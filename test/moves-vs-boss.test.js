@@ -117,6 +117,9 @@ describe('what already landed once on a boss still does', () => {
     const r = run('Saw', 'ground', 'fireSpecial(f, none());');
     expect(r.lost).toBe(28);
     const frames = r.hits.map(([f]) => f);
-    for (let i = 1; i < frames.length; i++) expect(frames[i] - frames[i - 1], 'ticks six frames apart').toBe(6);
+    // (restated for the HIT FREEZE, the owner 2026-10-20: "Yes, tiny" -- the hitter is held on a boss hit, once a move: the first gap is six
+    // of Saw's own frames plus the frames he stood held after the first tick)
+    const hold = W.eval('hitStopFrames(4)');
+    for (let i = 1; i < frames.length; i++) expect(frames[i] - frames[i - 1], 'ticks six frames apart').toBe(i === 1 ? 6 + hold : 6);
   });
 });

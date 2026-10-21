@@ -73,7 +73,9 @@ describe('holding', () => {
   it('a hit on either of them lets go', () => {
     grab('Coiny', 40); W.eval('applyHit(fighters[1], 3, 2, -2, fighters[0]);'); steps(2);
     expect(J('fighters[1]._heldBy')).toBe(null); expect(J('!!fighters[0]._hold')).toBe(false);
-    grab('Coiny', 40); W.eval('applyHit(fighters[0], 3, 2, -2, fighters[1]);'); steps(2);
+    // (restated for the HIT FREEZE, the owner 2026-10-20: "Yes, tiny" -- the holder hit is held still for the hit's freeze, and lets go on
+    // the first frame of their own after it)
+    grab('Coiny', 40); W.eval('applyHit(fighters[0], 3, 2, -2, fighters[1]);'); steps(2 + J('hitStopFrames(3)'));
     expect(J('fighters[1]._heldBy')).toBe(null); expect(J('!!fighters[0]._hold')).toBe(false);
   });
   it('the held fighter struggles free sooner by pressing, and later with more damage on them', () => {

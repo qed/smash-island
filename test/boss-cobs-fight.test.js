@@ -1058,14 +1058,14 @@ describe('OWNER: "2x damage on knife in the cobs fight."', () => {
     expect(r.mult.notNamedKnife, 'only Knife itself').toEqual([1, 1, 1]);
   });
 
-  it('it does not make Knife hit more often: the grace a hit opens on him is noted at the number written (20 buys 21 frames, the doubled 40 would buy 24), and the keynote speech counts what he really took', () => {
+  it('it does not make Knife hit more often: the grace a hit opens on him is noted at the number written (20 buys 27 frames, the doubled 40 would buy 30), and the keynote speech counts what he really took', () => {
     const r = DEAL(`
       var out = {}, fHit = by('Firey'), kHit = by('Knife');
       hazardT += 40; damageSummon(fHit, s, s.x, s.y, 20); damageSummon(kHit, s, s.x, s.y, 20);
       out.grace = [bossGraceRec(s, fHit, false).invuln, bossGraceRec(s, kHit, false).invuln];
       s._speechT = 100; s._speechHit = 0; hazardT += 40; var k0 = s.hp; damageSummon(kHit, s, s.x, s.y, 20); out.speech = [s._speechHit, k0 - s.hp];
       return out;`);
-    expect(r.grace, 'the same for both: 9 + 20 x 0.6').toEqual([21, 21]);
+    expect(r.grace, 'the same for both: 9 + 6 + 20 x 0.6').toEqual([27, 27]);   // (restated for COMBOS, the owner 2026-10-20: "Flat +1/10 s" on a fighter's hit's stun, and grace +6 with it -- it was 9 + 20 x 0.6 = 21, the doubled 40 24)
     expect(r.speech[0], 'the keynote speech counts the doubled damage').toBeCloseTo(r.speech[1], 9);
     expect(r.speech[1]).toBeCloseTo(2 * 20 / 1.6, 9);
   });

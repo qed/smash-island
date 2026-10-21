@@ -313,14 +313,15 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change'
       out.p3 = ${WATCH(110, 'f.x = 200; f.vx = 0; f.y = groundY() - 24; f.vy = 0; f.invuln = 1e9;')}.notes.length; out.p3kind = b._telKind;
       return out;
     })()`);
-    // A swing of 5 every six frames: his grace for this fighter after a 5 is twelve, so every other one lands ("give bosses by-character
-    // iframes", the owner, 2026-10-04; every swing landed before).
-    expect(r.hpLost, 'the hits landed, every other one').toBe(Math.ceil(r.hits / 2) * 5);
-    expect(r.hpLost, 'and that is more than a few').toBeGreaterThanOrEqual(30);
+    // A swing of 5 every six frames: his grace for this fighter after a 5 is eighteen, so every third one lands ("give bosses by-character
+    // iframes", the owner, 2026-10-04; every swing landed before). (Restated for COMBOS, the owner 2026-10-20: "Flat +1/10 s" on every hit's
+    // stun and grace +6 with it -- the grace was twelve, and every other one landed, at least 30.)
+    expect(r.hpLost, 'the hits landed, every third one').toBe(Math.ceil(r.hits / 3) * 5);
+    expect(r.hpLost, 'and that is more than a few').toBeGreaterThanOrEqual(20);
     expect(r.kind, 'and he is still rapping').toBe('pfaceRap');
     expect(r.w.notes.length, 'the beat dropped: all four pulses, eight notes').toBe(8);
     expect(Math.abs(r.flung - 550), 'nobody flings him off the screen mid-rap (his canon weakness is not taken): a hit shoves him a couple of px, no more').toBeLessThan(40);
-    expect(r.p3hits, 'phase 3: the hits landed').toBeGreaterThan(10);
+    expect(r.p3hits, 'phase 3: the hits landed').toBeGreaterThanOrEqual(6);   // (restated for COMBOS, the owner 2026-10-20: grace +6 -- a 2 every five frames lands every fourth swing, not every other: three of them, was more than 10%)
     expect(r.p3, 'phase 3 the same').toBe(8);
   });
 

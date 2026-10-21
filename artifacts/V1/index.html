@@ -40281,6 +40281,7 @@ function updateSummons(){
 function step(){
   if(fsTimeGate()) return;   // CATCH, THEN CINEMATIC: the Final Smash intro stops the match; its slow-mo KO skips steps (fsTimeGate)
   hazardT++;
+  STEP_F = null;   // (HIT FREEZE: set while each fighter's own frame runs, below)
   // Clutch-time music. Deliberately NOT per frame: twice a second is far more often than the
   // condition can meaningfully change, and it keeps audio work out of the hot loop.
   if(hazardT % CLUTCH_CHECK_FRAMES === 0){ try{ clutchTick(); }catch(e){} }
@@ -40311,10 +40312,14 @@ function step(){
   const gravFor = function(f){ if(f._floatT>0){ f._floatT--; return grav*0.35; } return grav; };
 
   for(const f of fighters){
-    if(f.dead) continue;
+    if(f.dead){ f._hitStop = 0; f._hsBuf = null; continue; }
     if(f._fsLock && fsLockHold(f)) continue;   // CATCH, THEN CINEMATIC: caught by a Final Smash, they cannot move or act (fsLockHold)
     const fst = f.st || STAT_ONE;   // FIGHTER STATS
     if(TESTMODE.active) trainingPin(f);   // Training: the dummy's damage held where the player set it
+    // HIT FREEZE: held still by a hit they are in. Nothing of theirs runs this frame -- no move, no timer, no thinking -- so every
+    // countdown picks up where it stopped; a person's presses wait for the frame it ends (hitStopHold).
+    if(f._hitStop > 0 && f._hsAt !== hazardT){ hitStopHold(f, f.controller || (f.you ? "local" : "ai"), pad); continue; }
+    STEP_F = f;
     // ---- input (local human / remote player / AI) ----
     let inp={left:false,right:false,jump:false,attack:false,special:false,smash:false};
     const ctrl = f.controller || (f.you ? "local" : "ai");
@@ -40347,6 +40352,7 @@ function step(){
       legacyFin(inp);   // the CPU's rules still press attack + special for the finisher; the engine reads `fin`
       fsBotInput(f, inp);   // chases the Smash Ball, and holds a Final Smash until it will hit
     }
+    if(f._hsBuf){ for(const b in f._hsBuf) inp[b] = true; f._hsBuf = null; }   // HIT FREEZE: a button pressed while held still is pressed now
     f._rawKeys = (ctrl==='local' || ctrl==='remote') ? [!!inp.attack, !!inp.special, !!inp.smash, !!inp.jump] : null;   // a human's buttons as pressed, before the pairing below: what a cuff's mash counts (cuffKeys)
     const inpPaired = inp;   // (the pairing changes this input in place; anything below that masks the input makes a new one: heldStruggle)
     if((ctrl==='local' || ctrl==='remote') && !RACE.active && !(SETTINGS.mode==='ctf' && CTF.live && (CTF.live.phase==='hide' || CTF.live.phase==='fix'))) comboInput(f, inp);   // X+C grab, V+C finisher (the Capture the Flag hiding phase reads the raw keys)
@@ -40537,7 +40543,7 @@ function step(){
     if(f._windup){
       const wu = f._windup;
       if(wu.falls !== (f._falls||0)) f._windup = null;          // KO'd since it started
-      else if((wu.t -= aS) <= 0){ f._windup = null; wu.fire(); }
+      else if((wu.t -= aS) <= 0){ f._windup = null; f._wuRoot = wu.root || wu; try{ wu.fire(); } finally { f._wuRoot = null; } }   // (_wuRoot: which string of wind-ups this is -- HIT FREEZE)
     }
     // SMASH PATTERNS that live across frames (see SM_PAT). Naily's _nail below is the same idea
     // written by hand first; these are the general versions the other thirty-nine use.
@@ -41054,8 +41060,9 @@ function step(){
     }
   }
 
+  STEP_F = null;
   // DROPS CARRY: whoever a plunging fighter falls into goes down with them (see updateDropCarry).
-  for(const f of fighters) updateDropCarry(f);
+  for(const f of fighters) if(f._hsHeld !== hazardT) updateDropCarry(f);   // (not one held still by a hit this frame: HIT FREEZE)
 
   // evil leafy hazard
   if(evil){
@@ -42222,14 +42229,100 @@ const SMASH_CD_SCALE = 0.75;                      // every declared smash cost, 
 const SELF_STUN_SCALE = 0.6;                      // cost.stun freezes movement too; 24 fighters sat out up to 34 frames
 
 // CHAINING. The same attacker may follow up through the grace their own hit opened, but only while the
-// target is still in hitstun, only with a swing (projectiles test invuln in their own loop, so a wall of
-// shots still cannot chain-stun), and only CHAIN_MAX times. Each link cuts the next hitstun by
-// CHAIN_DECAY and knockback grows with the target's damage, so a chain runs out on its own. A chained
-// hit has to come from a NEW move (_atkSeq): a hitbox that lingers over several frames, like Meteor
-// Puff's fall, may not re-land through the grace its own first hit opened -- the golden fixture is
-// what caught that.
-const CHAIN_MAX = 3, CHAIN_DECAY = 0.75;
-function chainOpen(t, f){ return !!f && t.hitstun > 0 && t._chainBy === f.idx && t._chainSeq !== f._atkSeq && (t._chain||0) < CHAIN_MAX; }
+// target is still in hitstun, and only with a swing (projectiles test invuln in their own loop, so a wall of
+// shots still cannot chain-stun). A chained hit has to come from a NEW move (_atkSeq): a hitbox that lingers
+// over several frames, like Meteor Puff's fall, may not re-land through the grace its own first hit opened --
+// the golden fixture is what caught that.
+// COMBOS (the owner, 2026-10-20: "give a tiny stun during hits, to allow combos, because I cant spam at the speed of
+// light..."; "like, an attack stun"). Every hit stuns HIT_STUN_PLUS frames longer than it did ("Flat +1/10 s"): a 3% jab
+// stunned 9 frames and the next jab was ready at 12 (JAB_HIT_CD), so a follow-up needed inhuman speed; it stuns 15 now,
+// and a jab pressed two frames after it is ready still links. Hit-grace grows by the same amount (hitGraceFrames), so it
+// covers the stun exactly as much as before for shots and for anyone else. And a chain has no end of its own any more --
+// no cap on its links and no shrinking stun (there were CHAIN_MAX = 3 links, each 0.75 the stun of the last): "if i can get
+// them into a position where i can combo relentlessly, and then i dont make a mistake that lets them get away, then I
+// should be rewarded for that, right?" A combo ends when the attacker misses, is too slow, or the knockback (which grows
+// with the target's damage) carries the foe out of reach. _chain still counts the links (a string's length).
+// The +6 is on a FIGHTER's hit (hitStunPlus): combos are made of fighters' hits. A hit from no fighter -- a boss's, an arena
+// hazard's, an assist trophy's -- stuns and protects as long as it did, because the bosses' own timings are built on that:
+// MePhone4's FIST THINGY and Cobs's SCREEN CRACKER throw their second punch 26 frames after the first, "past the 24-frame hit
+// grace", and with a boss hit's grace grown to 30 the first glove's grace swallowed the second (boss-mephone4).
+const HIT_STUN_PLUS = 6;
+function hitStunPlus(from, tick){ return (!tick && from && fighters[from.idx] === from) ? HIT_STUN_PLUS : 0; }
+function chainOpen(t, f){ return !!f && t.hitstun > 0 && t._chainBy === f.idx && t._chainSeq !== f._atkSeq; }
+// HIT FREEZE ("Yes, tiny" -- the owner, 2026-10-20). A hit that lands holds the two fighters in it still for a moment: HITSTOP_MIN
+// frames for a 3% jab up to HITSTOP_MAX for an 18% heavy (hitStopFrames). Only those two: never the match, the clock, anyone
+// else, a shot or a boss. While held, a fighter's frame does not run at all (step), so their stun, cooldowns, move timers and
+// grace all wait, and the timing between the two is the same after it as before. The rules:
+//   - a swing, a dash, a body -- anything a fighter lands during their own frame (STEP_F) within HITSTOP_REACH of them -- holds the
+//     attacker and the target;
+//   - a shot holds only the target, and the shot flies on (shots are moved after the fighters, outside anyone's frame); so does a
+//     hit a fighter lands from farther off than HITSTOP_REACH in their own frame -- a beam smash (up to 900 px long), an instant zap
+//     like Lightning's Chain Bolt -- which is a shot that happens to resolve at once;
+//   - a move that hits more than once holds once, on its first hit (hitStopKey: the move, _atkSeq, and its multi-hit, _comboTok),
+//     so a spin does not crawl; a move that strikes in a string of wind-ups (Bonesaw's three strokes, each a new _atkSeq so it can
+//     link) is one move too: the strokes share the first wind-up of the string (_wuRoot). A later hit of a move that held them
+//     already under another key -- a spin up-special's aura after its own hit, Goo's spit after his swallow -- holds 1 frame at most
+//     ("1 frame per later tick at most": hitStopMove);
+//   - a boss is never held; the fighter who hits one is, and that fighter's grace record on the boss waits with them (bossGraceNote);
+//   - never in RUNNING!, never while a Final Smash plays, never for a tick (burn, poison, bleed, a shot's lingering damage: opts.tick),
+//     and never for damage from no fighter (an arena hazard, a boss, an assist trophy).
+// A person's attack, special, smash and jump pressed while held count on the first frame after (hitStopHold); a client is sent the
+// positions as they are, so it sees them hold.
+const HITSTOP_MIN = 2, HITSTOP_MAX = 6;
+const HITSTOP_KEYS = ['attack', 'special', 'smash', 'jump'];
+let STEP_F = null;   // the fighter whose own frame is running in step(), or null
+function hitStopFrames(dmg){ return Math.max(HITSTOP_MIN, Math.min(HITSTOP_MAX, Math.round(2 + (dmg - 3)*4/15))); }   // 3% -> 2, 10% -> 4, 18% -> 6
+function hitStopOff(){
+  if(RACE.active) return true;
+  for(const f of fighters) if(f._fs) return true;   // a Final Smash is playing
+  return false;
+}
+// How far off (px between the two bodies) a hit landed in the attacker's own frame may be and still hold them. Every melee hit lands
+// inside it -- the widest, a burst smash (Gust: 120 + 32 around its user's middle), about 130 past their body; the ranged things that
+// resolve in the shooter's own frame (beam smashes, instant zaps) were found holding their shooter from 160 px off.
+const HITSTOP_REACH = 150;
+function hitStopNear(f, t){ return Math.hypot(t.x - f.x, t.y - f.y) - (t.r||0) - (f.r||0) <= HITSTOP_REACH; }
+let HITSTOP_WU = 0;
+function hitStopKey(f){
+  const w = f._wuRoot;
+  if(w) return 'w' + (w.hsId || (w.hsId = ++HITSTOP_WU));   // a wind-up going off: the string it belongs to
+  return (f._atkSeq||0) + ':' + (f._comboTok||0);
+}
+// The move a hit belongs to, under all its keys: the move (_atkSeq), or for a wind-up going off, the move that started its string.
+function hitStopMove(f){ const w = f._wuRoot; return w ? (w.seq||0) : (f._atkSeq||0); }
+// The attacker, once a move. Returns how many frames they are held from the next frame on (0: not held). `t`, what was hit: a hit
+// landed from beyond HITSTOP_REACH is a shot's, and holds only its target.
+function hitStopSelf(f, dmg, t){
+  if(!f || f !== STEP_F || !(dmg > 0) || hitStopOff()) return 0;
+  if(t && !hitStopNear(f, t)) return 0;
+  const key = hitStopKey(f), mv = hitStopMove(f);
+  if(f._hsOwn === key) return f._hsAt === hazardT ? (f._hitStop||0) : 0;   // this move held them already (a second target in the same frame shares it)
+  const n = f._hsMv === mv ? 1 : hitStopFrames(dmg);   // a later hit of a move that held them already: 1 frame at most
+  f._hsOwn = key; f._hsMv = mv; f._hitStop = Math.max(f._hitStop||0, n); f._hsAt = hazardT;   // (Math.max: a longer hold from a hit they took earlier this same frame stands)
+  return f._hitStop;
+}
+// A fighter `t` hit by `from` (applyHit, not a tick): the target is held, once for each of the attacker's moves, and the attacker too
+// if it was their own frame and the hit was within reach.
+function hitStopHit(t, from, dmg){
+  if(!from || !(dmg > 0) || t.dead || from === t || fighters[from.idx] !== from || hitStopOff()) return;   // (a fighter's hit: a boss's, an assist's and a hazard's hold no one)
+  const key = hitStopKey(from), mv = hitStopMove(from);
+  if(!(t._hsBy === from.idx && t._hsKey === key)){
+    const n = (t._hsBy === from.idx && t._hsMv === mv) ? 1 : hitStopFrames(dmg);   // a later hit of a move that held them already: 1 frame at most
+    if(!(t._hitStop > 0)) t._hsAt = hazardT;   // (held from the next frame; one already held stays held)
+    t._hitStop = Math.max(t._hitStop||0, n); t._hsBy = from.idx; t._hsKey = key; t._hsMv = mv;
+  }
+  hitStopSelf(from, dmg, t);
+}
+// One frame of being held: counted down, and a person's buttons noted for the frame it ends (a remote player's press is latched
+// for one frame only, so it is read here or lost).
+function hitStopHold(f, ctrl, pad){
+  f._hitStop--; f._hsHeld = hazardT;
+  let r = null;
+  if(ctrl === 'local'){ const K = KEYS; r = { attack:down[K.attack]||pad?.attack, special:down[K.special]||pad?.special, smash:down[K.smash]||pad?.smash, jump:down[K.jump]||pad?.jump }; }
+  else if(ctrl === 'remote') r = netRemoteInput(f.idx);
+  if(!r) return;
+  for(const b of HITSTOP_KEYS) if(r[b]) (f._hsBuf || (f._hsBuf = {}))[b] = true;
+}
 // One place a smash actually goes off, so the buffered release and the live one cannot drift apart.
 // AIM. Half a second of charge is long enough for anyone with movement to get behind you, and a smash
 // thrown at where they were is the "hard to use against enemies with movetech" half of the complaint.
@@ -43912,13 +44005,14 @@ function updateDropCarry(f){
     // BOW'S EXTRA HIT ON THE WAY DOWN ("bows up special should deal damage on the way down(extra)"): the chair that falls through
     // someone hits them first, once, and the slam at the bottom is the second link of the same chain -- the hit's own grace and
     // the _chainSeq reset below are what let it land (hitCircle asks chainOpen), so the 13% and the stun still come after it.
+    // (It also held the link count down so the slam fitted under the old cap of three; a chain has no cap now: COMBOS.)
     const st = f._stall;
     if(st && st.fall && st.air && st.fHit && !st.fHit.has(t.idx)){
       st.fHit.add(t.idx);
       applyHit(t, st.fall.dmg, 0, st.fall.kb, f);
       for(let i=0;i<6;i++) puff(t.x, t.y - 6, i%2 ? '#f06fa8' : '#fff', 4);
       if(t.dead) continue;
-      t._chainSeq = -1; t._chain = Math.min(t._chain||0, CHAIN_MAX - 2);
+      t._chainSeq = -1;
     }
     const reach = (f.r + t.r)*0.8;
     (f._carrying = f._carrying || []).push({ idx: t.idx, dx: Math.max(-reach, Math.min(reach, t.x - f.x)), dy: Math.max(-f.r, Math.min(f.r*0.4, t.y - f.y)) });
@@ -46578,7 +46672,7 @@ function startWindup(f, frames, fire, color, sh){
   if(f._windup) return;              // already committed to one; a second press is simply eaten
   // `falls` pins the wind-up to this life: every KO path bumps _falls, so a ring started just
   // before a KO can never go off at the respawn point, whichever respawn route ran.
-  f._windup = { t: frames, t0: frames, fire: fire, color: color || f.color, falls: f._falls||0, sh: sh || null };
+  f._windup = { t: frames, t0: frames, fire: fire, color: color || f.color, falls: f._falls||0, sh: sh || null, root: f._wuRoot || null, seq: f._atkSeq||0 };   // (root: the wind-up this one was started from, for a move that strikes in strokes; seq: the move that started it -- HIT FREEZE)
 }
 // set the fighter's vertical dash velocity from the directions they were holding at cast time
 function applyDashVY(f, upSpeed, downSpeed){
@@ -48412,7 +48506,7 @@ function graceBlocks(t, f){
   return t.invuln > 0 && !(f && t._graceBy === f.idx && t._graceTok === (f._comboTok||0) && t.invuln <= (t._graceLeft||0));
 }
 // Two launchers ignore hit-grace by design, and told it apart by size alone: above 16, the old grace
-// cap, was real invulnerability. Grace reaches 24 now, so they keep that rule but never count grace.
+// cap, was real invulnerability. Grace reaches 30 now (COMBOS), so they keep that rule but never count grace.
 function hardInvuln(t){ return t.invuln > 16 && t.invuln > (t._graceLeft||0); }
 // WHAT A HIT DOES TO ITS TARGET'S GRACE AND CHAIN -- one place, for a fighter (applyHit) and for a boss (bossGraceNote).
 // Hit-grace scales with the hit's weight: light/fast pokes give little grace (so rapid pokes connect), heavy hits give more
@@ -48420,19 +48514,23 @@ function hardInvuln(t){ return t.invuln > 16 && t.invuln > (t._graceLeft||0); }
 // projectile wall or a fast multi-hit chained someone with no gap to answer in. Roughly doubled at the light end, and the cap
 // raised so a big hit still buys more room than a small one. Comeback scaling: a designated fighter's attacks impose less
 // hit-grace (down to a floor), so their pokes chain better the more they've died / KO'd.
-function hitGraceFrames(dmg, from){
-  let grace = Math.round(9 + dmg*0.6);        // ~12 for a 5-dmg poke, ~20 for an 18-dmg hit, capped at 24
-  if(from && from.kit && COMEBACK[from.kit.special]){ grace = Math.max(COMEBACK_IFRAME_FLOOR, grace - comebackPoints(from)); }
-  return Math.min(24, grace);
+// COMBOS: grace grows by the stun's HIT_STUN_PLUS, cap and all, so it still covers a hit's stun exactly as much as it did. A tick
+// (a shot's lingering damage, a poison cloud: opts.tick) is not an attack's hit, and keeps the stun and the grace it had; so does a
+// hit from no fighter (a boss, a hazard, an assist trophy: hitStunPlus).
+function hitGraceFrames(dmg, from, tick){
+  const plus = hitStunPlus(from, tick);
+  let grace = Math.round(9 + plus + dmg*0.6);        // a fighter's: ~18 for a 5-dmg poke, ~26 for an 18-dmg hit, capped at 30 (ticks and no fighter's: 12, 20, 24)
+  if(from && from.kit && COMEBACK[from.kit.special]){ grace = Math.max(COMEBACK_IFRAME_FLOOR + plus, grace - comebackPoints(from)); }   // (the floor moves too: 9, was 3)
+  return Math.min(24 + plus, grace);
 }
-function hitStunFrames(dmg, chained){ return Math.max(4, Math.round(Math.min(24, 6+dmg) * Math.pow(CHAIN_DECAY, chained))); }
+function hitStunFrames(dmg, from, tick){ return Math.max(4, Math.round(Math.min(24, 6 + dmg))) + hitStunPlus(from, tick); }   // a fighter's: 15 for a 3% jab (was 9), 30 at the cap (was 24)
 // `t` is anything with a fighter's invuln / hitstun / chain / grace fields: a fighter, or a boss's record of one attacker.
 function stampHit(t, dmg, from, isTick, stunOvr, mvKey){
   let chained = (!isTick && from && t._chainBy === from.idx && t.hitstun > 0) ? (t._chain||0) + 1 : 0;
   if(mvKey && chained > 0 && t._chainSeq === from._atkSeq) chained--;   // a moveset move's own second hit (a spin that hits twice) is not another link of the chain
   if(!isTick){ t._chainBy = from ? from.idx : -1; t._chain = chained; t._chainSeq = from ? from._atkSeq : -1; }
-  t.hitstun = stunOvr ? Math.max(4, Math.round(stunOvr * Math.pow(CHAIN_DECAY, chained))) : hitStunFrames(dmg, chained);   // (stunOvr: a moveset move's own stun)
-  const grace = hitGraceFrames(dmg, from);
+  t.hitstun = stunOvr ? Math.max(4, Math.round(stunOvr)) + hitStunPlus(from, isTick) : hitStunFrames(dmg, from, isTick);   // (stunOvr: a moveset move's own stun, +6 like every fighter's hit: COMBOS)
+  const grace = hitGraceFrames(dmg, from, isTick);
   t.invuln = Math.max(t.invuln, grace);
   t._graceBy = from ? from.idx : -1; t._graceTok = from ? (from._comboTok||0) : 0;
   t._graceLeft = Math.max(t._graceLeft||0, grace);
@@ -48455,10 +48553,13 @@ function bossGraceRec(s, f, make){
   if(!R){
     if(!make) return null;
     R = G[k] = { invuln:0, hitstun:0, _graceLeft:0, _graceBy:-1, _graceTok:0, _chainBy:-1, _chain:0, _chainSeq:-1, at:hazardT };
-    for(const k2 in G) if(G[k2] !== R && hazardT - G[k2].at >= 40) delete G[k2];   // a record untouched for 40 frames has run out (grace and stun top out at 24), and a missing one reads the same: so the trophies of a long fight do not pile up
+    for(const k2 in G) if(G[k2] !== R && hazardT - G[k2].at >= 40) delete G[k2];   // a record untouched for 40 frames has run out (grace and stun top out at 30), and a missing one reads the same: so the trophies of a long fight do not pile up
   }
   const dt = hazardT - R.at;
-  if(dt !== 0){ R.at = hazardT; if(dt > 0){ R.invuln = Math.max(0, R.invuln - dt); R._graceLeft = Math.max(0, R._graceLeft - dt); R.hitstun = Math.max(0, R.hitstun - dt); } }
+  if(dt !== 0){ R.at = hazardT;
+    if(dt > 0){ const run = Math.max(0, dt - (R._hold||0)); R._hold = Math.max(0, (R._hold||0) - dt);   // (_hold: frames the attacker stood held by the hit -- HIT FREEZE)
+      R.invuln = Math.max(0, R.invuln - run); R._graceLeft = Math.max(0, R._graceLeft - run); R.hitstun = Math.max(0, R.hitstun - run); }
+    else R._hold = 0; }
   return R;
 }
 // Does this attacker's grace on this boss stop the hit? The rule is the fighter's: a move built to hit more than once (f._combo)
@@ -48470,7 +48571,14 @@ function bossGraceBlocks(s, f, strict){
   return f._combo ? graceBlocks(R, f) : (strict || !chainOpen(R, f));
 }
 // A hit landed on the boss: it opens this attacker's grace, for as long as the same hit gives a fighter.
-function bossGraceNote(s, f, dmg){ stampHit(bossGraceRec(s, f, true), dmg, f, false); }
+// HIT FREEZE: the boss is never held, the fighter who hit it is (their own swing: hitStopSelf), and their record on the boss skips the
+// frames they stand held (_hold), as their stun and grace on a fighter would.
+function bossGraceNote(s, f, dmg){
+  const R = bossGraceRec(s, f, true);
+  stampHit(R, dmg, f, false);
+  const k = hitStopSelf(f, dmg, s);
+  if(k > 0) R._hold = k;
+}
 // A boss hurt by a shot or a dash: damageSummon's own branches for a caller with no point to shove it from. Returns what it took.
 function bossTakeHit(s, dmg, from){
   dmg = statDmg(from, dmg);   // FIGHTER STATS: the attacker's dmg
@@ -48694,14 +48802,14 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   const hitGround = t.onground;   // (for the dust a launch kicks up: hitFx)
   knock(t, kbx*scale, kby*scale - kp*0.025);
   if(SETTINGS.mode==='ctf') ctfBigHit(t, from);   // a big enough launch makes a flag carrier drop the flag
-  // Each link of a chain stuns for less, so a chain ends even before CHAIN_MAX (see chainOpen). The stun, the chain and the
-  // hit-grace this hit gives are all set by stampHit: the one place that says what a hit does to its target's grace, which a
+  // The stun, the chain and the hit-grace this hit gives are all set by stampHit: the one place that says what a hit does to its target's grace, which a
   // boss's grace for each attacker (bossGraceNote) runs through as well.
   const isTick = !!(opts && opts.tick);
   stampHit(t, dmg*fsRow, from, isTick, opts && opts.stun, opts && opts.mvKey);   // (fsRow: a Final Smash's hit stamps its row's own size)
   if(t._fsLock) fsLockKeep(t, dmg*fsRow);   // CATCH, THEN CINEMATIC: a locked foe's launch waits for the let-go (fsLockOff)...
   else if(fsSt && !t.dead){ t._fsHitT = hazardT; if(fsKoFlight(t)) fsSlowStart(t); }   // ...and a launch that will carry them out plays slowed down
   else if(dmg > 0) t._fsHitT = null;   // (a hit that is not a Final Smash's: a KO from here on is not one: fsKoSlow)
+  if(!isTick) hitStopHit(t, from, dmg*fsRow);   // HIT FREEZE: the two of them are held still a moment (none while a Final Smash plays: hitStopOff)
   // A circle still winding up is lost to any hit that connects first -- the counterplay that turns
   // a ring from an answer to everything into a read (see CIRCLE_WINDUP).
   if(t._windup) t._windup=null;
@@ -63806,6 +63914,9 @@ function applySnapshot(s){
       you: (myIdx != null) ? fd.idx === myIdx : !!fd.you,
     };
     const was = wasF.get(fd.idx);
+    // the swing timer the last snapshot had, when this is the same swing still running: netSwing never shows more than it. A swing held by a
+    // hit's freeze on the host (HIT FREEZE) arrives with the same timer twice, and counted back up from it each time it stepped a frame back and forth
+    f._atkCap = (was && was._atk0 > 0 && f._atk0 > 0 && was._atk0 >= f._atk0) ? was._atk0 : 0;
     netGlide(f, (was && was._tpT > 0 && !(f._tpT > 0)) ? null : was);   // Bow's Teleport: the fade just ended, so she is somewhere else -- cut to it (a short trip is under NET_TELEPORT, and would glide)
     return f;
   });
@@ -63910,7 +64021,7 @@ function netInterpolate(now){
 // moment the glide is showing (hazardT, a frame or two behind the newest snapshot, so the timer is a little higher).
 function netSwing(f){
   if(!(f._atk0 > 0)) return;
-  f._atkAnim = Math.min(f._atkLen || ATK_ANIM, f._atk0 + Math.max(0, NET_VIEW.tt - hazardT));
+  f._atkAnim = Math.min(f._atkLen || ATK_ANIM, f._atk0 + Math.max(0, NET_VIEW.tt - hazardT), f._atkCap > 0 ? f._atkCap : Infinity);   // (_atkCap: see applySnapshot)
   f._atkPhase = atkPhase(f); f._atkProg = atkPhaseK(f);
 }
 // The same rule step() moves particles by, run by the client on the births the host sent: once per 60th of a second (clientFrame
