@@ -32,7 +32,7 @@ const rows = (rep.rows || []).filter((r) => r.games > 0);
 if (!rows.length) { console.error(`${src} has no rows with games`); process.exit(1); }
 
 // every playable fighter must be in it (the same roster balance-1v1.mjs measures)
-const { loadMonolith } = await import('../test/helpers/load-monolith.js');
+const { loadMonolith } = await import('./helpers/load-monolith.js');
 const { window: w } = loadMonolith(1);
 let roster;
 try { roster = w.eval('ROSTER.filter(function(r){ return r.play && !r.prize; }).map(function(r){ return r.name; })'); } finally { try { w.close && w.close(); } catch {} }

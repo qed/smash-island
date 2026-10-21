@@ -1,4 +1,4 @@
-import { loadMonolith } from '../test/helpers/load-monolith.js';
+import { loadMonolith } from './helpers/load-monolith.js';
 const { window: w } = loadMonolith(1);
 const out = w.eval(`(function(){
   const rows = ROSTER.filter(r=>r.play).map(r=>{

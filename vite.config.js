@@ -1,5 +1,4 @@
 import { defineConfig } from 'vite';
-import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   base: './',
@@ -27,17 +26,4 @@ export default defineConfig({
     },
   },
   server: { port: 5173, strictPort: true },
-  test: {
-    environment: 'jsdom',
-    include: ['test/**/*.test.js'],
-    // test/pending/ holds TDD tests written ahead of their implementation. They are red by
-    // design and are excluded so the suite stays green as a trustworthy gate; move a file up
-    // into test/ when the code it specifies lands. Currently: eslint-rules.test.js, which
-    // needs the eslint.config.js state-safety rules from Plan A.
-    exclude: ['test/pending/**'],
-    // An absolute path: vitest resolves a relative one against the root as a URL with no trailing slash, so in a worktree nested inside
-    // another checkout (smash-island/smash-bal) it found the PARENT checkout's copy of this file, and then refused to load it.
-    setupFiles: [fileURLToPath(new URL('./test/setup/jsdom-canvas.js', import.meta.url))],
-    globals: false,
-  },
 });

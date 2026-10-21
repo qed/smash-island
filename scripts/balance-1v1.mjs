@@ -24,7 +24,7 @@ function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t
 
 async function rosterNames(){
   await import('./balance-tournament.mjs');   // installs its jsdom teardown guard (a closed window's boot tasks must not kill the run)
-  const { loadMonolith } = await import('../test/helpers/load-monolith.js');
+  const { loadMonolith } = await import('./helpers/load-monolith.js');
   const { window: w } = loadMonolith(1);
   try { return w.eval('ROSTER.filter(function(r){ return r.play && !r.prize; }).map(function(r){ return r.name; })'); }
   finally { try { w.close && w.close(); } catch {} }

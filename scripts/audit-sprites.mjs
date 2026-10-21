@@ -91,6 +91,15 @@ function declared() {
 
   const generated = /renderSprite\(\s*"([^"]+)"\s*(?:,\s*\{([^}]*)\})?\s*\)/g;
   while ((m = generated.exec(html))) out[m[1]] = { flip: /flip:\s*true/.test(m[2] || '') };
+
+  // A POSE SET's pictures (POSE_SETS in the monolith, made by scripts/make-anim-batch1.mjs) are named at runtime by poseSpritesOf:
+  // `<file>-<key>.png`, each with its own flag, the third number of its `pics` entry ([w, h, flip, k]).
+  const poseRow = /file:'([a-z0-9-]+)',\s*base:\[[^\]]*\],\s*pics:\s*\{([^}]*)\}/g;
+  while ((m = poseRow.exec(html))) {
+    const pic = /'([^']+)':\[\s*\d+\s*,\s*\d+\s*,\s*([01])/g;
+    let q;
+    while ((q = pic.exec(m[2]))) out[`${m[1]}-${q[1]}.png`] = { flip: q[2] === '1' };
+  }
   return out;
 }
 
@@ -100,6 +109,20 @@ const ADJUDICATED = {
   'bubble.png': 'transparent soap film: the dark "ink" is the rim and one white specular, not a face — she is front-on',
   'fries.png': 'the carton\'s own outlines sit left of centre and drag the ink centroid; the face itself is dead centre',
 };
+// The same, for the pictures of the POSE SETS (scripts/make-anim-batch1.mjs), whose flags were set for the set as a whole or by eye.
+const ADJUDICATED_POSE = [
+  [/^lollipop-screech-\d+\.png$/, 'a frame of her screech, front-on by fetch-sprites\' measure (under 0.03): it keeps her render\'s flag, one for all fifteen'],
+  [/^(lollipop-twirl|bell-spin)-\d\.png$/, 'a step of a turn: one flag for the whole turn, or the fighter would jump sides mid-spin'],
+  [/^teddy-bear-laugh-\d+\.png$/, 'her laugh GIF: the paint gun points left in the art, so it is flipped to point at the foe; her face, looking back, fools the measure'],
+  [/^tissues-sneeze\.png$/, 'he faces left in the art (the snot jet, taken off, went left): flipped so he sneezes forward'],
+  [/^sidewalky-(breaking|frozen)\.png$/, 'his flag goes by his side band (on the left, as on his render), which the measure reads as ink'],
+  [/^box-flaps-4\.png$/, 'three-quarter view turned to the viewer\'s left (frames 1-3 face the front): flipped by eye so she turns to the foe'],
+  [/^box-(running|panicked)\.png$/, 'she faces right, as her render does (side panel on the left, eyes shifted right): the side panel reads as ink'],
+  [/^goo-arm\.png$/, 'he faces right: his eyes and grin are turned to the muscular arm on his right, whose bulk the measure reads as ink'],
+  [/^goo-(engulf-\d|splat)\.png$/, 'one flag for the whole Engulf: his form, not his face, sets the side'],
+  [/^(teddy-bear-paint|paintbrush-shocked|tissues-scared)\.png$/, 'front-on by fetch-sprites\' measure (under 0.03): it keeps the render\'s flag'],
+];
+const adjudged = (file) => ADJUDICATED[file] || (ADJUDICATED_POSE.find(([re]) => re.test(file)) || [])[1];
 
 const decl = declared();
 const files = readdirSync(DIR).filter(f => f.endsWith('.png')).sort();
@@ -123,9 +146,9 @@ for (const file of files) {
   const agree = should === !!d.flip;
   // A render whose face sits within ±0.02 of centre is front-facing; either flag looks the same,
   // so it is not a disagreement worth reporting. Nor is a character the measurement cannot read.
-  const ambiguous = Math.abs(a.facing) <= 0.02 || !a.confident || !!ADJUDICATED[file];
+  const ambiguous = Math.abs(a.facing) <= 0.02 || !a.confident || !!adjudged(file);
   const verdict = agree ? 'ok'
-    : ADJUDICATED[file] ? `ok (adjudicated: ${ADJUDICATED[file]})`
+    : adjudged(file) ? `ok (adjudicated: ${adjudged(file)})`
     : !a.confident ? 'ok (too dark/plain to read facing — flag left as authored)'
     : Math.abs(a.facing) <= 0.02 ? 'ok (front-facing, flag is cosmetic)'
     : `MISMATCH — measured ${should ? 'left' : 'right'}-facing`;

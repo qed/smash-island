@@ -71,8 +71,8 @@ import { fileURLToPath } from 'node:url';
 import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
-import { mulberry32 } from '../test/helpers/prng.js';
-import { makeCtx, installImages } from '../test/helpers/validating-canvas.js';
+import { mulberry32 } from './helpers/prng.js';
+import { makeCtx, installImages } from './helpers/validating-canvas.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const GAME_DIR = join(process.env.GAME_ROOT || ROOT, 'artifacts/V1');   // GAME_ROOT=<another checkout of the repo> plays that checkout's game with this script

@@ -15,8 +15,8 @@
 //
 // One game is booted, and its dice are seeded again before every measurement, so a row does not depend on the slice or the order:
 // the same build prints the same rows.
-import { bootMonolith } from '../test/helpers/smash-golden.js';
-import { mulberry32 } from '../test/helpers/prng.js';
+import { bootMonolith } from './helpers/smash-golden.js';
+import { mulberry32 } from './helpers/prng.js';
 
 const W = bootMonolith(5);
 await W.eval('profileReady');

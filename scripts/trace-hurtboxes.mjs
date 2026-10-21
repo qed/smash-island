@@ -14,7 +14,7 @@
 //   node scripts/trace-hurtboxes.mjs            (cwd = repo root; rewrites artifacts/V1/index.html)
 import { readFileSync, writeFileSync } from 'node:fs';
 import { PNG } from 'pngjs';
-import { loadMonolith } from '../test/helpers/load-monolith.js';
+import { loadMonolith } from './helpers/load-monolith.js';
 
 const HTML = 'artifacts/V1/index.html';
 const BANDS = 22;            // horizontal slices: 200px renders, ~9px a band, ~3px on screen
