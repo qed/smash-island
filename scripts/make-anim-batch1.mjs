@@ -359,19 +359,23 @@ function goo() {
   // his arm: he faces right in it, his eyes and grin turned to the arm; the measure (-0.036) reads the arm's bulk as ink, so the flag is by eye
   emit(F, 'arm', toBase(L.load(join(SRC, "Goo's Muscular Arm (S4E4).png")), F, 0.9), { src: ["Goo's Muscular Arm (S4E4).png"], method: 'cut-out (wiki pose)', flip: false });
   emit(F, 'hand', toBase(D('Goo raises his hand in the S4.png'), F), { src: ['Goo raises his hand in the S4.webp'], method: 'cut-out (wiki pose)' });
-  // HURT: screaming. The file is small (148x142, so blown up) and was cut off a red ground, whose tint runs up to ~5px in: those pixels go to
-  // his outline's blue (a red or purple pixel within 6px of the edge: r over g, which none of his blues is; his red mouth is far inside), and
-  // his blue, a purple-blue in this frame (hue ~229), is turned to his own (~215).
-  { const im = toBase(S('Goo screaming.png'), F);
-    L.decontaminate(im, (r, g, b) => r > g, { band: 6, reach: 3, passes: 6 });
-    for (let i = 0; i < im.d.length; i += 4) {
-      const r = im.d[i], g = im.d[i + 1], b = im.d[i + 2]; if (!im.d[i + 3] || !(b > r + 40 && b > g + 20)) continue;
-      const lo = Math.min(r, g), hue = 60 * (4 + (r - g) / (b - lo)), to = hue - 14 * Math.max(0, Math.min(1, (hue - 195) / 20));
-      if (to === hue) continue;
-      const t = (4 - to / 60) * (b - lo);   // b stays the max and lo the min: solve the hue for the middle channel
-      if (t >= 0) { im.d[i] = lo; im.d[i + 1] = lo + t; } else { im.d[i + 1] = lo; im.d[i] = lo - t; }
+  // HURT: screaming, rebuilt crisp ("Yes, rebuild it", the owner, 2026-10-21). The wiki's Goo screaming.png is a 148x142 frame, so blown
+  // up to his size it was blurry; now it is made the way the frame has him, out of the official parts: his standing form (Goo Form SW),
+  // squashed a little as he flinches, with his wide scream (GooMouth0029), and the eyes shut tight (closed arcs) and worried brows (inner
+  // ends up) drawn in his ink, at his render's line weight, where the frame has them.
+  { const t = L.trim(S('Goo Form SW.png'), 0), sq = 0.86, s = Math.sqrt((P.box.w * P.box.h) / (t.w * t.h * sq));
+    const im = L.trim(L.resize(t, Math.round(t.w * s), Math.round(t.h * s * sq)), 6), b = L.bbox(im);
+    const cx = b.x + b.w * 0.54, ey = b.y + b.h * 0.30, by = b.y + b.h * 0.19, ink = [16, 16, 16];
+    const bez = (p0, p1, p2, n = 20) => Array.from({ length: n + 1 }, (_, i) => { const u = i / n, v = 1 - u;
+      return [v * v * p0[0] + 2 * v * u * p1[0] + u * u * p2[0], v * v * p0[1] + 2 * v * u * p1[1] + u * u * p2[1]]; });
+    for (const sd of [-1, 1]) {   // sd: the left eye, then the right
+      const ex = cx + sd * b.w * 0.13;
+      L.stroke(im, L.arc(ex, ey, 11, 11, Math.PI * 0.94, Math.PI * 2.06), 5.2, ink, 1, 'atop');
+      L.stroke(im, bez([ex + sd * 12, by + 1], [ex - sd * 3, by + 5], [ex - sd * 10, by - 8]), 4.8, ink, 1, 'atop');
     }
-    emit(F, 'scream', im, { src: ['Goo screaming.png'], method: 'cut-out (wiki pose), its red fringe cleaned and its blue matched to his render' }); }
+    putFace(im, M(29), cx, b.y + b.h * 0.62, { s: ms * 0.85, fx: 175, fy: 117 });
+    emit(F, 'scream', im, { src: ['Goo Form SW.png', 'GooMouth0029.png'], method: 'official form + official mouth, eyes and brows drawn',
+      note: 'rebuilt crisp in place of the blurry 148x142 Goo screaming.png frame, as that frame has him', flip: false }); }
   emit(F, 'happy', toBase(S('Goo happy s4.png'), F), { src: ['Goo happy s4.png'], method: 'cut-out (wiki pose)' });
 }
 
