@@ -2,7 +2,7 @@
 // checked against, and corrected by, the real engine. One fixture is slow (about 7 ms a step at 3v3: a 5 minute cap is 18000 steps, about two minutes), so run few and run them one process at a time.
 //   node scripts/ctf-strat-probe.mjs <planA> <planB> [map=castle] [size=3] [capMinutes=5] [seeds=1] [seed0=1]
 // Plans: balanced rush rushback turtle fortress jailbreak twowaves traps hunt. Prints one JSON line per fixture and a summary: flags, who won, how it ended, steps.
-import { loadMonolith } from '../test/helpers/load-monolith.js';
+import { loadMonolith } from './helpers/load-monolith.js';
 
 const [planA = 'balanced', planB = 'balanced', map = 'castle', size = '3', cap = '5', seeds = '1', seed0 = '1'] = process.argv.slice(2);
 let winsA = 0, winsB = 0, draws = 0;

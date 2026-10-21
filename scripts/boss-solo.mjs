@@ -33,8 +33,8 @@ import { writeFileSync, readFileSync } from 'node:fs';
 import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { availableParallelism } from 'node:os';
-import { bootMonolith } from '../test/helpers/smash-golden.js';
-import { mulberry32 } from '../test/helpers/prng.js';
+import { bootMonolith } from './helpers/smash-golden.js';
+import { mulberry32 } from './helpers/prng.js';
 import { BOSS_TUNING_EXPR, harnessCode } from './boss-tuning.mjs';
 
 const FIGHTERS = ["Firey","Leafy","Pin","Needle","Coiny","Bubble","Pen","Snowball","Blocky","Ice Cube","Match","Pencil","Rocky","Tennis Ball","Golf Ball"];

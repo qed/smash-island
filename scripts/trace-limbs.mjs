@@ -17,7 +17,7 @@
 //   node scripts/trace-limbs.mjs            (cwd = repo root; rewrites artifacts/V1/index.html). Run it again whenever a skin is added.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { PNG } from 'pngjs';
-import { loadMonolith } from '../test/helpers/load-monolith.js';
+import { loadMonolith } from './helpers/load-monolith.js';
 
 // Limbs the rules still get wrong, by eye (2026-09-23 review): the fuse on Bomby and Bomb, Grassy's blade tips,
 // and a scrap at Flower's feet. Arms joining above this fraction of the body height are dropped for these.

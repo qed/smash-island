@@ -78,7 +78,7 @@ window.__platFrame = function(){
 `;
 
 async function runOne(job){
-  const { loadMonolith } = await import('../test/helpers/load-monolith.js');
+  const { loadMonolith } = await import('./helpers/load-monolith.js');
   const { window: w } = loadMonolith(job.seed >>> 0);
   const names = job.names, stocks = job.stocks, maxFrames = job.frames;
   const out = { stage: job.stage, mode: job.mode, names, seed: job.seed, frames: 0, contact: null, fighters: {} };
@@ -153,7 +153,7 @@ async function runOne(job){
 // "survived" = alive and back on a surface well inside the stage 360 frames later. The launch is the same for every fighter, so a fighter or a
 // class that fails it fails on what it does with its jumps and its up-special, not on its weight.
 async function runRecovery(job){
-  const { loadMonolith } = await import('../test/helpers/load-monolith.js');
+  const { loadMonolith } = await import('./helpers/load-monolith.js');
   const { window: w } = loadMonolith(job.seed >>> 0);
   const out = { name: job.name, stage: job.stage, launches: [] };
   try {
@@ -192,7 +192,7 @@ async function child(){
 
 async function rosterOk(names){
   await import('./balance-tournament.mjs');
-  const { loadMonolith } = await import('../test/helpers/load-monolith.js');
+  const { loadMonolith } = await import('./helpers/load-monolith.js');
   const { window: w } = loadMonolith(1);
   try { const all = w.eval('ROSTER.filter(function(r){ return r.play && !r.prize; }).map(function(r){ return r.name; })'); return names.filter(n => all.includes(n)); }
   finally { try { w.close && w.close(); } catch {} }
@@ -265,7 +265,7 @@ async function parent(){
 async function recoveryParent(){
   const stages = (args.stages || 'goiky').split(','), procs = +(args.procs || 3);
   await import('./balance-tournament.mjs');
-  const { loadMonolith } = await import('../test/helpers/load-monolith.js');
+  const { loadMonolith } = await import('./helpers/load-monolith.js');
   const { window: w0 } = loadMonolith(1);
   const all = w0.eval('ROSTER.filter(function(r){ return r.play && !r.prize; }).map(function(r){ return r.name; })'); try { w0.close(); } catch {}
   const names = args.only ? args.only.split(',') : all;
