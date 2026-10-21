@@ -42270,6 +42270,16 @@ function chainOpen(t, f){ return !!f && t.hitstun > 0 && t._chainBy === f.idx &&
 //     already under another key -- a spin up-special's aura after its own hit, Goo's spit after his swallow -- holds 1 frame at most
 //     ("1 frame per later tick at most": hitStopMove);
 //   - a boss is never held; the fighter who hits one is, and that fighter's grace record on the boss waits with them (bossGraceNote);
+//   - a FINISHER ("Freeze both" -- the owner, 2026-10-21): every hit it lands during its owner's own action -- the stamp's first jet, the
+//     thrust, the slam, the grab, the smack, the swap, the geyser she comes up out of, the dive, the sand, the jet's splash, the castle
+//     springing up, the stomps, the slap fight's opener and finale -- holds the owner as well as the target, from any distance, by the
+//     rules above. A finisher runs outside its owner's frame (finxStep, before the fighters move), so STEP_F never names them; finxStep
+//     marks it while it runs instead (HITSTOP_FIN, hitStopFin): its owner's own action is the time they are committed to it (_fxLock)
+//     up to their last frame. The finisher is one move; each frame it lands hits in is a strike of it (hitStopKey), so its first hit
+//     holds 2 to 6 frames and a later one 1 at most. What it LEFT BEHIND holds only the target, like a shot: anything it lands after its
+//     owner is free (Leafy's whirl sweeping on, Snowball's rolling ball, a thrown carton or jelly glob, Puffball's splat, Firey's later
+//     jets), and whatever hits from Bubble's raft, Flower's propped mirror, Pen's cap sentry, Book's castle, Puffball's bridge and Ruby's
+//     prism once it is set, at any time (FINX_LEFT); Pin's board pins what flies into it, no hit (its slam is her own);
 //   - never in RUNNING!, never while a Final Smash plays, never for a tick (burn, poison, bleed, a shot's lingering damage: opts.tick),
 //     and never for damage from no fighter (an arena hazard, a boss, an assist trophy).
 // A person's attack, special, smash and jump pressed while held count on the first frame after (hitStopHold); a client is sent the
@@ -42289,18 +42299,34 @@ function hitStopOff(){
 const HITSTOP_REACH = 150;
 function hitStopNear(f, t){ return Math.hypot(t.x - f.x, t.y - f.y) - (t.r||0) - (f.r||0) <= HITSTOP_REACH; }
 let HITSTOP_WU = 0;
+// FINISHERS (the rule above). finxStep sets this while each finisher runs: its owner, the finisher, and whether the owner was still committed
+// to it (_fxLock) through their last frame -- pre, read before it runs, because a finisher may let go of them as it lands (Teardrop comes up
+// out of her geyser free). hitStopFin(f): 0, not a finisher's hit; 1, its owner's own (committed through their last frame or again now, not
+// caught in someone else's finisher, _fxBy, and not from what it left behind, FINX_LEFT) -- held too, from any distance; -1, the target alone.
+const HITSTOP_FIN = { f:null, o:null, pre:false };
+function hitStopFin(f){
+  const H = HITSTOP_FIN;
+  if(!f || H.f !== f) return 0;
+  const L = FINX_LEFT[H.o.k];
+  if(L && L.indexOf(H.o.ph) >= 0) return -1;
+  return (f._fxBy == null && (H.pre || (f._fxLock || 0) > hazardT)) ? 1 : -1;
+}
 function hitStopKey(f){
+  if(HITSTOP_FIN.f === f) return 'x' + HITSTOP_FIN.o.id + ':' + hazardT;   // a finisher: each frame it lands hits in is a strike of the one move (hitStopMove)
   const w = f._wuRoot;
   if(w) return 'w' + (w.hsId || (w.hsId = ++HITSTOP_WU));   // a wind-up going off: the string it belongs to
   return (f._atkSeq||0) + ':' + (f._comboTok||0);
 }
 // The move a hit belongs to, under all its keys: the move (_atkSeq), or for a wind-up going off, the move that started its string.
-function hitStopMove(f){ const w = f._wuRoot; return w ? (w.seq||0) : (f._atkSeq||0); }
+function hitStopMove(f){ if(HITSTOP_FIN.f === f) return 'x' + HITSTOP_FIN.o.id; const w = f._wuRoot; return w ? (w.seq||0) : (f._atkSeq||0); }
 // The attacker, once a move. Returns how many frames they are held from the next frame on (0: not held). `t`, what was hit: a hit
-// landed from beyond HITSTOP_REACH is a shot's, and holds only its target.
+// landed from beyond HITSTOP_REACH is a shot's, and holds only its target. A finisher's (hitStopFin): held if it is their own action,
+// from any distance; not, once they are free of it.
 function hitStopSelf(f, dmg, t){
-  if(!f || f !== STEP_F || !(dmg > 0) || hitStopOff()) return 0;
-  if(t && !hitStopNear(f, t)) return 0;
+  if(!f || !(dmg > 0) || hitStopOff()) return 0;
+  const fin = hitStopFin(f);
+  if(fin < 0) return 0;
+  if(!fin && (f !== STEP_F || (t && !hitStopNear(f, t)))) return 0;
   const key = hitStopKey(f), mv = hitStopMove(f);
   if(f._hsOwn === key) return f._hsAt === hazardT ? (f._hitStop||0) : 0;   // this move held them already (a second target in the same frame shares it)
   const n = f._hsMv === mv ? 1 : hitStopFrames(dmg);   // a later hit of a move that held them already: 1 frame at most
@@ -42308,7 +42334,7 @@ function hitStopSelf(f, dmg, t){
   return f._hitStop;
 }
 // A fighter `t` hit by `from` (applyHit, not a tick): the target is held, once for each of the attacker's moves, and the attacker too
-// if it was their own frame and the hit was within reach.
+// if it was their own frame and the hit was within reach, or their own finisher's action (hitStopFin).
 function hitStopHit(t, from, dmg){
   if(!from || !(dmg > 0) || t.dead || from === t || fighters[from.idx] !== from || hitStopOff()) return;   // (a fighter's hit: a boss's, an assist's and a hazard's hold no one)
   const key = hitStopKey(from), mv = hitStopMove(from);
@@ -44370,13 +44396,20 @@ function finxPress(f){
 const FINX_STEP = { jets:fxJetsStep, whirl:fxWhirlStep, thread:fxThreadStep, cork:fxCorkStep, snow:fxSnowStep, bubble:fxBubbleStep,
   puddle:fxPuddleStep, mirror:fxMirrorStep, swap:fxSwapStep, slap:fxSlapStep };
 function fxRelease(o){ for(const t of fighters) if(t._fxBy === o.id) t._fxBy = null; }
+// HIT FREEZE: what a finisher LEFT BEHIND, by the phase it stands in (hitStopFin) -- what hits from it holds only the target, like a shot,
+// even in the frame or two its owner is still committed after setting it ("Freeze both", the owner, 2026-10-21, named these as the things
+// that keep holding the target alone). Anything else a finisher lands after its owner is free is a shot's hit too, by the commitment alone.
+// (Pin's board is not here: it slams down in the frame it starts to stand, which is her own swing, and what flies into it after is pinned,
+// not hit. Pen's sentry's darts are shots of their own.)
+const FINX_LEFT = { bubble:['drift'], mirror:['prop'], sentry:['stand'], popup:['stand'], rainbow:['bridge'], prism:['charge', 'burst', 'stand'] };
 // Once a frame, before the fighters move: each finisher runs; one whose owner is gone (KO'd) lets go of whatever it holds and ends.
 function finxStep(){
   for(const o of FINX){
     if(o.dead) continue;
     const f = fxOwner(o), run = FINX_STEP[o.k];
     if(!f || !run){ o.dead = true; continue; }
-    run(o, f);
+    HITSTOP_FIN.f = f; HITSTOP_FIN.o = o; HITSTOP_FIN.pre = (f._fxLock || 0) >= hazardT && f._fxBy == null;   // HIT FREEZE: whose finisher lands what it lands, and whether they are still in it (hitStopFin)
+    try { run(o, f); } finally { HITSTOP_FIN.f = null; HITSTOP_FIN.o = null; }
     if(o.dead && f.hitstun > 0) f._fxLock = 0;   // a hit cancelled it: the hitstun is the only wait (the tell's lock used to run on past it, free frames for the attacker)
   }
   if(FINX.some(function(o){ return o.dead; })){ for(const o of FINX) if(o.dead) fxRelease(o); FINX = FINX.filter(function(o){ return !o.dead; }); }
