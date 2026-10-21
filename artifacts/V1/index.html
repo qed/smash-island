@@ -2347,8 +2347,9 @@ const CTF_COVER = { B:'bush', C:'crate', F:'banner', W:'barrel', U:'curtain', R:
   G:'stalagmite', M:'minecart', Q:'ore',                  // caves and mines
   E:'machine', L:'gears', Z:'blocks',                     // factory and toy land
   O:'log', V:'fern', I:'stump',                           // forest and beach
-  X:'cloud', D:'snowman', n:'drift', t:'pine' };           // sky, snow (a drift of snow, a pine you can stand behind)
-const CTF_COVER_HW = { bush:70, crate:112, banner:50, barrel:40, curtain:60, rubble:70, rock:64, armor:40, urn:34, chest:62, hay:70, stalagmite:62, minecart:72, ore:60, machine:62, gears:72, blocks:60, log:84, fern:62, stump:46, cloud:84, snowman:46, drift:84, pine:70, iceblock:56, crystal:62, lamp:30, coral:64, kelp:40, shell:46, anchor:44, cone:28, hydrant:30, ball:50 };
+  X:'cloud', D:'snowman', n:'drift', t:'pine',            // sky, snow (a drift of snow, a pine you can stand behind)
+  l:'lamp', k:'anchor', r:'rope' };                        // ships and docks (a lantern on a post, an anchor, a coil of rope)
+const CTF_COVER_HW = { bush:70, crate:112, banner:50, barrel:40, curtain:60, rubble:70, rock:64, armor:40, urn:34, chest:62, hay:70, stalagmite:62, minecart:72, ore:60, machine:62, gears:72, blocks:60, log:84, fern:62, stump:46, cloud:84, snowman:46, drift:84, pine:70, iceblock:56, crystal:62, lamp:30, coral:64, kelp:40, shell:46, anchor:44, cone:28, hydrant:30, ball:50, rope:52 };
 const CTF_COVER_CHARS = Object.keys(CTF_COVER).join('');
 const CTF_MAPS = {};
 
@@ -2631,22 +2632,41 @@ function ctfMapBuildOne(id, build, band){
   for(const k of objs.keys){ M.keys.push({ door:String(k.door), x:k.x, y:k.y }); M.keys.push({ door:k.door+'r', x:mx(k.x), y:k.y }); }
   for(const b of objs.boosts){ M.boosts.push({ kind:b.kind, x:b.x, y:b.y }); M.boosts.push({ kind:b.kind, x:mx(b.x), y:b.y }); }
   for(const b of objs.buffs){ M.buffs.push({ kind:'speed', x:b.x, y:b.y }); M.buffs.push({ kind:'speed', x:mx(b.x), y:b.y }); }
-  for(const s of objs.spots){ M.spots.push({ team:0, cover:s.cover, x:s.x, y:s.y }); M.spots.push({ team:1, cover:s.cover, x:mx(s.x), y:s.y }); }
   const padRects = ctfMergeCells(objs.pad);
   const pad = padRects[0] ? { x:padRects[0].x, y:padRects[0].y+CTF_CELL, w:padRects[0].w, h:CTF_CELL } : null;
   M.homes.push({ team:0, spawns:objs.spawns.map(s=>({x:s.x,y:s.y})), pad });
   M.homes.push({ team:1, spawns:objs.spawns.map(s=>({x:mx(s.x),y:s.y})), pad: pad && { x:mx(pad.x,pad.w), y:pad.y, w:pad.w, h:pad.h } });
   const js = [...jailCells].map(k=>k.split(',').map(Number));
+  let jailZone = null;
   if(js.length){
     const jr = stacks(js)[0], dr0 = jr[0], dr1 = jr[1], dc = jr[2];
     const door = doorOf(dr0, dr1, dc, 0, 0);
     const floorY = (dr1+1)*CTF_CELL, minC = Math.min(...objs.slots.map(s=>Math.floor(s.x/CTF_CELL)));
     // the no-go zone: from the door out into the corridor, 500 px (the owner: it was 1800 and took in the home spawn: a defender must not stand at the door, but may guard nearby and chase)
-    const zone = { x:door.x, y:(dr0-4)*CTF_CELL, w:door.w + 500, h:floorY-(dr0-4)*CTF_CELL };
+    let zone = { x:door.x, y:(dr0-4)*CTF_CELL, w:door.w + 500, h:floorY-(dr0-4)*CTF_CELL };
+    // On a map with interiors (rooms stacked floor on floor: the jail in a tower's lobby, a ship's brig) it is the jail's own corridor and nothing else (the owner, 2026-10-19: "i cant seem to enter the buildings in the airship thing.
+    // where are they?": it reached four rows over the door, up through the ceiling, and pushed the jail's own team away from its own doors and rooms): from the door's top row down to its floor, and out until a wall, a door,
+    // a hole in the floor or a hatch in the ceiling, a spring, an updraft or a lift, so it never covers a way in or out of anywhere.
+    if(g.interiors.length){
+      const C = CTF_CELL, cellAt = (r, c)=>(r >= 0 && r < CTF_DIM.rows && c >= 0 && c < CTF_DIM.half) ? g.rows[r][c] : '#', firm = (r, c)=>{ const ch = cellAt(r, c); return ch === '#' || ch === '='; };
+      const hatchUp = c=>{ if(firm(dr0 - 1, c)) return false; let a = c, b = c; while(a > c - 6 && !firm(dr0 - 1, a - 1)) a--; while(b < c + 6 && !firm(dr0 - 1, b + 1)) b++; return firm(dr0 - 1, a - 1) && firm(dr0 - 1, b + 1); };   // (a hole in a ceiling, not the open air over a tall hall)
+      const zoneStop = col=>{ for(let r = dr0; r <= dr1; r++){ const ch = cellAt(r, col); if(ch === '#' || ch === 'J' || (ch >= '1' && ch <= '6')) return true; }
+        if(!firm(dr1 + 1, col) || hatchUp(col)) return true;
+        const x0 = col*C, x1 = x0 + C, y0 = dr0*C, y1 = floorY;
+        return g.zones.some(z=>(z.type === 'spring' || z.type === 'updraft') && z.c0*C < x1 && (z.c1 + 1)*C > x0 && z.r0*C < y1 && (z.r1 + 1)*C > y0)
+          || g.elevs.some(e=>e.c0*C < x1 && (e.c0 + e.w)*C > x0 && e.rTop*C - C < y1 && e.rBot*C > y0)
+          || g.portals.some(p=>p.x < x1 && p.x + p.w > x0 && p.y < y1 && p.y + p.h > y0); };
+      let zx1 = door.x + door.w + 500; for(let col = dc + 1; col*C < zx1; col++) if(zoneStop(col)){ zx1 = col*C; break; }
+      zone = { x:door.x, y:dr0*C, w:zx1 - door.x, h:floorY - dr0*C };
+    }
+    jailZone = zone;
     const j0 = { owner:0, door:{ x:door.x, y:door.y, w:door.w, h:door.h }, slots:objs.slots.map(s=>({x:s.x,y:s.y})), zone, face:1 };
     M.jails.push(j0);
     M.jails.push({ owner:1, door:{ x:mx(door.x,door.w), y:door.y, w:door.w, h:door.h }, slots:objs.slots.map(s=>({x:mx(s.x),y:s.y})), zone:{ x:mx(zone.x,zone.w), y:zone.y, w:zone.w, h:zone.h }, face:-1 });
   }
+  // the hiding places, but none in the jail's no-go zone (its own team could not go near a flag hidden there)
+  for(const s of objs.spots){ if(jailZone && s.x >= jailZone.x && s.x <= jailZone.x + jailZone.w && s.y > jailZone.y && s.y <= jailZone.y + jailZone.h) continue;
+    M.spots.push({ team:0, cover:s.cover, x:s.x, y:s.y }); M.spots.push({ team:1, cover:s.cover, x:mx(s.x), y:s.y }); }
   for(const b of g.clear) M.clear.push(b);
   M.solids = M.plats.filter(p=>p.solid);
   M.rows = g.rows.map(r=>r.join(''));   // the left half as text, for a look at it
@@ -3549,7 +3569,7 @@ function skyDock(k, g){
   S(66, 0, D, 6); A(67, 2, D, 5); BK(67, 2, D, 5, 'cabin'); DC('window', 70, 3, 1, 2); DC('window', 76, 3, 1, 2); DC('window', 82, 3, 1, 2); P(5, 82, 'y');   // the zeppelin's hull, and its room
   skyIsle(k, 66, D, 16, 4); k.SL(66, 71, 14, 16, 3, { fill:16 });                                       // the gondola's island, a short ramp up to the rim at its west end
   S(74, 10, D, 16); A(75, 12, D, 15); BK(75, 12, D, 15, 'teal'); A(74, 13, 74, 15); DC('lantern', 78, 12, 2, 2); DC('window', 77, 13, 1, 2);   // its cabin: a roof, a door on the west, open through the line
-  A(67, 6, 70, 6); fUp(k, g, 69, 16, 6);                                                              // a hatch in the hull's floor over the plaza: a balloon spring up on its east half, a plain way down on the west
+  A(67, 6, 70, 6); H(6, 71, 73); fUp(k, g, 69, 16, 5);                                               // a hatch in the hull's floor over the plaza: a balloon spring up on its east half (thrown a row over the floor, time to steer in), a plain way down on the west; the floor east of it is planks (the owner, 2026-10-19: drifting east you hit its underside)
   DC('cloud', 68, 8, 4, 2); DC('balloon', 70, 18, 3, 4);
   g.skin(66, Y(0), D, Y(6), 'hull'); g.skin(66, Y(16), D, Y(19), 'cloud');
 }
@@ -3573,7 +3593,8 @@ function skyFair(k, g){
 }
 // THE SKIFF (the owner, 2026-10-19: "THATS THE CABIN???? I THOUGHT IT WAS AN AREA LIKE THE MILL"; the plan, interiors-plan.md 2.1): outside, the skiff's cabin is a closed shell on its deck (portholes, a door at each end, the mast on its roof, which is stood on);
 // inside is an area apart under the map like the oak's mill, a little ship bigger on the inside, run from stern to bow, open to both teams. Six rooms, each its own platforming:
-//   the CARGO HOLD (two decks tall): crate stacks a row apart and crates hung from the crane, a zigzag up to the loft; the crane's trolley runs along the ceiling through the loft to the gun deck (a zipline: the shortcut);
+//   the CARGO HOLD (two decks tall): crate stacks a row apart and crates hung from the crane, a zigzag up to the loft; the crane's trolley runs along the ceiling through the loft to the gun deck (a zipline: the shortcut); beside the stern
+//   door, the GANGPLANK's door through to the flagship's chain locker, both ways (skyFlagship);
 //   the CREW QUARTERS: sea chests two high, too high to jump, and the hammocks before, between and after them are low springs: bounce from one to the next;
 //   the RIGGING LOFT over the quarters and the engine room: rope nets for ledges and sail folds to hide in, the wind in the sails (a gust up to the nets), the engine room's steam valve up through a hole in its floor, the lookout at the bow end;
 //   the ENGINE ROOM: the propeller's wash blows toward the bow (fast with it, slow against it), humps of machinery, a catwalk, the steam valve (a spring) up into the loft;
@@ -3592,12 +3613,12 @@ function skySkiff(k, g){
   DC('porthole', 42, 15, 1, 1); DC('porthole', 46, 15, 1, 1); DC('porthole', 42, 11, 1, 1); DC('porthole', 46, 11, 1, 1); DC('lantern', 43, 9, 2, 2);
   g._np.push([18, 39], [18, 49], [18, 50]);   // (no prop in the doorways)
   // ---- inside: under the map, columns 12-64, rows 29-45 ----
-  g.interior('skiff', 12, Y(29), 64, Y(45), { name:'Skiff' });
+  g.interior('skiff', 12, Y(29), 64, Y(45), { name:'Skiff' }); BK(12, 29, 64, 45, 'brick'); g.skin(12, Y(29), 64, Y(45), 'indoor');   // (a wall behind it all, so a hole in a floor shows the room below and not the sky; its floors are indoor ones: no grass on them)
   // the CARGO HOLD (cols 13-24, rows 30-39; its floor row 40)
   A(13, 30, 24, 39); BK(13, 30, 24, 39, 'wood'); DC('lantern', 17, 30, 2, 2); DC('chains', 21, 30, 1, 4);
   S(17, 39, 18, 39); A(19, 40, 20, 40); DC('hatch', 19, 39, 2, 1, { dir:1 });                       // a crate on the floor to hop, then the hatch down to the bilge
   H(38, 21, 22); H(37, 19, 20); H(36, 22, 23); H(35, 16, 18); H(34, 20, 24);                           // crates hung from the crane: a zigzag a row at a time up to the loft's opening (none by the doorway: the way in under it stays clear)
-  P(38, 17, 'C'); P(39, 15, 'W'); P(37, 22, 'C'); P(35, 23, 'W'); P(34, 17, 'Y'); P(33, 21, 'C');
+  P(38, 17, 'C'); P(37, 22, 'C'); P(35, 23, 'W'); P(34, 17, 'Y'); P(33, 21, 'C');
   g.entrance(39, Y(17), 39, Y(18), 13, Y(38), { two:true, side:1 }); g.exitDoor(13, Y(38), 14, Y(39), 39, Y(17), { two:true });   // the stern door, both ways
   g.zip(22, Y(32), 57, Y(32), { spd:18 });                                                            // the crane's trolley: from the top of the stacks along the ceiling to the gun deck's gallery
   // the CREW QUARTERS (cols 26-37, rows 35-39)
@@ -3631,6 +3652,272 @@ function skySkiff(k, g){
   A(37, 44, 38, 44); g.drop(37, Y(44), 38, Y(44), 44, Y(25), 8, { fall:true });                        // the drain: out under the ship, hurt
   P(43, 16, 'W'); P(43, 32, 'W'); P(43, 53, 'R'); P(43, 61, 'W');
 }
+// THE PENTHOUSE TOWER (the plan, interiors-plan.md 2.2; the owner: buildings are "AN AREA LIKE THE MILL"): Cloud City's home. Outside, a closed shell on the high island (lit windows, the cap on its roof, which is stood on), with its doors on the
+// east face: the LOBBY's front door at the island and the SUITE's balcony door at the plank to the islet, both ways; the ROOF HATCH, both ways; a FIRE ESCAPE of hops up the east face from the plank to the roof (the outside way up).
+// Inside, an area apart under the map, open to both teams: your team's private tower, five floors from the suite down to the street door, each its own platforming, joined by the SPINE:
+//   the SUITE (HOME): a sunken lounge you run down into and back up out of (slopes); the spawns on the raised ends, the pad and the shield boost in the lounge under the skylight; a step up to the roof hatch at the west end; the balcony
+//   door and the LAUNDRY CHUTE's mouth at the east end (three ways out of the suite besides the spine: the spawns cannot be bottled up);
+//   the GYM: three trampolines in a row, each bounce higher, the last up to a climbing-wall ledge;
+//   the GALLERY: a glass catwalk over the light well that cracks under you and comes back (a crumbling ledge; the well drops you into the cellar), rail ledges over it the slow way; a SAFE behind a painting at the east end (a wall you
+//   walk through), the best flag spot in the tower;
+//   the WINE CELLAR: dark; wine racks to climb (ledges), lanterns by them; barrels to hide behind;
+//   the LOBBY: a plain flat run, so a rescue is decided by fighting, not jumping; the JAIL (the porter's lockup) at the west end, the front door at the east end, where the chute comes down;
+//   the SPINE: a spring stack (a sprung barrel on every floor up through a hatch to the floor above: the plain way up), the glass lift from the lobby to the suite (the shortcut; its shaft is a drop from any floor), the laundry chute (a shaft
+//   from the suite to the lobby by the front door, the dryer vents puffing you side to side on the way down: the defenders' fast way to the jail).
+// Outside, the barred window of the lockup shows a lit pip for every prisoner (deco 'jailwin'), so rescuers know someone is inside.
+function skyPenthouse(k, g){
+  const { A, S, H, P, SL, BK, DC, ZN, Y, STALK } = k;
+  // ---- outside: the shell (columns 0-16, rows 3-13 on the island at row 14; its 'hotel' skin draws the lit windows), the cap on its roof ----
+  S(0, 3, 16, 13); S(5, 0, 11, 2);
+  DC('jailwin', 2, 11, 2, 2);                                                                          // the lockup's barred window: a lit pip for every prisoner (drawn live)
+  STALK(18, 8, 4); g._np.push([13, 17], [8, 17], [7, 17], [2, 13], [2, 14]);                              // the fire escape (hops a row apart off the doorway, from the plank to the roof's edge); no prop in a doorway
+  g.entrance(17, Y(12), 17, Y(13), 30, Y(53), { two:true, side:-1 }); g.exitDoor(30, Y(53), 31, Y(54), 17, Y(12), { two:true });     // the lobby's front door, both ways
+  g.entrance(17, Y(7), 17, Y(8), 30, Y(31), { two:true, side:-1 }); g.exitDoor(30, Y(31), 31, Y(32), 17, Y(7), { two:true });       // the suite's balcony door, both ways
+  g.entrance(13, Y(1), 14, Y(2), 2, Y(30), { two:true }); g.exitDoor(2, Y(30), 2, Y(31), 13, Y(1), { two:true });                    // the roof hatch, both ways (inside: on the step under it)
+  // ---- inside: under the map, columns 1-32, rows 29-55 ----
+  g.interior('penthouse', 1, Y(29), 32, Y(55), { name:'Penthouse' }); BK(1, 29, 32, 55, 'brick'); g.skin(1, Y(29), 32, Y(55), 'indoor');   // (a wall behind it all, so a hole in a floor shows the room below and not the sky; its floors are indoor ones: no grass on them)
+  // the SUITE (rows 30-34, its floor row 35; the raised ends' floor row 33)
+  A(2, 30, 31, 34); BK(2, 30, 31, 34, 'paper');
+  S(2, 33, 8, 34); SL(9, 13, 33, 35, 2, { fill:34 }); SL(21, 25, 35, 33, 2, { fill:34 }); S(26, 33, 31, 34);   // the raised ends, the lounge sunk between them
+  P(32, 3, 'HHHHHH'); P(32, 26, 'HH'); P(34, 16, 'PP'); P(34, 18, 'h');                                 // the spawns on the raised ends; the pad and the shield boost in the lounge
+  S(2, 32, 2, 32); DC('hatch', 2, 29, 1, 1, { dir:1 });                                                  // the step up to the roof hatch
+  DC('window', 17, 30, 1, 2); DC('beam', 16, 30, 3, 5); DC('lantern', 11, 30, 2, 2); DC('lantern', 27, 30, 2, 2);   // the skylight over the lounge
+  A(28, 33, 29, 35); DC('hatch', 28, 32, 2, 1, { dir:1 });                                                // the laundry chute's mouth (the shaft under the east end)
+  // the GYM (rows 36-39, its floor row 40)
+  A(2, 36, 24, 39); BK(2, 36, 24, 39, 'wood'); DC('lantern', 8, 36, 2, 2); DC('lantern', 21, 36, 2, 2);
+  [[4, 0.62], [7, 0.76], [10, 0.9]].forEach(([tc, st])=>{ H(39, tc, tc + 1); ZN('spring', tc, 38, tc + 1, 38, st); g._np.push([38, tc], [38, tc + 1]); });   // the trampolines, each bounce higher
+  H(37, 12, 13); P(36, 12, 'C');                                                                           // the climbing-wall ledge the last one reaches
+  P(39, 2, 'C'); P(39, 23, 'T'); P(39, 21, 'C');
+  // the GALLERY (rows 41-44, its floor row 45)
+  A(2, 41, 24, 44); BK(2, 41, 24, 44, 'paper'); DC('lantern', 12, 41, 2, 2);
+  A(4, 45, 9, 45); g.crumble(Y(45), 4, 9); H(43, 4, 5); H(42, 6, 7); H(43, 8, 9);                         // the light well, the glass catwalk over it (it cracks and comes back), the rail ledges the slow way
+  for(const pc of [11, 18]) DC('painting', pc, 42, 2, 2);
+  g.secret(22, Y(41), 22, Y(44)); DC('painting', 22, 42, 1, 2); P(44, 24, 'T'); BK(23, 41, 24, 44, 'stripe');   // the safe behind a painting (walk through it)
+  P(44, 2, 'U'); P(44, 12, 'N');
+  // the WINE CELLAR (rows 46-49, its floor row 50): dark
+  A(2, 46, 24, 49); BK(2, 46, 24, 49, 'brick'); ZN('dark', 2, 46, 24, 49);
+  H(48, 10, 11); H(47, 12, 13); H(48, 21, 22); H(47, 23, 24);                                              // the wine racks
+  DC('lantern', 10, 46, 1, 1); DC('lantern', 22, 46, 1, 1); DC('lantern', 3, 46, 1, 1);
+  P(49, 2, 'W'); P(49, 11, 'W'); P(46, 24, 'W'); P(46, 12, 'W'); P(49, 22, 'W');
+  // the LOBBY (rows 51-54, its floor row 55): the jail at the west end
+  A(2, 51, 31, 54); BK(6, 51, 31, 54, 'paper');
+  g.col(6, Y(51), Y(54), 'J'); P(54, 2, 'ppp'); g.keepClear(2, Y(51), 6, Y(54)); BK(2, 51, 5, 54, 'dirt');
+  DC('lantern', 13, 51, 2, 2); DC('lantern', 24, 51, 2, 2);
+  P(54, 12, 'T'); P(54, 21, 'N'); P(54, 25, 'F');
+  // the SPINE: the spring stack (a sprung barrel on each floor, up through a hatch in the ceiling: the hatch a ledge over it to land on), the glass lift, the chute
+  [[40, 35, 14], [45, 40, 16], [50, 45, 14], [55, 50, 16]].forEach(([fl, up, tc])=>{ H(fl - 1, tc, tc + 1); fUp(k, g, tc, fl - 1, up); H(up, tc, tc + 1); });
+  for(const fl of [35, 40, 45, 50]) A(19, fl, 20, fl);
+  g.elev(19, 2, Y(35), Y(55));                                                                             // the glass lift, the suite to the lobby
+  A(26, 36, 31, 50); BK(26, 36, 31, 50, 'metal');                                                          // the laundry chute (walled off from the floors it falls past)
+  [[38, 1], [42, -1], [46, 1]].forEach(([wr, wd])=>{ ZN('wind', 26, wr, 31, wr + 1, 0.8, wd); DC('fan', wd > 0 ? 26 : 31, wr, 1, 2); });   // the dryer vents
+}
+// THE GRAND HOTEL (the plan, interiors-plan.md 2.3): a little level of its own, the big one of Cloud City. Outside, a closed shell on its island (the 'hotel' skin's lit windows), its roof stood on; the doors:
+//   the FRONT DOOR on the west face where the low islet's plank arrives, both ways (into the lobby); the TERRACE DOOR on the east face at the observatory's plank, both ways (onto the ballroom's stage); the ROOF DOOR on the roof, both ways
+//   (into the roof garden; a small game's hotel has no garden: onto the ballroom's balcony); the STAFF DOOR, one way out of the kitchen onto the small islet by the Penthouse (a quick way home for defenders, and it drops raiders deep in
+//   enemy ground); in large games the conference wing's FIRE EXIT, one way out onto the observatory's plank. The outside way up to the roof: a balloon spring on a beam over the observatory's plank, up past the east face to a yardarm.
+// Inside, an area apart under the map, open to both teams; ten rooms on five levels (and a sixth in large games), each its own platforming, joined at the west end by the ELEVATOR BANK:
+//   the ELEVATOR BANK (the spine): two glass lifts running out of step (one from the garden to the lobby, one from the ballroom to the basement: the shortcut; their shafts are drops), and the service stair beside them (a sprung barrel on
+//   every level up through a hatch to the one above: the plain way up);
+//   the ROOF GARDEN AND SKY POOL (medium and large): a deep pool to swim (two floats over it, the dry way), a diving board (a low spring) up to the hedge tops, and a GROTTO behind the waterfall (a wall you walk through) with the
+//   best flag spot in the hotel;
+//   the BALLROOM, eight rows tall: a polished ice dance floor, chandeliers high up that give way under you and come back (crumbling ledges), the west balcony and the band stage at the east end the plain way round;
+//   the GUEST CORRIDOR (medium and large): a long hall of guest-room doors, the coloured ones doors to elsewhere (RED to the kitchen, BLUE to the roof garden, GOLD to the ballroom's balcony: colours only, no words), the plain ones closets;
+//   the LOBBY: twin grand staircases (slopes) up to the reception desk on its mezzanine;
+//   the LUGGAGE ROOM (medium and large): the carousel loops on two levels running opposite ways (belts), trunks and bags to hide behind, and the LUGGAGE CHUTE that drops lost bags, and you, into the basement by the vault (a small
+//   game's chute is in the lobby's floor);
+//   the KITCHEN (medium and large): a syrup spill (sticky), pot racks over it (ledges), the staff door, the red door;
+//   the BOILER BASEMENT: dark; steam vents (updrafts) lift you over humps of hot pipes;
+//   the VAULT, at the bottom behind two locked doors (the key: at the Observatory's eyepiece), a chest, an urn and a speed boost; the chute's landing beyond its far door, a spring back up;
+//   the CONFERENCE WING (large games): folding partitions open and shut in turn on the match clock (plugs), a catwalk over them the way round that is always open (a trampoline up to it in every bay), its fire exit.
+function skyHotel(k, g){
+  const { A, S, H, P, SL, BK, DC, ZN, Y } = k, mid = g.band >= 1, big = g.band >= 2;
+  // ---- outside: the shell (columns 41-53, rows 3-18 on the island at row 19) ----
+  S(41, 3, 53, 18);
+  g.entrance(40, Y(12), 40, Y(13), 43, Y(53), { two:true, side:1 }); g.exitDoor(43, Y(53), 44, Y(54), 40, Y(12), { two:true });       // the front door, both ways
+  g.entrance(54, Y(12), 54, Y(13), 63, Y(41), { two:true, side:-1 }); g.exitDoor(63, Y(41), 64, Y(42), 54, Y(12), { two:true });     // the terrace door, both ways (onto the stage)
+  if(mid){ g.entrance(47, Y(1), 48, Y(2), 43, Y(32), { two:true }); g.exitDoor(43, Y(32), 44, Y(33), 47, Y(1), { two:true }); }       // the roof door, both ways: into the roof garden
+  else { g.entrance(47, Y(1), 48, Y(2), 44, Y(41), { two:true }); g.exitDoor(43, Y(41), 44, Y(42), 47, Y(1), { two:true }); }           // (a small game: onto the ballroom's balcony)
+  H(13, 55, 56); fUp(k, g, 55, 13, 3); H(3, 54, 56); g._np.push([12, 54], [13, 54], [2, 47], [2, 48], [13, 40], [13, 39]);                // the way up outside: a beam over the plank (a jump under it touches its spring), up to a yardarm at the roof
+  // ---- inside: under the map, columns 34-65, rows 29-66 ----
+  g.interior('hotel', 34, Y(29), 65, Y(66), { name:'Grand Hotel' }); BK(34, mid ? 34 : 29, 65, 66, 'brick'); g.skin(34, Y(29), 65, Y(66), 'indoor');   // (a wall behind it all, so a hole in a floor shows the room below and not the sky; its floors are indoor ones: no grass on them) (the roof garden open to the sky)
+  const COL = { red:'#c9433f', blue:'#3f7ad0', gold:'#e0b030' }, link = (a, b, col)=>{ g.passage(a, b, { col }); };   // a coloured door: a two-way door from one room of the hotel to another
+  // the ROOF GARDEN AND SKY POOL (medium and large; rows 30-33, its floor row 34, the pool dug two rows into it)
+  if(mid){
+    A(35, 30, 64, 33); BK(35, 30, 60, 33, 'sky'); BK(61, 30, 64, 33, 'dirt');
+    S(45, 33, 46, 33); P(32, 45, 'B'); P(33, 47, 'B');                                                        // a hedge (its top a flag spot)
+    H(33, 48, 49); ZN('spring', 48, 32, 49, 32, 0.95); g._np.push([32, 48], [32, 49]);                         // the diving board: a low spring up to the hedge tops and out over the pool
+    A(50, 34, 60, 35); ZN('water', 50, 34, 60, 35, 1); BK(50, 34, 60, 35, 'teal'); H(33, 51, 52); H(33, 54, 55); H(33, 58, 59); ZN('spring', 50, 35, 50, 35, 1.4); ZN('spring', 60, 35, 60, 35, 1.4);   // the pool, two rows deep; floats on it (the dry way across), a jet at each end that throws you out
+    DC('falls', 61, 30, 1, 4); g.secret(61, Y(30), 61, Y(33)); P(33, 63, 'T'); P(33, 64, 'U');               // the waterfall, the grotto behind it
+    DC('balloon', 38, 30, 1, 2); P(33, 37, 'B');
+  }
+  // the BALLROOM (rows 37-44, its floor row 45)
+  A(35, 37, 64, 44); BK(35, 37, 64, 44, 'paper');
+  ZN('ice', 43, 44, 59, 44);                                                                                   // the polished dance floor
+  [[46, 41], [51, 40], [56, 41]].forEach(([cc, rr])=>{ g.crumble(Y(rr), cc, cc + 1); DC('chandelier', cc, rr - 1, 2, 1); });   // the chandeliers (they give way and come back)
+  H(44, 47, 48); H(43, 43, 46);                                                                                // the west balcony and a step up to it
+  S(60, 43, 64, 44); H(44, 58, 59); DC('neon', 61, 39, 2, 1);                                                  // the band stage (the terrace door is on it), a step up to it
+  P(42, 45, 'U'); P(42, 61, 'F'); P(44, 50, 'N');
+  // the GUEST CORRIDOR (medium and large; rows 46-48, its floor row 49)
+  if(mid){
+    A(35, 46, 64, 48); BK(35, 46, 64, 48, 'paper'); DC('lantern', 50, 46, 1, 1); DC('lantern', 61, 46, 1, 1);
+    for(const cc of [48, 54, 60, 63]){ DC('doorway', cc, 46, 1, 3, { dir:1 }); P(48, cc, cc % 2 ? 'C' : 'U'); }   // the closets (flag spots)
+    link([45, Y(47), 46, Y(48)], [48, Y(58), 49, Y(59)], COL.red);                                             // RED: the kitchen
+    link([51, Y(47), 52, Y(48)], [41, Y(32), 42, Y(33)], COL.blue);                                            // BLUE: the roof garden
+    link([57, Y(47), 58, Y(48)], [43, Y(41), 44, Y(42)], COL.gold);                                            // GOLD: the ballroom's balcony
+  }
+  // the LOBBY (rows 50-54, its floor row 55): twin staircases up to the reception desk on its mezzanine; a small game's lobby goes on east to the luggage chute
+  A(35, 50, mid ? 54 : 64, 54); BK(35, 50, mid ? 54 : 64, 54, 'paper'); DC('lantern', 49, 50, 2, 2); DC('chandelier', 49, 50, 2, 1);
+  SL(45, 47, 55, 54, 2, { fill:54 }); S(48, 54, 51, 54); SL(52, 54, 54, 55, 2, { fill:54 }); P(53, 49, 'T'); P(53, 51, 'N');
+  // the LUGGAGE ROOM (medium and large; rows 50-54, its floor row 55): the carousel on two levels running opposite ways; an arch from the lobby
+  if(mid){
+    A(55, 53, 55, 54); A(56, 50, 64, 54); BK(56, 50, 64, 54, 'wood');
+    ZN('belt', 56, 54, 61, 54, 1, 1); H(52, 57, 62); ZN('belt', 57, 51, 62, 51, 1, -1);                        // the carousel's two loops
+    P(54, 57, 'T'); P(51, 58, 'C'); P(51, 61, 'T'); DC('lantern', 59, 50, 1, 1);
+  } else { P(54, 57, 'T'); P(54, 59, 'C'); }
+  A(63, 55, 64, 55); DC('hatch', 63, 54, 2, 1, { dir:-1 });                                                   // the luggage chute, down to the vault's far door
+  // the KITCHEN (medium and large), the BOILER BASEMENT, the VAULT (rows 56-59, its floor row 60)
+  A(35, 56, 64, 59); BK(35, 56, 42, 59, 'metal');
+  if(mid){
+    BK(43, 56, 49, 59, 'stripe'); S(50, 56, 50, 57);                                                          // the kitchen; its wall to the boiler room, an arch under it
+    ZN('glue', 44, 59, 47, 59, 0.7); H(57, 44, 45); H(57, 46, 47); DC('chains', 45, 56, 1, 1);               // the syrup spill, the pot racks over it
+    g.exitDoor(44, Y(58), 44, Y(59), 23, Y(8));                                                               // the STAFF DOOR: one way out, onto the small islet by the Penthouse
+    P(59, 43, 'W');
+  }
+  const b0 = mid ? 51 : 43;                                                                                    // the boiler room (a small game's spans the kitchen's place too)
+  BK(b0, 56, 55, 59, 'metal'); ZN('dark', b0, 56, 55, 59);
+  if(!mid){ S(45, 58, 46, 59); ZN('updraft', 43, 56, 44, 59, 1); S(48, 59, 49, 59); ZN('updraft', 47, 56, 47, 59, 1); P(59, 50, 'W'); }   // humps of hot pipes, the vents that lift you over them
+  S(52, 58, 53, 59); ZN('updraft', 51, 56, 51, 59, 1); ZN('updraft', 54, 56, 54, 59, 1); DC('gear', 52, 56, 2, 2); P(57, 52, 'E');
+  g.col(56, Y(56), Y(59), '1'); g.col(61, Y(56), Y(59), '1'); BK(57, 56, 60, 59, 'stripe'); ZN('dark', 57, 56, 60, 59); P(59, 57, 'T'); P(59, 58, 'u'); P(59, 60, 'N');   // the VAULT
+  BK(62, 56, 64, 59, 'dirt'); fUp(k, g, 62, 60, 55, { w:1 }); H(55, 62, 62); P(59, 64, 'C');            // the chute's landing beyond the far door, a spring back up
+  // the CONFERENCE WING (large games; rows 61-64, its floor row 65): partitions open and shut in turn, a catwalk over them always open, the fire exit
+  if(big){
+    A(43, 61, 64, 64); BK(43, 61, 64, 64, 'paper'); DC('lantern', 53, 61, 1, 1);
+    A(47, 60, 47, 60); fUp(k, g, 43, 65, 60, { w:1 }); H(60, 43, 43);                                        // a hole down from the kitchen, a spring back up into it (through a hatch you land on)
+    [[50, 0], [55, 0.33], [60, 0.66]].forEach(([pc, ph])=>g.plug(pc, Y(63), pc, Y(64), { open:300, shut:300, phase:ph }));   // the folding partitions
+    H(62, 45, 63); for(const tc of [45, 52, 57, 61]){ H(64, tc, tc); ZN('spring', tc, 63, tc, 63, 0.85); }        // the catwalk over them, and in every bay a trampoline up to it
+    g.exitDoor(63, Y(63), 64, Y(64), 55, Y(12)); P(64, 46, 'C'); P(64, 52, 'T'); P(64, 57, 'U'); P(61, 58, 'C');   // the fire exit, one way: onto the observatory's plank
+  }
+  // the ELEVATOR BANK (columns 35-42): lift A (35-36) from the garden (a small game's ballroom) to the lobby, lift B (41-42) from the ballroom to the basement; the service stair's sprung barrels between them (37-38, 39-40 by turns)
+  const top = mid ? 34 : 45;
+  A(35, top, 36, 54); g.elev(35, 2, Y(top), Y(55));                                                           // (the shafts: a drop from every level they pass)
+  A(41, 45, 42, 59); g.elev(41, 2, Y(45), Y(60));
+  const stair = mid ? [[60, 55, 37], [55, 49, 39], [49, 45, 37], [45, 34, 39]] : [[60, 55, 37], [55, 45, 39]];
+  stair.forEach(([fl, up, tc])=>{ A(tc, up, tc + 1, fl - 2); H(fl - 1, tc, tc + 1); fUp(k, g, tc, fl - 1, up); H(up, tc, tc + 1); });
+  for(const [rr, cc] of [[30, 38], [37, 38], [50, 38], [56, 38]]) if(rr >= top - 4) DC('lantern', cc, rr, 1, 1);
+}
+// THE OBSERVATORY (the plan, interiors-plan.md 2.4): a stargazer's tower you climb into a dome, every storey a different kind of "up"; narrow and tall where the hotel is wide. Outside, a closed tower over an open porch on the rim island (the
+// walk from the plank to the fair still goes through the porch), the dome on its roof; the FRONT DOOR in the porch, both ways; the DOME SLIT, one way out onto the roof. Its roof is a jump from the hotel's yardarm.
+// Inside, an area apart under the map, open to both teams; five rooms from the bottom up, each with its plain way up (a spring, ledges, a gust) and a plain way down (a hole):
+//   the ORRERY HALL (the front door): brass planets on arms circle the sun and stay level (a wheel): ride one up to the hatch in the ceiling (the shortcut); the sprung barrel at the east wall the plain way;
+//   the CLOCK ROOM: the great clock's shutters open in a wave, one after another (plugs on the match clock; run with the wave), a ladder up the east wall to a catwalk over them the slower way that is always open (a pendulum
+//   bob in each bay between the shutters bounces you up to it);
+//   the STAR-CHART ROOM: dark for stargazing; the constellation's ledges are the only lit things (their stars glow through the dark): climb the constellation; map chests to hide behind;
+//   the WEATHER DECK: a gale blows in through the open west side (wind): jump the gaps in the floor into it;
+//   the DOME: night sky; the great telescope's barrel a long slope up to the EYEPIECE (the VAULT KEY), the observer's chair riding the dome's rail up to it (a line: the shortcut), the super-jump boost; the SLIT out onto the roof by the eyepiece.
+function skyObservatory(k, g){
+  const { A, S, H, P, SL, BK, DC, ZN, Y, STALK } = k;
+  // ---- outside: the tower (columns 58-65, rows 3-9) over the porch (rows 10-13, an arch at each end), the dome on the roof ----
+  S(58, 3, 65, 9); S(58, 10, 58, 10); S(65, 10, 65, 10); BK(59, 10, 64, 13, 'paper'); DC('lantern', 61, 10, 2, 2);
+  DC('obsdome', 59, 0, 6, 3);
+  g.entrance(61, Y(12), 62, Y(13), 67, Y(59), { two:true }); g.exitDoor(67, Y(59), 68, Y(60), 61, Y(12), { two:true });              // the front door, in the porch, both ways
+  g._np.push([13, 60], [13, 61], [13, 62], [13, 63], [13, 58], [13, 65]);
+  // ---- inside: under the map, columns 66-83 (the dock's), rows 29-61 ----
+  g.interior('observatory', 66, Y(29), 83, Y(61), { name:'Observatory' }); BK(66, 29, 83, 37, 'brick'); BK(69, 38, 83, 41, 'brick'); BK(66, 42, 83, 61, 'brick'); g.skin(66, Y(29), 83, Y(61), 'indoor');   // (a wall behind it all, so a hole in a floor shows the room below and not the sky; its floors are indoor ones: no grass on them) (the weather deck's open side)
+  // the ORRERY HALL (rows 55-60, its floor row 61)
+  A(67, 55, 82, 60); BK(67, 55, 82, 60, 'stripe'); DC('lantern', 70, 55, 1, 1); DC('lantern', 79, 55, 1, 1);
+  g.wheel(75, Y(58), 2, 4, { kind:'orrery', pw:200, spd:1.6, dir:1 });                                       // the planets on their arms round the sun (ride one up)
+  H(54, 74, 75);                                                                                             // the hatch over the orrery's top (a ledge to jump up onto)
+  H(60, 81, 82); fUp(k, g, 81, 60, 54); H(54, 81, 82);                                                       // the sprung barrel at the east wall, up through its hatch
+  P(60, 70, 'N'); P(60, 79, 'T');
+  // the CLOCK ROOM (rows 49-53, its floor row 54)
+  A(67, 49, 82, 53); BK(67, 49, 82, 53, 'wood'); DC('gear', 73, 49, 2, 2); DC('gear', 77, 50, 1, 1);
+  A(69, 54, 70, 54);                                                                                         // a hole down to the orrery hall
+  [[79, 0], [76, 0.08], [72, 0.2]].forEach(([pc, ph])=>g.plug(pc, Y(51), pc, Y(53), { open:240, shut:360, phase:ph }));   // the clock's shutters, opening in a wave from the east
+  STALK(80, 53, 51); H(50, 71, 80);                                                                          // the ladder up the east wall, the catwalk over the shutters
+  for(const tc of [77, 73]){ H(53, tc, tc); ZN('spring', tc, 52, tc, 52, 0.95); }                            // a pendulum's bob in each bay between them (a low spring up to the catwalk: no bay is a trap while its shutters are shut)
+  H(53, 67, 68); fUp(k, g, 67, 53, 48); H(48, 67, 68);                                                       // the sprung barrel up to the star-chart room
+  P(53, 78, 'U'); P(49, 74, 'T');
+  // the STAR-CHART ROOM (rows 43-47, its floor row 48): dark; the constellation
+  A(67, 43, 82, 47); BK(67, 43, 82, 47, 'stars'); ZN('dark', 67, 43, 82, 47);
+  A(74, 48, 75, 48);                                                                                         // a hole down (onto the clock room's hatch)
+  [[47, 69], [46, 71], [45, 74], [44, 77], [43, 79]].forEach(([rr, cc])=>{ H(rr, cc, cc + 1); DC('star', cc, rr - 1, 1, 1); DC('star', cc + 1, rr - 1, 1, 1); });
+  H(42, 78, 81);                                                                                             // its hatch up to the weather deck (wide: the climb's last hop goes under it)
+  P(47, 79, 'T'); P(47, 81, 'T'); P(47, 72, 'T');
+  // the WEATHER DECK (rows 38-41, its floor row 42): a gale in through the open west side; gaps in the floor
+  A(67, 38, 82, 41); BK(67, 38, 68, 41, 'sky'); BK(69, 38, 82, 41, 'wood'); DC('cloud', 67, 38, 2, 2);
+  ZN('wind', 67, 38, 82, 41, 0.6, 1);
+  A(72, 42, 73, 42); A(75, 42, 76, 42);                                                                      // the gaps (drops to the star-chart room)
+  H(41, 67, 68); fUp(k, g, 67, 41, 37); H(37, 67, 68);                                                       // the sprung barrel up into the dome
+  P(41, 70, 'X'); P(41, 82, 'C');
+  // the DOME (rows 30-36, its floor row 37): the telescope's barrel up to the eyepiece, the chair's rail, the slit
+  A(67, 30, 82, 36); BK(67, 30, 82, 36, 'stars'); for(const [sc, sr] of [[69, 31], [72, 30], [76, 31], [79, 30], [74, 33]]) DC('star', sc, sr, 1, 1);
+  A(69, 37, 70, 37);                                                                                         // a hole down to the weather deck
+  SL(72, 81, 37, 33, 2, { fill:36 }); S(82, 33, 82, 36); DC('telescope', 72, 32.6, 10, 4);                     // the telescope's barrel (a slope) up to the eyepiece's platform
+  P(32, 82, 'a'); P(36, 71, 'v');                                                                            // the VAULT KEY at the eyepiece; the super-jump boost
+  g.zip(68, Y(35), 81, Y(31), { spd:10 });                                                                   // the observer's chair on the dome's rail
+  g.exitDoor(81, Y(31), 82, Y(32), 61, Y(1));                                                                // the slit: one way out onto the roof
+}
+// THE FLAGSHIP (the owner: "Yes, flagship too"; designed in the plan's way, interiors-plan.md 2.5): the Fleet's big ship, its home, jail and vault. Outside, a closed hull moored in the sky, the deck on top walked on, the captain's cabin a closed
+// shell on the deck (the 'cabin' skin's planks and portholes), a bowsprit at the bow; the doors: the CABIN DOOR on the deck, both ways (into the captain's cabin); the DECK HATCH, both ways (down into the wheelhouse); the BOW DOOR at the
+// gangplank's end, both ways (onto the gun deck); the STERN WINDOWS, a risky way out of the cabin that drops you under the stern onto the cloud sea, 8% hurt. The way back up from the gangplank outside: a balloon spring on a beam over its end,
+// up to the bowsprit.
+// Inside, an area apart under the map, open to both teams: a warship from stern to bow on three decks, each room its own platforming, none like the skiff's:
+//   the CAPTAIN'S CABIN (HOME): the spawns on the floor and on the captain's bunk, the pad and the shield boost; the stern gallery under the great windows (the risky way out), the companionway down, the cabin door;
+//   the WHEELHOUSE: the ship's wheel turns (its handles are boards: ride one up, the shortcut) to the helm platform, a ladder up the far wall the plain way; the deck hatch on the platform;
+//   the GUN DECK: the ship rolls (low gravity in its waist: long floaty jumps), cannons on their carriages to hop; the BRIG (the jail) at the stern, so a rescue is fought for on the flat; the bow door at the bow;
+//   the HOLD: dark, cargo nets to climb (ledges), lanterns, crates; the VAULT at the stern behind two locked doors (an antechamber between them), a chest, an urn and the speed boost; the key lies on the deck outside;
+//   the MAGAZINE: a pitch spill on the floor (sticky), the shot trolley riding its rail over it (a ferry: the shortcut), powder kegs;
+//   the CHAIN LOCKER at the bow: the anchor chain hauled up and down (a lift to the gun deck: the shortcut), its links a ladder up to a hatch (the plain way), and the GANGPLANK's door through to the skiff's cargo hold, both ways (the plan:
+//   "the gangplank from the flagship lands" at the skiff's stern).
+function skyFlagship(k, g){
+  const { A, S, H, P, BK, DC, ZN, Y, STALK } = k;
+  // ---- outside: the hull (columns 0-28, rows 14-23; the deck its top), the keel, the cabin on the deck (columns 0-10, rows 8-13), the bowsprit; the doors ----
+  S(0, 14, 28, 23); S(4, 24, 25, 24); S(0, 8, 10, 13);
+  H(14, 29, 32); H(18, 31, 32); fUp(k, g, 31, 18, 14);                                                       // the bowsprit; a balloon spring on a beam over the gangplank's end up to it (walked under, a jump touches it)
+  P(13, 12, 'g'); DC('hatch', 14, 13, 2, 1, { dir:-1 });
+  g.entrance(11, Y(12), 11, Y(13), 18, Y(51), { two:true, side:-1 }); g.exitDoor(18, Y(51), 18, Y(52), 11, Y(12), { two:true });     // the cabin door, both ways
+  g.entrance(14, Y(12), 15, Y(13), 31, Y(48), { two:true }); g.exitDoor(31, Y(47), 32, Y(48), 14, Y(12), { two:true });             // the deck hatch, both ways: into the wheelhouse, onto the helm platform
+  g.entrance(29, Y(17), 29, Y(18), 46, Y(57), { two:true, side:-1 }); g.exitDoor(46, Y(57), 47, Y(58), 29, Y(17), { two:true });     // the bow door, both ways
+  g._np.push([13, 11], [13, 14], [13, 15], [18, 29], [17, 31], [17, 32], [13, 29], [13, 30], [13, 31], [13, 32]);
+  // ---- inside: under the map, columns 1-48, rows 47-67 (the skiff is above it) ----
+  g.interior('flagship', 1, Y(47), 48, Y(67), { name:'Flagship' }); BK(1, 47, 48, 67, 'brick'); g.skin(1, Y(47), 48, Y(67), 'indoor');   // (a wall behind it all, so a hole in a floor shows the room below and not the sky; its floors are indoor ones: no grass on them)
+  // the CAPTAIN'S CABIN (home; rows 48-52, its floor row 53)
+  A(2, 48, 18, 52); BK(2, 48, 18, 52, 'wood'); DC('lantern', 9, 48, 2, 2);
+  S(2, 52, 3, 52); H(51, 5, 8); for(const wc of [2, 3]) DC('window', wc, 48, 1, 2);                          // the stern gallery under the great windows, the captain's bunk
+  P(52, 5, 'HHHHHH'); P(50, 6, 'HH'); P(52, 11, 'PP'); P(52, 15, 'h'); P(52, 4, 'T');                        // the spawns on the floor and the bunk, the pad, the shield boost, the sea chest
+  g.drop(2, Y(50), 3, Y(51), 2, Y(25), 8);                                                                   // out of the stern windows: under the stern onto the cloud sea, 8% hurt
+  A(16, 53, 17, 53); DC('hatch', 16, 52, 2, 1, { dir:1 });                                                   // the companionway down to the gun deck
+  // the WHEELHOUSE (rows 48-52, its floor row 53): the ship's wheel, the helm platform, the ladder, the deck hatch
+  A(19, 51, 19, 52); A(20, 48, 40, 52); BK(20, 48, 40, 52, 'wood'); DC('lantern', 33, 48, 1, 1); DC('porthole', 22, 49, 1, 1);
+  g.wheel(26, Y(50.75), 2, 6, { kind:'helm', pw:170, spd:1.3, dir:-1 });                                     // the ship's wheel (ride a handle up)
+  H(49, 29, 36); STALK(37, 52, 50);                                                                          // the helm platform, the ladder up to it
+  A(21, 53, 22, 53);                                                                                         // a hole down to the gun deck
+  P(52, 31, 'T'); P(48, 34, 'C'); P(52, 40, 'W');
+  // the GUN DECK (rows 54-58, its floor row 59): the ship rolls (low gravity), the cannons, the BRIG at the stern
+  A(2, 54, 47, 58); BK(9, 54, 47, 58, 'wood'); ZN('float', 24, 54, 39, 58);                               // (the waist of the ship, between the masts, rolls the most: low gravity there)
+  g.col(8, Y(54), Y(58), 'J'); P(58, 2, 'ppp'); g.keepClear(2, Y(54), 8, Y(58)); BK(2, 54, 7, 58, 'dirt');   // the BRIG
+  for(const gc of [19, 25, 29, 37]){ S(gc, 58, gc + 1, 58); DC('cannon', gc, 57, 2, 1, { dir:1 }); DC('porthole', gc, 55, 1, 1); }   // the cannons on their carriages (humps to hop), their ports
+  H(58, 13, 14); fUp(k, g, 13, 58, 53); H(53, 13, 14);                                                       // a sprung barrel up to the cabin (through its hatch)
+  H(58, 33, 34); fUp(k, g, 33, 58, 53); H(53, 33, 34);                                                       // and one up to the wheelhouse
+  A(23, 59, 24, 59);                                                                                         // a hole down to the hold
+  P(58, 15, 'W'); P(58, 27, 'r'); P(58, 35, 'C'); P(58, 45, 'W'); DC('lantern', 22, 54, 2, 2); DC('lantern', 40, 54, 2, 2);
+  // the HOLD (rows 60-65, its floor row 66): dark, cargo nets; the VAULT at the stern
+  A(2, 60, 26, 65); BK(10, 60, 26, 65, 'brick'); ZN('dark', 10, 60, 26, 65);
+  g.col(6, Y(60), Y(65), '1'); g.col(9, Y(60), Y(65), '1'); BK(2, 60, 8, 65, 'stripe'); ZN('dark', 2, 60, 8, 65); P(65, 2, 'T'); P(65, 3, 'u'); P(65, 5, 'N');   // the VAULT, an antechamber between its two locked doors
+  H(65, 18, 19); fUp(k, g, 18, 65, 59); H(59, 18, 19);                                                       // a sprung barrel up to the gun deck
+  H(64, 11, 12); H(62, 13, 14); H(64, 21, 22); H(62, 24, 25);                                                // the cargo nets
+  P(63, 11, 'C'); P(61, 13, 'W'); P(61, 25, 'C'); P(65, 15, 'C'); P(65, 23, 'W'); DC('lantern', 13, 60, 1, 1); DC('lantern', 23, 60, 1, 1);
+  // the MAGAZINE (rows 60-65, its floor row 66): the pitch spill, the shot trolley over it, powder kegs
+  A(27, 64, 27, 65); A(28, 60, 38, 65); BK(28, 60, 38, 65, 'metal'); DC('lantern', 33, 60, 1, 1);
+  ZN('glue', 29, 65, 37, 65, 0.6); g.ferry(29, 35, Y(65), 240, { spd:2.5 });                                 // the pitch, the trolley riding over it
+  P(65, 28, 'W'); P(65, 33, 'W'); P(65, 38, 'W');                                                            // the powder kegs
+  // the CHAIN LOCKER (rows 60-65, its floor row 66): the anchor chain's lift, its links a ladder, the gangplank's door
+  A(39, 64, 39, 65); A(40, 60, 47, 65); BK(40, 60, 47, 65, 'wood');
+  A(40, 59, 41, 59); g.elev(40, 2, Y(59), Y(66)); DC('chains', 40, 54, 2, 5);                                // the anchor chain (a lift up to the gun deck)
+  STALK(42, 65, 60); H(59, 42, 44);                                                                          // its links, a ladder up to a hatch
+  g.passage([46, Y(64), 47, Y(65)], [15, Y(38), 16, Y(39)]);                                                 // the GANGPLANK's door: through to the skiff's cargo hold, both ways
+  P(65, 45, 'k');
+}
 CTF_MAPS.sky = {
   name:'Cloud City and the Airship Fleet',
   size:{ rows:28, half:84, pocket:42 },   // (the 42 rows under the map: its interiors)
@@ -3646,29 +3933,28 @@ CTF_MAPS.sky = {
     // THE CLOUD CITY (the owner, 2026-10-18: "islands with empty air between them; a dozen separate chunks at different heights; thumbnail = scattered shapes on blue"; "cloud city: buildings you go inside, bridges and balloons"): six chunks at different heights over the cloud sea: the penthouse tower (high, home and jail), a small islet and a high islet with the team buff,
     // a low islet, the grand hotel (the vault behind two locked doors), the observatory at the rim; the buildings are real ones with floors, rooms, windows, doors and a roof; the ways between them are skybridges (planks at the doors of the floors they share), gusts of wind (updrafts) in the gaps and balloon springs. The cloud sea is the only floor.
     S(0, 26, 65, 27);                                                                                   // the cloud sea
-    // CHUNK ONE (home): the penthouse tower, high up. A penthouse (the spawns) over a ground room with the jail at its west end, a balloon spring and a plain hole between them, a spring up to the roof
+    g.wing(2, ()=>{ S(-24, 26, -1, 27); ZN('updraft', -3, 3, -1, 25, 1.8); DC('cloud', -20, 6, 5, 2); DC('cloud', -13, 16, 4, 2); });   // (large teams: the cloud sea goes on behind the tower, and a gust up beside its wall to the roof)
+    // CHUNK ONE (home): the PENTHOUSE TOWER, high up: a closed shell on its island (doors on its east face, a roof hatch, a fire escape), the tower itself an area apart under the map (skyPenthouse): the home in its suite at the top, the jail in its lobby
     skyIsle(k, 0, 19, 14, 5);
-    fBuilding(k, g, { c0:0, c1:16, n:2, G:14, doors:'a', west:false, tubes:[9], drops:[12], roofUp:14, back:'paper' }); S(5, 0, 11, 2);
-    P(8, 1, 'HHHHHHH'); P(5, 2, 'H'); P(5, 5, 'H'); P(13, 13, 'PP'); P(13, 11, 'h');
-    g.col(8, Y(10), Y(13), 'J'); P(13, 2, 'ppp'); g.keepClear(1, Y(10), 8, Y(13)); BK(1, 10, 7, 13, 'dirt');
+    skyPenthouse(k, g);
     // CHUNK TWO: a small islet at the penthouse's door level (a plank from the balcony), a balloon spring to the high islet beside it
     H(9, 17, 19); skyIsle(k, 20, 25, 10, 2);
     // CHUNK THREE: the high islet (the team buff), over the gust that rises between; CHUNK FOUR: a low islet; the gust rises in the gap
     skyIsle(k, 34, 39, 5, 2); A(36, 5, 37, 7); g.elev(36, 2, Y(5), Y(15)); P(4, 38, 'y'); skyIsle(k, 33, 38, 15, 2); ZN('updraft', 29, 6, 32, 25, 1.8);
-    // CHUNK FIVE: the grand hotel: three floors, the vault in the ground room behind two locked doors, a plank from the low islet to its door at the second floor
+    // CHUNK FIVE: the GRAND HOTEL: a closed shell on its island (the front door at the low islet's plank, the terrace door at the observatory's, a door on the roof), the hotel itself a whole small level under the map (skyHotel): the vault in its basement
     H(14, 39, 40); skyIsle(k, 41, 54, 19, 4);
-    fBuilding(k, g, { c0:41, c1:53, n:3, G:19, doors:'a', tubes:[47, 42], drops:[44, 51], roofUp:49, back:'paper' });
-    g.col(46, Y(15), Y(18), '1'); g.col(50, Y(15), Y(18), '1'); BK(47, 15, 49, 18, 'stripe'); ZN('dark', 47, 15, 49, 18); P(18, 47, 'T'); P(18, 48, 'u'); P(18, 49, 'N');
-    // CHUNK SIX: the observatory at the rim: two floors, doors on the second; a plank across the gap with a gust under it
+    skyHotel(k, g);
+    // CHUNK SIX: the OBSERVATORY at the rim, over a plank across the gap with a gust under it: a closed tower over an open porch (the way through to the fair), its front door in the porch, the climb inside it an area apart (skyObservatory):
+    // the vault's key at its eyepiece and the super-jump boost in its dome
     H(14, 54, 57); ZN('updraft', 55, 15, 56, 25, 1.8); skyIsle(k, 57, 65, 14, 4);
-    fBuilding(k, g, { c0:58, c1:65, n:2, G:14, doors:'a', west:true, east:false, tubes:[59], drops:[63], roofUp:61, roofW:1, back:'paper' }); A(65, 11, 65, 13);
-    // the keys and the boosts
-    P(14, 36, 'a'); P(13, 62, 'v'); P(9, 22, 'g');
-    k.scatter((r, c)=>(r >= 24 ? ['C', 'W', 'R', 'K'] : r >= 12 ? ['A', 'N', 'U', 'F', 'C', 'T', 'W'] : ['B', 'K', 'C', 'O']), [0.5, 0.85, 0.9][g.band], 3, (r, c)=>(r <= 2) || (c >= 66 && c <= 83 && r <= 9) || (c >= 1 && c <= 7 && r >= 10 && r <= 13) || (c >= 46 && c <= 50 && r >= 15 && r <= 18) || (c >= 29 && c <= 32) || (c >= 55 && c <= 56) || g._np.some(q=>q[0] === r && q[1] === c), 41);
+    skyObservatory(k, g);
+    // the boosts
+    P(9, 22, 'g');
+    k.scatter((r, c)=>(r >= 24 ? ['X', 'C', 'W', 'X'] : r >= 12 ? ['A', 'N', 'U', 'F', 'C', 'T', 'W', 'l'] : ['X', 'C', 'W', 'l']), [0.5, 0.85, 0.9][g.band], 3, (r, c)=>(r <= 2) || (c >= 66 && c <= 83 && r <= 9) || (c >= 46 && c <= 50 && r >= 15 && r <= 18) || (c >= 29 && c <= 32) || (c >= 55 && c <= 56) || g._np.some(q=>q[0] === r && q[1] === c), 41);
     g.skin(0, Y(14), 19, Y(18), 'cloud'); g.skin(41, Y(19), 54, Y(22), 'cloud'); g.skin(57, Y(14), 65, Y(17), 'cloud'); g.skin(0, Y(3), 16, Y(14), 'hotel'); g.skin(41, Y(3), 53, Y(19), 'hotel'); g.skin(58, Y(5), 65, Y(14), 'hotel');
     DC('cloud', 18, 2, 4, 2); DC('cloud', 52, 1, 5, 2); DC('balloon', 28, 3, 4, 5);
     skyFair(k, g); skyDock(k, g);
-    g.decoDefault(['curtain', 'chest', 'urn', 'crate', 'armor']); g.decoSet(0, Y(20), D, Y(25), ['cloud', 'rock']);
+    g.decoDefault(['curtain', 'chest', 'urn', 'crate', 'armor']); g.decoSet(0, Y(20), D, Y(25), ['cloud', 'crate', 'barrel', 'lamp']);
     g.info = info; return info;
   },
   // ---- SIDE B: THE CLOUD GARDENS ----
@@ -3678,35 +3964,25 @@ CTF_MAPS.sky = {
     // a balloon spring that throws you back up), a door in the bow where the GANGPLANK comes aboard from the skiff, a hatch in the hall's floor down to the hold (the vault at the stern end behind two locked doors, cargo, portholes); a crow's nest high over the deck that a BARREL CANNON fires you up to. The skiff: a cabin of two floors you walk through
     // (a door at each end), its captain's room above (a balloon spring up to it, a door at each end of it). Between them open sky, a gust of wind rises under the gangplank, and the rim is across a little islet. (A hull does not move in this engine: it is moored. The gangplank is fixed; a lift is for people.)
     S(0, 26, 65, 27);                                                                                   // the cloud sea
-    S(0, 14, 26, 23); S(1, 24, 25, 24);                                                                 // the flagship's hull: the deck at row 14, the gun deck (rows 15-18) and the hold (rows 20-22) hollowed out of it, a keel
-    fBuilding(k, g, { c0:0, c1:10, n:1, G:14, doors:'a', west:false, back:'wood', win:'porthole', frames:'low' });   // the captain's cabin on the deck
-    P(13, 1, 'HHHHHHH'); P(10, 3, 'H'); P(13, 8, 'PP'); P(13, 14, 'h'); P(13, 13, 'g');
-    // the gun deck: a hall with portholes, the jail at the stern behind its door, the door in the bow
-    A(2, 15, 25, 18); BK(2, 15, 25, 18, 'wood'); DC('porthole', 5, 16, 1, 1); DC('porthole', 8, 16, 1, 1); DC('porthole', 14, 16, 1, 1); DC('porthole', 19, 16, 1, 1); DC('porthole', 24, 16, 1, 1); DC('lantern', 12, 15, 2, 2); DC('lantern', 22, 15, 2, 2);
-    g.col(11, Y(15), Y(18), 'J'); P(18, 3, 'ppp'); g.keepClear(2, Y(15), 11, Y(18)); BK(2, 15, 10, 18, 'dirt');   // the brig at the stern
-    A(26, 16, 26, 18); DC('doorway', 26, 16, 1, 3, { dir:1 });                                          // the door in the bow, and the gangplank outside it
-    A(16, 14, 17, 14); DC('hatch', 16, 13, 2, 1, { dir:-1 });                                           // a hatch in the deck, a plain way down
-    A(20, 14, 21, 14); fUp(k, g, 20, 19, 14); DC('hatch', 20, 13, 2, 1, { dir:1 });                    // a hatch in the deck with a balloon spring under it, the way back up
-    // the hold: cargo, portholes, the vault at the stern end behind two locked doors
-    A(2, 20, 25, 22); BK(2, 20, 25, 22, 'brick'); ZN('dark', 2, 20, 25, 22); DC('porthole', 14, 20, 1, 1); DC('porthole', 18, 20, 1, 1); DC('lantern', 12, 20, 2, 2); DC('lantern', 20, 20, 2, 2);
-    A(13, 19, 14, 19);                                                                                  // a hatch in the hall's floor: a plain way down
-    A(23, 19, 24, 19); fUp(k, g, 23, 23, 19);                                                           // and one with a balloon spring under it, the way back up
-    g.col(6, Y(20), Y(22), '1'); g.col(10, Y(20), Y(22), '1'); BK(7, 20, 9, 22, 'stripe'); P(22, 7, 'T'); P(22, 8, 'u'); P(22, 9, 'N');
+    g.wing(2, ()=>{ S(-24, 26, -1, 27); ZN('updraft', -3, 6, -1, 25, 1.8); DC('cloud', -20, 4, 5, 2); DC('cloud', -12, 15, 4, 2); });   // (large teams: the cloud sea goes on behind the stern, and a gust up beside it to the cabin's roof)
+    // THE FLAGSHIP (the owner: "Yes, flagship too"): a closed hull moored in the sky, its deck walked on, the captain's cabin a closed shell on the deck; the warship inside it an area apart under the map (skyFlagship): the home in the
+    // captain's cabin, the jail in the brig, the vault in the hold, the gangplank's door through to the skiff
+    skyFlagship(k, g);
     // the crow's nest, the barrel that fires you up to it (a plank above the deck, so nobody is fired by walking), a lift for people
     H(4, 17, 26); H(12, 24, 25); fUp(k, g, 24, 12, 4); P(3, 21, 'y'); g.elev(18, 2, Y(4), Y(14)); DC('mast', 20, 0, 3, 14); DC('cannon', 24, 10, 2, 2);
     // the gangplank from the bow door to the skiff, a gust under it
-    H(19, 27, 37); ZN('updraft', 30, 20, 33, 25, 1.8);
+    H(19, 29, 37); ZN('updraft', 30, 20, 33, 25, 1.8);
     skyIsle(k, 38, 50, 19, 4);                                                                          // the skiff
     skySkiff(k, g);                                                                                     // its cabin: a closed shell, the ship inside it an area apart under the map (skySkiff)
     skyIsle(k, 52, 57, 19, 2); fUp(k, g, 55, 19, 14);                                                   // a little islet one step across, a spring up to the rim
     skyIsle(k, 59, 65, 14, 4);                                                                          // the rim
     // the keys and the boosts
-    P(13, 26, 'a'); P(18, 39, 'v'); P(13, 62, 'O');
-    k.scatter((r, c)=>(r >= 24 ? ['C', 'W', 'R', 'K'] : r >= 14 ? ['V', 'B', 'K', 'G', 'W'] : ['B', 'K', 'O', 'V']), [0.55, 0.9, 0.95][g.band], 3, (r, c)=>(r <= 3) || (c >= 66 && c <= 83 && r <= 9) || (c >= 2 && c <= 10 && r >= 15 && r <= 22) || (c === 25 && r >= 20 && r <= 22) || (c >= 40 && c <= 48 && r <= 7) || (c >= 30 && c <= 33) || g._np.some(q=>q[0] === r && q[1] === c), 41);
-    g.skin(0, Y(14), 26, Y(24), 'hull'); g.skin(38, Y(19), 50, Y(22), 'hull'); g.skin(59, Y(14), 65, Y(17), 'cloud'); g.skin(0, Y(8), 10, Y(14), 'cabin'); g.skin(40, Y(8), 48, Y(19), 'cabin');
+    P(13, 26, 'a'); P(18, 39, 'v'); P(13, 62, 'k');
+    k.scatter((r, c)=>(r >= 24 ? ['X', 'C', 'W', 'X'] : r >= 14 ? ['C', 'W', 'T', 'r', 'k', 'l'] : ['C', 'W', 'r', 'l', 'X']), [0.55, 0.9, 0.95][g.band], 3, (r, c)=>(r <= 3) || (c >= 66 && c <= 83 && r <= 9) || (c >= 2 && c <= 10 && r >= 15 && r <= 22) || (c === 25 && r >= 20 && r <= 22) || (c >= 40 && c <= 48 && r <= 7) || (c >= 30 && c <= 33) || g._np.some(q=>q[0] === r && q[1] === c), 41);
+    g.skin(0, Y(14), 28, Y(24), 'hull'); g.skin(38, Y(19), 50, Y(22), 'hull'); g.skin(59, Y(14), 65, Y(17), 'cloud'); g.skin(0, Y(8), 10, Y(14), 'cabin'); g.skin(40, Y(8), 48, Y(19), 'cabin');
     DC('cloud', 20, 1, 4, 2); DC('cloud', 46, 0, 5, 2); DC('balloon', 33, 4, 4, 5);
     skyFair(k, g); skyDock(k, g);
-    g.decoDefault(['crate', 'barrel', 'rope', 'anchor', 'chest']); g.decoSet(0, Y(20), D, Y(25), ['cloud', 'rock']);
+    g.decoDefault(['crate', 'barrel', 'rope', 'anchor', 'chest']); g.decoSet(0, Y(20), D, Y(25), ['cloud', 'crate', 'barrel', 'lamp']);
     g.info = info; return info;
   },
 };
@@ -3764,6 +4040,19 @@ const CTF_PING_FIRST = 10800, CTF_PING_EVERY = 3600, CTF_PING_LEN = 300;   // th
 //    The MIDDLE is the same on both sides (oakHeart): a bowl of mossy ground with a pond, a hollow heart-tree on the line, a cave under it all, a canopy bridge, a rope of hops.
 //  Rows are written as the grid's own (0 the top, 27 the bottom floor).
 // ---------------------------------------------------------------------------------------------------------------
+// Where a scattered prop must never stand (the owner, 2026-10-19: a fern was drawn in the Fleet's cabin door, a bush in the bow door, a rock in the skiff's upper door): a DOORWAY (a gap under a wall one cell thick: its lintel within
+// three rows over the floor, open on both sides of it, the wall going on up) and the cell either side of it, a door you go through with Up (g.portal) and the cell either side, a spring or an updraft. r, c: a builder's row (through its Y)
+// and column; the test is made on the grid's own cells, so the middle module and the annex read right.
+function ctfPropKeepOut(g, Y){
+  const lift = new Set(); for(const z of g.zones) if(z.type === 'spring' || z.type === 'updraft') for(let rr = z.r0; rr <= z.r1; rr++) for(let cc = z.c0; cc <= z.c1; cc++) lift.add(rr + '.' + cc);
+  const at = (r, c)=>(r >= 0 && r < g.rows.length && c >= 0 && c < g.rows[r].length) ? g.rows[r][c] : '#';
+  const doorway = (fr, fc)=>{ if(at(fr, fc) === '#') return false;
+    for(let q = 1; q <= 3; q++){ const up = at(fr - q, fc); if(up !== '#' && up !== '=') continue; return up === '#' && at(fr - q, fc - 1) !== '#' && at(fr - q, fc + 1) !== '#' && at(fr - q - 1, fc) === '#'; }
+    return false; };
+  const C = CTF_CELL, portal = (fr, fc)=>g.portals.some(p=>p.x < (fc + 2)*C && p.x + p.w > (fc - 1)*C && p.y < (fr + 1)*C && p.y + p.h > fr*C);
+  return (r, c)=>{ const fr = Y(r) + g.dr, fc = g.cx(c); if(fc < 0) return false; if(lift.has(fr + '.' + fc)) return true;
+    return doorway(fr, fc) || doorway(fr, fc - 1) || doorway(fr, fc + 1) || portal(fr, fc); };
+}
 function ctfKit28(g){
   const Y = r=>r + 11, D = 83;
   const k = { Y, D };
@@ -3779,10 +4068,10 @@ function ctfKit28(g){
   k.CUT = (c0, r0, c1, r1)=>{ const dr = CTF_DIM.dr; c0 = g.cx(c0); c1 = g.cx(c1); g.ramps = g.ramps.filter(rp=>!(rp.x >= c0*CTF_CELL && rp.x < (c1 + 1)*CTF_CELL && Math.floor((rp.y + 1)/CTF_CELL) >= r0 + dr + 11 && Math.floor((rp.y + 1)/CTF_CELL) <= r1 + dr + 11)); };
   // props along every flat floor and ledge, a kind to suit the place; kindsAt(r, c) -> a list; skip(r, c) -> true to leave the place bare
   k.scatter = (kindsAt, prob, gap, skip, salt)=>{
-    const rampCell = new Set(g.ramps.map(rp=>Math.floor((rp.y + 1)/CTF_CELL) + '.' + Math.floor(rp.x/CTF_CELL))), last = {};
+    const rampCell = new Set(g.ramps.map(rp=>Math.floor((rp.y + 1)/CTF_CELL) + '.' + Math.floor(rp.x/CTF_CELL))), last = {}, keepOut = ctfPropKeepOut(g, Y);
     const cols = []; for(let c = Math.min(1, -g.ox); c <= D; c++) cols.push(c); for(let o = 0; o < g.mx; o++) cols.push(1000 + o);
     for(let r = 0; r < 27; r++) for(const c of cols){
-      if(rampCell.has(r + '.' + g.cx(c)) || (skip && skip(r, c))) continue;
+      if(rampCell.has(r + '.' + g.cx(c)) || (skip && skip(r, c)) || keepOut(r, c)) continue;   // (nor in a doorway, by a door or on a spring: ctfPropKeepOut)
       const here = g.at(Y(r), c), below = g.at(Y(r) + 1, c);
       if(here !== '.' || (below !== '#' && below !== '=')) continue;
       if(cellJitter(c, r, salt || 41) > prob || (last[r] != null && c - last[r] < gap)) continue;
@@ -5107,7 +5396,7 @@ const CTF_TOOLS = ['flag', 'deco', 'plat', 'wall', 'trap', 'remove', 'offer'];
 const CTF_PIECES = { flag:[null], deco:['crate', 'barrel', 'bush', 'curtain', 'rubble'], plat:['plat'], wall:['block', 'wall'], trap:['spikes', 'stun', 'spring', 'trapdoor'], remove:[null], offer:['both+', 'both-', 'mine+', 'mine-'] };
 const CTF_COSTS = { deco:1, plat:2, wall:3, trap:5, remove:1 };
 const CTF_DECO_H = { crate:152, barrel:74, bush:80, curtain:150, rubble:62, armor:150, urn:90, chest:70, hay:90, banner:150, drift:84, pine:190, rock:80, iceblock:100, minecart:90, ore:70, stalagmite:110,
-  crystal:120, lamp:180, coral:110, kelp:150, shell:56, anchor:110, machine:100, gears:110, blocks:100, cone:76, hydrant:66, ball:84, log:56, fern:90, stump:60, cloud:70, snowman:130 };
+  crystal:120, lamp:180, coral:110, kelp:150, shell:56, anchor:110, machine:100, gears:110, blocks:100, cone:76, hydrant:66, ball:84, log:56, fern:90, stump:60, cloud:70, snowman:130, rope:62 };
 // The decoration tool's pieces change with the place: each map says what fits its areas (an armoured hall, a snowy slope, a mine, a reef, a factory, a street) and a default; a map that says
 // nothing offers the old five. The set is the one for the area the cursor is in; B steps through it.
 const CTF_DECO_DEFAULT = ['crate', 'barrel', 'bush', 'curtain', 'rubble'];
@@ -6037,6 +6326,37 @@ function ctfLandmarkDeco(g, d, th, c){
       for(const [bx, by, br] of bs){ g.fillStyle = dark; g.beginPath(); g.arc(bx, by, br + 3, 0, 7); g.fill(); }
       for(const [bx, by, br, col] of bs){ g.fillStyle = col; g.beginPath(); g.arc(bx, by, br, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,0.18)'; g.beginPath(); g.arc(bx - br*0.3, by - br*0.34, br*0.45, 0, 7); g.fill(); g.fillStyle = 'rgba(0,0,0,0.12)'; g.beginPath(); g.arc(bx + br*0.45, by + br*0.5, br*0.55, 0, 7); g.fill(); }
       break; }
+    case 'cannon': {   // a cannon on its wooden carriage, its muzzle to the side it faces (dir; the bottom of its box the deck)
+      const by = y + h, s = (d.dir === -1 ? -1 : 1);
+      g.fillStyle = '#8f5f2f'; ctfOutline(g, 4); g.fillRect(cx - w*0.32, by - h*0.42, w*0.64, h*0.3); g.strokeRect(cx - w*0.32, by - h*0.42, w*0.64, h*0.3);
+      g.fillStyle = '#3a3a44'; for(const wx of [cx - w*0.22, cx + w*0.22]){ g.beginPath(); g.arc(wx, by - h*0.12, h*0.13, 0, 7); g.fill(); g.stroke(); }
+      g.save(); g.translate(cx, by - h*0.5); g.rotate(-s*0.12); g.fillStyle = '#4a4f5a'; g.beginPath(); g.moveTo(-s*w*0.3, -h*0.17); g.lineTo(s*w*0.48, -h*0.12); g.lineTo(s*w*0.48, h*0.12); g.lineTo(-s*w*0.3, h*0.17); g.closePath(); g.fill(); g.stroke();
+      g.beginPath(); g.arc(-s*w*0.32, 0, h*0.17, 0, 7); g.fill(); g.stroke(); g.restore();
+      break; }
+    case 'star': {   // a star of a constellation (it glows through the dark: ctfDrawDark)
+      const sx = cx, sy = y + h/2, R = Math.min(w, h)*0.32; g.fillStyle = '#fff3b0'; g.strokeStyle = dark; g.lineWidth = 3; g.beginPath();
+      for(let i = 0; i < 10; i++){ const a = -Math.PI/2 + i*Math.PI/5, r = i % 2 ? R*0.42 : R; g.lineTo(sx + Math.cos(a)*r, sy + Math.sin(a)*r); } g.closePath(); g.fill(); g.stroke();
+      break; }
+    case 'obsdome': {   // an observatory's dome on its roof (the bottom of its box): a white half-ball, its slit open, the telescope's end in it
+      const by = y + h, R = Math.min(w/2, h)*0.95; g.fillStyle = '#eef0f6'; ctfOutline(g, 5); g.beginPath(); g.arc(cx, by, R, Math.PI, 0); g.closePath(); g.fill(); g.stroke();
+      g.strokeStyle = 'rgba(80,90,120,0.35)'; g.lineWidth = 3; g.beginPath(); for(const f of [0.35, 0.7]){ g.moveTo(cx - R*f, by); g.quadraticCurveTo(cx - R*f*0.5, by - R*0.95, cx, by - R); } g.stroke();
+      g.fillStyle = '#1d2346'; g.beginPath(); g.moveTo(cx + R*0.08, by - R); g.lineTo(cx + R*0.3, by - R*0.94); g.lineTo(cx + R*0.42, by); g.lineTo(cx + R*0.14, by); g.closePath(); g.fill();
+      g.fillStyle = '#8a8f9c'; ctfOutline(g, 4); g.save(); g.translate(cx + R*0.26, by - R*0.55); g.rotate(-0.7); g.fillRect(-14, -R*0.5, 28, R*0.6); g.strokeRect(-14, -R*0.5, 28, R*0.6); g.restore();
+      break; }
+    case 'telescope': {   // the great telescope seen side on: its barrel along the slope you climb (the box's lower left to its upper right), the eyepiece at the top, the mount at the foot
+      g.strokeStyle = dark; g.lineWidth = 34; g.lineCap = 'round'; g.beginPath(); g.moveTo(x + 40, y + h - 20); g.lineTo(x + w - 60, y + 30); g.stroke();
+      g.strokeStyle = '#9aa4b4'; g.lineWidth = 24; g.stroke(); g.strokeStyle = '#d8b25a'; g.lineWidth = 26; g.beginPath(); g.moveTo(x + w*0.45, y + h*0.62); g.lineTo(x + w*0.5, y + h*0.55); g.stroke();
+      g.fillStyle = '#d8b25a'; ctfOutline(g, 4); g.beginPath(); g.arc(x + w - 50, y + 30, 22, 0, 7); g.fill(); g.stroke();
+      break; }
+    case 'painting': {   // a painting on the wall: a gilt frame round a little landscape (sky, hills, a sun), no words
+      const fw = Math.min(w, h*1.4), fh = Math.min(h, fw*0.8), fx = cx - fw/2, fy = y + (h - fh)/2;
+      g.fillStyle = '#d8a83a'; ctfOutline(g, 4); g.fillRect(fx, fy, fw, fh); g.strokeRect(fx, fy, fw, fh);
+      const ix = fx + 12, iy = fy + 12, iw = fw - 24, ih = fh - 24;
+      g.fillStyle = '#8fd0f0'; g.fillRect(ix, iy, iw, ih);
+      g.fillStyle = '#ffe27a'; g.beginPath(); g.arc(ix + iw*0.75, iy + ih*0.3, Math.min(iw, ih)*0.12, 0, 7); g.fill();
+      g.fillStyle = '#5aa860'; g.beginPath(); g.moveTo(ix, iy + ih); g.lineTo(ix, iy + ih*0.7); g.quadraticCurveTo(ix + iw*0.3, iy + ih*0.35, ix + iw*0.6, iy + ih*0.72); g.quadraticCurveTo(ix + iw*0.8, iy + ih*0.55, ix + iw, iy + ih*0.68); g.lineTo(ix + iw, iy + ih); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(60,40,10,0.6)'; g.lineWidth = 3; g.strokeRect(ix, iy, iw, ih);
+      break; }
     case 'chandelier': {   // a hotel chandelier on a chain: a brass ring, tiers of crystal, candle flames
       g.strokeStyle = '#6a5a30'; g.lineWidth = 5; g.beginPath(); g.moveTo(cx, y - 80); g.lineTo(cx, y + h*0.3); g.stroke();
       g.fillStyle = '#e0b85a'; ctfOutline(g, 3.5); g.beginPath(); g.ellipse(cx, y + h*0.4, w*0.5, 16, 0, 0, 7); g.fill(); g.stroke(); g.beginPath(); g.ellipse(cx, y + h*0.62, w*0.32, 12, 0, 0, 7); g.fill(); g.stroke();
@@ -6175,6 +6495,11 @@ function ctfPaintBackBase(g, b, th, X0, Y0, X1, Y1){
   if(kind === 'paper'){   // hotel wallpaper: cream with soft stripes and little gold diamonds
     g.fillStyle = '#efe3c8'; g.fillRect(x0, y0, x1 - x0, y1 - y0); g.fillStyle = 'rgba(160,120,70,0.10)'; for(let x = Math.ceil(x0/80)*80; x < x1; x += 80) g.fillRect(x, y0, 38, y1 - y0);
     g.fillStyle = 'rgba(214,170,70,0.55)'; for(let y = Math.ceil(y0/100)*100 + 30; y < y1; y += 100) for(let x = Math.ceil(x0/80)*80 + 19; x < x1; x += 80){ g.beginPath(); g.moveTo(x, y - 9); g.lineTo(x + 7, y); g.lineTo(x, y + 9); g.lineTo(x - 7, y); g.closePath(); g.fill(); }
+    return;
+  }
+  if(kind === 'stars'){   // a night sky (the observatory): deep blue, little stars where a hash of their cell puts them
+    g.fillStyle = '#1d2346'; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+    for(let y = Math.floor(y0/60)*60; y < y1; y += 60) for(let x = Math.floor(x0/60)*60; x < x1; x += 60){ const h = ctfHash(x, y, 31); if(h % 4) continue; g.fillStyle = h % 3 ? 'rgba(255,255,255,0.75)' : 'rgba(255,230,150,0.9)'; g.beginPath(); g.arc(x + (h >>> 4) % 50, y + (h >>> 9) % 50, 1.5 + (h >>> 14) % 3, 0, 7); g.fill(); }
     return;
   }
   if(kind === 'teal'){   // a gondola's walls: teal panels with brass rivets
@@ -6553,6 +6878,10 @@ function ctfCoverDraw(g, s, th){
       g.beginPath(); g.moveTo(s.x, s.y - 100); g.lineTo(s.x, s.y - 10); g.moveTo(s.x - 22, s.y - 80); g.lineTo(s.x + 22, s.y - 80); g.stroke();
       g.beginPath(); g.arc(s.x, s.y - 46, 38, Math.PI*0.08, Math.PI*0.92); g.stroke(); g.beginPath(); g.arc(s.x, s.y - 112, 10, 0, 7); g.stroke(); }
     ctfOutline(g); }
+  else if(s.cover === 'rope'){   // a coil of rope on the deck, its loose end trailing
+    g.fillStyle = c.rope || '#c9a465'; for(const [dy, rx] of [[-14, 50], [-32, 44], [-50, 38]]){ g.beginPath(); g.ellipse(s.x, s.y + dy, rx, 15, 0, 0, 7); g.fill(); g.stroke(); }
+    g.fillStyle = 'rgba(70,46,20,0.5)'; g.beginPath(); g.ellipse(s.x, s.y - 52, 15, 6, 0, 0, 7); g.fill();
+    g.lineWidth = 7; g.beginPath(); g.moveTo(s.x + 34, s.y - 6); g.quadraticCurveTo(s.x + 58, s.y - 2, s.x + 74, s.y - 3); g.stroke(); ctfOutline(g); }
   else if(s.cover === 'cone'){   // a traffic cone
     g.fillStyle = '#444'; g.fillRect(s.x - 30, s.y - 8, 60, 8); g.strokeRect(s.x - 30, s.y - 8, 60, 8);
     g.fillStyle = '#ff7a2a'; g.beginPath(); g.moveTo(s.x - 22, s.y - 8); g.lineTo(s.x - 9, s.y - 76); g.lineTo(s.x + 9, s.y - 76); g.lineTo(s.x + 22, s.y - 8); g.closePath(); g.fill(); g.stroke();
@@ -6757,7 +7086,7 @@ function ctfDrawWorld(){
   for(const z of (M.zones || [])){ if(z.type === 'dark' || !inView(z.x, z.y, z.w, z.h)) continue; if(z.tide){ const r = ctfTideRect(z, L.phase === 'play' ? L.playT : 0); ctfDrawZone(Object.assign({}, z, { y:r.y, h:r.h }), T, vx, vy, vw, vh); ctfDrawTideMark(z, r, T, vx, vw); continue; } ctfDrawZone(z, T, vx, vy, vw, vh); }
   // wheels: the water wheel (timber and rim) or the iron cog, its paddles level at the rim; the water running off the ones that are rising
   for(const wl of (L.wheels || [])){ const ext = wl.R + wl.pw; if(!inView(wl.x - ext, wl.y - ext, 2*ext, 2*ext)) continue;
-    const cog = wl.kind === 'cog', wood = cog ? '#7d8795' : '#8a5a2f', dark = cog ? '#4b5360' : '#5a3a1c', hi = cog ? '#aab4c4' : '#b88a50';
+    const cog = wl.kind === 'cog', orr = wl.kind === 'orrery', wood = orr ? '#c9a040' : cog ? '#7d8795' : '#8a5a2f', dark = orr ? '#7a5a1c' : cog ? '#4b5360' : '#5a3a1c', hi = orr ? '#ffd770' : cog ? '#aab4c4' : '#b88a50';
     ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = Math.max(8, wl.R*0.05) + 6; ctx.beginPath(); ctx.arc(wl.x, wl.y, wl.R, 0, 7); ctx.stroke();
     ctx.strokeStyle = wood; ctx.lineWidth = Math.max(8, wl.R*0.05); ctx.beginPath(); ctx.arc(wl.x, wl.y, wl.R, 0, 7); ctx.stroke();
@@ -6765,20 +7094,24 @@ function ctfDrawWorld(){
     for(let q = 0; q < wl.n; q++){ const an = wl.a + q*2*Math.PI/wl.n, cx = Math.cos(an), cy = Math.sin(an);   // spokes, one to each paddle
       ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 12; ctx.beginPath(); ctx.moveTo(wl.x, wl.y); ctx.lineTo(wl.x + cx*wl.R, wl.y + cy*wl.R); ctx.stroke();
       ctx.strokeStyle = hi; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(wl.x, wl.y); ctx.lineTo(wl.x + cx*wl.R, wl.y + cy*wl.R); ctx.stroke();
+      if(wl.kind === 'helm'){ ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 16; ctx.beginPath(); ctx.moveTo(wl.x + cx*wl.R, wl.y + cy*wl.R); ctx.lineTo(wl.x + cx*(wl.R + 46), wl.y + cy*(wl.R + 46)); ctx.stroke(); ctx.strokeStyle = hi; ctx.lineWidth = 9; ctx.stroke(); }   // a handle
       if(cog){ ctx.fillStyle = '#4b5360'; ctx.save(); ctx.translate(wl.x + cx*(wl.R + 10), wl.y + cy*(wl.R + 10)); ctx.rotate(an + Math.PI/2); ctx.fillRect(-14, -12, 28, 24); ctx.restore(); } }
     ctx.fillStyle = dark; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW; ctx.beginPath(); ctx.arc(wl.x, wl.y, Math.max(22, wl.R*0.1), 0, 7); ctx.fill(); ctx.stroke();
     ctx.fillStyle = hi; ctx.beginPath(); ctx.arc(wl.x, wl.y, Math.max(9, wl.R*0.04), 0, 7); ctx.fill();
+    if(orr){ const gr = ctx.createRadialGradient(wl.x, wl.y, 10, wl.x, wl.y, 120); gr.addColorStop(0, 'rgba(255,220,90,0.7)'); gr.addColorStop(1, 'rgba(255,220,90,0)'); ctx.fillStyle = gr; ctx.fillRect(wl.x - 120, wl.y - 120, 240, 240);   // the sun
+      ctx.fillStyle = '#ffcf3a'; ctx.beginPath(); ctx.arc(wl.x, wl.y, 46, 0, 7); ctx.fill(); ctx.stroke(); }
     wl.ids.forEach((id, q)=>{ const e = L.elevs[id], an = wl.a + q*2*Math.PI/wl.n;   // the paddle: a board with a lip each end, its hangers to the rim
       ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(e.x + 14, e.y + 16); ctx.lineTo(wl.x + Math.cos(an)*wl.R, wl.y + Math.sin(an)*wl.R + 2); ctx.lineTo(e.x + e.w - 14, e.y + 16); ctx.stroke();
       ctx.fillStyle = hi; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW; ctx.fillRect(e.x, e.y - 3, e.w, 20); ctx.strokeRect(e.x, e.y - 3, e.w, 20);
       ctx.fillStyle = wood; ctx.fillRect(e.x, e.y - 16, 10, 14); ctx.fillRect(e.x + e.w - 10, e.y - 16, 10, 14); ctx.strokeRect(e.x, e.y - 16, 10, 14); ctx.strokeRect(e.x + e.w - 10, e.y - 16, 10, 14);
-      if(!cog && Math.sin(an) < 0.2 && wl.R > 300){ ctx.fillStyle = 'rgba(120,190,235,0.75)'; for(let d = 0; d < 4; d++){ const ph = (T*2.4 + d*17 + q*9) % 70; ctx.fillRect(e.x + 14 + d*(e.w - 28)/3, e.y + 18 + ph*1.6, 4, 12); } } });
+      if(orr){ ctx.fillStyle = ['#e0703a', '#5aa0e0', '#c0a060', '#a070d0', '#60b070'][q % 5]; ctx.beginPath(); ctx.arc(e.x + e.w/2, e.y + 46, 24, 0, 7); ctx.fill(); ctx.stroke(); }   // the planet under its board
+      if(!cog && !orr && Math.sin(an) < 0.2 && wl.R > 300){ ctx.fillStyle = 'rgba(120,190,235,0.75)'; for(let d = 0; d < 4; d++){ const ph = (T*2.4 + d*17 + q*9) % 70; ctx.fillRect(e.x + 14 + d*(e.w - 28)/3, e.y + 18 + ph*1.6, 4, 12); } } });
     ctx.restore(); }
   // lifts: a car on its chain-less rails, the shaft marked
   // ferries: a raft with a lantern post, riding on the water
   for(const e of (L.elevs || [])){ if(e.fx0 == null || !inView(e.x - 20, e.y - 320, e.w + 40, 380)) continue;
     ctx.save(); ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW;
-    if(M.theme && M.theme.bg === 'sky'){ const bx = e.x + e.w/2, by = e.y - 200;   // a balloon carries the raft
+    if(M.theme && M.theme.bg === 'sky' && !ctfInteriorAt(M, e.x + e.w/2, e.y - 10)){ const bx = e.x + e.w/2, by = e.y - 200;   // a balloon carries the raft
       ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(bx - 60, by + 50); ctx.lineTo(e.x + 6, e.y - 4); ctx.moveTo(bx + 60, by + 50); ctx.lineTo(e.x + e.w - 6, e.y - 4); ctx.moveTo(bx - 20, by + 80); ctx.lineTo(e.x + e.w*0.4, e.y - 4); ctx.moveTo(bx + 20, by + 80); ctx.lineTo(e.x + e.w*0.6, e.y - 4); ctx.stroke();
       ctx.fillStyle = '#ff6a5a'; ctx.lineWidth = CTF_LW; ctx.beginPath(); ctx.ellipse(bx, by, 78, 96, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#fff2c8'; ctx.beginPath(); ctx.ellipse(bx, by, 26, 96, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.ellipse(bx - 38, by - 30, 12, 30, 0.3, 0, 7); ctx.fill();
       ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW; }
@@ -6810,6 +7143,13 @@ function ctfDrawWorld(){
     const o = fighters[fl.owner]; ctfShadow(ctx, fl.x, fl.y, 28); ctfFlagIcon(ctx, fl.x, fl.y, ctfColor(fl.team), 64, T*0.1 + fl.id, o ? o.color : null);
     if(fl.st === 3 && fl.team !== vt){ ctx.save(); ctx.globalAlpha = 0.5 + 0.3*Math.sin(T*0.2); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(fl.x, fl.y - 30, 44, 0, 7); ctx.stroke(); ctx.restore(); }
   }
+  // a jail's barred window on the outside of its building (deco 'jailwin', the plan's penthouse: "one lit pip per prisoner, so rescuers know someone is inside")
+  if(!M._jw) M._jw = (M.decor || []).filter(d=>d.kind === 'jailwin');
+  for(const d of M._jw){ if(!inView(d.x - 20, d.y - 20, d.w + 40, d.h + 40)) continue; const j = (L.jails || []).find(q=>(q.door.x < M.WW/2) === (d.x + d.w/2 < M.WW/2)), n = j ? Math.min(8, j.pris.length) : 0;
+    ctx.save(); ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW; ctx.fillStyle = '#2a2430'; ctx.fillRect(d.x + 16, d.y + 16, d.w - 32, d.h - 32); ctx.strokeRect(d.x + 16, d.y + 16, d.w - 32, d.h - 32);
+    for(let q = 0; q < 8; q++){ const px = d.x + 34 + (q % 4)*(d.w - 68)/3, py = d.y + d.h*0.38 + Math.floor(q/4)*d.h*0.26; ctx.fillStyle = q < n ? '#ffd23f' : 'rgba(255,255,255,0.12)'; ctx.beginPath(); ctx.arc(px, py, q < n ? 12 + 2*Math.sin(T*0.2 + q) : 9, 0, 7); ctx.fill(); if(q < n){ ctx.lineWidth = 3; ctx.stroke(); } }
+    ctx.strokeStyle = '#6a6e78'; ctx.lineWidth = 9; ctx.beginPath(); for(let q = 1; q < 5; q++){ const bx = d.x + 16 + q*(d.w - 32)/5; ctx.moveTo(bx, d.y + 16); ctx.lineTo(bx, d.y + d.h - 16); } ctx.stroke();
+    ctx.restore(); }
   // the doors (the door onto the wheel is seen from the pit; the ways out of the room are seen only from inside it)
   for(const p of (M.portals || [])){ if(!inView(p.x - 60, p.y - 20, p.w + 120, p.h + 40)) continue;
     if(p.dmg || p.fall){   // a risky drop or a hole: a dark hatch, striped, an arrow down (a way out that hurts)
@@ -6818,9 +7158,9 @@ function ctfDrawWorld(){
       ctx.fillStyle = '#f2c230'; for(let k = 0; k < 4; k++) ctx.fillRect(hx - hw/2 + 8 + k*(hw - 16)/4, hy + 4, (hw - 16)/8, 10);
       ctx.beginPath(); ctx.moveTo(hx - 15, hy - 44); ctx.lineTo(hx + 15, hy - 44); ctx.lineTo(hx, hy - 14); ctx.closePath(); ctx.fill(); ctx.lineWidth = 3; ctx.stroke(); ctx.restore(); continue; }
     const enter = p.kind === 'enter', sd = p.side != null ? p.side : p.dir, fx = sd < 0 ? p.x : p.x + p.w, dw = enter ? 74 : 70, dh = Math.min(p.h, 150), dx = sd === 0 ? p.x + p.w/2 - dw/2 : sd < 0 ? fx - dw*(enter ? 0.6 : 0.2) : fx - dw*(enter ? 0.4 : 0.8), dy = p.y + p.h - dh;
-    ctx.save(); ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW; ctx.fillStyle = enter ? '#8a5a2f' : '#6e4a2a';
+    ctx.save(); ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW; ctx.fillStyle = p.col || (enter ? '#8a5a2f' : '#6e4a2a');
     ctx.beginPath(); ctx.moveTo(dx, dy + dh); ctx.lineTo(dx, dy + dw*0.5); ctx.arc(dx + dw/2, dy + dw*0.5, dw/2, Math.PI, 0); ctx.lineTo(dx + dw, dy + dh); ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#c99a5c'; ctx.fillRect(dx + 10, dy + dh*0.4, dw - 20, dh*0.55); ctx.strokeRect(dx + 10, dy + dh*0.4, dw - 20, dh*0.55);
+    ctx.fillStyle = p.col ? 'rgba(255,255,255,0.35)' : '#c99a5c'; ctx.fillRect(dx + 10, dy + dh*0.4, dw - 20, dh*0.55); ctx.strokeRect(dx + 10, dy + dh*0.4, dw - 20, dh*0.55);
     ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(sd < 0 ? dx + dw - 16 : dx + 16, dy + dh*0.7, 5, 0, 7); ctx.fill();
     if(enter && !p.iv){ ctx.strokeStyle = '#4b5360'; ctx.fillStyle = '#7d8795'; ctx.lineWidth = 3; const gx = dx + dw/2, gy = dy + dw*0.45; ctx.beginPath(); ctx.arc(gx, gy, 12, 0, 7); ctx.fill(); ctx.stroke(); for(let k = 0; k < 6; k++){ const a = k*Math.PI/3 + hazardT*0.02; ctx.beginPath(); ctx.moveTo(gx + Math.cos(a)*12, gy + Math.sin(a)*12); ctx.lineTo(gx + Math.cos(a)*18, gy + Math.sin(a)*18); ctx.stroke(); } }   // a cog on it: the mill
     ctx.restore(); }
@@ -8829,6 +9169,11 @@ function ctfDrawDark(){
   ctx.save(); ctx.globalAlpha = Math.min(1, k)*0.95;
   const g = ctx.createRadialGradient(sx, sy, r0, sx, sy, r1); g.addColorStop(0, 'rgba(6,4,14,0)'); g.addColorStop(1, 'rgba(6,4,14,1)');
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);   // clear inside the light, black beyond it
+  // the lit things in the dark (the plan: the star-chart room's "glowing constellation ledges are the only lit things"; the wine cellar's lanterns mark its racks): a star or a lantern inside a dark area glows through it
+  if(!M._glow){ const dk = M.zones.filter(z=>z.type === 'dark'); M._glow = (M.decor || []).filter(d=>(d.kind === 'star' || d.kind === 'lantern') && dk.some(z=>d.x + d.w/2 >= z.x && d.x + d.w/2 <= z.x + z.w && d.y + d.h/2 >= z.y && d.y + d.h/2 <= z.y + z.h)); }
+  for(const d of M._glow){ const X = W/2 + zm*(d.x + d.w/2 - camX - W/2), Y = H/2 + zm*(d.y + d.h/2 - camY - H/2), R = (d.kind === 'star' ? 46 : 70)*zm; if(X < -R || X > W + R || Y < -R || Y > H + R) continue;
+    const gl = ctx.createRadialGradient(X, Y, 1, X, Y, R); gl.addColorStop(0, d.kind === 'star' ? 'rgba(255,243,176,0.95)' : 'rgba(255,214,110,0.9)'); gl.addColorStop(0.3, d.kind === 'star' ? 'rgba(255,243,176,0.35)' : 'rgba(255,214,110,0.3)'); gl.addColorStop(1, 'rgba(255,240,180,0)');
+    ctx.fillStyle = gl; ctx.fillRect(X - R, Y - R, 2*R, 2*R); }
   ctx.restore();
 }
 
