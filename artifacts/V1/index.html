@@ -40982,11 +40982,16 @@ function chainOpen(t, f){ return !!f && t.hitstun > 0 && t._chainBy === f.idx &&
 // frames for a 3% jab up to HITSTOP_MAX for an 18% heavy (hitStopFrames). Only those two: never the match, the clock, anyone
 // else, a shot or a boss. While held, a fighter's frame does not run at all (step), so their stun, cooldowns, move timers and
 // grace all wait, and the timing between the two is the same after it as before. The rules:
-//   - a swing, a dash, a body -- anything a fighter lands during their own frame (STEP_F) -- holds the attacker and the target;
-//   - a shot holds only the target, and the shot flies on (shots are moved after the fighters, outside anyone's frame);
+//   - a swing, a dash, a body -- anything a fighter lands during their own frame (STEP_F) within HITSTOP_REACH of them -- holds the
+//     attacker and the target;
+//   - a shot holds only the target, and the shot flies on (shots are moved after the fighters, outside anyone's frame); so does a
+//     hit a fighter lands from farther off than HITSTOP_REACH in their own frame -- a beam smash (up to 900 px long), an instant zap
+//     like Lightning's Chain Bolt -- which is a shot that happens to resolve at once;
 //   - a move that hits more than once holds once, on its first hit (hitStopKey: the move, _atkSeq, and its multi-hit, _comboTok),
 //     so a spin does not crawl; a move that strikes in a string of wind-ups (Bonesaw's three strokes, each a new _atkSeq so it can
-//     link) is one move too: the strokes share the first wind-up of the string (_wuRoot);
+//     link) is one move too: the strokes share the first wind-up of the string (_wuRoot). A later hit of a move that held them
+//     already under another key -- a spin up-special's aura after its own hit, Goo's spit after his swallow -- holds 1 frame at most
+//     ("1 frame per later tick at most": hitStopMove);
 //   - a boss is never held; the fighter who hits one is, and that fighter's grace record on the boss waits with them (bossGraceNote);
 //   - never in RUNNING!, never while a Final Smash plays, never for a tick (burn, poison, bleed, a shot's lingering damage: opts.tick),
 //     and never for damage from no fighter (an arena hazard, a boss, an assist trophy).
@@ -41001,30 +41006,41 @@ function hitStopOff(){
   for(const f of fighters) if(f._fs) return true;   // a Final Smash is playing
   return false;
 }
+// How far off (px between the two bodies) a hit landed in the attacker's own frame may be and still hold them. Every melee hit lands
+// inside it -- the widest, a burst smash (Gust: 120 + 32 around its user's middle), about 130 past their body; the ranged things that
+// resolve in the shooter's own frame (beam smashes, instant zaps) were found holding their shooter from 160 px off.
+const HITSTOP_REACH = 150;
+function hitStopNear(f, t){ return Math.hypot(t.x - f.x, t.y - f.y) - (t.r||0) - (f.r||0) <= HITSTOP_REACH; }
 let HITSTOP_WU = 0;
 function hitStopKey(f){
   const w = f._wuRoot;
   if(w) return 'w' + (w.hsId || (w.hsId = ++HITSTOP_WU));   // a wind-up going off: the string it belongs to
   return (f._atkSeq||0) + ':' + (f._comboTok||0);
 }
-// The attacker, once a move. Returns how many frames they are held from the next frame on (0: not held).
-function hitStopSelf(f, dmg){
+// The move a hit belongs to, under all its keys: the move (_atkSeq), or for a wind-up going off, the move that started its string.
+function hitStopMove(f){ const w = f._wuRoot; return w ? (w.seq||0) : (f._atkSeq||0); }
+// The attacker, once a move. Returns how many frames they are held from the next frame on (0: not held). `t`, what was hit: a hit
+// landed from beyond HITSTOP_REACH is a shot's, and holds only its target.
+function hitStopSelf(f, dmg, t){
   if(!f || f !== STEP_F || !(dmg > 0) || hitStopOff()) return 0;
-  const key = hitStopKey(f);
+  if(t && !hitStopNear(f, t)) return 0;
+  const key = hitStopKey(f), mv = hitStopMove(f);
   if(f._hsOwn === key) return f._hsAt === hazardT ? (f._hitStop||0) : 0;   // this move held them already (a second target in the same frame shares it)
-  f._hsOwn = key; f._hitStop = hitStopFrames(dmg); f._hsAt = hazardT;
+  const n = f._hsMv === mv ? 1 : hitStopFrames(dmg);   // a later hit of a move that held them already: 1 frame at most
+  f._hsOwn = key; f._hsMv = mv; f._hitStop = Math.max(f._hitStop||0, n); f._hsAt = hazardT;   // (Math.max: a longer hold from a hit they took earlier this same frame stands)
   return f._hitStop;
 }
 // A fighter `t` hit by `from` (applyHit, not a tick): the target is held, once for each of the attacker's moves, and the attacker too
-// if it was their own frame.
+// if it was their own frame and the hit was within reach.
 function hitStopHit(t, from, dmg){
   if(!from || !(dmg > 0) || t.dead || from === t || fighters[from.idx] !== from || hitStopOff()) return;   // (a fighter's hit: a boss's, an assist's and a hazard's hold no one)
-  const key = hitStopKey(from);
+  const key = hitStopKey(from), mv = hitStopMove(from);
   if(!(t._hsBy === from.idx && t._hsKey === key)){
+    const n = (t._hsBy === from.idx && t._hsMv === mv) ? 1 : hitStopFrames(dmg);   // a later hit of a move that held them already: 1 frame at most
     if(!(t._hitStop > 0)) t._hsAt = hazardT;   // (held from the next frame; one already held stays held)
-    t._hitStop = Math.max(t._hitStop||0, hitStopFrames(dmg)); t._hsBy = from.idx; t._hsKey = key;
+    t._hitStop = Math.max(t._hitStop||0, n); t._hsBy = from.idx; t._hsKey = key; t._hsMv = mv;
   }
-  hitStopSelf(from, dmg);
+  hitStopSelf(from, dmg, t);
 }
 // One frame of being held: counted down, and a person's buttons noted for the frame it ends (a remote player's press is latched
 // for one frame only, so it is read here or lost).
@@ -45300,7 +45316,7 @@ function startWindup(f, frames, fire, color, sh){
   if(f._windup) return;              // already committed to one; a second press is simply eaten
   // `falls` pins the wind-up to this life: every KO path bumps _falls, so a ring started just
   // before a KO can never go off at the respawn point, whichever respawn route ran.
-  f._windup = { t: frames, t0: frames, fire: fire, color: color || f.color, falls: f._falls||0, sh: sh || null, root: f._wuRoot || null };   // (root: the wind-up this one was started from, for a move that strikes in strokes -- HIT FREEZE)
+  f._windup = { t: frames, t0: frames, fire: fire, color: color || f.color, falls: f._falls||0, sh: sh || null, root: f._wuRoot || null, seq: f._atkSeq||0 };   // (root: the wind-up this one was started from, for a move that strikes in strokes; seq: the move that started it -- HIT FREEZE)
 }
 // set the fighter's vertical dash velocity from the directions they were holding at cast time
 function applyDashVY(f, upSpeed, downSpeed){
@@ -47201,7 +47217,7 @@ function bossGraceBlocks(s, f, strict){
 function bossGraceNote(s, f, dmg){
   const R = bossGraceRec(s, f, true);
   stampHit(R, dmg, f, false);
-  const k = hitStopSelf(f, dmg);
+  const k = hitStopSelf(f, dmg, s);
   if(k > 0) R._hold = k;
 }
 // A boss hurt by a shot or a dash: damageSummon's own branches for a caller with no point to shove it from. Returns what it took.

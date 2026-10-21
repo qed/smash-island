@@ -230,6 +230,66 @@ describe('the hit freeze ("Yes, tiny")', () => {
     expect(r.tHeld, 'and so is the foe').toBe(r.k);
   });
 
+  it('a later hit of a move that held them already holds 1 frame at most: a spin up-special\'s aura after its hit, Goo\'s spit after his swallow', () => {
+    const r = run(`
+      var go = function(name, keys){
+        var S = mk(name, 300, 0, 0, 1); fighters = [S, T, B]; step();
+        S.x = T.x - S.r - T.r - 6; S.y = gy - S.r; S.vx = 0; S.vy = 0; S.controller = 'local'; S.spCd = 0; S.atkCd = 0; S.invuln = 0; S._hitStop = 0;
+        T.invuln = 0; T._graceLeft = 0; T.hitstun = 0; T._hitStop = 0; T._hsKey = null; T._hsBy = -1; T._hsMv = null; T.pct = 0;
+        var held = 0, tHeld = 0, hits = [], last = T.pct;
+        for (var i = 0; i < 70; i++) {
+          if (i === 0) keys.forEach(function(k){ down[KEYS[k]] = true; });
+          step(); pin(); if (i === 0) for (var k in down) delete down[k];
+          if (S._hsHeld === hazardT) held++; if (T._hsHeld === hazardT) tHeld++; if (T.pct > last + 1e-9) { hits.push(+(T.pct - last).toFixed(2)); last = T.pct; }
+        }
+        return { held: held, tHeld: tHeld, hits: hits, k: hits.length ? hitStopFrames(hits[0]) : -1 };
+      };
+      return { bell: go('Bell', ['special', 'jump']), goo: go('Goo', ['special']) };
+    `);
+    expect(r.bell.hits.length, 'Bell\'s up-special hits, then its aura ticks').toBeGreaterThanOrEqual(2);
+    expect(r.bell.held, 'Bell: the hit\'s freeze, then 1 frame for the aura (it was the hit\'s 3, then the aura\'s 2)').toBe(r.bell.k + 1);
+    expect(r.bell.tHeld, 'and the foe the same').toBe(r.bell.k + 1);
+    expect(r.goo.hits, 'Goo swallows (2) and spits (6)').toEqual([2, 6]);
+    expect(r.goo.held, 'Goo: the swallow\'s 2 frames and 1 for the spit (it was 2 + 3)').toBe(r.goo.k + 1);
+    expect(r.goo.tHeld, 'and the foe the same').toBe(r.goo.k + 1);
+  });
+
+  it('a hit landed far off in the attacker\'s own frame -- a beam smash -- holds only the target, as a shot does', () => {
+    const r = run(`
+      var unit = function(gap){
+        [A, T].forEach(function(f){ f._hitStop = 0; f._hsOwn = null; f._hsKey = null; f._hsMv = null; f._hsBy = -1; f.invuln = 0; f._graceLeft = 0; f.hitstun = 0; });
+        T.x = A.x + A.r + T.r + gap; T.y = A.y; A._atkSeq = (A._atkSeq || 0) + 1; STEP_F = A; applyHit(T, 10, 0, 0, A); STEP_F = null; T.x = x0; T.y = y0;
+        return [A._hitStop || 0, T._hitStop || 0];
+      };
+      var out = { near: unit(20), reach: unit(HITSTOP_REACH), far: unit(HITSTOP_REACH + 40) };
+      var R = mk('Ruler', 400, 0, 0, 1); fighters = [R, T, B]; R.controller = 'local'; R.invuln = 0; R.smCd = 0; T.invuln = 0; T._graceLeft = 0; T._hitStop = 0; T.pct = 0;
+      T.x = R.x + R.r + T.r + 200; x0 = T.x;
+      down[KEYS.smash] = true; step(); pin(); for (var k in down) delete down[k];
+      var rHeld = 0, tHeld = 0;
+      for (var i = 0; i < 120; i++) { step(); pin(); if (R._hsHeld === hazardT) rHeld++; if (T._hsHeld === hazardT) tHeld++; }
+      out.beam = { hit: T.pct > 0, rHeld: rHeld, tHeld: tHeld };
+      return out;
+    `);
+    expect(r.near, 'a swing from 20 px: both, 4 frames').toEqual([4, 4]);
+    expect(r.reach, 'from as far as HITSTOP_REACH: both still').toEqual([4, 4]);
+    expect(r.far, 'from beyond it: only the target').toEqual([0, 4]);
+    expect(r.beam.hit, 'Ruler\'s beam smash lands from 200 px').toBe(true);
+    expect(r.beam.rHeld, 'and Ruler is not held').toBe(0);
+    expect(r.beam.tHeld, 'the target is').toBeGreaterThan(0);
+  });
+
+  it('a fighter already held longer by a hit taken earlier in the same frame keeps that hold when a move of theirs lands', () => {
+    const r = run(`
+      A._atkSeq = (A._atkSeq || 0) + 1; B._atkSeq = (B._atkSeq || 0) + 1; B.x = A.x - A.r - B.r - 4;
+      STEP_F = B; applyHit(A, 18, 0, 0, B); STEP_F = null; var first = A._hitStop;
+      STEP_F = A; applyHit(T, 3, 0, 0, A); STEP_F = null;
+      return { first: first, after: A._hitStop, t: T._hitStop };
+    `);
+    expect(r.first, 'B\'s 18% holds A 6').toBe(6);
+    expect(r.after, 'A\'s own 3% landing in A\'s frame does not cut it to 2').toBe(6);
+    expect(r.t, 'the jab holds its target 2').toBe(2);
+  });
+
   it('a boss hit holds the hitter, never the boss, and the hitter\'s grace on the boss waits with them', () => {
     const r = run(`
       SETTINGS.mode = 'boss'; fighters = [A]; summons = [];
