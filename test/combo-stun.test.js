@@ -65,7 +65,7 @@ describe('the stun ("Flat +1/10 s")', () => {
     const r = run(`
       var stun = function(dmg, opts){ T.hitstun = 0; T._chainBy = -1; T.invuln = 0; T._graceLeft = 0; T._hitStop = 0; applyHit(T, dmg, 0, 0, A, opts); return T.hitstun; };
       return { s3: stun(3), s10: stun(10), s18: stun(18), s40: stun(40), mv: stun(4, { stun: 22, mvKey: 'ft' }), tick: stun(4, { tick: true }),
-               g5: hitGraceFrames(5, null), g60: hitGraceFrames(60, null), gTick: hitGraceFrames(5, null, true) };
+               g5: hitGraceFrames(5, A), g60: hitGraceFrames(60, A), gTick: hitGraceFrames(5, A, true) };
     `);
     expect(r.s3, 'a 3% jab (was 9)').toBe(15);
     expect(r.s10, 'a 10% hit (was 16)').toBe(22);
@@ -76,6 +76,26 @@ describe('the stun ("Flat +1/10 s")', () => {
     expect(r.g5, 'grace for a 5% hit (was 12)').toBe(18);
     expect(r.g60, 'grace\'s cap (was 24)').toBe(30);
     expect(r.gTick, 'a tick keeps its grace').toBe(12);
+  });
+});
+
+describe('a hit from no fighter keeps the stun and grace it had', () => {
+  // The +6 is a fighter's: a combo is made of fighters' hits. The bosses' timings are built on the old numbers: MePhone4's FIST THINGY
+  // and Cobs's SCREEN CRACKER throw their second punch 26 frames after the first, "past the 24-frame hit grace" (boss-mephone4).
+  it('a boss\'s shot, a hazard (no one), an assist trophy: 9 frames for 3%, 16 for 10%, grace 12 for 5% and capped at 24', () => {
+    const r = run(`
+      var holds = 0, hit = function(dmg, from){ T.hitstun = 0; T._chainBy = -1; T.invuln = 0; T._graceLeft = 0; T._hitStop = 0; applyHit(T, dmg, 0, 0, from); holds += T._hitStop || 0; return [T.hitstun, T.invuln]; };
+      var boss = { team: -1, idx: -2 }, assist = { team: 2, idx: -2, _asKey: 'a1' };
+      return { hz3: hit(3, null), boss10: hit(10, boss), as5: hit(5, assist), boss60: hit(60, boss), g5: hitGraceFrames(5, null), g60: hitGraceFrames(60, boss),
+               held: holds, fighter5: hit(5, A) };
+    `);
+    expect(r.hz3, 'a hazard\'s 3%: stun 9, grace 11').toEqual([9, 11]);
+    expect(r.boss10, 'a boss\'s 10%: stun 16, grace 15').toEqual([16, 15]);
+    expect(r.as5, 'an assist trophy\'s 5%: stun 11, grace 12').toEqual([11, 12]);
+    expect(r.boss60, 'the caps: 24 and 24').toEqual([24, 24]);
+    expect([r.g5, r.g60]).toEqual([12, 24]);
+    expect(r.held, 'and none of them holds anyone (the hit freeze is a fighter\'s too)').toBe(0);
+    expect(r.fighter5, 'a fighter\'s 5%, for the difference: 6 more of each').toEqual([17, 18]);
   });
 });
 

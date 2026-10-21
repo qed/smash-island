@@ -40971,7 +40971,12 @@ const SELF_STUN_SCALE = 0.6;                      // cost.stun freezes movement 
 // them into a position where i can combo relentlessly, and then i dont make a mistake that lets them get away, then I
 // should be rewarded for that, right?" A combo ends when the attacker misses, is too slow, or the knockback (which grows
 // with the target's damage) carries the foe out of reach. _chain still counts the links (a string's length).
+// The +6 is on a FIGHTER's hit (hitStunPlus): combos are made of fighters' hits. A hit from no fighter -- a boss's, an arena
+// hazard's, an assist trophy's -- stuns and protects as long as it did, because the bosses' own timings are built on that:
+// MePhone4's FIST THINGY and Cobs's SCREEN CRACKER throw their second punch 26 frames after the first, "past the 24-frame hit
+// grace", and with a boss hit's grace grown to 30 the first glove's grace swallowed the second (boss-mephone4).
 const HIT_STUN_PLUS = 6;
+function hitStunPlus(from, tick){ return (!tick && from && fighters[from.idx] === from) ? HIT_STUN_PLUS : 0; }
 function chainOpen(t, f){ return !!f && t.hitstun > 0 && t._chainBy === f.idx && t._chainSeq !== f._atkSeq; }
 // HIT FREEZE ("Yes, tiny" -- the owner, 2026-10-20). A hit that lands holds the two fighters in it still for a moment: HITSTOP_MIN
 // frames for a 3% jab up to HITSTOP_MAX for an 18% heavy (hitStopFrames). Only those two: never the match, the clock, anyone
@@ -47135,20 +47140,21 @@ function hardInvuln(t){ return t.invuln > 16 && t.invuln > (t._graceLeft||0); }
 // raised so a big hit still buys more room than a small one. Comeback scaling: a designated fighter's attacks impose less
 // hit-grace (down to a floor), so their pokes chain better the more they've died / KO'd.
 // COMBOS: grace grows by the stun's HIT_STUN_PLUS, cap and all, so it still covers a hit's stun exactly as much as it did. A tick
-// (a shot's lingering damage, a poison cloud: opts.tick) is not an attack's hit, and keeps the stun and the grace it had.
+// (a shot's lingering damage, a poison cloud: opts.tick) is not an attack's hit, and keeps the stun and the grace it had; so does a
+// hit from no fighter (a boss, a hazard, an assist trophy: hitStunPlus).
 function hitGraceFrames(dmg, from, tick){
-  const plus = tick ? 0 : HIT_STUN_PLUS;
-  let grace = Math.round(9 + plus + dmg*0.6);        // ~18 for a 5-dmg poke, ~26 for an 18-dmg hit, capped at 30 (ticks: 12, 20, 24)
+  const plus = hitStunPlus(from, tick);
+  let grace = Math.round(9 + plus + dmg*0.6);        // a fighter's: ~18 for a 5-dmg poke, ~26 for an 18-dmg hit, capped at 30 (ticks and no fighter's: 12, 20, 24)
   if(from && from.kit && COMEBACK[from.kit.special]){ grace = Math.max(COMEBACK_IFRAME_FLOOR + plus, grace - comebackPoints(from)); }   // (the floor moves too: 9, was 3)
   return Math.min(24 + plus, grace);
 }
-function hitStunFrames(dmg, tick){ return Math.max(4, Math.round(Math.min(24, 6 + dmg))) + (tick ? 0 : HIT_STUN_PLUS); }   // 15 for a 3% jab (was 9), 30 at the cap (was 24)
+function hitStunFrames(dmg, from, tick){ return Math.max(4, Math.round(Math.min(24, 6 + dmg))) + hitStunPlus(from, tick); }   // a fighter's: 15 for a 3% jab (was 9), 30 at the cap (was 24)
 // `t` is anything with a fighter's invuln / hitstun / chain / grace fields: a fighter, or a boss's record of one attacker.
 function stampHit(t, dmg, from, isTick, stunOvr, mvKey){
   let chained = (!isTick && from && t._chainBy === from.idx && t.hitstun > 0) ? (t._chain||0) + 1 : 0;
   if(mvKey && chained > 0 && t._chainSeq === from._atkSeq) chained--;   // a moveset move's own second hit (a spin that hits twice) is not another link of the chain
   if(!isTick){ t._chainBy = from ? from.idx : -1; t._chain = chained; t._chainSeq = from ? from._atkSeq : -1; }
-  t.hitstun = stunOvr ? Math.max(4, Math.round(stunOvr)) + (isTick ? 0 : HIT_STUN_PLUS) : hitStunFrames(dmg, isTick);   // (stunOvr: a moveset move's own stun, +6 like every hit's: COMBOS)
+  t.hitstun = stunOvr ? Math.max(4, Math.round(stunOvr)) + hitStunPlus(from, isTick) : hitStunFrames(dmg, from, isTick);   // (stunOvr: a moveset move's own stun, +6 like every fighter's hit: COMBOS)
   const grace = hitGraceFrames(dmg, from, isTick);
   t.invuln = Math.max(t.invuln, grace);
   t._graceBy = from ? from.idx : -1; t._graceTok = from ? (from._comboTok||0) : 0;

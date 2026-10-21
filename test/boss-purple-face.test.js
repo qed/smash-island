@@ -622,18 +622,15 @@ describe('TORTURE TIME!: the bugs land once, and never inside the stomach', () =
       expect(a.ids, 'one attack id for the burst and its bugs').toBe(1);
       expect(a.hits, `${tag}: one bug at most`).toBeLessThanOrEqual(1);
       expect(a.pct, `${tag}: a quarter of a boss hit and no more`).toBeLessThanOrEqual(a.bug + 1e-6);
-      expect(a.maxRun, `${tag}: one stun, not a chain of them`).toBeLessThanOrEqual(14 + 6);   // (restated for COMBOS, the owner 2026-10-20: "Flat +1/10 s" -- one hit's stun is 6 longer)
+      expect(a.maxRun, `${tag}: one stun, not a chain of them`).toBeLessThanOrEqual(14);
       if (a.hits) reached++;
       worst = Math.max(worst, c.hits);
     }
     expect(rows[0][3].n, 'the bugs are still thrown: eighteen in phase 1').toBe(18);
     expect(rows.filter(([ph]) => ph === 2)[0][3].n, 'and twenty-four in phase 2').toBe(24);
     expect(reached, 'the bugs do land on a fighter the glass did not take').toBeGreaterThanOrEqual(8);
-    expect(worst, 'the control: without the cap the same bugs land more than once').toBeGreaterThanOrEqual(2);   // (restated for COMBOS, the owner 2026-10-20: grace +6 turns more of the uncapped bugs away -- up to two land, it was three)
-    // (restated for COMBOS, the owner 2026-10-20: "Flat +1/10 s" on every hit's stun, and grace +6 with it so it covers the stun as it did --
-    // the longer grace now turns an uncapped bug's second landing away until the first stun is all but over, so the control's longest stun
-    // is 18 frames, where it chained into 36 before; the cap still holds a fighter to one bug, above)
-    expect(Math.max(...rows.map(([, , , , c]) => c.maxRun)), 'and they still stun: 18 frames at the longest').toBeGreaterThanOrEqual(18);
+    expect(worst, 'the control: without the cap the same bugs land more than once').toBeGreaterThanOrEqual(3);
+    expect(Math.max(...rows.map(([, , , , c]) => c.maxRun)), 'and chain their stuns into a lock').toBeGreaterThanOrEqual(30);
   });
 
   it('a fighter in the stomach takes only the stomach\'s damage: 10% a second, nothing from the bugs that fly through him -- and without the guard they would hit him', async () => {
