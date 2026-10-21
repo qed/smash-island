@@ -4951,6 +4951,7 @@ function ctfRideStep(L){
     else { ride(fl, i); if(fl.st === 1){ fl.hx = fl.x; fl.hy = fl.y; } }
   }
   for(const k of L.keys){ if(k.st !== 0 || k.fall) continue; let i = k.elev; if(i == null){ const e = pick(k.x, k.y); if(!e) continue; i = k.elev = e.i; } ride(k, i); }
+  for(const pr of projectiles){ const q = pr._stuck; if(q && q.e != null && E[q.e]){ pr.x = E[q.e].x + q.ox; pr.y = E[q.e].y + q.oy; } }   // (and a sticky shot stuck on one: shotStick)
 }
 // A piece just built on a moving part rides it (a platform, a wall or a trapdoor only on a lift's car, its foot on the car's top; a prop or a trap where its middle stands on a part or on a piece riding one).
 function ctfEditRide(L, e){
@@ -18913,7 +18914,7 @@ function haAuto(f, sh){
 //   1 a shot in flight (a boss's too: its art was drawn up to 3x what hits, the audit's C row)      2 a trap, armed      3 a trap still falling or arming
 // The host works it out here; a client has none of these fields and reads it from the snapshot (`hz`, netProjectiles).
 function haShotState(pr){
-  if(!pr || !(pr.life > 0) || pr.delay > 0 || pr.turret || pr._metagWall || !(pr.r > 0)) return 0;
+  if(!pr || !(pr.life > 0) || pr.delay > 0 || pr.turret || pr._metagWall || pr._stuck || !(pr.r > 0)) return 0;
   if(!(pr.owner >= 0) && !pr.assist) return ((pr.bossAtk != null || pr.owner === -2) && !pr.trap && !pr.landsTrap && pr.dmg > 0) ? 1 : 0;   // a boss's flying shot (an assist's is pr.assist)
   if(pr.trap){ if(!pr.falling && pr.arm > 0 && pr.arm >= pr.life) return 0; return (pr.falling || pr.arm > 0) ? 3 : 2; }
   return 1;
@@ -41482,6 +41483,7 @@ function step(){
   const liveTurrets = projectiles.filter(p => p.turret && p.life > 0);
   for(const pr of projectiles){
     SMASH_PROJ = pr;   // whatever this shot hits, it hits at its own smash angle (none unless a smash threw it)
+    if(pr._stuck){ shotStuckStep(pr); continue; }   // a sticky shot stuck where it hit (shotStick): it goes where that goes, and hurts nobody
     if(pr.delay>0){ pr.delay--; continue; }   // held back briefly before it starts moving (Morse bursts)
     if(pr.turret){ tickTurret(pr); continue; }   // Tennis Ball's turret shoots; it is never itself a hit
     // HOMING: gently curve toward the nearest valid target (used by Two's mind-read copies).
@@ -41716,6 +41718,7 @@ function step(){
         puff(pr.x,pr.y,pr.color,6);
       }
     }
+    if(pr.sticky && pr.life > 0) shotStick(pr);   // (a fighter it met this frame it hit first)
   }
   SMASH_PROJ = null;
   // projectiles hitting summons (bosses take damage; enemy assists get shoved)
@@ -41726,7 +41729,7 @@ function step(){
       // shots and every other summon-owned kind still skip this loop as before. A mine arms first, as it does for a fighter,
       // and lands the trap number a fighter takes (TRAP_DMG_MULT); a fighter's own trap on a boss is untouched.
       const fromAssist = pr.owner<0 && !!pr.assist;
-      if(pr.life<=0 || pr.delay>0 || (pr.owner<0 && !fromAssist && pr._cherryOil==null)) continue;   // skip expired, delayed or summon-owned shots (the Cherries' oil has no owner index and would trip this)
+      if(pr.life<=0 || pr.delay>0 || pr._stuck || (pr.owner<0 && !fromAssist && pr._cherryOil==null)) continue;   // skip expired, delayed or summon-owned shots (the Cherries' oil has no owner index and would trip this)
       if(fromAssist && pr.trap && (pr.arm>0 || pr.falling)) continue;
       const pd = (fromAssist && pr.trap) ? Math.round(pr.dmg*TRAP_DMG_MULT) : pr.dmg;
       const o=pr.ownerObj;
@@ -43680,6 +43683,31 @@ function shotInWall(pr){
   const o = pr.ownerObj, solids = o && o.team !== undefined ? tpSolids(o) : platRects().filter(p => p.solid);
   for(const p of solids){ if(p.rot) continue; if(pr.x > p.x && pr.x < p.x + p.w && pr.y > p.y && pr.y < p.y + (p.h || 16)) return true; }
   return false;
+}
+// STUCK SHOTS (the owner, 2026-10-21: "everything should stick to moving things"; which things: "Projectiles on hit"). No shot stuck to anything before this: they all flew on or vanished. A shot whose card says it is
+// sticky -- Lollipop's Sticky Sucker (the candy) and Toothpaste's Paste Trap (the glob it flings; its trap is a trap, not a shot) -- now sticks where it hits: in a wall (a solid block, a shut door) it flies into,
+// or on anything that moves that it touches (in Capture the Flag: a lift's car, a ferry's deck, a wheel's paddle, a piece riding one), and stays SHOT_STUCK_LIFE frames (1.5 s), going where the moving thing goes,
+// then is gone. Stuck, it hurts nobody (it is not a trap: nothing an attack leaves rides a platform). A platform that stands still it passes, as every straight shot does; a fighter, a boss or an add it hits as before.
+const SHOT_STUCK_LIFE = 90;
+function shotStick(pr){
+  const r = (pr.r || 8)*0.5, L = SETTINGS.mode === 'ctf' ? CTF.live : null;
+  if(L){
+    for(const e of (L.elevs || [])) if(pr.x > e.x - r && pr.x < e.x + e.w + r && pr.y > e.y - r && pr.y < e.y + 16 + r) return shotStickOn(pr, e.i);
+    for(const p of (L.edits || [])) if(p.elev != null && (ctfEditStructural(p) || (p.kind === 'trapdoor' && !p.open)) && pr.x > p.x - r && pr.x < p.x + p.w + r && pr.y > p.y - r && pr.y < p.y + p.h + r) return shotStickOn(pr, p.elev);
+  }
+  return shotInWall(pr) ? shotStickOn(pr, null) : false;
+}
+function shotStickOn(pr, i){
+  const L = CTF.live, e = i != null && L ? L.elevs[i] : null;
+  pr._stuck = e ? { e:i, ox:pr.x - e.x, oy:pr.y - e.y } : { e:null };
+  pr.vx = 0; pr.vy = 0; pr.grav = false; pr.homing = 0; pr.aimWindow = 0; pr.life = SHOT_STUCK_LIFE;
+  for(let k = 0; k < 4; k++) puff(pr.x, pr.y, pr.color, 3);
+  return true;
+}
+function shotStuckStep(pr){
+  const s = pr._stuck;
+  if(s.e != null){ const L = SETTINGS.mode === 'ctf' ? CTF.live : null, e = L && L.elevs ? L.elevs[s.e] : null; if(!e){ pr.life = 0; return; } pr.x = e.x + s.ox; pr.y = e.y + s.oy; }
+  pr.life--;
 }
 // HOLD THEM STILL (the owner, 2026-10-20, on moving while attacking: "Hold them still"). While a COUNTER stance (countering), a REFLECT stance
 // (reflecting) or an ARMOUR stance -- a brace (braceUp) -- is up, the fighter cannot walk or run and cannot turn: the arrows do nothing on the ground
@@ -49351,7 +49379,7 @@ function doSpecial(f){
         spawnProj(f,{vx:f.face*18,vy:dy*0.5,grav:false,pierce:true,dmg:8,kb:6,r:6,color:'#c0c0c0',life:38}); }
       f.flash=6; f.spCd=35; break; }
     case "sucker": { // Lollipop: sticky projectile that roots the target in place
-      spawnProj(f,{vx:f.face*9,vy:0,grav:false,dmg:5,kb:2,r:9,color:'#c04be0',life:50,root:true}); f.flash=6; f.spCd=67; break; }
+      spawnProj(f,{vx:f.face*9,vy:0,grav:false,dmg:5,kb:2,r:9,color:'#c04be0',life:50,root:true,sticky:true}); f.flash=6; f.spCd=67; break; }
     case "static": { // TV: stunning burst around itself
       startWindup(f, CIRCLE_WINDUP, function(){
       hitArt(f, 'static', { kind:'circle', x:f.x, y:f.y, r:f.r+70-HURT_R0 }, { color:'#8fd0ff' });   // HIT ART: the static's reach
@@ -49426,7 +49454,7 @@ function doSpecial(f){
       f.vx=-f.face*20; f._dashing=Math.max(f._dashing||0,10); f.invuln=Math.max(f.invuln,10); f.flash=10; applyDashVY(f,16,14);
       for(let i=0;i<3;i++) spawnProj(f,{vx:f.face*(2-i),vy:-2,grav:true,dmg:5,kb:4,r:7,color:'#e8c84b',life:70,landsTrap:true});  f.spCd=60; break; }   // the splinters settle where they land and wait for pursuers
     case "paste": { // Toothpaste: fling a sticky glob that roots on hit, and leave a trap (+comeback reach)
-      spawnProj(f,{vx:f.face*10,vy:-1,grav:false,dmg:12,kb:6,r:12+comebackRange(f)*0.4,color:'#f0f0f0',life:50,root:true});   // stronger active rooting projectile
+      spawnProj(f,{vx:f.face*10,vy:-1,grav:false,dmg:12,kb:6,r:12+comebackRange(f)*0.4,color:'#f0f0f0',life:50,root:true,sticky:true});   // stronger active rooting projectile
       addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:4,kb:2,r:13,color:'#f0f0f0',life:220,trap:true,root:true,arm:14});
       f.flash=8;  f.spCd=55; break; }
     case "rant": { // Dora: RAPID RANT, three hard jabs and the last one launches. It was four of 3.5 on a 23-frame
