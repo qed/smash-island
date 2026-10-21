@@ -92,7 +92,8 @@ describe('V + C while glowing', () => {
       var fired = !!A._fs, id = A.fsId, glow = A.fsGlow;
       down[KEYS.smash] = false; down[KEYS.special] = false;
       var starts = 0, prev = !!A._fs;
-      for (var i=0;i<130;i++){ step(); if (A._fs && !prev) starts++; prev = !!A._fs; }
+      // (+ the intro's stop and the catch, before the row itself: the owner, 2026-10-20, "Catch, then cinematic" / "Freeze + zoom intro" / "Slow-mo KO")
+      for (var i=0;i<130 + FS_INTRO + FS_CATCH;i++){ step(); if (A._fs && !prev) starts++; prev = !!A._fs; }
       // pressing again after it is over is the ordinary finisher: nothing glows
       down[KEYS.smash] = true; down[KEYS.special] = true; for (var k=0;k<4;k++) step();
       return { fired: fired, id: id, glow: glow, starts: starts, over: !A._fs && !A.fsId, again: !!A._fs };`);
@@ -127,16 +128,17 @@ describe('V + C while glowing', () => {
   });
 
   it('the default lands on a foe inside the drawn circle (a stock at moderate %) and misses one outside it', () => {
+    // (+ the intro's stop, the catch, and the slow-mo that a KO-ing launch plays in: the owner, 2026-10-20, "Catch, then cinematic" / "Freeze + zoom intro" / "Slow-mo KO")
     const near = arena(110, `
       A.fsGlow = 900; fsTryFire(A);
-      for (var i=0;i<160;i++) step();
+      for (var i=0;i<160 + FS_INTRO + FS_CATCH + FS_SLOW.frames;i++) step();
       return { pct: D.pct, stocks: D.stocks };`, { pct: 60 });
     // KO-level (the owner, 2026-10-18: "smash balls feel like they dont do enough damage"; chosen: "KO-level"): the surge's 48% (24
     // before) on top of 60, the fighter's own finisher at its own size, and a launch: out (the stock is gone, the % starts over)
     expect(near).toEqual({ pct: 0, stocks: 8 });
     const far = arena(520, `
       A.fsGlow = 900; fsTryFire(A);
-      for (var i=0;i<160;i++) step();
+      for (var i=0;i<160 + FS_INTRO + FS_CATCH + FS_SLOW.frames;i++) step();
       return { pct: D.pct, stocks: D.stocks };`, { pct: 60 });
     expect(far.pct).toBe(60);
     expect(far.stocks).toBe(9);
@@ -192,7 +194,7 @@ describe('online', () => {
 
   it('a Final Smash in progress is on the wire (id, frames in, tell length)', () => {
     const r = arena(300, `
-      A.fsGlow = 900; fsTryFire(A); for (var i=0;i<12;i++) step();
+      A.fsGlow = 900; fsTryFire(A); for (var i=0;i<FS_INTRO + FS_CATCH + 12;i++) step();   // (12 frames into the row, after the intro and the catch: the owner, 2026-10-20, "Catch, then cinematic" / "Freeze + zoom intro" / "Slow-mo KO")
       var o = JSON.parse(JSON.stringify(serializeState(true))).fighters[0];
       return { id: o.fsId, t: o.fsT, wind: o.fsWind, dur: o.fsDur };`);
     expect(r.id).toBe('surge');
@@ -249,7 +251,8 @@ describe('batches A, B and C: the unique Final Smashes', () => {
   ];
   const play = (name, dx, pct) => arena(dx, `
     A.fsGlow = 900; fsTryFire(A); var id = A.fsId, kind0 = null, kinds = {};
-    for (var i = 0; i < 200; i++) { step(); if (A._atkKind) kinds[A._atkKind] = 1; if (i > 150) { D.invuln = 0; } }
+    // (+ the intro, the catch and a KO's slow-mo: the owner, 2026-10-20, "Catch, then cinematic" / "Freeze + zoom intro" / "Slow-mo KO")
+    for (var i = 0; i < 200 + FS_INTRO + FS_CATCH + FS_SLOW.frames; i++) { step(); if (A._atkKind) kinds[A._atkKind] = 1; if (i > 150 + FS_INTRO + FS_CATCH) { D.invuln = 0; } }
     var over = !A._fs && !A.fsId;
     return { id: id, over: over, hurt: D.pct !== ${pct} || D.stocks < 9, stocks: D.stocks, pct: D.pct, kinds: Object.keys(kinds) };`, { pct, a: name, ax: dx < 0 ? 800 : 130 });
   for (const [name, id, near, far] of rows) {
@@ -267,9 +270,9 @@ describe('batches A, B and C: the unique Final Smashes', () => {
   }
   it('Flower flings petals, and more between them 16 frames on', () => {
     const r = arena(400, `
-      A.fsGlow = 900; fsTryFire(A); var n = [], q = [];
-      for (var i = 0; i < 70; i++) { step(); n.push(projectiles.filter(function(p){ return p.owner === A.idx && p.color === '#ff6fae'; }).length); }
-      return { first: n[36], second: Math.max.apply(null, n) };`, { a: 'Flower' });
+      A.fsGlow = 900; fsTryFire(A); var n = [], q = [], o = FS_INTRO + FS_CATCH;   // (the row begins after the intro and the catch: the owner, 2026-10-20, "Catch, then cinematic" / "Freeze + zoom intro" / "Slow-mo KO")
+      for (var i = 0; i < 70 + o; i++) { step(); n.push(projectiles.filter(function(p){ return p.owner === A.idx && p.color === '#ff6fae'; }).length); }
+      return { first: n[36 + o], second: Math.max.apply(null, n) };`, { a: 'Flower' });
     expect(r.first).toBeGreaterThanOrEqual(6);   // (the ones thrown down into the floor break on it at once)
     expect(r.second).toBeGreaterThan(r.first);
     expect(r.second).toBeLessThanOrEqual(24);
@@ -295,7 +298,8 @@ function batchSuite(title, rows){
   describe(title, () => {
     const play = (name, dx, pct) => arena(dx, `
       A.fsGlow = 900; fsTryFire(A); var id = A.fsId, kinds = {};
-      for (var i = 0; i < 220; i++) { step(); if (A._atkKind) kinds[A._atkKind] = 1; if (i > 170) { D.invuln = 0; } }
+      // (+ the intro, the catch and a KO's slow-mo: the owner, 2026-10-20, "Catch, then cinematic" / "Freeze + zoom intro" / "Slow-mo KO")
+      for (var i = 0; i < 220 + FS_INTRO + FS_CATCH + FS_SLOW.frames; i++) { step(); if (A._atkKind) kinds[A._atkKind] = 1; if (i > 170 + FS_INTRO + FS_CATCH) { D.invuln = 0; } }
       var over = !A._fs && !A.fsId;
       return { id: id, over: over, hurt: D.pct !== ${pct} || D.stocks < 9, stocks: D.stocks, pct: D.pct, kinds: Object.keys(kinds) };`, { pct, a: name, ax: dx < 0 ? 800 : 130 });
     for (const [name, id, near, far] of rows) {

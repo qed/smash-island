@@ -18997,7 +18997,8 @@ function interpEnd(){
 // draw(), blended or not
 function drawView(blended, client){
   if(!blended){ draw(); return; }
-  interpBegin(clamp(STEP_CLOCK.owed/STEP_CLOCK.ms, 0, 1), client);
+  const sb = client ? null : fsSlowBlend();   // (a Final Smash's slow-mo KO: by the slow clock, so the slowed steps glide: fsSlowBlend)
+  interpBegin(sb != null ? sb : clamp(STEP_CLOCK.owed/STEP_CLOCK.ms, 0, 1), client);
   try{ draw(); } finally { interpEnd(); }
 }
 
@@ -19026,8 +19027,8 @@ function loop(){
     } else {
       // however many steps the clock owes (none on a frame that came early), then one picture of where the match is now
       const nn = (CTF.spec && CTF.spec.speed > 1 && SETTINGS.mode === 'ctf') ? n*CTF.spec.speed : n;   // (a spectated Capture the Flag match can run fast: F)
-      for(let i = 0; i < nn && running && !paused; i++){ if(INTERP && FIXED_STEP) interpRecord(false); step(); }
-      drawView(ip, false); ageView(n); clipCapture(n);
+      for(let i = 0; i < nn && running && !paused; i++){ if(INTERP && FIXED_STEP && !fsSlowSkips()) interpRecord(false); step(); }   // (fsSlowSkips: a step the Final Smash slow-mo skips)
+      drawView(ip || (INTERP && FIXED_STEP && fsSlowBlend() != null), false); ageView(n); clipCapture(n);
       if(role==="host" && n > 0) window.NET.broadcastState();   // host relays authoritative state, once for each frame that moved the match
     }
   }catch(err){
@@ -19329,7 +19330,7 @@ function pickUpItem(f, it){
 //     hit is a radius or a lane that was drawn during the tell. The sim uses its own dice (fsRand), so a seeded match is the same
 //     with or without the system. Everything a client needs to DRAW one is on the fighter: fsId, fsT (frames in), fsWind, fsDur.
 const FSBALL = { r:22, hp:34, life:1500, glow:1200, grace:12, minHit:4, maxHit:24 };
-const FS = { next:0, seq:0, rng:1, lastT:0, by:null };   // by: the fighter whose Final Smash frame is running (fsRun), for fsHitBy
+const FS = { next:0, seq:0, rng:1, lastT:0, by:null, freeze:0, fz:-1, slow:0, slowN:0, slowAcc:0, sf:-1, sx:0, sy:0 };   // by: the fighter whose Final Smash frame is running (fsRun), for fsHitBy; freeze .. sy: the intro and the slow-mo (CATCH, THEN CINEMATIC)
 // KO-LEVEL. The owner, 2026-10-18: "smash balls feel like they dont do enough damage. I got one, and sidewalky went from 9 percent to 39
 // percent". Chosen: "KO-level" (big damage AND big knockback, so a Final Smash usually KOs anyone above ~60%, like in Smash), and knockback
 // "Yes, same amount": it rises with the damage. Every hit a Final Smash deals (a frame of its own, or a shot it threw: fsHitBy) lands
@@ -19376,8 +19377,8 @@ function fsAllowed(){
 function fsReset(){
   SMASHBALL = null; FS.seq = 0; FS.rng = ((0x9e3779b9 ^ Math.imul(fighters.length, 2654435761)) >>> 0) || 1;
   FS.next = Math.round(fsInterval()*0.55*(0.8 + 0.4*fsRand()));   // the first one comes a little early
-  for(const f of fighters){ f.fsGlow = 0; f.fsId = ''; f.fsT = 0; f._fs = null; }
-  FS.lastT = hazardT;
+  for(const f of fighters){ f.fsGlow = 0; f.fsId = ''; f.fsT = 0; f._fs = null; f.fsC = 0; f.fsLk = 0; f._fsLock = null; f._fsVolDone = null; }
+  FS.lastT = hazardT; FS.freeze = 0; FS.slow = 0; FS.fz = -1;
 }
 function fsClampPos(x, y){ const gy = groundY(); return { x:clamp(x, 50, WW - 50), y:clamp(y, 70, Math.max(120, isBig() ? WH - 320 : gy - 70)) }; }
 function fsSpawn(){
@@ -19470,7 +19471,8 @@ function fsGrant(f){
 // The holder is KO'd (eliminate): the glow goes with the stock, and a fresh ball may come a few seconds on.
 function fsOnKo(f){
   const had = f.fsGlow > 0;
-  f.fsGlow = 0; f._fs = null; f.fsId = ''; f.fsT = 0;
+  if(f._fs) fsLockAll(f, f._fs);   // whoever their catch held is let go (CATCH, THEN CINEMATIC)
+  f.fsGlow = 0; f._fs = null; f.fsId = ''; f.fsT = 0; f.fsC = 0;
   if(had && !SMASHBALL) FS.next = 150 + Math.floor(fsRand()*120);
 }
 // ---- firing -------------------------------------------------------------------------------------------------------------
@@ -19486,25 +19488,42 @@ function fsTryFire(f){
   if(!fsCanFire(f)) return false;
   if(f._mv) mvCancel(f);
   const d = f._fsForce || fsOf(f);   // (_fsForce: a test's way to play the default whoever the fighter is)
-  f._fs = { d:d, hit:new Set(), t:0, bonus:{} };   // bonus: idx -> the extra % this Final Smash has dealt them (fsKbMult)
+  f._fs = { d:d, hit:new Set(), t:0, bonus:{}, c:0, held:[], cs:null };   // bonus: idx -> the extra % this Final Smash has dealt them (fsKbMult); c, held, cs: the catch (CATCH, THEN CINEMATIC)
   f.fsId = d.id; f.fsT = 0; f.fsWind = d.wind; f.fsDur = d.dur; f.fsAx = Math.round(f.x); f.fsAy = Math.round(f.y); f.fsBx = f.fsBy = f.fsCx = f.fsCy = null;
-  f.fsGlow = 0; f.invuln = Math.max(f.invuln, 2); f.fnCd = Math.max(f.fnCd || 0, 30);
-  if(d.start) d.start(f, f._fs);
+  f.fsGlow = 0; f.invuln = Math.max(f.invuln, 2); f._lag = Math.max(f._lag || 0, 3); f.fnCd = Math.max(f.fnCd || 0, 30);
+  // CATCH, THEN CINEMATIC: the catch area, from where they stand (drawn from now, landing FS_CATCH frames after the intro), and the
+  // intro: the match stops (fsTimeGate). The row itself (its start, its tell) begins once the catch has landed (fsRun).
+  f.fsC = FS_CATCH; f._fs.cs = fsCatchOf(d, f);
+  FS.freeze = FS_INTRO; FS.fz = f.idx; FS.slow = 0;
+  hitArt(f, 'fscatch', f._fs.cs, { tell:true, p:0, color:f.color, world:true });
   return true;
 }
 function fsRun(f){
   const st = f._fs, d = st.d;
-  if(f.dead){ f._fs = null; f.fsId = ''; return; }
+  if(f.dead){ fsLockAll(f, st); f._fs = null; f.fsId = ''; f.fsC = 0; return; }
+  f.invuln = Math.max(f.invuln, 2); f._lag = Math.max(f._lag || 0, 3);   // untouchable and still while it plays
+  if(st.c < FS_CATCH){   // THE CATCH (CATCH, THEN CINEMATIC): its area drawn, filling in; on its last frame it lands, and the row begins
+    f.vx *= 0.7; if(!f.onground) f.vy = 0;
+    st.c++; f.fsC = FS_CATCH - st.c;
+    if(st.c < FS_CATCH){ hitArt(f, 'fscatch', st.cs, { tell:true, p:(FS_INTRO + st.c)/(FS_INTRO + FS_CATCH), color:f.color, world:true }); return; }
+    hitArt(f, 'fscatch', st.cs, { color:f.color, world:true, fade:10 });
+    fsCatch(f, st);
+    f.fsAx = Math.round(f.x); f.fsAy = Math.round(f.y);
+    if(d.start) d.start(f, st);
+    return;
+  }
   const t = st.t;
-  f.invuln = Math.max(f.invuln, 2); f._lag = Math.max(f._lag || 0, 3); f.fsT = t;   // untouchable and still while it plays
+  f.fsT = t;
   if(t < d.wind){ f.vx *= 0.7; if(!f.onground) f.vy = 0; }
   FS.by = f;   // every hit this frame deals, and every shot it throws, is the Final Smash's (fsHitBy)
   try { d.tick(f, st, t); } finally { FS.by = null; }
+  fsLockStep(f, st);   // the locked foes stay where the row left them; any it is done with is let go
   if(++st.t >= d.dur) fsEnd(f);
 }
 function fsEnd(f){
   const st = f._fs; if(st && st.d.end) st.d.end(f, st);
-  f._fs = null; f.fsId = ''; f.fsT = 0; f.fsWind = 0; f.fsDur = 0;
+  if(st) fsLockAll(f, st);   // the lock ends with the Final Smash (CATCH, THEN CINEMATIC)
+  f._fs = null; f.fsId = ''; f.fsT = 0; f.fsWind = 0; f.fsDur = 0; f.fsC = 0;
   if(!(st && st.d.exposed)){ f._lag = Math.max(f._lag || 0, 6); f.invuln = Math.max(f.invuln, 10); }   // (a row marked `exposed` ends with no grace at all)
   fsArm();
 }
@@ -19532,12 +19551,277 @@ function fsFoeNear(f, R){
   for(const t of fighters) if(!t.dead && t.team !== f.team && !hardInvuln(t) && !(t._ghostT > 0) && hurtGap(t, f.x, f.y) < R) return true;
   return false;
 }
+// ---- CATCH, THEN CINEMATIC (the owner, 2026-10-20) --------------------------------------------------------------------------------
+// "and final smashes are baddddd" -- asked what was bad: "they are hard to land WELL", "Hard to land", "Look boring". Chosen: "Catch, then
+// cinematic", "Freeze + zoom intro" and "Slow-mo KO" (not wanted: bigger effects, a colour backdrop). One layer round every row:
+//   1. THE INTRO. When a Final Smash fires the match stops for FS_INTRO frames (half a second): nothing moves and nothing counts down
+//      (step() runs none of the match: fsTimeGate), the screen darkens and the camera closes in on the holder, who is lit in their own
+//      colour (fsCamFocus, fsDrawScreen). No words.
+//   2. THE CATCH. The row's catch area (its `catch`: the reach of its first hit, a circle or a box, see each shape) is drawn at its true
+//      edge from the first frame of the intro (HIT ART: a dashed tell filling in), and FS_CATCH frames after the match moves again (a sixth
+//      of a second) it lands: every foe whose body touches it is LOCKED (fsCatch). It misses a foe outside it, and a foe who cannot be
+//      hurt on that frame (a dodge's, a dash's or a respawn's invulnerability: hardInvuln, the rule every Final Smash hit already has), a
+//      ghost, and one already held. A counter stance does not stop it: a Final Smash beats a counter, as its hits always have (the stance
+//      is spent), and armor does not either (the catch takes it, as a grab does). A Yoyleberry or a cloud form keeps working for the
+//      time it has left: it runs down while they are held.
+//   3. THE CINEMATIC. Then the row plays as it always has (its tell, its hits). A locked foe cannot move or act (their own frame does not
+//      run: fsLockHold), stays where they were caught, and nobody but the holder can touch them (applyHit). The row's own pulls and pins
+//      still move them. Its hits land on them where they stand (each shape brings its hits to a locked foe: a fan turns a shot of each
+//      volley onto them, a stream is aimed at them, a lock-on marks them, a rain goes for them first). Each hit's launch is kept, and the
+//      let-go is one blow, the row's biggest (fsLockKeep, fsLockStun), when the row is done with them (fsLockDone), when the Final Smash
+//      ends, or when the holder is KO'd: never later than the row's own length.
+//      Miss the catch and nothing locks: the Final Smash still plays, and whoever is outside it can dodge it as before.
+//   4. THE SLOW-MO KO. A launch by a Final Smash that will carry the foe out (fsKoFlight: their flight, untouched, past a blast line) plays
+//      FS_SLOW.frames frames at FS_SLOW.k speed, the camera snapping in on the spot the blow landed and following them only a little
+//      (FS_SLOW.follow), so they are seen flying out of the close-up, as in Smash; a KO by one it did not see coming gets a shorter one,
+//      on the spot they went out. On screen the slowed steps are blended (fsSlowBlend): a smooth slow motion, not a stutter.
+// The KO-level numbers are untouched (FS_DMG_MULT, FS_KB, FS_KO_FIX). Online the host runs all of it; a client gets the lock (fsLk), the
+// catch phase (fsC), the intro and the slow-mo (s.fsx), and the catch area as hit art. Training never has a Smash Ball; a replay is the
+// frames as they were drawn.
+const FS_INTRO = 30, FS_CATCH = 10;
+const FS_INTRO_ZOOM = 1.55;
+const FS_SLOW = { k:0.25, frames:60, zoom:1.5, follow:0.3 };
+const FS_RAIN_CATCH = 360;   // a row that drops its hits on the nearest foes wherever they are: its catch is this circle round the holder
+const FS_LOCK_BEAT = 3;      // frames a locked foe is held after the row's last hit on them, before that hit's launch is let go
+const FS_LOCK_STUN = 30;     // the let-go's stun at most (fsLockStun)
+// A row's `lockGrace`: the hit-grace each of its hits leaves on the foe its catch holds, in place of the hit's own (hitGraceFrames). For the
+// streams whose shots come faster than that grace: a foe they carry along is carried out of the grace before the next shot arrives, a
+// locked foe is not, and would take fewer of them than a clean hit gives. It is the stream's own rhythm (every shot lands) or twice it
+// (every other one), whichever is the clean hit's count or the nearest above it (the all-row measure).
+// FS_CATCH_KB: id -> the let-go's own launch multiplier, for the rows the all-row measure found out of line once caught (Pen at 60% not
+// carried out, or at 0% carried out), as FS_KO_FIX does for a clean hit (and in the same way: a cut holds at every %, a boost grows in
+// with the launch, none at FS_KB.from%, all of it from FS_KB.at%). Only a locked foe's let-go: a hit on anyone else is as it was.
+const FS_CATCH_KB = { chainbolt:1.15, matter:0.7, fryfan:2, permanentrecord:1.6, lemonspit:1.3, rant:0.9 };
+function fsCatchKb(t, L){
+  const fix = FS_CATCH_KB[L.st.d.id]; if(!fix) return 1;
+  const p = Math.max(0, (t.pct || 0) - (L.st.bonus[t.idx] || 0)), r = clamp((p - FS_KB.from)/(FS_KB.at - FS_KB.from), 0, 1);
+  return fix < 1 ? fix : 1 + (fix - 1)*r;
+}
+let FS_VIEW = { on:false };  // render-only: the close-up draw() worked out for this picture (fsDrawScreen reads it)
+// The catch area for a row, from the holder where they stand now. A row without its own: a circle of its reach.
+function fsCatchOf(d, f){ return d.catch ? d.catch(f) : { kind:'circle', x:f.x, y:f.y, r:Math.min(d.reach || 200, 400) }; }
+// Does fighter t's body touch the catch area? (hit art's own rule: touch the drawn shape with any part of you and you are in it)
+function fsCatchTouch(sh, t){
+  if(!sh) return false;
+  if(sh.kind === 'circle') return hurtGap(t, sh.x, sh.y) < sh.r;
+  if(sh.kind === 'box'){ const cy = hurtCY(t), nx = clamp(t.x, sh.x, sh.x + sh.w), ny = clamp(cy, sh.y, sh.y + sh.h); return (nx === t.x && ny === cy) || hurtGap(t, nx, ny) < 0; }
+  if(sh.kind === 'fan') return shapeHits(sh, t);
+  return false;
+}
+// Who the catch may take: a foe, alive, not untouchable this frame (hardInvuln), not a ghost, not held by someone, not locked already.
+function fsCatchable(f, t){ return !t.dead && t.idx !== f.idx && t.team !== f.team && !hardInvuln(t) && !(t._ghostT > 0) && t._heldBy == null && !t._fsLock && !t._fs && !inOwnTeamZone(t); }
+// The same area a little smaller, for the CPU's "will it land?" (fsBotInput): a foe has the catch's frames to step out of it.
+function fsCatchInset(sh, k){
+  if(!sh) return sh;
+  if(sh.kind === 'circle') return { kind:'circle', x:sh.x, y:sh.y, r:sh.r*k };
+  if(sh.kind === 'box'){ const dx = sh.w*(1 - k)/2, dy = sh.h*(1 - k)/2; return { kind:'box', x:sh.x + dx, y:sh.y + dy, w:sh.w - 2*dx, h:sh.h - 2*dy }; }
+  if(sh.kind === 'fan') return Object.assign({}, sh, { r1:sh.r1*k });
+  return sh;
+}
+// The catch lands: every foe touching it is locked to this Final Smash. How many it took.
+// A row that aims at one foe (a lock-on's marker, a stream thrown at them) or at its k nearest (a rain) catches only that many
+// (catchMax), the nearest first by its marker's own rule (nearestFoe: across, and twice up or down); the rest are free, as before.
+function fsCatch(f, st){
+  const C = fighters.filter((t)=> fsCatchable(f, t) && fsCatchTouch(st.cs, t)), max = st.d.catchMax || C.length;
+  if(C.length > max){ const near = (t)=> Math.abs(t.x - f.x) + 2*Math.abs(t.y - f.y); C.sort((a, b)=> near(a) - near(b)); C.length = max; }
+  for(const t of C) fsLockOn(f, st, t);
+  if(C.length){ shake(6); f.flash = 8; }
+  return C.length;
+}
+function fsLockOn(f, st, t){
+  mvCancel(t);   // a grab, a hold or a move in progress is let go
+  // ...and what would carry them on over their launch once let go: a dash, a lunge, a dive, a stall, a teleport, a tackle, a stance
+  t._windup = null; t._sm = null; t._dashing = 0; t._nail = null; t._stall = null; t._plunge = null; t._hyperT = 0; t._tp = null; t._tpHang = 0;
+  t._gotcha = null; t._holdT = 0; t._attract = null; t._spPend = 0; t._smQ = null; t.smashHold = 0;
+  t.countering = 0; t._riposte = false; t.reflecting = 0; t.vx = 0; t.vy = 0;
+  t.armor = 0;   // ...and the armor a stance or a special had on: the catch takes it, as a grab does (holdStart). A buff with time left on it
+                 // (a Yoyleberry, a cloud form) runs down while they are held, as it would have (fsLockHold)
+  t._fsVolDone = null;
+  t._fsLock = { by:f.idx, st:st, x:t.x, y:t.y, until:hazardT + (st.d.dur || 120) + 40, hit:false, vx:0, vy:0, hs:0, last:-1 };
+  t.fsLk = f.idx + 1;   // on the wire: whose catch holds them (+1, so 0 is nobody)
+  st.held.push(t.idx);
+  t.flash = 10;
+  for(let i = 0; i < 10; i++) puff(t.x, t.y, i % 2 ? f.color : '#fff', 5);
+}
+// The foe this holder's catch holds (the first, if it took several). Read from the wire flag, so a client's drawing agrees with the host.
+function fsLockedOf(f){ if(!f) return null; for(const t of fighters) if(!t.dead && t.fsLk === f.idx + 1) return t; return null; }
+function fsIsLockedBy(t, f){ return !!t && !!f && t.fsLk === f.idx + 1; }
+// A locked foe's frame, in place of their own (step()). False: the lock is over this frame and their own frame runs.
+function fsLockHold(t){
+  const L = t._fsLock, h = fighters[L.by];
+  if(!h || h.dead || h._fs !== L.st || hazardT > L.until){ fsLockOff(t); return false; }   // never a stuck foe
+  if(t.invuln > 0) t.invuln--;   // a hit's grace and stun run down as they would (a spray lands as many shots on them as it ever did, and
+  if(t._graceLeft > 0) t._graceLeft--;   // a later hit is a link of a chain only if it would have been one: CHAIN_DECAY)
+  if(t.hitstun > 0) t.hitstun--;
+  if(t.armor > 0) t.armor--;   // and so do the defensive buffs (their own frame, which counts them down, does not run): a Yoyleberry
+  if(t.cloud > 0) t.cloud--;   // or a cloud form that would have run out halfway through the Final Smash does run out
+  if(t._yoyleT > 0) t._yoyleT--;
+  return true;
+}
+// Let go: where the row left them, with the launch of its last hit on them (none, if it never touched them).
+function fsLockOff(t, quiet){
+  const L = t._fsLock; if(!L) return;
+  t._fsLock = null; t.fsLk = 0; t._fsVolDone = L.vols ? { st:L.st, vols:L.vols } : null;   // (the volleys that landed stay landed: fsVolleyLanded)
+  if(quiet || t.dead) return;
+  t.x = L.x; t.y = L.y;
+  if(L.hit){ const k = fsCatchKb(t, L); t.vx = L.vx*k; t.vy = L.vy*k; t.hitstun = Math.max(t.hitstun || 0, fsLockStun(L)); t.onground = false; t._fsHitT = hazardT; if(fsKoFlight(t)) fsSlowStart(t); }
+  else { t.vx = 0; t.vy = 0; }
+}
+function fsLockAll(f, st, quiet){ for(const t of fighters) if(t._fsLock && (t._fsLock.by === f.idx || t._fsLock.st === st)) fsLockOff(t, quiet); }
+// Is the row done with this locked foe? lockEnd 'one' (a row that hits a foe once): a beat after that hit. A number (the row frame its
+// last hit is thrown): from then, a beat after their last hit, once none of its shots is still on the way to them. Neither: its end.
+function fsLockDone(f, st, t){
+  const L = t._fsLock, end = st.d.lockEnd;
+  if(!L.hit) return typeof end === 'number' && st.t >= end + FS_LOCK_BEAT && !fsShotsAt(st, t);   // (its last hit is thrown and none is on the way to them: let go, unhurt)
+  if(hazardT - L.last < FS_LOCK_BEAT) return false;
+  if(end === 'one') return true;
+  if(st.d.volleys && L.vols && Object.keys(L.vols).filter((v)=> L.vols[v] >= fsVolHits(st)).length >= st.d.volleys) return true;   // (a fan: every volley has landed on them)
+  if(typeof end === 'number') return st.t >= end && !fsShotsAt(st, t);
+  return false;
+}
+function fsShotsAt(st, t){
+  const gy = groundY(), R0 = hurtReach(t) + 12, ty = hurtCY(t);
+  for(const p of projectiles){
+    if(!(p.life > 0) || p._fsSt !== st) continue;
+    // its path from here, by the shot step's rule (move, then fall; a bouncing one comes back up off the ground): does it still reach them?
+    let x = p.x, y = p.y, vx = p.vx || 0, vy = p.vy || 0;
+    const g = (p.grav || p.bounce) ? 0.34 : 0, R = (p.r || 10) + R0, n = Math.min(90, p.life);
+    for(let i = 0; i < n; i++){
+      x += vx; y += vy; vy += g;
+      if(p.bounce && !isBig() && y > gy - 6 && vy > 0) vy = -vy*0.8;
+      if(Math.hypot(t.x - x, ty - y) < R) return true;
+    }
+  }
+  return false;
+}
+// After the row's frame: where its pulls and pins left the locked foes is where they stay; let go of any it is done with.
+function fsLockStep(f, st){
+  for(const i of st.held){
+    const t = fighters[i]; if(!t || !t._fsLock || t._fsLock.st !== st) continue;
+    if(t.dead){ fsLockOff(t, true); continue; }
+    t._fsLock.x = t.x; t._fsLock.y = t.y;
+    if(fsLockDone(f, st, t)) fsLockOff(t);
+  }
+}
+// A fan's volleys are each a wave of their own: on the foe the catch holds, each lands once -- the first of its shots to reach them goes
+// through the grace an earlier volley left (a locked foe cannot use the gaps the next volley fills), and the rest of that volley never
+// lands on them, while they are held or once they are let go and flying (fsVolleyLanded): the let-go is the one blow.
+// (A row's lockShots: that many shots of each volley land on them -- Spikey's two spikes -- the rest do not.)
+function fsVolHits(st){ return (st && st.d && st.d.lockShots) || 1; }
+function fsVolleyThrough(t, pr){ const L = t._fsLock; return !!(L && pr && pr._fsVol != null && pr._fsSt === L.st && !(((L.vols && L.vols[pr._fsVol]) || 0) >= fsVolHits(L.st))); }
+function fsVolleyLanded(t, pr){
+  if(!pr || pr._fsVol == null) return false;
+  const V = t._fsLock || t._fsVolDone;
+  return !!(V && pr._fsSt === V.st && V.vols && (V.vols[pr._fsVol] || 0) >= fsVolHits(V.st));
+}
+// The end of the step: nothing but the row moves a locked foe (another fighter's shove, a hold, a push zone).
+function fsLockPin(){ for(const t of fighters){ const L = t._fsLock; if(L && !t.dead){ t.x = L.x; t.y = L.y; } } }
+// The holder's hit on a locked foe (applyHit, once its launch and stun are worked out; dmg: the row's own size of it): kept for the let-go,
+// not flown yet. The let-go is ONE blow: the row's biggest launch on them (a small shot after the big one does not take its launch away),
+// with the stun the row's real blows on them would give (fsLockStun: at most FS_LOCK_STUN). Unlocked, a row
+// of many hits carried its foe a little further with each one; locked, they all land on one spot, and this is that distance.
+function fsLockKeep(t, dmg){
+  const L = t._fsLock, v = Math.hypot(t.vx, t.vy);
+  if(SMASH_PROJ && SMASH_PROJ._fsVol != null && SMASH_PROJ._fsSt === L.st) { const V = L.vols || (L.vols = {}); V[SMASH_PROJ._fsVol] = (V[SMASH_PROJ._fsVol] || 0) + 1; }   // (this volley has landed: fsVolleyThrough)
+  (L.blows || (L.blows = [])).push([v, t.hitstun || 0]);
+  if(!L.hit || v >= Math.hypot(L.vx, L.vy)){ L.vx = t.vx; L.vy = t.vy; L.hs = t.hitstun || 0; L.ch = t._chain || 0; }
+  L.dmg = (L.dmg || 0) + (dmg || 0);
+  L.hit = true; L.last = hazardT; t.vx = 0; t.vy = 0;
+  const lg = L.st.d.lockGrace;   // (a stream's own rhythm on the foe it holds: fsLockGrace)
+  if(lg != null){ t.invuln = Math.min(t.invuln, lg); t._graceLeft = Math.min(t._graceLeft || 0, lg); }
+}
+// The let-go's stun: the biggest blow's own, and the flight each of the row's other real blows (half its launch or more: not a pin's
+// pokes) would have added, in proportion to its launch -- at most FS_LOCK_STUN. A blow that was not a link of a chain (CHAIN_DECAY: a
+// pin's last throw after its pokes is one) is the cinematic's finisher, and stuns at least as long as the biggest single hit (24).
+function fsLockStun(L){
+  const vb = Math.hypot(L.vx, L.vy); let s = L.hs || 0, skip = true;
+  for(const b of (L.blows || [])){ if(skip && b[0] === vb && b[1] === L.hs){ skip = false; continue; } if(vb > 0 && b[0] >= 0.5*vb) s += b[1]*b[0]/vb; }
+  if(!L.ch) s = Math.max(s, hitStunFrames(99, 0));
+  return Math.min(FS_LOCK_STUN, Math.round(s));
+}
+// ---- the clock: the intro's stop and the slow-mo ----------------------------------------------------------------------------------
+// Called first in step(): true while this step is one the match does not run (the intro, or a step the slow-mo skips).
+function fsTimeGate(){
+  if(!(FS.freeze > 0) && !(FS.slow > 0)) return false;
+  if(hazardT < FS.lastT || !running){ FS.freeze = 0; FS.slow = 0; return false; }   // a new match began
+  if(FS.freeze > 0){
+    FS.freeze--;
+    const h = fighters[FS.fz];
+    if(h && h._fs && h._fs.cs) hitArt(h, 'fscatch', h._fs.cs, { tell:true, p:(FS_INTRO - FS.freeze)/(FS_INTRO + FS_CATCH), color:h.color, world:true });
+    updateCamera();
+    return true;
+  }
+  FS.slow--;
+  FS.slowAcc += FS_SLOW.k;
+  if(FS.slowAcc >= 1){ FS.slowAcc -= 1; return false; }
+  return true;   // (the camera too waits for the next step that runs: the picture blends to it, fsSlowBlend)
+}
+// Will the next step() be one the slow-mo skips? (loop(): a skipped step records no positions to blend from)
+function fsSlowSkips(){ return !(FS.freeze > 0) && FS.slow > 0 && FS.slowAcc + FS_SLOW.k < 1; }
+// Through the slow-mo, how far the picture is from the last step that ran to the next one (drawView blends by it); null otherwise.
+function fsSlowBlend(){ return !(FS.freeze > 0) && FS.slow > 0 ? clamp(FS.slowAcc, 0, 1) : null; }
+// Will this launch carry t past a blast line before they can steer (while their stun lasts)? The slow-mo's cue. A launch that only
+// carries them out if they then fail to steer back gets the shorter slow-mo at the KO itself (fsKoSlow).
+function fsKoFlight(t){
+  let x = t.x, y = t.y, vx = t.vx || 0, vy = t.vy || 0;
+  const g = GRAV*(stage.hazard === 'lowgrav' ? 0.7 : 1), fall = (t.st || STAT_ONE).fall, gy = groundY(), n = Math.min(90, (t.hitstun || 0) + 4);
+  for(let i = 0; i < n; i++){
+    vy += vy > 0 ? g*fall : g; x += vx; y += vy;
+    if(x < -120 || x > WW + 120 || y > WH + 160 || y < -260) return true;
+    if(!isBig() && vy > 0 && y >= gy - t.r) return false;
+  }
+  return false;
+}
+function fsSlowStart(t, frames){ if(FS.slow > 0 || FS.freeze > 0){ if(FS.sf === t.idx) t._fsHitT = null; return; } t._fsHitT = null; FS.slow = FS.slowN = frames || FS_SLOW.frames; FS.slowAcc = 0; FS.sf = t.idx; FS.sx = t.x; FS.sy = t.y; }
+// A KO by a Final Smash that the slow-mo did not see coming (eliminate): a shorter one, on the spot they went out.
+function fsKoSlow(t){
+  if(t._fsHitT == null || hazardT - t._fsHitT > 180 || FS.slow > 0) return;
+  t._fsHitT = null;
+  FS.slow = FS.slowN = Math.round(FS_SLOW.frames*0.6); FS.slowAcc = 0; FS.sf = -1; FS.sx = clamp(t.x, 0, WW); FS.sy = clamp(t.y, 0, WH);
+}
+// The close-up: the holder through the intro, the launched foe through the slow-mo ({x, y, z, k}: the point, the zoom, how far in).
+function fsCamFocus(){
+  if(FS.freeze > 0){ const h = fighters[FS.fz]; if(!h || h.dead) return null; const e = FS_INTRO - FS.freeze; return { x:h.x, y:h.y, z:FS_INTRO_ZOOM, k:Math.min(1, (e + 1)/7)*Math.min(1, FS.freeze/9) }; }
+  if(FS.slow > 0){   // the spot the blow landed, a little way after the foe (FS_SLOW.follow): it snaps in, and eases out over the last frames
+    const t = fighters[FS.sf]; let x = FS.sx, y = FS.sy; if(t && !t.dead){ x += (t.x - x)*FS_SLOW.follow; y += (t.y - y)*FS_SLOW.follow; }
+    const e = (FS.slowN || FS_SLOW.frames) - FS.slow; return { x:x, y:y, z:FS_SLOW.zoom, k:Math.min(1, (e + 1)/5)*Math.min(1, FS.slow/16) }; }
+  return null;
+}
+// draw(): the close-up, as a transform over the camera's own (zoom: the view's), kept inside what the camera shows (no edge of the
+// world comes into view). Notes the picture in FS_VIEW for the screen-space overlay.
+function fsCamApply(c, zoom){
+  FS_VIEW.on = false;
+  const fz = fsCamFocus(); if(!fz || !(fz.k > 0.001)) return;
+  const k = fz.k*fz.k*(3 - 2*fz.k), Z = 1 + (fz.z - 1)*k;
+  const px = (fz.x - camX - W/2)*zoom + W/2, py = (fz.y - camY - H/2)*zoom + H/2;
+  const cx = clamp(px + (W/2 - px)*k, W - (W - px)*Z, px*Z), cy = clamp(py + (H/2 - py)*k, H - (H - py)*Z, py*Z);
+  c.translate(cx, cy); c.scale(Z, Z); c.translate(-px, -py);
+  FS_VIEW = { on:true, Z:Z, zoom:zoom, cx:cx, cy:cy, px:px, py:py, k:k };
+}
+// A world point's place on the screen in this picture (the close-up included), and px per world px there.
+function fsToScreen(x, y){
+  const V = FS_VIEW, zoom = V.on ? V.zoom : viewZoom();
+  const bx = (x - camX - W/2)*zoom + W/2, by = (y - camY - H/2)*zoom + H/2;
+  return V.on ? { x:V.cx + V.Z*(bx - V.px), y:V.cy + V.Z*(by - V.py), s:zoom*V.Z } : { x:bx, y:by, s:zoom };
+}
+// The bind on a locked foe, in the holder's colour (world space, over the fighters: fsDrawFx). A client draws it from fsLk.
+function fsDrawLock(t){
+  const h = fighters[t.fsLk - 1]; if(!h) return;
+  const now = performance.now(); if(!t._fsLkT) t._fsLkT = now;
+  const u = clamp((now - t._fsLkT)/150, 0, 1), snap = 1 + 1.6*(1 - u)*(1 - u);   // closing in over 150 ms
+  const c = ctx, R = (t.r + 14)*snap, a0 = hazardT*0.06;
+  c.save(); c.translate(t.x, t.y); c.lineCap = 'round';
+  fsRing(c, 0, 0, R, h.color, 3, 0.85);
+  for(let i = 0; i < 4; i++){ const a = a0 + i*Math.PI/2; c.globalAlpha = 0.9; c.strokeStyle = '#1c1c1c'; c.lineWidth = 7; c.beginPath(); c.arc(0, 0, R, a, a + 0.5); c.stroke(); c.strokeStyle = h.color; c.lineWidth = 4; c.stroke(); }
+  c.restore(); c.globalAlpha = 1;
+}
 // ---- the default: a supercharged, cinematic version of the fighter's own finisher ------------------------------------
 // A tell (the ground circle closes in for FS_DEFAULT.wind frames: walk out of it), then a burst in that circle, with the fighter's own
 // finisher thrown in the middle of it. Everyone without a row of their own plays this one, in their own colour.
 const FS_SURGE_R = 240;
 const FS_DEFAULT = {
   id:'surge', wind:40, dur:92, reach:FS_SURGE_R,
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FS_SURGE_R }; }, lockEnd:'one',   // CATCH: the surge's circle
   tick(f, st, t){
     if(t === 0){ shake(6); armAtk(f, this.wind, 'fsgather'); for(let i = 0; i < 10; i++) puff(f.x, f.y, f.color, 6); }
     if(t === this.wind){
@@ -19574,7 +19858,7 @@ const FS_DEFAULT = {
   },
 };
 // ---- the CPU ----------------------------------------------------------------------------------------------------------
-// Run after the CPU's own rules each frame. A glowing CPU holds its Final Smash until it will hit (a foe in the drawn reach), or
+// Run after the CPU's own rules each frame. A glowing CPU holds its Final Smash until its catch will land (a foe in the catch area), or
 // until the glow is nearly out and a foe is anywhere near; a third of them mind their own fight when a ball is out, and nobody
 // walks away from a foe at arm's length to chase it.
 function fsBotInput(f, inp){
@@ -19583,8 +19867,12 @@ function fsBotInput(f, inp){
   if(f.fsGlow > 0){
     inp.fin = false;
     if(fsRebounds(f)) return inp;   // infected: it would come back on them (fsRebounds)
-    const d = fsOf(f), ready = d.ai ? d.ai(f) : fsFoeNear(f, d.reach || 200);
-    if(ready || (f.fsGlow < 150 && fsFoeNear(f, 420))){ inp.fin = true; inp.attack = false; inp.special = false; inp.smash = false; }
+    // CATCH, THEN CINEMATIC: it fires when the catch will take someone -- a foe well inside the catch area now (a little smaller than
+    // drawn: the catch lands a sixth of a second after the intro, and they may step out)
+    const d = f._fsForce || fsOf(f), cs = fsCatchInset(fsCatchOf(d, f), 0.85);
+    let ready = false;
+    for(const t of fighters) if(fsCatchable(f, t) && fsCatchTouch(cs, t)){ ready = true; break; }
+    if(ready || (f.fsGlow < 150 && fsFoeNear(f, 420))){ inp.fin = true; inp.attack = false; inp.special = false; inp.smash = false; inp.left = false; inp.right = false; inp.jump = false; }   // (and stands still to fire: a step this frame would turn it, or lift it, before the catch is laid out)
     return inp;
   }
   const b = SMASHBALL;
@@ -19647,37 +19935,58 @@ function fsDrawAura(f){
 }
 // World-space effects of a Final Smash in progress (its tell and its blast), over the fighters.
 function fsDrawFx(){
+  for(const f of fighters){ if(f.fsLk > 0 && !f.dead) fsDrawLock(f); else f._fsLkT = 0; }   // CATCH, THEN CINEMATIC: the bind on a locked foe
   for(const f of fighters){
-    if(!f.fsId || f.dead) continue;
+    if(!f.fsId || f.dead || f.fsC > 0) continue;   // (through the catch the catch area is what is drawn: hit art)
     const d = FINAL_SMASHES[f.name] && FINAL_SMASHES[f.name].id === f.fsId ? FINAL_SMASHES[f.name] : FS_DEFAULT;
     if(d.draw){ ctx.save(); try{ d.draw(f, ctx); }catch(e){} ctx.restore(); }
   }
 }
-// Screen-space: the white flash, the dimmed edges, and the silhouette sweeping across, for the first moments of a Final Smash.
+// Screen-space. THE INTRO (CATCH, THEN CINEMATIC): the screen dark but for the holder, who is lit in their own colour, rings of it
+// closing in on them through the stop; it lifts through the catch, so the catch area reads. THE SLOW-MO KO: the edges darkened. And
+// through a row's tell the dimmed edges, and the white flash on its hit. No words. (The band of the fighter's colour and the silhouette
+// that swept across the screen are gone: the intro is that moment now, and "a colour backdrop" was not wanted.)
 function fsDrawScreen(){
+  const c = ctx, h = FS.fz >= 0 ? fighters[FS.fz] : null;
+  let a = 0;
+  if(FS.freeze > 0) a = Math.min(1, (FS_INTRO - FS.freeze + 1)/5);
+  else if(h && h.fsC > 0 && h.fsId) a = h.fsC/FS_CATCH;
+  if(a > 0.01 && h && !h.dead){
+    const p = fsToScreen(h.x, h.y), R0 = (h.r + 40)*p.s, e = FS.freeze > 0 ? (FS_INTRO - FS.freeze)/FS_INTRO : 1;
+    c.save(); c.globalAlpha = 1;
+    const g = c.createRadialGradient(p.x, p.y, R0*0.9, p.x, p.y, Math.max(R0*3, Math.hypot(W, H)*0.6));
+    g.addColorStop(0, 'rgba(8,4,22,0)'); g.addColorStop(0.2, 'rgba(8,4,22,' + (0.55*a) + ')'); g.addColorStop(1, 'rgba(8,4,22,' + (0.72*a) + ')');
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    c.globalCompositeOperation = 'lighter';   // their colour, glowing round them
+    const gl = c.createRadialGradient(p.x, p.y, R0*0.35, p.x, p.y, R0*1.3);
+    gl.addColorStop(0, 'rgba(0,0,0,0)'); gl.addColorStop(0.72, h.color); gl.addColorStop(1, 'rgba(0,0,0,0)');
+    c.globalAlpha = 0.5*a; c.fillStyle = gl; c.beginPath(); c.arc(p.x, p.y, R0*1.3, 0, 7); c.fill();
+    c.globalCompositeOperation = 'source-over';
+    for(let j = 0; j < 3; j++){   // rings of their colour closing in on them
+      const u = (e*1.5 + j/3) % 1, rr = R0*(1 + 2.4*(1 - u));
+      c.globalAlpha = a*0.85*Math.sin(u*Math.PI); c.strokeStyle = '#1c1c1c'; c.lineWidth = 7; c.beginPath(); c.arc(p.x, p.y, rr, 0, 7); c.stroke();
+      c.strokeStyle = h.color; c.lineWidth = 4; c.stroke();
+    }
+    c.restore();
+  }
+  if(FS.slow > 0){
+    const e = (FS.slowN || FS_SLOW.frames) - FS.slow, a2 = Math.min(1, (e + 1)/5)*Math.min(1, FS.slow/16);
+    c.save(); c.globalAlpha = 1;
+    const g = c.createRadialGradient(W/2, H/2, Math.min(W, H)*0.3, W/2, H/2, Math.max(W, H)*0.72);
+    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(10,0,30,' + (0.5*a2) + ')');
+    c.fillStyle = g; c.fillRect(0, 0, W, H); c.restore();
+  }
   for(const f of fighters){
-    if(!f.fsId || f.dead) continue;
+    if(!f.fsId || f.dead || f.fsC > 0) continue;
     const t = f.fsT || 0, w = f.fsWind || 40;
     if(t > w + 12) continue;
-    const c = ctx; c.save();
+    c.save();
     const dim = t < w ? Math.min(1, t/8) : Math.max(0, 1 - (t - w)/12);
     const g = c.createRadialGradient(W/2, H/2, Math.min(W, H)*0.3, W/2, H/2, Math.max(W, H)*0.75);
     g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(10,0,30,' + (0.5*dim) + ')');
     c.fillStyle = g; c.fillRect(0, 0, W, H);
-    if(t < 28){   // the sweep: a band of the fighter's colour and their dark silhouette crossing the screen
-      const k = t/28, ba = Math.sin(k*Math.PI);
-      c.globalAlpha = 0.8*ba; c.fillStyle = f.color; c.fillRect(0, H*0.38, W, H*0.2);
-      c.globalAlpha = 0.9*ba; c.fillStyle = '#1c1c1c'; c.fillRect(0, H*0.38 - 5, W, 5); c.fillRect(0, H*0.58, W, 5);
-      c.globalAlpha = ba; c.fillStyle = '#fff';
-      for(let i = 0; i < 6; i++){ const ly = H*0.38 + 12 + i*(H*0.2 - 24)/5, lx = ((k*W*1.6 + i*97) % (W + 200)) - 200; c.fillRect(lx, ly, 160 + 40*(i % 3), 3); }
-      const sx = -W*0.1 + k*W*1.2, sy = H*0.48, s = 2.6*f.r/24 + 1.2;
-      c.globalAlpha = Math.min(1, ba*1.6); c.translate(sx, sy); c.scale(s, s);
-      c.fillStyle = '#1c1c1c'; c.strokeStyle = '#fff'; c.lineWidth = 3; roundBlob(0, 0, 24); c.fill(); c.stroke();
-      c.fillStyle = f.color; c.beginPath(); c.arc(-7*f.face, -4, 4, 0, 7); c.arc(7*f.face, -4, 4, 0, 7); c.fill();
-    }
     c.restore();
-    if(t < 6){ c.save(); c.globalAlpha = 0.75*(1 - t/6); c.fillStyle = '#fff'; c.fillRect(0, 0, W, H); c.restore(); }
-    else if(t >= w && t < w + 4){ c.save(); c.globalAlpha = 0.5*(1 - (t - w)/4); c.fillStyle = '#fff'; c.fillRect(0, 0, W, H); c.restore(); }
+    if(t >= w && t < w + 4){ c.save(); c.globalAlpha = 0.5*(1 - (t - w)/4); c.fillStyle = '#fff'; c.fillRect(0, 0, W, H); c.restore(); }
     break;   // one at a time is plenty
   }
 }
@@ -19695,6 +20004,7 @@ function fsHurtMark(f, t){ return t.dead || t.idx === f.idx || t.team === f.team
 // three frames, 55 px apart, 8 a side, each 300 tall and 80 wide. Stand off the marked floor or be above the flames.
 FINAL_SMASHES['Firey'] = {
   id:'inferno', wind:36, dur:96, reach:400,
+  catch(f){ const X = 7*55 + 40 - HURT_R0*0.5, fy = f.y + f.r; return { kind:'box', x:f.x - X, y:fy - 300, w:2*X, h:300 }; }, lockEnd:'one',   // CATCH: the marked floor, as tall as the flames
   start(f, st){ st.fy = f.y + f.r; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     if(t === 0){ shake(5); for(let i = 0; i < 12; i++) puff(f.x, f.y, i % 2 ? '#f0521f' : '#ffd23f', 6); }
@@ -19739,6 +20049,7 @@ FINAL_SMASHES['Firey'] = {
 // for 40 frames (run or jump away faster than that and you are out), and snaps shut on whoever is in its middle.
 FINAL_SMASHES['Leafy'] = {
   id:'void', wind:34, dur:104, reach:300,
+  catch(f){ return { kind:'circle', x:f.x + f.face*150, y:f.y, r:fsPullCatch(330, 100, 40, (d)=> -Math.min(3.2, d)) }; }, lockEnd:'one',   // CATCH: as far round the void as its pull still brings a foe into its middle
   start(f, st){ st.cx = f.x + f.face*150; st.cy = f.y; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     if(t === this.wind) armAtk(f, 44, 'fsgather');
@@ -19778,6 +20089,7 @@ FINAL_SMASHES['Leafy'] = {
 // shrug off (`exposed`: no grace at the end).
 FINAL_SMASHES['Pencil'] = {
   id:'twofour', wind:44, dur:126, reach:300, exposed:true,
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:300 }; }, lockEnd:'one',   // CATCH: the inner ring
   start(f, st){ st.hit2 = new Set(); armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     if(t === 0){ shake(6); for(let i = 0; i < 12; i++) puff(f.x, f.y, i % 2 ? '#f2d84b' : '#a78bfa', 6); }
@@ -19816,6 +20128,7 @@ FINAL_SMASHES['Pencil'] = {
 // the tsunami sweeps out in front of her, 560 px along the floor and 100 tall, hitting everyone in its way, entranced or not.
 FINAL_SMASHES['Puffball'] = {
   id:'trance', wind:40, dur:130, reach:270,
+  catch(f){ return fsBoxAhead(f, HURT_R0 - 10, 560, 90, f.r); }, lockEnd:'one',   // CATCH: the tsunami's path in front of her (it is the hit; the song only stuns)
   start(f, st){ st.wave = false; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -19874,6 +20187,7 @@ FINAL_SMASHES['Puffball'] = {
 // and the rest scattered about them. Keep moving: no single mark is on you for long.
 FINAL_SMASHES['Bow'] = {
   id:'snowbow', wind:36, dur:124, reach:600,
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FS_RAIN_CATCH }; }, lockEnd:36 + 48,   // CATCH: a circle round her; the snowballs go for a locked foe
   start(f, st){ st.n = 0; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -19883,7 +20197,8 @@ FINAL_SMASHES['Bow'] = {
     if(t >= w && t < w + 52 && (t - w) % 4 === 0){
       const foes = fighters.filter(o=>!o.dead && o.team !== f.team);
       if(!foes.length) return;
-      const o = foes[st.n % foes.length], jit = (fsRand() - 0.5)*(st.n % 2 ? 40 : 200);
+      const lk = foes.filter(o=>fsIsLockedBy(o, f)), pool = lk.length ? lk : foes;   // (a locked foe's turn every time: CATCH, THEN CINEMATIC)
+      const o = pool[st.n % pool.length], jit = (fsRand() - 0.5)*(st.n % 2 ? 40 : 200);
       st.n++;
       dropProj(f, clamp(o.x + jit, 30, WW - 30), o.y + o.r, { dmg:12, kb:17, r:22, color:'#eaf6ff', life:150 }, true);
     }
@@ -19909,16 +20224,17 @@ FINAL_SMASHES['Bow'] = {
 // break on a floor; the gaps between them are the way through.
 FINAL_SMASHES['Flower'] = {
   id:'petals', wind:34, dur:100, reach:330,
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:330 }; }, lockEnd:34 + 16, volleys:2,   // CATCH: the petals' reach; each volley is turned so a petal meets a locked foe
   start(f, st){ armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
     if(t === 0){ shake(5); for(let i = 0; i < 10; i++) puff(f.x, f.y, i % 2 ? '#ff6fae' : '#fff', 6); }
     if(t === w || t === w + 16){
       if(t === w){ armAtk(f, 40, 'spin'); shake(9); }
-      const off = t === w ? 0 : Math.PI/12;
+      const off = t === w ? 0 : Math.PI/12, turn = fsFanTurn(f, 12, (i)=> off + i*Math.PI/6, 12, 0);   // (a petal onto a locked foe)
       for(let i = 0; i < 12; i++){
-        const a = off + i*Math.PI/6;
-        addProj({ owner:f.idx, ownerObj:f, x:f.x, y:f.y, vx:Math.cos(a)*12, vy:Math.sin(a)*12, grav:false, dmg:14, kb:18, r:15, color:'#ff6fae', life:55, breaksOnSurface:true });
+        const a = off + i*Math.PI/6 + turn;
+        addProj({ owner:f.idx, ownerObj:f, x:f.x, y:f.y, vx:Math.cos(a)*12, vy:Math.sin(a)*12, grav:false, dmg:14, kb:18, r:15, color:'#ff6fae', life:55, breaksOnSurface:true, _fsVol:t === w ? 0 : 1 });
       }
       for(let i = 0; i < 12; i++) puff(f.x, f.y, '#ff9bc8', 6);
     }
@@ -19947,7 +20263,7 @@ FINAL_SMASHES['Flower'] = {
 // A LOCK-ON Final Smash (Blocky, Pen, Ice Cube, Teardrop) picks its foe by a plain rule on what everyone can see -- the nearest foe in a
 // box about the holder (fsPick) -- and follows them with a marker until `lock` frames before the hit, then the spot is fixed: it is sent
 // as the fighter's fsAx / fsAy, and the tell shows it. Step out of the marked circle in the beat between the lock and the hit and it misses.
-function fsPick(f, rx, ry, fwd){ return nearestFoe(f, rx, ry, o=>!hardInvuln(o) && !(o._ghostT > 0) && !(fwd && (o.x - f.x)*f.face < 0)); }
+function fsPick(f, rx, ry, fwd){ return fsLockedOf(f) || nearestFoe(f, rx, ry, o=>!hardInvuln(o) && !(o._ghostT > 0) && !(fwd && (o.x - f.x)*f.face < 0)); }   // (the foe the catch holds, first: CATCH, THEN CINEMATIC)
 function fsLockAt(f, st, o, fallback){   // fix the spot (ahead of the holder when nobody is in the box)
   f.fsAx = Math.round(o ? o.x : f.x + f.face*fallback); f.fsAy = Math.round(o ? o.y : f.y); st.locked = true;
 }
@@ -19964,6 +20280,7 @@ function fsPin(o, x, y){ if(o.dead) return; o.x = x; o.y = y; o.vx = 0; o.vy = 0
 // The circle in the tell is 230 px; whoever is in it when it closes is caught, floats up for 42 frames helpless, and the pop (22%) throws them.
 FINAL_SMASHES['Bubble'] = {
   id:'yoylecake', wind:34, dur:112, reach:230,
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:230 }; }, lockEnd:'one',   // CATCH: the bubble's circle
   start(f, st){ st.caught = []; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -19972,7 +20289,7 @@ FINAL_SMASHES['Bubble'] = {
       armAtk(f, 44, 'fsburst'); shake(6);
       for(const o of fighters){ if(fsHurtMark(f, o) || o._heldBy != null) continue; if(hurtGap(o, f.x, f.y) < 230){ st.caught.push(o.idx); o.countering = 0; } }
     }
-    if(t >= w && t < w + 42) for(const i of st.caught){ const o = fighters[i]; if(o && !o.dead){ o.vy = -3.2; o.vx *= 0.7; stunFx(o, 3); } }
+    if(t >= w && t < w + 42) for(const i of st.caught){ const o = fighters[i]; if(o && !o.dead){ o.vy = -3.2; o.vx *= 0.7; stunFx(o, 3); if(o._fsLock) o.y -= 3.2; } }   // (a locked foe's own frame does not run: the bubble carries them up)
     if(t === w + 42){
       shake(12);
       for(const i of st.caught){ const o = fighters[i]; if(o && !o.dead){ applyHit(o, 22, (Math.sign(o.x - f.x) || f.face)*6, -22, f); for(let k = 0; k < 14; k++) puff(o.x, o.y, k % 2 ? '#bfe8ff' : '#fff', 6); } }
@@ -20003,6 +20320,7 @@ FINAL_SMASHES['Bubble'] = {
 // (3% rising to 5%) over 56 frames, then the crush (10%, a big launch).
 FINAL_SMASHES['Blocky'] = {
   id:'recoveryloop', wind:36, dur:126, reach:300,
+  catch(f){ return { kind:'box', x:f.x - 300, y:f.y - 210, w:600, h:420 }; }, lockEnd:36 + 56, catchMax:1,   // CATCH: the box the marker looks in
   start(f, st){ st.caught = []; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -20045,6 +20363,7 @@ FINAL_SMASHES['Blocky'] = {
 // 420, fixed 20 frames before the X is complete: stand outside its circle (90 px) by then and the X lands on nothing. It is 30%, thrown hard.
 FINAL_SMASHES['Pen'] = {
   id:'erasure', wind:40, dur:104, reach:420,
+  catch(f){ return { kind:'box', x:f.x - 420, y:f.y - 260, w:840, h:520 }; }, lockEnd:'one', catchMax:1,   // CATCH: the box the marker looks in
   start(f, st){ armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -20080,6 +20399,8 @@ FINAL_SMASHES['Pen'] = {
 // off the lane. 24% and a hard launch for whoever it meets.
 FINAL_SMASHES['Match'] = {
   id:'freesmartvan', wind:36, dur:112, reach:700,
+  catch(f){ const d = f.face < 0 ? -1 : 1, v0 = d > 0 ? -150 : WW + 150, v1 = v0 + d*24*61, lo = Math.max(f.x - 700, Math.min(v0, v1)), hi = Math.min(f.x + 700, Math.max(v0, v1)), fy = f.y + f.r;
+    return { kind:'box', x:lo, y:fy - 100, w:Math.max(0, hi - lo), h:100 }; }, lockEnd:'one',   // CATCH: the Van's lane, as far as her reach and its run
   start(f, st){ st.dir = f.face; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind, dir = st.dir;
@@ -20125,6 +20446,7 @@ FINAL_SMASHES['Match'] = {
 // frames, she dashes to them (the Cube is a hard shape of ice, so a charge is on-model) and the block bursts: 26%, a big launch.
 FINAL_SMASHES['Ice Cube'] = {
   id:'vengeance', wind:38, dur:116, reach:380,
+  catch(f){ return { kind:'box', x:f.x - 380, y:f.y - 240, w:760, h:480 }; }, lockEnd:'one', catchMax:1,   // CATCH: the box the frost marker looks in
   start(f, st){ st.caught = []; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -20166,6 +20488,7 @@ FINAL_SMASHES['Ice Cube'] = {
 // says only three dots) lands for 20% and a big launch.
 FINAL_SMASHES['Teardrop'] = {
   id:'silenttreatment', wind:40, dur:132, reach:500,
+  catch(f){ return fsBoxAhead(f, 0, 500, 240, 240); }, lockEnd:40 + 64, catchMax:1,   // CATCH: the box in front of her the marker looks in
   start(f, st){ st.caught = []; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -20211,6 +20534,7 @@ FINAL_SMASHES['Teardrop'] = {
 // stunned for 90 frames (`exposed`), and the circle is only 200 px.
 FINAL_SMASHES['Bomby'] = {
   id:'detonation', wind:50, dur:134, reach:200, exposed:true,
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:200 }; }, lockEnd:'one',   // CATCH: the blast's circle
   start(f, st){ armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -20254,6 +20578,7 @@ FINAL_SMASHES['Bomby'] = {
 // distances (6-8% each); then one acid cannonball (22%, goes through). Behind him is safe; the shots land in front, so it is a wall to get over.
 FINAL_SMASHES['Rocky'] = {
   id:'matter', wind:30, dur:138,reach:420,
+  catch(f){ return fsBoxAhead(f, 0, 330, 160, f.r + 8); }, lockEnd:30 + 78, catchMax:1,   // CATCH: the part of the fountain's reach in front of him its shots rain on (past it they thin out)
   start(f, st){ armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -20268,7 +20593,7 @@ FINAL_SMASHES['Rocky'] = {
       ][k];
       spawnProj(f, Object.assign({ vx:vx, vy:vy, life:110, noAim:true }, P));
     }
-    if(t === w + 78){ armAtk(f, 30, 'fsburst'); shake(11); spawnProj(f, { vx:f.face*13, vy:-2, grav:false, dmg:22, kb:24, r:28, color:'#b2ff59', life:60, pierce:true, noAim:true }); for(let i = 0; i < 16; i++) puff(f.x + f.face*20, f.y, '#b2ff59', 6); }
+    if(t === w + 78){ armAtk(f, 30, 'fsburst'); shake(11); spawnProj(f, fsAimShot(f, { vx:f.face*13, vy:-2, grav:false, dmg:22, kb:24, r:28, color:'#b2ff59', life:60, pierce:true, noAim:true, _fsVol:'big' })); for(let i = 0; i < 16; i++) puff(f.x + f.face*20, f.y, '#b2ff59', 6); }   // (the cannonball: at a locked foe, and through the grace a late shot of the fountain left them -- a wave of its own: fsVolleyThrough)
   },
   ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && (o.x - f.x)*f.face > 0 && (o.x - f.x)*f.face < 430 && Math.abs(o.y - f.y) < 160) return true; return false; },
   draw(f, c){
@@ -20302,6 +20627,7 @@ function fsBolt(c, x0, y0, x1, y1, a, seed){   // a jagged bolt, the same on eve
 // struck passes it on, 14 frames apart, to the nearest unstruck foe within 280 of it, twice: 14%, then 12%, then 12%.
 FINAL_SMASHES['Lightning'] = {
   id:'chainbolt', wind:36, dur:96, reach:520,
+  catch(f){ return { kind:'box', x:f.x - 520, y:f.y - 320, w:1040, h:640 }; }, lockEnd:'one', catchMax:1,   // CATCH: the box the marker looks in
   start(f, st){ armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -20342,6 +20668,7 @@ FINAL_SMASHES['Lightning'] = {
 // toward her and the wind is worse; leave the circle and it is nothing.
 FINAL_SMASHES['Fanny'] = {
   id:'hurricane', wind:36, dur:112, reach:380,
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:fsPullCatch(400, 380, 40, (d)=> 1 + 4.5*(1 - d/400)) }; }, lockEnd:'one',   // CATCH: as far out as the blast still reaches a foe once the wind has pushed them
   start(f, st){ armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -20376,6 +20703,7 @@ FINAL_SMASHES['Fanny'] = {
 // held and takes 20 jabs, two frames apart, of 1.8%, and then the last, 10%, launches them. Be out of the zone, or behind her.
 FINAL_SMASHES['Dora'] = {
   id:'rant', wind:30, dur:100, reach:140,
+  catch(f){ return fsBoxAhead(f, HURT_R0 - 10, 150, 80, 80); }, lockEnd:30 + 44,   // CATCH: the zone in front of her
   start(f, st){ st.caught = []; st.dir = f.face; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind, dir = st.dir;
@@ -20413,6 +20741,7 @@ FINAL_SMASHES['Dora'] = {
 // be out of it by then.
 FINAL_SMASHES['Saw'] = {
   id:'overdrive', wind:28, dur:108, reach:95,
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:90 }; }, lockEnd:28 + 56,   // CATCH: the blade's circle
   start(f, st){ st.caught = []; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -20442,13 +20771,14 @@ FINAL_SMASHES['Saw'] = {
 // (6% each). The tell is the lane, 650 px, drawn in front of him; behind him it is safe, and a hop clears a low one.
 FINAL_SMASHES['Tennis Ball'] = {
   id:'ballmachine', wind:30, dur:108, reach:650,
+  catch(f){ return fsBoxAhead(f, 0, 650, 170, f.r); }, lockEnd:30 + 36, lockGrace:8, catchMax:1,   // CATCH: the lane in front of him; on the foe it holds, every other ball lands (as on a foe it carries)
   start(f, st){ st.dir = f.face; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
     if(t === w){ armAtk(f, 44, 'throw'); }
     if(t >= w && t < w + 40 && (t - w) % 4 === 0){
       const i = (t - w)/4;
-      spawnProj(f, { vx:st.dir*(10 + (i % 3)*2), vy:-(3 + (i*3) % 6), grav:true, bounce:true, maxBounces:6, dmg:6, kb:6, r:13, color:'#c9f24b', life:150, noAim:true });
+      spawnProj(f, fsAimShot(f, { vx:st.dir*(10 + (i % 3)*2), vy:-(3 + (i*3) % 6), grav:true, bounce:true, maxBounces:6, dmg:6, kb:6, r:13, color:'#c9f24b', life:150, noAim:true }, 12));   // (at a locked foe: CATCH, THEN CINEMATIC)
       shake(2);
     }
   },
@@ -20470,11 +20800,12 @@ FINAL_SMASHES['Tennis Ball'] = {
 // sends it: one huge snowball straight ahead at his chest height, 44 px wide, through everyone (18%), and two small ones behind it (8%). Jump it.
 FINAL_SMASHES['Snowball'] = {
   id:'avalanche', wind:36, dur:106, reach:520,
+  catch(f){ return fsBoxAhead(f, 0, 520, 50, 38); }, lockEnd:36 + 20, volleys:3,   // CATCH: the big snowball's path, at his chest height
   start(f, st){ st.dir = f.face; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
-    if(t === w){ armAtk(f, 40, 'dash'); shake(10); spawnProj(f, { vx:st.dir*13, vy:0, grav:false, dmg:18, kb:18, r:44, color:'#eef6ff', life:90, pierce:true, noAim:true }); for(let i = 0; i < 14; i++) puff(f.x + st.dir*30, f.y, '#ffffff', 6); }
-    if(t === w + 10 || t === w + 20) spawnProj(f, { vx:st.dir*15, vy:0, grav:false, dmg:8, kb:10, r:26, color:'#dcecff', life:80, pierce:true, noAim:true });
+    if(t === w){ armAtk(f, 40, 'dash'); shake(10); spawnProj(f, { vx:st.dir*13, vy:0, grav:false, dmg:18, kb:18, r:44, color:'#eef6ff', life:90, pierce:true, noAim:true, _fsVol:0 }); for(let i = 0; i < 14; i++) puff(f.x + st.dir*30, f.y, '#ffffff', 6); }
+    if(t === w + 10 || t === w + 20) spawnProj(f, { vx:st.dir*15, vy:0, grav:false, dmg:8, kb:10, r:26, color:'#dcecff', life:80, pierce:true, noAim:true, _fsVol:t === w + 10 ? 1 : 2 });   // (each a wave of its own on a caught foe: fsVolleyThrough)
   },
   ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && (o.x - f.x)*f.face > 0 && (o.x - f.x)*f.face < 520 && Math.abs(o.y - f.y) < 80) return true; return false; },
   draw(f, c){
@@ -20495,12 +20826,14 @@ FINAL_SMASHES['Snowball'] = {
 // over a mark drawn on the floor first (13%, a hard knock); the line of them walks 60 px to one side of the foe each time. Keep moving.
 FINAL_SMASHES['Book'] = {
   id:'overdue', wind:34, dur:116, reach:600,
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FS_RAIN_CATCH }; }, lockEnd:34 + 32, catchMax:2,   // CATCH: a circle round her; the books go for a locked foe first
   start(f, st){ armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
     if(t === w) armAtk(f, 52, 'cast');
     if(t >= w && t < w + 40 && (t - w) % 8 === 0){
-      const j = (t - w)/8, foes = fighters.filter(o=>!o.dead && o.team !== f.team).sort((a, b)=>Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y)).slice(0, 2);
+      const near = (a)=> (fsIsLockedBy(a, f) ? -1e6 : 0) + Math.hypot(a.x - f.x, a.y - f.y);   // (a locked foe first)
+      const j = (t - w)/8, foes = fighters.filter(o=>!o.dead && o.team !== f.team).sort((a, b)=>near(a) - near(b)).slice(0, 2);
       for(const o of foes) dropProj(f, clamp(o.x + (j - 2)*60, 30, WW - 30), o.y + o.r, { dmg:13, kb:22, r:24, color:'#8a4fd2', life:150 }, true);
     }
   },
@@ -20525,13 +20858,14 @@ FINAL_SMASHES['Book'] = {
 // and off the walls up to six times (14%): one low, one mid, one high. Hop the low one, duck the high one, or be behind her.
 FINAL_SMASHES['Ruby'] = {
   id:'refraction', wind:30, dur:104, reach:600,
+  catch(f){ return fsBoxAhead(f, 0, 600, 150, f.r); }, lockEnd:30 + 40, volleys:3,   // CATCH: the bolts' reach in front of her
   start(f, st){ st.dir = f.face; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
     if(t === w) armAtk(f, 44, 'throw');
     if(t === w || t === w + 6 || t === w + 12){
       const i = (t - w)/6;
-      spawnProj(f, { vx:st.dir*16, vy:[-2, -7, 3][i], grav:true, bounce:true, maxBounces:6, dmg:14, kb:14, r:17, color:'#ff3b6b', life:150, pierce:true, noAim:true });
+      spawnProj(f, { vx:st.dir*16, vy:[-2, -7, 3][i], grav:true, bounce:true, maxBounces:6, dmg:14, kb:14, r:17, color:'#ff3b6b', life:150, pierce:true, noAim:true, _fsVol:i });   // (each a wave of its own on a caught foe)
       for(let k = 0; k < 8; k++) puff(f.x + st.dir*22, f.y, '#ff9bb5', 5);
     }
   },
@@ -20625,11 +20959,69 @@ function fsArchTell(c, f, o, R, k, blink){   // a drawn circle of radius R at th
   c.restore();
 }
 
+// CATCH, THEN CINEMATIC: the pieces the shapes and rows share for their catch and for landing on a locked foe.
+// A box in front of the holder (dir: their facing), from `near` to `far` px ahead, `up` above their centre to `dn` below it.
+function fsBoxAhead(f, near, far, up, dn){ const d = f.face < 0 ? -1 : 1, x0 = f.x + d*near, x1 = f.x + d*far; return { kind:'box', x:Math.min(x0, x1), y:f.y - up, w:Math.abs(x1 - x0), h:up + dn }; }
+// The direction to throw a shot of speed sp (gravity g a frame; 0: straight) so it meets (x1, y1) from (x0, y0): the low arc, or 45
+// degrees when it is out of reach.
+function fsAimAngle(x0, y0, x1, y1, sp, g){
+  const dx = x1 - x0, dy = y1 - y0;
+  if(!(g > 0)) return Math.atan2(dy, dx);
+  const X = Math.abs(dx), Y = -dy, v2 = sp*sp, disc = v2*v2 - g*(g*X*X + 2*Y*v2);
+  const al = disc < 0 || X < 1 ? Math.PI/4 : Math.atan((v2 - Math.sqrt(disc))/(g*X));
+  return Math.atan2(-Math.sin(al), (dx < 0 ? -1 : 1)*Math.cos(al));
+}
+// A volley of n shots at the angles ang(i): how far to turn it so its nearest shot meets the foe the holder's catch holds (0: none).
+// The volley keeps its shape and its gaps; it is turned at most half a gap.
+function fsFanTurn(f, n, ang, sp, g){
+  const L = fsLockedOf(f); if(!L) return 0;
+  const want = fsAimAngle(f.x, f.y, L.x, hurtCY(L), sp, g);
+  let best = 0, bd = 1e9;
+  for(let i = 0; i < n; i++){ const d = Math.atan2(Math.sin(want - ang(i)), Math.cos(want - ang(i))); if(Math.abs(d) < Math.abs(bd)){ bd = d; best = i; } }
+  return bd;
+}
+// A row's lockShots (k > 1): its k shots nearest the foe the catch holds go onto them, side by side (8 px apart at them, so each is seen),
+// in place of the one fsFanTurn turns: index -> angle (none without a locked foe).
+function fsFanAim(f, n, ang, sp, g, k){
+  const out = {}, L = k > 1 ? fsLockedOf(f) : null; if(!L) return out;
+  const cy = hurtCY(L), want = fsAimAngle(f.x, f.y, L.x, cy, sp, g), dl = 8/Math.max(40, Math.hypot(L.x - f.x, cy - f.y));
+  const off = (i)=> Math.atan2(Math.sin(ang(i) - want), Math.cos(ang(i) - want));
+  const pick = []; for(let i = 0; i < n; i++) pick.push(i);
+  pick.sort((a, b)=> Math.abs(off(a)) - Math.abs(off(b)) || a - b); pick.length = Math.min(k, n);
+  pick.sort((a, b)=> off(a) - off(b)).forEach((i, j)=> { out[i] = want + (j - (pick.length - 1)/2)*dl; });
+  return out;
+}
+// A shot from the holder's hand (spawnProj's spot) turned to meet the foe the catch holds: its own speed across (or sp: one speed
+// for every shot of a stream, so they arrive in the rhythm they were thrown in), its rise or fall worked out so it arrives at them (by the
+// shot step's own rule: move, then fall). Nothing to do with no locked foe ahead.
+function fsAimShot(f, p, sp){
+  const L = fsLockedOf(f); if(!L) return p;
+  const x0 = f.x + f.face*20, y0 = f.y - 6, dx = L.x - x0, dy = hurtCY(L) - y0;
+  if(dx*f.face <= 0) return p;
+  const vx = sp || Math.abs(p.vx) || 8, T = Math.max(1, Math.abs(dx)/vx), g = (p.grav || p.bounce) ? 0.34 : 0;
+  p.vx = Math.sign(dx)*vx; p.vy = (dy - g*T*(T - 1)/2)/T; p._fsAimAt = L.idx;
+  return p;
+}
+// A shot thrown at the foe a catch holds (fsAimShot) flies through any floor above where they stand while they are held: its arc was
+// worked out without floors, and a lob over Goiky Field's platform still comes down on a foe held under it. Their own floor still counts.
+function fsAimPass(pr, y){
+  const i = pr._fsAimAt; if(i == null) return false;
+  const t = fighters[i]; return !!(t && !t.dead && t._fsLock && y < t.y + t.r - 4);
+}
+// The farthest a foe can be from a pull's point and still be dragged into its burst (R2) by the end of the pull, or -- a push -- still be
+// inside the burst once the wind has pushed them; less a standard body (the catch is measured to the outline). pushK(d): px a frame.
+function fsPullCatch(R, R2, frames, step){
+  let best = 0;
+  for(let d0 = 0; d0 <= R; d0 += 2){ let d = d0; for(let i = 0; i < frames && d < R; i++) d = Math.max(0, d + step(d)); if(d - HURT_R0 < R2 - 4) best = d0; else break; }
+  return Math.max(10, Math.min(R*0.95, best) - HURT_R0);
+}
+
 // -- circle --
 function fsCircle(o){
   const w = o.wind || 38, R = o.R, ky = o.ky == null ? -14 : o.ky;
   return {
     id:o.id, wind:w, dur:o.dur || (w + 62), reach:R, exposed:o.exposed,
+    catch(f){ return { kind:'circle', x:f.x, y:f.y, r:R }; }, lockEnd:'one',   // CATCH: the first ring (the second only takes whoever it missed)
     start(f, st){ armAtk(f, w, 'fsgather'); if(o.start) o.start(f, st); },
     tick(f, st, t){
       if(t === 0){ shake(5); for(let i = 0; i < 10; i++) puff(f.x, f.y, i % 2 ? o.c1 : (o.c2 || '#fff'), 6); }
@@ -20659,6 +21051,11 @@ function fsLane(o){
   const front = (f, dir, tt)=> o.edge ? (dir > 0 ? -140 : WW + 140) + dir*spd*tt : f.fsAx + dir*(spd*tt);
   return {
     id:o.id, wind:w, dur:o.dur || (w + Math.ceil((o.edge ? WW + 300 : L)/spd) + 40), reach:L,
+    // CATCH: the lane, as far as its front really runs (its last frame's front) and as tall as it hits; it meets a locked foe where they stand
+    catch(f){ const Lr = spd*(Math.ceil(L/spd) - 1), fy = f.y + f.r;
+      if(o.edge) return { kind:'box', x:-40, y:fy - H, w:WW + 80, h:H };
+      return o.both ? { kind:'box', x:f.x - Lr - hw, y:fy - H, w:2*(Lr + hw), h:H } : Object.assign(fsBoxAhead(f, -hw, Lr + hw, 0, 0), { y:fy - H, h:H }); },
+    lockEnd:'one',
     start(f, st){ st.dir = f.face; st.fy = f.y + f.r; armAtk(f, w, 'fsgather'); },
     tick(f, st, t){
       const dir = st.dir;
@@ -20692,19 +21089,30 @@ function fsLane(o){
 
 // -- fan --
 function fsFan(o){
-  const w = o.wind || 34, n = o.n || 12, vols = o.vols || [0, 16];
+  const w = o.wind || 34, n = o.n || 12, vols = o.vols || [0, 16], sp = o.spd || 12, P0 = o.proj || {}, g = P0.grav ? 0.34 : 0;
+  const Rc = g ? Math.min(o.reach || 330, 0.9*sp*sp/g) : (o.reach || 330);   // (a shot that falls reaches no farther than its arc)
   return {
     id:o.id, wind:w, dur:o.dur || (w + vols[vols.length - 1] + 50), reach:o.reach || 330,
+    // CATCH: its reach -- all round, or its cone (a cone too narrow to show as one: the band its shots fly along). Each volley is turned
+    // so a shot meets a locked foe (fsFanTurn).
+    catch(f){
+      if(!o.cone) return { kind:'circle', x:f.x, y:f.y, r:Rc };
+      if(o.cone*Rc < 40){ const r = o.r || 14; return fsBoxAhead(f, 0, Rc, r + o.cone*Rc, r + o.cone*Rc); }
+      return { kind:'fan', cx:f.x, cy:f.y, r0:0, r1:Rc, a0:-o.cone, a1:o.cone, face:f.face < 0 ? -1 : 1 };
+    },
+    lockEnd:w + vols[vols.length - 1], volleys:vols.length, lockGrace:o.lockGrace, lockShots:o.lockShots,
     start(f, st){ st.dir = f.face; armAtk(f, w, 'fsgather'); },
     tick(f, st, t){
       if(t === 0){ shake(5); for(let i = 0; i < 10; i++) puff(f.x, f.y, i % 2 ? o.c1 : '#fff', 6); }
       for(let v = 0; v < vols.length; v++) if(t === w + vols[v]){
         if(v === 0){ armAtk(f, 40, o.kind || 'spin'); shake(9); }
         const off = v % 2 ? Math.PI/n : 0;
+        const ang = (i)=> o.cone ? st.dir > 0 ? (-o.cone + 2*o.cone*(i + 0.5)/n) : Math.PI - (-o.cone + 2*o.cone*(i + 0.5)/n) : off + i*Math.PI*2/n;
+        const turn = fsFanTurn(f, n, ang, sp, g), aim = fsFanAim(f, n, (i)=> ang(i) + turn, sp, g, o.lockShots || 1);   // CATCH, THEN CINEMATIC: a shot (lockShots: that many) onto the locked foe
         for(let i = 0; i < n; i++){
-          const a = o.cone ? st.dir > 0 ? (-o.cone + 2*o.cone*(i + 0.5)/n) : Math.PI - (-o.cone + 2*o.cone*(i + 0.5)/n) : off + i*Math.PI*2/n;
+          const a = aim[i] != null ? aim[i] : ang(i) + turn;
           const P = o.proj || {};
-          addProj(Object.assign({ owner:f.idx, ownerObj:f, x:f.x, y:f.y, vx:Math.cos(a)*(o.spd || 12), vy:Math.sin(a)*(o.spd || 12), grav:false, dmg:o.dmg, kb:o.kb, r:o.r || 14, color:o.c1, life:o.life || 55, breaksOnSurface:true }, P));
+          addProj(Object.assign({ owner:f.idx, ownerObj:f, x:f.x, y:f.y, vx:Math.cos(a)*(o.spd || 12), vy:Math.sin(a)*(o.spd || 12), grav:false, dmg:o.dmg, kb:o.kb, r:o.r || 14, color:o.c1, life:o.life || 55, breaksOnSurface:true }, P, { _fsVol:v }));
         }
         for(let i = 0; i < 12; i++) puff(f.x, f.y, o.c1, 6);
       }
@@ -20730,11 +21138,14 @@ function fsRain(o){
   const w = o.wind || 34, k = o.k || 2, n = o.n || 6, ev = o.every || 8, P = o.proj || {};
   return {
     id:o.id, wind:w, dur:o.dur || (w + n*ev + 70), reach:o.reach || 600,
+    catch(f){ return { kind:'circle', x:f.x, y:f.y, r:Math.min(o.reach || 600, FS_RAIN_CATCH) }; },   // CATCH: a circle round the holder; it falls on a locked foe first
+    lockEnd:w + (n - 1)*ev, catchMax:k,   // (it drops on its k nearest: it catches that many)
     start(f, st){ armAtk(f, w, 'fsgather'); },
     tick(f, st, t){
       if(t === w) armAtk(f, n*ev + 12, o.kind || 'cast');
       if(t >= w && t < w + n*ev && (t - w) % ev === 0){
-        const j = (t - w)/ev, foes = fighters.filter(x=>!x.dead && x.team !== f.team).sort((a, b)=>Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y)).slice(0, k);
+        const near = (a)=> (fsIsLockedBy(a, f) ? -1e6 : 0) + Math.hypot(a.x - f.x, a.y - f.y);   // (a locked foe first)
+        const j = (t - w)/ev, foes = fighters.filter(x=>!x.dead && x.team !== f.team).sort((a, b)=>near(a) - near(b)).slice(0, k);
         for(const x of foes){ const jit = o.walk ? (j - (n - 1)/2)*o.walk : (fsRand() - 0.5)*(j % 2 ? 40 : 200); dropProj(f, clamp(x.x + jit, 30, WW - 30), x.y + x.r, Object.assign({ dmg:o.dmg, kb:o.kb, r:o.r || 22, color:o.c1, life:150 }, P), true); }
       }
     },
@@ -20756,6 +21167,9 @@ function fsLock(o){
   const w = o.wind || 38, lead = o.lead || 18, R = o.R || 80, bx = o.bx || 400, by = o.by || 240;
   return {
     id:o.id, wind:w, dur:o.dur || (w + (o.effect === 'pin' ? 40 + (o.hits || 8)*(o.every || 5) : 40) + 40), reach:bx,
+    // CATCH: the box its marker looks in; the marker goes on a locked foe (fsPick), and the blast or the pin lands on them where they stand
+    catch(f){ return o.fwd ? fsBoxAhead(f, 0, bx, by, by) : { kind:'box', x:f.x - bx, y:f.y - by, w:2*bx, h:2*by }; },
+    lockEnd:o.effect === 'pin' ? w + (o.hits || 8)*(o.every || 5) + 4 : 'one', catchMax:1,   // (its marker goes on one foe: it catches one)
     start(f, st){ st.caught = []; armAtk(f, w, 'fsgather'); },
     tick(f, st, t){
       if(t === w - lead) fsLockAt(f, st, fsPick(f, bx, by, o.fwd), o.fall || 150);
@@ -20795,8 +21209,11 @@ function fsLock(o){
 // -- pull --  (a point that drags foes in -- or, with `push`, a wind that shoves them out -- and then bursts)
 function fsPull(o){
   const w = o.wind || 34, R = o.R || 330, dur = o.pull || 40, rate = o.rate || 3.2, ahead = o.ahead == null ? 150 : o.ahead, push = !!o.push;
+  const Rc = fsPullCatch(R, o.R2 || 100, dur, push ? (d)=> 1 + (rate - 1)*(1 - d/R) : (d)=> -Math.min(rate, d));
   return {
     id:o.id, wind:w, dur:o.dur || (w + dur + 60), reach:R*0.9,
+    // CATCH: round its point, as far as the pull still brings a foe into the burst (a push: as far as the burst still reaches them once pushed)
+    catch(f){ return { kind:'circle', x:f.x + f.face*ahead, y:f.y, r:Rc }; }, lockEnd:'one',
     start(f, st){ st.cx = f.x + f.face*ahead; st.cy = f.y; armAtk(f, w, 'fsgather'); },
     tick(f, st, t){
       if(t === w) armAtk(f, dur + 4, o.kind || 'fsgather');
@@ -20831,6 +21248,8 @@ function fsCols(o){
   const w = o.wind || 36, sp = o.sp || 55, nc = o.nc || 8, ev = o.every || 3, H = o.H || 300, hw = o.hw || 40, life = o.life || 22;
   return {
     id:o.id, wind:w, dur:o.dur || (w + nc*ev + life + 36), reach:sp*nc,
+    // CATCH: from its outermost column to the other, as tall as they stand (a column takes a body within hw + half its width)
+    catch(f){ const X = (nc - 1)*sp + hw - HURT_R0*0.5, fy = f.y + f.r; return { kind:'box', x:f.x - X, y:fy - H, w:2*X, h:H }; }, lockEnd:'one',
     start(f, st){ st.fy = f.y + f.r; armAtk(f, w, 'fsgather'); },
     tick(f, st, t){
       if(t === 0){ shake(5); for(let i = 0; i < 10; i++) puff(f.x, f.y, o.c1, 6); }
@@ -20870,6 +21289,7 @@ function fsOrbit(o){
   const w = o.wind || 28, R = o.R || 90, n = o.n || 9, ev = o.every || 6;
   return {
     id:o.id, wind:w, dur:o.dur || (w + n*ev + 52), reach:R + 5,
+    catch(f){ return { kind:'circle', x:f.x, y:f.y, r:R }; }, lockEnd:w + n*ev + 2,   // CATCH: its ring
     start(f, st){ st.caught = []; armAtk(f, w, 'fsgather'); },
     tick(f, st, t){
       if(t === w){ armAtk(f, n*ev + 6, o.kind || 'spin'); shake(5); for(const x of fighters){ if(fsHurtMark(f, x) || x._heldBy != null) continue; if(hurtGap(x, f.x, f.y) < R){ st.caught.push(x.idx); x.countering = 0; fsStatus(x, f, o.S); } } }
@@ -20892,16 +21312,19 @@ function fsOrbit(o){
 // -- hose --
 function fsHose(o){
   const w = o.wind || 30, n = o.n || 18, ev = o.every || 3, P = o.shots;
+  const aimV = Math.max(o.v0 || 0, ...P.map((S)=> Math.abs(S.vx || 0))) || undefined;   // (on a locked foe, every shot at its fastest: fsAimShot)
   return {
     id:o.id, wind:w, dur:o.dur || (w + n*ev + 70), reach:o.reach || 430,
+    catch(f){ return fsBoxAhead(f, 0, o.reach || 430, 150, f.r + 8); },   // CATCH: the stream's reach in front of them
+    lockEnd:w + n*ev + (o.big ? 8 : 0), lockGrace:o.lockGrace, catchMax:1,   // (its stream is thrown at one foe: it catches one)
     start(f, st){ st.dir = f.face; armAtk(f, w, 'fsgather'); },
     tick(f, st, t){
       if(t === w){ armAtk(f, n*ev + 10, o.kind || 'spit'); shake(6); }
       if(t >= w && t < w + n*ev && (t - w) % ev === 0){
         const i = (t - w)/ev, S = P[i % P.length];
-        spawnProj(f, Object.assign({ vx:st.dir*(o.v0 || 6 + (i*5) % 6), vy:-(2 + (i*7) % 6), life:110, noAim:true, grav:true }, S));
+        spawnProj(f, fsAimShot(f, Object.assign({ vx:st.dir*(o.v0 || 6 + (i*5) % 6), vy:-(2 + (i*7) % 6), life:110, noAim:true, grav:true }, S), aimV));   // (at a locked foe: CATCH, THEN CINEMATIC)
       }
-      if(o.big && t === w + n*ev + 8){ armAtk(f, 30, 'fsburst'); shake(11); spawnProj(f, Object.assign({ vx:st.dir*13, vy:-2, grav:false, life:60, pierce:true, noAim:true }, o.big)); }
+      if(o.big && t === w + n*ev + 8){ armAtk(f, 30, 'fsburst'); shake(11); spawnProj(f, fsAimShot(f, Object.assign({ vx:st.dir*13, vy:-2, grav:false, life:60, pierce:true, noAim:true, _fsVol:'big' }, o.big))); }   // (the big one: a wave of its own on a locked foe, through the stream's grace)
     },
     ai(f){ for(const x of fighters) if(!fsHurtMark(f, x) && (x.x - f.x)*f.face > 0 && (x.x - f.x)*f.face < (o.reach || 430) && Math.abs(x.y - f.y) < 160) return true; return false; },
     draw(f, c){
@@ -20975,7 +21398,7 @@ FINAL_SMASHES['Barf Bag'] = fsCircle({ id:'outbreak', wind:40, c1:'#8ab04b', c2:
 
 // BASKETBALL -- NOTHING BUT NET. "Nothing but net." (her frame row): the roster's sports competitor, inflated rubber, and her own card is the
 // Self-Dribble, a ball that speeds up with every bounce. Four balls, ten frames apart, bounce down the floor in front of her (6%, up to six bounces, and they keep hitting).
-FINAL_SMASHES['Basketball'] = fsHose({ id:'nothingbutnet', wind:30, c1:'#e87a2a', n:4, every:10, v0:11, art:FS_GLYPH.bball, reach:520,
+FINAL_SMASHES['Basketball'] = fsHose({ id:'nothingbutnet', lockGrace:10, wind:30, c1:'#e87a2a', n:4, every:10, v0:11, art:FS_GLYPH.bball, reach:520,
   shots:[{ color:'#e87a2a', dmg:6, kb:7, r:22, bounce:true, maxBounces:6, grav:true, vy:-1, life:140 }] });
 
 // BELL -- SAVED BY THE BELL. "Saved by the bell. Mine." (her frame row): cast metal that rings when it is struck; her own card is the RING that bursts
@@ -21120,7 +21543,7 @@ FINAL_SMASHES['Tree'] = fsRain({ id:'timber', wind:40, c1:'#8a6a3a', k:1, n:3, e
 
 // CAKE -- CAKE AT STAKE. "the prize is tossed from the Cake Tosser on the centre cylinder" (Barriers and Pitfalls, quoted at the stage); her own card lobs a slice that bounces along
 // ahead of her. Eight slices, five frames apart, lobbed low and flat over two distances and bouncing on (6%, they keep hitting).
-FINAL_SMASHES['Cake'] = fsHose({ id:'cakeatstake', wind:30, c1:'#f4d9a8', n:8, every:5, v0:8, art:FS_GLYPH.slice, reach:520,
+FINAL_SMASHES['Cake'] = fsHose({ id:'cakeatstake', lockGrace:5, wind:30, c1:'#f4d9a8', n:8, every:5, v0:8, art:FS_GLYPH.slice, reach:520,
   shots:[{ color:'#f4d9a8', dmg:6, kb:9, r:17, bounce:true, maxBounces:4, grav:true, vy:-3, life:130 }, { color:'#f4d9a8', dmg:6, kb:9, r:17, bounce:true, maxBounces:4, grav:true, vx:12, vy:-5, life:130 }] });
 
 // DONUT -- SPRINKLE ROLL. "multiplied by Donut [zero]" -- the zero that liquefied Four (the Four page, quoted at his art); his own card is the Sprinkle Roll, a spinning wheel that hits everyone
@@ -21146,7 +21569,7 @@ Object.assign(FS_GLYPH, {
 
 // KNIFE -- BAG OF TRICKS. His own card: in order, "the Temporary Paralyzer, a boomerang blade, caltrops that draw blood, then the Fist Thingy"; blunt, loud, a bully who shoved Paper off the
 // platform (the design doc, A Lemony Lesson). Nine things out of the bag, five frames apart, in a rotation of blade (flat, through everyone), caltrops (lobbed) and a spark of shock (5-6%, and they keep hitting).
-FINAL_SMASHES['Knife'] = fsHose({ id:'bagoftricks', wind:30, c1:'#dfe6ee', n:9, every:5, v0:12, art:FS_GLYPH.blade, reach:520,
+FINAL_SMASHES['Knife'] = fsHose({ id:'bagoftricks', lockGrace:5, wind:30, c1:'#dfe6ee', n:9, every:5, v0:12, art:FS_GLYPH.blade, reach:520,
   shots:[{ color:'#dfe6ee', dmg:5, kb:7, r:11, grav:false, vy:0, pierce:true, life:70 }, { color:'#c0304a', dmg:4, kb:7, r:10, grav:true, vy:-5, life:90 }, { color:'#fff27a', dmg:4, kb:7, r:10, grav:false, vy:0, life:60 }] });
 
 // LIGHTBULB -- BRIGHT FLASH. "OMGA!" -- the new OMG (the II wiki, quoted at her card); "laid back, free-spirited and optimistic ... erratic and unpredictable" (the design doc). Her own card is the Bright
@@ -21236,7 +21659,8 @@ FINAL_SMASHES['Bonesaw'] = fsLock({ id:'cutstothecore', wind:38, c1:'#b4764a', c
 
 // SPIKEY -- CAN'T HOLD IT IN. His own card: "hold it in, let go, and every spike shoots off at once, all ways"; lost and a little slow ("Wait, I won? Did I miss something?", his frame row). Eighteen spikes, all at once,
 // in every direction (12%, they fly 700 px): the gaps between them are the way through, and he is bald afterwards.
-FINAL_SMASHES['Spikey'] = fsFan({ id:'cantholditin', wind:36, c1:'#8a8a96', n:18, spd:14, vols:[0], dmg:12, kb:18, r:11, life:52, reach:340, kind:'fsburst', art:FS_GLYPH.spike });
+FINAL_SMASHES['Spikey'] = fsFan({ id:'cantholditin', wind:36, c1:'#8a8a96', n:18, spd:14, vols:[0], dmg:12, kb:18, r:11, life:52, reach:340, kind:'fsburst', art:FS_GLYPH.spike,
+  lockShots:2 });   // (the foe his catch holds takes two spikes, as one right beside him does: the catch does not halve it)
 
 // CANDLE -- CRYSTAL CHIME. "There is no magic. JUST, your inner..." (The Overthinkers, quoted at her card); her own card chimes her crystal with the tuning fork "and every grounded foe near her trips". Crystals
 // come up out of the floor out from under her, seven a side, 60 px apart, one every three frames (13%, and a stun): the tell is the glints on the floor.
@@ -39855,6 +40279,7 @@ function updateSummons(){
   summons = summons.filter(s=> s.life>0);
 }
 function step(){
+  if(fsTimeGate()) return;   // CATCH, THEN CINEMATIC: the Final Smash intro stops the match; its slow-mo KO skips steps (fsTimeGate)
   hazardT++;
   // Clutch-time music. Deliberately NOT per frame: twice a second is far more often than the
   // condition can meaningfully change, and it keeps audio work out of the hot loop.
@@ -39887,6 +40312,7 @@ function step(){
 
   for(const f of fighters){
     if(f.dead) continue;
+    if(f._fsLock && fsLockHold(f)) continue;   // CATCH, THEN CINEMATIC: caught by a Final Smash, they cannot move or act (fsLockHold)
     const fst = f.st || STAT_ONE;   // FIGHTER STATS
     if(TESTMODE.active) trainingPin(f);   // Training: the dummy's damage held where the player set it
     // ---- input (local human / remote player / AI) ----
@@ -39951,6 +40377,7 @@ function step(){
     f._smRaw = !!inp.smash;
     if(f.hitstun>0 && (f._hold || f._heldBy!=null || f._gb || f._mv)) mvCancel(f);   // a hit lets go of a grab, a hold or a move in progress
     if(f.hitstun>0){ f.hitstun--; f._spPend=0; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
+    if(f._fsHitT != null && f.onground && hazardT - f._fsHitT > 3) f._fsHitT = null;   // landed after a Final Smash's launch: a later KO is not its (fsKoSlow)
     if(f.frozen>0){ inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
     if(f._heldBy!=null && heldStruggle(f, inp, inp === inpPaired ? f._rawKeys : null)) inp={left:false,right:false,jump:false,attack:false,special:false,smash:false};   // held: only the struggle (each press takes frames off the hold)
     const aS = atkSpeedSteps(f);   // ATTACK SPEED: how many frames the attack timers run this frame -- 1, unless something speeds them up or slows them (atkSpeedSteps)
@@ -40634,7 +41061,7 @@ function step(){
   if(evil){
     const you=fighters.find(f=>f.you&&!f.dead)||fighters.find(f=>!f.dead);
     if(you){ const dx=you.x-evil.x; evil.x+=Math.sign(dx)*1.4; evil.y+=(you.y-evil.y)*0.03;
-      for(const f of fighters){ if(f.dead)continue; if(hurtGap(f,evil.x,evil.y)<30-HURT_R0 && f.invuln<=0){ f.pct+=18; knock(f,Math.sign(f.x-evil.x)*8,-6); f.invuln=40; } } }   // no "EVIL LEAFY!" line ("Remove them all"): the hit and the shake say it
+      for(const f of fighters){ if(f.dead||f._fsLock)continue; if(hurtGap(f,evil.x,evil.y)<30-HURT_R0 && f.invuln<=0){ f.pct+=18; knock(f,Math.sign(f.x-evil.x)*8,-6); f.invuln=40; } } }   // no "EVIL LEAFY!" line ("Remove them all"): the hit and the shake say it
   }
 
   // projectiles
@@ -40757,7 +41184,7 @@ function step(){
     if(((pr.grav && !pr.bounce && !pr.landsPuddle && !pr.landsAcid && !pr.trap && !pr.turret && !pr.boomerang) || pr.breaksOnSurface) && pr.vy>0){
       const bottomNow = pr.y + (pr.r||8)*0.5, bottomPrev = bottomNow - pr.vy;
       let top = null;
-      for(const t of vanTopsAt(pr.x)){ if(pr.warnY!=null && t.y < pr.warnY - 6) continue; if(t.y >= bottomPrev - 1 && t.y <= bottomNow + 1 && (top===null || t.y < top)) top = t.y; }
+      for(const t of vanTopsAt(pr.x)){ if(pr.warnY!=null && t.y < pr.warnY - 6) continue; if(fsAimPass(pr, t.y)) continue; if(t.y >= bottomPrev - 1 && t.y <= bottomNow + 1 && (top===null || t.y < top)) top = t.y; }
       if(top !== null){
         if(pr.warnX != null && Math.abs(pr.x - pr.warnX) < 0.5) pr.x = pr.warnX;   // a drifted drop lands on its shadow to the pixel (FALL_DRIFT)
         if(pr.landImpact){ impact(pr.x, top, pr.landImpact); pr.landImpact = null; }   // a heavy drop lands heavily: shake, dust, debris, a scar (impact)
@@ -40769,6 +41196,7 @@ function step(){
     if(pr.bounce && pr.vy>0){
       let landed=false;
       for(const p of platRects()){
+        if(fsAimPass(pr, p.y)) continue;   // (a Final Smash's shot at the foe it holds: fsAimPass)
         if(pr.x>p.x-2 && pr.x<p.x+p.w+2 && pr.y>p.y-8 && pr.y<p.y+p.h+12){
           pr.y=p.y-6; landed=true; break;
         }
@@ -40814,7 +41242,7 @@ function step(){
     }
     if(pr.boomerang){ pr.vx += -pr.ownerFace*(pr.boomCurve||0.32); }  // smaller curve = flies further before returning
     if(liveTurrets.length && shotHitsTurret(pr, liveTurrets)) continue;   // it broke on a turret (see damageTurret)
-    for(const f of fighters){ if(f.dead||f.idx===pr.owner||f.invuln>0)continue;
+    for(const f of fighters){ if(f.dead||f.idx===pr.owner||fsVolleyLanded(f, pr)||(f.invuln>0 && !fsVolleyThrough(f, pr)))continue;   // (a Final Smash's volleys on the foe it caught: fsVolleyThrough, fsVolleyLanded)
       // a shot marked `noStunHit` -- a patch of fire lying on the floor -- never lands on a fighter still reeling from a hit: knocked
       // into it, you get up before it can burn you again (the glitch hunter's stun-lock on Firey Speaker Box's patches; the owner,
       // 2026-10-01: "theyre unavoidable bcs they barely have a moment where you can move to dodge")
@@ -40924,6 +41352,7 @@ function step(){
   stepLandFx();     // landing dust (HIT EFFECTS, render-only)
 
   if(RACE.active) raceTick();   // RUNNING!: the line advances, the throw is charged and flies, the hazards fall and pound (see raceTick)
+  fsLockPin();   // a foe a Final Smash caught is where its row left them, whatever else pushed them this step
   updateCamera();
   updateHUD();
   if(SETTINGS.mode==='ctf'){ ctfStep(); if(CTUT.active) ctutTick(); }   // (the practice checks its step after the mode's own)
@@ -43478,7 +43907,7 @@ function updateDropCarry(f){
   if(!isDropping(f)) return;
   // catch anyone the fall runs into
   for(const t of fighters){
-    if(t === f || t.dead || t.team === f.team || t.invuln > 0 || t._carriedBy != null || t._carrying) continue;
+    if(t === f || t.dead || t.team === f.team || t.invuln > 0 || t._carriedBy != null || t._carrying || t._fsLock) continue;   // (_fsLock: a Final Smash holds them)
     if(!bodyTouch(f, t, 4)) continue;
     // BOW'S EXTRA HIT ON THE WAY DOWN ("bows up special should deal damage on the way down(extra)"): the chair that falls through
     // someone hits them first, once, and the slam at the bottom is the second link of the same chain -- the hit's own grace and
@@ -43686,7 +44115,7 @@ function grabOf(f){
 }
 function grabbable(f, t){
   return !t.dead && t.idx !== f.idx && t.team !== f.team && t._heldBy == null && !(t.frozen > 0) && t._carriedBy == null
-    && !(SETTINGS.mode === 'ctf' && ctfNoHit(t, f)) && !hardInvuln(t) && !(t._ghostT > 0);
+    && !(SETTINGS.mode === 'ctf' && ctfNoHit(t, f)) && !hardInvuln(t) && !(t._ghostT > 0) && !t._fsLock;   // (a foe a Final Smash caught is its holder's alone)
 }
 function mvGrabStart(f){
   if(RACE.active || inOwnTeamZone(f) || !f.onground || f._hold || f._gb || f._mv || f.atkCd > 0) return false;
@@ -46695,7 +47124,7 @@ function doSpecial(f){
       f._switchOn=true; f.flash=12; f.vx=f.face*12; f._dashing=10; applyDashVY(f,15,14);
       // blitz forward and grab the first enemy in the dash path
       let grabbed=null, gd=1e9;
-      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||hardInvuln(t))continue;
+      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||hardInvuln(t)||t._fsLock)continue;   // (_fsLock: a Final Smash holds them)
         const ahead=(f.face>0? t.x>f.x-20 : t.x<f.x+20);
         const d=Math.hypot(t.x-f.x,t.y-f.y);
         if(ahead && d<95 && d<gd){ gd=d; grabbed=t; } }   // reach 150 -> 95
@@ -47000,7 +47429,7 @@ function doSpecial(f){
       // simply come loose: a friend can free them.
       f.vx=f.face*7; f.flash=8;
       let tgt=null, best=f.r+80;
-      for(const t of fighters){ if(t.dead||t===f||t.team===f.team||hardInvuln(t)) continue;
+      for(const t of fighters){ if(t.dead||t===f||t.team===f.team||hardInvuln(t)||t._fsLock) continue;   // (_fsLock: a Final Smash holds them)
         if(Math.sign(t.x-f.x)!==f.face && Math.abs(t.x-f.x)>f.r) continue;
         if(Math.abs(t.y-f.y)>60) continue;
         const d=hurtGap(t, f.x, f.y); if(d<best){ best=d; tgt=t; } }
@@ -48058,6 +48487,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   // can be applied — a partial exemption would still let a fighter be juggled out of their spawn.
   if(SETTINGS.mode==='ctf' && ctfNoHit(t, from)) return;   // a prisoner cannot hit or be hit
   if(inOwnTeamZone(t)) return;
+  if(t._fsLock && !(from && from.idx === t._fsLock.by)) return;   // CATCH, THEN CINEMATIC: a foe a Final Smash caught is its holder's alone
   // …and you cannot swing out of it either: an attack thrown from inside the zone does not land.
   if(from && from !== t && inOwnTeamZone(from)) return;
   // BOT'S GOTCHA! (DOWNSPECIALS.cheer): "Bot takes no damage while holding." Nothing that hits them lands while they hold a foe -- no
@@ -48269,6 +48699,9 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   // boss's grace for each attacker (bossGraceNote) runs through as well.
   const isTick = !!(opts && opts.tick);
   stampHit(t, dmg*fsRow, from, isTick, opts && opts.stun, opts && opts.mvKey);   // (fsRow: a Final Smash's hit stamps its row's own size)
+  if(t._fsLock) fsLockKeep(t, dmg*fsRow);   // CATCH, THEN CINEMATIC: a locked foe's launch waits for the let-go (fsLockOff)...
+  else if(fsSt && !t.dead){ t._fsHitT = hazardT; if(fsKoFlight(t)) fsSlowStart(t); }   // ...and a launch that will carry them out plays slowed down
+  else if(dmg > 0) t._fsHitT = null;   // (a hit that is not a Final Smash's: a KO from here on is not one: fsKoSlow)
   // A circle still winding up is lost to any hit that connects first -- the counterplay that turns
   // a ring from an answer to everything into a read (see CIRCLE_WINDUP).
   if(t._windup) t._windup=null;
@@ -48517,6 +48950,8 @@ function eliminate(f){
   if(f._oneGhost){ oneGhostDown(f); return; }   // One's ghost fighter has no stocks to lose: a knockout is the kill
   SFX.ko();
   if(f.fsGlow>0 || f._fs) fsOnKo(f);   // the glow (or a Final Smash under way) goes with the stock
+  if(f._fsLock) fsLockOff(f, true);   // a foe a Final Smash caught is let go (CATCH, THEN CINEMATIC)
+  fsKoSlow(f);   // ...and a KO by a Final Smash plays slowed down, if its launch did not already
   // if an infected puppet is KO'd, revert it to its real team immediately
   if(f._infected>0){ f.team=f._origTeam; f._infected=0; f._infectedBy=null; }
   // Pillow passive: each KO she scores permanently boosts all her damage (+1% per stack)
@@ -53593,6 +54028,7 @@ function draw(){
   // On scrolling arenas, zoom OUT so you can see more of the (now bigger) map at once.
   // (a client uses the zoom its own view chose -- see viewZoom and clientCamera; the host's is unchanged)
   const zoom = viewZoom();
+  fsCamApply(ctx, zoom);   // CATCH, THEN CINEMATIC: the Final Smash intro's and slow-mo KO's close-up, over the camera (fsCamApply)
   if(zoom!==1){
     // zoom about the screen center, keeping the followed fighter roughly centered
     ctx.translate(W/2, H/2); ctx.scale(zoom, zoom); ctx.translate(-W/2, -H/2);
@@ -63078,7 +63514,8 @@ const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering
   'bleed','hitstun','_stunFx','slowed','rooted','ctrlRev','weakened','curseStacks','defineStacks','_infected','_empowerT','_empower',
   '_momentumT','_hasteT','_bulletT','_starT','_yoyleT','healing','reflecting','_noBattery','_taunted','_grasstree','curse','iceUntil',
   'reform','_floatT','_swallow','_fury','koCount','_poisonT','_tpT',
-  'fsGlow','fsId','fsT','fsWind','fsDur','fsAx','fsAy','fsBx','fsBy','fsCx','fsCy'];   // FINAL SMASH BALLS: the glow, and which Final Smash is on, how far in, and where it began (all a client needs to draw it)
+  'fsGlow','fsId','fsT','fsWind','fsDur','fsAx','fsAy','fsBx','fsBy','fsCx','fsCy',   // FINAL SMASH BALLS: the glow, and which Final Smash is on, how far in, and where it began (all a client needs to draw it)
+  'fsC','fsLk'];   // ...the catch's frames left, and whose catch holds this fighter (+1) (CATCH, THEN CINEMATIC)
 function netFighter(f){
   const o = { idx:f.idx, name:f.name, color:f.color, x:Math.round(f.x), y:Math.round(f.y), r:f.r, face:f.face,
     pct:Math.round(f.pct*10)/10, stocks:(f.stocks===Infinity?-1:f.stocks), koCap:f.koCap, dead:f.dead, team:f.team,
@@ -63279,6 +63716,7 @@ function serializeState(withGeo){
   };
   if(FILE_RIDES.length) s.frd = FILE_RIDES.map(p=>[Math.round(p.x), Math.round(p.y), p.w, p.h, p.face, p.on ? 1 : 0, p.vx ? 1 : 0, p.owner ? p.owner.idx : -1]);   // the big files being ridden: where, which way, glowing, gliding, whose
   if(SMASHBALL) s.fsb = [Math.round(SMASHBALL.x), Math.round(SMASHBALL.y), Math.max(0, Math.round(SMASHBALL.hp/SMASHBALL.hpMax*100)), SMASHBALL.flash > 0 ? 1 : 0];   // the Smash Ball: where it is, how much is left, a hit's flash
+  if(FS.freeze > 0 || FS.slow > 0) s.fsx = [FS.freeze, FS.fz, FS.slow, FS.sf, Math.round(FS.sx), Math.round(FS.sy), FS.slowN];   // a Final Smash's intro and slow-mo KO: frames left, whose, the close-up's point, the slow-mo's length (CATCH, THEN CINEMATIC)
   if(SETTINGS.mode==='ctf') s.ctf = ctfNetOut();   // Capture the Flag: the map by its id and the live state (ctfNetOut)
   if(COS_KO_OUT.length) s.ko = COS_KO_OUT.splice(0);   // cosmetic KO bursts since the last snapshot, [x, y, which]: only on a KO
   if(IMPACT_OUT.length) s.imp = IMPACT_OUT.splice(0);  // impacts since the last snapshot (impact), at most IMPACT_FX.netMax: a client plays them
@@ -63395,6 +63833,8 @@ function applySnapshot(s){
   { const wasB = fresh ? null : SMASHBALL;   // the Smash Ball, glided like a fighter
     SMASHBALL = Array.isArray(s.fsb) ? { x:s.fsb[0], y:s.fsb[1], r:FSBALL.r, hp:s.fsb[2], hpMax:100, flash:s.fsb[3] ? 8 : 0 } : null;
     if(SMASHBALL) netGlide(SMASHBALL, wasB); }
+  if(Array.isArray(s.fsx)){ FS.freeze = s.fsx[0] | 0; FS.fz = s.fsx[1]; FS.slow = s.fsx[2] | 0; FS.sf = s.fsx[3]; FS.sx = s.fsx[4]; FS.sy = s.fsx[5]; FS.slowN = s.fsx[6] | 0; }   // the intro and the slow-mo, as the host has them (a client draws the close-up)
+  else { FS.freeze = 0; FS.slow = 0; }
   { const was = fresh ? [] : FILE_RIDES;   // the big files being ridden (THE BIG FILE), glided like everything else
     FILE_RIDES = Array.isArray(s.frd) ? s.frd.map(r=>{ const p = { x:r[0], y:r[1], w:r[2], h:r[3], face:r[4], on:!!r[5], vx:r[6] ? r[4] : 0, oi:r[7], fileRide:true };
       netGlide(p, was.find(q=>q.oi===p.oi) || null); return p; }) : []; }
