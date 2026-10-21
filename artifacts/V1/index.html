@@ -13600,6 +13600,20 @@ function sizeMainCanvas(){
   UI.sx = w/LOGICAL_W; UI.sy = h/LOGICAL_H;
   baseTransform(ctx);
 }
+// THE WHOLE CANVAS, EVERY PICTURE (the owner, 2026-10-21, "bug:"). The base transform used to be set here and nowhere else, so anything that reset the
+// canvas's state behind the game's back left every later picture drawn at 1/k of the canvas, in its top-left corner: the clear and the backdrop covered
+// only that corner, and the strips to its right and below it were never cleared again -- the name tags, ticks and fighters just past the view smeared
+// there in long trails (a Capture the Flag match on a big map, 8v8). Two things reset it: the browser, when it gives back a 2D canvas whose GPU context it
+// lost (contextrestored: the context comes back in its DEFAULT state, the identity transform), and a picture that threw between a save and its restore
+// (loop's catch keeps the game going, and the canvas kept that picture's saves, transforms and clips). So draw() stands on the base first thing, a thrown
+// picture is unwound (drawView), and a context given back is set up again here.
+// (restore() past the bottom of the stack does nothing, so a few more than any picture nests unwinds whatever one left.)
+function unwindMainCtx(){ for(let i = 0; i < 64; i++) ctx.restore(); baseTransform(ctx); }
+if(cv && cv.addEventListener) cv.addEventListener('contextrestored', ()=>{
+  unwindMainCtx();
+  // the cached pictures on canvases of their own may have lost theirs too: the map's tiles, its backdrop, the minimap and the stage art are drawn again
+  try{ CTF_TILES.clear(); CTF_BG.key = ''; CTF_MINI.id = null; CTF_AREA_IMG.id = null; SA.key = ''; }catch(e){}
+});
 // On load, on a resize and on entering or leaving fullscreen. Gameplay does not read any of it: W and H do not move (see resize).
 function fitApp(){
   const box = layoutBox(), app = document.getElementById('app');
@@ -19343,10 +19357,12 @@ function interpEnd(){
 }
 // draw(), blended or not
 function drawView(blended, client){
-  if(!blended){ draw(); return; }
-  const sb = client ? null : fsSlowBlend();   // (a Final Smash's slow-mo KO: by the slow clock, so the slowed steps glide: fsSlowBlend)
-  interpBegin(sb != null ? sb : clamp(STEP_CLOCK.owed/STEP_CLOCK.ms, 0, 1), client);
-  try{ draw(); } finally { interpEnd(); }
+  try{
+    if(!blended){ draw(); return; }
+    const sb = client ? null : fsSlowBlend();   // (a Final Smash's slow-mo KO: by the slow clock, so the slowed steps glide: fsSlowBlend)
+    interpBegin(sb != null ? sb : clamp(STEP_CLOCK.owed/STEP_CLOCK.ms, 0, 1), client);
+    try{ draw(); } finally { interpEnd(); }
+  }catch(err){ unwindMainCtx(); throw err; }   // a picture that threw half-way: its saves, transforms and clips do not carry into the next (loop's catch reports it)
 }
 
 function loop(){
@@ -57074,6 +57090,7 @@ function drawStageEvilLeafy(e){
   c.restore();
 }
 function draw(){
+  baseTransform(ctx);   // whatever state the canvas was left in (see THE WHOLE CANVAS, EVERY PICTURE): the clear and the backdrop below then cover all of it
   ctx.save();
   let sx=0,sy=0; if(shakeAmt>0.2){ sx=(Math.random()*2-1)*shakeAmt; sy=(Math.random()*2-1)*shakeAmt; }   // it dies down on the 60 Hz clock, not per picture (ageView)
   ctx.clearRect(0,0,W,H); ctx.translate(sx,sy);
