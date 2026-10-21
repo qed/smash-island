@@ -18694,7 +18694,8 @@ function interpEnd(){
 // draw(), blended or not
 function drawView(blended, client){
   if(!blended){ draw(); return; }
-  interpBegin(clamp(STEP_CLOCK.owed/STEP_CLOCK.ms, 0, 1), client);
+  const sb = client ? null : fsSlowBlend();   // (a Final Smash's slow-mo KO: by the slow clock, so the slowed steps glide: fsSlowBlend)
+  interpBegin(sb != null ? sb : clamp(STEP_CLOCK.owed/STEP_CLOCK.ms, 0, 1), client);
   try{ draw(); } finally { interpEnd(); }
 }
 
@@ -18723,8 +18724,8 @@ function loop(){
     } else {
       // however many steps the clock owes (none on a frame that came early), then one picture of where the match is now
       const nn = (CTF.spec && CTF.spec.speed > 1 && SETTINGS.mode === 'ctf') ? n*CTF.spec.speed : n;   // (a spectated Capture the Flag match can run fast: F)
-      for(let i = 0; i < nn && running && !paused; i++){ if(INTERP && FIXED_STEP) interpRecord(false); step(); }
-      drawView(ip, false); ageView(n); clipCapture(n);
+      for(let i = 0; i < nn && running && !paused; i++){ if(INTERP && FIXED_STEP && !fsSlowSkips()) interpRecord(false); step(); }   // (fsSlowSkips: a step the Final Smash slow-mo skips)
+      drawView(ip || (INTERP && FIXED_STEP && fsSlowBlend() != null), false); ageView(n); clipCapture(n);
       if(role==="host" && n > 0) window.NET.broadcastState();   // host relays authoritative state, once for each frame that moved the match
     }
   }catch(err){
@@ -19026,7 +19027,7 @@ function pickUpItem(f, it){
 //     hit is a radius or a lane that was drawn during the tell. The sim uses its own dice (fsRand), so a seeded match is the same
 //     with or without the system. Everything a client needs to DRAW one is on the fighter: fsId, fsT (frames in), fsWind, fsDur.
 const FSBALL = { r:22, hp:34, life:1500, glow:1200, grace:12, minHit:4, maxHit:24 };
-const FS = { next:0, seq:0, rng:1, lastT:0, by:null, freeze:0, fz:-1, slow:0, slowAcc:0, sf:-1, sx:0, sy:0 };   // by: the fighter whose Final Smash frame is running (fsRun), for fsHitBy; freeze .. sy: the intro and the slow-mo (CATCH, THEN CINEMATIC)
+const FS = { next:0, seq:0, rng:1, lastT:0, by:null, freeze:0, fz:-1, slow:0, slowN:0, slowAcc:0, sf:-1, sx:0, sy:0 };   // by: the fighter whose Final Smash frame is running (fsRun), for fsHitBy; freeze .. sy: the intro and the slow-mo (CATCH, THEN CINEMATIC)
 // KO-LEVEL. The owner, 2026-10-18: "smash balls feel like they dont do enough damage. I got one, and sidewalky went from 9 percent to 39
 // percent". Chosen: "KO-level" (big damage AND big knockback, so a Final Smash usually KOs anyone above ~60%, like in Smash), and knockback
 // "Yes, same amount": it rises with the damage. Every hit a Final Smash deals (a frame of its own, or a shot it threw: fsHitBy) lands
@@ -19267,13 +19268,15 @@ function fsFoeNear(f, R){
 //      ends, or when the holder is KO'd: never later than the row's own length.
 //      Miss the catch and nothing locks: the Final Smash still plays, and whoever is outside it can dodge it as before.
 //   4. THE SLOW-MO KO. A launch by a Final Smash that will carry the foe out (fsKoFlight: their flight, untouched, past a blast line) plays
-//      FS_SLOW.frames frames at FS_SLOW.k speed, the camera closing in on them (a KO by one it did not see coming gets a shorter one).
+//      FS_SLOW.frames frames at FS_SLOW.k speed, the camera snapping in on the spot the blow landed and following them only a little
+//      (FS_SLOW.follow), so they are seen flying out of the close-up, as in Smash; a KO by one it did not see coming gets a shorter one,
+//      on the spot they went out. On screen the slowed steps are blended (fsSlowBlend): a smooth slow motion, not a stutter.
 // The KO-level numbers are untouched (FS_DMG_MULT, FS_KB, FS_KO_FIX). Online the host runs all of it; a client gets the lock (fsLk), the
 // catch phase (fsC), the intro and the slow-mo (s.fsx), and the catch area as hit art. Training never has a Smash Ball; a replay is the
 // frames as they were drawn.
 const FS_INTRO = 30, FS_CATCH = 10;
 const FS_INTRO_ZOOM = 1.55;
-const FS_SLOW = { k:0.3, frames:84, zoom:1.45 };
+const FS_SLOW = { k:0.25, frames:60, zoom:1.5, follow:0.3 };
 const FS_RAIN_CATCH = 360;   // a row that drops its hits on the nearest foes wherever they are: its catch is this circle round the holder
 const FS_LOCK_BEAT = 3;      // frames a locked foe is held after the row's last hit on them, before that hit's launch is let go
 const FS_LOCK_STUN = 30;     // the let-go's stun at most (fsLockStun)
@@ -19284,7 +19287,7 @@ const FS_LOCK_STUN = 30;     // the let-go's stun at most (fsLockStun)
 // FS_CATCH_KB: id -> the let-go's own launch multiplier, for the rows the all-row measure found out of line once caught (Pen at 60% not
 // carried out, or at 0% carried out), as FS_KO_FIX does for a clean hit (and in the same way: a cut holds at every %, a boost grows in
 // with the launch, none at FS_KB.from%, all of it from FS_KB.at%). Only a locked foe's let-go: a hit on anyone else is as it was.
-const FS_CATCH_KB = { chainbolt:1.15, matter:0.7, fryfan:2, permanentrecord:1.6, lemonspit:1.3 };
+const FS_CATCH_KB = { chainbolt:1.15, matter:0.7, fryfan:2, permanentrecord:1.6, lemonspit:1.3, rant:0.9 };
 function fsCatchKb(t, L){
   const fix = FS_CATCH_KB[L.st.d.id]; if(!fix) return 1;
   const p = Math.max(0, (t.pct || 0) - (L.st.bonus[t.idx] || 0)), r = clamp((p - FS_KB.from)/(FS_KB.at - FS_KB.from), 0, 1);
@@ -19434,12 +19437,14 @@ function fsTimeGate(){
     return true;
   }
   FS.slow--;
-  const t = fighters[FS.sf]; if(t && !t.dead){ FS.sx = t.x; FS.sy = t.y; }
   FS.slowAcc += FS_SLOW.k;
   if(FS.slowAcc >= 1){ FS.slowAcc -= 1; return false; }
-  updateCamera();
-  return true;
+  return true;   // (the camera too waits for the next step that runs: the picture blends to it, fsSlowBlend)
 }
+// Will the next step() be one the slow-mo skips? (loop(): a skipped step records no positions to blend from)
+function fsSlowSkips(){ return !(FS.freeze > 0) && FS.slow > 0 && FS.slowAcc + FS_SLOW.k < 1; }
+// Through the slow-mo, how far the picture is from the last step that ran to the next one (drawView blends by it); null otherwise.
+function fsSlowBlend(){ return !(FS.freeze > 0) && FS.slow > 0 ? clamp(FS.slowAcc, 0, 1) : null; }
 // Will this launch carry t past a blast line before they can steer (while their stun lasts)? The slow-mo's cue. A launch that only
 // carries them out if they then fail to steer back gets the shorter slow-mo at the KO itself (fsKoSlow).
 function fsKoFlight(t){
@@ -19452,17 +19457,19 @@ function fsKoFlight(t){
   }
   return false;
 }
-function fsSlowStart(t, frames){ if(FS.slow > 0 || FS.freeze > 0) return; FS.slow = frames || FS_SLOW.frames; FS.slowAcc = 0; FS.sf = t.idx; FS.sx = t.x; FS.sy = t.y; }
+function fsSlowStart(t, frames){ if(FS.slow > 0 || FS.freeze > 0) return; FS.slow = FS.slowN = frames || FS_SLOW.frames; FS.slowAcc = 0; FS.sf = t.idx; FS.sx = t.x; FS.sy = t.y; }
 // A KO by a Final Smash that the slow-mo did not see coming (eliminate): a shorter one, on the spot they went out.
 function fsKoSlow(t){
   if(t._fsHitT == null || hazardT - t._fsHitT > 180 || FS.slow > 0) return;
   t._fsHitT = null;
-  FS.slow = Math.round(FS_SLOW.frames*0.6); FS.slowAcc = 0; FS.sf = -1; FS.sx = clamp(t.x, 0, WW); FS.sy = clamp(t.y, 0, WH);
+  FS.slow = FS.slowN = Math.round(FS_SLOW.frames*0.6); FS.slowAcc = 0; FS.sf = -1; FS.sx = clamp(t.x, 0, WW); FS.sy = clamp(t.y, 0, WH);
 }
 // The close-up: the holder through the intro, the launched foe through the slow-mo ({x, y, z, k}: the point, the zoom, how far in).
 function fsCamFocus(){
   if(FS.freeze > 0){ const h = fighters[FS.fz]; if(!h || h.dead) return null; const e = FS_INTRO - FS.freeze; return { x:h.x, y:h.y, z:FS_INTRO_ZOOM, k:Math.min(1, (e + 1)/7)*Math.min(1, FS.freeze/9) }; }
-  if(FS.slow > 0){ const t = fighters[FS.sf]; let x = FS.sx, y = FS.sy; if(t && !t.dead){ x = t.x; y = t.y; } const e = FS_SLOW.frames - FS.slow; return { x:x, y:y, z:FS_SLOW.zoom, k:Math.min(1, (e + 1)/10)*Math.min(1, FS.slow/14) }; }
+  if(FS.slow > 0){   // the spot the blow landed, a little way after the foe (FS_SLOW.follow): it snaps in, and eases out over the last frames
+    const t = fighters[FS.sf]; let x = FS.sx, y = FS.sy; if(t && !t.dead){ x += (t.x - x)*FS_SLOW.follow; y += (t.y - y)*FS_SLOW.follow; }
+    const e = (FS.slowN || FS_SLOW.frames) - FS.slow; return { x:x, y:y, z:FS_SLOW.zoom, k:Math.min(1, (e + 1)/5)*Math.min(1, FS.slow/16) }; }
   return null;
 }
 // draw(): the close-up, as a transform over the camera's own (zoom: the view's), kept inside what the camera shows (no edge of the
@@ -19485,7 +19492,9 @@ function fsToScreen(x, y){
 // The bind on a locked foe, in the holder's colour (world space, over the fighters: fsDrawFx). A client draws it from fsLk.
 function fsDrawLock(t){
   const h = fighters[t.fsLk - 1]; if(!h) return;
-  const c = ctx, R = t.r + 14, a0 = hazardT*0.06;
+  const now = performance.now(); if(!t._fsLkT) t._fsLkT = now;
+  const u = clamp((now - t._fsLkT)/150, 0, 1), snap = 1 + 1.6*(1 - u)*(1 - u);   // closing in over 150 ms
+  const c = ctx, R = (t.r + 14)*snap, a0 = hazardT*0.06;
   c.save(); c.translate(t.x, t.y); c.lineCap = 'round';
   fsRing(c, 0, 0, R, h.color, 3, 0.85);
   for(let i = 0; i < 4; i++){ const a = a0 + i*Math.PI/2; c.globalAlpha = 0.9; c.strokeStyle = '#1c1c1c'; c.lineWidth = 7; c.beginPath(); c.arc(0, 0, R, a, a + 0.5); c.stroke(); c.strokeStyle = h.color; c.lineWidth = 4; c.stroke(); }
@@ -19611,7 +19620,7 @@ function fsDrawAura(f){
 }
 // World-space effects of a Final Smash in progress (its tell and its blast), over the fighters.
 function fsDrawFx(){
-  for(const f of fighters) if(f.fsLk > 0 && !f.dead) fsDrawLock(f);   // CATCH, THEN CINEMATIC: the bind on a locked foe
+  for(const f of fighters){ if(f.fsLk > 0 && !f.dead) fsDrawLock(f); else f._fsLkT = 0; }   // CATCH, THEN CINEMATIC: the bind on a locked foe
   for(const f of fighters){
     if(!f.fsId || f.dead || f.fsC > 0) continue;   // (through the catch the catch area is what is drawn: hit art)
     const d = FINAL_SMASHES[f.name] && FINAL_SMASHES[f.name].id === f.fsId ? FINAL_SMASHES[f.name] : FS_DEFAULT;
@@ -19629,7 +19638,7 @@ function fsDrawScreen(){
   else if(h && h.fsC > 0 && h.fsId) a = h.fsC/FS_CATCH;
   if(a > 0.01 && h && !h.dead){
     const p = fsToScreen(h.x, h.y), R0 = (h.r + 40)*p.s, e = FS.freeze > 0 ? (FS_INTRO - FS.freeze)/FS_INTRO : 1;
-    c.save();
+    c.save(); c.globalAlpha = 1;
     const g = c.createRadialGradient(p.x, p.y, R0*0.9, p.x, p.y, Math.max(R0*3, Math.hypot(W, H)*0.6));
     g.addColorStop(0, 'rgba(8,4,22,0)'); g.addColorStop(0.2, 'rgba(8,4,22,' + (0.55*a) + ')'); g.addColorStop(1, 'rgba(8,4,22,' + (0.72*a) + ')');
     c.fillStyle = g; c.fillRect(0, 0, W, H);
@@ -19646,8 +19655,8 @@ function fsDrawScreen(){
     c.restore();
   }
   if(FS.slow > 0){
-    const e = FS_SLOW.frames - FS.slow, a2 = Math.min(1, (e + 1)/10)*Math.min(1, FS.slow/14);
-    c.save();
+    const e = (FS.slowN || FS_SLOW.frames) - FS.slow, a2 = Math.min(1, (e + 1)/5)*Math.min(1, FS.slow/16);
+    c.save(); c.globalAlpha = 1;
     const g = c.createRadialGradient(W/2, H/2, Math.min(W, H)*0.3, W/2, H/2, Math.max(W, H)*0.72);
     g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(10,0,30,' + (0.5*a2) + ')');
     c.fillStyle = g; c.fillRect(0, 0, W, H); c.restore();
@@ -20254,7 +20263,7 @@ FINAL_SMASHES['Bomby'] = {
 // distances (6-8% each); then one acid cannonball (22%, goes through). Behind him is safe; the shots land in front, so it is a wall to get over.
 FINAL_SMASHES['Rocky'] = {
   id:'matter', wind:30, dur:138,reach:420,
-  catch(f){ return fsBoxAhead(f, 0, 430, 160, f.r + 8); }, lockEnd:30 + 78,   // CATCH: the fountain's reach in front of him
+  catch(f){ return fsBoxAhead(f, 0, 330, 160, f.r + 8); }, lockEnd:30 + 78,   // CATCH: the part of the fountain's reach in front of him its shots rain on (past it they thin out)
   start(f, st){ armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -63318,7 +63327,7 @@ function serializeState(withGeo){
   };
   if(FILE_RIDES.length) s.frd = FILE_RIDES.map(p=>[Math.round(p.x), Math.round(p.y), p.w, p.h, p.face, p.on ? 1 : 0, p.vx ? 1 : 0, p.owner ? p.owner.idx : -1]);   // the big files being ridden: where, which way, glowing, gliding, whose
   if(SMASHBALL) s.fsb = [Math.round(SMASHBALL.x), Math.round(SMASHBALL.y), Math.max(0, Math.round(SMASHBALL.hp/SMASHBALL.hpMax*100)), SMASHBALL.flash > 0 ? 1 : 0];   // the Smash Ball: where it is, how much is left, a hit's flash
-  if(FS.freeze > 0 || FS.slow > 0) s.fsx = [FS.freeze, FS.fz, FS.slow, FS.sf, Math.round(FS.sx), Math.round(FS.sy)];   // a Final Smash's intro and slow-mo KO: frames left, whose, and the close-up's point (CATCH, THEN CINEMATIC)
+  if(FS.freeze > 0 || FS.slow > 0) s.fsx = [FS.freeze, FS.fz, FS.slow, FS.sf, Math.round(FS.sx), Math.round(FS.sy), FS.slowN];   // a Final Smash's intro and slow-mo KO: frames left, whose, the close-up's point, the slow-mo's length (CATCH, THEN CINEMATIC)
   if(SETTINGS.mode==='ctf') s.ctf = ctfNetOut();   // Capture the Flag: the map by its id and the live state (ctfNetOut)
   if(COS_KO_OUT.length) s.ko = COS_KO_OUT.splice(0);   // cosmetic KO bursts since the last snapshot, [x, y, which]: only on a KO
   if(IMPACT_OUT.length) s.imp = IMPACT_OUT.splice(0);  // impacts since the last snapshot (impact), at most IMPACT_FX.netMax: a client plays them
@@ -63435,7 +63444,7 @@ function applySnapshot(s){
   { const wasB = fresh ? null : SMASHBALL;   // the Smash Ball, glided like a fighter
     SMASHBALL = Array.isArray(s.fsb) ? { x:s.fsb[0], y:s.fsb[1], r:FSBALL.r, hp:s.fsb[2], hpMax:100, flash:s.fsb[3] ? 8 : 0 } : null;
     if(SMASHBALL) netGlide(SMASHBALL, wasB); }
-  if(Array.isArray(s.fsx)){ FS.freeze = s.fsx[0] | 0; FS.fz = s.fsx[1]; FS.slow = s.fsx[2] | 0; FS.sf = s.fsx[3]; FS.sx = s.fsx[4]; FS.sy = s.fsx[5]; }   // the intro and the slow-mo, as the host has them (a client draws the close-up)
+  if(Array.isArray(s.fsx)){ FS.freeze = s.fsx[0] | 0; FS.fz = s.fsx[1]; FS.slow = s.fsx[2] | 0; FS.sf = s.fsx[3]; FS.sx = s.fsx[4]; FS.sy = s.fsx[5]; FS.slowN = s.fsx[6] | 0; }   // the intro and the slow-mo, as the host has them (a client draws the close-up)
   else { FS.freeze = 0; FS.slow = 0; }
   { const was = fresh ? [] : FILE_RIDES;   // the big files being ridden (THE BIG FILE), glided like everything else
     FILE_RIDES = Array.isArray(s.frd) ? s.frd.map(r=>{ const p = { x:r[0], y:r[1], w:r[2], h:r[3], face:r[4], on:!!r[5], vx:r[6] ? r[4] : 0, oi:r[7], fileRide:true };
