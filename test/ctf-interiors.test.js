@@ -159,3 +159,84 @@ describe('interiors: several rooms apart under one map', () => {
     expect(J(w, 'CTF.stat.portalOK || 0'), 'in by a door (the end of the line is the place it was for)').toBeGreaterThanOrEqual(1);
   });
 });
+
+// THE SKIFF (the sky map, the Fleet's half): the first interior in a shipped map. Outside, the cabin is a closed shell with a door at each end; inside, six rooms under the map, the crane's zipline, the bilge's
+// drain (a hole) and the CANNON (g.cannon): Up in its breech, a fuse, then a fixed arc out over the sky to the dock end of the Sky Fair; a flag carrier may not ride it (the owner, 2026-10-19).
+function sky(seed, count = 10) {
+  const { window: w } = loadMonolith(seed);
+  w.eval(`CTF.skipNav=true; SETTINGS.mode='ctf'; SETTINGS.count=${count}; SETTINGS.itemRate=0; CTF.forceMap='sky'; beginMatchNow();
+          fighters.forEach(function(f){ f.controller='still'; f.you=false; }); ctfEndHide(CTF.live);`);
+  return w;
+}
+
+describe('the skiff: the sky map\'s first interior, and its cannon', () => {
+  it('is one interior on the Fleet\'s half in every size and either way round, with its doors both ways, the hatch to the roof, the drain, the zipline and a cannon whose arc ends on the fair\'s dock end, clear of the map', () => {
+    const { window: w } = loadMonolith(91);
+    const r = J(w, `[0, 1, 2].reduce(function(out, band){ [false, true].forEach(function(sw){ var M = ctfMapBuild('sky', sw, band), col = [0, 0, 24][band] + 66 + [14, 28, 40][band] - 2, iv = M.interiors, P = M.portals.filter(function(p){ return p.iv; }), k = M.cannons[0], A = k && ctfCannonPath(M, k, 40);
+      var clear = true; if(A) for(var t = 0; t <= A.T; t++){ var q = ctfCannonPos(A, t); M.plats.forEach(function(p){ if(p.solid && q.x > p.x - 30 && q.x < p.x + p.w + 30 && q.y > p.y - 30 && q.y < p.y + p.h + 30 && t < A.T - 2) clear = false; }); }
+      out.push({ band:band, sw:sw, n:iv.length, key:iv[0] && iv[0].key, half:iv[0] && iv[0].half, band1:!!M.ivBand, under:iv[0] && iv[0].y >= M.pocketY,
+        two:P.filter(function(p){ return p.two; }).length, out:P.filter(function(p){ return p.kind === 'exit' && !p.two && !p.dmg; }).length, hole:P.filter(function(p){ return p.fall && p.dmg === 8; }).length,
+        zips:M.zips.length, cans:M.cannons.length, sameHalf:!!A && (A.x1 < M.WW/2) === (iv[0].half === 0), lands:!!A && Math.abs(A.y1 + 42 - 14*120) < 2, fair:!!A && Math.abs(A.x1 - (iv[0].half === 0 ? col*120 + 60 : M.WW - col*120 - 60)) < 2, clear:clear, T:A && A.T }); }); return out; }, [])`);
+    for (const m of r) {
+      const at = `band ${m.band}${m.sw ? ' swapped' : ''}`;
+      expect([m.n, m.key, m.under, m.band1], `${at}: one interior, the skiff, under the map, not a mill`).toEqual([1, 'skiff', true, false]);
+      expect(m.half, `${at}: on the Fleet's half`).toBe(m.sw ? 0 : 1);
+      expect([m.two, m.out, m.hole, m.zips, m.cans], `${at}: two doors both ways (four doorways), the hatch to the roof, the drain, the crane's zipline, the cannon`).toEqual([4, 1, 1, 1, 1]);
+      expect([m.sameHalf, m.lands, m.fair], `${at}: the cannon lands on the fair's dock-end island, on its own half`).toEqual([true, true, true]);
+      expect(m.clear, `${at}: the arc never goes through the map`).toBe(true);
+    }
+  });
+
+  it('the cannon: Up in its breech lights a fuse, a second later you are fired along the arc with no steering and land on the fair; a carrier is refused; a hit knocks you out of the barrel, or off the arc', () => {
+    const w = sky(92);
+    const k = J(w, `(function(){ var k = CTF.map.cannons[0], A = ctfCannonPath(CTF.map, k, 40); return { x:k.x, y:k.y, w:k.w, h:k.h, mx:k.mx, my:k.my, lx:k.lx, fuse:k.fuse, T:A.T }; })()`);
+    const f = w.eval(`fighters.find(function(g){ return g.team === CTF.map.interiors[0].half; }).idx`);
+    const put = () => w.eval(`(function(){ var f = fighters[${f}]; f.x = ${k.x + k.w / 2}; f.y = ${k.y + k.h} - f.r; f.vx = 0; f.vy = 0; f.onground = true; f.hitstun = 0; f.dead = false; f._cf = -1; f._portCool = 0; f._portHold = false; f._portT = 0; f._fuse = null; f._can = null; f._room = ctfInteriorAt(CTF.map, f.x, f.y); })()`);
+    const up = (n) => { for (let i = 0; i < n; i++) w.eval(`fighters[${f}]._pressUp = true; ctfStepPortals(CTF.live);`); };
+    const me = () => J(w, `{ x:fighters[${f}].x, feet:fighters[${f}].y + fighters[${f}].r, room:fighters[${f}]._room || null, fuse:!!fighters[${f}]._fuse, can:!!fighters[${f}]._can, g:fighters[${f}].onground }`);
+    put(); up(3); expect(me().fuse, 'Up held a moment, as at a door').toBe(false);
+    up(1); let m = me(); expect([m.fuse, m.room != null], 'in the barrel, the fuse lit, still inside').toEqual([true, true]);
+    for (let i = 0; i < k.fuse - 2; i++) w.eval('step()');
+    expect(me().fuse, 'the fuse burns about a second').toBe(true);
+    for (let i = 0; i < 4; i++) w.eval('step()');
+    m = me(); expect([m.can, m.room], 'fired: out of the ship, on the arc').toEqual([true, null]);
+    expect(Math.hypot(m.x - k.mx, m.feet - k.my), 'from the muzzle').toBeLessThan(400);
+    expect(J(w, `(function(){ var r = ctfFilterInput(fighters[${f}], { left:true, right:false, jump:true, up:true, down:false, attack:true, special:false, smash:false, flag:false, edit:false }); return [r.left, r.jump, r.attack]; })()`), 'no steering in the air').toEqual([false, false, false]);
+    let n = 0; for (; n < k.T + 120; n++) { w.eval('step()'); m = me(); if (!m.can && m.g) break; }
+    expect(m.g, 'down again').toBe(true);
+    expect(Math.abs(m.x - k.lx), 'on the fair\'s dock-end island, where it always lands').toBeLessThan(200);
+    expect(Math.abs(m.feet - 14 * 120), 'on its top').toBeLessThan(4);
+    put(); w.eval(`fighters[${f}]._cf = 0;`); up(8); expect(me().fuse, 'a flag carrier may not ride it').toBe(false);
+    put(); up(4); for (let i = 0; i < 20; i++) w.eval('step()');
+    w.eval(`fighters[${f}].hitstun = 15; fighters[${f}].vx = -6;`); w.eval('step()'); m = me();
+    expect([m.fuse, m.can, m.room != null], 'hit in the barrel: knocked out of it, still inside (it fires empty)').toEqual([false, false, true]);
+    put(); up(4); for (let i = 0; i < k.fuse + 40; i++) w.eval('step()');
+    expect(me().can, 'in the air').toBe(true);
+    w.eval(`fighters[${f}].hitstun = 15; fighters[${f}].vx = 6; fighters[${f}].vy = 2;`); w.eval('step()');
+    expect(me().can, 'hit in the air: off the arc').toBe(false);
+    expect(J(w, `(function(){ var o = {}, g = fighters[${f}]; g._fuse = { i:0, t:3 }; ctfNetFighter(g, o); g._fuse = null; return o.cn; })()`), 'online: who is in a barrel goes on the wire').toEqual([0, 1]);
+  });
+
+  it('CPUs: the cannon is a plain way for a free fighter only, the drain\'s move starts on the floor at its edge, and a Fleet CPU sent to the cannon\'s landing goes in by a door (over the roof to the bow door, the quick way) and is fired', { timeout: 240000 }, () => {
+    const { window: w } = loadMonolith(93);
+    w.eval(`CTF.noShipped=true; SETTINGS.mode='ctf'; SETTINGS.count=10; SETTINGS.itemRate=0; CTF.forceMap='sky'; beginMatchNow(); fighters.forEach(function(f){ f.controller='still'; f.you=false; }); ctfEndHide(CTF.live);
+            var nav = ctfNavMake(CTF.map); while(!nav.ready) ctfNavTick(nav, 200); CTF.nav = nav; CTF.navs = {}; CTF.navs[ctfNavId()] = nav; ctfAiBegin(CTF.live, nav);`);
+    const r = J(w, `(function(){ var M = CTF.map, nav = CTF.nav, N = nav.nodes, can = [], hole = [];
+      N.forEach(function(n){ n.edges.forEach(function(e){ if(e.kind !== 'portal') return; if(e.can != null) can.push({ plain:!!e.plain, prof:e.prof || '', pit:!!n.pit }); if(e.fall) hole.push({ pit:!!n.pit, inside:ctfInteriorAt(M, (n.x0 + n.x1)/2, n.y - 10) }); }); });
+      return { can:can, hole:hole, iv:M.interiors[0].id }; })()`);
+    expect(r.can, 'one move for the cannon, plain, for a free fighter (a carrier\'s plan never takes it)').toEqual([{ plain: true, prof: 'f', pit: false }]);
+    expect(r.hole, 'the drain: one move, from the bilge\'s floor, not from the bottom of the hole').toEqual([{ pit: false, inside: r.iv }]);
+    const f = w.eval('fighters.find(function(g){ return g.team === CTF.map.interiors[0].half; }).idx');
+    const g = J(w, `(function(){ var k = CTF.map.cannons[0], A = ctfCannonPath(CTF.map, k, 40), d = CTF.map.portals.find(function(p){ return p.iv && p.two && p.kind === 'enter' && Math.abs(p.ty - 38*120) < 200; }); return { x:k.lx, y:A.y1 + 42, dx:d.x + d.w/2, dy:d.y + d.h }; })()`);
+    w.eval(`(function(){ CTF.noPlan = true; CTF.stat = {}; var f = fighters[${f}]; f.controller = 'ai'; f.x = ${g.dx} + (${g.dx} > CTF.map.WW/2 ? 1 : -1)*200; f.y = ${g.dy} - f.r - 2; f.vx = 0; f.vy = 0; })()`);
+    let inside = false, fired = false, best = null;
+    for (let i = 0; i < 4000 && !best; i++) {
+      w.eval(`(function(){ var a = fighters[${f}]._ai; if(!a.goal || a.goal.x !== ${g.x}){ a.goal = { kind:'guard', x:${g.x}, y:${g.y} }; a.path = null; } a.replan = 1e9; a.role = 'att'; })(); step()`);
+      const s = J(w, `{ x:fighters[${f}].x, feet:fighters[${f}].y + fighters[${f}].r, room:fighters[${f}]._room || null, can:!!fighters[${f}]._can, g:fighters[${f}].onground }`);
+      if (s.room) inside = true; if (s.can) fired = true;
+      if (fired && !s.can && s.g) best = s;   // (the first footing after the shot)
+    }
+    expect([inside, fired], 'in by a door, out by the cannon').toEqual([true, true]);
+    expect(best && Math.abs(best.x - g.x) < 300 && Math.abs(best.feet - g.y) < 8, 'and down on the fair where it lands').toBe(true);
+  });
+});
