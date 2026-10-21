@@ -2347,8 +2347,9 @@ const CTF_COVER = { B:'bush', C:'crate', F:'banner', W:'barrel', U:'curtain', R:
   G:'stalagmite', M:'minecart', Q:'ore',                  // caves and mines
   E:'machine', L:'gears', Z:'blocks',                     // factory and toy land
   O:'log', V:'fern', I:'stump',                           // forest and beach
-  X:'cloud', D:'snowman', n:'drift', t:'pine' };           // sky, snow (a drift of snow, a pine you can stand behind)
-const CTF_COVER_HW = { bush:70, crate:112, banner:50, barrel:40, curtain:60, rubble:70, rock:64, armor:40, urn:34, chest:62, hay:70, stalagmite:62, minecart:72, ore:60, machine:62, gears:72, blocks:60, log:84, fern:62, stump:46, cloud:84, snowman:46, drift:84, pine:70, iceblock:56, crystal:62, lamp:30, coral:64, kelp:40, shell:46, anchor:44, cone:28, hydrant:30, ball:50 };
+  X:'cloud', D:'snowman', n:'drift', t:'pine',            // sky, snow (a drift of snow, a pine you can stand behind)
+  l:'lamp', k:'anchor', r:'rope' };                        // ships and docks (a lantern on a post, an anchor, a coil of rope)
+const CTF_COVER_HW = { bush:70, crate:112, banner:50, barrel:40, curtain:60, rubble:70, rock:64, armor:40, urn:34, chest:62, hay:70, stalagmite:62, minecart:72, ore:60, machine:62, gears:72, blocks:60, log:84, fern:62, stump:46, cloud:84, snowman:46, drift:84, pine:70, iceblock:56, crystal:62, lamp:30, coral:64, kelp:40, shell:46, anchor:44, cone:28, hydrant:30, ball:50, rope:52 };
 const CTF_COVER_CHARS = Object.keys(CTF_COVER).join('');
 const CTF_MAPS = {};
 
@@ -2631,22 +2632,41 @@ function ctfMapBuildOne(id, build, band){
   for(const k of objs.keys){ M.keys.push({ door:String(k.door), x:k.x, y:k.y }); M.keys.push({ door:k.door+'r', x:mx(k.x), y:k.y }); }
   for(const b of objs.boosts){ M.boosts.push({ kind:b.kind, x:b.x, y:b.y }); M.boosts.push({ kind:b.kind, x:mx(b.x), y:b.y }); }
   for(const b of objs.buffs){ M.buffs.push({ kind:'speed', x:b.x, y:b.y }); M.buffs.push({ kind:'speed', x:mx(b.x), y:b.y }); }
-  for(const s of objs.spots){ M.spots.push({ team:0, cover:s.cover, x:s.x, y:s.y }); M.spots.push({ team:1, cover:s.cover, x:mx(s.x), y:s.y }); }
   const padRects = ctfMergeCells(objs.pad);
   const pad = padRects[0] ? { x:padRects[0].x, y:padRects[0].y+CTF_CELL, w:padRects[0].w, h:CTF_CELL } : null;
   M.homes.push({ team:0, spawns:objs.spawns.map(s=>({x:s.x,y:s.y})), pad });
   M.homes.push({ team:1, spawns:objs.spawns.map(s=>({x:mx(s.x),y:s.y})), pad: pad && { x:mx(pad.x,pad.w), y:pad.y, w:pad.w, h:pad.h } });
   const js = [...jailCells].map(k=>k.split(',').map(Number));
+  let jailZone = null;
   if(js.length){
     const jr = stacks(js)[0], dr0 = jr[0], dr1 = jr[1], dc = jr[2];
     const door = doorOf(dr0, dr1, dc, 0, 0);
     const floorY = (dr1+1)*CTF_CELL, minC = Math.min(...objs.slots.map(s=>Math.floor(s.x/CTF_CELL)));
     // the no-go zone: from the door out into the corridor, 500 px (the owner: it was 1800 and took in the home spawn: a defender must not stand at the door, but may guard nearby and chase)
-    const zone = { x:door.x, y:(dr0-4)*CTF_CELL, w:door.w + 500, h:floorY-(dr0-4)*CTF_CELL };
+    let zone = { x:door.x, y:(dr0-4)*CTF_CELL, w:door.w + 500, h:floorY-(dr0-4)*CTF_CELL };
+    // On a map with interiors (rooms stacked floor on floor: the jail in a tower's lobby, a ship's brig) it is the jail's own corridor and nothing else (the owner, 2026-10-19: "i cant seem to enter the buildings in the airship thing.
+    // where are they?": it reached four rows over the door, up through the ceiling, and pushed the jail's own team away from its own doors and rooms): from the door's top row down to its floor, and out until a wall, a door,
+    // a hole in the floor or a hatch in the ceiling, a spring, an updraft or a lift, so it never covers a way in or out of anywhere.
+    if(g.interiors.length){
+      const C = CTF_CELL, cellAt = (r, c)=>(r >= 0 && r < CTF_DIM.rows && c >= 0 && c < CTF_DIM.half) ? g.rows[r][c] : '#', firm = (r, c)=>{ const ch = cellAt(r, c); return ch === '#' || ch === '='; };
+      const hatchUp = c=>{ if(firm(dr0 - 1, c)) return false; let a = c, b = c; while(a > c - 6 && !firm(dr0 - 1, a - 1)) a--; while(b < c + 6 && !firm(dr0 - 1, b + 1)) b++; return firm(dr0 - 1, a - 1) && firm(dr0 - 1, b + 1); };   // (a hole in a ceiling, not the open air over a tall hall)
+      const zoneStop = col=>{ for(let r = dr0; r <= dr1; r++){ const ch = cellAt(r, col); if(ch === '#' || ch === 'J' || (ch >= '1' && ch <= '6')) return true; }
+        if(!firm(dr1 + 1, col) || hatchUp(col)) return true;
+        const x0 = col*C, x1 = x0 + C, y0 = dr0*C, y1 = floorY;
+        return g.zones.some(z=>(z.type === 'spring' || z.type === 'updraft') && z.c0*C < x1 && (z.c1 + 1)*C > x0 && z.r0*C < y1 && (z.r1 + 1)*C > y0)
+          || g.elevs.some(e=>e.c0*C < x1 && (e.c0 + e.w)*C > x0 && e.rTop*C - C < y1 && e.rBot*C > y0)
+          || g.portals.some(p=>p.x < x1 && p.x + p.w > x0 && p.y < y1 && p.y + p.h > y0); };
+      let zx1 = door.x + door.w + 500; for(let col = dc + 1; col*C < zx1; col++) if(zoneStop(col)){ zx1 = col*C; break; }
+      zone = { x:door.x, y:dr0*C, w:zx1 - door.x, h:floorY - dr0*C };
+    }
+    jailZone = zone;
     const j0 = { owner:0, door:{ x:door.x, y:door.y, w:door.w, h:door.h }, slots:objs.slots.map(s=>({x:s.x,y:s.y})), zone, face:1 };
     M.jails.push(j0);
     M.jails.push({ owner:1, door:{ x:mx(door.x,door.w), y:door.y, w:door.w, h:door.h }, slots:objs.slots.map(s=>({x:mx(s.x),y:s.y})), zone:{ x:mx(zone.x,zone.w), y:zone.y, w:zone.w, h:zone.h }, face:-1 });
   }
+  // the hiding places, but none in the jail's no-go zone (its own team could not go near a flag hidden there)
+  for(const s of objs.spots){ if(jailZone && s.x >= jailZone.x && s.x <= jailZone.x + jailZone.w && s.y > jailZone.y && s.y <= jailZone.y + jailZone.h) continue;
+    M.spots.push({ team:0, cover:s.cover, x:s.x, y:s.y }); M.spots.push({ team:1, cover:s.cover, x:mx(s.x), y:s.y }); }
   for(const b of g.clear) M.clear.push(b);
   M.solids = M.plats.filter(p=>p.solid);
   M.rows = g.rows.map(r=>r.join(''));   // the left half as text, for a look at it
@@ -3549,7 +3569,7 @@ function skyDock(k, g){
   S(66, 0, D, 6); A(67, 2, D, 5); BK(67, 2, D, 5, 'cabin'); DC('window', 70, 3, 1, 2); DC('window', 76, 3, 1, 2); DC('window', 82, 3, 1, 2); P(5, 82, 'y');   // the zeppelin's hull, and its room
   skyIsle(k, 66, D, 16, 4); k.SL(66, 71, 14, 16, 3, { fill:16 });                                       // the gondola's island, a short ramp up to the rim at its west end
   S(74, 10, D, 16); A(75, 12, D, 15); BK(75, 12, D, 15, 'teal'); A(74, 13, 74, 15); DC('lantern', 78, 12, 2, 2); DC('window', 77, 13, 1, 2);   // its cabin: a roof, a door on the west, open through the line
-  A(67, 6, 70, 6); fUp(k, g, 69, 16, 6);                                                              // a hatch in the hull's floor over the plaza: a balloon spring up on its east half, a plain way down on the west
+  A(67, 6, 70, 6); H(6, 71, 73); fUp(k, g, 69, 16, 5);                                               // a hatch in the hull's floor over the plaza: a balloon spring up on its east half (thrown a row over the floor, time to steer in), a plain way down on the west; the floor east of it is planks (the owner, 2026-10-19: drifting east you hit its underside)
   DC('cloud', 68, 8, 4, 2); DC('balloon', 70, 18, 3, 4);
   g.skin(66, Y(0), D, Y(6), 'hull'); g.skin(66, Y(16), D, Y(19), 'cloud');
 }
@@ -3646,6 +3666,7 @@ CTF_MAPS.sky = {
     // THE CLOUD CITY (the owner, 2026-10-18: "islands with empty air between them; a dozen separate chunks at different heights; thumbnail = scattered shapes on blue"; "cloud city: buildings you go inside, bridges and balloons"): six chunks at different heights over the cloud sea: the penthouse tower (high, home and jail), a small islet and a high islet with the team buff,
     // a low islet, the grand hotel (the vault behind two locked doors), the observatory at the rim; the buildings are real ones with floors, rooms, windows, doors and a roof; the ways between them are skybridges (planks at the doors of the floors they share), gusts of wind (updrafts) in the gaps and balloon springs. The cloud sea is the only floor.
     S(0, 26, 65, 27);                                                                                   // the cloud sea
+    g.wing(2, ()=>{ S(-24, 26, -1, 27); ZN('updraft', -3, 3, -1, 25, 1.8); DC('cloud', -20, 6, 5, 2); DC('cloud', -13, 16, 4, 2); });   // (large teams: the cloud sea goes on behind the tower, and a gust up beside its wall to the roof)
     // CHUNK ONE (home): the penthouse tower, high up. A penthouse (the spawns) over a ground room with the jail at its west end, a balloon spring and a plain hole between them, a spring up to the roof
     skyIsle(k, 0, 19, 14, 5);
     fBuilding(k, g, { c0:0, c1:16, n:2, G:14, doors:'a', west:false, tubes:[9], drops:[12], roofUp:14, back:'paper' }); S(5, 0, 11, 2);
@@ -3664,11 +3685,11 @@ CTF_MAPS.sky = {
     fBuilding(k, g, { c0:58, c1:65, n:2, G:14, doors:'a', west:true, east:false, tubes:[59], drops:[63], roofUp:61, roofW:1, back:'paper' }); A(65, 11, 65, 13);
     // the keys and the boosts
     P(14, 36, 'a'); P(13, 62, 'v'); P(9, 22, 'g');
-    k.scatter((r, c)=>(r >= 24 ? ['C', 'W', 'R', 'K'] : r >= 12 ? ['A', 'N', 'U', 'F', 'C', 'T', 'W'] : ['B', 'K', 'C', 'O']), [0.5, 0.85, 0.9][g.band], 3, (r, c)=>(r <= 2) || (c >= 66 && c <= 83 && r <= 9) || (c >= 1 && c <= 7 && r >= 10 && r <= 13) || (c >= 46 && c <= 50 && r >= 15 && r <= 18) || (c >= 29 && c <= 32) || (c >= 55 && c <= 56) || g._np.some(q=>q[0] === r && q[1] === c), 41);
+    k.scatter((r, c)=>(r >= 24 ? ['X', 'C', 'W', 'X'] : r >= 12 ? ['A', 'N', 'U', 'F', 'C', 'T', 'W', 'l'] : ['X', 'C', 'W', 'l']), [0.5, 0.85, 0.9][g.band], 3, (r, c)=>(r <= 2) || (c >= 66 && c <= 83 && r <= 9) || (c >= 46 && c <= 50 && r >= 15 && r <= 18) || (c >= 29 && c <= 32) || (c >= 55 && c <= 56) || g._np.some(q=>q[0] === r && q[1] === c), 41);
     g.skin(0, Y(14), 19, Y(18), 'cloud'); g.skin(41, Y(19), 54, Y(22), 'cloud'); g.skin(57, Y(14), 65, Y(17), 'cloud'); g.skin(0, Y(3), 16, Y(14), 'hotel'); g.skin(41, Y(3), 53, Y(19), 'hotel'); g.skin(58, Y(5), 65, Y(14), 'hotel');
     DC('cloud', 18, 2, 4, 2); DC('cloud', 52, 1, 5, 2); DC('balloon', 28, 3, 4, 5);
     skyFair(k, g); skyDock(k, g);
-    g.decoDefault(['curtain', 'chest', 'urn', 'crate', 'armor']); g.decoSet(0, Y(20), D, Y(25), ['cloud', 'rock']);
+    g.decoDefault(['curtain', 'chest', 'urn', 'crate', 'armor']); g.decoSet(0, Y(20), D, Y(25), ['cloud', 'crate', 'barrel', 'lamp']);
     g.info = info; return info;
   },
   // ---- SIDE B: THE CLOUD GARDENS ----
@@ -3678,6 +3699,7 @@ CTF_MAPS.sky = {
     // a balloon spring that throws you back up), a door in the bow where the GANGPLANK comes aboard from the skiff, a hatch in the hall's floor down to the hold (the vault at the stern end behind two locked doors, cargo, portholes); a crow's nest high over the deck that a BARREL CANNON fires you up to. The skiff: a cabin of two floors you walk through
     // (a door at each end), its captain's room above (a balloon spring up to it, a door at each end of it). Between them open sky, a gust of wind rises under the gangplank, and the rim is across a little islet. (A hull does not move in this engine: it is moored. The gangplank is fixed; a lift is for people.)
     S(0, 26, 65, 27);                                                                                   // the cloud sea
+    g.wing(2, ()=>{ S(-24, 26, -1, 27); ZN('updraft', -3, 6, -1, 25, 1.8); DC('cloud', -20, 4, 5, 2); DC('cloud', -12, 15, 4, 2); });   // (large teams: the cloud sea goes on behind the stern, and a gust up beside it to the cabin's roof)
     S(0, 14, 26, 23); S(1, 24, 25, 24);                                                                 // the flagship's hull: the deck at row 14, the gun deck (rows 15-18) and the hold (rows 20-22) hollowed out of it, a keel
     fBuilding(k, g, { c0:0, c1:10, n:1, G:14, doors:'a', west:false, back:'wood', win:'porthole', frames:'low' });   // the captain's cabin on the deck
     P(13, 1, 'HHHHHHH'); P(10, 3, 'H'); P(13, 8, 'PP'); P(13, 14, 'h'); P(13, 13, 'g');
@@ -3689,7 +3711,7 @@ CTF_MAPS.sky = {
     A(20, 14, 21, 14); fUp(k, g, 20, 19, 14); DC('hatch', 20, 13, 2, 1, { dir:1 });                    // a hatch in the deck with a balloon spring under it, the way back up
     // the hold: cargo, portholes, the vault at the stern end behind two locked doors
     A(2, 20, 25, 22); BK(2, 20, 25, 22, 'brick'); ZN('dark', 2, 20, 25, 22); DC('porthole', 14, 20, 1, 1); DC('porthole', 18, 20, 1, 1); DC('lantern', 12, 20, 2, 2); DC('lantern', 20, 20, 2, 2);
-    A(13, 19, 14, 19);                                                                                  // a hatch in the hall's floor: a plain way down
+    A(18, 19, 19, 19);                                                                                  // a hatch in the hall's floor: a plain way down (clear of the brig's no-go zone)
     A(23, 19, 24, 19); fUp(k, g, 23, 23, 19);                                                           // and one with a balloon spring under it, the way back up
     g.col(6, Y(20), Y(22), '1'); g.col(10, Y(20), Y(22), '1'); BK(7, 20, 9, 22, 'stripe'); P(22, 7, 'T'); P(22, 8, 'u'); P(22, 9, 'N');
     // the crow's nest, the barrel that fires you up to it (a plank above the deck, so nobody is fired by walking), a lift for people
@@ -3701,12 +3723,12 @@ CTF_MAPS.sky = {
     skyIsle(k, 52, 57, 19, 2); fUp(k, g, 55, 19, 14);                                                   // a little islet one step across, a spring up to the rim
     skyIsle(k, 59, 65, 14, 4);                                                                          // the rim
     // the keys and the boosts
-    P(13, 26, 'a'); P(18, 39, 'v'); P(13, 62, 'O');
-    k.scatter((r, c)=>(r >= 24 ? ['C', 'W', 'R', 'K'] : r >= 14 ? ['V', 'B', 'K', 'G', 'W'] : ['B', 'K', 'O', 'V']), [0.55, 0.9, 0.95][g.band], 3, (r, c)=>(r <= 3) || (c >= 66 && c <= 83 && r <= 9) || (c >= 2 && c <= 10 && r >= 15 && r <= 22) || (c === 25 && r >= 20 && r <= 22) || (c >= 40 && c <= 48 && r <= 7) || (c >= 30 && c <= 33) || g._np.some(q=>q[0] === r && q[1] === c), 41);
+    P(13, 26, 'a'); P(18, 39, 'v'); P(13, 62, 'k');
+    k.scatter((r, c)=>(r >= 24 ? ['X', 'C', 'W', 'X'] : r >= 14 ? ['C', 'W', 'T', 'r', 'k', 'l'] : ['C', 'W', 'r', 'l', 'X']), [0.55, 0.9, 0.95][g.band], 3, (r, c)=>(r <= 3) || (c >= 66 && c <= 83 && r <= 9) || (c >= 2 && c <= 10 && r >= 15 && r <= 22) || (c === 25 && r >= 20 && r <= 22) || (c >= 40 && c <= 48 && r <= 7) || (c >= 30 && c <= 33) || g._np.some(q=>q[0] === r && q[1] === c), 41);
     g.skin(0, Y(14), 26, Y(24), 'hull'); g.skin(38, Y(19), 50, Y(22), 'hull'); g.skin(59, Y(14), 65, Y(17), 'cloud'); g.skin(0, Y(8), 10, Y(14), 'cabin'); g.skin(40, Y(8), 48, Y(19), 'cabin');
     DC('cloud', 20, 1, 4, 2); DC('cloud', 46, 0, 5, 2); DC('balloon', 33, 4, 4, 5);
     skyFair(k, g); skyDock(k, g);
-    g.decoDefault(['crate', 'barrel', 'rope', 'anchor', 'chest']); g.decoSet(0, Y(20), D, Y(25), ['cloud', 'rock']);
+    g.decoDefault(['crate', 'barrel', 'rope', 'anchor', 'chest']); g.decoSet(0, Y(20), D, Y(25), ['cloud', 'crate', 'barrel', 'lamp']);
     g.info = info; return info;
   },
 };
@@ -3764,6 +3786,19 @@ const CTF_PING_FIRST = 10800, CTF_PING_EVERY = 3600, CTF_PING_LEN = 300;   // th
 //    The MIDDLE is the same on both sides (oakHeart): a bowl of mossy ground with a pond, a hollow heart-tree on the line, a cave under it all, a canopy bridge, a rope of hops.
 //  Rows are written as the grid's own (0 the top, 27 the bottom floor).
 // ---------------------------------------------------------------------------------------------------------------
+// Where a scattered prop must never stand (the owner, 2026-10-19: a fern was drawn in the Fleet's cabin door, a bush in the bow door, a rock in the skiff's upper door): a DOORWAY (a gap under a wall one cell thick: its lintel within
+// three rows over the floor, open on both sides of it, the wall going on up) and the cell either side of it, a door you go through with Up (g.portal) and the cell either side, a spring or an updraft. r, c: a builder's row (through its Y)
+// and column; the test is made on the grid's own cells, so the middle module and the annex read right.
+function ctfPropKeepOut(g, Y){
+  const lift = new Set(); for(const z of g.zones) if(z.type === 'spring' || z.type === 'updraft') for(let rr = z.r0; rr <= z.r1; rr++) for(let cc = z.c0; cc <= z.c1; cc++) lift.add(rr + '.' + cc);
+  const at = (r, c)=>(r >= 0 && r < g.rows.length && c >= 0 && c < g.rows[r].length) ? g.rows[r][c] : '#';
+  const doorway = (fr, fc)=>{ if(at(fr, fc) === '#') return false;
+    for(let q = 1; q <= 3; q++){ const up = at(fr - q, fc); if(up !== '#' && up !== '=') continue; return up === '#' && at(fr - q, fc - 1) !== '#' && at(fr - q, fc + 1) !== '#' && at(fr - q - 1, fc) === '#'; }
+    return false; };
+  const C = CTF_CELL, portal = (fr, fc)=>g.portals.some(p=>p.x < (fc + 2)*C && p.x + p.w > (fc - 1)*C && p.y < (fr + 1)*C && p.y + p.h > fr*C);
+  return (r, c)=>{ const fr = Y(r) + g.dr, fc = g.cx(c); if(fc < 0) return false; if(lift.has(fr + '.' + fc)) return true;
+    return doorway(fr, fc) || doorway(fr, fc - 1) || doorway(fr, fc + 1) || portal(fr, fc); };
+}
 function ctfKit28(g){
   const Y = r=>r + 11, D = 83;
   const k = { Y, D };
@@ -3779,10 +3814,10 @@ function ctfKit28(g){
   k.CUT = (c0, r0, c1, r1)=>{ const dr = CTF_DIM.dr; c0 = g.cx(c0); c1 = g.cx(c1); g.ramps = g.ramps.filter(rp=>!(rp.x >= c0*CTF_CELL && rp.x < (c1 + 1)*CTF_CELL && Math.floor((rp.y + 1)/CTF_CELL) >= r0 + dr + 11 && Math.floor((rp.y + 1)/CTF_CELL) <= r1 + dr + 11)); };
   // props along every flat floor and ledge, a kind to suit the place; kindsAt(r, c) -> a list; skip(r, c) -> true to leave the place bare
   k.scatter = (kindsAt, prob, gap, skip, salt)=>{
-    const rampCell = new Set(g.ramps.map(rp=>Math.floor((rp.y + 1)/CTF_CELL) + '.' + Math.floor(rp.x/CTF_CELL))), last = {};
+    const rampCell = new Set(g.ramps.map(rp=>Math.floor((rp.y + 1)/CTF_CELL) + '.' + Math.floor(rp.x/CTF_CELL))), last = {}, keepOut = ctfPropKeepOut(g, Y);
     const cols = []; for(let c = Math.min(1, -g.ox); c <= D; c++) cols.push(c); for(let o = 0; o < g.mx; o++) cols.push(1000 + o);
     for(let r = 0; r < 27; r++) for(const c of cols){
-      if(rampCell.has(r + '.' + g.cx(c)) || (skip && skip(r, c))) continue;
+      if(rampCell.has(r + '.' + g.cx(c)) || (skip && skip(r, c)) || keepOut(r, c)) continue;   // (nor in a doorway, by a door or on a spring: ctfPropKeepOut)
       const here = g.at(Y(r), c), below = g.at(Y(r) + 1, c);
       if(here !== '.' || (below !== '#' && below !== '=')) continue;
       if(cellJitter(c, r, salt || 41) > prob || (last[r] != null && c - last[r] < gap)) continue;
@@ -5107,7 +5142,7 @@ const CTF_TOOLS = ['flag', 'deco', 'plat', 'wall', 'trap', 'remove', 'offer'];
 const CTF_PIECES = { flag:[null], deco:['crate', 'barrel', 'bush', 'curtain', 'rubble'], plat:['plat'], wall:['block', 'wall'], trap:['spikes', 'stun', 'spring', 'trapdoor'], remove:[null], offer:['both+', 'both-', 'mine+', 'mine-'] };
 const CTF_COSTS = { deco:1, plat:2, wall:3, trap:5, remove:1 };
 const CTF_DECO_H = { crate:152, barrel:74, bush:80, curtain:150, rubble:62, armor:150, urn:90, chest:70, hay:90, banner:150, drift:84, pine:190, rock:80, iceblock:100, minecart:90, ore:70, stalagmite:110,
-  crystal:120, lamp:180, coral:110, kelp:150, shell:56, anchor:110, machine:100, gears:110, blocks:100, cone:76, hydrant:66, ball:84, log:56, fern:90, stump:60, cloud:70, snowman:130 };
+  crystal:120, lamp:180, coral:110, kelp:150, shell:56, anchor:110, machine:100, gears:110, blocks:100, cone:76, hydrant:66, ball:84, log:56, fern:90, stump:60, cloud:70, snowman:130, rope:62 };
 // The decoration tool's pieces change with the place: each map says what fits its areas (an armoured hall, a snowy slope, a mine, a reef, a factory, a street) and a default; a map that says
 // nothing offers the old five. The set is the one for the area the cursor is in; B steps through it.
 const CTF_DECO_DEFAULT = ['crate', 'barrel', 'bush', 'curtain', 'rubble'];
@@ -6553,6 +6588,10 @@ function ctfCoverDraw(g, s, th){
       g.beginPath(); g.moveTo(s.x, s.y - 100); g.lineTo(s.x, s.y - 10); g.moveTo(s.x - 22, s.y - 80); g.lineTo(s.x + 22, s.y - 80); g.stroke();
       g.beginPath(); g.arc(s.x, s.y - 46, 38, Math.PI*0.08, Math.PI*0.92); g.stroke(); g.beginPath(); g.arc(s.x, s.y - 112, 10, 0, 7); g.stroke(); }
     ctfOutline(g); }
+  else if(s.cover === 'rope'){   // a coil of rope on the deck, its loose end trailing
+    g.fillStyle = c.rope || '#c9a465'; for(const [dy, rx] of [[-14, 50], [-32, 44], [-50, 38]]){ g.beginPath(); g.ellipse(s.x, s.y + dy, rx, 15, 0, 0, 7); g.fill(); g.stroke(); }
+    g.fillStyle = 'rgba(70,46,20,0.5)'; g.beginPath(); g.ellipse(s.x, s.y - 52, 15, 6, 0, 0, 7); g.fill();
+    g.lineWidth = 7; g.beginPath(); g.moveTo(s.x + 34, s.y - 6); g.quadraticCurveTo(s.x + 58, s.y - 2, s.x + 74, s.y - 3); g.stroke(); ctfOutline(g); }
   else if(s.cover === 'cone'){   // a traffic cone
     g.fillStyle = '#444'; g.fillRect(s.x - 30, s.y - 8, 60, 8); g.strokeRect(s.x - 30, s.y - 8, 60, 8);
     g.fillStyle = '#ff7a2a'; g.beginPath(); g.moveTo(s.x - 22, s.y - 8); g.lineTo(s.x - 9, s.y - 76); g.lineTo(s.x + 9, s.y - 76); g.lineTo(s.x + 22, s.y - 8); g.closePath(); g.fill(); g.stroke();
