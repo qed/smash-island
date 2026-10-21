@@ -39121,7 +39121,7 @@ function step(){
     if(f.hitstun>0){ f.hitstun--; f._spPend=0; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
     if(f.frozen>0){ inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
     if(f._heldBy!=null && heldStruggle(f, inp, inp === inpPaired ? f._rawKeys : null)) inp={left:false,right:false,jump:false,attack:false,special:false,smash:false};   // held: only the struggle (each press takes frames off the hold)
-    if(f._fxLock > hazardT){ if(FINX.length) finxPress(f); inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }   // committed to a finisher (its tell, a reel, a slap fight): no input but the slap fight's mash (FINISHERS V2)
+    if(f._fxLock > hazardT){ if(FINX.length) finxPress(f); inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; f._smQ = null; f.smashHold = 0; f._smBuf = false; }   // committed to a finisher (its tell, a reel, a slap fight): no input but the slap fight's mash, and no smash charging through it (FINISHERS V2)
     const aS = atkSpeedSteps(f);   // ATTACK SPEED: how many frames the attack timers run this frame -- 1, unless something speeds them up or slows them (atkSpeedSteps)
     if(f._lag>0){ f._lag-=aS; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }   // the recovery of a throw, a whiffed grab or a landing
     if(f.invuln>0) f.invuln--;
@@ -42383,11 +42383,13 @@ function doAttackSpecial(f){
 //   - ONE AT A TIME (the owner's rule): what one leaves behind -- Pin's corkboard, Bubble's bubble, Flower's propped mirror -- holds the
 //     finisher while it stands, and the normal cooldown (FIN_CD) starts when it is gone.
 //   - BOSS RUSH: a boss is too big to grab, carry, pin, pack, swap, daze or slap-fight. It takes the move's damage as a plain hit, once.
-//   - No words on screen.
+//   - No words on screen. HIT ART: each tell and each live hit area is also recorded through hitArt (fxTell, fxArt), so what is drawn is what
+//     is tested, the hitbox view sees it (DEBUG_HITS) and a guest draws it off the snapshot like every other hit.
+//   - Walls: nothing passes a solid wall, a closed door, jail bars or a locked vault door (the CTF rule Toothpaste's teleport keeps).
 const FX1 = {
   jets:   { tell:24, gap:10, live:6, fade:8, first:70, step:56, r:24, h:116, dmg:6, burn:120 },
-  whirl:  { tell:24, dist:350, spd:9, r:28, h:100, every:9, hits:4, dmg:2, end:30, boss:12 },
-  thread: { aim:6, spd:24, reach:264, r:7, pull:18, reel:16, dmg:12, bleed:150, patch:480, whiff:12 },
+  whirl:  { tell:24, dist:350, spd:9, r:28, h:76, every:9, hits:4, dmg:2, end:30, boss:12 },
+  thread: { aim:22, spd:24, reach:264, r:7, pull:18, reel:16, dmg:12, bleed:150, patch:480, whiff:12 },
   cork:   { tell:24, off:30, w:30, h:100, life:240, pin:30, dmg:9, fast:6 },
   snow:   { reach:8, grab:20, pack:10, spd:7.5, dist:360, r0:26, r1:46, dmg:6, d0:6, d1:12, whiff:18 },
   bubble: { blow:12, life:180, spd:1.3, r:38, dmg:7, pop:8 },
@@ -42405,12 +42407,14 @@ function fxRand(f, salt){
   return (h >>> 0) / 4294967296;
 }
 function fxOwner(o){ const f = fighters[o.o]; return (f && !f.dead) ? f : null; }
-function fxFoe(i){ const t = (i != null && i >= 0) ? fighters[i] : null; return (t && !t.dead) ? t : null; }
+function fxFoe(i){ const t = (i != null && i >= 0) ? fighters[i] : null; return (t && !t.dead && t._jail == null) ? t : null; }   // (Capture the Flag: a jailed fighter is out of it)
+// A foe this finisher holds: still in the match and still marked as held by it. A KO, a jail or a trip home lets go (finxDrop clears the mark).
+function fxHeld(o, i){ const t = fxFoe(i); return (t && t._fxBy === o.id) ? t : null; }
 function finxAdd(f, k, o){ o.k = k; o.o = f.idx; o.id = ++FINX_SEQ; o.t0 = hazardT; o.face = f.face < 0 ? -1 : 1; FINX.push(o); return o; }
 function fxLock(f, n){ f._fxLock = Math.max(f._fxLock || 0, hazardT + n); }
 // May this finisher land on t: a living foe no finisher holds, protected by nothing but the grace this same finisher's own hits opened.
 function fxCanHit(f, t, o){
-  if(!t || t.dead || t === f || t.team === f.team || t._fxBy != null) return false;
+  if(!t || t.dead || t === f || t.team === f.team || t._fxBy != null || t._jail != null || f._jail != null) return false;
   return !(t.invuln > 0) || (t._graceBy === f.idx && t._fxTok === o.id && t.invuln <= (t._graceLeft || 0)) || chainOpen(t, f);
 }
 function fxHit(f, t, o, dmg, kbx, kby){ applyHit(t, dmg, kbx, kby, f); t._fxTok = o.id; }
@@ -42435,6 +42439,42 @@ function fxHold(t, o, x, y){ t._fxBy = o.id; t.x = x; t.y = y; t.vx = 0; t.vy = 
 function fxFree(t){ if(t) t._fxBy = null; }
 // A solid wall (not a floor under it) across x between top and bottom: where a whirl, a snowball, a puddle or a bubble stops.
 function fxWall(x, top, bottom){ for(const q of platRects()){ if(!q.solid || q.rot) continue; if(x > q.x && x < q.x + q.w && q.y < bottom - 2 && q.y + (q.h || 16) > top) return true; } return false; }
+// The same across a whole span x0..x1 (either order): something that comes out ahead of her may not come out past a wall.
+function fxWallSpan(x0, x1, top, bottom){ const a = Math.min(x0, x1), b = Math.max(x0, x1); for(const q of platRects()){ if(!q.solid || q.rot) continue; if(q.x < b && q.x + q.w > a && q.y < bottom - 2 && q.y + (q.h || 16) > top) return true; } return false; }
+// How far along y's band (top..bottom) from x0 toward dir the first solid wall is, up to len (len: nothing in the way). Needle's thread stops there.
+function fxWallDist(x0, dir, len, top, bottom){
+  let best = len;
+  for(const q of platRects()){
+    if(!q.solid || q.rot || !(q.y < bottom - 2 && q.y + (q.h || 16) > top)) continue;
+    const near = dir > 0 ? q.x - x0 : x0 - (q.x + q.w), far = dir > 0 ? q.x + q.w - x0 : x0 - q.x;
+    if(far > 0) best = Math.min(best, Math.max(0, near));
+  }
+  return best;
+}
+// Nothing solid on the straight line from (ax, ay) to (bx, by): a wall, a floor slab, a closed door, jail bars (Liang-Barsky against each).
+function fxClear(ax, ay, bx, by){
+  const dx = bx - ax, dy = by - ay;
+  for(const q of platRects()){
+    if(!q.solid || q.rot) continue;
+    const P = [-dx, dx, -dy, dy], Q = [ax - q.x, q.x + q.w - ax, ay - q.y, q.y + (q.h || 16) - ay];
+    let t0 = 0, t1 = 1, out = false;
+    for(let i=0;i<4 && !out;i++){
+      if(P[i] === 0){ if(Q[i] <= 0) out = true; continue; }
+      const r = Q[i]/P[i];
+      if(P[i] < 0){ if(r > t1) out = true; else if(r > t0) t0 = r; } else { if(r < t0) out = true; else if(r < t1) t1 = r; }
+    }
+    if(!out && t0 < t1) return false;
+  }
+  return true;
+}
+// HIT ART for these moves. fxArt: a hit area live this frame -- drawn solid (left where it was cast unless world:false) and noted for the
+// hitbox view. fxTell: where a hit WILL be, dashed and filling in as the tell runs (p: 0..1); nothing can hit there yet.
+function fxArt(f, key, sh, o){
+  if(SHOW_HITBOXES) DEBUG_HITS.push(sh.kind === 'circle' ? { x:sh.x, y:sh.y, r:sh.r, t:10 } : { shape:sh, pts:shapePts(sh), t:10 });
+  return hitArt(f, key, sh, Object.assign({ world:true, fade:FIN_ART_FADE }, o || {}));
+}
+function fxTell(f, key, sh, p, o){ return hitArt(f, key, sh, Object.assign({ tell:true, p:p, world:true }, o || {})); }
+function fxCircle(x, y, r){ return { kind:'circle', x:x, y:y, r:r }; }
 function fxCap(x, yBottom, yTop, r){ return { kind:'capsule', x1:x, y1:yBottom, x2:x, y2:yTop, r:r }; }
 function fxPuffs(x, y, n, c1, c2, spread){ for(let i=0;i<n;i++) puff(x + (fxRand(null, i*7 + n) - 0.5)*(spread || 0), y, i%2 ? c1 : (c2 || c1), 3); }
 
@@ -42449,6 +42489,7 @@ function finJets(f){
     if(x < 14 || x > WW - 14) break;
     const sb = surfaceBelow(x, fy - 10);
     if(sb === null || Math.abs(sb - fy) > 30) break;   // along the floor she stands on; it stops where that floor ends
+    if(fxWallSpan(f.x, x + f.face*J.r, Math.min(fy, sb) - J.h, Math.min(fy, sb))) break;   // and at the first wall, closed door or jail bars: none comes out past one
     sp.push([Math.round(x), Math.round(sb)]);
   }
   if(!sp.length) return false;
@@ -42459,8 +42500,9 @@ function finJets(f){
 function fxJetShape(o, i){ const J = FX1.jets, x = o.sp[i][0], y = o.sp[i][1]; return fxCap(x, y - J.r, y - J.h + J.r, J.r); }
 function fxJetsStep(o, f){
   const J = FX1.jets, age = hazardT - o.t0, n = o.sp.length;
+  if(age < J.tell && f.hitstun > 0){ o.dead = true; return; }   // hit in the stamp: no jets
+  for(let i=0;i<n;i++){ const w = J.tell + i*J.gap; if(age < w) fxTell(f, 'jet' + i, fxJetShape(o, i), age/w, { color:'#ff7a2a' }); }   // HIT ART: each jet's outline, filling in until it bursts
   if(age < J.tell){
-    if(f.hitstun > 0){ o.dead = true; return; }   // hit in the stamp: no jets
     fxLock(f, 2);
     if(age % 5 === 0) for(const s of o.sp) puff(s[0] + (fxRand(f, age + s[0]) - 0.5)*J.r*1.6, s[1] - 6, '#9a9a9a', 1);
     return;
@@ -42470,6 +42512,7 @@ function fxJetsStep(o, f){
     if(a < 0 || a >= J.live) continue;
     const x = o.sp[i][0], y = o.sp[i][1], last = i === n - 1, sh = fxJetShape(o, i);
     if(a === 0){ hitTurrets(f, x, y - J.h*0.5, J.r, J.dmg); shake(2); for(let k=0;k<5;k++) puff(x, y - 10 - k*20, k%2 ? '#ffd23f' : '#f0521f', 4); }
+    fxArt(f, 'jet' + i, sh, { color:'#ff7a2a' });
     for(const t of fxTargets(f, o, sh, o.hit[i])){
       fxHit(f, t, o, J.dmg, f.face*(last ? 8 : 2), last ? -13 : -6);
       SM_FX.burn(t, f, J.burn); o.hit[i].push(t.idx);
@@ -42480,11 +42523,14 @@ function fxJetsStep(o, f){
 }
 
 // ---- LEAFY: LEAF WHIRL SLIPSTREAM. Spins up a whirl of leaves (24 frames, Leafy spinning in place), then it sweeps 350 px ahead along the
-// floor, catching whoever it touches and carrying them along: 4 hits of 2%, the fourth flinging them. 100 px tall, so a full jump clears it.
+// floor, catching whoever it touches and carrying them along: 4 hits of 2%, the fourth flinging them. 76 px tall, so a jump made when it
+// starts to move clears it (at 100 a single jump cleared it at one start time per distance: the review, 2026-10-20).
 function finWhirl(f){
   const W = FX1.whirl;
   if(!f.onground) return false;   // it runs along a floor
-  finxAdd(f, 'whirl', { x:clamp(f.x + f.face*(f.r + W.r + 6), 30, WW - 30), y:feetY(f), ph:'spin', go:0, c:[], done:[], bn:0, bt:0 });
+  const x0 = clamp(f.x + f.face*(f.r + W.r + 6), 30, WW - 30);
+  if(fxWallSpan(f.x, x0 + f.face*W.r, feetY(f) - W.h, feetY(f))) return false;   // no room before a wall: no whirl, and the finisher is not spent
+  finxAdd(f, 'whirl', { x:x0, y:feetY(f), ph:'spin', go:0, c:[], done:[], bn:0, bt:0 });
   fxLock(f, W.tell); armAtk(f, W.tell + 6, 'spin');
 }
 function fxWhirlShape(o){ const W = FX1.whirl; return fxCap(o.x, o.y - W.r, o.y - W.h + W.r, W.r); }
@@ -42494,9 +42540,11 @@ function fxWhirlStep(o, f){
   if(o.ph === 'spin'){
     if(f.hitstun > 0){ o.dead = true; return; }
     fxLock(f, 2);
+    fxTell(f, 'whirl', fxWhirlShape(o), age/W.tell, { color:'#8ed24b' });   // HIT ART: where it stands, filling in as it spins up
     if(age >= W.tell) o.ph = 'go';
     return;
   }
+  let tick = false; const going = o.ph === 'go';
   if(o.ph === 'go'){
     const nx = o.x + o.face*W.spd, sb = (nx > 30 && nx < WW - 30) ? surfaceBelow(nx, o.y - 30) : null;
     if(sb === null || Math.abs(sb - o.y) > 24 || fxWall(nx + o.face*W.r, o.y - W.h, o.y)){ o.ph = 'end'; o.et = hazardT; }   // the side of the stage, a wall or the end of the floor: it stops there
@@ -42509,36 +42557,41 @@ function fxWhirlStep(o, f){
     }
   }
   for(let j = o.c.length - 1; j >= 0; j--){
-    const c = o.c[j], t = fxFoe(c[0]);
-    if(!t){ o.c.splice(j, 1); continue; }
+    const c = o.c[j], t = fxHeld(o, c[0]);
+    if(!t){ o.c.splice(j, 1); continue; }   // KO'd, jailed or sent home: out of it
     fxHold(t, o, o.x + (j - (o.c.length - 1)/2)*10, o.y - W.h*0.45);
     if(hazardT < c[2]) continue;
-    c[1]++; c[2] = hazardT + W.every;
+    c[1]++; c[2] = hazardT + W.every; tick = true;
     if(c[1] < W.hits){ fxHit(f, t, o, W.dmg, 0, 0); fxHold(t, o, t.x, t.y); }
     else { o.c.splice(j, 1); fxWhirlFling(f, o, t); }
   }
+  if(going || tick) fxArt(f, 'whirl', fxWhirlShape(o), { color:'#8ed24b', fade:4, tick:tick });   // HIT ART: live while it sweeps (it catches), flashing on each of its hits
   if(o.ph === 'end' && (!o.c.length || hazardT - o.et >= W.end)){
-    for(const c of o.c){ const t = fxFoe(c[0]); if(t) fxWhirlFling(f, o, t); }
+    for(const c of o.c){ const t = fxHeld(o, c[0]); if(t) fxWhirlFling(f, o, t); }
     o.c = []; o.dead = true;
   }
 }
 
-// ---- NEEDLE: THREAD THE NEEDLE. A short twirl of thread (6 frames), then she whips it straight ahead (264 px, 7 px either side of the thread):
-// the first foe it touches is reeled in to a point-blank thrust, 12% and bleeding, and a catch stitches her a patch that halves the next hit
-// she takes (8 s). A miss reels the empty thread back, and she waits for it.
+// ---- NEEDLE: THREAD THE NEEDLE. A twirl of thread (22 frames, the thread's 14 px band traced along its whole path), then she whips it straight
+// ahead (264 px, 7 px either side of the thread, stopping at the first wall): the first foe it touches is reeled in to a point-blank thrust,
+// 12% and bleeding, and a catch stitches her a patch that halves the next hit she takes (8 s). A miss reels the empty thread back, and she
+// waits for it. (The twirl was 6 frames: a 70-130 ms window, below a person's reaction -- the review, 2026-10-20.)
 function finThread(f){
-  finxAdd(f, 'thread', { ph:'aim', tip:0, tgt:-1, hx:Math.round(f.x), hy:Math.round(f.y) });
-  fxLock(f, FX1.thread.aim + 2); armAtk(f, 14, 'throw');
+  finxAdd(f, 'thread', { ph:'aim', tip:0, tgt:-1, hx:Math.round(f.x), hy:Math.round(f.y), lim:FX1.thread.reach });
+  fxLock(f, FX1.thread.aim + 2); armAtk(f, FX1.thread.aim + 8, 'throw');
 }
+function fxThreadBand(o, len){ return { kind:'capsule', x1:o.hx, y1:o.hy, x2:o.hx + o.face*len, y2:o.hy, r:FX1.thread.r }; }
 function fxThreadStep(o, f){
   const T = FX1.thread, age = hazardT - o.t0, hx = f.x + o.face*f.r*0.6, hy = f.y - 4;
   o.hx = hx; o.hy = hy;
-  if((o.ph === 'aim' || o.ph === 'whip' || o.ph === 'reel') && f.hitstun > 0){ fxFree(fxFoe(o.tgt)); o.dead = true; return; }
+  if((o.ph === 'aim' || o.ph === 'whip' || o.ph === 'reel') && f.hitstun > 0){ fxFree(fxHeld(o, o.tgt)); o.dead = true; return; }
   fxLock(f, 2);
-  if(o.ph === 'aim'){ if(age >= T.aim) o.ph = 'whip'; return; }
+  if(o.ph === 'aim' || o.ph === 'whip') o.lim = fxWallDist(hx, o.face, T.reach, hy - T.r, hy + T.r);   // it stops at the first wall, closed door or jail bars
+  if(o.ph === 'aim'){ fxTell(f, 'thread', fxThreadBand(o, o.lim), age/T.aim, { color:'#d94f6a' }); if(age >= T.aim) o.ph = 'whip'; return; }   // HIT ART: the band it will whip along
   if(o.ph === 'whip'){
-    o.tip = Math.min(T.reach, o.tip + T.spd);
-    const sh = { kind:'capsule', x1:hx, y1:hy, x2:hx + o.face*o.tip, y2:hy, r:T.r };
+    o.tip = Math.min(o.lim, o.tip + T.spd);
+    const sh = fxThreadBand(o, o.tip);
+    if(o.tip > 0) fxArt(f, 'thread', sh, { color:'#d94f6a', fade:4 });
     let best = null, bd = 1e9;
     for(const t of fighters){ if(!fxCanHit(f, t, o) || !shapeHits(sh, t)) continue; const d = (t.x - hx)*o.face; if(d < bd){ bd = d; best = t; } }
     let boss = null;
@@ -42551,12 +42604,12 @@ function fxThreadStep(o, f){
     else if(boss){   // a boss is not reeled in: the thrust lands on it where it stands, and the catch still stitches the patch
       damageSummon(f, boss, boss.x, boss.y, T.dmg); f._patch = hazardT + T.patch;
       o.ph = 'thrust'; o.tt = hazardT; o.tip = 0; armAtk(f, 14, 'punch');
-    } else if(o.tip >= T.reach){ o.ph = 'back'; o.bt = hazardT; }
+    } else if(o.tip >= o.lim){ o.ph = 'back'; o.bt = hazardT; }
     return;
   }
   if(o.ph === 'reel'){
-    const t = fxFoe(o.tgt);
-    if(!t){ o.ph = 'back'; o.bt = hazardT; return; }
+    const t = fxHeld(o, o.tgt);
+    if(!t || !fxClear(f.x, hy, t.x, t.y)){ fxFree(t); o.tgt = -1; o.ph = 'back'; o.bt = hazardT; return; }   // gone, jailed, or a door shut between them: the thread lets go
     const want = f.x + o.face*(f.r + t.r)*0.85, dx = want - t.x;
     const nx = Math.abs(dx) <= T.pull ? want : t.x + Math.sign(dx)*T.pull;
     fxHold(t, o, nx, t.y + (f.y - t.y)*0.35); o.tip = Math.abs(t.x - hx);
@@ -42578,6 +42631,7 @@ function fxThreadStep(o, f){
 function finCork(f){
   const C = FX1.cork, x = clamp(f.x + f.face*(f.r + C.off), 20, WW - 20), fy = feetY(f), sb = surfaceBelow(x, fy - 10);
   if(sb === null || sb - fy > 220) return false;   // nothing under where it would come down: no board, and the finisher is not spent
+  if(fxWallSpan(f.x, x + f.face*C.w/2, Math.min(fy, sb) - C.h, Math.min(fy, sb))) return false;   // nor on the far side of a wall
   finxAdd(f, 'cork', { x:Math.round(x), y:Math.round(sb), ph:'raise', pin:[] });
   fxLock(f, C.tell); armAtk(f, C.tell + 10, 'slam');
 }
@@ -42592,9 +42646,10 @@ function fxCorkStep(o, f){
   if(o.ph === 'raise'){
     if(f.hitstun > 0){ o.dead = true; return; }
     fxLock(f, 2);
-    if(age < C.tell) return;
+    if(age < C.tell){ fxTell(f, 'cork', fxCorkShape(o), age/C.tell, { color:'#c8955a' }); return; }   // HIT ART: where it will come down
     o.ph = 'stand'; o.st = hazardT;
     const sh = fxCorkShape(o);
+    fxArt(f, 'cork', sh, { color:'#c8955a' });
     hitTurrets(f, o.x, o.y - C.h*0.5, C.w*0.5, C.dmg);
     for(const t of fxTargets(f, o, sh)){ fxHit(f, t, o, C.dmg, o.face, -1); fxPin(t, o, C.pin); }
     fxBossShape(f, o, 0, sh, C.dmg);
@@ -42628,18 +42683,19 @@ function fxSnowStep(o, f){
   if(o.ph === 'reach'){
     if(f.hitstun > 0){ o.dead = true; return; }
     fxLock(f, 2);
-    if(age < S.reach) return;
     const hx = f.x + o.face*(f.r + 16), hy = f.y;
+    if(age < S.reach){ fxTell(f, 'grab', fxCircle(hx, hy, S.grab), age/S.reach, { style:'grab', color:'#ffffff', world:false }); return; }   // HIT ART: the hands' reach, closing
     let got = null, bd = 1e9;
     for(const t of fighters){ if(!fxCanHit(f, t, o) || (t.x - f.x)*o.face < -4 || hurtGap(t, hx, hy) >= S.grab) continue; const d = Math.abs(t.x - f.x); if(d < bd){ bd = d; got = t; } }
+    fxArt(f, 'grab', fxCircle(hx, hy, S.grab), { style:'grab', color:got ? '#ffffff' : '#9aa7b0', world:false, fade:6 });
     if(got){ fxHit(f, got, o, S.dmg, 0, 0); o.tgt = got.idx; fxHold(got, o, got.x, got.y); got.invuln = Math.max(got.invuln || 0, 2); o.ph = 'pack'; o.pt = hazardT; return; }
     const bs = summons.length ? nearestSummon(f, hx, hy, S.grab, function(s){ return (s.x - f.x)*o.face >= -4; }) : null;
     if(bs){ damageSummon(f, bs, hx, hy, S.dmg); o.ph = 'pack'; o.pt = hazardT; return; }   // a boss is not packed: the grab's 6 lands, and the snowball rolls on empty
     o.ph = 'whiff'; o.pt = hazardT; return;
   }
   if(o.ph === 'whiff'){ fxLock(f, 2); if(hazardT - o.pt >= S.whiff) o.dead = true; return; }
-  const t = fxFoe(o.tgt);
-  if(o.tgt >= 0 && !t){ fxSnowBurst(o, null); return; }
+  const t = fxHeld(o, o.tgt);
+  if(o.tgt >= 0 && !t){ o.tgt = -1; fxSnowBurst(o, null); return; }   // KO'd, jailed or sent home: the ball bursts empty
   if(o.ph === 'pack'){
     if(f.hitstun > 0){ fxSnowBurst(o, t); return; }
     fxLock(f, 2);
@@ -42653,6 +42709,7 @@ function fxSnowStep(o, f){
   o.x = nx; o.y = sb; o.go += S.spd; o.R = R;
   const cy = o.y - R, d = Math.round(S.d0 + (S.d1 - S.d0)*(R - S.r0)/(S.r1 - S.r0));
   if(t){ fxHold(t, o, o.x, cy); t.invuln = Math.max(t.invuln || 0, 2); }
+  fxArt(f, 'snow', fxCircle(o.x, cy, R), { color:'#cfe3ff', fade:4 });   // HIT ART: the ball is what flattens
   for(const u of fighters){
     if(u === t || o.hit.indexOf(u.idx) >= 0 || !fxCanHit(f, u, o) || hurtGap(u, o.x, cy) >= R) continue;
     fxHit(f, u, o, d, o.face*4, -5); SM_FX.knockdown(u, f, 30); o.hit.push(u.idx);
@@ -42664,8 +42721,9 @@ function fxSnowStep(o, f){
 // touches is bounced up and away, 7%, once. Its top is a one-way platform anyone can stand on, and it carries whoever does -- she rides it.
 // One hard hit (8% or more, a swing or a shot) pops it. One at a time.
 function finBubble(f){
-  const B = FX1.bubble, x = clamp(f.x + f.face*(f.r + B.r + 6), B.r + 6, WW - B.r - 6), sb = surfaceBelow(x, f.y - 30);
-  finxAdd(f, 'bubble', { x:x, y:sb !== null ? Math.min(f.y - 8, sb - B.r - 4) : f.y - 8, ph:'blow', R:0, hit:[] });
+  const B = FX1.bubble, x = clamp(f.x + f.face*(f.r + B.r + 6), B.r + 6, WW - B.r - 6), sb = surfaceBelow(x, f.y - 30), y = sb !== null ? Math.min(f.y - 8, sb - B.r - 4) : f.y - 8;
+  if(fxWallSpan(f.x, x + f.face*B.r, y - B.r, y + B.r)) return false;   // no room before a wall: no bubble, and the finisher is not spent
+  finxAdd(f, 'bubble', { x:x, y:y, ph:'blow', R:0, hit:[] });
   fxLock(f, B.blow); armAtk(f, B.blow + 6, 'spit');
 }
 function fxBubblePlat(o){ const w = o.R*1.3; return { x:o.x - w/2, y:o.y - o.R + 6, w:w, h:10, fxPlat:true }; }
@@ -42677,6 +42735,7 @@ function fxBubbleStep(o, f){
     if(f.hitstun > 0){ fxPop(o); return; }
     fxLock(f, 2); o.R = B.r*Math.min(1, age/B.blow);
     if(age >= B.blow){ o.ph = 'drift'; o.R = B.r; o.dt = hazardT; }
+    else fxTell(f, 'bubble', fxCircle(o.x, o.y, B.r), age/B.blow, { color:'#bfe8ff' });   // HIT ART: its full size, as she blows it
     return;
   }
   const nx = o.x + o.face*B.spd;
@@ -42684,6 +42743,7 @@ function fxBubbleStep(o, f){
   const P = fxBubblePlat(o);
   for(const u of fighters){ if(!u.dead && u.onground && Math.abs(feetY(u) - P.y) < 3 && u.x > P.x - 4 && u.x < P.x + P.w + 4) u.x += nx - o.x; }   // whoever rides it goes along
   o.x = nx;
+  fxArt(f, 'bubble', fxCircle(o.x, o.y, o.R), { color:'#bfe8ff', fade:4 });   // HIT ART: the bubble is what bounces
   for(const t of fighters){
     if(o.hit.indexOf(t.idx) >= 0 || !fxCanHit(f, t, o) || hurtGap(t, o.x, o.y) >= o.R) continue;
     fxHit(f, t, o, B.dmg, (Math.sign(t.x - o.x) || o.face)*6, -11); o.hit.push(t.idx);
@@ -42715,6 +42775,7 @@ function fxPuddleBreak(o, g, from, dmg, kbx, kby, opts){
 function fxPuddleStep(o, f){
   const P = FX1.puddle, age = hazardT - o.t0;
   if(o.ph !== 'geyser' && f.hitstun > 0){ o.dead = true; return; }   // something reached her anyway: she is herself again
+  if(o.ph !== 'geyser') f.fnCd = Math.max(f.fnCd || 0, FIN_CD);   // her cooldown starts when she comes up, not on the press: no chaining one puddle into the next
   if(o.ph !== 'geyser'){ fxLock(f, 2); f.invuln = Math.max(f.invuln || 0, 2); f.vx = 0; f.vy = 0; f.x = o.x; f.y = o.y - f.r; f.onground = true; }
   if(o.ph === 'melt'){ if(age >= P.melt) o.ph = 'slide'; return; }
   if(o.ph === 'slide'){
@@ -42729,7 +42790,7 @@ function fxPuddleStep(o, f){
     return;
   }
   if(o.ph === 'bubble'){
-    if(hazardT - o.bt < P.bubble){ if((hazardT - o.bt) % 4 === 0) puff(o.x + (fxRand(f, hazardT) - 0.5)*P.w*0.6, o.y - 6, '#bfe8ff', 1); return; }
+    if(hazardT - o.bt < P.bubble){ fxTell(f, 'geyser', fxGeyserShape(o), (hazardT - o.bt)/P.bubble, { color:'#6fb7ff' }); if((hazardT - o.bt) % 4 === 0) puff(o.x + (fxRand(f, hazardT) - 0.5)*P.w*0.6, o.y - 6, '#bfe8ff', 1); return; }   // HIT ART: where the geyser will come
     o.ph = 'geyser'; o.gt = hazardT;
     f._fxLock = 0; f.x = o.x; f.y = o.y - f.r; f.vy = -9; f.onground = false; armAtk(f, 12, 'uppercut'); shake(3);   // she comes up out of it
     hitTurrets(f, o.x, o.y - P.h*0.5, P.r, P.dmg);
@@ -42737,6 +42798,7 @@ function fxPuddleStep(o, f){
   const a = hazardT - o.gt;
   if(a < P.live){
     const sh = fxGeyserShape(o);
+    fxArt(f, 'geyser', sh, { color:'#6fb7ff' });
     for(const t of fxTargets(f, o, sh, o.hit)){ fxHit(f, t, o, P.dmg, (Math.sign(t.x - o.x) || o.face)*1.5, -14); o.hit.push(t.idx); }
     fxBossShape(f, o, 0, sh, P.dmg);
   }
@@ -42757,7 +42819,7 @@ function fxMirrorStep(o, f){
   if(o.ph === 'preen'){
     if(f.hitstun > 0){ o.dead = true; return; }
     fxLock(f, 2);
-    if(age < M.preen) return;
+    if(age < M.preen){ fxTell(f, 'mirror', fxMirrorFan(f, o), age/M.preen, { color:'#ff6fae', world:false }); return; }   // HIT ART: the arc it will sweep
     o.ph = 'smack'; o.st = hazardT; armAtk(f, 14, 'punch');
     hitTurrets(f, f.x + o.face*(f.r + 20), f.y, M.reach*0.5, M.dmg);
   }
@@ -42765,12 +42827,13 @@ function fxMirrorStep(o, f){
     fxLock(f, 2); o.x = Math.round(f.x); o.y = Math.round(f.y);
     if(hazardT - o.st < M.live){
       const sh = fxMirrorFan(f, o);
+      fxArt(f, 'mirror', sh, { color:'#ff6fae', world:false, fade:4 });
       for(const t of fxTargets(f, o, sh, o.hit)){ fxHit(f, t, o, M.dmg, o.face*7, -6); t._dazzle = hazardT + M.daze; stunFx(t, M.daze); o.hit.push(t.idx); }
       fxBossShape(f, o, 0, sh, M.dmg);
       return;
     }
     const mx = clamp(f.x + o.face*(f.r + M.off), 20, WW - 20), fy = feetY(f), sb = surfaceBelow(mx, fy - 10);
-    if(sb === null || sb - fy > 120){ o.dead = true; return; }   // nothing to prop it on
+    if(sb === null || sb - fy > 120 || fxWallSpan(f.x, mx + o.face*M.w/2, Math.min(fy, sb) - M.h, Math.min(fy, sb))){ o.dead = true; return; }   // nothing to prop it on, or a wall in the way
     o.ph = 'prop'; o.x = Math.round(mx); o.y = Math.round(sb); o.pt = hazardT;
     return;
   }
@@ -42783,16 +42846,23 @@ function fxMirrorStep(o, f){
 function finSwap(f){
   const S = FX1.swap;
   let best = null, boss = null, bd = S.range + 1;
-  for(const t of fighters){ if(t.dead || t === f || t.team === f.team || t._fxBy != null) continue; const d = Math.hypot(t.x - f.x, t.y - f.y); if(d < bd && landable(t.x, t.y)){ bd = d; best = t; } }
-  for(const s of summons){ if(!fxLiveSummon(f, s)) continue; const d = Math.max(0, Math.hypot(s.x - f.x, s.y - f.y) - s.r); if(d < bd){ bd = d; boss = s; best = null; } }
+  for(const t of fighters){ if(t.dead || t === f || t.team === f.team || t._fxBy != null || t._jail != null) continue; const d = Math.hypot(t.x - f.x, t.y - f.y); if(d < bd && landable(t.x, t.y) && fxClear(f.x, f.y, t.x, t.y)){ bd = d; best = t; } }   // in clear sight: never through a wall, a closed door or jail bars
+  for(const s of summons){ if(!fxLiveSummon(f, s)) continue; const d = Math.max(0, Math.hypot(s.x - f.x, s.y - f.y) - s.r); if(d < bd && fxClear(f.x, f.y, s.x, s.y)){ bd = d; boss = s; best = null; } }
   if(!best && !boss) return false;
   const o = finxAdd(f, 'swap', { ph:'line', tgt:best ? best.idx : -1 });
   if(boss){ o._tb = boss; o.bx = Math.round(boss.x); o.by = Math.round(boss.y); }
   fxLock(f, S.tell + 2); armAtk(f, S.tell, 'cast');
 }
-function fxBlockyTrap(f, x, range){
+// His Trap within `range` across of the spot (x, feet fy) the foe will land on: on that same floor (within 40 px up or down) and in clear sight of it.
+function fxBlockyTrap(f, x, range, fy){
   let best = null, bd = range;
-  for(const p of projectiles){ if(!p.trap || p.turret || p.owner !== f.idx || !(p.life > 0)) continue; const d = Math.abs(p.x - x); if(d < bd){ bd = d; best = p; } }
+  for(const p of projectiles){
+    if(!p.trap || p.turret || p.owner !== f.idx || !(p.life > 0)) continue;
+    const d = Math.abs(p.x - x); if(d >= bd) continue;
+    const sb = surfaceBelow(p.x, p.y - 30);
+    if(sb === null || Math.abs(sb - fy) > 40 || !fxClear(x, fy - 12, p.x, sb - 12)) continue;
+    bd = d; best = p;
+  }
   return best;
 }
 function fxSwapStep(o, f){
@@ -42801,12 +42871,13 @@ function fxSwapStep(o, f){
   fxLock(f, 2); f.vx = 0;
   if(o._tb){ if(!fxLiveSummon(f, o._tb)){ o.dead = true; return; } o.bx = Math.round(o._tb.x); o.by = Math.round(o._tb.y); }
   else if(!t || t.team === f.team){ o.dead = true; return; }
-  if(age < S.tell) return;
+  if(age < S.tell){ fxTell(f, 'swap', { kind:'capsule', x1:f.x, y1:f.y, x2:o._tb ? o.bx : t.x, y2:o._tb ? o.by : t.y, r:3 }, age/S.tell, { color:'#e0503a' }); return; }   // HIT ART: the pick, told
   o.dead = true;
+  haPick(f, 'swap', o._tb ? { x:o.bx, y:o.by } : t, S.range, '#e0503a');
   if(o._tb){ damageSummon(f, o._tb, o._tb.x, o._tb.y, S.dmg); for(let i=0;i<6;i++) puff(o._tb.x, o._tb.y, '#e0503a', 4); return; }   // a boss is not moved: the 8 lands
-  if(t._fxBy != null || hardInvuln(t) || inOwnTeamZone(t) || Math.hypot(t.x - f.x, t.y - f.y) > S.range + 60 || !landable(t.x, t.y) || !landable(f.x, f.y)){
-    for(let i=0;i<5;i++) puff(f.x, f.y - 8, '#bbbbbb', 3); fxLock(f, 10); return; }   // out of reach, or a spot over nothing: it fizzles
-  const ax = f.x, ay = f.y, bx = t.x, by = t.y, trap = fxBlockyTrap(f, ax, S.trap);
+  if(t._fxBy != null || t._jail != null || hardInvuln(t) || inOwnTeamZone(t) || Math.hypot(t.x - f.x, t.y - f.y) > S.range + 60 || !landable(t.x, t.y) || !landable(f.x, f.y) || !fxClear(f.x, f.y, t.x, t.y)){
+    for(let i=0;i<5;i++) puff(f.x, f.y - 8, '#bbbbbb', 3); fxLock(f, 10); return; }   // out of reach, out of sight, or a spot over nothing: it fizzles
+  const ax = f.x, ay = f.y, bx = t.x, by = t.y, trap = fxBlockyTrap(f, ax, S.trap, feetY(f));
   let lx = ax, ly = ay + f.r - t.r;   // the foe's feet where his were...
   if(trap){ const sb = surfaceBelow(trap.x, trap.y - 30); if(sb !== null){ lx = trap.x; ly = sb - t.r; } }   // ...or on his Trap
   for(let i=0;i<6;i++){ puff(ax, ay - 6, i%2 ? '#e0503a' : '#ffffff', 4); puff(bx, by - 6, i%2 ? '#e0503a' : '#ffffff', 4); }
@@ -42833,16 +42904,19 @@ function fxSlapStep(o, f){
   if(o.ph === 'reach'){
     if(f.hitstun > 0){ o.dead = true; return; }
     fxLock(f, 2);
-    if(age < S.reach) return;
     const hx = f.x + o.face*(f.r + 14);
+    if(age < S.reach){ fxTell(f, 'grab', fxCircle(hx, f.y, S.grab), age/S.reach, { style:'grab', color:'#ffffff', world:false }); return; }   // HIT ART: the reach, closing
     let got = null, bd = 1e9;
     for(const t of fighters){
       if(!fxCanHit(f, t, o) || (t.x - f.x)*o.face < -4 || hurtGap(t, hx, f.y) >= S.grab || Math.abs(feetY(t) - feetY(f)) > 30) continue;
       const d = Math.abs(t.x - f.x); if(d < bd){ bd = d; got = t; }
     }
+    fxArt(f, 'grab', fxCircle(hx, f.y, S.grab), { style:'grab', color:got ? '#ffffff' : '#9aa7b0', world:false, fade:6 });
     if(got){
       fxHit(f, got, o, S.dmg, 0, 0); got.hitstun = 0; got._stunFx = 0;   // the opening slap; from here a stun on either means someone else hit them
-      o.tgt = got.idx; o.ph = 'fight'; o.ft = hazardT; o.cl = hazardT; fxSlapPlace(o, f, got); fxLock(got, 2);
+      // The fight is even from its first frame: both may slap at once (her opener is not one of her slaps, and does not start her 8-frame wait),
+      // and a key either was already holding is not a press -- a slap is a NEW press, for both (it was 8 slaps to her 7 at best: the review).
+      o.tgt = got.idx; o.ph = 'fight'; o.ft = hazardT; o.op = hazardT; o.ck = fxKeyBits(f); o.tk = fxKeyBits(got); fxSlapPlace(o, f, got); fxLock(got, 2);
       return;
     }
     const bs = summons.length ? nearestSummon(f, hx, f.y, S.grab, function(s){ return (s.x - f.x)*o.face >= -4; }) : null;
@@ -42850,8 +42924,8 @@ function fxSlapStep(o, f){
     o.ph = 'done'; o.dt = hazardT; return;
   }
   if(o.ph === 'done'){ fxLock(f, 2); if(hazardT - o.dt >= S.whiff) o.dead = true; return; }
-  const t = fxFoe(o.tgt);
-  if(!t || f.hitstun > 0 || t.hitstun > 0){ fxFree(t); o.dead = true; return; }
+  const t = fxHeld(o, o.tgt);
+  if(!t || f.hitstun > 0 || t.hitstun > 0){ fxFree(t); o.dead = true; return; }   // (KO'd, jailed or sent home: fxHeld lets go)
   fxLock(f, 2); fxLock(t, 2); fxSlapPlace(o, f, t);
   if(hazardT - o.ft < S.fight) return;
   fxFree(t); o.dead = true;
@@ -42860,6 +42934,10 @@ function fxSlapStep(o, f){
 }
 // A fighter locked in a slap fight: each NEW press of attack, special, smash or jump is a slap (a person's keys as pressed: cuffKeys). A CPU
 // mashes at a person's pace, a little faster on Hard. A still dummy does not mash.
+function fxKeyBits(f){
+  const c = ctrlOf(f); if(c !== 'local' && c !== 'remote') return 0;
+  const K = cuffKeys(f); return (K[0] ? 1 : 0) | (K[1] ? 2 : 0) | (K[2] ? 4 : 0) | (K[3] ? 8 : 0);
+}
 function finxPress(f){
   for(const o of FINX){
     if(o.k !== 'slap' || o.ph !== 'fight' || o.dead) continue;
@@ -42868,14 +42946,14 @@ function finxPress(f){
     const c = ctrlOf(f);
     let press = false;
     if(c === 'local' || c === 'remote'){
-      const K = cuffKeys(f), bits = (K[0] ? 1 : 0) | (K[1] ? 2 : 0) | (K[2] ? 4 : 0) | (K[3] ? 8 : 0), prev = o[side + 'k'] || 0;
+      const bits = fxKeyBits(f), prev = o[side + 'k'] || 0;
       o[side + 'k'] = bits; press = (bits & ~prev) !== 0;
     } else if(c !== 'still' && c !== 'trainer'){
       const lvl = f._lvlCache != null ? f._lvlCache : AI_LEVEL;
       press = fxRand(f, 31 + hazardT - o.ft) < (FX1.slap.cpu[lvl] != null ? FX1.slap.cpu[lvl] : FX1.slap.cpu[1]);
     }
     if(!press || hazardT - o[side + 'l'] < FX1.slap.gap) continue;
-    const other = side === 'c' ? fxFoe(o.tgt) : fxOwner(o);
+    const other = side === 'c' ? fxHeld(o, o.tgt) : fxOwner(o);
     if(!other) continue;
     o[side + 'l'] = hazardT;
     if(side === 'c') o.cs++; else o.ts++;
@@ -42895,14 +42973,24 @@ function finxStep(){
     const f = fxOwner(o), run = FINX_STEP[o.k];
     if(!f || !run){ o.dead = true; continue; }
     run(o, f);
+    if(o.dead && f.hitstun > 0) f._fxLock = 0;   // a hit cancelled it: the hitstun is the only wait (the tell's lock used to run on past it, free frames for the attacker)
   }
   if(FINX.some(function(o){ return o.dead; })){ for(const o of FINX) if(o.dead) fxRelease(o); FINX = FINX.filter(function(o){ return !o.dead; }); }
   FX_PLATS = [];
   for(const o of FINX) if(o.k === 'bubble' && o.ph === 'drift') FX_PLATS.push(fxBubblePlat(o));   // a drifting bubble's top: a one-way platform (platRects)
 }
 // A KO'd fighter: its own finishers end (what they hold is let go), and it leaves any finisher holding it. (dropInFlightMoves)
+// (Capture the Flag's jail and trip home keep the fighter alive, so the holder's own row must let go too, or it pulls them straight back.)
 function finxDrop(f){
-  for(const o of FINX) if(o.o === f.idx && !o.dead){ o.dead = true; fxRelease(o); }
+  for(const o of FINX){
+    if(o.dead) continue;
+    if(o.o === f.idx){ o.dead = true; fxRelease(o); continue; }
+    if(o.c && o.c.length) o.c = o.c.filter(function(c){ return c[0] !== f.idx; });   // the whirl
+    if(o.tgt !== f.idx) continue;
+    if(o.k === 'snow'){ if(o.ph === 'pack' || o.ph === 'roll'){ o.tgt = -1; fxSnowBurst(o, null); } }
+    else if(o.k === 'thread'){ if(o.ph === 'reel'){ o.tgt = -1; o.ph = 'back'; o.bt = hazardT; } }
+    else if(o.k === 'slap' || o.k === 'swap'){ o.dead = true; fxRelease(o); }
+  }
   if(FINX.some(function(o){ return o.dead; })) FINX = FINX.filter(function(o){ return !o.dead; });
   f._fxLock = 0; f._fxBy = null; f._patch = 0; f._dazzle = 0;
 }
@@ -42963,7 +43051,7 @@ function fxShapeNear(sh, inside){
   return false;
 }
 // The snapshot's rows: the fields the drawing reads, plain numbers. A guest draws from these and runs none of it.
-const FINX_NET = ['k','o','id','t0','ph','face','x','y','R','tip','tgt','hx','hy','go','sp','pt','st','dt','gt','bt','et','rt','tt','fl','cl','tl','bx','by','cs','ts'];
+const FINX_NET = ['k','o','id','t0','ph','face','x','y','R','tip','tgt','hx','hy','go','sp','pt','st','dt','gt','bt','et','rt','tt','fl','cl','tl','op','bx','by','cs','ts','lim'];
 function finxNet(){
   return FINX.map(function(o){ const r = {};
     for(const k of FINX_NET){ const v = o[k]; if(v === undefined || v === null) continue; r[k] = typeof v === 'number' ? Math.round(v*10)/10 : v; }
@@ -42994,7 +43082,7 @@ function finB1Ai(f, inp, sp){
     case 'kick':    want = ground && ady < 60 && adx > 40 && adx < 280; break;
     case 'quake':   want = ady < 40 && gap < 34; break;
     case 'anvil':   want = t._isBoss ? Math.hypot(dx, dy) - tr < 300   // his Trap set beside him (they land on it), or him cornered with them nearer the middle
-                         : (Math.hypot(dx, dy) < 300 && landable(t.x, t.y) && landable(f.x, f.y) && (!!fxBlockyTrap(f, f.x, FX1.swap.trap)
+                         : (Math.hypot(dx, dy) < 300 && landable(t.x, t.y) && landable(f.x, f.y) && fxClear(f.x, f.y, t.x, t.y) && (!!fxBlockyTrap(f, f.x, FX1.swap.trap, feetY(f))
                             || ((f.x < 170 || f.x > WW - 170) && Math.abs(t.x - WW/2) < Math.abs(f.x - WW/2) - 80))); break;
     case 'slap':    want = ground && tground && ady < 26 && gap < 12; break;
   }
@@ -43036,10 +43124,7 @@ function fxDrawJets(o, f){
 }
 function fxDrawLeaf(x, y, a, c){ ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(0, 0, 7, 3.2, 0, 0, 7); ctx.fill(); ctx.strokeStyle = '#2f5d17'; ctx.lineWidth = 1; ctx.stroke(); ctx.restore(); }
 function fxDrawWhirl(o, f){
-  const W = FX1.whirl, live = o.ph === 'go', k = o.ph === 'spin' ? clamp((hazardT - o.t0)/W.tell, 0, 1) : 1, yb = o.y - W.r, yt = o.y - W.h + W.r;
-  fxCapPath(o.x, yb, yt, W.r);
-  if(live){ ctx.globalAlpha = 0.24; ctx.fillStyle = '#8ed24b'; ctx.fill(); ctx.globalAlpha = 0.95; ctx.strokeStyle = '#3f7a1e'; ctx.lineWidth = 2.5; ctx.stroke(); }
-  else { ctx.globalAlpha = 0.6*k; ctx.setLineDash([5, 5]); ctx.strokeStyle = '#3f7a1e'; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]); }
+  const W = FX1.whirl, live = o.ph === 'go', k = o.ph === 'spin' ? clamp((hazardT - o.t0)/W.tell, 0, 1) : 1;   // (its outline is the hit art's: told, then live)
   ctx.globalAlpha = live ? 1 : 0.5 + 0.5*k;
   for(let i=0;i<12;i++){
     const h = (i + 0.5)/12, a = hazardT*0.35*o.face + i*2.1, rr = (W.r - 7)*k*(0.55 + 0.45*Math.abs(Math.sin(i*1.7)));
@@ -43051,7 +43136,6 @@ function fxDrawThread(o, f){
   if(!(o.tip > 0)) return;
   const x2 = o.hx + o.face*o.tip;
   ctx.lineCap = 'round';
-  if(o.ph === 'whip'){ ctx.globalAlpha = 0.3; ctx.strokeStyle = '#ffd0d8'; ctx.lineWidth = FX1.thread.r*2; ctx.beginPath(); ctx.moveTo(o.hx, o.hy); ctx.lineTo(x2, o.hy); ctx.stroke(); }   // the reach that catches: the thread's own width
   ctx.globalAlpha = 1; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4.5; ctx.beginPath(); ctx.moveTo(o.hx, o.hy); ctx.lineTo(x2, o.hy); ctx.stroke();
   ctx.strokeStyle = '#d94f6a'; ctx.lineWidth = 2.5; ctx.stroke();
   ctx.fillStyle = '#e8e8e8'; ctx.beginPath(); ctx.moveTo(x2 + o.face*9, o.hy); ctx.lineTo(x2 - o.face*2, o.hy - 4); ctx.lineTo(x2 - o.face*2, o.hy + 4); ctx.closePath(); ctx.fill(); fxEdge(1.5);
@@ -43070,8 +43154,7 @@ function fxDrawCork(o, f){
   const C = FX1.cork;
   if(o.ph === 'raise'){
     const k = clamp((hazardT - o.t0)/C.tell, 0, 1);
-    ctx.globalAlpha = 0.6; ctx.setLineDash([6, 4]); fxBoardPath(o.x, o.y, C.w, C.h); ctx.strokeStyle = '#7a4a22'; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]);   // where it will come down
-    ctx.globalAlpha = 1; ctx.save(); ctx.translate(f.x - o.face*4, f.y - f.r - 6); ctx.rotate(-o.face*(0.4 + 0.9*k)); fxDrawBoard(0, 0, C.w, C.h*0.8); ctx.restore();   // held up over her head
+    ctx.globalAlpha = 1; ctx.save(); ctx.translate(f.x - o.face*4, f.y - f.r - 6); ctx.rotate(-o.face*(0.4 + 0.9*k)); fxDrawBoard(0, 0, C.w, C.h*0.8); ctx.restore();   // held up over her head (where it will come down: the hit art's tell)
     return;
   }
   fxDrawBoard(o.x, o.y, C.w, C.h);
@@ -43099,8 +43182,7 @@ function fxDrawPuddle(o, f){
   const P = FX1.puddle;
   if(!fxPuddleOpen(o)) return;
   const k = o.ph === 'melt' ? clamp((hazardT - o.t0)/P.melt, 0.2, 1) : 1;
-  if(o.ph === 'bubble'){   // where the geyser will come: its own outline, faint and dashed
-    ctx.globalAlpha = 0.45; ctx.setLineDash([5, 5]); fxCapPath(o.x, o.y - P.r, o.y - P.h + P.r, P.r); ctx.strokeStyle = '#3a7fc4'; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]);
+  if(o.ph === 'bubble'){   // bubbles rising (where the geyser will come: the hit art's tell, its own outline)
     for(let i=0;i<4;i++){ const ph = ((hazardT + i*6) % 24)/24; ctx.globalAlpha = 0.8*(1 - ph); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(o.x + (i - 1.5)*12, o.y - 6 - ph*26, 3 + ph*2, 0, 7); ctx.stroke(); }
   }
   ctx.globalAlpha = 1; ctx.fillStyle = f.color || '#6fb7ff'; ctx.beginPath(); ctx.ellipse(o.x, o.y - 4, P.w*0.5*k, 7*k + 1, 0, 0, 7); ctx.fill(); fxEdge(2);
@@ -43135,11 +43217,7 @@ function fxDrawMirror(o, f, layer){
   if(o.ph === 'smack' && layer === 'over'){
     const a = hazardT - o.st;
     if(a >= M.live) return;
-    const sh = fxMirrorFan(f, o), u = clamp((a + 1)/M.live, 0, 1);
-    ctx.globalAlpha = 0.35; ctx.fillStyle = '#ff9ccb'; ctx.beginPath();   // the arc it sweeps: exactly the fan that hits
-    ctx.arc(sh.cx, sh.cy, sh.r1, o.face > 0 ? sh.a0 : Math.PI - sh.a0, o.face > 0 ? sh.a1 : Math.PI - sh.a1, o.face < 0);
-    ctx.arc(sh.cx, sh.cy, sh.r0, o.face > 0 ? sh.a1 : Math.PI - sh.a1, o.face > 0 ? sh.a0 : Math.PI - sh.a0, o.face > 0);
-    ctx.closePath(); ctx.fill(); ctx.globalAlpha = 0.9; fxEdge(1.5);
+    const sh = fxMirrorFan(f, o), u = clamp((a + 1)/M.live, 0, 1);   // (the arc it sweeps, exactly the fan that hits: the hit art's)
     const ang = sh.a0 + (sh.a1 - sh.a0)*u, rr = sh.r1 - 10;
     ctx.globalAlpha = 1; fxDrawHandMirror(sh.cx + Math.cos(ang)*rr*o.face, sh.cy + Math.sin(ang)*rr, o.face*(ang + Math.PI/2), 1.1);
     return;
@@ -43172,7 +43250,7 @@ function fxDrawSlap(o, f){
   for(let i=0;i<5;i++){ const a = hazardT*0.3 + i*1.26; ctx.beginPath(); ctx.arc(mx + Math.cos(a)*10, my + Math.sin(a)*8, 7, 0, 7); ctx.fill(); }
   ctx.globalAlpha = 1;
   const hand = function(x, y, c, d){ ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(x, y, 8, 6, d*0.4, 0, 7); ctx.fill(); fxEdge(1.5); };
-  if(o.cl != null && hazardT - o.cl < 5){ hand(t.x - o.face*t.r*0.4, t.y - 8, f.color || '#e8a33d', o.face); fxStar(t.x - o.face*t.r*0.2, t.y - 14, 7, '#fff27a'); }
+  if((o.cl != null && hazardT - o.cl < 5) || (o.op != null && hazardT - o.op < 5)){ hand(t.x - o.face*t.r*0.4, t.y - 8, f.color || '#e8a33d', o.face); fxStar(t.x - o.face*t.r*0.2, t.y - 14, 7, '#fff27a'); }
   if(o.tl != null && hazardT - o.tl < 5){ hand(f.x + o.face*f.r*0.4, f.y - 8, t.color || '#ffffff', -o.face); fxStar(f.x + o.face*f.r*0.2, f.y - 14, 7, '#fff27a'); }
 }
 function fxDrawDazzle(t){ for(let i=0;i<3;i++){ const a = hazardT*0.18 + i*2.09; fxStar(t.x + Math.cos(a)*16, t.y - t.r - 10 + Math.sin(a)*4, 5, i%2 ? '#ffffff' : '#fff27a'); } }
@@ -43555,7 +43633,7 @@ function comboInput(f, inp){
   else if(x && cc && !v){ if(!c.grab){ c.grab = true; c.xUsed = true; inp.grab = true; } }
   inp.attack = (x && c.x >= xd && !c.grab && !cc) || xTap;
   inp.special = cc && !c.grab && !c.fin && !x && !v;
-  inp.smash = (v && c.v >= CI_DELAY && !cc && !c.fin) || vTap;
+  inp.smash = (v && c.v >= CI_DELAY && !cc && !c.fin && !c.vUsed) || vTap;   // (vUsed: this V was half of a V+C finisher; letting C up first does not turn it into a smash)
   if((xTap || vTap) && c.dir){ const d = c.dir; inp.left = inp.left || d.left; inp.right = inp.right || d.right; inp.jump = inp.jump || d.jump; inp.up = inp.up || d.up; inp.down = inp.down || d.down; }   // a press that came and went keeps the arrows it was made with
   return inp;
 }
@@ -63854,7 +63932,7 @@ function resetTest(){
   if(!TESTMODE.active) return;
   buildFighters();
   for(const f of fighters){ f.pct = (TESTMODE.training && f.controller!=='local') ? TESTMODE.pct : 0; f.stocks=99; }
-  particles=[]; projectiles=[]; beams=[]; HIT_ART.length=0;
+  particles=[]; projectiles=[]; beams=[]; HIT_ART.length=0; FINX=[]; FX_PLATS=[];
   TESTMODE.dpsT=0; TESTMODE.dpsDmg=0;   // reset the DPS meter with the dummy
   banner("RESET",700);
 }
