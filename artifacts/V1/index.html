@@ -56449,7 +56449,10 @@ function brainOf(f){
 }
 // How far its swing reaches from its middle (the jab's arc: doAttack), and whether a foe stands in it (seen, so a moment late).
 function brainReach(f){ return brainKit(f).shotX ? 260 : f.r + 24 + (rangeProfile(f).reach || 0) + (f._grasstree > 0 ? 14 : 0); }
-function brainInReach(f, t, extra){ const adx = Math.abs(t.x - f.x), ady = Math.abs(t.y - f.y); return adx - (t.r || 24)*0.5 <= brainReach(f) + (extra || 0) && ady < (brainKit(f).shotX ? 40 : 44); }
+function brainInReach(f, t, extra){   // (a big body -- a boss -- is reached at its edge, up and down as well as across)
+  const adx = Math.abs(t.x - f.x), ady = Math.abs(t.y - f.y), big = Math.max(0, (t.r || 24) - 26);
+  return adx - (t.r || 24)*0.5 <= brainReach(f) + (extra || 0) && ady < (brainKit(f).shotX ? 40 : 44) + big;
+}
 // The frames before it may use a special of its own again (a team plan that hoards them waits longer, one that spends them freely less).
 function brainSpecGap(f, L){ const u = planSpecialUsage(f); return Math.round(brainR(L.spec) * (u === 'hoard' ? 1.6 : u === 'spam' ? 0.6 : 1)); }
 function brainSpecReady(f, B){ return f.spCd <= 0 && hazardT >= B.specAt && !(f._aiSpGap > 0); }
@@ -56518,6 +56521,21 @@ function aiThink(f){
   }
   // RECOVER: flung off the stage.
   if(brainRecover(f, inp, B, sp)) return brainOut(f, inp, B, L, t, false);
+  // NO WAY THROUGH: four seconds trying to reach a far foe without getting 100 px nearer (bouncing between two ways round a wall on the big
+  // maps, say): as a person would, it tries something else -- another foe for a while if there is one, and a run the other way first.
+  if(dist > 300 && !t._isBoss){
+    if(B.progD == null || dist < B.progD - 100){ B.progD = dist; B.progT = now; }
+    else if(now - B.progT > 240){
+      B.progD = null; B.progT = now; B.detour = { dir: dx < 0 ? 1 : -1, until: now + 70 };
+      const other = pickFrom.filter(o => o !== t);
+      if(other.length){ f.aiTarget = other[Math.floor(Math.random()*other.length)]; f.aiTimer = 300; }
+    }
+  } else B.progD = null;
+  if(B.detour && now < B.detour.until){
+    brainWalk(f, inp, B.detour.dir, sp, f.x + B.detour.dir*300);
+    if(f.onground && Math.random() < 0.08) inp.jump = true;
+    brainEdges(f, inp, 100); return brainOut(f, inp, B, L, t, false);
+  }
   // UNSTICK: trying to reach a foe and the x has barely changed for a while (a wall, a corner): a short burst around, over or up it.
   if(f._lastX===undefined){ f._lastX=f.x; f._stuck=0; f._recover=0; }
   const moved=Math.abs(f.x - f._lastX); f._lastX=f.x;
@@ -56805,8 +56823,10 @@ function brainString(f, t, inp, B, L, inReach, toward){
     S.dmg0 = f._dmgDealt||0; S.n++; S.left--; S.next = now + Math.round(brainR(L.gap));
     return;
   }
-  // between presses: stay on the foe (a step in if it has drifted off), and let go of the arrows otherwise
-  if(!inReach && Math.abs(t.x - f.x) > 6){ inp.left = toward < 0; inp.right = toward > 0; }
+  // between presses: a press that landed knocks the foe on ahead, and a person mashing keeps pushing forward after it; otherwise a step in if
+  // the foe has drifted off, and the arrows let go of
+  if(S.n > 0 && (f._dmgDealt||0) > S.dmg0 && S.move !== 'air'){ inp.left = f.face < 0; inp.right = f.face > 0; brainEdges(f, inp, 70); }
+  else if(!inReach && Math.abs(t.x - f.x) > 6){ inp.left = toward < 0; inp.right = toward > 0; }
   if(S.move === 'air' && !f.onground && Math.abs(t.x - f.x) > 20){ inp.left = toward < 0; inp.right = toward > 0; }
 }
 function brainEndString(f, B, L){
