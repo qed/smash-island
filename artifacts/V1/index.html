@@ -56381,10 +56381,11 @@ let AI_LEVEL = 1;
 //   smash  a smash on an opening it saw         spec  frames between its own specials              fin   the finisher at kill percent, a decision
 //   ctr    the stance guess on a swing seen     ctrCd frames after any guess before another        ctrHit frames after its own stun before one
 //   grab   a string that is a grab              hop   an approach that hops in for an aerial       back  backing off after a stun or a string
+//   wrong  a decision that takes a few steps the wrong way                                         target frames before it looks for the nearest foe again
 const BRAIN_LV = [
-  { think:[16, 28], wake:[26, 40], gap:[16, 24], strMax:3, miss:0.25, hesit:0.18, smash:0.10, spec:[420, 720], fin:0.06, ctr:0,    ctrCd:[0, 0],     ctrHit:1e9, grab:0.03, hop:0.08, back:0.45, target:[70, 130] },
-  { think:[9, 15],  wake:[14, 24], gap:[11, 16], strMax:4, miss:0.12, hesit:0.07, smash:0.25, spec:[180, 360], fin:0.12, ctr:0.2,  ctrCd:[360, 600], ctrHit:60,  grab:0.06, hop:0.15, back:0.25, target:[50, 100] },
-  { think:[6, 10],  wake:[9, 15],   gap:[9, 13],  strMax:5, miss:0.05, hesit:0.03, smash:0.40, spec:[120, 240], fin:0.18, ctr:0.3,  ctrCd:[240, 420], ctrHit:45,  grab:0.10, hop:0.22, back:0.15, target:[40, 80] },
+  { think:[16, 28], wake:[26, 40], gap:[16, 24], strMax:3, miss:0.25, hesit:0.18, smash:0.10, spec:[420, 720], fin:0.06, ctr:0,    ctrCd:[0, 0],     ctrHit:1e9, grab:0.03, hop:0.08, back:0.45, wrong:0.06, target:[70, 130] },
+  { think:[9, 15],  wake:[14, 24], gap:[11, 16], strMax:4, miss:0.12, hesit:0.07, smash:0.25, spec:[180, 360], fin:0.12, ctr:0.2,  ctrCd:[360, 600], ctrHit:60,  grab:0.06, hop:0.15, back:0.25, wrong:0.02, target:[50, 100] },
+  { think:[6, 10],  wake:[9, 15],   gap:[9, 13],  strMax:5, miss:0.05, hesit:0.03, smash:0.40, spec:[120, 240], fin:0.18, ctr:0.3,  ctrCd:[240, 420], ctrHit:45,  grab:0.10, hop:0.22, back:0.15, wrong:0,    target:[40, 80] },
 ];
 // The kits whose neutral special is a shot (a projectile or a beam): those fire it from range. (The old AI's list, kept as a fact about the kits.)
 const BRAIN_SHOOTERS = new Set(["ember","cap","fry","barf","serve","freeze","beam","sign","splash","dribble","zapshooter","buynow","ring","fly","gust","zap","spark",
@@ -56747,8 +56748,9 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
     const stale = hazardT - lastKoFrame > 720;
     if(now >= B.until || stale){ B.st = 'approach'; }
     else {
-      const away = -toward, centre = f.x > WW/2 ? -1 : 1;
-      const dir = (!isBig() && (f.x < 140 || f.x > WW - 140)) ? centre : away;
+      const away = -toward, centre = f.x > WW/2 ? -1 : 1, isle = isBigFFA() ? nearestSafeIsland(f) : null;   // (a big FFA's safe island, if the foe is not in the way)
+      const ix = isle ? isle.x + isle.w/2 : null, toIsle = isle ? (ix < f.x ? -1 : 1) : 0;
+      const dir = (isle && Math.abs(ix - f.x) > 30 && (toIsle !== toward || dist > 200)) ? toIsle : (!isBig() && (f.x < 140 || f.x > WW - 140)) ? centre : away;
       brainWalk(f, inp, dir, sp, f.x + dir*200);
       if(f.onground && Math.random() < 0.02) inp.jump = true;
       brainEdges(f, inp, 110);
@@ -56768,6 +56770,7 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   const stance = (TEAM_PLAN && TEAM_PLAN[f.team] && TEAM_PLAN[f.team].stance) || 'balanced';
   const hesit = L.hesit * (stance === 'aggressive' ? 0.5 : stance === 'defensive' ? 1.5 : 1);
   if(Math.random() < hesit){ B.st = 'wait'; B.until = now + 8 + Math.random()*20; return; }
+  if(Math.random() < L.wrong){ B.st = 'retreat'; B.until = now + 8 + Math.random()*12; return; }   // a wrong guess: a few steps the wrong way
   // near kill percent, the foe close: back off a while (not again soon, not once the match drags)
   const killPct = (100 + (f.w-70)*0.6) * planRiskScale(f);
   if(f.pct > Math.max(85, killPct*0.85) && dist < 220 && now - B.backAt > 300 && hazardT - lastKoFrame < 720 && (t.pct||0) < f.pct && Math.random() < (stance === 'aggressive' ? 0.3 : 0.6)){
