@@ -18917,10 +18917,12 @@ addEventListener('keydown', e => {
 // the same frames. Almost every hit is measured to the target's outline (hurtGap), so one rule covers it: touch the drawn shape with
 // any part of your body and you are hit.
 //   live  a translucent fill with a crisp edge on each frame the hit is tested, then HIT_ART_FADE frames fading out (it is over)
-//   tell  a dashed edge at the true size and spot, filling in from where it starts as the wind-up runs (nothing can hit yet)
+// (There were TELLS too -- a dashed edge filling in where a hit would be. The owner, 2026-10-22: "i didnt mean telegraphs. I meant give stuff
+// logical ways of knowing how to dodge, like a small startup animation" -- "EVERYTHING IS TELEGRAPHED". So a hit is drawn only while it is live,
+// and what comes first is the fighter's own STARTUP (stupK): the swing held in its gather, a crouch, a tremble and the body glowing.)
 // The shapes are hitShape's own (fan, capsule) plus {kind:'circle', x, y, r} for hitCircle and the rings, and a box {kind:'box', x, y,
 // w, h}. The sim records them as it tests them -- hitShape, hitCircle, mvStrike, gbTick, the smash patterns, the up-specials, the
-// wind-ups' hits -- and drawHitArt draws them (the wind-up tells it draws from the fighter's own _windup.sh, see startWindup). Render-
+// wind-ups' hits -- and drawHitArt draws them (live only: no tells -- see THE STARTUP, stupK). Render-
 // only: nothing reads HIT_ART back, it spends no randomness, and it rides the snapshot (`ha`) so a client draws what the host tested.
 // This replaced the one white swipe every melee move drew (drawSwipeArc): about 50 px, always in front, and starting after the hit.
 const HIT_ART = [];
@@ -18951,6 +18953,7 @@ function haSame(a, b){
 //   world  stays where it was cast instead of riding its fighter on the live frame (an up-special's ring, as the caster rises)
 //   tick   this frame is one of a multi-hit's hits: the shape flashes, so the hits can be counted
 function hitArt(f, key, sh, o){
+  if(o && o.tell) return null;   // NO TELLS (the owner, 2026-10-22): nothing is drawn where a hit WILL be -- the fighter's own startup shows it (stupK)
   const g = haShape(sh); if(!g) return null;
   const own = f && f.idx != null ? f.idx : -1, k = own + ':' + key;
   let e = null;
@@ -19976,7 +19979,7 @@ function fsTryFire(f){
   // intro: the match stops (fsTimeGate). The row itself (its start, its tell) begins once the catch has landed (fsRun).
   f.fsC = FS_CATCH; f._fs.cs = fsCatchOf(d, f);
   FS.freeze = FS_INTRO; FS.fz = f.idx; FS.slow = 0;
-  hitArt(f, 'fscatch', f._fs.cs, { tell:true, p:0, color:f.color, world:true });
+  armAtk(f, FS_CATCH + (d.wind || 0) + 8, 'fsgather');   // STARTUP: the holder gathers through the intro and the catch (stupK) -- no catch area drawn ahead of it
   return true;
 }
 function fsRun(f){
@@ -19986,7 +19989,7 @@ function fsRun(f){
   if(st.c < FS_CATCH){   // THE CATCH (CATCH, THEN CINEMATIC): its area drawn, filling in; on its last frame it lands, and the row begins
     f.vx *= 0.7; if(!f.onground) f.vy = 0;
     st.c++; f.fsC = FS_CATCH - st.c;
-    if(st.c < FS_CATCH){ hitArt(f, 'fscatch', st.cs, { tell:true, p:(FS_INTRO + st.c)/(FS_INTRO + FS_CATCH), color:f.color, world:true }); return; }
+    if(st.c < FS_CATCH) return;
     hitArt(f, 'fscatch', st.cs, { color:f.color, world:true, fade:10 });
     fsCatch(f, st);
     f.fsAx = Math.round(f.x); f.fsAy = Math.round(f.y);
@@ -20229,7 +20232,6 @@ function fsTimeGate(){
   if(FS.freeze > 0){
     FS.freeze--;
     const h = fighters[FS.fz];
-    if(h && h._fs && h._fs.cs) hitArt(h, 'fscatch', h._fs.cs, { tell:true, p:(FS_INTRO - FS.freeze)/(FS_INTRO + FS_CATCH), color:h.color, world:true });
     updateCamera();
     return true;
   }
@@ -40935,7 +40937,7 @@ function step(){
     if(f.cloud>0){ f.cloud--; if(f.cloud%14===0) puff(f.x+(Math.random()*30-15), f.y-4, '#eaf4ff', 2); }   // no banner("") when the cloud ends: it blanked whatever line was up (a KO line lasted 30 frames instead of 1100 ms)
     if(f.weakened>0) f.weakened--;
     if(f._coolT>0 && --f._coolT===0 && !f.dead && f.hitstun<=0){ popUpBurst(f, f.r + 60, 3, 20, '#cfeeff'); f.flash=10; }   // Loser's Stay Cool ends in a cold blast (case "cool"). Reach f.r+60, was +40: it goes off 22 frames after the press, and by then the foe had usually drifted out (it caught someone on 15% of CPU presses; owner, 2026-10-18: "Fix them")
-    if(f._coolT>0 && !f.dead) hitArt(f, 'cool', { kind:'circle', x:f.x, y:f.y, r:f.r + 60 }, { tell:true, p:1 - f._coolT/LOSER_COOL_FRAMES, color:'#cfeeff' });   // HIT ART: where the cold blast will pop, filling in as Stay Cool runs out
+    if(f._coolT>0 && !f.dead) stupMark(f, 1 - f._coolT/LOSER_COOL_FRAMES);   // STARTUP: Loser winds up (and glows) as Stay Cool runs out to its cold blast -- no ring where it pops
     if(f.armor>0) f.armor--;
     if(f._braceT>0){ if(f.armor>0) f._braceT--; else if(!f._scrub) f._braceT=0; }   // an ARMOUR STANCE (braceUp) runs down with its armour: a strip or a grab that takes the armour off ends it, Soap's scrub only pauses it (checked before the scrub's armour comes back, so the two stay in step)
     if(f._scrub && hazardT >= f._scrub.until){ const S = f._scrub; f._scrub = null;   // Soap's pause is over: what she scrubbed comes back with the time it had left
@@ -41019,9 +41021,6 @@ function step(){
           f._stall=null;
         }
       }
-      // HIT ART: while hanging and falling, where the landing will hit: its circle on the surface below, dashed, filling in as it comes down
-      if(f._stall && (st.phase==='hang' || st.phase==='fall') && !f.onground){ const top = surfaceBelow(f.x, feetY(f));
-        if(top !== null) hitArt(f, 'plunge', { kind:'circle', x:f.x, y:top, r:f.r+st.rad }, { tell:true, p:1 - (top - feetY(f))/240 }); }
       if(f._stall && --st.life<=0) f._stall=null;
     }
     // A circle winding up (startWindup). Nothing lands until it runs out; a hit in the meantime
@@ -41067,9 +41066,8 @@ function step(){
         }
         if(f.vy > 0 && !f.onground) f.vy += GRAV*0.5*(f.st || STAT_ONE).fall;   // (FIGHTER STATS: fall)
         const stomp = (f.vy > 0 && !f.onground) ? smashTargets(f, f.x, f.y+f.r*0.5, m.rad).filter(function(t){ return !m.hit[t.idx]; }) : [];
-        // HIT ART: the stomp is live on every frame of the way down, so its ring rides the body; and from the hop on, where it will land
+        // HIT ART: the stomp is live on every frame of the way down, so its ring rides the body (no mark where it will land: NO TELLS)
         if(f.vy > 0 && !f.onground) hitArt(f, 'leap', { kind:'circle', x:f.x, y:f.y+f.r*0.5, r:m.rad }, { color:m.color, style:'ring' });
-        if(!f.onground){ const top = surfaceBelow(f.x, feetY(f)); if(top !== null) hitArt(f, 'leapLand', { kind:'circle', x:f.x, y:top - f.r*0.5, r:m.rad }, { tell:true, p:1 - (top - feetY(f))/200, color:m.color }); }
         if(stomp.length || (f.onground && f.vy>=0)){
           const hurt = f._hurtAnim;
           hitArt(f, 'leap', { kind:'circle', x:f.x, y:f.y+f.r*0.5, r:m.rad }, { color:m.color, style:'ring' });   // HIT ART: the stomp that lands (a landing too, in the smash's colour)
@@ -41081,11 +41079,11 @@ function step(){
       } else if(m.pat==='plant'){
         if(hazardT%3===0) puff(f.x+(Math.random()*30-15), f.y+f.r-4, m.color, 3);
         if(--m.t<=0){
-          hitArt(f, 'plant', { kind:'circle', x:f.x, y:f.y, r:m.rad }, { color:m.color, style:'ring' });   // HIT ART: the release, exactly where the tell said
+          hitArt(f, 'plant', { kind:'circle', x:f.x, y:f.y, r:m.rad }, { color:m.color, style:'ring' });   // HIT ART: the release
           smashSwing(f, f.x, f.y, m.rad, m.dmg, m.kb, null, m.fx, m.n, m.up);
           for(let i=0;i<16;i++) puff(f.x+(Math.random()*m.rad*2-m.rad), f.y+f.r, m.color, 5);
           f._sm=null;
-        } else hitArt(f, 'plant', { kind:'circle', x:f.x, y:f.y, r:m.rad }, { tell:true, p:1 - m.t/(m.t0 || (m.t0 = m.t + 1)), color:m.color });   // HIT ART: rooted, winding up: the circle it will hit, filling in (t0: render-only)
+        } else stupMark(f, 1 - m.t/(m.t0 || (m.t0 = m.t + 1)));   // STARTUP: rooted, winding up -- the body loads and glows (no circle where it will hit; t0: render-only)
       } else if(m.pat==='reel'){
         hitArt(f, 'reel', { kind:'circle', x:f.x, y:f.y, r:m.R }, { color:m.color, style:'pull' });   // HIT ART: the pull's reach (a foe whose centre is inside it is dragged in)
         for(const t of fighters){
@@ -41180,7 +41178,6 @@ function step(){
       }
       if(f._plunge && (f.onground || --f._plunge.life <= 0)) f._plunge = null;
       if(f._plunge && hazardT%2===0) puff(f.x, f.y-f.r, '#f2a6e8', 3);
-      if(f._plunge && !f.onground){ const top = surfaceBelow(f.x, feetY(f)); if(top !== null) hitArt(f, 'meteorLand', { kind:'circle', x:f.x, y:top, r:f.r + 40 }, { tell:true, p:1 - (top - feetY(f))/240, color:'#f2a6e8' }); }   // HIT ART: where the dive comes down, on the surface below, filling in
     }
     // rooted (Lollipop sucker): can't move for the duration
     if(f.rooted>0){ f.rooted--; f.vx=0; }
@@ -42152,7 +42149,7 @@ function animPoses(kind, fwd){
 const wrapA = (a)=>{ while(a > Math.PI) a -= 2*Math.PI; while(a < -Math.PI) a += 2*Math.PI; return a; };
 // The limbs that move this frame and by how much, or null when nothing but the body moves.
 function limbMoves(f, rig, sp){
-  if(!(f._atkAnim > 0) || !f._atkKind) return null;
+  if(!(f._atkAnim > 0 || stupK(f) >= 0) || !f._atkKind) return null;   // (a startup: the limbs held in the wind-up -- STARTUP, atkU)
   const fwd = sp && sp.flip ? -1 : 1, mva = f._atkMove ? MVA[f._atkMove] : null;
   if(mva) return mvaLimbMoves(f, rig, mva, fwd);   // a move of a converted fighter has limb work of its own (MOVE ANIMATIONS)
   const pose = animPoses(f._atkKind, fwd);
@@ -42162,7 +42159,7 @@ function limbMoves(f, rig, sp){
   const frontSide = fwd > 0 ? 'R' : 'L';
   const front = pool.find((L)=>L.side === frontSide) || pool[0];
   const back = pose.back ? pool.find((L)=>L !== front) : null;
-  const ph = f._atkPhase, k = atkPhaseK(f), ease = (x)=> 1 - (1-x)*(1-x);
+  const ph = atkPhase(f), k = atkPhaseK(f), ease = (x)=> 1 - (1-x)*(1-x);   // (the beat worked out now, not the mirror: a startup holds the wind-up)
   const swing = (L, targets)=>{
     const rest = Math.atan2(L.tip[1]-L.pivot[1], L.tip[0]-L.pivot[0]);
     const dW = wrapA(targets[0] - rest), dS = wrapA(targets[1] - rest);
@@ -42203,10 +42200,34 @@ function armAtk(f, len, kind, move){
   f._atkPhase = "windup";   // interned literals; mirrored each tick in the fighter loop
   f._atkProg  = 0;
 }
+// THE STARTUP. The owner, 2026-10-22: "i didnt mean telegraphs. I meant give stuff logical ways of knowing how to dodge, like a small startup
+// animation" -- and of the telegraphs, "LITERALLY EVERYTHING". So nothing is drawn where a hit will land; the FIGHTER winds up: through a
+// move's startup the swing is held in its gather beat (atkU below, so the shared rig, the frame layer, the painted limbs and every bespoke
+// deform read it), the body crouches and pulls back, trembles as the move comes (spriteRig), and glows (drawSpriteBody). A startup is
+//   - a wind-up (startWindup: f._windup, on the wire as `charge`), unless it draws itself (a see-through colour: a carry, a grip)
+//   - a Final Smash's catch and its row's own startup (fsC, fsT < fsWind: on the wire)
+//   - a frame a move marked (stupMark: a finisher's startup through fxTell, a plant smash, a grab reaching): `su` on the wire
+// stupK: 0..1 through it, or -1. Render-only: the sim never reads it.
+function stupMark(f, p){ if(!f || f.idx == null) return; f._suT = hazardT; f._suP = p == null ? 0.5 : (p < 0 ? 0 : (p > 1 ? 1 : p)); }
+function stupK(f){
+  if(!f || f.dead) return -1;
+  if(f.fsId){
+    if(f.fsC > 0) return 0.6*(1 - f.fsC/FS_CATCH);
+    const w = f.fsWind || 0, t = f.fsT || 0; if(w > 0 && t < w) return 0.6 + 0.4*t/w;
+  }
+  const wu = f._windup;
+  if(wu && wu.t0 > 0 && !haClear(wu.color)) return wu.t >= wu.t0 ? 0 : (wu.t <= 0 ? 1 : 1 - wu.t/wu.t0);
+  if(f._suT != null){ const d = hazardT - f._suT; if(d >= 0 && d <= 1) return f._suP; }
+  if(f.su != null) return f.su/100;   // a client: the host's mark (applySnapshot keeps `su` as it came)
+  return -1;
+}
 // Progress through the WHOLE swing: 0 on the frame it fires -> 1 as it ends. -1 = not swinging.
 // `_atkLen` is absent on a netcode client (which is shipped neither timer), so it falls back to the
-// jab length and degrades to the same shape it always had.
+// jab length and degrades to the same shape it always had. Through a STARTUP (stupK) the swing is held in its gather instead: u runs 0 ->
+// the end of the wind-up beat as the startup runs, so every animation that reads the beats winds up until the move goes.
 function atkU(f){
+  const su = stupK(f);
+  if(su >= 0) return su*ATK_WINDUP*0.999;
   if(!(f._atkAnim > 0)) return -1;
   const len = f._atkLen || ATK_ANIM;
   const u = 1 - f._atkAnim/len;
@@ -44438,12 +44459,13 @@ function fxClear(ax, ay, bx, by){
   return true;
 }
 // HIT ART for these moves. fxArt: a hit area live this frame -- drawn solid (left where it was cast unless world:false) and noted for the
-// hitbox view. fxTell: where a hit WILL be, dashed and filling in as the tell runs (p: 0..1); nothing can hit there yet.
+// hitbox view. fxTell: a frame of the move's STARTUP (p: 0..1 through it). It drew a dashed outline where the hit would be; now it draws nothing
+// there, and the fighter winds up instead (stupMark, stupK: the owner, 2026-10-22, "a small startup animation"). The shape is still passed, unused.
 function fxArt(f, key, sh, o){
   if(SHOW_HITBOXES) DEBUG_HITS.push(sh.kind === 'circle' ? { x:sh.x, y:sh.y, r:sh.r, t:10 } : { shape:sh, pts:shapePts(sh), t:10 });
   return hitArt(f, key, sh, Object.assign({ world:true, fade:FIN_ART_FADE }, o || {}));
 }
-function fxTell(f, key, sh, p, o){ return hitArt(f, key, sh, Object.assign({ tell:true, p:p, world:true }, o || {})); }
+function fxTell(f, key, sh, p, o){ stupMark(f, p); return null; }
 function fxCircle(x, y, r){ return { kind:'circle', x:x, y:y, r:r }; }
 function fxCap(x, yBottom, yTop, r){ return { kind:'capsule', x1:x, y1:yBottom, x2:x, y2:yTop, r:r }; }
 function fxPuffs(x, y, n, c1, c2, spread){ for(let i=0;i<n;i++) puff(x + (fxRand(null, i*7 + n) - 0.5)*(spread || 0), y, i%2 ? c1 : (c2 || c1), 3); }
@@ -49215,8 +49237,8 @@ function mvGrabStart(f){
 function gbTick(f, inp){
   const g = f._gb, G = g.G;
   inp.left = false; inp.right = false; inp.jump = false;
-  // HIT ART: the grab's reach comes out over its first frames (a hand sliding to the tip), then closes on frame G.st -- white on a catch, grey on a whiff
-  if(g.t < G.st) hitArt(f, 'grab', { kind:'capsule', x1: f.x + f.face * f.r * 0.2, y1: f.y, x2: f.x + f.face * (f.r + G.reach), y2: f.y, r: 15 }, { tell:true, p:g.t / G.st, color:'#ffffff', style:'grab' });
+  // STARTUP: the arms reach (the grab's own swing, held in its gather) over its first frames, then it closes on frame G.st -- HIT ART white on a catch, grey on a whiff
+  if(g.t < G.st) stupMark(f, g.t / G.st);
   if(g.t === G.st){
     const sh = { kind:'capsule', x1: f.x + f.face * f.r * 0.2, y1: f.y, x2: f.x + f.face * (f.r + G.reach), y2: f.y, r: 15 };
     if(SHOW_HITBOXES) DEBUG_HITS.push({ shape: sh, pts: shapePts(sh), t: 10 });
@@ -51653,17 +51675,14 @@ const CIRCLE_WINDUP = 8;
 const FLUFF_REACH = 96;
 const DOUGH_SMASH_WINDOW = 300;   // Dough: how long after a foe's smash the Knockoff can still copy it (5 s)
 const KNOCKOFF_FRAMES = 90;   // Dough: how long a copy stays "weaker" (case "copycat"): Candle's 32-frame hold and Bonesaw's three strokes fit inside
-// `sh` (HIT ART) is what the wind-up will hit, so its tell is drawn at the true size and spot (drawHitArt), relative to the fighter:
-//   {kind:'circle', r, x?, y?}   centred x forward and y down from them (a ring round them: just r); {wx, wy} for a spot fixed in the world
-//   {kind:'capsule', x1, y1, x2, y2, r}   forward-relative, like a moveset box
-//   r2: a second, fainter ring (Magnet's reach on metal); c: the tell's colour when the wind-up's own is see-through
-// With no shape (a counter's read, a held charge, a whistle, shots still to come) the cue hugs the body instead (drawWindupCue): no
-// ring that reads as a reach. A see-through colour and no shape draws nothing (a carry, a grip: the move draws itself).
+// THE STARTUP (stupK): while a wind-up runs the fighter's body winds up and glows in `color` -- nothing is drawn where it will hit or round
+// the body (the owner, 2026-10-22: "i didnt mean telegraphs ... like a small startup animation"). A see-through colour is a wind-up that is
+// not a startup (a carry, a grip, a stroke chained on: the move draws itself). `sh`, what it will hit, drew the old tell; it is not drawn.
 function startWindup(f, frames, fire, color, sh){
   if(f._windup) return;              // already committed to one; a second press is simply eaten
   // `falls` pins the wind-up to this life: every KO path bumps _falls, so a ring started just
   // before a KO can never go off at the respawn point, whichever respawn route ran.
-  f._windup = { t: frames, t0: frames, fire: fire, color: color || f.color, falls: f._falls||0, sh: sh || null, root: f._wuRoot || null, seq: f._atkSeq||0 };   // (root: the wind-up this one was started from, for a move that strikes in strokes; seq: the move that started it -- HIT FREEZE)
+  f._windup = { t: frames, t0: frames, fire: fire, color: color || f.color, falls: f._falls||0, root: f._wuRoot || null, seq: f._atkSeq||0 };   // (root: the wind-up this one was started from, for a move that strikes in strokes; seq: the move that started it -- HIT FREEZE)
 }
 // set the fighter's vertical dash velocity from the directions they were holding at cast time
 function applyDashVY(f, upSpeed, downSpeed){
@@ -58302,8 +58321,9 @@ function drawLaunchingProjectiles(){
   }
 }
 function drawProjectile(pr){
-    // telegraph shadow for incoming downpour projectiles
-    if(pr.warn>0){ const pulse=0.4+0.4*Math.sin(hazardT*0.5);
+    // telegraph shadow for incoming downpour projectiles -- a BOSS's only (their warnings are the owner's call, not yet made). A fighter's
+    // drop has none: "i didnt mean telegraphs" (the owner, 2026-10-22). It is seen as it falls in from the top of the view.
+    if(pr.warn>0 && (pr.bossAtk != null || pr.owner === -2)){ const pulse=0.4+0.4*Math.sin(hazardT*0.5);
       ctx.globalAlpha=pulse; ctx.strokeStyle=pr.color; ctx.fillStyle=pr.color; ctx.lineWidth=2;
       ctx.beginPath(); ctx.ellipse(pr.warnX,pr.warnY-4,pr.r*1.3,6,0,0,7); ctx.stroke();
       ctx.globalAlpha=pulse*0.3; ctx.beginPath(); ctx.ellipse(pr.warnX,pr.warnY-4,pr.r*1.3,6,0,0,7); ctx.fill();
@@ -61013,8 +61033,8 @@ const POSE_SETS = {
 };
 // Ticks into the swing, on the 18-tick clock every set is timed on (a 23-tick smash runs the same frames, slower). 0 on the tick it fires.
 function poseSwingTick(f){
-  const len = f._atkLen || ATK_ANIM;
-  return (len - f._atkAnim) * (ATK_ANIM / len);
+  const u = atkU(f);   // (the same clock as before, (len - anim)/len, and a startup's gather -- STARTUP)
+  return u < 0 ? 0 : u*ATK_ANIM;
 }
 // The step of a [[tick, key], ...] list the clock is on.
 function poseStep(T, e){
@@ -61044,12 +61064,13 @@ function poseKey(f){
   if(S.frozen && f.frozen > 0) return poseFrames(S.frozen, 0);
   if(S.ko && f.hitstun > 0 && vx*vx + vy*vy > 100 && !(f._atkAnim > 0)) return poseFrames(S.ko, 0);   // launched (a slam's own lunge is not)
   if(S.hurt && hurtK(f) > 0) return poseFrames(S.hurt, f._hurtAnim > 0 ? HURT_ANIM - f._hurtAnim : 0);
-  if(f._atkAnim > 0 && S.moves){
+  const su = stupK(f);
+  if((f._atkAnim > 0 || su >= 0) && S.moves){   // (a STARTUP: the move's own pictures from its first, by the gather's clock -- poseSwingTick)
     const M = S.moves[poseSlot(f)] || S.moves['kind:' + f._atkKind];
     if(M) return poseFrames(M, Math.round(poseSwingTick(f)));
   }
   if(S.hold && f._windup && f.rooted > 0) return poseFrames(S.hold, 0);
-  if(S.charge && f.smashHold > 0) return poseFrames(S.charge, 0);
+  if(S.charge && (f.smashHold > 0 || su >= 0)) return poseFrames(S.charge, 0);   // (a STARTUP with no picture of its own: the charge)
   if(S.armor && f.armor >= 4) return poseFrames(S.armor, 0);   // (4: not the last ticks of a slam's own armour, only a brace's)
   if(S.meter && !(f._atkAnim > 0) && !(f.smashHold > 0)){   // (a move with no picture of its own keeps the render, and its painted swing)
     const v = Math.round(f[S.meter.field] || 0), st = S.meter.steps;   // whole, as the wire sends it: a client reads the same step
@@ -63895,7 +63916,8 @@ function spriteRig(f, R, sp, anim){
   }
 
   // ---- ATTACK / CHARGE — layered ON TOP of whatever the fighter's feet are doing ----
-  if(f._atkAnim > 0){                      // GATHER back, snap forward, then settle to neutral
+  const su = stupK(f);
+  if(f._atkAnim > 0 || su >= 0){           // GATHER back, snap forward, then settle to neutral (a STARTUP holds the gather: atkU)
     // THREE BEATS, one signed drive (atkDrive): -1 fully wound back -> +1 fully extended -> 0
     // settled. The release beat is the lunge this rig has always played, unchanged in size and
     // still peaking mid-swing; the windup and the recover are the frames either side of it that
@@ -63913,6 +63935,11 @@ function spriteRig(f, R, sp, anim){
     // The body compresses at BOTH ends of the drive — a crouch on the gather, a stretch on the
     // strike — so anticipation reads as weight being loaded rather than as the lunge starting late.
     sx += m*0.17; sy -= m*0.13;
+    if(su >= 0){                           // STARTUP: loaded and shaking a little as it comes, so the moment it goes can be read
+      const q = su > 0.45 ? (su - 0.45)/0.55 : 0;
+      lunge += Math.sin(hazardT*2.9 + ph)*R*0.035*q; bob -= q*R*0.04; sy -= q*0.04; sx += q*0.03;
+      state = "startup";
+    } else
     state = "attack";                      // ONE rig state; the beat within it is f._atkPhase
   } else if(f.smashHold > 0){              // wind BACK while the smash charges — anticipation
     const c = f.smashHold/smashFullOf(f); const cc = c>1?1:c;
@@ -66596,7 +66623,7 @@ mvaBuildAll();
 function mvId(f, slot){ const k = f && f.kit && f.kit.special; return (k && MOVESETS[k]) ? k + '.' + slot : null; }
 // the painted limbs of a move (limbMoves hands over here when the move has an entry): each entry is aimed from the limb's rest to the move's wind-up, strike and back
 function mvaLimbMoves(f, rig, mva, fwd){
-  const frontSide = fwd > 0 ? 'R' : 'L', out = [], ph = f._atkPhase, k = atkPhaseK(f), ease = (x)=> 1 - (1-x)*(1-x), E = mva.limbs;
+  const frontSide = fwd > 0 ? 'R' : 'L', out = [], ph = atkPhase(f), k = atkPhaseK(f), ease = (x)=> 1 - (1-x)*(1-x), E = mva.limbs;
   for(let i = 0; i < E.length; i++){
     const e = E[i], pool = e[0] ? rig.legs : rig.arms;
     if(!pool || !pool.length) continue;
@@ -66617,6 +66644,8 @@ function mvaLimbMoves(f, rig, mva, fwd){
 // squash/stretch transform, so the art deforms with every jump, landing and run exactly like the
 // blob did. State tints (flash / yoyle metal / star strobe / burn) are laid over the silhouette in
 // the same order and with the same meaning the blob gives them.
+// The colour a startup glows: the wind-up's own, else the fighter's smash colour (a Final Smash: their own colour).
+function stupColor(f){ const wu = f._windup; if(wu && !haClear(wu.color) && typeof wu.color === 'string') return wu.color; return f.fsId ? (f.color || '#ffffff') : smashColorOf(f); }
 function drawSpriteBody(f, sp, anim){
   const R = f.r, a0 = drawAlpha;
   const im = spriteImage(sp);
@@ -66695,6 +66724,11 @@ function drawSpriteBody(f, sp, anim){
     ctx.globalAlpha = a0;
   };
   if(tint) lay(tint[0],tint[1]);
+  else {   // STARTUP and CHARGE: the body itself glows, brighter as it comes, flickering on the last stretch (no ring, no outline: the owner, 2026-10-22)
+    const su = stupK(f);
+    if(su >= 0) lay(stupColor(f), 0.16 + 0.5*su*su + ((su > 0.7 && (hazardT & 2)) ? 0.16 : 0));
+    else if(f.smashHold > 0){ const ck = chargeK(f); lay(smashColorOf(f), 0.12 + 0.42*ck + ((ck >= 1 && (hazardT & 4)) ? 0.14 : 0)); }
+  }
   if(f.burn>0) lay("#f0521f",0.30);
   if(f.bleed>0) lay("#c0304a",0.22);            // bleed: a darker red under the burn tint             // burn reads on top of any other state, as on the blob
   // THE FACE of the frame (FRAME LAYER): drawn over the painted one, after the tints so a hit's white flash gets the same face on it.
@@ -66854,11 +66888,8 @@ function drawFighter(f){
     ctx.globalAlpha = ending ? 0.3 : 0.55 + 0.4*k; ctx.stroke();
     ctx.restore();
   }
-  // WIND-UP (see startWindup). One whose hit has an area draws that area at its true size and spot (drawHitArt); one with no area of
-  // its own -- a counter's read, a held charge, a whistle, shots still to come -- gets a cue that hugs the body (drawWindupCue), so it
-  // never reads as a reach. It was one ring closing from 74 px to about 36 for every move, whatever came next: half the hit's size as it
-  // landed. Drawn, not puffed, so it spends no simulation randomness.
-  if(f._windup && (!f._windup.sh || f._windup.sh.kind === 'body')) drawWindupCue(f);
+  // WIND-UP (see startWindup): nothing is drawn round the body or where the hit will be any more -- the body itself winds up (stupK, in
+  // spriteRig, the frame layer and the glow in drawSpriteBody).
   // COSMETICS (see WIN TOKENS): whatever this fighter wears. The trail goes behind the body; the skin and the hat are
   // put on with the body below. Looks only: nothing here is read back by the sim.
   const cos = cosOf(f), skin = cos && cos.skin ? cosItem(cos.skin) : null;
@@ -66954,10 +66985,8 @@ function drawFighter(f){
   // you marker
   if(f.you){ ctx.fillStyle="#ffd23f"; ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=2;
     ctx.beginPath(); ctx.moveTo(0,-f.r-16); ctx.lineTo(-7,-f.r-6); ctx.lineTo(7,-f.r-6); ctx.closePath(); ctx.fill(); ctx.stroke(); }
-  // The charge ring wears the fighter's own smash colour — the first thing you see of a smash, and
-  // for the whole roster's life it was the same yellow for all 59.
-  if(f.smashHold>0){ ctx.strokeStyle=smashColorOf(f); ctx.lineWidth=3; ctx.globalAlpha=0.8;
-    ctx.beginPath(); ctx.arc(0,0,f.r+6,0,7*chargeK(f)); ctx.stroke(); }
+  // (The charge ring that filled round the body as a smash charged is gone -- NO TELLS, the owner, 2026-10-22: the body glows in the smash's
+  // colour instead, brighter as it charges and flickering once full -- drawSpriteBody -- over the wind-back the rig already plays.)
   // ---- SHARED ACTION OVERLAYS ----
   // Measured, not guessed: a fighter's render is only about 67px tall on screen, so the per-
   // character deforms (4-12% scale, ~0.2rad) move roughly FIVE pixels for 13 frames. They were
@@ -67020,7 +67049,7 @@ function drawFighter(f){
 function visualFace(f){
   const vx = f.vx || 0;
   const sprinting = (f.onground !== false) && (vx > 4 || vx < -4);
-  const committed = (f._atkAnim > 0) || (f.smashHold > 0);
+  const committed = (f._atkAnim > 0) || (f.smashHold > 0) || stupK(f) >= 0;
   if(sprinting && !committed) return vx < 0 ? -1 : 1;
   return f.face < 0 ? -1 : 1;
 }
@@ -68338,29 +68367,14 @@ function haMove(sh, dx, dy){
   if(sh.kind === 'poly') return { kind:'poly', pts:sh.pts.map(function(v, i){ return v + (i % 2 ? dy : dx); }) };
   return { kind:'circle', x:sh.x + dx, y:sh.y + dy, r:sh.r };
 }
-// A wind-up's shape (startWindup's `sh`, written relative to its fighter) where it is in the world now.
-function haWorld(f, rel){
-  const d = f.face < 0 ? -1 : 1;
-  if(rel.kind === 'circle') return rel.wx != null ? { kind:'circle', x:rel.wx, y:rel.wy, r:rel.r } : { kind:'circle', x:f.x + (rel.x || 0)*d, y:f.y + (rel.y || 0), r:rel.r };
-  if(rel.kind === 'capsule') return { kind:'capsule', x1:f.x + rel.x1*d, y1:f.y + rel.y1, x2:f.x + rel.x2*d, y2:f.y + rel.y2, r:rel.r };
-  return null;
-}
 function haOwner(o){ for(const f of fighters) if(f.idx === o) return f; return null; }
 function haHidden(f){ return !!f && SETTINGS.mode === 'ctf' && typeof ctfHiddenFrom === 'function' && ctfHiddenFrom(f); }   // a fighter hidden from this player shows no hit art either
-// The pass, over the fighters (so the edge of a hit can be seen crossing a body): the wind-ups' tells, then every recorded shape.
+// The pass, over the fighters (so the edge of a hit can be seen crossing a body): every recorded shape. (A wind-up's own shape, its `sh`, is no
+// longer drawn ahead of the hit: the fighter's startup is the warning -- stupK.)
 function drawHitArt(){
   const c = ctx;
-  let any = HIT_ART.length > 0;
-  if(!any) for(const f of fighters) if(f._windup && f._windup.sh){ any = true; break; }
-  if(!any) return;
+  if(!HIT_ART.length) return;
   c.save();
-  for(const f of fighters){
-    const wu = f._windup; if(f.dead || !wu || !wu.sh || !(wu.t0 > 0) || haHidden(f)) continue;
-    const g = haWorld(f, wu.sh); if(!g) continue;
-    const col = wu.sh.c || (haClear(wu.color) ? '#ffffff' : wu.color), p = Math.max(0, Math.min(1, wu.sh.p != null ? wu.sh.p : 1 - wu.t/wu.t0));   // (sh.p: a chain of short wind-ups saying how far the whole is)
-    haDraw(c, g, { tell:true, p:p, col:col });
-    if(wu.sh.r2 > 0 && g.kind === 'circle') haDraw(c, { kind:'circle', x:g.x, y:g.y, r:wu.sh.r2 }, { tell:true, p:0, col:col, k:0.45 });
-  }
   for(let i = HIT_ART.length - 1; i >= 0; i--){
     const e = HIT_ART[i], age = hazardT - e.t;
     if(age > (e.fd || HIT_ART_FADE) || age < -600 || (e.m === 't' && age > 0)) HIT_ART.splice(i, 1);
@@ -68471,7 +68485,7 @@ function haZoneDecal(c, x, y, r, col, zone){
 const HA_SHOT_PLAIN = [1, 0, 0];   // a plain flying shot's disc state, as a client fills it in when the host left hz off
 function drawShotArea(pr, edge){
   const z = Array.isArray(pr.hz) ? pr.hz : null, st = z ? (z[0] | 0) : haShotState(pr);
-  if(!st || !(pr.r > 0) || (edge && st === 1)) return '';
+  if(!st || st === 3 || !(pr.r > 0) || (edge && st === 1)) return '';   // (3, falling or arming: no dashed disc ahead of it -- NO TELLS, 2026-10-22)
   const zone = z ? (z[2] || '') : (st >= 2 ? haShotZone(pr) : '');
   const col = pr.color || '#ffffff', sh = { kind:'circle', x:pr.x, y:pr.y, r:pr.r }, c = ctx;
   c.save();
@@ -68492,18 +68506,6 @@ function drawShotArea(pr, edge){
 }
 // One shape drawn by a boss's own fx pass, in the shared look (haDraw), leaving the context as it found it.
 function haPaint(sh, o){ ctx.save(); haDraw(ctx, sh, o); ctx.restore(); }
-// A wind-up with no area of its own: three short brackets hugging the body and turning, brighter as it comes to the boil. Tight to the
-// outline on purpose: it says "something is coming" without drawing a reach the move does not have.
-function drawWindupCue(f){
-  const wu = f._windup; if(haClear(wu.color) || (wu.sh && wu.sh.kind === 'none')) return;
-  const k = wu.t0 > 0 ? Math.max(0, Math.min(1, 1 - wu.t/wu.t0)) : 1, R = f.r + 5, spin = hazardT*0.12;
-  ctx.save(); ctx.lineCap = 'round';
-  for(let i = 0; i < 3; i++){ const a = spin + i*Math.PI*2/3;
-    ctx.beginPath(); ctx.arc(0, 0, R, a, a + 0.7);
-    ctx.globalAlpha = 0.4; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 5; ctx.stroke();
-    ctx.globalAlpha = 0.5 + 0.45*k; ctx.strokeStyle = wu.color; ctx.lineWidth = 3; ctx.stroke(); }
-  ctx.restore();
-}
 // The wire: [owner, frame, tell?, p%, colour, style, world?, owner x, owner y, fade, tick frame, [kind, ...geometry]]
 function haPack(e){
   const s = e.sh, r1 = (v)=>Math.round((+v||0)*10)/10, r3 = (v)=>Math.round((+v||0)*1000)/1000;
@@ -68661,7 +68663,8 @@ function netFighter(f){
   if(f._heatFx) o.heatFx = f._heatFx;   // Paintbrush's Heat Explosion and Knife's Fist Thingy: drawKitFx draws them from these
   if(f._hookFx) o.hookFx = f._hookFx;
   if(f._jamFx) o.jamFx = f._jamFx;   // Remote Jam's signal
-  if(f._windup) o.charge = { t:f._windup.t, t0:f._windup.t0, color:f._windup.color, sh:f._windup.sh || undefined };   // the wind-up: its clock, and what it will hit (HIT ART)
+  if(f._windup) o.charge = { t:f._windup.t, t0:f._windup.t0, color:f._windup.color };   // the wind-up: its clock and its colour (the body winds up and glows: STARTUP)
+  else if(f._suT != null && hazardT - f._suT >= 0 && hazardT - f._suT <= 1) o.su = Math.round((f._suP || 0)*100);   // a marked STARTUP (stupMark), 0..100
   if(SETTINGS.mode==='ctf') ctfNetFighter(f, o);
   return o;
 }
