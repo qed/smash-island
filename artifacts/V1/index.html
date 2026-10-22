@@ -20293,17 +20293,9 @@ function fsToScreen(x, y){
   const bx = (x - camX - W/2)*zoom + W/2, by = (y - camY - H/2)*zoom + H/2;
   return V.on ? { x:V.cx + V.Z*(bx - V.px), y:V.cy + V.Z*(by - V.py), s:zoom*V.Z } : { x:bx, y:by, s:zoom };
 }
-// The bind on a locked foe, in the holder's colour (world space, over the fighters: fsDrawFx). A client draws it from fsLk.
-function fsDrawLock(t){
-  const h = fighters[t.fsLk - 1]; if(!h) return;
-  const now = performance.now(); if(!t._fsLkT) t._fsLkT = now;
-  const u = clamp((now - t._fsLkT)/150, 0, 1), snap = 1 + 1.6*(1 - u)*(1 - u);   // closing in over 150 ms
-  const c = ctx, R = (t.r + 14)*snap, a0 = hazardT*0.06;
-  c.save(); c.translate(t.x, t.y); c.lineCap = 'round';
-  fsRing(c, 0, 0, R, h.color, 3, 0.85);
-  for(let i = 0; i < 4; i++){ const a = a0 + i*Math.PI/2; c.globalAlpha = 0.9; c.strokeStyle = '#1c1c1c'; c.lineWidth = 7; c.beginPath(); c.arc(0, 0, R, a, a + 0.5); c.stroke(); c.strokeStyle = h.color; c.lineWidth = 4; c.stroke(); }
-  c.restore(); c.globalAlpha = 1;
-}
+// A locked foe is shown on their own body: lit in the holder's colour, pulsing (drawSpriteBody, from fsLk, so a client draws it too). The ring
+// that closed in round them is gone -- NO TELLS (the owner, 2026-10-22: "EVERYTHING IS TELEGRAPHED").
+function fsLockColor(t){ const h = t && t.fsLk > 0 ? fighters[t.fsLk - 1] : null; return h ? (h.color || '#ffffff') : null; }
 // ---- the default: a supercharged, cinematic version of the fighter's own finisher ------------------------------------
 // A startup (FS_WIND frames: the holder gathers and glows), then a burst in a circle round them, with the fighter's own
 // finisher thrown in the middle of it. Everyone without a row of their own plays this one, in their own colour.
@@ -20416,7 +20408,6 @@ function fsDrawAura(f){
 }
 // World-space effects of a Final Smash in progress (what it summons and its blast; nothing where it will hit before it does), over the fighters.
 function fsDrawFx(){
-  for(const f of fighters){ if(f.fsLk > 0 && !f.dead) fsDrawLock(f); else f._fsLkT = 0; }   // CATCH, THEN CINEMATIC: the bind on a locked foe
   for(const f of fighters){
     if(!f.fsId || f.dead || f.fsC > 0) continue;   // (through the catch the catch area is what is drawn: hit art)
     const d = FINAL_SMASHES[f.name] && FINAL_SMASHES[f.name].id === f.fsId ? FINAL_SMASHES[f.name] : FS_DEFAULT;
@@ -42904,6 +42895,7 @@ function lungeSwing(f, m, moving){
 }
 // PATTERNS. Each returns nothing; each either resolves now or installs a cross-frame state that
 // the fighter loop drives (search _sm). Every smash is the full charge (O18).
+const PLANT_STARTUP = 15;   // a plant smash's rooted wind-up, at most (see plant below)
 const SM_PAT = {
   // LUNGE: you move forward, and the swing travels with you. Whoever it touches first takes the whole hit.
   // It used to be a 3px nudge and one swing on the press frame -- "steps in" -- which reached nobody who
@@ -42933,11 +42925,13 @@ const SM_PAT = {
       color:s.color||f.color, life:120, up:s.up, hit:{}};
   },
   // Root yourself, wind up, then release. Cannot move during. The biggest numbers, the worst
-  // punish if you are read.
+  // punish if you are read. The wind-up is a small startup (PLANT_STARTUP at most: the owner, 2026-10-22, "a small startup animation"):
+  // the rows' own `wind` of 16-24 was there to show the circle the release would hit, which is not drawn any more.
   plant(f,s){
-    f._sm = {pat:'plant', t:s.wind||18, rad:f.r+(s.rad||46), dmg:s.dmg, kb:s.kb, fx:s.effect,
+    const w = Math.min(s.wind||PLANT_STARTUP, PLANT_STARTUP);
+    f._sm = {pat:'plant', t:w, rad:f.r+(s.rad||46), dmg:s.dmg, kb:s.kb, fx:s.effect,
       n:s.n, color:s.color||f.color, up:s.up};
-    f.rooted = Math.max(f.rooted||0, (s.wind||18)+4);
+    f.rooted = Math.max(f.rooted||0, w+4);
   },
   // A hazard that walks away from you along the ground, hitting whatever it meets.
   walk(f,s){
@@ -66563,6 +66557,7 @@ function drawSpriteBody(f, sp, anim){
   else {   // STARTUP and CHARGE: the body itself glows, brighter as it comes, flickering on the last stretch (no ring, no outline: the owner, 2026-10-22)
     const su = stupK(f);
     if(su >= 0) lay(stupColor(f), 0.16 + 0.5*su*su + ((su > 0.7 && (hazardT & 2)) ? 0.16 : 0));
+    else if(f.fsLk > 0 && typeof fsLockColor === 'function' && fsLockColor(f)) lay(fsLockColor(f), 0.3 + 0.14*Math.sin(hazardT*0.45));   // caught by a Final Smash: lit in the holder's colour
     else if(f.smashHold > 0){ const ck = chargeK(f); lay(smashColorOf(f), 0.12 + 0.42*ck + ((ck >= 1 && (hazardT & 4)) ? 0.14 : 0)); }
   }
   if(f.burn>0) lay("#f0521f",0.30);
