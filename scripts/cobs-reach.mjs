@@ -14,8 +14,8 @@
 // (more than 146 px over your middle). `kos` counts every stock lost (his tier lines hand one back, so it can pass 3); `hp` is his bar left.
 // Each run boots its own game and seeds its own dice (mulberry32 of the seed). Run from the repo root.
 import os from 'node:os';
-import { bootMonolith } from '../test/helpers/smash-golden.js';
-import { mulberry32 } from '../test/helpers/prng.js';
+import { bootMonolith } from './helpers/smash-golden.js';
+import { mulberry32 } from './helpers/prng.js';
 try { os.setPriority(os.constants.priority.PRIORITY_LOWEST); } catch (e) {}
 const MODE = process.env.MODE || 'ai', SEEDS = JSON.parse(process.env.SEEDS || '[1,2,3,4]'), FIGHTER = process.env.FIGHTER || 'Knife';
 const STORY = process.env.STORY !== '0', FRAMES = Number(process.env.FRAMES || 28800), DASH = Number(process.env.DASH || 180);

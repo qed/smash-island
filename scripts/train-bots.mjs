@@ -48,9 +48,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import os, { availableParallelism, tmpdir } from 'node:os';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, appendFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { loadMonolith } from '../test/helpers/load-monolith.js';
-import { SETUP_SRC } from '../test/helpers/match-setup.js';
-import { mulberry32 } from '../test/helpers/prng.js';
+import { loadMonolith } from './helpers/load-monolith.js';
+import { SETUP_SRC } from './helpers/match-setup.js';
+import { mulberry32 } from './helpers/prng.js';
 
 const SELF = fileURLToPath(import.meta.url);
 const DEFAULT_DIR = path.join(path.dirname(SELF), 'bot-training');

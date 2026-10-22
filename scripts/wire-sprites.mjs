@@ -21,7 +21,7 @@ const CRED_START = '<!-- RENDER-INVENTORY-START -->';
 const CRED_END = '<!-- RENDER-INVENTORY-END -->';
 
 const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
-const accepted = Object.values(manifest).filter(r => r.ok).sort((a, b) => a.name.localeCompare(b.name));
+const accepted = Object.values(manifest).filter(r => r.ok && !r.pose).sort((a, b) => a.name.localeCompare(b.name));   // (`pose`: a picture of a fighter's POSE SET, scripts/make-anim-batch1.mjs -- not a render of its own)
 
 // A very tall, narrow render (Needle) would be contain-fitted by height and end up a sliver; a very
 // wide one (Coiny) by width. The defaults handle both, but an extreme aspect gets a nudge so the
