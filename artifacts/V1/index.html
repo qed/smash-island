@@ -19809,9 +19809,9 @@ function pickUpItem(f, it){
 //     fight, the Training room, or the World Cup (fsAllowed). Online, the host runs it all; a client is sent the ball (s.fsb) and the
 //     fighters' fs* fields, and draws everything from those.
 //   - NO WORDS are drawn: a flash, a silhouette sweep, rings and effects. The ball is drawn in code (fsDrawBall); no image files.
-//   - A Final Smash is a table row (FINAL_SMASHES, by fighter name; FS_DEFAULT for everyone without one): a visible tell (`wind`
-//     frames, the holder cannot be hurt and cannot move), then the hit, then the end (`dur` frames in all). It can be dodged: every
-//     hit is a radius or a lane that was drawn during the tell. The sim uses its own dice (fsRand), so a seeded match is the same
+//   - A Final Smash is a table row (FINAL_SMASHES, by fighter name; FS_DEFAULT for everyone without one): a short startup (`wind`,
+//     FS_WIND frames, the holder cannot be hurt and cannot move, and winds up: stupK), then the hit, then the end (`dur` frames in all).
+//     Nothing is drawn where it will hit before it does (NO TELLS, 2026-10-22). The sim uses its own dice (fsRand), so a seeded match is the same
 //     with or without the system. Everything a client needs to DRAW one is on the fighter: fsId, fsT (frames in), fsWind, fsDur.
 const FSBALL = { r:22, hp:34, life:1500, glow:1200, grace:12, minHit:4, maxHit:24 };
 const FS = { next:0, seq:0, rng:1, lastT:0, by:null, freeze:0, fz:-1, slow:0, slowN:0, slowAcc:0, sf:-1, sx:0, sy:0 };   // by: the fighter whose Final Smash frame is running (fsRun), for fsHitBy; freeze .. sy: the intro and the slow-mo (CATCH, THEN CINEMATIC)
@@ -20041,14 +20041,14 @@ function fsFoeNear(f, R){
 //   1. THE INTRO. When a Final Smash fires the match stops for FS_INTRO frames (half a second): nothing moves and nothing counts down
 //      (step() runs none of the match: fsTimeGate), the screen darkens and the camera closes in on the holder, who is lit in their own
 //      colour (fsCamFocus, fsDrawScreen). No words.
-//   2. THE CATCH. The row's catch area (its `catch`: the reach of its first hit, a circle or a box, see each shape) is drawn at its true
-//      edge from the first frame of the intro (HIT ART: a dashed tell filling in), and FS_CATCH frames after the match moves again (a sixth
-//      of a second) it lands: every foe whose body touches it is LOCKED (fsCatch). It misses a foe outside it, and a foe who cannot be
+//   2. THE CATCH. The row's catch area (its `catch`: the reach of its first hit, a circle or a box, see each shape) lands FS_CATCH frames
+//      after the match moves again (a sixth of a second; the holder gathering through it, and nothing drawn ahead of it -- NO TELLS,
+//      2026-10-22; it is drawn as it lands): every foe whose body touches it is LOCKED (fsCatch). It misses a foe outside it, and a foe who cannot be
 //      hurt on that frame (a dodge's, a dash's or a respawn's invulnerability: hardInvuln, the rule every Final Smash hit already has), a
 //      ghost, and one already held. A counter stance does not stop it: a Final Smash beats a counter, as its hits always have (the stance
 //      is spent), and armor does not either (the catch takes it, as a grab does). A Yoyleberry or a cloud form keeps working for the
 //      time it has left: it runs down while they are held.
-//   3. THE CINEMATIC. Then the row plays as it always has (its tell, its hits). A locked foe cannot move or act (their own frame does not
+//   3. THE CINEMATIC. Then the row plays as it always has (its startup, its hits). A locked foe cannot move or act (their own frame does not
 //      run: fsLockHold), stays where they were caught, and nobody but the holder can touch them (applyHit). The row's own pulls and pins
 //      still move them. Its hits land on them where they stand (each shape brings its hits to a locked foe: a fan turns a shot of each
 //      volley onto them, a stream is aimed at them, a lock-on marks them, a rain goes for them first). Each hit's launch is kept, and the
@@ -20063,6 +20063,11 @@ function fsFoeNear(f, R){
 // catch phase (fsC), the intro and the slow-mo (s.fsx), and the catch area as hit art. Training never has a Smash Ball; a replay is the
 // frames as they were drawn.
 const FS_INTRO = 30, FS_CATCH = 10;
+// THE STARTUP of every row (its `wind`): frames from the catch landing to the row's first hit. They were 28-50, each drawing its reach,
+// lane or marker ahead of it. The owner, 2026-10-22: "i didnt mean telegraphs ... like a small startup animation", "EVERYTHING IS
+// TELEGRAPHED". So it is a small startup now, the same for every row, shown on the holder (stupK: the gather, the glow) -- and a foe the
+// catch took is held through it anyway. A row's own beats after its first hit are as they were (its dur is shortened by what came off).
+const FS_WIND = 14;
 const FS_INTRO_ZOOM = 1.55;
 const FS_SLOW = { k:0.25, frames:60, zoom:1.5, follow:0.3 };
 const FS_RAIN_CATCH = 360;   // a row that drops its hits on the nearest foes wherever they are: its catch is this circle round the holder
@@ -20300,11 +20305,11 @@ function fsDrawLock(t){
   c.restore(); c.globalAlpha = 1;
 }
 // ---- the default: a supercharged, cinematic version of the fighter's own finisher ------------------------------------
-// A tell (the ground circle closes in for FS_DEFAULT.wind frames: walk out of it), then a burst in that circle, with the fighter's own
+// A startup (FS_WIND frames: the holder gathers and glows), then a burst in a circle round them, with the fighter's own
 // finisher thrown in the middle of it. Everyone without a row of their own plays this one, in their own colour.
 const FS_SURGE_R = 240;
 const FS_DEFAULT = {
-  id:'surge', wind:40, dur:92, reach:FS_SURGE_R,
+  id:'surge', wind:FS_WIND, dur:FS_WIND + 52, reach:FS_SURGE_R,
   catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FS_SURGE_R }; }, lockEnd:'one',   // CATCH: the surge's circle
   tick(f, st, t){
     if(t === 0){ shake(6); armAtk(f, this.wind, 'fsgather'); for(let i = 0; i < 10; i++) puff(f.x, f.y, f.color, 6); }
@@ -20322,15 +20327,7 @@ const FS_DEFAULT = {
   ai(f){ return fsFoeNear(f, FS_SURGE_R*0.85); },
   draw(f, c){
     const t = f.fsT || 0, w = f.fsWind || FS_DEFAULT.wind, R = FS_SURGE_R;
-    if(t < w){
-      const k = t/w, blink = (w - t < 14) && (t % 4 < 2);
-      c.save(); c.translate(f.x, f.y);
-      c.globalAlpha = (blink ? 0.3 : 0.12 + 0.16*k); c.fillStyle = f.color; c.beginPath(); c.arc(0, 0, R, 0, 7); c.fill();
-      c.globalAlpha = 0.85; c.strokeStyle = '#1c1c1c'; c.lineWidth = 8; c.setLineDash([16, 12]); c.beginPath(); c.arc(0, 0, R, 0, 7); c.stroke();
-      c.strokeStyle = blink ? '#fff' : f.color; c.lineWidth = 4; c.stroke(); c.setLineDash([]);
-      for(let j = 0; j < 3; j++){ const rr = R*(1 - ((k*1.6 + j/3) % 1)*0.85); c.globalAlpha = 0.35 + 0.4*k; c.strokeStyle = '#fff'; c.lineWidth = 3; c.beginPath(); c.arc(0, 0, rr, 0, 7); c.stroke(); }
-      c.restore();
-    } else {
+    if(t >= w){   // (through the startup nothing is drawn: the holder winds up -- NO TELLS)
       const u = (t - w)/20;
       if(u < 1){
         c.save(); c.translate(f.x, f.y);
@@ -20417,7 +20414,7 @@ function fsDrawAura(f){
   for(let i = 0; i < 6; i++){ const a = hazardT*0.06 + i*1.047, rr = f.r + 16 + 6*Math.sin(hazardT*0.11 + i*2); c.fillStyle = fsRainbow(i, 9); c.beginPath(); c.arc(Math.cos(a)*rr, Math.sin(a)*rr, 2.6, 0, 7); c.fill(); }
   c.restore();
 }
-// World-space effects of a Final Smash in progress (its tell and its blast), over the fighters.
+// World-space effects of a Final Smash in progress (what it summons and its blast; nothing where it will hit before it does), over the fighters.
 function fsDrawFx(){
   for(const f of fighters){ if(f.fsLk > 0 && !f.dead) fsDrawLock(f); else f._fsLkT = 0; }   // CATCH, THEN CINEMATIC: the bind on a locked foe
   for(const f of fighters){
@@ -20426,8 +20423,8 @@ function fsDrawFx(){
     if(d.draw){ ctx.save(); try{ d.draw(f, ctx); }catch(e){} ctx.restore(); }
   }
 }
-// Screen-space. THE INTRO (CATCH, THEN CINEMATIC): the screen dark but for the holder, who is lit in their own colour, rings of it
-// closing in on them through the stop; it lifts through the catch, so the catch area reads. THE SLOW-MO KO: the edges darkened. And
+// Screen-space. THE INTRO (CATCH, THEN CINEMATIC): the screen dark but for the holder, who is lit in their own colour; it lifts through
+// the catch. (The rings that closed in on them are gone, and so is the catch area drawn ahead of it: NO TELLS, 2026-10-22.) THE SLOW-MO KO: the edges darkened. And
 // through a row's tell the dimmed edges, and the white flash on its hit. No words. (The band of the fighter's colour and the silhouette
 // that swept across the screen are gone: the intro is that moment now, and "a colour backdrop" was not wanted.)
 function fsDrawScreen(){
@@ -20446,11 +20443,6 @@ function fsDrawScreen(){
     gl.addColorStop(0, 'rgba(0,0,0,0)'); gl.addColorStop(0.72, h.color); gl.addColorStop(1, 'rgba(0,0,0,0)');
     c.globalAlpha = 0.5*a; c.fillStyle = gl; c.beginPath(); c.arc(p.x, p.y, R0*1.3, 0, 7); c.fill();
     c.globalCompositeOperation = 'source-over';
-    for(let j = 0; j < 3; j++){   // rings of their colour closing in on them
-      const u = (e*1.5 + j/3) % 1, rr = R0*(1 + 2.4*(1 - u));
-      c.globalAlpha = a*0.85*Math.sin(u*Math.PI); c.strokeStyle = '#1c1c1c'; c.lineWidth = 7; c.beginPath(); c.arc(p.x, p.y, rr, 0, 7); c.stroke();
-      c.strokeStyle = h.color; c.lineWidth = 4; c.stroke();
-    }
     c.restore();
   }
   if(FS.slow > 0){
@@ -20475,8 +20467,11 @@ function fsDrawScreen(){
   }
 }
 // ---- BATCH A: Firey, Leafy, Pencil, Puffball, Bow, Flower (each from a show moment; the canon is quoted on its row) --------------------
-// Shared pieces. Every row's hit is something the tell drew: a circle, a lane, a pull, a marked spot, a fan with gaps. `draw` is a pure
-// function of the fighter's fs* fields (fsT, fsWind, fsAx, fsAy, face, colour) and, for what other fighters are doing, their own wire fields.
+// Shared pieces. Every row's hit is a plain shape: a circle, a lane, a pull, a picked spot, a fan with gaps. `draw` is a pure function of the
+// fighter's fs* fields (fsT, fsWind, fsAx, fsAy, face, colour) and, for what other fighters are doing, their own wire fields.
+// NO TELLS (the owner, 2026-10-22: "i didnt mean telegraphs ... like a small startup animation"): a row's notes below still say what its "tell"
+// was -- a circle, a lane, a marker, marks on the floor. None of those is drawn any more: the startup is FS_WIND frames of the holder winding
+// up (stupK), and what a row summons that is really there (Leafy's void opening, Bow's snowballs, Bomby's fuse, Snowball's ball) is drawn.
 function fsFeetY(f){ return (f.fsAy != null ? f.fsAy : f.y) + f.r; }
 function fsRing(c, x, y, r, col, lw, a){ c.globalAlpha = a; c.strokeStyle = '#1c1c1c'; c.lineWidth = lw + 3; c.beginPath(); c.arc(x, y, r, 0, 7); c.stroke(); c.strokeStyle = col; c.lineWidth = lw; c.stroke(); }
 function fsDisc(c, x, y, r, col, a){ c.globalAlpha = a; c.fillStyle = col; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); }
@@ -20487,7 +20482,7 @@ function fsHurtMark(f, t){ return t.dead || t.idx === f.idx || t.team === f.team
 // (the tell: a row of flames flickering on the floor out to both sides) and the fire runs out from under him in columns, one every
 // three frames, 55 px apart, 8 a side, each 300 tall and 80 wide. Stand off the marked floor or be above the flames.
 FINAL_SMASHES['Firey'] = {
-  id:'inferno', wind:36, dur:96, reach:400,
+  id:'inferno', wind:FS_WIND, dur:FS_WIND + 60, reach:400,
   catch(f){ const X = 7*55 + 40 - HURT_R0*0.5, fy = f.y + f.r; return { kind:'box', x:f.x - X, y:fy - 300, w:2*X, h:300 }; }, lockEnd:'one',   // CATCH: the marked floor, as tall as the flames
   start(f, st){ st.fy = f.y + f.r; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
@@ -20513,11 +20508,7 @@ FINAL_SMASHES['Firey'] = {
     const t = f.fsT || 0, w = f.fsWind || 36, ax = f.fsAx != null ? f.fsAx : f.x, fy = fsFeetY(f), sw = hazardT*0.3;
     for(let i = 0; i < 8; i++) for(const sd of (i === 0 ? [0] : [-1, 1])){
       const x = ax + sd*i*55, born = w + i*3;
-      if(t < w){   // the tell: a flicker of flame on the floor where a column will stand, growing as the moment nears
-        const k = t/w, hh = 8 + 14*k + 3*Math.sin(sw + i);
-        c.globalAlpha = 0.5 + 0.4*k; c.fillStyle = '#ffd23f'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2;
-        c.beginPath(); c.moveTo(x - 13, fy); c.quadraticCurveTo(x - 6, fy - hh, x, fy - hh*1.6); c.quadraticCurveTo(x + 7, fy - hh, x + 13, fy); c.closePath(); c.fill(); c.stroke();
-      } else if(t >= born && t < born + 22){   // the column: shoots up, holds, sinks
+      if(t >= born && t < born + 22){   // the column: shoots up, holds, sinks
         const u = (t - born)/22, h = 300*Math.sin(Math.min(1, u*1.6)*Math.PI/2)*(u > 0.7 ? 1 - (u - 0.7)/0.3 : 1), wd = 40;
         c.globalAlpha = 1; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4; c.fillStyle = '#f0521f';
         c.beginPath(); c.moveTo(x - wd, fy); c.quadraticCurveTo(x - wd*0.9, fy - h*0.55, x + Math.sin(sw + i)*10, fy - h); c.quadraticCurveTo(x + wd*0.9, fy - h*0.55, x + wd, fy); c.closePath(); c.fill(); c.stroke();
@@ -20532,7 +20523,7 @@ FINAL_SMASHES['Firey'] = {
 // 150 px ahead of her (the tell: it widens and its pull ring, 330 px, pulses), drags every foe in reach toward it about 3 px a frame
 // for 40 frames (run or jump away faster than that and you are out), and snaps shut on whoever is in its middle.
 FINAL_SMASHES['Leafy'] = {
-  id:'void', wind:34, dur:104, reach:300,
+  id:'void', wind:FS_WIND, dur:FS_WIND + 70, reach:300,
   catch(f){ return { kind:'circle', x:f.x + f.face*150, y:f.y, r:fsPullCatch(330, 100, 40, (d)=> -Math.min(3.2, d)) }; }, lockEnd:'one',   // CATCH: as far round the void as its pull still brings a foe into its middle
   start(f, st){ st.cx = f.x + f.face*150; st.cy = f.y; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
@@ -20556,7 +20547,7 @@ FINAL_SMASHES['Leafy'] = {
     if(t >= w + 46) return;
     const open = t < w ? t/w : (t < w + 40 ? 1 : Math.max(0, 1 - (t - w - 40)/6)), R = 100*open;
     c.save(); c.translate(cx, cy);
-    if(t >= w - 10 && t < w + 42){ const pr = 330*(0.9 + 0.1*Math.sin(hazardT*0.25)); fsRing(c, 0, 0, pr, '#b9a5ff', 4, 0.5); }   // how far its pull reaches
+    if(t >= w && t < w + 42){ const pr = 330*(0.9 + 0.1*Math.sin(hazardT*0.25)); fsRing(c, 0, 0, pr, '#b9a5ff', 4, 0.5); }   // how far its pull reaches (while it pulls: the void opening is the startup)
     fsDisc(c, 0, 0, R + 8, '#f4f1ff', 0.35*open);
     fsDisc(c, 0, 0, R, '#1a1030', 0.95*open);
     c.globalAlpha = open; c.fillStyle = '#fff';
@@ -20572,7 +20563,7 @@ FINAL_SMASHES['Leafy'] = {
 // (20%), the outer 420 px (14%) for whoever the first did not reach; then she is dizzy for 70 frames and takes the hit she can no longer
 // shrug off (`exposed`: no grace at the end).
 FINAL_SMASHES['Pencil'] = {
-  id:'twofour', wind:44, dur:126, reach:300, exposed:true,
+  id:'twofour', wind:FS_WIND, dur:FS_WIND + 82, reach:300, exposed:true,
   catch(f){ return { kind:'circle', x:f.x, y:f.y, r:300 }; }, lockEnd:'one',   // CATCH: the inner ring
   start(f, st){ st.hit2 = new Set(); armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
@@ -20591,12 +20582,7 @@ FINAL_SMASHES['Pencil'] = {
   draw(f, c){
     const t = f.fsT || 0, w = f.fsWind || 44;
     c.save(); c.translate(f.x, f.y);
-    if(t < w){
-      const k = t/w, pulse = 0.5 + 0.5*Math.sin(t*0.5);
-      fsDisc(c, 0, 0, 300, '#f2d84b', 0.08 + 0.1*k); fsRing(c, 0, 0, 300, '#f2d84b', 5, 0.9);
-      fsRing(c, 0, 0, 420, '#a78bfa', 3, 0.35 + 0.3*pulse);
-      for(let j = 0; j < 3; j++){ c.globalAlpha = 0.5; c.strokeStyle = '#fff'; c.lineWidth = 2; c.beginPath(); c.arc(0, 0, 420*(1 - ((k*1.5 + j/3) % 1)*0.9), 0, 7); c.stroke(); }
-    } else {
+    if(t >= w){
       const u1 = Math.min(1, (t - w)/18), u2 = t >= w + 14 ? Math.min(1, (t - w - 14)/20) : -1;
       if(u1 < 1){ fsDisc(c, 0, 0, 300*u1, '#fff', 0.5*(1 - u1)); fsRing(c, 0, 0, 300*u1, '#f2d84b', 16*(1 - u1) + 2, 1 - u1); }
       if(u2 >= 0 && u2 < 1){ fsRing(c, 0, 0, 420*u2, '#a78bfa', 12*(1 - u2) + 2, 1 - u2); }
@@ -20611,7 +20597,7 @@ FINAL_SMASHES['Pencil'] = {
 // BFDIA 4 and 5a). The tell is the song's circle, 270 px; whoever is still in it when it goes off is entranced for 70 frames; 30 frames on
 // the tsunami sweeps out in front of her, 560 px along the floor and 100 tall, hitting everyone in its way, entranced or not.
 FINAL_SMASHES['Puffball'] = {
-  id:'trance', wind:40, dur:130, reach:270,
+  id:'trance', wind:FS_WIND, dur:FS_WIND + 90, reach:270,
   catch(f){ return fsBoxAhead(f, HURT_R0 - 10, 560, 90, f.r); }, lockEnd:'one',   // CATCH: the tsunami's path in front of her (it is the hit; the song only stuns)
   start(f, st){ st.wave = false; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
@@ -20638,10 +20624,8 @@ FINAL_SMASHES['Puffball'] = {
   draw(f, c){
     const t = f.fsT || 0, w = f.fsWind || 40;
     c.save();
-    if(t < w + 50){   // the song's circle (rainbow, turning), then the spirals over whoever it caught
+    if(t < w + 50){   // the spirals over whoever the song caught
       c.translate(f.x, f.y);
-      if(t < w){ const k = t/w; fsDisc(c, 0, 0, 270, '#e6a6e0', 0.1 + 0.14*k); for(let i = 0; i < 6; i++){ c.globalAlpha = 0.8; c.strokeStyle = fsRainbow(i, 6); c.lineWidth = 6; c.beginPath(); c.arc(0, 0, 270, i*1.047 + hazardT*0.04, i*1.047 + 0.9 + hazardT*0.04); c.stroke(); }
-        for(let n = 0; n < 4; n++){ const a = hazardT*0.1 + n*1.57, rr = 60 + ((t*5 + n*40) % 200); c.globalAlpha = 0.7; c.fillStyle = fsRainbow(n, 8); c.beginPath(); c.arc(Math.cos(a)*rr, Math.sin(a)*rr*0.8, 5, 0, 7); c.fill(); } }
       c.translate(-f.x, -f.y);
       if(t >= w) for(const o of fighters){
         if(o.dead || o.idx === f.idx || o.team === f.team || !(o.hitstun > 0) || Math.hypot(o.x - f.x, o.y - f.y) > 330) continue;
@@ -20670,8 +20654,8 @@ FINAL_SMASHES['Puffball'] = {
 // on the stage, 13 of them four frames apart, each over a mark drawn on the floor for a beat before it lands: one on each foe in turn
 // and the rest scattered about them. Keep moving: no single mark is on you for long.
 FINAL_SMASHES['Bow'] = {
-  id:'snowbow', wind:36, dur:124, reach:600,
-  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FS_RAIN_CATCH }; }, lockEnd:36 + 48,   // CATCH: a circle round her; the snowballs go for a locked foe
+  id:'snowbow', wind:FS_WIND, dur:FS_WIND + 88, reach:600,
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FS_RAIN_CATCH }; }, lockEnd:FS_WIND + 48,   // CATCH: a circle round her; the snowballs go for a locked foe
   start(f, st){ st.n = 0; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -20707,8 +20691,8 @@ FINAL_SMASHES['Bow'] = {
 // every direction, 12 of them, and, 16 frames on, 12 more between them. Petals fly 12 px a frame for 55 frames (about 660 px) and
 // break on a floor; the gaps between them are the way through.
 FINAL_SMASHES['Flower'] = {
-  id:'petals', wind:34, dur:100, reach:330,
-  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:330 }; }, lockEnd:34 + 16, volleys:2,   // CATCH: the petals' reach; each volley is turned so a petal meets a locked foe
+  id:'petals', wind:FS_WIND, dur:FS_WIND + 66, reach:330,
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:330 }; }, lockEnd:FS_WIND + 16, volleys:2,   // CATCH: the petals' reach; each volley is turned so a petal meets a locked foe
   start(f, st){ armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -20735,7 +20719,6 @@ FINAL_SMASHES['Flower'] = {
         c.save(); c.translate(Math.cos(a)*rr, Math.sin(a)*rr); c.rotate(a); c.globalAlpha = 0.9; c.fillStyle = '#ff6fae'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5;
         c.beginPath(); c.ellipse(0, 0, 11, 6, 0, 0, 7); c.fill(); c.stroke(); c.restore();
       }
-      c.globalAlpha = 0.5*k; c.strokeStyle = '#ff6fae'; c.lineWidth = 3; c.setLineDash([10, 10]); c.beginPath(); c.arc(0, 0, 130, 0, 7); c.stroke(); c.setLineDash([]);   // where the first of them are by the end
     } else {
       const u = (t - w)/20; fsRing(c, 0, 0, 40 + 120*u, '#ff9bc8', 10*(1 - u) + 2, 1 - u);
     }
@@ -20745,17 +20728,11 @@ FINAL_SMASHES['Flower'] = {
 
 // ---- BATCH B: Bubble, Blocky, Pen, Match, Ice Cube, Teardrop, Bomby, Rocky (the design doc's finishers, docs/animation-move-design.md) ----------
 // A LOCK-ON Final Smash (Blocky, Pen, Ice Cube, Teardrop) picks its foe by a plain rule on what everyone can see -- the nearest foe in a
-// box about the holder (fsPick) -- and follows them with a marker until `lock` frames before the hit, then the spot is fixed: it is sent
-// as the fighter's fsAx / fsAy, and the tell shows it. Step out of the marked circle in the beat between the lock and the hit and it misses.
+// box about the holder (fsPick) -- and fixes the spot `lock` frames before the hit, or on the startup's first frame when that is sooner (it
+// is sent as the fighter's fsAx / fsAy). No marker is drawn (NO TELLS): move as the holder winds up, and it lands where you were.
 function fsPick(f, rx, ry, fwd){ return fsLockedOf(f) || nearestFoe(f, rx, ry, o=>!hardInvuln(o) && !(o._ghostT > 0) && !(fwd && (o.x - f.x)*f.face < 0)); }   // (the foe the catch holds, first: CATCH, THEN CINEMATIC)
 function fsLockAt(f, st, o, fallback){   // fix the spot (ahead of the holder when nobody is in the box)
   f.fsAx = Math.round(o ? o.x : f.x + f.face*fallback); f.fsAy = Math.round(o ? o.y : f.y); st.locked = true;
-}
-function fsMark(c, x, y, R, col, k, a){   // a lock-on marker: a ring with four ticks, closing in as `k` goes 0 -> 1
-  c.save(); c.translate(x, y); c.globalAlpha = a;
-  fsRing(c, 0, 0, R*(1.5 - 0.5*k), col, 4, a);
-  for(let i = 0; i < 4; i++){ const an = i*Math.PI/2 + hazardT*0.05; c.strokeStyle = '#1c1c1c'; c.lineWidth = 6; c.beginPath(); c.moveTo(Math.cos(an)*(R*0.5), Math.sin(an)*(R*0.5)); c.lineTo(Math.cos(an)*(R*1.7), Math.sin(an)*(R*1.7)); c.stroke(); c.strokeStyle = col; c.lineWidth = 3; c.stroke(); }
-  c.restore();
 }
 function fsPin(o, x, y){ if(o.dead) return; o.x = x; o.y = y; o.vx = 0; o.vy = 0; stunFx(o, 3); }
 
@@ -20763,7 +20740,7 @@ function fsPin(o, x, y){ if(o.dead) return; o.x = x; o.y = y; o.vx = 0; o.vy = 0
 // foe skyward, inflate them inside a giant bubble, float them up and "pop the whole thing for a massive launch and soap-shard shower".
 // The circle in the tell is 230 px; whoever is in it when it closes is caught, floats up for 42 frames helpless, and the pop (22%) throws them.
 FINAL_SMASHES['Bubble'] = {
-  id:'yoylecake', wind:34, dur:112, reach:230,
+  id:'yoylecake', wind:FS_WIND, dur:FS_WIND + 78, reach:230,
   catch(f){ return { kind:'circle', x:f.x, y:f.y, r:230 }; }, lockEnd:'one',   // CATCH: the bubble's circle
   start(f, st){ st.caught = []; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
@@ -20783,11 +20760,7 @@ FINAL_SMASHES['Bubble'] = {
   draw(f, c){
     const t = f.fsT || 0, w = f.fsWind || 34;
     c.save();
-    if(t < w){
-      const k = t/w; c.translate(f.x, f.y);
-      fsDisc(c, 0, 0, 230, '#bfe8ff', 0.1 + 0.12*k); fsRing(c, 0, 0, 230, '#7fc8f8', 5, 0.9);
-      for(let i = 0; i < 9; i++){ const a = i*0.7 + hazardT*0.02, rr = 60 + ((i*37 + t*3) % 160); fsRing(c, Math.cos(a)*rr, Math.sin(a)*rr*0.8 - k*30, 6 + (i % 3)*4, '#ffffff', 2, 0.8); }
-    } else if(t < w + 56){
+    if(t >= w && t < w + 56){
       for(const o of fighters){   // a bubble round whoever it caught (they are the ones held in the air: stunned, near her)
         if(o.dead || o.idx === f.idx || o.team === f.team || !(o.hitstun > 0) || Math.hypot(o.x - f.x, o.y - f.y) > 420) continue;
         if(t < w + 42){ c.globalAlpha = 0.35; c.fillStyle = '#bfe8ff'; c.beginPath(); c.arc(o.x, o.y, o.r + 24, 0, 7); c.fill(); fsRing(c, o.x, o.y, o.r + 24, '#ffffff', 3, 0.9); c.globalAlpha = 0.8; c.fillStyle = '#fff'; c.beginPath(); c.arc(o.x - o.r*0.6, o.y - o.r*0.7, 6, 0, 7); c.fill(); }
@@ -20803,12 +20776,12 @@ FINAL_SMASHES['Bubble'] = {
 // tell: a marker on the nearest foe within 300, fixed 16 frames before the boxes slam down; whoever is inside it is boxed in and takes seven hits
 // (3% rising to 5%) over 56 frames, then the crush (10%, a big launch).
 FINAL_SMASHES['Blocky'] = {
-  id:'recoveryloop', wind:36, dur:126, reach:300,
-  catch(f){ return { kind:'box', x:f.x - 300, y:f.y - 210, w:600, h:420 }; }, lockEnd:36 + 56, catchMax:1,   // CATCH: the box the marker looks in
+  id:'recoveryloop', wind:FS_WIND, dur:FS_WIND + 90, reach:300,
+  catch(f){ return { kind:'box', x:f.x - 300, y:f.y - 210, w:600, h:420 }; }, lockEnd:FS_WIND + 56, catchMax:1,   // CATCH: the box the marker looks in
   start(f, st){ st.caught = []; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
-    if(t === w - 16){ fsLockAt(f, st, fsPick(f, 300, 210), 110); }
+    if(t === Math.max(0, w - 16)){ fsLockAt(f, st, fsPick(f, 300, 210), 110); }
     if(t === w){
       armAtk(f, 30, 'fsburst'); shake(10);
       for(const o of fighters){ if(fsHurtMark(f, o) || o._heldBy != null) continue; if(Math.hypot(o.x - f.fsAx, o.y - f.fsAy) < 75 + o.r*0.3){ st.caught.push(o.idx); o.countering = 0; } }
@@ -20826,9 +20799,7 @@ FINAL_SMASHES['Blocky'] = {
   draw(f, c){
     const t = f.fsT || 0, w = f.fsWind || 36;
     c.save();
-    if(t < w - 16){ const o = fsPick(f, 300, 210); if(o) fsMark(c, o.x, o.y, 60, '#d62329', t/(w - 16), 0.7); }
-    else if(t < w){ fsMark(c, f.fsAx, f.fsAy, 75, '#d62329', 1, 0.9); }
-    else if(t < w + 66){
+    if(t >= w && t < w + 66){
       const x = f.fsAx, y = f.fsAy, drop = Math.min(1, (t - w)/6), k = (t - w)/56, spin = Math.min(1, Math.max(0, k));
       for(let i = 0; i < 6; i++){   // the ring of boxes, slammed down round the foe
         const a = i*Math.PI/3 + (t >= w + 56 ? 0 : spin*0.4), rr = 52, bx = x + Math.cos(a)*rr, by = y + Math.sin(a)*rr*0.7 - (1 - drop)*220;
@@ -20846,12 +20817,12 @@ FINAL_SMASHES['Blocky'] = {
 // he uncaps and draws a colossal dripping X over the foe, who is slurped into his nib as an inkblot. The tell is the marker on the nearest foe within
 // 420, fixed 20 frames before the X is complete: stand outside its circle (90 px) by then and the X lands on nothing. It is 30%, thrown hard.
 FINAL_SMASHES['Pen'] = {
-  id:'erasure', wind:40, dur:104, reach:420,
+  id:'erasure', wind:FS_WIND, dur:FS_WIND + 64, reach:420,
   catch(f){ return { kind:'box', x:f.x - 420, y:f.y - 260, w:840, h:520 }; }, lockEnd:'one', catchMax:1,   // CATCH: the box the marker looks in
   start(f, st){ armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
-    if(t === w - 20) fsLockAt(f, st, fsPick(f, 420, 260), 150);
+    if(t === Math.max(0, w - 20)) fsLockAt(f, st, fsPick(f, 420, 260), 150);
     if(t === w){ armAtk(f, 34, 'fsburst'); shake(5); }
     if(t === w + 8){
       shake(13); const n = fsBurst(f, st, f.fsAx, f.fsAy, 90, 30, 22, -16);
@@ -20862,10 +20833,8 @@ FINAL_SMASHES['Pen'] = {
   draw(f, c){
     const t = f.fsT || 0, w = f.fsWind || 40;
     c.save();
-    if(t < w - 20){ const o = fsPick(f, 420, 260); if(o) fsMark(c, o.x, o.y, 55, '#3a2f9f', t/(w - 20), 0.7); }
-    else if(t < w + 40){
+    if(t < w + 40){   // (the X is his pen at work: the hit comes as it is finished)
       const x = f.fsAx, y = f.fsAy, k = Math.min(1, (t - (w - 20))/28), s = 110;
-      if(t < w + 8) fsRing(c, x, y, 90, '#3a2f9f', 3, 0.45);
       c.globalAlpha = 1; c.lineCap = 'round';
       c.strokeStyle = '#1c1c1c'; c.lineWidth = 17; c.beginPath(); c.moveTo(x - s, y - s); c.lineTo(x - s + 2*s*Math.min(1, k*2), y - s + 2*s*Math.min(1, k*2)); c.stroke();
       if(k > 0.5){ const k2 = (k - 0.5)*2; c.beginPath(); c.moveTo(x + s, y - s); c.lineTo(x + s - 2*s*k2, y - s + 2*s*k2); c.stroke(); }
@@ -20882,7 +20851,7 @@ FINAL_SMASHES['Pen'] = {
 // (the design doc). Match whistles and the Van barrels through from behind her, edge to edge, 24 px a frame, 100 px tall: jump it or stand
 // off the lane. 24% and a hard launch for whoever it meets.
 FINAL_SMASHES['Match'] = {
-  id:'freesmartvan', wind:36, dur:112, reach:700,
+  id:'freesmartvan', wind:FS_WIND, dur:FS_WIND + 76, reach:700,
   catch(f){ const d = f.face < 0 ? -1 : 1, v0 = d > 0 ? -150 : WW + 150, v1 = v0 + d*24*61, lo = Math.max(f.x - 700, Math.min(v0, v1)), hi = Math.min(f.x + 700, Math.max(v0, v1)), fy = f.y + f.r;
     return { kind:'box', x:lo, y:fy - 100, w:Math.max(0, hi - lo), h:100 }; }, lockEnd:'one',   // CATCH: the Van's lane, as far as her reach and its run
   start(f, st){ st.dir = f.face; armAtk(f, this.wind, 'fsgather'); },
@@ -20903,10 +20872,7 @@ FINAL_SMASHES['Match'] = {
     const t = f.fsT || 0, w = f.fsWind || 36, fy = fsFeetY(f), dir = f.face;
     c.save();
     if(t < w + 66){
-      if(t < w){   // the lane, marked with chevrons running the way the Van will, and its headlights flashing at the edge
-        const k = t/w; c.globalAlpha = 0.12 + 0.12*k; c.fillStyle = '#ffd23f'; c.fillRect(-40, fy - 100, WW + 80, 112);
-        c.globalAlpha = 0.5 + 0.4*k; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.setLineDash([14, 12]); c.strokeRect(-40, fy - 100, WW + 80, 112); c.setLineDash([]);
-        for(let i = 0; i < 8; i++){ const x = ((hazardT*6*dir + i*160) % (WW + 160) + WW + 160) % (WW + 160) - 80; c.fillStyle = '#d62329'; c.beginPath(); c.moveTo(x, fy - 60); c.lineTo(x + dir*26, fy - 44); c.lineTo(x, fy - 28); c.closePath(); c.fill(); }
+      if(t < w){   // the Van's headlights flashing at the edge it will come from (no lane drawn)
         if((t % 6) < 3){ const ex = dir > 0 ? 24 : WW - 24; c.globalAlpha = 1; c.fillStyle = '#fffbd0'; c.beginPath(); c.arc(ex, fy - 60, 16, 0, 7); c.arc(ex, fy - 30, 16, 0, 7); c.fill(); }
       } else if(t < w + 62){   // the Van
         const vx = (dir > 0 ? -150 : WW + 150) + dir*24*(t - w), by = fy;
@@ -20929,12 +20895,12 @@ FINAL_SMASHES['Match'] = {
 // the frost marker on the nearest foe within 380, fixed 18 frames before the freeze (80 px: step out of it); a frozen foe is held 70
 // frames, she dashes to them (the Cube is a hard shape of ice, so a charge is on-model) and the block bursts: 26%, a big launch.
 FINAL_SMASHES['Ice Cube'] = {
-  id:'vengeance', wind:38, dur:116, reach:380,
+  id:'vengeance', wind:FS_WIND, dur:FS_WIND + 78, reach:380,
   catch(f){ return { kind:'box', x:f.x - 380, y:f.y - 240, w:760, h:480 }; }, lockEnd:'one', catchMax:1,   // CATCH: the box the frost marker looks in
   start(f, st){ st.caught = []; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
-    if(t === w - 18) fsLockAt(f, st, fsPick(f, 380, 240), 120);
+    if(t === Math.max(0, w - 18)) fsLockAt(f, st, fsPick(f, 380, 240), 120);
     if(t === w){
       armAtk(f, 28, 'dash'); shake(5);
       for(const o of fighters){ if(fsHurtMark(f, o)) continue; if(Math.hypot(o.x - f.fsAx, o.y - f.fsAy) < 80 + o.r*0.3){ st.caught.push(o.idx); o.countering = 0; applyFreeze(o, 70); } }
@@ -20951,8 +20917,6 @@ FINAL_SMASHES['Ice Cube'] = {
   draw(f, c){
     const t = f.fsT || 0, w = f.fsWind || 38;
     c.save();
-    if(t < w - 18){ const o = fsPick(f, 380, 240); if(o) fsMark(c, o.x, o.y, 55, '#7fc8f8', t/(w - 18), 0.75); }
-    else if(t < w){ fsMark(c, f.fsAx, f.fsAy, 80, '#7fc8f8', 1, 0.9); }
     if(t < w + 40){   // frost creeping in from the edges of the screen, in the world: drawn about the view
       const fa = t < w ? t/w : 1 - (t - w)/40; c.globalAlpha = 0.25*fa; c.strokeStyle = '#cfeeff'; c.lineWidth = 40; c.strokeRect(camX - 10, camY - 10, W + 20, H + 20);
     }
@@ -20971,12 +20935,12 @@ FINAL_SMASHES['Ice Cube'] = {
 // its circle (70 px) is held in place 64 frames while twelve blank signs fly at them (2.5% each), and a house-sized last sign (the sign
 // says only three dots) lands for 20% and a big launch.
 FINAL_SMASHES['Teardrop'] = {
-  id:'silenttreatment', wind:40, dur:132, reach:500,
-  catch(f){ return fsBoxAhead(f, 0, 500, 240, 240); }, lockEnd:40 + 64, catchMax:1,   // CATCH: the box in front of her the marker looks in
+  id:'silenttreatment', wind:FS_WIND, dur:FS_WIND + 92, reach:500,
+  catch(f){ return fsBoxAhead(f, 0, 500, 240, 240); }, lockEnd:FS_WIND + 64, catchMax:1,   // CATCH: the box in front of her the marker looks in
   start(f, st){ st.caught = []; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
-    if(t === w - 16) fsLockAt(f, st, fsPick(f, 500, 240, true), 200);
+    if(t === Math.max(0, w - 16)) fsLockAt(f, st, fsPick(f, 500, 240, true), 200);
     if(t === w){
       armAtk(f, 48, 'throw'); shake(4);
       for(const o of fighters){ if(fsHurtMark(f, o) || o._heldBy != null) continue; if(Math.hypot(o.x - f.fsAx, o.y - f.fsAy) < 70 + o.r*0.3){ st.caught.push(o.idx); o.countering = 0; } }
@@ -20995,8 +20959,6 @@ FINAL_SMASHES['Teardrop'] = {
   draw(f, c){
     const t = f.fsT || 0, w = f.fsWind || 40;
     c.save();
-    if(t < w - 16){ const o = fsPick(f, 500, 240, true); if(o) fsMark(c, o.x, o.y, 50, '#6fb7ff', t/(w - 16), 0.7); }
-    else if(t < w){ fsMark(c, f.fsAx, f.fsAy, 70, '#6fb7ff', 1, 0.9); }
     const board = (x, y, wd, ht, rot, dots)=>{ c.save(); c.translate(x, y); c.rotate(rot); c.fillStyle = '#c9a46c'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.rect(-wd/2, -ht/2, wd, ht); c.fill(); c.stroke();
       c.fillStyle = '#7a5a30'; c.fillRect(-3, ht/2, 6, ht*0.6); if(dots){ c.fillStyle = '#1c1c1c'; for(let i = -1; i <= 1; i++){ c.beginPath(); c.arc(i*wd*0.22, 0, wd*0.05, 0, 7); c.fill(); } } c.restore(); };
     if(t >= w && t < w + 70){
@@ -21017,7 +20979,7 @@ FINAL_SMASHES['Teardrop'] = {
 // 50 frames), then a point-blank blast, 34% and a launch that takes anyone it reaches at moderate %. The price is his: he takes 35% himself and is
 // stunned for 90 frames (`exposed`), and the circle is only 200 px.
 FINAL_SMASHES['Bomby'] = {
-  id:'detonation', wind:50, dur:134, reach:200, exposed:true,
+  id:'detonation', wind:FS_WIND, dur:FS_WIND + 84, reach:200, exposed:true,
   catch(f){ return { kind:'circle', x:f.x, y:f.y, r:200 }; }, lockEnd:'one',   // CATCH: the blast's circle
   start(f, st){ armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
@@ -21037,9 +20999,7 @@ FINAL_SMASHES['Bomby'] = {
     const t = f.fsT || 0, w = f.fsWind || 50;
     c.save(); c.translate(f.x, f.y);
     if(t < w){
-      const k = t/w, blink = (t % 8) < 4 && k > 0.5;
-      fsDisc(c, 0, 0, 200, '#ffb347', 0.08 + 0.14*k); fsRing(c, 0, 0, 200, blink ? '#fff' : '#f0521f', 5, 0.9);
-      fsRing(c, 0, 0, 200*(1 - k*0.85), '#ffffff', 3, 0.6);
+      const k = t/w;   // (the fuse, burning down on him: no circle)
       c.globalAlpha = 1; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.moveTo(f.face*4, -f.r); c.quadraticCurveTo(f.face*14, -f.r - 14, f.face*6, -f.r - 20 + 14*k); c.stroke();
       c.fillStyle = '#ffd23f'; c.beginPath(); c.arc(f.face*6, -f.r - 20 + 14*k, 4 + 2*Math.sin(hazardT), 0, 7); c.fill();
     } else if(t < w + 40){
@@ -21061,8 +21021,8 @@ FINAL_SMASHES['Bomby'] = {
 // becomes a fountain: for 70 frames, a shot every three, in a rotation of sludge, red ball, block and batter, thrown forward over a spread of
 // distances (6-8% each); then one acid cannonball (22%, goes through). Behind him is safe; the shots land in front, so it is a wall to get over.
 FINAL_SMASHES['Rocky'] = {
-  id:'matter', wind:30, dur:138,reach:420,
-  catch(f){ return fsBoxAhead(f, 0, 330, 160, f.r + 8); }, lockEnd:30 + 78, catchMax:1,   // CATCH: the part of the fountain's reach in front of him its shots rain on (past it they thin out)
+  id:'matter', wind:FS_WIND, dur:FS_WIND + 108,reach:420,
+  catch(f){ return fsBoxAhead(f, 0, 330, 160, f.r + 8); }, lockEnd:FS_WIND + 78, catchMax:1,   // CATCH: the part of the fountain's reach in front of him its shots rain on (past it they thin out)
   start(f, st){ armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -21085,7 +21045,6 @@ FINAL_SMASHES['Rocky'] = {
     if(t >= w + 80) return;
     c.save(); c.translate(f.x, f.y);
     if(t < w){ const k = t/w; c.globalAlpha = 0.5*k; c.strokeStyle = '#fff'; c.lineWidth = 4; for(let i = 0; i < 6; i++){ const a = i*1.047 + hazardT*0.1; c.beginPath(); c.moveTo(Math.cos(a)*(f.r + 4), Math.sin(a)*(f.r + 4)); c.lineTo(Math.cos(a)*(f.r + 4 + 16*k), Math.sin(a)*(f.r + 4 + 16*k)); c.stroke(); }
-      c.globalAlpha = 0.18 + 0.12*k; c.fillStyle = '#7cb342'; c.beginPath(); c.moveTo(0, -f.r*0.5); c.lineTo(f.face*440, -150); c.lineTo(f.face*440, f.r + 8); c.lineTo(0, f.r*0.5); c.closePath(); c.fill();   // where it will land: the cone in front
     } else if(t < w + 72){ c.globalAlpha = 0.9; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillStyle = '#7cb342'; c.beginPath(); c.arc(f.face*(f.r*0.5), -4, f.r*0.5 + 4*Math.sin(hazardT*0.8), 0, 7); c.fill(); c.stroke(); }
     c.restore();
   },
@@ -21110,12 +21069,12 @@ function fsBolt(c, x0, y0, x1, y1, a, seed){   // a jagged bolt, the same on eve
 // foe within 520, fixed 18 frames before the strike (70 px: step out of it and the strike lands on nothing, and so there is no chain); a foe
 // struck passes it on, 14 frames apart, to the nearest unstruck foe within 280 of it, twice: 14%, then 12%, then 12%.
 FINAL_SMASHES['Lightning'] = {
-  id:'chainbolt', wind:36, dur:96, reach:520,
+  id:'chainbolt', wind:FS_WIND, dur:FS_WIND + 60, reach:520,
   catch(f){ return { kind:'box', x:f.x - 520, y:f.y - 320, w:1040, h:640 }; }, lockEnd:'one', catchMax:1,   // CATCH: the box the marker looks in
   start(f, st){ armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
-    if(t === w - 18){ fsLockAt(f, st, fsPick(f, 520, 320), 200); st.px = f.fsAx; st.py = f.fsAy; st.chain = false; }
+    if(t === Math.max(0, w - 18)){ fsLockAt(f, st, fsPick(f, 520, 320), 200); st.px = f.fsAx; st.py = f.fsAy; st.chain = false; }
     if(t === w){
       armAtk(f, 30, 'fsburst'); shake(9);
       st.chain = fsBurst(f, st, f.fsAx, f.fsAy, 70, 14, 12, -14) > 0;
@@ -21136,8 +21095,7 @@ FINAL_SMASHES['Lightning'] = {
   draw(f, c){
     const t = f.fsT || 0, w = f.fsWind || 36, top = camY - 40;
     c.save();
-    if(t < w - 18){ const o = fsPick(f, 520, 320); if(o) fsMark(c, o.x, o.y, 55, '#8ad8ff', t/(w - 18), 0.75); }
-    else if(t < w){ fsMark(c, f.fsAx, f.fsAy, 70, '#8ad8ff', 1, 0.9); c.globalAlpha = 0.2*(t - (w - 18))/18; c.fillStyle = '#8ad8ff'; c.fillRect(camX, camY, W, H); }
+    if(t < w){ c.globalAlpha = 0.2*t/w; c.fillStyle = '#8ad8ff'; c.fillRect(camX, camY, W, H); }   // the air charging (the whole view: no marker on anyone)
     if(t >= w && t < w + 10) fsBolt(c, f.fsAx + 20, top, f.fsAx, f.fsAy, 1 - (t - w)/10, 1);
     if(f.fsBx != null && t >= w + 14 && t < w + 24){ const a = 1 - (t - w - 14)/10; fsBolt(c, f.fsAx, f.fsAy, f.fsBx, f.fsBy, a, 2); fsBolt(c, f.fsBx + 10, top, f.fsBx, f.fsBy, a, 3); }
     if(f.fsCx != null && f.fsBx != null && t >= w + 28 && t < w + 38){ const a = 1 - (t - w - 28)/10; fsBolt(c, f.fsBx, f.fsBy, f.fsCx, f.fsCy, a, 4); fsBolt(c, f.fsCx + 10, top, f.fsCx, f.fsCy, a, 5); }
@@ -21151,7 +21109,7 @@ FINAL_SMASHES['Lightning'] = {
 // frame down to 1) and then blasts the circle: 16%, thrown out the way they were being pushed. The tell is the circle itself. Run in
 // toward her and the wind is worse; leave the circle and it is nothing.
 FINAL_SMASHES['Fanny'] = {
-  id:'hurricane', wind:36, dur:112, reach:380,
+  id:'hurricane', wind:FS_WIND, dur:FS_WIND + 76, reach:380,
   catch(f){ return { kind:'circle', x:f.x, y:f.y, r:fsPullCatch(400, 380, 40, (d)=> 1 + 4.5*(1 - d/400)) }; }, lockEnd:'one',   // CATCH: as far out as the blast still reaches a foe once the wind has pushed them
   start(f, st){ armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
@@ -21174,7 +21132,7 @@ FINAL_SMASHES['Fanny'] = {
     c.save(); c.translate(f.x, f.y);
     if(t < w + 40){
       const k = t < w ? t/w : 1;
-      fsDisc(c, 0, 0, 400, '#cfe8ff', 0.06 + 0.1*k); fsRing(c, 0, 0, 400, '#9ac8f4', 4, 0.5 + 0.4*k);
+      if(t >= w){ fsDisc(c, 0, 0, 400, '#cfe8ff', 0.16); fsRing(c, 0, 0, 400, '#9ac8f4', 4, 0.9); }   // the wind's reach while it blows (through the startup only the gusts round her)
       c.globalAlpha = 0.7*k; c.strokeStyle = '#ffffff'; c.lineWidth = 4; c.lineCap = 'round';
       for(let i = 0; i < 14; i++){ const a = i*Math.PI*2/14, r0 = 40 + ((hazardT*(t < w ? 2 : 9) + i*53) % 340); c.beginPath(); c.moveTo(Math.cos(a)*r0, Math.sin(a)*r0*0.8); c.lineTo(Math.cos(a)*(r0 + 34), Math.sin(a)*(r0 + 34)*0.8); c.stroke(); }
     } else { const u = (t - w - 40)/16; fsRing(c, 0, 0, 100 + 290*u, '#ffffff', 16*(1 - u) + 2, 1 - u); }
@@ -21186,8 +21144,8 @@ FINAL_SMASHES['Fanny'] = {
 // front of you, and the last one launches". This is the whole rant: whoever is in the zone drawn in front of her (140 px by 140) when it starts is
 // held and takes 20 jabs, two frames apart, of 1.8%, and then the last, 10%, launches them. Be out of the zone, or behind her.
 FINAL_SMASHES['Dora'] = {
-  id:'rant', wind:30, dur:100, reach:140,
-  catch(f){ return fsBoxAhead(f, HURT_R0 - 10, 150, 80, 80); }, lockEnd:30 + 44,   // CATCH: the zone in front of her
+  id:'rant', wind:FS_WIND, dur:FS_WIND + 70, reach:140,
+  catch(f){ return fsBoxAhead(f, HURT_R0 - 10, 150, 80, 80); }, lockEnd:FS_WIND + 44,   // CATCH: the zone in front of her
   start(f, st){ st.caught = []; st.dir = f.face; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind, dir = st.dir;
@@ -21209,8 +21167,7 @@ FINAL_SMASHES['Dora'] = {
     const t = f.fsT || 0, w = f.fsWind || 30, dir = f.face;
     if(t >= w + 56) return;
     c.save(); c.translate(f.x, f.y);
-    if(t < w){ const k = t/w; c.globalAlpha = 0.14 + 0.16*k; c.fillStyle = '#e25b8a'; c.fillRect(dir > 0 ? -10 : -150, -80, 160, 160); c.globalAlpha = 0.9; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.setLineDash([10, 8]); c.strokeRect(dir > 0 ? -10 : -150, -80, 160, 160); c.setLineDash([]); }
-    else if(t < w + 44){   // the rant: jagged bursts and fists, flying out in front, quicker than the eye
+    if(t >= w && t < w + 44){   // the rant: jagged bursts and fists, flying out in front, quicker than the eye
       for(let i = 0; i < 9; i++){ const ph = (hazardT*3 + i*29) % 40, x = dir*(f.r + 8 + ph*3), y = ((i*47) % 90) - 45 + Math.sin(hazardT*0.7 + i)*6;
         c.globalAlpha = 1 - ph/44; c.fillStyle = i % 2 ? '#ffe45e' : '#ffffff'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5;
         c.beginPath(); for(let k = 0; k < 8; k++){ const a = k*Math.PI/4, r = (k % 2 ? 7 : 15); c.lineTo(x + Math.cos(a)*r, y + Math.sin(a)*r); } c.closePath(); c.fill(); c.stroke(); }
@@ -21224,8 +21181,8 @@ FINAL_SMASHES['Dora'] = {
 // when it spins up is kept in it and hit every 6 frames for 4% (nine times), and the last turn throws them, 14% and a launch. The tell is the circle:
 // be out of it by then.
 FINAL_SMASHES['Saw'] = {
-  id:'overdrive', wind:28, dur:108, reach:95,
-  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:90 }; }, lockEnd:28 + 56,   // CATCH: the blade's circle
+  id:'overdrive', wind:FS_WIND, dur:FS_WIND + 80, reach:95,
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:90 }; }, lockEnd:FS_WIND + 56,   // CATCH: the blade's circle
   start(f, st){ st.caught = []; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -21242,7 +21199,7 @@ FINAL_SMASHES['Saw'] = {
     if(t >= w + 64) return;
     c.save(); c.translate(f.x, f.y);
     const open = t < w ? t/w : 1, R = 90*open, spin = hazardT*(t < w ? 0.2 : 0.7);
-    fsDisc(c, 0, 0, R, '#cfcfcf', 0.16 + 0.1*open); fsRing(c, 0, 0, 90, '#9a9a9a', 4, 0.5 + 0.4*open);
+    fsDisc(c, 0, 0, R, '#cfcfcf', 0.16 + 0.1*open); if(t >= w) fsRing(c, 0, 0, 90, '#9a9a9a', 4, 0.9);
     c.rotate(spin); c.globalAlpha = 0.9*open; c.fillStyle = '#d8d8d8'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
     c.beginPath(); for(let i = 0; i < 24; i++){ const a = i*Math.PI/12, r = (i % 2 ? R*0.8 : R); c.lineTo(Math.cos(a)*r, Math.sin(a)*r); } c.closePath(); c.fill(); c.stroke();
     c.fillStyle = '#9a9a9a'; c.beginPath(); c.arc(0, 0, R*0.2, 0, 7); c.fill(); c.stroke();
@@ -21254,8 +21211,8 @@ FINAL_SMASHES['Saw'] = {
 // the "bounciest silhouette in the cast". Ten balls, one every four frames, in a rotation of speeds and loft, bounce along the floor in front of him
 // (6% each). The tell is the lane, 650 px, drawn in front of him; behind him it is safe, and a hop clears a low one.
 FINAL_SMASHES['Tennis Ball'] = {
-  id:'ballmachine', wind:30, dur:108, reach:650,
-  catch(f){ return fsBoxAhead(f, 0, 650, 170, f.r); }, lockEnd:30 + 36, lockGrace:8, catchMax:1,   // CATCH: the lane in front of him; on the foe it holds, every other ball lands (as on a foe it carries)
+  id:'ballmachine', wind:FS_WIND, dur:FS_WIND + 78, reach:650,
+  catch(f){ return fsBoxAhead(f, 0, 650, 170, f.r); }, lockEnd:FS_WIND + 36, lockGrace:8, catchMax:1,   // CATCH: the lane in front of him; on the foe it holds, every other ball lands (as on a foe it carries)
   start(f, st){ st.dir = f.face; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -21272,8 +21229,6 @@ FINAL_SMASHES['Tennis Ball'] = {
     if(t >= w + 44) return;
     c.save(); c.translate(f.x, f.y);
     const k = t < w ? t/w : 1;
-    c.globalAlpha = 0.1 + 0.1*k; c.fillStyle = '#c9f24b'; c.beginPath(); c.moveTo(0, -f.r); c.lineTo(dir*650, -170); c.lineTo(dir*650, f.r + 6); c.lineTo(0, f.r); c.closePath(); c.fill();
-    c.globalAlpha = 0.6; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.setLineDash([12, 10]); c.stroke(); c.setLineDash([]);
     for(let i = 0; i < 3; i++){ const bx = dir*(f.r + 14), by = -f.r*0.4 - i*10 + Math.sin(hazardT*0.4 + i)*5; c.globalAlpha = 0.9*k; c.fillStyle = '#c9f24b'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.arc(bx + dir*i*6, by, 10, 0, 7); c.fill(); c.stroke(); }
     c.restore();
   },
@@ -21283,8 +21238,8 @@ FINAL_SMASHES['Tennis Ball'] = {
 // visible before contact"; his own card is the armoured Rage Tackle). He gathers snow in front of him (the tell: the ball grows as he rolls it) and
 // sends it: one huge snowball straight ahead at his chest height, 44 px wide, through everyone (18%), and two small ones behind it (8%). Jump it.
 FINAL_SMASHES['Snowball'] = {
-  id:'avalanche', wind:36, dur:106, reach:520,
-  catch(f){ return fsBoxAhead(f, 0, 520, 50, 38); }, lockEnd:36 + 20, volleys:3,   // CATCH: the big snowball's path, at his chest height
+  id:'avalanche', wind:FS_WIND, dur:FS_WIND + 70, reach:520,
+  catch(f){ return fsBoxAhead(f, 0, 520, 50, 38); }, lockEnd:FS_WIND + 20, volleys:3,   // CATCH: the big snowball's path, at his chest height
   start(f, st){ st.dir = f.face; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -21297,8 +21252,6 @@ FINAL_SMASHES['Snowball'] = {
     if(t >= w + 6) return;
     c.save(); c.translate(f.x, f.y);
     const k = t/w, r = 8 + 36*k;
-    c.globalAlpha = 0.12 + 0.12*k; c.fillStyle = '#9ac8f4'; c.fillRect(dir > 0 ? 0 : -560, -52, 560, 104);   // the lane the big one takes
-    c.globalAlpha = 0.6; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.setLineDash([12, 10]); c.strokeRect(dir > 0 ? 0 : -560, -52, 560, 104); c.setLineDash([]);
     c.globalAlpha = 1; c.fillStyle = '#eef6ff'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3.5; c.beginPath(); c.arc(dir*(f.r + r*0.8), 0, r, 0, 7); c.fill(); c.stroke();
     c.strokeStyle = '#9ac8f4'; c.lineWidth = 3; c.beginPath(); c.arc(dir*(f.r + r*0.8), 0, r*0.6, hazardT*0.2, hazardT*0.2 + 2.2); c.stroke();   // it turns as it grows
     c.restore();
@@ -21309,8 +21262,8 @@ FINAL_SMASHES['Snowball'] = {
 // and her card). Open books circle her (the tell), then snap shut and fall: five a foe, at the two nearest foes, 8 frames apart, each
 // over a mark drawn on the floor first (13%, a hard knock); the line of them walks 60 px to one side of the foe each time. Keep moving.
 FINAL_SMASHES['Book'] = {
-  id:'overdue', wind:34, dur:116, reach:600,
-  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FS_RAIN_CATCH }; }, lockEnd:34 + 32, catchMax:2,   // CATCH: a circle round her; the books go for a locked foe first
+  id:'overdue', wind:FS_WIND, dur:FS_WIND + 82, reach:600,
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FS_RAIN_CATCH }; }, lockEnd:FS_WIND + 32, catchMax:2,   // CATCH: a circle round her; the books go for a locked foe first
   start(f, st){ armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -21341,8 +21294,8 @@ FINAL_SMASHES['Book'] = {
 // Beam that "goes through foes". Three gems, six frames apart, each a bright bolt that goes through whoever it meets and bounces on along the floor
 // and off the walls up to six times (14%): one low, one mid, one high. Hop the low one, duck the high one, or be behind her.
 FINAL_SMASHES['Ruby'] = {
-  id:'refraction', wind:30, dur:104, reach:600,
-  catch(f){ return fsBoxAhead(f, 0, 600, 150, f.r); }, lockEnd:30 + 40, volleys:3,   // CATCH: the bolts' reach in front of her
+  id:'refraction', wind:FS_WIND, dur:FS_WIND + 74, reach:600,
+  catch(f){ return fsBoxAhead(f, 0, 600, 150, f.r); }, lockEnd:FS_WIND + 40, volleys:3,   // CATCH: the bolts' reach in front of her
   start(f, st){ st.dir = f.face; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind;
@@ -21370,13 +21323,14 @@ FINAL_SMASHES['Ruby'] = {
 
 // ---- THE SHAPES (used from batch D on) ------------------------------------------------------------------------------------------------
 // Each remaining fighter's Final Smash is one of nine shapes below, filled in with their own numbers, colours, a drawn glyph of their own (`art`) and
-// the status their hit carries (S). The shapes are the same plain rules the bespoke rows above use (a drawn tell, then the hit, nothing instant and
-// nothing full-screen), so what a player learns from one carries to the next. A row says what the show gives the fighter in a comment.
-//   circle  a ring closes in (R), then it bursts, with an optional second, wider ring after it
+// the status their hit carries (S). The shapes are the same plain rules the bespoke rows above use (the holder's startup, then the hit, nothing
+// instant and nothing full-screen), so what a player learns from one carries to the next. A row says what the show gives the fighter in a comment.
+// (Each shape drew its reach through the startup -- a ring, a lane, a cone, marks, a marker. NO TELLS, 2026-10-22: none is drawn now.)
+//   circle  a burst round the holder (R), with an optional second, wider ring after it
 //   lane    a band along the floor (a wave, a car, a roll): front-running from the holder, or edge to edge; jump it or stand off it
 //   fan     projectiles flung from the holder, all round or in a cone, one or two volleys (the gaps are the way through)
-//   rain    marks on the floor under the nearest foes, and something falls on each a beat later
-//   lock    a marker on the nearest foe, fixed a beat before it goes: a blast there, or the foe held and hit several times and then thrown
+//   rain    something falls in from above onto each of the nearest foes, one after another
+//   lock    the nearest foe's spot, fixed as the startup begins: a blast there, or the foe held and hit several times and then thrown
 //   pull    a point that drags everyone near it in (or a wind that pushes them out) and then bursts
 //   cols    columns going up out of the floor, one beside the next, out to both sides
 //   orbit   a ring round the holder: whoever is in it when it starts is kept in it and hit again and again, then thrown
@@ -21418,30 +21372,16 @@ function fsGlyphOf(name, col){ const g = FS_GLYPH[name] || FS_GLYPH.star; return
 
 // HIT ART for a Final Smash's rings (A6). fsLandRing: a burst of radius R on the frame it lands -- its OUTER edge on R (the thick stroke is
 // drawn inside it), a white flash filling it -- fading over the next 20 frames as u goes 0 -> 1. They grew from a third of R, so on the frame
-// they hit they promised a third of the reach, and then grew past it. fsTellRing: a reach still to come, dashed and faint, filling in as p
-// goes 0 -> 1. fsPinEdge: where a pin lock's catch is for a body (fsLock).
+// they hit they promised a third of the reach, and then grew past it. (fsTellRing, a reach still to come drawn dashed, is gone: NO TELLS.)
+// fsPinEdge: where a pin lock's catch is for a body (fsLock).
 function fsLandRing(c, x, y, R, col, u){
   const lw = 14*(1 - u) + 2;
   c.save(); fsDisc(c, x, y, R, '#fff', 0.4*(1 - u)); fsRing(c, x, y, Math.max(1, R - lw/2 - 1.5), col, lw, 1 - u); c.restore(); c.globalAlpha = 1;
-}
-function fsTellRing(c, x, y, R, col, p){
-  c.save(); if(p > 0.02) fsDisc(c, x, y, R, col, 0.05 + 0.07*p);
-  c.setLineDash([12, 14]); c.globalAlpha = 0.5; c.strokeStyle = '#1c1c1c'; c.lineWidth = 5; c.beginPath(); c.arc(x, y, R, 0, 7); c.stroke();
-  c.globalAlpha = 0.75; c.strokeStyle = col; c.lineWidth = 2.5; c.stroke(); c.setLineDash([]); c.restore(); c.globalAlpha = 1;
 }
 // A pin lock catches a foe whose CENTRE is within R + 0.3 of their body's radius of the mark, so a standard body (HURT_R0) is caught as its
 // edge crosses R - 0.7*HURT_R0: the ring is drawn there, where touching it means caught. At R it promised 17 px that a body overlapping it
 // did not get. The catch itself is unchanged (whether it should judge the outline is the audit's question 3).
 function fsPinEdge(R){ return Math.max(8, R - 0.7*HURT_R0); }
-function fsArchTell(c, f, o, R, k, blink){   // a drawn circle of radius R at the holder: the same tell for circle-like rows
-  c.save(); c.translate(f.x, f.y);
-  fsDisc(c, 0, 0, R, o.c1, 0.1 + 0.14*k);
-  c.globalAlpha = 0.9; c.strokeStyle = '#1c1c1c'; c.lineWidth = 8; c.setLineDash([16, 12]); c.beginPath(); c.arc(0, 0, R, 0, 7); c.stroke();
-  c.strokeStyle = blink ? '#fff' : o.c1; c.lineWidth = 4; c.stroke(); c.setLineDash([]);
-  for(let j = 0; j < 3; j++){ const rr = R*(1 - ((k*1.6 + j/3) % 1)*0.85); c.globalAlpha = 0.3 + 0.4*k; c.strokeStyle = o.c2 || '#fff'; c.lineWidth = 3; c.beginPath(); c.arc(0, 0, rr, 0, 7); c.stroke(); }
-  c.globalAlpha = 1; if(o.art) fsGlyphRing(c, 0, 0, 8, R*(0.35 + 0.55*k), 9, k, o.art, f, hazardT*0.04);
-  c.restore();
-}
 
 // CATCH, THEN CINEMATIC: the pieces the shapes and rows share for their catch and for landing on a locked foe.
 // A box in front of the holder (dir: their facing), from `near` to `far` px ahead, `up` above their centre to `dn` below it.
@@ -21502,7 +21442,7 @@ function fsPullCatch(R, R2, frames, step){
 
 // -- circle --
 function fsCircle(o){
-  const w = o.wind || 38, R = o.R, ky = o.ky == null ? -14 : o.ky;
+  const w = FS_WIND, R = o.R, ky = o.ky == null ? -14 : o.ky;
   return {
     id:o.id, wind:w, dur:o.dur || (w + 62), reach:R, exposed:o.exposed,
     catch(f){ return { kind:'circle', x:f.x, y:f.y, r:R }; }, lockEnd:'one',   // CATCH: the first ring (the second only takes whoever it missed)
@@ -21517,10 +21457,9 @@ function fsCircle(o){
     ai(f){ for(const x of fighters) if(!fsHurtMark(f, x) && hurtGap(x, f.x, f.y) < R*0.85) return true; return false; },
     draw(f, c){
       const t = f.fsT || 0, ww = f.fsWind || w, gap = o.gap || 14;
-      // HIT ART (A6): the second ring is a hit of its own, `gap` frames after the first, on anyone the first missed -- its reach is told from
-      // the start, fainter, until it lands (it was drawn only after it had landed)
-      if(o.R2 && t < ww + gap) fsTellRing(c, f.x, f.y, o.R2, o.c2 || o.c1, t/(ww + gap));
-      if(t < ww){ fsArchTell(c, f, o, R, t/ww, (ww - t < 14) && (t % 4 < 2)); return; }
+      // HIT ART (A6): the second ring is a hit of its own, `gap` frames after the first, on anyone the first missed. Each is drawn as it lands;
+      // nothing before (NO TELLS: through the startup the holder winds up)
+      if(t < ww) return;
       const u = (t - ww)/20;   // each ring full size on the frame it lands, fading from there (fsLandRing)
       if(u < 1){ fsLandRing(c, f.x, f.y, R, o.c1, u); if(o.art){ c.save(); c.translate(f.x, f.y); c.globalAlpha = 1 - u; fsGlyphRing(c, 0, 0, 10, R*(0.2 + 0.8*u), 10 + 8*u, u, o.art, f, 0); c.restore(); } }
       if(o.R2){ const u2 = (t - ww - gap)/20; if(u2 >= 0 && u2 < 1) fsLandRing(c, f.x, f.y, o.R2, o.c2 || o.c1, u2); }
@@ -21531,7 +21470,7 @@ function fsCircle(o){
 
 // -- lane --
 function fsLane(o){
-  const w = o.wind || 36, L = o.L || 640, spd = o.spd || 18, H = o.H || 100, hw = o.hw || 50;
+  const w = FS_WIND, L = o.L || 640, spd = o.spd || 18, H = o.H || 100, hw = o.hw || 50;
   const front = (f, dir, tt)=> o.edge ? (dir > 0 ? -140 : WW + 140) + dir*spd*tt : f.fsAx + dir*(spd*tt);
   return {
     id:o.id, wind:w, dur:o.dur || (w + Math.ceil((o.edge ? WW + 300 : L)/spd) + 40), reach:L,
@@ -21563,9 +21502,7 @@ function fsLane(o){
       if(t >= ww + run + 4) return;
       c.save();
       const x0 = o.edge ? -40 : (o.both ? f.fsAx - L : (dir > 0 ? f.fsAx : f.fsAx - L)), wd = o.edge ? WW + 80 : (o.both ? 2*L : L);
-      if(t < ww){ const k = t/ww; c.globalAlpha = 0.1 + 0.12*k; c.fillStyle = o.c1; c.fillRect(x0, fy - H, wd, H + 12); c.globalAlpha = 0.6 + 0.3*k; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.setLineDash([14, 12]); c.strokeRect(x0, fy - H, wd, H + 12); c.setLineDash([]);
-        if(o.art) for(let i = 0; i < 6; i++){ const x = ((hazardT*5*dir + i*(wd/6)) % wd + wd) % wd + x0; c.globalAlpha = 0.5 + 0.3*k; o.art(c, x, fy - H*0.5, H*0.18, k, f); } }
-      else if(t < ww + run){ for(const d of (o.both ? [1, -1] : [dir])){ const fx = front(f, d, t - ww), dir = d; c.globalAlpha = 1; if(o.art) { for(let i = 0; i < 3; i++) o.art(c, fx - dir*i*H*0.3, fy - H*0.5 + (i - 1)*H*0.22, H*0.4, (t - ww)/run, f); } else fsDisc(c, fx, fy - H*0.5, H*0.5, o.c1, 0.9); c.globalAlpha = 0.5; c.strokeStyle = o.c1; c.lineWidth = 5; for(let i = 1; i < 5; i++){ c.beginPath(); c.moveTo(fx - dir*(hw + i*18), fy - H*0.2*i); c.lineTo(fx - dir*(hw + i*18 + 50), fy - H*0.2*i); c.stroke(); } } }
+      if(t >= ww && t < ww + run){ for(const d of (o.both ? [1, -1] : [dir])){ const fx = front(f, d, t - ww), dir = d; c.globalAlpha = 1; if(o.art) { for(let i = 0; i < 3; i++) o.art(c, fx - dir*i*H*0.3, fy - H*0.5 + (i - 1)*H*0.22, H*0.4, (t - ww)/run, f); } else fsDisc(c, fx, fy - H*0.5, H*0.5, o.c1, 0.9); c.globalAlpha = 0.5; c.strokeStyle = o.c1; c.lineWidth = 5; for(let i = 1; i < 5; i++){ c.beginPath(); c.moveTo(fx - dir*(hw + i*18), fy - H*0.2*i); c.lineTo(fx - dir*(hw + i*18 + 50), fy - H*0.2*i); c.stroke(); } } }
       c.restore();
     },
   };
@@ -21573,7 +21510,7 @@ function fsLane(o){
 
 // -- fan --
 function fsFan(o){
-  const w = o.wind || 34, n = o.n || 12, vols = o.vols || [0, 16], sp = o.spd || 12, P0 = o.proj || {}, g = P0.grav ? 0.34 : 0;
+  const w = FS_WIND, n = o.n || 12, vols = o.vols || [0, 16], sp = o.spd || 12, P0 = o.proj || {}, g = P0.grav ? 0.34 : 0;
   const Rc = g ? Math.min(o.reach || 330, 0.9*sp*sp/g) : (o.reach || 330);   // (a shot that falls reaches no farther than its arc)
   return {
     id:o.id, wind:w, dur:o.dur || (w + vols[vols.length - 1] + 50), reach:o.reach || 330,
@@ -21608,9 +21545,6 @@ function fsFan(o){
       c.save(); c.translate(f.x, f.y);
       if(t < ww){ const k = t/ww, sh = Math.sin(t*1.9)*2*k;
         for(let i = 0; i < n; i++){ const a = o.cone ? (dir > 0 ? (-o.cone + 2*o.cone*(i + 0.5)/n) : Math.PI - (-o.cone + 2*o.cone*(i + 0.5)/n)) : i*Math.PI*2/n + hazardT*0.02, rr = 20 + (f.r + 28)*k + sh; c.save(); c.translate(Math.cos(a)*rr, Math.sin(a)*rr); c.rotate(a); c.globalAlpha = 0.9; if(o.art) o.art(c, 0, 0, 9, k, f); else fsDisc(c, 0, 0, 8, o.c1, 0.9); c.restore(); }
-        c.globalAlpha = 0.5*k; c.strokeStyle = o.c1; c.lineWidth = 3; c.setLineDash([10, 10]);
-        if(o.cone){ const a0 = dir > 0 ? -o.cone : Math.PI - o.cone, a1 = dir > 0 ? o.cone : Math.PI + o.cone; c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, 300, a0, a1); c.closePath(); c.stroke(); } else { c.beginPath(); c.arc(0, 0, 130, 0, 7); c.stroke(); }
-        c.setLineDash([]);
       } else { const u = (t - ww)/20; fsRing(c, 0, 0, 40 + 120*u, o.c1, 10*(1 - u) + 2, 1 - u); }
       c.restore();
     },
@@ -21619,7 +21553,7 @@ function fsFan(o){
 
 // -- rain --
 function fsRain(o){
-  const w = o.wind || 34, k = o.k || 2, n = o.n || 6, ev = o.every || 8, P = o.proj || {};
+  const w = FS_WIND, k = o.k || 2, n = o.n || 6, ev = o.every || 8, P = o.proj || {};
   return {
     id:o.id, wind:w, dur:o.dur || (w + n*ev + 70), reach:o.reach || 600,
     catch(f){ return { kind:'circle', x:f.x, y:f.y, r:Math.min(o.reach || 600, FS_RAIN_CATCH) }; },   // CATCH: a circle round the holder; it falls on a locked foe first
@@ -21648,7 +21582,7 @@ function fsRain(o){
 
 // -- lock --  (effect 'blast': a circle at the spot; 'pin': the foe is held, hit `hits` times, then thrown)
 function fsLock(o){
-  const w = o.wind || 38, lead = o.lead || 18, R = o.R || 80, bx = o.bx || 400, by = o.by || 240;
+  const w = FS_WIND, lead = o.lead || 18, R = o.R || 80, bx = o.bx || 400, by = o.by || 240;
   return {
     id:o.id, wind:w, dur:o.dur || (w + (o.effect === 'pin' ? 40 + (o.hits || 8)*(o.every || 5) : 40) + 40), reach:bx,
     // CATCH: the box its marker looks in; the marker goes on a locked foe (fsPick), and the blast or the pin lands on them where they stand
@@ -21656,7 +21590,7 @@ function fsLock(o){
     lockEnd:o.effect === 'pin' ? w + (o.hits || 8)*(o.every || 5) + 4 : 'one', catchMax:1,   // (its marker goes on one foe: it catches one)
     start(f, st){ st.caught = []; armAtk(f, w, 'fsgather'); },
     tick(f, st, t){
-      if(t === w - lead) fsLockAt(f, st, fsPick(f, bx, by, o.fwd), o.fall || 150);
+      if(t === Math.max(0, w - lead)) fsLockAt(f, st, fsPick(f, bx, by, o.fwd), o.fall || 150);
       if(t === w){
         armAtk(f, o.effect === 'pin' ? 40 + (o.hits || 8)*(o.every || 5) : 34, o.kind || 'fsburst'); shake(5);
         if(o.effect === 'pin'){ for(const x of fighters){ if(fsHurtMark(f, x) || x._heldBy != null) continue; if(Math.hypot(x.x - f.fsAx, x.y - f.fsAy) < R + x.r*0.3){ st.caught.push(x.idx); x.countering = 0; fsStatus(x, f, o.S); } } }
@@ -21675,13 +21609,11 @@ function fsLock(o){
     draw(f, c){
       const t = f.fsT || 0, ww = f.fsWind || w, hits = o.hits || 8, ev = o.every || 5;
       c.save();
-      if(t < ww - lead){ const x = fsPick(f, bx, by, o.fwd); if(x) fsMark(c, x.x, x.y, R*0.7, o.c1, t/(ww - lead), 0.7); }
-      else if(t < ww){ fsMark(c, f.fsAx, f.fsAy, o.effect === 'pin' ? fsPinEdge(R) : R, o.c1, 1, 0.9); }   // (HIT ART: a pin's ring is its catch edge, fsPinEdge)
-      else {
+      if(t >= ww){
         const span = o.effect === 'pin' ? hits*ev + 20 : (o.delay || 8) + 24, u = (t - ww)/span;
         if(u < 1){
           if(o.effect === 'pin'){ c.globalAlpha = 0.85; if(o.art) for(let i = 0; i < 6; i++){ const a = hazardT*0.2 + i*1.05, rr = R*0.6; o.art(c, f.fsAx + Math.cos(a)*rr, f.fsAy + Math.sin(a)*rr*0.8, 10, u, f); } if(t > ww + hits*ev) fsLandRing(c, f.fsAx, f.fsAy, fsPinEdge(R), o.c1, Math.min(1, (u*span - hits*ev)/20)); }   // the last blow, on the caught: no ring past the catch
-          else if(t < ww + (o.delay || 8)){ fsRing(c, f.fsAx, f.fsAy, R, o.c1, 4, 0.6); if(o.art) o.art(c, f.fsAx, f.fsAy - 120*(1 - (t - ww)/(o.delay || 8)), 30, u, f); }
+          else if(t < ww + (o.delay || 8)){ if(o.art) o.art(c, f.fsAx, f.fsAy - 120*(1 - (t - ww)/(o.delay || 8)), 30, u, f); }   // (what comes down, coming down: no ring under it)
           else { const v = (t - ww - (o.delay || 8))/24; fsLandRing(c, f.fsAx, f.fsAy, R, o.c1, v); if(o.art){   /* HIT ART: the blast at exactly R as it lands (it grew from 0.4R to 1.5R) */ c.globalAlpha = 1 - v; fsGlyphRing(c, f.fsAx, f.fsAy, 8, R*(0.3 + v), 12, v, o.art, f, 0); } }
         }
       }
@@ -21692,7 +21624,7 @@ function fsLock(o){
 
 // -- pull --  (a point that drags foes in -- or, with `push`, a wind that shoves them out -- and then bursts)
 function fsPull(o){
-  const w = o.wind || 34, R = o.R || 330, dur = o.pull || 40, rate = o.rate || 3.2, ahead = o.ahead == null ? 150 : o.ahead, push = !!o.push;
+  const w = FS_WIND, R = o.R || 330, dur = o.pull || 40, rate = o.rate || 3.2, ahead = o.ahead == null ? 150 : o.ahead, push = !!o.push;
   const Rc = fsPullCatch(R, o.R2 || 100, dur, push ? (d)=> 1 + (rate - 1)*(1 - d/R) : (d)=> -Math.min(rate, d));
   return {
     id:o.id, wind:w, dur:o.dur || (w + dur + 60), reach:R*0.9,
@@ -21718,7 +21650,7 @@ function fsPull(o){
       if(t >= ww + dur + 8) return;
       const open = t < ww ? t/ww : (t < ww + dur ? 1 : Math.max(0, 1 - (t - ww - dur)/8)), R2 = (o.R2 || 100)*open;
       c.save(); c.translate(push ? f.x : cx, push ? f.y : cy);
-      if(t >= ww - 10 && t < ww + dur + 2){ const pr = R*(0.92 + 0.08*Math.sin(hazardT*0.25)); fsRing(c, 0, 0, pr, o.c1, 4, 0.5); }
+      if(t >= ww && t < ww + dur + 2){ const pr = R*(0.92 + 0.08*Math.sin(hazardT*0.25)); fsRing(c, 0, 0, pr, o.c1, 4, 0.5); }   // (while it pulls)
       fsDisc(c, 0, 0, R2 + 6, o.c2 || '#fff', 0.3*open); fsDisc(c, 0, 0, R2, o.c1, 0.55*open);
       if(o.art) fsGlyphRing(c, 0, 0, 7, R2*0.7, 10, open, o.art, f, hazardT*(push ? -0.06 : 0.06));
       if(t >= ww && t < ww + dur){ c.globalAlpha = 0.6; c.strokeStyle = o.c2 || '#fff'; c.lineWidth = 3; for(let i = 0; i < 6; i++){ const a = i*1.047 + hazardT*0.04, r0 = push ? 60 + ((hazardT*5 + i*50) % 200) : R*0.9 - ((hazardT*6 + i*50) % (R*0.7)); c.beginPath(); c.moveTo(Math.cos(a)*r0, Math.sin(a)*r0); c.lineTo(Math.cos(a)*(r0 + (push ? 40 : -40)), Math.sin(a)*(r0 + (push ? 40 : -40))); c.stroke(); } }
@@ -21729,7 +21661,7 @@ function fsPull(o){
 
 // -- cols --
 function fsCols(o){
-  const w = o.wind || 36, sp = o.sp || 55, nc = o.nc || 8, ev = o.every || 3, H = o.H || 300, hw = o.hw || 40, life = o.life || 22;
+  const w = FS_WIND, sp = o.sp || 55, nc = o.nc || 8, ev = o.every || 3, H = o.H || 300, hw = o.hw || 40, life = o.life || 22;
   return {
     id:o.id, wind:w, dur:o.dur || (w + nc*ev + life + 36), reach:sp*nc,
     // CATCH: from its outermost column to the other, as tall as they stand (a column takes a body within hw + half its width)
@@ -21755,8 +21687,7 @@ function fsCols(o){
       const t = f.fsT || 0, ww = f.fsWind || w, ax = f.fsAx != null ? f.fsAx : f.x, fy = fsFeetY(f);
       for(let i = 0; i < nc; i++) for(const sd of (i === 0 ? [0] : [-1, 1])){
         const x = ax + sd*i*sp, born = ww + i*ev;
-        if(t < ww){ const k = t/ww, hh = 8 + 14*k + 3*Math.sin(hazardT*0.3 + i); c.globalAlpha = 0.5 + 0.4*k; if(o.art) o.art(c, x, fy - hh, 8 + 6*k, k, f); else { c.fillStyle = o.c1; c.fillRect(x - 10, fy - hh, 20, hh); } }
-        else if(t >= born && t < born + life){
+        if(t >= born && t < born + life){
           const u = (t - born)/life, h = H*Math.sin(Math.min(1, u*1.6)*Math.PI/2)*(u > 0.7 ? 1 - (u - 0.7)/0.3 : 1);
           c.globalAlpha = 1; c.fillStyle = o.c1; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4;
           c.beginPath(); c.moveTo(x - hw, fy); c.quadraticCurveTo(x - hw*0.9, fy - h*0.55, x + Math.sin(hazardT*0.3 + i)*8, fy - h); c.quadraticCurveTo(x + hw*0.9, fy - h*0.55, x + hw, fy); c.closePath(); c.fill(); c.stroke();
@@ -21770,7 +21701,7 @@ function fsCols(o){
 
 // -- orbit --
 function fsOrbit(o){
-  const w = o.wind || 28, R = o.R || 90, n = o.n || 9, ev = o.every || 6;
+  const w = FS_WIND, R = o.R || 90, n = o.n || 9, ev = o.every || 6;
   return {
     id:o.id, wind:w, dur:o.dur || (w + n*ev + 52), reach:R + 5,
     catch(f){ return { kind:'circle', x:f.x, y:f.y, r:R }; }, lockEnd:w + n*ev + 2,   // CATCH: its ring
@@ -21786,7 +21717,7 @@ function fsOrbit(o){
       if(t >= ww + n*ev + 12) return;
       c.save(); c.translate(f.x, f.y);
       const open = t < ww ? t/ww : 1, Rr = R*open;
-      fsDisc(c, 0, 0, Rr, o.c1, 0.14 + 0.1*open); fsRing(c, 0, 0, R, o.c2 || o.c1, 4, 0.5 + 0.4*open);
+      if(t >= ww){ fsDisc(c, 0, 0, Rr, o.c1, 0.24); fsRing(c, 0, 0, R, o.c2 || o.c1, 4, 0.9); }   // (once it runs: through the startup its pieces spin up round the holder)
       if(o.art) fsGlyphRing(c, 0, 0, 8, Rr*0.8, 12, open, o.art, f, hazardT*(t < ww ? 0.15 : 0.5));
       c.restore();
     },
@@ -21795,7 +21726,7 @@ function fsOrbit(o){
 
 // -- hose --
 function fsHose(o){
-  const w = o.wind || 30, n = o.n || 18, ev = o.every || 3, P = o.shots;
+  const w = FS_WIND, n = o.n || 18, ev = o.every || 3, P = o.shots;
   const aimV = Math.max(o.v0 || 0, ...P.map((S)=> Math.abs(S.vx || 0))) || undefined;   // (on a locked foe, every shot at its fastest: fsAimShot)
   return {
     id:o.id, wind:w, dur:o.dur || (w + n*ev + 70), reach:o.reach || 430,
@@ -21816,8 +21747,6 @@ function fsHose(o){
       if(t >= ww + n*ev + 12) return;
       c.save(); c.translate(f.x, f.y);
       const k = t < ww ? t/ww : 1;
-      c.globalAlpha = 0.12 + 0.1*k; c.fillStyle = o.c1; c.beginPath(); c.moveTo(0, -f.r*0.5); c.lineTo(dir*L, -150); c.lineTo(dir*L, f.r + 8); c.lineTo(0, f.r*0.5); c.closePath(); c.fill();
-      c.globalAlpha = 0.5; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.setLineDash([12, 10]); c.stroke(); c.setLineDash([]);
       if(o.art) for(let i = 0; i < 4; i++){ c.globalAlpha = 0.9*k; o.art(c, dir*(f.r + 10 + ((hazardT*4 + i*30) % 90)), -6 + Math.sin(hazardT*0.4 + i)*8, 9, k, f); }
       c.restore();
     },
@@ -21836,36 +21765,36 @@ Object.assign(FS_GLYPH, {
 
 // NEEDLE -- CUT IN HALF. "while magnetized" she cut a Fish monster in half in "Lots of Mud" (the II wiki, quoted at METAL_FIGHTERS). One long thin
 // cut along the floor, 720 px at 36 a frame, 70 tall, through everyone it meets (22%): the tell is the lane, drawn before it goes. Hop it.
-FINAL_SMASHES['Needle'] = fsLane({ id:'cutinhalf', wind:40, c1:'#c8d0d8', L:720, spd:36, H:70, hw:26, dmg:22, kb:20, ky:-8, kind:'dash', art:FS_GLYPH.slash });
+FINAL_SMASHES['Needle'] = fsLane({ id:'cutinhalf', c1:'#c8d0d8', L:720, spd:36, H:70, hw:26, dmg:22, kb:20, ky:-8, kind:'dash', art:FS_GLYPH.slash });
 
 // PIN -- POPPED. Her own card: the point-first poke that "pops inflatables"; the design doc has her as the pushy, take-charge leader of Squashy
 // Grapes. A marker on the nearest foe within 420, fixed 18 frames before the pin comes down on it (75 px: step out): 28%, thrown hard.
-FINAL_SMASHES['Pin'] = fsLock({ id:'popped', wind:38, c1:'#e8506a', c2:'#d8d8d8', R:75, bx:420, by:260, dmg:28, kb:22, ky:-16, delay:10, art:FS_GLYPH.pin });
+FINAL_SMASHES['Pin'] = fsLock({ id:'popped', c1:'#e8506a', c2:'#d8d8d8', R:75, bx:420, by:260, dmg:28, kb:22, ky:-16, delay:10, art:FS_GLYPH.pin });
 
 // COINY -- THE MONITOR. In "She Deserves This": "Golf Ball uses freeze juice to freeze Evil Leafy ... Coiny grabs a computer monitor and throws it at
 // her, shattering and killing her" (the II wiki, quoted at elEndBegin). Six coin slaps flat and fast, then the monitor: a heavy lob (34 px, 26%).
-FINAL_SMASHES['Coiny'] = fsHose({ id:'monitor', wind:30, c1:'#f2c94c', n:6, every:4, v0:11, art:FS_GLYPH.coin, reach:460,
+FINAL_SMASHES['Coiny'] = fsHose({ id:'monitor', c1:'#f2c94c', n:6, every:4, v0:11, art:FS_GLYPH.coin, reach:460,
   shots:[{ color:'#f2c94c', dmg:5, kb:5, r:11, grav:false, vy:0, life:60 }], big:{ vy:-9, grav:true, dmg:26, kb:22, r:34, color:'#9aa6b2', life:100, pierce:false } });
 
 // GOLF BALL -- FREEZE JUICE. The same scene: "Golf Ball uses freeze juice to freeze Evil Leafy". The marker is on the nearest foe within 520, fixed 18
 // frames ahead (80 px: step out); whoever is in it is frozen solid and held 30 frames while six cold hits land (3%), and the last one (20%) throws them.
-FINAL_SMASHES['Golf Ball'] = fsLock({ id:'freezejuice', wind:40, c1:'#9fe4ff', c2:'#ffffff', R:80, bx:520, by:320, effect:'pin', hits:6, every:5, hitDmg:3, dmg:20, kb:22, S:{ freeze:50 }, art:FS_GLYPH.golf });
+FINAL_SMASHES['Golf Ball'] = fsLock({ id:'freezejuice', c1:'#9fe4ff', c2:'#ffffff', R:80, bx:520, by:320, effect:'pin', hits:6, every:5, hitDmg:3, dmg:20, kb:22, S:{ freeze:50 }, art:FS_GLYPH.golf });
 
 // FRIES -- FRY FAN. A carton of loose fries, proud and short-tempered (the design doc: "the contents splay"); her own card fires the Fry Dart. Nine
 // darts in a fan ahead of her, three volleys ten frames apart (6%), each one aimed between the last: the gaps are the way through.
-FINAL_SMASHES['Fries'] = fsFan({ id:'fryfan', wind:34, c1:'#e0443a', n:9, cone:0.55, spd:13, vols:[0, 10, 20], dmg:6, kb:9, r:10, life:50, reach:420, kind:'throw', art:FS_GLYPH.fry });
+FINAL_SMASHES['Fries'] = fsFan({ id:'fryfan', c1:'#e0443a', n:9, cone:0.55, spd:13, vols:[0, 10, 20], dmg:6, kb:9, r:10, life:50, reach:420, kind:'throw', art:FS_GLYPH.fry });
 
 // GELATIN -- JELLY QUAKE. A block of jelly: nothing about him is ever fully still (the design doc); his own card freezes a foe once they are past 40%. He
 // slams down and the quake rings out, 230 px (18%, a launch) and again to 320 (12%): the second ring freezes whoever it reaches, 45 frames.
-FINAL_SMASHES['Gelatin'] = fsCircle({ id:'jellyquake', wind:38, c1:'#7ee89a', c2:'#ffffff', R:230, R2:320, gap:12, dmg:18, dmg2:12, kb:20, S2:{ freeze:45 }, art:FS_GLYPH.jelly, kind:'slam' });
+FINAL_SMASHES['Gelatin'] = fsCircle({ id:'jellyquake', c1:'#7ee89a', c2:'#ffffff', R:230, R2:320, gap:12, dmg:18, dmg2:12, kb:20, S2:{ freeze:45 }, art:FS_GLYPH.jelly, kind:'slam' });
 
 // NICKEL -- SPARE CHANGE. Sarcastic, unimpressed, and worth five cents (the design doc; he is on the roster's list of canon metal). He tips his pocket out:
 // two marks on the nearest foes, eight times, seven frames apart, a nickel dropping on each (12%), walking 50 px along; keep moving.
-FINAL_SMASHES['Nickel'] = fsRain({ id:'sparechange', wind:34, c1:'#b8c0c8', k:2, n:8, every:7, walk:50, dmg:12, kb:16, r:20, art:FS_GLYPH.nickel });
+FINAL_SMASHES['Nickel'] = fsRain({ id:'sparechange', c1:'#b8c0c8', k:2, n:8, every:7, walk:50, dmg:12, kb:16, r:20, art:FS_GLYPH.nickel });
 
 // YELLOW FACE -- BUY NOW! The infomercial salesman, and his whole shtick is overselling (the design doc); his own card is the BUY NOW! soundwave that stuns. The
 // ring is 260 px (16%, a stun), and the hard sell goes on to 380 (11%) twelve frames later. Out of the biggest ring, or it gets you.
-FINAL_SMASHES['Yellow Face'] = fsCircle({ id:'buynow', wind:36, c1:'#ffe45e', c2:'#ff9a3a', R:260, R2:380, gap:12, dmg:16, dmg2:11, kb:17, kb2:15, S:{ stun:25 }, art:FS_GLYPH.smile, kind:'fsburst' });
+FINAL_SMASHES['Yellow Face'] = fsCircle({ id:'buynow', c1:'#ffe45e', c2:'#ff9a3a', R:260, R2:380, gap:12, dmg:16, dmg2:11, kb:17, kb2:15, S:{ stun:25 }, art:FS_GLYPH.smile, kind:'fsburst' });
 
 // ---- BATCH E: Barf Bag, Basketball, Bell, Bracelety, Gaty, Grassy, Liy, Lollipop ----------------------------------------------------------------
 Object.assign(FS_GLYPH, {
@@ -21878,40 +21807,40 @@ Object.assign(FS_GLYPH, {
 
 // BARF BAG -- OUTBREAK. "Oh, my SAP! Somebody refill me!" (quoted at her frame row): dramatic and permanently queasy, a bag of fluid; her own card is the
 // Outbreak, the sick cloud that bursts around her. The cloud is 240 px (16%, poisons) and spreads on to 340 (8%) 14 frames later.
-FINAL_SMASHES['Barf Bag'] = fsCircle({ id:'outbreak', wind:40, c1:'#8ab04b', c2:'#d8f0a0', R:240, R2:340, gap:14, dmg:16, dmg2:8, kb:15, kb2:8, S:{ poison:200 }, art:FS_GLYPH.goo });
+FINAL_SMASHES['Barf Bag'] = fsCircle({ id:'outbreak', c1:'#8ab04b', c2:'#d8f0a0', R:240, R2:340, gap:14, dmg:16, dmg2:8, kb:15, kb2:8, S:{ poison:200 }, art:FS_GLYPH.goo });
 
 // BASKETBALL -- NOTHING BUT NET. "Nothing but net." (her frame row): the roster's sports competitor, inflated rubber, and her own card is the
 // Self-Dribble, a ball that speeds up with every bounce. Four balls, ten frames apart, bounce down the floor in front of her (6%, up to six bounces, and they keep hitting).
-FINAL_SMASHES['Basketball'] = fsHose({ id:'nothingbutnet', lockGrace:10, wind:30, c1:'#e87a2a', n:4, every:10, v0:11, art:FS_GLYPH.bball, reach:520,
+FINAL_SMASHES['Basketball'] = fsHose({ id:'nothingbutnet', lockGrace:10, c1:'#e87a2a', n:4, every:10, v0:11, art:FS_GLYPH.bball, reach:520,
   shots:[{ color:'#e87a2a', dmg:6, kb:7, r:22, bounce:true, maxBounces:6, grav:true, vy:-1, life:140 }] });
 
 // BELL -- SAVED BY THE BELL. "Saved by the bell. Mine." (her frame row): cast metal that rings when it is struck; her own card is the RING that bursts
 // out round her and stuns. The ring is 200 px (12%, stuns) and a second, wider one follows 14 frames later to 320 px (9%).
-FINAL_SMASHES['Bell'] = fsCircle({ id:'savedbythebell', wind:36, c1:'#d9a441', c2:'#ffffff', R:200, R2:320, gap:14, dmg:12, dmg2:9, kb:14, S:{ stun:40 }, art:FS_GLYPH.bellring });
+FINAL_SMASHES['Bell'] = fsCircle({ id:'savedbythebell', c1:'#d9a441', c2:'#ffffff', R:200, R2:320, gap:14, dmg:12, dmg2:9, kb:14, S:{ stun:40 }, art:FS_GLYPH.bellring });
 
 // BRACELETY -- DID ICE CUBE SEE? "Oh, my grip! Did Ice Cube see?!" (her frame row): eager and devoted to Ice Cube, a hoop with no front (the design doc). The
 // marker is on the nearest foe within 420, fixed 18 frames ahead (70 px: step out); whoever is in it is held in her hoop while six cheers hit them (3%), and
 // the last (18%) throws them.
-FINAL_SMASHES['Bracelety'] = fsLock({ id:'didicecubesee', wind:38, c1:'#f2c94c', c2:'#ffffff', R:70, bx:420, by:260, effect:'pin', hits:6, every:5, hitDmg:3, dmg:18, kb:22, art:FS_GLYPH.spark });
+FINAL_SMASHES['Bracelety'] = fsLock({ id:'didicecubesee', c1:'#f2c94c', c2:'#ffffff', R:70, bx:420, by:260, effect:'pin', hits:6, every:5, hitDmg:3, dmg:18, kb:22, art:FS_GLYPH.spark });
 
 // GATY -- SWING OPEN. A gate, with a hinge (the design doc); her own card is Swing Open, bouncing shots back and bursting a ring round her. The gate swings
 // and the wind comes with it: for 40 frames everyone within 380 is shoved away from her (hard close in, gently at the edge) and then the gate slams, 360 px
 // round her (18%, thrown out). Close in the push is the strongest; out past 380 there is none.
-FINAL_SMASHES['Gaty'] = fsPull({ id:'swingopen', wind:34, c1:'#c9a46c', c2:'#ffffff', R:380, ahead:0, push:true, rate:5.5, pull:40, R2:360, dmg:18, kb:22, ky:-10, art:FS_GLYPH.square });
+FINAL_SMASHES['Gaty'] = fsPull({ id:'swingopen', c1:'#c9a46c', c2:'#ffffff', R:380, ahead:0, push:true, rate:5.5, pull:40, R2:360, dmg:18, kb:22, ky:-10, art:FS_GLYPH.square });
 
 // GRASSY -- NOBODY STEPS ON ME. "Nobody steps on me." (her frame row): a patch of grass that has been stepped on once too often; "Grassy tells Puffball to go super
 // fast" (Barriers and Pitfalls, quoted at her special). Blades shoot up out of the floor out from under her, seven a side, 60 px apart, three frames
-// each way (14%, 230 tall): the tell is the blades pricking up along the floor first.
-FINAL_SMASHES['Grassy'] = fsCols({ id:'nobodysteps', wind:36, c1:'#6dbe45', c2:'#c8f08a', nc:7, sp:60, H:230, hw:34, dmg:14, kb:15, ky:-16, art:FS_GLYPH.leaf });
+// each way (14%, 230 tall).
+FINAL_SMASHES['Grassy'] = fsCols({ id:'nobodysteps', c1:'#6dbe45', c2:'#c8f08a', nc:7, sp:60, H:230, hw:34, dmg:14, kb:15, ky:-16, art:FS_GLYPH.leaf });
 
 // LIY -- LIGHTS OUT. "Lights out." (her frame row): a light switch whose kit is a grapple; her own card dashes forward, grabs and Hurls. The marker is on the
 // nearest foe in front of her within 520, fixed 18 frames ahead (90 px: step out); then the lights go and she throws them, 26% and a hard launch.
-FINAL_SMASHES['Liy'] = fsLock({ id:'lightsout', wind:36, c1:'#ffe45e', c2:'#1c1c1c', R:90, bx:520, by:200, fwd:true, effect:'blast', delay:6, dmg:26, kb:24, ky:-14, art:FS_GLYPH.spark });
+FINAL_SMASHES['Liy'] = fsLock({ id:'lightsout', c1:'#ffe45e', c2:'#1c1c1c', R:90, bx:520, by:200, fwd:true, effect:'blast', delay:6, dmg:26, kb:24, ky:-14, art:FS_GLYPH.spark });
 
 // LOLLIPOP -- STICKY TRAP. "Was that supposed to be difficult?" (her frame row): glass-hard and haughty; her own cards are the Sticky Sucker and the Rooting
 // Trap. A sticky patch opens 120 px ahead of her and, for 40 frames, drags everyone within 300 of it slowly in (2.6 px a frame: walk away faster); then it
 // snaps shut, 90 px round it (22%, a launch).
-FINAL_SMASHES['Lollipop'] = fsPull({ id:'stickytrap', wind:34, c1:'#e86fb0', c2:'#ffffff', R:300, ahead:120, rate:2.6, pull:40, R2:90, dmg:22, kb:22, art:FS_GLYPH.candy });
+FINAL_SMASHES['Lollipop'] = fsPull({ id:'stickytrap', c1:'#e86fb0', c2:'#ffffff', R:300, ahead:120, rate:2.6, pull:40, R2:90, dmg:22, kb:22, art:FS_GLYPH.candy });
 
 // ---- BATCH F: Loser, Marker, Money, Naily, Pillow, Remote, Rose, Taco ---------------------------------------------------------------------------
 Object.assign(FS_GLYPH, {
@@ -21924,37 +21853,37 @@ Object.assign(FS_GLYPH, {
 
 // LOSER -- THE TINY LOSER CHAMBER. "(Jumping on the TLC) The Tiny. Loser. Chamber. Needs. To be. Fixed!" (Hurtful!, transcript; quoted at his card's chain): kind,
 // and means it, with the smallest, most controlled swing in the cast. He jumps and comes down on it: the ring is 210 px (20%) and a second to 300 (13%), 14 frames later.
-FINAL_SMASHES['Loser'] = fsCircle({ id:'tlc', wind:36, c1:'#f5d442', c2:'#ffffff', R:210, R2:300, gap:14, dmg:20, dmg2:13, kb:18, kb2:15, art:FS_GLYPH.star, kind:'slam' });
+FINAL_SMASHES['Loser'] = fsCircle({ id:'tlc', c1:'#f5d442', c2:'#ffffff', R:210, R2:300, gap:14, dmg:20, dmg2:13, kb:18, kb2:15, art:FS_GLYPH.star, kind:'slam' });
 
 // MARKER -- PERMANENT RECORD. "Permanent record." (his frame row): deadpan, a hard plastic barrel with a nib for a business end; his own card is the Ink Spray, a short
-// cone that slows. Four volleys six frames apart, thirteen drops across a wide cone in front of him (5% each, they keep hitting): the cone is the tell.
-FINAL_SMASHES['Marker'] = fsFan({ id:'permanentrecord', wind:34, c1:'#6a3fa0', n:13, cone:0.6, spd:12, vols:[0, 6, 12, 18], dmg:5, kb:10, r:9, life:45, reach:420, kind:'throw', art:FS_GLYPH.ink });
+// cone that slows. Four volleys six frames apart, thirteen drops across a wide cone in front of him (5% each, they keep hitting).
+FINAL_SMASHES['Marker'] = fsFan({ id:'permanentrecord', c1:'#6a3fa0', n:13, cone:0.6, spd:12, vols:[0, 6, 12, 18], dmg:5, kb:10, r:9, life:45, reach:420, kind:'throw', art:FS_GLYPH.ink });
 
 // MONEY -- MAKE IT RAIN. "Oh, my tree! Wins don't grow on trees." (his frame row): rich, and pleased about it, paper with no rigidity; his own card is Make It Rain, a
 // burst of coins. Marks on the three nearest foes, five times, nine frames apart, a bag of coins dropping on each (13%), the line walking 70 px along.
-FINAL_SMASHES['Money'] = fsRain({ id:'makeitrain', wind:34, c1:'#f2c94c', k:3, n:5, every:9, walk:70, dmg:13, kb:17, r:24, art:FS_GLYPH.coin });
+FINAL_SMASHES['Money'] = fsRain({ id:'makeitrain', c1:'#f2c94c', k:3, n:5, every:9, walk:70, dmg:13, kb:17, r:24, art:FS_GLYPH.coin });
 
 // NAILY -- NAILED IT. "Nailed it." (their frame row): sharper and angrier than Needle, hardened steel that is driven and does not give; their own card is the Nail
 // Volley, three fast nails that go through foes. Five nails in a tight fan, three volleys eight frames apart, through everyone in line (12%, they fly the whole stage).
-FINAL_SMASHES['Naily'] = fsFan({ id:'nailedit', wind:30, c1:'#9aa4b0', n:5, cone:0.14, spd:20, vols:[0, 8, 16], dmg:12, kb:14, r:9, life:90, reach:600, kind:'throw', proj:{ pierce:true }, art:FS_GLYPH.pin });
+FINAL_SMASHES['Naily'] = fsFan({ id:'nailedit', c1:'#9aa4b0', n:5, cone:0.14, spd:20, vols:[0, 8, 16], dmg:12, kb:14, r:9, life:90, reach:600, kind:'throw', proj:{ pierce:true }, art:FS_GLYPH.pin });
 
 // PILLOW -- FLUFF BOUNCE. Stuffed fabric: her gimmick is soaking up hits and growing stronger for each KO (the design doc); her own card is the Fluff Bounce, a springy
 // ring that pops foes up. The ring is 230 px (16%) and throws them nearly straight up, two rings: the second is 330 px (10%), 14 frames later.
-FINAL_SMASHES['Pillow'] = fsCircle({ id:'fluffbounce', wind:38, c1:'#fbeee0', c2:'#f0b8c8', R:230, R2:330, gap:14, dmg:16, dmg2:10, kb:6, kb2:5, ky:-24, art:FS_GLYPH.fluff });
+FINAL_SMASHES['Pillow'] = fsCircle({ id:'fluffbounce', c1:'#fbeee0', c2:'#f0b8c8', R:230, R2:330, gap:14, dmg:16, dmg2:10, kb:6, kb2:5, ky:-24, art:FS_GLYPH.fluff });
 
 // REMOTE -- SIGNAL JAM. "Match won. Deaths prevented: 0.00." (her frame row): a text-to-speech monotone, moulded plastic that transmits rather than deforms; her own card is
 // the Remote Jam, which scrambles a foe's controls. The pulse is 250 px (14%) and a wider one at 360 (9%) follows; the second scrambles the controls of whoever it reaches.
-FINAL_SMASHES['Remote'] = fsCircle({ id:'signaljam', wind:36, c1:'#e8506a', c2:'#ffffff', R:250, R2:360, gap:14, dmg:14, dmg2:9, kb:15, kb2:8, S2:{ rev:55 }, art:FS_GLYPH.signal });
+FINAL_SMASHES['Remote'] = fsCircle({ id:'signaljam', c1:'#e8506a', c2:'#ffffff', R:250, R2:360, gap:14, dmg:14, dmg2:9, kb:15, kb2:8, S2:{ rev:55 }, art:FS_GLYPH.signal });
 
 // ROSE -- THORN LASH. "...(keeps her vow of silence, wins anyway)" (her frame row): elegant and silent; her own card is the Thorn Lash, which lashes the nearest foe, in front or
-// behind, and pulls them to her. The marker is on the nearest foe within 460, fixed 18 frames ahead (85 px: step out); whoever is in it is bound by the thorns and
+// behind, and pulls them to her. It goes for the nearest foe within 460, its spot fixed as the startup begins (85 px: step out); whoever is in it is bound by the thorns and
 // takes six lashes (3%) and then the last (18%), thrown.
-FINAL_SMASHES['Rose'] = fsLock({ id:'thornlash', wind:38, c1:'#d6304a', c2:'#ffffff', R:85, bx:460, by:260, effect:'pin', hits:6, every:5, hitDmg:3, dmg:18, kb:22, art:FS_GLYPH.rose });
+FINAL_SMASHES['Rose'] = fsLock({ id:'thornlash', c1:'#d6304a', c2:'#ffffff', R:85, bx:460, by:260, effect:'pin', hits:6, every:5, hitDmg:3, dmg:18, kb:22, art:FS_GLYPH.rose });
 
 // TACO -- RETRACTABLE ARMS. "SOUR CREAM!" is Taco's most common catchphrase (the II wiki, Taco/Quotes, quoted at her card); her own card is the Retractable Arms that drag the
 // nearest foe in. The arms go out: for 40 frames everyone within 320 of her is dragged toward her, 3.4 px a frame (walk away faster), and then she clamps shut,
 // 110 px round her (22%).
-FINAL_SMASHES['Taco'] = fsPull({ id:'retractablearms', wind:34, c1:'#f2c94c', c2:'#6dbe45', R:320, ahead:0, rate:3.4, pull:40, R2:110, dmg:22, kb:22, art:FS_GLYPH.taco });
+FINAL_SMASHES['Taco'] = fsPull({ id:'retractablearms', c1:'#f2c94c', c2:'#6dbe45', R:320, ahead:0, rate:3.4, pull:40, R2:110, dmg:22, kb:22, art:FS_GLYPH.taco });
 
 // ---- BATCH G: TV, Woody, Toothpaste, David, Firey Jr., Fern, Ruler, Sidewalky ---------------------------------------------------------------------
 Object.assign(FS_GLYPH, {
@@ -21967,37 +21896,37 @@ Object.assign(FS_GLYPH, {
 
 // TV -- STATIC BURST. A CRT that shows static (the design doc); "The TV screen that displays the votes" is on the stage in the show ("Budget cuts", quoted at the
 // stage's code), and her own card is the Static Burst, a ring that stuns. The ring is 240 px (13%, a stun), then a wider one to 340 (9%) 14 frames later.
-FINAL_SMASHES['TV'] = fsCircle({ id:'staticburst', wind:36, c1:'#9fb4c8', c2:'#ffffff', R:240, R2:340, gap:14, dmg:13, dmg2:9, kb:16, kb2:11, S:{ stun:30 }, art:FS_GLYPH.tvstatic });
+FINAL_SMASHES['TV'] = fsCircle({ id:'staticburst', c1:'#9fb4c8', c2:'#ffffff', R:240, R2:340, gap:14, dmg:13, dmg2:9, kb:16, kb2:11, S:{ stun:30 }, art:FS_GLYPH.tvstatic });
 
 // WOODY -- FRAIDY STAMPEDE. "the most fearful character in the show" (the design doc); his own card is the Fraidy Dash, which "drops three splinters behind". He bolts, and what
-// he leaves is a rush of splinters along the floor, 560 px at 22 a frame, 90 tall, through everyone it meets (15%): the lane is the tell. Jump it.
-FINAL_SMASHES['Woody'] = fsLane({ id:'fraidystampede', wind:30, c1:'#c9a46c', L:560, spd:22, H:90, hw:34, dmg:15, kb:18, ky:-10, kind:'dash', art:FS_GLYPH.splinter });
+// he leaves is a rush of splinters along the floor, 560 px at 22 a frame, 90 tall, through everyone it meets (15%). Jump it.
+FINAL_SMASHES['Woody'] = fsLane({ id:'fraidystampede', c1:'#c9a46c', L:560, spd:22, H:90, hw:34, dmg:15, kb:18, ky:-10, kind:'dash', art:FS_GLYPH.splinter });
 
 // TOOTHPASTE -- YOU'RE MY ENEMY NOW! "You're my ENEMY now!" (BFDI wiki, quoted at her card): a tube whose lot is to be squeezed. She is squeezed: fourteen blobs of paste,
 // three frames apart, thrown forward over a spread of distances (7%), and a big last glob that goes through everyone (18%).
-FINAL_SMASHES['Toothpaste'] = fsHose({ id:'enemynow', wind:30, c1:'#4cc3ff', n:14, every:3, v0:8, art:FS_GLYPH.paste, reach:440,
+FINAL_SMASHES['Toothpaste'] = fsHose({ id:'enemynow', c1:'#4cc3ff', n:14, every:3, v0:8, art:FS_GLYPH.paste, reach:440,
   shots:[{ color:'#e8f8ff', dmg:7, kb:24, r:13, grav:true, vy:-3, life:100 }, { color:'#4cc3ff', dmg:7, kb:24, r:13, grav:true, vy:-5, life:100 }], big:{ dmg:18, kb:26, r:26, color:'#e8f8ff', life:60, pierce:true } });
 
 // DAVID -- AW, SERIOUSLY! He only ever says "aw, seriously?" and does nothing (the design doc); his own card is the Aw Seriously, a ground-pound shockwave. For once he does
 // something: the pound is 260 px (22%, a hard launch), and the shockwave goes on out to 360 (12%) 14 frames later.
-FINAL_SMASHES['David'] = fsCircle({ id:'awseriously', wind:38, c1:'#6fb7ff', c2:'#ffffff', R:260, R2:360, gap:14, dmg:22, dmg2:12, kb:20, kb2:14, art:FS_GLYPH.burst, kind:'slam' });
+FINAL_SMASHES['David'] = fsCircle({ id:'awseriously', c1:'#6fb7ff', c2:'#ffffff', R:260, R2:360, gap:14, dmg:22, dmg2:12, kb:20, kb2:14, art:FS_GLYPH.burst, kind:'slam' });
 
 // FIREY JR. -- SPARK JR. A smaller Firey who copies him (the design doc); his own card is the Spark Jr. fireball. Ten sparks fly out all round him, twice, sixteen frames
 // apart (9%, they burn), the second between the first: the gaps are the way through.
-FINAL_SMASHES['Firey Jr.'] = fsFan({ id:'sparkjr', wind:34, c1:'#f0803a', n:10, spd:11, vols:[0, 16], dmg:9, kb:21, r:12, life:50, reach:330, proj:{ burn:true }, art:FS_GLYPH.flame });
+FINAL_SMASHES['Firey Jr.'] = fsFan({ id:'sparkjr', c1:'#f0803a', n:10, spd:11, vols:[0, 16], dmg:9, kb:21, r:12, life:50, reach:330, proj:{ burn:true }, art:FS_GLYPH.flame });
 
 // FERN -- PHOTOSYNTHESIS. "Oh, my soil! I was gonna surrender!" (his frame row): composed, a plant that does not snap; his own card whips a vine and heals him. The marker is on the
 // nearest foe within 440, fixed 18 frames ahead (80 px: step out); whoever is in it is wound in vines, takes six lashes (3%) and then the last (16%), thrown, and he
 // is healed 12% for it.
-FINAL_SMASHES['Fern'] = fsLock({ id:'photosynthesis', wind:38, c1:'#4f8a3c', c2:'#bfe8a0', R:80, bx:440, by:260, effect:'pin', hits:6, every:5, hitDmg:3, dmg:16, kb:20, heal:12, art:FS_GLYPH.leaf });
+FINAL_SMASHES['Fern'] = fsLock({ id:'photosynthesis', c1:'#4f8a3c', c2:'#bfe8a0', R:80, bx:440, by:260, effect:'pin', hits:6, every:5, hitDmg:3, dmg:16, kb:20, heal:12, art:FS_GLYPH.leaf });
 
 // RULER -- BY EXACTLY MY MEASURE. "By exactly my measure." (his frame row): the definition of straight, who does not bend; his own card, Measure Twice, is a fast straight shot the
-// whole stage long. One straight edge sweeps out along the floor, 900 px at 45 a frame, 60 tall, and does not bend (14%): the lane is the tell. Hop it.
-FINAL_SMASHES['Ruler'] = fsLane({ id:'exactmeasure', wind:32, c1:'#e8d49a', L:900, spd:45, H:60, hw:22, dmg:14, kb:18, ky:-9, kind:'dash', art:FS_GLYPH.ruler });
+// whole stage long. One straight edge sweeps out along the floor, 900 px at 45 a frame, 60 tall, and does not bend (14%). Hop it.
+FINAL_SMASHES['Ruler'] = fsLane({ id:'exactmeasure', c1:'#e8d49a', L:900, spd:45, H:60, hw:22, dmg:14, kb:18, ky:-9, kind:'dash', art:FS_GLYPH.ruler });
 
 // SIDEWALKY -- PHYSICALLY. "I won. Sorry? Can't. Physically." (his frame row): everything about him is mass; his own card is the armoured Pavement Slam. A slab comes down on the nearest foe
 // within 380: the marker is fixed 26 frames ahead, he is slow (120 px: step out), and it is 28%, thrown hard.
-FINAL_SMASHES['Sidewalky'] = fsLock({ id:'physically', wind:44, lead:26, c1:'#b4b4b4', c2:'#ffffff', R:120, bx:380, by:240, effect:'blast', delay:12, dmg:28, kb:20, ky:-16, art:FS_GLYPH.slab });
+FINAL_SMASHES['Sidewalky'] = fsLock({ id:'physically', lead:26, c1:'#b4b4b4', c2:'#ffffff', R:120, bx:380, by:240, effect:'blast', delay:12, dmg:28, kb:20, ky:-16, art:FS_GLYPH.slab });
 
 // ---- BATCH H: Balloony, Roboty, Profily, Tree, Cake, Donut, Balloon, Bomb -------------------------------------------------------------------------
 Object.assign(FS_GLYPH, {
@@ -22010,37 +21939,37 @@ Object.assign(FS_GLYPH, {
 });
 
 // BALLOONY -- AIR LEAK. "Air Leak: jets of released air zip Balloony around." (quoted at his special); bright and buoyant, a balloon that deflates and snaps back. He lets go: a jet of
-// air along the floor in front of him, 900 px at 30 a frame, 110 tall, through everyone it meets (16%, thrown far): the lane is the tell.
-FINAL_SMASHES['Balloony'] = fsLane({ id:'airleak', wind:32, c1:'#ff9ac0', L:900, spd:30, H:110, hw:40, dmg:16, kb:22, ky:-10, kind:'dash', art:FS_GLYPH.puffair });
+// air along the floor in front of him, 900 px at 30 a frame, 110 tall, through everyone it meets (16%, thrown far).
+FINAL_SMASHES['Balloony'] = fsLane({ id:'airleak', c1:'#ff9ac0', L:900, spd:30, H:110, hw:40, dmg:16, kb:22, ky:-10, kind:'dash', art:FS_GLYPH.puffair });
 
 // ROBOTY -- ANTENNA SPRING. "beep. beep beep. (I won.)" (his frame row): a monotone that wastes nothing, moving in servo steps; his own card is the Antenna Spring that launches foes straight
-// up. Antennas spring up out of the floor, six a side, 70 px apart, one every three frames (10%, thrown nearly straight up): the tell is the nubs on the floor.
-FINAL_SMASHES['Roboty'] = fsCols({ id:'antennaspring', wind:36, c1:'#c8c8d0', c2:'#e8506a', nc:6, sp:70, H:260, hw:30, dmg:10, kb:4, ky:-24, art:FS_GLYPH.gear });
+// up. Antennas spring up out of the floor, six a side, 70 px apart, one every three frames (10%, thrown nearly straight up).
+FINAL_SMASHES['Roboty'] = fsCols({ id:'antennaspring', c1:'#c8c8d0', c2:'#e8506a', nc:6, sp:70, H:260, hw:30, dmg:10, kb:4, ky:-24, art:FS_GLYPH.gear });
 
 // PROFILY -- DON'T HUG THE CACTUS! "In 'Chapter Complete', touching a cactus representation of Four causes Profily to warp, ascend, and pop." (the Four page, quoted at the
-// move); his own card is the Price Tag. The marker is on the nearest foe within 400, fixed 18 frames ahead (90 px: step out): a cactus warps up under them, 24%, thrown hard.
-FINAL_SMASHES['Profily'] = fsLock({ id:'cactus', wind:38, c1:'#4f9a4a', c2:'#ffffff', R:90, bx:400, by:240, effect:'blast', delay:10, dmg:24, kb:22, ky:-18, art:FS_GLYPH.cactus });
+// move); his own card is the Price Tag. It goes for the nearest foe within 400, its spot fixed as the startup begins (90 px: step out): a cactus warps up under them, 24%, thrown hard.
+FINAL_SMASHES['Profily'] = fsLock({ id:'cactus', c1:'#4f9a4a', c2:'#ffffff', R:90, bx:400, by:240, effect:'blast', delay:10, dmg:24, kb:22, ky:-18, art:FS_GLYPH.cactus });
 
 // TREE -- TIMBER. His own card: a heavy branch dropped on the nearest foe after a warning; the design doc has him enormous and rooted. Marks under the nearest foe, three branches
 // fourteen frames apart, 80 px along each time (18%, a hard knock): keep moving.
-FINAL_SMASHES['Tree'] = fsRain({ id:'timber', wind:40, c1:'#8a6a3a', k:1, n:3, every:14, walk:80, dmg:18, kb:22, r:30, art:FS_GLYPH.branch });
+FINAL_SMASHES['Tree'] = fsRain({ id:'timber', c1:'#8a6a3a', k:1, n:3, every:14, walk:80, dmg:18, kb:22, r:30, art:FS_GLYPH.branch });
 
 // CAKE -- CAKE AT STAKE. "the prize is tossed from the Cake Tosser on the centre cylinder" (Barriers and Pitfalls, quoted at the stage); her own card lobs a slice that bounces along
 // ahead of her. Eight slices, five frames apart, lobbed low and flat over two distances and bouncing on (6%, they keep hitting).
-FINAL_SMASHES['Cake'] = fsHose({ id:'cakeatstake', lockGrace:5, wind:30, c1:'#f4d9a8', n:8, every:5, v0:8, art:FS_GLYPH.slice, reach:520,
+FINAL_SMASHES['Cake'] = fsHose({ id:'cakeatstake', lockGrace:5, c1:'#f4d9a8', n:8, every:5, v0:8, art:FS_GLYPH.slice, reach:520,
   shots:[{ color:'#f4d9a8', dmg:6, kb:9, r:17, bounce:true, maxBounces:4, grav:true, vy:-3, life:130 }, { color:'#f4d9a8', dmg:6, kb:9, r:17, bounce:true, maxBounces:4, grav:true, vx:12, vy:-5, life:130 }] });
 
 // DONUT -- SPRINKLE ROLL. "multiplied by Donut [zero]" -- the zero that liquefied Four (the Four page, quoted at his art); his own card is the Sprinkle Roll, a spinning wheel that hits everyone
 // around him. He rolls round on the spot, 105 px: whoever is in it when it starts is kept in it and hit eight times (2.5%) and thrown by the last (14%).
-FINAL_SMASHES['Donut'] = fsOrbit({ id:'sprinkleroll', wind:30, c1:'#d8a060', c2:'#f08ab8', R:105, n:8, every:6, hitDmg:2.5, dmg:14, kb:22, art:FS_GLYPH.donut });
+FINAL_SMASHES['Donut'] = fsOrbit({ id:'sprinkleroll', c1:'#d8a060', c2:'#f08ab8', R:105, n:8, every:6, hitDmg:2.5, dmg:14, kb:22, art:FS_GLYPH.donut });
 
 // BALLOON -- INSULT TIRADE. "OH, C'MON!" -- his catchphrase since The Crappy Cliff (the II wiki, quoted at his card); "I demand a prize! Now!" (A Lemony Lesson, the design doc): a petulant, bossy
 // season-1 captain. His own card is the Insult Tirade, which weakens everyone near. The tirade is 260 px (14%, and their hits are weaker for 5 seconds).
-FINAL_SMASHES['Balloon'] = fsCircle({ id:'tirade', wind:36, c1:'#e0503a', c2:'#ffffff', R:260, dmg:14, kb:16, S:{ weak:300 }, art:FS_GLYPH.angry, kind:'fsburst' });
+FINAL_SMASHES['Balloon'] = fsCircle({ id:'tirade', c1:'#e0503a', c2:'#ffffff', R:260, dmg:14, kb:16, S:{ weak:300 }, art:FS_GLYPH.angry, kind:'fsburst' });
 
 // BOMB -- LITERALLY. "Y-yeah, I'm the bomb. L-literally." (his frame row): iron and nervous, a stutter in everything; "the bump comes twice" (the design doc). The blast comes twice: 180 px (24%),
 // and 14 frames later 260 (14%). It costs him: 8% for each.
-FINAL_SMASHES['Bomb'] = fsCircle({ id:'literally', wind:36, c1:'#3a3a3a', c2:'#f0803a', R:180, R2:260, gap:14, dmg:24, dmg2:14, kb:20, kb2:16, art:FS_GLYPH.spark, tick(f, st, t){ if(t === 36 || t === 50) f.pct = Math.min(Math.max(0, f.koCap - 5), f.pct + 8); } });
+FINAL_SMASHES['Bomb'] = fsCircle({ id:'literally', c1:'#3a3a3a', c2:'#f0803a', R:180, R2:260, gap:14, dmg:24, dmg2:14, kb:20, kb2:16, art:FS_GLYPH.spark, tick(f, st, t){ if(t === 36 || t === 50) f.pct = Math.min(Math.max(0, f.koCap - 5), f.pct + 8); } });
 
 // ---- BATCH I: Knife, Lightbulb, Paintbrush, Taco (II), Marshmallow, Apple, Baseball, Pickle ----------------------------------------------------
 Object.assign(FS_GLYPH, {
@@ -22053,36 +21982,36 @@ Object.assign(FS_GLYPH, {
 
 // KNIFE -- BAG OF TRICKS. His own card: in order, "the Temporary Paralyzer, a boomerang blade, caltrops that draw blood, then the Fist Thingy"; blunt, loud, a bully who shoved Paper off the
 // platform (the design doc, A Lemony Lesson). Nine things out of the bag, five frames apart, in a rotation of blade (flat, through everyone), caltrops (lobbed) and a spark of shock (5-6%, and they keep hitting).
-FINAL_SMASHES['Knife'] = fsHose({ id:'bagoftricks', lockGrace:5, wind:30, c1:'#dfe6ee', n:9, every:5, v0:12, art:FS_GLYPH.blade, reach:520,
+FINAL_SMASHES['Knife'] = fsHose({ id:'bagoftricks', lockGrace:5, c1:'#dfe6ee', n:9, every:5, v0:12, art:FS_GLYPH.blade, reach:520,
   shots:[{ color:'#dfe6ee', dmg:5, kb:7, r:11, grav:false, vy:0, pierce:true, life:70 }, { color:'#c0304a', dmg:4, kb:7, r:10, grav:true, vy:-5, life:90 }, { color:'#fff27a', dmg:4, kb:7, r:10, grav:false, vy:0, life:60 }] });
 
 // LIGHTBULB -- BRIGHT FLASH. "OMGA!" -- the new OMG (the II wiki, quoted at her card); "laid back, free-spirited and optimistic ... erratic and unpredictable" (the design doc). Her own card is the Bright
 // Flash, which scrambles everyone near's controls. The flash is 270 px (14%), and whoever it reaches has their controls scrambled for about a second.
-FINAL_SMASHES['Lightbulb'] = fsCircle({ id:'brightflash', wind:34, c1:'#fff27a', c2:'#ffffff', R:270, dmg:14, kb:17, S:{ rev:50 }, art:FS_GLYPH.spark });
+FINAL_SMASHES['Lightbulb'] = fsCircle({ id:'brightflash', c1:'#fff27a', c2:'#ffffff', R:270, dmg:14, kb:17, S:{ rev:50 }, art:FS_GLYPH.spark });
 
 // PAINTBRUSH -- HEAT WAVES. "prone to angry outbursts"; "bristles react to their emotions and can glow with heat" (the design doc; her own cards are the Heat Explosion and the Heat Waves). A wave of heat
-// goes out along the floor both ways, 600 px at 20 a frame, 70 tall (12%, and it sets them burning): the lanes are the tell.
-FINAL_SMASHES['Paintbrush'] = fsLane({ id:'heatwaves', wind:34, c1:'#f0803a', both:true, L:600, spd:20, H:70, hw:36, dmg:12, kb:18, ky:-12, S:{ burn:160 }, art:FS_GLYPH.flame });
+// goes out along the floor both ways, 600 px at 20 a frame, 70 tall (12%, and it sets them burning).
+FINAL_SMASHES['Paintbrush'] = fsLane({ id:'heatwaves', c1:'#f0803a', both:true, L:600, spd:20, H:70, hw:36, dmg:12, kb:18, ky:-12, S:{ burn:160 }, art:FS_GLYPH.flame });
 
 // TACO (II) -- LEMON SPIT. "completely oblivious ... motionless with a sideways smile", and under it a plan (the design doc); her own card is the Lemon Spit. Five lemons in a fan, three volleys eight
-// frames apart (6%, and they slow whoever they hit): the cone is the tell.
-FINAL_SMASHES['Taco (II)'] = fsFan({ id:'lemonspit', wind:32, c1:'#f5e04a', n:5, cone:0.5, spd:12, vols:[0, 8, 16], dmg:6, kb:11, r:13, life:55, reach:420, kind:'spit', proj:{ slow:true }, art:FS_GLYPH.lemon });
+// frames apart (6%, and they slow whoever they hit).
+FINAL_SMASHES['Taco (II)'] = fsFan({ id:'lemonspit', c1:'#f5e04a', n:5, cone:0.5, spd:12, vols:[0, 8, 16], dmg:6, kb:11, r:13, life:55, reach:420, kind:'spit', proj:{ slow:true }, art:FS_GLYPH.lemon });
 
 // MARSHMALLOW -- NO WAY! "Shattering Scream -- the voice that killed Test Tube" (her own card); on the boardwalk over the saw she shouted "NO WAY!" (quoted at her special). The scream goes out 300 px (15%) and a
 // second one to 420 (10%) twelve frames after it.
-FINAL_SMASHES['Marshmallow'] = fsCircle({ id:'noway', wind:36, c1:'#bfe8ff', c2:'#ffffff', R:300, R2:420, gap:12, dmg:15, dmg2:10, kb:19, kb2:14, art:FS_GLYPH.scream, kind:'fsburst' });
+FINAL_SMASHES['Marshmallow'] = fsCircle({ id:'noway', c1:'#bfe8ff', c2:'#ffffff', R:300, R2:420, gap:12, dmg:15, dmg2:10, kb:19, kb2:14, art:FS_GLYPH.scream, kind:'fsburst' });
 
 // APPLE -- PENCIL THROW. "I won? Where's my pony?" (her frame row): naive and childish and quick to take offence; her own card is the Pencil Throw, "point first; it tears straight through everyone in its way". Three
 // pencils, ten frames apart, each straight and through everyone (12%): a hop clears a low one.
-FINAL_SMASHES['Apple'] = fsFan({ id:'pencilthrow', wind:30, c1:'#f2b84b', n:1, cone:0.02, spd:22, vols:[0, 10, 20], dmg:12, kb:20, r:11, life:80, reach:520, kind:'throw', proj:{ pierce:true }, art:FS_GLYPH.pencil });
+FINAL_SMASHES['Apple'] = fsFan({ id:'pencilthrow', c1:'#f2b84b', n:1, cone:0.02, spd:22, vols:[0, 10, 20], dmg:12, kb:20, r:11, life:80, reach:520, kind:'throw', proj:{ pierce:true }, art:FS_GLYPH.pencil });
 
 // BASEBALL -- GROUND POUND. "We won! Nobody got thrown as ammo!" (his frame row): the largest contestant, strongest in the legs, and self-conscious about his size (the design doc); his own card is the
-// Ground Pound, a shockwave along the floor both ways. The shockwave goes out both ways, 700 px at 16 a frame, 60 tall (18%): the lanes are the tell. Hop them.
-FINAL_SMASHES['Baseball'] = fsLane({ id:'groundpound', wind:34, c1:'#e8e0d0', both:true, L:700, spd:16, H:60, hw:34, dmg:18, kb:22, ky:-12, kind:'slam', art:FS_GLYPH.burst });
+// Ground Pound, a shockwave along the floor both ways. The shockwave goes out both ways, 700 px at 16 a frame, 60 tall (18%). Hop them.
+FINAL_SMASHES['Baseball'] = fsLane({ id:'groundpound', c1:'#e8e0d0', both:true, L:700, spd:16, H:60, hw:34, dmg:18, kb:22, ky:-12, kind:'slam', art:FS_GLYPH.burst });
 
 // PICKLE -- LOADS OF EXPERIENCE. "Okay, let's do this! Oh, we did." (his frame row): a laid-back boxer, sweet and dim; his own card is the diving belly-flop. The marker is on the nearest foe within 440,
 // fixed 18 frames ahead (100 px: step out); he comes down on it, 24%.
-FINAL_SMASHES['Pickle'] = fsLock({ id:'loadsofexperience', wind:38, c1:'#6aa83a', c2:'#ffffff', R:100, bx:440, by:260, effect:'blast', delay:8, dmg:24, kb:21, ky:-16, art:FS_GLYPH.pickle });
+FINAL_SMASHES['Pickle'] = fsLock({ id:'loadsofexperience', c1:'#6aa83a', c2:'#ffffff', R:100, bx:440, by:260, effect:'blast', delay:8, dmg:24, kb:21, ky:-16, art:FS_GLYPH.pickle });
 
 // ---- BATCH J: Nickel (II), Paper, Microphone, Salt, Test Tube, Box, Trophy, Goo ---------------------------------------------------------------------
 Object.assign(FS_GLYPH, {
@@ -22093,35 +22022,35 @@ Object.assign(FS_GLYPH, {
 
 // NICKEL (II) -- DOUBLE ZINGER. "sarcasm as an art, and himself an artist"; blunt, snarky, armless (the design doc); his own card is the Double Zinger, "two remarks at once". Two remarks:
 // the first goes out 230 px (14%), the second, eight frames later, to 330 (14%).
-FINAL_SMASHES['Nickel (II)'] = fsCircle({ id:'doublezinger', wind:34, c1:'#8aa0c0', c2:'#ffffff', R:230, R2:330, gap:8, dmg:14, dmg2:14, kb:20, kb2:19, art:FS_GLYPH.burst, kind:'fsburst' });
+FINAL_SMASHES['Nickel (II)'] = fsCircle({ id:'doublezinger', c1:'#8aa0c0', c2:'#ffffff', R:230, R2:330, gap:8, dmg:14, dmg2:14, kb:20, kb2:19, art:FS_GLYPH.burst, kind:'fsburst' });
 
 // PAPER -- SOMEBODY CHECK FOR PIANOS. "Somebody check for pianos." (his frame row): wary and jumpy, a sheet. For once there is one: a mark under the nearest foe, a piano falling on it (24%), twice,
 // twenty frames apart, and it is about as hard to miss as a piano.
-FINAL_SMASHES['Paper'] = fsRain({ id:'pianos', wind:36, c1:'#2a2a30', k:1, n:2, every:20, walk:90, dmg:24, kb:26, r:34, art:FS_GLYPH.piano });
+FINAL_SMASHES['Paper'] = fsRain({ id:'pianos', c1:'#2a2a30', k:1, n:2, every:20, walk:90, dmg:24, kb:26, r:34, art:FS_GLYPH.piano });
 
 // MICROPHONE -- DEAFENINGLY LOUD. "her voice getting deafeningly loud" (the design doc: outspoken and honest); her own card is Yell at the Ball, a shout that sends it forward fast. The shout goes out
-// along the floor, 800 px at 24 a frame, 120 tall (16%, thrown far): the lane is the tell.
-FINAL_SMASHES['Microphone'] = fsLane({ id:'deafening', wind:34, c1:'#7a4fd2', L:800, spd:24, H:120, hw:44, dmg:16, kb:22, ky:-10, kind:'spit', art:FS_GLYPH.scream });
+// along the floor, 800 px at 24 a frame, 120 tall (16%, thrown far).
+FINAL_SMASHES['Microphone'] = fsLane({ id:'deafening', c1:'#7a4fd2', L:800, spd:24, H:120, hw:44, dmg:16, kb:22, ky:-10, kind:'spit', art:FS_GLYPH.scream });
 
 // SALT -- SHAKE. "Peps, that's us! Recognition!" (her frame row): vapid, a little vain, and half of a pair; her own card throws salt in an arc, and Pepper throws pepper after it. Ten grains in an
-// arc ahead of her, and ten more twelve frames behind (8%): the arc is the tell.
-FINAL_SMASHES['Salt'] = fsFan({ id:'shake', wind:32, c1:'#f4f4f4', n:10, cone:0.9, spd:11, vols:[0, 12], dmg:8, kb:22, r:10, life:60, reach:420, kind:'throw', proj:{ grav:true, weak:true }, art:FS_GLYPH.spark });
+// arc ahead of her, and ten more twelve frames behind (8%).
+FINAL_SMASHES['Salt'] = fsFan({ id:'shake', c1:'#f4f4f4', n:10, cone:0.9, spd:11, vols:[0, 12], dmg:8, kb:22, r:10, life:60, reach:420, kind:'throw', proj:{ grav:true, weak:true }, art:FS_GLYPH.spark });
 
 // TEST TUBE -- GLASS UP. "an extreme form of atychiphobia (fear of being wrong)": the most knowledgeable contestant (the design doc); her own card braces, and the next hit shatters her and
 // poisons everything near. The glass goes: 250 px (14%, it poisons), and a wider shower of it at 340 (8%) twelve frames after.
-FINAL_SMASHES['Test Tube'] = fsCircle({ id:'glassup', wind:36, c1:'#9fe6d8', c2:'#ffffff', R:250, R2:340, gap:12, dmg:14, dmg2:8, kb:17, kb2:9, S:{ poison:180 }, art:FS_GLYPH.shard });
+FINAL_SMASHES['Test Tube'] = fsCircle({ id:'glassup', c1:'#9fe6d8', c2:'#ffffff', R:250, R2:340, gap:12, dmg:14, dmg2:8, kb:17, kb2:9, S:{ poison:180 }, art:FS_GLYPH.shard });
 
 // BOX -- EVERYTHING PACKED. "...(says nothing. Everyone calls it wise.)" (the design doc); her own card packs away the nearest shot coming at her and sends it back harder. The marker is on the nearest foe within
 // 460, fixed 18 frames ahead (85 px: step out); whoever is in it is packed in a box, which takes four knocks (2%) and is shipped, 24%, thrown.
-FINAL_SMASHES['Box'] = fsLock({ id:'everythingpacked', wind:38, c1:'#c9a46c', c2:'#ffffff', R:85, bx:460, by:260, effect:'pin', hits:4, every:8, hitDmg:2, dmg:24, kb:24, art:FS_GLYPH.square });
+FINAL_SMASHES['Box'] = fsLock({ id:'everythingpacked', c1:'#c9a46c', c2:'#ffffff', R:85, bx:460, by:260, effect:'pin', hits:4, every:8, hitDmg:2, dmg:24, kb:24, art:FS_GLYPH.square });
 
 // TROPHY -- BLACKMAIL. "No cardboard box beats me twice." (his frame row): proud, and sore about a loss; his own card is Blackmail, a camera flash that catches one foe and goes soft on their hits. The marker is on
 // the nearest foe within 420, fixed 18 frames ahead (110 px: step out); the flash goes off and the picture is the blow, 22%, and their hits are weaker for 6 seconds.
-FINAL_SMASHES['Trophy'] = fsLock({ id:'blackmail', wind:36, c1:'#f2c94c', c2:'#ffffff', R:110, bx:420, by:260, effect:'blast', delay:6, dmg:22, kb:21, ky:-15, S:{ weak:360 }, art:FS_GLYPH.spark });
+FINAL_SMASHES['Trophy'] = fsLock({ id:'blackmail', c1:'#f2c94c', c2:'#ffffff', R:110, bx:420, by:260, effect:'blast', delay:6, dmg:22, kb:21, ky:-15, S:{ weak:360 }, art:FS_GLYPH.spark });
 
 // GOO -- ENGULF. "Winning is like glue! This one stuck!" (the design doc, his analogies never stick); his own card surges forward, swallows whoever he reaches, holds them, and spits them out. He swells to 120 px round
 // him: whoever is in it when he does is held and hit ten times (2%) and spat out by the last (16%).
-FINAL_SMASHES['Goo'] = fsOrbit({ id:'engulf', wind:30, c1:'#5ad08a', c2:'#ffffff', R:120, n:10, every:5, hitDmg:2, dmg:16, kb:24, art:FS_GLYPH.slime });
+FINAL_SMASHES['Goo'] = fsOrbit({ id:'engulf', c1:'#5ad08a', c2:'#ffffff', R:120, n:10, every:5, hitDmg:2, dmg:16, kb:24, art:FS_GLYPH.slime });
 
 // ---- BATCH K: Lifering, Bonesaw, Spikey, Candle, Cammy, Cheesy, Dough, Fan ---------------------------------------------------------------------------
 Object.assign(FS_GLYPH, {
@@ -22134,38 +22063,38 @@ Object.assign(FS_GLYPH, {
 });
 
 // LIFERING -- WE'VE GOT A SINKER! His own card: "a whistle, then a flat-out sprint that bowls over the first fighter he reaches"; the lifeguard, earnest ("Everyone okay? I can perform CPR!", his
-// frame row). The whistle, and then the sprint along the floor in front of him, 800 px at 26 a frame, 90 tall, through everyone it meets (17%): the lane is the tell.
-FINAL_SMASHES['Lifering'] = fsLane({ id:'sinker', wind:32, c1:'#ff5a4a', L:800, spd:26, H:90, hw:44, dmg:17, kb:21, ky:-10, kind:'dash', art:FS_GLYPH.lifebuoy });
+// frame row). The whistle, and then the sprint along the floor in front of him, 800 px at 26 a frame, 90 tall, through everyone it meets (17%).
+FINAL_SMASHES['Lifering'] = fsLane({ id:'sinker', c1:'#ff5a4a', L:800, spd:26, H:90, hw:44, dmg:17, kb:21, ky:-10, kind:'dash', art:FS_GLYPH.lifebuoy });
 
 // BONESAW -- CUTS RIGHT TO THE CORE. "Bonesaw cuts right to the core." -- after getting through to Box (quoted at his card); "a saw cuts in strokes, and he is never fast". The marker is on the nearest foe within
 // 400, fixed 18 frames ahead (80 px: step out); whoever is in it takes three slow strokes (6%) and then the last (20%), thrown.
-FINAL_SMASHES['Bonesaw'] = fsLock({ id:'cutstothecore', wind:38, c1:'#b4764a', c2:'#dfe6ee', R:80, bx:400, by:240, effect:'pin', hits:3, every:10, hitDmg:6, dmg:20, kb:23, art:FS_GLYPH.blade });
+FINAL_SMASHES['Bonesaw'] = fsLock({ id:'cutstothecore', c1:'#b4764a', c2:'#dfe6ee', R:80, bx:400, by:240, effect:'pin', hits:3, every:10, hitDmg:6, dmg:20, kb:23, art:FS_GLYPH.blade });
 
 // SPIKEY -- CAN'T HOLD IT IN. His own card: "hold it in, let go, and every spike shoots off at once, all ways"; lost and a little slow ("Wait, I won? Did I miss something?", his frame row). Eighteen spikes, all at once,
 // in every direction (12%, they fly 700 px): the gaps between them are the way through, and he is bald afterwards.
-FINAL_SMASHES['Spikey'] = fsFan({ id:'cantholditin', wind:36, c1:'#8a8a96', n:18, spd:14, vols:[0], dmg:12, kb:18, r:11, life:52, reach:340, kind:'fsburst', art:FS_GLYPH.spike,
+FINAL_SMASHES['Spikey'] = fsFan({ id:'cantholditin', c1:'#8a8a96', n:18, spd:14, vols:[0], dmg:12, kb:18, r:11, life:52, reach:340, kind:'fsburst', art:FS_GLYPH.spike,
   lockShots:2 });   // (the foe his catch holds takes two spikes, as one right beside him does: the catch does not halve it)
 
 // CANDLE -- CRYSTAL CHIME. "There is no magic. JUST, your inner..." (The Overthinkers, quoted at her card); her own card chimes her crystal with the tuning fork "and every grounded foe near her trips". Crystals
-// come up out of the floor out from under her, seven a side, 60 px apart, one every three frames (13%, and a stun): the tell is the glints on the floor.
-FINAL_SMASHES['Candle'] = fsCols({ id:'crystalchime', wind:36, c1:'#b894f0', c2:'#ffffff', nc:7, sp:60, H:170, hw:34, dmg:13, kb:15, ky:-16, S:{ stun:20 }, art:FS_GLYPH.crystal });
+// come up out of the floor out from under her, seven a side, 60 px apart, one every three frames (13%, and a stun).
+FINAL_SMASHES['Candle'] = fsCols({ id:'crystalchime', c1:'#b894f0', c2:'#ffffff', nc:7, sp:60, H:170, hw:34, dmg:13, kb:15, ky:-16, S:{ stun:20 }, art:FS_GLYPH.crystal });
 
 // CAMMY -- SAY CHEESE! "The power of MePhone compels you: say cheese!" (his frame row): theatrical, a camera that compels you; his own card, Snapshot, goes off "at a point well ahead". The marker is on the
 // nearest foe in front of him within 560, fixed 20 frames ahead (130 px: step out); the flash catches whoever is in frame, 22%, and a stun.
-FINAL_SMASHES['Cammy'] = fsLock({ id:'saycheese', wind:38, lead:20, c1:'#ffffff', c2:'#8ad8ff', R:130, bx:560, by:240, fwd:true, effect:'blast', delay:6, dmg:22, kb:21, ky:-14, S:{ stun:30 }, art:FS_GLYPH.spark });
+FINAL_SMASHES['Cammy'] = fsLock({ id:'saycheese', lead:20, c1:'#ffffff', c2:'#8ad8ff', R:130, bx:560, by:240, fwd:true, effect:'blast', delay:6, dmg:22, kb:21, ky:-14, S:{ stun:30 }, art:FS_GLYPH.spark });
 
 // CHEESY -- KICK! SOCCER! PUN! "Who knew all that slapping would give my leg endurance?" (A Kick in the Right Direction, quoted at the move); his own card kicks a ball low along the floor. Five balls, eight
 // frames apart, bounce along the floor in front of him (6%, and they keep hitting), and the last is the goal: a big one that goes through everyone (18%).
-FINAL_SMASHES['Cheesy'] = fsHose({ id:'kicksoccerpun', wind:30, c1:'#f4f4f4', n:5, every:8, v0:11, art:FS_GLYPH.soccer, reach:520,
+FINAL_SMASHES['Cheesy'] = fsHose({ id:'kicksoccerpun', c1:'#f4f4f4', n:5, every:8, v0:11, art:FS_GLYPH.soccer, reach:520,
   shots:[{ color:'#f4f4f4', dmg:6, kb:8, r:14, bounce:true, maxBounces:5, grav:true, vy:-2, life:130 }], big:{ dmg:18, kb:23, r:26, color:'#f4f4f4', life:70, pierce:true } });
 
 // DOUGH -- SHAMELESS KNOCKOFF. "enjoys mimicking everything Bow does mere seconds after she does it" (the design doc: the whole beat arrives a beat late); his own card is the Shameless Knockoff. He bounces down
 // and the ring goes out 220 px (18%), and then, a beat late, it does it again, to 320 (12%), twenty frames behind.
-FINAL_SMASHES['Dough'] = fsCircle({ id:'knockoff', wind:36, c1:'#f0d8a8', c2:'#ffffff', R:220, R2:320, gap:20, dmg:18, dmg2:12, kb:19, kb2:15, art:FS_GLYPH.dough, kind:'slam' });
+FINAL_SMASHES['Dough'] = fsCircle({ id:'knockoff', c1:'#f0d8a8', c2:'#ffffff', R:220, R2:320, gap:20, dmg:18, dmg2:12, kb:19, kb2:15, art:FS_GLYPH.dough, kind:'slam' });
 
 // FAN -- YOU LEAVE US ALONE! His own card: "an armoured charge straight through everyone in his way"; "talkative, awkward, and passionate", the show's biggest fan (the design doc). The charge, 700 px at 24 a frame,
-// 100 tall, through everyone it meets (20%): the lane is the tell.
-FINAL_SMASHES['Fan'] = fsLane({ id:'leaveusalone', wind:34, c1:'#e8506a', L:700, spd:24, H:100, hw:46, dmg:20, kb:22, ky:-10, kind:'dash', art:FS_GLYPH.fanblade });
+// 100 tall, through everyone it meets (20%).
+FINAL_SMASHES['Fan'] = fsLane({ id:'leaveusalone', c1:'#e8506a', L:700, spd:24, H:100, hw:46, dmg:20, kb:22, ky:-10, kind:'dash', art:FS_GLYPH.fanblade });
 
 // ---- BATCH L: Soap, Tissues, Yin-Yang, Starfruit, Blueberry, Cherries, Clover, Jack ------------------------------------------------------------------
 Object.assign(FS_GLYPH, {
@@ -22179,36 +22108,36 @@ Object.assign(FS_GLYPH, {
 
 // SOAP -- SCRUB FOR HOURS. A germophobe who will "scrub for hours until she knows bacteria aren't anywhere near her" (Soap, Official Description, quoted in the design doc); "They're the mess, we clean it." (her frame
 // row). She scrubs on the spot, a lather 110 px round her: whoever is in it when she starts is kept in it and scrubbed eight times (3%), and the last rinse (16%) throws them.
-FINAL_SMASHES['Soap'] = fsOrbit({ id:'scrubforhours', wind:30, c1:'#cfeeff', c2:'#ffffff', R:110, n:8, every:6, hitDmg:3, dmg:16, kb:22, art:FS_GLYPH.bubbles });
+FINAL_SMASHES['Soap'] = fsOrbit({ id:'scrubforhours', c1:'#cfeeff', c2:'#ffffff', R:110, n:8, every:6, hitDmg:3, dmg:16, kb:22, art:FS_GLYPH.bubbles });
 
 // TISSUES -- ACHOO. "very sickly ... the condiShAWn"; his sneezes are uncontrollable (Tissues, Personality, the design doc); his own card sneezes a jet of snot straight ahead. Fourteen blobs, two frames apart, in a stream
 // in front of him (5%, they keep hitting), and the last is the big one that goes through everyone (18%).
-FINAL_SMASHES['Tissues'] = fsHose({ id:'achoo', wind:32, c1:'#9ad84a', n:14, every:2, v0:14, art:FS_GLYPH.goo, reach:480,
+FINAL_SMASHES['Tissues'] = fsHose({ id:'achoo', c1:'#9ad84a', n:14, every:2, v0:14, art:FS_GLYPH.goo, reach:480,
   shots:[{ color:'#9ad84a', dmg:5, kb:7, r:12, grav:false, vy:0, life:60 }, { color:'#b8e86a', dmg:5, kb:7, r:11, grav:true, vy:-2, life:70 }], big:{ dmg:18, kb:23, r:28, color:'#9ad84a', life:60, pierce:true } });
 
 // YIN-YANG -- YANG THROWS YIN. "Yin ... is good-hearted ... Yang despises participation" (the design doc): two in one body; his own card has Yang hurl Yin, who rolls out and back and knocks down whoever he meets. Yin rolls out both ways
-// along the floor, 450 px at 18 a frame, 70 tall (15%): the lanes are the tell.
-FINAL_SMASHES['Yin-Yang'] = fsLane({ id:'yangthrowsyin', wind:32, c1:'#1c1c1c', c2:'#ffffff', both:true, L:450, spd:18, H:70, hw:38, dmg:15, kb:19, ky:-11, kind:'throw', art:FS_GLYPH.yinyang });
+// along the floor, 450 px at 18 a frame, 70 tall (15%).
+FINAL_SMASHES['Yin-Yang'] = fsLane({ id:'yangthrowsyin', c1:'#1c1c1c', c2:'#ffffff', both:true, L:450, spd:18, H:70, hw:38, dmg:15, kb:19, ky:-11, kind:'throw', art:FS_GLYPH.yinyang });
 
 // STARFRUIT -- ONE-HIT WONDER. "recycle... I am REBORN!" (Run the Risk!); the lead singer of Spoiled Lemon, whose whole identity is "fame and recognition" (the design doc); his own card belts into the mic. The star pose, and the
 // note goes out all round him, 260 px (24%, thrown hard).
-FINAL_SMASHES['Starfruit'] = fsCircle({ id:'onehitwonder', wind:36, c1:'#ffe45e', c2:'#ffffff', R:260, dmg:24, kb:22, art:FS_GLYPH.star, kind:'fsburst' });
+FINAL_SMASHES['Starfruit'] = fsCircle({ id:'onehitwonder', c1:'#ffe45e', c2:'#ffffff', R:260, dmg:24, kb:22, art:FS_GLYPH.star, kind:'fsburst' });
 
 // BLUEBERRY -- PALANQUIN CATCH. "Nothing matters. Start clapping." (his frame row): "pessimistic, apathetic, and lazy" (the design doc), so it is slow; his own card lifts whoever is in front of him and slams them down. The marker is on the nearest
 // foe within 380, fixed 24 frames ahead (90 px: step out), and he takes his time after it: 22%, thrown.
-FINAL_SMASHES['Blueberry'] = fsLock({ id:'palanquin', wind:44, lead:24, c1:'#4a5ac8', c2:'#ffffff', R:90, bx:380, by:240, effect:'blast', delay:16, dmg:22, kb:21, ky:-16, art:FS_GLYPH.berry });
+FINAL_SMASHES['Blueberry'] = fsLock({ id:'palanquin', lead:24, c1:'#4a5ac8', c2:'#ffffff', R:90, bx:380, by:240, effect:'blast', delay:16, dmg:22, kb:21, ky:-16, art:FS_GLYPH.berry });
 
 // CHERRIES -- PLAY DIRTY. "LONG LIVE THE MARASCHINOS! (The left one mimes it.)" (their frame row): two bodies, one mind; their own card pours olive oil on the floor ahead for the first to run onto it to slip. A slick of oil
-// runs out along the floor in front of them, 600 px at 14 a frame, only 40 tall (14%): hop it. The lane is the tell.
-FINAL_SMASHES['Cherries'] = fsLane({ id:'playdirty', wind:32, c1:'#d6c040', L:600, spd:14, H:40, hw:44, dmg:14, kb:18, ky:-12, kind:'throw', art:FS_GLYPH.cherry });
+// runs out along the floor in front of them, 600 px at 14 a frame, only 40 tall (14%): hop it.
+FINAL_SMASHES['Cherries'] = fsLane({ id:'playdirty', c1:'#d6c040', L:600, spd:14, H:40, hw:44, dmg:14, kb:18, ky:-12, kind:'throw', art:FS_GLYPH.cherry });
 
 // CLOVER -- BUTTERFLIES. "bubbly and cheery", easily distracted by butterflies (the design doc); her own card calls them. Ten butterflies drift out all round her, three flights, fourteen frames apart, slow (7 px a frame) and soft
 // (8%), each flight between the last: they are easy to see and hard to be everywhere at once.
-FINAL_SMASHES['Clover'] = fsFan({ id:'butterflies', wind:34, c1:'#7bd8ff', n:10, spd:7, vols:[0, 14, 28], dmg:8, kb:23, r:13, life:80, reach:330, proj:{ breaksOnSurface:false }, art:FS_GLYPH.butterfly });
+FINAL_SMASHES['Clover'] = fsFan({ id:'butterflies', c1:'#7bd8ff', n:10, spd:7, vols:[0, 14, 28], dmg:8, kb:23, r:13, life:80, reach:330, proj:{ breaksOnSurface:false }, art:FS_GLYPH.butterfly });
 
-// JACK -- KNUCKLES. "Knuckles" was his word in Cob Mentality; he glared and cracked them at each person he talked to (quoted at his card). The marker is on the nearest foe within 420, fixed 18 frames ahead (80 px: step out); whoever is in
+// JACK -- KNUCKLES. "Knuckles" was his word in Cob Mentality; he glared and cracked them at each person he talked to (quoted at his card). It goes for the nearest foe within 420, its spot fixed as the startup begins (80 px: step out); whoever is in
 // it takes four cracks (4%) and the last, 22%, thrown.
-FINAL_SMASHES['Jack'] = fsLock({ id:'knuckles', wind:38, c1:'#d6304a', c2:'#ffffff', R:80, bx:420, by:240, effect:'pin', hits:4, every:6, hitDmg:4, dmg:22, kb:23, art:FS_GLYPH.card });
+FINAL_SMASHES['Jack'] = fsLock({ id:'knuckles', c1:'#d6304a', c2:'#ffffff', R:80, bx:420, by:240, effect:'pin', hits:4, every:6, hitDmg:4, dmg:22, kb:23, art:FS_GLYPH.card });
 
 // ---- BATCH M: Magnet, MeTag, Poppy, Silver Spoon, Tapey, Tea Kettle, Teddy Bear, Bot -------------------------------------------------------------------
 Object.assign(FS_GLYPH, {
@@ -22221,34 +22150,34 @@ Object.assign(FS_GLYPH, {
 
 // MAGNET -- LIKE POLES REPEL. "a very magnetic presence and personality" (the design doc); her own cards are C'mon, Bestie! (pulls the nearest foe in) and Like Poles Repel (a blast that shoves everyone away hard). Both, one after the
 // other: for 36 frames everyone within 360 of her is drawn in, 3.2 px a frame (walk away faster), and then the poles flip: 200 px round her, 20%, thrown hard.
-FINAL_SMASHES['Magnet'] = fsPull({ id:'likepolesrepel', wind:34, c1:'#d6304a', c2:'#dfe6ee', R:360, ahead:0, rate:3.2, pull:36, R2:200, dmg:20, kb:26, ky:-10, art:FS_GLYPH.horseshoe });
+FINAL_SMASHES['Magnet'] = fsPull({ id:'likepolesrepel', c1:'#d6304a', c2:'#dfe6ee', R:360, ahead:0, rate:3.2, pull:36, R2:200, dmg:20, kb:26, ky:-10, art:FS_GLYPH.horseshoe });
 
 // METAG -- BARRIERS. "Generation: MeTag is able to generate seemingly indestructible and transparent walls"; "Their logo will glow when they're currently tracking someone's location." (the MeTag page, quoted at their card).
-// Walls come up out of the floor out from under them, five a side, 80 px apart, one every three frames (12%, 280 tall): the tell is the glints along the floor.
-FINAL_SMASHES['MeTag'] = fsCols({ id:'barrierwalls', wind:36, c1:'#8ad8ff', c2:'#ffffff', nc:5, sp:80, H:280, hw:30, dmg:12, kb:15, ky:-16, art:FS_GLYPH.wall });
+// Walls come up out of the floor out from under them, five a side, 80 px apart, one every three frames (12%, 280 tall).
+FINAL_SMASHES['MeTag'] = fsCols({ id:'barrierwalls', c1:'#8ad8ff', c2:'#ffffff', nc:5, sp:80, H:280, hw:30, dmg:12, kb:15, ky:-16, art:FS_GLYPH.wall });
 
 // POPPY -- THE JIG IS UP! "The jig is up!" (their frame row): all enthusiasm, a kernel in a pan; their own card is the Ghost Vacuum. They pop: twelve kernels all round them, twice, fourteen frames apart (9%), thrown up in arcs
 // and coming down: the gaps between them are the way through.
-FINAL_SMASHES['Poppy'] = fsFan({ id:'popcorn', wind:34, c1:'#fff4c0', n:12, spd:11, vols:[0, 14], dmg:9, kb:23, r:13, life:58, reach:330, proj:{ grav:true }, art:FS_GLYPH.popcorn });
+FINAL_SMASHES['Poppy'] = fsFan({ id:'popcorn', c1:'#fff4c0', n:12, spd:11, vols:[0, 14], dmg:9, kb:23, r:13, life:58, reach:330, proj:{ grav:true }, art:FS_GLYPH.popcorn });
 
 // SILVER SPOON -- GLOWING GOLD. "can turn gold at will", boosting strength and mobility (quoted at his special): "acts very refined and posh", views people as "beneath him" (the design doc). The flash of gold goes out 230 px (20%,
 // thrown), and then he glows: stronger and faster for 6 seconds after (the Attack Up and haste a pickup gives).
-FINAL_SMASHES['Silver Spoon'] = fsCircle({ id:'glowinggold', wind:36, c1:'#f2c94c', c2:'#ffffff', R:230, dmg:20, kb:21, art:FS_GLYPH.star, end(f){ f._empowerT = Math.max(f._empowerT || 0, 360); f._hasteT = Math.max(f._hasteT || 0, 360); } });
+FINAL_SMASHES['Silver Spoon'] = fsCircle({ id:'glowinggold', c1:'#f2c94c', c2:'#ffffff', R:230, dmg:20, kb:21, art:FS_GLYPH.star, end(f){ f._empowerT = Math.max(f._empowerT || 0, 360); f._hasteT = Math.max(f._hasteT || 0, 360); } });
 
 // TAPEY -- PLAYBACK. "observant and meticulous"; a cassette player (the design doc: REWIND, PLAY, EJECT); her own card plays back the biggest hit she taped as a wave from her speaker. The wave goes out along the floor, 700 px at 22 a frame,
-// 100 tall (20%): the lane is the tell.
-FINAL_SMASHES['Tapey'] = fsLane({ id:'playback', wind:34, c1:'#e8e0d0', L:700, spd:22, H:100, hw:42, dmg:20, kb:22, ky:-10, kind:'spit', art:FS_GLYPH.tape });
+// 100 tall (20%).
+FINAL_SMASHES['Tapey'] = fsLane({ id:'playback', c1:'#e8e0d0', L:700, spd:22, H:100, hw:42, dmg:20, kb:22, ky:-10, kind:'spit', art:FS_GLYPH.tape });
 
 // TEA KETTLE -- MAMA'S GOTCHA! Her catchphrase, and her hugs are firm "familial holds" (quoted at her card); "Motherly, flushed and steaming when she boils over" (the design doc). The marker is on the nearest foe within 380, fixed 18
 // frames ahead (85 px: step out); whoever is in it is held in a firm hug, takes five squeezes (3%), and the boil-over (20%) throws them.
-FINAL_SMASHES['Tea Kettle'] = fsLock({ id:'mamasgotcha', wind:38, c1:'#f4f4f4', c2:'#ffb0a0', R:85, bx:380, by:240, effect:'pin', hits:5, every:6, hitDmg:3, dmg:20, kb:23, art:FS_GLYPH.steam });
+FINAL_SMASHES['Tea Kettle'] = fsLock({ id:'mamasgotcha', c1:'#f4f4f4', c2:'#ffb0a0', R:85, bx:380, by:240, effect:'pin', hits:5, every:6, hitDmg:3, dmg:20, kb:23, art:FS_GLYPH.steam });
 
 // TEDDY BEAR -- YES!!! SMASH!!! "YES!!! SMASH!!!" (her frame row): the Rage Room, a wild swing that leans in; her own card is the Front of the Crowd shoulder barge. The swing is a smash all round her, 230 px (26%, thrown hard).
-FINAL_SMASHES['Teddy Bear'] = fsCircle({ id:'ragesmash', wind:34, c1:'#b8742e', c2:'#ffffff', R:230, dmg:26, kb:22, art:FS_GLYPH.burst, kind:'slam' });
+FINAL_SMASHES['Teddy Bear'] = fsCircle({ id:'ragesmash', c1:'#b8742e', c2:'#ffffff', R:230, dmg:26, kb:22, art:FS_GLYPH.burst, kind:'slam' });
 
-// BOT -- GOTCHA! "I am Bot. The one and only! WOOHOO!" (their frame row, the design doc); their own card lunges at the nearest foe, tackles and holds them. The marker is on the nearest foe within 420, fixed 18 frames ahead (80 px: step
+// BOT -- GOTCHA! "I am Bot. The one and only! WOOHOO!" (their frame row, the design doc); their own card lunges at the nearest foe, tackles and holds them. It goes for the nearest foe within 420, its spot fixed as the startup begins (80 px: step
 // out); whoever is in it is held while six kicks land (2%) and "THERE'S MORE!" the last (20%) throws them.
-FINAL_SMASHES['Bot'] = fsLock({ id:'gotcha', wind:38, c1:'#7cf0a8', c2:'#ffffff', R:80, bx:420, by:240, effect:'pin', hits:6, every:5, hitDmg:2, dmg:20, kb:23, art:FS_GLYPH.star });
+FINAL_SMASHES['Bot'] = fsLock({ id:'gotcha', c1:'#7cf0a8', c2:'#ffffff', R:80, bx:420, by:240, effect:'pin', hits:6, every:5, hitDmg:2, dmg:20, kb:23, art:FS_GLYPH.star });
 // @finalsmash:end
 function summonAssist(owner){
   summonAssistNamed(owner, ASSIST_ROSTER[Math.floor(Math.random()*ASSIST_ROSTER.length)]);
