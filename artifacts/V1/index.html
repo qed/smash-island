@@ -16552,6 +16552,7 @@ function finishWatchedGroup(fx){
   const sa = Math.max(0, st0[1] - cupTeamStocks(1));   // stocks team A took from B
   const sb = Math.max(0, st0[0] - cupTeamStocks(0));   // stocks team B took from A
   fx.result={sa,sb}; fx.played=true; applyGroupResult(fx.a, fx.b, sa, sb);
+  recordCupFight(sa>sb ? 0 : (sb>sa ? 1 : null));   // for DWS: the fight as it was played (level is a draw)
   running=false; TOURNEY_WATCHING=null; TOURNEY_MATCH_ACTIVE=false;
   const you = fighters.find(f=>f.you);
   try{ if(you) oneCupMatchWon(you.team===0 ? sa>sb : sb>sa); }catch(e){}   // One's chain: a won cup match is a win
@@ -16563,6 +16564,7 @@ function finishWatchedKnockout(fx, winTeam){
   fx.winner = winTeam===0 ? fx.a : fx.b;
   fx.result = { sa: winTeam===0?1:0, sb: winTeam===1?1:0 };
   fx.played=true;
+  recordCupFight(winTeam);   // for DWS: the fight as it was played
   running=false; TOURNEY_WATCHING=null; TOURNEY_MATCH_ACTIVE=false;
   const you = fighters.find(f=>f.you);
   try{ if(you) oneCupMatchWon(you.team===winTeam); }catch(e){}   // One's chain: a won cup match is a win
@@ -55131,6 +55133,9 @@ async function recordMatch(winTeam){
     const initialStocks = SETTINGS.stocks;
     const rec = {
       ts: Date.now(), mode: SETTINGS.mode, count: fighters.length, stage: stage.id, aiLevel: AI_LEVEL,
+      // DWS (DOMINATION WEIGHTED STRENGTH, dwsMatch) reads these: the match's length in seconds and the stocks it was played to.
+      // Entries from before them have neither; DWS reads what those have (stocks left, end %) and counts them for less.
+      v: 2, secs: Math.round(hazardT/6)/10, stocks: initialStocks,
       fighters: fighters.map(f=>{
         const kos=f._kos||0, falls=f._falls||0;
         const won=(f.team===winTeam);
@@ -55146,6 +55151,8 @@ async function recordMatch(winTeam){
           stocksLeft:Math.max(0,f.stocks), kos, falls,
           dmgDealt:Math.round(f._dmgDealt||0), dmgTaken:Math.round(f._dmgTaken||0),
           carry:Math.round(carry*10)/10,
+          // DWS: a CPU's skill (0 Easy, 1 Normal, 2 Hard; null for a person), and whether they were knocked out of the match
+          lvl: (f.controller==='ai' || (!f.controller && !f.you)) ? AI_LEVEL : null, out: !!f.dead,
           // "carried but lost": strong individual performance on a losing team
           carriedButLost: (!won && kos>=Math.max(3, initialStocks) && kos>falls)
         };
@@ -55163,6 +55170,29 @@ async function recordMatch(winTeam){
       if(p.carriedButLost) a.carriedLosses++;
     }
     await BStore.set('balance:tallies', JSON.stringify(agg));
+  }catch(e){ /* recording must never break the game */ }
+}
+// A World Cup fight played out on screen (one you watched, or your own) goes in the same match log, for DWS: checkWin hands those to the
+// cup (finishWatchedGroup, finishWatchedKnockout) and never reaches recordMatch. Only the log: the tallies the cup's own dice read
+// (teamStrength) are left as they were, and a fixture that was only simulated is never logged -- nobody fought it. winTeam 0 or 1;
+// anything else is a draw (a group fight that ended level).
+function recordCupFight(winTeam){
+  try{
+    if(!BStore.available() || SETTINGS.mode==='ctf') return;
+    const draw = !(winTeam===0 || winTeam===1);
+    const rec = { ts: Date.now(), mode:'cup', count: fighters.length, stage: stage.id, aiLevel: AI_LEVEL,
+      v: 2, secs: Math.round(hazardT/6)/10, stocks: SETTINGS.stocks, draw,
+      fighters: fighters.map(f=>({ name:f.name, team:f.team, controller:f.controller||(f.you?'local':'ai'), you:!!f.you,
+        won: !draw && f.team===winTeam, placement: (draw || f.team===winTeam) ? 1 : 2, finalPct: Math.round(f.pct||0),
+        stocksLeft: f.dead ? 0 : Math.max(0, f.stocks|0), kos: f._kos||0, falls: f._falls||0,
+        dmgDealt: Math.round(f._dmgDealt||0), dmgTaken: Math.round(f._dmgTaken||0),
+        lvl: f.controller==='ai' ? AI_LEVEL : null, out: !!f.dead })) };
+    BStore.get('balance:matchlog').then(raw=>{
+      let log = []; if(raw){ try{ log = JSON.parse(raw); }catch(e){} }
+      if(!Array.isArray(log)) log = [];
+      log.push(rec); if(log.length>500) log = log.slice(-500);
+      return BStore.set('balance:matchlog', JSON.stringify(log));
+    }).catch(()=>{});
   }catch(e){ /* recording must never break the game */ }
 }
 // ---- placement scoring (OPS-style): value halves per rank, tracked as a wins:losses bar ----
