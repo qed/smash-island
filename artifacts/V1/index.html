@@ -40946,7 +40946,8 @@ function step(){
       f._sawing--;
       hitArt(f, 'spin', { kind:'circle', x:f.x, y:f.y, r:f.r + (f._spinR||30) - HURT_R0 }, { style:'zone', tick:f._sawing%6===0 });   // HIT ART: the aura's reach, riding the fighter, flashing on each tick below
       for(let i=0;i<2;i++){ const a=Math.random()*Math.PI*2; puff(f.x+Math.cos(a)*30,f.y+Math.sin(a)*30,'#d0d0d0',3); }
-      if(f._sawing%6===0){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||graceBlocks(t,f))continue;
+      if(f._sawing%6===0){ HIT_CAST = f._sawCast || 0;   // a spin that dropped a volley is one move with it (ONE VOLLEY IS ONE MOVE)
+        for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||graceBlocks(t,f))continue;
         if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+(f._spinR||30)){
           const m=f._spinKb||'out', sx=Math.sign(t.x-f.x||f.face);
           const kx = m==='up'?0 : m==='fwd'?f.face*6 : m==='pull'?-sx*4 : m==='flat'?f.face*4 : sx*5;
@@ -40955,8 +40956,9 @@ function step(){
         // The aura reaches a boss too, on the same six-frame tick: it looped over fighters only, so Saw's Spin Cycle and Defensive
         // Spin, Donut's Sprinkle Roll and every 'spin' up-special (Firey, Flower, Match, Balloony, Bomb, Donut) did 0 in Boss Rush.
         // ...and as the fighters above do (graceBlocks), each tick lands through the grace the spin's own earlier ticks opened on the boss (f._combo).
-        if(summons.length){ f._combo=true; damageSummons(f, f.x, f.y, f.r+(f._spinR||30), 4); f._combo=false; } }
-    } else { f._sawOn = false; f._spinR = null; f._spinKb = null; }   // the aura is over: its size and launch go with it (spinAura sets them per move)
+        if(summons.length){ f._combo=true; damageSummons(f, f.x, f.y, f.r+(f._spinR||30), 4); f._combo=false; }
+        HIT_CAST = 0; }
+    } else { f._sawOn = false; f._spinR = null; f._spinKb = null; f._sawCast = 0; }   // the aura is over: its size and launch go with it (spinAura sets them per move)
     // Puffball — METEOR PUFF: the plunge is a live state, not a single frame. The smash commits her
     // downward and the hitbox tracks her all the way down, so the payoff can measure the thing it
     // is actually paying for: how far she FELL before she connected. Checking only the activation
@@ -41522,6 +41524,7 @@ function step(){
   const liveTurrets = projectiles.filter(p => p.turret && p.life > 0);
   for(const pr of projectiles){
     SMASH_PROJ = pr;   // whatever this shot hits, it hits at its own smash angle (none unless a smash threw it)
+    HIT_CAST = pr._cast || 0;   // ...and as one shot of its volley, if it is one (ONE VOLLEY IS ONE MOVE)
     if(pr._stuck){ shotStuckStep(pr); continue; }   // a sticky shot stuck where it hit (shotStick): it goes where that goes, and hurts nobody
     if(pr.delay>0){ pr.delay--; continue; }   // held back briefly before it starts moving (Morse bursts)
     if(pr.turret){ tickTurret(pr); continue; }   // Tennis Ball's turret shoots; it is never itself a hit
@@ -41698,7 +41701,7 @@ function step(){
     if(pr.boomerang){ pr.vx += -pr.ownerFace*(pr.boomCurve||0.32); }  // smaller curve = flies further before returning
     if(FINX.length && finxShotHit(pr)) continue;   // the corkboard stops it, the propped mirror turns it back, a hard one pops the bubble (FINISHERS V2)
     if(liveTurrets.length && shotHitsTurret(pr, liveTurrets)) continue;   // it broke on a turret (see damageTurret)
-    for(const f of fighters){ if(f.dead||f.idx===pr.owner||fsVolleyLanded(f, pr)||(f.invuln>0 && !fsVolleyThrough(f, pr)))continue;   // (a Final Smash's volleys on the foe it caught: fsVolleyThrough, fsVolleyLanded)
+    for(const f of fighters){ if(f.dead||f.idx===pr.owner||fsVolleyLanded(f, pr)||(f.invuln>0 && !fsVolleyThrough(f, pr) && !castThrough(f, pr.ownerObj, pr)))continue;   // (a Final Smash's volleys on the foe it caught: fsVolleyThrough, fsVolleyLanded; a volley through the grace its own cast opened: castThrough)
       // a shot marked `noStunHit` -- a patch of fire lying on the floor -- never lands on a fighter still reeling from a hit: knocked
       // into it, you get up before it can burn you again (the glitch hunter's stun-lock on Firey Speaker Box's patches; the owner,
       // 2026-10-01: "theyre unavoidable bcs they barely have a moment where you can move to dodge")
@@ -41712,7 +41715,7 @@ function step(){
         // Gaty reflect: bounce enemy projectiles back at their owner
         if(f.reflecting>0 && !pr.unbreakable && f.team!==(pr.ownerObj?pr.ownerObj.team:-1)){   // (an `unbreakable` shot -- the Bug Swarm's dodgeball -- is not turned back: it hits)
           hitArt(f, 'turn', { kind:'circle', x:pr.x, y:pr.y, r:pr.r }, { style:'glint', color:'#e8eef5', world:true, fade:6 });   // HIT ART: a glint on the rim where it turned
-          pr.vx*=-1; pr.vy*=-0.5; pr.owner=f.idx; pr.ownerObj=f; pr.reflected=true; f.flash=8; puff(pr.x,pr.y,'#e8e8e8',5); continue;
+          pr.vx*=-1; pr.vy*=-0.5; pr.owner=f.idx; pr.ownerObj=f; pr.reflected=true; pr._cast=0; f.flash=8; puff(pr.x,pr.y,'#e8e8e8',5); continue;   // (turned back, it is no one's volley: _cast)
         }
         const ffOpts = {reflected: !!pr.reflected, bossAtk: pr.bossAtk, bossCap: pr.bossCap, volley: pr.volley, shot:1};   // reflected shots ignore FF; bossAtk caps boss damage; shot: scaled at spawn, not again by Dough's window
         if(pr.van){
@@ -41759,7 +41762,7 @@ function step(){
     }
     if(pr.sticky && pr.life > 0) shotStick(pr);   // (a fighter it met this frame it hit first)
   }
-  SMASH_PROJ = null;
+  SMASH_PROJ = null; HIT_CAST = 0;
   // projectiles hitting summons (bosses take damage; enemy assists get shoved)
   if(summons.length){
     for(const pr of projectiles){
@@ -41779,7 +41782,7 @@ function step(){
           // GRACE, PER ATTACKER (bossGraceRec): a shot that reaches a boss while its owner's grace on it is running goes on through,
           // unspent and unmarked, as it goes through a fighter in grace (the fighter loop above skips them on invuln alone). The
           // owner is the character: the fighter, the reflector of a turned-back shot, or an assist trophy (assistFighter).
-          if(s.type==="boss" && o && bossGraceBlocks(s, o, true)) continue;
+          if(s.type==="boss" && o && bossGraceBlocks(s, o, true) && !castThrough(bossGraceRec(s, o, false), o, pr, true)) continue;   // (a volley's shot through its own cast's grace, up to the boss cap: castThrough)
           // A pierce/van shot is deliberately NOT consumed on contact (see below) — but this loop,
           // unlike the fighter loop above, had no per-target guard to go with that. So a piercing
           // projectile sitting inside a boss's ~85px body re-applied its FULL damage on every frame
@@ -41791,7 +41794,7 @@ function step(){
             if(pr._sHit.indexOf(s) >= 0) continue;    // already went through this one — pass on
             pr._sHit.push(s);
           }
-          if(s.type==="boss"){ bossTakeHit(s, pd, o); for(let i=0;i<4;i++) puff(pr.x,pr.y,'#fff',4); }   // (One's shield, Cobs's passives, Two's grounding, and the owner's grace opened by what lands)
+          if(s.type==="boss"){ HIT_CAST = pr._cast || 0; bossTakeHit(s, pd, o); HIT_CAST = 0; for(let i=0;i<4;i++) puff(pr.x,pr.y,'#fff',4); }   // (One's shield, Cobs's passives, Two's grounding, and the owner's grace opened by what lands)
           else if(s.hostile){ hurtHostileAdd(s, pd, Math.sign(pr.vx||1)*2, null, o); }   // MePhone4's adds can be shot down (and Steve Cobs's units: o is the shooter, whose Knife counts double on them)
           else { s.vx += Math.sign(pr.vx||1)*2; }   // assists are immune (see damageSummons) — shots shove, never kill
           if(!pr.pierce && !pr.van) pr.life=0;
@@ -42491,7 +42494,7 @@ const SMASHES = {
     for(let i=0;i<14;i++) puff(f.x+(Math.random()*40-20),f.y+(Math.random()*30-15),'#dfefff',6); },
   zapshooter(f){ f.curse=300; f.flash=12; f.smCd=Math.max(f.smCd||0, 173); 
     for(let i=0;i<16;i++) puff(f.x+(Math.random()*50-25),f.y+(Math.random()*40-20),i%2?'#8b5cf6':'#4a2a6a',6); },
-  payday(f){ f.flash=12; for(let i=0;i<3;i++) spawnProj(f,{vx:f.face*(9+i*2),vy:-4+i*2,grav:true,bounce:true,dmg:Math.round(16*SMASH_DMG_MULT),kb:11,r:9,color:'#ffd23f',life:100,payday:true,maxBounces:3});  },
+  payday(f){ f.flash=12; const V=newVolley('coins'); for(let i=0;i<3;i++) spawnProj(f,Object.assign({vx:f.face*(9+i*2),vy:-4+i*2,grav:true,bounce:true,dmg:Math.round(16*SMASH_DMG_MULT),kb:11,r:9,color:'#ffd23f',life:100,payday:true,maxBounces:3}, V));  },   // one cast: two coins on one foe at most (VOLLEY_CAP)
 };
 
 // ============================================================
@@ -43468,7 +43471,7 @@ const UPSPEC = {
   tackle:     {shape:'hop', power:-12, hit:{off:-12, fx:6, reach:18, dmg:[5,10], band:0.5, kb:[0,-11], eff:'slow', n:80}},   // Snowball -- Cold Clock: the roster's angriest brawler throws a rising uppercut that has to land in close (a positive band is the inner sweet spot) and leaves the...
   bomb:       {shape:'hop', power:-14, hit:{off:0, fx:0, reach:20, dmg:[4,8], band:null, kb:[6,-8], eff:'stun', n:16}},   // Bomby -- Short Fuse: a small pop at his feet rocket-jumps him, and what makes a bomb a bomb is the blast, so it rattles anyone beside him for a moment (stun)
   float:      {shape:'warp', dist:150, dx:0, invuln:8, drop:{rider:'puddle', dmg:3, count:1, color:'#bfe8ff'}, self:{jumps:1}},   // Bubble -- Pop & Reform: she pops where she stood (a soapy slick splashes down) and reforms higher up as a fresh bubble with a jump handed back
-  quake:      {shape:'spin', power:-13, frames:16, spinKb:'up', drop:{rider:'scramble', dmg:3, count:3, spread:3, color:'#f2b0d0'}},   // Flower -- Pollen Puff: her whole kit is stomps (Stomp Quake, the shockwave, Announcer Crusher's root), so the up-special is the flower half
+  quake:      {shape:'spin', power:-13, frames:16, spinKb:'up', drop:{rider:'scramble', dmg:3, count:3, spread:3, color:'#f2b0d0', volley:'pollen'}},   // Flower -- Pollen Puff: her whole kit is stomps (Stomp Quake, the shockwave, Announcer Crusher's root), so the up-special is the flower half
   serve:      {shape:'hop', power:-13, shot:{vx:7, vy:-10, grav:true, dmg:6, kb:5, r:9, life:80, fxTag:'knockdown', fxN:22, bounce:false, shape:'serve'}},   // Tennis Ball -- Overhead Lob: the tennis shot for going over someone
   beam:       {shape:'hop', power:-14, hit:{off:0, fx:0, reach:16, dmg:[3,7], band:-0.6, kb:[0,-6]}, self:{armor:20}},   // Ruby -- Gem-Hard: the Durable brawler blasts up off her old under-body thruster, with the swing as low as the vocabulary allows and sweetest at its edge, and...
   buynow:     {shape:'warp', dist:130, dx:40, invuln:6, shot:{vx:10, vy:-2, grav:false, dmg:5, kb:4, r:9, life:50, fxTag:'drain', fxN:2, bounce:false, shape:'buynow', homing:0.08}},   // Yellow Face (homing 0.08, owner 2026-10-18: "Fix them": the sample flew up and away from every grounded foe, 0 of 10 real-key casts on a still foe, 9 of 60 against a moving CPU; now 6 of 10 and 42 of 60). The infomercial cuts to him higher up and he flings a star-shaped free sample, and when it hits, the sale pays him back a small 2%
@@ -43507,7 +43510,7 @@ const UPSPEC = {
   timber:     {shape:'plunge', power:-14, hang:6, rad:40, dmg:10, kb:[-5,-9], leave:'trap', ram:0},   // Tree -- TIMBER: the rooted heavy topples down and flings foes back over his trunk, and the fall leaves a length of log in the crater as a trap
   shatter:    {shape:'hop', power:-13, hit:{off:-10, fx:0, reach:18, dmg:[4,7], band:null, kb:[3,-8], eff:'ice', n:100}},   // Ice Cube -- The fragile slipper rises in a skating kick that makes whoever it hits lose their footing and slide with no friction for about 100 frames (n:100 goes...
   atstake:    {shape:'hop', power:-13, hit:{off:-12, fx:4, reach:16, dmg:[4,7], band:0.5, kb:[3,-8]}, self:{empower:1}},   // Cake -- '...and Eat It Too', the other half of his smash Have Your Cake: a close rising slice, and the bite powers up his next hit
-  glaze:      {shape:'spin', power:-14, frames:18, spinKb:'up', drop:{rider:'plain', dmg:3, count:3, spread:3, r:5, color:'#f26fae', shape:'sprinkles'}},   // Donut -- Sprinkle Roll turned upright: the roller spins upward, the aura lifts foes, and three sprinkles shake loose and rain on whoever is below
+  glaze:      {shape:'spin', power:-14, frames:18, spinKb:'up', drop:{rider:'plain', dmg:3, count:3, spread:3, r:5, color:'#f26fae', shape:'sprinkles', volley:'sprinkles'}},   // Donut -- Sprinkle Roll turned upright: the roller spins upward, the aura lifts foes, and three sprinkles shake loose and rain on whoever is below
   anvil:      {shape:'hop', power:-12, drop:{rider:'plain', dmg:6, kb:6, count:1, r:12, vy:8, color:'#e84646', shape:'block'}},   // Blocky -- Block Spawning: in the show Blocky can conjure blocks of himself (he 'put a block around all of the earth'), so he conjures one underfoot, kicks off...
   define:     {shape:'hop', power:-13, hit:{off:-14, fx:0, reach:18, dmg:[3,6], band:0.5, kb:[3,-8], eff:'knockdown', n:24}, self:{jumps:1}},   // Book -- What Book writes on her pages becomes fact, gravity included (Fishes and Dishes)
   slap:       {shape:'hop', power:-12, hit:{off:-12, fx:4, reach:18, dmg:[4,8], band:0.55, kb:[7,-4], eff:'stun', n:18}},   // Coiny -- The slap fights with Firey: Coiny's rising backhand is close and flat (positive band, inner sweet spot), and it stings, leaving the target reeling a...
@@ -43517,7 +43520,7 @@ const UPSPEC = {
   flip:       {shape:'warp', dist:150, dx:0, invuln:8, drop:{rider:'coin', dmg:4, kb:3, count:3, spread:3, color:'#b8b8b8'}},   // Nickel -- Money Explosion (The Long-lost Yoyle City, Intruder Alert): Nickel goes up like a flipped coin and change sprays out where he was, three coins that...
   cap:        {shape:'warp', dist:140, dx:0, invuln:6, drop:{rider:'plain', dmg:5, kb:4, count:1, r:8, color:'#3a6ea5'}, self:{jumps:1}},   // Pen -- Pen won the ladder climb in 'A Leg Up in the Race', so he pops his cap to shoot up, the cap drops on whoever is under him, and he keeps a rung in...
   van:        {shape:'hop', power:-13, shot:{vx:10, vy:-2, grav:false, dmg:5, kb:4, r:8, life:45, fxTag:'burn', fxN:70, bounce:false, shape:'ember'}},   // Pencil -- In 'Yeah, Who? I Wanna Know' Donut sets Pencil ablaze and she sucks the flames up and spits them back out as a projectile, so as she hops she spits...
-  barf:       {shape:'hop', power:-13, drop:{rider:'bounce', dmg:3, kb:3, count:3, spread:3, color:'#d23a2a'}},   // Rocky -- Rocky's matter generator doesn't only make vomit: it made red balls in 'Don't Lose Your Marbles'
+  barf:       {shape:'hop', power:-13, drop:{rider:'bounce', dmg:3, kb:3, count:3, spread:3, color:'#d23a2a', volley:'redballs'}},   // Rocky -- Rocky's matter generator doesn't only make vomit: it made red balls in 'Don't Lose Your Marbles'
   packed:     {shape:'warp', dist:120, dx:44, invuln:12, self:{jumps:1}},   // Box -- Transcending Time and Space: the official site says she enjoys it. Out and back in, no hitbox
   blackmail:  {shape:'hop', power:-14, hit:{off:-12, fx:4, reach:20, dmg:[5,9], band:null, kb:[2,-11], eff:'knockdown', n:0}, self:{empower:45}},   // Trophy -- Horseplay: "Horseplay is my middle name" (Breaking the Ice). A jock's jump with a rising knee
   engulf:     {shape:'hop', power:-13, hit:{off:-16, fx:6, reach:24, dmg:[6,10], band:null, kb:[2,-12], eff:'stun', n:18}, self:{armor:18}},   // Goo -- Raise Your Hand: he shapes hands, and a muscular arm in Fan the Flames, and hauls up on it
@@ -43560,7 +43563,7 @@ const UPSPEC = {
 // the rest of the match, not its own 30 px outward push (the hitbox visuals audit, 2026-10-19). Saw's Spin Cycle and Defensive Spin and
 // Donut's Sprinkle Roll are SPIN_R_GROUND and 'out'; every 'spin' row in UPSPEC is SPIN_R_RISE and its own spinKb.
 const SPIN_R_GROUND = 30, SPIN_R_RISE = 56;
-function spinAura(f, frames, r, kb){ f._sawing = Math.max(f._sawing||0, frames); f._spinR = r; f._spinKb = kb; }
+function spinAura(f, frames, r, kb){ f._sawing = Math.max(f._sawing||0, frames); f._spinR = r; f._spinKb = kb; f._sawCast = 0; }   // (_sawCast: riseShape's, when the spin drops a volley)
 // The one function behind every UPSPEC row. Warp moves the body; the other three launch it and
 // hand the rest to a frame block (spin -> _sawing, plunge -> _stall). Then the optional swing, the
 // optional drop, and whatever the row says it leaves behind.
@@ -43610,10 +43613,12 @@ function riseShape(f, s){
     for(let i=0;i<8;i++) puff(x0+(Math.random()*R*2-R),y0-10,'#6fb7ff',4); }
   if(s.drop){
     const D=s.drop, R=DROP_RIDERS[D.rider]||{}, n=D.count||1;
+    const V = (D.volley && n>1) ? newVolley(D.volley) : null;   // drops built to land together are one cast, and a spin they fall from is that cast too (ONE VOLLEY IS ONE MOVE)
+    if(V && s.shape==='spin') f._sawCast = V._cast;
     for(let i=0;i<n;i++){
       const spread = n>1 ? (i-(n-1)/2)*(D.spread==null?2.5:D.spread) : 0;
       spawnProj(f, Object.assign({vx:spread, vy:D.vy||5, grav:false, dmg:D.dmg||5, kb:D.kb==null?4:D.kb, r:D.r||8, color:D.color||f.color, life:D.life||24}, R,
-        D.shape ? {shape:D.shape} : null));   // a drop may name its own shape (Donut's sprinkles, Blocky's block)
+        D.shape ? {shape:D.shape} : null, V));   // a drop may name its own shape (Donut's sprinkles, Blocky's block)
     }
   }
   puff(f.x, f.y+14, f.color, 6);
@@ -51916,8 +51921,8 @@ function doSpecial(f){
         for(let i=0;i<6;i++) puff(tgt.x,tgt.y-12,'#4b9c6a',4); }
       f.flash=8; break; }
     case "fry": { // Fries: quick triple dart (+comeback shots)
-      const n=3+comebackShots(f);
-      for(let i=0;i<n;i++) addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*18,y:f.y-6+(i%3)*6-6,vx:f.face*(8+(i%3)),vy:(i>=3?((i-3)-1)*1.2:0),grav:false,dmg:4,kb:4,r:5,color:"#e04b3a",life:40});
+      const n=3+comebackShots(f), V=newVolley('fries');   // one cast: two fries on one foe at most (VOLLEY_CAP)
+      for(let i=0;i<n;i++) addProj(Object.assign({owner:f.idx,ownerObj:f,x:f.x+f.face*18,y:f.y-6+(i%3)*6-6,vx:f.face*(8+(i%3)),vy:(i>=3?((i-3)-1)*1.2:0),grav:false,dmg:4,kb:4,r:5,color:"#e04b3a",life:40}, V));
       f.flash=6; f.spCd=46; break; }
     case "freeze": { const n=1+comebackShots(f);
       for(let i=0;i<n;i++) spawnProj(f,{vx:f.face*10,vy:-1+(i-(n-1)/2)*1.4,grav:true,dmg:6,kb:5,r:8,color:"#9ad24b",life:70,freeze:true});
@@ -52007,9 +52012,9 @@ function doSpecial(f){
         fxTag:'root',fxN:JAWBREAKER_STUCK,shape:'jawball'});
       f.flash=8; f.spCd=72; break; }
     case "spike": { // Naily: fast piercing jab volley (+extra shots via comeback scaling)
-      const extra=comebackShots(f); const n=3+extra;
+      const extra=comebackShots(f); const n=3+extra, V=newVolley('nails');   // one cast: two nails in one foe at most, however many she fires (VOLLEY_CAP)
       for(let k=0;k<n;k++){ const dy=(n===1?0:(k/(n-1)-0.5))*2*(1+extra*0.15);   // fan wider as shots grow
-        spawnProj(f,{vx:f.face*18,vy:dy*0.5,grav:false,pierce:true,dmg:8,kb:6,r:6,color:'#c0c0c0',life:38}); }
+        spawnProj(f,Object.assign({vx:f.face*18,vy:dy*0.5,grav:false,pierce:true,dmg:8,kb:6,r:6,color:'#c0c0c0',life:38}, V)); }
       f.flash=6; f.spCd=35; break; }
     case "sucker": { // Lollipop: sticky projectile that roots the target in place
       spawnProj(f,{vx:f.face*9,vy:0,grav:false,dmg:5,kb:2,r:9,color:'#c04be0',life:50,root:true,sticky:true}); f.flash=6; f.spCd=67; break; }
@@ -52410,9 +52415,9 @@ function doSpecial(f){
       if(f._baldUntil > hazardT){ f.spCd = Math.max(f.spCd||0, f._baldUntil - hazardT); break; }
       let held = 0;
       const burst = function(){
-        const full = held >= 12, n = full ? 8 : 6, dmg = full ? 6 : 4;
+        const full = held >= 12, n = full ? 8 : 6, dmg = full ? 6 : 4, V = newVolley('spikeburst');   // one burst, one cast: every spike that reaches a foe lands (VOLLEY_CAP)
         for(let i=0;i<n;i++){ const a = i/n*Math.PI*2;
-          spawnProj(f, {x:f.x, y:f.y-4, vx:Math.cos(a)*9, vy:Math.sin(a)*9, grav:false, dmg:dmg, kb:3, r:7, color:'#a5acac', life:28}); }
+          spawnProj(f, Object.assign({x:f.x, y:f.y-4, vx:Math.cos(a)*9, vy:Math.sin(a)*9, grav:false, dmg:dmg, kb:3, r:7, color:'#a5acac', life:28}, V)); }
         for(let i=0;i<8;i++) puff(f.x, f.y-4, '#7c2028', 4);
         f._baldUntil = hazardT + 150; f.spCd = Math.max(f.spCd||0, 150);
       };
@@ -53334,6 +53339,37 @@ function beginCombo(f){ f._comboTok = (f._comboTok||0) + 1; }
 function graceBlocks(t, f){
   return t.invuln > 0 && !(f && t._graceBy === f.idx && t._graceTok === (f._comboTok||0) && t.invuln <= (t._graceLeft||0));
 }
+// ONE VOLLEY IS ONE MOVE ("the grace rule was added to prevent crazy multihits, not fighters (like spikey) who play around multihits...",
+// "save for naily, who should have a limit", "and other scalers" -- the owner, 2026-10-23). A swing that hits more than once lands through
+// its own grace (graceBlocks); a shot never did -- the shot loop tests invuln alone -- so a volley built to land several hits on one foe landed
+// one: Spikey's Can't Hold It In ("4% a spike") put one spike in a foe pressed against him. Now the shots of ONE cast of a kit built for it
+// carry that cast (newVolley: _cast, a number no other cast has) and land through the grace the same cast opened -- the same attacker, the
+// same cast, and only while grace is all that protects the target (respawn, a dodge, a Final Smash's hold still stop them). Everything else
+// keeps the grace exactly as before: the same fighter's next cast or any other move, other attackers, assists, hazards, a turned-back shot.
+// A rising spin that drops a volley (Flower's pollen, Donut's sprinkles) is one move with its drops: the aura's hits carry the cast too.
+// THE LIMIT, for a kit whose power scales -- a comeback kit (more shots per death, less grace), or one whose hits grow with a counter (Money's
+// interest): `cap` is the most hits one cast lands on one foe (the first and those through its grace). `boss` is the same for a boss's
+// per-attacker grace (bossGraceRec), so a body 170 px across does not take a whole volley a fighter would not ("bosses must not melt").
+// 0 is no limit. Only the kits here have volleys; every other shot is untouched.
+const VOLLEY_CAP = {
+  spikeburst: { cap:0, boss:3 },   // Spikey -- Can't Hold It In: every spike that reaches a foe ("4% a spike, 6% held full"); a boss, three
+  pollen:     { cap:0, boss:3 },   // Flower -- Pollen Puff: the spin and its three puffs ("a puff does 3%")
+  sprinkles:  { cap:0, boss:3 },   // Donut -- Sprinkle Spin: the spin and the three sprinkles that rain on foes below
+  redballs:   { cap:0, boss:3 },   // Rocky -- Red Balls: "3% per ball"
+  nails:      { cap:2, boss:1 },   // Naily -- Nail Volley (comeback: up to 13 nails): two; a boss, one, as before (8 a cast every 35 frames: two doubled her Boss Rush, the mode piercing nails once ran away with)
+  fries:      { cap:2, boss:2 },   // Fries -- Fry Dart (comeback: up to 13 fries): two, as the card says ("sometimes two land")
+  coins:      { cap:2, boss:1 },   // Money -- her smash's three coins, each worth more on a hurt foe (her interest): two; a boss, one, as before (two were 48 of a 175 boss in one smash)
+};
+let VOLLEY_SEQ = 0;
+let HIT_CAST = 0;   // the cast of the hit landing now (the shot loop and a volley's spin set it; stampHit records it)
+function newVolley(key){ const C = VOLLEY_CAP[key] || {}; return { _cast: ++VOLLEY_SEQ, _castCap: C.cap||0, _castBossCap: C.boss||0 }; }
+// May this shot of a volley land through the grace on `t` (a fighter, or `f`'s record on a boss)? Its own cast opened it, under the cap.
+function castThrough(t, f, pr, boss){
+  const k = pr && pr._cast;
+  if(!k || !f || !t || !(t.invuln > 0)) return false;
+  const cap = boss ? (pr._castBossCap || pr._castCap) : pr._castCap;
+  return t._graceBy === f.idx && t._graceCast === k && t.invuln <= (t._graceLeft||0) && !(cap > 0 && (t._castHits||0) >= cap);
+}
 // Two launchers ignore hit-grace by design, and told it apart by size alone: above 16, the old grace
 // cap, was real invulnerability. Grace reaches 30 now (COMBOS), so they keep that rule but never count grace.
 function hardInvuln(t){ return t.invuln > 16 && t.invuln > (t._graceLeft||0); }
@@ -53361,6 +53397,8 @@ function stampHit(t, dmg, from, isTick, stunOvr, mvKey){
   t.hitstun = stunOvr ? Math.max(4, Math.round(stunOvr)) + hitStunPlus(from, isTick) : hitStunFrames(dmg, from, isTick);   // (stunOvr: a moveset move's own stun, +6 like every fighter's hit: COMBOS)
   const grace = hitGraceFrames(dmg, from, isTick);
   t.invuln = Math.max(t.invuln, grace);
+  if(!isTick){ const k = HIT_CAST || 0, by = from ? from.idx : -1;   // ONE VOLLEY IS ONE MOVE: the cast this hit belongs to, and how many of its hits this target has taken (castThrough)
+    t._castHits = (k && t._graceCast === k && t._graceBy === by) ? (t._castHits||0) + 1 : 1; t._graceCast = k; }
   t._graceBy = from ? from.idx : -1; t._graceTok = from ? (from._comboTok||0) : 0;
   t._graceLeft = Math.max(t._graceLeft||0, grace);
 }
