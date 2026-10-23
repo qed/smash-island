@@ -2213,12 +2213,16 @@ function syncPrizeRoster(announce){
 
 // ---------- STADIUMS ----------
 const STAGES = [
-  {id:"goiky", name:"Goiky Field", blurb:"Flat classic. No tricks.",
+  {id:"goiky", name:"Goiky Field", blurb:"Flat classic, with real edges.",
    sky:["#bfe8ff","#88cdf2"], ground:"#7bc043", plats:[[0.5,0.62,0.42]],
+   // REAL EDGES (see FLOOR_SEGS): the field is a floating meadow -- the grass ends in a cliff on both sides, with clouds below
+   edges:{ floor:[[0.1,0.9]], void:['#d4eefa','#3f78a6'], clouds:true },
    hazard:null},
-  {id:"yoyle", name:"Yoyleland", blurb:"Metal platforms, slick low grav. Solid core.",
+  {id:"yoyle", name:"Yoyleland", blurb:"A metal deck in low grav. Mind the hatch under the core.",
    sky:["#dfeaf2","#b8c9dc"], ground:"#c9d4dc",
    plats:[[0.28,0.55,0.2],[0.72,0.55,0.2],[0.5,0.4,0.24,"solid",0.08]],
+   // REAL EDGES: the deck ends on both sides, and an open hatch (a shaft with walls to kick off) sits under the solid core
+   edges:{ floor:[[0.08,0.445],[0.555,0.92]], void:['#c3d0dc','#3a4656'] },
    hazard:"lowgrav"},
   {id:"pillars", name:"Stone Pillars", blurb:"Solid blocks you can't drop through.",
    sky:["#d8d2e2","#a9a2bb"], ground:"#7a7286",
@@ -2235,16 +2239,22 @@ const STAGES = [
   // bigW = how many screen-widths wide. platsBig = [nx,ny,nw] normalized to the WORLD (0..bigW, 0..1).
   {id:"grandplains", name:"Grand Plains", blurb:"Twin plateaus over a central pit.", big:true, bigW:2.4,
    sky:["#bfe8ff","#88cdf2"], ground:"#7bc043",
+   // REAL EDGES: the central pit is real now -- the floor stops under each plateau's inner end, the lower arena floats over the drop
+   edges:{ floor:[[0,0.355],[0.645,1]], void:['#9c7b52','#24180d'] },
    // two raised plateaus (left & right) flanking a lower central arena, with a high sniper ledge
    platsBig:[[0.45,0.60,0.62],[1.95,0.60,0.62],[1.2,0.74,0.42],[0.8,0.44,0.2],[1.6,0.44,0.2],[1.2,0.30,0.5]],
    hazard:null},
-  {id:"skytower", name:"Sky Towers", blurb:"Staircase of ascending ledges.", big:true, bigW:2.0,
+  {id:"skytower", name:"Sky Towers", blurb:"Floating isles under a staircase of ledges.", big:true, bigW:2.0,
    sky:["#cfe0f5","#9fb8e0"], ground:"#8fa8c8",
+   // REAL EDGES: the ground is three floating isles with open sky between them
+   edges:{ floor:[[0,0.31],[0.38,0.62],[0.69,1]], void:['#d6e6fb','#5677b4'], clouds:true },
    // a diagonal staircase climbing left-to-right, plus a summit platform
    platsBig:[[0.3,0.7,0.28],[0.6,0.58,0.24],[0.9,0.46,0.24],[1.2,0.34,0.24],[1.5,0.22,0.24],[1.75,0.12,0.3],[1.0,0.66,0.3]],
    hazard:null},
-  {id:"canyon", name:"Yoyle Canyon", blurb:"Three mesas over a deep gorge.", big:true, bigW:2.6,
+  {id:"canyon", name:"Yoyle Canyon", blurb:"Three mesas over two deep gorges.", big:true, bigW:2.6,
    sky:["#e6dcc8","#c8b89a"], ground:"#b89a72",
+   // REAL EDGES: the canyon floor is cut by two gorges, under the low ledges between the mesas
+   edges:{ floor:[[0,0.30],[0.355,0.645],[0.70,1]], void:['#b07e52','#341f10'] },
    // mesa TOPS are solid stone (no dropping through), but low enough to hop onto
    platsBig:[[0.4,0.52,0.34,"solid",0.035],[1.3,0.46,0.34,"solid",0.035],[2.2,0.52,0.34,"solid",0.035],
              [0.85,0.66,0.26],[1.75,0.66,0.26],[1.3,0.24,0.4]],
@@ -14676,6 +14686,15 @@ let FINX = [], FX_PLATS = [];   // FINISHERS V2 (finxStep): the finishers runnin
 let lastKoFrame=0;   // frame of the most recent KO — drives the anti-stalemate aggression ramp
 // world (arena) coordinates — for big team mode the world is larger than the screen
 let WW=1100, WH=720, camX=0, camY=0, bases=[], worldPlats=[], floors=[], worldZones=[], spawnZones=[];
+// REAL EDGES (the owner, 2026-10-23: "recovery isnt a thing. you cant fall off maps..."; asked what to do, "3": some stages get real edges and
+// pits you can be knocked off or fall from, the others stay walled, recovery matters where you can fall -- "use recovery as a balance tool").
+// A stage with `edges` has a main floor that ENDS: FLOOR_SEGS is that floor for this match, as spans of world x ({x0, x1}); between and beyond
+// them there is no floor, so a fall is a fall (past the bottom blast line it is a KO), and each span's end is a cliff with a face to kick off.
+// null is the endless floor every other stage keeps. setupWorld builds it (buildFloorSegs) for a plain match only: never Boss Rush, the
+// tutorial, Training or a test, a custom level, the teams map, Capture the Flag or RUNNING!.
+let FLOOR_SEGS = null;
+const EDGE_GAP_MAX = 320;   // the widest a gap between two floor spans gets, in px: a Huge map's wider world never stretches a pit past a double jump
+const LEDGE_CATCH = 30;     // feet within this of a cliff's top, moving into it out of a stun: put up onto the ledge (the ledge catch)
 // Pre-match co-op plan, keyed by team index: { focusName, stance:'aggressive'|'defensive'|'balanced', protectName }
 let TEAM_PLAN = {};
 // TWO-TEAM WALL BANDS (see wallBand). One's arena and Steve Cobs's are cut from the 2v2 teams map as it was before 2TDM got its
@@ -18553,6 +18572,80 @@ function feetY(f){ return f.y + f.r; }
 
 function groundY(){ return RACE.active ? RACE.floorY : WH*((ONEFIGHT.active || COBSFIGHT.active) ? ONE_FLOOR_Y : (isBig()?0.86:0.82)); }   // RUNNING!: its lane's floor line; One's arena (and Steve Cobs's): the teams map's own
 function stageScale(){ return Math.max(0.85, Math.min(1.5, 0.7 + SETTINGS.count*0.04)); }
+// ---- REAL EDGES: the helpers (see FLOOR_SEGS) ----
+function edgesAllowed(){
+  return !!(stage && stage.edges) && SETTINGS.mode === 'ffa' && !CUSTOM_LEVEL && !TESTMODE.active && !(typeof TUT !== 'undefined' && TUT.active)
+    && !isBig() && !RACE.active && !ONEFIGHT.active && !COBSFIGHT.active;
+}
+// The floor for this match from stage.edges.floor (spans in shares of the world's width). On the scrolling path a SMALL stage (Tall/Huge)
+// runs its sides to the world's edges: the big FFA's safe islands sit over them, and a fighter dropping off one must land. Pure, like setupWorld.
+function buildFloorSegs(){
+  FLOOR_SEGS = null;
+  if(!edgesAllowed()) return;
+  const sp = stage.edges.floor.map(q => [q[0]*WW, q[1]*WW]);
+  if(isBigFFA() && !stage.big){ sp[0][0] = 0; sp[sp.length - 1][1] = WW; }
+  for(let i = 0; i < sp.length - 1; i++){
+    const g = sp[i + 1][0] - sp[i][1];
+    if(g > EDGE_GAP_MAX){ const m = (sp[i][1] + sp[i + 1][0])/2; sp[i][1] = m - EDGE_GAP_MAX/2; sp[i + 1][0] = m + EDGE_GAP_MAX/2; }
+  }
+  FLOOR_SEGS = sp.map(q => ({ x0:Math.round(q[0]), x1:Math.round(q[1]) }));
+}
+// Is there floor under x? (Always, on a stage without edges.)
+function groundAt(x){
+  if(!FLOOR_SEGS) return true;
+  for(const q of FLOOR_SEGS) if(x >= q.x0 && x <= q.x1) return true;
+  return false;
+}
+// No floor under x: a gap in it, or one of Springy's open holes.
+function floorOpenAt(x){ return !groundAt(x) || !!springyHoleAt(x); }
+// The nearest x over the floor, `inset` px in from a span's end (a spawn, an item): x itself where there is no edge.
+function floorSafeX(x, inset){
+  if(!FLOOR_SEGS) return x;
+  const k = inset == null ? 40 : inset;
+  let best = x, bd = Infinity;
+  for(const q of FLOOR_SEGS){ const cx = clamp(x, q.x0 + k, q.x1 - k), d = Math.abs(cx - x); if(d < bd){ bd = d; best = cx; } }
+  return best;
+}
+// Does the floor hold this fighter? Over a span, and coming down onto it (feet above its top a step ago, or the endless floor's own few px
+// under it). One deeper in a pit is held off by the cliff's face (cliffWalls), never pulled up through the floor.
+function floorCatches(f, gy){
+  if(!FLOOR_SEGS) return true;
+  return groundAt(f.x) && (f.y + f.r - f.vy) <= gy + LEDGE_CATCH;
+}
+// THE CLIFFS: under its top a floor span is solid rock. A fighter beside one below the top is held off its face -- hard when moving into it
+// (and that face is a wall to kick off: the wall jump), gently when only brushing it on the way down, so walking off a ledge is a fall and
+// not a jolt. THE LEDGE CATCH: moving into the face with the feet within LEDGE_CATCH of the top, and not in a stun, it is put up on the ledge.
+function cliffWalls(f, gy){
+  const feet = f.y + f.r;
+  if(feet <= gy + 2) return;
+  for(const q of FLOOR_SEGS){
+    if(f.x + f.r <= q.x0 || f.x - f.r >= q.x1) continue;
+    const toL = (f.x + f.r) - q.x0, toR = q.x1 - (f.x - f.r), side = toL < toR ? -1 : 1, over = side < 0 ? toL : toR;
+    const into = f.vx*side < -0.2;
+    if(into && feet - gy <= LEDGE_CATCH && !(f.hitstun > 0) && f.vy > -6 && f._heldBy == null){
+      f.y = gy - f.r; f.x = side < 0 ? q.x0 + 2 : q.x1 - 2; f.vy = 0; f.onground = true; f.jumps = 2; f._usedAirSpecial = false;
+      return;
+    }
+    f.x += side*(into ? over : Math.min(over, 5));
+    f._wallSide = -side; f._wallT = hazardT; f._wallId = f._wallSide + ':' + Math.round((side < 0 ? q.x0 : q.x1)/WALL_FACE_SNAP);
+    if(into) f.vx = 0;
+  }
+}
+// Off the stage: in the air with nothing under it but the drop (no floor, no platform), on a stage with edges.
+function overDrop(f){
+  if(!FLOOR_SEGS || f.onground) return false;
+  return surfaceBelow(clamp(f.x, 1, WW - 1), f.y + f.r) === null;
+}
+// RECOVERY AS A BALANCE KNOB (FIGHTER_STATS `rec`): the share of a fighter's up-special lift (and its air jump) it gets while it is off the
+// stage -- getting back, never attacking. Height goes as the square of a launch's speed, so the speed takes the square root: rec 1.2 is a
+// fifth more height. 1 everywhere else, and on every stage without edges (there is nothing to get back to).
+function recK(f){
+  const r = (f && f.st && f.st.rec) || 1;
+  if(r === 1 || !FLOOR_SEGS) return 1;
+  const feet = f.y + f.r;
+  return (!groundAt(f.x) || feet > groundY() + 2 || overDrop(f)) ? r : 1;
+}
+function recV(f){ const r = recK(f); return r === 1 ? 1 : Math.sqrt(r); }
 
 // A double jump gains roughly this much height. Any vertical gap between successive platform
 // LAYERS wider than this can strand a fighter on the floor of a tall arena, so fillClimbGaps()
@@ -18708,6 +18801,7 @@ function wallBand(team, g){
 // Set up world dimensions, floors, and team bases for the current match.
 function setupWorld(){
   spawnZones=[];
+  FLOOR_SEGS = null;   // REAL EDGES: built again below for the stages that have them (buildFloorSegs)
   if(SETTINGS.mode==='ctf'){ ctfBuildWorld(); return; }   // Capture the Flag: one of its own huge maps (see the CTF block)
   CAM_ZOOM = 0.72;
   if(ONEFIGHT.active || COBSFIGHT.active){ buildOneArena(); return; }   // One's arena, and Steve Cobs's: the teams map without its walls (see buildOneArena)
@@ -18746,6 +18840,7 @@ function setupWorld(){
       }));
       // Reachability: nobody should be stranded on the floor of a 2.5x-tall arena.
       worldPlats = worldPlats.concat(fillClimbGaps(climbLayers(), WW));
+      buildFloorSegs();   // REAL EDGES
       return;
     }
     // ---- SMALL stage in FFA/1v1 ----
@@ -18759,6 +18854,7 @@ function setupWorld(){
       WW=W; WH=H; camX=0; camY=0; bases=[];
       worldPlats = platRectsSmall();
       worldZones=[]; spawnZones=[];
+      buildFloorSegs();   // REAL EDGES
       return;
     }
     // ---- HAND-BUILT / GENERATED CUSTOM LEVEL ----
@@ -19111,7 +19207,7 @@ function vanProj(f, o){
 // Every surface top under x: the floor (single-screen only; the tower has none), and each platform's top.
 function vanTopsAt(x){
   const tops = [];
-  if(!isBig()) tops.push({ y: groundY(), solid:true });
+  if(!isBig() && groundAt(x)) tops.push({ y: groundY(), solid:true });   // (REAL EDGES: none over a gap)
   for(const p of platRects()){ if(p.rot) continue; if(x > p.x-2 && x < p.x+p.w+2) tops.push({ y: p.y, solid: !!p.solid }); }
   return tops;
 }
@@ -19285,14 +19381,14 @@ function buildFighters(){
       sx = sp.x; sy = sp.y - (b.wall ? 40 : 0);
     } else if(isBigFFA()){
       // spread across the wide arena floor so they don't all start in one blob
-      sx = WW*(0.12+0.76*i/Math.max(1,N-1));
+      sx = floorSafeX(WW*(0.12+0.76*i/Math.max(1,N-1)));   // (REAL EDGES: over the floor, never a gap)
       sy = groundY()-60;
     } else if(CUSTOM_LEVEL && CUSTOM_LEVEL.spawns && CUSTOM_LEVEL.spawns.length){
       const sp = CUSTOM_LEVEL.spawns[i % CUSTOM_LEVEL.spawns.length];
       sx = sp.nx*WW; sy = sp.ny*WH;        // world box, not screen
     } else {
       // spread across the (possibly widened) small arena so fighters don't start in one blob
-      sx = WW*(0.08+0.84*i/Math.max(1,N-1));
+      sx = floorSafeX(WW*(0.08+0.84*i/Math.max(1,N-1)));   // (REAL EDGES: over the floor, never past a ledge)
       sy = groundY()-60;
     }
     const f=makeFighter(r, sx, sy, i);
@@ -20040,7 +20136,7 @@ function haCrest(f, key, half, own, color){
 //     dmg on top): both fighters' stats count, on purpose;
 //   * the hop smash's aim and MePhone4's portal fling, which plan an arc on gravity, plan it with the fall stat.
 const FIGHTER_STATS = {
-  "*": { "run":1, "air":1, "jump":1, "fall":1, "dmg":1 },
+  "*": { "run":1, "air":1, "jump":1, "fall":1, "dmg":1, "rec":1 },
   "Firey": { "jump":1.09, "fall":0.91 },
   "Leafy": { "run":1.11, "jump":0.92, "fall":0.9 },
   "Needle": { "air":1.03, "jump":1.09, "fall":1.09 },
@@ -20137,7 +20233,7 @@ const FIGHTER_STATS = {
   "Teddy Bear": { "run":0.92, "air":1.08, "fall":0.91 },
   "Bot": { "run":1.1, "jump":1.1 }
 };
-const STAT_KEYS = ['run', 'air', 'jump', 'fall', 'dmg'];
+const STAT_KEYS = ['run', 'air', 'jump', 'fall', 'dmg', 'rec'];   // rec: RECOVERY, the up-special's lift and the air jump while off a stage with edges (recK)
 const STAT_ONE = Object.freeze(Object.fromEntries(STAT_KEYS.map(k => [k, 1])));   // what a fighter with no `st` (a client's copy) reads (built from the keys, so a `dmg:` knob cannot reach it)
 // A fighter's own five, read once (makeFighter): its row's value, else the default's; anything that is not a positive number reads 1.
 function statsFor(name){
@@ -20677,7 +20773,7 @@ function itemSpawnInterval(){
 }
 function spawnItem(){
   const gy = groundY();
-  const x = 120 + Math.random()*(WW-240);
+  const x = floorSafeX(120 + Math.random()*(WW-240), 50);   // (REAL EDGES: it comes down over the floor, not a gap)
   // weight the pool: healing/marmalade common, powerups & throwables medium, assist/yoyle rarer, boss rarest
   const pool = ["heal","heal","marmalade","marmalade","throw","throw","power","power","assist","assist","yoyle","yoyle"];
   const kind = pool[Math.floor(Math.random()*pool.length)];
@@ -20708,7 +20804,8 @@ function updateItems(){
     if(it.taken) continue;
     it.vy += 0.5; it.y += it.vy; it.x += it.vx; it.vx*=0.98;
     // land on ground
-    if(it.y > gy - it.r){ it.y = gy - it.r; it.vy=0; it.vx=0; it._land=true; }   // landed: the fall's drift stops here (itemFallDrift)
+    if(it.y > gy - it.r && (!FLOOR_SEGS || (groundAt(it.x) && it.y - it.vy <= gy - it.r + 18))){ it.y = gy - it.r; it.vy=0; it.vx=0; it._land=true; }   // landed: the fall's drift stops here (itemFallDrift)
+    if(FLOOR_SEGS && it.y > WH + 160) it.life = 0;   // REAL EDGES: knocked or dropped into a gap, it is gone
     it.life--;
     // pickup: any living fighter overlapping grabs it
     for(const f of fighters){
@@ -21201,7 +21298,7 @@ function fsKoFlight(t){
   for(let i = 0; i < n; i++){
     vy += vy > 0 ? g*fall : g; x += vx; y += vy;
     if(x < -120 || x > WW + 120 || y > WH + 160 || y < -260) return true;
-    if(!isBig() && vy > 0 && y >= gy - t.r) return false;
+    if(!isBig() && vy > 0 && y >= gy - t.r && groundAt(x)) return false;   // (REAL EDGES: over a gap the flight goes on down)
   }
   return false;
 }
@@ -23251,7 +23348,8 @@ function stepAssistBody(s, gy){
   // makes it a hazard, so it keeps its momentum and is left alone by navAssist.
   if(s.act!=="bounce" && !s._commit) s.vx *= 0.9;   // (a committed line -- 8-Ball's roll, Spongy's leap, a ridden cart -- keeps its speed: assistBrain sets it)
   s.onground = false;
-  if(s.y > gy - s.r){ s.y = gy - s.r; if(s.vy>0) s.vy=0; s.onground=true; }
+  if(s.y > gy - s.r && (!FLOOR_SEGS || (groundAt(s.x) && s.y - s.vy <= gy - s.r + 18))){ s.y = gy - s.r; if(s.vy>0) s.vy=0; s.onground=true; }
+  if(FLOOR_SEGS && s.y > WH + 160) s.life = 0;   // REAL EDGES: a trophy that walks or is knocked into a gap is gone
   // Same two-pass resolution the fighters use: solids from every side, then one-way tops.
   for(const p of platRects()){
     if(p===s._myPlat) continue;                       // Spongy does not stand on himself
@@ -23417,7 +23515,7 @@ function pieLob(s, T){
 // of Springy's open holes, never off the world. Null where there is none.
 function floorTopAt(x, y){
   if(x < 10 || x > WW - 10) return null;
-  if(!isBig() && Math.abs(y - groundY()) <= 8) return springyHoleAt(x) ? null : groundY();
+  if(!isBig() && Math.abs(y - groundY()) <= 8) return floorOpenAt(x) ? null : groundY();
   for(const p of platRects()){ if(!p.solid || p.rot) continue; if(x > p.x && x < p.x + p.w && Math.abs(p.y - y) <= 8) return p.y; }
   return null;
 }
@@ -23439,7 +23537,7 @@ function floorSpot(t){
 }
 // Toilet's waves ride the surface they were flushed onto: an edge, a hole or a wall ends one.
 function waveFloorAt(x, y){
-  if(!isBig() && Math.abs(y - groundY()) <= 4) return !springyHoleAt(x);
+  if(!isBig() && Math.abs(y - groundY()) <= 4) return !floorOpenAt(x);
   return vanTopsAt(x).some(t=>Math.abs(t.y - y) <= 4);
 }
 function waveWallAt(x, y, h){
@@ -23603,7 +23701,7 @@ const AS_ACT = {
     const half = (GROTATO_MINES-1)*GROTATO_GAP*0.5, mx = clamp(s.x + s._dir*T.lead, 30 + half, WW - 30 - half);
     for(let i=0;i<GROTATO_MINES;i++){
       const x = mx + (i - (GROTATO_MINES-1)*0.5)*GROTATO_GAP, top = surfaceBelow(x, s.y + s.r - 30);
-      if(top == null || (!isBig() && Math.abs(top - groundY()) < 2 && springyHoleAt(x))) continue;
+      if(top == null || (!isBig() && Math.abs(top - groundY()) < 2 && floorOpenAt(x))) continue;
       addProj({owner:-2, ownerObj:assistFighter(s), x, y:top-8, vx:0, vy:0, grav:false, dmg:addDmg(s, 12), kb:11, r:12, color:'#4a9c6a', life:60*8, trap:true, arm:30, assist:true});
     }
     s.life = 0;   // one-shot
@@ -42423,7 +42521,7 @@ function step(){
       // jump
       if(inp.jump && !f._jp && mtDashJump(f, inp)){ f._jp=true; }   // a hyper, a super or a reverse hyper out of a dash (dashers)
       else if(inp.jump && !f._jp && mtWallJump(f, inp)){ f._jp=true; }   // a wall jump (movetech): in the air, toward a wall, once per wall per airtime
-      else if(inp.jump && !f._jp && f.jumps>0 && !f._tp && !(isBig()&&inp.down&&f.onground)){ f._jmp0={t:hazardT, y:f.y, jumps:f.jumps, ground:f.onground}; f._wallUsed = null; /* a real jump (from the ground or a double jump, not a fall) gives the wall jumps back: the owner, 2026-10-19 */ f.vy=(SETTINGS.mode==='ctf'?ctfJumpV(f):JUMP*fst.jump); f._hop=f.onground && mtOn(f) && f.vy===JUMP*fst.jump && (isHumanCtrl(f) || !!f._aiHop); if(f._sinkT > hazardT) f.vy *= FX2.sand.jump;   /* sunk in Golf Ball's sand: a short jump (FINISHERS V2) */   /* a CPU's jumps stay the full jump unless the brain asked for a short hop (f._aiHop): its hands tap jump */ /* a boosted or laden jump is never cut short */ f.jumps--; f.onground=false; f._jp=true; puff(f.x,f.y+20,'#fff',4); if(f.you) SFX.jump(); }   // (while Bow fades into her Teleport the jump key is her aim up, not a jump: a player's up is the jump key, see teleportHold)
+      else if(inp.jump && !f._jp && f.jumps>0 && !f._tp && !(isBig()&&inp.down&&f.onground)){ f._jmp0={t:hazardT, y:f.y, jumps:f.jumps, ground:f.onground}; f._wallUsed = null; /* a real jump (from the ground or a double jump, not a fall) gives the wall jumps back: the owner, 2026-10-19 */ f.vy=(SETTINGS.mode==='ctf'?ctfJumpV(f):JUMP*fst.jump); f._hop=f.onground && mtOn(f) && f.vy===JUMP*fst.jump && (isHumanCtrl(f) || !!f._aiHop); if(!f.onground) f.vy *= recV(f); /* rec: an air jump off the stage */ if(f._sinkT > hazardT) f.vy *= FX2.sand.jump;   /* sunk in Golf Ball's sand: a short jump (FINISHERS V2) */   /* a CPU's jumps stay the full jump unless the brain asked for a short hop (f._aiHop): its hands tap jump */ /* a boosted or laden jump is never cut short */ f.jumps--; f.onground=false; f._jp=true; puff(f.x,f.y+20,'#fff',4); if(f.you) SFX.jump(); }   // (while Bow fades into her Teleport the jump key is her aim up, not a jump: a player's up is the jump key, see teleportHold)
       if(!inp.jump) f._jp=false;
       if(f._hop){ if(f.vy>=0 || f.onground) f._hop=false; else if(!inp.jump){ const shv = SH_V*fst.jump; if(f.vy < -shv) f.vy = -shv; f._hop=false; } }   // SHORT HOP: a tap of jump is cut (SH_V); held is the full jump
 
@@ -42522,7 +42620,9 @@ function step(){
     f.onground=false;
     // solid ground only in single-screen mode; the tower has no floor (fall = KO)
     // ...and not over one of Springy's open holes (springyHoleAt): there you fall, and the pit pops you back out (updateSpringy)
-    if(!isBig() && f.y>=gy-f.r && !springyHoleAt(f.x)){ f.y=gy-f.r; if(f.vy>0){f.vy=0;} f.onground=true; f.jumps=2; f._usedAirSpecial=false; }
+    // REAL EDGES: only over the floor's spans, and only coming down onto it (floorCatches); under its top each span is a cliff (cliffWalls)
+    if(!isBig() && f.y>=gy-f.r && !springyHoleAt(f.x) && floorCatches(f, gy)){ f.y=gy-f.r; if(f.vy>0){f.vy=0;} f.onground=true; f.jumps=2; f._usedAirSpecial=false; }
+    if(FLOOR_SEGS && !isBig()) cliffWalls(f, gy);
     // SOLID blocks: impassable from every side (walls/floors/ceilings). Resolved first,
     // and never droppable-through. One-way tops are handled after this.
     for(const p of plats){
@@ -42793,7 +42893,7 @@ function step(){
           pr.y=p.y-6; landed=true; break;
         }
       }
-      if(!landed && !isBig() && pr.y>groundY()-6){ pr.y=groundY()-6; landed=true; }
+      if(!landed && !isBig() && pr.y>groundY()-6 && (!FLOOR_SEGS || (pr.y<groundY()+14 && groundAt(pr.x)))){ pr.y=groundY()-6; landed=true; }   // (REAL EDGES: a gap lets it fall)
       if(landed){
         pr.vy=-Math.abs(pr.vy)*(pr.accel?1.05:0.82); pr.vx*=(pr.accel?1.04:0.97);
         if(Math.abs(pr.vy)<2) pr.vy=-4;            // guarantee a visible bounce
@@ -44563,7 +44663,7 @@ function doSmash(f){
 function upLaunch(f, power){ f.vy=power; f.onground=false; }   // launches, but does NOT hand back a jump
 const UPSPECIALS = {
   // Every other fighter's up-special is an UPSPEC row now; the ten bodies that lived here were shadowed by them.
-  fly(f){ upLaunch(f,-10); f.flying=Math.max(f.flying,70); f.jumps=1; for(let i=0;i<6;i++) puff(f.x,f.y+14,'#e6a6e0',5);  }, // Puffball — float boost
+  fly(f){ upLaunch(f,-10*recV(f)); f.flying=Math.max(f.flying,70); f.jumps=1; for(let i=0;i<6;i++) puff(f.x,f.y+14,'#e6a6e0',5);  }, // Puffball — float boost
 };
 // ============================================================
 //  UP-SPECIAL SHAPES — one table, one function, four ways to rise
@@ -44714,11 +44814,11 @@ function riseShape(f, s){
   const wasAir = !f.onground;   // a plunge that hits on the way down (`fall`) only does it from a cast in the air
   f._castX=f.x; f._castY=f.y;   // where the cast happened (a warp moves before its leave is applied)
   if(s.shape==='warp'){
-    f.y = Math.max(40, f.y - (s.dist||140)); f.x += dir*(s.dx||0); f.vy = -4; f.onground=false;
+    f.y = Math.max(40, f.y - (s.dist||140)*recK(f)); f.x += dir*(s.dx||0); f.vy = -4; f.onground=false;   // (rec: a warp off the stage goes that much higher)
     f.invuln = Math.max(f.invuln, s.invuln||8);
     for(let i=0;i<10;i++) puff(f.x,f.y+(Math.random()*40-20),f.color,4);
   } else {
-    upLaunch(f, s.power==null ? -13 : s.power);   // a row may ask for no lift at all (Bow), and 0 is a real value
+    upLaunch(f, (s.power==null ? -13 : s.power)*recV(f));   // a row may ask for no lift at all (Bow), and 0 is a real value (rec: more lift off the stage)
     if(s.push && dir) f.vx = dir*s.push;           // a row may push her the way she steers (Tea Kettle's steam jet)
     // The aura ticks when _sawing (after its decrement) is a multiple of 6. Round the length up to 6k+1 so the
     // FIRST tick is the launch frame, while the neighbour is still beside you: an 18-frame spin used to tick
@@ -44771,7 +44871,7 @@ function doUpSpecial(f){
   const k=f.kit && f.kit.special;
   if(UPSPEC[k]){ riseShape(f, UPSPEC[k]); }
   else if(UPSPECIALS[k]){ UPSPECIALS[k](f); }
-  else { upLaunch(f,-13); puff(f.x,f.y+14,f.color,6); }  // default recovery hop
+  else { upLaunch(f,-13*recV(f)); puff(f.x,f.y+14,f.color,6); }  // default recovery hop
   f.flash=8;
 }
 
@@ -53923,7 +54023,7 @@ function tpSolids(f){
 }
 function tpFits(f, x, y, solids, F){
   if(x - f.r < 0 || x + f.r > WW || y - f.r < 0 || y + f.r > WH) return false;   // never out of the world (the blast zones are further out still)
-  if(!isBig() && y > groundY() - f.r + 0.5 && !springyHoleAt(x)) return false;   // not in the floor
+  if(!isBig() && y > groundY() - f.r + 0.5 && !floorOpenAt(x)) return false;   // not in the floor (REAL EDGES: a pit is not floor)
   if(F && x + f.r > F.x && x - f.r < F.x + F.w && y > F.y - f.r + 0.5) return false;   // nor under the big arenas' main floor, from on or above it (tpFloorUnder)
   const r = f.r - 1;   // (flush against a surface is not inside it: she may appear standing on a floor)
   for(const p of solids){ const ph = p.h || 16; if(x + r > p.x && x - r < p.x + p.w && y + r > p.y && y - r < p.y + ph) return false; }
@@ -55823,6 +55923,9 @@ function knock(t,kx,ky){
   // sustained damage/DPS on a stationary target instead of chasing it around the stage.
   if(TESTMODE.active && TESTMODE.anchored && t.controller!=="local"){ t.vx=0; t.vy=0; return; }
   t.vx=kx; t.vy=ky; t.onground=false; t._hop=false; t._ff=false; t._hyperT=0;
+  // REAL EDGES: knocked into the air where a fall is a fall, a fighter gets a jump and the up-special back, as in the games this one
+  // follows -- so anyone knocked off a ledge has a way back to try, and getting back is up to the player
+  if(FLOOR_SEGS){ t.jumps = Math.max(t.jumps||0, 1); t._usedAirSpecial = false; }
 }
 const WIND_DRIFT = 3.2, PIN_STEPS = 36, PIN_FREE = 150;
 function pushPin(f){   // true while the push zones let this fighter go: a fighter pressing a key in a push zone who has not moved for PIN_STEPS steps (pinned in a corner, held under a lid) is let go for PIN_FREE
@@ -58318,7 +58421,7 @@ function aiWallWay(f, inp, w, goalX){
   inp.left = false; inp.right = false; inp.jump = false;
   const feet = f.y + f.r;
   if(f.onground && m.way !== 'climb'){
-    const below = x => (!isBig() && groundY() > feet + 40) || worldPlats.some(p => p.y > feet + 40 && x > p.x && x < p.x + p.w);
+    const below = x => (!isBig() && groundY() > feet + 40 && groundAt(x)) || worldPlats.some(p => p.y > feet + 40 && x > p.x && x < p.x + p.w);
     for(const dropX of [nearestDropX(f), nearestDropX(f, -dir)]){
       if(dropX == null || (dir < 0 ? dropX <= w.edgeX : dropX >= w.edgeX) || !below(dropX)) continue;
       m.way = 'drop';
@@ -58557,11 +58660,12 @@ let AI_LEVEL = 1;
 //   ctr    the stance guess on a swing seen     ctrCd frames after any guess before another        ctrHit frames after its own stun before one
 //   grab   a string that is a grab              hop   an approach that hops in for an aerial       back  backing off after a stun or a string
 //   wrong  a decision that takes a few steps the wrong way    lead  how much of its late view it makes up by reading the foe's speed
+//   recMiss  REAL EDGES: the chance a trip off the stage goes wrong (a late start, a drift, the jump and up-special thrown away at once)
 //   target frames before it looks for the nearest foe again
 const BRAIN_LV = [
-  { think:[16, 28], wake:[26, 40], gap:[16, 24], strMax:3, miss:0.25, hesit:0.18, smash:0.10, spec:[420, 720], fin:0.06, ctr:0,    ctrCd:[0, 0],     ctrHit:1e9, grab:0.03, hop:0.08, back:0.45, wrong:0.06, lead:0.3, target:[70, 130] },
-  { think:[9, 15],  wake:[14, 24], gap:[11, 16], strMax:4, miss:0.12, hesit:0.07, smash:0.25, spec:[180, 360], fin:0.12, ctr:0.2,  ctrCd:[360, 600], ctrHit:60,  grab:0.06, hop:0.15, back:0.25, wrong:0.02, lead:0.6, target:[50, 100] },
-  { think:[6, 10],  wake:[9, 15],   gap:[9, 13],  strMax:5, miss:0.05, hesit:0.03, smash:0.40, spec:[120, 240], fin:0.18, ctr:0.3,  ctrCd:[240, 420], ctrHit:45,  grab:0.10, hop:0.22, back:0.15, wrong:0,    lead:0.8, target:[40, 80] },
+  { think:[16, 28], wake:[26, 40], gap:[16, 24], strMax:3, miss:0.25, hesit:0.18, smash:0.10, spec:[420, 720], fin:0.06, ctr:0,    ctrCd:[0, 0],     ctrHit:1e9, grab:0.03, hop:0.08, back:0.45, wrong:0.06, lead:0.3, target:[70, 130], recMiss:0.35 },
+  { think:[9, 15],  wake:[14, 24], gap:[11, 16], strMax:4, miss:0.12, hesit:0.07, smash:0.25, spec:[180, 360], fin:0.12, ctr:0.2,  ctrCd:[360, 600], ctrHit:60,  grab:0.06, hop:0.15, back:0.25, wrong:0.02, lead:0.6, target:[50, 100], recMiss:0.2 },
+  { think:[6, 10],  wake:[9, 15],   gap:[9, 13],  strMax:5, miss:0.05, hesit:0.03, smash:0.40, spec:[120, 240], fin:0.18, ctr:0.3,  ctrCd:[240, 420], ctrHit:45,  grab:0.10, hop:0.22, back:0.15, wrong:0,    lead:0.8, target:[40, 80], recMiss:0.1 },
 ];
 // The kits whose neutral special is a shot (a projectile or a beam): those fire it from range. (The old AI's list, kept as a fact about the kits.)
 const BRAIN_SHOOTERS = new Set(["ember","cap","fry","barf","serve","freeze","beam","sign","splash","dribble","zapshooter","buynow","ring","fly","gust","zap","spark",
@@ -58837,18 +58941,64 @@ function aiThink(f){
 // Teleport (aiBowRecover: her up-special is a drop).
 function brainRecover(f, inp, B, sp){
   const offLeft=f.x<50, offRight=f.x>WW-50, fallingOut=f.y>WH-90 && f.vy>0;
-  if(!(offLeft||offRight||fallingOut||(sp==='chair' && aiBowAdrift(f)))){ B.jHeld = false; return false; }
+  const goal = edgeGoal(f, B);   // REAL EDGES: off the stage over nothing -- where it heads back to (null: not off, or a stage without edges)
+  if(!(offLeft||offRight||fallingOut||goal||(sp==='chair' && aiBowAdrift(f)))){ B.jHeld = false; B.recEp = null; return false; }
   B.press = null; B.str = null; if(B.st === 'string' || B.st === 'smash') B.st = 'approach';
+  // A PERSON OFF THE STAGE (REAL EDGES): once a trip, by level (BRAIN_LV recMiss), it may get one thing wrong -- a late start (nothing pressed
+  // for a moment while it falls), a moment's drift without steering, or its jump and its up-special thrown away at once. So a CPU makes it
+  // back most of the time and is lost now and then, as a person is.
+  if(goal && !B.recEp){ const r = Math.random(), miss = BRAIN_LV[brainLevel(f)].recMiss || 0; B.recEp = { at:hazardT, err: r < miss ? ['late', 'drift', 'early'][Math.floor(Math.random()*3)] : null }; }
+  const E = goal ? B.recEp : null, age = E ? hazardT - E.at : 0;
   if(offLeft) inp.right=true; if(offRight) inp.left=true;
+  if(goal && !(E && E.err === 'drift' && age < 22)){ inp.left = goal.dir < 0; inp.right = goal.dir > 0; }
   if(sp==='chair'){ aiBowRecover(f, inp, 0); return true; }
+  if(E && E.err === 'late' && age < 26){ B.jHeld = false; return true; }
+  if(E && E.err === 'early' && age < 24){
+    if(f.jumps > 0) inp.jump = !B.jHeld;
+    else if(f.spCd<=0 && !brainKit(f).uStance){ inp.special=true; inp.up=true; }
+    B.jHeld = !!inp.jump; return true;
+  }
   if(f._wallSide && f._wallT >= hazardT - 2 && f.vy > 0.5 && !(f._wallUsed && f._wallUsed[f._wallId]) && !(f.flying > 0) && !f._tp && mtOn(f)){
     f._aiWJ = hazardT; inp.jump = !B.jHeld; inp.left = f._wallSide < 0; inp.right = f._wallSide > 0;
-  } else if(f.vy>0.5 || f.y>WH-140){
+  } else if(f.vy>0.5 || f.y>WH-140 || (goal && f.y + f.r > groundY() + 30)){
     if(f.jumps > 0) inp.jump = !B.jHeld;
     else if(f.spCd<=0 && !brainKit(f).uStance){ inp.special=true; inp.up=true; }
   }
   B.jHeld = !!inp.jump;
   return true;
+}
+// REAL EDGES, for the CPU: off the stage (overDrop), the place it heads back to -- the floor span nearest where its speed is taking it, or
+// the far side of a gap it jumped on purpose (B.cross, brainLedge) while that trip lasts. Null when it is not off the stage.
+function edgeGoal(f, B){
+  if(!overDrop(f)) return null;
+  const C = B.cross;
+  if(C && hazardT < C.until) return { x:C.x, dir:(C.x - f.x) < 0 ? -1 : 1 };
+  const px = f.x + (f.vx||0)*10;
+  let best = null, bd = Infinity;
+  for(const q of FLOOR_SEGS){ const gx = clamp(px, q.x0 + 30, q.x1 - 30), d = Math.abs(gx - px); if(d < bd){ bd = d; best = gx; } }
+  return best == null ? null : { x:best, dir:(best - f.x) < 0 ? -1 : 1 };
+}
+// REAL EDGES: a CPU on its feet does not walk off into the drop by accident. At the end of what it stands on, with nothing under its next
+// step, it jumps the gap when what it is after is across it and the far side is in a jump's reach (and remembers the trip: B.cross), else it
+// stops at the edge. (Its hands still go at a person's pace in a fight, so now and then it is a step late -- and then it recovers.)
+function brainLedge(f, inp, B){
+  if(!FLOOR_SEGS || !f.onground || inp.jump || f._fileRide) return;
+  const dir = (inp.left && !inp.right) ? -1 : (inp.right && !inp.left) ? 1 : 0;
+  if(!dir) return;
+  const feet = f.y + f.r, ax = f.x + dir*(f.r*0.5 + 4 + Math.abs(f.vx||0)*3);
+  if(standAt(ax, feet)) return;
+  const fst = f.st || STAT_ONE, reach = 300*fst.jump*fst.air;
+  let land = null;
+  for(let d = 40; d <= reach; d += 20){ const x = f.x + dir*d; if(x < 0 || x > WW) break; if(standAt(x, feet - 140)){ land = x + dir*30; break; } }
+  const t = f.aiTarget;
+  if(land != null && t && !t.dead && (t.x - f.x)*dir > 40){ inp.jump = true; B.cross = { x:land, until:hazardT + 90 }; return; }
+  inp.left = false; inp.right = false;
+}
+// Something to stand on under x whose top is at or below `top`: the floor where there is floor, or a platform.
+function standAt(x, top){
+  if(groundAt(x) && groundY() >= top - 4) return true;
+  for(const p of platRects()){ if(p.rot) continue; if(x > p.x && x < p.x + p.w && p.y >= top - 4) return true; }
+  return false;
 }
 
 // HOLDING A FOE (a grab took them): a beat, a pummel now and then while they are low, then the throw -- toward the nearer side at kill percent,
@@ -59037,6 +59187,7 @@ function brainOut(f, inp, B, L, t, fight){
   // HOLD THEM STILL (stanceStill): a stance up on the ground and nothing else asked for, it lets go of the arrows (they could not walk it anywhere)
   if(f.onground && stanceStill(f) && !(inp.attack || inp.special || inp.smash || inp.grab || inp.fin || inp.jump)){ inp.left = false; inp.right = false; }
   if(f._fileRide) fileRideAiHold(f, inp);   // on its own big file (THE BIG FILE): it stays on
+  brainLedge(f, inp, B);   // REAL EDGES: never off a ledge by accident
   return inp;
 }
 
@@ -59126,6 +59277,7 @@ function aiBowRecover(f, inp, upY){
     const cx = clamp(f.x, p.x + 24, p.x + p.w - 24), d = Math.abs(cx - f.x) + (feetY(f) - p.y)*0.5;
     if(d < best){ best = d; tx = cx; }
   }
+  if(FLOOR_SEGS){ const gy = groundY(); for(const q of FLOOR_SEGS){ const cx = clamp(f.x, q.x0 + 24, q.x1 - 24), d = Math.abs(cx - f.x) + Math.max(0, feetY(f) - gy)*0.5; if(d < best){ best = d; tx = cx; } } }   // (REAL EDGES: the floor's spans are places to come back to)
   if(hole){ inp.left = tx - f.x < -8; inp.right = tx - f.x > 8; }
   if(!isBig() && f.hitstun <= 0 && (f.x < 0 || f.x > WW) && f.spCd <= 0 && !f._tpUsed){   // past the side of a single-screen stage: back in, now
     f._aiTpAim = aiBowTpRecoverAim(f) || { ax: f.x < 0 ? 1 : -1, ay:0, why:'back' };
@@ -60289,11 +60441,14 @@ function draw(){
     // below the world's bottom edge, and it should see more ground there, not sky
     // A boss arena may lay its own ground (BOSS_ARENA_GROUND); every other stage, and an arena with no entry, is as it was.
     const arenaG = arenaGround();
+    if(FLOOR_SEGS) drawEdgedGround(gy);   // REAL EDGES: the floor's spans, their cliffs, and the drop between and beyond them
+    else {
     if(!saGround(gy)){   // (STAGE ART lays the textured ground band of the ten normal stages; everything else keeps its flat floor)
       ctx.fillStyle=(arenaG && arenaG.fill) || stage.ground; ctx.fillRect(-20,gy,WW+40,WH-gy+H);
       if(arenaG && typeof arenaG.pattern === 'function'){ ctx.save(); arenaG.pattern(ctx, gy, -20, WW+20, WH+H, arenaG); ctx.restore(); }
     }
     ctx.strokeStyle=(arenaG && arenaG.line) || "#1c1c1c"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(-20,gy); ctx.lineTo(WW+20,gy); ctx.stroke();
+    }
     if(stage.hazard==='lava' && (hazardT%260)<70){ ctx.fillStyle="#f0521f88"; ctx.fillRect(-20,gy-8,WW+40,10); }
   } else {
     // tower: dark blast pit at the very bottom (visual danger cue)
@@ -60578,6 +60733,7 @@ function drawMinimap(){
   for(const p of worldPlats){ if(p.field || p.ladder) continue;
     if(p.floor==null && !isBigFFA()) continue;
     ctx.beginPath(); ctx.moveTo(mx+p.x*sxr, my+p.y*syr); ctx.lineTo(mx+(p.x+p.w)*sxr, my+p.y*syr); ctx.stroke(); }
+  if(FLOOR_SEGS){ const gy = groundY(); ctx.strokeStyle = '#ffffffcc'; ctx.lineWidth = 2; for(const q of FLOOR_SEGS){ ctx.beginPath(); ctx.moveTo(mx+q.x0*sxr, my+gy*syr); ctx.lineTo(mx+q.x1*sxr, my+gy*syr); ctx.stroke(); } }   // REAL EDGES: the floor's spans, the gaps between
   // spawn zones on the minimap (big FFA)
   if(isBigFFA()){ for(const z of spawnZones){
     ctx.fillStyle = z.kind==="safe" ? "#6fd0a0" : (z.owner!=null && fighters[z.owner] ? fighters[z.owner].color : "#d9c48a");
@@ -60599,16 +60755,67 @@ function drawMinimap(){
   ctx.restore();
 }
 
-// Arrows pointing to off-screen teammates/enemies in the big arena
+// REAL EDGES, drawn (FLOOR_SEGS): the floor only over its spans -- the stage's own ground band and fill -- the drop between and beyond them
+// (stage.edges.void: a haze at the top darkening downward; `clouds`: a sky stage's clouds drifting below), and each cliff's face: a shadow
+// down its side and the black outline. The world's own ends are not cliffs. Art only: the floor is FLOOR_SEGS's.
+function drawEdgedGround(gy){
+  const c = ctx, E = stage.edges || {}, V = E.void || ['#c8dff0', '#2a3a4a'], arenaG = arenaGround(), bot = WH + H, segs = FLOOR_SEGS;
+  const gaps = [];
+  let x = -60;
+  for(const q of segs){ if(q.x0 > x) gaps.push([x, q.x0]); x = Math.max(x, q.x1); }
+  if(x < WW + 60) gaps.push([x, WW + 60]);
+  const gr = c.createLinearGradient(0, gy, 0, gy + Math.max(260, WH - gy + 140));
+  gr.addColorStop(0, V[0]); gr.addColorStop(1, V[1]);
+  c.fillStyle = gr;
+  for(const g of gaps) c.fillRect(g[0], gy - 1, g[1] - g[0], bot - gy + 1);
+  if(E.clouds){   // a sky stage: clouds drifting by below the edge
+    const T = saClock();
+    c.save(); c.fillStyle = 'rgba(255,255,255,0.55)';
+    for(const g of gaps){
+      c.save(); c.beginPath(); c.rect(g[0], gy, g[1] - g[0], bot - gy); c.clip();
+      const off = (T*0.25) % 170;
+      for(let cx = g[0] - 170 + off; cx < g[1] + 170; cx += 170){
+        const cy = gy + 78 + Math.sin(cx*0.011)*18;
+        c.beginPath(); c.ellipse(cx, cy, 62, 18, 0, 0, 7); c.ellipse(cx + 38, cy - 10, 40, 16, 0, 0, 7); c.ellipse(cx - 40, cy + 4, 34, 12, 0, 0, 7); c.fill();
+      }
+      c.restore();
+    }
+    c.restore();
+  }
+  for(const q of segs){
+    c.save(); c.beginPath(); c.rect(q.x0, gy - 40, q.x1 - q.x0, bot - gy + 40); c.clip();
+    if(!saGround(gy)){
+      c.fillStyle = (arenaG && arenaG.fill) || stage.ground; c.fillRect(q.x0, gy, q.x1 - q.x0, bot - gy);
+      if(arenaG && typeof arenaG.pattern === 'function'){ c.save(); arenaG.pattern(c, gy, q.x0, q.x1, WH + H, arenaG); c.restore(); }
+    }
+    for(const side of [-1, 1]){   // the cliff's face: a shadow in from each open side
+      const ex = side < 0 ? q.x0 : q.x1;
+      if(ex <= 0 || ex >= WW) continue;
+      const sh = c.createLinearGradient(ex, 0, ex - side*26, 0); sh.addColorStop(0, 'rgba(0,0,0,0.42)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
+      c.fillStyle = sh; c.fillRect(side < 0 ? ex : ex - 26, gy + 4, 26, bot - gy);
+    }
+    c.restore();
+    c.strokeStyle = (arenaG && arenaG.line) || '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.moveTo(q.x0, gy); c.lineTo(q.x1, gy);
+    for(const side of [-1, 1]){ const ex = side < 0 ? q.x0 : q.x1; if(ex <= 0 || ex >= WW) continue; c.moveTo(ex, gy); c.lineTo(ex, bot); }
+    c.stroke();
+  }
+}
+// Arrows pointing to off-screen teammates/enemies in the big arena -- and, on a stage with edges (REAL EDGES), to anyone off the screen,
+// you too: knocked past the side or down a pit, a ring at the screen's edge shows where you are (yours white-rimmed, larger)
 function drawOffscreenArrows(){
-  if(!isBig()) return;
+  if(!isBig() && !FLOOR_SEGS) return;
   const z=viewZoom();
-  for(const f of fighters){ if(f.dead||f.you)continue;
+  for(const f of fighters){ if(f.dead||(f.you && !FLOOR_SEGS))continue;
     // where it is drawn on screen at this zoom: tested at zoom 1, a fighter in the outer 19% of the view on either
     // side was on screen AND got an edge dot
     const sx=W/2+z*(f.x-camX-W/2), sy=H/2+z*(f.y-camY-H/2);
     if(sx>=0&&sx<=W&&sy>=0&&sy<=H) continue;   // on screen
     const ex=clamp(sx,16,W-16), ey=clamp(sy,74,H-16);
+    if(FLOOR_SEGS && !isBig()){   // REAL EDGES: a ring in the fighter's colour, rimmed (yours white and larger)
+      ctx.fillStyle = f.color; ctx.globalAlpha = 0.85; ctx.beginPath(); ctx.arc(ex, ey, f.you ? 10 : 7, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+      ctx.strokeStyle = f.you ? '#ffffff' : '#1c1c1c'; ctx.lineWidth = f.you ? 3 : 2; ctx.stroke();
+      continue;
+    }
     ctx.fillStyle = TEAM_COLORS[f.team%TEAM_COLORS.length] || f.color; ctx.globalAlpha=0.7;   // (One's ghost fights on team -1: no entry, so it wore the last fill)
     ctx.beginPath(); ctx.arc(ex,ey,4,0,7); ctx.fill(); ctx.globalAlpha=1;
   }
