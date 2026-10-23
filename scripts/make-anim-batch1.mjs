@@ -36,7 +36,11 @@ try { os.setPriority(0, os.constants.priority.PRIORITY_LOW); } catch (e) {}   //
 const flag = (k) => { const a = process.argv.find((x) => x.startsWith(`--${k}=`)); return a ? a.slice(k.length + 3) : ''; };
 const SRC = flag('src'), DEC = flag('dec'), OUT = flag('out') || 'artifacts/V1/assets/sprites', ONLY = flag('only') ? flag('only').split(',') : null;
 const REPORT = flag('report');
-if (!SRC || !DEC) { console.error('usage: node scripts/make-anim-batch1.mjs --src=<downloads> --dec=<decoded>'); process.exit(1); }
+// --src2 / --dec2: the ART CONSISTENCY files ("use the s4 art" ... "jst try to make it consistent by character", the owner, 2026-10-21): the nine
+// files of smash-bal/reports/moves/anim-consistency-download-list.md, and Teddydance.gif decoded to one PNG a frame ("Teddydance-NNN.png").
+// They replace the pictures of Box, Tissues, Paintbrush and Teddy Bear that came from another art era than the rest of that fighter's set.
+const SRC2 = flag('src2'), DEC2 = flag('dec2');
+if (!SRC || !DEC) { console.error('usage: node scripts/make-anim-batch1.mjs --src=<downloads> --dec=<decoded> [--src2=<consistency downloads> --dec2=<their decoded GIF frames>]'); process.exit(1); }
 const SPR = 'artifacts/V1/assets/sprites';
 const BASE = { Donut: 'donut.png', Sidewalky: 'sidewalky.png', Lollipop: 'lollipop.png', Box: 'box.png', Tissues: 'tissues.png', Goo: 'goo.png',
   Bell: 'bell.png', Paintbrush: 'paintbrush.png', 'Teddy Bear': 'teddy-bear.png' };
@@ -47,6 +51,9 @@ const BASE_FLIP = { Donut: true, Lollipop: true, Tissues: true, Paintbrush: true
 const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const S = (f) => L.load(join(SRC, f));          // a downloaded PNG
 const D = (f) => L.load(join(DEC, f));          // a decoded WebP / JPEG / GIF frame
+const need2 = (dir, k) => { if (!dir) throw new Error(`--${k}= is needed (the art consistency files)`); return dir; };
+const S2 = (f) => L.load(join(need2(SRC2, 'src2'), f));   // an art consistency download
+const D2 = (f) => L.load(join(need2(DEC2, 'dec2'), f));   // a decoded frame of one
 const B = (fighter) => L.load(join(SPR, BASE[fighter]));
 const rows = [];
 
@@ -387,40 +394,38 @@ function tissues() {
   const F = 'Tissues', base = B(F);
   const faceRect = { x: 36, y: 74, w: 98, h: 76 };
   emit(F, 'sniff', toBase(S('TissuesSniff.png'), F), { src: ['TissuesSniff.png'], method: 'cut-out (wiki pose)' });
-  // the sneeze: Tissues Sneezing.png with its green jet taken off (the jet is the attack's own art, attacks/condishawn.png). The jet's green is
-  // looked for only left of his lips (x < 222: the green drop under his eye is his, and stays); its soft edge goes with it. The notch its root
-  // cut in his face, from the box's left edge to his lips, is filled from the face above and below it, along the edge's slant; then
-  // everything left of that edge (x = 179 at y = 200, 0.1385 px further right a row) down to his foot goes: the jet's dark outline, its splash.
-  { const im = S('Tissues Sneezing.png'), w = im.w, slant = 0.1385, edge = (y) => 179 + (y - 200) * slant;
-    const jet = (r, g, b) => (b < 110 && g > r + 25 && g > b + 25) || (g > r + 25 && g > b + 55);   // the jet, and its pale highlight
-    const hole = new Uint8Array(w * im.h);
-    for (let y = 0; y < im.h; y++) for (let x = 0; x < 222; x++) { const i = (y * w + x) * 4; if (im.d[i + 3] > 0 && jet(im.d[i], im.d[i + 1], im.d[i + 2])) hole[y * w + x] = 1; }
-    for (let pass = 0; pass < 2; pass++) {   // its soft edge: a pixel by the hole greener than his face (g - b over 28; his teal is ~18)
-      const grow = [];
-      for (let y = 1; y < im.h - 1; y++) for (let x = 1; x < 222; x++) { const p = y * w + x, i = p * 4;
-        if (hole[p] || !(im.d[i + 1] - im.d[i + 2] > 28)) continue;
-        if (hole[p - 1] || hole[p + 1] || hole[p - w] || hole[p + w]) grow.push(p); }
-      for (const p of grow) hole[p] = 1;
-    }
-    const src = L.clone(im);
-    for (let y = 250; y <= 310; y++) for (let x = Math.floor(edge(y)) - 1; x < 222; x++) {
-      const p = y * w + x; if (!hole[p]) continue;
-      let a = -1, b = -1, ka = 0, kb = 0;
-      for (let k = 1; k < 40 && a < 0; k++) { const pp = (y - k) * w + Math.round(x - k * slant); if (!hole[pp]) { a = pp; ka = k; } }
-      for (let k = 1; k < 40 && b < 0; k++) { const pp = (y + k) * w + Math.round(x + k * slant); if (!hole[pp]) { b = pp; kb = k; } }
-      const t = ka / (ka + kb), i = p * 4;
-      for (let ch = 0; ch < 4; ch++) im.d[i + ch] = src.d[a * 4 + ch] * (1 - t) + src.d[b * 4 + ch] * t;
-    }
-    for (let y = 0; y < im.h; y++) for (let x = 0; x < w; x++) { const p = y * w + x;
-      if ((y >= 240 && y <= 346 && x < Math.floor(edge(y)) - 1) || (hole[p] && x < Math.floor(edge(y)) - 1)) im.d[p * 4 + 3] = 0; }
-    L.keepParts(im, (p) => p.n > 400);
-    emit(F, 'sneeze', toBase(im, F), { src: ['Tissues Sneezing.png'], method: 'cut-out (wiki pose), the snot jet taken off', flip: true }); }   // he faces left (the jet went left): he sneezes to his left
-  // the four face frames (Tissues Face 1-4, on flat backgrounds): keyed against the border's colour
+  // THE SNEEZE: his "AH HAH AHACK" fit (S2E16 Tissues2.png, an episode frame: him on a hotel bed, Phone beside it), in the late-II look of his
+  // render (art consistency, 2026-10-21: it replaced Tissues Sneezing.png, an older pose in a paler cyan with a darker teal outline and thinner,
+  // rounder line work). What is not him is flooded out from the frame's border: the sheet and the snot on it, the headboard, the lamp, the wall.
+  // He is his teal, his black line-work, and white only where his tissues stick up out of the box (above its top edge); the edge is un-mixed
+  // from the ground behind it (matteEdge: his outline is teal, so a darker edge is not ink).
+  { const im = L.crop(S2('S2E16 Tissues2.png'), 1020, 240, 500, 410);
+    const him = (r, g, b, x, y) => !((x > 426 && y < 235) || (x > 330 && y < 70))   // (the nightstand's black top and the lamp's edge, by his side)
+      && ((g > r + 50 && b > r + 30) || (L.lum(r, g, b) < 90 && Math.max(r, g, b) - Math.min(r, g, b) < 30)
+      || (x > 105 && x < 335 && y < 108 && Math.min(r, g, b) > 140 && Math.max(r, g, b) - Math.min(r, g, b) < 30));
+    L.matteEdge(im, L.floodBg(im, (r, g, b, a, x, y) => !him(r, g, b, x, y)));
+    L.keepParts(im, (p) => p.n > 300);
+    emit(F, 'sneeze', toBase(im, F), { src: ['S2E16 Tissues2.png'], method: 'episode frame, the room and the snot keyed out', flip: true,   // he is turned the way his render is
+      note: 'in place of the older Tissues Sneezing.png' }); }
+  // the four face frames (Tissues Face 1-4, on flat backgrounds): keyed against the border's colour. They are frames of the Fan's Fantastic
+  // Features episode "The Issues with Tissues" (2022): his design, line weight and proportions are his render's, but that episode coloured him
+  // a darker teal, so each is shifted onto his render's turquoise (art consistency, 2026-10-21) by one colour map fitted to his parts, frame
+  // colour to render colour; the frozen blue (face-2) and the sick green (face-3, face-4) are tints on him and stay tints. His mouth (red, pink)
+  // is left as it is.
+  const tealMap = L.fitColourMap([
+    [[0, 199, 186], [0, 238, 196]],     // his front
+    [[2, 184, 171], [0, 219, 175]],     // his side
+    [[5, 138, 134], [2, 158, 133]],     // his outline
+    [[41, 212, 201], [47, 247, 213]],   // the shine along his edges
+    [[210, 215, 215], [223, 229, 229]], // his tissues
+    [[15, 22, 24], [2, 8, 6]],          // his line-work and limbs
+  ]);
   for (const n of [1, 2, 3, 4]) {
     const fr = S(`Tissues Face ${n}.png`), bg = L.borderColour(fr);
     L.cutBg(fr, () => bg, { lo: 16, hi: 54, global: true });   // global: and the pockets of it his arms close round
     L.keepParts(fr, (p) => p.n > 300);
-    emit(F, `face-${n}`, toBase(fr, F), { src: [`Tissues Face ${n}.png`], method: 'episode frame, flat background keyed out' });
+    L.applyColourMap(fr, tealMap, (r, g, b) => r <= g + 4);
+    emit(F, `face-${n}`, toBase(fr, F), { src: [`Tissues Face ${n}.png`], method: 'episode frame, flat background keyed out, recoloured to his render\'s turquoise' });
   }
   // HURT: extremely scared (Objects in Mirror): the grass flooded out (green, far greener than his teal), the trophy and the rest cropped off.
   { const im = L.crop(S('Tissues extremely scared.png'), 330, 100, 1290, 980);
@@ -448,8 +453,10 @@ function box() {
   emit(F, 'running', toBase(S('Box Running Out of the Maze (S4E3).png'), F), { src: ['Box Running Out of the Maze (S4E3).png'], method: 'cut-out (wiki pose)', flip: false });
   emit(F, 'panicked', toBase(S('Box in a Panicked Expression (S4E3).png'), F), { src: ['Box in a Panicked Expression (S4E3).png'], method: 'cut-out (wiki pose)', flip: false });
   emit(F, 'smiling', toBase(S('Box Smiling (S4E3).png'), F), { src: ['Box Smiling (S4E3).png'], method: 'cut-out (wiki pose)' });
-  // KO: crushed and bandaged. The fill is a different shape (squashed flat), so it is sized by eye to her width rather than by area.
-  emit(F, 'damaged', toBase(S('Box Damage.png'), F, 1.0), { src: ['Box Damage.png'], method: 'cut-out (wiki pose)', faceless: true, note: 'no face: her crushed, bandaged body' });
+  // KO: fallen over, blindfolded (Blindfolded Box Fell Down (S4E3).png, an S4 cut-out from the same "Poses" set as her smiling and panicked
+  // pictures). It replaced Box Damage.png, the Season 3 asset of her old faceless body crushed and bandaged (art consistency, 2026-10-21).
+  emit(F, 'fell', toBase(S2('Blindfolded Box Fell Down (S4E3).png'), F), { src: ['Blindfolded Box Fell Down (S4E3).png'], method: 'cut-out (wiki pose)',
+    note: 'Season 4, in place of the Season 3 Box Damage.png' });
 }
 
 // ---- BELL ----------------------------------------------------------------------------------------------------------------------------
@@ -480,29 +487,134 @@ function bell() {
 }
 
 // ---- TEDDY BEAR ------------------------------------------------------------------------------------------------------------------------
+// Her set is Season 4 throughout (art consistency, 2026-10-21): her render is her S4 sticker art, her mad picture an S4 cut-out, and the
+// pictures that came from older seasons are replaced -- the paint hit and the grief (Season 1 Remastered: a round head, no cheek fur, no
+// fangs, a thick outline), her fists (TB.png, the older 2017/II look) and the laugh GIF of her win (Season 1, flat and unshaded).
 function teddy() {
-  const F = 'Teddy Bear';
-  // the paint hit: the cut-out carries a white-to-grey fringe (round her tail's curl, and paling her outline by it) and a green one (round her
-  // feet) from old grounds; in the 2px edge band those go to the colour inside (her limbs' black, her outline's brown: neither is grey, pale
-  // or green)
-  { const im = toBase(S('Teddy Bear Paint.png'), F);
-    L.decontaminate(im, (r, g, b) => (g > r + 12 && g > b + 12) || (Math.max(r, g, b) > 40 && Math.max(r, g, b) - Math.min(r, g, b) < 30) || (Math.max(r, g, b) > 150 && Math.max(r, g, b) - Math.min(r, g, b) < 60), { band: 2, reach: 4, passes: 2 });
-    emit(F, 'paint', im, { src: ['Teddy Bear Paint.png'], method: 'cut-out (wiki pose), its white and green fringes cleaned' }); }
-  emit(F, 'fists', toBase(S('TB.png'), F), { src: ['TB.png'], method: 'cut-out (wiki pose)' });
-  emit(F, 'mad', toBase(S('TeddyBearMad.png'), F), { src: ['TeddyBearMad.png'], method: 'cut-out (wiki pose)' });
-  emit(F, 'grief', toBase(S('TeddyBear-Grief.png'), F), { src: ['TeddyBear-Grief.png'], method: 'cut-out (wiki pose)' });
-  // The laugh: every frame of the official GIF, all on one canvas size so the frames never jump.
-  const frames = []; for (let i = 1; i <= 17; i++) frames.push(D(`Teddy bear laugh gif transparent-${String(i).padStart(2, '0')}.png`));
-  const s = Math.sqrt((baseArea[F] || (baseArea[F] = L.fillArea(B(F)))) / L.fillArea(frames[0]));
-  const union = frames.map((f) => L.bbox(f)).reduce((u, b) => ({ x0: Math.min(u.x0, b.x), y0: Math.min(u.y0, b.y), x1: Math.max(u.x1, b.x + b.w), y1: Math.max(u.y1, b.y + b.h) }), { x0: 1e9, y0: 1e9, x1: 0, y1: 0 });
-  frames.forEach((f, i) => {
-    const c = L.crop(f, union.x0 - 2, union.y0 - 2, union.x1 - union.x0 + 4, union.y1 - union.y0 + 4);
-    emit(F, `laugh-${String(i + 1).padStart(2, '0')}`, L.keepParts(L.scaleBy(c, s), (p) => p.n >= 40), { src: ['Teddy bear laugh gif transparent.gif'], method: `official GIF, frame ${i + 1} of 17`, flip: true });   // the gun points left
+  const F = 'Teddy Bear', base = B(F), faceRect = { x: 40, y: 27, w: 58, h: 64 };
+  if (!baseArea[F]) baseArea[F] = L.fillArea(base);
+  // RESPECT THIS! and the finisher: angry, fists on her hips (Angryteddybear.png, an S4 cut-out from the same set as her mad picture: the same
+  // 439x568 canvas, the same upload day). It replaced TB.png.
+  // Its colouring is a darker, duller brown than the rest of her set (body 173,106,52 against the render's 208,146,58, and a pinkish belly), so
+  // it is shifted onto her render's by three tone curves fitted to her parts, cut-out colour to render colour: line-work, outline, shade,
+  // body, fur highlight, belly. First its fringe goes: the cut-out keeps a 4px rim of the light ground it was cut from, grey fading into her
+  // outline (161,148,144 at the edge); within 5px of the clear, a pixel greyer than her outline (red under blue + 60) and not her black takes
+  // the colour of the nearest one deeper in that is not, so her outline comes out the render's width.
+  { const im = S2('Angryteddybear.png');
+    L.decontaminate(im, (r, g, b) => r - b < 60 && L.lum(r, g, b) > 60, { band: 5, reach: 6, passes: 2 });
+    L.applyCurves(im, [[[0, 0], [22, 7], [121, 137], [158, 193], [173, 208], [194, 226], [208, 253], [255, 255]],
+      [[0, 0], [13, 4], [66, 80], [96, 129], [106, 146], [136, 172], [157, 202], [255, 255]],
+      [[0, 0], [12, 2], [48, 45], [54, 58], [93, 88], [119, 117], [255, 255]]]);
+    emit(F, 'angry', toBase(im, F), { src: ['Angryteddybear.png'], method: "cut-out (wiki pose), recoloured to her render's browns", note: 'Season 4, in place of the older TB.png' }); }
+  const mad = toBase(S('TeddyBearMad.png'), F);
+  emit(F, 'mad', L.clone(mad), { src: ['TeddyBearMad.png'], method: 'cut-out (wiki pose)' });
+  // THE PAINT GUN: her mad picture, charging with her arms out, with the paint gun in her outstretched paw (the gun of the old laugh GIF, the
+  // only drawing of it: a flat grey pistol, frame 1, x 19-94, y 154-217). It is laid behind her, its grip under her paw, about as long as a
+  // quarter of her height (as in the GIF), pointing the way she charges. It replaced laugh-01, which the Paint Gun wore before.
+  { const lf = D('Teddy bear laugh gif transparent-01.png'), gun = L.crop(lf, 17, 150, 80, 70);
+    for (let i = 0; i < gun.d.length; i += 4) { const r = gun.d[i], g = gun.d[i + 1], b = gun.d[i + 2];
+      if (!(Math.max(r, g, b) - Math.min(r, g, b) < 28 && L.lum(r, g, b) > 50)) gun.d[i + 3] = 0; }   // the grey of the gun only (not her black arm)
+    L.keepParts(gun, (p) => p.n > 200);
+    const hand = (() => {   // her outstretched paw: the leftmost black of the picture, and the black round it
+      let lx = 1e9; for (let y = 0; y < mad.h; y++) for (let x = 0; x < mad.w; x++) { const i = (y * mad.w + x) * 4; if (mad.d[i + 3] > 128 && L.lum(mad.d[i], mad.d[i + 1], mad.d[i + 2]) < 50 && x < lx) lx = x; }
+      let n = 0, sx = 0, sy = 0;
+      for (let y = 0; y < mad.h; y++) for (let x = lx; x < lx + 9; x++) { const i = (y * mad.w + x) * 4; if (mad.d[i + 3] > 128 && L.lum(mad.d[i], mad.d[i + 1], mad.d[i + 2]) < 50) { n++; sx += x; sy += y; } }
+      return [sx / n, sy / n]; })();
+    const tall = L.bbox(mad).h, gs = (tall * 0.225) / 75, g2 = L.scaleBy(gun, gs), pad = Math.ceil(g2.w) + 4;
+    const out = L.blank(mad.w + pad, mad.h);
+    L.paste(out, g2, { x: pad + hand[0], y: hand[1], ox: (93 - 17) * gs, oy: (200 - 150) * gs });   // the grip's back (93, 200 of the frame) at her paw
+    L.paste(out, mad, { x: pad, y: 0 });
+    emit(F, 'gun', L.trim(out, 2), { src: ['TeddyBearMad.png', 'Teddy bear laugh gif transparent.gif (the paint gun, frame 1)'], method: 'cut-out (wiki pose) with the paint gun of the laugh GIF in her paw',
+      note: 'the Season 4 mad picture in place of the Season 1 laugh-01', flip: true }); }   // the gun points left, as she charges
+  // HURT, the first moment: shaken (S4E1 Teddy Tramua.png): eyes shut, brows down, mouth open. The frame cuts her off at the hips, so its face
+  // goes on her own render (swapFace), as her "No!!" does. It replaced Teddy Bear Paint.png.
+  emit(F, 'shaken', L.trim(swapFace(base, faceRect, S2('S4E1 Teddy Tramua.png'), { x: 358, y: 106, w: 172, h: 194 }, { scale: 0.335, dy: 3 }), 2),
+    { src: ['S4E1 Teddy Tramua.png', 'teddy-bear.png'], method: 'face swap: her face (a cropped frame) on her own render', note: 'Season 4, in place of the Season 1 Remastered Teddy Bear Paint.png' });
+  // LAUNCHED: grief, "I can't take any more loss!" (PointOfNoReturn- Teddy Bear's first appearance.png, S4E6, an episode frame: a pink hospital
+  // room). The wall, the lino, the nightstand and the bed are flooded out from the border (she is her browns and creams and her black limbs);
+  // the edge is un-mixed from the ground (matteEdge: her outline is brown). The bed's corner hides her right foot, so her left foot (x 1216-1312,
+  // y 996-1042 of the frame) is copied onto her right leg, 124px across, where the legs run side by side. It replaced TeddyBear-Grief.png.
+  { const X = 1040, Y = 160, im = L.crop(S2("PointOfNoReturn- Teddy Bear's first appearance.png"), X, Y, 480, 918);
+    const her = (r, g, b) => (r > b + 40 && g > b + 10) || (L.lum(r, g, b) < 60 && Math.max(r, g, b) - Math.min(r, g, b) < 40);
+    L.matteEdge(im, L.floodBg(im, (r, g, b) => !her(r, g, b)));
+    L.keepParts(im, (p) => p.n > 2000);
+    L.paste(im, L.crop(im, 1216 - X, 996 - Y, 96, 46), { x: 1216 - X + 124, y: 996 - Y });
+    emit(F, 'grief', toBase(im, F), { src: ["PointOfNoReturn- Teddy Bear's first appearance.png"], method: 'episode frame, the room keyed out, her hidden right foot copied from her left',
+      note: 'Season 4, in place of the Season 1 Remastered TeddyBear-Grief.png' }); }
+  // THE WIN: her S4 dance with Tea Kettle (Teddydance.gif, from "Rock the Boat", S4E7: 426x238, 111 frames, the owner's pick). It is an episode
+  // clip, at night, with Tea Kettle beside her, in a 3-3-2 palette (8 reds, 8 greens, 4 blues) error-diffused all over. The frames kept are the
+  // twirl and the bow after it (78 to 110, every other frame: 17 pictures), where she stands clear of Tea Kettle (before them he has his arms
+  // round her and his spout on her face). Each frame, the same way:
+  //   · her LINE-WORK (limbs, brows, mouth) is read off the raw frame: its black is a palette entry no ground colour comes near (lum under 14),
+  //     so it stays crisp; the COLOUR is the frame blurred (sigma 1.2: the dither averaged out) and flattened twice by an edge-keeping
+  //     bilateral (the error diffusion's blotches), its edges firmed (unsharp); both are drawn at twice the size, to cut a smooth edge;
+  //   · the night is flooded out from the border (she is warm -- red over green over blue --, her pale belly and ear insides, or her ink; the
+  //     wall is magenta, the doorway, the ground and the stars blue-grey);
+  //   · Tea Kettle's arm is ink like hers and holds her raised paw: the two paws make one blob, the thickest ink near the top (the twirl) or
+  //     at the left (the bow); every ink left of it (in the twirl, no lower than it) is his, and goes. A part of her that is left above her
+  //     middle in the twirl is the clasped paws over her head with her arm hidden behind it: it goes; her legs, parted from her by the blur of
+  //     her bottom outline into the ground, stay (any part within 10px of her);
+  //   · the edge is un-mixed from the night behind it (matteEdge), then the silhouette smoothed (its alpha blurred and re-sharpened round 0.5);
+  //   · the scene's light is taken off her by three tone curves fitted to her own colours, clip (blurred) to render: ink 9,16,17 -> 7,4,2,
+  //     outline 62,36,28 -> 137,80,45, body 97,62,41 -> 208,146,58, belly 148,113,89 -> 253,202,117 (the render's own); and her S4 outline,
+  //     which the night sank into the dark, is drawn back: the render's brown, 7px wide at this size (3px in the picture, as the render's), round her fill (not her limbs);
+  //   · all seventeen share one canvas and one scale, so she never jumps between frames.
+  // She is ~190px tall in the clip and ~165px in the pictures: no upscaling was needed (the 2x is only for the cut); she is a little softer
+  // than her cut-outs, as a frame of a 22% clip is.
+  const DANCE = []; for (let n = 78; n <= 110; n += 2) DANCE.push(n);
+  const CURVES = [[[0, 0], [9, 7], [62, 137], [97, 208], [148, 253], [255, 255]], [[0, 0], [16, 4], [36, 80], [62, 146], [113, 202], [255, 255]],
+    [[0, 0], [17, 2], [28, 45], [41, 58], [89, 117], [255, 255]]];
+  const CX = 180, CW = 220, CH = 238, Z = 2, OUTLINE = [137, 80, 45], INK = [9, 16, 17];
+  const warm = (r, g, b) => r - b > 22 && g - b > 4 && r - g > 12 && r > 40;
+  const pale = (r, g, b) => L.lum(r, g, b) > 95 && r - b > 12 && r > g;   // her belly, and the inside of her ears (greyed by the night)
+  const cuts = DANCE.map((n) => {
+    const c = L.crop(D2(`Teddydance-${String(n).padStart(3, '0')}.png`), CX, 0, CW, CH);
+    const ink = L.blank(CW, CH);
+    for (let p = 0; p < CW * CH; p++) { const i = p * 4, v = L.lum(c.d[i], c.d[i + 1], c.d[i + 2]) < 14 ? 255 : 0; ink.d[i] = ink.d[i + 1] = ink.d[i + 2] = v; ink.d[i + 3] = 255; }
+    let col = L.blur(c, 1.2);
+    for (let k = 0; k < 2; k++) col = L.bilateral(col, 3, 2, 12);
+    L.unsharp(col, 1.4, 0.6);
+    const im = L.paste(L.blank(CW * Z, CH * Z), col, { sx: Z, sy: Z }), ik = L.paste(L.blank(CW * Z, CH * Z), L.blur(ink, 0.7), { sx: Z, sy: Z });
+    const w = im.w, h = im.h, inkAt = new Float32Array(w * h);
+    for (let p = 0; p < w * h; p++) { const a = Math.min(1, Math.max(0, (ik.d[p * 4] / 255 - 0.2) * 2)); inkAt[p] = a;
+      for (let ch = 0; ch < 3; ch++) im.d[p * 4 + ch] += (INK[ch] - im.d[p * 4 + ch]) * a; }
+    const her = (p) => inkAt[p] > 0.35 || warm(im.d[p * 4], im.d[p * 4 + 1], im.d[p * 4 + 2]) || pale(im.d[p * 4], im.d[p * 4 + 1], im.d[p * 4 + 2]);
+    const bg = L.floodBg(im, (r, g, b, a, x, y) => !her(y * w + x));
+    // the clasp: the thickest ink (chessboard distance to anything not ink), near the top in the twirl, at the left in the bow
+    const isB = (p) => !bg[p] && inkAt[p] > 0.35, dist = new Int32Array(w * h);
+    for (let p = 0; p < w * h; p++) dist[p] = isB(p) ? 1 << 20 : 0;
+    const relax = (x, y, p) => { let m = dist[p];
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) { m = Math.min(m, 1); continue; } m = Math.min(m, dist[yy * w + xx] + 1); }
+      dist[p] = m; };
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (dist[y * w + x]) relax(x, y, y * w + x);
+    for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) if (dist[y * w + x]) relax(x, y, y * w + x);
+    const twirl = n <= 100;
+    let cx = -1, cy = -1, rc = 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { if (twirl ? y >= 70 * Z : (x >= 80 * Z || y >= 150 * Z)) continue; const d = dist[y * w + x]; if (d > rc) { rc = d; cx = x; cy = y; } }
+    if (cx >= 0) for (let y = 0; y < h; y++) for (let x = 0; x < cx - rc - 2; x++) { const p = y * w + x; if ((!twirl || y < cy + rc + 6 * Z) && isB(p)) bg[p] = 1; }
+    L.matteEdge(im, L.floodBg(im, (r, g, b, a, x, y) => bg[y * w + x] || !her(y * w + x)), { band: 3 });
+    const all = L.parts(im, 8), main = new Uint8Array(w * h); for (const p of all[0].px) main[p] = 1;
+    const near = L.dilate(main, w, h, 10), mid = all[0].box.y + all[0].box.h * 0.45;
+    for (const pt of all.slice(1)) if (!(pt.n >= 30 && (!twirl || pt.box.y + pt.box.h > mid) && pt.px.some((p) => near[p]))) for (const p of pt.px) im.d[p * 4 + 3] = 0;
+    { const A = L.blank(w, h); for (let p = 0; p < w * h; p++) { A.d[p * 4] = A.d[p * 4 + 1] = A.d[p * 4 + 2] = im.d[p * 4 + 3]; A.d[p * 4 + 3] = 255; }
+      const As = L.blur(A, 1.4); for (let p = 0; p < w * h; p++) im.d[p * 4 + 3] = 255 * Math.max(0, Math.min(1, (As.d[p * 4] / 255 - 0.5) * 2.5 + 0.5)); }
+    L.applyCurves(im, CURVES);
+    // her outline: the render's brown, within 7px of the clear (4-connected distance), on her fill only
+    const dd = new Int32Array(w * h).fill(1 << 20), q = [];
+    for (let p = 0; p < w * h; p++) if (im.d[p * 4 + 3] < 128) { dd[p] = 0; q.push(p); }
+    for (let qi = 0; qi < q.length; qi++) { const p = q[qi], x = p % w, y = (p / w) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; const pp = yy * w + xx; if (dd[pp] > dd[p] + 1) { dd[pp] = dd[p] + 1; q.push(pp); } } }
+    for (let p = 0; p < w * h; p++) { if (inkAt[p] > 0.3 || !im.d[p * 4 + 3]) continue; const t = Math.max(0, Math.min(1, 8 - dd[p]));
+      if (t > 0) for (let ch = 0; ch < 3; ch++) im.d[p * 4 + ch] += (OUTLINE[ch] - im.d[p * 4 + ch]) * t; }
+    return im;
   });
+  const u = cuts.map((c) => L.bbox(c)).reduce((a, b) => ({ x0: Math.min(a.x0, b.x), y0: Math.min(a.y0, b.y), x1: Math.max(a.x1, b.x + b.w), y1: Math.max(a.y1, b.y + b.h) }), { x0: 1e9, y0: 1e9, x1: 0, y1: 0 });
+  const ds = Math.sqrt(baseArea[F] / L.fillArea(cuts[DANCE.indexOf(104)]));   // her size: a frame where she faces the front, matched to her render
+  cuts.forEach((c, i) => emit(F, `dance-${String(i + 1).padStart(2, '0')}`, L.scaleBy(L.crop(c, u.x0 - 4, u.y0 - 4, u.x1 - u.x0 + 8, u.y1 - u.y0 + 8), ds),
+    { src: ['Teddydance.gif'], method: `episode GIF, frame ${DANCE[i]} of 111: Tea Kettle and the night keyed out, the scene's light taken off, her outline drawn back`, flip: false }));
   // HURT ("No!!"): the episode frame is cut off at her hips by the frame's edge, so its face goes on her own render (the scream with her hands
   // on her head). (Front of the Crowd had a swap like it off "Teddy runs for Bell.png": a ghost head edge and a cut nose, and the face reads
   // as crying, not barging; the down special wears her 'mad' picture until a clean barging frame is cut.)
-  const base = B(F), faceRect = { x: 40, y: 27, w: 58, h: 64 };
   emit(F, 'no', L.trim(swapFace(base, faceRect, S('Teddy _No!!_.png'), { x: 352, y: 100, w: 166, h: 238 }, { scale: 0.33, dy: 4 }), 2),
     { src: ['Teddy \"No!!\".png', 'teddy-bear.png'], method: 'face swap: her face (a cropped frame) on her own render' });
 }
@@ -510,8 +622,9 @@ function teddy() {
 // ---- PAINTBRUSH ---------------------------------------------------------------------------------------------------------------------------
 function paintbrush() {
   const F = 'Paintbrush';
-  emit(F, 'rage-1', toBase(S('PaintbrushIsPissedOff.png'), F), { src: ['PaintbrushIsPissedOff.png'], method: 'cut-out (wiki pose)' });
-  emit(F, 'win', toBase(S('OMG I Stacked TWO!.png'), F), { src: ['OMG I Stacked TWO!.png'], method: 'cut-out (wiki pose)' });
+  // WIN: their Season 4 pose, hands on hips (Paintbrush IIS4.png, their infobox picture, a cut-out). It replaced the older flat "OMG I Stacked
+  // TWO!.png" (no handle shading, no rim shine, a heavier ferrule outline).
+  emit(F, 'win', toBase(S2('Paintbrush IIS4.png'), F), { src: ['Paintbrush IIS4.png'], method: 'cut-out (wiki pose)', note: 'Season 4, in place of the older OMG I Stacked TWO!.png' });
   // Tired: the wiki cut-out carries a green fringe from its old background; it goes.
   const t = S('Paintbrush Tired.png');
   for (let i = 0; i < t.d.length; i += 4) {
@@ -520,11 +633,94 @@ function paintbrush() {
     else if (g > r + 8 && g > b + 8 && l <= 85) { const k = Math.min(r, b); t.d[i] = t.d[i + 1] = t.d[i + 2] = k; }   // the limbs it tinted: back to black
   }
   emit(F, 'tired', toBase(L.keepParts(t, (p) => p.n > 30), F), { src: ['Paintbrush Tired.png'], method: 'cut-out (wiki pose), green fringe removed' });
-  // Rage (on fire, red): the sky behind them keyed out.
-  const r = S('Paintbrush Rage.png');
-  const sky = (R, G, Bb, A) => A > 0 && Bb > 150 && Bb > R + 40 && G > R;
-  L.applyMask(r, L.floodBg(r, sky), 0.5);
-  emit(F, 'rage-3', toBase(L.keepParts(r, (p) => p.n > 200 && p.box.x > 20), F, 0.95), { src: ['Paintbrush Rage.png'], method: 'episode frame, sky keyed out' });
+  // RAGE, steps 1 and 3, in Season 4 (art consistency, 2026-10-21: they replaced PaintbrushIsPissedOff.png, a Season 2 frame with an olive
+  // handle and no ferrule shine, and Paintbrush Rage.png, the old Season 2 picture of them on fire). Both come from S4E5, where they wear the
+  // crossed hi-vis strap:
+  //   · THE BODY: S4E5 Paintbrush 2.png ("Can someone say something infuriating?"), the whole of them in a doorway. The snow, the sky and the room
+  //     are flooded out from the border (they are warm browns and yellows, their black limbs, their dark outline, and the strap's green and grey
+  //     where it crosses the handle), and the ground seen through the hole in their handle from a seed in it. The doorway lights them from
+  //     behind, so the scene draws them dim and blue; one colour map fitted to their parts (frame colour to render colour) puts their render's
+  //     colours back.
+  //   · THE FACE, eyes squeezed shut and a scowl, and THE FLAMES: S4E5 Paintbrush's bristles turn into flames.png, a close-up cut off at the neck
+  //     by the frame's bottom edge and at the top of the fire by its top edge. Its white doorway is flooded out (the flames' soft glow fades into
+  //     it, so their edge keeps that glow as alpha); the fire's light on the head and ferrule is kept, it is part of the picture.
+  // rage-1 is the body with that face (the body's own face reads as surprised, not angry); rage-3 is the close-up's flaming head down to the
+  // neck on the body's strap, handle and limbs, the top of the fire, cut off by the frame, rounded off in its own colours.
+  { const P2 = L.crop(S2('S4E5 Paintbrush 2.png'), 300, 20, 240, 457);
+    const strapZone = (x, y) => x > 85 && x < 165 && y > 225 && y < 318, ferruleZone = (x, y) => x > 45 && x < 212 && y > 92 && y < 152;
+    const frame = (x, y) => x < 14 || x > 228 || y < 11 || (x < 23 && y < 16);   // the doorframe's edges, which the bristles' tip touches
+    const dark = (r, g, b) => L.lum(r, g, b) < 40 || (L.lum(r, g, b) < 75 && r >= b - 2 && !(g < r - 12 && g < b - 12));   // (the room's purple is not)
+    const brush = (r, g, b, x, y) => !frame(x, y) && (r > b + 25 || g > r + 30 || dark(r, g, b))
+      || (strapZone(x, y) && L.lum(r, g, b) > 40 && L.lum(r, g, b) < 150 && Math.max(r, g, b) - Math.min(r, g, b) < 30)
+      || (ferruleZone(x, y) && L.lum(r, g, b) < 215 && Math.max(r, g, b) - Math.min(r, g, b) < 45);
+    const bg = L.floodBg(P2, (r, g, b, a, x, y) => !brush(r, g, b, x, y));
+    const hole = L.floodBg(P2, (r, g, b) => !(r > b + 25) && !dark(r, g, b), [[120, 362]]);   // the hole in the handle
+    const pale = (r, g, b) => L.lum(r, g, b) > 185 && b >= r - 5;   // the snow and the sky
+    const loop = L.floodBg(P2, pale, allWhere(P2, pale).filter(([x, y]) => x < 105 && y > 290 && y < 360));   // the snow inside the loop of their left arm
+    for (let p = 0; p < bg.length; p++) bg[p] |= hole[p] | loop[p];
+    L.matteEdge(P2, bg);
+    L.keepParts(P2, (p) => p.n > 3000);   // (not the doorframe's edges)
+    const toRender = L.fitColourMap([
+      [[95, 77, 52], [168, 118, 57]],     // the handle
+      [[170, 169, 99], [254, 254, 130]],  // the bristles
+      [[123, 134, 145], [187, 187, 185]], // the ferrule
+      [[60, 51, 43], [100, 77, 55]],      // the outline
+      [[2, 3, 14], [3, 2, 1]],            // the limbs and line-work
+      [[100, 166, 38], [150, 225, 36]],   // the strap's green, as the close-up has it
+      [[77, 90, 88], [93, 102, 96]],      // the strap's grey stripe
+    ]);
+    L.applyColourMap(P2, toRender);
+    // the close-up, and how it sits on the body: its ferrule is 249px across (x 293-542), the body's 149px (x 352-501), so it is drawn at 0.598;
+    // its neck where the strap starts (y 352, x 373-459) goes on the body's (y 256 of the frame, x 398-449)
+    const C = S2("S4E5 Paintbrush's bristles turn into flames.png"), cs = 149 / 249;
+    if (!baseArea[F]) baseArea[F] = L.fillArea(B(F));
+    const scaleOf = Math.sqrt(baseArea[F] / L.fillArea(P2));   // the body's size, kept for the flaming one too (its fire is not body)
+    // rage-1: the body with the close-up's scowl (brows, squeezed eyes, mouth: x 350-478, y 209-320) in place of its own surprised face. The
+    // body's face is painted out below its ferrule's rim (its brows hang from the rim); the scowl is taken as ink only (inkLayer), since the
+    // fire lights that head from above and a lifted face would carry the shading with it.
+    const angry = L.clone(P2), fr = { x: 88, y: 149, w: 88, h: 76 }, bc = L.bodyColour(P2, padR(fr, 8));
+    L.paintOut(angry, fr, (x, y, r, g, b) => Math.hypot(r - bc[0], g - bc[1], b - bc[2]) > 42);
+    for (let y = 143; y < 149; y++) for (let x = fr.x; x < fr.x + fr.w; x++) {   // where the brows cross the rim's outline (y 145-148), the rim as it is between them
+      const i = (y * angry.w + x) * 4, j = (y * angry.w + 135) * 4;
+      if (L.lum(angry.d[i], angry.d[i + 1], angry.d[i + 2]) < 45 && angry.d[i + 3] > 128) for (let c = 0; c < 4; c++) angry.d[i + c] = angry.d[j + c];
+    }
+    putFace(angry, L.inkLayer(C, { x: 350, y: 209, w: 128, h: 111 }, { inkLum: 40, bodyLum: 100 }), 130, 187, { s: cs });
+    emit(F, 'rage-1', L.trim(L.scaleBy(L.trim(angry, 0), scaleOf), 2), { src: ['S4E5 Paintbrush 2.png', "S4E5 Paintbrush's bristles turn into flames.png (their scowl)"],
+      method: 'episode frame, the room keyed out and recoloured to their render, with the scowl of the close-up', note: 'Season 4, in place of the Season 2 PaintbrushIsPissedOff.png' });
+    // rage-3: the close-up keyed (its doorway flooded in from the sides and the bottom, the top being the fire's cut), down to just past the neck
+    const top = L.crop(C, 262, 0, 316, 357), tw = top.w, th = top.h;
+    const doorway = (r, g, b, x, y) => L.lum(r, g, b) > 195 && b >= r - 12 && !(x >= 193 && x <= 243 && y < 65);   // (not the white flick of light in the fire, top right)
+    const seeds = []; for (let y = 0; y < th; y++) { seeds.push([0, y], [tw - 1, y]); } for (let x = 0; x < tw; x++) seeds.push([x, th - 1]);
+    L.matteEdge(top, L.floodBg(top, (r, g, b, a, x, y) => doorway(r, g, b, x, y) || y >= 352 && !(r > b + 25), seeds.filter(([x, y]) => { const i = (y * tw + x) * 4; return doorway(top.d[i], top.d[i + 1], top.d[i + 2], x, y); })), { band: 5 });
+    for (let y = 352; y < th; y++) for (let x = 0; x < tw; x++) top.d[(y * tw + x) * 4 + 3] *= (th - y) / (th - 351);   // the last rows fade onto the body's strap
+    // the fire runs off the frame's top (x 287-540 at y 0): it is rounded off with three lobes like its own, filled with the fire's own colours
+    // mirrored up from the rows below the cut (its plain yellow where that is clear), its edge as soft as its glow
+    const E = 70, fire = L.blank(tw, th + E);
+    L.paste(fire, top, { x: 0, y: E });
+    const lobes = [[345 - 262, 10, 58], [420 - 262, 5, 70], [495 - 262, 15, 50]];
+    for (let y = 0; y < E + 40; y++) for (let x = 0; x < tw; x++) {
+      const fy = y - E;   // the frame's y (above its top while negative)
+      const inside = Math.max(...lobes.map(([cx, cy, r]) => r - Math.hypot(x - cx, fy - cy)));   // px inside the nearest lobe's edge
+      if (inside <= -1.5) continue;
+      const i = (y * tw + x) * 4, a = 255 * Math.min(1, (inside + 1.5) / 3);
+      if (fy >= 0) {   // below the cut, the lobes only fill the doorway's white between the fire's own top lobes
+        if (fire.d[i + 3] >= a) continue;
+        const k = fire.d[i + 3] / 255; for (let c = 0; c < 3; c++) fire.d[i + c] = fire.d[i + c] * k + [255, 236, 18][c] * (1 - k);
+        fire.d[i + 3] = a; continue;
+      }
+      const mi = ((E - fy - 1) * tw + x) * 4;   // the row as far below the cut as this one is above it
+      const src = fire.d[mi + 3] > 200 ? [fire.d[mi], fire.d[mi + 1], fire.d[mi + 2]] : [255, 236, 18];
+      fire.d[i] = src[0]; fire.d[i + 1] = src[1]; fire.d[i + 2] = src[2]; fire.d[i + 3] = a;
+    }
+    // on the body: the body below its neck (y >= 236 of the crop), the flaming head over it, the close-up's neck point (416, 352) on (123.5, 236)
+    const body = L.clone(P2); L.eraseRect(body, 0, 0, body.w, 236);
+    const pad = 60, out = L.blank(body.w + pad * 2, body.h + pad * 2);
+    L.paste(out, body, { x: pad, y: pad });
+    const fs = L.scaleBy(fire, cs), k = fire.w / fs.w;
+    L.paste(out, fs, { x: pad + 123.5, y: pad + 236, ox: (416 - 262) / k, oy: (352 + E) / k });
+    emit(F, 'rage-3', L.trim(L.scaleBy(L.trim(out, 0), scaleOf), 2), { src: ["S4E5 Paintbrush's bristles turn into flames.png", 'S4E5 Paintbrush 2.png (their strap, handle and limbs)'],
+      method: 'episode frames: the flaming close-up keyed, its fire rounded off at the frame\'s cut, on the body of the other (recoloured to their render)', note: 'Season 4, in place of the Season 2 Paintbrush Rage.png' });
+  }
   // RAGE, step 2 (Paintbrush is very mad..png, an episode frame): the pale sky and the white podium flooded out from the border; their ferrule
   // is the same pale grey but is closed in by its outline.
   { const im = L.crop(S('Paintbrush is very mad..png'), 870, 40, 380, 750);

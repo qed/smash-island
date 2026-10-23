@@ -383,6 +383,120 @@ export function cutPred(im, isBg, { seeds = null, ink = [24, 24, 24], soft = 0.6
   }
   return im;
 }
+// An EDGE MATTE for a cut whose outline is coloured (Tissues' teal, Teddy's and Paintbrush's brown), where cutPred's "darker means ink" would
+// blacken it. `bg` is the background mask (floodBg's). Every kept pixel within `band` px of it is un-mixed: B, the mean of the background
+// round it (radius rb), F, the mean of the character deeper in (radius rf, beyond the band); its alpha is how far it lies from B toward F,
+// and its colour is the un-mixed (P - (1 - a) B) / a, leaned to F as a falls (a faint pixel's un-mixing is noise). The background goes.
+export function matteEdge(im, bg, { band = 2, rb = 2, rf = 3 } = {}) {
+  const { w, h, d } = im, src = new Uint8ClampedArray(d), dist = new Int32Array(w * h).fill(1 << 20), q = [];
+  for (let p = 0; p < w * h; p++) if (bg[p]) { dist[p] = 0; q.push(p); }
+  for (let qi = 0; qi < q.length; qi++) {
+    const p = q[qi], x = p % w, y = (p / w) | 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+      const pp = yy * w + xx; if (dist[pp] > dist[p] + 1) { dist[pp] = dist[p] + 1; q.push(pp); }
+    }
+  }
+  const mean = (x, y, r, ok) => { let n = 0, R = 0, G = 0, B = 0;
+    for (let yy = Math.max(0, y - r); yy <= Math.min(h - 1, y + r); yy++) for (let xx = Math.max(0, x - r); xx <= Math.min(w - 1, x + r); xx++) {
+      const pp = yy * w + xx; if (!ok(pp)) continue; const j = pp * 4; R += src[j]; G += src[j + 1]; B += src[j + 2]; n++; }
+    return n ? [R / n, G / n, B / n] : null; };
+  for (let p = 0; p < w * h; p++) {
+    const i = p * 4;
+    if (bg[p]) { d[i + 3] = 0; continue; }
+    if (dist[p] > band) continue;
+    const x = p % w, y = (p / w) | 0;
+    const Bc = mean(x, y, rb, (pp) => bg[pp]);
+    let Fc = mean(x, y, rf, (pp) => !bg[pp] && dist[pp] > band);
+    if (!Fc) Fc = mean(x, y, rf, (pp) => !bg[pp] && dist[pp] > dist[p]);
+    if (!Bc || !Fc) continue;
+    const P = [src[i], src[i + 1], src[i + 2]], FB = [Fc[0] - Bc[0], Fc[1] - Bc[1], Fc[2] - Bc[2]], n2 = FB[0] ** 2 + FB[1] ** 2 + FB[2] ** 2;
+    if (n2 < 400) continue;   // the character and the ground too alike to tell apart here: kept as it is
+    const a = Math.max(0, Math.min(1, ((P[0] - Bc[0]) * FB[0] + (P[1] - Bc[1]) * FB[1] + (P[2] - Bc[2]) * FB[2]) / n2));
+    for (let c = 0; c < 3; c++) { const un = a > 0.02 ? Math.max(0, Math.min(255, (P[c] - (1 - a) * Bc[c]) / a)) : Fc[c]; d[i + c] = Fc[c] + (un - Fc[c]) * a; }
+    d[i + 3] = src[i + 3] * a;
+  }
+  return im;
+}
+// A 3x4 AFFINE COLOUR MAP fitted (least squares) to pairs [[from rgb], [to rgb]]: each channel out = m0 r + m1 g + m2 b + m3. One frame's
+// colouring (an episode's darker teal, a scene's light) shifted onto a render's, with the tints a pose adds (a blush, a frost) kept as tints.
+export function fitColourMap(pairs) {
+  const M = [];
+  for (let ch = 0; ch < 3; ch++) {
+    const A = Array.from({ length: 4 }, () => new Float64Array(5));
+    for (const [f, t] of pairs) { const a = [f[0], f[1], f[2], 1]; for (let i = 0; i < 4; i++) { for (let j = 0; j < 4; j++) A[i][j] += a[i] * a[j]; A[i][4] += a[i] * t[ch]; } }
+    for (let i = 0; i < 4; i++) A[i][i] += 1e-3;   // a whisker of ridge: a channel no pair varies stays solvable
+    for (let c = 0; c < 4; c++) {   // Gauss-Jordan with partial pivots
+      let piv = c; for (let r = c + 1; r < 4; r++) if (Math.abs(A[r][c]) > Math.abs(A[piv][c])) piv = r;
+      [A[c], A[piv]] = [A[piv], A[c]];
+      for (let r = 0; r < 4; r++) if (r !== c) { const k = A[r][c] / A[c][c]; for (let j = c; j < 5; j++) A[r][j] -= k * A[c][j]; }
+    }
+    M.push([0, 1, 2, 3].map((i) => A[i][4] / A[i][i]));
+  }
+  return M;
+}
+export function applyColourMap(im, M, only = null) {
+  const d = im.d;
+  for (let i = 0; i < d.length; i += 4) {
+    if (!d[i + 3]) continue;
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+    if (only && !only(r, g, b)) continue;
+    for (let c = 0; c < 3; c++) d[i + c] = M[c][0] * r + M[c][1] * g + M[c][2] * b + M[c][3];
+  }
+  return im;
+}
+// TONE CURVES, one a channel, each a list of [in, out] points (piecewise linear, in rising order): a scene's light taken off a character
+// whose darks, middles and lights it moved by different amounts (a night scene's dim, compressed browns back to a render's).
+export function applyCurves(im, curves) {
+  const lut = curves.map((pts) => { const t = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) { let k = 1; while (k < pts.length - 1 && v > pts[k][0]) k++;
+      const [a, A] = pts[k - 1], [b, Bv] = pts[k]; t[v] = A + (Bv - A) * Math.max(0, Math.min(1, (v - a) / Math.max(1, b - a))); }
+    return t; });
+  for (let i = 0; i < im.d.length; i += 4) for (let c = 0; c < 3; c++) im.d[i + c] = lut[c][im.d[i + c]];
+  return im;
+}
+// A GAUSSIAN BLUR (separable, alpha-weighted so a clear pixel lends no colour): a dithered GIF frame's error-diffusion noise averaged back to
+// the flat colours it stands for.
+export function blur(im, sigma) {
+  const r = Math.max(1, Math.ceil(sigma * 3)), k = [], { w, h } = im;
+  for (let i = -r; i <= r; i++) k.push(Math.exp(-(i * i) / (2 * sigma * sigma)));
+  const pass = (src, dx, dy) => {
+    const o = blank(w, h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let R = 0, G = 0, B = 0, A = 0, W = 0;
+      for (let i = -r; i <= r; i++) {
+        const xx = x + i * dx, yy = y + i * dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+        const j = (yy * w + xx) * 4, a = src.d[j + 3] / 255 * k[i + r];
+        R += src.d[j] * a; G += src.d[j + 1] * a; B += src.d[j + 2] * a; A += a; W += k[i + r];
+      }
+      const t = (y * w + x) * 4; if (A > 0) { o.d[t] = R / A; o.d[t + 1] = G / A; o.d[t + 2] = B / A; } o.d[t + 3] = (A / W) * 255;
+    }
+    return o;
+  };
+  return pass(pass(im, 1, 0), 0, 1);
+}
+// An EDGE-KEEPING SMOOTH (a bilateral filter: each pixel the mean of its neighbours within `r`, weighted by distance, sigma ss, and by how
+// near their colour is to its own, sigma sr): the blotches error diffusion leaves in a GIF's flat colours, flattened, its edges kept.
+export function bilateral(im, r, ss, sr) {
+  const { w, h, d } = im, o = clone(im), K = [];
+  for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) K.push([dx, dy, Math.exp(-(dx * dx + dy * dy) / (2 * ss * ss))]);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4; let R = 0, G = 0, B = 0, W = 0;
+    for (const [dx, dy, ks] of K) {
+      const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+      const j = (yy * w + xx) * 4, dc = (d[j] - d[i]) ** 2 + (d[j + 1] - d[i + 1]) ** 2 + (d[j + 2] - d[i + 2]) ** 2, wt = ks * Math.exp(-dc / (2 * sr * sr));
+      R += d[j] * wt; G += d[j + 1] * wt; B += d[j + 2] * wt; W += wt;
+    }
+    o.d[i] = R / W; o.d[i + 1] = G / W; o.d[i + 2] = B / W;
+  }
+  return o;
+}
+// An UNSHARP MASK: each colour pushed `amt` further from its blur (sigma), so edges a blur softened stand firm again.
+export function unsharp(im, sigma, amt) {
+  const bl = blur(im, sigma);
+  for (let i = 0; i < im.d.length; i += 4) for (let c = 0; c < 3; c++) im.d[i + c] = im.d[i + c] + (im.d[i + c] - bl.d[i + c]) * amt;
+  return im;
+}
 // Background colour models for cutBg: the median of the border (a flat colour), or one colour per row taken from columns known
 // to be clear (a vertical gradient).
 export function borderColour(im) {
