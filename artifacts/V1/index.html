@@ -44306,14 +44306,22 @@ function doAttackSpecial(f){
 // and nothing is drawn where the hit will land. What the move really puts in the world stays (a board raised, a whirl spinning up, a bubble
 // being blown). Longer only where the move is a placed trap or a counter stance (said at each).
 const FIN_STARTUP = 12;
+// GROW IN, ONE AT A TIME (the owner, 2026-10-23: "finishers are a bit op. I dont like it when multiple traps just spawn with no way to dodge
+// them"; picked "They grow in harmlessly" and "One at a time"). What a finisher puts out into the world that can hurt -- a jet, a whirl, a
+// bubble, a geyser, a dart, a castle, prism spikes, an updraft, a gate, a griddle, a flame, a fireball, a fernling, a crack -- comes up out of
+// the floor or forms in the air over FIN_GROW frames, drawn as the thing itself growing (no outline, no marker), and it cannot hurt until it is
+// whole: whoever stands there can step off. One that puts out several puts them out one after another, each with its own grow-in, the next
+// starting as the one before strikes. The fighter's own startup and commitment are what they were (counted from the press); the damage and
+// the reach are what they were; only the thing it spawns waits.
+const FIN_GROW = 24;
 const FX1 = {
-  jets:   { tell:FIN_STARTUP, gap:10, live:6, fade:8, first:70, step:56, r:24, h:116, dmg:6, burn:120 },
-  whirl:  { tell:FIN_STARTUP, dist:350, spd:9, r:28, h:76, every:9, hits:4, dmg:2, end:30, boss:12 },
+  jets:   { tell:FIN_STARTUP, grow:FIN_GROW, gap:FIN_GROW + 6, live:6, fade:8, first:70, step:56, r:24, h:116, dmg:6, burn:120 },   // (gap: a jet's grow-in and its live frames: the next licks up as one bursts)
+  whirl:  { tell:FIN_STARTUP, grow:FIN_GROW, dist:350, spd:9, r:28, h:76, every:9, hits:4, dmg:2, end:30, boss:12 },
   thread: { aim:FIN_STARTUP, spd:24, reach:264, r:7, pull:18, reel:16, dmg:12, bleed:150, patch:480, whiff:12 },
   cork:   { tell:FIN_STARTUP, off:30, w:30, h:100, life:240, pin:30, dmg:9, fast:6 },
   snow:   { reach:8, grab:20, pack:10, spd:7.5, dist:360, r0:26, r1:46, dmg:6, d0:6, d1:12, whiff:18 },
-  bubble: { blow:12, life:180, spd:1.3, r:38, dmg:7, pop:8 },
-  puddle: { range:300, melt:8, spd:6, slide:50, bubble:FIN_STARTUP, geyser:16, live:6, r:24, h:130, w:64, dmg:11, alone:120 },
+  bubble: { blow:12, grow:FIN_GROW, life:180, spd:1.3, r:38, dmg:7, pop:8 },
+  puddle: { range:300, melt:8, spd:6, slide:50, bubble:FIN_GROW, geyser:16, live:6, r:24, h:130, w:64, dmg:11, alone:120 },
   mirror: { preen:FIN_STARTUP, reach:46, live:4, dmg:10, daze:30, life:180, w:24, h:54, off:24 },
   swap:   { range:320, tell:FIN_STARTUP, dmg:8, trap:160 },
   slap:   { reach:6, grab:22, fight:60, gap:8, dmg:2, fin:10, whiff:16, cpu:[0.10, 0.13, 0.16] },
@@ -44405,6 +44413,8 @@ function fxPuffs(x, y, n, c1, c2, spread){ for(let i=0;i<n;i++) puff(x + (fxRand
 
 // ---- FIREY: WILDFIRE FLAME JETS. Stamps (FIN_STARTUP frames: her stomp winding up; nothing marks the floor), then three
 // flame jets burst up one after another along the floor ahead, 48 px wide and 56 px apart from 70 px out: 6% each with burn, the last one launching.
+// GROW IN, ONE AT A TIME: each jet's flame licks up out of the floor for FIN_GROW frames first (harmless: step off it), and the next starts
+// licking up as the one before bursts. She is free from the end of her stamp; her next set waits until this one is done.
 function finJets(f){
   const J = FX1.jets;
   if(!f.onground) return false;   // a stamp needs a floor: in the air nothing happens, and the finisher is not spent
@@ -44427,8 +44437,9 @@ function fxJetsStep(o, f){
   const J = FX1.jets, age = hazardT - o.t0, n = o.sp.length;
   if(age < J.tell && f.hitstun > 0){ o.dead = true; return; }   // hit in the stamp: no jets
   if(age < J.tell){ fxLock(f, 2); fxTell(f, 'jets', null, age/J.tell); return; }   // STARTUP: the stamp winding up (no outline, smoke or glow where the jets will come)
+  f.fnCd = Math.max(f.fnCd || 0, J.tell + (n - 1)*J.gap + J.grow + J.live - age);   // ONE AT A TIME: her next set cannot come while this one runs (the cooldown still counts from the press)
   for(let i=0;i<n;i++){
-    const a = age - J.tell - i*J.gap;
+    const a = age - J.tell - i*J.gap - J.grow;   // GROW-IN: its flame licks up out of the floor for J.grow frames first, harmless (fxDrawJets)
     if(a < 0 || a >= J.live) continue;
     const x = o.sp[i][0], y = o.sp[i][1], last = i === n - 1, sh = fxJetShape(o, i);
     if(a === 0){ hitTurrets(f, x, y - J.h*0.5, J.r, J.dmg); shake(2); for(let k=0;k<5;k++) puff(x, y - 10 - k*20, k%2 ? '#ffd23f' : '#f0521f', 4); }
@@ -44439,12 +44450,13 @@ function fxJetsStep(o, f){
     }
     fxBossShape(f, o, i, sh, J.dmg);
   }
-  if(age >= J.tell + (n - 1)*J.gap + J.live + J.fade) o.dead = true;
+  if(age >= J.tell + (n - 1)*J.gap + J.grow + J.live + J.fade) o.dead = true;
 }
 
 // ---- LEAFY: LEAF WHIRL SLIPSTREAM. Spins up a whirl of leaves (FIN_STARTUP frames, Leafy spinning in place), then it sweeps 350 px ahead along the
 // floor, catching whoever it touches and carrying them along: 4 hits of 2%, the fourth flinging them. 76 px tall, so a jump made when it
-// starts to move clears it (at 100 a single jump cleared it at one start time per distance: the review, 2026-10-20).
+// starts to move clears it (at 100 a single jump cleared it at one start time per distance: the review, 2026-10-20). GROW IN: the leaves gather
+// into the whirl over FIN_GROW frames from the press (harmless: it catches no one until it is whole and goes); she is free from the end of her spin.
 function finWhirl(f){
   const W = FX1.whirl;
   if(!f.onground) return false;   // it runs along a floor
@@ -44458,10 +44470,11 @@ function fxWhirlFling(f, o, t){ fxFree(t); o.done.push(t.idx); fxHit(f, t, o, FX
 function fxWhirlStep(o, f){
   const W = FX1.whirl, age = hazardT - o.t0;
   if(o.ph === 'spin'){
-    if(f.hitstun > 0){ o.dead = true; return; }
-    fxLock(f, 2);
-    fxTell(f, 'whirl', null, age/W.tell);   // STARTUP: she spins, the whirl spinning up in front of her
-    if(age >= W.tell) o.ph = 'go';
+    if(age < W.tell){   // STARTUP: she spins (a hit stops it)
+      if(f.hitstun > 0){ o.dead = true; return; }
+      fxLock(f, 2); fxTell(f, 'whirl', null, age/W.tell);
+    }
+    if(age >= W.grow) o.ph = 'go';   // GROW-IN: the whirl gathering in front of her, harmless; it goes when it is whole
     return;
   }
   let tick = false; const going = o.ph === 'go';
@@ -44639,7 +44652,8 @@ function fxSnowStep(o, f){
 
 // ---- BUBBLE: BUBBLE RAFT BUMP. Blows a big bubble (12 frames, Bubble puffing) that drifts slowly ahead for 3 s, 38 px round: each foe it
 // touches is bounced up and away, 7%, once. Its top is a one-way platform anyone can stand on, and it carries whoever does -- she rides it.
-// One hard hit (8% or more, a swing or a shot) pops it. One at a time.
+// One hard hit (8% or more, a swing or a shot) pops it. One at a time. GROW IN: it swells to its full size over FIN_GROW frames from the press,
+// bumping no one (and carrying no one) until it is whole; she is free from the end of her puff.
 function finBubble(f){
   const B = FX1.bubble, x = clamp(f.x + f.face*(f.r + B.r + 6), B.r + 6, WW - B.r - 6), sb = surfaceBelow(x, f.y - 30), y = sb !== null ? Math.min(f.y - 8, sb - B.r - 4) : f.y - 8;
   if(fxWallSpan(f.x, x + f.face*B.r, y - B.r, y + B.r)) return false;   // no room before a wall: no bubble, and the finisher is not spent
@@ -44652,10 +44666,9 @@ function fxBubbleStep(o, f){
   const B = FX1.bubble, age = hazardT - o.t0;
   f.fnCd = Math.max(f.fnCd || 0, FIN_CD);   // one at a time
   if(o.ph === 'blow'){
-    if(f.hitstun > 0){ fxPop(o); return; }
-    fxLock(f, 2); o.R = B.r*Math.min(1, age/B.blow);
-    if(age >= B.blow){ o.ph = 'drift'; o.R = B.r; o.dt = hazardT; }
-    else fxTell(f, 'bubble', null, age/B.blow);   // STARTUP: she blows it (the bubble growing is the bubble)
+    if(age < B.blow){ if(f.hitstun > 0){ fxPop(o); return; } fxLock(f, 2); fxTell(f, 'bubble', null, age/B.blow); }   // STARTUP: she blows it
+    o.R = B.r*Math.min(1, age/B.grow);   // GROW-IN: the bubble swelling is the bubble, harmless until it is whole
+    if(age >= B.grow){ o.ph = 'drift'; o.R = B.r; o.dt = hazardT; }
     return;
   }
   const nx = o.x + o.face*B.spd;
@@ -44672,8 +44685,8 @@ function fxBubbleStep(o, f){
 }
 
 // ---- TEARDROP: SILENT PUDDLE AMBUSH. Melts into a puddle (8 frames) that slides along her floor, 6 px a frame for up to 50, toward the nearest
-// foe within 300 px (no one: 120 px ahead), stopping under them or at the end of the floor; it bubbles there (FIN_STARTUP frames: the place is fixed,
-// step away), then erupts as a geyser 48 px wide and 130 tall: 11%, launches. While she is a puddle only the puddle can be hit: a swing or
+// foe within 300 px (no one: 120 px ahead), stopping under them or at the end of the floor; the water wells up out of it there into a column
+// (GROW IN: FIN_GROW frames, harmless; the place is fixed, step away), then erupts as a geyser 48 px wide and 130 tall: 11%, launches. While she is a puddle only the puddle can be hit: a swing or
 // a shot on it breaks the ambush and she takes the hit.
 function finPuddle(f){
   const P = FX1.puddle;
@@ -44710,7 +44723,7 @@ function fxPuddleStep(o, f){
     return;
   }
   if(o.ph === 'bubble'){
-    if(hazardT - o.bt < P.bubble){ fxTell(f, 'geyser', null, (hazardT - o.bt)/P.bubble); if((hazardT - o.bt) % 4 === 0) puff(o.x + (fxRand(f, hazardT) - 0.5)*P.w*0.6, o.y - 6, '#bfe8ff', 1); return; }   // HIT ART: where the geyser will come
+    if(hazardT - o.bt < P.bubble){ fxTell(f, 'geyser', null, (hazardT - o.bt)/P.bubble); if((hazardT - o.bt) % 4 === 0) puff(o.x + (fxRand(f, hazardT) - 0.5)*P.w*0.6, o.y - 6, '#bfe8ff', 1); return; }   // GROW-IN: the column welling up (fxDrawGeyser), harmless
     o.ph = 'geyser'; o.gt = hazardT;
     f._fxLock = 0; f.x = o.x; f.y = o.y - f.r; f.vy = -9; f.onground = false; armAtk(f, 12, 'uppercut'); shake(3);   // she comes up out of it
     hitTurrets(f, o.x, o.y - P.h*0.5, P.r, P.dmg);
@@ -45049,9 +45062,19 @@ function fxEdge(w){ ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = w || 2; ctx.str
 function fxDrawJets(o, f){
   const J = FX1.jets, age = hazardT - o.t0, n = o.sp.length;
   for(let i=0;i<n;i++){
-    const x = o.sp[i][0], y = o.sp[i][1], a = age - J.tell - i*J.gap;
-    if(a < 0) continue;   // not yet (nothing drawn where it will come: NO TELLS)
+    const x = o.sp[i][0], y = o.sp[i][1], gt = age - J.tell - i*J.gap, a = gt - J.grow;
+    if(gt < 0) continue;   // not yet (nothing drawn where it will come: NO TELLS)
     if(a >= J.live + J.fade) continue;
+    if(a < 0){   // GROW-IN: the flame licking up out of the floor, a thin flickering tongue taller each frame (harmless until it bursts)
+      const k = gt/J.grow, r = J.r*(0.28 + 0.32*k), hh = 6 + (J.h*0.8 - 6)*k*(0.88 + 0.12*Math.sin(hazardT*0.9 + i*2)), top = y - hh;
+      const g0 = ctx.createLinearGradient(0, y, 0, top); g0.addColorStop(0, '#d8361b'); g0.addColorStop(0.6, '#f0803a'); g0.addColorStop(1, '#ffd23f');
+      ctx.globalAlpha = 0.5 + 0.35*k;
+      if(top < y - 2*r) fxCapPath(x, y - r, top + r, r); else { ctx.beginPath(); ctx.ellipse(x, y - hh/2, r, Math.max(2, hh/2), 0, 0, 7); }
+      ctx.fillStyle = g0; ctx.fill();
+      ctx.fillStyle = '#ffd23f';
+      for(let e=0;e<3;e++){ const q = (hazardT*0.08 + e/3 + i*0.37) % 1; ctx.globalAlpha = (0.75 - 0.6*q)*(0.4 + 0.6*k); ctx.beginPath(); ctx.arc(x + Math.sin(e*2.1 + hazardT*0.3)*r, y - 4 - q*hh*1.1, 1.8, 0, 7); ctx.fill(); }   // embers
+      continue;
+    }
     const live = a < J.live, k = live ? 1 : 1 - (a - J.live)/J.fade, r = live ? J.r : J.r*(0.45 + 0.4*k), top = y - (live ? J.h : J.h*k);
     if(top > y - 2*r) continue;
     ctx.globalAlpha = live ? 1 : 0.55*k;
@@ -45064,11 +45087,11 @@ function fxDrawJets(o, f){
 }
 function fxDrawLeaf(x, y, a, c){ ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(0, 0, 7, 3.2, 0, 0, 7); ctx.fill(); ctx.strokeStyle = '#2f5d17'; ctx.lineWidth = 1; ctx.stroke(); ctx.restore(); }
 function fxDrawWhirl(o, f){
-  const W = FX1.whirl, live = o.ph === 'go', k = o.ph === 'spin' ? clamp((hazardT - o.t0)/W.tell, 0, 1) : 1;   // (its outline is the hit art's while it is live)
-  ctx.globalAlpha = live ? 1 : 0.5 + 0.5*k;
+  const W = FX1.whirl, live = o.ph === 'go', k = o.ph === 'spin' ? clamp((hazardT - o.t0)/W.grow, 0, 1) : 1;   // (its outline is the hit art's while it is live)
+  ctx.globalAlpha = live ? 1 : 0.35 + 0.5*k;   // GROW-IN: the leaves gathering up off the floor into the whirl, wider and taller each frame
   for(let i=0;i<12;i++){
     const h = (i + 0.5)/12, a = hazardT*0.35*o.face + i*2.1, rr = (W.r - 7)*k*(0.55 + 0.45*Math.abs(Math.sin(i*1.7)));
-    fxDrawLeaf(o.x + Math.cos(a)*rr, o.y - 6 - (W.h - 12)*h, a + 1.2, i%3 ? '#8ed24b' : '#c9ec7a');
+    fxDrawLeaf(o.x + Math.cos(a)*rr, o.y - 6 - (W.h - 12)*h*(0.2 + 0.8*k), a + 1.2, i%3 ? '#8ed24b' : '#c9ec7a');
   }
 }
 function fxDrawThread(o, f){
@@ -45131,6 +45154,15 @@ function fxDrawPuddle(o, f){
 }
 function fxDrawGeyser(o, f){
   const P = FX1.puddle;
+  if(o.ph === 'bubble'){   // GROW-IN: the water welling up out of her puddle, a column climbing taller each frame (harmless until it erupts)
+    const k = clamp((hazardT - (o.bt != null ? o.bt : o.t0))/P.bubble, 0, 1), r = P.r*(0.3 + 0.35*k), hh = 4 + (P.h*0.78 - 4)*k, yb = o.y - 4, top = yb - hh;
+    const g0 = ctx.createLinearGradient(0, yb, 0, top); g0.addColorStop(0, '#3a7fc4'); g0.addColorStop(1, '#bfe8ff');
+    ctx.globalAlpha = 0.45 + 0.3*k;
+    if(top < yb - 2*r) fxCapPath(o.x, yb - r, top + r, r); else { ctx.beginPath(); ctx.ellipse(o.x, yb - hh/2, r, Math.max(2, hh/2), 0, 0, 7); }
+    ctx.fillStyle = g0; ctx.fill();
+    ctx.globalAlpha *= 0.7; ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(o.x + Math.sin(hazardT*0.7)*r*0.3, top + r*0.6, r*0.45, 0, 7); ctx.fill();   // its frothy top
+    return;
+  }
   if(o.ph !== 'geyser') return;
   const a = hazardT - o.gt, live = a < P.live, k = live ? 1 : clamp(1 - (a - P.live)/(P.geyser - P.live), 0, 1), r = live ? P.r : P.r*(0.5 + 0.5*k), top = o.y - (live ? P.h : P.h*k);
   if(top > o.y - 2*r) return;
@@ -45222,23 +45254,23 @@ function finxDraw(layer){
 //   - Statuses: Golf Ball's sand sinks a foe (`_sinkT`: slowed, and its jumps are short), Gelatin's jelly is the engine's own slip (iceUntil),
 //     drawn as jelly round their feet (`_jellyT`). Both ride the snapshot.
 const FX2 = {
-  sentry: { plant:FIN_STARTUP, off:34, life:300, hp:12, r:14, first:30, every:48, aim:FIN_STARTUP, range:440, spd:9, dmg:4, kb:3, slow:60, dr:6 },
+  sentry: { plant:FIN_STARTUP, off:34, life:300, hp:12, r:14, first:30, every:48, aim:FIN_GROW, range:440, spd:9, dmg:4, kb:3, slow:60, dr:6 },
   dive:   { range:400, alone:220, sketch:FIN_STARTUP, run:8, fly:26, apex:90, r:30, live:3, dmg:13, down:30, stuck:16 },
   sand:   { swing:FIN_STARTUP, live:6, end:10, r1:150, a0:-0.62, a1:0.3, dmg:9, sink:120, jump:0.6, curse:2 },
   rocket: { gulp:10, max:120, climb0:16, up:-4.5, climb:-3.2, rise:-0.6, dive:3, side:4.5, top:70, len:230, r:16, every:15, hits:4, dmg:2, poison:90, boss:8 },
-  popup:  { tell:FIN_STARTUP, off:60, w:96, h:72, live:6, dmg:9, life:300 },
+  popup:  { tell:FIN_STARTUP, grow:FIN_GROW, off:60, w:96, h:72, live:6, dmg:9, life:300 },
   carton: { range:360, alone:200, toss:6, lock:12, r:18, g:0.5, cap:48, dmg:9 },
   jelly:  { range:340, alone:200, toss:6, lock:12, r:14, g:0.5, dmg:7, ice:180 },
   bounce: { range:200, hop:22, air:30, apex:56, apex2:76, r:20, dmg:[3, 6, 12], early:8, late:5, track:2.5, squish:10, flat:26, cpu:[0.5, 0.7, 0.85] },
   rainbow:{ range:400, alone:300, spit:12, fly:24, w:110, r:18, live:6, dmg:8, stick:36, life:240, seg:8 },
-  prism:  { set:10, tell:30,   /* (the placed prism's own fuse after it is set: a trap, kept) */ off:50, r:54, cy:30, live:6, dmg:10, life:240, hw:17, hh:48, fan:3.5 },
+  prism:  { set:10, grow:FIN_GROW, spikes:3, off:50, r:54, cy:30, live:6, dmg:10, life:240, hw:17, hh:48, fan:3.5 },
 };
 function fxGrav(){ return GRAV*(stage && stage.hazard === 'lowgrav' ? 0.7 : 1); }
 function fxMine(f, k){ for(const o of FINX) if(o.o === f.idx && o.k === k && !o.dead) return o; return null; }
 
 // ---- PEN: CAP SENTRY. Plants his cap 34 px past his front (FIN_STARTUP frames, the cap flying there): for 5 s it stands as a sentry. Every 48 frames it
-// aims at the nearest foe within 440 px in clear sight -- its nib glows for FIN_STARTUP frames, following the foe (no line drawn where the dart
-// will fly) -- then fires a slowing ink dart along it (4%, slowed 1 s). No Cap Shot while it stands. Foes break it: 12 damage of swings
+// aims at the nearest foe within 440 px in clear sight -- its nib glows and the dart forms on it over FIN_GROW frames (GROW IN: it turns with the
+// foe; no line drawn where it will fly, and it hurts no one until it is whole) -- then fires the slowing ink dart along it (4%, slowed 1 s). No Cap Shot while it stands. Foes break it: 12 damage of swings
 // or shots. One at a time.
 function finSentry(f){
   const S = FX2.sentry, x = clamp(f.x + f.face*(f.r + S.off), 24, WW - 24), fy = feetY(f), sb = surfaceBelow(x, fy - 10);
@@ -45283,7 +45315,7 @@ function fxSentryStep(o, f){
   if(t && t.team !== f.team){ o.tx = Math.round(t.x); o.ty = Math.round(t.y); }
   else if(o._ts && fxLiveSummon(f, o._ts)){ o.tx = Math.round(o._ts.x); o.ty = Math.round(o._ts.y); }
   const band = fxSentryBand(o), a = hazardT - o.at;
-  if(a < S.aim) return;   // the nib glows (the sentry's own startup, fxDrawSentry); nothing drawn where the dart will fly
+  if(a < S.aim) return;   // GROW-IN: the dart forming on the glowing nib (fxDrawSentry); nothing drawn where it will fly
   const n = fxSentryNib(o);
   o.at = -1; o.nx = hazardT + S.every - S.aim;
   if(!fxClear(n.x, n.y, o.tx, o.ty)) return;   // a door shut in between: it holds its fire
@@ -45442,7 +45474,8 @@ function fxRocketStep(o, f){
 }
 
 // ---- BOOK: POP-UP PAGE. Flips open (FIN_STARTUP frames, the book held open over her head) and a cardboard castle
-// springs up, 96 px wide and 72 tall, from 60 px past her front: whoever is standing there is flung skyward, 9%. Then it stands 5 s, its top a
+// folds up out of the floor (GROW IN: FIN_GROW frames from the press, harmless and no platform yet) and springs, 96 px wide and 72 tall, from
+// 60 px past her front: whoever is still standing there when it is whole is flung skyward, 9%. Then it stands 5 s, its top a
 // one-way platform anyone can stand on. It fits itself onto the floor she stands on (it shifts back toward her up to 40 px), or it does not
 // come. One at a time.
 function finPopup(f){
@@ -45467,9 +45500,11 @@ function fxPopupStep(o, f){
   const P = FX2.popup, age = hazardT - o.t0;
   f.fnCd = Math.max(f.fnCd || 0, FIN_CD);   // one at a time
   if(o.ph === 'open'){
-    if(f.hitstun > 0){ o.dead = true; return; }
-    fxLock(f, 2);
-    if(age < P.tell){ fxTell(f, 'popup', null, age/P.tell); return; }   // STARTUP: the book opening (nothing on the floor where it springs up)
+    if(age < P.tell){   // STARTUP: the book opening (a hit stops it, and the castle folds away)
+      if(f.hitstun > 0){ o.dead = true; for(let i=0;i<5;i++) puff(o.x + (i - 2)*14, o.y - 6, '#c8955a', 3); return; }
+      fxLock(f, 2); fxTell(f, 'popup', null, age/P.tell);
+    }
+    if(age < P.grow) return;   // GROW-IN: the castle folding up out of the floor (fxDrawPopup), harmless, until it stands whole
     o.ph = 'pop'; o.pt = hazardT; shake(3); hitTurrets(f, o.x, o.y - P.h/2, P.w/2, P.dmg);
   }
   if(o.ph === 'pop'){
@@ -45695,9 +45730,11 @@ function fxRainbowStep(o, f){
   if(hazardT - o.bt >= R.life){ o.dead = true; for(const p of o.bs || []) puff(p[0] + p[2]/2, p[1], '#ffffff', 3); }
 }
 
-// ---- RUBY: REFRACTING PRISM. Sets a crystal prism 50 px past her front (10 frames: a hit then stops it); 0.5 s after she set it, it bursts into
-// spikes 54 px round (6 frames): 10%, popping foes up. Then it stands 4 s: each of her Gem Bolts that passes through it splits in three -- it
-// goes on, and two more fan out from it, up and down (each bolt splits once). One at a time.
+// ---- RUBY: REFRACTING PRISM. Sets a crystal prism 50 px past her front (10 frames: a hit then stops it); then it bursts into spikes 54 px round
+// -- ONE AT A TIME, GROWING IN: three spikes push out of the crystal one after another, forward, up, then back (from where she faced), each over
+// FIN_GROW frames (harmless) before it is out for 6 frames, the next starting as the one before is out: 10%, popping foes up, once a foe in all.
+// Then it stands 4 s: each of her Gem Bolts that passes through it splits in three -- it goes on, and two more fan out from it, up and down
+// (each bolt splits once). One at a time.
 function finPrism(f){
   const P = FX2.prism, x = clamp(f.x + f.face*(f.r + P.off), 24, WW - 24), fy = feetY(f), sb = surfaceBelow(x, fy - 10);
   if(sb === null || sb - fy > 220) return false;   // nowhere to set it: no prism, and the finisher is not spent
@@ -45705,25 +45742,37 @@ function finPrism(f){
   finxAdd(f, 'prism', { x:Math.round(x), y:Math.round(sb), ph:'set', hit:[], n:0 });
   fxLock(f, P.set); armAtk(f, P.set + 6, 'cast');
 }
-function fxPrismBurst(o){ const P = FX2.prism, y = o.y - P.cy; return { kind:'capsule', x1:o.x, y1:y, x2:o.x, y2:y, r:P.r }; }
+// Spike i's own clock (0 forward, 1 up, 2 back, from where Ruby faced): from -P.grow, when it starts pushing out of the crystal, to 0, when it is
+// out (live P.live frames). ONE AT A TIME: each starts as the one before is out.
+function fxPrismSpikeT(o, i){ const P = FX2.prism; return hazardT - o.t0 - P.set - P.grow - i*(P.grow + P.live); }
+// The part of the burst's disc (54 px round, 30 px up) each spike fills, as fans (angles from straight ahead, below positive): the three
+// together are the whole disc the burst was, so its reach is what it was. Their shards as drawn: the parts above the floor.
+const FX_PRISM_SECTORS = [[[-0.85, 1.75]], [[-2.29, -0.85]], [[-Math.PI, -2.29], [1.75, Math.PI]]];
+const FX_PRISM_SHARDS = [[-0.72, -0.3, 0.12, 0.5], [-2.15, -1.76, -1.38, -1.0], [-2.45, -2.85, -3.25, -3.62]];
+function fxPrismSpike(o, i){ const P = FX2.prism; return FX_PRISM_SECTORS[i].map(function(q){ return { kind:'fan', cx:o.x, cy:o.y - P.cy, r0:0, r1:P.r, a0:q[0], a1:q[1], face:o.face }; }); }
 function fxPrismStep(o, f){
   const P = FX2.prism, age = hazardT - o.t0;
   f.fnCd = Math.max(f.fnCd || 0, FIN_CD);   // one at a time
   if(o.ph === 'set'){
     if(f.hitstun > 0){ o.dead = true; return; }
     fxLock(f, 2);
-    if(age >= P.set) o.ph = 'charge';
+    if(age < P.set){ fxTell(f, 'prism', null, age/P.set); return; }   // STARTUP while she sets it (nothing drawn for the spikes' reach)
+    o.ph = 'charge';
   }
-  if(o.ph === 'set' || o.ph === 'charge'){
-    if(age < P.tell){ if(o.ph === 'set') fxTell(f, 'prism', null, age/P.set); return; }   // STARTUP while she sets it; then the prism's own fuse (it glints and grows: fxDrawPrism), nothing drawn for the spikes' reach
-    o.ph = 'burst'; o.bt = hazardT; shake(3); hitTurrets(f, o.x, o.y - P.cy, P.r, P.dmg);
-  }
-  if(o.ph === 'burst'){
-    const sh = fxPrismBurst(o);
-    fxArt(f, 'prism', sh, { color:'#ff3b6b' });
-    for(const t of fxTargets(f, o, sh, o.hit)){ if(!fxClear(o.x, o.y - P.cy, t.x, t.y)) continue; fxHit(f, t, o, P.dmg, (Math.sign(t.x - o.x) || o.face)*3, -12); o.hit.push(t.idx); }
-    fxBossShape(f, o, 0, sh, P.dmg);
-    if(hazardT - o.bt + 1 >= P.live){ o.ph = 'stand'; o.st = hazardT; }
+  if(o.ph === 'charge' || o.ph === 'burst'){   // GROW IN, ONE AT A TIME: the spikes pushing out of the crystal one after another (fxDrawPrism), each harmless until it is out
+    let done = false;
+    for(let i=0;i<P.spikes;i++){
+      const a = fxPrismSpikeT(o, i);
+      if(a < 0 || a >= P.live) continue;
+      if(a === 0){ o.ph = 'burst'; o.bt = hazardT; shake(2); if(i === 0) hitTurrets(f, o.x, o.y - P.cy, P.r, P.dmg); }
+      fxPrismSpike(o, i).forEach(function(sh, j){
+        fxArt(f, 'prism' + i + j, sh, { color:'#ff3b6b' });
+        for(const t of fxTargets(f, o, sh, o.hit)){ if(!fxClear(o.x, o.y - P.cy, t.x, t.y)) continue; fxHit(f, t, o, P.dmg, (Math.sign(t.x - o.x) || o.face)*3, -12); o.hit.push(t.idx); }   // once a foe in all: 10%
+        fxBossShape(f, o, 0, sh, P.dmg);   // (and a boss once in all)
+      });
+      if(i === P.spikes - 1 && a + 1 >= P.live) done = true;
+    }
+    if(done){ o.ph = 'stand'; o.st = hazardT; }
     return;
   }
   if(hazardT - o.st >= P.life){ o.dead = true; for(let i=0;i<6;i++) puff(o.x, o.y - 10 - i*6, i%2 ? '#ffffff' : '#ff3b6b', 3); }
@@ -45820,6 +45869,11 @@ function fxDrawSentry(o, f){
     ctx.globalAlpha = 0.4 + 0.6*k; ctx.fillStyle = aiming ? '#9fd0ff' : '#ffffff';
     ctx.beginPath(); ctx.arc(n.x, n.y - 2, 3 + 3*k, 0, 7); ctx.fill();
   }
+  if(aiming){   // GROW-IN: the ink dart forming on the nib, point toward its foe, bigger each frame (it flies only when it is whole)
+    const k = clamp((hazardT - o.at)/S.aim, 0, 1), an = Math.atan2(o.ty - n.y, o.tx - n.x), r = S.dr*(0.3 + 0.7*k);
+    ctx.save(); ctx.translate(n.x, n.y - 2); ctx.rotate(an); ctx.globalAlpha = 0.5 + 0.5*k; ctx.fillStyle = '#1d2b6b'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(r*1.9, 0); ctx.lineTo(-r*1.2, -r*0.65); ctx.lineTo(-r*0.6, 0); ctx.lineTo(-r*1.2, r*0.65); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+  }
 }
 function fxDrawDive(o, f){
   const D = FX2.dive, r = fxDiveRamp(o), age = hazardT - o.t0;
@@ -45886,8 +45940,11 @@ function fxDrawCastle(x, yb, w, h, k){   // a cardboard pop-up castle; its top (
 }
 function fxDrawPopup(o, f){
   const P = FX2.popup;
-  if(o.ph === 'open'){   // the book held open over her head, opening (nothing on the floor where the castle will spring up)
-    const k = clamp((hazardT - o.t0)/P.tell, 0, 1);
+  if(o.ph === 'open'){
+    const age = hazardT - o.t0, g = clamp(age/P.grow, 0, 1);
+    if(g > 0.05){ ctx.globalAlpha = 1; fxDrawCastle(o.x, o.y, P.w, P.h, g); }   // GROW-IN: the castle folding up out of the floor, taller each frame (harmless until it is whole)
+    if(age >= P.tell) return;
+    const k = clamp(age/P.tell, 0, 1);   // the book held open over her head, opening
     ctx.globalAlpha = 1; ctx.save(); ctx.translate(f.x + o.face*f.r*0.6, f.y - f.r - 8);   // the book held open over her head
     ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 1.5;
     for(const s of [-1, 1]){ ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(s*12*k + s*2, -4 - 4*k); ctx.lineTo(s*12*k + s*2, 6); ctx.lineTo(0, 9); ctx.closePath(); ctx.fill(); ctx.stroke(); }
@@ -45971,17 +46028,22 @@ function fxDrawPrismCrystal(x, yb, k, glow){
 function fxDrawPrism(o, f, layer){
   const P = FX2.prism, age = hazardT - o.t0;
   if(layer === 'under'){
-    const k = o.ph === 'set' || o.ph === 'charge' ? 0.35 + 0.65*clamp(age/P.tell, 0, 1) : 1;
+    const k = o.ph === 'set' || o.ph === 'charge' ? 0.35 + 0.65*clamp(age/(P.set + P.grow), 0, 1) : 1;
     fxDrawPrismCrystal(o.x, o.y, k, o.fl != null && hazardT - o.fl < 6);
     if((o.ph === 'set' || o.ph === 'charge') && (hazardT >> 2) % 2) fxStar(o.x + 6, o.y - P.hh*k*0.7, 5, '#ffffff');
     return;
   }
-  if(o.ph !== 'burst') return;   // the spikes: crystal shards out to the edge of the hit
+  if(o.ph !== 'charge' && o.ph !== 'burst') return;   // the spikes: crystal shards out to the edge of the hit, one part of it at a time
   const cx = o.x, cy = o.y - P.cy;
-  ctx.globalAlpha = 1;
-  for(let i=0;i<10;i++){ const a = i/10*Math.PI*2 + 0.31, ca = Math.cos(a), sa = Math.sin(a), px = -sa, py = ca;
-    ctx.beginPath(); ctx.moveTo(cx + ca*10 + px*6, cy + sa*10 + py*6); ctx.lineTo(cx + ca*P.r, cy + sa*P.r); ctx.lineTo(cx + ca*10 - px*6, cy + sa*10 - py*6); ctx.closePath();
-    ctx.fillStyle = i%2 ? '#ff9bb5' : '#ffffff'; ctx.fill(); fxEdge(1.5); }
+  for(let i=0;i<P.spikes;i++){
+    const a = fxPrismSpikeT(o, i);
+    if(a < -P.grow || a >= P.live) continue;
+    const grow = a < 0, k = grow ? (a + P.grow)/P.grow : 1, L = grow ? 10 + (P.r*0.9 - 10)*k : P.r, w = grow ? 2.5 + 3.5*k : 6, A = FX_PRISM_SHARDS[i];
+    ctx.globalAlpha = grow ? 0.45 + 0.4*k : 1;   // GROW-IN: the shards pushing out of the crystal, longer each frame (harmless until they are out)
+    for(let j=0;j<A.length;j++){ const ca = Math.cos(A[j])*o.face, sa = Math.sin(A[j]), px = -sa, py = ca;
+      ctx.beginPath(); ctx.moveTo(cx + ca*10 + px*w, cy + sa*10 + py*w); ctx.lineTo(cx + ca*L, cy + sa*L); ctx.lineTo(cx + ca*10 - px*w, cy + sa*10 - py*w); ctx.closePath();
+      ctx.fillStyle = j%2 ? '#ff9bb5' : '#ffffff'; ctx.fill(); if(!grow) fxEdge(1.5); }
+  }
 }
 function fxDrawSink(t){   // sunk in sand to the ankles
   const fy = t.y + t.r, w = t.r*0.95;
