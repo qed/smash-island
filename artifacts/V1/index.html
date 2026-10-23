@@ -793,6 +793,7 @@
   .pcx-art .cosdot{width:56px; height:62px}
   .pcx-art .cosdot::before,.pcx-art .cosdot::after{top:14px; width:8px; height:8px}
   .pcx-hat{position:absolute; left:0; top:-32px; width:96px; height:128px; pointer-events:none}
+  .pcx-cst{position:absolute; left:50%; bottom:0; width:192px; height:160px; transform:translateX(-50%); pointer-events:none}
   .pcx-name{font-weight:800; font-size:16px; background:#fffc; padding:0 8px; border-radius:6px}
   .pcx-title{font-size:12px; font-weight:800; color:var(--gold); background:#1c1c1c; padding:1px 8px; border-radius:6px}
   .pose-po_hop{animation:poseHop .7s ease-in-out infinite}
@@ -15585,7 +15586,7 @@ function refreshSel(){
   document.getElementById('selName').textContent=chosen.name;
   document.getElementById('selArch').textContent=chosen.arch;
   document.getElementById('selMoves').textContent=chosen.kit?chosen.kit.desc:"";
-  const art=document.getElementById('selArt'); if(art){ art.innerHTML=''; art.appendChild(fighterThumb(chosen, 'selartimg')); }
+  const art=document.getElementById('selArt'); if(art){ art.innerHTML=''; art.appendChild(cosSelArt(chosen) || fighterThumb(chosen, 'selartimg')); }   // (in the Halloween costume they wear, if any)
   // MOVE CARD: with 59 fighters and 8 inputs, "what do my buttons do" needs answering here,
   // not discovered by mashing. Shows this fighter's full kit before the match starts.
   const mc=document.getElementById('moveCard');
@@ -65938,7 +65939,7 @@ function frWinPose(P, fd, t, idx){
 }
 /* FR-HOT-END */
 // One winner, drawn into `g` (a 2D context) standing on the ground line at (cx, gy), S times the size of a fighter in a match.
-function frStageDraw(g, name, sp, fd, t, idx, cx, gy, S){
+function frStageDraw(g, name, sp, fd, t, idx, cx, gy, S, cst){
   const im = spriteImage(sp);
   if(!im) return;
   const R = 24, feet = R + 12, P = _FP;
@@ -65951,9 +65952,11 @@ function frStageDraw(g, name, sp, fd, t, idx, cx, gy, S){
   g.save(); g.translate(0, feet - dh/2);
   if(mir) g.scale(-1, 1);
   g.globalAlpha = 1;
+  if(cst) cosCostumeDraw(g, cst, 'back', dw, dh, null, mir, false, t);   // a Halloween costume (COSTUME_ART), as in a match
   const moves = rig ? frLimbMoves(rig, sp, P) : null;
   if(moves) drawRigged(im, dw, dh, rig, moves, g); else g.drawImage(im, -dw/2, -dh/2, dw, dh);
   if(fc) frFace(g, fc, dw, dh, P, false, 1);
+  if(cst) cosCostumeDraw(g, cst, 'front', dw, dh, null, mir, false, t);
   g.restore();
   if(fc && (fc.e || fc.m)) frHead(fc);
   frFx(g, P, fc && (fc.e || fc.m) ? (_FB.hx - 0.5)*dw*(mir ? -1 : 1) : 0, fc && (fc.e || fc.m) ? feet - dh + _FB.hy*dh : -R*0.2, R, 1, 1);
@@ -65972,7 +65975,7 @@ function winStageShow(winners){
     const fd = FRAME_DATA[f.name];
     if(!fd || !SPRITES[f.name]) continue;
     const cos = cosOf(f), skin = cos && cos.skin ? cosItem(cos.skin) : null;
-    items.push({ name: f.name, idx: f.idx | 0, fd: fd, base: SPRITES[f.name], skin: skin ? cosSkinSprite(skin, f.name) : null });
+    items.push({ name: f.name, idx: f.idx | 0, fd: fd, base: SPRITES[f.name], skin: skin ? cosSkinSprite(skin, f.name) : null, cst: cosCostume(skin, f.name) });
   }
   if(!items.length || !el.getContext){ el.style.display = 'none'; _win.items = null; return; }
   const g = el.getContext('2d');
@@ -65986,8 +65989,8 @@ function winStageShow(winners){
     g.setTransform(2, 0, 0, 2, 0, 0); g.clearRect(0, 0, 360, 190);
     const n = _win.items.length, S = n === 1 ? 2.1 : (n === 2 ? 1.8 : 1.45);
     for(let i = 0; i < n; i++){
-      const it = _win.items[i], wp = it.skin ? null : poseWinSprite(it.name, t), sp = (it.skin && spriteImage(it.skin)) ? it.skin : (wp || it.base);
-      frStageDraw(g, wp ? it.name + ' (win)' : it.name, sp, it.fd, t, it.idx, 360*(i + 0.5)/n, 178, S);
+      const it = _win.items[i], wp = (it.skin || it.cst) ? null : poseWinSprite(it.name, t), sp = (it.skin && spriteImage(it.skin)) ? it.skin : (wp || it.base);
+      frStageDraw(g, wp ? it.name + ' (win)' : it.name, sp, it.fd, t, it.idx, 360*(i + 0.5)/n, 178, S, sp === it.base ? it.cst : null);
     }
     _win.raf = requestAnimationFrame(tick);
   };
@@ -68149,6 +68152,8 @@ function drawSpriteBody(f, sp, anim){
   if(fd) frDeform(ctx, R);
   if(f.idx != null && typeof ctx.getTransform === 'function') CP_XF = { o:f.idx, m:ctx.getTransform() };   // the space the body is drawn in: a thing in its hand is drawn in it too (cpFollow)
   let dw=0, dh=0;
+  // A HALLOWEEN COSTUME (COSTUME_ART): on the fighter's own render only (a pose picture, poseBody, goes under another name and is left alone)
+  const _cst = (im && sp === SPRITES[f.name]) ? cosCostumeOf(f) : null;
   if(im){
     // CONTAIN-fit inside the entry's box, driven by the image's OWN aspect ratio, so no render is
     // ever stretched and a wide character (Rocky) is capped by width rather than blown up by
@@ -68183,6 +68188,7 @@ function drawSpriteBody(f, sp, anim){
       if(fc && (fc.e || fc.m)){ frHead(fc); _FH.x = (_FB.hx - 0.5)*dw*ms; _FH.y = (R + 12) - dh + _FB.hy*dh; } else { _FH.x = 0; _FH.y = -R*0.2; }
       if(_FP.smear > 0) frSmear(ctx, im, dw, dh, ms, a0);
     }
+    if(_cst) cosCostumeDraw(ctx, _cst, 'back', dw, dh, f, !!sp.flip, false);   // a costume's cape, wings or tail: behind the body
     if(moves) drawRigged(im, dw, dh, rig, moves);      // the character's own arm swings (LIMB ANIMATION), and their legs walk and their arms fly (FRAME LAYER)
     else if(fd && _FP.bulge > 0) frBulge(ctx, im, dw, dh, _FP.bulge*0.24, 0.6, 0.36);   // the cheeks of a spit
     else ctx.drawImage(im,-dw/2,-dh/2,dw,dh);
@@ -68215,13 +68221,14 @@ function drawSpriteBody(f, sp, anim){
   if(f.bleed>0) lay("#c0304a",0.22);            // bleed: a darker red under the burn tint             // burn reads on top of any other state, as on the blob
   // THE FACE of the frame (FRAME LAYER): drawn over the painted one, after the tints so a hit's white flash gets the same face on it.
   if(fd){ const fc = FR_FACE[frPicKey(sp)]; if(fc) frFace(ctx, fc, dw, dh, _FP, !!(tint && tint[0] === '#ffffff'), a0); }
+  if(_cst) cosCostumeDraw(ctx, _cst, 'front', dw, dh, f, !!sp.flip, !!(tint && tint[0] === '#ffffff'));   // the costume, over the body and its face
   // PUNCH / KICK. Every attack used to be the whole body lunging; now the jab throws an arm and the
   // ground move throws a leg, out on the release beat and back on the recover. Drawn after the art
   // and inside the rig, so it moves with everything else that moves the body.
   // The stick limb is the VECTOR art's -- a render swings its own painted limb instead, or its body does the move.
   if(!im && (f._atkKind === 'punch' || f._atkKind === 'kick' || f._atkKind === 'uppercut') && f._atkAnim > 0) drawAttackLimb(f, R, im, sp, dw, dh);
   // The hat on a render rides everything the art does: the rig, the bespoke deform and the facing mirror.
-  if(im && _cos && _cos.hat){ try{ drawCosHat(ctx, _cos.hat, R/24, -dh/2 + 2, -dh/2 + dh*0.3); }catch(e){ cosDrawFail(e); } }
+  if(im && _cos && _cos.hat && !(_cst && _cst.noHat && !COS_FACE_GEAR[_cos.hat])){ try{ drawCosHat(ctx, _cos.hat, R/24, -dh/2 + 2, -dh/2 + dh*0.3); }catch(e){ cosDrawFail(e); } }   // (a costume with headwear of its own takes a hat's place)
   ctx.restore();
   // face last and UNFLIPPED, so eyes read identically across the whole cast — vector art only;
   // a render already carries its own face (see the note at the top of this function)
@@ -69023,7 +69030,9 @@ function drawFighter(f){
   let handled = false;
   CP_XF = null;   // (WHAT THE CARD SAYS, SEEN: the body's space, left by drawSpriteBody for the things in its hands)
   if(f.kit && f.kit.special === 'chair'){ ctx.save(); cpChairSlam(f, true); ctx.restore(); }   // (and Bow's chair, behind her as she rides it down)
-  if(anim && anim.body && !skinLive){ ctx.save(); handled = (anim.body(f, ctx) === true); ctx.restore(); }
+  // A COSTUME (COSTUME_ART) is drawn on the plain render: a fighter whose moves are a set of pictures (POSE_SETS) keeps the plain render while one is
+  // on, as with a skin. Any other `body` (Leafy's sprint streak) still replaces the body for its frames, and the costume is off for those.
+  if(anim && anim.body && !skinLive && !(POSE_SETS[f.name] && cosCostume(skin, f.name))){ ctx.save(); handled = (anim.body(f, ctx) === true); ctx.restore(); }
   // A body that replaces the default one keeps the hat too, on top of it and facing the same way.
   if(handled && cos && cos.hat){ ctx.save(); ctx.scale(visualFace(f),1); try{ drawCosHat(ctx, cos.hat, f.r/24, -f.r, -f.r*0.2); }catch(e){ cosDrawFail(e); } ctx.restore(); }
 
@@ -73688,6 +73697,19 @@ const COSMETICS = [
   { id:'sk_loser_pack',        kind:'skin', fighter:'Loser',      name:'Backpack Loser',        price:75,  src:'assets/sprites/skins/backpack-loser.png', imgH:2.8, imgW:2.96 },
   { id:'sk_marker_uncap',      kind:'skin', fighter:'Marker',     name:'Uncapped Marker',       price:75,  src:'assets/sprites/skins/uncapped-marker.png', imgH:3.1, imgW:2.3 },
   { id:'sk_marker_burnt',      kind:'skin', fighter:'Marker',     name:'Burnt Marker',          price:115, src:'assets/sprites/skins/burnt-marker.png', imgH:3.26, imgW:2.3 },
+  // HALLOWEEN COSTUMES (the owner, 2026-10-23: "make some halloween skins. they dont have to be canon."). Not pictures: each is DRAWN over its fighter's
+  // own render (COSTUME_ART, named by `costume`), so it moves with every pose. In the Store in October only (`month`: cosInSeason, cosListed); one bought
+  // is kept, and can be worn, all year. Appended, like every skin, so the online codes of the skins above never move.
+  { id:'sk_firey_hw',          kind:'skin', fighter:'Firey',      name:"Jack-o'-Lantern Firey", price:115, costume:'pumpkin',  month:10 },
+  { id:'sk_leafy_hw',          kind:'skin', fighter:'Leafy',      name:'Vampire Bat Leafy',     price:115, costume:'bat',      month:10 },
+  { id:'sk_coiny_hw',          kind:'skin', fighter:'Coiny',      name:'Mummy Coiny',           price:115, costume:'mummy',    month:10 },
+  { id:'sk_pen_hw',            kind:'skin', fighter:'Pen',        name:'Vampire Pen',           price:115, costume:'vampire',  month:10 },
+  { id:'sk_pin_hw',            kind:'skin', fighter:'Pin',        name:'Pirate Pin',            price:75,  costume:'pirate',   month:10 },
+  { id:'sk_book_hw',           kind:'skin', fighter:'Book',       name:'Wizard Book',           price:115, costume:'wizard',   month:10 },
+  { id:'sk_taco_hw',           kind:'skin', fighter:'Taco',       name:'Werewolf Taco',         price:115, costume:'werewolf', month:10 },
+  { id:'sk_apple_hw',          kind:'skin', fighter:'Apple',      name:'Caramel Apple',         price:75,  costume:'caramel',  month:10 },
+  { id:'sk_pickle_hw',         kind:'skin', fighter:'Pickle',     name:'Frankenpickle',         price:75,  costume:'franken',  month:10 },
+  { id:'sk_bomb_hw',           kind:'skin', fighter:'Bomb',       name:'Black Cat Bomb',        price:75,  costume:'blackcat', month:10 },
   // HATS AND ACCESSORIES: drawn on the head (drawCosHat), inside the same transforms as the art, so they follow the
   // sprite's rig, its facing and its squash.
   { id:'hat_party',   kind:'hat', name:'Party Hat',        price:75 },
@@ -73771,6 +73793,9 @@ function shopWeekNo(now){
   const days = Math.floor(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate()) / 86400000);
   return Math.floor((days + 3) / 7);   // 1970-01-01 was a Thursday, so +3 starts every week on a Monday
 }
+// A SEASONAL LOOK (a row with `month`, 1-12: the Halloween costumes' 10) is in the Store during that month of the player's own calendar, and only then.
+// One bought stays owned and wearable all year: only the Store (cosListed) and buying (buyCosmetic) ask.
+function cosInSeason(it, now){ if(!it || !it.month) return true; const t = now || shopNow(); return t.getMonth() + 1 === it.month; }
 
 // ---- the wallet ----
 // PROFILE.wallet = { earned, spent, owned:{id: price paid} }. The balance is earned - spent. Both totals only ever go UP,
@@ -73833,6 +73858,7 @@ function buyCosmetic(id){
   if(!c || !PROFILE) return { ok:false, why:'unknown' };
   shopPeek();   // what another tab bought or was paid counts before this one decides (see shopCatchUp)
   if(ownsCos(id)) return { ok:false, why:'owned' };
+  if(!cosInSeason(c)) return { ok:false, why:'season' };   // a Halloween costume is sold in October only (one already yours is kept)
   const bal = walletBalance();
   if(bal < c.price) return { ok:false, why:'tokens', need: c.price - bal };
   const w = walletState();
@@ -74218,6 +74244,303 @@ function cosSkinBox(sp, R){
   return { h: dh*(sp.roomH || 1), w: dh*bar*(sp.roomW || 1) };
 }
 function cosSkinPreload(id){ try{ const it = cosItem(id), sp = it && cosSkinSprite(it, it.fighter); if(sp) spriteImage(sp); }catch(e){} }
+// HALLOWEEN COSTUMES (the owner, 2026-10-23: "make some halloween skins. they dont have to be canon."). A costume is a skin with no picture of
+// its own: it is DRAWN, in code and in the game's look (a dark outline, flat colours, one highlight), over the fighter's own render -- a pumpkin, a
+// cape, bandages, a hat, ears and a tail -- inside drawSpriteBody's transforms (the rig, the move's deform, the frame layer's pose, the facing mirror),
+// so it moves with the body in every animation. Each row's numbers are pixels of that fighter's render (W x H, its own picture: x right, y down), so a
+// piece sits where it does on the picture whichever way the fighter faces. `back` is drawn before the render (wings, a cape, a tail), `front` after
+// it and its face (everything else). A costume is worn on the plain render: a fighter whose moves are a set of pictures (POSE_SETS) keeps the plain
+// render while one is on, as a skin does (drawFighter). Looks only: hits never use any of it (HURT_POLY is the render's outline), and the sim never
+// reads it. In the Store in OCTOBER only (`month`, cosInSeason); one bought stays yours, and wearable, all year.
+let HW_WHITE = false;   // the second pass of a hit's white flash: every colour of the costume drawn white (cosCostumeDraw)
+const hwC = (col)=>HW_WHITE ? '#ffffff' : col;
+function hwInk(c, w){ c.lineWidth = w; c.strokeStyle = hwC('#1c1c1c'); c.stroke(); }
+function hwFill(c, col){ c.fillStyle = hwC(col); c.fill(); }
+function hwPoly(c, p){ c.beginPath(); c.moveTo(p[0], p[1]); for(let i = 2; i < p.length; i += 2) c.lineTo(p[i], p[i + 1]); c.closePath(); }
+function hwBlob(c, x, y, rx, ry, col, w){ c.beginPath(); c.ellipse(x, y, rx, ry, 0, 0, 7); hwFill(c, col); if(w) hwInk(c, w); }
+// a four-point twinkle, `r` its half-size
+function hwTwinkle(c, x, y, r, col){
+  c.beginPath(); c.moveTo(x, y - r); c.quadraticCurveTo(x, y, x + r, y); c.quadraticCurveTo(x, y, x, y + r); c.quadraticCurveTo(x, y, x - r, y); c.quadraticCurveTo(x, y, x, y - r);
+  hwFill(c, col); hwInk(c, 2);
+}
+// a fang: a small white tooth hanging from (x, y)
+function hwFang(c, x, y, w, h){ hwPoly(c, [x - w/2, y, x + w/2, y, x + w*0.08, y + h]); hwFill(c, '#ffffff'); hwInk(c, 2.4); }
+// A pointed ear standing on (x, y), its tip `h` away along angle `a` (radians; -PI/2 is straight up), `w` across the base.
+function hwEar(c, x, y, a, w, h, outer, inner){
+  const ux = Math.cos(a), uy = Math.sin(a), px = -uy, py = ux;
+  hwPoly(c, [x - px*w/2, y - py*w/2, x + ux*h, y + uy*h, x + px*w/2, y + py*w/2]); hwFill(c, outer); hwInk(c, 4.5);
+  hwPoly(c, [x - px*w*0.26 + ux*h*0.12, y - py*w*0.26 + uy*h*0.12, x + ux*h*0.72, y + uy*h*0.72, x + px*w*0.26 + ux*h*0.12, y + py*w*0.26 + uy*h*0.12]); hwFill(c, inner);
+}
+
+// S, what each drawer is told: t (a clock in ticks), back (+1 or -1: which way is BEHIND the fighter on the picture), trail (0..1: how hard the air
+// pushes a cape or a tail back, from their speed), air (off the ground), atk (0..1 through a swing, else -1), hurt (0..1), still (a preview: no wind).
+const COSTUME_ART = {
+  // FIREY -- a jack-o'-lantern helmet, its carved face lit from inside by his own fire, a vine curling off the back.
+  pumpkin: { W:150, H:200, box:[-6, -6, 158, 200], noHat:true,
+    front(c, S){
+      const cx = 75, cy = 50, lobes = [[-52, 26, 27], [52, 26, 27], [-27, 28, 30], [27, 28, 30], [0, 30, 31]];
+      for(const L of lobes){ hwBlob(c, cx + L[0], cy, L[1], L[2], '#ec7a1c', 5); }
+      for(const L of lobes){ hwBlob(c, cx + L[0] - L[1]*0.38, cy - L[2]*0.3, L[1]*0.16, L[2]*0.42, '#f8a751', 0); }
+      // the vine and its leaf, off the back of the shell
+      const bx = S.back > 0 ? 1 : -1, vx = cx + bx*44;
+      c.beginPath(); c.moveTo(vx, 24); c.bezierCurveTo(vx + bx*10, 6, vx + bx*26, 12, vx + bx*20, 24); c.bezierCurveTo(vx + bx*16, 30, vx + bx*10, 24, vx + bx*14, 18);
+      c.lineWidth = 6.5; c.strokeStyle = hwC('#1c1c1c'); c.stroke(); c.lineWidth = 3.2; c.strokeStyle = hwC('#4f9a2a'); c.stroke();
+      c.save(); c.translate(vx + bx*30, 8); c.rotate(bx*0.5); hwBlob(c, 0, 0, 11, 6, '#5fb534', 3.5); c.restore();
+      // the carved face, flickering with the fire inside
+      const fl = S.still ? 1 : 0.82 + 0.18*Math.sin(S.t*0.37) * Math.sin(S.t*0.11 + 1.3);
+      const glow = (p)=>{ hwPoly(c, p); hwFill(c, '#5a2408'); c.globalAlpha *= fl; hwPoly(c, p); hwFill(c, '#ffd23f'); c.globalAlpha /= fl; hwPoly(c, p); hwInk(c, 3.2); };
+      glow([33, 52, 59, 52, 46, 34]);
+      glow([91, 52, 117, 52, 104, 34]);
+      glow([69, 63, 81, 63, 75, 55]);
+      glow([35, 64, 49, 67, 55, 62, 61, 68, 75, 69, 89, 68, 95, 62, 101, 67, 115, 64, 107, 74, 91, 80, 75, 81, 59, 80, 43, 74]);
+    } },
+
+  // LEAFY -- a vampire bat: wings that beat (faster off the ground), bat ears on a band, and two small fangs.
+  bat: { W:127, H:200, box:[-78, -22, 205, 200],
+    back(c, S){
+      const beat = S.still ? 0.4 : Math.sin(S.t*(S.air ? 0.55 : 0.16)), up = (S.air ? 0.42 : 0.18)*beat;
+      for(const side of [-1, 1]){
+        c.save(); c.translate(side < 0 ? 12 : 115, 92); c.scale(side, 1); c.rotate(-0.12 - up);
+        const p = [0, -8, 30, -30, 62, -44, 80, -40, 74, -18, 64, 6, 52, -6, 42, 16, 30, 4, 18, 22, 4, 18];
+        hwPoly(c, p); hwFill(c, '#3b2b52'); hwInk(c, 5);
+        c.beginPath(); c.moveTo(0, -8); c.lineTo(80, -40); c.moveTo(30, -30); c.lineTo(52, -6); c.moveTo(48, -38); c.lineTo(42, 16); c.moveTo(62, -44); c.lineTo(64, 6);
+        c.lineWidth = 2.5; c.strokeStyle = hwC('#6b558e'); c.stroke();
+        c.restore();
+      }
+    },
+    front(c, S){
+      c.beginPath(); c.moveTo(24, 40); c.quadraticCurveTo(54, 28, 88, 38); c.lineWidth = 9; c.strokeStyle = hwC('#1c1c1c'); c.stroke(); c.lineWidth = 5; c.strokeStyle = hwC('#3b2b52'); c.stroke();
+      hwEar(c, 32, 37, -2.05, 20, 26, '#3b2b52', '#e58fb0');
+      hwEar(c, 80, 36, -1.05, 20, 26, '#3b2b52', '#e58fb0');
+      hwFang(c, 49, 111, 7, 9); hwFang(c, 63, 111, 7, 9);
+    } },
+
+  // COINY -- a mummy: bandages wrapped round the coin, his eyes and grin left out, one loose end that swings.
+  mummy: { W:209, H:200, box:[-4, -2, 209, 204],
+    front(c, S){
+      const band = (x0, y0, x1, y1, w)=>{
+        const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy), nx = -dy/L*w/2, ny = dx/L*w/2;
+        c.beginPath(); c.moveTo(x0 + nx, y0 + ny);
+        for(let i = 1; i <= 6; i++){ const u = i/6, wv = Math.sin(u*9 + x0)*1.6; c.lineTo(x0 + dx*u + nx + wv, y0 + dy*u + ny + wv); }
+        for(let i = 6; i >= 0; i--){ const u = i/6, wv = Math.sin(u*9 + y0)*1.6; c.lineTo(x0 + dx*u - nx + wv, y0 + dy*u - ny + wv); }
+        c.closePath(); hwFill(c, '#f1ead6'); hwInk(c, 3.6);
+        c.beginPath(); for(let i = 1; i < 6; i++){ const u = i/6 + 0.04, mx = x0 + dx*u, my = y0 + dy*u; c.moveTo(mx + nx*0.8, my + ny*0.8); c.lineTo(mx - nx*0.6 + dx/L*6, my - ny*0.6 + dy/L*6); }
+        c.lineWidth = 2; c.strokeStyle = hwC('#c4b894'); c.stroke();
+      };
+      c.save(); c.beginPath(); c.ellipse(90, 95, 87, 87, 0, 0, 7); c.clip();
+      band(-6, 44, 186, 10, 20);
+      band(-4, 128, 78, 74, 17);
+      band(150, 32, 186, 140, 17);
+      band(4, 156, 186, 146, 19);
+      c.restore();
+      // the loose end, hanging off the bottom band and swaying
+      const sw = S.still ? 0 : Math.sin(S.t*0.12)*7 + S.trail*S.back*14;
+      c.beginPath(); c.moveTo(22, 152); c.quadraticCurveTo(14 + sw*0.4, 176, 12 + sw, 198); c.lineTo(26 + sw, 196); c.quadraticCurveTo(30 + sw*0.4, 174, 40, 156); c.closePath();
+      hwFill(c, '#f1ead6'); hwInk(c, 3.6);
+    } },
+
+  // PEN -- a vampire: a cape with a tall collar (black outside, red inside) that streams out behind him, a gold clasp and two fangs.
+  vampire: { W:60, H:200, box:[-52, 40, 112, 200],
+    back(c, S){
+      const tr = S.trail*S.back*30, fl = S.still ? 0 : Math.sin(S.t*0.2)*3;
+      // the cape
+      c.beginPath(); c.moveTo(6, 80); c.quadraticCurveTo(-14 + tr*0.4, 130, -28 + tr, 186 + fl);
+      c.quadraticCurveTo(-8 + tr, 178, 6 + tr*0.9, 190 - fl); c.quadraticCurveTo(30 + tr*0.9, 180, 54 + tr*0.9, 190 + fl);
+      c.quadraticCurveTo(70 + tr, 178, 88 + tr, 186 - fl); c.quadraticCurveTo(74 + tr*0.4, 130, 54, 80); c.closePath();
+      hwFill(c, '#1f1a28'); hwInk(c, 5);
+      c.beginPath(); c.moveTo(10, 84); c.quadraticCurveTo(-4 + tr*0.4, 130, -16 + tr, 180); c.lineTo(-24 + tr, 184); c.quadraticCurveTo(-12 + tr*0.4, 130, 6, 84); c.closePath(); hwFill(c, '#b3202f');
+      c.beginPath(); c.moveTo(50, 84); c.quadraticCurveTo(64 + tr*0.4, 130, 76 + tr, 180); c.lineTo(84 + tr, 184); c.quadraticCurveTo(72 + tr*0.4, 130, 54, 84); c.closePath(); hwFill(c, '#b3202f');
+      // the collar, standing up round his head
+      for(const s of [-1, 1]){
+        const x0 = s < 0 ? 12 : 48;
+        hwPoly(c, [x0, 86, x0 + s*30, 52, x0 + s*16, 50, x0 - s*2, 70]); hwFill(c, '#b3202f'); hwInk(c, 4.5);
+        hwPoly(c, [x0 + s*30, 52, x0 + s*34, 58, x0 + s*4, 90, x0, 86]); hwFill(c, '#1f1a28'); hwInk(c, 3.5);
+      }
+    },
+    front(c, S){
+      hwBlob(c, 31, 81, 7, 7, '#e8c040', 3.5); hwBlob(c, 31, 81, 3.2, 3.2, '#c0202e', 0);
+      hwFang(c, 27, 117, 5.5, 8); hwFang(c, 35, 117, 5.5, 8);
+    } },
+
+  // PIN -- a pirate: a black tricorne with a gold edge and a skull-and-crossbones (her point comes through the crown), and an eye patch.
+  pirate: { W:120, H:200, box:[-10, 0, 130, 200], noHat:true,
+    front(c, S){
+      // the crown, then the brim curling up at both ends
+      c.beginPath(); c.moveTo(22, 58); c.quadraticCurveTo(26, 22, 60, 20); c.quadraticCurveTo(94, 22, 98, 58); c.closePath(); hwFill(c, '#26222c'); hwInk(c, 5);
+      c.beginPath(); c.moveTo(-8, 44); c.quadraticCurveTo(10, 66, 60, 62); c.quadraticCurveTo(110, 66, 128, 44); c.quadraticCurveTo(122, 74, 60, 74); c.quadraticCurveTo(-2, 74, -8, 44); c.closePath();
+      hwFill(c, '#26222c'); hwInk(c, 5);
+      c.beginPath(); c.moveTo(-4, 52); c.quadraticCurveTo(12, 70, 60, 68); c.quadraticCurveTo(108, 70, 124, 52); c.lineWidth = 2.6; c.strokeStyle = hwC('#e8c040'); c.stroke();
+      // her point, back through the hat
+      hwPoly(c, [55, 22, 62, 0, 69, 22]); hwFill(c, '#c3c3c8'); hwInk(c, 3);
+      // the emblem
+      c.beginPath(); c.moveTo(48, 50); c.lineTo(72, 40); c.moveTo(48, 40); c.lineTo(72, 50); c.lineWidth = 3.4; c.strokeStyle = hwC('#f4f2ea'); c.stroke();
+      hwBlob(c, 60, 39, 6.5, 6, '#f4f2ea', 0); hwBlob(c, 57.6, 38.5, 1.6, 1.8, '#26222c', 0); hwBlob(c, 62.4, 38.5, 1.6, 1.8, '#26222c', 0);
+      // the patch, over the eye on her far side, and its strap
+      c.beginPath(); c.moveTo(12, 82); c.quadraticCurveTo(60, 74, 112, 96); c.lineWidth = 3; c.strokeStyle = hwC('#1c1c1c'); c.stroke();
+      hwBlob(c, 80, 101, 9, 8, '#1c1c1c', 0);
+    } },
+
+  // BOOK -- a wizard: a tall starry hat whose tip flops behind him, a long white beard, and sparkles drifting round the brim.
+  wizard: { W:206, H:200, box:[18, -92, 206, 200], noHat:true,
+    front(c, S){
+      const bk = S.back, sway = S.still ? 0 : Math.sin(S.t*0.08)*4 + S.trail*bk*8;
+      // the beard
+      c.beginPath(); c.moveTo(84, 128);
+      const pts = [[150, 128], [158, 146], [152, 162], [144, 176], [126, 196], [116, 204], [104, 192], [90, 176], [80, 160], [76, 144]];
+      for(const p of pts) c.lineTo(p[0], p[1]);
+      c.closePath(); hwFill(c, '#f4f4f0'); hwInk(c, 4.5);
+      c.beginPath(); c.moveTo(100, 150); c.quadraticCurveTo(104, 164, 98, 176); c.moveTo(126, 150); c.quadraticCurveTo(122, 166, 128, 180); c.moveTo(113, 160); c.lineTo(114, 190);
+      c.lineWidth = 2.2; c.strokeStyle = hwC('#c9c9c2'); c.stroke();
+      // the moustache, under the mouth line
+      c.beginPath(); c.moveTo(116, 128); c.quadraticCurveTo(96, 120, 84, 134); c.quadraticCurveTo(100, 140, 116, 132); c.quadraticCurveTo(132, 142, 150, 134); c.quadraticCurveTo(138, 120, 116, 128); c.closePath();
+      hwFill(c, '#ffffff'); hwInk(c, 3.5);
+      // the hat: the cone (its tip bent back), the band, the brim
+      const tx = 112 + bk*26 + sway, ty = -80;
+      c.beginPath(); c.moveTo(62, 12); c.quadraticCurveTo(84, -30, 104 + bk*6, -60); c.quadraticCurveTo(110 + bk*14, -76, tx, ty); c.quadraticCurveTo(122 + bk*8, -50, 160, 12); c.closePath();
+      hwFill(c, '#5b3fa8'); hwInk(c, 5);
+      c.beginPath(); c.moveTo(72, -6); c.quadraticCurveTo(110, -16, 150, -6); c.lineTo(156, 6); c.quadraticCurveTo(110, -4, 66, 6); c.closePath(); hwFill(c, '#e8c040'); hwInk(c, 3.5);
+      c.beginPath(); c.ellipse(111, 12, 74, 11, 0, 0, 7); hwFill(c, '#4a3290'); hwInk(c, 5);
+      hwTwinkle(c, 96, -26, 6, '#ffd84a'); hwTwinkle(c, 124, -44, 5, '#ffd84a'); hwTwinkle(c, 132, -14, 4, '#ffd84a');
+      c.beginPath(); c.arc(100, -48, 6, 0.6, 5.2); c.arc(103, -50, 5, 4.6, 1.2, true); c.closePath(); hwFill(c, '#fff1a8'); hwInk(c, 2);
+      // the sparkles
+      if(!HW_WHITE) for(let i = 0; i < 3; i++){
+        const u = ((S.t*0.012 + i/3) % 1), a = u*6.283 + i, x = 111 + Math.cos(a)*92, y = 2 + Math.sin(a)*16 - 6;
+        const k = S.still ? 0.8 : 0.5 + 0.5*Math.sin(S.t*0.3 + i*2);
+        hwTwinkle(c, x, y, 4 + 3*k, i % 2 ? '#fff1a8' : '#c8a8ff');
+      }
+    } },
+
+  // TACO -- a werewolf: wolf ears, tufts of fur at her sides, fangs, and a bushy tail that wags (harder when she runs).
+  werewolf: { W:220, H:200, box:[-62, 8, 220, 200],
+    back(c, S){
+      const wag = S.still ? 0.1 : Math.sin(S.t*(0.18 + S.trail*0.25))*0.32;
+      c.save(); c.translate(30, 148); c.rotate(wag);
+      c.beginPath(); c.moveTo(0, -10); c.quadraticCurveTo(-44, -6, -70, -62); c.quadraticCurveTo(-62, -76, -50, -68); c.quadraticCurveTo(-58, -50, -42, -32);
+      c.quadraticCurveTo(-28, -12, 4, 10); c.closePath(); hwFill(c, '#7a6a5c'); hwInk(c, 5);
+      c.beginPath(); c.moveTo(-50, -68); c.quadraticCurveTo(-60, -56, -53, -46); c.quadraticCurveTo(-68, -56, -70, -62); c.quadraticCurveTo(-62, -76, -50, -68); c.closePath(); hwFill(c, '#e8e2d8');
+      c.restore();
+    },
+    front(c, S){
+      const tuft = (x, y, s)=>{ hwPoly(c, [x, y - 26, x + s*12, y - 16, x + s*4, y - 10, x + s*16, y - 2, x + s*6, y + 4, x + s*14, y + 16, x, y + 20]); hwFill(c, '#7a6a5c'); hwInk(c, 3.6); };
+      tuft(38, 122, -1); tuft(180, 116, 1);
+      hwEar(c, 72, 66, -1.95, 34, 44, '#7a6a5c', '#e8a0a8');
+      hwEar(c, 142, 64, -1.2, 34, 44, '#7a6a5c', '#e8a0a8');
+      hwPoly(c, [96, 60, 104, 44, 110, 58, 118, 42, 124, 60]); hwFill(c, '#7a6a5c'); hwInk(c, 3.6);
+      hwFang(c, 99, 131, 9, 12); hwFang(c, 125, 131, 9, 12);
+    } },
+
+  // APPLE -- a caramel apple: a coat of caramel dripping down her top (round her eyes), sprinkles, and the stick it is on.
+  caramel: { W:211, H:200, box:[22, -44, 192, 200], noHat:true,
+    front(c, S){
+      c.beginPath();
+      const P = [26, 86, 30, 54, 48, 34, 72, 26, 96, 38, 104, 36, 130, 16, 160, 18, 182, 40, 190, 70, 188, 94,
+                 182, 118, 172, 120, 168, 94, 158, 72, 146, 58, 132, 52, 120, 54, 116, 60, 115, 84, 107, 88, 104, 62, 98, 54, 84, 54, 74, 60,
+                 68, 96, 58, 100, 56, 70, 46, 72, 40, 102, 30, 104];
+      c.moveTo(P[0], P[1]); for(let i = 2; i < P.length; i += 2){ const x = P[i], y = P[i + 1]; c.lineTo(x, y); }
+      c.closePath(); hwFill(c, '#c8782a'); hwInk(c, 5);
+      c.beginPath(); c.moveTo(56, 38); c.quadraticCurveTo(72, 30, 88, 42); c.moveTo(138, 26); c.quadraticCurveTo(160, 22, 176, 44);
+      c.lineWidth = 5; c.strokeStyle = hwC('#eaa860'); c.stroke();
+      const sp = [[60, 50, 0.4, '#ff8a1e'], [86, 46, -0.6, '#8a4ae0'], [150, 40, 0.9, '#6fd04a'], [168, 58, -0.3, '#ffffff'], [124, 38, 0.2, '#ff8a1e'],
+                  [42, 66, 1.2, '#6fd04a'], [178, 80, 0.5, '#8a4ae0'], [110, 46, -1.1, '#ffffff'], [140, 52, 1.4, '#8a4ae0']];
+      for(const s of sp){ c.save(); c.translate(s[0], s[1]); c.rotate(s[2]); c.beginPath(); c.rect(-4.5, -1.6, 9, 3.2); hwFill(c, s[3]); hwInk(c, 1.2); c.restore(); }
+      // the stick, out of the top
+      c.beginPath(); c.rect(94, -40, 12, 82); hwFill(c, '#dcb47c'); hwInk(c, 4.5);
+      c.beginPath(); c.moveTo(97, -34); c.lineTo(97, 34); c.lineWidth = 2; c.strokeStyle = hwC('#f2d6a6'); c.stroke();
+    } },
+
+  // PICKLE -- Frankenstein's monster: a flat black top with ragged bangs, a stitched scar, and bolts in his neck.
+  franken: { W:104, H:200, box:[-12, -18, 116, 200], noHat:true,
+    front(c, S){
+      hwPoly(c, [-4, 24, -4, -12, 72, -12, 74, 22, 64, 16, 56, 27, 48, 17, 40, 28, 31, 17, 22, 27, 13, 16, 5, 26]); hwFill(c, '#211e27'); hwInk(c, 5);
+      c.beginPath(); c.moveTo(2, -5); c.lineTo(66, -5); c.lineWidth = 3; c.strokeStyle = hwC('#4a4656'); c.stroke();
+      c.beginPath(); c.moveTo(14, 46); c.quadraticCurveTo(34, 40, 54, 48);
+      for(let i = 0; i < 4; i++){ const x = 18 + i*11, y = 44 - Math.sin((i + 0.5)/4*3.14)*3; c.moveTo(x - 2, y - 6); c.lineTo(x + 2, y + 6); }
+      c.lineWidth = 2.6; c.strokeStyle = hwC('#1c1c1c'); c.stroke();
+      for(const s of [-1, 1]){
+        const x = s < 0 ? 12 : 94;
+        c.beginPath(); c.rect(s < 0 ? x - 14 : x, 112, 14, 9); hwFill(c, '#9aa3ad'); hwInk(c, 3.5);
+        c.beginPath(); c.rect(s < 0 ? x - 21 : x + 13, 108, 8, 17); hwFill(c, '#6c7580'); hwInk(c, 3.5);
+      }
+    } },
+
+  // BOMB -- a black cat: ears, white whiskers and a pink nose, and a long tail that swishes.
+  blackcat: { W:169, H:200, box:[-40, -4, 186, 200],
+    back(c, S){
+      const sw = S.still ? 0.15 : Math.sin(S.t*0.1)*0.28 + S.trail*0.2;
+      c.save(); c.translate(46, 150); c.rotate(sw);
+      c.beginPath(); c.moveTo(0, 0); c.bezierCurveTo(-34, 10, -50, -20, -36, -54); c.bezierCurveTo(-30, -68, -14, -66, -16, -54);
+      c.bezierCurveTo(-26, -50, -36, -26, -18, -12); c.bezierCurveTo(-10, -6, 0, -10, 8, -14); c.closePath(); hwFill(c, '#1a181e'); hwInk(c, 4.5);
+      c.restore();
+    },
+    front(c, S){
+      hwEar(c, 102, 34, -1.62, 36, 36, '#1a181e', '#f2a0b4');
+      hwEar(c, 150, 58, -0.72, 36, 36, '#1a181e', '#f2a0b4');
+      c.beginPath();
+      c.moveTo(96, 112); c.lineTo(58, 102); c.moveTo(96, 120); c.lineTo(56, 120); c.moveTo(96, 128); c.lineTo(60, 140);
+      c.moveTo(142, 108); c.lineTo(182, 96); c.moveTo(144, 116); c.lineTo(186, 114); c.moveTo(144, 124); c.lineTo(182, 134);
+      c.lineWidth = 5; c.strokeStyle = hwC('#1c1c1c'); c.stroke(); c.lineWidth = 2.6; c.strokeStyle = hwC('#f4f4f4'); c.stroke();
+      hwPoly(c, [110, 94, 124, 94, 117, 103]); hwFill(c, '#f28aa6'); hwInk(c, 2.6);
+    } },
+};
+// `noHat`: the costume has headwear of its own (a pumpkin, a tricorne, a wizard's hat, a stick, a flat top), so a worn hat is left off while it is on
+// (face gear -- shades, headphones, glasses -- is still worn).
+// The costume a fighter wears: its drawing, when `it` is a costume row and the fighter is the one it is for (cosFitsFighter's rule), else null.
+function cosCostume(it, name){
+  if(!it || it.kind !== 'skin' || !it.costume || it.fighter !== name) return null;
+  const a = COSTUME_ART[it.costume];
+  return a && !it.src ? a : null;
+}
+// Draw one layer of a costume in the space a render is drawn in: (0, 0) the picture's centre, dw x dh its box, already mirrored to the facing. `f` the
+// fighter (null in a preview, where nothing blows in the wind), `flip` the picture's own facing, `white` a hit's flash (drawn white over itself), `t` the
+// clock for a preview.
+function cosCostumeDraw(c, art, layer, dw, dh, f, flip, white, t){
+  const fn = art && art[layer];
+  if(!fn) return;
+  const vx = f ? (f.vx || 0) : 0, vy = f ? (f.vy || 0) : 0;
+  const S = { t: f ? hazardT : (t || 0), back: flip ? 1 : -1, trail: Math.min(1, (Math.abs(vx) + Math.max(0, -vy)*0.3)/7), air: !!f && f.onground === false,
+              atk: f && typeof atkU === 'function' ? atkU(f) : -1, hurt: f && typeof hurtK === 'function' ? hurtK(f) : 0, still: !f && t == null };
+  c.save();
+  c.translate(-dw/2, -dh/2); c.scale(dw/art.W, dh/art.H);
+  c.lineJoin = 'round'; c.lineCap = 'round';
+  try{
+    fn(c, S);
+    if(white){ const a = c.globalAlpha; c.globalAlpha = a*0.88; HW_WHITE = true; try{ fn(c, S); } finally { HW_WHITE = false; c.globalAlpha = a; } }
+  }catch(e){ HW_WHITE = false; cosDrawFail(e); }
+  c.restore();
+}
+// A fighter in a costume, on a canvas of its own (the Store's thumbnail, the Wardrobe card, the pick panel): the render `im` contain-fitted so that the
+// WHOLE costume (art.box, in the render's pixels) fits w x h, feet on the bottom; or, with `base` set, the render at that height in px with the costume
+// round it (the card: the fighter the size it always is there).
+function cosCostumePic(g, art, im, flip, w, h, base){
+  const W = art.W, H = art.H, b = art.box;
+  let k, ox, oy;
+  if(base){ k = base/H; ox = w/2 - (W/2)*k; oy = h - H*k; }
+  else { k = Math.min(w/(b[2] - b[0]), h/(b[3] - b[1])); ox = w/2 - ((b[0] + b[2])/2)*k; oy = h - b[3]*k; }
+  const dw = W*k, dh = H*k;
+  g.save(); g.translate(ox + dw/2, oy + dh/2);
+  cosCostumeDraw(g, art, 'back', dw, dh, null, flip, false);
+  g.drawImage(im, -dw/2, -dh/2, dw, dh);
+  cosCostumeDraw(g, art, 'front', dw, dh, null, flip, false);
+  g.restore();
+}
+// The costume this fighter in a match wears (cosOf: yours, or an online player's from their join code), or null.
+function cosCostumeOf(f){ const c = cosOf(f); return c && c.skin ? cosCostume(cosItem(c.skin), f.name) : null; }
+// The pick panel's picture of your fighter in the costume they wear (refreshSel), or null for the plain portrait: until their render has decoded, and then
+// the panel is drawn again.
+function cosSelArt(r){
+  try{
+    if(!r || !PROFILE) return null;
+    const cst = cosCostume(cosItem(wornCos('skin', r.name)), r.name);
+    if(!cst) return null;
+    const base = SPRITES[r.name], im = base && spriteImage(base);
+    if(!im){ if(base) base.onReady = ()=>{ try{ if(chosen === r) refreshSel(); }catch(e){} }; return null; }
+    const cv = document.createElement('canvas'); cv.className = 'selartimg'; cv.width = 104; cv.height = 104; cv.style.width = '52px'; cv.style.height = '52px';
+    const g = cv.getContext && cv.getContext('2d');
+    if(!g) return null;
+    cosCostumePic(g, cst, im, !!base.flip, 104, 104);
+    return cv;
+  }catch(e){ cosDrawFail(e); return null; }
+}
 // Once the profile is in, the seven retired recolours are dealt with (COS_RETIRED): what was paid for one goes back onto the wallet,
 // once (walletNorm), and one that was being worn is taken off (cosNorm). True when that changed the profile, so the caller saves it.
 function cosRetireSweep(){
@@ -74812,7 +75135,7 @@ function cosPreview(it, colour){
   const col = colour || (chosen && chosen.color) || '#f0521f';
   const dot = ()=>{ const d = document.createElement('div'); d.className = 'cosdot'; d.style.background = col; return d; };
   if(it.kind === 'skin'){
-    if(it.src && COS_SKIN_THUMBS[it.id]){
+    if((it.src || it.costume) && COS_SKIN_THUMBS[it.id]){
       // A skin's own picture, from its data: URI thumbnail, decoded into a canvas: no <img> is put on the page and nothing is fetched.
       const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64;
       const g = cv.getContext && cv.getContext('2d');
@@ -74845,6 +75168,7 @@ function storeBuy(id){
   if(r.ok) storeReply('Yours: ' + it.name + '! Wear it now, or any time in the Wardrobe.');
   else if(r.why === 'tokens') storeReply('You need ' + r.need + ' more Win Tokens. Quests earn them.', 'wrong');
   else if(r.why === 'owned') storeReply('You already have ' + (it ? it.name : 'that') + '.');
+  else if(r.why === 'season') storeReply((it ? it.name : 'That') + ' is only in the Store in October.', 'wrong');
   buildStore();
   return r;
 }
@@ -74861,6 +75185,7 @@ function storeWear(id){
 // A look for a Vault fighter stays out of the Store until that fighter has been opened by its code: "can ONLY be opened by a code",
 // and a Store that listed their skin would say the fighter exists.
 function cosListed(it){
+  if(it && it.month && !cosInSeason(it)) return false;   // a Halloween costume: in the Store in October only (cosInSeason)
   if(!it || !it.fighter || !VAULT_FIGHTERS.has(it.fighter)) return true;
   const r = ROSTER.find(x=>x.name === it.fighter);
   return !!r && isUnlocked(r);
@@ -74881,11 +75206,15 @@ function buildStore(){
   if(note){ const t = retiredNote(); note.textContent = t; note.style.display = t ? '' : 'none'; }
   box.innerHTML = '';
   const bal = walletBalance(), who = chosen && chosen.name;
-  for(const kind of COS_KINDS){
-    const sec = document.createElement('div'); sec.className = 'shopsec'; sec.textContent = COS_KIND_NAMES[kind]; box.appendChild(sec);
+  // The Halloween costumes, while it is October (cosListed), come first under a heading of their own; the rest by kind.
+  const seasonal = COSMETICS.filter(it=>it.month && cosListed(it));
+  const groups = (seasonal.length ? [['Halloween costumes \u00b7 October only', seasonal]] : [])
+    .concat(COS_KINDS.map(kind=>[COS_KIND_NAMES[kind], cosOfKind(kind).filter(it=>!it.month && cosListed(it))]));
+  for(const [label, list] of groups){
+    const sec = document.createElement('div'); sec.className = 'shopsec'; sec.textContent = label; box.appendChild(sec);
     const grid = document.createElement('div'); grid.className = 'storegrid';
-    for(const it of cosOfKind(kind).filter(cosListed)){
-      const owned = ownsCos(it.id), wearing = owned && wornCos(kind, it.fighter || who) === it.id;
+    for(const it of list){
+      const kind = it.kind, owned = ownsCos(it.id), wearing = owned && wornCos(kind, it.fighter || who) === it.id;
       const c = document.createElement('div'); c.className = 'scell' + (owned ? ' owned' : ''); c.dataset.id = it.id;
       c.appendChild(cosPreview(it));
       const nm = document.createElement('div'); nm.className = 'sname'; nm.textContent = it.name; c.appendChild(nm);
@@ -74924,13 +75253,20 @@ function renderPlayerCard(el, name, opts){
   if(skinSp && !skinIm) skinSp.onReady = ()=>{ if(el.isConnected) renderPlayerCard(el, name, opts); };
   const sp = skinIm ? skinSp : base;
   const im = skinIm || (base && spriteImage(base));
+  // A Halloween costume (COSTUME_ART) is drawn round the fighter's own render, on a canvas the costume can stick out of; asked again once that render decodes.
+  const cst = cosCostume(skin, r.name);
+  if(cst && base && !im) base.onReady = ()=>{ if(el.isConnected) renderPlayerCard(el, name, opts); };
   let pic, top, h;
   if(im && sp.src){
-    pic = document.createElement('img'); pic.alt = ''; pic.draggable = false; pic.src = sp.src;
     const ar = im.naturalWidth / im.naturalHeight; h = ar < 1 ? 96 : 96 / ar; top = 96 - h;
+    if(cst && sp === base){
+      pic = document.createElement('canvas'); pic.className = 'pcx-cst'; pic.width = 384; pic.height = 320;
+      const g = pic.getContext && pic.getContext('2d');
+      if(g){ try{ g.scale(2, 2); cosCostumePic(g, cst, im, !!base.flip, 192, 160, h); }catch(e){ cosDrawFail(e); } }
+    } else { pic = document.createElement('img'); pic.alt = ''; pic.draggable = false; pic.src = sp.src; }
   } else { pic = document.createElement('div'); pic.className = 'cosdot'; pic.style.background = safeColor(r.color); h = 62; top = 34; }
   art.appendChild(pic);
-  if(hat){
+  if(hat && !(cst && cst.noHat && !COS_FACE_GEAR[hat])){
     const cv = document.createElement('canvas'); cv.className = 'pcx-hat'; cv.width = 96; cv.height = 128;
     const g = cv.getContext && cv.getContext('2d');
     if(g){ try{ g.translate(48, 32); drawCosHat(g, hat, 1, top + 3, top + h * 0.3); }catch(e){ cosDrawFail(e); } }
