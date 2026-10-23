@@ -13944,6 +13944,7 @@ function musicDeck(i){
     el.addEventListener('ended', ()=>{ musicPlaylistNext(i); });   // a playlist track played to its end: the next one (musicPlaylistNext)
   }catch(e){ return null; }
   SND._decks[i] = el;
+  try{ if(RUN_REC.audio){ runRecAudioTap(el); if(el._recSrc) el._recSrc.connect(RUN_REC.audio); } }catch(e){}   // a deck made mid-match joins the recording
   return el;
 }
 function musicActiveEl(){ return SND._decks[SND._deck] || null; }
@@ -17624,11 +17625,35 @@ let BOSSRUSH = { active:false, bossIdx:0, cleared:0, defeated:false };
 // ============================================================
 //  BOSS RUSH RUN RECORDER — auto-captures your run to review afterward (like a snipping tool for gameplay)
 // ============================================================
-let RUN_REC = { rec:null, stream:null, chunks:[], url:null, supported:false, recording:false, skipped:false };
+let RUN_REC = { rec:null, stream:null, audio:null, chunks:[], url:null, supported:false, recording:false, skipped:false };
 function recorderSupported(){
   return !!(window.MediaRecorder && cv && cv.captureStream);
 }
 function runRecStopTracks(stream){ try{ if(stream) stream.getTracks().forEach(t=>t.stop()); }catch(e){} }
+// THE REPLAY'S SOUND (the owner, 2026-10-23: "audio should be conserved in match recordings"). The video records what you hear: the
+// sound effects and the synth bed (all through SND.master) and the music files (the two decks, which are <audio> elements). An
+// element plays straight to the speakers, where nothing can record it, so a recording routes each deck through the sound graph,
+// to the speakers as before (at its own volume) and to the recording. That routing is for good, and only done while the graph
+// is running: a deck routed into a suspended graph would go quiet.
+function runRecAudioTap(el){
+  if(!el || el._recSrc || !SND.ctx || SND.ctx.state !== 'running') return;
+  try{ el._recSrc = SND.ctx.createMediaElementSource(el); el._recSrc.connect(SND.ctx.destination); }catch(e){ el._recSrc = null; }
+}
+// A fresh tap for each recording (stopping a recording ends its audio track for good); null with no sound.
+function runRecAudio(){
+  if(!SND.ctx || !SND.master || !SND.ctx.createMediaStreamDestination) return null;
+  try{
+    const dest = SND.ctx.createMediaStreamDestination();
+    SND.master.connect(dest);
+    SND._decks.forEach(el=>{ runRecAudioTap(el); if(el && el._recSrc) el._recSrc.connect(dest); });
+    return dest;
+  }catch(e){ return null; }
+}
+function runRecAudioOff(dest){
+  if(!dest) return;
+  try{ SND.master.disconnect(dest); }catch(e){}
+  SND._decks.forEach(el=>{ try{ if(el && el._recSrc) el._recSrc.disconnect(dest); }catch(e){} });
+}
 // A recorder still running is stopped and its footage thrown away (it belongs to a match that is being replaced).
 function runRecDiscard(){
   const r = RUN_REC.rec;
@@ -17636,7 +17661,8 @@ function runRecDiscard(){
     try{ r.ondataavailable = null; r.onstop = null; r.stop(); }catch(e){}
     runRecStopTracks(RUN_REC.stream);
   }
-  RUN_REC.rec = null; RUN_REC.stream = null; RUN_REC.recording = false;
+  runRecAudioOff(RUN_REC.audio);
+  RUN_REC.rec = null; RUN_REC.stream = null; RUN_REC.audio = null; RUN_REC.recording = false;
 }
 function startRunRecording(){
   // One recorder at a time. Pressing R mid-match started another and never stopped the one before: after three
@@ -17663,15 +17689,17 @@ function startRunRecording(){
       const k2 = document.createElement('canvas'); k2.width = LOGICAL_W; k2.height = LOGICAL_H;
       const g2 = k2.getContext('2d'); if(g2){ RUN_REC.copy = { cv:k2, ctx:g2, n:0 }; source = k2; }
     }
-    const stream = source.captureStream(30);   // 30fps capture of the game canvas
+    const video = source.captureStream(30);   // 30fps capture of the game canvas
+    const audio = runRecAudio();               // and the game's sound (runRecAudio)
+    const stream = audio ? new MediaStream(video.getVideoTracks().concat(audio.stream.getAudioTracks())) : video;
     // pick a supported mime type -- VP8 first: the same replay for much less encoding work than VP9, at a bitrate a
-    // 30 fps cartoon has no use for more than
+    // 30 fps cartoon has no use for more than; Opus for the sound
     let mime = "";
-    for(const m of ["video/webm;codecs=vp8","video/webm;codecs=vp9","video/webm"]){
+    for(const m of audio ? ["video/webm;codecs=vp8,opus","video/webm;codecs=vp9,opus","video/webm"] : ["video/webm;codecs=vp8","video/webm;codecs=vp9","video/webm"]){
       if(MediaRecorder.isTypeSupported(m)){ mime=m; break; }
     }
-    RUN_REC.stream = stream;
-    RUN_REC.rec = new MediaRecorder(stream, mime ? {mimeType:mime, videoBitsPerSecond:2500000} : undefined);
+    RUN_REC.stream = stream; RUN_REC.audio = audio;
+    RUN_REC.rec = new MediaRecorder(stream, mime ? {mimeType:mime, videoBitsPerSecond:2500000, audioBitsPerSecond:96000} : undefined);
     RUN_REC.rec.ondataavailable = e=>{ if(e.data && e.data.size>0) RUN_REC.chunks.push(e.data); };
     RUN_REC.rec.start(1000);   // gather data every second so long runs don't lose everything
     RUN_REC.recording = true;
@@ -17679,15 +17707,17 @@ function startRunRecording(){
 }
 function stopRunRecording(onReady){
   if(!RUN_REC.recording || !RUN_REC.rec){ if(onReady) onReady(null); return; }
-  const stream = RUN_REC.stream;
+  const stream = RUN_REC.stream, audio = RUN_REC.audio;
+  RUN_REC.audio = null;
   RUN_REC.rec.onstop = ()=>{
     runRecStopTracks(stream);   // the canvas capture kept running after the match it was recording had ended
+    runRecAudioOff(audio);
     RUN_REC.recording = false;
     const blob = new Blob(RUN_REC.chunks, {type:"video/webm"});
     RUN_REC.url = URL.createObjectURL(blob);
     if(onReady) onReady(RUN_REC.url);
   };
-  try{ RUN_REC.rec.stop(); }catch(e){ RUN_REC.recording=false; if(onReady) onReady(null); }
+  try{ RUN_REC.rec.stop(); }catch(e){ RUN_REC.recording=false; runRecAudioOff(audio); if(onReady) onReady(null); }
 }
 // Show the captured run in a review panel appended to the result screen.
 function showRunReview(){
