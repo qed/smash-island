@@ -515,6 +515,22 @@
   .lpname{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .lptag{flex:none; font-size:10px; font-weight:800; letter-spacing:.08em; background:var(--gold); color:#1c1c1c; border:2px solid #1c1c1c; border-radius:6px; padding:1px 6px}
   .lobbywait{font-weight:700; font-size:14px; color:#2a3b4d; text-align:center; padding:6px 10px}
+  /* Capture the Flag and Teams: the players in one block per side, under a bar in the team's colour. Your Join button is on each bar
+     (NET.renderSides); a player who has not picked wears AUTO. */
+  .lpshint{font-size:11px; font-weight:700; color:#2a3b4d; line-height:1.25}
+  .lpside{flex:0 0 auto; display:flex; align-items:center; gap:8px; margin-top:3px; padding:2px 4px 2px 10px; background:var(--tc); color:var(--tt);
+    border:3px solid #1c1c1c; border-radius:10px; font-weight:800}
+  .lpsname{flex:none; font-size:13px; letter-spacing:.08em; text-transform:uppercase}
+  .lpscount{flex:1 1 auto; min-width:0; font-size:11px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .lpsbtn{flex:none; font:inherit; font-size:12px; font-weight:800; padding:2px 11px; background:#fff; color:#1c1c1c; border:2px solid #1c1c1c;
+    border-radius:8px; box-shadow:0 2px 0 #1c1c1c; cursor:pointer}
+  .lpsbtn:hover:not(:disabled){transform:translateY(-1px)}
+  .lpsbtn:focus-visible{outline:3px solid var(--vote); outline-offset:1px}
+  .lpsbtn:disabled{cursor:default; box-shadow:none}
+  .lpsbtn.mine{background:var(--gold)}
+  .lpsbtn.full{background:#d9d9d9; color:#555}
+  .lobbyplayer.sided{margin-left:12px; border-left:8px solid var(--tc)}
+  .lpauto{flex:none; font-size:9px; font-weight:800; letter-spacing:.08em; color:#555; border:2px dashed #888; border-radius:6px; padding:0 5px}
   /* The fighter picker: everyone's portraits in one grid, and each player's pick wears their P-badge on its portrait, live. The names are on
      hover (and the picked one on your row). The cells are buttons, and they let go of the keyboard focus the moment one is clicked (pickFighter). */
   .lobbypicker{flex:1 1 auto; min-width:0; min-height:0; display:flex; flex-direction:column; gap:6px; background:#ffffff80; border:3px solid #1c1c1c; border-radius:12px; padding:7px 9px 8px}
@@ -6990,11 +7006,12 @@ function ctfNetFightersIn(){
 
 
 // ---- who is on which side -----------------------------------------------------------------------------------------------
-// Online, the humans take the seats first and alternate sides (the host is on team 0), so two friends meet; the CPUs fill the rest
-// to five a side. A local match puts the player on team 0.
-function ctfTeamOf(N, humanCount, net){
+// Online, the humans take the seats first, each on the side they picked in the lobby (`sides`, the host's start: netResolveSides);
+// with no picks (or an older host's start) they alternate (the host is on team 0). The CPUs fill the rest to the same number a side.
+// A local match puts the player on team 0.
+function ctfTeamOf(N, humanCount, net, sides){
   const teamOf = new Array(N).fill(-1), cnt = [0, 0], CAP = Math.floor(N/2);
-  if(net){ for(let i = 0; i < humanCount && i < N; i++){ const t = i % 2; teamOf[i] = t; cnt[t]++; } }
+  if(net){ for(let i = 0; i < humanCount && i < N; i++){ let t = (sides && (sides[i] === 0 || sides[i] === 1)) ? sides[i] : i % 2; if(cnt[t] >= CAP) t = 1 - t; teamOf[i] = t; cnt[t]++; } }
   else { teamOf[0] = 0; cnt[0] = 1; }
   for(let i = 0; i < N; i++){
     if(teamOf[i] >= 0) continue;
@@ -7002,6 +7019,59 @@ function ctfTeamOf(N, humanCount, net){
     teamOf[i] = t; cnt[t]++;
   }
   return teamOf;
+}
+// ONLINE SIDES (Capture the Flag and Teams): each player picks their side in the lobby. The pick rides the player's hello, right after
+// the fighter's name ("Pen#2"; "Pen#2~a3k0" with a look): the relay keeps nothing else of a player, and that name is in the roster
+// every screen is sent. The host works the room's sides out from the picks (netResolveSides), shows them to everyone in its settings
+// preview, and sends them in the start, so every device seats the same. (The side goes before the look: a name the relay has to cut
+// at 24 letters loses the look, never the side.)
+function netSideTag(hello, side){
+  hello = String(hello == null ? '' : hello);
+  if(!(side >= 1 && side <= 4)) return hello;
+  const i = hello.indexOf('~');
+  return i < 0 ? hello + '#' + side : hello.slice(0, i) + '#' + side + hello.slice(i);
+}
+function netSideSplit(s){
+  s = String(s == null ? '' : s);
+  const m = /#([1-4])(?=~|$)/.exec(s);
+  return m ? { side:+m[1], rest:s.slice(0, m.index) + s.slice(m.index + 2) } : { side:0, rest:s };
+}
+// The sides the next match will have, by size: Capture the Flag's two halves, or the Teams split ([2,1,1]...). null for a mode
+// without sides. (buildFighters' own numbers: the same clamp on the count, the same split rule.)
+function netSideSizes(mode, count, teamKey){
+  if(mode === 'ctf'){ const n = clamp(Math.round((+count || 0)/2)*2, 4, 16); return [n/2, n/2]; }
+  if(mode !== 'teams') return null;
+  const N = Math.max(2, Math.min(MAX_TEAMS, Math.round(+count) || 2));
+  const split = String(teamKey || '').split('v').map(Number).filter(n=>n>0);
+  return split.reduce((a, b)=>a + b, 0) === N ? split : (teamSplitsFor(N)[0] || [N]);
+}
+// Each human's side (0 = Team 1), by seat. picks[i]: the side seat i picked (0-based), or -1 for none. A pick holds while its side has
+// room for another human (a side never holds more humans than its size: half the contestants in Capture the Flag); everyone else is
+// dealt the way the seats went before there were picks -- by turns in Capture the Flag (seat 0 Team 1, seat 1 Team 2, ...), in seat
+// order through the split in Teams -- to the next side with room when that one is full. Nobody picking gives exactly the old seating.
+function netResolveSides(picks, sizes, mode){
+  const n = sizes.length, cnt = new Array(n).fill(0), out = picks.map(()=>-1);
+  picks.forEach((t, i)=>{ if(Number.isInteger(t) && t >= 0 && t < n && cnt[t] < sizes[t]){ out[i] = t; cnt[t]++; } });
+  const seq = []; sizes.forEach((k, t)=>{ for(let j = 0; j < k; j++) seq.push(t); });   // Teams: the seats in order through the split
+  picks.forEach((t, i)=>{
+    if(out[i] >= 0) return;
+    const want = mode === 'ctf' ? i % n : (seq[i] != null ? seq[i] : 0);
+    for(let k = 0; k < n; k++){ const tt = (want + k) % n; if(cnt[tt] < sizes[tt]){ out[i] = tt; cnt[tt]++; break; } }
+    if(out[i] < 0) out[i] = want;   // (more humans than seats: the lobby never offers that)
+  });
+  return out;
+}
+// Teams online: the humans on the sides the start gave them, then the CPUs fill each team to its size, team by team.
+function netTeamsSeat(sizes, sides, humans){
+  const left = sizes.slice(), out = [];
+  for(let i = 0; i < humans; i++){
+    let t = sides[i];
+    if(!(Number.isInteger(t) && t >= 0 && t < left.length && left[t] > 0)) t = left.findIndex(k=>k > 0);
+    if(t < 0) t = 0;
+    out.push(t); left[t]--;
+  }
+  for(let t = 0; t < left.length; t++) for(; left[t] > 0; left[t]--) out.push(t);
+  return out;
 }
 // The result screen's own words (it is outside the match, so words are fine).
 function ctfRevealMap(L){   // the whole map, with every flag where it was hidden (a ring round the ones that were carried home): the result screen's own picture
@@ -14885,7 +14955,7 @@ function go(id){
     // loop() broadcasting that solo match into the old room ~22x/sec. leave() resets role, ws,
     // snapshot, players and the roster globals together, and is a no-op when already solo.
     if(window.NET && window.NET.role!=="solo") window.NET.leave();
-    window.__netRoster=null; window.__netHumanCount=0;
+    window.__netRoster=null; window.__netHumanCount=0; window.__netSides=null;
   }   // leaving to title exits test/tournament/boss mode
   if(id==='title'||id==='lobby' || (id==='select' && !PENDING_CUSTOM)) CUSTOM_LEVEL=null;   // navigation clears custom level, unless we're queuing one for character select
   if(id!=='select') PENDING_CUSTOM=false;   // consumed once we leave the select screen into a match
@@ -19399,12 +19469,14 @@ function buildFighters(){
 
   // team assignment
   let teamOf=null;
-  if(SETTINGS.mode==='ctf'){ teamOf = ctfTeamOf(N, humanCount, !!netRoster); }
+  const netSides = netRoster ? (window.__netSides || null) : null;   // online: the side each human picked in the lobby, as the host's start sent it
+  if(SETTINGS.mode==='ctf'){ teamOf = ctfTeamOf(N, humanCount, !!netRoster, netSides); }
   else if(SETTINGS.mode==='teams'){
     const split=(SETTINGS.teamKey||'').split('v').map(Number).filter(n=>n>0);
     const sizes = (split.reduce((a,b)=>a+b,0)===N) ? split : (teamSplitsFor(N)[0]||[N]);
     teamOf=[]; 
     for(let s=0;s<sizes.length;s++){ for(let k=0;k<sizes[s];k++){ teamOf.push(s); } }
+    if(netRoster && netSides) teamOf = netTeamsSeat(sizes, netSides, humanCount);   // the humans where they picked, the CPUs fill each team
     if(!netRoster){
       if(LINEUP_MEMO && LINEUP_MEMO.key===lineupKey(N) && LINEUP_MEMO.teamOf && LINEUP_MEMO.teamOf.length===teamOf.length){
         teamOf = LINEUP_MEMO.teamOf.slice();
@@ -71555,6 +71627,8 @@ window.NET = {
   snapshot: null,        // latest state (client renders this)
   myId: Math.random().toString(36).slice(2,8),
   lastInputSent: 0,
+  mySide: 0,             // the side this player picked in the lobby (1 = Team 1, ...); 0 = not picked, dealt by turns (netResolveSides)
+  lobbySides: null,      // a client: the sides the host last said the room has ({ids, p, t}: seats, their picks, the sides)
 
   wsURL(addr, loc){
     loc = loc || location;
@@ -71602,7 +71676,7 @@ window.NET = {
     catch(e){ this.status("Bad address"); this.role="solo"; return; }
     this.ws.onopen = ()=>{
       this.status(asHost?"Hosting — waiting for players":"Connected — joining");
-      this.send({t:"hello", id:this.myId, host:!!asHost, name:(chosen?netHelloName(chosen.name):"?")});   // the look rides the name (netHelloName)
+      this.send({t:"hello", id:this.myId, host:!!asHost, name:(chosen?this.helloName(chosen.name):"?")});   // the look rides the name (netHelloName), and the side (netSideTag)
     };
     this.ws.onmessage = (ev)=>{ try{ this.onMessage(JSON.parse(ev.data)); }catch(e){} };
     const ws = this.ws;
@@ -71662,8 +71736,9 @@ window.NET = {
   leave(){
     if(this.ws){ try{this.ws.close();}catch(e){} }
     this.role="solo"; this.ws=null; this.snapshot=null; this.players=[]; this.lobby=null; this._ctutCheck=false;   // (lobby: the last room's settings are not the next room's)
+    this.mySide=0; this.lobbySides=null;   // (a side is picked in a room: the next room starts unpicked)
     // Cleared here too, not just in go('title'), so any other exit path is safe as well.
-    window.__netRoster=null; window.__netHumanCount=0;
+    window.__netRoster=null; window.__netHumanCount=0; window.__netSides=null;
     NET_COS=[]; COS_KO_OUT=[];   // ...and so are the room's looks
   },
 
@@ -71671,6 +71746,8 @@ window.NET = {
 
   onMessage(m){
     if(m.t==="state" && m.lobby){ if(this.role==="client"){ const was = this.lobby, first = this._ctutCheck; this._ctutCheck = false; this.lobby=m.lobby;
+        this.lobbySides = (m.sides && typeof m.sides==='object' && Array.isArray(m.sides.ids)) ? m.sides : null;   // the sides as the host worked them out
+        if(!running) this.renderRoster();   // (the mode, the count or someone's side may have changed what the players list shows)
         if(m.lobby.mode==='ctf' && !running){ if(first && ctfTutJoin()) return; if(!first && (!was || was.mode!=='ctf')){ this.renderLobbySettings(); ctfTutLobbyLine(); return; } }
         this.renderLobbySettings(); } return; }   // (the room you just joined plays Capture the Flag, and no practice yet: out, the practice, back in; a later switch to it: a line only)   // the host's settings preview (no snapshot)
     if(m.t==="roster"){
@@ -71710,7 +71787,7 @@ window.NET = {
     }
     else if(m.t==="ctfvote" && this.role==="host"){ try{ ctfPlanVoteMsg(m); }catch(e){} }   // a guest's vote for its side's plan
     else if(m.t==="state" && this.role==="client"){ if(m.s && typeof m.s==='object') netSnapshotArrived(this, m.s); }
-    else if(m.t==="start"){ this.beginMatch(m.settings, m.roster, m.ids, m.cos); }
+    else if(m.t==="start"){ this.beginMatch(m.settings, m.roster, m.ids, m.cos, m.sides); }
     else if(m.t==="status"){ this.status(m.msg); }
   },
 
@@ -71722,8 +71799,9 @@ window.NET = {
   lobbyEntries(){
     const firey=ROSTER.find(x=>x.name==="Firey");
     return (this.players||[]).map((p,i)=>{
-      const nm=netSplitName(p.fighter||p.name).name, r=ROSTER.find(x=>x.play && x.name===nm) || firey;
-      return { slot:i+1, id:p.id, isHost:!!p.isHost, you:p.id===this.myId, fighter:r?r.name:"Firey", color:r?r.color:null };
+      const sd=netSideSplit(p.fighter||p.name), nm=netSplitName(sd.rest).name, r=ROSTER.find(x=>x.play && x.name===nm) || firey, you=p.id===this.myId;
+      // pick: the side they picked (1 = Team 1...), 0 for none -- your own straight from here, everyone else's from their hello (netSideTag)
+      return { slot:i+1, id:p.id, isHost:!!p.isHost, you, fighter:r?r.name:"Firey", color:r?r.color:null, pick: you ? (this.mySide|0) : sd.side };
     });
   },
   renderLobby(){
@@ -71750,19 +71828,92 @@ window.NET = {
     }
     el.classList.toggle('dense', list.length>6);   // past six the rows shrink, so ten fit under each other
     const head=document.createElement('div'); head.className='lobbyhead'; head.textContent='In the room · '+list.length+' player'+(list.length>1?'s':''); el.appendChild(head);
-    for(const p of list){
-      const d=document.createElement('div'); d.className='lobbyplayer'+(p.isHost?' host':'')+(p.you?' you':'');
-      d.dataset.slot=String(p.slot); d.dataset.fighter=p.fighter;
-      const sl=document.createElement('span'); sl.className='lpslot'; sl.textContent='P'+p.slot; d.appendChild(sl);
-      d.appendChild(lobbyThumb(p.fighter, p.color));
-      const nm=document.createElement('span'); nm.className='lpname'; nm.textContent=p.fighter;
-      if(p.you){ const y=document.createElement('span'); y.className='lpyou'; y.textContent=' (you)'; nm.appendChild(y); }
-      d.appendChild(nm);
-      if(p.isHost){ const h=document.createElement('span'); h.className='lptag'; h.textContent='HOST'; d.appendChild(h); }
-      el.appendChild(d);
-    }
+    const sizes=this.sideSizes();
+    if(sizes && sizes.length>1) this.renderSides(el, list, sizes);   // Capture the Flag and Teams: one block per side, and you pick yours
+    else for(const p of list) el.appendChild(this.lobbyRow(p));
     el.scrollTop=keep;
   },
+  // One player's row: the slot, their fighter's face and name, who is you, and the host's tag.
+  lobbyRow(p){
+    const d=document.createElement('div'); d.className='lobbyplayer'+(p.isHost?' host':'')+(p.you?' you':'');
+    d.dataset.slot=String(p.slot); d.dataset.fighter=p.fighter;
+    const sl=document.createElement('span'); sl.className='lpslot'; sl.textContent='P'+p.slot; d.appendChild(sl);
+    d.appendChild(lobbyThumb(p.fighter, p.color));
+    const nm=document.createElement('span'); nm.className='lpname'; nm.textContent=p.fighter;
+    if(p.you){ const y=document.createElement('span'); y.className='lpyou'; y.textContent=' (you)'; nm.appendChild(y); }
+    d.appendChild(nm);
+    if(p.isHost){ const h=document.createElement('span'); h.className='lptag'; h.textContent='HOST'; d.appendChild(h); }
+    return d;
+  },
+  // ---- sides (Capture the Flag and Teams) ----
+  // The players, one block per side under its team's colour: Team 1, then Team 2 (Teams: as many as the split has). Each player picks
+  // their own side with the button on its bar -- Join; Stay, to keep the side they were dealt; Full when it already has as many humans
+  // as it has places (half the contestants in Capture the Flag). Someone who has not picked is dealt by turns, and says AUTO. The CPUs
+  // fill every side to its size, and each bar says how many.
+  renderSides(el, list, sizes){
+    const set=this.sideSettings(), sides=this.lobbySideList(list, sizes), me=list.findIndex(p=>p.you);
+    const hint=document.createElement('div'); hint.className='lpshint';
+    hint.textContent = me>=0 ? 'Pick your side: click Join. Not picked yet? You are dealt one by turns.' : 'Each player picks a side.';
+    el.appendChild(hint);
+    for(let t=0;t<sizes.length;t++){
+      const on=list.filter((p,i)=>sides[i]===t), cpus=Math.max(0, sizes[t]-on.length);
+      const g=document.createElement('div'); g.className='lpside'; g.dataset.team=String(t);
+      g.style.setProperty('--tc', TEAM_COLORS[t % TEAM_COLORS.length]); g.style.setProperty('--tt', (t % 4 >= 2) ? '#1c1c1c' : '#fff');
+      const nm=document.createElement('span'); nm.className='lpsname'; nm.textContent='Team '+(t+1); g.appendChild(nm);
+      const ct=document.createElement('span'); ct.className='lpscount';
+      ct.textContent=on.length+' player'+(on.length===1?'':'s')+(cpus ? ' + '+cpus+' CPU'+(cpus>1?'s':'') : '');
+      g.appendChild(ct);
+      if(me>=0){
+        const mine=sides[me]===t, picked=mine && list[me].pick-1===t, others=on.filter(p=>!p.you).length;
+        const b=document.createElement('button'); b.type='button'; b.className='lpsbtn'; b.dataset.team=String(t);
+        if(picked){ b.textContent='✓ Your side'; b.disabled=true; b.classList.add('mine'); }
+        else if(mine){ b.textContent='Stay'; b.title='You were dealt Team '+(t+1)+': click to keep it'; b.onclick=()=>this.pickSide(t); }
+        else if(others>=sizes[t]){ b.textContent='Full'; b.disabled=true; b.classList.add('full');
+          b.title='Team '+(t+1)+' already has '+sizes[t]+' player'+(sizes[t]>1?'s':'')+(set && set.mode==='ctf' ? ': half the contestants' : ': all its places in this split'); }
+        else { b.textContent='Join'; b.title='Play on Team '+(t+1); b.onclick=()=>this.pickSide(t); }
+        g.appendChild(b);
+      }
+      el.appendChild(g);
+      for(const p of on){
+        const d=this.lobbyRow(p); d.classList.add('sided'); d.style.setProperty('--tc', TEAM_COLORS[t % TEAM_COLORS.length]); d.dataset.team=String(t);
+        if(p.pick-1!==t){ const a=document.createElement('span'); a.className='lpauto'; a.textContent='AUTO';
+          a.title = p.pick ? 'Team '+p.pick+' was full, so dealt here' : 'Has not picked a side yet: dealt by turns'; d.insertBefore(a, d.querySelector('.lptag')); }
+        el.appendChild(d);
+      }
+    }
+  },
+  // The settings the lobby is showing: the host's own, or the preview the host last sent (null until it comes).
+  sideSettings(){ return this.role==="host" ? this.lobbySettings() : (this.lobby || null); },
+  // The sizes of the next match's sides ([5,5]; a Teams split such as [2,1,1]), or null when the mode has none.
+  sideSizes(){ const s=this.sideSettings(); return s ? netSideSizes(s.mode, Math.max(+s.count||0, (this.players||[]).length), s.teamKey) : null; },
+  // Who is on which side, by seat. A client shows the host's word when it was said about this very room (the same seats with the same
+  // picks); between a pick and the host's answer it works the sides out by the host's rule, which comes to the same.
+  lobbySideList(list, sizes){
+    const L=this.lobbySides, picks=list.map(p=>p.pick|0);
+    if(this.role==="client" && L && Array.isArray(L.ids) && Array.isArray(L.p) && Array.isArray(L.t) && L.ids.join(',')===list.map(p=>p.id).join(',')
+       && L.p.join(',')===picks.join(',') && L.t.length===list.length && L.t.every(t=>Number.isInteger(t) && t>=0 && t<sizes.length)) return L.t.slice();
+    const set=this.sideSettings();
+    return netResolveSides(picks.map(k=>k-1), sizes, set ? set.mode : 'ctf');
+  },
+  // What the host tells the room about the sides (null in a mode without them): the seats, their picks and where each one plays.
+  sidesNow(){
+    const sizes=this.sideSizes(); if(!sizes || sizes.length<2) return null;
+    const list=this.lobbyEntries(), p=list.map(e=>e.pick|0);
+    return { ids:list.map(e=>e.id), p, t:netResolveSides(p.map(k=>k-1), sizes, this.lobbySettings().mode) };
+  },
+  // You pick a side: it goes out in a fresh hello (your fighter and your look with it), and the relay's roster tells everyone.
+  pickSide(t){
+    const sizes=this.sideSizes(); if(!sizes || !(t>=0 && t<sizes.length)) return;
+    this.mySide=t+1;
+    const hello=chosen ? this.helloName(chosen.name) : netSideTag("?", this.mySide);
+    this.send({t:"hello", id:this.myId, host:this.role==="host", name:hello});
+    const me=(this.players||[]).find(p=>p.id===this.myId); if(me && this.ws && this.ws.readyState<=1){ me.name=hello; me.fighter=null; }   // your own list at once (pickFighter's rule)
+    this.renderRoster();
+    if(this.role==="host") this.pushLobby();
+    blurFormControl();
+  },
+  // Your hello's name: your fighter, your side if you picked one, your look (netHelloName, netSideTag).
+  helloName(name){ return netSideTag(netHelloName(name), this.mySide|0); },
   // The fighter picker: what the dropdown used to list (the fighters this player can pick, in show order), as one grid of portraits right in the lobby.
   // Click one to pick it. Every player's pick wears their P-badge on its portrait (two players on one fighter stack their badges), and a friend's pick
   // shows the moment the relay says it. The grid is built once (and again only if the set of fighters changes): a roster message only moves the
@@ -71861,11 +72012,11 @@ window.NET = {
     return { mode:SETTINGS.mode, count:SETTINGS.count, stocks:SETTINGS.stocks, teamKey:SETTINGS.teamKey, mapSize:SETTINGS.mapSize,
              stage: stage && stage.id, itemRate:SETTINGS.itemRate, ai:AI_LEVEL, smashBalls:SETTINGS.smashBalls===false ? 0 : 1, ctfAdv:SETTINGS.mode==='ctf' ? ctfAdvOn() : false };
   },
-  pushLobby(){ if(this.role==="host") this.send({t:"state", lobby:this.lobbySettings()}); },
+  pushLobby(){ if(this.role!=="host") return; const m={t:"state", lobby:this.lobbySettings()}, sd=this.sidesNow(); if(sd) m.sides=sd; this.send(m); },   // (and who is on which side: sidesNow)
   pickFighter(name){
     const r = ROSTER.find(x=>x.name===name && x.play); if(!r || oneBanned(r)) return;   // One's bans hold online too
     chosen = r;
-    const hello = netHelloName(r.name);
+    const hello = this.helloName(r.name);   // (your side goes with it)
     this.send({t:"hello", id:this.myId, host:this.role==="host", name:hello});
     // Your own card changes at once; the roster the relay sends back (the same for everyone) says it again a moment later.
     const me=(this.players||[]).find(p=>p.id===this.myId); if(me && this.ws && this.ws.readyState<=1){ me.name=hello; me.fighter=null; }   // (while the socket is open or opening -- the hello goes out at once, or at open; a closed socket tells nobody)
@@ -71892,7 +72043,7 @@ window.NET = {
     const wrap=document.createElement('div'); wrap.className='settings'; el.appendChild(wrap);
     const group=(label)=>{ const g=document.createElement('div'); g.className='setgrp'; const l=document.createElement('label'); l.textContent=label; g.appendChild(l); wrap.appendChild(g); return g; };
     // the host: the main game's options
-    const changed=()=>{ this.renderLobbySettings(); this.pushLobby(); };
+    const changed=()=>{ this.renderLobbySettings(); this.renderRoster(); this.pushLobby(); };   // (the players list too: the mode, the count and the split decide its sides)
     const seg=(label, id, opts, cur, apply)=>{
       const g=group(label); const sg=document.createElement('div'); sg.className='seg'; sg.id=id;
       opts.forEach(([v, text])=>{ const b=document.createElement('button'); b.dataset.v=v; b.textContent=text; if(String(v)===String(cur)) b.classList.add('on');
@@ -71967,7 +72118,7 @@ window.NET = {
     // Each player's fighter is the `name` of their hello (the relay keeps no other field for it). This read
     // `p.fighter`, which nothing ever set, so every human in an online match played Firey.
     // A name may carry its player's look after a "~" (netHelloName); the host's own is read fresh from its profile.
-    const picks=this.players.map(p=>{ const s=netSplitName(p.fighter||p.name); if(p.id===this.myId) s.code=cosNetCode(myCos(s.name)); return s; });
+    const picks=this.players.map(p=>{ const s=netSplitName(netSideSplit(p.fighter||p.name).rest); if(p.id===this.myId) s.code=cosNetCode(myCos(s.name)); return s; });
     const humans=picks.map(s=>ROSTER.some(r=>r.play && r.name===s.name) ? s.name : "Firey");
     // Everything the lobby shows travels with the start: host and clients must build the SAME stadium and arena.
     const settings=Object.assign(this.lobbySettings(), { count:Math.max(SETTINGS.count, this.players.length) });
@@ -71977,11 +72128,13 @@ window.NET = {
     const start={t:"start", settings, roster, ids};
     const cos=picks.map(s=>s.code||"");
     if(cos.some(Boolean)) start.cos=cos;   // each human's look, by slot: four characters each, and only when someone wears one
+    { const sizes=netSideSizes(settings.mode, settings.count, settings.teamKey);   // Capture the Flag and Teams: each human's side, by slot (0 = Team 1)
+      if(sizes && sizes.length>1) start.sides=netResolveSides(this.lobbyEntries().map(e=>(e.pick|0)-1), sizes, settings.mode); }
     this.send(start);
-    this.beginMatch(settings, roster, ids, start.cos);
+    this.beginMatch(settings, roster, ids, start.cos, start.sides);
   },
 
-  beginMatch(settings, roster, ids, cos){
+  beginMatch(settings, roster, ids, cos, sides){
     // Peer-supplied, every field of it: validate before anything reaches the arena math or the globals.
     const s=settings||{}, int=(v,lo,hi,d)=>{ v=Math.round(+v); return Number.isFinite(v) ? Math.max(lo,Math.min(hi,v)) : d; };
     SETTINGS.mode = ['ffa','teams','boss','ctf'].includes(s.mode) ? s.mode : 'ffa';
@@ -72005,6 +72158,9 @@ window.NET = {
     // mark which fighters are network-controlled
     window.__netRoster = roster;
     window.__netHumanCount = this.players.length;
+    // each human's side (Capture the Flag and Teams), by seat, as the host worked it out. Peer-supplied: small whole numbers, one a seat, or
+    // nothing (an older host sends none: the seats go by turns, as they used to)
+    window.__netSides = (Array.isArray(sides) && sides.length===roster.length && sides.every(t=>Number.isInteger(t) && t>=0 && t<4)) ? sides.slice() : null;
     NET_COS = cosNetList(cos, roster.length);   // peer-supplied as well: decoded against the catalogue, or nothing
     // nothing from the last match: a held key it left behind, or a snapshot of its world
     this.inputs = {}; this.latch = {}; this.snapshot = null; this._inputKey = null;
