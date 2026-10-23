@@ -56381,11 +56381,12 @@ let AI_LEVEL = 1;
 //   smash  a smash on an opening it saw         spec  frames between its own specials              fin   the finisher at kill percent, a decision
 //   ctr    the stance guess on a swing seen     ctrCd frames after any guess before another        ctrHit frames after its own stun before one
 //   grab   a string that is a grab              hop   an approach that hops in for an aerial       back  backing off after a stun or a string
-//   wrong  a decision that takes a few steps the wrong way                                         target frames before it looks for the nearest foe again
+//   wrong  a decision that takes a few steps the wrong way    lead  how much of its late view it makes up by reading the foe's speed
+//   target frames before it looks for the nearest foe again
 const BRAIN_LV = [
-  { think:[16, 28], wake:[26, 40], gap:[16, 24], strMax:3, miss:0.25, hesit:0.18, smash:0.10, spec:[420, 720], fin:0.06, ctr:0,    ctrCd:[0, 0],     ctrHit:1e9, grab:0.03, hop:0.08, back:0.45, wrong:0.06, target:[70, 130] },
-  { think:[9, 15],  wake:[14, 24], gap:[11, 16], strMax:4, miss:0.12, hesit:0.07, smash:0.25, spec:[180, 360], fin:0.12, ctr:0.2,  ctrCd:[360, 600], ctrHit:60,  grab:0.06, hop:0.15, back:0.25, wrong:0.02, target:[50, 100] },
-  { think:[6, 10],  wake:[9, 15],   gap:[9, 13],  strMax:5, miss:0.05, hesit:0.03, smash:0.40, spec:[120, 240], fin:0.18, ctr:0.3,  ctrCd:[240, 420], ctrHit:45,  grab:0.10, hop:0.22, back:0.15, wrong:0,    target:[40, 80] },
+  { think:[16, 28], wake:[26, 40], gap:[16, 24], strMax:3, miss:0.25, hesit:0.18, smash:0.10, spec:[420, 720], fin:0.06, ctr:0,    ctrCd:[0, 0],     ctrHit:1e9, grab:0.03, hop:0.08, back:0.45, wrong:0.06, lead:0.3, target:[70, 130] },
+  { think:[9, 15],  wake:[14, 24], gap:[11, 16], strMax:4, miss:0.12, hesit:0.07, smash:0.25, spec:[180, 360], fin:0.12, ctr:0.2,  ctrCd:[360, 600], ctrHit:60,  grab:0.06, hop:0.15, back:0.25, wrong:0.02, lead:0.6, target:[50, 100] },
+  { think:[6, 10],  wake:[9, 15],   gap:[9, 13],  strMax:5, miss:0.05, hesit:0.03, smash:0.40, spec:[120, 240], fin:0.18, ctr:0.3,  ctrCd:[240, 420], ctrHit:45,  grab:0.10, hop:0.22, back:0.15, wrong:0,    lead:0.8, target:[40, 80] },
 ];
 // The kits whose neutral special is a shot (a projectile or a beam): those fire it from range. (The old AI's list, kept as a fact about the kits.)
 const BRAIN_SHOOTERS = new Set(["ember","cap","fry","barf","serve","freeze","beam","sign","splash","dribble","zapshooter","buynow","ring","fly","gust","zap","spark",
@@ -56445,6 +56446,7 @@ function brainOf(f){
     B = f._br = { st:'approach', until:0, next:0, press:null, str:null, hurt:false, wake:0, hurtEnd:-1e9, ctrCd:0, ctrOk:-1e9, tellOn:false,
       specAt:0, backAt:-1e9, holdH:null, jHeld:false, seen:0 };
   }
+  if(hazardT - B.seen > 1){ B.progD = null; B.detour = null; }   // (it was not thinking a moment ago -- a Capture the Flag errand had the keys: the watch on its progress starts again)
   B.seen = hazardT;
   return B;
 }
@@ -56507,7 +56509,11 @@ function aiThink(f){
       f.aiTimer=brainR(L.target);
     }
   }
-  const t=f.aiTarget;
+  // WHERE IT GUESSES THE FOE IS: it sees the foe a moment late (CPU_HUMAN.react), and a person makes up some of that by reading where the foe
+  // was heading -- the seen place, carried on along the seen speed for part of that moment (lead: more of it on Hard). Its swings, its reach
+  // and its steps go by the guess; what the foe is doing (its swing, its stun) is still only what it saw.
+  const ts = f.aiTarget, ld = CPU_HUMAN.react[lvl] * L.lead;
+  const t = (ts._isBoss || !(ld > 0)) ? ts : Object.assign(Object.create(ts), { x: ts.x + (ts.vx||0)*ld, y: ts.y + (ts.onground ? 0 : (ts.vy||0)*ld*0.3) });
   const dx=t.x-f.x, dy=t.y-f.y, adx=Math.abs(dx), ady=Math.abs(dy), dist=Math.hypot(dx,dy);
   const sp = f.kit && f.kit.special;
   // Holding a foe: a beat to decide, then the throw that fits.
@@ -56528,7 +56534,7 @@ function aiThink(f){
     if(B.progD == null || dist < B.progD - 100){ B.progD = dist; B.progT = now; }
     else if(now - B.progT > 240){
       B.progD = null; B.progT = now; B.detour = { dir: dx < 0 ? 1 : -1, until: now + 70 };
-      const other = pickFrom.filter(o => o !== t);
+      const other = pickFrom.filter(o => o !== ts);
       if(other.length){ f.aiTarget = other[Math.floor(Math.random()*other.length)]; f.aiTimer = 300; }
     }
   } else B.progD = null;
