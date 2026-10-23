@@ -12856,6 +12856,7 @@ const SND = {
   _userPick:{},       // kind -> the blob: URL currently chosen out of that playlist
   _userLast:{},       // kind -> index of the last pick, so a re-roll avoids an instant repeat
   _keepPick:false,    // one-shot: the caller already chose a track; startMusic must not re-roll
+  _nextKind:null,     // in a fight: the bed to cross to when the song playing ENDS (clutch time in or out: musicQueue)
 };
 function sndInit(){
   if(SND.ctx || !SND.on) return;
@@ -12926,7 +12927,7 @@ const SFX = {
 //  in assets/music/CREDITS.md next to the files. The five shipped contexts deliberately sound
 //  different: a warm chiptune loop for the menus, an energetic 8-bit bed for arena matches, a dark
 //  orchestral bed for Boss Rush, a regal anthem for the World Cup hub, and a swung big-band
-//  chiptune that takes over when a match reaches clutch time (see the CLUTCH block further down).
+//  chiptune that takes over when a match reaches clutch time, once the song playing ends (see the CLUTCH block further down).
 //  A sixth context, `title`, is a slot with NO shipped file — see MUSIC_FALLBACK below.
 //  Two more, `one` and `cobs`, are the beds of the two secret fights; they borrow a track from the
 //  cleared set (see MUSIC_FILES).
@@ -13029,8 +13030,8 @@ const MUSIC_SCREENS = {
   tourneySetup:'tourney', tourneyHub:'tourney', ctfCupSetup:'tourney', ctfCupTeams:'tourney',
 };
 // ---- two decks, so one bed can fade out while the next fades in ----
-// A single element cannot cross-fade with itself, and the clutch trigger switches beds mid-fight
-// where a hard cut is jarring. Deck 0/1 alternate; SND._deck is whichever one is live.
+// A single element cannot cross-fade with itself, and a change of bed (a screen, a match starting, the next song
+// of a fight) is jarring as a hard cut. Deck 0/1 alternate; SND._deck is whichever one is live.
 // SND.fadeMs is deliberately a knob, not a constant: 0 gives an instant cut (used by the tests,
 // and available if the crossfade ever gets in the way).
 function musicDeck(i){
@@ -13180,6 +13181,7 @@ function musicSilenceDecks(){
 // The one entry point the game calls. Picks the recorded track when there is one, else the synth.
 function startMusic(kind){
   if(!musicAllowed()) return;
+  musicUnqueue();   // a bed asked for outright replaces one queued for the end of the song (musicQueue)
   if(musicResumeHeld(kind)) return;   // the song the result screen paused, on the same bed: picked up where it stopped
   // Re-entering the same context (title -> select -> title) must not restart the track.
   if(kind===SND._kind && (musicPlaying() || SND._pendingKind===kind)) return;
@@ -13218,7 +13220,9 @@ function musicUnlock(){
   // parked request has to win outright. It means the file layer never got to start (blocked
   // autoplay) and the synth is only covering; treating that as "playing" would leave the context
   // on the fallback forever and make the retry this gesture exists for dead code.
-  if(!pending && musicPlaying() && SND._kind===k) return;
+  // ...and IN A FIGHT a key or a click never changes the song (2026-10-23): the fight's own bed, or clutch time's, plays on, and a change already
+  // queued for the end of the song stays queued (musicQueue). currentMusicKind() says 'intense' the moment clutch time starts; the song says otherwise.
+  if(!pending && musicPlaying() && (SND._kind===k || SND._nextKind===k || musicFightBed(SND._kind))) return;
   SND._pendingKind = null; SND._kind = null;    // clear so startMusic's dedupe doesn't swallow this
   startMusic(k);
 }
@@ -13391,20 +13395,46 @@ function musicRollIndex(n, last){
 // this is plain startMusic.
 // FINISH THE TRACK. THE OWNER, 2026-10-07: "change the music so that it finishes a track before going to the next." A new match, a rematch (R) and a new
 // Boss Rush boss no longer cut the song that is playing to roll a fresh one: if the bed is already playing it carries on, and a playlist moves to its
-// next track only when a track ENDS (musicPlaylistNext). A change of bed (menu to match, a match into clutch time) still changes the music at once.
+// next track only when a track ENDS (musicPlaylistNext). A change of bed (menu to match) still changes the music at once; inside a fight even clutch time waits for the song to end (musicQueue).
 // The context whose PLAYLIST the source `src` is (kind itself, or a context its chain falls back to), when that playlist has two or more tracks; else null.
 function musicPlaylistOf(kind, src){
   for(const k of musicChainKinds(kind)){ const list = SND._userList[k]; if(list && list.length > 1 && SND._userPick[k] === src) return k; }
   return null;
 }
-// The live deck's playlist track ended: roll that playlist's next track (never the same twice running) and cross to it, in the same bed.
+// The live deck's song ended: the bed queued for this moment (musicQueue), or else that playlist's next track (never the same twice running), in the same bed.
 function musicPlaylistNext(i){
   if(i !== SND._deck || !musicAllowed()) return;   // a deck already fading out, or music switched off
+  if(SND._nextKind){ const nk = SND._nextKind; SND._nextKind = null; SND._kind = null; startMusic(nk); return; }   // clutch time in or out: its bed starts now, a fresh pick
   const kind = SND._deckKind[i] || SND._kind, k = kind && musicPlaylistOf(kind, SND._deckSrc[i]);
   if(!k){ const el = SND._decks[i]; try{ el.currentTime = 0; el.play(); }catch(e){} return; }   // (a lone track loops; this is only a safety net)
   musicRollUserTrack(k);
   SND._kind = null; SND._keepPick = true;
   try{ startMusic(kind); } finally { SND._keepPick = false; }
+}
+// SONGS FINISH IN A FIGHT. THE OWNER, 2026-10-23: "song switches without finishing during fights". It was clutch time: it swapped the battle bed for
+// the intense one the moment a fighter reached their last stock or you reached 90%, and swapped back (to a new pick, from the top) when that fighter was
+// out -- five cuts in one free-for-all with a battle playlist. Now a change of bed asked for mid-song in a fight (clutch time in or out, R in clutch
+// time) is QUEUED: the song playing carries on to its END and musicPlaylistNext starts the queued bed then. A lone track that loops (battle.mp3,
+// intense.mp3, a custom/ slot, a one-track playlist) stops looping so that its end comes; un-queueing gives the loop back. Asking for the bed already
+// playing cancels the queue. The synth bed (when no file could play) has no end, so it carries on. Leaving the fight (the result screen, a menu, R into
+// another mode, music switched off and on) is not queued: startMusic and stopMusic drop the queue.
+function musicQueue(kind){
+  if(!kind) return;
+  if(kind === SND._kind){ musicUnqueue(); return; }
+  if(!SND._kind || !musicPlaying()){ startMusic(kind); return; }   // nothing audible to finish (music parked until a gesture): start it now
+  SND._nextKind = kind;
+  const el = musicActiveEl();
+  if(el && SND._deckSrc[SND._deck]){ try{ el.loop = false; }catch(e){} }
+}
+function musicUnqueue(){
+  if(!SND._nextKind) return;
+  SND._nextKind = null;
+  const el = musicActiveEl(), src = SND._deckSrc[SND._deck];
+  if(el && src){ try{ el.loop = !musicPlaylistOf(SND._deckKind[SND._deck] || SND._kind, src); }catch(e){} }   // the loop the bed had (startMusicFile)
+}
+// Is `kind` a bed of the fight running now (its own bed, or clutch time's)? A key or a click in the fight leaves such a bed alone (musicUnlock).
+function musicFightBed(kind){
+  try{ return !!(running && kind && (kind === 'intense' || kind === clutchBaseKind())); }catch(e){ return false; }
 }
 // The result screen stops the music for the win sting. So a rematch does not throw the song away ("finishes a track before going to the next"), the
 // result screen notes which song a MATCH bed was playing, and the next startMusic on that same bed resumes it from where it stopped. Any other bed
@@ -13428,6 +13458,7 @@ function musicResumeHeld(kind){
   return true;
 }
 function musicNewMatch(kind){
+  if(kind === 'battle' && SND._kind === 'intense' && musicPlaying()){ musicQueue(kind); return; }   // R in clutch time: that song finishes, then the battle bed (musicQueue)
   startMusic(kind);   // the same bed already playing carries on (startMusic no-ops); a different bed starts with a fresh pick
 }
 // Force a fresh pick mid-context. Boss Rush calls this on every boss spawn so a gauntlet walks
@@ -13510,8 +13541,9 @@ function musicHydrateUser(){
     }catch(e){}
   }
 }
-// ---------- CLUTCH TIME: swap the battle bed for the intense one when a match gets tense ----------
-// Checked twice a second from step(), never per frame, and it only ever calls startMusic() on an
+// ---------- CLUTCH TIME: the intense bed follows the song playing when a match gets tense ----------
+// It never cuts a song (2026-10-23): an edge only QUEUES the bed for the end of the song playing (musicQueue).
+// Checked twice a second from step(), never per frame, and it only ever calls musicQueue() on an
 // actual edge — so the steady state costs one modulo and a short scan of the fighter list.
 //
 // Thresholds are asymmetric ON PURPOSE (a Schmitt trigger). Entering needs the strict numbers;
@@ -13566,10 +13598,10 @@ function clutchTick(){
     if(CLUTCH.ticks < CLUTCH_MIN_HOLD) return;   // minimum hold — the whole point of the hysteresis
     if(clutchCondition(false)) return;           // still tense by the loose test; stay
     clutchReset();
-    startMusic(base);
+    musicQueue(base);          // the battle bed again, when the clutch song ends (or stays on, if it never started)
   } else if(clutchCondition(true)){
     CLUTCH.on = true; CLUTCH.ticks = 0;
-    startMusic('intense');
+    musicQueue('intense');     // the clutch song, when the song playing ends
   }
 }
 // Which bed the game SHOULD be playing right now — used when sound is toggled back on.
@@ -13679,6 +13711,7 @@ function syncMusicToggle(){
 // Stops BOTH music paths. Decks are paused (not torn down) so the next startMusic for the same
 // kind can reuse the already-downloaded file.
 function stopMusic(){
+  musicUnqueue();   // first, while the live deck is known: it gets its loop back for a rematch that resumes it (musicHoldForResult)
   stopSynthMusic();
   SND._pendingKind = null;
   SND._kind = null;
