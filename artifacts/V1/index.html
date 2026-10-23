@@ -6916,6 +6916,7 @@ function ctfNetOut(){
   o.wa = (L.wheels || []).map(w=>Math.round(w.a*10000)/10000);
   if(L.timed && L.timed.length) o.tm = L.timed.map(q=>q.st | (q.warn ? 4 : 0));
   o.pl = ctfPlanNetOut(L);   // a wheel is its angle: the paddles follow
+  { const vk = window.NET && window.NET.planAck; if(vk && Object.keys(vk).length) o.vk = vk; }   // (each guest's last plan vote counted, by seat: ctfPlanVoteNetSend)
   o.pt2 = fighters.map(f=>L.pts[f.idx] == null ? 0 : L.pts[f.idx]);
   o.dn = fighters.map(f=>L.done[f.idx] ? 1 : 0);
   o.pg = L.ping.map(p=>p ? [p.id, p.t | 0] : 0);
@@ -6974,7 +6975,7 @@ function ctfNetIn(c){
   (c.b || []).forEach((cd, i)=>{ if(L.boosts[i]) L.boosts[i].cd = cd; });
   (c.bf || []).forEach((m, i)=>{ if(L.buffs[i]) L.buffs[i].got = [!!(m & 1), !!(m & 2)]; }); if(c.bt) L.buff = c.bt;
   (c.el || []).forEach((r, i)=>{ const e = L.elevs[i]; if(!e || e.wheel != null) return; e.y = r[0]; e.dir = r[1]; e.rect.y = e.y; if(e.fx0 != null && r[2] != null){ e.x = r[2]; e.rect.x = e.x; } });
-  ctfPlanNetIn(L, c);
+  ctfPlanNetIn(L, c); ctfPlanVoteNetAck(c);
   (c.wa || []).forEach((a, j)=>{ const wl = (L.wheels || [])[j]; if(wl){ wl.a = a; ctfWheelPlace(L, wl); } });
   if(L.timed) (c.tm || []).forEach((m, i)=>{ const q = L.timed[i]; if(!q) return; q.st = m & 3; q.warn = !!(m & 4); q.wp.w = q.st === 2 ? 0 : q.w0; });
   L.pts = {}; (c.pt2 || []).forEach((v, i)=>{ L.pts[i] = v; });
@@ -12924,7 +12925,7 @@ function ctfPlanHoldRescue(L, f, j){
 // =================================================================================================================================================================
 //  THE PLANNING MENU (the owner, 2026-10-15: "can you have a planning menu where you can choose ideas for your team?"): opens any time with a key (P; hiding, the bid, mid-match) over a match that keeps running; a PRESET whole-team plan,
 //  or single build setups, offence plays and defence tactics ticked, and roles given to particular CPU teammates (the rest choose their own from what is ticked). Online every human on the side votes and the most-ticked
-//  ideas become the plan (a guest's vote goes to the host in a 'ctfvote' message; the host sends the plan back in its snapshot). Never opened: the CPUs use their own judgement. Words and icons are for the menu only.
+//  ideas become the plan (a guest's vote rides to the host on its inputs, until the host's snapshot says it was counted; the host sends the plan back in its snapshot). Never opened: the CPUs use their own judgement. Words and icons are for the menu only.
 // =================================================================================================================================================================
 Object.assign(CTF_PRESETS, {
   fortress:{ name:'Fortress', icon:'#', builds:['rings', 'moat', 'seeit', 'sealedbox', 'shell', 'wallshort'], plays:['zone', 'patrol', 'fallback', 'jailguard'], defShare:0.62, desc:'walls and traps, most stay home' },
@@ -13005,7 +13006,7 @@ function ctfMenuToggle(on){
 function ctfMenuSend(){
   const L = CTF.live, me = fighters.find(f=>f.you); if(!L || !me) return;
   const vote = CTF.menu.vote;
-  if(isNetClient()){ try{ window.NET.send({ t:'ctfvote', idx:window.NET.myIdx, vote }); }catch(e){} L.plans = L.plans || [0, 1].map(tt=>({ t:tt, cpus:[], roles:{}, ticks:{}, votes:{}, assign:{}, preset:null })); }
+  if(isNetClient()){ try{ ctfPlanVoteNetSend(vote); }catch(e){} L.plans = L.plans || [0, 1].map(tt=>({ t:tt, cpus:[], roles:{}, ticks:{}, votes:{}, assign:{}, preset:null })); }
   else ctfPlanVoteIn(L, me.team, me.idx, vote);
 }
 function ctfMenuKey(e){
@@ -13121,7 +13122,26 @@ function ctfPlanVoteMsg(m){
     for(const k of Object.keys(m.vote.areas || {})){ const cpu = +k, g = fighters[cpu]; if(Number.isInteger(cpu) && g && g.team === f.team && !ctfIsHuman(g) && ids[m.vote.areas[k]] === true) vote.areas[cpu] = m.vote.areas[k]; } }
   for(const k of Object.keys(m.vote.assign || {})){ const i = +k, g = fighters[i], r = m.vote.assign[k]; if(Number.isInteger(i) && g && g.team === f.team && !ctfIsHuman(g) && CTF_ROLE_CHOICES.indexOf(r) >= 0) vote.assign[i] = r; }
   ctfPlanVoteIn(L, f.team, f.idx, vote);
+  return true;
 }
+// ONLINE, the way a guest's vote travels. The relay passes a guest's 'input' to the host and nothing else of a guest's (it used to go in a
+// 'ctfvote' message of its own, which the relay dropped: no guest's vote ever reached the host). So it rides on the guest's inputs, numbered
+// (NET.planVote, NET.sendInput), on every one sent until the host's snapshot says that number was counted (vk: NET.planAck, each guest's
+// last counted vote by seat), and the host counts each number once (ctfPlanVoteMsg's checks, on the seat of the input it rides on). An input
+// that is lost or superseded loses nothing: the next one carries it, and one goes at least twice a second.
+function ctfPlanVoteNetSend(vote){
+  const N = window.NET; if(!N) return;
+  N._planVoteN = (N._planVoteN || 0) + 1;
+  N.planVote = { n:N._planVoteN, v:JSON.parse(JSON.stringify(vote || {})) };
+  N._inputKey = null; N.sendInput();   // (now, not at the next heartbeat)
+}
+function ctfPlanVoteNetIn(N, idx, pv){
+  if(SETTINGS.mode !== 'ctf' || !CTF.live || !pv || !Number.isInteger(pv.n)) return;
+  const ack = N.planAck || (N.planAck = {});
+  if(ack[idx] === pv.n) return;   // (counted already: it keeps riding until the guest sees the snapshot that says so)
+  if(ctfPlanVoteMsg({ idx, vote:pv.v })) ack[idx] = pv.n;
+}
+function ctfPlanVoteNetAck(c){ const N = window.NET, pv = N && N.planVote; if(pv && c && c.vk && c.vk[N.myIdx] === pv.n) N.planVote = null; }
 // what goes over the wire: each side's plan (the preset, the ticked ideas, the roles given)
 function ctfPlanNetOut(L){ return L.plans ? L.plans.map(p=>[p.preset || 0, Object.keys(p.ticks), p.assign, p.allow ? Object.keys(p.allow) : 0, p.jobs || {}, p.areas || {}]) : 0; }
 function ctfPlanNetIn(L, c){
@@ -71737,6 +71757,7 @@ window.NET = {
     if(this.ws){ try{this.ws.close();}catch(e){} }
     this.role="solo"; this.ws=null; this.snapshot=null; this.players=[]; this.lobby=null; this._ctutCheck=false;   // (lobby: the last room's settings are not the next room's)
     this.mySide=0; this.lobbySides=null;   // (a side is picked in a room: the next room starts unpicked)
+    this.planVote=null; this.planAck={};   // (a plan vote belongs to its match)
     // Cleared here too, not just in go('title'), so any other exit path is safe as well.
     window.__netRoster=null; window.__netHumanCount=0; window.__netSides=null;
     NET_COS=[]; COS_KO_OUT=[];   // ...and so are the room's looks
@@ -71784,8 +71805,8 @@ window.NET = {
         const L = this.latch[idx] || (this.latch[idx] = { at:hazardT, b:{} });
         L.at = hazardT; L.b[b] = true;
       }
+      if(m.plan && typeof m.plan==='object'){ try{ ctfPlanVoteNetIn(this, idx, m.plan); }catch(e){} }   // a guest's vote for its side's plan rides on its input (ctfPlanVoteNetSend)
     }
-    else if(m.t==="ctfvote" && this.role==="host"){ try{ ctfPlanVoteMsg(m); }catch(e){} }   // a guest's vote for its side's plan
     else if(m.t==="state" && this.role==="client"){ if(m.s && typeof m.s==='object') netSnapshotArrived(this, m.s); }
     else if(m.t==="start"){ this.beginMatch(m.settings, m.roster, m.ids, m.cos, m.sides); }
     else if(m.t==="status"){ this.status(m.msg); }
@@ -72164,7 +72185,7 @@ window.NET = {
     window.__netSides = (Array.isArray(sides) && sides.length===roster.length && sides.every(t=>Number.isInteger(t) && t>=0 && t<4)) ? sides.slice() : null;
     NET_COS = cosNetList(cos, roster.length);   // peer-supplied as well: decoded against the catalogue, or nothing
     // nothing from the last match: a held key it left behind, or a snapshot of its world
-    this.inputs = {}; this.latch = {}; this.snapshot = null; this._inputKey = null;
+    this.inputs = {}; this.latch = {}; this.snapshot = null; this._inputKey = null; this.planVote = null; this.planAck = {};
     startMatch();   // handles screen switch + starts the loop (net-aware buildFighters)
   },
 
@@ -72210,7 +72231,9 @@ window.NET = {
     // messages a second through the relay.
     if(key === this._inputKey && now - this.lastInputSent < 500) return;
     this._inputKey = key; this.lastInputSent = now;
-    this.send({t:"input", idx:this.myIdx, input:inp});
+    const msg = {t:"input", idx:this.myIdx, input:inp};
+    if(this.planVote) msg.plan = this.planVote;   // a Capture the Flag plan vote, until the host's snapshot says it was counted (ctfPlanVoteNetSend)
+    this.send(msg);
   },
 
   status(msg){ const el=document.getElementById('lobbyStatus'); if(el) el.textContent=msg; },
