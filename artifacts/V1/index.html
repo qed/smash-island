@@ -2460,7 +2460,7 @@ function ctfGridNew(){
     crumble(r, c0, c1, o){ g.timed.push({ kind:'crumble', c0, c1, r0:r, r1:r, delay:30, back:300, ...(o || {}) }); return g; },
     // A PLUG (cave-ins that open and close routes): a block of stone in cells c0..c1, rows r0..r1 that is OPEN (gone) for o.open steps and then shuts for o.shut steps, on a clock the whole match shares (o.phase 0..1 shifts it);
     // it shakes for a second before it moves, and never shuts on somebody standing where it would shut. A map keeps a way round every plug.
-    plug(c0, r0, c1, r1, o){ g.timed.push({ kind:'plug', c0, c1, r0, r1, open:600, shut:600, phase:0, ...(o || {}) }); return g; },
+    plug(c0, r0, c1, r1, o){ g.timed.push({ kind:'plug', c0, c1, r0, r1, open:600, shut:600, phase:0, ...(o || {}) }); return g; },   // (o.look 'laser': drawn as a laser gate, a curtain of red light; it blocks the same)
     // A TIDE (Coral Deep: "a tide that rises and falls"): water in cells c0..c1, rows r0..r1 (the highest it gets) that stands at o.lo (0..1 of its depth, 0) for o.hold steps (900), rises over o.move steps (300) to o.hi (1), stands there,
     // and falls again. A warning (the line flashes and an arrow shows which way) for o.warn steps (150) before each move. o.phase shifts it on the shared clock.
     tide(c0, r0, c1, r1, o){ const td = { lo:0, hi:1, hold:900, move:300, warn:150, phase:0, ...(o || {}) }; g.zones.push({ type:'water', c0, r0, c1, r1, strength:1, dir:0, tide:td }); return g; },
@@ -2634,7 +2634,7 @@ function ctfMapBuildOne(id, build, band){
   for(const tp of g.timed){   // (a crumbling ledge or a plug: a plat like any other for the route graph, with its numbers on it for the match to move)
     const a = tp.c0, b = tp.c1, w = (b - a + 1)*CTF_CELL;   // (the columns and rows are already the grid's own: see the wrappers below)
     if(tp.kind === 'crumble') leftPlats.push({ x:a*CTF_CELL, y:tp.r0*CTF_CELL, w, h:16, hop:true, tm:{ kind:'crumble', delay:tp.delay, back:tp.back } });
-    else leftPlats.push({ x:a*CTF_CELL, y:tp.r0*CTF_CELL, w, h:(tp.r1 - tp.r0 + 1)*CTF_CELL, solid:true, tm:{ kind:'plug', open:tp.open, shut:tp.shut, phase:tp.phase } });
+    else leftPlats.push({ x:a*CTF_CELL, y:tp.r0*CTF_CELL, w, h:(tp.r1 - tp.r0 + 1)*CTF_CELL, solid:true, tm:{ kind:'plug', open:tp.open, shut:tp.shut, phase:tp.phase, look:tp.look } });
   }
   if(g.ramps.length){   // (the steps of a slope: see g.slope; the stone beside a step whose top is within a step's height of it is stepped onto the same way)
     const edge = {}; for(const p of leftPlats) if(p.solid){ (edge[p.x] = edge[p.x] || []).push(p); (edge[p.x + p.w] = edge[p.x + p.w] || []).push(p); }
@@ -3341,8 +3341,6 @@ CTF_MAPS.mines = {
 //    Every floor of every building is on the same rows (7, 12, 17, 22, 27) so doors line up. The MIDDLE is the same on both sides (workHeart): the SWITCHYARD, a junction building on the line, belts running opposite ways on its floors.
 //    The THIRD AREA is the same on both sides too (workYard): the RAIL YARD, a station and carriages (a belt along each roof, opposite ways), a signal tower in the biggest yard, pads between them.
 // ---------------------------------------------------------------------------------------------------------------
-const FACTORY_A_LV = [[3, 6, 7, [[1, 31]]], [8, 11, 12, [[1, 13], [16, 31]]], [13, 16, 17, [[1, 14], [17, 31]]], [18, 21, 22, [[1, 15], [18, 31]]], [23, 26, 27, [[7, 25]]]];
-const FACTORY_A_HOLES = [[3,4,'D',11],[3,4,'U',7],[1,2,'D',25],[1,2,'U',21],[1,2,'D',3],[1,2,'U',7],[0,1,'D',19],[0,1,'U',23],[3,4,'D',24],[3,4,'U',21],[2,3,'D',27],[2,3,'U',19],[2,3,'D',9],[2,3,'U',5]];
 // THE MIDDLE, shared by both teams: THE SWITCHYARD (the owner, 2026-10-18): one big junction building on the middle line, three floors, open through the line: belts on its two lower floors run opposite ways (toward the line on the ground, away from it above), springs up between the floors, doors at the foot on each side.
 function workHeart(k, g){
   const { A, S, H, P, BK, DC, UP, ZN, Y } = k, D = k.D;
@@ -3371,9 +3369,647 @@ function workYard(k, g){
     o += w + 2; });
   DC('torch', m(2), 22, 1, 2);
 }
+// THE LINE (the plan, interiors-plan.md 3.1; the owner, 2026-10-19: "build the buildings like the mill", "THATS THE CABIN???? I THOUGHT IT WAS AN AREA LIKE THE MILL"): the Works machine hall, the big one of the Works. Outside, a closed
+// shell (the 'works' skin: sooty brick, tall lit windows), its roof stood on; in large games the annex behind it is more of the shell (the Scrap Heap wing inside replaced the outdoor boiler rooms). Its doors, all on the east face:
+//   D1 the GROUND DOOR (both ways, into the loading dock), D2 the FEED-FLOOR DOOR on its catwalk (both ways, into the assembly line's east end), D3 the PRESS-FLOOR DOOR on its catwalk (both ways, into the press line's east end);
+//   and the ways out: X1 the control room's hatch onto the hall's roof (home's quick exit), X2 the smelter's slag chute into the alley between the vat house and the pipe house (it hurts: 5%), X3 the boiler room's steam stack
+//   onto the vat house's roof (medium and large).
+// Inside, an area apart under the map, open to both teams: you walk through one giant machine along its product line, five levels joined in the middle by the MAIN SHAFT, every room its own platforming:
+//   the MAIN SHAFT (the spine): on every level one sprung barrel up through a hatch and one hole down, like the mill's stair tower, none of them over another: the fast way between home and the jail;
+//   the CONTROL ROOM (HOME, top west): flat, the consoles' gallery a step up; the spawns, the pad, the shield boost; consoles and lockers to hide behind; X1 at its west end;
+//   the GEARBOX (large, top east): two big cogs turning (ride a tooth up to the shelf over each: the shortcut), zigzag ledges beside them: the raiders' high road toward home;
+//   the BOILER ROOM (medium and large): boilers too tall to jump, steam valves between them (springs) that throw you onto their tops, steam jets (wind) over the gaps; a barrel up to the control room; X3;
+//   the PRESS LINE (east, the signature room): three presses slam in turn (dash through the gaps), the catwalk over them the plain way; D3;
+//   the ASSEMBLY LINE (the whole width): two long belts stacked, running opposite ways, robot-arm ledges between them; the super-jump boost; D2;
+//   the SMELTER (tall, west): the furnace's heat (an updraft) lifts you from the slag pit to the ladle catwalk, a spring beside it the plain way; X2 in the pit;
+//   the CASTING PIT (medium and large, tall, east): sand heaps (slopes) and mould pits (holes down to the dock);
+//   the CRAWL (bottom, dark, low): the JAIL at the west end; the VAULT in the middle behind two locked doors (a chest, an urn, the speed boost; the key: in the pipe house), the crawl dipping under it for those without the key; the ghost boost;
+//   the LOADING DOCK (bottom east): crate stacks to hop, the freight lift up to the assembly line (the shortcut) with a spring beside it (medium and large: up into the casting pit); D1;
+//   the SCRAP HEAP wing (large, west): scrap piles as rough slopes on three tiers, the magnet crane riding across the top (a ferry: the shortcut), joined to the boiler room, the assembly line and the smelter.
+function worksLine(k, g){
+  const { A, S, H, P, SL, BK, DC, ZN, Y, STALK } = k, mid = g.band >= 1, big = g.band >= 2;
+  // ---- outside: the shell (columns 0-32, rows 1-27; the annex too in large games), the catwalks at the feed-floor and press-floor doors ----
+  S(0, 1, 32, 27); g.wing(2, ()=>S(-24, 1, -1, 27)); g.skin(-24, Y(1), 32, Y(26), 'works');
+  H(22, 33, 34); H(17, 33, 34);
+  g.entrance(33, Y(25), 33, Y(26), 59, Y(59), { two:true, side:-1 }); g.exitDoor(59, Y(58), 60, Y(59), 33, Y(25), { two:true });     // D1 the ground door, both ways (the loading dock)
+  g.entrance(33, Y(20), 33, Y(21), 59, Y(47), { two:true, side:-1 }); g.exitDoor(59, Y(46), 60, Y(47), 33, Y(20), { two:true });     // D2 the feed-floor door, both ways (the assembly line)
+  g.entrance(33, Y(15), 33, Y(16), 59, Y(40), { two:true, side:-1 }); g.exitDoor(59, Y(39), 60, Y(40), 33, Y(15), { two:true });     // D3 the press-floor door, both ways (the press line)
+  g._np.push([26, 33], [26, 34], [21, 33], [21, 34], [16, 33], [16, 34], [0, 16], [0, 17]);
+  // ---- inside: under the map, columns 1-61, rows 29-62 (and the Scrap Heap wing, columns -23 to 0, in large games) ----
+  g.interior('line', 1, Y(29), 61, Y(62), { name:'The Line' }); BK(1, 29, 61, 62, 'metal'); g.skin(1, Y(29), 61, Y(62), 'indoor');   // (a wall behind it all, so a hole in a floor shows the room below; indoor floors)
+  // the MAIN SHAFT (columns 31-36: three pairs a, b, c; walls 30 and 37 with an arch onto every level's rooms)
+  A(31, 30, 36, 34); A(31, 36, 36, 40); A(31, 49, 36, 54); BK(31, 30, 36, 59, 'stripe');
+  A(31, 35, 32, 35); H(35, 33, 34);                                                                    // under the control room: a hole (a), the hatch (b)
+  H(40, 33, 34); fUp(k, g, 33, 40, 35); A(35, 41, 36, 41); H(41, 31, 32);                              // the press level: the barrel up (b), a hole (c), the hatch (a)
+  H(47, 31, 32); fUp(k, g, 31, 47, 41); A(33, 48, 34, 48); H(48, 35, 36);                              // the assembly level: the barrel up (a), a hole (b), the hatch (c)
+  H(54, 35, 36); fUp(k, g, 35, 54, 48); A(31, 55, 32, 56); H(55, 33, 34); A(33, 56, 34, 56);           // the smelter level: the barrel up (c), a hole (a), the hatch (b)
+  H(58, 33, 34); fUp(k, g, 33, 58, 55);                                                                // the crawl: the barrel up (b)
+  A(30, 32, 30, 34); A(30, 52, 30, 54); A(37, 38, 37, 40); A(37, 57, 37, 59);                          // the arches: the control room, the smelter, the press line, the dock
+  if(mid){ A(30, 38, 30, 40); A(37, 52, 37, 54); } if(big) A(37, 32, 37, 34);                          // (the boiler room, the casting pit, the gearbox)
+  for(const [lc, lr] of [[33, 30], [33, 36], [33, 49]]) DC('lantern', lc, lr, 1, 1);
+  // the CONTROL ROOM (HOME: columns 2-29, rows 30-34, its floor row 35)
+  A(2, 30, 29, 34); BK(2, 30, 29, 34, 'metal');
+  H(32, 12, 22); STALK(9, 34, 33); P(34, 4, 'HHHHH'); P(31, 14, 'HHH'); P(34, 24, 'PP'); P(34, 22, 'h');                 // the consoles' gallery; the spawns on the floor and the gallery, the pad, the shield boost
+  S(2, 34, 3, 34); DC('hatch', 2, 29, 2, 1, { dir:1 }); g.exitDoor(2, Y(32), 3, Y(33), 16, Y(0));       // X1: a step up to the hatch, out onto the hall's roof
+  P(34, 13, 'E'); P(31, 20, 'E'); P(34, 17, 'A'); P(34, 28, 'C'); P(31, 12, 'E');                      // consoles and lockers
+  DC('window', 7, 31, 1, 2); DC('window', 26, 31, 1, 2); DC('lantern', 16, 30, 2, 2); DC('gear', 11, 30, 1, 1);
+  if(mid){ A(26, 35, 27, 35); H(35, 5, 6); }                                                           // a hole down to the boiler room, the hatch over its barrel
+  // the GEARBOX (large: columns 38-60, rows 30-34, its floor row 35)
+  if(big){
+    A(38, 30, 60, 34); BK(38, 30, 60, 34, 'metal'); DC('lantern', 49, 30, 1, 1);
+    g.wheel(45, Y(33), 1.2, 4, { kind:'cog', pw:120, spd:1.4 }); g.wheel(52, Y(33), 1.2, 4, { kind:'cog', pw:120, spd:1.4, dir:-1 });   // the cogs (ride a tooth up)
+    H(32, 43, 47); H(32, 50, 54); STALK(40, 34, 33); STALK(47, 34, 33);                               // the shelves over them, the zigzags beside them
+    A(39, 35, 40, 35); H(35, 57, 58);                                                                  // a hole down onto the press line's catwalk; the hatch over the press line's barrel
+    P(31, 44, 'L'); P(31, 53, 'L'); P(34, 51, 'E'); P(34, 59, 'C');
+  }
+  // the BOILER ROOM (medium and large: columns 2-29, rows 36-40, its floor row 41)
+  if(mid){
+    A(2, 36, 29, 40); BK(2, 36, 29, 40, 'brick'); DC('lantern', 25, 36, 1, 1);
+    H(40, 5, 6); fUp(k, g, 5, 40, 35);                                                                 // the barrel up to the control room
+    for(const bc of [11, 16, 21]){ S(bc, 38, bc + 2, 40); DC('chimney', bc + 1, 36, 1, 2); }          // the boilers, too tall to jump, their flues
+    for(const [vc, wd] of [[9, 1], [14, -1], [19, 1], [24, -1]]){ fUp(k, g, vc, 41, 38); ZN('wind', vc, 36, vc + 1, 37, 0.6, wd); DC('fan', wd > 0 ? vc : vc + 1, 36, 1, 2); }   // the steam valves before, between and after them (onto their tops), the jets over the gaps
+    A(28, 41, 29, 41);                                                                                 // a hole down to the assembly line
+    DC('hatch', 2, 35, 2, 1, { dir:1 }); g.exitDoor(2, Y(39), 3, Y(40), 38, Y(10));                   // X3: the steam stack, out onto the vat house's roof
+    P(37, 12, 'W'); P(37, 17, 'E'); P(40, 7, 'C'); P(37, 22, 'W');
+  }
+  // the PRESS LINE (columns 38-60, rows 36-40, its floor row 41): three presses slam in turn, the catwalk over them
+  A(38, 36, 60, 40); BK(38, 36, 60, 40, 'stripe'); DC('lantern', 58, 36, 1, 1);
+  [[43, 0], [48, 0.33], [52, 0.66]].forEach(([pc, ph])=>{ g.plug(pc, Y(38), pc + 1, Y(40), { open:150, shut:150, phase:ph }); DC('chains', pc, 36, 2, 2); });   // the presses (open, shut, in turn)
+  H(37, 39, 55); STALK(38, 40, 38); STALK(54, 40, 38);                                                  // the catwalk over them, the hops up to it at each end
+  A(46, 41, 47, 41); H(41, 50, 51);                                                                    // a hole down to the assembly line between the presses; the hatch over its barrel
+  if(big){ H(40, 57, 58); fUp(k, g, 57, 40, 35); }                                                      // (a barrel up into the gearbox)
+  P(36, 41, 'E'); P(40, 45, 'L'); P(40, 56, 'C');
+  // the ASSEMBLY LINE (the whole width, columns 2-60, rows 42-47, its floor row 48): two belts stacked running opposite ways, robot arms between
+  A(2, 42, 60, 47); BK(2, 42, 29, 47, 'metal'); BK(38, 42, 60, 47, 'metal');
+  ZN('belt', 2, 47, 29, 47, 1, 1); ZN('belt', 38, 47, 60, 47, 1, 1);                                   // the lower belt, toward the feed-floor door
+  H(45, 3, 28); H(45, 39, 58); ZN('belt', 3, 44, 28, 44, 1, -1); ZN('belt', 39, 44, 58, 44, 1, -1);     // the upper belt over it, the other way
+  for(const ac of [9, 21, 42, 54]) STALK(ac, 47, 46);                                                   // the robot arms (hops up to the upper belt)
+  H(47, 50, 51); fUp(k, g, 50, 47, 41);                                                                 // a barrel up to the press line
+  A(12, 48, 13, 48); H(48, 17, 18);                                                                    // a hole down into the smelter; the hatch over its spring
+  if(mid){ A(56, 48, 57, 48); H(48, 38, 39); }                                                         // (a hole down into the casting pit; the hatch over its barrel)
+  P(44, 6, 'v');                                                                                       // the super-jump boost on the upper belt
+  P(47, 5, 'C'); P(44, 15, 'Z'); P(47, 25, 'E'); P(44, 46, 'Z'); P(47, 46, 'C'); P(44, 24, 'C');
+  for(const gc of [16, 45]) DC('gear', gc, 42, 2, 2);
+  // the SMELTER (columns 2-29, rows 49-54, its floor row 55): the slag pit, the furnace's heat up to the ladle catwalk, a spring beside it
+  A(2, 49, 29, 54); BK(2, 49, 29, 54, 'brick');
+  S(2, 54, 6, 54); SL(7, 9, 54, 55, 4); SL(19, 21, 55, 54, 4); S(22, 54, 29, 54);                       // the raised ends, the slag pit sunk between them
+  ZN('updraft', 13, 49, 16, 54, 1.1); H(50, 4, 18); fUp(k, g, 4, 54, 50); fUp(k, g, 17, 50, 48);       // the heat up to the ladle catwalk, the spring beside it, a spring at the catwalk's end up into the assembly line
+  DC('torch', 14, 52, 1, 2); DC('chains', 8, 49, 1, 1);
+  A(11, 55, 12, 56);                                                                                   // a hole in the pit down to the crawl
+  g.drop(17, Y(53), 18, Y(54), 43, Y(26), 5);                                                          // X2: the slag chute, out into the alley by the pipe house (hurts)
+  P(53, 3, 'W'); P(53, 26, 'Q'); P(49, 6, 'C'); P(53, 23, 'W');
+  // the CASTING PIT (medium and large: columns 38-60, rows 49-54, its floor row 55): sand heaps, mould pits
+  if(mid){
+    A(38, 49, 60, 54); BK(38, 49, 60, 54, 'dirt');
+    SL(40, 44, 55, 53, 3, { fill:54 }); SL(45, 49, 53, 55, 3, { fill:54 }); SL(57, 60, 55, 54, 3, { fill:54 });   // the sand heaps
+    A(51, 55, 52, 55);                                                                                 // a mould pit: a hole down to the dock
+    H(54, 38, 39); fUp(k, g, 38, 54, 48); H(55, 55, 56);                                               // a barrel up to the assembly line; the hatch over the dock's spring
+    P(52, 44, 'Q'); P(53, 59, 'W'); P(54, 50, 'R');
+  }
+  // the CRAWL (columns 2-36, rows 57-58, its floor row 59): dark and low; the JAIL at the west end, the VAULT in the middle, the dip under it
+  A(2, 57, 36, 58); BK(2, 57, 36, 58, 'metal'); ZN('dark', 7, 57, 36, 58);
+  g.col(6, Y(57), Y(58), 'J'); P(58, 2, 'ppp'); g.keepClear(2, Y(57), 6, Y(58)); BK(2, 57, 5, 58, 'dirt');   // the JAIL
+  g.col(17, Y(57), Y(58), '1'); g.col(24, Y(57), Y(58), '1'); BK(18, 57, 23, 58, 'stripe'); P(58, 18, 'T'); P(58, 20, 'u'); P(58, 22, 'N');   // the VAULT
+  A(13, 60, 28, 61); BK(13, 60, 28, 61, 'dirt'); ZN('dark', 13, 60, 28, 61);                            // the dip under the vault
+  A(13, 59, 14, 59); H(59, 15, 16); fUp(k, g, 15, 62, 59); A(27, 59, 28, 59); H(59, 25, 26); fUp(k, g, 25, 62, 59);   // its ends: a hole down and a spring up through a hatch
+  P(61, 20, 'g');                                                                                      // the ghost boost
+  P(58, 29, 'W'); P(61, 18, 'C'); P(58, 35, 'W'); P(61, 23, 'W');
+  // the LOADING DOCK (columns 38-60, rows 56-59, its floor row 60): crate stacks, the freight lift, D1
+  A(38, 56, 60, 59); BK(38, 56, 60, 59, 'wood'); DC('lantern', 47, 56, 2, 2);
+  S(39, 59, 40, 59); S(43, 58, 44, 59); S(47, 59, 48, 59);                                              // the crate stacks
+  A(53, 48, 54, 59); g.elev(53, 2, Y(48), Y(60));                                                      // the freight lift, up to the assembly line (its shaft a drop from it)
+  if(mid){ H(59, 55, 56); fUp(k, g, 55, 59, 55); }                                                      // (the spring beside it, up into the casting pit)
+  P(57, 43, 'C'); P(59, 50, 'W'); P(59, 57, 'C'); P(58, 39, 'C');
+  // the SCRAP HEAP wing (large: columns -23 to 0, rows 35-56): scrap piles on three tiers, the magnet crane across the top, arches onto the boiler room, the assembly line and the smelter
+  if(big){
+    g.interior('line', -23, Y(35), 0, Y(56));
+    A(-22, 36, 1, 40); A(-22, 42, 1, 47); A(-22, 49, 1, 54); BK(-23, 35, 0, 56, 'metal'); g.skin(-23, Y(35), 0, Y(56), 'indoor');
+    S(-22, 40, -17, 40); SL(-16, -12, 41, 39, 3, { fill:40, rough:true }); SL(-11, -7, 39, 41, 3, { fill:40, rough:true });   // the top tier's heaps
+    g.ferry(-21, -6, Y(38), 240, { spd:2.4 }); DC('chains', -14, 36, 1, 1);                            // the magnet crane, riding across the top
+    SL(-18, -14, 48, 46, 3, { fill:47, rough:true }); SL(-13, -9, 46, 48, 3, { fill:47, rough:true });   // the middle tier's heap
+    SL(-21, -17, 55, 53, 3, { fill:54, rough:true }); SL(-16, -12, 53, 55, 3, { fill:54, rough:true });   // the bottom tier's heap
+    A(-5, 41, -4, 41); H(47, -2, -1); fUp(k, g, -2, 47, 41); H(41, -2, -1);                             // the top tier's floor: a hole down; a barrel up from the middle tier
+    A(-21, 48, -20, 48); H(54, -6, -5); fUp(k, g, -6, 54, 48); H(48, -6, -5);                          // the middle tier's floor: a hole down; a barrel up from the bottom tier
+    P(39, -20, 'R'); P(40, -3, 'C'); P(47, -21, 'R'); P(47, -7, 'L'); P(54, -9, 'R'); P(54, -2, 'W');
+    DC('lantern', -15, 42, 1, 1); DC('lantern', -15, 49, 1, 1);
+  }
+}
+// THE NEON ARMS (the plan, interiors-plan.md 3.5; the owner, 2026-10-19: "build the buildings like the mill", "THATS THE CABIN???? I THOUGHT IT WAS AN AREA LIKE THE MILL"): Neon City's all-night hotel, the big one of the city.
+// Outside, a closed shell on the street (the 'neon' skin: dark plum walls, lit windows, a pink neon band on top; the cellar's barred window shows a lit pip for every prisoner), its roof stood on. Its doors:
+//   D1 the STREET DOOR (the revolving door, both ways, into the lobby), D2 the PLANK DOOR on the low plank (both ways, into the kitchen), D3 the UPPER PLANK DOOR (both ways, into the casino), all on the east face;
+//   D4 (large games) the WEST DOOR from the scrapyard (both ways, into the laundry); and the ways out: X1 the penthouse's balcony onto the hotel's roof (home's quick exit), X2 the kitchen's back door into the alley by the bank,
+//   X3 the pool's overflow, a fall into the alley between the bank and the tower (it hurts: 3%).
+// Inside, an area apart under the map, open to both teams: the hotel stacked like a layer cake, one storey over the next, each its own platforming, joined at the west end by the ELEVATOR:
+//   the ELEVATOR (the spine): the lift car from the penthouse down to the lobby (the shortcut; its shaft a drop from every storey it passes), beside the service stair (a sprung barrel on every storey up through a hatch in the
+//   floor above: the plain way up); and at the east end the LAUNDRY CHUTE, walled off from the storeys it falls past, the fast way down from the casino (large games: the guest corridor) to the laundry (a small game's: the cellar);
+//   the PENTHOUSE (HOME, the top): flat; the spawns, the pad, the shield boost; sofas, a piano, urns and a trunk to hide behind; up a step at the east end the balcony (X1); a stairwell down onto the pool's sun deck;
+//   the ROOFTOP POOL (medium and large, under the night sky): a deep pool to swim (floats on it the dry way across, a jet at each end that throws you out), the diving board (a spring) up to the high sun deck; the overflow (X3) under the deck;
+//   the NIGHTCLUB (medium and large): a polished ice dance floor, the DJ booth on a high ledge over it, reached by the speakers' springs;
+//   the CASINO: the giant roulette wheel turning in the middle (ride a pocket up: the shortcut), balconies each side with a ledge up to each (the plain way), slot machines and card tables to hide behind; D3;
+//   the GUEST CORRIDOR (large): a long hall of closets, luggage carts to hop; the chute's hatch at its end;
+//   the KITCHEN: the dish line (a belt on the counter one way, a belt along the floor the other), pan racks over it as ledges; D2; X2;
+//   the LOBBY (the ground): flat; the front desk and a chandelier over its end to jump on; D1; a stairwell down;
+//   the LAUNDRY (medium and large): the dryers at each end blow across it (wind), washing machines to hop, sheets to hide behind; the chute lands here; a hole down to the cellar; D4 (large);
+//   the CELLAR (the bottom, dark, low): low wine racks to hop; the JAIL at the west end, two rooms from D1 (a small game's: one);
+//   the PARKING GARAGE (large, the west wing): a second way between the lobby and the laundry: the ramp down from the lobby's deck to a landing at the far end, a drop to the lower deck, which runs back under the ramp
+//   to the laundry (the way up: a step and the landing, then the ramp); parked cars to hop.
+function neonArms(k, g){
+  const { A, S, H, P, SL, BK, DC, ZN, Y } = k, mid = g.band >= 1, big = g.band >= 2;
+  // the storeys, top down: [name, rows of air, rows of floor under it]; R[name] = { t: its top row of air, f: its floor's row, th: how thick its floor is }
+  const ST = [['pent', 4, 1], mid && ['pool', 5, 3], mid && ['club', 5, 1], ['casino', 6, 1], big && ['corr', 3, 1], ['kitchen', 5, 1], ['lobby', 4, 1], mid && ['laundry', 4, 1], ['cellar', 3, 1]].filter(Boolean);
+  const R = {}, order = ST.map(q=>q[0]); let row = 30; for(const [n, h, th] of ST){ R[n] = { t:row, f:row + h, th }; row += h + th; }
+  const bot = row - 1;                                                                                  // (the cellar's floor: the bottom of the area)
+  // ---- outside: the shell (columns 0-14, rows 6-27), its doors on the east face (the planks across the alley at rows 17 and 22, the lift up to them), the barred window ----
+  S(0, 6, 14, 27); g.skin(0, Y(6), 14, Y(26), 'neon'); DC('jailwin', 2, 23, 2, 2);
+  const Lb = R.lobby, Kt = R.kitchen, Cs = R.casino;
+  g.entrance(15, Y(25), 15, Y(26), 31, Y(Lb.f - 1), { two:true, side:-1 }); g.exitDoor(31, Y(Lb.f - 2), 32, Y(Lb.f - 1), 15, Y(25), { two:true });   // D1 the street door, both ways (the lobby)
+  g.entrance(15, Y(20), 15, Y(21), 31, Y(Kt.f - 1), { two:true, side:-1 }); g.exitDoor(31, Y(Kt.f - 2), 32, Y(Kt.f - 1), 15, Y(20), { two:true });   // D2 the plank door, both ways (the kitchen)
+  g.entrance(15, Y(15), 15, Y(16), 33, Y(Cs.f - 1), { two:true, side:-1 }); g.exitDoor(33, Y(Cs.f - 2), 34, Y(Cs.f - 1), 15, Y(15), { two:true });   // D3 the upper plank door, both ways (the casino)
+  if(big){ const Ld = R.laundry; g.entrance(-1, Y(25), -1, Y(26), 3, Y(Ld.f - 1), { two:true, side:1 }); g.exitDoor(2, Y(Ld.f - 2), 3, Y(Ld.f - 1), -1, Y(25), { two:true }); }   // D4 the west door, both ways (the laundry)
+  g._np.push([26, 15], [21, 15], [16, 15], [26, -1], [5, 6], [5, 7], [5, 8]);
+  // ---- inside: under the map, columns 1-38, rows 29 down to the cellar's floor (and the garage, columns -23 to 0, in large games) ----
+  g.interior('arms', 1, Y(29), 38, Y(bot), { name:'The Neon Arms' }); BK(1, 29, 38, bot, 'brick'); g.skin(1, Y(29), 38, Y(bot), 'indoor');   // (a wall behind it all, so a hole in a floor shows the room below; indoor floors)
+  const room = (n, kind)=>{ const q = R[n]; A(2, q.t, 37, q.f - 1); BK(2, q.t, 37, q.f - 1, kind); return q; };
+  // the PENTHOUSE (HOME)
+  { const q = room('pent', 'paper'), f = q.f;
+    P(f - 1, 12, 'HHHHH'); P(f - 1, 19, 'HHH'); P(f - 1, 24, 'PP'); P(f - 1, 28, 'h');                     // the spawns, the pad, the shield boost
+    S(35, f - 1, 37, f - 1); DC('window', 36, q.t, 1, 2); g.exitDoor(36, Y(f - 3), 37, Y(f - 2), 7, Y(5));  // X1: up a step onto the balcony, out onto the hotel's roof
+    A(31, f, 32, f); DC('hatch', 31, f - 1, 2, 1, { dir:1 });                                              // the stairwell down (onto the pool's sun deck)
+    P(f - 1, 4, 'U'); P(f - 1, 17, 'E'); P(f - 1, 22, 'N'); P(f - 1, 33, 'T');                              // a sofa, the piano, an urn, a trunk
+    DC('window', 11, q.t, 1, 2); DC('window', 26, q.t, 1, 2); DC('lantern', 18, q.t, 2, 2); DC('neon', 29, q.t, 2, 1);
+  }
+  // the ROOFTOP POOL (medium and large)
+  if(mid){ const q = room('pool', 'stars'), f = q.f;
+    A(12, f, 25, f + 1); ZN('water', 12, f, 25, f + 1, 1); BK(12, f, 25, f + 1, 'teal');                   // the pool, two rows deep
+    ZN('spring', 12, f + 1, 12, f + 1, 1.4); ZN('spring', 25, f + 1, 25, f + 1, 1.4);                      // a jet at each end that throws you out
+    H(f - 1, 15, 16); H(f - 1, 20, 21);                                                                     // floats (the dry way across)
+    H(q.t + 2, 27, 37); H(f - 1, 28, 29); fUp(k, g, 28, f - 1, q.t + 2);                                    // the sun deck; the diving board (a spring) up to it
+    A(36, f, 37, f); g.drop(36, Y(f), 37, Y(f), 32, Y(26), 3, { fall:true }); DC('hatch', 36, f - 1, 2, 1, { dir:-1 });   // X3: the overflow, a fall into the alley between the bank and the tower
+    P(f - 1, 4, 'B'); P(f - 1, 11, 'B'); P(q.t + 1, 30, 'U'); P(q.t + 1, 34, 'B'); P(f - 1, 33, 'U');
+    DC('neon', 18, q.t, 2, 1); DC('balloon', 31, q.t, 1, 2);
+  }
+  // the NIGHTCLUB (medium and large)
+  if(mid){ const q = room('club', 'club'), f = q.f;
+    ZN('ice', 16, f - 1, 26, f - 1);                                                                        // the polished dance floor
+    H(q.t + 2, 13, 29);                                                                                     // the DJ booth, high over it
+    for(const sc of [14, 27]){ S(sc, f - 1, sc + 1, f - 1); fUp(k, g, sc, f - 1, q.t + 2); }                // the speakers: springs up to it
+    P(q.t + 1, 20, 'E'); P(q.t + 1, 24, 'U'); P(f - 1, 31, 'U'); P(f - 1, 34, 'l'); P(f - 1, 11, 'N'); P(f - 1, 4, 'U');
+    DC('neon', 32, q.t + 1, 2, 1); DC('neon', 5, q.t + 1, 2, 1); DC('lantern', 21, q.t, 1, 1);
+  }
+  // the CASINO
+  { const q = room('casino', 'velvet'), f = q.f, hub = q.t + 3;
+    g.wheel(21, Y(hub), 2, 6, { kind:'roulette', pw:150, spd:1.3 });                                       // the roulette wheel (ride a pocket up)
+    H(hub, 11, 17); H(hub, 24, 31); H(f - 1, 14, 15); H(f - 2, 12, 13); H(f - 1, 26, 27); H(f - 2, 28, 29);   // the balconies each side, two steps up under each (the plain way)
+    P(f - 1, 13, 'E'); P(f - 1, 16, 'E'); P(f - 1, 24, 'E'); P(f - 1, 30, 'E'); P(hub - 1, 14, 'T'); P(hub - 1, 27, 'T');   // slot machines, card tables
+    DC('chandelier', 14, q.t, 2, 1); DC('chandelier', 27, q.t, 2, 1);
+  }
+  // the GUEST CORRIDOR (large)
+  if(big){ const q = room('corr', 'paper'), f = q.f;
+    for(const cc of [14, 21, 28]) S(cc, f - 1, cc + 1, f - 1);                                              // luggage carts to hop
+    for(const cc of [12, 18, 25, 31]){ DC('doorway', cc, q.t, 1, 3, { dir:1 }); P(f - 1, cc, 'U'); }        // the closets
+    P(f - 2, 21, 'T'); DC('lantern', 24, q.t, 1, 1);
+  }
+  // the KITCHEN
+  { const q = room('kitchen', 'tile'), f = q.f;
+    H(f - 2, 14, 29); ZN('belt', 14, f - 3, 29, f - 3, 1, -1);                                              // the dish line: the counter, its belt one way
+    ZN('belt', 12, f - 1, 30, f - 1, 1, 1);                                                                 // and a belt along the floor the other
+    H(f - 3, 16, 18); H(f - 3, 24, 26);                                                                     // the pan racks over it
+    g.exitDoor(11, Y(f - 2), 12, Y(f - 1), 17, Y(26));                                                      // X2: the back door, out into the alley by the bank
+    P(f - 4, 17, 'W'); P(f - 4, 25, 'C'); P(f - 1, 21, 'W'); P(f - 1, 27, 'C'); P(f - 1, 4, 'W');
+    DC('chains', 17, q.t, 1, 1); DC('chains', 25, q.t, 1, 1);
+  }
+  // the LOBBY
+  { const q = room('lobby', 'paper'), f = q.f;
+    S(15, f - 1, 19, f - 1); H(f - 2, 19, 21); DC('chandelier', 19, f - 3, 3, 1);                          // the front desk, the chandelier over its end
+    A(26, f, 27, f); DC('hatch', 26, f - 1, 2, 1, { dir:1 });                                              // the stairwell down
+    P(f - 1, 12, 'N'); P(f - 2, 16, 'T'); P(f - 1, 23, 'B'); P(f - 1, 29, 'B'); P(f - 3, 20, 'N');
+    DC('lantern', 11, q.t, 2, 2); DC('lantern', 29, q.t, 1, 1);
+  }
+  // the LAUNDRY (medium and large)
+  if(mid){ const q = room('laundry', 'stripe'), f = q.f;
+    ZN('wind', 9, q.t, 19, f - 1, 0.6, 1); ZN('wind', 23, q.t, 33, f - 1, 0.6, -1); DC('fan', 9, q.t, 1, 2); DC('fan', 33, q.t, 1, 2);   // the dryers at each end blow across it
+    S(15, f - 1, 16, f - 1); S(28, f - 1, 29, f - 1);                                                       // washing machines to hop
+    A(21, f, 22, f); DC('hatch', 21, f - 1, 2, 1, { dir:1 });                                              // a hole down to the cellar
+    P(f - 1, 12, 'U'); P(f - 1, 31, 'U'); P(f - 2, 15, 'C'); P(f - 2, 28, 'W'); P(f - 1, 25, 'U');
+  }
+  // the CELLAR: dark and low; the JAIL at the west end
+  { const q = room('cellar', 'brick'), f = q.f;
+    g.col(6, Y(q.t), Y(f - 1), 'J'); P(f - 1, 2, 'ppp'); g.keepClear(2, Y(q.t), 6, Y(f - 1)); BK(2, q.t, 5, f - 1, 'dirt');   // the JAIL
+    ZN('dark', 7, q.t, 37, f - 1);
+    for(const rc of [18, 24, 30]) S(rc, f - 1, rc + 1, f - 1);                                              // the wine racks, low, to hop
+    P(f - 1, 16, 'W'); P(f - 1, 28, 'W'); P(f - 1, 33, 'W'); P(f - 2, 18, 'W'); P(f - 2, 24, 'W');
+    DC('lantern', 16, q.t, 1, 1); DC('lantern', 28, q.t, 1, 1);
+  }
+  // the ELEVATOR: the lift (columns 2-3) from the penthouse down to the lobby, its shaft a hole in every floor it passes; the service stair: on every storey but the top a sprung barrel up through a hatch in the floor above
+  // (none over another: the columns go 6 and 9 by turns from the cellar's, 13, clear of the jail)
+  for(let i = 0; i < order.indexOf('lobby'); i++){ const q = R[order[i]]; A(2, q.f, 3, q.f + q.th - 1); }
+  g.elev(2, 2, Y(R.pent.f), Y(Lb.f)); DC('lantern', 4, R.pent.t, 1, 1);
+  for(let i = order.length - 1, tc = 13; i >= 1; i--, tc = tc === 6 ? 9 : 6){ const q = R[order[i]], up = R[order[i - 1]];
+    A(tc, up.f, tc + 1, q.f - 2); H(q.f - 1, tc, tc + 1); fUp(k, g, tc, q.f - 1, up.f); H(up.f, tc, tc + 1); }
+  // the LAUNDRY CHUTE (columns 35-37): from its hatch in the floor of the casino (large games: the guest corridor) down past the kitchen and the lobby, walled off from them, out of the ceiling of the laundry (a small game's: the cellar)
+  { const mo = big ? R.corr : Cs, la = mid ? R.laundry : R.cellar;
+    for(const n of ['kitchen', 'lobby']){ const q = R[n]; S(34, q.t, 34, q.f - 1); }
+    A(35, mo.f, 37, la.t - 1); BK(35, mo.f, 37, la.t - 1, 'metal'); DC('hatch', 35, mo.f - 1, 3, 1, { dir:1 });
+    [[Kt.t + 1, 1], [Lb.t + 1, -1]].forEach(([wr, wd])=>{ ZN('wind', 35, wr, 37, wr + 1, 0.8, wd); DC('fan', wd > 0 ? 35 : 37, wr, 1, 2); });   // the dryer vents puffing you side to side on the way down
+  }
+  // the PARKING GARAGE (large: columns -23 to 0, beside the lobby and the laundry)
+  if(big){ const gl = Lb, gd = R.laundry;
+    g.interior('arms', -23, Y(gl.t - 1), 0, Y(gd.f)); A(-22, gl.t, 0, gd.f - 1); BK(-23, gl.t - 1, 0, gd.f, 'metal'); g.skin(-23, Y(gl.t - 1), 0, Y(gd.f), 'indoor');
+    A(1, gl.t, 1, gl.f - 1); A(1, gd.t, 1, gd.f - 1);                                                      // the arches through the hotel's west wall: the lobby, the laundry
+    S(-4, gl.f, 0, gl.f);                                                                                   // the upper deck, level with the lobby (the lower deck runs on under it)
+    SL(-18, -5, gl.f + 2, gl.f, 2); S(-19, gl.f + 2, -19, gl.f + 2); H(gl.f + 3, -22, -20);                 // the ramp, down from the deck to the landing at the far end; a step up to the landing from the lower deck
+    S(-15, gd.f - 1, -13, gd.f - 1); S(-9, gd.f - 1, -7, gd.f - 1);                                        // parked cars to hop
+    P(gd.f - 1, -21, 'W'); P(gd.f - 1, -2, 'C'); P(gl.f - 1, -2, 'W'); P(gd.f - 2, -14, 'W'); P(gd.f - 1, -11, 'C');
+    DC('lantern', -12, gl.t, 1, 1); DC('lantern', -3, gl.t, 1, 1);
+  }
+}
+// THE DYE WORKS (the plan, interiors-plan.md 3.2; the owner: "build the buildings like the mill"): the vat house of the Works yard, a dye works whose three colour vats fill and drain on a clock. Outside, a closed shell (the 'works'
+// skin), its roof stood on (the pad up from the pipe house's roof; the Line's steam stack comes out on it). Its doors: D1 the GROUND DOOR on the west face (both ways, into the dye store), D2 the PLANK DOOR on the east face at the plank
+// across the alley (both ways, onto the mixing gantry's east end); and the ways out: X1 the drying loft's roof hatch, X2 the spill room's drain, a fall into the alley by the generator (it hurts: 3%).
+// Inside, an area apart under the map, open to both teams, five rooms each its own platforming:
+//   the DYE STORE (west, the ground): barrel stacks to hop up, a row at a time, to the gantry's west end; D1;
+//   the VAT HALL (the signature room): three vats, red, blue and yellow, fill to the brim and drain out of step (tides), so one is always low; the walls between them always walkable; a valve spring at the east end of each vat throws
+//   you out of the dye (full or empty) onto the gantry over the next wall: the plain way east is vat to vat;
+//   the MIXING GANTRY over the vats: rusty gratings that give way a moment after you step on them (crumbling) between fixed catwalks over the walls: keep running or you drop into a vat; D2 at its east end;
+//   the DRYING LOFT (the top): big fans at each end blow across it toward the middle (wind), drying racks to hop, hanging cloth to hide behind; a hole down onto the gantry's west end (the plain way back west); X1;
+//   the SPILL ROOM (east, tall, under the gantry's end): spilled dye on its floor (sticky), the valve spring up through a hatch into the loft; X2 its drain, right under the wall you drop off.
+function dyeWorks(k, g){
+  const { A, S, H, P, BK, DC, ZN, Y } = k;
+  // ---- outside: the shell (columns 35-42, rows 11-27) ----
+  S(35, 11, 42, 27); g.skin(35, Y(11), 42, Y(26), 'works');
+  g.entrance(34, Y(25), 34, Y(26), 2, Y(77), { two:true, side:1 }); g.exitDoor(2, Y(76), 3, Y(77), 34, Y(25), { two:true });         // D1 the ground door, both ways (the dye store)
+  g.entrance(43, Y(20), 43, Y(21), 24, Y(72), { two:true, side:-1 }); g.exitDoor(24, Y(71), 25, Y(72), 43, Y(20), { two:true });      // D2 the plank door, both ways (the gantry's east end)
+  g._np.push([26, 34], [21, 43], [10, 38], [10, 39], [10, 40]);
+  // ---- inside: under the map, columns 1-34, rows 64-79 (under the Line) ----
+  g.interior('dye', 1, Y(64), 34, Y(79), { name:'The Dye Works' }); BK(1, 64, 34, 79, 'brick'); g.skin(1, Y(64), 34, Y(79), 'indoor');   // (a wall behind it all, so a hole in a floor shows the room below; indoor floors)
+  // the DRYING LOFT (rows 65-68, its floor row 69)
+  A(2, 65, 33, 68); BK(2, 65, 33, 68, 'wood');
+  ZN('wind', 2, 65, 15, 68, 0.6, 1); ZN('wind', 18, 65, 33, 68, 0.6, -1); DC('fan', 2, 65, 1, 3); DC('fan', 33, 65, 1, 3);   // the fans at each end, blowing toward the middle
+  H(68, 7, 10); H(67, 12, 15); H(68, 18, 21);                                                            // the drying racks
+  A(3, 69, 4, 69); DC('hatch', 3, 68, 2, 1, { dir:-1 });                                                 // a hole down onto the gantry's west end (the way back west)
+  H(69, 31, 32);                                                                                          // the hatch the spill room's valve spring comes up through
+  g.exitDoor(26, Y(67), 27, Y(68), 38, Y(10)); DC('hatch', 26, 64, 2, 1, { dir:1 });                     // X1: the roof hatch, out onto the vat house's roof
+  P(68, 6, 'U'); P(67, 9, 'U'); P(66, 13, 'U'); P(68, 16, 'U'); P(67, 20, 'U'); P(68, 24, 'U'); P(68, 29, 'W');   // hanging cloth on the floor and the racks, a dye drum
+  DC('lantern', 11, 65, 1, 1); DC('lantern', 23, 65, 1, 1); DC('hang', 14, 65, 1, 2); DC('hang', 21, 65, 1, 2);
+  // the DYE STORE, the VAT HALL with the MIXING GANTRY over it (rows 70-77, their floor row 78), and the SPILL ROOM east of them under the gantry's end
+  A(2, 70, 33, 77); BK(2, 70, 7, 77, 'wood'); BK(8, 70, 26, 77, 'metal'); BK(27, 70, 33, 77, 'dirt');
+  // the store: barrel stacks, a row at a time up to the gantry's west end
+  H(77, 6, 7); H(76, 4, 5); H(75, 6, 7); H(74, 4, 5);
+  P(77, 4, 'W'); P(75, 4, 'W'); P(72, 4, 'C');
+  // the vats: walls three rows high (their tops walked), each vat filling to the brim and draining, out of step with the others
+  S(8, 75, 8, 77); S(13, 75, 14, 77); S(19, 75, 20, 77); S(25, 75, 25, 77);
+  [[9, 'rgba(214,46,58,0.62)', 0], [15, 'rgba(46,92,216,0.62)', 0.33], [21, 'rgba(236,186,36,0.64)', 0.66]].forEach(([vc, col, ph])=>{
+    g.tide(vc, Y(75), vc + 3, Y(77), { lo:0.1, hi:1, hold:600, move:240, warn:120, phase:ph, col });      // a vat (four columns, three rows deep)
+    ZN('spring', vc + 2, 77, vc + 3, 77, 2);                                                              // its valve spring, at its east end: out of the dye, full or empty, onto the gantry over the next wall
+    DC('chains', vc + 1, 70, 1, 1); });
+  // the gantry (row 73): fixed catwalks over the store and each wall (and over each valve spring), rusty gratings over the rest of each vat that give way a moment after you step on them, and come back
+  H(73, 2, 8); H(73, 11, 14); H(73, 17, 20); H(73, 23, 25);
+  for(const gc of [9, 15, 21]) g.crumble(Y(73), gc, gc + 1);
+  P(72, 2, 'C'); P(72, 14, 'W'); P(72, 20, 'E'); P(74, 13, 'W'); P(74, 20, 'W');
+  // the SPILL ROOM (columns 27-33): its wall under the gantry's end, the spilled dye, the valve spring up into the loft, the drain under the wall
+  S(26, 73, 26, 77);                                                                                      // its wall, the top level with the gantry (the gantry's east end)
+  ZN('glue', 27, 77, 33, 77, 0.7);
+  ZN('spring', 31, 77, 32, 77, 1.7);                                                                      // the valve spring: up through the hatch into the loft
+  A(27, 78, 28, 78); g.drop(27, Y(78), 28, Y(78), 54, Y(26), 3, { fall:true }); DC('hatch', 27, 77, 2, 1, { dir:-1 });   // X2: the drain, a fall out into the alley by the generator
+  P(77, 30, 'W'); P(77, 33, 'W'); DC('lantern', 30, 70, 1, 1); DC('torch', 33, 74, 1, 2);
+}
+// THE PLUMBING (the plan, interiors-plan.md 3.3; the owner: "build the buildings like the mill"): the pipe house of the Works yard, the inside of the pipes themselves: a tangle of fat tubes, rushing air that pushes you along. Outside, a
+// closed shell (the 'works' skin), its roof stood on (the pad on it up to the vat house's roof). Its doors: D1 the GROUND DOOR on the east face (both ways, into the pump room), D2 the PLANK DOOR on the west face at the plank from the
+// vat house (both ways, into the tangle); and the ways out: X1 the top of the riser onto the pipe house's roof, by the pad, X2 the sump's grate out into the station in the rail yard (the subway it was to lead to is not built).
+// Inside, an area apart under the map, open to both teams, five rooms each its own platforming:
+//   the RISER (west, tall): a geyser of pressure up its east half (a spring from the bottom that throws you to the top), the side ledges in its west half at every level to drop down by; X1 at the top;
+//   the TANGLE (the top): a small maze of pipes two rows high on two levels, walled into runs, joined by holes down and valve springs up through hatches, a loop and dead ends; THE WORKS KEY at the end of the dead end;
+//   the WIND MAIN (the middle, the signature room): one long straight pipe with the air rushing east, fast with it (pressing against it holds you); a valve spring at its east end up into the tangle; a hole down into the sump;
+//   the PUMP ROOM (the ground): the big pump wheel turning (ride a paddle up to the shelf: the shortcut), crates stacked a row at a time beside it (the plain way); D1;
+//   the SUMP (the bottom east, dark): a low ceiling, shallow water to wade, a valve spring up a shaft into the wind main; X2.
+function worksPlumbing(k, g){
+  const { A, S, H, P, BK, DC, ZN, Y } = k;
+  // ---- outside: the shell (columns 45-51, rows 16-27), its pad up to the vat house's roof ----
+  S(45, 16, 51, 27); g.skin(45, Y(16), 51, Y(26), 'works');
+  g.entrance(52, Y(25), 52, Y(26), 49, Y(78), { two:true, side:-1 }); g.exitDoor(49, Y(77), 50, Y(78), 52, Y(25), { two:true });      // D1 the ground door, both ways (the pump room)
+  g.entrance(44, Y(20), 44, Y(21), 42, Y(65), { two:true, side:1 }); g.exitDoor(42, Y(64), 43, Y(65), 44, Y(20), { two:true });        // D2 the plank door, both ways (the tangle)
+  fUp(k, g, 46, 16, 11);                                                                                     // the pad on the roof, up to the vat house's roof
+  g._np.push([26, 52], [21, 44], [15, 49], [15, 50]);
+  // ---- inside: under the map, columns 36-61, rows 63-79 (under the Line, beside the Dye Works) ----
+  g.interior('plumbing', 36, Y(63), 61, Y(79), { name:'The Plumbing' }); BK(36, 63, 61, 79, 'metal'); g.skin(36, Y(63), 61, Y(79), 'indoor');   // (a wall behind it all, so a hole in a floor shows the room below; indoor floors)
+  // the RISER (columns 37-40, rows 64-78): the geyser up columns 39-40 from the pump room's floor to the top ledge; the side ledges at the tangle's lower level and the wind main's floor; X1 at the top
+  A(37, 64, 40, 78); BK(37, 64, 40, 78, 'stripe');
+  H(66, 37, 40); H(69, 37, 38); H(73, 37, 38);                                                               // the top ledge (over the geyser too), the side ledges
+  ZN('spring', 39, 78, 40, 78, 1.9); DC('fan', 39, 64, 2, 1);                                                // the geyser: from the bottom to the top in one go
+  g.exitDoor(37, Y(64), 38, Y(65), 49, Y(15)); DC('hatch', 37, 63, 2, 1, { dir:-1 });                        // X1: out of the top, onto the pipe house's roof by the pad
+  A(41, 64, 41, 65); A(41, 67, 41, 68); A(41, 70, 41, 72); A(41, 74, 41, 78);                                // the riser's mouths onto every level
+  P(65, 40, 'W'); P(68, 37, 'W'); P(72, 37, 'L');
+  // the TANGLE (columns 42-60): the upper pipes (rows 64-65, their floor row 66) and the lower (rows 67-68, their floor row 69)
+  A(42, 64, 60, 65); A(42, 67, 60, 68); BK(42, 64, 60, 68, 'metal');
+  S(48, 64, 48, 65); S(55, 64, 55, 65); S(51, 67, 51, 68);                                                   // the pipes' walls: three runs above, two below
+  A(45, 66, 46, 66); A(53, 66, 54, 66); A(59, 66, 60, 66);                                                   // the holes down: from each upper run onto the lower run under it (a hole beside each hatch: a spring stands under a hatch)
+  A(55, 69, 56, 69);                                                                                         // and from the second lower run down into the wind main
+  H(66, 49, 50); fUp(k, g, 49, 69, 66);                                                                      // a valve spring up from the first lower run into the second upper run
+  H(66, 57, 58); fUp(k, g, 57, 69, 66);                                                                      // and one from the second lower run into the last upper run: the dead end
+  P(65, 56, 'a');                                                                                            // THE WORKS KEY at the end of the dead end
+  P(65, 47, 'E'); P(65, 51, 'L'); P(68, 43, 'E'); P(68, 47, 'L'); P(68, 54, 'W');
+  for(const [lc, lr] of [[44, 64], [51, 64], [58, 67], [46, 67]]) DC('lantern', lc, lr, 1, 1);
+  // the WIND MAIN (columns 42-60, rows 70-72, its floor row 73): the air rushing east, a valve spring at the east end up into the tangle, a hole down into the sump
+  A(42, 70, 60, 72); BK(42, 70, 60, 72, 'stripe');
+  ZN('wind', 42, 70, 58, 72, 0.8, 1); DC('fan', 42, 70, 1, 3);
+  H(69, 59, 60); fUp(k, g, 59, 73, 69);                                                                      // the valve spring up into the second lower run
+  A(52, 73, 53, 76);                                                                                         // the hole down into the sump
+  P(72, 45, 'C'); P(72, 50, 'W'); P(72, 55, 'L');
+  // the PUMP ROOM (columns 37-50, rows 74-78, its floor row 79): the pump wheel, the shelf it comes up to, crates beside it; D1
+  A(42, 74, 50, 78); BK(42, 74, 50, 78, 'brick');
+  g.wheel(44, Y(76.5), 1.5, 4, { kind:'cog', pw:120, spd:1.2 });                                             // the pump wheel (ride a paddle up to the shelf)
+  H(75, 47, 50); H(76, 47, 48); H(77, 49, 50); H(78, 47, 48);                                                // the shelf, crates a row at a time up to it
+  P(74, 49, 'E'); P(78, 37, 'C'); P(78, 42, 'W'); P(77, 47, 'C'); DC('gear', 46, 74, 1, 1); DC('lantern', 39, 74, 1, 1);
+  // the SUMP (columns 52-60, rows 77-78, its floor row 79): dark, low, shallow water, the valve spring up its shaft, the grate
+  A(52, 77, 60, 78); BK(52, 77, 60, 78, 'dirt'); ZN('dark', 52, 77, 60, 78); ZN('water', 52, 78, 55, 78, 1);
+  A(56, 74, 57, 76); H(73, 56, 57); ZN('spring', 56, 78, 57, 78, 1.34);                                      // the valve spring up its shaft, through a hatch into the wind main
+  g.exitDoor(59, Y(77), 60, Y(78), 1003, Y(26)); DC('hatch', 59, 76, 2, 1, { dir:1 });                       // X2: the grate, out into the station in the rail yard
+  P(78, 58, 'W'); P(78, 54, 'R');
+}
+// THE DYNAMO (the plan, interiors-plan.md 3.4; the owner: "build the buildings like the mill"): the generator tower of the Works yard, a humming power station: the turbine turns, the magnet pulls you up, and the Works team buff crackles
+// inside the coil at the very top. Outside, a closed shell (the 'works' skin) standing on an ARCADE: the ground under it is open, so the yard and the rail yard still join on the ground; its roof stood on (just a lookout now). Its doors:
+// D1 the GROUND DOOR in the arcade (both ways, into the switch room), D2 the PLANK DOOR on the west face at the alley's plank (both ways, into the battery racks), the alley's freight lift up to it; and the ways out: X1 the coil
+// chamber's hatch onto the tower's roof, X2 the end of the cable run out onto the station's roof in the rail yard, following the power line.
+// Inside, an area apart under the map, open to both teams, six rooms each its own platforming:
+//   the SWITCH ROOM (the ground): the breaker shutter across it (open 3 s, shut 3 s), a spring up into the turbine hall each side of it and the turbine hall's holes back down: the plain way round; D1;
+//   the TURBINE HALL: the huge turbine turning (ride a blade up to the high ledge: the shortcut), a zigzag of ledges beside it the plain way; a spring on the high ledge up into the battery racks;
+//   the BATTERY RACKS: narrow shelves, two zigzag climbs of short ledges up to hatches into the coil chamber; D2;
+//   the MAGNET LIFT (east, tall, the signature room): a field that pulls you up, from the cable run's floor past the switch room to the coil chamber in one go (it only goes up);
+//   the COIL CHAMBER (the top): a cage of ledges round the coil, THE WORKS TEAM BUFF on its top; X1;
+//   the CABLE RUN (the bottom, dark): a low crawl along the cable trays under it all, a hole down into it from the switch room; the magnet's field reaches down into its east end (the way up); X2 at its west end.
+function worksDynamo(k, g){
+  const { A, S, H, P, BK, DC, ZN, Y } = k;
+  // ---- outside: the shell (columns 55-60, rows 6-23; a gap of a column between it and the station) on its arcade (rows 24-26), the alley's plank and freight lift ----
+  S(55, 6, 60, 23); A(55, 24, 61, 26); g.skin(55, Y(6), 60, Y(23), 'works'); BK(55, 24, 61, 26, 'brick'); DC('lantern', 56, 24, 1, 1); DC('lantern', 60, 24, 1, 1);
+  g.entrance(58, Y(25), 59, Y(26), 63, Y(75), { two:true }); g.exitDoor(63, Y(74), 64, Y(75), 58, Y(25), { two:true });               // D1 the ground door in the arcade, both ways (the switch room)
+  g.entrance(54, Y(20), 54, Y(21), 75, Y(63), { two:true, side:1 }); g.exitDoor(75, Y(62), 76, Y(63), 54, Y(20), { two:true });       // D2 the plank door, both ways (the battery racks)
+  H(22, 54, 54); g.elev(52, 2, Y(22), Y(27));                                                                // the plank at it, the freight lift beside it (up from the yard: the shortcut)
+  g._np.push([26, 58], [26, 59], [26, 55], [26, 61], [21, 54], [5, 58], [5, 59]);
+  // ---- inside: under the map, columns 62-83, rows 50-79 ----
+  g.interior('dynamo', 62, Y(50), 83, Y(79), { name:'The Dynamo' }); BK(62, 50, 83, 79, 'metal'); g.skin(62, Y(50), 83, Y(79), 'indoor');   // (a wall behind it all, so a hole in a floor shows the room below; indoor floors)
+  // the COIL CHAMBER (columns 63-77, rows 51-56, its floor row 57): the cage of ledges round the coil, the buff on its top; X1
+  A(63, 51, 77, 56); BK(63, 51, 77, 56, 'stripe');
+  H(56, 65, 66); H(55, 67, 68); H(54, 69, 71); H(55, 72, 73); H(56, 74, 75);                                  // the cage: steps up from each side to its top
+  P(53, 70, 'y');                                                                                            // THE WORKS TEAM BUFF, in the coil
+  DC('chains', 70, 51, 1, 3); DC('gear', 69, 51, 1, 1); DC('gear', 71, 51, 1, 1); DC('lantern', 66, 51, 1, 1); DC('lantern', 75, 51, 1, 1);
+  g.exitDoor(63, Y(55), 64, Y(56), 58, Y(5)); DC('hatch', 63, 50, 2, 1, { dir:1 });                         // X1: the hatch onto the tower's roof
+  P(56, 70, 'E'); P(56, 76, 'L'); P(54, 72, 'L');
+  // the BATTERY RACKS (columns 63-77, rows 58-63, its floor row 64): two zigzag climbs of short shelves up to hatches into the coil chamber; D2
+  A(63, 58, 77, 63); BK(63, 58, 77, 63, 'metal');
+  H(63, 65, 66); H(62, 67, 68); H(61, 65, 66); H(60, 67, 68); H(59, 65, 66); H(58, 67, 68); H(57, 67, 68);   // the west climb, its hatch
+  H(63, 71, 72); H(62, 73, 74); H(61, 71, 72); H(60, 73, 74); H(59, 71, 72); H(58, 73, 74); H(57, 73, 74);   // the east climb, its hatch
+  A(63, 64, 64, 64);                                                                                         // a hole down into the turbine hall
+  P(62, 65, 'E'); P(59, 67, 'E'); P(62, 71, 'E'); P(58, 71, 'E'); P(63, 69, 'W'); P(63, 77, 'C');
+  // the TURBINE HALL (columns 63-77, rows 65-70, its floor row 71): the turbine (ride a blade up to the high ledge), the zigzag beside it, the spring up into the racks
+  A(63, 65, 77, 70); BK(63, 65, 77, 70, 'brick');
+  g.wheel(68, Y(68), 2, 6, { kind:'cog', pw:120, spd:1.3 });                                                 // the turbine
+  H(66, 67, 74); H(67, 73, 74); H(68, 75, 76); H(69, 73, 74); H(70, 75, 76);                                 // the high ledge (the turbine's top blade comes up level with it), the zigzag up to it
+  H(64, 72, 73); fUp(k, g, 72, 66, 64);                                                                      // a spring on the high ledge, up through a hatch into the racks
+  A(63, 71, 64, 71); A(74, 71, 75, 71);                                                                      // holes down into the switch room, each side of its shutters
+  H(71, 65, 66); H(71, 76, 77);                                                                              // the hatches the switch room's springs come up through
+  P(65, 70, 'L'); P(70, 77, 'W'); P(70, 72, 'C');
+  // the SWITCH ROOM (columns 63-77, rows 72-75, its floor row 76): the breaker shutter, the springs up round it; D1; open east onto the magnet lift
+  A(63, 72, 77, 75); BK(63, 72, 77, 75, 'stripe');
+  g.plug(69, Y(72), 70, Y(75), { open:180, shut:180, phase:0 });                                            // the breaker shutter (open 3 s, shut 3 s)
+  fUp(k, g, 65, 76, 71); fUp(k, g, 76, 76, 71);                                                              // the springs up into the turbine hall (the plain way round the shutters)
+  A(72, 76, 73, 76);                                                                                         // a hole down into the cable run
+  DC('chains', 69, 72, 2, 1);
+  P(75, 67, 'E'); P(75, 75, 'E'); P(75, 71, 'W');
+  // the MAGNET LIFT (columns 79-82): open onto the switch room and the coil chamber, and down into the cable run; the field from the cable run's floor up to the coil chamber's floor (a landing over it, row 57)
+  A(79, 51, 82, 78); A(78, 72, 78, 75); A(78, 51, 78, 56); BK(79, 51, 82, 76, 'metal');
+  ZN('updraft', 79, 58, 82, 78, 1.6); H(57, 79, 82);                                                         // the field, the landing at the top
+  DC('lantern', 80, 51, 1, 1); P(56, 82, 'W');
+  // the CABLE RUN (columns 63-82, rows 77-78, its floor row 79): dark and low; X2 at its west end, the magnet's field at its east end
+  A(63, 77, 82, 78); BK(63, 77, 82, 78, 'dirt'); ZN('dark', 63, 77, 82, 78);
+  DC('chains', 70, 77, 1, 1); DC('chains', 76, 77, 1, 1);
+  g.exitDoor(63, Y(77), 64, Y(78), 1001, Y(15));                                                            // X2: the end of the cable run, out onto the station's roof
+  P(78, 67, 'W'); P(78, 71, 'C'); P(78, 76, 'W');
+}
+// NEON SAVINGS AND LOAN (the plan, interiors-plan.md 3.6; the owner: "build the buildings like the mill"): Neon City's bank, a heist movie inside a building: a marble hall up front, laser gates and a secret panel behind it, the vault at the
+// bottom. Outside, a closed shell (cream stucco, arched windows, a gold cornice) standing on an ARCADE (the street runs on under it), its roof stood on (the billboard pad on it). Its doors: D1 the STREET DOOR in the arcade (both ways, into
+// the banking hall), D2 the PLANK DOOR on the east face (both ways, onto the deposit box wall halfway up); and the ways out: X1 the manager's office hatch onto the bank's roof by the billboard, X2 the armoured-car bay out into the alley
+// between the tower and the shop.
+// Inside, an area apart under the map, open to both teams, six rooms each its own platforming:
+//   the MANAGER'S OFFICE (the top): flat; the desk and the safe to hide behind; the super-jump boost; X1; and the SECRET: a painting you walk through into the hidden stash beside the deposit box wall;
+//   the BANKING HALL: the teller counters to hop, velvet ropes to hide behind; a spring up into the office, a grate down into the air duct; D1;
+//   the AIR DUCT (dark): a low crawl over the laser corridor, the slow, safe way round its lasers (a grate down at its far end, springs up into it from both ends of the corridor);
+//   the LASER CORRIDOR (the signature room): five laser gates side by side open and shut in a running wave (2 s, 2 s): ride the wave through; X2 at its near end;
+//   the VAULT (the bottom, dark): behind two locked doors (a chest, an urn, the speed boost; the key is in the Big Store), the passage beside it reached from the corridor and from the deposit box wall;
+//   the DEPOSIT BOX WALL (east, tall): a zigzag climb up the walls of deposit boxes from the vault's passage to the office, a landing at every floor; D2 at the hall's.
+function neonBank(k, g){
+  const { A, S, H, P, BK, DC, ZN, Y } = k;
+  // ---- outside: the shell (columns 18-30, rows 11-23) on its arcade (rows 24-26) ----
+  S(18, 11, 30, 23); A(18, 24, 30, 26); g.skin(18, Y(11), 30, Y(23), 'hotel'); BK(18, 24, 30, 26, 'brick'); DC('lantern', 23, 24, 1, 1); DC('lantern', 27, 24, 1, 1);
+  g.entrance(19, Y(25), 20, Y(26), 40, Y(39), { two:true }); g.exitDoor(40, Y(38), 41, Y(39), 19, Y(25), { two:true });               // D1 the street door in the arcade, both ways (the banking hall)
+  g.entrance(31, Y(20), 31, Y(21), 59, Y(39), { two:true, side:-1 }); g.exitDoor(59, Y(38), 60, Y(39), 31, Y(20), { two:true });      // D2 the plank door, both ways (the deposit box wall, halfway up)
+  g._np.push([26, 19], [26, 20], [21, 31], [10, 23], [10, 24]);
+  // ---- inside: under the map, columns 39-61, rows 29-53 (beside the Neon Arms) ----
+  g.interior('bank', 39, Y(29), 61, Y(53), { name:'Neon Savings and Loan' }); BK(39, 29, 61, 53, 'brick'); g.skin(39, Y(29), 61, Y(53), 'indoor');   // (a wall behind it all, so a hole in a floor shows the room below; indoor floors)
+  // the DEPOSIT BOX WALL (columns 56-60, rows 30-51, its floor row 52): a landing at every floor, a zigzag of short ledges between them; its mouths onto the stash, the hall, the corridor and the vault's passage
+  A(56, 30, 60, 51); BK(56, 30, 60, 51, 'metal');
+  H(34, 56, 60); H(40, 56, 60); H(48, 56, 60);                                                               // the landings: the office's, the hall's (D2), the corridor's
+  for(const [rr, cc] of [[51, 56], [50, 59], [49, 56], [47, 59], [46, 56], [45, 59], [44, 56], [43, 59], [42, 56], [41, 59], [39, 56], [38, 59], [37, 56], [36, 59], [35, 56]]) H(rr, cc, cc + 1);   // the zigzag up the boxes
+  A(55, 30, 55, 33); A(55, 35, 55, 39); A(55, 44, 55, 47); A(55, 49, 55, 51);                                // its mouths
+  P(51, 60, 'T'); P(47, 60, 'N'); P(39, 58, 'N'); P(33, 60, 'T');
+  // the MANAGER'S OFFICE (columns 40-50, rows 30-33, its floor row 34) and the STASH behind its painting (columns 52-54, behind the false wall at column 51)
+  A(40, 30, 54, 33); BK(40, 30, 50, 33, 'paper'); BK(51, 30, 54, 33, 'velvet');
+  g.secret(51, Y(30), 51, Y(33)); DC('painting', 51, 31, 1, 2, { front:true });                               // the SECRET: a wall you walk through, a painting on it
+  P(33, 43, 'v');                                                                                            // the super-jump boost
+  P(33, 47, 'T'); P(33, 50, 'N'); P(33, 53, 'T'); P(33, 54, 'U');                                            // the safe, an urn; in the stash, a strongbox and a curtain
+  g.exitDoor(40, Y(32), 41, Y(33), 23, Y(10)); DC('hatch', 40, 29, 2, 1, { dir:1 });                         // X1: the hatch onto the bank's roof by the billboard
+  A(44, 34, 45, 34); DC('hatch', 44, 33, 2, 1, { dir:-1 });                                                  // a hole down into the hall
+  H(34, 48, 49);                                                                                             // the hatch the hall's spring comes up through
+  DC('window', 42, 30, 1, 2); DC('window', 49, 30, 1, 2); DC('chandelier', 46, 30, 2, 1);
+  // the BANKING HALL (columns 40-54, rows 35-39, its floor row 40): the teller counters, the spring up into the office, the grate down into the duct; D1
+  A(40, 35, 54, 39); BK(40, 35, 54, 39, 'tile');
+  S(45, 39, 47, 39); S(51, 39, 53, 39);                                                                      // the teller counters (hop onto them)
+  fUp(k, g, 48, 40, 34);                                                                                     // the spring up into the office
+  A(42, 40, 43, 40); DC('hatch', 42, 39, 2, 1, { dir:-1 });                                                  // the grate down into the air duct
+  P(39, 44, 'U'); P(38, 46, 'T'); P(39, 50, 'U'); P(38, 52, 'N'); P(39, 54, 'U');                            // velvet ropes, the tellers' cash boxes
+  DC('chandelier', 44, 35, 2, 1); DC('chandelier', 51, 35, 2, 1);
+  // the AIR DUCT (columns 40-54, rows 41-42, its floor row 43): dark and low; the hatches up from the corridor, the grate down at its far end
+  A(40, 41, 54, 42); BK(40, 41, 54, 42, 'metal'); ZN('dark', 40, 41, 54, 42);
+  H(43, 42, 43); H(43, 52, 53);                                                                              // the hatches the corridor's springs come up through (one at each end)
+  A(54, 43, 54, 43);                                                                                         // the grate down into the corridor's far end
+  P(42, 46, 'W'); P(42, 50, 'W');
+  // the LASER CORRIDOR (columns 40-54, rows 44-47, its floor row 48): the laser gates in a running wave; X2 at the near end
+  A(40, 44, 54, 47); BK(40, 44, 54, 47, 'stripe');
+  [46, 47, 48, 49, 50].forEach((lc, i)=>g.plug(lc, Y(44), lc, Y(47), { open:120, shut:120, phase:i*0.1, look:'laser' }));   // the laser gates, side by side (each open 2 s, shut 2 s, a wave running along them: ride it through)
+  fUp(k, g, 42, 48, 43); fUp(k, g, 52, 48, 43);                                                              // springs up into the duct, one each side of the gates (the plain way round)
+  A(40, 48, 41, 48); DC('hatch', 40, 47, 2, 1, { dir:-1 });                                                  // a hole down into the vault's passage
+  H(48, 44, 44);                                                                                             // the hatch the passage's spring comes up through
+  g.exitDoor(44, Y(46), 44, Y(47), 44, Y(26));                                                               // X2: the armoured-car bay, out into the alley between the tower and the shop
+  P(47, 54, 'C');
+  // the VAULT (columns 46-50, rows 49-51, its floor row 52) between its locked doors, in the passage under the corridor (dark)
+  A(40, 49, 54, 51); BK(40, 49, 54, 51, 'dirt'); ZN('dark', 40, 49, 54, 51);
+  g.col(45, Y(49), Y(51), '1'); g.col(51, Y(49), Y(51), '1'); BK(46, 49, 50, 51, 'stripe'); P(51, 46, 'T'); P(51, 48, 'u'); P(51, 50, 'N');   // the VAULT: a chest, the speed boost, an urn
+  fUp(k, g, 44, 52, 48, { w:1 });                                                                            // the spring up from the passage's near end into the corridor
+  P(51, 42, 'W'); P(51, 53, 'W');
+}
+// THE BROADCAST SPIRE (the plan, interiors-plan.md 3.7; the owner: "build the buildings like the mill"): Neon City's tower, a TV station stacked up a spire: every storey a different live show, the transmitter at the tip holding the Neon team buff.
+// Outside, a closed shell (the 'neon' skin) standing on an ARCADE (the street runs on under it), its roof stood on. Its doors: D1 the GROUND DOOR at the arcade's west end (both ways, into the green room), D2 the PLANK DOOR on the east face
+// (both ways, into the weather studio); and the ways out: X1 the transmitter's hatch onto the tower's roof, X2 the news studio's camera window out onto the warehouse's roof.
+// Inside, an area apart under the map, open to both teams, six storeys, each its own platforming; every storey has a way up and a way down (a spring through a hatch, a hole), never one over the other, and each studio's toy is extra:
+//   the GREEN ROOM (the ground): flat; sofas and make-up tables to hide behind; D1;
+//   the CABLE SHAFT (dark): a zigzag of short ledges between the bundles of cable, up to a hatch;
+//   the GAME SHOW STUDIO: the audience bleachers (a slope up to the podium), the spinning prize wheel (a ride), the podium;
+//   the WEATHER STUDIO: the wind machine blows across the set toward the green screen; D2;
+//   the NEWS STUDIO: a gap in the floor the camera dolly rolls across on its track (the shortcut), the anchor desk and a ledge over the gap the plain way; X2;
+//   the TRANSMITTER (the top): ledges round the mast, THE NEON TEAM BUFF at the top of them; X1.
+function neonSpire(k, g){
+  const { A, S, H, P, SL, BK, DC, ZN, Y } = k;
+  // ---- outside: the shell (columns 34-42, rows 1-23) on its arcade (rows 24-26) ----
+  S(34, 1, 42, 23); A(34, 24, 42, 26); g.skin(34, Y(1), 42, Y(23), 'neon'); BK(34, 24, 42, 26, 'brick'); DC('lantern', 38, 24, 1, 1); DC('neon', 40, 24, 2, 1);
+  g.entrance(35, Y(25), 36, Y(26), 63, Y(59), { two:true }); g.exitDoor(63, Y(58), 64, Y(59), 35, Y(25), { two:true });               // D1 the ground door in the arcade, both ways (the green room)
+  g.entrance(43, Y(20), 43, Y(21), 74, Y(43), { two:true, side:-1 }); g.exitDoor(74, Y(42), 75, Y(43), 43, Y(20), { two:true });      // D2 the plank door, both ways (the weather studio)
+  g._np.push([26, 35], [26, 36], [21, 43], [0, 38], [0, 39]);
+  // ---- inside: under the map, columns 62-76, rows 29-60 ----
+  g.interior('spire', 62, Y(29), 76, Y(60), { name:'The Broadcast Spire' }); BK(62, 29, 76, 60, 'metal'); g.skin(62, Y(29), 76, Y(60), 'indoor');   // (a wall behind it all, so a hole in a floor shows the room below; indoor floors)
+  // the TRANSMITTER (rows 30-33, its floor row 34): the ledges round the mast, the buff at their top; X1; a hole down
+  A(63, 30, 75, 33); BK(63, 30, 75, 33, 'stars');
+  H(33, 67, 68); H(32, 69, 71); H(33, 72, 73); DC('antenna', 69, 30, 3, 2); P(31, 70, 'y');                    // the ledges round the mast; THE NEON TEAM BUFF
+  g.exitDoor(63, Y(32), 64, Y(33), 38, Y(0)); DC('hatch', 63, 29, 2, 1, { dir:1 });                         // X1: the hatch onto the tower's roof
+  A(65, 34, 66, 34); DC('hatch', 65, 33, 2, 1, { dir:-1 });                                                  // a hole down into the news studio
+  H(34, 70, 71);                                                                                             // the hatch the news studio's spring comes up through
+  P(33, 75, 'E'); P(32, 67, 'L');
+  // the NEWS STUDIO (rows 35-38, its floor row 39): the gap the camera dolly crosses, the anchor desk and the ledge over the gap; a spring on the camera crate up to the transmitter; X2
+  A(63, 35, 75, 38); BK(63, 35, 75, 38, 'paper');
+  S(63, 38, 64, 38); H(37, 66, 69);                                                                          // the anchor desk, the ledge over the gap
+  A(66, 39, 69, 39); g.ferry(65, 68, Y(39), 240, { spd:1.6 });                                               // the gap, and the camera dolly that rolls across it on its track (the shortcut)
+  S(70, 38, 71, 38); fUp(k, g, 70, 38, 34);                                                                  // the camera crate, a spring on it up into the transmitter
+  H(39, 72, 73);                                                                                             // the hatch the weather studio's spring comes up through
+  g.exitDoor(74, Y(37), 75, Y(38), 59, Y(15)); DC('window', 75, 35, 1, 2);                                   // X2: the camera window, out onto the warehouse's roof
+  P(37, 63, 'T');
+  // the WEATHER STUDIO (rows 40-43, its floor row 44): the wind machine blowing west across the set to the green screen; D2
+  A(63, 40, 75, 43); BK(63, 40, 75, 43, 'stripe'); BK(63, 40, 67, 43, 'teal');                               // (the green screen)
+  ZN('wind', 63, 40, 71, 43, 0.7, -1); DC('fan', 71, 40, 1, 3);                                              // the wind machine
+  H(44, 65, 66);                                                                                             // the hatch the game show's spring comes up through
+  A(67, 44, 68, 44); DC('hatch', 67, 43, 2, 1, { dir:1 });                                                   // a hole down into the game show
+  fUp(k, g, 72, 44, 39);                                                                                     // the spring up into the news studio
+  P(43, 64, 'E'); P(43, 70, 'C');
+  // the GAME SHOW STUDIO (rows 45-49, its floor row 50): the prize wheel, the bleachers up to the podium, a spring up, a hole down past the podium
+  A(63, 45, 75, 49); BK(63, 45, 75, 49, 'club');
+  g.wheel(65, Y(47.3), 1.2, 4, { kind:'roulette', pw:110, spd:1.2 });                                        // the prize wheel (a ride)
+  SL(67, 71, 50, 48, 2, { fill:50 }); H(48, 72, 74);                                                         // the audience bleachers, up to the podium
+  fUp(k, g, 65, 50, 44);                                                                                     // the spring up into the weather studio
+  H(50, 63, 64);                                                                                             // the hatch the cable shaft's climb comes up through
+  A(75, 50, 75, 50);                                                                                         // a hole down past the podium into the cable shaft
+  P(47, 73, 'Z'); P(49, 63, 'Z'); DC('neon', 68, 45, 2, 1); DC('lantern', 72, 45, 1, 1);
+  // the CABLE SHAFT (rows 51-54, its floor row 55): dark; the zigzag between the cable bundles up to the hatch into the game show
+  A(63, 51, 75, 54); BK(63, 51, 75, 54, 'dirt'); ZN('dark', 63, 51, 75, 54);
+  H(54, 65, 66); H(53, 63, 64); H(52, 65, 66); H(51, 63, 64);                                                // the zigzag up to the hatch
+  for(const cc of [67, 69, 72]) DC('chains', cc, 51, 1, 4);                                                  // the bundles of cable
+  A(70, 55, 71, 55);                                                                                         // a hole down into the green room
+  H(55, 73, 74);                                                                                             // the hatch the green room's spring comes up through
+  P(54, 68, 'W'); P(54, 75, 'C');
+  // the GREEN ROOM (rows 56-59, its floor row 60): flat; sofas, make-up tables; D1; the spring up
+  A(63, 56, 75, 59); BK(63, 56, 75, 59, 'paper');
+  fUp(k, g, 73, 60, 55);                                                                                     // the spring up into the cable shaft
+  P(59, 66, 'U'); P(59, 68, 'E'); P(59, 71, 'U'); P(59, 75, 'E'); DC('lantern', 67, 56, 1, 1); DC('lantern', 72, 56, 1, 1);
+}
+// THE BIG STORE (the plan, interiors-plan.md 3.8; the owner: "build the buildings like the mill"): Neon City's department store after closing: ride the escalators, bounce through the toy department, hide among the mannequins and in the
+// fitting rooms. Outside, a closed shell (the 'neon' skin) standing on an ARCADE (the street runs on under it), its roof stood on (the billboard pad on it up to the tower's roof). Its doors: D1 the STREET DOOR in the arcade (both ways, into
+// the shop floor), D2 the PLANK DOOR on the west face (both ways, into the toy department); and the ways out: X1 the stockroom's hatch onto the shop's roof beside the billboard pad, X2 behind the last fitting-room curtain, out into the street
+// by the warehouse.
+// Inside, an area apart under the map, open to both teams, five rooms each its own platforming:
+//   the TOY DEPARTMENT (the top): the bouncy castle (low springs all over its floor), the ball pit (it slows you like water), toy blocks to hide behind; a hole down at the pit's end; D2;
+//   the STOCKROOM: high shelves to climb, boxes to hide behind, THE NEON KEY on the top shelf; a spring up into the toy department; X1;
+//   the ESCALATORS (the signature room, over the shop floor): the moving stairs, one up to the top (its belt carries you; walking against it is slow) and one down from there (the stockroom's hole drops you onto it); at the top a spring
+//   through a hatch into the stockroom;
+//   the SHOP FLOOR (the ground, under the escalators): glass counters to hop, mannequins to hide behind; D1;
+//   the FITTING ROOMS (the bottom): a row of curtained booths along a corridor, the partitions hanging low; X2 behind the last curtain; a spring up into the shop floor, a hole down from it.
+function neonStore(k, g){
+  const { A, S, H, P, SL, BK, DC, ZN, Y } = k;
+  // ---- outside: the shell (columns 46-54, rows 11-23) on its arcade (rows 24-26) ----
+  S(46, 11, 54, 23); A(46, 24, 54, 26); g.skin(46, Y(11), 54, Y(23), 'neon'); BK(46, 24, 54, 26, 'brick'); DC('lantern', 50, 24, 1, 1); DC('neon', 52, 24, 2, 1);
+  g.entrance(47, Y(25), 48, Y(26), 46, Y(72), { two:true }); g.exitDoor(46, Y(71), 47, Y(72), 47, Y(25), { two:true });               // D1 the street door in the arcade, both ways (the shop floor, under the up escalator)
+  g.entrance(45, Y(15), 45, Y(16), 40, Y(59), { two:true, side:1 }); g.exitDoor(40, Y(58), 41, Y(59), 45, Y(15), { two:true });       // D2 the plank door, both ways (the toy department)
+  g._np.push([26, 47], [26, 48], [16, 45], [10, 50], [10, 51]);
+  // ---- inside: under the map, columns 39-61, rows 55-79 (under the bank) ----
+  g.interior('store', 39, Y(55), 61, Y(79), { name:'The Big Store' }); BK(39, 55, 61, 79, 'brick'); g.skin(39, Y(55), 61, Y(79), 'indoor');   // (a wall behind it all, so a hole in a floor shows the room below; indoor floors)
+  // the TOY DEPARTMENT (columns 40-60, rows 56-59, its floor row 60): the bouncy castle, the ball pit, the hole down; D2
+  A(40, 56, 60, 59); BK(40, 56, 60, 59, 'club');
+  ZN('spring', 44, 59, 50, 59, 0.8); DC('balloon', 45, 56, 1, 2); DC('balloon', 49, 56, 1, 2);              // the bouncy castle: low springs all over its floor
+  ZN('water', 53, 58, 58, 59, 1); BK(53, 58, 58, 59, 'teal');                                                // the ball pit (it slows you like water)
+  A(59, 60, 60, 60); DC('hatch', 59, 59, 2, 1, { dir:1 });                                                   // a hole down into the stockroom
+  H(60, 42, 43);                                                                                             // the hatch the stockroom's spring comes up through
+  P(59, 43, 'Z'); P(59, 51, 'Z'); P(59, 52, 'Z'); P(59, 55, 'Z'); DC('neon', 51, 56, 2, 1);
+  // the STOCKROOM (columns 40-60, rows 61-64, its floor row 65): the high shelves (the key on the top one), boxes; X1; the spring up
+  A(40, 61, 60, 64); BK(40, 61, 60, 64, 'wood');
+  H(64, 45, 46); H(63, 47, 48); H(62, 45, 46); P(61, 45, 'a');                                               // the high shelves; THE NEON KEY on the top one
+  H(64, 53, 54); H(63, 55, 56);                                                                              // more shelves (boxes on them)
+  fUp(k, g, 42, 65, 60);                                                                                     // the spring up into the toy department
+  g.exitDoor(40, Y(63), 41, Y(64), 50, Y(10)); DC('hatch', 40, 60, 2, 1, { dir:1 });                         // X1: the hatch onto the shop's roof by the billboard pad
+  H(65, 50, 51);                                                                                             // the hatch the escalators' spring comes up through
+  A(57, 65, 58, 65); DC('hatch', 57, 64, 2, 1, { dir:-1 });                                                  // a hole down onto the down escalator
+  P(64, 48, 'C'); P(63, 53, 'C'); P(62, 56, 'C'); P(64, 60, 'C');
+  // the ESCALATORS over the SHOP FLOOR (columns 40-60, rows 66-72, the floor row 73): up from the door to the top, a spring there into the stockroom, down from the stockroom's hole to the floor's far end
+  A(40, 66, 60, 72); BK(40, 66, 60, 72, 'paper');
+  SL(40, 49, 73, 69, 3); S(50, 69, 51, 69); SL(52, 60, 69, 72.6, 3);                                         // the up escalator, the top, the down escalator (stairs in the air: the floor runs on under them)
+  for(let c = 40; c <= 49; c++){ const sr = 73 - 4*(c - 40 + 0.5)/10; ZN('belt', c, Math.ceil(sr) - 1, c, Math.ceil(sr) - 1, 1, 1); }      // the up escalator's belt (it carries you up)
+  for(let c = 52; c <= 60; c++){ const sr = 69 + 3.6*(c - 52 + 0.5)/9; ZN('belt', c, Math.ceil(sr) - 1, c, Math.ceil(sr) - 1, 1, 1); }     // the down escalator's belt (it carries you down)
+  ZN('spring', 50, 68, 51, 68, 1.13);                                                                        // at the top: a spring through a hatch into the stockroom
+  S(48, 72, 49, 72); S(52, 72, 53, 72);                                                                      // glass counters on the shop floor (under the escalators' high ends)
+  P(72, 42, 'A'); P(72, 44, 'A'); P(71, 49, 'C'); P(71, 52, 'C'); P(72, 57, 'A'); P(72, 59, 'A');            // mannequins, the counters' tills
+  H(73, 50, 51);                                                                                             // the hatch the fitting rooms' spring comes up through
+  A(54, 73, 55, 73); DC('hatch', 54, 72, 2, 1, { dir:1 });                                                   // a hole down into the fitting rooms
+  DC('chandelier', 46, 66, 2, 1); DC('chandelier', 55, 66, 2, 1);
+  // the FITTING ROOMS (columns 40-60, rows 74-77, the floor row 78): the booths' partitions hanging low over the corridor, curtains; X2 behind the last; the spring up
+  A(40, 74, 60, 77); BK(40, 74, 60, 77, 'velvet');
+  for(const pc of [43, 46, 53, 57]) S(pc, 74, pc, 75);                                                       // the partitions (the corridor runs on under them)
+  ZN('spring', 50, 77, 51, 77, 1.24);                                                                        // the spring up into the shop floor
+  g.exitDoor(59, Y(76), 60, Y(77), 55, Y(26));                                                               // X2: behind the last curtain, out into the street by the warehouse
+  P(77, 41, 'U'); P(77, 44, 'U'); P(77, 48, 'U'); P(77, 55, 'U'); P(77, 58, 'U'); P(77, 60, 'U');
+}
+// THE STOCKPILE (the plan, interiors-plan.md 3.9; the owner: "build the buildings like the mill"): Neon City's warehouse, cramped, its cardboard box towers caving in under you, the forklift the steady way up. Outside, a closed shell (sooty
+// brick, the 'works' skin) standing on an ARCADE (the street runs on under it to the rail yard), a column's gap before the station, its roof stood on (the billboard pad on it up to the shop's roof). Its doors: D1 the GROUND DOOR in the
+// arcade (both ways, into the loading bay), D2 the PLANK DOOR on the west face (both ways, into the high racks); and the ways out: X1 the packing line's hatch out into the street at the station's west door, X2 the freight basement's far
+// end out into the station in the rail yard (the subway it was to lead to is not built).
+// Inside, an area apart under the map, open to both teams, five rooms each its own platforming:
+//   the LOADING BAY (the ground): pallets to hide behind; the forklift (a lift: the shortcut) up through the racks to the packing line, a spring beside it all the way up; D1;
+//   the BOX CANYON (over the bay, the signature room): towers of boxes over the ramp's mouth that give way under you (crumbling) up to one hatch into the racks, the steel shelf tops beside them the safe steps up to another;
+//   the HIGH RACKS: tall pallet racking, a zigzag climb up to a hatch into the packing line; a hole down into the bay; D2;
+//   the PACKING LINE (the top): a conveyor along the floor, spilled packing tape (sticky); a hole down into the racks; X1;
+//   the FREIGHT BASEMENT (the bottom, dark): a ramp down into the dark from the bay, under its floor; X2 at its foot.
+function neonStockpile(k, g){
+  const { A, S, H, P, SL, BK, DC, ZN, Y, STALK } = k;
+  // ---- outside: the shell (columns 57-60, rows 16-23; the column after it open to the station) on its arcade (rows 24-26) ----
+  S(57, 16, 60, 23); A(57, 24, 61, 26); A(61, 16, 61, 23); g.skin(57, Y(16), 60, Y(23), 'works'); BK(57, 24, 61, 26, 'brick'); DC('lantern', 60, 24, 1, 1);
+  g.entrance(58, Y(25), 59, Y(26), 73, Y(75), { two:true }); g.exitDoor(73, Y(74), 74, Y(75), 58, Y(25), { two:true });               // D1 the ground door in the arcade, both ways (the loading bay)
+  g.entrance(56, Y(20), 56, Y(21), 63, Y(70), { two:true, side:1 }); g.exitDoor(63, Y(69), 64, Y(70), 56, Y(20), { two:true });       // D2 the plank door, both ways (the high racks)
+  g._np.push([26, 58], [26, 59], [21, 56], [26, 61]);
+  // ---- inside: under the map, columns 62-83, rows 62-79 (under the Broadcast Spire) ----
+  g.interior('stockpile', 62, Y(62), 83, Y(79), { name:'The Stockpile' }); BK(62, 62, 83, 79, 'wood'); g.skin(62, Y(62), 83, Y(79), 'indoor');   // (a wall behind it all, so a hole in a floor shows the room below; indoor floors)
+  // the PACKING LINE (columns 63-82, rows 63-65, its floor row 66): the conveyor, the spilled tape; X1; a hole down
+  A(63, 63, 82, 65); BK(63, 63, 82, 65, 'metal');
+  ZN('belt', 66, 65, 76, 65, 1, -1); ZN('glue', 71, 65, 73, 65, 0.7); DC('gear', 66, 63, 1, 1); DC('gear', 76, 63, 1, 1);   // the conveyor (toward the west), the spilled packing tape on it
+  A(64, 66, 65, 66); DC('hatch', 64, 65, 2, 1, { dir:-1 });                                                  // a hole down into the racks
+  H(66, 69, 70); H(66, 82, 82);                                                                              // the hatches the racks' climb and the bay's spring come up through
+  g.exitDoor(77, Y(64), 78, Y(65), 61, Y(26)); DC('hatch', 77, 62, 2, 1, { dir:1 });                         // X1: the hatch, out into the street at the station's west door
+  P(65, 67, 'C'); P(65, 74, 'C'); P(65, 79, 'W');
+  // the HIGH RACKS (columns 63-82, rows 67-70, its floor row 71): the zigzag up the racking, more racking; a hole down; D2
+  A(63, 67, 82, 70); BK(63, 67, 82, 70, 'wood');
+  H(70, 67, 68); H(69, 69, 70); H(68, 67, 68); H(67, 69, 70);                                                // the zigzag up the racking to the hatch
+  H(69, 72, 74); H(68, 76, 77);                                                                              // more racking (pallets on it)
+  A(74, 71, 75, 71); DC('hatch', 74, 70, 2, 1, { dir:-1 });                                                  // a hole down into the bay
+  H(71, 65, 66); H(71, 77, 78); H(71, 82, 82);                                                              // the hatches the canyon's two climbs and the bay's spring come up through
+  P(70, 65, 'C'); P(68, 73, 'C'); P(67, 76, 'C'); P(70, 71, 'W');
+  // the LOADING BAY and the BOX CANYON over it (columns 63-82, rows 72-75, the floor row 76): the ramp's mouth down to the basement; the box towers over it and the steel tops; the forklift and the spring beside it; D1
+  A(63, 72, 82, 75); BK(63, 72, 82, 75, 'wood');
+  SL(65, 72, 79, 76, 2);                                                                                     // the ramp: down west from the bay's floor, under it, into the freight basement
+  [[71, 75], [69, 74], [67, 73]].forEach(([bc, br])=>{ g.crumble(Y(br), bc, bc + 1); DC('chains', bc, br - 1, 1, 1); });   // the box towers over the ramp's mouth: they give way under you, and are stacked again
+  H(72, 65, 66);                                                                                             // the steel top at the canyon's end, under the racks' hatch
+  STALK(76, 75, 72);                                                                                         // the steel shelf tops, a row at a time up to the racks' other hatch (the safe steps)
+  A(80, 66, 81, 71); g.elev(80, 2, Y(66), Y(76)); DC('lantern', 81, 72, 1, 1);                               // the forklift: up from the bay through the racks to the packing line (the shortcut; its shaft a drop)
+  ZN('spring', 82, 75, 82, 75, 1.68);                                                                        // the spring beside it, from the bay all the way up to the packing line
+  P(75, 75, 'C'); P(75, 79, 'C'); P(75, 64, 'C');
+  // the FREIGHT BASEMENT (columns 63-64, rows 77-78, its floor row 79): dark, at the ramp's foot; X2
+  A(63, 77, 64, 78); BK(63, 77, 72, 78, 'dirt'); ZN('dark', 63, 77, 72, 78);
+  g.exitDoor(63, Y(77), 64, Y(78), 1003, Y(26));                                                             // X2: the far end, out into the station in the rail yard
+}
 CTF_MAPS.factory = {
   name:'Yoyleland Works and Neon City',
-  size:{ rows:28, half:84 },
+  size:{ rows:28, half:84, pocket:52 },   // (the 52 rows under the map: its interiors)
   asym:{ value:[0.6, 0.4], icons:['fort', 'run'], names:['Works', 'City'] },
   bands:true, annex:[0, 0, 24], mid:[12, 24, 36], midAt:62,   // the third area, the rail yard and station, is a module of this many columns put in at column 62
   living:{ weather:['clear', 'rain', 'clear', 'fog'], night:true, critters:{ birds:6, bats:2, mice:18, fish:0 } },
@@ -3387,31 +4023,18 @@ CTF_MAPS.factory = {
     // THE WORKS (the owner, 2026-10-18: "build the buildings like the mill"; "a machine you move THROUGH"): one huge machine hall of five floors (the control room at the top with the home, the boiler floor, the press floor with a press that slams shut on a rhythm, the feed floor with belts, the crawl at the bottom with the jail and the
     // vault), each floor cut into halls by walls, joined by springs up through the floors and holes down; its doors on the ground and on the feed floor (a catwalk) lead to the yard: a vat house, a pipe house and the generator tower, each a real building with floors, joined by planks across the alleys at their doors. Every floor of every
     // building is on the same rows, so the doors line up.
+    g.rock(-24);                                                                                        // (the rows under the map stone: the interiors are carved out of it)
     S(0, 27, 61, 27);                                                                                   // the ground
-    S(0, 1, 32, 27);                                                                                    // the machine hall's shell
-    const no = forestMaze(k, g, FACTORY_A_LV, FACTORY_A_HOLES, 0, 1, { back:'metal', dark:false });
-    A(32, 24, 32, 26); A(32, 19, 32, 21); DC('doorway', 32, 24, 1, 3, { dir:1 }); DC('doorway', 32, 19, 1, 3, { dir:1 }); H(22, 33, 34); A(32, 14, 32, 16); DC('doorway', 32, 14, 1, 3, { dir:1 }); H(17, 33, 34);                                                // the doors out: the ground, and the feed floor's onto a catwalk
-    A(15, 13, 16, 16); g.plug(15, Y(13), 16, Y(16), { open:600, shut:600, phase:0 });                    // the PRESS on the press floor (a wall that opens and shuts)
-    ZN('belt', 14, 21, 22, 21, 1, 1); ZN('belt', 20, 11, 30, 11, 1, -1); ZN('belt', 8, 26, 18, 26, 1, 1);   // belts on the feed, boiler and crawl floors
-    // the CONTROL ROOM (home) at the top, the JAIL and the VAULT in the crawl
-    P(6, 1, 'HHHHHHHH'); P(6, 11, 'PP'); P(6, 9, 'h'); DC('lantern', 6, 3, 2, 2); DC('window', 20, 4, 1, 2);
-    A(1, 23, 5, 26); ZN('dark', 1, 23, 5, 26); g.col(6, Y(23), Y(26), 'J'); P(26, 2, 'ppp'); g.keepClear(1, Y(23), 6, Y(26)); BK(1, 23, 5, 26, 'metal');
-    A(26, 23, 31, 26); g.col(26, Y(23), Y(26), '1'); g.col(30, Y(23), Y(26), '1'); BK(27, 23, 29, 26, 'stripe'); ZN('dark', 27, 23, 29, 26); P(26, 27, 'T'); P(26, 28, 'u'); P(26, 29, 'N');
+    // the machine hall: a closed shell with its doors on the east face, the hall itself a whole small level under the map (worksLine): the home in its control room, the jail and the vault in its crawl
+    worksLine(k, g);
     // the YARD: three buildings
-    fBuilding(k, g, { frames:'low', c0:35, c1:42, n:3, doors:'a', tubes:[36, 40], drops:[40, 36], roofUp:38, back:'brick' });
-    fBuilding(k, g, { frames:'low', c0:45, c1:53, n:2, doors:'a', tubes:[46], drops:[51], roofUp:49, back:'metal' });
-    fBuilding(k, g, { frames:'low', c0:55, c1:61, n:4, doors:'a', tubes:[56, 59, 56], drops:[59, 56, 59], roofUp:58, roofW:1, back:'brick' });
-    H(22, 43, 44); H(22, 54, 54); g.elev(43, 2, Y(22), Y(27));                                          // (a freight lift in the alley, from the yard up to the planks)                                                                        // planks across the alleys, at the doors of the third floor
-    fUp(k, g, 46, 16, 11); P(5, 58, 'y');                                                                      // a pad on the pipe house's roof up to the vat house's, the buff on the tower's
-    // the keys and the boosts
-    P(11, 10, 'a'); P(21, 5, 'v'); P(26, 15, 'g');
-    g.wing(2, ()=>{   // THE BOILER ROOMS (large teams): behind the control room, a hall on each of its floors, joined to it by doors
-      S(-24, 1, -1, 27); A(-22, 3, 0, 6); BK(-22, 3, 0, 6, 'metal'); A(-22, 8, 0, 11); BK(-22, 8, 0, 11, 'metal'); A(-22, 13, 0, 16); BK(-22, 13, 0, 16, 'metal');
-      A(-14, 7, -13, 7); fUp(k, g, -14, 12, 7); A(-8, 12, -7, 12); fUp(k, g, -8, 17, 12); A(-14, 17, -13, 17); fUp(k, g, -14, 22, 17);
-      A(-22, 18, -1, 21); BK(-22, 18, -1, 21, 'metal'); A(-10, 22, -9, 22); P(6, -20, 'E'); P(6, -4, 'L'); P(11, -18, 'E'); P(16, -16, 'L'); P(21, -12, 'E'); DC('lantern', -12, 3, 2, 2);
-    });
+    dyeWorks(k, g);                                                                                     // the vat house: a closed shell, the Dye Works a small level under the map
+    worksPlumbing(k, g);                                                                                // the pipe house: a closed shell, the Plumbing a small level under the map (the Works key in its tangle)
+    worksDynamo(k, g);                                                                                  // the generator tower: a closed shell on an arcade, the Dynamo a small level under the map (the Works team buff in its coil chamber)
+    H(22, 43, 44); fUp(k, g, 43, 27, 22);                                                               // the plank across the alley between the vat house and the pipe house, at their plank doors; a steam vent (a spring pad) up to it from the alley
+    // (the key, the vault's in the hall's crawl, is in the Plumbing's tangle; the team buff in the Dynamo's coil chamber; the boosts are in the hall)
     workHeart(k, g); workYard(k, g);
-    k.scatter((r, c)=>(r > 14 ? ['C', 'W', 'E', 'L', 'Z', 'R'] : ['C', 'W', 'E', 'L', 'Z']), [0.5, 0.9, 0.95][g.band], 3, (r, c)=>(r <= 1 && c <= 32) || (c >= 15 && c <= 16 && r >= 13 && r <= 16) || (c >= 26 && c <= 31 && r >= 23) || (c >= 1 && c <= 6 && r >= 23) || (c >= 0 && c <= 12 && r <= 6) || g._np.some(q=>q[0] === r && q[1] === c), 41);
+    k.scatter((r, c)=>(r > 14 ? ['C', 'W', 'E', 'L', 'Z', 'R'] : ['C', 'W', 'E', 'L', 'Z']), [0.5, 0.9, 0.95][g.band], 3, (r, c)=>(r <= 1 && c <= 32) || g._np.some(q=>q[0] === r && q[1] === c), 41);
     DC('cloud', 20, 0, 4, 1);
     g.info = info; return info;
   },
@@ -3420,31 +4043,28 @@ CTF_MAPS.factory = {
     const k = ctfKit28(g), { A, S, H, P, SL, BK, DC, ZN, STALK, SHAFT, CUT, Y, UP } = k, D = k.D, info = { supers:[], pieces:[] }; g._np = [];
     // NEON CITY (the owner, 2026-10-18: "the city feels like it's just gonna be pillars: build the buildings like the mill"; "rooftops and billboards"): five real buildings of different heights on a flat street, each with its floors, rooms, windows, doors and a spring up between the floors (the hotel with the home and the jail in its cellar, the bank with the
     // vault, the tower, the shop, the warehouse), a plank across each alley at the doors of every floor the neighbours share, a roof you can stand on and, on a low roof beside a taller one, a bounce pad (a billboard) up to it. Every floor of every building is on the same rows, so the doors line up.
+    g.rock(-24);                                                                                        // (the rows under the map stone: the interiors are carved out of it)
     S(0, 27, 61, 27);                                                                                   // the street
-    // the HOTEL (home): spawns on the top floor, the jail at the west end of the cellar
-    fBuilding(k, g, { frames:'low', c0:0, c1:14, n:4, doors:'a', west:false, tubes:[1, 12, 10], drops:[12, 5, 7], roofUp:10, back:'brick' });
-    P(11, 3, 'HHHHH'); P(10, 5, 'H'); P(11, 8, 'PP'); P(16, 8, 'HHH'); P(16, 11, 'h');
-    g.col(6, Y(23), Y(26), 'J'); P(26, 1, 'ppp'); g.keepClear(1, Y(23), 6, Y(26)); BK(1, 23, 5, 26, 'metal');
-    // the BANK: a vault in the cellar behind two locked doors (the way down into the cellar is on its west side, the spring up on its east)
-    fBuilding(k, g, { frames:'low', c0:18, c1:30, n:3, doors:'a', tubes:[19, 27], drops:[25, 19], roofUp:21, back:'brick' });
-    g.col(21, Y(23), Y(26), '1'); g.col(26, Y(23), Y(26), '1'); BK(22, 23, 25, 26, 'stripe'); ZN('dark', 22, 23, 25, 26); P(26, 22, 'T'); P(26, 23, 'u'); P(26, 24, 'N');
-    // the TOWER, the tallest
-    fBuilding(k, g, { frames:'low', c0:34, c1:42, n:5, doors:'a', tubes:[35, 39, 35, 39], drops:[39, 35, 39, 35], roofUp:37, back:'metal' });
-    // the SHOP and the WAREHOUSE
-    fBuilding(k, g, { frames:'low', c0:46, c1:54, n:3, doors:'a', tubes:[47, 51], drops:[51, 47], roofUp:49, back:'brick' });
-    fBuilding(k, g, { frames:'low', c0:57, c1:61, n:2, doors:'a', tubes:[58], drops:[], roofUp:null, back:'metal' });
+    // the HOTEL: a closed shell with its doors on the east face, the hotel itself a whole small level under the map (neonArms): the home in its penthouse, the jail in its cellar
+    neonArms(k, g);
+    // the BANK: a closed shell on an arcade, Neon Savings and Loan a small level under the map (the Neon vault, the super-jump boost)
+    neonBank(k, g);
+    // the TOWER, the tallest: a closed shell on an arcade, the Broadcast Spire a small level under the map (the Neon team buff)
+    neonSpire(k, g);
+    // the SHOP: a closed shell on an arcade, the Big Store a small level under the map (the Neon key); the WAREHOUSE: the same, the Stockpile
+    neonStore(k, g); neonStockpile(k, g);
     // the planks across the alleys, at the doors of the floors the neighbours share
     H(17, 15, 17); H(22, 15, 17); g.elev(15, 2, Y(17), Y(27)); H(17, 31, 33); H(22, 31, 33); H(17, 43, 45); H(22, 43, 45); H(22, 55, 56);
-    // the BILLBOARDS: bounce pads on the low roofs, up to the taller roof beside them; the buff on the tower's roof
-    fUp(k, g, 19, 11, 6); fUp(k, g, 47, 11, 1); fUp(k, g, 58, 16, 11); P(0, 38, 'y');
-    // the keys and the boosts
-    P(26, 50, 'a'); P(16, 28, 'v'); P(21, 44, 'g');
+    // the BILLBOARDS: bounce pads on the low roofs, up to the taller roof beside them (the team buff is in the Spire's transmitter)
+    fUp(k, g, 19, 11, 6); fUp(k, g, 47, 11, 1); fUp(k, g, 58, 16, 11);
+    // the ghost boost on its alley plank (the key is in the Big Store's stockroom; the super-jump boost in the bank)
+    P(21, 44, 'g');
     g.wing(2, ()=>{   // THE SCRAPYARD (large teams): behind the hotel, a two-floor shed and a low container shed, the hotel's west doors open on it
       S(-24, 27, -1, 27); fBuilding(k, g, { frames:'low', c0:-22, c1:-14, n:2, doors:'a', tubes:[-21], drops:[-16], roofUp:-18, back:'metal' }); fBuilding(k, g, { frames:'low', c0:-11, c1:-4, n:1, back:'metal' });
-      A(0, 24, 0, 26); A(0, 19, 0, 21); P(26, -9, 'W'); P(26, -6, 'C'); P(21, -19, 'E');
+      P(26, -9, 'W'); P(26, -6, 'C'); P(21, -19, 'E');                                                // (the hotel's west door, D4, is on its shell: neonArms)
     });
     workHeart(k, g); workYard(k, g);
-    k.scatter((r, c)=>(r > 14 ? ['C', 'W', 'E', 'L', 'Z', 'R'] : ['C', 'W', 'E', 'L', 'Z']), [0.5, 0.9, 0.95][g.band], 3, (r, c)=>(c >= 21 && c <= 26 && r >= 23) || (c >= 1 && c <= 6 && r >= 23) || g._np.some(q=>q[0] === r && q[1] === c), 41);
+    k.scatter((r, c)=>(r > 14 ? ['C', 'W', 'E', 'L', 'Z', 'R'] : ['C', 'W', 'E', 'L', 'Z']), [0.5, 0.9, 0.95][g.band], 3, (r, c)=>g._np.some(q=>q[0] === r && q[1] === c), 41);
     DC('cloud', 20, 0, 4, 1); DC('chimney', 30, 20, 2, 6);
     g.info = info; return info;
   },
@@ -6499,9 +7119,29 @@ function ctfLandmarkSkin(g, p, th, x0, y0, x1, y1, Y0, Y1){
       g.stroke(); if(top){ g.fillStyle = 'rgba(255,255,255,0.28)'; g.fillRect(x0, p.y, W, Math.min(9, p.h)); }
       if(!rp){ g.fillStyle = 'rgba(30,20,40,0.2)'; g.fillRect(Math.max(x0, x1 - 12), y0, Math.min(12, W), H); ctfOutline(g, 4); g.strokeRect(p.x, p.y, p.w, p.h); } return true;
     }
+    if(k === 'works'){   // a machine hall's wall: sooty red brick, tall lit factory windows with iron glazing bars, an iron band along the top
+      g.fillStyle = '#9a5a46'; g.fillRect(x0, y0, W, H); g.fillStyle = 'rgba(30,16,10,0.16)'; if(x1 >= p.x + p.w - 16) g.fillRect(Math.max(x0, p.x + p.w - 16), y0, Math.min(16, p.x + p.w - x0), H);
+      g.strokeStyle = 'rgba(40,20,14,0.22)'; g.lineWidth = 2; g.beginPath(); for(let y = Math.ceil(y0/30)*30; y < y1; y += 30){ g.moveTo(x0, y); g.lineTo(x1, y); } g.stroke();
+      if(p.w >= 150 && p.h >= 220) for(let y = Math.floor((y0 - 200)/240)*240 + 50; y < y1; y += 240) for(let x = Math.floor((x0 - 120)/180)*180 + 50; x < x1; x += 180){   // (every window that reaches into this piece, so none is lost on a seam)
+        if(x < p.x + 30 || x + 70 > p.x + p.w - 30 || y < p.y + 40 || y + 150 > p.y + p.h - 20) continue; const h = ctfHash(x, y, 7);
+        g.fillStyle = (h >>> 3) % 4 ? '#ffd970' : '#3a4658'; ctfRRect(g, x, y, 70, 150, 26); g.fill(); ctfOutline(g, 3); g.stroke();
+        g.strokeStyle = 'rgba(40,30,30,0.75)'; g.lineWidth = 3; g.beginPath(); g.moveTo(x + 35, y + 4); g.lineTo(x + 35, y + 150); for(let yy = y + 50; yy < y + 150; yy += 34){ g.moveTo(x, yy); g.lineTo(x + 70, yy); } g.stroke(); }
+      if(top){ g.fillStyle = '#4b5360'; g.fillRect(x0, p.y, W, 16); g.fillStyle = '#7d8795'; g.fillRect(x0, p.y, W, 5); }
+      if(!rp){ ctfOutline(g, 4); g.strokeRect(p.x, p.y, p.w, p.h); } return true;
+    }
+    if(k === 'neon'){   // a neon hotel's wall: dark plum brick, rows of lit windows (pink, ice blue, a few dark), a pink neon band along the top
+      g.fillStyle = '#4a3058'; g.fillRect(x0, y0, W, H); g.fillStyle = 'rgba(10,0,20,0.2)'; if(x1 >= p.x + p.w - 14) g.fillRect(Math.max(x0, p.x + p.w - 14), y0, Math.min(14, p.x + p.w - x0), H);
+      g.strokeStyle = 'rgba(20,8,30,0.28)'; g.lineWidth = 2; g.beginPath(); for(let y = Math.ceil(y0/40)*40; y < y1; y += 40){ g.moveTo(x0, y); g.lineTo(x1, y); } g.stroke();
+      if(p.w >= 90 && p.h >= 130) for(let y = Math.floor((y0 - 120)/180)*180 + 40; y < y1; y += 180) for(let x = Math.floor((x0 - 90)/150)*150 + 45; x < x1; x += 150){   // (every window that reaches into this piece, so none is lost on a seam)
+        if(x < p.x + 20 || x + 62 > p.x + p.w - 20 || y < p.y + 30 || y + 90 > p.y + p.h - 12) continue; const h = ctfHash(x, y, 9);
+        g.fillStyle = (h >>> 4) % 4 ? ((h >>> 7) % 2 ? '#ffd2ee' : '#a8f0ff') : '#2a1a3a'; g.fillRect(x, y, 62, 90); ctfOutline(g, 3); g.strokeRect(x, y, 62, 90);
+        g.strokeStyle = 'rgba(40,20,50,0.7)'; g.lineWidth = 3; g.beginPath(); g.moveTo(x + 31, y); g.lineTo(x + 31, y + 90); g.stroke(); }
+      if(top){ g.fillStyle = '#ff4fa8'; g.fillRect(x0, p.y, W, 12); g.fillStyle = '#ffd0ea'; g.fillRect(x0, p.y + 4, W, 3); }
+      if(!rp){ ctfOutline(g, 4); g.strokeRect(p.x, p.y, p.w, p.h); } return true;
+    }
     if(k === 'hotel'){   // a hotel's wall: cream stucco, arched lit windows, a gold cornice
       g.fillStyle = '#ecddbf'; g.fillRect(x0, y0, W, H); g.fillStyle = 'rgba(120,90,50,0.10)'; g.fillRect(Math.max(x0, x1 - 14), y0, Math.min(14, W), H);
-      if(p.w >= 90 && p.h >= 130) for(let y = Math.ceil((y0 - 30)/180)*180 + 40; y < y1 - 60; y += 180) for(let x = Math.ceil((x0 - 20)/150)*150 + 45; x < x1 - 70; x += 150){
+      if(p.w >= 90 && p.h >= 130) for(let y = Math.floor((y0 - 110)/180)*180 + 40; y < y1; y += 180) for(let x = Math.floor((x0 - 80)/150)*150 + 45; x < x1 + 8; x += 150){   // (every window that reaches into this piece, so none is lost on a seam)
         const h = ctfHash(x, y, 5); if(x < p.x + 20 || x + 62 > p.x + p.w - 20 || y < p.y + 20 || y + 96 > p.y + p.h - 12) continue;
         g.fillStyle = (h >>> 4) % 3 ? '#ffe9a0' : '#3e7488'; g.beginPath(); g.moveTo(x, y + 96); g.lineTo(x, y + 31); g.arc(x + 31, y + 31, 31, Math.PI, 0); g.lineTo(x + 62, y + 96); g.closePath(); g.fill(); ctfOutline(g, 3); g.stroke();
         g.strokeStyle = 'rgba(70,40,20,0.7)'; g.lineWidth = 3; g.beginPath(); g.moveTo(x + 31, y); g.lineTo(x + 31, y + 96); g.moveTo(x, y + 58); g.lineTo(x + 62, y + 58); g.stroke(); g.fillStyle = '#d8c8a8'; g.fillRect(x - 8, y + 96, 78, 10); ctfOutline(g, 3); g.strokeRect(x - 8, y + 96, 78, 10); }
@@ -6778,6 +7418,23 @@ function ctfPaintBackBase(g, b, th, X0, Y0, X1, Y1){
     g.fillStyle = 'rgba(214,170,70,0.55)'; for(let y = Math.ceil(y0/100)*100 + 30; y < y1; y += 100) for(let x = Math.ceil(x0/80)*80 + 19; x < x1; x += 80){ g.beginPath(); g.moveTo(x, y - 9); g.lineTo(x + 7, y); g.lineTo(x, y + 9); g.lineTo(x - 7, y); g.closePath(); g.fill(); }
     return;
   }
+  if(kind === 'club'){   // a nightclub's wall: deep violet, slanting bands of pink and ice-blue neon
+    g.fillStyle = '#2a1840'; g.fillRect(x0, y0, x1 - x0, y1 - y0); g.lineWidth = 10;
+    for(let kk = Math.floor((x0 - y1)/240); kk*240 < x1 - y0; kk++){ const o = kk*240; g.strokeStyle = kk & 1 ? 'rgba(255,79,168,0.34)' : 'rgba(90,220,255,0.28)'; g.beginPath(); g.moveTo(o + y0, y0); g.lineTo(o + y1, y1); g.stroke(); }
+    return;
+  }
+  if(kind === 'velvet'){   // a casino's wall: deep red velvet, a lattice of gold
+    g.fillStyle = '#7a1e2e'; g.fillRect(x0, y0, x1 - x0, y1 - y0); g.strokeStyle = 'rgba(224,184,90,0.32)'; g.lineWidth = 3; g.beginPath();
+    for(let kk = Math.floor((x0 - y1)/160); kk*160 < x1 - y0; kk++){ const o = kk*160; g.moveTo(o + y0, y0); g.lineTo(o + y1, y1); }
+    for(let kk = Math.floor((x0 + y0)/160); kk*160 < x1 + y1; kk++){ const o = kk*160; g.moveTo(o - y0, y0); g.lineTo(o - y1, y1); }
+    g.stroke(); return;
+  }
+  if(kind === 'tile'){   // a kitchen's wall: white tiles, grey grout
+    g.fillStyle = '#eef2f4'; g.fillRect(x0, y0, x1 - x0, y1 - y0); g.strokeStyle = 'rgba(90,110,130,0.28)'; g.lineWidth = 2; g.beginPath();
+    for(let y = Math.ceil(y0/60)*60; y < y1; y += 60){ g.moveTo(x0, y); g.lineTo(x1, y); }
+    for(let x = Math.ceil(x0/60)*60; x < x1; x += 60){ g.moveTo(x, y0); g.lineTo(x, y1); }
+    g.stroke(); return;
+  }
   if(kind === 'stars'){   // a night sky (the observatory): deep blue, little stars where a hash of their cell puts them
     g.fillStyle = '#1d2346'; g.fillRect(x0, y0, x1 - x0, y1 - y0);
     for(let y = Math.floor(y0/60)*60; y < y1; y += 60) for(let x = Math.floor(x0/60)*60; x < x1; x += 60){ const h = ctfHash(x, y, 31); if(h % 4) continue; g.fillStyle = h % 3 ? 'rgba(255,255,255,0.75)' : 'rgba(255,230,150,0.9)'; g.beginPath(); g.arc(x + (h >>> 4) % 50, y + (h >>> 9) % 50, 1.5 + (h >>> 14) % 3, 0, 7); g.fill(); }
@@ -6819,9 +7476,10 @@ function ctfTile(M, tx, ty){
     g.beginPath(); g.rect(X0, Y0, CTF_TILE, CTF_TILE); g.clip();
     g.lineJoin = 'round';
     for(const b of (M.back || [])) if(b.x < X1 && b.x + b.w > X0 && b.y < Y1 && b.y + b.h > Y0) ctfPaintBack(g, b, M.theme, X0, Y0, X1, Y1);
-    for(const d of (M.decor || [])) if(d.x < X1 + 100 && d.x + d.w > X0 - 100 && d.y - 140 < Y1 && d.y + d.h + 80 > Y0) ctfDecorDraw(g, d, M.theme);
+    for(const d of (M.decor || [])) if(!d.front && d.x < X1 + 100 && d.x + d.w > X0 - 100 && d.y - 140 < Y1 && d.y + d.h + 80 > Y0) ctfDecorDraw(g, d, M.theme);
     for(const p of M.plats) if(!p.tm && p.x < X1 && p.x + p.w > X0 && p.y < Y1 && p.y + p.h > Y0) ctfPaintPlat(g, p, M.theme, X0, Y0, X1, Y1);
     for(const d of (M.front || [])) if(d.x < X1 && d.x + d.w > X0 && d.y < Y1 && d.y + d.h > Y0) ctfPaintPlat(g, { x:d.x, y:d.y, w:d.w, h:d.h, solid:true }, M.theme, X0, Y0, X1, Y1);   // a secret wall: stone you walk through
+    for(const d of (M.decor || [])) if(d.front && d.x < X1 + 100 && d.x + d.w > X0 - 100 && d.y - 140 < Y1 && d.y + d.h + 80 > Y0) ctfDecorDraw(g, d, M.theme);   // (a picture hung on a secret wall, o.front: drawn over the wall)
     ctfRampLines(g, M, X0, Y0, X1, Y1);
   }
   CTF_TILES.set(key, cv);
@@ -7355,6 +8013,13 @@ function ctfDrawWorld(){
       ctx.restore(); } }
   // the crumbling ledges and the plugs (not in the cached tiles: they come and go)
   for(const q of (L.timed || [])){ const p = q.wp; if(q.st === 2 || !inView(p.x - 10, p.y - 10, q.w0 + 20, p.h + 20)) continue;
+    if(q.tm.look === 'laser'){   // a laser gate: the emitters top and bottom, a curtain of red light between them, flickering harder just before it goes
+      const a = q.warn ? 0.45 + 0.35*Math.sin(T*0.9) : 0.85, cx = p.x + q.w0/2;
+      ctx.save(); ctx.fillStyle = 'rgba(255,40,70,' + (0.22*a) + ')'; ctx.fillRect(p.x + 14, p.y, q.w0 - 28, p.h);
+      ctx.strokeStyle = 'rgba(255,70,90,' + a + ')'; ctx.lineWidth = 5; ctx.beginPath(); for(const dx of [-24, 0, 24]){ ctx.moveTo(cx + dx, p.y + 18); ctx.lineTo(cx + dx + Math.sin(T*0.6 + dx)*2, p.y + p.h - 18); } ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,230,235,' + a + ')'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx, p.y + 18); ctx.lineTo(cx, p.y + p.h - 18); ctx.stroke();
+      for(const ey of [p.y, p.y + p.h - 18]){ ctx.fillStyle = '#3a3f4a'; ctx.fillRect(p.x + 8, ey, q.w0 - 16, 18); ctfOutline(ctx, 3); ctx.strokeRect(p.x + 8, ey, q.w0 - 16, 18); ctx.fillStyle = '#ff4060'; ctx.fillRect(cx - 10, ey + 5, 20, 8); }
+      ctx.restore(); continue; }
     ctx.save(); if(q.warn) ctx.translate(Math.sin(T*1.9 + p.x)*3, 0);
     ctfPaintPlat(ctx, Object.assign({}, p, { w:q.w0 }), M.theme, vx, vy, vx + vw, vy + vh);
     ctx.strokeStyle = 'rgba(28,28,28,0.75)'; ctx.lineWidth = 3; ctx.beginPath();
@@ -7367,10 +8032,11 @@ function ctfDrawWorld(){
   for(const z of (M.zones || [])){ if(z.type === 'dark' || !inView(z.x, z.y, z.w, z.h)) continue; if(z.tide){ const r = ctfTideRect(z, L.phase === 'play' ? L.playT : 0); ctfDrawZone(Object.assign({}, z, { y:r.y, h:r.h }), T, vx, vy, vw, vh); ctfDrawTideMark(z, r, T, vx, vw); continue; } ctfDrawZone(z, T, vx, vy, vw, vh); }
   // wheels: the water wheel (timber and rim) or the iron cog, its paddles level at the rim; the water running off the ones that are rising
   for(const wl of (L.wheels || [])){ const ext = wl.R + wl.pw; if(!inView(wl.x - ext, wl.y - ext, 2*ext, 2*ext)) continue;
-    const cog = wl.kind === 'cog', orr = wl.kind === 'orrery', wood = orr ? '#c9a040' : cog ? '#7d8795' : '#8a5a2f', dark = orr ? '#7a5a1c' : cog ? '#4b5360' : '#5a3a1c', hi = orr ? '#ffd770' : cog ? '#aab4c4' : '#b88a50';
+    const cog = wl.kind === 'cog', orr = wl.kind === 'orrery', rou = wl.kind === 'roulette', wood = orr || rou ? '#c9a040' : cog ? '#7d8795' : '#8a5a2f', dark = orr ? '#7a5a1c' : rou ? '#3a1a1a' : cog ? '#4b5360' : '#5a3a1c', hi = orr ? '#ffd770' : rou ? '#f0d890' : cog ? '#aab4c4' : '#b88a50';
     ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = Math.max(8, wl.R*0.05) + 6; ctx.beginPath(); ctx.arc(wl.x, wl.y, wl.R, 0, 7); ctx.stroke();
     ctx.strokeStyle = wood; ctx.lineWidth = Math.max(8, wl.R*0.05); ctx.beginPath(); ctx.arc(wl.x, wl.y, wl.R, 0, 7); ctx.stroke();
+    if(rou) for(let q = 0; q < 16; q++){ const a0 = wl.a + q*Math.PI/8, a1 = a0 + Math.PI/8; ctx.fillStyle = q % 2 ? '#1c1c24' : '#c9302c'; ctx.beginPath(); ctx.arc(wl.x, wl.y, wl.R*0.94, a0, a1); ctx.arc(wl.x, wl.y, wl.R*0.62, a1, a0, true); ctx.closePath(); ctx.fill(); }   // (a roulette wheel's pockets)
     ctx.strokeStyle = dark; ctx.lineWidth = Math.max(5, wl.R*0.03); ctx.beginPath(); ctx.arc(wl.x, wl.y, wl.R*0.62, 0, 7); ctx.stroke();
     for(let q = 0; q < wl.n; q++){ const an = wl.a + q*2*Math.PI/wl.n, cx = Math.cos(an), cy = Math.sin(an);   // spokes, one to each paddle
       ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 12; ctx.beginPath(); ctx.moveTo(wl.x, wl.y); ctx.lineTo(wl.x + cx*wl.R, wl.y + cy*wl.R); ctx.stroke();
@@ -9402,7 +10068,7 @@ function ctfDrawZone(z, T, vx, vy, vw, vh){
       ctx.fillStyle = 'rgba(120,84,42,0.45)'; ctx.fillRect(x0, y, w, h);
       ctx.fillStyle = 'rgba(90,60,28,0.8)'; for(let xx = Math.floor(x0/70)*70; xx < x1; xx += 70){ ctx.beginPath(); ctx.arc(xx + 20, y + h - 6 + Math.sin(T*0.05 + xx)*2, 14, Math.PI, 0); ctx.fill(); } break; }
     case 'water': {
-      ctx.fillStyle = 'rgba(40,120,215,0.46)'; ctx.fillRect(x0, y, w, h);
+      ctx.fillStyle = (z.tide && z.tide.col) || 'rgba(40,120,215,0.46)'; ctx.fillRect(x0, y, w, h);   // (a tide may have its own colour: the dye works' vats)
       ctx.fillStyle = 'rgba(255,255,255,0.45)'; for(let k = 0; k < 16; k++){ const bx = z.x + ((k*263 + T*0.35) % z.w), by = y + h - ((k*179 + T*0.9) % h); if(bx > x0 && bx < x1){ ctx.beginPath(); ctx.arc(bx, by, 4 + (k%3)*2, 0, 7); ctx.fill(); } }
       ctx.strokeStyle = 'rgba(210,240,255,0.9)'; ctx.lineWidth = CTF_LW; ctx.beginPath();
       for(let xx = x0; xx <= x1; xx += 24){ const yy = y + 6 + Math.sin(T*0.08 + xx*0.04)*4; if(xx === x0) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy); } ctx.stroke(); break; }
@@ -9761,6 +10427,13 @@ function ctfDecorDraw(g, d, th){
     case 'mast': {   // a wreck's mast with a torn sail
       g.globalAlpha = 0.9; g.fillStyle = '#6f5033'; g.strokeStyle = dark; g.lineWidth = 6; g.fillRect(x + w*0.45, y, w*0.1, h); g.strokeRect(x + w*0.45, y, w*0.1, h);
       g.fillStyle = '#e8e2c8'; g.beginPath(); g.moveTo(x + w*0.55, y + h*0.08); g.lineTo(x + w*1.1, y + h*0.45); g.lineTo(x + w*0.85, y + h*0.5); g.lineTo(x + w*0.95, y + h*0.62); g.lineTo(x + w*0.55, y + h*0.6); g.closePath(); g.fill(); g.stroke();
+      break; }
+    case 'antenna': {   // a broadcast mast: a red and white lattice tower tapering up to a beacon (the Broadcast Spire's transmitter)
+      g.globalAlpha = 0.95; const cx = x + w/2, bw = w*0.42; g.strokeStyle = dark; g.lineWidth = 5;
+      for(let i = 0; i < 6; i++){ const y0 = y + h*0.12 + h*0.88*i/6, y1 = y + h*0.12 + h*0.88*(i + 1)/6, a = bw*(0.25 + 0.75*i/6), b = bw*(0.25 + 0.75*(i + 1)/6);
+        g.fillStyle = i % 2 ? '#f4f4f4' : '#e0403a'; g.beginPath(); g.moveTo(cx - a, y0); g.lineTo(cx + a, y0); g.lineTo(cx + b, y1); g.lineTo(cx - b, y1); g.closePath(); g.fill(); g.stroke();
+        g.beginPath(); g.moveTo(cx - a, y0); g.lineTo(cx + b, y1); g.moveTo(cx + a, y0); g.lineTo(cx - b, y1); g.stroke(); }
+      g.fillStyle = '#ff3a3a'; g.beginPath(); g.arc(cx, y + h*0.08, Math.max(8, w*0.12), 0, 7); g.fill(); g.stroke();
       break; }
     case 'neon': {   // a glowing sign: a rounded plate with a bolt, no letters
       g.globalAlpha = 0.9; g.fillStyle = '#2a1a3a'; g.strokeStyle = '#ff4fa8'; g.lineWidth = 8; g.beginPath(); g.rect(x + w*0.1, y + h*0.1, w*0.8, h*0.8); g.fill(); g.stroke();
