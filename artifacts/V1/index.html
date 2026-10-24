@@ -10884,23 +10884,50 @@ function ctfNavNew(M, prev, diff, fine, band){   // fine: every built piece (def
 }
 // The zones that change a flight, so the ones the planner models (and the shipped graphs' fingerprint reads). 'float' is one since the owner's
 // "Fix it" (2026-10-18) made thin air really lighten gravity: before that the game set its timer and never read it, and float areas were left out.
-function ctfNavZoneMoves(z){ return z.type === 'water' || z.type === 'glue' || z.type === 'wind' || z.type === 'spring' || z.type === 'updraft' || z.type === 'float'; }
-// The game's own applyZone for the zones a flight meets (what a fighter feels at x, y): T holds vx, vy, jumps, the spring's rest steps and the
-// float timer (T.ft, the game's f._floatT: a float area holds it at 3, and gravity is at 0.35 while it runs, one off each step: gravFor in step()).
-const CTF_ZT = { vx:0, vy:0, jumps:0, sp:0, ft:0 };
+// The belt is one since the push zones were made the game's own (CTF_PUSH_SIM): it carries whoever stands on it, so a flight that comes down on one comes down where it is carried to.
+function ctfNavZoneMoves(z){ return z.type === 'water' || z.type === 'glue' || z.type === 'wind' || z.type === 'spring' || z.type === 'updraft' || z.type === 'float' || z.type === 'belt'; }
+// THE PUSH ZONES AS THE GAME HAS THEM (applyZone and pushPin; the owner, 2026-10-19: "wind can get you stuck in a corner", "wind must never trap"): a wind lets go while you press against it and, left alone,
+// carries you at most WIND_DRIFT a step; an updraft lets go while you hold Down and for 12 steps after you bonk the underside of something, and lifts you off a floor inside it; a belt carries you only while
+// you stand on it; and whoever presses a key in any of them without getting 70 px anywhere for PIN_STEPS steps is let go of by all of them for PIN_FREE. The route sim used to push with no cap and no
+// let-go (a wind's 0.6 a step for as long as the flight was in it: a jump pressed against a wind was lifted as if it went with it, and one left alone in it was thrown ever faster), and stopped at the first
+// touch of a floor even where an updraft lifts you straight off it again. CTF_PUSH_SIM is in the fingerprint of every map with a push zone, so a graph shipped before this is never taken for one made after it.
+const CTF_PUSH_SIM = 2;
+function ctfNavPushZone(z){ return z.type === 'wind' || z.type === 'updraft' || z.type === 'belt'; }
+// The game's own applyZone for the zones a flight meets (what a fighter feels at x, y, after the step's collisions): T holds vx, vy, jumps, the spring's rest steps and the
+// float timer (T.ft, the game's f._floatT: a float area holds it at 3, and gravity is at 0.35 while it runs, one off each step: gravFor in step()). For the push zones also T.x (a belt moves it; set it to x),
+// T.g (on the ground after the collisions: an updraft that lifts clears it), the keys of the step (T.dir, T.dn, T.up: the game's f._pushIn, _pushDn, _pushUp), T.bk (steps since the underside of something
+// was bonked: f._bonkT) and the let-go (T.px, py, pt, off: f._pinX, _pinY, _pinT, _pushOff; ctfNavPin). On the ground only the push zones are felt here. The other areas are felt in the air only,
+// as before, though step() applies them on the ground too: a spring pad's floor would then be a place no flight comes down on (the pad throws you off it), so no flag could be hidden on one, and a flag
+// on a pad is still taken by whoever is thrown off it. That is the owner's call, not this sim's: left as it was (measured, 2026-10-24: 3-4 pad floors a side on Sky and the Factory).
+function ctfNavZoneNew(s){ return { vx:0, vy:0, jumps:0, sp:0, ft:0, x:0, y:0, g:false, dir:0, dn:false, up:false, bk:99, px:s && s.px != null ? s.px : null, py:(s && s.py) || 0, pt:(s && s.pt) || 0, off:(s && s.off) || 0, pf:false }; }
+// A live fighter's push-zone state, for a flight from where it is (ctfNavFly, ctfNavWallFly): the let-go and how long ago it bonked a ceiling.
+function ctfNavPushOf(f, s){ s.px = f._pinX != null ? f._pinX : null; s.py = f._pinY || 0; s.pt = f._pinT || 0; s.off = f._pushOff || 0; s.bk = f._bonkT != null ? hazardT - f._bonkT : 99; return s; }
+function ctfNavPin(T){   // pushPin, on T
+  if(T.off > 0) return true;
+  if(T.pf) return false;   // (once a step, however many zones)
+  T.pf = true;
+  if(T.px == null || Math.abs(T.x - T.px) + Math.abs(T.y - T.py) > 70){ T.px = T.x; T.py = T.y; T.pt = 0; }
+  else if(T.dir || T.dn || T.up) T.pt++; else T.pt = Math.max(0, T.pt - 1);
+  if(T.pt >= PIN_STEPS){ T.pt = 0; T.off = PIN_FREE; return true; }
+  return false;
+}
 function ctfNavZoneFx(nav, x, y, R, T){
-  const zl = nav.zb[ctfNavBucket(x)];
+  if(T.off > 0) T.off--;   // (step(): the let-go runs down every step, before the zones)
+  T.pf = false;
+  const g0 = T.g, zl = nav.zb[ctfNavBucket(x)];
   if(zl) for(const z of zl){
-    if(x < z.x || x > z.x + z.w || y + R < z.y || y > z.y + z.h) continue;
+    if(T.x < z.x || T.x > z.x + z.w || y + R < z.y || y > z.y + z.h) continue;
     const s = z.strength || 1;
-    if(z.type === 'water'){ T.vx *= 1 - 0.13*s; T.vy *= 1 - 0.05*s; }
+    if(z.type === 'wind'){ if(ctfNavPin(T)) continue; const d = z.dir || 1; if(T.dir === -d) continue; if(T.vx*d < WIND_DRIFT*s) T.vx += d*0.6*s; T.vy -= 0.15*s; }
+    else if(z.type === 'updraft'){ if(ctfNavPin(T) || T.dn || T.bk <= 12) continue; T.vy = Math.max(T.vy - 1.35*s, -9.5*s); if(T.vy < 0) T.g = false; }
+    else if(z.type === 'belt'){ if(T.g && !ctfNavPin(T)) T.x += (z.dir || 1)*2.2*s; }
+    else if(g0) continue;
+    else if(z.type === 'water'){ T.vx *= 1 - 0.13*s; T.vy *= 1 - 0.05*s; }
     else if(z.type === 'glue') T.vx *= Math.max(0, 1 - 0.55*s);
-    else if(z.type === 'wind'){ T.vx += (z.dir || 1)*0.6*s; T.vy -= 0.15*s; }
     else if(z.type === 'float') T.ft = Math.max(T.ft, 3);
-    else if(z.type === 'updraft') T.vy = Math.max(T.vy - 1.35*s, -9.5*s);
     else if(z.type === 'spring' && !(T.sp > 0)){ T.vy = -24*s; T.jumps = 2; T.sp = 24; }
   }
-  if(T.sp > 0) T.sp--;
+  if(T.sp > 0 && !g0) T.sp--;
 }
 // Standing in thin air (the game applies the zones on the ground too): the float timer is already 3 at the takeoff.
 function ctfNavFloatAt(nav, x, y, R){
@@ -10930,15 +10957,17 @@ function ctfNavNodeOf(nav, f){
 function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free, thru, bst, pert){
   const P = ctfNavParams(free, bst), R = P.R, WH = nav.M.WH;
   if(pert){ P.CAP *= pert.k; P.ACC *= pert.k; if(pert.jv) P.JV *= pert.jv; }   // (a slightly slower fighter, a later second jump: does the move still come down on the same place?)
-  let x = xa, y = A.y - R, vy = 0, jumps = 2, sp = 0, ft = 0, wt = -9, ws = 0;   // (wt, ws: when and on which side a wall was last touched; ft: the float timer)
+  let x = xa, y = A.y - R, vy = 0, jumps = 2, sp = 0, ft = 0, wt = -9, ws = 0, bk = 99;   // (wt, ws: when and on which side a wall was last touched; ft: the float timer; bk: steps since the underside of something was bonked)
+  const Z = nav.zb ? ctfNavZoneNew() : null;   // (the push zones' let-go, kept on the fighter as the game keeps it: a fresh one at the take-off)
   if(nav.zb && ctfNavFloatAt(nav, x, y, R)) ft = 3;
   if(jump){ vy = P.JV; jumps = 1; }
   if(thru){ y += R*0.6; vy = 5; }   // down + jump on a one-way ledge: dropped through it (the game's own: dropping = 10 frames, vy 5)
   for(let t = 1; t <= 150; t++){
-    if(dir !== 0 && t <= T){ vx += dir*P.ACC; if(vx > P.CAP) vx = P.CAP; else if(vx < -P.CAP) vx = -P.CAP; }
-    if(dj && jumps > 0 && t >= 6 + (pert ? pert.dd : 0) && vy >= -0.4){ if(t - wt <= 3 && dir === ws && t <= T && !CTF.wallOK) return null; vy = P.JV; jumps--; }   // (a jump against a wall held toward is the wall jump: these plain moves never plan one, and it is not what the plan says; a graph patched for built pieces has wall-jump moves of their own: ctfWjCtl)
+    const held = dir !== 0 && t <= T ? dir : 0; let up = !!jump && t === 1;   // (the keys of the step, which the push zones read: the way held, and Jump at the take-off and the second jump)
+    if(held){ vx += dir*P.ACC; if(vx > P.CAP) vx = P.CAP; else if(vx < -P.CAP) vx = -P.CAP; }
+    if(dj && jumps > 0 && t >= 6 + (pert ? pert.dd : 0) && vy >= -0.4){ if(t - wt <= 3 && dir === ws && t <= T && !CTF.wallOK) return null; vy = P.JV; jumps--; up = true; }   // (a jump against a wall held toward is the wall jump: these plain moves never plan one, and it is not what the plan says; a graph patched for built pieces has wall-jump moves of their own: ctfWjCtl)
     { const lt = ft > 0; if(lt) ft--; vy += lt ? P.G*0.35 : P.G; } x += vx; const pb = y + R; y += vy;   // (thin air: gravFor)
-    const list = (nav.pb[ctfNavBucket(x)] || []);
+    const list = ctfNavSolidsAt(nav, x, R);   // (both buckets the body is in: a wall just over a bucket's edge is still felt, as step() feels every piece)
     let landed = null;
     for(const p of list){
       if(!p.solid) continue;
@@ -10946,17 +10975,18 @@ function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free, thru, bst, pert){
       const fl = p.x - (x + R), fr = (p.x + p.w) - (x - R), ft = p.y - (y + R), fb = (p.y + p.h) - (y - R);
       const ax = Math.abs(fl) < Math.abs(fr) ? fl : fr, ay = Math.abs(ft) < Math.abs(fb) ? ft : fb;
       if(Math.abs(ax) < Math.abs(ay) && !((p.ramp === true || p.step === true) && ft < 0 && ft >= -28 && vy > -2)){ x += ax; wt = t; ws = ax < 0 ? 1 : -1; if((ax < 0 && vx > 0) || (ax > 0 && vx < 0)) vx = 0; }
-      else { y += ay; if(ay < 0){ vy = Math.min(0, vy); landed = p; } else vy = Math.max(0, vy); }
+      else { y += ay; if(ay < 0){ vy = Math.min(0, vy); landed = p; } else { vy = Math.max(0, vy); bk = 0; } }
     }
     if(!landed && vy >= 0 && !(thru && t <= 10)){
       for(const p of list){
         if(p.solid || !(x > p.x - 4 && x < p.x + p.w + 4)) continue;
-        if(y + R >= p.y && y + R <= p.y + 18 + vy){ landed = p; y = p.y - R; break; }   // (the game's own test: no look at where the feet were a step ago)
+        if(y + R >= p.y && y + R <= p.y + 18 + vy){ landed = p; y = p.y - R; vy = 0; break; }   // (the game's own test: no look at where the feet were a step ago)
       }
     }
-    if(nav.zb && !landed){ const Z = CTF_ZT; Z.vx = vx; Z.vy = vy; Z.jumps = jumps; Z.sp = sp; Z.ft = ft; ctfNavZoneFx(nav, x, y, R, Z); vx = Z.vx; vy = Z.vy; jumps = Z.jumps; sp = Z.sp; ft = Z.ft; }
+    if(Z){ Z.vx = vx; Z.vy = vy; Z.jumps = jumps; Z.sp = sp; Z.ft = ft; Z.x = x; Z.y = y; Z.g = !!landed; Z.dir = held; Z.up = up; Z.dn = false; Z.bk = bk; ctfNavZoneFx(nav, x, y, R, Z); vx = Z.vx; vy = Z.vy; jumps = Z.jumps; sp = Z.sp; ft = Z.ft; x = Z.x; if(landed && !Z.g) landed = null; }   // (on a floor too, as step(): an updraft lifts you straight off it, a belt carries you)
     if(landed){ const node = ctfNavNodeAt(nav, x, landed.y, 1.5); return node ? { node, x, t } : null; }
-    if(y > WH + 100) return null;
+    if(y > WH + 100 || y < -260 || x < -120 || x > nav.M.WW + 120) return null;   // (the blast lines: step() takes a fighter out past any of them)
+    bk++;
   }
   return null;
 }
@@ -11011,8 +11041,8 @@ function ctfNavWallFly(nav, A, s0, p, P, S){
   const R = P.R, WH = nav.M.WH, ACCg = P.ACC*S.run, ACCa = P.ACC*S.air, CAPg = P.CAP*S.run, CAPa = P.CAP*S.air, JV = P.JV*S.jump, WJV = JUMP*WJ_VY*S.jump, GF = S.fall;
   let x = s0.x, y = s0.y != null ? s0.y : A.y - R, vx = s0.vx || 0, vy = s0.vy || 0, jumps = s0.jumps != null ? s0.jumps : 2, g = s0.g != null ? !!s0.g : true, jp = !!s0.jp, sp = 0, ft = s0.ft || 0, ta = s0.at || 0;   // (ft: the float timer, f._floatT; ta: the steps in the air, f._airT)
   if(s0.ft == null && nav.zb && ctfNavFloatAt(nav, x, y, R)) ft = 3;   // (a standing start in thin air: the timer is already 3, as ctfNavSim)
-  let wt = -99, ws = 0, wid = null, kicks = 0, used = {};
-  const c = {};
+  let wt = -99, ws = 0, wid = null, kicks = 0, used = {}, bk = s0.bk != null ? s0.bk : 99;   // (bk: steps since the underside of something was bonked)
+  const c = {}, Z = nav.zb ? ctfNavZoneNew(s0) : null;   // (the push zones' let-go: the live fighter's, or a fresh one at a standing start)
   for(let t = 1; t <= 170; t++){
     ta = g ? 0 : ta + 1;
     const o = ctfWjCtl(p, c, { t, g, vy, jumps, wall:t - wt, ws, used:wid !== null && !!used[wid] });
@@ -11033,21 +11063,22 @@ function ctfNavWallFly(nav, A, s0, p, P, S){
       const fL = q.x - (x + R), fR = (q.x + q.w) - (x - R), fT = q.y - (y + R), fB = (q.y + q.h) - (y - R);
       const ax = Math.abs(fL) < Math.abs(fR) ? fL : fR, ay = Math.abs(fT) < Math.abs(fB) ? fT : fB;
       if(Math.abs(ax) < Math.abs(ay) && !((q.ramp === true || q.step === true) && fT < 0 && fT >= -28 && vy > -2)){ x += ax; wt = t; ws = ax < 0 ? 1 : -1; wid = ws + ':' + Math.round((ax < 0 ? q.x : q.x + q.w)/WALL_FACE_SNAP); if((ax < 0 && vx > 0) || (ax > 0 && vx < 0)) vx = 0; }   // (which wall: its face, as step() counts it)
-      else { y += ay; if(ay < 0){ vy = Math.min(0, vy); landed = q; } else vy = Math.max(0, vy); }
+      else { y += ay; if(ay < 0){ vy = Math.min(0, vy); landed = q; } else { vy = Math.max(0, vy); bk = 0; } }
     }
     if(!landed && vy >= 0){
       for(const q of list){
         if(q.solid || !(x > q.x - 4 && x < q.x + q.w + 4)) continue;
-        if(y + R >= q.y && y + R <= q.y + 18 + vy){ landed = q; y = q.y - R; break; }
+        if(y + R >= q.y && y + R <= q.y + 18 + vy){ landed = q; y = q.y - R; vy = 0; break; }
       }
     }
-    if(nav.zb && !landed){ const Z = CTF_ZT; Z.vx = vx; Z.vy = vy; Z.jumps = jumps; Z.sp = sp; Z.ft = ft; ctfNavZoneFx(nav, x, y, R, Z); vx = Z.vx; vy = Z.vy; jumps = Z.jumps; sp = Z.sp; ft = Z.ft; }
+    if(Z){ Z.vx = vx; Z.vy = vy; Z.jumps = jumps; Z.sp = sp; Z.ft = ft; Z.x = x; Z.y = y; Z.g = !!landed; Z.dir = o.dir || 0; Z.up = !!o.jump; Z.dn = false; Z.bk = bk; ctfNavZoneFx(nav, x, y, R, Z); vx = Z.vx; vy = Z.vy; jumps = Z.jumps; sp = Z.sp; ft = Z.ft; x = Z.x; if(landed && !Z.g) landed = null; }   // (on a floor too: an updraft lifts you off it, a belt carries you)
+    bk++;
     if(landed){
       if(!kicks) return null;
       const node = ctfNavNodeAt(nav, x, landed.y, 1.5);
       return node ? { node, x, t, kicks } : null;
     }
-    if(y > WH + 100) return null;
+    if(y > WH + 100 || y < -260 || x < -120 || x > nav.M.WW + 120) return null;   // (the blast lines: step() takes a fighter out past any of them)
   }
   return null;
 }
@@ -11257,12 +11288,12 @@ function ctfNavTick(nav, count, ms){   // ms: stop after that many milliseconds 
 // artifacts/V1/assets/ctf/<map>-graph.json. The places themselves are cheap and always made here (ctfNavNew); the file holds only the simulated moves, place by place,
 // with a fingerprint of the map's geometry and the numbers the simulation reads. A file that does not match the map (or is missing, or the fetch fails) leaves the runtime
 // builder to do the work exactly as before, and the players' own pieces still patch the graph at runtime (ctfEditNav).
-const CTF_GRAPH_V = 1, CTF_GRAPH_KINDS = ['jump', 'drop', 'thru'], CTF_GRAPHS = {}, CTF_GRAPH_WAIT = {};
+const CTF_GRAPH_V = 2, CTF_GRAPH_KINDS = ['jump', 'drop', 'thru'], CTF_GRAPHS = {}, CTF_GRAPH_WAIT = {};
 function ctfNavFingerprint(M){
   const zs = (M.zones || []).filter(ctfNavZoneMoves);
   const str = JSON.stringify([CTF_GRAPH_V, M.gid || M.id, M.WW, M.WH, M.plats.map(p=>[p.x, p.y, p.w, p.h, p.solid ? 1 : 0, p.hop ? 1 : 0]), M.doors.map(d=>[d.id, d.x, d.y, d.w, d.h]),
     M.jails.map(j=>[j.owner, j.door.x, j.door.y, j.door.w, j.door.h]), zs.map(z=>[z.type, z.x, z.y, z.w, z.h, z.strength || 1, z.dir || 1]), M.boosts.filter(b=>b.kind === 'jump').map(b=>[b.x, b.y]),
-    [GRAV, MAXVX, MOVE, JUMP, CTF_SPEED, CTF_CARRY_SPEED, CTF_CARRY_JUMP, CTF_BOOST_JUMP, CTF_NAV_BUCKET], CTF.noZones ? 1 : 0]);
+    [GRAV, MAXVX, MOVE, JUMP, CTF_SPEED, CTF_CARRY_SPEED, CTF_CARRY_JUMP, CTF_BOOST_JUMP, CTF_NAV_BUCKET], CTF.noZones ? 1 : 0].concat(zs.some(ctfNavPushZone) ? [[CTF_PUSH_SIM, WIND_DRIFT, PIN_STEPS, PIN_FREE]] : []));   // (a map with a push zone: how they are simulated, CTF_PUSH_SIM)
   let a = 0x811c9dc5, b = 0x01000193;
   for(let i = 0; i < str.length; i++){ const ch = str.charCodeAt(i); a = Math.imul(a ^ ch, 0x01000193) >>> 0; b = Math.imul(b + ch, 0x85ebca6b) >>> 0; b ^= b >>> 13; }
   return a.toString(16).padStart(8, '0') + b.toString(16).padStart(8, '0') + '-' + str.length;
@@ -11489,6 +11520,8 @@ function ctfNavFly(nav, s, ctl, free, thru, bst, st, tmax, out){
   // on the way down, as step() moves the fighter.
   const S = st || STAT_ONE, ACCg = P.ACC*S.run, ACCa = P.ACC*S.air, CAPg = P.CAP*S.run, CAPa = P.CAP*S.air, JV = P.JV*S.jump, GF = S.fall;
   let x = s.x, y = s.y, vx = s.vx, vy = s.vy, jumps = s.jumps, ground = !!s.g, jp = !!s.jp, sp = s.sp || 0, ft = s.ft || 0, wt = s.wa != null ? -s.wa : -9, ws = s.ws || 0, ta = s.at || 0;   // (ft: the float timer, f._floatT)
+  let bk = s.bk != null ? s.bk : 99;   // (steps since the underside of something was bonked: an updraft lets go for 12)
+  const Z = nav.zb ? ctfNavZoneNew(s) : null;   // (the push zones' let-go: s.px, py, pt, off, as the game keeps it on the fighter: ctfNavPushOf)
   const TM = tmax || 150; if(out){ out.dead = true; out.lx = null; }
   for(let t = 1; t <= TM; t++){
     ta = ground ? 0 : ta + 1;
@@ -11499,7 +11532,7 @@ function ctfNavFly(nav, s, ctl, free, thru, bst, st, tmax, out){
     if(c.jump){ if(jumps > 0 && !jp){ if(!ground && t - wt <= 3 && c.dir === ws && !CTF.wallOK && !s.wjPlain) return null; vy = JV; jumps--; ground = false; jp = true; } } else jp = false;
     if(thru && t === 1){ y += R*0.6; vy = 5; ground = false; }
     { const lt = ft > 0; if(lt) ft--; vy += (lt ? P.G*0.35 : P.G)*(vy > 0 ? GF : 1); } x += vx; const pb = y + R; y += vy;   // (thin air: gravFor)
-    const list = (nav.pb[ctfNavBucket(x)] || []);
+    const list = ctfNavSolidsAt(nav, x, R);   // (both buckets the body is in: a wall just over a bucket's edge is still felt, as step() feels every piece)
     let landed = null;
     for(const p of list){
       if(!p.solid) continue;
@@ -11507,19 +11540,21 @@ function ctfNavFly(nav, s, ctl, free, thru, bst, st, tmax, out){
       const fl = p.x - (x + R), fr = (p.x + p.w) - (x - R), ft = p.y - (y + R), fb = (p.y + p.h) - (y - R);
       const ax = Math.abs(fl) < Math.abs(fr) ? fl : fr, ay = Math.abs(ft) < Math.abs(fb) ? ft : fb;
       if(Math.abs(ax) < Math.abs(ay) && !((p.ramp === true || p.step === true) && ft < 0 && ft >= -28 && vy > -2)){ x += ax; wt = t; ws = ax < 0 ? 1 : -1; if((ax < 0 && vx > 0) || (ax > 0 && vx < 0)) vx = 0; }
-      else { y += ay; if(ay < 0){ vy = Math.min(0, vy); landed = p; } else vy = Math.max(0, vy); }
+      else { y += ay; if(ay < 0){ vy = Math.min(0, vy); landed = p; } else { vy = Math.max(0, vy); bk = 0; } }
     }
     if(!landed && vy >= 0 && !(thru && t <= 10)){
       for(const p of list){
         if(p.solid || !(x > p.x - 4 && x < p.x + p.w + 4)) continue;
-        if(y + R >= p.y && y + R <= p.y + 18 + vy){ landed = p; y = p.y - R; break; }   // (the game's own test: no look at where the feet were a step ago)
+        if(y + R >= p.y && y + R <= p.y + 18 + vy){ landed = p; y = p.y - R; vy = 0; break; }   // (the game's own test: no look at where the feet were a step ago)
       }
     }
-    if(nav.zb && !landed){ const Z = CTF_ZT; Z.vx = vx; Z.vy = vy; Z.jumps = jumps; Z.sp = sp; Z.ft = ft; ctfNavZoneFx(nav, x, y, R, Z); vx = Z.vx; vy = Z.vy; jumps = Z.jumps; sp = Z.sp; ft = Z.ft; }
+    if(Z){ Z.vx = vx; Z.vy = vy; Z.jumps = jumps; Z.sp = sp; Z.ft = ft; Z.x = x; Z.y = y; Z.g = !!landed; Z.dir = c.dir || 0; Z.up = !!c.jump; Z.dn = !!thru && t === 1; Z.bk = bk; ctfNavZoneFx(nav, x, y, R, Z); vx = Z.vx; vy = Z.vy; jumps = Z.jumps; sp = Z.sp; ft = Z.ft; x = Z.x; if(landed && !Z.g) landed = null; }   // (on a floor too, as step(): an updraft lifts you straight off it, a belt carries you)
+    bk++;
+    if(out && Z){ out.px = Z.px; out.py = Z.py; out.pt = Z.pt; out.off = Z.off; out.bk = bk; }
     if(landed){ const node = ctfNavNodeAt(nav, x, landed.y, 1.5);
       if(out){ out.x = x; out.y = y; out.vx = vx; out.vy = vy; out.jumps = jumps; out.g = true; out.jp = jp; out.sp = sp; out.ft = ft; out.at = 0; out.wa = t - wt; out.ws = ws; out.dead = !node; out.lx = node ? null : x; out.ly = landed.y; }
       return node ? { node, x, t } : null; }
-    if(y > WH + 100) return null;
+    if(y > WH + 100 || y < -260 || x < -120 || x > nav.M.WW + 120) return null;   // (the blast lines: step() takes a fighter out past any of them)
   }
   if(out){ out.x = x; out.y = y; out.vx = vx; out.vy = vy; out.jumps = jumps; out.g = false; out.jp = jp; out.sp = sp; out.ft = ft; out.at = ta; out.wa = TM - wt; out.ws = ws; out.dead = false; }   // (not come down: in the air)
   return null;
@@ -11534,7 +11569,7 @@ function ctfAiPlanFly(nav, f, e, o){
     else if(o.dj && !djDone && jumps > 0 && (o.djNow || (t >= 6 && vy >= -0.4))){ c.jump = true; djDone = true; }
     return c;
   };
-  return ctfNavFly(nav, { x:f.x, y:f.y, vx:f.vx, vy:f.vy, jumps:f.jumps, g:f.onground, jp:f._jp, sp:f._springT || 0, ft:f._floatT || 0, at:f._airT || 0 }, ctl, free, !!o.thru, bst, f.st);
+  return ctfNavFly(nav, ctfNavPushOf(f, { x:f.x, y:f.y, vx:f.vx, vy:f.vy, jumps:f.jumps, g:f.onground, jp:f._jp, sp:f._springT || 0, ft:f._floatT || 0, at:f._airT || 0 }), ctl, free, !!o.thru, bst, f.st);
 }
 // The CPU's plans for a move, shared by ctfAiFollow and the stat check (ctfNavStatGen), so the check takes a move exactly as the CPU does.
 // The take-off of a jump (the run): holding the way as planned, or letting go sooner (a free fighter is faster than the plan was made for); straight up, the one plan.
@@ -11713,7 +11748,7 @@ function ctfWjLive(f){   // a live fighter's numbers for ctfNavWallFly (as step(
   return { R:f.r || 24, G:GRAV, CAP:MAXVX*k, ACC:MOVE*k, JV:JUMP*(f._cf >= 0 ? CTF_CARRY_JUMP : 1)*(f._ctfJT > 0 ? CTF_BOOST_JUMP : 1) };
 }
 function ctfAiWallLook(nav, f, e){
-  const r = ctfNavWallFly(nav, nav.nodes[e.from], { x:f.x, y:f.y, vx:f.vx, vy:f.vy, jumps:f.jumps, g:f.onground, jp:f._jp, ft:f._floatT || 0, at:f._airT || 0 }, e.wj, ctfWjLive(f), f.st || STAT_ONE);
+  const r = ctfNavWallFly(nav, nav.nodes[e.from], ctfNavPushOf(f, { x:f.x, y:f.y, vx:f.vx, vy:f.vy, jumps:f.jumps, g:f.onground, jp:f._jp, ft:f._floatT || 0, at:f._airT || 0 }), e.wj, ctfWjLive(f), f.st || STAT_ONE);
   return !!(r && r.node.id === e.to);
 }
 // May this CPU plan this wall edge: it has the wall jump at all, and the route works on its own numbers from the take-off (remembered a while: the numbers change only with a buff or a flag).
@@ -11842,6 +11877,7 @@ function* ctfNavStatGen(nav, e, S, free){
       if(t > 1){
         ai.jt++;
         g.x = st.x; g.y = st.y; g.vx = st.vx; g.vy = st.vy; g.jumps = st.jumps; g.onground = false; g._jp = st.jp; g._springT = st.sp; g._floatT = st.ft; g._airT = st.at;
+        g._pinX = st.px; g._pinY = st.py; g._pinT = st.pt; g._pushOff = st.off; g._bonkT = st.bk != null ? hazardT - st.bk : undefined;   // (the push zones' let-go and the last bonk, for its look-aheads: ctfNavPushOf)
         const A = ctfAiAirPlans(g, e, ai); let pick = null;
         if(!A.thru) for(const q of A.cands){ const r = ctfAiPlanFly(nav, g, e, q); yield; if(hit(r)){ pick = q; break; } }
         k = ctfAiAirKeys(g, ai, pick || A.fb);
