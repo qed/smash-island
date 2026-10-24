@@ -74212,6 +74212,10 @@ const COSMETICS = [
   { id:'sk_balloony_hw',       kind:'skin', fighter:'Balloony',   name:'Pufferfish Balloony',   price:115, costume:'balloony_puffer',  month:10 },
   { id:'sk_roboty_hw',         kind:'skin', fighter:'Roboty',     name:'Cowboy Roboty',         price:75,  costume:'roboty_cowboy',    month:10 },
   // end batch 4
+  // HALLOWEEN COSTUMES - batch 6 (the owner, 2026-10-23: "costumes for all!!!"): eleven more, drawn as the ones above are; appended after them so no
+  // online code above moves.
+  { id:'sk_marshmallow_hw',    kind:'skin', fighter:'Marshmallow', name:'Ghost Marshmallow',    price:115, costume:'mallow_ghost',      month:10 },
+  // end batch 6
   // HATS AND ACCESSORIES: drawn on the head (drawCosHat), inside the same transforms as the art, so they follow the
   // sprite's rig, its facing and its squash.
   { id:'hat_party',   kind:'hat', name:'Party Hat',        price:75 },
@@ -76958,6 +76962,108 @@ Object.assign(COSTUME_ART, (function(){
   };
 })());
 // end batch 4
+// HALLOWEEN COSTUMES - batch 6 (the owner, 2026-10-23: "costumes for all!!!"): eleven more, drawn as the ones above are (COSTUME_ART: a `back` layer under
+// the render and a `front` one over it and its face, in the render's own pixels, every piece laid against the body's traced outline `ol`), so they lean,
+// squash, turn and flip with the body in every pose. Their own little helpers stay inside this block.
+Object.assign(COSTUME_ART, (function(){
+  // a strip along the points q ([x0, y0, x1, y1, ...]), w0 wide at its first point and w1 at its last: its path, ready to fill and ink
+  function strip(c, q, w0, w1){
+    const n = q.length/2, L = [], R = [];
+    for(let i = 0; i < n; i++){
+      const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1), dx = q[2*b] - q[2*a], dy = q[2*b + 1] - q[2*a + 1], d = Math.hypot(dx, dy) || 1, w = (w0 + (w1 - w0)*i/(n - 1))/2;
+      L.push(q[2*i] - dy/d*w, q[2*i + 1] + dx/d*w); R.push(q[2*i] + dy/d*w, q[2*i + 1] - dx/d*w);
+    }
+    c.beginPath(); c.moveTo(L[0], L[1]); for(let i = 2; i < L.length; i += 2) c.lineTo(L[i], L[i + 1]);
+    for(let i = R.length - 2; i >= 0; i -= 2) c.lineTo(R[i], R[i + 1]); c.closePath();
+  }
+  // n + 1 points along the curve from (x0, y0) bent toward (cx, cy) to (x1, y1)
+  function qpts(x0, y0, cx, cy, x1, y1, n){ const q = []; for(let i = 0; i <= n; i++){ const u = i/n, a = (1 - u)*(1 - u), b = 2*u*(1 - u), d = u*u; q.push(a*x0 + b*cx + d*x1, a*y0 + b*cy + d*y1); } return q; }
+  // round bumps ([x, y, r, colour] each) inked as one shape: every ink first, then every fill, so only the outside edge keeps its line
+  function bumps(c, B, w){
+    for(const b of B){ c.beginPath(); c.ellipse(b[0], b[1], b[2], b[2], 0, 0, 7); hwInk(c, w); }
+    for(const b of B){ c.beginPath(); c.ellipse(b[0], b[1], b[2], b[2], 0, 0, 7); hwFill(c, b[3]); }
+  }
+  // the outline's bottom edge at column x (the greatest y where it crosses x)
+  function bottom(p, x){
+    let b = -1e9;
+    for(let i = 0, n = p.length; i < n; i += 2){ const ax = p[i], ay = p[i + 1], bx = p[(i + 2) % n], by = p[(i + 3) % n]; if((ax <= x) !== (bx <= x)){ const y = ay + (x - ax)*(by - ay)/(bx - ax); if(y > b) b = y; } }
+    return b;
+  }
+  // a five-point star at (x, y)
+  function star(c, x, y, r, col, w){
+    c.beginPath(); for(let i = 0; i < 10; i++){ const a = -Math.PI/2 + i*Math.PI/5, q = i % 2 ? r*0.45 : r; c.lineTo(x + Math.cos(a)*q, y + Math.sin(a)*q); } c.closePath();
+    hwFill(c, col); hwInk(c, w || 3);
+  }
+  // a plaid laid over whatever the caller has clipped to: lines every g px both ways, turned by a, in col
+  function plaid(c, x, y, R, g, a, col, w){
+    c.save(); c.translate(x, y); c.rotate(a);
+    c.beginPath(); for(let k = -R; k <= R; k += g){ c.moveTo(k, -R); c.lineTo(k, R); c.moveTo(-R, k); c.lineTo(R, k); }
+    c.lineWidth = w; c.strokeStyle = hwC(col); c.stroke(); c.restore();
+  }
+  // a coil spring from (x0, y0) to (x1, y1), n turns, w across: each turn's back stroke darker, then its front stroke over it
+  function spring(c, x0, y0, x1, y1, n, w){
+    const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy) || 1, px = -dy/L*w/2, py = dx/L*w/2;
+    const at = (u, k)=>[x0 + dx*u + px*k, y0 + dy*u + py*k];
+    for(const front of [0, 1]){
+      c.beginPath();
+      for(let i = 0; i < n; i++){
+        const a = at((i + (front ? 0.5 : 0))/n, front ? 1 : -1), b = at((i + (front ? 1 : 0.5))/n, front ? -1 : 1), m = at((i + (front ? 0.75 : 0.25))/n, 0);
+        c.moveTo(a[0], a[1]); c.quadraticCurveTo(m[0] + (front ? 1 : -1)*dx/L*2.5, m[1] + (front ? 1 : -1)*dy/L*2.5, b[0], b[1]);
+      }
+      c.lineWidth = 6; c.strokeStyle = hwC('#1c1c1c'); c.stroke();
+      c.lineWidth = 3; c.strokeStyle = hwC(front ? '#e2e6ec' : '#8a919b'); c.stroke();
+    }
+  }
+  return {
+  // MARSHMALLOW -- a sheet ghost: a pale bedsheet pulled down over her (over her lid, down her sides, its scalloped hem fluttering below her bottom, her
+  // arms and legs out from under it), a wide hole cut in it for her face, so her eyes and mouth look out; its back corner drawn out low behind her into a
+  // ghost's wispy tail that curls up, longer as she runs.
+  mallow_ghost: { W:182, H:200, box:[-2, -11, 214, 200], noHat:true, key:'marshmallow.png',
+    ol:[102,1,128,1,141,4,147,8,149,12,158,55,164,100,166,106,165,109,168,128,163,130,160,133,161,138,160,141,149,147,133,152,129,156,122,155,105,159,90,160,88,162,58,159,50,156,47,153,42,133,39,130,40,124,32,89,24,31,25,28,32,21,48,13,67,7],
+    back(c, S){
+      const s = S.back > 0 ? 1 : -1, w = S.still ? 0 : Math.sin(S.t*0.12), tr = S.trail;
+      const X = (x)=> s > 0 ? x : 182 - x;   // laid out for her back on the right of the picture, mirrored for the other
+      // the wisp: the sheet's back corner drawn out into a ghost's tail, low behind her, its tip curling up (longer as she runs)
+      const tx = 198 + tr*30, ty = 150 - tr*10 + w*4;
+      const q = qpts(X(138), 144, X(184 + tr*16), 178, X(tx), ty, 10);
+      q.push(X(tx + 5), ty - 9, X(tx + 1), ty - 16);
+      strip(c, q, 38, 3); hwFill(c, '#eef2fc'); hwInk(c, 4.5);
+      c.beginPath(); c.moveTo(X(160), 160); c.quadraticCurveTo(X(186 + tr*14), 172, X(tx - 2), ty + 2); c.lineWidth = 2.4; c.strokeStyle = hwC('#c4cde3'); c.stroke();
+    },
+    front(c, S){
+      const p = this.ol, G = hwGrow(p, 5), tt = S.still ? 0 : S.t*0.16, sh = (S.back > 0 ? 1 : -1)*S.trail*5, a0 = c.globalAlpha;
+      // the hole her face looks out of: above her brows, wide of her eyes, under her mouth
+      // (a rounded oblong cut with scissors: its edge a little uneven, tilted with her)
+      const hole = ()=>{ for(let i = 0; i < 48; i++){ const th = i/48*Math.PI*2, cs = Math.cos(th), sn = Math.sin(th), r = 1 + 0.02*Math.sin(th*11 + 0.7);
+          const u = 60*r*Math.sign(cs)*Math.pow(Math.abs(cs), 0.62), v = 51*r*Math.sign(sn)*Math.pow(Math.abs(sn), 0.62), x = 97 + u*0.997 + v*0.08, y = 97 - u*0.08 + v*0.997;
+          if(i) c.lineTo(x, y); else c.moveTo(x, y); }
+        c.closePath(); };
+      // the hem: down her sides from yl, a row of scallops below her bottom
+      const yl = 132, xl = hwSide(G, yl, -1), xr = hwSide(G, yl, 1), n = 6, hb = 166, x0 = xr + 5, x1 = xl - 5;
+      const hem = ()=>{ c.moveTo(xl, yl - 12); c.lineTo(xr, yl - 12); c.lineTo(x0, hb);
+        for(let i = 0; i < n; i++){ const a = x0 + (x1 - x0)*i/n, b = x0 + (x1 - x0)*(i + 1)/n, d = 10 + 2.5*Math.sin(tt + i*1.7); c.quadraticCurveTo((a + b)/2 + sh, hb + 2*d, b, hb); }
+        c.closePath(); };
+      c.save(); c.beginPath(); c.rect(-80, -80, 360, 380); hole(); c.clip('evenodd');
+      hwOl(c, G); hwInk(c, 9); c.beginPath(); hem(); hwInk(c, 9);
+      hwOl(c, G); hwFill(c, '#eef2fc'); c.beginPath(); hem(); hwFill(c, '#eef2fc');
+      for(const k of [0, 1]){   // her shaded side: on the sheet over her, then on its hem
+        c.save(); if(k){ c.beginPath(); hem(); } else hwOl(c, G); c.clip();
+        c.beginPath(); c.moveTo(150, -10); c.lineTo(156, 60); c.lineTo(160, 190); c.lineTo(220, 190); c.lineTo(220, -10); c.closePath(); hwFill(c, '#dde3f2');
+        c.restore();
+      }
+      c.beginPath();
+      c.moveTo(72, 6); c.quadraticCurveTo(56, 22, 50, 44); c.moveTo(118, 3); c.quadraticCurveTo(134, 18, 142, 40);
+      c.moveTo(31, 80); c.quadraticCurveTo(34, 104, 41, 128); c.moveTo(162, 66); c.quadraticCurveTo(163, 96, 164, 124);
+      c.moveTo(70, 152); c.quadraticCurveTo(68, 162, 64 + sh*0.5, 172); c.moveTo(108, 154); c.quadraticCurveTo(110, 164, 114 + sh*0.5, 174); c.moveTo(140, 150); c.quadraticCurveTo(143, 158, 148 + sh*0.5, 168);
+      c.lineWidth = 2.4; c.strokeStyle = hwC('#c4cde3'); c.stroke();
+      c.restore();
+      // the hood's shadow on her round the hole, and the hole's cut edge
+      c.save(); c.beginPath(); hole(); c.clip(); c.globalAlpha = a0*0.16; c.beginPath(); hole(); c.lineWidth = 12; c.strokeStyle = hwC('#3c4670'); c.stroke(); c.restore();
+      c.globalAlpha = a0; c.beginPath(); hole(); hwInk(c, 3.6);
+    } },
+  };
+})());
+// end batch 6
 // `noHat`: the costume has headwear of its own (a pumpkin, a tricorne, a wizard's hat, a stick, a flat top), so a worn hat is left off while it is on
 // (face gear -- shades, headphones, glasses -- is still worn).
 // The costume a fighter wears: its drawing, when `it` is a costume row and the fighter is the one it is for (cosFitsFighter's rule), else null.
@@ -77673,6 +77779,9 @@ const COS_SKIN_THUMBS = {
   sk_balloony_hw:'data:image/png;base64,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',
   sk_roboty_hw:'data:image/png;base64,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',
   // end batch 4 (Store thumbnails)
+  // HALLOWEEN COSTUMES - batch 6 (Store thumbnails)
+  sk_marshmallow_hw:'data:image/png;base64,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',
+  // end batch 6 (Store thumbnails)
 };
 // A small preview of a cosmetic, drawn on its own little canvas or with CSS -- never a picture fetched from anywhere, so the
 // Store makes no requests at all.
