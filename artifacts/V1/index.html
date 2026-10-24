@@ -12999,7 +12999,7 @@ function ctfMenuToggle(on){
   CTF.menu = CTF.menu || { open:false, tab:0, cur:0, areaCur:0, mate:0, vote:{ preset:null, ticks:{}, off:{}, assign:{}, jobs:{}, areas:{} } };
   CTF.menu.open = on == null ? !CTF.menu.open : !!on;
   if(CTF.menu.open){ const pl = L.plans && L.plans[me.team], v = pl && pl.votes && pl.votes[me.idx]; if(v) CTF.menu.vote = { preset:v.preset, ticks:Object.assign({}, v.ticks), off:Object.assign({}, v.off || {}), assign:Object.assign({}, v.assign), jobs:Object.assign({}, v.jobs || {}), areas:Object.assign({}, v.areas || {}) }; }
-  netInputChanged();   // online, a guest's fighter stands while the menu is open, as the host's does (NET.readInput)
+  netInputChanged(true);   // online, a guest's fighter stands while the menu is open, as the host's does (NET.readInput)
 }
 function ctfMenuSend(){
   const L = CTF.live, me = fighters.find(f=>f.you); if(!L || !me) return;
@@ -13131,7 +13131,7 @@ function ctfPlanVoteNetSend(vote){
   const N = window.NET; if(!N) return;
   N._planVoteN = (N._planVoteN || 0) + 1;
   N.planVote = { n:N._planVoteN, v:JSON.parse(JSON.stringify(vote || {})) };
-  N._inSentV = -1; N.sendInput();   // (now, not at the next heartbeat)
+  N.sendInput(true);   // (now, not at the next heartbeat)
 }
 function ctfPlanVoteNetIn(N, idx, pv){
   if(SETTINGS.mode !== 'ctf' || !CTF.live || !pv || !Number.isInteger(pv.n)) return;
@@ -15814,13 +15814,13 @@ addEventListener('keyup',e=>{down[e.code]=false; netInputChanged();});
 // A key held as the window loses focus never sends its keyup -- it is let go in another window -- so it stayed down until the
 // player pressed it again. A match now goes on while the host's tab is hidden (HIDDEN HOST), and a host who tabbed away holding
 // Right walked their fighter off the stage with nobody playing. Everything is let go instead.
-function releaseKeys(){ for(const c in down) down[c] = false; netInputChanged(); }   // (online, a guest's host lets go too, now)
+function releaseKeys(){ for(const c in down) down[c] = false; netInputChanged(true); }   // (online, a guest's host lets go too, now)
 addEventListener('blur', releaseKeys);
 addEventListener('visibilitychange', ()=>{ if(document.hidden) releaseKeys(); });
 // A new screen, and a new match, start with none of the mapped keys held: one still down from the last (a smash held as the player pressed R,
 // say) would act on the first frame of the next. The keyboard's own keyup, and the key repeat while a key really is held, put back whatever
 // is. Only the mapped keys are let go, as it always was: this was the touch pad's other job, for every player, and the pad is gone.
-function releaseMappedKeys(){ for(const k in KEYS) if(down[KEYS[k]]) down[KEYS[k]] = false; netInputChanged(); }
+function releaseMappedKeys(){ for(const k in KEYS) if(down[KEYS[k]]) down[KEYS[k]] = false; netInputChanged(true); }
 
 // A computer game: the keyboard, and the mouse in the menus and the Level Creator (the owner, 2026-10-06: "remove mobile compatibility....
 // I SAID I WANTED THIS TO BE A COMPUTER GAME!!!"). The on-screen touch pad is gone, and the setting an earlier build saved for it is let go
@@ -71593,6 +71593,7 @@ function clientFrame(ticks){
   if(NET_VIEW.lastFrame){ const d = now - NET_VIEW.lastFrame; if(d > 0 && d < 100) NET_VIEW.frameDt += (d - NET_VIEW.frameDt)*0.1; }
   NET_VIEW.lastFrame = now;
   if(s && s !== NET_VIEW.applied) applySnapshot(s);
+  if(SETTINGS.mode==='ctf' && ctfMenuOpen()){ const me = fighters.find(q=>q.you); if(me && me.hitstun > 0) ctfMenuToggle(false); }   // (the planning menu closes when you are hit, online as on the host: ctfFilterInput)
   netInterpolate(now);
   try{ netPredict(now); }catch(e){ NET_PRED.on = false; console.error('netPredict', e); }   // its own fighter moves at once (GUEST PREDICTION)
   for(let i = 0; i < k; i++){
@@ -71639,7 +71640,7 @@ function netInputIn(N, idx, m){
     let prev = S.cur; S.q = q.filter(c=>{ const keep = c[1] !== prev; prev = c[1]; return keep; });
   }
   // the guest's clock against the host's steps: the earliest any message lately came, in frames (netAck)
-  S.offs.push([f - (N.inTick || 0), now]); while(S.offs.length > 1 && now - S.offs[0][1] > NET_IN.win) S.offs.shift();
+  if(!m.u) S.offs.push([f - (N.inTick || 0), now]);   // (an urgent one went mid-frame: not a measure of the network) while(S.offs.length > 1 && now - S.offs[0][1] > NET_IN.win) S.offs.shift();
   return true;
 }
 // One host step: every guest who sends frames moves on (NET.inputs[idx] is what step() and anything else reads for their keys).
@@ -71690,7 +71691,8 @@ function netPredOut(f){
   const N = window.NET, S = N && N.role === 'host' && N.inS && N.inS[f.idx];
   if(!S) return null;
   const a = netAck(N, S); if(a == null) return null;
-  const busy = !!(f._freeAt !== hazardT || f._freeIn !== (S.cur & 7) || FS.freeze > 0 || FS.slow > 0 || f.dead || f.hitstun > 0 || f._hitStop > 0 || f._fsLock || f._mv || f._dashing > 0 || f._hyperT > 0 || f._gotcha || f._nail
+  const ctfHeld = SETTINGS.mode === 'ctf' && CTF.live && !CTF.live.over && (CTF.live.phase !== 'play' || f._jail != null || f._fuse || f._can || f._canLand || f._peekT > 0 || f._peekCd > 0);   // (Capture the Flag holds them: ctfFilterInput)
+  const busy = !!(ctfHeld || f._freeAt !== hazardT || f._freeIn !== (S.cur & 7) || FS.freeze > 0 || FS.slow > 0 || f.dead || f.hitstun > 0 || f._hitStop > 0 || f._fsLock || f._mv || f._dashing > 0 || f._hyperT > 0 || f._gotcha || f._nail
     || (f._sm && f._sm.drive) || f.flying > 0 || f._tp || f._tpHang > 0 || stanceStill(f) || f.rooted > 0 || f._gb || f._hold || f._slam
     || f.frozen > 0 || f._fxLock > hazardT || f.ctrlRev > 0 || f.smashHold > 0 || f._windup || f._plunge || f._floatT > 0 || f.iceUntil > 0
     || f._heldBy != null || f._grabHold || f._attract || f.dropping > 0 || f._clingT > 0 || f._springT > 0 || f._raceSpringT > 0 || f.swallowed || RACE.active);
@@ -71810,10 +71812,10 @@ function netRemoteInput(idx){
 }
 // A client's key went down or up (the key handlers), or something let go of them (a blur, a pause, the planning menu): into its timeline,
 // and sent now, not at the next frame.
-function netInputChanged(){ try{ if(window.NET && window.NET.role==='client') window.NET.sendInput(); }catch(e){} }
+function netInputChanged(urgent){ try{ if(window.NET && window.NET.role==='client') window.NET.sendInput(!!urgent); }catch(e){} }
 // and a client whose tab is hidden lets go of everything (sendInput sends nothing held while hidden): the host kept
 // its last input, running right forever, until the tab came back
-addEventListener('visibilitychange', netInputChanged);
+addEventListener('visibilitychange', ()=>netInputChanged(true));
 
 // ============================================================
 //  NETCODE — LAN multiplayer over WebSocket relay
@@ -71849,6 +71851,7 @@ window.NET = {
   inS: {},               // the host: idx -> that guest's changes waiting to play, and what it holds (netInputIn, netPlayStep)
   inTick: 0,             // the host: steps since the match began (netPlayStep)
   _inT0: null,           // a client: when its match began -- frame 0 of its input timeline (sampleInput)
+  _inTimer: null,        // a client: the timer that sends its next frame as it begins (inArm)
   snapshot: null,        // latest state (client renders this)
   myId: Math.random().toString(36).slice(2,8),
   lastInputSent: 0,
@@ -71964,6 +71967,7 @@ window.NET = {
     this.mySide=0; this.lobbySides=null;   // (a side is picked in a room: the next room starts unpicked)
     this.planVote=null; this.planAck={};   // (a plan vote belongs to its match)
     this.inS={}; this.inTick=0; this._inT0=null;   // (and so does input)
+    if(this._inTimer != null){ try{ clearTimeout(this._inTimer); }catch(e){} this._inTimer = null; }
     // Cleared here too, not just in go('title'), so any other exit path is safe as well.
     window.__netRoster=null; window.__netHumanCount=0; window.__netSides=null;
     NET_COS=[]; COS_KO_OUT=[];   // ...and so are the room's looks
@@ -72435,7 +72439,8 @@ window.NET = {
   // clock. _inChg: its recent changes, [frame, buttons], oldest first (what it sends, and what its prediction plays: inMaskAt).
   inReset(){
     this._inT0 = performance.now(); this._inE = 1 + (Date.now() % 1000000);   // (e: which match of this client's the frames belong to)
-    this._inChg = []; this._inCur = 0; this._inLatW = null; this._inLatB = 0; this._inV = 0; this._inSentV = -1; this._inSentF = -1e9;
+    this._inChg = []; this._inCur = 0; this._inLatW = null; this._inLatB = 0; this._inV = 0; this._inSentF = -1e9;
+    if(this._inTimer != null){ try{ clearTimeout(this._inTimer); }catch(e){} this._inTimer = null; } this._inTimerAt = Infinity;
   },
   inFrame(now){ return Math.floor((now - this._inT0) / STEP_CLOCK.ms); },
   inMaskAt(g){ let m = 0; for(const c of (this._inChg || [])){ if(c[0] > g) break; m = c[1]; } return m; },
@@ -72455,22 +72460,46 @@ window.NET = {
     const last = C.length ? C[C.length - 1] : null;
     if(C.length !== n0 || (last && (last[0] !== lw0 || last[1] !== lm0))) this._inV++;
   },
-  // Sent the moment the timeline changes -- the key handlers call this (netInputChanged), and loop() every frame (a gamepad) -- and otherwise
-  // every NET_IN.hb frames, so the host knows how its messages come. Each carries the frame it was sent in (f) and the recent changes as frames
-  // before it (c: [frames before f, buttons, ...]); `input`, the keys held now, is for a host from before this.
-  sendInput(){
+  // The frame the next message is due in: the first frame with a change no message has carried yet, or the next heartbeat.
+  inDue(){
+    let due = this._inSentF + NET_IN.hb;
+    for(const x of this._inChg) if(x[0] > this._inSentF){ if(x[0] < due) due = x[0]; break; }
+    return due;
+  },
+  // A timer for the edge of that frame (a hair after it), so the message goes as the frame begins; loop() sends it too if it comes first.
+  inArm(now){
+    if(typeof setTimeout !== 'function') return;
+    const at = this._inT0 + this.inDue()*STEP_CLOCK.ms + 0.3;
+    if(this._inTimer != null && this._inTimerAt <= at) return;   // (one is already set for then, or sooner)
+    if(this._inTimer != null) clearTimeout(this._inTimer);
+    this._inTimerAt = at;
+    this._inTimer = setTimeout(()=>{ this._inTimer = null; this._inTimerAt = Infinity; try{ this.sendInput(); }catch(e){} }, Math.max(0, at - now));
+  },
+  // A frame goes WHOLE (from the guest-input job, 2026-10-24): a message sent in frame F carries the changes for frames up to F and none after,
+  // so whatever is pressed during F goes as F+1 begins (the frame it counts from) with every key pressed with it -- down + C pressed a few ms
+  // apart is one change, never a neutral special and then a down special. At most a 60th of a second on the way to the host; this screen's
+  // own fighter does not wait for it (GUEST PREDICTION reads the timeline at once). Sent when a frame with a change begins, and otherwise
+  // every NET_IN.hb frames (so the host knows how its messages arrive) -- whichever of the timer (inArm), loop() or a key handler gets there
+  // first. Each carries the frame it was sent in (f) and the recent changes as frames before it (c: [frames before f, buttons, ...]); `input`,
+  // the keys held now, is for a host from before this. `urgent` (a blur, a hidden tab, a pause, the planning menu, a vote): it goes now, with
+  // what is known of the frame to come as well, and says so (u), so the host does not read the network's speed from it.
+  sendInput(urgent){
     if(this.role!=="client" || !running) return;
     if(this._inT0 == null) this.inReset();
     const now = performance.now(), F = this.inFrame(now);
     this.sampleInput(now);
-    if(this._inV === this._inSentV && F - this._inSentF < NET_IN.hb) return;
-    this._inSentV = this._inV; this._inSentF = F; this.lastInputSent = now;
-    const input = {}, c = [], C = this._inChg;
-    for(let i = 0; i < NET_BUTTONS.length; i++) if(this._inCur & (1 << i)) input[NET_BUTTONS[i]] = true;
-    for(let i = Math.max(0, C.length - NET_IN.send); i < C.length; i++) c.push(F - C[i][0], C[i][1]);
-    const msg = {t:"input", idx:this.myIdx, input, f:F, e:this._inE, c};
-    if(this.planVote) msg.plan = this.planVote;   // a Capture the Flag plan vote, until the host's snapshot says it was counted (ctfPlanVoteNetSend)
-    this.send(msg);
+    if(urgent || F >= this.inDue()){
+      const input = {}, c = [], C = this._inChg, upTo = urgent ? Infinity : F;
+      for(let i = 0; i < NET_BUTTONS.length; i++) if(this._inCur & (1 << i)) input[NET_BUTTONS[i]] = true;
+      const sendable = C.filter(x=>x[0] <= upTo);
+      for(let i = Math.max(0, sendable.length - NET_IN.send); i < sendable.length; i++) c.push(F - sendable[i][0], sendable[i][1]);
+      const msg = {t:"input", idx:this.myIdx, input, f:F, e:this._inE, c};
+      if(urgent || (typeof document!=='undefined' && document.hidden)) msg.u = 1;
+      if(this.planVote) msg.plan = this.planVote;   // a Capture the Flag plan vote, until the host's snapshot says it was counted (ctfPlanVoteNetSend)
+      this.send(msg);
+      this._inSentF = F; this.lastInputSent = now;
+    }
+    this.inArm(now);
   },
 
   status(msg){ const el=document.getElementById('lobbyStatus'); if(el) el.textContent=msg; },
@@ -72544,7 +72573,7 @@ function setPaused(on){
   paused = !!on;
   const el = document.getElementById('pauseCard'); if(el) el.style.display = paused ? 'flex' : 'none';
   if(paused){ try{ syncPauseMoves(); }catch(e){} } else PAUSE_MOVES_OPEN = false;
-  netInputChanged();   // a guest's host stops playing what it held (and gets it back on the way out)
+  netInputChanged(true);   // a guest's host stops playing what it held (and gets it back on the way out)
   if(was && !paused) netInResume();   // a host's guests pick up from now, not with what they pressed while it stood still
   if(!paused && running) startLoop();
 }
