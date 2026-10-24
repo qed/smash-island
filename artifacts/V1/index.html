@@ -10889,7 +10889,9 @@ function ctfNavPushZone(z){ return z.type === 'wind' || z.type === 'updraft' || 
 // The game's own applyZone for the zones a flight meets (what a fighter feels at x, y, after the step's collisions): T holds vx, vy, jumps, the spring's rest steps and the
 // float timer (T.ft, the game's f._floatT: a float area holds it at 3, and gravity is at 0.35 while it runs, one off each step: gravFor in step()). For the push zones also T.x (a belt moves it; set it to x),
 // T.g (on the ground after the collisions: an updraft that lifts clears it), the keys of the step (T.dir, T.dn, T.up: the game's f._pushIn, _pushDn, _pushUp), T.bk (steps since the underside of something
-// was bonked: f._bonkT) and the let-go (T.px, py, pt, off: f._pinX, _pinY, _pinT, _pushOff; ctfNavPin). On the ground every zone is felt as in the air, as step() applies them: a spring under the feet throws you off the floor.
+// was bonked: f._bonkT) and the let-go (T.px, py, pt, off: f._pinX, _pinY, _pinT, _pushOff; ctfNavPin). On the ground only the push zones are felt here. The other areas are felt in the air only,
+// as before, though step() applies them on the ground too: a spring pad's floor would then be a place no flight comes down on (the pad throws you off it), so no flag could be hidden on one, and a flag
+// on a pad is still taken by whoever is thrown off it. That is the owner's call, not this sim's: left as it was (measured, 2026-10-24: 3-4 pad floors a side on Sky and the Factory).
 function ctfNavZoneNew(s){ return { vx:0, vy:0, jumps:0, sp:0, ft:0, x:0, y:0, g:false, dir:0, dn:false, up:false, bk:99, px:s && s.px != null ? s.px : null, py:(s && s.py) || 0, pt:(s && s.pt) || 0, off:(s && s.off) || 0, pf:false }; }
 // A live fighter's push-zone state, for a flight from where it is (ctfNavFly, ctfNavWallFly): the let-go and how long ago it bonked a ceiling.
 function ctfNavPushOf(f, s){ s.px = f._pinX != null ? f._pinX : null; s.py = f._pinY || 0; s.pt = f._pinT || 0; s.off = f._pushOff || 0; s.bk = f._bonkT != null ? hazardT - f._bonkT : 99; return s; }
@@ -10905,19 +10907,20 @@ function ctfNavPin(T){   // pushPin, on T
 function ctfNavZoneFx(nav, x, y, R, T){
   if(T.off > 0) T.off--;   // (step(): the let-go runs down every step, before the zones)
   T.pf = false;
-  const zl = nav.zb[ctfNavBucket(x)];
+  const g0 = T.g, zl = nav.zb[ctfNavBucket(x)];
   if(zl) for(const z of zl){
     if(T.x < z.x || T.x > z.x + z.w || y + R < z.y || y > z.y + z.h) continue;
     const s = z.strength || 1;
     if(z.type === 'wind'){ if(ctfNavPin(T)) continue; const d = z.dir || 1; if(T.dir === -d) continue; if(T.vx*d < WIND_DRIFT*s) T.vx += d*0.6*s; T.vy -= 0.15*s; }
     else if(z.type === 'updraft'){ if(ctfNavPin(T) || T.dn || T.bk <= 12) continue; T.vy = Math.max(T.vy - 1.35*s, -9.5*s); if(T.vy < 0) T.g = false; }
     else if(z.type === 'belt'){ if(T.g && !ctfNavPin(T)) T.x += (z.dir || 1)*2.2*s; }
+    else if(g0) continue;
     else if(z.type === 'water'){ T.vx *= 1 - 0.13*s; T.vy *= 1 - 0.05*s; }
     else if(z.type === 'glue') T.vx *= Math.max(0, 1 - 0.55*s);
     else if(z.type === 'float') T.ft = Math.max(T.ft, 3);
-    else if(z.type === 'spring' && !(T.sp > 0)){ T.vy = -24*s; T.jumps = 2; T.sp = 24; T.g = false; }
+    else if(z.type === 'spring' && !(T.sp > 0)){ T.vy = -24*s; T.jumps = 2; T.sp = 24; }
   }
-  if(T.sp > 0) T.sp--;
+  if(T.sp > 0 && !g0) T.sp--;
 }
 // Standing in thin air (the game applies the zones on the ground too): the float timer is already 3 at the takeoff.
 function ctfNavFloatAt(nav, x, y, R){
@@ -10973,7 +10976,7 @@ function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free, thru, bst, pert){
         if(y + R >= p.y && y + R <= p.y + 18 + vy){ landed = p; y = p.y - R; vy = 0; break; }   // (the game's own test: no look at where the feet were a step ago)
       }
     }
-    if(Z){ Z.vx = vx; Z.vy = vy; Z.jumps = jumps; Z.sp = sp; Z.ft = ft; Z.x = x; Z.y = y; Z.g = !!landed; Z.dir = held; Z.up = up; Z.dn = false; Z.bk = bk; ctfNavZoneFx(nav, x, y, R, Z); vx = Z.vx; vy = Z.vy; jumps = Z.jumps; sp = Z.sp; ft = Z.ft; x = Z.x; if(landed && !Z.g) landed = null; }   // (on a floor too, as step(): an updraft or a spring lifts you straight off it, a belt carries you)
+    if(Z){ Z.vx = vx; Z.vy = vy; Z.jumps = jumps; Z.sp = sp; Z.ft = ft; Z.x = x; Z.y = y; Z.g = !!landed; Z.dir = held; Z.up = up; Z.dn = false; Z.bk = bk; ctfNavZoneFx(nav, x, y, R, Z); vx = Z.vx; vy = Z.vy; jumps = Z.jumps; sp = Z.sp; ft = Z.ft; x = Z.x; if(landed && !Z.g) landed = null; }   // (on a floor too, as step(): an updraft lifts you straight off it, a belt carries you)
     if(landed){ const node = ctfNavNodeAt(nav, x, landed.y, 1.5); return node ? { node, x, t } : null; }
     if(y > WH + 100 || y < -260 || x < -120 || x > nav.M.WW + 120) return null;   // (the blast lines: step() takes a fighter out past any of them)
     bk++;
