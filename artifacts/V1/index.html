@@ -74258,6 +74258,10 @@ const COSMETICS = [
   { id:'sk_goo_hw',            kind:'skin', fighter:'Goo',        name:'Snail Goo',             price:75,  costume:'goo_snail',         month:10 },
   { id:'sk_lifering_hw',       kind:'skin', fighter:'Lifering',   name:'Octopus Lifering',      price:115, costume:'lifering_octo',     month:10 },
   // end batch 6
+  // HALLOWEEN COSTUMES - batch 7 (the owner, 2026-10-23: "costumes for all!!!"): eleven more, drawn as the ones above are; appended after them so no
+  // online code above moves.
+  { id:'sk_bonesaw_hw',        kind:'skin', fighter:'Bonesaw',    name:'Skeleton Bonesaw',      price:115, costume:'bonesaw_skeleton', month:10 },
+  // end batch 7
   // HATS AND ACCESSORIES: drawn on the head (drawCosHat), inside the same transforms as the art, so they follow the
   // sprite's rig, its facing and its squash.
   { id:'hat_party',   kind:'hat', name:'Party Hat',        price:75 },
@@ -78007,6 +78011,132 @@ Object.assign(COSTUME_ART, (function(){
   };
 })());
 // end batch 6
+// HALLOWEEN COSTUMES - batch 7 (the owner, 2026-10-23: "costumes for all!!!"): the last eleven, drawn as the ones above are (COSTUME_ART: a `back` layer
+// under the render and a `front` one over it and its face, in the render's own pixels, every piece laid against the body's traced outline `ol`), so they
+// lean, squash, turn and flip with the body in every pose. Their own little helpers stay inside this block.
+Object.assign(COSTUME_ART, (function(){
+  // a strip along the points q ([x0, y0, x1, y1, ...]), w0 wide at its first point and w1 at its last: its path, ready to fill and ink
+  function strip(c, q, w0, w1){
+    const n = q.length/2, L = [], R = [];
+    for(let i = 0; i < n; i++){
+      const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1), dx = q[2*b] - q[2*a], dy = q[2*b + 1] - q[2*a + 1], d = Math.hypot(dx, dy) || 1, w = (w0 + (w1 - w0)*i/(n - 1))/2;
+      L.push(q[2*i] - dy/d*w, q[2*i + 1] + dx/d*w); R.push(q[2*i] + dy/d*w, q[2*i + 1] - dx/d*w);
+    }
+    c.beginPath(); c.moveTo(L[0], L[1]); for(let i = 2; i < L.length; i += 2) c.lineTo(L[i], L[i + 1]);
+    for(let i = R.length - 2; i >= 0; i -= 2) c.lineTo(R[i], R[i + 1]); c.closePath();
+  }
+  // n + 1 points along the curve from (x0, y0) bent toward (cx, cy) to (x1, y1)
+  function qpts(x0, y0, cx, cy, x1, y1, n){ const q = []; for(let i = 0; i <= n; i++){ const u = i/n, a = (1 - u)*(1 - u), b = 2*u*(1 - u), d = u*u; q.push(a*x0 + b*cx + d*x1, a*y0 + b*cy + d*y1); } return q; }
+  // n + 1 points along the cubic from (x0, y0) by (x1, y1) and (x2, y2) to (x3, y3)
+  function cpts(x0, y0, x1, y1, x2, y2, x3, y3, n){ const q = []; for(let i = 0; i <= n; i++){ const u = i/n, v = 1 - u; q.push(v*v*v*x0 + 3*v*v*u*x1 + 3*v*u*u*x2 + u*u*u*x3, v*v*v*y0 + 3*v*v*u*y1 + 3*v*u*u*y2 + u*u*u*y3); } return q; }
+  // round bumps ([x, y, r, colour] each) inked as one shape: every ink first, then every fill, so only the outside edge keeps its line
+  function bumps(c, B, w){
+    for(const b of B){ c.beginPath(); c.ellipse(b[0], b[1], b[2], b[2], 0, 0, 7); hwInk(c, w); }
+    for(const b of B){ c.beginPath(); c.ellipse(b[0], b[1], b[2], b[2], 0, 0, 7); hwFill(c, b[3]); }
+  }
+  // a polygon's path added to the one being built (no beginPath), so two can make one shape (a ring, filled evenodd)
+  function addPoly(c, p){ c.moveTo(p[0], p[1]); for(let i = 2; i < p.length; i += 2) c.lineTo(p[i], p[i + 1]); c.closePath(); }
+  // the polygon p cut by the line through (x, y) whose outward normal is (nx, ny): the part on its inner side
+  function cut(p, x, y, nx, ny){
+    const out = [], n = p.length/2, side = (i)=> (p[2*i] - x)*nx + (p[2*i + 1] - y)*ny;
+    for(let i = 0; i < n; i++){
+      const j = (i + 1) % n, a = side(i), b = side(j);
+      if(a <= 0) out.push(p[2*i], p[2*i + 1]);
+      if((a <= 0) !== (b <= 0)){ const u = a/(a - b); out.push(p[2*i] + (p[2*j] - p[2*i])*u, p[2*i + 1] + (p[2*j + 1] - p[2*i + 1])*u); }
+    }
+    return out;
+  }
+  // the closed polygon p as points every `st` px along its edge
+  function resample(p, st){
+    const out = [], n = p.length/2; let carry = 0;
+    for(let i = 0; i < n; i++){
+      const j = (i + 1) % n, ax = p[2*i], ay = p[2*i + 1], dx = p[2*j] - ax, dy = p[2*j + 1] - ay, L = Math.hypot(dx, dy);
+      let d = carry; while(d < L){ out.push(ax + dx*d/L, ay + dy*d/L); d += st; } carry = d - L;
+    }
+    return out;
+  }
+  // a bone: a round-ended shaft from (x0, y0) to (x1, y1), w thick, a pair of knobs at each end; inked as one shape
+  function bone(c, x0, y0, x1, y1, w, col){
+    const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy) || 1, nx = -dy/L*w*0.55, ny = dx/L*w*0.55, r = w*0.62;
+    const K = [[x0 + nx, y0 + ny], [x0 - nx, y0 - ny], [x1 + nx, y1 + ny], [x1 - nx, y1 - ny]];
+    for(const k of [0, 1]){
+      c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.lineWidth = w + (k ? 0 : 6); c.strokeStyle = hwC(k ? col : '#1c1c1c'); c.stroke();
+      for(const q of K){ c.beginPath(); c.ellipse(q[0], q[1], r + (k ? 0 : 3), r + (k ? 0 : 3), 0, 0, 7); hwFill(c, k ? col : '#1c1c1c'); }
+    }
+  }
+  // a bone along the points q, w thick: an inked round-ended stroke
+  function boneLine(c, q, w, col){
+    for(const k of [0, 1]){ c.beginPath(); c.moveTo(q[0], q[1]); for(let i = 2; i < q.length; i += 2) c.lineTo(q[i], q[i + 1]); c.lineWidth = w + (k ? 0 : 6); c.strokeStyle = hwC(k ? col : '#1c1c1c'); c.stroke(); }
+  }
+  // the points of a closed shape joined by curves through their midpoints
+  function smooth(c, P){
+    const n = P.length/2, mx = (i)=> (P[2*(i % n)] + P[2*((i + 1) % n)])/2, my = (i)=> (P[2*(i % n) + 1] + P[2*((i + 1) % n) + 1])/2;
+    c.beginPath(); c.moveTo(mx(n - 1), my(n - 1));
+    for(let i = 0; i < n; i++) c.quadraticCurveTo(P[2*i], P[2*i + 1], mx(i), my(i));
+    c.closePath();
+  }
+  // true while the picture is mirrored (the fighter turned the other way): a number on a costume is turned back so it still reads
+  function mirrored(c){ const X = c.getTransform ? c.getTransform() : null; return !!X && X.a*X.d - X.b*X.c < 0; }
+  // the numeral 1 as a shape (not a letter: no move or look puts words on the screen), h tall, its foot's middle at (x, y)
+  function one(c, x, y, h, col, w){
+    const P = [-0.3,-0.7, 0.04,-1, 0.18,-1, 0.18,-0.16, 0.34,-0.16, 0.34,0, -0.32,0, -0.32,-0.16, -0.12,-0.16, -0.12,-0.68, -0.26,-0.58];
+    c.beginPath(); for(let i = 0; i < P.length; i += 2){ const px = x + P[i]*h, py = y + P[i + 1]*h; if(i) c.lineTo(px, py); else c.moveTo(px, py); } c.closePath();
+    hwFill(c, col); if(w) hwInk(c, w);
+  }
+  // a round ear on the outline's top edge at column x, its middle out along the edge's facing (turned k of the way to straight up), sunk `sink` px under it
+  function roundEar(c, p, x, k, r, sink, outer, inner, hi){
+    const y = hwTop(p, x), a = hwTopDir(p, x, k), ux = Math.cos(a), uy = Math.sin(a), ex = x + ux*(r - sink), ey = y + uy*(r - sink);
+    hwBlob(c, ex, ey, r, r, outer, 4.5);
+    hwBlob(c, ex + ux*2, ey + uy*2, r*0.58, r*0.58, inner, 0);
+    if(hi){ c.beginPath(); c.arc(ex, ey, r - 4.5, a - 2.3, a - 1.35); c.lineWidth = 2.6; c.strokeStyle = hwC(hi); c.stroke(); }
+  }
+  return {
+  // BONESAW -- a skeleton suit: black over all of him but his teeth, a hole cut in it for his face; on it in white, a skull hood rising over his top edge
+  // (its sockets, its nose and its grin above his brows), his ribs curving out from either side of his face, vertebrae along his back and a big bone down
+  // his handle.
+  bonesaw_skeleton: { W:411, H:200, box:[-4, -32, 415, 200], noHat:true, key:'bonesaw.png',
+    ol:[70,1,72,1,86,12,98,18,109,22,122,24,123,28,337,20,341,24,342,32,350,36,375,54,388,67,395,77,403,96,408,118,411,158,400,158,392,156,386,156,385,158,379,158,370,156,369,159,358,157,346,159,339,157,337,160,322,158,321,161,306,159,305,162,291,159,289,160,289,162,274,160,273,163,258,160,257,163,242,161,241,164,226,162,225,165,210,162,209,164,206,165,194,163,193,166,178,163,177,166,162,164,161,167,146,165,145,168,131,165,129,168,118,168,111,161,106,151,103,148,94,144,97,119,97,89,96,84,90,77,86,75,81,75,76,81,72,92,57,156,53,164,43,169,26,169,17,166,8,158,4,148,1,130,1,117,14,99,25,80,35,59,41,42,46,37,56,33,60,33,62,31,61,27,62,10,64,6],
+    front(c, S){
+      const p = this.ol, G = hwGrow(p, 2), BONE = '#f3efe2', SH = '#cfc8b3', DK = '#25222b', cx = 258, cy = 104, rx = 76, ry = 41;
+      const hole = ()=>{ c.moveTo(cx + rx, cy); c.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2); };
+      const top = (x)=> cy - ry*Math.sqrt(Math.max(0, 1 - ((x - cx)/rx)*((x - cx)/rx)));   // the hole's top edge at column x
+      const area = ()=> hwPoly(c, [-30, -90, 440, -90, 440, 150, 121, 150, 121, 200, -30, 200]);   // all of his handle; his blade down to above its teeth
+      // the suit
+      c.save(); area(); c.clip(); hwOl(c, G); c.clip();
+      c.beginPath(); c.rect(-40, -100, 500, 320); hole(); c.clip('evenodd');
+      hwOl(c, G); hwFill(c, '#1f1d25');
+      c.beginPath(); c.moveTo(128, 33); c.lineTo(334, 26); c.lineWidth = 3; c.strokeStyle = hwC('#3d3a47'); c.stroke();   // a sheen along his back
+      // his ribs, three each side, out from his face and curving down
+      for(const s of [-1, 1]){
+        const X = (x)=> cx + s*(x - cx);
+        boneLine(c, qpts(X(197), 84, X(166), 74, X(138), 94, 8), 7, BONE);
+        boneLine(c, qpts(X(187), 104, X(158), 98, X(132), 118, 8), 7, BONE);
+        boneLine(c, qpts(X(197), 125, X(166), 124, X(140), 141, 8), 7, BONE);
+      }
+      // vertebrae along his back, from the skull toward his handle
+      for(const x of [137, 154, 171, 188]){ const y = 37 - (x - 137)*0.03; hwBlob(c, x, y, 7, 7.5, BONE, 3); c.beginPath(); c.moveTo(x - 3.5, y + 0.5); c.lineTo(x + 3.5, y + 0.5); c.lineWidth = 2; c.strokeStyle = hwC(SH); c.stroke(); }
+      // a big bone down his handle
+      bone(c, 64, 44, 32, 144, 12, BONE);
+      c.beginPath(); c.moveTo(60, 58); c.lineTo(38, 128); c.lineWidth = 2.4; c.strokeStyle = hwC(SH); c.stroke();
+      c.restore();
+      // the suit's edges: round him, along the top of his teeth, round the hole
+      c.save(); area(); c.clip(); hwOl(c, G); hwInk(c, 4.5); c.restore();
+      c.save(); hwOl(c, G); c.clip(); c.beginPath(); c.moveTo(121, 200); c.lineTo(121, 150); c.lineTo(440, 150); hwInk(c, 4); c.restore();
+      c.beginPath(); hole(); hwInk(c, 4);
+      // the skull hood: its cranium up over his top edge, its grin along the top of the hole, just above his brows
+      const sk = ()=>{ c.beginPath(); c.moveTo(210, top(210)); c.lineTo(209, 64); c.quadraticCurveTo(193, 58, 193, 36); c.bezierCurveTo(192, -40, 324, -40, 323, 36);
+        c.quadraticCurveTo(323, 58, 307, 64); c.lineTo(306, top(306)); for(let x = 306; x >= 210; x -= 6) c.lineTo(x, top(x)); c.closePath(); };
+      sk(); hwFill(c, BONE);
+      c.save(); sk(); c.clip(); c.beginPath(); c.ellipse(262, 26, 60, 46, 0, -0.35, 1.25); c.lineWidth = 8; c.strokeStyle = hwC(SH); c.stroke(); c.restore();
+      sk(); hwInk(c, 4.5);
+      for(const s of [-1, 1]){ c.save(); c.translate(cx + s*24, 20); c.rotate(s*0.18); hwBlob(c, 0, 0, 15, 13.5, DK, 3); c.restore(); }
+      c.beginPath(); c.moveTo(258, 50); c.quadraticCurveTo(248, 43, 251, 37); c.quadraticCurveTo(255, 34, 258, 39); c.quadraticCurveTo(261, 34, 265, 37); c.quadraticCurveTo(268, 43, 258, 50); c.closePath(); hwFill(c, DK); hwInk(c, 2.4);
+      c.beginPath(); for(let x = 214; x <= 302; x += 2){ const y = top(x) - 12; if(x === 214) c.moveTo(x, y); else c.lineTo(x, y); }
+      for(let x = 222; x < 300; x += 9.5){ c.moveTo(x, top(x) - 12); c.lineTo(x, top(x) - 1); } c.lineWidth = 2.6; c.strokeStyle = hwC('#1c1c1c'); c.stroke();
+    } },
+  };
+})());
+// end batch 7
 // `noHat`: the costume has headwear of its own (a pumpkin, a tricorne, a wizard's hat, a stick, a flat top), so a worn hat is left off while it is on
 // (face gear -- shades, headphones, glasses -- is still worn).
 // The costume a fighter wears: its drawing, when `it` is a costume row and the fighter is the one it is for (cosFitsFighter's rule), else null.
