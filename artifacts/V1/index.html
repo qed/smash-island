@@ -12999,6 +12999,7 @@ function ctfMenuToggle(on){
   CTF.menu = CTF.menu || { open:false, tab:0, cur:0, areaCur:0, mate:0, vote:{ preset:null, ticks:{}, off:{}, assign:{}, jobs:{}, areas:{} } };
   CTF.menu.open = on == null ? !CTF.menu.open : !!on;
   if(CTF.menu.open){ const pl = L.plans && L.plans[me.team], v = pl && pl.votes && pl.votes[me.idx]; if(v) CTF.menu.vote = { preset:v.preset, ticks:Object.assign({}, v.ticks), off:Object.assign({}, v.off || {}), assign:Object.assign({}, v.assign), jobs:Object.assign({}, v.jobs || {}), areas:Object.assign({}, v.areas || {}) }; }
+  netInputChanged();   // online, a guest's fighter stands while the menu is open, as the host's does (NET.readInput)
 }
 function ctfMenuSend(){
   const L = CTF.live, me = fighters.find(f=>f.you); if(!L || !me) return;
@@ -13130,7 +13131,7 @@ function ctfPlanVoteNetSend(vote){
   const N = window.NET; if(!N) return;
   N._planVoteN = (N._planVoteN || 0) + 1;
   N.planVote = { n:N._planVoteN, v:JSON.parse(JSON.stringify(vote || {})) };
-  N._inputKey = null; N.sendInput();   // (now, not at the next heartbeat)
+  N._inSentV = -1; N.sendInput();   // (now, not at the next heartbeat)
 }
 function ctfPlanVoteNetIn(N, idx, pv){
   if(SETTINGS.mode !== 'ctf' || !CTF.live || !pv || !Number.isInteger(pv.n)) return;
@@ -14839,6 +14840,7 @@ function viewScrolls(){ return isNetClient() ? NET_VIEW.scroll : scrolls(); }
 function viewZoom(){ return isNetClient() ? NET_VIEW.z : (scrolls() ? CAM_ZOOM : 1); }
 // The buttons an online input message carries (NET.sendInput, NET.onMessage, netRemoteInput).
 const NET_BUTTONS = ['left','right','jump','down','attack','special','smash','flag','edit'];
+const NET_IN_MASK = (1 << NET_BUTTONS.length) - 1, NET_IN_ACT = NET_IN_MASK & ~15;   // (bit i is NET_BUTTONS[i]); every button; the ones that start a move
 
 // ============================================================
 //  THE LOCKER, WHAT'S NEW, AND THE CHANGELOG  (the owner, 2026-10-14)
@@ -15812,13 +15814,13 @@ addEventListener('keyup',e=>{down[e.code]=false; netInputChanged();});
 // A key held as the window loses focus never sends its keyup -- it is let go in another window -- so it stayed down until the
 // player pressed it again. A match now goes on while the host's tab is hidden (HIDDEN HOST), and a host who tabbed away holding
 // Right walked their fighter off the stage with nobody playing. Everything is let go instead.
-function releaseKeys(){ for(const c in down) down[c] = false; }
+function releaseKeys(){ for(const c in down) down[c] = false; netInputChanged(); }   // (online, a guest's host lets go too, now)
 addEventListener('blur', releaseKeys);
 addEventListener('visibilitychange', ()=>{ if(document.hidden) releaseKeys(); });
 // A new screen, and a new match, start with none of the mapped keys held: one still down from the last (a smash held as the player pressed R,
 // say) would act on the first frame of the next. The keyboard's own keyup, and the key repeat while a key really is held, put back whatever
 // is. Only the mapped keys are let go, as it always was: this was the touch pad's other job, for every player, and the pad is gone.
-function releaseMappedKeys(){ for(const k in KEYS) if(down[KEYS[k]]) down[KEYS[k]] = false; }
+function releaseMappedKeys(){ for(const k in KEYS) if(down[KEYS[k]]) down[KEYS[k]] = false; netInputChanged(); }
 
 // A computer game: the keyboard, and the mouse in the menus and the Level Creator (the owner, 2026-10-06: "remove mobile compatibility....
 // I SAID I WANTED THIS TO BE A COMPUTER GAME!!!"). The on-screen touch pad is gone, and the setting an earlier build saved for it is let go
@@ -23921,7 +23923,7 @@ const AS_ACT = {
   // and plows foes harder the faster it goes. Riderless it trundles at a walk, and a cart rolling at a walk hurts nobody.
   cart(s, tgt, T, owner){
     const rider = fighters.find(f=>!f.dead && f.idx===s.owner && Math.abs(f.x-s.x) < s.r+18 && f.y < s.y && f.y > s.y-s.r-70);
-    if(!rider && owner && !owner.dead && owner.controller!=='local' && !owner.you){
+    if(!rider && owner && !owner.dead && owner.controller!=='local' && owner.controller!=='remote' && !owner.you){   // (a guest online is a person: not walked over by it)
       const odx = s.x - owner.x;
       if(Math.abs(odx) > 20){ owner.vx += Math.sign(odx)*0.5; }
       else if(owner.onground && owner.y > s.y - s.r - 40){ owner.vy = -12*(owner.st || STAT_ONE).jump; owner.onground=false; }   // (FIGHTER STATS: jump)
@@ -42097,6 +42099,7 @@ function updateSummons(){
   summons = summons.filter(s=> s.life>0);
 }
 function step(){
+  netPlayStep();   // ONLINE: each guest's input for this step (netPlayStep), before the gate: a step not run is one no one plays
   if(fsTimeGate()) return;   // CATCH, THEN CINEMATIC: the Final Smash intro stops the match; its slow-mo KO skips steps (fsTimeGate)
   hazardT++;
   STEP_F = null;   // (HIT FREEZE: set while each fighter's own frame runs, below)
@@ -42636,6 +42639,7 @@ function step(){
     // ---- move ----
     f._airT = f.onground ? 0 : (f._airT || 0) + 1;   // frames in the air (1 on the first): a running jump eases down over them (runEaseCap)
     if(f.hitstun<=0){
+      f._freeAt = hazardT; f._freeIn = (inp.left ? 1 : 0) | (inp.right ? 2 : 0) | (inp.jump ? 4 : 0);   // (moved by these keys this step: a guest's prediction runs only when they are the guest's own, netPredOut)
       if((inp.left && !f._pl) || (inp.right && !f._pr)) f._dirT = hazardT;
       f._pl = !!inp.left; f._pr = !!inp.right;
       if(f._gb) gbTick(f, inp);
@@ -42751,13 +42755,14 @@ function step(){
     if(f._tpHang > 0 && (f.vy !== 0 || f.hitstun > 0)) f._tpHang = 0;   // the beat after she appears ends early if anything moves her (a jump, a hit)
     // DOWN cancels the float outright, so committing to a hover is not committing to its whole
     // duration — she can drop out of it to dodge or to chase someone below her.
-    if(f.flying>0 && inp.down && f.you){ f.flying=0; f.vy=Math.max(f.vy,1); puff(f.x,f.y+f.r,'#e6a6e0',3); }
+    if(f.flying>0 && inp.down && (f.you || f.controller==='remote')){ f.flying=0; f.vy=Math.max(f.vy,1); puff(f.x,f.y+f.r,'#e6a6e0',3); }
     const gv = gravFor(f);   // gravity this frame: thin air lightens it (Thermal Rise, a float area), and the float timer runs down
     if(f.flying>0){                       // Puffball flight: hover, up gives lift, gravity floats
       const wantUp = f.you ? (down[KEYS.jump]||pollPad()?.jump)
+                           : f.controller==='remote' ? !!(window.NET && window.NET.inputs[f.idx] && window.NET.inputs[f.idx].jump)   // (a guest's Puffball was flown by the CPU's rule: up did nothing and she sank)
                            : (f.aiTarget && f.aiTarget.y < f.y-20);   // AI climbs only if target is above
       if(wantUp) f.vy-=0.9;
-      else if(!f.you && f.aiTarget && f.aiTarget.y > f.y+20) f.vy+=0.7; // AI dives toward lower targets
+      else if(!f.you && f.controller!=='remote' && f.aiTarget && f.aiTarget.y > f.y+20) f.vy+=0.7; // AI dives toward lower targets
       f.vy += f.vy > 0 ? gv*0.15*fst.fall : gv*0.15; f.vy*=0.94;   // (FIGHTER STATS: fall pulls on the way down)
     } else if(f._tp || f._tpHang > 0){
       if(f._tpHang > 0) f._tpHang--;   // Bow's Teleport: no gravity while she fades, nor for a beat after she appears (TP.hang)
@@ -71151,6 +71156,7 @@ function netFighter(f){
   if(f._windup) o.charge = { t:f._windup.t, t0:f._windup.t0, color:f._windup.color };   // the wind-up: its clock and its colour (the body winds up and glows: STARTUP)
   else if(f._suT != null && hazardT - f._suT >= 0 && hazardT - f._suT <= 1) o.su = Math.round((f._suP || 0)*100);   // a marked STARTUP (stupMark), 0..100
   if(SETTINGS.mode==='ctf') ctfNetFighter(f, o);
+  if(f.controller==='remote'){ const pr = netPredOut(f); if(pr) o.pr = pr; }   // a guest's own fighter: where its screen's prediction starts (GUEST PREDICTION)
   return o;
 }
 // [id, x, y, r, vx, vy, colour index, owner's slot in fighters (-1: none), {rare fields}?]
@@ -71588,6 +71594,7 @@ function clientFrame(ticks){
   NET_VIEW.lastFrame = now;
   if(s && s !== NET_VIEW.applied) applySnapshot(s);
   netInterpolate(now);
+  try{ netPredict(now); }catch(e){ NET_PRED.on = false; console.error('netPredict', e); }   // its own fighter moves at once (GUEST PREDICTION)
   for(let i = 0; i < k; i++){
     if(ticks !== undefined && INTERP) interpRecord(true);   // (render interpolation: only a loop() frame, which counts ticks)
     netStepParticles();
@@ -71600,11 +71607,195 @@ function netViewReset(){
   Object.assign(NET_VIEW, { applied:null, lerp:false, camReady:false, follow:null, z:1, scroll:false, lastArrive:0, gap:33, lastFrame:0, frameDt:1000/60 });
   if(window.NET) window.NET._geoKey = null;   // the host sends its world again with the first snapshot
 }
-// The input step() uses for a remote player this frame: what they hold now, plus any button pressed since the last
-// frame even if it has been let go again. step() reads input once a frame, and a tap whose press and release both
-// arrived between two frames used to never happen.
+// ONLINE INPUT, FRAME BY FRAME. The owner, 2026-10-23: "controls are glitchy" -- "wrong move comes out", "only for guests"; 2026-10-24: "fix server
+// lag ... inputs are continuously read without letting overrides". A guest's input used to be the keys it held when each message ARRIVED, so
+// the network decided the timing: two keys pressed on one frame (up + X, down + C) were two messages, and jitter landed them on different host
+// frames -- a hop and then an aerial instead of the up-tilt. Now each guest numbers its own 60 Hz frames (NET.sampleInput) and every message
+// carries its recent changes stamped with them (`c`). The host plays a change THE STEP IT ARRIVES (netInputIn, netPlayStep): nothing waits in
+// a buffer. One change a step, so a tap is never swallowed, and keys pressed on one frame land on one step. Only changes a few frames apart
+// that the network bunched together are spread back to the gaps they were pressed with (at most `wait` steps), so a short hop stays short.
+//   hb    a guest's heartbeat, in frames, while nothing changes       keep, max  the frames, and changes, a guest remembers (its prediction too)
+//   send  changes each message repeats    near  frames apart under which two changes keep their gap    wait  most steps one is held for it
+//   win   ms of arrivals the host's estimate of a guest's clock looks back over (netAck)
+const NET_IN = { hb:6, keep:90, max:24, send:12, near:12, wait:4, win:2000 };
+function netInputOf(m){ const o = {}; for(let i = 0; i < NET_BUTTONS.length; i++) o[NET_BUTTONS[i]] = !!(m & (1 << i)); return o; }
+function netMaskOf(inp){ let m = 0; for(let i = 0; i < NET_BUTTONS.length; i++) if(inp && inp[NET_BUTTONS[i]]) m |= 1 << i; return m; }
+// A guest's input message, on the host. Peer-supplied: whole numbers only, a bounded list, buttons masked. False for one not of this shape
+// (a guest from before frame-by-frame input: the latch serves it).
+function netInputIn(N, idx, m){
+  const f = m.f, e = Number.isInteger(m.e) ? m.e : 0, raw = m.c;
+  if(!Number.isInteger(f) || !Array.isArray(raw) || raw.length > 64 || raw.length % 2) return false;
+  const list = [];
+  for(let i = 0; i < raw.length; i += 2){ const d = raw[i], mk = raw[i + 1]; if(!Number.isInteger(d) || !Number.isInteger(mk) || d < -4 || d > 1e6) return false; list.push([f - d, mk & NET_IN_MASK]); }
+  list.sort((a, b)=>a[0] - b[0]);
+  const ins = N.inS || (N.inS = {}), now = performance.now();
+  let S = ins[idx];
+  if(!S || S.e !== e) S = ins[idx] = { e, q:[], cur:0, lastG:-1e9, clk:0, wt:0, offs:[] };   // a new match of theirs
+  if(list.length){
+    // what this message says from its first change on replaces what was queued from there; a change already played is not played again,
+    // unless the frame last played now says otherwise (a key that came later in that same frame): it is played as a change of its own
+    const g0 = list[0][0], q = S.q.filter(c=>c[0] < g0);
+    for(const c of list) if(c[0] > S.lastG || (c[0] === S.lastG && c === list[list.length - 1])) q.push(c);
+    let prev = S.cur; S.q = q.filter(c=>{ const keep = c[1] !== prev; prev = c[1]; return keep; });
+  }
+  // the guest's clock against the host's steps: the earliest any message lately came, in frames (netAck)
+  S.offs.push([f - (N.inTick || 0), now]); while(S.offs.length > 1 && now - S.offs[0][1] > NET_IN.win) S.offs.shift();
+  return true;
+}
+// One host step: every guest who sends frames moves on (NET.inputs[idx] is what step() and anything else reads for their keys).
+function netPlayStep(){
+  const N = window.NET; if(!N || N.role !== 'host' || !N.inS) return;
+  N.inTick = (N.inTick || 0) + 1;
+  for(const k in N.inS){
+    const S = N.inS[k]; if(!S) continue;
+    S.clk++;
+    const c = S.q[0];
+    // far from the last change (a fresh press): now. Close to it: when its gap has passed, or after `wait` steps at most.
+    if(c && (c[0] - S.lastG >= NET_IN.near || S.clk >= c[0] || ++S.wt > NET_IN.wait)){ S.q.shift(); S.cur = c[1]; S.lastG = c[0]; S.clk = c[0]; S.wt = 0; }
+    N.inputs[k] = netInputOf(S.cur);
+  }
+}
+// The last of a guest's frames the host's match has played, as best the host can tell: its step count moved onto the guest's clock by the
+// earliest any of their recent messages came (the latest frame each said it was sent in), and never past a change still waiting to play.
+function netAck(N, S){
+  let o = -Infinity; for(const x of S.offs) if(x[0] > o) o = x[0];
+  if(o === -Infinity) return null;
+  let a = (N.inTick || 0) + o;
+  if(S.q.length) a = Math.min(a, S.q[0][0] - 1);
+  return a;
+}
+// The host comes back from its pause: what the guests pressed meanwhile is not played -- each picks up with what they hold now.
+function netInResume(){
+  const N = window.NET; if(!N || N.role !== 'host' || !N.inS) return;
+  for(const k in N.inS){ const S = N.inS[k]; if(!S) continue; const c = S.q[S.q.length - 1]; if(c){ S.cur = c[1]; S.lastG = c[0]; } S.q = []; S.offs = []; S.wt = 0; }
+}
+
+// GUEST PREDICTION. The owner, 2026-10-24, on "server lag" for guests (all four: the old key keeps acting, presses queue up late, a move cannot
+// be cut in on, a key seems stuck): a guest's screen showed its own fighter only once its keys had gone to the host and the host's picture
+// had come back -- a whole round trip on every step and every turn. Now the guest's screen moves its own fighter AT ONCE: it takes where the
+// host last put it (the snapshot) and plays its own keys since then (the frames the host had not yet played: netAck) by the host's run, drift,
+// jump, short hop, fast fall, gravity, floor and platform rules (netPredRun). Moves, hits and everything else are still the host's alone: the
+// prediction stops at a press of attack, special, smash, flag or edit, at Down on the ground, and while the host says the fighter is not free
+// to just run and jump (`b`: a stun, a move, a dash, a stance, flight, a step its own keys did not move it in -- the hiding phase, a cannon...), and the fighter is then drawn
+// where the host has it. Where the host
+// and the guest disagree (a hit the guest has not heard of yet, a moving platform), the difference eases out over a few frames rather than
+// snapping (NET_PRED.ease), unless it is too big to be one (`snap` px).
+//   max  most frames played ahead (a worse network is not chased further)     ease  how much of a difference is left the next frame
+const NET_PRED = { on:true, max:30, ease:0.8, snap:160, ox:0, oy:0, mode:0, bx:0, by:0, auth:null };
+// On the host: what a guest's prediction needs of its fighter -- the frame it is at, whether it is free (b), its jumps and jump-key state,
+// and the numbers this step's run and jump would use (k) as step() works them out, so the guest needs none of the buffs and stats behind them.
+function netPredOut(f){
+  const N = window.NET, S = N && N.role === 'host' && N.inS && N.inS[f.idx];
+  if(!S) return null;
+  const a = netAck(N, S); if(a == null) return null;
+  const busy = !!(f._freeAt !== hazardT || f._freeIn !== (S.cur & 7) || FS.freeze > 0 || FS.slow > 0 || f.dead || f.hitstun > 0 || f._hitStop > 0 || f._fsLock || f._mv || f._dashing > 0 || f._hyperT > 0 || f._gotcha || f._nail
+    || (f._sm && f._sm.drive) || f.flying > 0 || f._tp || f._tpHang > 0 || stanceStill(f) || f.rooted > 0 || f._gb || f._hold || f._slam
+    || f.frozen > 0 || f._fxLock > hazardT || f.ctrlRev > 0 || f.smashHold > 0 || f._windup || f._plunge || f._floatT > 0 || f.iceUntil > 0
+    || f._heldBy != null || f._grabHold || f._attract || f.dropping > 0 || f._clingT > 0 || f._springT > 0 || f._raceSpringT > 0 || f.swallowed || RACE.active);
+  const o = { a, b:busy ? 1 : 0 };
+  if(busy) return o;
+  const fst = f.st || STAT_ONE, sk = ctfSpeedK(f), r3 = v=>Math.round(v*1000)/1000;
+  const mvB = (f.slowed>0 ? MOVE*0.5 : MOVE) * (f._hasteT>0 ? (1 + 0.5*Math.min(1, f._hasteT/20)) : 1) * sk;
+  const capB = (f.slowed>0?MAXVX*0.55:MAXVX)*(f._hasteT>0 ? (1 + 0.4*Math.min(1, f._hasteT/20)) : 1)*(f._grasstree>0?0.85:1)*(f._noBattery>0?0.75:1)*(f._slowmoT>hazardT?0.5:1)*sk;
+  const jv = (SETTINGS.mode==='ctf' ? ctfJumpV(f) : JUMP*fst.jump) * (f._sinkT > hazardT ? FX2.sand.jump : 1);
+  const hopOk = mtOn(f) && jv === JUMP*fst.jump;   // (step(): a boosted, laden or sunk jump is never cut short)
+  o.j = f.jumps; o.at = f._airT || 0;
+  o.s = (f._jp ? 1 : 0) | (f._hop ? 2 : 0) | (f._ff ? 4 : 0) | (f._dnPrev ? 8 : 0) | (mtOn(f) ? 16 : 0) | (hopOk ? 32 : 0) | ((f.kit && f.kit.special==='airrel') ? 64 : 0);
+  o.k = [r3(mvB*fst.run), r3(mvB*fst.air), r3(capB*fst.run), r3(capB*fst.air), r3(jv), r3(recV(f)), r3(SH_V*fst.jump), r3(FF_V*fst.fall), r3(fst.fall), r3(stage.hazard==='lowgrav' ? GRAV*0.7 : GRAV)];
+  return o;
+}
+// On the guest: its own fighter's frames from `a` (the snapshot's state, `pr` its numbers) played forward through frame `to` with its own keys.
+// Null when there is nothing to play. Stops early at a key that starts a move, or Down on the ground.
+function netPredRun(a, pr, to, team){
+  const N = window.NET, k = pr.k;
+  let from = pr.a + 1; if(to - from + 1 > NET_PRED.max) from = to - NET_PRED.max + 1;
+  if(to < from) return null;
+  const P = { x:a.x, y:a.y, vx:a.vx, vy:a.vy, g:a.g, face:a.face, r:a.r, j:pr.j, at:pr.at, jp:!!(pr.s & 1), hop:!!(pr.s & 2), ff:!!(pr.s & 4), dn:!!(pr.s & 8) };
+  const mt = !!(pr.s & 16), hopOk = !!(pr.s & 32), airrel = !!(pr.s & 64), grav = k[9];
+  const plats = platRects(), gy = groundY(), big = isBig();
+  for(let g = from; g <= to; g++){
+    const m = N.inMaskAt(g);
+    if(m & NET_IN_ACT) break;
+    const L = m & 1, R = m & 2, J = m & 4, D = m & 8;
+    if(D && P.g) break;
+    // move (step(): ---- move ----)
+    const vx0 = Math.abs(P.vx), mv = P.g ? k[0] : k[1];
+    if(L){ P.vx -= mv; P.face = -1; }
+    if(R){ P.vx += mv; P.face = 1; }
+    if(!L && !R && P.g) P.vx *= FRICTION;
+    let cap = P.g ? k[2] : k[3];
+    if(!P.g && k[2] > k[3] && vx0 > cap) cap = Math.min(runEaseCap(cap, k[2], P.at + 1), vx0);
+    P.vx = Math.max(-cap, Math.min(cap, P.vx));
+    // jump, and the short hop
+    if(J && !P.jp && P.j > 0){ P.vy = k[4]; P.hop = P.g && mt && hopOk; if(!P.g) P.vy *= k[5]; P.j--; P.g = false; P.jp = true; }
+    if(!J) P.jp = false;
+    if(P.hop){ if(P.vy >= 0 || P.g) P.hop = false; else if(!J){ if(P.vy < -k[6]) P.vy = -k[6]; P.hop = false; } }
+    // gravity, and the fast fall (mtFastFall)
+    P.vy += P.vy > 0 ? (airrel ? grav*0.55 : grav)*k[8] : grav;
+    { const edge = D && !P.dn; P.dn = !!D;
+      if(mt){ if(P.g || P.vy < 0) P.ff = false; else if(P.ff){ if(P.vy < k[7]) P.vy = k[7]; } else if(edge){ P.ff = true; P.vy = Math.max(P.vy, k[7]); } } }
+    P.x += P.vx; P.y += P.vy;
+    P.g = false;
+    // the floor, the solid blocks, the one-way tops (step(): ---- integrate ----)
+    if(!big && P.y >= gy - P.r && !springyHoleAt(P.x) && floorCatches(P, gy)){ P.y = gy - P.r; if(P.vy > 0) P.vy = 0; P.g = true; P.j = 2; }
+    for(const p of plats){
+      if(!p.solid) continue;
+      if(p.dref !== undefined && p.dref.op[team]) continue;
+      const ph = p.h || 16;
+      if(!(P.x + P.r > p.x && P.x - P.r < p.x + p.w && P.y + P.r > p.y && P.y - P.r < p.y + ph)) continue;
+      const fromLeft = p.x - (P.x + P.r), fromRight = (p.x + p.w) - (P.x - P.r), fromTop = p.y - (P.y + P.r), fromBottom = (p.y + ph) - (P.y - P.r);
+      const ax = Math.abs(fromLeft) < Math.abs(fromRight) ? fromLeft : fromRight, ay = Math.abs(fromTop) < Math.abs(fromBottom) ? fromTop : fromBottom;
+      const stepUp = (p.ramp === true || p.step === true) && fromTop < 0 && fromTop >= -28 && P.vy > -2;
+      if(Math.abs(ax) < Math.abs(ay) && !stepUp){ P.x += ax; if(ax < 0 && P.vx > 0) P.vx = 0; if(ax > 0 && P.vx < 0) P.vx = 0; }
+      else { P.y += ay; if(ay < 0){ P.vy = Math.min(0, P.vy); P.g = true; P.j = 2; } else P.vy = Math.max(0, P.vy); }
+    }
+    for(const p of plats){
+      if(p.solid) continue;
+      if(p.rot){
+        const cx = p.x + p.w/2, cy = p.y + (p.h||14)/2, an = -p.rot*Math.PI/180, relx = P.x - cx, rely = (P.y + P.r) - cy;
+        const lx = Math.cos(an)*relx - Math.sin(an)*rely, ly = Math.sin(an)*relx + Math.cos(an)*rely, halfW = p.w/2, halfH = (p.h||14)/2;
+        if(Math.abs(lx) < halfW + 2 && ly >= -halfH - 2 && ly <= halfH + 10 + Math.abs(P.vy)){
+          const sa = p.rot*Math.PI/180, wy = cy + (Math.sin(sa)*lx + Math.cos(sa)*-halfH);
+          if(P.vy >= 0 && P.y + P.r <= wy + 18){ P.y = wy - P.r; P.g = true; P.j = 2; const slope = Math.sin(sa); if(Math.abs(slope) > 0.05) P.vx += slope*0.9; else P.vy = 0; }
+        }
+      } else if(P.vy >= 0 && P.x > p.x - 4 && P.x < p.x + p.w + 4 && P.y + P.r >= p.y && P.y + P.r <= p.y + 18 + P.vy){
+        P.y = p.y - P.r;
+        if(p.bouncy){ P.vy = -14; P.j = 2; } else { P.vy = 0; P.g = true; P.j = 2; }
+      }
+    }
+    if(P.g){ P.ff = false; P.at = 0; } else P.at++;
+  }
+  return P;
+}
+// Every client frame, after the glide: this device's own fighter drawn where its prediction has it (or where the host has it, while it is not
+// free), with any jump between the two eased out.
+function netPredict(now){
+  const N = window.NET, S = NET_PRED;
+  const me = N && N.role === 'client' ? fighters.find(f=>f.idx===N.myIdx) : null;
+  if(!me || me.dead || !S.on || N._inT0 == null || me._tx === undefined){ S.ox = S.oy = 0; S.mode = 0; S.auth = null; return; }
+  // the snapshot's own numbers, kept on its fighter before anything here draws over them
+  if(!me._pa) me._pa = { x:me._tx, y:me._ty, vx:me.vx, vy:me.vy, g:!!me.onground, face:me.face, r:me.r, pr:me.pr };
+  const A = me._pa, to = N.inFrame(now);
+  const free = A.pr && !A.pr.b && Array.isArray(A.pr.k) && A.pr.k.length >= 10;
+  const P = free ? netPredRun(A, A.pr, to, me.team) : null;
+  const bx = P ? P.x : me.x, by = P ? P.y : me.y, mode = P ? 1 : 2;
+  if(S.mode && mode !== S.mode){ S.ox += S.bx - bx; S.oy += S.by - by; }   // prediction on or off: from where it was drawn
+  else if(mode === 1 && S.auth && S.auth !== A){   // a new snapshot: what the last one predicted for now, against what this one does
+    const was = S.auth.pr && !S.auth.pr.b && Array.isArray(S.auth.pr.k) ? netPredRun(S.auth, S.auth.pr, to, me.team) : null;
+    if(was){ S.ox += was.x - bx; S.oy += was.y - by; }
+  }
+  S.auth = A; S.mode = mode; S.bx = bx; S.by = by;
+  if(Math.abs(S.ox) + Math.abs(S.oy) > S.snap){ S.ox = 0; S.oy = 0; }
+  me.x = bx + S.ox; me.y = by + S.oy;
+  if(P){ me.face = P.face; me.vx = P.vx; me.vy = P.vy; me.onground = P.g; }   // (the run cycle, the lean, the jump stretch)
+  S.ox *= S.ease; S.oy *= S.ease;
+  if(Math.abs(S.ox) < 0.05) S.ox = 0; if(Math.abs(S.oy) < 0.05) S.oy = 0;
+}
+// The input step() uses for a remote player this frame. A guest sending frames: what netPlayStep gave them. A guest from before that: what
+// they hold now, plus any button pressed since the last frame even if it has been let go again (the latch).
 function netRemoteInput(idx){
   const N = window.NET; if(!N) return null;
+  if(N.inS && N.inS[idx]) return N.inputs[idx] || null;
   const r = N.inputs[idx] || null, L = N.latch && N.latch[idx];
   if(!L) return r;
   N.latch[idx] = null;
@@ -71615,7 +71806,8 @@ function netRemoteInput(idx){
   for(const b of NET_BUTTONS) if(L.b[b]) out[b] = true;
   return out;
 }
-// A client's key went down or up (the key handlers): send it now, not at the next frame.
+// A client's key went down or up (the key handlers), or something let go of them (a blur, a pause, the planning menu): into its timeline,
+// and sent now, not at the next frame.
 function netInputChanged(){ try{ if(window.NET && window.NET.role==='client') window.NET.sendInput(); }catch(e){} }
 // and a client whose tab is hidden lets go of everything (sendInput sends nothing held while hidden): the host kept
 // its last input, running right forever, until the tab came back
@@ -71651,7 +71843,10 @@ window.NET = {
   myIdx: null,           // which fighter index this device controls
   players: [],           // lobby roster [{id,name,fighter,ready,isHost}]
   inputs: {},            // idx -> latest input (host reads these for remote fighters)
-  latch: {},             // idx -> buttons pressed since the host's last step (netRemoteInput)
+  latch: {},             // idx -> buttons pressed since the host's last step (netRemoteInput; a guest from before frame-by-frame input)
+  inS: {},               // the host: idx -> that guest's changes waiting to play, and what it holds (netInputIn, netPlayStep)
+  inTick: 0,             // the host: steps since the match began (netPlayStep)
+  _inT0: null,           // a client: when its match began -- frame 0 of its input timeline (sampleInput)
   snapshot: null,        // latest state (client renders this)
   myId: Math.random().toString(36).slice(2,8),
   lastInputSent: 0,
@@ -71751,7 +71946,7 @@ window.NET = {
     (this._seats||[]).forEach((id, i)=>{
       if(!id || here.has(id)) return;
       this._seats[i] = null;
-      if(this.inputs) this.inputs[i] = null; if(this.latch) this.latch[i] = null;
+      if(this.inputs) this.inputs[i] = null; if(this.latch) this.latch[i] = null; if(this.inS) delete this.inS[i];
       const f = fighters[i];
       if(f && f.controller==="remote"){ f.controller = "ai"; f.you = false; }
     });
@@ -71766,6 +71961,7 @@ window.NET = {
     this.role="solo"; this.ws=null; this.snapshot=null; this.players=[]; this.lobby=null; this._ctutCheck=false;   // (lobby: the last room's settings are not the next room's)
     this.mySide=0; this.lobbySides=null;   // (a side is picked in a room: the next room starts unpicked)
     this.planVote=null; this.planAck={};   // (a plan vote belongs to its match)
+    this.inS={}; this.inTick=0; this._inT0=null;   // (and so does input)
     // Cleared here too, not just in go('title'), so any other exit path is safe as well.
     window.__netRoster=null; window.__netHumanCount=0; window.__netSides=null;
     NET_COS=[]; COS_KO_OUT=[];   // ...and so are the room's looks
@@ -71806,12 +72002,14 @@ window.NET = {
       // idx is peer-supplied: a fighter slot and nothing else ("__proto__" would reach Object.prototype via the latch)
       const idx=m.idx, inp=m.input;
       if(!Number.isInteger(idx) || idx<0 || idx>=64 || !inp || typeof inp!=='object') return;
-      const was = this.inputs[idx] || {};
-      this.inputs[idx]=inp;
-      // latch a PRESS (up -> down), stamped with the host frame it came after; a key held through a heartbeat is not one
-      for(const b of NET_BUTTONS) if(inp[b] && !was[b]){
-        const L = this.latch[idx] || (this.latch[idx] = { at:hazardT, b:{} });
-        L.at = hazardT; L.b[b] = true;
+      if(!(Array.isArray(m.c) && netInputIn(this, idx, m))){   // frame by frame (ONLINE INPUT, FRAME BY FRAME); else a guest from before that:
+        const was = this.inputs[idx] || {};
+        this.inputs[idx]=inp;
+        // latch a PRESS (up -> down), stamped with the host frame it came after; a key held through a heartbeat is not one
+        for(const b of NET_BUTTONS) if(inp[b] && !was[b]){
+          const L = this.latch[idx] || (this.latch[idx] = { at:hazardT, b:{} });
+          L.at = hazardT; L.b[b] = true;
+        }
       }
       if(m.plan && typeof m.plan==='object'){ try{ ctfPlanVoteNetIn(this, idx, m.plan); }catch(e){} }   // a guest's vote for its side's plan rides on its input (ctfPlanVoteNetSend)
     }
@@ -72193,7 +72391,8 @@ window.NET = {
     window.__netSides = (Array.isArray(sides) && sides.length===roster.length && sides.every(t=>Number.isInteger(t) && t>=0 && t<4)) ? sides.slice() : null;
     NET_COS = cosNetList(cos, roster.length);   // peer-supplied as well: decoded against the catalogue, or nothing
     // nothing from the last match: a held key it left behind, or a snapshot of its world
-    this.inputs = {}; this.latch = {}; this.snapshot = null; this._inputKey = null; this.planVote = null; this.planAck = {};
+    this.inputs = {}; this.latch = {}; this.snapshot = null; this.planVote = null; this.planAck = {};
+    this.inS = {}; this.inTick = 0; this._inT0 = null; if(this.role==='client') this.inReset();   // (a new input timeline: frame 0 is now)
     startMatch();   // handles screen switch + starts the loop (net-aware buildFighters)
   },
 
@@ -72201,7 +72400,7 @@ window.NET = {
   broadcastState(){
     if(!this.ws || this.ws.readyState!==1) return;
     const now=performance.now();
-    // 30 snapshots a second while they are small (every 2nd frame at 60 fps). It was 20 always -- the 45 ms gate lands
+    // 60 snapshots a second while they are small (every frame; the owner, 2026-10-24, on guests' lag: it was every 2nd frame, 30 before that 20). It was 20 always -- the 45 ms gate lands
     // on every 3rd frame, so a client held each picture for 3 frames. A big one waits longer, holding the host's upload
     // near 200 KB/s: Four's Screechy ring (300 shots, ~9.5 KB a snapshot) goes out 20 times a second, the old rate.
     // Sized without the world geometry, which rides along only now and then.
@@ -72209,7 +72408,7 @@ window.NET = {
     // say: loop() stops broadcasting after it, and when the rate gate dropped it every client froze on the frame before the
     // winning KO and never learned the match was over.
     const final = !running || paused;
-    if(!final && now - (this._lastBroadcast||0) < clamp((this._rateBytes||0)/200, 25, 66)) return;
+    if(!final && now - (this._lastBroadcast||0) < clamp((this._rateBytes||0)/200, 15, 66)) return;
     // A backed-up socket drops this snapshot rather than queue it behind the others. The old 200 KB allowance let ~9
     // queue up -- half a second of stale picture at full speed, 1.6 s on a 1 Mbit/s uplink -- and every client saw the
     // match that far in the past until it drained ("there is an input delay sometimes").
@@ -72223,23 +72422,51 @@ window.NET = {
     this.ws.send(text);
   },
   // What this client holds right now: its keys, and its gamepad (a client could not play with one before). Nothing
-  // while paused or hidden, so the host does not keep playing the last thing held.
+  // while paused or hidden, or while its Capture the Flag planning menu is open (there the fighter stands, as it does for the host),
+  // so the host does not keep playing the last thing held.
   readInput(){
-    const inp = {}, idle = paused || (typeof document!=='undefined' && document.hidden), pad = idle ? null : pollPad();
+    const inp = {}, idle = paused || (typeof document!=='undefined' && document.hidden) || (typeof ctfMenuOpen==='function' && ctfMenuOpen()), pad = idle ? null : pollPad();
     for(const b of NET_BUTTONS) inp[b] = !idle && !!(down[KEYS[b]] || (pad && pad[b]));
     return inp;
   },
+  // A client's input timeline (ONLINE INPUT, FRAME BY FRAME): frame 0 is when its match began, a frame every 60th of a second after, by the
+  // clock. _inChg: its recent changes, [frame, buttons], oldest first (what it sends, and what its prediction plays: inMaskAt).
+  inReset(){
+    this._inT0 = performance.now(); this._inE = 1 + (Date.now() % 1000000);   // (e: which match of this client's the frames belong to)
+    this._inChg = []; this._inCur = 0; this._inLatW = null; this._inLatB = 0; this._inV = 0; this._inSentV = -1; this._inSentF = -1e9;
+  },
+  inFrame(now){ return Math.floor((now - this._inT0) / STEP_CLOCK.ms); },
+  inMaskAt(g){ let m = 0; for(const c of (this._inChg || [])){ if(c[0] > g) break; m = c[1]; } return m; },
+  // The keys now, into the timeline. A change made during frame k counts from frame k+1 -- the frame the host's own step would first read it
+  // on. A key pressed and let go inside one frame still counts for that frame, and is up from the next.
+  sampleInput(now){
+    const m = netMaskOf(this.readInput()), w = this.inFrame(now) + 1;
+    if(this._inLatW !== w){ this._inLatW = w; this._inLatB = 0; }
+    this._inLatB |= m & ~this._inCur;
+    this._inCur = m;
+    const mw = m | this._inLatB, C = this._inChg, n0 = C.length, last0 = n0 ? C[n0 - 1] : null, lw0 = last0 && last0[0], lm0 = last0 && last0[1];
+    while(C.length && C[C.length - 1][0] >= w) C.pop();
+    const before = C.length ? C[C.length - 1][1] : 0;
+    if(mw !== before) C.push([w, mw]);
+    if(m !== mw) C.push([w + 1, m]);
+    const lo = w - NET_IN.keep; while(C.length > 1 && (C[1][0] <= lo || C.length > NET_IN.max)) C.shift();   // (the last change before `lo` stays: it says what was held then)
+    const last = C.length ? C[C.length - 1] : null;
+    if(C.length !== n0 || (last && (last[0] !== lw0 || last[1] !== lm0))) this._inV++;
+  },
+  // Sent the moment the timeline changes -- the key handlers call this (netInputChanged), and loop() every frame (a gamepad) -- and otherwise
+  // every NET_IN.hb frames, so the host knows how its messages come. Each carries the frame it was sent in (f) and the recent changes as frames
+  // before it (c: [frames before f, buttons, ...]); `input`, the keys held now, is for a host from before this.
   sendInput(){
     if(this.role!=="client" || !running) return;
-    const now=performance.now(), inp=this.readInput();
-    const key = NET_BUTTONS.map(b=>inp[b]?1:0).join('');
-    // Sent the moment it changes -- the key handlers call this (netInputChanged) -- and otherwise twice a second as a
-    // heartbeat. It used to go every frame, sampled from the keys at that instant: a press waited up to a frame for the
-    // next loop() before it left, a tap shorter than a frame was never sent at all, and an idle player still sent 60
-    // messages a second through the relay.
-    if(key === this._inputKey && now - this.lastInputSent < 500) return;
-    this._inputKey = key; this.lastInputSent = now;
-    const msg = {t:"input", idx:this.myIdx, input:inp};
+    if(this._inT0 == null) this.inReset();
+    const now = performance.now(), F = this.inFrame(now);
+    this.sampleInput(now);
+    if(this._inV === this._inSentV && F - this._inSentF < NET_IN.hb) return;
+    this._inSentV = this._inV; this._inSentF = F; this.lastInputSent = now;
+    const input = {}, c = [], C = this._inChg;
+    for(let i = 0; i < NET_BUTTONS.length; i++) if(this._inCur & (1 << i)) input[NET_BUTTONS[i]] = true;
+    for(let i = Math.max(0, C.length - NET_IN.send); i < C.length; i++) c.push(F - C[i][0], C[i][1]);
+    const msg = {t:"input", idx:this.myIdx, input, f:F, e:this._inE, c};
     if(this.planVote) msg.plan = this.planVote;   // a Capture the Flag plan vote, until the host's snapshot says it was counted (ctfPlanVoteNetSend)
     this.send(msg);
   },
@@ -72311,9 +72538,12 @@ function exitTest(){
 // PAUSE. Esc used to flip `paused` and nothing else: loop() returns while paused, so the picture froze with no word on
 // it, and there was no way to leave a match from there. Now a card says so and offers the way out.
 function setPaused(on){
+  const was = paused;
   paused = !!on;
   const el = document.getElementById('pauseCard'); if(el) el.style.display = paused ? 'flex' : 'none';
   if(paused){ try{ syncPauseMoves(); }catch(e){} } else PAUSE_MOVES_OPEN = false;
+  netInputChanged();   // a guest's host stops playing what it held (and gets it back on the way out)
+  if(was && !paused) netInResume();   // a host's guests pick up from now, not with what they pressed while it stood still
   if(!paused && running) startLoop();
 }
 function quitMatch(){
