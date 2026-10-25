@@ -58,14 +58,16 @@ export async function makePair(opts = {}) {
   const wire = { state: [], input: [], inputAt: [] };
   // `phantoms`: extra humans seated between the host and the client (they never send input), for tests about a room of
   // three or more -- who a client is after someone leaves, for one.
-  const players = [{ id: 'h', name: hostFighter, isHost: true }, ...phantoms.map((p) => ({ isHost: false, ...p })), { id: 'c', name: cliFighter, isHost: false }];
+  // Every id carries the page's build (NET.idTail: "h.4WQW7V8W.thx2ab"), as a real join's does -- a host starts only a room on one build.
+  const tail = Hh.eval('NET.idTail()');
+  const players = [{ id: 'h' + tail, name: hostFighter, isHost: true }, ...phantoms.map((p) => ({ isHost: false, ...p, id: String(p.id) + tail })), { id: 'c' + tail, name: cliFighter, isHost: false }];
   const cliIdx = players.length - 1;
   Hh.__out = (s) => { if (s.startsWith('{"t":"state"') && s.indexOf('"lobby"') < 0) wire.state.push(s.length); q.push({ at: arrive('C'), to: 'C', data: s }); };
   Cc.__out = (s) => { if (s.startsWith('{"t":"input"')) { wire.input.push(s); wire.inputAt.push(clock.T); } q.push({ at: arrive('H'), to: 'H', data: s }); };
   for (const [w, role, idx] of [[Hh, 'host', 0], [Cc, 'client', cliIdx]]) {
     w.eval(`chosen = ROSTER.find(function(r){ return r.name===${JSON.stringify(role === 'host' ? hostFighter : cliFighter)}; });
       NET.role=${JSON.stringify(role)}; NET.myIdx=${idx}; NET.players=${JSON.stringify(players)};
-      NET.myId=${JSON.stringify(role === 'host' ? 'h' : 'c')};
+      NET.myId=${JSON.stringify((role === 'host' ? 'h' : 'c') + tail)};
       NET.ws={readyState:1, bufferedAmount:0, send:function(s){ window.__out(s); }, close:function(){}};`);
   }
   Hh.eval(`SETTINGS.mode=${JSON.stringify(mode)}; SETTINGS.count=${count}; SETTINGS.stocks=${stocks}; SETTINGS.itemRate=0;

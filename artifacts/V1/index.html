@@ -182,6 +182,9 @@
   .optlabel{font-size:11px; font-weight:800; color:#555; text-transform:uppercase; letter-spacing:.08em}
   .optgrp .row{justify-content:center}
   .opthint{font-size:12px; color:#0008; max-width:400px}
+  /* The build this page is, small and quiet under Done (buildVersionUI): for bug reports, and for checking two computers match. */
+  .optbuild{margin-top:10px; font-size:11px; font-weight:700; color:#0007; letter-spacing:.04em}
+  .optbuild b{font-family:'JetBrains Mono Variable',ui-monospace,monospace; color:#000a; user-select:all; -webkit-user-select:all}
   /* WHAT'S NEW: a small card over the title, once per version. It is a sibling of the screens (not inside the title), so the
      title keeps its six buttons; it is never up in a match (go() hides it). */
   #whatsNew{position:absolute; right:18px; bottom:18px; width:min(280px,calc(100% - 36px)); z-index:25; display:none;
@@ -531,6 +534,14 @@
   .lpsbtn.full{background:#d9d9d9; color:#555}
   .lobbyplayer.sided{margin-left:12px; border-left:8px solid var(--tc)}
   .lpauto{flex:none; font-size:9px; font-weight:800; letter-spacing:.08em; color:#555; border:2px dashed #888; border-radius:6px; padding:0 5px}
+  /* ONLINE VERSIONS (NET.versionCheck): a player whose game needs a refresh wears OLD VERSION on their row, and the banner over the room says
+     who and what to do. Start stays off until the whole room has one build. */
+  .lpver{flex:none; font-size:9px; font-weight:800; letter-spacing:.06em; background:#c0392b; color:#fff; border:2px solid #1c1c1c; border-radius:6px; padding:0 5px; white-space:nowrap}
+  .lobbyplayer.oldver{border-color:#c0392b}
+  .lobbyver{flex:0 0 auto; margin-top:8px; background:#ffe3de; border:3px solid #c0392b; border-radius:12px; padding:6px 12px 7px; text-align:left; color:#3a120d}
+  .lvhead{font-size:14px; font-weight:800}
+  .lvline{font-size:13px; font-weight:700; margin-top:2px}
+  .lvbuilds{font-size:11px; font-weight:600; color:#7a3a30; margin-top:3px}
   /* The fighter picker: everyone's portraits in one grid, and each player's pick wears their P-badge on its portrait, live. The names are on
      hover (and the picked one on your row). The cells are buttons, and they let go of the keyboard focus the moment one is clicked (pickFighter). */
   .lobbypicker{flex:1 1 auto; min-width:0; min-height:0; display:flex; flex-direction:column; gap:6px; background:#ffffff80; border:3px solid #1c1c1c; border-radius:12px; padding:7px 9px 8px}
@@ -563,6 +574,7 @@
   #lobbyControls{flex:0 0 240px; display:flex; flex-direction:column; justify-content:center; gap:8px}
   #lobbyControls .btn{width:100%; font-size:15px; padding:9px 8px}
   #lobbyControls .btn.sm{font-size:13px; padding:6px 12px}
+  #lobbyControls .btn:disabled{opacity:.45; cursor:not-allowed; transform:none; box-shadow:0 3px 0 #1c1c1c}
   /* ---- balance stats ---- */
   .statswrap{max-height:374px; overflow-y:auto; margin:12px auto; max-width:520px; text-align:left}
   .statrow{display:flex; align-items:center; gap:10px; padding:5px 10px; border-bottom:1px solid rgba(0,0,0,0.08); font-size:14px}
@@ -949,6 +961,9 @@
     <div class="row" style="margin-top:16px">
       <button class="btn sm" onclick="go('title')">◀ Done</button>
     </div>
+    <!-- WHICH BUILD (2026-10-25): the build this page is (gameBuild: a hash of the game's own code, so it changes with every push by
+         itself), for bug reports. Online, a room plays one build (NET.versionCheck). Filled by buildVersionUI; never in a match. -->
+    <div class="optbuild" id="optBuild" title="Give this number when you report a bug. Playing online, everyone in a room needs the same build."></div>
   </div>
 
   <!-- LEARN (the owner, 2026-10-14): How to Play and Training sit under one button on the title. Each keeps its own screen. -->
@@ -1257,6 +1272,9 @@
       </div>
     </div>
     <div id="lobbyInvite" class="lobbyinvite" style="display:none"></div>
+    <!-- ONLINE VERSIONS: shown to everyone in a room whose players are not all on one build -- who has an older game and has to refresh
+         (NET.renderVersion). Empty and hidden otherwise. -->
+    <div id="lobbyVersion" class="lobbyver" role="alert" style="display:none"></div>
     <!-- In a room: the players on the left, the fighter picker (a grid of portraits, click one) on the right, and along the bottom the host's
          settings with Start and Leave. NET.renderLobby fills all of it; none of it shows until you are in a room. -->
     <div class="lobbymain" id="lobbyMain" style="display:none">
@@ -15037,7 +15055,7 @@ function go(id){
   if(id==='quests'){ try{ buildQuests(); }catch(e){} }
   if(id==='store'){ try{ storeReply(''); buildStore(); }catch(e){} }
   if(id==='wardrobe'){ try{ buildWardrobe(); }catch(e){} }
-  if(id==='options'){ try{ buildThanksUI(); }catch(e){} }
+  if(id==='options'){ try{ buildThanksUI(); }catch(e){} try{ buildVersionUI(); }catch(e){} }
   if(id==='title'){ try{ refreshWallets(); }catch(e){} }
   if(id==='quests' || id==='store' || id==='wardrobe') LOCKER_LAST = id;   // the Locker opens the tab you used last
   if(id==='changelog'){ try{ buildChangelog(); }catch(e){} }
@@ -72921,6 +72939,50 @@ function relayEndpoint(){
   try{ const o = localStorage.getItem('bfsi:relay'); if(o) return o; }catch(e){}
   return (window.NET && typeof window.NET.RELAY === "string") ? window.NET.RELAY : RELAY_URL;
 }
+// ---- WHICH BUILD THIS PAGE IS --------------------------------------------------------------------------------------------
+// The game is pushed several times a day, so a friend with an older page still open can join a newer host -- and the two games then
+// disagree about moves, rules and snapshots, which looks like lag or glitches. So every page knows its build: a hash of this script's
+// own text (gameBuild), which changes whenever the code does with nothing to remember on a push, shown as eight letters in the room
+// codes' alphabet ("4WQW-7V8W", buildLabel). Hashing the 8 MB script takes about 15 ms, so it is made on first need -- a room created
+// or joined, the Settings screen -- never at load and never in a match. The lobby keeps a room to one build (NET.versionCheck).
+const BUILD_SCRIPT = document.currentScript;   // (readable only while this script runs: kept now, read when the build is first wanted)
+const BUILD_LOADED = Date.now();               // when this page was opened: of two builds in one room, the one opened later is the newer
+const BUILD_ABC = "BCDFGHJKMNPQRSTVWXYZ23456789";   // no vowels, no 0/O/1/I: it reads out loud like a room code
+let BUILD_ID = null, BUILD_MS = 0;             // the build, once made, and what making it cost (ms)
+function buildHash(s){   // two 32-bit multiply-xor streams over every character (cyrb53's mix), 8 symbols of the 64 bits
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for(let i = 0, n = s.length; i < n; i++){ const ch = s.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  let out = '', x = h1 >>> 0, y = h2 >>> 0;
+  for(let k = 0; k < 4; k++){ out += BUILD_ABC[x % 28]; x = Math.floor(x / 28); }
+  for(let k = 0; k < 4; k++){ out += BUILD_ABC[y % 28]; y = Math.floor(y / 28); }
+  return out;
+}
+function gameBuild(){
+  if(BUILD_ID) return BUILD_ID;
+  const t0 = performance.now();
+  let src = '';
+  try{ const el = BUILD_SCRIPT || [].find.call(document.scripts, x=>!x.src && !x.type); if(el) src = el.textContent || ''; }catch(e){}
+  BUILD_ID = buildHash(src); BUILD_MS = performance.now() - t0;
+  return BUILD_ID;
+}
+function buildLabel(b){ b = String(b || gameBuild()); return b.slice(0, 4) + '-' + b.slice(4); }
+// The Settings screen's build line (go('options')): the changelog's version and this page's build.
+function buildVersionUI(){
+  const el = document.getElementById('optBuild'); if(!el) return;
+  const v = (typeof CHANGELOG !== 'undefined' && CHANGELOG[0] && CHANGELOG[0].version) || '';
+  el.textContent = (v ? 'Version ' + v + ' · ' : '') + 'build ';
+  const b = document.createElement('b'); b.textContent = buildLabel(); el.appendChild(b);
+}
+// ONLINE, a player's build rides their id in the join hello: "k3f9x2.4WQW7V8W.thx2ab" -- the id, the build, and when the page was opened
+// (seconds, base 36). The relay keeps the id whole (up to 32 letters; the name is cut at 24 and already carries the fighter, the side and
+// the look) and puts it in the roster every screen is sent, so every screen knows every player's build; an older build reads it as just an
+// id. An id with no build is a page from before this check. Returns {build, at} or null.
+function netIdBuild(id){
+  const m = /^[0-9a-z]+\.([A-Z0-9]{8})\.([0-9a-z]{1,8})$/.exec(String(id == null ? '' : id));
+  return m ? { build:m[1], at:parseInt(m[2], 36) } : null;
+}
 window.NET = {
   RELAY: RELAY_URL,      // the deployed relay; see RELAY_URL above and relay/README.md
   role: "solo",          // solo | host | client
@@ -72974,6 +73036,7 @@ window.NET = {
   },
 
   connect(addr, asHost){
+    this.stampId();   // (host and join have already: this is for any other way in)
     const url = this.wsURL(addr);
     // No relay AND no usable origin to guess one from — the desktop build, before RELAY_URL is set.
     // It used to dial ws://game here and report a generic connection error, which sent an owner
@@ -73001,6 +73064,7 @@ window.NET = {
 
   host(){
     if(SETTINGS.mode==='ctf' && this.role==='solo' && ctfTutGate(()=>{ openLobby(); NET.host(); }, 'host')) return;   // Capture the Flag on: the practice first, then the room
+    this.stampId();   // your build goes in your id before the room lists you (netIdBuild)
     this.role="host"; this.myIdx=0;
     this.room = this.makeRoomCode();     // give this game a shareable 4-letter code
     this.players=[{ id:this.myId, name:(chosen?chosen.name:"?"), isHost:true }];   // yourself, until the relay's roster replaces it
@@ -73012,6 +73076,7 @@ window.NET = {
     this.renderLobby();
   },
   join(code){
+    this.stampId();   // your build goes in your id before the room lists you (netIdBuild)
     this.lastJoin = code;   // (what was typed: the Capture the Flag practice joins it again after, ctfTutJoin)
     this._ctutCheck = true;   // (the room's first settings decide whether the practice comes first; a later switch to the mode never pulls you out)
     // The invite link, pasted whole: the code is after #room=. Stripping the link down to its letters made a room named
@@ -73025,6 +73090,44 @@ window.NET = {
     this.role="client";
     this.connect(null, false);           // same origin, different room
     this.renderLobby();                  // the fighter picker at once; the host's settings arrive with the room
+  },
+  // Your id with your build and when this page was opened on the end (netIdBuild), made once: a rejoin is the same id.
+  stampId(){ if(!netIdBuild(this.myId)) this.myId = String(this.myId).split('.')[0] + this.idTail(); return this.myId; },
+  idTail(){ return '.' + gameBuild() + '.' + Math.floor(BUILD_LOADED / 1000).toString(36); },
+  // ONLINE VERSIONS: is the room on one build? Every screen works it out from the same roster, so the host and every player see the same
+  // answer. null when everyone has the host's build (or there is nobody to compare with). Otherwise the players who need to refresh: the
+  // newest build in the room is the one whose page was opened last (a page with no build in its id is from before this check, so it is
+  // always the older), and everyone not on it is out of date -- the host too, when it is the host's game that is behind. (Whoever
+  // refreshes is then the page opened last, so if a guess was wrong the next look names the others.) The host's Start stays off meanwhile.
+  versionCheck(){
+    const ps=(this.players||[]).filter(p=>p && p.id), host=ps.find(p=>p.isHost);
+    if(!host || ps.length<2) return null;
+    const vs=ps.map(p=>({ id:p.id, v:netIdBuild(p.id) })), hv=netIdBuild(host.id);
+    if(hv && vs.every(e=>e.v && e.v.build===hv.build)) return null;
+    let newest=null; for(const e of vs) if(e.v && (!newest || e.v.at>newest.v.at)) newest=e;
+    const stale=new Set(vs.filter(e=>!e.v || !newest || e.v.build!==newest.v.build).map(e=>e.id));
+    return { stale, me:stale.has(this.myId), host:stale.has(host.id), builds:vs };
+  },
+  // The banner over the room when it is not on one build: who has an older game, what they do about it, and that the match waits.
+  renderVersion(){
+    const el=document.getElementById('lobbyVersion'); if(!el) return;
+    const vc=(this.role==="host"||this.role==="client") ? this.versionCheck() : null;
+    el.textContent=''; el.style.display = vc ? 'block' : 'none';
+    if(!vc) return;
+    const line=(cls, text)=>{ const d=document.createElement('div'); d.className=cls; d.textContent=text; el.appendChild(d); };
+    const list=this.lobbyEntries(), code=this.room ? ' '+this.room : '';
+    line('lvhead', '⚠ Not everyone has the same version of the game');
+    if(vc.me) line('lvline', 'Your game is an older version: refresh the page (F5) to update it, then '+(this.role==="host" ? 'create a new room.' : 'join room'+code+' again.'));
+    const host=list.find(e=>e.isHost && !e.you && vc.stale.has(e.id));
+    if(host) line('lvline', 'The host (P'+host.slot+') has an older version: they need to refresh the page (F5) and create a new room.');
+    const rest=list.filter(e=>!e.isHost && !e.you && vc.stale.has(e.id));
+    if(rest.length){
+      const names=rest.map(e=>'P'+e.slot+' ('+e.fighter+')'), who=names.length>1 ? names.slice(0,-1).join(', ')+' and '+names[names.length-1] : names[0];
+      line('lvline', who+(rest.length>1 ? ' have' : ' has')+' an older version: they need to refresh the page (F5), then join room'+code+' again.');
+    }
+    line('lvline', this.role==="host" ? 'Start is off until everyone has the same version.' : "The match can't start until everyone has the same version.");
+    const by=new Map(vc.builds.map(b=>[b.id, b.v]));
+    line('lvbuilds', 'Builds: '+list.map(e=>{ const v=by.get(e.id); return 'P'+e.slot+(e.you ? ' (you)' : '')+' '+(v ? buildLabel(v.build) : 'older, none'); }).join(' · '));
   },
   // A seat whose player has gone (the roster no longer lists them): nothing of theirs is served to step() any more, and the
   // computer takes the fighter for the rest of the match.
@@ -73102,7 +73205,16 @@ window.NET = {
       if(m.plan && typeof m.plan==='object'){ try{ ctfPlanVoteNetIn(this, idx, m.plan); }catch(e){} }   // a guest's vote for its side's plan rides on its input (ctfPlanVoteNetSend)
     }
     else if(m.t==="state" && this.role==="client"){ if(m.s && typeof m.s==='object') netSnapshotArrived(this, m.s); }
-    else if(m.t==="start"){ this.beginMatch(m.settings, m.roster, m.ids, m.cos, m.sides); }
+    else if(m.t==="start"){
+      // A host on another build (an older host sends no build at all) cannot be played with: the two games would disagree. Out of
+      // the room, told why, rather than into a match that only looks like lag. (A host on this build never starts a room that is not.)
+      if(this.role==="client" && m.build!==gameBuild()){
+        this.dropped(m.build ? "Left the room: the host has a different version of the game. Refresh the page (F5), and ask the host to as well."
+                             : "Left the room: the host has an older version of the game. Ask them to refresh the page (F5) and create a new room.");
+        return;
+      }
+      this.beginMatch(m.settings, m.roster, m.ids, m.cos, m.sides);
+    }
     else if(m.t==="status"){ this.status(m.msg); }
   },
 
@@ -73112,11 +73224,11 @@ window.NET = {
   // roster every screen is sent -- so the host's list and every client's are one list. What is listed is what the match will play:
   // startAsHost's own rule, a name that is not a playable fighter is Firey.
   lobbyEntries(){
-    const firey=ROSTER.find(x=>x.name==="Firey");
+    const firey=ROSTER.find(x=>x.name==="Firey"), vc=this.versionCheck();   // (vc: who has an older game -- their row says so)
     return (this.players||[]).map((p,i)=>{
       const sd=netSideSplit(p.fighter||p.name), nm=netSplitName(sd.rest).name, r=ROSTER.find(x=>x.play && x.name===nm) || firey, you=p.id===this.myId;
       // pick: the side they picked (1 = Team 1...), 0 for none -- your own straight from here, everyone else's from their hello (netSideTag)
-      return { slot:i+1, id:p.id, isHost:!!p.isHost, you, fighter:r?r.name:"Firey", color:r?r.color:null, pick: you ? (this.mySide|0) : sd.side };
+      return { slot:i+1, id:p.id, isHost:!!p.isHost, you, fighter:r?r.name:"Firey", color:r?r.color:null, pick: you ? (this.mySide|0) : sd.side, old: !!(vc && vc.stale.has(p.id)) };
     });
   },
   renderLobby(){
@@ -73128,6 +73240,7 @@ window.NET = {
     this.renderRoster();
     this.renderFighterGrid();
     this.renderLobbySettings();
+    this.renderVersion();
     this.renderControls();
   },
   // The players, one compact row each: the slot (P1 is the host), the fighter they picked, and who is you. Redrawn from the roster on every
@@ -73157,6 +73270,7 @@ window.NET = {
     const nm=document.createElement('span'); nm.className='lpname'; nm.textContent=p.fighter;
     if(p.you){ const y=document.createElement('span'); y.className='lpyou'; y.textContent=' (you)'; nm.appendChild(y); }
     d.appendChild(nm);
+    if(p.old){ d.classList.add('oldver'); const o=document.createElement('span'); o.className='lpver'; o.textContent='OLD VERSION'; o.title='This game is an older version: refresh the page (F5) to update it'; d.appendChild(o); }
     if(p.isHost){ const h=document.createElement('span'); h.className='lptag'; h.textContent='HOST'; d.appendChild(h); }
     return d;
   },
@@ -73301,7 +73415,8 @@ window.NET = {
     const ctr=document.getElementById('lobbyControls'); if(!ctr) return; ctr.innerHTML='';
     if(this.role==="host"){
       const n=Math.max(1, this.players.length);
-      const b=document.createElement('button'); b.className='btn'; b.textContent='Start Match ▶ ('+n+' human'+(n>1?'s':'')+')';
+      const b=document.createElement('button'); b.className='btn'; b.id='lobbyStart'; b.textContent='Start Match ▶ ('+n+' human'+(n>1?'s':'')+')';
+      if(this.versionCheck()){ b.disabled=true; b.title='Everyone in the room needs the same version of the game first (see above)'; }
       b.onclick=()=>this.startAsHost(); ctr.appendChild(b);
     } else if(this.role==="client"){
       // A room the relay lists with nobody hosting is almost always a mistyped code (any four letters name a room): say so
@@ -73430,6 +73545,12 @@ window.NET = {
 
   // ---- match start (host decides settings & roster) ----
   startAsHost(){
+    // ONLINE VERSIONS: a room on two builds does not start. The Rematch on the result screen comes here as well (someone joined during
+    // the match with another build): back to the lobby, where the banner says who has to refresh.
+    if(this.versionCheck()){
+      const lob=document.getElementById('lobby'); if(!(lob && lob.classList.contains('active'))) go('lobby');
+      this.renderLobby(); this.status("Can't start yet: not everyone has the same version of the game"); return;
+    }
     // build a roster: humans first (in lobby order), fill rest with AI up to SETTINGS.count
     // Each player's fighter is the `name` of their hello (the relay keeps no other field for it). This read
     // `p.fighter`, which nothing ever set, so every human in an online match played Firey.
@@ -73441,7 +73562,7 @@ window.NET = {
     if(SETTINGS.mode==='ctf') settings.ctfMap = ctfPickMap();   // the host picks the map: the start carries its id, and every device builds that one
     const roster=humans;
     const ids=this.players.map(p=>p.id);   // who sits where, so a client's seat comes from the start itself
-    const start={t:"start", settings, roster, ids};
+    const start={t:"start", settings, roster, ids, build:gameBuild()};   // (build: a client on another build stays out of it)
     const cos=picks.map(s=>s.code||"");
     if(cos.some(Boolean)) start.cos=cos;   // each human's look, by slot: four characters each, and only when someone wears one
     { const sizes=netSideSizes(settings.mode, settings.count, settings.teamKey);   // Capture the Flag and Teams: each human's side, by slot (0 = Team 1)
