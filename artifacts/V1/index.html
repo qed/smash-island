@@ -2324,6 +2324,15 @@ const STAGES = [
   {id:"incin", name:"The Incinerator", blurb:"Floor flares up. Watch your feet.",
    sky:["#3a1a10","#1a0a06"], ground:"#5a2a18", plats:[[0.5,0.58,0.34],[0.2,0.42,0.18],[0.8,0.42,0.18]],
    hazard:"lava"},
+  // THE MOON: the reward for beating One (the owner, asked "should there be a reward for beating One?": "The Moon as a stage"). TPOT 7: Lightning's
+  // strike cracks it; TPOT 9: she climbs out of the hole -- that hole is the pit in the middle, under the chunk of rock it left floating over it.
+  // `secret:'one'`: out of every list until she is beaten (stageOpen). Low gravity is Yoyleland's (hazard "lowgrav"); the floor ends on both sides.
+  // A respawn drops in at the middle of the screen: the top ledge and the solid rock both sit over the hole, so nobody comes back into it.
+  {id:"moon", name:"The Moon", blurb:"Low gravity on the cracked Moon. Mind the hole in the middle.", secret:"one",
+   sky:["#04050b","#161a2a"], ground:"#9a9da5",
+   plats:[[0.22,0.5,0.15],[0.78,0.5,0.15],[0.5,0.45,0.17,"solid",0.06],[0.5,0.24,0.13]],
+   edges:{ floor:[[0.07,0.41],[0.59,0.93]], void:['#151821','#000000'] },
+   hazard:"lowgrav"},
   // ---- BIG MAPS: wide scrolling arenas with multi-level spawn areas ----
   // bigW = how many screen-widths wide. platsBig = [nx,ny,nw] normalized to the WORLD (0..bigW, 0..1).
   {id:"grandplains", name:"Grand Plains", blurb:"Twin plateaus over a central pit.", big:true, bigW:2.4,
@@ -2367,6 +2376,14 @@ const STAGES = [
    ],
    hazard:null},
 ];
+// A stage with `secret` stays out of every list the player sees -- the stage cards, the World Cup's pools and its ticks, the online lobby's
+// -- until its secret is done: The Moon (secret 'one') until One is beaten (oneUnlocked), so nothing names it before her chain does. It stays
+// IN STAGES, so a guest whose host picks it, a replay or a saved cup still finds it by id; only the lists ask stageOpen.
+function stageOpen(s){ return !!s && (!s.secret || (s.secret === 'one' && oneUnlocked())); }
+function stagesOpen(){ return STAGES.filter(stageOpen); }
+// The stage in hand when the lists no longer offer it (a host's Moon carried out of an online match, a profile reset): back to the first stage.
+// Never during an online match (the host's pick is the guest's stage there).
+function stageGuard(){ if(stage && STAGES.indexOf(stage) >= 0 && !stageOpen(stage) && !inNetSession()) stage = STAGES[0]; }
 
 // ---------- CONTROLS ----------
 const DEFAULT_KEYS = {left:"ArrowLeft",right:"ArrowRight",jump:"ArrowUp",down:"ArrowDown",
@@ -15506,7 +15523,7 @@ function buildSettings(){
   bindSeg('segTourneyMode', v=>{ TOURNEY_SETUP_MODE=v; cupSyncUI(); cupSave(); });
   // the rest of the World Cup setup: each row sets one field of TOURNEY_CFG (see cupClean for what each may hold)
   for(const [id, key] of CUP_SEGS){ if(key) bindSeg(id, v=>{ TOURNEY_CFG[key] = (key==='mates'||key==='pool') ? v : +v;
-    if(key==='pool' && v==='pick' && !TOURNEY_CFG.picks.length) TOURNEY_CFG.picks = STAGES.map(st=>st.id);   // 'Pick…' starts from every stage; untick what you do not want
+    if(key==='pool' && v==='pick' && !TOURNEY_CFG.picks.length) TOURNEY_CFG.picks = stagesOpen().map(st=>st.id);   // 'Pick…' starts from every stage; untick what you do not want
     TOURNEY_CFG = cupClean(TOURNEY_CFG); cupSyncUI(); cupSave(); }); }
   bindSeg('segAI', v=>{ AI_LEVEL=+v; updateSummary(); });
   bindSeg('segMapSize', v=>{ SETTINGS.mapSize = MAP_SIZES[v] ? v : 'normal'; updateSummary(); });
@@ -15867,7 +15884,8 @@ function refreshSel(){
 function buildStages(){
   const sp=document.getElementById('stagepick'); sp.innerHTML='';
   const big=(s)=>s.big?' <span style="font-size:10px;background:#e0503a;color:#fff;padding:1px 5px;border-radius:6px;vertical-align:middle">BIG</span>':'';
-  STAGES.forEach(s=>{
+  stageGuard();   // (a stage the lists do not offer is not the one in hand either)
+  stagesOpen().forEach(s=>{
     const d=document.createElement('div');
     d.className='stagecard'+(s.id===stage.id?' sel':'');
     d.innerHTML=`<b>${s.name}${big(s)}</b><span>${s.blurb}</span>`;
@@ -16684,7 +16702,7 @@ function cupSyncUI(){
   if(row) row.style.display = cfg.pool==='pick' ? '' : 'none';
   if(chips && cfg.pool==='pick'){
     chips.innerHTML = '';
-    for(const st of STAGES){
+    for(const st of stagesOpen()){
       const b = document.createElement('button'); b.className = 'cupchip' + (cfg.picks.includes(st.id) ? ' on' : '');
       b.textContent = st.name + (st.big ? ' (big)' : ''); b.title = st.blurb;
       b.onclick = () => { const i = cfg.picks.indexOf(st.id); if(i<0) cfg.picks.push(st.id); else cfg.picks.splice(i,1); cupSyncUI(); cupSave(); };
@@ -17655,11 +17673,12 @@ function watchFixture(fx, youPlay){
 // The stages this cup may use, by the setup's Stages row: all of them, the small ones (today's cup), the big scrolling ones, or the ticked list.
 // A list with nothing ticked falls back to the small ones, so a fixture always has a stage.
 function cupStagePool(cfg){
-  const pool = cfg.pool==='all' ? STAGES.slice()
-    : cfg.pool==='big' ? STAGES.filter(st=>st.big)
-    : cfg.pool==='pick' ? STAGES.filter(st=>(cfg.picks||[]).includes(st.id))
-    : STAGES.filter(st=>!st.big);
-  return pool.length ? pool : STAGES.filter(st=>!st.big);
+  const open = stagesOpen();   // (The Moon only once One is beaten: stageOpen)
+  const pool = cfg.pool==='all' ? open.slice()
+    : cfg.pool==='big' ? open.filter(st=>st.big)
+    : cfg.pool==='pick' ? open.filter(st=>(cfg.picks||[]).includes(st.id))
+    : open.filter(st=>!st.big);
+  return pool.length ? pool : open.filter(st=>!st.big);
 }
 // Where the camera looks at a fixture nobody is playing here (a spectated cup, or the player's own team is out): the closest pair of opponents
 // still standing. A big scrolling stage follows the fight; it used to follow whoever was first in the list, who can be a screen away from it.
@@ -18592,6 +18611,7 @@ function bossRushCheck(){
   }
 }
 function beginMatchNow(){
+  stageGuard();   // (a locked secret stage never starts a match here; online, the host's pick stands)
   go('_none_');
   document.getElementById('hud').classList.add('active');
   resize();
@@ -58450,12 +58470,15 @@ function oneLineup(){
 function oneFightEnded(won, result){
   clearEraseNote();
   if(!won){ clearUnlockNote(); return false; }
-  const first = awardOneDefeated(result ? result.secs : 0), q = oneQ();
+  const first = awardOneDefeated(result ? result.secs : 0), q = oneQ(), paid = ONE_REWARD_PAID; ONE_REWARD_PAID = 0;
   const n = document.getElementById('unlockNote');
   if(n){
-    n.textContent = first
+    // the reward has a line of its own: the stage she climbed out of, and the tokens (paid once: oneTokenGrant)
+    const reward = (first ? "★ NEW STAGE: The Moon, in the stage list for every match" : "") + (paid ? (first ? "  ·  " : "★ ") + "+" + paid + " Win Tokens" : "");
+    n.textContent = (first
       ? "★ ONE UNLOCKED! Everyone she erased is back. Fight her any time, with any fighter: Boss Rush ▸ 🌕 One."
-      : "★ One beaten " + q.wins + " time" + (q.wins===1 ? "" : "s") + " · best " + oneMmss(q.bestSecs);
+      : "★ One beaten " + q.wins + " time" + (q.wins===1 ? "" : "s") + " · best " + oneMmss(q.bestSecs)) + (reward ? "\n" + reward : "");
+    n.style.whiteSpace = 'pre-line';
     n.style.display = 'block';
   }
   return false;
@@ -58468,8 +58491,31 @@ function awardOneDefeated(secs){
   const first = q.stage < ONE_STAGE.FREE;
   q.stage = ONE_STAGE.FREE; q.wins++;
   secs = secs|0; if(secs > 0 && (!q.bestSecs || secs < q.bestSecs)) q.bestSecs = secs;
+  ONE_REWARD_PAID = oneTokenGrant();   // the reward: The Moon opens with the stage itself (stageOpen reads it), the tokens are paid here
   saveProfile();
+  try{ refreshWallets(); }catch(e){}
   return first;
+}
+// THE REWARD FOR BEATING ONE (the owner, asked "should there be a reward for beating One?", chose "The Moon as a stage" and "Win Tokens"): The
+// Moon (STAGES, secret 'one') and ONE_TOKENS Win Tokens, once -- the first time she falls, or, for a save that beat her before this, the first
+// time it loads (initShop). The mark is wallet.owned.bonus_one = 0, beside the retired looks' marks and for the same reasons (walletNorm):
+// every build keeps `owned` whole and merges it by union, and a 0 adds nothing where mergeWallet counts what one side holds that the other
+// does not. So it is paid once whichever tab, reload or old save gets there first; two tabs that both pay it merge to the one payout (the
+// larger `earned`), and shopPeek takes in another tab's payment before this one decides.
+const ONE_TOKENS = 500, ONE_TOKEN_MARK = 'bonus_one';
+let ONE_REWARD_PAID = 0;   // what the win just paid, for her result screen (oneFightEnded)
+function oneTokenGrant(){
+  if(!PROFILE || !oneUnlocked()) return 0;
+  shopPeek();
+  const w = walletState();
+  if(_own(w.owned, ONE_TOKEN_MARK)) return 0;
+  w.owned[ONE_TOKEN_MARK] = 0; w.earned += ONE_TOKENS;
+  return ONE_TOKENS;
+}
+// For a player who has it: the Store's receipt for it (nobody else sees a word).
+function oneTokenNote(){
+  const w = PROFILE && PROFILE.wallet;
+  return (w && w.owned && typeof w.owned === 'object' && _own(w.owned, ONE_TOKEN_MARK)) ? 'For beating One: ' + ONE_TOKENS + ' Win Tokens, in your wallet.' : '';
 }
 // The title's way back into the chain after a reload, inside the title's own rule -- at most six buttons (the UI pass,
 // test/ui-simplify). A seventh row for One broke it for every player from the Moon on, and for good once she was beaten:
@@ -61282,6 +61328,45 @@ function saCobbleTile(g, w, h, C){
   g.fillStyle = C.lip; g.fillRect(0, 0, w, 8); g.fillStyle = 'rgba(255,255,255,0.3)'; g.fillRect(0, 0, w, 2);
   g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(0, 118, w, h - 118);
 }
+// The Moon's regolith: a pale surface lip with shallow craters pressed into it, grey strata under it with rocks set in the face.
+function saMoonTile(g, w, h, C){
+  g.fillStyle = C.a; g.fillRect(0, 0, w, h);
+  g.fillStyle = C.b; g.fillRect(0, 64, w, 50); g.fillStyle = C.c; g.fillRect(0, 114, w, h - 114);
+  g.strokeStyle = C.seam; g.lineWidth = 2; g.beginPath();
+  for(const y0 of [64, 114]){ g.moveTo(0, y0); for(let x = 8; x <= w; x += 8) g.lineTo(x, y0 + Math.sin(x/w*6.2832*2 + y0)*2.5); }   // (whole waves a tile: no seam)
+  g.stroke();
+  const R = saRng(71);
+  for(let i = 0; i < 10; i++){ const x = R()*w, y = 38 + R()*100, sz = 4 + R()*7, col = (i % 3) ? C.rock : C.rock2;
+    saWrap(w, x, sz + 2, xx => { g.fillStyle = col; g.beginPath(); g.moveTo(xx - sz, y); g.lineTo(xx - sz*0.4, y - sz*0.7); g.lineTo(xx + sz*0.6, y - sz*0.6); g.lineTo(xx + sz, y + sz*0.1); g.lineTo(xx + sz*0.3, y + sz*0.6); g.lineTo(xx - sz*0.6, y + sz*0.5); g.closePath(); g.fill(); }); }
+  g.fillStyle = 'rgba(0,0,0,0.16)'; for(let i = 0; i < 26; i++) g.fillRect(R()*w, 30 + R()*112, 2, 2);
+  g.fillStyle = C.lip; g.fillRect(0, 0, w, 22);
+  g.fillStyle = C.lipHi; g.fillRect(0, 0, w, 4);
+  g.fillStyle = C.lipDark; g.fillRect(0, 20, w, 3); g.beginPath(); for(let x = 0; x < w; x += 32){ g.moveTo(x + 32, 22); g.ellipse(x + 16, 22, 16, 5, 0, 0, Math.PI); } g.fill();
+  for(const q of [[38, 11, 15], [120, 13, 9], [194, 10, 18], [248, 14, 7]]) saWrap(w, q[0], q[2] + 2, xx => {
+    g.fillStyle = C.pit; g.beginPath(); g.ellipse(xx, q[1], q[2], q[2]*0.28, 0, 0, 7); g.fill();
+    g.strokeStyle = C.lipHi; g.lineWidth = 1.5; g.beginPath(); g.ellipse(xx, q[1], q[2]*0.9, q[2]*0.24, 0, 0.2, Math.PI - 0.2); g.stroke(); });
+}
+// a crater on a far slope: the raised rim, the bowl, its far side in shadow
+function saCrater(g, x, y, rx, pit, rim, shade){
+  const ry = rx*0.3;
+  g.fillStyle = rim; g.beginPath(); g.ellipse(x, y, rx*1.14, ry*1.35, 0, 0, 7); g.fill();
+  g.fillStyle = pit; g.beginPath(); g.ellipse(x, y + ry*0.1, rx, ry, 0, 0, 7); g.fill();
+  if(shade){ g.fillStyle = shade; g.beginPath(); g.ellipse(x, y + ry*0.1, rx, ry, 0, Math.PI, 0); g.lineTo(x + rx*0.8, y); g.closePath(); g.fill(); }
+}
+// The crack running out from each lip of the Moon's hole, across the surface and down its face: a few jagged lines, fixed per lip (cached).
+const SA_MOON_CRACKS = new Map();
+function saMoonCracks(rx, dir, gy){
+  const key = Math.round(rx) + '|' + dir + '|' + Math.round(gy);
+  let out = SA_MOON_CRACKS.get(key); if(out) return out;
+  const R = saRng(Math.round(rx)*3 + (dir > 0 ? 1 : 2));
+  const run = (y0, len, drift, wob, ymin) => { const p = [[rx, y0]]; let x = rx, y = y0, d = 0; while(d < len){ const st = 14 + R()*12; d += st; x += dir*st; y = Math.max(ymin, y + drift*st + (R() - 0.5)*wob); p.push([x, y]); } return p; };
+  const a = run(gy + 8, 210 + R()*50, 0.0, 8, gy + 4), b = run(gy + 38, 140 + R()*40, 0.12, 10, gy + 26), c2 = run(gy + 88, 90 + R()*30, 0.18, 8, gy + 70);
+  out = [a, b, c2];
+  for(const L of [a, b]){ const at = L[Math.min(2 + Math.floor(R()*3), L.length - 1)], br = [[at[0], at[1]]]; let bx = at[0], by = at[1]; for(let i = 0; i < 3; i++){ bx += dir*(6 + R()*8); by += 8 + R()*7; br.push([bx, by]); } out.push(br); }
+  if(SA_MOON_CRACKS.size > 40) SA_MOON_CRACKS.clear();
+  SA_MOON_CRACKS.set(key, out);
+  return out;
+}
 // ---- the ten stages --------------------------------------------------------------------------------------------------------------------
 const STAGE_ART = {
   // GOIKY FIELD: a bright day over green country, round trees, a slow windmill, drifting clouds. (the Goiky of the later seasons: fields, round trees)
@@ -61583,6 +61668,123 @@ const STAGE_ART = {
     fx(c, F){ saMotes(c, F, 10, { cols:['#fff6e0'], speed:0.08, y0:F.H*0.8, span:F.H*0.55, r:2, alpha:0.5, sway:14, par:0.25, seed:81 }); },
     plat:{ kind:'cobble', lip:'#b4abcb', lipHi:'#d0c8e4', body:'#8a809f', dark:'#5c5374', line:'#1c1c1c' },
   },
+  // THE MOON (One's reward; see STAGES): a grey cratered surface under a black sky, the Earth and the stars over it, dust drifting up in the low
+  // gravity. The crack Lightning's strike left (TPOT 7) runs out from both lips of the hole in the middle (ground.anim), the hole goes down into
+  // the dark with a cold light far below, and past the cliffs at either end there is only open space with more stars in it (voidArt).
+  moon: {
+    sky:['#020309', '#171b2c'],
+    skyPaint(g, W, H){
+      const R = saRng(91);
+      g.save(); g.translate(W*0.42, H*0.34); g.rotate(-0.3);   // a faint band of far stars
+      const band = g.createLinearGradient(0, -80, 0, 80); band.addColorStop(0, 'rgba(150,160,215,0)'); band.addColorStop(0.5, 'rgba(150,160,215,0.09)'); band.addColorStop(1, 'rgba(150,160,215,0)');
+      g.fillStyle = band; g.fillRect(-W, -80, W*2, 160); g.restore();
+      for(let i = 0; i < 180; i++){
+        const x = R()*W, y = R()*H*0.8, big = R() < 0.08, r = big ? 1.5 + R()*0.9 : 0.5 + R()*0.9, t = R();
+        g.fillStyle = t < 0.12 ? '#ffe9c4' : t < 0.26 ? '#cdd8ff' : '#ffffff'; g.globalAlpha = big ? 0.95 : 0.35 + R()*0.55;
+        g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+      }
+      g.globalAlpha = 1;
+      // the Earth, lit from the right
+      const ex = W*0.8, ey = H*0.19, er = 42;
+      g.fillStyle = 'rgba(100,160,255,0.10)'; g.beginPath(); g.arc(ex, ey, er + 18, 0, 7); g.fill();
+      g.fillStyle = 'rgba(100,160,255,0.20)'; g.beginPath(); g.arc(ex, ey, er + 7, 0, 7); g.fill();
+      g.save(); g.beginPath(); g.arc(ex, ey, er, 0, 7); g.clip();
+      g.fillStyle = '#2d6fd2'; g.fillRect(ex - er, ey - er, er*2, er*2);
+      g.fillStyle = '#4fae52';
+      for(const b of [[-16, -18, 13, 8, 0.4], [-9, -6, 8, 11, 0.2], [-4, 12, 6, 12, -0.3], [16, -12, 10, 7, -0.2], [19, 5, 8, 13, 0.15], [30, -22, 9, 5, 0.5], [2, -30, 12, 4, 0]]){ g.beginPath(); g.ellipse(ex + b[0], ey + b[1], b[2], b[3], b[4], 0, 7); g.fill(); }
+      g.fillStyle = '#c9a86a'; g.beginPath(); g.ellipse(ex + 21, ey - 2, 5, 4, 0, 0, 7); g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.88)';
+      for(const q of [[-22, 22, 15, 3.2, 0.2], [8, -24, 16, 3, -0.15], [24, 18, 11, 2.6, 0.3], [-2, 2, 10, 2.4, -0.4], [-30, -4, 8, 2.2, 0.6], [12, 32, 14, 2.6, 0]]){ g.beginPath(); g.ellipse(ex + q[0], ey + q[1], q[2], q[3], q[4], 0, 7); g.fill(); }
+      g.fillStyle = '#eef6ff'; g.beginPath(); g.ellipse(ex, ey - er + 3, 18, 6, 0, 0, 7); g.fill();
+      g.fillStyle = 'rgba(4,8,24,0.62)'; g.beginPath(); g.arc(ex - er*0.62, ey + er*0.08, er*1.02, 0, 7); g.fill();   // the night side
+      g.restore();
+      g.strokeStyle = '#0d1736'; g.lineWidth = 2.5; g.beginPath(); g.arc(ex, ey, er, 0, 7); g.stroke();
+    },
+    skyAnim(c, F, S){
+      c.fillStyle = '#ffffff';   // a few stars that twinkle
+      for(let i = 0; i < 12; i++){ const a = Math.sin(F.T*0.035*(0.6 + saHash(i, 3)) + i*2.3); if(a < 0.55) continue; c.globalAlpha = (a - 0.55)*2.2; saStar(c, saHash(i, 1)*F.W, saHash(i, 2)*F.H*0.62, 3 + a*4); }
+      c.globalAlpha = 1;
+      const per = 540, k = Math.floor(F.T/per), ph = F.T - k*per;   // now and then a shooting star, high up
+      if(ph < 34){
+        const u = ph/34, x0 = F.W*(0.06 + saHash(k, 7)*0.5), y0 = F.H*(0.05 + saHash(k, 8)*0.2), dx = 260, dy = 70, x = x0 + dx*u, y = y0 + dy*u;
+        const gr = c.createLinearGradient(x - dx*0.35, y - dy*0.35, x, y);
+        gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(1, 'rgba(255,255,255,' + (0.8*Math.sin(Math.PI*u)).toFixed(3) + ')');
+        c.strokeStyle = gr; c.lineWidth = 2; c.beginPath(); c.moveTo(x - dx*0.35, y - dy*0.35); c.lineTo(x, y); c.stroke();
+      }
+    },
+    layers:[
+      { rate:0.04, ry:0.15, dy:-16, P:1500, h:170, body:'#4d5059', paint(g, P, h){
+          const y = saRidge(g, P, h, 64, 61, '#4d5059', '#3b3e46', 2, [1, 2, 3, 5]);
+          const R = saRng(62); for(let i = 0; i < 12; i++){ const x = R()*P, rx = 10 + R()*22, yy = Math.min(h - 8, y(x) + 14 + R()*40); saWrap(P, x, rx*1.2, xx => saCrater(g, xx, yy, rx, '#40434b', '#5a5d66', null)); }
+        } },
+      { rate:0.12, ry:0.3, dy:-6, P:1400, h:210, body:'#666972', paint(g, P, h){
+          const y = saRidge(g, P, h, 96, 63, '#666972', '#51545c', 2.5, [1, 2, 4, 6]);
+          const R = saRng(64);
+          for(let i = 0; i < 9; i++){ const x = R()*P, rx = 16 + R()*30, yy = Math.min(h - 10, y(x) + 22 + R()*60); saWrap(P, x, rx*1.2, xx => saCrater(g, xx, yy, rx, '#575a62', '#7a7d86', 'rgba(30,32,38,0.35)')); }
+          g.strokeStyle = '#51545c'; g.lineWidth = 2;
+          for(let i = 0; i < 7; i++){ const x = R()*P, sz = 7 + R()*10; saWrap(P, x, sz + 2, xx => { const yb = y(xx) + 3; g.fillStyle = '#7b7e87'; g.beginPath(); g.moveTo(xx - sz, yb); g.lineTo(xx - sz*0.6, yb - sz*0.8); g.lineTo(xx + sz*0.3, yb - sz); g.lineTo(xx + sz, yb - sz*0.3); g.lineTo(xx + sz*0.9, yb); g.closePath(); g.fill(); g.stroke(); }); }
+        } },
+      { rate:0.24, ry:0.55, dy:0, P:1300, h:150, body:'#80838c', paint(g, P, h){
+          const y = saRidge(g, P, h, 46, 65, '#80838c', '#6a6d76', 3, [1, 3, 5]);
+          const R = saRng(66);
+          for(let i = 0; i < 7; i++){ const x = R()*P, rx = 22 + R()*34, yy = Math.min(h - 10, y(x) + 26 + R()*40); saWrap(P, x, rx*1.2, xx => saCrater(g, xx, yy, rx, '#70737c', '#95989f', 'rgba(30,32,38,0.3)')); }
+          g.strokeStyle = '#62656e'; g.lineWidth = 2.5;
+          for(let i = 0; i < 6; i++){ const x = R()*P, sz = 9 + R()*12; saWrap(P, x, sz + 2, xx => { const yb = y(xx) + 4; g.fillStyle = '#979aa3'; g.beginPath(); g.moveTo(xx - sz, yb); g.quadraticCurveTo(xx - sz*0.8, yb - sz*0.9, xx, yb - sz); g.quadraticCurveTo(xx + sz*0.9, yb - sz*0.8, xx + sz, yb); g.closePath(); g.fill(); g.stroke(); }); }
+        } },
+    ],
+    ground:{ th:150, fill:'#6a6d75', line:'#1c1c1c', tile(g, w, h){ saMoonTile(g, w, h, { a:'#9fa2aa', b:'#8d9098', c:'#767981', seam:'#6a6d75', rock:'#b4b7be', rock2:'#7c7f87', lip:'#c3c6cc', lipHi:'#e2e4e8', lipDark:'#a7aab1', pit:'#9a9da5' }); },
+      // the crack, out from each lip of the hole (FLOOR_SEGS); with no pit this match (Training), its scar still runs out from the middle
+      anim(c, F, x0, x1, gy){
+        const rims = [];
+        if(FLOOR_SEGS && FLOOR_SEGS.length > 1){ for(let i = 0; i < FLOOR_SEGS.length - 1; i++) rims.push([FLOOR_SEGS[i].x1, -1], [FLOOR_SEGS[i + 1].x0, 1]); }
+        else if(!FLOOR_SEGS) rims.push([WW/2, -1], [WW/2, 1]);
+        const glow = 0.32 + 0.14*Math.sin(F.T*0.02);
+        for(const q of rims){
+          const rx = q[0], dir = q[1];
+          if(Math.max(rx, rx + dir*280) < x0 - 10 || Math.min(rx, rx + dir*280) > x1 + 10) continue;
+          const lines = saMoonCracks(rx, dir, gy);
+          c.lineJoin = 'miter';
+          c.strokeStyle = '#e4e6ea'; c.lineWidth = 1.2; c.beginPath();
+          for(const L of lines) L.forEach((p, i) => i ? c.lineTo(p[0], p[1] + 1.8) : c.moveTo(p[0], p[1] + 1.8));
+          c.stroke();
+          c.strokeStyle = '#33363e'; c.lineWidth = 2.6; c.beginPath();
+          for(const L of lines) L.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1]));
+          c.stroke();
+          c.strokeStyle = 'rgba(120,150,255,' + glow.toFixed(3) + ')'; c.lineWidth = 1.4; c.beginPath();   // a cold light down in it, near the hole
+          for(const L of lines.slice(0, 3)) for(let i = 0; i < Math.min(4, L.length); i++){ const p = L[i]; if(i) c.lineTo(p[0], p[1]); else c.moveTo(p[0], p[1]); }
+          c.stroke();
+          c.lineJoin = 'round';
+        }
+      } },
+    // the drop, in world space (drawEdgedGround): open space with stars past the cliffs at either end, and in the hole its rough walls and a light far down
+    voidArt(c, F, gaps, gy, bot){
+      for(const g of gaps){
+        const x0 = g[0], x1 = g[1], w = x1 - x0;
+        if(!(w > 0)) continue;
+        c.save(); c.beginPath(); c.rect(x0, gy, w, bot - gy); c.clip();
+        if(x0 <= 0 || x1 >= WW){
+          const cell = 44, top = gy + 16;
+          for(let cx = Math.floor(x0/cell); cx*cell < x1; cx++) for(let cy = 0; cy < 30 && top + cy*cell < bot; cy++){
+            const h1 = saHash(cx, cy + 50), h2 = saHash(cx + 17, cy), x = cx*cell + h1*cell, y = top + cy*cell + h2*cell;
+            if(x < x0 || x > x1) continue;
+            const tw = 0.55 + 0.45*Math.sin(F.T*0.03*(0.5 + h2) + h1*9), sz = h1 > 0.9 ? 2.6 : 1.7;
+            c.globalAlpha = Math.min(1, (y - gy)/120)*(0.35 + 0.5*h2)*tw; c.fillStyle = h1 < 0.15 ? '#cdd8ff' : '#ffffff';
+            c.fillRect(x - sz/2, y - sz/2, sz, sz);
+          }
+          c.globalAlpha = 1;
+        } else {
+          const mx = (x0 + x1)/2, pulse = 0.18 + 0.06*Math.sin(F.T*0.015), gl = c.createRadialGradient(mx, gy + 300, 10, mx, gy + 300, Math.max(120, w*0.9));
+          gl.addColorStop(0, 'rgba(93,122,242,' + pulse.toFixed(3) + ')'); gl.addColorStop(1, 'rgba(93,122,242,0)');
+          c.fillStyle = gl; c.fillRect(x0, gy, w, bot - gy);
+          c.fillStyle = '#23262e';
+          for(const side of [-1, 1]){ const ex = side < 0 ? x0 : x1, R = saRng(Math.round(ex) + 5); c.beginPath(); c.moveTo(ex, gy); let y = gy; while(y < gy + 440){ y += 18 + R()*22; c.lineTo(ex - side*(3 + R()*8), y); } c.lineTo(ex, y); c.closePath(); c.fill(); }
+        }
+        c.restore();
+      }
+    },
+    fx(c, F){ saMotes(c, F, 14, { cols:['#d4d7de', '#aeb2bb'], speed:0.06, y0:F.gyS - 4, span:260, r:1.7, alpha:0.5, sway:20, par:0.3, seed:27 }); },   // dust, drifting up
+    plat:{ kind:'moonrock', lip:'#c9ccd2', lipHi:'#e6e8eb', body:'#9a9da5', dark:'#6c6f77', line:'#1c1c1c' },
+  },
 };
 // ---- the machinery ---------------------------------------------------------------------------------------------------------------------
 // what is drawn this stage, built once per stage and size (the sky, the parallax tiles, the ground tile, the clouds)
@@ -61656,12 +61858,14 @@ function saPlatPaint(g, x, y, w, h, T, solid){
   if(k === 'plate' || k === 'steel'){ for(let xx = x + 40; xx < x + w - 6; xx += (solid ? 64 : 80)){ g.moveTo(xx, y + lh); g.lineTo(xx, y + h); } }
   else if(k === 'stone' || k === 'cobble' || k === 'brick'){ const bw = k === 'brick' ? 28 : 44, rows = Math.max(1, Math.round((h - lh)/(k === 'cobble' ? 12 : 10))); for(let r = 0; r < rows; r++){ const yy = y + lh + (r + 1)*(h - lh)/(rows + 0.0001); if(r < rows - 1 || rows === 1){ g.moveTo(x, yy); g.lineTo(x + w, yy); } for(let xx = x + ((r % 2) ? bw/2 : 0); xx < x + w; xx += bw){ g.moveTo(xx, yy - (h - lh)/rows); g.lineTo(xx, yy); } } }
   else if(k === 'wood'){ for(let xx = x + 20, i = 0; xx < x + w - 6; xx += 38 + (i++ % 3)*9){ g.moveTo(xx, y + lh); g.quadraticCurveTo(xx + 6, y + h*0.6, xx - 2, y + h); } }
+  else if(k === 'moonrock'){ for(let xx = x + 26, i = 0; xx < x + w - 10; xx += 46 + (i++ % 3)*13){ g.moveTo(xx, y + lh); g.lineTo(xx + 5, y + lh + (h - lh)*0.45); g.lineTo(xx - 2, y + h); } }
   else if(k === 'sand'){ for(let r = 1; r < 3; r++){ g.moveTo(x, y + lh + r*(h - lh)/3); for(let xx = x; xx <= x + w; xx += 10) g.lineTo(xx, y + lh + r*(h - lh)/3 + Math.sin(xx*0.05 + r)*1.5); } }
   g.stroke();
   g.fillStyle = T.dark; g.fillRect(x, y + h - bh, w, bh);
   g.fillStyle = T.lip; g.fillRect(x, y, w, lh);
   g.fillStyle = T.lipHi; g.fillRect(x, y, w, Math.max(1.5, lh*0.3));
   if(k === 'grass'){ g.fillStyle = T.lip; g.beginPath(); for(let xx = x + 6; xx < x + w; xx += 12){ g.moveTo(xx - 6, y + lh - 1); g.arc(xx, y + lh - 1, 6, Math.PI, 0, true); } g.fill(); g.fillStyle = T.lipHi; g.beginPath(); for(let xx = x + 3; xx < x + w; xx += 12){ g.moveTo(xx - 2.5, y + 1.2); g.lineTo(xx, y - 3.5); g.lineTo(xx + 2.5, y + 1.2); } g.fill(); }
+  if(k === 'moonrock'){ g.fillStyle = 'rgba(0,0,0,0.2)'; for(let xx = x + 14, i = 0; xx < x + w - 8; xx += 34 + (i++ % 2)*20){ g.beginPath(); g.ellipse(xx, y + lh + (h - lh)*(0.3 + (i % 3)*0.2), 4 + (i % 3)*2, 2.2, 0, 0, 7); g.fill(); } }
   if(T.glow){ g.fillStyle = T.glow; g.globalAlpha = 0.55; g.fillRect(x, y + h - 2, w, 2); g.globalAlpha = 1; }
   g.restore();
   // rivets / studs: the one-way ledge has few, the solid block has them at its corners
@@ -62091,6 +62295,7 @@ function drawEdgedGround(gy){
   gr.addColorStop(0, V[0]); gr.addColorStop(1, V[1]);
   c.fillStyle = gr;
   for(const g of gaps) c.fillRect(g[0], gy - 1, g[1] - g[0], bot - gy + 1);
+  { const A = SA.on && SA.S ? SA.S.A : null; if(A && A.voidArt) A.voidArt(c, SA.F, gaps, gy, bot); }   // a stage's own drop (STAGE ART: The Moon's space and hole)
   if(E.clouds){   // a sky stage: clouds drifting by below the edge
     const T = saClock();
     c.save(); c.fillStyle = 'rgba(255,255,255,0.55)';
@@ -73574,7 +73779,8 @@ window.NET = {
       g.appendChild(sg); return g;
     };
     const sg=group('Stadium'); const ss=document.createElement('select'); ss.className='netinput lobbyselect'; ss.id='lobbyStage';
-    STAGES.forEach(st=>{ const o=document.createElement('option'); o.value=st.id; o.textContent=st.name + (st.big?' (big)':''); if(stage && stage.id===st.id) o.selected=true; ss.appendChild(o); });
+    if(stage && STAGES.indexOf(stage)>=0 && !stageOpen(stage)) stage = STAGES[0];   // (a Moon this player only played as a guest is not theirs to host)
+    stagesOpen().forEach(st=>{ const o=document.createElement('option'); o.value=st.id; o.textContent=st.name + (st.big?' (big)':''); if(stage && stage.id===st.id) o.selected=true; ss.appendChild(o); });
     ss.onchange=()=>{ const st=STAGES.find(x=>x.id===ss.value); if(st) stage=st; changed(); };
     sg.appendChild(ss);
     seg('Mode', 'lobbyMode', [['ffa','Free-for-all'],['teams','Teams'],['boss','Boss Rush'],['ctf','Capture the Flag']], SETTINGS.mode, v=>{ if(v==='ctf' && SETTINGS.mode!=='ctf' && ctfTutHostPick()) return; SETTINGS.mode=v; });   // (the practice first: ctfTutHostPick)
@@ -81315,7 +81521,7 @@ function buildStore(){
   refreshWallets();
   const box = document.getElementById('storeList'); if(!box) return;
   const note = document.getElementById('storeNote');
-  if(note){ const t = retiredNote(); note.textContent = t; note.style.display = t ? '' : 'none'; }
+  if(note){ const t = [retiredNote(), oneTokenNote()].filter(Boolean).join(' '); note.textContent = t; note.style.display = t ? '' : 'none'; }
   box.innerHTML = '';
   const bal = walletBalance(), who = chosen && chosen.name;
   // The Halloween costumes, while it is October (cosListed), come first under a heading of their own; the rest by kind.
@@ -81475,7 +81681,7 @@ function initShop(){
   // Once the profile is in: a quest finished under an older build and never claimed is paid now (questSettle), the seven retired
   // recolours are paid back and taken off (cosRetireSweep: once, whatever the tab or the reload), then the wallets show the real
   // number, and the skins the player wears start to load so the first match already shows them.
-  if(profileReady) profileReady.then(()=>{ try{ const paid = questSettle(), swept = cosRetireSweep(); if(paid || swept) saveProfile(); refreshWallets(); cosPreloadWorn(); }catch(e){} });
+  if(profileReady) profileReady.then(()=>{ try{ const paid = questSettle(), swept = cosRetireSweep(), one = oneTokenGrant(); if(paid || swept || one) saveProfile(); refreshWallets(); cosPreloadWorn(); }catch(e){} });   // (one: a save that beat One before her reward existed gets it now, once: oneTokenGrant)
   // Another tab saved: take in its wallet and quests now, so this tab's balance and Store are the real ones.
   if(typeof window !== 'undefined' && !initShop._storageWired){
     initShop._storageWired = true;
