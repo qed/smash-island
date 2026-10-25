@@ -13,11 +13,12 @@ import { normalizeRoom, rosterOf, applyHello, routeMessage } from '../../relay/s
 // Messages are queued and delivered in order by flush(), which every action ends with, so a page's reply to a message never jumps
 // ahead of the message that caused it.
 
-export async function makeRoom(names, { w = 1280, h = 720 } = {}) {
+// `html`: { name: page text } boots that player on another build of the page (a friend with an older page open); the rest run the real file.
+export async function makeRoom(names, { w = 1280, h = 720, html = {} } = {}) {
   const clock = { T: 0 };
   const pages = {};
   let seed = 7001;
-  for (const n of names) pages[n] = bootRealm(w, h, seed++, clock);
+  for (const n of names) pages[n] = bootRealm(w, h, seed++, clock, html[n]);
   await Promise.all(Object.values(pages).map((p) => p.eval('profileReady')));
 
   const relay = { peers: [], pending: new Map(), queue: [], seq: 0, log: [] };
