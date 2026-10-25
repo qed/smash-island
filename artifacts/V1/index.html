@@ -45931,7 +45931,7 @@ const FX1 = {
   whirl:  { tell:FIN_STARTUP, grow:FIN_GROW, dist:350, spd:9, r:28, h:76, every:9, hits:4, dmg:2, end:30, boss:12 },
   thread: { aim:FIN_STARTUP, spd:24, reach:264, r:7, pull:18, reel:16, dmg:12, bleed:150, patch:480, whiff:12 },
   cork:   { tell:FIN_STARTUP, off:30, w:30, h:100, life:240, pin:30, dmg:9, fast:6 },
-  snow:   { reach:8, grab:20, pack:10, spd:7.5, dist:360, r0:26, r1:46, dmg:6, d0:6, d1:12, whiff:18 },
+  snow:   { reach:8, grab:20, pack:10, swing:0.34, spd:7.5, dist:360, r0:26, r1:46, dmg:6, d0:6, d1:12, whiff:18 },
   bubble: { blow:12, grow:FIN_GROW, life:180, spd:1.3, r:38, dmg:7, pop:8 },
   puddle: { range:300, melt:8, spd:6, slide:50, bubble:FIN_GROW, geyser:16, live:6, r:24, h:130, w:64, dmg:11, alone:120 },
   mirror: { preen:FIN_STARTUP, reach:46, live:4, dmg:10, daze:30, life:180, w:24, h:54, off:24 },
@@ -45983,6 +45983,34 @@ function fxBossCircle(f, o, key, cx, cy, rad, dmg){
 function fxLiveSummon(f, s){ return !!s && s.team !== f.team && !(s.life <= 0) && (s.type === 'boss' ? s.hp > 0 : !!s.hostile) && summons.indexOf(s) >= 0; }
 function fxHold(t, o, x, y){ t._fxBy = o.id; t.x = x; t.y = y; t.vx = 0; t.vy = 0; t.onground = false; stunFx(t, 3); }
 function fxFree(t){ if(t) t._fxBy = null; }
+// WHICH WAY IT GOES (the owner, 2026-10-25: "you should be able to change the directions of the finishers if they are smth that could
+// obviously be moved extremely easily (like bow's)"). The finishers that send something along that could as easily go the other way --
+// Bow's chair tower toppling, Woody falling flat, Pin's board slammed down, Marshmallow's log kicked, Snowball's snowball bowled, Firey's
+// fireball thrown, Naily's tack flicked, Fries', Gelatin's and Dora's lobs -- and those that send the fighter along -- Lollipop's lunge,
+// Remote's skip, Profily's glide, Apple's pony -- go the way the arrow held when they COMMIT says (the end of the startup, or the bowl, the
+// kick, the throw): toward the back sends it behind, forward or none sends it ahead as before. Through the startup the fighter turns to
+// face the way it would go now (and back again if the arrow is let go): that turn is the only cue (NO TELLS: nothing is drawn for it).
+// Damage, timing and grow-in are unchanged. ok(d), when given, says whether that side has the room the move needs (a floor, no wall in
+// the way); if not, it goes ahead. A person's arrows are _fxIn (kept every frame a finisher holds them; a guest's reach the host frame by
+// frame, so the host decides); a CPU already faces its target at the press, and turns if its target crosses behind it in the startup.
+// o.face and f.face ride the snapshot, so a guest draws the turn with nothing new sent.
+const FX_AIM_CPU = 30;   // how far behind it a CPU's target must get before it turns
+function fxAimStart(f){ f._fxIn = 0; }   // at the press: what was held for the last finisher is not an aim
+function fxAimWay(f, o, ok){
+  if(o.f0 == null) o.f0 = o.face;
+  const f0 = o.f0;
+  let d = o.face;
+  if(isHumanCtrl(f)){
+    const b = f._fxIn | 0, L = !!(b & 1), R = !!(b & 2);
+    d = (L !== R && (L ? -1 : 1)*(f.ctrlRev > 0 ? -1 : 1) === -f0) ? -f0 : f0;   // (Dora's scramble swaps the arrows, as it does for walking)
+  } else {
+    const c = ctrlOf(f), t = f.aiTarget;
+    if(c !== 'still' && c !== 'trainer' && t && !t.dead){ const dx = (t.x - f.x)*f0; if(dx < -FX_AIM_CPU) d = -f0; else if(dx > FX_AIM_CPU) d = f0; }
+  }
+  if(d !== f0 && ok && !ok(d)) d = f0;
+  o.face = d; f.face = d;
+  return d;
+}
 // A solid wall (not a floor under it) across x between top and bottom: where a whirl, a snowball, a puddle or a bubble stops.
 function fxWall(x, top, bottom){ for(const q of platRects()){ if(!q.solid || q.rot) continue; if(x > q.x && x < q.x + q.w && q.y < bottom - 2 && q.y + (q.h || 16) > top) return true; } return false; }
 // The same across a whole span x0..x1 (either order): something that comes out ahead of her may not come out past a wall.
@@ -46175,11 +46203,19 @@ function fxThreadStep(o, f){
 // ---- PIN: CORKBOARD SLAM. Raises a corkboard over her head (FIN_STARTUP frames), slams it down 30 px past her front: a foe
 // under it takes 9% and is pinned 0.5 s. It stands 4 s, 30 px wide and 100 tall: enemy shots that reach it stop, and a foe launched into it
 // is pinned there (once a board). One at a time.
+// Where the board comes down that way, 30 px past her front, or null: nothing under it, or the far side of a wall.
+function fx1CorkSpot(f, dir){
+  const C = FX1.cork, x = clamp(f.x + dir*(f.r + C.off), 20, WW - 20), fy = feetY(f), sb = surfaceBelow(x, fy - 10);
+  if(sb === null || sb - fy > 220) return null;   // nothing under where it would come down
+  if(fxWallSpan(f.x, x + dir*C.w/2, Math.min(fy, sb) - C.h, Math.min(fy, sb))) return null;   // nor on the far side of a wall
+  return { x:Math.round(x), y:Math.round(sb) };
+}
 function finCork(f){
-  const C = FX1.cork, x = clamp(f.x + f.face*(f.r + C.off), 20, WW - 20), fy = feetY(f), sb = surfaceBelow(x, fy - 10);
-  if(sb === null || sb - fy > 220) return false;   // nothing under where it would come down: no board, and the finisher is not spent
-  if(fxWallSpan(f.x, x + f.face*C.w/2, Math.min(fy, sb) - C.h, Math.min(fy, sb))) return false;   // nor on the far side of a wall
-  finxAdd(f, 'cork', { x:Math.round(x), y:Math.round(sb), ph:'raise', pin:[] });
+  const C = FX1.cork, dir = f.face < 0 ? -1 : 1, p = fx1CorkSpot(f, dir);
+  if(!p) return false;   // nowhere ahead for it to come down: no board, and the finisher is not spent
+  fxAimStart(f);
+  const o = finxAdd(f, 'cork', { x:p.x, y:p.y, ph:'raise', pin:[] });
+  o._b = fx1CorkSpot(f, -dir);   // WHICH WAY: where it comes down if she slams it behind her
   fxLock(f, C.tell); armAtk(f, C.tell + 10, 'slam');
 }
 function fxCorkShape(o){ const C = FX1.cork, r = C.w/2; return fxCap(o.x, o.y - r, o.y - C.h + r, r); }
@@ -46193,8 +46229,10 @@ function fxCorkStep(o, f){
   if(o.ph === 'raise'){
     if(f.hitstun > 0){ o.dead = true; return; }
     fxLock(f, 2);
+    fxAimWay(f, o, function(){ return !!o._b; });   // WHICH WAY: she turns under it (it leans back over her the other way), and slams it down the way she faces
     if(age < C.tell){ fxTell(f, 'cork', null, age/C.tell); return; }   // STARTUP: the board raised over her head
     o.ph = 'stand'; o.st = hazardT;
+    if(o.face !== o.f0){ o.x = o._b.x; o.y = o._b.y; }
     const sh = fxCorkShape(o);
     fxArt(f, 'cork', sh, { color:'#c8955a' });
     hitTurrets(f, o.x, o.y - C.h*0.5, C.w*0.5, C.dmg);
@@ -46217,6 +46255,7 @@ function fxCorkStep(o, f){
 // bowls it ahead along the floor at 7.5 px a frame for up to 360 px. It grows as it rolls (26 to 46 px), and anyone in its path is flattened:
 // 6% growing to 12%, knocked down. It bursts at the end of the floor, at the side of the stage or at the end of its roll, never off the stage.
 function finSnow(f){
+  fxAimStart(f);
   finxAdd(f, 'snow', { ph:'reach', tgt:-1, x:Math.round(f.x), y:Math.round(feetY(f)), R:0, go:0, hit:[] });
   fxLock(f, FX1.snow.reach + 2); armAtk(f, FX1.snow.reach + 10, 'grab');
 }
@@ -46246,9 +46285,12 @@ function fxSnowStep(o, f){
   if(o.ph === 'pack'){
     if(f.hitstun > 0){ fxSnowBurst(o, t); return; }
     fxLock(f, 2);
-    o.R = S.r0*Math.min(1, (hazardT - o.pt)/S.pack); o.y = feetY(f); o.x = f.x + o.face*(f.r + S.r0 + 2);
+    fxAimWay(f, o);   // WHICH WAY: he turns while he packs it, swinging the ball round over his head, and bowls it the way he faces
+    if(o._sd == null) o._sd = o.f0;
+    o._sd = o._sd < o.face ? Math.min(o.face, o._sd + S.swing) : Math.max(o.face, o._sd - S.swing);
+    o.R = S.r0*Math.min(1, (hazardT - o.pt)/S.pack); o.y = feetY(f) - (1 - Math.abs(o._sd))*(f.r + S.r0)*1.2; o.x = f.x + o._sd*(f.r + S.r0 + 2);
     if(t){ fxHold(t, o, o.x, o.y - S.r0); t.invuln = Math.max(t.invuln || 0, 2); }
-    if(hazardT - o.pt >= S.pack){ o.ph = 'roll'; o.R = S.r0; o.x = clamp(o.x, S.r0 + 9, WW - S.r0 - 9); }
+    if(hazardT - o.pt >= S.pack){ o.ph = 'roll'; o.R = S.r0; o._sd = o.face; o.y = feetY(f); o.x = clamp(f.x + o.face*(f.r + S.r0 + 2), S.r0 + 9, WW - S.r0 - 9); if(t) fxHold(t, o, o.x, o.y - S.r0); }
     return;
   }
   const R = S.r0 + (S.r1 - S.r0)*Math.min(1, o.go/S.dist), nx = o.x + o.face*S.spd, sb = surfaceBelow(nx, o.y - 30);
@@ -49442,10 +49484,9 @@ FINX_NET.push('ex', 'ey');
 // the floor), then faints and topples forward like a felled plank (8 frames, pivoting on his front foot) and slams down: a
 // splintering band along the floor out to 120 px past his front, 32 px tall (4 frames): 12%, knocked down. He lies there 0.5 s, open. He needs
 // a floor; the band stops at its end or at a wall. A hit before he lands knocks him out of it. A boss takes the 12 as a plain hit.
-function finFaint(f){
+// How far along his floor the band reaches that way: 120 px past his front, short of its end or a wall (at least the band's own width).
+function fx5FaintLen(f, fy, dir){
   const F = FX5.faint;
-  if(!f.onground) return false;   // he topples onto a floor: in the air nothing happens, and the finisher is not spent
-  const fy = feetY(f), dir = f.face < 0 ? -1 : 1;
   let len = 0;
   while(len < F.reach){
     const nl = Math.min(F.reach, len + 6), x = f.x + dir*(f.r + nl);
@@ -49454,7 +49495,15 @@ function finFaint(f){
     if(sb === null || Math.abs(sb - fy) > 12 || fxWallSpan(f.x, x, fy - F.band*2, fy - 2)) break;
     len = nl;
   }
-  finxAdd(f, 'faint', { ph:'squeak', x:Math.round(f.x), y:Math.round(fy), len:Math.round(Math.max(F.band, len)), hit:[] });
+  return Math.round(Math.max(F.band, len));
+}
+function finFaint(f){
+  const F = FX5.faint;
+  if(!f.onground) return false;   // he topples onto a floor: in the air nothing happens, and the finisher is not spent
+  const fy = feetY(f), dir = f.face < 0 ? -1 : 1;
+  fxAimStart(f);
+  const o = finxAdd(f, 'faint', { ph:'squeak', x:Math.round(f.x), y:Math.round(fy), len:fx5FaintLen(f, fy, dir), hit:[] });
+  o._lb = fx5FaintLen(f, fy, -dir);   // WHICH WAY: the band if he falls the other way
   fxLock(f, F.squeak + 2); armAtk(f, F.squeak + 4, 'cast');
 }
 function fxFaintBand(o, f){ const F = FX5.faint, y = o.y - F.band; return { kind:'capsule', x1:o.x + o.face*f.r*0.4, y1:y, x2:o.x + o.face*Math.max(f.r*0.4, f.r + o.len - F.band), y2:y, r:F.band }; }
@@ -49464,8 +49513,10 @@ function fxFaintStep(o, f){
     if(f.hitstun > 0){ o.dead = true; return; }   // knocked out of it before he lands
     fxLock(f, 2); f.vx = 0;
     if(o.ph === 'squeak'){
+      fxAimWay(f, o);   // WHICH WAY: he turns in his fright, and falls the way he faces when he faints
       if(age < F.squeak){ fxTell(f, 'faint', null, age/F.squeak); return; }   // STARTUP: the fright
       o.ph = 'fall'; o.st = hazardT;
+      if(o.face !== o.f0) o.len = o._lb;
     }
     if(hazardT - o.st < F.fall) return;
     o.ph = 'slam'; o.lt = hazardT; shake(4);
@@ -51529,10 +51580,9 @@ FX5_LETGO.push('pretend');   // a KO, a jail or a Final Smash's catch of the foe
 // stunned 0.5 s. The tower is sized to the floor ahead: the run along her floor (up to 300 px, short of a wall or the floor's end) holds
 // three chairs and her, each chair up to 64 px tall (under 30, there is no room: nothing happens, and the finisher is not spent; nor with no
 // room overhead). A hit on her before it falls knocks the tower down harmlessly and drops her. A boss takes the crash as a plain 12.
-function finShowroom(f){
+// The run along her floor that way: up to 300 px, short of a wall or the floor's end.
+function fx7ShowRun(f, fy, dir){
   const S = FX7.showroom;
-  if(!f.onground) return false;   // a tower needs a floor
-  const fy = feetY(f), dir = f.face < 0 ? -1 : 1;
   let run = 0;
   while(run < S.len){
     const nl = Math.min(S.len, run + 6), x = f.x + dir*nl;
@@ -51541,10 +51591,18 @@ function finShowroom(f){
     if(sb === null || Math.abs(sb - fy) > 8 || fxWallSpan(f.x, x, fy - S.band*2, fy - 2)) break;
     run = nl;
   }
+  return run;
+}
+function finShowroom(f){
+  const S = FX7.showroom;
+  if(!f.onground) return false;   // a tower needs a floor
+  const fy = feetY(f), dir = f.face < 0 ? -1 : 1, run = fx7ShowRun(f, fy, dir);
   const ch = Math.min(S.ch[1], (run - 2*f.r)/3.3);   // three chairs and her, lying along the floor ahead, fit the run (3.3: the chair's half-width at the foot it tips over)
   if(ch < S.ch[0]) return false;
   if(!fxClear(f.x, fy - 4, f.x, fy - 3*ch - 2*f.r - 4)) return false;   // no room overhead for the tower
-  finxAdd(f, 'showroom', { ph:'stack', x0:Math.round(f.x), y0:Math.round(fy), ch:Math.round(ch*10)/10, hh:0, hit:[] });
+  fxAimStart(f);
+  const o = finxAdd(f, 'showroom', { ph:'stack', x0:Math.round(f.x), y0:Math.round(fy), ch:Math.round(ch*10)/10, hh:0, hit:[] });
+  o._bk = (fx7ShowRun(f, fy, -dir) - 2*f.r)/3.3 >= o.ch - 0.1;   // WHICH WAY: room behind her for the same tower to come down that way
   fxLock(f, S.n*S.every + 2); armAtk(f, S.lift + 4, 'cast');
 }
 function fx7ShowCW(o){ return 27*o.ch/46; }   // a chair's width (the art is 27 wide, 46 tall)
@@ -51566,6 +51624,7 @@ function fxShowStep(o, f){
   }
   if(o.ph === 'stack'){
     fxLock(f, 2);
+    fxAimWay(f, o, function(){ return !!o._bk; });   // WHICH WAY: she turns on top of it, and it tips over the way she faces when it is up
     if(age < S.lift) fxTell(f, 'showroom', null, age/S.lift);   // STARTUP: her winding up as the first chair comes up under her
     const hh = clamp(age/S.every, 0, S.n); o.hh = Math.round(hh*100)/100;   // GROW IN: one chair after another
     const r = fx7ShowRider(o, f, hh*o.ch, 0);
@@ -51640,13 +51699,21 @@ Object.assign(FINX_DRAW_UNDER, { showroom:fxDrawShow });
 // tall, so jump it. Every foe it rolls over takes 9% and burns 2 s. The fire's embers stay where it stood for 2 s and heal her (fire heals
 // her) 3% a second while she stands in them, 70 px across: up to 6%. She is free once she has kicked. A hit before the kick puts the fire
 // out. A boss takes the log as a plain 9. One at a time: the finisher waits for the log and the embers.
+// Where the campfire builds that way, 30 px past her front, or null: no floor there, or the far side of a wall.
+function fx7CampSpot(f, dir){
+  const C = FX7.campfire, fy = feetY(f), x = clamp(f.x + dir*(f.r + C.off), 24, WW - 24), sb = surfaceBelow(x, fy - 10);
+  if(sb === null || Math.abs(sb - fy) > 24) return null;   // no floor in front of her
+  if(fxWallSpan(f.x, x + dir*C.len/2, Math.min(fy, sb) - C.r*2, Math.min(fy, sb) - 2)) return null;   // nor on the far side of a wall
+  return { x:Math.round(x), y:Math.round(sb) };
+}
 function finCampfire(f){
   const C = FX7.campfire;
   if(!f.onground) return false;   // a campfire needs a floor
-  const fy = feetY(f), x = clamp(f.x + f.face*(f.r + C.off), 24, WW - 24), sb = surfaceBelow(x, fy - 10);
-  if(sb === null || Math.abs(sb - fy) > 24) return false;   // no floor in front of her: nothing happens, and the finisher is not spent
-  if(fxWallSpan(f.x, x + f.face*C.len/2, Math.min(fy, sb) - C.r*2, Math.min(fy, sb) - 2)) return false;   // nor on the far side of a wall
-  finxAdd(f, 'campfire', { ph:'build', x0:Math.round(x), y0:Math.round(sb), x:Math.round(x), y:Math.round(sb), hit:[] });
+  const dir = f.face < 0 ? -1 : 1, p = fx7CampSpot(f, dir);
+  if(!p) return false;   // no floor in front of her (or a wall): nothing happens, and the finisher is not spent
+  fxAimStart(f);
+  const o = finxAdd(f, 'campfire', { ph:'build', x0:p.x, y0:p.y, x:p.x, y:p.y, hit:[] });
+  o._a = p; o._b = fx7CampSpot(f, -dir);   // WHICH WAY: where it builds if she turns round
   fxLock(f, C.grow + 2); armAtk(f, C.wind + 4, 'cast');
 }
 function fxCampLog(o){ const C = FX7.campfire, y = o.y - C.r; return { kind:'capsule', x1:o.x - C.len/2 + C.r, y1:y, x2:o.x + C.len/2 - C.r, y2:y, r:C.r }; }
@@ -51656,6 +51723,11 @@ function fxCampStep(o, f){
   if(o.ph === 'build'){
     if(f.hitstun > 0){ o.dead = true; return; }   // a hit before the kick puts it out
     fxLock(f, 2); f.vx = 0;
+    const was = o.face;
+    if(fxAimWay(f, o, function(){ return !!o._b; }) !== was){   // WHICH WAY: she turns round, and the campfire builds in front of her on that side (still harmless), so she kicks the log that way
+      for(let i=0;i<4;i++) puff(o.x0 + (i - 1.5)*9, o.y0 - 8, '#9a9a9a', 3);
+      const p = o.face === o.f0 ? o._a : o._b; o.x0 = o.x = p.x; o.y0 = o.y = p.y;
+    }
     if(age < C.wind) fxTell(f, 'campfire', null, age/C.wind);   // STARTUP: her foot drawn back
     if(age < C.grow) return;   // GROW-IN: the campfire building up (fxDrawCamp), harmless
     o.ph = 'roll'; o.kt = hazardT; armAtk(f, 12, 'kick'); fxLock(f, C.kick); shake(2);
