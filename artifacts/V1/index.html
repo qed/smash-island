@@ -792,6 +792,17 @@
   .scell .sfor{font-size:10px; font-weight:700; color:#555; margin-top:-3px}
   .scell .btn{padding:5px 10px; font-size:12px; box-shadow:0 3px 0 #1c1c1c; display:inline-flex; align-items:center; gap:3px}
   .scell .btn.short{opacity:.6}
+  /* the Skins section: one fighter's looks at a time (buildStore), picked with the list or stepped through with the arrows */
+  .skinpick{display:flex; gap:8px; align-items:center; justify-content:center; margin:2px 0 4px}
+  .skinpick .skinsel{width:auto; min-width:200px; margin:0; font-weight:700}
+  .skinpick .skinstep{padding:4px 11px; font-size:13px; box-shadow:0 3px 0 #1c1c1c}
+  .skinsum{font-size:12px; font-weight:700; color:#555; margin:0 0 8px}
+  .skingrid .scell{width:128px}
+  .scell.seasonal{border-color:#b85a00; box-shadow:inset 0 0 0 2px #ffb45c}
+  .scell .stags{display:flex; flex-wrap:wrap; gap:3px; justify-content:center; margin-top:-2px}
+  .stag{font-size:9.5px; font-weight:800; line-height:1.3; border:1.5px solid #1c1c1c; border-radius:999px; padding:0 6px; white-space:nowrap}
+  .stag.oct{background:#ffb45c; color:#1c1c1c}
+  .stag.own{background:#bfe8a0; color:#1c1c1c}
   .cosprev{width:64px; height:64px; border-radius:10px; background:#dfefff; border:2px solid #1c1c1c33; display:flex;
     align-items:center; justify-content:center; overflow:hidden}
   .cosprev.wide{width:100px; padding:0 3px}
@@ -15043,7 +15054,7 @@ function go(id){
   if(id==='vault'){ try{ buildVault(); }catch(e){} }
   if(id==='quests' || id==='store' || id==='wardrobe'){ try{ shopPeek(); }catch(e){} }   // the balance another tab left, not this one's old copy
   if(id==='quests'){ try{ buildQuests(); }catch(e){} }
-  if(id==='store'){ try{ storeReply(''); buildStore(); }catch(e){} }
+  if(id==='store'){ try{ storeReply(''); STORE_PICK = null; buildStore(); }catch(e){} }   // (each visit opens the Skins on the fighter you play)
   if(id==='wardrobe'){ try{ buildWardrobe(); }catch(e){} }
   if(id==='options'){ try{ buildThanksUI(); }catch(e){} }
   if(id==='title'){ try{ refreshWallets(); }catch(e){} }
@@ -81063,39 +81074,93 @@ function retiredNote(){
   return 'The old recolours are gone: skins belong to one fighter each now. ' + got.map(id=>COS_RETIRED[id]).join(', ') + (many ? ' were' : ' was')
     + ' yours, so the ' + paid + ' Win Tokens you paid for ' + (many ? 'them are' : 'it is') + ' back in your wallet.';
 }
+// THE SKINS SECTION (the owner, 2026-10-25: "there should be a skins section when you select them, to make it feel less overwhelming"):
+// the Store shows ONE fighter's skins at a time -- their skins and, in October, their Halloween costume -- picked from a list of the
+// fighters who have any on sale, instead of a wall of 250. It opens on the fighter you play (chosen), and keeps the pick while you buy and wear.
+// The rules are cosListed's, unchanged: a Halloween costume is listed in October only, and a Vault fighter's looks only once that fighter is
+// open (so the list never names a fighter the save has not found); the prize fighters have no looks at all.
+let STORE_PICK = null;
+const COS_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function storeSkinFighters(){
+  const has = new Set(COSMETICS.filter(it=>it.kind === 'skin' && it.fighter && cosListed(it)).map(it=>it.fighter));
+  return ROSTER.filter(r=>has.has(r.name)).sort(byShowOrder);
+}
+// One fighter's looks on sale, the seasonal one (the Halloween costume) first.
+function storeSkinsOf(name){
+  return COSMETICS.filter(it=>it.kind === 'skin' && it.fighter === name && cosListed(it)).sort((a, b)=>(b.month ? 1 : 0) - (a.month ? 1 : 0));
+}
 function buildStore(){
   refreshWallets();
   const box = document.getElementById('storeList'); if(!box) return;
   const note = document.getElementById('storeNote');
   if(note){ const t = retiredNote(); note.textContent = t; note.style.display = t ? '' : 'none'; }
+  const scr = document.getElementById('store'), keep = scr ? scr.scrollTop : 0;   // buying rebuilds the list: the screen stays where it was
   box.innerHTML = '';
   const bal = walletBalance(), who = chosen && chosen.name;
-  // The Halloween costumes, while it is October (cosListed), come first under a heading of their own; the rest by kind.
-  const seasonal = COSMETICS.filter(it=>it.month && cosListed(it));
-  const groups = (seasonal.length ? [['Halloween costumes \u00b7 October only', seasonal]] : [])
-    .concat(COS_KINDS.map(kind=>[COS_KIND_NAMES[kind], cosOfKind(kind).filter(it=>!it.month && cosListed(it))]));
-  for(const [label, list] of groups){
-    const sec = document.createElement('div'); sec.className = 'shopsec'; sec.textContent = label; box.appendChild(sec);
-    const grid = document.createElement('div'); grid.className = 'storegrid';
-    for(const it of list){
-      const kind = it.kind, owned = ownsCos(it.id), wearing = owned && wornCos(kind, it.fighter || who) === it.id;
-      const c = document.createElement('div'); c.className = 'scell' + (owned ? ' owned' : ''); c.dataset.id = it.id;
-      c.appendChild(cosPreview(it));
-      const nm = document.createElement('div'); nm.className = 'sname'; nm.textContent = it.name; c.appendChild(nm);
-      if(it.fighter){ const ff = document.createElement('div'); ff.className = 'sfor'; ff.textContent = 'for ' + it.fighter; c.appendChild(ff); }
-      const btn = document.createElement('button');
-      if(!owned){
-        btn.className = 'btn sm'; btn.textContent = 'Get ';
-        btn.appendChild(tokenAmount(it.price));
-        if(bal < it.price){ btn.classList.add('short'); btn.title = 'You need ' + (it.price - bal) + ' more Win Tokens'; }
-        btn.onclick = ()=>storeBuy(it.id);
-      } else if(wearing){ btn.className = 'btn ghost sm'; btn.textContent = 'Wearing ✓'; btn.disabled = true; }
-      else { btn.className = 'btn alt sm'; btn.textContent = 'Wear'; btn.onclick = ()=>storeWear(it.id); }
-      c.appendChild(btn);
-      grid.appendChild(c);
+  const colourOf = (name)=>{ const r = ROSTER.find(x=>x.name === name); return r ? safeColor(r.color) : null; };
+  const cellFor = (it, showFor)=>{
+    const kind = it.kind, owned = ownsCos(it.id), wearing = owned && wornCos(kind, it.fighter || who) === it.id;
+    const c = document.createElement('div'); c.className = 'scell' + (owned ? ' owned' : '') + (it.month ? ' seasonal' : ''); c.dataset.id = it.id;
+    c.appendChild(cosPreview(it, it.fighter ? colourOf(it.fighter) : null));
+    const nm = document.createElement('div'); nm.className = 'sname'; nm.textContent = it.name; c.appendChild(nm);
+    if(showFor && it.fighter){ const ff = document.createElement('div'); ff.className = 'sfor'; ff.textContent = 'for ' + it.fighter; c.appendChild(ff); }
+    if(it.month || owned){
+      const tags = document.createElement('div'); tags.className = 'stags';
+      if(it.month){ const t = document.createElement('span'); t.className = 'stag oct'; t.textContent = '\ud83c\udf83 ' + (COS_MONTHS[it.month - 1] || 'Seasonal') + ' only'; tags.appendChild(t); }
+      if(owned){ const t = document.createElement('span'); t.className = 'stag own'; t.textContent = 'Owned \u2713'; tags.appendChild(t); }
+      c.appendChild(tags);
     }
+    const btn = document.createElement('button');
+    if(!owned){
+      btn.className = 'btn sm'; btn.textContent = 'Get ';
+      btn.appendChild(tokenAmount(it.price));
+      if(bal < it.price){ btn.classList.add('short'); btn.title = 'You need ' + (it.price - bal) + ' more Win Tokens'; }
+      btn.onclick = ()=>storeBuy(it.id);
+    } else if(wearing){ btn.className = 'btn ghost sm'; btn.textContent = 'Wearing \u2713'; btn.disabled = true; }
+    else { btn.className = 'btn alt sm'; btn.textContent = 'Wear'; btn.onclick = ()=>storeWear(it.id); }
+    c.appendChild(btn);
+    return c;
+  };
+  const heading = (label)=>{ const sec = document.createElement('div'); sec.className = 'shopsec'; sec.textContent = label; box.appendChild(sec); };
+  // SKINS: one fighter at a time
+  const fl = storeSkinFighters();
+  if(fl.length){
+    if(!STORE_PICK || !fl.some(r=>r.name === STORE_PICK))
+      STORE_PICK = (chosen && fl.some(r=>r.name === chosen.name)) ? chosen.name : fl[0].name;
+    heading(COS_KIND_NAMES.skin);
+    const pick = document.createElement('div'); pick.className = 'skinpick';
+    const step = (d, label, glyph)=>{ const b = document.createElement('button'); b.className = 'btn ghost sm skinstep'; b.textContent = glyph; b.title = label; b.setAttribute('aria-label', label);
+      b.onclick = ()=>{ const i = fl.findIndex(r=>r.name === STORE_PICK); STORE_PICK = fl[(i + d + fl.length) % fl.length].name; show(); }; return b; };
+    const sel = document.createElement('select'); sel.className = 'netinput lobbyselect skinsel'; sel.id = 'storeFighter'; sel.setAttribute('aria-label', 'Fighter');
+    for(const r of fl){
+      const mine = storeSkinsOf(r.name), all = mine.length && mine.every(it=>ownsCos(it.id));
+      const o = document.createElement('option'); o.value = r.name; o.textContent = r.name + (all ? '  \u2713' : ''); sel.appendChild(o);
+    }
+    sel.onchange = ()=>{ STORE_PICK = sel.value; show(); };
+    pick.appendChild(step(-1, 'Previous fighter', '\u25c0')); pick.appendChild(sel); pick.appendChild(step(1, 'Next fighter', '\u25b6'));
+    box.appendChild(pick);
+    const sum = document.createElement('div'); sum.className = 'skinsum'; box.appendChild(sum);
+    const grid = document.createElement('div'); grid.className = 'storegrid skingrid'; box.appendChild(grid);
+    const show = ()=>{
+      sel.value = STORE_PICK;
+      const list = storeSkinsOf(STORE_PICK), own = list.filter(it=>ownsCos(it.id)).length;
+      sum.textContent = list.length + ' skin' + (list.length === 1 ? '' : 's') + ' for ' + STORE_PICK + (own ? ' \u00b7 ' + own + ' owned' : '');
+      grid.innerHTML = '';
+      for(const it of list) grid.appendChild(cellFor(it, false));
+    };
+    show();
+  }
+  // Everything else, by kind: hats and accessories (worn by the fighter you pick), then the slots every fighter shares.
+  for(const kind of COS_KINDS){
+    if(kind === 'skin') continue;
+    const list = cosOfKind(kind).filter(cosListed);
+    if(!list.length) continue;
+    heading(COS_KIND_NAMES[kind]);
+    const grid = document.createElement('div'); grid.className = 'storegrid';
+    for(const it of list) grid.appendChild(cellFor(it, true));
     box.appendChild(grid);
   }
+  if(scr) scr.scrollTop = keep;
 }
 // THE PLAYER CARD: a fighter in your skin and hat, on your card, with your title -- striking your victory pose when you
 // have just won. The Wardrobe shows it as a preview and the result screen shows it after a match.
