@@ -273,6 +273,14 @@
     font-size:28px; color:#d23a2a; pointer-events:none}
   .erase-note{background:#2a2530; color:#ffd9d4; border-color:#b0281c}
   .cell .cellname{width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:0 0 auto}
+  .cell.locked:focus-visible{outline:3px solid var(--gold); outline-offset:1px; z-index:2}
+  /* THE UNLOCK BUBBLE (showLockTip): over a locked fighter while the mouse rests on it or the keyboard focuses it -- the name, and how to get them */
+  .locktip{position:absolute; z-index:40; display:none; max-width:250px; padding:5px 11px 6px; border:2px solid #1c1c1c; border-radius:9px;
+    background:#2a2438; color:#fff; font-size:12.5px; font-weight:700; line-height:1.25; text-align:center; pointer-events:none;
+    box-shadow:0 3px 0 rgba(0,0,0,.28)}
+  .locktip b{display:block; color:var(--gold); font-size:12px; font-weight:800; margin-bottom:1px}
+  .locktip::after{content:""; position:absolute; left:var(--ax,50%); top:100%; margin-left:-7px; border:7px solid transparent; border-top-color:#1c1c1c}
+  .locktip.below::after{top:auto; bottom:100%; border-top-color:transparent; border-bottom-color:#1c1c1c}
   .legend{font-size:12px; color:#555; display:flex; gap:18px; margin-bottom:6px; flex-wrap:wrap}
   .legend b{color:#1c1c1c}
   /* the chosen fighter: name, kind of fighter, and the moves (the YOU line and the moves card, beside the grid) */
@@ -1306,6 +1314,7 @@
         <div class="movecard" id="moveCard"></div>
       </div></div>
     </div>
+    <div class="locktip" id="lockTip" role="tooltip" aria-hidden="true"></div>
 
     <!-- COLLAPSIBLE TEAM STRATEGY / CHAT (appears when Teams mode is picked) -->
     <div id="teamChatPanel" class="teamchat" style="display:none">
@@ -15208,32 +15217,58 @@ function setViewMode(v){
   if(!onePickable(chosen)) chosen = ROSTER.find(r=>onePickable(r)) || chosen;
   saveProfile(); buildBoard();
 }
-// What a locked cell must teach. Says how to earn the fighter, not merely that it is locked.
+// What a locked cell must teach, in plain words: how to earn the fighter, not merely that it is locked. The bubble over a locked cell
+// says it while the mouse rests there or the cell has the keyboard's focus (showLockTip), and the note beside the grid when it is
+// clicked. Every line is the rule that really opens the fighter (TROPHIES and the award that grants each, DRIP_ORDER and dripCount).
 function unlockHint(name){
-  // A Vault fighter comes from its code and nothing else, so the cell says where, never what: the
-  // code is "Just knowledge", and printing it here would hand it out.
-  if(VAULT_FIGHTERS.has(name)) return 'Found in the Vault — it opens with a code';
+  // A Vault fighter comes from its code and nothing else, and the cell gives nothing away: not the code, not where it is typed, not a
+  // clue to it. "A secret", and that is all (the owner's brief, 2026-10-25).
+  if(VAULT_FIGHTERS.has(name)) return 'A secret';
   for(const k in TROPHIES){
     if(TROPHIES[k]!==name) continue;
-    if(k==='wc') return 'Win the World Cup';
-    if(k==='rush2') return 'Reach Boss Rush loop 2';
-    if(k==='tutorial') return 'Finish How to Play';
+    if(k==='wc') return 'Win the World Cup';                                   // awardWorldCup: your side wins a cup you play in
+    if(k==='rush2') return 'Beat all '+BOSS_ROSTER.length+' bosses in one Boss Rush run';   // awardRushLoop(2): Four, the last, falls and the gauntlet loops
+    if(k==='tutorial') return 'Finish How to Play (under Learn)';
     if(k.indexOf('solo:')===0){
+      // soloRun: Boss Rush with you as the only fighter; each boss counts once, by name, however often it falls.
       const need = +k.slice(5);
       const got = PROFILE ? Object.keys(PROFILE.soloBosses||{}).length : 0;
       // Say how many are left, not just the target — a locked cell that reads the same after every
       // run it made progress on is indistinguishable from one that is not tracking anything.
-      return got>=need ? 'Beat '+need+' bosses solo'
-                       : 'Beat '+need+' bosses solo ('+Math.min(got,need)+'/'+need+')';
+      return 'Beat '+need+' different bosses in Boss Rush on your own'+(got>=need ? '' : ' ('+Math.min(got,need)+'/'+need+')');
     }
-    if(k.indexOf('boss:')===0) return 'Defeat '+k.slice(5)+' in Boss Rush';
+    if(k.indexOf('boss:')===0){
+      const who = k.slice(5);
+      return who==='Four' ? 'Beat Four, the last boss of Boss Rush' : 'Beat '+(who==='Announcer' ? 'the Announcer' : who)+' in Boss Rush';
+    }
   }
   const i = DRIP_ORDER.indexOf(name);
   if(i<0) return 'Keep playing';
+  // The drip: every match played (won or lost) opens the next one in DRIP_ORDER, quickly at first, then more slowly (dripCount).
   let need = 0; while(need<200 && dripCount(need) < i+1) need++;
   const left = Math.max(1, need - ((PROFILE&&PROFILE.matches)|0));
-  return 'Play '+left+' more match'+(left===1?'':'es');
+  return 'Keep playing matches ('+left+' more)';
 }
+// THE UNLOCK BUBBLE (the owner, 2026-10-25): over a locked cell, the moment the mouse rests on it or the keyboard focuses it, its name and
+// how to get it. One bubble, in the select screen (so it goes when the screen does), placed above the cell, or below it at the top edge.
+function showLockTip(cell, mark, name, hint){
+  const tip = document.getElementById('lockTip'), scr = document.getElementById('select');
+  if(!tip || !scr || !cell || !cell.isConnected) return;
+  tip.innerHTML = '';
+  const b = document.createElement('b'); b.textContent = mark+' '+name; tip.appendChild(b);
+  const t = document.createElement('span'); t.textContent = hint; tip.appendChild(t);
+  tip.classList.remove('below'); tip.style.left = '0px'; tip.style.top = '0px'; tip.style.display = 'block';
+  const k = UI.k || 1, sr = scr.getBoundingClientRect(), a = cell.getBoundingClientRect();   // (the rects are on the screen: divide by k for the box's pixels)
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  const cx = (a.left + a.width/2 - sr.left)/k + scr.scrollLeft, top = (a.top - sr.top)/k + scr.scrollTop, bot = (a.bottom - sr.top)/k + scr.scrollTop;
+  const x = Math.round(Math.max(scr.scrollLeft + 6, Math.min(cx - tw/2, scr.scrollLeft + scr.clientWidth - tw - 6)));
+  let y = Math.round(top - th - 9);
+  if(y < scr.scrollTop + 4){ y = Math.round(bot + 9); tip.classList.add('below'); }
+  tip.style.left = x+'px'; tip.style.top = y+'px';
+  tip.style.setProperty('--ax', Math.round(cx - x)+'px');   // the bubble's point, over the cell's middle even when the bubble is pushed in from an edge
+}
+function hideLockTip(){ const tip = document.getElementById('lockTip'); if(tip){ tip.style.display = 'none'; tip.innerHTML = ''; } }
+function focusShown(el){ try{ return el.matches(':focus-visible'); }catch(e){ return false; } }   // focus from the keyboard (a click's focus does not hold the bubble)
 // A fighter's face in the picker. It is the SAME render the match draws (SPRITES[name].src), and the decoded element is handed back to the sprite registry, so
 // picking a fighter warms the exact Image the canvas will use instead of fetching it twice. No render (or a 404) falls back to the colour blob this board has
 // always shown, which is also what the canvas falls back to.
@@ -15331,6 +15366,7 @@ function buildBoard(){
   const b=document.getElementById('board'); if(!b) return;
   const wrap=b.parentElement, keepScroll = wrap ? wrap.scrollTop : 0;   // a rebuild must not fling the grid back to the top
   b.innerHTML='';
+  hideLockTip();   // its cell is gone
   closeStagePick();
   const mode = viewMode();
   if(!TUT.active) oneCoercePick();   // a pick One has erased since (or before a reload) snaps to Lightning
@@ -15359,18 +15395,24 @@ function buildBoard(){
     c.appendChild(fighterThumb(r));
     const nm=document.createElement('span'); nm.className='cellname'; nm.textContent=r.name;
     c.appendChild(nm);
-    c.title = r.name;
     // (The RIVAL tag that sat on the fighter who had beaten you most is gone from the select: the owner, 2026-10-07, "remove the thing that says
     // "rival" from the select." RIVAL_NAME still feeds the line on My Stats.)
-    if(open){ c.onclick=()=>pickCell(r, c); }
+    if(open){ c.title = r.name; c.onclick=()=>pickCell(r, c); }
     else {
       const hint = taken ? 'already on your team' : erased ? oneEraseHint() : unlockHint(r.name);
-      c.title = r.name+(taken ? " — " : erased ? " — " : " — locked · ")+hint;
-      // A cell has no room for criterion text, so clicking a locked cell explains it in the note above the moves (the hover tooltip says the same, but only
-      // while the mouse rests on the cell).
+      const mark = taken ? "✔" : erased ? "✖" : "🔒";
+      // A cell has no room for criterion text, so the bubble says it the moment the mouse rests on the cell or the keyboard focuses it (showLockTip:
+      // no native tooltip as well, which would say it again a second later), and clicking it keeps it in the note above the moves.
+      c.setAttribute('aria-label', r.name+(taken || erased ? " — " : " — locked: ")+hint);
+      c.tabIndex = 0;
+      c.onmouseenter = ()=>showLockTip(c, mark, r.name, hint);
+      c.onmouseleave = ()=>{ if(!focusShown(c)) hideLockTip(); };
+      c.onfocus = ()=>{ if(focusShown(c)) showLockTip(c, mark, r.name, hint); };
+      c.onblur = hideLockTip;
       c.onclick = ()=>{
         const n=document.getElementById('lockNote');
-        if(n){ n.textContent = (taken ? "✔ " : erased ? "✖ " : "🔒 ")+r.name+" — "+hint; n.style.display='block'; } };
+        if(n){ n.textContent = mark+" "+r.name+" — "+hint; n.style.display='block'; } };
+      c.onkeydown = e=>{ if(!running && (e.key==='Enter' || e.key===' ')){ e.preventDefault(); e.stopPropagation(); c.onclick(); } };   // (never a match's keys, should the focus outlive the screen)
     }
     b.appendChild(c);
   });
