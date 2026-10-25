@@ -27,8 +27,9 @@ function stubCtx(w, h) {
   });
 }
 
-export function bootRealm(w, h, seed, clock) {
-  const dom = new JSDOM(HTML, {
+// `html`: another build of the page (the online version check's "a friend with an older page open"); the real file by default.
+export function bootRealm(w, h, seed, clock, html = HTML) {
+  const dom = new JSDOM(html, {
     url: 'http://localhost/', runScripts: 'dangerously', pretendToBeVisual: true,
     beforeParse(win) {
       win.HTMLCanvasElement.prototype.getContext = () => stubCtx(w, h);
