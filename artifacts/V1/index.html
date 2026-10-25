@@ -8518,7 +8518,7 @@ function ctfSpecCam(){
 // ---- keys ----
 function ctfSpecKey(e){
   if(typeof CTF === 'undefined' || !ctfSpecOn() || !running || e.ctrlKey || e.metaKey || e.altKey) return;
-  if(e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  if(typingBox(e.target)) return;   // (a box the player can see; a hidden one that kept the focus does not take the keys)
   const sp = CTF.spec, code = e.code, eat = ()=>{ e.stopImmediatePropagation(); e.preventDefault(); };
   const order = fighters.slice().sort((a, b)=>a.team - b.team || a.idx - b.idx);
   const step = d=>{ const i = sp.mode === 'fighter' ? order.findIndex(f=>f.idx === sp.lock) : -1; sp.mode = 'fighter'; sp.lock = order[((i < 0 ? (d > 0 ? -1 : 0) : i) + d + order.length) % order.length].idx; };
@@ -9110,7 +9110,7 @@ function ctfKitDraw(){
     const ok = document.createElement('button'); ok.className = 'cupchip on'; ok.textContent = u.confirm ? 'Replace it' : 'Save'; ok.onclick = ctfKitSaveGo; row.appendChild(ok);
     const no = document.createElement('button'); no.className = 'cupchip'; no.textContent = 'Cancel'; no.onclick = ctfKitClose; row.appendChild(no); box.appendChild(row);
     const f = document.createElement('div'); f.className = 'ctfcup-planfoot'; f.textContent = 'Type a name, Enter saves, Esc cancels'; box.appendChild(f);
-    setTimeout(()=>{ try{ inp.focus(); inp.select(); }catch(e){} }, 0);
+    setTimeout(()=>{ try{ if(CTFKIT_UI === u && typingBox(inp)){ inp.focus(); inp.select(); } }catch(e){} }, 0);   // (not after the box closed, or Play was pressed)
     return;
   }
   const kits = ctfKits(); u.cur = Math.max(0, Math.min(u.cur, kits.length - 1));
@@ -9122,7 +9122,7 @@ function ctfKitDraw(){
   if(!kits.length){ const e = document.createElement('div'); e.className = 'ctfcup-planrow'; e.textContent = 'No kits yet: Save kit on a team makes one.'; list.appendChild(e); }
   kits.forEach((k, q)=>{
     const r = document.createElement('div'); r.className = 'ctfcup-planrow ctfkit-row' + (q === u.cur ? ' cur' : '');
-    if(u.rename === q){ const inp = document.createElement('input'); inp.type = 'text'; inp.maxLength = 40; inp.className = 'ctfkit-input'; inp.id = 'ctfKitRename'; inp.value = u.text; inp.oninput = ()=>{ u.text = inp.value; }; r.appendChild(inp); setTimeout(()=>{ try{ inp.focus(); inp.select(); }catch(e){} }, 0); }
+    if(u.rename === q){ const inp = document.createElement('input'); inp.type = 'text'; inp.maxLength = 40; inp.className = 'ctfkit-input'; inp.id = 'ctfKitRename'; inp.value = u.text; inp.oninput = ()=>{ u.text = inp.value; }; r.appendChild(inp); setTimeout(()=>{ try{ if(CTFKIT_UI === u && typingBox(inp)){ inp.focus(); inp.select(); } }catch(e){} }, 0); }
     else { const nm = document.createElement('span'); nm.className = 'ctfkit-name'; nm.textContent = k.name; r.appendChild(nm); const sm = document.createElement('span'); sm.className = 'ctfkit-sum'; sm.textContent = ctfKitSummary(k); r.appendChild(sm); }
     const mk = (label, fn)=>{ const b = document.createElement('button'); b.className = 'cupchip'; b.textContent = label; b.onclick = ev=>{ ev.stopPropagation(); u.cur = q; fn(); }; r.appendChild(b); };
     mk('Load', ()=>ctfKitLoadGo(q)); mk('Rename', ()=>ctfKitRenameStart(q)); mk(u.confirm === q ? 'Sure?' : 'Delete', ()=>ctfKitDeleteGo(q));
@@ -9465,7 +9465,7 @@ function ctfKitImportDraw(box, u){
     const ok = document.createElement('button'); ok.className = 'cupchip on'; ok.textContent = 'Read it'; ok.onclick = ctfKitImportRead; row.appendChild(ok);
     const no = document.createElement('button'); no.className = 'cupchip'; no.textContent = 'Cancel'; no.onclick = ctfKitClose; row.appendChild(no); box.appendChild(row);
     box.appendChild(mk('ctfcup-planfoot', 'Ctrl+V pastes   Ctrl+Enter reads it   Esc cancels'));
-    setTimeout(()=>{ try{ ta.focus(); }catch(e){} }, 0);
+    setTimeout(()=>{ try{ if(CTFKIT_UI === u && typingBox(ta)) ta.focus(); }catch(e){} }, 0);
     return;
   }
   const r = u.res, scroll = document.createElement('div'); scroll.className = 'ctfcup-planlist ctfkit-review';
@@ -13053,7 +13053,7 @@ function ctfMenuSend(){
 function ctfMenuKey(e){
   if(typeof CTF === 'undefined' || SETTINGS.mode !== 'ctf' || !CTF.live || !running) return;
   const code = e.code, open = ctfMenuOpen();
-  if(code === (KEYS.plan || 'KeyP') && !e.repeat && !(e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName))){ ctfMenuToggle(); e.stopImmediatePropagation(); e.preventDefault(); return; }
+  if(code === (KEYS.plan || 'KeyP') && !e.repeat && !typingBox(e.target)){ ctfMenuToggle(); e.stopImmediatePropagation(); e.preventDefault(); return; }
   if(!open) return;
   const m = CTF.menu, rows = ctfMenuRows(), nt = 6;
   const eat = ()=>{ e.stopImmediatePropagation(); e.preventDefault(); };
@@ -15838,12 +15838,27 @@ function blurFormControl(){
   const ae = document.activeElement;
   if(ae && ae !== document.body && /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(ae.tagName) && typeof ae.blur === 'function') ae.blur();
 }
+// Is the focused control a box the player can type in right now? Only one they can SEE: a box on a screen that has gone, or in a closed
+// panel, keeps the focus in some browsers (and the kit box's deferred focus could land after Play was pressed), and the keydown handler
+// below gave every key to it -- Esc did not pause a running match (playtest, 2026-10-25: the focus was the CTF kit name box on a hidden
+// screen). A box nobody can see gives the keys back; the Vault, the room code and the kit boxes still type while they are showing.
+function typingBox(ae){
+  if(!ae || !/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.disabled || ae.isConnected === false) return false;
+  for(let el = ae; el && el !== document.body && el !== document.documentElement; el = el.parentElement){
+    if(el.hidden) return false;
+    if(el.classList && el.classList.contains('screen') && !el.classList.contains('active')) return false;
+    if(el.style && el.style.display === 'none') return false;
+  }
+  try{ const cs = getComputedStyle(ae); if(cs.display === 'none' || cs.visibility === 'hidden') return false; }catch(e){}   // (the box itself; its panels hide by their own style)
+  return true;
+}
 addEventListener('keydown',e=>{
   if(listening){ KEYS[listening]=e.code; listening=null; buildMaps(); e.preventDefault(); return; }
-  // If the player is typing in a text field (a level name, a room code), let them type freely.
+  // If the player is typing in a text field (a level name, a room code), let them type freely -- in one they can see (typingBox).
   const ae=document.activeElement;
   if(ae && (ae.tagName==='INPUT' || ae.tagName==='TEXTAREA' || ae.tagName==='SELECT')){
-    return;
+    if(typingBox(ae)) return;
+    try{ ae.blur(); }catch(e){}   // a hidden box lets go of the focus, and this key goes to the game
   }
   down[e.code]=true;
   if(TUT.active && e.code==='Escape'){ TUT.active=false; TUT.done=true; running=false; tutorialRestore(); go('title'); return; }
@@ -20118,7 +20133,7 @@ addEventListener('keydown', e => {
   // A B typed into a text box (a Vault code like BUY A CHAIR, a room code) is a letter, not the
   // hitbox toggle -- and the toggle's banner must not appear over a menu for it.
   const ae = document.activeElement;
-  if(ae && (ae.tagName==='INPUT' || ae.tagName==='TEXTAREA')) return;
+  if(ae && (ae.tagName==='INPUT' || ae.tagName==='TEXTAREA') && typingBox(ae)) return;
   // a player's key wins -- except CTF's edit key (B by default), which only means something in the CTF hiding phase
   if(Object.keys(KEYS).some(k => k !== 'edit' && KEYS[k] === 'KeyB')) return;
   if(KEYS.edit === 'KeyB' && SETTINGS.mode === 'ctf' && typeof CTF !== 'undefined' && CTF.live && CTF.live.phase !== 'play') return;
