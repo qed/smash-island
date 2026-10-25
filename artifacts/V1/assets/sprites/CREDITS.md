@@ -1000,8 +1000,8 @@ keyed by the assist's name; MePhone4's hostile adds wear the same art.
 
 ## Per-fighter skins (Wardrobe)
 
-153 second renders, each worn by ONE fighter only (its Wardrobe skin), in `assets/sprites/skins/`; every playable fighter has at least
-one (Tree has none, on the owner's standing rule "Do not change Tree"), and a fighter with several real canon looks has them all. They are loaded only when
+155 second renders, each worn by ONE fighter only (its Wardrobe skin), in `assets/sprites/skins/`; every playable fighter has at least
+one, and a fighter with several real canon looks has them all. They are loaded only when
 worn, never at boot, and the fighter's own render above is unchanged. Each was fetched with the same pipeline as every render
 above: `node scripts/fetch-sprites.mjs --wiki=<subdomain> --out-dir=artifacts/V1/assets/sprites/skins
 --manifest=scripts/sprite-manifest-skins.json "Skin Name=File.png@Fighter"`, so each one is genuinely transparent, has a face,
@@ -1118,6 +1118,8 @@ used under fan-work norms in a disclaimed, non-commercial fan game.
 | Backpack Loser | Loser | `skins/backpack-loser.png` | 215×200 | `File:LoserBackpack.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/b/bc/LoserBackpack.png/revision/latest?cb=20250621232021 |
 | Uncapped Marker | Marker | `skins/uncapped-marker.png` | 97×200 | `File:Uncapped marker.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/8b/Uncapped_marker.png/revision/latest?cb=20191026124851 |
 | Burnt Marker | Marker | `skins/burnt-marker.png` | 97×200 | `File:Burnt Marker (TPOT 6).png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3d/Burnt_Marker_%28TPOT_6%29.png/revision/latest?cb=20230710043409 |
+| Tree the Green | Tree | `skins/tree-the-green.png` | 170×200 | `File:Tpot renders0002.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d0/Tpot_renders0002.png/revision/latest |
+| Snowy Tree | Tree | `skins/snowy-tree.png` | 170×200 | `File:SnowTree.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f1/SnowTree.png/revision/latest |
 
 ### Inanimate Insanity wiki skins
 
@@ -1205,6 +1207,11 @@ inanimateinsanity.fandom.com.
   its Designs gallery on the wiki. Every Battle for Dream Island fighter's looks are from its own gallery pages on the BFDI wiki (the episode
   is in each caption there). The "Climbing Gear" renders of episode 3 (Cherries, Magnet, MeTag, Bonesaw) are the blindfold plus the harness
   of the rock-climbing leg. No render with lettering, no render with a second character in it, and none whose face is hidden was kept.
-- **Left out on purpose.** Tree (the owner's standing rule). Renders under 200 px tall at the source (the blue Ruler of BFDIA 8). Renders
+- **Tree's two** (`skins/tree-the-green.png`, `skins/snowy-tree.png`; the owner said yes to both on 2026-10-25, when Tree was the only fighter
+  with no skin). Tree the Green (what Four calls him) is his TPOT render, the very drawing his purple `tree.png` is, in green; Snowy Tree is his
+  TPOT 14 look, as Snowy Ruby and Jetpack Fanny are theirs. These two were not fetched by the script: the wiki files were saved by hand and put
+  through its steps locally (cut to the drawing, scaled to 200 px tall, the invisible halo erased, the same checks). Both face the way `tree.png`
+  does, so both are flipped as it is.
+- **Left out on purpose.** Renders under 200 px tall at the source (the blue Ruler of BFDIA 8). Renders
   that are a photograph or a frame, not a cut-out; renders whose face is covered (a cake in the face, a paint splat, an ice block); renders
   that carry a sign; fan-made colour variants.
