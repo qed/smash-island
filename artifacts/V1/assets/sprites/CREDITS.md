@@ -1184,6 +1184,23 @@ inanimateinsanity.fandom.com.
 | Ice Cream Paintbrush | Paintbrush | `skins/ice-cream-paintbrush.png` | 83×200 | `File:1645292052660.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b1/1645292052660.png/revision/latest?cb=20220219173519 |
 | Guacamole Marshmallow | Marshmallow | `skins/guacamole-marshmallow.png` | 238×200 | `File:Guacamolemellow.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/03/Guacamolemellow.png/revision/latest?cb=20251005170934 |
 
+### Steve Cobs's prize skins
+
+Two looks for each of his three prize fighters (A, B and C, as in the Inanimate Insanity DLC section above), hidden with them until Steve Cobs is
+beaten; the owner chose these six (2026-10-25) and approved their download. Same footing as the Inanimate Insanity skins above. Their names stay
+out of this file ("Yes, hide them"), so each is described, linked by the wiki's page id of the gallery page it is on where it is on one, and
+dated by its upload. Unlike the rest, these were downloaded at full size and cut down here, not by `scripts/fetch-sprites.mjs`: trimmed to the
+character, area-averaged to 200 px tall and the invisible halo erased, the same result; each was looked at before it was kept.
+
+| Skin | Fighter | File | Size | Wiki file | Source |
+|---|---|---|---|---|---|
+| Prize fighter A, skin 1 | Prize fighter A | `skins/prize-a-skin1.png` | 162×200 | the wiki's render of his Season 1 look, remastered (his gallery page, Poses/Artwork); the upload of 2026-04-28 06:35 UTC | https://inanimateinsanity.fandom.com/?curid=66160 |
+| Prize fighter A, skin 2 | Prize fighter A | `skins/prize-a-skin2.png` | 152×200 | the wiki's render of his Invitational design (2021), giving a thumbs up (his gallery page, Poses/Artwork); the upload of 2021-09-14 21:50 UTC | https://inanimateinsanity.fandom.com/?curid=66160 |
+| Prize fighter B, skin 1 | Prize fighter B | `skins/prize-b-skin1.png` | 193×200 | the wiki's render of her in the "Winner!" sash of Inanimate Insanity II episode 14; the sash's lettering is the show's own; the upload of 2026-03-22 01:57 UTC | inanimateinsanity.fandom.com (its File: title names her) |
+| Prize fighter B, skin 2 | Prize fighter B | `skins/prize-b-skin2.png` | 196×200 | the wiki's render of her 2021 design (her gallery page, Poses); the upload of 2024-05-21 20:07 UTC | https://inanimateinsanity.fandom.com/?curid=42988 |
+| Prize fighter C, skin 1 | Prize fighter C | `skins/prize-c-skin1.png` | 146×200 | the wiki's render of her golden, holding the Immunity Cookie (Invitational episodes 10 and 14); the upload of 2024-06-22 10:36 UTC | inanimateinsanity.fandom.com (its File: title names her) |
+| Prize fighter C, skin 2 | Prize fighter C | `skins/prize-c-skin2.png` | 115×200 | the wiki's render of her in a construction hard hat (Invitational episode 17); the upload of 2026-03-15 06:34 UTC | inanimateinsanity.fandom.com (its File: title names her) |
+
 ### Notes on individual skins
 
 - **`skins/tattered-jack.png`** -- the card's own "J" and spade index shows in two corners, exactly as on the fighter's
