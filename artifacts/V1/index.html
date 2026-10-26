@@ -20657,6 +20657,7 @@ function makeFighter(r,x,y,idx){
     flash:0, _atkAnim:0, _atkLen:ATK_ANIM, _atkPhase:null, _atkProg:0, _hurtAnim:0, _rigState:"idle", aiTimer:Math.random()*40, aiTarget:null, aiMode:0, _lastX:undefined, _stuck:0, _recover:0, _seekingSpawn:false,
     hurt: hurtboxFor(r && r.name),   // see HURTBOX; null falls back to the 24px circle
     st: statsFor(r && r.name),   // FIGHTER STATS: run, air, jump, fall, dmg (all 1 unless FIGHTER_STATS says otherwise)
+    size:1,   // PER-FIGHTER SIZE (setFighterSize): 1, the size every fighter has always been; r and hurt below are the size-1 ones
     r:24
   };
 }
@@ -42538,6 +42539,7 @@ function step(){
     if(f.ctrlRev>0) f.ctrlRev--;
     if(f._revLock>0) f._revLock--;   // re-scramble immunity window
     if(f.slowed>0) f.slowed--;
+    if(f._soakT && f._soakT <= hazardT) f._soakT = 0;   // SOAKED has dried off (its slow ran out with it), and its flag leaves the snapshot
     if(f._taunted>0){ if(--f._taunted===0) f._tauntedBy=null; }   // Teardrop's mark wears off
     if(f._momentumT>0) f._momentumT--;
     if(f._fury>0) f._fury = Math.max(0, f._fury - 0.05);   // Paintbrush calms down, slowly
@@ -56232,8 +56234,7 @@ function doSpecial(f){
       // frames, the wind-up ring) and weaker (0.7x -- `weakened` is exactly that in applyHit), from his own body. With
       // no one near he copies whatever a foe used last; with nothing used yet, a weak ghostly shove.
       // Kits whose special runs on its owner's own state have no sense on him and get the shove: Salt's needs Pepper
-      // beside her, and copying the copy copies nothing.
-      const SKIP = { copycat:1, saltpepper:1 };
+      // beside her, and copying the copy copies nothing (DOUGH_SKIP, which also holds the event fighters' seven).
       let src = null, best = 260;
       for(const t of fighters){ if(t.dead || t.idx === f.idx || t.team === f.team || !t._lastSpecialKind) continue;
         const d = Math.hypot(t.x - f.x, t.y - f.y); if(d < best){ best = d; src = t; } }
@@ -56261,7 +56262,7 @@ function doSpecial(f){
         }, '#fcdfa6');
         f.flash = 8; f.spCd = 50;
       } else
-      if(kind && !SKIP[kind] && !f._windup){
+      if(kind && !doughSkips(kind) && !f._windup){
         startWindup(f, 12, function(){
           if(f.dead) return;
           const kit0 = f.kit, cd0 = f.spCd||0;
@@ -56908,6 +56909,160 @@ function hitShape(f, sh, dmgLow, dmgHigh, kbx, kby, band, sourKb, once){
 }
 // Two bodies touching: the attacker's outline against the target's, with a little margin for the frame step.
 function bodyTouch(f, t, margin){ return shapeHits(bodyShape(f, margin), t); }
+
+// ============================================================
+//  EVENT FIGHTERS: SHARED PIECES (event-fighters-phase1.md, section 3.0; build step 1)
+// ============================================================
+// What several of the event fighters' kits use, built once before any of them, with nothing a player can see yet: no move calls any of
+// it today (the wet list's rows for today's fighters are switched off), and every fighter is size 1, the size it has always been. The
+// owner approved every recommended answer on 2026-10-26 (here: questions 16 to 19, 23, 44 and 83, and J1: one set of rules for all 14).
+
+// ---- GROW-IN FOR EVERYTHING NEW (question 16) ----
+// Anything new that a move puts into the world -- a kit's object, an assist's leftover, a twist that pushes or slows -- grows in over
+// GROW_IN frames, drawn as the thing itself growing, and hurts, pushes or slows nobody until it is whole: the finishers' rule (FIN_GROW,
+// GROW IN, ONE AT A TIME) for everything. `age` is the frames since it was put out.
+const GROW_IN = FIN_GROW;
+function growK(age){ return age <= 0 ? 0 : (age >= GROW_IN ? 1 : age/GROW_IN); }   // how much of it there is, 0..1: draw it at this size
+function grownIn(age){ return age >= GROW_IN; }   // whole: from this frame it can hurt, push or slow
+
+// ---- SOAKED (questions 17 and 19) ----
+// One status for everyone. A soaked fighter drips, gets the game's usual slow (`slowed`: MOVE*0.5 and the 0.55 run cap, and nothing
+// else -- "slow only", no lower jumps) and has any fire put out the moment it is soaked. Cloudy's bolt does a third more to it (SOAK.bolt)
+// and a soaked Foldy goes soggy -- no glide, no Fold and Fly, and she falls SOAK.soggyFall faster -- each read in its own kit. It lasts as
+// long as the move says, SOAK.min to SOAK.max frames (1 to 2.5 s), and a second soak only ever makes it longer. `_soakT` is when it dries:
+// the one flag a guest is sent (NET_FIGHTER_FLAGS), and the drips are drawn from it and the clock (drawSoakDrips), the same on every
+// screen. The slow is `slowed`, which the snapshot already carries and the guest's own prediction already reads (GUEST PREDICTION).
+const SOAK = { min:60, max:150, bolt:4/3, soggyFall:1.1, drop:'#6ec6f0', edge:'#2a78a8' };
+function soaked(t){ return !!t && t._soakT > hazardT; }
+// Puts out fire, and only fire. Burn and poison share one timer (the part of it that is poison is _poisonT), so the poison is left
+// running, as Taco's heatproofing leaves it. Cloudy's rain puts out fire on everyone in it, foes included (question 19): it calls this
+// for whoever stands in it, as well as soaking them.
+function douse(t){ if(t && t.burn > (t._poisonT || 0)) t.burn = t._poisonT || 0; }
+function soakApply(t, n){
+  if(!t || t.dead) return;
+  n = clamp(Math.round(n || SOAK.min), SOAK.min, SOAK.max);
+  t._soakT = Math.max(t._soakT || 0, hazardT + n);
+  t.slowed = Math.max(t.slowed || 0, t._soakT - hazardT);   // slowed for exactly as long as it is soaked
+  douse(t);
+}
+// The drips (render-only): four drops running off the lower half of the body, each on its own short fall, worked out from the clock and
+// the fighter's slot, so a guest, who has only `_soakT`, draws the same drops. They thin out over the last 20 frames.
+function drawSoakDrips(f){
+  const R = f.r || SIZE_R, s = R/SIZE_R, fade = clamp((f._soakT - hazardT)/20, 0, 1);
+  ctx.save(); ctx.fillStyle = SOAK.drop; ctx.strokeStyle = SOAK.edge; ctx.lineWidth = 1;
+  for(let i = 0; i < 4; i++){
+    const u = ((hazardT + i*7 + f.idx*5) % 28)/28;   // how far down its fall this drop is, 0..1
+    const x = f.x + ((i + 0.5)/4 - 0.5)*R*1.3 + ((f.idx*3 + i*5) % 5 - 2)*s, y = f.y + R*0.15 + u*u*R*1.5;
+    ctx.globalAlpha = (1 - u)*0.9*fade*drawAlpha;
+    ctx.beginPath(); ctx.moveTo(x, y - 4*s); ctx.quadraticCurveTo(x + 2.8*s, y + 0.6*s, x, y + 2.8*s); ctx.quadraticCurveTo(x - 2.8*s, y + 0.6*s, x, y - 4*s);
+    ctx.fill(); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ---- THE WET LIST (section 3.0; question 18: Marker's ink and Toothpaste's paste count) ----
+// The hits that soak whoever they hit, by fighter and by the move's slot (MOVE_TEXT's and MOVESETS' names: 'dt' the down tilt, 'da' the
+// down air, 'grab.d' the down throw), for `soak` frames (null: SOAK.min until the kit sets it). Looked up by kit (kitOfName), so a special
+// Dough copies is as wet as the one he copied. `live`: it soaks now. TODAY'S FIVE ARE OFF: soaking them would not be invisible -- the
+// drips show, the fire goes out (Rocky's barf on a burning Firey), and four of the five would slow foes they do not slow today -- so they
+// wait here, ready, for the first kit that soaks (Spongy, build step 11), to be switched on and shown to the owner then. Each row names
+// where its soakHit call goes. The event kits' rows are live from the start: they match nobody until that fighter is in the roster.
+const WET_HITS = [
+  { who:'Rocky',        slot:'special', soak:90,       live:false },   // Barf: the glob (doSpecial case "barf", its shot)
+  { who:'Barf Bag',     slot:'up',      soak:90,       live:false },   // Sick Spray: the splash (UPSPEC splash, its shot)
+  { who:'Golf Ball',    slot:'up',      soak:90,       live:false },   // Water Hazard: the landing (UPSPEC zapshooter, its plunge)
+  { who:'Marker',       slot:'special', soak:90,       live:false },   // Ink Spray: the cone (case "ink"; it slows 90 already)
+  { who:'Toothpaste',   slot:'special', soak:90,       live:false },   // Paste Trap: the glob (case "paste", its shot)
+  { who:'Spongy',       slot:'special', soak:null,     live:true },    // Wring Out: the water
+  { who:'Spongy',       slot:'smash',   soak:null,     live:true },    // Big Squish
+  { who:'Cloudy',       slot:'dt',      soak:SOAK.min, live:true },    // Drizzle ("soaks briefly")
+  { who:'Cloudy',       slot:'da',      soak:null,     live:true },    // Cloudburst
+  { who:'Cloudy',       slot:'grab.d',  soak:null,     live:true },    // Rained On
+  { who:'Cloudy',       slot:'down',    soak:120,      live:true },    // Rain Cloud: while under it, and for 2 s after
+  { who:'Kitchen Sink', slot:'trophy',  soak:null,     live:true },    // the trophy's splash (assist batch A1): read by its act, not by kit
+];
+// The soak a hit by `f` in move slot `slot` gives, in frames (0: a dry hit).
+function wetSoak(f, slot){
+  const k = f && f.kit && f.kit.special; if(!k) return 0;
+  for(const w of WET_HITS) if(w.live && w.slot === slot && kitOfName(w.who) === k) return w.soak || SOAK.min;
+  return 0;
+}
+// Called once a hit by `f` in `slot` has landed on `t`: soaks them when it is a live wet hit (never a teammate: friendly fire is off).
+function soakHit(t, f, slot){ const n = wetSoak(f, slot); if(n > 0 && t && f && t.team !== f.team) soakApply(t, n); }
+// A fighter's kit (kit.special) by name; null while that fighter is not in the roster.
+function kitOfName(name){ const r = ROSTER.find(function(q){ return q.name === name; }); return (r && r.kit && r.kit.special) || null; }
+
+// ---- WHAT CAN TAKE AWAY EACH NEW THING (section 3.0; question 23: only what a hit could already break; question 44: never shots) ----
+// Three takers, three rules. Eraser's Rub Out erases shots in flight and anything a hit could already break. The Onigiri trophy eats foes'
+// thrown items, puddles and floor traps, never shots. Black Hole's Accretion catches only loose items and its own clod. Nothing a smash, a
+// finisher or a Final Smash put out is ever erased, caught or eaten (TAKE_NEVER). One row per new thing, read by the takers' jobs: rub
+// (Rub Out erases it), eat (Onigiri eats it), grab (Accretion catches it; 'own': only its own), quiet (taken without its pop), and ends:
+// what else ends it, in words, for the kit that builds it.
+const TAKE_NEVER = { smash:1, finisher:1, fs:1 };
+const TAKE_RULES = {
+  stapleShot:   { rub:true,  eat:false, grab:false },                                         // Stapy's staple, flying
+  stapleLink:   { rub:false, eat:false, grab:false, ends:'a hard launch knocks it out' },     // ...a staple link, on two fighters
+  stapleLadder: { rub:false, eat:false, grab:false },                                         // ...Staple Ladder's staples
+  berryShot:    { rub:true,  eat:false, grab:false, quiet:true, ends:'pops on the first foe' },        // Pie's berry, flying
+  berryStuck:   { rub:true,  eat:true,  grab:false, quiet:true, ends:'pops when a foe touches it' },   // ...a berry stuck where it landed
+  fork:         { rub:false, eat:false, grab:false },                                         // ...her fork
+  earthRain:    { rub:false, eat:false, grab:false },                                         // Cloudy's Earth, and his rain
+  trebuchet:    { rub:false, eat:false, grab:false },                                         // 8-Ball's trebuchet and basket
+  clod:         { rub:true,  eat:false, grab:'own' },                                         // Black Hole's clod, or the item in his orbit
+  bell:         { rub:true,  eat:true,  grab:false, ends:'breaks on any hit' },               // Foldy's Magic Bell
+  swingset:     { rub:false, eat:false, grab:false, ends:'stops if Clock is hit' },           // Clock's swingset
+  airPuff:      { rub:false, eat:false, grab:false },                                         // Beach Ball's air puff
+  splat:        { rub:true,  eat:true,  grab:false },                                         // the Blender trophy's splats, the Shampoo trophy's lather
+};
+// May `how` ('rub', 'eat' or 'grab') take a thing of `kind` that a move in `slot` put out? `own`: the taker put it out itself.
+function canTake(how, kind, slot, own){
+  if(slot && TAKE_NEVER[slot]) return false;
+  const R = TAKE_RULES[kind]; if(!R) return false;
+  return R[how] === 'own' ? !!own : !!R[how];
+}
+
+// ---- DOUGH'S COPY SKIPS (section 3.0) ----
+// Shameless Knockoff (doSpecial case "copycat") copies the last special a foe near him used. A special that runs on its owner's own
+// gauge or objects has no sense on him, and he does the hollow shove instead. By kit: Salt's (she needs Pepper beside her) and his own
+// (copying the copy copies nothing). By fighter: the event fighters' seven -- Clock Hands, Wring Out, Accretion/Slingshot, Stop Shot, Big
+// Bounce, Explosive Blueberry and Staple Together -- whose kits are named in their own jobs. Foldy's Fold and Fly is checked in hers.
+const DOUGH_SKIP = { kits:['copycat', 'saltpepper'], who:['Clock', 'Spongy', 'Black Hole', '8-Ball', 'Beach Ball', 'Pie', 'Stapy'] };
+function doughSkips(kind){
+  if(DOUGH_SKIP.kits.indexOf(kind) >= 0) return true;
+  for(const n of DOUGH_SKIP.who) if(kitOfName(n) === kind) return true;
+  return false;
+}
+
+// ---- PER-FIGHTER SIZE (question 83: Beach Ball's sizes change "both drawing and hurtbox") ----
+// f.size is 1 for every fighter (makeFighter): the size each has always been. setFighterSize makes a fighter bigger or smaller for real:
+// its body (f.r, what stands on the floor and what its picture, name tag and marker are sized by: drawSpriteBody, drawFighter) and the
+// outline that gets hit (f.hurt) together, so what you see is still what gets hit. The feet stay where they were: a fighter grows up off
+// the floor, never into it. A traced outline is scaled about the picture's feet, SIZE_FEET below the body at every size (where
+// drawSpriteBody stands it), and an ellipse about the middle (the blob's); with no outline the circle is f.r itself. r rides in every
+// snapshot already; the size rides only when it is not 1 (netFighter), for the outline a guest's hit art is drawn on (haHurtOf).
+const SIZE_R = 24, SIZE_FEET = 12;   // f.r at size 1 (makeFighter's r); how far below the body a picture's feet stand (drawSpriteBody: R + 12)
+const SIZE_HURT = new Map();
+function sizeOf(f){ return (f && f.size > 0) ? f.size : 1; }
+function sizedHurt(name, k){
+  if(k === 1) return hurtboxFor(name);
+  const key = name + '@' + k;
+  if(SIZE_HURT.has(key)) return SIZE_HURT.get(key);
+  const h = hurtboxFor(name), c = SIZE_FEET*(1 - k);   // y -> k*y + c keeps the feet (SIZE_R + SIZE_FEET below the middle at size 1) at f.r + SIZE_FEET
+  let out = null;
+  if(h && h.poly){
+    const p = new Array(h.poly.length);
+    for(let i = 0; i < p.length; i += 2){ p[i] = h.poly[i]*k; p[i + 1] = h.poly[i + 1]*k + c; }
+    out = { poly:p, flip:h.flip, rx:h.rx*k, ry:h.ry*k, oy:h.oy*k + c, cx:h.cx*k };
+  } else if(h) out = { rx:h.rx*k, ry:h.ry*k, oy:(h.oy || 0)*k };
+  SIZE_HURT.set(key, out);
+  return out;
+}
+function setFighterSize(f, k){
+  k = Math.round(clamp(+k || 1, 0.5, 2)*100)/100;
+  const feet = f.y + f.r;
+  f.size = k; f.r = SIZE_R*k; f.y = feet - f.r;
+  f.hurt = sizedHurt(f.name, k);
+}
 
 // ============================================================
 //  SMASH PAYOFFS — a smash that asks something of you, and pays when you deliver
@@ -57657,6 +57812,7 @@ function dropInFlightMoves(f){
   f._gotcha=null; f._holdT=0; f._cheer1=0;   // Bot's tackle, the hold and the cheer they gave themself do not outlive the stock
   f._attract=null; f._dashCuff=false; f._mtCuff=null; f._g6track=null;   // MeTag's cuff, a cuff they are in, and the lock they held do not outlive the stock...
   finxDrop(f);   // ...nor a finisher they ran or were held in, Needle's patch or a daze (FINISHERS V2)
+  f._soakT = 0;   // ...and SOAKED dries off with the stock (EVENT FIGHTERS: SHARED PIECES)
   for(const g of fighters) if(g._g6track && g._g6track.idx === f.idx) g._g6track = null;   // ...and a MeTag's lock on a fighter ends with that fighter's stock
 }
 function eliminate(f){
@@ -62354,7 +62510,7 @@ function draw(){
   // fighters
   drawKitFx('under');   // the Heat Explosion, behind the fighters it catches
   if(FINX.length) finxDraw('under');   // a corkboard, a puddle, a propped mirror (FINISHERS V2)
-  for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(FINX.length && finxHidden(f)) continue; if(f._oneGhost) drawOneGhostAura(f); if(f.fsGlow>0 || f.fsId) fsDrawAura(f); drawFighter(f); if(SETTINGS.mode==='ctf'){ ctfDrawCarry(f); if(CTF.spec) ctfSpecDrawChip(f); } }
+  for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(FINX.length && finxHidden(f)) continue; if(f._oneGhost) drawOneGhostAura(f); if(f.fsGlow>0 || f.fsId) fsDrawAura(f); drawFighter(f); if(f._soakT > hazardT) drawSoakDrips(f); if(SETTINGS.mode==='ctf'){ ctfDrawCarry(f); if(CTF.spec) ctfSpecDrawChip(f); } }
   if(SETTINGS.mode==='ctf') ctfDrawCoverFront();   // the props a friend stands in, see-through, over the fighters
   if(CTUT.active) ctutDrawWorld();   // the Capture the Flag practice: where a flag may not go
   drawKitFx('over');    // the Fist Thingy's arm, over the fighters it reaches across
@@ -72490,7 +72646,7 @@ function haSweet(c, sh, sw, col, k){
 // countering and reflecting are net flags, so a client draws the same frames.
 const STANCE_BLINK = 6;
 const HA_HURT = new Map();
-function haHurtOf(f){ if(f.hurt !== undefined) return f.hurt; let h = HA_HURT.get(f.name); if(h === undefined){ h = hurtboxFor(f.name) || null; HA_HURT.set(f.name, h); } return h; }
+function haHurtOf(f){ if(f.hurt !== undefined) return f.hurt; if(sizeOf(f) !== 1) return sizedHurt(f.name, sizeOf(f)); let h = HA_HURT.get(f.name); if(h === undefined){ h = hurtboxFor(f.name) || null; HA_HURT.set(f.name, h); } return h; }
 // The fighter's hurtbox outline in the world -- the traced polygon mirrored as it is drawn (hurtMirror), else its ellipse, else its circle.
 // Returns the polygon and its mirror (for the glint), or null for a curve.
 function haOutline(c, f){
@@ -72721,6 +72877,7 @@ const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering
   'reform','_floatT','_swallow','_fury','koCount','_poisonT','_tpT','_patch','_dazzle','_sinkT','_jellyT',   // (FINISHERS V2: Needle's patch, Flower's daze, Golf Ball's sand, Gelatin's jelly)
   '_sleepT','_slowmoT','_hushT',   // (FINISHERS V2, batch 4: Pillow's sleep, Remote's slow motion, Rose's hush)
   '_zeroT',   // (FINISHERS V2, batch 6: Donut's zero)
+  '_soakT',   // (EVENT FIGHTERS: SOAKED, until when -- the drips are drawn from it)
   'fsGlow','fsId','fsT','fsWind','fsDur','fsAx','fsAy','fsBx','fsBy','fsCx','fsCy',   // FINAL SMASH BALLS: the glow, and which Final Smash is on, how far in, and where it began (all a client needs to draw it)
   'fsC','fsLk'];   // ...the catch's frames left, and whose catch holds this fighter (+1) (CATCH, THEN CINEMATIC)
 function netFighter(f){
@@ -72728,6 +72885,7 @@ function netFighter(f){
     pct:Math.round(f.pct*10)/10, stocks:(f.stocks===Infinity?-1:f.stocks), koCap:f.koCap, dead:f.dead, team:f.team,
     vx:nr1(f.vx), vy:nr1(f.vy), onground:!!f.onground,   // the run cycle, the lean, the jump stretch, the run dust
     kit:{special:f.kit&&f.kit.special} };
+  if(f.size && f.size !== 1) o.size = Math.round(f.size*100)/100;   // PER-FIGHTER SIZE: r rides already; the size is for the outline a guest's hit art is drawn on (haHurtOf)
   for(const k of NET_FIGHTER_FLAGS){ const v = f[k]; if(v) o[k] = (typeof v === 'number') ? Math.round(v) : v; }   // whole frames: _fury drifts by 0.05
   // The swing, the hurt pose and the smash charge: the sim's own render-only timers, so on the wire they go by names
   // without the underscore, like heatFx and hookFx -- nothing named _x leaves as it is. applySnapshot maps them back.
