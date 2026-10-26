@@ -2529,6 +2529,9 @@ function countOptions(){
 }
 // How many fighters a queued custom level seats: one to each spawn placed, up to MAX_FFA. 0 when no level is queued, it is not an FFA, or it has under 2
 // spawns (the editor's Play will not start one: edPlayReady).
+// A spawn on the map (0..1 both ways). A save from before 2026-10-26 can hold one off it (the old editor took clicks in the side strips beside a Tall map):
+// it seats nobody and nobody comes back on it (queueCustomLevel leaves it out of the queued level).
+function spawnOnMap(sp){ return !!sp && sp.nx >= 0 && sp.nx <= 1 && sp.ny >= 0 && sp.ny <= 1; }
 function customSpawnCap(){
   const n = (CUSTOM_LEVEL && SETTINGS.mode==='ffa' && CUSTOM_LEVEL.spawns) ? CUSTOM_LEVEL.spawns.length : 0;
   return n >= 2 ? Math.min(MAX_FFA, n) : 0;
@@ -57508,7 +57511,10 @@ function applyZone(f, z){
     // higher than the last until the fighter left through the top at 0% (the level creator review, 2026-10-26: two CPUs out in about 5 s). The strength
     // is the height: BOUNCE_VY times its square root, so x2 bounces twice as high as x1 and every bounce of one zone is alike. One who came down into it
     // this step leaves from its top, as from Spongy's (how far past the top the step carried them varied with the fall, and the height with it).
-    case "bounce": if(f.vy>0){ if(f.y - f.vy + f.r < z.y) f.y = z.y - f.r; f.vy=-BOUNCE_VY*Math.sqrt(s); f.onground=false; f.jumps=2; f._usedAirSpecial=false; if(hazardT%4===0) puff(f.x,f.y+f.r,'#e84b9c',4); } break;
+    // It throws only one who came down through its top this step, or who stands in it (on the floor or a ledge inside it), as landing on Spongy does. It
+    // threw at every peak inside it, so a zone taller than one bounce carried a fighter up it a bounce at a time (the independent check, 2026-10-26).
+    case "bounce": { const _top = f.vy>0 && f.y - f.vy + f.r < z.y;
+      if(_top || f.onground){ if(_top) f.y = z.y - f.r; f.vy=-BOUNCE_VY*Math.sqrt(s); f.onground=false; f.jumps=2; f._usedAirSpecial=false; if(hazardT%4===0) puff(f.x,f.y+f.r,'#e84b9c',4); } break; }
     case "damage": f.pct+=0.35*s; if(hazardT%8===0){ puff(f.x,f.y,'#e0503a',3); } break;
     case "heal":   f.pct=Math.max(0, f.pct-0.3*s); if(hazardT%12===0){ puff(f.x,f.y-6,'#7bc043',3); } break;
     // PUSH ZONES (the owner, 2026-10-19: "wind can get you stuck in a corner"; "sometimes you go in one direction without controlling anything"): a wind, an updraft and a belt push you, and you always win. A wind lets go while you press against it (a CPU's keys count the same) and, left alone,
@@ -57816,7 +57822,7 @@ function eliminate(f){
 function customRespawnSpot(f){
   let best = null, bestD = -1;
   for(const sp of ((CUSTOM_LEVEL && CUSTOM_LEVEL.spawns) || [])){
-    if(!(sp.nx >= 0 && sp.nx <= 1 && sp.ny >= 0 && sp.ny <= 1)) continue;
+    if(!spawnOnMap(sp)) continue;
     const x = sp.nx*WW, y = sp.ny*WH - f.r;
     let d = 1e9;
     for(const o of fighters){ if(o !== f && !o.dead) d = Math.min(d, Math.hypot(o.x - x, o.y - y)); }
@@ -59688,6 +59694,8 @@ function showResult(winners, winTeam){
   const r=document.getElementById('result');
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   r.classList.add('active');
+  // Back to editor, as go('result') shows it: a match ends here without going through go(), so the button kept its display:none
+  { const eb=document.getElementById('resultEditor'); if(eb) eb.style.display = customFromEditor() ? '' : 'none'; }
   const you=fighters.find(f=>f.you);
   const youWon = you && winTeam!==undefined && you.team===winTeam;
   const teams = SETTINGS.mode==='teams' || SETTINGS.mode==='ctf';
@@ -75444,25 +75452,40 @@ function edCurrentLevel(){
 }
 // CHECK MY LEVEL (the level creator review, 2026-10-26: "Nothing checks a hand-made level" -- a wall from the floor to the sky between two CPUs ran for 5
 // minutes with no damage and no end). Run on Save and on Play; what it finds is written under the editor's buttons and ringed on the canvas, never in the
-// match. It measures the level in the world box the match builds (levelPlatRects, at the level's MAP SIZE) with a fighter's own numbers: a double jump
-// rises MAX_HOP_RISE (more in low gravity), a body is ED_BODY_R from its middle. It looks for:
+// match. It measures the level in the world box the match builds (levelPlatRects, at the level's MAP SIZE) with the fighters' own numbers: a double jump
+// rises as far as the LOWEST double jump in the game (edJumpRise: JUMP, GRAV and the jump stats; more in low gravity), a one-way top catches feet up to
+// ED_CATCH under it (step()'s landing), a body is ED_BODY_R from its middle. It measured with MAX_HOP_RISE (170), the Quick map generator's safety
+// margin, and called ledges and walls out of reach that every fighter's double jump clears (202 to 291 px: the independent check, 2026-10-26). Other
+// fighters jump higher, and wall jumps, up-specials and flight go higher still, so what it finds out of reach is written as "may": only a wall from the
+// floor to the top blast line is "can never meet". It looks for:
 //   spawns  off the map, or inside a solid block;
 //   ledges  a platform no chain of jumps reaches from the floor (each a rise of at most a double jump, and at most ED_REACH_X to the side; a drop goes
 //           further to the side);
-//   walls   solid blocks that cut the map in two: the open air a fighter can get to (up to a double jump over the highest place it can stand) is filled
-//           from each spawn, and two spawns in different pockets of it can never meet;
+//   walls   solid blocks that cut the map in two: the open air a fighter can get to (up to a double jump over the highest place it can stand; for "never",
+//           up to the top blast line) is filled from each spawn, and two spawns in different pockets of it cannot meet;
 //   bounce  a bounce zone that throws a fighter out through the top (BOUNCE_VY, against the top blast line, ED_TOP_KO).
 // Returns { warns:[text], plats:[], spawns:[], zones:[] }: the indices of what to ring.
-const ED_BODY_R = 24, ED_REACH_X = 300, ED_TOP_KO = -260;
+const ED_BODY_R = 24, ED_REACH_X = 300, ED_TOP_KO = -260, ED_CATCH = 18;   // (ED_CATCH: step()'s catch, top+18, under a one-way top)
+// How high the lowest double jump of the playable fighters lifts the feet at gravity g: a held jump (JUMP times the fighter's jump stat) stepped as
+// step() moves a fighter (gravity added, then the move), and the second jump at the top of the first.
+const ED_RISE = {};
+function edJumpRise(g){
+  if(ED_RISE[g]) return ED_RISE[g];
+  let lo = Infinity;
+  for(const rr of ROSTER){ if(!rr.play) continue;
+    let up = 0; for(let vy = JUMP*statsFor(rr.name).jump + g; vy < 0; vy += g) up -= vy;
+    lo = Math.min(lo, 2*up); }
+  return (ED_RISE[g] = lo < Infinity ? lo : MAX_HOP_RISE*GRAV/g);
+}
 function edCheckLevel(lvl){
   const m = mapgenMul(lvl.size), ww = Math.round((W||1100)*m.sw), wh = Math.round((H||720)*m.sh);
-  const r = ED_BODY_R, gy = wh*MAPGEN_FLOOR_N, g = GRAV*(lvl.hazard==='lowgrav' ? 0.7 : 1), rise = MAX_HOP_RISE*GRAV/g;
+  const r = ED_BODY_R, gy = wh*MAPGEN_FLOOR_N, g = GRAV*(lvl.hazard==='lowgrav' ? 0.7 : 1), rise = edJumpRise(g);
   const rects = levelPlatRects(lvl.plats, ww, wh), solids = rects.filter(p=>p.solid);
   const out = { warns:[], plats:[], spawns:[], zones:[] };
   // spawns
   const starts = [];
   (lvl.spawns||[]).forEach((sp,i)=>{
-    if(!(sp.nx>=0 && sp.nx<=1 && sp.ny>=0 && sp.ny<=1)){ out.spawns.push(i); out.warns.push('Spawn '+(i+1)+' is off the map.'); return; }
+    if(!spawnOnMap(sp)){ out.spawns.push(i); out.warns.push('Spawn '+(i+1)+' is off the map: nobody starts there.'); return; }
     const x = sp.nx*ww, feet = Math.min(gy, sp.ny*wh);
     if(solids.some(b=> x+r > b.x+2 && x-r < b.x+b.w-2 && feet > b.y+2 && feet-2*r < b.y+b.h-2)){ out.spawns.push(i); out.warns.push('Spawn '+(i+1)+' is inside a solid block.'); return; }
     starts.push({ i, x, y:feet - r });
@@ -75481,46 +75504,53 @@ function edCheckLevel(lvl){
     for(const b of surf){ if(b.ok) continue;
       for(const a of surf){ if(!a.ok) continue;
         const gap = Math.max(0, b.x0 - a.x1, a.x0 - b.x1), up = a.hi - b.lo;
-        if(up <= rise && gap <= ED_REACH_X + Math.max(0, -up)){ b.ok = true; grew = true; break; }
+        if(up <= rise + (b.solid ? 0 : ED_CATCH) && gap <= ED_REACH_X + Math.max(0, -up)){ b.ok = true; grew = true; break; }
       }
     }
   }
   const high = surf.filter(b=>!b.ok && !b.solid);   // (a block's top out of reach is a wall's, and fine)
   if(high.length){
     for(const b of high) out.plats.push(b.i);
-    out.warns.push(high.length===1 ? 'A ledge (ringed in red) is too high to reach: no jump from the floor or from another ledge gets there.'
-      : high.length+' ledges (ringed in red) are too high to reach: no jump from the floor or from another ledge gets there.');
+    out.warns.push(high.length===1 ? 'A ledge (ringed in red) may be out of reach: the lowest double jumps, from the floor or from another ledge, do not get there.'
+      : high.length+' ledges (ringed in red) may be out of reach: the lowest double jumps, from the floor or from another ledge, do not get there.');
   }
-  // walls: the open air a fighter can get to, in cells of C px, filled from each spawn; a cell is shut when a body there would be inside a block
-  const C = 12, reach = surf.filter(b=>b.ok);
-  const top = Math.max(ED_TOP_KO + r, Math.min.apply(null, reach.map(b=>b.hi)) - rise - r), bot = gy - r;
-  const cols = Math.max(1, Math.ceil(ww/C)), rows = Math.max(1, Math.floor((bot - top)/C) + 1);
-  const shut = new Uint8Array(cols*rows), comp = new Int32Array(cols*rows).fill(-1);
-  for(let j=0; j<rows; j++){ const cy = top + j*C;
-    for(let k=0; k<cols; k++){ const cx = (k+0.5)*C;
-      if(solids.some(b=> cx > b.x-r+2 && cx < b.x+b.w+r-2 && cy > b.y-r+2 && cy < b.y+b.h+r-2)) shut[j*cols+k] = 1; } }
-  const cellOf = (x, y)=>{
-    const k0 = edClamp(Math.floor(x/C), 0, cols-1), j0 = edClamp(Math.round((y-top)/C), 0, rows-1);
-    for(let d=0; d<=3; d++) for(let dj=-d; dj<=d; dj++) for(let dk=-d; dk<=d; dk++){ const j=j0+dj, k=k0+dk; if(j>=0 && j<rows && k>=0 && k<cols && !shut[j*cols+k]) return j*cols+k; }
-    return -1;   // (a spawn walled into a pocket smaller than a fighter)
-  };
-  let nComp = 0; const met = [];
-  for(const st of starts){
-    const c0 = cellOf(st.x, st.y); if(c0 < 0) continue;
-    if(comp[c0] < 0){
-      const q = [c0]; comp[c0] = nComp;
-      while(q.length){ const c = q.pop(), j = (c/cols)|0, k = c%cols;
-        if(j>0 && !shut[c-cols] && comp[c-cols]<0){ comp[c-cols]=nComp; q.push(c-cols); }
-        if(j<rows-1 && !shut[c+cols] && comp[c+cols]<0){ comp[c+cols]=nComp; q.push(c+cols); }
-        if(k>0 && !shut[c-1] && comp[c-1]<0){ comp[c-1]=nComp; q.push(c-1); }
-        if(k<cols-1 && !shut[c+1] && comp[c+1]<0){ comp[c+1]=nComp; q.push(c+1); } }
-      nComp++;
+  // walls: the open air a fighter can get to (up to up0 over the highest top reached), in cells of C px, filled from each spawn; a cell is shut when a body
+  // there would be inside a block. Returns the first two spawns in different pockets, or null.
+  const C = 12, reach = surf.filter(b=>b.ok), cols = Math.max(1, Math.ceil(ww/C)), bot = gy - r;
+  const apartAt = (up0)=>{
+    const top = Math.max(ED_TOP_KO + r, Math.min.apply(null, reach.map(b=>b.hi)) - up0 - r);
+    const rows = Math.max(1, Math.floor((bot - top)/C) + 1);
+    const shut = new Uint8Array(cols*rows), comp = new Int32Array(cols*rows).fill(-1);
+    for(let j=0; j<rows; j++){ const cy = top + j*C;
+      for(let k=0; k<cols; k++){ const cx = (k+0.5)*C;
+        if(solids.some(b=> cx > b.x-r+2 && cx < b.x+b.w+r-2 && cy > b.y-r+2 && cy < b.y+b.h+r-2)) shut[j*cols+k] = 1; } }
+    const cellOf = (x, y)=>{
+      const k0 = edClamp(Math.floor(x/C), 0, cols-1), j0 = edClamp(Math.round((y-top)/C), 0, rows-1);
+      for(let d=0; d<=3; d++) for(let dj=-d; dj<=d; dj++) for(let dk=-d; dk<=d; dk++){ const j=j0+dj, k=k0+dk; if(j>=0 && j<rows && k>=0 && k<cols && !shut[j*cols+k]) return j*cols+k; }
+      return -1;   // (a spawn walled into a pocket smaller than a fighter)
+    };
+    let nComp = 0; const met = [];
+    for(const st of starts){
+      const c0 = cellOf(st.x, st.y); if(c0 < 0) continue;
+      if(comp[c0] < 0){
+        const q = [c0]; comp[c0] = nComp;
+        while(q.length){ const c = q.pop(), j = (c/cols)|0, k = c%cols;
+          if(j>0 && !shut[c-cols] && comp[c-cols]<0){ comp[c-cols]=nComp; q.push(c-cols); }
+          if(j<rows-1 && !shut[c+cols] && comp[c+cols]<0){ comp[c+cols]=nComp; q.push(c+cols); }
+          if(k>0 && !shut[c-1] && comp[c-1]<0){ comp[c-1]=nComp; q.push(c-1); }
+          if(k<cols-1 && !shut[c+1] && comp[c+1]<0){ comp[c+1]=nComp; q.push(c+1); } }
+        nComp++;
+      }
+      met.push({ i:st.i, c:comp[c0] });
     }
-    met.push({ i:st.i, c:comp[c0] });
-  }
-  const apart = met.find(o=>o.c !== met[0].c);
-  if(apart){ out.spawns.push(met[0].i, apart.i);
-    out.warns.push('Spawns '+(met[0].i+1)+' and '+(apart.i+1)+' are walled apart: solid blocks cut the map in two, so the fighters on them can never meet.'); }
+    const o = met.find(q=>q.c !== met[0].c);
+    return o ? [met[0].i, o.i] : null;
+  };
+  const never = apartAt(Infinity), may = never ? null : apartAt(rise);   // (Infinity: the air up to the top blast line)
+  if(never){ out.spawns.push(never[0], never[1]);
+    out.warns.push('Spawns '+(never[0]+1)+' and '+(never[1]+1)+' are walled apart: solid blocks cut the map in two from the floor to the top, so the fighters on them can never meet.'); }
+  else if(may){ out.spawns.push(may[0], may[1]);
+    out.warns.push('Spawns '+(may[0]+1)+' and '+(may[1]+1)+' may be walled apart: the solid blocks between them are higher than the lowest double jumps get over.'); }
   // bounce zones: how high one throws (applyZone), against the top blast line
   const hiB = [];
   (lvl.zones||[]).forEach((z,i)=>{ if(z.type!=='bounce') return;
@@ -75553,9 +75583,9 @@ function edRunCheck(lvl, head, more){
 // Before ▶ Play (and a saved level's ▶): two spawns at least, one for you and one for a CPU -- a map with none still started, everyone dropped on one
 // spot -- and Check my level. If it finds anything, the first press stops there with the list; pressing ▶ again on the level as it was checked plays it.
 function edPlayReady(lvl){
-  if((lvl.spawns||[]).length < 2){
+  if((lvl.spawns||[]).filter(spawnOnMap).length < 2){
     ED.check = null;
-    edShowCheck(['Place at least 2 spawn points (◎ Spawn): one for you and one for each CPU. Up to '+MAX_FFA+' fighters play, one on each spawn.'], 'Not ready to play:');
+    edShowCheck(['Place at least 2 spawn points (◎ Spawn) on the map: one for you and one for each CPU. Up to '+MAX_FFA+' fighters play, one on each spawn.'], 'Not ready to play:');
     edDraw(); return false;
   }
   const fp = edFingerprint();
@@ -75568,7 +75598,7 @@ function edPlayReady(lvl){
 // ▶ Play says who plays: "▶ Play as Firey vs 3 CPUs" -- you as the fighter last picked, a CPU on each other spawn, MAX_FFA in all at most.
 function edSyncPlayBtn(){
   const b = document.getElementById('edPlayBtn'); if(!b) return;
-  const n = Math.min(MAX_FFA, ED.spawns.length), k = n - 1;
+  const n = Math.min(MAX_FFA, ED.spawns.filter(spawnOnMap).length), k = n - 1;
   const t = (n >= 2 && chosen) ? '▶ Play as '+chosen.name+' vs '+k+' CPU'+(k===1 ? '' : 's') : '▶ Play';
   if(b.textContent !== t) b.textContent = t;
 }
@@ -75650,7 +75680,9 @@ function queueCustomLevel(lvl, fromEd){
   if(!CUSTOM_PREV) CUSTOM_PREV = { stage:(stage && stage.id==='custom') ? STAGES[0] : stage, mapSize:SETTINGS.mapSize, mode:SETTINGS.mode, count:SETTINGS.count };
   const size = MAP_SIZES[lvl.size] ? lvl.size : 'normal';
   // `fromEd`: queued from the editor, so the pause menu and the result screen offer the way back to it (customFromEditor)
-  CUSTOM_LEVEL = { v:2, name:lvl.name, size, plats:lvl.plats, spawns:lvl.spawns,
+  // Only the spawns on the map: an old save's spawn off it was counted as a seat, and that fighter started past the edge (spawnOnMap)
+  const spawns = (lvl.spawns||[]).filter(spawnOnMap);
+  CUSTOM_LEVEL = { v:2, name:lvl.name, size, plats:lvl.plats, spawns,
                    zones:lvl.zones||[], deco:lvl.deco||[], hazard:lvl.hazard, fromEd:!!fromEd };
   SETTINGS.mapSize = size;
   const skies={"":["#bfe8ff","#88cdf2"], lava:["#3a1a10","#1a0a06"], lowgrav:["#dfeaf2","#b8c9dc"], evilleafy:["#20301a","#0e1a0c"]};
@@ -75659,7 +75691,7 @@ function queueCustomLevel(lvl, fromEd){
   SETTINGS.mode="ffa";
   // One fighter to each spawn placed, up to MAX_FFA: Play used the menu's count (5 at first), so 5 fighters piled onto a map's 2 spawns (the level creator
   // review, 2026-10-26). customSpawnCap holds the select screen and buildFighters to the same number.
-  const ns = (lvl.spawns||[]).length;
+  const ns = spawns.length;
   SETTINGS.count = ns >= 2 ? Math.min(MAX_FFA, ns) : Math.max(2, Math.min(MAX_FFA, SETTINGS.count||2));
 }
 // Play a custom level: single-screen FFA on the custom geometry.
