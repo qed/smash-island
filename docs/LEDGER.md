@@ -956,6 +956,31 @@ build, and the Daily keeps every pairing. Left on purpose:
   that player's Daily is no longer everyone's (496 of the 508 days from 2026-08-11 to 2027-12-31 differ). The same one-word
   filter the Daily now uses for event fighters would fix it, but it changes that player's Daily, so it waits for a yes.
 
+### O25 · Event fighters: what step 3 (the calendar) left to later steps
+
+Step 3 (branch `g-events`) is the calendar: an event week is the weekly quests' week (`shopWeekNo`, Monday 00:00 UTC to the next
+Monday), worked out from the date alone. `EVENT_LAPS` is the append-only table of laps (one row today: the 14 of J2, from lap 1),
+`EVENT_LAUNCH` is the first event's Monday and is `null`, so no week is an event week and nothing shows. `eventOfWeek(wk)` gives a
+week's event (`week`, `lap`, `n`, `name`, `start`, `end`), `eventThisWeek()` this week's and `eventsComingUp(n)` the next n.
+Checked with a test launch (2026-10-19) injected by the check script, not committed: the same 30-week table (two laps and the start
+of a third) comes out with the process timezone set to UTC, America/Los_Angeles and Asia/Tokyo, it flips at Monday 00:00 UTC
+exactly (1 s and 1 ms before give the week before), a non-Monday or impossible launch date starts nothing, and an appended row
+leaves every earlier lap as it was. With the committed `null`, no date from 2000 to 2100 has an event. Left on purpose:
+
+- **The launch (build step 15):** sets `EVENT_LAUNCH` to a Monday at least two weeks after the last kit lands, in a build that
+  goes live at least two weeks before it (the announcement). A date that is not a Monday starts nothing.
+- **The event match runner (step 7) and tokens (step 4):** the runner keeps `eventThisWeek().week` from the moment its match
+  starts, and the payout and the 100-a-week limit use `eventOfWeek(thatWeek)`, so a match that crosses Monday midnight pays toward
+  the event it started in.
+- **The event screens (step 9):** `eventGroupOpen()` becomes `!!eventThisWeek()` (still `false` today); "ends in 3 days" comes
+  from `end`, "Next week" and "Coming up" from `eventsComingUp`, and a locked cell's "back in 6 weeks" from the first week in
+  `eventsComingUp(14)` that names it. Before the launch, `eventsComingUp` already lists the first weeks; whether anything shows
+  them in the two weeks of announcement is step 9's and 15's call (the plan's announcement is a changelog line).
+- **Event rooms (step 14):** the host's week travels as `week`; a guest is paid only if it is the guest's own week or the one
+  before.
+- **A later phase:** a new row `{ from: lap, order: [...] }` appended to `EVENT_LAPS`, starting at least two weeks after its build
+  goes live. No row is ever edited or removed.
+
 ---
 
 ## Scoreboard
@@ -963,7 +988,7 @@ build, and the Daily keeps every pairing. Left on purpose:
 | | Count |
 |---|---|
 | Done | 161 |
-| Open | 4 (O20, O22, O23, O24) |
+| Open | 5 (O20, O22, O23, O24, O25) |
 | Superseded | 2 (O1, B12) |
 | Blocked on you | 1 (G11: the Cloudflare MCP authorization) |
 

@@ -2069,9 +2069,10 @@ const ROSTER = [
   {name:"Bot",w:74,color:"#f0fff3", play:true, dlc:"Inanimate Insanity", arch:"Hype",
    kit:{special:"cheer", desc:"Cheer Factory → a confetti pulse: allies near heal a little and run faster; alone, Bot runs faster and their next hit lands harder"}},
   // EVENT FIGHTERS (event-fighters-phase1.md and event-fighters-bfdie.md): each kit job adds its row HERE, after every other row,
-  // with event:true, in the order of the first lap (approval question J2: Eraser, Spongy, 8-Ball, Black Hole, Clock, Cloudy, Pie,
-  // Stapy, Foldy, Beach Ball, then Hot Dog, Needy, Sticker, Jammy). Last, so nothing that indexes into ROSTER moves -- the Daily's
-  // draw, the drip, a seeded lineup -- and each stays off every list until it is won (EVENT FIGHTERS: THE LOCK RULE, by isUnlocked).
+  // with event:true, in the order of the first lap (EVENT_LAPS; approval question J2: Eraser, Spongy, 8-Ball, Black Hole, Clock,
+  // Cloudy, Pie, Stapy, Foldy, Beach Ball, then Hot Dog, Needy, Sticker, Jammy). Last, so nothing that indexes into ROSTER moves --
+  // the Daily's draw, the drip, a seeded lineup -- and each stays off every list until it is won (EVENT FIGHTERS: THE LOCK RULE, by
+  // isUnlocked).
 ];
 // ---- Steve Cobs's prize: begin ----
 // "3, but only after you beat cobs." The three Inanimate Insanity winners -- A (Season 1), B (II) and C (Invitational), in
@@ -58194,10 +58195,65 @@ function unlockFighter(name){
 function eventLocked(r){ return !!(r && r.event) && !isUnlocked(r); }
 // THE SELECT SCREEN'S "Event fighters" GROUP (question 13) sits between the BFDI cast and the Inanimate Insanity DLC (showRank) and is
 // hidden until the first event: until then the board holds only the event fighters you have. This is its switch, off until the
-// calendar (build step 3) has a first week; the event screens (step 9) turn it on, with a hint on each locked cell.
+// first event week (THE CALENDAR: eventThisWeek() is null before EVENT_LAUNCH, which is not set yet); the event screens (step 9)
+// turn it on from that week, with a hint on each locked cell.
 function eventGroupOpen(){ return false; }
 // How many fighters the title says the game has: every row bar the event fighters you do not have.
 function rosterCount(){ return ROSTER.filter(r=>!eventLocked(r)).length; }
+
+// ---------- EVENT FIGHTERS: THE CALENDAR (event-fighters-phase1.md, section 2, "The week"; build step 3) ----------
+// One event a week, from Monday 00:00 UTC to the next Monday: the very week the weekly quests use (shopWeekNo), so the two change
+// at the same moment. It is worked out from the date alone, so every player sees the same event, even offline, and a computer with
+// the wrong date sees a different week, as it does with quests. A week is shopWeekNo's number; nothing is stored.
+//
+// THE LAPS (approval question J2): one lap of 14, the ten in the owner's order and then the BFDIE four in story order (B3), round and
+// round, so each fighter comes back every 14 weeks. EVENT_LAPS is only ever added to: a row names the lap it starts at (`from`, 1 is
+// the first) and the order from then on, and holds until the next row's lap. A later phase joins that way, at the start of a lap,
+// so nobody's week is cut short and every week already played keeps its fighter. A new lap is announced at least two weeks ahead:
+// its row's first lap starts at least two weeks after the build that adds it goes live. A row is never edited or removed.
+const EVENT_LAPS = [
+  { from:1, order:['Eraser', 'Spongy', '8-Ball', 'Black Hole', 'Clock', 'Cloudy', 'Pie', 'Stapy', 'Foldy', 'Beach Ball',
+                   'Hot Dog', 'Needy', 'Sticker', 'Jammy'] },
+];
+// THE LAUNCH: the first event's Monday, 'YYYY-MM-DD' (UTC). Events start only once all 14 kits are built, with the first week
+// announced at least two weeks ahead (questions 3 and J2), so it stays null until the launch job (build step 15) sets it: until then
+// no week is an event week and nothing shows. A date that is not a real Monday starts nothing either.
+const EVENT_LAUNCH = null;
+function eventLaunchWeek(){
+  const m = typeof EVENT_LAUNCH === 'string' && /^(\d{4})-(\d{2})-(\d{2})$/.exec(EVENT_LAUNCH);
+  if(!m) return null;
+  const t = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  if(t.getUTCDate() !== +m[3] || t.getUTCDay() !== 1) return null;   // 2027-02-30, or not a Monday
+  return shopWeekNo(t);
+}
+// The event of week `wk` (a shopWeekNo): { week, lap, n (its place in the lap, from 1), name, start, end (the Monday 00:00 UTC it
+// starts and the next, in ms) }, or null before the launch. It reads nothing but the week, so A MATCH THAT CROSSES MONDAY MIDNIGHT PAYS TOWARD THE EVENT IT
+// STARTED IN: the event match runner (step 7) keeps the week its match started in, and the payout (step 4) asks for that week's event.
+function eventOfWeek(wk){
+  const first = eventLaunchWeek();
+  if(first == null || !Number.isInteger(wk) || wk < first) return null;
+  let i = wk - first;                                                  // weeks since the launch
+  for(let r = 0; r < EVENT_LAPS.length; r++){
+    const row = EVENT_LAPS[r], next = EVENT_LAPS[r + 1], len = row.order.length;
+    const weeks = next ? (next.from - row.from) * len : Infinity;     // the weeks this row's laps cover
+    if(i < weeks){
+      const start = (wk * 7 - 3) * 86400000;                           // week wk's Monday is day 7wk - 3 (1970-01-01 was a Thursday)
+      return { week:wk, lap:row.from + Math.floor(i / len), n:i % len + 1, name:row.order[i % len], start, end:start + 7 * 86400000 };
+    }
+    i -= weeks;
+  }
+  return null;
+}
+// This week's event (null before the launch -- today, every week), and the `count` weeks after it, for the title card's "Next week"
+// and the event page's "Coming up" (step 9). Before the launch the weeks coming up are the first ones, from the launch week.
+function eventThisWeek(now){ return eventOfWeek(shopWeekNo(now)); }
+function eventsComingUp(count, now){
+  const first = eventLaunchWeek(), out = [];
+  if(first == null) return out;
+  const from = Math.max(shopWeekNo(now) + 1, first);
+  for(let k = 0; k < count; k++) out.push(eventOfWeek(from + k));
+  return out;
+}
 
 // ---------- unlock model: fast drip + hand-authored trophies ----------
 // Reveal order for the 52 non-starters (Bubble joined them when she left the starters). Fixed, so
