@@ -2068,6 +2068,10 @@ const ROSTER = [
   // Trivia), and the butterflies are Clover's.
   {name:"Bot",w:74,color:"#f0fff3", play:true, dlc:"Inanimate Insanity", arch:"Hype",
    kit:{special:"cheer", desc:"Cheer Factory → a confetti pulse: allies near heal a little and run faster; alone, Bot runs faster and their next hit lands harder"}},
+  // EVENT FIGHTERS (event-fighters-phase1.md and event-fighters-bfdie.md): each kit job adds its row HERE, after every other row,
+  // with event:true, in the order of the first lap (approval question J2: Eraser, Spongy, 8-Ball, Black Hole, Clock, Cloudy, Pie,
+  // Stapy, Foldy, Beach Ball, then Hot Dog, Needy, Sticker, Jammy). Last, so nothing that indexes into ROSTER moves -- the Daily's
+  // draw, the drip, a seeded lineup -- and each stays off every list until it is won (EVENT FIGHTERS: THE LOCK RULE, by isUnlocked).
 ];
 // ---- Steve Cobs's prize: begin ----
 // "3, but only after you beat cobs." The three Inanimate Insanity winners -- A (Season 1), B (II) and C (Invitational), in
@@ -2326,7 +2330,7 @@ function syncPrizeRoster(announce){
   if(!changed) return false;
   if(open && announce) PENDING_UNLOCKS.push(...PRIZE_NAMES);
   if(!open && chosen && chosen.prize) chosen = ROSTER.find(r=>r.play) || chosen;   // never left standing on a hidden pick
-  try{ document.getElementById('titleFighters').textContent = ROSTER.length; }catch(e){}   // the title's count follows the roster
+  try{ document.getElementById('titleFighters').textContent = rosterCount(); }catch(e){}   // the title's count follows the roster
   return true;
 }
 // ---- Steve Cobs's prize: end ----
@@ -15312,7 +15316,14 @@ const SHOW_ORDER = ["Match","Pencil","Flower","Ice Cube","Bubble","Pin","Blocky"
   PZ_A, PZ_B, PZ_C,   // the three winners, shown last in the DLC group once Cobs has fallen (display only: ROSTER gets them appended)
   // ---- Steve Cobs's prize: end ----
 ];
-function byShowOrder(a, b){ const i=SHOW_ORDER.indexOf(a.name), j=SHOW_ORDER.indexOf(b.name); return (i<0?999:i) - (j<0?999:j); }
+// EVENT FIGHTERS are not in SHOW_ORDER: they are a group of their own, after the BFDI cast and before the Inanimate Insanity DLC
+// (approval question 13), in ROSTER's order, which is the lap's. EVENT_SHOW_AT is the gap just before the first DLC name.
+const EVENT_SHOW_AT = SHOW_ORDER.findIndex(n=>ROSTER.some(r=>r.name===n && r.dlc)) - 0.5;
+function showRank(r){
+  if(r && r.event) return EVENT_SHOW_AT + ROSTER.findIndex(x=>x.name===r.name)/10000;
+  const i = SHOW_ORDER.indexOf(r.name); return i<0 ? 999 : i;
+}
+function byShowOrder(a, b){ return showRank(a) - showRank(b); }
 let SHOW_ALL_CHARS = false;
 // ONE three-state control, not two overlapping ones. A separate "show everything" setting
 // alongside the old starters/all toggle produces four states, two of which render identically —
@@ -15422,7 +15433,8 @@ function titleContestants(){
     im.onerror = ()=>{ const b = document.createElement('div'); b.className = 'blob'; b.style.background = safeColor(r.color || '#cccccc'); try{ im.replaceWith(b); }catch(e){} };
     box.appendChild(im);
   }
-  try{ const n = ROSTER.filter(r=>r && r.play && !r.prize).length, tg = document.getElementById('titleTag'); if(tg && n) tg.textContent = n + ' fighters · Capture the Flag · Boss Rush · online'; }catch(e){}
+  try{ const n = ROSTER.filter(r=>r && r.play && !r.prize && !eventLocked(r)).length, tg = document.getElementById('titleTag'); if(tg && n) tg.textContent = n + ' fighters · Capture the Flag · Boss Rush · online'; }catch(e){}
+  try{ document.getElementById('titleFighters').textContent = rosterCount(); }catch(e){}   // (a computer that cannot save has its event fighters by now)
 }
 window.addEventListener('load', ()=>{ setTimeout(()=>{ try{ const t = document.getElementById('title'); if(t && t.classList.contains('active')) titleContestants(); }catch(e){} }, 0); });   // the title shown on start, before any go('title')
 function blobDot(r){
@@ -15485,16 +15497,19 @@ function buildBoard(){
   const oneLive = oneQuestLive();
   // EVERYONE AT ONCE ("a full grid", the owner, 2026-10-07): the whole roster in show order, the locked ones greyed and teaching how to get them. It was a
   // strip with the starters first and "All N unlocked" at its head, pulled sideways.
-  const list = ROSTER.slice().sort(byShowOrder);   // shown in show order
-  const nOpen = ROSTER.filter(onePickable).length;
+  // An event fighter you do not have is not on it at all until the first event (eventGroupOpen); one you have is in its group.
+  const list = ROSTER.filter(r=>!r.event || isUnlocked(r) || eventGroupOpen()).sort(byShowOrder);   // shown in show order
+  const nOpen = list.filter(onePickable).length;
   const vt=document.getElementById('viewToggle');
   if(vt){
     vt.textContent = mode==='everything' ? '◂ Only the fighters I have unlocked' : 'Unlock every fighter ▸';
     vt.title = mode==='everything' ? 'Every fighter is playable on this device. Click to go back to the ones you have earned.'
                                    : 'Make every fighter playable on this device (the Vault ones still open only with their code).';
   }
-  let dlcHead = null;
+  let dlcHead = null, eventHead = false;
   list.forEach((r)=>{
+    if(r.event && !eventHead){ eventHead = true;   // the event fighters' own group, labelled, between the BFDI cast and the DLC
+      const h=document.createElement('div'); h.className='dlchead'; h.innerHTML='<span class="cellname">Event fighters</span>'; b.appendChild(h); }
     if(r.dlc && dlcHead !== r.dlc){ dlcHead = r.dlc;   // the DLC pack's own group, labelled
       const h=document.createElement('div'); h.className='dlchead'; h.innerHTML=`<span class="cellname">${r.dlc} DLC</span>`; b.appendChild(h); }
     const banned = oneBanned(r), erased = banned && oneErased(r);   // banned: cannot be picked; erased: drawn with the ✖
@@ -15532,9 +15547,9 @@ function buildBoard(){
   scrollChosenIntoView();
   const note=document.getElementById('lockNote'); if(note) note.style.display='none';
   const leg=document.getElementById('rosterLegend');
-  if(leg) leg.textContent = oneLive ? oneLegend() : nOpen>=ROSTER.length
-    ? `All ${ROSTER.length} fighters unlocked`
-    : `${nOpen} of ${ROSTER.length} fighters unlocked — play to earn more`;
+  if(leg) leg.textContent = oneLive ? oneLegend() : nOpen>=list.length
+    ? `All ${list.length} fighters unlocked`
+    : `${nOpen} of ${list.length} fighters unlocked — play to earn more`;
   refreshSel(); buildStages(); buildSettings();
 }
 
@@ -17362,7 +17377,7 @@ function startTournament(teamSize, mode, opts){
   if(!TOURNEY_PREV) TOURNEY_PREV = { mode:SETTINGS.mode, count:SETTINGS.count, stage, teamKey:SETTINGS.teamKey, stocks:SETTINGS.stocks, itemRate:SETTINGS.itemRate, ai:AI_LEVEL };
   mode = mode || TOURNEY_SETUP_MODE || "spectate";
   const cfg = cupClean({ ...TOURNEY_CFG, ...(opts||{}) }), cupSize = cfg.cup;   // the setup screen's choices, unless the caller names them
-  const pool = ROSTER.filter(r=>r.play);
+  const pool = ROSTER.filter(r=>r.play && !eventLocked(r));   // (never an event fighter you do not have)
   // build cupSize teams (16, 32 or 48); each team is `teamSize` fighters
   const teams=[];
   // ONE bag for the whole tournament, not a fresh one per team. The old code reset the draw on
@@ -19653,7 +19668,7 @@ function buildFighters(){
   if(TESTMODE.active){
     // Her erased are not handed to the computer here either ("the ais also dont have access to the fighters that have been
     // erased"). With nobody erased it is the same list, so the same dummies; Lightning is never erased, so it is never empty.
-    const dummyChar = ROSTER.filter(r=>r.play && !oneAiBanned(r));
+    const dummyChar = ROSTER.filter(r=>r.play && !oneAiBanned(r) && !eventLocked(r));
     const lineup=[{...chosen, you:true}];
     for(let i=0;i<TESTMODE.dummies;i++){ const pick = TESTMODE.training && TESTMODE.dummyPick !== 'auto' && dummyChar.find(r=>r.name===TESTMODE.dummyPick); lineup.push({...(pick || dummyChar[(i+1)%dummyChar.length]), you:false}); }
     lineup.forEach((r,i)=>{
@@ -19688,7 +19703,8 @@ function buildFighters(){
     const prizePick = (nm)=>{ const r = PRIZE_ROSTER.find(x=>x.name===nm); if(r) installPrizeKit(); return r || null; };   // a guest's pick may be a prize fighter this host has not earned: the guest earned it, so the row (and its kit) is honoured
     const humans = netRoster.map(nm => ({...(ROSTER.find(r=>r.name===nm)||prizePick(nm)||ROSTER.find(r=>r.play)), you:false}));
     const used = new Set(netRoster);
-    const pool = ROSTER.filter(r=>!used.has(r.name));
+    // Never an event fighter in an online CPU seat, yours or not (approval question 8): the host cannot know what its guests own.
+    const pool = ROSTER.filter(r=>!used.has(r.name) && !r.event);
     const playAI=pool.filter(r=>r.play), road=pool.filter(r=>!r.play);
     shuffle(playAI); shuffle(road);
     const fill=oneAiTake([...playAI,...road], N-humans.length).map(p=>({...p, you:false}));   // the host's own chain decides
@@ -19697,11 +19713,11 @@ function buildFighters(){
     let picks;
     // Every seat but yours is the computer's and skips her erased (oneAiTake). A remembered lineup holding an erased
     // fighter in an AI seat is drawn again.
-    const memoOk = m => m.names.every(nm => !oneAiBanned(ROSTER.find(r=>r.name===nm)));
+    const memoOk = m => m.names.every(nm => { const r = ROSTER.find(q=>q.name===nm); return !oneAiBanned(r) && !eventLocked(r); });
     if(LINEUP_MEMO && LINEUP_MEMO.key===lineupKey(N) && memoOk(LINEUP_MEMO)){
       picks = LINEUP_MEMO.names.map(nm => ROSTER.find(r=>r.name===nm)).filter(Boolean);
     } else {
-      const pool=ROSTER.filter(r=>r.name!==chosen.name);
+      const pool=ROSTER.filter(r=>r.name!==chosen.name && !eventLocked(r));   // (an event fighter fights you before it is yours only in its own event)
       const playAI=pool.filter(r=>r.play); const road=pool.filter(r=>!r.play);
       shuffle(playAI); shuffle(road);
       picks=oneAiTake([...playAI, ...road], N-1);
@@ -55096,7 +55112,7 @@ function trainingScreenSync(){
   const tag = document.getElementById('testTag'); if(tag) tag.textContent = T ? 'A practice room: a dummy, the hitboxes, any damage. Infinite stocks, R resets.' : 'Jump around your map — infinite stocks, reset anytime.';
   const back = document.getElementById('testBack'); if(back){ back.textContent = T ? '◀ Back' : '◀ Back to editor'; back.onclick = ()=>{ if(T){ TESTMODE.training = false; go('title'); } else openEditor(); }; }
 }
-function trainingDummyRoster(){ return ROSTER.filter(r=>r.play && !oneAiBanned(r)); }
+function trainingDummyRoster(){ return ROSTER.filter(r=>r.play && !oneAiBanned(r) && !eventLocked(r)); }
 // what a dummy does when it is not a CPU: walk at you, or hop about
 function trainerInput(f){
   const inp = { left:false, right:false, jump:false, attack:false, special:false, smash:false, down:false, up:false };
@@ -58057,8 +58073,10 @@ function freshProfile(){
 // opens its fighter at once, for the session, even where nothing can be saved.
 function openProfile(from){
   const p = freshProfile();
-  p.unlocked = ROSTER.filter(r=>!VAULT_FIGHTERS.has(r.name)).map(r=>r.name);
   p.migratedFrom = from || 'no-storage';
+  // The event fighters open only on a computer that cannot save (approval question 6). A very old save grandfathered in ('pre-A')
+  // and a load that failed get the fighters playing could have earned, and an event fighter is earned in its event.
+  p.unlocked = ROSTER.filter(r=>!VAULT_FIGHTERS.has(r.name) && (!r.event || p.migratedFrom==='no-storage')).map(r=>r.name);
   // The wallet, quests and cosmetics come from freshProfile, empty: degrading open opens FIGHTERS, never free Win Tokens or
   // looks. Tokens are earned by playing, here as anywhere.
   return p;
@@ -58142,6 +58160,9 @@ function isUnlocked(r){
   // ---- Steve Cobs's prize: begin ----
   if(r && r.prize && !cobsBeaten()) return false;   // a prize row is not in ROSTER while the gate is shut; anything still holding one (a guest's net pick) finds it locked
   // ---- Steve Cobs's prize: end ----
+  // An event fighter is open once its name is in your unlocked list and never before: not by the "everything" view (approval
+  // question 5, as the Vault fighters), and not before the profile has loaded (it is left out, never drawn locked).
+  if(r && r.event) return !!PROFILE && PROFILE.unlocked.indexOf(r.name)>=0;
   // A Vault fighter "can ONLY be opened by a code", which beats both the rules below it: the DLC
   // pack arriving whole ("Wal-mart is for marshmallow", "add more dlc codes") and the "everything"
   // view's escape hatch, which would otherwise open every one of them with a single click.
@@ -58158,10 +58179,30 @@ function unlockFighter(name){
   return true;
 }
 
+// ---------- EVENT FIGHTERS: THE LOCK RULE (event-fighters-phase1.md, section 2, "Where event fighters appear"; build step 2) ----------
+// The contestants who are not fighters yet, each won in their own event week. Their rows sit at the END of ROSTER, marked event:true.
+// Until you unlock one it is on no list at all: not the select screens or the online lobby's picker, not a CPU seat anywhere (Free-for-
+// all, Teams, Capture the Flag, Boss Rush allies, One's and Steve Cobs's allies, Test mode and training dummies), not the drip, the
+// opener for very old saves or "Unlock every fighter" (openProfile, isUnlocked), not a World Cup or Flag Cup draw, the rankings, the
+// Wardrobe, the Store, the Level Creator's crowd or the title's count. Unlocked, it is on every one of them like any fighter, bar
+// two that never take one: the Daily (approval question 7, dailyMatchup, so it stays the same for everyone) and an online room's
+// CPU seats (question 8, buildFighters). Before you have it, it fights only in its own event matches, as a CPU (B4): the event
+// match runner (build step 7) seats it there itself, as the Daily seats its foe, so no pool ever offers it. A computer that cannot
+// save opens them, by the game's open-everything rule (question 6, openProfile). Online, each player brings their own: a guest's
+// pick travels in its hello, and the host plays it whether the host has it or not (startAsHost and beginMatch read ROSTER, which
+// holds every event row).
+function eventLocked(r){ return !!(r && r.event) && !isUnlocked(r); }
+// THE SELECT SCREEN'S "Event fighters" GROUP (question 13) sits between the BFDI cast and the Inanimate Insanity DLC (showRank) and is
+// hidden until the first event: until then the board holds only the event fighters you have. This is its switch, off until the
+// calendar (build step 3) has a first week; the event screens (step 9) turn it on, with a hint on each locked cell.
+function eventGroupOpen(){ return false; }
+// How many fighters the title says the game has: every row bar the event fighters you do not have.
+function rosterCount(){ return ROSTER.filter(r=>!eventLocked(r)).length; }
+
 // ---------- unlock model: fast drip + hand-authored trophies ----------
 // Reveal order for the 52 non-starters (Bubble joined them when she left the starters). Fixed, so
 // two players at the same match count have the same roster and can compare progress.
-const UNLOCK_ORDER = ROSTER.filter(r=>!r.dlc).map(r=>r.name).filter(n=>STARTERS.indexOf(n)<0);
+const UNLOCK_ORDER = ROSTER.filter(r=>!r.dlc && !r.event).map(r=>r.name).filter(n=>STARTERS.indexOf(n)<0);   // (an event fighter is won in its event)
 // Trophies are pulled OUT of the drip so a deed always grants something the player did not
 // already have. Each is tied to a deed that is legible without reading anything.
 const TROPHIES = {
@@ -58569,9 +58610,9 @@ function oneDailyMatchup(m){
 // only change it if they take the stand-in too. Nobody left at all: Lightning, a mirror match.
 function oneDailyFoe(foe, seed){
   if(!oneAiBanned(foe)) return foe;
-  const pool = ROSTER.filter(r=>r.play && r.name!=='Lightning' && !oneAiBanned(r));
+  const pool = ROSTER.filter(r=>r.play && !r.event && r.name!=='Lightning' && !oneAiBanned(r));   // (never an event fighter: dailyMatchup)
   if(!pool.length) return oneLightning() || foe;
-  const all = ROSTER.filter(r=>r.play);
+  const all = ROSTER.filter(r=>r.play && !r.event);
   let h = ((seed>>>0) ^ 0x0E0A5ED) >>> 0;
   const nxt = ()=>{ h = (Math.imul(h ^ (h>>>15), 1 | h) + 0x6D2B79F5) >>> 0; return h / 4294967296; };
   for(let g=0; g<400; g++){ const r = all[Math.floor(nxt()*all.length) % all.length]; if(pool.indexOf(r) >= 0) return r; }
@@ -58821,7 +58862,7 @@ function oneWanted(){ return SETTINGS.mode==='boss' && SETTINGS.bossPick==='one'
 // Your pick first, then AI allies drawn like the rest of the game draws them, up to the contestant count.
 function oneLineup(){
   const N = Math.max(minCount(), Math.min(MAX_FFA, SETTINGS.count|0 || 1));
-  const pool = ROSTER.filter(r=>r.play && (!chosen || r.name!==chosen.name)); shuffle(pool);
+  const pool = ROSTER.filter(r=>r.play && !eventLocked(r) && (!chosen || r.name!==chosen.name)); shuffle(pool);
   return [chosen ? chosen.name : pool[0].name].concat(pool.slice(0, N - 1).map(r=>r.name));
 }
 // startOneFight's onEnd, for the story fight and every fight after. Returns false: her own result screen always shows.
@@ -59481,7 +59522,9 @@ function dailySeed(d){
   return (t.getUTCFullYear()*10000 + (t.getUTCMonth()+1)*100 + t.getUTCDate()) >>> 0;
 }
 function dailyMatchup(seed){
-  const pool = ROSTER.filter(r=>r.play);
+  // Never an event fighter, yours or not (approval question 7), so the Daily stays the same for everyone. Their rows are the last in
+  // ROSTER, so leaving them out moves no other fighter's place in the draw: every day keeps the pairing it had before they came.
+  const pool = ROSTER.filter(r=>r.play && !r.event);
   if(!pool.length) return null;
   // mulberry-style hash so the same day gives the same pair everywhere, with no stored state
   let h = seed >>> 0;
@@ -75247,8 +75290,13 @@ function edToggleZoom(){ if(ED.fit) edZoomOne(); else edZoomFit(); edSyncPanel()
 // The renders a level shows in its crowd and on its spawn markers: every fighter's, and the bosses'. Not Pepper's -- she
 // is a partner drawn only beside her fighter (Salt's echo) -- and she sits first in SPRITES, where she also shifted which
 // render every spawn marker showed. Bot is a fighter now ("oh, and bot should get their own kit."), so they are in the crowd.
+// Nor an event fighter you do not have (eventLocked): a crowd is one more place a fighter shows up.
 const ED_NOT_CAMEOS = new Set(['Pepper']);
-function edSpriteNames(){ return (typeof SPRITES!=='undefined') ? Object.keys(SPRITES).filter(n=>!ED_NOT_CAMEOS.has(n)) : []; }
+function edSpriteNames(){
+  if(typeof SPRITES==='undefined') return [];
+  const shut = new Set(ROSTER.filter(eventLocked).map(r=>r.name));
+  return Object.keys(SPRITES).filter(n=>!ED_NOT_CAMEOS.has(n) && !shut.has(n));
+}
 // A new prop. A cameo picks a real fighter here rather than at paint time, so the crowd a level
 // was saved with is the crowd it loads back with.
 function edMakeDeco(kind, nx, ny){
@@ -82163,10 +82211,12 @@ function storeWear(id){
 // screen (cosNetDecode and cosCostume never ask), as the fighter it is worn by is.
 function cosPrizeHidden(it){ return !!(it && it.fighter && PRIZE_NAMES.indexOf(it.fighter) >= 0 && !cobsBeaten()); }
 // A look for a Vault fighter stays out of the Store until that fighter has been opened by its code: "can ONLY be opened by a code",
-// and a Store that listed their skin would say the fighter exists.
+// and a Store that listed their skin would say the fighter exists. An event fighter's look waits the same way, until the fighter is
+// yours (eventLocked: the Store is one more list of fighters).
 function cosListed(it){
   if(it && it.month && !cosInSeason(it)) return false;   // a Halloween costume: in the Store in October only (cosInSeason)
   if(cosPrizeHidden(it)) return false;                     // Steve Cobs's prize: not until he has been beaten
+  if(it && it.fighter && eventLocked(ROSTER.find(x=>x.name === it.fighter))) return false;
   if(!it || !it.fighter || !VAULT_FIGHTERS.has(it.fighter)) return true;
   const r = ROSTER.find(x=>x.name === it.fighter);
   return !!r && isUnlocked(r);
@@ -82372,7 +82422,7 @@ try{ hydrateRatings(); }catch(e){}
 try{ hydrateRival(); }catch(e){}        // Wave 3.5: who has beaten you most
 try{ refreshDailyCard(); }catch(e){}    // Wave 3.5: today's seeded matchup
 // The title's counts come off the rosters: the line said "59 fighters" while the Inanimate Insanity pack had made it 101.
-try{ document.getElementById('titleFighters').textContent = ROSTER.length; document.getElementById('titleBosses').textContent = BOSS_ROSTER.length; document.getElementById('titleAssists').textContent = ASSIST_ROSTER.length; }catch(e){}
+try{ document.getElementById('titleFighters').textContent = rosterCount(); document.getElementById('titleBosses').textContent = BOSS_ROSTER.length; document.getElementById('titleAssists').textContent = ASSIST_ROSTER.length; }catch(e){}
 profileReady = (async()=>{ try{ await loadProfile(); }catch(e){ PROFILE = openProfile('load-failed'); } })();
 profileReady.then(()=>{ try{ buildBoard(); }catch(e){} try{ refreshOneEntry(); }catch(e){} try{ seedFighterStats(); }catch(e){} try{ ctfTutGrandfather(); }catch(e){} });
 

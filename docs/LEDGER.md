@@ -932,6 +932,30 @@ grow-in) left these out on purpose. Each belongs to the job that builds the thin
   beside them: it is a second water list (Teardrop, Barf Bag, Bubble) and does not match the wet list. A shot Dough copies
   lands as his own, so the soak goes on the shot when it is fired.
 
+### O24 · Event fighters: what step 2 (the lock rule) left to later steps
+
+Step 2 (branch `g-events`) marks an event fighter with `event:true` on its ROSTER row, at the END of the roster, and keeps it off
+every list and out of every draw until it is unlocked (`eventLocked`, `isUnlocked`); the Daily and an online room's CPU seats never
+take one at all. Checked in scratch copies (Donut moved to the end and marked; a new row appended): nothing changes in the committed
+build, and the Daily keeps every pairing. Left on purpose:
+
+- **Every kit job:** its row goes after Bot, below the EVENT FIGHTERS comment in ROSTER, with `event:true`, in the lap's order (J2).
+  Its name does NOT go into SHOW_ORDER: the group's place comes from `showRank`.
+- **The calendar (build step 3) and the event screens (step 9):** `eventGroupOpen()` is the select screen's hidden switch and is
+  `false`. Step 9 turns it on from the first week, writes the locked cells' hint (`unlockHint` has no event line yet; today it
+  would say "Keep playing"), and decides whether the board's legend and the "Unlock every fighter" tooltip should mention them.
+- **The event match runner (step 7):** the event fighter's own seat is placed by the runner, as the Daily places its foe: no pool
+  offers a locked one. Its other CPUs are fighters "you could already have" (B4): no event, Vault or secret fighter, no Four.
+- **Tokens (step 4):** the unlock is `unlockFighter(name)`, the same list as every other unlock; nothing else needs to change.
+- **Online (step 10):** the EVENT tag in the lobby. A guest's own event fighter already plays in a host's room, and online CPU
+  seats already skip them (checked with the in-process pair).
+- **For the owner:** a computer that cannot save opens the event fighters as soon as their rows land (question 6), so on such a
+  computer they would show, playable, in their own group before the first event, while question 13 hides the group from
+  everyone else until then. Gating that on the first week is one line in `openProfile` or `isUnlocked`, if wanted.
+- **Found in passing, not changed:** once Steve Cobs is beaten, his three prize rows join ROSTER and with it the Daily's pool, so
+  that player's Daily is no longer everyone's (496 of the 508 days from 2026-08-11 to 2027-12-31 differ). The same one-word
+  filter the Daily now uses for event fighters would fix it, but it changes that player's Daily, so it waits for a yes.
+
 ---
 
 ## Scoreboard
@@ -939,7 +963,7 @@ grow-in) left these out on purpose. Each belongs to the job that builds the thin
 | | Count |
 |---|---|
 | Done | 161 |
-| Open | 3 (O20, O22, O23) |
+| Open | 4 (O20, O22, O23, O24) |
 | Superseded | 2 (O1, B12) |
 | Blocked on you | 1 (G11: the Cloudflare MCP authorization) |
 
