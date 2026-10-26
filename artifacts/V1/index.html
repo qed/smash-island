@@ -20273,7 +20273,8 @@ function hurtGap(t, x, y){
 
 // HITBOX OVERLAY -- press B (unless a player has B bound). Yellow: each fighter's hurtbox, the thing that
 // gets hit. Grey, dashed: f.r, the body that stands on platforms and sizes the art -- a different shape on
-// purpose. Red: attack hitboxes from the last few frames. Render-only; recording happens only while on.
+// purpose. Red: attack hitboxes from the last few frames, and every trap that can go off this frame (landed
+// and armed, or falling past its grow-in: TRAPS HIT AS THEY FALL). Render-only; recording happens only while on.
 let SHOW_HITBOXES = false;
 const DEBUG_HITS = [];
 function noteHitbox(x, y, r){ if(SHOW_HITBOXES) DEBUG_HITS.push({ x:x, y:y, r:r, t:10 }); }
@@ -20303,6 +20304,17 @@ function drawHitboxOverlay(){
       else if(h.pts && h.pts.length){ ctx.beginPath(); for(let j=0;j<h.pts.length;j+=2){ if(j===0) ctx.moveTo(h.pts[j], h.pts[j+1]); else ctx.lineTo(h.pts[j], h.pts[j+1]); } ctx.closePath(); ctx.stroke(); }
     } else { ctx.beginPath(); ctx.arc(h.x, h.y, h.r, 0, 7); ctx.stroke(); }
   }   // (the boxes age in ageView, on the 60 Hz clock)
+  ctx.globalAlpha = 0.85; ctx.strokeStyle = '#e0503a'; ctx.lineWidth = 2;
+  // SHOW ALL LIVE SHOTS (the owner, 2026-10-26, "Show all live shots"): every shot in flight (haShotState's 1: a barf glob, splinters, a
+  // battery, a puddle drop) as well as every trap that can go off (2) -- pr.r round about its centre, where it is now. A client reads it
+  // off the snapshot's hz (a fighter's plain shot carries none and is filled in as 1: HA_SHOT_PLAIN), nothing new. HOST AND OFFLINE ONLY
+  // for a flying shot whose owner is a stand-in not in fighters -- every boss's flying shot, Pie's cream pie, Stapy's staples: the host
+  // sends it no hz (netProjectiles counts it as a fighter's plain shot) and a client, reading its owner as -1, does not fill one in, so an
+  // online client draws no ring for it (nor its disc, drawShotArea).
+  for(const pr of projectiles){
+    const st = Array.isArray(pr.hz) ? (pr.hz[0] | 0) : haShotState(pr);
+    if((st === 1 || st === 2) && pr.r > 0){ ctx.beginPath(); ctx.arc(pr.x, pr.y, pr.r, 0, 7); ctx.stroke(); }
+  }
   ctx.restore();
 }
 addEventListener('keydown', e => {
@@ -20394,18 +20406,26 @@ function haAuto(f, sh){
   hitArt(f, 'h' + (c.n++), g, HA_FADE_NEXT ? { fade:HA_FADE_NEXT } : undefined);
 }
 // SHOTS AND TRAPS (A5). A shot in flight hits a body whose outline comes within pr.r of its centre; a trap the same, once it has landed and
-// armed. So each one carries a disc of exactly pr.r (drawShotArea): faint under a shot in flight (its art is the owner's pick, and can be
-// bigger or smaller than what hits), a flat decal under a trap -- dashed while it falls and arms, filling in as it arms, solid once it can
-// go off -- and under a lingering zone (poison, slow, slick, burn) a decal textured with what it does. What the disc shows:
+// armed -- or, still falling, once it has grown in (TRAPS HIT AS THEY FALL, trapFallLive). So each one carries a disc of exactly pr.r
+// (drawShotArea): faint under a shot in flight (its art is the owner's pick, and can be bigger or smaller than what hits), a flat decal
+// under a trap -- dashed while it falls and arms, filling in as it arms, solid once it can go off -- and under a lingering zone (poison,
+// slow, slick, burn) a decal textured with what it does. What the disc shows:
 //   0 nothing hits here (a held-back shot, a turret, a trap that never arms, a boss's trap: the bosses' own marks are theirs)
-//   1 a shot in flight (a boss's too: its art was drawn up to 3x what hits, the audit's C row)      2 a trap, armed      3 a trap still falling or arming
+//   1 a shot in flight (a boss's too: its art was drawn up to 3x what hits, the audit's C row)      2 a trap that can go off: armed, or falling
+//   and grown in      3 a trap still growing in as it falls, or arming
 // The host works it out here; a client has none of these fields and reads it from the snapshot (`hz`, netProjectiles).
 function haShotState(pr){
   if(!pr || !(pr.life > 0) || pr.delay > 0 || pr.turret || pr._metagWall || pr._stuck || !(pr.r > 0)) return 0;
-  if(!(pr.owner >= 0) && !pr.assist) return ((pr.bossAtk != null || pr.owner === -2) && !pr.trap && !pr.landsTrap && pr.dmg > 0) ? 1 : 0;   // a boss's flying shot (an assist's is pr.assist)
-  if(pr.trap){ if(!pr.falling && pr.arm > 0 && pr.arm >= pr.life) return 0; return (pr.falling || pr.arm > 0) ? 3 : 2; }
+  if(!(pr.owner >= 0) && !pr.assist && pr._cherryOil == null) return ((pr.bossAtk != null || pr.owner === -2) && !pr.trap && !pr.landsTrap && pr.dmg > 0) ? 1 : 0;   // a boss's flying shot (an assist's is pr.assist; the Cherries' oil has no owner index, but it is theirs: a fighter's trap)
+  if(pr.trap){ if(pr.falling) return trapFallLive(pr) ? 2 : 3; if(pr.arm > 0 && pr.arm >= pr.life) return 0; return pr.arm > 0 ? 3 : 2; }
   return 1;
 }
+// TRAPS HIT AS THEY FALL (the owner, 2026-10-26: "hitboxes on traps that fall should exist while they are falling"). A laid trap on its way
+// down (TRAPS FALL, addProj) grows in for FIN_GROW frames like everything a move puts out, then hits whoever it comes down on with what it
+// does on the floor, to the same people. Its arming delay is for once it has landed and is counted from there, as it always was; one that
+// never arms (arm past its life) never hits falling either. Laid from the ground it lands inside its grow-in, so only one dropped from the
+// air changes. _fallT: frames it has been falling, counted by the trap branch of the projectile step.
+function trapFallLive(pr){ return !!pr.falling && pr._fallT > FIN_GROW && !(pr.arm > 0 && pr.arm >= pr.life); }
 // A trap that lingers (no arm, light: it does not go off once and vanish) and does something while you stand in it: what it does.
 function haShotZone(pr){ if(!pr || !pr.trap || pr.arm !== undefined || pr.dmg >= 8) return ''; return pr.poison ? 'poison' : pr.slow ? 'slow' : pr.slick ? 'slick' : pr.burn ? 'burn' : ''; }
 // How far a landed trap has armed, 0..1 (_a0: the arm it started counting down from, noted by the trap loop; render-only).
@@ -43179,20 +43199,24 @@ function step(){
     }
     if(pr._metagWall && pr.trap){ pr.life--; metagWallStep(pr); continue; }   // MeTag's wall: a bump for a foe who walks in, a crush for one launched in
     if(pr.trap){
+      let fell = false;   // TRAPS HIT AS THEY FALL (trapFallLive): it came down this frame grown in, so it hits where it is as it would on the floor
       if(pr.falling){   // a laid trap on its way down (see addProj): it lands on the first surface, then arms
+        pr._fallT = (pr._fallT || 0) + 1; fell = trapFallLive(pr);   // (before it moves: the frame it lands on is still a frame of its fall)
         pr.vy = Math.min(14, pr.vy + 0.5);
         const b0 = pr.y + pr._rest, b1 = b0 + pr.vy;
         let top = null;
         for(const t of vanTopsAt(pr.x)){ if(t.y >= b0 - 1 && t.y <= b1 + 1 && (top===null || t.y < top)) top = t.y; }
         if(top !== null){ pr.y = top - pr._rest; pr.vy = 0; pr.falling = false; puff(pr.x, top, pr.color, 3); }
         else { pr.y += pr.vy; if(pr.y > WH + 200) pr.life = 0; }
-        continue;
+        if(!fell || !(pr.life > 0)) continue;
+      } else {
+        if(pr.arm>0){ if(pr._a0 == null) pr._a0 = pr.arm; pr.arm--; }        // arming delay before it can trigger (_a0: where it started, for HIT ART's dashed decal filling in; read by nothing else)
+        pr.life--;
       }
-      if(pr.arm>0){ if(pr._a0 == null) pr._a0 = pr.arm; pr.arm--; }        // arming delay before it can trigger (_a0: where it started, for HIT ART's dashed decal filling in; read by nothing else)
-      pr.life--;
       for(const f of fighters){ if(f.dead||f.idx===pr.owner||f.invuln>0)continue;
+        if(fell && pr._cherryOil===f.idx) continue;   // SAFE WHILE FALLING (the owner, 2026-10-26): the Cherries' oil on its way down never trips its own pourer -- landed, it may, as before; a foe it comes down on is tripped mid-air
         if(hurtGap(f, pr.x, pr.y)<pr.r){
-          if(pr.arm>0) continue;
+          if(pr.arm>0 && !fell) continue;   // (falling, its grow-in was its wait: it arms where it lands)
           // friendly fire: a teammate's trap doesn't affect you (traps are never "reflected")
           const ownTeam = pr.ownerObj ? pr.ownerObj.team : -1;
           // ---- Steve Cobs's prize: begin ----
@@ -43224,7 +43248,7 @@ function step(){
           if(pr.arm!==undefined || pr.dmg>=8){ pr.life=0; }  // mines/heavy traps detonate once; puddles linger
         }
       }
-      if(pr.life%20===0) puff(pr.x,pr.y-4,pr.color,1);   // idle shimmer
+      if(!fell && pr.life%20===0) puff(pr.x,pr.y-4,pr.color,1);   // idle shimmer
       continue;
     }
     // Liy orbiting petals: circle their owner until they strike something
@@ -43407,7 +43431,7 @@ function step(){
       // and lands the trap number a fighter takes (TRAP_DMG_MULT); a fighter's own trap on a boss is untouched.
       const fromAssist = pr.owner<0 && !!pr.assist;
       if(pr.life<=0 || pr.delay>0 || pr._stuck || (pr.owner<0 && !fromAssist && pr._cherryOil==null)) continue;   // skip expired, delayed or summon-owned shots (the Cherries' oil has no owner index and would trip this)
-      if(fromAssist && pr.trap && (pr.arm>0 || pr.falling)) continue;
+      if(fromAssist && pr.trap && (pr.falling ? !trapFallLive(pr) : pr.arm>0)) continue;   // (falling, its grow-in: TRAPS HIT AS THEY FALL)
       const pd = (fromAssist && pr.trap) ? Math.round(pr.dmg*TRAP_DMG_MULT) : pr.dmg;
       const o=pr.ownerObj;
       for(const s of summons){
@@ -56359,7 +56383,8 @@ function doSpecial(f){
     case "cherries": { // Cherries: PLAY DIRTY (Fan the Flames): they poured olive oil, Soap slipped, then they slipped in their own oil.
       // A slick on the floor ahead (it falls to the surface below if poured in the air) that trips the first fighter onto it
       // -- the Cherries too: it has no owner index, so the trap loop does not spare them, but ownerObj keeps it theirs, so
-      // their teammates are spared and the kill is theirs. One slick at a time. dmg is pre-divided: traps are scaled.
+      // their teammates are spared and the kill is theirs. Only once it has landed: on its way down it trips a foe it comes down on but
+      // never them (SAFE WHILE FALLING, the trap loop). One slick at a time. dmg is pre-divided: traps are scaled.
       projectiles = projectiles.filter(p=>p._cherryOil!==f.idx);
       addProj({owner:-1, ownerObj:f, x:f.x + f.face*60, y:f.y, vx:0, vy:0, grav:false, dmg:4/TRAP_DMG_MULT, kb:6, r:40, color:'#6b5a1e',
         life:300, trap:true, arm:12, shape:'oliveoil', fxTag:'knockdown', fxN:24, _cherryOil:f.idx});
@@ -56558,7 +56583,8 @@ function addProj(p){
   // to be created at its resting spot and never moved again (the trap branch skips all movement), so it popped
   // into place, hung in midair when laid from the air, and Taco's puddle was pinned to the main floor. Now it
   // starts at the fighter's hands and drops to the first surface under it -- a platform or the floor -- keeping
-  // the stand-off it was authored with, and it neither arms nor triggers until it has landed (see the trap branch).
+  // the stand-off it was authored with, and it arms only once it has landed (see the trap branch). On the way down it hits once it has
+  // grown in (TRAPS HIT AS THEY FALL, trapFallLive).
   if(p && p.trap && !p.turret && !p.noFall && p.ownerObj && typeof p.ownerObj.y === 'number'){
     const surf = surfaceBelow(p.x, p.y);
     p._rest = surf !== null ? Math.max(2, Math.min(12, surf - p.y)) : 6;
@@ -72563,7 +72589,7 @@ function haZoneDecal(c, x, y, r, col, zone){
 const HA_SHOT_PLAIN = [1, 0, 0];   // a plain flying shot's disc state, as a client fills it in when the host left hz off
 function drawShotArea(pr, edge){
   const z = Array.isArray(pr.hz) ? pr.hz : null, st = z ? (z[0] | 0) : haShotState(pr);
-  if(!st || st === 3 || !(pr.r > 0) || (edge && st === 1)) return '';   // (3, falling or arming: no dashed disc ahead of it -- NO TELLS, 2026-10-22)
+  if(!st || st === 3 || !(pr.r > 0) || (edge && st === 1)) return '';   // (3, growing in as it falls, or arming: no dashed disc ahead of it -- NO TELLS, 2026-10-22)
   const zone = z ? (z[2] || '') : (st >= 2 ? haShotZone(pr) : '');
   const col = pr.color || '#ffffff', sh = { kind:'circle', x:pr.x, y:pr.y, r:pr.r }, c = ctx;
   c.save();
