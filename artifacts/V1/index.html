@@ -58064,7 +58064,10 @@ function freshProfile(){
            // 'refunded_<id>', see walletNorm), this day's and week's quests, and what is worn.
            wallet:{ earned:0, spent:0, owned:{} },
            quests:{ day:'', week:'', dp:{}, wp:{}, wf:[], claims:{} },
-           cos:{ f:{}, trail:null, ko:null, pose:null, card:null, title:null } };
+           cos:{ f:{}, trail:null, ko:null, pose:null, card:null, title:null },
+           // THE EVENT FIGHTERS' TOKENS (see EVENT FIGHTERS: TOKENS AND SAVING): each fighter's total, and the ledger of the payouts
+           // toward this week's and last week's events.
+           event:{ tok:{}, pay:{} } };
 }
 // Everything unlocked — used when storage is unavailable and when grandfathering an existing
 // install. Degrading OPEN is deliberate: a blocked-storage Chromebook must never leave a player
@@ -58113,6 +58116,10 @@ function mergeProfiles(stored, mine){
   out.wallet = mergeWallet(stored.wallet, mine.wallet, stored.quests, mine.quests);
   out.cos    = mergeCos(stored.cos, mine.cos);
   if(stored.ctfTutorialDone || mine.ctfTutorialDone) out.ctfTutorialDone = true;   // the Capture the Flag practice, done in either tab
+  // The event fighters' tokens (see EVENT FIGHTERS: TOKENS AND SAVING): each total to the larger side plus the payouts only the other
+  // side made, with the week's limit kept; a total the merge takes to 100 unlocks its fighter here, though neither tab got there alone.
+  out.event = mergeEvent(stored.event, mine.event);
+  for(const n of eventNames()) if((out.event.tok[n] | 0) >= EVENT_PAY.unlock && out.unlocked.indexOf(n) < 0) out.unlocked.push(n);
   return out;
 }
 // Parse failure is treated as MISSING, not as an empty object. The usual try/JSON.parse/catch{}
@@ -58228,7 +58235,7 @@ function eventLaunchWeek(){
 }
 // The event of week `wk` (a shopWeekNo): { week, lap, n (its place in the lap, from 1), name, start, end (the Monday 00:00 UTC it
 // starts and the next, in ms) }, or null before the launch. It reads nothing but the week, so A MATCH THAT CROSSES MONDAY MIDNIGHT PAYS TOWARD THE EVENT IT
-// STARTED IN: the event match runner (step 7) keeps the week its match started in, and the payout (step 4) asks for that week's event.
+// STARTED IN: the event match runner (step 7) keeps the week its match started in, and the payout (eventPay) asks for that week's event.
 function eventOfWeek(wk){
   const first = eventLaunchWeek();
   if(first == null || !Number.isInteger(wk) || wk < first) return null;
@@ -58253,6 +58260,112 @@ function eventsComingUp(count, now){
   const from = Math.max(shopWeekNo(now) + 1, first);
   for(let k = 0; k < count; k++) out.push(eventOfWeek(from + k));
   return out;
+}
+
+// ---------- EVENT FIGHTERS: TOKENS AND SAVING (event-fighters-phase1.md, section 2, "Tokens and the unlock" and "Saving"; build step 4) ----------
+// Each event fighter has tokens of their own, "Eraser tokens" (approval question 2): they cannot be bought and buy nothing, so Win
+// Tokens stay "only buys a look". ONE RULE FOR ALL 14 (J1, question 1), paid the moment an event match ends (eventPay):
+//   * a WIN pays 10 if you are still in at the end, so in an ally match the CPU cannot finish it for you. A win you are no longer in
+//     is paid as a loss is: being knocked out never pays less because your side went on to win;
+//   * a LOSS pays 5, and only if you dealt at least 20% in all or lasted 60 seconds: a quick throwaway loss pays nothing;
+//   * the FIRST WIN on each of the event's three matches pays 10 more, once per match per event;
+//   * no daily limit, and at most 100 a week per fighter. The week is the one the match STARTED in (eventOfWeek), so a match that
+//     crosses Monday midnight pays toward the event it started in;
+//   * 100 unlocks the fighter for good: the name joins the unlocked list (unlockFighter), which only ever grows. Tokens past 100
+//     keep counting, quietly (question 11), for a later event costume.
+// What pays nothing: Test mode, the Level Creator and the tutorial (questsCount: the profile's own rule), a week with no event, and
+// a week before last week. Event matches count for quests, stats and My Stats and not for One's chain, the Daily or the World Cup
+// (question 10): the event match runner (build step 7) sees to that, as it is the one that knows a match is an event match.
+//
+// PROFILE.event = { tok:{ name: total }, pay:{ line: tokens } }. `tok` holds each fighter's total, which only ever rises. `pay` is
+// the LEDGER of recent payouts, kept the way the quests keep theirs (claims): one line per payout, 'w<week>:<name>:<id>', where the
+// id is this tab's own (eventPayId) for a win or a loss, and 'f1' to 'f3' for a first-win bonus -- the same line in every tab, so
+// two tabs that each win match 2 first are paid its bonus once. A line is kept for the week it was paid toward and the week after,
+// and no longer (eventLive): no payout can meet that week's limit or first wins later than that. The totals are kept for ever.
+// TWO TABS (mergeEvent): a total merges to the larger side PLUS the lines the other side paid that it does not hold, the way the Win
+// Tokens do (mergeWallet), with the week's limit kept -- two tabs at 90 that each win once come to 100, not 110 -- so nothing is
+// paid twice and nothing is lost. A total that reaches 100 in a merge unlocks its fighter there too (mergeProfiles, shopCatchUp).
+// A COMPUTER THAT CANNOT SAVE has every event fighter open already (openProfile, question 6); a match there still pays, into memory.
+const EVENT_PAY = { win:10, loss:5, first:10, dealt:20, secs:60, week:100, unlock:100 };
+const EVENT_PAY_LINE = /^w\d{1,9}:[^:]{1,32}:(?:f[1-3]|[a-z0-9]{1,14}\.\d{1,9})$/;
+// Every fighter on the laps: the only names a total can unlock (a save's other names are kept, and open nothing).
+function eventNames(){ const s = new Set(); for(const row of EVENT_LAPS) for(const n of row.order) s.add(n); return s; }
+// A save's tokens, cleaned: whole numbers, never below zero, and only lines of the ledger's own shape. A name this build does not
+// know (a later phase's, saved by a newer tab) keeps its total, so an old tab's save never drops it.
+function eventNorm(e){
+  e = (e && typeof e === 'object' && !Array.isArray(e)) ? e : {};
+  const tok = {}, pay = {}, obj = o=>o && typeof o === 'object' && !Array.isArray(o);
+  if(obj(e.tok)) for(const n in e.tok) if(_own(e.tok, n) && n && n.length <= 32 && n !== '__proto__') tok[n] = Math.max(0, Math.floor(+e.tok[n] || 0));
+  if(obj(e.pay)) for(const k in e.pay) if(_own(e.pay, k) && EVENT_PAY_LINE.test(k) && k.indexOf(':__proto__:') < 0) pay[k] = Math.max(0, Math.min(EVENT_PAY.week, Math.floor(+e.pay[k] || 0)));
+  return { tok, pay };
+}
+function eventLive(k, now){ return +k.slice(1, k.indexOf(':')) >= shopWeekNo(now) - 1; }   // this week's line or last week's
+function eventState(now){
+  const e = eventNorm(PROFILE && PROFILE.event);
+  for(const k in e.pay) if(!eventLive(k, now)) delete e.pay[k];
+  if(PROFILE) PROFILE.event = e;
+  return e;
+}
+// What each week's lines hold, by 'w<week>:<name>'.
+function eventWeekSums(pay){ const o = {}; for(const k in pay){ const p = k.slice(0, k.lastIndexOf(':')); o[p] = (o[p] | 0) + pay[k]; } return o; }
+function mergeEvent(a, b){
+  const A = eventNorm(a), B = eventNorm(b);
+  for(const E of [A, B]) for(const k in E.pay) if(!eventLive(k)) delete E.pay[k];
+  // What `other` paid that `own` does not hold, per fighter: each week's share only up to what that week's limit leaves `own`.
+  const gain = (own, other)=>{
+    const sums = eventWeekSums(own.pay), miss = {}, out = {};
+    for(const k in other.pay) if(!_own(own.pay, k)){ const p = k.slice(0, k.lastIndexOf(':')); miss[p] = (miss[p] | 0) + other.pay[k]; }
+    for(const p in miss){ const n = p.slice(p.indexOf(':') + 1); out[n] = (out[n] | 0) + Math.min(miss[p], Math.max(0, EVENT_PAY.week - (sums[p] | 0))); }
+    return out;
+  };
+  const gA = gain(A, B), gB = gain(B, A), tok = {}, pay = Object.assign({}, A.pay);
+  for(const k in B.pay) pay[k] = Math.max(pay[k] | 0, B.pay[k]);
+  for(const n of new Set([...Object.keys(A.tok), ...Object.keys(B.tok), ...Object.keys(gA), ...Object.keys(gB)]))
+    tok[n] = Math.max((A.tok[n] | 0) + (gA[n] | 0), (B.tok[n] | 0) + (gB[n] | 0));
+  return { tok, pay };
+}
+// Every fighter whose total has reached 100 is unlocked; returns the ones this call opened.
+function eventUnlocks(){
+  if(!PROFILE) return [];
+  const tok = eventNorm(PROFILE.event).tok, fresh = [];
+  for(const n of eventNames()) if((tok[n] | 0) >= EVENT_PAY.unlock && unlockFighter(n)) fresh.push(n);
+  return fresh;
+}
+// A payout's own line: this tab's id and a count. The id comes from the browser's crypto, never Math.random, whose numbers are the
+// matches' seeded dice; two tabs drawing the same one is a one-in-four-billion-squared chance.
+let EVENT_TAB = '', EVENT_SEQ = 0;
+function eventPayId(){
+  if(!EVENT_TAB){
+    try{ const a = new Uint32Array(2); crypto.getRandomValues(a); EVENT_TAB = a[0].toString(36) + a[1].toString(36); }
+    catch(e){ EVENT_TAB = Date.now().toString(36); }
+  }
+  return EVENT_TAB + '.' + (++EVENT_SEQ);
+}
+// PAY AN EVENT MATCH, the moment it ends. `m` = { week (the shopWeekNo the match started in), n (1 the duel, 2 their team, 3 their
+// challenge), won (your side won), alive (you were still in at the end), dealt (the % you dealt in all), secs (how long you lasted) }.
+// Returns { name, week, n, base, first, bonus, paid, capped, weekTotal, total, unlocked } for the result screen, or null when the
+// match pays nothing at all. Saved here. The event match runner (build step 7) calls it; nothing does yet.
+function eventPay(m, now){
+  if(!PROFILE || !questsCount() || !m) return null;
+  const t = now || shopNow(), ev = eventOfWeek(m.week), n = m.n;
+  if(!ev || !(n === 1 || n === 2 || n === 3) || ev.week < shopWeekNo(t) - 1) return null;
+  shopPeek();   // what another tab paid stands here first, so the week's limit and the first wins are the real ones (shopCatchUp)
+  const e = eventState(t), name = ev.name, pre = 'w' + ev.week + ':' + name + ':';
+  const win = !!m.won && !!m.alive;
+  const fought = (+m.dealt || 0) >= EVENT_PAY.dealt || (+m.secs || 0) >= EVENT_PAY.secs;
+  const had = eventWeekSums(e.pay)[pre.slice(0, -1)] | 0;
+  const want = win ? EVENT_PAY.win : fought ? EVENT_PAY.loss : 0;
+  const base = Math.min(want, Math.max(0, EVENT_PAY.week - had));
+  const first = win && !_own(e.pay, pre + 'f' + n);
+  const bonus = first ? Math.min(EVENT_PAY.first, Math.max(0, EVENT_PAY.week - had - base)) : 0;
+  if(base) e.pay[pre + eventPayId()] = base;
+  if(first) e.pay[pre + 'f' + n] = bonus;   // written even when the limit leaves it 0: it was this match's first win all the same
+  e.tok[name] = (e.tok[name] | 0) + base + bonus;
+  const fresh = eventUnlocks();
+  PENDING_UNLOCKS.push(...fresh);
+  if(base || first) saveProfile();
+  return { name, week:ev.week, n, base, first, bonus, paid:base + bonus, capped:base + bonus < want + (first ? EVENT_PAY.first : 0),
+           weekTotal:had + base + bonus, total:e.tok[name], unlocked:fresh.indexOf(name) >= 0 };
 }
 
 // ---------- unlock model: fast drip + hand-authored trophies ----------
@@ -76695,12 +76808,15 @@ function walletEarn(n){ const w = walletState(); w.earned += Math.max(0, Math.fl
 // CATCHING UP WITH ANOTHER TAB. mergeWallet keeps every purchase two tabs make, so a tab that loaded before the other one
 // spent could spend the same tokens again, and the two looks would leave the wallet owing (earned below spent). So before a
 // purchase or a payout, and whenever another tab saves (the 'storage' event, initShop), this tab folds the stored wallet and
-// quests into its own -- upward only, by the same merges a save uses -- and decides on the real balance.
+// quests into its own -- upward only, by the same merges a save uses -- and decides on the real balance. The event fighters'
+// tokens come in the same way (eventPay peeks here too), so an event payout meets the real week's limit and first wins.
 function shopCatchUp(stored){
   if(!PROFILE || !stored || typeof stored !== 'object' || Array.isArray(stored)) return false;
   const quests = mergeQuests(stored.quests, PROFILE.quests);
   PROFILE.wallet = mergeWallet(stored.wallet, PROFILE.wallet, stored.quests, PROFILE.quests);   // both ledgers, before either is merged
   PROFILE.quests = quests;
+  PROFILE.event = mergeEvent(stored.event, PROFILE.event);   // the event fighters' tokens (EVENT FIGHTERS: TOKENS AND SAVING)
+  eventUnlocks();                                            // ...so a fighter the other tab took to 100 is open in this one too
   return true;
 }
 // Synchronous where the store is (localStorage, what the site and the desktop app use), so the check and the spend are one

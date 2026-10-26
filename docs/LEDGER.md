@@ -981,6 +981,33 @@ leaves every earlier lap as it was. With the committed `null`, no date from 2000
 - **A later phase:** a new row `{ from: lap, order: [...] }` appended to `EVENT_LAPS`, starting at least two weeks after its build
   goes live. No row is ever edited or removed.
 
+### O26 · Event fighters: what step 4 (tokens and saving) left to later steps
+
+Step 4 (branch `g-events`) is question 1's token rule, one for all 14 (J1). `eventPay(m)` pays an event match the moment it ends,
+where `m` = { `week` (the week it started in), `n` (1 the duel, 2 their team, 3 their challenge), `won`, `alive`, `dealt`, `secs` },
+into the profile's `event` field: `tok`, each fighter's own total (question 2), which only rises and keeps counting past 100
+(question 11), and `pay`, the ledger of this week's and last week's payouts. A win pays 10 if you are still in; a loss 5, only with
+20% dealt or 60 s lasted; the first win on each match +10, once per event (lines `f1`-`f3`, the same in every tab); no daily limit,
+at most 100 a week per fighter; 100 unlocks through `unlockFighter`, for good. The numbers are `EVENT_PAY`. Two tabs: `mergeEvent`
+(in `mergeProfiles` and `shopCatchUp`; `eventPay` peeks at the store first, as the quests do) keeps the larger total plus the
+payouts only the other side made, inside the week's limit, and a merge that reaches 100 unlocks. A computer that cannot save already
+has the fighters open (step 2) and is paid into memory. Nothing calls `eventPay` yet, and with `EVENT_LAUNCH` null it pays nothing.
+Checked with a scratch script (test launch 2026-10-19 injected, not committed): 28 payout cases, 6 two-tab merges through
+`mergeProfiles` both ways and the game's own `saveProfile`, and the cannot-save path; 49 expectations met. Left on purpose:
+
+- **The event match runner (step 7):** calls `eventPay` once per finished event match, with the week it kept from the start;
+  `alive` is "still in at the end", `dealt` the player's total % dealt, `secs` how long the player lasted (to the KO that put them
+  out, or to the end). Watched matches pay nothing because the runner does not call it. The runner also keeps event matches out of
+  One's chain (question 10: `oneAfterMatch` in `awardMatchProgress`), and asks the owner whether they feed `recordFighterGame`,
+  which is both the per-fighter record and the Lightning win rate that opens One's chain. The Daily and the World Cup cannot be
+  running during an event match. Quests, stats and My Stats count it as any match.
+- **The result note (steps 7 and 9):** reads `eventPay`'s return (`base`, `first`, `bonus`, `weekTotal`, `total`, `unlocked`). An
+  unlock is queued in `PENDING_UNLOCKS` like any other, so the existing "new fighter unlocked" note already shows it.
+- **Event rooms (step 14):** a guest calls `eventPay` with the host's week; it already refuses a week before last week, which is
+  the "their week or the one just before" rule.
+- **For the owner:** a win you are no longer in for (your ally finished it) is paid as a loss is, 5 if you dealt 20% or lasted
+  60 s, so being knocked out never pays less because your side went on to win. Paying nothing instead is one line in `eventPay`.
+
 ---
 
 ## Scoreboard
@@ -988,7 +1015,7 @@ leaves every earlier lap as it was. With the committed `null`, no date from 2000
 | | Count |
 |---|---|
 | Done | 161 |
-| Open | 5 (O20, O22, O23, O24, O25) |
+| Open | 6 (O20, O22, O23, O24, O25, O26) |
 | Superseded | 2 (O1, B12) |
 | Blocked on you | 1 (G11: the Cloudflare MCP authorization) |
 
