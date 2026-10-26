@@ -1694,7 +1694,7 @@ function observations() {
   }
   // falls: the player lost a stock nobody knocked them out of (no hit in the 3 s before) -- off a cliff or into a pit (edged stages), or over a screen side (the others)
   const fl = (ms) => `${ms.reduce((a, m) => a + (m.youFalls || 0), 0)} in ${ms.length} matches`;
-  const per = ['tryhard', 'new', 'explorer'].map((pn) => [pn, STATS.matches.filter((m) => m.persona === pn && m.youFalls != null)]).filter(([, ms]) => ms.length);
+  const per = ['tryhard', 'new', 'explorer'].map((pn) => [pn, STATS.matches.filter((m) => m.persona === pn && m.youFalls != null && m.mode !== 'ctf')]).filter(([, ms]) => ms.length);   // (a Capture the Flag KO is a trip home, not a stock)
   if (per.length) obs.push({ kind: 'player-falls', text: `The player fell off on its own (a stock lost with no hit in the 3 s before): ${per.map(([pn, ms]) => `${pn} ${fl(ms)} (edged stages ${fl(ms.filter((m) => m.edges))})`).join('; ')}. A tryhard should not; a new player may.` });
   if (STATS.cpuIdle.length) obs.push({ kind: 'cpu-idle', text: 'CPU idle for 10 s: ' + STATS.cpuIdle.map((c) => `${c.fighter} (${c.mode}/${c.stage})`).join(', ') });
   return obs;
