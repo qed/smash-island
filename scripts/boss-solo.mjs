@@ -26,15 +26,14 @@
 //
 // Every run boots its own copy of the game and seeds its own dice (mulberry32 of the run's seed), so a run does not depend
 // on what ran before it or on which worker ran it: the same build prints the same numbers, however many workers (JOBS).
-// THE BOT IS TODAY'S: every game this boots comes from bootMonolith, which pins it to the legacy AI (BOT_PB.legacy) with the in-browser
-// adaptation locked off, so the per-fighter playbooks ("1 bot to 1 fighter", 2026-10-05) cannot move a number stored in
-// scripts/boss-rush-balance.json -- "BOSS MEASUREMENTS keep today's bot", the owner. The parent checks the pin below, as it checks BOSS_HP_MULT.
+// THE BOT: since the CPU brain rebuild (2026-10-22) there is one CPU, with nothing learned to pin; the numbers stored in
+// scripts/boss-rush-balance.json before then were the old AI's.
 import { writeFileSync, readFileSync } from 'node:fs';
 import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { availableParallelism } from 'node:os';
-import { bootMonolith } from '../test/helpers/smash-golden.js';
-import { mulberry32 } from '../test/helpers/prng.js';
+import { bootMonolith } from './helpers/smash-golden.js';
+import { mulberry32 } from './helpers/prng.js';
 import { BOSS_TUNING_EXPR, harnessCode } from './boss-tuning.mjs';
 
 const FIGHTERS = ["Firey","Leafy","Pin","Needle","Coiny","Bubble","Pen","Snowball","Blocky","Ice Cube","Match","Pencil","Rocky","Tennis Ball","Golf Ball"];
@@ -120,7 +119,6 @@ if (process.env.BOSS_SOLO_WORKER) {
 } else {
   const W = bootMonolith(7);
   await W.eval('profileReady');
-  if (!W.eval('BOT_PB.legacy === true && BOT_ADAPT.locked === true')) throw new Error("the boss harness measures today's bot: bootMonolith (test/helpers/smash-golden.js) must pin the legacy AI");
   const ALL = JSON.parse(W.eval('JSON.stringify(BOSS_ROSTER.map(function(b){ return b.name; }))'));
   const tuning = JSON.parse(W.eval(BOSS_TUNING_EXPR));
   W.close();

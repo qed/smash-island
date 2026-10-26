@@ -9,7 +9,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadMonolith } from '../test/helpers/load-monolith.js';
+import { loadMonolith } from './helpers/load-monolith.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);

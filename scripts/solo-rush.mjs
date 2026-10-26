@@ -2,13 +2,12 @@
 // The previous investigation measured "damage to bosses over 60s", which is not what soloing means.
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { mulberry32 } from '../test/helpers/prng.js';
+import { mulberry32 } from './helpers/prng.js';
 function boot(seed){
   const html=readFileSync('artifacts/V1/index.html','utf8');
   const dom=new JSDOM(html,{url:'http://localhost/',runScripts:'dangerously',pretendToBeVisual:true,
     beforeParse(w){ w.HTMLCanvasElement.prototype.getContext=()=>new Proxy({},{get:(_t,p)=>(p==='measureText'?()=>({width:0}):p==='canvas'?{width:1100,height:720}:p==='getImageData'?()=>({data:[]}):()=>{}),set:()=>true});
       w.Math.random=mulberry32(seed); w.requestAnimationFrame=()=>0; w.cancelAnimationFrame=()=>{}; }});
-  dom.window.eval('BOT_PB.legacy = true; BOT_ADAPT.lock();');   // today's bot, as in every boss measurement
   return dom.window;
 }
 const NAMES = JSON.parse(process.env.NAMES || '["Money"]');

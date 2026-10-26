@@ -31,8 +31,8 @@
 //   node scripts/balance-tournament.mjs full --tournaments 8 --seed 1234 --out ranking.json
 // ============================================================================
 
-import { loadMonolith } from '../test/helpers/load-monolith.js';
-import { SETUP_SRC } from '../test/helpers/match-setup.js';
+import { loadMonolith } from './helpers/load-monolith.js';
+import { SETUP_SRC } from './helpers/match-setup.js';
 
 // ---------------------------------------------------------------------------
 //  JSDOM TEARDOWN GUARD

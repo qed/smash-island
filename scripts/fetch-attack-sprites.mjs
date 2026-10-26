@@ -393,28 +393,28 @@ const PICKS = {
   cobspopcorn:   { who: 'Steve Cobs', kits: ['popcorn'], wiki: 'ii', file: 'Popcorn Everywhere!.png', key: 'prop', region: [698, 42, 1250, 672], srcH: 1080, h: 48,
     poly: [[901,46],[922,46],[949,64],[966,107],[993,81],[1023,86],[1110,159],[1109,209],[1160,187],[1184,197],[1197,216],[1198,232],[1172,267],[1232,299],[1241,321],[1245,372],[1231,439],[1215,469],[1174,515],[1149,529],[1087,511],[1093,540],[1087,559],[1043,584],[1014,571],[990,540],[968,603],[947,634],[929,654],[886,668],[842,661],[797,643],[769,628],[752,603],[742,560],[749,531],[813,397],[722,359],[705,324],[702,290],[733,182],[771,165],[840,181],[829,119],[834,102],[859,72]],
     keep: () => true, note: 'a popped kernel, from the frame of the popcorn he exploded into (Objects in Mirror), hand-masked' },
-  // ---- Steve Cobs's prize (OJ, Suitcase, Cabby): begin ----
-  // The three II winners, allowed in only as Steve Cobs's prize ("3, but only after you beat cobs."). The owner's art answers
-  // (2026-09-29): OJ's shards -- "crop the shards that were stuck to book in shattered." and then "the episode bfdia 23." --
-  // come out of BFDIA 23 ("Shattered!", the BFDI wiki), File:BookSmashesThroughtheGlass.png: Book bursting up through the pane,
-  // its shards flying round him. The cut is the long shard at his right shoulder: pale rainbow glass with a dark outline over
-  // saturated sky blue, which the glass never is (key 'glass'). His juice puddle is DRAWN (a flat orange puddle with a paler
-  // rim), per the owner, so it has no pick.
-  ojshard:  { who: 'OJ',        kits: ['spill'],  file: 'BookSmashesThroughtheGlass.png', note: 'a glass shard, cropped out of the BFDIA 23 (Shattered!) frame where Book smashes up through the glass (the owner: "crop the shards that were stuck to book in shattered", "the episode bfdia 23.")', key: 'glass', region: [835, 212, 962, 296], srcH: 598, h: 40 },
-  // Suitcase's bomb -- "cut from an Objects in Mirror frame" (find the frame where the bomb is clearest, hand-mask it): the
-  // episode's frames are JPEGs (II218_1..189); II218_140 is Cobs holding the bomb up against the sky in his two black hands,
-  // the clearest of them. Flat white with a pale shade: the near-white is kept and the bites his fingers left are closed with
-  // its own colour (key 'orb', the Shimmer Orb's), so what ships is the bomb alone. The game adds the glow.
-  casebomb: { who: 'Suitcase',  kits: ['voices'], wiki: 'ii', file: 'II218 140.jpeg', png: true, note: 'the bomb Cobs took out of her (Objects in Mirror), cut from the frame where he holds it up', key: 'orb', region: [1545, 705, 2290, 1430], srcH: 1080, h: 44 },
-  // Suitcase's wrench -- "cut from the Marsh on Mars frame": File:S2e2 wow, this should make this challenge a walk in the park!.png,
-  // where she stands open with a wrench, a hammer and a ruler inside. The wrench lies across the hammer's handle and under its
-  // claw, so it is hand-masked first (poly, in the frame's own pixels: the open jaw and the handle up to the claw) and then keyed
-  // grey (key 'prop'): the case's brown interior, the sunflower straps and what is left of the hammer go.
-  wrench:   { who: 'Suitcase',  kits: ['voices'], wiki: 'ii', file: 'S2e2 wow, this should make this challenge a walk in the park!.png', note: 'the wrench from inside her (Marsh on Mars), hand-masked out of the frame', key: 'prop', region: [1028, 552, 1104, 604], srcH: 768, h: 40,
+  // ---- Steve Cobs's prize: begin ----
+  // His three prize fighters (A, B and C, PRIZE_ROSTER's order), allowed in only as Steve Cobs's prize ("3, but only after you beat cobs.").
+  // Their names stay out of this file, but for the wiki File: titles the fetch asks for. The owner's art answers (2026-09-29): A's shards --
+  // "crop the shards that were stuck to book in shattered." and then "the episode bfdia 23." -- come out of BFDIA 23 ("Shattered!", the BFDI
+  // wiki), File:BookSmashesThroughtheGlass.png: Book bursting up through the pane, its shards flying round him. The cut is the long shard at his
+  // right shoulder: pale rainbow glass with a dark outline over saturated sky blue, which the glass never is (key 'glass'). A's juice puddle is
+  // DRAWN (a flat orange puddle with a paler rim), per the owner, so it has no pick.
+  prizeshard: { who: 'prize fighter A', kits: ['spill'],  file: 'BookSmashesThroughtheGlass.png', note: 'a glass shard, cropped out of the BFDIA 23 (Shattered!) frame where Book smashes up through the glass (the owner: "crop the shards that were stuck to book in shattered", "the episode bfdia 23.")', key: 'glass', region: [835, 212, 962, 296], srcH: 598, h: 40 },
+  // B's bomb -- "cut from an Objects in Mirror frame" (find the frame where the bomb is clearest, hand-mask it): the episode's frames are
+  // JPEGs (II218_1..189); II218_140 is Cobs holding the bomb up against the sky in his two black hands, the clearest of them. Flat white with a
+  // pale shade: the near-white is kept and the bites his fingers left are closed with its own colour (key 'orb', the Shimmer Orb's), so what
+  // ships is the bomb alone. The game adds the glow.
+  casebomb: { who: 'prize fighter B', kits: ['voices'], wiki: 'ii', file: 'II218 140.jpeg', png: true, note: 'the bomb Cobs took out of her (Objects in Mirror), cut from the frame where he holds it up', key: 'orb', region: [1545, 705, 2290, 1430], srcH: 1080, h: 44 },
+  // B's wrench -- "cut from the Marsh on Mars frame": File:S2e2 wow, this should make this challenge a walk in the park!.png, where she stands
+  // open with a wrench, a hammer and a ruler inside. The wrench lies across the hammer's handle and under its claw, so it is hand-masked first
+  // (poly, in the frame's own pixels: the open jaw and the handle up to the claw) and then keyed grey (key 'prop'): the case's brown interior,
+  // the sunflower straps and what is left of the hammer go.
+  wrench:   { who: 'prize fighter B', kits: ['voices'], wiki: 'ii', file: 'S2e2 wow, this should make this challenge a walk in the park!.png', note: 'the wrench from inside her (Marsh on Mars), hand-masked out of the frame', key: 'prop', region: [1028, 552, 1104, 604], srcH: 768, h: 40,
     poly: [[1037, 557], [1062, 557], [1075, 560], [1075, 571], [1100, 571], [1100, 589], [1075, 589], [1074, 592], [1061, 599], [1039, 599], [1034, 595], [1039, 584], [1051, 577], [1039, 564], [1034, 560]],
     keep: (r, g, b) => Math.max(r, g, b) - Math.min(r, g, b) < 30 },
-  // Cabby's file: File:Cabby file pose.png is a clean, transparent manila folder on its own.
-  file:     { who: 'Cabby',     kits: ['files'],  wiki: 'ii', file: 'Cabby file pose.png', note: 'a file from her drawer (File:Cabby file pose.png)', h: 40 },
+  // C's file: the wiki's own folder render (fetched by its File: title below), a clean, transparent manila folder on its own.
+  file:     { who: 'prize fighter C', kits: ['files'],  wiki: 'ii', file: 'Cabby file pose.png', note: 'a file from her drawer (the wiki\'s own folder render)', h: 40 },
   // ---- Steve Cobs's prize: end ----
   // ---- Springy's MY PURPOSE! (the boss overhaul, Round 10: "give him 1 more: the bot toy"): Spring-Bot itself. Springy has no picks slot, so
   // this is the one block, at the end of the list. File:Springbot.png is the toy's own render (the Spring-toys page's gallery, season 3), a clean
@@ -731,7 +731,7 @@ const ROCK_GREY = (d, i) => lum(d, i) > 165 ? 0 : clamp01((34 - (Math.max(d[i], 
 const PAGER_PURPLE = (d, i) => clamp01(Math.min((d[i + 2] - d[i + 1] - 8) / 20, (d[i] - d[i + 1] + 10) / 20));
 const OIL_OLIVE = (d, i) => (d[i] - d[i + 1] > 50) ? 0 : clamp01((d[i + 1] - d[i + 2] - 10) / 12);
 Object.assign(KEYS, { rock: (png) => keyPiece(png, ROCK_GREY), pager: (png) => keyPiece(png, PAGER_PURPLE), slick: (png) => keyPiece(png, OIL_OLIVE, { hull: true, minPiece: 0.03 }) });
-// 'glass' (Steve Cobs's prize, OJ): the shard in File:BookSmashesThroughtheGlass.png is pale rainbow glass with a dark outline;
+// 'glass' (Steve Cobs's prize, fighter A): the shard in File:BookSmashesThroughtheGlass.png is pale rainbow glass with a dark outline;
 // the sky round it is a saturated blue (blue well over red, bright), which neither the glass nor its outline is. The biggest
 // piece that is not sky is the shard. The glass is see-through, so the sky shows inside its outline too; that stays
 // see-through (a faint pane: anything near sky blue inside the outline) and the stage shows through it instead.

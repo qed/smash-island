@@ -1,8 +1,8 @@
 // ============================================================================
 //  balance-knobs.mjs — every stat a balance sweep can move, including the hidden ones
 // ============================================================================
-// auto-balance.mjs can only reach two things: per-fighter WEIGHT and the RANGE_PROFILE row
-// (reach/dmg/kb). Everything else that decides a fight — how long a move is on cooldown, how many
+// auto-balance.mjs reaches per-fighter WEIGHT, the RANGE_PROFILE row (reach/dmg/kb) and, with --stats, the raw
+// stats in FIGHTER_STATS (run, air, jump, fall, dmg). Everything else that decides a fight — how long a move is on cooldown, how many
 // ticks a burn runs for, how long a freeze locks you — is a bare literal somewhere in the monolith,
 // so nothing could measure it and nothing could sweep it.
 //
@@ -90,6 +90,37 @@ export const KNOBS = {
     read: (m) => int(m[2]), write: (m, v) => m[1] + v, clamp: [40, 145],
   },
 
+  // ---- RAW STATS (FIGHTER_STATS) -----------------------------------------------------------
+  // The per-fighter multipliers beside weight (the owner, 2026-10-18: "add it, bcs its just a system extension"). The table is
+  // written with quoted keys, so these reach only it (and `dmg.all`, which matches `dmg:` with no quote, never does: STAT_ONE is built from STAT_KEYS, not written out). A sweep
+  // scales the "*" default and every fighter's own row together: the whole roster's run, jump... at once. Per-fighter nudges are
+  // auto-balance.mjs's (--stats). The clamps are the sane bounds for a stat: 0.85-1.15, damage 0.85-1.2.
+  'stat.run': {
+    doc: 'FIGHTER_STATS run: ground run acceleration and top speed (MOVE, MAXVX), per fighter and the "*" default',
+    find: /("run":\s*)(\d+(?:\.\d+)?)/g,
+    read: (m) => parseFloat(m[2]), write: (m, v) => m[1] + keepPlaces(m[2], v), clamp: [0.85, 1.15], places: 2,
+  },
+  'stat.air': {
+    doc: 'FIGHTER_STATS air: air drift acceleration and top speed',
+    find: /("air":\s*)(\d+(?:\.\d+)?)/g,
+    read: (m) => parseFloat(m[2]), write: (m, v) => m[1] + keepPlaces(m[2], v), clamp: [0.85, 1.15], places: 2,
+  },
+  'stat.jump': {
+    doc: 'FIGHTER_STATS jump: every jump\'s launch speed (JUMP, wall, dash and CTF jumps) and the short-hop cut',
+    find: /("jump":\s*)(\d+(?:\.\d+)?)/g,
+    read: (m) => parseFloat(m[2]), write: (m, v) => m[1] + keepPlaces(m[2], v), clamp: [0.85, 1.15], places: 2,
+  },
+  'stat.fall': {
+    doc: 'FIGHTER_STATS fall: gravity on the way down and the fast-fall speed (FF_V)',
+    find: /("fall":\s*)(\d+(?:\.\d+)?)/g,
+    read: (m) => parseFloat(m[2]), write: (m, v) => m[1] + keepPlaces(m[2], v), clamp: [0.85, 1.15], places: 2,
+  },
+  'stat.dmg': {
+    doc: 'FIGHTER_STATS dmg: the damage of every hit the fighter lands (not hazards, bleed, burn or healing)',
+    find: /("dmg":\s*)(\d+(?:\.\d+)?)/g,
+    read: (m) => parseFloat(m[2]), write: (m, v) => m[1] + keepPlaces(m[2], v), clamp: [0.85, 1.2], places: 2,
+  },
+
   // ---- OFFENCE ------------------------------------------------------------------------------
   // These reach further than auto-balance's RANGE_PROFILE rows: `dmg:` and `kb:` are also written
   // inline on every projectile the kits spawn, so scaling here moves the roster's whole offence,
@@ -161,10 +192,16 @@ export function patch(knobName, factor) {
     const m = args.slice(0, -2);
     m[0] = args[0];
     const cur = k.read(m);
+    // A literal of 0 (or below) is left exactly as written, at any scale: it is an "off" (the grab's `f.atkCd = 0`, a `dmg:0` row), not a
+    // quantity, and the clamp's floor must never lift it (cd.attack's 6 would make the grab's 0 a 6-frame wait). It used to survive only
+    // because the clamp widens to a value already below it and 0 times anything is 0; now it is never touched at all.
+    if (!(cur > 0)) return args[0];
     // Whole numbers unless the knob says otherwise: a family written with decimals has to come back
     // with them, or a scale of 1.0 stops being a no-op (see verify) and every arm inherits the drift.
     const p = 10 ** (k.places || 0);
-    const next = Math.max(k.clamp[0], Math.min(k.clamp[1], Math.round(cur * factor * p) / p));
+    // A literal already outside the clamp (set there by hand: FIGHTER_STATS allows it) is never pulled in by a scale of 1.0, nor
+    // pushed further out by any scale: the clamp widens to take it.
+    const next = Math.max(Math.min(k.clamp[0], cur), Math.min(Math.max(k.clamp[1], cur), Math.round(cur * factor * p) / p));
     return k.write(m, next);
   });
 }
