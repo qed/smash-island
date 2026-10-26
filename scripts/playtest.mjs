@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // THE SIMULATED PLAYTESTER (2026-10-16).
 //
-// A headless PLAYER, not a CPU: it boots artifacts/V1/index.html in the jsdom harness (test/helpers/load-monolith.js) and plays it the way
+// A headless PLAYER, not a CPU: it boots artifacts/V1/index.html in the jsdom harness (scripts/helpers/load-monolith.js) and plays it the way
 // a person would, through the REAL inputs -- KeyboardEvents on the page (so the game's own keydown handlers fill `down[]`) and clicks on the
 // real menu buttons -- with a reaction delay, imperfect aim, held keys, mashing, short hops and fast falls, grabs (X+C), specials with and
 // without a direction, smashes and finishers, drop-throughs and recoveries. It never sets game state directly except to START a scene
@@ -23,8 +23,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
-import { loadMonolith } from '../test/helpers/load-monolith.js';
-import { mulberry32 } from '../test/helpers/prng.js';
+import { loadMonolith } from './helpers/load-monolith.js';
+import { mulberry32 } from './helpers/prng.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(ROOT);
@@ -135,28 +135,52 @@ let CONSOLE_SINK = null;
 }
 
 const PAGE_HOOKS = `(function(){
-  var P = window.__pt = { banners: [], moves: Object.create(null), kos: [], result: null, cat: null, catUntil: 0, cats: Object.create(null), dmgYou: 0, dmgTaken: 0 };
+  var P = window.__pt = { banners: [], moves: Object.create(null), kos: [], result: null, cat: null, catUntil: 0, cats: Object.create(null), dmgYou: 0, dmgTaken: 0, finF: null, finLbl: null, inFinx: false };
   function wrap(name, mk){ try{ var o = window[name]; if(typeof o === 'function'){ var n = mk(o); window[name] = n; } }catch(e){} }
   wrap('banner', function(o){ return function(t, ms, kind, local){ try{ P.banners.push({ t: String(t), kind: kind || null, f: hazardT }); }catch(e){} return o.apply(this, arguments); }; });
+  // A finisher is one move, though it arms several swings (a cast, a punch) and hits from its own objects (finxStep) and shots for a while after: its first swing is its label,
+  // the inner ones are not moves of their own, and its hits are credited to it -- not to whatever the fighter armed since (P.finF: inside doAttackSpecial; P.inFinx: inside finxStep).
+  function tagShots(n0, lbl){ for(var i = n0; i < projectiles.length; i++){ var pr = projectiles[i], ow = pr.ownerObj || fighters[pr.owner]; if(!pr._ptFin) pr._ptFin = lbl || (ow && ow._ptFin) || null; } }
   wrap('armAtk', function(o){ return function(f, len, kind, move){
-    try{ var k = f.name + '|' + (move || kind || '?'); var m = P.moves[k] || (P.moves[k] = { fired: 0, landed: 0, dmg: 0 }); m.fired++; f._ptLbl = k; f._ptLblT = hazardT; }catch(e){}
+    try{
+      if(P.finF === f && !P.finLbl){ P.finLbl = f.name + '|' + (move || 'finisher'); var mf = P.moves[P.finLbl] || (P.moves[P.finLbl] = { fired: 0, landed: 0, dmg: 0 }); mf.fired++; f._ptLbl = P.finLbl; f._ptLblT = hazardT; }
+      else if(P.finF !== f && !P.inFinx){ var k = f.name + '|' + (move || kind || '?'); var m = P.moves[k] || (P.moves[k] = { fired: 0, landed: 0, dmg: 0 }); m.fired++; f._ptLbl = k; f._ptLblT = hazardT; }
+    }catch(e){}
     return o.apply(this, arguments); }; });
+  wrap('doAttackSpecial', function(o){ return function(f){
+    var r, n0 = projectiles.length; P.finF = f; P.finLbl = null;
+    try{ r = o.apply(this, arguments); } finally{ P.finF = null; }
+    try{ if(P.finLbl){ if(r === false){ P.moves[P.finLbl].fired--; } else { f._ptFin = P.finLbl; tagShots(n0, P.finLbl); } } }catch(e){}
+    return r; }; });
+  wrap('finxStep', function(o){ return function(){
+    var n0 = projectiles.length; P.inFinx = true;
+    try{ return o.apply(this, arguments); } finally{ P.inFinx = false; try{ tagShots(n0, null); }catch(e){} } }; });
+  // a hit landed by 'from' for d damage (on a fighter or a boss): the player's damage, its move type, and the move that did it
+  function credit(from, d){
+    var lbl = (P.finF === from && P.finLbl) || ((SMASH_PROJ && SMASH_PROJ._ptFin) || (P.inFinx && from._ptFin)) || (from._ptLbl && hazardT - from._ptLblT < 170 ? from._ptLbl : null);
+    var fin = !!lbl && /finisher$/.test(lbl);
+    if(from.you){ P.dmgYou += d; var cat = fin ? 'finisher' : (P.cat && P.catUntil >= hazardT ? P.cat : null); if(cat){ var c = from.name + '|' + cat; var cc = P.cats[c] || (P.cats[c] = { used: 0, landed: 0, dmg: 0 }); cc.landed++; cc.dmg += d; P.catLanded = true; } }
+    var m = lbl && P.moves[lbl]; if(m){ m.landed++; m.dmg += d; }
+  }
   wrap('applyHit', function(o){ return function(t, dmg, kbx, kby, from, opts){
     var before = t ? t.pct : 0, r;
     try{ r = o.apply(this, arguments); }catch(e){ throw e; }
     try{ if(from && t && from !== t && dmg > 0 && t.pct !== before){
       var d = t.pct - before;
-      if(from.you){ P.dmgYou += d; if(P.cat && P.catUntil >= hazardT){ var c = from.name + '|' + P.cat; var cc = P.cats[c] || (P.cats[c] = { used: 0, landed: 0, dmg: 0 }); cc.landed++; cc.dmg += d; P.catLanded = true; } }
+      credit(from, d);
       if(t.you) P.dmgTaken += d;
-      if(from._ptLbl && hazardT - from._ptLblT < 170){ var m = P.moves[from._ptLbl]; if(m){ m.landed++; m.dmg += d; } }
     } }catch(e){}
     return r; }; });
+  // bosses are summons, not fighters (applyHit never sees them): every hit a character lands on one is noted here, whatever its route (melee, shot, dash, bolt)
+  wrap('bossGraceNote', function(o){ return function(s, f, dmg){
+    try{ if(s && s.type === 'boss' && f && dmg > 0) credit(f, dmg); }catch(e){}
+    return o.apply(this, arguments); }; });
   // the HUD is rebuilt through querySelector every step; in jsdom that is 40% of a frame and says nothing about the game, so it runs every 8th step (the HUD checks still see it)
   wrap('updateHUD', function(o){ var n = 0; return function(){ if((n++ & 7) === 0) return o.apply(this, arguments); }; });
   // --arg prof=1: inclusive time of the systems a slow frame could come from, per frame (the playtester reads it on a spike)
   P.fnT = Object.create(null);
   if(window.__ptProf){ ['ctfNavTick','ctfAiSee','ctfStratTick','ctfPlanWatch','ctfReveal','ctfEditStep','ctfAiHideTick','ctfAiInputRaw','ctfStepKeys','ctfStepFlags','ctfStepElevs','ctfFixStep','ctfAiBegin','ctfEditNav','ctfStepJails','ctfStepZones','ctfAiTrack','aiThink','updateSummons','updateItems','fsStep','teamAiTick','comboInput','ctfRebuildDyn','ctfNavNew','ctfEditSettle','ctfEditResolve'].forEach(function(n){ wrap(n, function(o){ return function(){ var t = performance.now(); try{ return o.apply(this, arguments); } finally{ P.fnT[n] = (P.fnT[n] || 0) + performance.now() - t; } }; }); }); }
-  wrap('eliminate', function(o){ return function(f){ try{ P.kos.push({ n: f.name, you: !!f.you, t: hazardT, by: f.lastHitBy != null && fighters[f.lastHitBy] ? fighters[f.lastHitBy].name : null }); }catch(e){} return o.apply(this, arguments); }; });
+  wrap('eliminate', function(o){ return function(f){ try{ P.kos.push({ n: f.name, you: !!f.you, t: hazardT, pct: Math.round(f.pct), side: f.x < 0 ? 'LEFT' : f.x > WW ? 'RIGHT' : f.y < 0 ? 'TOP' : 'BOTTOM', by: f.lastHitBy != null && fighters[f.lastHitBy] ? fighters[f.lastHitBy].name : null }); }catch(e){} return o.apply(this, arguments); }; });
   wrap('showResult', function(o){ return function(winners, winTeam){ try{ P.result = { winners: (winners || []).map(function(x){ return x && x.name; }), winTeam: winTeam, t: hazardT }; }catch(e){} return o.apply(this, arguments); }; });
 })()`;
 
@@ -253,8 +277,9 @@ function readMatch(wo) {
     var foes = [], i, f;
     for(i=0;i<fighters.length;i++){ f = fighters[i]; if(f !== me && !f.dead && (me ? (f.team !== me.team) : true)) foes.push(f); }
     var bosses = []; for(i=0;i<summons.length;i++){ var s = summons[i]; if(s.type==='boss' && s.hp>0) bosses.push(s); }
-    var pc = window.__ptPlat; if(!pc || hazardT - pc.t >= 20 || hazardT < pc.t){ pc = window.__ptPlat = { t: hazardT, plats: platRects(), floors: floors.slice() }; }
-    return { me: me, foes: foes, bosses: bosses, gy: groundY(), WW: WW, WH: WH, plats: pc.plats, floors: pc.floors, mode: SETTINGS.mode, t: hazardT };
+    // segs: the main floor's spans on a stage with edges and pits (FLOOR_SEGS: [x0, x1] pairs, one per piece), else null -- the floor then runs the world's width
+    var pc = window.__ptPlat; if(!pc || hazardT - pc.t >= 20 || hazardT < pc.t || pc.fs !== FLOOR_SEGS){ pc = window.__ptPlat = { t: hazardT, fs: FLOOR_SEGS, plats: platRects(), floors: floors.slice(), segs: FLOOR_SEGS ? FLOOR_SEGS.map(function(q){ return [q.x0, q.x1]; }) : null }; }
+    return { me: me, foes: foes, bosses: bosses, gy: groundY(), WW: WW, WH: WH, plats: pc.plats, floors: pc.floors, segs: pc.segs, mode: SETTINGS.mode, t: hazardT };
   })()`);
 }
 
@@ -332,7 +357,10 @@ class Player {
     const ready = real.hitstun <= 0 && !(real.frozen > 0) && !(real._lag > 0) && real._heldBy == null;
     const surfaces = this.surfaces(S);
     const off = this.offStage(real, S, surfaces);
-    // 1. recovery
+    // a jump across a pit ends when the player is over the far side again, runs out of time, or sinks below the floor
+    if (this.cross && (S.t >= this.cross.until || real.y >= S.gy + 20 || (!off && S.t - this.cross.t0 > 15))) this.cross = null;
+    // 1. recovery (but not from a jump the player means to land on the far side of a pit)
+    if (off && this.cross) { this.holdMove(this.cross.dir); if (real.jumps > 0 && real.vy > 1 && r() < 0.5) this.queue([MOVE_KEYS.up], 0, 3, 'djump'); return; }
     if (off) { this.recover(S, real, surfaces); return; }
     // the target: the nearest foe (or boss) by what the player saw a moment ago
     const foes = (P.foes && P.foes.length ? P.foes : []).concat(P.bosses || []);
@@ -349,8 +377,14 @@ class Player {
     if (ax > rng) want = dirT; else if (tooClose) want = -dirT;
     // a new player is sloppy: sometimes walks the wrong way, or keeps walking past the foe
     if (!p.space && r() < p.aim * 0.5) want = r() < 0.5 ? -want : want;
-    // do not walk off the edge on purpose unless a new player (walkoff)
-    if (want !== 0 && real.onground && this.edgeAhead(real, want, S, surfaces) && !(r() < p.walkoff)) want = 0;
+    // do not walk off the edge on purpose unless a new player (walkoff); a pit with floor on its far side is jumped, by a player who knows how to recover
+    if (this.cross) want = this.cross.dir;
+    else if (want !== 0 && real.onground && this.edgeAhead(real, want, S, surfaces) && !(r() < p.walkoff)) {
+      if (r() < p.recover && this.gapAhead(real, want, surfaces) < 260) { this.cross = { dir: want, t0: S.t, until: S.t + 70 }; this.queue([MOVE_KEYS.up], 0, R.int(r, 8, 12), 'hop'); }
+      else want = 0;
+    }
+    // ...and not in the air either (over the stage's own floor, whose end is a cliff, a pit or a screen side): the air has no drag, so it brakes with the opposite key
+    else if (want !== 0 && !real.onground && !(S.floors && S.floors.length) && this.dropAhead(real, want, surfaces) && !(r() < p.walkoff)) want = real.vx * want > 1 ? -want : 0;
     this.holdMove(want);
     this.hop(S, real, tgt, dx, dy);
     if (!ready) return;
@@ -415,19 +449,37 @@ class Player {
     const out = [];
     for (const p of S.plats || []) out.push({ x: p.x, y: p.y, w: p.w, solid: !!p.solid, thin: !p.solid });
     for (const f of S.floors || []) out.push({ x: f.x, y: f.y, w: f.w, solid: true, thin: false });
-    if (!(S.floors && S.floors.length)) out.push({ x: -40, y: S.gy, w: S.WW + 80, solid: true, thin: false });
+    if (!(S.floors && S.floors.length)) {
+      // a stage with edges has a floor that ENDS: the game's own spans, cliffs and pits (FLOOR_SEGS). Any other stage's floor runs the world's width and no further:
+      // past a screen side is a KO at 0% (the blast zone is 120 px out), so there the sides are cliffs too (a tryhard keeps off them; a new player may blunder over)
+      if (S.segs) for (const q of S.segs) out.push({ x: q[0], y: S.gy, w: q[1] - q[0], solid: true, thin: false });
+      else out.push({ x: 0, y: S.gy, w: S.WW, solid: true, thin: false });
+    }
     return out;
   }
   offStage(me, S, surfaces) {
     if (me.onground) return false;
     if (me.x < -20 || me.x > S.WW + 20) return true;
     if (me.y > S.gy + 30) return true;
+    // over a pit or past a cliff (a stage with edges): in the air with no floor or platform under the feet
+    if (S.segs) { const feet = me.y + me.r; return !surfaces.some((s) => me.x >= s.x - 4 && me.x <= s.x + s.w + 4 && s.y >= feet - 6); }
     return false;
   }
   edgeAhead(me, dir, S, surfaces) {
     const feet = me.y + me.r, ax = me.x + dir * 40;
     for (const s of surfaces) if (ax >= s.x - 6 && ax <= s.x + s.w + 6 && Math.abs(feet - s.y) <= 12) return false;
     return true;
+  }
+  // in the air: nothing to land on a little way ahead, by how fast it is flying
+  dropAhead(me, dir, surfaces) {
+    const ax = me.x + dir * (20 + 10 * Math.abs(me.vx)), feet = me.y + me.r;
+    return !surfaces.some((s) => ax >= s.x - 6 && ax <= s.x + s.w + 6 && s.y >= feet - 10);
+  }
+  // how far to the next surface at about this level in that direction (a pit's width, from where the fighter stands); Infinity when there is none
+  gapAhead(me, dir, surfaces) {
+    const feet = me.y + me.r; let best = Infinity;
+    for (const s of surfaces) { if (Math.abs(s.y - feet) > 80) continue; const d = dir > 0 ? s.x - me.x : me.x - (s.x + s.w); if (d > 0 && d < best) best = d; }
+    return best;
   }
   onThinPlat(me, S) { const feet = me.y + me.r; for (const p of S.plats || []) if (!p.solid && !p.rot && me.x >= p.x - 2 && me.x <= p.x + p.w + 2 && Math.abs(feet - p.y) <= 5) return true; return false; }
   recover(S, me, surfaces) {
@@ -627,7 +679,7 @@ function closeMatch(wo, sim, tag, extra) {
   const res = P.result, kos = P.kos.slice();
   const youKos = kos.filter((k) => k.you);
   const row = { scene: CUR.scene, seed: CUR.seed, tag, frames: sim.f, secs: Math.round(sim.f / 60), mode: wo.E('SETTINGS.mode'), stage: wo.E('stage.id'),
-    result: res, kos: kos.length, youKoAt: youKos.length ? Math.round(youKos[0].t / 60) : null, dmgYou: Math.round(P.dmgYou), dmgTaken: Math.round(P.dmgTaken), persona: extra && extra.persona, you: extra && extra.you, ended: !wo.running() || wo.screen() === 'result' };
+    result: res, kos: kos.length, youKoAt: youKos.length ? Math.round(youKos[0].t / 60) : null, youKoWhere: youKos.length ? youKos[0].side + ' at ' + youKos[0].pct + '%' : null, dmgYou: Math.round(P.dmgYou), dmgTaken: Math.round(P.dmgTaken), persona: extra && extra.persona, you: extra && extra.you, ended: !wo.running() || wo.screen() === 'result' };
   STATS.matches.push(row);
   for (const [k, v] of Object.entries(P.moves)) { const a = STATS.moves[k] || (STATS.moves[k] = { fired: 0, landed: 0, dmg: 0 }); a.fired += v.fired; a.landed += v.landed; a.dmg += v.dmg; }
   for (const [k, v] of Object.entries(P.cats)) { const a = STATS.cats[k] || (STATS.cats[k] = { used: 0, landed: 0, dmg: 0 }); a.landed += v.landed; a.dmg += v.dmg; }
@@ -933,14 +985,22 @@ async function bossScene(wo, rng, args) {
   wo.w.__ptCap = true;
   const sim = new Sim(wo, { cpuWatchCtf: false });
   sim.player = new Player(wo, mulberry32(hashSeed(CUR.seed, 'player')), persona);
-  let sawBoss = false, bossHp0 = null, lastHp = null, noDamageSince = 0;
+  let sawBoss = false, bossHp0 = null, lastHp = null, noDamageSince = 0, curBoss = null, told = false;
   const cap = Math.round(Math.min(OPT.matchMin, 4) * 3600);
   const why = await playOut(wo, sim, cap, (s) => {
     const bs = wo.E('summons.filter(function(m){return m.type==="boss"})');
-    if (bs.length) { sawBoss = true; const hp = bs[0].hp; if (bossHp0 == null) bossHp0 = hp; if (lastHp == null || hp < lastHp - 0.01) { noDamageSince = s.f; } lastHp = hp; }
+    // each boss has its own untouched clock: it starts when the boss appears (a new object, or its health jumps up) and does not run in the gap between two bosses
+    // (headless, the next boss's 1.5 s real-time spawn timer is 40-80 s of game time)
+    if (!bs.length) noDamageSince = s.f;
+    else {
+      sawBoss = true; const hp = bs[0].hp;
+      if (bs[0] !== curBoss || (lastHp != null && hp > lastHp + 1)) { curBoss = bs[0]; bossHp0 = hp; noDamageSince = s.f; told = false; }
+      else if (hp < lastHp - 0.01) noDamageSince = s.f;
+      lastHp = hp;
+    }
     // the boss was beaten and the next one is up: one boss is enough for a scene (two when the first fell quickly)
     if (wo.E('BOSSRUSH.cleared') >= 2) return true;
-    if (sawBoss && s.f - noDamageSince > 2400 && s.f > 3000 && wo.E('summons.filter(function(m){return m.type==="boss"}).length')) { note('FEEL', 'boss-untouched', `${wo.E('(summons.find(function(m){return m.type==="boss"})||{}).name') || bossName}: nobody damaged the boss for 40 s (player ${you}, persona ${persona}, scene started at ${bossName})`, { detail: `boss hp ${Math.round(lastHp)}/${Math.round(bossHp0)}; ${wo.E('(function(){ var b = summons.find(function(s){return s.type==="boss"}); return b ? "tel " + b._telKind + " phase " + b._phase + " atk " + b.attack + " x" + Math.round(b.x) + " y" + Math.round(b.y) + " r" + Math.round(b.r) + " stationary " + b.stationary + " | " + fighters.map(function(f){ return f.name + (f.dead ? " dead" : " x" + Math.round(f.x) + " y" + Math.round(f.y) + " cd" + f.atkCd); }).join(" ; ") : "none"; })()')}` }); noDamageSince = s.f + 99999; }
+    if (sawBoss && !told && bs.length && s.f - noDamageSince > 2400 && s.f > 3000) { note('FEEL', 'boss-untouched', `${wo.E('(summons.find(function(m){return m.type==="boss"})||{}).name') || bossName}: nobody damaged the boss for 40 s (player ${you}, persona ${persona}, scene started at ${bossName})`, { detail: `boss hp ${Math.round(lastHp)}/${Math.round(bossHp0)}; ${wo.E('(function(){ var b = summons.find(function(s){return s.type==="boss"}); return b ? "tel " + b._telKind + " phase " + b._phase + " atk " + b.attack + " x" + Math.round(b.x) + " y" + Math.round(b.y) + " r" + Math.round(b.r) + " stationary " + b.stationary + " | " + fighters.map(function(f){ return f.name + (f.dead ? " dead" : " x" + Math.round(f.x) + " y" + Math.round(f.y) + " cd" + f.atkCd); }).join(" ; ") : "none"; })()')}` }); told = true; }
     return false;
   });
   sim.player.releaseAll(); wo.w.__ptCap = false; sampleCanvasText(wo);
@@ -1130,6 +1190,9 @@ SCENES.worldcup = { weight: 2, run: worldCupScene };
 // Capture the Flag
 // ------------------------------------------------------------------------------------------------------------------------------
 const CTF_MAP_IDS = ['castle', 'mines', 'factory', 'forest', 'sky', 'oak'];
+// The game runs a Capture the Flag practice before a player's first match of the mode (CTUT: it waits for Enter on its first card, and "done hiding" works only at
+// its own step, on purpose). The match scenes are about the match, so they come as a player who has finished it: the game's own done key, as it writes it at the end.
+function ctfPracticeDone(wo) { try { wo.w.localStorage.setItem('bfsi:ctfTutorialDone', '1'); } catch (e) { /* no storage: the game lets everyone through */ } }
 function ctfPickMapId(rng, args) { if (args.map) return args.map; const s = CTF_MAP_IDS.slice().sort((a, b) => (COVERAGE.maps[a] || 0) - (COVERAGE.maps[b] || 0) || rng() - 0.5); return s[0]; }
 function clickCtfMap(wo, id) { const b = [...wo.doc.querySelectorAll('#segCtfMap button')].find((x) => x.dataset.v === id); if (!b) return false; wo.clickEl(b); return true; }
 function clickCtfCount(wo, n) { const b = [...wo.doc.querySelectorAll('#segCount button')].find((x) => wo.btnText(x) === `${n}v${n}`); if (!b) return false; wo.clickEl(b); return true; }
@@ -1251,6 +1314,7 @@ class CtfPlayer {
 }
 async function ctfScene(wo, rng, args, mode) {
   const persona = args.persona || R.pick(rng, ['tryhard', 'new', 'explorer']);
+  ctfPracticeDone(wo);
   if (!await toSelect(wo)) return { fail: 'menu' };
   const you = chooseFighter(wo, rng, args); pickFighter(wo, you);
   seg(wo, 'segMode', 'ctf');
@@ -1298,6 +1362,7 @@ SCENES['ctf-spectate'] = { weight: 1, run: (wo, rng, args) => ctfScene(wo, rng, 
 
 // A short Flag Cup: watch a fixture or two, skip one with S, sim the round
 async function flagCupScene(wo, rng, args) {
+  ctfPracticeDone(wo);   // (a Normal Flag Cup's Kick Off goes through the practice too)
   if (!(await titleDoor(wo, 'World Cup'))) return { fail: 'door' };
   if (!wo.click(/Flag Cup/, '#tourneySetup')) { note('BUG', 'menu', 'World Cup setup has no Flag Cup button'); return { fail: 'flagcup' }; }
   scanText(wo, 'ctfCupSetup');
@@ -1329,6 +1394,154 @@ async function flagCupScene(wo, rng, args) {
   return { why: `watched ${watched}, skipped ${skipped}` };
 }
 SCENES.flagcup = { weight: 1, run: flagCupScene };
+
+// The Capture the Flag practice, played the way its cards ask (the other CTF scenes come as someone who has finished it: ctfPracticeDone). Enter moves the read-and-go-on cards, and
+// "done hiding" is pressed at its own step, not before (the game holds it back on purpose). A step a player following the card cannot finish is a "can't" moment; the practice
+// waiting for its player is not a stuck match, so none of the match watchers (hiding that never ends, a match that goes on) run here.
+function practiceView(wo) {
+  return wo.E(`(function(){
+    var L = CTF.live, me = fighters.find(function(f){ return f.you; });
+    if(!L || !me || !CTUT.active) return null;
+    var t = me.team;
+    return { id: CTUT_STEPS[CTUT.step].id, phase: L.phase, me: me, mid: L.map.WW/2, team: t, S: CTUT.S, menu: ctfMenuOpen(), voted: ctutVoted(), tool: CTF_TOOLS[me._tool || 0], cam: me._cam ? { x: me._cam.x, y: me._cam.y } : null,
+      spots: L.map.spots.filter(function(s){ return s.team === t && ctfHideValid(t, s.x, s.y); }).map(function(s){ return { x: s.x, y: s.y }; }),
+      foeFlags: L.flags.filter(function(q){ return q.team !== t && q.st === 1; }).map(function(q){ return { x: q.x, y: q.y }; }),
+      doors: L.doors.filter(function(d){ return !d.op[t] && (t === 0 ? d.x < L.map.WW/2 : d.x > L.map.WW/2); }).map(function(d){ return { x: t === 0 ? d.x - 40 : d.x + d.w + 40, y: d.y + d.h }; }),
+      boosts: L.boosts.filter(function(b){ return !(b.cd > 0) && (t === 0 ? b.x < L.map.WW/2 : b.x > L.map.WW/2); }).map(function(b){ return { x: b.x, y: b.y }; }),
+      cave: ctutCave(L.map, t), pieces: L.edits.filter(function(e){ return e.owner === me.idx; }).map(function(e){ return { id: e.id, x: e.x + e.w/2, y: e.y + e.h/2 }; }) };
+  })()`);
+}
+class PracticePlayer extends CtfPlayer {
+  constructor(wo, rng, persona) { super(wo, rng, persona); this.step = null; this.stepT = 0; this.tries = 0; this.hopPlan = null; }
+  // the first jump of the way to a place, by the platforms a person sees: from the top the player stands on to the top that holds the place, by jumps up (to 190 px), across (to 230) or
+  // drops down; null when both are the same top (just walk) or there is no way
+  hop1(me, gx, gy, plats) {
+    const T = plats.filter((p) => p.w >= 24 && !p.rot).map((p) => ({ x0: p.x, x1: p.x + p.w, y: p.y, solid: !!p.solid }));
+    const at = (t, x, y, tol) => x >= t.x0 - 14 && x <= t.x1 + 14 && Math.abs(y - t.y) <= tol;
+    const a = T.findIndex((t) => at(t, me.x, me.y + me.r, 30));
+    let b = -1; T.forEach((t, i) => { if (at(t, gx, gy, 70) && (b < 0 || Math.abs(t.y - gy) < Math.abs(T[b].y - gy))) b = i; });
+    if (a < 0 || b < 0 || a === b) return null;
+    const ov = (s, t) => Math.min(s.x1, t.x1) - Math.max(s.x0, t.x0);
+    const ok = (s, t) => { const gap = Math.max(0, -ov(s, t)), rise = s.y - t.y; if (rise > 190) return false; if (rise > 20) return gap <= 200 && !(t.solid && ov(s, t) > 8); return gap <= 260; };
+    const prev = new Map([[a, -1]]), q = [a];
+    while (q.length && !prev.has(b)) { const i = q.shift(); for (let j = 0; j < T.length; j++) if (!prev.has(j) && ok(T[i], T[j])) { prev.set(j, i); q.push(j); } }
+    if (!prev.has(b)) return null;
+    let j = b; while (prev.get(j) !== a) j = prev.get(j);
+    return { from: T[a], to: T[j] };
+  }
+  // walk (and jump) to a place: the feet on the floor at (x, y), within tol
+  go(v, S, x, y, tol) {
+    const me = v.me, t = tol || 30;
+    if (me.onground) this.hopPlan = this.hop1(me, x, y, S.plats || []);
+    const h = this.hopPlan;
+    if (!h) { const near = Math.abs(x - me.x) < t && Math.abs(y - (me.y + me.r)) < 120; this.setKeys(near ? new Set() : this.walker.keys(me, x, y - me.r)); return near; }
+    const a = h.from, b = h.to, o0 = Math.max(a.x0, b.x0) + 16, o1 = Math.min(a.x1, b.x1) - 16, over = o1 > o0;
+    const side = (b.x0 + b.x1) / 2 > (a.x0 + a.x1) / 2 ? 1 : -1, toward = over ? 0 : side;
+    const lx = over ? clamp(me.x, o0, o1) : (side > 0 ? a.x1 - 16 : a.x0 + 16);
+    const k = new Set();
+    if (me.onground) {
+      if (b.y >= a.y - 20) k.add(side > 0 ? 'ArrowRight' : 'ArrowLeft');   // level with it or below: walk on (off the edge)
+      else if (Math.abs(me.x - lx) > 18) k.add(lx > me.x ? 'ArrowRight' : 'ArrowLeft');
+      else this.hit(toward ? ['ArrowUp', toward > 0 ? 'ArrowRight' : 'ArrowLeft'] : ['ArrowUp'], 12, 1);
+    } else {   // in the air: on to the next top, a second jump when falling past its level
+      const mx = clamp(me.x, b.x0 + 20, b.x1 - 20); if (Math.abs(mx - me.x) > 14) k.add(mx > me.x ? 'ArrowRight' : 'ArrowLeft');
+      if (me.jumps > 0 && me.vy > 1 && me.y + me.r > b.y - 12) this.hit(['ArrowUp'], 3, 1);
+    }
+    this.setKeys(k); return false;
+  }
+  // steer the build view's cursor (it moves 26 px a frame): true once it is over the place
+  aim(v, x, y) {
+    const c = v.cam; if (!c) return false;
+    const k = new Set(); if (Math.abs(x - c.x) > 30) k.add(x > c.x ? 'ArrowRight' : 'ArrowLeft'); if (Math.abs(y - c.y) > 30) k.add(y > c.y ? 'ArrowDown' : 'ArrowUp');
+    this.setKeys(k); return k.size === 0;
+  }
+  // the build view open with this tool picked (V opens it, X goes to the next tool)
+  tool(v, want) {
+    if (!v.cam) { this.setKeys(new Set()); if (this.stepT % 45 === 5) this.tap('KeyV', 3, 6); return false; }
+    if (v.tool !== want) { this.setKeys(new Set()); if (this.stepT % 12 === 0) this.tap('KeyX', 2, 4); return false; }
+    return true;
+  }
+  tick(S) {
+    const wo = this.wo;
+    if (this.exec()) return;
+    const v = practiceView(wo);
+    if (!v) { this.setKeys(new Set()); return; }
+    if (v.id !== this.step) { this.step = v.id; this.stepT = 0; this.tries = 0; this.hopPlan = null; }
+    this.stepT++;
+    const me = v.me, feet = me.y + me.r, home = v.team === 0 ? v.mid - 300 : v.mid + 300, away = v.team === 0 ? v.mid + 400 : v.mid - 400;
+    switch (v.id) {
+      case 'goal': case 'map': case 'ready': this.setKeys(new Set()); if (this.stepT % 90 === 30) this.tap('Enter', 3, 4); break;   // read, then Enter
+      case 'hide': {   // walk to a spot the red zones leave open and put the flag down
+        const sp = v.spots.slice().sort((a, b) => Math.abs(a.x - me.x) + Math.abs(a.y - feet) - Math.abs(b.x - me.x) - Math.abs(b.y - feet))[this.tries % Math.max(1, v.spots.length)];
+        if (!sp) { this.setKeys(new Set()); break; }
+        if (this.go(v, S, sp.x, sp.y, 40) && this.stepT % 30 === 0) { this.tries++; this.tap('Space', 3, 4); }
+        break;
+      }
+      case 'build':   // V, X to the crate's tool, Space; a place that is refused: the cursor a step along
+        if (!this.tool(v, 'deco')) break;
+        this.setKeys(new Set()); if (this.stepT % 40 === 0) { this.tries++; this.tap('Space', 3, 4); if (this.tries % 2 === 0) this.hit(['ArrowLeft'], 3, 2); }
+        break;
+      case 'remove': {   // X to the red cross, the cursor on the piece, Space
+        if (!this.tool(v, 'remove')) break;
+        const pc = v.pieces.find((p) => v.S && p.id === v.S.id) || v.pieces[0];
+        if (!pc) { this.setKeys(new Set()); break; }
+        if (this.aim(v, pc.x, pc.y) && this.stepT % 30 === 0) this.tap('Space', 3, 4);
+        break;
+      }
+      case 'reach': {   // X to the flag tool, the cursor into the closed cave, Space (the game refuses the place)
+        if (!this.tool(v, 'flag')) break;
+        if (this.aim(v, v.cave.x + v.cave.w / 2, v.cave.y + v.cave.h / 2) && this.stepT % 30 === 0) this.tap('Space', 3, 4);
+        break;
+      }
+      case 'plan': this.setKeys(new Set()); if (!v.menu && this.stepT % 45 === 5) this.tap('KeyP', 3, 6); break;
+      case 'pick':   // in the plan menu: down, Space (another tab now and then)
+        this.setKeys(new Set());
+        if (!v.menu) { if (this.stepT % 45 === 5) this.tap('KeyP', 3, 6); break; }
+        if (this.stepT % 60 === 10) { this.tries++; if (this.tries % 3 === 0) this.tap('ArrowRight', 2, 3); this.tap('ArrowDown', 2, 3); this.tap('Space', 2, 3); }
+        break;
+      case 'close': this.setKeys(new Set()); if (this.stepT % 45 === 5) this.tap('Escape', 3, 4); break;
+      case 'done': this.setKeys(new Set()); if (v.phase === 'hide' && this.stepT % 60 === 10) this.tap('KeyC', 3, 4); break;   // (the check of the way takes a moment)
+      case 'find': { const f = v.foeFlags[0]; if (f) this.go(v, S, f.x, f.y, 24); else this.setKeys(new Set()); break; }
+      case 'carry': this.go(v, S, home, feet, 30); break;
+      case 'jail': this.go(v, S, away, feet, 40); break;   // and stand there: their hunter does the rest
+      case 'freed': case 'radar': this.setKeys(new Set()); break;   // wait for the teammate / the radar
+      case 'key': { const d = v.doors[0]; if (d) this.go(v, S, d.x, d.y, 30); else this.setKeys(new Set()); break; }
+      case 'boost': { const b = v.boosts[0]; if (b) this.go(v, S, b.x, b.y, 24); else this.setKeys(new Set()); break; }
+      default: this.setKeys(new Set());
+    }
+  }
+}
+async function ctfPracticeScene(wo, rng, args) {
+  const persona = args.persona || R.pick(rng, ['tryhard', 'new']);
+  CUR.args = { persona }; Object.assign(args, CUR.args);
+  await toTitle(wo);
+  if (!(await titleDoor(wo, 'Learn'))) return { fail: 'learn' };
+  if (!wo.click(/Capture the Flag practice/, '#learn')) { note('BUG', 'menu', 'Learn has no Capture the Flag practice button'); return { fail: 'button' }; }
+  if (!wo.running() || !wo.E('CTUT.active')) { note('BUG', 'ctf-practice', 'the Capture the Flag practice button did not start the practice'); return { fail: 'start' }; }
+  wo.w.__ptCap = true;
+  const sim = new Sim(wo, { drawEvery: 6, bannerOK: () => true });
+  sim.player = new PracticePlayer(wo, mulberry32(hashSeed(CUR.seed, 'player')), persona);
+  const ids = wo.E('CTUT_STEPS.map(function(s){return s.id})'), bits = [];
+  let last = -1, t0 = 0, stuck = false;
+  for (let guard = 0; guard < 60 * 60 * 10 && wo.running() && wo.E('CTUT.active') && !sessionOver(); guard++) {
+    const st = wo.E('CTUT.step');
+    if (st !== last) { last = st; t0 = sim.f; bits.push(`${ids[st]}@${sim.f}`); }
+    else if (sim.f - t0 > 60 * 45) {   // 45 s of game time on one card
+      stuck = true;
+      note('BUG', 'cant', `Capture the Flag practice, step ${st + 1} of ${ids.length} ("${ids[st]}"): a player following the card could not finish it in 45 s`, { detail: `${JSON.stringify(practiceView(wo) && { ...practiceView(wo), me: undefined })}; ${fdiag(wo, wo.E('fighters.find(function(f){return f.you})'))}` });
+      break;
+    }
+    if (!sim.frame()) break;
+    if (guard % 120 === 0) await maybeYield();
+  }
+  wo.releaseAll(); sim.player.releaseAll(); wo.w.__ptCap = false;
+  const done = !wo.E('CTUT.active') && wo.E('ctfTutDone()');
+  vlog('practice steps', bits.join(' '));
+  if (wo.E('CTUT.active')) await toTitle(wo, 'after the Capture the Flag practice');
+  else if (!done && !stuck && !sessionOver()) note('BUG', 'ctf-practice', 'the Capture the Flag practice ended but is not marked done');
+  return { why: done ? 'complete' : stuck ? 'stuck@' + ids[last] : 'left', steps: bits.join(' ') };
+}
+SCENES['ctf-practice'] = { weight: 1, run: ctfPracticeScene };
 
 // ------------------------------------------------------------------------------------------------------------------------------
 // session driver
@@ -1404,6 +1617,7 @@ function saveCoverage() { try { writeFileSync(COVERAGE_FILE(), JSON.stringify(CO
 // ------------------------------------------------------------------------------------------------------------------------------
 function observations() {
   const obs = [];
+  const tally = (xs) => { const n = {}; for (const x of xs) n[x || '?'] = (n[x || '?'] || 0) + 1; return Object.entries(n).map(([k, v]) => `${k} x${v}`).join(', ') || 'none'; };
   // fighters whose moves never landed
   const byF = {};
   for (const [k, v] of Object.entries(STATS.moves)) { const [n, m] = k.split('|'); (byF[n] = byF[n] || []).push({ m, ...v }); }
@@ -1421,7 +1635,7 @@ function observations() {
     obs.push({ kind: 'match-length', text: `Matches played: ${STATS.matches.length}, ended ${done.length}; length median ${med}s, shortest ${secs[0]}s, longest ${secs[secs.length - 1]}s.` });
     const early = STATS.matches.filter((m) => m.youKoAt != null && m.youKoAt <= 30 && m.persona !== 'explorer');
     const tr = STATS.matches.filter((m) => m.persona === 'tryhard'), tre = tr.filter((m) => m.youKoAt != null && m.youKoAt <= 30);
-    obs.push({ kind: 'early-ko', text: `The human-like player was KO'd within the first 30 s in ${early.length}/${STATS.matches.filter((m) => m.persona !== 'explorer').length} non-explorer matches (tryhard: ${tre.length}/${tr.length}).` });
+    obs.push({ kind: 'early-ko', text: `The human-like player was KO'd within the first 30 s in ${early.length}/${STATS.matches.filter((m) => m.persona !== 'explorer').length} non-explorer matches (tryhard: ${tre.length}/${tr.length}); where: ${tally(early.map((m) => m.youKoWhere))}.` });
   }
   if (STATS.cpuIdle.length) obs.push({ kind: 'cpu-idle', text: 'CPU idle for 10 s: ' + STATS.cpuIdle.map((c) => `${c.fighter} (${c.mode}/${c.stage})`).join(', ') });
   return obs;

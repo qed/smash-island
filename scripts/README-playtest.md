@@ -1,6 +1,6 @@
 # The simulated playtester (`scripts/playtest.mjs`)
 
-A headless PLAYER, not a CPU. It boots `artifacts/V1/index.html` in the jsdom harness (`test/helpers/load-monolith.js`) and plays
+A headless PLAYER, not a CPU. It boots `artifacts/V1/index.html` in the jsdom harness (`scripts/helpers/load-monolith.js`) and plays
 it through the real inputs: `KeyboardEvent`s on the page body (so the game's own keydown handlers fill `down[]`, with the keyboard's
 auto-repeat for held keys) and clicks on the real menu buttons. It sets game state directly only to START a scene (a Boss Rush boss
 number, the RUNNING! race, which has no door of its own). Computer only: nothing touch, nothing same-computer two-player.
