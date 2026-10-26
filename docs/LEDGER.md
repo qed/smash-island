@@ -1008,6 +1008,36 @@ Checked with a scratch script (test launch 2026-10-19 injected, not committed): 
 - **For the owner:** a win you are no longer in for (your ally finished it) is paid as a loss is, 5 if you dealt 20% or lasted
   60 s, so being knocked out never pays less because your side went on to win. Paying nothing instead is one line in `eventPay`.
 
+### O27 · Event fighters: what kit 1 (Eraser) left to later steps
+
+Kit 1 (branch `g-events`, build step 6 of event-fighters-phase1.md) is Eraser, the first event row in ROSTER (`event:true`, kit `rubout`),
+from section 3.1 and the approved questions 21 to 28: weight 88; run 1.07, jump 1.06, fall 1.03 (FIGHTER_STATS); his wall jump a backflip
+15% higher (`WALL_JUMP_HIGH`, the one wall trick of the event cast); BFB+TPOT art only (his TPOT render, already in the game as his assist
+picture; HURT_POLY and LIMB_RIG traced from it the trace scripts' way, FR_FACE measured with measure-faces.mjs). His code is the section
+EVENT FIGHTERS: ERASER: Rub Out (`eraserRubOut`, `rubOutWipe`; it takes only foes' things a hit could already break, through the object rules,
+`eraserTakes`, with `takeKindOf` and `takeSlotOf` beside `canTake`), Steakhouse Flip (`UPSPECIALS.rubout`, `eraserFlip`, the wall kick in
+`eraserStep`), Rub It Off (`DOWNSPECIALS.rubout`, `eraserRubOff`), Hard Rub (SMASH_SPEC), Out of the Picture (FINX `ootp`: `finOotp`,
+`fxOotpStep`, `ootpFade`, `fxDrawOotp`), Wipe the Slate Clean (`FINAL_SMASHES['Eraser']`), his moveset (`MOVESETS.rubout`, the side tilt and
+side special kept as data rows) and his CPU (`aiEraserOut`, `finEventWant`, on `FINX_AI_KITS`). A smash's and a finisher's shots now carry
+the move they came from (`_slot`), so no taker ever takes one. Online: everything he draws rides the snapshot (one new flag, `_flipT`; the
+finisher's row gains `rn`); the guest's prediction treats Rub Out's air hang and the flip's wall-kick window as frames the host moves him in.
+His three event matches are data (`EVENT_MATCHES.Eraser`). Checked: it boots; a scratch-unlocked check of every move and a CPU match; the
+in-process pair with him on the guest; one 15-match 1v1 tournament against opponents drawn across the roster (Hard CPUs, 2 stocks, Goiky
+Field): 6 of 15, 40%, KOs 12 to falls 20 -- inside what 15 games can tell from 50% (one standard deviation is about 13 points), so nothing
+was buffed; if a fuller run puts him clearly low, the design's first knob is run and jump toward 1.1, then Rub Out's cooldown. Left on purpose:
+
+- **The event match runner (step 7):** plays `EVENT_MATCHES` as they are written: the event fighter's seat placed by the runner (B4), 2 stocks,
+  the items and Smash Balls fixed. The design names no stage for "Pen and Eraser" (and for the other team matches): `stage:null` until the
+  runner's job settles it with the owner. "The Trebuchet" is read as a free-for-all of four (the format column) with the usual items and
+  Smash Balls (the design names none); both are data, one word each.
+- **Twists (step 8):** "The Trebuchet" needs the sponge floor (`twist:'sponge'`); a match whose twist is not built is not played without it.
+- **The assist bag:** his trophy stays in the bag until events launch (`ASSIST_LEAVES_AT_LAUNCH`, `assistBagRows`, `eventsLaunched`: false while
+  `EVENT_LAUNCH` is null), so nobody loses it before he can be won; the title's assist count follows the bag. Each kit job adds its name.
+  Its name tag goes with every assist's in batch A1 (question 22), not here.
+- **Recovery:** measured (the rise of the air jump and the up special from a standstill, every fighter): his 283 px is above the roster's median
+  (249), so `rec` stays 1. The flip goes backwards, so a recovery is steered with the arrows once it is out.
+- **For the owner:** the fighters' standing name pills (every fighter's, not his kit's) still show over him in a match, as over everyone.
+
 ---
 
 ## Scoreboard
@@ -1015,7 +1045,7 @@ Checked with a scratch script (test launch 2026-10-19 injected, not committed): 
 | | Count |
 |---|---|
 | Done | 161 |
-| Open | 6 (O20, O22, O23, O24, O25, O26) |
+| Open | 7 (O20, O22, O23, O24, O25, O26, O27) |
 | Superseded | 2 (O1, B12) |
 | Blocked on you | 1 (G11: the Cloudflare MCP authorization) |
 
