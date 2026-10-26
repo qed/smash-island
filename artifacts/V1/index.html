@@ -683,6 +683,8 @@
   .edlevel{display:flex; align-items:center; gap:6px; border:2px solid #1c1c1c; border-radius:10px; padding:5px 6px 5px 12px; background:var(--panel); font-weight:700; font-size:13px}
   .edlevel button{font-family:inherit; font-weight:700; border:none; border-radius:7px; padding:5px 9px; cursor:pointer}
   .edlevel .load{background:var(--host); color:#fff} .edlevel .del{background:#e0503a; color:#fff}
+  .edcheck{max-width:640px; margin:4px auto 8px; padding:8px 12px; border:2px solid #1c1c1c; border-radius:10px; background:#fff3c4; color:#1c1c1c; font-size:13px; text-align:left}
+  .edcheck ul{margin:4px 0 0 18px; padding:0}
   .edzrow{display:flex; align-items:center; gap:6px; font-weight:700; font-size:13px}
   #edZoneType{font-family:inherit; font-weight:700; padding:5px 7px; border:2px solid #1c1c1c; border-radius:8px; background:var(--panel)}
   #edStrength{width:130px}
@@ -1127,6 +1129,7 @@
       <span class="edzrow" id="edStrRow" style="display:none">
         <label id="edStrLabel" style="font-size:12px">Strength</label>
         <input type="range" id="edStrength" min="10" max="300" value="100" oninput="edSetStrength(+this.value)"/>
+        <span class="seg" id="edWindDir" style="display:none" title="Which way this wind blows"><button data-d="-1" onclick="edSetWindDir(-1)">← Left</button><button data-d="1" onclick="edSetWindDir(1)">Right →</button></span>
       </span>
       <span class="edzrow" id="edDecoSizeRow" style="display:none">
         <label style="font-size:12px">Prop size</label>
@@ -1149,11 +1152,13 @@
     <div class="edtoolbar">
       <input id="edName" class="edname" placeholder="Level name" maxlength="24"/>
       <button class="btn sm" onclick="edSave()">💾 Save</button>
-      <button class="btn alt sm" onclick="edTestPlay()">▶ Play</button>
+      <button class="btn alt sm" id="edPlayBtn" onclick="edTestPlay()">▶ Play</button>
       <button class="btn alt sm" onclick="edTestFeel()" title="Sandbox on this map — infinite stocks, a dummy to hit">🧪 Test the Feel</button>
       <button class="btn ghost sm" onclick="edClear()">Clear</button>
       <button class="btn ghost sm" onclick="go('title')">◀ Title</button>
     </div>
+    <!-- CHECK MY LEVEL's finds and Play's notes (edShowCheck): the editor's own words, never the match's -->
+    <div id="edCheck" class="edcheck" role="status" style="display:none"></div>
     <div id="edLevelList" class="edlevels"></div>
   </div>
 
@@ -1177,7 +1182,7 @@
       <div class="foot" style="margin-top:6px">In-match: press <b>R</b> to reset positions & damage, <b>Esc</b> to come back.</div>
     </div>
     <div class="row" style="margin-top:12px">
-      <button class="btn ghost sm" id="testBack" onclick="openEditor()">◀ Back to editor</button>
+      <button class="btn ghost sm" id="testBack" onclick="backToEditor()">◀ Back to editor</button>
       <button class="btn" onclick="startTestNow()">Start Testing ▶</button>
       <button class="btn ghost sm" onclick="TESTMODE.active=true; go('select')">Pick a different fighter</button>
     </div>
@@ -1599,6 +1604,7 @@
       <div class="row" style="justify-content:center;gap:10px">
         <button class="btn" onclick="setPaused(false)">Resume ▶</button>
         <button class="btn ghost sm" id="pauseMovesBtn" onclick="togglePauseMoves()">Move list</button>
+        <button class="btn ghost sm" id="pauseEditorBtn" style="display:none" onclick="backToEditor()">◀ Back to editor</button>
         <button class="btn ghost sm" onclick="quitMatch()">Quit to title</button>
       </div>
       <div id="pauseMoves" class="movecard" style="display:none;text-align:left;margin-top:12px"></div>
@@ -1805,7 +1811,8 @@
     <div id="runReview" class="run-review"></div>
     <div class="row" style="justify-content:center">
       <button class="btn" id="resultRematch" onclick="rematch()">Rematch ↻</button>
-      <button class="btn alt sm" onclick="go('select')">Change fighter</button>
+      <button class="btn alt sm" onclick="resultChangeFighter()">Change fighter</button>
+      <button class="btn alt sm" id="resultEditor" style="display:none" onclick="backToEditor()">◀ Back to editor</button>
       <button class="btn ghost sm" onclick="go('title')">Title</button>
       <!-- SHARE: after a match, never during one. The same button carries the brag line after a Boss Rush clear or the Daily
            (shareResult): see SHARE below. -->
@@ -2481,6 +2488,17 @@ let MC_TAB = "kit", PAUSE_MOVES_OPEN = false;   // the move card's tab (kit, mov
 // The level's own size wins over the match's MAP SIZE setting, because a map is DESIGNED at a
 // size: its jumps are only guaranteed climbable in the box it was laid out in.
 let CUSTOM_LEVEL = null;
+// What queueCustomLevel changed to play a level -- the stadium, the map size, the mode and the count -- put back when the level is let go (dropCustomLevel).
+// They were kept, so after ▶ Play the next ordinary match was a flat, empty arena with the level's name on it, at the level's size and mode (the level
+// creator review, 2026-10-26).
+let CUSTOM_PREV = null;
+function dropCustomLevel(){
+  CUSTOM_LEVEL = null;
+  const p = CUSTOM_PREV; CUSTOM_PREV = null;
+  if(!p) return;
+  if(stage && stage.id === 'custom') stage = p.stage;
+  SETTINGS.mapSize = p.mapSize; SETTINGS.mode = p.mode; SETTINGS.count = p.count;
+}
 // The MAP SIZE a custom level plays at: its own, falling back to the match setting for a pre-v2
 // save that never recorded one.
 function customSize(){
@@ -2506,7 +2524,14 @@ function countOptions(){
     : SETTINGS.mode==="teams"
     ? [2,3,4,5,6,8,10,12,16,20]
     : SETTINGS.mode==="boss" ? [1,2,3,4,5]
+    : customSpawnCap() ? [2,3,4,5].filter(n=>n<=customSpawnCap())   // a custom level waiting: no more than its spawns (buildFighters)
     : [2,3,4,5];
+}
+// How many fighters a queued custom level seats: one to each spawn placed, up to MAX_FFA. 0 when no level is queued, it is not an FFA, or it has under 2
+// spawns (the editor's Play will not start one: edPlayReady).
+function customSpawnCap(){
+  const n = (CUSTOM_LEVEL && SETTINGS.mode==='ffa' && CUSTOM_LEVEL.spawns) ? CUSTOM_LEVEL.spawns.length : 0;
+  return n >= 2 ? Math.min(MAX_FFA, n) : 0;
 }
 // The smallest legal contestant count for a mode — 1 only where a boss supplies the opposition.
 function minCount(){ return SETTINGS.mode==='boss' ? 1 : 2; }
@@ -15139,7 +15164,7 @@ function go(id){
     if(window.NET && window.NET.role!=="solo") window.NET.leave();
     window.__netRoster=null; window.__netHumanCount=0; window.__netSides=null;
   }   // leaving to title exits test/tournament/boss mode
-  if(id==='title'||id==='lobby' || (id==='select' && !PENDING_CUSTOM)) CUSTOM_LEVEL=null;   // navigation clears custom level, unless we're queuing one for character select
+  if(id==='title'||id==='lobby' || (id==='select' && !PENDING_CUSTOM)) dropCustomLevel();   // navigation clears custom level (and puts back what it changed), unless we're queuing one for character select
   if(id!=='select') PENDING_CUSTOM=false;   // consumed once we leave the select screen into a match
   // A Daily left part-way (to the menu, the lobby...) is over: its fighter goes back, and the next ordinary match is not
   // recorded as today's attempt against the Daily's opponent. Matches ('_none_') and the result screen keep it.
@@ -15163,6 +15188,7 @@ function go(id){
   if(id==='changelog'){ try{ buildChangelog(); }catch(e){} }
   try{ if(id==='title') refreshWhatsNew(); else hideWhatsNew(); }catch(e){}   // the card is the title's, never a match's
   if(id==='result'){ try{ showQuestNote(); refreshWallets(); }catch(e){} try{ shareSyncResult(); }catch(e){} }   // Boss Rush reaches its result screen through here
+  if(id==='result'){ const eb=document.getElementById('resultEditor'); if(eb) eb.style.display = customFromEditor() ? '' : 'none'; }   // back to the level you were building (backToEditor)
   if(id!=='result' && id!=='_none_'){ try{ SHARE_BRAG = null; }catch(e){} }   // a brag line belongs to the result screen it was made for
   // Screen music. Matches use go('_none_') and start their own bed, so they are not listed;
   // startMusic() no-ops when the requested bed is already the one playing, which keeps the
@@ -15941,16 +15967,27 @@ function buildStages(){
   const sp=document.getElementById('stagepick'); sp.innerHTML='';
   const big=(s)=>s.big?' <span style="font-size:10px;background:#e0503a;color:#fff;padding:1px 5px;border-radius:6px;vertical-align:middle">BIG</span>':'';
   stageGuard();   // (a stage the lists do not offer is not the one in hand either)
+  // A LEVEL FROM THE LEVEL CREATOR, WAITING (queueCustomLevel), is the stadium in play: its own card, first and picked. A stadium picked over it let go of
+  // the level only in name -- you fought on its platforms with that stadium's gravity and hazard (the level creator review, 2026-10-26) -- so a stadium
+  // picked now lets the level go (dropCustomLevel puts back the settings it changed) and that stadium is the one played.
+  const lvlUp = !!CUSTOM_LEVEL && !!stage && stage.id==='custom';
+  if(lvlUp){
+    const d=document.createElement('div'); d.className='stagecard sel';
+    const b=document.createElement('b'); b.textContent=stage.name;
+    const t=document.createElement('span'); t.textContent='Your level, from the Level Creator';
+    d.appendChild(b); d.appendChild(t); d.onclick=()=>closeStagePick();
+    sp.appendChild(d);
+  }
   stagesOpen().forEach(s=>{
     const d=document.createElement('div');
     d.className='stagecard'+(s.id===stage.id?' sel':'');
     d.innerHTML=`<b>${s.name}${big(s)}</b><span>${s.blurb}</span>`;
-    d.onclick=()=>{stage=s; buildStages(); closeStagePick();};
+    d.onclick=()=>{ const had=!!CUSTOM_LEVEL; if(had){ dropCustomLevel(); PENDING_CUSTOM=false; } stage=s; buildStages(); closeStagePick(); if(had) buildSettings(); };
     sp.appendChild(d);
   });
   // the button shows the stadium in play; its cards (each with its blurb and its BIG tag) open from it
-  const nm=document.getElementById('stageBtnName'); if(nm) nm.innerHTML=`${stage.name}${big(stage)}`;
-  const btn=document.getElementById('stageBtn'); if(btn) btn.title=stage.blurb;
+  const nm=document.getElementById('stageBtnName'); if(nm){ if(lvlUp) nm.textContent=stage.name+' (your level)'; else nm.innerHTML=`${stage.name}${big(stage)}`; }
+  const btn=document.getElementById('stageBtn'); if(btn) btn.title = lvlUp ? 'Your level, from the Level Creator' : stage.blurb;
 }
 function closeStagePick(){
   const p=document.getElementById('stagepick'); if(p) p.style.display='none';
@@ -19229,6 +19266,10 @@ function setupWorld(){
     // to do nothing for custom maps however it was set. Coordinates are normalized against this
     // box (see CUSTOM_LEVEL), so an old level with no size still lands on WW=W, WH=H unchanged.
     WW=customWorldW(); WH=customWorldH(); camX=0; camY=0; bases=[];
+    // A custom map is seen at 1:1, one screen of it at a time, the way the editor's Zoom in shows it (edZoomOne). At the big arenas' 0.72 a Tall map
+    // (one screen wide) showed empty space past both sides and a Huge one (1.4 wide) all but its last few px, so neither scrolled sideways (the level
+    // creator review, 2026-10-26). A Normal or Compact one is a single screen and does not scroll at all (scrolls()).
+    CAM_ZOOM = 1;
     if(CUSTOM_LEVEL){
       // Platform THICKNESS stays in absolute px (12/16) — a fighter is the same size on a Huge map,
       // so a ledge that scaled with the arena would read as a wall. Only spans and positions scale.
@@ -19660,12 +19701,14 @@ function buildFighters(){
       let sx = W*(0.2+0.6*i/Math.max(1,lineup.length-1)), sy=groundY()-60;
       // Testing a hand-drawn map: start on the spawn markers the map-maker placed, exactly as a
       // real match on this level would. A level with no floor otherwise dropped everyone at once.
+      let onSpot = false;
       if(CUSTOM_LEVEL && CUSTOM_LEVEL.spawns && CUSTOM_LEVEL.spawns.length){
         const sp = CUSTOM_LEVEL.spawns[i % CUSTOM_LEVEL.spawns.length];
-        sx = sp.nx*WW; sy = sp.ny*WH;      // world box, not screen — a Huge map's markers are off-screen
+        sx = sp.nx*WW; sy = sp.ny*WH; onSpot = true;      // world box, not screen — a Huge map's markers are off-screen
       }
       if(PENDING_DAILY && i===1){ r = PENDING_DAILY; }   // Daily Match: a fixed opponent for everyone
     const f=makeFighter(r, sx, sy, i);
+      if(onSpot) f.y = sy - f.r;   // standing ON the marker (its feet there), as the match below does
       f.team=i; f.stocks=99; f.homeBase=null;   // everyone their own team; infinite-ish stocks
       f.controller = (i===0) ? "local" : (TESTMODE.dummyMode==="live" ? "ai" : (TESTMODE.dummyMode==="still" ? "still" : "trainer"));
       if(i>0 && TESTMODE.training) f.pct = TESTMODE.pct;
@@ -19680,7 +19723,8 @@ function buildFighters(){
   const cap = SETTINGS.mode==='teams'?MAX_TEAMS:(SETTINGS.mode==='ctf'?16:MAX_FFA);
   const netRoster = window.__netRoster || null;   // list of human-chosen fighter names, in slot order
   const humanCount = netRoster ? netRoster.length : 0;
-  const N=Math.max(minCount(), Math.min(cap, SETTINGS.count));
+  let N=Math.max(minCount(), Math.min(cap, SETTINGS.count));
+  if(customSpawnCap()) N = Math.min(N, customSpawnCap());   // a custom level: one fighter to a spawn, never a pile on one spot (queueCustomLevel)
 
   let all;
   if(netRoster){
@@ -19736,7 +19780,7 @@ function buildFighters(){
 
   all.forEach((r,i)=>{
     const team = teamOf ? teamOf[i] : i;
-    let sx, sy;
+    let sx, sy, onSpot = false;
     if(SETTINGS.mode==='ctf'){ sx = WW/2; sy = WH/2; }   // ctfBegin puts everyone at their home
     else if(isBig() && bases.length){
       const b = bases[team % bases.length];
@@ -19753,13 +19797,16 @@ function buildFighters(){
       sy = groundY()-60;
     } else if(CUSTOM_LEVEL && CUSTOM_LEVEL.spawns && CUSTOM_LEVEL.spawns.length){
       const sp = CUSTOM_LEVEL.spawns[i % CUSTOM_LEVEL.spawns.length];
-      sx = sp.nx*WW; sy = sp.ny*WH;        // world box, not screen
+      sx = sp.nx*WW; sy = sp.ny*WH; onSpot = true;        // world box, not screen
     } else {
       // spread across the (possibly widened) small arena so fighters don't start in one blob
       sx = floorSafeX(WW*(0.08+0.84*i/Math.max(1,N-1)));   // (REAL EDGES: over the floor, never past a ledge)
       sy = groundY()-60;
     }
     const f=makeFighter(r, sx, sy, i);
+    // A CUSTOM LEVEL'S SPAWN MARKER is where the fighter's FEET go: the editor draws the fighter standing on it, and the match put its middle there, so a
+    // fighter set on a ledge started inside it and dropped to the floor (the level creator review, 2026-10-26).
+    if(onSpot) f.y = sy - f.r;
     f.stocks=SETTINGS.stocks;
     f.team = team;
     f.homeBase = (isBig() && bases.length) ? team % bases.length : null;
@@ -43066,17 +43113,21 @@ function step(){
           const lx=Math.cos(a)*relx - Math.sin(a)*rely;
           const ly=Math.sin(a)*relx + Math.cos(a)*rely;
           const halfW=p.w/2, halfH=(p.h||14)/2;
-          if(Math.abs(lx)<halfW+2 && ly>=-halfH-2 && ly<=halfH+10+Math.abs(f.vy)){
+          // (a fighter standing on it last step is held to it a little above the top as well: walking down a slope, the top drops away faster than gravity pulls)
+          const stick = _wasAir ? 2 : 2 + Math.min(10, Math.abs(f.vx*Math.tan(p.rot*Math.PI/180)));
+          if(Math.abs(lx)<halfW+2 && ly>=-halfH-stick && ly<=halfH+10+Math.abs(f.vy)){
             // resolve: push the fighter to the platform's top surface (local y=-halfH), back to world space
             const sa=p.rot*Math.PI/180;
             const topLocalY=-halfH;
             const wx=cx + (Math.cos(sa)*lx - Math.sin(sa)*topLocalY);
             const wy=cy + (Math.sin(sa)*lx + Math.cos(sa)*topLocalY);
             if(f.vy>=0 && f.y+f.r <= wy+18){
-              f.y=wy-f.r; f.onground=true; f.jumps=2; f._usedAirSpecial=false;
-              // slope makes you slide: steeper angle = more slide
-              const slope=Math.sin(sa); if(Math.abs(slope)>0.05){ f.vx += slope*0.9; } else if(f.vy>0){ f.vy=0; }
-              else f.vy=0;
+              // LANDING ON A SLOPE STOPS THE FALL (the level creator review, 2026-10-26: "tilted platforms don't hold you"). The fall speed was only
+              // cleared on a flat plank, so on a tilted one it built up under the snap until the feet passed the 18 px catch and dropped through.
+              f.y=wy-f.r; f.vy=0; f.onground=true; f.jumps=2; f._usedAirSpecial=false;
+              // a slope you can stand on (SLOPE_HOLD_DEG or gentler: every angle the editor offers, ROT_STEPS) holds you; only a steeper one, from a level
+              // saved before, still slides you down it
+              const slope=Math.sin(sa); if(Math.abs(slope) > SLOPE_HOLD_SIN) f.vx += slope*0.9;
             }
           }
         } else if(f.vy>=0 && f.x>p.x-4 && f.x<p.x+p.w+4){
@@ -55083,7 +55134,7 @@ function setMcTab(t){ MC_TAB = t; refreshSel(); }
 const TRAIN_PCTS = [0, 20, 40, 60, 80, 100, 130];
 function openTraining(){
   openTest();   // builds the option rows (and routes to the screen)
-  TESTMODE.training = true; CUSTOM_LEVEL = null;
+  TESTMODE.training = true; dropCustomLevel();
   trainingScreenSync();
 }
 function trainingScreenSync(){
@@ -55092,7 +55143,7 @@ function trainingScreenSync(){
   ['testRowPct','testRowHold','testRowDummy','testRowBox'].forEach(id=>set(id, T));
   const h = document.getElementById('testTitle'); if(h) h.textContent = T ? 'TRAINING' : 'TEST THE FEEL';
   const tag = document.getElementById('testTag'); if(tag) tag.textContent = T ? 'A practice room: a dummy, the hitboxes, any damage. Infinite stocks, R resets.' : 'Jump around your map — infinite stocks, reset anytime.';
-  const back = document.getElementById('testBack'); if(back){ back.textContent = T ? '◀ Back' : '◀ Back to editor'; back.onclick = ()=>{ if(T){ TESTMODE.training = false; go('title'); } else openEditor(); }; }
+  const back = document.getElementById('testBack'); if(back){ back.textContent = T ? '◀ Back' : '◀ Back to editor'; back.onclick = ()=>{ if(T){ TESTMODE.training = false; go('title'); } else backToEditor(); }; }
 }
 function trainingDummyRoster(){ return ROSTER.filter(r=>r.play && !oneAiBanned(r)); }
 // what a dummy does when it is not a CPU: walk at you, or hop about
@@ -57436,6 +57487,7 @@ function knock(t,kx,ky){
   if(FLOOR_SEGS){ t.jumps = Math.max(t.jumps||0, 1); t._usedAirSpecial = false; }
 }
 const WIND_DRIFT = 3.2, PIN_STEPS = 36, PIN_FREE = 150;
+const BOUNCE_VY = 14;   // a bounce zone's throw at x1 strength: Spongy's (p.bouncy), so a bounce zone is landing on Spongy
 function pushPin(f){   // true while the push zones let this fighter go: a fighter pressing a key in a push zone who has not moved for PIN_STEPS steps (pinned in a corner, held under a lid) is let go for PIN_FREE
   if(f._pushOff > 0) return true;
   if(f._pinF === hazardT) return false;   // (once a step, however many zones)
@@ -57452,7 +57504,11 @@ function applyZone(f, z){
   switch(z.type){
     case "glue":   f.vx*=Math.max(0, 1-0.55*s); if(f.onground){ f.slowed=Math.max(f.slowed||0,4); } break;   // sticky: kills momentum
     case "ice":    if(f.onground) f.vx*=(1 - 0.02*s); f.iceUntil=6; break;   // slippery: almost no friction (handled below)
-    case "bounce": if(f.vy>0){ f.vy=-Math.abs(f.vy)*(0.9+0.5*s) - 3*s; f.onground=false; f.jumps=2; if(hazardT%4===0) puff(f.x,f.y+f.r,'#e84b9c',4); } break;
+    // BOUNCE: every bounce the same height, as landing on Spongy is. It threw you back up faster than you came down (x1.4 and 3 more), so each bounce went
+    // higher than the last until the fighter left through the top at 0% (the level creator review, 2026-10-26: two CPUs out in about 5 s). The strength
+    // is the height: BOUNCE_VY times its square root, so x2 bounces twice as high as x1 and every bounce of one zone is alike. One who came down into it
+    // this step leaves from its top, as from Spongy's (how far past the top the step carried them varied with the fall, and the height with it).
+    case "bounce": if(f.vy>0){ if(f.y - f.vy + f.r < z.y) f.y = z.y - f.r; f.vy=-BOUNCE_VY*Math.sqrt(s); f.onground=false; f.jumps=2; f._usedAirSpecial=false; if(hazardT%4===0) puff(f.x,f.y+f.r,'#e84b9c',4); } break;
     case "damage": f.pct+=0.35*s; if(hazardT%8===0){ puff(f.x,f.y,'#e0503a',3); } break;
     case "heal":   f.pct=Math.max(0, f.pct-0.3*s); if(hazardT%12===0){ puff(f.x,f.y-6,'#7bc043',3); } break;
     // PUSH ZONES (the owner, 2026-10-19: "wind can get you stuck in a corner"; "sometimes you go in one direction without controlling anything"): a wind, an updraft and a belt push you, and you always win. A wind lets go while you press against it (a CPU's keys count the same) and, left alone,
@@ -57675,18 +57731,19 @@ function eliminate(f){
     killer.koCount=(killer.koCount||0)+1;   // no "PILLOW POWER" line ("Remove them all"); the puffs stay
     for(let i=0;i<10;i++) puff(killer.x, killer.y-8, '#f2e0d0', 4);
   }
-  // Test mode: nobody is ever KO'd for good — just respawn at center
+  // Test mode: nobody is ever KO'd for good — just respawn at center (on a custom level, at a free spawn point: customRespawnSpot)
+  const _cs = CUSTOM_LEVEL ? customRespawnSpot(f) : null;
   if(TESTMODE.active){
-    f.x=camX+W*0.5; f.y=camY-40; f.vx=0; f.vy=0; f.pct=0; f.invuln=60; f.hitstun=0; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0; f.frozen=0; f._floatT=0;
+    f.x=camX+W*0.5; f.y=camY-40; if(_cs){ f.x=_cs.x; f.y=_cs.y; } f.vx=0; f.vy=0; f.pct=0; f.invuln=60; f.hitstun=0; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0; f.frozen=0; f._floatT=0;
     dropInFlightMoves(f);
-    puff(W*0.5, 40, f.color, 12);
+    puff(_cs ? f.x : W*0.5, _cs ? f.y : 40, f.color, 12);
     return;
   }
   // Bubble reform: the first KO each stock just "pops" her — she reforms at center, no stock lost
   if(f.reform>0){
-    f.reform--; f.x=camX+W*0.5; f.y=camY-30; f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0; f.frozen=0; f._floatT=0;
+    f.reform--; f.x=camX+W*0.5; f.y=camY-30; if(_cs){ f.x=_cs.x; f.y=_cs.y; } f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0; f.frozen=0; f._floatT=0;
     dropInFlightMoves(f);
-    for(let i=0;i<18;i++) puff(W*0.5, 60, '#bfe8ff', 6);   // no "YOYLEBERRY REFORM!" line ("Remove them all")
+    for(let i=0;i<18;i++) puff(_cs ? f.x : W*0.5, _cs ? f.y : 60, '#bfe8ff', 6);   // no "YOYLEBERRY REFORM!" line ("Remove them all")
     return;
   }
   // Knocked past a blast zone = KO = lose one stock.
@@ -57739,6 +57796,8 @@ function eliminate(f){
   } else if(isBig() && f.homeBase!=null && bases[f.homeBase]){
     const sp = pickSpawnPad(bases[f.homeBase], f);
     f.x=sp.x; f.y=sp.y-40;
+  } else if(_cs){
+    f.x=_cs.x; f.y=_cs.y;   // a custom level: back at a free spawn point the builder placed (customRespawnSpot)
   } else {
     // Screen centre, just above the top of the CURRENT VIEW. camX/camY are 0 on every single-screen
     // arena, so this is the old behaviour there exactly — and on a Tall/Huge custom map it drops
@@ -57749,6 +57808,21 @@ function eliminate(f){
   f._floatT=0;   // thin air (Thermal Rise's second, a float area's linger) does not outlive the stock: she comes back on whole gravity
   dropInFlightMoves(f);
   if(f.name==="Bubble") f.reform=1;   // Bubble regains her reform each new stock
+}
+
+// A CUSTOM LEVEL'S SPAWN POINTS are where a fighter comes back after a knockout too: they came back at the top middle, not at the spawns the builder
+// placed (the level creator review, 2026-10-26). The free one: the spawn farthest from everyone else still in the match. Feet on the spot, as at the
+// start (buildFighters); a spawn off the map (a level saved before the editor kept them on it) is passed over. Null when there is none to use.
+function customRespawnSpot(f){
+  let best = null, bestD = -1;
+  for(const sp of ((CUSTOM_LEVEL && CUSTOM_LEVEL.spawns) || [])){
+    if(!(sp.nx >= 0 && sp.nx <= 1 && sp.ny >= 0 && sp.ny <= 1)) continue;
+    const x = sp.nx*WW, y = sp.ny*WH - f.r;
+    let d = 1e9;
+    for(const o of fighters){ if(o !== f && !o.dead) d = Math.min(d, Math.hypot(o.x - x, o.y - y)); }
+    if(d > bestD){ bestD = d; best = { x, y }; }
+  }
+  return best;
 }
 
 function checkWin(){
@@ -60751,8 +60825,43 @@ function brainOut(f, inp, B, L, t, fight){
   // HOLD THEM STILL (stanceStill): a stance up on the ground and nothing else asked for, it lets go of the arrows (they could not walk it anywhere)
   if(f.onground && stanceStill(f) && !(inp.attack || inp.special || inp.smash || inp.grab || inp.fin || inp.jump)){ inp.left = false; inp.right = false; }
   if(f._fileRide) fileRideAiHold(f, inp);   // on its own big file (THE BIG FILE): it stays on
+  brainZones(f, inp, B);   // a custom level: out of a damage or a bounce zone, and not into one
   brainLedge(f, inp, B);   // REAL EDGES: never off a ledge by accident
   return inp;
+}
+// CPUS AND THE EFFECT ZONES (the level creator review, 2026-10-26: CPUs stood in damage zones and walked into bounce zones; they could not see zones at all).
+// On a custom level a CPU in a damage or a bounce zone steps out of it -- on the side its foe is on, if the foe is out of the zone, else the nearer side --
+// still swinging (the side must be on the map); and on the ground it does
+// not walk into one: a short, low one (a strip on a ledge) it hops over, a bigger one it waits at the edge of -- for ZONE_AI_WAIT steps, then it goes
+// through anyway for ZONE_AI_GO, so a zone between two CPUs cannot stall a match. A zone across the whole map has no side to step to: then nothing changes.
+// Heal, glue, ice and wind are left to the fight. Recovering (off a side, falling out) comes first.
+const ZONE_AI_WAIT = 180, ZONE_AI_GO = 120;
+function aiZoneHurts(z){ return z.type === 'damage' || z.type === 'bounce'; }
+function aiInZone(f, z, x){ return x >= z.x && x <= z.x + z.w && f.y + f.r >= z.y && f.y <= z.y + z.h; }   // (applyZone's own test, at x)
+function brainZones(f, inp, B){
+  if(!CUSTOM_LEVEL || !worldZones.length || B.zoneGo > hazardT) return;
+  if(f.x < 50 || f.x > WW - 50 || f.y > WH - 90) return;
+  for(const z of worldZones){
+    if(!aiZoneHurts(z) || !aiInZone(f, z, f.x)) continue;
+    const L = z.x - f.r - 8, R = z.x + z.w + f.r + 8, okL = L >= 40, okR = R <= WW - 40;
+    if(!okL && !okR) continue;
+    const t = f.aiTarget, tOut = !!t && !t.dead && t.x != null && !aiInZone(t, z, t.x);
+    const goR = okR && (!okL || (tOut ? t.x > z.x + z.w/2 : R - f.x < f.x - L));
+    inp.left = !goR; inp.right = goR;
+    return;
+  }
+  const dir = (inp.right && !inp.left) ? 1 : ((inp.left && !inp.right) ? -1 : 0);
+  if(f.onground && dir){
+    const ahead = f.x + dir*(f.r*0.5 + 10 + Math.abs(f.vx)*4);
+    for(const z of worldZones){
+      if(!aiZoneHurts(z) || !aiInZone(f, z, ahead)) continue;
+      if(z.w <= 160 && (f.y + f.r) - z.y < 70){ inp.jump = true; return; }
+      if((B.zoneWait = (B.zoneWait || 0) + 1) > ZONE_AI_WAIT){ B.zoneWait = 0; B.zoneGo = hazardT + ZONE_AI_GO; return; }
+      inp.left = false; inp.right = false;
+      return;
+    }
+  }
+  B.zoneWait = Math.max(0, (B.zoneWait || 0) - 1);
 }
 
 // ---- the few kits the brain has a word for (a kit that cannot play right without it), and the big maps' places ----
@@ -74286,6 +74395,7 @@ function setPaused(on){
   const was = paused;
   paused = !!on;
   const el = document.getElementById('pauseCard'); if(el) el.style.display = paused ? 'flex' : 'none';
+  { const eb = document.getElementById('pauseEditorBtn'); if(eb) eb.style.display = (paused && customFromEditor()) ? '' : 'none'; }   // a level played from the editor: the way back to it (backToEditor)
   if(paused){ try{ syncPauseMoves(); }catch(e){} } else PAUSE_MOVES_OPEN = false;
   netInputChanged(true);   // a guest's host stops playing what it held (and gets it back on the way out)
   if(was && !paused) netInResume();   // a host's guests pick up from now, not with what they pressed while it stood still
@@ -74324,10 +74434,11 @@ function testDpsText(){
 function levelPlatRects(plats, ww, wh){
   return (plats||[]).map(p=>( p.solid
     ? ({ x:p.nx*ww, y:p.ny*wh, w:p.nw*ww, h:(p.nh||0.04)*wh, solid:true, rot:0 })
-    : ({ x:p.nx*ww, y:p.ny*wh, w:p.nw*ww, h:p.hop?12:16, hop:!!p.hop, rot:p.rot||0 }) ));
+    : ({ x:p.nx*ww, y:p.ny*wh, w:p.nw*ww, h:p.hop?12:16, hop:!!p.hop, rot:platRot(p.rot) }) ));
 }
 function levelZoneRects(zones, ww, wh){
-  return (zones||[]).map(z=>({ x:z.nx*ww, y:z.ny*wh, w:z.nw*ww, h:z.nh*wh, type:z.type, strength:z.strength||1 }));
+  // `dir`: which way a wind zone blows, 1 right (and every zone saved before it had one), -1 left (applyZone reads it)
+  return (zones||[]).map(z=>({ x:z.nx*ww, y:z.ny*wh, w:z.nw*ww, h:z.nh*wh, type:z.type, strength:z.strength||1, dir:z.dir===-1 ? -1 : 1 }));
 }
 
 // ---- DECORATIONS ------------------------------------------------------------------------------
@@ -74500,7 +74611,13 @@ const ZONE_TYPES = {
   heal:   {label:"Heal",   color:"#7bc043", def:1.0, unit:"heal/tick"},
   wind:   {label:"Wind",   color:"#8fd0ff", def:1.0, unit:"push force"},
 };
-const ROT_STEPS = [0,45,90,135];   // snap angles (degrees)
+// Snap angles (degrees), only ones a fighter can stand on: 45, 90 and 135 were offered, and on them a fighter slid off or could not stand at all (the
+// level creator review, 2026-10-26). In the order the plank turns: 30 then -30 (150, the same plank) then -15. A level saved with a steeper angle keeps it
+// (levelPlatRects folds 135 to -45, so its top is the face on top) and slides you down it, as it did.
+const ROT_STEPS = [0,15,30,-30,-15];
+const SLOPE_HOLD_DEG = 30, SLOPE_HOLD_SIN = Math.sin((SLOPE_HOLD_DEG+1)*Math.PI/180);
+// A plank's angle folded into -90..90: turned by 180 a plank is the same plank, but the match lands you on its local top face, which at 135 was underneath.
+function platRot(r){ r = (+r||0) % 180; if(r > 90) r -= 180; if(r <= -90) r += 180; return r; }
 // ---- EDITOR STATE ----------------------------------------------------------------------------
 // ED.w/ED.h are the WORLD BOX in real world pixels — the very box setupWorld() will build, at the
 // level's MAP SIZE — NOT the canvas. The canvas (ED.cw x ED.ch) is a VIEWPORT onto it: ED.view is
@@ -74541,7 +74658,14 @@ function edBacking(){
 }
 UI.hooks.push(()=>{ if(ED.cv && ED.cw){ edBacking(); edDraw(); } });
 function edZoomFit(){ ED.fit=true; ED.zoom = Math.min(ED.cw/ED.w, ED.ch/ED.h); ED.view.x=0; ED.view.y=0; edClampView(); }
-function edZoomOne(){ ED.fit=false; ED.zoom = ED.cw/(W||1100); edClampView(); }   // 1:1 with the play screen
+// 1:1 with the play screen: one screen of the map, the very view a fighter has in the match (a custom map is played at 1:1: setupWorld). Centred on the
+// middle of what was in view, so zooming in on a Tall map does not land on its sky.
+function edZoomOne(){
+  const cx = ED.view.x + (ED.cw/2 - edOx())/ED.zoom, cy = ED.view.y + (ED.ch/2 - edOy())/ED.zoom;
+  ED.fit=false; ED.zoom = ED.cw/(W||1100);
+  ED.view.x = cx - (ED.cw/2)/ED.zoom; ED.view.y = cy - (ED.ch/2)/ED.zoom;
+  edClampView();
+}
 // Letterbox offset: when the whole world is smaller than the canvas it sits centred rather than
 // jammed into the top-left corner.
 function edOx(){ return Math.max(0, (ED.cw - ED.w*ED.zoom)/2); }
@@ -74790,15 +74914,20 @@ function mapgenLadder(plats, c){
 // Spread the spawn points across the width, each one standing on whatever surface is actually
 // under it (a platform top, else the floor). Spawning inside a solid or in a corner of dead air is
 // the classic generated-map failure, and both are cheap to just not do.
-function mapgenSpawns(plats, n){
+// A surface is passed over when a solid block hangs over it lower than a fighter is tall: the fighter set there started inside the block (Check my level,
+// edCheckLevel, found one in half the Towers and Cavern maps). Every other spawn comes out exactly where it did.
+function mapgenSpawns(plats, n, c){
   const out=[];
+  const sw = (c && c.sw) || 1, sh = (c && c.sh) || 1;
+  const rx = ED_BODY_R/1024/sw, tall = 2*ED_BODY_R/720/sh;   // a fighter's half-width and height, in this world's normalized units
+  const roofed = (nx, ny)=> plats.some(q=> q.solid && nx + rx > q.nx && nx - rx < q.nx + q.nw && ny > q.ny && ny - 0.06 - tall < q.ny + (q.nh||0.04));
   for(let i=0;i<n;i++){
     const nx = 0.12 + 0.76*(n===1 ? 0.5 : i/(n-1));
     let best = MAPGEN_FLOOR_N;
     for(const p of plats){
       if(p.solid) continue;                                   // never perch on top of a solid slab
       if(nx < p.nx || nx > p.nx + p.nw) continue;
-      if(p.ny < best && p.ny > MAPGEN_CEIL_N + 0.05) best = p.ny;
+      if(p.ny < best && p.ny > MAPGEN_CEIL_N + 0.05 && !roofed(nx, p.ny)) best = p.ny;
     }
     out.push({ nx, ny: Math.max(MAPGEN_CEIL_N, best - 0.06) });
   }
@@ -74867,13 +74996,17 @@ function generateMap(cfg){
     return Object.assign({}, p, { nw, nx:Math.min(p.nx, 1-MAPGEN_EDGE_N-nw),
       ny: Math.max(MAPGEN_CEIL_N, Math.min(MAPGEN_FLOOR_N - 0.05, p.ny)) });
   }).filter(p => p.nx >= MAPGEN_EDGE_N - 1e-9 && p.nx + p.nw <= 1 - MAPGEN_EDGE_N + 1e-9);
+  const zones = mapgenZones(plats, effects.n, rng, c);
+  const deco  = mapgenDeco(plats, c);               // non-colliding scenery, drawn in play
+  // A wind zone blows left or right (applyZone reads z.dir). Picked last of all, so every roll a seed made before winds had a way to blow -- the
+  // scenery's included -- comes out as it did: an old seed rebuilds the same map, its winds now each blowing one way or the other.
+  for(const z of zones) if(z.type==='wind') z.dir = rng() < 0.5 ? -1 : 1;
   return {
     v: 2,                                           // save-format version (see CUSTOM_LEVEL)
     name: MAP_ARCHETYPES[type].label + " " + seed.toString(36).toUpperCase().slice(-4),
     plats,
-    spawns: mapgenSpawns(plats, 5),                 // MAX_FFA is 5
-    zones:  mapgenZones(plats, effects.n, rng, c),
-    deco:   mapgenDeco(plats, c),                   // non-colliding scenery, drawn in play
+    spawns: mapgenSpawns(plats, 5, c),              // MAX_FFA is 5
+    zones, deco,
     hazard: cfg.hazard || "",
     // `size` is the level's MAP SIZE: the world box it was generated against, and the one the
     // match will rebuild. It travels with the level, not with the menu.
@@ -74997,6 +75130,9 @@ function openEditor(){
       if(!forcePan){ ED.sel=null; edSyncPanel(); edDraw(); }
       return;
     }
+    // Outside the map (the dark strips beside a Tall or Huge map at Fit) nothing is placed: a spawn put there was knocked out at once (the level creator
+    // review, 2026-10-26). Move and Erase still reach a piece a level saved before left out there, to bring it in or take it away.
+    if(ED.tool!=="move" && ED.tool!=="erase" && !edInMap(p)) return;
     if(ED.tool==="move"){
       const hit=edHitTest(p.x,p.y);
       ED.sel=hit;
@@ -75006,8 +75142,8 @@ function openEditor(){
     }
     else if(ED.tool==="plat"){ ED.drag={mode:"draw", x0:p.x,y0:p.y,x1:p.x,y1:p.y}; }
     else if(ED.tool==="solid"){ ED.drag={mode:"solid", x0:p.x,y0:p.y,x1:p.x,y1:p.y}; }
-    else if(ED.tool==="hop"){ const o={nx:(p.x-60)/ED.w, ny:p.y/ED.h, nw:120/ED.w, hop:true, rot:0}; ED.plats.push(o); ED.sel={kind:"plat",obj:o}; edSyncPanel(); edDraw(); }
-    else if(ED.tool==="spawn"){ if(ED.spawns.length<8){ const o={nx:p.x/ED.w, ny:p.y/ED.h}; ED.spawns.push(o);} edDraw(); }
+    else if(ED.tool==="hop"){ const o=edKeepIn({nx:(p.x-60)/ED.w, ny:p.y/ED.h, nw:Math.min(1, 120/ED.w), hop:true, rot:0}, "plat"); ED.plats.push(o); ED.sel={kind:"plat",obj:o}; edSyncPanel(); edDraw(); }
+    else if(ED.tool==="spawn"){ if(ED.spawns.length<8){ const o=edKeepIn({nx:p.x/ED.w, ny:p.y/ED.h}, "spawn"); ED.spawns.push(o);} edDraw(); }
     else if(ED.tool==="deco"){ const o=edMakeDeco(ED.decoKind, p.x/ED.w, p.y/ED.h); ED.deco.push(o); ED.sel={kind:"deco",obj:o}; edSyncPanel(); edDraw(); }
     else if(ED.tool==="zone"){ ED.drag={mode:"zone", x0:p.x,y0:p.y,x1:p.x,y1:p.y}; }
     else if(ED.tool==="erase"){ edEraseAt(p.x,p.y); ED.sel=null; edSyncPanel(); edDraw(); }
@@ -75021,10 +75157,10 @@ function openEditor(){
       ED.view.x = ED.drag.vx - dx/ED.zoom; ED.view.y = ED.drag.vy - dy/ED.zoom;
       edClampView(); edDraw(); return;
     }
-    if(ED.drag.mode==="draw"||ED.drag.mode==="zone"||ED.drag.mode==="solid"){ ED.drag.x1=p.x; ED.drag.y1=p.y; edDraw(); }
+    if(ED.drag.mode==="draw"||ED.drag.mode==="zone"||ED.drag.mode==="solid"){ ED.drag.x1=edClamp(p.x,0,ED.w); ED.drag.y1=edClamp(p.y,0,ED.h); edDraw(); }   // (drawn out no further than the map's edge)
     else if(ED.drag.mode==="move"){ const dx=p.x-ED.drag.ox, dy=p.y-ED.drag.oy;
-      ED.drag.obj.nx=Math.max(0,Math.min(1,(ED.drag.sx+dx)/ED.w));
-      ED.drag.obj.ny=Math.max(0,Math.min(1,(ED.drag.sy+dy)/ED.h));
+      ED.drag.obj.nx=(ED.drag.sx+dx)/ED.w; ED.drag.obj.ny=(ED.drag.sy+dy)/ED.h;
+      edKeepIn(ED.drag.obj, ED.drag.kind);   // the whole piece stays inside the map's edges (it could be dragged until only its left end was in)
       edDraw(); }
   };
   cv.onpointerup=e=>{ if(!ED.drag){ return; } const d=ED.drag; ED.drag=null;
@@ -75034,7 +75170,7 @@ function openEditor(){
     else if(d.mode==="solid"){ const x=Math.min(d.x0,d.x1), y=Math.min(d.y0,d.y1), w=Math.abs(d.x1-d.x0), hh=Math.abs(d.y1-d.y0);
       if(w>16&&hh>10){ const o={nx:x/ED.w, ny:y/ED.h, nw:w/ED.w, nh:hh/ED.h, solid:true, rot:0}; ED.plats.push(o); ED.sel={kind:"plat",obj:o}; edSyncPanel(); } }
     else if(d.mode==="zone"){ const x=Math.min(d.x0,d.x1), y=Math.min(d.y0,d.y1), w=Math.abs(d.x1-d.x0), hh=Math.abs(d.y1-d.y0);
-      if(w>16&&hh>12){ const o={nx:x/ED.w, ny:y/ED.h, nw:w/ED.w, nh:hh/ED.h, type:ED.zoneType, strength:ZONE_TYPES[ED.zoneType].def}; ED.zones.push(o); ED.sel={kind:"zone",obj:o}; edSyncPanel(); } }
+      if(w>16&&hh>12){ const o={nx:x/ED.w, ny:y/ED.h, nw:w/ED.w, nh:hh/ED.h, type:ED.zoneType, strength:ZONE_TYPES[ED.zoneType].def}; if(o.type==="wind") o.dir=1; ED.zones.push(o); ED.sel={kind:"zone",obj:o}; edSyncPanel(); } }
     edDraw(); };
   cv.onpointerleave=cv.onpointerup;
   // The wheel walks the map: plain wheel down/up, shift-wheel sideways. On a map that fits, both
@@ -75055,6 +75191,17 @@ function edBindKeys(){
   addEventListener('keyup',   e=>{ if(e.code==='Space'){ ED.space=false; } });
 }
 function edIsOpen(){ const s=document.getElementById('editor'); return !!s && s.classList.contains('active'); }
+function edClamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+function edInMap(p){ return p.x >= 0 && p.x <= ED.w && p.y >= 0 && p.y <= ED.h; }   // (world px)
+// Keep a piece inside the map's edges: a platform, a block or a zone all of it (its width, and a block's or a zone's height, inside the box); a spawn
+// with the whole fighter inside the sides and its feet no lower than the floor; a decoration its base inside the box.
+function edKeepIn(o, kind){
+  const padX = kind==="spawn" ? ED_BODY_R/ED.w : 0;
+  const x1 = (kind==="plat" || kind==="zone") ? Math.max(0, 1-(o.nw||0)) : 1-padX;
+  const y1 = kind==="spawn" ? MAPGEN_FLOOR_N : ((kind==="zone" || o.solid) ? Math.max(0, 1-(o.nh||0)) : 1);
+  o.nx = edClamp(o.nx, padX, x1); o.ny = edClamp(o.ny, 0, y1);
+  return o;
+}
 // Switch the MAP SIZE being built at. The stored coordinates are normalized against the world box,
 // so the layout keeps its proportions and the box around it grows — nothing has to be rewritten.
 function edSetSize(k){
@@ -75153,6 +75300,13 @@ function edSyncPanel(){
       if(sl){ sl.value=Math.round((sel.obj.strength||1)*100); }
       if(lab){ lab.textContent=ZONE_TYPES[sel.obj.type].label+" "+ZONE_TYPES[sel.obj.type].unit+": "+(sel.obj.strength||1).toFixed(2)+"×"; }
     } }
+  // which way a selected wind zone blows (it always blew right: the level creator review, 2026-10-26)
+  const wd=document.getElementById('edWindDir');
+  if(wd){ const on = !!(sel && sel.kind==="zone" && sel.obj.type==="wind"); wd.style.display = on ? 'inline-flex' : 'none';
+    if(on) wd.querySelectorAll('button').forEach(b=>b.classList.toggle('on', +b.dataset.d === (sel.obj.dir===-1 ? -1 : 1))); }
+}
+function edSetWindDir(d){
+  if(ED.sel && ED.sel.kind==="zone" && ED.sel.obj.type==="wind"){ ED.sel.obj.dir = d<0 ? -1 : 1; edSyncPanel(); edDraw(); }
 }
 function edSetStrength(v){
   if(ED.sel && ED.sel.kind==="zone"){ ED.sel.obj.strength=Math.max(0.1,Math.min(3,v/100)); edSyncPanel(); edDraw(); }
@@ -75196,7 +75350,7 @@ function edDraw(){
   for(const z2 of ED.zones){ const zx=z2.nx*w, zy=z2.ny*h, zw=z2.nw*w, zh=z2.nh*h; const zc=ZONE_TYPES[z2.type]||ZONE_TYPES.glue;
     ctx2.globalAlpha=0.4; ctx2.fillStyle=zc.color; ctx2.fillRect(zx,zy,zw,zh);
     ctx2.globalAlpha=1; ctx2.strokeStyle=zc.color; ctx2.setLineDash([6,4]); ctx2.lineWidth=2; ctx2.strokeRect(zx,zy,zw,zh); ctx2.setLineDash([]);
-    ctx2.fillStyle='#1c1c1c'; ctx2.font='bold '+Math.round(11/z)+'px system-ui'; ctx2.textAlign='left'; ctx2.fillText(zc.label+" "+(z2.strength||1).toFixed(1)+"×", zx+4, zy+13/z);
+    ctx2.fillStyle='#1c1c1c'; ctx2.font='bold '+Math.round(11/z)+'px system-ui'; ctx2.textAlign='left'; ctx2.fillText(zc.label+(z2.type==="wind" ? (z2.dir===-1 ? " ←" : " →") : "")+" "+(z2.strength||1).toFixed(1)+"×", zx+4, zy+13/z);
     if(ED.sel&&ED.sel.obj===z2){ edOutline(ctx2, zx-2,zy-2,zw+4,zh+4); }
   }
   // platforms — painted by the MATCH's painter, from the MATCH's rectangles
@@ -75221,6 +75375,15 @@ function edDraw(){
   // selected decoration
   if(ED.sel && ED.sel.kind==='deco'){ const b=decoBox(ED.sel.obj, w, h);
     edOutline(ctx2, b.x-b.s*0.5, b.y-b.s, b.s, b.s*1.1); }
+  // CHECK MY LEVEL's finds, ringed in red while the level is still as it was checked (edCheckLevel). The editor's only: the match draws none of it.
+  if(ED.check && ED.check.fp === edFingerprint()){
+    ctx2.save(); ctx2.strokeStyle='#e0302a'; ctx2.lineWidth=3/Math.max(0.15,z); ctx2.setLineDash([8/Math.max(0.15,z), 5/Math.max(0.15,z)]);
+    for(const i of ED.check.plats){ const r=rects[i]; if(!r) continue;
+      ctx2.save(); ctx2.translate(r.x+r.w/2, r.y+r.h/2); if(r.rot) ctx2.rotate(r.rot*Math.PI/180); ctx2.strokeRect(-r.w/2-7, -r.h/2-7, r.w+14, r.h+14); ctx2.restore(); }
+    for(const i of ED.check.spawns){ const s2=ED.spawns[i]; if(s2){ ctx2.beginPath(); ctx2.arc(s2.nx*w, s2.ny*h-30, 50, 0, 7); ctx2.stroke(); } }
+    for(const i of ED.check.zones){ const z2=ED.zones[i]; if(z2) ctx2.strokeRect(z2.nx*w-5, z2.ny*h-5, z2.nw*w+10, z2.nh*h+10); }
+    ctx2.restore();
+  }
   // drag preview
   if(ED.drag && (ED.drag.mode==="draw"||ED.drag.mode==="zone"||ED.drag.mode==="solid")){ const d=ED.drag;
     const x=Math.min(d.x0,d.x1), y=Math.min(d.y0,d.y1), ww=Math.abs(d.x1-d.x0), hh=Math.abs(d.y1-d.y0);
@@ -75231,6 +75394,7 @@ function edDraw(){
     ctx2.globalAlpha=1; }
   ctx2.restore();
   edDrawMinimap(ctx2);
+  edSyncPlayBtn();
 }
 // A selection ring that stays the same weight on screen however far you are zoomed out.
 function edOutline(g,x,y,w,h){ g.strokeStyle='#fff'; g.lineWidth=2/Math.max(0.15,ED.zoom); g.strokeRect(x,y,w,h); }
@@ -75268,7 +75432,7 @@ function edDrawMinimap(g){
   g.strokeRect(mx+ED.view.x*rx, my+ED.view.y*ry, (ED.cw/ED.zoom)*rx, (ED.ch/ED.zoom)*ry);
   g.restore();
 }
-function edClear(){ ED.plats=[]; ED.spawns=[]; ED.zones=[]; ED.deco=[]; ED.sel=null; edSyncPanel(); edDraw(); }
+function edClear(){ ED.plats=[]; ED.spawns=[]; ED.zones=[]; ED.deco=[]; ED.sel=null; ED.check=null; edShowCheck(null); edSyncPanel(); edDraw(); }
 // The level as it would be SAVED — and as "▶ Play" and "🧪 Test the Feel" queue it. `size` and
 // `deco` are part of it, which is what makes the test button test the map you are actually
 // looking at rather than a one-screen undressed version of it.
@@ -75278,6 +75442,136 @@ function edCurrentLevel(){
     plats:ED.plats.map(p=>({...p})), spawns:ED.spawns.map(s=>({...s})),
     zones:ED.zones.map(z=>({...z})), deco:ED.deco.map(d=>({...d})), hazard:ED.hazard };
 }
+// CHECK MY LEVEL (the level creator review, 2026-10-26: "Nothing checks a hand-made level" -- a wall from the floor to the sky between two CPUs ran for 5
+// minutes with no damage and no end). Run on Save and on Play; what it finds is written under the editor's buttons and ringed on the canvas, never in the
+// match. It measures the level in the world box the match builds (levelPlatRects, at the level's MAP SIZE) with a fighter's own numbers: a double jump
+// rises MAX_HOP_RISE (more in low gravity), a body is ED_BODY_R from its middle. It looks for:
+//   spawns  off the map, or inside a solid block;
+//   ledges  a platform no chain of jumps reaches from the floor (each a rise of at most a double jump, and at most ED_REACH_X to the side; a drop goes
+//           further to the side);
+//   walls   solid blocks that cut the map in two: the open air a fighter can get to (up to a double jump over the highest place it can stand) is filled
+//           from each spawn, and two spawns in different pockets of it can never meet;
+//   bounce  a bounce zone that throws a fighter out through the top (BOUNCE_VY, against the top blast line, ED_TOP_KO).
+// Returns { warns:[text], plats:[], spawns:[], zones:[] }: the indices of what to ring.
+const ED_BODY_R = 24, ED_REACH_X = 300, ED_TOP_KO = -260;
+function edCheckLevel(lvl){
+  const m = mapgenMul(lvl.size), ww = Math.round((W||1100)*m.sw), wh = Math.round((H||720)*m.sh);
+  const r = ED_BODY_R, gy = wh*MAPGEN_FLOOR_N, g = GRAV*(lvl.hazard==='lowgrav' ? 0.7 : 1), rise = MAX_HOP_RISE*GRAV/g;
+  const rects = levelPlatRects(lvl.plats, ww, wh), solids = rects.filter(p=>p.solid);
+  const out = { warns:[], plats:[], spawns:[], zones:[] };
+  // spawns
+  const starts = [];
+  (lvl.spawns||[]).forEach((sp,i)=>{
+    if(!(sp.nx>=0 && sp.nx<=1 && sp.ny>=0 && sp.ny<=1)){ out.spawns.push(i); out.warns.push('Spawn '+(i+1)+' is off the map.'); return; }
+    const x = sp.nx*ww, feet = Math.min(gy, sp.ny*wh);
+    if(solids.some(b=> x+r > b.x+2 && x-r < b.x+b.w-2 && feet > b.y+2 && feet-2*r < b.y+b.h-2)){ out.spawns.push(i); out.warns.push('Spawn '+(i+1)+' is inside a solid block.'); return; }
+    starts.push({ i, x, y:feet - r });
+  });
+  // ledges: what a chain of jumps reaches, from the floor up (`hi` the highest point of a top, `lo` the lowest: a tilted plank is landed on low)
+  const surf = [{ x0:0, x1:ww, hi:gy, lo:gy, i:-1, solid:false, ok:true }];
+  rects.forEach((p,i)=>{
+    if(p.y >= gy) return;   // under the floor line: nobody can stand there, nobody needs to
+    if(p.rot){
+      const a = p.rot*Math.PI/180, hx = Math.abs(Math.cos(a))*p.w/2, hy = Math.abs(Math.sin(a))*p.w/2, cx = p.x+p.w/2, top = p.y+p.h/2 - Math.cos(a)*p.h/2;
+      surf.push({ x0:cx-hx, x1:cx+hx, hi:top-hy, lo:top+hy, i, solid:false, ok:false });
+    } else surf.push({ x0:p.x, x1:p.x+p.w, hi:p.y, lo:p.y, i, solid:!!p.solid, ok:false });
+  });
+  for(let grew=true; grew;){
+    grew = false;
+    for(const b of surf){ if(b.ok) continue;
+      for(const a of surf){ if(!a.ok) continue;
+        const gap = Math.max(0, b.x0 - a.x1, a.x0 - b.x1), up = a.hi - b.lo;
+        if(up <= rise && gap <= ED_REACH_X + Math.max(0, -up)){ b.ok = true; grew = true; break; }
+      }
+    }
+  }
+  const high = surf.filter(b=>!b.ok && !b.solid);   // (a block's top out of reach is a wall's, and fine)
+  if(high.length){
+    for(const b of high) out.plats.push(b.i);
+    out.warns.push(high.length===1 ? 'A ledge (ringed in red) is too high to reach: no jump from the floor or from another ledge gets there.'
+      : high.length+' ledges (ringed in red) are too high to reach: no jump from the floor or from another ledge gets there.');
+  }
+  // walls: the open air a fighter can get to, in cells of C px, filled from each spawn; a cell is shut when a body there would be inside a block
+  const C = 12, reach = surf.filter(b=>b.ok);
+  const top = Math.max(ED_TOP_KO + r, Math.min.apply(null, reach.map(b=>b.hi)) - rise - r), bot = gy - r;
+  const cols = Math.max(1, Math.ceil(ww/C)), rows = Math.max(1, Math.floor((bot - top)/C) + 1);
+  const shut = new Uint8Array(cols*rows), comp = new Int32Array(cols*rows).fill(-1);
+  for(let j=0; j<rows; j++){ const cy = top + j*C;
+    for(let k=0; k<cols; k++){ const cx = (k+0.5)*C;
+      if(solids.some(b=> cx > b.x-r+2 && cx < b.x+b.w+r-2 && cy > b.y-r+2 && cy < b.y+b.h+r-2)) shut[j*cols+k] = 1; } }
+  const cellOf = (x, y)=>{
+    const k0 = edClamp(Math.floor(x/C), 0, cols-1), j0 = edClamp(Math.round((y-top)/C), 0, rows-1);
+    for(let d=0; d<=3; d++) for(let dj=-d; dj<=d; dj++) for(let dk=-d; dk<=d; dk++){ const j=j0+dj, k=k0+dk; if(j>=0 && j<rows && k>=0 && k<cols && !shut[j*cols+k]) return j*cols+k; }
+    return -1;   // (a spawn walled into a pocket smaller than a fighter)
+  };
+  let nComp = 0; const met = [];
+  for(const st of starts){
+    const c0 = cellOf(st.x, st.y); if(c0 < 0) continue;
+    if(comp[c0] < 0){
+      const q = [c0]; comp[c0] = nComp;
+      while(q.length){ const c = q.pop(), j = (c/cols)|0, k = c%cols;
+        if(j>0 && !shut[c-cols] && comp[c-cols]<0){ comp[c-cols]=nComp; q.push(c-cols); }
+        if(j<rows-1 && !shut[c+cols] && comp[c+cols]<0){ comp[c+cols]=nComp; q.push(c+cols); }
+        if(k>0 && !shut[c-1] && comp[c-1]<0){ comp[c-1]=nComp; q.push(c-1); }
+        if(k<cols-1 && !shut[c+1] && comp[c+1]<0){ comp[c+1]=nComp; q.push(c+1); } }
+      nComp++;
+    }
+    met.push({ i:st.i, c:comp[c0] });
+  }
+  const apart = met.find(o=>o.c !== met[0].c);
+  if(apart){ out.spawns.push(met[0].i, apart.i);
+    out.warns.push('Spawns '+(met[0].i+1)+' and '+(apart.i+1)+' are walled apart: solid blocks cut the map in two, so the fighters on them can never meet.'); }
+  // bounce zones: how high one throws (applyZone), against the top blast line
+  const hiB = [];
+  (lvl.zones||[]).forEach((z,i)=>{ if(z.type!=='bounce') return;
+    const up = BOUNCE_VY*BOUNCE_VY*(z.strength||1)/(2*g);
+    if(z.ny*wh - r - up < ED_TOP_KO) hiB.push(i); });
+  if(hiB.length){ out.zones.push.apply(out.zones, hiB);
+    out.warns.push((hiB.length===1 ? 'A bounce zone (ringed in red) throws' : hiB.length+' bounce zones (ringed in red) throw')+' fighters out through the top of the map: put it lower or turn its springiness down.'); }
+  return out;
+}
+// The level as it is now, to tell whether what Check my level ringed is still the level it checked.
+function edFingerprint(){ return JSON.stringify([ED.size, ED.hazard, ED.plats, ED.spawns, ED.zones]); }
+// Write a heading and a list under the editor's buttons (null hides it). Text only, set as text.
+function edShowCheck(lines, head){
+  const el = document.getElementById('edCheck'); if(!el) return;
+  el.innerHTML = '';
+  if(!lines || !lines.length){ el.style.display = 'none'; return; }
+  const b = document.createElement('b'); b.textContent = head || ''; el.appendChild(b);
+  const ul = document.createElement('ul');
+  for(const t of lines){ const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); }
+  el.appendChild(ul); el.style.display = '';
+}
+// Check `lvl`, keep what it found for the rings, and write it up (with `more` lines after). Returns the warnings.
+function edRunCheck(lvl, head, more){
+  const c = edCheckLevel(lvl);
+  ED.check = c.warns.length ? Object.assign(c, { fp:edFingerprint() }) : null;
+  edShowCheck(c.warns.length ? c.warns.concat(more || []) : null, head);
+  edDraw();
+  return c.warns;
+}
+// Before ▶ Play (and a saved level's ▶): two spawns at least, one for you and one for a CPU -- a map with none still started, everyone dropped on one
+// spot -- and Check my level. If it finds anything, the first press stops there with the list; pressing ▶ again on the level as it was checked plays it.
+function edPlayReady(lvl){
+  if((lvl.spawns||[]).length < 2){
+    ED.check = null;
+    edShowCheck(['Place at least 2 spawn points (◎ Spawn): one for you and one for each CPU. Up to '+MAX_FFA+' fighters play, one on each spawn.'], 'Not ready to play:');
+    edDraw(); return false;
+  }
+  const fp = edFingerprint();
+  if(ED.playAck === fp) return true;
+  const warns = edRunCheck(lvl, 'Check my level found:', ['Press ▶ Play again to play it anyway.']);
+  if(!warns.length) return true;
+  ED.playAck = fp;
+  return false;
+}
+// ▶ Play says who plays: "▶ Play as Firey vs 3 CPUs" -- you as the fighter last picked, a CPU on each other spawn, MAX_FFA in all at most.
+function edSyncPlayBtn(){
+  const b = document.getElementById('edPlayBtn'); if(!b) return;
+  const n = Math.min(MAX_FFA, ED.spawns.length), k = n - 1;
+  const t = (n >= 2 && chosen) ? '▶ Play as '+chosen.name+' vs '+k+' CPU'+(k===1 ? '' : 's') : '▶ Play';
+  if(b.textContent !== t) b.textContent = t;
+}
 async function edSave(){
   const lvl=edCurrentLevel();
   if(!lvl.name){ alert("Give your level a name first."); return; }
@@ -75285,6 +75579,7 @@ async function edSave(){
   levels[lvl.name]=lvl;
   await BStore.set('levels:custom', JSON.stringify(levels));
   edRenderList();
+  edRunCheck(lvl, 'Saved. Check my level found:');   // saved all the same: a level part-built is worth keeping
   alert('Saved "'+lvl.name+'"');
 }
 async function edRenderList(){
@@ -75321,6 +75616,7 @@ function edAdoptLevel(lvl){
   ED.hazard=lvl.hazard||"";
   ED.size=MAP_SIZES[lvl.size] ? lvl.size : 'normal';
   ED.sel=null;
+  ED.check=null; edShowCheck(null);   // the last level's findings are not this one's
 }
 async function edLoad(nm, thenPlay){
   let levels={}; const raw=await BStore.get('levels:custom'); if(raw){ try{levels=JSON.parse(raw);}catch(e){} }
@@ -75332,37 +75628,43 @@ async function edLoad(nm, thenPlay){
   if(sz) sz.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.v===ED.size));
   ED.fit=true; edResize();
   edSyncPanel(); edDraw();
-  if(thenPlay) playCustomLevel(edCurrentLevel());
+  if(thenPlay){ const l=edCurrentLevel(); if(edPlayReady(l)) playCustomLevel(l, false, true); }
 }
-function edTestPlay(){ playCustomLevel(edCurrentLevel(), true); }   // quick test from the editor skips character select
+function edTestPlay(){ const l=edCurrentLevel(); if(edPlayReady(l)) playCustomLevel(l, true, true); }   // quick test from the editor skips character select
 // "Test the feel" — the same sandbox that used to hang off the title screen as "Test Mode", now
 // where it belongs: one click from the canvas, running on the level currently being drawn. The
 // dummy/damage/knockback options still live on the #test screen; this just queues the map first.
 function edTestFeel(){
-  queueCustomLevel(edCurrentLevel());
+  queueCustomLevel(edCurrentLevel(), true);
   openTest();              // go('test') clears PENDING_CUSTOM, so re-arm it after
   PENDING_CUSTOM = true;   // keeps the map alive if they detour through fighter select
 }
 // Arm a hand-drawn level as the world the next match builds: CUSTOM_LEVEL feeds setupWorld's
 // geometry, `stage` feeds the sky/ground painting. Shared by "▶ Play" and "🧪 Test the Feel".
-function queueCustomLevel(lvl){
+function queueCustomLevel(lvl, fromEd){
   // `size` and `deco` travel with the level. The size decides the WORLD BOX setupWorld builds (so
   // a map built as Huge plays as Huge, from "▶ Play" and from "🧪 Test the Feel" alike), and it is
   // mirrored into SETTINGS.mapSize so the menus, the summary line and the netcode all agree with
   // the arena the match is actually about to construct.
+  // What this changes is noted the first time, and put back when the level is let go (dropCustomLevel).
+  if(!CUSTOM_PREV) CUSTOM_PREV = { stage:(stage && stage.id==='custom') ? STAGES[0] : stage, mapSize:SETTINGS.mapSize, mode:SETTINGS.mode, count:SETTINGS.count };
   const size = MAP_SIZES[lvl.size] ? lvl.size : 'normal';
+  // `fromEd`: queued from the editor, so the pause menu and the result screen offer the way back to it (customFromEditor)
   CUSTOM_LEVEL = { v:2, name:lvl.name, size, plats:lvl.plats, spawns:lvl.spawns,
-                   zones:lvl.zones||[], deco:lvl.deco||[], hazard:lvl.hazard };
+                   zones:lvl.zones||[], deco:lvl.deco||[], hazard:lvl.hazard, fromEd:!!fromEd };
   SETTINGS.mapSize = size;
   const skies={"":["#bfe8ff","#88cdf2"], lava:["#3a1a10","#1a0a06"], lowgrav:["#dfeaf2","#b8c9dc"], evilleafy:["#20301a","#0e1a0c"]};
   stage = { id:"custom", name:lvl.name||"Custom", blurb:"Your level", sky:skies[lvl.hazard]||skies[""],
     ground:lvl.hazard==='lava'?'#5a2a18':(lvl.hazard==='evilleafy'?'#2d3a24':'#7bc043'), plats:[], hazard:lvl.hazard||null };
   SETTINGS.mode="ffa";
-  if(!SETTINGS.count || SETTINGS.count<2) SETTINGS.count=Math.max(2, (lvl.spawns&&lvl.spawns.length)||2);
+  // One fighter to each spawn placed, up to MAX_FFA: Play used the menu's count (5 at first), so 5 fighters piled onto a map's 2 spawns (the level creator
+  // review, 2026-10-26). customSpawnCap holds the select screen and buildFighters to the same number.
+  const ns = (lvl.spawns||[]).length;
+  SETTINGS.count = ns >= 2 ? Math.min(MAX_FFA, ns) : Math.max(2, Math.min(MAX_FFA, SETTINGS.count||2));
 }
 // Play a custom level: single-screen FFA on the custom geometry.
-function playCustomLevel(lvl, skipSelect){
-  queueCustomLevel(lvl);
+function playCustomLevel(lvl, skipSelect, fromEd){
+  queueCustomLevel(lvl, fromEd);
   TESTMODE.active=false;
   if(skipSelect){ startMatch(); return; }   // editor "test play" jumps straight in
   // otherwise let the player pick their fighter first — the custom level is already queued in CUSTOM_LEVEL,
@@ -75371,6 +75673,18 @@ function playCustomLevel(lvl, skipSelect){
   go('select');
 }
 let PENDING_CUSTOM = false;
+// BACK TO THE EDITOR (the level creator review, 2026-10-26: after ▶ Play there was no way back to your level -- not in the pause menu, not on the result
+// screen). Offered there, and on Test the Feel's screen, when the level came from the editor (customFromEditor). The level is let go (dropCustomLevel puts
+// back the stadium and settings it changed); the editor still holds it, and ▶ Play queues it again.
+function backToEditor(){
+  TESTMODE.active = false;
+  dropCustomLevel();
+  openEditor();
+}
+function customFromEditor(){ return !!(CUSTOM_LEVEL && CUSTOM_LEVEL.fromEd) && !inNetSession(); }
+// The result screen's Change fighter: the select screen with the level still queued. It went through go('select') bare, which let the level go, so the
+// next match was on a stadium.
+function resultChangeFighter(){ if(CUSTOM_LEVEL) PENDING_CUSTOM = true; go('select'); }
 
 // ============================================================
 //  DWS -- DOMINATION WEIGHTED STRENGTH
@@ -75408,6 +75722,9 @@ function dwsClamp(v){ return v<0 ? 0 : (v>1 ? 1 : (v===v ? v : 0)); }
 // One log entry as DWS reads it, or null when it is no fight to score (the tutorial's still dummy, a trainer, one side only).
 function dwsMatch(m){
   if(!m || !Array.isArray(m.fighters) || m.fighters.length<2 || m.mode==='boss' || m.mode==='ctf') return null;
+  // A match on a level from the Level Creator is no fight to rank: a trap level hands out big wins nobody earned (the level creator review, 2026-10-26).
+  // recordMatch logs its stage as 'custom' (queueCustomLevel), so the ones already in a player's log are left out as well.
+  if(m.stage==='custom') return null;
   if(m.fighters.some(p=>!p || !p.name || (p.controller && p.controller!=='local' && p.controller!=='remote' && p.controller!=='ai'))) return null;
   const teams = m.mode==='teams' || m.mode==='cup';
   const full = m.fighters.every(p=>typeof p.stocksLeft==='number');
