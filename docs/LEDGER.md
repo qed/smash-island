@@ -919,6 +919,19 @@ per roster; per fighter, eight to sixteen games a run is thinner still. The next
 another three runs on the same build, not a knob: if Roboty and Golf Ball hold their places over
 six, they are real.
 
+### O23 · Event fighters: what step 1 left to the kits' own jobs
+
+Step 1 of the event fighters' build (branch `g-events`: SOAKED, the wet list, per-fighter size, the object rules, Dough's skips,
+grow-in) left these out on purpose. Each belongs to the job that builds the thing:
+
+- **Hot Dog's, Needy's and Sticker's jobs:** the BFDIE objects have no rows yet in the object rules (`TAKE_RULES`) or the wet
+  list (`WET_HITS`): the pole, the Recovery Center, the trampoline, the water column, the sandcastle and the jam splat.
+- **Needy's job:** Draw Up, the fourth taker (approval question B14), joins the object rules; and whether her water column soaks.
+- **Spongy's job (build step 11):** the puddles Wring Out soaks up (section 3.0's list) are not data yet. Today's five wet
+  moves (Rocky, Barf Bag, Golf Ball, Marker, Toothpaste) are switched on there and shown to the owner, with Firey's aquaphobia
+  beside them: it is a second water list (Teardrop, Barf Bag, Bubble) and does not match the wet list. A shot Dough copies
+  lands as his own, so the soak goes on the shot when it is fired.
+
 ---
 
 ## Scoreboard
@@ -926,7 +939,7 @@ six, they are real.
 | | Count |
 |---|---|
 | Done | 161 |
-| Open | 2 (O20, O22) |
+| Open | 3 (O20, O22, O23) |
 | Superseded | 2 (O1, B12) |
 | Blocked on you | 1 (G11: the Cloudflare MCP authorization) |
 
