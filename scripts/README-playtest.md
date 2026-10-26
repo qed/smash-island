@@ -9,7 +9,7 @@ number, the RUNNING! race, which has no door of its own). Computer only: nothing
 
 ```
 node scripts/playtest.mjs                      # a session: --minutes CPU minutes (default 12), a rotating seeded sample of scenes
-node scripts/playtest.mjs --seed 7             # the same session again
+node scripts/playtest.mjs --seed 7             # the same session again (Boss Rush aside: see below)
 node scripts/playtest.mjs --only ctf,flagcup   # only these scenes (shards: run up to 3 processes with different --only lists)
 node scripts/playtest.mjs --scene ffa --seed 99 [--arg fighter=Bomb --arg stage=canyon]   # ONE scene: how every finding is reproduced
 node scripts/playtest.mjs --list               # the scenes
@@ -19,6 +19,10 @@ Flags: `--minutes N` (CPU time, with a wall limit of 4x; with `--scene` it caps 
 `--wall-minutes N`, `--match-minutes N` (game-time cap of one match, default 3), `--out DIR` (default `playtest-out/`), `-v` (print
 findings as they happen), `--no-idle`, `--force`. After each scene's line, a match scene prints a summary: the player's damage (and
 on bosses), the player's KOs (where, at what %, and who hit last or `fell`), finishers fired/landed/damage, and the CTF phases.
+A KO by an owner the game marks `idx -2` reads `a boss` only in Boss Rush (or with a boss on the field); elsewhere it is an assist
+trophy or a hazard (`an assist/hazard`). `--arg stage=X` for a stage this fresh profile cannot pick (a secret stage still locked,
+such as the Moon) plays the select screen's stage instead: the summary prints a NOTE, the repro line names the stage played, and the
+report lists it under `stage-arg-ignored`.
 
 It asks for Idle priority itself (`os.setPriority`). On a laptop it reads the battery: on battery under 40% it caps the session to
 1 minute; on battery under 60% to 3 (`--force` overrides). Ctrl+C writes a partial report and exits; the report is also rewritten
@@ -61,17 +65,22 @@ that fired often and never landed, the player's damage by move type, CPUs idle f
 match puts up beyond GO!, KO lines, boss/system lines (the tutorial and the World Cup are exempt), phone/touch wording on any screen.
 
 How hits are counted: every hit through `applyHit` (on fighters) and `bossGraceNote` (on bosses, whatever the route: melee, shot,
-dash, bolt) counts for the hitter's damage, its move type and its move. A finisher is ONE move: its first swing names it, the inner
+dash, bolt) counts for the hitter's damage, its move type and its move; on a fighter only a rise in % counts (a hit that reaches the
+damage cap counts up to the % at the KO). A finisher is ONE move: its first swing names it, the inner
 swings are not moves of their own, and its hits -- in its start (`doAttackSpecial`), from its objects (`finxStep`, the game's
 `HITSTOP_FIN` says whose) and from the shots it put out (tagged with the finisher and its fighter) -- go to it, not to whatever the
-fighter pressed since. Self-check: a hit the game marks as a finisher's and the playtester credits elsewhere is a `playtest-credit` BUG.
+fighter pressed since. A finisher press that comes out as something else (no meter: a smash) never counts as a finisher hit, in the
+move list or in the move types. Self-check, both ways: a hit the game marks as a finisher's and the playtester credits elsewhere, or a
+player's `finisher` move type whose hits differ from what the player's finisher move landed, is a `playtest-credit` BUG.
 
 Falls: a stock the player lost with no hit or stun from anyone in the 3 s before (`fell` in the KO list; the `player-falls` line
 counts them per persona, on edged stages and overall). A tryhard should have none; a new player may.
 
 Boss Rush, `boss-untouched` (FEEL): nobody damaged the boss for 40 s. Each boss has its own clock, started when it arrives (a boss
 not on the field before, or its health jumping up), and the clock does not run in the gap between two bosses (headless, the next
-boss's 1.5 s real-time spawn timer is 40-80 s of game time). The summary line gives the longest wait between bosses.
+boss's 1.5 s real-time spawn timer is 40-80 s of game time). The summary line gives the longest wait between bosses. Because that
+timer is wall-clock, the gaps between bosses (and so what follows them) depend on how fast the machine runs: the same seed does not
+repeat a Boss Rush scene exactly once a second boss is due.
 
 ## Honest limits
 

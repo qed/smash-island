@@ -163,15 +163,20 @@ const PAGE_HOOKS = `(function(){
     var fin = !!lbl && /finisher$/.test(lbl);
     // a self-check against the game's own mark of a finisher's hit (inside its start, or HITSTOP_FIN while finxStep runs that fighter's finisher object): finHits, and finMiss when it was credited to anything else
     try{ if(P.finF === from || (typeof HITSTOP_FIN !== 'undefined' && HITSTOP_FIN.f === from)){ P.finHits = (P.finHits || 0) + 1; if(!fin) P.finMiss = (P.finMiss || 0) + 1; } }catch(e){}
-    if(from.you){ P.dmgYou += d; var cat = fin ? 'finisher' : (P.cat && P.catUntil >= hazardT ? P.cat : null); if(cat){ var c = from.name + '|' + cat; var cc = P.cats[c] || (P.cats[c] = { used: 0, landed: 0, dmg: 0 }); cc.landed++; cc.dmg += d; P.catLanded = true; } }
+    // its move type: a finisher's hit is 'finisher'; any other hit takes what the player pressed in the last 45 frames -- except a finisher press,
+    // which only names finisher hits: one that came out as something else (no meter: a smash) is a smash when its label says so, else no type
+    if(from.you){ P.dmgYou += d; var cat = fin ? 'finisher' : (P.cat && P.catUntil >= hazardT ? (P.cat !== 'finisher' ? P.cat : (lbl && /\.smash$/.test(lbl) ? 'smash' : null)) : null); if(cat){ var c = from.name + '|' + cat; var cc = P.cats[c] || (P.cats[c] = { used: 0, landed: 0, dmg: 0 }); cc.landed++; cc.dmg += d; P.catLanded = true; } }
     var m = lbl && P.moves[lbl]; if(m){ m.landed++; m.dmg += d; }
   }
   wrap('applyHit', function(o){ return function(t, dmg, kbx, kby, from, opts){
     var before = t ? t.pct : 0, r;
+    if(t) t._ptKoPct = null;
     try{ r = o.apply(this, arguments); }catch(e){ throw e; }
     try{ if(t && from !== t) t._ptHitT = hazardT; }catch(e){}   // touched by someone: a KO soon after is theirs, not a fall (see eliminate)
-    try{ if(from && t && from !== t && dmg > 0 && t.pct !== before){
-      var d = t.pct - before;
+    // a hit that reaches the damage cap KOs inside the call and the respawn zeroes the %: the damage is up to the % at the KO, never negative
+    var after = t && t._ptKoPct != null ? t._ptKoPct : (t ? t.pct : 0);
+    try{ if(from && t && from !== t && dmg > 0 && after > before){
+      var d = after - before;
       credit(from, d);
       if(t.you) P.dmgTaken += d;
     } }catch(e){}
@@ -189,7 +194,7 @@ const PAGE_HOOKS = `(function(){
   P.fnT = Object.create(null);
   if(window.__ptProf){ ['ctfNavTick','ctfAiSee','ctfStratTick','ctfPlanWatch','ctfReveal','ctfEditStep','ctfAiHideTick','ctfAiInputRaw','ctfStepKeys','ctfStepFlags','ctfStepElevs','ctfFixStep','ctfAiBegin','ctfEditNav','ctfStepJails','ctfStepZones','ctfAiTrack','aiThink','updateSummons','updateItems','fsStep','teamAiTick','comboInput','ctfRebuildDyn','ctfNavNew','ctfEditSettle','ctfEditResolve'].forEach(function(n){ wrap(n, function(o){ return function(){ var t = performance.now(); try{ return o.apply(this, arguments); } finally{ P.fnT[n] = (P.fnT[n] || 0) + performance.now() - t; } }; }); }); }
   // a KO: where (a blast line, or MAX for the damage cap), who hit last (lastHitBy is the fighter itself), and whether it was a FALL -- nobody had touched them for 3 s
-  wrap('eliminate', function(o){ return function(f){ try{ var lb = f.lastHitBy; P.kos.push({ n: f.name, you: !!f.you, t: hazardT, pct: Math.round(f.pct), side: f.x < -100 ? 'LEFT' : f.x > WW + 100 ? 'RIGHT' : f.y < -240 ? 'TOP' : f.y > WH + 100 ? 'BOTTOM' : 'MAX', by: lb ? (typeof lb === 'object' ? lb.name || (lb.idx === -2 || lb.team === -1 ? 'a boss' : null) : (fighters[lb] && fighters[lb].name) || null) : null, fell: !(hazardT - (f._ptHitT == null ? -1e9 : f._ptHitT) < 180), stage: stage && stage.id, segs: !!FLOOR_SEGS }); }catch(e){} return o.apply(this, arguments); }; });
+  wrap('eliminate', function(o){ return function(f){ try{ f._ptKoPct = f.pct; var lb = f.lastHitBy; P.kos.push({ n: f.name, you: !!f.you, t: hazardT, pct: Math.round(f.pct), side: f.x < -100 ? 'LEFT' : f.x > WW + 100 ? 'RIGHT' : f.y < -240 ? 'TOP' : f.y > WH + 100 ? 'BOTTOM' : 'MAX', by: lb ? (typeof lb === 'object' ? lb.name || (lb.idx === -2 || lb.team === -1 ? ((typeof BOSSRUSH !== 'undefined' && BOSSRUSH.active) || summons.some(function(m){ return m.type === 'boss'; }) ? 'a boss' : 'an assist/hazard') : null) : (fighters[lb] && fighters[lb].name) || null) : null, fell: !(hazardT - (f._ptHitT == null ? -1e9 : f._ptHitT) < 180), stage: stage && stage.id, segs: !!FLOOR_SEGS }); }catch(e){} return o.apply(this, arguments); }; });
   wrap('showResult', function(o){ return function(winners, winTeam){ try{ P.result = { winners: (winners || []).map(function(x){ return x && x.name; }), winTeam: winTeam, t: hazardT }; }catch(e){} return o.apply(this, arguments); }; });
 })()`;
 
@@ -690,6 +695,7 @@ function pickFighter(wo, name) {
 function pickStage(wo, id) {
   const name = wo.E(`(STAGES.find(function(s){ return s.id===${JSON.stringify(id)}; })||{}).name`);
   if (!name) return false;
+  if (!wo.E(`typeof stagesOpen !== 'function' || stagesOpen().some(function(s){ return s.id===${JSON.stringify(id)}; })`)) return false;   // locked here (a secret stage): no card by design; the scene says so
   wo.click('#stageBtn' && wo.doc.getElementById('stageBtn'));
   const card = wo.buttons('#stagepick').find((c) => c.querySelector('b') && c.querySelector('b').textContent.startsWith(name));
   if (!card) { note('BUG', 'menu', `the stadium list has no card for ${name}`); return false; }
@@ -725,6 +731,13 @@ function closeMatch(wo, sim, tag, extra) {
   { const c = extra && extra.you && P.cats[extra.you + '|finisher']; row.youFinisher = c ? `${c.landed} hits, ${Math.round(c.dmg)} dmg` : 'none'; }
   row.finHits = P.finHits || 0; row.finMiss = P.finMiss || 0;   // hits the game marks as a finisher's, and how many of them were credited to another move (should be 0)
   if (row.finMiss) note('BUG', 'playtest-credit', `the playtester credited ${row.finMiss} of ${row.finHits} finisher hits to another move (its own bookkeeping, not the game)`);
+  // and the other way: the player's 'finisher' move type holds exactly the hits of the player's finisher move(s) (skipped in a mirror match, where a CPU shares the name)
+  if (extra && extra.you && wo.E('fighters').filter((f) => f.name === extra.you).length === 1) {
+    const c = P.cats[extra.you + '|finisher'], byType = c ? c.landed : 0;
+    const byMove = Object.entries(P.moves).filter(([k]) => k.startsWith(extra.you + '|') && /finisher$/.test(k)).reduce((n, [, v]) => n + v.landed, 0);
+    row.finTypeVsMove = `${byType}/${byMove}`;
+    if (byType !== byMove) note('BUG', 'playtest-credit', `the player's finisher move type counts ${byType} hits but the player's finisher move landed ${byMove} (the playtester's own bookkeeping, not the game)`);
+  }
   STATS.matches.push(row);
   for (const [k, v] of Object.entries(P.moves)) { const a = STATS.moves[k] || (STATS.moves[k] = { fired: 0, landed: 0, dmg: 0 }); a.fired += v.fired; a.landed += v.landed; a.dmg += v.dmg; }
   for (const [k, v] of Object.entries(P.cats)) { const a = STATS.cats[k] || (STATS.cats[k] = { used: 0, landed: 0, dmg: 0 }); a.landed += v.landed; a.dmg += v.dmg; }
@@ -772,8 +785,9 @@ async function matchScene(wo, rng, args, kind) {
   if (!await toSelect(wo)) return { fail: 'menu' };
   const you = chooseFighter(wo, rng, args);
   if (!pickFighter(wo, you)) return { fail: 'pick' };
-  const stageIds = wo.E('STAGES.map(function(s){return s.id})');
-  const stageId = args.stage || R.pick(rng, kind === 'teams' ? stageIds : stageIds);
+  // a random stage comes from the ones this profile can pick (a secret stage stays locked on a fresh profile); an asked-for one is tried as asked
+  const stageIds = wo.E('(typeof stagesOpen === "function" ? stagesOpen() : STAGES).map(function(s){return s.id})');
+  const stageId = args.stage || R.pick(rng, stageIds);
   pickStage(wo, stageId);
   const mode = kind === 'teams' ? 'teams' : 'ffa';
   seg(wo, 'segMode', mode);
@@ -784,6 +798,8 @@ async function matchScene(wo, rng, args, kind) {
   CUR.args = { persona, fighter: you, stage: stageId, kind }; Object.assign(args, CUR.args);
   if (!startFromSelect(wo)) { note('BUG', 'menu', 'Start Match did not start a match'); return { fail: 'start' }; }
   COVERAGE.fighters[you] = (COVERAGE.fighters[you] || 0) + 1;
+  const played = wo.E('stage.id'), askedStage = stageId !== played ? stageId : null;   // an asked-for stage that is locked on this profile (or unknown) is not played
+  if (askedStage) { CUR.args.stage = played; args.stage = played; }
   wo.w.__ptCap = true;
   const sim = new Sim(wo);
   sim.player = new Player(wo, mulberry32(hashSeed(CUR.seed, 'player')), persona);
@@ -794,6 +810,7 @@ async function matchScene(wo, rng, args, kind) {
   await settle(wo);
   sampleCanvasText(wo);
   const row = closeMatch(wo, sim, kind, { persona, you });
+  if (askedStage) row.stageAsked = askedStage;
   if (wo.screen() === 'result' && rng() < 0.5) await resultScreen(wo, rng);
   return { why, row };
 }
@@ -1614,8 +1631,9 @@ async function runScene(name, seed, args) {
   STATS.scenes.push({ scene: name, seed, args: CUR.args, ms, result: res && (res.why || res.fail || res.crash || 'ok') });
   out(`  ${name.padEnd(10)} seed ${String(seed).padEnd(10)} ${String(ms).padStart(6)} ms  ${res && (res.why || res.fail || res.crash || 'ok')}  ${JSON.stringify(CUR.args)}`);
   const rw = res && res.row;
+  if (rw && rw.stageAsked) out(`             NOTE: asked for stage ${rw.stageAsked}, which this profile cannot pick (locked or unknown); played ${rw.stage} instead`);
   if (rw) out(`             ${rw.secs}s ${rw.stage || ''}${rw.edges ? ' (edges)' : ''}: player dmg ${rw.dmgYou}${rw.dmgYouBoss != null ? ` (on bosses ${rw.dmgYouBoss}; boss hits by anyone ${rw.bossHits}; bosses met ${rw.bossesMet}; longest wait between bosses ${rw.bossGapMax} s)` : ''}, taken ${rw.dmgTaken}; player KOs ${rw.youKoList.join(', ') || 'none'}; falls ${rw.youFalls}`);
-  if (rw) out(`             finishers (fired/landed/dmg): ${rw.finishers.join('; ') || 'none'}; the player's finisher hits: ${rw.youFinisher}; finisher hits by the game's mark ${rw.finHits}, credited elsewhere ${rw.finMiss}${rw.phases ? '; CTF phases (frames) ' + JSON.stringify(rw.phases) : ''}`);
+  if (rw) out(`             finishers (fired/landed/dmg): ${rw.finishers.join('; ') || 'none'}; the player's finisher hits: ${rw.youFinisher}; finisher hits by the game's mark ${rw.finHits}, credited elsewhere ${rw.finMiss}${rw.finTypeVsMove ? `; player's finisher type/move hits ${rw.finTypeVsMove}` : ''}${rw.phases ? '; CTF phases (frames) ' + JSON.stringify(rw.phases) : ''}`);
   return res;
 }
 
@@ -1696,6 +1714,8 @@ function observations() {
   const fl = (ms) => `${ms.reduce((a, m) => a + (m.youFalls || 0), 0)} in ${ms.length} matches`;
   const per = ['tryhard', 'new', 'explorer'].map((pn) => [pn, STATS.matches.filter((m) => m.persona === pn && m.youFalls != null && m.mode !== 'ctf')]).filter(([, ms]) => ms.length);   // (a Capture the Flag KO is a trip home, not a stock)
   if (per.length) obs.push({ kind: 'player-falls', text: `The player fell off on its own (a stock lost with no hit in the 3 s before): ${per.map(([pn, ms]) => `${pn} ${fl(ms)} (edged stages ${fl(ms.filter((m) => m.edges))})`).join('; ')}. A tryhard should not; a new player may.` });
+  const asked = STATS.matches.filter((m) => m.stageAsked);
+  if (asked.length) obs.push({ kind: 'stage-arg-ignored', text: 'Asked-for stages that could not be picked (locked on a fresh profile, or unknown), and what was played instead: ' + asked.map((m) => `${m.stageAsked} -> ${m.stage} (seed ${m.seed})`).join(', ') });
   if (STATS.cpuIdle.length) obs.push({ kind: 'cpu-idle', text: 'CPU idle for 10 s: ' + STATS.cpuIdle.map((c) => `${c.fighter} (${c.mode}/${c.stage})`).join(', ') });
   return obs;
 }
