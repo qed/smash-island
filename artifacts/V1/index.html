@@ -15441,7 +15441,7 @@ function titleContestants(){
     box.appendChild(im);
   }
   try{ const n = ROSTER.filter(r=>r && r.play && !r.prize && !eventLocked(r)).length, tg = document.getElementById('titleTag'); if(tg && n) tg.textContent = n + ' fighters · Capture the Flag · Boss Rush · online'; }catch(e){}
-  try{ document.getElementById('titleFighters').textContent = rosterCount(); }catch(e){}   // (a computer that cannot save has its event fighters by now)
+  try{ document.getElementById('titleFighters').textContent = rosterCount(); }catch(e){}   // (a computer that cannot save has its event fighters only once events have launched: isUnlocked)
 }
 window.addEventListener('load', ()=>{ setTimeout(()=>{ try{ const t = document.getElementById('title'); if(t && t.classList.contains('active')) titleContestants(); }catch(e){} }, 0); });   // the title shown on start, before any go('title')
 function blobDot(r){
@@ -20640,7 +20640,7 @@ const FIGHTER_STATS = {
   "Tea Kettle": { "fall":1.09 },
   "Teddy Bear": { "run":0.92, "air":1.08, "fall":0.91 },
   "Bot": { "run":1.1, "jump":1.1 },
-  "Eraser": { "run":1.07, "jump":1.06, "fall":1.03 }   // event fighter (event-fighters-phase1.md, 3.1): quick on his feet; air, dmg and rec 1 (his wall jump: WALL_JUMP_HIGH)
+  "Eraser": { "run":1.1, "jump":1.1, "fall":1.03, "dmg":1.15 }   // event fighter (event-fighters-phase1.md, 3.1): quick on his feet; air and rec 1 (his wall jump: WALL_JUMP_HIGH). Run and jump 1.1 (were 1.07, 1.06) and dmg 1.15 (was 1): he landed low (2 of 15 against mid-pack Hard CPUs), and the design's first knobs (these two, then Rub Out's cooldown) alone left him at 1 of 15; with dmg 1.15, 9 of 15
 };
 const STAT_KEYS = ['run', 'air', 'jump', 'fall', 'dmg', 'rec'];   // rec: RECOVERY, the up-special's lift and the air jump while off a stage with edges (recK)
 const STAT_ONE = Object.freeze(Object.fromEntries(STAT_KEYS.map(k => [k, 1])));   // what a fighter with no `st` (a client's copy) reads (built from the keys, so a `dmg:` knob cannot reach it)
@@ -23980,7 +23980,7 @@ function stepToiletWaves(s, T){
 // THE ACTS. Each is called once a frame after the arrival, with the nearest foe (a fighter, a boss or an add: may be null), its row
 // of AS and the summoner (a fighter, or undefined for one of MePhone4's adds).
 const AS_ACT = {
-  // ERASER: rubs side to side (her wind-up), then the wipe (eraserWipe).
+  // ERASER: rubs side to side (his wind-up), then the wipe (eraserWipe).
   erase(s, tgt, T){
     s.vx *= 0.5;
     if(s._ph === 'idle'){ asGo(s, 'wind'); return; }
@@ -53189,7 +53189,7 @@ function mvTick(f, inp){
     const vx = m.vx == null ? null : m.vx * f.face;
     if(m.vy != null && m.vy < 0) mv.lift = true;   // the move sends its fighter up itself (see WALKING OFF above)
     if(m.mode === 'add'){ if(vx != null) f.vx += vx; if(m.vy != null) f.vy += m.vy; }
-    else if(m.mode === 'stall'){ if(f.vy > m.vy) f.vy = m.vy; if(vx != null) f.vx = vx; }
+    else if(m.mode === 'stall'){ if(f.vy > m.vy) f.vy = m.vy; if(vx != null) f.vx = vx; f._ff = false; }   // (a hang ends a fast fall: ↓ and X pressed together start one before the attack is read, CI_DELAY)
     else if(m.mode === 'dive'){ if(f.vy < m.vy) f.vy = m.vy; if(vx != null) f.vx = vx; }
     else { if(vx != null) f.vx = vx; if(m.vy != null){ f.vy = m.vy; if(m.vy < 0) f.onground = false; } }
   }
@@ -57082,13 +57082,15 @@ const TAKE_RULES = {
 // not MeTag's wall (its health cannot be emptied). A later kit's puddle or trap that a hit breaks says so with `breaks`.
 function hitBreaks(p){ return !!p && !p.unbreakable && (!!p.breaks || (!!p.turret && p.hpMax < 1e9)); }
 // May `how` ('rub', 'eat' or 'grab') take a thing of `kind` that a move in `slot` put out? `own`: the taker put it out itself. `thing`:
-// the object itself, when the taker has one, for the two tests that ask it (`unbreakable`, and 'break': hitBreaks).
-function canTake(how, kind, slot, own, thing){
+// the object itself, when the taker has one, for the two tests that ask it (`unbreakable`, and 'break': hitBreaks). `wide`: the 'break'
+// test counts as passed -- a wipe of the whole screen (Eraser's Final Smash, "every enemy shot and trap on the stage is erased") takes a
+// puddle or a floor trap whether or not a hit could break it; every other rule (TAKE_NEVER, `unbreakable`, a row's false) still holds.
+function canTake(how, kind, slot, own, thing, wide){
   if(slot && TAKE_NEVER[slot]) return false;
   if(thing && thing.unbreakable) return false;
   const R = TAKE_RULES[kind]; if(!R) return false;
   const v = R[how];
-  return v === 'own' ? !!own : v === 'break' ? hitBreaks(thing) : !!v;
+  return v === 'own' ? !!own : v === 'break' ? (!!wide || hitBreaks(thing)) : !!v;
 }
 // THE KIND AND THE SLOT OF A THING ALREADY IN THE GAME, for the takers (Eraser's Rub Out first: build step 6). A projectile is a turret a hit can
 // break ('breakable'; one no hit can empty, MeTag's wall, is nothing a taker takes: null), a puddle (a trap that slows: Taco's salsa, Rocky's
@@ -57169,12 +57171,13 @@ function setFighterSize(f, k){
 //           `reach` px past his front the `tip` %. A wall touched in its first `wall` frames is kicked off, with a jump back.
 //   rub     RUB IT OFF: `t` frames of scrubbing, then the cleanse; back in cd frames, or cdNone when there was nothing to rub off; aiFoe:
 //           the CPU scrubs only with no foe that near.
-//   ootp    OUT OF THE PICTURE (finOotp)            fs  WIPE THE SLATE CLEAN (FINAL_SMASHES['Eraser'])
+//   ootp    OUT OF THE PICTURE (finOotp; aiGap: the CPU throws it on a grounded foe whose edge is within 40 px, section 3.1 -- the grab
+//           itself connects out to about 46)            fs  WIPE THE SLATE CLEAN (FINAL_SMASHES['Eraser'])
 const ERASER = {
-  rubOut: { wind:10, hang:6, near:18, far:112, up:44, dn:10, r:30, dy:2, dmg:7, kb:[4.5, -5], show:12, cd:78, aiShot:120, aiFoe:100 },
+  rubOut: { wind:10, hang:6, near:18, far:112, up:44, dn:10, r:30, dy:2, dmg:7, kb:[4.5, -5], show:12, cd:60, aiShot:120, aiFoe:100 },
   flip:   { crouch:3, power:-14, back:2.6, spin:22, wall:16, reach:30, close:8, tip:4, band:0.5, kb:[3.5, -9.5] },
   rub:    { t:24, cd:300, cdNone:60, aiFoe:140 },
-  ootp:   { lean:FIN_STARTUP, reach:30, grab:4, every:12, rubs:3, dmg:3, fade:4, gone:18, step:40, fin:8, kbx:11, kby:-10, mash:5, cpu:[0.06, 0.08, 0.10], boss:8, whiff:22, end:14, ai:360 },
+  ootp:   { lean:FIN_STARTUP, reach:30, aiGap:40, grab:4, every:12, rubs:3, dmg:3, fade:4, gone:18, step:40, fin:8, kbx:11, kby:-10, mash:5, cpu:[0.06, 0.08, 0.10], boss:8, whiff:22, end:14, ai:360 },
   fs:     { run:60, hw:50, H:64, dmg:21, kb:20, ky:-11 },
 };
 // The pinks he is drawn in (the wiki's Template: body, shade, shine, outline) and his crumbs.
@@ -57184,18 +57187,19 @@ const ERASER_INK = { body:'#e47e93', shade:'#df6a82', shine:'#e6919c', edge:'#aa
 // A foe's thing only: never his own or a teammate's, never a boss's or its side's (a shot a boss or a hostile add threw: no fighter's team),
 // never one with no owner; and only what the rules let Rub Out erase (canTake on takeKindOf and takeSlotOf): a shot in flight, a thrown item,
 // a turret a hit could break; a puddle or a floor trap only when a hit could already break it; never an unbreakable shot, and nothing a smash,
-// a finisher or a Final Smash put out.
-function eraserTakes(f, p){
+// a finisher or a Final Smash put out. `all`: the Final Smash's wider test (WIPE THE SLATE CLEAN, question 27: "every enemy shot and trap on
+// the stage"), the same in everything but question 23's -- every foe's puddle and floor trap goes, breakable or not (canTake's `wide`).
+function eraserTakes(f, p, all){
   if(!p || !(p.life > 0) || p.bossAtk != null) return false;
   const o = p.ownerObj;
   if(!o || o === f || !(o.team >= 0) || o.team === f.team) return false;
-  return canTake('rub', takeKindOf(p), takeSlotOf(p), false, p);
+  return canTake('rub', takeKindOf(p), takeSlotOf(p), false, p, !!all);
 }
-// Erases every thing `inside` holds that he may take, each in a puff of eraser crumbs; returns how many.
-function eraserTake(f, inside){
+// Erases every thing `inside` holds that he may take (`all`: by the Final Smash's wider test), each in a puff of eraser crumbs; returns how many.
+function eraserTake(f, inside, all){
   let n = 0;
   for(const p of projectiles){
-    if(!inside(p) || !eraserTakes(f, p)) continue;
+    if(!inside(p) || !eraserTakes(f, p, all)) continue;
     p.life = 0; n++;
     for(let i = 0; i < 5; i++) puff(p.x, p.y, i % 2 ? ERASER_INK.crumb : ERASER_INK.body, 3);
   }
@@ -57207,10 +57211,10 @@ function eraserTake(f, inside){
 // it stops it -- then wipes the space 18-112 px ahead clean: every enemy shot it touches is erased, and so is every enemy trap or puddle a hit
 // could already break (eraserTakes), and a foe in the wipe takes 7%. Never a teammate's thing, a boss (every summon is passed to the hit as
 // already hit) or a boss's thing, an unbreakable shot, or what a smash, a finisher or a Final Smash put out. On the ground he stands to rub
-// (eraserStep); in the air he hangs through it, once per airtime. Cooldown 78 frames.
+// (eraserStep); in the air he hangs through it, once per airtime. Cooldown 60 frames (the design's 78, shortened: he landed low).
 function eraserRubOut(f){
   const R = ERASER.rubOut;
-  f.spCd = Math.max(f.spCd, Math.round(R.cd/SPECIAL_CD_SCALE));   // (fireSpecial scales a special's cooldown on the way out: 78 frames once it has)
+  f.spCd = Math.max(f.spCd, Math.round(R.cd/SPECIAL_CD_SCALE));   // (fireSpecial scales a special's cooldown on the way out: 60 frames once it has)
   armAtk(f, R.wind + 2, 'sweep', mvId(f, 'special'));
   if(!f.onground && !f._rubHung){ f._rubHung = true; f._rubHang = hazardT + R.wind + R.hang; f._ff = false; }   // he hangs while he rubs, once per airtime
   startWindup(f, R.wind, function(){ rubOutWipe(f); }, 'rgba(0,0,0,0)');   // (see-through: the wiggle is his body's own)
@@ -57250,6 +57254,12 @@ function eraserRubOff(f){
 // once per airtime (eraserStep). The steakhouse wall is The Seven Wonders of Goiky's ("The Contestants got to be at the steakhouse"). Its lift
 // is a recovery's (recV), and the once-per-airtime rule of every up special holds (fireSpecialInner).
 UPSPECIALS.rubout = function(f){   // Eraser -- STEAKHOUSE FLIP (EVENT FIGHTERS: ERASER)
+  // ↑ + C ON THE GROUND: a player's ↑ is the jump key, so he hopped as C went down. That hop is taken back, as the up-tilt takes back ↑ + X's
+  // (mvAttack, UT_JUMP_WINDOW): the crouch is on the floor and the kick comes out at the height of a foe standing there.
+  const J0 = f._jmp0;
+  if(!f.onground && J0 && J0.ground && hazardT - J0.t <= UT_JUMP_WINDOW && f.vy < 0 && !(f.flying > 0)){
+    f.y = J0.y; f.vy = 0; f.onground = true; f.jumps = J0.jumps; f._hop = false; f._ff = false; f._usedAirSpecial = false;
+  }
   startWindup(f, ERASER.flip.crouch, function(){ eraserFlip(f); }, 'rgba(0,0,0,0)');   // (see-through: the crouch is his body's own)
   if(f._windup) f._windup.flip = true;
 };
@@ -57411,15 +57421,16 @@ FINX_AI_KITS.add('rubout');   // the CPU finisher list: it presses his finisher 
 // The event fighters' finisher reads (finB1Ai, through finB7Want): only from where each reaches. A kit job adds its case.
 function finEventWant(f, t, sp, dx, dy, adx, ady, gap, ground, tground){
   switch(sp){
-    case 'rubout': return ground && tground && !t._isBoss && ady < 30 && gap > -12 && gap < ERASER.ootp.reach
-                        && hazardT - (f._aiOotpT == null ? -1e9 : f._aiOotpT) >= ERASER.ootp.ai;   // Eraser: a grounded foe right in front of him, at most once every 6 s
+    case 'rubout': return ground && tground && !t._isBoss && ady < 30 && gap > -12 && gap < ERASER.ootp.aiGap
+                        && hazardT - (f._aiOotpT == null ? -1e9 : f._aiOotpT) >= ERASER.ootp.ai;   // Eraser: a grounded foe within 40 px in front of him, at most once every 6 s
   }
   return false;
 }
 
 // ---- WIPE THE SLATE CLEAN (his Final Smash; question 27: "keep both") ----
-// He winds up (FS_WIND frames, his own), then every enemy shot and trap on the stage that his Rub Out could take is erased (eraserTakes), and
-// a giant pink eraser sweeps the whole floor from one edge to the other the way he faces, in ERASER.fs.run frames: whoever it meets on the floor,
+// He winds up (FS_WIND frames, his own), then every enemy shot and trap on the stage is erased (eraserTakes with `all`: Rub Out's rules, bar
+// question 23's -- a foe's puddle or floor trap goes whether or not a hit could break it; never a teammate's, a boss's, an unbreakable thing
+// or what a smash, a finisher or a Final Smash put out), and a giant pink eraser sweeps the whole floor from one edge to the other the way he faces, in ERASER.fs.run frames: whoever it meets on the floor,
 // up to its height, takes 21% (42% with KO-LEVEL). Jump it or stand on a platform. The floor is the main floor (the one under him on a map
 // that has none), worked out the same way on every screen; the eraser's place is a pure function of fsT and the facing.
 function eraserFsFloor(f){ return isBig() ? fsFeetY(f) : groundY(); }
@@ -57431,7 +57442,7 @@ FINAL_SMASHES['Eraser'] = {
   tick(f, st, t){
     const E = ERASER.fs;
     if(t === 0){ shake(5); for(let i = 0; i < 10; i++) puff(f.x, f.y, i % 2 ? ERASER_INK.body : '#ffffff', 6); }
-    if(t === this.wind){ armAtk(f, 30, 'fsburst'); shake(8); eraserTake(f, function(){ return true; }); }   // the screen, erased
+    if(t === this.wind){ armAtk(f, 30, 'fsburst'); shake(8); eraserTake(f, function(){ return true; }, true); }   // the screen, erased: every foe's shot and trap
     if(t >= this.wind && t < this.wind + E.run){
       const fx = eraserFsFront(st.dir, t - this.wind);
       for(const o of fighters){
@@ -57466,7 +57477,7 @@ function drawSlateEraser(c, x, fy, hw, H, dir){
 
 // ---- THE CPU: his word in brainOut (finisher: finEventWant; recovery: brainRecover, his up special) ----
 // RUB OUT only on a foe's shot it may take within 120 px or a foe within 100 px, and no other time; RUB IT OFF only with an ailment on him and
-// no foe within 140 px. What it reads is what it sees, a moment late (the eyes: the shots too new to have been seen are not in `projectiles`
+// no foe within 140 px; neither with no floor under him (the recovery needs the cooldown they share). What it reads is what it sees, a moment late (the eyes: the shots too new to have been seen are not in `projectiles`
 // here). A foe close is a chance a frame, not a certainty, so his strings and grabs still come; a shot coming is answered once Rub Out is back.
 function eraserRubPays(f){
   if(!eraserAilment(f)) return false;
@@ -57475,6 +57486,12 @@ function eraserRubPays(f){
 }
 function aiEraserOut(f, inp, B, L, t, fight){
   const now = hazardT, R = ERASER.rubOut;
+  // OFF THE STAGE (nothing under him): no special of his but the recovery's. Rub Out and Rub It Off share the special cooldown with
+  // Steakhouse Flip, so one pressed over the pit would leave him without his way back for 1 s or 5 s.
+  if(!f.onground && surfaceBelow(f.x, feetY(f)) === null){
+    if(inp.special && !inp.up && !inp.attack){ inp.special = false; inp.down = false; }
+    return;
+  }
   let shot = null, sd = R.aiShot;
   for(const p of projectiles){ if(Math.abs(p.y - f.y) > 60 || !eraserTakes(f, p)) continue; const d = Math.hypot(p.x - f.x, p.y - f.y); if(d < sd){ sd = d; shot = p; } }
   const near = !!(t && !t._isBoss && Math.hypot(t.x - f.x, t.y - f.y) < R.aiFoe);
@@ -58502,9 +58519,11 @@ function freshProfile(){
 function openProfile(from){
   const p = freshProfile();
   p.migratedFrom = from || 'no-storage';
-  // The event fighters open only on a computer that cannot save (approval question 6). A very old save grandfathered in ('pre-A')
-  // and a load that failed get the fighters playing could have earned, and an event fighter is earned in its event.
-  p.unlocked = ROSTER.filter(r=>!VAULT_FIGHTERS.has(r.name) && (!r.event || p.migratedFrom==='no-storage')).map(r=>r.name);
+  // The event fighters open only on a computer that cannot save (approval question 6), and only once events have launched (the owner,
+  // "Hide until launch"): before then they are as hidden there as anywhere. isUnlocked opens them at the launch week for a session already
+  // running. A very old save grandfathered in ('pre-A') and a load that failed get the fighters playing could have earned, and an event
+  // fighter is earned in its event.
+  p.unlocked = ROSTER.filter(r=>!VAULT_FIGHTERS.has(r.name) && (!r.event || (p.migratedFrom==='no-storage' && eventsLaunched()))).map(r=>r.name);
   // The wallet, quests and cosmetics come from freshProfile, empty: degrading open opens FIGHTERS, never free Win Tokens or
   // looks. Tokens are earned by playing, here as anywhere.
   return p;
@@ -58593,8 +58612,10 @@ function isUnlocked(r){
   if(r && r.prize && !cobsBeaten()) return false;   // a prize row is not in ROSTER while the gate is shut; anything still holding one (a guest's net pick) finds it locked
   // ---- Steve Cobs's prize: end ----
   // An event fighter is open once its name is in your unlocked list and never before: not by the "everything" view (approval
-  // question 5, as the Vault fighters), and not before the profile has loaded (it is left out, never drawn locked).
-  if(r && r.event) return !!PROFILE && PROFILE.unlocked.indexOf(r.name)>=0;
+  // question 5, as the Vault fighters), and not before the profile has loaded (it is left out, never drawn locked). On a computer that
+  // cannot save, every one opens once events have launched (question 6 and "Hide until launch"), even in a session that crosses the
+  // launch Monday.
+  if(r && r.event) return !!PROFILE && (PROFILE.unlocked.indexOf(r.name)>=0 || (PROFILE.migratedFrom==='no-storage' && eventsLaunched()));
   // A Vault fighter "can ONLY be opened by a code", which beats both the rules below it: the DLC
   // pack arriving whole ("Wal-mart is for marshmallow", "add more dlc codes") and the "everything"
   // view's escape hatch, which would otherwise open every one of them with a single click.
@@ -58620,7 +58641,8 @@ function unlockFighter(name){
 // two that never take one: the Daily (approval question 7, dailyMatchup, so it stays the same for everyone) and an online room's
 // CPU seats (question 8, buildFighters). Before you have it, it fights only in its own event matches, as a CPU (B4): the event
 // match runner (build step 7) seats it there itself, as the Daily seats its foe, so no pool ever offers it. A computer that cannot
-// save opens them, by the game's open-everything rule (question 6, openProfile). Online, each player brings their own: a guest's
+// save opens them by the game's open-everything rule (question 6, openProfile), but only once events have launched (the owner, "Hide
+// until launch": eventsLaunched, in openProfile and isUnlocked); before then they are hidden there too. Online, each player brings their own: a guest's
 // pick travels in its hello, and the host plays it whether the host has it or not (startAsHost and beginMatch read ROSTER, which
 // holds every event row).
 function eventLocked(r){ return !!(r && r.event) && !isUnlocked(r); }
@@ -58722,8 +58744,8 @@ const EVENT_MATCHES = {
 //     crosses Monday midnight pays toward the event it started in;
 //   * 100 unlocks the fighter for good: the name joins the unlocked list (unlockFighter), which only ever grows. Tokens past 100
 //     keep counting, quietly (question 11), for a later event costume.
-// What pays nothing: Test mode, the Level Creator and the tutorial (questsCount: the profile's own rule), a week with no event, and
-// a week before last week. Event matches count for quests, stats and My Stats and not for One's chain, the Daily or the World Cup
+// What pays nothing: Test mode, the Level Creator and the tutorial (questsCount: the profile's own rule), a week with no event, a week
+// before last week, and a week after this one (a wrong or forward clock on the other side of an event room). Event matches count for quests, stats and My Stats and not for One's chain, the Daily or the World Cup
 // (question 10): the event match runner (build step 7) sees to that, as it is the one that knows a match is an event match.
 //
 // PROFILE.event = { tok:{ name: total }, pay:{ line: tokens } }. `tok` holds each fighter's total, which only ever rises. `pay` is
@@ -58734,7 +58756,8 @@ const EVENT_MATCHES = {
 // TWO TABS (mergeEvent): a total merges to the larger side PLUS the lines the other side paid that it does not hold, the way the Win
 // Tokens do (mergeWallet), with the week's limit kept -- two tabs at 90 that each win once come to 100, not 110 -- so nothing is
 // paid twice and nothing is lost. A total that reaches 100 in a merge unlocks its fighter there too (mergeProfiles, shopCatchUp).
-// A COMPUTER THAT CANNOT SAVE has every event fighter open already (openProfile, question 6); a match there still pays, into memory.
+// A COMPUTER THAT CANNOT SAVE has every event fighter open once events have launched (openProfile, isUnlocked: question 6 and "Hide until
+// launch"), so by the time any match pays there its fighters are open; it still pays, into memory.
 const EVENT_PAY = { win:10, loss:5, first:10, dealt:20, secs:60, week:100, unlock:100 };
 const EVENT_PAY_LINE = /^w\d{1,9}:[^:]{1,32}:(?:f[1-3]|[a-z0-9]{1,14}\.\d{1,9})$/;
 // Every fighter on the laps: the only names a total can unlock (a save's other names are kept, and open nothing).
@@ -58797,7 +58820,7 @@ function eventPayId(){
 function eventPay(m, now){
   if(!PROFILE || !questsCount() || !m) return null;
   const t = now || shopNow(), ev = eventOfWeek(m.week), n = m.n;
-  if(!ev || !(n === 1 || n === 2 || n === 3) || ev.week < shopWeekNo(t) - 1) return null;
+  if(!ev || !(n === 1 || n === 2 || n === 3) || ev.week < shopWeekNo(t) - 1 || ev.week > shopWeekNo(t)) return null;   // this week or last week only: never a week to come
   shopPeek();   // what another tab paid stands here first, so the week's limit and the first wins are the real ones (shopCatchUp)
   const e = eventState(t), name = ev.name, pre = 'w' + ev.week + ':' + name + ':';
   const win = !!m.won && !!m.alive;

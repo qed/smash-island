@@ -949,9 +949,9 @@ build, and the Daily keeps every pairing. Left on purpose:
 - **Tokens (step 4):** the unlock is `unlockFighter(name)`, the same list as every other unlock; nothing else needs to change.
 - **Online (step 10):** the EVENT tag in the lobby. A guest's own event fighter already plays in a host's room, and online CPU
   seats already skip them (checked with the in-process pair).
-- **For the owner:** a computer that cannot save opens the event fighters as soon as their rows land (question 6), so on such a
-  computer they would show, playable, in their own group before the first event, while question 13 hides the group from
-  everyone else until then. Gating that on the first week is one line in `openProfile` or `isUnlocked`, if wanted.
+- **Done (the owner, "Hide until launch"; kit 1's fixes):** a computer that cannot save opens the event fighters only once events
+  have launched (`eventsLaunched()` in `openProfile` and `isUnlocked`, so a session that crosses the launch Monday opens them too);
+  before then they are as hidden there as anywhere.
 - **Found in passing, not changed:** once Steve Cobs is beaten, his three prize rows join ROSTER and with it the Daily's pool, so
   that player's Daily is no longer everyone's (496 of the 508 days from 2026-08-11 to 2027-12-31 differ). The same one-word
   filter the Daily now uses for event fighters would fix it, but it changes that player's Daily, so it waits for a yes.
@@ -990,8 +990,8 @@ into the profile's `event` field: `tok`, each fighter's own total (question 2), 
 20% dealt or 60 s lasted; the first win on each match +10, once per event (lines `f1`-`f3`, the same in every tab); no daily limit,
 at most 100 a week per fighter; 100 unlocks through `unlockFighter`, for good. The numbers are `EVENT_PAY`. Two tabs: `mergeEvent`
 (in `mergeProfiles` and `shopCatchUp`; `eventPay` peeks at the store first, as the quests do) keeps the larger total plus the
-payouts only the other side made, inside the week's limit, and a merge that reaches 100 unlocks. A computer that cannot save already
-has the fighters open (step 2) and is paid into memory. Nothing calls `eventPay` yet, and with `EVENT_LAUNCH` null it pays nothing.
+payouts only the other side made, inside the week's limit, and a merge that reaches 100 unlocks. A computer that cannot save has the
+fighters open once events have launched (step 2, "Hide until launch") and is paid into memory. Nothing calls `eventPay` yet, and with `EVENT_LAUNCH` null it pays nothing.
 Checked with a scratch script (test launch 2026-10-19 injected, not committed): 28 payout cases, 6 two-tab merges through
 `mergeProfiles` both ways and the game's own `saveProfile`, and the cannot-save path; 49 expectations met. Left on purpose:
 
@@ -1003,15 +1003,15 @@ Checked with a scratch script (test launch 2026-10-19 injected, not committed): 
   running during an event match. Quests, stats and My Stats count it as any match.
 - **The result note (steps 7 and 9):** reads `eventPay`'s return (`base`, `first`, `bonus`, `weekTotal`, `total`, `unlocked`). An
   unlock is queued in `PENDING_UNLOCKS` like any other, so the existing "new fighter unlocked" note already shows it.
-- **Event rooms (step 14):** a guest calls `eventPay` with the host's week; it already refuses a week before last week, which is
-  the "their week or the one just before" rule.
+- **Event rooms (step 14):** a guest calls `eventPay` with the host's week; it refuses a week before last week and, since kit 1's
+  fixes, a week after this one, which is the "their week or the one just before" rule.
 - **For the owner:** a win you are no longer in for (your ally finished it) is paid as a loss is, 5 if you dealt 20% or lasted
   60 s, so being knocked out never pays less because your side went on to win. Paying nothing instead is one line in `eventPay`.
 
 ### O27 · Event fighters: what kit 1 (Eraser) left to later steps
 
 Kit 1 (branch `g-events`, build step 6 of event-fighters-phase1.md) is Eraser, the first event row in ROSTER (`event:true`, kit `rubout`),
-from section 3.1 and the approved questions 21 to 28: weight 88; run 1.07, jump 1.06, fall 1.03 (FIGHTER_STATS); his wall jump a backflip
+from section 3.1 and the approved questions 21 to 28: weight 88; run 1.1, jump 1.1, fall 1.03, dmg 1.15 (FIGHTER_STATS; see the balance note below); his wall jump a backflip
 15% higher (`WALL_JUMP_HIGH`, the one wall trick of the event cast); BFB+TPOT art only (his TPOT render, already in the game as his assist
 picture; HURT_POLY and LIMB_RIG traced from it the trace scripts' way, FR_FACE measured with measure-faces.mjs). His code is the section
 EVENT FIGHTERS: ERASER: Rub Out (`eraserRubOut`, `rubOutWipe`; it takes only foes' things a hit could already break, through the object rules,
@@ -1023,8 +1023,16 @@ the move they came from (`_slot`), so no taker ever takes one. Online: everythin
 finisher's row gains `rn`); the guest's prediction treats Rub Out's air hang and the flip's wall-kick window as frames the host moves him in.
 His three event matches are data (`EVENT_MATCHES.Eraser`). Checked: it boots; a scratch-unlocked check of every move and a CPU match; the
 in-process pair with him on the guest; one 15-match 1v1 tournament against opponents drawn across the roster (Hard CPUs, 2 stocks, Goiky
-Field): 6 of 15, 40%, KOs 12 to falls 20 -- inside what 15 games can tell from 50% (one standard deviation is about 13 points), so nothing
-was buffed; if a fuller run puts him clearly low, the design's first knob is run and jump toward 1.1, then Rub Out's cooldown. Left on purpose:
+Field): 6 of 15, 40%, KOs 12 to falls 20. **The three checks after it, and their fixes** (same branch): the checker's tournament against
+mid-pack Hard CPUs (same rules, items off, 7200 frames) went 2 of 15, so he was buffed toward the middle -- the design's knobs first (run
+and jump 1.1, Rub Out's cooldown 78 to 60: 1 of 15 on the same seeds), then his damage (dmg 1.1: 4 of 15; with a 48 cooldown and a longer
+jab as well: 5 of 15; dmg 1.15: 9 of 15, kept). The builder's roster-spread run again on the final build: 8 of 15 (was 6), KOs 15 to falls 19
+(was 12 to 20), damage dealt to taken 0.99 (was 0.85). Both sets together: 17 of 30, 57% (was 8 of 30, 27%). Also fixed: the Final Smash erases every foe's puddle and floor trap (`eraserTakes` with
+`all`, canTake's `wide`), as "every enemy shot and trap" says, while Rub Out keeps question 23; Steakhouse Flip from the ground by the keys
+takes back the hop the jump key gave (as the up-tilt does), so the kick lands on a standing foe; a 'stall' step of a move ends a fast fall
+(down and X pressed together); his CPU presses no Rub Out or Rub It Off with nothing under him, and throws the finisher at a foe within
+40 px (`ERASER.ootp.aiGap`); `eventPay` refuses a week after this one; a computer that cannot save opens event fighters only once events
+launch. Left on purpose:
 
 - **The event match runner (step 7):** plays `EVENT_MATCHES` as they are written: the event fighter's seat placed by the runner (B4), 2 stocks,
   the items and Smash Balls fixed. The design names no stage for "Pen and Eraser" (and for the other team matches): `stage:null` until the
@@ -1037,6 +1045,11 @@ was buffed; if a fuller run puts him clearly low, the design's first knob is run
 - **Recovery:** measured (the rise of the air jump and the up special from a standstill, every fighter): his 283 px is above the roster's median
   (249), so `rec` stays 1. The flip goes backwards, so a recovery is steered with the arrows once it is out.
 - **For the owner:** the fighters' standing name pills (every fighter's, not his kit's) still show over him in a match, as over everyone.
+- **For the owner (from the checks):** Wipe the Slate Clean's catch is the whole floor, so every foe standing on the floor when it lands is
+  held until the eraser hits (21%, 42% with KO-LEVEL, times his dmg 1.15: 48%): "jump it" works only for a foe already in the air or on a platform, as with every floor
+  Final Smash. Shrinking the catch is a question for you. Rub It Off's 5 s is the shared special cooldown, so Rub Out and the flip wait too.
+  Pencil's down air still whiffs when down and X go down together (its move has no hang step, so the fast fall wins); that is the engine's,
+  not his, and is left for a yes.
 
 ---
 
