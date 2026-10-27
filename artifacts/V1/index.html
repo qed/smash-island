@@ -73384,8 +73384,11 @@ function netInputIn(N, idx, m){
     for(const c of list) if(c[0] > S.lastG || (c[0] === S.lastG && c === list[list.length - 1])) q.push(c);
     let prev = S.cur; S.q = q.filter(c=>{ const keep = c[1] !== prev; prev = c[1]; return keep; });
   }
-  // the guest's clock against the host's steps: the earliest any message lately came, in frames (netAck)
-  if(!m.u) S.offs.push([f - (N.inTick || 0), now]);   // (an urgent one went mid-frame: not a measure of the network) while(S.offs.length > 1 && now - S.offs[0][1] > NET_IN.win) S.offs.shift();
+  // the guest's clock against the host's steps: the earliest any message lately came, in frames (netAck). A message that comes between two
+  // steps is played by the next one, so its frame f is the host's step inTick + 1. (It was read as inTick: the host said it had played a
+  // frame more than it had, the guest replayed one frame too few of its own keys, and its fighter was always a frame behind.)
+  if(!m.u) S.offs.push([f - (N.inTick || 0) - 1, now]);   // (an urgent one went mid-frame: not a measure of the network)
+  while(S.offs.length > 1 && now - S.offs[0][1] > NET_IN.win) S.offs.shift();   // only the last NET_IN.win ms, so a ping that gets worse is followed (this sat inside the comment above: the fastest message of the whole match ruled)
   return true;
 }
 // One host step: every guest who sends frames moves on (NET.inputs[idx] is what step() and anything else reads for their keys).
@@ -73420,7 +73423,7 @@ function netInResume(){
 // be cut in on, a key seems stuck): a guest's screen showed its own fighter only once its keys had gone to the host and the host's picture
 // had come back -- a whole round trip on every step and every turn. Now the guest's screen moves its own fighter AT ONCE: it takes where the
 // host last put it (the snapshot) and plays its own keys since then (the frames the host had not yet played: netAck) by the host's run, drift,
-// jump, short hop, fast fall, gravity, floor and platform rules (netPredRun). Moves, hits and everything else are still the host's alone: the
+// jump, short hop, fast fall, gravity, floor, platform, cliff-face, ledge-catch, wall-jump and cling rules (netPredRun). Moves, hits and everything else are still the host's alone: the
 // prediction stops at a press of attack, special, smash, flag or edit, at Down on the ground, and while the host says the fighter is not free
 // to just run and jump (`b`: a stun, a move, a dash, a stance, flight, a step its own keys did not move it in -- the hiding phase, a cannon...), and the fighter is then drawn
 // where the host has it. Where the host
@@ -73431,7 +73434,9 @@ function netInResume(){
 //                  that slide is the one a player notices, so it is short (the owner, 2026-10-24: "try to fix that")
 const NET_PRED = { on:true, max:30, ease:0.8, hitEase:0.5, hitT:8, snap:160, ox:0, oy:0, mode:0, bx:0, by:0, auth:null, fastT:0 };
 // On the host: what a guest's prediction needs of its fighter -- the frame it is at, whether it is free (b), its jumps and jump-key state,
-// and the numbers this step's run and jump would use (k) as step() works them out, so the guest needs none of the buffs and stats behind them.
+// and the numbers this step's run and jump would use (k) as step() works them out, so the guest needs none of the buffs and stats behind them;
+// and its walls: the one touched within WALL_WINDOW steps (w: side, steps ago, which face), the faces kicked off this airtime (wu), its cling
+// (cl: the most frames, and the frames clung this airtime).
 function netPredOut(f){
   const N = window.NET, S = N && N.role === 'host' && N.inS && N.inS[f.idx];
   if(!S) return null;
@@ -73440,7 +73445,7 @@ function netPredOut(f){
   const busy = !!(ctfHeld || f._freeAt !== hazardT || f._freeIn !== (S.cur & 7) || FS.freeze > 0 || FS.slow > 0 || f.dead || f.hitstun > 0 || f._hitStop > 0 || f._fsLock || f._mv || f._dashing > 0 || f._hyperT > 0 || f._gotcha || f._nail
     || (f._sm && f._sm.drive) || f.flying > 0 || f._tp || f._tpHang > 0 || stanceStill(f) || f.rooted > 0 || f._gb || f._hold || f._slam
     || f.frozen > 0 || f._fxLock > hazardT || f.ctrlRev > 0 || f.smashHold > 0 || f._windup || f._plunge || f._floatT > 0 || f.iceUntil > 0
-    || f._heldBy != null || f._grabHold || f._attract || f.dropping > 0 || f._clingT > 0 || f._springT > 0 || f._raceSpringT > 0 || f.swallowed || RACE.active);
+    || f._heldBy != null || f._grabHold || f._attract || f.dropping > 0 || f._springT > 0 || f._raceSpringT > 0 || f.swallowed || RACE.active);
   const o = { a, b:busy ? 1 : 0 };
   if(busy) return o;
   const fst = f.st || STAT_ONE, sk = ctfSpeedK(f), r3 = v=>Math.round(v*1000)/1000;
@@ -73450,11 +73455,16 @@ function netPredOut(f){
   const hopOk = mtOn(f) && jv === JUMP*fst.jump;   // (step(): a boosted, laden or sunk jump is never cut short)
   o.j = f.jumps; o.at = f._airT || 0;
   o.s = (f._jp ? 1 : 0) | (f._hop ? 2 : 0) | (f._ff ? 4 : 0) | (f._dnPrev ? 8 : 0) | (mtOn(f) ? 16 : 0) | (hopOk ? 32 : 0) | ((f.kit && f.kit.special==='airrel') ? 64 : 0);
-  o.k = [r3(mvB*fst.run), r3(mvB*fst.air), r3(capB*fst.run), r3(capB*fst.air), r3(jv), r3(recV(f)), r3(SH_V*fst.jump), r3(FF_V*fst.fall), r3(fst.fall), r3(stage.hazard==='lowgrav' ? GRAV*0.7 : GRAV)];
+  o.k = [r3(mvB*fst.run), r3(mvB*fst.air), r3(capB*fst.run), r3(capB*fst.air), r3(jv), r3(recV(f)), r3(SH_V*fst.jump), r3(FF_V*fst.fall), r3(fst.fall), r3(stage.hazard==='lowgrav' ? GRAV*0.7 : GRAV), r3(JUMP*WJ_VY*fst.jump)];
+  if(f._wallSide && typeof f._wallT === 'number' && hazardT - f._wallT <= WALL_WINDOW) o.w = [f._wallSide, hazardT - f._wallT, f._wallId];   // (mtWallJump)
+  if(f._wallUsed){ const u = Object.keys(f._wallUsed); if(u.length) o.wu = u; }
+  { const lim = f.kit && CLINGERS[f.kit.special]; if(lim) o.cl = [lim, f._clingT || 0]; }   // (mtCling: how long it may cling, and has this airtime)
   return o;
 }
 // On the guest: its own fighter's frames from `a` (the snapshot's state, `pr` its numbers) played forward through frame `to` with its own keys.
-// Null when there is nothing to play. Stops early at a key that starts a move, or Down on the ground.
+// Null when there is nothing to play. Stops early at a key that starts a move, or Down on the ground. The cliffs are the host's own rule
+// (cliffWalls: the face holds it off the rock, and the ledge catch puts it up on the ledge), and so are the wall jump and the cling: without
+// them the guest's fighter fell past the ledge into the rock and was dragged back out 45 to 96 px (the guest-controls report, 2026-10-26).
 function netPredRun(a, pr, to, team){
   const N = window.NET, k = pr.k;
   let from = pr.a + 1; if(to - from + 1 > NET_PRED.max) from = to - NET_PRED.max + 1;
@@ -73462,6 +73472,9 @@ function netPredRun(a, pr, to, team){
   const P = { x:a.x, y:a.y, vx:a.vx, vy:a.vy, g:a.g, face:a.face, r:a.r, j:pr.j, at:pr.at, jp:!!(pr.s & 1), hop:!!(pr.s & 2), ff:!!(pr.s & 4), dn:!!(pr.s & 8) };
   const mt = !!(pr.s & 16), hopOk = !!(pr.s & 32), airrel = !!(pr.s & 64), grav = k[9];
   const plats = platRects(), gy = groundY(), big = isBig();
+  // the walls: the one touched last (side, the frame, which face: mtWallJump's window and once-per-face rule), the faces kicked off this airtime
+  const wjv = k[10], cliffs = !!FLOOR_SEGS && !big, w = Array.isArray(pr.w) && pr.w.length === 3 ? pr.w : null, cl = Array.isArray(pr.cl) ? pr.cl : null, clLim = cl ? +cl[0] || 0 : 0;
+  P.ws = w ? w[0] : 0; P.wt = w ? pr.a - w[1] : -1e9; P.wid = w ? String(w[2]) : ''; P.used = Array.isArray(pr.wu) ? pr.wu.slice(0, 32).map(String) : []; P.clT = cl ? +cl[1] || 0 : 0;
   for(let g = from; g <= to; g++){
     const m = N.inMaskAt(g);
     if(m & NET_IN_ACT) break;
@@ -73476,7 +73489,10 @@ function netPredRun(a, pr, to, team){
     if(!P.g && k[2] > k[3] && vx0 > cap) cap = Math.min(runEaseCap(cap, k[2], P.at + 1), vx0);
     P.vx = Math.max(-cap, Math.min(cap, P.vx));
     // jump, and the short hop
-    if(J && !P.jp && P.j > 0){ P.vy = k[4]; P.hop = P.g && mt && hopOk; if(!P.g) P.vy *= k[5]; P.j--; P.g = false; P.jp = true; }
+    if(J && !P.jp && wjv && mt && !P.g && P.ws && P.wt >= g - WALL_WINDOW && (P.ws > 0 ? R : L) && !P.used.includes(P.wid)){   // the wall jump (mtWallJump)
+      P.used.push(P.wid); P.vy = wjv; P.vx = -P.ws*WJ_VX; P.face = -P.ws; P.clT = 0; P.hop = false; P.jp = true;
+    }
+    else if(J && !P.jp && P.j > 0){ P.vy = k[4]; P.hop = P.g && mt && hopOk; if(!P.g) P.vy *= k[5]; P.j--; P.g = false; P.jp = true; P.used = []; }   // (a real jump gives the wall jumps back)
     if(!J) P.jp = false;
     if(P.hop){ if(P.vy >= 0 || P.g) P.hop = false; else if(!J){ if(P.vy < -k[6]) P.vy = -k[6]; P.hop = false; } }
     // gravity, and the fast fall (mtFastFall)
@@ -73487,6 +73503,10 @@ function netPredRun(a, pr, to, team){
     P.g = false;
     // the floor, the solid blocks, the one-way tops (step(): ---- integrate ----)
     if(!big && P.y >= gy - P.r && !springyHoleAt(P.x) && floorCatches(P, gy)){ P.y = gy - P.r; if(P.vy > 0) P.vy = 0; P.g = true; P.j = 2; }
+    if(cliffs){   // the cliff faces and the ledge catch: the host's own cliffWalls, on the prediction's fighter
+      P.onground = P.g; P.jumps = P.j; P._wallT = null; cliffWalls(P, gy); P.g = P.onground; P.j = P.jumps;
+      if(P._wallT != null){ P.ws = P._wallSide; P.wt = g; P.wid = P._wallId; }
+    }
     for(const p of plats){
       if(!p.solid) continue;
       if(p.dref !== undefined && p.dref.op[team]) continue;
@@ -73495,7 +73515,7 @@ function netPredRun(a, pr, to, team){
       const fromLeft = p.x - (P.x + P.r), fromRight = (p.x + p.w) - (P.x - P.r), fromTop = p.y - (P.y + P.r), fromBottom = (p.y + ph) - (P.y - P.r);
       const ax = Math.abs(fromLeft) < Math.abs(fromRight) ? fromLeft : fromRight, ay = Math.abs(fromTop) < Math.abs(fromBottom) ? fromTop : fromBottom;
       const stepUp = (p.ramp === true || p.step === true) && fromTop < 0 && fromTop >= -28 && P.vy > -2;
-      if(Math.abs(ax) < Math.abs(ay) && !stepUp){ P.x += ax; if(ax < 0 && P.vx > 0) P.vx = 0; if(ax > 0 && P.vx < 0) P.vx = 0; }
+      if(Math.abs(ax) < Math.abs(ay) && !stepUp){ P.x += ax; P.ws = ax < 0 ? 1 : -1; P.wt = g; P.wid = P.ws + ':' + Math.round((ax < 0 ? p.x : p.x + p.w)/WALL_FACE_SNAP); if(ax < 0 && P.vx > 0) P.vx = 0; if(ax > 0 && P.vx < 0) P.vx = 0; }
       else { P.y += ay; if(ay < 0){ P.vy = Math.min(0, P.vy); P.g = true; P.j = 2; } else P.vy = Math.max(0, P.vy); }
     }
     for(const p of plats){
@@ -73512,7 +73532,8 @@ function netPredRun(a, pr, to, team){
         if(p.bouncy){ P.vy = -14; P.j = 2; } else { P.vy = 0; P.g = true; P.j = 2; }
       }
     }
-    if(P.g){ P.ff = false; P.at = 0; } else P.at++;
+    if(clLim && mt && !P.g && P.ws && P.wt === g && (P.ws > 0 ? R : L) && P.vy > 0 && P.clT < clLim){ P.vy = Math.min(P.vy, 0.7); P.clT++; }   // the cling (mtCling)
+    if(P.g){ P.ff = false; P.at = 0; P.used = []; P.clT = 0; } else P.at++;
   }
   return P;
 }
