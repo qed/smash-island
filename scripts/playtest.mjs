@@ -135,7 +135,7 @@ let CONSOLE_SINK = null;
 }
 
 const PAGE_HOOKS = `(function(){
-  var P = window.__pt = { banners: [], moves: Object.create(null), kos: [], result: null, cat: null, catUntil: 0, cats: Object.create(null), dmgYou: 0, dmgTaken: 0, finF: null, finLbl: null, inFinx: false };
+  var P = window.__pt = { banners: [], moves: Object.create(null), kos: [], result: null, cat: null, catUntil: 0, cats: Object.create(null), dmgYou: 0, dmgTaken: 0, dmgTakenOther: 0, finF: null, finLbl: null, inFinx: false };
   function wrap(name, mk){ try{ var o = window[name]; if(typeof o === 'function'){ var n = mk(o); window[name] = n; } }catch(e){} }
   wrap('banner', function(o){ return function(t, ms, kind, local){ try{ P.banners.push({ t: String(t), kind: kind || null, f: hazardT }); }catch(e){} return o.apply(this, arguments); }; });
   // A finisher is one move, though it arms several swings (a cast, a punch) and hits from its own objects (finxStep) and shots for a while after: its first swing is its label,
@@ -170,11 +170,13 @@ const PAGE_HOOKS = `(function(){
   }
   wrap('applyHit', function(o){ return function(t, dmg, kbx, kby, from, opts){
     var before = t ? t.pct : 0, r;
-    if(t) t._ptKoPct = null;
-    try{ r = o.apply(this, arguments); }catch(e){ throw e; }
+    if(t){ t._ptKoPct = null; t._ptAhD = (t._ptAhD || 0) + 1; }
+    try{ r = o.apply(this, arguments); } finally{ if(t) t._ptAhD--; }
     try{ if(t && from !== t) t._ptHitT = hazardT; }catch(e){}   // touched by someone: a KO soon after is theirs, not a fall (see eliminate)
     // a hit that reaches the damage cap KOs inside the call and the respawn zeroes the %: the damage is up to the % at the KO, never negative
     var after = t && t._ptKoPct != null ? t._ptKoPct : (t ? t.pct : 0);
+    // the % this call added, for the step check below (which counts any other rise as 'other' damage): only the outermost call on this fighter, as a riposte can nest one
+    try{ if(t && !t._ptAhD && after > before) t._ptAh = (t._ptAh || 0) + (after - before); }catch(e){}
     try{ if(from && t && from !== t && dmg > 0 && after > before){
       var d = after - before;
       credit(from, d);
@@ -187,14 +189,20 @@ const PAGE_HOOKS = `(function(){
     return o.apply(this, arguments); }; });
   // a stun from anything (many moves set hitstun without applyHit: tape, a pop-up burst, a stage hazard) also counts as being touched: a KO soon after is no fall.
   // A fighter's own endlag is not (a missed move's stun comes with _selfStun as long).
-  wrap('step', function(o){ return function(){ var r = o.apply(this, arguments); try{ for(var i = 0; i < fighters.length; i++){ var f = fighters[i], h = f.hitstun || 0; if(h > (f._ptHs || 0) && !((f._selfStun || 0) >= h)) f._ptHitT = hazardT; f._ptHs = h; } }catch(e){} return r; }; });
+  // So does any rise in the % since the last frame that applyHit did not cause (Evil Leafy's hit, burn, bleed, lava, an enemy zone): that is touched too,
+  // and on the player it is damage taken, kept apart as 'other'.
+  wrap('step', function(o){ return function(){ var r = o.apply(this, arguments); try{ for(var i = 0; i < fighters.length; i++){ var f = fighters[i], h = f.hitstun || 0; if(h > (f._ptHs || 0) && !((f._selfStun || 0) >= h)) f._ptHitT = hazardT; f._ptHs = h;
+    var p = f.pct || 0, up = f._ptPct == null ? 0 : p - f._ptPct - (f._ptAh || 0);
+    if(up > 0.01){ f._ptHitT = hazardT; if(f.you){ P.dmgTaken += up; P.dmgTakenOther += up; } }
+    f._ptPct = p; f._ptAh = 0; } }catch(e){} return r; }; });
   // the HUD is rebuilt through querySelector every step; in jsdom that is 40% of a frame and says nothing about the game, so it runs every 8th step (the HUD checks still see it)
   wrap('updateHUD', function(o){ var n = 0; return function(){ if((n++ & 7) === 0) return o.apply(this, arguments); }; });
   // --arg prof=1: inclusive time of the systems a slow frame could come from, per frame (the playtester reads it on a spike)
   P.fnT = Object.create(null);
   if(window.__ptProf){ ['ctfNavTick','ctfAiSee','ctfStratTick','ctfPlanWatch','ctfReveal','ctfEditStep','ctfAiHideTick','ctfAiInputRaw','ctfStepKeys','ctfStepFlags','ctfStepElevs','ctfFixStep','ctfAiBegin','ctfEditNav','ctfStepJails','ctfStepZones','ctfAiTrack','aiThink','updateSummons','updateItems','fsStep','teamAiTick','comboInput','ctfRebuildDyn','ctfNavNew','ctfEditSettle','ctfEditResolve'].forEach(function(n){ wrap(n, function(o){ return function(){ var t = performance.now(); try{ return o.apply(this, arguments); } finally{ P.fnT[n] = (P.fnT[n] || 0) + performance.now() - t; } }; }); }); }
   // a KO: where (a blast line, or MAX for the damage cap), who hit last (lastHitBy is the fighter itself), and whether it was a FALL -- nobody had touched them for 3 s
-  wrap('eliminate', function(o){ return function(f){ try{ f._ptKoPct = f.pct; var lb = f.lastHitBy; P.kos.push({ n: f.name, you: !!f.you, t: hazardT, pct: Math.round(f.pct), side: f.x < -100 ? 'LEFT' : f.x > WW + 100 ? 'RIGHT' : f.y < -240 ? 'TOP' : f.y > WH + 100 ? 'BOTTOM' : 'MAX', by: lb ? (typeof lb === 'object' ? lb.name || (lb.idx === -2 || lb.team === -1 ? ((typeof BOSSRUSH !== 'undefined' && BOSSRUSH.active) || summons.some(function(m){ return m.type === 'boss'; }) ? 'a boss' : 'an assist/hazard') : null) : (fighters[lb] && fighters[lb].name) || null) : null, fell: !(hazardT - (f._ptHitT == null ? -1e9 : f._ptHitT) < 180), stage: stage && stage.id, segs: !!FLOOR_SEGS }); }catch(e){} return o.apply(this, arguments); }; });
+  // (a MAX KO never is: the damage did it)
+  wrap('eliminate', function(o){ return function(f){ try{ f._ptKoPct = f.pct; var lb = f.lastHitBy, side = f.x < -100 ? 'LEFT' : f.x > WW + 100 ? 'RIGHT' : f.y < -240 ? 'TOP' : f.y > WH + 100 ? 'BOTTOM' : 'MAX'; P.kos.push({ n: f.name, you: !!f.you, t: hazardT, pct: Math.round(f.pct), side: side, by: lb ? (typeof lb === 'object' ? lb.name || (lb.idx === -2 || lb.team === -1 ? ((typeof BOSSRUSH !== 'undefined' && BOSSRUSH.active) || summons.some(function(m){ return m.type === 'boss'; }) ? 'a boss' : 'an assist/hazard') : null) : (fighters[lb] && fighters[lb].name) || null) : null, fell: side !== 'MAX' && !(hazardT - (f._ptHitT == null ? -1e9 : f._ptHitT) < 180), stage: stage && stage.id, segs: !!FLOOR_SEGS }); }catch(e){} return o.apply(this, arguments); }; });
   wrap('showResult', function(o){ return function(winners, winTeam){ try{ P.result = { winners: (winners || []).map(function(x){ return x && x.name; }), winTeam: winTeam, t: hazardT }; }catch(e){} return o.apply(this, arguments); }; });
 })()`;
 
@@ -725,7 +733,7 @@ function closeMatch(wo, sim, tag, extra) {
   const youKos = kos.filter((k) => k.you);
   const row = { scene: CUR.scene, seed: CUR.seed, tag, frames: sim.f, secs: Math.round(sim.f / 60), mode: wo.E('SETTINGS.mode'), stage: wo.E('stage.id'),
     result: res, kos: kos.length, youKoAt: youKos.length ? Math.round(youKos[0].t / 60) : null, youKoWhere: youKos.length ? youKos[0].side + ' at ' + youKos[0].pct + '%' + (youKos[0].fell ? ' (fell)' : '') : null,
-    youFalls: youKos.filter((k) => k.fell).length, youKoList: youKos.map((k) => `${k.side}@${k.pct}%${k.fell ? ' fell' : ' by ' + (k.by || '?')}`), edges: !!sim.edges, dmgYou: Math.round(P.dmgYou), dmgTaken: Math.round(P.dmgTaken), persona: extra && extra.persona, you: extra && extra.you, ended: !wo.running() || wo.screen() === 'result' };
+    youFalls: youKos.filter((k) => k.fell).length, youKoList: youKos.map((k) => `${k.side}@${k.pct}%${k.fell ? ' fell' : ' by ' + (k.by || '?')}`), edges: !!sim.edges, dmgYou: Math.round(P.dmgYou), dmgTaken: Math.round(P.dmgTaken), dmgTakenOther: Math.round(P.dmgTakenOther || 0), persona: extra && extra.persona, you: extra && extra.you, ended: !wo.running() || wo.screen() === 'result' };
   // finishers this match, every fighter's (fired / landed / damage), and the player's finisher category (its hits, wherever they came from)
   row.finishers = Object.entries(P.moves).filter(([k]) => /finisher$/.test(k)).map(([k, v]) => `${k} ${v.fired}/${v.landed}/${Math.round(v.dmg)}`);
   { const c = extra && extra.you && P.cats[extra.you + '|finisher']; row.youFinisher = c ? `${c.landed} hits, ${Math.round(c.dmg)} dmg` : 'none'; }
@@ -1632,7 +1640,7 @@ async function runScene(name, seed, args) {
   out(`  ${name.padEnd(10)} seed ${String(seed).padEnd(10)} ${String(ms).padStart(6)} ms  ${res && (res.why || res.fail || res.crash || 'ok')}  ${JSON.stringify(CUR.args)}`);
   const rw = res && res.row;
   if (rw && rw.stageAsked) out(`             NOTE: asked for stage ${rw.stageAsked}, which this profile cannot pick (locked or unknown); played ${rw.stage} instead`);
-  if (rw) out(`             ${rw.secs}s ${rw.stage || ''}${rw.edges ? ' (edges)' : ''}: player dmg ${rw.dmgYou}${rw.dmgYouBoss != null ? ` (on bosses ${rw.dmgYouBoss}; boss hits by anyone ${rw.bossHits}; bosses met ${rw.bossesMet}; longest wait between bosses ${rw.bossGapMax} s)` : ''}, taken ${rw.dmgTaken}; player KOs ${rw.youKoList.join(', ') || 'none'}; falls ${rw.youFalls}`);
+  if (rw) out(`             ${rw.secs}s ${rw.stage || ''}${rw.edges ? ' (edges)' : ''}: player dmg ${rw.dmgYou}${rw.dmgYouBoss != null ? ` (on bosses ${rw.dmgYouBoss}; boss hits by anyone ${rw.bossHits}; bosses met ${rw.bossesMet}; longest wait between bosses ${rw.bossGapMax} s)` : ''}, taken ${rw.dmgTaken}${rw.dmgTakenOther ? ` (other ${rw.dmgTakenOther})` : ''}; player KOs ${rw.youKoList.join(', ') || 'none'}; falls ${rw.youFalls}`);
   if (rw) out(`             finishers (fired/landed/dmg): ${rw.finishers.join('; ') || 'none'}; the player's finisher hits: ${rw.youFinisher}; finisher hits by the game's mark ${rw.finHits}, credited elsewhere ${rw.finMiss}${rw.finTypeVsMove ? `; player's finisher type/move hits ${rw.finTypeVsMove}` : ''}${rw.phases ? '; CTF phases (frames) ' + JSON.stringify(rw.phases) : ''}`);
   return res;
 }
@@ -1710,10 +1718,10 @@ function observations() {
     const tr = STATS.matches.filter((m) => m.persona === 'tryhard'), tre = tr.filter((m) => m.youKoAt != null && m.youKoAt <= 30);
     obs.push({ kind: 'early-ko', text: `The human-like player was KO'd within the first 30 s in ${early.length}/${STATS.matches.filter((m) => m.persona !== 'explorer').length} non-explorer matches (tryhard: ${tre.length}/${tr.length}); where: ${tally(early.map((m) => m.youKoWhere))}.` });
   }
-  // falls: the player lost a stock nobody knocked them out of (no hit in the 3 s before) -- off a cliff or into a pit (edged stages), or over a screen side (the others)
+  // falls: the player lost a stock nobody knocked them out of (no hit, stun or damage in the 3 s before; never a damage-cap KO) -- off a cliff or into a pit (edged stages), or over a screen side (the others)
   const fl = (ms) => `${ms.reduce((a, m) => a + (m.youFalls || 0), 0)} in ${ms.length} matches`;
   const per = ['tryhard', 'new', 'explorer'].map((pn) => [pn, STATS.matches.filter((m) => m.persona === pn && m.youFalls != null && m.mode !== 'ctf')]).filter(([, ms]) => ms.length);   // (a Capture the Flag KO is a trip home, not a stock)
-  if (per.length) obs.push({ kind: 'player-falls', text: `The player fell off on its own (a stock lost with no hit in the 3 s before): ${per.map(([pn, ms]) => `${pn} ${fl(ms)} (edged stages ${fl(ms.filter((m) => m.edges))})`).join('; ')}. A tryhard should not; a new player may.` });
+  if (per.length) obs.push({ kind: 'player-falls', text: `The player fell off on its own (a stock lost past a blast line with no hit, stun or damage in the 3 s before): ${per.map(([pn, ms]) => `${pn} ${fl(ms)} (edged stages ${fl(ms.filter((m) => m.edges))})`).join('; ')}. A tryhard should not; a new player may.` });
   const asked = STATS.matches.filter((m) => m.stageAsked);
   if (asked.length) obs.push({ kind: 'stage-arg-ignored', text: 'Asked-for stages that could not be picked (locked on a fresh profile, or unknown), and what was played instead: ' + asked.map((m) => `${m.stageAsked} -> ${m.stage} (seed ${m.seed})`).join(', ') });
   if (STATS.cpuIdle.length) obs.push({ kind: 'cpu-idle', text: 'CPU idle for 10 s: ' + STATS.cpuIdle.map((c) => `${c.fighter} (${c.mode}/${c.stage})`).join(', ') });

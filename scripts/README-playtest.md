@@ -73,8 +73,10 @@ fighter pressed since. A finisher press that comes out as something else (no met
 move list or in the move types. Self-check, both ways: a hit the game marks as a finisher's and the playtester credits elsewhere, or a
 player's `finisher` move type whose hits differ from what the player's finisher move landed, is a `playtest-credit` BUG.
 
-Falls: a stock the player lost with no hit or stun from anyone in the 3 s before (`fell` in the KO list; the `player-falls` line
-counts them per persona, on edged stages and overall). A tryhard should have none; a new player may.
+Falls: a stock the player lost past a blast line with no hit, stun or damage from anything in the 3 s before (`fell` in the KO list;
+the `player-falls` line counts them per persona, on edged stages and overall). Damage counts however it came: a rise in the % that
+`applyHit` did not cause (Evil Leafy's hit, burn, bleed, lava, an enemy zone) is a touch too, and on the player it is added to
+`taken` and shown apart as `other`. A damage-cap KO (`MAX`) is never a fall. A tryhard should have none; a new player may.
 
 Boss Rush, `boss-untouched` (FEEL): nobody damaged the boss for 40 s. Each boss has its own clock, started when it arrives (a boss
 not on the field before, or its health jumping up), and the clock does not run in the gap between two bosses (headless, the next
