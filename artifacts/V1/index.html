@@ -75693,10 +75693,12 @@ function edRestore(step){
 // The level on the editor is kept by itself under levels:draft -- never among the saved levels (levels:custom), which it does not touch -- a moment after
 // each change (and at once when the page goes away), while it is not one of the saved levels just as it was saved or loaded (ED.keptFP). An empty map, or
 // one just saved or loaded, keeps none. The editor opened on an empty map with a draft there offers it back (edOfferDraft): Bring it back, or Throw it
-// away. The offer holds last time's draft itself, so work done before either is pressed is kept as the draft in its place, and is not lost either; and
-// while the offer waits, an empty map (or one just saved or loaded) leaves last time's draft stored: only Throw it away lets it go. (A name typed or a
-// Map size clicked on the empty map deleted it, so a reload before answering lost it: the independent check, 2026-10-27.)
-const ED_DRAFT = 'levels:draft', ED_DRAFT_MS = 400;
+// away. While the offer waits, last time's draft stays stored just as it is -- only an answer lets it go -- and the map on the editor is kept beside it,
+// under levels:draft:beside (ED_DRAFT_BESIDE), so neither is lost: a page that goes away before the answer offers last time's draft again, with the work
+// done meanwhile back on the map under the offer, as it was. Once answered, the map on the editor is the draft again, under levels:draft. (A name typed or
+// a Map size clicked on the empty map deleted last time's draft, and work done while it was offered was written over it within ED_DRAFT_MS, so a reload
+// before answering lost it: the independent checks, 2026-10-27.)
+const ED_DRAFT = 'levels:draft', ED_DRAFT_BESIDE = 'levels:draft:beside', ED_DRAFT_MS = 400;
 function edHasPieces(){ return !!(ED.plats.length || ED.spawns.length || ED.zones.length || ED.deco.length); }
 function edDraftNeeded(){ return edHasPieces() && edWorkFP() !== ED.keptFP; }
 function edDraftSoon(){
@@ -75706,21 +75708,28 @@ function edDraftSoon(){
 function edDraftWrite(){
   clearTimeout(ED._draftT); ED._draftT = 0;
   try{
-    if(!edDraftNeeded()){ if(ED.draftOffer) BStore.set(ED_DRAFT, JSON.stringify(ED.draftOffer)); else BStore.del(ED_DRAFT); return; }   // (still offered: stays)
+    const key = ED.draftOffer ? ED_DRAFT_BESIDE : ED_DRAFT;   // (last time's draft still offered: it is not touched, the map is kept beside it)
+    if(!edDraftNeeded()){ BStore.del(key); return; }
     const nameEl = document.getElementById('edName');
-    BStore.set(ED_DRAFT, JSON.stringify({ v:1, t:Date.now(), name:nameEl ? nameEl.value : '', level:edCurrentLevel(),
+    BStore.set(key, JSON.stringify({ v:1, t:Date.now(), name:nameEl ? nameEl.value : '', level:edCurrentLevel(),
       savedName:ED.savedName, cleanFP:ED.cleanFP, keptFP:ED.keptFP }));
   }catch(e){}
 }
+// A stored draft's pieces (0: none, or not a draft).
+function edDraftCount(d){
+  const L = (d && typeof d==='object' && d.level && typeof d.level==='object') ? d.level : null;
+  return L ? ['plats','spawns','zones','deco'].reduce((t,k)=>t + (Array.isArray(L[k]) ? L[k].length : 0), 0) : 0;
+}
+async function edReadDraft(key){ try{ return JSON.parse((await BStore.get(key)) || 'null'); }catch(e){ return null; } }
 // Offered once a visit, the first time the editor opens, and only on an empty map (back from a match, the editor still holds its level).
 async function edOfferDraft(){
   if(ED.draftAsked) return;
   ED.draftAsked = true;
   if(edHasPieces()) return;
-  let d = null;
-  try{ d = JSON.parse((await BStore.get(ED_DRAFT)) || 'null'); }catch(e){ d = null; }
-  const L = (d && typeof d==='object' && d.level && typeof d.level==='object') ? d.level : null;
-  const n = L ? ['plats','spawns','zones','deco'].reduce((t,k)=>t + (Array.isArray(L[k]) ? L[k].length : 0), 0) : 0;
+  let d = await edReadDraft(ED_DRAFT), n = edDraftCount(d);
+  const b = await edReadDraft(ED_DRAFT_BESIDE), nb = edDraftCount(b);
+  if(!n && nb){ await BStore.set(ED_DRAFT, JSON.stringify(b)); BStore.del(ED_DRAFT_BESIDE); d = b; n = nb; }   // (only the work kept beside: it is the draft)
+  else if(nb && !edHasPieces() && edIsOpen()){ ED.draftOffer = d; edPutDraft(b); }   // the page went away while it was offered: that work back on the map, the offer over it
   if(!n) return;
   ED.draftOffer = d;
   edShowDraft(d, n);
@@ -75743,7 +75752,12 @@ function edDraftAnswer(keep){
   const d = ED.draftOffer; if(!d) return;
   if(keep && !edOkToReplace()) return;   // work drawn since the editor opened: ask first, as Load does
   ED.draftOffer = null; edShowDraft(null);
-  if(!keep){ edDraftWrite(); return; }   // last time's is let go: the draft is the map on the editor now, or none
+  if(!keep){ edDraftWrite(); BStore.del(ED_DRAFT_BESIDE); return; }   // last time's is let go: the draft is the map on the editor now, or none
+  BStore.del(ED_DRAFT_BESIDE);   // (the map it replaces is one undo step back, as a loaded level's is; last time's draft is stored as the draft already)
+  edPutDraft(d);
+}
+// A stored draft onto the editor, as another map: its pieces, its name, and which saved level it is.
+function edPutDraft(d){
   edNewDoc();   // another map (undo: edIdent)
   edAdoptLevel(d.level);
   const nameEl = document.getElementById('edName'); if(nameEl) nameEl.value = typeof d.name==='string' ? d.name.slice(0,24) : '';
@@ -75867,22 +75881,24 @@ async function edPickSize(k){
   const doc = ED.docN;
   const v = await edAsk(text, [
     { t: grow ? 'Keep sizes, add space' : 'Keep sizes', v:'keep', cls:'btn alt sm',
-      tip: grow ? 'Every piece stays the size it is, in the middle of the bigger map, with the floor where it was under it.' : 'Every piece stays the size it is, in the middle of the smaller map; a piece that does not fit moves inside the edges.' },
+      tip: grow ? 'Every piece stays the size it is, in the middle of the bigger map, with the floor where it was under it.' : 'Every piece stays the size it is, in the middle of the smaller map; a piece that does not fit moves inside the edges, and one longer than the map is cut to the map\'s size.' },
     { t: grow ? 'Stretch it' : 'Squeeze it', v:'stretch', tip: grow ? 'Every piece and gap grows with the map.' : 'Every piece and gap shrinks with the map.' },
     { t:'Cancel', v:null } ]);
   if(!edIsOpen() || k===ED.size || !MAP_SIZES[k] || ED.docN !== doc) return;   // (another map came onto the editor meanwhile: not that one)
   if(v==='keep') edSetSizeKeep(k); else if(v==='stretch') edSetSize(k);
 }
 // Another MAP SIZE with every piece kept its size in world px: in the middle of the new box from side to side, and as high over the floor as it was (the
-// floor is MAPGEN_FLOOR_N of the box's height), so the sky above grows or shrinks. A piece that no longer fits is moved inside the edges (edKeepIn).
+// floor is MAPGEN_FLOOR_N of the box's height), so the sky above grows or shrinks. A piece that no longer fits is moved inside the edges (edKeepIn), and
+// one wider or taller than the new map is cut to the map's width or height first: a 1394 px ledge on Huge stuck out 370 px past Normal's edge (the
+// independent check, 2026-10-27).
 function edSetSizeKeep(k){
   if(!MAP_SIZES[k]) return;
   const W1 = ED.w, H1 = ED.h, m = mapgenMul(k), W2 = Math.round((W||1100)*m.sw), H2 = Math.round((H||720)*m.sh);   // (edResize's own box)
   const dx = (W2 - W1)/2, dy = (H2 - H1)*MAPGEN_FLOOR_N;
   const move = (o, kind)=>{
     o.nx = ((o.nx||0)*W1 + dx)/W2; o.ny = ((o.ny||0)*H1 + dy)/H2;
-    if(typeof o.nw==='number') o.nw = o.nw*W1/W2;
-    if(typeof o.nh==='number') o.nh = o.nh*H1/H2;
+    if(typeof o.nw==='number') o.nw = Math.min(1, o.nw*W1/W2);
+    if(typeof o.nh==='number') o.nh = Math.min(1, o.nh*H1/H2);
     edKeepIn(o, kind);
   };
   for(const p of ED.plats) move(p, 'plat');
@@ -76560,11 +76576,15 @@ function edSaveFailed(name, why){
   edShowCheck([why], 'Could not save "'+name+'":');
   edNote('Could not save "'+name+'".', true, 4000);
 }
+// A saved level's name as Save writes it: no spaces at either end, 24 letters at most. A level saved before Save trimmed names can be stored under its name
+// with a space at the end ("Spacey "): that is the saved level of the trimmed name, so Load shows the trimmed name and saving it again replaces it under
+// the trimmed name, never adds a second copy beside it (the independent check, 2026-10-27).
+function edLevelName(s){ return String(s == null ? '' : s).trim().slice(0,24); }
 // NO POP-UP BOXES (the level creator review, 2026-10-26): a level with no name asks for one by lighting the name box and saying so; a name already used by
 // another saved level asks over the drawing box (edAsk), Replace it or Cancel; "Saved" and anything that went wrong is a short note there (edNote).
 async function edSave(){
   const nameEl = document.getElementById('edName');
-  const name = (nameEl.value||'').trim().slice(0,24);
+  const name = edLevelName(nameEl.value);
   if(!name){
     edShowCheck(['Type a name for your level in the box beside 💾 Save, then press Save.'], 'Not saved yet:');
     edNote('Name your level first: type it in the box beside 💾 Save.', true, 3200);
@@ -76572,7 +76592,7 @@ async function edSave(){
     return;
   }
   let st = await edReadLevels();
-  if(st.levels[name] && name !== ED.savedName){
+  if(Object.keys(st.levels).some(k=>k !== ED.savedName && edLevelName(k) === name)){   // another saved level of this name (or an old spelling of it)
     const doc = ED.docN;
     const ok = await edAsk('You already have a saved level called "'+name+'". Replace it with this one?',
       [{ t:'Replace it', v:true, cls:'btn alt sm' }, { t:'Cancel', v:false }]);
@@ -76585,7 +76605,9 @@ async function edSave(){
   if(st.broken && !(await edWriteChecked(ED_STORE+':unreadable:'+Date.now(), st.raw))){
     edSaveFailed(name, 'Your saved levels could not be read, and could not be kept aside, so nothing was written over them.'); return;
   }
-  const levels = Object.assign({}, st.levels); levels[name] = lvl;
+  const levels = Object.assign({}, st.levels);
+  for(const k of Object.keys(levels)) if(k !== name && edLevelName(k) === name) delete levels[k];   // an old spelling of it ("Spacey "): replaced, not kept beside it
+  levels[name] = lvl;
   if(!(await edWriteChecked(ED_STORE, JSON.stringify(levels)))){
     edSaveFailed(name, 'This browser did not keep it: its storage may be full or blocked.');
     edRenderList(); return;
@@ -76596,7 +76618,9 @@ async function edSave(){
   const doc = ED.docN;
   edIdentEach(id=>{
     if(id.doc === doc){ id.savedName = name; id.cleanFP = fp; id.keptFP = fp; }
-    else if(id.savedName === name && id.keptFP !== fp){ id.savedName = null; id.cleanFP = null; id.keptFP = null; }
+    else if(typeof id.savedName==='string' && edLevelName(id.savedName) === name){
+      if(id.keptFP !== fp){ id.savedName = null; id.cleanFP = null; id.keptFP = null; } else id.savedName = name;   // (an old spelling is stored under the trimmed name now)
+    }
   });
   edRenderList();
   edRunCheck(lvl, 'Saved. Check my level found:');   // saved all the same: a level part-built is worth keeping
@@ -76668,10 +76692,11 @@ function edAdoptLevel(lvl){
 async function edLoad(nm, thenPlay){
   if(!edOkToReplace()) return;   // unsaved work on the map: ask first (edHasUnsaved)
   const st=await edReadLevels();
+  if(!(nm in st.levels)) nm = Object.keys(st.levels).find(k=>edLevelName(k) === edLevelName(nm)) || nm;   // (a row drawn before its level was saved again under the trimmed name)
   const lvl=st.levels[nm]; if(!lvl || typeof lvl!=='object') return;
   edNewDoc();   // another map (undo: edIdent)
   edAdoptLevel(lvl);
-  document.getElementById('edName').value=nm;
+  document.getElementById('edName').value=edLevelName(nm);   // (an old spelling, "Spacey ", shows as Save writes it; ED.savedName keeps the stored key)
   document.getElementById('edHazard').value=ED.hazard;
   const sz=document.getElementById('edSize');
   if(sz) sz.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.v===ED.size));
