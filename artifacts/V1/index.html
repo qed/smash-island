@@ -675,7 +675,13 @@
   .tierkey .tier{margin:0 3px 0 0}
   /* ---- level editor ---- */
   .edtoolbar{display:flex; gap:8px; align-items:center; justify-content:center; flex-wrap:wrap; margin:8px auto; max-width:760px}
-  .edcanvas{display:block; margin:6px auto; border:3px solid #1c1c1c; border-radius:10px; background:linear-gradient(#bfe8ff,#88cdf2); cursor:crosshair; max-width:96vw}
+  /* The drawing box is sized by edResize to the game screen's shape (ED.cw x ED.ch, set on its style): the page's canvas{width:100%; height:100%} made it
+     1048 x 524, 31% too wide, so round things were ovals (the level creator review, 2026-10-26). content-box, so its border is not taken out of that size;
+     flex:0 0 auto, so the screen's column never squeezes it; no vw cap, which would narrow it without shortening it. */
+  .edcanvas{display:block; flex:0 0 auto; box-sizing:content-box; margin:6px auto; border:3px solid #1c1c1c; border-radius:10px; background:linear-gradient(#bfe8ff,#88cdf2); cursor:crosshair}
+  /* The Rotate / Decoration / Effect row keeps one height whether anything shows in it or not: it came and went above the drawing box, moving the box by up
+     to 44 px between one click and the next (the level creator review, 2026-10-26). One line, never wrapped. */
+  #edProps{height:44px; flex-wrap:nowrap; flex-shrink:0}
   .edhint{font-size:12px; opacity:0.7; max-width:640px; margin:2px auto 8px}
   .edhaz select{font-family:inherit; font-weight:700; padding:6px 8px; border:2px solid #1c1c1c; border-radius:8px; background:var(--panel)}
   .edname{font-family:inherit; font-weight:700; padding:8px 10px; border:2px solid #1c1c1c; border-radius:8px; width:150px}
@@ -62313,16 +62319,18 @@ function draw(){
   }
 
   // floors & platforms — give tower floors a thick slab look
-  // custom effect zones (under platforms)
-  if(worldZones && worldZones.length && SETTINGS.mode!=='ctf'){   // (Capture the Flag draws its own areas)
-    const zcol={glue:"#c9a34b",ice:"#bfe8ff",bounce:"#e84b9c",damage:"#e0503a",heal:"#7bc043",wind:"#8fd0ff"};
-    for(const z of worldZones){ ctx.globalAlpha=0.30; ctx.fillStyle=zcol[z.type]||"#c9a34b"; ctx.fillRect(z.x,z.y,z.w,z.h);
-      ctx.globalAlpha=0.9; ctx.strokeStyle=zcol[z.type]||"#c9a34b"; ctx.setLineDash([8,5]); ctx.lineWidth=2; ctx.strokeRect(z.x,z.y,z.w,z.h); ctx.setLineDash([]); ctx.globalAlpha=1; }
-  }
   // A custom level's SCENERY, behind the geometry: placed in the editor, drawn here by the very
   // same painter the editor canvas uses. Decorations never touch worldPlats — nothing collides.
+  // Painted BEFORE the effect zones, as the editor paints them (edDraw): it was painted over them, so a tree could hide a damage zone in the match that
+  // the editor showed on top of it (the level creator review, 2026-10-26).
   if(CUSTOM_LEVEL && CUSTOM_LEVEL.deco && CUSTOM_LEVEL.deco.length){
     paintDecoList(ctx, CUSTOM_LEVEL.deco, WW, WH, hazardT);
+  }
+  // custom effect zones (over the scenery, under platforms), each in its own colour: ZONE_TYPES's, the editor's (a copy here had Wind almost Ice's blue)
+  if(worldZones && worldZones.length && SETTINGS.mode!=='ctf'){   // (Capture the Flag draws its own areas)
+    for(const z of worldZones){ const zc=ZONE_TYPES[z.type], col=zc ? zc.color : "#c9a34b";
+      ctx.globalAlpha=0.30; ctx.fillStyle=col; ctx.fillRect(z.x,z.y,z.w,z.h);
+      ctx.globalAlpha=0.9; ctx.strokeStyle=col; ctx.setLineDash([8,5]); ctx.lineWidth=2; ctx.strokeRect(z.x,z.y,z.w,z.h); ctx.setLineDash([]); ctx.globalAlpha=1; }
   }
   const platStyle = { yoyle: stage.hazard==='yoyle',
                       leafy: (stage.id==='goiky'||stage.id==='custom'), shadow: isBig(),
@@ -74555,8 +74563,9 @@ function paintDeco(g, d, ww, wh, t){
   } else if(k==="cameo"){
     // A REAL roster render, watching from the scenery. Degrades exactly the way the fighters do:
     // until the PNG decodes (and forever if it 404s, or the environment has no Image constructor)
-    // it paints the same spectator blob a crowd prop does — never a hole in the map.
-    const sp = (typeof SPRITES!=='undefined' && d.n) ? SPRITES[d.n] : null;
+    // it paints the same spectator blob a crowd prop does — never a hole in the map. A fighter not unlocked
+    // (a saved level's cameo, locked again) is that blob too, in the editor and in the match (decoCameoShown).
+    const sp = (typeof SPRITES!=='undefined' && d.n && decoCameoShown(d.n)) ? SPRITES[d.n] : null;
     const im = sp ? spriteImage(sp) : null;
     const bob = Math.sin(t*0.03 + ph)*S*0.03;
     if(im){
@@ -74569,6 +74578,15 @@ function paintDeco(g, d, ww, wh, t){
     }
   }
   g.restore();
+}
+// Whether a cameo shows its fighter's render: only once that fighter is unlocked (isUnlocked, the game's own check; the owner's rule for the Level
+// Creator's pictures). Otherwise it is the plain spectator blob, and the level keeps its name, so it shows the fighter once unlocked. A name that is no
+// fighter (a boss, in a level saved before only fighters were picked) is not a locked fighter and shows as it did.
+function decoCameoShown(n){
+  if(!n) return false;
+  if(typeof PRIZE_NAMES!=='undefined' && PRIZE_NAMES.indexOf(n)>=0 && !cobsBeaten()) return false;
+  const r = ROSTER.find(x=>x.name===n);
+  return r ? isUnlocked(r) : true;
 }
 // Paint a whole level's scenery. Kept as its own pass so decorations sit BEHIND the geometry you
 // actually stand on — scenery must never hide a ledge.
@@ -74617,7 +74635,7 @@ const ZONE_TYPES = {
   bounce: {label:"Bounce", color:"#e84b9c", def:1.0, unit:"springiness"},
   damage: {label:"Damage", color:"#e0503a", def:1.0, unit:"dmg/tick"},
   heal:   {label:"Heal",   color:"#7bc043", def:1.0, unit:"heal/tick"},
-  wind:   {label:"Wind",   color:"#8fd0ff", def:1.0, unit:"push force"},
+  wind:   {label:"Wind",   color:"#a77bff", def:1.0, unit:"push force"},   // violet: it was #8fd0ff, almost Ice's blue (the level creator review, 2026-10-26)
 };
 // Snap angles (degrees), only ones a fighter can stand on: 45, 90 and 135 were offered, and on them a fighter slid off or could not stand at all (the
 // level creator review, 2026-10-26). In the order the plank turns: 30 then -30 (150, the same plank) then -15. A level saved with a steeper angle keeps it
@@ -74634,11 +74652,13 @@ function platRot(r){ r = (+r||0) % 180; if(r > 90) r -= 180; if(r <= -90) r += 1
 const ED = { plats:[], spawns:[], zones:[], deco:[], hazard:"", tool:"plat", zoneType:"glue",
   decoKind:"tree", size:"normal",
   drag:null, sel:null, cv:null, ctx:null,
-  w:1100, h:720, cw:760, ch:498, view:{x:0,y:0}, zoom:1, fit:true, pan:false };
+  w:1100, h:720, cw:800, ch:524, view:{x:0,y:0}, zoom:1, fit:true, pan:false,
+  cleanFP:null, savedName:null, genName:null };   // (unsaved work and saving: edHasUnsaved, edSave)
 // A press that MOVED is a pan, not a placement. The same discrimination the roster strip used to make for
 // drag-vs-pick (3px to start moving, 6px to swallow the click), because a builder
 // nudging the mouse while clicking must not have a platform appear under it.
 const ED_PAN_START = 3, ED_PAN_CLICK = 6;
+const ED_BOX_W = 800;   // the drawing box's width on the page (edResize); its height follows from the game screen's shape
 // The world multipliers for the size currently being edited. Identical to the ones setupWorld()
 // applies at play time — one source of truth for "how big is this map".
 function edMul(){ const S = MAP_SIZES[ED.size] || MAP_SIZES.normal; return { sw:Math.max(1,S.w), sh:Math.max(1,S.h) }; }
@@ -74648,15 +74668,18 @@ function edResize(){
   const cv = ED.cv; if(!cv) return;
   const gw = W||1100, gh = H||720;
   const m = edMul();
-  ED.cw = Math.max(320, Math.min(760, ((UI.real ? LOGICAL_W : window.innerWidth)||760)-24));   // (the box's own width, not the window's: the box is what scales)
+  ED.cw = Math.max(320, Math.min(ED_BOX_W, ((UI.real ? LOGICAL_W : window.innerWidth)||ED_BOX_W)-24));   // (the box's own width, not the window's: the box is what scales)
   ED.ch = Math.round(ED.cw * gh/gw);
+  // The box on the page is exactly this size, so it has the game screen's shape: it took the page's canvas rule, width 100% (1048 px) and a height of half
+  // that, and was drawn 31% too wide (the level creator review, 2026-10-26). 800 wide keeps the 524 px height it had, so nothing under it moves.
+  cv.style.width = ED.cw+'px'; cv.style.height = ED.ch+'px';
   edBacking();
   ED.w = Math.round(gw*m.sw); ED.h = Math.round(gh*m.sh);
   if(ED.fit) edZoomFit(); else edClampView();
 }
 // The editor canvas is drawn in its own logical size (ED.cw x ED.ch), under a base transform up to a backing store of the pixels its box really covers: its CSS box
-// (the page stretches it to the screen's width, 1048 px in the box, so it was always drawn bigger than it was made, and soft) times UI.sx and UI.sy. With no layout
-// (a headless page) its box is 0 and the backing store is ED.cw x ED.ch, as it always was.
+// (ED.cw x ED.ch since edResize sizes it; the page used to stretch it to 1048 x 524) times UI.sx and UI.sy. With no layout (a headless page) its box is 0 and the
+// backing store is ED.cw x ED.ch, as it always was.
 function edBacking(){
   const cv = ED.cv; if(!cv || !ED.cw) return;
   const bw = cv.clientWidth || ED.cw, bh = cv.clientHeight || ED.ch;   // its box, in the app's own pixels (clientWidth is a layout size: k is not in it)
@@ -75067,6 +75090,7 @@ function genFillSelects(){
 // Generate straight into the editor, so the result is a starting point you can edit — not a
 // black box you either accept or reroll.
 function genQuickMap(seed){
+  if(!edOkToReplace()) return null;   // unsaved work on the map: ask first (edHasUnsaved)
   const readSel=(id,fallback)=>{ const el=document.getElementById(id); return el && el.value ? el.value : fallback; };
   GEN.type    = readSel('genType', GEN.type);
   GEN.size    = MAP_SIZES[ED.size] ? ED.size : 'normal';   // the editor's MAP SIZE, not a second one
@@ -75080,7 +75104,11 @@ function genQuickMap(seed){
   if(bad.length){ banner("MAP GEN FAILED: "+bad[0], 1800); return null; }
   edAdoptLevel(lvl);                       // same path a saved level takes in, size and all
   ED.fit=true; edResize();
-  const nameEl=document.getElementById('edName'); if(nameEl) nameEl.value = lvl.name;
+  // A name the builder typed stays: Generate wrote its own over it (the level creator review, 2026-10-26). An empty box, or one still holding the last
+  // generated name, takes the new one. It is a new map, so saving it over a saved level of that name asks first (ED.savedName).
+  const nameEl=document.getElementById('edName');
+  if(nameEl && (!nameEl.value.trim() || nameEl.value === ED.genName)){ nameEl.value = lvl.name; ED.genName = lvl.name; }
+  ED.savedName = null; edMarkClean();
   const seedEl=document.getElementById('genSeedLabel');
   if(seedEl) seedEl.textContent = "seed "+lvl.seed.toString(36).toUpperCase();
   const t=document.getElementById('genType'); if(t) t.title = MAP_ARCHETYPES[GEN.type].blurb;
@@ -75220,19 +75248,26 @@ function edSetSize(k){
   ED.fit=true; edResize(); edSyncPanel(); edDraw();
 }
 function edToggleZoom(){ if(ED.fit) edZoomOne(); else edZoomFit(); edSyncPanel(); edDraw(); }
-// The renders a level shows in its crowd and on its spawn markers: every fighter's, and the bosses'. Not Pepper's -- she
-// is a partner drawn only beside her fighter (Salt's echo) -- and she sits first in SPRITES, where she also shifted which
-// render every spawn marker showed. Bot is a fighter now ("oh, and bot should get their own kit."), so they are in the crowd.
+// The renders the Level Creator shows on its spawn markers and picks for a new Cameo: the fighters this player has UNLOCKED, by the game's own check
+// (isUnlocked), and no one else -- the owner's rule, locked fighters stay out of the Level Creator's pictures until unlocked. It showed every render,
+// locked fighters' too (the level creator review, 2026-10-26). Not a boss's: a boss is no fighter you unlock. Not Pepper's -- she is a partner drawn only
+// beside her fighter (Salt's echo). Bot is a fighter now ("oh, and bot should get their own kit."), so they are in it once unlocked. Steve Cobs's prize
+// is in neither SPRITES nor ROSTER until he is beaten (edFighterUnlocked asks all the same).
 const ED_NOT_CAMEOS = new Set(['Pepper']);
-function edSpriteNames(){ return (typeof SPRITES!=='undefined') ? Object.keys(SPRITES).filter(n=>!ED_NOT_CAMEOS.has(n)) : []; }
+function edFighterUnlocked(n){
+  if(typeof PRIZE_NAMES!=='undefined' && PRIZE_NAMES.indexOf(n)>=0 && !cobsBeaten()) return false;
+  const r = ROSTER.find(x=>x.name===n);
+  return !!r && isUnlocked(r);
+}
+function edSpriteNames(){ return (typeof SPRITES!=='undefined') ? Object.keys(SPRITES).filter(n=>!ED_NOT_CAMEOS.has(n) && edFighterUnlocked(n)) : []; }
 // A new prop. A cameo picks a real fighter here rather than at paint time, so the crowd a level
 // was saved with is the crowd it loads back with.
 function edMakeDeco(kind, nx, ny){
   const d={ k:kind, nx:+nx.toFixed(4), ny:+ny.toFixed(4), s:1 };
   if(kind==='cameo'){
-    const names = edSpriteNames();
-    const pool = names.length ? names : ROSTER.map(r=>r.name);
-    d.n = pool[Math.floor(Math.random()*pool.length) % pool.length];
+    const names = edSpriteNames();   // unlocked fighters only
+    const pool = names.length ? names : ROSTER.filter(r=>edFighterUnlocked(r.name)).map(r=>r.name);
+    if(pool.length) d.n = pool[Math.floor(Math.random()*pool.length) % pool.length];
   }
   return d;
 }
@@ -75354,7 +75389,8 @@ function edDraw(){
   if(ED.hazard==='lava'){ ctx2.fillStyle='#f0521f'; ctx2.fillRect(0,gy-4,w,5); }
   // scenery, behind the geometry — the same painter the match calls
   paintDecoList(ctx2, ED.deco, w, h, t);
-  // effect zones (under platforms)
+  for(const d of ED.deco) if(d && d.k==='cameo' && d.n && decoCameoShown(d.n)) edAwaitSprite(SPRITES[d.n]);   // a cameo's render still loading
+  // effect zones (over the scenery, under platforms): the match paints them in this order too
   for(const z2 of ED.zones){ const zx=z2.nx*w, zy=z2.ny*h, zw=z2.nw*w, zh=z2.nh*h; const zc=ZONE_TYPES[z2.type]||ZONE_TYPES.glue;
     ctx2.globalAlpha=0.4; ctx2.fillStyle=zc.color; ctx2.fillRect(zx,zy,zw,zh);
     ctx2.globalAlpha=1; ctx2.strokeStyle=zc.color; ctx2.setLineDash([6,4]); ctx2.lineWidth=2; ctx2.strokeRect(zx,zy,zw,zh); ctx2.setLineDash([]);
@@ -75413,6 +75449,7 @@ function edDrawSpawnFighter(g, i, x, y){
   if(!names.length) return;
   const sp = SPRITES[names[i % names.length]];
   const im = sp ? spriteImage(sp) : null;
+  if(sp && !im) edAwaitSprite(sp);   // still loading: draw the editor again when it is in
   g.globalAlpha=0.85;
   if(im){
     const hh=84, ww=hh*(im.naturalWidth/Math.max(1,im.naturalHeight));
@@ -75422,6 +75459,19 @@ function edDrawSpawnFighter(g, i, x, y){
     g.beginPath(); g.ellipse(x, y-34, 28, 32, 0, 0, 7); g.fill(); g.stroke();
   }
   g.globalAlpha=1;
+}
+// A render still loading when the editor is drawn showed its grey stand-in until something else redrew the editor, the next click (the level creator
+// review, 2026-10-26). Its load now redraws the editor once (spriteImage's onReady, after anything else waiting on it).
+function edAwaitSprite(sp){
+  if(!sp || !sp.src || sp.img || (sp.onReady && sp.onReady._ed)) return;
+  const prev = sp.onReady;
+  const go = ()=>{ if(prev){ try{ prev(); }catch(_e){} } edRedrawSoon(); };
+  go._ed = true; sp.onReady = go;
+}
+function edRedrawSoon(){
+  if(ED._redraw) return;
+  ED._redraw = true;
+  setTimeout(()=>{ ED._redraw = false; if(edIsOpen()) edDraw(); }, 0);
 }
 // A minimap, so a builder panning a Huge map always knows where in it they are. Only drawn when
 // there is actually more map than canvas — on a one-screen level it would be a picture of itself.
@@ -75440,7 +75490,21 @@ function edDrawMinimap(g){
   g.strokeRect(mx+ED.view.x*rx, my+ED.view.y*ry, (ED.cw/ED.zoom)*rx, (ED.ch/ED.zoom)*ry);
   g.restore();
 }
-function edClear(){ ED.plats=[]; ED.spawns=[]; ED.zones=[]; ED.deco=[]; ED.sel=null; ED.check=null; edShowCheck(null); edSyncPanel(); edDraw(); }
+// UNSAVED WORK (the level creator review, 2026-10-26: Clear, Quick map's Generate and Load replaced the whole map in one click, with no undo). edWorkFP is
+// the map as it is now, scenery and all; ED.cleanFP the map as it was last saved, loaded, cleared or generated. Something on the map that differs from
+// that is work not saved, and those three ask "Replace your map?" first. A map fresh from Generate is not work of yours: Generate again does not ask.
+function edWorkFP(){ return JSON.stringify([ED.size, ED.hazard, ED.plats, ED.spawns, ED.zones, ED.deco]); }
+function edMarkClean(){ ED.cleanFP = edWorkFP(); }
+function edHasUnsaved(){
+  if(!(ED.plats.length || ED.spawns.length || ED.zones.length || ED.deco.length)) return false;
+  return edWorkFP() !== ED.cleanFP;
+}
+function edOkToReplace(){ return !edHasUnsaved() || confirm('Replace your map? You have changes you have not saved.'); }
+function edClear(){
+  if(!edOkToReplace()) return;
+  ED.plats=[]; ED.spawns=[]; ED.zones=[]; ED.deco=[]; ED.sel=null; ED.check=null; ED.savedName=null;
+  edMarkClean(); edShowCheck(null); edSyncPanel(); edDraw();
+}
 // The level as it would be SAVED — and as "▶ Play" and "🧪 Test the Feel" queue it. `size` and
 // `deco` are part of it, which is what makes the test button test the map you are actually
 // looking at rather than a one-screen undressed version of it.
@@ -75602,24 +75666,68 @@ function edSyncPlayBtn(){
   const t = (n >= 2 && chosen) ? '▶ Play as '+chosen.name+' vs '+k+' CPU'+(k===1 ? '' : 's') : '▶ Play';
   if(b.textContent !== t) b.textContent = t;
 }
+// SAVING (the level creator review, 2026-10-26). A blank name saved as "Custom", so two unnamed levels overwrote each other; a name already used was
+// replaced without asking; "Saved" showed even when nothing was kept (BStore swallows a failed write); and saved levels that could not be read were taken
+// as none, so the next save (or Delete) wrote one level over all of them. Now Save asks for a name, asks before replacing a different saved level (the one
+// you loaded or last saved under that name is yours to save again), puts saved levels it cannot read aside before writing, and reads the save back
+// before it says Saved. The format is the same: one object of levels by name, under levels:custom.
+const ED_STORE = 'levels:custom';
+// The saved levels: { levels, raw, broken }. broken: there is text under the key that is not an object of levels (a write cut short); levels is then
+// empty, and raw is that text, to be kept, never written over.
+async function edReadLevels(){
+  const raw = await BStore.get(ED_STORE);
+  if(raw == null || raw === '') return { levels:{}, raw:null, broken:false };
+  try{ const L = JSON.parse(raw); if(L && typeof L==='object' && !Array.isArray(L)) return { levels:L, raw, broken:false }; }catch(e){}
+  return { levels:{}, raw, broken:true };
+}
+// Write `text` under `key` and read it back: true only when it is really there.
+async function edWriteChecked(key, text){
+  await BStore.set(key, text);
+  let back = null;
+  try{ back = await BStore.get(key); }catch(e){}
+  return back === text;
+}
+function edSaveFailed(name, why){
+  edShowCheck([why], 'Could not save "'+name+'":');
+  alert('Could not save "'+name+'". '+why);
+}
 async function edSave(){
-  const lvl=edCurrentLevel();
-  if(!lvl.name){ alert("Give your level a name first."); return; }
-  let levels={}; const raw=await BStore.get('levels:custom'); if(raw){ try{levels=JSON.parse(raw);}catch(e){} }
-  levels[lvl.name]=lvl;
-  await BStore.set('levels:custom', JSON.stringify(levels));
+  const nameEl = document.getElementById('edName');
+  let name = (nameEl.value||'').trim().slice(0,24);
+  if(!name){
+    let typed = null;
+    try{ typed = prompt('Name your level:', ''); }catch(e){}
+    name = (typed||'').trim().slice(0,24);
+    if(!name){ edShowCheck(['Type a name for your level in the box beside 💾 Save, then press Save.'], 'Not saved yet:'); try{ nameEl.focus(); }catch(e){} return; }
+    nameEl.value = name;
+  }
+  const lvl = edCurrentLevel(); lvl.name = name;
+  const fp = edWorkFP();
+  const st = await edReadLevels();
+  if(st.levels[name] && name !== ED.savedName && !confirm('Replace your saved level "'+name+'"?')) return;
+  // Saved levels that cannot be read are put aside first, under a key of their own, and checked: nothing is written over them.
+  if(st.broken && !(await edWriteChecked(ED_STORE+':unreadable:'+Date.now(), st.raw))){
+    edSaveFailed(name, 'Your saved levels could not be read, and could not be kept aside, so nothing was written over them.'); return;
+  }
+  const levels = Object.assign({}, st.levels); levels[name] = lvl;
+  if(!(await edWriteChecked(ED_STORE, JSON.stringify(levels)))){
+    edSaveFailed(name, 'This browser did not keep it: its storage may be full or blocked.');
+    edRenderList(); return;
+  }
+  ED.savedName = name; ED.cleanFP = fp;
   edRenderList();
   edRunCheck(lvl, 'Saved. Check my level found:');   // saved all the same: a level part-built is worth keeping
-  alert('Saved "'+lvl.name+'"');
+  alert('Saved "'+name+'"' + (st.broken ? '. Your old saved levels could not be read: a copy of them is kept aside.' : ''));
 }
 async function edRenderList(){
   const box=document.getElementById('edLevelList'); if(!box) return; box.innerHTML='';
-  let levels={}; const raw=await BStore.get('levels:custom'); if(raw){ try{levels=JSON.parse(raw);}catch(e){} }
+  const st=await edReadLevels(), levels=st.levels;
+  if(st.broken){ box.innerHTML='<div class="foot">Your saved levels could not be read. Nothing has been deleted: your next save keeps a copy of them aside.</div>'; return; }
   const names=Object.keys(levels);
   if(!names.length){ box.innerHTML='<div class="foot">No saved levels yet.</div>'; return; }
   for(const nm of names){
     const d=document.createElement('div'); d.className='edlevel';
-    const lv=levels[nm]||{};
+    const lv=(levels[nm] && typeof levels[nm]==='object') ? levels[nm] : {};
     const label=document.createElement('span');
     const sz=MAP_SIZES[lv.size] ? MAP_SIZES[lv.size].label : MAP_SIZES.normal.label;
     label.textContent=nm+" · "+sz; d.appendChild(label);
@@ -75628,7 +75736,9 @@ async function edRenderList(){
     const play=document.createElement('button'); play.className='load'; play.textContent='▶'; play.style.background='#7bc043';
     play.onclick=()=>{ edLoad(nm, true); }; d.appendChild(play);
     const del=document.createElement('button'); del.className='del'; del.textContent='✕';
-    del.onclick=async()=>{ if(!confirm('Delete "'+nm+'"?'))return; let L={}; const r=await BStore.get('levels:custom'); if(r){try{L=JSON.parse(r);}catch(e){}} delete L[nm]; await BStore.set('levels:custom',JSON.stringify(L)); edRenderList(); };
+    del.onclick=async()=>{ if(!confirm('Delete "'+nm+'"?'))return;
+      const s2=await edReadLevels(); if(s2.broken){ alert('Your saved levels could not be read, so nothing was deleted.'); edRenderList(); return; }
+      delete s2.levels[nm]; await BStore.set(ED_STORE,JSON.stringify(s2.levels)); if(ED.savedName===nm) ED.savedName=null; edRenderList(); };
     d.appendChild(del);
     box.appendChild(d);
   }
@@ -75637,26 +75747,30 @@ async function edRenderList(){
 // level saved before sizes existed has no `size` and is read as 'normal' — which is the one-screen
 // world box its coordinates were drawn against, so it comes back exactly as it was left — and a
 // level saved before decorations existed has no `deco` and is read as an empty list. Nothing is
-// rewritten on disk and nothing that ever saved is refused.
+// rewritten on disk and nothing that ever saved is refused. A list that is not a list (a broken save)
+// is read as empty, so one broken level cannot stop the others loading.
 function edAdoptLevel(lvl){
-  ED.plats=(lvl.plats||[]).map(p=>({rot:0,...p}));
-  ED.spawns=(lvl.spawns||[]).map(s=>({...s}));
-  ED.zones=(lvl.zones||[]).map(z=>({...z}));
-  ED.deco=(lvl.deco||[]).filter(d=>d && DECO_TYPES[d.k]).map(d=>({s:1,...d}));
+  const list = a => Array.isArray(a) ? a.filter(o=>o && typeof o==='object') : [];
+  ED.plats=list(lvl.plats).map(p=>({rot:0,...p}));
+  ED.spawns=list(lvl.spawns).map(s=>({...s}));
+  ED.zones=list(lvl.zones).map(z=>({...z}));
+  ED.deco=list(lvl.deco).filter(d=>DECO_TYPES[d.k]).map(d=>({s:1,...d}));
   ED.hazard=lvl.hazard||"";
   ED.size=MAP_SIZES[lvl.size] ? lvl.size : 'normal';
   ED.sel=null;
   ED.check=null; edShowCheck(null);   // the last level's findings are not this one's
 }
 async function edLoad(nm, thenPlay){
-  let levels={}; const raw=await BStore.get('levels:custom'); if(raw){ try{levels=JSON.parse(raw);}catch(e){} }
-  const lvl=levels[nm]; if(!lvl) return;
+  if(!edOkToReplace()) return;   // unsaved work on the map: ask first (edHasUnsaved)
+  const st=await edReadLevels();
+  const lvl=st.levels[nm]; if(!lvl || typeof lvl!=='object') return;
   edAdoptLevel(lvl);
-  document.getElementById('edName').value=lvl.name;
+  document.getElementById('edName').value=nm;
   document.getElementById('edHazard').value=ED.hazard;
   const sz=document.getElementById('edSize');
   if(sz) sz.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.v===ED.size));
   ED.fit=true; edResize();
+  ED.savedName=nm; ED.genName=null; edMarkClean();
   edSyncPanel(); edDraw();
   if(thenPlay){ const l=edCurrentLevel(); if(edPlayReady(l)) playCustomLevel(l, false, true); }
 }
