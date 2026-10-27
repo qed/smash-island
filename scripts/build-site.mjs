@@ -316,7 +316,7 @@ function buildStamp(js) {
   const fn = /\nfunction buildHash\(s\)\{[\s\S]*?\n\}/.exec(js), abc = /\nconst BUILD_ABC = ("[^"\n]*");/.exec(js);
   if (!fn || !abc) return null;
   try {
-    const id = vm.runInNewContext(`const BUILD_ABC = ${abc[1]};${fn[0]}\nbuildHash(SRC)`, { SRC: js }, { timeout: 20000 });
+    const id = vm.runInNewContext(`const BUILD_ABC = ${abc[1]};${fn[0]}\nbuildHash(SRC)`, { SRC: js }, { timeout: 120000 });   // (20 s timed out on a busy laptop and quietly left the stamp off)
     return /^[BCDFGHJKMNPQRSTVWXYZ23456789]{8}$/.test(id) ? id : null;
   } catch { return null; }
 }
