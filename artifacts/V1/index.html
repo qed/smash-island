@@ -44189,7 +44189,14 @@ const SUCKER_ROOT_KB = 1.2;   // Lollipop: how much farther her smash launches a
 const GRASSY_SMASH_KB = 11;   // Grassy's rolling grass: its launch (was 8)
 // The rows keep their authored dmg -- the dmg:kb ratio is each smash's job (racks vs launches) -- and the boost
 // is applied to the copy that fires, so it never flips a launcher into a percent-racker.
-function smashRowAsFired(row){ return Object.assign({}, row, { dmg: Math.round(row.dmg * SMASH_DMG_MULT) }); }
+// `goldKb` (Silver Spoon's row alone): his smash thrown inside his own Glowing Gold -- the gold shimmer and Attack Up both on, as his
+// special sets them (case "glowgold") -- launches that much less, on top of Attack Up's x1.2 (its x1.4 damage stays). Not his smash out
+// of gold, not his other moves, not anyone's Attack Up pickup. ("you can just spam glowing gold, right?" -- the owner, 2026-10-27)
+function smashRowAsFired(row, f){
+  const o = Object.assign({}, row, { dmg: Math.round(row.dmg * SMASH_DMG_MULT) });
+  if(row.goldKb && f && f._starT > 0 && f._empowerT > 0){ o.kb = row.kb * row.goldKb; if(row.up != null) o.up = row.up * row.goldKb; }
+  return o;
+}
 const TRAP_DMG_MULT = 1.5;
 const SMASHES = {
   // Tennis Ball: the smash fires a much stronger version of whichever gadget is loaded (see GADGETS).
@@ -45112,7 +45119,8 @@ const SMASH_SPEC = {
   vacuum:   {pat:'lunge', step:4, reach:26, dmg:14, kb:12, effect:'burn', n:120, cost:{stun:18, cd:20}, color:'#e6d21c'},
   // Silver Spoon: Punched Into the Sky -- the Animation Machine wreck (The Show Must Go On), his Flame punching out
   // Candle's (A Jury of Your Fears). One super-strength punch, launching up and forward; hardest inside Glowing Gold.
-  glowgold: {pat:'lunge', step:6, reach:30, dmg:16, kb:14, far:1, effect:'knockdown', up:-10, cost:{stun:24, self:2}, color:'#e8c34a'},   // kb 19 -> 14, up -14 -> -10 (the same up-and-forward angle): a medium CPU, recovering, mid-stage, is KO'd from about 38% now (was about 12%): the strong end, not the middle (2026-10-26)
+  glowgold: {pat:'lunge', step:6, reach:30, dmg:16, kb:14, far:1, effect:'knockdown', up:-10, goldKb:0.81, cost:{stun:24, self:2}, color:'#e8c34a'},   // kb 19 -> 14, up -14 -> -10 (the same up-and-forward angle): a medium CPU, recovering, mid-stage, is KO'd from about 38% now (was about 12%): the strong end, not the middle (2026-10-26). Inside his own Glowing Gold it launches x0.81
+  // (goldKb, smashRowAsFired): there the same CPU is KO'd from about 30% (was about 11%), still his hardest (2026-10-27)
   // Tapey: Solo Track (Fan the Flames) -- cued for the "solo track", she played Poppy's confession by accident and everyone
   // gasped. A recording at full volume down one line, and everyone on it is stunned: shorter than TV's Static Burst, a longer stun.
   tape:     {pat:'beam', len:460, wide:22, dmg:13, kb:11, effect:'stun', n:40, cost:{stun:20, cd:20}, color:'#c91745'},
@@ -45146,7 +45154,7 @@ function doSmash(f){
   const before = f._smAngle ? new Set(projectiles) : null;
   const tag = function(){ if(before) for(const p of projectiles) if(p.owner===f.idx && !before.has(p)) p.smAngle = f._smAngle; };   // shots carry the angle
   if(SMASH_SPEC[k] && SMASH_SPEC[k].uncopyable) f._noCopyT = hazardT + 150;   // Bot's THE ONE AND ONLY!: nothing may copy it (see applyHit's tape)
-  if(SMASH_SPEC[k]){ runSmashSpec(f, smashRowAsFired(SMASH_SPEC[k])); tag(); return; }
+  if(SMASH_SPEC[k]){ runSmashSpec(f, smashRowAsFired(SMASH_SPEC[k], f)); tag(); return; }
   if(SMASHES[k]){ SMASHES[k](f); smashCost(f, LEGACY_SMASH_COST[k]); tag(); return; }
   genericSmash(f);
 }
@@ -56376,7 +56384,7 @@ function doSpecial(f){
           try { doSpecial(f); } catch(e){ /* a kit that cannot run from his body simply does nothing */ }
           f.kit = kit0; f._lastSpecialKind = 'copycat';
           // The copied kit set its cooldown raw, inside the wind-up, after fireSpecial had already scaled this press: a copy
-          // of Silver Spoon locked him for 880 frames to her 704. Scaled here as fireSpecial would have.
+          // of Silver Spoon locked him for 1500 frames to her 1200. Scaled here as fireSpecial would have.
           if(f.spCd > cd0) f.spCd = Math.max(1, Math.round(f.spCd * SPECIAL_CD_SCALE));
           for(let i=0;i<8;i++) puff(f.x, f.y - 6, '#fcdfa6', 4);
         }, '#fcdfa6');
@@ -56525,7 +56533,9 @@ function doSpecial(f){
     case "glowgold": { // Silver Spoon: GLOWING GOLD -- he "can turn gold at will", boosting strength and mobility, and "sort of blacks out
       // when it activates" (his Abilities); the power felt out of his control (The Great Bluish Bake Off). He blacks out first
       // (40 frames, stunned), then 6 s gold on the powerups the game already has: Attack Up (x1.4 damage, x1.2 knockback) and
-      // Speed Up, with the star's gold shimmer. Hits don't end it. Then 8 s before he can light it again.
+      // Speed Up, with the star's gold shimmer. Hits don't end it. He can light it again 20 s after the press (1500 x SPECIAL_CD_SCALE =
+      // 1200 frames), about 13 s after the gold ends, so he is gold a third of the time at most. (It was 220*4 -> 704 frames, about 5 s
+      // after the gold: gold 57% of the time at most. "you can just spam glowing gold, right?" -- the owner, 2026-10-27.)
       // KIT FIX (kit-roles): he had no combo starter of his own, and the black-out was 40 free frames to the foe. The flash IS the hit now:
       // as it takes hold the gold bursts out of him and pops every foe within a spoon's length straight up (4%, a lift and a 26-frame stun),
       // and he is down for only 16 frames, so a jab or the up-special follows. The gold itself is unchanged.
@@ -56533,7 +56543,7 @@ function doSpecial(f){
       stunFx(f, 16);
       f._empowerT = Math.max(f._empowerT||0, 400); f._hasteT = Math.max(f._hasteT||0, 400); f._starT = Math.max(f._starT||0, 400);
       for(let i=0;i<12;i++) puff(f.x+(Math.random()*30-15), f.y+(Math.random()*50-30), '#ffd23f', 4);
-      f.flash = 10; f.spCd = 220 * 4; break; }
+      f.flash = 10; f.spCd = 1500; break; }   // 1200 frames after SPECIAL_CD_SCALE: 400 gold + 800 waiting
     case "tape": { // Tapey: PLAYBACK -- her second button replays what she recorded (Tapey, Appearance): Lightbulb's words and Tea
       // Kettle's own line played back at them (Cob Mentality), Starfruit framed with his (All Play and No Work). The biggest hit
       // taken near her since she pressed Record goes out from her speaker as a wave, straight ahead: its damage (capped at 14%),
