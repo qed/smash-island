@@ -74707,7 +74707,7 @@ const ED = { plats:[], spawns:[], zones:[], deco:[], hazard:"", tool:"plat", zon
   drag:null, sel:null, cv:null, ctx:null,
   w:1100, h:720, cw:800, ch:524, view:{x:0,y:0}, zoom:1, fit:true, pan:false, mcv:null, mctx:null,
   cleanFP:null, savedName:null, genName:null, keptFP:null,   // (unsaved work and saving: edHasUnsaved, edSave; the draft: edDraftNeeded)
-  undo:[], redo:[], histFP:null, histLast:null, histMerge:null,   // (undo and redo: edTrack)
+  undo:[], redo:[], histFP:null, histID:null, histLast:null, histMerge:null, docN:0, docSeq:0,   // (undo and redo: edTrack; what the level is: edIdent)
   draftAsked:false, draftOffer:null };   // (a draft offered back: edOfferDraft)
 // A press that MOVED is a pan, not a placement. The same discrimination the roster strip used to make for
 // drag-vs-pick (3px to start moving, 6px to swallow the click), because a builder
@@ -75176,6 +75176,7 @@ function genQuickMap(seed){
   // player — say so plainly rather than silently shipping an unplayable arena.
   const bad = mapgenValidate(lvl);
   if(bad.length){ banner("MAP GEN FAILED: "+bad[0], 1800); return null; }
+  edNewDoc();                              // another map (undo: edIdent)
   edAdoptLevel(lvl);                       // same path a saved level takes in, size and all
   ED.fit=true; edResize();
   // A name the builder typed stays: Generate wrote its own over it (the level creator review, 2026-10-26). An empty box, or one still holding the last
@@ -75267,7 +75268,8 @@ function openEditor(){
     else if(ED.tool==="deco"){ const o=edMakeDeco(ED.decoKind, p.x/ED.w, p.y/ED.h); ED.deco.push(o); ED.sel={kind:"deco",obj:o}; edSyncPanel(); edDraw(); }
     else if(ED.tool==="zone"){ ED.drag={mode:"zone", x0:p.x,y0:p.y,x1:p.x,y1:p.y}; }
     // DRAG TO ERASE (the level creator review, 2026-10-26: the eraser removed one thing per click). Held down, it goes on erasing whatever the pointer
-    // passes over (edDragTo); the whole sweep is one undo step (edTrack).
+    // passes over (edDragTo) once it has moved more than ED_PAN_START px, as a Move or a Pan does, so a click whose mouse moves a pixel or two still removes
+    // one thing (it removed the piece under it as well: the independent check, 2026-10-27); the whole sweep is one undo step (edTrack).
     else if(ED.tool==="erase"){ ED.drag={mode:"erase", lw:p}; edEraseAt(p.x,p.y); ED.sel=null; edSyncPanel(); edDraw(); }
     if(ED.drag) edHoldPointer(e, c);
   };
@@ -75371,7 +75373,7 @@ function edDragTo(c){
   else if(d.mode==="move"){ const dx=p.x-d.ox, dy=p.y-d.oy;
     d.obj.nx=(d.sx+dx)/ED.w; d.obj.ny=(d.sy+dy)/ED.h;
     edKeepIn(d.obj, d.kind); }   // the whole piece stays inside the map's edges (it could be dragged until only its left end was in)
-  else if(d.mode==="erase"){   // everything the pointer passed over since the last move, not only where it is now: a quick sweep skips nothing
+  else if(d.mode==="erase" && d.moved){   // everything the pointer passed over since the last move (since the press, at first), not only where it is now: a quick sweep skips nothing
     const a=d.lw||p, n=Math.max(1, Math.ceil(Math.hypot(p.x-a.x, p.y-a.y)*ED.zoom/6));
     for(let i=1;i<=n;i++) edEraseAt(a.x+(p.x-a.x)*i/n, a.y+(p.y-a.y)*i/n);
     d.lw=p;
@@ -75400,19 +75402,36 @@ function edEdgeTick(){
 // hazard, the map size, and Clear, Generate and Load. edDraw notes them (edTrack): when the level is no longer what it was when last noted, what it was goes
 // on the undo list. A drag is noted when it ends, so a piece dragged across the map, or a sweep of the eraser, is one step, not one per mouse move; a slider
 // being dragged, or a piece nudged with an arrow key held down, stays one step while it goes on (edMergeNext). A step is the level as text (edWorkFP: its
-// size, hazard and pieces), so undoing puts back exactly that. The name box has its own undo. Undo: the button or Ctrl+Z; Redo: the button, Ctrl+Y or
-// Ctrl+Shift+Z.
+// size, hazard and pieces), so undoing puts back exactly that, and what that level was (edIdent): which saved level it is, and so whether Save asks
+// first. Clear, Generate, Load and a draft brought back each start another map (ED.docN); undoing past one puts back the map before it with its own name in
+// the box as well. (Undoing a Load put the old map back under the loaded level's name, and Save then wrote it over that saved level with no question: the
+// independent check, 2026-10-27.) Within one map the name box has its own undo. Undo: the button or Ctrl+Z; Redo: the button, Ctrl+Y or Ctrl+Shift+Z.
 const ED_UNDO_MAX = 200, ED_MERGE_MS = 800;
+// What the level on the editor is, beside its pieces: which map it is (ED.docN), the name in the box, the saved level it is (Save writes over that one
+// with no question), the map as it was last saved, loaded, cleared or generated ("Replace your map?"), the map as it is kept among the saved levels (the
+// draft), and Quick map's last name.
+function edIdent(){
+  const nameEl = document.getElementById('edName');
+  return { doc:ED.docN, name:nameEl ? nameEl.value : '', savedName:ED.savedName, cleanFP:ED.cleanFP, keptFP:ED.keptFP, genName:ED.genName };
+}
+// Another map on the editor (Clear, Generate, Load, a draft brought back): what was there is noted first, as it was.
+function edNewDoc(){ edTrack(); ED.docN = ++ED.docSeq; }
+// Every step's record of what is saved (the undo and redo lists, and the level on the editor), after a save or a delete changed a saved level.
+function edIdentEach(fn){
+  for(const e of ED.undo) if(e && e.id) fn(e.id);
+  for(const e of ED.redo) if(e && e.id) fn(e.id);
+  if(ED.histID) fn(ED.histID);
+}
 function edMergeNext(tag){ ED.histMerge = { tag, t:Date.now() }; }
 function edTrack(){
   if(ED.drag) return;   // a drag is one step, noted when it ends
   const fp = edWorkFP(), m = ED.histMerge; ED.histMerge = null;
-  if(ED.histFP === null){ ED.histFP = fp; return; }
-  if(fp === ED.histFP) return;
+  if(ED.histFP === null){ ED.histFP = fp; ED.histID = edIdent(); return; }
+  if(fp === ED.histFP){ ED.histID = edIdent(); return; }   // the same level (a name typed, the level saved: it is what that step is now)
   const L = ED.histLast;
   if(m && L && L.tag === m.tag && m.t - L.t < ED_MERGE_MS && L.fp === ED.histFP){ L.t = m.t; L.fp = fp; }   // the same slider drag, the same arrow held: still the step before
-  else { ED.undo.push(ED.histFP); if(ED.undo.length > ED_UNDO_MAX) ED.undo.shift(); ED.histLast = m ? { tag:m.tag, t:m.t, fp } : null; }
-  ED.redo.length = 0; ED.histFP = fp;
+  else { ED.undo.push({ fp:ED.histFP, id:ED.histID }); if(ED.undo.length > ED_UNDO_MAX) ED.undo.shift(); ED.histLast = m ? { tag:m.tag, t:m.t, fp } : null; }
+  ED.redo.length = 0; ED.histFP = fp; ED.histID = edIdent();
   edSyncUndo(); edDraftSoon();
 }
 function edSyncUndo(){
@@ -75426,20 +75445,25 @@ function edStepTo(from, to){
   if(ED.drag) return;   // not in the middle of a drag
   edTrack();            // a change not noted yet is a step of its own first
   if(!from.length) return;
-  to.push(edWorkFP()); if(to.length > ED_UNDO_MAX) to.shift();
+  to.push({ fp:edWorkFP(), id:edIdent() }); if(to.length > ED_UNDO_MAX) to.shift();
   edRestore(from.pop());
 }
-// The level put back to step `fp`. What was picked stays picked while it is still there.
-function edRestore(fp){
+// The level put back to a step: its pieces (fp) and what it was (id: edIdent). What was picked stays picked while it is still there.
+function edRestore(step){
+  const fp = typeof step==='string' ? step : (step && step.fp), id = step && typeof step==='object' ? step.id : null;
   let a; try{ a = JSON.parse(fp); }catch(e){ return; }
   if(!Array.isArray(a)) return;
+  if(id){
+    if(id.doc !== ED.docN){ const nameEl = document.getElementById('edName'); if(nameEl) nameEl.value = typeof id.name==='string' ? id.name : ''; }   // another map: its own name
+    ED.docN = id.doc; ED.savedName = id.savedName; ED.cleanFP = id.cleanFP; ED.keptFP = id.keptFP; ED.genName = id.genName;
+  }
   const lists = { plat:'plats', spawn:'spawns', zone:'zones', deco:'deco' }, sel = ED.sel, key = sel ? lists[sel.kind] : null;
   const at = key ? ED[key].indexOf(sel.obj) : -1, size0 = ED.size;
   const list = v => Array.isArray(v) ? v : [];
   ED.size = MAP_SIZES[a[0]] ? a[0] : 'normal'; ED.hazard = a[1] || '';
   ED.plats = list(a[2]); ED.spawns = list(a[3]); ED.zones = list(a[4]); ED.deco = list(a[5]);
   ED.sel = (at >= 0 && ED[key][at]) ? { kind:sel.kind, obj:ED[key][at] } : null;
-  ED.histFP = fp; ED.histLast = null;
+  ED.histFP = fp; ED.histID = edIdent(); ED.histLast = null;
   edSyncSizeHazard();
   if(ED.size !== size0){ ED.fit = true; edResize(); }
   edSyncPanel(); edSyncUndo(); edDraw(); edDraftSoon();
@@ -75449,7 +75473,9 @@ function edRestore(fp){
 // The level on the editor is kept by itself under levels:draft -- never among the saved levels (levels:custom), which it does not touch -- a moment after
 // each change (and at once when the page goes away), while it is not one of the saved levels just as it was saved or loaded (ED.keptFP). An empty map, or
 // one just saved or loaded, keeps none. The editor opened on an empty map with a draft there offers it back (edOfferDraft): Bring it back, or Throw it
-// away. The offer holds last time's draft itself, so work done before either is pressed is kept as the draft in its place, and is not lost either.
+// away. The offer holds last time's draft itself, so work done before either is pressed is kept as the draft in its place, and is not lost either; and
+// while the offer waits, an empty map (or one just saved or loaded) leaves last time's draft stored: only Throw it away lets it go. (A name typed or a
+// Map size clicked on the empty map deleted it, so a reload before answering lost it: the independent check, 2026-10-27.)
 const ED_DRAFT = 'levels:draft', ED_DRAFT_MS = 400;
 function edHasPieces(){ return !!(ED.plats.length || ED.spawns.length || ED.zones.length || ED.deco.length); }
 function edDraftNeeded(){ return edHasPieces() && edWorkFP() !== ED.keptFP; }
@@ -75460,7 +75486,7 @@ function edDraftSoon(){
 function edDraftWrite(){
   clearTimeout(ED._draftT); ED._draftT = 0;
   try{
-    if(!edDraftNeeded()){ BStore.del(ED_DRAFT); return; }
+    if(!edDraftNeeded()){ if(ED.draftOffer) BStore.set(ED_DRAFT, JSON.stringify(ED.draftOffer)); else BStore.del(ED_DRAFT); return; }   // (still offered: stays)
     const nameEl = document.getElementById('edName');
     BStore.set(ED_DRAFT, JSON.stringify({ v:1, t:Date.now(), name:nameEl ? nameEl.value : '', level:edCurrentLevel(),
       savedName:ED.savedName, cleanFP:ED.cleanFP, keptFP:ED.keptFP }));
@@ -75498,6 +75524,7 @@ function edDraftAnswer(keep){
   if(keep && !edOkToReplace()) return;   // work drawn since the editor opened: ask first, as Load does
   ED.draftOffer = null; edShowDraft(null);
   if(!keep){ edDraftWrite(); return; }   // last time's is let go: the draft is the map on the editor now, or none
+  edNewDoc();   // another map (undo: edIdent)
   edAdoptLevel(d.level);
   const nameEl = document.getElementById('edName'); if(nameEl) nameEl.value = typeof d.name==='string' ? d.name.slice(0,24) : '';
   ED.savedName = typeof d.savedName==='string' ? d.savedName : null; ED.genName = null;
@@ -75556,7 +75583,7 @@ function edNudgeSel(dx, dy){
   const o=k.s.obj;
   o.nx=(o.nx||0)+dx/ED.w; o.ny=(o.ny||0)+dy/ED.h;
   edKeepIn(o, k.s.kind);
-  edMergeNext('nudge:'+k.s.kind+':'+k.L.indexOf(o)); edDraw(); return true;
+  edMergeNext('nudge:'+k.s.kind+':'+k.L.indexOf(o)+':'+Math.sign(dx)+':'+Math.sign(dy)); edDraw(); return true;   // (the same arrow held is one step; another arrow is another)
 }
 function edCopySel(){
   const k=edPicked(); if(!k) return false;
@@ -75857,6 +75884,7 @@ function edHasUnsaved(){
 function edOkToReplace(){ return !edHasUnsaved() || confirm('Replace your map? You have changes you have not saved.'); }
 function edClear(){
   if(!edOkToReplace()) return;
+  edNewDoc();   // another map (undo: edIdent)
   ED.plats=[]; ED.spawns=[]; ED.zones=[]; ED.deco=[]; ED.sel=null; ED.check=null; ED.savedName=null;
   edMarkClean(); edShowCheck(null); edSyncPanel(); edDraw();
 }
@@ -76070,6 +76098,13 @@ async function edSave(){
     edRenderList(); return;
   }
   ED.savedName = name; ED.cleanFP = fp; ED.keptFP = fp; edDraftSoon();   // saved as it is: no draft needed for it (edDraftNeeded)
+  // The steps of this map (undo and redo) are this saved level now, as it is stored; another map's steps that were the saved level of this name are not
+  // any more (unless it is stored just as they kept it), so Save asks before writing them over it.
+  const doc = ED.docN;
+  edIdentEach(id=>{
+    if(id.doc === doc){ id.savedName = name; id.cleanFP = fp; id.keptFP = fp; }
+    else if(id.savedName === name && id.keptFP !== fp){ id.savedName = null; id.cleanFP = null; id.keptFP = null; }
+  });
   edRenderList();
   edRunCheck(lvl, 'Saved. Check my level found:');   // saved all the same: a level part-built is worth keeping
   alert('Saved "'+name+'"' + (st.broken ? '. Your old saved levels could not be read: a copy of them is kept aside.' : ''));
@@ -76093,7 +76128,7 @@ async function edRenderList(){
     const del=document.createElement('button'); del.className='del'; del.textContent='✕';
     del.onclick=async()=>{ if(!confirm('Delete "'+nm+'"?'))return;
       const s2=await edReadLevels(); if(s2.broken){ alert('Your saved levels could not be read, so nothing was deleted.'); edRenderList(); return; }
-      delete s2.levels[nm]; await BStore.set(ED_STORE,JSON.stringify(s2.levels)); if(ED.savedName===nm){ ED.savedName=null; ED.keptFP=null; edDraftSoon(); } edRenderList(); };   // (the level on the editor is no longer kept anywhere but the draft)
+      delete s2.levels[nm]; await BStore.set(ED_STORE,JSON.stringify(s2.levels)); if(ED.savedName===nm){ ED.savedName=null; ED.keptFP=null; edDraftSoon(); } edIdentEach(id=>{ if(id.savedName===nm){ id.savedName=null; id.keptFP=null; } }); edRenderList(); };   // (the level on the editor is no longer kept anywhere but the draft)
     d.appendChild(del);
     box.appendChild(d);
   }
@@ -76119,6 +76154,7 @@ async function edLoad(nm, thenPlay){
   if(!edOkToReplace()) return;   // unsaved work on the map: ask first (edHasUnsaved)
   const st=await edReadLevels();
   const lvl=st.levels[nm]; if(!lvl || typeof lvl!=='object') return;
+  edNewDoc();   // another map (undo: edIdent)
   edAdoptLevel(lvl);
   document.getElementById('edName').value=nm;
   document.getElementById('edHazard').value=ED.hazard;
