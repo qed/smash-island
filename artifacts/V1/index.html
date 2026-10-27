@@ -57191,7 +57191,7 @@ function setFighterSize(f, k){
 const ERASER = {
   rubOut: { wind:10, hang:6, near:18, far:112, up:44, dn:10, r:30, dy:2, dmg:7, kb:[4.5, -5], show:12, cd:60, aiShot:120, aiFoe:100 },
   flip:   { crouch:3, power:-14, back:2.6, spin:22, wall:16, reach:30, close:8, tip:4, band:0.5, kb:[3.5, -9.5] },
-  rub:    { t:24, cd:300, cdNone:60, aiFoe:140 },
+  rub:    { t:24, cd:300, cdNone:60, aiFoe:140, aiEdge:110, aiLock:20 },
   ootp:   { lean:FIN_STARTUP, reach:30, aiGap:40, grab:4, every:12, rubs:3, dmg:3, fade:4, gone:18, step:40, fin:8, kbx:11, kby:-10, mash:5, cpu:[0.06, 0.08, 0.10], boss:8, whiff:22, end:14, ai:360 },
   fs:     { run:60, hw:50, H:64, dmg:21, kb:20, ky:-11 },
 };
@@ -57529,11 +57529,20 @@ function drawSlateEraser(c, x, fy, hw, H, dir){
 function eraserRubPays(f){
   if(!eraserAilment(f)) return false;
   for(const o of fighters) if(!o.dead && o !== f && o.team !== f.team && Math.hypot(o.x - f.x, o.y - f.y) < ERASER.rub.aiFoe) return false;
-  return true;
+  return eraserRoom(f, -1) && eraserRoom(f, 1);   // and not beside a drop: its 5 s lock on the flip starts where he cleanses
 }
+// Floor (or something to stand on) ERASER.rub.aiEdge px to that side of him: no drop that near.
+function eraserRoom(f, dir){ return standAt(f.x + dir*ERASER.rub.aiEdge, feetY(f)); }
 function aiEraserOut(f, inp, B, L, t, fight){
   const now = hazardT, R = ERASER.rubOut;
   eraserLastHit(f);   // (his own hits, for the finisher's read: ootpRead)
+  // NO STOMP OUT OVER THE PIT: it hangs 10 frames and then dives straight down, so only with something to stand on under where the hang
+  // leaves him (his drift carried 14 frames on); off a ledge or over the pit it took him down with it.
+  if(!f.onground && inp.attack && inp.down && !inp.special && !standAt(f.x + (f.vx || 0)*14, feetY(f))){ inp.attack = false; inp.down = false; }
+  // HIS WAY BACK LOCKED: Rub It Off's cleanse puts the cooldown he shares with the flip at 5 s. While more than ERASER.rub.aiLock frames of
+  // it are left, he goes no nearer a drop than ERASER.rub.aiEdge px -- no step, run or drift toward one -- so a hand a moment late
+  // (CPU_HUMAN) or a string carrying on does not take him off the stage with no flip to get back on.
+  if(f.spCd > ERASER.rub.aiLock && !overDrop(f)){ if(inp.left && !eraserRoom(f, -1)) inp.left = false; if(inp.right && !eraserRoom(f, 1)) inp.right = false; }
   // OFF THE STAGE (nothing under him): no special of his but the recovery's. Rub Out and Rub It Off share the special cooldown with
   // Steakhouse Flip, so one pressed over the pit would leave him without his way back for 1 s or 5 s.
   // STEAKHOUSE FLIP goes up and BACK, the way he faces turned away (eraserFlip). The shared recovery (brainRecover) presses it with the arrow
@@ -61203,7 +61212,7 @@ function brainOf(f){
   let B = f._br;
   if(!B || hazardT < B.seen){   // (a new match's clock: a fresh head)
     B = f._br = { st:'approach', until:0, next:0, press:null, str:null, hurt:false, wake:0, hurtEnd:-1e9, ctrCd:0, ctrOk:-1e9, tellOn:false,
-      specAt:0, backAt:-1e9, holdH:null, jHeld:false, seen:0 };
+      specAt:0, backAt:-1e9, holdH:null, seen:0 };
   }
   if(hazardT - B.seen > 1){ B.progD = null; B.detour = null; }   // (it was not thinking a moment ago -- a Capture the Flag errand had the keys: the watch on its progress starts again)
   B.seen = hazardT;
@@ -61252,7 +61261,9 @@ function aiThink(f){
     if(B.st === 'string' || B.st === 'smash') B.st = 'approach';
     if(f.pct > 40 && Math.random() < L.back){ B.st = 'retreat'; B.until = now + 25 + Math.random()*35; }
   }
-  if(!targets.length){ B.press = null; return brainOut(f, inp, B, L, null, false); }
+  // No foe to see (in a one-on-one, the foe it just KO'd is not back yet): it still gets back to the stage first. (This came before the
+  // recovery and it stood down: a CPU that chased its foe off the stage and KO'd it fell after it with its jumps unused -- Eraser's checks.)
+  if(!targets.length){ B.press = null; brainRecover(f, inp, B, f.kit && f.kit.special); return brainOut(f, inp, B, L, null, false); }
   // --- pick / keep a target: the team plan's focus, else the nearest; looked at again every second or so ---
   // TEAMS: a foe standing in its own safe zone cannot be hit (applyHit), so while another foe is out in the open the CPU picks from the open ones.
   let pickFrom = targets;
@@ -61419,32 +61430,38 @@ function aiThink(f){
 // RECOVER. Off a side (x < 50, x > WW - 50) or falling out of the bottom: steer back, a fresh jump while it has one (the key let go between
 // two, as a person's thumb is), then the up-special; a wall beside it is kicked off (the movetech: f._aiWJ asks for it). Bow's way back is her
 // Teleport (aiBowRecover: her up-special is a drop).
+// THE JUMP KEY is read from the jump's own latch (f._jp: a jump went out and the key is still down): a new jump is pressed until one goes
+// out, then let go of until the latch clears, so the next one is a fresh press. (Pressed every other frame on its own say-so, a jump decided while the hands
+// were busy was dropped whenever they came free on the frame between -- "a press it has walked away from" -- and a CPU fell 10 to 20 frames
+// with its jumps unused: Eraser's checks, after a string that ran him off a ledge.)
 function brainRecover(f, inp, B, sp){
   const offLeft=f.x<50, offRight=f.x>WW-50, fallingOut=f.y>WH-90 && f.vy>0;
   const goal = edgeGoal(f, B);   // REAL EDGES: off the stage over nothing -- where it heads back to (null: not off, or a stage without edges)
-  if(!(offLeft||offRight||fallingOut||goal||(sp==='chair' && aiBowAdrift(f)))){ B.jHeld = false; B.recEp = null; return false; }
+  if(!(offLeft||offRight||fallingOut||goal||(sp==='chair' && aiBowAdrift(f)))){ B.recEp = null; return false; }
   B.press = null; B.str = null; if(B.st === 'string' || B.st === 'smash') B.st = 'approach';
+  const held = !!f._jp;
   // A PERSON OFF THE STAGE (REAL EDGES): once a trip, by level (BRAIN_LV recMiss), it may get one thing wrong -- a late start (nothing pressed
   // for a moment while it falls), a moment's drift without steering, or its jump and its up-special thrown away at once. So a CPU makes it
-  // back most of the time and is lost now and then, as a person is.
-  if(goal && !B.recEp){ const r = Math.random(), miss = BRAIN_LV[brainLevel(f)].recMiss || 0; B.recEp = { at:hazardT, err: r < miss ? ['late', 'drift', 'early'][Math.floor(Math.random()*3)] : null }; }
+  // back most of the time and is lost now and then, as a person is. As the trip begins, a press decided on the floor and still waiting for
+  // the hands (a tilt, a jab: cpuHandsForget) is forgotten: in the air it came out as an aerial instead of the jump (Eraser's down-tilt came
+  // out as Stomp Out off a ledge and dove into the pit).
+  if(goal && !B.recEp){ cpuHandsForget(f); const r = Math.random(), miss = BRAIN_LV[brainLevel(f)].recMiss || 0; B.recEp = { at:hazardT, err: r < miss ? ['late', 'drift', 'early'][Math.floor(Math.random()*3)] : null }; }
   const E = goal ? B.recEp : null, age = E ? hazardT - E.at : 0;
   if(offLeft) inp.right=true; if(offRight) inp.left=true;
   if(goal && !(E && E.err === 'drift' && age < 22)){ inp.left = goal.dir < 0; inp.right = goal.dir > 0; }
   if(sp==='chair'){ aiBowRecover(f, inp, 0); return true; }
-  if(E && E.err === 'late' && age < 26){ B.jHeld = false; return true; }
+  if(E && E.err === 'late' && age < 26) return true;
   if(E && E.err === 'early' && age < 24){
-    if(f.jumps > 0) inp.jump = !B.jHeld;
+    if(f.jumps > 0) inp.jump = !held;
     else if(f.spCd<=0 && !brainKit(f).uStance){ inp.special=true; inp.up=true; }
-    B.jHeld = !!inp.jump; return true;
+    return true;
   }
   if(f._wallSide && f._wallT >= hazardT - 2 && f.vy > 0.5 && !(f._wallUsed && f._wallUsed[f._wallId]) && !(f.flying > 0) && !f._tp && mtOn(f)){
-    f._aiWJ = hazardT; inp.jump = !B.jHeld; inp.left = f._wallSide < 0; inp.right = f._wallSide > 0;
+    f._aiWJ = hazardT; inp.jump = !held; inp.left = f._wallSide < 0; inp.right = f._wallSide > 0;
   } else if(f.vy>0.5 || f.y>WH-140 || (goal && f.y + f.r > groundY() + 30)){
-    if(f.jumps > 0) inp.jump = !B.jHeld;
+    if(f.jumps > 0) inp.jump = !held;
     else if(f.spCd<=0 && !brainKit(f).uStance){ inp.special=true; inp.up=true; }
   }
-  B.jHeld = !!inp.jump;
   return true;
 }
 // REAL EDGES, for the CPU: off the stage (overDrop), the place it heads back to -- the floor span nearest where its speed is taking it, or
@@ -61978,6 +61995,8 @@ const CPU_PRESS_RANK = [[(1<<8)|(1<<9)|(1<<10)|(1<<11), 4], [(1<<6)|(1<<7)|(1<<1
 function cpuPressRank(bits){ for(const [m, r] of CPU_PRESS_RANK) if(bits & m) return r; return 0; }
 const CPU_PEND_MAX = 12;                // frames a press decided while the hands were busy keeps (past that it is stale and dropped)
 const _cpuHands = new WeakMap();        // fighter -> { sig, keys, tok, next, last, n, pend }
+// The hands forget a press still waiting for them (brainRecover, as a trip off the stage begins: the recovery has the keys now).
+function cpuHandsForget(f){ const h = _cpuHands.get(f); if(h) h.pend = null; }
 function cpuHumanKeys(f, inp, gap, fight){
   if(!(gap > 0) || !inp) return inp;
   const now = hazardT, cap = CPU_HUMAN.tapBurst;

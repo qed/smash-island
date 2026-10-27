@@ -1043,7 +1043,8 @@ launch. Left on purpose:
   `EVENT_LAUNCH` is null), so nobody loses it before he can be won; the title's assist count follows the bag. Each kit job adds its name.
   Its name tag goes with every assist's in batch A1 (question 22), not here.
 - **Recovery:** measured (the rise of the air jump and the up special from a standstill, every fighter): his 283 px is above the roster's median
-  (249), so `rec` stays 1. The flip goes backwards, so a recovery is steered with the arrows once it is out.
+  (249), so `rec` stays 1. The flip goes backwards, so a person's recovery is steered with the arrows once it is out (his CPU turns its
+  back to the floor for the crouch: see the launch job's fixes below).
 - **For the owner:** the fighters' standing name pills (every fighter's, not his kit's) still show over him in a match, as over everyone.
 - **For the owner (from the checks):** Wipe the Slate Clean's catch is the whole floor, so every foe standing on the floor when it lands is
   held until the eraser hits (21%, 42% with KO-LEVEL, times his dmg 1.15: 48%): "jump it" works only for a foe already in the air or on a platform, as with every floor
@@ -1068,6 +1069,21 @@ launch. Left on purpose:
   (9 of 15 on the re-check's seeds, 1 of 15 on seed set B0B5EED), this build 3 + 3; with each change taken back alone 3 or 4 of 15 on the
   re-check's seeds, so no one change moved it -- the 9 was the seeds' luck. He sits below the middle on both builds: **his buff is a
   separate pass after launch, checked on at least two seed sets** (the coordinator, 2026-10-27).
+- **The launch job's second round (2026-10-27): CPU recovery on par.** The checker found the 2-of-48 held only on the re-check's run order
+  (4 seeds: 10 of 96 on both builds, Pen 3, Leafy 4), and most of his losses came after he was back on the stage. Traced, they were:
+  (1) SHARED: the recovery pressed jump every other frame on its own say-so (`B.jHeld`), so a jump decided while the CPU's hands were busy
+  (`cpuHumanKeys`) was dropped whenever they came free on the frame between, and the CPU fell 10 to 20 frames with its jumps unused; now
+  the recovery reads the jump's own latch (`f._jp`): pressed until a jump goes out, let go until the latch clears. (2) SHARED: a press
+  decided on the floor and still waiting for the hands came out in the air as an aerial instead of the jump (his down-tilt as Stomp Out
+  off a ledge); the hands forget it as a trip off the stage begins (`cpuHandsForget`). (3) SHARED: a CPU with no foe to see (a one-on-one
+  just after it KO'd its foe) stood down before the recovery ran and fell after it; it now recovers first. (4) ERASER: no Stomp Out with
+  nothing to stand on under where its hang leaves him; Rub It Off only with floor 110 px to both sides (`eraserRoom`); and while more than
+  20 frames of the cooldown he shares with the flip are left he steps, runs and drifts no nearer a drop than 110 px (`ERASER.rub.aiEdge`,
+  `aiLock`). Checks: the checker's own run (4 seeds, one world per seed, setups back to back): out 50/110 he loses 2 of 96 (was 10; start
+  commit 9-10), Pen 1 (was 3), Leafy 1 (was 4); out 170, 2 of 48 (Pen 2, Leafy 1). Order-free (a fresh match and random stream per setup,
+  placed inside the world 40/80 px past the floor's end, 8 seeds): Eraser 5 of 192, Pen 5, Leafy 3 (before: 6, 6, 5). Future recovery
+  checks should place fighters inside 0..WW (the re-check's "out 110" on Goiky is x -8 or 1032). Balance (not this job's): two fresh seed
+  sets 2 + 4 of 15; in-memory knob trials for the buff job, same two sets: dmg 1.25 gave 5 + 1, weight 100 (was 88) gave 7 + 4.
 
 ---
 
