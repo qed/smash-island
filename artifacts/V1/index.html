@@ -2078,7 +2078,7 @@ const ROSTER = [
   // wiki's Eraser, Personality), and secretly athletic. Weight 88 (approval question 26: light), colour Cherry Pink (Template: his body
   // colour from late BFDIA on), archetype Saboteur. Art: BFB+TPOT only -- his TPOT render, the picture his assist trophy already used.
   {name:"Eraser",w:88,color:"#e47e93", play:true, event:true, arch:"Saboteur",
-   kit:{special:"rubout", desc:"Rub Out → wipes the space just ahead clean: enemy shots and breakable traps there are erased, and a foe in it is rubbed for 7%"}},
+   kit:{special:"rubout", desc:"Rub Out → wipes the space just ahead clean: enemy shots and breakable traps there are erased, and a foe in it is rubbed for 8%"}},   // (Rub Out's 7 x his dmg 1.15, FIGHTER_STATS: the hit as it lands, as his MOVE_TEXT lines say it -- statWords)
 ];
 // ---- Steve Cobs's prize: begin ----
 // "3, but only after you beat cobs." The three Inanimate Insanity winners -- A (Season 1), B (II) and C (Invitational), in
@@ -46830,6 +46830,9 @@ function finxHidden(f){ for(const o of FINX) if((o.o === f.idx && (fxPuddleOpen(
 // ---- THE CPU'S READS. The legacy rules press attack + special at kill percent in melee; for these ten kits that press gives way to each
 // move's own read: only from where it reaches, never into a tell that cannot land, and never one while its last is still out. No dice
 // from the shared random (fxRand).
+// EAGER (kit -> how many times as often): a kit whose read holds on only a few frames a match (Eraser's: a foe standing free within 40 px)
+// presses that many times as often when it holds, so its finisher is still thrown now and then; every other kit 1.
+const FIN_AI_EAGER = {};
 function finB1Ai(f, inp, sp){
   const legacy = !!(inp.attack && inp.special);
   if(legacy){ inp.attack = false; inp.special = false; }
@@ -46856,7 +46859,7 @@ function finB1Ai(f, inp, sp){
   }
   if(!want) return;
   const hot = !!t._isBoss || (t.pct || 0) >= 70;
-  if(!legacy && fxRand(f, 101) >= (hot ? 0.04 : 0.006)) return;   // now and then, more often at kill percent: not the moment it is back
+  if(!legacy && fxRand(f, 101) >= (hot ? 0.04 : 0.006)*(FIN_AI_EAGER[sp] || 1)) return;   // now and then, more often at kill percent: not the moment it is back
   inp.attack = true; inp.special = true; inp.smash = false; inp.up = false; inp.down = false; inp.jump = false;
   inp.left = dx < 0; inp.right = dx > 0; delete inp._kitRead;
 }
@@ -52884,6 +52887,9 @@ function comboInput(f, inp){
   inp.special = cc && !c.grab && !c.fin && !x && !v;
   inp.smash = (v && c.v >= CI_DELAY && !cc && !c.fin && !c.vUsed) || vTap;   // (vUsed: this V was half of a V+C finisher; letting C up first does not turn it into a smash)
   if((xTap || vTap) && c.dir){ const d = c.dir; inp.left = inp.left || d.left; inp.right = inp.right || d.right; inp.jump = inp.jump || d.jump; inp.up = inp.up || d.up; inp.down = inp.down || d.down; }   // a press that came and went keeps the arrows it was made with
+  // X or V down this frame but still held back for C (not yet the attack or the smash, and not half of a grab or a finisher): an arrow
+  // pressed with it belongs to that press, so a down pressed with it starts no fast fall (mtFastFall reads this frame's mark)
+  c.wait = ((x && !inp.attack && !c.grab && !c.xUsed && c.x < xd) || (v && !inp.smash && !c.fin && !c.vUsed && c.v < CI_DELAY)) ? hazardT : -1;
   return inp;
 }
 // A CPU's finisher is attack + special on one frame (the brain's press, and the finishers' own reads: finB1Ai); this is where the two become
@@ -52901,6 +52907,13 @@ function legacyFin(inp){
 // a double jump, not a fall: the owner, 2026-10-19). CLING:
 // the fighters in CLINGERS stick to a wall they hold toward and slide slowly for up to that many frames. The owner
 // (2026-10-14): flyers and dashers get a SMALL share -- short hop, fast fall and a plain wall jump, no cling.
+// DOWN AND X TOGETHER ARE THE DOWN AIR (the owner, 2026-10-26: "fix pencil's down air too"). X is held back CI_DELAY frames in case C
+// joins it (comboInput), so on the frame down and X went down together there was no attack yet, and down alone started a fast fall: the
+// down air then came out at fast-fall speed and landed before its hit (Pencil's from 110 px on frame 7, for 0%), for 99 of the 106
+// fighters from a short hop or from high up. Now down pressed while an X or a V is still held back starts no fast fall: it is that
+// press's arrow, exactly as when X comes first -- one rule for every fighter. Down alone is the fast fall it always was; a CPU's keys
+// are never held back, so its fast falls are untouched. (Online the host pairs a guest's keys here too, so host and guest agree, and the
+// guest's own prediction already stops at the X: netPredRun.)
 const SH_V = 8.2, FF_V = 13, WJ_VX = 6.2, WJ_VY = 0.92, WALL_WINDOW = 3, WALL_FACE_SNAP = 12;   // (faces within about 12 px count as one wall)
 const CLINGERS = { van:62 };   // Pencil: the point of her pencil digs into the wall
 // HIGHER WALL JUMPS: a kit whose wall jump goes higher, `k` times as high (its launch the square root of that: height goes as the square of a
@@ -52936,7 +52949,8 @@ function mtFastFall(f, inp){
   if(blocked){ f._ff = false; return; }
   const ffv = FF_V*(f.st || STAT_ONE).fall;   // FIGHTER STATS: fall
   if(f._ff){ if(f.vy < ffv) f.vy = ffv; if(hazardT % 2 === 0) puff(f.x, f.y - f.r, '#fff', 1); return; }
-  if(edge && !inp.attack && !inp.special && !inp.smash && !inp.grab && !inp.fin && !f._mv && !f._grabHold && !(!isHumanCtrl(f) && (msOf(f) || {}).aiFit && f._aiFF !== hazardT)){   // (a CPU of batch 2 on fast-falls only when asked: it presses ↓ in the air for other reasons)
+  const held = !!(f._ci && f._ci.wait === hazardT);   // (down with an X or a V still held back for C: the press's arrow, not a fast fall)
+  if(edge && !held && !inp.attack && !inp.special && !inp.smash && !inp.grab && !inp.fin && !f._mv && !f._grabHold && !(!isHumanCtrl(f) && (msOf(f) || {}).aiFit && f._aiFF !== hazardT)){   // (a CPU of batch 2 on fast-falls only when asked: it presses ↓ in the air for other reasons)
     f._ff = true; f.vy = Math.max(f.vy, ffv); for(let i = 0; i < 3; i++) puff(f.x + (i - 1) * 8, f.y - f.r, '#fff', 1);
   }
 }
@@ -53189,7 +53203,7 @@ function mvTick(f, inp){
     const vx = m.vx == null ? null : m.vx * f.face;
     if(m.vy != null && m.vy < 0) mv.lift = true;   // the move sends its fighter up itself (see WALKING OFF above)
     if(m.mode === 'add'){ if(vx != null) f.vx += vx; if(m.vy != null) f.vy += m.vy; }
-    else if(m.mode === 'stall'){ if(f.vy > m.vy) f.vy = m.vy; if(vx != null) f.vx = vx; f._ff = false; }   // (a hang ends a fast fall: ↓ and X pressed together start one before the attack is read, CI_DELAY)
+    else if(m.mode === 'stall'){ if(f.vy > m.vy) f.vy = m.vy; if(vx != null) f.vx = vx; f._ff = false; }   // (a hang ends a fast fall -- one begun with ↓ a frame before X, say; ↓ and X together start none: mtFastFall)
     else if(m.mode === 'dive'){ if(f.vy < m.vy) f.vy = m.vy; if(vx != null) f.vx = vx; }
     else { if(vx != null) f.vx = vx; if(m.vy != null){ f.vy = m.vy; if(m.vy < 0) f.onground = false; } }
   }
@@ -57172,7 +57186,8 @@ function setFighterSize(f, k){
 //   rub     RUB IT OFF: `t` frames of scrubbing, then the cleanse; back in cd frames, or cdNone when there was nothing to rub off; aiFoe:
 //           the CPU scrubs only with no foe that near.
 //   ootp    OUT OF THE PICTURE (finOotp; aiGap: the CPU throws it on a grounded foe whose edge is within 40 px, section 3.1 -- the grab
-//           itself connects out to about 46)            fs  WIPE THE SLATE CLEAN (FINAL_SMASHES['Eraser'])
+//           itself connects out to just past 40 -- and only one it reads as staying there through the lean: ootpRead)
+//   fs      WIPE THE SLATE CLEAN (FINAL_SMASHES['Eraser'])
 const ERASER = {
   rubOut: { wind:10, hang:6, near:18, far:112, up:44, dn:10, r:30, dy:2, dmg:7, kb:[4.5, -5], show:12, cd:60, aiShot:120, aiFoe:100 },
   flip:   { crouch:3, power:-14, back:2.6, spin:22, wall:16, reach:30, close:8, tip:4, band:0.5, kb:[3.5, -9.5] },
@@ -57255,9 +57270,11 @@ function eraserRubOff(f){
 // is a recovery's (recV), and the once-per-airtime rule of every up special holds (fireSpecialInner).
 UPSPECIALS.rubout = function(f){   // Eraser -- STEAKHOUSE FLIP (EVENT FIGHTERS: ERASER)
   // ↑ + C ON THE GROUND: a player's ↑ is the jump key, so he hopped as C went down. That hop is taken back, as the up-tilt takes back ↑ + X's
-  // (mvAttack, UT_JUMP_WINDOW): the crouch is on the floor and the kick comes out at the height of a foe standing there.
+  // (mvAttack, UT_JUMP_WINDOW): the crouch is on the floor and the kick comes out at the height of a foe standing there. A person's only
+  // (a local or an online player): a CPU's `up` is not its jump key, and a CPU's jump just before the flip is meant -- the shared climb
+  // rule presses jump, then the up special, to get up a wall or onto a ledge.
   const J0 = f._jmp0;
-  if(!f.onground && J0 && J0.ground && hazardT - J0.t <= UT_JUMP_WINDOW && f.vy < 0 && !(f.flying > 0)){
+  if(isHumanCtrl(f) && !f.onground && J0 && J0.ground && hazardT - J0.t <= UT_JUMP_WINDOW && f.vy < 0 && !(f.flying > 0)){
     f.y = J0.y; f.vy = 0; f.onground = true; f.jumps = J0.jumps; f._hop = false; f._ff = false; f._usedAirSpecial = false;
   }
   startWindup(f, ERASER.flip.crouch, function(){ eraserFlip(f); }, 'rgba(0,0,0,0)');   // (see-through: the crouch is his body's own)
@@ -57303,9 +57320,13 @@ function eraserStep(f, inp){
 // jump) before a rub, and it does not land -- they slip free and he is left open. A hit on him lets go; a whiff leaves him open for 22 frames.
 // A boss is too big to rub out: the grab lands on it as a plain 8. A KO, a jail or a Final Smash's catch of the foe ends it (FX5_LETGO). The
 // row rides the snapshot (FINX_NET: `rn`, the rubs landed, is new), so a guest draws the fade from it.
+// WHICH WAY (the finishers' shared rule, fxAimWay): he grabs the foe in front of him the way he faces when the lean ends, and through the lean
+// he turns as every finisher's startup turns -- to the arrow a person holds, or for a CPU to its target once it has crossed behind him -- so a
+// foe that steps round him in the lean is still the foe in front. The turn is the only cue (nothing is drawn); o.face rides the snapshot.
 function finOotp(f){
   const S = ERASER.ootp;
   if(!isHumanCtrl(f)) f._aiOotpT = hazardT;   // (the CPU's read waits 6 s from here: finEventWant)
+  fxAimStart(f);
   finxAdd(f, 'ootp', { ph:'lean', tgt:-1, rn:0, m:0 });
   fxLock(f, S.lean + 2); armAtk(f, S.lean + 4, 'cast', mvId(f, 'finisher'));
 }
@@ -57316,6 +57337,7 @@ function fxOotpStep(o, f){
   if((o.ph === 'lean' || o.ph === 'grab' || o.ph === 'rub' || o.ph === 'gone') && f.hitstun > 0){ ootpFree(fxHeld(o, o.tgt)); o.dead = true; return; }   // a hit on him lets go
   if(o.ph === 'lean'){
     fxLock(f, 2); f.vx = 0;
+    fxAimWay(f, o);   // WHICH WAY: he turns in the lean, and grabs the way he faces as it ends
     if(age < S.lean){ fxTell(f, 'ootp', null, age/S.lean); return; }   // STARTUP: he squints and leans back
     o.ph = 'grab'; o.gt = hazardT; armAtk(f, 10, 'grab', mvId(f, 'finisher'));
   }
@@ -57418,13 +57440,38 @@ FX5_LETGO.push('ootp');   // a KO, a jail or a Final Smash's catch of the foe be
 FINX_NET.push('rn');
 ATKSPECIALS.rubout = function(f){ return finOotp(f); };   // Eraser -- Out of the Picture (EVENT FIGHTERS: ERASER)
 FINX_AI_KITS.add('rubout');   // the CPU finisher list: it presses his finisher on its own read (finEventWant)
+FIN_AI_EAGER.rubout = 3;   // (his read holds on a few frames a match -- a foe standing free within 40 px -- so when it holds he takes it more often)
 // The event fighters' finisher reads (finB1Ai, through finB7Want): only from where each reaches. A kit job adds its case.
 function finEventWant(f, t, sp, dx, dy, adx, ady, gap, ground, tground){
   switch(sp){
     case 'rubout': return ground && tground && !t._isBoss && ady < 30 && gap > -12 && gap < ERASER.ootp.aiGap
-                        && hazardT - (f._aiOotpT == null ? -1e9 : f._aiOotpT) >= ERASER.ootp.ai;   // Eraser: a grounded foe within 40 px in front of him, at most once every 6 s
+                        && hazardT - (f._aiOotpT == null ? -1e9 : f._aiOotpT) >= ERASER.ootp.ai && ootpRead(f, t, dx);   // Eraser: a grounded foe within 40 px that stays there (ootpRead), at most once every 6 s
   }
   return false;
+}
+
+// HIS CPU'S READ (the re-check, 2026-10-26: his CPU threw it 19 times in a 15-match tournament and caught nobody; with the 40 px gap alone
+// it caught 4 of 19 on the same seeds here -- the rest went out at a foe his own hit had just sent flying, one already in the air, running
+// off or behind him, or were hit out of the lean by a foe in the middle of its own string). Section 3.1's "a grounded foe within 40 px" is
+// read the way a person throwing a slow grab reads it. What a CPU sees of a foe is a moment old (CPU_HUMAN.react) and the grab comes
+// ERASER.ootp.lean frames after the press, so it throws only at a foe it sees standing free on the floor: not in a move, a swing, a wind-up,
+// a smash's charge, a dash or a grab of its own (each would hit or carry it out of the lean), not in a stun or a hit's grace (sent flying, or
+// untouchable), not coming at him (a foe walking in is about to swing), and still within reach once its seen speed is carried through the
+// wait. Never in the moment after his own hit lands: what he sees is from before it, and where it sent them is not seen yet (he knows his
+// own hits: eraserLastHit). It reads only what it sees (it runs inside the eyes, cpuSeeBegin); nothing is drawn.
+function eraserLastHit(f){ const d = f._dmgDealt || 0; if(d !== f._aiDealt){ f._aiDealt = d; f._aiHitT = hazardT; } return f._aiHitT == null ? -1e9 : f._aiHitT; }
+function ootpRead(f, t, dx){
+  const S = ERASER.ootp, lvl = f._lvlCache != null ? f._lvlCache : AI_LEVEL, late = CPU_HUMAN.react[lvl] || 0;
+  if(hazardT - eraserLastHit(f) <= late + 2) return false;   // his own hit just landed: where it sent them is not seen yet
+  if(t.hitstun > 0 || t.invuln > 0 || t._heldBy != null || t._fxBy != null) return false;   // stunned, untouchable or held
+  const wait = late + S.lean;
+  if(t.frozen > 0) return t.frozen > wait + 4 && Math.abs(t.x - f.x) - (t.r || 24) - f.r < S.aiGap;   // frozen through the wait: it stays put
+  if(t._mv || t._windup || t.smashHold > 0 || t._smQ || (t._sm && t._sm.drive) || t._dashing > 0 || t._gb || t._hold || t._gotcha || t._nail
+     || (t.atkCd > 0 && t._atkAnim > 0)) return false;   // a move, a swing, a wind-up, a charge, a dash or a grab of its own
+  const dir = dx < 0 ? -1 : 1, vx = t.vx || 0;
+  if(-vx*dir > 1.5) return false;   // coming at him: about to swing
+  const gap = Math.abs(t.x + vx*wait - f.x) - (t.r || 24) - f.r;
+  return gap > -12 && gap < S.aiGap;   // still within reach when the grab comes (behind him by then is fine: he turns, fxAimWay)
 }
 
 // ---- WIPE THE SLATE CLEAN (his Final Smash; question 27: "keep both") ----
@@ -57486,10 +57533,19 @@ function eraserRubPays(f){
 }
 function aiEraserOut(f, inp, B, L, t, fight){
   const now = hazardT, R = ERASER.rubOut;
+  eraserLastHit(f);   // (his own hits, for the finisher's read: ootpRead)
   // OFF THE STAGE (nothing under him): no special of his but the recovery's. Rub Out and Rub It Off share the special cooldown with
   // Steakhouse Flip, so one pressed over the pit would leave him without his way back for 1 s or 5 s.
+  // STEAKHOUSE FLIP goes up and BACK, the way he faces turned away (eraserFlip). The shared recovery (brainRecover) presses it with the arrow
+  // toward the floor, so he faced the floor in its crouch and flipped away from it (the re-check: 7 of 48 stocks lost from far off the stage,
+  // Pen 2). Now through the press and the crouch he holds away from the floor -- he turns his back to it, as a person does for a backflip --
+  // so the flip carries him back toward it, and he steers for it again once he is up. And a C still down from before (the latch, f._sp: C
+  // must come up before it fires again) is let go of for a frame, so the flip's press is a new one: held on, it never came while he fell.
   if(!f.onground && surfaceBelow(f.x, feetY(f)) === null){
     if(inp.special && !inp.up && !inp.attack){ inp.special = false; inp.down = false; }
+    const g = edgeGoal(f, B), wu = f._windup, flip = inp.special && inp.up && !inp.attack && f.spCd <= 0 && !f._usedAirSpecial && !wu;
+    if(flip && f._sp){ inp.special = false; inp.up = false; return; }
+    if(g && (flip || (wu && wu.flip))){ inp.left = g.dir > 0; inp.right = g.dir < 0; }
     return;
   }
   let shot = null, sd = R.aiShot;

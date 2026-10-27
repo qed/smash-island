@@ -1048,8 +1048,26 @@ launch. Left on purpose:
 - **For the owner (from the checks):** Wipe the Slate Clean's catch is the whole floor, so every foe standing on the floor when it lands is
   held until the eraser hits (21%, 42% with KO-LEVEL, times his dmg 1.15: 48%): "jump it" works only for a foe already in the air or on a platform, as with every floor
   Final Smash. Shrinking the catch is a question for you. Rub It Off's 5 s is the shared special cooldown, so Rub Out and the flip wait too.
-  Pencil's down air still whiffs when down and X go down together (its move has no hang step, so the fast fall wins); that is the engine's,
-  not his, and is left for a yes.
+  Pencil's down air whiffed when down and X went down together; fixed for everyone by the launch job (below).
+- **The launch job's fixes (2026-10-26, same branch).** DOWN AND X TOGETHER (the owner: "fix pencil's down air too"): X is held back
+  CI_DELAY frames in case C joins it, so the down pressed with it started a fast fall and the down air landed before its hit. Now
+  `comboInput` marks the frames an X or a V is still held back (`_ci.wait`) and `mtFastFall` starts no fast fall on a down pressed then:
+  one rule, every fighter. Swept with down and X on the same frame against X a frame first (all 106 playable fighters, the three prize
+  fighters installed in memory; a short hop pressed on its frames 10, 14 and 18, drops from 110 and 200 px; a standing dummy under and
+  16 px ahead): before, 99 of 106 did less pressed together (Pencil 0% against 8.5% from three of the five starts); after, none. Down
+  alone (318 traces) falls frame for frame as before. A CPU's keys are never held back, so its fast falls are untouched (its tournament
+  is the same with or without the rule). ERASER: Steakhouse Flip's hop take-back is a person's jump key only (`isHumanCtrl`); his kit
+  line says Rub Out's 8% (7 x his dmg 1.15; every other line of his already went through `statWords`); Out of the Picture turns in the
+  lean as every finisher does (`fxAimWay`), and his CPU throws it only on a foe it sees standing free on the floor that stays in reach
+  through the lean, never just after his own hit (`ootpRead`, `eraserLastHit`), a little more often when that holds (`FIN_AI_EAGER`,
+  3); his CPU's recovery turns its back to the floor for the flip's crouch, so the backflip carries him back, and lets go of a C held
+  from before so the flip is a new press. Checks: in the re-check's tournament (same seeds) and a second seed set, his finisher went
+  from 49 thrown / 9 landed / 18 whiffs (the start commit) to 25 / 11 / 3; from the re-check's 24 off-stage setups x 2 seeds he lost 2
+  stocks (was 7; Pen 2). The re-check's "caught 0" was its counter's slip (the lean ends and the grab lands in one step, so the grab's
+  start was never seen): the start commit really landed 5 of its 19. Wins against the mid-pack Hard CPUs: the start commit 9 + 1 of 30
+  (9 of 15 on the re-check's seeds, 1 of 15 on seed set B0B5EED), this build 3 + 3; with each change taken back alone 3 or 4 of 15 on the
+  re-check's seeds, so no one change moved it -- the 9 was the seeds' luck. He sits below the middle on both builds: **his buff is a
+  separate pass after launch, checked on at least two seed sets** (the coordinator, 2026-10-27).
 
 ---
 
