@@ -14625,6 +14625,7 @@ function musicResumeHeld(kind){
   SND._held = null;
   const el = SND._decks[H.deck];
   if(H.kind !== kind || !el || SND._deckSrc[H.deck] !== H.src || !SND.gesture) return false;
+  if(el.ended) return false;   // it finished as the result screen held it: a fresh pick, not the same song from the top
   stopSynthMusic(); SND._pendingKind = null;
   SND._kind = kind; SND._deck = H.deck; SND._deckKind[H.deck] = kind;
   if(SND._decks[1 - H.deck]) musicFadeTo(1 - H.deck, 0);   // whatever the other deck holds is not this song
@@ -18089,24 +18090,28 @@ function startRunRecording(){
     }
     RUN_REC.stream = stream; RUN_REC.audio = audio;
     RUN_REC.rec = new MediaRecorder(stream, mime ? {mimeType:mime, videoBitsPerSecond:2500000, audioBitsPerSecond:96000} : undefined);
-    RUN_REC.rec.ondataavailable = e=>{ if(e.data && e.data.size>0) RUN_REC.chunks.push(e.data); };
+    const chunks = RUN_REC.chunks;   // its own list: a late last chunk from the recorder before must not land in this one
+    RUN_REC.rec.ondataavailable = e=>{ if(e.data && e.data.size>0) chunks.push(e.data); };
     RUN_REC.rec.start(1000);   // gather data every second so long runs don't lose everything
     RUN_REC.recording = true;
   }catch(err){ RUN_REC.supported=false; RUN_REC.recording=false; }
 }
 function stopRunRecording(onReady){
   if(!RUN_REC.recording || !RUN_REC.rec){ if(onReady) onReady(null); return; }
-  const stream = RUN_REC.stream, audio = RUN_REC.audio;
+  const stream = RUN_REC.stream, audio = RUN_REC.audio, rec = RUN_REC.rec, chunks = RUN_REC.chunks;
   RUN_REC.audio = null;
-  RUN_REC.rec.onstop = ()=>{
+  rec.onstop = ()=>{
     runRecStopTracks(stream);   // the canvas capture kept running after the match it was recording had ended
     runRecAudioOff(audio);
+    // Rematch can start the next recording before this one finishes saving. Its state is not ours: setting recording=false
+    // here left the new recorder running forever (stopRunRecording saw nothing to stop) and put this video on its result screen.
+    if(RUN_REC.rec !== rec) return;
     RUN_REC.recording = false;
-    const blob = new Blob(RUN_REC.chunks, {type:"video/webm"});
+    const blob = new Blob(chunks, {type:"video/webm"});
     RUN_REC.url = URL.createObjectURL(blob);
     if(onReady) onReady(RUN_REC.url);
   };
-  try{ RUN_REC.rec.stop(); }catch(e){ RUN_REC.recording=false; runRecAudioOff(audio); if(onReady) onReady(null); }
+  try{ rec.stop(); }catch(e){ RUN_REC.recording=false; runRecAudioOff(audio); if(onReady) onReady(null); }
 }
 // Show the captured run in a review panel appended to the result screen.
 function showRunReview(){
