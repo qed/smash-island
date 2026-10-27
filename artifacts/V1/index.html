@@ -14223,6 +14223,7 @@ function musicSourceFailed(i){
   if(src) SND._badSrc[src] = true;
   SND._deckSrc[i] = null; SND._deckKind[i] = null;
   if(!kind || SND._kind!==kind) return;            // stale deck from an older context; ignore
+  if(i!==SND._deck) return;                        // ...or an older deck of this one, already handed to the fade: the live deck carries the bed
   if(musicSources(kind).length){ startMusicFile(kind); return; }
   SND._fileBad[kind] = true;
   startSynthMusic(kind);
@@ -14250,13 +14251,24 @@ function musicFadeTick(){
   }
   if(!moving && SND._fadeTimer){ clearInterval(SND._fadeTimer); SND._fadeTimer=null; }
 }
+// ONE SONG AT A TIME (the owner, 2026-10-26: "also, music can layer by accident"). The deck that is not the live one is either fading
+// out or silent: once its fade is over (or it never had one) it is paused, whatever a late play() or a browser quirk left it doing.
+// Run from the fade timer and from a play() that settles late, never from inside startMusicFile, where the decks swap roles mid-call.
+function musicOnlyLive(){
+  for(let i=0;i<SND._decks.length;i++){
+    const el = SND._decks[i];
+    if(!el || i===SND._deck || SND._fade[i]) continue;
+    try{ if(!el.paused) el.pause(); el.volume = 0; }catch(e){}
+  }
+}
+function musicFadeInterval(){ musicFadeTick(); musicOnlyLive(); }
 function musicFadeTo(i, to){
   const el = SND._decks[i]; if(!el) return;
   let from = 0; try{ from = el.volume; }catch(e){}
   const now = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
   SND._fade[i] = { from, to, t0: now };
   if(!SND._fadeTimer && typeof setInterval==='function'){
-    SND._fadeTimer = setInterval(musicFadeTick, 40);
+    SND._fadeTimer = setInterval(musicFadeInterval, 40);
   }
   musicFadeTick();   // apply immediately so a 0ms fade is a genuine instant cut
 }
@@ -14301,7 +14313,10 @@ function startMusicFile(kind){
   const src = sources[0];
   // Is this deck still the one the game is relying on? A chain walks several sources and a dead
   // one's promise can settle at any point afterwards, so both handlers below check before acting.
-  const live = ()=> SND._kind===kind && SND._deck===next && SND._deckSrc[next]===src;
+  // ...and each load of a deck has its own ticket: a play() from an EARLIER load of this deck (the same file for the same bed, say,
+  // menu -> match -> menu in one moment) settles with that load's AbortError, which is not the browser refusing autoplay.
+  const ticket = el._musicTicket = (el._musicTicket || 0) + 1;
+  const live = ()=> el._musicTicket===ticket && SND._kind===kind && SND._deck===next && SND._deckSrc[next]===src;
   try{
     el.src = src;
     SND._deckSrc[next] = src;
@@ -14317,7 +14332,7 @@ function startMusicFile(kind){
         // The file is making sound now. Anything that was covering for it while the chain was
         // still resolving — the synth bed an earlier 404 in this same chain started, and the retry
         // that 404 parked — is stale and would otherwise loop on underneath it forever.
-        if(!live()) return;
+        if(!live()){ musicOnlyLive(); return; }   // a deck the game has moved on from: silent unless it is still fading out
         musicFileTookOver(kind);
       }, ()=>{
         // TWO different failures reject play(), and they need opposite responses. A source that
@@ -14345,6 +14360,7 @@ function musicSilenceDecks(){
 // The one entry point the game calls. Picks the recorded track when there is one, else the synth.
 function startMusic(kind){
   if(!musicAllowed()) return;
+  musicReplayHush();   // a bed starting stops the result screen's replay, which plays the last match's music (musicReplayPlaying)
   musicUnqueue();   // a bed asked for outright replaces one queued for the end of the song (musicQueue)
   if(musicResumeHeld(kind)) return;   // the song the result screen paused, on the same bed: picked up where it stopped
   // Re-entering the same context (title -> select -> title) must not restart the track.
@@ -14569,6 +14585,7 @@ function musicPlaylistOf(kind, src){
 // The live deck's song ended: the bed queued for this moment (musicQueue), or else that playlist's next track (never the same twice running), in the same bed.
 function musicPlaylistNext(i){
   if(i !== SND._deck || !musicAllowed()) return;   // a deck already fading out, or music switched off
+  if(!SND._kind) return;   // ...or the music was stopped (the result screen) while this song's end was on its way: nothing follows it, so nothing plays under the replay
   if(SND._nextKind){ const nk = SND._nextKind; SND._nextKind = null; SND._kind = null; startMusic(nk); return; }   // clutch time in or out: its bed starts now, a fresh pick
   const kind = SND._deckKind[i] || SND._kind, k = kind && musicPlaylistOf(kind, SND._deckSrc[i]);
   if(!k){ const el = SND._decks[i]; try{ el.currentTime = 0; el.play(); }catch(e){} return; }   // (a lone track loops; this is only a safety net)
@@ -14615,8 +14632,10 @@ function musicResumeHeld(kind){
   SND._held = null;
   const el = SND._decks[H.deck];
   if(H.kind !== kind || !el || SND._deckSrc[H.deck] !== H.src || !SND.gesture) return false;
+  if(el.ended) return false;   // it finished as the result screen held it: a fresh pick, not the same song from the top
   stopSynthMusic(); SND._pendingKind = null;
   SND._kind = kind; SND._deck = H.deck; SND._deckKind[H.deck] = kind;
+  if(SND._decks[1 - H.deck]) musicFadeTo(1 - H.deck, 0);   // whatever the other deck holds is not this song
   try{ const p = el.play(); if(p && typeof p.catch === 'function') p.catch(()=>{}); }catch(e){ return false; }   // from where it stopped: currentTime is untouched
   musicFileTookOver(kind);
   musicFadeTo(H.deck, (MUSIC_VOLUME[kind]!=null) ? MUSIC_VOLUME[kind] : 0.32);
@@ -14778,8 +14797,14 @@ function currentMusicKind(){
   try{
     if(typeof running!=='undefined' && running) return CLUTCH.on ? 'intense' : clutchBaseKind();
     const el = document.querySelector('.screen.active');
-    return (el && MUSIC_SCREENS[el.id]) || null;
+    return (el && screenMusicKind(el.id)) || null;
   }catch(e){ return null; }
+}
+// A screen's bed. While Steve Cobs's card holds the title (his door is open, One's card is not up), the title plays his bed: go() and
+// currentMusicKind() both ask here, so a click or a music toggle on that title keeps his bed instead of swapping in the title's.
+function screenMusicKind(id){
+  try{ if(id==='title' && cobsCardDue()) return 'cobs'; }catch(e){}
+  return MUSIC_SCREENS[id] || null;
 }
 // looping music: a bass groove with a melody layer on top, varying by context
 const MUSIC_SCALES = {
@@ -14890,6 +14915,35 @@ function stopMusic(){
     const el = SND._decks[i]; if(!el) continue;
     try{ el.pause(); el.volume = 0; }catch(e){}
   }
+}
+// THE MATCH REPLAY IS A SONG TOO. Since replays keep their sound (runRecAudio), the result screen's replay video plays the match's music
+// back; it autoplays and loops. The owner, 2026-10-26: "also, music can layer by accident". It did, three ways: Boss Rush, One's and
+// Steve Cobs's fights and RUNNING! reach their result screen with their bed still on (only showResult stops it), so the bed and the
+// replay's copy of it played together; a screen is hidden, never emptied, so after Rematch, the select screen, a hub or the lobby the
+// replay looped on under the next bed (only the title emptied it); and a recording that finished saving after the player had left the
+// result screen put its autoplaying video into the hidden screen. Now the replay plays only on the result screen, and it and the game's
+// music never sound at once: the replay starting with its sound stops the bed (held, as showResult holds it, so a Rematch picks the
+// song up where it stopped), and any bed starting (startMusic), or any screen but the result (go), stops the replay.
+function musicReplayEls(){
+  try{ return Array.prototype.slice.call(document.querySelectorAll('#runReview video')); }catch(e){ return []; }
+}
+function musicReplayHush(){
+  for(const v of musicReplayEls()){ try{ if(!v.paused) v.pause(); }catch(e){} }
+}
+function resultScreenActive(){
+  try{ const r = document.getElementById('result'); return !!(r && r.classList.contains('active')); }catch(e){ return false; }
+}
+// The replay video's play and volumechange handler.
+function musicReplayPlaying(ev){
+  const v = ev && ev.target; if(!v) return;
+  let audible = false; try{ audible = !v.paused && !v.muted && v.volume > 0; }catch(e){}
+  if(!audible) return;
+  if(!resultScreenActive()){ try{ v.pause(); }catch(e){} return; }   // a replay off its screen never plays
+  if(SND._kind || musicPlaying()){ musicHoldForResult(); stopMusic(); }
+}
+// A tab coming back finishes any fade its throttled timer left part-way, so the song that was going out is gone.
+if(typeof document!=='undefined' && document.addEventListener){
+  document.addEventListener('visibilitychange', ()=>{ try{ musicFadeInterval(); }catch(e){} });
 }
 // unlock audio on first interaction (browsers block autoplay)
 if(typeof window!=='undefined' && window.addEventListener){
@@ -15118,6 +15172,7 @@ function go(id){
   if(id !== 'ctfCupTeams' && typeof CTFKIT_UI !== 'undefined' && CTFKIT_UI){ try{ ctfKitClose(); }catch(e){ CTFKIT_UI = null; } }   // a kit box left open must not eat the next screen's Esc (playtest)
   paused=false; { const pc=document.getElementById('pauseCard'); if(pc) pc.style.display='none'; }   // no screen is reached paused
   try{ stopReplay(); }catch(e){}   // a looping replay must not survive leaving the result screen
+  if(id!=='result'){ try{ musicReplayHush(); }catch(e){} }   // ...and nor may the replay video, with the last match's music in it (musicReplayPlaying)
   try{ stopMoonScene(); }catch(e){}   // ...and neither may the Moon's own animation loop
   if(id!=='result'){ try{ clearShopNotes(); clearNetResults(); }catch(e){} }   // the result screen's player card, quest line and players' cards are that match's
   if(id==='title'){ try{ refreshDailyCard(); }catch(e){} try{ titleContestants(); }catch(e){} }
@@ -15174,8 +15229,8 @@ function go(id){
   // Screen music. Matches use go('_none_') and start their own bed, so they are not listed;
   // startMusic() no-ops when the requested bed is already the one playing, which keeps the
   // menu loop running unbroken across title -> select -> controls -> title.
-  // While Steve Cobs's card holds the title (his door is open, One's card is not up), the title plays his bed.
-  const bed = (id==='title' && cobsCardDue()) ? 'cobs' : MUSIC_SCREENS[id];
+  // While Steve Cobs's card holds the title (his door is open, One's card is not up), the title plays his bed (screenMusicKind).
+  const bed = screenMusicKind(id);
   if(bed){ try{ startMusic(bed); }catch(e){} }
 }
 
@@ -18043,24 +18098,28 @@ function startRunRecording(){
     }
     RUN_REC.stream = stream; RUN_REC.audio = audio;
     RUN_REC.rec = new MediaRecorder(stream, mime ? {mimeType:mime, videoBitsPerSecond:2500000, audioBitsPerSecond:96000} : undefined);
-    RUN_REC.rec.ondataavailable = e=>{ if(e.data && e.data.size>0) RUN_REC.chunks.push(e.data); };
+    const chunks = RUN_REC.chunks;   // its own list: a late last chunk from the recorder before must not land in this one
+    RUN_REC.rec.ondataavailable = e=>{ if(e.data && e.data.size>0) chunks.push(e.data); };
     RUN_REC.rec.start(1000);   // gather data every second so long runs don't lose everything
     RUN_REC.recording = true;
   }catch(err){ RUN_REC.supported=false; RUN_REC.recording=false; }
 }
 function stopRunRecording(onReady){
   if(!RUN_REC.recording || !RUN_REC.rec){ if(onReady) onReady(null); return; }
-  const stream = RUN_REC.stream, audio = RUN_REC.audio;
+  const stream = RUN_REC.stream, audio = RUN_REC.audio, rec = RUN_REC.rec, chunks = RUN_REC.chunks;
   RUN_REC.audio = null;
-  RUN_REC.rec.onstop = ()=>{
+  rec.onstop = ()=>{
     runRecStopTracks(stream);   // the canvas capture kept running after the match it was recording had ended
     runRecAudioOff(audio);
+    // Rematch can start the next recording before this one finishes saving. Its state is not ours: setting recording=false
+    // here left the new recorder running forever (stopRunRecording saw nothing to stop) and put this video on its result screen.
+    if(RUN_REC.rec !== rec) return;
     RUN_REC.recording = false;
-    const blob = new Blob(RUN_REC.chunks, {type:"video/webm"});
+    const blob = new Blob(chunks, {type:"video/webm"});
     RUN_REC.url = URL.createObjectURL(blob);
     if(onReady) onReady(RUN_REC.url);
   };
-  try{ RUN_REC.rec.stop(); }catch(e){ RUN_REC.recording=false; runRecAudioOff(audio); if(onReady) onReady(null); }
+  try{ rec.stop(); }catch(e){ RUN_REC.recording=false; runRecAudioOff(audio); if(onReady) onReady(null); }
 }
 // Show the captured run in a review panel appended to the result screen.
 function showRunReview(){
@@ -18092,7 +18151,7 @@ function showRunReview(){
     // GIF meant the first "Make GIF" click wiped the replay out from under itself.
     '<div id="rrReplay" class="rr-replay-box"></div>'
     + '<div class="rr-title">📼 Match Replay</div>'
-    + '<video class="rr-video" src="'+RUN_REC.url+'" controls autoplay loop></video>'
+    + '<video class="rr-video" src="'+RUN_REC.url+'" controls'+(resultScreenActive() ? ' autoplay' : '')+' loop onplay="musicReplayPlaying(event)" onvolumechange="musicReplayPlaying(event)"></video>'
     + '<div class="rr-actions">'
     + '<button class="btn sm" id="rrGif" onclick="shareMakeGif()">🎞 Make GIF</button>'
     + '<button class="btn ghost sm" onclick="shareCopyLink(this)">🔗 Copy Link</button>'
@@ -59422,7 +59481,7 @@ async function refreshDailyCard(){
   // whole worker down -- the balance harness could not finish a run on this build until it was guarded.
   if(typeof document === 'undefined' || !document) return;
   if(oneTitleCard(el)) return;   // ...and the profile may have loaded while this waited
-  if(cobsTitleCard(el)){ try{ startMusic('cobs'); }catch(e){} return; }
+  if(cobsTitleCard(el)){ try{ const ts = document.getElementById('title'); if(ts && ts.classList.contains('active')) startMusic('cobs'); }catch(e){} return; }   // (not after the player has moved on: a match, the select screen)
   el.style.display = 'block';
   el.innerHTML = '';
   const title = document.createElement('div');
