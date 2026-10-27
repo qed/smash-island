@@ -15018,6 +15018,18 @@ let WW=1100, WH=720, camX=0, camY=0, bases=[], worldPlats=[], floors=[], worldZo
 let FLOOR_SEGS = null;
 const EDGE_GAP_MAX = 320;   // the widest a gap between two floor spans gets, in px: a Huge map's wider world never stretches a pit past a double jump
 const LEDGE_CATCH = 30;     // feet within this of a cliff's top, moving into it out of a stun: put up onto the ledge (the ledge catch)
+// MORE ROOM PAST THE LEDGES (the owner, 2026-10-27, after the edge-KO study found smashes KO'ing at 0% beside a ledge: "Make the stages have
+// more off-stage area"). On a single-screen stage with real edges (Goiky Field, Yoyleland, The Moon, at Compact or Normal) there are
+// SIDE_ROOM px of open air past each side of the stage's own box before the side KO line, and the player sees all of it: the view zooms out to
+// show it (viewZoom; an online client fits it too: clientCamera), the side KO line moves out by it (pastSideLine), the drop is drawn across it
+// (drawEdgedGround), and what drops in from the sky starts above the wider view (sideRoomTop). The stage itself is unchanged: WW, the floor
+// spans, the platforms, the spawns and the item spots are the same size in the same place. With OFFSTAGE_ROOM 160 a fighter flies about 390 px
+// past Goiky Field's ledge before the KO line instead of 230 (the study's "KO line 280" case). 0 on every other stage and mode (setupWorld),
+// so those play and look exactly as before. Pure: derived from the match settings, like FLOOR_SEGS.
+const OFFSTAGE_ROOM = 160;
+let SIDE_ROOM = 0;
+function pastSideLine(x){ return x < -120 - SIDE_ROOM || x > WW + 120 + SIDE_ROOM; }   // past a side KO line: 120 px out from the stage's box, and SIDE_ROOM more
+function sideRoomTop(){ return SIDE_ROOM ? Math.round(H/2 - H*(WW + 2*SIDE_ROOM)/(2*W)) : 0; }   // the world y of the top of the view there (above 0: the zoomed-out view shows more sky); 0 elsewhere
 // Pre-match co-op plan, keyed by team index: { focusName, stance:'aggressive'|'defensive'|'balanced', protectName }
 let TEAM_PLAN = {};
 // TWO-TEAM WALL BANDS (see wallBand). One's arena and Steve Cobs's are cut from the 2v2 teams map as it was before 2TDM got its
@@ -15062,7 +15074,9 @@ const NET_VIEW = { applied:null, at:0, gap:33, lastArrive:0, lerp:false, ft:0, t
                    scroll:false, z:1, camReady:false, follow:null, bannerAt:0 };
 function isNetClient(){ return !!(window.NET && window.NET.role==='client'); }
 function viewScrolls(){ return isNetClient() ? NET_VIEW.scroll : scrolls(); }
-function viewZoom(){ return isNetClient() ? NET_VIEW.z : (scrolls() ? CAM_ZOOM : 1); }
+function viewZoom(){ return isNetClient() ? NET_VIEW.z : (scrolls() ? CAM_ZOOM : (SIDE_ROOM ? W/(WW + 2*SIDE_ROOM) : 1)); }   // (SIDE_ROOM: the stage and its air either side, centred)
+// The rectangle of the world the view shows (at zoom 1: camX, camY, W, H). For a drawing that covers the whole view, in world space.
+function viewRect(){ const z = viewZoom(), hw = W/(2*z), hh = H/(2*z), cx = camX + W/2, cy = camY + H/2; return { x:cx - hw, y:cy - hh, w:2*hw, h:2*hh }; }
 // The buttons an online input message carries (NET.sendInput, NET.onMessage, netRemoteInput).
 const NET_BUTTONS = ['left','right','jump','down','attack','special','smash','flag','edit'];
 const NET_IN_MASK = (1 << NET_BUTTONS.length) - 1, NET_IN_ACT = NET_IN_MASK & ~15;   // (bit i is NET_BUTTONS[i]); every button; the ones that start a move
@@ -19235,6 +19249,7 @@ function wallBand(team, g){
 function setupWorld(){
   spawnZones=[];
   FLOOR_SEGS = null;   // REAL EDGES: built again below for the stages that have them (buildFloorSegs)
+  SIDE_ROOM = 0;       // MORE ROOM PAST THE LEDGES: given below to the single-screen stages with ledges only
   if(SETTINGS.mode==='ctf'){ ctfBuildWorld(); return; }   // Capture the Flag: one of its own huge maps (see the CTF block)
   CAM_ZOOM = 0.72;
   if(ONEFIGHT.active || COBSFIGHT.active){ buildOneArena(); return; }   // One's arena, and Steve Cobs's: the teams map without its walls (see buildOneArena)
@@ -19289,6 +19304,7 @@ function setupWorld(){
       worldPlats = platRectsSmall();
       worldZones=[]; spawnZones=[];
       buildFloorSegs();   // REAL EDGES
+      SIDE_ROOM = FLOOR_SEGS ? OFFSTAGE_ROOM : 0;   // MORE ROOM PAST THE LEDGES: open air past each ledge before the side KO line (see OFFSTAGE_ROOM)
       return;
     }
     // ---- HAND-BUILT / GENERATED CUSTOM LEVEL ----
@@ -21244,7 +21260,7 @@ function spawnItem(){
   // weight the pool: healing/marmalade common, powerups & throwables medium, assist/yoyle rarer, boss rarest
   const pool = ["heal","heal","marmalade","marmalade","throw","throw","power","power","assist","assist","yoyle","yoyle"];
   const kind = pool[Math.floor(Math.random()*pool.length)];
-  items.push(itemFallDrift({ kind, x, y:-40, vx:0, vy:0, r: kind==="boss"?0:16, taken:false, life: 60*30, _land:false }, gy));
+  items.push(itemFallDrift({ kind, x, y:sideRoomTop() - 40, vx:0, vy:0, r: kind==="boss"?0:16, taken:false, life: 60*30, _land:false }, gy));
   // boss/assist "capsules" resolve on pickup; others sit until grabbed
 }
 // FALL DRIFT for a loose item from the sky (the rule is FALL_DRIFT's, by addProj): it comes down on a slant, FALL_DRIFT px
@@ -21764,7 +21780,7 @@ function fsKoFlight(t){
   const g = GRAV*(stage.hazard === 'lowgrav' ? 0.7 : 1), fall = (t.st || STAT_ONE).fall, gy = groundY(), n = Math.min(90, (t.hitstun || 0) + 4);
   for(let i = 0; i < n; i++){
     vy += vy > 0 ? g*fall : g; x += vx; y += vy;
-    if(x < -120 || x > WW + 120 || y > WH + 160 || y < -260) return true;
+    if(pastSideLine(x) || y > WH + 160 || y < -260) return true;
     if(!isBig() && vy > 0 && y >= gy - t.r && groundAt(x)) return false;   // (REAL EDGES: over a gap the flight goes on down)
   }
   return false;
@@ -22346,19 +22362,20 @@ FINAL_SMASHES['Pen'] = {
   },
 };
 
+function fsVanRoom(){ return Math.ceil(2*SIDE_ROOM/24); }   // MORE ROOM PAST THE LEDGES: the frames the Van needs to cross the side room too (0 elsewhere)
 // MATCH -- FREESMART OVERDRIVE. The FreeSmart Van, the FreeSmarters' own: in BFDIA 5 Pencil drives it (Match aboard) into Evil Leafy's mouth
 // (the design doc). Match whistles and the Van barrels through from behind her, edge to edge, 24 px a frame, 100 px tall: jump it or stand
 // off the lane. 24% and a hard launch for whoever it meets.
 FINAL_SMASHES['Match'] = {
-  id:'freesmartvan', wind:FS_WIND, dur:FS_WIND + 76, reach:700,
-  catch(f){ const d = f.face < 0 ? -1 : 1, v0 = d > 0 ? -150 : WW + 150, v1 = v0 + d*24*61, lo = Math.max(f.x - 700, Math.min(v0, v1)), hi = Math.min(f.x + 700, Math.max(v0, v1)), fy = f.y + f.r;
+  id:'freesmartvan', wind:FS_WIND, get dur(){ return FS_WIND + 76 + fsVanRoom(); }, reach:700,
+  catch(f){ const d = f.face < 0 ? -1 : 1, v0 = d > 0 ? -150 - SIDE_ROOM : WW + 150 + SIDE_ROOM, v1 = v0 + d*24*(61 + fsVanRoom()), lo = Math.max(f.x - 700, Math.min(v0, v1)), hi = Math.min(f.x + 700, Math.max(v0, v1)), fy = f.y + f.r;
     return { kind:'box', x:lo, y:fy - 100, w:Math.max(0, hi - lo), h:100 }; }, lockEnd:'one',   // CATCH: the Van's lane, as far as her reach and its run
   start(f, st){ st.dir = f.face; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind, dir = st.dir;
     if(t === w){ armAtk(f, 40, 'fsburst'); shake(7); }
-    if(t >= w && t < w + 62){
-      const vx = (dir > 0 ? -150 : WW + 150) + dir*24*(t - w), fy = st.fy != null ? st.fy : (st.fy = f.y + f.r);
+    if(t >= w && t < w + 62 + fsVanRoom()){
+      const vx = (dir > 0 ? -150 - SIDE_ROOM : WW + 150 + SIDE_ROOM) + dir*24*(t - w), fy = st.fy != null ? st.fy : (st.fy = f.y + f.r);
       for(const o of fighters){
         if(fsHurtMark(f, o) || st.hit.has(o.idx)) continue;
         if(Math.abs(o.x - vx) < 70 + o.r && o.y > fy - 100 - o.r && o.y < fy + 30){ st.hit.add(o.idx); o.countering = 0; applyHit(o, 24, dir*24, -10, f); shake(8); }
@@ -22370,11 +22387,11 @@ FINAL_SMASHES['Match'] = {
   draw(f, c){
     const t = f.fsT || 0, w = f.fsWind || 36, fy = fsFeetY(f), dir = f.face;
     c.save();
-    if(t < w + 66){
+    if(t < w + 66 + fsVanRoom()){
       if(t < w){   // the Van's headlights flashing at the edge it will come from (no lane drawn)
-        if((t % 6) < 3){ const ex = dir > 0 ? 24 : WW - 24; c.globalAlpha = 1; c.fillStyle = '#fffbd0'; c.beginPath(); c.arc(ex, fy - 60, 16, 0, 7); c.arc(ex, fy - 30, 16, 0, 7); c.fill(); }
-      } else if(t < w + 62){   // the Van
-        const vx = (dir > 0 ? -150 : WW + 150) + dir*24*(t - w), by = fy;
+        if((t % 6) < 3){ const ex = dir > 0 ? 24 - SIDE_ROOM : WW - 24 + SIDE_ROOM; c.globalAlpha = 1; c.fillStyle = '#fffbd0'; c.beginPath(); c.arc(ex, fy - 60, 16, 0, 7); c.arc(ex, fy - 30, 16, 0, 7); c.fill(); }
+      } else if(t < w + 62 + fsVanRoom()){   // the Van
+        const vx = (dir > 0 ? -150 - SIDE_ROOM : WW + 150 + SIDE_ROOM) + dir*24*(t - w), by = fy;
         c.save(); c.translate(vx, by); c.scale(dir, 1); c.globalAlpha = 1; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4;
         c.fillStyle = '#e8e2d0'; c.beginPath(); c.rect(-90, -88, 150, 76); c.fill(); c.stroke();   // the body
         c.fillStyle = '#e8e2d0'; c.beginPath(); c.moveTo(60, -80); c.lineTo(100, -50); c.lineTo(100, -12); c.lineTo(60, -12); c.closePath(); c.fill(); c.stroke();   // the nose
@@ -22417,7 +22434,7 @@ FINAL_SMASHES['Ice Cube'] = {
     const t = f.fsT || 0, w = f.fsWind || 38;
     c.save();
     if(t < w + 40){   // frost creeping in from the edges of the screen, in the world: drawn about the view
-      const fa = t < w ? t/w : 1 - (t - w)/40; c.globalAlpha = 0.25*fa; c.strokeStyle = '#cfeeff'; c.lineWidth = 40; c.strokeRect(camX - 10, camY - 10, W + 20, H + 20);
+      const fa = t < w ? t/w : 1 - (t - w)/40; c.globalAlpha = 0.25*fa; c.strokeStyle = '#cfeeff'; c.lineWidth = 40; const V = viewRect(); c.strokeRect(V.x - 10, V.y - 10, V.w + 20, V.h + 20);
     }
     if(t >= w && t < w + 26){   // the ice round whoever is frozen near the spot
       for(const o of fighters){ if(o.dead || o.idx === f.idx || o.team === f.team || !(o.frozen > 0) || Math.hypot(o.x - f.fsAx, o.y - f.fsAy) > 140) continue;
@@ -22592,9 +22609,9 @@ FINAL_SMASHES['Lightning'] = {
   },
   ai(f){ return !!fsPick(f, 500, 300); },
   draw(f, c){
-    const t = f.fsT || 0, w = f.fsWind || 36, top = camY - 40;
+    const t = f.fsT || 0, w = f.fsWind || 36, V = viewRect(), top = V.y - 40;
     c.save();
-    if(t < w){ c.globalAlpha = 0.2*t/w; c.fillStyle = '#8ad8ff'; c.fillRect(camX, camY, W, H); }   // the air charging (the whole view: no marker on anyone)
+    if(t < w){ c.globalAlpha = 0.2*t/w; c.fillStyle = '#8ad8ff'; c.fillRect(V.x, V.y, V.w, V.h); }   // the air charging (the whole view: no marker on anyone)
     if(t >= w && t < w + 10) fsBolt(c, f.fsAx + 20, top, f.fsAx, f.fsAy, 1 - (t - w)/10, 1);
     if(f.fsBx != null && t >= w + 14 && t < w + 24){ const a = 1 - (t - w - 14)/10; fsBolt(c, f.fsAx, f.fsAy, f.fsBx, f.fsBy, a, 2); fsBolt(c, f.fsBx + 10, top, f.fsBx, f.fsBy, a, 3); }
     if(f.fsCx != null && f.fsBx != null && t >= w + 28 && t < w + 38){ const a = 1 - (t - w - 28)/10; fsBolt(c, f.fsBx, f.fsBy, f.fsCx, f.fsCy, a, 4); fsBolt(c, f.fsCx + 10, top, f.fsCx, f.fsCy, a, 5); }
@@ -43218,8 +43235,8 @@ function step(){
     }
     // Bow's Teleport comes back when she lands or is hit (it is once per airtime; not while she is still fading: teleportArrive spends it)
     if(f._tpUsed && !f._tp && (f.onground || f.hitstun>0)) f._tpUsed = false;
-    // blast zone — screen edges in small mode, world edges in the big arena
-    if(f.x<-120||f.x>WW+120||f.y>WH+160||f.y<-260){ eliminate(f); }
+    // blast zone — screen edges in small mode, world edges in the big arena (the sides SIDE_ROOM further out past real ledges: pastSideLine)
+    if(pastSideLine(f.x)||f.y>WH+160||f.y<-260){ eliminate(f); }
 
     // hazards
     if(stage.hazard==='lava' && f.onground && f.name!=="Firey" && f.name!=="Firey Jr."){   // Firey is immune to lava (canon)
@@ -57806,7 +57823,7 @@ function eliminate(f){
   }
   // Bubble reform: the first KO each stock just "pops" her — she reforms at center, no stock lost
   if(f.reform>0){
-    f.reform--; f.x=camX+W*0.5; f.y=camY-30; f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0; f.frozen=0; f._floatT=0;
+    f.reform--; f.x=camX+W*0.5; f.y=camY+sideRoomTop()-30; f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0; f.frozen=0; f._floatT=0;
     dropInFlightMoves(f);
     for(let i=0;i<18;i++) puff(W*0.5, 60, '#bfe8ff', 6);   // no "YOYLEBERRY REFORM!" line ("Remove them all")
     return;
@@ -57830,8 +57847,7 @@ function eliminate(f){
   if(f.kit && COMEBACK[f.kit.special] && f.stocks>0 && f.stocks!==Infinity){   // dying (but not out) fuels the comeback; infinite-stock respawns don't count
     f.deaths=(f.deaths||0)+1;   // no "COMEBACK +n" line ("Remove them all"); the status icon carries the count
   }
-  puff(f.x, Math.max(20,Math.min(WH-20,f.y)), '#fff', 22);
-  puff(f.x, Math.max(20,Math.min(WH-20,f.y)), f.color, 14);
+  { const vt = sideRoomTop(); puff(f.x, Math.max(20 + vt,Math.min(WH-20-vt,f.y)), '#fff', 22); puff(f.x, Math.max(20 + vt,Math.min(WH-20-vt,f.y)), f.color, 14); }
   koStarburst(f.x, f.y, f.color);   // the star at the blast zone (HIT EFFECTS)
   try{ cosKoBurst(f); }catch(e){}   // the KO effect of whoever knocked them out: drawn only, and never a roll of the dice
   shake(9);
@@ -57865,7 +57881,7 @@ function eliminate(f){
     // Screen centre, just above the top of the CURRENT VIEW. camX/camY are 0 on every single-screen
     // arena, so this is the old behaviour there exactly — and on a Tall/Huge custom map it drops
     // you back in where you can see, instead of at the roof of a world three screens tall.
-    f.x=camX+W*0.5; f.y=camY-40;
+    f.x=camX+W*0.5; f.y=camY+sideRoomTop()-40;   // (MORE ROOM PAST THE LEDGES: that view's top is higher)
   }
   f.vx=0; f.vy=0; f.pct=0; f.invuln=90; f.hitstun=0; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0;
   f._floatT=0;   // thin air (Thermal Rise's second, a float area's linger) does not outlive the stock: she comes back on whole gravity
@@ -59883,7 +59899,8 @@ function hitFx(t, from, dmg, grounded){
 // The star a KO bursts into, where the fighter crossed the blast zone (kept inside the arena, so it is seen): two rings and a fan of streaks all round.
 function koStarburst(x, y, color){
   if(particles.length > HITFX.room*1.5) return;
-  x = Math.max(64, Math.min(WW - 64, x)); y = Math.max(64, Math.min(WH - 64, y));
+  const vt = sideRoomTop();   // (MORE ROOM PAST THE LEDGES: the view is wider and taller than the stage's box there)
+  x = Math.max(64 - SIDE_ROOM, Math.min(WW - 64 + SIDE_ROOM, x)); y = Math.max(64 + vt, Math.min(WH - 64 - vt, y));
   const rnd = hitFxDice(x, y, 23);
   const tint = (typeof color === 'string' && color.charAt(0) === '#' && color.length === 7) ? color : '#ffd34d', cols = ['#ffffff', '#ffe27a', tint];
   particles.push({ x, y, vx:0, vy:-0.6, life:HITFX.ring, r:46, color:'r|#ffffff' });
@@ -62632,9 +62649,9 @@ function drawMinimap(){
 function drawEdgedGround(gy){
   const c = ctx, E = stage.edges || {}, V = E.void || ['#c8dff0', '#2a3a4a'], arenaG = arenaGround(), bot = WH + H, segs = FLOOR_SEGS;
   const gaps = [];
-  let x = -60;
+  let x = -60 - SIDE_ROOM;   // (MORE ROOM PAST THE LEDGES: out across the open air either side)
   for(const q of segs){ if(q.x0 > x) gaps.push([x, q.x0]); x = Math.max(x, q.x1); }
-  if(x < WW + 60) gaps.push([x, WW + 60]);
+  if(x < WW + 60 + SIDE_ROOM) gaps.push([x, WW + 60 + SIDE_ROOM]);
   const gr = c.createLinearGradient(0, gy, 0, gy + Math.max(260, WH - gy + 140));
   gr.addColorStop(0, V[0]); gr.addColorStop(1, V[1]);
   c.fillStyle = gr;
@@ -73005,6 +73022,7 @@ function serializeState(withGeo){
     t: hazardT,
     WW, WH,
     sc: scrolls() ? 1 : 0,
+    sr: SIDE_ROOM,   // MORE ROOM PAST THE LEDGES: the air the client's view shows either side (clientCamera)
     stage: stage.id,
     mode: SETTINGS.mode,
     fighters: fighters.map(netFighter),
@@ -73149,7 +73167,7 @@ function applySnapshot(s){
   const wasF = new Map(), wasP = new Map(), wasS = fresh ? [] : summons;
   if(!fresh){ for(const f of fighters) wasF.set(f.idx, f); for(const p of projectiles) if(p.i != null) wasP.set(p.i, p); }
   NET_VIEW.ft = (fresh || !(s.t >= hazardT) || s.t - hazardT > 60) ? s.t : hazardT; NET_VIEW.tt = s.t;
-  hazardT=s.t; WW=s.WW; WH=s.WH;
+  hazardT=s.t; WW=s.WW; WH=s.WH; SIDE_ROOM = +s.sr || 0;
   const st=STAGES.find(x=>x.id===s.stage); if(st) stage=st;
   SETTINGS.mode=s.mode;
   const geo = s.geo || (s.worldPlats ? s : null);   // (before the geometry was split out, it sat at the top level)
@@ -73316,7 +73334,8 @@ function clientCamera(k){
   if(!NET_VIEW.scroll){
     // The host's arena is one screen -- the HOST's screen. Fit all of it into this one, centred. Equal windows: zoom 1,
     // camera 0, exactly as before. (A 1920x1080 host on a 1280x720 client used to put the floor below the screen.)
-    NET_VIEW.z = Math.min(W/Math.max(1,WW), H/Math.max(1,WH));
+    // MORE ROOM PAST THE LEDGES: the host's view is its stage and SIDE_ROOM of air either side, so that is what is fitted.
+    NET_VIEW.z = Math.min(W/Math.max(1,WW + 2*SIDE_ROOM), H/Math.max(1,WH));
     camX = WW/2 - W/2; camY = WH/2 - H/2;
     return;
   }
