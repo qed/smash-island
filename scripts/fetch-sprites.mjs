@@ -18,6 +18,14 @@
 //        # scripts/wire-sprites.mjs never reads (it rebuilds the fighter block from every accepted row of sprite-manifest.json):
 //        #   --out-dir=artifacts/V1/assets/sprites/skins --manifest=scripts/sprite-manifest-skins.json
 //
+// THE STORE'S THUMBNAILS. Every render written into a `skins` folder also gets its Store thumbnail, written into the `thumbs` folder beside
+// it (artifacts/V1/assets/sprites/thumbs/<the same file name>.png): the render trimmed to what is drawn and cut down to at most 56 px on
+// a side. The game finds a skin's thumbnail by that file name (cosSkinThumbSrc in index.html) and fetches it only when the skin is first
+// drawn, so re-fetching a skin refreshes its thumbnail too and nothing in index.html changes. (They used to be data: URIs baked into the page.)
+//   --thumbs-dir=<dir>    write the thumbnails there instead;  --no-thumbs    write none
+//   node scripts/fetch-sprites.mjs --thumbs                     # no network: a thumbnail for every skin render that has none yet
+//   node scripts/fetch-sprites.mjs --thumbs rockstar-poppy.png  # no network: (re)make these skins' thumbnails from their renders
+//
 // WHAT IT GUARANTEES (a render that fails any of these is REJECTED, never shipped):
 //   · genuinely transparent — a render with an opaque rectangular background reads as a sticker
 //     pasted over the stage, which is the single most obvious way fan art looks wrong in-engine
@@ -29,7 +37,8 @@
 // dark ink (eyes/brows/mouth) against the centroid of the body silhouette. Negative means the face
 // sits left of the body's middle, i.e. the art natively faces LEFT and needs `flip:true`.
 
-import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
 
@@ -45,6 +54,12 @@ const TAGGED = !!(OUT_ARG || MANIFEST_ARG);   // only then do rows also record `
 const OUT_DIR = OUT_ARG || 'artifacts/V1/assets/sprites';
 const MANIFEST = MANIFEST_ARG || (WIKI_SUB === 'battlefordreamisland' ? 'scripts/sprite-manifest.json' : `scripts/sprite-manifest-${WIKI_SUB}.json`);
 const TARGET_H = 200;
+// The Store's thumbnails (see the top): written beside a `skins` folder, unless --thumbs-dir says where or --no-thumbs says not at all.
+const SKINS_DIR = 'artifacts/V1/assets/sprites/skins';
+const THUMB_MAX = 56;
+const trimSlash = d => d.replace(/[\\/]+$/, '');
+const THUMB_DIR = process.argv.includes('--no-thumbs') ? ''
+  : flag('thumbs-dir') || (basename(trimSlash(OUT_DIR)) === 'skins' ? join(dirname(trimSlash(OUT_DIR)), 'thumbs') : '');
 
 export function slug(name) {
   return name.toLowerCase().replace(/\./g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -187,6 +202,52 @@ export function clean(png) {
   return cleaned;
 }
 
+// The Store's thumbnail of a render (see the top): trimmed to its drawn pixels, then cut down to fit THUMB_MAX on its longer side (never
+// blown up), each output pixel the area-weighted average of the source pixels it covers, colour weighted by alpha so the transparent edge
+// does not darken the outline. Returns a new PNG; the render is untouched.
+export function storeThumb(png, max = THUMB_MAX) {
+  const { width: w, height: h, data } = png;
+  let x0 = w, x1 = -1, y0 = h, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (data[(y * w + x) * 4 + 3] === 0) continue;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  if (x1 < 0) { x0 = 0; y0 = 0; x1 = w - 1; y1 = h - 1; }   // nothing drawn: keep the whole canvas
+  const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+  const s = Math.min(1, max / Math.max(bw, bh));
+  const tw = Math.max(1, Math.round(bw * s)), th = Math.max(1, Math.round(bh * s));
+  const sx = bw / tw, sy = bh / th;
+  const out = new PNG({ width: tw, height: th });
+  for (let ty = 0; ty < th; ty++) {
+    const fy0 = ty * sy, fy1 = fy0 + sy;
+    for (let tx = 0; tx < tw; tx++) {
+      const fx0 = tx * sx, fx1 = fx0 + sx;
+      let r = 0, g = 0, b = 0, a = 0, area = 0;
+      for (let y = Math.floor(fy0); y < Math.min(bh, Math.ceil(fy1)); y++) {
+        const wy = Math.min(fy1, y + 1) - Math.max(fy0, y);
+        if (wy <= 0) continue;
+        for (let x = Math.floor(fx0); x < Math.min(bw, Math.ceil(fx1)); x++) {
+          const wx = Math.min(fx1, x + 1) - Math.max(fx0, x);
+          if (wx <= 0) continue;
+          const k = wx * wy, i = ((y0 + y) * w + (x0 + x)) * 4, al = data[i + 3] * k;
+          r += data[i] * al; g += data[i + 1] * al; b += data[i + 2] * al; a += al; area += k;
+        }
+      }
+      const o = (ty * tw + tx) * 4, oa = area ? Math.round(a / area) : 0;
+      out.data[o + 3] = oa;
+      if (oa > 0) { out.data[o] = Math.round(r / a); out.data[o + 1] = Math.round(g / a); out.data[o + 2] = Math.round(b / a); }
+    }
+  }
+  return out;
+}
+
+function writeThumb(png, file, dir = THUMB_DIR) {
+  mkdirSync(dir, { recursive: true });
+  const t = storeThumb(png);
+  writeFileSync(join(dir, file), PNG.sync.write(t));
+  return `${t.width}x${t.height}`;
+}
+
 // ---- main -------------------------------------------------------------------------------------
 async function fetchOne(spec) {
   const [name, rest] = spec.split("=");
@@ -212,6 +273,7 @@ async function fetchOne(spec) {
     const cleaned = clean(png);
     if (OUT_ARG) mkdirSync(OUT_DIR, { recursive: true });
     writeFileSync(`${OUT_DIR}/${row.slug}.png`, PNG.sync.write(png));
+    if (THUMB_DIR) console.log(`       thumbnail ${join(THUMB_DIR, `${row.slug}.png`)} ${writeThumb(png, `${row.slug}.png`)}`);
     return {
       ...row, ok: true, file: `${row.slug}.png`,
       width: a.w, height: a.h, facing: +a.facing.toFixed(3),
@@ -227,12 +289,27 @@ async function fetchOne(spec) {
 // this file is the one node was started on.
 const MAIN = !!process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 const names = MAIN ? process.argv.slice(2).filter(x => !x.startsWith('--')) : [];
-if (MAIN && !names.length) {
-  console.error('usage: node scripts/fetch-sprites.mjs "Needle" "Pin" ...');
+const THUMBS_ONLY = MAIN && process.argv.includes('--thumbs');
+if (MAIN && !names.length && !THUMBS_ONLY) {
+  console.error('usage: node scripts/fetch-sprites.mjs "Needle" "Pin" ...   (or --thumbs [file.png ...], see the top)');
   process.exit(1);
 }
 
-if (MAIN) {
+if (THUMBS_ONLY) {
+  // No network: the Store's thumbnails from the skin renders already on disk (the named ones, or every one that has no thumbnail yet).
+  const dir = OUT_ARG || SKINS_DIR;
+  const tdir = flag('thumbs-dir') || join(dirname(trimSlash(dir)), 'thumbs');
+  const files = names.length ? names.map(n => basename(n))
+    : readdirSync(dir).filter(f => f.endsWith('.png') && !existsSync(join(tdir, f)));
+  let made = 0;
+  for (const f of files) {
+    const png = existsSync(join(dir, f)) ? decode(readFileSync(join(dir, f))) : null;
+    if (!png) { console.log(`  SKIP ${f.padEnd(30)} no decodable render in ${dir}`); continue; }
+    console.log(`  OK   ${f.padEnd(30)} ${writeThumb(png, f, tdir)}`);
+    made++;
+  }
+  console.log(`\n${made} thumbnail(s) -> ${tdir}`);
+} else if (MAIN) {
 const results = [];
 for (const spec of names) {
   const n = spec.split("=")[0];

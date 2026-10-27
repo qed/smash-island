@@ -1011,7 +1011,12 @@ was scaled server-side to 200px tall and had its invisible halo erased; and each
 a visible face, no lettering added to the art, nobody else in the shot. The rows (skin, fighter, wiki, File: name, exact source
 URL) are in `scripts/sprite-manifest-skins.json`, deliberately NOT in `scripts/sprite-manifest.json`, which
 `scripts/wire-sprites.mjs` regenerates the fighter block from, so a re-run of that script never wires a skin in. The Store's
-thumbnails of them (56px at most, embedded in index.html) are downscaled copies of the same files. The wiki file names are the
+thumbnails of them are downscaled copies of the same files (trimmed, 56px at most on a side), one PNG per skin in
+`assets/sprites/thumbs/` under the same file name as its render (`skins/rockstar-poppy.png` -> `thumbs/rockstar-poppy.png`), with
+the same provenance as the render they were cut from. `scripts/fetch-sprites.mjs` writes a skin's thumbnail there whenever it writes
+the skin into `skins/` (and `node scripts/fetch-sprites.mjs --thumbs` makes any that are missing, without the network); the game
+fetches one only when the Store or the Wardrobe first draws that skin. (Until 2026-10-27 they were data: URIs baked into
+index.html: 161 of them, 0.38 MB of the page. The files in `thumbs/` are those same PNGs, byte for byte.) The wiki file names are the
 wiki's own; they are recorded here and in the manifest and nowhere else.
 
 ### Battle for Dream Island wiki skins
