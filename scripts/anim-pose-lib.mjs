@@ -264,8 +264,9 @@ export function liftFace(im, rect, body, tol = 70, ink = [16, 16, 16]) {
   return out;
 }
 // The opposite: PAINT A FACE OUT. Every pixel `kill(x, y, r, g, b)` marks inside `rect` is refilled from the body round it
-// (a diffusion fill: each hole pixel the mean of its known neighbours, many passes), alpha kept.
-export function paintOut(im, rect, kill, passes = 400) {
+// (a diffusion fill: each hole pixel the mean of its known neighbours, many passes), alpha kept. `minA`: how opaque a neighbour must be to
+// be known (a see-through body, Teardrop's water, is under 200); `alpha`: fill the alpha from the neighbours too, rather than making it opaque.
+export function paintOut(im, rect, kill, passes = 400, { minA = 200, alpha = false } = {}) {
   const { w, d } = im, hole = [];
   for (let y = rect.y; y < rect.y + rect.h; y++) for (let x = rect.x; x < rect.x + rect.w; x++) {
     if (x < 0 || y < 0 || x >= im.w || y >= im.h) continue;
@@ -273,23 +274,23 @@ export function paintOut(im, rect, kill, passes = 400) {
     if (kill(x, y, d[i], d[i + 1], d[i + 2], d[i + 3])) hole.push(y * w + x);
   }
   const isHole = new Uint8Array(im.w * im.h); for (const p of hole) isHole[p] = 1;
-  const known = (p) => !isHole[p] && d[p * 4 + 3] >= 200;
-  const val = new Float64Array(im.w * im.h * 3);
-  for (let p = 0; p < im.w * im.h; p++) { val[p * 3] = d[p * 4]; val[p * 3 + 1] = d[p * 4 + 1]; val[p * 3 + 2] = d[p * 4 + 2]; }
-  // seed every hole pixel with the mean of the body pixels in its row and column, then relax
-  for (const p of hole) { val[p * 3] = val[p * 3 + 1] = val[p * 3 + 2] = -1; }
+  const known = (p) => !isHole[p] && d[p * 4 + 3] >= minA;
+  const val = new Float64Array(im.w * im.h * 4);
+  for (let p = 0; p < im.w * im.h; p++) { val[p * 4] = d[p * 4]; val[p * 4 + 1] = d[p * 4 + 1]; val[p * 4 + 2] = d[p * 4 + 2]; val[p * 4 + 3] = d[p * 4 + 3]; }
+  // seed every hole pixel as unknown, then relax
+  for (const p of hole) { val[p * 4] = val[p * 4 + 1] = val[p * 4 + 2] = val[p * 4 + 3] = -1; }
   for (let it = 0; it < passes; it++) {
     for (const p of hole) {
-      let n = 0, R = 0, G = 0, B = 0;
+      let n = 0, R = 0, G = 0, B = 0, A = 0;
       for (const q of [p - 1, p + 1, p - w, p + w]) {
         if (q < 0 || q >= im.w * im.h) continue;
-        if (isHole[q]) { if (val[q * 3] < 0) continue; } else if (!known(q)) continue;
-        R += val[q * 3]; G += val[q * 3 + 1]; B += val[q * 3 + 2]; n++;
+        if (isHole[q]) { if (val[q * 4] < 0) continue; } else if (!known(q)) continue;
+        R += val[q * 4]; G += val[q * 4 + 1]; B += val[q * 4 + 2]; A += val[q * 4 + 3]; n++;
       }
-      if (n) { val[p * 3] = R / n; val[p * 3 + 1] = G / n; val[p * 3 + 2] = B / n; }
+      if (n) { val[p * 4] = R / n; val[p * 4 + 1] = G / n; val[p * 4 + 2] = B / n; val[p * 4 + 3] = A / n; }
     }
   }
-  for (const p of hole) if (val[p * 3] >= 0) { d[p * 4] = val[p * 3]; d[p * 4 + 1] = val[p * 3 + 1]; d[p * 4 + 2] = val[p * 3 + 2]; d[p * 4 + 3] = 255; }
+  for (const p of hole) if (val[p * 4] >= 0) { d[p * 4] = val[p * 4]; d[p * 4 + 1] = val[p * 4 + 1]; d[p * 4 + 2] = val[p * 4 + 2]; d[p * 4 + 3] = alpha ? val[p * 4 + 3] : 255; }
   return im;
 }
 // The fill of a character: opaque pixels that are not line-work. Its area is how big the character is, whatever the pose.

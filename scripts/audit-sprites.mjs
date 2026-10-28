@@ -94,7 +94,8 @@ function declared() {
 
   // A POSE SET's pictures (POSE_SETS in the monolith, made by scripts/make-anim-batch1.mjs) are named at runtime by poseSpritesOf:
   // `<file>-<key>.png`, each with its own flag, the third number of its `pics` entry ([w, h, flip, k]).
-  const poseRow = /file:'([a-z0-9-]+)',\s*base:\[[^\]]*\],\s*pics:\s*\{([^}]*)\}/g;
+  // (any short flags between base and pics -- batch 2's `cosHook:true` -- are skipped)
+  const poseRow = /file:'([a-z0-9-]+)',\s*base:\[[^\]]*\],(?:\s*[a-zA-Z]+:[a-z0-9]+,)*\s*pics:\s*\{([^}]*)\}/g;
   while ((m = poseRow.exec(html))) {
     const pic = /'([^']+)':\[\s*\d+\s*,\s*\d+\s*,\s*([01])/g;
     let q;
@@ -121,6 +122,11 @@ const ADJUDICATED_POSE = [
   [/^goo-arm\.png$/, 'he faces right: his eyes and grin are turned to the muscular arm on his right, whose bulk the measure reads as ink'],
   [/^goo-(engulf-\d|splat)\.png$/, 'one flag for the whole Engulf: his form, not his face, sets the side'],
   [/^(paintbrush-shocked|tissues-scared)\.png$/, 'front-on by fetch-sprites\' measure (under 0.03): it keeps the render\'s flag'],
+  // animation batch 2 (scripts/make-anim-batch2.mjs)
+  [/^needle-(stance|mad|proud)\.png$/, 'her face is a few pixels across: flag by eye -- the stance points right, as her render faces; mad and proud are front-on and keep her render\'s'],
+  [/^(candle-scared|snowball-cheer)\.png$/, 'front-on (a face square to the viewer, the arms either side): it keeps the render\'s flag'],
+  [/^(bubble-rise|teardrop-kick-1)\.png$/, 'drawn from the fighter\'s own render, its face unmoved: it keeps the render\'s flag (the measure reads the redrawn limbs as ink)'],
+  [/^(yin-yang-ko|teardrop-run|teardrop-throw)\.png$/, 'drawn from the fighter\'s own render and turned (knocked over, leaning into the run) or given new limbs: it keeps the render\'s flag (second pass)'],
 ];
 const adjudged = (file) => ADJUDICATED[file] || (ADJUDICATED_POSE.find(([re]) => re.test(file)) || [])[1];
 
