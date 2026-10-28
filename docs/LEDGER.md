@@ -919,6 +919,249 @@ per roster; per fighter, eight to sixteen games a run is thinner still. The next
 another three runs on the same build, not a knob: if Roboty and Golf Ball hold their places over
 six, they are real.
 
+### O23 · Event fighters: what step 1 left to the kits' own jobs
+
+Step 1 of the event fighters' build (branch `g-events`: SOAKED, the wet list, per-fighter size, the object rules, Dough's skips,
+grow-in) left these out on purpose. Each belongs to the job that builds the thing:
+
+- **Hot Dog's, Needy's and Sticker's jobs:** the BFDIE objects have no rows yet in the object rules (`TAKE_RULES`) or the wet
+  list (`WET_HITS`): the pole, the Recovery Center, the trampoline, the water column, the sandcastle and the jam splat.
+- **Needy's job:** Draw Up, the fourth taker (approval question B14), joins the object rules; and whether her water column soaks.
+- **Spongy's job (build step 11):** the puddles Wring Out soaks up (section 3.0's list) are not data yet. Today's five wet
+  moves (Rocky, Barf Bag, Golf Ball, Marker, Toothpaste) are switched on there and shown to the owner, with Firey's aquaphobia
+  beside them: it is a second water list (Teardrop, Barf Bag, Bubble) and does not match the wet list. A shot Dough copies
+  lands as his own, so the soak goes on the shot when it is fired.
+
+### O24 · Event fighters: what step 2 (the lock rule) left to later steps
+
+Step 2 (branch `g-events`) marks an event fighter with `event:true` on its ROSTER row, at the END of the roster, and keeps it off
+every list and out of every draw until it is unlocked (`eventLocked`, `isUnlocked`); the Daily and an online room's CPU seats never
+take one at all. Checked in scratch copies (Donut moved to the end and marked; a new row appended): nothing changes in the committed
+build, and the Daily keeps every pairing. Left on purpose:
+
+- **Every kit job:** its row goes after Bot, below the EVENT FIGHTERS comment in ROSTER, with `event:true`, in the lap's order (J2).
+  Its name does NOT go into SHOW_ORDER: the group's place comes from `showRank`.
+- **The calendar (build step 3) and the event screens (step 9):** `eventGroupOpen()` is the select screen's hidden switch and is
+  `false`. Step 9 turns it on from the first week, writes the locked cells' hint (`unlockHint` has no event line yet; today it
+  would say "Keep playing"), and decides whether the board's legend and the "Unlock every fighter" tooltip should mention them.
+- **The event match runner (step 7):** the event fighter's own seat is placed by the runner, as the Daily places its foe: no pool
+  offers a locked one. Its other CPUs are fighters "you could already have" (B4): no event, Vault or secret fighter, no Four.
+- **Tokens (step 4):** the unlock is `unlockFighter(name)`, the same list as every other unlock; nothing else needs to change.
+- **Online (step 10):** the EVENT tag in the lobby. A guest's own event fighter already plays in a host's room, and online CPU
+  seats already skip them (checked with the in-process pair).
+- **Done (the owner, "Hide until launch"; kit 1's fixes):** a computer that cannot save opens the event fighters only once events
+  have launched (`eventsLaunched()` in `openProfile` and `isUnlocked`, so a session that crosses the launch Monday opens them too);
+  before then they are as hidden there as anywhere.
+- **Found in passing, fixed by the launch job (the owner said yes):** once Steve Cobs is beaten, his three prize rows joined ROSTER and with
+  it the Daily's pool, so that player's Daily was no longer everyone's (496 of the 508 days from 2026-08-11 to 2027-12-31 differed). Now
+  `dailyMatchup` and `oneDailyFoe` leave `r.prize` rows out (see O28).
+
+### O25 · Event fighters: what step 3 (the calendar) left to later steps
+
+Step 3 (branch `g-events`) is the calendar: an event week is the weekly quests' week (`shopWeekNo`, Monday 00:00 UTC to the next
+Monday), worked out from the date alone. `EVENT_LAPS` is the append-only table of laps (one row today: the 14 of J2, from lap 1),
+`EVENT_LAUNCH` is the first event's Monday and is `null`, so no week is an event week and nothing shows. `eventOfWeek(wk)` gives a
+week's event (`week`, `lap`, `n`, `name`, `start`, `end`), `eventThisWeek()` this week's and `eventsComingUp(n)` the next n.
+Checked with a test launch (2026-10-19) injected by the check script, not committed: the same 30-week table (two laps and the start
+of a third) comes out with the process timezone set to UTC, America/Los_Angeles and Asia/Tokyo, it flips at Monday 00:00 UTC
+exactly (1 s and 1 ms before give the week before), a non-Monday or impossible launch date starts nothing, and an appended row
+leaves every earlier lap as it was. With the committed `null`, no date from 2000 to 2100 has an event. Left on purpose:
+
+- **The launch (build step 15):** sets `EVENT_LAUNCH` to a Monday at least two weeks after the last kit lands, in a build that
+  goes live at least two weeks before it (the announcement). A date that is not a Monday starts nothing.
+- **The event match runner (step 7) and tokens (step 4):** the runner keeps `eventThisWeek().week` from the moment its match
+  starts, and the payout and the 100-a-week limit use `eventOfWeek(thatWeek)`, so a match that crosses Monday midnight pays toward
+  the event it started in.
+- **The event screens (step 9):** `eventGroupOpen()` becomes `!!eventThisWeek()` (still `false` today); "ends in 3 days" comes
+  from `end`, "Next week" and "Coming up" from `eventsComingUp`, and a locked cell's "back in 6 weeks" from the first week in
+  `eventsComingUp(14)` that names it. Before the launch, `eventsComingUp` already lists the first weeks; whether anything shows
+  them in the two weeks of announcement is step 9's and 15's call (the plan's announcement is a changelog line).
+- **Event rooms (step 14):** the host's week travels as `week`; a guest is paid only if it is the guest's own week or the one
+  before.
+- **A later phase:** a new row `{ from: lap, order: [...] }` appended to `EVENT_LAPS`, starting at least two weeks after its build
+  goes live. No row is ever edited or removed.
+
+### O26 · Event fighters: what step 4 (tokens and saving) left to later steps
+
+Step 4 (branch `g-events`) is question 1's token rule, one for all 14 (J1). `eventPay(m)` pays an event match the moment it ends,
+where `m` = { `week` (the week it started in), `n` (1 the duel, 2 their team, 3 their challenge), `won`, `alive`, `dealt`, `secs` },
+into the profile's `event` field: `tok`, each fighter's own total (question 2), which only rises and keeps counting past 100
+(question 11), and `pay`, the ledger of this week's and last week's payouts. A win pays 10 if you are still in; a loss 5, only with
+20% dealt or 60 s lasted; the first win on each match +10, once per event (lines `f1`-`f3`, the same in every tab); no daily limit,
+at most 100 a week per fighter; 100 unlocks through `unlockFighter`, for good. The numbers are `EVENT_PAY`. Two tabs: `mergeEvent`
+(in `mergeProfiles` and `shopCatchUp`; `eventPay` peeks at the store first, as the quests do) keeps the larger total plus the
+payouts only the other side made, inside the week's limit, and a merge that reaches 100 unlocks. A computer that cannot save has the
+fighters open once events have launched (step 2, "Hide until launch") and is paid into memory. Nothing calls `eventPay` yet, and with `EVENT_LAUNCH` null it pays nothing.
+Checked with a scratch script (test launch 2026-10-19 injected, not committed): 28 payout cases, 6 two-tab merges through
+`mergeProfiles` both ways and the game's own `saveProfile`, and the cannot-save path; 49 expectations met. Left on purpose:
+
+- **The event match runner (step 7):** calls `eventPay` once per finished event match, with the week it kept from the start;
+  `alive` is "still in at the end", `dealt` the player's total % dealt, `secs` how long the player lasted (to the KO that put them
+  out, or to the end). Watched matches pay nothing because the runner does not call it. The runner also keeps event matches out of
+  One's chain (question 10: `oneAfterMatch` in `awardMatchProgress`), and asks the owner whether they feed `recordFighterGame`,
+  which is both the per-fighter record and the Lightning win rate that opens One's chain. The Daily and the World Cup cannot be
+  running during an event match. Quests, stats and My Stats count it as any match.
+- **The result note (steps 7 and 9):** reads `eventPay`'s return (`base`, `first`, `bonus`, `weekTotal`, `total`, `unlocked`). An
+  unlock is queued in `PENDING_UNLOCKS` like any other, so the existing "new fighter unlocked" note already shows it.
+- **Event rooms (step 14):** a guest calls `eventPay` with the host's week; it refuses a week before last week and, since kit 1's
+  fixes, a week after this one, which is the "their week or the one just before" rule.
+- **For the owner:** a win you are no longer in for (your ally finished it) is paid as a loss is, 5 if you dealt 20% or lasted
+  60 s, so being knocked out never pays less because your side went on to win. Paying nothing instead is one line in `eventPay`.
+
+### O27 · Event fighters: what kit 1 (Eraser) left to later steps
+
+Kit 1 (branch `g-events`, build step 6 of event-fighters-phase1.md) is Eraser, the first event row in ROSTER (`event:true`, kit `rubout`),
+from section 3.1 and the approved questions 21 to 28: weight 88; run 1.1, jump 1.1, fall 1.03, dmg 1.15 (FIGHTER_STATS; see the balance note below); his wall jump a backflip
+15% higher (`WALL_JUMP_HIGH`, the one wall trick of the event cast); BFB+TPOT art only (his TPOT render, already in the game as his assist
+picture; HURT_POLY and LIMB_RIG traced from it the trace scripts' way, FR_FACE measured with measure-faces.mjs). His code is the section
+EVENT FIGHTERS: ERASER: Rub Out (`eraserRubOut`, `rubOutWipe`; it takes only foes' things a hit could already break, through the object rules,
+`eraserTakes`, with `takeKindOf` and `takeSlotOf` beside `canTake`), Steakhouse Flip (`UPSPECIALS.rubout`, `eraserFlip`, the wall kick in
+`eraserStep`), Rub It Off (`DOWNSPECIALS.rubout`, `eraserRubOff`), Hard Rub (SMASH_SPEC), Out of the Picture (FINX `ootp`: `finOotp`,
+`fxOotpStep`, `ootpFade`, `fxDrawOotp`), Wipe the Slate Clean (`FINAL_SMASHES['Eraser']`), his moveset (`MOVESETS.rubout`, the side tilt and
+side special kept as data rows) and his CPU (`aiEraserOut`, `finEventWant`, on `FINX_AI_KITS`). A smash's and a finisher's shots now carry
+the move they came from (`_slot`), so no taker ever takes one. Online: everything he draws rides the snapshot (one new flag, `_flipT`; the
+finisher's row gains `rn`); the guest's prediction treats Rub Out's air hang and the flip's wall-kick window as frames the host moves him in.
+His three event matches are data (`EVENT_MATCHES.Eraser`). Checked: it boots; a scratch-unlocked check of every move and a CPU match; the
+in-process pair with him on the guest; one 15-match 1v1 tournament against opponents drawn across the roster (Hard CPUs, 2 stocks, Goiky
+Field): 6 of 15, 40%, KOs 12 to falls 20. **The three checks after it, and their fixes** (same branch): the checker's tournament against
+mid-pack Hard CPUs (same rules, items off, 7200 frames) went 2 of 15, so he was buffed toward the middle -- the design's knobs first (run
+and jump 1.1, Rub Out's cooldown 78 to 60: 1 of 15 on the same seeds), then his damage (dmg 1.1: 4 of 15; with a 48 cooldown and a longer
+jab as well: 5 of 15; dmg 1.15: 9 of 15, kept). The builder's roster-spread run again on the final build: 8 of 15 (was 6), KOs 15 to falls 19
+(was 12 to 20), damage dealt to taken 0.99 (was 0.85). Both sets together: 17 of 30, 57% (was 8 of 30, 27%). Also fixed: the Final Smash erases every foe's puddle and floor trap (`eraserTakes` with
+`all`, canTake's `wide`), as "every enemy shot and trap" says, while Rub Out keeps question 23; Steakhouse Flip from the ground by the keys
+takes back the hop the jump key gave (as the up-tilt does), so the kick lands on a standing foe; a 'stall' step of a move ends a fast fall
+(down and X pressed together); his CPU presses no Rub Out or Rub It Off with nothing under him, and throws the finisher at a foe within
+40 px (`ERASER.ootp.aiGap`); `eventPay` refuses a week after this one; a computer that cannot save opens event fighters only once events
+launch. Left on purpose:
+
+- **The event match runner (step 7):** plays `EVENT_MATCHES` as they are written: the event fighter's seat placed by the runner (B4), 2 stocks,
+  the items and Smash Balls fixed. The design names no stage for "Pen and Eraser" (and for the other team matches): `stage:null` until the
+  runner's job settles it with the owner. "The Trebuchet" is read as a free-for-all of four (the format column) with the usual items and
+  Smash Balls (the design names none); both are data, one word each.
+- **Twists (step 8):** "The Trebuchet" needs the sponge floor (`twist:'sponge'`); a match whose twist is not built is not played without it.
+- **The assist bag:** his trophy stays in the bag until events launch (`ASSIST_LEAVES_AT_LAUNCH`, `assistBagRows`, `eventsLaunched`: false while
+  `EVENT_LAUNCH` is null), so nobody loses it before he can be won; the title's assist count follows the bag. Each kit job adds its name.
+  Its name tag goes with every assist's in batch A1 (question 22), not here.
+- **Recovery:** measured (the rise of the air jump and the up special from a standstill, every fighter): his 283 px is above the roster's median
+  (249), so `rec` stays 1. The flip goes backwards, so a person's recovery is steered with the arrows once it is out (his CPU turns its
+  back to the floor for the crouch: see the launch job's fixes below).
+- **For the owner:** the fighters' standing name pills (every fighter's, not his kit's) still show over him in a match, as over everyone.
+- **For the owner (from the checks):** Wipe the Slate Clean's catch is the whole floor, so every foe standing on the floor when it lands is
+  held until the eraser hits (21%, 42% with KO-LEVEL, times his dmg 1.15: 48%): "jump it" works only for a foe already in the air or on a platform, as with every floor
+  Final Smash. Shrinking the catch is a question for you. Rub It Off's 5 s is the shared special cooldown, so Rub Out and the flip wait too.
+  Pencil's down air whiffed when down and X went down together; fixed for everyone by the launch job (below).
+- **The launch job's fixes (2026-10-26, same branch).** DOWN AND X TOGETHER (the owner: "fix pencil's down air too"): X is held back
+  CI_DELAY frames in case C joins it, so the down pressed with it started a fast fall and the down air landed before its hit. Now
+  `comboInput` marks the frames an X or a V is still held back (`_ci.wait`) and `mtFastFall` starts no fast fall on a down pressed then:
+  one rule, every fighter. Swept with down and X on the same frame against X a frame first (all 106 playable fighters, the three prize
+  fighters installed in memory; a short hop pressed on its frames 10, 14 and 18, drops from 110 and 200 px; a standing dummy under and
+  16 px ahead): before, 99 of 106 did less pressed together (Pencil 0% against 8.5% from three of the five starts); after, none. Down
+  alone (318 traces) falls frame for frame as before. A CPU's keys are never held back, so its fast falls are untouched (its tournament
+  is the same with or without the rule). ERASER: Steakhouse Flip's hop take-back is a person's jump key only (`isHumanCtrl`); his kit
+  line says Rub Out's 8% (7 x his dmg 1.15; every other line of his already went through `statWords`); Out of the Picture turns in the
+  lean as every finisher does (`fxAimWay`), and his CPU throws it only on a foe it sees standing free on the floor that stays in reach
+  through the lean, never just after his own hit (`ootpRead`, `eraserLastHit`), a little more often when that holds (`FIN_AI_EAGER`,
+  3); his CPU's recovery turns its back to the floor for the flip's crouch, so the backflip carries him back, and lets go of a C held
+  from before so the flip is a new press. Checks: in the re-check's tournament (same seeds) and a second seed set, his finisher went
+  from 49 thrown / 9 landed / 18 whiffs (the start commit) to 25 / 11 / 3; from the re-check's 24 off-stage setups x 2 seeds he lost 2
+  stocks (was 7; Pen 2). The re-check's "caught 0" was its counter's slip (the lean ends and the grab lands in one step, so the grab's
+  start was never seen): the start commit really landed 5 of its 19. Wins against the mid-pack Hard CPUs: the start commit 9 + 1 of 30
+  (9 of 15 on the re-check's seeds, 1 of 15 on seed set B0B5EED), this build 3 + 3; with each change taken back alone 3 or 4 of 15 on the
+  re-check's seeds, so no one change moved it -- the 9 was the seeds' luck. He sits below the middle on both builds: **his buff is a
+  separate pass after launch, checked on at least two seed sets** (the coordinator, 2026-10-27).
+- **The launch job's second round (2026-10-27): CPU recovery on par.** The checker found the 2-of-48 held only on the re-check's run order
+  (4 seeds: 10 of 96 on both builds, Pen 3, Leafy 4), and most of his losses came after he was back on the stage. Traced, they were:
+  (1) SHARED: the recovery pressed jump every other frame on its own say-so (`B.jHeld`), so a jump decided while the CPU's hands were busy
+  (`cpuHumanKeys`) was dropped whenever they came free on the frame between, and the CPU fell 10 to 20 frames with its jumps unused; now
+  the recovery reads the jump's own latch (`f._jp`): pressed until a jump goes out, let go until the latch clears. (2) SHARED: a press
+  decided on the floor and still waiting for the hands came out in the air as an aerial instead of the jump (his down-tilt as Stomp Out
+  off a ledge); the hands forget it as a trip off the stage begins (`cpuHandsForget`). (3) SHARED: a CPU with no foe to see (a one-on-one
+  just after it KO'd its foe) stood down before the recovery ran and fell after it; it now recovers first. (4) ERASER: no Stomp Out with
+  nothing to stand on under where its hang leaves him; Rub It Off only with floor 110 px to both sides (`eraserRoom`); and while more than
+  20 frames of the cooldown he shares with the flip are left he steps, runs and drifts no nearer a drop than 110 px (`ERASER.rub.aiEdge`,
+  `aiLock`). Checks: the checker's own run (4 seeds, one world per seed, setups back to back): out 50/110 he loses 2 of 96 (was 10; start
+  commit 9-10), Pen 1 (was 3), Leafy 1 (was 4); out 170, 2 of 48 (Pen 2, Leafy 1). Order-free (a fresh match and random stream per setup,
+  placed inside the world 40/80 px past the floor's end, 8 seeds): Eraser 5 of 192, Pen 5, Leafy 3 (before: 6, 6, 5). Future recovery
+  checks should place fighters inside 0..WW (the re-check's "out 110" on Goiky is x -8 or 1032). Balance (not this job's): two fresh seed
+  sets 2 + 4 of 15; in-memory knob trials for the buff job, same two sets: dmg 1.25 gave 5 + 1, weight 100 (was 88) gave 7 + 4.
+
+### O28 · Event fighters: Eraser's event goes live (build steps 7-10 for his three matches) -- what it left
+
+The launch job (branch `g-events`, 2026-10-27). The owner, 2026-10-26: "add him as an event immediately" (over J2's wait for all 14), "Eraser
+stays until Spongy", "Yes, remove it now" (his assist), and yes to keeping Steve Cobs's prize rows out of the Daily.
+
+- **The launch.** `EVENT_LAUNCH = '2026-10-26'` (Monday 00:00 UTC). The lap runs only through the kits that are BUILT (`eventLapOrder`: a lap
+  row's order with every name that has no event row in ROSTER left out), so every week is Eraser's until Spongy's row exists, and each kit that
+  lands joins in the plan order. Still the date and the build alone. His assist left the bag with the launch (`assistBagRows`, already gated).
+  The select screen's Event fighters group is on from the launch (`eventGroupOpen` = `eventsLaunched`); a locked cell's hint is `eventHint`
+  ("His event is on this week: 40 of 100 tokens", or "Back in N weeks (40 saved)").
+- **The runner (step 7).** `EVENT_PICK` (the match picked on the event page, held through the select screen, the match and its result),
+  `startEventMatch` (the fixed setup: stage, lineup, sides, items, Smash Balls, twist, 2 stocks, Normal map size; a side of more than one makes
+  it Teams), `eventLineup` (you first, then the CPUs side by side, your side team 0; a CPU One has erased gets `oneDailyFoe`'s stand-in, the
+  event fighter never), `eventFinish` (checkWin: `eventPay` with the week the match started in; alive, % dealt, seconds lasted to the KO that
+  put you out: `f._outT`), `returnEventLoan` (mode, contestants, stocks, team split, items, stage, map size, Smash Balls), handed back when the
+  player LEAVES the match or its result screen (go), so the result reads the match it shows and Rematch replays it. Counts for quests, stats
+  and My Stats; not One's chain (no `oneAfterMatch` and no `recordFighterGame`, whose Lightning record opens her chain), the Daily or the
+  World Cup. RIVAL: event CPUs count (they did KO you), but `rivalPick` never names a locked event fighter (or a prize fighter before his gate):
+  the next one down is named until he is yours.
+- **Pen and Eraser's stage** (the design names none): Stone Pillars. A team match is Teams, which always plays on the Teams arena with the
+  stage's sky and ground; Stone Pillars has no hazard and is not the duel's stage. One word in `EVENT_MATCHES` if the owner wants another.
+- **The twists (step 8, his two).** Food only (`eventItemPool`: the healing snacks only, the usual rate and weights, one draw as before).
+  The sponge floor (`MATCH_TWIST`, `SPONGE`, `spongeLanding`, `spongeBounce`, `drawSpongeFloor`): only a HARD landing on the main floor bounces
+  -- 21 px a frame or more for a free fighter (above any fighter's own double jump, about 18-20: a long drop), 10 for a tumbling one (in hitstun)
+  -- at 0.6 of the speed (8 to 15), with the jumps back; a fighter in a move lands as on any floor (no move loses its landing hit). Art (a
+  yellow sponge band with pores under a green scrubber) and the jump sound, no words. Online: the guest's prediction (`netPredRun`) bounces by
+  the same rule; nothing new rides the relay (no room can have a twist yet: event rooms are step 14, whose start message would carry it).
+- **The screens (step 9).** The title's event card beside the Daily card (`refreshEventCard`; its button inside the card, so the title keeps
+  its six), the event page (`#event`, `buildEventPage`: who and his pronouns, "ends in N days", the token bar, the week's limit and the rules in a
+  sentence, the three match cards with the twist in plain words, a first-win tick and Play, his move list, "Next week"), the select screen's
+  strip for an event match (`syncEventSelect`: the fixed setup and the CPU skill where the settings were; Play; Esc or Back to the event page),
+  and the result note (`showEventNote`) with Rematch and "Event ▸". Keyboard: all buttons; Esc goes back from the page and the pick.
+- **Online (step 10).** The lobby's EVENT tag on a pick that is an event fighter this computer has not unlocked (`lobbyRow`). Online CPU seats
+  already never take one; a guest's own Eraser plays in any host's room.
+- **The Daily:** `dailyMatchup` and `oneDailyFoe` leave `r.prize` rows out (O24's note).
+
+**Fixes after the two checkers (2026-10-28):** the event note and "Event ▸" are hidden whenever the result screen is left (`go` ->
+`hideEventNote`), so Boss Rush, One's and Steve Cobs's fights, RUNNING! and a guest's Boss Rush never show an old note; the event pick keeps its
+labels after the CPU-skill click or any `buildBoard` (`cupPickSync` ends by re-applying `syncEventSelect` while `EVENT_PICK` is held); the arrow
+keys pick a fighter and Enter presses Play on the event pick (`selGridKey`, as in the World Cup pick); an erased CPU's stand-in is never a
+Vault fighter (`eventStandIn`: `oneDailyFoe` redrawn with the next seed, `oneDailyFoe` itself untouched so the Daily keeps its draws); the
+lobby EVENT tag's tooltip uses the fighter's pronouns (`eventInfo`); wording: the team match reads "Teams arena (Stone Pillars sky)", the
+duel's "real edges" shows in the strip, "Wins on Easy count the same", the rules in short sentences (no "makes him yours" once he is), "Won
+this week: N of 100 (the weekly limit)", no bonus line over the limit, and a team win after you were out says it pays as a loss.
+Open for the owner: the sponge's "hard landing" line (`SPONGE.hard = 21`): no fighter's own jump and double jump bounces (highest Baseball 20.47
+px a frame), but a fast fall from the top of a double jump lands at 19.0-24.8 depending on the fall stat, so it bounces some fighters and not others.
+
+**Checks (2026-10-28, after the fixes; jsdom and the in-process pair only, one node at a time at Idle):** `node --check` passes; boot (CPU
+FFA and Teams) clean. All three matches ran to the end CPU against CPU (50 s, 259 s, 122 s of game) and with a scripted player (32 s, 259 s,
+216 s), each paid through `eventPay` (win 10 + first win 10; a loss that fought 5; a quick loss 0; a team win after you were out paid as a
+loss), and every setting handed back exactly (mode, contestants, stocks, team split, items, stage, map size, Smash Balls). A clean unlock at
+100: 90 saved, a won duel paid 20 and the note read "Eraser is yours! Pick him on the select screen", with "2 NEW FIGHTERS: Pin, Eraser!", the
+title card "✓ Eraser is yours", his cell playable. Food only dropped only heals and marmalade; the sponge floor bounced hard landings on Sky
+Towers. The week table (this week and the next 8) is Eraser in UTC, Los Angeles and Tokyo; the launch flips at 2026-10-26 00:00 UTC. The Daily
+fingerprints: a save without the prize rows unchanged, a save with them now equal (also with One's chain on). The pair: a host who has not
+unlocked Eraser and a guest playing him, EVENT tag on the host's screen only, both screens agree (own fighters 0.4-0.5 px apart), 0 of 80
+CPU seats an event fighter over 40 rebuilds, no twist, run or food pool in a room, eventPlay and startEventMatch refused there. The checkers'
+scripts (`ck_flow.mjs`, `scr_check.mjs`, `online_pair.mjs`) and the builder's (`ev_batch.ps1`) passed bar test-setup artifacts (a profile
+overwritten in memory while the saved copy held other payouts, which the two-tab merge then counts; a One state that outlived its section).
+
+Left on purpose:
+- **Event rooms (step 14):** the host's week, match number and twist ride the lobby preview and the start that exist; the guest pays from the
+  final snapshot. The sponge floor's prediction is ready for it: the in-process pair check with the twist set on both ends (2026-10-28) has
+  the guest's own fighter rise 172-173 px after a hard landing as on the host (471 px, a snap, when only the host has it), settled 0.0 px apart.
+- **Each kit job:** add `EVENT_INFO` (pronouns, blurb), its `EVENT_MATCHES` rows, any twist it needs into `EVENT_TWISTS_BUILT` with its art and
+  its prediction, and its name in `ASSIST_LEAVES_AT_LAUNCH`.
+- **OWNER DECISION BEFORE SPONGY LANDS: how a kit joins the lap.** Today a kit joins by its event row alone (`eventLapOrder` counts the built
+  kits from the launch), so the build that adds Spongy RE-DEALS EVERY WEEK SINCE THE LAUNCH: in a sandbox with a scratch Spongy row, Wed
+  2026-11-04 is Eraser before the row and Spongy after it, so the week in progress changes fighter the moment that build goes live (Eraser's week
+  cut short, "Next week" changed), and 8-Ball re-deals again (11-12 goes from Eraser to 8-Ball). That breaks the design's "nobody's week is cut
+  short" and "announced at least two weeks ahead". Every computer on one build still agrees. One rule that still reads only the date and the
+  build: each kit joins on a Monday of its own (at least two weeks after its build goes live), and the lap at a week runs through the kits
+  joined by then, counted from that join. With Eraser alone every rule gives him every week, so nothing changes until then. (The code comment
+  at THE LAPS said only a match crossing that Monday could see a re-deal; that was wrong and now says this.)
+- **Not built:** the twists no Eraser match uses (throwables only, lots, backdrops, pull, rain, gusts, wind back, fast forward, low gravity
+  anywhere); a match needing one shows its Play greyed. No changelog line was added (the push job's call).
+
 ---
 
 ## Scoreboard
@@ -926,7 +1169,7 @@ six, they are real.
 | | Count |
 |---|---|
 | Done | 161 |
-| Open | 2 (O20, O22) |
+| Open | 8 (O20, O22, O23, O24, O25, O26, O27, O28) |
 | Superseded | 2 (O1, B12) |
 | Blocked on you | 1 (G11: the Cloudflare MCP authorization) |
 
