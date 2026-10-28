@@ -18,6 +18,9 @@
 //   node fetch-attack-sprites.mjs <outDir> [name ...]
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { PNG } from 'pngjs';
+// Steve Cobs's three prize fighters are secret: their names are read from the game at run time (scripts/prize-names.mjs), never
+// spelled here, and what this writes (manifest.json, credits.txt) and prints says {PZ_A}, {PZ_B} or {PZ_C} instead.
+import { PZ_C, hidePz } from './prize-names.mjs';
 
 const WIKIS = {
   bfdi: 'https://battlefordreamisland.fandom.com',
@@ -395,7 +398,7 @@ const PICKS = {
     keep: () => true, note: 'a popped kernel, from the frame of the popcorn he exploded into (Objects in Mirror), hand-masked' },
   // ---- Steve Cobs's prize: begin ----
   // His three prize fighters (A, B and C, PRIZE_ROSTER's order), allowed in only as Steve Cobs's prize ("3, but only after you beat cobs.").
-  // Their names stay out of this file, but for the wiki File: titles the fetch asks for. The owner's art answers (2026-09-29): A's shards --
+  // Their names stay out of this file (C's File: title is built from PZ_C at run time). The owner's art answers (2026-09-29): A's shards --
   // "crop the shards that were stuck to book in shattered." and then "the episode bfdia 23." -- come out of BFDIA 23 ("Shattered!", the BFDI
   // wiki), File:BookSmashesThroughtheGlass.png: Book bursting up through the pane, its shards flying round him. The cut is the long shard at his
   // right shoulder: pale rainbow glass with a dark outline over saturated sky blue, which the glass never is (key 'glass'). A's juice puddle is
@@ -414,7 +417,7 @@ const PICKS = {
     poly: [[1037, 557], [1062, 557], [1075, 560], [1075, 571], [1100, 571], [1100, 589], [1075, 589], [1074, 592], [1061, 599], [1039, 599], [1034, 595], [1039, 584], [1051, 577], [1039, 564], [1034, 560]],
     keep: (r, g, b) => Math.max(r, g, b) - Math.min(r, g, b) < 30 },
   // C's file: the wiki's own folder render (fetched by its File: title below), a clean, transparent manila folder on its own.
-  file:     { who: 'prize fighter C', kits: ['files'],  wiki: 'ii', file: 'Cabby file pose.png', note: 'a file from her drawer (the wiki\'s own folder render)', h: 40 },
+  file:     { who: 'prize fighter C', kits: ['files'],  wiki: 'ii', file: `${PZ_C} file pose.png`, note: 'a file from her drawer (the wiki\'s own folder render)', h: 40 },
   // ---- Steve Cobs's prize: end ----
   // ---- Springy's MY PURPOSE! (the boss overhaul, Round 10: "give him 1 more: the bot toy"): Spring-Bot itself. Springy has no picks slot, so
   // this is the one block, at the end of the list. File:Springbot.png is the toy's own render (the Spring-toys page's gallery, season 3), a clean
@@ -789,7 +792,7 @@ const manifest = {}, credits = [];
 for (const [name, pick] of Object.entries(PICKS)) {
   if (only.size && !only.has(name)) continue;
   const wiki = pick.wiki || 'bfdi';
-  const line = (msg) => console.log(`${name.padEnd(11)} ${pick.who.padEnd(18)} ${msg}`);
+  const line = (msg) => console.log(hidePz(`${name.padEnd(11)} ${pick.who.padEnd(18)} ${msg}`));
   const candidates = Array.isArray(pick.file) ? pick.file : [pick.file];
   for (const sk of pick.skipped || []) line(`skip ${sk}: looked at in the game and turned down (see its pick)`);
   let done = false;
@@ -814,10 +817,10 @@ for (const [name, pick] of Object.entries(PICKS)) {
     const small = shrink(png, box, pick.h || TARGET_H);
     const file = `${name}.png`;
     writeFileSync(`${outDir}/${file}`, PNG.sync.write(small));
-    manifest[name] = { who: pick.who, kits: pick.kits, file, wiki, source: info.url, srcTitle: cand, width: small.width, height: small.height,
+    manifest[name] = { who: pick.who, kits: pick.kits, file, wiki, source: hidePz(info.url), srcTitle: hidePz(cand), width: small.width, height: small.height,
       clearFrac: +box.clearFrac.toFixed(3), note: pick.note, ...(pick.key ? { key: pick.key } : {}), ...(pick.region ? { region: pick.region } : {}), ...(pick.solid ? { solid: true } : {}),
       ...(pick.skipped ? { skipped: pick.skipped } : {}) };
-    credits.push(`- ${pick.who} (${file}): ${pick.note} — File:${cand} — ${info.url}`);
+    credits.push(`- ${pick.who} (${file}): ${pick.note} — File:${hidePz(cand)} — ${hidePz(info.url)}`);
     line(`ok ${cand}: ${info.w}x${info.h} -> ${small.width}x${small.height} (${(100 * box.clearFrac).toFixed(0)}% clear${pick.key ? `, ${pick.key}-keyed` : ''})`); done = true;
   } catch (e) { line(`${cand} FAILED: ${e.message}`); } }
   if (!done) line('REJECT: no candidate passed');
