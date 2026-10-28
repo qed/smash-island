@@ -952,9 +952,9 @@ build, and the Daily keeps every pairing. Left on purpose:
 - **Done (the owner, "Hide until launch"; kit 1's fixes):** a computer that cannot save opens the event fighters only once events
   have launched (`eventsLaunched()` in `openProfile` and `isUnlocked`, so a session that crosses the launch Monday opens them too);
   before then they are as hidden there as anywhere.
-- **Found in passing, not changed:** once Steve Cobs is beaten, his three prize rows join ROSTER and with it the Daily's pool, so
-  that player's Daily is no longer everyone's (496 of the 508 days from 2026-08-11 to 2027-12-31 differ). The same one-word
-  filter the Daily now uses for event fighters would fix it, but it changes that player's Daily, so it waits for a yes.
+- **Found in passing, fixed by the launch job (the owner said yes):** once Steve Cobs is beaten, his three prize rows joined ROSTER and with
+  it the Daily's pool, so that player's Daily was no longer everyone's (496 of the 508 days from 2026-08-11 to 2027-12-31 differed). Now
+  `dailyMatchup` and `oneDailyFoe` leave `r.prize` rows out (see O28).
 
 ### O25 · Event fighters: what step 3 (the calendar) left to later steps
 
@@ -1085,6 +1085,58 @@ launch. Left on purpose:
   checks should place fighters inside 0..WW (the re-check's "out 110" on Goiky is x -8 or 1032). Balance (not this job's): two fresh seed
   sets 2 + 4 of 15; in-memory knob trials for the buff job, same two sets: dmg 1.25 gave 5 + 1, weight 100 (was 88) gave 7 + 4.
 
+### O28 · Event fighters: Eraser's event goes live (build steps 7-10 for his three matches) -- what it left
+
+The launch job (branch `g-events`, 2026-10-27). The owner, 2026-10-26: "add him as an event immediately" (over J2's wait for all 14), "Eraser
+stays until Spongy", "Yes, remove it now" (his assist), and yes to keeping Steve Cobs's prize rows out of the Daily.
+
+- **The launch.** `EVENT_LAUNCH = '2026-10-26'` (Monday 00:00 UTC). The lap runs only through the kits that are BUILT (`eventLapOrder`: a lap
+  row's order with every name that has no event row in ROSTER left out), so every week is Eraser's until Spongy's row exists, and each kit that
+  lands joins in the plan order. Still the date and the build alone. His assist left the bag with the launch (`assistBagRows`, already gated).
+  The select screen's Event fighters group is on from the launch (`eventGroupOpen` = `eventsLaunched`); a locked cell's hint is `eventHint`
+  ("His event is on this week: 40 of 100 tokens", or "Back in N weeks (40 saved)").
+- **The runner (step 7).** `EVENT_PICK` (the match picked on the event page, held through the select screen, the match and its result),
+  `startEventMatch` (the fixed setup: stage, lineup, sides, items, Smash Balls, twist, 2 stocks, Normal map size; a side of more than one makes
+  it Teams), `eventLineup` (you first, then the CPUs side by side, your side team 0; a CPU One has erased gets `oneDailyFoe`'s stand-in, the
+  event fighter never), `eventFinish` (checkWin: `eventPay` with the week the match started in; alive, % dealt, seconds lasted to the KO that
+  put you out: `f._outT`), `returnEventLoan` (mode, contestants, stocks, team split, items, stage, map size, Smash Balls), handed back when the
+  player LEAVES the match or its result screen (go), so the result reads the match it shows and Rematch replays it. Counts for quests, stats
+  and My Stats; not One's chain (no `oneAfterMatch` and no `recordFighterGame`, whose Lightning record opens her chain), the Daily or the
+  World Cup. RIVAL: event CPUs count (they did KO you), but `rivalPick` never names a locked event fighter (or a prize fighter before his gate):
+  the next one down is named until he is yours.
+- **Pen and Eraser's stage** (the design names none): Stone Pillars. A team match is Teams, which always plays on the Teams arena with the
+  stage's sky and ground; Stone Pillars has no hazard and is not the duel's stage. One word in `EVENT_MATCHES` if the owner wants another.
+- **The twists (step 8, his two).** Food only (`eventItemPool`: the healing snacks only, the usual rate and weights, one draw as before).
+  The sponge floor (`MATCH_TWIST`, `SPONGE`, `spongeLanding`, `spongeBounce`, `drawSpongeFloor`): only a HARD landing on the main floor bounces
+  -- 21 px a frame or more for a free fighter (above any fighter's own double jump, about 18-20: a long drop), 10 for a tumbling one (in hitstun)
+  -- at 0.6 of the speed (8 to 15), with the jumps back; a fighter in a move lands as on any floor (no move loses its landing hit). Art (a
+  yellow sponge band with pores under a green scrubber) and the jump sound, no words. Online: the guest's prediction (`netPredRun`) bounces by
+  the same rule; nothing new rides the relay (no room can have a twist yet: event rooms are step 14, whose start message would carry it).
+- **The screens (step 9).** The title's event card beside the Daily card (`refreshEventCard`; its button inside the card, so the title keeps
+  its six), the event page (`#event`, `buildEventPage`: who and his pronouns, "ends in N days", the token bar, the week's limit and the rules in a
+  sentence, the three match cards with the twist in plain words, a first-win tick and Play, his move list, "Next week"), the select screen's
+  strip for an event match (`syncEventSelect`: the fixed setup and the CPU skill where the settings were; Play; Esc or Back to the event page),
+  and the result note (`showEventNote`) with Rematch and "Event ▸". Keyboard: all buttons; Esc goes back from the page and the pick.
+- **Online (step 10).** The lobby's EVENT tag on a pick that is an event fighter this computer has not unlocked (`lobbyRow`). Online CPU seats
+  already never take one; a guest's own Eraser plays in any host's room.
+- **The Daily:** `dailyMatchup` and `oneDailyFoe` leave `r.prize` rows out (O24's note).
+
+**Checks so far:** the main script passes `node --check`. The runtime checks (boot; all three matches CPU against CPU and with a scripted player
+to the end, the settings handed back, the pay and an unlock at 100; the week table in UTC, Los Angeles and Tokyo; the Daily fingerprints; the
+in-process pair with a guest's Eraser and the sponge floor; the event page's and result note's texts and buttons from jsdom) are written and
+waiting: on 2026-10-27/28 the machine sat at 100% CPU under another project's 10-worker job at normal priority, and an Idle-priority node got
+about 4 s of CPU in 15 hours, so not one finished. They are `ev_batch.ps1` (`ev_check.mjs`, `ev_weeks.mjs`, `ev_daily.mjs`, `ev_net.mjs`) in
+the session scratchpad's events/launch folder; the lead runs them when the CPU is free, and anything they find is fixed on this branch.
+
+Left on purpose:
+- **Event rooms (step 14):** the host's week, match number and twist ride the lobby preview and the start that exist; the guest pays from the
+  final snapshot. The sponge floor's prediction is ready for it (checked with the twist set on both ends in the pair harness).
+- **Each kit job:** its fighter joins the lap by its event row alone (nothing to add to the calendar); add `EVENT_INFO` (pronouns, blurb), its
+  `EVENT_MATCHES` rows, any twist it needs into `EVENT_TWISTS_BUILT` with its art and its prediction, and its name in `ASSIST_LEAVES_AT_LAUNCH`.
+  A kit landing re-deals the weeks of its build (the lap's length changes): every computer on that build agrees.
+- **Not built:** the twists no Eraser match uses (throwables only, lots, backdrops, pull, rain, gusts, wind back, fast forward, low gravity
+  anywhere); a match needing one shows its Play greyed. No changelog line was added (the push job's call).
+
 ---
 
 ## Scoreboard
@@ -1092,7 +1144,7 @@ launch. Left on purpose:
 | | Count |
 |---|---|
 | Done | 161 |
-| Open | 7 (O20, O22, O23, O24, O25, O26, O27) |
+| Open | 8 (O20, O22, O23, O24, O25, O26, O27, O28) |
 | Superseded | 2 (O1, B12) |
 | Blocked on you | 1 (G11: the Cloudflare MCP authorization) |
 
