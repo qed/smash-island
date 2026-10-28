@@ -121,6 +121,10 @@ const ADJUDICATED_POSE = [
   [/^goo-arm\.png$/, 'he faces right: his eyes and grin are turned to the muscular arm on his right, whose bulk the measure reads as ink'],
   [/^goo-(engulf-\d|splat)\.png$/, 'one flag for the whole Engulf: his form, not his face, sets the side'],
   [/^(paintbrush-shocked|tissues-scared)\.png$/, 'front-on by fetch-sprites\' measure (under 0.03): it keeps the render\'s flag'],
+  // animation batch 2 (scripts/make-anim-batch2.mjs)
+  [/^needle-(stance|mad|proud)\.png$/, 'her face is a few pixels across: flag by eye -- the stance points right, as her render faces; mad and proud are front-on and keep her render\'s'],
+  [/^(candle-scared|snowball-cheer)\.png$/, 'front-on (a face square to the viewer, the arms either side): it keeps the render\'s flag'],
+  [/^(bubble-rise|teardrop-kick-1)\.png$/, 'drawn from the fighter\'s own render, its face unmoved: it keeps the render\'s flag (the measure reads the redrawn limbs as ink)'],
 ];
 const adjudged = (file) => ADJUDICATED[file] || (ADJUDICATED_POSE.find(([re]) => re.test(file)) || [])[1];
 
