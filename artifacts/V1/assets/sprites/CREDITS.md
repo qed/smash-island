@@ -466,7 +466,7 @@ How a source became a picture (the `method` of its row), as in batch 1, plus:
 - **drawn:** the poses the show never drew, or whose file could not be used, made by bending the fighter's own render: the painted limbs taken
   off along their own outlines (`LIMB_RIG`) and drawn again where the pose has them, the face redrawn in the render's ink, the body turned or
   squashed (Lifering's whistle, flying formation and KO; Candle's Crystal Chime; Yin-Yang's stance, Through the Roof, KO and laugh; Leafy's
-  Kindness Parry; Snowball's Dig In; Bomby charred; Bubble's Thermal Rise; Teardrop's kick).
+  Kindness Parry; Snowball's Dig In; Bomby charred; Bubble's Thermal Rise; Teardrop's kick, throw and run).
 
 ### Lifering (Inanimate Insanity wiki)
 
@@ -485,10 +485,9 @@ How a source became a picture (the `method` of its row), as in batch 1, plus:
 | `candle-chime.png` (92x200) | Crystal Chime | `candle.png` (the picture itself); drawn: her own render, eyes shut and humming (no show file) | https://static.wikia.nocookie.net/inanimateinsanity/images/8/89/CandleII4Placeholder.png/revision/latest?cb=20260812150503 |
 | `candle-maddening.png` (92x200) | the smash's wind-up | File:Candle “this is maddening”.jpeg; `candle.png` (the picture itself); face swap: her face (a close-up, S4E3) on her own render | https://inanimateinsanity.fandom.com/wiki/File:Candle_%E2%80%9Cthis_is_maddening%E2%80%9D.jpeg |
 | `candle-mad.png` (104x187) | the smash | File:Candle Mad.png; cut-out (wiki pose) | https://inanimateinsanity.fandom.com/wiki/File:Candle_Mad.png |
-| `candle-flabbergasted.png` (92x200) | the first moment of a hit | File:Candle flabbergasted.png; `candle.png` (the picture itself); face swap: her mouth (an episode frame, S4E1) on her own render, its eyes drawn as the frame has them | https://inanimateinsanity.fandom.com/wiki/File:Candle_flabbergasted.png |
-| `candle-scared.png` (100x192) | the rest of a hit | File:Candle Scared.png; cut-out (wiki pose) | https://inanimateinsanity.fandom.com/wiki/File:Candle_Scared.png |
+| `candle-scared.png` (100x192) | a hit | File:Candle Scared.png; cut-out (wiki pose) | https://inanimateinsanity.fandom.com/wiki/File:Candle_Scared.png |
 | `candle-giggle.png` (92x200) | the result screen (first) | File:S4E2 Candle giggles at Cheesy.png; `candle.png` (the picture itself); face swap: her face (an episode frame, S4E2) on her own render | https://inanimateinsanity.fandom.com/wiki/File:S4E2_Candle_giggles_at_Cheesy.png |
-| `candle-laughing.png` (102x162) | the result screen (then) | File:Candle Laughing.png; cut-out (wiki pose) | https://inanimateinsanity.fandom.com/wiki/File:Candle_Laughing.png |
+| `candle-laughing.png` (102x190) | the result screen (then; her flame set back on) | File:Candle Laughing.png; `candle.png` (her flame); cut-out (wiki pose), her render's flame set back on its wick | https://inanimateinsanity.fandom.com/wiki/File:Candle_Laughing.png |
 | `candle-dead.png` (189x96) | launched | File:CandleDead.png; cut-out (wiki pose), a box's outline behind her taken out | https://inanimateinsanity.fandom.com/wiki/File:CandleDead.png |
 
 ### Cammy (Inanimate Insanity wiki)
@@ -508,16 +507,16 @@ How a source became a picture (the `method` of its row), as in batch 1, plus:
 | Picture | Shown | Made from | Source |
 |---|---|---|---|
 | `yin-yang-stance.png` (218x196) | standing still (the fight stance) | `yin-yang.png` (the picture itself); drawn: their own render, fists up and brows down (no show file) | https://static.wikia.nocookie.net/inanimateinsanity/images/e/eb/YinYang2024Pose.png/revision/latest?cb=20250628193516 |
-| `yin-yang-roof.png` (130x200) | Through the Roof | `yin-yang.png` (the picture itself); drawn: their own render, both fists driving up (no show file) | https://static.wikia.nocookie.net/inanimateinsanity/images/e/eb/YinYang2024Pose.png/revision/latest?cb=20250628193516 |
+| `yin-yang-roof.png` (127x200) | Through the Roof | `yin-yang.png` (the picture itself); drawn: their own render, both fists driving up (no show file) | https://static.wikia.nocookie.net/inanimateinsanity/images/e/eb/YinYang2024Pose.png/revision/latest?cb=20250628193516 |
 | `yin-yang-hurt.png` (175x200) | hit | File:Yinyang Hurt.png; cut-out (wiki pose) | https://inanimateinsanity.fandom.com/wiki/File:Yinyang_Hurt.png |
-| `yin-yang-ko.png` (232x199) | launched | `yin-yang.png` (the picture itself); drawn: their own render knocked over, eyes squeezed shut (YinYangEliminated.png hides them behind the glove) | https://static.wikia.nocookie.net/inanimateinsanity/images/e/eb/YinYang2024Pose.png/revision/latest?cb=20250628193516 |
+| `yin-yang-ko.png` (160x200) | launched | `yin-yang.png` (the picture itself); drawn: their own render knocked over, eyes squeezed shut (YinYangEliminated.png hides them behind the glove) | https://static.wikia.nocookie.net/inanimateinsanity/images/e/eb/YinYang2024Pose.png/revision/latest?cb=20250628193516 |
 | `yin-yang-laugh.png` (195x200) | the result screen | `yin-yang.png` (the picture itself); drawn: their own render, eyes shut laughing, both arms thrown up (no show file) | https://static.wikia.nocookie.net/inanimateinsanity/images/e/eb/YinYang2024Pose.png/revision/latest?cb=20250628193516 |
 
 ### Leafy (BFDI wiki)
 
 | Picture | Shown | Made from | Source |
 |---|---|---|---|
-| `leafy-sprint.png` (144x200) | BFDIA Sprint (the first ticks, into her drawn blade) | File:RUNLEAFYRUNNNN.png; cut-out (wiki pose), recoloured from its scene's yellow to her render's greens, the tip of the leaf (off the file's top) drawn back | https://battlefordreamisland.fandom.com/wiki/File:RUNLEAFYRUNNNN.png |
+| `leafy-sprint.png` (144x200) | BFDIA Sprint (the first 8 ticks, into her drawn blade) | File:RUNLEAFYRUNNNN.png; cut-out (wiki pose), recoloured from its scene's yellow to her render's greens, the tip of the leaf (off the file's top) drawn back | https://battlefordreamisland.fandom.com/wiki/File:RUNLEAFYRUNNNN.png |
 | `leafy-smug.png` (128x200) | her attack | File:Smugleafy.png (her face); `leafy.png` (the picture itself); face swap: her face (an episode frame) on her own render, its one eye laid for both | https://battlefordreamisland.fandom.com/wiki/File:Smugleafy.png |
 | `leafy-angry.png` (128x200) | hit | File:Angry Leafy.png (her face); `leafy.png` (the picture itself); face swap: her face (an episode frame, tipped over: turned upright) on her own render | https://battlefordreamisland.fandom.com/wiki/File:Angry_Leafy.png |
 | `leafy-parry.png` (167x200) | Kindness Parry, while it lasts | `leafy.png` (the picture itself); drawn: her own render, a warm smile and arms open (no show file) | https://static.wikia.nocookie.net/battlefordreamisland/images/c/ca/TPOTLeafyColorCorrected.png |
@@ -554,18 +553,18 @@ How a source became a picture (the `method` of its row), as in batch 1, plus:
 | `bomby-flying.png` (246x182) | Short Fuse | File:Bombyflying.png; cut-out (wiki pose) | https://battlefordreamisland.fandom.com/wiki/File:Bombyflying.png |
 | `bomby-throw.png` (222x200) | his attack | File:BombyThrowingBlockAside.png; cut-out (wiki pose) | https://battlefordreamisland.fandom.com/wiki/File:BombyThrowingBlockAside.png |
 | `bomby-happy.png` (173x200) | the result screen | File:Bombyhappyandexcited.png; cut-out (wiki pose) | https://battlefordreamisland.fandom.com/wiki/File:Bombyhappyandexcited.png |
-| `bomby-angry.png` (208x200) | the finisher's wind-up | File:Angrybombythetpot20.png; cut-out (wiki pose), recoloured from its scene's navy to his render's greys | https://battlefordreamisland.fandom.com/wiki/File:Angrybombythetpot20.png |
+| `bomby-angry.png` (208x200) | the finisher's wind-up | File:Angrybombythetpot20.png; cut-out (wiki pose), recoloured from its scene's navy to his render's greys (his body neutral grey, the fuse his rope's tan) | https://battlefordreamisland.fandom.com/wiki/File:Angrybombythetpot20.png |
 | `bomby-charred.png` (206x200) | launched | `bomby.png` (the picture itself); drawn: his own render charred, eyes dazed, the fuse burnt down (no show file) | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2e/Tpot_renders0015.png |
 
 ### Bubble (BFDI wiki)
 
 | Picture | Shown | Made from | Source |
 |---|---|---|---|
-| `bubble-stance.png` (278x181) | her attack | File:Bubble 18 Stance 1.png; cut-out (wiki pose) | https://battlefordreamisland.fandom.com/wiki/File:Bubble_18_Stance_1.png |
 | `bubble-flinch.png` (189x200) | Bubble Shield (under the cloud form today) | File:Bubble - phew, i almost got punched.png; cut-out (wiki pose) | https://battlefordreamisland.fandom.com/wiki/File:Bubble_-_phew,_i_almost_got_punched.png |
 | `bubble-gasp.png` (207x189) | hit (after the pop) | File:Bubble gasp.png; cut-out (wiki pose) | https://battlefordreamisland.fandom.com/wiki/File:Bubble_gasp.png |
+| `bubble-stance.png` (278x181) | her attack | File:Bubble 18 Stance 1.png; cut-out (wiki pose), her film given the see-through alpha of her render | https://battlefordreamisland.fandom.com/wiki/File:Bubble_18_Stance_1.png |
 | `bubble-yay.png` (169x200) | the result screen | File:Bubble - yay.png; cut-out (wiki pose), the bubble's edge cut off by its canvas filled from the other side | https://battlefordreamisland.fandom.com/wiki/File:Bubble_-_yay.png |
-| `bubble-rise.png` (142x200) | Thermal Rise | `bubble.png` (the picture itself); drawn: her own render rising, arms up, legs tucked (HER JUMP.png is a storyboard sketch) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a0/Bubble_18_Stance_5.png |
+| `bubble-rise.png` (167x200) | Thermal Rise | `bubble.png` (the picture itself); drawn: her own render rising, arms up, legs tucked (HER JUMP.png is a storyboard sketch) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a0/Bubble_18_Stance_5.png |
 
 ### Teardrop (BFDI wiki)
 
@@ -574,9 +573,9 @@ How a source became a picture (the `method` of its row), as in batch 1, plus:
 | `teardrop-angry.png` (145x200) | Silent Counter, while it lasts | File:TPOT2teardropangry.png (her face); `teardrop.png` (the picture itself); face swap: her face (a 149px episode frame) on her own render | https://battlefordreamisland.fandom.com/wiki/File:TPOT2teardropangry.png |
 | `teardrop-kick-1.png` (153x200) | THE KICK's wind-up | File:TPOT2teardropangry.png (her face); `teardrop.png` (the picture itself); drawn: her own render winding up a kick (no show file of the kick in her TPOT look) | https://battlefordreamisland.fandom.com/wiki/File:TPOT2teardropangry.png |
 | `teardrop-kick-2.png` (168x200) | THE KICK | File:TPOT2teardropangry.png (her face); `teardrop.png` (the picture itself); drawn: her own render kicking (no show file of the kick in her TPOT look) | https://battlefordreamisland.fandom.com/wiki/File:TPOT2teardropangry.png |
-| `teardrop-throw.png` (128x200) | her low sweep (the plan's "Ranged") | File:Td throwing block.png; episode frame, the fence and wall keyed out (and the fence seen through her tip) | https://battlefordreamisland.fandom.com/wiki/File:Td_throwing_block.png |
+| `teardrop-throw.png` (141x200) | not wired: her low sweep slot (the plan called it "Ranged"), the owner decides | `teardrop.png` (the picture itself); drawn: her own render, both arms up throwing (Td throwing block.png would not cut out clean) | https://static.wikia.nocookie.net/battlefordreamisland/images/0/08/Tpot_renders0043.png |
+| `teardrop-run.png` (167x200) | running | `teardrop.png` (the picture itself); drawn: her own render running, leaning in (Running so fast TD.png would not cut out clean) | https://static.wikia.nocookie.net/battlefordreamisland/images/0/08/Tpot_renders0043.png |
 | `teardrop-hurt.png` (145x200) | hit | File:Teardrop hurt.png (her face); `teardrop.png` (the picture itself); face swap: her face (a close-up) on her own render | https://battlefordreamisland.fandom.com/wiki/File:Teardrop_hurt.png |
-| `teardrop-run.png` (108x200) | running | File:Running so fast TD.png; episode frame, the pink ground and the road keyed out | https://battlefordreamisland.fandom.com/wiki/File:Running_so_fast_TD.png |
 | `teardrop-blep.png` (145x200) | the result screen | File:Teardrop go blep -3.png (her face); `teardrop.png` (the picture itself); face swap: her face (an episode frame) on her own render | https://battlefordreamisland.fandom.com/wiki/File:Teardrop_go_blep_-3.png |
 
 ### Downloaded and not used (batch 2)
@@ -590,6 +589,10 @@ How a source became a picture (the `method` of its row), as in batch 1, plus:
 - `HER JUMP.png`: a pencil storyboard sketch, not the show's art; Thermal Rise is drawn.
 - `Teardrop literally pushes Flower.png` (BFB 27): both arms out and her feet planted -- it does not read as a kick -- and its canvas cuts off her
   left side; THE KICK is drawn (the lead's call: the push first, else drawn).
+- `Td throwing block.png` and `Running so fast TD.png`: keyed out of their scenes, neither came out clean (the fence through her tip, an opaque
+  body, a smeared ground band, doubled legs), so Teardrop's throw and run are drawn on her render (second pass, 2026-10-28).
+- `Candle flabbergasted.png` (S4E1): its face is a mild, almost neutral smile, so it did not read as the first moment of a hit; a hit is
+  `Candle Scared.png` throughout (second pass, 2026-10-28).
 
 ## One (the secret boss)
 

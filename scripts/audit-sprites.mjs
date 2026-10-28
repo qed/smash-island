@@ -125,6 +125,7 @@ const ADJUDICATED_POSE = [
   [/^needle-(stance|mad|proud)\.png$/, 'her face is a few pixels across: flag by eye -- the stance points right, as her render faces; mad and proud are front-on and keep her render\'s'],
   [/^(candle-scared|snowball-cheer)\.png$/, 'front-on (a face square to the viewer, the arms either side): it keeps the render\'s flag'],
   [/^(bubble-rise|teardrop-kick-1)\.png$/, 'drawn from the fighter\'s own render, its face unmoved: it keeps the render\'s flag (the measure reads the redrawn limbs as ink)'],
+  [/^(yin-yang-ko|teardrop-run|teardrop-throw)\.png$/, 'drawn from the fighter\'s own render and turned (knocked over, leaning into the run) or given new limbs: it keeps the render\'s flag (second pass)'],
 ];
 const adjudged = (file) => ADJUDICATED[file] || (ADJUDICATED_POSE.find(([re]) => re.test(file)) || [])[1];
 
