@@ -1252,6 +1252,7 @@ Open: the owner tries Firey, Bomby and a few buffed fighters by hand.
 **2026-10-28, Bow's tower drags you down (`g-bow-drag`):** the owner, after a World Cup where it hit Leafy twice: "make it so that the knockback only applies once it hits the floor, and it drags you down with it", "12% once, on the floor". The falling tower catches whoever it sweeps through and carries them down; the crash hits them and everyone it lands on, 12% and the 0.5 s stun, once a foe (one list for the whole finisher).
 
 - **2026-10-28, Eraser's damage (the owner: "eraser seems to have... high damage values", chose "Lower damage, keep him winning", then to retune after the balance pass; branch `g-eraser-retune`):** dmg 1.45 -> 1.35 (jab and Rub Out 10.2% -> 9.5%, Hard Rub 30% -> 28%), Rub Out's cooldown 60 -> 40 frames, Rub It Off's 5 s / 1 s -> 3 s / half a second; weight 104 kept. The balance pass's 30 matches on the jab-lock build: 14 of 30 (1.45 as it was 11; with the cooldowns 1.45 16, 1.3 6, 1.2 7), so 1.35 is the lowest damage that keeps him at 12+.
+- **2026-10-28, prize fighters A and B's jab (the owner: "Reach-8 jab for both"; branch `g-pz-jab`):** each kit gets its own jab row, the default jab with reach 8 (the balance pass's jab-reach row; damage and launch unchanged), installed and removed with the rest of the prize kit; C keeps the default. Farthest jab hit on a Pen dummy, middle to middle: 63 -> 72 px for both (Goo's reach-8 row: 72).
 
 ---
 
