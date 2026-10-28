@@ -1233,6 +1233,7 @@ Checks: syntax, boot (FFA and Teams clean), CPU matches with the changed fighter
 `balance3/`). Open: the 60-match re-run in the plan's section 4, then the owner tries Firey, Bomby and a few buffed fighters by hand.
 
 - **2026-10-28, Toothpaste (the owner: "Break the root chain"; branch `g-tp-root`):** a foe her traps rooted can't be rooted by them again until about a second after it is free (trap into trap, then Squeeze Rocket, no longer works); her damage is unchanged.
+- **2026-10-28, Toothpaste (the owner: "Rocket launch 9 -> 8"; branch `g-tp-root`):** Squeeze Rocket's launch 9 -> 8 (it scored 44 of her 58 KOs, median KO 132%); damage 10% unchanged. Rocket KO on a recovering Normal CPU, mid-stage / ledge: 148 / 89 -> 161 / 99.
 
 ---
 
