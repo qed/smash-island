@@ -1210,7 +1210,7 @@ Left on purpose:
 - **OWNER QUESTION, Beach Ball:** their team match is an ally match ("Cheaters' Alliance": you + Beach Ball vs Rose + David). As a 3 vs 1 it would
   be you vs Beach Ball, Rose and David, which turns their story around; ask before that kit is built.
 
-### O30 · Balance pass (2026-10-28): the jab fixes, Bomby's mine, the bottom-20 buffs  [BUILT; the re-run is next]
+### O30 · Balance pass (2026-10-28): the jab fixes, Bomby's mine, the bottom-20 buffs  [BUILT; re-run done, the plan's fallback applied]
 
 Branch `g-balance` (from `ii-dlc` `4b3397f`). The plan is `smash-bal/reports/balance-pass-plan.md` (evidence: `jab-study.md`, `bottom-fighters.md`).
 The owner: "Build it all", "Yes, stop the jab lock", and Tea Kettle gets the reach-8 jab too. No CPU changes; Bow's kit is untouched (only the shared jab lock reaches her).
@@ -1230,7 +1230,17 @@ The owner: "Build it all", "Yes, stop the jab lock", and Tea Kettle gets the rea
   (Box's and Knife's numbers follow their dmg stat by themselves).
 
 Checks: syntax, boot (FFA and Teams clean), CPU matches with the changed fighters, and jsdom before / after runs of every line above (the scratchpad's
-`balance3/`). Open: the 60-match re-run in the plan's section 4, then the owner tries Firey, Bomby and a few buffed fighters by hand.
+`balance3/`).
+
+- **The re-run (2026-10-28, 30 matches each: the BFDI 15 + the mixed 15; `smash-bal/reports/balance-pass-results.md`):** Firey 23, Bomby 26 on target;
+  Magnet 21 (under 22-26); 5 of 21 buffed fighters on target (8-16), none above 18, 11 still at 5 or fewer.
+- **The plan's fallback, applied once (2026-10-28):** Magnet's empowered jab x1.3 -> x1.45 (launch 12 -> 14). The buffed fighters at 5 or fewer get one more
+  number from `bottom-fighters.md` section 2: Box dmg 1.15 -> 1.2 (the tools' cap); Balloon's POP! launch 10 -> 12; Cammy's smash launch 10 -> 12;
+  Starfruit's Has-Been shove launch 7 -> 9; Fern's jab launch 7 -> 8; Tissues' jab 6% -> 7%; weight Lifering 75 -> 81, Paper 70 -> 76, Apple 76 -> 82,
+  Teardrop 66 -> 72. Tea Kettle (4) is left as he is: section 2 has no entry for him. Firey, Bomby and everyone else unchanged. Words: Magnet's
+  up-special ("more launch"), Tissues' jab (7%). The 11 adjusted fighters are re-measured in the results report's "after adjustment" column.
+
+Open: the owner tries Firey, Bomby and a few buffed fighters by hand.
 
 ---
 
