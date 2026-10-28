@@ -35,6 +35,10 @@
 // or column by column where it is shaded in upright bands (paintColumns: Candle). Limbs come off a ball without a stub (limbOffBall). Teardrop's
 // throw and run are drawn; Bomby angry made neutral grey with his rope's tan fuse; Bubble's stance given her film's alpha; Candle's laugh given
 // her flame back, and her flabbergasted frame dropped.
+//
+// THIRD PASS (the checker's notes on the second): Teardrop's left edge and outline carried across the rows her left arm and its fist crossed
+// (the throw and the run had a see-through notch at each); Leafy's smug eye cut whole (its rect ended inside the eye: two specks); the
+// stray specks of an old limb's soft edge left beside Bubble's rise and Leafy's parry erased.
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import * as L from './anim-pose-lib.mjs';
@@ -584,6 +588,10 @@ function fillPoly(im, poly, rgb, mode = 'over') {
 // A picture squashed or stretched about its feet (the bottom of its box), on a canvas that holds it.
 function squash(im, sx, sy) { return L.trim(L.resize(im, Math.round(im.w * sx), Math.round(im.h * sy)), 2); }
 const median3 = (im, x, y, w, h) => L.bodyColour(im, { x, y, w, h }, 40);
+// (Third pass.) A drawn picture's stray specks -- a few faint pixels of an old limb's soft edge left off the body, 40px or fewer of them visible
+// (at fetch-sprites' floor, which the write erases below: a speck tied to the body only by fainter pixels is a speck in play) -- erased after the
+// trim, so the picture keeps its size.
+const despeck = (im, n = 40) => { for (const p of L.parts(im, L.ALPHA_FLOOR)) if (p.n <= n) for (const q of p.px) im.d[q * 4 + 3] = 0; return im; };
 
 // ---- LEAFY (BFDI) -------------------------------------------------------------------------------------------------------------------------
 // The sprint (TPOT) leads into her drawn blade dash; her attack is smug, her hit angry (both BFB frames with the sky or Firey behind her, so
@@ -659,10 +667,11 @@ function leafy() {
     if (blankL.d[i + 3] && L.lum(blankL.d[i], blankL.d[i + 1], blankL.d[i + 2]) < 150) blankL.d[i + 3] = 0; }
   const leftArm = (im) => limb(im, [[xe[146] + 2, 146], [xe[146] - 8, 157], [xe[146] - 4, 168]], 6, 6);   // a new left arm, hanging at her side
   // ATTACK: smug (Smugleafy.png, BFB, the sky and the floor behind her). Seen three-quarters, she shows one eye; it is laid for both, the second
-  // mirrored, over her smirk.
-  { const src = S('Smugleafy.png'), eye = faceOf(src, { x: 330, y: 240, w: 100, h: 140 }, { whites: false, gain: 1.8 }), smirk = faceOf(src, { x: 270, y: 370, w: 170, h: 110 }, { whites: false, gain: 1.8 });   // (its soft lines darkened to her render's black)
+  // mirrored, over her smirk. (Third pass: the eye's rect ended at x 430 and the eye is at x 428-449, so only two dark specks of it came; the
+  // rect now runs to x 460, the eye and its brow, and the smirk's starts at y 380, under the eye's foot, placed where it was.)
+  { const src = S('Smugleafy.png'), eye = faceOf(src, { x: 330, y: 240, w: 130, h: 140 }, { whites: false, gain: 1.8 }), smirk = faceOf(src, { x: 270, y: 380, w: 170, h: 100 }, { whites: false, gain: 1.8 });   // (its soft lines darkened to her render's black)
     const im = L.clone(blankL); leftArm(im);
-    putFace(im, eye, 40, 84, { s: 0.36, mirror: true }); putFace(im, eye, 76, 84, { s: 0.36 }); putFace(im, smirk, 60, 122, { s: 0.36 });
+    putFace(im, eye, 40, 84, { s: 0.36, mirror: true }); putFace(im, eye, 76, 84, { s: 0.36 }); putFace(im, smirk, 60, 122, { s: 0.36, fy: 45 });
     emit(F, 'smug', L.trim(im, 2), { src: ['Smugleafy.png (her face)', 'leafy.png'], method: 'face swap: her face (an episode frame) on her own render, its one eye laid for both' }); }
   // HIT: angry (Angry Leafy.png, BFB 6: Firey beside her, the lava behind): her face, tipped over in the frame, turned upright onto her render.
   { const face = faceOf(S('Angry Leafy.png'), { x: 270, y: 90, w: 340, h: 320 });
@@ -675,7 +684,7 @@ function leafy() {
     const c = L.blank(im.w + 40, im.h); L.paste(c, im, { x: 20 });
     limb(c, [[20 + 22, 146], [20 + 4, 132], [20 - 14, 122]], 6, 6.5);
     limb(c, [[20 + 102, 138], [20 + 120, 124], [20 + 138, 116]], 6, 6.5);
-    emit(F, 'parry', L.trim(c, 2), { src: ['leafy.png'], method: 'drawn: her own render, a warm smile and arms open (no show file)' }); }
+    emit(F, 'parry', despeck(L.trim(c, 2)), { src: ['leafy.png'], method: 'drawn: her own render, a warm smile and arms open (no show file)' }); }
   // KO: sucked to the EXIT (Leafy sucked by 40003, 40005, 40007: the official BFB set, one canvas each, so one scale for all three): the leaf
   // bending away, her eyes squeezed shut and mouth open where the face shows, edge-on and faceless at the last.
   { const s = Math.sqrt(L.fillArea(base) / L.fillArea(L.trim(S('Leafy sucked by 40003.png'), 0))) * 0.95;
@@ -808,7 +817,7 @@ function bubble() {
     limb(c, [P(156, 146), P(170, 138), P(178, 126), P(179, 112)], 5, 6.5);
     limb(c, [P(64, 168), P(56, 182), P(70, 192)], 5.5, 0, [6, 0, 8, 4.5]);
     limb(c, [P(114, 168), P(124, 182), P(110, 192)], 5.5, 0, [-6, 0, 8, 4.5]);
-    emit(F, 'rise', L.trim(c, 2), { src: ['bubble.png'], method: 'drawn: her own render rising, arms up, legs tucked (HER JUMP.png is a storyboard sketch)' }); }
+    emit(F, 'rise', despeck(L.trim(c, 2)), { src: ['bubble.png'], method: 'drawn: her own render rising, arms up, legs tucked (HER JUMP.png is a storyboard sketch)' }); }
 }
 
 // ---- TEARDROP (BFDI) ----------------------------------------------------------------------------------------------------------------------
@@ -857,10 +866,53 @@ function teardrop() {
       if (!fillM[q]) { if (dark) d[i + 3] = 0; continue; }
       if (dark || d[i + 3] < 100) hole[q] = 1; }
     paintOne(limbless, L.dilate(hole, base.w, base.h, 1).map((v, q) => (v && fillM[q] ? 1 : 0)), (r, g, b) => b > 180, { alpha: true }); }
+  // (Third pass.) HER LEFT EDGE carried across the arm. Her left arm leaves her body through her outline twice -- the upper arm (rows 133-141)
+  // and its fist (rows 153-162) -- and what was black there was cleared, so her outline had a see-through notch at each, and the arm's channel
+  // inside it (rows 129-141) was clear as well. Now her left edge is measured on every row (the first pixel of her, to a fraction of a pixel by
+  // its alpha), on the rows where nothing black lies on it or within an outline's width inside it; carried smoothly across the rows the arm
+  // and the fist spoil (as Leafy's is); her outline drawn again along it from its own profile (colour and alpha across the outline, read off
+  // the clean rows above, where her edge stands upright); the arm's channel inside refilled from her water (colour and alpha); and anything
+  // left outside her edge cleared.
+  { const W = base.w, H = base.h, at = (x, y) => { const i = (y * W + x) * 4; return [base.d[i], base.d[i + 1], base.d[i + 2], base.d[i + 3]]; };
+    const inkT = (r, g, b, a) => a >= L.ALPHA_FLOOR && L.lum(r, g, b) < 90, Y0 = 100, Y1 = 166, PY = 128, xe = new Float64Array(H).fill(NaN), bad = new Uint8Array(H);
+    for (let y = Y0; y <= Y1; y++) { let sawInk = false;
+      for (let x = 0; x < 60; x++) { const [r, g, b, a] = at(x, y); if (a < L.ALPHA_FLOOR) { sawInk = false; continue; } if (inkT(r, g, b, a)) { sawInk = true; continue; }
+        if (!sawInk) xe[y] = x + 1 - a / 255; break; }
+      if (isNaN(xe[y])) bad[y] = 1; else for (let x = Math.floor(xe[y]); x < xe[y] + 5; x++) if (inkT(...at(x, y))) { bad[y] = 1; break; } }
+    const fit = (ya, yb) => { let n = 0, sy = 0, sx = 0, sxy = 0, syy = 0;
+      for (let y = Math.max(Y0, ya); y <= Math.min(Y1, yb); y++) if (!bad[y]) { n++; sy += y; sx += xe[y]; sxy += y * xe[y]; syy += y * y; }
+      return n < 2 ? 0 : (n * sxy - sy * sx) / (n * syy - sy * sy); };
+    for (let y = Y0 + 1; y < Y1; y++) if (bad[y] && !bad[y - 1]) { let z = y; while (bad[z + 1]) z++;
+      const ya = y - 1, yb = z + 1, x0 = xe[ya], x1 = xe[yb], m0 = fit(ya - 6, ya) * (yb - ya), m1 = fit(yb, yb + 6) * (yb - ya);
+      for (let q = y; q < yb; q++) { const t = (q - ya) / (yb - ya), t2 = t * t, t3 = t2 * t; xe[q] = (2 * t3 - 3 * t2 + 1) * x0 + (t3 - 2 * t2 + t) * m0 + (-2 * t3 + 3 * t2) * x1 + (t3 - t2) * m1; }
+      y = z; }
+    // her outline's profile across the edge (quarter-pixel bins from 1.5px outside to 7.5px in: colour weighted by alpha, and the alpha)
+    const NB = 37, prof = new Float64Array(NB * 5), bin = (e) => Math.round((e + 1.5) * 4);
+    for (let y = Y0; y <= PY; y++) if (!bad[y]) for (let x = Math.max(0, Math.floor(xe[y]) - 2); x < xe[y] + 7.5; x++) {
+      const k = bin(x + 0.5 - xe[y]); if (k < 0 || k >= NB) continue; const [r, g, b, a] = at(x, y);
+      prof[k * 5] += r * a; prof[k * 5 + 1] += g * a; prof[k * 5 + 2] += b * a; prof[k * 5 + 3] += a; prof[k * 5 + 4]++; }
+    const binPx = (k) => { const n = prof[k * 5 + 4], A = prof[k * 5 + 3]; return A > 0 ? [prof[k * 5] / A, prof[k * 5 + 1] / A, prof[k * 5 + 2] / A, A / n] : [0, 0, 0, 0]; };
+    const profAt = (e) => { const f = (e + 1.5) * 4; let lo = Math.min(NB - 1, Math.floor(f)), hi = Math.max(0, Math.ceil(f));
+      while (lo > 0 && !prof[lo * 5 + 4]) lo--; while (hi < NB - 1 && !prof[hi * 5 + 4]) hi++;
+      const p = binPx(lo), q = binPx(hi), t = hi > lo ? c01((f - lo) / (hi - lo)) : 0; return p.map((v, c) => v + (q[c] - v) * t); };
+    // the arm's channel inside her edge (the arm's black and its soft edge, grown 2px; left of x 36, clear of her grin), refilled from her water
+    const armZ = new Uint8Array(W * H);
+    for (let y = 118; y <= 174; y++) for (let x = 0; x < 36; x++) if (inkT(...at(x, y))) armZ[y * W + x] = 1;
+    const armG = L.dilate(armZ, W, H, 2), holeA = new Uint8Array(W * H);
+    for (let y = Y0; y <= Y1; y++) for (let x = 0; x < 40; x++) if (armG[y * W + x] && x + 0.5 - xe[y] >= 3) holeA[y * W + x] = 1;
+    paintOne(limbless, holeA, water, { alpha: true });
+    const d = limbless.d;
+    for (let y = Y0; y <= Y1; y++) {
+      const ya = Math.max(Y0, y - 2), yb = Math.min(Y1, y + 2), cs = 1 / Math.hypot(1, (xe[yb] - xe[ya]) / (yb - ya));   // (the edge's slant)
+      for (let x = 0; x < 48; x++) { const i = (y * W + x) * 4, e = (x + 0.5 - xe[y]) * cs;
+        if (e < -1.5) { d[i + 3] = 0; continue; }   // outside her edge
+        if (!bad[y] || e >= 5.5) continue;
+        const p = profAt(e), t = c01(e - 4.5);   // her outline, from its profile, blending into her water over its last pixel
+        for (let c = 0; c < 4; c++) d[i + c] = p[c] * (1 - t) + d[i + c] * t; } } }
   // THE THROW (drawn; Td throwing block.png has both arms up over her head, flinging): both arms up, the hands over her shoulders. Not wired
   // (POSE_SETS.Teardrop): the slot the plan named "Ranged" is her low sweep, and a throw does not show a sweep -- the owner's call.
   { const c = L.blank(limbless.w + 24, limbless.h); L.paste(c, limbless, { x: 12 });
-    limb(c, [[12 + 14, 139], [12 + 2, 126], [12 + 6, 104]], 6.5, 7);   // (from where her left arm crossed her outline: it covers the gap)
+    limb(c, [[12 + 14, 139], [12 + 2, 126], [12 + 6, 104]], 6.5, 7);   // (from where her left arm crossed her outline, drawn whole under it now)
     limb(c, [[12 + 118, 142], [12 + 134, 122], [12 + 128, 98]], 6.5, 7);
     limb(c, [[12 + 44, 170], [12 + 41, 186], [12 + 40, 194]], 6.5, 0, [6, 1, 9, 5]);
     limb(c, [[12 + 86, 172], [12 + 88, 186], [12 + 89, 194]], 6.5, 0, [7, 1, 9, 5]);

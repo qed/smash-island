@@ -94,7 +94,8 @@ function declared() {
 
   // A POSE SET's pictures (POSE_SETS in the monolith, made by scripts/make-anim-batch1.mjs) are named at runtime by poseSpritesOf:
   // `<file>-<key>.png`, each with its own flag, the third number of its `pics` entry ([w, h, flip, k]).
-  const poseRow = /file:'([a-z0-9-]+)',\s*base:\[[^\]]*\],\s*pics:\s*\{([^}]*)\}/g;
+  // (any short flags between base and pics -- batch 2's `cosHook:true` -- are skipped)
+  const poseRow = /file:'([a-z0-9-]+)',\s*base:\[[^\]]*\],(?:\s*[a-zA-Z]+:[a-z0-9]+,)*\s*pics:\s*\{([^}]*)\}/g;
   while ((m = poseRow.exec(html))) {
     const pic = /'([^']+)':\[\s*\d+\s*,\s*\d+\s*,\s*([01])/g;
     let q;
