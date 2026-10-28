@@ -39,6 +39,11 @@
 // THIRD PASS (the checker's notes on the second): Teardrop's left edge and outline carried across the rows her left arm and its fist crossed
 // (the throw and the run had a see-through notch at each); Leafy's smug eye cut whole (its rect ended inside the eye: two specks); the
 // stray specks of an old limb's soft edge left beside Bubble's rise and Leafy's parry erased.
+//
+// FOURTH PASS (the owner's choices from the contact sheets, and a checker's note): Yin-Yang's hit drawn on their render (wincing, teeth
+// gritted, in each half's ink), in place of the Season 3 bandaged Yinyang Hurt.png, and their KO's red open mouth (it read as a red third eye)
+// drawn as a plain open mouth in their ink; the pale cream flames of Candle's mad and scared tinted to her render's yellow; Leafy's parry's
+// right arm attached to her body and the dark stub of the old one cleared off her edge. (Bubble's flinch is wired in index.html: no picture.)
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import * as L from './anim-pose-lib.mjs';
@@ -430,11 +435,38 @@ function candle() {
   const onCandle = (src, rect, at, s, extra) => { const im = L.clone(blankC); putFace(im, faceOf(src, rect), at[0], at[1], { s }); if (extra) extra(im); return L.trim(im, 2); };
   emit(F, 'maddening', onCandle(S('Candle “this is maddening”.jpeg'), { x: 118, y: 296, w: 272, h: 266 }, [46, 126], 0.17),
     { src: ['Candle “this is maddening”.jpeg', 'candle.png'], method: 'face swap: her face (a close-up, S4E3) on her own render' });
-  // SMASH: mad (Candle Mad.png, Season 3), as the show's cut-out has her (with the paper in her hand).
-  emit(F, 'mad', toBase(S('Candle Mad.png'), F), { src: ['Candle Mad.png'], method: 'cut-out (wiki pose)' });
-  // HIT: scared (Candle Scared.png, Season 3), the whole reaction. (Second pass: the first pass led into it with the flabbergasted frame
-  // (S4E1), but that frame is a mild, almost neutral smile, so the first moment of a hit did not look like a hit; it is no longer made.)
-  emit(F, 'scared', toBase(S('Candle Scared.png'), F), { src: ['Candle Scared.png'], method: 'cut-out (wiki pose)' });
+  // (Fourth pass, the owner's "Keep, tint the flames".) The Season 3 cut-outs' flames are a pale cream (a cream rim round a near-white core);
+  // her render's is yellow (a golden rim round a cream core). Each flame is its pixels of flame colour (light, warm, not the grey of the wick)
+  // joined to the top of the picture, and each takes the render's flame colour for how far it is from the rim's lightness to the core's: the
+  // rim golden, the core cream, the soft edge the rim's colour. Its alpha, and its shape, are kept.
+  const lumOf = (d, i) => L.lum(d[i], d[i + 1], d[i + 2]), satOf = (d, i) => Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]);
+  const isFlame = (d, i) => d[i + 3] >= 8 && lumOf(d, i) > 200 && d[i] > 180 && (d[i + 3] < 160 || (satOf(d, i) >= 10 && d[i] >= d[i + 2]));
+  const flameOf = (im) => {   // a flood from the top three rows of the picture through flame-coloured pixels
+    const m = new Uint8Array(im.w * im.h), q = []; let y0 = 0;
+    while (y0 < im.h && ![...Array(im.w).keys()].some((x) => im.d[(y0 * im.w + x) * 4 + 3] >= 8)) y0++;
+    for (let y = y0; y < y0 + 3; y++) for (let x = 0; x < im.w; x++) { const p = y * im.w + x; if (isFlame(im.d, p * 4)) { m[p] = 1; q.push(p); } }
+    while (q.length) { const p = q.pop(), x = p % im.w, y = Math.floor(p / im.w);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const X = x + dx, Y = y + dy, pp = Y * im.w + X;
+        if (X < 0 || Y < 0 || X >= im.w || Y >= im.h * 0.35 || m[pp] || !isFlame(im.d, pp * 4)) continue; m[pp] = 1; q.push(pp); } }
+    return m;
+  };
+  const tones = (im, m) => {   // a flame's rim and core: the median lightness, and colour, of its opaque pixels darker and lighter than their middle
+    const px = []; for (let p = 0; p < m.length; p++) if (m[p] && im.d[p * 4 + 3] >= 200) px.push(p * 4);
+    const ls = px.map((i) => lumOf(im.d, i)).sort((a, b) => a - b), mid = (ls[Math.floor(ls.length * 0.1)] + ls[Math.floor(ls.length * 0.9)]) / 2;
+    const med = (sel) => { const s = px.filter(sel); return [0, 1, 2].map((c) => s.map((i) => im.d[i + c]).sort((a, b) => a - b)[s.length >> 1]).concat([s.map((i) => lumOf(im.d, i)).sort((a, b) => a - b)[s.length >> 1]]); };
+    return { rim: med((i) => lumOf(im.d, i) < mid), core: med((i) => lumOf(im.d, i) >= mid) };
+  };
+  const OWN = tones(base, flameOf(base));   // her render's flame (rim [r, g, b, lightness], core [...])
+  const tintFlame = (im) => { const m = flameOf(im), T = tones(im, m);
+    for (let p = 0; p < m.length; p++) { if (!m[p]) continue; const i = p * 4, t = c01((lumOf(im.d, i) - T.rim[3]) / Math.max(1, T.core[3] - T.rim[3]));
+      for (let c = 0; c < 3; c++) im.d[i + c] = OWN.rim[c] * (1 - t) + OWN.core[c] * t; }
+    return im; };
+  // SMASH: mad (Candle Mad.png, Season 3), as the show's cut-out has her (with the paper in her hand), her flame tinted to her render's.
+  emit(F, 'mad', tintFlame(toBase(S('Candle Mad.png'), F)), { src: ['Candle Mad.png', 'candle.png (her flame\'s colours)'], method: 'cut-out (wiki pose), her flame tinted to her render\'s yellow' });
+  // HIT: scared (Candle Scared.png, Season 3), the whole reaction, her flame tinted to her render's. (Second pass: the first pass led into it
+  // with the flabbergasted frame (S4E1), but that frame is a mild, almost neutral smile, so the first moment of a hit did not look like a hit;
+  // it is no longer made.)
+  emit(F, 'scared', tintFlame(toBase(S('Candle Scared.png'), F)), { src: ['Candle Scared.png', 'candle.png (her flame\'s colours)'], method: 'cut-out (wiki pose), her flame tinted to her render\'s yellow' });
   // WIN: the giggle (S4E2, Cheesy beside her), then the laugh (Candle Laughing.png, Season 3).
   emit(F, 'giggle', onCandle(S('S4E2 Candle giggles at Cheesy.png'), { x: 574, y: 212, w: 112, h: 84 }, [46, 124], 0.36),
     { src: ['S4E2 Candle giggles at Cheesy.png', 'candle.png'], method: 'face swap: her face (an episode frame, S4E2) on her own render' });
@@ -498,10 +530,11 @@ function cammy() {
 }
 
 // ---- YIN-YANG (Inanimate Insanity, they) ---------------------------------------------------------------------------------------------------
-// Yang alone and Mindful keep their pictures ("Keep them"); the two Season 4 bodies downloaded for them are not needed. Yinyang Hurt.png (Season
-// 3, the owner's "close enough") is their hit. Their fight-stance idle, Through the Roof, their KO (YinYangEliminated.png has the boxing glove
-// over most of them) and their laugh are drawn on their render: the arms taken off along their own outlines and drawn again where the pose has
-// them (outside the ball, where a black arm shows), and the face redrawn in each half's own ink -- black on Yin's white, white on Yang's black.
+// Yang alone and Mindful keep their pictures ("Keep them"); the two Season 4 bodies downloaded for them are not needed. Their fight-stance idle,
+// Through the Roof, their hit, their KO (YinYangEliminated.png has the boxing glove over most of them) and their laugh are drawn on their render:
+// the arms taken off along their own outlines and drawn again where the pose has them (outside the ball, where a black arm shows), and the face
+// redrawn in each half's own ink -- black on Yin's white, white on Yang's black. (Their hit was Yinyang Hurt.png, Season 3, until the fourth
+// pass: its bandaged grey look did not match their render, and the owner chose "Redraw both from render" -- the hit, and the KO's mouth.)
 // (Second pass.) The first pass snapped every painted-out pixel to pure white or pure black: that left white jags where the eye rects met the
 // curve, a dark block on Yang's half (their black is not one flat colour: it has its shine), and, for the KO, a straight cut where the grin
 // hid the curve. Now: the arms come off the ball cleanly (limbOffBall: the rim painted back where they joined, no stub); the face's strokes
@@ -535,7 +568,13 @@ function yinyang() {
   const faceOut = (rects, all) => { const im = L.clone(noArms); return paintParts(im, holeOf(im, rects, (r, g, b, x, y) => all(x, y) || strokeOn(r, g, b, x, y), 2), yang, half); };
   // their eyes and brows painted out (each half's own colour put back, the S-curve between them kept smooth)
   const noEyes = faceOut(EYES, () => false);
-  const noFace = faceOut([...EYES, GRIN], (x, y) => x >= GRIN.x && y >= GRIN.y && x < GRIN.x + GRIN.w && y < GRIN.y + GRIN.h);
+  const inGrin = (x, y) => x >= GRIN.x && y >= GRIN.y && x < GRIN.x + GRIN.w && y < GRIN.y + GRIN.h;
+  const noFace = faceOut([...EYES, GRIN], inGrin);
+  // (Fourth pass.) INK IN EACH HALF'S OWN COLOUR: a shape drawn into a layer is laid on in black over Yin's white and in white over Yang's
+  // black, anti-aliased across the curve, as their render's face is (its grin lines, its eyes and brows).
+  const halfInk = (im, draw) => { const lay = L.blank(im.w, im.h); draw(lay);
+    for (let p = 0; p < im.w * im.h; p++) { const i = p * 4; if (!lay.d[i + 3]) continue; const k = yang(p % im.w, Math.floor(p / im.w)); for (let c = 0; c < 3; c++) lay.d[i + c] = INK[c] * (1 - k) + WH[c] * k; }
+    return L.paste(im, lay, {}); };
   const brows = (im) => {   // angry brows: the inner ends low
     L.stroke(im, [[50, 56], [76, 66]], 5, INK);
     L.stroke(im, [[104, 70], [128, 58]], 5, WH);
@@ -554,18 +593,35 @@ function yinyang() {
     limb(im, [[26, pad + 52], [18, pad + 6], [34, 14]], W, FIST);
     limb(im, [[170, pad + 52], [180, pad + 6], [164, 14]], W, FIST);
     emit(F, 'roof', L.trim(L.resize(im, Math.round(im.w * 0.94), Math.round(im.h * 1.05)), 2), { src: ['yin-yang.png'], method: 'drawn: their own render, both fists driving up (no show file)' }); }
-  // HIT: Yinyang Hurt.png (Season 3, S3E14: the bandages of that episode).
-  emit(F, 'hurt', toBase(S('Yinyang Hurt.png'), F, 1, true), { src: ['Yinyang Hurt.png'], method: 'cut-out (wiki pose)' });
+  // HIT (drawn; fourth pass, the owner's "Redraw both from render"): their own render, arms and legs as it has them, the face redrawn in each
+  // half's ink -- eyes squeezed shut in a wince ("> <") under brows raised at their inner ends, and the teeth gritted: a wide mouth, its
+  // corners pulled down, white teeth crossed by black lines, outlined black on Yin's white and white on Yang's black like their grin. (It was
+  // Yinyang Hurt.png, the Season 3 bandaged grey look, which did not match their render; that file is no longer used.)
+  { const im = paintParts(L.clone(base), holeOf(base, [...EYES, GRIN], (r, g, b, x, y) => inGrin(x, y) || strokeOn(r, g, b, x, y), 2), yang, half);
+    halfInk(im, (lay) => {
+      L.stroke(lay, [[60, 73], [75, 81], [60, 89]], 5, INK); L.stroke(lay, [[123, 78], [108, 86], [123, 94]], 5, INK);   // the wince
+      L.stroke(lay, [[51, 63], [75, 54]], 5, INK); L.stroke(lay, [[105, 58], [129, 66]], 5, INK);                       // brows up in the middle
+    });
+    const cx = 98, cy = 117, hw = 30, hh = 9.5, bend = 5;   // the grimace: a rounded slab, its corners `bend` px lower than its middle
+    const edge = (u, s) => [cx + u * hw, cy + bend * u * u + s * hh * Math.pow(Math.max(0, 1 - Math.pow(Math.abs(u), 6)), 1 / 6)];
+    const us = Array.from({ length: 41 }, (_, i) => -1 + i / 20), outline = [...us.map((u) => edge(u, -1)), ...us.slice().reverse().map((u) => edge(u, 1))];
+    fillPoly(im, outline, WH);                                                                                          // the teeth
+    for (const u of [-0.5, 0, 0.5]) L.stroke(im, [edge(u, -0.8), edge(u, 0.8)], 2.6, INK);                             // between them
+    L.stroke(im, us.filter((u) => Math.abs(u) <= 0.9).map((u) => edge(u, 0)), 2.6, INK);                                // where they meet
+    halfInk(im, (lay) => L.stroke(lay, [...outline, outline[0]], 4.5, INK));                                           // its outline
+    emit(F, 'hurt', L.trim(im, 2), { src: ['yin-yang.png'], method: 'drawn: their own render, wincing, teeth gritted (Yinyang Hurt.png, the Season 3 bandaged look, did not match it)', flip: false }); }   // (their render's flag)
   // KO (drawn): knocked over onto their back (the whole render turned, legs up), the arms flung out, eyes squeezed shut ("> <": black on Yin,
-  // white on Yang), the grin dropped to a small open mouth.
+  // white on Yang), the grin dropped to a small open mouth. (Fourth pass: the mouth was dark red with a pink tongue, which read as a red third
+  // eye; it is a plain open mouth in their own ink now, black on Yin's white and white on Yang's black.)
   { const im = L.clone(noFace);
     L.stroke(im, [[58, 72], [74, 81], [58, 90]], 5, INK);
     L.stroke(im, [[124, 76], [108, 85], [124, 94]], 5, WH);
-    mouth(im, 84, 122, 22, 18, { teeth: false, line: 4 });
+    { const D = [...L.arc(97, 116, 15, 2.5, Math.PI, Math.PI * 2, 16), ...L.arc(97, 116, 15, 12, 0, Math.PI, 24).slice(1)];   // (flat across the top, round below)
+      fillPoly(im, D, WH); halfInk(im, (lay) => L.stroke(lay, [...D, D[0]], 4.5, INK)); }   // (drawn as their grin is: white inside, its outline in each half's ink, across the curve)
     const pad = 26, c = L.blank(im.w + pad * 2, im.h); L.paste(c, im, { x: pad });
     limb(c, [[pad + 12, 100], [pad - 6, 112], [pad - 14, 130]], W, FIST);
     limb(c, [[pad + 186, 124], [pad + 206, 130], [pad + 220, 122]], W, FIST);
-    emit(F, 'ko', turn(L.trim(c, 2), -72), { src: ['yin-yang.png'], method: 'drawn: their own render knocked over, eyes squeezed shut (YinYangEliminated.png hides them behind the glove)', flip: false }); }   // (their render's flag: the turn fools the facing measure)
+    emit(F, 'ko', turn(L.trim(c, 2), -72), { src: ['yin-yang.png'], method: 'drawn: their own render knocked over, eyes squeezed shut, mouth open (YinYangEliminated.png hides them behind the glove)', flip: false }); }   // (their render's flag: the turn fools the facing measure)
   // WIN (drawn): laughing, eyes shut happy (^ ^), both arms thrown up.
   { const pad = 54, im = L.blank(base.w + 34, base.h + pad), f = L.clone(noEyes);
     L.stroke(f, L.arc(66, 84, 10, 8, Math.PI * 1.08, Math.PI * 1.92, 16), 5, INK);
@@ -680,10 +736,31 @@ function leafy() {
     emit(F, 'angry', L.trim(im, 2), { src: ['Angry Leafy.png (her face)', 'leafy.png'], method: 'face swap: her face (an episode frame, tipped over: turned upright) on her own render' }); }
   // KINDNESS PARRY (drawn): a warm smile, eyes shut happy, both arms open wide.
   { const im = L.clone(blankL); for (const a of rig.arms) if (a.side === 'R') eraseLimb(im, a);   // (her left arm is already off: blankL)
+    // (Fourth pass, the last checker's note: the new right arm floated 3px off her body, and a dark stub of the old arm's hand -- which lay on
+    // her right edge, below the face's rect, so only its top had been painted out, and that top as a green bulge past her edge -- was left on
+    // her edge.) Her right edge is carried across the rows the old arm and its hand spoiled (125-157): measured, to a fraction of a pixel, on
+    // the clean rows above and below, and carried smoothly between (as her left edge is); everything outside it cleared, her outline's green
+    // drawn again along it, and what is dark or see-through inside it painted back from her own crescent. The new arm starts inside the edge,
+    // as long as her left one.
+    const E = new Float64Array(H0).fill(NaN), Y0 = 125, Y1 = 157;
+    for (let y = 104; y <= 161; y++) { if (y >= Y0 && y <= Y1) continue; let s = 0; for (let x = 60; x < W0; x++) s += im.d[(y * W0 + x) * 4 + 3] / 255; E[y] = 60 + s; }
+    hermite(E, Y0 - 1, Y1 + 1, slopeOf(E, 112, Y0 - 1), slopeOf(E, Y1 + 1, 161));
+    const OUTR = [0, 1, 2].map((c) => { const v = []; for (let y = 108; y < Y0; y++) v.push(im.d[(y * W0 + Math.floor(E[y]) - 2) * 4 + c]); return v.sort((p, q) => p - q)[v.length >> 1]; });
+    const holeR = new Uint8Array(W0 * H0);
+    for (let y = Y0; y <= Y1; y++) for (let x = Math.floor(E[y] - 12); x < W0; x++) { const i = (y * W0 + x) * 4, e = E[y] - (x + 0.5);
+      if (e >= 2.5 && (im.d[i + 3] < 250 || L.lum(im.d[i], im.d[i + 1], im.d[i + 2]) < 110)) holeR[y * W0 + x] = 1; }
+    paintParts(im, L.dilate(holeR, W0, H0, 1).map((v, q) => (v && E[Math.floor(q / W0)] - (q % W0 + 0.5) >= 2.5 && Math.floor(q / W0) >= Y0 && Math.floor(q / W0) <= Y1 ? 1 : 0)), cres,
+      (r, g, b) => (g > 205 && b < 40 && r < 112 ? 0 : b > 60 && b < 120 && g > 195 && L.lum(r, g, b) < 200 ? 1 : null), { alpha: true });
+    for (let y = Y0; y <= Y1; y++) for (let x = Math.floor(E[y] - 6); x < W0; x++) { const i = (y * W0 + x) * 4, e = E[y] - (x + 0.5);
+      if (e >= 4) continue;
+      if (e < -0.5) { im.d[i + 3] = 0; continue; }
+      const k = c01(e - 3);   // (the outline's inner edge eases into the body)
+      for (let c = 0; c < 3; c++) im.d[i + c] = OUTR[c] * (1 - k) + im.d[i + c] * k;
+      im.d[i + 3] = e < 3 ? 255 * c01(e + 0.5) : 255; }
     shutEyes(im, 58, 92, 34, 8, 4.5); L.stroke(im, L.arc(58, 118, 18, 12, 0.25, Math.PI - 0.25, 20), 4.5, INK);
     const c = L.blank(im.w + 40, im.h); L.paste(c, im, { x: 20 });
     limb(c, [[20 + 22, 146], [20 + 4, 132], [20 - 14, 122]], 6, 6.5);
-    limb(c, [[20 + 102, 138], [20 + 120, 124], [20 + 138, 116]], 6, 6.5);
+    limb(c, [[20 + E[141] - 2.5, 141], [20 + 106, 129], [20 + 126, 121]], 6, 6.5);
     emit(F, 'parry', despeck(L.trim(c, 2)), { src: ['leafy.png'], method: 'drawn: her own render, a warm smile and arms open (no show file)' }); }
   // KO: sucked to the EXIT (Leafy sucked by 40003, 40005, 40007: the official BFB set, one canvas each, so one scale for all three): the leaf
   // bending away, her eyes squeezed shut and mouth open where the face shows, edge-on and faceless at the last.
