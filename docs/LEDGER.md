@@ -1210,6 +1210,8 @@ Left on purpose:
 - **OWNER QUESTION, Beach Ball:** their team match is an ally match ("Cheaters' Alliance": you + Beach Ball vs Rose + David). As a 3 vs 1 it would
   be you vs Beach Ball, Rose and David, which turns their story around; ask before that kit is built.
 
+**2026-10-28, Bow's tower drags you down (`g-bow-drag`):** the owner, after a World Cup where it hit Leafy twice: "make it so that the knockback only applies once it hits the floor, and it drags you down with it", "12% once, on the floor". The falling tower catches whoever it sweeps through and carries them down; the crash hits them and everyone it lands on, 12% and the 0.5 s stun, once a foe (one list for the whole finisher).
+
 ---
 
 ## Scoreboard
