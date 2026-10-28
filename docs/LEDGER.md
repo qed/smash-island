@@ -1210,6 +1210,42 @@ Left on purpose:
 - **OWNER QUESTION, Beach Ball:** their team match is an ally match ("Cheaters' Alliance": you + Beach Ball vs Rose + David). As a 3 vs 1 it would
   be you vs Beach Ball, Rose and David, which turns their story around; ask before that kit is built.
 
+### O30 · Balance pass (2026-10-28): the jab fixes, Bomby's mine, the bottom-20 buffs  [BUILT; re-run done, the plan's fallback applied and re-measured]
+
+Branch `g-balance` (from `ii-dlc` `4b3397f`). The plan is `smash-bal/reports/balance-pass-plan.md` (evidence: `jab-study.md`, `bottom-fighters.md`).
+The owner: "Build it all", "Yes, stop the jab lock", and Tea Kettle gets the reach-8 jab too. No CPU changes; Bow's kit is untouched (only the shared jab lock reaches her).
+
+- **Empowered jab:** Firey's keeps its damage bonus and loses its launch bonus (launch 13 -> 7); Magnet's launches x1.3 instead of x1.6 +2 (17 -> 12).
+  Trophy, David, Cake, Fan, Blueberry and every other banked empower are unchanged. Recovering CPU, mid-stage / ledge: Firey 87 / 21 -> 142 / 83,
+  Magnet 44 / 0 -> 83 / 17.
+- **The jab lock (every fighter):** a jab cannot combo into your own jab. Hold X and walk: 2 to 17 linked jabs -> 1. A jab still combos into other moves
+  (jab -> down-tilt linked for the same 14 of 19 fighters before and after, jab -> special for the same 3; jab -> jab 15 -> 0).
+- **Bomby:** one Proximity Mine out at a time (a new one removes the old); damage 20 / launch 12 unchanged. Up to 7 were out at once.
+- **Jab reach 8** (damage and launch unchanged): new rows for Goo, Lifering, Yin-Yang, Starfruit, Cammy, Trophy, Clover, Candle and Tea Kettle; Box and
+  Tissues 2 -> 8; Snowball 2 -> 6. The default jab stays for Fan, Blueberry and Jack.
+- **Per fighter:** Goo's Drip From Above 8%; Box dmg 1.15; Lifering's Spare Ring 6%; Balloon weight 66; Snowball run 1.0; Teardrop's THE KICK cooldown
+  84; Starfruit's Has-Been shove 6%; Cammy smash launch 10; Paper weight 70; Fern smash launch 11; Pillow fall 0.97; Lightbulb smash launch 11; Clover's
+  Butterflies 4%; Knife dmg 1.1; Candle's Inner-Flame 11%; Apple weight 76; Barf Bag smash launch 10.5.
+- Player words updated: Firey's and Magnet's up-special, Bomby's mine, Goo's and Lifering's finishers, Starfruit's, Clover's and Candle's specials
+  (Box's and Knife's numbers follow their dmg stat by themselves).
+
+Checks: syntax, boot (FFA and Teams clean), CPU matches with the changed fighters, and jsdom before / after runs of every line above (the scratchpad's
+`balance3/`).
+
+- **The re-run (2026-10-28, 30 matches each: the BFDI 15 + the mixed 15; `smash-bal/reports/balance-pass-results.md`):** Firey 23, Bomby 26 on target;
+  Magnet 21 (under 22-26); 5 of 21 buffed fighters on target (8-16), none above 18, 11 still at 5 or fewer.
+- **The plan's fallback, applied once (2026-10-28):** Magnet's empowered jab x1.3 -> x1.45 (launch 12 -> 14). The buffed fighters at 5 or fewer get one more
+  number (section 2 of `bottom-fighters.md` lists one buff each and all were already in, so each is one more step on the weakness it names;
+  picked in this step, not an owner-approved line -- the owner's call): Box dmg 1.15 -> 1.2 (the tools' cap); Balloon's POP! launch 10 -> 12; Cammy's smash launch 10 -> 12;
+  Starfruit's Has-Been shove launch 7 -> 9; Fern's jab launch 7 -> 8; Tissues' jab 6% -> 7%; weight Lifering 75 -> 81, Paper 70 -> 76, Apple 76 -> 82,
+  Teardrop 66 -> 72. Tea Kettle (4) is left as he is: section 2 has no entry for him. Firey, Bomby and everyone else unchanged. Words: Magnet's
+  up-special ("more launch"), Tissues' jab (7%). The 11 adjusted fighters are re-measured in the results report's "after adjustment" column.
+- **After the adjustment (2026-10-28, 7300c53, the 11 changed fighters, 30 matches each, 0 errors):** Magnet 24 (on target; jab KOs at a median 84%).
+  Fern 6 (just under); Box, Teardrop, Paper, Apple, Tissues 5; Balloon, Starfruit 2; Lifering, Cammy 1 (still at 5 or fewer). The 10 buffed fighters
+  went 29 -> 37 wins in 300 matches, each within the noise. The fallback is used up; what is next for the bottom is the owner's call.
+
+Open: the owner tries Firey, Bomby and a few buffed fighters by hand.
+
 ---
 
 ## Scoreboard
@@ -1217,7 +1253,7 @@ Left on purpose:
 | | Count |
 |---|---|
 | Done | 161 |
-| Open | 9 (O20, O22, O23, O24, O25, O26, O27, O28, O29) |
+| Open | 10 (O20, O22, O23, O24, O25, O26, O27, O28, O29, O30) |
 | Superseded | 2 (O1, B12) |
 | Blocked on you | 1 (G11: the Cloudflare MCP authorization) |
 
