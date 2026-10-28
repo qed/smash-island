@@ -1104,7 +1104,7 @@ stays until Spongy", "Yes, remove it now" (his assist), and yes to keeping Steve
   and My Stats; not One's chain (no `oneAfterMatch` and no `recordFighterGame`, whose Lightning record opens her chain), the Daily or the
   World Cup. RIVAL: event CPUs count (they did KO you), but `rivalPick` never names a locked event fighter (or a prize fighter before his gate):
   the next one down is named until he is yours.
-- **Pen and Eraser's stage** (the design names none): Stone Pillars. A team match is Teams, which always plays on the Teams arena with the
+- **Pen and Eraser's stage** (the design names none; since O29 the match is The Alliance, a 3 vs 1): Stone Pillars. A team match is Teams, which always plays on the Teams arena with the
   stage's sky and ground; Stone Pillars has no hazard and is not the duel's stage. One word in `EVENT_MATCHES` if the owner wants another.
 - **The twists (step 8, his two).** Food only (`eventItemPool`: the healing snacks only, the usual rate and weights, one draw as before).
   The sponge floor (`MATCH_TWIST`, `SPONGE`, `spongeLanding`, `spongeBounce`, `drawSpongeFloor`): only a HARD landing on the main floor bounces
@@ -1149,8 +1149,8 @@ Left on purpose:
 - **Event rooms (step 14):** the host's week, match number and twist ride the lobby preview and the start that exist; the guest pays from the
   final snapshot. The sponge floor's prediction is ready for it: the in-process pair check with the twist set on both ends (2026-10-28) has
   the guest's own fighter rise 172-173 px after a hard landing as on the host (471 px, a snap, when only the host has it), settled 0.0 px apart.
-- **Each kit job:** add `EVENT_INFO` (pronouns, blurb), its `EVENT_MATCHES` rows, any twist it needs into `EVENT_TWISTS_BUILT` with its art and
-  its prediction, and its name in `ASSIST_LEAVES_AT_LAUNCH`.
+- **Each kit job:** add `EVENT_INFO` (pronouns, blurb), its `EVENT_MATCHES` rows (its team slot as a 3 vs 1: O29), any twist it needs into
+  `EVENT_TWISTS_BUILT` with its art and its prediction, and its name in `ASSIST_LEAVES_AT_LAUNCH`.
 - **OWNER DECISION BEFORE SPONGY LANDS: how a kit joins the lap.** Today a kit joins by its event row alone (`eventLapOrder` counts the built
   kits from the launch), so the build that adds Spongy RE-DEALS EVERY WEEK SINCE THE LAUNCH: in a sandbox with a scratch Spongy row, Wed
   2026-11-04 is Eraser before the row and Spongy after it, so the week in progress changes fighter the moment that build goes live (Eraser's week
@@ -1162,6 +1162,54 @@ Left on purpose:
 - **Not built:** the twists no Eraser match uses (throwables only, lots, backdrops, pull, rain, gusts, wind back, fast forward, low gravity
   anywhere); a match needing one shows its Play greyed. No changelog line was added (the push job's call).
 
+### O29 · Event fighters: the team match is a 3 vs 1 (every event fighter's match 2) -- what it left
+
+Branch `g-event-3v1` (from `ii-dlc` `1837133`, 2026-10-28). The owner: "event fighters should actually have 3v1, which would give you bonus
+tokens to win it"; asked, he chose "You alone vs 3", "Replace the team match" and, for the bonus, "Both" (a bigger win and a bigger first win).
+
+- **The rule, for every event fighter (`EVENT_MATCHES` header):** match 2, their team, is YOU ALONE against three CPUs -- the event fighter and
+  two of their team -- kind `'3v1'`, sides `[['you'], [name, a, b]]`, 3 stocks for you (`youStocks`, set in `buildFighters` for the player's
+  seat only, offline only) and 2 for each of them, the CPU skill the player picks (Easy counts the same), on the Teams arena (a side of more
+  than one is Teams: team split 1v3, the stage giving the sky and ground). Everything else fixed as before; the settings loan hands it all back.
+- **Eraser's: The Alliance** (was "Pen and Eraser": Eraser + Pen vs you + Blocky). The same cast, with Blocky gone over to them: you vs Eraser,
+  Pen and Blocky -- in BFDI those three were the alliance. Food only kept ("gimme gimme food"); the stage kept: the Teams arena in Stone Pillars'
+  sky (no hazard, and the arena's room lets one fighter split the three up and get to the food; a small stage would be a swarm).
+- **Stocks: 3 against 2 each,** as briefed. Nothing in the code argues for other numbers: no fighter count or stock rule caps it, DWS already
+  scores a fighter by the stocks they started with (`s0` counts stocks left plus falls), the HUD draws each fighter's own, and Rematch keeps it.
+- **Pay (`EVENT_PAY_3V1 = { win:20, first:30 }`, `eventRate(m)`):** a win on the 3 vs 1 pays 20 (10 elsewhere), its first win each week 30 more
+  (10 elsewhere); a loss pays as any (5 if you dealt 20% or lasted a minute, else 0); all of it within the week's 100 and toward the unlock at
+  100 (the bonus is cut to what the 100 leaves, as before). With the three first wins a keen week is now 20 + 20 + 50 = 90 from one win of
+  each, so the unlock takes four wins (was about seven).
+- **Screens:** the card reads "🍎 His team, 3 vs 1 · The Alliance · Teams arena (Stone Pillars sky) · you vs Eraser, Pen and Blocky · 3 stocks for
+  you, 2 each for them · food only", the twist line, and "Win: 20 tokens · first win this week: +30" (taken: "Win: 20 tokens · ✓ first win this
+  week: bonus taken"; the other two cards keep their line); the rules: "A win pays 10 Eraser tokens if you are still in at the end, and 20 on The
+  Alliance, where you face three alone. ... Your first win on each match pays 10 more (30 on The Alliance)."; the select strip adds the same pay
+  line; the result note: "+20 Eraser tokens for beating all three · first win on The Alliance +30 · 50/100". Event CPUs still appear only in their
+  own matches (Pen and Blocky are regular fighters). The duel and The Trebuchet are unchanged.
+
+**Checks (2026-10-28; jsdom only, at most three node processes at BelowNormal, each with a timeout; no browser, no relay):** the syntax check
+passes (2 scripts); boot (CPU FFA and Teams) clean. The 3 vs 1 through the real screens (event page, Play, the strip, Play), lineup "Pencil/T0/3
+stocks (you), Eraser, Pen, Blocky/T1/2 stocks each", Teams 1v3 on the Teams arena, food only (only heals and marmalade dropped): CPU against CPU
+to the end twice (the lone CPU lost both: 434 s with 0 KOs, 554 s with 3 of the 6), paid a loss that fought 5; with a scripted player twice (it
+won both, 6 KOs and no falls, 307 s and 259 s, on Normal), paid 20 + 30 with the note "+20 Eraser tokens for beating all three · first win on
+The Alliance +30 · 50/100"; every setting handed back exactly each time. Pay forced through the real KO path (last stocks knocked past the blast
+zone; checkWin, eventFinish, eventPay): a first win 20 + 30, a second win 20, a loss after lasting a minute 5, a quick loss 0, 60 held this week
+then a first win 20 + 20 (capped at 100, and that 100 unlocked him: "2 NEW FIGHTERS: Teardrop, Eraser!"), at 100 held 0 ("this week's 100 are all
+won"), 50 saved from last week then a first win 50 (unlocked at exactly 100, not capped). The duel and The Trebuchet print the same in both
+builds (rows, cards, strips, setups, 20 s of seeded CPU play, a win's pay and note): unchanged. Scripts: the scratchpad's `events/3v1/`
+(`c3_play.mjs`, `c3_pay.mjs`, `c3_other.mjs`, `c3_stall.mjs`, from the launch's `ev_check.mjs`).
+Seen on the way (not changed): with the first scripted player, which only short-hopped, the last CPU (Pen, 138%) sat hopping in place on the deck
+straight above the player for over 8 minutes (it never dropped through to them), so that run never ended; a scripted player that double-jumps
+and drops through finished both seeds. A person reaches that deck, but it is a CPU navigation loop worth a look of its own (any Teams arena match).
+
+Left on purpose:
+- **Each kit job** writes its 3 vs 1 from the design's team match (`smash-bal/reports/event-fighters-phase1.md`, "The 30 event matches", still
+  2 v 2 / 3 v 3 there): the event fighter and the two CPUs of their own side (Spongy + Barf Bag + Firey Jr., 8-Ball + Golf Ball + Tennis Ball,
+  Black Hole + Remote + Tree, Clock + Loser + Pin, Cloudy + Leafy + Woody, Pie + Pen + Remote, Stapy + Marker + Fries, Foldy + Bell + Snowball),
+  renaming the match if the name no longer fits. The design doc's table and "Their team" row were not edited (outside this worktree).
+- **OWNER QUESTION, Beach Ball:** their team match is an ally match ("Cheaters' Alliance": you + Beach Ball vs Rose + David). As a 3 vs 1 it would
+  be you vs Beach Ball, Rose and David, which turns their story around; ask before that kit is built.
+
 ---
 
 ## Scoreboard
@@ -1169,7 +1217,7 @@ Left on purpose:
 | | Count |
 |---|---|
 | Done | 161 |
-| Open | 8 (O20, O22, O23, O24, O25, O26, O27, O28) |
+| Open | 9 (O20, O22, O23, O24, O25, O26, O27, O28, O29) |
 | Superseded | 2 (O1, B12) |
 | Blocked on you | 1 (G11: the Cloudflare MCP authorization) |
 
