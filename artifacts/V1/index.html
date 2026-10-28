@@ -21954,12 +21954,16 @@ function fsSlowSkips(){ return !(FS.freeze > 0) && FS.slow > 0 && FS.slowAcc + F
 // Through the slow-mo, how far the picture is from the last step that ran to the next one (drawView blends by it); null otherwise.
 function fsSlowBlend(){ return !(FS.freeze > 0) && FS.slow > 0 ? clamp(FS.slowAcc, 0, 1) : null; }
 // Will this launch carry t past a blast line before they can steer (while their stun lasts)? The slow-mo's cue. A launch that only
-// carries them out if they then fail to steer back gets the shorter slow-mo at the KO itself (fsKoSlow).
-function fsKoFlight(t){
+// carries them out if they then fail to steer back gets the shorter slow-mo at the KO itself (fsKoSlow). strict (THE LAST KO): the stun
+// itself and not a frame more -- the frame it ends their air speed is cut and they steer back in, so the 4 frames' grace after it called
+// launches they survived (the sting played, then again at the real KO). Marshmallow's gravity (once a stock) flings her back up first.
+function fsKoFlight(t, strict){
   let x = t.x, y = t.y, vx = t.vx || 0, vy = t.vy || 0;
-  const g = GRAV*(stage.hazard === 'lowgrav' ? 0.7 : 1), fall = (t.st || STAT_ONE).fall, gy = groundY(), n = Math.min(90, (t.hitstun || 0) + 4);
+  const g = GRAV*(stage.hazard === 'lowgrav' ? 0.7 : 1), fall = (t.st || STAT_ONE).fall, gy = groundY(), n = Math.min(90, (t.hitstun || 0) + (strict ? 0 : 4));
+  const saved = !!(t.kit && t.kit.special === 'wallmart' && !t._gravSaved);
   for(let i = 0; i < n; i++){
     vy += vy > 0 ? g*fall : g; x += vx; y += vy;
+    if(saved && vy > 0 && y > WH + 60 && y <= WH + 160) return false;   // (MARSHMALLOW'S GRAVITY: halted above the bottom line, flung back up)
     if(pastSideLine(x) || y > WH + 160 || y < -260) return true;
     if(!isBig() && vy > 0 && y >= gy - t.r && groundAt(x)) return false;   // (REAL EDGES: over a gap the flight goes on down)
   }
@@ -21983,23 +21987,26 @@ function fsCamFocus(){
 // ---- THE LAST KO (the owner, 2026-10-28) ------------------------------------------------------------------------------------------------
 // "at last stock and kill, there should be a ko cinematic when ko-ed. Also, use the "GAME" sfx from smash." The KO that ends a match (the last
 // stock of the last fighter, or of the last team, standing in the way) plays the Final Smash's slow-mo KO (CATCH, THEN CINEMATIC, 4) from any
-// move: a hit whose launch will carry them out (fsKoFlight) starts it on the blow -- the camera snapping in there, following a little, the
-// match at FS_SLOW.k speed for FS_SLOW.frames frames -- with a white flash at the blow (KOC_FLASH frames, swelling out from it as it fades: no
-// colour backdrop, no words); a match-ending KO nobody saw coming (a fall, a hazard, the damage cap) gets the shorter one on the spot they went
-// out. The match is decided at that KO and nobody else is knocked out after it, but it runs on to the end of the slow-mo and KOC_BEAT steps
-// more before it stops (kocHold), so the result screen comes that much later: never more than KOC_HOLD_MAX frames, then the usual 700 ms
-// (about 2 s at most). A hit that does not end the match changes nothing.
+// move: a hit whose launch will carry them out before their stun ends (fsKoFlight, strict) starts it on the blow -- the camera snapping in
+// there, following a little, the match at FS_SLOW.k speed for FS_SLOW.frames frames, and no hit freeze on that hit (hitStopOff), so they are
+// seen flying out of the close-up -- with a white flash at the blow (KOC_FLASH frames, swelling out from it as it fades: no colour backdrop,
+// no words); a Final Smash's slow-mo already on them when they go out becomes the last KO's where it is; a match-ending KO nobody saw
+// coming (a fall, a hazard, the damage cap) gets the shorter one on the spot they went out. The match is decided at that KO and nobody
+// else is knocked out after it, but it runs on to the end of the slow-mo and KOC_BEAT steps more before it stops (kocHold), so the result
+// screen comes that much later: never more than KOC_HOLD_MAX frames, then the usual 700 ms (about 2 s at most). A hit that does not end the match changes nothing.
 // THE SOUND: the real "GAME!" is Nintendo's recording and is not used. SFX.game is a sting of our own, synthesized like every other sound
-// here: a heavy punch on the blow, then a bright two-note stab over a crowd-like swell as they fly out, about a second; once per match, under
+// here: a heavy punch on the blow, then a bright two-note stab over a crowd-like swell as they fly out, about a second; once per match (KOC.sung:
+// a launch that was stopped after all -- something in the way -- stands the close-up down but never plays a second sting), under
 // the Sound switch like every effect. (There is no music ducking to put it under: the music plays on as it was.)
 // Where: free-for-all, Teams, the Daily, the World Cup's fights, online rooms. Not Training, the tutorial, Capture the Flag (no stocks: a KO
 // is a trip home), Boss Rush, One's, Steve Cobs's or RUNNING! (their own endings). Online the host decides and runs it; a guest gets it in
-// s.fsx (its 8th field: this slow-mo is the last KO's), draws the same close-up and flash, and plays the sting the first time it sees it.
+// s.fsx (its 8th field: this slow-mo is the last KO's, 1 with the sting, 2 without), draws the same close-up and flash, and plays the sting
+// the first time it sees a 1.
 const KOC_FLASH = 12;      // frames of the white flash at the blow (it grows out over all of them)
 const KOC_BEAT = 18;       // steps the match runs on after the slow-mo (or after the KO, once the slow-mo is over) before it stops
 const KOC_HOLD_MAX = 78;   // frames at most from the deciding KO to the stop (+ the 700 ms before the result screen: about 2 s)
-const KOC = { on:false, idx:-1, t0:0, over:false, done:false, ticks:0, beat:0, heldMs:0, lastT:0, heard:false };   // heard: a guest played this one's sting
-function kocReset(){ KOC.on = false; KOC.idx = -1; KOC.t0 = 0; KOC.over = false; KOC.done = false; KOC.ticks = 0; KOC.beat = 0; KOC.heldMs = 0; }
+const KOC = { on:false, idx:-1, t0:0, over:false, done:false, ticks:0, beat:0, heldMs:0, lastT:0, heard:false, sung:false, free:0 };   // heard: a guest played this one's sting; sung: the sting played this match; free: frames they have been out of their stun, alive
+function kocReset(){ KOC.on = false; KOC.idx = -1; KOC.t0 = 0; KOC.over = false; KOC.done = false; KOC.ticks = 0; KOC.beat = 0; KOC.heldMs = 0; KOC.free = 0; }   // (not sung: only a new match clears it, kocTick)
 // A match the last KO plays in.
 function kocApplies(){ return !TESTMODE.active && !TUT.active && SETTINGS.mode !== 'ctf' && SETTINGS.mode !== 'boss' && !ONEFIGHT.active && !COBSFIGHT.active && !RACE.active; }
 // How many sides still have someone standing, leaving out `t` (checkWin's own count: an infected puppet is on its real side).
@@ -22007,18 +22014,24 @@ function kocSides(t){ const left = new Set(); for(const o of fighters) if(o !== 
 // Would t's next KO end the match? Their last stock (Bubble's pop, while she has it, loses none), and one side or none left after them.
 function kocFinal(t){ return !!t && !t.dead && t.stocks <= 1 && !(t.reform > 0) && !t._oneGhost && kocApplies() && kocSides(t) <= 1; }
 // A hit has set t's launch (applyHit; a Final Smash's let-go): the last KO starts on the blow when it will carry them out.
-function kocLaunch(t){ if(!KOC.on && kocFinal(t) && fsKoFlight(t)) kocStart(t, t.x, t.y, FS_SLOW.frames, t.idx); }
+function kocLaunch(t){ if(!KOC.on && kocFinal(t) && fsKoFlight(t, true)) kocStart(t, t.x, t.y, FS_SLOW.frames, t.idx); }
 // eliminate(): f's last stock is gone. When that ends the match and the blow did not already start it, the shorter one where they went out.
 function kocKo(f){
   if(!kocApplies() || kocSides(f) > 1 || (KOC.on && KOC.idx === f.idx)) return;
+  if(FS.slow > 0 && !(FS.freeze > 0) && !FS.game && FS.sf === f.idx){ kocMark(f); return; }   // a Final Smash's slow-mo on them (its looser cue called it): the last KO's from here, no new close-up
   kocStart(f, clamp(f.x, 0, WW), clamp(f.y, 0, WH), Math.round(FS_SLOW.frames*0.6), -1);
 }
-// The slow-mo (the Final Smash's, marked as the last KO's) and the sting, once.
+// The slow-mo (the Final Smash's, marked as the last KO's) and the sting.
 function kocStart(t, x, y, n, sf){
-  const first = !KOC.on;
-  KOC.on = true; KOC.idx = t.idx; KOC.t0 = hazardT; t._fsHitT = null;
-  FS.freeze = 0; FS.slow = FS.slowN = n; FS.slowAcc = 0; FS.sf = sf; FS.sx = x; FS.sy = y; FS.game = 1;
-  if(first){ try{ SFX.game(); }catch(e){} }
+  FS.freeze = 0; FS.slow = FS.slowN = n; FS.slowAcc = 0; FS.sf = sf; FS.sx = x; FS.sy = y;
+  kocMark(t);
+}
+// The slow-mo running is the last KO's (FS.game: 1, the one the sting played with; 2, a later one the same match), and the sting, once a match.
+function kocMark(t){
+  const sing = !KOC.sung;
+  KOC.on = true; KOC.idx = t.idx; KOC.t0 = hazardT; KOC.free = 0; KOC.sung = true; t._fsHitT = null;
+  FS.game = sing ? 1 : 2;
+  if(sing){ try{ SFX.game(); }catch(e){} }
 }
 // checkWin(), when the match is over: true while the last KO still plays (its slow-mo, then KOC_BEAT steps), so the stop waits for it.
 function kocHold(){
@@ -22031,15 +22044,16 @@ function kocHold(){
 // A wait after the stop longer than the usual 700 ms (the World Cup's banners): the hold comes out of it, down to 700 ms.
 function kocAfter(ms){ return KOC.done ? Math.max(Math.min(ms, 700), ms - KOC.heldMs) : ms; }
 // step(), first, every frame: a new match starts clean; the frames since the match was decided (and never stuck: past the most it may hold,
-// it lets go); a launch it saw coming that did not carry them out after all (something stopped them) stands it down.
+// it lets go); a launch it saw coming that did not carry them out after all (something stopped them: they landed, or their stun ran out
+// with them still in) stands it down -- the sting stays played (KOC.sung) until the next match.
 function kocTick(){
-  if(hazardT <= 0 || hazardT < KOC.lastT) kocReset();
+  if(hazardT <= 0 || hazardT < KOC.lastT){ kocReset(); KOC.sung = false; }
   KOC.lastT = hazardT;
   if(!KOC.on) return;
   if(KOC.over){ if(++KOC.ticks > KOC_HOLD_MAX + 60) kocReset(); return; }
   if(FS.slow > 0) return;
   const t = fighters[KOC.idx];
-  if(!t || (!t.dead && (t.onground || hazardT - KOC.t0 > 150))) kocReset();
+  if(!t || (!t.dead && (t.onground || (!(t.hitstun > 0) && ++KOC.free > 2) || hazardT - KOC.t0 > 150))) kocReset();   // (free: a frame or two past the stun, in case)
 }
 // draw(): the close-up, as a transform over the camera's own (zoom: the view's), kept inside what the camera shows (no edge of the
 // world comes into view). Notes the picture in FS_VIEW for the screen-space overlay.
@@ -44927,6 +44941,7 @@ let STEP_F = null;   // the fighter whose own frame is running in step(), or nul
 function hitStopFrames(dmg){ return Math.max(HITSTOP_MIN, Math.min(HITSTOP_MAX, Math.round(2 + (dmg - 3)*4/15))); }   // 3% -> 2, 10% -> 4, 18% -> 6
 function hitStopOff(){
   if(RACE.active) return true;
+  if(KOC.on && (FS.slow > 0 || KOC.over)) return true;   // THE LAST KO (its deciding hit too: kocLaunch runs first): a freeze would eat the slow-mo, and they would leave the close-up unseen
   for(const f of fighters) if(f._fs) return true;   // a Final Smash is playing
   return false;
 }
@@ -74611,7 +74626,7 @@ function serializeState(withGeo){
   if(FINX.length) s.fnx = finxNet();   // the finishers running (FINISHERS V2): what a guest draws of them
   if(FILE_RIDES.length) s.frd = FILE_RIDES.map(p=>[Math.round(p.x), Math.round(p.y), p.w, p.h, p.face, p.on ? 1 : 0, p.vx ? 1 : 0, p.owner ? p.owner.idx : -1]);   // the big files being ridden: where, which way, glowing, gliding, whose
   if(SMASHBALL) s.fsb = [Math.round(SMASHBALL.x), Math.round(SMASHBALL.y), Math.max(0, Math.round(SMASHBALL.hp/SMASHBALL.hpMax*100)), SMASHBALL.flash > 0 ? 1 : 0];   // the Smash Ball: where it is, how much is left, a hit's flash
-  if(FS.freeze > 0 || FS.slow > 0) s.fsx = [FS.freeze, FS.fz, FS.slow, FS.sf, Math.round(FS.sx), Math.round(FS.sy), FS.slowN, FS.game ? 1 : 0];   // a Final Smash's intro and slow-mo KO: frames left, whose, the close-up's point, the slow-mo's length (CATCH, THEN CINEMATIC); the last KO's (THE LAST KO)
+  if(FS.freeze > 0 || FS.slow > 0) s.fsx = [FS.freeze, FS.fz, FS.slow, FS.sf, Math.round(FS.sx), Math.round(FS.sy), FS.slowN, FS.game | 0];   // a Final Smash's intro and slow-mo KO: frames left, whose, the close-up's point, the slow-mo's length (CATCH, THEN CINEMATIC); the last KO's (THE LAST KO)
   if(SETTINGS.mode==='ctf') s.ctf = ctfNetOut();   // Capture the Flag: the map by its id and the live state (ctfNetOut)
   if(COS_KO_OUT.length) s.ko = COS_KO_OUT.splice(0);   // cosmetic KO bursts since the last snapshot, [x, y, which]: only on a KO
   if(IMPACT_OUT.length) s.imp = IMPACT_OUT.splice(0);  // impacts since the last snapshot (impact), at most IMPACT_FX.netMax: a client plays them
@@ -74733,7 +74748,7 @@ function applySnapshot(s){
     if(SMASHBALL) netGlide(SMASHBALL, wasB); }
   if(Array.isArray(s.fsx)){ FS.freeze = s.fsx[0] | 0; FS.fz = s.fsx[1]; FS.slow = s.fsx[2] | 0; FS.sf = s.fsx[3]; FS.sx = s.fsx[4]; FS.sy = s.fsx[5]; FS.slowN = s.fsx[6] | 0; FS.game = s.fsx[7] | 0; }   // the intro and the slow-mo, as the host has them (a client draws the close-up)
   else { FS.freeze = 0; FS.slow = 0; FS.game = 0; }
-  if(FS.game && FS.slow > 0){ if(!KOC.heard){ KOC.heard = true; try{ SFX.game(); }catch(e){} } } else KOC.heard = false;   // THE LAST KO: its sting, when the host's slow-mo first comes in
+  if(FS.game === 1 && FS.slow > 0){ if(!KOC.heard){ KOC.heard = true; try{ SFX.game(); }catch(e){} } } else KOC.heard = false;   // THE LAST KO: its sting, when the host's slow-mo with it first comes in (2: the host played it already this match)
   { const was = fresh ? [] : FILE_RIDES;   // the big files being ridden (THE BIG FILE), glided like everything else
     FILE_RIDES = Array.isArray(s.frd) ? s.frd.map(r=>{ const p = { x:r[0], y:r[1], w:r[2], h:r[3], face:r[4], on:!!r[5], vx:r[6] ? r[4] : 0, oi:r[7], fileRide:true };
       netGlide(p, was.find(q=>q.oi===p.oi) || null); return p; }) : []; }
