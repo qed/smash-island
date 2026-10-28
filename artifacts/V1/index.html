@@ -15219,7 +15219,7 @@ function scrolls(){ return isBig() || isBigFFA() || WW>W+2 || WH>H+2; }   // any
 // small in one corner. NET_VIEW is the client's own view: the host's scroll decision, the zoom, the camera it runs on
 // its own fighter, and the timing it uses to glide between snapshots. See clientFrame and test/net-feel.test.js.
 const NET_VIEW = { applied:null, at:0, gap:33, lastArrive:0, lerp:false, ft:0, tt:0, lastFrame:0, frameDt:1000/60,
-                   scroll:false, z:1, camReady:false, follow:null, bannerAt:0 };
+                   scroll:false, z:1, camReady:false, follow:null, bannerAt:0, slowG:false, slowP:false, hold:false };   // slowG, slowP, hold: the slow-mo's glide (applySnapshot)
 function isNetClient(){ return !!(window.NET && window.NET.role==='client'); }
 function viewScrolls(){ return isNetClient() ? NET_VIEW.scroll : scrolls(); }
 function viewZoom(){ return isNetClient() ? NET_VIEW.z : (scrolls() ? CAM_ZOOM : (SIDE_ROOM ? W/(WW + 2*SIDE_ROOM) : 1)); }   // (SIDE_ROOM: the stage and its air either side, centred)
@@ -22013,8 +22013,10 @@ function kocApplies(){ return !TESTMODE.active && !TUT.active && SETTINGS.mode !
 function kocSides(t){ const left = new Set(); for(const o of fighters) if(o !== t && !o.dead) left.add(o._infected > 0 ? o._origTeam : o.team); return left.size; }
 // Would t's next KO end the match? Their last stock (Bubble's pop, while she has it, loses none), and one side or none left after them.
 function kocFinal(t){ return !!t && !t.dead && t.stocks <= 1 && !(t.reform > 0) && !t._oneGhost && kocApplies() && kocSides(t) <= 1; }
-// A hit has set t's launch (applyHit; a Final Smash's let-go): the last KO starts on the blow when it will carry them out.
-function kocLaunch(t){ if(!KOC.on && kocFinal(t) && fsKoFlight(t, true)) kocStart(t, t.x, t.y, FS_SLOW.frames, t.idx); }
+// A hit has set t's launch (applyHit; a Final Smash's let-go): the last KO starts on the blow when it will carry them out. Not when the damage
+// cap is about to take them (applyHit's koCap, right after): that KO is on the spot, so it gets the shorter close-up there (eliminate: kocKo),
+// not the long one that followed a flight the cap then cut short.
+function kocLaunch(t){ if(!KOC.on && !(t.pct >= t.koCap) && kocFinal(t) && fsKoFlight(t, true)) kocStart(t, t.x, t.y, FS_SLOW.frames, t.idx); }
 // eliminate(): f's last stock is gone. When that ends the match and the blow did not already start it, the shorter one where they went out.
 function kocKo(f){
   if(!kocApplies() || kocSides(f) > 1 || (KOC.on && KOC.idx === f.idx)) return;
@@ -74682,8 +74684,14 @@ function netSnapshotArrived(N, s){
 const NET_TELEPORT = 240;   // px in one snapshot: a respawn or a carry. Cut to it rather than smear across the map.
 function netGlide(e, prev){
   e._tx = e.x; e._ty = e.y;
-  const near = !!prev && Math.abs(prev.x - e.x) + Math.abs(prev.y - e.y) < NET_TELEPORT;
-  e._fx = near ? prev.x : e.x; e._fy = near ? prev.y : e.y;
+  if(NET_VIEW.hold && prev && prev._fx !== undefined){ e._fx = prev._fx; e._fy = prev._fy; return; }   // the slow-mo, and no host step since the last snapshot: the glide runs on
+  // (the slow-mo: this guest's own fighter -- the one netPredict draws over, holding its offset on top -- glides on from where the glide had it,
+  // and as the slow-mo begins from where the host last had it: never from where the prediction drew it, or it glided back over the offset)
+  const own = NET_VIEW.slowG && !!prev && prev._gx !== undefined, k = own && !NET_VIEW.slowP && prev._tx !== undefined;
+  const px = !prev ? 0 : k ? prev._tx : own ? prev._gx : prev.x, py = !prev ? 0 : k ? prev._ty : own ? prev._gy : prev.y;
+  const lim = NET_TELEPORT + (NET_VIEW.slowG ? 2*(Math.abs(+e.vx || 0) + Math.abs(+e.vy || 0)) : 0);   // (the slow-mo: one slowed step of a launch -- 180 px -- is a flight to glide, not a teleport to cut to)
+  const near = !!prev && Math.abs(px - e.x) + Math.abs(py - e.y) < lim;
+  e._fx = near ? px : e.x; e._fy = near ? py : e.y;
 }
 function applySnapshot(s){
   if(!s) return;
@@ -74691,7 +74699,15 @@ function applySnapshot(s){
   const fresh = NET_VIEW.applied == null;   // the first snapshot of a match: nothing on screen yet to glide from
   const wasF = new Map(), wasP = new Map(), wasS = fresh ? [] : summons;
   if(!fresh){ for(const f of fighters) wasF.set(f.idx, f); for(const p of projectiles) if(p.i != null) wasP.set(p.i, p); }
-  NET_VIEW.ft = (fresh || !(s.t >= hazardT) || s.t - hazardT > 60) ? s.t : hazardT; NET_VIEW.tt = s.t;
+  // THE SLOW-MO (a Final Smash's slow-mo KO, the last KO's): the host runs one step in every 1/FS_SLOW.k frames but still sends a snapshot
+  // every frame, and each one restarted the glide -- so on a guest's screen everything stood still 3 frames and then jumped the whole step
+  // (135-160 px for the launched foe), and its own fighter, drawn where the host had it, stuttered and stepped back. Now a snapshot with no
+  // host step in it (the same s.t) leaves the glide running (hold), each step glides over the 1/FS_SLOW.k frames the host takes to the next
+  // (netInterpolate), and the guest's own fighter glides from where the glide had it, not from where its prediction drew it (netGlide): the
+  // smooth slow motion the host's own screen shows (fsSlowBlend).
+  { const sl = (q)=>!!q && Array.isArray(q.fsx) && (q.fsx[2] | 0) > 0 && !((q.fsx[0] | 0) > 0);   // (slowG: this snapshot is the slow-mo's; slowP: so was the last one)
+    NET_VIEW.slowG = !fresh && sl(s); NET_VIEW.slowP = NET_VIEW.slowG && sl(NET_VIEW.applied); NET_VIEW.hold = NET_VIEW.slowP && s.t === NET_VIEW.tt; }
+  if(!NET_VIEW.hold){ NET_VIEW.ft = (fresh || !(s.t >= hazardT) || s.t - hazardT > 60) ? s.t : hazardT; NET_VIEW.tt = s.t; }
   hazardT=s.t; WW=s.WW; WH=s.WH; SIDE_ROOM = +s.sr || 0;
   const st=STAGES.find(x=>x.id===s.stage); if(st) stage=st;
   SETTINGS.mode=s.mode;
@@ -74767,7 +74783,8 @@ function applySnapshot(s){
   // The glide is timed from the frame that first draws this snapshot, not from when it arrived: it lands between two
   // frames, and timed from the arrival a snapshot that landed just after a frame was already 1 frame "old" when first
   // drawn, jumped straight to its target, and sat there.
-  NET_VIEW.applied = s; NET_VIEW.at = performance.now(); NET_VIEW.lerp = !fresh;
+  NET_VIEW.applied = s; if(!NET_VIEW.hold) NET_VIEW.at = performance.now(); NET_VIEW.lerp = !fresh;   // (hold: the slow-mo's glide runs on from its own start)
+  NET_VIEW.slowG = NET_VIEW.slowP = NET_VIEW.hold = false;
   if(N && N.role==='client'){
     const card = !!s.rushWin;
     if(card !== !!NET_VIEW.rushCard){ NET_VIEW.rushCard = card; netClientRushCard(card); }
@@ -74810,7 +74827,8 @@ function netClientRushCard(on){
 // it is on screen to where the newest snapshot puts it, over one snapshot interval, reaching it a frame early so no
 // frame repeats. It never runs past the snapshot: nothing is guessed, and a hit is shown only when the host has it.
 function netInterpolate(now){
-  const a = NET_VIEW.lerp ? clamp((now - NET_VIEW.at + NET_VIEW.frameDt) / clamp(NET_VIEW.gap, NET_VIEW.frameDt, 100), 0, 1) : 1;
+  const gap = (FS.slow > 0 && !(FS.freeze > 0)) ? NET_VIEW.frameDt/FS_SLOW.k : clamp(NET_VIEW.gap, NET_VIEW.frameDt, 100);   // (the slow-mo: a step glides over the frames the host takes to the next: applySnapshot)
+  const a = NET_VIEW.lerp ? clamp((now - NET_VIEW.at + NET_VIEW.frameDt) / gap, 0, 1) : 1;
   hazardT = Math.round(NET_VIEW.ft + (NET_VIEW.tt - NET_VIEW.ft)*a);
   const at = (e)=>{ if(e._tx === undefined) return; e.x = e._fx + (e._tx - e._fx)*a; e.y = e._fy + (e._ty - e._fy)*a; };
   for(const f of fighters){ at(f); netSwing(f); }
@@ -74895,7 +74913,7 @@ function clientFrame(ticks){
 }
 // A new match (beginMatchNow, on host and client alike).
 function netViewReset(){
-  Object.assign(NET_VIEW, { applied:null, lerp:false, camReady:false, follow:null, z:1, scroll:false, lastArrive:0, gap:33, lastFrame:0, frameDt:1000/60 });
+  Object.assign(NET_VIEW, { applied:null, lerp:false, camReady:false, follow:null, z:1, scroll:false, lastArrive:0, gap:33, lastFrame:0, frameDt:1000/60, slowG:false, slowP:false, hold:false });
   if(window.NET) window.NET._geoKey = null;   // the host sends its world again with the first snapshot
 }
 // ONLINE INPUT, FRAME BY FRAME. The owner, 2026-10-23: "controls are glitchy" -- "wrong move comes out", "only for guests"; 2026-10-24: "fix server
@@ -75088,6 +75106,7 @@ function netPredict(now){
   const N = window.NET, S = NET_PRED;
   const me = N && N.role === 'client' ? fighters.find(f=>f.idx===N.myIdx) : null;
   if(!me || me.dead || !S.on || N._inT0 == null || me._tx === undefined){ S.ox = S.oy = 0; S.mode = 0; S.auth = null; return; }
+  me._gx = me.x; me._gy = me.y;   // where the glide has it, before anything here draws over it (the slow-mo's next glide starts here: netGlide)
   // the snapshot's own numbers, kept on its fighter before anything here draws over them
   if(!me._pa) me._pa = { x:me._tx, y:me._ty, vx:me.vx, vy:me.vy, g:!!me.onground, face:me.face, r:me.r, pr:me.pr };
   const A = me._pa, to = N.inFrame(now);
