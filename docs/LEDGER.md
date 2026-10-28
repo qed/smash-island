@@ -1132,17 +1132,23 @@ this week: N of 100 (the weekly limit)", no bonus line over the limit, and a tea
 Open for the owner: the sponge's "hard landing" line (`SPONGE.hard = 21`): no fighter's own jump and double jump bounces (highest Baseball 20.47
 px a frame), but a fast fall from the top of a double jump lands at 19.0-24.8 depending on the fall stat, so it bounces some fighters and not others.
 
-**Checks so far:** the main script passes `node --check`. The runtime checks (boot; all three matches CPU against CPU and with a scripted player
-to the end, the settings handed back, the pay and an unlock at 100; the week table in UTC, Los Angeles and Tokyo; the Daily fingerprints; the
-in-process pair with a guest's Eraser and the sponge floor; the event page's and result note's texts and buttons from jsdom) are written and
-waiting: on 2026-10-27/28 the machine sat at 100% CPU under another project's 10-worker job at normal priority, and an Idle-priority node got
-about 4 s of CPU in 15 hours, so not one finished. They are `ev_batch.ps1` (`ev_check.mjs`, `ev_weeks.mjs`, `ev_daily.mjs`, `ev_net.mjs`) in
-the session scratchpad's events/launch folder; the lead runs them when the CPU is free, and anything they find is fixed on this branch.
+**Checks (2026-10-28, after the fixes; jsdom and the in-process pair only, one node at a time at Idle):** `node --check` passes; boot (CPU
+FFA and Teams) clean. All three matches ran to the end CPU against CPU (50 s, 259 s, 122 s of game) and with a scripted player (32 s, 259 s,
+216 s), each paid through `eventPay` (win 10 + first win 10; a loss that fought 5; a quick loss 0; a team win after you were out paid as a
+loss), and every setting handed back exactly (mode, contestants, stocks, team split, items, stage, map size, Smash Balls). A clean unlock at
+100: 90 saved, a won duel paid 20 and the note read "Eraser is yours! Pick him on the select screen", with "2 NEW FIGHTERS: Pin, Eraser!", the
+title card "✓ Eraser is yours", his cell playable. Food only dropped only heals and marmalade; the sponge floor bounced hard landings on Sky
+Towers. The week table (this week and the next 8) is Eraser in UTC, Los Angeles and Tokyo; the launch flips at 2026-10-26 00:00 UTC. The Daily
+fingerprints: a save without the prize rows unchanged, a save with them now equal (also with One's chain on). The pair: a host who has not
+unlocked Eraser and a guest playing him, EVENT tag on the host's screen only, both screens agree (own fighters 0.4-0.5 px apart), 0 of 80
+CPU seats an event fighter over 40 rebuilds, no twist, run or food pool in a room, eventPlay and startEventMatch refused there. The checkers'
+scripts (`ck_flow.mjs`, `scr_check.mjs`, `online_pair.mjs`) and the builder's (`ev_batch.ps1`) passed bar test-setup artifacts (a profile
+overwritten in memory while the saved copy held other payouts, which the two-tab merge then counts; a One state that outlived its section).
 
 Left on purpose:
 - **Event rooms (step 14):** the host's week, match number and twist ride the lobby preview and the start that exist; the guest pays from the
-  final snapshot. The sponge floor's prediction is written for it; its pair check (`ev_net.mjs`, the twist set on both ends) is written but has
-  not run yet (see "Checks so far").
+  final snapshot. The sponge floor's prediction is ready for it: the in-process pair check with the twist set on both ends (2026-10-28) has
+  the guest's own fighter rise 172-173 px after a hard landing as on the host (471 px, a snap, when only the host has it), settled 0.0 px apart.
 - **Each kit job:** add `EVENT_INFO` (pronouns, blurb), its `EVENT_MATCHES` rows, any twist it needs into `EVENT_TWISTS_BUILT` with its art and
   its prediction, and its name in `ASSIST_LEAVES_AT_LAUNCH`.
 - **OWNER DECISION BEFORE SPONGY LANDS: how a kit joins the lap.** Today a kit joins by its event row alone (`eventLapOrder` counts the built
