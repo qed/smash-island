@@ -1249,6 +1249,8 @@ Open: the owner tries Firey, Bomby and a few buffed fighters by hand.
 - **2026-10-28, Toothpaste (the owner: "Break the root chain"; branch `g-tp-root`):** a foe her traps rooted can't be rooted by them again until about a second after it is free (trap into trap, then Squeeze Rocket, no longer works); her damage is unchanged.
 - **2026-10-28, Toothpaste (the owner: "Rocket launch 9 -> 8"; branch `g-tp-root`):** Squeeze Rocket's launch 9 -> 8 (it scored 44 of her 58 KOs, median KO 132%); damage 10% unchanged. Rocket KO on a recovering Normal CPU, mid-stage / ledge: 148 / 89 -> 161 / 99.
 
+**2026-10-28, Bow's tower drags you down (`g-bow-drag`):** the owner, after a World Cup where it hit Leafy twice: "make it so that the knockback only applies once it hits the floor, and it drags you down with it", "12% once, on the floor". The falling tower catches whoever it sweeps through and carries them down; the crash hits them and everyone it lands on, 12% and the 0.5 s stun, once a foe (one list for the whole finisher).
+
 ---
 
 ## Scoreboard
