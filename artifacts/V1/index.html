@@ -20151,6 +20151,7 @@ function buildFighters(){
     // fighter set on a ledge started inside it and dropped to the floor (the level creator review, 2026-10-26).
     if(onSpot) f.y = sy - f.r;
     f.stocks=SETTINGS.stocks;
+    if(EVENT_RUN && !netRoster && f.you && EVENT_RUN.m.youStocks > 0) f.stocks = EVENT_RUN.m.youStocks;   // the 3 vs 1: your 3 against their 2 each (EVENT_MATCHES)
     f.team = team;
     f.homeBase = (isBig() && bases.length) ? team % bases.length : null;
     // controller assignment for netcode
@@ -60619,13 +60620,19 @@ function eventsLaunched(now){ const first = eventLaunchWeek(); return first != n
 
 // ---------- EVENT FIGHTERS: THE EVENT MATCHES (event-fighters-phase1.md, section 2, "The three event matches" and "The 30 event matches") ----------
 // Each event fighter's three matches, as data for the event match runner (build step 7), which plays them; a kit job adds its fighter's row.
-//   n      1 the duel, 2 their team, 3 their challenge (eventPay's n)            kind   'duel', 'team' or 'challenge'
+//   n      1 the duel, 2 their team, 3 their challenge (eventPay's n)            kind   'duel', '3v1' or 'challenge' ('team' is kept for a side match)
 //   stage  a STAGES id, the same for everyone (where the design names none, the runner's job picked one: see the row)
 //   sides  one array per side: 'you' is the player's seat, any other name a CPU (a free-for-all is a side each). The event fighter's seat is
 //          placed by the runner, as the Daily places its foe; every other CPU is a fighter the player could already have (B4)
 //   items  'off', 'food' (food only), 'throw' (throwables only), 'lots', or 'on' (the usual)        smashBalls  fixed for everyone too
 //   twist  null, or the twist the match needs (build step 8, two a job): 'backdrop', 'lowgrav', 'sponge', 'pull', 'rain', 'gusts', 'windback',
-//          'fast'. A match whose twist is not built yet is not played without it.          stocks  2 for every event match
+//          'fast'. A match whose twist is not built yet is not played without it.          stocks  2 for every CPU in every event match
+//   youStocks  the player's own stocks where they differ (the 3 vs 1: 3); otherwise the player has `stocks` too
+// THE TEAM SLOT IS A 3 VS 1 for every event fighter (the owner, 2026-10-28: "event fighters should actually have 3v1, which would give you bonus
+// tokens to win it"; asked: "You alone vs 3", "Replace the team match", bonus "Both"): match 2 is YOU ALONE against the event fighter and two
+// of their team, kind '3v1', sides [['you'], [name, a, b]], 3 stocks for you and 2 for each of them, on the Teams arena (a side of more than
+// one is Teams), with the CPU skill the player picks. It pays more (EVENT_PAY_3V1: a win 20, its first win +30). A kit job writes its 3 vs 1
+// from the design's team match: the event fighter and the two CPUs of their own side there.
 // Fixed for everyone: all of the above. The player picks only their own fighter (any they own; One's bans apply) and the CPU skill.
 const EVENT_MATCHES = {
   // ERASER (build step 6). The canon teams, checked against the wiki's Eraser and Seven Wonders of Goiky pages (as fetched for an earlier job):
@@ -60634,9 +60641,11 @@ const EVENT_MATCHES = {
   // using Fries" -- so Fries and Puffball are his teammates there.
   'Eraser': [
     { n:1, name:'Take the Plunge', kind:'duel', stage:'goiky', sides:[['you'], ['Eraser']], items:'off', smashBalls:false, twist:null, stocks:2 },   // Goiky Field, with its real edges
-    // (The design names no stage for the team matches. A team match is Teams, which always plays on the Teams arena with the stage's sky and ground;
-    // Stone Pillars: no hazard and no twist the design did not ask for, and not the duel's Goiky Field -- the launch job's pick, 2026-10-27.)
-    { n:2, name:'Pen and Eraser', kind:'team', stage:'pillars', sides:[['you', 'Blocky'], ['Eraser', 'Pen']], items:'food', smashBalls:false, twist:null, stocks:2 },
+    // THE 3 VS 1 (2026-10-28; it was "Pen and Eraser", Eraser + Pen vs you + Blocky): you alone against Eraser, Pen and Blocky -- the same cast,
+    // with Blocky gone over to them. Named The Alliance: in BFDI Pen, Eraser and Blocky were the alliance. Food only stays ("gimme gimme food").
+    // It is Teams (sides 1 and 3), so it plays on the Teams arena with Stone Pillars' sky and ground, as the team match did: no hazard, and the
+    // arena's room lets one fighter split the three up and get to the food. (The design names no stage for the team matches: the launch job's pick.)
+    { n:2, name:'The Alliance', kind:'3v1', stage:'pillars', sides:[['you'], ['Eraser', 'Pen', 'Blocky']], items:'food', smashBalls:false, twist:null, stocks:2, youStocks:3 },
     { n:3, name:'The Trebuchet', kind:'challenge', stage:'skytower', sides:[['you'], ['Eraser'], ['Fries'], ['Puffball']], items:'on', smashBalls:true, twist:'sponge', stocks:2 },
   ],
 };
@@ -60648,6 +60657,8 @@ const EVENT_MATCHES = {
 //     is paid as a loss is: being knocked out never pays less because your side went on to win;
 //   * a LOSS pays 5, and only if you dealt at least 20% in all or lasted 60 seconds: a quick throwaway loss pays nothing;
 //   * the FIRST WIN on each of the event's three matches pays 10 more, once per match per event;
+//   * THE 3 VS 1 (match 2: you alone against three; the owner, 2026-10-28) pays more: a win 20 and its first win 30 more (EVENT_PAY_3V1,
+//     eventRate). A loss there pays as any loss does, and all of it counts toward the week's 100 and the unlock at 100;
 //   * no daily limit, and at most 100 a week per fighter. The week is the one the match STARTED in (eventOfWeek), so a match that
 //     crosses Monday midnight pays toward the event it started in;
 //   * 100 unlocks the fighter for good: the name joins the unlocked list (unlockFighter), which only ever grows. Tokens past 100
@@ -60667,6 +60678,9 @@ const EVENT_MATCHES = {
 // A COMPUTER THAT CANNOT SAVE has every event fighter open once events have launched (openProfile, isUnlocked: question 6 and "Hide until
 // launch"), so by the time any match pays there its fighters are open; it still pays, into memory.
 const EVENT_PAY = { win:10, loss:5, first:10, dealt:20, secs:60, week:100, unlock:100 };
+const EVENT_PAY_3V1 = { win:20, first:30 };
+// What a win and a first win pay on a match (an EVENT_MATCHES row): the 3 vs 1's own, or the usual.
+function eventRate(m){ return (m && m.kind === '3v1') ? EVENT_PAY_3V1 : EVENT_PAY; }
 const EVENT_PAY_LINE = /^w\d{1,9}:[^:]{1,32}:(?:f[1-3]|[a-z0-9]{1,14}\.\d{1,9})$/;
 // Every fighter on the laps: the only names a total can unlock (a save's other names are kept, and open nothing).
 function eventNames(){ const s = new Set(); for(const row of EVENT_LAPS) for(const n of row.order) s.add(n); return s; }
@@ -60733,18 +60747,18 @@ function eventPay(m, now){
   const e = eventState(t), name = ev.name, pre = 'w' + ev.week + ':' + name + ':';
   const win = !!m.won && !!m.alive;
   const fought = (+m.dealt || 0) >= EVENT_PAY.dealt || (+m.secs || 0) >= EVENT_PAY.secs;
-  const had = eventWeekSums(e.pay)[pre.slice(0, -1)] | 0;
-  const want = win ? EVENT_PAY.win : fought ? EVENT_PAY.loss : 0;
+  const had = eventWeekSums(e.pay)[pre.slice(0, -1)] | 0, rate = eventRate(eventMatchOf(name, n));   // (the 3 vs 1 pays its own)
+  const want = win ? rate.win : fought ? EVENT_PAY.loss : 0;
   const base = Math.min(want, Math.max(0, EVENT_PAY.week - had));
   const first = win && !_own(e.pay, pre + 'f' + n);
-  const bonus = first ? Math.min(EVENT_PAY.first, Math.max(0, EVENT_PAY.week - had - base)) : 0;
+  const bonus = first ? Math.min(rate.first, Math.max(0, EVENT_PAY.week - had - base)) : 0;
   if(base) e.pay[pre + eventPayId()] = base;
   if(first) e.pay[pre + 'f' + n] = bonus;   // written even when the limit leaves it 0: it was this match's first win all the same
   e.tok[name] = (e.tok[name] | 0) + base + bonus;
   const fresh = eventUnlocks();
   PENDING_UNLOCKS.push(...fresh);
   if(base || first) saveProfile();
-  return { name, week:ev.week, n, base, first, bonus, paid:base + bonus, capped:base + bonus < want + (first ? EVENT_PAY.first : 0),
+  return { name, week:ev.week, n, base, first, bonus, paid:base + bonus, capped:base + bonus < want + (first ? rate.first : 0),
            weekTotal:had + base + bonus, total:e.tok[name], unlocked:fresh.indexOf(name) >= 0 };
 }
 
@@ -60752,8 +60766,8 @@ function eventPay(m, now){
 // The week's three matches, played as EVENT_MATCHES writes them. On the event page (THE SCREENS, below) a match's Play goes to the select screen
 // with the match held (EVENT_PICK): the player picks a fighter (any they own; One's bans apply: startMatch's oneCoercePick) and the CPU skill
 // (Easy counts the same), and Play starts it (startEventMatch). FIXED FOR EVERYONE: the stage, the lineup and sides, the items, the Smash Balls
-// and the twist, 2 stocks, the Normal map size. A side of more than one makes it a Teams match (the Teams arena, the stage giving its sky and
-// ground); otherwise it is a free-for-all, a side each.
+// and the twist, 2 stocks (3 for you in the 3 vs 1: youStocks, set in buildFighters), the Normal map size. A side of more than one makes it a
+// Teams match (the Teams arena, the stage giving its sky and ground; the 3 vs 1 is 1v3); otherwise it is a free-for-all, a side each.
 // THE LOAN: the player's own settings are lent for the match and all handed back (returnEventLoan) -- mode, contestants, stocks, the team split,
 // items, stage, map size and Smash Balls -- when the player leaves the match or its result screen (go), not at the last KO, so the result screen
 // still reads the match it shows and its Rematch plays the same event match again. The fighter picked is the player's own pick, and stays.
@@ -60919,17 +60933,24 @@ function drawSpongeFloor(gy){
 function eventTokens(name){ return eventNorm(PROFILE && PROFILE.event).tok[name] | 0; }
 function eventWeekTotal(name, week){ return eventWeekSums(eventNorm(PROFILE && PROFILE.event).pay)['w' + week + ':' + name] | 0; }
 function eventFirstDone(name, week, n){ return _own(eventNorm(PROFILE && PROFILE.event).pay, 'w' + week + ':' + name + ':f' + n); }
-function eventKindWords(m, His){ return m.kind === 'duel' ? 'Duel' : m.kind === 'team' ? His + ' team' : His + ' challenge'; }
+function eventKindWords(m, His){ return m.kind === 'duel' ? 'Duel' : m.kind === '3v1' ? His + ' team, 3 vs 1' : m.kind === 'team' ? His + ' team' : His + ' challenge'; }
+// A match's own pay where it is not the usual (the 3 vs 1): "Win: 20 tokens · first win this week: +30" (done: the bonus taken). '' otherwise.
+function eventPayWords(m, done){
+  const r = eventRate(m); if(r === EVENT_PAY) return '';
+  return 'Win: ' + r.win + ' tokens · ' + (done ? '✓ first win this week: bonus taken' : 'first win this week: +' + r.first);
+}
 // "Take the Plunge · Goiky Field · you vs Eraser · 2 stocks · no items" (the design's strip).
 function eventSetupWords(m, withName){
   const st = STAGES.find(x=>x.id === m.stage), mine = m.sides.find(sd=>sd.indexOf('you') >= 0) || ['you'];
   const others = m.sides.filter(sd=>sd !== mine), teams = m.sides.some(sd=>sd.length > 1);
   const and = a=>a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
-  const lineup = teams ? mine.join(' + ') + ' vs ' + others.map(sd=>sd.join(' + ')).join(' vs ') : 'you vs ' + and(others.map(sd=>sd[0]));
+  const lone = mine.length === 1 && others.length === 1;   // you alone against one side (the 3 vs 1): "you vs Eraser, Pen and Blocky"
+  const lineup = lone ? 'you vs ' + and(others[0]) : teams ? mine.join(' + ') + ' vs ' + others.map(sd=>sd.join(' + ')).join(' vs ') : 'you vs ' + and(others.map(sd=>sd[0]));
+  const stocks = m.youStocks ? m.youStocks + ' stocks for you, ' + (m.stocks || 2) + ' each for them' : (m.stocks || 2) + ' stocks';
   const items = ({ off:'no items', food:'food only', on:'items on', lots:'lots of items', throw:'throwables only' })[m.items] || 'items on';
   const tk = eventTwistOf(m), tw = tk && tk !== 'food' && EVENT_TWIST_WORDS[tk];   // (the duel's real edges too; food only is the items word already)
   const where = st ? (teams ? 'Teams arena (' + st.name + ' sky)' : st.name) : '';   // (a Teams match always plays on the Teams arena, in the stage's sky: isBig)
-  return [withName ? m.name : null, where, lineup, (m.stocks || 2) + ' stocks', items + (m.items !== 'off' && m.smashBalls ? ' · Smash Balls' : ''), tw ? tw.short : null]
+  return [withName ? m.name : null, where, lineup, stocks, items + (m.items !== 'off' && m.smashBalls ? ' · Smash Balls' : ''), tw ? tw.short : null]
     .filter(Boolean).join(' · ');
 }
 function eventEndsWords(ev){
@@ -60939,8 +60960,10 @@ function eventEndsWords(ev){
   return 'ends within the hour';
 }
 function eventRulesWords(name, info, own){
-  return 'A win pays ' + EVENT_PAY.win + ' ' + name + ' tokens if you are still in at the end. A loss pays ' + EVENT_PAY.loss + ' if you dealt ' + EVENT_PAY.dealt +
-    '% or lasted a minute. Your first win on each match pays ' + EVENT_PAY.first + ' more. Up to ' + EVENT_PAY.week + ' a week' +
+  const t = (EVENT_MATCHES[name] || []).find(m=>eventRate(m) !== EVENT_PAY), r = t && eventRate(t);   // the 3 vs 1, which pays more
+  return 'A win pays ' + EVENT_PAY.win + ' ' + name + ' tokens if you are still in at the end' + (t ? ', and ' + r.win + ' on ' + t.name + ', where you face three alone' : '') +
+    '. A loss pays ' + EVENT_PAY.loss + ' if you dealt ' + EVENT_PAY.dealt +
+    '% or lasted a minute. Your first win on each match pays ' + EVENT_PAY.first + ' more' + (t ? ' (' + r.first + ' on ' + t.name + ')' : '') + '. Up to ' + EVENT_PAY.week + ' a week' +
     (own ? '.' : '; ' + EVENT_PAY.unlock + ' makes ' + info.him + ' yours for good.');
 }
 // A locked event fighter's cell on the select screen (unlockHint).
@@ -61013,8 +61036,8 @@ function buildEventPage(){
     c.appendChild(eventEl('div', 'evcname', m.name));
     c.appendChild(eventEl('div', 'evcsetup', eventSetupWords(m, false)));
     if(tw) c.appendChild(eventEl('div', 'evtwist', tw.words));
-    const done = eventFirstDone(ev.name, ev.week, m.n);
-    c.appendChild(eventEl('div', 'evfirst' + (done ? '' : ' todo'), done ? '✓ First win this week: bonus taken' : 'First win this week: +' + EVENT_PAY.first + ' bonus'));
+    const done = eventFirstDone(ev.name, ev.week, m.n), pw = eventPayWords(m, done);   // (the 3 vs 1 shows its own pay: "Win: 20 tokens · first win this week: +30")
+    c.appendChild(eventEl('div', 'evfirst' + (done ? '' : ' todo'), pw || (done ? '✓ First win this week: bonus taken' : 'First win this week: +' + EVENT_PAY.first + ' bonus')));
     const b = eventEl('button', 'btn sm', 'Play ▶'); b.type = 'button'; b.dataset.n = String(m.n);
     if(!eventMatchReady(m)){ b.disabled = true; b.title = 'Not ready yet'; } else b.onclick = ()=>eventPlay(m.n);
     c.appendChild(b); cards.appendChild(c);
@@ -61047,7 +61070,8 @@ function syncEventSelect(){
     if(sb) sb.textContent = 'Play ▶';
     const nm = document.getElementById('evStripName'), ln = document.getElementById('evStripLine');
     if(nm) nm.textContent = m.name + ' · ' + eventKindWords(m, eventCap(eventInfo(P.name).his));
-    if(ln) ln.textContent = eventSetupWords(m, false) + ' · Wins on Easy count the same';
+    const pw = eventPayWords(m, eventFirstDone(P.name, (eventThisWeek() || {}).week, m.n));
+    if(ln) ln.textContent = eventSetupWords(m, false) + (pw ? ' · ' + pw : '') + ' · Wins on Easy count the same';
     const seg = document.getElementById('segEvAI');
     if(seg) seg.querySelectorAll('button').forEach(btn=>{
       btn.classList.toggle('on', +btn.dataset.v === AI_LEVEL);
@@ -61062,13 +61086,15 @@ function syncEventSelect(){
     try{ updateSummary(); }catch(e){}
   }
 }
-// THE RESULT NOTE: "+10 Eraser tokens · first win on Take the Plunge +10 · 70/100", the unlock when it comes, and the "Event ▸" button beside
+// THE RESULT NOTE: "+10 Eraser tokens · first win on Take the Plunge +10 · 70/100" (the 3 vs 1: "+20 Eraser tokens for beating all three ·
+// first win on The Alliance +30 · 50/100"), the unlock when it comes, and the "Event ▸" button beside
 // Rematch (which plays the same event match again).
 function eventNoteText(R){
   const p = R.pay, name = R.name;
   if(!p) return 'No ' + name + ' tokens: this match did not count';
   const row = ROSTER.find(r=>r.event && r.name === name), parts = [];
-  if(p.base) parts.push('+' + p.base + ' ' + name + ' tokens');
+  const m3 = eventRate(eventMatchOf(name, R.n)) !== EVENT_PAY;   // the 3 vs 1: say what the bigger win was for
+  if(p.base) parts.push('+' + p.base + ' ' + name + ' tokens' + (m3 && R.won && R.alive ? ' for beating all three' : ''));
   if(p.first && p.bonus) parts.push('first win on ' + R.title + ' +' + p.bonus);   // (a first win over the week's limit pays no bonus: the limit line says so)
   if(!p.paid) parts.push(p.capped ? 'this week’s ' + EVENT_PAY.week + ' are all won'
     : (R.won && !R.alive ? 'your side won after you were out, which pays as a loss: none this time' : 'no tokens this time') +
