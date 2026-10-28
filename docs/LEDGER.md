@@ -1121,6 +1121,17 @@ stays until Spongy", "Yes, remove it now" (his assist), and yes to keeping Steve
   already never take one; a guest's own Eraser plays in any host's room.
 - **The Daily:** `dailyMatchup` and `oneDailyFoe` leave `r.prize` rows out (O24's note).
 
+**Fixes after the two checkers (2026-10-28):** the event note and "Event ▸" are hidden whenever the result screen is left (`go` ->
+`hideEventNote`), so Boss Rush, One's and Steve Cobs's fights, RUNNING! and a guest's Boss Rush never show an old note; the event pick keeps its
+labels after the CPU-skill click or any `buildBoard` (`cupPickSync` ends by re-applying `syncEventSelect` while `EVENT_PICK` is held); the arrow
+keys pick a fighter and Enter presses Play on the event pick (`selGridKey`, as in the World Cup pick); an erased CPU's stand-in is never a
+Vault fighter (`eventStandIn`: `oneDailyFoe` redrawn with the next seed, `oneDailyFoe` itself untouched so the Daily keeps its draws); the
+lobby EVENT tag's tooltip uses the fighter's pronouns (`eventInfo`); wording: the team match reads "Teams arena (Stone Pillars sky)", the
+duel's "real edges" shows in the strip, "Wins on Easy count the same", the rules in short sentences (no "makes him yours" once he is), "Won
+this week: N of 100 (the weekly limit)", no bonus line over the limit, and a team win after you were out says it pays as a loss.
+Open for the owner: the sponge's "hard landing" line (`SPONGE.hard = 21`): no fighter's own jump and double jump bounces (highest Baseball 20.47
+px a frame), but a fast fall from the top of a double jump lands at 19.0-24.8 depending on the fall stat, so it bounces some fighters and not others.
+
 **Checks so far:** the main script passes `node --check`. The runtime checks (boot; all three matches CPU against CPU and with a scripted player
 to the end, the settings handed back, the pay and an unlock at 100; the week table in UTC, Los Angeles and Tokyo; the Daily fingerprints; the
 in-process pair with a guest's Eraser and the sponge floor; the event page's and result note's texts and buttons from jsdom) are written and
@@ -1130,10 +1141,18 @@ the session scratchpad's events/launch folder; the lead runs them when the CPU i
 
 Left on purpose:
 - **Event rooms (step 14):** the host's week, match number and twist ride the lobby preview and the start that exist; the guest pays from the
-  final snapshot. The sponge floor's prediction is ready for it (checked with the twist set on both ends in the pair harness).
-- **Each kit job:** its fighter joins the lap by its event row alone (nothing to add to the calendar); add `EVENT_INFO` (pronouns, blurb), its
-  `EVENT_MATCHES` rows, any twist it needs into `EVENT_TWISTS_BUILT` with its art and its prediction, and its name in `ASSIST_LEAVES_AT_LAUNCH`.
-  A kit landing re-deals the weeks of its build (the lap's length changes): every computer on that build agrees.
+  final snapshot. The sponge floor's prediction is written for it; its pair check (`ev_net.mjs`, the twist set on both ends) is written but has
+  not run yet (see "Checks so far").
+- **Each kit job:** add `EVENT_INFO` (pronouns, blurb), its `EVENT_MATCHES` rows, any twist it needs into `EVENT_TWISTS_BUILT` with its art and
+  its prediction, and its name in `ASSIST_LEAVES_AT_LAUNCH`.
+- **OWNER DECISION BEFORE SPONGY LANDS: how a kit joins the lap.** Today a kit joins by its event row alone (`eventLapOrder` counts the built
+  kits from the launch), so the build that adds Spongy RE-DEALS EVERY WEEK SINCE THE LAUNCH: in a sandbox with a scratch Spongy row, Wed
+  2026-11-04 is Eraser before the row and Spongy after it, so the week in progress changes fighter the moment that build goes live (Eraser's week
+  cut short, "Next week" changed), and 8-Ball re-deals again (11-12 goes from Eraser to 8-Ball). That breaks the design's "nobody's week is cut
+  short" and "announced at least two weeks ahead". Every computer on one build still agrees. One rule that still reads only the date and the
+  build: each kit joins on a Monday of its own (at least two weeks after its build goes live), and the lap at a week runs through the kits
+  joined by then, counted from that join. With Eraser alone every rule gives him every week, so nothing changes until then. (The code comment
+  at THE LAPS said only a match crossing that Monday could see a re-deal; that was wrong and now says this.)
 - **Not built:** the twists no Eraser match uses (throwables only, lots, backdrops, pull, rain, gusts, wind back, fast forward, low gravity
   anywhere); a match needing one shows its Play greyed. No changelog line was added (the push job's call).
 

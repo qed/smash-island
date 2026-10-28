@@ -15200,7 +15200,7 @@ function go(id){
   paused=false; { const pc=document.getElementById('pauseCard'); if(pc) pc.style.display='none'; }   // no screen is reached paused
   try{ stopReplay(); }catch(e){}   // a looping replay must not survive leaving the result screen
   try{ stopMoonScene(); }catch(e){}   // ...and neither may the Moon's own animation loop
-  if(id!=='result'){ try{ clearShopNotes(); clearNetResults(); }catch(e){} }   // the result screen's player card, quest line and players' cards are that match's
+  if(id!=='result'){ try{ clearShopNotes(); clearNetResults(); }catch(e){} try{ hideEventNote(); }catch(e){} }   // the result screen's player card, quest line, players' cards and event note are that match's
   if(id==='title'){ try{ refreshDailyCard(); }catch(e){} try{ titleContestants(); }catch(e){} }
   try{ releaseMappedKeys(); }catch(e){}   // a new screen starts with no mapped key held
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
@@ -17381,6 +17381,9 @@ function cupPickSync(){
   set('selHowTo', mates ? 'Click a teammate (or use the arrow keys), then '+(pt.mates.length+1 < pt.size-1 ? 'Next teammate.' : 'Kick Off.')+' Esc: back.'
                   : onCup ? 'Click your fighter (or use the arrow keys), then Pick teammates. Esc: back.' : 'Click a fighter, pick a stadium, then start.');
   if(onCup) set('matchSummary', 'World Cup · '+pt.size+'v'+pt.size);
+  // An event match's pick keeps its own labels ("Play ▶", "Event · Take the Plunge", its how-to), whatever relabelled the screen: updateSummary
+  // ends here, and the CPU skill's click and every buildBoard call it. (syncEventSelect, with a match held, never calls updateSummary back.)
+  if(!onCup && !mates){ try{ if(EVENT_PICK) syncEventSelect(); }catch(e){} }
 }
 // Each seat of the pick is shown, not just relabelled: the screen back at its top with the title flashing, the pick on the grid in view,
 // and the keyboard on the button that goes on (Enter: the next seat). The owner, 2026-10-18: "when i select a fighter, i cant go to select
@@ -17404,13 +17407,13 @@ function cupPickReveal(){
   sel.classList.remove('cupstep'); void sel.offsetWidth; sel.classList.add('cupstep');   // the flash plays again on every seat
   clearTimeout(cupPickReveal._t); cupPickReveal._t = setTimeout(()=>sel.classList.remove('cupstep'), 1000);
 }
-// THE GRID FROM THE KEYBOARD, in the World Cup pick: the arrow keys move the pick cell by cell (locked fighters and the ones already on
-// your team are passed over), Enter presses the Start button -- Pick teammates, Next teammate or Kick Off -- and Esc is Back (see the
-// popovers' Escape handler). A focused button keeps its own Enter (a click), and a text box keeps every key.
+// THE GRID FROM THE KEYBOARD, in the World Cup pick and an event match's pick: the arrow keys move the pick cell by cell (locked fighters
+// and the ones already on your team are passed over), Enter presses the Start button -- Pick teammates, Next teammate, Kick Off, or the event's
+// Play -- and Esc is Back (see the popovers' Escape handler). A focused button keeps its own Enter (a click), and a text box keeps every key.
 function selGridKey(e){
   const sel = document.getElementById('select');
   if(running || !sel || !sel.classList.contains('active')) return;
-  if(!(PENDING_TOURNEY && PENDING_TOURNEY.pickMates)) return;   // the cup pick only: the normal fighter select keeps the keys it always had
+  if(!((PENDING_TOURNEY && PENDING_TOURNEY.pickMates) || EVENT_PICK)) return;   // the cup pick and the event pick only: the normal fighter select keeps the keys it always had
   // A HELD Enter is one press. Its auto-repeats would otherwise press the focused button again and again (each seat puts the focus on it)
   // and run the whole pick through to the hub with fighters nobody chose. The window hears the key before the button's own Enter, so
   // preventDefault stops that native click too.
@@ -58832,9 +58835,12 @@ function rosterCount(){ return ROSTER.filter(r=>!eventLocked(r)).length; }
 // round, so each fighter comes back every 14 weeks once all 14 are built. UNTIL THEN THE LAP RUNS ONLY THROUGH THE KITS THAT ARE BUILT (the owner,
 // 2026-10-26: "Eraser stays until Spongy"): a row's order is read with every name that has no event row in ROSTER left out (eventLapOrder), so with
 // Eraser alone every week is his, and each kit that lands joins the lap in the row's order (Eraser, Spongy, 8-Ball, ...). It is still worked out
-// from the date and this build alone, so every computer on one build sees the same week. (A kit landing re-deals the weeks of the build it lands
-// in, the past ones too; only a match that crosses the Monday of that very push could see it, and it pays toward its start week's fighter as that
-// build reads it.) EVENT_LAPS is only ever added to: a row names the lap it starts at (`from`, 1 is
+// from the date and this build alone, so every computer on one build sees the same week. NOT SETTLED (O28, before Spongy lands): read this way, a
+// kit landing RE-DEALS EVERY WEEK SINCE THE LAUNCH (the lap's length changes), so the week in progress can change fighter the moment that build
+// goes live -- Eraser's week cut short, its "Next week" changed, a past week's fighter changed -- against "nobody's week is cut short" below.
+// One rule that still reads only the date and the build: each kit joins on a Monday of its own, at least two weeks after its build goes live, and
+// the lap at a week runs through the kits that have joined by then, counted from that join. The owner picks before the Spongy job; with Eraser
+// alone, every rule gives him every week. EVENT_LAPS is only ever added to: a row names the lap it starts at (`from`, 1 is
 // the first) and the order from then on, and holds until the next row's lap. A later phase joins that way, at the start of a lap,
 // so nobody's week is cut short and every week already played keeps its fighter. A new lap is announced at least two weeks ahead:
 // its row's first lap starts at least two weeks after the build that adds it goes live. A row is never edited or removed.
@@ -59104,11 +59110,18 @@ function eventLineup(){
       if(nm === 'you') continue;
       let r = ROSTER.find(x=>x.name === nm);
       if(!r) continue;
-      if(r.name !== R.name && oneAiBanned(r)) r = oneDailyFoe(r, (R.week * 7 + all.length) >>> 0);   // (One's erased: a stand-in, the same for that week)
+      if(r.name !== R.name && oneAiBanned(r)) r = eventStandIn(r, (R.week * 7 + all.length) >>> 0);   // (One's erased: a stand-in, the same for that week)
       all.push({ ...r, you:false }); teamOf.push(t);
     }
   });
   return { all, teamOf };
+}
+// A stand-in for a CPU One has erased: oneDailyFoe's rule, the same for everyone that week, but never a Vault fighter (section 2: an event CPU is
+// never anything secret), which the Daily's foe may be. A Vault draw is drawn again with the next seed (oneDailyFoe itself is left as it is, so
+// the Daily keeps its draws); Lightning if every draw is one.
+function eventStandIn(r, seed){
+  for(let k = 0; k < 64; k++){ const s = oneDailyFoe(r, (seed + Math.imul(k, 0x9E3779B1)) >>> 0); if(s && !VAULT_FIGHTERS.has(s.name)) return s; }
+  return oneLightning() || oneDailyFoe(r, seed);
 }
 // The last KO of an event match (checkWin): pay it (alive = still in at the end; dealt = the % you dealt; secs = how long you lasted, to the KO
 // that put you out or to the end).
@@ -59192,8 +59205,9 @@ function eventSetupWords(m, withName){
   const and = a=>a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
   const lineup = teams ? mine.join(' + ') + ' vs ' + others.map(sd=>sd.join(' + ')).join(' vs ') : 'you vs ' + and(others.map(sd=>sd[0]));
   const items = ({ off:'no items', food:'food only', on:'items on', lots:'lots of items', throw:'throwables only' })[m.items] || 'items on';
-  const tw = m.twist && EVENT_TWIST_WORDS[m.twist];
-  return [withName ? m.name : null, st ? st.name : '', lineup, (m.stocks || 2) + ' stocks', items + (m.items !== 'off' && m.smashBalls ? ' · Smash Balls' : ''), tw ? tw.short : null]
+  const tk = eventTwistOf(m), tw = tk && tk !== 'food' && EVENT_TWIST_WORDS[tk];   // (the duel's real edges too; food only is the items word already)
+  const where = st ? (teams ? 'Teams arena (' + st.name + ' sky)' : st.name) : '';   // (a Teams match always plays on the Teams arena, in the stage's sky: isBig)
+  return [withName ? m.name : null, where, lineup, (m.stocks || 2) + ' stocks', items + (m.items !== 'off' && m.smashBalls ? ' · Smash Balls' : ''), tw ? tw.short : null]
     .filter(Boolean).join(' · ');
 }
 function eventEndsWords(ev){
@@ -59202,10 +59216,10 @@ function eventEndsWords(ev){
   if(h > 1.5) return 'ends in ' + Math.round(h) + ' hours';
   return 'ends within the hour';
 }
-function eventRulesWords(name, info){
-  return 'A win pays ' + EVENT_PAY.win + ' ' + name + ' tokens if you are still in at the end, a loss ' + EVENT_PAY.loss + ' if you dealt ' + EVENT_PAY.dealt +
-    '% or lasted a minute, and your first win on each match pays ' + EVENT_PAY.first + ' more. Up to ' + EVENT_PAY.week + ' a week; ' + EVENT_PAY.unlock +
-    ' makes ' + info.him + ' yours for good.';
+function eventRulesWords(name, info, own){
+  return 'A win pays ' + EVENT_PAY.win + ' ' + name + ' tokens if you are still in at the end. A loss pays ' + EVENT_PAY.loss + ' if you dealt ' + EVENT_PAY.dealt +
+    '% or lasted a minute. Your first win on each match pays ' + EVENT_PAY.first + ' more. Up to ' + EVENT_PAY.week + ' a week' +
+    (own ? '.' : '; ' + EVENT_PAY.unlock + ' makes ' + info.him + ' yours for good.');
 }
 // A locked event fighter's cell on the select screen (unlockHint).
 function eventHint(name){
@@ -59266,8 +59280,8 @@ function buildEventPage(){
   const bar = eventEl('div', 'evbar'), fill = eventEl('i'); fill.style.width = Math.min(100, tok*100/EVENT_PAY.unlock) + '%'; bar.appendChild(fill); tk.appendChild(bar);
   tk.appendChild(eventEl('div', 'evtokline', own ? '✓ ' + ev.name + ' is yours: pick ' + info.him + ' on the select screen. The matches stay open all week.'
     : Math.min(tok, EVENT_PAY.unlock) + ' of ' + EVENT_PAY.unlock + ' ' + ev.name + ' tokens · ' + EVENT_PAY.unlock + ' unlocks ' + info.him + ' for good'));
-  tk.appendChild(eventEl('div', 'evweek', 'This week: ' + wk + ' of ' + EVENT_PAY.week + ' tokens (the most one week pays)' + (wk >= EVENT_PAY.week ? ' · all won' : '')));
-  tk.appendChild(eventEl('div', 'evrules', eventRulesWords(ev.name, info)));
+  tk.appendChild(eventEl('div', 'evweek', 'Won this week: ' + wk + ' of ' + EVENT_PAY.week + ' (the weekly limit)' + (wk >= EVENT_PAY.week ? ' · all won' : '')));
+  tk.appendChild(eventEl('div', 'evrules', eventRulesWords(ev.name, info, own)));
   body.appendChild(tk);
   const cards = eventEl('div', 'evcards'); cards.id = 'evCards';
   for(const m of (EVENT_MATCHES[ev.name] || [])){
@@ -59311,7 +59325,7 @@ function syncEventSelect(){
     if(sb) sb.textContent = 'Play ▶';
     const nm = document.getElementById('evStripName'), ln = document.getElementById('evStripLine');
     if(nm) nm.textContent = m.name + ' · ' + eventKindWords(m, eventCap(eventInfo(P.name).his));
-    if(ln) ln.textContent = eventSetupWords(m, false) + ' · Easy counts the same';
+    if(ln) ln.textContent = eventSetupWords(m, false) + ' · Wins on Easy count the same';
     const seg = document.getElementById('segEvAI');
     if(seg) seg.querySelectorAll('button').forEach(btn=>{
       btn.classList.toggle('on', +btn.dataset.v === AI_LEVEL);
@@ -59333,13 +59347,23 @@ function eventNoteText(R){
   if(!p) return 'No ' + name + ' tokens: this match did not count';
   const row = ROSTER.find(r=>r.event && r.name === name), parts = [];
   if(p.base) parts.push('+' + p.base + ' ' + name + ' tokens');
-  if(p.first) parts.push('first win on ' + R.title + (p.bonus ? ' +' + p.bonus : ''));
-  if(!p.paid) parts.push(p.capped ? 'this week’s ' + EVENT_PAY.week + ' are all won' : 'no tokens this time (a loss pays ' + EVENT_PAY.loss + ' when you deal ' + EVENT_PAY.dealt + '% or last a minute)');
+  if(p.first && p.bonus) parts.push('first win on ' + R.title + ' +' + p.bonus);   // (a first win over the week's limit pays no bonus: the limit line says so)
+  if(!p.paid) parts.push(p.capped ? 'this week’s ' + EVENT_PAY.week + ' are all won'
+    : (R.won && !R.alive ? 'your side won after you were out, which pays as a loss: none this time' : 'no tokens this time') +
+      ' (a loss pays ' + EVENT_PAY.loss + ' when you deal ' + EVENT_PAY.dealt + '% or last a minute)');
   else if(p.capped) parts.push('this week’s limit reached');
   if(p.unlocked) parts.push(name + ' is yours! Pick ' + eventInfo(name).him + ' on the select screen');
   else if(row && isUnlocked(row)) parts.push('✓ ' + name + ' is yours');
   else parts.push(Math.min(p.total, EVENT_PAY.unlock) + '/' + EVENT_PAY.unlock);
   return parts.join(' · ');
+}
+// Leaving the result screen (go) takes the note and the button away: the result screens that showResult does not draw (Boss Rush, One's and
+// Steve Cobs's fights, RUNNING!, an online guest's Boss Rush) reach the screen by go('result') and never call showEventNote, so a note left up
+// would stand on them. (EVENT_RESULT itself is cleared by the next match: beginMatchNow.)
+function hideEventNote(){
+  const el = document.getElementById('eventNote'), btn = document.getElementById('resultEvent');
+  if(el){ el.textContent = ''; el.style.display = 'none'; }
+  if(btn) btn.style.display = 'none';
 }
 function showEventNote(){
   const el = document.getElementById('eventNote'), btn = document.getElementById('resultEvent'), R = EVENT_RESULT;
@@ -75217,7 +75241,7 @@ window.NET = {
     // THE EVENT TAG (event-fighters-phase1.md, "Online"): a pick that is an event fighter this computer has not unlocked -- the player brought their
     // own (each player brings their own unlocks; the host plays it all the same).
     { const er = ROSTER.find(r=>r.name===p.fighter); if(er && er.event && !isUnlocked(er)){ const t=document.createElement('span'); t.className='lptag lpev'; t.textContent='EVENT';
-      t.title=p.fighter+' is an event fighter: this player has unlocked them. You can win them in their event week.'; d.appendChild(t); } }
+      const ei=eventInfo(p.fighter); t.title=p.fighter+' is an event fighter: this player has unlocked '+ei.him+'. You can win '+ei.him+' in '+ei.his+' event week.'; d.appendChild(t); } }
     if(p.isHost){ const h=document.createElement('span'); h.className='lptag'; h.textContent='HOST'; d.appendChild(h); }
     return d;
   },
