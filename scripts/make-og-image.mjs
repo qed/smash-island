@@ -11,7 +11,7 @@
 //
 // WHO MAY STAND IN THE LINEUP. The picture is public and is the first thing a stranger sees, so it follows the same rule as
 // every other public surface of the game: it never shows a secret. That is the Vault's fighters (a code opens them, so they
-// are not on the board at the start), Steve Cobs's prize (OJ, Suitcase, Cabby), and One and Steve Cobs themselves. Every name
+// are not on the board at the start), Steve Cobs's prize (prize fighters A, B and C), and One and Steve Cobs themselves. Every name
 // in LINEUP is an ordinary fighter; test/share-and-previews.test.js re-checks the list against the game's own VAULT and
 // prize tables on every run, so adding a fighter here that the game keeps behind a code fails the suite rather than the site.
 

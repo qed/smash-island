@@ -41,6 +41,9 @@ import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from 
 import { basename, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
+// Steve Cobs's three prize fighters are secret: a File: title that spells one (typed on the command line) is written to the
+// manifest and printed as {PZ_A}, {PZ_B} or {PZ_C} (scripts/prize-names.mjs reads the names from the game at run time).
+import { hidePz } from './prize-names.mjs';
 
 // --wiki=<fandom subdomain> fetches from another show's wiki: the Inanimate Insanity DLC's renders come from
 // inanimateinsanity.fandom.com (AnimationEpic's designs), on the same footing and with the same checks.
@@ -315,15 +318,15 @@ for (const spec of names) {
   const n = spec.split("=")[0];
   const r = await fetchOne(spec);
   results.push(r);
-  console.log(
+  console.log(hidePz(
     r.ok
       ? `  OK   ${n.padEnd(14)} ${r.file.padEnd(18)} ${r.width}x${r.height}  facing ${String(r.facing).padStart(6)} ${r.flip ? '(flip)' : ''}  ink ${r.inkPixels}${r.cleanedHaloPixels ? `  halo-cleaned ${r.cleanedHaloPixels}` : ''}`
       : `  SKIP ${n.padEnd(14)} ${r.reason}`
-  );
+  ));
 }
 
 const prev = existsSync(MANIFEST) ? JSON.parse(readFileSync(MANIFEST, 'utf8')) : {};
-for (const r of results) prev[r.name] = r;
+for (const r of results) prev[r.name] = JSON.parse(hidePz(JSON.stringify(r)));
 writeFileSync(MANIFEST, JSON.stringify(prev, null, 2));
 
 const ok = results.filter(r => r.ok).length;
