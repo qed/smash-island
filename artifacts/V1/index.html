@@ -20367,9 +20367,14 @@ function ffaRespawn(f){
   f._windup=null;   // never carry a pending circle across a respawn (see startWindup)
   const mine = spawnZones.find(z=>z.kind==="claim" && z.owner===f.idx);
   if(mine) return { x: mine.x+mine.w/2, y: mine.y-40 };
-  // otherwise use whichever safe island is on the side they were nearer to (spread players out)
+  // Otherwise a safe island -- never the one by the line they just went out of (ONE FALL, ONE STOCK, the check 2026-10-29). The two islands
+  // are perches over open air at the far edges, about 300 px in from the side KO lines, and this put them on the island of the side they were
+  // nearer: one still walking the way they went out walked off its outer edge and out of the same line within a second (Sky Towers, Grand
+  // Incinerator). So the island on the other side; and when they are holding left or right as they go out, the island that key walks them in
+  // from (toward the stage, not off the outer edge into the line beside it). Teams and Capture the Flag keep their own spawns (not big FFA).
   const safes = spawnZones.filter(z=>z.kind==="safe");
-  const pick = (f.x < WW/2) ? safes[0] : safes[safes.length-1];
+  const I = f._lastInput, dir = I ? (I.left ? -1 : 0) + (I.right ? 1 : 0) : 0;
+  const pick = dir < 0 ? safes[safes.length-1] : dir > 0 ? safes[0] : (f.x < WW/2 ? safes[safes.length-1] : safes[0]);
   return pick ? { x: pick.x+pick.w/2, y: pick.y-40 } : { x:WW/2, y:-40 };
 }
 
@@ -27791,7 +27796,9 @@ function psbPrivate(s, tgt){
     if(f.dead) continue;
     const inL = f.x < shw + f.r*0.5, inR = f.x > WW - shw - f.r*0.5;
     if(!inL && !inR) continue;
+    const n0 = f._koN||0;
     if(f.invuln <= 0) applyHit(f, bossDmg()*0.6, (inL ? 1 : -1)*10, -9, null, { bossAtk:id, volley:true });
+    if(koSince(f, n0)) continue;   // (KO'd by it: back at the respawn point, not pushed to the wall -- ONE FALL, ONE STOCK)
     f.x = inL ? shw + f.r + 4 : WW - shw - f.r - 4; f.vx = (inL ? 1 : -1)*4;
   }
   impact(shw, gy, { shake:14, dust:2, debris:6, scar:true }); impact(WW - shw, gy, { shake:0, dust:2, debris:6, scar:true });
@@ -43995,21 +44002,25 @@ function step(){
           if(bodyTouch(f, t, 6)){ got = t; break; } }
         const bs = got ? null : nearestSummon(f, f.x + f.face*f.r*0.7, f.y, 26, function(o){ return (o.x - f.x)*f.face >= -4; });
         if(got && !(got.countering>0 || got.reflecting>0)){
+          const n0 = got._koN||0;
           applyHit(got, 4, f.face*1.5, -1.5, f);                                   // the tackle
+          if(koSince(got, n0)){ f.vx = f.onground ? 0 : f.vx*0.3; f._gotcha = null; }   // ONE FALL, ONE STOCK: the tackle KO'd them (the damage cap) -- they came back elsewhere, and the hold set them down beside Bot (off a ledge: a second stock)
+          else {
           got.x = f.x + f.face*(f.r + got.r)*0.7; got.vx = 0; got.vy = 0;
           got.rooted = Math.max(got.rooted||0, GOTCHA_HOLD); stunFx(got, GOTCHA_HOLD);
           got.spCd = Math.max(got.spCd||0, GOTCHA_LOCK);                           // "cannot use specials for 2 s"
-          g.phase = 'hold'; g.t = GOTCHA_HOLD; g.tgt = got.idx; f._holdT = hazardT + GOTCHA_HOLD;
+          g.phase = 'hold'; g.t = GOTCHA_HOLD; g.tgt = got.idx; g.n0 = n0; f._holdT = hazardT + GOTCHA_HOLD;
           f.vx = 0; f.rooted = Math.max(f.rooted||0, GOTCHA_HOLD);
           f.atkCd = Math.max(f.atkCd||0, GOTCHA_HOLD); f.smCd = Math.max(f.smCd||0, GOTCHA_HOLD); f.spCd = Math.max(f.spCd||0, GOTCHA_HOLD);   // busy holding
           shake(3); for(let i=0;i<8;i++) puff(got.x, got.y - 8, i%2 ? '#f0fff3' : '#9ad7a3', 4);
+          }
         } else if(got || bs || --g.t <= 0 || (f.onground && !landable(f.x + f.vx + f.face*f.r*0.5, feetY(f) - 2))){
           if(got) applyHit(got, 4, f.face*1.5, -1.5, f);                           // it answers the tackle (its counter or reflect)
           if(bs){ damageSummon(f, bs, f.x, f.y, 4); for(let i=0;i<6;i++) puff(bs.x, bs.y - 8, '#f0fff3', 4); }   // a boss takes the 4%; it is too big to hold
           f.vx = f.onground ? 0 : f.vx*0.3; f.rooted = Math.max(f.rooted||0, 16); f._gotcha = null;   // a whiff leaves them stuck a beat
         } else if(hazardT%2===0) puff(f.x - f.face*10, f.y + (Math.random()*16-8), '#f0fff3', 3);
       } else {                                                                     // the hold
-        if(!foe || foe.dead || --g.t <= 0){ f._gotcha = null; f._holdT = 0; }
+        if(!foe || koSince(foe, g.n0 != null ? g.n0 : (foe._koN||0)) || --g.t <= 0){ f._gotcha = null; f._holdT = 0; }   // (KO'd while held, by anyone: let go -- ONE FALL, ONE STOCK)
         else { f.vx = 0; foe.vx = 0; foe.x = f.x + f.face*(f.r + foe.r)*0.7; }
       }
     }
@@ -46836,7 +46847,7 @@ const DOWNSPECIALS = {
   // ---- final 12 down-specials ----
   switch(f){ f.flash=10; // Liy — HURL: fling the grabbed enemy, or toggle lights off
     let target=null;
-    if(f._grabbed!=null && f._grabTimer>0){ const g=fighters[f._grabbed]; if(g&&!g.dead) target=g; }
+    if(f._grabbed!=null && f._grabTimer>0){ const g=fighters[f._grabbed]; if(g && !koSince(g, f._grabbedN != null ? f._grabbedN : (g._koN||0))) target=g; }   // (not one KO'd since the grab: the hurl hit them wherever they came back -- ONE FALL, ONE STOCK)
     if(target){
       // hurl them hard in the faced direction (canon: hurl toward her boat to KO)
       applyHit(target, 13, f.face*15, -10, f); target.rooted=0;
@@ -46914,9 +46925,9 @@ const DOWNSPECIALS = {
     if(!t && summons.length){ const bs = nearestSummon(f, f.x+f.face*f.r, f.y, 34, function(o){ return Math.sign(o.x-f.x||f.face)===f.face; });
       if(bs){ f._atkSeq=(f._atkSeq||0)+1; damageSummon(f, bs, f.x, f.y, 8); for(let i=0;i<6;i++) puff(bs.x, bs.y, '#7c2028', 4); return; } }   // a boss will not go on a spike: the fling's 8 lands where it stands (fighters only before: 0 in Boss Rush)
     if(!t){ f.hitstun=Math.max(f.hitstun||0,18); f._selfStun=18; puff(f.x+f.face*f.r, f.y, '#a5acac', 4); return; }   // a miss: 18 frames of endlag
-    const falls = t._falls||0; let n=0;
+    const n0 = t._koN||0; let n=0;
     const carry = function(){
-      if(f.dead || t.dead || (t._falls||0)!==falls) return;
+      if(f.dead || koSince(t, n0)) return;   // (any KO of theirs ends the ride: a lost stock, a Bubble reform, a trip home -- ONE FALL, ONE STOCK)
       if(++n <= 12){   // about 36 frames on the spike, at a run
         f.vx = f.face*6; t.x = f.x + f.face*(f.r + 14); t.y = f.y - 6; t.vx = f.vx; t.vy = 0; t.onground=false; stunFx(t, 6);
         startWindup(f, 3, carry, 'rgba(0,0,0,0)'); if(f._windup) f._windup.b3 = 'grab';
@@ -47122,7 +47133,9 @@ const DOWNSPECIALS = {
     if(!tgt && summons.length){ const bs = nearestSummon(f, hx, f.y, 26, function(o){ return (o.x - f.x)*f.face >= -4; });
       if(bs){ damageSummon(f, bs, f.x, f.y, 8); for(let i=0;i<6;i++) puff(bs.x, bs.y-8, i%2 ? '#f7b6c8' : '#a8d8ae', 4); return; } }   // a boss is too big to hug: the squeeze's 8 lands, the hold needs a body (fighters only before: 0 in Boss Rush)
     if(!tgt){ f.rooted = Math.max(f.rooted||0, 14); for(let i=0;i<4;i++) puff(hx, f.y-6, '#a8d8ae', 3); return; }
+    const n0 = tgt._koN||0;
     applyHit(tgt, 8, f.face*1.5, -1.5, f);
+    if(koSince(tgt, n0)) return;   // ONE FALL, ONE STOCK: the squeeze KO'd them (the damage cap) -- they came back elsewhere; the hug set them back down in front of her, rooted (off a ledge: a second stock)
     tgt.x = f.x + f.face*(f.r + tgt.r)*0.7; tgt.vx = 0; tgt.vy = 0;
     tgt.rooted = Math.max(tgt.rooted||0, 40); stunFx(tgt, 40);   // held: no moving and no acting until she sets them down
     for(let i=0;i<6;i++) puff(tgt.x, tgt.y-8, i%2 ? '#f7b6c8' : '#a8d8ae', 4); },
@@ -47607,7 +47620,7 @@ function fxCorkStep(o, f){
     const sh = fxCorkShape(o);
     fxArt(f, 'cork', sh, { color:'#c8955a' });
     hitTurrets(f, o.x, o.y - C.h*0.5, C.w*0.5, C.dmg);
-    for(const t of fxTargets(f, o, sh)){ fxHit(f, t, o, C.dmg, o.face, -1); fxPin(t, o, C.pin); }
+    for(const t of fxTargets(f, o, sh)){ if(fxHit(f, t, o, C.dmg, o.face, -1)) fxPin(t, o, C.pin); }   // (not one it KO'd at the damage cap: ONE FALL, ONE STOCK)
     fxBossShape(f, o, 0, sh, C.dmg);
     shake(4); for(let i=0;i<8;i++) puff(o.x + (i - 3.5)*6, o.y - 2, '#c8955a', 4);
     return;
@@ -47873,7 +47886,8 @@ function fxSlapStep(o, f){
     }
     fxArt(f, 'grab', fxCircle(hx, f.y, S.grab), { style:'grab', color:got ? '#ffffff' : '#9aa7b0', world:false, fade:6 });
     if(got){
-      fxHit(f, got, o, S.dmg, 0, 0); got.hitstun = 0; got._stunFx = 0;   // the opening slap; from here a stun on either means someone else hit them
+      if(!fxHit(f, got, o, S.dmg, 0, 0)){ o.ph = 'done'; o.dt = hazardT; return; }   // ONE FALL, ONE STOCK: the opening slap KO'd them (the damage cap) -- no fight puts the fighter who came back beside her
+      got.hitstun = 0; got._stunFx = 0;   // the opening slap; from here a stun on either means someone else hit them
       // The fight is even from its first frame: both may slap at once (her opener is not one of her slaps, and does not start her 8-frame wait),
       // and a key either was already holding is not a press -- a slap is a NEW press, for both (it was 8 slaps to her 7 at best: the review).
       o.tgt = got.idx; o.ph = 'fight'; o.ft = hazardT; o.op = hazardT; o.ck = fxKeyBits(f); o.tk = fxKeyBits(got); fxSlapPlace(o, f, got); fxLock(got, 2);
@@ -58252,11 +58266,14 @@ function doSpecial(f){
         if(bs){ damageSummon(f, bs, f.x, f.y, 6); (f._dashSummonHits = f._dashSummonHits || new Set()).add(bs); for(let i=0;i<8;i++) puff(bs.x,bs.y,'#fff29a',4); } }   // the blitz lands its 6 on a boss in its path (and the dash that carries it does not sweep the same boss for 12 more: a fighter's grace stops that); the grab and the hurl need a body (fighters only before: 0 in Boss Rush)
       if(grabbed){
         // pull them back toward Liy and mark them for the hurl (down-special finishes it)
+        const n0 = grabbed._koN||0;
         applyHit(grabbed, 6, -f.face*4, -3, f);            // small pull-in hit
+        if(!koSince(grabbed, n0)){   // ONE FALL, ONE STOCK: not if it KO'd them (the damage cap) -- the yank and the hurl took the fighter who came back
         grabbed.x += (f.x - grabbed.x)*0.5;                 // yank them to her
         grabbed.vx = -f.face*3; grabbed.rooted=Math.max(grabbed.rooted||0,6);   // root 10 -> 6
-        f._grabbed = grabbed.idx; f._grabTimer = 30;        // window to hurl (trimmed)
+        f._grabbed = grabbed.idx; f._grabTimer = 30; f._grabbedN = n0;   // window to hurl (trimmed); the KO stamp the hurl checks
         for(let i=0;i<8;i++) puff(grabbed.x,grabbed.y,'#fff29a',4);
+        }
       } else {
         for(let i=0;i<6;i++) puff(f.x+f.face*20,f.y,'#fff29a',4); 
       }
@@ -58557,13 +58574,14 @@ function doSpecial(f){
       if(!tgt && summons.length){ const bs = nearestSummon(f, f.x, f.y, f.r+80, function(o){ return Math.sign(o.x-f.x||f.face)===f.face && Math.abs(o.y-f.y) < 60+o.r; });
         if(bs){ damageSummon(f, bs, f.x, f.y, 8); for(let i=0;i<10;i++) puff(bs.x, bs.y, '#3a86f0', 5); f.spCd=96; break; } }   // a boss will not go inside him: the 2 and the 6 land as one hit where it stands (fighters only before: 0 in Boss Rush)
       if(!tgt){ f.spCd=44; break; }
-      const held=tgt;
+      const held=tgt, n0=held._koN||0;
       applyHit(held, 2, 0, 0, f);
+      if(koSince(held, n0)){ f.spCd=96; break; }   // ONE FALL, ONE STOCK: the swallow KO'd them (the damage cap) -- they came back elsewhere, not inside him (the spit 45 frames on put them back beside him, launched)
       held.x=f.x+f.face*8; held.y=f.y; held.vx=0; held.vy=0;
       held.rooted=Math.max(held.rooted||0,48); stunFx(held, 48);
       f.vx=0; f.rooted=Math.max(f.rooted||0,48); f.atkCd=Math.max(f.atkCd||0,46);
       startWindup(f, 45, function(){
-        if(held.dead) return;
+        if(koSince(held, n0)) return;   // KO'd while inside him (by anyone): they came back elsewhere, and the spit does not fetch them back
         held.rooted=0; held.x=f.x+f.face*(f.r+6);
         applyHit(held, 6, f.face*10, -6, f);
         for(let i=0;i<10;i++) puff(held.x, held.y, '#3a86f0', 5); }, '#3a86f0');
@@ -60801,6 +60819,14 @@ function dropInFlightMoves(f){
   f._rubHang = 0; f._rubHung = false; f._flipT = 0; f._wallKickT = 0; f._wallKicked = false;   // ...nor Eraser's hang, backflip or wall kick (EVENT FIGHTERS: ERASER)
   f._tpRoot = false; f._tpRootImm = 0;   // ...nor Toothpaste's root and its window (ROOT CHAIN BROKEN)
   for(const g of fighters) if(g._g6track && g._g6track.idx === f.idx) g._g6track = null;   // ...and a MeTag's lock on a fighter ends with that fighter's stock
+  // ONE FALL, ONE STOCK (the check, 2026-10-29). Every respawn gives back what a landing gives: both jumps and the up-special (a fighter who
+  // spent them on a failed recovery came back with none, so a jump or an Up+C pressed on the way back in did nothing), the wall jump and the
+  // air dash. And nothing of the old stock holds them: a root or a freeze still running (Goo's swallow, a frozen Final Smash), or a Final
+  // Smash under way -- its catch list pinned them back where it was and hit them again after the KO, and its lock held them.
+  f.jumps = 2; f._usedAirSpecial = false; f._wallUsed = null; f._clingT = 0; f._ff = false; f._airDash = false; f._hyperT = 0;
+  f.rooted = 0; f.frozen = 0;
+  if(f._fsLock) fsLockOff(f, true);
+  for(const g of fighters) if(g._fs && g._fs.caught && g._fs.caught.indexOf(f.idx) >= 0) g._fs.caught = g._fs.caught.filter((i)=>i !== f.idx);
 }
 function eliminate(f){
   f._koN = (f._koN||0) + 1;   // a KO stamp, whatever this KO turns out to be: a hit that holds its target after it asks (ONE FALL, ONE STOCK: koSince)
