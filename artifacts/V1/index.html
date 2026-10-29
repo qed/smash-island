@@ -64149,10 +64149,11 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   if(L.space && !want && brainSpace(f, t, inp, B, L, inReach, dist, toward, now)){ brainEdges(f, inp, 70); return; }   // EXPERT: a swing it saw, waited out
   if(want){ if((dist > want + 40 || ady > 60) && adx > 6) brainWalk(f, inp, toward, sp, t.x); }   // a shooter keeping off stays at its range
   // HOLD THE SPOT (the circling fixes, F2): a foe out of reach only up or down, already within its reach across, is not walked right under or
-  // drifted right over -- it comes down in front of it. In the air, still carrying on toward a foe it is nearly on, it holds the arrow away a
-  // moment (8 frames, at most once in 28: one input, a person's fade back), since nothing slows a fighter in the air and it sailed on past.
+  // drifted right over -- it comes down in front of it. In the air, still carrying on toward a foe it is nearly on that is out of its reach
+  // up or down (one level with it is just fought), it holds the arrow away a moment (8 frames, at most once in 28: one input, a person's
+  // fade back), since nothing slows a fighter in the air and it sailed on past.
   else if(!inReach && adx > 6 && !(ady >= 44 && adx < brainReach(f) + (t.r || 24)*0.5)) brainWalk(f, inp, toward, sp, t.x);
-  if(!f.onground && ady < 150 && adx < brainReach(f) + 40 && f.vx*toward > 1.5 && !(B.fadeT > now - 20)) B.fadeT = now + 8;
+  if(!f.onground && ady >= 44 && ady < 150 && adx < brainReach(f) + 40 && f.vx*toward > 1.5 && !(B.fadeT > now - 20)) B.fadeT = now + 8;
   if(!f.onground && B.fadeT > now){ inp.left = toward > 0; inp.right = toward < 0; }
   if(dy < -50 && adx < 120 && f.onground && Math.random() < 0.03) inp.jump = true;   // up at a foe just above
   brainEdges(f, inp, 70);
@@ -64375,6 +64376,7 @@ function brainEdgeNear(x){
 // the foe stands on the stage again the fight takes over.
 const EG_MAX = 600;   // frames it keeps a guard up for one trip (a flyer hanging out there for good is left alone after that)
 const EG_HOLD = 6;    // frames it stands still, faced the way it pressed, once a press's keys are let go of
+const EG_AIR_HOLD = 6;   // frames, at least, between turning its arrow one way in the air and turning it back the other way (it lets go meanwhile)
 function brainGuard(f, ts, t, inp, B, L, targets, sp){
   if(!FLOOR_SEGS || ts._isBoss || isBig()){ B.eg = null; return false; }
   const now = hazardT, off = overDrop(t);   // (t: where it guesses the foe is -- seen a moment late, led a little)
@@ -64408,12 +64410,19 @@ function brainGuard(f, ts, t, inp, B, L, targets, sp){
   if(!f.onground){
     // IN THE AIR (back over the stage from a trip of its own, a hop): it comes down on the stage first and walks to the ledge on its feet,
     // where brainLedge keeps it on. Heading for the edge or past it, it steers back in; else it lets itself drop. (Drifting out to the spot,
-    // it overshot the edge with no jump left -- Box, Snowball, Loser and Puffball fell that way.)
+    // it overshot the edge with no jump left -- Box, Snowball, Loser and Puffball fell that way.) Where it comes down is a guess from how it
+    // drifts now, and one frame's push moves that guess a long way when it is high up: it drifts on toward the spot only past a band at
+    // least that wide, and lets itself drop inside it, so the arrow is not flipped every frame (after a respawn Bow's flipped 51 times in a
+    // second); and it lets go a moment (EG_AIR_HOLD) before it turns the arrow back the other way, as a person would.
     const dyL = Math.max(0, groundY() - (f.y + f.r)), tL = (Math.sqrt(Math.max(0, (f.vy || 0)*(f.vy || 0) + 2*GRAV*dyL)) - (f.vy || 0))/GRAV;
-    const lx = f.x + (f.vx || 0)*Math.max(0, tL);
-    if((lx - e.x)*out > -(f.r + 30)){ inp.left = out > 0; inp.right = out < 0; }
-    else if((lx - spot)*e.inl > 30){ inp.left = out < 0; inp.right = out > 0; }   // (coming down well in from the spot: on toward it)
-    else { inp.left = false; inp.right = false; }
+    const lx = f.x + (f.vx || 0)*Math.max(0, tL), li = (lx - e.x)*e.inl;   // (li: how far in from the edge it comes down, carrying on as it is)
+    const band = Math.max(30, MOVE*(f.st || STAT_ONE).air*Math.max(0, tL));   // (how far a frame's push moves that)
+    let a = 0;
+    if(li < f.r + 30) a = e.inl;   // (heading for the edge or past it: back in)
+    else if(li > Math.max((spot - e.x)*e.inl, f.r + 30) + band) a = out;   // (coming down well in from the spot: on toward it)
+    if(a && E.airA === -a && now < E.airT + EG_AIR_HOLD && li >= 0) a = 0;   // (just turned the other way: not back yet, unless it would come down off the stage)
+    if(a && a !== E.airA){ E.airA = a; E.airT = now; }
+    inp.left = a < 0; inp.right = a > 0;
     return true;
   }
   if(!there) brainWalk(f, inp, gx < 0 ? -1 : 1, sp, spot);
