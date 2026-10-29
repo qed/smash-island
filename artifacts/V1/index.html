@@ -2543,6 +2543,90 @@ function syncPrizeRoster(announce){
 // ---- Steve Cobs's prize: end ----
 
 // ---------- STADIUMS ----------
+// ---- MOON CAVES: groundwork (M0) ----------------------------------------------------------------------------------------------
+// The round map with gravity toward its middle (reports/moon-caves-design.md). Nothing here runs on any other map: MCAVE is null
+// outside a Moon Caves match, every hook asks it first, and mcEnter/mcExit return at once. It is built in steps, each hidden behind
+// MCAVE_DEV (off for everyone; localStorage 'bfsi:mcavedev' = '1' turns it on in one browser) until the release step.
+// Positions (x, y) are real between frames. On this map velocities are stored local to the body: vx along the ground (clockwise
+// positive), vy toward the centre (positive down). Each moving thing's own update runs inside its CHART: the disc laid flat round it,
+// height = radius (y' = cy - r) and left/right = distance along the ground at its own radius (x' = cx + rho*(th - phi)). Its down is
+// +y there, every ring piece is a box and every spoke face a wall, so the engine's code runs unchanged. th is clockwise from 12 o'clock.
+const MCAVE_DEV = (function(){ try{ return localStorage.getItem('bfsi:mcavedev') === '1'; }catch(e){ return false; } })();
+let MCAVE = null;   // { on:true, cx, cy, ... } in a Moon Caves match; null everywhere else (only its builder sets it; setupWorld clears it)
+let camAng = 0;     // the view's turn on Moon Caves, radians (0 everywhere else)
+const MC_TAU = 2*Math.PI;
+function mcWrap(a){ a = (a + Math.PI) % MC_TAU; if(a < 0) a += MC_TAU; return a - Math.PI; }   // to -PI..PI
+function mcTh(x, y){ return Math.atan2(x - MCAVE.cx, -(y - MCAVE.cy)); }   // a real point's angle, clockwise from 12 o'clock
+function mcRad(x, y){ return Math.hypot(x - MCAVE.cx, y - MCAVE.cy); }
+// The open frame (one at a time: frames never nest). Its owner E sits at (cx, cy - rho) in its own chart.
+const MC_FR = { open:false, depth:0, E:null, serial:0, phi:0, rho:1, th0:0, n:0, o:[], wx:[], wy:[], cx:[], cy:[], wp:null };
+const MC_PT = { x:0, y:0 }, MC_LISTS = [];
+// A real point into the open frame's chart, and back (written into `out`: a frame allocates nothing per object).
+function mcToChart(x, y, out){ const M = MCAVE, F = MC_FR; out.x = M.cx + F.rho*mcWrap(mcTh(x, y) - F.phi); out.y = M.cy - mcRad(x, y); return out; }
+function mcFromChart(x, y, out){ const M = MCAVE, F = MC_FR, th = F.phi + (x - M.cx)/F.rho, r = M.cy - y; out.x = M.cx + r*Math.sin(th); out.y = M.cy - r*Math.cos(th); return out; }
+// A ring piece {id, r0, r1, a0, a1, oneway} as boxes in the open frame's chart, pushed onto `out`: one box, or two where it crosses the
+// far point half a lap from E. Its face angles ride along: the wall-jump rule counts a face, not a piece (mcWallId).
+function mcPieceBoxes(seg, out){
+  const M = MCAVE, rho = MC_FR.rho, a = mcWrap(seg.a0 - MC_FR.phi), span = seg.a1 - seg.a0, y = M.cy - seg.r1, h = seg.r1 - seg.r0, solid = !seg.oneway;
+  if(a + span <= Math.PI){ out.push({ x:M.cx + rho*a, y:y, w:rho*span, h:h, solid:solid, mcId:seg.id, mcA0:seg.a0, mcA1:seg.a1 }); return out; }
+  const s1 = Math.PI - a;   // up to the far point, then the rest from the other side
+  out.push({ x:M.cx + rho*a, y:y, w:rho*s1, h:h, solid:solid, mcId:seg.id, mcA0:seg.a0, mcA1:NaN });
+  out.push({ x:M.cx - rho*Math.PI, y:y, w:rho*(span - s1), h:h, solid:solid, mcId:seg.id, mcA0:NaN, mcA1:seg.a1 });
+  return out;
+}
+// A wall's id on this map: its side and its face's angle (a face's place in a chart moves as the chart does). step() and the guest's
+// prediction (netPredRun) use it in place of the face's x.
+function mcWallId(side, p, left){ return side + ':m' + Math.round((left ? p.mcA0 : p.mcA1)*1e4); }
+// The objects charted with a frame: read and written by the code inside it. (Kit-made platforms -- FX_PLATS, FILE_RIDES, SPONGY_PLATS --
+// are charted with the terrain on this map.)
+function mcLists(){ const L = MC_LISTS; L[0] = fighters; L[1] = projectiles; L[2] = summons; L[3] = items; L[4] = FINX; L[5] = tendrils; L[6] = CP_BITS; return L; }
+function mcSwapIn(o){
+  const F = MC_FR;
+  if(!o || o._mcS === F.serial || typeof o.x !== 'number') return;
+  o._mcS = F.serial;   // the entry stamp: anything in the lists at exit without it was made during the frame
+  const i = F.n++;
+  F.o[i] = o; F.wx[i] = o.x; F.wy[i] = o.y;
+  mcToChart(o.x, o.y, MC_PT); o.x = MC_PT.x; o.y = MC_PT.y;
+  F.cx[i] = o.x; F.cy[i] = o.y;
+}
+// E's frame in: every listed object to E's chart, and the terrain to E's window of pieces. Out (always, from a finally): every object
+// back to real coordinates -- untouched ones bit for bit, moved ones from the chart, ones put at a real point (mcPlace) left be.
+function mcEnter(E){
+  const M = MCAVE; if(!M || !M.on) return;
+  const F = MC_FR;
+  if(F.open){ F.depth++; return; }   // one asked for inside another reuses it
+  F.open = true; F.depth = 0; F.E = E; F.serial++; F.n = 0;
+  F.phi = mcTh(E.x, E.y); F.rho = Math.max(M.rhoMin || 64, mcRad(E.x, E.y)); F.th0 = F.phi;
+  mcSwapIn(E);
+  const L = mcLists(); for(let k = 0; k < L.length; k++){ const a = L[k]; for(let j = 0; j < a.length; j++) mcSwapIn(a[j]); }
+  F.wp = worldPlats; if(M.window) worldPlats = M.window(F.phi, F.rho, E);   // the terrain round E, as boxes in its chart
+}
+function mcExit(){
+  const M = MCAVE; if(!M || !M.on) return;
+  const F = MC_FR; if(!F.open) return;
+  if(F.depth > 0){ F.depth--; return; }
+  const s = F.serial, P = MC_PT;
+  for(let i = 0; i < F.n; i++){
+    const o = F.o[i]; F.o[i] = null;
+    if(o._mcPlaced === s) continue;                                                       // put at a real point (mcPlace)
+    if(o.x === F.cx[i] && o.y === F.cy[i]){ o.x = F.wx[i]; o.y = F.wy[i]; continue; }   // untouched: its real place, bit for bit
+    mcFromChart(o.x, o.y, P); o.x = P.x; o.y = P.y;                                        // moved: E itself, a push, a grab, a throw
+  }
+  const L = mcLists();
+  for(let k = 0; k < L.length; k++){ const a = L[k]; for(let j = 0; j < a.length; j++){ const o = a[j];
+    if(!o || o._mcS === s || o._mcPlaced === s || typeof o.x !== 'number') continue;
+    o._mcS = s; mcFromChart(o.x, o.y, P); o.x = P.x; o.y = P.y; } }                       // made during the frame, in its chart
+  worldPlats = F.wp; F.wp = null;
+  F.open = false; F.E = null;
+}
+// Writing a real (world) position from inside a frame: a respawn, an item's spawn. Elsewhere it is just the write.
+function mcPlace(o, x, y){ o.x = x; o.y = y; if(MCAVE && MCAVE.on && MC_FR.open) o._mcPlaced = MC_FR.serial; }
+// A world point's place on the screen (zoom z, viewZoom() when left out). Off Moon Caves it is the draw transform's own maths.
+function worldToScreen(x, y, z){
+  if(z === undefined) z = viewZoom();
+  if(MCAVE && MCAVE.on){ const dx = (x - camX - W/2)*z, dy = (y - camY - H/2)*z, c = Math.cos(camAng), sn = Math.sin(camAng); return { x:W/2 + c*dx - sn*dy, y:H/2 + sn*dx + c*dy, s:z }; }
+  return { x:(x - camX - W/2)*z + W/2, y:(y - camY - H/2)*z + H/2, s:z };
+}
 const STAGES = [
   {id:"goiky", name:"Goiky Field", blurb:"Flat classic, with real edges.",
    sky:["#bfe8ff","#88cdf2"], ground:"#7bc043", plats:[[0.5,0.62,0.42]],
@@ -2621,11 +2705,16 @@ const STAGES = [
    plats:[[0.2,0.56,0.15],[0.8,0.56,0.15],[0.5,0.45,0.22,"solid",0.06]],
    edges:{ floor:[[0.07,0.43],[0.57,0.93]], void:['#151821','#000000'] },
    hazard:"lowgrav"},
+  // MOON CAVES (see the groundwork block above STAGES): built in steps, out of every list unless MCAVE_DEV is on (`mcDev`, stageOpen) until
+  // the release step, when it unlocks with The Moon (`secret:'one'`). Teams only, two sides: a safe strip at 9 o'clock and one at 3.
+  {id:"mooncaves", name:"Moon Caves", blurb:"A whole moon to fight round, with caves down to its core.", secret:"one", mcDev:true,
+   sky:["#02030a","#0b0e1c"], ground:"#9a9da5", plats:[], layout:"disc", teamsOnly:true,
+   hazard:"lowgrav"},
 ];
 // A stage with `secret` stays out of every list the player sees -- the stage cards, the World Cup's pools and its ticks, the online lobby's
 // -- until its secret is done: The Moon (secret 'one') until One is beaten (oneUnlocked), so nothing names it before her chain does. It stays
 // IN STAGES, so a guest whose host picks it, a replay or a saved cup still finds it by id; only the lists ask stageOpen.
-function stageOpen(s){ return !!s && (!s.secret || (s.secret === 'one' && oneUnlocked())); }
+function stageOpen(s){ if(s && s.mcDev) return MCAVE_DEV; return !!s && (!s.secret || (s.secret === 'one' && oneUnlocked())); }   // (mcDev: Moon Caves while it is built)
 function stagesOpen(){ return STAGES.filter(stageOpen); }
 // The stage in hand when the lists no longer offer it (a host's Moon carried out of an online match, a profile reset): back to the first stage.
 // Never during an online match (the host's pick is the guest's stage there).
@@ -19556,6 +19645,7 @@ function setupWorld(){
   spawnZones=[];
   FLOOR_SEGS = null;   // REAL EDGES: built again below for the stages that have them (buildFloorSegs)
   SIDE_ROOM = 0;       // MORE ROOM PAST THE LEDGES: given below to the single-screen stages with ledges only
+  MCAVE = null;        // MOON CAVES: set again only by its own builder
   if(SETTINGS.mode==='ctf'){ ctfBuildWorld(); return; }   // Capture the Flag: one of its own huge maps (see the CTF block)
   CAM_ZOOM = 0.72;
   if(ONEFIGHT.active || COBSFIGHT.active){ buildOneArena(); return; }   // One's arena, and Steve Cobs's: the teams map without its walls (see buildOneArena)
@@ -21626,7 +21716,7 @@ function updateItems(){
   if(iv>0){ itemTimer--; if(itemTimer<=0){ itemTimer=iv + Math.floor(Math.random()*90); if(items.length<6) spawnItem(); } }
   const gy = groundY();
   // physics + pickup for loose items
-  for(const it of items){
+  for(const it of items){ mcEnter(it); try {   // (MOON CAVES: in the item's own chart)
     if(it.taken) continue;
     it.vy += 0.5; it.y += it.vy; it.x += it.vx; it.vx*=0.98;
     // land on ground
@@ -21640,7 +21730,7 @@ function updateItems(){
         pickUpItem(f, it); break;
       }
     }
-  }
+  } finally { mcExit(); } }
   items = items.filter(it=> !it.taken && it.life>0);
   // update active summons (assists & bosses)
   updateSummons();
@@ -21749,7 +21839,7 @@ function fsStep(){
   FS.lastT = hazardT;
   let busy = false;
   for(const f of fighters){
-    if(f._fs){ fsRun(f); busy = true; }
+    if(f._fs){ mcEnter(f); try { fsRun(f); } finally { mcExit(); } busy = true; }   // (MOON CAVES: in its user's chart)
     if(f.fsGlow > 0){
       busy = true;
       if(f.dead || !running) f.fsGlow = 0;
@@ -42953,14 +43043,14 @@ function spawnTendril(x, atkId){
 }
 function updateTendrils(){
   const gy=groundY();
-  for(const t of tendrils){
+  for(const t of tendrils){ mcEnter(t); try {
     if(t.h < t.maxH) t.h += t.grow;
     t.life--;
     // damage fighters within the vine's vertical reach — only ONCE per tendril, capped at 30%
     if(!t._hit){ for(const f of fighters){ if(f.dead) continue;
       if(Math.abs(f.x-t.x)<26 && f.y > gy - t.h - 20 && f.invuln<=0){ applyHit(f, bossDmg(), (f.x<t.x?-1:1)*8, -10, null, {bossAtk:t.bossAtk}); t._hit=true; } } }
     if(t.life%6===0) puff(t.x, gy-t.h, '#1a4a1a', 3);
-  }
+  } finally { mcExit(); } }
   tendrils = tendrils.filter(t=>t.life>0);
 }
 function updateSummons(){
@@ -42968,7 +43058,7 @@ function updateSummons(){
   asTrackPct();   // the Clock's memory of every fighter's damage (AS.rewind)
   refreshSpongyPlats();
   springyTickProps();   // Springy's landed boxes stand SPRINGY.boxLife frames, whoever dropped them (an item boss has no frame of its own)
-  for(const s of summons){
+  for(const s of summons){ mcEnter(s); try {   // (MOON CAVES: in the summon's own chart)
     s.life--; if(s._cd>0) s._cd--;
     if(s.type==="springyend"){ springyEndStep(s); continue; }   // his ending: no gravity, no target, no fight (springyEnding)
     if(s.type==="metag" || s.type==="mephoneunit"){ cobsMinionStep(s); continue; }   // Steve Cobs's MeTags and MePhone units: their own brain (cobsMinionStep), never the assists'
@@ -43030,7 +43120,7 @@ function updateSummons(){
     }
     // boss takes damage from fighters' attacks: handled in applyHit via summon hit-test (below)
     if(s.type==="boss" && s.hp<=0){ s.life=0; banner("BOSS DOWN!",700,'sys'); for(let i=0;i<30;i++) puff(s.x,s.y,s.color,7); }
-  }
+  } finally { mcExit(); } }
   summons = summons.filter(s=> s.life>0);
 }
 function step(){
@@ -43059,7 +43149,7 @@ function step(){
   const pad=pollPad();
   if(FILE_RIDES.length) fileRideStep();   // the big files glide and carry whoever stands on them, before this frame's platforms are gathered (THE BIG FILE)
   if(FINX.length) finxStep();   // the finishers running (FINISHERS V2): their tells, hits and holds, and what they leave behind
-  const gy=groundY(), plats=platRects();
+  const gy=groundY(); let plats=platRects();   // (let: re-read inside each fighter's frame on Moon Caves)
   let grav=GRAV; if(stage.hazard==='lowgrav') grav*=0.7;
   // THIN AIR: Bubble's Thermal Rise (_floatT = 60) and Capture the Flag's float areas (applyZone 'float' holds it at 3 while you are
   // in one) are gravity at 0.35 while the timer runs. Read once a frame for every fighter, at the gravity line below, which is also
@@ -43077,6 +43167,8 @@ function step(){
     // HIT FREEZE: held still by a hit they are in. Nothing of theirs runs this frame -- no move, no timer, no thinking -- so every
     // countdown picks up where it stopped; a person's presses wait for the frame it ends (hitStopHold).
     if(f._hitStop > 0 && f._hsAt !== hazardT){ hitStopHold(f, f.controller || (f.you ? "local" : "ai"), pad); continue; }
+    mcEnter(f); try {   // MOON CAVES: the rest of this fighter's frame runs in its own chart (mcEnter: nothing at all on any other map)
+    if(MCAVE && MCAVE.on) plats = platRects();
     STEP_F = f;
     // ---- input (local human / remote player / AI) ----
     let inp={left:false,right:false,jump:false,attack:false,special:false,smash:false};
@@ -43749,7 +43841,7 @@ function step(){
         f._wallSide = ax < 0 ? 1 : -1; f._wallT = hazardT;   // movetech: which side the wall is on, and which wall --
         // the wall is its FACE, not the piece (the owner, 2026-10-19: "walljump can double up if you go from 1 wall section to another"):
         // a wall built of stacked pieces is one wall, so its face line (side + x, to WALL_FACE_SNAP px) is what the once-per-airtime rule counts
-        f._wallId = f._wallSide + ':' + Math.round((ax < 0 ? p.x : p.x + p.w) / WALL_FACE_SNAP);
+        f._wallId = (MCAVE && MCAVE.on && p.mcA0 !== undefined) ? mcWallId(f._wallSide, p, ax < 0) : f._wallSide + ':' + Math.round((ax < 0 ? p.x : p.x + p.w) / WALL_FACE_SNAP);
         if(ax < 0 && f.vx > 0) f.vx = 0;      // pushed left  => was moving right into it
         if(ax > 0 && f.vx < 0) f.vx = 0;      // pushed right => was moving left into it
       } else {
@@ -43847,11 +43939,12 @@ function step(){
       const flareOn = (hazardT%260)<70;
       if(flareOn && f.y>gy-f.r-2){ f.pct+=0.5; if(hazardT%6===0){ f.vy=-6; puff(f.x,f.y,'#f0521f',4);} }
     }
+    } finally { mcExit(); }
   }
 
   STEP_F = null;
   // DROPS CARRY: whoever a plunging fighter falls into goes down with them (see updateDropCarry).
-  for(const f of fighters) if(f._hsHeld !== hazardT) updateDropCarry(f);   // (not one held still by a hit this frame: HIT FREEZE)
+  for(const f of fighters) if(f._hsHeld !== hazardT){ mcEnter(f); try { updateDropCarry(f); } finally { mcExit(); } }   // (not one held still by a hit this frame: HIT FREEZE)
 
   // evil leafy hazard
   if(evil){
@@ -43862,7 +43955,7 @@ function step(){
 
   // projectiles
   const liveTurrets = projectiles.filter(p => p.turret && p.life > 0);
-  for(const pr of projectiles){
+  for(const pr of projectiles){ mcEnter(pr); try {   // (MOON CAVES: in the shot's own chart)
     SMASH_PROJ = pr;   // whatever this shot hits, it hits at its own smash angle (none unless a smash threw it)
     HIT_CAST = pr._cast || 0;   // ...and as one shot of its volley, if it is one (ONE VOLLEY IS ONE MOVE)
     if(pr._stuck){ shotStuckStep(pr); continue; }   // a sticky shot stuck where it hit (shotStick): it goes where that goes, and hurts nobody
@@ -44108,11 +44201,11 @@ function step(){
       }
     }
     if(pr.sticky && pr.life > 0) shotStick(pr);   // (a fighter it met this frame it hit first)
-  }
+  } finally { mcExit(); } }
   SMASH_PROJ = null; HIT_CAST = 0;
   // projectiles hitting summons (bosses take damage; enemy assists get shoved)
   if(summons.length){
-    for(const pr of projectiles){
+    for(const pr of projectiles){ mcEnter(pr); try {
       // An assist's shot (Pie's lob, a Grotato mine: `assist`) comes through for the boss's side only ("they dont work on
       // bosses"): it lands on an enemy boss or add exactly as a fighter's shot does, and never shoves a cameo. A boss's own
       // shots and every other summon-owned kind still skip this loop as before. A mine arms first, as it does for a fighter,
@@ -44148,7 +44241,7 @@ function step(){
           break;
         }
       }
-    }
+    } finally { mcExit(); } }
   }
   projectiles=projectiles.filter(p=>p.life>0);
   for(const bm of beams) bm.life--;
@@ -47492,7 +47585,7 @@ function finxStep(){
     const f = fxOwner(o), run = FINX_STEP[o.k];
     if(!f || !run){ o.dead = true; continue; }
     HITSTOP_FIN.f = f; HITSTOP_FIN.o = o; HITSTOP_FIN.pre = (f._fxLock || 0) >= hazardT && f._fxBy == null;   // HIT FREEZE: whose finisher lands what it lands, and whether they are still in it (hitStopFin)
-    try { run(o, f); } finally { HITSTOP_FIN.f = null; HITSTOP_FIN.o = null; }
+    mcEnter(f); try { run(o, f); } finally { HITSTOP_FIN.f = null; HITSTOP_FIN.o = null; mcExit(); }   // (MOON CAVES: in its user's chart)
     if(o.dead && f.hitstun > 0) f._fxLock = 0;   // a hit cancelled it: the hitstun is the only wait (the tell's lock used to run on past it, free frames for the attacker)
   }
   if(FINX.some(function(o){ return o.dead; })){ for(const o of FINX) if(o.dead) fxRelease(o); FINX = FINX.filter(function(o){ return !o.dead; }); }
@@ -54519,7 +54612,7 @@ function fileRideBlocked(p, nx){
 }
 // Once a frame, before the fighters move (step): each file glides and carries whoever is on it, and its owner's buff follows whether they stand on it.
 function fileRideStep(){
-  for(const p of FILE_RIDES){
+  for(const p of FILE_RIDES){ mcEnter(p); try {
     const o = p.owner;
     const live = !!o && !o.dead && fighters.indexOf(o) >= 0 && hazardT < p.until;
     const born = hazardT - p.t0 < 3;   // the frame it appears, that frame's platforms were already gathered: they are on it
@@ -54538,7 +54631,7 @@ function fileRideStep(){
     o._fileRide = stand ? p : null;
     o.atkSpd = stand ? FILE_RIDE.atkSpd : 1;
     o.fnCd = Math.max(o.fnCd || 0, FILE_RIDE.cd);   // the finisher waits for this one, and its cooldown runs from when it ends
-  }
+  } finally { mcExit(); } }
   if(FILE_RIDES.some((p)=>p.dead)) FILE_RIDES = FILE_RIDES.filter((p)=>{ if(!p.dead) return true; endFileRide(p); return false; });
 }
 // A thrown thing aimed at the nearest foe (a fighter, or a boss or hostile summon nearer than any), from where it is thrown, at the moment it is
@@ -76943,11 +77036,12 @@ function netPredRun(a, pr, to, team){
   if(to < from) return null;
   const P = { x:a.x, y:a.y, vx:a.vx, vy:a.vy, g:a.g, face:a.face, r:a.r, j:pr.j, at:pr.at, jp:!!(pr.s & 1), hop:!!(pr.s & 2), ff:!!(pr.s & 4), dn:!!(pr.s & 8) };
   const mt = !!(pr.s & 16), hopOk = !!(pr.s & 32), airrel = !!(pr.s & 64), grav = k[9];
-  const plats = platRects(), gy = groundY(), big = isBig();
+  let plats = platRects(); const gy = groundY(), big = isBig();   // (let: re-read in each replayed frame's chart on Moon Caves)
   // the walls: the one touched last (side, the frame, which face: mtWallJump's window and once-per-face rule), the faces kicked off this airtime
   const wjv = k[10], cliffs = !!FLOOR_SEGS && !big, w = Array.isArray(pr.w) && pr.w.length === 3 ? pr.w : null, cl = Array.isArray(pr.cl) ? pr.cl : null, clLim = cl ? +cl[0] || 0 : 0;
   P.ws = w ? w[0] : 0; P.wt = w ? pr.a - w[1] : -1e9; P.wid = w ? String(w[2]) : ''; P.used = Array.isArray(pr.wu) ? pr.wu.slice(0, 32).map(String) : []; P.clT = cl ? +cl[1] || 0 : 0;
-  for(let g = from; g <= to; g++){
+  for(let g = from; g <= to; g++){ mcEnter(P); try {   // (MOON CAVES: in the predicted body's own chart)
+    if(MCAVE && MCAVE.on) plats = platRects();
     const m = N.inMaskAt(g);
     if(m & NET_IN_ACT) break;
     const L = m & 1, R = m & 2, J = m & 4, D = m & 8;
@@ -76989,7 +77083,7 @@ function netPredRun(a, pr, to, team){
       const fromLeft = p.x - (P.x + P.r), fromRight = (p.x + p.w) - (P.x - P.r), fromTop = p.y - (P.y + P.r), fromBottom = (p.y + ph) - (P.y - P.r);
       const ax = Math.abs(fromLeft) < Math.abs(fromRight) ? fromLeft : fromRight, ay = Math.abs(fromTop) < Math.abs(fromBottom) ? fromTop : fromBottom;
       const stepUp = (p.ramp === true || p.step === true) && fromTop < 0 && fromTop >= -28 && P.vy > -2;
-      if(Math.abs(ax) < Math.abs(ay) && !stepUp){ P.x += ax; P.ws = ax < 0 ? 1 : -1; P.wt = g; P.wid = P.ws + ':' + Math.round((ax < 0 ? p.x : p.x + p.w)/WALL_FACE_SNAP); if(ax < 0 && P.vx > 0) P.vx = 0; if(ax > 0 && P.vx < 0) P.vx = 0; }
+      if(Math.abs(ax) < Math.abs(ay) && !stepUp){ P.x += ax; P.ws = ax < 0 ? 1 : -1; P.wt = g; P.wid = (MCAVE && MCAVE.on && p.mcA0 !== undefined) ? mcWallId(P.ws, p, ax < 0) : P.ws + ':' + Math.round((ax < 0 ? p.x : p.x + p.w)/WALL_FACE_SNAP); if(ax < 0 && P.vx > 0) P.vx = 0; if(ax > 0 && P.vx < 0) P.vx = 0; }
       else { P.y += ay; if(ay < 0){ P.vy = Math.min(0, P.vy); P.g = true; P.j = 2; } else P.vy = Math.max(0, P.vy); }
     }
     for(const p of plats){
@@ -77008,7 +77102,7 @@ function netPredRun(a, pr, to, team){
     }
     if(clLim && mt && !P.g && P.ws && P.wt === g && (P.ws > 0 ? R : L) && P.vy > 0 && P.clT < clLim){ P.vy = Math.min(P.vy, 0.7); P.clT++; }   // the cling (mtCling)
     if(P.g){ P.ff = false; P.at = 0; P.used = []; P.clT = 0; } else P.at++;
-  }
+  } finally { mcExit(); } }
   return P;
 }
 // Every client frame, after the glide: this device's own fighter drawn where its prediction has it (or where the host has it, while it is not
