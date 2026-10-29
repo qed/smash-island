@@ -19981,7 +19981,18 @@ function wallBand(team, g){
   const rise = Math.min(280, (bluffY - Math.max(60, g.WH*0.12))/nPads);
   const pw = Math.min(140, bw*0.34);
   for(let k=0; k<nPads; k++){
-    const cx = at(bw * (k%2 === 0 ? 0.76 : 0.24)), y = bluffY - rise*(k+1);
+    const cx = at(bw * (k%2 === 0 ? 0.76 : 0.24));
+    let y = bluffY - rise*(k+1);
+    // NOT INSIDE THE ARM. The cross's horizontal arm runs out to the band (g.armY0/armY1: its top and its underside), and a pad at its
+    // height sat inside its tunnel (red's fourth, at x 201-341 on a 2v2; on Compact and Tall maps too), so a tenth of a team's comebacks
+    // started in a dead end the CPUs walked out of (the stuck report, 2026-10-29). That spot stands on the arm's own top instead, which is
+    // footing already (moved along it, off a doorway, when one is cut there); with no arm top near, the pad goes a head's height under it.
+    if(g.armY0 != null && y > g.armY0 - 24 && y < g.armY1 + 60){
+      let ax = null, ad = 200;
+      for(const p of worldPlats){ if(!p.wall || Math.abs(p.y - g.armY0) >= 1 || p.w < 80) continue; const x = clamp(cx, p.x + 30, p.x + p.w - 30); if(Math.abs(x - cx) < ad){ ad = Math.abs(x - cx); ax = x; } }
+      if(ax != null){ spawns.push({ x: ax, y: g.armY0, used:0 }); continue; }
+      y = g.armY1 + 60;
+    }
     plats.push({ x: cx - pw/2, y, w: pw, h: 14, hop:true, floor:0, pad:true });
     spawns.push({ x: cx, y, used:0 });
   }
@@ -20107,12 +20118,20 @@ function setupWorld(){
   const midX     = marginX + floorW*0.5;
   const midY     = WH*0.50;        // the horizontal arm — upper and lower quadrants both get real height
   const crossTop = WH*0.05;        // the vertical arm stops short of the ceiling
-  floors=[{ level:0, y:botY, x:marginX, w:floorW }];
+  // THE FLOOR RUNS THE WHOLE WIDTH OF THE WORLD (the owner, 2026-10-29, after "bow and sb keep getting stuck here": the full-width floor).
+  // It stopped 3% of the world short of each side, and the strip past it (165 px on a 2v2) was open all the way down to the bottom KO
+  // line, with the horizontal arm's tunnel opening straight onto it: CPUs walked out of the tunnel into it and lost a stock with nobody
+  // near them (Bow teleported back into the tunnel and did it again), and a person could fall down it too. Now that strip is open air over
+  // the floor, a drop and no more. The cross, the field and the bands stay where they were (they still run from marginX). Past the floor's
+  // ends the side KO lines are where they always were (pastSideLine), so a launch out of either side still knocks out. One's and Steve
+  // Cobs's arenas, cut from this layout (TEAMS_QUADS_ONLY), keep their slab and the open pits past both ends: a knockout there by design.
+  const floorX0 = TEAMS_QUADS_ONLY ? marginX : 0, floorX1 = TEAMS_QUADS_ONLY ? marginX + floorW : WW;
+  floors=[{ level:0, y:botY, x:floorX0, w:floorX1 - floorX0 }];
 
   worldPlats=[];
   worldZones=[];
   // --- the canyon floor: one continuous solid surface, no gaps ---
-  worldPlats.push({ x:marginX, y:botY, w:floorW, h:46, solid:true, floor:0 });
+  worldPlats.push({ x:floorX0, y:botY, w:floorX1 - floorX0, h:46, solid:true, floor:0 });
 
   // --- THE CROSS ---
   // THICK, so it reads as architecture rather than a drawn line. HOLLOW, so the inside is somewhere
@@ -20191,7 +20210,13 @@ function setupWorld(){
     // its up-special on cooldown). The teams arena now has them ("add steps", the owner); One's and Steve Cobs's arenas are cut
     // from this same layout (TEAMS_QUADS_ONLY) and keep the chamber clear, as they were.
     if(TEAMS_QUADS_ONLY && Math.abs(y - midY) < half*0.75) continue;         // leave the centre chamber clear
-    worldPlats.push({ x: midX-cavity/2, y, w: cavity, h: 12, hop:true, floor:0 });
+    // THE RUNG IN THE CENTRE CHAMBER clears the arms' ceiling (the underside of their top face). On a Normal map it sat 7 px too high: a
+    // fighter (48 px tall) standing on it had its head in that ceiling, so it could walk neither left nor right into the arms, and at
+    // either end of the rung a jump straight up bonked on the end of a shaft wall (the stuck report, 2026-10-29). Lowered until a head
+    // clears it, with 2 px to spare (1318 -> 1327 on a Normal map: 95 and 113 px to the rungs either side, both in one jump).
+    const ceil = midY - half + FACE, clear = ceil + 2*24 + 2;
+    const ry = (y > ceil && y < clear) ? clear : y;
+    worldPlats.push({ x: midX-cavity/2, y: ry, w: cavity, h: 12, hop:true, floor:0 });
   }
 
   // --- QUADRANTS → team safe zones ---
@@ -20224,7 +20249,7 @@ function setupWorld(){
   bases=[];
   for(let t=0; t<teamCount; t++){
     if(WALL){
-      const wb = wallBand(t, { WW, WH, marginX, floorW, botY });
+      const wb = wallBand(t, { WW, WH, marginX, floorW, botY, armY0: midY - half, armY1: midY + half });
       worldPlats.push(...wb.plats); bases.push(wb.base);
       continue;
     }
@@ -63910,11 +63935,17 @@ function navUp(f, t, wallX, wallX2){
   if(st && !f.onground && hazardT - st.t <= 50 && !past(st.xL, st.xR)){
     const feet = f.y + f.r;
     if(feet > st.y - 90 && feet < st.y + 150){
-      const sx = (f.x < st.xL) ? st.xL + 12 : (f.x > st.xR) ? st.xR - 12 : f.x;
+      let sx = (f.x < st.xL) ? st.xL + 12 : (f.x > st.xR) ? st.xR - 12 : f.x;
+      const bx = navBeside(f, st); if(bx != null) sx = bx;
       // hold: already over the step, so nothing else may steer it off (teams only, see steerClimb)
       return { x:sx, y:st.y, landing: feet <= st.y + 2, hold: !wideFFA && sx === f.x };
     }
   }
+  // IN THE ARM'S TUNNEL (teams): under a solid roof close over the head, a step 30 px up counts. The doorway's step is 43 px over the tunnel's
+  // floor, short of the 48 px (f.y - 24) every other step has to be up, so a CPU in the tunnel that wanted to go up never took it: it aimed
+  // at the tops of the two arm pieces in turn and paced under the doorway (the stuck report, 2026-10-29).
+  const roofed = SETTINGS.mode === 'teams' && worldPlats.some(p => p.solid && f.x > p.x && f.x < p.x + p.w && p.y + (p.h||16) <= f.y - f.r + 2 && p.y + (p.h||16) > f.y - f.r - 140);
+  const upTo = roofed ? f.y + f.r - 30 : f.y - 24;
   const cands=[];
   for(const p of worldPlats){
     const ptop=p.y;
@@ -63926,7 +63957,7 @@ function navUp(f, t, wallX, wallX2){
     // Skipping it makes navUp choose the doorway step instead and route through the wall by itself.
     if(p.solid && f.x > p.x - 8 && f.x < p.x + p.w + 8) continue;
     if(past(p.x, p.x + p.w)) continue;
-    if(ptop < f.y - 24 && ptop > t.y - 30){
+    if(ptop < upTo && ptop > t.y - 30){
       const climbGap = (f.y - ptop);
       // Still bounded at 300, NOT at MAX_HOP_RISE. Tightening it to what a double jump clears was
       // tried and cost match resolution on generated maps (6/6 down to 5/6): a fighter that has run
@@ -63943,7 +63974,7 @@ function navUp(f, t, wallX, wallX2){
       const hx = (f.x < xL) ? xL - f.x : (f.x > xR) ? f.x - xR : 0;
       // Prefer the highest step still within reach — it makes progress fastest — but let sideways
       // distance dominate so nobody sprints across the arena for one extra platform of height.
-      cands.push({ y:ptop, xL, xR,
+      cands.push({ y:ptop, xL, xR, slab: p.solid ? p.y + (p.h||16) : null,
                    d: hx + (MAX_HOP_RISE - Math.min(climbGap, MAX_HOP_RISE))*0.35 + reachPenalty });
     }
   }
@@ -63951,9 +63982,19 @@ function navUp(f, t, wallX, wallX2){
   cands.sort((a,b)=>a.d-b.d);
   // aim at the nearest reachable point on the chosen platform (its edge if we're beside it)
   const c=cands[0];
-  const aimX = (f.x < c.xL) ? c.xL+12 : (f.x > c.xR) ? c.xR-12 : f.x;
-  if(sticky) f._navStep = { y:c.y, xL:c.xL, xR:c.xR, t:hazardT };
+  let aimX = (f.x < c.xL) ? c.xL+12 : (f.x > c.xR) ? c.xR-12 : f.x;
+  const bx = navBeside(f, c); if(bx != null) aimX = bx;
+  if(sticky) f._navStep = { y:c.y, xL:c.xL, xR:c.xR, t:hazardT, slab:c.slab };
   return {x:aimX, y:c.y};
+}
+// ONTO A SLAB'S TOP FROM BESIDE IT (teams): below the top of a solid whose underside is over the fighter's head (the arm's top face, seen from
+// its doorway), it keeps a body and a bit clear of the slab's end and goes up first, then in over it once its feet are above the top. Aimed at
+// the end itself, it pressed in under the face and bonked on every jump (the doorway's step, the stuck report, 2026-10-29). Null: aim as before.
+function navBeside(f, c){
+  if(SETTINGS.mode !== 'teams' || c.slab == null || f.y + f.r <= c.y + 2 || !(c.slab < f.y - f.r)) return null;
+  if(f.x >= c.xR) return c.xR + f.r + 16;
+  if(f.x <= c.xL) return c.xL - f.r - 16;
+  return null;
 }
 // Horizontal ground a rising jump covers before the fighter is level with the next step.
 const CLIMB_REACH = 130;
@@ -64071,8 +64112,13 @@ function nearestDropX(f, prefer){   // prefer (-1/1): that end of the segment in
   if(walkOff(seg)){
     const past = body + 30;
     const below = x => worldPlats.some(p => p !== seg && p.y > seg.y && x > p.x && x < p.x + p.w) || floors.some(q => q.y > seg.y && x > q.x && x < q.x + q.w);
-    if(below(seg.x - past)) leftEdge = seg.x - past;
-    if(below(seg.x + seg.w + past)) rightEdge = seg.x + seg.w + past;
+    // (an end with nothing under it is no way down at all while the other end has something: the stuck report, 2026-10-29, where the arm's
+    // tunnel opened onto the strip past the floor and the open end won for a CPU in its outer half. The floor reaches the world's edges now,
+    // so on the teams map this only guards.)
+    const okL = below(seg.x - past), okR = below(seg.x + seg.w + past);
+    if(okL) leftEdge = seg.x - past;
+    if(okR) rightEdge = seg.x + seg.w + past;
+    if(!prefer && okL !== okR) return okL ? leftEdge : rightEdge;
   }
   if(prefer) return prefer < 0 ? leftEdge : rightEdge;
   return (Math.abs(leftEdge-f.x) < Math.abs(rightEdge-f.x)) ? leftEdge : rightEdge;
@@ -64290,7 +64336,13 @@ function brainWalk(f, inp, dir, sp, goalX){
   else if(obst && obst.detourX != null){ inp.left = obst.detourX < f.x; inp.right = !inp.left; }
   else { inp.left = dir < 0; inp.right = dir > 0; if(obst && obst.jump && (f.onground || f.jumps > 0)) inp.jump = true; }
 }
-function brainEdges(f, inp, m){ if(isBig()) return; if(f.x < m){ inp.left = false; } if(f.x > WW - m){ inp.right = false; } }
+// On the teams map it keeps off the ends of the floor (the world's edges, now the floor runs right across: past them is the drop to the bottom KO
+// line). It returned on every big map, so the "other way" of NO WAY THROUGH ran CPUs straight out of their own band, off the arm's open end
+// (the stuck report, 2026-10-29). The other big maps are as they were.
+function brainEdges(f, inp, m){
+  if(isBig()){ if(SETTINGS.mode === 'teams' && floors.length){ const q = floors[0]; if(f.x < q.x + m) inp.left = false; if(f.x > q.x + q.w - m) inp.right = false; } return; }
+  if(f.x < m){ inp.left = false; } if(f.x > WW - m){ inp.right = false; }
+}
 
 function aiThink(f){
   if(RACE.active && f._runner) return raceRunnerAi(f);   // RUNNING!: the runners run (see raceRunnerAi)
@@ -64386,7 +64438,10 @@ function aiThink(f){
       brainEdges(f, inp, 100); return brainOut(f, inp, B, L, t, false);
     }
     if(dx<0) inp.left=true; else inp.right=true;   // up and over toward the target
-    if(f.onground||f.jumps>0) inp.jump=true;
+    // A TAP, a fresh press each time (f._jp: a jump went out and the key is still down), the second near the top of the first (climbJump). Held
+    // down for the whole burst, and the bursts follow one another while it stands still, the key was never let go of, so it never jumped:
+    // 4-7 s standing in the teams map's centre chamber with both jumps unused (the stuck report, 2026-10-29).
+    if((f.onground||f.jumps>0) && !f._jp && climbJump(f)) inp.jump=true;
     if(ady>60 && (f.onground||f.jumps>0)) inp.up = (Math.random()<0.5);
     brainEdges(f, inp, 100); return brainOut(f, inp, B, L, t, false);
   }
@@ -64494,7 +64549,11 @@ function aiThink(f){
 // were busy was dropped whenever they came free on the frame between -- "a press it has walked away from" -- and a CPU fell 10 to 20 frames
 // with its jumps unused: Eraser's checks, after a string that ran him off a ledge.)
 function brainRecover(f, inp, B, sp){
-  const offLeft=f.x<50, offRight=f.x>WW-50, fallingOut=f.y>WH-90 && f.vy>0;
+  // On the teams map a side is off the stage where the floor ends (the world's edges, now the floor runs right across), not 50 px in: over the
+  // floor there, a CPU that had dropped out of the arm's open end was "recovering", and Bow's jump took her straight back into the tunnel to
+  // walk out again (the stuck report, 2026-10-29).
+  const tq = (SETTINGS.mode === 'teams' && isBig() && floors.length) ? floors[0] : null;
+  const offLeft = f.x < (tq ? tq.x : 50), offRight = f.x > (tq ? tq.x + tq.w : WW-50), fallingOut=f.y>WH-90 && f.vy>0;
   const goal = edgeGoal(f, B);   // REAL EDGES: off the stage over nothing -- where it heads back to (null: not off, or a stage without edges)
   if(!(offLeft||offRight||fallingOut||goal||(sp==='chair' && aiBowAdrift(f)))){ B.recEp = null; return false; }
   B.press = null; B.str = null; if(B.st === 'string' || B.st === 'smash') B.st = 'approach';
