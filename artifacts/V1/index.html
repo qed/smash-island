@@ -63566,8 +63566,11 @@ let AI_LEVEL = 1;
 //   GUARD     its foe off the stage and able to get back (as it reads it): to the ledge, a projectile while they try to get back up, a strong
 //             jab if they jump up to it, a trap laid there first by a trap kit -- the owner's ledgeguarding (brainGuard, 2026-10-28).
 //   GETTING THERE (kept from the old AI, they are not fighting): the team plan's ward, the unstick burst, the big maps' spawn points, the team
-//             flank, the long trips, climbing to a foe above and dropping to one below, walking out of its own team zone, items nearby.
-//   APPROACH  walk to the foe (around, over or up what is in the way), now and then a hop in for an aerial. A fighter whose special is a shot
+//             flank, the long trips, climbing to a foe above and dropping to one below (on another floor, or a flyer: not a foe that has only
+//             jumped -- the circling fixes, 2026-10-29), walking out of its own team zone, items nearby.
+//   APPROACH  walk to the foe (around, over or up what is in the way), now and then a hop in for an aerial (it throws the aerial once the foe
+//             is in reach on the way down); a foe out of reach only up or down it waits under or over, and in the air it fades back a little
+//             so it comes down in front of the foe, not past it (the circling fixes). A fighter whose special is a shot
 //             fires it from where it lands (BRAIN_SPEC) now and then; a trap is laid for a foe walking in; a heal is taken when hurt and alone.
 //             It steps round (or over, or waits out) a foe's live trap or prism it has noticed, an item in one is not worth it, and a dash or a
 //             hop that would leave it where it cannot get back from is not pressed (brainHazards, brainItemDanger, brainDashEdge).
@@ -63808,6 +63811,8 @@ function aiThink(f){
   const t = (ts._isBoss || !(ld > 0)) ? ts : Object.assign(Object.create(ts), { x: ts.x + (ts.vx||0)*ld, y: ts.y + (ts.onground ? 0 : (ts.vy||0)*ld*0.3) });
   const dx=t.x-f.x, dy=t.y-f.y, adx=Math.abs(dx), ady=Math.abs(dy), dist=Math.hypot(dx,dy);
   const sp = f.kit && f.kit.special;
+  // How long the foe has been up in the air, as it sees it (frames): one hanging up there over 1.5 s is a flyer, another level (below).
+  B.tAir = (ts._isBoss || ts.onground || B.tAirOf !== ts) ? 0 : (B.tAir || 0) + 1; B.tAirOf = ts;
   // Holding a foe: a beat to decide, then the throw that fits.
   if(f._hold){ brainThrow(f, inp, B); return brainOut(f, inp, B, L, t, false); }
 
@@ -63910,13 +63915,21 @@ function aiThink(f){
     brainEdges(f, inp, 90); return brainOut(f, inp, B, L, t, false);
   }
   // ANOTHER LEVEL: a foe well above is climbed to, one well below is dropped to (walk off the edge on a single screen; drop through on a big map).
-  if(ady > 70 && dy < -80){
+  // ANOTHER LEVEL IS ANOTHER FLOOR (the circling fixes, 2026-10-29; the owner: "the cpus still run circles around each other, even if they are
+  // productive ones"): the surface under the foe as it saw it and the one under itself differ by more than 40 px, or the foe has been up in the
+  // air over 1.5 s (a flyer), or one of them is over nothing (off the stage, over a pit). A foe that has only jumped from its own floor is not
+  // climbed after, and a foe below it is not dropped onto while it is only up in a jump itself: that chase jumped after the foe, which made it
+  // the foe above for the other CPU -- two Experts leapfrogged 77 times a minute, 30% of their time, and neither rule ever attacks
+  // (smash-bal/reports/cpu-circling.md, F1b).
+  const footT = ts._isBoss ? null : surfaceBelow(ts.x, ts.y + (ts.r || 24) - 6), footM = surfaceBelow(f.x, f.y + f.r - 6);
+  const onLevel = !!ts._isBoss || B.tAir > 90 || footT == null || footM == null || Math.abs(footT - footM) > 40;
+  if(ady > 70 && dy < -80 && onLevel){
     if(sp === 'chair' && f.spCd <= 0 && hazardT >= B.specAt && !f._tpUsed && Math.random() < 0.3*L.kit && aiBowTpInto(f, ts)){ inp.special = true; B.specAt = hazardT + brainSpecGap(f, L); return brainOut(f, inp, B, L, t, false); }   // BOW: a Teleport up onto them
     if(steerClimb(f, t, inp)){ if(f._wallWayAt !== hazardT && dy < -150 && f.spCd<=0 && sp !== 'chair' && (f.jumps<=0 || Math.random()<0.3)){ inp.special=true; inp.up=true; } }
     else if(f.jumps<=0 && !f.onground && dy<-120 && f.spCd<=0 && sp !== 'chair' && Math.random()<0.5){ inp.special=true; inp.up=true; }
     return brainOut(f, inp, B, L, t, false);
   }
-  if(ady > 70 && dy > 110){
+  if(ady > 70 && dy > 110 && onLevel){
     if(isBig()){ const gapX = nearestDropX(f); if(gapX!=null && Math.abs(gapX - f.x) > 20){ if(gapX < f.x) inp.left=true; else inp.right=true; } else if(f.onground){ inp.down=true; inp.jump=true; } }
     else { const edgeX = f.onground ? nearestDropX(f) : null; if(edgeX!=null){ inp.left = edgeX < f.x; inp.right = edgeX >= f.x; } else if(adx>26){ if(dx<0)inp.left=true; else inp.right=true; } }
     return brainOut(f, inp, B, L, t, false);
@@ -64132,7 +64145,12 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   const shooter = K.shot || K.shotX, want = K.shotX ? 180 : (shooter && B.keepOff) ? Math.max(120, Math.min(230, K.band[1] - 40)) : 0;   // (a shooter keeps off inside its own shot's reach: BRAIN_SPEC)
   if(L.space && !want && brainSpace(f, t, inp, B, L, inReach, dist, toward, now)){ brainEdges(f, inp, 70); return; }   // EXPERT: a swing it saw, waited out
   if(want){ if((dist > want + 40 || ady > 60) && adx > 6) brainWalk(f, inp, toward, sp, t.x); }   // a shooter keeping off stays at its range
-  else if(!inReach && adx > 6) brainWalk(f, inp, toward, sp, t.x);
+  // HOLD THE SPOT (the circling fixes, F2): a foe out of reach only up or down, already within its reach across, is not walked right under or
+  // drifted right over -- it comes down in front of it. In the air, still carrying on toward a foe it is nearly on, it holds the arrow away a
+  // moment (8 frames, at most once in 28: one input, a person's fade back), since nothing slows a fighter in the air and it sailed on past.
+  else if(!inReach && adx > 6 && !(ady >= 44 && adx < brainReach(f) + (t.r || 24)*0.5)) brainWalk(f, inp, toward, sp, t.x);
+  if(!f.onground && ady < 150 && adx < brainReach(f) + 40 && f.vx*toward > 1.5 && !(B.fadeT > now - 20)) B.fadeT = now + 8;
+  if(!f.onground && B.fadeT > now){ inp.left = toward > 0; inp.right = toward < 0; }
   if(dy < -50 && adx < 120 && f.onground && Math.random() < 0.03) inp.jump = true;   // up at a foe just above
   brainEdges(f, inp, 70);
   if(now < B.next) return;
@@ -64229,7 +64247,11 @@ function brainString(f, t, inp, B, L, inReach, toward){
   const S = B.str, now = hazardT;
   if(!S){ B.st = 'approach'; return; }
   if(S.move === 'air' && f.onground && S.n > 0){ brainEndString(f, B, L); return; }
-  if(now >= S.next){
+  // THE HOP-IN COMMITS (the circling fixes, F3): while its hop is up with the foe inside its reach across (and within 130 px up or down), the
+  // string does not end for "out of reach": the aerial goes out once the foe is in reach, mostly on the way down. (Looked at 8 frames after the
+  // hop, it was still some 60 px over the foe, gave the aerial up and flew over: two hop-ins in three.) Pressed through the same hands.
+  const hopWait = S.move === 'air' && S.n === 0 && !f.onground && !inReach && Math.abs(t.x - f.x) < brainReach(f) + 50 && Math.abs(t.y - f.y) < 130;
+  if(now >= S.next && !hopWait){
     if(S.n > 0){
       const landed = (f._dmgDealt||0) > S.dmg0;
       if(!landed){ if(!S.extra && Math.random() < L.miss){ S.extra = true; } else { brainEndString(f, B, L); return; } }
@@ -64250,7 +64272,14 @@ function brainString(f, t, inp, B, L, inReach, toward){
   // the foe has drifted off, and the arrows let go of
   if(S.n > 0 && (f._dmgDealt||0) > S.dmg0 && S.move !== 'air'){ inp.left = f.face < 0; inp.right = f.face > 0; brainEdges(f, inp, 70); }
   else if(!inReach && Math.abs(t.x - f.x) > 6){ inp.left = toward < 0; inp.right = toward > 0; }
-  if(S.move === 'air' && !f.onground && Math.abs(t.x - f.x) > 20){ inp.left = toward < 0; inp.right = toward > 0; }
+  // an aerial drifts in only until the foe is where it reaches (60% of its reach), then lets go -- and, still carrying on toward the foe, fades
+  // back as the approach does (F2), so it comes down with the aerial on the foe instead of over its head (F3)
+  if(S.move === 'air' && !f.onground){
+    inp.left = false; inp.right = false;
+    if(Math.abs(t.x - f.x) > brainReach(f)*0.6){ inp.left = toward < 0; inp.right = toward > 0; }
+    else if(f.vx*toward > 1.5 && Math.abs(t.y - f.y) < 150 && !(B.fadeT > now - 20)) B.fadeT = now + 8;
+    if(B.fadeT > now){ inp.left = toward > 0; inp.right = toward < 0; }
+  }
 }
 function brainEndString(f, B, L){
   B.str = null; B.next = hazardT + Math.round(brainR(L.think));
