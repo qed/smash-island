@@ -2684,7 +2684,7 @@ function buildMoonCaves(){
   });
   worldPlats = []; worldZones = []; floors = [{ level:0, y:cy - Rout, x:0, w:WW }];
   MCAVE = { on:true, test:true, cx:cx, cy:cy, Rout:Rout, Rblast:Rb, rKill:shellBot - T.kill, shellTop:shellTop, shellBot:shellBot, crustBot:crustBot,
-            segs:segs, window:mcWindow, win:[], rhoMin:64, flight:true, items:false, camT:null };
+            segs:segs, window:mcWindow, win:[], rhoMin:64, flight:true, items:false, camT:null, camHold:false, camOff:0 };
   camAng = 0;
 }
 // The terrain inside a frame: every piece within reach of E (900 px of arc; 3,000 for a CPU, which thinks inside its frame), as boxes in E's
@@ -2704,15 +2704,31 @@ function mcWindow(phi, rho, E){
 function mcLift(x, y, d){ const M = MCAVE, r = mcRad(x, y) || 1, k = (r + d)/r; return { x:M.cx + (x - M.cx)*k, y:M.cy + (y - M.cy)*k }; }
 // The host's camera here: it eases after its target as everywhere (0.12), and the view turns to keep the point it looks at upright, so the
 // turn eases with the follow. The angle is held while that point is down in the core (atan2 spins there), and a target that jumps more than
-// 1,200 px in a step (a respawn across the disc) is a cut, never a half-turn spin.
-function mcCamAngle(){ const x = camX + W/2, y = camY + H/2; if(mcRad(x, y) > MCAVE.shellBot) camAng = -mcTh(x, y); }
-function mcCamReset(){ MCAVE.camT = { x:camX, y:camY }; camAng = 0; mcCamAngle(); }
+// 1,200 px in a step (a respawn across the disc) is a cut, never a half-turn spin. Any other step turns the view at most MC_CAM_TURN rad:
+// when the point comes back out of the core the view does not jump to the new upright -- the gap the hold left (the short way round) eases
+// away at the camera's own 0.12 a step (camOff), on top of the turn the follow makes -- and a follow that swings faster than that (the point
+// skimming past the core) puts the rest into the same gap. So a hard launch along the cave never whips the screen round.
+const MC_CAM_TURN = 0.05;
+function mcCamAngle(cut){
+  const M = MCAVE, x = camX + W/2, y = camY + H/2;
+  if(mcRad(x, y) <= M.shellBot){ M.camHold = true; return; }   // held: the core
+  const to = -mcTh(x, y);
+  if(cut){ M.camHold = false; M.camOff = 0; camAng = to; return; }   // a cut is a cut: already upright
+  let o = M.camHold ? mcWrap(camAng - to) : (M.camOff || 0);   // out of the hold: the gap it left, the short way round
+  M.camHold = false;
+  if(o) o -= Math.max(-MC_CAM_TURN, Math.min(MC_CAM_TURN, o*0.12));   // the gap eases away
+  const d = mcWrap(to + o - camAng);
+  if(Math.abs(d) > MC_CAM_TURN) o -= d - Math.sign(d)*MC_CAM_TURN;   // never more than MC_CAM_TURN in a step: the rest joins the gap
+  o = mcWrap(o); if(Math.abs(o) < 1e-4) o = 0;
+  M.camOff = o; camAng = o ? mcWrap(to + o) : to;
+}
+function mcCamReset(){ MCAVE.camT = { x:camX, y:camY }; MCAVE.camHold = false; MCAVE.camOff = 0; camAng = 0; mcCamAngle(true); }
 function mcCamera(t){
-  const L = MCAVE.camT;
-  if(L && Math.hypot(t.x - L.x, t.y - L.y) > 1200){ camX = t.x; camY = t.y; }
+  const L = MCAVE.camT, cut = !!L && Math.hypot(t.x - L.x, t.y - L.y) > 1200;
+  if(cut){ camX = t.x; camY = t.y; }
   else { camX += (t.x - camX)*0.12; camY += (t.y - camY)*0.12; }
   if(L){ L.x = t.x; L.y = t.y; } else MCAVE.camT = { x:t.x, y:t.y };
-  mcCamAngle();
+  mcCamAngle(cut);
 }
 // Particles fall toward the middle here (step).
 function mcParticleStep(){
