@@ -49153,8 +49153,8 @@ function fxPatchBreak(o, g, from, dmg, kbx, kby, opts){
 // ---- LIGHTNING: POCKET THUNDERCLOUD. A small thundercloud puffs up over her (12 frames) and drifts after the nearest foe at 2.4 px a frame, slower
 // than a run, 150 px over the floor under them. Every second it stops: it darkens and sparks (24 frames, its own fuse; nothing on the floor),
 // then a bolt strikes straight down from it, 26 px wide (6 frames): 7%. Four bolts in about 4 s, then it is gone. Get out from under it.
-// It does not drift through a wall, and a bolt stops at the first floor under it. A boss is chased too, and takes each bolt as a plain 7. One
-// at a time.
+// It does not drift through a wall: it goes round, up and over first (fxCloudDrift). A bolt stops at the first floor under it. A boss is
+// chased too, and takes each bolt as a plain 7. One at a time.
 function finCloud(f){
   const C = FX3.cloud;
   if(!fighters.some(function(t){ return !t.dead && t.team !== f.team && t._jail == null; }) && !summons.some(function(s){ return fxLiveSummon(f, s); })) return false;   // nobody to chase
@@ -49169,7 +49169,49 @@ function fxCloudChase(f, o){   // the nearest foe to the cloud (or boss), and wh
   if(!best) return null;
   const gy = surfaceBelow(best.x, best.y);
   o.tgt = best.idx != null && fighters[best.idx] === best ? best.idx : -1;
-  return { x:clamp(best.x, 30, WW - 30), y:Math.max(40, (gy !== null ? gy : best.y + (best.r || 24)) - FX3.cloud.alt) };
+  const x = clamp(best.x, 30, WW - 30), fy = gy !== null ? gy : best.y + (best.r || 24);
+  let y = Math.max(40, fy - FX3.cloud.alt);
+  const q = fxSolidAt(x, y);
+  if(q && q.y + (q.h || 16) + 6 < fy) y = q.y + (q.h || 16) + 6;   // (2026-10-29) the spot inside a wall (a low ceiling over the foe): just under it, where it can get to
+  return { x:x, y:y };
+}
+// (2026-10-29) "finisher stuck on a wall" -- the owner, watching a 2v2 World Cup final ("*lightning's": this one). A wall, a solid block or the
+// teams map's cross between the cloud and its foe stopped it dead for its whole life, and its four bolts fell on nothing. It still never goes
+// through a wall; blocked, it now goes ROUND. At a wall it rises up the face and over the top, a cloud in the sky (it sinks along the face only
+// when the way up is shut, by a ceiling or the top of the world); under or over a block it slides to the block's nearer end; turned back by
+// something on the way, it tries the other way. Once the way on toward its foe is clear again, it carries on. Along a floor or under a ceiling
+// it slides at its own speed (it crept there before, or sat still). Its speed, timing, damage and bolts are unchanged, and in open sky its path
+// is the same, frame for frame.
+const CLOUD_AHEAD = 24;   // px of clear way on toward its spot that ends going round
+function fxSolidAt(x, y){ for(const q of platRects()){ if(q.solid && !q.rot && x > q.x && x < q.x + q.w && y > q.y && y < q.y + (q.h || 16)) return q; } return null; }
+function fxCloudRoof(x, ya, yb){   // the solid block straight over (or under) x that a step from ya to yb runs into
+  const y0 = Math.min(ya, yb) - 1, y1 = Math.max(ya, yb) + 1;
+  for(const q of platRects()){ if(q.solid && !q.rot && x >= q.x - 1 && x <= q.x + q.w + 1 && q.y <= y1 && q.y + (q.h || 16) >= y0) return q; }
+  return null;
+}
+function fxCloudSlide(o, C){   // one step of going round, along o.gax ('x' or 'y') the way o.gs says; that way shut, the other way
+  for(let i=0;i<2;i++){
+    const x = o.gax === 'x' ? o.x + o.gs*C.spd : o.x, y = o.gax === 'y' ? o.y + o.gs*C.spd : o.y;
+    let ok = x >= 30 && x <= WW - 30 && y >= 40 && fxClear(o.x, o.y, x, y);   // never through a wall, never over the top of the world
+    if(ok && y > o.y){ let fl = WH; for(const t of vanTopsAt(x)) if(t.solid && t.y >= o.y && t.y < fl) fl = t.y; ok = y <= fl - 40; }   // sinking: not down onto a floor
+    if(ok){ o.x = x; o.y = y; return; }
+    o.gs = -o.gs;
+  }
+}
+function fxCloudDrift(o, w, C){   // one frame of drifting toward its spot w
+  const dx = w.x - o.x, dy = w.y - o.y, d = Math.hypot(dx, dy), k = d > C.spd ? C.spd/d : 1, nx = o.x + dx*k, ny = o.y + dy*k;
+  if(o.gax){   // going round something
+    const a = d > CLOUD_AHEAD ? CLOUD_AHEAD/d : 1;
+    if(!fxClear(o.x, o.y, nx, ny) || !fxClear(o.x, o.y, o.x + dx*a, o.y + dy*a)){ fxCloudSlide(o, C); return; }
+    o.gax = 0;   // the way on is clear: carry on
+  }
+  if(fxClear(o.x, o.y, nx, ny)){ o.x = nx; o.y = ny; return; }   // open sky: straight for it, as it always did
+  const sx = o.x + clamp(dx, -C.spd, C.spd), side = fxClear(o.x, o.y, sx, o.y);
+  if(side && Math.abs(dx) >= 0.5){ o.x = sx; return; }   // along a floor or under a ceiling
+  if(fxSolidAt(w.x, w.y)) return;   // (its spot is inside something solid: nowhere to go round to)
+  if(!side){ o.gax = 'y'; o.gs = -1; }   // a wall: up the face first
+  else { const q = fxCloudRoof(o.x, o.y, ny); o.gax = 'x'; o.gs = q ? (o.x - q.x < q.x + q.w - o.x ? -1 : 1) : (dx < 0 ? -1 : 1); }   // a block over or under it: to its nearer end
+  fxCloudSlide(o, C);
 }
 function fxCloudBolt(o){ const C = FX3.cloud, y1 = o.y + 12; return { kind:'capsule', x1:o.lx, y1:y1, x2:o.lx, y2:Math.max(y1, o.ly - C.r), r:C.r }; }
 function fxCloudStep(o, f){
@@ -49183,8 +49225,7 @@ function fxCloudStep(o, f){
   }
   if(o.ph === 'drift'){
     const w = fxCloudChase(f, o);
-    if(w){ const dx = w.x - o.x, dy = w.y - o.y, d = Math.hypot(dx, dy), k = d > C.spd ? C.spd/d : 1, nx = o.x + dx*k, ny = o.y + dy*k;
-      if(fxClear(o.x, o.y, nx, ny)){ o.x = nx; o.y = ny; } else if(fxClear(o.x, o.y, nx, o.y)) o.x = nx; }   // not through a wall
+    if(w) fxCloudDrift(o, w, C);   // not through a wall: round it (2026-10-29)
     if(hazardT - o.pt >= C.drift){
       o.ph = 'charge'; o.ct = hazardT; o.lx = Math.round(o.x);
       const sb = surfaceBelow(o.x, o.y + 14); o.ly = Math.round(sb !== null ? Math.min(sb, o.y + C.len) : o.y + C.len);
