@@ -63572,7 +63572,8 @@ let AI_LEVEL = 1;
 //             is in reach on the way down); a foe out of reach only up or down it waits under or over, and in the air it fades back a little
 //             so it comes down in front of the foe, not past it (the circling fixes). A fighter whose special is a shot
 //             fires it from where it lands (BRAIN_SPEC) now and then; a trap is laid for a foe walking in; a heal is taken when hurt and alone.
-//             It steps round (or over, or waits out) a foe's live trap or prism it has noticed, an item in one is not worth it, and a dash or a
+//             It steps round (or over, or waits out) a foe's live trap or prism it has noticed -- on its floor, or at the end of a platform it
+//             is jumping up onto (brainHazardUp, brainHazardAir) --, an item in one is not worth it, and a dash or a
 //             hop that would leave it where it cannot get back from is not pressed (brainHazards, brainItemDanger, brainDashEdge).
 //   STRING    in reach it picks ONE move -- the jab, an up- or down-tilt, or an aerial -- and presses it again at a person's pace while it keeps
 //             landing ("HUMANS MASH 1 BUTTON IN A COMBO"); a swing that misses ends it. Sometimes the press is a grab, its special when that
@@ -64562,6 +64563,7 @@ const HZ_WAIT = 150, HZ_GO = 90;
 function brainHazards(f, inp, B, L){
   if(B.hzGo > hazardT || f._fileRide || f.x < 50 || f.x > WW - 50) return;
   if(!f.onground){ brainHazardAir(f, inp, B, L); return; }
+  if((inp.jump || (inp.special && inp.up && !inp.attack)) && brainHazardUp(f, inp, B, L)) return;   // a jump (or an up-special) up onto a platform, into a danger up there (World Cup #17)
   const dir = (inp.right && !inp.left) ? 1 : (inp.left && !inp.right) ? -1 : 0;
   if(!dir) return;
   const H = brainDangers(f, B, L);
@@ -64587,21 +64589,76 @@ function brainHazards(f, inp, B, L){
   }
   B.hzWait = Math.max(0, (B.hzWait || 0) - 1);
 }
-// IN THE AIR, coming down over the stage: it drifts off a small one it noticed that it would land on, to the near side (an aerial at a foe
-// standing by their own trap came down on it -- Toothpaste's, Bomby's, Blocky's, 2 in 3 of the walk-ins left after the hop). Only the last of
-// the fall, and only the arrow: whatever it was pressing goes on, at its hands' own pace (cpuHumanKeys). Not off the stage: that is the recovery's.
+// IN THE AIR, coming down over the stage: it drifts off one it noticed that it would land on, to the near side (an aerial at a foe standing by
+// their own trap came down on it -- Toothpaste's, Bomby's, Blocky's, 2 in 3 of the walk-ins left after the hop). Only the last of the fall, and
+// only the arrow: whatever it was pressing goes on, at its hands' own pace (cpuHumanKeys). Not off the stage: that is the recovery's.
+// GOING UP, ONTO A PLATFORM (round 2, World Cup #17: "tried to go on platforms with traps on the edge"): a trap hits whoever it touches, so a
+// rise that would carry it up into one it noticed on a platform above -- through a one-way top from under it, or onto the end of one from
+// beside it -- drifts off it the same way, and an air jump or an up-special that would take it there is not pressed. Coming down onto a
+// platform it looks further ahead (a longer fall: its hands need the time to turn it), and keeps to the side it chose (a flip between sides is
+// two inputs and lands it on it). A big one (a prism, a wide trap) is steered off too over a platform: there is no walking round it after.
 function brainHazardAir(f, inp, B, L){
-  if(!(f.vy > 0) || overDrop(f)) return;
-  const H = brainDangers(f, B, L);
+  if(overDrop(f)) return;
+  const H = brainDangers(f, B, L), vx = f.vx || 0;
+  // where on its arc (vertical speed vy) its body first meets the height of h: [frames, x then], or null
+  const gy = groundY();
+  const meet = (h, vy) => {
+    if(vy > 0 || (h.y + h.r) > (f.y - f.r)){   // coming down onto it (its feet onto the danger's top), or level with it
+      const dy = (h.y - h.r) - (f.y + f.r); if(dy < 0 || dy > (h.y < gy - 50 ? 260 : 160)) return null;
+      const t = (Math.sqrt(Math.max(0, vy*vy + 2*GRAV*dy)) - vy)/GRAV;
+      return [t, f.x + vx*t];
+    }
+    const gap = (f.y - f.r) - (h.y + h.r), disc = vy*vy - 2*GRAV*gap;   // going up into it from under it (its head to the danger's bottom)
+    if(disc < 0) return null;
+    const t = (-vy - Math.sqrt(disc))/GRAV;
+    return t >= 0 ? [t, f.x + vx*t] : null;
+  };
+  const near = (h, m) => !!m && Math.abs(m[1] - h.x) <= h.r + f.r + 6;   // (its whole body clear of it: a trap trips on any touch)
+  const jv = JUMP*((f.st && f.st.jump) || 1);
   for(const h of H){
-    if(!h.small) continue;
-    const dy = (h.y - h.r) - (f.y + f.r); if(dy < 0 || dy > 160) continue;   // its feet above the trap's top, within a short fall
-    const t = (Math.sqrt(f.vy*f.vy + 2*GRAV*dy) - f.vy)/GRAV, lx = f.x + (f.vx || 0)*t;   // where it comes down, as it is falling
-    if(Math.abs(lx - h.x) > h.r + f.r*0.6 + 6) continue;
-    const away = lx >= h.x ? 1 : -1;
-    inp.left = away < 0; inp.right = away > 0; B.hzAir = hazardT;
+    if(!h.small && h.y > gy - 50) continue;   // (a big one on the floor itself is the walk's: it waits short of it, on its feet)
+    const over = h.y + h.r < f.y - f.r;   // (up above its head)
+    if(over && inp.jump && f.jumps > 0 && near(h, meet(h, jv))){ inp.jump = false; B.hzAir = hazardT; }   // (an air jump up into it: not pressed)
+    if(over && inp.special && inp.up && !inp.attack && (f.y - f.r) - (h.y + h.r) < 320 && Math.abs(h.x - f.x) <= h.r + f.r + 24){ inp.special = false; inp.up = false; B.hzAir = hazardT; }   // (nor an up-special up into it)
+    const m = meet(h, f.vy || 0);
+    if(!near(h, m)) continue;
+    const keep = hazardT - (B.hzAirAt || -1e9) <= 3 && Math.abs(h.x - B.hzAirX) < 6;   // the side it chose a moment ago, for this one
+    const away = keep ? B.hzAirSide : m[1] >= h.x ? 1 : -1;
+    inp.left = away < 0; inp.right = away > 0; B.hzAir = B.hzAirAt = hazardT; B.hzAirX = h.x; B.hzAirSide = away;
     return;
   }
+}
+// ON ITS FEET, ABOUT TO JUMP UP ONTO A PLATFORM (round 2, World Cup #17): the climb heads for the near end of the platform its foe is on -- just
+// where a trap laid at its edge sits -- and jumps from under it (or goes up with its up-special: Lightning's Flash). A danger it noticed up
+// there, over where it goes up, is not jumped into: it walks on under the platform to a spot past it (the side with more of the platform,
+// its foe's side if both have room) and jumps from there; a solid platform cannot be jumped up through, and with no spot past it either it
+// waits under it for the trap to go (HZ_WAIT, then it goes anyway for HZ_GO), as for one on its own floor. Only what it has noticed
+// (brainDangers), seen a moment late.
+function brainHazardUp(f, inp, B, L){
+  const H = brainDangers(f, B, L);
+  if(!H.length) return false;
+  const feet = f.y + f.r, jv = JUMP*((f.st && f.st.jump) || 1), upSp = inp.special && inp.up && !inp.attack;
+  const reach = Math.max(jv*jv/GRAV, upSp ? 300 : 0) + 2*f.r + 20;   // (both jumps' rise -- or an up-special's -- and its body)
+  for(const h of H){
+    if(h.y + h.r > f.y - f.r*0.5 || feet - (h.y - h.r) > reach) continue;   // not over its head, or higher than its jumps go
+    // over where it goes up: straight above it, or where its run carries it by the time it is up there (the way it is moving, and the arrow it
+    // holds: a jump taken on the run went up into it beside where it took off)
+    const gap = (f.y - f.r) - (h.y + h.r), disc = jv*jv - 2*GRAV*gap, tu = upSp ? 12 : disc >= 0 ? (-jv - Math.sqrt(disc))/GRAV : -jv/GRAV;
+    const held = (inp.right && !inp.left) ? 1 : (inp.left && !inp.right) ? -1 : 0, vu = clamp((f.vx || 0) + held*MOVE*tu*0.5, -MAXVX, MAXVX);
+    if(Math.abs(h.x - f.x) > h.r + f.r*0.5 + 24 && Math.abs(f.x + vu*tu - h.x) > h.r + f.r + 6) continue;
+    let p = null;   // the platform it lies on
+    for(const q of worldPlats) if(h.x >= q.x - 4 && h.x <= q.x + q.w + 4 && Math.abs(q.y - (h.y + h.r)) < h.r + 16){ p = q; break; }
+    const goal = h.r + f.r + 26, t = f.aiTarget;
+    const ok = (d) => !!p && !p.solid && (d < 0 ? h.x - p.x : p.x + p.w - h.x) > goal + 10 && h.x + d*goal > 50 && h.x + d*goal < WW - 50;
+    const okL = ok(-1), okR = ok(1);
+    const side = (okL && okR) ? ((t && t.x !== h.x) ? (t.x < h.x ? -1 : 1) : (h.x - p.x > p.x + p.w - h.x ? -1 : 1)) : okL ? -1 : okR ? 1 : 0;
+    inp.jump = false; if(upSp){ inp.special = false; inp.up = false; } B.hzUp = hazardT;
+    if(side){ const gx = h.x + side*goal; inp.left = gx < f.x; inp.right = gx > f.x; return true; }
+    if((B.hzWait = (B.hzWait || 0) + 1) > HZ_WAIT){ B.hzWait = 0; B.hzGo = hazardT + HZ_GO; return true; }
+    inp.left = false; inp.right = false;
+    return true;
+  }
+  return false;
 }
 // An item in a danger it noticed, or with a big one between it and the item, is not worth the walk (World Cup #8).
 function brainItemDanger(f, B, L, it){
