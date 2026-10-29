@@ -20910,6 +20910,7 @@ function haCrest(f, key, half, own, color){
 // WEIGHT (ROSTER w) was the only per-fighter raw stat; these five sit beside it. Each is a MULTIPLIER, and 1 is the game as it was:
 //   run   on the ground: the run's acceleration (MOVE) and its top speed (MAXVX)
 //   air   the same two in the air (drift)
+//         A fighter above weight 100 has a share taken off both, the heavier the more (HEAVIES MOVE SLOWER: HEAVY_SLOW, below).
 //   jump  every jump's launch speed (JUMP: first and double jumps, wall jumps, dash jumps, ctfJumpV) and the short-hop cut (SH_V)
 //   fall  gravity on the way down (a flyer's Flight included) and the fast-fall speed (FF_V). The engine has no terminal speed,
 //         so "falls faster" is "is pulled down harder": the fall speed at every moment scales by it. The way up is untouched.
@@ -21044,11 +21045,26 @@ const FIGHTER_STATS = {
 };
 const STAT_KEYS = ['run', 'air', 'jump', 'fall', 'dmg', 'rec'];   // rec: RECOVERY, the up-special's lift and the air jump while off a stage with edges (recK)
 const STAT_ONE = Object.freeze(Object.fromEntries(STAT_KEYS.map(k => [k, 1])));   // what a fighter with no `st` (a client's copy) reads (built from the keys, so a `dmg:` knob cannot reach it)
-// A fighter's own five, read once (makeFighter): its row's value, else the default's; anything that is not a positive number reads 1.
-function statsFor(name){
+// HEAVIES MOVE SLOWER (the owner, 2026-10-29: "heavies should have noticeable slower movespeed"). Asked, he chose a sliding scale
+// from weight 100: at or below 100 nothing changes (a light fighter is NOT made faster); above it, the heavier the slower -- about 2%
+// at 101, 8% at 110 and 15% at the heaviest (Tree, 138; Roboty, 134, about 14%). The share taken off is
+//     slow(w) = 0.15 x sqrt((w - 100) / 38)        (w > 100; 0 otherwise)    -> 101: 2.4%, 104: 4.9%, 110: 7.7%, 120: 10.9%, 138: 15%
+// and it multiplies BOTH the fighter's run and its air (drift): its own FIGHTER_STATS run and air x (1 - slow), rounded to 3 places,
+// so each fighter keeps its own run/air identity on top (fighters of the same weight keep their order; a heavier one loses more). Jump, fall, dmg and rec are untouched (jump height and fall speed
+// stay). It is read in ONE place: makeFighter hands statsFor the fighter's weight (its own row's w -- prize and event fighters too),
+// and everything that moves a fighter reads that st (step's run and drift, the netcode's prediction numbers, the CTF route checks).
+// RUNNING! and a boss's ghost fighter still run on 1 (they replace st with STAT_ONE: see above). Above 138 it keeps growing (sqrt).
+const HEAVY_SLOW = { from:100, ref:138, max:0.15 };   // from: the weight it starts above; ref: the weight that loses `max` (Tree)
+function heavySlowK(w){ const x = (+w || 0) - HEAVY_SLOW.from; return x > 0 ? 1 - HEAVY_SLOW.max*Math.sqrt(x/(HEAVY_SLOW.ref - HEAVY_SLOW.from)) : 1; }
+// A fighter's own stats, read once (makeFighter): its row's value, else the default's; anything that is not a positive number reads 1.
+// With a weight `w` (makeFighter's), a heavy fighter's run and air are slowed by HEAVY_SLOW; without one (the move words' dmg, a
+// jump's height) nothing is.
+function statsFor(name, w){
   const D = FIGHTER_STATS['*'] || STAT_ONE;
   const R = (name && Object.prototype.hasOwnProperty.call(FIGHTER_STATS, name)) ? FIGHTER_STATS[name] : null, o = {};
   for(const k of STAT_KEYS){ const v = +(R && R[k] != null ? R[k] : D[k]); o[k] = v > 0 ? v : 1; }
+  const hk = w != null ? heavySlowK(w) : 1;
+  if(hk !== 1){ o.run = Math.round(o.run*hk*1000)/1000; o.air = Math.round(o.air*hk*1000)/1000; }   // HEAVIES MOVE SLOWER
   return o;
 }
 // The damage `d` of a hit landed by `f` (a fighter, or anything else: only a fighter has stats).
@@ -21084,7 +21100,7 @@ function makeFighter(r,x,y,idx){
     rooted:0, ctrlRev:0, _revLock:0, slowed:0, _sawing:0, koCount:0, iceUntil:0, healing:0, _hurt:0, deaths:0, killCount:0, placement:null, _downOrder:0, _kos:0, _falls:0, _dmgDealt:0, _dmgTaken:0, _infected:0, _infectedBy:null, _origTeam:0, _lastInput:null, _empowerT:0, _hasteT:0, _bulletT:0, _plunge:null, _starT:0, _glowGoldT:0, _yoyleT:0, _holding:null, _bossHitId:-1, _bossHitDmg:0, _swallow:0, _swallowTick:0,
     flash:0, _atkAnim:0, _atkLen:ATK_ANIM, _atkPhase:null, _atkProg:0, _hurtAnim:0, _rigState:"idle", aiTimer:Math.random()*40, aiTarget:null, aiMode:0, _lastX:undefined, _stuck:0, _recover:0, _seekingSpawn:false,
     hurt: hurtboxFor(r && r.name),   // see HURTBOX; null falls back to the 24px circle
-    st: statsFor(r && r.name),   // FIGHTER STATS: run, air, jump, fall, dmg (all 1 unless FIGHTER_STATS says otherwise)
+    st: statsFor(r && r.name, w),   // FIGHTER STATS: run, air, jump, fall, dmg (all 1 unless FIGHTER_STATS says otherwise); above weight 100 the run and air are slowed (HEAVY_SLOW)
     size:1,   // PER-FIGHTER SIZE (setFighterSize): 1, the size every fighter has always been; r and hurt here are the size-1 ones
     r:24
   };
@@ -24311,7 +24327,8 @@ function navAssist(s, tgt, dx, vmax){
 // "They do too little", "More variety", and "add the floor as an assist trophy" ("Chomp from below"). EVERYTHING IS
 // TELEGRAPHED (2026-10-22): the cue is the trophy's own body, never a drawn warning. The rules every trophy keeps now:
 //   * it pops out of the trophy first (ASSIST_ARRIVE frames, growing in) and hurts nobody while it does;
-//   * it never walks faster than ASSIST_WALK, under the slowest run the roster allows (FIGHTER_STATS' 0.85 bound x MAXVX = 5.4),
+//   * it never walks faster than ASSIST_WALK, under the slowest run the roster allows (FIGHTER_STATS' 0.85 bound x MAXVX = 5.4;
+//     x 0.85 more for weight 138, HEAVY_SLOW, 4.6 -- Tree today, run 0.89, is 4.84),
 //     and walking it touches nobody: nothing walks you down;
 //   * anything faster is COMMITTED: a wind-up with its own body (8-Ball spins in place, Spongy squats, Foldy folds herself, Stapy
 //     opens wide, the Selfie Stick raises its phone), then one straight line fixed when the wind-up began -- jump it or step out;
