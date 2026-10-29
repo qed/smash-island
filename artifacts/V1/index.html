@@ -15309,6 +15309,15 @@ function onDropLedge(f){
   return false;
 }
 function isBig(){ return SETTINGS.mode==='teams' || SETTINGS.mode==='ctf' || ONEFIGHT.active || COBSFIGHT.active || RACE.active; }   // team mode uses the big 4-floor tower (and so do One's arena and Steve Cobs's)
+// THE WORLD'S EDGE IS A WALL FOR WALKING, on the Teams map only (SETTINGS.mode 'teams': The Yoyle Crossing). Its floor runs the whole width of the
+// world (setupWorld), so it ends at the world's edges, which is also where the camera stops: on screen the floor seemed to run up to a wall, and a
+// person holding left walked off it at x -76 to -92, off the screen, and lost a stock 7 frames later (the check of the full-width floor,
+// 2026-10-29). A fighter on the ground moved by its own keys (no hitstun, no faster than its run, not carried by a dash or a move: step()'s
+// ---- integrate ----) now stops with its whole body over the floor (edgeWalkHold). A jump off the edge, a launch, a knock or a move that carries
+// it still goes past, so side KOs are as they were. Not One's or Steve Cobs's arenas (cut from this map, their pits a knockout by design), not
+// Capture the Flag, not RUNNING!. An online guest's prediction keeps the same rule (netPredRun), so it does not slide past and get pulled back.
+function edgeWalkWall(){ return SETTINGS.mode==='teams' && !ONEFIGHT.active && !COBSFIGHT.active && !RACE.active; }
+function edgeWalkHold(f){ const lo = f.r, hi = WW - f.r; if(f.x < lo){ f.x = lo; if(f.vx < 0) f.vx = 0; } else if(f.x > hi){ f.x = hi; if(f.vx > 0) f.vx = 0; } }   // (f: a fighter, or a guest's predicted one)
 let CAM_ZOOM = 0.72;   // scrolling arenas render zoomed out so more of the big map is visible (Capture the Flag's rooms are drawn closer: ctfBuildWorld)
 // Wide scrolling FFA/boss arena: any stage flagged `big`, plus small stages when the MAP SIZE
 // setting asks for extra height (those ride this same, proven scrolling path).
@@ -20122,9 +20131,12 @@ function setupWorld(){
   // It stopped 3% of the world short of each side, and the strip past it (165 px on a 2v2) was open all the way down to the bottom KO
   // line, with the horizontal arm's tunnel opening straight onto it: CPUs walked out of the tunnel into it and lost a stock with nobody
   // near them (Bow teleported back into the tunnel and did it again), and a person could fall down it too. Now that strip is open air over
-  // the floor, a drop and no more. The cross, the field and the bands stay where they were (they still run from marginX). Past the floor's
-  // ends the side KO lines are where they always were (pastSideLine), so a launch out of either side still knocks out. One's and Steve
-  // Cobs's arenas, cut from this layout (TEAMS_QUADS_ONLY), keep their slab and the open pits past both ends: a knockout there by design.
+  // the floor: out of the tunnel's end is a drop onto it. The cross, the field and the bands stay where they were (they still run from
+  // marginX). The floor ends at the world's edges, where the camera stops too, and past them is nothing: the drop to the bottom KO line.
+  // Walking or running on the ground stops at the edge (edgeWalkWall: a person walked off it, off screen, before that rule), but a jump off
+  // it still goes over, and a launch past it flies on to the side KO lines, which are where they always were (pastSideLine), so a launch
+  // out of either side still knocks out. One's and Steve Cobs's arenas, cut from this layout (TEAMS_QUADS_ONLY), keep their slab and the
+  // open pits past both ends, walkable off: a knockout there by design.
   const floorX0 = TEAMS_QUADS_ONLY ? marginX : 0, floorX1 = TEAMS_QUADS_ONLY ? marginX + floorW : WW;
   floors=[{ level:0, y:botY, x:floorX0, w:floorX1 - floorX0 }];
 
@@ -44044,6 +44056,7 @@ function step(){
     if(f.onground){ f._aiFloorY = f.y + f.r; f._aiFloorT = hazardT; }   // the floor its jumps go up from (aiJumpFloor, a CPU's walls)
     // ---- move ----
     f._airT = f.onground ? 0 : (f._airT || 0) + 1;   // frames in the air (1 on the first): a running jump eases down over them (runEaseCap)
+    let _walkCap = -1;   // the run's speed cap, when this frame's speed is the fighter's own keys' (THE WORLD'S EDGE IS A WALL FOR WALKING: edgeWalkWall)
     if(f.hitstun<=0){
       f._freeAt = hazardT; f._freeIn = (inp.left ? 1 : 0) | (inp.right ? 2 : 0) | (inp.jump ? 4 : 0);   // (moved by these keys this step: a guest's prediction runs only when they are the guest's own, netPredOut)
       if((inp.left && !f._pl) || (inp.right && !f._pr)) f._dirT = hazardT;
@@ -44080,7 +44093,7 @@ function step(){
         // but it never cuts the speed the fighter already had below the easing ceiling: the momentum is kept while the ceiling slides
         // down (a drift against it still slows it), and it is never added to.
         if(!f.onground && fst.run > fst.air && vx0 > cap) cap = Math.min(runEaseCap(cap, cb*fst.run, f._airT), vx0);
-        f.vx=Math.max(-cap,Math.min(cap,f.vx)); }
+        f.vx=Math.max(-cap,Math.min(cap,f.vx)); _walkCap = cap; }
       // jump
       if(inp.jump && !f._jp && mtDashJump(f, inp)){ f._jp=true; }   // a hyper, a super or a reverse hyper out of a dash (dashers)
       else if(inp.jump && !f._jp && mtWallJump(f, inp)){ f._jp=true; }   // a wall jump (movetech): in the air, toward a wall, once per wall per airtime
@@ -44183,6 +44196,10 @@ function step(){
     mtFastFall(f, inp);   // movetech: Down in the air past the peak
     f.x+=f.vx; f.y+=f.vy;
     const _wasAir=!f.onground, _impactVY=f.vy;   // capture for the land-squash before we reset onground
+    // THE WORLD'S EDGE IS A WALL FOR WALKING (the Teams map: edgeWalkWall). On the ground at the start of this frame (a jump this frame has already
+    // left it), moved by its own keys: no hitstun, no faster than the run's cap (a lunge, a dash or a launch is faster, or never had the cap), not
+    // being carried (Bow's Teleport, a grab).
+    if(!_wasAir && _walkCap >= 0 && !(f.hitstun > 0) && Math.abs(f.vx) <= _walkCap + 1e-6 && !f._tp && !(f._tpHang > 0) && f._heldBy == null && !f._grabHold && edgeWalkWall()) edgeWalkHold(f);
     f.onground=false;
     // solid ground only in single-screen mode; the tower has no floor (fall = KO)
     // ...and not over one of Springy's open holes (springyHoleAt): there you fall, and the pit pops you back out (updateSpringy)
@@ -63936,7 +63953,7 @@ function navUp(f, t, wallX, wallX2){
     const feet = f.y + f.r;
     if(feet > st.y - 90 && feet < st.y + 150){
       let sx = (f.x < st.xL) ? st.xL + 12 : (f.x > st.xR) ? st.xR - 12 : f.x;
-      const bx = navBeside(f, st); if(bx != null) sx = bx;
+      const bx = navBeside(f, st); if(bx != null) sx = bx; else sx = navUnderEnd(f, st, sx);
       // hold: already over the step, so nothing else may steer it off (teams only, see steerClimb)
       return { x:sx, y:st.y, landing: feet <= st.y + 2, hold: !wideFFA && sx === f.x };
     }
@@ -63983,7 +64000,7 @@ function navUp(f, t, wallX, wallX2){
   // aim at the nearest reachable point on the chosen platform (its edge if we're beside it)
   const c=cands[0];
   let aimX = (f.x < c.xL) ? c.xL+12 : (f.x > c.xR) ? c.xR-12 : f.x;
-  const bx = navBeside(f, c); if(bx != null) aimX = bx;
+  const bx = navBeside(f, c); if(bx != null) aimX = bx; else aimX = navUnderEnd(f, c, aimX);
   if(sticky) f._navStep = { y:c.y, xL:c.xL, xR:c.xR, t:hazardT, slab:c.slab };
   return {x:aimX, y:c.y};
 }
@@ -63996,6 +64013,25 @@ function navBeside(f, c){
   if(f.x <= c.xL) return c.xL - f.r - 16;
   return null;
 }
+// CLEAR OF A SOLID'S END OVERHEAD (teams): aimed straight up at a one-way step (x on it), with a solid's end hanging over the way up (its underside
+// above the head and below where the head will be on the step), the aim is moved a body and 2 px inside that end. The centre chamber's rung: at
+// either end of it the bottom end of a shaft wall is over the head, and a jump straight up for the rung above bonked on it, again and again,
+// for 4 s and more (the check of the stuck fixes, 2026-10-29). With no column a body wide between two such ends, the aim is as it was.
+function navUnderEnd(f, c, x){
+  if(SETTINGS.mode !== 'teams' || c.slab != null || x < c.xL || x > c.xR) return x;
+  const head = f.y - f.r, top = c.y - 2*f.r;
+  let ax = x;
+  for(const p of worldPlats){
+    if(!p.solid) continue;
+    const bot = p.y + (p.h||16);
+    if(bot > head + 2 || bot < top) continue;
+    const pR = p.x + p.w;
+    if(p.x < x && pR > x - f.r - 2 && pR < c.xR) ax = Math.max(ax, pR + f.r + 2);   // hangs over from the left
+    else if(pR > x && p.x < x + f.r + 2 && p.x > c.xL) ax = Math.min(ax, p.x - f.r - 2);   // from the right
+  }
+  return (ax < c.xL || ax > c.xR || (ax !== x && navUnderEnd.hit(f, ax, head, top))) ? x : ax;
+}
+navUnderEnd.hit = (f, x, head, top) => worldPlats.some(p => p.solid && x + f.r > p.x && x - f.r < p.x + p.w && p.y + (p.h||16) <= head + 2 && p.y + (p.h||16) >= top);   // (both sides at once: no clear column)
 // Horizontal ground a rising jump covers before the fighter is level with the next step.
 const CLIMB_REACH = 130;
 // Is a SOLID layer between us and a target above, and if so, where is the nearest way through it?
@@ -78028,7 +78064,7 @@ function netPredRun(a, pr, to, team){
   if(to < from) return null;
   const P = { x:a.x, y:a.y, vx:a.vx, vy:a.vy, g:a.g, face:a.face, r:a.r, j:pr.j, at:pr.at, jp:!!(pr.s & 1), hop:!!(pr.s & 2), ff:!!(pr.s & 4), dn:!!(pr.s & 8) };
   const mt = !!(pr.s & 16), hopOk = !!(pr.s & 32), airrel = !!(pr.s & 64), grav = k[9];
-  const plats = platRects(), gy = groundY(), big = isBig();
+  const plats = platRects(), gy = groundY(), big = isBig(), edgeW = edgeWalkWall();
   // the walls: the one touched last (side, the frame, which face: mtWallJump's window and once-per-face rule), the faces kicked off this airtime
   const wjv = k[10], cliffs = !!FLOOR_SEGS && !big, w = Array.isArray(pr.w) && pr.w.length === 3 ? pr.w : null, cl = Array.isArray(pr.cl) ? pr.cl : null, clLim = cl ? +cl[0] || 0 : 0;
   P.ws = w ? w[0] : 0; P.wt = w ? pr.a - w[1] : -1e9; P.wid = w ? String(w[2]) : ''; P.used = Array.isArray(pr.wu) ? pr.wu.slice(0, 32).map(String) : []; P.clT = cl ? +cl[1] || 0 : 0;
@@ -78057,6 +78093,7 @@ function netPredRun(a, pr, to, team){
     { const edge = D && !P.dn; P.dn = !!D;
       if(mt){ if(P.g || P.vy < 0) P.ff = false; else if(P.ff){ if(P.vy < k[7]) P.vy = k[7]; } else if(edge){ P.ff = true; P.vy = Math.max(P.vy, k[7]); } } }
     P.x += P.vx; P.y += P.vy;
+    if(P.g && edgeW) edgeWalkHold(P);   // the Teams map's edge, a wall for walking (step(): edgeWalkWall; on the ground the speed is always the run's here)
     P.g = false;
     // the floor, the solid blocks, the one-way tops (step(): ---- integrate ----)
     if(!big && P.y >= gy - P.r && !springyHoleAt(P.x) && floorCatches(P, gy)){ P.y = gy - P.r;
