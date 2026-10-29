@@ -18184,8 +18184,8 @@ function cupCamFocus(){
 // sleep or stun on a foe at kill %. PCAM_MIN and over cuts (every KO does; a poke never does), the biggest one first.
 const PCAM_CAP = 4;          // background fixtures stepped at once, at most (pcPace takes it down to 1 when the frames get slow, and back up)
 const PCAM_MIN = 30;         // a play this big or bigger cuts the camera to its match
-const PCAM_DWELL = 180;      // frames the camera stays after a cut before it may cut again (3 s): the play it cut for is seen
-const PCAM_HOLD = 120;       // frames a good play in the match on screen keeps the camera there (2 s), so it plays out
+const PCAM_DWELL = 180;      // frames the camera stays after a cut before it may cut again (3 s): the play it cut for is seen (a KO waiting skips it)
+const PCAM_HOLD = 120;       // frames a good play in the match on screen keeps the camera there (2 s), so it plays out (a KO waiting minds a KO's only)
 const PCAM_STALE = 90;       // a play older than this (1.5 s) is no longer worth cutting to: the camera shows the matches live
 const PCAM_BEAT = 75;        // frames the match on screen stands at its end before the camera moves on (the hub's old 1.2 s wait)
 // The fixture's own dice (mulberry32): the same seed is the same match.
@@ -18253,11 +18253,11 @@ function pcBase(){
 function pcSeeds(){ for(const f of TOURNEY.fixtures) if(f._pcSeed == null) f._pcSeed = Math.floor(PCAM.real()*4294967296) >>> 0; }
 function pcInit(fx){
   const P = PCAM;
-  Object.assign(P, { on:true, bg:false, cur:null, list:[], shown:null, pend:null, auto:true, cap:PCAM_CAP, frame:0, cutF:0, holdF:0, ms:0,
+  Object.assign(P, { on:true, bg:false, cur:null, list:[], shown:null, pend:null, auto:true, cap:PCAM_CAP, frame:0, cutF:0, holdF:0, koHoldF:0, ms:0,
     log:[], flashF:0, paceF:0, ending:false });
   P.queue = TOURNEY.fixtures.filter(f=>!f.played && f !== fx);
 }
-function pcNewMatch(fx){ return { fx, rng:pcRng(fx._pcSeed), st:null, over:false, overF:0, steps:0, plays:0, lastGood:null,
+function pcNewMatch(fx){ return { fx, rng:pcRng(fx._pcSeed), st:null, over:false, overF:0, steps:0, plays:0, lastGood:null, sung:false,
   det:{ str:{}, big:{}, hit:{}, st:{}, setT:{}, trip:{}, koT:{}, down:{} } }; }
 // Watch a fixture with the Plays Camera: it is set up on its own dice like any other in the round, then given the screen.
 function pcStart(fx){
@@ -18323,6 +18323,7 @@ function pcRun(m, n, bg){
     for(let i = 0; i < n && running; i++){
       if(!bg && INTERP && FIXED_STEP && !fsSlowSkips()) interpRecord(false);
       step(); m.steps++;
+      if(!bg && KOC.on && FS.game === 1) m.sung = true;   // the last KO's sting played with the match on screen (kocMark)
       pcTick(m);
       if(P.onStep) P.onStep(m);
     }
@@ -18332,7 +18333,10 @@ function pcRun(m, n, bg){
 function pcFrame(n){
   const P = PCAM, t0 = performance.now(), sh = P.shown;
   P.frame++;
-  if(!sh.over) pcRun(sh, n, false);
+  if(!sh.over){
+    try{ pcRun(sh, n, false); }
+    catch(err){ sh.over = true; sh.overF = P.frame - PCAM_BEAT; console.error('Plays Camera: the match on screen threw; its fixture is left to watch or sim', err); }   // (no beat on a match that broke: the director moves on now)
+  }
   sh.st = pcSave();
   let k = 0;
   for(const m of P.list){
@@ -18344,7 +18348,10 @@ function pcFrame(n){
   if(P.queue.length && k < P.cap){ try{ pcFill(); }catch(err){ console.error('Plays Camera: a fixture would not set up; it is left to watch or sim', err); } }
   pcDirector();
   pcLoad(P.shown.st);
-  if(P.shown !== sh){ try{ buildHUD(); updateHUD(); }catch(e){} }
+  if(P.shown !== sh){
+    try{ buildHUD(); updateHUD(); }catch(e){}
+    if(KOC.on && FS.game === 1 && !P.shown.sung){ P.shown.sung = true; try{ SFX.game(); }catch(e){} }   // cut into its last KO's slow-mo: the sting it played unheard, once, for the screen
+  }
   pcPace(performance.now() - t0);
   const left = P.list.some(m=>!m.over) || P.queue.length > 0;
   if(P.shown.over && P.frame - P.shown.overF >= PCAM_BEAT && (!left || !P.auto)) pcEnd();   // all played (or the camera switched off): the hub
@@ -18379,6 +18386,7 @@ function pcOver(winTeam){
     try{ recordCupFight(sa>sb ? 0 : (sb>sa ? 1 : null)); }catch(e){}
   }
   m.over = true; m.overF = P.frame;
+  if(P.pend && P.pend.m === m) P.pend = null;   // never a cut to a match that is over
 }
 function pcEnd(){
   const P = PCAM;
@@ -18438,7 +18446,7 @@ function pcKoPlay(m, t, k, after){
   const mine = cupTeamStocks(k.team), theirs = cupTeamStocks(t.team) + (after ? 1 : 0);   // before this KO
   if((D.down[k.team] || 0) >= 2 && mine >= theirs - 1){ sc += 15; kind = 'comeback KO'; }
   if(k.stocks === 1 && (k.pct || 0) > 110) sc += 12;   // clutch: on their last stock at kill %
-  pcPlay(m, kind, sc);
+  pcPlay(m, kind, sc, true);
 }
 // After each step of a match: a root, freeze, sleep or stun starting on someone (a setup), and the trips off the stage.
 function pcTick(m){
@@ -18466,21 +18474,25 @@ function pcTick(m){
 }
 // A play in match m, scored. PCAM_MIN or more: on screen, it holds the camera there while it plays out; elsewhere, it is a cut
 // waiting (the biggest one waiting wins).
-function pcPlay(m, kind, score){
+function pcPlay(m, kind, score, ko){
   const P = PCAM; score = Math.round(score);
-  const e = { f:P.frame, t:hazardT, m, kind, score };
+  const e = { f:P.frame, t:hazardT, m, kind, score, ko:!!ko };
   m.plays++;
   if(P.onPlay) P.onPlay(e);
-  if(score < PCAM_MIN) return;
+  if(score < PCAM_MIN || m.over) return;
   m.lastGood = e;
-  if(m === P.shown){ P.holdF = Math.max(P.holdF, P.frame + PCAM_HOLD); return; }
+  if(m === P.shown){ P.holdF = Math.max(P.holdF, P.frame + PCAM_HOLD); if(e.ko) P.koHoldF = Math.max(P.koHoldF, P.frame + PCAM_HOLD); return; }
   const q = P.pend;
-  if(!q || score > q.score || P.frame - q.f > PCAM_STALE) P.pend = e;
+  if(!q || (e.ko && !q.ko) || (e.ko === q.ko && score > q.score) || P.frame - q.f > PCAM_STALE) P.pend = e;   // a KO first, then the biggest
 }
 // Once a frame, after every match has stepped: cut to the best play waiting, unless the camera only just cut or a play on screen is
-// still playing out. The match on screen over: after its beat, to the best match still playing.
+// still playing out. The match on screen over: after its beat, to the best match still playing. Never to a match that is over: a play
+// waiting there goes the moment it ends. A KO is caught on the blow and waits for no dwell (only for a KO on screen still playing
+// out), so a deciding KO is cut to while it flies, before its match ends.
 function pcDirector(){
-  const P = PCAM, sh = P.shown, e = P.pend;
+  const P = PCAM, sh = P.shown;
+  if(P.pend && P.pend.m.over) P.pend = null;
+  const e = P.pend;
   if(sh.over){
     if(!P.auto || P.frame - sh.overF < PCAM_BEAT) return;
     const live = P.list.filter(m=>!m.over);
@@ -18490,17 +18502,18 @@ function pcDirector(){
     pcCut(to, e && e.m === to ? e : null); P.pend = null; return;
   }
   if(!e || !P.auto) return;
-  if(P.frame - e.f > PCAM_STALE || e.m.over && P.frame - e.m.overF > 30){ P.pend = null; return; }
-  if(P.frame < P.cutF + PCAM_DWELL || P.frame < P.holdF) return;
+  if(P.frame - e.f > PCAM_STALE){ P.pend = null; return; }
+  if(e.ko ? P.frame < P.koHoldF : (P.frame < P.cutF + PCAM_DWELL || P.frame < P.holdF)) return;
   pcCut(e.m, e); P.pend = null;
 }
 function pcCut(m, e){
   const P = PCAM, from = P.shown;
   P.log.push({ f:P.frame, from:TOURNEY.fixtures.indexOf(from.fx), to:TOURNEY.fixtures.indexOf(m.fx), kind:e ? e.kind : 'match over', score:e ? e.score : 0 });
-  P.shown = m; P.cutF = P.frame; P.flashF = P.frame; P.holdF = e ? P.frame + PCAM_HOLD : 0;
+  P.shown = m; P.cutF = P.frame; P.flashF = P.frame; P.holdF = e ? P.frame + PCAM_HOLD : 0; P.koHoldF = (e && e.ko) ? P.frame + PCAM_HOLD : 0;
 }
 // K: in a session, the camera's cuts (and its tag) off and on -- off, the match on screen is the one you stay with, and its end is the
-// hub; elsewhere in a spectated stock cup, the setting itself (and mid-fixture, a session from here: pcAdopt).
+// hub; elsewhere in a spectated stock cup, the setting itself (and mid-fixture, a session from here: pcAdopt). Only this cup's: the saved
+// setup default is the setup row's alone (K never writes it).
 function pcKey(){
   if(!TOURNEY || !TOURNEY.active || TOURNEY.mode !== 'spectate' || TOURNEY.game === 'ctf') return;
   const P = PCAM, cfg = TOURNEY.cfg || (TOURNEY.cfg = cupClean(TOURNEY_CFG));
@@ -18509,7 +18522,6 @@ function pcKey(){
     cfg.pcam = cfg.pcam ? 0 : 1;
     if(cfg.pcam && TOURNEY_WATCHING && running && !paused && !KOC.over && !inNetSession()) pcAdopt();
   }
-  TOURNEY_CFG.pcam = cfg.pcam; cupSave(); try{ cupSyncUI(); }catch(e){}
   const hub = document.getElementById('tourneyHub'); if(!P.on && hub && hub.classList.contains('active')) showTourneyHub();
 }
 addEventListener('keydown', e=>{
