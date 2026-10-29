@@ -43840,6 +43840,13 @@ function step(){
     // Bow's Teleport comes back when she lands or is hit (it is once per airtime; not while she is still fading: teleportArrive spends it)
     if(f._tpUsed && !f._tp && (f.onground || f.hitstun>0)) f._tpUsed = false;
     // blast zone — screen edges in small mode, world edges in the big arena (the sides SIDE_ROOM further out past real ledges: pastSideLine)
+    // ONE FALL, ONE STOCK (the owner, 2026-10-29: "i take two stocks sometimes when falling" -- "i think its 2", the respawn). Since the ledge
+    // stages got their open air (SIDE_ROOM) a KO'd fighter comes back at the top of the wider view, 145 px above the stage's box and only 115 px
+    // under the top KO line, and a jump or an up-special pressed in the first frames back carried them out the top, off screen: a second stock
+    // for the one fall. So until a fighter who came back (f._backAir, set by eliminate) touches down or is knocked about, the top line is a
+    // ceiling for them, not a KO: they stop at it and fall back in. Everyone else, and every launch, meets the same KO lines as before.
+    if(f._backAir && (f.onground || f.hitstun > 0)) f._backAir = false;
+    if(f._backAir && f.y < -260){ f.y = -260; if(f.vy < 0) f.vy = 0; }
     if(pastSideLine(f.x)||f.y>WH+160||f.y<-260){ eliminate(f); }
 
     // hazards
@@ -60085,6 +60092,7 @@ function knock(t,kx,ky){
   // sustained damage/DPS on a stationary target instead of chasing it around the stage.
   if(TESTMODE.active && TESTMODE.anchored && t.controller!=="local"){ t.vx=0; t.vy=0; return; }
   t.vx=kx; t.vy=ky; t.onground=false; t._hop=false; t._ff=false; t._hyperT=0;
+  t._backAir=false;   // knocked about: the respawn's ceiling is over (ONE FALL, ONE STOCK, in step)
   // REAL EDGES: knocked into the air where a fall is a fall, a fighter gets a jump and the up-special back, as in the games this one
   // follows -- so anyone knocked off a ledge has a way back to try, and getting back is up to the player
   if(FLOOR_SEGS){ t.jumps = Math.max(t.jumps||0, 1); t._usedAirSpecial = false; }
@@ -60351,6 +60359,18 @@ function eliminate(f){
   SFX.ko();
   if(f.fsGlow>0 || f._fs) fsOnKo(f);   // the glow (or a Final Smash under way) goes with the stock
   if(f._fsLock) fsLockOff(f, true);   // a foe a Final Smash caught is let go (CATCH, THEN CINEMATIC)
+  // ONE FALL, ONE STOCK (the owner, 2026-10-29: "i take two stocks sometimes when falling"). Whoever was dragging this fighter down (DROPS CARRY)
+  // or holding them in a grab lets go of them here. The drop kept a fighter it carried off the stage on its list, and the frame after they came
+  // back it put them under itself again, still past the bottom line: a second stock for the one fall. (A hold pulled them back into it.)
+  for(const g of fighters){
+    if(g === f) continue;
+    if(g._carrying && g._carrying.some((c)=>c.idx === f.idx)) g._carrying = g._carrying.filter((c)=>c.idx !== f.idx);
+    if(g._hold && g._hold.idx === f.idx) holdRelease(g, f, 0);
+    // ---- Steve Cobs's prize: begin ----
+    if(g._drawer && g._drawer.idx === f.idx) g._drawer = null;   // (a drawer ride ends too: it put the foe back beside the roll, past a side line)
+    // ---- Steve Cobs's prize: end ----
+  }
+  f._carriedBy = null;
   fsKoSlow(f);   // ...and a KO by a Final Smash plays slowed down, if its launch did not already
   // if an infected puppet is KO'd, revert it to its real team immediately
   if(f._infected>0){ f.team=f._origTeam; f._infected=0; f._infectedBy=null; }
@@ -60370,7 +60390,7 @@ function eliminate(f){
   }
   // Bubble reform: the first KO each stock just "pops" her — she reforms at center, no stock lost
   if(f.reform>0){
-    f.reform--; f.x=camX+W*0.5; f.y=camY+sideRoomTop()-30; if(_cs){ f.x=_cs.x; f.y=_cs.y; } f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0; f.frozen=0; f._floatT=0;
+    f.reform--; f.x=camX+W*0.5; f.y=camY+sideRoomTop()-30; if(_cs){ f.x=_cs.x; f.y=_cs.y; } f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f._backAir=true; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0; f.frozen=0; f._floatT=0;
     dropInFlightMoves(f);
     for(let i=0;i<18;i++) puff(_cs ? f.x : W*0.5, _cs ? f.y : 60, '#bfe8ff', 6);   // no "YOYLEBERRY REFORM!" line ("Remove them all")
     return;
@@ -60436,6 +60456,7 @@ function eliminate(f){
   }
   f.vx=0; f.vy=0; f.pct=0; f.invuln=90; f.hitstun=0; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0;
   f._floatT=0;   // thin air (Thermal Rise's second, a float area's linger) does not outlive the stock: she comes back on whole gravity
+  f._backAir=true;   // just back: the top KO line is a ceiling until they touch down or are knocked about (ONE FALL, ONE STOCK, in step)
   dropInFlightMoves(f);
   if(f.name==="Bubble") f.reform=1;   // Bubble regains her reform each new stock
 }
