@@ -1910,6 +1910,10 @@
           <div class="seg" id="segCupItems">
             <button data-v="0">Off</button><button data-v="1">Low</button><button data-v="2" class="on">Normal</button><button data-v="3">High</button>
           </div></div>
+        <div class="cuprow" id="cupPcamRow" title="Watching a match also plays the round's other matches, and the camera cuts to the best plays (K switches it during the cup)"><div class="seglabel">📺 Plays Camera (K)</div>
+          <div class="seg" id="segCupPcam">
+            <button data-v="0" class="on">Off</button><button data-v="1">On</button>
+          </div></div>
       </div>
     </div>
     <div class="cuprow" id="cupStageRow" style="display:none;margin:10px auto 0;align-items:center">
@@ -2645,6 +2649,10 @@ const KEY_LABELS = {left:"Move Left",right:"Move Right",jump:"Jump",down:"Down /
 // ---------- state ----------
 let chosen = ROSTER.find(r=>r.play);
 let stage = STAGES[0];
+// PLAYS CAMERA (see that block, in the World Cup's): declared with the first state, since go(), loop(), applyHit and the sound ask it.
+// on: a session is live; bg: the match stepping now is one nobody sees; cur: the match stepping now; real: the game's own dice.
+const PCAM = { on:false, bg:false, cur:null, real:null, list:[], queue:[], shown:null, auto:true, cap:4, frame:0, cutF:0, holdF:0, pend:null,
+  ms:0, log:[], flashF:0, paceF:0, ending:false, noPace:false, onStep:null, onPlay:null };
 const SETTINGS = { mode:"ffa", count:5, stocks:3, teamKey:"", itemRate:2, mapSize:"normal", bossPick:"rush", smashBalls:true };   // bossPick: "rush" or "one" (once One is beaten)
 // ---------- MAP SIZE (match setting) ----------
 // Multipliers applied to the arena width/height that setupWorld() computes. Every other piece of
@@ -14280,7 +14288,7 @@ function noise(dur, gain, filterFreq, whenOff, filterTo){
     const t0=SND.ctx.currentTime + (whenOff||0);
     const n = SND.ctx.createBufferSource();
     const buf = SND.ctx.createBuffer(1, Math.ceil(SND.ctx.sampleRate*dur), SND.ctx.sampleRate);
-    const d = buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1);
+    const d = buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=(pcRand()*2-1);   // (pcRand: never a Plays Camera fixture's dice)
     n.buffer=buf;
     const f=SND.ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.setValueAtTime(filterFreq||1200, t0);
     if(filterTo){ f.frequency.exponentialRampToValueAtTime(Math.max(80,filterTo), t0+dur); }
@@ -14294,7 +14302,7 @@ function noiseSwell(dur, peak, gain, freq, whenOff){
   try{
     const c = SND.ctx, t0 = c.currentTime + (whenOff||0);
     const n = c.createBufferSource(), buf = c.createBuffer(1, Math.ceil(c.sampleRate*dur), c.sampleRate), d = buf.getChannelData(0);
-    for(let i=0;i<d.length;i++) d[i] = Math.random()*2-1;
+    for(let i=0;i<d.length;i++) d[i] = pcRand()*2-1;
     n.buffer = buf;
     const f = c.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 0.7; f.frequency.setValueAtTime(freq*0.6, t0); f.frequency.linearRampToValueAtTime(freq, t0 + peak);
     const g = c.createGain(); g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(Math.max(0.001, gain), t0 + peak); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
@@ -14806,7 +14814,7 @@ function musicRollUserTrack(kind){
 // Bounded retry, then a deterministic step. An unbounded do/while would hang forever against a
 // stubbed Math.random that returns a constant — which is exactly what the golden harness does.
 function musicRollIndex(n, last){
-  const roll = ()=>{ const r = Math.floor(Math.random()*n); return (r>=0 && r<n) ? r : 0; };
+  const roll = ()=>{ const r = Math.floor(pcRand()*n); return (r>=0 && r<n) ? r : 0; };
   let i = roll();
   for(let tries=0; tries<8 && i===last && n>1; tries++) i = roll();
   if(i===last && n>1) i = (last+1) % n;
@@ -15429,6 +15437,7 @@ function buildChangelog(){
 
 // ---------- screen router ----------
 function go(id){
+  if(PCAM.on && id !== '_none_') pcStop();   // PLAYS CAMERA: left part-way; the fixtures not finished stay to watch or sim
   if(id !== 'ctfCupTeams' && typeof CTFKIT_UI !== 'undefined' && CTFKIT_UI){ try{ ctfKitClose(); }catch(e){ CTFKIT_UI = null; } }   // a kit box left open must not eat the next screen's Esc (playtest)
   paused=false; { const pc=document.getElementById('pauseCard'); if(pc) pc.style.display='none'; }   // no screen is reached paused
   try{ stopReplay(); }catch(e){}   // a looping replay must not survive leaving the result screen
@@ -16789,7 +16798,7 @@ function teamAiShouldRefresh(now, sig, tier){
  * the promise chain never touches the frame that started it.
  */
 function teamAiTick(){
-  if(!running || SETTINGS.mode!=='teams' || inNetSession()) return false;
+  if(!running || SETTINGS.mode!=='teams' || inNetSession() || PCAM.on) return false;   // (PLAYS CAMERA: no re-plans that arrive on the clock's time; each fixture plays on its own dice)
   if(!fighters || !fighters.length) return false;
   const tier = teamAiTier();
   const ctx = teamAiContext();
@@ -17009,6 +17018,7 @@ function changeFighter(){
   resultChangeFighter();   // offline: the select screen, with a Level Creator level still queued
 }
 function startMatch(){
+  if(PCAM.on) pcStop();   // (PLAYS CAMERA: a new match ends the session)
   { const rb=document.getElementById('resultRematch'); if(rb) rb.style.display=''; }
   if(CTUT.active){ ctutStart(CTUT.step); return; }   // R in the Capture the Flag practice: this step again, on a fresh map
   if(RACE.retry){ startRunningRace(RACE.retry.opts); return; }          // Retry from RUNNING!'s result screen
@@ -17113,7 +17123,8 @@ function cupClean(src){
     gStocks:one(o.gStocks, [1,2,3], 2), kStocks:one(o.kStocks, [1,2,3,5], 3),
     gTime:one(o.gTime, [0,60,90,120,180], 90), kTime:one(o.kTime, [0,120,180,300], 0),
     items:one(o.items, [0,1,2,3], 2), pool:str(o.pool, ['all','small','big','pick'], 'small'),
-    picks:(Array.isArray(o.picks) ? o.picks : []).filter(id => STAGES.some(st => st.id===id)), cpu:one(o.cpu, [0,1,2,3], 1) };
+    picks:(Array.isArray(o.picks) ? o.picks : []).filter(id => STAGES.some(st => st.id===id)), cpu:one(o.cpu, [0,1,2,3], 1),
+    pcam:one(o.pcam, [0,1], 0) };   // PLAYS CAMERA, spectator cups only: Off by default
 }
 let TOURNEY_CFG = cupClean(CUP_DEFAULTS);
 (function cupLoad(){
@@ -17128,7 +17139,7 @@ let TOURNEY_CFG = cupClean(CUP_DEFAULTS);
 function cupSave(){ try{ localStorage.setItem(CUP_SETUP_KEY, JSON.stringify({ ...TOURNEY_CFG, team:TOURNEY_SETUP_SIZE, mode:TOURNEY_SETUP_MODE })); }catch(e){} }
 // [segment id, TOURNEY_CFG field] -- the two older rows (mode, team size) keep their own globals and have no field
 const CUP_SEGS = [['segTourneyMode',null], ['segTourneySize',null], ['segCupSize','cup'], ['segCupMates','mates'], ['segCupCpu','cpu'], ['segCupPool','pool'],
-  ['segCupGStocks','gStocks'], ['segCupKStocks','kStocks'], ['segCupGTime','gTime'], ['segCupKTime','kTime'], ['segCupItems','items']];
+  ['segCupGStocks','gStocks'], ['segCupKStocks','kStocks'], ['segCupGTime','gTime'], ['segCupKTime','kTime'], ['segCupItems','items'], ['segCupPcam','pcam']];
 // teams that advance from the groups, and the knockout rounds that leaves: 48 -> 32 (a Round of 32), 32 -> 16, 16 -> 8
 function cupAdvancers(n){ return n===48 ? 32 : n/2; }
 function cupKnockoutRounds(n){ return Math.round(Math.log2(cupAdvancers(n))); }
@@ -17139,6 +17150,7 @@ function cupSyncUI(){
     const want = String(key ? cfg[key] : (id==='segTourneyMode' ? TOURNEY_SETUP_MODE : TOURNEY_SETUP_SIZE));
     seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === want));
   }
+  const pcr = document.getElementById('cupPcamRow'); if(pcr) pcr.style.display = TOURNEY_SETUP_MODE==='spectate' ? '' : 'none';   // PLAYS CAMERA: a spectator cup's
   const mates = document.getElementById('cupMatesRow');
   if(mates) mates.style.display = (TOURNEY_SETUP_MODE==='normal' && TOURNEY_SETUP_SIZE>1) ? '' : 'none';
   const row = document.getElementById('cupStageRow'), chips = document.getElementById('cupStagePicks');
@@ -18102,6 +18114,7 @@ let TOURNEY_WATCHING = null;
 function watchFixture(fx, youPlay){
   if(fx.played){ return; }
   if(TOURNEY.game === 'ctf'){ ctfCupWatch(fx); return; }   // the Flag Cup: a spectated Capture the Flag match, or (a Normal cup) your own fixture, which you always play
+  if(pcWants(fx, youPlay)){ pcStart(fx); return; }   // PLAYS CAMERA: this fixture on screen, the round's others behind it
   TOURNEY_WATCHING = fx;
   { const cfg0 = TOURNEY.cfg || TOURNEY_CFG, secs = (fx.kind==="group") ? cfg0.gTime : cfg0.kTime; TOURNEY.liveTimer = secs ? secs*60*tourneyTeamSize() : 0; }   // a clock only if the setup gave one (a group fight's is a cap, a knockout runs to elimination), per fighter on a side: a 3v3 has three times the stocks to get through
   const size = tourneyTeamSize(), cfg = TOURNEY.cfg || TOURNEY_CFG;
@@ -18144,6 +18157,428 @@ function cupCamFocus(){
   }
   return best ? { x:(best[0].x+best[1].x)/2, y:(best[0].y+best[1].y)/2 } : null;
 }
+// ============================================================
+//  PLAYS CAMERA -- the spectated World Cup's "NFL RedZone"
+// ============================================================
+// The owner, 2026-10-29: "add a 'nfl redzone' sort of thing which shows the best plays. name it 'plays camera'" -- "this is for
+// spectator world cup". With the setup's Plays Camera row On (cfg.pcam, Off by default; K switches it mid-cup), watching a fixture
+// of a spectated stock cup plays the round's OTHER fixtures at the same time, unseen: PCAM_CAP of them at once at most (pcPace
+// lowers that when the frames get slow), the rest waiting for a free slot. When one of them has a good play the camera cuts to
+// that match and STAYS there until the next good play somewhere else -- it never goes back by itself. No words: a frame in the
+// two sides' colours and a corner tag with a camera and the two fighters' faces say it is the Plays Camera and which match.
+//
+// HOW. One set of globals holds a match: the fighters, the shots, the world, the camera, the last KO's and the Final Smash's
+// state and the rest (pcSave lists every one). Each live match keeps its own copy, and each frame every match is loaded in turn
+// (pcLoad), run through the game's own step() and saved back -- the one on screen first, then the background ones. Each fixture
+// has its OWN dice: Math.random is that fixture's seeded generator (pcRng, seeded once per fixture: fx._pcSeed) while its steps
+// run, and every match starts from the same clean slate (pcBase), so a fixture plays out exactly the same on screen or in the
+// background: the same seed is the same winner and the same score. What only the screen has -- the HUD, the banner line, sound,
+// music, the shake, draw() -- is skipped in the background and never rolls a fixture's dice (pcRand), so it cannot change one.
+// With the row Off nothing here runs: PCAM.on stays false, and every hook below is behind it.
+//
+// THE PLAYS. The game's own event points report them (no wrapping of anything the CPU brain reads): applyHit (pcHit), eliminate
+// (pcKo) and, after each step, the statuses and the trips off the stage (pcTick). A play is scored by how big the moment is (the
+// simulated cups' detector, made live): a KO of every kind -- caught on the BLOW that will carry them out (fsKoFlight), so the cut
+// arrives for the flight -- worth more early, off the stage, after a setup, at the end of a string, by a Final Smash, on match
+// point, as a comeback; a string of three moves or more; a big finisher; a deep recovery while it is still going; a root, freeze,
+// sleep or stun on a foe at kill %. PCAM_MIN and over cuts (every KO does; a poke never does), the biggest one first.
+const PCAM_CAP = 4;          // background fixtures stepped at once, at most (pcPace takes it down to 1 when the frames get slow, and back up)
+const PCAM_MIN = 30;         // a play this big or bigger cuts the camera to its match
+const PCAM_DWELL = 180;      // frames the camera stays after a cut before it may cut again (3 s): the play it cut for is seen (a KO waiting skips it)
+const PCAM_HOLD = 120;       // frames a good play in the match on screen keeps the camera there (2 s), so it plays out (a KO waiting minds a KO's only)
+const PCAM_STALE = 90;       // a play older than this (1.5 s) is no longer worth cutting to: the camera shows the matches live
+const PCAM_BEAT = 75;        // frames the match on screen stands at its end before the camera moves on (the hub's old 1.2 s wait)
+// The fixture's own dice (mulberry32): the same seed is the same match.
+function pcRng(seed){
+  let a = seed >>> 0;
+  return function(){ a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0)/4294967296; };
+}
+// Dice for what only the screen has (the sound's noise, the music's next track): never a fixture's own, so whether a match is heard
+// cannot change how it plays. Outside a Plays Camera session it is Math.random itself, so nothing else changes.
+function pcRand(){ return (PCAM.on && PCAM.real) ? PCAM.real() : Math.random(); }
+// A spectated stock cup with the row On, a fixture nobody of yours plays in.
+function pcWants(fx, youPlay){
+  return !youPlay && !PCAM.on && TOURNEY && TOURNEY.active && TOURNEY.mode === 'spectate' && TOURNEY.game !== 'ctf' && !!(TOURNEY.cfg && TOURNEY.cfg.pcam) && !inNetSession();
+}
+// EVERY GLOBAL ONE MATCH LIVES IN. A binding left out of here is shared by every match running (a leak); the jsdom proof runs a
+// fixture alone and among others and compares every step, which is what found the list complete.
+function pcSave(){
+  return { stage, running, fighters, particles, projectiles, beams, hazardT, evil, items, summons, itemTimer, SPONGY_PLATS, FILE_RIDES,
+    FINX, FX_PLATS, lastKoFrame, WW, WH, camX, camY, bases, worldPlats, floors, worldZones, spawnZones, FLOOR_SEGS, SIDE_ROOM, TEAM_PLAN,
+    CAM_ZOOM, TOURNEY_WATCHING, BOSS_ARENA, SMASHBALL, ASSIST_BAG, ASSIST_LAST, ASSIST_KEY_SEQ, HA_SUMMON_SEQ, FSB_CLONE, TWO_NIGHT,
+    BOSS_ATK_ID, tendrils, JAB_BY, STEP_F, HITSTOP_WU, FINX_SEQ, VOLLEY_SEQ, HIT_CAST, IMPACT_DUST, IMPACT_DEBRIS, IMPACT_SCARS,
+    IMPACT_OUT, MATCH_TWIST, CAKE_FX, RIVAL_NAME, RIVAL_KILLS, _cpuSeeT, SMASH_PROJ, NET_PROJ_SEQ, COS_KO_FX, COS_KO_OUT, HA_FADE_NEXT,
+    oneFx, cobsFx,
+    _koc:Object.assign({}, KOC), _fs:Object.assign({}, FS), _hsf:Object.assign({}, HITSTOP_FIN), _stom:Object.assign({}, STOMACH),
+    _han:pcCopyHaN(HA_N), _ha:HIT_ART.slice(), _dh:DEBUG_HITS.slice(),
+    _live:(TOURNEY && TOURNEY.liveTimer) || 0, _elim:window.__elimSeq || 0 };
+}
+function pcLoad(s){
+  stage = s.stage; running = s.running; fighters = s.fighters; particles = s.particles; projectiles = s.projectiles; beams = s.beams;
+  hazardT = s.hazardT; evil = s.evil; items = s.items; summons = s.summons; itemTimer = s.itemTimer; SPONGY_PLATS = s.SPONGY_PLATS;
+  FILE_RIDES = s.FILE_RIDES; FINX = s.FINX; FX_PLATS = s.FX_PLATS; lastKoFrame = s.lastKoFrame; WW = s.WW; WH = s.WH; camX = s.camX;
+  camY = s.camY; bases = s.bases; worldPlats = s.worldPlats; floors = s.floors; worldZones = s.worldZones; spawnZones = s.spawnZones;
+  FLOOR_SEGS = s.FLOOR_SEGS; SIDE_ROOM = s.SIDE_ROOM; TEAM_PLAN = s.TEAM_PLAN; CAM_ZOOM = s.CAM_ZOOM; TOURNEY_WATCHING = s.TOURNEY_WATCHING;
+  BOSS_ARENA = s.BOSS_ARENA; SMASHBALL = s.SMASHBALL; ASSIST_BAG = s.ASSIST_BAG; ASSIST_LAST = s.ASSIST_LAST; ASSIST_KEY_SEQ = s.ASSIST_KEY_SEQ;
+  HA_SUMMON_SEQ = s.HA_SUMMON_SEQ; FSB_CLONE = s.FSB_CLONE; TWO_NIGHT = s.TWO_NIGHT; BOSS_ATK_ID = s.BOSS_ATK_ID; tendrils = s.tendrils;
+  JAB_BY = s.JAB_BY; STEP_F = s.STEP_F; HITSTOP_WU = s.HITSTOP_WU; FINX_SEQ = s.FINX_SEQ; VOLLEY_SEQ = s.VOLLEY_SEQ; HIT_CAST = s.HIT_CAST;
+  IMPACT_DUST = s.IMPACT_DUST; IMPACT_DEBRIS = s.IMPACT_DEBRIS; IMPACT_SCARS = s.IMPACT_SCARS; IMPACT_OUT = s.IMPACT_OUT;
+  MATCH_TWIST = s.MATCH_TWIST; CAKE_FX = s.CAKE_FX; RIVAL_NAME = s.RIVAL_NAME; RIVAL_KILLS = s.RIVAL_KILLS; _cpuSeeT = s._cpuSeeT;
+  SMASH_PROJ = s.SMASH_PROJ; NET_PROJ_SEQ = s.NET_PROJ_SEQ; COS_KO_FX = s.COS_KO_FX; COS_KO_OUT = s.COS_KO_OUT; HA_FADE_NEXT = s.HA_FADE_NEXT;
+  oneFx = s.oneFx; cobsFx = s.cobsFx;
+  pcSetObj(KOC, s._koc); pcSetObj(FS, s._fs); pcSetObj(HITSTOP_FIN, s._hsf); pcSetObj(STOMACH, s._stom);
+  pcSetObj(HA_N, pcCopyHaN(s._han));
+  HIT_ART.length = 0; for(const e of s._ha) HIT_ART.push(e);
+  DEBUG_HITS.length = 0; for(const e of s._dh) DEBUG_HITS.push(e);
+  if(TOURNEY) TOURNEY.liveTimer = s._live; window.__elimSeq = s._elim;
+}
+function pcSetObj(o, src){ for(const k of Object.keys(o)) if(!(k in src)) delete o[k]; Object.assign(o, src); }
+function pcCopyHaN(h){ const o = {}; for(const k of Object.keys(h)) o[k] = Object.assign({}, h[k]); return o; }
+// The clean slate every match starts from: what each of those globals holds when the game loads (the setup then builds the match
+// on it). Never what the last match left, so a fixture's play cannot depend on what was watched before it.
+function pcBase(){
+  const s = pcSave();
+  Object.assign(s, { running:false, fighters:[], particles:[], projectiles:[], beams:[], hazardT:0, evil:null, items:[], summons:[], itemTimer:0,
+    SPONGY_PLATS:[], FILE_RIDES:[], FINX:[], FX_PLATS:[], lastKoFrame:0, WW:1100, WH:720, camX:0, camY:0, bases:[], worldPlats:[], floors:[],
+    worldZones:[], spawnZones:[], FLOOR_SEGS:null, SIDE_ROOM:0, TEAM_PLAN:{}, CAM_ZOOM:0.72, TOURNEY_WATCHING:null, BOSS_ARENA:null,
+    SMASHBALL:null, ASSIST_BAG:[], ASSIST_LAST:null, ASSIST_KEY_SEQ:0, HA_SUMMON_SEQ:0, FSB_CLONE:null, TWO_NIGHT:0, BOSS_ATK_ID:0,
+    tendrils:[], JAB_BY:null, STEP_F:null, HITSTOP_WU:0, FINX_SEQ:0, VOLLEY_SEQ:0, HIT_CAST:0, IMPACT_DUST:[], IMPACT_DEBRIS:[],
+    IMPACT_SCARS:[], IMPACT_OUT:[], MATCH_TWIST:null, CAKE_FX:null, RIVAL_NAME:null, RIVAL_KILLS:{}, _cpuSeeT:0, SMASH_PROJ:null,
+    NET_PROJ_SEQ:0, COS_KO_FX:[], COS_KO_OUT:[], HA_FADE_NEXT:0, oneFx:[], cobsFx:[],
+    _koc:Object.assign({}, PCAM_BOOT.koc), _fs:Object.assign({}, PCAM_BOOT.fs), _hsf:Object.assign({}, PCAM_BOOT.hsf), _stom:Object.assign({}, PCAM_BOOT.stom),
+    _han:{}, _ha:[], _dh:[], _live:0, _elim:0 });
+  return s;
+}
+// Each fixture of the round gets its dice once, in fixture order, from the game's own (so which one you pick does not change any).
+function pcSeeds(){ for(const f of TOURNEY.fixtures) if(f._pcSeed == null) f._pcSeed = Math.floor(PCAM.real()*4294967296) >>> 0; }
+function pcInit(fx){
+  const P = PCAM;
+  Object.assign(P, { on:true, bg:false, cur:null, list:[], shown:null, pend:null, auto:true, cap:PCAM_CAP, frame:0, cutF:0, holdF:0, koHoldF:0, ms:0,
+    log:[], flashF:0, paceF:0, ending:false });
+  P.queue = TOURNEY.fixtures.filter(f=>!f.played && f !== fx);
+}
+function pcNewMatch(fx){ return { fx, rng:pcRng(fx._pcSeed), st:null, over:false, overF:0, steps:0, plays:0, lastGood:null, sung:false,
+  det:{ str:{}, big:{}, hit:{}, st:{}, setT:{}, trip:{}, koT:{}, down:{} } }; }
+// Watch a fixture with the Plays Camera: it is set up on its own dice like any other in the round, then given the screen.
+function pcStart(fx){
+  const P = PCAM;
+  P.real = Math.random;
+  pcSeeds();
+  go('_none_'); document.getElementById('hud').classList.add('active');
+  TOURNEY_MATCH_ACTIVE = true;   // a World Cup match: One's bans do not apply, and the replay is not offered
+  try{ resize(); }catch(e){}
+  pcInit(fx);
+  try{ P.shown = pcSetup(fx); }
+  catch(err){
+    console.error("Plays Camera setup error:", err); pcStop();
+    const msg = (err && (err.stack||err.message)) ? String(err.stack||err.message) : String(err);
+    try{ banner("WC SETUP ERROR: "+msg.split("\n").slice(0,2).join(" | "), 10000); }catch(e){}
+    return;
+  }
+  // what only the screen has (finishWatchSetup leaves it to here for a Plays Camera match): the music, the line, the HUD, the loop
+  try{ clutchReset(); sndInit(); musicNewMatch('battle'); }catch(e){}
+  banner((fx.kind==="group"?"GROUP ":"KNOCKOUT ")+fx.a.name+" vs "+fx.b.name, 1600);
+  LINEUP_MEMO = null;
+  buildHUD(); startLoop();
+}
+// K in the middle of a fixture watched without it: that fixture carries on as the first one (on dice of its own from here), and the
+// round's others start behind it.
+function pcAdopt(){
+  const P = PCAM, fx = TOURNEY_WATCHING;
+  P.real = Math.random;
+  pcSeeds();
+  pcInit(fx);
+  const m = pcNewMatch(fx);
+  m.rng = pcRng((fx._pcSeed ^ Math.imul(hazardT + 1, 2654435761)) >>> 0);
+  m.st = pcSave(); P.list.push(m); P.shown = m; P.base = null;
+}
+// One fixture set up on its own dice, from the clean slate, without the screen (watchFixture's and finishWatchSetup's own steps).
+// Leaves the new match's globals loaded.
+function pcSetup(fx){
+  const P = PCAM, m = pcNewMatch(fx);
+  pcLoad(pcBase());
+  const r0 = Math.random, snd0 = SND.on;
+  Math.random = m.rng; P.bg = true; P.cur = m; SND.on = false;
+  try{
+    TOURNEY_WATCHING = fx;
+    { const cfg0 = TOURNEY.cfg || TOURNEY_CFG, secs = (fx.kind==="group") ? cfg0.gTime : cfg0.kTime; TOURNEY.liveTimer = secs ? secs*60*tourneyTeamSize() : 0; }
+    const size = tourneyTeamSize(), cfg = TOURNEY.cfg || TOURNEY_CFG;
+    SETTINGS.mode = (size>1) ? 'teams' : 'ffa'; SETTINGS.count = size*2; SETTINGS.teamKey = (size>1) ? size+'v'+size : '';
+    SETTINGS.itemRate = cfg.items; AI_LEVEL = cfg.cpu; SETTINGS.stocks = (fx.kind==="group") ? cfg.gStocks : cfg.kStocks;
+    const pool = cupStagePool(cfg);
+    if(pool.length) stage = pool[Math.floor(Math.random()*pool.length)];
+    LINEUP_MEMO = null;   // buildFighters draws its slots fresh (a memo left by another setup skipped the draw, and the dice went out of step)
+    setupWorld(); buildFighters();
+    finishWatchSetup(fx, false, size);
+  } finally { Math.random = r0; P.bg = false; P.cur = null; SND.on = snd0; LINEUP_MEMO = null; }
+  m.st = pcSave();
+  P.list.push(m);
+  return m;
+}
+// Steps of one match on its own dice. bg: nobody sees it (no sound, HUD, banner or shake; see the hooks).
+function pcRun(m, n, bg){
+  const P = PCAM, r0 = Math.random, snd0 = SND.on;
+  Math.random = m.rng; P.bg = bg; P.cur = m; if(bg) SND.on = false;
+  try{
+    for(let i = 0; i < n && running; i++){
+      if(!bg && INTERP && FIXED_STEP && !fsSlowSkips()) interpRecord(false);
+      step(); m.steps++;
+      if(!bg && KOC.on && FS.game === 1) m.sung = true;   // the last KO's sting played with the match on screen (kocMark)
+      pcTick(m);
+      if(P.onStep) P.onStep(m);
+    }
+  } finally { Math.random = r0; P.bg = false; P.cur = null; SND.on = snd0; }
+}
+// loop()'s steps while a session is on: the match on screen, then the background ones, a new one into a free slot, the director.
+function pcFrame(n){
+  const P = PCAM, t0 = performance.now(), sh = P.shown;
+  P.frame++;
+  if(!sh.over){
+    try{ pcRun(sh, n, false); }
+    catch(err){ sh.over = true; sh.overF = P.frame - PCAM_BEAT; console.error('Plays Camera: the match on screen threw; its fixture is left to watch or sim', err); }   // (no beat on a match that broke: the director moves on now)
+  }
+  sh.st = pcSave();
+  let k = 0;
+  for(const m of P.list){
+    if(m === sh || m.over) continue;
+    if(k++ >= P.cap) continue;   // over the cap it waits: its fixture plays the same whenever its steps run
+    try{ pcLoad(m.st); pcRun(m, n, true); m.st = pcSave(); }
+    catch(err){ m.over = true; m.overF = P.frame; console.error('Plays Camera: a background match threw; its fixture is left to watch or sim', err); }   // (never the screen's globals left half-swapped)
+  }
+  if(P.queue.length && k < P.cap){ try{ pcFill(); }catch(err){ console.error('Plays Camera: a fixture would not set up; it is left to watch or sim', err); } }
+  pcDirector();
+  pcLoad(P.shown.st);
+  if(P.shown !== sh){
+    try{ buildHUD(); updateHUD(); }catch(e){}
+    if(KOC.on && FS.game === 1 && !P.shown.sung){ P.shown.sung = true; try{ SFX.game(); }catch(e){} }   // cut into its last KO's slow-mo: the sting it played unheard, once, for the screen
+  }
+  pcPace(performance.now() - t0);
+  const left = P.list.some(m=>!m.over) || P.queue.length > 0;
+  if(P.shown.over && P.frame - P.shown.overF >= PCAM_BEAT && (!left || !P.auto)) pcEnd();   // all played (or the camera switched off): the hub
+}
+function pcFill(){
+  const P = PCAM;
+  while(P.queue.length){ const fx = P.queue.shift(); if(fx.played) continue; pcSetup(fx); return; }   // one a frame: a setup costs a few ms
+}
+// Fewer background matches when the frames get slow, more again when there is room.
+function pcPace(ms){
+  const P = PCAM;
+  P.ms = P.ms ? P.ms*0.9 + ms*0.1 : ms;
+  if(P.noPace || P.frame - P.paceF < 90) return;
+  P.paceF = P.frame;
+  if(P.ms > 10 && P.cap > 1) P.cap--;
+  else if(P.ms < 6 && P.cap < PCAM_CAP && P.list.filter(m=>!m.over && m !== P.shown).length >= P.cap) P.cap++;
+}
+// A match is decided (checkWin, or its clock ran out: tourneyLiveTick): the fixture's result, as finishWatchedGroup and
+// finishWatchedKnockout score it -- but nothing changes screen; the session goes on.
+function pcOver(winTeam){
+  const P = PCAM, m = P.cur; if(!m || m.over) return;
+  const fx = m.fx;
+  running = false;
+  if(fx.kind === 'ko'){
+    const wt = (winTeam===0 || winTeam===1) ? winTeam : cupTimedWinner(fx);   // both out on one frame, or the clock: the tie-break
+    fx.winner = wt===0 ? fx.a : fx.b; fx.result = { sa: wt===0?1:0, sb: wt===1?1:0 }; fx.played = true;
+    try{ recordCupFight(wt); }catch(e){}
+  } else {
+    const st0 = fx._stk0 || [0,0];
+    const sa = Math.max(0, st0[1] - cupTeamStocks(1)), sb = Math.max(0, st0[0] - cupTeamStocks(0));
+    fx.result = { sa, sb }; fx.played = true; applyGroupResult(fx.a, fx.b, sa, sb);
+    try{ recordCupFight(sa>sb ? 0 : (sb>sa ? 1 : null)); }catch(e){}
+  }
+  m.over = true; m.overF = P.frame;
+  if(P.pend && P.pend.m === m) P.pend = null;   // never a cut to a match that is over
+}
+function pcEnd(){
+  const P = PCAM;
+  P.ending = true;
+  P.on = false; P.list = []; P.queue = []; P.shown = null; P.pend = null; P.cur = null; P.bg = false;
+  if(P.real) Math.random = P.real;
+  running = false; TOURNEY_WATCHING = null; TOURNEY_MATCH_ACTIVE = false;
+  try{ showTourneyHub(); } finally { P.ending = false; }
+}
+// Left part-way (Quit, a new match): the fixtures not finished stay to watch or sim; the match on screen is where it stood.
+function pcStop(){
+  const P = PCAM; if(!P.on) return;
+  P.on = false; P.list = []; P.queue = []; P.shown = null; P.pend = null; P.cur = null; P.bg = false;
+  if(P.real) Math.random = P.real;
+}
+// ---- the plays ----
+// applyHit, once the hit has landed (its stun stamped): `stun`, they were still in this attacker's stun when it landed (a string).
+function pcHit(t, dmg, from, opts, fs, stun){
+  const m = PCAM.cur;
+  if(!m || !t || !from || from === t || !(dmg > 0.05) || (opts && opts.tick) || fighters.indexOf(from) < 0 || fighters.indexOf(t) < 0) return;
+  const D = m.det, i = t.idx, now = hazardT, seq = from._atkSeq || 0;
+  D.hit[i] = { t:now, by:from.idx };
+  let s = D.str[i];
+  if(!s || s.by !== from.idx || !stun || now - s.t1 > 45) s = D.str[i] = { by:from.idx, t1:now, seqs:[], dmg:0, sent:2 };
+  s.t1 = now; s.dmg += dmg; if(s.seqs.indexOf(seq) < 0) s.seqs.push(seq);
+  let b = D.big[from.idx];
+  if(!b || b.seq !== seq || now - b.t0 > 60) b = D.big[from.idx] = { seq:seq, t0:now, dmg:0, fs:false, sent:false };
+  b.dmg += dmg; if(fs) b.fs = true;
+  if(!t.dead && now - (D.koT[i] || -999) > 60 && fsKoFlight(t, true)){ D.koT[i] = now; pcKoPlay(m, t, from, false); return; }   // the blow that will carry them out
+  const n = s.seqs.length;
+  if(n >= 3 && n > s.sent){ s.sent = n; pcPlay(m, 'combo', Math.min(90, 10 + 6*n + 0.8*s.dmg)); }
+  if(!b.sent && (b.dmg >= 22 || (b.fs && b.dmg >= 12))){ b.sent = true; pcPlay(m, b.fs ? 'final smash' : 'big finisher', 12 + 0.9*b.dmg + (b.fs ? 15 : 0)); }
+}
+// eliminate, as the stock goes (f.stocks already one less). A KO the blow did not already report (a fall after a long trip, the
+// damage cap, a hazard after a hit): its play now. And the most each side has been behind, for the comebacks.
+function pcKo(f, killer){
+  const m = PCAM.cur; if(!m || fighters.indexOf(f) < 0) return;
+  const D = m.det, i = f.idx, now = hazardT;
+  for(const tm of [0, 1]){ const d = cupTeamStocks(1 - tm) - cupTeamStocks(tm); if(d > (D.down[tm] || 0)) D.down[tm] = d; }
+  if(now - (D.koT[i] || -999) <= 150) return;   // the blow was the play: the camera went there for the flight
+  const h = D.hit[i];
+  if(!killer || killer === f || !h || h.by !== killer.idx || now - h.t > 240 || fighters.indexOf(killer) < 0) return;   // a fall nobody caused is no play
+  D.koT[i] = now;
+  pcKoPlay(m, f, killer, true);
+}
+// How big a KO is. after: the stock is already gone (eliminate) rather than about to go (the blow).
+function pcKoPlay(m, t, k, after){
+  const D = m.det, i = t.idx, now = hazardT, p = t.pct || 0;
+  let sc = 30, kind = 'KO';
+  if(p < 100){ sc += (100 - p)*0.5; if(p < 70) kind = 'early KO'; }
+  const tr = D.trip[i]; if(tr && now - tr.t0 >= 15){ sc += 22; kind = 'edge KO'; }   // already off the stage: a ledgeguard, a chase
+  const su = D.setT[i]; if(su && su.by === k.idx && now - su.t <= 150){ sc += 20; kind = 'setup KO'; }
+  const s = D.str[i]; if(s && s.by === k.idx && now - s.t1 <= 2 && s.seqs.length >= 2){ sc += 4*(s.seqs.length - 1) + 0.3*s.dmg; if(kind === 'KO' || kind === 'early KO') kind = 'combo KO'; }
+  const b = D.big[k.idx]; if(b && b.fs && now - b.t0 <= 120){ sc += 12; kind = 'final smash KO'; } else if(b && b.dmg >= 22 && now - b.t0 <= 60) sc += 8;
+  const left = after ? t.stocks : t.stocks - 1;
+  if(left <= 0 && kocSides(t) <= 1) sc += 8;   // match point: this one ends it
+  const mine = cupTeamStocks(k.team), theirs = cupTeamStocks(t.team) + (after ? 1 : 0);   // before this KO
+  if((D.down[k.team] || 0) >= 2 && mine >= theirs - 1){ sc += 15; kind = 'comeback KO'; }
+  if(k.stocks === 1 && (k.pct || 0) > 110) sc += 12;   // clutch: on their last stock at kill %
+  pcPlay(m, kind, sc, true);
+}
+// After each step of a match: a root, freeze, sleep or stun starting on someone (a setup), and the trips off the stage.
+function pcTick(m){
+  const D = m.det, segs = FLOOR_SEGS, gy = groundY();
+  for(const f of fighters){
+    const i = f.idx;
+    const st = ((f.rooted || 0) > 0 ? 1 : 0) | ((f.frozen || 0) > 0 ? 2 : 0) | ((f._sleepT || 0) > hazardT ? 4 : 0) | ((f._stunFx || 0) > 0 ? 8 : 0);
+    const on = st & ~(D.st[i] || 0); D.st[i] = st;
+    if(on && !f.dead){ const h = D.hit[i]; if(h && hazardT - h.t <= 4){ D.setT[i] = { t:hazardT, by:h.by }; if((f.pct || 0) >= 90) pcPlay(m, 'setup', 20 + 0.12*f.pct); } }
+    let off = false, dist = 0;
+    if(segs && segs.length && !f.onground && !f.dead){
+      let inside = false; dist = 1e9;
+      for(const sg of segs){ if(f.x >= sg.x0 && f.x <= sg.x1){ inside = true; break; } dist = Math.min(dist, Math.abs(f.x - sg.x0), Math.abs(f.x - sg.x1)); }
+      off = !inside;
+      if(off){ try{ for(const p of platRects()){ if(f.x > p.x && f.x < p.x + p.w && p.y > f.y - 10){ off = false; break; } } }catch(e){} }
+    }
+    let tr = D.trip[i];
+    if(off){
+      if(!tr) tr = D.trip[i] = { t0:hazardT, d:0, y:0, sent:false };
+      tr.d = Math.max(tr.d, dist); tr.y = Math.max(tr.y, f.y - gy);
+      if(!tr.sent && hazardT - tr.t0 >= 30 && (tr.d >= 260 || tr.y >= 180)){ tr.sent = true;   // still out there: the camera gets there for the way back (or the KO)
+        pcPlay(m, 'deep recovery', Math.min(70, 16 + 0.07*tr.d + 0.08*Math.max(0, tr.y) + ((f.pct || 0) > 100 ? 8 : 0))); }
+    } else if(tr) D.trip[i] = null;
+  }
+}
+// A play in match m, scored. PCAM_MIN or more: on screen, it holds the camera there while it plays out; elsewhere, it is a cut
+// waiting (the biggest one waiting wins).
+function pcPlay(m, kind, score, ko){
+  const P = PCAM; score = Math.round(score);
+  const e = { f:P.frame, t:hazardT, m, kind, score, ko:!!ko };
+  m.plays++;
+  if(P.onPlay) P.onPlay(e);
+  if(score < PCAM_MIN || m.over) return;
+  m.lastGood = e;
+  if(m === P.shown){ P.holdF = Math.max(P.holdF, P.frame + PCAM_HOLD); if(e.ko) P.koHoldF = Math.max(P.koHoldF, P.frame + PCAM_HOLD); return; }
+  const q = P.pend;
+  if(!q || (e.ko && !q.ko) || (e.ko === q.ko && score > q.score) || P.frame - q.f > PCAM_STALE) P.pend = e;   // a KO first, then the biggest
+}
+// Once a frame, after every match has stepped: cut to the best play waiting, unless the camera only just cut or a play on screen is
+// still playing out. The match on screen over: after its beat, to the best match still playing. Never to a match that is over: a play
+// waiting there goes the moment it ends. A KO is caught on the blow and waits for no dwell (only for a KO on screen still playing
+// out), so a deciding KO is cut to while it flies, before its match ends.
+function pcDirector(){
+  const P = PCAM, sh = P.shown;
+  if(P.pend && P.pend.m.over) P.pend = null;
+  const e = P.pend;
+  if(sh.over){
+    if(!P.auto || P.frame - sh.overF < PCAM_BEAT) return;
+    const live = P.list.filter(m=>!m.over);
+    if(!live.length) return;
+    let to = (e && !e.m.over) ? e.m : null;
+    if(!to) to = live.slice().sort((a, b)=>((b.lastGood && b.lastGood.f) || -1) - ((a.lastGood && a.lastGood.f) || -1))[0];   // the latest good play
+    pcCut(to, e && e.m === to ? e : null); P.pend = null; return;
+  }
+  if(!e || !P.auto) return;
+  if(P.frame - e.f > PCAM_STALE){ P.pend = null; return; }
+  if(e.ko ? P.frame < P.koHoldF : (P.frame < P.cutF + PCAM_DWELL || P.frame < P.holdF)) return;
+  pcCut(e.m, e); P.pend = null;
+}
+function pcCut(m, e){
+  const P = PCAM, from = P.shown;
+  P.log.push({ f:P.frame, from:TOURNEY.fixtures.indexOf(from.fx), to:TOURNEY.fixtures.indexOf(m.fx), kind:e ? e.kind : 'match over', score:e ? e.score : 0 });
+  P.shown = m; P.cutF = P.frame; P.flashF = P.frame; P.holdF = e ? P.frame + PCAM_HOLD : 0; P.koHoldF = (e && e.ko) ? P.frame + PCAM_HOLD : 0;
+}
+// K: in a session, the camera's cuts (and its tag) off and on -- off, the match on screen is the one you stay with, and its end is the
+// hub; elsewhere in a spectated stock cup, the setting itself (and mid-fixture, a session from here: pcAdopt). Only this cup's: the saved
+// setup default is the setup row's alone (K never writes it).
+function pcKey(){
+  if(!TOURNEY || !TOURNEY.active || TOURNEY.mode !== 'spectate' || TOURNEY.game === 'ctf') return;
+  const P = PCAM, cfg = TOURNEY.cfg || (TOURNEY.cfg = cupClean(TOURNEY_CFG));
+  if(P.on){ P.auto = !P.auto; cfg.pcam = P.auto ? 1 : 0; if(P.auto) P.flashF = P.frame; }
+  else {
+    cfg.pcam = cfg.pcam ? 0 : 1;
+    if(cfg.pcam && TOURNEY_WATCHING && running && !paused && !KOC.over && !inNetSession()) pcAdopt();
+  }
+  const hub = document.getElementById('tourneyHub'); if(!P.on && hub && hub.classList.contains('active')) showTourneyHub();
+}
+addEventListener('keydown', e=>{
+  if(e.code !== 'KeyK' || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const ae = document.activeElement; if(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
+  pcKey();
+});
+// The hub's line about it, in a spectated stock cup.
+function pcHubNote(){
+  if(!TOURNEY || TOURNEY.mode !== 'spectate' || TOURNEY.game === 'ctf' || TOURNEY.stage === 'done') return '';
+  const on = !!(TOURNEY.cfg && TOURNEY.cfg.pcam);
+  return '<div class="th-sub" style="text-align:center">📺 Plays Camera: <b>' + (on ? 'On' : 'Off') + '</b> · K to switch'
+    + (on ? ' · watching a match plays the round\'s other matches too, and the camera cuts to the best plays' : '') + '</div>';
+}
+// ---- the tag (no words) ----
+// A frame in the two sides' colours (left half, right half), thicker and flashed white on a cut, and bottom left a camera and the two
+// sides' faces in their colours. Drawn over the picture, every frame of a session while the cuts are on.
+function pcSideColor(team){
+  const f = fighters.find(o=>o.team === team);
+  if(SETTINGS.mode === 'teams') return TEAM_COLORS[team % TEAM_COLORS.length];
+  return (f && safeColor(f.color)) || (team ? '#3a8ee0' : '#e0503a');
+}
+function pcDrawTag(){
+  const P = PCAM, sh = P.shown; if(!P.on || !P.auto || !sh) return;
+  const ca = pcSideColor(0), cb = pcSideColor(1), age = P.frame - P.flashF, k = age < 60 ? 1 - age/60 : 0, w = 5 + 7*k, c = ctx;
+  c.save(); baseTransform(c); c.globalAlpha = 1;
+  c.fillStyle = ca; c.fillRect(0, 0, W/2, w); c.fillRect(0, H - w, W/2, w); c.fillRect(0, 0, w, H);
+  c.fillStyle = cb; c.fillRect(W/2, 0, W/2, w); c.fillRect(W/2, H - w, W/2, w); c.fillRect(W - w, 0, w, H);
+  if(age < 12){ c.globalAlpha = 0.3*(1 - age/12); c.fillStyle = '#ffffff'; c.fillRect(0, 0, W, H); c.globalAlpha = 1; }
+  const x = 12 + w, y = H - 58 - w, r = 18 + 3*k;
+  c.fillStyle = 'rgba(20,16,30,0.82)'; c.beginPath();
+  if(c.roundRect) c.roundRect(x, y, 142, 50, 12); else c.rect(x, y, 142, 50);
+  c.fill();
+  // the camera: a body, a lens, the viewfinder cone, and its red light
+  const cx = x + 26, cy = y + 25;
+  c.fillStyle = '#f4f4f8'; c.fillRect(cx - 15, cy - 9, 22, 18);
+  c.beginPath(); c.moveTo(cx + 7, cy - 3); c.lineTo(cx + 16, cy - 9); c.lineTo(cx + 16, cy + 9); c.lineTo(cx + 7, cy + 3); c.closePath(); c.fill();
+  c.fillStyle = '#2a2438'; c.beginPath(); c.arc(cx - 4, cy, 5, 0, 7); c.fill();
+  if((P.frame >> 4) & 1 || k > 0){ c.fillStyle = '#ff3b3b'; c.beginPath(); c.arc(cx - 11, cy - 13, 3.2, 0, 7); c.fill(); }
+  pcFace(c, fighters.find(o=>o.team === 0), x + 74, cy, r, ca);
+  pcFace(c, fighters.find(o=>o.team === 1), x + 118, cy, r, cb);
+  c.restore();
+}
+function pcFace(c, f, x, y, r, ring){
+  c.save();
+  c.beginPath(); c.arc(x, y, r, 0, 7); c.fillStyle = (f && safeColor(f.color)) || '#cccccc'; c.fill();
+  let im = null; try{ const sp = f && SPRITES[f.name]; im = sp && sp.img; }catch(e){ im = null; }
+  if(im && im.complete && im.naturalWidth > 0){
+    c.save(); c.beginPath(); c.arc(x, y, r - 1, 0, 7); c.clip();
+    const s = (2.3*r)/Math.max(im.naturalWidth, im.naturalHeight), iw = im.naturalWidth*s, ih = im.naturalHeight*s;
+    try{ c.drawImage(im, x - iw/2, y - ih*0.42, iw, ih); }catch(e){}
+    c.restore();
+  }
+  c.lineWidth = 3; c.strokeStyle = ring; c.beginPath(); c.arc(x, y, r, 0, 7); c.stroke();
+  if(f && f.dead){ c.globalAlpha = 0.55; c.fillStyle = '#000000'; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); }
+  c.restore();
+}
 function finishWatchSetup(fx, youPlay, size){
   // in normal mode, YOU control your team; the side your team sits on becomes the human side.
   const myIsA = youPlay && TOURNEY.myTeam && fx.a===TOURNEY.myTeam;
@@ -18185,6 +18620,7 @@ function finishWatchSetup(fx, youPlay, size){
     if(scrolls() && foc){ const t = camTarget(foc.x, foc.y, CAM_ZOOM); camX = t.x; camY = t.y; } else { camX=0; camY=0; } }
   // A World Cup fixture is an arena match — swap the hub's anthem for the battle bed. (Without
   // this the regal hub loop kept playing straight through every fight.)
+  if(PCAM.bg) return;   // PLAYS CAMERA: a fixture set up unseen (pcSetup); pcStart gives the one on screen its music, line, HUD and loop
   try{ clutchReset(); sndInit(); musicNewMatch('battle'); }catch(e){}
   banner((fx.kind==="group"?"GROUP ":"KNOCKOUT ")+fx.a.name+" vs "+fx.b.name, 1600);
   LINEUP_MEMO = null;   // the draw this fixture's slots came from is spent: the next team-chat preview rolls fresh
@@ -18197,6 +18633,7 @@ function tourneyLiveTick(){
   if(!(fx.kind==="group" ? cfg.gTime : cfg.kTime)) return;   // no clock set for this kind of fixture
   TOURNEY.liveTimer--;
   if(TOURNEY.liveTimer<=0){
+    if(PCAM.on){ pcOver(null); return; }   // PLAYS CAMERA: scored where it stands; the session goes on
     if(fx.kind==="group") finishWatchedGroup(fx);
     else if(!fx.played){ banner(cupTimedWinner(fx)===0 ? fx.a.name+" advance!" : fx.b.name+" advance!", 1600); finishWatchedKnockout(fx, cupTimedWinner(fx)); }
   }
@@ -18279,6 +18716,7 @@ function showTourneyHub(){
     body.innerHTML = renderKnockoutHub();
   }
   body.innerHTML = oneHubNote() + body.innerHTML;   // who One erased with the match just won
+  body.innerHTML = pcHubNote() + body.innerHTML;   // PLAYS CAMERA: on or off, K to switch (a spectated stock cup)
   if(myFx){
     proceed.textContent="▶ Play My Match";
     proceed.onclick=()=>watchFixture(myFx, true);   // true = you control team A/B
@@ -21151,6 +21589,7 @@ function updateStandings(){
   box.innerHTML=html;
 }
 function updateHUD(){
+  if(PCAM.bg) return;   // PLAYS CAMERA: the HUD is the match on screen's
   updateStandings();
   fighters.forEach(f=>{
     const c=document.querySelector(`.pcard[data-i="${f.idx}"]`); if(!c)return;
@@ -21167,6 +21606,7 @@ function pctColor(p, cap){ const r = cap ? p/cap : p/200;   // fraction of this 
 // snapshot, so a client read "KO'd! − a stock" when the host lost a stock, while its own KO said nothing (applySnapshot
 // writes the client's own line now).
 function banner(txt,ms,kind,local){
+  if(PCAM.bg) return;   // PLAYS CAMERA: a match nobody sees puts up no line
   const b=document.getElementById('banner');
   // A boss's attack warning is the one line that says what is about to hit you, and there is only one line. A popup that
   // arrived during the wind-up used to replace it: the cookie poison's popup wiped "I'LL BE BACK!" two frames into the
@@ -21348,7 +21788,7 @@ function drawView(blended, client){
 }
 
 function loop(){
-  if(!running||paused) return;
+  if((!running && !PCAM.on)||paused) return;   // (PLAYS CAMERA: the session's loop runs on past the end of the match on screen)
   // A hidden host's match belongs to the worker's clock (HIDDEN HOST); this loop only waits to be seen again. A loop() that
   // starts or resumes while the tab is hidden hands the match over too, or it would wait for a frame that never comes.
   if(hiddenHostWanted()){ hiddenHostStart(); raf=requestAnimationFrame(loop); return; }
@@ -21372,8 +21812,9 @@ function loop(){
     } else {
       // however many steps the clock owes (none on a frame that came early), then one picture of where the match is now
       const nn = (CTF.spec && CTF.spec.speed > 1 && SETTINGS.mode === 'ctf') ? n*CTF.spec.speed : n;   // (a spectated Capture the Flag match can run fast: F)
-      for(let i = 0; i < nn && running && !paused; i++){ if(INTERP && FIXED_STEP && !fsSlowSkips()) interpRecord(false); step(); }   // (fsSlowSkips: a step the Final Smash slow-mo skips)
-      drawView(ip || (INTERP && FIXED_STEP && fsSlowBlend() != null), false); ageView(n); clipCapture(n);
+      if(PCAM.on) pcFrame(nn);   // PLAYS CAMERA: the match on screen, then the round's others behind it, and the cuts
+      else for(let i = 0; i < nn && running && !paused; i++){ if(INTERP && FIXED_STEP && !fsSlowSkips()) interpRecord(false); step(); }   // (fsSlowSkips: a step the Final Smash slow-mo skips)
+      drawView(ip || (INTERP && FIXED_STEP && fsSlowBlend() != null), false); if(PCAM.on) pcDrawTag(); ageView(n); clipCapture(n);
       if(role==="host" && n > 0) window.NET.broadcastState();   // host relays authoritative state, once for each frame that moved the match
     }
   }catch(err){
@@ -45214,6 +45655,8 @@ let HITSTOP_WU = 0;
 // out of her geyser free). hitStopFin(f): 0, not a finisher's hit; 1, its owner's own (committed through their last frame or again now, not
 // caught in someone else's finisher, _fxBy, and not from what it left behind, FINX_LEFT) -- held too, from any distance; -1, the target alone.
 const HITSTOP_FIN = { f:null, o:null, pre:false };
+// PLAYS CAMERA: what the state objects a match keeps of its own hold when the game loads (pcBase starts every match from these)
+const PCAM_BOOT = { koc:Object.assign({}, KOC), fs:Object.assign({}, FS), hsf:Object.assign({}, HITSTOP_FIN), stom:Object.assign({}, STOMACH) };
 function hitStopFin(f){
   const H = HITSTOP_FIN;
   if(!f || H.f !== f) return 0;
@@ -60068,7 +60511,9 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   // The stun, the chain and the hit-grace this hit gives are all set by stampHit: the one place that says what a hit does to its target's grace, which a
   // boss's grace for each attacker (bossGraceNote) runs through as well.
   const isTick = !!(opts && opts.tick);
+  const pcStun = PCAM.on && !!from && t.hitstun > 0 && t._chainBy === from.idx;   // PLAYS CAMERA: still in this attacker's stun (a string)
   stampHit(t, dmg*fsRow, from, isTick, opts && opts.stun, opts && opts.mvKey);   // (fsRow: a Final Smash's hit stamps its row's own size)
+  if(PCAM.on) pcHit(t, dmg*fsRow, from, opts, fsSt, pcStun);   // PLAYS CAMERA: the plays (read only)
   if(t._fsLock) fsLockKeep(t, dmg*fsRow);   // CATCH, THEN CINEMATIC: a locked foe's launch waits for the let-go (fsLockOff)...
   else if(fsSt && !t.dead){ t._fsHitT = hazardT; if(fsKoFlight(t)) fsSlowStart(t); }   // ...and a launch that will carry them out plays slowed down
   else if(dmg > 0) t._fsHitT = null;   // (a hit that is not a Final Smash's: a KO from here on is not one: fsKoSlow)
@@ -60147,7 +60592,7 @@ const SHAKE_PREF_KEY = 'bfsi:shake';
 function shakePrefLoad(){ try{ return localStorage.getItem(SHAKE_PREF_KEY) !== '0'; }catch(e){ return true; } }   // default ON
 function shakePrefSave(v){ try{ localStorage.setItem(SHAKE_PREF_KEY, v ? '1' : '0'); }catch(e){} }
 let SHAKE_ON = shakePrefLoad();
-let shakeAmt=0; function shake(n){ if(!SHAKE_ON) return; shakeAmt=Math.min(12,shakeAmt+n*0.4); }
+let shakeAmt=0; function shake(n){ if(!SHAKE_ON || PCAM.bg) return; shakeAmt=Math.min(12,shakeAmt+n*0.4); }
 function toggleShake(){
   SHAKE_ON = !SHAKE_ON; shakePrefSave(SHAKE_ON);
   if(!SHAKE_ON) shakeAmt = 0;
@@ -60397,6 +60842,7 @@ function eliminate(f){
   }
   // Knocked past a blast zone = KO = lose one stock.
   f.stocks--;
+  if(PCAM.on) pcKo(f, killer);   // PLAYS CAMERA: the plays (read only)
   lastKoFrame = hazardT;                              // reset the stalemate-breaker timer on any KO
   try{ teamAiKoSignal(); }catch(e){}                  // a KO is worth re-planning for — see teamAiTick
   f._falls = (f._falls||0)+1;                       // universal: stocks this fighter has lost
@@ -60493,6 +60939,7 @@ function checkWin(){
     assignFinalPlacements(winTeam);
     // TOURNAMENT: a watched match resolving by elimination.
     if(TOURNEY.active && TOURNEY_WATCHING){
+      if(PCAM.on){ pcOver(winTeam); return; }   // PLAYS CAMERA: the fixture's result now, and no change of screen
       const fx=TOURNEY_WATCHING;
       if(fx.kind==="ko"){
         // knockout: the surviving team wins; return to hub
@@ -78466,7 +78913,7 @@ function setPaused(on){
   if(paused){ try{ syncPauseMoves(); }catch(e){} } else PAUSE_MOVES_OPEN = false;
   netInputChanged(true);   // a guest's host stops playing what it held (and gets it back on the way out)
   if(was && !paused) netInResume();   // a host's guests pick up from now, not with what they pressed while it stood still
-  if(!paused && running) startLoop();
+  if(!paused && (running || PCAM.on)) startLoop();
 }
 function quitMatch(){
   setPaused(false);
