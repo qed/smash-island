@@ -64134,8 +64134,10 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
     brainString(f, t, inp, B, L, inReach, toward); return;
   }
   // a shot from range, level with the foe and facing it -- from where it lands (BRAIN_SPEC: Cammy's Snapshot 120-220 px out, Rocky's to 200) --
-  // or a rush from there (a dash that hits whoever it runs into), now and then
-  if((K.shot || K.rush) && ready && ady < 50 && adx > Math.max(brainReach(f) - 10, K.band[0] >= 60 ? K.band[0] + 30 : K.band[0] - 10) && adx < K.band[1] && Math.random() < (K.shot ? 0.5*(K.shot0 ? 1 : L.kit) : 0.25*L.kit)){ brainTap(B, brainFace({ special:true }, toward), 3); B.specAt = now + brainSpecGap(f, L); return; }
+  // or a rush from there (a dash that hits whoever it runs into), now and then. A shot that lands only far out (Cammy's flash, 170 ahead after
+  // a 12-frame shutter) is fired for where the foe will be when it goes off, by the way it is moving (as it reads a foe: t)
+  const shotAt = K.band && K.band[0] >= 60 ? Math.abs(t.x + (t.vx || 0)*12 - f.x) : adx;
+  if((K.shot || K.rush) && ready && ady < 50 && shotAt > Math.max(brainReach(f) - 10, K.band[0] >= 60 ? K.band[0] + 30 : K.band[0] - 10) && shotAt < K.band[1] && Math.random() < (K.shot ? 0.5*(K.shot0 ? 1 : L.kit) : 0.25*L.kit)){ brainTap(B, brainFace({ special:true }, toward), 3); B.specAt = now + brainSpecGap(f, L); return; }
   // a down-special that lands at range (Bow's snowballs, Baseball's, Paintbrush's; a mark thrown on the nearest foe), now and then
   if(K.dBand && ready && f.onground && ady < 60 && adx > Math.max(brainReach(f), K.dBand[0]) && adx < K.dBand[1] && Math.random() < (K.dDmg > 0 ? 0.3 : 0.12)*L.kit){ brainTap(B, { special:true, down:true }, 3); B.specAt = now + brainSpecGap(f, L); return; }
   // a beam smash down the stage at a foe level with it (Lightbulb's, Tissues', TV's, Remote's, Ruler's...): on an opening it saw, or now and then
@@ -64449,7 +64451,8 @@ function brainDangers(f, B, L){
 // it goes on through. (brainOut: whatever brought it here -- the approach, a string's push, an item, a retreat.)
 const HZ_WAIT = 150, HZ_GO = 90;
 function brainHazards(f, inp, B, L){
-  if(!f.onground || B.hzGo > hazardT || f._fileRide || f.x < 50 || f.x > WW - 50) return;
+  if(B.hzGo > hazardT || f._fileRide || f.x < 50 || f.x > WW - 50) return;
+  if(!f.onground){ brainHazardAir(f, inp, B, L); return; }
   const dir = (inp.right && !inp.left) ? 1 : (inp.left && !inp.right) ? -1 : 0;
   if(!dir) return;
   const H = brainDangers(f, B, L);
@@ -64457,14 +64460,15 @@ function brainHazards(f, inp, B, L){
   // HOW FAR ON IT LOOKS: its next steps at the speed it walks, and as far again as its hands may take to do something about it (a hop or a
   // stop is an input like any other: CPU_HUMAN.inputGap) -- and, for one it stops short of, the slide its stop takes. (Looking only its
   // next steps ahead, the hop went out late and it was hit in the air going up -- Blocky's anvil trap, 5 of 7 -- and the stop came as it
-  // stood in a prism's burst.)
-  const sp = Math.abs(f.vx || 0), lv = f._lvlCache != null ? f._lvlCache : brainLevel(f);
-  const ahead = f.r*0.5 + 20 + sp*(8 + (CPU_HUMAN.inputGap[lv] || 10));
+  // stood in a prism's burst.) A big one it keeps as far off as a stop takes from a run: slowed down, a nearer look let it walk on, and its
+  // hands' next stop came only after it had run up to speed again -- it crept up a run at a time and stood in the burst (Hard, Ruby's prism, 5 in 6).
+  const sp = Math.abs(f.vx || 0), lv = f._lvlCache != null ? f._lvlCache : brainLevel(f), hg = 8 + (CPU_HUMAN.inputGap[lv] || 10);
+  const ahead = f.r*0.5 + 20 + sp*hg, vB = Math.max(sp, MAXVX), aheadB = f.r*0.5 + 20 + vB*hg + vB/(1 - FRICTION);
   for(const h of H){
     const d = (h.x - f.x)*dir;   // how far ahead it is
     if(d > 340 || d < -h.r || Math.abs(h.y - f.y) > h.r + f.r + 24) continue;   // far off, behind it, or not at its height
     if(hurtGap(f, h.x, h.y) < h.r) continue;                                     // in it already: on through
-    if(d - h.r - f.r*0.5 > (h.small ? ahead : ahead + sp/(1 - FRICTION))) continue;   // not yet in its way
+    if(d - h.r - f.r*0.5 > (h.small ? ahead : aheadB)) continue;                 // not yet in its way
     // a small one it hops over -- a full jump, carried on over it -- unless the jump would come down past the floor's end (then it waits, as
     // for a big one: brainLedge does not hold back a jump)
     if(h.small && (!FLOOR_SEGS || groundAt(f.x + dir*Math.max(150, sp*42)))){ if(!inp.jump) inp.jump = true; B.hzHop = hazardT; return; }
@@ -64473,6 +64477,22 @@ function brainHazards(f, inp, B, L){
     return;
   }
   B.hzWait = Math.max(0, (B.hzWait || 0) - 1);
+}
+// IN THE AIR, coming down over the stage: it drifts off a small one it noticed that it would land on, to the near side (an aerial at a foe
+// standing by their own trap came down on it -- Toothpaste's, Bomby's, Blocky's, 2 in 3 of the walk-ins left after the hop). Only the last of
+// the fall, and only the arrow: whatever it was pressing goes on, at its hands' own pace (cpuHumanKeys). Not off the stage: that is the recovery's.
+function brainHazardAir(f, inp, B, L){
+  if(!(f.vy > 0) || overDrop(f)) return;
+  const H = brainDangers(f, B, L);
+  for(const h of H){
+    if(!h.small) continue;
+    const dy = (h.y - h.r) - (f.y + f.r); if(dy < 0 || dy > 160) continue;   // its feet above the trap's top, within a short fall
+    const t = (Math.sqrt(f.vy*f.vy + 2*GRAV*dy) - f.vy)/GRAV, lx = f.x + (f.vx || 0)*t;   // where it comes down, as it is falling
+    if(Math.abs(lx - h.x) > h.r + f.r*0.6 + 6) continue;
+    const away = lx >= h.x ? 1 : -1;
+    inp.left = away < 0; inp.right = away > 0; B.hzAir = hazardT;
+    return;
+  }
 }
 // An item in a danger it noticed, or with a big one between it and the item, is not worth the walk (World Cup #8).
 function brainItemDanger(f, B, L, it){
