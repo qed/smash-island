@@ -44284,9 +44284,11 @@ function step(){
     // ONE FALL, ONE STOCK (the owner, 2026-10-29: "i take two stocks sometimes when falling" -- "i think its 2", the respawn). Since the ledge
     // stages got their open air (SIDE_ROOM) a KO'd fighter comes back at the top of the wider view, 145 px above the stage's box and only 115 px
     // under the top KO line, and a jump or an up-special pressed in the first frames back carried them out the top, off screen: a second stock
-    // for the one fall. So until a fighter who came back (f._backAir, set by eliminate) touches down or is knocked about, the top line is a
-    // ceiling for them, not a KO: they stop at it and fall back in. Everyone else, and every launch, meets the same KO lines as before.
-    if(f._backAir && (f.onground || f.hitstun > 0)) f._backAir = false;
+    // for the one fall. So until a fighter who came back (f._backAir, set by eliminate) touches down or is hit by someone else (applyHit), the top
+    // line is a ceiling for them, not a KO: they stop at it and fall back in. Their own moves do not end it (2026-10-29, the check: a smash's own
+    // stun, a miss's endlag or Light My Fuse's self-knock had ended it, and a jump plus an attack still went out the top). Everyone else, and every
+    // launch by a foe, meets the same KO lines as before.
+    if(f._backAir && f.onground) f._backAir = false;
     if(f._backAir && f.y < -260){ f.y = -260; if(f.vy < 0) f.vy = 0; }
     if(pastSideLine(f.x)||f.y>WH+160||f.y<-260){ eliminate(f); }
 
@@ -47332,7 +47334,7 @@ function fxCanHit(f, t, o){
   if(!t || t.dead || t === f || t.team === f.team || t._fxBy != null || t._jail != null || f._jail != null || t._fsLock) return false;   // (_fsLock: a Final Smash caught them, its holder's alone)
   return !(t.invuln > 0) || (t._graceBy === f.idx && t._fxTok === o.id && t.invuln <= (t._graceLeft || 0)) || chainOpen(t, f);
 }
-function fxHit(f, t, o, dmg, kbx, kby){ applyHit(t, dmg, kbx, kby, f); t._fxTok = o.id; }
+function fxHit(f, t, o, dmg, kbx, kby){ const n0 = t._koN||0; applyHit(t, dmg, kbx, kby, f); t._fxTok = o.id; return !koSince(t, n0); }   // false: the hit KO'd them (hold no more)
 function fxTargets(f, o, sh, skip){
   const out = [];
   for(const t of fighters){ if(skip && skip.indexOf(t.idx) >= 0) continue; if(fxCanHit(f, t, o) && shapeHits(sh, t)) out.push(t); }
@@ -47506,7 +47508,7 @@ function fxWhirlStep(o, f){
     fxHold(t, o, o.x + (j - (o.c.length - 1)/2)*10, o.y - W.h*0.45);
     if(hazardT < c[2]) continue;
     c[1]++; c[2] = hazardT + W.every; tick = true;
-    if(c[1] < W.hits){ fxHit(f, t, o, W.dmg, 0, 0); fxHold(t, o, t.x, t.y); }
+    if(c[1] < W.hits){ if(fxHit(f, t, o, W.dmg, 0, 0)) fxHold(t, o, t.x, t.y); }
     else { o.c.splice(j, 1); fxWhirlFling(f, o, t); }
   }
   if(going || tick) fxArt(f, 'whirl', fxWhirlShape(o), { color:'#8ed24b', fade:4, tick:tick });   // HIT ART: live while it sweeps (it catches), flashing on each of its hits
@@ -47643,7 +47645,7 @@ function fxSnowStep(o, f){
     let got = null, bd = 1e9;
     for(const t of fighters){ if(!fxCanHit(f, t, o) || (t.x - f.x)*o.face < -4 || hurtGap(t, hx, hy) >= S.grab) continue; const d = Math.abs(t.x - f.x); if(d < bd){ bd = d; got = t; } }
     fxArt(f, 'grab', fxCircle(hx, hy, S.grab), { style:'grab', color:got ? '#ffffff' : '#9aa7b0', world:false, fade:6 });
-    if(got){ fxHit(f, got, o, S.dmg, 0, 0); o.tgt = got.idx; fxHold(got, o, got.x, got.y); got.invuln = Math.max(got.invuln || 0, 2); o.ph = 'pack'; o.pt = hazardT; return; }
+    if(got){ const kept = fxHit(f, got, o, S.dmg, 0, 0); o.tgt = got.idx; if(kept){ fxHold(got, o, got.x, got.y); got.invuln = Math.max(got.invuln || 0, 2); } o.ph = 'pack'; o.pt = hazardT; return; }   // (not kept: KO'd by it, the ball bursts empty)
     const bs = summons.length ? nearestSummon(f, hx, hy, S.grab, function(s){ return (s.x - f.x)*o.face >= -4; }) : null;
     if(bs){ damageSummon(f, bs, hx, hy, S.dmg); o.ph = 'pack'; o.pt = hazardT; return; }   // a boss is not packed: the grab's 6 lands, and the snowball rolls on empty
     o.ph = 'whiff'; o.pt = hazardT; return;
@@ -49458,7 +49460,7 @@ function fxSqueezeStep(o, f){
   f.x = t.x; f.y = t.y + t.r - f.r; f.vx = 0; f.vy = 0;   // she is where they are: round them
   const a = hazardT - o.lt;
   if(o.n < S.at.length && a >= S.at[o.n]){
-    o.n++; o.tt = hazardT; fxHit(f, t, o, S.dmg, 0, 0); fxHold(t, o, o.x, o.y);
+    o.n++; o.tt = hazardT; if(!fxHit(f, t, o, S.dmg, 0, 0)) return; fxHold(t, o, o.x, o.y);   // (KO'd by the squeeze: the loop ends next frame)
     fxArt(f, 'squeeze', fxCircle(t.x, t.y, t.r + 10), { color:f.color || '#6fb7ff', fade:6, tick:true });   // HIT ART: the loop, flashing on each squeeze
   }
   if(a < S.hold) return;
@@ -50119,7 +50121,7 @@ function fxFlurryStep(o, f){
       if(last) o.c = [];
       for(const t of fxTargets(f, o, sh, had)){
         if(last) fxHit(f, t, o, L.dmg, o.face*L.kbx, L.kby);
-        else { fxHit(f, t, o, L.dmg, 0, 0); o.c.push(t.idx); fxHold(t, o, t.x, t.y); }
+        else if(fxHit(f, t, o, L.dmg, 0, 0)){ o.c.push(t.idx); fxHold(t, o, t.x, t.y); }
       }
       fxFlurryCarry(o, f);
       fxBossShape(f, o, 's' + o.n, sh, L.dmg);
@@ -55115,6 +55117,9 @@ const CARRY_MAX = 90;   // frames: a drop that never lands lets go
 function isDropping(f){
   return !!f && !f.dead && !f.onground && ((f._stall && f._stall.phase === 'fall') || !!f._slam);
 }
+// ONE FALL, ONE STOCK: has t been KO'd (any path of eliminate, a Bubble reform too) since the stamp n0 = t._koN? A hit that then holds or
+// carries its target asks, so a hit that KOs (the damage cap) does not take the fighter who just came back along with it.
+function koSince(t, n0){ return !t || t.dead || (t._koN||0) !== n0; }
 function updateDropCarry(f){
   if(f.dead) return;
   // let go of anyone already carried once the drop is over (landed, cancelled, or too long)
@@ -55140,9 +55145,10 @@ function updateDropCarry(f){
     const st = f._stall;
     if(st && st.fall && st.air && st.fHit && !st.fHit.has(t.idx)){
       st.fHit.add(t.idx);
+      const n0 = t._koN||0;
       applyHit(t, st.fall.dmg, 0, st.fall.kb, f);
       for(let i=0;i<6;i++) puff(t.x, t.y - 6, i%2 ? '#f06fa8' : '#fff', 4);
-      if(t.dead) continue;
+      if(koSince(t, n0)) continue;   // the fall hit KO'd them (the cap): they came back elsewhere, not under the chair (a second stock, otherwise)
       t._chainSeq = -1;
     }
     const reach = (f.r + t.r)*0.8;
@@ -60506,6 +60512,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
     kbx = sx*L*Math.cos(a); kby = L*Math.sin(a);
   }
   const hitGround = t.onground;   // (for the dust a launch kicks up: hitFx)
+  if(from !== t) t._backAir = false;   // hit by someone else: the respawn's ceiling is over (ONE FALL, ONE STOCK, in step)
   knock(t, kbx*scale, kby*scale - kp*0.025);
   if(SETTINGS.mode==='ctf') ctfBigHit(t, from);   // a big enough launch makes a flag carrier drop the flag
   // The stun, the chain and the hit-grace this hit gives are all set by stampHit: the one place that says what a hit does to its target's grace, which a
@@ -60537,7 +60544,6 @@ function knock(t,kx,ky){
   // sustained damage/DPS on a stationary target instead of chasing it around the stage.
   if(TESTMODE.active && TESTMODE.anchored && t.controller!=="local"){ t.vx=0; t.vy=0; return; }
   t.vx=kx; t.vy=ky; t.onground=false; t._hop=false; t._ff=false; t._hyperT=0;
-  t._backAir=false;   // knocked about: the respawn's ceiling is over (ONE FALL, ONE STOCK, in step)
   // REAL EDGES: knocked into the air where a fall is a fall, a fighter gets a jump and the up-special back, as in the games this one
   // follows -- so anyone knocked off a ledge has a way back to try, and getting back is up to the player
   if(FLOOR_SEGS){ t.jumps = Math.max(t.jumps||0, 1); t._usedAirSpecial = false; }
@@ -60797,6 +60803,7 @@ function dropInFlightMoves(f){
   for(const g of fighters) if(g._g6track && g._g6track.idx === f.idx) g._g6track = null;   // ...and a MeTag's lock on a fighter ends with that fighter's stock
 }
 function eliminate(f){
+  f._koN = (f._koN||0) + 1;   // a KO stamp, whatever this KO turns out to be: a hit that holds its target after it asks (ONE FALL, ONE STOCK: koSince)
   if(RACE.active){ raceEliminate(f); return; }   // RUNNING!: a fall or a knockout ends your race; a runner is deleted, Marshmallow is put back
   if(SETTINGS.mode==='ctf' && ctfEliminate(f)) return;   // Capture the Flag: no stocks; a KO is a trip home, or to the enemy's jail
   if(f._oneGhost){ oneGhostDown(f); return; }   // One's ghost fighter has no stocks to lose: a knockout is the kill
@@ -60809,7 +60816,10 @@ function eliminate(f){
   // back it put them under itself again, still past the bottom line: a second stock for the one fall. (A hold pulled them back into it.)
   for(const g of fighters){
     if(g === f) continue;
-    if(g._carrying && g._carrying.some((c)=>c.idx === f.idx)) g._carrying = g._carrying.filter((c)=>c.idx !== f.idx);
+    if(g._carrying && g._carrying.some((c)=>c.idx === f.idx)){
+      g._carrying = g._carrying.filter((c)=>c.idx !== f.idx);
+      if(!g._carrying.length){ g._carrying = null; g._carryT = 0; }   // nobody left: no carry (an empty list still read as carrying)
+    }
     if(g._hold && g._hold.idx === f.idx) holdRelease(g, f, 0);
     // ---- Steve Cobs's prize: begin ----
     if(g._drawer && g._drawer.idx === f.idx) g._drawer = null;   // (a drawer ride ends too: it put the foe back beside the roll, past a side line)
@@ -60902,7 +60912,7 @@ function eliminate(f){
   }
   f.vx=0; f.vy=0; f.pct=0; f.invuln=90; f.hitstun=0; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0;
   f._floatT=0;   // thin air (Thermal Rise's second, a float area's linger) does not outlive the stock: she comes back on whole gravity
-  f._backAir=true;   // just back: the top KO line is a ceiling until they touch down or are knocked about (ONE FALL, ONE STOCK, in step)
+  f._backAir=true;   // just back: the top KO line is a ceiling until they touch down or are hit by someone else (ONE FALL, ONE STOCK, in step)
   dropInFlightMoves(f);
   if(f.name==="Bubble") f.reform=1;   // Bubble regains her reform each new stock
 }
