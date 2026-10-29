@@ -52385,7 +52385,7 @@ function finB7Want(f, t, sp, dx, dy, adx, ady, gap, ground, tground){
   switch(sp){
     case 'fury':       return ady < 40 && gap > -10 && gap < 80;
     case 'lemon':      return ground && tground && ady < 60 && adx > 90 && adx < 240 && (t.vx || 0)*Math.sign(dx) < -1.5;   // only as they come at her
-    case 'chair':      return ground && tground && ady < 40 && adx > 100 && adx < 270;
+    case 'chair':      return ground && ((f._finRead || 0) >= hazardT || (tground && ady < 40 && adx > 100 && adx < 270));   // (_finRead: her tower as a read, the brain's own decision -- brainTowerRead)
     case 'wallmart':   return ground && tground && ady < 30 && adx > 60 && adx < 380;
     case 'split':      return ground && tground && ady < 40 && adx > 60 && adx < 420;
     case 'heavy':      return ground && tground && ady < 30 && gap > -10 && gap < 60;
@@ -63610,15 +63610,17 @@ let AI_LEVEL = 1;
 //           an up-tilt that popped the foe up
 //   kit     how much of the rest of its kit it reaches for: a rush from range, a down-special that is an attack, a beam smash down
 //           the stage, Bow's Teleport at a foe, Box's catch (a multiplier on those chances)
+//   towerRead  BOW (round 2 of the bot fixes, 2026-10-29): the chance a decision is her tower as a read, on a foe she sees walking or jumping in
+//           from where the falling tower meets them (brainTowerRead)
 const BRAIN_LV = [
   { think:[16, 28], wake:[26, 40], gap:[16, 24], strMax:3, miss:0.25, hesit:0.18, smash:0.10, spec:[420, 720], fin:0.06, ctr:0,    ctrCd:[0, 0],     ctrHit:1e9, grab:0.03, hop:0.08, back:0.45, wrong:0.06, lead:0.3, target:[70, 130], recMiss:0.35,
-    eg:0.05, egJudge:0.6, egHit:0.25, egTrap:0, hz:0.15, edge:0.2, upAtk:0, kit:0.1 },
+    eg:0.05, egJudge:0.6, egHit:0.25, egTrap:0, hz:0.15, edge:0.2, upAtk:0, kit:0.1, towerRead:0.04 },
   { think:[9, 15],  wake:[14, 24], gap:[11, 16], strMax:4, miss:0.12, hesit:0.07, smash:0.25, spec:[180, 360], fin:0.12, ctr:0.2,  ctrCd:[360, 600], ctrHit:60,  grab:0.06, hop:0.15, back:0.25, wrong:0.02, lead:0.6, target:[50, 100], recMiss:0.2,
-    eg:0.35, egJudge:0.4, egHit:0.45, egTrap:0.3, hz:0.5, edge:0.6, upAtk:0.08, kit:0.5 },
+    eg:0.35, egJudge:0.4, egHit:0.45, egTrap:0.3, hz:0.5, edge:0.6, upAtk:0.08, kit:0.5, towerRead:0.15 },
   { think:[6, 10],  wake:[9, 15],   gap:[9, 13],  strMax:5, miss:0.05, hesit:0.03, smash:0.40, spec:[120, 240], fin:0.18, ctr:0.3,  ctrCd:[240, 420], ctrHit:45,  grab:0.10, hop:0.22, back:0.15, wrong:0,    lead:0.8, target:[40, 80], recMiss:0.1,
-    eg:0.6, egJudge:0.25, egHit:0.65, egTrap:0.5, hz:0.8, edge:0.85, upAtk:0.15, kit:0.85 },
+    eg:0.6, egJudge:0.25, egHit:0.65, egTrap:0.5, hz:0.8, edge:0.85, upAtk:0.15, kit:0.85, towerRead:0.25 },
   { think:[4, 7],   wake:[6, 10],   gap:[8, 11],  strMax:6, miss:0.02, hesit:0.01, smash:0.50, spec:[100, 200], fin:0.22, ctr:0.3,  ctrCd:[240, 420], ctrHit:45,  grab:0.12, hop:0.25, back:0.12, wrong:0,    lead:0.9, target:[30, 60], recMiss:0.04, recSmart:1, space:0.6,
-    eg:0.75, egJudge:0.15, egHit:0.8, egTrap:0.6, hz:0.9, edge:0.95, upAtk:0.2, kit:1 },
+    eg:0.75, egJudge:0.15, egHit:0.8, egTrap:0.6, hz:0.9, edge:0.95, upAtk:0.2, kit:1, towerRead:0.3 },
 ];
 // The kits whose neutral special is a shot (a projectile or a beam): those fire it from range. (The old AI's list, kept as a fact about the kits;
 // only a kit missing from BRAIN_SPEC below reads it now. Five had gone stale and are out: Barf Bag's Outbreak, Yellow Face's cone, Bell's ring,
@@ -64181,6 +64183,11 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   }
   // the finisher at kill percent (or on a boss), a foe in reach: FINX kits check their own reach (finB1Ai), the rest go
   if(inReach && f.fnCd <= 0 && f.onground && ((t.pct||0) >= 85 || t._isBoss) && Math.random() < L.fin){ brainTap(B, brainFace({ attack:true, special:true }, toward), 3); return; }
+  // BOW'S TOWER AS A READ (the owner, 2026-10-29: "I use bow's finisher as something that can be used to punish a read, but I get height, so I
+  // dont get punished for reading. that's how I play my finisher"): a foe she sees coming at her, walking or jumping in, from where the falling
+  // tower meets them, she now and then guesses will still be coming when it falls, and starts Topple the Chair Showroom -- a decision like any
+  // other, on what she saw a moment ago, rolled by level (towerRead). A guess: a foe that stops, turns or goes over her is missed.
+  if(sp === 'chair' && f.fnCd <= 0 && f.onground && !t._isBoss && brainTowerRead(f, t, dx, adx, dy) && Math.random() < L.towerRead){ f._finRead = now + 3; brainTap(B, brainFace({ attack:true, special:true }, toward), 3); return; }
   // its up-special when it lands from here (brainUpLands), now and then: an uppercut or a spin at a foe above it (an anti-air), Bow's Chair
   // Slam on a foe beside her
   if(ready && f.onground && !t._isBoss && (dy < -24 || (K.up && K.up.kind === 'slam')) && brainUpLands(f, K, t) && Math.random() < L.upAtk){ brainTap(B, { special:true, up:true }, 3); B.specAt = now + brainSpecGap(f, L); return; }
@@ -64456,6 +64463,18 @@ function brainStrongMove(f, t){
   const dy = t.y - f.y, adx = Math.abs(t.x - f.x), ms = msOf(f);
   if(dy < -40 && adx < 70 && !brainKit(f).shotX && (!(ms && ms.aiFit) || aiMoveFits(f, t, ms.ut, f.face))) return 'ut';
   return 'jab';
+}
+// BOW'S TOWER AS A READ: the foe as she guesses it (seen a moment late, led a little) about 180-260 px off (TOWER_READ: plays.md -- started
+// closer, she was hit during the 0.7 s stack 14-19 times in 20; much further and the tower falls short), coming at her -- on the floor about
+// level with her, or in the air on its way in, no higher than the tower stands -- and her floor running on toward them for the tower to lie
+// along (fx7ShowRun). Where the read holds she may start it (finB7Want lets a read through: f._finRead).
+const TOWER_READ = [180, 260];
+function brainTowerRead(f, t, dx, adx, dy){
+  if(adx < TOWER_READ[0] || adx > TOWER_READ[1]) return false;
+  const dir = dx < 0 ? -1 : 1, inward = -(t.vx || 0)*dir;   // (its speed toward her)
+  if(t.onground !== false){ if(!(inward > 1.5 && Math.abs(dy) < 40)) return false; }
+  else if(!(inward > 1 && dy > -170 && dy < 30)) return false;
+  return fx7ShowRun(f, feetY(f), dir) >= Math.min(FX7.showroom.len, adx - 40);
 }
 // Does its up-special land on t from here (brainKit's up: where riseShape puts the hit)? An uppercut's arc round the cast point, a spin's
 // ring as it rises through a foe above or beside it, Bow's Chair Slam round her feet on a foe beside her on the floor.
