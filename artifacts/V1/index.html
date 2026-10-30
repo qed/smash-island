@@ -2551,13 +2551,12 @@ function syncPrizeRoster(announce){
 // ---------- STADIUMS ----------
 // ---- MOON CAVES: groundwork (M0) ----------------------------------------------------------------------------------------------
 // The round map with gravity toward its middle (reports/moon-caves-design.md). Nothing here runs on any other map: MCAVE is null
-// outside a Moon Caves match, every hook asks it first, and mcEnter/mcExit return at once. It is built in steps, each hidden behind
-// MCAVE_DEV (off for everyone; localStorage 'bfsi:mcavedev' = '1' turns it on in one browser) until the release step.
+// outside a Moon Caves match, every hook asks it first, and mcEnter/mcExit return at once. Released 2026-10-30: it unlocks with The Moon,
+// Teams only (stageOpen).
 // Positions (x, y) are real between frames. On this map velocities are stored local to the body: vx along the ground (clockwise
 // positive), vy toward the centre (positive down). Each moving thing's own update runs inside its CHART: the disc laid flat round it,
 // height = radius (y' = cy - r) and left/right = distance along the ground at its own radius (x' = cx + rho*(th - phi)). Its down is
 // +y there, every ring piece is a box and every spoke face a wall, so the engine's code runs unchanged. th is clockwise from 12 o'clock.
-const MCAVE_DEV = (function(){ try{ return localStorage.getItem('bfsi:mcavedev') === '1'; }catch(e){ return false; } })();
 let MCAVE = null;   // { on:true, cx, cy, ... } in a Moon Caves match; null everywhere else (only its builder sets it; setupWorld clears it)
 let camAng = 0;     // the view's turn on Moon Caves, radians (0 everywhere else)
 const MC_TAU = 2*Math.PI;
@@ -2649,7 +2648,7 @@ function worldToScreen(x, y, z){
   return { x:(x - camX - W/2)*z + W/2, y:(y - camY - H/2)*z + H/2, s:z };
 }
 // ---- MOON CAVES: the radial-gravity sandbox (M1) ------------------------------------------------------------------------------
-// A fixed test disc, built only while MCAVE_DEV is on, in a Teams match on the Moon Caves row (setupWorld): the surface (the crust's top,
+// A fixed disc, built in a Teams match on the Moon Caves row (setupWorld): the surface (the crust's top,
 // walkable all the way round), one cave under it, four holes through the crust with steps down, a walled shaft, and two cracks in the cave's
 // floor over the hollow core. Fighters only: no items, assists or Smash Balls (itemSpawnInterval). A KO is past the blast ring out in space,
 // or down in the core. The view turns with your fighter (mcCamera), and every fighter stands upright on its own part of the disc. Sizes are
@@ -2859,16 +2858,16 @@ const STAGES = [
    plats:[[0.2,0.56,0.15],[0.8,0.56,0.15],[0.5,0.45,0.22,"solid",0.06]],
    edges:{ floor:[[0.07,0.43],[0.57,0.93]], void:['#151821','#000000'] },
    hazard:"lowgrav"},
-  // MOON CAVES (see the groundwork block above STAGES): built in steps, out of every list unless MCAVE_DEV is on (`mcDev`, stageOpen) until
-  // the release step, when it unlocks with The Moon (`secret:'one'`). Teams only, two sides: a safe strip at 9 o'clock and one at 3.
-  {id:"mooncaves", name:"Moon Caves", blurb:"A whole moon to fight round, with caves down to its core.", secret:"one", mcDev:true,
+  // MOON CAVES (see the groundwork block above STAGES): unlocks with The Moon (`secret:'one'`), and only a Teams match lists it
+  // (`teamsOnly`, stageOpen; never a cup's pool). Two sides: a safe strip at 9 o'clock and one at 3.
+  {id:"mooncaves", name:"Moon Caves", blurb:"A whole moon to fight round, with caves down to its core.", secret:"one",
    sky:["#02030a","#0b0e1c"], ground:"#9a9da5", plats:[], layout:"disc", teamsOnly:true,
    hazard:"lowgrav"},
 ];
 // A stage with `secret` stays out of every list the player sees -- the stage cards, the World Cup's pools and its ticks, the online lobby's
 // -- until its secret is done: The Moon (secret 'one') until One is beaten (oneUnlocked), so nothing names it before her chain does. It stays
 // IN STAGES, so a guest whose host picks it, a replay or a saved cup still finds it by id; only the lists ask stageOpen.
-function stageOpen(s){ if(s && s.mcDev) return MCAVE_DEV; return !!s && (!s.secret || (s.secret === 'one' && oneUnlocked())); }   // (mcDev: Moon Caves while it is built)
+function stageOpen(s){ if(s && s.teamsOnly && SETTINGS.mode !== 'teams') return false; return !!s && (!s.secret || (s.secret === 'one' && oneUnlocked())); }   // (teamsOnly: Moon Caves)
 function stagesOpen(){ return STAGES.filter(stageOpen); }
 // The stage in hand when the lists no longer offer it (a host's Moon carried out of an online match, a profile reset): back to the first stage.
 // Never during an online match (the host's pick is the guest's stage there).
@@ -17396,7 +17395,7 @@ function cupSyncUI(){
   if(row) row.style.display = cfg.pool==='pick' ? '' : 'none';
   if(chips && cfg.pool==='pick'){
     chips.innerHTML = '';
-    for(const st of stagesOpen()){
+    for(const st of stagesOpen().filter(st=>!st.teamsOnly)){
       const b = document.createElement('button'); b.className = 'cupchip' + (cfg.picks.includes(st.id) ? ' on' : '');
       b.textContent = st.name + (st.big ? ' (big)' : ''); b.title = st.blurb;
       b.onclick = () => { const i = cfg.picks.indexOf(st.id); if(i<0) cfg.picks.push(st.id); else cfg.picks.splice(i,1); cupSyncUI(); cupSave(); };
@@ -18378,7 +18377,7 @@ function watchFixture(fx, youPlay){
 // The stages this cup may use, by the setup's Stages row: all of them, the small ones (today's cup), the big scrolling ones, or the ticked list.
 // A list with nothing ticked falls back to the small ones, so a fixture always has a stage.
 function cupStagePool(cfg){
-  const open = stagesOpen();   // (The Moon only once One is beaten: stageOpen)
+  const open = stagesOpen().filter(st=>!st.teamsOnly);   // (The Moon only once One is beaten: stageOpen; never Moon Caves)
   const pool = cfg.pool==='all' ? open.slice()
     : cfg.pool==='big' ? open.filter(st=>st.big)
     : cfg.pool==='pick' ? open.filter(st=>(cfg.picks||[]).includes(st.id))
@@ -20239,7 +20238,7 @@ function setupWorld(){
   if(SETTINGS.mode==='ctf'){ ctfBuildWorld(); return; }   // Capture the Flag: one of its own huge maps (see the CTF block)
   CAM_ZOOM = 0.72;
   if(ONEFIGHT.active || COBSFIGHT.active){ buildOneArena(); return; }   // One's arena, and Steve Cobs's: the teams map without its walls (see buildOneArena)
-  if(SETTINGS.mode === 'teams' && MCAVE_DEV && stage && stage.layout === 'disc'){ buildMoonCaves(); return; }   // MOON CAVES (while it is built: MCAVE_DEV only)
+  if(SETTINGS.mode === 'teams' && stage && stage.layout === 'disc'){ buildMoonCaves(); return; }   // MOON CAVES (Teams only: stageOpen)
   if(RACE.active){ buildRaceLane(); return; }       // RUNNING!: the Red Line Game's lane (see buildRaceLane)
   const MS = mapSize();                       // MAP SIZE match setting → arena W/H multipliers
   if(!isBig()){
