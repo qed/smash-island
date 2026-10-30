@@ -2568,7 +2568,7 @@ function mcWrap(a){ a = (a + Math.PI) % MC_TAU; if(a < 0) a += MC_TAU; return a 
 function mcTh(x, y){ return Math.atan2(x - MCAVE.cx, -(y - MCAVE.cy)); }   // a real point's angle, clockwise from 12 o'clock
 function mcRad(x, y){ return Math.hypot(x - MCAVE.cx, y - MCAVE.cy); }
 // The open frame (one at a time: frames never nest). Its owner E sits at (cx, cy - rho) in its own chart.
-const MC_FR = { open:false, depth:0, E:null, serial:0, phi:0, rho:1, th0:0, n:0, o:[], wx:[], wy:[], cx:[], cy:[], wp:null, pa:null, np:0 };
+const MC_FR = { open:false, depth:0, E:null, serial:0, phi:0, rho:1, th0:0, n:0, o:[], wx:[], wy:[], cx:[], cy:[], k:[], wp:null, pa:null, np:0, ca:[], cl:[] };
 const MC_PT = { x:0, y:0 }, MC_LISTS = [];
 // A real point into the open frame's chart, and back (written into `out`: a frame allocates nothing per object).
 function mcToChart(x, y, out){ const M = MCAVE, F = MC_FR; out.x = M.cx + F.rho*mcWrap(mcTh(x, y) - F.phi); out.y = M.cy - mcRad(x, y); return out; }
@@ -2586,30 +2586,85 @@ function mcPieceBoxes(seg, out){
 // A wall's id on this map: its side and its face's angle (a face's place in a chart moves as the chart does). step() and the guest's
 // prediction (netPredRun) use it in place of the face's x.
 function mcWallId(side, p, left){ return side + ':m' + Math.round((left ? p.mcA0 : p.mcA1)*1e4); }
-// The objects charted with a frame: read and written by the code inside it. (Kit-made platforms -- FX_PLATS, FILE_RIDES, SPONGY_PLATS --
-// are charted with the terrain on this map.)
-function mcLists(){ const L = MC_LISTS; L[0] = fighters; L[1] = projectiles; L[2] = summons; L[3] = items; L[4] = FINX; L[5] = tendrils; L[6] = CP_BITS; return L; }
+// The objects charted with a frame: read and written by the code inside it. (2026-10-30, M3: and the Smash Ball, which every swing and
+// shot is tested against. The kit-made platforms -- FILE_RIDES, FX_PLATS, SPONGY_PLATS -- are charted too, by their top's middle
+// (mcSwapPlat), and join the frame's terrain, so a big file, a bubble's top or Spongy is stood on in every chart as it is in its own.)
+const MC_BALL = [];
+function mcLists(){ const L = MC_LISTS; L[0] = fighters; L[1] = projectiles; L[2] = summons; L[3] = items; L[4] = FINX; L[5] = tendrils; L[6] = CP_BITS;
+  MC_BALL.length = 0; if(SMASHBALL) MC_BALL.push(SMASHBALL); L[7] = MC_BALL; return L; }
+const MC_KITS = [];
+function mcKits(){ const L = MC_KITS; L[0] = FILE_RIDES; L[1] = FX_PLATS; L[2] = SPONGY_PLATS; return L; }
+// THE REMEMBERED POINTS (2026-10-30, M3): x/y pairs an object keeps from one frame to the next -- a drop's shadow, a fist's arm root, where
+// a cast happened, a Final Smash's anchors, the spot a Final Smash's catch pins its foe to, Dark Nickel's snap-back. Kept as real places
+// between frames and charted with their owner, like its own position. A pair first written inside a frame is in that chart, so it is
+// brought back with the rest. ([x, y] on the object; [holder, x, y] on an object it holds.)
+const MC_RP2 = [['warnX', 'warnY'], ['armX0', 'armY0'], ['_castX', '_castY'], ['_pinX', '_pinY'], ['fsAx', 'fsAy'], ['fsBx', 'fsBy'], ['fsCx', 'fsCy']];
+const MC_RP3 = [['_fsLock', 'x', 'y'], ['_nsplit', 'x', 'y'], ['_mtCrushFx', 'x', 'y'], ['_attractFx', 'tx', 'ty']];
+// ...and lone x's (a summon's home, its run's start, a CPU's last place, an aim): an x alone is a place along the ground at the owner's height,
+// kept between frames as its angle round the disc (o._mcA).
+const MC_RP1 = ['_lastX', '_x0', '_px', 'homeX', '_homeX', '_aimX'];
+function mcPtsIn(o){
+  const M = MCAVE, F = MC_FR, P = MC_PT;
+  for(let k = 0; k < MC_RP2.length; k++){ const a = MC_RP2[k][0], c = MC_RP2[k][1];
+    if(typeof o[a] === 'number' && typeof o[c] === 'number'){ mcToChart(o[a], o[c], P); o[a] = P.x; o[c] = P.y; } }
+  for(let k = 0; k < MC_RP3.length; k++){ const h = o[MC_RP3[k][0]], a = MC_RP3[k][1], c = MC_RP3[k][2];
+    if(h && typeof h === 'object' && h._mcS !== F.serial && typeof h[a] === 'number' && typeof h[c] === 'number'){ h._mcS = F.serial; mcToChart(h[a], h[c], P); h[a] = P.x; h[c] = P.y; } }
+  const A = o._mcA; if(A) for(const n in A){ if(typeof o[n] === 'number') o[n] = M.cx + F.rho*mcWrap(A[n] - F.phi); }
+}
+function mcPtsOut(o){
+  const M = MCAVE, F = MC_FR, P = MC_PT, s = -F.serial;
+  for(let k = 0; k < MC_RP2.length; k++){ const a = MC_RP2[k][0], c = MC_RP2[k][1];
+    if(typeof o[a] === 'number' && typeof o[c] === 'number'){ mcFromChart(o[a], o[c], P); o[a] = P.x; o[c] = P.y; } }
+  for(let k = 0; k < MC_RP3.length; k++){ const h = o[MC_RP3[k][0]], a = MC_RP3[k][1], c = MC_RP3[k][2];
+    if(h && typeof h === 'object' && h._mcS !== s && typeof h[a] === 'number' && typeof h[c] === 'number'){ h._mcS = s; mcFromChart(h[a], h[c], P); h[a] = P.x; h[c] = P.y; } }
+  for(let k = 0; k < MC_RP1.length; k++){ const n = MC_RP1[k]; if(typeof o[n] === 'number' && Number.isFinite(o[n])) (o._mcA || (o._mcA = {}))[n] = F.phi + (o[n] - M.cx)/F.rho; }
+}
 function mcSwapIn(o){
   const F = MC_FR;
-  if(!o || o._mcS === F.serial || typeof o.x !== 'number') return;
+  if(!o || o._mcS === F.serial || typeof o.x !== 'number' || typeof o.y !== 'number') return;   // (a tendril is an x and a height: no place to chart)
+  if(o._mcKit){ mcSwapPlat(o); return; }
   o._mcS = F.serial;   // the entry stamp: anything in the lists at exit without it was made during the frame
   const i = F.n++;
-  F.o[i] = o; F.wx[i] = o.x; F.wy[i] = o.y;
+  F.o[i] = o; F.wx[i] = o.x; F.wy[i] = o.y; F.k[i] = 0;
   mcToChart(o.x, o.y, MC_PT); o.x = MC_PT.x; o.y = MC_PT.y;
   F.cx[i] = o.x; F.cy[i] = o.y;
+  mcPtsIn(o);
 }
+// A kit-made platform {x, y, w, h}: charted by the middle of its top, so it sits the same either side of that point in every chart.
+// (Its width stays its width: along the ground at its own radius it is the same within a few px.)
+function mcSwapPlat(p){
+  const F = MC_FR;
+  if(!p || p._mcS === F.serial || typeof p.x !== 'number') return;
+  p._mcS = F.serial; p._mcKit = 1;
+  const i = F.n++, hw = (p.w || 0)/2;
+  F.o[i] = p; F.wx[i] = p.x; F.wy[i] = p.y; F.k[i] = 1;
+  mcToChart(p.x + hw, p.y, MC_PT); p.x = MC_PT.x - hw; p.y = MC_PT.y;
+  F.cx[i] = p.x; F.cy[i] = p.y;
+}
+function mcPlatOut(p, P){ const hw = (p.w || 0)/2; mcFromChart(p.x + hw, p.y, P); p.x = P.x - hw; p.y = P.y; p._mcKit = 1; }
+// THE PICTURES MADE IN A FRAME (2026-10-30, M3): the effect lists the sim only appends to (dust, debris, scars, KO bursts, the hitbox view,
+// the beams) are noted at entry by their last entry; whatever comes after it at exit was made in the chart and is turned to real places
+// (mcCosOut). The hit art is refreshed in place, so hitArt stamps what it writes in a frame (e._mc) instead.
+const MC_COS = [];
+function mcCos(){ const L = MC_COS; L[0] = IMPACT_DUST; L[1] = IMPACT_DEBRIS; L[2] = IMPACT_SCARS; L[3] = IMPACT_OUT; L[4] = COS_KO_FX; L[5] = COS_KO_OUT; L[6] = DEBUG_HITS; L[7] = beams; return L; }
 // E's frame in: every listed object to E's chart, and the terrain to E's window of pieces. Out (always, from a finally): every object
 // back to real coordinates -- untouched ones bit for bit, moved ones from the chart, ones put at a real point (mcPlace) left be.
 function mcEnter(E){
   const M = MCAVE; if(!M || !M.on) return;
   const F = MC_FR;
   if(F.open){ F.depth++; return; }   // one asked for inside another reuses it
+  if(!E || typeof E.x !== 'number' || typeof E.y !== 'number') return;   // (no place of its own: no frame, and mcExit finds none open)
   F.open = true; F.depth = 0; F.E = E; F.serial++; F.n = 0;
-  F.phi = mcTh(E.x, E.y); F.rho = Math.max(M.rhoMin || 64, mcRad(E.x, E.y)); F.th0 = F.phi;
+  const ex = E._mcKit ? E.x + (E.w || 0)/2 : E.x;   // (a kit-made platform's own frame: the middle of its top)
+  F.phi = mcTh(ex, E.y); F.rho = Math.max(M.rhoMin || 64, mcRad(ex, E.y)); F.th0 = F.phi;
   mcSwapIn(E);
   const L = mcLists(); for(let k = 0; k < L.length; k++){ const a = L[k]; for(let j = 0; j < a.length; j++) mcSwapIn(a[j]); }
-  F.wp = worldPlats; if(M.window) worldPlats = M.window(F.phi, F.rho, E);   // the terrain round E, as boxes in its chart
+  const K = mcKits(); for(let k = 0; k < K.length; k++){ const a = K[k]; for(let j = 0; j < a.length; j++) mcSwapPlat(a[j]); }
+  F.wp = worldPlats;
+  if(M.window){ worldPlats = M.window(F.phi, F.rho, E);   // the terrain round E, as boxes in its chart, and the kit-made platforms (already charted)
+    for(let k = 0; k < K.length; k++){ const a = K[k]; for(let j = 0; j < a.length; j++) if(a[j] && a[j]._mcS === F.serial) worldPlats.push(a[j]); } }
   F.pa = particles; F.np = particles.length;   // (the particles made in the frame are made in its chart)
+  const C = mcCos(); for(let k = 0; k < C.length; k++){ const a = C[k]; F.ca[k] = a; F.cl[k] = a.length ? a[a.length - 1] : null; }
 }
 function mcExit(){
   const M = MCAVE; if(!M || !M.on) return;
@@ -2618,14 +2673,21 @@ function mcExit(){
   const s = F.serial, P = MC_PT;
   for(let i = 0; i < F.n; i++){
     const o = F.o[i]; F.o[i] = null;
+    if(!F.k[i]) mcPtsOut(o);                                                              // (its remembered points: always from the chart)
     if(o._mcPlaced === s) continue;                                                       // put at a real point (mcPlace)
     if(o.x === F.cx[i] && o.y === F.cy[i]){ o.x = F.wx[i]; o.y = F.wy[i]; continue; }   // untouched: its real place, bit for bit
+    if(F.k[i]){ mcPlatOut(o, P); continue; }                                             // a kit-made platform that moved (a big file gliding)
     mcFromChart(o.x, o.y, P); o.x = P.x; o.y = P.y;                                        // moved: E itself, a push, a grab, a throw
   }
   const L = mcLists();
   for(let k = 0; k < L.length; k++){ const a = L[k]; for(let j = 0; j < a.length; j++){ const o = a[j];
-    if(!o || o._mcS === s || o._mcPlaced === s || typeof o.x !== 'number') continue;
-    o._mcS = s; mcFromChart(o.x, o.y, P); o.x = P.x; o.y = P.y; } }                       // made during the frame, in its chart
+    if(!o || o._mcS === s || typeof o.x !== 'number') continue;
+    o._mcS = s; mcPtsOut(o); if(o._mcPlaced === s) continue;
+    mcFromChart(o.x, o.y, P); o.x = P.x; o.y = P.y; } }                                    // made during the frame, in its chart
+  const K = mcKits();
+  for(let k = 0; k < K.length; k++){ const a = K[k]; for(let j = 0; j < a.length; j++){ const p = a[j];
+    if(!p || p._mcS === s || typeof p.x !== 'number') continue;
+    p._mcS = s; mcPlatOut(p, P); } }                                                       // a platform a move made in the frame (a big file starting)
   // THE FLIGHT (the owner, 2026-10-29: a hard sideways hit on the surface carries someone off the curve, out into space). E airborne in
   // hitstun keeps its real direction -- its local speed turned back by the angle it went round in the frame -- so a launch flies straight in
   // real space and rises off the curve. Grounded bodies and shots never get this: a run follows the floor and a shot follows the curve.
@@ -2636,12 +2698,62 @@ function mcExit(){
   }
   // particles made in the frame (dust, sparks, a KO's burst): to real places, their speeds turned to real directions
   const PA = F.pa;
-  if(PA && PA === particles) for(let i = F.np; i < PA.length; i++){ const p = PA[i]; if(!p || typeof p.x !== 'number') continue;
-    const th = F.phi + (p.x - M.cx)/F.rho, c = Math.cos(th), sn = Math.sin(th), vx = p.vx || 0, vy = p.vy || 0;
-    mcFromChart(p.x, p.y, P); p.x = P.x; p.y = P.y; p.vx = vx*c - vy*sn; p.vy = vx*sn + vy*c; }
+  if(PA && PA === particles) for(let i = F.np; i < PA.length; i++){ const p = PA[i]; if(!p || typeof p.x !== 'number') continue; mcCosPt(p, true); }
   F.pa = null;
+  mcCosOut(s);
   worldPlats = F.wp; F.wp = null;
   F.open = false; F.E = null;
+}
+// One made-in-the-frame point {x, y} (and its speed, turned from the ground's directions to real ones when `v`) to its real place.
+function mcCosPt(p, v){
+  const M = MCAVE, F = MC_FR, th = F.phi + (p.x - M.cx)/F.rho;
+  if(v){ const c = Math.cos(th), sn = Math.sin(th), vx = p.vx || 0, vy = p.vy || 0; p.vx = vx*c - vy*sn; p.vy = vx*sn + vy*c; }
+  mcFromChart(p.x, p.y, MC_PT); p.x = MC_PT.x; p.y = MC_PT.y;
+}
+// A hit shape drawn in the chart, as a real one: a circle and a capsule keep their kind (their ends moved); a fan, a box and a cut disc
+// become outlines (poly), bent round the disc where they are long. So the hit art, its wire (haPack) and its drawing need no chart.
+function mcShapeOut(sh){
+  const P = MC_PT, out = [];
+  const pt = (x, y) => { mcFromChart(x, y, P); out.push(P.x, P.y); };
+  if(!sh) return sh;
+  if(sh.kind === 'circle'){ mcFromChart(sh.x, sh.y, P); return { kind:'circle', x:P.x, y:P.y, r:sh.r }; }
+  if(sh.kind === 'capsule'){ mcFromChart(sh.x1, sh.y1, P); const x1 = P.x, y1 = P.y; mcFromChart(sh.x2, sh.y2, P); return { kind:'capsule', x1:x1, y1:y1, x2:P.x, y2:P.y, r:sh.r }; }
+  if(sh.kind === 'fan'){ const m = sh.face < 0 ? -1 : 1;
+    for(let j = 0; j <= 12; j++){ const a = sh.a0 + (sh.a1 - sh.a0)*j/12; pt(sh.cx + Math.cos(a)*sh.r1*m, sh.cy + Math.sin(a)*sh.r1); }
+    for(let j = 12; j >= 0; j--){ const a = sh.a0 + (sh.a1 - sh.a0)*j/12; pt(sh.cx + Math.cos(a)*sh.r0*m, sh.cy + Math.sin(a)*sh.r0); }
+    return { kind:'poly', pts:out }; }
+  if(sh.kind === 'box'){ const n = Math.max(1, Math.min(12, Math.ceil(sh.w/60)));
+    for(let j = 0; j <= n; j++) pt(sh.x + sh.w*j/n, sh.y);
+    for(let j = n; j >= 0; j--) pt(sh.x + sh.w*j/n, sh.y + sh.h);
+    return { kind:'poly', pts:out }; }
+  if(sh.kind === 'cut'){ for(let j = 0; j < 24; j++){ const a = j/24*MC_TAU; pt(Math.max(sh.x0, Math.min(sh.x1, sh.x + Math.cos(a)*sh.r)), Math.max(sh.y0, Math.min(sh.y1, sh.y + Math.sin(a)*sh.r))); }
+    return { kind:'poly', pts:out }; }
+  if(sh.kind === 'poly' && Array.isArray(sh.pts)){ for(let j = 0; j + 1 < sh.pts.length; j += 2) pt(sh.pts[j], sh.pts[j + 1]); return { kind:'poly', pts:out }; }
+  return sh;
+}
+function mcCosOut(s){
+  const M = MCAVE, F = MC_FR, P = MC_PT, C = mcCos();
+  for(let k = 0; k < C.length; k++){
+    const a = C[k]; if(a !== F.ca[k]){ F.ca[k] = null; F.cl[k] = null; continue; }   // (a list replaced in the frame: not one of ours to turn)
+    const from = F.cl[k] ? a.lastIndexOf(F.cl[k]) + 1 : 0;   // (not found: trimmed from the front past it, so all of it is new)
+    F.ca[k] = null; F.cl[k] = null;
+    for(let i = from; i < a.length; i++){ const e = a[i]; if(!e) continue;
+      if(k <= 1) mcCosPt(e, true);                                          // dust and debris fly: their speeds turn too
+      else if(k === 3 || k === 5){ if(Array.isArray(e)){ mcFromChart(e[0], e[1], P); e[0] = Math.round(P.x*10)/10; e[1] = Math.round(P.y*10)/10; } }
+      else if(k === 7){   // BEAMS AS ARCS: a beam runs along the ground at its height, so it is kept as a radius and two angles (drawn as an arc)
+        if(e.mc) continue;
+        e.mc = 1; e.r = M.cy - e.y; e.a0 = F.phi + (e.x0 - M.cx)/F.rho; e.a1 = F.phi + (e.x1 - M.cx)/F.rho;
+        mcFromChart(e.x0, e.y, P); e.x0 = P.x; const y0 = P.y; mcFromChart(e.x1, e.y, P); e.x1 = P.x; e.y = (y0 + P.y)/2;
+      }
+      else if(k === 6){ if(e.shape){ const g = mcShapeOut(e.shape); e.shape = g; e.pts = g.kind === 'poly' ? g.pts : e.pts; }
+        else if(typeof e.x === 'number') mcCosPt(e, false); }
+      else if(typeof e.x === 'number') mcCosPt(e, false);
+    }
+  }
+  for(let i = 0; i < HIT_ART.length; i++){ const e = HIT_ART[i]; if(e._mc !== s) continue;
+    e._mc = 0; e.sh = mcShapeOut(e.sh);
+    if(e.sw){ mcFromChart(e.sw[0], e.sw[1], P); e.sw = [P.x, P.y, e.sw[2], e.sw[3]]; }
+    mcFromChart(e.ox, e.oy, P); e.ox = P.x; e.oy = P.y; }
 }
 // Writing a real (world) position from inside a frame: a respawn, an item's spawn. Elsewhere it is just the write.
 function mcPlace(o, x, y){ o.x = x; o.y = y; if(MCAVE && MCAVE.on && MC_FR.open) o._mcPlaced = MC_FR.serial; }
@@ -2816,7 +2928,7 @@ function buildMoonCaves(){
   worldPlats = []; worldZones = []; floors = [{ level:0, y:cy - D.Rout, x:0, w:WW }];
   MCAVE = { on:true, cx:cx, cy:cy, N:D.N, Rout:D.Rout, Rblast:Rb, rKill:D.rKill, shellTop:D.shellTop, shellBot:D.shellBot, crustBot:D.crustBot,
             caves:D.caves, bands:D.bands, segs:D.segs, passages:D.passages, cracks:D.cracks,
-            window:mcWindow, win:[], rhoMin:64, flight:true, items:false, camT:null, camHold:false, camOff:0 };
+            window:mcWindow, win:[], rhoMin:64, flight:true, items:true, camT:null, camHold:false, camOff:0 };   // (items: on from M3, 2026-10-30)
   camAng = 0;
 }
 // THE LAST KO's look ahead on this map (fsKoFlight: will the launch carry t out before its stun ends?): past the blast ring, or down in the
@@ -2853,6 +2965,51 @@ function mcWindow(phi, rho, E){
 }
 // A real point d px further out from the middle (a spawn pad's place over its floor).
 function mcLift(x, y, d){ const M = MCAVE, r = mcRad(x, y) || 1, k = (r + d)/r; return { x:M.cx + (x - M.cx)*k, y:M.cy + (y - M.cy)*k }; }
+// ---- MOON CAVES: every move, shot and item on the disc (M3) -----------------------------------------------------------------
+// (2026-10-30) Items appear on the floors -- the surface and every cave floor, outside both strips -- standing on rock (never over a hole or
+// a crack) and grow in over FIN_GROW frames before they can be picked up. They never fall from space. The pool is the normal one (it has
+// no boss capsule). Assists and Smash Balls come with items, as everywhere.
+function mcFloorAt(j, th, pad){
+  for(const g of MCAVE.segs){ if(g.band !== j) continue; const a = ((th - g.a0) % MC_TAU + MC_TAU) % MC_TAU; if(a >= pad && a + pad <= g.a1 - g.a0) return true; }
+  return false;
+}
+function mcItemSpot(rad){
+  const M = MCAVE;
+  for(let n = 0; n < 24; n++){
+    const j = Math.floor(Math.random()*(M.caves + 1)), top = M.bands[j].top, th = Math.random()*MC_TAU;
+    if(Math.abs(Math.cos(th))*top < MC_GEN.strip/2 + 80) continue;   // in a strip (a band 700 px tall through the middle, at 3 and 9 o'clock)
+    if(!mcFloorAt(j, th, (rad + 40)/top)) continue;
+    return { x:M.cx + (top + rad)*Math.sin(th), y:M.cy - (top + rad)*Math.cos(th) };
+  }
+  return null;
+}
+function mcSpawnItem(){
+  const pool = eventItemPool() || ["heal","heal","marmalade","marmalade","throw","throw","power","power","assist","assist","yoyle","yoyle"];
+  const kind = pool[Math.floor(Math.random()*pool.length)], r = kind === "boss" ? 0 : 16, q = mcItemSpot(16);
+  if(!q || kind === "boss") return;   // (no boss capsule here: a boss's attacks are drawn for a flat arena)
+  items.push({ kind, x:q.x, y:q.y, vx:0, vy:0, r, taken:false, life:60*30, _land:true, _mcGrow:0 });
+}
+// An item in its own chart: it lands on the first floor or plank it crosses (updateItems has moved it).
+function mcItemLand(it){
+  if(!(it.vy > 0)) return;
+  const top = vanLanding(it.x, it.y + it.r - it.vy, it.y + it.r);
+  if(top !== null){ it.y = top - it.r; it.vy = 0; it.vx = 0; it._land = true; }
+}
+// THE SMASH BALL here: it comes near a fighter, out over them (never at the fighters' middle, which is the core), and drifts between such
+// places; nothing clamps it to a box.
+function mcBallSpot(a, up, side){
+  const M = MCAVE, r = mcRad(a.x, a.y) + up, th = mcTh(a.x, a.y) + side/Math.max(200, r);
+  return { x:M.cx + r*Math.sin(th), y:M.cy - r*Math.cos(th) };
+}
+// A beam (BEAMS AS ARCS, mcCosOut): its band and its bright line along its radius, between its two angles.
+function mcDrawBeam(bm){
+  const M = MCAVE, Q = Math.PI/2, a = bm.life/10, lo = Math.min(bm.a0, bm.a1) - Q, hi = Math.max(bm.a0, bm.a1) - Q;
+  ctx.save(); ctx.lineCap = 'round';
+  if(bm.w > 0){ const k = Math.max(0, Math.min(1, (bm.life - 4)/9)); if(k > 0){ ctx.globalAlpha = 0.22*k; ctx.strokeStyle = bm.color; ctx.lineWidth = bm.w*2; ctx.beginPath(); ctx.arc(M.cx, M.cy, bm.r, lo, hi); ctx.stroke(); } }
+  ctx.globalAlpha = Math.max(0, Math.min(1, a)); ctx.strokeStyle = bm.color; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(M.cx, M.cy, bm.r, lo, hi); ctx.stroke();
+  ctx.globalAlpha = Math.max(0, Math.min(1, a*0.5)); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.restore();
+}
 // The host's camera here: it eases after its target as everywhere (0.12), and the view turns to keep the point it looks at upright, so the
 // turn eases with the follow. The angle is held while that point is down in the core (atan2 spins there), and a target that jumps more than
 // 1,200 px in a step (a respawn across the disc) is a cut, never a half-turn spin. Any other step turns the view at most MC_CAM_TURN rad:
@@ -20904,7 +21061,7 @@ function vanDrive(pr){
   pr.phase = 'fall'; pr.life = Math.max(pr.life, 90);          // the finisher: it falls, and has the time to land
 }
 function platRects(){
-  if(MCAVE && MCAVE.on) return worldPlats;   // MOON CAVES: the open frame's pieces (none outside a frame; kit-made platforms join with the moves' step)
+  if(MCAVE && MCAVE.on) return worldPlats;   // MOON CAVES: the open frame's pieces and the kit-made platforms charted with it (none outside a frame)
   let base = isBigFFA() ? [...worldPlats, ...spawnPlatRects()]
              : !isBig()   ? worldPlats
              : [...worldPlats, ...bases.map(b=>({x:b.x,y:b.y,w:b.w,h:b.h}))];
@@ -21683,6 +21840,7 @@ function hitArt(f, key, sh, o){
   e.to = o && o.to != null ? o.to : null;   // a path's far end follows this fighter (a hold, a yank: style 'tether')
   e.sw = o && o.sweet ? [o.sweet.x, o.sweet.y, o.sweet.r, o.sweet.tip ? 1 : 0] : null;   // a swing's sweet spot (haSweet): the band's disc, and whether the tip (past it) or the hilt (in it) is sweet
   e.ox = f && f.x != null ? f.x : 0; e.oy = f && f.y != null ? f.y : 0;
+  if(MC_FR.open) e._mc = MC_FR.serial;   // MOON CAVES: drawn in a chart; turned to real places as the frame closes (mcCosOut)
   return e;
 }
 // What hitShape and hitCircle record on their own. A move that drew this very hit already this frame (a lunge's wedge, an up-special's
@@ -22484,10 +22642,11 @@ function itemSpawnInterval(){
   if(ONEFIGHT.active && ONEFIGHT.story) return 0;   // One's story fight has no items, whatever the setting (see ONE_STORY_STOCKS)
   if(RACE.active) return 0;   // RUNNING!: "attacks allowed", no items
   if(COBSFIGHT.active && COBSFIGHT.story) return 0;   // and neither has Steve Cobs's (COBS_STORY_STOCKS)
-  if(MCAVE && MCAVE.on && !MCAVE.items) return 0;   // MOON CAVES (the sandbox): fighters only -- no items, assists or Smash Balls
+  if(MCAVE && MCAVE.on && !MCAVE.items) return 0;   // MOON CAVES: items, assists and Smash Balls only with MCAVE.items (on from M3; the M1 sandbox had them off)
   switch(SETTINGS.itemRate){ case 1: return 780; case 2: return 460; case 3: return 260; default: return 0; }
 }
 function spawnItem(){
+  if(MCAVE && MCAVE.on){ mcSpawnItem(); return; }   // MOON CAVES: on a floor, growing in (it never falls from space)
   const gy = groundY();
   const x = floorSafeX(120 + Math.random()*(WW-240), 50);   // (REAL EDGES: it comes down over the floor, not a gap)
   // weight the pool: healing/marmalade common, powerups & throwables medium, assist/yoyle rarer, boss rarest
@@ -22520,11 +22679,13 @@ function updateItems(){
     if(it.taken) continue;
     it.vy += 0.5; it.y += it.vy; it.x += it.vx; it.vx*=0.98;
     // land on ground
-    if(it.y > gy - it.r && (!FLOOR_SEGS || (groundAt(it.x) && it.y - it.vy <= gy - it.r + 18))){ it.y = gy - it.r; it.vy=0; it.vx=0; it._land=true; }   // landed: the fall's drift stops here (itemFallDrift)
+    if(MCAVE && MCAVE.on){ if(it._mcGrow < FIN_GROW) it._mcGrow++; mcItemLand(it); }   // MOON CAVES: on the floors round it (its chart's pieces), and it grows in
+    else if(it.y > gy - it.r && (!FLOOR_SEGS || (groundAt(it.x) && it.y - it.vy <= gy - it.r + 18))){ it.y = gy - it.r; it.vy=0; it.vx=0; it._land=true; }   // landed: the fall's drift stops here (itemFallDrift)
     if(FLOOR_SEGS && it.y > WH + 160) it.life = 0;   // REAL EDGES: knocked or dropped into a gap, it is gone
     if(MCAVE && MCAVE.on && MCAVE.cy - it.y < MCAVE.rKill) it.life = 0;   // MOON CAVES: down in the core (in its own chart cy - y is the radius)
     it.life--;
     // pickup: any living fighter overlapping grabs it
+    if(it._mcGrow < FIN_GROW) continue;   // (MOON CAVES: still growing in)
     for(const f of fighters){
       if(f.dead) continue;
       if(Math.abs(f.x-it.x) < f.r+it.r && Math.abs(f.y-it.y) < f.r+it.r){
@@ -22627,7 +22788,7 @@ function fsSpawn(){
   const live = fighters.filter(f=>!f.dead);
   if(live.length < 2){ FS.next = 120; return; }
   let cx = 0, cy = 0; for(const f of live){ cx += f.x; cy += f.y; } cx /= live.length; cy /= live.length;
-  const p = fsClampPos(cx + (fsRand() - 0.5)*500, cy - 80 - fsRand()*80);
+  const p = (MCAVE && MCAVE.on) ? mcBallSpot(live[Math.floor(fsRand()*live.length)], 80 + fsRand()*80, (fsRand() - 0.5)*500) : fsClampPos(cx + (fsRand() - 0.5)*500, cy - 80 - fsRand()*80);   // (MOON CAVES: over a fighter)
   SMASHBALL = { x:p.x, y:p.y, vx:0, vy:0, hp:FSBALL.hp, hpMax:FSBALL.hp, r:FSBALL.r, t:0, life:FSBALL.life, wx:p.x, wy:p.y, wt:0, gr:{}, seq:++FS.seq, flash:0, last:-1 };
   for(let i = 0; i < 14; i++) puff(p.x, p.y, 'hsl(' + (i*26) + ',95%,62%)', 5);
 }
@@ -22662,7 +22823,7 @@ function fsMoveBall(){
   const live = fighters.filter(f=>!f.dead);
   if(--b.wt <= 0 && live.length){   // a new place to drift to, near some fighter
     b.wt = 90 + Math.floor(fsRand()*80);
-    const a = live[Math.floor(fsRand()*live.length)], p = fsClampPos(a.x + (fsRand() - 0.5)*420, a.y - 60 - fsRand()*140);
+    const a = live[Math.floor(fsRand()*live.length)], p = (MCAVE && MCAVE.on) ? mcBallSpot(a, 60 + fsRand()*140, (fsRand() - 0.5)*420) : fsClampPos(a.x + (fsRand() - 0.5)*420, a.y - 60 - fsRand()*140);
     b.wx = p.x; b.wy = p.y;
   }
   let ax = (b.wx - b.x)*0.0016, ay = (b.wy - b.y)*0.0016;
@@ -22673,6 +22834,7 @@ function fsMoveBall(){
   b.vx = (b.vx + ax)*0.97; b.vy = (b.vy + ay)*0.97;
   const sp = Math.hypot(b.vx, b.vy); if(sp > 4.2){ b.vx *= 4.2/sp; b.vy *= 4.2/sp; }
   b.x += b.vx; b.y += b.vy;
+  if(MCAVE && MCAVE.on) return;   // (MOON CAVES: no box to keep it in)
   const lo = fsClampPos(-1e9, -1e9), hi = fsClampPos(1e9, 1e9);
   if(b.x < lo.x){ b.x = lo.x; b.vx = Math.abs(b.vx); } else if(b.x > hi.x){ b.x = hi.x; b.vx = -Math.abs(b.vx); }
   if(b.y < lo.y){ b.y = lo.y; b.vy = Math.abs(b.vy); } else if(b.y > hi.y){ b.y = hi.y; b.vy = -Math.abs(b.vy); }
@@ -25049,9 +25211,9 @@ function summonAssistNamed(owner, a){
   if(!a) return null;
   // Blender "opens at center stage" per the doc — it is a placed trap, not a chaser, so it arrives
   // where it belongs rather than wherever its summoner happened to be standing.
-  const cx = a.fixed==="center" ? WW*0.5 : owner.x;
+  const mc = !!(MCAVE && MCAVE.on), cx = (a.fixed==="center" && !mc) ? WW*0.5 : owner.x;   // (MOON CAVES: no stage centre -- it opens where it was called)
   const s = { type:"assist", name:a.name, color:a.color, act:a.act, team:owner.team, owner:owner.idx,
-    x:cx, y:(a.fixed || !Number.isFinite(owner.y)) ? groundY()-40 : owner.y - 10, vx:0, vy:0, r:a.r || 26,   // beside its summoner, on their level (a placed trap at its place)
+    x:cx, y:((a.fixed && !mc) || !Number.isFinite(owner.y)) ? groundY()-40 : owner.y - 10, vx:0, vy:0, r:a.r || 26,   // beside its summoner, on their level (a placed trap at its place)
     life:(a.dur || (a.oneShot ? ASSIST_ONESHOT_WINDOW : ASSIST_DUR)), face:owner.face, _cd:0,
     oneShot:!!a.oneShot, mortal:!!a.mortal, fixed:a.fixed||null, jumps:1, onground:false, _fly:a.fly ? 1 : 0 };
   summons.push(s);
@@ -43860,7 +44022,7 @@ function updateTendrils(){
   tendrils = tendrils.filter(t=>t.life>0);
 }
 function updateSummons(){
-  const gy=groundY();
+  const gy=(MCAVE && MCAVE.on) ? Infinity : groundY();   // (MOON CAVES: no ground line -- the floors are pieces, in each summon's chart)
   asTrackPct();   // the Clock's memory of every fighter's damage (AS.rewind)
   refreshSpongyPlats();
   springyTickProps();   // Springy's landed boxes stand SPRINGY.boxLife frames, whoever dropped them (an item boss has no frame of its own)
@@ -44882,6 +45044,9 @@ function step(){
     }
     if(pr.aimBoom){ aimBoomStep(pr); if(pr.life<=0) continue; }   // thrown at a foe and coming back (fileRideThrow): straight out along its aim, then home to the thrower
     pr.x+=pr.vx; pr.y+=pr.vy; if(pr.grav||pr.bounce) pr.vy+=0.34; if(pr.grow) pr.r += pr.grow; pr.life--;   // bounce implies gravity so it arcs into surfaces
+    // MOON CAVES (2026-10-30, M3): a shot runs along the curve in its own chart; once it has gone half a lap (on a flat map it would have left
+    // the stage) it is gone, and so is one down in the core or far out in space.
+    if(MCAVE && MCAVE.on){ const _r = MCAVE.cy - pr.y; pr._mcLap = (pr._mcLap || 0) + Math.abs(pr.vx)/Math.max(64, _r); if(pr._mcLap > Math.PI || _r < MCAVE.rKill || _r > MCAVE.Rblast + 400){ pr.life = 0; continue; } }
     // a fist on an arm that retracts (Springy's JUST WANTED A HAND): where its flight out would have ended, it turns and comes back the
     // same way to where the arm began, and is gone there -- the reach is what it was, and the way back is new
     if(pr.retract && pr.life <= 0){ pr.vx = -pr.vx; pr.retract = false; pr.life = Math.ceil(Math.abs(pr.x - pr.armX0)/Math.abs(pr.vx)) + 1; }
@@ -44939,7 +45104,7 @@ function step(){
     if((pr.landsPuddle || pr.landsAcid) && pr.grav && pr.vy>=0){
       let surfaceY=null;
       // ground floor
-      const gy=groundY();
+      const gy=(MCAVE && MCAVE.on) ? Infinity : groundY();   // (MOON CAVES: no ground line -- in a cave it put the puddle up on the surface; the floors are pieces)
       if(pr.y > gy-8) surfaceY=gy-6;
       // any platform / solid top the puddle is falling onto this frame
       for(const p of platRects()){
@@ -47347,7 +47512,7 @@ const DOWNSPECIALS = {
     // ("they go out, and you come back", DOWNSPECIALS.lemon: 210 px, the nearest foe is dragged to her, 6% and 18 frames stunned), and the puddle
     // stays, laid where she stands: the foe is pulled in on top of her salsa, which is what the puddle was for.
     DOWNSPECIALS.lemon(f);
-    addProj({owner:f.idx,ownerObj:f,x:f.x,y:groundY()-6,vx:0,vy:0,grav:false,dmg:2,kb:1,r:18,color:'#f2c84b',life:220,trap:true,slow:true});  }, // Taco -- arms, then an instant salsa puddle
+    addProj({owner:f.idx,ownerObj:f,x:f.x,y:((MCAVE && MCAVE.on) ? feetY(f) : groundY())-6,vx:0,vy:0,grav:false,dmg:2,kb:1,r:18,color:'#f2c84b',life:220,trap:true,slow:true});  }, // (MOON CAVES: at her feet -- the surface line is a cave away) Taco -- arms, then an instant salsa puddle
   spike(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:6,kb:5,r:12,color:'#c0c0c0',life:220,trap:true,arm:16});  }, // Naily — spike trap
   sucker(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:4,kb:2,r:13,color:'#c04be0',life:220,trap:true,root:true,arm:14});  }, // Lollipop — rooting trap
   static(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ hitArt(f, 'static', { kind:'circle', x:f.x, y:f.y, r:f.r+50-HURT_R0 }, { color:'#8fd0ff' }); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+50){ stunFx(t,18);} } puff(f.x,f.y-8,'#8fd0ff',6); }, '#8fd0ff', { kind:'circle', r:f.r+50-HURT_R0 });  }, // TV — brace + nearby stun
@@ -59700,7 +59865,7 @@ function spawnProj(f,o){
 function dropProj(f, lx, landY, o, burst){
   if(f.dropCd>0 && !burst) return;              // shared throttle: no rapid-fire drops (special OR smash)
   if(!burst) f.dropCd = 70;                     // a burst volley sets its own cooldown once, outside this call
-  const spawnY = camY - 30;                    // just above the top of the current view
+  const spawnY = (MCAVE && MCAVE.on) ? f.y - H/(2*viewZoom()) - 30 : camY - 30;   // just above the top of the current view (MOON CAVES: over the thrower, in its chart -- the view turns with it; the world's top is nowhere near)
   const onTop = surfaceBelow(lx, landY);             // the shadow sits on the surface under the spot, not always the floor
   addProj({ owner:f.idx, ownerObj:f, x:lx, y:spawnY, vx:0, vy:5, grav:true, _dropFace:f.face, _dropVx:f.vx,   // the way it was thrown, for the fall drift
     warnX:lx, warnY: onTop!==null ? onTop : landY, warn:26, ...o });
@@ -61319,6 +61484,7 @@ function stepImpactFx(){
     for(const c of IMPACT_DEBRIS){
       c.life--;
       if(c.rest) continue;
+      if(MCAVE && MCAVE.on){ const dx = c.x - MCAVE.cx, dy = c.y - MCAVE.cy, d = Math.hypot(dx, dy) || 1; c.vx -= 0.4*dx/d; c.vy -= 0.4*dy/d; c.x += c.vx; c.y += c.vy; c.rot += c.vr; continue; }   // MOON CAVES: toward the middle (no landing: it fades)
       c.vy += 0.4; c.x += c.vx; c.y += c.vy; c.rot += c.vr;
       if(c.vy > 0){
         const top = vanLanding(c.x, c.y - c.vy, c.y);
@@ -67405,6 +67571,7 @@ function draw(){
 
   // laser beams (Ruby) — bright fading line
   for(const bm of beams){
+    if(bm.mc){ mcDrawBeam(bm); continue; }   // MOON CAVES: along its radius (BEAMS AS ARCS)
     const a=bm.life/10;
     // HIT ART: the band it really hit -- `w` either side of the line, a body's outline touching it is hit -- full as it lands, then
     // fading; the bright line rides its middle. (Dora's and Cammy's are 70 px tall walls; they were drawn as an 8 px stroke.)
@@ -67805,6 +67972,7 @@ function drawItem(it, c){
   const ph = (it.x||0)*0.037;           // each item bobs on its own beat, so a row of them does not bounce in step
   const bob = Math.sin(hazardT*0.08 + ph)*3;
   c.save(); c.translate(it.x, it.y);
+  if(MCAVE && MCAVE.on){ c.rotate(mcTh(it.x, it.y)); if(it._mcGrow < FIN_GROW){ const k = Math.max(0.05, it._mcGrow/FIN_GROW); c.scale(k, k); } }   // MOON CAVES: upright on its floor, growing in
   // A soft contact shadow once it has landed: it anchors the item on a light stage, and is faint on a dark one.
   if(it._land !== false){
     c.globalAlpha = 0.22; c.fillStyle = "#000";
@@ -71342,7 +71510,7 @@ const FIGHTER_ANIM = {
         ctx.drawImage(im, 0, -h/2, L, h); ctx.restore(); };
       const s = f._sneezeFx;
       if(s && hazardT - s.t >= 0 && hazardT - s.t < 10) jet(s.face*f.r*0.3, s.face*s.len, -4, 1 - (hazardT - s.t)/12);
-      for(const b of beams) if(b.owner === f.idx && b.life > 0) jet(b.x0 - f.x, b.x1 - f.x, b.y - f.y, Math.min(1, b.life/6));
+      for(const b of beams) if(b.owner === f.idx && b.life > 0 && !b.mc) jet(b.x0 - f.x, b.x1 - f.x, b.y - f.y, Math.min(1, b.life/6));
     }
   }
   , "Yin-Yang": {
