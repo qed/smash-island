@@ -59969,8 +59969,8 @@ function finEventWant(f, t, sp, dx, dy, adx, ady, gap, ground, tground){
   switch(sp){
     case 'rubout': return ground && tground && !t._isBoss && ady < 30 && gap > -12 && gap < ERASER.ootp.aiGap
                         && hazardT - (f._aiOotpT == null ? -1e9 : f._aiOotpT) >= ERASER.ootp.ai && ootpRead(f, t, dx);   // Eraser: a grounded foe within 40 px that stays there (ootpRead), at most once every 6 s
-    case 'clockhands': return ground && tground && !t._isBoss && ady < 40 && dx*(f.face < 0 ? -1 : 1) >= CLOCK.swing.ai[0] - 30 && adx >= CLOCK.swing.ai[0] && adx <= CLOCK.swing.ai[1]
-                        && hazardT - (f._aiSwingT == null ? -1e9 : f._aiSwingT) >= CLOCK.swing.aiGap;   // Clock: a foe on the floor 60-150 px ahead (the seat's loop), at most once every 5 s
+    case 'clockhands': return ground && tground && !t._isBoss && ady < 40 && adx >= CLOCK.swing.ai[0] && adx <= CLOCK.swing.ai[1]
+                        && hazardT - (f._aiSwingT == null ? -1e9 : f._aiSwingT) >= CLOCK.swing.aiGap && swingRead(f, t, dx);   // Clock: a foe on the floor 60-150 px ahead that stays there (swingRead), at most once every 5 s
   }
   return false;
 }
@@ -60356,7 +60356,21 @@ Object.assign(FINX_STEP, { swing:fxSwingStep });
 Object.assign(FINX_DRAW_UNDER, { swing:fxDrawSwing });
 ATKSPECIALS.clockhands = function(f){ return finSwing(f); };   // Clock -- Daylight Savings Swingset (EVENT FIGHTERS: CLOCK)
 FINX_AI_KITS.add('clockhands');   // the CPU finisher list: it presses his finisher on its own read (finEventWant)
-FIN_AI_EAGER.clockhands = 2;   // (his read -- a foe on the floor 60-150 px ahead -- holds on a few frames a match)
+FIN_AI_EAGER.clockhands = 3;   // (his read -- a foe standing free on the floor 60-150 px ahead, still there when the seat comes: swingRead -- holds on a few frames a match)
+
+// HIS CPU'S READ FOR IT (as Eraser's ootpRead): the seat comes round FIN_STARTUP frames and more after the press and sweeps the floor about its
+// bar, so it throws only at a foe it sees standing free -- not in a move, a swing, a wind-up, a smash's charge, a dash or a grab of its own; not
+// stunned, untouchable or held; not coming at him -- that will still be 60-150 px ahead (its seen speed carried through the wait) when the seat
+// comes. What a CPU sees is a moment old (CPU_HUMAN.react). (The first build threw it 12 times in six Hard matches and flung 2.)
+function swingRead(f, t, dx){
+  const S = CLOCK.swing, lvl = f._lvlCache != null ? f._lvlCache : AI_LEVEL, wait = (CPU_HUMAN.react[lvl] || 0) + FIN_STARTUP + 4;
+  if(t.hitstun > 0 || t.invuln > 0 || t._heldBy != null || t._fxBy != null) return false;
+  if(t._mv || t._windup || t.smashHold > 0 || t._smQ || (t._sm && t._sm.drive) || t._dashing > 0 || t._gb || t._hold || (t.atkCd > 0 && t._atkAnim > 0)) return false;
+  const dir = dx < 0 ? -1 : 1, vx = t.vx || 0;
+  if(-vx*dir > 1.5) return false;   // coming at him: about to swing
+  const ahead = (t.x + vx*wait - f.x)*dir;
+  return ahead >= S.ai[0] && ahead <= S.ai[1];
+}
 
 // ---- INFINITELY POWERFUL (his Final Smash) ----
 // He winds up (FS_WIND frames, his own), and his face grows huge in the sky behind him (drawClockFsFace, in the sky, behind everything). Only
@@ -60491,7 +60505,14 @@ function aiClockOut(f, inp, B, L, t, fight){
   if(inp.special && !inp.attack && !inp.up && !inp.down && !handsOk) inp.special = false;
   if(inp.special && inp.down && !inp.attack && !clockFallPays(f)){ inp.special = false; inp.down = false; }
   if(inp.smash && !(t && Math.hypot(t.x - f.x, t.y - f.y) < CLOCK.aiSmash)) inp.smash = false;
-  if(f.spCd > 0 || f._windup || inp.special || inp.attack || inp.smash || inp.grab || inp.fin) return;
+  if(f._windup || inp.special || inp.attack || inp.smash || inp.grab || inp.fin) return;
+  // STRIKE TWELVE on an opening it saw within 140 px (the foe stunned, frozen or mid-swing): the shared opening rule reaches only a jab's
+  // length past him, and his lunge carries well past that (the CPU at Hard pressed it once in six matches).
+  const open = !!t && !t._isBoss && ((t.hitstun > 10) || (t.frozen > 0) || (t.atkCd > 12 && t._atkAnim > 0));
+  if(fight && open && f.onground && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && Math.abs(t.y - f.y) < 40 && Math.hypot(t.x - f.x, t.y - f.y) < CLOCK.aiSmash && fxRand(f, 137) < L.smash*0.25){
+    brainTap(B, brainFace({ smash:true }, t.x < f.x ? -1 : 1), 3); Object.assign(inp, B.press.keys); return;
+  }
+  if(f.spCd > 0) return;
   if(fight && handsOk && now >= B.specAt && (g >= 1 || fxRand(f, 131) < 0.08)){
     brainTap(B, brainFace({ special:true }, t.x < f.x ? -1 : 1), 3); Object.assign(inp, B.press.keys);
     B.specAt = now + brainSpecGap(f, L); return;
