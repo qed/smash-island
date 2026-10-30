@@ -15317,7 +15317,20 @@ function isBig(){ return SETTINGS.mode==='teams' || SETTINGS.mode==='ctf' || ONE
 // it still goes past, so side KOs are as they were. Not One's or Steve Cobs's arenas (cut from this map, their pits a knockout by design), not
 // Capture the Flag, not RUNNING!. An online guest's prediction keeps the same rule (netPredRun), so it does not slide past and get pulled back.
 function edgeWalkWall(){ return SETTINGS.mode==='teams' && !ONEFIGHT.active && !COBSFIGHT.active && !RACE.active; }
-function edgeWalkHold(f){ const lo = f.r, hi = WW - f.r; if(f.x < lo){ f.x = lo; if(f.vx < 0) f.vx = 0; } else if(f.x > hi){ f.x = hi; if(f.vx > 0) f.vx = 0; } }   // (f: a fighter, or a guest's predicted one)
+// Called just after this frame's x += vx. Walked up to the line this frame: it stops on it. Already past it on the ground (a jump or a drift came down
+// with the body hanging over the end, up to 44 px out): it was set back on the line at once, a 44 px jump in one frame (the check of the edge wall,
+// 2026-10-30). Now the move out is undone and it eases back in, EDGE_EASE px a frame or its own walk in if that is faster.
+const EDGE_EASE = 4;
+function edgeWalkHold(f){ const lo = f.r, hi = WW - f.r;   // (f: a fighter, or a guest's predicted one)
+  if(f.x < lo){ const px = f.x - f.vx; if(f.vx < 0) f.vx = 0; f.x = px >= lo ? lo : Math.min(lo, Math.max(f.x, px + EDGE_EASE)); }
+  else if(f.x > hi){ const px = f.x - f.vx; if(f.vx > 0) f.vx = 0; f.x = px <= hi ? hi : Math.max(hi, Math.min(f.x, px - EDGE_EASE)); } }
+// A fighter's OWN stun (f._selfStun: a smash's cost, a miss's endlag, Tissues' Nap and tired stun; a foe's hit clears it, stampHit) is still its own doing:
+// nothing slows it on the ground in hitstun, so a run (or a drift it landed with) that ended in one slid on at that speed for the whole stun, past the
+// edge and off (the check, 2026-10-30: Tissues' Nap, TV's and Rose's landing in a miss's endlag). On the ground in its own stun and no faster than its
+// own legs or drift could take it (not a dash, a lunge or a smash drive: a move that carries it), the edge holds it too. A foe's hit or launch stays
+// exempt, so side KOs are unchanged.
+function edgeOwnStun(f, fst){ return f.hitstun > 0 && f._selfStun > 0 && f._selfStun >= f.hitstun && !(f._sm && f._sm.drive) && !(f._dashing > 0) && !f._nail && !(f._gotcha && f._gotcha.phase==='lunge')
+  && Math.abs(f.vx) <= MAXVX*Math.max(fst.run, fst.air)*(f._hasteT > 0 ? 1.4 : 1) + 1e-6; }
 let CAM_ZOOM = 0.72;   // scrolling arenas render zoomed out so more of the big map is visible (Capture the Flag's rooms are drawn closer: ctfBuildWorld)
 // Wide scrolling FFA/boss arena: any stage flagged `big`, plus small stages when the MAP SIZE
 // setting asks for extra height (those ride this same, proven scrolling path).
@@ -43625,6 +43638,7 @@ function step(){
     f._smRaw = !!inp.smash;
     if(f.hitstun>0 && (f._hold || f._heldBy!=null || f._gb || f._mv)) mvCancel(f);   // a hit lets go of a grab, a hold or a move in progress
     if(f.hitstun>0){ f.hitstun--; f._spPend=0; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
+    if(f._selfStun > 0) f._selfStun = f.hitstun > 0 ? f._selfStun - 1 : 0;   // its own stun runs down with the hitstun (edgeOwnStun)
     if(f._fsHitT != null && f.onground && hazardT - f._fsHitT > 3) f._fsHitT = null;   // landed after a Final Smash's launch: a later KO is not its (fsKoSlow)
     if(f.frozen>0){ inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
     if(f._sleepT > hazardT){ inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }   // Pillow's sleep: no moves at all until it ends or a hit wakes them (FINISHERS V2, batch 4)
@@ -44198,8 +44212,8 @@ function step(){
     const _wasAir=!f.onground, _impactVY=f.vy;   // capture for the land-squash before we reset onground
     // THE WORLD'S EDGE IS A WALL FOR WALKING (the Teams map: edgeWalkWall). On the ground at the start of this frame (a jump this frame has already
     // left it), moved by its own keys: no hitstun, no faster than the run's cap (a lunge, a dash or a launch is faster, or never had the cap), not
-    // being carried (Bow's Teleport, a grab).
-    if(!_wasAir && _walkCap >= 0 && !(f.hitstun > 0) && Math.abs(f.vx) <= _walkCap + 1e-6 && !f._tp && !(f._tpHang > 0) && f._heldBy == null && !f._grabHold && edgeWalkWall()) edgeWalkHold(f);
+    // being carried (Bow's Teleport, a grab); or in its own stun, sliding no faster than its legs or drift (edgeOwnStun).
+    if(!_wasAir && ((_walkCap >= 0 && !(f.hitstun > 0) && Math.abs(f.vx) <= _walkCap + 1e-6) || edgeOwnStun(f, fst)) && !f._tp && !(f._tpHang > 0) && f._heldBy == null && !f._grabHold && edgeWalkWall()) edgeWalkHold(f);
     f.onground=false;
     // solid ground only in single-screen mode; the tower has no floor (fall = KO)
     // ...and not over one of Springy's open holes (springyHoleAt): there you fall, and the pit pops you back out (updateSpringy)
@@ -47052,7 +47066,7 @@ const DOWNSPECIALS = {
       for(let i=0;i<14;i++){ const a=Math.random()*Math.PI*2; puff(f.x+Math.cos(a)*44, f.y+Math.sin(a)*30, '#7cc242', 4); }
       f.flash = 8;
     }, '#18eac1', { kind:'circle', r:f.r + 44 });
-    if(f._windup){ f._windup.nap = true; f.hitstun = Math.max(f.hitstun||0, 50); }   // asleep: no input until he wakes (FIGHTER_ANIM draws him sitting)
+    if(f._windup){ f._windup.nap = true; f.hitstun = Math.max(f.hitstun||0, 50); f._selfStun = 50; }   // asleep: no input until he wakes (FIGHTER_ANIM draws him sitting); his own stun (edgeOwnStun)
   },
   // Yin-Yang -- MINDFUL POSITIONING. Mindful positioning lets one half take full control (Yin-Yang, Abilities); with it
   // Bot's joke did nothing ("Your spaggers affect me little!", Try Not To Laugh Challenge). Yang takes over for four
@@ -60348,6 +60362,7 @@ function stampHit(t, dmg, from, isTick, stunOvr, mvKey){
   if(!isTick){ t._chainBy = from ? from.idx : -1; t._chain = chained; t._chainSeq = from ? from._atkSeq : -1; }
   if(!isTick){ const jp = jabHitPress(from); t._jabBy = jp ? from.idx : -1; t._jabPress = jp; }   // THE JAB LOCK (2026-10-28, "Yes, stop the jab lock"): was it a jab of from's, and which press
   t.hitstun = stunOvr ? Math.max(4, Math.round(stunOvr)) + hitStunPlus(from, isTick) : hitStunFrames(dmg, from, isTick);   // (stunOvr: a moveset move's own stun, +6 like every fighter's hit: COMBOS)
+  if(from !== t) t._selfStun = 0;   // a foe's hit: the stun is not its own any more (edgeOwnStun)
   const grace = hitGraceFrames(dmg, from, isTick);
   t.invuln = Math.max(t.invuln, grace);
   if(!isTick){ const k = HIT_CAST || 0, by = from ? from.idx : -1;   // ONE VOLLEY IS ONE MOVE: the cast this hit belongs to, and how many of its hits this target has taken (castThrough)
