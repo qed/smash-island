@@ -2314,6 +2314,8 @@ const PRIZE_NAMES = PRIZE_ROSTER.map(r=>r.name);
 // The special cases (fireSpecialInner), the applyHit riders, the trap-loop pickup and the drawer ride are code and stay in
 // place, marked; they can only be reached by a fighter with one of these kits.
 const PRIZE_KIT = {
+  // A JUMP BACK FOR A HIT (hitJumpBack, HIT_JUMP_K): measured with the cast on 2026-10-30, an up-air ladder for each of the three at 1; 0.5 had none.
+  HIT_JUMP_K: { [PZ_A]:0.5, [PZ_B]:0.5, [PZ_C]:0.5 },
   // Seven lines a fighter, measured the way test/move-text measures (Pen at 40, 110 and 220). The Low Sweep and Uppercut
   // lines are written from their numbers at install, exactly as the boot pass writes every other fighter's.
   MOVE_TEXT: {
@@ -44371,7 +44373,7 @@ function step(){
       // jump
       if(inp.jump && !f._jp && mtDashJump(f, inp)){ f._jp=true; }   // a hyper, a super or a reverse hyper out of a dash (dashers)
       else if(inp.jump && !f._jp && mtWallJump(f, inp)){ f._jp=true; }   // a wall jump (movetech): in the air, toward a wall, once per wall per airtime
-      else if(inp.jump && !f._jp && f.jumps>0 && !f._tp && !(isBig()&&inp.down&&f.onground)){ f._jmp0={t:hazardT, y:f.y, jumps:f.jumps, ground:f.onground}; f._wallUsed = null; /* a real jump (from the ground or a double jump, not a fall) gives the wall jumps back: the owner, 2026-10-19 */ f.vy=(SETTINGS.mode==='ctf'?ctfJumpV(f):JUMP*fst.jump); f._hop=f.onground && mtOn(f) && f.vy===JUMP*fst.jump && (isHumanCtrl(f) || !!f._aiHop); if(!f.onground) f.vy *= recV(f); /* rec: an air jump off the stage */ if(f._sinkT > hazardT) f.vy *= FX2.sand.jump;   /* sunk in Golf Ball's sand: a short jump (FINISHERS V2) */   /* a CPU's jumps stay the full jump unless the brain asked for a short hop (f._aiHop): its hands tap jump */ /* a boosted or laden jump is never cut short */ f.jumps--; f.onground=false; f._jp=true; puff(f.x,f.y+20,'#fff',4); if(f.you) SFX.jump(); }   // (while Bow fades into her Teleport the jump key is her aim up, not a jump: a player's up is the jump key, see teleportHold)
+      else if(inp.jump && !f._jp && f.jumps>0 && !f._tp && !(isBig()&&inp.down&&f.onground)){ f._jmp0={t:hazardT, y:f.y, jumps:f.jumps, ground:f.onground}; f._wallUsed = null; /* a real jump (from the ground or a double jump, not a fall) gives the wall jumps back: the owner, 2026-10-19 */ f.vy=(SETTINGS.mode==='ctf'?ctfJumpV(f):JUMP*fst.jump); f._hop=f.onground && mtOn(f) && f.vy===JUMP*fst.jump && (isHumanCtrl(f) || !!f._aiHop); if(!f.onground) f.vy *= recV(f); /* rec: an air jump off the stage */ if(!f.onground && f._hitJumpV && f.jumps === 1) f.vy *= f._hitJumpV; f._hitJumpV = 0; /* the jump a hit gave back: HIT_JUMP_K as high (hitJumpBack); any jump spends the mark */ if(f._sinkT > hazardT) f.vy *= FX2.sand.jump;   /* sunk in Golf Ball's sand: a short jump (FINISHERS V2) */   /* a CPU's jumps stay the full jump unless the brain asked for a short hop (f._aiHop): its hands tap jump */ /* a boosted or laden jump is never cut short */ f.jumps--; f.onground=false; f._jp=true; puff(f.x,f.y+20,'#fff',4); if(f.you) SFX.jump(); }   // (while Bow fades into her Teleport the jump key is her aim up, not a jump: a player's up is the jump key, see teleportHold)
       if(!inp.jump) f._jp=false;
       if(f._hop){ if(f.vy>=0 || f.onground) f._hop=false; else if(!inp.jump){ const shv = SH_V*fst.jump; if(f.vy < -shv) f.vy = -shv; f._hop=false; } }   // SHORT HOP: a tap of jump is cut (SH_V); held is the full jump
 
@@ -45999,14 +46001,66 @@ function hitStopMove(f){ if(HITSTOP_FIN.f === f) return 'x' + HITSTOP_FIN.o.id; 
 // from any distance; not, once they are free of it.
 function hitStopSelf(f, dmg, t){
   if(!f || !(dmg > 0) || hitStopOff()) return 0;
-  const fin = hitStopFin(f);
-  if(fin < 0) return 0;
-  if(!fin && (f !== STEP_F || (t && !hitStopNear(f, t)))) return 0;
+  if(!ownHit(f, t)) return 0;
   const key = hitStopKey(f), mv = hitStopMove(f);
   if(f._hsOwn === key) return f._hsAt === hazardT ? (f._hitStop||0) : 0;   // this move held them already (a second target in the same frame shares it)
   const n = f._hsMv === mv ? 1 : hitStopFrames(dmg);   // a later hit of a move that held them already: 1 frame at most
   f._hsOwn = key; f._hsMv = mv; f._hitStop = Math.max(f._hitStop||0, n); f._hsAt = hazardT;   // (Math.max: a longer hold from a hit they took earlier this same frame stands)
   return f._hitStop;
+}
+// Was this hit the attacker's OWN -- their body or what they hold, the hit that holds them too (the rules above)? Landed in their own frame
+// (STEP_F) within HITSTOP_REACH of them, or their own finisher's action (hitStopFin 1). Not a shot (shots fly after the fighters, outside
+// anyone's frame; a beam or a zap landing farther off than HITSTOP_REACH is one), a trap or puddle (stepped on in the shots' loop), an assist's
+// or a summon's (theirs is no fighter's frame), or what a finisher left behind (hitStopFin -1). Read by hitStopSelf and hitJumpBack.
+function ownHit(f, t){ const fin = hitStopFin(f); return fin ? fin > 0 : (f === STEP_F && !(t && !hitStopNear(f, t))); }
+// A JUMP BACK FOR A HIT. The owner, 2026-10-30: "you should get a jump back when you have no jumps left while in the air and you connect a hit."
+// How often -- not once an airtime: "well, you should be rewarded for air control, right? and they will prob break out at high percent, and it
+// can also be a balance tool; some fighter's air jumps will be lower hieght". So EVERY hit that qualifies gives ONE jump back, and only to a
+// fighter in the air with none left (so never more than one, never past their own most jumps). Which hits: "your own body/weapon hits" -- an
+// aerial, a tilt, a special, a smash, a throw or a finisher the fighter swings or rams with their own body or what they hold (ownHit: the hit
+// HIT FREEZE holds the attacker for). Never a shot, a trap or puddle, a tick (burn, poison, bleed, a shot's lingering damage), an assist, a
+// summon or a thrown item. A hit on a boss, or on a boss's add, counts as a hit on a foe (bossGraceNote, damageSummon). No hit, no jump: off
+// the stage with nobody to hit, the jumps run out as they always did.
+// HIT_JUMP_K: how high the jump given back goes, by fighter, as a share of the height of their own air jump (1: the same jump; its launch is
+// the square root of that share, as WALL_JUMP_HIGH's: height goes as the square of a launch's speed; 0: no jump back for that fighter at
+// all). The balance knob the owner asked for.
+// MEASURED (2026-10-30, jsdom: the scratchpad's airjump/search.mjs). With the same jump for everyone, 94 of the 106 fighters had an AIR LOOP: a
+// frame-perfect chaser starting in the air with no jumps, hitting a still Pen, Tree or Puffball at 0% or 50% with one aerial (neutral, forward,
+// up, down, or picked by where the foe is), kept them in the stun of its hits for 15+ moves, or to a KO having used 3+ jumps back, or 800+ px
+// across the stage -- mostly an up-air ladder out the top from 0% (6-17 moves) and a neutral-air string to a KO from 50%; a down-air pogo on a
+// foe pinned to the floor ran 16-31 moves. With no jump back the longest string was 8 hits and none reached a KO. Each value is the highest
+// share on the grid 1 / 0.7 / 0.5 / 0.35 / 0.25 / 0.15 / 0.08 / 0 with no loop at it and at the next one down (a lower jump can make a string
+// LONGER, staying closer to the foe; one lucky share is not trusted); the 12 not listed had none at 1. Re-run with a CPU Pen as the foe too (2026-10-30): Bell, Pin, Dora, Fanny,
+// Magnet and Tea Kettle still looped (up-air ladders to a KO) and were lowered. Steve Cobs's prize keeps its own rows
+// (PRIZE_KIT.HIT_JUMP_K). A table to tune: the specials never looped; a jump back of 0 is none at all.
+const HIT_JUMP_K = { "*":1,
+  "Bow":0.7, "Flower":0.7, "Golf Ball":0.7, "Pencil":0.7, "TV":0.7,
+  "Box":0.5, "Bubble":0.5, "Cammy":0.5, "Dough":0.5, "Fan":0.5, "Knife":0.5, "Lifering":0.5, "Lightning":0.5, "Lollipop":0.5, "Marker":0.5,
+  "Puffball":0.5, "Ruby":0.5, "Salt":0.5, "Silver Spoon":0.5, "Starfruit":0.5, "Tapey":0.5, "Tea Kettle":0.5, "Teddy Bear":0.5, "Tissues":0.5,
+  "Barf Bag":0.35, "Bomb":0.35, "Bomby":0.35, "Bracelety":0.35, "Candle":0.35, "Cheesy":0.35, "Clover":0.35, "Eraser":0.35, "Firey Jr.":0.35,
+  "Ice Cube":0.35, "Liy":0.35, "Marshmallow":0.35, "Match":0.35, "MeTag":0.35, "Microphone":0.35, "Money":0.35, "Naily":0.35, "Nickel":0.35,
+  "Nickel (II)":0.35, "Paintbrush":0.35, "Paper":0.35, "Pickle":0.35, "Pillow":0.35, "Pin":0.35, "Ruler":0.35, "Soap":0.35, "Taco (II)":0.35,
+  "Teardrop":0.35, "Test Tube":0.35, "Toothpaste":0.35, "Yellow Face":0.35,
+  "Apple":0.25, "Cake":0.25, "Cherries":0.25, "Firey":0.25, "Fries":0.25, "Gaty":0.25, "Gelatin":0.25, "Grassy":0.25, "Leafy":0.25,
+  "Lightbulb":0.25, "Loser":0.25, "Needle":0.25, "Profily":0.25, "Rose":0.25, "Tennis Ball":0.25, "Woody":0.25,
+  "Bell":0.15, "Blocky":0.15, "Book":0.15, "Bot":0.15, "Coiny":0.15, "Donut":0.15, "Dora":0.15, "Fanny":0.15, "Pen":0.15, "Spikey":0.15,
+  "Trophy":0.15, "Yin-Yang":0.15,
+  "Balloony":0.08, "Basketball":0.08, "David":0.08, "Goo":0.08, "Jack":0.08, "Magnet":0.08, "Poppy":0.08, "Taco":0.08,
+  "Balloon":0
+};
+function hitJumpK(f){
+  let k = f && HIT_JUMP_K[f.name];
+  if(k == null && f && PRIZE_KIT.HIT_JUMP_K) k = PRIZE_KIT.HIT_JUMP_K[f.name];   // (the prize's rows live in its own block)
+  return k != null ? k : HIT_JUMP_K["*"];
+}
+// The attacker `f` landed a hit on `t` (a fighter, a boss, a boss's add). Gives the jump back when it is theirs to have; true if it did. The
+// jump given back is marked (_hitJumpV: its launch, times the air jump's) for the jump that spends it (step's jump; the guest's prediction
+// reads it too: netPredOut `hj`); any other jump, or a knock that gives a jump of its own, clears the mark.
+function hitJumpBack(f, t){
+  if(!f || f === t || fighters[f.idx] !== f || f.dead || f.onground || f.jumps > 0 || RACE.active || !ownHit(f, t)) return false;
+  const k = hitJumpK(f); if(!(k > 0)) return false;   // (0: none for them -- a jump of no height would still stop their fall)
+  f.jumps = 1; f._hitJumpV = Math.sqrt(k);
+  return true;
 }
 // A fighter `t` hit by `from` (applyHit, not a tick): the target is held, once for each of the attacker's moves, and the attacker too
 // if it was their own frame and the hit was within reach, or their own finisher's action (hitStopFin).
@@ -59577,7 +59631,7 @@ function damageSummon(f, s, cx, cy, dmg){
   // An assist is a CAMEO, not a combatant: it can be shoved around, but it cannot be killed.
   // It used to lose 30 life a connect out of 480, so any fighter who wandered into one deleted
   // it in half a second and the trophy you spent an item slot on was never seen again.
-  else if(s.hostile){ hurtHostileAdd(s, dmg0, Math.sign(s.x-cx||1)*4, f); }   // ...except MePhone4's adds, which fight for the boss
+  else if(s.hostile){ hurtHostileAdd(s, dmg0, Math.sign(s.x-cx||1)*4, f); hitJumpBack(f, s); }   // ...except MePhone4's adds, which fight for the boss (a hit on one gives the jump back as a foe's would)
   else if(s.type==="pepper"){ s.hp -= dmg; s.flash=6; s.vx += Math.sign(s.x-cx||1)*3; for(let i=0;i<4;i++) puff(s.x,s.y,'#3b3b46',4); }
   else { s.vx += Math.sign(s.x-cx||1)*4; if(s.mortal) popAssist(s, f); }
 }
@@ -60679,6 +60733,7 @@ function bossGraceNote(s, f, dmg){
   stampHit(R, dmg, f, false);
   const k = hitStopSelf(f, dmg, s);
   if(k > 0) R._hold = k;
+  hitJumpBack(f, s);   // a hit on a boss is a hit (A JUMP BACK FOR A HIT)
 }
 // A boss hurt by a shot or a dash: damageSummon's own branches for a caller with no point to shove it from. Returns what it took.
 function bossTakeHit(s, dmg, from){
@@ -60923,6 +60978,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   else if(dmg > 0) t._fsHitT = null;   // (a hit that is not a Final Smash's: a KO from here on is not one: fsKoSlow)
   if(!t._fsLock && !t.dead) kocLaunch(t);   // THE LAST KO: a launch that will carry a match-ending foe out plays slowed down, from any move
   if(!isTick) hitStopHit(t, from, dmg*fsRow);   // HIT FREEZE: the two of them are held still a moment (none while a Final Smash plays: hitStopOff)
+  if(!isTick && !(opts && opts.shot)) hitJumpBack(from, t);   // A JUMP BACK FOR A HIT: the attacker's own swing, in the air with no jumps left (hitJumpBack)
   // A circle still winding up is lost to any hit that connects first -- the counterplay that turns
   // a ring from an answer to everything into a read (see CIRCLE_WINDUP).
   if(t._windup) t._windup=null;
@@ -60943,7 +60999,7 @@ function knock(t,kx,ky){
   t.vx=kx; t.vy=ky; t.onground=false; t._hop=false; t._ff=false; t._hyperT=0;
   // REAL EDGES: knocked into the air where a fall is a fall, a fighter gets a jump and the up-special back, as in the games this one
   // follows -- so anyone knocked off a ledge has a way back to try, and getting back is up to the player
-  if(FLOOR_SEGS){ t.jumps = Math.max(t.jumps||0, 1); t._usedAirSpecial = false; }
+  if(FLOOR_SEGS){ t.jumps = Math.max(t.jumps||0, 1); t._usedAirSpecial = false; t._hitJumpV = 0; }   // (a full jump: not the one a hit gave back, hitJumpBack)
 }
 const WIND_DRIFT = 3.2, PIN_STEPS = 36, PIN_FREE = 150;
 const BOUNCE_VY = 14;   // a bounce zone's throw at x1 strength: Spongy's (p.bouncy), so a bounce zone is landing on Spongy
@@ -78499,6 +78555,7 @@ function netPredOut(f){
   const jv = (SETTINGS.mode==='ctf' ? ctfJumpV(f) : JUMP*fst.jump) * (f._sinkT > hazardT ? FX2.sand.jump : 1);
   const hopOk = mtOn(f) && jv === JUMP*fst.jump;   // (step(): a boosted, laden or sunk jump is never cut short)
   o.j = f.jumps; o.at = f._airT || 0;
+  if(f._hitJumpV && f._hitJumpV !== 1 && f.jumps === 1 && !f.onground) o.hj = r3(f._hitJumpV);   // the one jump left is the one a hit gave back, lower (hitJumpBack)
   o.s = (f._jp ? 1 : 0) | (f._hop ? 2 : 0) | (f._ff ? 4 : 0) | (f._dnPrev ? 8 : 0) | (mtOn(f) ? 16 : 0) | (hopOk ? 32 : 0) | ((f.kit && f.kit.special==='airrel') ? 64 : 0);
   o.k = [r3(mvB*fst.run), r3(mvB*fst.air), r3(capB*fst.run), r3(capB*fst.air), r3(jv), r3(recV(f)), r3(SH_V*fst.jump), r3(FF_V*fst.fall), r3(fst.fall), r3(stage.hazard==='lowgrav' ? GRAV*0.7 : GRAV), r3(JUMP*WJ_VY*fst.jump)];
   if(f._wallSide && typeof f._wallT === 'number' && hazardT - f._wallT <= WALL_WINDOW) o.w = [f._wallSide, hazardT - f._wallT, f._wallId];   // (mtWallJump)
@@ -78514,7 +78571,7 @@ function netPredRun(a, pr, to, team){
   const N = window.NET, k = pr.k;
   let from = pr.a + 1; if(to - from + 1 > NET_PRED.max) from = to - NET_PRED.max + 1;
   if(to < from) return null;
-  const P = { x:a.x, y:a.y, vx:a.vx, vy:a.vy, g:a.g, face:a.face, r:a.r, j:pr.j, at:pr.at, jp:!!(pr.s & 1), hop:!!(pr.s & 2), ff:!!(pr.s & 4), dn:!!(pr.s & 8) };
+  const P = { x:a.x, y:a.y, vx:a.vx, vy:a.vy, g:a.g, face:a.face, r:a.r, j:pr.j, at:pr.at, jp:!!(pr.s & 1), hop:!!(pr.s & 2), ff:!!(pr.s & 4), dn:!!(pr.s & 8), hj:+pr.hj || 0 };
   const mt = !!(pr.s & 16), hopOk = !!(pr.s & 32), airrel = !!(pr.s & 64), grav = k[9];
   let plats = platRects(); const gy = groundY(), big = isBig(), edgeW = edgeWalkWall();   // (let: re-read in each replayed frame's chart on Moon Caves)
   // the walls: the one touched last (side, the frame, which face: mtWallJump's window and once-per-face rule), the faces kicked off this airtime
@@ -78538,7 +78595,7 @@ function netPredRun(a, pr, to, team){
     if(J && !P.jp && wjv && mt && !P.g && P.ws && P.wt >= g - WALL_WINDOW && (P.ws > 0 ? R : L) && !P.used.includes(P.wid)){   // the wall jump (mtWallJump)
       P.used.push(P.wid); P.vy = wjv; P.vx = -P.ws*WJ_VX; P.face = -P.ws; P.clT = 0; P.hop = false; P.jp = true;
     }
-    else if(J && !P.jp && P.j > 0){ P.vy = k[4]; P.hop = P.g && mt && hopOk; if(!P.g) P.vy *= k[5]; P.j--; P.g = false; P.jp = true; P.used = []; }   // (a real jump gives the wall jumps back)
+    else if(J && !P.jp && P.j > 0){ P.vy = k[4]; P.hop = P.g && mt && hopOk; if(!P.g){ P.vy *= k[5]; if(P.hj && P.j === 1) P.vy *= P.hj; } P.hj = 0; P.j--; P.g = false; P.jp = true; P.used = []; }   // (a real jump gives the wall jumps back; the jump a hit gave back goes its own height: hitJumpBack)
     if(!J) P.jp = false;
     if(P.hop){ if(P.vy >= 0 || P.g) P.hop = false; else if(!J){ if(P.vy < -k[6]) P.vy = -k[6]; P.hop = false; } }
     // gravity, and the fast fall (mtFastFall)
