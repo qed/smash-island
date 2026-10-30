@@ -2379,7 +2379,9 @@ const PRIZE_KIT = {
       if(!tgt && summons.length){ const bs = nearestSummon(f, hx, f.y, 26, function(o){ return (o.x - f.x)*f.face >= -4; });
         if(bs){ damageSummon(f, bs, f.x, f.y, 6); for(let i=0;i<6;i++) puff(bs.x, bs.y-8, '#9ca8d9', 4); f.spCd = 60; return; } }
       if(!tgt){ f.rooted = Math.max(f.rooted||0, 12); f.spCd = 40; for(let i=0;i<4;i++) puff(hx, f.y+8, '#9ca8d9', 3); return; }
+      const n0 = tgt._koN||0;
       applyHit(tgt, 6, f.face*1.5, -1.5, f);
+      if(koSince(tgt, n0)){ f.spCd = 120; return; }   // 2026-10-29: a damage-cap KO on the grab -- no ride for the fighter who just came back (the owner: "i take two stocks sometimes when falling")
       tgt.vx = 0; tgt.vy = 0; tgt.rooted = Math.max(tgt.rooted||0, 30); stunFx(tgt, 30);
       f._dashing = 12; f._dashSpeed = 6; f._dashDmg = 0; f._dashArmored = true; f._dashMargin = 0;
       f._dashHits = new Set(fighters.map(t=>t.idx)); f._dashSummonHits = new Set(summons);
@@ -20608,9 +20610,14 @@ function ffaRespawn(f){
   f._windup=null;   // never carry a pending circle across a respawn (see startWindup)
   const mine = spawnZones.find(z=>z.kind==="claim" && z.owner===f.idx);
   if(mine) return { x: mine.x+mine.w/2, y: mine.y-40 };
-  // otherwise use whichever safe island is on the side they were nearer to (spread players out)
+  // Otherwise a safe island -- never the one by the line they just went out of (ONE FALL, ONE STOCK, the check 2026-10-29). The two islands
+  // are perches over open air at the far edges, about 300 px in from the side KO lines, and this put them on the island of the side they were
+  // nearer: one still walking the way they went out walked off its outer edge and out of the same line within a second (Sky Towers, Grand
+  // Incinerator). So the island on the other side; and when they are holding left or right as they go out, the island that key walks them in
+  // from (toward the stage, not off the outer edge into the line beside it). Teams and Capture the Flag keep their own spawns (not big FFA).
   const safes = spawnZones.filter(z=>z.kind==="safe");
-  const pick = (f.x < WW/2) ? safes[0] : safes[safes.length-1];
+  const I = f._lastInput, dir = I ? (I.left ? -1 : 0) + (I.right ? 1 : 0) : 0;
+  const pick = dir < 0 ? safes[safes.length-1] : dir > 0 ? safes[0] : (f.x < WW/2 ? safes[safes.length-1] : safes[0]);
   return pick ? { x: pick.x+pick.w/2, y: pick.y-40 } : { x:WW/2, y:-40 };
 }
 
@@ -28037,7 +28044,9 @@ function psbPrivate(s, tgt){
     if(f.dead) continue;
     const inL = f.x < shw + f.r*0.5, inR = f.x > WW - shw - f.r*0.5;
     if(!inL && !inR) continue;
+    const n0 = f._koN||0;
     if(f.invuln <= 0) applyHit(f, bossDmg()*0.6, (inL ? 1 : -1)*10, -9, null, { bossAtk:id, volley:true });
+    if(koSince(f, n0)) continue;   // (KO'd by it: back at the respawn point, not pushed to the wall -- ONE FALL, ONE STOCK)
     f.x = inL ? shw + f.r + 4 : WW - shw - f.r - 4; f.vx = (inL ? 1 : -1)*4;
   }
   impact(shw, gy, { shake:14, dust:2, debris:6, scar:true }); impact(WW - shw, gy, { shake:0, dust:2, debris:6, scar:true });
@@ -44243,21 +44252,25 @@ function step(){
           if(bodyTouch(f, t, 6)){ got = t; break; } }
         const bs = got ? null : nearestSummon(f, f.x + f.face*f.r*0.7, f.y, 26, function(o){ return (o.x - f.x)*f.face >= -4; });
         if(got && !(got.countering>0 || got.reflecting>0)){
+          const n0 = got._koN||0;
           applyHit(got, 4, f.face*1.5, -1.5, f);                                   // the tackle
+          if(koSince(got, n0)){ f.vx = f.onground ? 0 : f.vx*0.3; f._gotcha = null; }   // ONE FALL, ONE STOCK: the tackle KO'd them (the damage cap) -- they came back elsewhere, and the hold set them down beside Bot (off a ledge: a second stock)
+          else {
           got.x = f.x + f.face*(f.r + got.r)*0.7; got.vx = 0; got.vy = 0;
           got.rooted = Math.max(got.rooted||0, GOTCHA_HOLD); stunFx(got, GOTCHA_HOLD);
           got.spCd = Math.max(got.spCd||0, GOTCHA_LOCK);                           // "cannot use specials for 2 s"
-          g.phase = 'hold'; g.t = GOTCHA_HOLD; g.tgt = got.idx; f._holdT = hazardT + GOTCHA_HOLD;
+          g.phase = 'hold'; g.t = GOTCHA_HOLD; g.tgt = got.idx; g.n0 = n0; f._holdT = hazardT + GOTCHA_HOLD;
           f.vx = 0; f.rooted = Math.max(f.rooted||0, GOTCHA_HOLD);
           f.atkCd = Math.max(f.atkCd||0, GOTCHA_HOLD); f.smCd = Math.max(f.smCd||0, GOTCHA_HOLD); f.spCd = Math.max(f.spCd||0, GOTCHA_HOLD);   // busy holding
           shake(3); for(let i=0;i<8;i++) puff(got.x, got.y - 8, i%2 ? '#f0fff3' : '#9ad7a3', 4);
+          }
         } else if(got || bs || --g.t <= 0 || (f.onground && !landable(f.x + f.vx + f.face*f.r*0.5, feetY(f) - 2))){
           if(got) applyHit(got, 4, f.face*1.5, -1.5, f);                           // it answers the tackle (its counter or reflect)
           if(bs){ damageSummon(f, bs, f.x, f.y, 4); for(let i=0;i<6;i++) puff(bs.x, bs.y - 8, '#f0fff3', 4); }   // a boss takes the 4%; it is too big to hold
           f.vx = f.onground ? 0 : f.vx*0.3; f.rooted = Math.max(f.rooted||0, 16); f._gotcha = null;   // a whiff leaves them stuck a beat
         } else if(hazardT%2===0) puff(f.x - f.face*10, f.y + (Math.random()*16-8), '#f0fff3', 3);
       } else {                                                                     // the hold
-        if(!foe || foe.dead || --g.t <= 0){ f._gotcha = null; f._holdT = 0; }
+        if(!foe || koSince(foe, g.n0 != null ? g.n0 : (foe._koN||0)) || --g.t <= 0){ f._gotcha = null; f._holdT = 0; }   // (KO'd while held, by anyone: let go -- ONE FALL, ONE STOCK)
         else { f.vx = 0; foe.vx = 0; foe.x = f.x + f.face*(f.r + foe.r)*0.7; }
       }
     }
@@ -47088,7 +47101,7 @@ const DOWNSPECIALS = {
   // ---- final 12 down-specials ----
   switch(f){ f.flash=10; // Liy — HURL: fling the grabbed enemy, or toggle lights off
     let target=null;
-    if(f._grabbed!=null && f._grabTimer>0){ const g=fighters[f._grabbed]; if(g&&!g.dead) target=g; }
+    if(f._grabbed!=null && f._grabTimer>0){ const g=fighters[f._grabbed]; if(g && !koSince(g, f._grabbedN != null ? f._grabbedN : (g._koN||0))) target=g; }   // (not one KO'd since the grab: the hurl hit them wherever they came back -- ONE FALL, ONE STOCK)
     if(target){
       // hurl them hard in the faced direction (canon: hurl toward her boat to KO)
       applyHit(target, 13, f.face*15, -10, f); target.rooted=0;
@@ -47166,9 +47179,9 @@ const DOWNSPECIALS = {
     if(!t && summons.length){ const bs = nearestSummon(f, f.x+f.face*f.r, f.y, 34, function(o){ return Math.sign(o.x-f.x||f.face)===f.face; });
       if(bs){ f._atkSeq=(f._atkSeq||0)+1; damageSummon(f, bs, f.x, f.y, 8); for(let i=0;i<6;i++) puff(bs.x, bs.y, '#7c2028', 4); return; } }   // a boss will not go on a spike: the fling's 8 lands where it stands (fighters only before: 0 in Boss Rush)
     if(!t){ f.hitstun=Math.max(f.hitstun||0,18); f._selfStun=18; puff(f.x+f.face*f.r, f.y, '#a5acac', 4); return; }   // a miss: 18 frames of endlag
-    const falls = t._falls||0; let n=0;
+    const n0 = t._koN||0; let n=0;
     const carry = function(){
-      if(f.dead || t.dead || (t._falls||0)!==falls) return;
+      if(f.dead || koSince(t, n0)) return;   // (any KO of theirs ends the ride: a lost stock, a Bubble reform, a trip home -- ONE FALL, ONE STOCK)
       if(++n <= 12){   // about 36 frames on the spike, at a run
         f.vx = f.face*6; t.x = f.x + f.face*(f.r + 14); t.y = f.y - 6; t.vx = f.vx; t.vy = 0; t.onground=false; stunFx(t, 6);
         startWindup(f, 3, carry, 'rgba(0,0,0,0)'); if(f._windup) f._windup.b3 = 'grab';
@@ -47374,7 +47387,9 @@ const DOWNSPECIALS = {
     if(!tgt && summons.length){ const bs = nearestSummon(f, hx, f.y, 26, function(o){ return (o.x - f.x)*f.face >= -4; });
       if(bs){ damageSummon(f, bs, f.x, f.y, 8); for(let i=0;i<6;i++) puff(bs.x, bs.y-8, i%2 ? '#f7b6c8' : '#a8d8ae', 4); return; } }   // a boss is too big to hug: the squeeze's 8 lands, the hold needs a body (fighters only before: 0 in Boss Rush)
     if(!tgt){ f.rooted = Math.max(f.rooted||0, 14); for(let i=0;i<4;i++) puff(hx, f.y-6, '#a8d8ae', 3); return; }
+    const n0 = tgt._koN||0;
     applyHit(tgt, 8, f.face*1.5, -1.5, f);
+    if(koSince(tgt, n0)) return;   // ONE FALL, ONE STOCK: the squeeze KO'd them (the damage cap) -- they came back elsewhere; the hug set them back down in front of her, rooted (off a ledge: a second stock)
     tgt.x = f.x + f.face*(f.r + tgt.r)*0.7; tgt.vx = 0; tgt.vy = 0;
     tgt.rooted = Math.max(tgt.rooted||0, 40); stunFx(tgt, 40);   // held: no moving and no acting until she sets them down
     for(let i=0;i<6;i++) puff(tgt.x, tgt.y-8, i%2 ? '#f7b6c8' : '#a8d8ae', 4); },
@@ -47859,7 +47874,7 @@ function fxCorkStep(o, f){
     const sh = fxCorkShape(o);
     fxArt(f, 'cork', sh, { color:'#c8955a' });
     hitTurrets(f, o.x, o.y - C.h*0.5, C.w*0.5, C.dmg);
-    for(const t of fxTargets(f, o, sh)){ fxHit(f, t, o, C.dmg, o.face, -1); fxPin(t, o, C.pin); }
+    for(const t of fxTargets(f, o, sh)){ if(fxHit(f, t, o, C.dmg, o.face, -1)) fxPin(t, o, C.pin); }   // (not one it KO'd at the damage cap: ONE FALL, ONE STOCK)
     fxBossShape(f, o, 0, sh, C.dmg);
     shake(4); for(let i=0;i<8;i++) puff(o.x + (i - 3.5)*6, o.y - 2, '#c8955a', 4);
     return;
@@ -48125,7 +48140,8 @@ function fxSlapStep(o, f){
     }
     fxArt(f, 'grab', fxCircle(hx, f.y, S.grab), { style:'grab', color:got ? '#ffffff' : '#9aa7b0', world:false, fade:6 });
     if(got){
-      fxHit(f, got, o, S.dmg, 0, 0); got.hitstun = 0; got._stunFx = 0;   // the opening slap; from here a stun on either means someone else hit them
+      if(!fxHit(f, got, o, S.dmg, 0, 0)){ o.ph = 'done'; o.dt = hazardT; return; }   // ONE FALL, ONE STOCK: the opening slap KO'd them (the damage cap) -- no fight puts the fighter who came back beside her
+      got.hitstun = 0; got._stunFx = 0;   // the opening slap; from here a stun on either means someone else hit them
       // The fight is even from its first frame: both may slap at once (her opener is not one of her slaps, and does not start her 8-frame wait),
       // and a key either was already holding is not a press -- a slap is a NEW press, for both (it was 8 slaps to her 7 at best: the review).
       o.tgt = got.idx; o.ph = 'fight'; o.ft = hazardT; o.op = hazardT; o.ck = fxKeyBits(f); o.tk = fxKeyBits(got); fxSlapPlace(o, f, got); fxLock(got, 2);
@@ -50781,8 +50797,8 @@ function fxTackStep(o, f){
     if(!t || !fx3Open(f, t) || inOwnTeamZone(t)) return;
     const fy = feetY(t), sb = surfaceBelow(t.x, fy - 4), near = sb !== null && sb - fy < T.near;
     fxArt(f, 'tack', fx3Disc(t.x + o.ox, t.y + o.oy, T.r + 8), { color:'#d94f4f' });
-    fxHit(f, t, o, T.dmg, 0, near ? 0 : T.spike);
-    if(near){ t.y = sb - t.r; t.vx = 0; t.vy = 0; t.onground = true; t.rooted = Math.max(t.rooted || 0, T.bury); stunFx(t, T.bury); o.ph = 'buried'; o.bx = Math.round(t.x); o.by = Math.round(sb); }
+    const kept = fxHit(f, t, o, T.dmg, 0, near ? 0 : T.spike);   // false on a KO (2026-10-29: never bury the fighter who just came back)
+    if(near && kept){ t.y = sb - t.r; t.vx = 0; t.vy = 0; t.onground = true; t.rooted = Math.max(t.rooted || 0, T.bury); stunFx(t, T.bury); o.ph = 'buried'; o.bx = Math.round(t.x); o.by = Math.round(sb); }
     shake(3); for(let i=0;i<8;i++) puff(t.x + (i - 3.5)*6, fy - 2, i%2 ? '#8a6a3a' : '#c0c0c0', 4);
     return;
   }
@@ -53156,7 +53172,7 @@ function finB7Want(f, t, sp, dx, dy, adx, ady, gap, ground, tground){
   switch(sp){
     case 'fury':       return ady < 40 && gap > -10 && gap < 80;
     case 'lemon':      return ground && tground && ady < 60 && adx > 90 && adx < 240 && (t.vx || 0)*Math.sign(dx) < -1.5;   // only as they come at her
-    case 'chair':      return ground && tground && ady < 40 && adx > 100 && adx < 270;
+    case 'chair':      return ground && ((f._finRead || 0) >= hazardT || (tground && ady < 40 && adx > 100 && adx < 270));   // (_finRead: her tower as a read, the brain's own decision -- brainTowerRead)
     case 'wallmart':   return ground && tground && ady < 30 && adx > 60 && adx < 380;
     case 'split':      return ground && tground && ady < 40 && adx > 60 && adx < 420;
     case 'heavy':      return ground && tground && ady < 30 && gap > -10 && gap < 60;
@@ -58578,11 +58594,14 @@ function doSpecial(f){
         if(bs){ damageSummon(f, bs, f.x, f.y, 6); (f._dashSummonHits = f._dashSummonHits || new Set()).add(bs); for(let i=0;i<8;i++) puff(bs.x,bs.y,'#fff29a',4); } }   // the blitz lands its 6 on a boss in its path (and the dash that carries it does not sweep the same boss for 12 more: a fighter's grace stops that); the grab and the hurl need a body (fighters only before: 0 in Boss Rush)
       if(grabbed){
         // pull them back toward Liy and mark them for the hurl (down-special finishes it)
+        const n0 = grabbed._koN||0;
         applyHit(grabbed, 6, -f.face*4, -3, f);            // small pull-in hit
+        if(!koSince(grabbed, n0)){   // ONE FALL, ONE STOCK: not if it KO'd them (the damage cap) -- the yank and the hurl took the fighter who came back
         grabbed.x += (f.x - grabbed.x)*0.5;                 // yank them to her
         grabbed.vx = -f.face*3; grabbed.rooted=Math.max(grabbed.rooted||0,6);   // root 10 -> 6
-        f._grabbed = grabbed.idx; f._grabTimer = 30;        // window to hurl (trimmed)
+        f._grabbed = grabbed.idx; f._grabTimer = 30; f._grabbedN = n0;   // window to hurl (trimmed); the KO stamp the hurl checks
         for(let i=0;i<8;i++) puff(grabbed.x,grabbed.y,'#fff29a',4);
+        }
       } else {
         for(let i=0;i<6;i++) puff(f.x+f.face*20,f.y,'#fff29a',4); 
       }
@@ -58883,13 +58902,14 @@ function doSpecial(f){
       if(!tgt && summons.length){ const bs = nearestSummon(f, f.x, f.y, f.r+80, function(o){ return Math.sign(o.x-f.x||f.face)===f.face && Math.abs(o.y-f.y) < 60+o.r; });
         if(bs){ damageSummon(f, bs, f.x, f.y, 8); for(let i=0;i<10;i++) puff(bs.x, bs.y, '#3a86f0', 5); f.spCd=96; break; } }   // a boss will not go inside him: the 2 and the 6 land as one hit where it stands (fighters only before: 0 in Boss Rush)
       if(!tgt){ f.spCd=44; break; }
-      const held=tgt;
+      const held=tgt, n0=held._koN||0;
       applyHit(held, 2, 0, 0, f);
+      if(koSince(held, n0)){ f.spCd=96; break; }   // ONE FALL, ONE STOCK: the swallow KO'd them (the damage cap) -- they came back elsewhere, not inside him (the spit 45 frames on put them back beside him, launched)
       held.x=f.x+f.face*8; held.y=f.y; held.vx=0; held.vy=0;
       held.rooted=Math.max(held.rooted||0,48); stunFx(held, 48);
       f.vx=0; f.rooted=Math.max(f.rooted||0,48); f.atkCd=Math.max(f.atkCd||0,46);
       startWindup(f, 45, function(){
-        if(held.dead) return;
+        if(koSince(held, n0)) return;   // KO'd while inside him (by anyone): they came back elsewhere, and the spit does not fetch them back
         held.rooted=0; held.x=f.x+f.face*(f.r+6);
         applyHit(held, 6, f.face*10, -6, f);
         for(let i=0;i<10;i++) puff(held.x, held.y, '#3a86f0', 5); }, '#3a86f0');
@@ -61127,6 +61147,14 @@ function dropInFlightMoves(f){
   f._rubHang = 0; f._rubHung = false; f._flipT = 0; f._wallKickT = 0; f._wallKicked = false;   // ...nor Eraser's hang, backflip or wall kick (EVENT FIGHTERS: ERASER)
   f._tpRoot = false; f._tpRootImm = 0;   // ...nor Toothpaste's root and its window (ROOT CHAIN BROKEN)
   for(const g of fighters) if(g._g6track && g._g6track.idx === f.idx) g._g6track = null;   // ...and a MeTag's lock on a fighter ends with that fighter's stock
+  // ONE FALL, ONE STOCK (the check, 2026-10-29). Every respawn gives back what a landing gives: both jumps and the up-special (a fighter who
+  // spent them on a failed recovery came back with none, so a jump or an Up+C pressed on the way back in did nothing), the wall jump and the
+  // air dash. And nothing of the old stock holds them: a root or a freeze still running (Goo's swallow, a frozen Final Smash), or a Final
+  // Smash under way -- its catch list pinned them back where it was and hit them again after the KO, and its lock held them.
+  f.jumps = 2; f._usedAirSpecial = false; f._wallUsed = null; f._clingT = 0; f._ff = false; f._airDash = false; f._hyperT = 0;
+  f.rooted = 0; f.frozen = 0;
+  if(f._fsLock) fsLockOff(f, true);
+  for(const g of fighters) if(g._fs && g._fs.caught && g._fs.caught.indexOf(f.idx) >= 0) g._fs.caught = g._fs.caught.filter((i)=>i !== f.idx);
 }
 function eliminate(f){
   f._koN = (f._koN||0) + 1;   // a KO stamp, whatever this KO turns out to be: a hit that holds its target after it asks (ONE FALL, ONE STOCK: koSince)
@@ -64350,10 +64378,14 @@ let AI_LEVEL = 1;
 //   GUARD     its foe off the stage and able to get back (as it reads it): to the ledge, a projectile while they try to get back up, a strong
 //             jab if they jump up to it, a trap laid there first by a trap kit -- the owner's ledgeguarding (brainGuard, 2026-10-28).
 //   GETTING THERE (kept from the old AI, they are not fighting): the team plan's ward, the unstick burst, the big maps' spawn points, the team
-//             flank, the long trips, climbing to a foe above and dropping to one below, walking out of its own team zone, items nearby.
-//   APPROACH  walk to the foe (around, over or up what is in the way), now and then a hop in for an aerial. A fighter whose special is a shot
+//             flank, the long trips, climbing to a foe above and dropping to one below (on another floor, or a flyer: not a foe that has only
+//             jumped -- the circling fixes, 2026-10-29), walking out of its own team zone, items nearby.
+//   APPROACH  walk to the foe (around, over or up what is in the way), now and then a hop in for an aerial (it throws the aerial once the foe
+//             is in reach on the way down); a foe out of reach only up or down it waits under or over, and in the air it fades back a little
+//             so it comes down in front of the foe, not past it (the circling fixes). A fighter whose special is a shot
 //             fires it from where it lands (BRAIN_SPEC) now and then; a trap is laid for a foe walking in; a heal is taken when hurt and alone.
-//             It steps round (or over, or waits out) a foe's live trap or prism it has noticed, an item in one is not worth it, and a dash or a
+//             It steps round (or over, or waits out) a foe's live trap or prism it has noticed -- on its floor, or at the end of a platform it
+//             is jumping up onto (brainHazardUp, brainHazardAir) --, an item in one is not worth it, and a dash or a
 //             hop that would leave it where it cannot get back from is not pressed (brainHazards, brainItemDanger, brainDashEdge).
 //   STRING    in reach it picks ONE move -- the jab, an up- or down-tilt, or an aerial -- and presses it again at a person's pace while it keeps
 //             landing ("HUMANS MASH 1 BUTTON IN A COMBO"); a swing that misses ends it. Sometimes the press is a grab, its special when that
@@ -64391,15 +64423,17 @@ let AI_LEVEL = 1;
 //           an up-tilt that popped the foe up
 //   kit     how much of the rest of its kit it reaches for: a rush from range, a down-special that is an attack, a beam smash down
 //           the stage, Bow's Teleport at a foe, Box's catch (a multiplier on those chances)
+//   towerRead  BOW (round 2 of the bot fixes, 2026-10-29): the chance a decision is her tower as a read, on a foe she sees walking or jumping in
+//           from where the falling tower meets them (brainTowerRead)
 const BRAIN_LV = [
   { think:[16, 28], wake:[26, 40], gap:[16, 24], strMax:3, miss:0.25, hesit:0.18, smash:0.10, spec:[420, 720], fin:0.06, ctr:0,    ctrCd:[0, 0],     ctrHit:1e9, grab:0.03, hop:0.08, back:0.45, wrong:0.06, lead:0.3, target:[70, 130], recMiss:0.35,
-    eg:0.05, egJudge:0.6, egHit:0.25, egTrap:0, hz:0.15, edge:0.2, upAtk:0, kit:0.1 },
+    eg:0.05, egJudge:0.6, egHit:0.25, egTrap:0, hz:0.15, edge:0.2, upAtk:0, kit:0.1, towerRead:0.04 },
   { think:[9, 15],  wake:[14, 24], gap:[11, 16], strMax:4, miss:0.12, hesit:0.07, smash:0.25, spec:[180, 360], fin:0.12, ctr:0.2,  ctrCd:[360, 600], ctrHit:60,  grab:0.06, hop:0.15, back:0.25, wrong:0.02, lead:0.6, target:[50, 100], recMiss:0.2,
-    eg:0.35, egJudge:0.4, egHit:0.45, egTrap:0.3, hz:0.5, edge:0.6, upAtk:0.08, kit:0.5 },
+    eg:0.35, egJudge:0.4, egHit:0.45, egTrap:0.3, hz:0.5, edge:0.6, upAtk:0.08, kit:0.5, towerRead:0.15 },
   { think:[6, 10],  wake:[9, 15],   gap:[9, 13],  strMax:5, miss:0.05, hesit:0.03, smash:0.40, spec:[120, 240], fin:0.18, ctr:0.3,  ctrCd:[240, 420], ctrHit:45,  grab:0.10, hop:0.22, back:0.15, wrong:0,    lead:0.8, target:[40, 80], recMiss:0.1,
-    eg:0.6, egJudge:0.25, egHit:0.65, egTrap:0.5, hz:0.8, edge:0.85, upAtk:0.15, kit:0.85 },
+    eg:0.6, egJudge:0.25, egHit:0.65, egTrap:0.5, hz:0.8, edge:0.85, upAtk:0.15, kit:0.85, towerRead:0.25 },
   { think:[4, 7],   wake:[6, 10],   gap:[8, 11],  strMax:6, miss:0.02, hesit:0.01, smash:0.50, spec:[100, 200], fin:0.22, ctr:0.3,  ctrCd:[240, 420], ctrHit:45,  grab:0.12, hop:0.25, back:0.12, wrong:0,    lead:0.9, target:[30, 60], recMiss:0.04, recSmart:1, space:0.6,
-    eg:0.75, egJudge:0.15, egHit:0.8, egTrap:0.6, hz:0.9, edge:0.95, upAtk:0.2, kit:1 },
+    eg:0.75, egJudge:0.15, egHit:0.8, egTrap:0.6, hz:0.9, edge:0.95, upAtk:0.2, kit:1, towerRead:0.3 },
 ];
 // The kits whose neutral special is a shot (a projectile or a beam): those fire it from range. (The old AI's list, kept as a fact about the kits;
 // only a kit missing from BRAIN_SPEC below reads it now. Five had gone stale and are out: Barf Bag's Outbreak, Yellow Face's cone, Bell's ring,
@@ -64592,6 +64626,8 @@ function aiThink(f){
   const t = (ts._isBoss || !(ld > 0)) ? ts : Object.assign(Object.create(ts), { x: ts.x + (ts.vx||0)*ld, y: ts.y + (ts.onground ? 0 : (ts.vy||0)*ld*0.3) });
   const dx=t.x-f.x, dy=t.y-f.y, adx=Math.abs(dx), ady=Math.abs(dy), dist=Math.hypot(dx,dy);
   const sp = f.kit && f.kit.special;
+  // How long the foe has been up in the air, as it sees it (frames): one hanging up there over 1.5 s is a flyer, another level (below).
+  B.tAir = (ts._isBoss || ts.onground || B.tAirOf !== ts) ? 0 : (B.tAir || 0) + 1; B.tAirOf = ts;
   // Holding a foe: a beat to decide, then the throw that fits.
   if(f._hold){ brainThrow(f, inp, B); return brainOut(f, inp, B, L, t, false); }
 
@@ -64694,13 +64730,21 @@ function aiThink(f){
     brainEdges(f, inp, 90); return brainOut(f, inp, B, L, t, false);
   }
   // ANOTHER LEVEL: a foe well above is climbed to, one well below is dropped to (walk off the edge on a single screen; drop through on a big map).
-  if(ady > 70 && dy < -80){
+  // ANOTHER LEVEL IS ANOTHER FLOOR (the circling fixes, 2026-10-29; the owner: "the cpus still run circles around each other, even if they are
+  // productive ones"): the surface under the foe as it saw it and the one under itself differ by more than 40 px, or the foe has been up in the
+  // air over 1.5 s (a flyer), or one of them is over nothing (off the stage, over a pit). A foe that has only jumped from its own floor is not
+  // climbed after, and a foe below it is not dropped onto while it is only up in a jump itself: that chase jumped after the foe, which made it
+  // the foe above for the other CPU -- two Experts leapfrogged 77 times a minute, 30% of their time, and neither rule ever attacks
+  // (smash-bal/reports/cpu-circling.md, F1b).
+  const footT = ts._isBoss ? null : surfaceBelow(ts.x, ts.y + (ts.r || 24) - 6), footM = surfaceBelow(f.x, f.y + f.r - 6);
+  const onLevel = !!ts._isBoss || B.tAir > 90 || footT == null || footM == null || Math.abs(footT - footM) > 40;
+  if(ady > 70 && dy < -80 && onLevel){
     if(sp === 'chair' && f.spCd <= 0 && hazardT >= B.specAt && !f._tpUsed && Math.random() < 0.3*L.kit && aiBowTpInto(f, ts)){ inp.special = true; B.specAt = hazardT + brainSpecGap(f, L); return brainOut(f, inp, B, L, t, false); }   // BOW: a Teleport up onto them
     if(steerClimb(f, t, inp)){ if(f._wallWayAt !== hazardT && dy < -150 && f.spCd<=0 && sp !== 'chair' && (f.jumps<=0 || Math.random()<0.3)){ inp.special=true; inp.up=true; } }
     else if(f.jumps<=0 && !f.onground && dy<-120 && f.spCd<=0 && sp !== 'chair' && Math.random()<0.5){ inp.special=true; inp.up=true; }
     return brainOut(f, inp, B, L, t, false);
   }
-  if(ady > 70 && dy > 110){
+  if(ady > 70 && dy > 110 && onLevel){
     if(isBig()){ const gapX = nearestDropX(f); if(gapX!=null && Math.abs(gapX - f.x) > 20){ if(gapX < f.x) inp.left=true; else inp.right=true; } else if(f.onground){ inp.down=true; inp.jump=true; } }
     else { const edgeX = f.onground ? nearestDropX(f) : null; if(edgeX!=null){ inp.left = edgeX < f.x; inp.right = edgeX >= f.x; } else if(adx>26){ if(dx<0)inp.left=true; else inp.right=true; } }
     return brainOut(f, inp, B, L, t, false);
@@ -64916,7 +64960,13 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   const shooter = K.shot || K.shotX, want = K.shotX ? 180 : (shooter && B.keepOff) ? Math.max(120, Math.min(230, K.band[1] - 40)) : 0;   // (a shooter keeps off inside its own shot's reach: BRAIN_SPEC)
   if(L.space && !want && brainSpace(f, t, inp, B, L, inReach, dist, toward, now)){ brainEdges(f, inp, 70); return; }   // EXPERT: a swing it saw, waited out
   if(want){ if((dist > want + 40 || ady > 60) && adx > 6) brainWalk(f, inp, toward, sp, t.x); }   // a shooter keeping off stays at its range
-  else if(!inReach && adx > 6) brainWalk(f, inp, toward, sp, t.x);
+  // HOLD THE SPOT (the circling fixes, F2): a foe out of reach only up or down, already within its reach across, is not walked right under or
+  // drifted right over -- it comes down in front of it. In the air, still carrying on toward a foe it is nearly on that is out of its reach
+  // up or down (one level with it is just fought), it holds the arrow away a moment (8 frames, at most once in 28: one input, a person's
+  // fade back), since nothing slows a fighter in the air and it sailed on past.
+  else if(!inReach && adx > 6 && !(ady >= 44 && adx < brainReach(f) + (t.r || 24)*0.5)) brainWalk(f, inp, toward, sp, t.x);
+  if(!f.onground && ady >= 44 && ady < 150 && adx < brainReach(f) + 40 && f.vx*toward > 1.5 && !(B.fadeT > now - 20)) B.fadeT = now + 8;
+  if(!f.onground && B.fadeT > now){ inp.left = toward > 0; inp.right = toward < 0; }
   if(dy < -50 && adx < 120 && f.onground && Math.random() < 0.03) inp.jump = true;   // up at a foe just above
   brainEdges(f, inp, 70);
   if(now < B.next) return;
@@ -64947,6 +64997,11 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   }
   // the finisher at kill percent (or on a boss), a foe in reach: FINX kits check their own reach (finB1Ai), the rest go
   if(inReach && f.fnCd <= 0 && f.onground && ((t.pct||0) >= 85 || t._isBoss) && Math.random() < L.fin){ brainTap(B, brainFace({ attack:true, special:true }, toward), 3); return; }
+  // BOW'S TOWER AS A READ (the owner, 2026-10-29: "I use bow's finisher as something that can be used to punish a read, but I get height, so I
+  // dont get punished for reading. that's how I play my finisher"): a foe she sees coming at her, walking or jumping in, from where the falling
+  // tower meets them, she now and then guesses will still be coming when it falls, and starts Topple the Chair Showroom -- a decision like any
+  // other, on what she saw a moment ago, rolled by level (towerRead). A guess: a foe that stops, turns or goes over her is missed.
+  if(sp === 'chair' && f.fnCd <= 0 && f.onground && !t._isBoss && brainTowerRead(f, t, dx, adx, dy) && Math.random() < L.towerRead){ f._finRead = now + 3; brainTap(B, brainFace({ attack:true, special:true }, toward), 3); return; }
   // its up-special when it lands from here (brainUpLands), now and then: an uppercut or a spin at a foe above it (an anti-air), Bow's Chair
   // Slam on a foe beside her
   if(ready && f.onground && !t._isBoss && (dy < -24 || (K.up && K.up.kind === 'slam')) && brainUpLands(f, K, t) && Math.random() < L.upAtk){ brainTap(B, { special:true, up:true }, 3); B.specAt = now + brainSpecGap(f, L); return; }
@@ -65013,7 +65068,11 @@ function brainString(f, t, inp, B, L, inReach, toward){
   const S = B.str, now = hazardT;
   if(!S){ B.st = 'approach'; return; }
   if(S.move === 'air' && f.onground && S.n > 0){ brainEndString(f, B, L); return; }
-  if(now >= S.next){
+  // THE HOP-IN COMMITS (the circling fixes, F3): while its hop is up with the foe inside its reach across (and within 130 px up or down), the
+  // string does not end for "out of reach": the aerial goes out once the foe is in reach, mostly on the way down. (Looked at 8 frames after the
+  // hop, it was still some 60 px over the foe, gave the aerial up and flew over: two hop-ins in three.) Pressed through the same hands.
+  const hopWait = S.move === 'air' && S.n === 0 && !f.onground && !inReach && Math.abs(t.x - f.x) < brainReach(f) + 50 && Math.abs(t.y - f.y) < 130;
+  if(now >= S.next && !hopWait){
     if(S.n > 0){
       const landed = (f._dmgDealt||0) > S.dmg0;
       if(!landed){ if(!S.extra && Math.random() < L.miss){ S.extra = true; } else { brainEndString(f, B, L); return; } }
@@ -65034,7 +65093,14 @@ function brainString(f, t, inp, B, L, inReach, toward){
   // the foe has drifted off, and the arrows let go of
   if(S.n > 0 && (f._dmgDealt||0) > S.dmg0 && S.move !== 'air'){ inp.left = f.face < 0; inp.right = f.face > 0; brainEdges(f, inp, 70); }
   else if(!inReach && Math.abs(t.x - f.x) > 6){ inp.left = toward < 0; inp.right = toward > 0; }
-  if(S.move === 'air' && !f.onground && Math.abs(t.x - f.x) > 20){ inp.left = toward < 0; inp.right = toward > 0; }
+  // an aerial drifts in only until the foe is where it reaches (60% of its reach), then lets go -- and, still carrying on toward the foe, fades
+  // back as the approach does (F2), so it comes down with the aerial on the foe instead of over its head (F3)
+  if(S.move === 'air' && !f.onground){
+    inp.left = false; inp.right = false;
+    if(Math.abs(t.x - f.x) > brainReach(f)*0.6){ inp.left = toward < 0; inp.right = toward > 0; }
+    else if(f.vx*toward > 1.5 && Math.abs(t.y - f.y) < 150 && !(B.fadeT > now - 20)) B.fadeT = now + 8;
+    if(B.fadeT > now){ inp.left = toward > 0; inp.right = toward < 0; }
+  }
 }
 function brainEndString(f, B, L){
   B.str = null; B.next = hazardT + Math.round(brainR(L.think));
@@ -65122,6 +65188,7 @@ function brainEdgeNear(x){
 // the foe stands on the stage again the fight takes over.
 const EG_MAX = 600;   // frames it keeps a guard up for one trip (a flyer hanging out there for good is left alone after that)
 const EG_HOLD = 6;    // frames it stands still, faced the way it pressed, once a press's keys are let go of
+const EG_AIR_HOLD = 6;   // frames, at least, between turning its arrow one way in the air and turning it back the other way (it lets go meanwhile)
 function brainGuard(f, ts, t, inp, B, L, targets, sp){
   if(!FLOOR_SEGS || ts._isBoss || isBig()){ B.eg = null; return false; }
   const now = hazardT, off = overDrop(t);   // (t: where it guesses the foe is -- seen a moment late, led a little)
@@ -65155,12 +65222,19 @@ function brainGuard(f, ts, t, inp, B, L, targets, sp){
   if(!f.onground){
     // IN THE AIR (back over the stage from a trip of its own, a hop): it comes down on the stage first and walks to the ledge on its feet,
     // where brainLedge keeps it on. Heading for the edge or past it, it steers back in; else it lets itself drop. (Drifting out to the spot,
-    // it overshot the edge with no jump left -- Box, Snowball, Loser and Puffball fell that way.)
+    // it overshot the edge with no jump left -- Box, Snowball, Loser and Puffball fell that way.) Where it comes down is a guess from how it
+    // drifts now, and one frame's push moves that guess a long way when it is high up: it drifts on toward the spot only past a band at
+    // least that wide, and lets itself drop inside it, so the arrow is not flipped every frame (after a respawn Bow's flipped 51 times in a
+    // second); and it lets go a moment (EG_AIR_HOLD) before it turns the arrow back the other way, as a person would.
     const dyL = Math.max(0, groundY() - (f.y + f.r)), tL = (Math.sqrt(Math.max(0, (f.vy || 0)*(f.vy || 0) + 2*GRAV*dyL)) - (f.vy || 0))/GRAV;
-    const lx = f.x + (f.vx || 0)*Math.max(0, tL);
-    if((lx - e.x)*out > -(f.r + 30)){ inp.left = out > 0; inp.right = out < 0; }
-    else if((lx - spot)*e.inl > 30){ inp.left = out < 0; inp.right = out > 0; }   // (coming down well in from the spot: on toward it)
-    else { inp.left = false; inp.right = false; }
+    const lx = f.x + (f.vx || 0)*Math.max(0, tL), li = (lx - e.x)*e.inl;   // (li: how far in from the edge it comes down, carrying on as it is)
+    const band = Math.max(30, MOVE*(f.st || STAT_ONE).air*Math.max(0, tL));   // (how far a frame's push moves that)
+    let a = 0;
+    if(li < f.r + 30) a = e.inl;   // (heading for the edge or past it: back in)
+    else if(li > Math.max((spot - e.x)*e.inl, f.r + 30) + band) a = out;   // (coming down well in from the spot: on toward it)
+    if(a && E.airA === -a && now < E.airT + EG_AIR_HOLD && li >= 0) a = 0;   // (just turned the other way: not back yet, unless it would come down off the stage)
+    if(a && a !== E.airA){ E.airA = a; E.airT = now; }
+    inp.left = a < 0; inp.right = a > 0;
     return true;
   }
   if(!there) brainWalk(f, inp, gx < 0 ? -1 : 1, sp, spot);
@@ -65211,6 +65285,18 @@ function brainStrongMove(f, t){
   const dy = t.y - f.y, adx = Math.abs(t.x - f.x), ms = msOf(f);
   if(dy < -40 && adx < 70 && !brainKit(f).shotX && (!(ms && ms.aiFit) || aiMoveFits(f, t, ms.ut, f.face))) return 'ut';
   return 'jab';
+}
+// BOW'S TOWER AS A READ: the foe as she guesses it (seen a moment late, led a little) about 180-260 px off (TOWER_READ: plays.md -- started
+// closer, she was hit during the 0.7 s stack 14-19 times in 20; much further and the tower falls short), coming at her -- on the floor about
+// level with her, or in the air on its way in, no higher than the tower stands -- and her floor running on toward them for the tower to lie
+// along (fx7ShowRun). Where the read holds she may start it (finB7Want lets a read through: f._finRead).
+const TOWER_READ = [180, 260];
+function brainTowerRead(f, t, dx, adx, dy){
+  if(adx < TOWER_READ[0] || adx > TOWER_READ[1]) return false;
+  const dir = dx < 0 ? -1 : 1, inward = -(t.vx || 0)*dir;   // (its speed toward her)
+  if(t.onground !== false){ if(!(inward > 1.5 && Math.abs(dy) < 40)) return false; }
+  else if(!(inward > 1 && dy > -170 && dy < 30)) return false;
+  return fx7ShowRun(f, feetY(f), dir) >= Math.min(FX7.showroom.len, adx - 40);
 }
 // Does its up-special land on t from here (brainKit's up: where riseShape puts the hit)? An uppercut's arc round the cast point, a spin's
 // ring as it rises through a foe above or beside it, Bow's Chair Slam round her feet on a foe beside her on the floor.
@@ -65298,6 +65384,7 @@ const HZ_WAIT = 150, HZ_GO = 90;
 function brainHazards(f, inp, B, L){
   if(B.hzGo > hazardT || f._fileRide || f.x < 50 || f.x > WW - 50) return;
   if(!f.onground){ brainHazardAir(f, inp, B, L); return; }
+  if((inp.jump || (inp.special && inp.up && !inp.attack)) && brainHazardUp(f, inp, B, L)) return;   // a jump (or an up-special) up onto a platform, into a danger up there (World Cup #17)
   const dir = (inp.right && !inp.left) ? 1 : (inp.left && !inp.right) ? -1 : 0;
   if(!dir) return;
   const H = brainDangers(f, B, L);
@@ -65323,21 +65410,76 @@ function brainHazards(f, inp, B, L){
   }
   B.hzWait = Math.max(0, (B.hzWait || 0) - 1);
 }
-// IN THE AIR, coming down over the stage: it drifts off a small one it noticed that it would land on, to the near side (an aerial at a foe
-// standing by their own trap came down on it -- Toothpaste's, Bomby's, Blocky's, 2 in 3 of the walk-ins left after the hop). Only the last of
-// the fall, and only the arrow: whatever it was pressing goes on, at its hands' own pace (cpuHumanKeys). Not off the stage: that is the recovery's.
+// IN THE AIR, coming down over the stage: it drifts off one it noticed that it would land on, to the near side (an aerial at a foe standing by
+// their own trap came down on it -- Toothpaste's, Bomby's, Blocky's, 2 in 3 of the walk-ins left after the hop). Only the last of the fall, and
+// only the arrow: whatever it was pressing goes on, at its hands' own pace (cpuHumanKeys). Not off the stage: that is the recovery's.
+// GOING UP, ONTO A PLATFORM (round 2, World Cup #17: "tried to go on platforms with traps on the edge"): a trap hits whoever it touches, so a
+// rise that would carry it up into one it noticed on a platform above -- through a one-way top from under it, or onto the end of one from
+// beside it -- drifts off it the same way, and an air jump or an up-special that would take it there is not pressed. Coming down onto a
+// platform it looks further ahead (a longer fall: its hands need the time to turn it), and keeps to the side it chose (a flip between sides is
+// two inputs and lands it on it). A big one (a prism, a wide trap) is steered off too over a platform: there is no walking round it after.
 function brainHazardAir(f, inp, B, L){
-  if(!(f.vy > 0) || overDrop(f)) return;
-  const H = brainDangers(f, B, L);
+  if(overDrop(f)) return;
+  const H = brainDangers(f, B, L), vx = f.vx || 0;
+  // where on its arc (vertical speed vy) its body first meets the height of h: [frames, x then], or null
+  const gy = groundY();
+  const meet = (h, vy) => {
+    if(vy > 0 || (h.y + h.r) > (f.y - f.r)){   // coming down onto it (its feet onto the danger's top), or level with it
+      const dy = (h.y - h.r) - (f.y + f.r); if(dy < 0 || dy > (h.y < gy - 50 ? 260 : 160)) return null;
+      const t = (Math.sqrt(Math.max(0, vy*vy + 2*GRAV*dy)) - vy)/GRAV;
+      return [t, f.x + vx*t];
+    }
+    const gap = (f.y - f.r) - (h.y + h.r), disc = vy*vy - 2*GRAV*gap;   // going up into it from under it (its head to the danger's bottom)
+    if(disc < 0) return null;
+    const t = (-vy - Math.sqrt(disc))/GRAV;
+    return t >= 0 ? [t, f.x + vx*t] : null;
+  };
+  const near = (h, m) => !!m && Math.abs(m[1] - h.x) <= h.r + f.r + 6;   // (its whole body clear of it: a trap trips on any touch)
+  const jv = JUMP*((f.st && f.st.jump) || 1);
   for(const h of H){
-    if(!h.small) continue;
-    const dy = (h.y - h.r) - (f.y + f.r); if(dy < 0 || dy > 160) continue;   // its feet above the trap's top, within a short fall
-    const t = (Math.sqrt(f.vy*f.vy + 2*GRAV*dy) - f.vy)/GRAV, lx = f.x + (f.vx || 0)*t;   // where it comes down, as it is falling
-    if(Math.abs(lx - h.x) > h.r + f.r*0.6 + 6) continue;
-    const away = lx >= h.x ? 1 : -1;
-    inp.left = away < 0; inp.right = away > 0; B.hzAir = hazardT;
+    if(!h.small && h.y > gy - 50) continue;   // (a big one on the floor itself is the walk's: it waits short of it, on its feet)
+    const over = h.y + h.r < f.y - f.r;   // (up above its head)
+    if(over && inp.jump && f.jumps > 0 && near(h, meet(h, jv))){ inp.jump = false; B.hzAir = hazardT; }   // (an air jump up into it: not pressed)
+    if(over && inp.special && inp.up && !inp.attack && (f.y - f.r) - (h.y + h.r) < 320 && Math.abs(h.x - f.x) <= h.r + f.r + 24){ inp.special = false; inp.up = false; B.hzAir = hazardT; }   // (nor an up-special up into it)
+    const m = meet(h, f.vy || 0);
+    if(!near(h, m)) continue;
+    const keep = hazardT - (B.hzAirAt || -1e9) <= 3 && Math.abs(h.x - B.hzAirX) < 6;   // the side it chose a moment ago, for this one
+    const away = keep ? B.hzAirSide : m[1] >= h.x ? 1 : -1;
+    inp.left = away < 0; inp.right = away > 0; B.hzAir = B.hzAirAt = hazardT; B.hzAirX = h.x; B.hzAirSide = away;
     return;
   }
+}
+// ON ITS FEET, ABOUT TO JUMP UP ONTO A PLATFORM (round 2, World Cup #17): the climb heads for the near end of the platform its foe is on -- just
+// where a trap laid at its edge sits -- and jumps from under it (or goes up with its up-special: Lightning's Flash). A danger it noticed up
+// there, over where it goes up, is not jumped into: it walks on under the platform to a spot past it (the side with more of the platform,
+// its foe's side if both have room) and jumps from there; a solid platform cannot be jumped up through, and with no spot past it either it
+// waits under it for the trap to go (HZ_WAIT, then it goes anyway for HZ_GO), as for one on its own floor. Only what it has noticed
+// (brainDangers), seen a moment late.
+function brainHazardUp(f, inp, B, L){
+  const H = brainDangers(f, B, L);
+  if(!H.length) return false;
+  const feet = f.y + f.r, jv = JUMP*((f.st && f.st.jump) || 1), upSp = inp.special && inp.up && !inp.attack;
+  const reach = Math.max(jv*jv/GRAV, upSp ? 300 : 0) + 2*f.r + 20;   // (both jumps' rise -- or an up-special's -- and its body)
+  for(const h of H){
+    if(h.y + h.r > f.y - f.r*0.5 || feet - (h.y - h.r) > reach) continue;   // not over its head, or higher than its jumps go
+    // over where it goes up: straight above it, or where its run carries it by the time it is up there (the way it is moving, and the arrow it
+    // holds: a jump taken on the run went up into it beside where it took off)
+    const gap = (f.y - f.r) - (h.y + h.r), disc = jv*jv - 2*GRAV*gap, tu = upSp ? 12 : disc >= 0 ? (-jv - Math.sqrt(disc))/GRAV : -jv/GRAV;
+    const held = (inp.right && !inp.left) ? 1 : (inp.left && !inp.right) ? -1 : 0, vu = clamp((f.vx || 0) + held*MOVE*tu*0.5, -MAXVX, MAXVX);
+    if(Math.abs(h.x - f.x) > h.r + f.r*0.5 + 24 && Math.abs(f.x + vu*tu - h.x) > h.r + f.r + 6) continue;
+    let p = null;   // the platform it lies on
+    for(const q of worldPlats) if(h.x >= q.x - 4 && h.x <= q.x + q.w + 4 && Math.abs(q.y - (h.y + h.r)) < h.r + 16){ p = q; break; }
+    const goal = h.r + f.r + 26, t = f.aiTarget;
+    const ok = (d) => !!p && !p.solid && (d < 0 ? h.x - p.x : p.x + p.w - h.x) > goal + 10 && h.x + d*goal > 50 && h.x + d*goal < WW - 50;
+    const okL = ok(-1), okR = ok(1);
+    const side = (okL && okR) ? ((t && t.x !== h.x) ? (t.x < h.x ? -1 : 1) : (h.x - p.x > p.x + p.w - h.x ? -1 : 1)) : okL ? -1 : okR ? 1 : 0;
+    inp.jump = false; if(upSp){ inp.special = false; inp.up = false; } B.hzUp = hazardT;
+    if(side){ const gx = h.x + side*goal; inp.left = gx < f.x; inp.right = gx > f.x; return true; }
+    if((B.hzWait = (B.hzWait || 0) + 1) > HZ_WAIT){ B.hzWait = 0; B.hzGo = hazardT + HZ_GO; return true; }
+    inp.left = false; inp.right = false;
+    return true;
+  }
+  return false;
 }
 // An item in a danger it noticed, or with a big one between it and the item, is not worth the walk (World Cup #8).
 function brainItemDanger(f, B, L, it){
