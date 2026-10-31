@@ -432,6 +432,13 @@
   .pcard .pct{font-family:'JetBrains Mono',monospace; font-weight:700; font-size:16px; line-height:1}
   .pcard .stk{font-size:8px; color:#c0392b; letter-spacing:1px}
   .pcard.you{outline:3px solid var(--gold)}
+  /* MOON CAVES (M7): 21 to 30 cards -- compact, two rows of 15 */
+  .hudbar.many{max-height:150px; gap:3px; padding:4px 6px}
+  .hudbar.many .pcard{flex:1 1 0; min-width:0; max-width:84px; padding:1px 3px 2px; border-radius:7px}
+  .hudbar.many .hudbreak{flex-basis:100%; height:0}
+  .hudbar.many .pcard .nm{font-size:8px; max-width:44px}
+  .hudbar.many .pcard .pct{font-size:12px}
+  .hudbar.many .pcard .stk{font-size:7px; letter-spacing:0}
   .tut-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;width:100%;max-width:620px;margin:16px auto 4px;box-sizing:border-box}
   .tut-card{background:rgba(255,255,255,0.72);border:3px solid #1c1c1c;border-radius:12px;padding:10px;text-align:center}
   .tut-key{font-weight:800;font-size:20px;color:#b4460f}
@@ -2604,8 +2611,10 @@ function mcLists(){ const L = MC_LISTS; L[0] = fighters; L[1] = projectiles; L[2
 const MC_PAIRS = [['warnX','warnY'], ['armX0','armY0'], ['_castX','_castY'], ['_aimX','_aimY'], ['_x0','_y0'], ['fsAx','fsAy'], ['fsBx','fsBy'], ['fsCx','fsCy']];
 const MC_SUBS = [['_nsplit','x','y'], ['_fsLock','x','y'], ['_mtCrushFx','x','y'], ['_attractFx','tx','ty'], ['_visOrigin','x','y'], ['_fs','px','py']];
 const MC_NPT = MC_PAIRS.length + MC_SUBS.length;
-function mcPairOf(o, j){ if(j < MC_PAIRS.length) return o; const s = o[MC_SUBS[j - MC_PAIRS.length][0]]; return (s && typeof s === 'object') ? s : null; }
-function mcPairKeys(j){ return j < MC_PAIRS.length ? MC_PAIRS[j] : [MC_SUBS[j - MC_PAIRS.length][1], MC_SUBS[j - MC_PAIRS.length][2]]; }
+// [the sub-object's key (null: the object itself), x's key, y's key] for each remembered point, made once (mcSwapIn, mcPairsOut: at 30 fighters
+// the pairs were 20 ms of a 75 ms step, most of it two little arrays made for every object at every frame's entry and exit by the helpers
+// that looked them up, mcPairOf and mcPairKeys, which this replaces)
+const MC_PTK = MC_PAIRS.map(p => [null, p[0], p[1]]).concat(MC_SUBS.map(s => [s[0], s[1], s[2]]));
 function mcSwapIn(o){
   const F = MC_FR;
   if(!o || o._mcS === F.serial || typeof o.x !== 'number') return;
@@ -2616,10 +2625,11 @@ function mcSwapIn(o){
   F.cx[i] = o.x; F.cy[i] = o.y;
   F.pb[i] = F.pn;   // its remembered points: kept as [j, real x, real y, chart x, chart y] from pb[i] on
   for(let j = 0; j < MC_NPT; j++){
-    const q = mcPairOf(o, j); if(!q) continue;
-    const k = mcPairKeys(j), x = q[k[0]], y = q[k[1]];
-    if(typeof x !== 'number' || typeof y !== 'number') continue;
-    mcToChart(x, y, MC_PT); q[k[0]] = MC_PT.x; q[k[1]] = MC_PT.y;
+    const K = MC_PTK[j], q = K[0] === null ? o : o[K[0]];
+    if(!q || typeof q !== 'object') continue;
+    const x = q[K[1]]; if(typeof x !== 'number') continue;
+    const y = q[K[2]]; if(typeof y !== 'number') continue;
+    mcToChart(x, y, MC_PT); q[K[1]] = MC_PT.x; q[K[2]] = MC_PT.y;
     const b = F.pn*5; F.pv[b] = j; F.pv[b + 1] = x; F.pv[b + 2] = y; F.pv[b + 3] = MC_PT.x; F.pv[b + 4] = MC_PT.y; F.pn++;
   }
   F.pe[i] = F.pn;
@@ -2629,13 +2639,14 @@ function mcSwapIn(o){
 function mcPairsOut(o, from, to){
   const F = MC_FR, P = MC_PT;
   for(let j = 0; j < MC_NPT; j++){
-    const q = mcPairOf(o, j); if(!q) continue;
-    const k = mcPairKeys(j), x = q[k[0]], y = q[k[1]];
-    if(typeof x !== 'number' || typeof y !== 'number') continue;
+    const K = MC_PTK[j], q = K[0] === null ? o : o[K[0]];
+    if(!q || typeof q !== 'object') continue;
+    const x = q[K[1]]; if(typeof x !== 'number') continue;
+    const y = q[K[2]]; if(typeof y !== 'number') continue;
     let done = false;
     for(let s = from; s < to; s++){ const b = s*5; if(F.pv[b] !== j) continue;
-      if(x === F.pv[b + 3] && y === F.pv[b + 4]){ q[k[0]] = F.pv[b + 1]; q[k[1]] = F.pv[b + 2]; done = true; } break; }
-    if(!done){ mcFromChart(x, y, P); q[k[0]] = P.x; q[k[1]] = P.y; }
+      if(x === F.pv[b + 3] && y === F.pv[b + 4]){ q[K[1]] = F.pv[b + 1]; q[K[2]] = F.pv[b + 2]; done = true; } break; }
+    if(!done){ mcFromChart(x, y, P); q[K[1]] = P.x; q[K[2]] = P.y; }
   }
 }
 // THE MARKS A FRAME LEAVES (M3; section 2.3's append-only lists): what a frame records in its chart -- hit art, an impact's dust, debris and
@@ -3522,7 +3533,10 @@ function customWorldH(){ return Math.round(H * Math.max(1, customSize().h)); }
 // Does this custom level need a scrolling camera? (Drives scrolls(), and stops a mid-match browser
 // resize from collapsing a Tall/Huge custom world back down to one screen.)
 function customScrolls(){ return !!CUSTOM_LEVEL && (customWorldW()>W+2 || customWorldH()>H+2); }
-const MAX_FFA=5, MAX_TEAMS=20;
+const MAX_FFA=5, MAX_TEAMS=20, MAX_MOON=30;
+// MOON CAVES (M7): 15 a side there (the owner's spec), 20 on every other Teams map. The stage in hand decides (st: another); online, the host's
+// pick stands, so a guest who has not unlocked it plays the host's count.
+function maxTeams(st){ st = st || stage; return (st && st.layout === 'disc' && (stageOpen(st) || inNetSession())) ? MAX_MOON : MAX_TEAMS; }
 // contestant counts offered per mode (compact set for teams so buttons fit)
 function countOptions(){
   // Boss Rush offers ONE. It is a co-op mode and every other mode needs an opponent, so the floor
@@ -3530,7 +3544,7 @@ function countOptions(){
   // "beat N bosses solo" (TROPHIES) is not a deed anybody could perform without it.
   return SETTINGS.mode==="ctf" ? [4,6,8,10,12,14,16]   // Capture the Flag: 2 to 8 a side (the count is both teams)
     : SETTINGS.mode==="teams"
-    ? [2,3,4,5,6,8,10,12,16,20]
+    ? [2,3,4,5,6,8,10,12,16,20].concat(maxTeams() > MAX_TEAMS ? [MAX_MOON] : [])   // (MOON CAVES: 30, its stage only)
     : SETTINGS.mode==="boss" ? [1,2,3,4,5]
     : customSpawnCap() ? [2,3,4,5].filter(n=>n<=customSpawnCap())   // a custom level waiting: no more than its spawns (buildFighters)
     : [2,3,4,5];
@@ -8195,7 +8209,7 @@ function netSideSplit(s){
 function netSideSizes(mode, count, teamKey){
   if(mode === 'ctf'){ const n = clamp(Math.round((+count || 0)/2)*2, 4, 16); return [n/2, n/2]; }
   if(mode !== 'teams') return null;
-  const N = Math.max(2, Math.min(MAX_TEAMS, Math.round(+count) || 2));
+  const N = Math.max(2, Math.min(maxTeams(), Math.round(+count) || 2));
   const split = String(teamKey || '').split('v').map(Number).filter(n=>n>0);
   return split.reduce((a, b)=>a + b, 0) === N ? split : (teamSplitsFor(N)[0] || [N]);
 }
@@ -16733,7 +16747,7 @@ function buildSettings(){
     // clamp count into the new mode's range and rebuild count buttons. The FLOOR matters as well
     // as the cap now: a solo count of 1 is legal in Boss Rush but leaves every other mode with a
     // lone fighter and nobody to fight.
-    const cap = v==='teams'?MAX_TEAMS:(v==='ctf'?16:MAX_FFA);
+    const cap = v==='teams'?maxTeams():(v==='ctf'?16:MAX_FFA);
     if(v==='ctf') SETTINGS.count = (SETTINGS.count>=4 && SETTINGS.count<=16 && SETTINGS.count%2===0) ? SETTINGS.count : 10;   // five a side to start
     if(SETTINGS.count>cap) SETTINGS.count=cap;
     if(SETTINGS.count<minCount()) SETTINGS.count=minCount();
@@ -17140,7 +17154,7 @@ function buildStages(){
     const d=document.createElement('div');
     d.className='stagecard'+(s.id===stage.id?' sel':'');
     d.innerHTML=`<b>${s.name}${big(s)}</b><span>${s.blurb}</span>`;
-    d.onclick=()=>{ const had=!!CUSTOM_LEVEL; if(had){ dropCustomLevel(); PENDING_CUSTOM=false; } stage=s; buildStages(); closeStagePick(); if(had) buildSettings(); };
+    d.onclick=()=>{ const had=!!CUSTOM_LEVEL; if(had){ dropCustomLevel(); PENDING_CUSTOM=false; } stage=s; buildStages(); closeStagePick(); if(had) buildSettings(); else if(SETTINGS.mode==='teams'){ buildCountButtons(); buildTeamSplits(); updateSummary(); } };   // (MOON CAVES: 30 there, 20 elsewhere)
     sp.appendChild(d);
   });
   // the button shows the stadium in play; its cards (each with its blurb and its BIG tag) open from it
@@ -21476,7 +21490,7 @@ function buildFighters(){
   if(RACE.active){ buildRaceRunners(); return; }   // RUNNING!: you and Marshmallow (no rivals: RACE_RUNNERS)
   if(COBSFIGHT.active && COBSFIGHT.lineup){ buildCobsFighters(); return; }   // and his (Knife alone in the story fight)
   if(SETTINGS.mode==='ctf') SETTINGS.count = clamp(Math.round(SETTINGS.count/2)*2, 4, 16);   // 2 to 8 a side
-  const cap = SETTINGS.mode==='teams'?MAX_TEAMS:(SETTINGS.mode==='ctf'?16:MAX_FFA);
+  const cap = SETTINGS.mode==='teams'?maxTeams():(SETTINGS.mode==='ctf'?16:MAX_FFA);
   const netRoster = window.__netRoster || null;   // list of human-chosen fighter names, in slot order
   const humanCount = netRoster ? netRoster.length : 0;
   let N=Math.max(minCount(), Math.min(cap, SETTINGS.count));
@@ -22514,9 +22528,14 @@ function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;
 // ---------- HUD ----------
 function buildHUD(){
   const bar=document.getElementById('hudbar'); bar.innerHTML='';
+  const many = fighters.length > 20;
+  bar.classList.toggle('many', many);   // (MOON CAVES, M7: up to 30 cards, compact, a row a side)
   window.__hudLineup = fighters.map(f=>f.idx+':'+f.name).join('|');
   const teams=SETTINGS.mode==='teams' || SETTINGS.mode==='ctf';
-  fighters.forEach(f=>{
+  let lastTeam = null;
+  (many ? fighters.slice().sort((a, b)=>a.team - b.team || a.idx - b.idx) : fighters).forEach(f=>{
+    if(many && lastTeam !== null && f.team !== lastTeam){ const br=document.createElement('div'); br.className='hudbreak'; bar.appendChild(br); }
+    lastTeam = f.team;
     const c=document.createElement('div'); c.className='pcard'+(f.you?' you':''); c.dataset.i=f.idx;
     const tc = teams ? TEAM_COLORS[f.team%TEAM_COLORS.length] : null;
     if(tc) c.style.borderTopColor=tc, c.style.borderTopWidth='5px';
@@ -22547,11 +22566,13 @@ function updateStandings(){
       html+=`<span class="stteam${r===lead && rows.some(o=>o.stocks!==r.stocks)?' leader':''}${mine?' self':''}"><span class="stdot" style="background:${r.color}"></span>`
         +`<span class="ststk">${r.stocks}♥</span></span>`; });
   }
-  box.innerHTML=html;
+  if(MCAVE && MCAVE.on && box._html === html) return;   // (MOON CAVES, M7: rebuilt only when it changed)
+  box.innerHTML=html; box._html=html;
 }
 function updateHUD(){
   if(PCAM.bg) return;   // PLAYS CAMERA: the HUD is the match on screen's
   updateStandings();
+  if(MCAVE && MCAVE.on){ mcUpdateCards(); return; }   // MOON CAVES (M7): the same cards, written only where they changed
   fighters.forEach(f=>{
     const c=document.querySelector(`.pcard[data-i="${f.idx}"]`); if(!c)return;
     c.classList.toggle('dead',f.dead);
@@ -22559,6 +22580,21 @@ function updateHUD(){
     c.querySelector('.pct').style.color=pctColor(f.pct, f.koCap);
     c.querySelector('.stk').textContent = (SETTINGS.mode==='ctf') ? ((f._cf>=0?'\u2691':'')+(f._ck>=0?'\u26BF':'')+(f._jail!=null?'\u26D3':'')) : (f.stocks===Infinity) ? '∞' : '●'.repeat(Math.max(0, Math.min(20, f.stocks|0)));
   });
+}
+// MOON CAVES (M7): the cards as updateHUD writes them, each part written only when it differs from what the card shows (_v: its last values),
+// the cards found once (_mcCards, by index, rebuilt with the HUD) -- 30 querySelector calls and 90 writes a frame were most of the HUD's cost.
+let _mcCards = null, _mcCardsFor = null;
+function mcUpdateCards(){
+  const bar = document.getElementById('hudbar'); if(!bar) return;
+  if(_mcCardsFor !== bar.firstChild){ _mcCards = new Map(); for(const c of bar.querySelectorAll('.pcard')) _mcCards.set(+c.dataset.i, c); _mcCardsFor = bar.firstChild; }
+  for(const f of fighters){
+    const c = _mcCards.get(f.idx); if(!c) continue;
+    const v = c._v || (c._v = {}), pct = (Math.round(f.pct*10)/10).toFixed(1) + '%', col = pctColor(f.pct, f.koCap), dead = !!f.dead;
+    const stk = (f.stocks===Infinity) ? '∞' : '●'.repeat(Math.max(0, Math.min(20, f.stocks|0)));
+    if(v.dead !== dead){ c.classList.toggle('dead', dead); v.dead = dead; }
+    if(v.pct !== pct || v.col !== col){ const p = c.querySelector('.pct'); if(v.pct !== pct) p.textContent = pct; if(v.col !== col) p.style.color = col; v.pct = pct; v.col = col; }
+    if(v.stk !== stk){ c.querySelector('.stk').textContent = stk; v.stk = stk; }
+  }
 }
 function pctColor(p, cap){ const r = cap ? p/cap : p/200;   // fraction of this fighter's KO threshold
   if(r<0.35)return'#1c1c1c'; if(r<0.6)return'#e0803a'; if(r<0.85)return'#e0503a'; return'#c0142a'; }
@@ -44519,6 +44555,7 @@ function step(){
   const gravFor = function(f){ if(f._floatT>0){ f._floatT--; return grav*0.35; } return grav; };
 
   cpuSeeRecord();   // what every fighter, shot and summon looks like as this frame begins: what a CPU sees, late (CPU_HUMAN)
+  if(MCAVE && MCAVE.on) mcThinkPass();   // MOON CAVES (M7): the CPUs think first, sharing their eyes (mcThinkPass)
   for(const f of fighters){
     if(f.dead){ f._hitStop = 0; f._hsBuf = null; continue; }
     if(f._fsLock && fsLockHold(f)) continue;   // CATCH, THEN CINEMATIC: caught by a Final Smash, they cannot move or act (fsLockHold)
@@ -44559,14 +44596,18 @@ function step(){
     } else {
       // A HUMAN'S EYES AND HANDS (CPU_HUMAN): a CPU sees its foes as they were a moment ago, and its keys change at a person's pace;
       // the brain (aiThink) decides on what it sees.
-      const hl = cpuHumanLevel(f), seen = hl >= 0 ? cpuSeeBegin(f, CPU_HUMAN.react[hl]) : null;
+      const hl = cpuHumanLevel(f), pre = (f._mcThink && f._mcThink.t === hazardT) ? f._mcThink : null;   // (MOON CAVES: decided in mcThinkPass)
+      const seen = (hl >= 0 && !pre) ? cpuSeeBegin(f, CPU_HUMAN.react[hl]) : null;
+      if(pre){ inp = pre.inp; f._mcThink = null; }
+      else {
       try {
       inp = (SETTINGS.mode==='ctf' && ctfAiInput(f)) || aiThink(f);
       if(COBSFIGHT.active) cobsAiLasers(f, inp);   // Steve Cobs's laser walls: a CPU jumps for the gap as a player does (no other fight has them)
       legacyFin(inp);   // attack + special pressed together is the finisher; the engine reads `fin`
       fsBotInput(f, inp);   // chases the Smash Ball, and holds a Final Smash until it will hit
       } finally { if(seen) cpuSeeEnd(seen); }
-      if(hl >= 0) inp = cpuHumanKeys(f, inp, CPU_HUMAN.inputGap[hl], (seen ? seen.near : cpuFoeNear(f)) <= CPU_HUMAN.fightReach);
+      }
+      if(hl >= 0) inp = cpuHumanKeys(f, inp, CPU_HUMAN.inputGap[hl], (pre ? pre.near : seen ? seen.near : cpuFoeNear(f)) <= CPU_HUMAN.fightReach);
     }
     if(f._hsBuf){ for(const b in f._hsBuf) inp[b] = true; f._hsBuf = null; }   // HIT FREEZE: a button pressed while held still is pressed now
     f._rawKeys = (ctrl==='local' || ctrl==='remote') ? [!!inp.attack, !!inp.special, !!inp.smash, !!inp.jump] : null;   // a human's buttons as pressed, before the pairing below: what a cuff's mash counts (cuffKeys)
@@ -45326,7 +45367,9 @@ function step(){
 
   STEP_F = null;
   // DROPS CARRY: whoever a plunging fighter falls into goes down with them (see updateDropCarry).
-  for(const f of fighters) if(f._hsHeld !== hazardT){ mcEnter(f); try { updateDropCarry(f); } finally { mcExit(); } }   // (not one held still by a hit this frame: HIT FREEZE)
+  for(const f of fighters) if(f._hsHeld !== hazardT){
+    if(MCAVE && MCAVE.on && (f.dead || !((f._carrying && f._carrying.length) || isDropping(f)))) continue;   // (MOON CAVES, M7: no frame for nothing)
+    mcEnter(f); try { updateDropCarry(f); } finally { mcExit(); } }   // (not one held still by a hit this frame: HIT FREEZE)
 
   // evil leafy hazard
   if(evil){
@@ -65033,6 +65076,7 @@ function navUp(f, t, wallX, wallX2){
   const past1 = (wx, xL, xR) => wx != null && (f.x < wx ? xL >= wx : xR <= wx);
   const past = (xL, xR) => past1(wallX, xL, xR) || past1(wallX2, xL, xR);
   const st = sticky ? f._navStep : null;
+  if(st && st.a0 != null && MCAVE && MCAVE.on && MC_FR.open){ st.xL = MCAVE.cx + MC_FR.rho*mcWrap(st.a0 - MC_FR.phi); st.xR = MCAVE.cx + MC_FR.rho*mcWrap(st.a1 - MC_FR.phi); }   // (MOON CAVES: round the disc, read in this frame's chart)
   if(st && !f.onground && hazardT - st.t <= 50 && !past(st.xL, st.xR)){
     const feet = f.y + f.r;
     if(feet > st.y - 90 && feet < st.y + 150){
@@ -65085,7 +65129,8 @@ function navUp(f, t, wallX, wallX2){
   const c=cands[0];
   let aimX = (f.x < c.xL) ? c.xL+12 : (f.x > c.xR) ? c.xR-12 : f.x;
   const bx = navBeside(f, c); if(bx != null) aimX = bx; else aimX = navUnderEnd(f, c, aimX);
-  if(sticky) f._navStep = { y:c.y, xL:c.xL, xR:c.xR, t:hazardT, slab:c.slab };
+  if(sticky){ f._navStep = { y:c.y, xL:c.xL, xR:c.xR, t:hazardT, slab:c.slab };
+    if(MCAVE && MCAVE.on && MC_FR.open){ f._navStep.a0 = MC_FR.phi + (c.xL - MCAVE.cx)/MC_FR.rho; f._navStep.a1 = MC_FR.phi + (c.xR - MCAVE.cx)/MC_FR.rho; } }   // (MOON CAVES: its angles, not this chart's x)
   return {x:aimX, y:c.y};
 }
 // ONTO A SLAB'S TOP FROM BESIDE IT (teams): below the top of a solid whose underside is over the fighter's head (the arm's top face, seen from
@@ -66778,6 +66823,33 @@ function cpuFoeNear(f){
   for(const o of fighters) if(!o.dead && !cpuSeeOwn(f, o)) d = Math.min(d, Math.hypot(o.x - f.x, o.y - f.y));
   for(const s of summons) if((s.type === 'boss' || s.hostile) && !cpuSeeOwn(f, s) && !(s.life <= 0)) d = Math.min(d, Math.hypot(s.x - f.x, s.y - f.y));
   return d;
+}
+// MOON CAVES (M7): THE SHARED EYES. Every CPU that will think this step, grouped by team and by how late it sees (CPU_HUMAN.react): each
+// group's foes are swapped back to what it saw once (cpuSeeOwn leaves a whole side out, so one swap serves all of it), and inside it each
+// CPU thinks in its own chart (mcEnter: the seen places charted like any others) as the fighter loop would have had it -- its brain, its
+// finisher pairing, its Smash Ball chase -- and the loop takes the keys (f._mcThink) through its hands as ever. A CPU sees 10-30 frames
+// late, so thinking at the top of the step changes nothing it could see. Not a CPU held still this step (a hit freeze, a Final Smash's
+// catch): the loop skips it as before.
+function mcThinkPass(){
+  const G = new Map();
+  for(const f of fighters){
+    if(f.dead || f._fsLock || (f._hitStop > 0 && f._hsAt !== hazardT)) continue;
+    const ctrl = f.controller || (f.you ? 'local' : 'ai');
+    if(ctrl === 'local' || ctrl === 'remote' || ctrl === 'trainer' || ctrl === 'ctut' || ctrl === 'still') continue;
+    const hl = cpuHumanLevel(f); if(hl < 0) continue;
+    const n = CPU_HUMAN.react[hl], key = f.team + ':' + n;
+    let g = G.get(key); if(!g) G.set(key, g = { n, list:[] }); g.list.push(f);
+  }
+  for(const g of G.values()){
+    const S = cpuSeeBegin(g.list[0], g.n);
+    try {
+      for(const f of g.list){
+        mcEnter(f); STEP_F = f;
+        try { const inp = aiThink(f); legacyFin(inp); fsBotInput(f, inp); f._mcThink = { t:hazardT, inp, near:cpuFoeNear(f) }; }
+        finally { mcExit(); }
+      }
+    } finally { if(S) cpuSeeEnd(S); }
+  }
 }
 function cpuSeeEnd(S){
   const sv = S.saved;
@@ -80084,7 +80156,7 @@ window.NET = {
     const sg=group('Stadium'); const ss=document.createElement('select'); ss.className='netinput lobbyselect'; ss.id='lobbyStage';
     if(stage && STAGES.indexOf(stage)>=0 && !stageOpen(stage)) stage = STAGES[0];   // (a Moon this player only played as a guest is not theirs to host)
     stagesOpen().forEach(st=>{ const o=document.createElement('option'); o.value=st.id; o.textContent=st.name + (st.big?' (big)':''); if(stage && stage.id===st.id) o.selected=true; ss.appendChild(o); });
-    ss.onchange=()=>{ const st=STAGES.find(x=>x.id===ss.value); if(st) stage=st; changed(); };
+    ss.onchange=()=>{ const st=STAGES.find(x=>x.id===ss.value); if(st) stage=st; if(SETTINGS.mode==='teams' && SETTINGS.count > maxTeams()) SETTINGS.count = MAX_TEAMS; changed(); };   // (MOON CAVES: 30 there, 20 elsewhere)
     sg.appendChild(ss);
     seg('Mode', 'lobbyMode', [['ffa','Free-for-all'],['teams','Teams'],['boss','Boss Rush'],['ctf','Capture the Flag']], SETTINGS.mode, v=>{ if(v==='ctf' && SETTINGS.mode!=='ctf' && ctfTutHostPick()) return; SETTINGS.mode=v; });   // (the practice first: ctfTutHostPick)
     if(SETTINGS.mode==='ctf') seg('Map', 'lobbyCtfMap', ctfMapChoices(), ctfMapPickGet(), v=>{ ctfMapPickSet(v); });   // the host's pick goes in the start (settings.ctfMap)
@@ -80178,7 +80250,7 @@ window.NET = {
     SETTINGS.mode = ['ffa','teams','boss','ctf'].includes(s.mode) ? s.mode : 'ffa';
     if(SETTINGS.mode==='ctf') CTF.netMap = (typeof s.ctfMap==='string' && CTF_MAPS[s.ctfMap]) ? s.ctfMap : null;
     CTF.netAdv = SETTINGS.mode==='ctf' ? !!s.ctfAdv : null;   // (an older host sends none: off)
-    SETTINGS.count = int(s.count, 1, 20, SETTINGS.count||2);
+    SETTINGS.count = int(s.count, 1, MAX_MOON, SETTINGS.count||2);   // (MOON CAVES: 30 there; buildFighters clamps by the stage, maxTeams)
     SETTINGS.stocks = int(s.stocks, 1, 5, 3);
     if(typeof s.teamKey==='string' && /^\d+(v\d+)*$/.test(s.teamKey)) SETTINGS.teamKey = s.teamKey;
     SETTINGS.mapSize = MAP_SIZES[s.mapSize] ? s.mapSize : 'normal';
