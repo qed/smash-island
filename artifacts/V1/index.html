@@ -2702,6 +2702,11 @@ function mcEnter(E, at){
   const M = MCAVE; if(!M || !M.on) return;
   const F = MC_FR;
   if(F.open){ F.depth++; return; }   // one asked for inside another reuses it
+  // NOT A NUMBER: no frame round a mover at no place. Its chart was NaN, so every object charted with it came back NaN when the frame
+  // closed ("untouched" is x === its chart x, and NaN equals nothing): one bad number anywhere on the disc turned the whole match to NaN,
+  // for good -- nothing at no place is ever past the blast ring or in the core -- and the next gradient drawn at a fighter threw (the
+  // owner's screenshot, 2026-10-31: Bow's Teleport glow). Its own step runs unframed and touches nothing; nanGuard puts it right.
+  if(!(Number.isFinite(E.x) && Number.isFinite(E.y))){ nanNote(E, 'frame'); return; }
   F.open = true; F.depth = 0; F.E = E; F.serial++; F.n = 0; F.pn = 0;
   F.phi = mcTh(E.x, E.y); F.rho = Math.max(M.rhoMin || 64, mcRad(E.x, E.y)); F.th0 = F.phi;
   let far = 0; if(at && at._mcRho){ far = Math.abs(mcWrap(F.phi - at._mcPhi))*at._mcRho; F.phi = at._mcPhi; F.rho = at._mcRho; }   // (th0 stays E's own: the flight)
@@ -20449,6 +20454,7 @@ function bossRushCheck(){
   }
 }
 function beginMatchNow(){
+  nanGuard.said = false;   // (NOT A NUMBER: said once a match)
   stageGuard();   // (a locked secret stage never starts a match here; online, the host's pick stands)
   go('_none_');
   document.getElementById('hud').classList.add('active');
@@ -44524,6 +44530,49 @@ function updateSummons(){
   } finally { mcExit(); } }
   summons = summons.filter(s=> s.life>0);
 }
+// NOT A NUMBER (the owner's screenshot, 2026-10-31: "ERROR: TypeError: The provided double value is non-finite. | at drawTeleportFx", on the
+// site). A fighter at a place that is no number (NaN or Infinity: some sum somewhere divided by nothing) cannot be drawn -- a gradient at
+// it throws, and the whole picture with it, every frame it lasts (Bow's Teleport glow was the first gradient at her) -- nor hit, nor
+// followed, and it never comes back by itself. The cause was not found: about 950 teleports by CPUs, by a human on random keys and by a
+// guest online, on the Moon, Moon Caves and four other maps, never made one. So whatever does it, the end of every step puts a living
+// fighter whose place or speed is no number back where it last was a number (_okX, _okY: the last step's), standing still, and says so in
+// the console once a match, with what it was doing (window.__nanLog keeps the first 20), so the next one can be traced. A fighter that
+// never goes wrong is never touched (a replay is the same step for step).
+function nanGuard(){
+  for(const f of fighters){
+    if(f.dead) continue;
+    if(Number.isFinite(f.x) && Number.isFinite(f.y) && Number.isFinite(f.vx) && Number.isFinite(f.vy)){ f._okX = f.x; f._okY = f.y; continue; }
+    nanNote(f, 'fighter');
+    if(Number.isFinite(f._okX) && Number.isFinite(f._okY)){ f.x = f._okX; f.y = f._okY; }
+    else { const b = bases && bases.find && bases.find(q => q.team === f.team); f.x = b ? b.spawnX : WW/2; f.y = b ? b.spawnY - 40 : groundY() - f.r - 40; }
+    f.vx = 0; f.vy = 0;
+    for(const k in f){ if(typeof f[k] === 'number' && Number.isNaN(f[k])) f[k] = 0; }   // what the bad step left on it (a remembered x, a last speed: no number is ever meant to be NaN)
+    if(!Number.isFinite(f._lvy)) f._lvy = 0;
+  }
+  // ...and what else moves: a shot or an item at no place is gone (there it can only be drawn, never hit or be picked up), and a summon goes
+  // back to its last place as a fighter does (or is gone, with none)
+  const at = o => Number.isFinite(o.x) && Number.isFinite(o.y);
+  if(projectiles.some(p => !at(p))){ for(const p of projectiles) if(!at(p)) nanNote(p, 'shot'); projectiles = projectiles.filter(at); }
+  if(items.some(it => !at(it))){ for(const it of items) if(!at(it)) nanNote(it, 'item'); items = items.filter(at); }
+  let gone = false;
+  for(const s of summons){
+    if(at(s)){ s._okX = s.x; s._okY = s.y; continue; }
+    nanNote(s, 'summon');
+    if(Number.isFinite(s._okX) && Number.isFinite(s._okY)){ s.x = s._okX; s.y = s._okY; s.vx = 0; s.vy = 0; } else { s._nanGone = true; gone = true; }
+  }
+  if(gone) summons = summons.filter(s => !s._nanGone);
+}
+// What was at no place, and doing what (window.__nanLog keeps the first 20), and one line in the console a match.
+function nanNote(o, what){
+  const log = window.__nanLog || (window.__nanLog = []);
+  const row = { t:hazardT, what:what, name:o.name || o.kind || o.type || o.id || null, x:String(o.x), y:String(o.y), vx:String(o.vx), vy:String(o.vy), stage:stage && stage.id, mode:SETTINGS.mode, moon:!!(MCAVE && MCAVE.on) };
+  if(what === 'fighter' || o.stocks !== undefined){ Object.assign(row, { ctl:o.controller, tp:!!o._tp, tpT:o._tpT || 0, tpHang:o._tpHang || 0, mv:o._mv ? String(o._mv.key || o._mv.id || '?') : null,
+    gb:!!o._gb, hold:!!o._hold, held:o._heldBy, hit:o.hitstun || 0, fs:!!o._fsLock }); }
+  else { const w = o.owner != null ? o.owner : o.by; row.owner = (w && typeof w === 'object') ? w.name : w; }
+  if(log.length < 20) log.push(row);
+  if(!nanGuard.said){ nanGuard.said = true; try{ console.warn('nanGuard: something at a place that is no number, put right', JSON.stringify(row)); }catch(e){} }
+}
+nanGuard.said = false;
 function step(){
   netPlayStep();   // ONLINE: each guest's input for this step (netPlayStep), before the gate: a step not run is one no one plays
   kocTick();   // THE LAST KO: a new match starts it clean; the frames since the match was decided
@@ -45685,6 +45734,7 @@ function step(){
 
   if(RACE.active) raceTick();   // RUNNING!: the line advances, the throw is charged and flies, the hazards fall and pound (see raceTick)
   fsLockPin();   // a foe a Final Smash caught is where its row left them, whatever else pushed them this step
+  nanGuard();    // NOT A NUMBER: a fighter at a place that is no number goes back to its last one (nanGuard)
   updateCamera();
   updateHUD();
   if(SETTINGS.mode==='ctf'){ ctfStep(); if(CTUT.active) ctutTick(); }   // (the practice checks its step after the mode's own)
@@ -56459,7 +56509,12 @@ const SPECIAL_CD_SCALE = 0.8;
 // fingers, so a plain X on the ground (no arrow held: the jab, which is what a grab press looks like) waits CI_GRAB_DELAY frames
 // for C instead. Tilts and aerials keep the short wait (the owner: "2 for tilts/aerials"). C first works too: a neutral C waits
 // SPECIAL_DIR_WINDOW frames for a direction anyway, and an X landing inside that wait takes the grab and drops the pending special.
-const CI_DELAY = 2, CI_GRAB_DELAY = 5;
+// MORE LENIENT (the owner, 2026-10-31: "make the window to use grab more lenient"): that wait is 8 frames (it was 5; only the plain
+// standing jab waits it -- with an arrow held a jab is the short wait), and it runs from the X's press whether X is still down or not: a
+// quick tap let go before C lands is still half of the pair (xp), and its jab goes out at the end of the window if C never comes (it went
+// out the moment the tap was let go). C first counts let go too: a tapped neutral C still waiting for a direction takes an X pressed in
+// that wait. And a C that was half of a grab is never a special as well (cg: X let go first, C still down, it fired one).
+const CI_DELAY = 2, CI_GRAB_DELAY = 8;
 function ctrlOf(f){ return f.controller || (f.you ? "local" : "ai"); }
 function isHumanCtrl(f){ const c = ctrlOf(f); return c === "local" || c === "remote"; }
 // The fighter's moveset, or null (today's moves). MOVESETS is filled in by each batch; a fighter without an entry is "not yet converted".
@@ -56472,20 +56527,27 @@ function comboInput(f, inp){
   const x = !!inp.attack, cc = !!inp.special, v = !!inp.smash;
   const px = c.x, pv = c.v;   // how long X and V had been down as of the last frame
   if((x && px === 0) || (v && pv === 0)) c.dir = { left:!!inp.left, right:!!inp.right, jump:!!inp.jump, up:!!inp.up, down:!!inp.down };   // the arrows held as the press began
-  if(x && px === 0) c.xd = (f.onground && !inp.left && !inp.right && !inp.jump && !inp.up && !inp.down) ? CI_GRAB_DELAY : CI_DELAY;   // a plain X on the ground waits longer for C
+  if(x && px === 0){ c.xd = (f.onground && !inp.left && !inp.right && !inp.jump && !inp.up && !inp.down) ? CI_GRAB_DELAY : CI_DELAY; c.xt = 0; c.xp = false; }   // a plain X on the ground waits longer for C (xt: frames since the press)
+  else if(c.xt != null) c.xt++;
   const xd = c.xd || CI_DELAY;
   c.x = x ? px + 1 : 0; c.c = cc ? c.c + 1 : 0; c.v = v ? pv + 1 : 0;
-  // a press that came and went inside the window (a quick tap, or one latched online between two frames) still counts, on release
-  const xTap = !x && px > 0 && px < xd && !c.xUsed, vTap = !v && pv > 0 && pv < CI_DELAY && !c.vUsed;
+  // a press that came and went inside the window (a quick tap, or one latched online between two frames) still counts: on release -- or, the
+  // plain X on the ground, at the end of its window if C has not joined it by then (xp: let go, still half of a grab: THE GRAB WINDOW)
+  const xRel = !x && px > 0 && px < xd && !c.xUsed, vTap = !v && pv > 0 && pv < CI_DELAY && !c.vUsed;
+  if(xRel && xd === CI_GRAB_DELAY) c.xp = true;
+  let xTap = xRel && xd !== CI_GRAB_DELAY;
   if(!x) c.xUsed = false;
   if(!v) c.vUsed = false;
-  if(!(x && cc)) c.grab = false;
+  if(!cc) c.cg = false;
+  if(!((x || c.xp) && cc)) c.grab = false;
   if(!(v && cc)) c.fin = false;
   inp.grab = false; inp.fin = false;
+  const cPend = !cc && x && px === 0 && f.onground && f._spPend > 0;   // C tapped first: its neutral special still waits for a direction (SPECIAL_DIR_WINDOW), and X lands in that wait
   if(v && cc && !x){ if(!c.fin){ c.fin = true; c.vUsed = true; inp.fin = true; if(f._smQ && f.smashHold < 8){ f._smQ = null; f.smashHold = 0; } f._smBuf = false; } }
-  else if(x && cc && !v){ if(!c.grab){ c.grab = true; c.xUsed = true; inp.grab = true; } }
+  else if((x || c.xp) && (cc || cPend) && !v){ if(!c.grab){ c.grab = true; c.xUsed = true; c.xp = false; if(cc) c.cg = true; inp.grab = true; } }
+  if(c.xp && c.xt >= xd - 1){ c.xp = false; xTap = true; }   // the window ran out with no C: the tap is the jab, when a held X's would have gone out
   inp.attack = (x && c.x >= xd && !c.grab && !cc) || xTap;
-  inp.special = cc && !c.grab && !c.fin && !x && !v;
+  inp.special = cc && !c.grab && !c.cg && !c.fin && !x && !v;   // (cg: this C was half of a grab)
   inp.smash = (v && c.v >= CI_DELAY && !cc && !c.fin && !c.vUsed) || vTap;   // (vUsed: this V was half of a V+C finisher; letting C up first does not turn it into a smash)
   if((xTap || vTap) && c.dir){ const d = c.dir; inp.left = inp.left || d.left; inp.right = inp.right || d.right; inp.jump = inp.jump || d.jump; inp.up = inp.up || d.up; inp.down = inp.down || d.down; }   // a press that came and went keeps the arrows it was made with
   // X or V down this frame but still held back for C (not yet the attack or the smash, and not half of a grab or a finisher): an arrow
@@ -66789,6 +66851,9 @@ function cpuSeeSwap(o, F, row, saved){
   for(let k = 0; k < F.length; k++){
     const key = F[k], v = mc && k < 2 ? (k === 0 ? mx : my) : row[k], cur = o[key];
     if(v === cur) continue;
+    // NOT A NUMBER: a number it saw as no number is not written on it. Seen for a few frames after a bad one (nanGuard puts the real one
+    // right), it went back into the real place: on Moon Caves a frame closing round a body at no place writes no number back (mcEnter)
+    if(typeof v === 'number' && !Number.isFinite(v)) continue;
     saved.push(o, key, cur, Object.prototype.hasOwnProperty.call(o, key));
     o[key] = v;
   }
@@ -68832,7 +68897,7 @@ function drawSummon(s){
 const HOOK_FX_FRAMES = 16, HEAT_FX_FRAMES = 22;
 function drawKitFx(layer){
   for(const f of fighters){
-    if(f.dead) continue;
+    if(f.dead || !Number.isFinite(f.x) || !Number.isFinite(f.y)) continue;   // (NOT A NUMBER: nothing is drawn at a place that is no number -- a gradient there throws, and the picture with it: nanGuard)
     if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); try { drawKitFxOf(f, layer); } finally { ctx.restore(); } continue; }   // MOON CAVES: upright round the fighter
     drawKitFxOf(f, layer);
   }
@@ -68860,6 +68925,7 @@ function drawKitFxOf(f, layer){
 // she appears, the sim's own puffs burst pink and white.
 function drawTeleportFx(f, layer){
   const t = hazardT, k = 1 - Math.min(1, f._tpT/TP.vanish);   // 0 at the press, 1 as she goes
+  if(!(Number.isFinite(k) && Number.isFinite(f.r) && f.r > 0)) return;   // (NOT A NUMBER: the owner's screenshot, 2026-10-31 -- the glow's gradient threw here, on the site)
   ctx.save();
   if(layer !== 'over'){
     const R = f.r*(2.1 - 1.1*k), g = ctx.createRadialGradient(f.x, f.y, f.r*0.2, f.x, f.y, R);
@@ -79541,8 +79607,9 @@ function netPredict(now){
   // platform here and off it there, and a guest's own fighter jumped 185-192 px on its screen, a couple of times in 5 s in Moon Caves' strips.
   // The host plays a key the step it arrives, so those differences are real; they now ease in like every smaller one, at `ease` a frame, and
   // only a gap too big to be one -- a discontinuity -- is a cut.)
-  if(Math.abs(S.ox) + Math.abs(S.oy) > S.snap){ S.ox = 0; S.oy = 0; }
+  if(!(Math.abs(S.ox) + Math.abs(S.oy) <= S.snap)){ S.ox = 0; S.oy = 0; }   // (written so an offset that is no number goes too: NaN fails every test, so it was never eased away or cut -- NOT A NUMBER)
   me.x = bx + S.ox; me.y = by + S.oy;
+  if(!(Number.isFinite(me.x) && Number.isFinite(me.y))){ me.x = me._gx; me.y = me._gy; S.ox = 0; S.oy = 0; S.mode = 0; S.auth = null; }   // a prediction that came out no number: where the glide has it
   if(P){ me.face = P.face; me.vx = P.vx; me.vy = P.vy; me.onground = P.g; }   // (the run cycle, the lean, the jump stretch)
   // (THE LAST KO: through the slow-mo KO and a Final Smash's intro the gap from running ahead is held, not eased out -- eased out against a
   // match moving at a quarter speed, or not at all, it slid the fighter back to where the host had it, 16 px a frame at 50 ms; a hit's is still eased)
