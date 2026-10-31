@@ -2779,15 +2779,45 @@ function mcRoute(f, t){
     const c = Math.abs(mcWrap(h.a - thF))*rf + Math.abs(mcWrap(thT - h.a))*rt;
     if(c < bc){ bc = c; best = h; }
   }
-  return best ? { up:up, x:M.cx + F.rho*mcWrap(best.a - F.phi), upperY:M.cy - M.tops[band], gap:Math.abs(Lt - Lf) } : null;
+  return best ? { up:up, x:M.cx + F.rho*mcWrap(best.a - F.phi), upperY:M.cy - M.tops[band], lowY:M.cy - M.tops[band + 1], gap:Math.abs(Lt - Lf), hole:best } : null;
 }
 function mcOnOneWay(f){ const feet = f.y + f.r; for(const p of platRects()) if(!p.solid && !p.rot && f.x > p.x && f.x < p.x + p.w && Math.abs(p.y - feet) < 4) return true; return false; }
+// UP BY THE HOLE'S OWN STEPS, one after another (R.hole.steps, lowest first), then onto the floor above. The climb used to be steerClimb's
+// toward the floor above, and navUp takes the nearest step in reach anywhere: by a hole next to its own strip that was the lift's, the route
+// pulled back to the hole, and the CPU swung between the two at the hand-over, 45 s on one step (20 a side, out of the shell). In the air
+// it keeps the step it jumped for (navUp's own lesson: re-picked by height, the next one up won the moment the feet rose level, and it
+// swung off the step it was landing on).
 function mcRouteSteer(f, inp, R, sp){
   const dx = R.x - f.x;
   if(!R.up && f.onground && mcOnOneWay(f) && mcDropOk(f, f.x)){ inp.down = true; inp.jump = true; return; }   // down, on a step (the top one sits in a hole's mouth, walled in): through it
-  if(!R.up || Math.abs(dx) > 160){ if(Math.abs(dx) > 8){ inp.left = dx < 0; inp.right = dx > 0; } return; }   // down: into the hole and through its steps
-  const climbing = steerClimb(f, { x:R.x, y:R.upperY - (f.r || 24), r:f.r }, inp);   // up: its steps, then the floor above
-  if(!climbing && !f.onground && f.jumps <= 0 && f.spCd <= 0 && sp !== 'chair'){ inp.special = true; inp.up = true; }
+  if(!R.up){ if(Math.abs(dx) > 8){ inp.left = dx < 0; inp.right = dx > 0; } return; }   // down: into the hole and through its steps
+  const M = MCAVE, F = MC_FR, h = R.hole, feet = M.cy - (f.y + f.r), S = f._mcStep;
+  let k = (S && S.h === h && !f.onground && hazardT - S.t < 90 && feet > h.steps[S.k].r - 160) ? S.k : h.steps.findIndex(s => s.r > feet + 20);
+  if(k < 0){   // on the top step (in the hole's mouth): up onto the floor beside it
+    f._mcStep = null;
+    const climbing = steerClimb(f, { x:R.x, y:R.upperY - (f.r || 24), r:f.r }, inp);
+    if(!climbing && !f.onground && f.jumps <= 0 && f.spCd <= 0 && sp !== 'chair'){ inp.special = true; inp.up = true; }
+    return;
+  }
+  const s = h.steps[k], cx = a => M.cx + F.rho*mcWrap(a - F.phi), xL = cx(s.a0), xR = cx(s.a1);
+  if(f.onground) f._mcStep = { h:h, k:k, t:hazardT };
+  // (in the air: the step's middle, and where its speed is taking it -- aimed at the nearest point, it let go of the keys once over the step,
+  // and the speed it had carried it off the end before it came down: 30 a side, 27 s at its own lift)
+  let aim = !f.onground ? (xL + xR)/2 : f.x < xL + 12 ? xL + 12 : f.x > xR - 12 ? xR - 12 : f.x;
+  const gap = f.x < xL ? xL - f.x : f.x > xR ? f.x - xR : 0;   // how far the step is to the side
+  // The top step sits in the hole's mouth, rock round it: it is jumped for from under the opening only (hw: the opening's half, less a body).
+  const top = k === h.steps.length - 1, hw = F.rho*(h.w/2)/h.r - (f.r || 24) - 4, under = Math.abs(f.x - R.x) <= hw;
+  if(f.onground){
+    if(top && !under) aim = R.x + Math.sign(f.x - R.x)*Math.max(0, hw - 8);
+    // ...and standing on the step below it, it waits at that step's end for the jump (the hands take up to 10 frames to press it: it walked off)
+    const below = k > 0 ? h.steps[k - 1] : null;
+    if(below && Math.abs(feet - below.r) < 8){ const bL = cx(below.a0) + 10, bR = cx(below.a1) - 10; aim = Math.max(bL, Math.min(bR, aim)); }
+  }
+  const d = aim - (f.onground ? f.x : f.x + (f.vx || 0)*10);
+  if(Math.abs(d) > 6){ inp.left = d < 0; inp.right = d > 0; }
+  if(f.onground){ if(gap <= CLIMB_REACH && feet < s.r && (!top || under)) inp.jump = true; }   // (in the air the aim is the step itself)
+  else if(feet < s.r - 4 && climbJump(f)) inp.jump = true;
+  else if(feet < s.r - 60 && f.vy > 0 && f.jumps <= 0 && f.spCd <= 0 && sp !== 'chair'){ inp.special = true; inp.up = true; }
 }
 // A drop is only over something: under the shell's cracks there is nothing but the core (the pit sense; standAt reads the charted pieces).
 function mcDropOk(f, x){ return !(MCAVE && MCAVE.on) || standAt(x, f.y + f.r + 20); }
@@ -65410,8 +65440,11 @@ function aiThink(f){
   else {
     if(focus && (!f.aiTarget || f.aiTarget.dead || f.aiTimer<=0 || wentHome())){ f.aiTarget=focus; f.aiTimer=brainR(L.target); }
     if(!f.aiTarget||f.aiTarget.dead||f.aiTarget.team===f.team||f.aiTimer<=0||wentHome()||f.aiTarget._isBoss){
-      let best=1e9; f.aiTarget=focus||pickFrom[0];
+      let best=1e9; const cur=f.aiTarget; f.aiTarget=focus||pickFrom[0];
       if(!focus) for(const t of pickFrom){ const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;f.aiTarget=t;} }
+      // MOON CAVES: the foe it is after stays its foe until another is clearly nearer. Foes come from both ways round the ring, and the nearest
+      // changed every second or two as they moved: at 10 a side a CPU turned round each time, and three spent a whole minute far from everyone.
+      if(MCAVE && MCAVE.on && !focus && cur && cur!==f.aiTarget && !cur.dead && cur.team!==f.team && pickFrom.includes(cur) && best > 0.7*Math.hypot(cur.x-f.x,cur.y-f.y) - 150) f.aiTarget=cur;
       f.aiTimer=brainR(L.target);
     }
   }
@@ -65445,7 +65478,7 @@ function aiThink(f){
   // maps, say): as a person would, it tries something else -- another foe for a while if there is one, and a run the other way first.
   // (MOON CAVES: on a route to another layer the way can lead away from the foe first -- at 16 a side and more, out of the deepest cave only
   // by its own strip's lift -- so there the progress is along the route: nearer the passage, and a layer nearer the foe, 1000 px each.)
-  const mcR = MCAVE && MCAVE.on && !t._isBoss ? mcRoute(f, t) : null, prog = mcR ? Math.abs(mcR.x - f.x) + 1000*mcR.gap : dist;
+  const mcR = MCAVE && MCAVE.on && !t._isBoss ? mcRoute(f, t) : null, prog = mcR ? Math.abs(mcR.x - f.x) + 1000*mcR.gap - (mcR.up ? Math.max(0, mcR.lowY - (f.y + f.r)) : 0) : dist;
   if((dist > 300 || mcR) && !t._isBoss){
     if(B.progD == null || prog < B.progD - 100){ B.progD = prog; B.progT = now; }
     else if(now - B.progT > 240){
