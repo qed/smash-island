@@ -417,6 +417,10 @@
   .stdot{width:11px; height:11px; border-radius:4px; border:1px solid #1c1c1c; flex:none}
   .stname{color:#fff; font-weight:600; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .ststk{color:#cfcfe0; font-weight:700}
+  .standings.compact{width:auto; display:flex; gap:12px; align-items:center; padding:3px 9px; font-size:12px}
+  .stteam{display:flex; align-items:center; gap:5px}
+  .stteam.leader .ststk{color:#ffd23f}
+  .stteam.self .stdot{outline:2px solid #ffd23f}
   #hud.active{display:block}
   .hudbar{position:absolute; top:0; left:0; right:0; min-height:64px; max-height:128px;
     background:linear-gradient(#1c1c1cdd,#1c1c1c00); display:flex; gap:5px; flex-wrap:wrap;
@@ -428,6 +432,13 @@
   .pcard .pct{font-family:'JetBrains Mono',monospace; font-weight:700; font-size:16px; line-height:1}
   .pcard .stk{font-size:8px; color:#c0392b; letter-spacing:1px}
   .pcard.you{outline:3px solid var(--gold)}
+  /* MOON CAVES (M7): 21 to 30 cards -- compact, two rows of 15 */
+  .hudbar.many{max-height:150px; gap:3px; padding:4px 6px}
+  .hudbar.many .pcard{flex:1 1 0; min-width:0; max-width:84px; padding:1px 3px 2px; border-radius:7px}
+  .hudbar.many .hudbreak{flex-basis:100%; height:0}
+  .hudbar.many .pcard .nm{font-size:8px; max-width:44px}
+  .hudbar.many .pcard .pct{font-size:12px}
+  .hudbar.many .pcard .stk{font-size:7px; letter-spacing:0}
   .tut-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;width:100%;max-width:620px;margin:16px auto 4px;box-sizing:border-box}
   .tut-card{background:rgba(255,255,255,0.72);border:3px solid #1c1c1c;border-radius:12px;padding:10px;text-align:center}
   .tut-key{font-weight:800;font-size:20px;color:#b4460f}
@@ -2553,12 +2564,19 @@ function syncPrizeRoster(announce){
 // ---------- STADIUMS ----------
 // ---- MOON CAVES: groundwork (M0) ----------------------------------------------------------------------------------------------
 // The round map with gravity toward its middle (reports/moon-caves-design.md). Nothing here runs on any other map: MCAVE is null
-// outside a Moon Caves match, every hook asks it first, and mcEnter/mcExit return at once. Released 2026-10-30: it unlocks with The Moon,
-// Teams only (stageOpen).
+// outside a Moon Caves match, every hook asks it first, and mcEnter/mcExit return at once. It is built in steps, each hidden behind
+// MCAVE_DEV (off for everyone; localStorage 'bfsi:mcavedev' = '1' turns it on in one browser) until the release step (M8). It was
+// released by mistake on 2026-10-30 with only M0-M1 built and hidden again the same day (the owner: "the moon is not what it was described as");
+// M2 (the real map, sized by the players, with its safe strips and KOs) on 2026-10-31.
 // Positions (x, y) are real between frames. On this map velocities are stored local to the body: vx along the ground (clockwise
 // positive), vy toward the centre (positive down). Each moving thing's own update runs inside its CHART: the disc laid flat round it,
 // height = radius (y' = cy - r) and left/right = distance along the ground at its own radius (x' = cx + rho*(th - phi)). Its down is
 // +y there, every ring piece is a box and every spoke face a wall, so the engine's code runs unchanged. th is clockwise from 12 o'clock.
+const MCAVE_DEV = (function(){ try{ return localStorage.getItem('bfsi:mcavedev') === '1'; }catch(e){ return false; } })();
+// THE RELEASE (M8): true opens Moon Caves to everyone, a Teams stage that unlocks with The Moon (once One is beaten: the stage's secret),
+// its line on One's reward card. A release is the owner's call (2026-10-30: the M1 sandbox went out by mistake and was hidden again):
+// RELEASED 2026-10-31 (the owner, of "say 'release Moon Caves' and I'll flip the switch": "do 3"). False hides it again.
+const MCAVE_OPEN = true;
 let MCAVE = null;   // { on:true, cx, cy, ... } in a Moon Caves match; null everywhere else (only its builder sets it; setupWorld clears it)
 let camAng = 0;     // the view's turn on Moon Caves, radians (0 everywhere else)
 const MC_TAU = 2*Math.PI;
@@ -2566,7 +2584,8 @@ function mcWrap(a){ a = (a + Math.PI) % MC_TAU; if(a < 0) a += MC_TAU; return a 
 function mcTh(x, y){ return Math.atan2(x - MCAVE.cx, -(y - MCAVE.cy)); }   // a real point's angle, clockwise from 12 o'clock
 function mcRad(x, y){ return Math.hypot(x - MCAVE.cx, y - MCAVE.cy); }
 // The open frame (one at a time: frames never nest). Its owner E sits at (cx, cy - rho) in its own chart.
-const MC_FR = { open:false, depth:0, E:null, serial:0, phi:0, rho:1, th0:0, n:0, o:[], wx:[], wy:[], cx:[], cy:[], wp:null, pa:null, np:0 };
+const MC_FR = { open:false, depth:0, E:null, serial:0, phi:0, rho:1, th0:0, n:0, o:[], wx:[], wy:[], cx:[], cy:[], wp:null, pa:null, np:0,
+                pn:0, pv:[], pb:[], pe:[] };   // (pv, pb, pe: the remembered points, M3)
 const MC_PT = { x:0, y:0 }, MC_LISTS = [];
 // A real point into the open frame's chart, and back (written into `out`: a frame allocates nothing per object).
 function mcToChart(x, y, out){ const M = MCAVE, F = MC_FR; out.x = M.cx + F.rho*mcWrap(mcTh(x, y) - F.phi); out.y = M.cy - mcRad(x, y); return out; }
@@ -2584,9 +2603,22 @@ function mcPieceBoxes(seg, out){
 // A wall's id on this map: its side and its face's angle (a face's place in a chart moves as the chart does). step() and the guest's
 // prediction (netPredRun) use it in place of the face's x.
 function mcWallId(side, p, left){ return side + ':m' + Math.round((left ? p.mcA0 : p.mcA1)*1e4); }
-// The objects charted with a frame: read and written by the code inside it. (Kit-made platforms -- FX_PLATS, FILE_RIDES, SPONGY_PLATS --
-// are charted with the terrain on this map.)
-function mcLists(){ const L = MC_LISTS; L[0] = fighters; L[1] = projectiles; L[2] = summons; L[3] = items; L[4] = FINX; L[5] = tendrils; L[6] = CP_BITS; return L; }
+// The objects charted with a frame: read and written by the code inside it. Kit-made platforms (FX_PLATS, FILE_RIDES, SPONGY_PLATS: a
+// box, charted at its corner) are charted with them, and platRects joins them to the pieces; so is the Smash Ball, which a swing tests
+// in its chart (M3).
+const MC_BALL = [];
+function mcLists(){ const L = MC_LISTS; L[0] = fighters; L[1] = projectiles; L[2] = summons; L[3] = items; L[4] = FINX; L[5] = tendrils; L[6] = CP_BITS;
+  L[7] = FX_PLATS; L[8] = FILE_RIDES; L[9] = SPONGY_PLATS; MC_BALL.length = 0; if(SMASHBALL) MC_BALL.push(SMASHBALL); L[10] = MC_BALL; return L; }
+// REMEMBERED POINTS (M3; the design's section 2.3): x/y pairs a mover keeps between frames -- where a warned shot comes down, where an arm
+// began, where a cast was made, a summon's aim and start, a split's anchor, a Final Smash's pin, a crush's or a pull's mark -- are kept in
+// real places and charted in and out with it, exactly as its position is (a pair untouched in the frame goes back bit for bit).
+const MC_PAIRS = [['warnX','warnY'], ['armX0','armY0'], ['_castX','_castY'], ['_aimX','_aimY'], ['_x0','_y0'], ['fsAx','fsAy'], ['fsBx','fsBy'], ['fsCx','fsCy']];
+const MC_SUBS = [['_nsplit','x','y'], ['_fsLock','x','y'], ['_mtCrushFx','x','y'], ['_attractFx','tx','ty'], ['_visOrigin','x','y'], ['_fs','px','py']];
+const MC_NPT = MC_PAIRS.length + MC_SUBS.length;
+// [the sub-object's key (null: the object itself), x's key, y's key] for each remembered point, made once (mcSwapIn, mcPairsOut: at 30 fighters
+// the pairs were 20 ms of a 75 ms step, most of it two little arrays made for every object at every frame's entry and exit by the helpers
+// that looked them up, mcPairOf and mcPairKeys, which this replaces)
+const MC_PTK = MC_PAIRS.map(p => [null, p[0], p[1]]).concat(MC_SUBS.map(s => [s[0], s[1], s[2]]));
 function mcSwapIn(o){
   const F = MC_FR;
   if(!o || o._mcS === F.serial || typeof o.x !== 'number') return;
@@ -2595,18 +2627,88 @@ function mcSwapIn(o){
   F.o[i] = o; F.wx[i] = o.x; F.wy[i] = o.y;
   mcToChart(o.x, o.y, MC_PT); o.x = MC_PT.x; o.y = MC_PT.y;
   F.cx[i] = o.x; F.cy[i] = o.y;
+  F.pb[i] = F.pn;   // its remembered points: kept as [j, real x, real y, chart x, chart y] from pb[i] on
+  for(let j = 0; j < MC_NPT; j++){
+    const K = MC_PTK[j], q = K[0] === null ? o : o[K[0]];
+    if(!q || typeof q !== 'object') continue;
+    const x = q[K[1]]; if(typeof x !== 'number') continue;
+    const y = q[K[2]]; if(typeof y !== 'number') continue;
+    mcToChart(x, y, MC_PT); q[K[1]] = MC_PT.x; q[K[2]] = MC_PT.y;
+    const b = F.pn*5; F.pv[b] = j; F.pv[b + 1] = x; F.pv[b + 2] = y; F.pv[b + 3] = MC_PT.x; F.pv[b + 4] = MC_PT.y; F.pn++;
+  }
+  F.pe[i] = F.pn;
+}
+// At the exit, an object's remembered points back to real places: one untouched since it was charted goes back bit for bit; one set or
+// moved in the frame (or on an object made in it: from = to = 0) is turned from the chart.
+function mcPairsOut(o, from, to){
+  const F = MC_FR, P = MC_PT;
+  for(let j = 0; j < MC_NPT; j++){
+    const K = MC_PTK[j], q = K[0] === null ? o : o[K[0]];
+    if(!q || typeof q !== 'object') continue;
+    const x = q[K[1]]; if(typeof x !== 'number') continue;
+    const y = q[K[2]]; if(typeof y !== 'number') continue;
+    let done = false;
+    for(let s = from; s < to; s++){ const b = s*5; if(F.pv[b] !== j) continue;
+      if(x === F.pv[b + 3] && y === F.pv[b + 4]){ q[K[1]] = F.pv[b + 1]; q[K[2]] = F.pv[b + 2]; done = true; } break; }
+    if(!done){ mcFromChart(x, y, P); q[K[1]] = P.x; q[K[2]] = P.y; }
+  }
+}
+// THE MARKS A FRAME LEAVES (M3; section 2.3's append-only lists): what a frame records in its chart -- hit art, an impact's dust, debris and
+// scar, a KO's burst, a beam, the hitbox view -- is turned into real places as it closes (a fan's angles turned with it, a box or a cut the
+// outline it is, a mote's or a chip's speed turned to world directions; a beam keeps its arc: {r, a0, a1}), so drawing and the snapshot
+// need no frame. What was recorded outside any frame is real already: as a frame opens every entry is marked (_w; hit art: the shape it
+// holds), and only what is unmarked as it closes is turned.
+function mcFxLists(){ return [IMPACT_DUST, IMPACT_DEBRIS, IMPACT_SCARS, IMPACT_OUT, COS_KO_FX, COS_KO_OUT, DEBUG_HITS, beams]; }
+function mcFxMark(){
+  for(const L of mcFxLists()) for(let i = 0; i < L.length; i++){ const q = L[i]; if(q && !q._w) q._w = 1; }
+  for(let i = 0; i < HIT_ART.length; i++){ const q = HIT_ART[i]; if(q.sh !== q._wsh) q._wsh = q.sh; }
+}
+function mcFxPt(q, kx, ky){ const P = mcFromChart(q[kx], q[ky], MC_PT); q[kx] = P.x; q[ky] = P.y; }
+function mcFxTh(x){ return MC_FR.phi + (x - MCAVE.cx)/MC_FR.rho; }   // the turn at a chart x: a chart direction there is this much round in the world
+function mcFxV(q, kx, ky, th){ const c = Math.cos(th), s = Math.sin(th), vx = q[kx] || 0, vy = q[ky] || 0; q[kx] = vx*c - vy*s; q[ky] = vx*s + vy*c; }
+function mcFxPts(p){ const P = MC_PT; for(let i = 0; i + 1 < p.length; i += 2){ mcFromChart(p[i], p[i + 1], P); p[i] = P.x; p[i + 1] = P.y; } return p; }
+function mcArtShape(sh){
+  switch(sh.kind){
+    case 'circle': mcFxPt(sh, 'x', 'y'); return sh;
+    case 'capsule': mcFxPt(sh, 'x1', 'y1'); mcFxPt(sh, 'x2', 'y2'); return sh;
+    case 'fan': { const th = mcFxTh(sh.cx); mcFxPt(sh, 'cx', 'cy'); const d = sh.face < 0 ? -th : th; sh.a0 += d; sh.a1 += d; return sh; }   // (drawn mirrored when it faces left: the turn goes the other way there)
+    case 'box': return { kind:'poly', pts:mcFxPts([sh.x, sh.y, sh.x + sh.w, sh.y, sh.x + sh.w, sh.y + sh.h, sh.x, sh.y + sh.h]) };
+    case 'cut': return { kind:'poly', pts:mcFxPts(haCutPts(sh)) };
+    case 'poly': sh.pts = mcFxPts(sh.pts.slice()); return sh;
+  }
+  return sh;
+}
+function mcFxTurn(){
+  const M = MCAVE, F = MC_FR;
+  for(const q of IMPACT_DUST) if(!q._w){ q._w = 1; const th = mcFxTh(q.x); mcFxPt(q, 'x', 'y'); mcFxV(q, 'vx', 'vy', th); }
+  for(const q of IMPACT_DEBRIS) if(!q._w){ q._w = 1; const th = mcFxTh(q.x); mcFxPt(q, 'x', 'y'); mcFxV(q, 'vx', 'vy', th); q.rot = (q.rot || 0) + th; }
+  for(const q of IMPACT_SCARS) if(!q._w){ q._w = 1; q.rot = mcFxTh(q.x); mcFxPt(q, 'x', 'y'); }   // (a scar lies along its floor: rot, for its drawing)
+  for(const q of IMPACT_OUT) if(q && !q._w){ q._w = 1; if(typeof q[0] === 'number'){ q[9] = mcFxTh(q[0]); const P = mcFromChart(q[0], q[1], MC_PT); q[0] = P.x; q[1] = P.y; } }
+  for(const q of COS_KO_FX) if(!q._w){ q._w = 1; mcFxPt(q, 'x', 'y'); }
+  for(const q of COS_KO_OUT) if(q && !q._w){ q._w = 1; const P = mcFromChart(q[0], q[1], MC_PT); q[0] = Math.round(P.x); q[1] = Math.round(P.y); }
+  for(const q of DEBUG_HITS) if(!q._w){ q._w = 1; if(typeof q.x === 'number') mcFxPt(q, 'x', 'y'); if(Array.isArray(q.pts)) q.pts = mcFxPts(q.pts.slice()); q.shape = null; }
+  for(const q of beams) if(!q._w){ q._w = 1; q.mc = { r:M.cy - q.y, a0:mcFxTh(q.x0), a1:mcFxTh(q.x1) }; }   // (its arc round the curve)
+  for(const q of HIT_ART){
+    if(q.sh === q._wsh) continue;
+    q.sh = mcArtShape(q.sh); q._wsh = q.sh;
+    if(typeof q.ox === 'number'){ const P = mcFromChart(q.ox, q.oy, MC_PT); q.ox = P.x; q.oy = P.y; }
+    if(q.sw){ const P = mcFromChart(q.sw[0], q.sw[1], MC_PT); q.sw = [P.x, P.y, q.sw[2], q.sw[3]]; }
+  }
 }
 // E's frame in: every listed object to E's chart, and the terrain to E's window of pieces. Out (always, from a finally): every object
-// back to real coordinates -- untouched ones bit for bit, moved ones from the chart, ones put at a real point (mcPlace) left be.
-function mcEnter(E){
+// back to real coordinates -- untouched ones bit for bit, moved ones from the chart, ones put at a real point (mcPlace) left be. AT, a
+// finisher's record (finxStep), opens the chart the record was made in instead of E's own (mcAnchor), with the window out to E.
+function mcEnter(E, at){
   const M = MCAVE; if(!M || !M.on) return;
   const F = MC_FR;
   if(F.open){ F.depth++; return; }   // one asked for inside another reuses it
-  F.open = true; F.depth = 0; F.E = E; F.serial++; F.n = 0;
+  F.open = true; F.depth = 0; F.E = E; F.serial++; F.n = 0; F.pn = 0;
   F.phi = mcTh(E.x, E.y); F.rho = Math.max(M.rhoMin || 64, mcRad(E.x, E.y)); F.th0 = F.phi;
+  let far = 0; if(at && at._mcRho){ far = Math.abs(mcWrap(F.phi - at._mcPhi))*at._mcRho; F.phi = at._mcPhi; F.rho = at._mcRho; }   // (th0 stays E's own: the flight)
+  mcFxMark();   // (what was recorded outside any frame is real)
   mcSwapIn(E);
   const L = mcLists(); for(let k = 0; k < L.length; k++){ const a = L[k]; for(let j = 0; j < a.length; j++) mcSwapIn(a[j]); }
-  F.wp = worldPlats; if(M.window) worldPlats = M.window(F.phi, F.rho, E);   // the terrain round E, as boxes in its chart
+  F.wp = worldPlats; if(M.window) worldPlats = M.window(F.phi, F.rho, E, far);   // the terrain round E, as boxes in its chart
   F.pa = particles; F.np = particles.length;   // (the particles made in the frame are made in its chart)
 }
 function mcExit(){
@@ -2616,6 +2718,7 @@ function mcExit(){
   const s = F.serial, P = MC_PT;
   for(let i = 0; i < F.n; i++){
     const o = F.o[i]; F.o[i] = null;
+    mcPairsOut(o, F.pb[i], F.pe[i]);   // its remembered points (M3)
     if(o._mcPlaced === s) continue;                                                       // put at a real point (mcPlace)
     if(o.x === F.cx[i] && o.y === F.cy[i]){ o.x = F.wx[i]; o.y = F.wy[i]; continue; }   // untouched: its real place, bit for bit
     mcFromChart(o.x, o.y, P); o.x = P.x; o.y = P.y;                                        // moved: E itself, a push, a grab, a throw
@@ -2623,7 +2726,7 @@ function mcExit(){
   const L = mcLists();
   for(let k = 0; k < L.length; k++){ const a = L[k]; for(let j = 0; j < a.length; j++){ const o = a[j];
     if(!o || o._mcS === s || o._mcPlaced === s || typeof o.x !== 'number') continue;
-    o._mcS = s; mcFromChart(o.x, o.y, P); o.x = P.x; o.y = P.y; } }                       // made during the frame, in its chart
+    o._mcS = s; mcFromChart(o.x, o.y, P); o.x = P.x; o.y = P.y; mcPairsOut(o, 0, 0); } }   // made during the frame, in its chart (its points too)
   // THE FLIGHT (the owner, 2026-10-29: a hard sideways hit on the surface carries someone off the curve, out into space). E airborne in
   // hitstun keeps its real direction -- its local speed turned back by the angle it went round in the frame -- so a launch flies straight in
   // real space and rises off the curve. Grounded bodies and shots never get this: a run follows the floor and a shot follows the curve.
@@ -2638,68 +2741,474 @@ function mcExit(){
     const th = F.phi + (p.x - M.cx)/F.rho, c = Math.cos(th), sn = Math.sin(th), vx = p.vx || 0, vy = p.vy || 0;
     mcFromChart(p.x, p.y, P); p.x = P.x; p.y = P.y; p.vx = vx*c - vy*sn; p.vy = vx*sn + vy*c; }
   F.pa = null;
+  mcFxTurn();   // the marks it left, to real places (M3)
   worldPlats = F.wp; F.wp = null;
   F.open = false; F.E = null;
 }
+// A summon's floor on this map (updateSummons, in its frame): the first surface under its middle -- the sweep found Pepper and every
+// assist snapped up to groundY(), the surface's height in every chart, from a cave each frame -- or, over a crack with nothing under it,
+// a floor it never reaches: it falls into the core and is gone there.
+function mcSummonFloor(s){ const t = surfaceBelow(s.x, s.y); return t !== null ? t : MCAVE.cy + 1e6; }
+// ---- MOON CAVES: the CPU (M5). The brain runs in the CPU's own chart, so most of it is right as it is; these are what is not. ----
+// THE WAY ROUND: a foe more than ~110 degrees round the ring is about as near either way, and the shortest way is a coin toss. With the two
+// strips facing each other at 3 and 9 o'clock both teams' CPUs took the same way round and chased each other's backs (M2's watch). So a far
+// foe is gone after the way the team's even slots go, over 12 o'clock, and its odd slots, under 6: the two sides meet there. (A copy of the
+// foe where it is the other way round, a lap's chart width off: everything downstream steers by it.)
+// The way is the one that passes the mark, chosen once for that foe (B.way): chosen afresh each frame, a CPU crossing 12 o'clock turned round
+// there (the mark was then behind it), and 12 o'clock held it.
+const MC_WAY_FAR = 0.6*Math.PI;
+function mcWayTarget(f, t, B, ts){
+  if(!MC_FR.open) return t;
+  const rho = MC_FR.rho, dx = t.x - f.x;
+  if(Math.abs(dx) <= MC_WAY_FAR*rho){ B.way = null; return t; }
+  let want;
+  if(B.way && B.way.tgt === ts) want = B.way.dir;
+  else {
+    const th = MC_FR.phi + (f.x - MCAVE.cx)/rho, cw = ((dx/rho) % MC_TAU + MC_TAU) % MC_TAU;   // the clockwise turn from it to the foe
+    const mark = teamSlotOf(f) % 2 === 0 ? 0 : Math.PI, toMark = ((mark - th) % MC_TAU + MC_TAU) % MC_TAU;
+    want = toMark < cw ? 1 : -1;   // clockwise if that way passes the mark, else the other
+    B.way = { tgt:ts, dir:want };
+  }
+  if(Math.sign(dx) === want) return t;
+  return Object.assign(Object.create(t), { x: t.x - Math.sign(dx)*MC_TAU*rho });
+}
+// ROUTES: a fighter's layer from its feet (0 the surface, 1.. the caves, K the shell, K+1 under it). A foe on another layer is gone after
+// through the passage that makes the shortest way -- a hole in the band between the two layers, or its own strip's lift (never the other
+// team's: the trespass bleeds; never a crack: under those is the core) -- walked to, then climbed by its steps or dropped through. The
+// passages are the generator's holes (MCAVE.holes: band, angle, lift, team). Null: the same layer, or nothing to route.
+function mcLayer(rFeet){ const T = MCAVE.tops; let n = 0; for(let j = 0; j < T.length; j++) if(T[j] > rFeet + 20) n++; return n; }
+function mcRoute(f, t){
+  const M = MCAVE, F = MC_FR; if(!F.open) return null;
+  const rf = M.cy - f.y, rt = M.cy - t.y, Lf = mcLayer(rf - f.r), Lt = mcLayer(rt - (t.r || 24));
+  if(Lf === Lt || Lt > M.K || Lf > M.K) return null;
+  const up = Lt < Lf, band = up ? Lf - 1 : Lf;
+  if(band < 0 || band >= M.K) return null;
+  const thF = F.phi + (f.x - M.cx)/F.rho, thT = F.phi + (t.x - M.cx)/F.rho, foeSide = f.team === 0 ? Math.PI/2 : -Math.PI/2;
+  let best = null, bc = Infinity;
+  for(const h of M.holes){
+    if(h.band !== band || (h.lift && h.team !== f.team)) continue;
+    // ...nor a hole whose steps hang in the other team's strip: the strip is a band of the world 700 px across, so it is wider round the
+    // circle the deeper it is, and a hole beside it at 16 a side and more had its lowest step inside it (the CPU never got onto it)
+    const rS = M.tops[h.band + 1] + 140;
+    if(!h.lift && Math.abs(mcWrap(h.a - foeSide)) < Math.asin(Math.min(1, MC_GEN.strip/2/rS)) + (MC_GEN.stepReach + 20)/rS) continue;
+    const c = Math.abs(mcWrap(h.a - thF))*rf + Math.abs(mcWrap(thT - h.a))*rt;
+    if(c < bc){ bc = c; best = h; }
+  }
+  return best ? { up:up, x:M.cx + F.rho*mcWrap(best.a - F.phi), upperY:M.cy - M.tops[band], lowY:M.cy - M.tops[band + 1], gap:Math.abs(Lt - Lf), hole:best } : null;
+}
+function mcOnOneWay(f){ const feet = f.y + f.r; for(const p of platRects()) if(!p.solid && !p.rot && f.x > p.x && f.x < p.x + p.w && Math.abs(p.y - feet) < 4) return true; return false; }
+// UP BY THE HOLE'S OWN STEPS, one after another (R.hole.steps, lowest first), then onto the floor above. The climb used to be steerClimb's
+// toward the floor above, and navUp takes the nearest step in reach anywhere: by a hole next to its own strip that was the lift's, the route
+// pulled back to the hole, and the CPU swung between the two at the hand-over, 45 s on one step (20 a side, out of the shell). In the air
+// it keeps the step it jumped for (navUp's own lesson: re-picked by height, the next one up won the moment the feet rose level, and it
+// swung off the step it was landing on).
+function mcRouteSteer(f, inp, R, sp){
+  const dx = R.x - f.x;
+  if(!R.up && f.onground && mcOnOneWay(f) && mcDropOk(f, f.x)){ inp.down = true; inp.jump = true; return; }   // down, on a step (the top one sits in a hole's mouth, walled in): through it
+  if(!R.up){ if(Math.abs(dx) > 8){ inp.left = dx < 0; inp.right = dx > 0; } return; }   // down: into the hole and through its steps
+  const M = MCAVE, F = MC_FR, h = R.hole, feet = M.cy - (f.y + f.r), S = f._mcStep;
+  let k = (S && S.h === h && !f.onground && hazardT - S.t < 90 && feet > h.steps[S.k].r - 160) ? S.k : h.steps.findIndex(s => s.r > feet + 20);
+  if(k < 0){   // on the top step (in the hole's mouth): up onto the floor beside it
+    f._mcStep = null;
+    const climbing = steerClimb(f, { x:R.x, y:R.upperY - (f.r || 24), r:f.r }, inp);
+    if(!climbing && !f.onground && f.jumps <= 0 && f.spCd <= 0 && sp !== 'chair'){ inp.special = true; inp.up = true; }
+    return;
+  }
+  const s = h.steps[k], cx = a => M.cx + F.rho*mcWrap(a - F.phi), xL = cx(s.a0), xR = cx(s.a1);
+  if(f.onground) f._mcStep = { h:h, k:k, t:hazardT };
+  // (in the air: the step's middle, and where its speed is taking it -- aimed at the nearest point, it let go of the keys once over the step,
+  // and the speed it had carried it off the end before it came down: 30 a side, 27 s at its own lift)
+  let aim = !f.onground ? (xL + xR)/2 : f.x < xL + 12 ? xL + 12 : f.x > xR - 12 ? xR - 12 : f.x;
+  const gap = f.x < xL ? xL - f.x : f.x > xR ? f.x - xR : 0;   // how far the step is to the side
+  // The top step sits in the hole's mouth, rock round it: it is jumped for from under the opening only (hw: the opening's half, less a body).
+  const top = k === h.steps.length - 1, hw = F.rho*(h.w/2)/h.r - (f.r || 24) - 4, under = Math.abs(f.x - R.x) <= hw;
+  if(f.onground){
+    if(top && !under) aim = R.x + Math.sign(f.x - R.x)*Math.max(0, hw - 8);
+    // ...and standing on the step below it, it waits at that step's end for the jump (the hands take up to 10 frames to press it: it walked off)
+    const below = k > 0 ? h.steps[k - 1] : null;
+    if(below && Math.abs(feet - below.r) < 8){ const bL = cx(below.a0) + 10, bR = cx(below.a1) - 10; aim = Math.max(bL, Math.min(bR, aim)); }
+  }
+  const d = aim - (f.onground ? f.x : f.x + (f.vx || 0)*10);
+  if(Math.abs(d) > 6){ inp.left = d < 0; inp.right = d > 0; }
+  if(f.onground){ if(gap <= CLIMB_REACH && feet < s.r && (!top || under)) inp.jump = true; }   // (in the air the aim is the step itself)
+  else if(feet < s.r - 4 && climbJump(f)) inp.jump = true;
+  else if(feet < s.r - 60 && f.vy > 0 && f.jumps <= 0 && f.spCd <= 0 && sp !== 'chair'){ inp.special = true; inp.up = true; }
+}
+// A drop is only over something: under the shell's cracks there is nothing but the core (the pit sense; standAt reads the charted pieces).
+function mcDropOk(f, x){ return !(MCAVE && MCAVE.on) || standAt(x, f.y + f.r + 20); }
+function mcSafeDropX(f){ const x = nearestDropX(f); return x != null && mcDropOk(f, x) ? x : null; }
+// Under the shell (CORE RECOVERY): the way back is up through the nearest crack -- where its middle is in the CPU's chart. Null above it.
+function mcCrackGoal(f){
+  const M = MCAVE; if(!MC_FR.open || M.cy - f.y >= M.shellBot) return null;
+  let best = null, bd = Infinity;
+  for(const c of M.cracks){ const x = M.cx + MC_FR.rho*mcWrap(c - MC_FR.phi), d = Math.abs(x - f.x); if(d < bd){ bd = d; best = x; } }
+  return best == null ? null : { x:best, dir:(best - f.x) < 0 ? -1 : 1 };
+}
+// THE PLAN'S FOCUS at up to 15 a side: about five go for it (the nearest five), the rest fight whoever is nearest them (owner question 7).
+const MC_FOCUS_CAP = 5;
+function mcFocusRank(f, foc){ const d = Math.hypot(foc.x - f.x, foc.y - f.y); let n = 0; for(const o of fighters){ if(o === f || o.dead || o.team !== f.team) continue; if(Math.hypot(foc.x - o.x, foc.y - o.y) < d) n++; } return n; }
 // Writing a real (world) position from inside a frame: a respawn, an item's spawn. Elsewhere it is just the write.
 function mcPlace(o, x, y){ o.x = x; o.y = y; if(MCAVE && MCAVE.on && MC_FR.open) o._mcPlaced = MC_FR.serial; }
+// A FINISHER'S RECORD (finxAdd) keeps its points -- where she started, where it comes down, a trail, a row of cranes -- in the chart it was
+// made in, and runs in that chart every frame after (finxStep: mcEnter(owner, record)), so no point of it needs listing. Its own x, y are
+// charted like any object's (other frames read them: a shot on Pen's sentry); its other points, read or written from another frame, go
+// through mcRecX (the record's x as the open chart's) and mcRecXIn (back). The M3 sweep found why: Lollipop's lunge kept its start as
+// sx, and with her always at the middle of her own chart she lunged the whole way again each frame -- 240 px a frame, and rising.
+function mcAnchor(o){ if(MCAVE && MCAVE.on && MC_FR.open){ o._mcPhi = MC_FR.phi; o._mcRho = MC_FR.rho; } }
+function mcRecX(o, x){
+  const F = MC_FR;
+  if(!(MCAVE && MCAVE.on && F.open && o._mcRho) || (F.phi === o._mcPhi && F.rho === o._mcRho)) return x;
+  return MCAVE.cx + F.rho*mcWrap(o._mcPhi + (x - MCAVE.cx)/o._mcRho - F.phi);
+}
+function mcRecXIn(o, x){
+  const F = MC_FR;
+  if(!(MCAVE && MCAVE.on && F.open && o._mcRho) || (F.phi === o._mcPhi && F.rho === o._mcRho)) return x;
+  return MCAVE.cx + o._mcRho*mcWrap(F.phi + (x - MCAVE.cx)/F.rho - o._mcPhi);
+}
+// A DROP FROM THE SKY on this map (dropProj, inside a frame): DROP_FALL_H over the spot, straight out from the middle, as a height in the
+// open chart (inside the blast ring). The sweep found camY - 30 here: a real height read as a chart one, so at 3, 6 and 9 o'clock the
+// anvil, the raining smashes and the falling Final Smashes started in the core or across the disc.
+function mcDropY(lx, landY){ const M = MCAVE, rL = M.cy - landY; return M.cy - Math.min(M.Rblast + 300, rL + DROP_FALL_H); }
+// A drop's sideways drift (fallDrift) on this map, as frames of the open chart's own scale: each frame it moves vx along the ground at
+// its own height, a smaller turn the higher it is, so its start moves back by this many frames' worth -- not T -- and it still comes
+// down on its shadow to the pixel. (y as the projectile step moves it: the move, then gravity.)
+function mcFallArc(p, T){
+  const M = MCAVE, g = (p.grav || p.bounce) ? 0.34 : 0, lo = M.rhoMin || 64;
+  let y = p.y, vy = p.vy || 0, s = 0;
+  for(let t = 0; t < T; t++){ s += MC_FR.rho/Math.max(lo, M.cy - y); y += vy; vy += g; }
+  return s;
+}
+// THE FULL VIEW (M4). A thing drawn round its own spot stands upright on its own part of the disc: the drawing turned by the spot's angle
+// about the spot (the design's mcUpright; a no-op off this map). Called inside a save/restore.
+function mcUpright(x, y){ if(MCAVE && MCAVE.on){ ctx.translate(x, y); ctx.rotate(mcTh(x, y)); ctx.translate(-x, -y); } }
+// A finisher's record is drawn in the chart it runs in (mcAnchor): its owner's frame opened in it, and the canvas set so that chart lands
+// on the world at the owner -- turned by the owner's angle, exact there and a few px off far round the curve, as the chart is.
+function mcFinxDraw(o, f, fn, layer){
+  if(!(MCAVE && MCAVE.on && o._mcRho)){ fn(o, f, layer); return; }
+  const rx = f.x, ry = f.y;
+  mcEnter(f, o);
+  try { ctx.translate(rx, ry); ctx.rotate(mcTh(rx, ry)); ctx.translate(-f.x, -f.y); fn(o, f, layer); } finally { mcExit(); }
+}
+// A beam is an arc round the disc (mcFxTurn's {r, a0, a1}): its band and its bright line, as the straight one is drawn.
+function mcDrawBeam(bm, a){
+  const M = MCAVE, q = bm.mc, Q = Math.PI/2, lo = Math.min(q.a0, q.a1) - Q, hi = Math.max(q.a0, q.a1) - Q, c = ctx;
+  const arc = function(){ c.beginPath(); c.arc(M.cx, M.cy, Math.max(1, q.r), lo, hi); };
+  if(bm.w > 0){ const k = Math.max(0, Math.min(1, (bm.life - 4)/9)); if(k > 0){ c.save(); c.globalAlpha = 0.3*k; c.strokeStyle = bm.color; c.lineWidth = bm.w*2; arc(); c.stroke(); c.restore(); } }
+  c.globalAlpha = a; c.strokeStyle = bm.color; c.lineWidth = 8; c.lineCap = 'round'; arc(); c.stroke();
+  c.globalAlpha = a*0.5; c.strokeStyle = '#fff'; c.lineWidth = 3; arc(); c.stroke();
+  c.globalAlpha = 1; c.lineCap = 'butt';
+}
+// A safe strip's flag (no words): a pole on the surface beside its lift, on the 12 o'clock side, with a pennant in the team's colour.
+function mcDrawStripFlag(z, col){
+  const M = MCAVE, ths = mcTh(z.x + z.w/2, z.y + z.h/2), th = ths - Math.sign(ths || 1)*230/M.Rout, x = M.cx + M.Rout*Math.sin(th), y = M.cy - M.Rout*Math.cos(th);
+  ctx.save(); ctx.translate(x, y); ctx.rotate(th); ctx.globalAlpha = 1;
+  ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -64); ctx.stroke();
+  ctx.strokeStyle = '#d8dbe2'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -64); ctx.stroke();
+  const wv = Math.sin(hazardT*0.12)*3;
+  ctx.fillStyle = col; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(2, -63); ctx.quadraticCurveTo(18, -58 + wv, 34, -52); ctx.quadraticCurveTo(18, -46 - wv, 2, -41); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+// THE DISC MINIMAP (screen space, north up): space, the rock with its rings, the core's glow, the two strips in their colours, everyone as a
+// dot (you rimmed in white) and the view as the turned box it is. Top right where the flat minimap sits; under the cards past 20 fighters.
+function mcDrawMinimap(){
+  const M = MCAVE, c = ctx, R = 75, mx = W - 2*R - 14 + R, my = (fighters.length > 20 ? 150 : 64) + R, s = R/(M.Rout*1.06), Q = Math.PI/2;
+  c.save();
+  c.globalAlpha = 0.85; c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(mx, my, R + 3, 0, MC_TAU); c.fill(); c.globalAlpha = 1;
+  c.fillStyle = '#0b0d16'; c.beginPath(); c.arc(mx, my, R, 0, MC_TAU); c.fill();
+  c.save(); c.beginPath(); c.arc(mx, my, R, 0, MC_TAU); c.clip();
+  c.fillStyle = '#34363e'; c.beginPath(); c.arc(mx, my, M.Rout*s, 0, MC_TAU); c.fill();
+  for(const p of M.segs){ if(p.oneway) continue; c.strokeStyle = p.kind === 'crust' ? '#9a9da5' : '#6c6f77'; c.lineWidth = Math.max(1, (p.r1 - p.r0)*s);
+    c.beginPath(); c.arc(mx, my, (p.r0 + p.r1)/2*s, p.a0 - Q, p.a1 - Q); c.stroke(); }
+  c.fillStyle = '#05050a'; c.beginPath(); c.arc(mx, my, M.shellBot*s, 0, MC_TAU); c.fill();
+  c.fillStyle = 'rgba(255,170,90,0.75)'; c.beginPath(); c.arc(mx, my, Math.max(2, M.shellBot*s*0.35), 0, MC_TAU); c.fill();
+  for(const b of bases){ const z = b.zone; if(!z) continue; c.globalAlpha = 0.35; c.fillStyle = TEAM_COLORS[b.team % TEAM_COLORS.length];
+    c.fillRect(mx + (z.x - M.cx)*s, my + (z.y - M.cy)*s, z.w*s, z.h*s); }
+  c.globalAlpha = 1;
+  for(const f of fighters){ if(f.dead) continue; const px = mx + (f.x - M.cx)*s, py = my + (f.y - M.cy)*s;
+    c.fillStyle = TEAM_COLORS[f.team % TEAM_COLORS.length]; c.fillRect(px - 1.5, py - 1.5, f.you ? 4 : 3, f.you ? 4 : 3);
+    if(f.you){ c.strokeStyle = '#fff'; c.lineWidth = 1; c.strokeRect(px - 2.5, py - 2.5, 5, 5); } }
+  const z = viewZoom(), hw = W/(2*z), hh = H/(2*z), vx = camX + W/2, vy = camY + H/2, ca = Math.cos(-camAng), sa = Math.sin(-camAng);
+  c.strokeStyle = '#ffffffaa'; c.lineWidth = 1; c.beginPath();
+  [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(function(q, i){ const dx = q[0]*hw, dy = q[1]*hh, px = mx + (vx + dx*ca - dy*sa - M.cx)*s, py = my + (vy + dx*sa + dy*ca - M.cy)*s; if(i) c.lineTo(px, py); else c.moveTo(px, py); });
+  c.closePath(); c.stroke();
+  c.restore();
+  c.restore();
+}
+// Someone off the screen: a dot of their team's colour at the edge, where the turned view puts them (drawOffscreenArrows, through worldToScreen).
+function mcDrawArrows(){
+  for(const f of fighters){
+    if(f.dead || f.you) continue;
+    const P = worldToScreen(f.x, f.y);
+    if(P.x >= 0 && P.x <= W && P.y >= 0 && P.y <= H) continue;
+    const ex = clamp(P.x, 16, W - 16), ey = clamp(P.y, 74, H - 16);
+    ctx.fillStyle = TEAM_COLORS[f.team % TEAM_COLORS.length] || f.color; ctx.globalAlpha = 0.7; ctx.beginPath(); ctx.arc(ex, ey, 4, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+  }
+}
+// THE WATCHING VIEW (CPU-only, or once you are out for good): the camera follows the middle of the closest pair of foes -- held on a pair
+// about 3 s before it moves to a closer one, and at once if one of them goes down -- upright on that point. Z toggles the whole disc, north
+// up, eased in and out (mcWideZoom). While you play, the camera is yours, as everywhere.
+const MC_WATCH_HOLD = 180;
+function mcWatching(){ const me = fighters.find(f => f.you); return !me || (me.dead && !(me.stocks > 0)); }
+function mcWideZoom(){ const M = MCAVE, k = M.wideK, e = k*k*(3 - 2*k), z1 = Math.min(W, H)/(2*(M.Rout + 220)); return CAM_ZOOM + (z1 - CAM_ZOOM)*e; }
+function mcWatch(k){
+  const M = MCAVE;
+  if(M.wide){
+    M.wideK = Math.min(1, M.wideK + 0.05);
+    camX += (M.cx - W/2 - camX)*0.12; camY += (M.cy - H/2 - camY)*0.12; camAng = mcWrap(camAng - mcWrap(camAng)*0.12); M.camHold = false; M.camOff = 0;
+    return;
+  }
+  M.wideK = Math.max(0, M.wideK - 0.05);
+  const w = M.watch || (M.watch = { A:null, B:null, t:-1e9 }), up = function(f){ return !!f && !f.dead && fighters.indexOf(f) >= 0; };
+  if(!(up(w.A) && up(w.B) && hazardT - w.t < MC_WATCH_HOLD)){
+    let best = null, bd = Infinity;
+    for(const a of fighters){ if(a.dead) continue; for(const b of fighters){ if(b.dead || a.team >= b.team) continue; const d = Math.hypot(a.x - b.x, a.y - b.y); if(d < bd){ bd = d; best = [a, b]; } } }
+    if(best){ w.A = best[0]; w.B = best[1]; } else { w.A = w.B = fighters.find(f => !f.dead) || null; }
+    w.t = hazardT;
+  }
+  if(!w.A) return;
+  const ta = mcTh(w.A.x, w.A.y), th = ta + mcWrap(mcTh(w.B.x, w.B.y) - ta)/2, r = (mcRad(w.A.x, w.A.y) + mcRad(w.B.x, w.B.y))/2;
+  mcCamera(camTarget(M.cx + r*Math.sin(th), M.cy - r*Math.cos(th), CAM_ZOOM), k);
+}
+addEventListener('keydown', function(e){
+  if(e.code !== 'KeyZ' || e.repeat || e.ctrlKey || e.metaKey || e.altKey || !(MCAVE && MCAVE.on) || !running || paused || isNetClient() || !mcWatching()) return;
+  if(typingBox(e.target)) return;
+  e.preventDefault(); MCAVE.wide = !MCAVE.wide;
+});
 // A world point's place on the screen (zoom z, viewZoom() when left out). Off Moon Caves it is the draw transform's own maths.
 function worldToScreen(x, y, z){
   if(z === undefined) z = viewZoom();
   if(MCAVE && MCAVE.on){ const dx = (x - camX - W/2)*z, dy = (y - camY - H/2)*z, c = Math.cos(camAng), sn = Math.sin(camAng); return { x:W/2 + c*dx - sn*dy, y:H/2 + sn*dx + c*dy, s:z }; }
   return { x:(x - camX - W/2)*z + W/2, y:(y - camY - H/2)*z + H/2, s:z };
 }
-// ---- MOON CAVES: the radial-gravity sandbox (M1) ------------------------------------------------------------------------------
-// A fixed disc, built in a Teams match on the Moon Caves row (setupWorld): the surface (the crust's top,
-// walkable all the way round), one cave under it, four holes through the crust with steps down, a walled shaft, and two cracks in the cave's
-// floor over the hollow core. Fighters only: no items, assists or Smash Balls (itemSpawnInterval). A KO is past the blast ring out in space,
-// or down in the core. The view turns with your fighter (mcCamera), and every fighter stands upright on its own part of the disc. Sizes are
-// first guesses; the real map, sized by the number of players, with safe strips, is the next step.
-const MC_TEST = { Rout:2000, crust:140, pitch:560, floor:140, blast:1300, kill:200, holes:[-2.52, -0.62, 0.62, 2.52], holeW:220,
-  shaft:2.0, shaftW:200, shaftWall:60, cracks:[0, Math.PI], crackW:260, hops:[-0.25, 0.25], hopUp:200, hopW:260,
-  pads:[-0.15, -0.09, -0.03, 0.03, 0.09, 0.15] };
-function buildMoonCaves(){
-  const T = MC_TEST, Rout = T.Rout, Rb = Rout + T.blast;
-  WW = Math.ceil(MC_TAU*Rb) + 1000; WH = 2*Rb + 800; camX = 0; camY = 0;   // every chart place stays inside the box: no clamp or side line fires
-  const cx = WW/2, cy = WH/2, segs = [];
-  const put = (r0, r1, a0, a1, oneway) => { if(a1 - a0 > 1e-6) segs.push({ id:segs.length + 1, r0:r0, r1:r1, a0:a0, a1:a1, oneway:!!oneway }); };
-  const ring = (r0, r1, cuts) => {   // a whole ring with openings cut in it, each [centre, half-angle]
-    const cs = cuts.map(c => [c[0] - c[1], c[0] + c[1]]).sort((p, q) => p[0] - q[0]);
-    for(let i = 0; i < cs.length; i++) put(r0, r1, cs[i][1], i + 1 < cs.length ? cs[i + 1][0] : cs[0][0] + MC_TAU);
-  };
-  const crustBot = Rout - T.crust, shellTop = Rout - T.pitch, shellBot = shellTop - T.floor;
-  const hh = T.holeW/2/Rout, sh = T.shaftW/2/Rout;
-  ring(crustBot, Rout, T.holes.map(c => [c, hh]).concat([[T.shaft, sh]]));   // the crust: its top is the surface
-  ring(shellBot, shellTop, T.cracks.map(c => [c, T.crackW/2/shellTop]));       // the cave's floor (the shell), cracked over the core
-  // under each hole, one-way steps zigzag down to the cave floor, 140 px apart (mirrored on the left half, so the two sides match)
-  for(const c of T.holes){
-    const s = c >= 0 ? 1 : -1, step = (top, lo, hi) => { const a = c + s*lo, b = c + s*hi; put(top - 14, top, Math.min(a, b), Math.max(a, b), true); };
-    step(crustBot, -hh, hh*0.1);            // in the hole's mouth, on its near side
-    step(crustBot - 140, 0.032, 0.108);     // across, under the crust
-    step(crustBot - 280, -0.111, -0.029);   // and back, 140 px over the cave floor
+// ---- MOON CAVES: the real map (M2) -------------------------------------------------------------------------------------------------
+// The disc of moon-caves-design.md (section 3), built in a Teams match on the Moon Caves row (setupWorld) by a PURE generator from the
+// number of fighters N and the map size's width factor -- no Math.random, so a replay and an online guest rebuild the identical disc -- and
+// mirror-symmetric about the 12-6 line, so both teams get the same map. Every size is a first guess; the owner's play sets them (M8).
+//   Rout    the surface's radius: 620*sqrt(N), 1700 to 3400, times the map size (about 1.2 M px of disc a fighter)
+//   crust   the outer rock, Rout - 140 to Rout; its top is the surface, walkable all the way round
+//   caves   one under another, 560 apart (420 px of headroom over a 140 px rock floor): cave c's floor top is at Rout - 560c, as many as
+//           keep the innermost floor at r 800 or more (at most 4; the chart is a few px off there, no more). The innermost cave's floor is
+//           the shell, and under it is the hollow core: r_kill (the shell's underside - 200) is the core KO, Rout + 1300 the space KO.
+//   holes   in every rock band but the shell, ~220 px wide, one per ~1300 px of arc (an even number, at least 4), each band's half a
+//           spacing on from the band above's so the routes zigzag, none in the safe strips but each strip's lift
+//   steps   under every hole, one-way steps zigzag up through the cave below it: +140, +280, +420 (in the hole's mouth), then 140 more
+//           onto the floor above -- every climb 140 px (the CPU's 150 rule, FIELD_ROW_GAP), no wall taller than a jump
+//   ledges  a one-way ledge ~210 px over each cave floor between the holes above it; hop-tops 180 / 260 px over the surface between holes
+//   cracks  ~260 px openings in the shell at 12 and 6 o'clock (from 16 players four more, at 1:30, 4:30, 7:30 and 10:30), far from both
+//           strips. The Moon's lesson (9 of 30 KOs were CPUs walking down its hole at 0-2%): no plank lies over a crack and no hole straight
+//           above one, so a crack is reached only by being knocked in or by walking along the shell.
+//   strips  the two safe strips: a world rectangle 700 px tall through the middle, from the shell's underside out past the blast ring --
+//           team 0 at 9 o'clock (the human's side, as wallBand), team 1 at 3. In each, pads on every floor, its LIFT (a hole through every
+//           band but the shell, with its steps, each step a pad, so a fighter who reforms can come out on any layer) and three hop-tops.
+// Fighters only until M3 (no items, assists or Smash Balls: itemSpawnInterval). The view turns with your fighter (mcCamera), and every
+// fighter stands upright on its own part of the disc.
+const MC_GEN = { perFighter:620, rMin:1700, rMax:3400, crust:140, pitch:560, floor:140, cavesMax:4, innerMin:800, blast:1300, kill:200,
+  holeW:220, holeArc:1300, holesMin:4, stepT:14, steps:[[140, -191, -50], [280, 55, 186], [420, -110, 11]], stepReach:191,
+  ledgeUp:210, ledgeW:300, hopUp:[180, 260], hopW:220, crackW:260, cracks6At:16, strip:700, stripPast:400,
+  padsFloor:[-290, -170, 170, 290], padsShell:[-200, 0, 200], padsHop:[-240, 0, 240], padHopUp:200, padHopW:160 };
+function mcGen(N, k){
+  const G = MC_GEN, TAU = MC_TAU;
+  let Rout = Math.round(clamp(G.perFighter*Math.sqrt(Math.max(2, N)), G.rMin, G.rMax)*(k || 1));
+  Rout = Math.max(Rout, G.innerMin + G.pitch);   // (a Compact map still gets its cave)
+  let K = 0; while(K < G.cavesMax && Rout - G.pitch*(K + 1) >= G.innerMin) K++;
+  K = Math.max(1, K);
+  const tops = []; for(let j = 0; j <= K; j++) tops.push(Rout - G.pitch*j);   // tops[0] the surface, tops[c] cave c's floor (tops[K] the shell)
+  const thick = j => j === 0 ? G.crust : G.floor;
+  const shellTop = tops[K], shellBot = shellTop - G.floor, crustBot = Rout - G.crust, Rb = Rout + G.blast, rKill = shellBot - G.kill;
+  const WW = Math.ceil(TAU*Rb) + 1000, WH = 2*Rb + 800, cx = WW/2, cy = WH/2;   // every chart place stays inside the box: no clamp or side line fires
+  const segs = [], holes = [];
+  const put = (r0, r1, a0, a1, oneway, kind) => { if(a1 - a0 > 1e-6 && r1 - r0 > 0.5) segs.push({ id:segs.length + 1, r0, r1, a0, a1, oneway:!!oneway, kind }); };
+  const dist = (a, b) => Math.abs(mcWrap(a - b));
+  const SIDES = [-Math.PI/2, Math.PI/2];                                  // team 0's strip at 9 o'clock, team 1's at 3
+  const stripHalf = r => Math.asin(Math.min(1, G.strip/2/r));             // the strip (a band of y through the middle) at radius r
+  const inStrip = (a, hw, r, m) => SIDES.some(s => dist(a, s) < stripHalf(r) + hw + m/r);
+  const cracks = [0, Math.PI].concat(N >= G.cracks6At ? [Math.PI/4, 3*Math.PI/4, -Math.PI/4, -3*Math.PI/4] : []);
+  const crackH = G.crackW/2/shellTop;
+  const pt = (r, a) => ({ x:cx + r*Math.sin(a), y:cy - r*Math.cos(a), used:0 });
+  // THE HOLES: the crust's evenly round (one per ~1300 px, an even number, at least 4, none on the 12-6 line), and each band under it half
+  // a spacing on from the band above -- in the middle between each two of that band's holes (its lift among them), so the routes zigzag and
+  // no hole is under the steps above. None on the 12-6 line (its steps could not mirror), in a strip, or -- the band over the shell -- where
+  // its steps would hang over a crack. Every band but the shell also gets the LIFT in the middle of each strip.
+  for(let j = 0; j < K; j++){
+    const r = tops[j], hh = G.holeW/2/r, cand = [];
+    if(j === 0){ const n = Math.max(G.holesMin, 2*Math.round(TAU*r/G.holeArc/2)); for(let i = 0; i < n; i++) cand.push(mcWrap((i + 0.5)*TAU/n)); }
+    else {
+      const up = holes.filter(h => h.band === j - 1).map(h => h.a).sort((p, q) => p - q);
+      for(let i = 0; i < up.length; i++){ const a1 = up[i], a2 = up[(i + 1) % up.length], gap = (up.length === 1 || a2 <= a1) ? a2 - a1 + TAU : a2 - a1; cand.push(mcWrap(a1 + gap/2)); }
+    }
+    for(const a of cand){
+      if(dist(a, 0) < hh + 0.02 || dist(a, Math.PI) < hh + 0.02) continue;
+      if(inStrip(a, hh, r, 60)) continue;
+      if(holes.some(h => h.band === j - 1 && dist(h.a, a) < hh + (G.stepReach + 40)/(r + G.steps[0][0]))) continue;   // (the steps above hang 140 px and more over this floor)
+      if(j === K - 1 && cracks.some(c => dist(c, a) < crackH + (G.stepReach + 80)/(shellTop + 140))) continue;
+      holes.push({ band:j, a, r, w:G.holeW, lift:false, team:-1 });
+    }
+    SIDES.forEach((s, team) => holes.push({ band:j, a:s, r, w:G.holeW, lift:true, team }));
   }
-  // the walled shaft: rock walls either side of its opening, from a fighter's headroom over the cave floor up to the crust (wall jumps, the cling)
-  const ww = T.shaftWall/(crustBot - 140);
-  put(shellTop + 140, crustBot, T.shaft - sh - ww, T.shaft - sh); put(shellTop + 140, crustBot, T.shaft + sh, T.shaft + sh + ww);
-  for(const c of T.hops){ const h = T.hopW/2/(Rout + T.hopUp); put(Rout + T.hopUp - 14, Rout + T.hopUp, c - h, c + h, true); }   // hop-tops over the surface
-  // the two sides' places on the surface: team 0 at 9 o'clock (the human's, as wallBand), team 1 at 3. (No safe strips yet.)
-  bases = [0, 1].map(team => {
-    const at = team === 0 ? -Math.PI/2 : Math.PI/2;
-    const spawns = T.pads.map(o => ({ x:cx + Rout*Math.sin(at + o), y:cy - Rout*Math.cos(at + o), used:0 }));
-    return { team:team, x:spawns[2].x, y:spawns[2].y, w:0, h:0, color:TEAM_COLORS[team % TEAM_COLORS.length], spawnX:spawns[2].x, spawnY:spawns[2].y,
-             floor:0, spawns:spawns, zone:{ x:-1e7, y:-1e7, w:0, h:0 }, mc:true };
+  holes.sort((p, q) => p.band - q.band || p.a - q.a);
+  // THE ROCK: every band a ring with its openings cut (the shell's are the cracks)
+  const ring = (r0, r1, cuts, kind) => {
+    if(!cuts.length){ put(r0, r1, -Math.PI, Math.PI, false, kind); return; }
+    const cs = cuts.map(c => [c[0] - c[1], c[0] + c[1]]).sort((p, q) => p[0] - q[0]);
+    for(let i = 0; i < cs.length; i++) put(r0, r1, cs[i][1], i + 1 < cs.length ? cs[i + 1][0] : cs[0][0] + TAU, false, kind);
+  };
+  for(let j = 0; j <= K; j++){
+    const cuts = j < K ? holes.filter(h => h.band === j).map(h => [h.a, h.w/2/tops[j]]) : cracks.map(c => [c, crackH]);
+    ring(tops[j] - thick(j), tops[j], cuts, j === 0 ? 'crust' : (j === K ? 'shell' : 'floor'));
+  }
+  // THE STEPS under every hole, mirrored on the left half (so the two sides match); a lift's steps are pads
+  const pads = [[], []];
+  const liftPads = [[], []];
+  for(const h of holes){
+    const low = tops[h.band + 1], sg = h.a < 0 ? -1 : 1;
+    h.steps = [];
+    for(const st of G.steps){
+      const r1 = low + st[0], p0 = sg*st[1], p1 = sg*st[2], a0 = h.a + Math.min(p0, p1)/r1, a1 = h.a + Math.max(p0, p1)/r1;
+      put(r1 - G.stepT, r1, a0, a1, true, h.lift ? 'lift' : 'step');
+      h.steps.push({ r:r1, a0, a1 });
+      if(h.lift) liftPads[h.team].push(pt(r1, (a0 + a1)/2));
+    }
+  }
+  // THE LEDGES: one in each cave between two holes of the band above it, clear of their steps, the strips and (the innermost cave) the cracks
+  for(let c = 1; c <= K; c++){
+    const r = tops[c] + G.ledgeUp, lh = G.ledgeW/2/r, up = holes.filter(h => h.band === c - 1).sort((p, q) => p.a - q.a);
+    for(let i = 0; i < up.length; i++){
+      const h1 = up[i], h2 = up[(i + 1) % up.length], gap = mcWrap(h2.a - h1.a) + (up.length === 1 ? TAU : (mcWrap(h2.a - h1.a) <= 0 ? TAU : 0));
+      if(gap*r < 2*(G.ledgeW/2 + G.stepReach + 40)) continue;
+      const m = mcWrap(h1.a + gap/2);
+      if(inStrip(m, lh, r, 80)) continue;
+      if(c === K && cracks.some(k2 => dist(k2, m) < crackH + lh + 60/r)) continue;
+      put(r - G.stepT, r, m - lh, m + lh, true, 'ledge');
+    }
+  }
+  // THE HOP-TOPS over the surface, between holes (not in the strips: theirs are pads)
+  { const up = holes.filter(h => h.band === 0 && !h.lift).sort((p, q) => p.a - q.a), n0 = Math.max(1, up.length);
+    for(let i = 0; i < up.length; i++){
+      const h1 = up[i], h2 = up[(i + 1) % up.length], gap = (up.length === 1) ? TAU : (mcWrap(h2.a - h1.a) <= 0 ? mcWrap(h2.a - h1.a) + TAU : mcWrap(h2.a - h1.a));
+      const m = mcWrap(h1.a + gap/2), hu = (Math.round(Math.abs(m)/(TAU/n0)) % 2) ? G.hopUp[1] : G.hopUp[0], r = Rout + hu, hw = G.hopW/2/r;
+      if(gap*Rout < G.hopW + G.holeW || inStrip(m, hw, r, 80)) continue;
+      put(r - G.stepT, r, m - hw, m + hw, true, 'hop');
+    } }
+  // THE STRIPS' PADS: on every floor in the strip (four round a lift's hole, three on the shell), the lift's steps, three hop-tops
+  SIDES.forEach((s, team) => {
+    const P = pads[team], m = team ? -1 : 1;   // (team 1's are team 0's mirrored, one for one: the same order, so the start spots match)
+    for(const off of G.padsFloor) P.push(pt(Rout, s + m*off/Rout));                       // the surface first: where a team starts
+    const rh = Rout + G.padHopUp, hw = G.padHopW/2/rh;
+    for(const off of G.padsHop){ const a = s + m*off/rh; put(rh - G.stepT, rh, a - hw, a + hw, true, 'hop'); P.push(pt(rh, a)); }
+    for(let c = 1; c <= K; c++) for(const off of (c < K ? G.padsFloor : G.padsShell)) P.push(pt(tops[c], s + m*off/tops[c]));
+    P.push(...liftPads[team]);
   });
-  worldPlats = []; worldZones = []; floors = [{ level:0, y:cy - Rout, x:0, w:WW }];
-  MCAVE = { on:true, test:true, cx:cx, cy:cy, Rout:Rout, Rblast:Rb, rKill:shellBot - T.kill, shellTop:shellTop, shellBot:shellBot, crustBot:crustBot,
-            segs:segs, window:mcWindow, win:[], rhoMin:64, flight:true, items:false, camT:null, camHold:false, camOff:0 };
+  const zones = [{ x:cx - Rb - G.stripPast, y:cy - G.strip/2, w:Rb + G.stripPast - shellBot, h:G.strip },
+                 { x:cx + shellBot,        y:cy - G.strip/2, w:Rb + G.stripPast - shellBot, h:G.strip }];
+  return { N, k:k || 1, Rout, K, tops, crustBot, shellTop, shellBot, Rb, rKill, WW, WH, cx, cy, segs, holes,
+           cracks:cracks.map(a => ({ a, h:crackH })), pads, zones };
+}
+function buildMoonCaves(){
+  const g = mcGen(SETTINGS.count, mapSize().w);
+  WW = g.WW; WH = g.WH; camX = 0; camY = 0;
+  bases = [0, 1].map(team => {
+    const sp = g.pads[team], at = team ? Math.PI/2 : -Math.PI/2, x = g.cx + g.Rout*Math.sin(at), y = g.cy - g.Rout*Math.cos(at);
+    return { team, x, y, w:0, h:0, color:TEAM_COLORS[team % TEAM_COLORS.length], spawnX:sp[0].x, spawnY:sp[0].y, floor:0, spawns:sp, zone:g.zones[team], mc:true };
+  });
+  worldPlats = []; worldZones = []; floors = [{ level:0, y:g.cy - g.Rout, x:0, w:WW }];
+  MCAVE = mcState(g);
   camAng = 0;
 }
-// The terrain inside a frame: every piece within reach of E (900 px of arc; 3,000 for a CPU, which thinks inside its frame), as boxes in E's
-// chart (mcPieceBoxes). One array, refilled for each frame; the pieces are few here (the angle index and the box pool come with 15 v 15).
-function mcWindow(phi, rho, E){
+// The map's state from a generated disc (buildMoonCaves; a guest's mcNetGeo).
+function mcState(g){
+  return { on:true, cx:g.cx, cy:g.cy, N:g.N, k:g.k, Rout:g.Rout, Rblast:g.Rb, rKill:g.rKill, K:g.K, tops:g.tops, shellTop:g.shellTop, shellBot:g.shellBot,
+           crustBot:g.crustBot, segs:g.segs, holes:g.holes, cracks:g.cracks, window:mcWindow, win:[], rhoMin:64, flight:true, items:true,
+           camT:null, camHold:false, camOff:0, deco:mcDeco(g.segs), wide:false, wideK:0, watch:null };
+}
+// ---- MOON CAVES ONLINE (M6) ----------------------------------------------------------------------------------------------------------
+// THE DISC ON THE WIRE. A room plays one build (NET.versionCheck: a guest on another one stays out of the match), and the disc is the pure
+// generator's from the number of fighters and the map size's factor (mcGen: no dice). So the host's world (worldGeo) carries those two and a
+// check of its pieces, and a guest builds the same disc with the same code (mcNetGeo) -- whatever its own dev switch or unlocks say: its own
+// setupWorld built none, or one from its own settings. (The plan had every piece on the wire, 4-8 KB every 3 s: with one build a room, the
+// same disc from two numbers.)
+function mcSegsHash(segs){
+  let h = 2166136261;
+  const mix = v => { h = Math.imul(h ^ (Math.round(v) | 0), 16777619); };
+  for(const g of segs){ mix(g.r0); mix(g.r1); mix(g.a0*1e5); mix(g.a1*1e5); mix(g.oneway ? 1 : 0); }
+  return h >>> 0;
+}
+function mcGeoOut(){ const M = MCAVE; return { N:M.N, k:M.k, n:M.segs.length, h:mcSegsHash(M.segs) }; }
+function mcNetGeo(m){
+  if(!m || typeof m !== 'object'){ if(MCAVE) MCAVE = null; return; }   // the host's world is not the disc (a next match on another map)
+  const N = Math.round(+m.N), k = +m.k;
+  if(!(N >= 2 && N <= 64) || !(k > 0.2 && k < 5)) return;   // (peer-supplied)
+  if(MCAVE && MCAVE.on && MCAVE.N === N && MCAVE.k === k) return;   // built already
+  const g = mcGen(N, k);
+  if(g.segs.length !== m.n || mcSegsHash(g.segs) !== m.h) console.warn('Moon Caves: the disc built here is not the host\'s');
+  MCAVE = mcState(g); camAng = 0;
+  NET_VIEW.camReady = false;   // the camera starts afresh on it (mcNetCamera)
+}
+// A GUEST'S CAMERA: the host's own (mcCamera: the follow, the turn and its holds; mcWatch once it is out), on this device's fighter, at this
+// screen's pace (k: the 60ths of a second the picture stands for). Its first picture of the disc starts upright on that fighter.
+function mcNetCamera(k){
+  if(!NET_VIEW.camReady){ const f = clientFollow(); if(!f) return; const t = camTarget(f.x, f.y, CAM_ZOOM); camX = t.x; camY = t.y; mcCamReset(); NET_VIEW.camReady = true; return; }
+  if(mcWatching()){ mcWatch(k); return; }
+  const f = clientFollow(); if(f) mcCamera(camTarget(f.x, f.y, CAM_ZOOM), k);
+}
+// AN IMPACT A GUEST PLAYS (impactFromNet): the host made it upright in a chart and turned it to the world as the frame closed (mcFxTurn), and its
+// row carries the turn (e[9]); here it is made upright at its world place and turned there. ld/lb/ls: each list's last entry before it, and
+// nd/nb/ns how many it made (impactFx trims the lists from the front only).
+function mcImpactTurn(x, y, th, ld, lb, ls, nd, nb, ns){
+  const c = Math.cos(th), s = Math.sin(th);
+  const fresh = (L, last, n) => { let i = L.length; while(i > 0 && L[i - 1] !== last) i--; return L.slice(Math.max(i, L.length - n)); };
+  const turn = q => { const dx = q.x - x, dy = q.y - y, vx = q.vx || 0, vy = q.vy || 0; q.x = x + dx*c - dy*s; q.y = y + dx*s + dy*c; q.vx = vx*c - vy*s; q.vy = vx*s + vy*c; };
+  for(const q of fresh(IMPACT_DUST, ld, nd)) turn(q);
+  for(const q of fresh(IMPACT_DEBRIS, lb, nb)){ turn(q); q.rot = (q.rot || 0) + th; }
+  for(const q of fresh(IMPACT_SCARS, ls, ns)) q.rot = th;
+}
+// A CHIP OF AN IMPACT'S DEBRIS here (stepImpactFx, host and guest): it falls toward the middle and comes to rest on rock, one bounce first --
+// it fell down the screen, through the floor, wherever on the disc it was made.
+function mcDebrisStep(c){
+  const M = MCAVE, r = mcRad(c.x, c.y) || 1, ux = (c.x - M.cx)/r, uy = (c.y - M.cy)/r;   // (u: out from the middle)
+  c.vx -= 0.4*ux; c.vy -= 0.4*uy; c.x += c.vx; c.y += c.vy; c.rot += c.vr;
+  const out = c.vx*ux + c.vy*uy;
+  if(out < 0 && mcRockAt(c.x, c.y)){
+    c.x -= c.vx; c.y -= c.vy;   // back out of the rock
+    if(!c.bounced){ c.bounced = true; const tx = c.vx - out*ux, ty = c.vy - out*uy; c.vx = tx*0.55 - out*0.35*ux; c.vy = ty*0.55 - out*0.35*uy; c.vr *= 0.5; }
+    else { c.rest = true; c.vx = 0; c.vy = 0; c.vr = 0; }
+  } else if(r < M.rKill - 100 || r > M.Rblast + 600) c.life = 0;
+}
+// A real point for a mover inside the open frame (its chart place turned back), or its own place outside one: what a world rectangle -- a
+// safe strip -- is tested against. (MC_RP is reused: read it at once.)
+const MC_RP = { x:0, y:0 };
+function mcRealPt(o){
+  if(!(MCAVE && MCAVE.on && MC_FR.open) || o._mcPlaced === MC_FR.serial){ MC_RP.x = o.x; MC_RP.y = o.y; return MC_RP; }
+  return mcFromChart(o.x, o.y, MC_RP);
+}
+// Rock (a solid piece) at a real point? (The flight's look-ahead: fsKoFlight.)
+function mcRockAt(x, y){
+  const M = MCAVE, r = mcRad(x, y), a = mcTh(x, y);
+  for(const g of M.segs){ if(g.oneway || r < g.r0 || r > g.r1) continue; const d = mcWrap(a - g.a0); if((d < 0 ? d + MC_TAU : d) <= g.a1 - g.a0) return true; }
+  return false;
+}
+// THE SLOW-MO'S CUE ON THE DISC (fsKoFlight): the launch flown in real space -- its local speed turned to world directions at the fighter's
+// real place, then straight, with the pull toward the middle (the fall's factor while it heads in), as the flight knob flies it in hitstun.
+// Out past the blast ring or down into the core is a KO; into rock it is stopped; Marshmallow's gravity saves her once, just short of the core.
+function mcKoFlight(t, n, saved){
+  const M = MCAVE, P = mcRealPt(t);
+  let x = P.x, y = P.y;
+  const a = mcTh(x, y), c = Math.cos(a), s = Math.sin(a), lvx = t.vx || 0, lvy = t.vy || 0;
+  let vx = lvx*c - lvy*s, vy = lvx*s + lvy*c;
+  const g = GRAV*(stage.hazard === 'lowgrav' ? 0.7 : 1), fall = (t.st || STAT_ONE).fall;
+  for(let i = 0; i < n; i++){
+    const r = mcRad(x, y) || 1, dx = (M.cx - x)/r, dy = (M.cy - y)/r, inward = vx*dx + vy*dy > 0, gg = inward ? g*fall : g;
+    vx += dx*gg; vy += dy*gg; x += vx; y += vy;
+    const r2 = mcRad(x, y);
+    if(saved && inward && r2 < M.rKill + 100 && r2 >= M.rKill) return false;
+    if(r2 > M.Rblast || r2 < M.rKill) return true;
+    if(mcRockAt(x, y)) return false;
+  }
+  return false;
+}
+function mcWindow(phi, rho, E, far){
   const M = MCAVE, out = M.win;
   out.length = 0;
-  const half = Math.min(Math.PI, ((E && E.controller === 'ai') ? 3000 : 900)/rho);
+  const half = Math.min(Math.PI, (((E && E.controller === 'ai') ? 3000 : 900) + (far || 0))/rho);   // (far: a record's chart, E that far from its middle)
   for(const g of M.segs){
     const a = mcWrap(g.a0 - phi), span = g.a1 - g.a0;
     if(half < Math.PI && !(a <= half && a + span >= -half) && !(a + span - MC_TAU >= -half)) continue;
@@ -2730,12 +3239,13 @@ function mcCamAngle(cut){
   M.camOff = o; camAng = o ? mcWrap(to + o) : to;
 }
 function mcCamReset(){ MCAVE.camT = { x:camX, y:camY }; MCAVE.camHold = false; MCAVE.camOff = 0; camAng = 0; mcCamAngle(true); }
-function mcCamera(t){
-  const L = MCAVE.camT, cut = !!L && Math.hypot(t.x - L.x, t.y - L.y) > 1200;
+function mcCamera(t, k){
+  const L = MCAVE.camT, cut = !!L && Math.hypot(t.x - L.x, t.y - L.y) > 1200, e = (k === undefined || k === 1) ? 0.12 : 1 - Math.pow(1 - 0.12, k);
   if(cut){ camX = t.x; camY = t.y; }
-  else { camX += (t.x - camX)*0.12; camY += (t.y - camY)*0.12; }
+  else { camX += (t.x - camX)*e; camY += (t.y - camY)*e; }
   if(L){ L.x = t.x; L.y = t.y; } else MCAVE.camT = { x:t.x, y:t.y };
   mcCamAngle(cut);
+  for(let i = 1; i < Math.round(k || 1); i++) mcCamAngle(false);   // (a guest's picture of several steps: the turn eases each)
 }
 // Particles fall toward the middle here (step).
 function mcParticleStep(){
@@ -2752,12 +3262,57 @@ function mcDrawSpace(){
     c.globalAlpha = 0.4 + 0.55*((i*37 % 11)/11);
     for(let gx = x0 - T*Math.ceil((R + x0)/T); gx <= R; gx += T) for(let gy = y0 - T*Math.ceil((R + y0)/T); gy <= R; gy += T) c.fillRect(gx - sz/2, gy - sz/2, sz, sz);
   }
+  // EARTH, fixed in space up and to the left of the Moon: it turns with the view. It is shown only while it is up in the sky on the screen
+  // (within 72 degrees of straight up, fading over the last 14): lower, it sat on the horizon and read as a ball on the ground.
+  const phi = mcWrap(-0.62 + camAng), vis = Math.max(0, Math.min(1, (1.25 - Math.abs(phi))/0.25));
+  if(!(vis > 0)){ c.restore(); return; }
+  const L = Math.min(W, H)*0.30, ex = Math.sin(-0.62)*L, ey = -Math.cos(-0.62)*L, er = 34;
+  c.globalAlpha = 0.3*vis; c.fillStyle = '#8fc6ff'; c.beginPath(); c.arc(ex, ey, er + 6, 0, MC_TAU); c.fill(); c.globalAlpha = vis;
+  const eg = c.createRadialGradient(ex - er*0.35, ey - er*0.35, er*0.2, ex, ey, er);
+  eg.addColorStop(0, '#6fb4f2'); eg.addColorStop(1, '#1f4a8c'); c.fillStyle = eg; c.beginPath(); c.arc(ex, ey, er, 0, MC_TAU); c.fill();
+  c.save(); c.beginPath(); c.arc(ex, ey, er, 0, MC_TAU); c.clip();
+  c.fillStyle = '#5fa65a';
+  for(const b of [[-0.35, -0.3, 0.42, 0.26, 0.5], [0.3, 0.05, 0.3, 0.42, -0.3], [-0.1, 0.45, 0.36, 0.18, 0.2]]){ c.beginPath(); c.ellipse(ex + b[0]*er, ey + b[1]*er, b[2]*er, b[3]*er, b[4], 0, MC_TAU); c.fill(); }
+  c.strokeStyle = 'rgba(255,255,255,0.75)'; c.lineWidth = 3; c.lineCap = 'round';
+  for(const k of [[-0.55, -0.6, 0.5], [0.1, 0.3, 0.6], [-0.4, 0.75, 0.4]]){ c.beginPath(); c.arc(ex + k[0]*er, ey + k[1]*er, k[2]*er, -0.4, 0.5); c.stroke(); }
+  c.fillStyle = 'rgba(5,8,20,0.45)'; c.beginPath(); c.arc(ex + er*0.55, ey + er*0.55, er*1.1, 0, MC_TAU); c.fill();   // the night side
+  c.restore(); c.lineCap = 'butt';
+  c.strokeStyle = '#0b1530'; c.lineWidth = 2; c.beginPath(); c.arc(ex, ey, er, 0, MC_TAU); c.stroke();
   c.restore();
 }
+// What the view can see, from the middle of the disc: the angle round it and the radii, through the turned view's half-diagonal (+40). A
+// piece or a mark outside it is not drawn (the design's culling).
+function mcViewWin(){
+  const z = viewZoom(), D = Math.hypot(W, H)/(2*z) + 40, x = camX + W/2, y = camY + H/2, d = mcRad(x, y);
+  return { th:mcTh(x, y), half:d > D ? Math.asin(D/d) : Math.PI, rl:d - D, rh:d + D };
+}
+function mcInView(a0, a1, r0, r1, V){
+  if(r1 < V.rl || r0 > V.rh) return false;
+  if(V.half >= Math.PI) return true;
+  return Math.abs(mcWrap((a0 + a1)/2 - V.th)) <= V.half + (a1 - a0)/2;
+}
+// THE DISC'S DECORATION, fixed when the disc is built, from its pieces (a hash of each piece's id, no dice: a replay and a guest draw the
+// same): craters in the crust's face under the walking line, rubble in the cave floors' faces. Inside the rock only, so the art is the
+// collision exactly.
+function mcDeco(segs){
+  const out = [], hs = function(i){ return (Math.imul(i + 1, 0x9E3779B1) >>> 0)/4294967296; };
+  for(const p of segs){
+    if(p.oneway) continue;
+    const crust = p.kind === 'crust', th = p.r1 - p.r0, step = crust ? 240 : 170, n = Math.floor((p.a1 - p.a0)*p.r1/step);
+    for(let i = 0; i < n; i++){
+      const u = hs(p.id*131 + i*7), v = hs(p.id*977 + i*13 + 5), q = hs(p.id*389 + i*29 + 11);
+      const s = crust ? 22 + 30*u : 7 + 9*u, depth = crust ? 30 + Math.max(0, th - 60 - s)*v : 22 + Math.max(0, th - 50)*v;
+      const a = p.a0 + (i + 0.2 + 0.6*q)*step/p.r1, m = (s + 6)/p.r1;
+      if(a - m < p.a0 || a + m > p.a1) continue;
+      out.push({ a:a, r:p.r1 - depth, s:s, k:crust ? 0 : 1, t:u*MC_TAU });
+    }
+  }
+  return out;
+}
 // The disc (world space): the dark rock behind the caves, the hollow core with its glow in the middle (a place, not a warning: nothing is
-// drawn at the KO radius), and every piece as an arc band. Plain for now; the decoration comes with the full view.
+// drawn at the KO radius), every piece in view as an arc band, and the decoration on them.
 function mcDrawDisc(){
-  const M = MCAVE, c = ctx, cx = M.cx, cy = M.cy, Q = Math.PI/2;
+  const M = MCAVE, c = ctx, cx = M.cx, cy = M.cy, Q = Math.PI/2, V = mcViewWin();
   c.save();
   c.fillStyle = '#2b2d34'; c.beginPath(); c.arc(cx, cy, M.Rout, 0, MC_TAU); c.fill();
   c.fillStyle = '#0a0a10'; c.beginPath(); c.arc(cx, cy, M.shellBot, 0, MC_TAU); c.fill();
@@ -2766,18 +3321,34 @@ function mcDrawDisc(){
   c.fillStyle = g; c.beginPath(); c.arc(cx, cy, gr, 0, MC_TAU); c.fill();
   c.strokeStyle = '#1c1c1c';
   for(const p of M.segs){
+    if(!mcInView(p.a0, p.a1, p.r0, p.r1, V)) continue;
     c.beginPath(); c.arc(cx, cy, p.r1, p.a0 - Q, p.a1 - Q, false); c.arc(cx, cy, p.r0, p.a1 - Q, p.a0 - Q, true); c.closePath();
     c.fillStyle = p.oneway ? '#c9ccd3' : (p.r1 >= M.Rout ? '#9a9da5' : '#6c6f77'); c.fill();
     c.lineWidth = p.oneway ? 2 : 3; c.stroke();
   }
+  for(const d of (M.deco || [])){
+    if(!mcInView(d.a, d.a, d.r - d.s, d.r + d.s, V)) continue;
+    c.save(); c.translate(cx + d.r*Math.sin(d.a), cy - d.r*Math.cos(d.a)); c.rotate(d.a);
+    if(d.k === 0){   // a crater: a shallow bowl, its upper lip in shadow and its lower lip catching the light
+      c.fillStyle = '#878a92'; c.beginPath(); c.ellipse(0, 0, d.s, d.s*0.42, 0, 0, MC_TAU); c.fill();
+      c.lineWidth = 2; c.strokeStyle = '#6c6f77'; c.beginPath(); c.ellipse(0, 0, d.s, d.s*0.42, 0, Math.PI*1.04, Math.PI*1.96); c.stroke();
+      c.strokeStyle = '#b6b9c0'; c.beginPath(); c.ellipse(0, 0, d.s, d.s*0.42, 0, 0.12, Math.PI - 0.12); c.stroke();
+    } else {         // rubble: a loose stone set in the floor's face
+      c.fillStyle = '#585b63'; c.strokeStyle = '#7e8189'; c.lineWidth = 1.5; c.beginPath();
+      for(let j = 0; j < 6; j++){ const an = j/6*MC_TAU + d.t, rr = d.s*(0.75 + 0.25*Math.sin(d.t*3 + j*1.7)); if(j) c.lineTo(Math.cos(an)*rr, Math.sin(an)*rr*0.8); else c.moveTo(Math.cos(an)*rr, Math.sin(an)*rr*0.8); }
+      c.closePath(); c.fill(); c.stroke();
+    }
+    c.restore();
+  }
   c.restore();
 }
-// For pictures while it is built: your fighter to a clock position, on the surface or on the cave floor (the console: mcDevPut(3), mcDevPut(6.5, 'cave');
-// 12 and 6 in the cave are the cracks over the core).
+// For pictures while it is built: your fighter to a clock position, on the surface, on a cave's floor (1 the first cave ... 'cave' the
+// shell), in the console: mcDevPut(3), mcDevPut(6.5, 'cave'), mcDevPut(9, 2).
 function mcDevPut(hour, where){
   if(!MCAVE || !MCAVE.on) return false;
   const f = fighters.find(o => o.you && !o.dead) || fighters.find(o => !o.dead); if(!f) return false;
-  const th = (hour % 12)*Math.PI/6, r = (where === 'cave' ? MCAVE.shellTop : MCAVE.Rout) + f.r + 2;
+  const T = MCAVE.tops, top = where === 'cave' ? MCAVE.shellTop : (typeof where === 'number' && T[where] != null ? T[where] : MCAVE.Rout);
+  const th = (hour % 12)*Math.PI/6, r = top + f.r + 2;
   f.x = MCAVE.cx + r*Math.sin(th); f.y = MCAVE.cy - r*Math.cos(th); f.vx = 0; f.vy = 0;
   camX = f.x - W/2; camY = f.y - H/2; mcCamReset();
   return true;
@@ -2860,16 +3431,16 @@ const STAGES = [
    plats:[[0.2,0.56,0.15],[0.8,0.56,0.15],[0.5,0.45,0.22,"solid",0.06]],
    edges:{ floor:[[0.07,0.43],[0.57,0.93]], void:['#151821','#000000'] },
    hazard:"lowgrav"},
-  // MOON CAVES (see the groundwork block above STAGES): unlocks with The Moon (`secret:'one'`), and only a Teams match lists it
-  // (`teamsOnly`, stageOpen; never a cup's pool). Two sides: a safe strip at 9 o'clock and one at 3.
-  {id:"mooncaves", name:"Moon Caves", blurb:"A whole moon to fight round, with caves down to its core.", secret:"one",
+  // MOON CAVES (see the groundwork block above STAGES): built in steps, out of every list unless MCAVE_DEV is on (`mcDev`, stageOpen) until
+  // the release step (M8), when it unlocks with The Moon (`secret:'one'`). Teams only (`teamsOnly`; never a cup's pool), two sides.
+  {id:"mooncaves", name:"Moon Caves", blurb:"A whole moon to fight round, with caves down to its core.", secret:"one", mcDev:true,
    sky:["#02030a","#0b0e1c"], ground:"#9a9da5", plats:[], layout:"disc", teamsOnly:true,
    hazard:"lowgrav"},
 ];
 // A stage with `secret` stays out of every list the player sees -- the stage cards, the World Cup's pools and its ticks, the online lobby's
 // -- until its secret is done: The Moon (secret 'one') until One is beaten (oneUnlocked), so nothing names it before her chain does. It stays
 // IN STAGES, so a guest whose host picks it, a replay or a saved cup still finds it by id; only the lists ask stageOpen.
-function stageOpen(s){ if(s && s.teamsOnly && SETTINGS.mode !== 'teams') return false; return !!s && (!s.secret || (s.secret === 'one' && oneUnlocked())); }   // (teamsOnly: Moon Caves)
+function stageOpen(s){ if(s && s.mcDev && !MCAVE_DEV && !MCAVE_OPEN) return false; if(s && s.teamsOnly && SETTINGS.mode !== 'teams') return false; return !!s && (!s.secret || (s.secret === 'one' && oneUnlocked())); }   // (mcDev: Moon Caves while it is built, M8 opens it; teamsOnly: Moon Caves)
 function stagesOpen(){ return STAGES.filter(stageOpen); }
 // The stage in hand when the lists no longer offer it (a host's Moon carried out of an online match, a profile reset): back to the first stage.
 // Never during an online match (the host's pick is the guest's stage there).
@@ -2891,7 +3462,7 @@ let chosen = ROSTER.find(r=>r.play);
 let stage = STAGES[0];
 // PLAYS CAMERA (see that block, in the World Cup's): declared with the first state, since go(), loop(), applyHit and the sound ask it.
 // on: a session is live; bg: the match stepping now is one nobody sees; cur: the match stepping now; real: the game's own dice.
-const PCAM = { on:false, bg:false, cur:null, real:null, list:[], queue:[], shown:null, auto:true, cap:4, frame:0, cutF:0, holdF:0, pend:null,
+const PCAM = { on:false, bg:false, cur:null, real:null, list:[], queue:[], shown:null, auto:true, cap:4, frame:0, cutF:0, build:0,
   ms:0, log:[], flashF:0, paceF:0, ending:false, noPace:false, onStep:null, onPlay:null };
 const SETTINGS = { mode:"ffa", count:5, stocks:3, teamKey:"", itemRate:2, mapSize:"normal", bossPick:"rush", smashBalls:true };   // bossPick: "rush" or "one" (once One is beaten)
 // ---------- MAP SIZE (match setting) ----------
@@ -2966,7 +3537,10 @@ function customWorldH(){ return Math.round(H * Math.max(1, customSize().h)); }
 // Does this custom level need a scrolling camera? (Drives scrolls(), and stops a mid-match browser
 // resize from collapsing a Tall/Huge custom world back down to one screen.)
 function customScrolls(){ return !!CUSTOM_LEVEL && (customWorldW()>W+2 || customWorldH()>H+2); }
-const MAX_FFA=5, MAX_TEAMS=20;
+const MAX_FFA=5, MAX_TEAMS=20, MAX_MOON=30;
+// MOON CAVES (M7): 15 a side there (the owner's spec), 20 on every other Teams map. The stage in hand decides (st: another); online, the host's
+// pick stands, so a guest who has not unlocked it plays the host's count.
+function maxTeams(st){ st = st || stage; return (st && st.layout === 'disc' && (stageOpen(st) || inNetSession())) ? MAX_MOON : MAX_TEAMS; }
 // contestant counts offered per mode (compact set for teams so buttons fit)
 function countOptions(){
   // Boss Rush offers ONE. It is a co-op mode and every other mode needs an opponent, so the floor
@@ -2974,7 +3548,7 @@ function countOptions(){
   // "beat N bosses solo" (TROPHIES) is not a deed anybody could perform without it.
   return SETTINGS.mode==="ctf" ? [4,6,8,10,12,14,16]   // Capture the Flag: 2 to 8 a side (the count is both teams)
     : SETTINGS.mode==="teams"
-    ? [2,3,4,5,6,8,10,12,16,20]
+    ? [2,3,4,5,6,8,10,12,16,20].concat(maxTeams() > MAX_TEAMS ? [MAX_MOON] : [])   // (MOON CAVES: 30, its stage only)
     : SETTINGS.mode==="boss" ? [1,2,3,4,5]
     : customSpawnCap() ? [2,3,4,5].filter(n=>n<=customSpawnCap())   // a custom level waiting: no more than its spawns (buildFighters)
     : [2,3,4,5];
@@ -2992,6 +3566,7 @@ function customSpawnCap(){
 function minCount(){ return SETTINGS.mode==='boss' ? 1 : 2; }
 // generate team-split options for a given player count: balanced 2/3/4-team divisions
 function teamSplitsFor(N){
+  if(SETTINGS.mode === 'teams' && stage && stage.layout === 'disc') return [[Math.ceil(N/2), Math.floor(N/2)]];   // MOON CAVES: always two sides (two strips)
   const opts=[]; const seen=new Set();
   for(const t of [4,2,3]){   // 4-team first: fills the tower's four decks
     if(t>N) continue;
@@ -7638,7 +8213,7 @@ function netSideSplit(s){
 function netSideSizes(mode, count, teamKey){
   if(mode === 'ctf'){ const n = clamp(Math.round((+count || 0)/2)*2, 4, 16); return [n/2, n/2]; }
   if(mode !== 'teams') return null;
-  const N = Math.max(2, Math.min(MAX_TEAMS, Math.round(+count) || 2));
+  const N = Math.max(2, Math.min(maxTeams(), Math.round(+count) || 2));
   const split = String(teamKey || '').split('v').map(Number).filter(n=>n>0);
   return split.reduce((a, b)=>a + b, 0) === N ? split : (teamSplitsFor(N)[0] || [N]);
 }
@@ -15523,6 +16098,16 @@ const OFFSTAGE_ROOM = 160;
 let SIDE_ROOM = 0;
 function pastSideLine(x){ return x < -120 - SIDE_ROOM || x > WW + 120 + SIDE_ROOM; }   // past a side KO line: 120 px out from the stage's box, and SIDE_ROOM more
 function sideRoomTop(){ return SIDE_ROOM ? Math.round(H/2 - H*(WW + 2*SIDE_ROOM)/(2*W)) : 0; }   // the world y of the top of the view there (above 0: the zoomed-out view shows more sky); 0 elsewhere
+// THE TEAMS ARENA FITS ITS PLAYERS (the owner, 2026-10-31: "do 1" -- CPU team matches dragged: "most of the match is running around").
+// The arena was the same 2,700 px tower for 2v2 as for 10v10, its KO lines the world's edges: from mid-floor a strong smash needed 187-220%
+// (Leafy's KOs at 12% on Goiky Field, 112% on Moon Caves), and CPUs met little. Measured, CPU-only, 3 min, seeds 7 and 11:
+//   Goiky Field 4 FFA 5.5 KOs a minute, 19 hits a fighter a minute, near a foe 77% of the time; Grand Plains 8 FFA 3.0, 14, 67%;
+//   Teams 2v2 1.3, 8.5-11, 34-38%; Teams 5v5 2.3-4.3, 10-12, 51-55%.
+// A steeper launch past 100% (2-4x the ramp) barely moved it (2.3 -> 2.7-3.0); a smaller arena did: 2v2 at 0.7 of the size 2.0 KOs a minute,
+// near a foe 56-60% (both seeds); 5v5 at 0.75 4.3-5.3, near 55-61%; no more unsticking. So the whole arena -- floor, cross, field and
+// zones, all laid out from WW and WH -- is scaled by this: 0.7 up to 6 fighters, 0.75 at 10, growing to the full size at 30, so a big
+// team match keeps its room. (One's and Steve Cobs's arenas, cut from the corner layout, keep theirs.)
+function teamsArenaFit(){ return (TEAMS_QUADS_ONLY || ONEFIGHT.active || COBSFIGHT.active) ? 1 : clamp(0.62 + SETTINGS.count*0.013, 0.7, 1); }
 // Pre-match co-op plan, keyed by team index: { focusName, stance:'aggressive'|'defensive'|'balanced', protectName }
 let TEAM_PLAN = {};
 // TWO-TEAM WALL BANDS (see wallBand). One's arena and Steve Cobs's are cut from the 2v2 teams map as it was before 2TDM got its
@@ -15589,9 +16174,12 @@ const NET_VIEW = { applied:null, at:0, gap:33, lastArrive:0, lerp:false, ft:0, t
                    scroll:false, z:1, camReady:false, follow:null, bannerAt:0, slowG:false, slowP:false, hold:false };   // slowG, slowP, hold: the slow-mo's glide (applySnapshot)
 function isNetClient(){ return !!(window.NET && window.NET.role==='client'); }
 function viewScrolls(){ return isNetClient() ? NET_VIEW.scroll : scrolls(); }
-function viewZoom(){ return isNetClient() ? NET_VIEW.z : (scrolls() ? CAM_ZOOM : (SIDE_ROOM ? W/(WW + 2*SIDE_ROOM) : 1)); }   // (SIDE_ROOM: the stage and its air either side, centred)
+function viewZoom(){ if(MCAVE && MCAVE.on && MCAVE.wideK > 0 && !isNetClient()) return mcWideZoom();   // MOON CAVES: the watching view's whole disc (Z)
+  return isNetClient() ? NET_VIEW.z : (scrolls() ? CAM_ZOOM : (SIDE_ROOM ? W/(WW + 2*SIDE_ROOM) : 1)); }   // (SIDE_ROOM: the stage and its air either side, centred)
 // The rectangle of the world the view shows (at zoom 1: camX, camY, W, H). For a drawing that covers the whole view, in world space.
-function viewRect(){ const z = viewZoom(), hw = W/(2*z), hh = H/(2*z), cx = camX + W/2, cy = camY + H/2; return { x:cx - hw, y:cy - hh, w:2*hw, h:2*hh }; }
+function viewRect(){ const z = viewZoom(), hw = W/(2*z), hh = H/(2*z), cx = camX + W/2, cy = camY + H/2;
+  if(MCAVE && MCAVE.on){ const d = Math.hypot(hw, hh); return { x:cx - d, y:cy - d, w:2*d, h:2*d }; }   // MOON CAVES: the square the turned view turns in (it covers the screen at any turn)
+  return { x:cx - hw, y:cy - hh, w:2*hw, h:2*hh }; }
 // The buttons an online input message carries (NET.sendInput, NET.onMessage, netRemoteInput).
 const NET_BUTTONS = ['left','right','jump','down','attack','special','smash','flag','edit'];
 const NET_IN_MASK = (1 << NET_BUTTONS.length) - 1, NET_IN_ACT = NET_IN_MASK & ~15;   // (bit i is NET_BUTTONS[i]); every button; the ones that start a move
@@ -16163,7 +16751,7 @@ function buildSettings(){
     // clamp count into the new mode's range and rebuild count buttons. The FLOOR matters as well
     // as the cap now: a solo count of 1 is legal in Boss Rush but leaves every other mode with a
     // lone fighter and nobody to fight.
-    const cap = v==='teams'?MAX_TEAMS:(v==='ctf'?16:MAX_FFA);
+    const cap = v==='teams'?maxTeams():(v==='ctf'?16:MAX_FFA);
     if(v==='ctf') SETTINGS.count = (SETTINGS.count>=4 && SETTINGS.count<=16 && SETTINGS.count%2===0) ? SETTINGS.count : 10;   // five a side to start
     if(SETTINGS.count>cap) SETTINGS.count=cap;
     if(SETTINGS.count<minCount()) SETTINGS.count=minCount();
@@ -16570,7 +17158,7 @@ function buildStages(){
     const d=document.createElement('div');
     d.className='stagecard'+(s.id===stage.id?' sel':'');
     d.innerHTML=`<b>${s.name}${big(s)}</b><span>${s.blurb}</span>`;
-    d.onclick=()=>{ const had=!!CUSTOM_LEVEL; if(had){ dropCustomLevel(); PENDING_CUSTOM=false; } stage=s; buildStages(); closeStagePick(); if(had) buildSettings(); };
+    d.onclick=()=>{ const had=!!CUSTOM_LEVEL; if(had){ dropCustomLevel(); PENDING_CUSTOM=false; } stage=s; buildStages(); closeStagePick(); if(had) buildSettings(); else if(SETTINGS.mode==='teams'){ buildCountButtons(); buildTeamSplits(); updateSummary(); } };   // (MOON CAVES: 30 there, 20 elsewhere)
     sp.appendChild(d);
   });
   // the button shows the stadium in play; its cards (each with its blurb and its BIG tag) open from it
@@ -18429,6 +19017,16 @@ function cupCamFocus(){
 // that match and STAYS there until the next good play somewhere else -- it never goes back by itself. No words: a frame in the
 // two sides' colours and a corner tag with a camera and the two fighters' faces say it is the Plays Camera and which match.
 //
+// LOOK-AHEAD (the owner, 2026-10-31: "the 'plays' camera shows me plays AFTER theyre done"). A play is only known once it has happened
+// -- a string at its third move, a finisher once its damage is in, a KO at the blow -- so a camera that cut when it heard of one always
+// arrived after it. Now every match is played twice, on the same dice: a SCOUT copy nobody ever sees runs PCAM_LOOK of the match's own
+// frames ahead of the copy the camera shows, and the plays are read off the scout. The camera knows a play before the shown copy gets
+// there, and cuts to it PCAM_LEAD frames before the play starts: the lead-up, the hit and the flight are all on screen. A play whose key
+// moment (the KO's blow, a string's first hit, a finisher's first hit, a root landing, a trip's start) has already passed in the shown
+// copy is never cut to. The two copies are the same match (each fixture's own dice, the same clean slate); every PCAM_CHK frames the
+// shown copy checks it is where its scout was, and if they ever part, that match goes on without look-ahead (its plays caught as they
+// happen, as before).
+//
 // HOW. One set of globals holds a match: the fighters, the shots, the world, the camera, the last KO's and the Final Smash's
 // state and the rest (pcSave lists every one). Each live match keeps its own copy, and each frame every match is loaded in turn
 // (pcLoad), run through the game's own step() and saved back -- the one on screen first, then the background ones. Each fixture
@@ -18440,16 +19038,21 @@ function cupCamFocus(){
 //
 // THE PLAYS. The game's own event points report them (no wrapping of anything the CPU brain reads): applyHit (pcHit), eliminate
 // (pcKo) and, after each step, the statuses and the trips off the stage (pcTick). A play is scored by how big the moment is (the
-// simulated cups' detector, made live): a KO of every kind -- caught on the BLOW that will carry them out (fsKoFlight), so the cut
-// arrives for the flight -- worth more early, off the stage, after a setup, at the end of a string, by a Final Smash, on match
+// simulated cups' detector, made live): a KO of every kind -- caught on the BLOW that will carry them out (fsKoFlight) -- worth more
+// early, off the stage, after a setup, at the end of a string, by a Final Smash, on match
 // point, as a comeback; a string of three moves or more; a big finisher; a deep recovery while it is still going; a root, freeze,
 // sleep or stun on a foe at kill %. PCAM_MIN and over cuts (every KO does; a poke never does), the biggest one first.
 const PCAM_CAP = 4;          // background fixtures stepped at once, at most (pcPace takes it down to 1 when the frames get slow, and back up)
 const PCAM_MIN = 30;         // a play this big or bigger cuts the camera to its match
-const PCAM_DWELL = 180;      // frames the camera stays after a cut before it may cut again (3 s): the play it cut for is seen (a KO waiting skips it)
-const PCAM_HOLD = 120;       // frames a good play in the match on screen keeps the camera there (2 s), so it plays out (a KO waiting minds a KO's only)
-const PCAM_STALE = 90;       // a play older than this (1.5 s) is no longer worth cutting to: the camera shows the matches live
+const PCAM_DWELL = 180;      // frames the camera stays after a cut before it may cut again (3 s), unless a KO is coming elsewhere
 const PCAM_BEAT = 75;        // frames the match on screen stands at its end before the camera moves on (the hub's old 1.2 s wait)
+const PCAM_LOOK = 240;       // LOOK-AHEAD: how far (the match's own frames: 4 s) each scout runs ahead of the copy the camera can show
+const PCAM_LEAD = 60;        // the camera arrives this long (1 s) before a play starts, so its lead-up is seen too
+const PCAM_SEE = 20;         // ...and never less than this (a third of a second) before its key moment: closer than that, the play is let go
+const PCAM_TAIL = 60;        // a play keeps the camera on its match this long after its last moment (the KO, a string's last hit)
+const PCAM_BUILD = 6;        // a scout still getting its lead steps at most this many extra times a frame...
+const PCAM_BUILD_ALL = 12;   // ...and all of them together this many (a match nobody sees waits for its scout's lead before it starts)
+const PCAM_CHK = 30;         // every this many frames the shown copy checks it is where its scout was
 // The fixture's own dice (mulberry32): the same seed is the same match.
 function pcRng(seed){
   let a = seed >>> 0;
@@ -18515,12 +19118,15 @@ function pcBase(){
 function pcSeeds(){ for(const f of TOURNEY.fixtures) if(f._pcSeed == null) f._pcSeed = Math.floor(PCAM.real()*4294967296) >>> 0; }
 function pcInit(fx){
   const P = PCAM;
-  Object.assign(P, { on:true, bg:false, cur:null, list:[], shown:null, pend:null, auto:true, cap:PCAM_CAP, frame:0, cutF:0, holdF:0, koHoldF:0, ms:0,
+  Object.assign(P, { on:true, bg:false, cur:null, list:[], shown:null, auto:true, cap:PCAM_CAP, frame:0, cutF:0, build:0, ms:0,
     log:[], flashF:0, paceF:0, ending:false });
   P.queue = TOURNEY.fixtures.filter(f=>!f.played && f !== fx);
 }
+// A match (a copy of one fixture). ahead: the good plays still to come in it, read off its scout (sc); scout/of: this copy IS a scout,
+// and the copy it runs ahead of; chk: the scout's checkpoints (pcCheck).
 function pcNewMatch(fx){ return { fx, rng:pcRng(fx._pcSeed), st:null, over:false, overF:0, steps:0, plays:0, lastGood:null, sung:false,
-  det:{ str:{}, big:{}, hit:{}, st:{}, setT:{}, trip:{}, koT:{}, down:{} } }; }
+  ahead:[], sc:null, scout:false, of:null, chk:null,
+  det:{ str:{}, big:{}, hit:{}, st:{}, setT:{}, trip:{}, koT:{}, koId:{}, down:{} } }; }
 // Watch a fixture with the Plays Camera: it is set up on its own dice like any other in the round, then given the screen.
 function pcStart(fx){
   const P = PCAM;
@@ -18554,10 +19160,20 @@ function pcAdopt(){
   m.rng = pcRng((fx._pcSeed ^ Math.imul(hazardT + 1, 2654435761)) >>> 0);
   m.st = pcSave(); P.list.push(m); P.shown = m; P.base = null;
 }
-// One fixture set up on its own dice, from the clean slate, without the screen (watchFixture's and finishWatchSetup's own steps).
-// Leaves the new match's globals loaded.
+// One fixture set up on its own dice, from the clean slate, without the screen (watchFixture's and finishWatchSetup's own steps), and
+// its scout (LOOK-AHEAD). Leaves the new match's globals loaded.
 function pcSetup(fx){
-  const P = PCAM, m = pcNewMatch(fx);
+  const P = PCAM, m = pcNewMatch(fx), sc = pcNewMatch(fx);
+  pcBuild(m);
+  sc.scout = true; sc.of = m; sc.sung = true; m.sc = sc; m.chk = {};
+  pcBuild(sc);   // LOOK-AHEAD: the same fixture on the same dice from the same clean slate -- the same match, to be run ahead of it
+  pcLoad(m.st);
+  P.list.push(m);
+  return m;
+}
+// One copy of a fixture built from the clean slate on its own dice, without the screen; its globals saved into m.st.
+function pcBuild(m){
+  const P = PCAM, fx = m.fx;
   pcLoad(pcBase());
   const r0 = Math.random, snd0 = SND.on;
   Math.random = m.rng; P.bg = true; P.cur = m; SND.on = false;
@@ -18574,19 +19190,20 @@ function pcSetup(fx){
     finishWatchSetup(fx, false, size);
   } finally { Math.random = r0; P.bg = false; P.cur = null; SND.on = snd0; LINEUP_MEMO = null; }
   m.st = pcSave();
-  P.list.push(m);
-  return m;
 }
-// Steps of one match on its own dice. bg: nobody sees it (no sound, HUD, banner or shake; see the hooks).
-function pcRun(m, n, bg){
+// Steps of one match on its own dice. bg: nobody sees it (no sound, HUD, banner or shake; see the hooks). until: stop on reaching
+// this frame of the match (a scout's lead).
+function pcRun(m, n, bg, until){
   const P = PCAM, r0 = Math.random, snd0 = SND.on;
   Math.random = m.rng; P.bg = bg; P.cur = m; if(bg) SND.on = false;
   try{
     for(let i = 0; i < n && running; i++){
+      if(until != null && hazardT >= until) break;   // (a scout: as far ahead as it should be)
       if(!bg && INTERP && FIXED_STEP && !fsSlowSkips()) interpRecord(false);
       step(); m.steps++;
       if(!bg && KOC.on && FS.game === 1) m.sung = true;   // the last KO's sting played with the match on screen (kocMark)
       pcTick(m);
+      if(hazardT % PCAM_CHK === 0) pcCheck(m);
       if(P.onStep) P.onStep(m);
     }
   } finally { Math.random = r0; P.bg = false; P.cur = null; SND.on = snd0; }
@@ -18594,17 +19211,21 @@ function pcRun(m, n, bg){
 // loop()'s steps while a session is on: the match on screen, then the background ones, a new one into a free slot, the director.
 function pcFrame(n){
   const P = PCAM, t0 = performance.now(), sh = P.shown;
-  P.frame++;
+  P.frame++; P.build = PCAM_BUILD_ALL;
   if(!sh.over){
     try{ pcRun(sh, n, false); }
     catch(err){ sh.over = true; sh.overF = P.frame - PCAM_BEAT; console.error('Plays Camera: the match on screen threw; its fixture is left to watch or sim', err); }   // (no beat on a match that broke: the director moves on now)
   }
   sh.st = pcSave();
+  pcScout(sh, n);
   let k = 0;
   for(const m of P.list){
     if(m === sh || m.over) continue;
     if(k++ >= P.cap) continue;   // over the cap it waits: its fixture plays the same whenever its steps run
-    try{ pcLoad(m.st); pcRun(m, n, true); m.st = pcSave(); }
+    try{
+      if(pcReady(m)){ pcLoad(m.st); pcRun(m, n, true); m.st = pcSave(); }
+      pcScout(m, n);
+    }
     catch(err){ m.over = true; m.overF = P.frame; console.error('Plays Camera: a background match threw; its fixture is left to watch or sim', err); }   // (never the screen's globals left half-swapped)
   }
   if(P.queue.length && k < P.cap){ try{ pcFill(); }catch(err){ console.error('Plays Camera: a fixture would not set up; it is left to watch or sim', err); } }
@@ -18618,6 +19239,35 @@ function pcFrame(n){
   const left = P.list.some(m=>!m.over) || P.queue.length > 0;
   if(P.shown.over && P.frame - P.shown.overF >= PCAM_BEAT && (!left || !P.auto)) pcEnd();   // all played (or the camera switched off): the hub
 }
+// LOOK-AHEAD. A match's own frame (its clock, hazardT), in whichever copy.
+function pcNow(m){ return (m && m.st) ? m.st.hazardT : 0; }
+// A match nobody sees starts once its scout is PCAM_LOOK ahead: nobody is waiting for it, and its plays are then known before they happen.
+function pcReady(m){ const s = m.sc; return !s || s.over || pcNow(s) - pcNow(m) >= PCAM_LOOK; }
+// The scout's steps this frame: up to PCAM_LOOK of the match's frames ahead of the copy that can be shown -- as many steps as that copy
+// took, and while it is still getting its lead a few more (PCAM_BUILD, out of the frame's PCAM_BUILD_ALL).
+function pcScout(m, n){
+  const P = PCAM, s = m.sc;
+  if(!s || s.over || !s.st) return;
+  const want = pcNow(m) + PCAM_LOOK;
+  if(pcNow(s) >= want) return;
+  const extra = Math.max(0, Math.min(PCAM_BUILD, P.build));
+  pcLoad(s.st);
+  const h0 = hazardT;
+  try{ pcRun(s, n + extra, true, want); }
+  catch(err){ s.over = true; m.sc = null; m.chk = null; console.error('Plays Camera: a scout threw; its match goes on without look-ahead', err); }
+  P.build -= Math.max(0, (hazardT - h0) - n);
+  s.st = pcSave();
+}
+// Every PCAM_CHK frames: the scout leaves a mark of where the match stands; the shown copy, reaching that frame, checks it is the same.
+// If they ever part (a difference in how the two copies ran), the scout and the plays it saw go, and the match goes on without look-ahead.
+function pcCheck(m){
+  if(m.scout){ const B = m.of; if(B && B.chk) B.chk[hazardT] = pcHash(); return; }
+  if(!m.sc || !m.chk) return;
+  const h = m.chk[hazardT]; if(h === undefined) return;
+  delete m.chk[hazardT];
+  if(h !== pcHash()){ m.sc = null; m.chk = null; m.ahead = []; console.warn('Plays Camera: a match and its scout went apart at frame ' + hazardT + '; it goes on without look-ahead'); }
+}
+function pcHash(){ let h = 7; for(const f of fighters) h = (Math.imul(h, 31) + Math.round(f.x*4) + Math.imul(Math.round(f.y*4), 7) + Math.imul(Math.round((f.pct || 0)*8), 13) + Math.imul(f.stocks | 0, 101) + (f.dead ? 5 : 0)) | 0; return h; }
 function pcFill(){
   const P = PCAM;
   while(P.queue.length){ const fx = P.queue.shift(); if(fx.played) continue; pcSetup(fx); return; }   // one a frame: a setup costs a few ms
@@ -18635,8 +19285,9 @@ function pcPace(ms){
 // finishWatchedKnockout score it -- but nothing changes screen; the session goes on.
 function pcOver(winTeam){
   const P = PCAM, m = P.cur; if(!m || m.over) return;
-  const fx = m.fx;
   running = false;
+  if(m.scout){ m.over = true; m.overF = P.frame; return; }   // a scout's match is over: the copy that can be shown scores the fixture when it gets there
+  const fx = m.fx;
   if(fx.kind === 'ko'){
     const wt = (winTeam===0 || winTeam===1) ? winTeam : cupTimedWinner(fx);   // both out on one frame, or the clock: the tie-break
     fx.winner = wt===0 ? fx.a : fx.b; fx.result = { sa: wt===0?1:0, sb: wt===1?1:0 }; fx.played = true;
@@ -18648,12 +19299,11 @@ function pcOver(winTeam){
     try{ recordCupFight(sa>sb ? 0 : (sb>sa ? 1 : null)); }catch(e){}
   }
   m.over = true; m.overF = P.frame;
-  if(P.pend && P.pend.m === m) P.pend = null;   // never a cut to a match that is over
 }
 function pcEnd(){
   const P = PCAM;
   P.ending = true;
-  P.on = false; P.list = []; P.queue = []; P.shown = null; P.pend = null; P.cur = null; P.bg = false;
+  P.on = false; P.list = []; P.queue = []; P.shown = null; P.cur = null; P.bg = false;
   if(P.real) Math.random = P.real;
   running = false; TOURNEY_WATCHING = null; TOURNEY_MATCH_ACTIVE = false;
   try{ showTourneyHub(); } finally { P.ending = false; }
@@ -18661,7 +19311,7 @@ function pcEnd(){
 // Left part-way (Quit, a new match): the fixtures not finished stay to watch or sim; the match on screen is where it stood.
 function pcStop(){
   const P = PCAM; if(!P.on) return;
-  P.on = false; P.list = []; P.queue = []; P.shown = null; P.pend = null; P.cur = null; P.bg = false;
+  P.on = false; P.list = []; P.queue = []; P.shown = null; P.cur = null; P.bg = false;
   if(P.real) Math.random = P.real;
 }
 // ---- the plays ----
@@ -18672,15 +19322,15 @@ function pcHit(t, dmg, from, opts, fs, stun){
   const D = m.det, i = t.idx, now = hazardT, seq = from._atkSeq || 0;
   D.hit[i] = { t:now, by:from.idx };
   let s = D.str[i];
-  if(!s || s.by !== from.idx || !stun || now - s.t1 > 45) s = D.str[i] = { by:from.idx, t1:now, seqs:[], dmg:0, sent:2 };
+  if(!s || s.by !== from.idx || !stun || now - s.t1 > 45) s = D.str[i] = { by:from.idx, t0:now, t1:now, seqs:[], dmg:0, sent:2 };
   s.t1 = now; s.dmg += dmg; if(s.seqs.indexOf(seq) < 0) s.seqs.push(seq);
   let b = D.big[from.idx];
   if(!b || b.seq !== seq || now - b.t0 > 60) b = D.big[from.idx] = { seq:seq, t0:now, dmg:0, fs:false, sent:false };
   b.dmg += dmg; if(fs) b.fs = true;
   if(!t.dead && now - (D.koT[i] || -999) > 60 && fsKoFlight(t, true)){ D.koT[i] = now; pcKoPlay(m, t, from, false); return; }   // the blow that will carry them out
   const n = s.seqs.length;
-  if(n >= 3 && n > s.sent){ s.sent = n; pcPlay(m, 'combo', Math.min(90, 10 + 6*n + 0.8*s.dmg)); }
-  if(!b.sent && (b.dmg >= 22 || (b.fs && b.dmg >= 12))){ b.sent = true; pcPlay(m, b.fs ? 'final smash' : 'big finisher', 12 + 0.9*b.dmg + (b.fs ? 15 : 0)); }
+  if(n >= 3 && n > s.sent){ s.sent = n; pcPlay(m, 'combo', Math.min(90, 10 + 6*n + 0.8*s.dmg), false, { id:'str' + i + ':' + s.t0, start:s.t0, key:s.t0, end:now + PCAM_TAIL }); }   // seen from its first hit
+  if(!b.sent && (b.dmg >= 22 || (b.fs && b.dmg >= 12))){ b.sent = true; pcPlay(m, b.fs ? 'final smash' : 'big finisher', 12 + 0.9*b.dmg + (b.fs ? 15 : 0), false, { id:'big' + from.idx + ':' + b.t0, start:b.t0, key:b.t0, end:now + PCAM_TAIL }); }
 }
 // eliminate, as the stock goes (f.stocks already one less). A KO the blow did not already report (a fall after a long trip, the
 // damage cap, a hazard after a hit): its play now. And the most each side has been behind, for the comebacks.
@@ -18688,7 +19338,7 @@ function pcKo(f, killer){
   const m = PCAM.cur; if(!m || fighters.indexOf(f) < 0) return;
   const D = m.det, i = f.idx, now = hazardT;
   for(const tm of [0, 1]){ const d = cupTeamStocks(1 - tm) - cupTeamStocks(tm); if(d > (D.down[tm] || 0)) D.down[tm] = d; }
-  if(now - (D.koT[i] || -999) <= 150) return;   // the blow was the play: the camera went there for the flight
+  if(now - (D.koT[i] || -999) <= 150){ if(D.koId[i]) pcPlayEnd(m, D.koId[i], now + PCAM_TAIL); return; }   // the blow was the play: it lasts until the KO itself
   const h = D.hit[i];
   if(!killer || killer === f || !h || h.by !== killer.idx || now - h.t > 240 || fighters.indexOf(killer) < 0) return;   // a fall nobody caused is no play
   D.koT[i] = now;
@@ -18701,14 +19351,20 @@ function pcKoPlay(m, t, k, after){
   if(p < 100){ sc += (100 - p)*0.5; if(p < 70) kind = 'early KO'; }
   const tr = D.trip[i]; if(tr && now - tr.t0 >= 15){ sc += 22; kind = 'edge KO'; }   // already off the stage: a ledgeguard, a chase
   const su = D.setT[i]; if(su && su.by === k.idx && now - su.t <= 150){ sc += 20; kind = 'setup KO'; }
-  const s = D.str[i]; if(s && s.by === k.idx && now - s.t1 <= 2 && s.seqs.length >= 2){ sc += 4*(s.seqs.length - 1) + 0.3*s.dmg; if(kind === 'KO' || kind === 'early KO') kind = 'combo KO'; }
+  const s = D.str[i], strung = !!s && s.by === k.idx && now - s.t1 <= 2 && s.seqs.length >= 2;
+  if(strung){ sc += 4*(s.seqs.length - 1) + 0.3*s.dmg; if(kind === 'KO' || kind === 'early KO') kind = 'combo KO'; }
   const b = D.big[k.idx]; if(b && b.fs && now - b.t0 <= 120){ sc += 12; kind = 'final smash KO'; } else if(b && b.dmg >= 22 && now - b.t0 <= 60) sc += 8;
   const left = after ? t.stocks : t.stocks - 1;
   if(left <= 0 && kocSides(t) <= 1) sc += 8;   // match point: this one ends it
   const mine = cupTeamStocks(k.team), theirs = cupTeamStocks(t.team) + (after ? 1 : 0);   // before this KO
   if((D.down[k.team] || 0) >= 2 && mine >= theirs - 1){ sc += 15; kind = 'comeback KO'; }
   if(k.stocks === 1 && (k.pct || 0) > 110) sc += 12;   // clutch: on their last stock at kill %
-  pcPlay(m, kind, sc, true);
+  // when it starts (the string it ends, or the blow; after the fact, the last hit or the trip off the stage) and its key moment (the blow;
+  // after the fact, the KO itself)
+  let start = strung ? s.t0 : now;
+  if(after){ const h = D.hit[i]; start = Math.max(now - 150, Math.min(start, h ? h.t : now, tr ? tr.t0 : now)); }
+  const id = 'ko' + i + ':' + now; D.koId[i] = id;
+  pcPlay(m, kind, sc, true, { id, start, key:now, end:now + PCAM_TAIL });
 }
 // After each step of a match: a root, freeze, sleep or stun starting on someone (a setup), and the trips off the stage.
 function pcTick(m){
@@ -18717,7 +19373,7 @@ function pcTick(m){
     const i = f.idx;
     const st = ((f.rooted || 0) > 0 ? 1 : 0) | ((f.frozen || 0) > 0 ? 2 : 0) | ((f._sleepT || 0) > hazardT ? 4 : 0) | ((f._stunFx || 0) > 0 ? 8 : 0);
     const on = st & ~(D.st[i] || 0); D.st[i] = st;
-    if(on && !f.dead){ const h = D.hit[i]; if(h && hazardT - h.t <= 4){ D.setT[i] = { t:hazardT, by:h.by }; if((f.pct || 0) >= 90) pcPlay(m, 'setup', 20 + 0.12*f.pct); } }
+    if(on && !f.dead){ const h = D.hit[i]; if(h && hazardT - h.t <= 4){ D.setT[i] = { t:hazardT, by:h.by }; if((f.pct || 0) >= 90) pcPlay(m, 'setup', 20 + 0.12*f.pct, false, { id:'set' + i + ':' + hazardT, start:hazardT, key:hazardT, end:hazardT + 150 }); } }   // (the follow-up is the play: 2.5 s of it)
     let off = false, dist = 0;
     if(segs && segs.length && !f.onground && !f.dead){
       let inside = false; dist = 1e9;
@@ -18730,48 +19386,72 @@ function pcTick(m){
       if(!tr) tr = D.trip[i] = { t0:hazardT, d:0, y:0, sent:false };
       tr.d = Math.max(tr.d, dist); tr.y = Math.max(tr.y, f.y - gy);
       if(!tr.sent && hazardT - tr.t0 >= 30 && (tr.d >= 260 || tr.y >= 180)){ tr.sent = true;   // still out there: the camera gets there for the way back (or the KO)
-        pcPlay(m, 'deep recovery', Math.min(70, 16 + 0.07*tr.d + 0.08*Math.max(0, tr.y) + ((f.pct || 0) > 100 ? 8 : 0))); }
-    } else if(tr) D.trip[i] = null;
+        pcPlay(m, 'deep recovery', Math.min(70, 16 + 0.07*tr.d + 0.08*Math.max(0, tr.y) + ((f.pct || 0) > 100 ? 8 : 0)), false, { id:'trip' + i + ':' + tr.t0, start:tr.t0, key:hazardT, end:hazardT + 120 }); }
+    } else if(tr){ if(tr.sent) pcPlayEnd(m, 'trip' + i + ':' + tr.t0, hazardT + PCAM_TAIL); D.trip[i] = null; }
   }
 }
-// A play in match m, scored. PCAM_MIN or more: on screen, it holds the camera there while it plays out; elsewhere, it is a cut
-// waiting (the biggest one waiting wins).
-function pcPlay(m, kind, score, ko){
-  const P = PCAM; score = Math.round(score);
-  const e = { f:P.frame, t:hazardT, m, kind, score, ko:!!ko };
+// A play in match m, scored, with when it starts (start), the moment that must be seen (key) and when it is over (end), in the match's
+// own frames. PCAM_MIN or more goes on the list of plays to come in its match (pcAhead), which the director reads.
+function pcPlay(m, kind, score, ko, w){
+  const P = PCAM, B = m.of || m, now = hazardT; score = Math.round(score);
+  const e = { f:P.frame, t:now, m:B, kind, score, ko:!!ko, id:(w && w.id) || (kind + ':' + now), start:w ? w.start : now, key:w ? w.key : now, end:w ? w.end : now + PCAM_TAIL };
   m.plays++;
   if(P.onPlay) P.onPlay(e);
   if(score < PCAM_MIN || m.over) return;
-  m.lastGood = e;
-  if(m === P.shown){ P.holdF = Math.max(P.holdF, P.frame + PCAM_HOLD); if(e.ko) P.koHoldF = Math.max(P.koHoldF, P.frame + PCAM_HOLD); return; }
-  const q = P.pend;
-  if(!q || (e.ko && !q.ko) || (e.ko === q.ko && score > q.score) || P.frame - q.f > PCAM_STALE) P.pend = e;   // a KO first, then the biggest
+  if(!m.scout) B.lastGood = e;
+  if(m.scout || !B.sc) pcAhead(B, e);   // the scout's, known before the shown copy gets there (or, in a match with no scout -- one K took over -- as it happens)
 }
-// Once a frame, after every match has stepped: cut to the best play waiting, unless the camera only just cut or a play on screen is
-// still playing out. The match on screen over: after its beat, to the best match still playing. Never to a match that is over: a play
-// waiting there goes the moment it ends. A KO is caught on the blow and waits for no dwell (only for a KO on screen still playing
-// out), so a deciding KO is cut to while it flies, before its match ends.
+// One play in a match's list of plays to come: a string or a trip that goes on is the same play, longer and bigger.
+function pcAhead(B, e){
+  const o = B.ahead.find(p=>p.id === e.id);
+  if(!o){ B.ahead.push(e); return; }
+  if(e.score > o.score){ o.score = e.score; o.kind = e.kind; }
+  if(e.ko) o.ko = true;
+  o.start = Math.min(o.start, e.start); o.key = Math.min(o.key, e.key); o.end = Math.max(o.end, e.end);
+}
+function pcPlayEnd(m, id, end){ const B = m.of || m; if(!m.scout && B.sc) return; const o = B.ahead.find(p=>p.id === id); if(o) o.end = Math.max(o.end, end); }
+// Once a frame, after every match has stepped (LOOK-AHEAD): the plays to come, read off the scouts. The match on screen keeps the camera
+// while a play of its own is coming (from PCAM_LEAD before it starts) or playing out (to its end). Otherwise the best play elsewhere -- a
+// KO first, then the biggest -- that starts within PCAM_LEAD and whose key moment is still to come gets the cut: the camera arrives before
+// it. A cut for anything but a KO waits out PCAM_DWELL after the last one; a KO waits only for a KO on screen. A play the camera could not
+// get to in time is let go. The match on screen over: after its beat, to the match whose next good play comes soonest (else the latest
+// good play). Never to a match that is over.
 function pcDirector(){
   const P = PCAM, sh = P.shown;
-  if(P.pend && P.pend.m.over) P.pend = null;
-  const e = P.pend;
   if(sh.over){
     if(!P.auto || P.frame - sh.overF < PCAM_BEAT) return;
-    const live = P.list.filter(m=>!m.over);
+    const live = P.list.filter(m=>!m.over && m.st);
     if(!live.length) return;
-    let to = (e && !e.m.over) ? e.m : null;
-    if(!to) to = live.slice().sort((a, b)=>((b.lastGood && b.lastGood.f) || -1) - ((a.lastGood && a.lastGood.f) || -1))[0];   // the latest good play
-    pcCut(to, e && e.m === to ? e : null); P.pend = null; return;
+    let to = null, e = null;
+    for(const m of live) for(const p of pcComing(m)) if(!e || p.start - pcNow(m) < e.start - pcNow(to)){ e = p; to = m; }   // the next good play anywhere
+    if(!to) to = live.slice().sort((a, b)=>((b.lastGood && b.lastGood.f) || -1) - ((a.lastGood && a.lastGood.f) || -1))[0];   // else the latest good play
+    pcCut(to, e); return;
   }
-  if(!e || !P.auto) return;
-  if(P.frame - e.f > PCAM_STALE){ P.pend = null; return; }
-  if(e.ko ? P.frame < P.koHoldF : (P.frame < P.cutF + PCAM_DWELL || P.frame < P.holdF)) return;
-  pcCut(e.m, e); P.pend = null;
+  if(!P.auto) return;
+  const T = pcNow(sh);
+  pcComing(sh);
+  const mine = sh.ahead.filter(p=>p.start - PCAM_LEAD <= T), busy = mine.length > 0, busyKo = mine.some(p=>p.ko);   // coming within PCAM_LEAD, or playing out
+  let to = null, best = null;
+  for(const m of P.list){
+    if(m === sh || m.over || !m.st) continue;
+    const Tm = pcNow(m);
+    for(const p of pcComing(m)){
+      if(p.start - PCAM_LEAD > Tm) continue;   // not yet: the camera comes PCAM_LEAD before it starts
+      if(!best || (p.ko && !best.ko) || (p.ko === best.ko && p.score > best.score)){ best = p; to = m; }   // a KO first, then the biggest
+    }
+  }
+  if(!best) return;
+  if(best.ko ? busyKo : (busy || P.frame < P.cutF + PCAM_DWELL)) return;
+  pcCut(to, best);
 }
+// A match's good plays still to be seen: plays that are over leave its list, and only those whose key moment is still PCAM_SEE or more
+// to come in the copy that can be shown count -- the camera is never sent to a play that has happened, or that it would catch mid-blow.
+function pcComing(m){ const T = pcNow(m); if(m.ahead.length) m.ahead = m.ahead.filter(p=>p.end >= T); return m.ahead.filter(p=>p.key - PCAM_SEE >= T); }
 function pcCut(m, e){
   const P = PCAM, from = P.shown;
-  P.log.push({ f:P.frame, from:TOURNEY.fixtures.indexOf(from.fx), to:TOURNEY.fixtures.indexOf(m.fx), kind:e ? e.kind : 'match over', score:e ? e.score : 0 });
-  P.shown = m; P.cutF = P.frame; P.flashF = P.frame; P.holdF = e ? P.frame + PCAM_HOLD : 0; P.koHoldF = (e && e.ko) ? P.frame + PCAM_HOLD : 0;
+  P.log.push({ f:P.frame, from:TOURNEY.fixtures.indexOf(from.fx), to:TOURNEY.fixtures.indexOf(m.fx), kind:e ? e.kind : 'match over', score:e ? e.score : 0,
+    at:pcNow(m), start:e ? e.start : null, key:e ? e.key : null });
+  P.shown = m; P.cutF = P.frame; P.flashF = P.frame;
 }
 // K: in a session, the camera's cuts (and its tag) off and on -- off, the match on screen is the one you stay with, and its end is the
 // hub; elsewhere in a spectated stock cup, the setting itself (and mid-fixture, a session from here: pcAdopt). Only this cup's: the saved
@@ -20273,7 +20953,7 @@ function setupWorld(){
   if(SETTINGS.mode==='ctf'){ ctfBuildWorld(); return; }   // Capture the Flag: one of its own huge maps (see the CTF block)
   CAM_ZOOM = 0.72;
   if(ONEFIGHT.active || COBSFIGHT.active){ buildOneArena(); return; }   // One's arena, and Steve Cobs's: the teams map without its walls (see buildOneArena)
-  if(SETTINGS.mode === 'teams' && stage && stage.layout === 'disc'){ buildMoonCaves(); return; }   // MOON CAVES (Teams only: stageOpen)
+  if(SETTINGS.mode === 'teams' && (MCAVE_DEV || MCAVE_OPEN) && stage && stage.layout === 'disc'){ buildMoonCaves(); return; }   // MOON CAVES (while it is built: MCAVE_DEV only, MCAVE_OPEN once released; Teams only)
   if(RACE.active){ buildRaceLane(); return; }       // RUNNING!: the Red Line Game's lane (see buildRaceLane)
   const MS = mapSize();                       // MAP SIZE match setting → arena W/H multipliers
   if(!isBig()){
@@ -20372,10 +21052,10 @@ function setupWorld(){
   // ============================================================
   // 1.5x the old stadium on both axes. The cross eats the whole middle of the map, so without the
   // extra room each team would be fighting in a cupboard.
-  const ARENA_SCALE = 1.5;
+  const ARENA_SCALE = 1.5, FIT = teamsArenaFit();
   const wMul = 2.9 + SETTINGS.count*0.11;
-  WW = Math.round(W * Math.min(3.6, wMul) * MS.w * ARENA_SCALE);
-  WH = Math.round(H * 2.5 * MS.h * ARENA_SCALE);
+  WW = Math.round(W * Math.min(3.6, wMul) * MS.w * ARENA_SCALE * FIT);
+  WH = Math.round(H * 2.5 * MS.h * ARENA_SCALE * FIT);
 
   const teamCount = (SETTINGS.teamKey||'').split('v').filter(Boolean).length || 2;
   const marginX  = WW*0.03;
@@ -20759,7 +21439,10 @@ function vanDrive(pr){
   pr.phase = 'fall'; pr.life = Math.max(pr.life, 90);          // the finisher: it falls, and has the time to land
 }
 function platRects(){
-  if(MCAVE && MCAVE.on) return worldPlats;   // MOON CAVES: the open frame's pieces (none outside a frame; kit-made platforms join with the moves' step)
+  if(MCAVE && MCAVE.on){   // MOON CAVES: the open frame's pieces (none outside a frame), and the kit-made platforms charted with it (mcLists)
+    if(!FILE_RIDES.length && !FX_PLATS.length && !SPONGY_PLATS.length) return worldPlats;
+    return worldPlats.concat(FILE_RIDES, FX_PLATS, SPONGY_PLATS);
+  }
   let base = isBigFFA() ? [...worldPlats, ...spawnPlatRects()]
              : !isBig()   ? worldPlats
              : [...worldPlats, ...bases.map(b=>({x:b.x,y:b.y,w:b.w,h:b.h}))];
@@ -20811,7 +21494,7 @@ function buildFighters(){
   if(RACE.active){ buildRaceRunners(); return; }   // RUNNING!: you and Marshmallow (no rivals: RACE_RUNNERS)
   if(COBSFIGHT.active && COBSFIGHT.lineup){ buildCobsFighters(); return; }   // and his (Knife alone in the story fight)
   if(SETTINGS.mode==='ctf') SETTINGS.count = clamp(Math.round(SETTINGS.count/2)*2, 4, 16);   // 2 to 8 a side
-  const cap = SETTINGS.mode==='teams'?MAX_TEAMS:(SETTINGS.mode==='ctf'?16:MAX_FFA);
+  const cap = SETTINGS.mode==='teams'?maxTeams():(SETTINGS.mode==='ctf'?16:MAX_FFA);
   const netRoster = window.__netRoster || null;   // list of human-chosen fighter names, in slot order
   const humanCount = netRoster ? netRoster.length : 0;
   let N=Math.max(minCount(), Math.min(cap, SETTINGS.count));
@@ -20859,7 +21542,7 @@ function buildFighters(){
   if(SETTINGS.mode==='ctf'){ teamOf = ctfTeamOf(N, humanCount, !!netRoster, netSides); }
   else if(SETTINGS.mode==='teams'){
     const split=(SETTINGS.teamKey||'').split('v').map(Number).filter(n=>n>0);
-    const sizes = (split.reduce((a,b)=>a+b,0)===N) ? split : (teamSplitsFor(N)[0]||[N]);
+    const sizes = (split.reduce((a,b)=>a+b,0)===N && !(MCAVE && MCAVE.on && split.length !== 2)) ? split : (teamSplitsFor(N)[0]||[N]);   // (MOON CAVES: two sides)
     teamOf=[]; 
     for(let s=0;s<sizes.length;s++){ for(let k=0;k<sizes[s];k++){ teamOf.push(s); } }
     if(netRoster && netSides) teamOf = netTeamsSeat(sizes, netSides, humanCount);   // the humans where they picked, the CPUs fill each team
@@ -21849,9 +22532,14 @@ function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;
 // ---------- HUD ----------
 function buildHUD(){
   const bar=document.getElementById('hudbar'); bar.innerHTML='';
+  const many = fighters.length > 20;
+  bar.classList.toggle('many', many);   // (MOON CAVES, M7: up to 30 cards, compact, a row a side)
   window.__hudLineup = fighters.map(f=>f.idx+':'+f.name).join('|');
   const teams=SETTINGS.mode==='teams' || SETTINGS.mode==='ctf';
-  fighters.forEach(f=>{
+  let lastTeam = null;
+  (many ? fighters.slice().sort((a, b)=>a.team - b.team || a.idx - b.idx) : fighters).forEach(f=>{
+    if(many && lastTeam !== null && f.team !== lastTeam){ const br=document.createElement('div'); br.className='hudbreak'; bar.appendChild(br); }
+    lastTeam = f.team;
     const c=document.createElement('div'); c.className='pcard'+(f.you?' you':''); c.dataset.i=f.idx;
     const tc = teams ? TEAM_COLORS[f.team%TEAM_COLORS.length] : null;
     if(tc) c.style.borderTopColor=tc, c.style.borderTopWidth='5px';
@@ -21862,36 +22550,33 @@ function buildHUD(){
 }
 // Live in-match standings: current running order. FFA ranks individuals; teams ranks teams.
 // Order key: alive first, then more stocks, then more KOs, then fewer falls.
+// LESS ON THE SCREEN (the owner, 2026-10-31: "do 3"): a free-for-all has no box -- the cards along the top show every fighter's stocks -- and
+// Teams has one small line, each side's dot and stocks left, the leader bold, instead of a titled ladder over the arena's corner.
 function updateStandings(){
   const box=document.getElementById('standings'); if(!box) return;
-  if(RACE.active || SETTINGS.mode==='ctf'){ box.innerHTML=''; return; }   // (Capture the Flag has its own scoreboard, drawn on the canvas)   // RUNNING!: no ladder; the progress bar is the standing
+  if(RACE.active || SETTINGS.mode==='ctf'){ box.innerHTML=''; box.style.display='none'; return; }   // (Capture the Flag has its own scoreboard, drawn on the canvas)   // RUNNING!: no ladder; the progress bar is the standing
+  if(SETTINGS.mode!=='teams'){ box.innerHTML=''; box.style.display='none'; return; }
+  box.style.display=''; box.classList.add('compact');
   const you=fighters.find(f=>f.you);
-  const rankScore = f => (f.dead?0:1e6) + (f.stocks===Infinity ? (f._kos||0)*1000 : (f.stocks||0)*1000) + (f.killCount||0)*10 - (f.deaths||0);
   let html='';
-  if(SETTINGS.mode==='teams'){
+  {
     const teamIds=[...new Set(fighters.map(f=>f.team))];
     const teamStat = t => { const m=fighters.filter(f=>f.team===t);
       return { t, stocks:m.reduce((a,f)=>a+Math.max(0,f.stocks),0), alive:m.some(f=>!f.dead),
                kos:m.reduce((a,f)=>a+(f.killCount||0),0), color:(TEAM_COLORS[t%TEAM_COLORS.length]) }; };
-    const rows=teamIds.map(teamStat).sort((a,b)=> (b.alive?1:0)-(a.alive?1:0) || b.stocks-a.stocks || b.kos-a.kos);
-    html='<div class="standings-title">STANDINGS</div>';
-    rows.forEach((r,i)=>{ const mine=you&&you.team===r.t;
-      html+=`<div class="strow${i===0?' leader':''}${mine?' self':''}"><span class="stplace">${i+1}</span>`
-        +`<span class="stdot" style="background:${r.color}"></span>`
-        +`<span class="stname">Team ${r.t+1}</span><span class="ststk">${r.stocks}♥</span></div>`; });
-  } else {
-    const rows=[...fighters].filter(f=>!f._oneGhost).sort((a,b)=>rankScore(b)-rankScore(a));   // One's ghost is not a standing
-    html='<div class="standings-title">STANDINGS</div>';
-    rows.forEach((f,i)=>{ const mine=f.you;
-      html+=`<div class="strow${i===0?' leader':''}${mine?' self':''}"><span class="stplace">${f.dead?'✕':(i+1)}</span>`
-        +`<span class="stdot" style="background:${safeColor(f.color)}"></span>`
-        +`<span class="stname">${esc(f.name)}</span><span class="ststk">${f.stocks===Infinity?'∞':Math.max(0,f.stocks)}♥</span></div>`; });
+    const rows=teamIds.map(teamStat), lead=[...rows].sort((a,b)=> (b.alive?1:0)-(a.alive?1:0) || b.stocks-a.stocks || b.kos-a.kos)[0];
+    rows.sort((a,b)=>a.t-b.t);
+    rows.forEach(r=>{ const mine=you&&you.team===r.t;
+      html+=`<span class="stteam${r===lead && rows.some(o=>o.stocks!==r.stocks)?' leader':''}${mine?' self':''}"><span class="stdot" style="background:${r.color}"></span>`
+        +`<span class="ststk">${r.stocks}♥</span></span>`; });
   }
-  box.innerHTML=html;
+  if(MCAVE && MCAVE.on && box._html === html) return;   // (MOON CAVES, M7: rebuilt only when it changed)
+  box.innerHTML=html; box._html=html;
 }
 function updateHUD(){
   if(PCAM.bg) return;   // PLAYS CAMERA: the HUD is the match on screen's
   updateStandings();
+  if(MCAVE && MCAVE.on){ mcUpdateCards(); return; }   // MOON CAVES (M7): the same cards, written only where they changed
   fighters.forEach(f=>{
     const c=document.querySelector(`.pcard[data-i="${f.idx}"]`); if(!c)return;
     c.classList.toggle('dead',f.dead);
@@ -21899,6 +22584,21 @@ function updateHUD(){
     c.querySelector('.pct').style.color=pctColor(f.pct, f.koCap);
     c.querySelector('.stk').textContent = (SETTINGS.mode==='ctf') ? ((f._cf>=0?'\u2691':'')+(f._ck>=0?'\u26BF':'')+(f._jail!=null?'\u26D3':'')) : (f.stocks===Infinity) ? '∞' : '●'.repeat(Math.max(0, Math.min(20, f.stocks|0)));
   });
+}
+// MOON CAVES (M7): the cards as updateHUD writes them, each part written only when it differs from what the card shows (_v: its last values),
+// the cards found once (_mcCards, by index, rebuilt with the HUD) -- 30 querySelector calls and 90 writes a frame were most of the HUD's cost.
+let _mcCards = null, _mcCardsFor = null;
+function mcUpdateCards(){
+  const bar = document.getElementById('hudbar'); if(!bar) return;
+  if(_mcCardsFor !== bar.firstChild){ _mcCards = new Map(); for(const c of bar.querySelectorAll('.pcard')) _mcCards.set(+c.dataset.i, c); _mcCardsFor = bar.firstChild; }
+  for(const f of fighters){
+    const c = _mcCards.get(f.idx); if(!c) continue;
+    const v = c._v || (c._v = {}), pct = (Math.round(f.pct*10)/10).toFixed(1) + '%', col = pctColor(f.pct, f.koCap), dead = !!f.dead;
+    const stk = (f.stocks===Infinity) ? '∞' : '●'.repeat(Math.max(0, Math.min(20, f.stocks|0)));
+    if(v.dead !== dead){ c.classList.toggle('dead', dead); v.dead = dead; }
+    if(v.pct !== pct || v.col !== col){ const p = c.querySelector('.pct'); if(v.pct !== pct) p.textContent = pct; if(v.col !== col) p.style.color = col; v.pct = pct; v.col = col; }
+    if(v.stk !== stk){ c.querySelector('.stk').textContent = stk; v.stk = stk; }
+  }
 }
 function pctColor(p, cap){ const r = cap ? p/cap : p/200;   // fraction of this fighter's KO threshold
   if(r<0.35)return'#1c1c1c'; if(r<0.6)return'#e0803a'; if(r<0.85)return'#e0503a'; return'#c0142a'; }
@@ -22343,6 +23043,7 @@ function itemSpawnInterval(){
   switch(SETTINGS.itemRate){ case 1: return 780; case 2: return 460; case 3: return 260; default: return 0; }
 }
 function spawnItem(){
+  if(MCAVE && MCAVE.on){ mcSpawnItem(); return; }   // MOON CAVES: on a floor, never from space
   const gy = groundY();
   const x = floorSafeX(120 + Math.random()*(WW-240), 50);   // (REAL EDGES: it comes down over the floor, not a gap)
   // weight the pool: healing/marmalade common, powerups & throwables medium, assist/yoyle rarer, boss rarest
@@ -22351,10 +23052,39 @@ function spawnItem(){
   items.push(itemFallDrift({ kind, x, y:sideRoomTop() - 40, vx:0, vy:0, r: kind==="boss"?0:16, taken:false, life: 60*30, _land:false }, gy));
   // boss/assist "capsules" resolve on pickup; others sit until grabbed
 }
+// MOON CAVES (M3): an item appears ON a floor -- the surface, a cave's floor or the shell, never a step or a ledge -- outside both strips,
+// and grows in over MC_ITEM_GROW frames (drawItem); it never falls from space. The same pool as everywhere.
+const MC_ITEM_GROW = 12;
+function mcFloorSpot(lift){
+  const M = MCAVE, tops = M.segs.filter(g => !g.oneway && g.a1 - g.a0 > 80/g.r1); let tot = 0; for(const g of tops) tot += (g.a1 - g.a0)*g.r1;
+  for(let tries = 0; tries < 24; tries++){
+    let u = Math.random()*tot, g = tops[tops.length - 1];
+    for(const q of tops){ const L = (q.a1 - q.a0)*q.r1; if(u < L){ g = q; break; } u -= L; }
+    const m = 40/g.r1, a = g.a0 + m + Math.random()*(g.a1 - g.a0 - 2*m), r = g.r1 + lift, x = M.cx + r*Math.sin(a), y = M.cy - r*Math.cos(a);
+    if(!bases.some(b => b.zone && x >= b.zone.x && x <= b.zone.x + b.zone.w && y >= b.zone.y && y <= b.zone.y + b.zone.h)) return { x, y };
+  }
+  return null;
+}
+function mcSpawnItem(){
+  const pool = eventItemPool() || ["heal","heal","marmalade","marmalade","throw","throw","power","power","assist","assist","yoyle","yoyle"];
+  const kind = pool[Math.floor(Math.random()*pool.length)], r = kind==="boss"?0:16, p = mcFloorSpot(r);
+  if(!p) return;
+  items.push({ kind, x:p.x, y:p.y, vx:0, vy:0, r, taken:false, life:60*30, _land:true, _born:hazardT });
+}
 // FALL DRIFT for a loose item from the sky (the rule is FALL_DRIFT's, by addProj): it comes down on a slant, FALL_DRIFT px
 // across for every px down, toward the middle of the stage -- nobody threw it -- and still lands on the spot it was rolled
 // for, so its start moves back along the drift. updateItems moves it by the item physics (its vx eases x0.98 a frame) and
 // stops the drift the frame it lands. No dice: the item draws exactly what it drew before.
+// An item on the disc (in its own chart): one sitting where it appeared stays; one knocked loose falls toward the middle onto the first
+// surface under it, and one that falls into the core is gone.
+function mcItemStep(it){
+  if(it._land && !it.vx && !it.vy) return;
+  const y0 = it.y;
+  it.vy += 0.5; it.y += it.vy; it.x += it.vx; it.vx *= 0.98;
+  const top = surfaceBelow(it.x, y0 + it.r - 2);
+  if(top !== null && it.y + it.r >= top){ it.y = top - it.r; it.vy = 0; it.vx = 0; it._land = true; }
+  if(MCAVE.cy - it.y < MCAVE.rKill) it.life = 0;
+}
 function itemFallDrift(it, gy){
   const land = gy - (it.r||0), dir = it.x < WW*0.5 ? 1 : -1;
   let y = it.y, vy = it.vy||0, t = 0, sum = 0, k = 1;
@@ -22373,9 +23103,11 @@ function updateItems(){
   // physics + pickup for loose items
   for(const it of items){ mcEnter(it); try {   // (MOON CAVES: in the item's own chart)
     if(it.taken) continue;
+    if(MCAVE && MCAVE.on){ mcItemStep(it); } else {
     it.vy += 0.5; it.y += it.vy; it.x += it.vx; it.vx*=0.98;
     // land on ground
     if(it.y > gy - it.r && (!FLOOR_SEGS || (groundAt(it.x) && it.y - it.vy <= gy - it.r + 18))){ it.y = gy - it.r; it.vy=0; it.vx=0; it._land=true; }   // landed: the fall's drift stops here (itemFallDrift)
+    }
     if(FLOOR_SEGS && it.y > WH + 160) it.life = 0;   // REAL EDGES: knocked or dropped into a gap, it is gone
     it.life--;
     // pickup: any living fighter overlapping grabs it
@@ -22481,7 +23213,8 @@ function fsSpawn(){
   const live = fighters.filter(f=>!f.dead);
   if(live.length < 2){ FS.next = 120; return; }
   let cx = 0, cy = 0; for(const f of live){ cx += f.x; cy += f.y; } cx /= live.length; cy /= live.length;
-  const p = fsClampPos(cx + (fsRand() - 0.5)*500, cy - 80 - fsRand()*80);
+  let p = fsClampPos(cx + (fsRand() - 0.5)*500, cy - 80 - fsRand()*80);
+  if(MCAVE && MCAVE.on){ const f = live[0], r = mcRad(f.x, f.y) || 1, k = (r + 120)/r; p = { x:MCAVE.cx + (f.x - MCAVE.cx)*k, y:MCAVE.cy + (f.y - MCAVE.cy)*k }; }   // MOON CAVES: over the first fighter (the fighters' middle can be in the core)
   SMASHBALL = { x:p.x, y:p.y, vx:0, vy:0, hp:FSBALL.hp, hpMax:FSBALL.hp, r:FSBALL.r, t:0, life:FSBALL.life, wx:p.x, wy:p.y, wt:0, gr:{}, seq:++FS.seq, flash:0, last:-1 };
   for(let i = 0; i < 14; i++) puff(p.x, p.y, 'hsl(' + (i*26) + ',95%,62%)', 5);
 }
@@ -22516,8 +23249,11 @@ function fsMoveBall(){
   const live = fighters.filter(f=>!f.dead);
   if(--b.wt <= 0 && live.length){   // a new place to drift to, near some fighter
     b.wt = 90 + Math.floor(fsRand()*80);
-    const a = live[Math.floor(fsRand()*live.length)], p = fsClampPos(a.x + (fsRand() - 0.5)*420, a.y - 60 - fsRand()*140);
-    b.wx = p.x; b.wy = p.y;
+    const a = live[Math.floor(fsRand()*live.length)];
+    if(MCAVE && MCAVE.on){ const r = mcRad(a.x, a.y) || 1, ux = (a.x - MCAVE.cx)/r, uy = (a.y - MCAVE.cy)/r, s = (fsRand() - 0.5)*420, up = 60 + fsRand()*140;
+      b.wx = a.x + ux*up - uy*s; b.wy = a.y + uy*up + ux*s; }   // MOON CAVES: "above" a fighter is out from the middle, and "beside" along the ground
+    else { const p = fsClampPos(a.x + (fsRand() - 0.5)*420, a.y - 60 - fsRand()*140);
+    b.wx = p.x; b.wy = p.y; }
   }
   let ax = (b.wx - b.x)*0.0016, ay = (b.wy - b.y)*0.0016;
   for(const f of live){   // it shies away from anyone close, but only so fast: a runner catches it
@@ -22875,6 +23611,7 @@ function fsKoFlight(t, strict){
   let x = t.x, y = t.y, vx = t.vx || 0, vy = t.vy || 0;
   const g = GRAV*(stage.hazard === 'lowgrav' ? 0.7 : 1), fall = (t.st || STAT_ONE).fall, gy = groundY(), n = Math.min(90, (t.hitstun || 0) + (strict ? 0 : 4));
   const saved = !!(t.kit && t.kit.special === 'wallmart' && !t._gravSaved);
+  if(MCAVE && MCAVE.on) return mcKoFlight(t, n, saved);   // MOON CAVES: out past the blast ring or down into the core
   for(let i = 0; i < n; i++){
     vy += vy > 0 ? g*fall : g; x += vx; y += vy;
     if(saved && vy > 0 && y > WH + 60 && y <= WH + 160) return false;   // (MARSHMALLOW'S GRAVITY: halted above the bottom line, flung back up)
@@ -22883,12 +23620,12 @@ function fsKoFlight(t, strict){
   }
   return false;
 }
-function fsSlowStart(t, frames){ if(FS.slow > 0 || FS.freeze > 0){ if(FS.sf === t.idx) t._fsHitT = null; return; } t._fsHitT = null; FS.slow = FS.slowN = frames || FS_SLOW.frames; FS.slowAcc = 0; FS.game = 0; FS.sf = t.idx; FS.sx = t.x; FS.sy = t.y; }
+function fsSlowStart(t, frames){ if(FS.slow > 0 || FS.freeze > 0){ if(FS.sf === t.idx) t._fsHitT = null; return; } t._fsHitT = null; FS.slow = FS.slowN = frames || FS_SLOW.frames; FS.slowAcc = 0; FS.game = 0; FS.sf = t.idx; const p = mcRealPt(t); FS.sx = p.x; FS.sy = p.y; }   // (MOON CAVES: the real place)
 // A KO by a Final Smash that the slow-mo did not see coming (eliminate): a shorter one, on the spot they went out.
 function fsKoSlow(t){
   if(t._fsHitT == null || hazardT - t._fsHitT > 180 || FS.slow > 0) return;
   t._fsHitT = null;
-  FS.slow = FS.slowN = Math.round(FS_SLOW.frames*0.6); FS.slowAcc = 0; FS.sf = -1; FS.game = 0; FS.sx = clamp(t.x, 0, WW); FS.sy = clamp(t.y, 0, WH);
+  const p = mcRealPt(t); FS.slow = FS.slowN = Math.round(FS_SLOW.frames*0.6); FS.slowAcc = 0; FS.sf = -1; FS.game = 0; FS.sx = clamp(p.x, 0, WW); FS.sy = clamp(p.y, 0, WH);   // (MOON CAVES: the real place)
 }
 // The close-up: the holder through the intro, the launched foe through the slow-mo ({x, y, z, k}: the point, the zoom, how far in).
 function fsCamFocus(){
@@ -22930,12 +23667,12 @@ function kocFinal(t){ return !!t && !t.dead && t.stocks <= 1 && !(t.reform > 0) 
 // A hit has set t's launch (applyHit; a Final Smash's let-go): the last KO starts on the blow when it will carry them out. Not when the damage
 // cap is about to take them (applyHit's koCap, right after): that KO is on the spot, so it gets the shorter close-up there (eliminate: kocKo),
 // not the long one that followed a flight the cap then cut short.
-function kocLaunch(t){ if(!KOC.on && !(t.pct >= t.koCap) && kocFinal(t) && fsKoFlight(t, true)) kocStart(t, t.x, t.y, FS_SLOW.frames, t.idx); }
+function kocLaunch(t){ if(!KOC.on && !(t.pct >= t.koCap) && kocFinal(t) && fsKoFlight(t, true)){ const p = mcRealPt(t); kocStart(t, p.x, p.y, FS_SLOW.frames, t.idx); } }   // (MOON CAVES: the close-up at the real place)
 // eliminate(): f's last stock is gone. When that ends the match and the blow did not already start it, the shorter one where they went out.
 function kocKo(f){
   if(!kocApplies() || kocSides(f) > 1 || (KOC.on && KOC.idx === f.idx)) return;
   if(FS.slow > 0 && !(FS.freeze > 0) && !FS.game && FS.sf === f.idx){ kocMark(f); return; }   // a Final Smash's slow-mo on them (its looser cue called it): the last KO's from here, no new close-up
-  kocStart(f, clamp(f.x, 0, WW), clamp(f.y, 0, WH), Math.round(FS_SLOW.frames*0.6), -1);
+  const p = mcRealPt(f); kocStart(f, clamp(p.x, 0, WW), clamp(p.y, 0, WH), Math.round(FS_SLOW.frames*0.6), -1);   // (MOON CAVES: the real place)
 }
 // The slow-mo (the Final Smash's, marked as the last KO's) and the sting.
 function kocStart(t, x, y, n, sf){
@@ -22977,7 +23714,8 @@ function fsCamApply(c, zoom){
   FS_VIEW.on = false;
   const fz = fsCamFocus(); if(!fz || !(fz.k > 0.001)) return;
   const k = fz.k*fz.k*(3 - 2*fz.k), Z = 1 + (fz.z - 1)*k;
-  const px = (fz.x - camX - W/2)*zoom + W/2, py = (fz.y - camY - H/2)*zoom + H/2;
+  const P = MCAVE && MCAVE.on ? worldToScreen(fz.x, fz.y, zoom) : null;   // (MOON CAVES: where the turned view shows it)
+  const px = P ? P.x : (fz.x - camX - W/2)*zoom + W/2, py = P ? P.y : (fz.y - camY - H/2)*zoom + H/2;
   const cx = clamp(px + (W/2 - px)*k, W - (W - px)*Z, px*Z), cy = clamp(py + (H/2 - py)*k, H - (H - py)*Z, py*Z);
   c.translate(cx, cy); c.scale(Z, Z); c.translate(-px, -py);
   FS_VIEW = { on:true, Z:Z, zoom:zoom, cx:cx, cy:cy, px:px, py:py, k:k };
@@ -22985,7 +23723,8 @@ function fsCamApply(c, zoom){
 // A world point's place on the screen in this picture (the close-up included), and px per world px there.
 function fsToScreen(x, y){
   const V = FS_VIEW, zoom = V.on ? V.zoom : viewZoom();
-  const bx = (x - camX - W/2)*zoom + W/2, by = (y - camY - H/2)*zoom + H/2;
+  const P = MCAVE && MCAVE.on ? worldToScreen(x, y, zoom) : null;   // (MOON CAVES: the turned view)
+  const bx = P ? P.x : (x - camX - W/2)*zoom + W/2, by = P ? P.y : (y - camY - H/2)*zoom + H/2;
   return V.on ? { x:V.cx + V.Z*(bx - V.px), y:V.cy + V.Z*(by - V.py), s:zoom*V.Z } : { x:bx, y:by, s:zoom };
 }
 // A locked foe is shown on their own body: lit in the holder's colour, pulsing (drawSpriteBody, from fsLk, so a client draws it too). The ring
@@ -23106,7 +23845,7 @@ function fsDrawFx(){
   for(const f of fighters){
     if(!f.fsId || f.dead || f.fsC > 0) continue;   // (through the catch the catch area is what is drawn: hit art)
     const d = FINAL_SMASHES[f.name] && FINAL_SMASHES[f.name].id === f.fsId ? FINAL_SMASHES[f.name] : FS_DEFAULT;
-    if(d.draw){ ctx.save(); try{ d.draw(f, ctx); }catch(e){} ctx.restore(); }
+    if(d.draw){ ctx.save(); mcUpright(f.x, f.y); try{ d.draw(f, ctx); }catch(e){} ctx.restore(); }   // (MOON CAVES: upright round its user)
   }
 }
 // Screen-space. THE INTRO (CATCH, THEN CINEMATIC): the screen dark but for the holder, who is lit in their own colour; it lifts through
@@ -24901,9 +25640,10 @@ function summonAssistNamed(owner, a){
   if(!a) return null;
   // Blender "opens at center stage" per the doc — it is a placed trap, not a chaser, so it arrives
   // where it belongs rather than wherever its summoner happened to be standing.
-  const cx = a.fixed==="center" ? WW*0.5 : owner.x;
+  const mc = MCAVE && MCAVE.on, mcFloor = mc && Number.isFinite(owner.y) ? surfaceBelow(owner.x, owner.y) : null;   // (MOON CAVES: no centre stage on a disc -- at its summoner, on their floor)
+  const cx = a.fixed==="center" && !mc ? WW*0.5 : owner.x;
   const s = { type:"assist", name:a.name, color:a.color, act:a.act, team:owner.team, owner:owner.idx,
-    x:cx, y:(a.fixed || !Number.isFinite(owner.y)) ? groundY()-40 : owner.y - 10, vx:0, vy:0, r:a.r || 26,   // beside its summoner, on their level (a placed trap at its place)
+    x:cx, y:(a.fixed || !Number.isFinite(owner.y)) ? (mcFloor !== null ? mcFloor : groundY())-40 : owner.y - 10, vx:0, vy:0, r:a.r || 26,   // beside its summoner, on their level (a placed trap at its place)
     life:(a.dur || (a.oneShot ? ASSIST_ONESHOT_WINDOW : ASSIST_DUR)), face:owner.face, _cd:0,
     oneShot:!!a.oneShot, mortal:!!a.mortal, fixed:a.fixed||null, jumps:1, onground:false, _fly:a.fly ? 1 : 0 };
   summons.push(s);
@@ -25172,7 +25912,8 @@ function eraserWipe(s){
     f.burn = 0; f.bleed = 0; f._poisonT = 0; f.rooted = 0; f.slowed = 0; f.weakened = 0; f.curseStacks = 0; f.ctrlRev = 0; f._soakT = 0;   // (SOAKED is a slow: dried off with it)
     if(had) for(let i=0;i<8;i++) puff(f.x, f.y-8, '#ffd8cc', 4);
   }
-  for(let i=0;i<3;i++) items.push({kind:"yoyle", x:clamp(s.x+(i-1)*70, 30, WW-30), y:groundY()-16, vx:0, vy:0, r:16, taken:false, life:60*20, _land:true});
+  for(let i=0;i<3;i++){ const ix = clamp(s.x+(i-1)*70, 30, WW-30), fy = MCAVE && MCAVE.on ? surfaceBelow(ix, s.y) : null;   // (MOON CAVES: on the floor under it)
+    items.push({kind:"yoyle", x:ix, y:(fy !== null ? fy : groundY())-16, vx:0, vy:0, r:16, taken:false, life:60*20, _land:true}); }
   for(let i=0;i<14;i++) puff(s.x+Math.random()*120-60, s.y, '#e8b0a0', 4);
 }
 // Pie's lob, aimed to come down where the foe stood as she leaned back (_lx, _ly): a shot falls 0.34 a frame (the projectile step).
@@ -25341,7 +26082,7 @@ const AS_ACT = {
   // dark cloud. He still steals the throwable from a foe in his rain for his summoner (doc).
   steal(s, tgt, T, owner){
     s._fly = 1;
-    const gy = groundY();
+    const gy = MCAVE && MCAVE.on ? mcSummonFloor(tgt || s) : groundY();   // (MOON CAVES: over the floor under its target, not the surface)
     if(s._boltT > 0) s._boltT--;
     let hx = s.x, hy = s.y;
     if(tgt){ hx = tgt.x; hy = (tgt.type==="boss" ? tgt.y - tgt.r : tgt.y) - T.hover; s.face = Math.sign(tgt.x - s.x) || s.face; }
@@ -43716,6 +44457,7 @@ function updateSummons(){
   refreshSpongyPlats();
   springyTickProps();   // Springy's landed boxes stand SPRINGY.boxLife frames, whoever dropped them (an item boss has no frame of its own)
   for(const s of summons){ mcEnter(s); try {   // (MOON CAVES: in the summon's own chart)
+    const sgy = MCAVE && MCAVE.on ? mcSummonFloor(s) : gy;   // (MOON CAVES: its own floor -- groundY() is the surface's height in every chart)
     s.life--; if(s._cd>0) s._cd--;
     if(s.type==="springyend"){ springyEndStep(s); continue; }   // his ending: no gravity, no target, no fight (springyEnding)
     if(s.type==="metag" || s.type==="mephoneunit"){ cobsMinionStep(s); continue; }   // Steve Cobs's MeTags and MePhone units: their own brain (cobsMinionStep), never the assists'
@@ -43727,12 +44469,13 @@ function updateSummons(){
     }
     // gravity + ground — an assist gets the fighter-grade body (platforms, jumps, world edges);
     // a boss keeps the floor-snap it was tuned against.
-    if(s.type==="assist"){ stepAssistBody(s, gy); }
+    if(s.type==="assist"){ stepAssistBody(s, sgy); }
     else if(s.hover){ }   // One flies (canon): no gravity and no floor snap, oneMove steers her
     else {
       s.vy += 0.6; s.y += s.vy; s.x += s.vx; s.vx*=0.9;
-      if(s.y > gy - s.r){ s.y = gy - s.r; s.vy=0; }
+      if(s.y > sgy - s.r){ s.y = sgy - s.r; s.vy=0; }
     }
+    if(MCAVE && MCAVE.on && !s.hover && MCAVE.cy - s.y < MCAVE.rKill){ s.life = 0; continue; }   // MOON CAVES: fallen into the core
     // target: nearest valid enemy
     let tgt=null, best=1e9;
     for(const f of fighters){ if(f.dead) continue;
@@ -43816,6 +44559,7 @@ function step(){
   const gravFor = function(f){ if(f._floatT>0){ f._floatT--; return grav*0.35; } return grav; };
 
   cpuSeeRecord();   // what every fighter, shot and summon looks like as this frame begins: what a CPU sees, late (CPU_HUMAN)
+  if(MCAVE && MCAVE.on) mcThinkPass();   // MOON CAVES (M7): the CPUs think first, sharing their eyes (mcThinkPass)
   for(const f of fighters){
     if(f.dead){ f._hitStop = 0; f._hsBuf = null; continue; }
     if(f._fsLock && fsLockHold(f)) continue;   // CATCH, THEN CINEMATIC: caught by a Final Smash, they cannot move or act (fsLockHold)
@@ -43856,14 +44600,18 @@ function step(){
     } else {
       // A HUMAN'S EYES AND HANDS (CPU_HUMAN): a CPU sees its foes as they were a moment ago, and its keys change at a person's pace;
       // the brain (aiThink) decides on what it sees.
-      const hl = cpuHumanLevel(f), seen = hl >= 0 ? cpuSeeBegin(f, CPU_HUMAN.react[hl]) : null;
+      const hl = cpuHumanLevel(f), pre = (f._mcThink && f._mcThink.t === hazardT) ? f._mcThink : null;   // (MOON CAVES: decided in mcThinkPass)
+      const seen = (hl >= 0 && !pre) ? cpuSeeBegin(f, CPU_HUMAN.react[hl]) : null;
+      if(pre){ inp = pre.inp; f._mcThink = null; }
+      else {
       try {
       inp = (SETTINGS.mode==='ctf' && ctfAiInput(f)) || aiThink(f);
       if(COBSFIGHT.active) cobsAiLasers(f, inp);   // Steve Cobs's laser walls: a CPU jumps for the gap as a player does (no other fight has them)
       legacyFin(inp);   // attack + special pressed together is the finisher; the engine reads `fin`
       fsBotInput(f, inp);   // chases the Smash Ball, and holds a Final Smash until it will hit
       } finally { if(seen) cpuSeeEnd(seen); }
-      if(hl >= 0) inp = cpuHumanKeys(f, inp, CPU_HUMAN.inputGap[hl], (seen ? seen.near : cpuFoeNear(f)) <= CPU_HUMAN.fightReach);
+      }
+      if(hl >= 0) inp = cpuHumanKeys(f, inp, CPU_HUMAN.inputGap[hl], (pre ? pre.near : seen ? seen.near : cpuFoeNear(f)) <= CPU_HUMAN.fightReach);
     }
     if(f._hsBuf){ for(const b in f._hsBuf) inp[b] = true; f._hsBuf = null; }   // HIT FREEZE: a button pressed while held still is pressed now
     f._rawKeys = (ctrl==='local' || ctrl==='remote') ? [!!inp.attack, !!inp.special, !!inp.smash, !!inp.jump] : null;   // a human's buttons as pressed, before the pairing below: what a cuff's mash counts (cuffKeys)
@@ -44332,6 +45080,7 @@ function step(){
     if(f.onground){ f._aiFloorY = f.y + f.r; f._aiFloorT = hazardT; }   // the floor its jumps go up from (aiJumpFloor, a CPU's walls)
     // ---- move ----
     f._airT = f.onground ? 0 : (f._airT || 0) + 1;   // frames in the air (1 on the first): a running jump eases down over them (runEaseCap)
+    if(f.onground) f._hjN = 0;   // jumps hits gave back this airtime (HIT_JUMP_MAX)
     let _walkCap = -1;   // the run's speed cap, when this frame's speed is the fighter's own keys' (THE WORLD'S EDGE IS A WALL FOR WALKING: edgeWalkWall)
     if(f.hitstun<=0){
       f._freeAt = hazardT; f._freeIn = (inp.left ? 1 : 0) | (inp.right ? 2 : 0) | (inp.jump ? 4 : 0);   // (moved by these keys this step: a guest's prediction runs only when they are the guest's own, netPredOut)
@@ -44592,7 +45341,7 @@ function step(){
     f._footing = f.onground;   // where its own step left it: on a floor or not (WALKING OFF CANCELS THE TILT reads this, not a push that only marks it airborne)
     // MARSHMALLOW'S GRAVITY, the half that helps: halted right before the saw and flung back upwards (War De
     // Guacamole). Involuntary, once a stock, and only on the way down to a knockout.
-    if(f.kit && f.kit.special==='wallmart' && !f._gravSaved && f.vy > 0 && f.y > WH + 60 && f.y <= WH + 160 && !f.dead){
+    if(f.kit && f.kit.special==='wallmart' && !f._gravSaved && f.vy > 0 && !f.dead && (MCAVE && MCAVE.on ? (MCAVE.cy - f.y < MCAVE.rKill + 100 && MCAVE.cy - f.y >= MCAVE.rKill) : (f.y > WH + 60 && f.y <= WH + 160))){   // (MOON CAVES: just short of the core, on the way in)
       f._gravSaved = true; f.vy = -17; f.vx *= 0.3; f.hitstun = 0;
       for(let i=0;i<16;i++) puff(f.x + (Math.random()*50-25), f.y, '#ffe9f2', 5);   // no "...GRAVITY?!" line ("Remove them all"); the save itself is the joke
     }
@@ -44623,7 +45372,9 @@ function step(){
 
   STEP_F = null;
   // DROPS CARRY: whoever a plunging fighter falls into goes down with them (see updateDropCarry).
-  for(const f of fighters) if(f._hsHeld !== hazardT){ mcEnter(f); try { updateDropCarry(f); } finally { mcExit(); } }   // (not one held still by a hit this frame: HIT FREEZE)
+  for(const f of fighters) if(f._hsHeld !== hazardT){
+    if(MCAVE && MCAVE.on && (f.dead || !((f._carrying && f._carrying.length) || isDropping(f)))) continue;   // (MOON CAVES, M7: no frame for nothing)
+    mcEnter(f); try { updateDropCarry(f); } finally { mcExit(); } }   // (not one held still by a hit this frame: HIT FREEZE)
 
   // evil leafy hazard
   if(evil){
@@ -44667,7 +45418,7 @@ function step(){
         let top = null;
         for(const t of vanTopsAt(pr.x)){ if(t.y >= b0 - 1 && t.y <= b1 + 1 && (top===null || t.y < top)) top = t.y; }
         if(top !== null){ pr.y = top - pr._rest; pr.vy = 0; pr.falling = false; puff(pr.x, top, pr.color, 3); }
-        else { pr.y += pr.vy; if(pr.y > WH + 200) pr.life = 0; }
+        else { pr.y += pr.vy; if(MCAVE && MCAVE.on ? MCAVE.cy - pr.y < MCAVE.rKill : pr.y > WH + 200) pr.life = 0; }   // (MOON CAVES: fallen into the core)
         if(!fell || !(pr.life > 0)) continue;
       } else {
         if(pr.arm>0){ if(pr._a0 == null) pr._a0 = pr.arm; pr.arm--; }        // arming delay before it can trigger (_a0: where it started, for HIT ART's dashed decal filling in; read by nothing else)
@@ -44733,6 +45484,7 @@ function step(){
     }
     if(pr.aimBoom){ aimBoomStep(pr); if(pr.life<=0) continue; }   // thrown at a foe and coming back (fileRideThrow): straight out along its aim, then home to the thrower
     pr.x+=pr.vx; pr.y+=pr.vy; if(pr.grav||pr.bounce) pr.vy+=0.34; if(pr.grow) pr.r += pr.grow; pr.life--;   // bounce implies gravity so it arcs into surfaces
+    if(MCAVE && MCAVE.on){ const _r = MCAVE.cy - pr.y; pr._mcLap = (pr._mcLap || 0) + Math.abs(pr.vx)/Math.max(64, _r); if(_r < MCAVE.rKill || _r > MCAVE.Rblast + 400 || pr._mcLap > Math.PI) pr.life = 0; }   // MOON CAVES: gone in the core, far out in space, or half a lap round (on a flat map it would have left)
     // a fist on an arm that retracts (Springy's JUST WANTED A HAND): where its flight out would have ended, it turns and comes back the
     // same way to where the arm began, and is gone there -- the reach is what it was, and the way back is new
     if(pr.retract && pr.life <= 0){ pr.vx = -pr.vx; pr.retract = false; pr.life = Math.ceil(Math.abs(pr.x - pr.armX0)/Math.abs(pr.vx)) + 1; }
@@ -46048,6 +46800,9 @@ const HIT_JUMP_K = { "*":1,
   "Balloony":0.08, "Basketball":0.08, "David":0.08, "Goo":0.08, "Jack":0.08, "Magnet":0.08, "Poppy":0.08, "Taco":0.08,
   "Balloon":0
 };
+// HIT_JUMP_MAX: the most jumps hits give back in one airtime, on top of the fighter's own (the owner, 2026-10-30: "restrict max air jumps
+// to 3", then "no, the max of extra air jumps should be 2"). Landing starts the count again (step).
+const HIT_JUMP_MAX = 2;
 function hitJumpK(f){
   let k = f && HIT_JUMP_K[f.name];
   if(k == null && f && PRIZE_KIT.HIT_JUMP_K) k = PRIZE_KIT.HIT_JUMP_K[f.name];   // (the prize's rows live in its own block)
@@ -46058,8 +46813,9 @@ function hitJumpK(f){
 // reads it too: netPredOut `hj`); any other jump, or a knock that gives a jump of its own, clears the mark.
 function hitJumpBack(f, t){
   if(!f || f === t || fighters[f.idx] !== f || f.dead || f.onground || f.jumps > 0 || RACE.active || !ownHit(f, t)) return false;
+  if((f._hjN||0) >= HIT_JUMP_MAX) return false;   // two given back this airtime: no more until they land
   const k = hitJumpK(f); if(!(k > 0)) return false;   // (0: none for them -- a jump of no height would still stop their fall)
-  f.jumps = 1; f._hitJumpV = Math.sqrt(k);
+  f.jumps = 1; f._hitJumpV = Math.sqrt(k); f._hjN = (f._hjN||0) + 1;
   return true;
 }
 // A fighter `t` hit by `from` (applyHit, not a tick): the target is held, once for each of the attacker's moves, and the attacker too
@@ -47703,7 +48459,7 @@ function fxOwner(o){ const f = fighters[o.o]; return (f && !f.dead) ? f : null; 
 function fxFoe(i){ const t = (i != null && i >= 0) ? fighters[i] : null; return (t && !t.dead && t._jail == null) ? t : null; }   // (Capture the Flag: a jailed fighter is out of it)
 // A foe this finisher holds: still in the match and still marked as held by it. A KO, a jail or a trip home lets go (finxDrop clears the mark).
 function fxHeld(o, i){ const t = fxFoe(i); return (t && t._fxBy === o.id) ? t : null; }
-function finxAdd(f, k, o){ o.k = k; o.o = f.idx; o.id = ++FINX_SEQ; o.t0 = hazardT; o.face = f.face < 0 ? -1 : 1; FINX.push(o); return o; }
+function finxAdd(f, k, o){ o.k = k; o.o = f.idx; o.id = ++FINX_SEQ; o.t0 = hazardT; o.face = f.face < 0 ? -1 : 1; mcAnchor(o); FINX.push(o); return o; }   // (MOON CAVES: mcAnchor)
 function fxLock(f, n){ f._fxLock = Math.max(f._fxLock || 0, hazardT + n); }
 // May this finisher land on t: a living foe no finisher holds, protected by nothing but the grace this same finisher's own hits opened.
 function fxCanHit(f, t, o){
@@ -47761,12 +48517,18 @@ function fxAimWay(f, o, ok){
 // A solid wall (not a floor under it) across x between top and bottom: where a whirl, a snowball, a puddle or a bubble stops.
 function fxWall(x, top, bottom){ for(const q of platRects()){ if(!q.solid || q.rot) continue; if(x > q.x && x < q.x + q.w && q.y < bottom - 2 && q.y + (q.h || 16) > top) return true; } return false; }
 // The same across a whole span x0..x1 (either order): something that comes out ahead of her may not come out past a wall.
-function fxWallSpan(x0, x1, top, bottom){ const a = Math.min(x0, x1), b = Math.max(x0, x1); for(const q of platRects()){ if(!q.solid || q.rot) continue; if(q.x < b && q.x + q.w > a && q.y < bottom - 2 && q.y + (q.h || 16) > top) return true; } return false; }
+function fxWallSpan(x0, x1, top, bottom){ const a = Math.min(x0, x1), b = Math.max(x0, x1), lo = bottom - WALL_FLOOR_SKIN; for(const q of platRects()){ if(!q.solid || q.rot) continue; if(q.x < b && q.x + q.w > a && q.y < lo && q.y + (q.h || 16) > top) return true; } return false; }
 // How far along y's band (top..bottom) from x0 toward dir the first solid wall is, up to len (len: nothing in the way). Needle's thread stops there.
+// A FLOOR IS NOT A WALL (the owner, 2026-10-31: "do 2"). A solid block you stand on has its top at your feet, and a band reaching a few px
+// under them -- Tree's branch (to 6 px under), Cammy's photo (6 px under) -- read it as a wall at 0: on Stone Pillars both did nothing from on
+// top of a block (0%, and 11.4% / 6% from the floor), and on Moon Caves, where every floor is a block, never. A box is a wall only if it reaches
+// WALL_FLOOR_SKIN px up into the band (it was 2).
+const WALL_FLOOR_SKIN = 10;
 function fxWallDist(x0, dir, len, top, bottom){
   let best = len;
+  const lo = bottom - WALL_FLOOR_SKIN;
   for(const q of platRects()){
-    if(!q.solid || q.rot || !(q.y < bottom - 2 && q.y + (q.h || 16) > top)) continue;
+    if(!q.solid || q.rot || !(q.y < lo && q.y + (q.h || 16) > top)) continue;
     const near = dir > 0 ? q.x - x0 : x0 - (q.x + q.w), far = dir > 0 ? q.x + q.w - x0 : x0 - q.x;
     if(far > 0) best = Math.min(best, Math.max(0, near));
   }
@@ -48321,13 +49083,17 @@ function finxStep(){
     const f = fxOwner(o), run = FINX_STEP[o.k];
     if(!f || !run){ o.dead = true; continue; }
     HITSTOP_FIN.f = f; HITSTOP_FIN.o = o; HITSTOP_FIN.pre = (f._fxLock || 0) >= hazardT && f._fxBy == null;   // HIT FREEZE: whose finisher lands what it lands, and whether they are still in it (hitStopFin)
-    mcEnter(f); try { run(o, f); } finally { HITSTOP_FIN.f = null; HITSTOP_FIN.o = null; mcExit(); }   // (MOON CAVES: in its user's chart)
+    mcEnter(f, o); try { run(o, f); } finally { HITSTOP_FIN.f = null; HITSTOP_FIN.o = null; mcExit(); }   // (MOON CAVES: in the chart the record was made in, mcAnchor)
     if(o.dead && f.hitstun > 0) f._fxLock = 0;   // a hit cancelled it: the hitstun is the only wait (the tell's lock used to run on past it, free frames for the attacker)
   }
   if(FINX.some(function(o){ return o.dead; })){ for(const o of FINX) if(o.dead) fxRelease(o); FINX = FINX.filter(function(o){ return !o.dead; }); }
   for(const g of fighters) if(g._growSz && !fxMine(g, 'grow')) fxGrowEnd(g);   // Puffball's Grow ended some other way: her own size again
   FX_PLATS = [];
-  for(const o of FINX){ if(o.k === 'bubble' && o.ph === 'drift') FX_PLATS.push(fxBubblePlat(o)); else finx2Plats(o, FX_PLATS); }   // a drifting bubble's top, Book's castle top, Puffball's bridge: one-way platforms (platRects)
+  for(const o of FINX){
+    const mc = MCAVE && MCAVE.on && o._mcRho && ((o.k === 'bubble' && o.ph === 'drift') || (o.k === 'popup' && o.ph === 'stand') || (o.k === 'rainbow' && o.ph === 'bridge')) ? fxOwner(o) : null;
+    if(mc) mcEnter(mc, o);   // (MOON CAVES: made in the record's own chart -- the bridge's planks are its points -- and charted out as boxes)
+    try { if(o.k === 'bubble' && o.ph === 'drift') FX_PLATS.push(fxBubblePlat(o)); else finx2Plats(o, FX_PLATS); } finally { if(mc) mcExit(); }
+  }   // a drifting bubble's top, Book's castle top, Puffball's bridge: one-way platforms (platRects)
 }
 // A KO'd fighter: its own finishers end (what they hold is let go), and it leaves any finisher holding it. (dropInFlightMoves)
 // (Capture the Flag's jail and trip home keep the fighter alive, so the holder's own row must let go too, or it pulls them straight back.)
@@ -48424,6 +49190,7 @@ const FINX_NET = ['k','o','id','t0','ph','face','x','y','R','tip','tgt','hx','hy
 function finxNet(){
   return FINX.map(function(o){ const r = {};
     for(const k of FINX_NET){ const v = o[k]; if(v === undefined || v === null) continue; r[k] = typeof v === 'number' ? Math.round(v*10)/10 : v; }
+    if(o._mcRho){ r.mP = Math.round(o._mcPhi*1e6)/1e6; r.mR = Math.round(o._mcRho*10)/10; }   // MOON CAVES (M6): the chart its points are in (mcAnchor)
     return r; });
 }
 // Whether this fighter is drawn as Teardrop's puddle instead of herself.
@@ -48637,10 +49404,16 @@ function finxDraw(layer){
   for(const o of FINX){
     const fn = D[o.k], f = fighters[o.o];
     if(!fn || !f) continue;
-    ctx.save(); fn(o, f, layer); ctx.restore();
+    ctx.save(); try { mcFinxDraw(o, f, fn, layer); } finally { ctx.restore(); }   // (MOON CAVES: in the record's own chart; elsewhere fn(o, f, layer))
   }
   if(layer === 'over') for(const t of fighters){
     if(t.dead) continue;
+    if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(t.x, t.y); try { finxDrawStatus(t); } finally { ctx.restore(); } continue; }   // MOON CAVES: upright round them
+    finxDrawStatus(t);
+  }
+}
+function finxDrawStatus(t){
+  {
     if(t._dazzle > hazardT){ ctx.save(); fxDrawDazzle(t); ctx.restore(); }
     if(t._patch > hazardT){ ctx.save(); fxDrawPatch(t); ctx.restore(); }
     if(t._sinkT > hazardT){ ctx.save(); fxDrawSink(t); ctx.restore(); }   // (batch 2: Golf Ball's sand)
@@ -50644,6 +51417,7 @@ function fx4Caught(o, g, from, col, ax){
   o.tgt = (bodied && from.idx != null && fighters[from.idx] === from) ? from.idx : -1;
   o.ax = ax != null ? ax : (bodied ? from.x : g.x + o.face*100);
   if(!bodied && ax == null){ let bd = 1e9; for(const s of summons){ if(!fxLiveSummon(g, s)) continue; const dd = Math.abs(s.x - g.x); if(dd < bd){ bd = dd; o.ax = s.x; } } }   // a boss's hit with no body: back at the boss
+  o.ax = mcRecXIn(o, o.ax);   // (MOON CAVES: caught in a shot's or a swinger's frame, kept in the record's own chart)
   g.invuln = Math.max(g.invuln || 0, FX4.catch.inv); g.flash = 8;
   for(let i=0;i<6;i++) puff(g.x + o.face*g.r*0.6, g.y - 6, i%2 ? '#9fd8ff' : '#ffffff', 3);
 }
@@ -51990,7 +52764,7 @@ function fxFernsStep(o, f){
   if(hazardT - o.et >= N.end) o.dead = true;   // 'end': they wilt
 }
 // A foe's swing or shot on a fernling (or a seed still sprouting) uproots it.
-FX5_HURT.ferns = { at:function(o){ const N = FX5.ferns; return o.ph === 'grow' ? o.sp.map(function(p, i){ return o.al[i] === 1 ? [p[0], p[1] - 10, N.base + 4] : null; }) : []; },
+FX5_HURT.ferns = { at:function(o){ const N = FX5.ferns; return o.ph === 'grow' ? o.sp.map(function(p, i){ return o.al[i] === 1 ? [mcRecX(o, p[0]), p[1] - 10, N.base + 4] : null; }) : []; },   // (mcRecX: read from a shot's or a swing's frame on Moon Caves)
   hit:function(o, i){ fx5FernUproot(o, i); } };
 function fx5DrawFernling(x, y, h, spread, curl, a){
   ctx.globalAlpha = a; ctx.strokeStyle = '#2f6b3a'; ctx.lineWidth = 3; ctx.lineCap = 'round';
@@ -54167,7 +54941,7 @@ function fxCranesStep(o, f){
   if(o.ph === 'flock' && alive === 0) o.dead = true;
 }
 // A foe's swing or shot on a crane in the air tears it.
-FX5_HURT.cranes = { at:function(o){ const C = FX7.cranes; return o.cr.map(function(c){ return (c[2] >= 1 && c[2] <= 3) ? [c[0], c[1], C.r + 4] : null; }); },
+FX5_HURT.cranes = { at:function(o){ const C = FX7.cranes; return o.cr.map(function(c){ return (c[2] >= 1 && c[2] <= 3) ? [mcRecX(o, c[0]), c[1], C.r + 4] : null; }); },   // (mcRecX: as the ferns')
   hit:function(o, i, by, dmg){ const c = o.cr[i]; if(!c || c[2] < 1 || c[2] > 3) return; fx7CraneSet(c, c[0], c[1], 5); for(let k=0;k<6;k++) puff(c[0], c[1], k%2 ? '#f4f1e4' : '#d9d0c0', 3); } };
 // An origami crane at (x, y): r its size, ang the way its body points, flap 0..1 (wings down..up), k its fold (0 a flat sheet .. 1 a crane).
 function fx7DrawCrane(x, y, r, ang, flap, k, face){
@@ -55499,7 +56273,7 @@ function fileRideAiHold(f, inp){
 function drawFileRides(){
   for(const p of FILE_RIDES){
     const w = p.w, h = p.h, dir = p.face < 0 ? -1 : 1, cx = p.x + w/2;
-    ctx.save();
+    ctx.save(); mcUpright(cx, p.y);   // (MOON CAVES: upright where it glides)
     const sb = surfaceBelow(cx, p.y + h);
     if(sb !== null && sb - p.y < 160){ ctx.globalAlpha = 0.22; ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse(cx, sb - 1, w*0.42, 4, 0, 0, 7); ctx.fill(); }
     ctx.translate(cx, p.y); ctx.scale(dir, 1);   // local: +x is the way it glides, y 0 the surface you stand on
@@ -59530,7 +60304,7 @@ function fallDrift(p){
     if(!dir) dir = p.warnX < WW*0.5 ? 1 : -1;                                               // nobody threw it
     vx = dir * FALL_DRIFT * (p.warnY - p.y) / T;
   }
-  p.vx = vx; p.x = p.warnX - vx*T;
+  p.vx = vx; p.x = p.warnX - vx*(MCAVE && MCAVE.on && MC_FR.open ? mcFallArc(p, T) : T);   // (MOON CAVES: mcFallArc)
   return p;
 }
 function spawnProj(f,o){
@@ -59546,14 +60320,19 @@ function spawnProj(f,o){
   visLaunch(f, p);          // render-only: draw its first frames coming OUT of the fighter
   return addProj(p);   // the caller may want the shot it just made (SM_PAT.walk tags a roller)
 }
-// Drop a projectile from just above the visible area onto (lx) with a warning shadow at landing spot,
+// Drop a projectile from high above onto (lx) with a warning shadow at landing spot,
 // so "downpour" moves are reactable instead of ambushing from the world ceiling.
+// A FIXED FALL (the owner, 2026-10-31: "do 5"): it starts DROP_FALL_H over the spot, so every drop takes as long to land wherever the camera
+// is. It started "just above the top of the current view" (camY - 30), so the same anvil landed sooner or later with the view: 620 px over a
+// foe on the floor of a single-screen stage (the 720-tall view), anything on a scrolling map. 620 keeps the single-screen floor's fall.
+// It can start inside a zoomed-out view now, so it grows in over DROP_GROW frames as anything spawned does (drawProjectile).
+const DROP_FALL_H = 620, DROP_GROW = 12;
 function dropProj(f, lx, landY, o, burst){
   if(f.dropCd>0 && !burst) return;              // shared throttle: no rapid-fire drops (special OR smash)
   if(!burst) f.dropCd = 70;                     // a burst volley sets its own cooldown once, outside this call
-  const spawnY = camY - 30;                    // just above the top of the current view
+  const spawnY = MCAVE && MCAVE.on && MC_FR.open ? mcDropY(lx, landY) : landY - DROP_FALL_H;   // (MOON CAVES: mcDropY, out from the middle)
   const onTop = surfaceBelow(lx, landY);             // the shadow sits on the surface under the spot, not always the floor
-  addProj({ owner:f.idx, ownerObj:f, x:lx, y:spawnY, vx:0, vy:5, grav:true, _dropFace:f.face, _dropVx:f.vx,   // the way it was thrown, for the fall drift
+  addProj({ owner:f.idx, ownerObj:f, x:lx, y:spawnY, vx:0, vy:5, grav:true, _dropFace:f.face, _dropVx:f.vx, _dropAt:hazardT,   // the way it was thrown, for the fall drift; when (its grow-in)
     warnX:lx, warnY: onTop!==null ? onTop : landY, warn:26, ...o });
 }
 
@@ -60575,7 +61354,8 @@ function enemyZoneOf(f){
     if(b.team === f.team) continue;
     const z = teamZoneOf(b.team);
     if(!z) continue;
-    if(f.x >= z.x && f.x <= z.x + z.w && f.y >= z.y && f.y <= z.y + z.h) return b.team;
+    const p = mcRealPt(f);   // (MOON CAVES: inside a frame, the real place)
+    if(p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h) return b.team;
   }
   return null;
 }
@@ -60595,7 +61375,7 @@ const ENEMY_ZONE_BLEED = 0.035;
 function pickSpawnPad(b, f){
   const pads = (b.spawns && b.spawns.length) ? b.spawns : [{x:b.spawnX, y:b.spawnY}];
   const mates = fighters.filter(o=>o!==f && !o.dead && o.team===f.team);
-  const crowd = p => mates.filter(o=>Math.abs(o.x-p.x) < 95 && Math.abs(o.y-p.y) < 115).length;
+  const crowd = p => mates.filter(o=>{ const q = mcRealPt(o); return Math.abs(q.x-p.x) < 95 && Math.abs(q.y-p.y) < 115; }).length;   // (MOON CAVES: a reform inside a frame: the real places)
   for(let tries=0; tries<24; tries++){
     const p = pads[Math.floor(Math.random()*pads.length)];
     if(!crowd(p)) return p;
@@ -60609,7 +61389,8 @@ function inOwnTeamZone(f){
   if(!f || SETTINGS.mode !== 'teams') return false;
   const z = teamZoneOf(f.team);
   if(!z) return false;
-  return f.x >= z.x && f.x <= z.x + z.w && f.y >= z.y && f.y <= z.y + z.h;
+  const p = mcRealPt(f);   // (MOON CAVES: inside a frame, the real place)
+  return p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h;
 }
 // SELF-GRACE. Hit-grace stops OTHER hits piling onto someone who was just hit: a projectile wall, a
 // second attacker, or the same attacker's next move. It must not break one move built to hit more
@@ -61167,6 +61948,7 @@ function stepImpactFx(){
     for(const c of IMPACT_DEBRIS){
       c.life--;
       if(c.rest) continue;
+      if(MCAVE && MCAVE.on){ mcDebrisStep(c); continue; }   // (MOON CAVES: toward the middle, onto rock)
       c.vy += 0.4; c.x += c.vx; c.y += c.vy; c.rot += c.vr;
       if(c.vy > 0){
         const top = vanLanding(c.x, c.y - c.vy, c.y);
@@ -61204,6 +61986,12 @@ function impactFromNet(list){
     if(!Number.isFinite(x) || !Number.isFinite(y)) continue;
     const q = impactOpts({ shake: e[2], dust: e[3], debris: e[4], r: e[6], color: e[7] });
     q.scar = (Number.isFinite(+e[5]) && +e[5] >= 0) ? Math.min(400, +e[5]) : -1;
+    if(MCAVE && MCAVE.on && Number.isFinite(+e[9])){   // MOON CAVES (M6): made upright in a chart on the host and turned (e[9]): so here
+      const ld = IMPACT_DUST[IMPACT_DUST.length - 1], lb = IMPACT_DEBRIS[IMPACT_DEBRIS.length - 1], ls = IMPACT_SCARS[IMPACT_SCARS.length - 1];
+      impactFx(x, y, q, +e[8] || 0);
+      mcImpactTurn(x, y, +e[9], ld, lb, ls, Math.round(8*q.dust), q.debris, q.scar >= 0 ? 1 : 0);
+      continue;
+    }
     impactFx(x, y, q, +e[8] || 0);
   }
 }
@@ -61213,8 +62001,10 @@ function drawImpactScars(){
   ctx.save(); ctx.fillStyle = '#1a120c'; ctx.strokeStyle = '#1a120c'; ctx.lineWidth = 2;
   for(const s of IMPACT_SCARS){
     ctx.globalAlpha = 0.55*Math.min(1, s.life/IMPACT_FX.scarFade);
+    if(MCAVE && MCAVE.on && s.rot != null){ ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.rot); ctx.translate(-s.x, -s.y); }   // MOON CAVES: along its floor (mcFxTurn's rot)
     ctx.beginPath(); ctx.ellipse(s.x, s.y + 2, s.w*0.5, 4, 0, 0, 7); ctx.fill();
     ctx.beginPath(); for(const c of s.cracks){ ctx.moveTo(s.x + c[0]*0.4, s.y + 1); ctx.lineTo(s.x + c[0], s.y + c[1]); } ctx.stroke();
+    if(MCAVE && MCAVE.on && s.rot != null) ctx.restore();
   }
   ctx.restore();
 }
@@ -61223,7 +62013,7 @@ function drawImpactFx(){
   if(!IMPACT_DUST.length && !IMPACT_DEBRIS.length) return;
   ctx.save();
   for(const d of IMPACT_DUST){ ctx.globalAlpha = Math.max(0, 0.5*d.life/d.max); ctx.fillStyle = d.color;
-    ctx.beginPath(); ctx.ellipse(d.x, d.y, d.r, d.r*0.45, 0, 0, 7); ctx.fill(); }
+    ctx.beginPath(); ctx.ellipse(d.x, d.y, d.r, d.r*0.45, MCAVE && MCAVE.on ? mcTh(d.x, d.y) : 0, 0, 7); ctx.fill(); }   // (MOON CAVES: flat along the ground there)
   ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 1.5;
   for(const c of IMPACT_DEBRIS){
     ctx.save(); ctx.globalAlpha = Math.min(1, c.life/20); ctx.translate(c.x, c.y - c.s*0.5); ctx.rotate(c.rot); ctx.fillStyle = c.color;
@@ -62915,7 +63705,7 @@ function oneFightEnded(won, result){
   const n = document.getElementById('unlockNote');
   if(n){
     // the reward has a line of its own: the stage she climbed out of, and the tokens (paid once: oneTokenGrant)
-    const reward = (first ? "★ NEW STAGE: The Moon, in the stage list for every match" : "") + (paid ? (first ? "  ·  " : "★ ") + "+" + paid + " Win Tokens" : "");
+    const reward = (first ? "★ NEW STAGE: The Moon, in the stage list for every match" + (MCAVE_OPEN ? "  ·  ★ Moon Caves, for Teams" : "") : "") + (paid ? (first ? "  ·  " : "★ ") + "+" + paid + " Win Tokens" : "");   // (MOON CAVES: once released, M8)
     n.textContent = (first
       ? "★ ONE UNLOCKED! Everyone she erased is back. Fight her any time, with any fighter: Boss Rush ▸ 🌕 One."
       : "★ One beaten " + q.wins + " time" + (q.wins===1 ? "" : "s") + " · best " + oneMmss(q.bestSecs)) + (reward ? "\n" + reward : "");
@@ -64295,6 +65085,7 @@ function navUp(f, t, wallX, wallX2){
   const past1 = (wx, xL, xR) => wx != null && (f.x < wx ? xL >= wx : xR <= wx);
   const past = (xL, xR) => past1(wallX, xL, xR) || past1(wallX2, xL, xR);
   const st = sticky ? f._navStep : null;
+  if(st && st.a0 != null && MCAVE && MCAVE.on && MC_FR.open){ st.xL = MCAVE.cx + MC_FR.rho*mcWrap(st.a0 - MC_FR.phi); st.xR = MCAVE.cx + MC_FR.rho*mcWrap(st.a1 - MC_FR.phi); }   // (MOON CAVES: round the disc, read in this frame's chart)
   if(st && !f.onground && hazardT - st.t <= 50 && !past(st.xL, st.xR)){
     const feet = f.y + f.r;
     if(feet > st.y - 90 && feet < st.y + 150){
@@ -64347,7 +65138,8 @@ function navUp(f, t, wallX, wallX2){
   const c=cands[0];
   let aimX = (f.x < c.xL) ? c.xL+12 : (f.x > c.xR) ? c.xR-12 : f.x;
   const bx = navBeside(f, c); if(bx != null) aimX = bx; else aimX = navUnderEnd(f, c, aimX);
-  if(sticky) f._navStep = { y:c.y, xL:c.xL, xR:c.xR, t:hazardT, slab:c.slab };
+  if(sticky){ f._navStep = { y:c.y, xL:c.xL, xR:c.xR, t:hazardT, slab:c.slab };
+    if(MCAVE && MCAVE.on && MC_FR.open){ f._navStep.a0 = MC_FR.phi + (c.xL - MCAVE.cx)/MC_FR.rho; f._navStep.a1 = MC_FR.phi + (c.xR - MCAVE.cx)/MC_FR.rho; } }   // (MOON CAVES: its angles, not this chart's x)
   return {x:aimX, y:c.y};
 }
 // ONTO A SLAB'S TOP FROM BESIDE IT (teams): below the top of a solid whose underside is over the fighter's head (the arm's top face, seen from
@@ -64762,13 +65554,17 @@ function aiThink(f){
   let pickFrom = targets;
   if(SETTINGS.mode==='teams'){ const open = targets.filter(t=>!inOwnTeamZone(t)); if(open.length) pickFrom = open; }
   const wentHome = () => pickFrom !== targets && !!f.aiTarget && !pickFrom.includes(f.aiTarget);
-  const focus = (TEAM_PLAN && TEAM_PLAN[f.team] && TEAM_PLAN[f.team].focusName) ? pickFrom.find(t=>t.name===TEAM_PLAN[f.team].focusName) : null;
+  let focus = (TEAM_PLAN && TEAM_PLAN[f.team] && TEAM_PLAN[f.team].focusName) ? pickFrom.find(t=>t.name===TEAM_PLAN[f.team].focusName) : null;
+  if(focus && MCAVE && MCAVE.on && mcFocusRank(f, focus) >= MC_FOCUS_CAP) focus = null;   // MOON CAVES: about five on the focus (mcFocusRank)
   if(targets[0]._isBoss) f.aiTarget = targets[0];   // (the boss's stand-in is made fresh each frame, where it is seen)
   else {
     if(focus && (!f.aiTarget || f.aiTarget.dead || f.aiTimer<=0 || wentHome())){ f.aiTarget=focus; f.aiTimer=brainR(L.target); }
     if(!f.aiTarget||f.aiTarget.dead||f.aiTarget.team===f.team||f.aiTimer<=0||wentHome()||f.aiTarget._isBoss){
-      let best=1e9; f.aiTarget=focus||pickFrom[0];
+      let best=1e9; const cur=f.aiTarget; f.aiTarget=focus||pickFrom[0];
       if(!focus) for(const t of pickFrom){ const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;f.aiTarget=t;} }
+      // MOON CAVES: the foe it is after stays its foe until another is clearly nearer. Foes come from both ways round the ring, and the nearest
+      // changed every second or two as they moved: at 10 a side a CPU turned round each time, and three spent a whole minute far from everyone.
+      if(MCAVE && MCAVE.on && !focus && cur && cur!==f.aiTarget && !cur.dead && cur.team!==f.team && pickFrom.includes(cur) && best > 0.7*Math.hypot(cur.x-f.x,cur.y-f.y) - 150) f.aiTarget=cur;
       f.aiTimer=brainR(L.target);
     }
   }
@@ -64776,7 +65572,8 @@ function aiThink(f){
   // was heading -- the seen place, carried on along the seen speed for part of that moment (lead: more of it on Hard). Its swings, its reach
   // and its steps go by the guess; what the foe is doing (its swing, its stun) is still only what it saw.
   const ts = f.aiTarget, ld = CPU_HUMAN.react[lvl] * L.lead;
-  const t = (ts._isBoss || !(ld > 0)) ? ts : Object.assign(Object.create(ts), { x: ts.x + (ts.vx||0)*ld, y: ts.y + (ts.onground ? 0 : (ts.vy||0)*ld*0.3) });
+  let t = (ts._isBoss || !(ld > 0)) ? ts : Object.assign(Object.create(ts), { x: ts.x + (ts.vx||0)*ld, y: ts.y + (ts.onground ? 0 : (ts.vy||0)*ld*0.3) });
+  if(MCAVE && MCAVE.on && !ts._isBoss) t = mcWayTarget(f, t, B, ts);   // MOON CAVES: a foe round the far side is gone after over 12 or under 6 o'clock
   const dx=t.x-f.x, dy=t.y-f.y, adx=Math.abs(dx), ady=Math.abs(dy), dist=Math.hypot(dx,dy);
   const sp = f.kit && f.kit.special;
   // How long the foe has been up in the air, as it sees it (frames): one hanging up there over 1.5 s is a flyer, another level (below).
@@ -64799,10 +65596,13 @@ function aiThink(f){
   }
   // NO WAY THROUGH: four seconds trying to reach a far foe without getting 100 px nearer (bouncing between two ways round a wall on the big
   // maps, say): as a person would, it tries something else -- another foe for a while if there is one, and a run the other way first.
-  if(dist > 300 && !t._isBoss){
-    if(B.progD == null || dist < B.progD - 100){ B.progD = dist; B.progT = now; }
+  // (MOON CAVES: on a route to another layer the way can lead away from the foe first -- at 16 a side and more, out of the deepest cave only
+  // by its own strip's lift -- so there the progress is along the route: nearer the passage, and a layer nearer the foe, 1000 px each.)
+  const mcR = MCAVE && MCAVE.on && !t._isBoss ? mcRoute(f, t) : null, prog = mcR ? Math.abs(mcR.x - f.x) + 1000*mcR.gap - (mcR.up ? Math.max(0, mcR.lowY - (f.y + f.r)) : 0) : dist;
+  if((dist > 300 || mcR) && !t._isBoss){
+    if(B.progD == null || prog < B.progD - 100){ B.progD = prog; B.progT = now; }
     else if(now - B.progT > 240){
-      B.progD = null; B.progT = now; B.detour = { dir: dx < 0 ? 1 : -1, until: now + 70 };
+      B.progD = null; B.progT = now; B.detour = { dir: (mcR ? mcR.x - f.x : dx) < 0 ? 1 : -1, until: now + 70 };
       const other = pickFrom.filter(o => o !== ts);
       if(other.length){ f.aiTarget = other[Math.floor(Math.random()*other.length)]; f.aiTimer = 300; }
     }
@@ -64814,7 +65614,9 @@ function aiThink(f){
   }
   // UNSTICK: trying to reach a foe and the x has barely changed for a while (a wall, a corner): a short burst around, over or up it.
   if(f._lastX===undefined){ f._lastX=f.x; f._stuck=0; f._recover=0; }
-  const moved=Math.abs(f.x - f._lastX); f._lastX=f.x;
+  let moved=Math.abs(f.x - f._lastX); f._lastX=f.x;
+  if(MCAVE && MCAVE.on && MC_FR.open){ const th = MC_FR.phi + (f.x - MCAVE.cx)/MC_FR.rho, rr = MCAVE.cy - f.y;   // MOON CAVES: a CPU is always at the middle of its own
+    moved = f._lastTh == null ? 1 : Math.hypot(mcWrap(th - f._lastTh)*rr, rr - f._lastR); f._lastTh = th; f._lastR = rr; }   // chart, so f.x never moved: every CPU was "stuck", 11% of the time in unstick bursts
   if(dist>90 && moved<0.8 && f.onground && !stanceStill(f) && B.st !== 'wait'){ f._stuck++; } else { f._stuck=Math.max(0,f._stuck-2); }   // (a stance or a hesitation holds it still on purpose)
   if(f._stuck>26 && f._recover<=0){ f._recover=38; f._stuck=0; }
   if(f._recover>0){
@@ -64856,8 +65658,11 @@ function aiThink(f){
       }
     } else f._seekingSpawn=false;
   }
+  // MOON CAVES ROUTES (mcRoute): a foe on another layer is gone after through the hole that makes the shortest way.
+  if(mcR){ mcRouteSteer(f, inp, mcR, sp); brainEdges(f, inp, 90); return brainOut(f, inp, B, L, t, false); }
   // TEAM FLANK (teamSlotOf): the odd slots take the high road to a far foe, until close enough to drop in.
-  if(SETTINGS.mode==='teams' && isBig() && teamSlotOf(f) % 2 === 1 && adx > FLANK_X && dy > -FLANK_RISE*0.5 && dy < FLANK_RISE + 80 && f.pct < f.koCap*0.7){
+  if(SETTINGS.mode==='teams' && isBig() && teamSlotOf(f) % 2 === 1 && adx > FLANK_X && dy > -FLANK_RISE*0.5 && dy < FLANK_RISE + 80 && f.pct < f.koCap*0.7
+     && !(MCAVE && MCAVE.on && MCAVE.cy - f.y >= MCAVE.Rout)){   // (MOON CAVES: the high road is outward, the surface; on it, over it is space -- the flankers jumped at nothing, 30% of their time)
     const above = { x: t.x, y: t.y - FLANK_RISE, r: t.r };
     const wl = adx > 30 ? navAround(f, dx < 0 ? -1 : 1) : null;
     if(wl && wl.tall && aiWallWay(f, inp, wl, t.x)) return brainOut(f, inp, B, L, t, false);
@@ -64880,7 +65685,7 @@ function aiThink(f){
     if(adx>30){ if(dx<0) inp.left=true; else inp.right=true; }
     if(dy < -90){ steerClimb(f, t, inp); if(f._wallWayAt !== hazardT && dy<-160 && f.spCd<=0 && f.jumps<=0 && sp !== 'chair' && Math.random()<0.4){ inp.special=true; inp.up=true; } }
     else if(dy > 130){
-      if(isBig()){ const gx=nearestDropX(f); if(gx!=null && Math.abs(gx-f.x)>22){ inp.left=gx<f.x; inp.right=gx>=f.x; } else if(f.onground){ inp.down=true; inp.jump=true; } }
+      if(isBig()){ const gx=mcSafeDropX(f); if(gx!=null && Math.abs(gx-f.x)>22){ inp.left=gx<f.x; inp.right=gx>=f.x; } else if(f.onground && mcDropOk(f, f.x)){ inp.down=true; inp.jump=true; } }   // (MOON CAVES: only over something)
       else if(f.onground){ const ex=nearestDropX(f); if(ex!=null){ inp.left=ex<f.x; inp.right=ex>=f.x; } }
     }
     if(f.spCd<=0 && (sp==="dash"||sp==="rocket"||sp==="tackle"||sp==="switch") && adx>140 && hazardT >= B.specAt && Math.random()<0.25){ inp.special=true; B.specAt = hazardT + 90; }   // a dash to travel
@@ -64902,14 +65707,14 @@ function aiThink(f){
     return brainOut(f, inp, B, L, t, false);
   }
   if(ady > 70 && dy > 110 && onLevel){
-    if(isBig()){ const gapX = nearestDropX(f); if(gapX!=null && Math.abs(gapX - f.x) > 20){ if(gapX < f.x) inp.left=true; else inp.right=true; } else if(f.onground){ inp.down=true; inp.jump=true; } }
+    if(isBig()){ const gapX = mcSafeDropX(f); if(gapX!=null && Math.abs(gapX - f.x) > 20){ if(gapX < f.x) inp.left=true; else inp.right=true; } else if(f.onground && mcDropOk(f, f.x)){ inp.down=true; inp.jump=true; } }   // (MOON CAVES: only over something)
     else { const edgeX = f.onground ? nearestDropX(f) : null; if(edgeX!=null){ inp.left = edgeX < f.x; inp.right = edgeX >= f.x; } else if(adx>26){ if(dx<0)inp.left=true; else inp.right=true; } }
     return brainOut(f, inp, B, L, t, false);
   }
   // TEAMS: out of its own safe zone before it swings (nothing thrown from inside lands): toward the foe, or out of the zone's open side.
   if(SETTINGS.mode==='teams' && B.st !== 'retreat' && inOwnTeamZone(f)){
     const z = teamZoneOf(f.team);
-    const exitX = (t.x < z.x || t.x > z.x + z.w) ? t.x : (z.x + z.w/2 < WW/2 ? z.x + z.w + 40 : z.x - 40);
+    const exitX = MCAVE && MCAVE.on ? f.x + (dx < 0 ? -300 : 300) : (t.x < z.x || t.x > z.x + z.w) ? t.x : (z.x + z.w/2 < WW/2 ? z.x + z.w + 40 : z.x - 40);   // (MOON CAVES: the strip is a world box, the CPU in its chart: out toward the foe)
     brainWalk(f, inp, exitX < f.x ? -1 : 1, sp, exitX);
     B.press = null; B.str = null;
     const out = brainOut(f, inp, B, L, t, false);
@@ -64952,8 +65757,9 @@ function brainRecover(f, inp, B, sp){
   // floor there, a CPU that had dropped out of the arm's open end was "recovering", and Bow's jump took her straight back into the tunnel to
   // walk out again (the stuck report, 2026-10-29).
   const tq = (SETTINGS.mode === 'teams' && isBig() && floors.length) ? floors[0] : null;
-  const offLeft = f.x < (tq ? tq.x : 50), offRight = f.x > (tq ? tq.x + tq.w : WW-50), fallingOut=f.y>WH-90 && f.vy>0;
-  const goal = edgeGoal(f, B);   // REAL EDGES: off the stage over nothing -- where it heads back to (null: not off, or a stage without edges)
+  const mc = MCAVE && MCAVE.on;   // MOON CAVES: no sides and no bottom; under the shell the way back is up through the nearest crack
+  const offLeft = !mc && f.x < (tq ? tq.x : 50), offRight = !mc && f.x > (tq ? tq.x + tq.w : WW-50), fallingOut = !mc && f.y>WH-90 && f.vy>0;
+  const goal = mc ? mcCrackGoal(f) : edgeGoal(f, B);   // REAL EDGES: off the stage over nothing -- where it heads back to (null: not off, or a stage without edges)
   if(!(offLeft||offRight||fallingOut||goal||(sp==='chair' && aiBowAdrift(f)))){ B.recEp = null; return false; }
   B.press = null; B.str = null; if(B.st === 'string' || B.st === 'smash') B.st = 'approach';
   const held = !!f._jp;
@@ -65004,7 +65810,7 @@ function edgeGoal(f, B){
 // step, it jumps the gap when what it is after is across it and the far side is in a jump's reach (and remembers the trip: B.cross), else it
 // stops at the edge. (Its hands still go at a person's pace in a fight, so now and then it is a step late -- and then it recovers.)
 function brainLedge(f, inp, B){
-  if(!FLOOR_SEGS || !f.onground || inp.jump || f._fileRide) return;
+  if(!(FLOOR_SEGS || (MCAVE && MCAVE.on)) || !f.onground || inp.jump || f._fileRide) return;   // (MOON CAVES: the shell's cracks are drops)
   const dir = (inp.left && !inp.right) ? -1 : (inp.right && !inp.left) ? 1 : 0;
   if(!dir) return;
   const feet = f.y + f.r, ax = f.x + dir*(f.r*0.5 + 4 + Math.abs(f.vx||0)*3);
@@ -66027,6 +66833,33 @@ function cpuFoeNear(f){
   for(const s of summons) if((s.type === 'boss' || s.hostile) && !cpuSeeOwn(f, s) && !(s.life <= 0)) d = Math.min(d, Math.hypot(s.x - f.x, s.y - f.y));
   return d;
 }
+// MOON CAVES (M7): THE SHARED EYES. Every CPU that will think this step, grouped by team and by how late it sees (CPU_HUMAN.react): each
+// group's foes are swapped back to what it saw once (cpuSeeOwn leaves a whole side out, so one swap serves all of it), and inside it each
+// CPU thinks in its own chart (mcEnter: the seen places charted like any others) as the fighter loop would have had it -- its brain, its
+// finisher pairing, its Smash Ball chase -- and the loop takes the keys (f._mcThink) through its hands as ever. A CPU sees 10-30 frames
+// late, so thinking at the top of the step changes nothing it could see. Not a CPU held still this step (a hit freeze, a Final Smash's
+// catch): the loop skips it as before.
+function mcThinkPass(){
+  const G = new Map();
+  for(const f of fighters){
+    if(f.dead || f._fsLock || (f._hitStop > 0 && f._hsAt !== hazardT)) continue;
+    const ctrl = f.controller || (f.you ? 'local' : 'ai');
+    if(ctrl === 'local' || ctrl === 'remote' || ctrl === 'trainer' || ctrl === 'ctut' || ctrl === 'still') continue;
+    const hl = cpuHumanLevel(f); if(hl < 0) continue;
+    const n = CPU_HUMAN.react[hl], key = f.team + ':' + n;
+    let g = G.get(key); if(!g) G.set(key, g = { n, list:[] }); g.list.push(f);
+  }
+  for(const g of G.values()){
+    const S = cpuSeeBegin(g.list[0], g.n);
+    try {
+      for(const f of g.list){
+        mcEnter(f); STEP_F = f;
+        try { const inp = aiThink(f); legacyFin(inp); fsBotInput(f, inp); f._mcThink = { t:hazardT, inp, near:cpuFoeNear(f) }; }
+        finally { mcExit(); }
+      }
+    } finally { if(S) cpuSeeEnd(S); }
+  }
+}
 function cpuSeeEnd(S){
   const sv = S.saved;
   for(let i = sv.length - 4; i >= 0; i -= 4){ if(sv[i + 3]) sv[i][sv[i + 1]] = sv[i + 2]; else delete sv[i][sv[i + 1]]; }
@@ -66132,6 +66965,7 @@ function updateCamera(){
     const foc = cupCamFocus();
     if(foc){ const t = camTarget(foc.x, foc.y, CAM_ZOOM); camX += (t.x-camX)*0.12; camY += (t.y-camY)*0.12; return; }
   }
+  if(MCAVE && MCAVE.on && mcWatching()){ mcWatch(); return; }   // MOON CAVES: the watching view (CPU-only, or you are out)
   let you=live || fighters.find(f=>!f.dead);
   if(SETTINGS.mode==='ctf' && you) you = ctfCamFighter(you);   // a prisoner watches a teammate
   if(!you) return;
@@ -66152,13 +66986,22 @@ function drawLaunchingProjectiles(){
     if(!projVisLerp(pr) || _pvScale <= 0) continue;   // (a scale of 0 is a shot still held in the mouth: Puffball's, until her spit frame)
     ctx.save();
     ctx.translate(pr.x + _pvDX, pr.y + _pvDY);
+    if(MCAVE && MCAVE.on) ctx.rotate(mcTh(pr.x, pr.y));   // MOON CAVES: upright
     ctx.scale(_pvScale, _pvScale);
     ctx.translate(-pr.x, -pr.y);
     drawProjectile(pr);
     ctx.restore();
   }
 }
+// A drop grows in over its first DROP_GROW frames (dropProj); everything else is drawn as it always was.
 function drawProjectile(pr){
+  const ga = pr._dropAt != null ? hazardT - pr._dropAt : DROP_GROW;
+  if(ga >= DROP_GROW) return drawProjectileBody(pr);
+  const k = Math.max(0.08, (ga + 1)/DROP_GROW);
+  ctx.save(); ctx.translate(pr.x, pr.y); ctx.scale(k, k); ctx.translate(-pr.x, -pr.y);
+  try { drawProjectileBody(pr); } finally { ctx.restore(); }
+}
+function drawProjectileBody(pr){
     // the shadow of a boss's falling shot -- a BOSS's only. A fighter's drop has none: "i didnt mean telegraphs" (the owner, 2026-10-22). The
     // owner's call for bosses, the same day ("a bit of both"): a real shadow under what falls stays, the pulsing ring in the shot's colour went
     // (bossFallShadow). It darkens as the shot comes down.
@@ -67254,6 +68097,7 @@ function draw(){
   // laser beams (Ruby) — bright fading line
   for(const bm of beams){
     const a=bm.life/10;
+    if(MCAVE && MCAVE.on && bm.mc){ mcDrawBeam(bm, a); continue; }   // MOON CAVES: an arc round the disc
     // HIT ART: the band it really hit -- `w` either side of the line, a body's outline touching it is hit -- full as it lands, then
     // fading; the bright line rides its middle. (Dora's and Cammy's are 70 px tall walls; they were drawn as an 8 px stroke.)
     if(bm.w > 0){ const k = Math.max(0, Math.min(1, (bm.life - 4)/9)); if(k > 0){ ctx.save(); haDraw(ctx, { kind:'capsule', x1:bm.x0, y1:bm.y, x2:bm.x1, y2:bm.y, r:bm.w }, { k:k, col:bm.color }); ctx.restore(); } }
@@ -67274,6 +68118,10 @@ function draw(){
     // Those frames are drawn LATER, over the fighters (see drawLaunchingProjectiles): a shot
     // leaving a mouth sits ON the character who spat it, and this pass runs underneath them —
     // measured on the real canvas, Firey's own body hid the exact moment the feature is about.
+    if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(pr.x, pr.y); const zn = drawShotArea(pr);   // MOON CAVES: the same, upright where it is
+      if(projVisLerp(pr)) drawShotArea(pr, true);
+      else { if(zn){ ctx.translate(pr.x, pr.y); ctx.scale(ZONE_ICON, ZONE_ICON); ctx.translate(-pr.x, -pr.y); drawProjectile(pr); ctx.restore(); ctx.save(); mcUpright(pr.x, pr.y); } else drawProjectile(pr); drawShotArea(pr, true); }
+      ctx.restore(); continue; }
     const zone = drawShotArea(pr);   // HIT ART (A5): its real reach under it -- at the shot's true spot, even while its art is still lerping out of a mouth
     if(projVisLerp(pr)){ drawShotArea(pr, true); continue; }
     if(zone){ ctx.save(); ctx.translate(pr.x, pr.y); ctx.scale(ZONE_ICON, ZONE_ICON); ctx.translate(-pr.x, -pr.y); drawProjectile(pr); ctx.restore(); }   // a zone's own glyph, as a small icon on its decal
@@ -67282,10 +68130,13 @@ function draw(){
   }
 
   // items on the stage
-  for(const it of items){ if(it.taken) continue; drawItem(it); }
-  if(SMASHBALL) fsDrawBall(SMASHBALL);
+  for(const it of items){ if(it.taken) continue;
+    if(MCAVE && MCAVE.on){ const g = it._born != null ? Math.min(1, Math.max(0.05, (hazardT - it._born + 1)/MC_ITEM_GROW)) : 1;   // MOON CAVES: upright, and grown in over 12 frames
+      ctx.save(); mcUpright(it.x, it.y); if(g < 1){ ctx.translate(it.x, it.y); ctx.scale(g, g); ctx.translate(-it.x, -it.y); } drawItem(it); ctx.restore(); }
+    else drawItem(it); }
+  if(SMASHBALL){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(SMASHBALL.x, SMASHBALL.y); fsDrawBall(SMASHBALL); ctx.restore(); } else fsDrawBall(SMASHBALL); }
   // active summons (assists & bosses)
-  for(const s of summons){ drawSummon(s); }
+  for(const s of summons){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(s.x, s.y); drawSummon(s); ctx.restore(); } else drawSummon(s); }
   if(ONEFIGHT.active) drawOneFx();
   if(RACE.active) drawRaceFx();   // RUNNING!: the line, the pistons, the bridge, the finish
   if(COBSFIGHT.active) drawCobsFx();
@@ -67347,6 +68198,7 @@ function draw(){
       ctx.globalAlpha = 0.12;
       ctx.fillStyle = col;
       ctx.fillRect(z.x, z.y, z.w, z.h);
+      if(MCAVE && MCAVE.on){ mcDrawStripFlag(z, col); ctx.restore(); continue; }   // MOON CAVES: the tint and a flag on the surface, no line (no warning lines)
       // a brighter boundary line, pulsing gently so it reads as an active rule and not as scenery
       ctx.globalAlpha = 0.45 + 0.15*Math.sin(hazardT*0.06 + b.team);
       ctx.strokeStyle = col; ctx.lineWidth = 3;
@@ -67364,7 +68216,7 @@ function draw(){
   // fighters
   drawKitFx('under');   // the Heat Explosion, behind the fighters it catches
   if(FINX.length) finxDraw('under');   // a corkboard, a puddle, a propped mirror (FINISHERS V2)
-  for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(FINX.length && finxHidden(f)) continue; if(f._oneGhost) drawOneGhostAura(f); if(f.fsGlow>0 || f.fsId) fsDrawAura(f); drawFighter(f); if(f._soakT > hazardT) drawSoakDrips(f); if(SETTINGS.mode==='ctf'){ ctfDrawCarry(f); if(CTF.spec) ctfSpecDrawChip(f); } }
+  for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(FINX.length && finxHidden(f)) continue; if(f._oneGhost) drawOneGhostAura(f); if(f.fsGlow>0 || f.fsId){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); fsDrawAura(f); ctx.restore(); } else fsDrawAura(f); } drawFighter(f); if(f._soakT > hazardT){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); drawSoakDrips(f); ctx.restore(); } else drawSoakDrips(f); } if(SETTINGS.mode==='ctf'){ ctfDrawCarry(f); if(CTF.spec) ctfSpecDrawChip(f); } }
   if(SETTINGS.mode==='ctf') ctfDrawCoverFront();   // the props a friend stands in, see-through, over the fighters
   if(CTUT.active) ctutDrawWorld();   // the Capture the Flag practice: where a flag may not go
   drawKitFx('over');    // the Fist Thingy's arm, over the fighters it reaches across
@@ -67400,6 +68252,7 @@ function draw(){
   ctx.restore();   // end world space
 
   // ---- screen-space overlays ----
+  if(MCAVE && MCAVE.on){ mcDrawMinimap(); mcDrawArrows(); }   // MOON CAVES: the disc minimap and the marks at the edge
   if(viewScrolls() && !RACE.active && SETTINGS.mode!=='ctf' && !(MCAVE && MCAVE.on)) drawMinimap();   // the race has its progress bar instead (drawRaceBar); MOON CAVES gets its disc minimap and arrows with the full view
   if(!(MCAVE && MCAVE.on)) drawOffscreenArrows();
   fsDrawScreen();   // a Final Smash's flash and silhouette sweep
@@ -67979,6 +68832,12 @@ const HOOK_FX_FRAMES = 16, HEAT_FX_FRAMES = 22;
 function drawKitFx(layer){
   for(const f of fighters){
     if(f.dead) continue;
+    if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); try { drawKitFxOf(f, layer); } finally { ctx.restore(); } continue; }   // MOON CAVES: upright round the fighter
+    drawKitFxOf(f, layer);
+  }
+}
+function drawKitFxOf(f, layer){
+  {
     if(layer !== 'over' && f._heatFx != null){ const age = hazardT - f._heatFx; if(age >= 0 && age < HEAT_FX_FRAMES) drawHeatFx(f, age); }
     if(layer !== 'under' && f._hookFx){ const age = hazardT - f._hookFx.t; if(age >= 0 && age < HOOK_FX_FRAMES) drawHookFx(f, age); }
     if(layer !== 'under' && f._jamFx){ const age = hazardT - f._jamFx.t; if(age >= 0 && age < REMOTE_JAM_FX) drawJamFx(f, age); else if(age >= REMOTE_JAM_FX) f._jamFx = null; }   // Remote Jam
@@ -69278,6 +70137,7 @@ function fighterAnchor(f, out){
   const face = f.face < 0 ? -1 : 1;
   out.x = f.x + face * (an ? an.x : ANCHOR_DEFAULT_X) * f.r;
   out.y = f.y + (an ? an.y : ANCHOR_DEFAULT_Y) * f.r;
+  if(MCAVE && MCAVE.on && !MC_FR.open){ const th = mcTh(f.x, f.y), dx = out.x - f.x, dy = out.y - f.y, c = Math.cos(th), s = Math.sin(th); out.x = f.x + dx*c - dy*s; out.y = f.y + dx*s + dy*c; }   // MOON CAVES: a real place, turned with the body (in a frame the chart is upright already)
   return out;
 }
 // The same anchor expressed in the OVER pass's own space — centred on the fighter, and already
@@ -76152,6 +77012,14 @@ function drawCardStates(f){
 
 }
 
+// NAME TAGS WITH MANY FIGHTERS (the owner, 2026-10-31: "do 3" -- with 10 fighters there was a pill over every head, overlapping where they
+// met). Up to 4 fighters, everyone's name rides over them, as before. Past that, yours, and in a team mode your teammates'; watching a
+// match with nobody of yours in it, none: the cards along the top say who is who, and the colour ring under each fighter whose side.
+function nameTagShown(f){
+  if(f.you || fighters.length <= 4) return true;
+  const me = fighters.find(o => o.you);
+  return !!me && (SETTINGS.mode === 'teams' || SETTINGS.mode === 'ctf') && f.team === me.team;
+}
 function drawFighter(f){
   ctx.save();
   if(f._grasstree>0){   // Grasstree: Tree's body behind him (render-only). His own sprite if it has loaded, a trunk if not.
@@ -76304,13 +77172,14 @@ function drawFighter(f){
     if(k === 'chair'){ ctx.save(); cpChairSlam(f); ctx.restore(); } else if(k === 'spike'){ ctx.save(); cpHammerPlunge(f); ctx.restore(); } }
   // THE FRAME LAYER's effects (a bead of sweat, the stars of a tumble, an anger mark, the lines of a fall): over the body, under the name
   if(!handled && FRAME_ON){ const fdx = FRAME_DATA[f.name]; if(fdx && _FH.f === f){ ctx.save(); frPose(f, fdx, _FH.sp); frFx(ctx, _FP, _FH.x, _FH.y, f.r, f.face < 0 ? -1 : 1, drawAlpha); ctx.restore(); } }
-  // ---- NAMETAG: name label above the head so you always know who's who ----
-  {
+  // ---- NAMETAG: name label above the head so you always know who's who ---- (only some of them past 4 fighters: nameTagShown)
+  if(nameTagShown(f)){
     const label = f.name || "";
     const tagY = -(f.r + (f.you?28:16));   // sit above the head (higher if the 'you' triangle is present)
     ctx.font = "700 12px 'Baloo 2', system-ui, sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     const w = ctx.measureText(label).width + 12;
+    if(MCAVE && MCAVE.on){ ctx.translate(0, tagY); ctx.rotate(-(mcTh(f.x, f.y) + camAng)); ctx.translate(0, -tagY); }   // MOON CAVES: over the head, turned back to read screen-up (the icons above it with it)
     // team-colored pill in teams mode, dark pill otherwise; gold outline for the player
     const teamCol = (SETTINGS.mode==='teams') ? TEAM_COLORS[f.team%TEAM_COLORS.length] : "#1c1c1c";
     ctx.globalAlpha = 0.92;
@@ -77741,6 +78610,7 @@ function drawStanceArt(){
   const c = ctx; c.save(); c.lineJoin = 'round'; c.lineCap = 'round';
   for(const f of fighters){
     if(f.dead || haHidden(f)) continue;
+    const up = MCAVE && MCAVE.on; if(up){ c.save(); mcUpright(f.x, f.y); }   // (MOON CAVES: upright on its part of the disc)
     if(f.reflecting > 0 && !(f.reflecting <= STANCE_BLINK && (hazardT & 2))){   // glass: a pale fill, a silver rim, a sheen running round it
       haOutline(c, f);
       c.globalAlpha = 0.14; c.fillStyle = '#dfe8f2'; c.fill();
@@ -77758,6 +78628,7 @@ function drawStanceArt(){
       else { const hb = haHurtOf(f), a = hazardT*0.15; gx = f.x + Math.cos(a)*(hb ? hb.rx : f.r); gy = f.y + (hb ? hb.oy || 0 : 0) + Math.sin(a)*(hb ? hb.ry : f.r); }
       haStar(c, gx, gy, 7, 4); c.globalAlpha = 0.5; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.stroke(); c.globalAlpha = 1; c.fillStyle = '#ffffff'; c.fill();
     }
+    if(up) c.restore();
   }
   c.restore(); c.globalAlpha = 1;
 }
@@ -77930,7 +78801,8 @@ function worldGeo(){
     bases: bases.map(b=>({team:b.team,x:Math.round(b.x),y:Math.round(b.y),w:b.w,h:b.h,color:b.color,
       spawns: b.spawns ? b.spawns.map(sp=>({x:Math.round(sp.x),y:Math.round(sp.y)})) : undefined,
       zone: b.zone ? {x:Math.round(b.zone.x),y:Math.round(b.zone.y),w:Math.round(b.zone.w),h:Math.round(b.zone.h)} : undefined,
-      wall: b.wall || undefined})),
+      wall: b.wall || undefined, mc: b.mc || undefined})),   // (mc: MOON CAVES' strip bases, drawn with no deck: as the host draws them)
+    moon: MCAVE && MCAVE.on ? mcGeoOut() : undefined,   // MOON CAVES (M6): the disc, for a guest to build the same one (mcNetGeo)
   };
 }
 // A cheap fingerprint of the geometry, so the host can tell it changed without building and stringifying all of it
@@ -78092,7 +78964,8 @@ function serializeState(withGeo){
     mode: SETTINGS.mode,
     fighters: fighters.map(netFighter),
     pj: netProjectiles(),
-    beams: beams.map(b=>({x0:Math.round(b.x0),y:Math.round(b.y),x1:Math.round(b.x1),color:b.color,life:b.life,w:b.w})),
+    beams: beams.map(b=>({x0:Math.round(b.x0),y:Math.round(b.y),x1:Math.round(b.x1),color:b.color,life:b.life,w:b.w,
+      mc:b.mc ? [Math.round(b.mc.r), Math.round(b.mc.a0*1e5)/1e5, Math.round(b.mc.a1*1e5)/1e5] : undefined})),   // (mc: MOON CAVES' arc, mcFxTurn's)
     // Items and summons (assists, bosses) were never sent, so a client saw no pickups, no assist trophies
     // and no Boss Rush boss. These are the fields drawItem, drawSummon, drawBossSprite and drawBossBar read.
     items: items.filter(it=>!it.taken).map(it=>({x:Math.round(it.x),y:Math.round(it.y),r:it.r,kind:it.kind})),
@@ -78250,7 +79123,7 @@ function applySnapshot(s){
   const st=STAGES.find(x=>x.id===s.stage); if(st) stage=st;
   SETTINGS.mode=s.mode;
   const geo = s.geo || (s.worldPlats ? s : null);   // (before the geometry was split out, it sat at the top level)
-  if(geo){ floors=geo.floors||[]; worldPlats=geo.worldPlats||[]; bases=(geo.bases||[]).map(b=>({...b})); }
+  if(geo){ floors=geo.floors||[]; worldPlats=geo.worldPlats||[]; bases=(geo.bases||[]).map(b=>({...b})); mcNetGeo(geo.moon); }   // (MOON CAVES: the host's disc, built here)
   NET_VIEW.scroll = (s.sc != null) ? !!s.sc : scrolls();
   BOSS_ARENA = (typeof s.arena === 'string' && Object.prototype.hasOwnProperty.call(BOSS_ARENA_SKY, s.arena)) ? s.arena : null;
   if(Array.isArray(s.zones)) spawnZones = s.zones.map(z=>({ kind: z[0] ? 'claim' : 'safe', x:z[1], y:z[2], w:z[3], h:z[4], owner: z[5] >= 0 ? z[5] : null, progress: z[6]||0 }));
@@ -78292,7 +79165,7 @@ function applySnapshot(s){
       return p;
     });
   } else projectiles=(s.projectiles||[]).map(p=>({...p, ownerObj:null}));
-  beams=(s.beams||[]);
+  beams=(s.beams||[]).map(b=>Array.isArray(b.mc) ? Object.assign({}, b, { mc:{ r:+b.mc[0], a0:+b.mc[1], a1:+b.mc[2] } }) : b);   // (MOON CAVES: the arc mcDrawBeam draws)
   HIT_ART.length = 0; if(Array.isArray(s.ha)) for(const r of s.ha){ const e = haUnpack(r); if(e) HIT_ART.push(e); }   // the host's hit areas, as it tested them
   { const wasE = evil; evil = Array.isArray(s.evil) ? {x:s.evil[0], y:s.evil[1]} : null; if(evil) netGlide(evil, fresh ? null : wasE); }
   tendrils = (s.tend||[]).map(r=>({ x:r[0], h:r[1], maxH:r[1], grow:0, life:1, _hit:true }));   // drawTendrils reads x and h
@@ -78307,7 +79180,7 @@ function applySnapshot(s){
     FILE_RIDES = Array.isArray(s.frd) ? s.frd.map(r=>{ const p = { x:r[0], y:r[1], w:r[2], h:r[3], face:r[4], on:!!r[5], vx:r[6] ? r[4] : 0, oi:r[7], fileRide:true };
       netGlide(p, was.find(q=>q.oi===p.oi) || null); return p; }) : []; }
   { const was = fresh ? [] : FINX;   // the finishers running (FINISHERS V2): drawn from the host's rows, glided like everything else
-    FINX = Array.isArray(s.fnx) ? s.fnx.map(r=>{ const o = Object.assign({}, r); netGlide(o, was.find(q=>q.id===o.id) || null); return o; }) : []; }
+    FINX = Array.isArray(s.fnx) ? s.fnx.map(r=>{ const o = Object.assign({}, r); if(r.mR > 0){ o._mcPhi = +r.mP; o._mcRho = +r.mR; } netGlide(o, was.find(q=>q.id===o.id) || null); return o; }) : []; }   // (MOON CAVES: its chart, as mcFinxDraw reads it)
   summons=(s.summons||[]).map((m,i)=>{ const e={...m}, p=wasS[i]; netGlide(e, (p && p.name===m.name && p.type===m.type) ? p : null); return e; });
   if(typeof s.bossCleared==='number') BOSSRUSH.cleared=s.bossCleared;
   if(Array.isArray(s.pb)){
@@ -78390,7 +79263,7 @@ function netSwing(f){
 // calls it for each tick the clock owes), never once per animation frame, or a particle crossed the screen twice as fast on a 120 Hz one.
 function netStepParticles(){
   if(!particles.length) return;
-  for(const p of particles){ p.x+=p.vx; p.y+=p.vy; p.vy+=0.15; p.life--; }
+  if(MCAVE && MCAVE.on) mcParticleStep(); else for(const p of particles){ p.x+=p.vx; p.y+=p.vy; p.vy+=0.15; p.life--; }   // (MOON CAVES: toward the middle)
   particles=particles.filter(p=>p.life>0);
 }
 // Who this client's camera follows: its own fighter. While that fighter is out, the teammate nearest the view, else
@@ -78413,6 +79286,7 @@ function clientFollow(){
 // `k`: how many 60ths of a second this frame is (1 at 60 fps). The host eases once per step; a client eases once per picture, so its
 // 0.12 is spread over the time instead: the same pace on any screen, and a faster screen still gets a smoother camera.
 function clientCamera(k){
+  if(MCAVE && MCAVE.on){ NET_VIEW.z = CAM_ZOOM; mcNetCamera(k); return; }   // MOON CAVES (M6): the host's camera, turning with the view
   if(!NET_VIEW.scroll){
     // The host's arena is one screen -- the HOST's screen. Fit all of it into this one, centred. Equal windows: zoom 1,
     // camera 0, exactly as before. (A 1920x1080 host on a 1280x720 client used to put the floor below the screen.)
@@ -78533,7 +79407,7 @@ function netInResume(){
 //   max  most frames played ahead (a worse network is not chased further)     ease  how much of a difference is left the next frame
 //   hitEase, hitT  the same, for `hitT` frames after the prediction turns off or on -- a hit the guest had not heard of, and the stun's end:
 //                  that slide is the one a player notices, so it is short (the owner, 2026-10-24: "try to fix that")
-const NET_PRED = { on:true, max:30, ease:0.8, hitEase:0.5, hitT:8, snap:160, ox:0, oy:0, mode:0, bx:0, by:0, auth:null, fastT:0 };
+const NET_PRED = { on:true, max:30, ease:0.8, hitEase:0.5, hitT:8, snap:480, ox:0, oy:0, mode:0, bx:0, by:0, auth:null, fastT:0 };
 // On the host: what a guest's prediction needs of its fighter -- the frame it is at, whether it is free (b), its jumps and jump-key state,
 // and the numbers this step's run and jump would use (k) as step() works them out, so the guest needs none of the buffs and stats behind them;
 // and its walls: the one touched within WALL_WINDOW steps (w: side, steps ago, which face), the faces kicked off this airtime (wu), its cling
@@ -78662,6 +79536,10 @@ function netPredict(now){
     if(was){ S.ox += was.x - bx; S.oy += was.y - by; }
   }
   S.auth = A; S.mode = mode; S.bx = bx; S.by = by;
+  // (snap 480, was 160: the owner, 2026-10-31, "do 1" -- under a laggy network a key the host plays a frame or two late can land a jump on a
+  // platform here and off it there, and a guest's own fighter jumped 185-192 px on its screen, a couple of times in 5 s in Moon Caves' strips.
+  // The host plays a key the step it arrives, so those differences are real; they now ease in like every smaller one, at `ease` a frame, and
+  // only a gap too big to be one -- a discontinuity -- is a cut.)
   if(Math.abs(S.ox) + Math.abs(S.oy) > S.snap){ S.ox = 0; S.oy = 0; }
   me.x = bx + S.ox; me.y = by + S.oy;
   if(P){ me.face = P.face; me.vx = P.vx; me.vy = P.vy; me.onground = P.g; }   // (the run cycle, the lean, the jump stretch)
@@ -79291,7 +80169,7 @@ window.NET = {
     const sg=group('Stadium'); const ss=document.createElement('select'); ss.className='netinput lobbyselect'; ss.id='lobbyStage';
     if(stage && STAGES.indexOf(stage)>=0 && !stageOpen(stage)) stage = STAGES[0];   // (a Moon this player only played as a guest is not theirs to host)
     stagesOpen().forEach(st=>{ const o=document.createElement('option'); o.value=st.id; o.textContent=st.name + (st.big?' (big)':''); if(stage && stage.id===st.id) o.selected=true; ss.appendChild(o); });
-    ss.onchange=()=>{ const st=STAGES.find(x=>x.id===ss.value); if(st) stage=st; changed(); };
+    ss.onchange=()=>{ const st=STAGES.find(x=>x.id===ss.value); if(st) stage=st; if(SETTINGS.mode==='teams' && SETTINGS.count > maxTeams()) SETTINGS.count = MAX_TEAMS; changed(); };   // (MOON CAVES: 30 there, 20 elsewhere)
     sg.appendChild(ss);
     seg('Mode', 'lobbyMode', [['ffa','Free-for-all'],['teams','Teams'],['boss','Boss Rush'],['ctf','Capture the Flag']], SETTINGS.mode, v=>{ if(v==='ctf' && SETTINGS.mode!=='ctf' && ctfTutHostPick()) return; SETTINGS.mode=v; });   // (the practice first: ctfTutHostPick)
     if(SETTINGS.mode==='ctf') seg('Map', 'lobbyCtfMap', ctfMapChoices(), ctfMapPickGet(), v=>{ ctfMapPickSet(v); });   // the host's pick goes in the start (settings.ctfMap)
@@ -79385,7 +80263,7 @@ window.NET = {
     SETTINGS.mode = ['ffa','teams','boss','ctf'].includes(s.mode) ? s.mode : 'ffa';
     if(SETTINGS.mode==='ctf') CTF.netMap = (typeof s.ctfMap==='string' && CTF_MAPS[s.ctfMap]) ? s.ctfMap : null;
     CTF.netAdv = SETTINGS.mode==='ctf' ? !!s.ctfAdv : null;   // (an older host sends none: off)
-    SETTINGS.count = int(s.count, 1, 20, SETTINGS.count||2);
+    SETTINGS.count = int(s.count, 1, MAX_MOON, SETTINGS.count||2);   // (MOON CAVES: 30 there; buildFighters clamps by the stage, maxTeams)
     SETTINGS.stocks = int(s.stocks, 1, 5, 3);
     if(typeof s.teamKey==='string' && /^\d+(v\d+)*$/.test(s.teamKey)) SETTINGS.teamKey = s.teamKey;
     SETTINGS.mapSize = MAP_SIZES[s.mapSize] ? s.mapSize : 'normal';
