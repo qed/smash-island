@@ -20455,6 +20455,7 @@ function bossRushCheck(){
 }
 function beginMatchNow(){
   nanGuard.said = false;   // (NOT A NUMBER: said once a match)
+  CPU_LOOK.seed = cpuLookSeed();   // (CPUS WEAR SKINS: a new look for each CPU each match; online the start's seed is used: CPU_LOOK.net)
   stageGuard();   // (a locked secret stage never starts a match here; online, the host's pick stands)
   go('_none_');
   document.getElementById('hud').classList.add('active');
@@ -79939,7 +79940,7 @@ window.NET = {
                              : "Left the room: the host has an older version of the game. Ask them to refresh the page (F5) and create a new room.");
         return;
       }
-      this.beginMatch(m.settings, m.roster, m.ids, m.cos, m.sides);
+      this.beginMatch(m.settings, m.roster, m.ids, m.cos, m.sides, m.look);
     }
     else if(m.t==="status"){ this.status(m.msg); }
   },
@@ -80316,16 +80317,16 @@ window.NET = {
     if(SETTINGS.mode==='ctf') settings.ctfMap = ctfPickMap();   // the host picks the map: the start carries its id, and every device builds that one
     const roster=humans;
     const ids=this.players.map(p=>p.id);   // who sits where, so a client's seat comes from the start itself
-    const start={t:"start", settings, roster, ids, build:gameBuild()};   // (build: a client on another build stays out of it)
+    const start={t:"start", settings, roster, ids, build:gameBuild(), look:cpuLookSeed()};   // (build: a client on another build stays out of it; look: the CPUs' skins, CPU_LOOK)
     const cos=picks.map(s=>s.code||"");
     if(cos.some(Boolean)) start.cos=cos;   // each human's look, by slot: four characters each, and only when someone wears one
     { const sizes=netSideSizes(settings.mode, settings.count, settings.teamKey);   // Capture the Flag and Teams: each human's side, by slot (0 = Team 1)
       if(sizes && sizes.length>1) start.sides=netResolveSides(this.lobbyEntries().map(e=>(e.pick|0)-1), sizes, settings.mode); }
     this.send(start);
-    this.beginMatch(settings, roster, ids, start.cos, start.sides);
+    this.beginMatch(settings, roster, ids, start.cos, start.sides, start.look);
   },
 
-  beginMatch(settings, roster, ids, cos, sides){
+  beginMatch(settings, roster, ids, cos, sides, look){
     // Peer-supplied, every field of it: validate before anything reaches the arena math or the globals.
     const s=settings||{}, int=(v,lo,hi,d)=>{ v=Math.round(+v); return Number.isFinite(v) ? Math.max(lo,Math.min(hi,v)) : d; };
     SETTINGS.mode = ['ffa','teams','boss','ctf'].includes(s.mode) ? s.mode : 'ffa';
@@ -80353,6 +80354,7 @@ window.NET = {
     // nothing (an older host sends none: the seats go by turns, as they used to)
     window.__netSides = (Array.isArray(sides) && sides.length===roster.length && sides.every(t=>Number.isInteger(t) && t>=0 && t<4)) ? sides.slice() : null;
     NET_COS = cosNetList(cos, roster.length);   // peer-supplied as well: decoded against the catalogue, or nothing
+    CPU_LOOK.net = (Number.isInteger(look) && look >= 0 && look <= 0xFFFFFFFF) ? look : 0;   // ...and the CPUs' look seed: a whole number, or 0 (an older host sends none)
     // nothing from the last match: a held key it left behind, or a snapshot of its world
     this.inputs = {}; this.latch = {}; this.snapshot = null; this.planVote = null; this.planAck = {};
     this.inS = {}; this.inTick = 0; this._inT0 = null; if(this.role==='client') this.inReset();   // (a new input timeline: frame 0 is now)
@@ -84061,14 +84063,55 @@ function myCos(name){
 }
 // WHO WEARS WHAT. In local play, the fighter you control wears your cosmetics, and everyone sharing the screen -- the second
 // player, the AI -- sees them. Online, each human's look arrived with their join (netHelloName) and the match start
-// (NET_COS), so every screen dresses every player the same. The AI wears nothing: no looks are ever rolled for it.
+// (NET_COS), so every screen dresses every player the same. The CPUs wear skins of their own (CPUS WEAR SKINS, below: it used to be
+// "the AI wears nothing: no looks are ever rolled for it").
 let NET_COS = [];   // fighter slot -> {skin, hat, trail, ko} for this online match
 function cosOf(f){
   if(!f) return null;
   if(f.you) return myCos(f.name);
   const N = window.NET;
-  if(window.__netRoster && N && (N.role === 'host' || N.role === 'client')) return NET_COS[f.idx] || null;
-  return null;
+  if(window.__netRoster && N && (N.role === 'host' || N.role === 'client')){
+    if((f.idx | 0) < (window.__netHumanCount | 0)) return NET_COS[f.idx] || null;   // a player (the humans sit first): their own look
+    return cpuCos(f, CPU_LOOK.net);   // a CPU: by the start's look seed, the same on every screen
+  }
+  return cpuCos(f, CPU_LOOK.seed);
+}
+// CPUS WEAR SKINS (the owner, 2026-10-31: "cpus should be allowed to use skins"). A CPU wears one of its own fighter's skins about half the
+// time (CPU_LOOK.share) -- any of them, bought or not (the wallet is the player's), a seasonal one only in its month (cosInSeason) -- never one a
+// player in the match wears on the same fighter (two Rockstar Poppys could not be told apart), and only the skin: no hat, trail or KO effect.
+// The pick is a hash of the match's look seed, the fighter and its slot: a new seed each match (cpuLookSeed: the clock, never the match's
+// dice, so a replay, a scout copy and the CPUs' own play are the same with or without it), and online the host's seed travels in the
+// start (`look`), so every screen dresses each CPU the same. Looks only: nothing here is read back by the sim (cosOf's readers draw).
+const CPU_LOOK = { seed:0, net:0, share:0.5 };
+function cpuLookSeed(){ return (Math.imul(Date.now() % 2147483647, 2654435761) ^ Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0)*1000)) >>> 0; }
+function cpuLookHash(seed, name, idx){
+  let h = ((seed >>> 0) ^ Math.imul((idx | 0) + 1, 0x9E3779B1)) >>> 0;
+  for(let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619) >>> 0;
+  h ^= h >>> 15; h = Math.imul(h, 0x2C1B3C6D) >>> 0; h ^= h >>> 12; h = Math.imul(h, 0x297A2D39) >>> 0; h ^= h >>> 15;
+  return h >>> 0;
+}
+// The skins the players in this match wear on fighter `name` (online: from the start's looks, the same numbers on every screen).
+function cpuLookTaken(name){
+  const N = window.NET, net = !!(window.__netRoster && N && (N.role === 'host' || N.role === 'client')), out = [];
+  for(const o of fighters){
+    if(o.name !== name) continue;
+    const c = net ? ((o.idx | 0) < (window.__netHumanCount | 0) ? NET_COS[o.idx] : null) : (o.you ? myCos(o.name) : null);
+    if(c && c.skin) out.push(c.skin);
+  }
+  return out;
+}
+function cpuCos(f, seed){
+  if(!f || typeof f.name !== 'string' || f._oneGhost) return null;
+  if(f._clS === seed && f._clN === f.name && f._clI === f.idx) return f._clC;   // (worked out once a match: cosOf is asked every frame)
+  f._clS = seed; f._clN = f.name; f._clI = f.idx; f._clC = null;
+  const h = cpuLookHash(seed, f.name, f.idx);
+  if((h & 1023) >= CPU_LOOK.share*1024) return null;
+  const taken = cpuLookTaken(f.name), skins = cosOfKind('skin').filter(it => it.fighter === f.name && !_own(COS_RETIRED, it.id) && cosInSeason(it) && taken.indexOf(it.id) < 0);
+  if(!skins.length) return null;
+  const id = skins[(h >>> 10) % skins.length].id;
+  f._clC = { skin:id, hat:null, trail:null, ko:null };
+  cosSkinPreload(id);   // (its picture on its way: until it has decoded the plain render stays)
+  return f._clC;
 }
 // ONLINE: small ids only, sent once. A look travels as one character per slot (its position in its kind, base 36, 0 for
 // none) appended to the fighter name in the join `hello` -- "Firey~2400" -- because the relay passes that name through to
