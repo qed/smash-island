@@ -2893,7 +2893,7 @@ let chosen = ROSTER.find(r=>r.play);
 let stage = STAGES[0];
 // PLAYS CAMERA (see that block, in the World Cup's): declared with the first state, since go(), loop(), applyHit and the sound ask it.
 // on: a session is live; bg: the match stepping now is one nobody sees; cur: the match stepping now; real: the game's own dice.
-const PCAM = { on:false, bg:false, cur:null, real:null, list:[], queue:[], shown:null, auto:true, cap:4, frame:0, cutF:0, holdF:0, pend:null,
+const PCAM = { on:false, bg:false, cur:null, real:null, list:[], queue:[], shown:null, auto:true, cap:4, frame:0, cutF:0, build:0,
   ms:0, log:[], flashF:0, paceF:0, ending:false, noPace:false, onStep:null, onPlay:null };
 const SETTINGS = { mode:"ffa", count:5, stocks:3, teamKey:"", itemRate:2, mapSize:"normal", bossPick:"rush", smashBalls:true };   // bossPick: "rush" or "one" (once One is beaten)
 // ---------- MAP SIZE (match setting) ----------
@@ -18431,6 +18431,16 @@ function cupCamFocus(){
 // that match and STAYS there until the next good play somewhere else -- it never goes back by itself. No words: a frame in the
 // two sides' colours and a corner tag with a camera and the two fighters' faces say it is the Plays Camera and which match.
 //
+// LOOK-AHEAD (the owner, 2026-10-31: "the 'plays' camera shows me plays AFTER theyre done"). A play is only known once it has happened
+// -- a string at its third move, a finisher once its damage is in, a KO at the blow -- so a camera that cut when it heard of one always
+// arrived after it. Now every match is played twice, on the same dice: a SCOUT copy nobody ever sees runs PCAM_LOOK of the match's own
+// frames ahead of the copy the camera shows, and the plays are read off the scout. The camera knows a play before the shown copy gets
+// there, and cuts to it PCAM_LEAD frames before the play starts: the lead-up, the hit and the flight are all on screen. A play whose key
+// moment (the KO's blow, a string's first hit, a finisher's first hit, a root landing, a trip's start) has already passed in the shown
+// copy is never cut to. The two copies are the same match (each fixture's own dice, the same clean slate); every PCAM_CHK frames the
+// shown copy checks it is where its scout was, and if they ever part, that match goes on without look-ahead (its plays caught as they
+// happen, as before).
+//
 // HOW. One set of globals holds a match: the fighters, the shots, the world, the camera, the last KO's and the Final Smash's
 // state and the rest (pcSave lists every one). Each live match keeps its own copy, and each frame every match is loaded in turn
 // (pcLoad), run through the game's own step() and saved back -- the one on screen first, then the background ones. Each fixture
@@ -18442,16 +18452,21 @@ function cupCamFocus(){
 //
 // THE PLAYS. The game's own event points report them (no wrapping of anything the CPU brain reads): applyHit (pcHit), eliminate
 // (pcKo) and, after each step, the statuses and the trips off the stage (pcTick). A play is scored by how big the moment is (the
-// simulated cups' detector, made live): a KO of every kind -- caught on the BLOW that will carry them out (fsKoFlight), so the cut
-// arrives for the flight -- worth more early, off the stage, after a setup, at the end of a string, by a Final Smash, on match
+// simulated cups' detector, made live): a KO of every kind -- caught on the BLOW that will carry them out (fsKoFlight) -- worth more
+// early, off the stage, after a setup, at the end of a string, by a Final Smash, on match
 // point, as a comeback; a string of three moves or more; a big finisher; a deep recovery while it is still going; a root, freeze,
 // sleep or stun on a foe at kill %. PCAM_MIN and over cuts (every KO does; a poke never does), the biggest one first.
 const PCAM_CAP = 4;          // background fixtures stepped at once, at most (pcPace takes it down to 1 when the frames get slow, and back up)
 const PCAM_MIN = 30;         // a play this big or bigger cuts the camera to its match
-const PCAM_DWELL = 180;      // frames the camera stays after a cut before it may cut again (3 s): the play it cut for is seen (a KO waiting skips it)
-const PCAM_HOLD = 120;       // frames a good play in the match on screen keeps the camera there (2 s), so it plays out (a KO waiting minds a KO's only)
-const PCAM_STALE = 90;       // a play older than this (1.5 s) is no longer worth cutting to: the camera shows the matches live
+const PCAM_DWELL = 180;      // frames the camera stays after a cut before it may cut again (3 s), unless a KO is coming elsewhere
 const PCAM_BEAT = 75;        // frames the match on screen stands at its end before the camera moves on (the hub's old 1.2 s wait)
+const PCAM_LOOK = 240;       // LOOK-AHEAD: how far (the match's own frames: 4 s) each scout runs ahead of the copy the camera can show
+const PCAM_LEAD = 60;        // the camera arrives this long (1 s) before a play starts, so its lead-up is seen too
+const PCAM_SEE = 20;         // ...and never less than this (a third of a second) before its key moment: closer than that, the play is let go
+const PCAM_TAIL = 60;        // a play keeps the camera on its match this long after its last moment (the KO, a string's last hit)
+const PCAM_BUILD = 6;        // a scout still getting its lead steps at most this many extra times a frame...
+const PCAM_BUILD_ALL = 12;   // ...and all of them together this many (a match nobody sees waits for its scout's lead before it starts)
+const PCAM_CHK = 30;         // every this many frames the shown copy checks it is where its scout was
 // The fixture's own dice (mulberry32): the same seed is the same match.
 function pcRng(seed){
   let a = seed >>> 0;
@@ -18517,12 +18532,15 @@ function pcBase(){
 function pcSeeds(){ for(const f of TOURNEY.fixtures) if(f._pcSeed == null) f._pcSeed = Math.floor(PCAM.real()*4294967296) >>> 0; }
 function pcInit(fx){
   const P = PCAM;
-  Object.assign(P, { on:true, bg:false, cur:null, list:[], shown:null, pend:null, auto:true, cap:PCAM_CAP, frame:0, cutF:0, holdF:0, koHoldF:0, ms:0,
+  Object.assign(P, { on:true, bg:false, cur:null, list:[], shown:null, auto:true, cap:PCAM_CAP, frame:0, cutF:0, build:0, ms:0,
     log:[], flashF:0, paceF:0, ending:false });
   P.queue = TOURNEY.fixtures.filter(f=>!f.played && f !== fx);
 }
+// A match (a copy of one fixture). ahead: the good plays still to come in it, read off its scout (sc); scout/of: this copy IS a scout,
+// and the copy it runs ahead of; chk: the scout's checkpoints (pcCheck).
 function pcNewMatch(fx){ return { fx, rng:pcRng(fx._pcSeed), st:null, over:false, overF:0, steps:0, plays:0, lastGood:null, sung:false,
-  det:{ str:{}, big:{}, hit:{}, st:{}, setT:{}, trip:{}, koT:{}, down:{} } }; }
+  ahead:[], sc:null, scout:false, of:null, chk:null,
+  det:{ str:{}, big:{}, hit:{}, st:{}, setT:{}, trip:{}, koT:{}, koId:{}, down:{} } }; }
 // Watch a fixture with the Plays Camera: it is set up on its own dice like any other in the round, then given the screen.
 function pcStart(fx){
   const P = PCAM;
@@ -18556,10 +18574,20 @@ function pcAdopt(){
   m.rng = pcRng((fx._pcSeed ^ Math.imul(hazardT + 1, 2654435761)) >>> 0);
   m.st = pcSave(); P.list.push(m); P.shown = m; P.base = null;
 }
-// One fixture set up on its own dice, from the clean slate, without the screen (watchFixture's and finishWatchSetup's own steps).
-// Leaves the new match's globals loaded.
+// One fixture set up on its own dice, from the clean slate, without the screen (watchFixture's and finishWatchSetup's own steps), and
+// its scout (LOOK-AHEAD). Leaves the new match's globals loaded.
 function pcSetup(fx){
-  const P = PCAM, m = pcNewMatch(fx);
+  const P = PCAM, m = pcNewMatch(fx), sc = pcNewMatch(fx);
+  pcBuild(m);
+  sc.scout = true; sc.of = m; sc.sung = true; m.sc = sc; m.chk = {};
+  pcBuild(sc);   // LOOK-AHEAD: the same fixture on the same dice from the same clean slate -- the same match, to be run ahead of it
+  pcLoad(m.st);
+  P.list.push(m);
+  return m;
+}
+// One copy of a fixture built from the clean slate on its own dice, without the screen; its globals saved into m.st.
+function pcBuild(m){
+  const P = PCAM, fx = m.fx;
   pcLoad(pcBase());
   const r0 = Math.random, snd0 = SND.on;
   Math.random = m.rng; P.bg = true; P.cur = m; SND.on = false;
@@ -18576,19 +18604,20 @@ function pcSetup(fx){
     finishWatchSetup(fx, false, size);
   } finally { Math.random = r0; P.bg = false; P.cur = null; SND.on = snd0; LINEUP_MEMO = null; }
   m.st = pcSave();
-  P.list.push(m);
-  return m;
 }
-// Steps of one match on its own dice. bg: nobody sees it (no sound, HUD, banner or shake; see the hooks).
-function pcRun(m, n, bg){
+// Steps of one match on its own dice. bg: nobody sees it (no sound, HUD, banner or shake; see the hooks). until: stop on reaching
+// this frame of the match (a scout's lead).
+function pcRun(m, n, bg, until){
   const P = PCAM, r0 = Math.random, snd0 = SND.on;
   Math.random = m.rng; P.bg = bg; P.cur = m; if(bg) SND.on = false;
   try{
     for(let i = 0; i < n && running; i++){
+      if(until != null && hazardT >= until) break;   // (a scout: as far ahead as it should be)
       if(!bg && INTERP && FIXED_STEP && !fsSlowSkips()) interpRecord(false);
       step(); m.steps++;
       if(!bg && KOC.on && FS.game === 1) m.sung = true;   // the last KO's sting played with the match on screen (kocMark)
       pcTick(m);
+      if(hazardT % PCAM_CHK === 0) pcCheck(m);
       if(P.onStep) P.onStep(m);
     }
   } finally { Math.random = r0; P.bg = false; P.cur = null; SND.on = snd0; }
@@ -18596,17 +18625,21 @@ function pcRun(m, n, bg){
 // loop()'s steps while a session is on: the match on screen, then the background ones, a new one into a free slot, the director.
 function pcFrame(n){
   const P = PCAM, t0 = performance.now(), sh = P.shown;
-  P.frame++;
+  P.frame++; P.build = PCAM_BUILD_ALL;
   if(!sh.over){
     try{ pcRun(sh, n, false); }
     catch(err){ sh.over = true; sh.overF = P.frame - PCAM_BEAT; console.error('Plays Camera: the match on screen threw; its fixture is left to watch or sim', err); }   // (no beat on a match that broke: the director moves on now)
   }
   sh.st = pcSave();
+  pcScout(sh, n);
   let k = 0;
   for(const m of P.list){
     if(m === sh || m.over) continue;
     if(k++ >= P.cap) continue;   // over the cap it waits: its fixture plays the same whenever its steps run
-    try{ pcLoad(m.st); pcRun(m, n, true); m.st = pcSave(); }
+    try{
+      if(pcReady(m)){ pcLoad(m.st); pcRun(m, n, true); m.st = pcSave(); }
+      pcScout(m, n);
+    }
     catch(err){ m.over = true; m.overF = P.frame; console.error('Plays Camera: a background match threw; its fixture is left to watch or sim', err); }   // (never the screen's globals left half-swapped)
   }
   if(P.queue.length && k < P.cap){ try{ pcFill(); }catch(err){ console.error('Plays Camera: a fixture would not set up; it is left to watch or sim', err); } }
@@ -18620,6 +18653,35 @@ function pcFrame(n){
   const left = P.list.some(m=>!m.over) || P.queue.length > 0;
   if(P.shown.over && P.frame - P.shown.overF >= PCAM_BEAT && (!left || !P.auto)) pcEnd();   // all played (or the camera switched off): the hub
 }
+// LOOK-AHEAD. A match's own frame (its clock, hazardT), in whichever copy.
+function pcNow(m){ return (m && m.st) ? m.st.hazardT : 0; }
+// A match nobody sees starts once its scout is PCAM_LOOK ahead: nobody is waiting for it, and its plays are then known before they happen.
+function pcReady(m){ const s = m.sc; return !s || s.over || pcNow(s) - pcNow(m) >= PCAM_LOOK; }
+// The scout's steps this frame: up to PCAM_LOOK of the match's frames ahead of the copy that can be shown -- as many steps as that copy
+// took, and while it is still getting its lead a few more (PCAM_BUILD, out of the frame's PCAM_BUILD_ALL).
+function pcScout(m, n){
+  const P = PCAM, s = m.sc;
+  if(!s || s.over || !s.st) return;
+  const want = pcNow(m) + PCAM_LOOK;
+  if(pcNow(s) >= want) return;
+  const extra = Math.max(0, Math.min(PCAM_BUILD, P.build));
+  pcLoad(s.st);
+  const h0 = hazardT;
+  try{ pcRun(s, n + extra, true, want); }
+  catch(err){ s.over = true; m.sc = null; m.chk = null; console.error('Plays Camera: a scout threw; its match goes on without look-ahead', err); }
+  P.build -= Math.max(0, (hazardT - h0) - n);
+  s.st = pcSave();
+}
+// Every PCAM_CHK frames: the scout leaves a mark of where the match stands; the shown copy, reaching that frame, checks it is the same.
+// If they ever part (a difference in how the two copies ran), the scout and the plays it saw go, and the match goes on without look-ahead.
+function pcCheck(m){
+  if(m.scout){ const B = m.of; if(B && B.chk) B.chk[hazardT] = pcHash(); return; }
+  if(!m.sc || !m.chk) return;
+  const h = m.chk[hazardT]; if(h === undefined) return;
+  delete m.chk[hazardT];
+  if(h !== pcHash()){ m.sc = null; m.chk = null; m.ahead = []; console.warn('Plays Camera: a match and its scout went apart at frame ' + hazardT + '; it goes on without look-ahead'); }
+}
+function pcHash(){ let h = 7; for(const f of fighters) h = (Math.imul(h, 31) + Math.round(f.x*4) + Math.imul(Math.round(f.y*4), 7) + Math.imul(Math.round((f.pct || 0)*8), 13) + Math.imul(f.stocks | 0, 101) + (f.dead ? 5 : 0)) | 0; return h; }
 function pcFill(){
   const P = PCAM;
   while(P.queue.length){ const fx = P.queue.shift(); if(fx.played) continue; pcSetup(fx); return; }   // one a frame: a setup costs a few ms
@@ -18637,8 +18699,9 @@ function pcPace(ms){
 // finishWatchedKnockout score it -- but nothing changes screen; the session goes on.
 function pcOver(winTeam){
   const P = PCAM, m = P.cur; if(!m || m.over) return;
-  const fx = m.fx;
   running = false;
+  if(m.scout){ m.over = true; m.overF = P.frame; return; }   // a scout's match is over: the copy that can be shown scores the fixture when it gets there
+  const fx = m.fx;
   if(fx.kind === 'ko'){
     const wt = (winTeam===0 || winTeam===1) ? winTeam : cupTimedWinner(fx);   // both out on one frame, or the clock: the tie-break
     fx.winner = wt===0 ? fx.a : fx.b; fx.result = { sa: wt===0?1:0, sb: wt===1?1:0 }; fx.played = true;
@@ -18650,12 +18713,11 @@ function pcOver(winTeam){
     try{ recordCupFight(sa>sb ? 0 : (sb>sa ? 1 : null)); }catch(e){}
   }
   m.over = true; m.overF = P.frame;
-  if(P.pend && P.pend.m === m) P.pend = null;   // never a cut to a match that is over
 }
 function pcEnd(){
   const P = PCAM;
   P.ending = true;
-  P.on = false; P.list = []; P.queue = []; P.shown = null; P.pend = null; P.cur = null; P.bg = false;
+  P.on = false; P.list = []; P.queue = []; P.shown = null; P.cur = null; P.bg = false;
   if(P.real) Math.random = P.real;
   running = false; TOURNEY_WATCHING = null; TOURNEY_MATCH_ACTIVE = false;
   try{ showTourneyHub(); } finally { P.ending = false; }
@@ -18663,7 +18725,7 @@ function pcEnd(){
 // Left part-way (Quit, a new match): the fixtures not finished stay to watch or sim; the match on screen is where it stood.
 function pcStop(){
   const P = PCAM; if(!P.on) return;
-  P.on = false; P.list = []; P.queue = []; P.shown = null; P.pend = null; P.cur = null; P.bg = false;
+  P.on = false; P.list = []; P.queue = []; P.shown = null; P.cur = null; P.bg = false;
   if(P.real) Math.random = P.real;
 }
 // ---- the plays ----
@@ -18674,15 +18736,15 @@ function pcHit(t, dmg, from, opts, fs, stun){
   const D = m.det, i = t.idx, now = hazardT, seq = from._atkSeq || 0;
   D.hit[i] = { t:now, by:from.idx };
   let s = D.str[i];
-  if(!s || s.by !== from.idx || !stun || now - s.t1 > 45) s = D.str[i] = { by:from.idx, t1:now, seqs:[], dmg:0, sent:2 };
+  if(!s || s.by !== from.idx || !stun || now - s.t1 > 45) s = D.str[i] = { by:from.idx, t0:now, t1:now, seqs:[], dmg:0, sent:2 };
   s.t1 = now; s.dmg += dmg; if(s.seqs.indexOf(seq) < 0) s.seqs.push(seq);
   let b = D.big[from.idx];
   if(!b || b.seq !== seq || now - b.t0 > 60) b = D.big[from.idx] = { seq:seq, t0:now, dmg:0, fs:false, sent:false };
   b.dmg += dmg; if(fs) b.fs = true;
   if(!t.dead && now - (D.koT[i] || -999) > 60 && fsKoFlight(t, true)){ D.koT[i] = now; pcKoPlay(m, t, from, false); return; }   // the blow that will carry them out
   const n = s.seqs.length;
-  if(n >= 3 && n > s.sent){ s.sent = n; pcPlay(m, 'combo', Math.min(90, 10 + 6*n + 0.8*s.dmg)); }
-  if(!b.sent && (b.dmg >= 22 || (b.fs && b.dmg >= 12))){ b.sent = true; pcPlay(m, b.fs ? 'final smash' : 'big finisher', 12 + 0.9*b.dmg + (b.fs ? 15 : 0)); }
+  if(n >= 3 && n > s.sent){ s.sent = n; pcPlay(m, 'combo', Math.min(90, 10 + 6*n + 0.8*s.dmg), false, { id:'str' + i + ':' + s.t0, start:s.t0, key:s.t0, end:now + PCAM_TAIL }); }   // seen from its first hit
+  if(!b.sent && (b.dmg >= 22 || (b.fs && b.dmg >= 12))){ b.sent = true; pcPlay(m, b.fs ? 'final smash' : 'big finisher', 12 + 0.9*b.dmg + (b.fs ? 15 : 0), false, { id:'big' + from.idx + ':' + b.t0, start:b.t0, key:b.t0, end:now + PCAM_TAIL }); }
 }
 // eliminate, as the stock goes (f.stocks already one less). A KO the blow did not already report (a fall after a long trip, the
 // damage cap, a hazard after a hit): its play now. And the most each side has been behind, for the comebacks.
@@ -18690,7 +18752,7 @@ function pcKo(f, killer){
   const m = PCAM.cur; if(!m || fighters.indexOf(f) < 0) return;
   const D = m.det, i = f.idx, now = hazardT;
   for(const tm of [0, 1]){ const d = cupTeamStocks(1 - tm) - cupTeamStocks(tm); if(d > (D.down[tm] || 0)) D.down[tm] = d; }
-  if(now - (D.koT[i] || -999) <= 150) return;   // the blow was the play: the camera went there for the flight
+  if(now - (D.koT[i] || -999) <= 150){ if(D.koId[i]) pcPlayEnd(m, D.koId[i], now + PCAM_TAIL); return; }   // the blow was the play: it lasts until the KO itself
   const h = D.hit[i];
   if(!killer || killer === f || !h || h.by !== killer.idx || now - h.t > 240 || fighters.indexOf(killer) < 0) return;   // a fall nobody caused is no play
   D.koT[i] = now;
@@ -18703,14 +18765,20 @@ function pcKoPlay(m, t, k, after){
   if(p < 100){ sc += (100 - p)*0.5; if(p < 70) kind = 'early KO'; }
   const tr = D.trip[i]; if(tr && now - tr.t0 >= 15){ sc += 22; kind = 'edge KO'; }   // already off the stage: a ledgeguard, a chase
   const su = D.setT[i]; if(su && su.by === k.idx && now - su.t <= 150){ sc += 20; kind = 'setup KO'; }
-  const s = D.str[i]; if(s && s.by === k.idx && now - s.t1 <= 2 && s.seqs.length >= 2){ sc += 4*(s.seqs.length - 1) + 0.3*s.dmg; if(kind === 'KO' || kind === 'early KO') kind = 'combo KO'; }
+  const s = D.str[i], strung = !!s && s.by === k.idx && now - s.t1 <= 2 && s.seqs.length >= 2;
+  if(strung){ sc += 4*(s.seqs.length - 1) + 0.3*s.dmg; if(kind === 'KO' || kind === 'early KO') kind = 'combo KO'; }
   const b = D.big[k.idx]; if(b && b.fs && now - b.t0 <= 120){ sc += 12; kind = 'final smash KO'; } else if(b && b.dmg >= 22 && now - b.t0 <= 60) sc += 8;
   const left = after ? t.stocks : t.stocks - 1;
   if(left <= 0 && kocSides(t) <= 1) sc += 8;   // match point: this one ends it
   const mine = cupTeamStocks(k.team), theirs = cupTeamStocks(t.team) + (after ? 1 : 0);   // before this KO
   if((D.down[k.team] || 0) >= 2 && mine >= theirs - 1){ sc += 15; kind = 'comeback KO'; }
   if(k.stocks === 1 && (k.pct || 0) > 110) sc += 12;   // clutch: on their last stock at kill %
-  pcPlay(m, kind, sc, true);
+  // when it starts (the string it ends, or the blow; after the fact, the last hit or the trip off the stage) and its key moment (the blow;
+  // after the fact, the KO itself)
+  let start = strung ? s.t0 : now;
+  if(after){ const h = D.hit[i]; start = Math.max(now - 150, Math.min(start, h ? h.t : now, tr ? tr.t0 : now)); }
+  const id = 'ko' + i + ':' + now; D.koId[i] = id;
+  pcPlay(m, kind, sc, true, { id, start, key:now, end:now + PCAM_TAIL });
 }
 // After each step of a match: a root, freeze, sleep or stun starting on someone (a setup), and the trips off the stage.
 function pcTick(m){
@@ -18719,7 +18787,7 @@ function pcTick(m){
     const i = f.idx;
     const st = ((f.rooted || 0) > 0 ? 1 : 0) | ((f.frozen || 0) > 0 ? 2 : 0) | ((f._sleepT || 0) > hazardT ? 4 : 0) | ((f._stunFx || 0) > 0 ? 8 : 0);
     const on = st & ~(D.st[i] || 0); D.st[i] = st;
-    if(on && !f.dead){ const h = D.hit[i]; if(h && hazardT - h.t <= 4){ D.setT[i] = { t:hazardT, by:h.by }; if((f.pct || 0) >= 90) pcPlay(m, 'setup', 20 + 0.12*f.pct); } }
+    if(on && !f.dead){ const h = D.hit[i]; if(h && hazardT - h.t <= 4){ D.setT[i] = { t:hazardT, by:h.by }; if((f.pct || 0) >= 90) pcPlay(m, 'setup', 20 + 0.12*f.pct, false, { id:'set' + i + ':' + hazardT, start:hazardT, key:hazardT, end:hazardT + 150 }); } }   // (the follow-up is the play: 2.5 s of it)
     let off = false, dist = 0;
     if(segs && segs.length && !f.onground && !f.dead){
       let inside = false; dist = 1e9;
@@ -18732,48 +18800,72 @@ function pcTick(m){
       if(!tr) tr = D.trip[i] = { t0:hazardT, d:0, y:0, sent:false };
       tr.d = Math.max(tr.d, dist); tr.y = Math.max(tr.y, f.y - gy);
       if(!tr.sent && hazardT - tr.t0 >= 30 && (tr.d >= 260 || tr.y >= 180)){ tr.sent = true;   // still out there: the camera gets there for the way back (or the KO)
-        pcPlay(m, 'deep recovery', Math.min(70, 16 + 0.07*tr.d + 0.08*Math.max(0, tr.y) + ((f.pct || 0) > 100 ? 8 : 0))); }
-    } else if(tr) D.trip[i] = null;
+        pcPlay(m, 'deep recovery', Math.min(70, 16 + 0.07*tr.d + 0.08*Math.max(0, tr.y) + ((f.pct || 0) > 100 ? 8 : 0)), false, { id:'trip' + i + ':' + tr.t0, start:tr.t0, key:hazardT, end:hazardT + 120 }); }
+    } else if(tr){ if(tr.sent) pcPlayEnd(m, 'trip' + i + ':' + tr.t0, hazardT + PCAM_TAIL); D.trip[i] = null; }
   }
 }
-// A play in match m, scored. PCAM_MIN or more: on screen, it holds the camera there while it plays out; elsewhere, it is a cut
-// waiting (the biggest one waiting wins).
-function pcPlay(m, kind, score, ko){
-  const P = PCAM; score = Math.round(score);
-  const e = { f:P.frame, t:hazardT, m, kind, score, ko:!!ko };
+// A play in match m, scored, with when it starts (start), the moment that must be seen (key) and when it is over (end), in the match's
+// own frames. PCAM_MIN or more goes on the list of plays to come in its match (pcAhead), which the director reads.
+function pcPlay(m, kind, score, ko, w){
+  const P = PCAM, B = m.of || m, now = hazardT; score = Math.round(score);
+  const e = { f:P.frame, t:now, m:B, kind, score, ko:!!ko, id:(w && w.id) || (kind + ':' + now), start:w ? w.start : now, key:w ? w.key : now, end:w ? w.end : now + PCAM_TAIL };
   m.plays++;
   if(P.onPlay) P.onPlay(e);
   if(score < PCAM_MIN || m.over) return;
-  m.lastGood = e;
-  if(m === P.shown){ P.holdF = Math.max(P.holdF, P.frame + PCAM_HOLD); if(e.ko) P.koHoldF = Math.max(P.koHoldF, P.frame + PCAM_HOLD); return; }
-  const q = P.pend;
-  if(!q || (e.ko && !q.ko) || (e.ko === q.ko && score > q.score) || P.frame - q.f > PCAM_STALE) P.pend = e;   // a KO first, then the biggest
+  if(!m.scout) B.lastGood = e;
+  if(m.scout || !B.sc) pcAhead(B, e);   // the scout's, known before the shown copy gets there (or, in a match with no scout -- one K took over -- as it happens)
 }
-// Once a frame, after every match has stepped: cut to the best play waiting, unless the camera only just cut or a play on screen is
-// still playing out. The match on screen over: after its beat, to the best match still playing. Never to a match that is over: a play
-// waiting there goes the moment it ends. A KO is caught on the blow and waits for no dwell (only for a KO on screen still playing
-// out), so a deciding KO is cut to while it flies, before its match ends.
+// One play in a match's list of plays to come: a string or a trip that goes on is the same play, longer and bigger.
+function pcAhead(B, e){
+  const o = B.ahead.find(p=>p.id === e.id);
+  if(!o){ B.ahead.push(e); return; }
+  if(e.score > o.score){ o.score = e.score; o.kind = e.kind; }
+  if(e.ko) o.ko = true;
+  o.start = Math.min(o.start, e.start); o.key = Math.min(o.key, e.key); o.end = Math.max(o.end, e.end);
+}
+function pcPlayEnd(m, id, end){ const B = m.of || m; if(!m.scout && B.sc) return; const o = B.ahead.find(p=>p.id === id); if(o) o.end = Math.max(o.end, end); }
+// Once a frame, after every match has stepped (LOOK-AHEAD): the plays to come, read off the scouts. The match on screen keeps the camera
+// while a play of its own is coming (from PCAM_LEAD before it starts) or playing out (to its end). Otherwise the best play elsewhere -- a
+// KO first, then the biggest -- that starts within PCAM_LEAD and whose key moment is still to come gets the cut: the camera arrives before
+// it. A cut for anything but a KO waits out PCAM_DWELL after the last one; a KO waits only for a KO on screen. A play the camera could not
+// get to in time is let go. The match on screen over: after its beat, to the match whose next good play comes soonest (else the latest
+// good play). Never to a match that is over.
 function pcDirector(){
   const P = PCAM, sh = P.shown;
-  if(P.pend && P.pend.m.over) P.pend = null;
-  const e = P.pend;
   if(sh.over){
     if(!P.auto || P.frame - sh.overF < PCAM_BEAT) return;
-    const live = P.list.filter(m=>!m.over);
+    const live = P.list.filter(m=>!m.over && m.st);
     if(!live.length) return;
-    let to = (e && !e.m.over) ? e.m : null;
-    if(!to) to = live.slice().sort((a, b)=>((b.lastGood && b.lastGood.f) || -1) - ((a.lastGood && a.lastGood.f) || -1))[0];   // the latest good play
-    pcCut(to, e && e.m === to ? e : null); P.pend = null; return;
+    let to = null, e = null;
+    for(const m of live) for(const p of pcComing(m)) if(!e || p.start - pcNow(m) < e.start - pcNow(to)){ e = p; to = m; }   // the next good play anywhere
+    if(!to) to = live.slice().sort((a, b)=>((b.lastGood && b.lastGood.f) || -1) - ((a.lastGood && a.lastGood.f) || -1))[0];   // else the latest good play
+    pcCut(to, e); return;
   }
-  if(!e || !P.auto) return;
-  if(P.frame - e.f > PCAM_STALE){ P.pend = null; return; }
-  if(e.ko ? P.frame < P.koHoldF : (P.frame < P.cutF + PCAM_DWELL || P.frame < P.holdF)) return;
-  pcCut(e.m, e); P.pend = null;
+  if(!P.auto) return;
+  const T = pcNow(sh);
+  pcComing(sh);
+  const mine = sh.ahead.filter(p=>p.start - PCAM_LEAD <= T), busy = mine.length > 0, busyKo = mine.some(p=>p.ko);   // coming within PCAM_LEAD, or playing out
+  let to = null, best = null;
+  for(const m of P.list){
+    if(m === sh || m.over || !m.st) continue;
+    const Tm = pcNow(m);
+    for(const p of pcComing(m)){
+      if(p.start - PCAM_LEAD > Tm) continue;   // not yet: the camera comes PCAM_LEAD before it starts
+      if(!best || (p.ko && !best.ko) || (p.ko === best.ko && p.score > best.score)){ best = p; to = m; }   // a KO first, then the biggest
+    }
+  }
+  if(!best) return;
+  if(best.ko ? busyKo : (busy || P.frame < P.cutF + PCAM_DWELL)) return;
+  pcCut(to, best);
 }
+// A match's good plays still to be seen: plays that are over leave its list, and only those whose key moment is still PCAM_SEE or more
+// to come in the copy that can be shown count -- the camera is never sent to a play that has happened, or that it would catch mid-blow.
+function pcComing(m){ const T = pcNow(m); if(m.ahead.length) m.ahead = m.ahead.filter(p=>p.end >= T); return m.ahead.filter(p=>p.key - PCAM_SEE >= T); }
 function pcCut(m, e){
   const P = PCAM, from = P.shown;
-  P.log.push({ f:P.frame, from:TOURNEY.fixtures.indexOf(from.fx), to:TOURNEY.fixtures.indexOf(m.fx), kind:e ? e.kind : 'match over', score:e ? e.score : 0 });
-  P.shown = m; P.cutF = P.frame; P.flashF = P.frame; P.holdF = e ? P.frame + PCAM_HOLD : 0; P.koHoldF = (e && e.ko) ? P.frame + PCAM_HOLD : 0;
+  P.log.push({ f:P.frame, from:TOURNEY.fixtures.indexOf(from.fx), to:TOURNEY.fixtures.indexOf(m.fx), kind:e ? e.kind : 'match over', score:e ? e.score : 0,
+    at:pcNow(m), start:e ? e.start : null, key:e ? e.key : null });
+  P.shown = m; P.cutF = P.frame; P.flashF = P.frame;
 }
 // K: in a session, the camera's cuts (and its tag) off and on -- off, the match on screen is the one you stay with, and its end is the
 // hub; elsewhere in a spectated stock cup, the setting itself (and mid-fixture, a session from here: pcAdopt). Only this cup's: the saved
