@@ -3021,8 +3021,9 @@ const MC_GEN = { perFighter:620, rMin:1700, rMax:3400, crust:140, pitch:560, flo
   padsFloor:[-290, -170, 170, 290], padsShell:[-200, 0, 200], padsHop:[-240, 0, 240], padHopUp:200, padHopW:160,
   // THE LAYERS (mcGen): the caves' kinds from the top (the deepest is always the furnace); what each keeps clear, px past the reach of the
   // steps under a hole above (col) and past the edge of a hole in its floor (hole); and its pieces (px; heights over the cave's floor)
-  // (crackClear: the furnace's stones keep that far from a crack's edge; hotRim: the floor that far from one does not burn)
-  caveKinds:['galleries', 'columns', 'tunnels'], crackClear:100, hotRim:60,
+  // (crackClear: the furnace's stones keep that far from a crack's edge; hotRim: the floor that far from one does not burn; popRim: nor
+  // does it pop you up that far from one -- mcHotFloor)
+  caveKinds:['galleries', 'columns', 'tunnels'], crackClear:100, hotRim:20, popRim:220,
   kinds:{ galleries:{ col:140, hole:60, w:150, gap:130, lo:140, hi:280, top:330, topW:150 },
           columns:{ col:60, hole:60, w:90, gap:170, rockH:[70, 50], dripUp:250, dripW:120, holeDripUp:260, holeDripW:150 },
           tunnels:{ col:150, hole:100, up:160, min:200 },
@@ -3169,8 +3170,8 @@ function mcGen(N, k){
     if(Y.kind === 'galleries') for(const m of mids) if(m.c === c){ const r = rf + Q.top, hw = Q.topW/2/r; put(r - G.stepT, r, m.a - hw, m.a + hw, true, 'tier', c); }   // a top tier over each ledge
     if(Y.kind === 'columns') for(const h of holes) if(h.band === c && !h.lift){ const hw = Q.holeDripW/2/rc; put(rf + Q.holeDripUp, rc, h.a - hw, h.a + hw, false, 'drip', c); }   // a drip over each hole in its floor
   }
-  // THE FURNACE'S FLOOR: the shell's top less the cracks, with a cool rim round each (hotRim: a CPU kept in the air by the flare cannot stop
-  // at an edge), and the strips (a reform comes out on their pads): the arcs that flare (mcHotFloor)
+  // THE FURNACE'S FLOOR: the shell's top less the cracks (and their lips, hotRim) and the strips (a reform comes out on their pads): the arcs
+  // that flare (mcHotFloor; near a crack it burns but never pops, popRim)
   const hot = freeRuns(cracks.map(a => [a, crackH + G.hotRim/shellTop]).concat(SIDES.map(s => [s, stripHalf(shellTop)])));
   const zones = [{ x:cx - Rb - G.stripPast, y:cy - G.strip/2, w:Rb + G.stripPast - shellBot, h:G.strip },
                  { x:cx + shellBot,        y:cy - G.strip/2, w:Rb + G.stripPast - shellBot, h:G.strip }];
@@ -3205,13 +3206,20 @@ function mcGravAt(r){ return MCAVE.layers[mcLayerOf(r)].low ? GRAV*0.7 : GRAV; }
 // (step()), outside the strips and a cool rim round each crack (M.hot). Firey and Firey Jr. stand in it, as there.
 const MC_HOT = { every:260, on:70 };
 function mcHotOn(){ return (hazardT % MC_HOT.every) < MC_HOT.on; }
+// 0: not on the flaring floor; 2: on it (it burns and pops, as The Incinerator's); 1: on it within popRim of a crack -- it burns there once
+// every 6 frames (a pop's beat, about what bouncing on it costs) and never pops: a pop throws a runner up off the floor for 19 frames and it
+// cannot stop at an edge in the air (with the pop everywhere, a CPU running at 7 a frame went over one into the core: 5 of 11 core KOs at
+// 5 a side, against 1 before; on the ground the CPUs turn back about 230 px from a crack).
 function mcHotFloor(f){
-  const M = MCAVE; if(!M.hot) return false;
+  const M = MCAVE; if(!M.hot) return 0;
   const P = mcRealPt(f), r = mcRad(P.x, P.y);
-  if(Math.abs(r - f.r - M.shellTop) > 3) return false;   // its feet on the shell's top (a stone, a ledge or a step is not the floor)
+  if(Math.abs(r - f.r - M.shellTop) > 3) return 0;   // its feet on the shell's top (a stone, a ledge or a step is not the floor)
   const a = mcTh(P.x, P.y);
-  for(const h of M.hot){ const d = mcWrap(a - h[0]); if((d < 0 ? d + MC_TAU : d) <= h[1] - h[0]) return true; }
-  return false;
+  let on = false;
+  for(const h of M.hot){ const d = mcWrap(a - h[0]); if((d < 0 ? d + MC_TAU : d) <= h[1] - h[0]){ on = true; break; } }
+  if(!on) return 0;
+  for(const c of M.cracks) if(Math.abs(mcWrap(a - c.a)) < c.h + MC_GEN.popRim/M.shellTop) return 1;
+  return 2;
 }
 // A rock on the floor just ahead (the columns' rock: its top 2-130 px over the feet): hopped, as brainWalk hops one (navAround's {jump}).
 function mcRockHop(f, inp, dir){
@@ -45544,7 +45552,9 @@ function step(){
       if(flareOn && f.y>gy-f.r-2){ f.pct+=0.5; if(hazardT%6===0){ f.vy=-6; puff(f.x,f.y,'#f0521f',4);} }
     }
     // MOON CAVES: the furnace's floor flares and burns as The Incinerator's (mcHotFloor: the deepest cave's, outside the strips and the cracks' rims)
-    if(MCAVE && MCAVE.on && f.onground && f.name!=="Firey" && f.name!=="Firey Jr." && mcHotOn() && mcHotFloor(f)){ f.pct+=0.5; if(hazardT%6===0){ f.vy=-6; puff(f.x,f.y,'#f0521f',4); } }
+    { const hf = (MCAVE && MCAVE.on && f.onground && f.name!=="Firey" && f.name!=="Firey Jr." && mcHotOn()) ? mcHotFloor(f) : 0;
+      if(hf === 2){ f.pct+=0.5; if(hazardT%6===0){ f.vy=-6; f.vx*=0.5; puff(f.x,f.y,'#f0521f',4); } }   // (the pop throws you up, not along: half the run's speed)
+      else if(hf === 1 && hazardT%6===0){ f.pct+=0.5; puff(f.x,f.y,'#f0521f',2); } }   // (by a crack: the burn, on the pop's beat, and no pop)
     } finally { mcExit(); }
   }
 
