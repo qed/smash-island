@@ -3213,11 +3213,18 @@ function mcState(g){
 // of the floor above, so a body in a hole's mouth already has the layer above's, and the core under the shell is the deepest's -- and that
 // layer's gravity (the owner, 2026-10-31: "the lower layers should have normal gravity"): the Moon's low gravity (0.7 of GRAV, as hazard
 // 'lowgrav') in the upper half of the layers, GRAV below. The cracks and the hollow core under the shell are not a layer you fight on:
-// they keep the Moon's low gravity, so a fall into the core is as recoverable as it always was (in the furnace's normal gravity a CPU
-// that drifted over a crack could not climb back out -- its jumps and up-special rose short of the crack's lip -- and the CPU probe's
-// falls into the core with no hit before them went from 0-1 in 3 minutes to 4-6). A knock into it still KOs.
+// they keep the Moon's low gravity, and so does the furnace's air over each crack, up to its roof -- THE CORE'S HEAT rising through it,
+// drawn as a faint column (mcDrawDisc) -- so a fall into the core is as recoverable as it always was. In the furnace's normal gravity a CPU
+// that drifted over a crack (both its jumps spent on the steps beside it) fell 15-20 px a frame and its up-special rose short of the lip: the
+// CPU probe's falls into the core with no hit before them went from 0-1 in 3 minutes to 4-6. A knock into it still KOs. th: the body's
+// angle (left out: the radius alone).
 function mcLayerOf(r){ const Ls = MCAVE.layers; for(let L = 0; L < Ls.length; L++) if(r >= Ls[L].rBot) return L; return Ls.length - 1; }
-function mcGravAt(r){ return (r < MCAVE.shellTop || MCAVE.layers[mcLayerOf(r)].low) ? GRAV*0.7 : GRAV; }
+function mcOverCrack(th){ const C = MCAVE.cracks; for(let i = 0; i < C.length; i++) if(Math.abs(mcWrap(th - C[i].a)) < C[i].h) return true; return false; }
+function mcGravAt(r, th){
+  const M = MCAVE;
+  if(r < M.shellTop || (th != null && r < M.shellTop + 420 && mcOverCrack(th)) || M.layers[mcLayerOf(r)].low) return GRAV*0.7;
+  return GRAV;
+}
 // THE FURNACE (the owner: "the lowest ones an effect like the incinerator"): the deepest cave's floor flares as The Incinerator's does -- 70
 // frames in every 260, on the same clock (hazardT, which a guest has) -- and burns whoever stands on it then by that floor's own numbers
 // (step()), outside the strips and a cool rim round each crack (M.hot). Firey and Firey Jr. stand in it, as there.
@@ -3334,7 +3341,7 @@ function mcKoFlight(t, n, saved){
   let vx = lvx*c - lvy*s, vy = lvx*s + lvy*c;
   const fall = (t.st || STAT_ONE).fall;   // (the pull: the layer's own where it is, mcGravAt)
   for(let i = 0; i < n; i++){
-    const r = mcRad(x, y) || 1, dx = (M.cx - x)/r, dy = (M.cy - y)/r, inward = vx*dx + vy*dy > 0, g = mcGravAt(r), gg = inward ? g*fall : g;
+    const r = mcRad(x, y) || 1, dx = (M.cx - x)/r, dy = (M.cy - y)/r, inward = vx*dx + vy*dy > 0, g = mcGravAt(r, mcTh(x, y)), gg = inward ? g*fall : g;
     vx += dx*gg; vy += dy*gg; x += vx; y += vy;
     const r2 = mcRad(x, y);
     if(saved && inward && r2 < M.rKill + 100 && r2 >= M.rKill) return false;
@@ -3456,7 +3463,7 @@ const MC_LOOK = {
   galleries: { back:'#2a2f3b', rock:'#6c6f77', plank:'#c4d8e6' },
   columns:   { back:'#2f2925', rock:'#7a6c5d', plank:'#d2c7b6' },
   tunnels:   { back:'#222429', rock:'#5a5d66', plank:'#c9ccd3' },
-  furnace:   { back:'#341d17', rock:'#523b35', plank:'#d39a74', hot:'#f0521f88' },
+  furnace:   { back:'#341d17', rock:'#523b35', plank:'#d39a74', hot:'#f0521f88', heat:'rgba(255,140,60,0.10)' },
 };
 function mcLookOf(p){ const Ls = MCAVE.layers, Y = Ls && Ls[p.L | 0]; return (Y && MC_LOOK[Y.kind]) || MC_LOOK.surface; }
 function mcDrawDisc(){
@@ -3478,6 +3485,9 @@ function mcDrawDisc(){
     c.fillStyle = p.oneway ? lk.plank : (p.r1 >= M.Rout ? '#9a9da5' : lk.rock); c.fill();
     c.lineWidth = p.oneway ? 2 : 3; c.stroke();
   }
+  if(M.layers && M.cracks){ c.fillStyle = MC_LOOK.furnace.heat;   // the core's heat rising through each crack, to the furnace's roof (mcGravAt: the Moon's low gravity in it)
+    for(const k of M.cracks){ if(!mcInView(k.a - k.h, k.a + k.h, M.shellTop, M.shellTop + 420, V)) continue;
+      c.beginPath(); c.arc(cx, cy, M.shellTop + 420, k.a - k.h - Q, k.a + k.h - Q, false); c.arc(cx, cy, M.shellBot, k.a + k.h - Q, k.a - k.h - Q, true); c.closePath(); c.fill(); } }
   if(M.hot && mcHotOn()){ c.fillStyle = MC_LOOK.furnace.hot;   // the furnace's floor alight
     for(const h of M.hot){ if(!mcInView(h[0], h[1], M.shellTop - 2, M.shellTop + 8, V)) continue;
       c.beginPath(); c.arc(cx, cy, M.shellTop + 8, h[0] - Q, h[1] - Q, false); c.arc(cx, cy, M.shellTop - 2, h[1] - Q, h[0] - Q, true); c.closePath(); c.fill(); } }
@@ -22789,7 +22799,10 @@ const GRAV=0.62, MOVE=0.9, MAXVX=6.4, JUMP=-12.5, FRICTION=0.82;
 // uses this (they used GRAV, so on the low-gravity maps every jump went higher and every fall took longer than they reckoned:
 // moon-caves-design.md, risk 8). o: the body (on Moon Caves its place is its layer; in a frame its chart y is its radius).
 function gravAt(o){
-  if(MCAVE && MCAVE.on && o) return mcGravAt((MC_FR.open && o._mcPlaced !== MC_FR.serial) ? MCAVE.cy - o.y : mcRad(o.x, o.y));
+  if(MCAVE && MCAVE.on && o){
+    if(MC_FR.open && o._mcPlaced !== MC_FR.serial) return mcGravAt(MCAVE.cy - o.y, MC_FR.phi + (o.x - MCAVE.cx)/MC_FR.rho);   // (in a frame: its chart's place)
+    return mcGravAt(mcRad(o.x, o.y), mcTh(o.x, o.y));
+  }
   return (stage && stage.hazard === 'lowgrav') ? GRAV*0.7 : GRAV;
 }
 
@@ -79705,7 +79718,7 @@ function netPredRun(a, pr, to, team){
     if(!J) P.jp = false;
     if(P.hop){ if(P.vy >= 0 || P.g) P.hop = false; else if(!J){ if(P.vy < -k[6]) P.vy = -k[6]; P.hop = false; } }
     // gravity, and the fast fall (mtFastFall)
-    const gv = (MCAVE && MCAVE.on) ? mcGravAt(MCAVE.cy - P.y) : grav;   // (MOON CAVES: its layer's, as step()'s gravFor)
+    const gv = (MCAVE && MCAVE.on) ? mcGravAt(MCAVE.cy - P.y, MC_FR.phi + (P.x - MCAVE.cx)/MC_FR.rho) : grav;   // (MOON CAVES: its layer's, as step()'s gravFor)
     P.vy += P.vy > 0 ? (airrel ? gv*0.55 : gv)*k[8] : gv;
     { const edge = D && !P.dn; P.dn = !!D;
       if(mt){ if(P.g || P.vy < 0) P.ff = false; else if(P.ff){ if(P.vy < k[7]) P.vy = k[7]; } else if(edge){ P.ff = true; P.vy = Math.max(P.vy, k[7]); } } }
