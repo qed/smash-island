@@ -2935,7 +2935,7 @@ function mcDrawArrows(){
 const MC_WATCH_HOLD = 180;
 function mcWatching(){ const me = fighters.find(f => f.you); return !me || (me.dead && !(me.stocks > 0)); }
 function mcWideZoom(){ const M = MCAVE, k = M.wideK, e = k*k*(3 - 2*k), z1 = Math.min(W, H)/(2*(M.Rout + 220)); return CAM_ZOOM + (z1 - CAM_ZOOM)*e; }
-function mcWatch(){
+function mcWatch(k){
   const M = MCAVE;
   if(M.wide){
     M.wideK = Math.min(1, M.wideK + 0.05);
@@ -2952,7 +2952,7 @@ function mcWatch(){
   }
   if(!w.A) return;
   const ta = mcTh(w.A.x, w.A.y), th = ta + mcWrap(mcTh(w.B.x, w.B.y) - ta)/2, r = (mcRad(w.A.x, w.A.y) + mcRad(w.B.x, w.B.y))/2;
-  mcCamera(camTarget(M.cx + r*Math.sin(th), M.cy - r*Math.cos(th), CAM_ZOOM));
+  mcCamera(camTarget(M.cx + r*Math.sin(th), M.cy - r*Math.cos(th), CAM_ZOOM), k);
 }
 addEventListener('keydown', function(e){
   if(e.code !== 'KeyZ' || e.repeat || e.ctrlKey || e.metaKey || e.altKey || !(MCAVE && MCAVE.on) || !running || paused || isNetClient() || !mcWatching()) return;
@@ -3096,10 +3096,67 @@ function buildMoonCaves(){
     return { team, x, y, w:0, h:0, color:TEAM_COLORS[team % TEAM_COLORS.length], spawnX:sp[0].x, spawnY:sp[0].y, floor:0, spawns:sp, zone:g.zones[team], mc:true };
   });
   worldPlats = []; worldZones = []; floors = [{ level:0, y:g.cy - g.Rout, x:0, w:WW }];
-  MCAVE = { on:true, cx:g.cx, cy:g.cy, N:g.N, k:g.k, Rout:g.Rout, Rblast:g.Rb, rKill:g.rKill, K:g.K, tops:g.tops, shellTop:g.shellTop, shellBot:g.shellBot,
-            crustBot:g.crustBot, segs:g.segs, holes:g.holes, cracks:g.cracks, window:mcWindow, win:[], rhoMin:64, flight:true, items:true,
-            camT:null, camHold:false, camOff:0, deco:mcDeco(g.segs), wide:false, wideK:0, watch:null };
+  MCAVE = mcState(g);
   camAng = 0;
+}
+// The map's state from a generated disc (buildMoonCaves; a guest's mcNetGeo).
+function mcState(g){
+  return { on:true, cx:g.cx, cy:g.cy, N:g.N, k:g.k, Rout:g.Rout, Rblast:g.Rb, rKill:g.rKill, K:g.K, tops:g.tops, shellTop:g.shellTop, shellBot:g.shellBot,
+           crustBot:g.crustBot, segs:g.segs, holes:g.holes, cracks:g.cracks, window:mcWindow, win:[], rhoMin:64, flight:true, items:true,
+           camT:null, camHold:false, camOff:0, deco:mcDeco(g.segs), wide:false, wideK:0, watch:null };
+}
+// ---- MOON CAVES ONLINE (M6) ----------------------------------------------------------------------------------------------------------
+// THE DISC ON THE WIRE. A room plays one build (NET.versionCheck: a guest on another one stays out of the match), and the disc is the pure
+// generator's from the number of fighters and the map size's factor (mcGen: no dice). So the host's world (worldGeo) carries those two and a
+// check of its pieces, and a guest builds the same disc with the same code (mcNetGeo) -- whatever its own dev switch or unlocks say: its own
+// setupWorld built none, or one from its own settings. (The plan had every piece on the wire, 4-8 KB every 3 s: with one build a room, the
+// same disc from two numbers.)
+function mcSegsHash(segs){
+  let h = 2166136261;
+  const mix = v => { h = Math.imul(h ^ (Math.round(v) | 0), 16777619); };
+  for(const g of segs){ mix(g.r0); mix(g.r1); mix(g.a0*1e5); mix(g.a1*1e5); mix(g.oneway ? 1 : 0); }
+  return h >>> 0;
+}
+function mcGeoOut(){ const M = MCAVE; return { N:M.N, k:M.k, n:M.segs.length, h:mcSegsHash(M.segs) }; }
+function mcNetGeo(m){
+  if(!m || typeof m !== 'object'){ if(MCAVE) MCAVE = null; return; }   // the host's world is not the disc (a next match on another map)
+  const N = Math.round(+m.N), k = +m.k;
+  if(!(N >= 2 && N <= 64) || !(k > 0.2 && k < 5)) return;   // (peer-supplied)
+  if(MCAVE && MCAVE.on && MCAVE.N === N && MCAVE.k === k) return;   // built already
+  const g = mcGen(N, k);
+  if(g.segs.length !== m.n || mcSegsHash(g.segs) !== m.h) console.warn('Moon Caves: the disc built here is not the host\'s');
+  MCAVE = mcState(g); camAng = 0;
+  NET_VIEW.camReady = false;   // the camera starts afresh on it (mcNetCamera)
+}
+// A GUEST'S CAMERA: the host's own (mcCamera: the follow, the turn and its holds; mcWatch once it is out), on this device's fighter, at this
+// screen's pace (k: the 60ths of a second the picture stands for). Its first picture of the disc starts upright on that fighter.
+function mcNetCamera(k){
+  if(!NET_VIEW.camReady){ const f = clientFollow(); if(!f) return; const t = camTarget(f.x, f.y, CAM_ZOOM); camX = t.x; camY = t.y; mcCamReset(); NET_VIEW.camReady = true; return; }
+  if(mcWatching()){ mcWatch(k); return; }
+  const f = clientFollow(); if(f) mcCamera(camTarget(f.x, f.y, CAM_ZOOM), k);
+}
+// AN IMPACT A GUEST PLAYS (impactFromNet): the host made it upright in a chart and turned it to the world as the frame closed (mcFxTurn), and its
+// row carries the turn (e[9]); here it is made upright at its world place and turned there. ld/lb/ls: each list's last entry before it, and
+// nd/nb/ns how many it made (impactFx trims the lists from the front only).
+function mcImpactTurn(x, y, th, ld, lb, ls, nd, nb, ns){
+  const c = Math.cos(th), s = Math.sin(th);
+  const fresh = (L, last, n) => { let i = L.length; while(i > 0 && L[i - 1] !== last) i--; return L.slice(Math.max(i, L.length - n)); };
+  const turn = q => { const dx = q.x - x, dy = q.y - y, vx = q.vx || 0, vy = q.vy || 0; q.x = x + dx*c - dy*s; q.y = y + dx*s + dy*c; q.vx = vx*c - vy*s; q.vy = vx*s + vy*c; };
+  for(const q of fresh(IMPACT_DUST, ld, nd)) turn(q);
+  for(const q of fresh(IMPACT_DEBRIS, lb, nb)){ turn(q); q.rot = (q.rot || 0) + th; }
+  for(const q of fresh(IMPACT_SCARS, ls, ns)) q.rot = th;
+}
+// A CHIP OF AN IMPACT'S DEBRIS here (stepImpactFx, host and guest): it falls toward the middle and comes to rest on rock, one bounce first --
+// it fell down the screen, through the floor, wherever on the disc it was made.
+function mcDebrisStep(c){
+  const M = MCAVE, r = mcRad(c.x, c.y) || 1, ux = (c.x - M.cx)/r, uy = (c.y - M.cy)/r;   // (u: out from the middle)
+  c.vx -= 0.4*ux; c.vy -= 0.4*uy; c.x += c.vx; c.y += c.vy; c.rot += c.vr;
+  const out = c.vx*ux + c.vy*uy;
+  if(out < 0 && mcRockAt(c.x, c.y)){
+    c.x -= c.vx; c.y -= c.vy;   // back out of the rock
+    if(!c.bounced){ c.bounced = true; const tx = c.vx - out*ux, ty = c.vy - out*uy; c.vx = tx*0.55 - out*0.35*ux; c.vy = ty*0.55 - out*0.35*uy; c.vr *= 0.5; }
+    else { c.rest = true; c.vx = 0; c.vy = 0; c.vr = 0; }
+  } else if(r < M.rKill - 100 || r > M.Rblast + 600) c.life = 0;
 }
 // A real point for a mover inside the open frame (its chart place turned back), or its own place outside one: what a world rectangle -- a
 // safe strip -- is tested against. (MC_RP is reused: read it at once.)
@@ -3167,12 +3224,13 @@ function mcCamAngle(cut){
   M.camOff = o; camAng = o ? mcWrap(to + o) : to;
 }
 function mcCamReset(){ MCAVE.camT = { x:camX, y:camY }; MCAVE.camHold = false; MCAVE.camOff = 0; camAng = 0; mcCamAngle(true); }
-function mcCamera(t){
-  const L = MCAVE.camT, cut = !!L && Math.hypot(t.x - L.x, t.y - L.y) > 1200;
+function mcCamera(t, k){
+  const L = MCAVE.camT, cut = !!L && Math.hypot(t.x - L.x, t.y - L.y) > 1200, e = (k === undefined || k === 1) ? 0.12 : 1 - Math.pow(1 - 0.12, k);
   if(cut){ camX = t.x; camY = t.y; }
-  else { camX += (t.x - camX)*0.12; camY += (t.y - camY)*0.12; }
+  else { camX += (t.x - camX)*e; camY += (t.y - camY)*e; }
   if(L){ L.x = t.x; L.y = t.y; } else MCAVE.camT = { x:t.x, y:t.y };
   mcCamAngle(cut);
+  for(let i = 1; i < Math.round(k || 1); i++) mcCamAngle(false);   // (a guest's picture of several steps: the turn eases each)
 }
 // Particles fall toward the middle here (step).
 function mcParticleStep(){
@@ -49080,6 +49138,7 @@ const FINX_NET = ['k','o','id','t0','ph','face','x','y','R','tip','tgt','hx','hy
 function finxNet(){
   return FINX.map(function(o){ const r = {};
     for(const k of FINX_NET){ const v = o[k]; if(v === undefined || v === null) continue; r[k] = typeof v === 'number' ? Math.round(v*10)/10 : v; }
+    if(o._mcRho){ r.mP = Math.round(o._mcPhi*1e6)/1e6; r.mR = Math.round(o._mcRho*10)/10; }   // MOON CAVES (M6): the chart its points are in (mcAnchor)
     return r; });
 }
 // Whether this fighter is drawn as Teardrop's puddle instead of herself.
@@ -61837,6 +61896,7 @@ function stepImpactFx(){
     for(const c of IMPACT_DEBRIS){
       c.life--;
       if(c.rest) continue;
+      if(MCAVE && MCAVE.on){ mcDebrisStep(c); continue; }   // (MOON CAVES: toward the middle, onto rock)
       c.vy += 0.4; c.x += c.vx; c.y += c.vy; c.rot += c.vr;
       if(c.vy > 0){
         const top = vanLanding(c.x, c.y - c.vy, c.y);
@@ -61874,6 +61934,12 @@ function impactFromNet(list){
     if(!Number.isFinite(x) || !Number.isFinite(y)) continue;
     const q = impactOpts({ shake: e[2], dust: e[3], debris: e[4], r: e[6], color: e[7] });
     q.scar = (Number.isFinite(+e[5]) && +e[5] >= 0) ? Math.min(400, +e[5]) : -1;
+    if(MCAVE && MCAVE.on && Number.isFinite(+e[9])){   // MOON CAVES (M6): made upright in a chart on the host and turned (e[9]): so here
+      const ld = IMPACT_DUST[IMPACT_DUST.length - 1], lb = IMPACT_DEBRIS[IMPACT_DEBRIS.length - 1], ls = IMPACT_SCARS[IMPACT_SCARS.length - 1];
+      impactFx(x, y, q, +e[8] || 0);
+      mcImpactTurn(x, y, +e[9], ld, lb, ls, Math.round(8*q.dust), q.debris, q.scar >= 0 ? 1 : 0);
+      continue;
+    }
     impactFx(x, y, q, +e[8] || 0);
   }
 }
@@ -78654,7 +78720,8 @@ function worldGeo(){
     bases: bases.map(b=>({team:b.team,x:Math.round(b.x),y:Math.round(b.y),w:b.w,h:b.h,color:b.color,
       spawns: b.spawns ? b.spawns.map(sp=>({x:Math.round(sp.x),y:Math.round(sp.y)})) : undefined,
       zone: b.zone ? {x:Math.round(b.zone.x),y:Math.round(b.zone.y),w:Math.round(b.zone.w),h:Math.round(b.zone.h)} : undefined,
-      wall: b.wall || undefined})),
+      wall: b.wall || undefined, mc: b.mc || undefined})),   // (mc: MOON CAVES' strip bases, drawn with no deck: as the host draws them)
+    moon: MCAVE && MCAVE.on ? mcGeoOut() : undefined,   // MOON CAVES (M6): the disc, for a guest to build the same one (mcNetGeo)
   };
 }
 // A cheap fingerprint of the geometry, so the host can tell it changed without building and stringifying all of it
@@ -78816,7 +78883,8 @@ function serializeState(withGeo){
     mode: SETTINGS.mode,
     fighters: fighters.map(netFighter),
     pj: netProjectiles(),
-    beams: beams.map(b=>({x0:Math.round(b.x0),y:Math.round(b.y),x1:Math.round(b.x1),color:b.color,life:b.life,w:b.w})),
+    beams: beams.map(b=>({x0:Math.round(b.x0),y:Math.round(b.y),x1:Math.round(b.x1),color:b.color,life:b.life,w:b.w,
+      mc:b.mc ? [Math.round(b.mc.r), Math.round(b.mc.a0*1e5)/1e5, Math.round(b.mc.a1*1e5)/1e5] : undefined})),   // (mc: MOON CAVES' arc, mcFxTurn's)
     // Items and summons (assists, bosses) were never sent, so a client saw no pickups, no assist trophies
     // and no Boss Rush boss. These are the fields drawItem, drawSummon, drawBossSprite and drawBossBar read.
     items: items.filter(it=>!it.taken).map(it=>({x:Math.round(it.x),y:Math.round(it.y),r:it.r,kind:it.kind})),
@@ -78974,7 +79042,7 @@ function applySnapshot(s){
   const st=STAGES.find(x=>x.id===s.stage); if(st) stage=st;
   SETTINGS.mode=s.mode;
   const geo = s.geo || (s.worldPlats ? s : null);   // (before the geometry was split out, it sat at the top level)
-  if(geo){ floors=geo.floors||[]; worldPlats=geo.worldPlats||[]; bases=(geo.bases||[]).map(b=>({...b})); }
+  if(geo){ floors=geo.floors||[]; worldPlats=geo.worldPlats||[]; bases=(geo.bases||[]).map(b=>({...b})); mcNetGeo(geo.moon); }   // (MOON CAVES: the host's disc, built here)
   NET_VIEW.scroll = (s.sc != null) ? !!s.sc : scrolls();
   BOSS_ARENA = (typeof s.arena === 'string' && Object.prototype.hasOwnProperty.call(BOSS_ARENA_SKY, s.arena)) ? s.arena : null;
   if(Array.isArray(s.zones)) spawnZones = s.zones.map(z=>({ kind: z[0] ? 'claim' : 'safe', x:z[1], y:z[2], w:z[3], h:z[4], owner: z[5] >= 0 ? z[5] : null, progress: z[6]||0 }));
@@ -79016,7 +79084,7 @@ function applySnapshot(s){
       return p;
     });
   } else projectiles=(s.projectiles||[]).map(p=>({...p, ownerObj:null}));
-  beams=(s.beams||[]);
+  beams=(s.beams||[]).map(b=>Array.isArray(b.mc) ? Object.assign({}, b, { mc:{ r:+b.mc[0], a0:+b.mc[1], a1:+b.mc[2] } }) : b);   // (MOON CAVES: the arc mcDrawBeam draws)
   HIT_ART.length = 0; if(Array.isArray(s.ha)) for(const r of s.ha){ const e = haUnpack(r); if(e) HIT_ART.push(e); }   // the host's hit areas, as it tested them
   { const wasE = evil; evil = Array.isArray(s.evil) ? {x:s.evil[0], y:s.evil[1]} : null; if(evil) netGlide(evil, fresh ? null : wasE); }
   tendrils = (s.tend||[]).map(r=>({ x:r[0], h:r[1], maxH:r[1], grow:0, life:1, _hit:true }));   // drawTendrils reads x and h
@@ -79031,7 +79099,7 @@ function applySnapshot(s){
     FILE_RIDES = Array.isArray(s.frd) ? s.frd.map(r=>{ const p = { x:r[0], y:r[1], w:r[2], h:r[3], face:r[4], on:!!r[5], vx:r[6] ? r[4] : 0, oi:r[7], fileRide:true };
       netGlide(p, was.find(q=>q.oi===p.oi) || null); return p; }) : []; }
   { const was = fresh ? [] : FINX;   // the finishers running (FINISHERS V2): drawn from the host's rows, glided like everything else
-    FINX = Array.isArray(s.fnx) ? s.fnx.map(r=>{ const o = Object.assign({}, r); netGlide(o, was.find(q=>q.id===o.id) || null); return o; }) : []; }
+    FINX = Array.isArray(s.fnx) ? s.fnx.map(r=>{ const o = Object.assign({}, r); if(r.mR > 0){ o._mcPhi = +r.mP; o._mcRho = +r.mR; } netGlide(o, was.find(q=>q.id===o.id) || null); return o; }) : []; }   // (MOON CAVES: its chart, as mcFinxDraw reads it)
   summons=(s.summons||[]).map((m,i)=>{ const e={...m}, p=wasS[i]; netGlide(e, (p && p.name===m.name && p.type===m.type) ? p : null); return e; });
   if(typeof s.bossCleared==='number') BOSSRUSH.cleared=s.bossCleared;
   if(Array.isArray(s.pb)){
@@ -79114,7 +79182,7 @@ function netSwing(f){
 // calls it for each tick the clock owes), never once per animation frame, or a particle crossed the screen twice as fast on a 120 Hz one.
 function netStepParticles(){
   if(!particles.length) return;
-  for(const p of particles){ p.x+=p.vx; p.y+=p.vy; p.vy+=0.15; p.life--; }
+  if(MCAVE && MCAVE.on) mcParticleStep(); else for(const p of particles){ p.x+=p.vx; p.y+=p.vy; p.vy+=0.15; p.life--; }   // (MOON CAVES: toward the middle)
   particles=particles.filter(p=>p.life>0);
 }
 // Who this client's camera follows: its own fighter. While that fighter is out, the teammate nearest the view, else
@@ -79137,6 +79205,7 @@ function clientFollow(){
 // `k`: how many 60ths of a second this frame is (1 at 60 fps). The host eases once per step; a client eases once per picture, so its
 // 0.12 is spread over the time instead: the same pace on any screen, and a faster screen still gets a smoother camera.
 function clientCamera(k){
+  if(MCAVE && MCAVE.on){ NET_VIEW.z = CAM_ZOOM; mcNetCamera(k); return; }   // MOON CAVES (M6): the host's camera, turning with the view
   if(!NET_VIEW.scroll){
     // The host's arena is one screen -- the HOST's screen. Fit all of it into this one, centred. Equal windows: zoom 1,
     // camera 0, exactly as before. (A 1920x1080 host on a 1280x720 client used to put the floor below the screen.)
