@@ -2555,7 +2555,8 @@ function syncPrizeRoster(announce){
 // The round map with gravity toward its middle (reports/moon-caves-design.md). Nothing here runs on any other map: MCAVE is null
 // outside a Moon Caves match, every hook asks it first, and mcEnter/mcExit return at once. It is built in steps, each hidden behind
 // MCAVE_DEV (off for everyone; localStorage 'bfsi:mcavedev' = '1' turns it on in one browser) until the release step (M8). It was
-// released by mistake on 2026-10-30 with only M0-M1 built and hidden again the same day (the owner: "the moon is not what it was described as").
+// released by mistake on 2026-10-30 with only M0-M1 built and hidden again the same day (the owner: "the moon is not what it was described as");
+// M2 (the real map, sized by the players, with its safe strips and KOs) on 2026-10-31.
 // Positions (x, y) are real between frames. On this map velocities are stored local to the body: vx along the ground (clockwise
 // positive), vy toward the centre (positive down). Each moving thing's own update runs inside its CHART: the disc laid flat round it,
 // height = radius (y' = cy - r) and left/right = distance along the ground at its own radius (x' = cx + rho*(th - phi)). Its down is
@@ -2651,53 +2652,174 @@ function worldToScreen(x, y, z){
   if(MCAVE && MCAVE.on){ const dx = (x - camX - W/2)*z, dy = (y - camY - H/2)*z, c = Math.cos(camAng), sn = Math.sin(camAng); return { x:W/2 + c*dx - sn*dy, y:H/2 + sn*dx + c*dy, s:z }; }
   return { x:(x - camX - W/2)*z + W/2, y:(y - camY - H/2)*z + H/2, s:z };
 }
-// ---- MOON CAVES: the radial-gravity sandbox (M1) ------------------------------------------------------------------------------
-// A fixed test disc, built only while MCAVE_DEV is on, in a Teams match on the Moon Caves row (setupWorld): the surface (the crust's top,
-// walkable all the way round), one cave under it, four holes through the crust with steps down, a walled shaft, and two cracks in the cave's
-// floor over the hollow core. Fighters only: no items, assists or Smash Balls (itemSpawnInterval). A KO is past the blast ring out in space,
-// or down in the core. The view turns with your fighter (mcCamera), and every fighter stands upright on its own part of the disc. Sizes are
-// first guesses; the real map, sized by the number of players, with safe strips, is the next step.
-const MC_TEST = { Rout:2000, crust:140, pitch:560, floor:140, blast:1300, kill:200, holes:[-2.52, -0.62, 0.62, 2.52], holeW:220,
-  shaft:2.0, shaftW:200, shaftWall:60, cracks:[0, Math.PI], crackW:260, hops:[-0.25, 0.25], hopUp:200, hopW:260,
-  pads:[-0.15, -0.09, -0.03, 0.03, 0.09, 0.15] };
-function buildMoonCaves(){
-  const T = MC_TEST, Rout = T.Rout, Rb = Rout + T.blast;
-  WW = Math.ceil(MC_TAU*Rb) + 1000; WH = 2*Rb + 800; camX = 0; camY = 0;   // every chart place stays inside the box: no clamp or side line fires
-  const cx = WW/2, cy = WH/2, segs = [];
-  const put = (r0, r1, a0, a1, oneway) => { if(a1 - a0 > 1e-6) segs.push({ id:segs.length + 1, r0:r0, r1:r1, a0:a0, a1:a1, oneway:!!oneway }); };
-  const ring = (r0, r1, cuts) => {   // a whole ring with openings cut in it, each [centre, half-angle]
-    const cs = cuts.map(c => [c[0] - c[1], c[0] + c[1]]).sort((p, q) => p[0] - q[0]);
-    for(let i = 0; i < cs.length; i++) put(r0, r1, cs[i][1], i + 1 < cs.length ? cs[i + 1][0] : cs[0][0] + MC_TAU);
-  };
-  const crustBot = Rout - T.crust, shellTop = Rout - T.pitch, shellBot = shellTop - T.floor;
-  const hh = T.holeW/2/Rout, sh = T.shaftW/2/Rout;
-  ring(crustBot, Rout, T.holes.map(c => [c, hh]).concat([[T.shaft, sh]]));   // the crust: its top is the surface
-  ring(shellBot, shellTop, T.cracks.map(c => [c, T.crackW/2/shellTop]));       // the cave's floor (the shell), cracked over the core
-  // under each hole, one-way steps zigzag down to the cave floor, 140 px apart (mirrored on the left half, so the two sides match)
-  for(const c of T.holes){
-    const s = c >= 0 ? 1 : -1, step = (top, lo, hi) => { const a = c + s*lo, b = c + s*hi; put(top - 14, top, Math.min(a, b), Math.max(a, b), true); };
-    step(crustBot, -hh, hh*0.1);            // in the hole's mouth, on its near side
-    step(crustBot - 140, 0.032, 0.108);     // across, under the crust
-    step(crustBot - 280, -0.111, -0.029);   // and back, 140 px over the cave floor
+// ---- MOON CAVES: the real map (M2) -------------------------------------------------------------------------------------------------
+// The disc of moon-caves-design.md (section 3), built in a Teams match on the Moon Caves row (setupWorld) by a PURE generator from the
+// number of fighters N and the map size's width factor -- no Math.random, so a replay and an online guest rebuild the identical disc -- and
+// mirror-symmetric about the 12-6 line, so both teams get the same map. Every size is a first guess; the owner's play sets them (M8).
+//   Rout    the surface's radius: 620*sqrt(N), 1700 to 3400, times the map size (about 1.2 M px of disc a fighter)
+//   crust   the outer rock, Rout - 140 to Rout; its top is the surface, walkable all the way round
+//   caves   one under another, 560 apart (420 px of headroom over a 140 px rock floor): cave c's floor top is at Rout - 560c, as many as
+//           keep the innermost floor at r 800 or more (at most 4; the chart is a few px off there, no more). The innermost cave's floor is
+//           the shell, and under it is the hollow core: r_kill (the shell's underside - 200) is the core KO, Rout + 1300 the space KO.
+//   holes   in every rock band but the shell, ~220 px wide, one per ~1300 px of arc (an even number, at least 4), each band's half a
+//           spacing on from the band above's so the routes zigzag, none in the safe strips but each strip's lift
+//   steps   under every hole, one-way steps zigzag up through the cave below it: +140, +280, +420 (in the hole's mouth), then 140 more
+//           onto the floor above -- every climb 140 px (the CPU's 150 rule, FIELD_ROW_GAP), no wall taller than a jump
+//   ledges  a one-way ledge ~210 px over each cave floor between the holes above it; hop-tops 180 / 260 px over the surface between holes
+//   cracks  ~260 px openings in the shell at 12 and 6 o'clock (from 16 players four more, at 1:30, 4:30, 7:30 and 10:30), far from both
+//           strips. The Moon's lesson (9 of 30 KOs were CPUs walking down its hole at 0-2%): no plank lies over a crack and no hole straight
+//           above one, so a crack is reached only by being knocked in or by walking along the shell.
+//   strips  the two safe strips: a world rectangle 700 px tall through the middle, from the shell's underside out past the blast ring --
+//           team 0 at 9 o'clock (the human's side, as wallBand), team 1 at 3. In each, pads on every floor, its LIFT (a hole through every
+//           band but the shell, with its steps, each step a pad, so a fighter who reforms can come out on any layer) and three hop-tops.
+// Fighters only until M3 (no items, assists or Smash Balls: itemSpawnInterval). The view turns with your fighter (mcCamera), and every
+// fighter stands upright on its own part of the disc.
+const MC_GEN = { perFighter:620, rMin:1700, rMax:3400, crust:140, pitch:560, floor:140, cavesMax:4, innerMin:800, blast:1300, kill:200,
+  holeW:220, holeArc:1300, holesMin:4, stepT:14, steps:[[140, -191, -50], [280, 55, 186], [420, -110, 11]], stepReach:191,
+  ledgeUp:210, ledgeW:300, hopUp:[180, 260], hopW:220, crackW:260, cracks6At:16, strip:700, stripPast:400,
+  padsFloor:[-290, -170, 170, 290], padsShell:[-200, 0, 200], padsHop:[-240, 0, 240], padHopUp:200, padHopW:160 };
+function mcGen(N, k){
+  const G = MC_GEN, TAU = MC_TAU;
+  let Rout = Math.round(clamp(G.perFighter*Math.sqrt(Math.max(2, N)), G.rMin, G.rMax)*(k || 1));
+  Rout = Math.max(Rout, G.innerMin + G.pitch);   // (a Compact map still gets its cave)
+  let K = 0; while(K < G.cavesMax && Rout - G.pitch*(K + 1) >= G.innerMin) K++;
+  K = Math.max(1, K);
+  const tops = []; for(let j = 0; j <= K; j++) tops.push(Rout - G.pitch*j);   // tops[0] the surface, tops[c] cave c's floor (tops[K] the shell)
+  const thick = j => j === 0 ? G.crust : G.floor;
+  const shellTop = tops[K], shellBot = shellTop - G.floor, crustBot = Rout - G.crust, Rb = Rout + G.blast, rKill = shellBot - G.kill;
+  const WW = Math.ceil(TAU*Rb) + 1000, WH = 2*Rb + 800, cx = WW/2, cy = WH/2;   // every chart place stays inside the box: no clamp or side line fires
+  const segs = [], holes = [];
+  const put = (r0, r1, a0, a1, oneway, kind) => { if(a1 - a0 > 1e-6 && r1 - r0 > 0.5) segs.push({ id:segs.length + 1, r0, r1, a0, a1, oneway:!!oneway, kind }); };
+  const dist = (a, b) => Math.abs(mcWrap(a - b));
+  const SIDES = [-Math.PI/2, Math.PI/2];                                  // team 0's strip at 9 o'clock, team 1's at 3
+  const stripHalf = r => Math.asin(Math.min(1, G.strip/2/r));             // the strip (a band of y through the middle) at radius r
+  const inStrip = (a, hw, r, m) => SIDES.some(s => dist(a, s) < stripHalf(r) + hw + m/r);
+  const cracks = [0, Math.PI].concat(N >= G.cracks6At ? [Math.PI/4, 3*Math.PI/4, -Math.PI/4, -3*Math.PI/4] : []);
+  const crackH = G.crackW/2/shellTop;
+  const pt = (r, a) => ({ x:cx + r*Math.sin(a), y:cy - r*Math.cos(a), used:0 });
+  // THE HOLES: the crust's evenly round (one per ~1300 px, an even number, at least 4, none on the 12-6 line), and each band under it half
+  // a spacing on from the band above -- in the middle between each two of that band's holes (its lift among them), so the routes zigzag and
+  // no hole is under the steps above. None on the 12-6 line (its steps could not mirror), in a strip, or -- the band over the shell -- where
+  // its steps would hang over a crack. Every band but the shell also gets the LIFT in the middle of each strip.
+  for(let j = 0; j < K; j++){
+    const r = tops[j], hh = G.holeW/2/r, cand = [];
+    if(j === 0){ const n = Math.max(G.holesMin, 2*Math.round(TAU*r/G.holeArc/2)); for(let i = 0; i < n; i++) cand.push(mcWrap((i + 0.5)*TAU/n)); }
+    else {
+      const up = holes.filter(h => h.band === j - 1).map(h => h.a).sort((p, q) => p - q);
+      for(let i = 0; i < up.length; i++){ const a1 = up[i], a2 = up[(i + 1) % up.length], gap = (up.length === 1 || a2 <= a1) ? a2 - a1 + TAU : a2 - a1; cand.push(mcWrap(a1 + gap/2)); }
+    }
+    for(const a of cand){
+      if(dist(a, 0) < hh + 0.02 || dist(a, Math.PI) < hh + 0.02) continue;
+      if(inStrip(a, hh, r, 60)) continue;
+      if(holes.some(h => h.band === j - 1 && dist(h.a, a) < hh + (G.stepReach + 40)/(r + G.steps[0][0]))) continue;   // (the steps above hang 140 px and more over this floor)
+      if(j === K - 1 && cracks.some(c => dist(c, a) < crackH + (G.stepReach + 80)/(shellTop + 140))) continue;
+      holes.push({ band:j, a, r, w:G.holeW, lift:false, team:-1 });
+    }
+    SIDES.forEach((s, team) => holes.push({ band:j, a:s, r, w:G.holeW, lift:true, team }));
   }
-  // the walled shaft: rock walls either side of its opening, from a fighter's headroom over the cave floor up to the crust (wall jumps, the cling)
-  const ww = T.shaftWall/(crustBot - 140);
-  put(shellTop + 140, crustBot, T.shaft - sh - ww, T.shaft - sh); put(shellTop + 140, crustBot, T.shaft + sh, T.shaft + sh + ww);
-  for(const c of T.hops){ const h = T.hopW/2/(Rout + T.hopUp); put(Rout + T.hopUp - 14, Rout + T.hopUp, c - h, c + h, true); }   // hop-tops over the surface
-  // the two sides' places on the surface: team 0 at 9 o'clock (the human's, as wallBand), team 1 at 3. (No safe strips yet.)
-  bases = [0, 1].map(team => {
-    const at = team === 0 ? -Math.PI/2 : Math.PI/2;
-    const spawns = T.pads.map(o => ({ x:cx + Rout*Math.sin(at + o), y:cy - Rout*Math.cos(at + o), used:0 }));
-    return { team:team, x:spawns[2].x, y:spawns[2].y, w:0, h:0, color:TEAM_COLORS[team % TEAM_COLORS.length], spawnX:spawns[2].x, spawnY:spawns[2].y,
-             floor:0, spawns:spawns, zone:{ x:-1e7, y:-1e7, w:0, h:0 }, mc:true };
+  holes.sort((p, q) => p.band - q.band || p.a - q.a);
+  // THE ROCK: every band a ring with its openings cut (the shell's are the cracks)
+  const ring = (r0, r1, cuts, kind) => {
+    if(!cuts.length){ put(r0, r1, -Math.PI, Math.PI, false, kind); return; }
+    const cs = cuts.map(c => [c[0] - c[1], c[0] + c[1]]).sort((p, q) => p[0] - q[0]);
+    for(let i = 0; i < cs.length; i++) put(r0, r1, cs[i][1], i + 1 < cs.length ? cs[i + 1][0] : cs[0][0] + TAU, false, kind);
+  };
+  for(let j = 0; j <= K; j++){
+    const cuts = j < K ? holes.filter(h => h.band === j).map(h => [h.a, h.w/2/tops[j]]) : cracks.map(c => [c, crackH]);
+    ring(tops[j] - thick(j), tops[j], cuts, j === 0 ? 'crust' : (j === K ? 'shell' : 'floor'));
+  }
+  // THE STEPS under every hole, mirrored on the left half (so the two sides match); a lift's steps are pads
+  const pads = [[], []];
+  const liftPads = [[], []];
+  for(const h of holes){
+    const low = tops[h.band + 1], sg = h.a < 0 ? -1 : 1;
+    h.steps = [];
+    for(const st of G.steps){
+      const r1 = low + st[0], p0 = sg*st[1], p1 = sg*st[2], a0 = h.a + Math.min(p0, p1)/r1, a1 = h.a + Math.max(p0, p1)/r1;
+      put(r1 - G.stepT, r1, a0, a1, true, h.lift ? 'lift' : 'step');
+      h.steps.push({ r:r1, a0, a1 });
+      if(h.lift) liftPads[h.team].push(pt(r1, (a0 + a1)/2));
+    }
+  }
+  // THE LEDGES: one in each cave between two holes of the band above it, clear of their steps, the strips and (the innermost cave) the cracks
+  for(let c = 1; c <= K; c++){
+    const r = tops[c] + G.ledgeUp, lh = G.ledgeW/2/r, up = holes.filter(h => h.band === c - 1).sort((p, q) => p.a - q.a);
+    for(let i = 0; i < up.length; i++){
+      const h1 = up[i], h2 = up[(i + 1) % up.length], gap = mcWrap(h2.a - h1.a) + (up.length === 1 ? TAU : (mcWrap(h2.a - h1.a) <= 0 ? TAU : 0));
+      if(gap*r < 2*(G.ledgeW/2 + G.stepReach + 40)) continue;
+      const m = mcWrap(h1.a + gap/2);
+      if(inStrip(m, lh, r, 80)) continue;
+      if(c === K && cracks.some(k2 => dist(k2, m) < crackH + lh + 60/r)) continue;
+      put(r - G.stepT, r, m - lh, m + lh, true, 'ledge');
+    }
+  }
+  // THE HOP-TOPS over the surface, between holes (not in the strips: theirs are pads)
+  { const up = holes.filter(h => h.band === 0 && !h.lift).sort((p, q) => p.a - q.a), n0 = Math.max(1, up.length);
+    for(let i = 0; i < up.length; i++){
+      const h1 = up[i], h2 = up[(i + 1) % up.length], gap = (up.length === 1) ? TAU : (mcWrap(h2.a - h1.a) <= 0 ? mcWrap(h2.a - h1.a) + TAU : mcWrap(h2.a - h1.a));
+      const m = mcWrap(h1.a + gap/2), hu = (Math.round(Math.abs(m)/(TAU/n0)) % 2) ? G.hopUp[1] : G.hopUp[0], r = Rout + hu, hw = G.hopW/2/r;
+      if(gap*Rout < G.hopW + G.holeW || inStrip(m, hw, r, 80)) continue;
+      put(r - G.stepT, r, m - hw, m + hw, true, 'hop');
+    } }
+  // THE STRIPS' PADS: on every floor in the strip (four round a lift's hole, three on the shell), the lift's steps, three hop-tops
+  SIDES.forEach((s, team) => {
+    const P = pads[team], m = team ? -1 : 1;   // (team 1's are team 0's mirrored, one for one: the same order, so the start spots match)
+    for(const off of G.padsFloor) P.push(pt(Rout, s + m*off/Rout));                       // the surface first: where a team starts
+    const rh = Rout + G.padHopUp, hw = G.padHopW/2/rh;
+    for(const off of G.padsHop){ const a = s + m*off/rh; put(rh - G.stepT, rh, a - hw, a + hw, true, 'hop'); P.push(pt(rh, a)); }
+    for(let c = 1; c <= K; c++) for(const off of (c < K ? G.padsFloor : G.padsShell)) P.push(pt(tops[c], s + m*off/tops[c]));
+    P.push(...liftPads[team]);
   });
-  worldPlats = []; worldZones = []; floors = [{ level:0, y:cy - Rout, x:0, w:WW }];
-  MCAVE = { on:true, test:true, cx:cx, cy:cy, Rout:Rout, Rblast:Rb, rKill:shellBot - T.kill, shellTop:shellTop, shellBot:shellBot, crustBot:crustBot,
-            segs:segs, window:mcWindow, win:[], rhoMin:64, flight:true, items:false, camT:null, camHold:false, camOff:0 };
+  const zones = [{ x:cx - Rb - G.stripPast, y:cy - G.strip/2, w:Rb + G.stripPast - shellBot, h:G.strip },
+                 { x:cx + shellBot,        y:cy - G.strip/2, w:Rb + G.stripPast - shellBot, h:G.strip }];
+  return { N, k:k || 1, Rout, K, tops, crustBot, shellTop, shellBot, Rb, rKill, WW, WH, cx, cy, segs, holes,
+           cracks:cracks.map(a => ({ a, h:crackH })), pads, zones };
+}
+function buildMoonCaves(){
+  const g = mcGen(SETTINGS.count, mapSize().w);
+  WW = g.WW; WH = g.WH; camX = 0; camY = 0;
+  bases = [0, 1].map(team => {
+    const sp = g.pads[team], at = team ? Math.PI/2 : -Math.PI/2, x = g.cx + g.Rout*Math.sin(at), y = g.cy - g.Rout*Math.cos(at);
+    return { team, x, y, w:0, h:0, color:TEAM_COLORS[team % TEAM_COLORS.length], spawnX:sp[0].x, spawnY:sp[0].y, floor:0, spawns:sp, zone:g.zones[team], mc:true };
+  });
+  worldPlats = []; worldZones = []; floors = [{ level:0, y:g.cy - g.Rout, x:0, w:WW }];
+  MCAVE = { on:true, cx:g.cx, cy:g.cy, N:g.N, k:g.k, Rout:g.Rout, Rblast:g.Rb, rKill:g.rKill, K:g.K, tops:g.tops, shellTop:g.shellTop, shellBot:g.shellBot,
+            crustBot:g.crustBot, segs:g.segs, holes:g.holes, cracks:g.cracks, window:mcWindow, win:[], rhoMin:64, flight:true, items:false,
+            camT:null, camHold:false, camOff:0 };
   camAng = 0;
 }
-// The terrain inside a frame: every piece within reach of E (900 px of arc; 3,000 for a CPU, which thinks inside its frame), as boxes in E's
-// chart (mcPieceBoxes). One array, refilled for each frame; the pieces are few here (the angle index and the box pool come with 15 v 15).
+// A real point for a mover inside the open frame (its chart place turned back), or its own place outside one: what a world rectangle -- a
+// safe strip -- is tested against. (MC_RP is reused: read it at once.)
+const MC_RP = { x:0, y:0 };
+function mcRealPt(o){
+  if(!(MCAVE && MCAVE.on && MC_FR.open) || o._mcPlaced === MC_FR.serial){ MC_RP.x = o.x; MC_RP.y = o.y; return MC_RP; }
+  return mcFromChart(o.x, o.y, MC_RP);
+}
+// Rock (a solid piece) at a real point? (The flight's look-ahead: fsKoFlight.)
+function mcRockAt(x, y){
+  const M = MCAVE, r = mcRad(x, y), a = mcTh(x, y);
+  for(const g of M.segs){ if(g.oneway || r < g.r0 || r > g.r1) continue; const d = mcWrap(a - g.a0); if((d < 0 ? d + MC_TAU : d) <= g.a1 - g.a0) return true; }
+  return false;
+}
+// THE SLOW-MO'S CUE ON THE DISC (fsKoFlight): the launch flown in real space -- its local speed turned to world directions at the fighter's
+// real place, then straight, with the pull toward the middle (the fall's factor while it heads in), as the flight knob flies it in hitstun.
+// Out past the blast ring or down into the core is a KO; into rock it is stopped; Marshmallow's gravity saves her once, just short of the core.
+function mcKoFlight(t, n, saved){
+  const M = MCAVE, P = mcRealPt(t);
+  let x = P.x, y = P.y;
+  const a = mcTh(x, y), c = Math.cos(a), s = Math.sin(a), lvx = t.vx || 0, lvy = t.vy || 0;
+  let vx = lvx*c - lvy*s, vy = lvx*s + lvy*c;
+  const g = GRAV*(stage.hazard === 'lowgrav' ? 0.7 : 1), fall = (t.st || STAT_ONE).fall;
+  for(let i = 0; i < n; i++){
+    const r = mcRad(x, y) || 1, dx = (M.cx - x)/r, dy = (M.cy - y)/r, inward = vx*dx + vy*dy > 0, gg = inward ? g*fall : g;
+    vx += dx*gg; vy += dy*gg; x += vx; y += vy;
+    const r2 = mcRad(x, y);
+    if(saved && inward && r2 < M.rKill + 100 && r2 >= M.rKill) return false;
+    if(r2 > M.Rblast || r2 < M.rKill) return true;
+    if(mcRockAt(x, y)) return false;
+  }
+  return false;
+}
 function mcWindow(phi, rho, E){
   const M = MCAVE, out = M.win;
   out.length = 0;
@@ -2774,12 +2896,13 @@ function mcDrawDisc(){
   }
   c.restore();
 }
-// For pictures while it is built: your fighter to a clock position, on the surface or on the cave floor (the console: mcDevPut(3), mcDevPut(6.5, 'cave');
-// 12 and 6 in the cave are the cracks over the core).
+// For pictures while it is built: your fighter to a clock position, on the surface, on a cave's floor (1 the first cave ... 'cave' the
+// shell), in the console: mcDevPut(3), mcDevPut(6.5, 'cave'), mcDevPut(9, 2).
 function mcDevPut(hour, where){
   if(!MCAVE || !MCAVE.on) return false;
   const f = fighters.find(o => o.you && !o.dead) || fighters.find(o => !o.dead); if(!f) return false;
-  const th = (hour % 12)*Math.PI/6, r = (where === 'cave' ? MCAVE.shellTop : MCAVE.Rout) + f.r + 2;
+  const T = MCAVE.tops, top = where === 'cave' ? MCAVE.shellTop : (typeof where === 'number' && T[where] != null ? T[where] : MCAVE.Rout);
+  const th = (hour % 12)*Math.PI/6, r = top + f.r + 2;
   f.x = MCAVE.cx + r*Math.sin(th); f.y = MCAVE.cy - r*Math.cos(th); f.vx = 0; f.vy = 0;
   camX = f.x - W/2; camY = f.y - H/2; mcCamReset();
   return true;
@@ -2994,6 +3117,7 @@ function customSpawnCap(){
 function minCount(){ return SETTINGS.mode==='boss' ? 1 : 2; }
 // generate team-split options for a given player count: balanced 2/3/4-team divisions
 function teamSplitsFor(N){
+  if(SETTINGS.mode === 'teams' && stage && stage.layout === 'disc') return [[Math.ceil(N/2), Math.floor(N/2)]];   // MOON CAVES: always two sides (two strips)
   const opts=[]; const seen=new Set();
   for(const t of [4,2,3]){   // 4-team first: fills the tower's four decks
     if(t>N) continue;
@@ -20953,7 +21077,7 @@ function buildFighters(){
   if(SETTINGS.mode==='ctf'){ teamOf = ctfTeamOf(N, humanCount, !!netRoster, netSides); }
   else if(SETTINGS.mode==='teams'){
     const split=(SETTINGS.teamKey||'').split('v').map(Number).filter(n=>n>0);
-    const sizes = (split.reduce((a,b)=>a+b,0)===N) ? split : (teamSplitsFor(N)[0]||[N]);
+    const sizes = (split.reduce((a,b)=>a+b,0)===N && !(MCAVE && MCAVE.on && split.length !== 2)) ? split : (teamSplitsFor(N)[0]||[N]);   // (MOON CAVES: two sides)
     teamOf=[]; 
     for(let s=0;s<sizes.length;s++){ for(let k=0;k<sizes[s];k++){ teamOf.push(s); } }
     if(netRoster && netSides) teamOf = netTeamsSeat(sizes, netSides, humanCount);   // the humans where they picked, the CPUs fill each team
@@ -22969,6 +23093,7 @@ function fsKoFlight(t, strict){
   let x = t.x, y = t.y, vx = t.vx || 0, vy = t.vy || 0;
   const g = GRAV*(stage.hazard === 'lowgrav' ? 0.7 : 1), fall = (t.st || STAT_ONE).fall, gy = groundY(), n = Math.min(90, (t.hitstun || 0) + (strict ? 0 : 4));
   const saved = !!(t.kit && t.kit.special === 'wallmart' && !t._gravSaved);
+  if(MCAVE && MCAVE.on) return mcKoFlight(t, n, saved);   // MOON CAVES: out past the blast ring or down into the core
   for(let i = 0; i < n; i++){
     vy += vy > 0 ? g*fall : g; x += vx; y += vy;
     if(saved && vy > 0 && y > WH + 60 && y <= WH + 160) return false;   // (MARSHMALLOW'S GRAVITY: halted above the bottom line, flung back up)
@@ -22977,12 +23102,12 @@ function fsKoFlight(t, strict){
   }
   return false;
 }
-function fsSlowStart(t, frames){ if(FS.slow > 0 || FS.freeze > 0){ if(FS.sf === t.idx) t._fsHitT = null; return; } t._fsHitT = null; FS.slow = FS.slowN = frames || FS_SLOW.frames; FS.slowAcc = 0; FS.game = 0; FS.sf = t.idx; FS.sx = t.x; FS.sy = t.y; }
+function fsSlowStart(t, frames){ if(FS.slow > 0 || FS.freeze > 0){ if(FS.sf === t.idx) t._fsHitT = null; return; } t._fsHitT = null; FS.slow = FS.slowN = frames || FS_SLOW.frames; FS.slowAcc = 0; FS.game = 0; FS.sf = t.idx; const p = mcRealPt(t); FS.sx = p.x; FS.sy = p.y; }   // (MOON CAVES: the real place)
 // A KO by a Final Smash that the slow-mo did not see coming (eliminate): a shorter one, on the spot they went out.
 function fsKoSlow(t){
   if(t._fsHitT == null || hazardT - t._fsHitT > 180 || FS.slow > 0) return;
   t._fsHitT = null;
-  FS.slow = FS.slowN = Math.round(FS_SLOW.frames*0.6); FS.slowAcc = 0; FS.sf = -1; FS.game = 0; FS.sx = clamp(t.x, 0, WW); FS.sy = clamp(t.y, 0, WH);
+  const p = mcRealPt(t); FS.slow = FS.slowN = Math.round(FS_SLOW.frames*0.6); FS.slowAcc = 0; FS.sf = -1; FS.game = 0; FS.sx = clamp(p.x, 0, WW); FS.sy = clamp(p.y, 0, WH);   // (MOON CAVES: the real place)
 }
 // The close-up: the holder through the intro, the launched foe through the slow-mo ({x, y, z, k}: the point, the zoom, how far in).
 function fsCamFocus(){
@@ -23024,12 +23149,12 @@ function kocFinal(t){ return !!t && !t.dead && t.stocks <= 1 && !(t.reform > 0) 
 // A hit has set t's launch (applyHit; a Final Smash's let-go): the last KO starts on the blow when it will carry them out. Not when the damage
 // cap is about to take them (applyHit's koCap, right after): that KO is on the spot, so it gets the shorter close-up there (eliminate: kocKo),
 // not the long one that followed a flight the cap then cut short.
-function kocLaunch(t){ if(!KOC.on && !(t.pct >= t.koCap) && kocFinal(t) && fsKoFlight(t, true)) kocStart(t, t.x, t.y, FS_SLOW.frames, t.idx); }
+function kocLaunch(t){ if(!KOC.on && !(t.pct >= t.koCap) && kocFinal(t) && fsKoFlight(t, true)){ const p = mcRealPt(t); kocStart(t, p.x, p.y, FS_SLOW.frames, t.idx); } }   // (MOON CAVES: the close-up at the real place)
 // eliminate(): f's last stock is gone. When that ends the match and the blow did not already start it, the shorter one where they went out.
 function kocKo(f){
   if(!kocApplies() || kocSides(f) > 1 || (KOC.on && KOC.idx === f.idx)) return;
   if(FS.slow > 0 && !(FS.freeze > 0) && !FS.game && FS.sf === f.idx){ kocMark(f); return; }   // a Final Smash's slow-mo on them (its looser cue called it): the last KO's from here, no new close-up
-  kocStart(f, clamp(f.x, 0, WW), clamp(f.y, 0, WH), Math.round(FS_SLOW.frames*0.6), -1);
+  const p = mcRealPt(f); kocStart(f, clamp(p.x, 0, WW), clamp(p.y, 0, WH), Math.round(FS_SLOW.frames*0.6), -1);   // (MOON CAVES: the real place)
 }
 // The slow-mo (the Final Smash's, marked as the last KO's) and the sting.
 function kocStart(t, x, y, n, sf){
@@ -44686,7 +44811,7 @@ function step(){
     f._footing = f.onground;   // where its own step left it: on a floor or not (WALKING OFF CANCELS THE TILT reads this, not a push that only marks it airborne)
     // MARSHMALLOW'S GRAVITY, the half that helps: halted right before the saw and flung back upwards (War De
     // Guacamole). Involuntary, once a stock, and only on the way down to a knockout.
-    if(f.kit && f.kit.special==='wallmart' && !f._gravSaved && f.vy > 0 && f.y > WH + 60 && f.y <= WH + 160 && !f.dead){
+    if(f.kit && f.kit.special==='wallmart' && !f._gravSaved && f.vy > 0 && !f.dead && (MCAVE && MCAVE.on ? (MCAVE.cy - f.y < MCAVE.rKill + 100 && MCAVE.cy - f.y >= MCAVE.rKill) : (f.y > WH + 60 && f.y <= WH + 160))){   // (MOON CAVES: just short of the core, on the way in)
       f._gravSaved = true; f.vy = -17; f.vx *= 0.3; f.hitstun = 0;
       for(let i=0;i<16;i++) puff(f.x + (Math.random()*50-25), f.y, '#ffe9f2', 5);   // no "...GRAVITY?!" line ("Remove them all"); the save itself is the joke
     }
@@ -60669,7 +60794,8 @@ function enemyZoneOf(f){
     if(b.team === f.team) continue;
     const z = teamZoneOf(b.team);
     if(!z) continue;
-    if(f.x >= z.x && f.x <= z.x + z.w && f.y >= z.y && f.y <= z.y + z.h) return b.team;
+    const p = mcRealPt(f);   // (MOON CAVES: inside a frame, the real place)
+    if(p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h) return b.team;
   }
   return null;
 }
@@ -60689,7 +60815,7 @@ const ENEMY_ZONE_BLEED = 0.035;
 function pickSpawnPad(b, f){
   const pads = (b.spawns && b.spawns.length) ? b.spawns : [{x:b.spawnX, y:b.spawnY}];
   const mates = fighters.filter(o=>o!==f && !o.dead && o.team===f.team);
-  const crowd = p => mates.filter(o=>Math.abs(o.x-p.x) < 95 && Math.abs(o.y-p.y) < 115).length;
+  const crowd = p => mates.filter(o=>{ const q = mcRealPt(o); return Math.abs(q.x-p.x) < 95 && Math.abs(q.y-p.y) < 115; }).length;   // (MOON CAVES: a reform inside a frame: the real places)
   for(let tries=0; tries<24; tries++){
     const p = pads[Math.floor(Math.random()*pads.length)];
     if(!crowd(p)) return p;
@@ -60703,7 +60829,8 @@ function inOwnTeamZone(f){
   if(!f || SETTINGS.mode !== 'teams') return false;
   const z = teamZoneOf(f.team);
   if(!z) return false;
-  return f.x >= z.x && f.x <= z.x + z.w && f.y >= z.y && f.y <= z.y + z.h;
+  const p = mcRealPt(f);   // (MOON CAVES: inside a frame, the real place)
+  return p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h;
 }
 // SELF-GRACE. Hit-grace stops OTHER hits piling onto someone who was just hit: a projectile wall, a
 // second attacker, or the same attacker's next move. It must not break one move built to hit more
