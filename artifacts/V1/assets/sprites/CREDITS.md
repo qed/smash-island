@@ -597,6 +597,20 @@ How a source became a picture (the `method` of its row), as in batch 1, plus:
 - `Yinyang Hurt.png` (Season 3, S3E14): their hit until the fourth pass (2026-10-28). Its bandaged grey look did not match their render, and the
   owner chose "Redraw both from render": their hit is drawn on their render (`yin-yang-hurt.png`), and their KO's mouth redrawn in their own ink.
 
+## Event fighters: Black Hole's pictures (kit 4, 2026-11-01)
+
+Black Hole (he/him) is the fourth event fighter (`event-fighters-phase1.md`, section 3.4). Nothing was downloaded for him: his art is BFB+TPOT only,
+his one render, `black-hole.png` (475x200, 200 px tall like every render here), the picture his assist trophy already used (credited under Assist
+trophies below, with its source; his render never changed between seasons). He has no face and no limbs, so every pose is that render scaled,
+spun, squashed or stretched in code by `FIGHTER_ANIM['Black Hole']` (drawn 3.0 tall, `renderSprite("black-hole.png", { imgW:7.2, imgH:3.0 })`):
+the gentle bob as he floats, his disk speeding up for Accretion, shrinking to a point for Singularity, turning edge-on into the Wormhole's tunnel,
+winding tight and reaching out for Spaghettify, spreading wide for Event Horizon, swelling to his true size for Mass of Twenty Suns. His manifest
+row in `scripts/sprite-manifest.json` notes the same.
+
+Everything else of his kit is drawn in code: the floor clod Accretion tears up (it grows in over 12 frames), the pull streaks (only while a pull
+is live), the Wormhole's tunnel, the Singularity's point, Spaghettify's stretched path and the foe drawn long and thin while they orbit, the core
+of Mass of Twenty Suns, and the two twists his event matches use (the pull's dust drifting in, low gravity's slow motes). No words are drawn.
+
 ## One (the secret boss)
 
 One is not a roster fighter, so her render sits outside the generated inventory above (a re-run of
