@@ -59270,6 +59270,7 @@ function fireSpecialInner(f, inp){
     }
     return;
   }
+  if(inp.down && f.kit && f.kit.special==='clockhands' && !clockFallReady(f)) return;   // CLOCK: a Fall Back that cannot start does nothing -- no cooldown either (clockFallReady)
   if(inp.down){ doDownSpecial(f); f.spCd=Math.max(f.spCd, (f.kit && f.kit.special==='serve') ? GADGET_SWAP_CD : (f.kit && f.kit.special==='chair') ? BOW_SNOW.cd : 64); return; }   // (Bow's snowballs: BOW_SNOW.cd)
   if(dashKit && !mtAirDashOk(f)) return;   // one air dash an airtime (dashers)
   doSpecial(f); if(!(f.kit && f.kit.special==='serve')) f.spCd=Math.max(f.spCd,55);   // Tennis Ball's gadgets carry their own (GADGET_SPECIAL_CD)
@@ -61762,9 +61763,12 @@ function clockSpring(f){
 // last 3 s, 10% at most -- heal only: where he stands is not rewound (question 51). It costs a third of his Natural Time, paid as his hands
 // start; with less than that, nothing happens. Its own cooldown is 8 s (the specials' shared one is only the usual down-special's, so his
 // Spring Forward is never locked by it). The old Clock assist's rewind, in a small dose (that act retires with him: question 55).
+// "Nothing happens" is the whole press: fireSpecialInner asks clockFallReady before anything is set, so a press that cannot start leaves no
+// swing and no cooldown (until 2026-11-01 it set the shared down-special one, 51 frames, locking Clock Hands and Spring Forward for 0.85 s).
+function clockFallReady(f){ return (f._nt || 0) >= CLOCK.nt.fb && !((f._fbCd || 0) > hazardT); }
 DOWNSPECIALS.clockhands = function(f){   // Clock -- FALL BACK (EVENT FIGHTERS: CLOCK)
   const F = CLOCK.fall;
-  if((f._nt || 0) < CLOCK.nt.fb || (f._fbCd || 0) > hazardT) return;   // too little Natural Time, or inside its 8 s: nothing happens
+  if(!clockFallReady(f)) return;   // too little Natural Time, or inside its 8 s: nothing happens
   f._nt -= CLOCK.nt.fb; f._fbCd = hazardT + F.cd;
   armAtk(f, F.t + 4, 'sweep', mvId(f, 'down'));
   startWindup(f, F.t, function(){ clockFallBack(f); }, 'rgba(0,0,0,0)');   // (see-through: the hands whirling back are his own)
@@ -61996,7 +62000,7 @@ function clockInSweep(f, t){
 }
 function clockFallPays(f){
   const F = CLOCK.fall;
-  if(!f.onground || (f._nt || 0) < CLOCK.nt.fb || (f._fbCd || 0) > hazardT || clockTaken(f, F.back) < F.aiTaken) return false;
+  if(!f.onground || !clockFallReady(f) || clockTaken(f, F.back) < F.aiTaken) return false;
   for(const o of fighters) if(!o.dead && o !== f && o.team !== f.team && Math.hypot(o.x - f.x, o.y - f.y) < F.aiFoe) return false;
   return true;
 }
@@ -63738,8 +63742,14 @@ function drawWindBackSky(){
 // THE A-TWOS-MENT PARK BEHIND A STAGE (EVENT_BACKDROPS.twopark): the boss arena's own scenery with no boss -- the sun low over the hills, the
 // rollercoaster, the Ferris wheel, the strength game and the brown fence, all standing as they do once the attractions are up -- and none of its
 // hazards or its "S"tage (the stage's own floor and platforms are the match's).
+// Its numbers are the boss arena's (world x 0..WW, the floor at groundY()), and the arena draws them at zoom 1. Here they are drawn on the
+// screen layer, so they are placed: the park's floor on the floor line the player sees (worldToScreen), centred, at the size that spans the
+// window (W/WW: 1 for the host, whose world is its window; a guest with another window gets the same picture fitted). Until 2026-11-01 they
+// were drawn as world numbers straight onto the screen, and Goiky Field, shown zoomed out for its side room (viewZoom 0.77-0.83), had the
+// park's hills, fence and ride bases 48-64 px under the floor line, most of the fence hidden behind the ground (the checker's measure).
 function drawParkBackdrop(){
-  const t = hazardT, gy = groundY();
+  const t = hazardT, gy = groundY(), sy = worldToScreen(0, gy).y, k = W/Math.max(1, WW);
+  ctx.translate(W/2, sy); ctx.scale(k, k); ctx.translate(-WW/2, -gy);   // (drawEventSky saves and restores around it)
   twoDrawSkySun(null, {}, 2, t);
   twoDrawHills(gy);
   twoDrawCoaster(gy, t, 2, 1, {});
