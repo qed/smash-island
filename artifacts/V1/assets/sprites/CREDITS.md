@@ -1149,6 +1149,26 @@ keyed by the assist's name; MePhone4's hostile adds wear the same art.
 - **`beach-ball.png`** -- the Beach Ball page's own image, `Elswerebeachball.png`: the ball with its face, arms and legs.
   Drawn centred on the body, and squashed for a few frames on each ricochet.
 
+## Event fighters: pose pictures
+
+The event fighters (event-fighters-phase1.md) play from their assist trophy's render (credited under Assist trophies); a kit
+that needs more pictures adds them here, one art group per fighter (the design's "art from one group only"). Each file was downloaded
+once from its wiki file page after the owner approved the list, cut out and scaled to the fighter's own render's pixel size (at most 200px
+tall), and has a manifest row of its own (`scripts/sprite-manifest.json`, key `<Fighter> (<pose>)`, `pose` set). Pixels under the
+fetch script's alpha floor (24) are erased, as `fetch-sprites.mjs` does.
+
+### Clock (BFDI wiki; BFB+TPOT, kit 5)
+
+| Picture | Shown | Made from | Source |
+|---|---|---|---|
+| `clock-face.png` (191x200) | in a match, his body: his hands are drawn on it in code (clockDrawHands), showing Natural Time and every hand move; clock.png stays for the select screen, the HUD and the result screen | `clock.png` (the picture itself: File:Tpot renders0028.png); drawn: his own render with its two hands painted out in his face's colour (the eyes' ink kept), so the game draws his hands turning on it | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a5/Tpot_renders0028.png/revision/latest?cb=20210113224052 |
+| `clock-hurt.png` (185x200) | hit, and launched | File:Bruise Clock.png; cut-out (wiki pose), at his render's pixel size | https://battlefordreamisland.fandom.com/wiki/File:Bruise_Clock.png |
+| `clock-ring.png` (197x200) | Strike Twelve's charge (his alarm ringing; never for any other startup) | File:Clock ringaling.png; cut-out (wiki pose), at his render's pixel size; drawn mirrored (flip: his face sits left of the bells' middle) | https://battlefordreamisland.fandom.com/wiki/File:Clock_ringaling.png |
+| `clock-win.png` (232x188) | the result screen | File:Happy Clocky.png; cut-out (wiki pose), at his render's pixel size (188 tall: he lies on his side, legs out) | https://battlefordreamisland.fandom.com/wiki/File:Happy_Clocky.png |
+
+His hands, the swingset of Daylight Savings Swingset and the face of Infinitely Powerful are drawn in code (no file: his hands are the
+render's own, redrawn turning; the swingset is BFB's playground swing, drawn).
+
 ## Per-fighter skins (Wardrobe)
 
 215 second renders, each worn by ONE fighter only (its Wardrobe skin), in `assets/sprites/skins/`; every playable fighter has at least
