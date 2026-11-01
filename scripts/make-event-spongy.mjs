@@ -62,9 +62,53 @@ function out(key, im, note, src) {
   out('suck', im, 'the suction frame, with the base render\'s face and legs laid on', 'Spongy Sucking Stapy Up0024.png (+ spongy.png face and legs)');
 }
 // 5. the walk (Spongy - walk.gif, 14 frames): the GIF's frames carry a dark round shadow over his left side, multiplied in. It is lifted: the
-//    darkening is measured from the body's own yellow (242,213,0), smoothed, and divided out; under 12% left (the core of it) the body is
-//    refilled with his plain yellow. One crop for all 14 frames, so the legs stay put frame to frame.
+//    darkening is measured from the body's own yellow (242,213,0), smoothed, and divided out; under 20% left (the core of it) the body is
+//    refilled with his plain yellow. One crop for all 14 frames, so the legs stay put frame to frame. Then, at 200 px, the shadow's middle is
+//    re-skinned from the base render (skin, below): the plain fill there had left a flat disc with banded rings round it and a black speck
+//    (the check of 2026-11-01).
 {
+  // Lifting the shadow cannot bring back what the GIF kept too little of (its middle had gone black, and the light it kept round that was
+  // banded into rings). So under the shadow, the more of it there was, the more his sponge comes from the base render instead -- flipped to
+  // face the same way, its face and ink painted out, laid over his body box to box -- feathered into the lifted GIF; his outline, his face
+  // and his legs stay the GIF's own.
+  const KLO = 0.5, KHI = 0.9;
+  const yellowBox = (im) => { let a = 1e9, b = 1e9, c = -1, e = -1; for (let p = 0; p < im.w * im.h; p++) { const i = p * 4; if (im.d[i + 3] > 200 && im.d[i] > 120 && im.d[i + 1] > 90 && im.d[i + 2] < 70) { const x = p % im.w, y = (p / im.w) | 0; if (x < a) a = x; if (x > c) c = x; if (y < b) b = y; if (y > e) e = y; } } return { x: a, y: b, w: c - a + 1, h: e - b + 1 }; };
+  const sponge = L.flipX(base), SB = yellowBox(sponge), INSET = 7;
+  const ink = new Uint8Array(sponge.w * sponge.h);   // its face and any ink (and a pixel round each, the strokes' soft edges)
+  for (let p = 0; p < ink.length; p++) { const i = p * 4; if (sponge.d[i + 3] > 200 && L.lum(sponge.d[i], sponge.d[i + 1], sponge.d[i + 2]) < 90) ink[p] = 1; }
+  L.paintOut(sponge, { x: 0, y: 0, w: sponge.w, h: sponge.h }, (x, y, r, g, b) => { if (y > SB.y + SB.h - 6) return false; if (L.lum(r, g, b) < 125) return true; for (let j = -2; j <= 2; j++) for (let q = -2; q <= 2; q++) { const xx = x + q, yy = y + j; if (xx >= 0 && yy >= 0 && xx < sponge.w && yy < sponge.h && ink[yy * sponge.w + xx]) return true; } return false; }, 300);   // refilled from the sponge round them
+  const sAt = (u, v) => {   // the sponge's colour at (u, v), bilinear; null off its body
+    const x = Math.floor(u), y = Math.floor(v), fx = u - x, fy = v - y; let R = 0, G = 0, A = 0;
+    for (const [xx, yy, wt] of [[x, y, (1 - fx) * (1 - fy)], [x + 1, y, fx * (1 - fy)], [x, y + 1, (1 - fx) * fy], [x + 1, y + 1, fx * fy]]) {
+      if (xx < 0 || yy < 0 || xx >= sponge.w || yy >= sponge.h) return null;
+      const i = (yy * sponge.w + xx) * 4; if (sponge.d[i + 3] < 230) return null;
+      R += sponge.d[i] * wt; G += sponge.d[i + 1] * wt; A += wt;
+    }
+    return [R / A, G / A];
+  };
+  const smooth = (t) => { const u = Math.max(0, Math.min(1, (t - KLO) / (KHI - KLO))); return u * u * (3 - 2 * u); };
+  // His rim, from outside in, as the GIF draws it where no shadow fell (px from the edge of his silhouette): the dark-gold outline, then a step
+  // lighter, then nearly his yellow.
+  const RIM = [[183, 147, 0], [183, 147, 0], [200, 165, 0], [226, 188, 0]];
+  function skin(im, kAt, s) {
+    const { w, h, d } = im, B = yellowBox(im), src = new Uint8ClampedArray(d);
+    const sx = (SB.w - 2 * INSET) / B.w, sy = (SB.h - 2 * INSET) / B.h;   // (box to box, the sponge's kept inside its own outline)
+    // how far each pixel is from his silhouette's edge (a chamfer distance, in px)
+    const dt = new Float32Array(w * h).fill(1e9);
+    for (let p = 0; p < w * h; p++) if (src[p * 4 + 3] < 128) dt[p] = 0;
+    const relax = (x, y, dx, dy, c) => { const xx = x + dx, yy = y + dy, p = y * w + x; const v = (xx < 0 || yy < 0 || xx >= w || yy >= h) ? 0 : dt[yy * w + xx]; if (v + c < dt[p]) dt[p] = v + c; };
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { relax(x, y, -1, 0, 1); relax(x, y, 0, -1, 1); relax(x, y, -1, -1, 1.414); relax(x, y, 1, -1, 1.414); }
+    for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) { relax(x, y, 1, 0, 1); relax(x, y, 0, 1, 1); relax(x, y, 1, 1, 1.414); relax(x, y, -1, 1, 1.414); }
+    for (let y = B.y; y < B.y + B.h; y++) for (let x = B.x; x < B.x + B.w; x++) {
+      const p = y * w + x, i = p * 4; if (src[i + 3] < 128) continue;
+      const k = kAt(x / s, y / s); if (k >= KHI) continue;
+      if (L.lum(src[i], src[i + 1], src[i + 2]) < 110 && k > 0.35) continue;   // his face's strokes stay (the black left at the shadow's middle does not)
+      const r = Math.max(0, Math.round(dt[p]) - 1);
+      const c = r < RIM.length ? RIM[r] : (sAt(SB.x + INSET + (x - B.x) * sx, SB.y + INSET + (y - B.y) * sy) || [242, 213]);
+      const m = smooth(k);
+      d[i] = src[i] * m + c[0] * (1 - m); d[i + 1] = src[i + 1] * m + c[1] * (1 - m); d[i + 2] = 0;
+    }
+  }
   const fr = []; for (let i = 0; i < 14; i++) fr.push(L.load(D + '02-walk-' + String(i).padStart(2, '0') + '.png'));
   let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
   for (const im of fr) { const b = L.bbox(im); x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y); x1 = Math.max(x1, b.x + b.w - 1); y1 = Math.max(y1, b.y + b.h - 1); }
@@ -100,6 +144,7 @@ function out(key, im, note, src) {
       if (k < 0.6 || bd < 900) { d[i] = best[0]; d[i + 1] = best[1]; d[i + 2] = 0; } else { d[i] = Math.min(255, R); d[i + 1] = Math.min(255, G); d[i + 2] = 0; }
     }
     const small = toH(im, 200);
+    skin(small, kAt, small.h / ch);
     const key = 'walk-' + String(n + 1).padStart(2, '0'); keys.push(key);
     out(key, small, 'walk frame ' + (n + 1) + ' of 14, the GIF\'s shadow lifted', 'Spongy---walk.gif (frame ' + (n + 1) + ')');
   }
