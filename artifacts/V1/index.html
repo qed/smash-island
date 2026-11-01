@@ -2804,6 +2804,27 @@ function mcRoute(f, t){
   }
   return best ? { up:up, x:M.cx + F.rho*mcWrap(best.a - F.phi), upperY:M.cy - M.tops[band], lowY:M.cy - M.tops[band + 1], gap:Math.abs(Lt - Lf), hole:best, tx:t.x } : null;   // (tx: the side it goes on to)
 }
+// THE MINIMAP (the owner, 2026-11-01: "if the cpus cant find ppl, teach them to use the minimap"): the foe a CPU goes for is the nearest BY
+// THE WAY THERE -- round its own layer, or to the best passage between the layers and on round the foe's (mcRoute's measure), and a layer's
+// climb or drop on top -- not the straight line through the rock and the core, by which a foe two caves down across the disc was "near"
+// and one round the floor it stood on was not. In its own frame (the think pass: the foes charted with it).
+function mcPathCost(f, t){
+  const M = MCAVE, F = MC_FR; if(!F.open) return Math.hypot(t.x - f.x, t.y - f.y);
+  const thF = F.phi + (f.x - M.cx)/F.rho, thT = F.phi + (t.x - M.cx)/F.rho, rf = M.cy - f.y, rt = M.cy - t.y;
+  const Lf = mcLayer(rf - (f.r || 24)), Lt = mcLayer(rt - (t.r || 24));
+  if(Lf === Lt) return Math.abs(mcWrap(thT - thF))*Math.max(200, Math.min(rf, rt));
+  const up = Lt < Lf, band = up ? Lf - 1 : Lf; let best = Infinity;
+  if(band >= 0 && band < M.K) for(const h of M.holes){ if(h.band !== band || (h.lift && h.team !== f.team)) continue; const c = Math.abs(mcWrap(h.a - thF))*rf + Math.abs(mcWrap(thT - h.a))*rt; if(c < best) best = c; }
+  if(!isFinite(best)) best = Math.abs(mcWrap(thT - thF))*Math.max(rf, rt);
+  return best + Math.abs(Lt - Lf)*(up ? 420 : 160);
+}
+// ...and when the way to one foe has gone nowhere for a while (NO WAY THROUGH), the biggest fight it can see on the map: the foe with the
+// most of its own side round it (500 px), the nearest by the way there of those.
+function mcCrowd(f, cands){
+  let best = cands[0], bn = -1, bc = Infinity;
+  for(const t of cands){ let n = 0; for(const o of fighters) if(!o.dead && o.team === t.team && Math.hypot(o.x - t.x, o.y - t.y) < 500) n++; const c = mcPathCost(f, t); if(n > bn || (n === bn && c < bc)){ bn = n; bc = c; best = t; } }
+  return best;
+}
 function mcOnOneWay(f){ const feet = f.y + f.r; for(const p of platRects()) if(!p.solid && !p.rot && f.x > p.x && f.x < p.x + p.w && Math.abs(p.y - feet) < 4) return true; return false; }
 // UP BY THE HOLE'S OWN STEPS, one after another (R.hole.steps, lowest first), then onto the floor above. The climb used to be steerClimb's
 // toward the floor above, and navUp takes the nearest step in reach anywhere: by a hole next to its own strip that was the lift's, the route
@@ -66059,10 +66080,10 @@ function aiThink(f){
     if(focus && (!f.aiTarget || f.aiTarget.dead || f.aiTimer<=0 || wentHome())){ f.aiTarget=focus; f.aiTimer=brainR(L.target); }
     if(!f.aiTarget||f.aiTarget.dead||f.aiTarget.team===f.team||f.aiTimer<=0||wentHome()||f.aiTarget._isBoss){
       let best=1e9; const cur=f.aiTarget; f.aiTarget=focus||pickFrom[0];
-      if(!focus) for(const t of pickFrom){ const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;f.aiTarget=t;} }
+      if(!focus) for(const t of pickFrom){ const d=(MCAVE && MCAVE.on) ? mcPathCost(f, t) : Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;f.aiTarget=t;} }   // (MOON CAVES: nearest by the way there, mcPathCost)
       // MOON CAVES: the foe it is after stays its foe until another is clearly nearer. Foes come from both ways round the ring, and the nearest
       // changed every second or two as they moved: at 10 a side a CPU turned round each time, and three spent a whole minute far from everyone.
-      if(MCAVE && MCAVE.on && !focus && cur && cur!==f.aiTarget && !cur.dead && cur.team!==f.team && pickFrom.includes(cur) && best > 0.7*Math.hypot(cur.x-f.x,cur.y-f.y) - 150) f.aiTarget=cur;
+      if(MCAVE && MCAVE.on && !focus && cur && cur!==f.aiTarget && !cur.dead && cur.team!==f.team && pickFrom.includes(cur) && best > 0.7*mcPathCost(f, cur) - 150) f.aiTarget=cur;
       f.aiTimer=brainR(L.target);
     }
   }
@@ -66102,7 +66123,7 @@ function aiThink(f){
     else if(now - B.progT > 240){
       B.progD = null; B.progT = now; B.detour = { dir: (mcR ? mcR.x - f.x : dx) < 0 ? 1 : -1, until: now + 70 };
       const other = pickFrom.filter(o => o !== ts);
-      if(other.length){ f.aiTarget = other[Math.floor(Math.random()*other.length)]; f.aiTimer = 300; }
+      if(other.length){ f.aiTarget = (MCAVE && MCAVE.on) ? mcCrowd(f, other) : other[Math.floor(Math.random()*other.length)]; f.aiTimer = 300; }   // (MOON CAVES: the biggest fight on the map, mcCrowd)
     }
   } else B.progD = null;
   if(B.detour && now < B.detour.until){
@@ -79963,7 +79984,8 @@ function netPredRun(a, pr, to, team){
     const vx0 = Math.abs(P.vx), mv = P.g ? k[0] : k[1];
     if(L){ P.vx -= mv; P.face = -1; }
     if(R){ P.vx += mv; P.face = 1; }
-    if(!L && !R && P.g) P.vx *= FRICTION;
+    if(!L && !R && P.g) P.vx *= (P.ice > 0 ? 0.99 : FRICTION);
+    if(P.ice > 0) P.ice--;
     let cap = P.g ? k[2] : k[3];
     if(!P.g && k[2] > k[3] && vx0 > cap) cap = Math.min(runEaseCap(cap, k[2], P.at + 1), vx0);
     P.vx = Math.max(-cap, Math.min(cap, P.vx));
@@ -80014,6 +80036,15 @@ function netPredRun(a, pr, to, team){
         P.y = p.y - P.r;
         if(p.bouncy){ P.vy = -14; P.j = 2; } else { P.vy = 0; P.g = true; P.j = 2; }
       }
+    }
+    if(MCAVE && MCAVE.on && worldZones.length) for(const z of worldZones){   // MOON CAVES: the layers' zones (applyZone's, the parts that move you), in the frame's chart
+      if(!(P.x >= z.x && P.x <= z.x + z.w && P.y + P.r >= z.y && P.y <= z.y + z.h)) continue;
+      const s = z.strength || 1;
+      if(z.type === 'ice'){ if(P.g) P.vx *= 1 - 0.02*s; P.ice = 6; }
+      else if(z.type === 'bounce'){ const top = P.vy > 0 && P.y - P.vy + P.r < z.y; if(top || P.g){ if(top) P.y = z.y - P.r; P.vy = -BOUNCE_VY*Math.sqrt(s); P.g = false; P.j = 2; } }
+      else if(z.type === 'updraft'){ if(!D){ P.vy = Math.max(P.vy - 1.35*s, -9.5*s); if(P.vy < 0) P.g = false; } }
+      else if(z.type === 'belt'){ if(P.g) P.x += (z.dir || 1)*2.2*s; }
+      else if(z.type === 'water'){ P.vx *= 1 - 0.13*s; P.vy *= 1 - 0.05*s; }
     }
     if(clLim && mt && !P.g && P.ws && P.wt === g && (P.ws > 0 ? R : L) && P.vy > 0 && P.clT < clLim){ P.vy = Math.min(P.vy, 0.7); P.clT++; }   // the cling (mtCling)
     if(P.g){ P.ff = false; P.at = 0; P.used = []; P.clT = 0; } else P.at++;
