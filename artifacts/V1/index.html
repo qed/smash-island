@@ -2715,6 +2715,7 @@ function mcEnter(E, at){
   mcSwapIn(E);
   const L = mcLists(); for(let k = 0; k < L.length; k++){ const a = L[k]; for(let j = 0; j < a.length; j++) mcSwapIn(a[j]); }
   F.wp = worldPlats; if(M.window) worldPlats = M.window(F.phi, F.rho, E, far);   // the terrain round E, as boxes in its chart
+  F.wz = worldZones; worldZones = mcZoneWindow(F.phi, F.rho, E, far);              // ...and its zones (the layers' springs, ice, updrafts, belts, water)
   F.pa = particles; F.np = particles.length;   // (the particles made in the frame are made in its chart)
 }
 function mcExit(){
@@ -2749,6 +2750,7 @@ function mcExit(){
   F.pa = null;
   mcFxTurn();   // the marks it left, to real places (M3)
   worldPlats = F.wp; F.wp = null;
+  worldZones = F.wz; F.wz = null;
   F.open = false; F.E = null;
 }
 // A summon's floor on this map (updateSummons, in its frame): the first surface under its middle -- the sweep found Pepper and every
@@ -2801,6 +2803,27 @@ function mcRoute(f, t){
     if(c < bc){ bc = c; best = h; }
   }
   return best ? { up:up, x:M.cx + F.rho*mcWrap(best.a - F.phi), upperY:M.cy - M.tops[band], lowY:M.cy - M.tops[band + 1], gap:Math.abs(Lt - Lf), hole:best, tx:t.x } : null;   // (tx: the side it goes on to)
+}
+// THE MINIMAP (the owner, 2026-11-01: "if the cpus cant find ppl, teach them to use the minimap"): the foe a CPU goes for is the nearest BY
+// THE WAY THERE -- round its own layer, or to the best passage between the layers and on round the foe's (mcRoute's measure), and a layer's
+// climb or drop on top -- not the straight line through the rock and the core, by which a foe two caves down across the disc was "near"
+// and one round the floor it stood on was not. In its own frame (the think pass: the foes charted with it).
+function mcPathCost(f, t){
+  const M = MCAVE, F = MC_FR; if(!F.open) return Math.hypot(t.x - f.x, t.y - f.y);
+  const thF = F.phi + (f.x - M.cx)/F.rho, thT = F.phi + (t.x - M.cx)/F.rho, rf = M.cy - f.y, rt = M.cy - t.y;
+  const Lf = mcLayer(rf - (f.r || 24)), Lt = mcLayer(rt - (t.r || 24));
+  if(Lf === Lt) return Math.abs(mcWrap(thT - thF))*Math.max(200, Math.min(rf, rt));
+  const up = Lt < Lf, band = up ? Lf - 1 : Lf; let best = Infinity;
+  if(band >= 0 && band < M.K) for(const h of M.holes){ if(h.band !== band || (h.lift && h.team !== f.team)) continue; const c = Math.abs(mcWrap(h.a - thF))*rf + Math.abs(mcWrap(thT - h.a))*rt; if(c < best) best = c; }
+  if(!isFinite(best)) best = Math.abs(mcWrap(thT - thF))*Math.max(rf, rt);
+  return best + Math.abs(Lt - Lf)*(up ? 420 : 160);
+}
+// ...and when the way to one foe has gone nowhere for a while (NO WAY THROUGH), the biggest fight it can see on the map: the foe with the
+// most of its own side round it (500 px), the nearest by the way there of those.
+function mcCrowd(f, cands){
+  let best = cands[0], bn = -1, bc = Infinity;
+  for(const t of cands){ let n = 0; for(const o of fighters) if(!o.dead && o.team === t.team && Math.hypot(o.x - t.x, o.y - t.y) < 500) n++; const c = mcPathCost(f, t); if(n > bn || (n === bn && c < bc)){ bn = n; bc = c; best = t; } }
+  return best;
 }
 function mcOnOneWay(f){ const feet = f.y + f.r; for(const p of platRects()) if(!p.solid && !p.rot && f.x > p.x && f.x < p.x + p.w && Math.abs(p.y - feet) < 4) return true; return false; }
 // UP BY THE HOLE'S OWN STEPS, one after another (R.hole.steps, lowest first), then onto the floor above. The climb used to be steerClimb's
@@ -2877,7 +2900,7 @@ function mcCrackGoal(f){
     // and came out short (the CPU probe at 5 a side, 2-5 falls to the core in 3 minutes with no hit before them; live main 1). On a jump
     // across (brainLedge's, mcGapHop's) the lip ahead is the one its speed is taking it to, so it goes on over.
     const r = M.cy - f.y, th = MC_FR.phi + (f.x - M.cx)/MC_FR.rho;
-    if(f.onground || !(f.vy > 0) || r > M.shellTop + 420 || standAt(f.x, f.y + f.r + 20)) return null;
+    if(f.onground || !(f.vy > 0) || r > M.furnTop || standAt(f.x, f.y + f.r + 20)) return null;
     let cr = null; for(const c of M.cracks) if(Math.abs(mcWrap(th - c.a)) < c.h + (f.r + 40)/M.shellTop){ cr = c; break; }
     if(!cr) return null;
     const px = f.x + (f.vx || 0)*10, e0 = M.cx + MC_FR.rho*mcWrap(cr.a - cr.h - MC_FR.phi) - (f.r + 12), e1 = M.cx + MC_FR.rho*mcWrap(cr.a + cr.h - MC_FR.phi) + (f.r + 12);
@@ -3092,49 +3115,66 @@ function worldToScreen(x, y, z){
 //           of the layers has the Moon's low gravity, the lower half normal (mcGravAt). Every climb on a route is still the steps under a hole.
 // Fighters only until M3 (no items, assists or Smash Balls: itemSpawnInterval). The view turns with your fighter (mcCamera), and every
 // fighter stands upright on its own part of the disc.
-const MC_GEN = { perFighter:620, rMin:1700, rMax:3400, crust:140, pitch:560, floor:140, cavesMax:4, innerMin:800, blast:1300, kill:200,
-  holeW:220, holeArc:1300, holesMin:4, stepT:14, steps:[[140, -191, -50], [280, 55, 186], [420, -110, 11]], stepReach:191,
-  // ...and under a hole into a cave of normal gravity (the layers): four, 112 apart -- one jump each (a jump rises 120 there; 140 took both,
-  // so every climb was slower, and a CPU that missed a step had no jump left to save it: the CPU probe's falls into the core)
-  stepsN:[[112, -191, -50], [224, 55, 186], [336, -191, -50], [448, -110, 11]],
-  // ...and into the tunnels a narrow shaft (stepReachT each way): each step 110 px across, in turn either side of the middle with 20 px
-  // over it, so the two tunnels run up to the steps -- the lower one's floor under them, the upper one's floor 26 px over the second
-  stepsT:[[112, -100, 10], [224, -10, 100], [336, -100, 10], [448, -55, 55]], stepReachT:100,
+const MC_GEN = { perFighter:800, rMin:2550, rMax:4500, crust:140, floors:[120, 100], innerMin:650, blast:1300, kill:200,
+  holeW:220, holeArc:1300, holesMin:4, stepT:14,
+  // THE STEPS under a hole: as many as make every climb one jump -- 140 px at most into a cave with the Moon's low gravity, 112 into one of
+  // normal gravity (a jump rises 120 there; 140 took both, so every climb was slower, and a CPU that missed a step had no jump left to save
+  // it: the CPU probe's falls into the core) -- evenly up to the floor above, in turn either side of the hole's middle and the last in its
+  // mouth (stepsAt: px from the middle, the far half's mirrored): wide, and into the tunnels a narrow shaft (stepReachT each way: each step
+  // 110 px across, 20 px over the middle, so the two tunnels run up to the steps)
+  stepMax:140, stepMaxN:112, stepsAt:{ wide:[[-191, -50], [55, 186], [-110, 11]], narrow:[[-100, 10], [-10, 100], [-55, 55]] }, stepReach:191, stepReachT:100,
   ledgeUp:210, ledgeW:300, hopUp:[180, 260], hopW:220, crackW:260, cracks6At:16, strip:700, stripPast:400,
   padsFloor:[-290, -170, 170, 290], padsShell:[-200, 0, 200], padsHop:[-240, 0, 240], padHopUp:200, padHopW:160,
-  // THE LAYERS (mcGen): the caves' kinds from the top (the deepest is always the furnace, the one over it always the tunnels: deeper is
-  // more tunnel -- one cave over the furnace the tunnels, two the galleries and the tunnels, three all three); what each keeps clear, px
-  // past the reach of the steps under a hole above (col) and past the edge of a hole in its floor (hole: the tunnels bridge theirs); and
-  // its pieces (px; heights over the cave's floor) (crackClear: the furnace's stones keep that far from a crack's edge; hotRim: the floor
-  // that far from one does not burn; popRim: nor does it pop you up that far from one -- mcHotFloor)
-  caveKinds:['galleries', 'columns', 'tunnels'], crackClear:100, hotRim:20, popRim:220,
-  kinds:{ galleries:{ col:140, hole:60, w:150, gap:130, lo:140, hi:280, top:330, topW:150 },
-          columns:{ col:60, hole:60, w:90, gap:170, rockH:[70, 50], dripUp:250, dripW:120, holeDripUp:260, holeDripW:150 },
+  // THE LAYERS (the owner, 2026-11-01: "it does not feel like there are enough layers" -- more layers, thinner deeper and a bigger moon --
+  // and "VARY THE PLAFORMING MORE!!!!" -- new things to play on, a kind of its own for every layer, and no two runs alike): the caves' kinds
+  // from the top (caveOrder; the furnace always the deepest), as many as the disc's depth holds, coming in in caveRank's order (the tunnels
+  // over the furnace first); each its own height (head: its floor to the underside of the floor above), the thin ones deep. For each kind
+  // what it keeps clear, px past the reach of the steps under a hole above (col) and past the edge of a hole in its floor (hole: the tunnels
+  // bridge theirs); and its pieces (px; heights over the cave's floor). Each run between the passages is laid out one of a kind's ways
+  // (mcGen's pick: by its distance from 12 o'clock, so a run and its mirror image alike). (crackClear: the furnace's stones keep that far from
+  // a crack's edge; hotRim: the floor that far from one does not burn; popRim: nor does it pop you up that far from one -- mcHotFloor)
+  caveOrder:['galleries', 'springs', 'columns', 'ice', 'updrafts', 'mines', 'flooded', 'tunnels'],
+  caveRank:['tunnels', 'galleries', 'ice', 'springs', 'updrafts', 'columns', 'mines', 'flooded'],
+  head:{ galleries:380, springs:400, columns:340, ice:260, updrafts:420, mines:260, flooded:280, tunnels:420, furnace:360 },
+  crackClear:100, hotRim:20, popRim:220,
+  kinds:{ galleries:{ col:140, hole:60, w:150, gap:130, lo:140, mid:210, hi:280, isle:260, isleW:340, top:290, topW:150 },
+          // (springs: a pad of rising push on the floor -- applyZone's bounce, s: its strength, so that it throws you to the ledges, low
+          // gravity and normal)
+          springs:{ col:60, hole:60, padW:100, padH:24, sLow:1.3, sN:1.9, ledgeW:160, ledgeUp:290, rockW:80, rockH:60 },
+          columns:{ col:60, hole:60, w:90, gap:170, rockH:[70, 50], dripUp:220, dripW:120, holeDripUp:230, holeDripW:150,
+                    archW:260, archGap:160, archH:110, stalW:60, stalGap:90, stalH:[40, 80, 60, 100] },
+          ice:{ col:60, hole:60, iceH:40, icicleW:40, icicleGap:220, icicleUp:170, shelfW:140, shelfGap:160, shelfUp:130, sw:40, sh:22, steps:3, edge:40 },
+          updrafts:{ col:60, hole:60, shaftW:90, shaftTop:50, ledgeW:150, ledgeUp:330, isleW:200, isleUp:290, isleH:40, lowUp:160 },
+          mines:{ col:60, hole:60, beltH:30, scafW:200, scafUp:130, rockW:70, rockH:50 },
+          flooded:{ col:60, hole:60, waterUp:120, deepUp:170, plankW:120, plankGap:180, puddleW:200, puddleGap:120, puddleUp:90 },
           // (the tunnels: the lower one `low` px high -- a running jump's head clears it, over the holes in its floor: at 150 a CPU's hop
           // over the next hole bonked and it fell back to the furnace, 3 climbs in 6 never got out at 10 a side -- under a divider `div`
-          // thick, the upper one over it up to the roof (no holes in its floor: a walk); the upper one's
-          // floor rises over a hill of `steps` CTF steps (sw wide, sh high: walked up, the ramp step-up), `edge` px in from the run's
-          // ends and `top` px across its top -- two hills in a run `two` px and longer, with a bump of steps on the lower one's floor
-          // between them, `bump` px across, from the bottom)
+          // thick, the upper one over it up to the roof (no holes in its floor: a walk); the upper one's floor rises over a hill of `steps`
+          // CTF steps (sw wide, sh high: walked up, the ramp step-up), `edge` px in from the run's ends and `top` px across its top -- two
+          // hills in a run `two` px and longer, with a bump of steps on the lower one's floor between them, `bump` px across, from the
+          // bottom -- or up a ramp from one end to the other)
           tunnels:{ col:0, hole:null, min:140, low:200, div:50, sw:40, sh:22, steps:2, edge:30, top:60, two:900, bump:[220, 120] },
-          furnace:{ col:40, hole:60, w:130, gap:100, up:110 } } };
+          furnace:{ col:40, hole:60, w:130, gap:100, up:110, stair:[70, 110, 150], high:200 } } };
 function mcGen(N, k){
   const G = MC_GEN, TAU = MC_TAU;
   let Rout = Math.round(clamp(G.perFighter*Math.sqrt(Math.max(2, N)), G.rMin, G.rMax)*(k || 1));
-  Rout = Math.max(Rout, G.innerMin + G.pitch);   // (a Compact map still gets its cave)
-  let K = 0; while(K < G.cavesMax && Rout - G.pitch*(K + 1) >= G.innerMin) K++;
-  K = Math.max(1, K);
-  const tops = []; for(let j = 0; j <= K; j++) tops.push(Rout - G.pitch*j);   // tops[0] the surface, tops[c] cave c's floor (tops[K] the shell)
-  const thick = j => j === 0 ? G.crust : G.floor;
-  const shellTop = tops[K], shellBot = shellTop - G.floor, crustBot = Rout - G.crust, Rb = Rout + G.blast, rKill = shellBot - G.kill;
+  const thick = j => j === 0 ? G.crust : j === 1 ? G.floors[0] : G.floors[1];   // band j's rock (j 0 the crust): thinner deeper
+  // THE LAYERS' KINDS: the furnace always the deepest, then as many more as the disc's depth holds down to innerMin (G.caveRank's order of
+  // coming in; one that does not fit is passed over for the next), each in its place from the top (G.caveOrder)
+  const order = kd => kd === 'furnace' ? 99 : G.caveOrder.indexOf(kd);
+  const depthOf = ks => ks.reduce((d, kd, i) => d + thick(i) + G.head[kd], 0);   // (cave i+1's floor top under the band above it)
+  let chosen = ['furnace'];
+  for(const kd of G.caveRank){ const t = chosen.concat([kd]).sort((p, q) => order(p) - order(q)); if(Rout - depthOf(t) >= G.innerMin) chosen = t; }
+  Rout = Math.max(Rout, G.innerMin + depthOf(chosen));   // (a Compact map still gets its furnace)
+  const K = chosen.length;
+  const tops = [Rout]; for(let c = 1; c <= K; c++) tops.push(tops[c - 1] - thick(c - 1) - G.head[chosen[c - 1]]);   // tops[0] the surface, tops[c] cave c's floor (tops[K] the shell)
+  const shellTop = tops[K], shellBot = shellTop - thick(K), crustBot = Rout - G.crust, Rb = Rout + G.blast, rKill = shellBot - G.kill;
   // THE LAYERS (mcLayerOf): 0 the surface, c cave c -- each from the underside of its floor up to the underside of the floor above (rBot,
-  // rTop) -- with its kind (caves 1..K-1 take G.caveKinds from the top, the deepest is always the furnace) and its gravity: the upper half
-  // of the layers keeps the Moon's low gravity, the lower half is normal (mcGravAt)
-  const lowN = Math.max(1, Math.floor((K + 1)/2)), layers = [], CK = G.caveKinds;
-  const ck = K - 1 >= 3 ? CK.slice(0, 3) : K - 1 === 2 ? [CK[0], CK[2]] : [CK[2]];   // (deeper is more tunnel: the cave over the furnace is the tunnels)
-  for(let L = 0; L <= K; L++) layers.push({ kind:L === 0 ? 'surface' : L === K ? 'furnace' : ck[L - 1], low:L < lowN, rBot:tops[L] - thick(L), rTop:L === 0 ? 1e9 : tops[L - 1] - thick(L - 1) });
+  // rTop) -- with its kind and its gravity: the upper half of the layers keeps the Moon's low gravity, the lower half is normal (mcGravAt)
+  const lowN = Math.max(1, Math.floor((K + 1)/2)), layers = [];
+  for(let L = 0; L <= K; L++) layers.push({ kind:L === 0 ? 'surface' : chosen[L - 1], low:L < lowN, rBot:tops[L] - thick(L), rTop:L === 0 ? 1e9 : tops[L - 1] - thick(L - 1) });
   const WW = Math.ceil(TAU*Rb) + 1000, WH = 2*Rb + 800, cx = WW/2, cy = WH/2;   // every chart place stays inside the box: no clamp or side line fires
-  const segs = [], holes = [];
+  const segs = [], holes = [], zsegs = [];
   const put = (r0, r1, a0, a1, oneway, kind, L) => { if(a1 - a0 > 1e-6 && r1 - r0 > 0.5) segs.push({ id:segs.length + 1, r0, r1, a0, a1, oneway:!!oneway, kind, L:L | 0 }); };   // (L: its layer)
   const dist = (a, b) => Math.abs(mcWrap(a - b));
   const SIDES = [-Math.PI/2, Math.PI/2];                                  // team 0's strip at 9 o'clock, team 1's at 3
@@ -3158,8 +3198,8 @@ function mcGen(N, k){
     for(const a of cand){
       if(dist(a, 0) < hh + 0.02 || dist(a, Math.PI) < hh + 0.02) continue;
       if(inStrip(a, hh, r, 60)) continue;
-      if(holes.some(h => h.band === j - 1 && dist(h.a, a) < hh + (G.stepReach + 40)/(r + G.steps[0][0]))) continue;   // (the steps above hang 140 px and more over this floor)
-      if(j === K - 1 && cracks.some(c => dist(c, a) < crackH + (G.stepReach + 80)/(shellTop + 140))) continue;
+      if(holes.some(h => h.band === j - 1 && dist(h.a, a) < hh + (G.stepReach + 40)/(r + G.stepMax))) continue;   // (the steps above hang 140 px and more over this floor)
+      if(j === K - 1 && cracks.some(c => dist(c, a) < crackH + (G.stepReach + 80)/(shellTop + G.stepMax))) continue;
       got.push(a);
     }
     // THE TUNNELS' FLOOR keeps every other hole (by its distance from 12 o'clock, so in mirror pairs): between two shafts up there is then
@@ -3180,20 +3220,22 @@ function mcGen(N, k){
     const cuts = j < K ? holes.filter(h => h.band === j).map(h => [h.a, h.w/2/tops[j]]) : cracks.map(c => [c, crackH]);
     ring(tops[j] - thick(j), tops[j], cuts, j === 0 ? 'crust' : (j === K ? 'shell' : 'floor'), j);   // (band j is layer j's floor)
   }
-  // THE STEPS under every hole, mirrored on the left half (so the two sides match); a lift's steps are pads
+  // THE STEPS under every hole, mirrored on the left half (so the two sides match); a lift's steps are pads: as many as make the climb up to
+  // the floor above one jump each in the cave's own gravity, evenly
   const pads = [[], []];
   const liftPads = [[], []];
   for(const h of holes){
-    const low = tops[h.band + 1], sg = h.a < 0 ? -1 : 1;
+    const low = tops[h.band + 1], climb = tops[h.band] - low, sg = h.a < 0 ? -1 : 1, Y = layers[h.band + 1];
+    const n = Math.max(1, Math.ceil(climb/(Y.low ? G.stepMax : G.stepMaxN)) - 1), sp = climb/(n + 1), at = G.stepsAt[Y.kind === 'tunnels' ? 'narrow' : 'wide'];
     h.steps = [];
-    for(const st of (layers[h.band + 1].kind === 'tunnels' ? G.stepsT : layers[h.band + 1].low ? G.steps : G.stepsN)){   // (the cave's own gravity: the layers; the tunnels' narrow shaft)
-      const r1 = low + st[0], p0 = sg*st[1], p1 = sg*st[2], a0 = h.a + Math.min(p0, p1)/r1, a1 = h.a + Math.max(p0, p1)/r1;
+    for(let i = 1; i <= n; i++){
+      const o = i === n ? at[2] : at[(i - 1) % 2], r1 = low + i*sp, p0 = sg*o[0], p1 = sg*o[1], a0 = h.a + Math.min(p0, p1)/r1, a1 = h.a + Math.max(p0, p1)/r1;
       put(r1 - G.stepT, r1, a0, a1, true, h.lift ? 'lift' : 'step', h.band + 1);
       h.steps.push({ r:r1, a0, a1 });
       if(h.lift) liftPads[h.team].push(pt(r1, (a0 + a1)/2));
     }
   }
-  // THE LEDGES: one in each cave between two holes of the band above it, clear of their steps, the strips and (the innermost cave) the cracks
+  // THE LEDGES: one in each of the galleries between two holes of the band above it, clear of their steps, the strips and the cracks
   const mids = [];   // the ledges made: the layers' own pieces keep clear of them (and the galleries' top tier sits over each)
   for(let c = 1; c <= K; c++){
     if(layers[c].kind !== 'galleries') continue;   // (only the galleries keep the ledges: the other caves have their own pieces instead, below)
@@ -3227,8 +3269,10 @@ function mcGen(N, k){
   // THE CAVES' OWN PIECES (the layers: G.kinds). Each cave's kind is laid on the arcs its passages leave free (freeRuns): clear of the steps
   // under the holes above it (their reach and the kind's `col`: a CPU's jump for the first step goes up from out there, CLIMB_REACH), of the
   // holes in its floor (`hole`), of the strips, of the cracks (crackClear: The Moon's lesson, no plank over one) and of the galleries'
-  // ledges. Each row is centred on its run, and the runs mirror across the 12-6 line, so both halves still match. Made after every other
-  // piece, so the rock's ids (the decoration hashes them) are as they were.
+  // ledges. Each run is laid out one of its kind's ways (pick: by its distance from 12 o'clock and its cave, so a run and its mirror image
+  // alike; a run on the 12-6 line, its own mirror image, only a way that is the same both ways round), centred on its run, so both halves
+  // still match. THE ZONES (zsegs): the springs' pads, the ice, the updrafts, the belts and the water -- applyZone's, charted into each
+  // frame as the pieces are (mcZoneWindow). Made after every other piece, so the rock's ids (the decoration hashes them) are as they were.
   const freeRuns = res => {   // the circle less the reserved arcs ([middle, half-width]): [[a0, a1], ...] (a0 < a1), cut at the first one's middle
     const cut = res[0][0], iv = [];
     for(const q of res){ const s = cut + ((q[0] - q[1] - cut) % TAU + TAU) % TAU, e = s + 2*q[1];
@@ -3244,39 +3288,97 @@ function mcGen(N, k){
     for(let i = 0; i < n; i++){ const k = i - (n - 1)/2; out.push({ a:mid + k*(w + gap)/r, k:Math.round(Math.abs(k) - 0.01) }); }
     return out;
   };
+  const hsh = x => { x = (x ^ 61) ^ (x >>> 16); x = (x + (x << 3)) | 0; x = x ^ (x >>> 4); x = Math.imul(x, 0x27d4eb2d); x = x ^ (x >>> 15); return x >>> 0; };
   for(let c = 1; c <= K; c++){
     const Y = layers[c], Q = G.kinds[Y.kind], rf = tops[c], rc = Y.rTop, res = [];
     for(const h of holes){ if(h.band === c - 1) res.push([h.a, ((Y.kind === 'tunnels' ? G.stepReachT : G.stepReach) + Q.col)/rf]); else if(h.band === c && Q.hole != null) res.push([h.a, (G.holeW/2 + Q.hole)/rf]); }   // (hole null: over them)
     for(const s of SIDES) res.push([s, stripHalf(rf) + 60/rf]);
     if(c === K) for(const a of cracks) res.push([a, crackH + G.crackClear/rf]);
     for(const m of mids) if(m.c === c) res.push([m.a, (G.ledgeW/2 + 40)/rf]);
+    const plank = (r, a, w, kd) => { const hw = w/2/r; put(r - G.stepT, r, a - hw, a + hw, true, kd, c); };              // a one-way plank, its top at r
+    const block = (r0, r1, a, w, kd) => { const hw = w/2/r1; put(r0, r1, a - hw, a + hw, false, kd, c); };               // solid rock from r0 to r1
+    const zone = (r0, r1, a0, a1, type, o) => { if(a1 - a0 > 1e-6) zsegs.push(Object.assign({ id:zsegs.length + 1, r0, r1, a0, a1, type, L:c }, o || {})); };
+    const zoneW = (r0, r1, a, w, type, o) => { const hw = w/2/r1; zone(r0, r1, a - hw, a + hw, type, o); };
+    const hill = (a0, a1, base, n, sw, sh, edge) => {   // a hill of CTF steps on a floor at `base` (each a 'slope' piece: a ramp, walked up)
+      const L = (a1 - a0)*base, m = (a0 + a1)/2;
+      for(let i = 1; i <= n; i++){ const r1 = base + sh*i, hw = (L/2 - edge - (i - 1)*sw)/r1; if(hw > 0) put(r1 - sh, r1, m - hw, m + hw, false, 'slope', c); }
+    };
     for(const run of freeRuns(res)){
-      if(Y.kind === 'galleries'){   // ledges in tiers, low and high in turn out from the middle: up in the air
-        for(const q of rowOf(run, rf, Q.w, Q.gap)){ const r = rf + (q.k % 2 ? Q.hi : Q.lo), hw = Q.w/2/r; put(r - G.stepT, r, q.a - hw, q.a + hw, true, 'tier', c); }
-      } else if(Y.kind === 'columns'){   // rock up from the floor (hopped) and rock hanging from the roof, in turn: on the ground, round the rock
-        for(const q of rowOf(run, rf, Q.w, Q.gap)){
-          if(q.k % 2){ const hw = Q.dripW/2/rc; put(rf + Q.dripUp, rc, q.a - hw, q.a + hw, false, 'drip', c); }
-          else { const hw = Q.w/2/rf; put(rf, rf + Q.rockH[(q.k/2) % 2], q.a - hw, q.a + hw, false, 'rock', c); }
-        }
-      } else if(Y.kind === 'tunnels'){   // TWO TUNNELS, one over the other, from shaft to shaft -- a run with a hole down in it is an open
-        // chamber -- the divider between them across the run, the upper one's floor rising over hills of Capture the Flag's slopes (each
-        // step a 'slope' piece: a ramp, walked up without a jump), and in a long run the lower one's floor over a bump of them between its
-        // two hills. Every piece is centred on its run or its half, so the halves still mirror.
-        const len = (run[1] - run[0])*rf, m = (G.holeW/2 + 40)/rf, off = a => ((a - run[0]) % TAU + TAU) % TAU;
-        const pit = holes.some(h => h.band === c && !h.lift && (off(h.a) <= run[1] - run[0] + m || off(h.a) >= TAU - m));
-        if(len >= Q.min && !pit){
-          const rd = rf + Q.low, rb = rd + Q.div, mid = (run[0] + run[1])/2, two = len >= Q.two;
-          put(rd, rb, run[0], run[1], false, 'divider', c);
-          const hill = (a0, a1) => {
-            const L = (a1 - a0)*rb, n = Math.min(Q.steps, Math.floor((L - 2*Q.edge - Q.top)/(2*Q.sw))), m = (a0 + a1)/2;
-            for(let i = 1; i <= n; i++){ const r1 = rb + Q.sh*i, hw = (L/2 - Q.edge - (i - 1)*Q.sw)/r1; put(r1 - Q.sh, r1, m - hw, m + hw, false, 'slope', c); }
-          };
-          if(two){ hill(run[0], mid); hill(mid, run[1]); } else hill(run[0], run[1]);
-          if(two && !holes.some(h => h.band === c && dist(h.a, mid) < (G.holeW/2 + Q.bump[0]/2 + 40)/rf))
-            for(let i = 1; i <= Q.bump.length; i++){ const r1 = rf + Q.sh*i, hw = Q.bump[i - 1]/2/r1; put(r1 - Q.sh, r1, mid - hw, mid + hw, false, 'slope', c); }
-        }
-      } else if(Y.kind === 'furnace'){   // low one-way stepping stones over the hot floor: hop to keep your feet off it
-        for(const q of rowOf(run, rf, Q.w, Q.gap)){ const r = rf + Q.up, hw = Q.w/2/r; put(r - G.stepT, r, q.a - hw, q.a + hw, true, 'stone', c); }
+      const L = (run[1] - run[0])*rf, mid = (run[0] + run[1])/2, wm = mcWrap(mid), side = wm < 0 ? -1 : 1;
+      const self = Math.abs(wm) < 1e-6 || Math.abs(Math.abs(wm) - Math.PI) < 1e-6;   // (on the 12-6 line: its own mirror image)
+      const pick = n => hsh(Math.round(Math.abs(wm)*1e4) + 7919*c) % n;
+      switch(Y.kind){
+        case 'galleries': {   // one-way ledges up in the air: in tiers, a pyramid, an island up high, or a zigzag
+          const t = pick(4), R = rowOf(run, rf, Q.w, Q.gap);
+          if(t === 0) for(const q of R) plank(rf + (q.k % 2 ? Q.hi : Q.lo), q.a, Q.w, 'tier');
+          else if(t === 1) for(const q of R) plank(rf + Math.max(Q.lo, Q.hi - q.k*70), q.a, Q.w, 'tier');
+          else if(t === 2 && L >= 2*Q.w + 240){ plank(rf + Q.isle, mid, Math.min(L - 2*Q.w - 120, Q.isleW), 'tier'); plank(rf + Q.lo, run[0] + (Q.w/2 + 30)/rf, Q.w, 'tier'); plank(rf + Q.lo, run[1] - (Q.w/2 + 30)/rf, Q.w, 'tier'); }
+          else for(const q of R) plank(rf + [Q.lo, Q.mid, Q.hi][q.k % 3], q.a, Q.w, 'tier');
+          break; }
+        case 'springs': {   // SPRINGS: pads on the floor that throw you up (applyZone's bounce) to ledges no jump reaches
+          const t = pick(3), s = Y.low ? Q.sLow : Q.sN, pad = a => zoneW(rf, rf + Q.padH, a, Q.padW, 'bounce', { strength:s });
+          if(t === 1 && L >= 2*Q.padW + 280){ const d = (L/4)/rf; pad(mid - d); pad(mid + d); plank(rf + Q.ledgeUp + 20, mid, Math.min(L/2 - Q.padW, 220), 'ledge2'); }
+          else if(t === 2 && L >= 400){ for(const q of rowOf(run, rf, 150, 40)){ if(q.k % 2){ block(rf, rf + Q.rockH, q.a, Q.rockW, 'rock'); plank(rf + Q.ledgeUp, q.a, 150, 'ledge2'); } else pad(q.a); } }
+          else { pad(mid); const d = (Q.padW/2 + Q.ledgeW/2 + 10)/rf; if(L >= Q.padW + 2*Q.ledgeW + 60){ plank(rf + Q.ledgeUp, mid - d, Q.ledgeW, 'ledge2'); plank(rf + Q.ledgeUp, mid + d, Q.ledgeW, 'ledge2'); } }
+          break; }
+        case 'columns': {   // rock up from the floor and hanging from the roof, arches, or a field of stalagmites: on the ground, round the rock
+          const t = pick(3);
+          if(t === 0) for(const q of rowOf(run, rf, Q.w, Q.gap)){ if(q.k % 2) block(rf + Q.dripUp, rc, q.a, Q.dripW, 'drip'); else block(rf, rf + Q.rockH[(q.k/2) % 2], q.a, Q.w, 'rock'); }
+          else if(t === 1) for(const q of rowOf(run, rf, Q.archW, Q.archGap)){ const d = (Q.archW/2 - 20)/rf; block(rf, rf + Q.archH, q.a - d, 40, 'rock'); block(rf, rf + Q.archH, q.a + d, 40, 'rock'); plank(rf + Q.archH + G.stepT, q.a, Q.archW, 'arch'); }
+          else for(const q of rowOf(run, rf, Q.stalW, Q.stalGap)) block(rf, rf + Q.stalH[q.k % Q.stalH.length], q.a, Q.stalW, 'rock');
+          break; }
+        case 'ice': {   // ICE: the floor slick across the run (applyZone's ice), with icicles from the roof, ice shelves, or a hill of ice to slide
+          const t = pick(3);
+          zone(rf, rf + Q.iceH, run[0], run[1], 'ice');
+          if(t === 0) for(const q of rowOf(run, rf, Q.icicleW, Q.icicleGap)) block(rf + Q.icicleUp, rc, q.a, Q.icicleW, 'icicle');
+          else if(t === 1) for(const q of rowOf(run, rf, Q.shelfW, Q.shelfGap)){ plank(rf + Q.shelfUp, q.a, Q.shelfW, 'shelf'); zoneW(rf + Q.shelfUp - 2, rf + Q.shelfUp + Q.iceH, q.a, Q.shelfW, 'ice'); }
+          else { const n = Math.min(Q.steps, Math.floor((L - 2*Q.edge - 60)/(2*Q.sw))); hill(run[0], run[1], rf, n, Q.sw, Q.sh, Q.edge); zone(rf, rf + Math.max(0, n)*Q.sh + Q.iceH, run[0], run[1], 'ice'); }
+          break; }
+        case 'updrafts': {   // UPDRAFTS: columns of rising air (applyZone's updraft) up to ledges and islands no jump reaches
+          const t = self ? 0 : pick(3), shaft = a => zoneW(rf, rc - Q.shaftTop, a, Q.shaftW, 'updraft');
+          if(t === 1 && L >= 2*Q.shaftW + Q.isleW + 160){ const d = (L/4)/rf; shaft(mid - d); shaft(mid + d); block(rf + Q.isleUp - Q.isleH, rf + Q.isleUp, mid, Q.isleW, 'isle'); }
+          else if(t === 2 && L >= Q.shaftW + 2*(200 + 70)){ shaft(mid); for(const s of [-1, 1]){ plank(rf + Q.lowUp, mid + s*(Q.shaftW/2 + 80)/rf, 140, 'ledge2'); plank(rf + Q.ledgeUp, mid + s*(Q.shaftW/2 + 200)/rf, 140, 'ledge2'); } }
+          else { shaft(mid); if(L >= Q.shaftW + 2*Q.ledgeW + 60){ const d = (Q.shaftW/2 + Q.ledgeW/2 + 20)/rf; plank(rf + Q.ledgeUp, mid - d, Q.ledgeW, 'ledge2'); plank(rf + Q.ledgeUp, mid + d, Q.ledgeW, 'ledge2'); } }
+          break; }
+        case 'mines': {   // MINES: conveyor belts on the floor (applyZone's belt) -- in to the middle under a scaffold, out from a rock, or one long belt
+          // one way round (the mirror image the other way) with rocks on it
+          const t = self ? 0 : pick(3), belt = (a0, a1, d) => zone(rf, rf + Q.beltH, a0, a1, 'belt', { dir:d });
+          if(t === 1){ belt(run[0], mid - 20/rf, -1); belt(mid + 20/rf, run[1], 1); block(rf, rf + Q.rockH, mid, Q.rockW, 'rock'); }
+          else if(t === 2){ belt(run[0], run[1], side); for(const q of rowOf(run, rf, Q.rockW, 220)) block(rf, rf + Q.rockH, q.a, Q.rockW, 'rock'); }
+          else { belt(run[0], mid - 20/rf, 1); belt(mid + 20/rf, run[1], -1); if(L > Q.scafW + 100) plank(rf + Q.scafUp, mid, Q.scafW, 'scaffold'); }
+          break; }
+        case 'flooded': {   // FLOODED: water over the floor (applyZone's water: it drags at you) with rafts on it, deep water round a rock, or puddles
+          const t = pick(3);
+          if(t === 1){ zone(rf, rf + Q.deepUp, run[0], run[1], 'water'); if(L >= 400) block(rf, rf + Q.deepUp - 30, mid, 160, 'rock'); for(const q of rowOf(run, rf, Q.plankW, Q.plankGap + 120)) if(q.k) plank(rf + Q.deepUp + 8, q.a, Q.plankW, 'raft'); }
+          else if(t === 2) for(const q of rowOf(run, rf, Q.puddleW, Q.puddleGap)) zoneW(rf, rf + Q.puddleUp, q.a, Q.puddleW, 'water');
+          else { zone(rf, rf + Q.waterUp, run[0], run[1], 'water'); for(const q of rowOf(run, rf, Q.plankW, Q.plankGap)) plank(rf + Q.waterUp + 8, q.a, Q.plankW, 'raft'); }
+          break; }
+        case 'tunnels': {   // TWO TUNNELS, one over the other, from shaft to shaft -- a run with a hole down in it is an open chamber -- the divider
+          // between them across the run, the upper one's floor over hills of Capture the Flag's slopes (each step a 'slope' piece: a ramp,
+          // walked up without a jump) or up a ramp from one end to the other, and in a long run the lower one's floor over a bump of them
+          const len = L, m = (G.holeW/2 + 40)/rf, off = a => ((a - run[0]) % TAU + TAU) % TAU;
+          const pit = holes.some(h => h.band === c && !h.lift && (off(h.a) <= run[1] - run[0] + m || off(h.a) >= TAU - m));
+          if(len >= Q.min && !pit){
+            const rd = rf + Q.low, rb = rd + Q.div, two = len >= Q.two, t = self ? 0 : pick(2);
+            put(rd, rb, run[0], run[1], false, 'divider', c);
+            if(t === 1){   // a ramp: steps the length of the run, rising toward the end its mirror image's falls from
+              const L2 = (run[1] - run[0])*rb, n = Math.max(0, Math.min(3, Math.floor((L2 - 2*Q.edge)/160))), seg = (L2 - 2*Q.edge)/(n + 1);
+              for(let i = 1; i <= n; i++){ const r1 = rb + Q.sh*i, lo = Q.edge + i*seg, hi = L2 - Q.edge;
+                if(side > 0) put(r1 - Q.sh, r1, run[0] + lo/r1, run[0] + hi/r1, false, 'slope', c); else put(r1 - Q.sh, r1, run[1] - hi/r1, run[1] - lo/r1, false, 'slope', c); }
+            } else {
+              const hillN = a => Math.min(Q.steps, Math.floor((a*rb - 2*Q.edge - Q.top)/(2*Q.sw)));
+              if(two){ hill(run[0], mid, rb, hillN(mid - run[0]), Q.sw, Q.sh, Q.edge); hill(mid, run[1], rb, hillN(run[1] - mid), Q.sw, Q.sh, Q.edge); } else hill(run[0], run[1], rb, hillN(run[1] - run[0]), Q.sw, Q.sh, Q.edge);
+              if(two && !holes.some(h => h.band === c && dist(h.a, mid) < (G.holeW/2 + Q.bump[0]/2 + 40)/rf))
+                for(let i = 1; i <= Q.bump.length; i++){ const r1 = rf + Q.sh*i, hw = Q.bump[i - 1]/2/r1; put(r1 - Q.sh, r1, mid - hw, mid + hw, false, 'slope', c); }
+            }
+          }
+          break; }
+        case 'furnace': {   // low one-way stepping stones over the hot floor -- in a row, a stair up to the middle, or high and low in turn: hop to keep your feet off it
+          const t = pick(3), R = rowOf(run, rf, Q.w, Q.gap);
+          if(t === 1) for(const q of R) plank(rf + Q.stair[Math.max(0, Q.stair.length - 1 - q.k)], q.a, Q.w, 'stone');
+          else if(t === 2) for(const q of R) plank(rf + (q.k % 2 ? Q.high : Q.up), q.a, Q.w, 'stone');
+          else for(const q of R) plank(rf + Q.up, q.a, Q.w, 'stone');
+          break; }
       }
     }
     if(Y.kind === 'galleries') for(const m of mids) if(m.c === c){ const r = rf + Q.top, hw = Q.topW/2/r; put(r - G.stepT, r, m.a - hw, m.a + hw, true, 'tier', c); }   // a top tier over each ledge
@@ -3287,7 +3389,7 @@ function mcGen(N, k){
   const hot = freeRuns(cracks.map(a => [a, crackH + G.hotRim/shellTop]).concat(SIDES.map(s => [s, stripHalf(shellTop)])));
   const zones = [{ x:cx - Rb - G.stripPast, y:cy - G.strip/2, w:Rb + G.stripPast - shellBot, h:G.strip },
                  { x:cx + shellBot,        y:cy - G.strip/2, w:Rb + G.stripPast - shellBot, h:G.strip }];
-  return { N, k:k || 1, Rout, K, tops, crustBot, shellTop, shellBot, Rb, rKill, WW, WH, cx, cy, segs, holes,
+  return { N, k:k || 1, Rout, K, tops, crustBot, shellTop, shellBot, Rb, rKill, WW, WH, cx, cy, segs, holes, zsegs,
            cracks:cracks.map(a => ({ a, h:crackH })), pads, zones, layers, hot };
 }
 function buildMoonCaves(){
@@ -3305,7 +3407,8 @@ function buildMoonCaves(){
 function mcState(g){
   return { on:true, cx:g.cx, cy:g.cy, N:g.N, k:g.k, Rout:g.Rout, Rblast:g.Rb, rKill:g.rKill, K:g.K, tops:g.tops, shellTop:g.shellTop, shellBot:g.shellBot,
            crustBot:g.crustBot, segs:g.segs, holes:g.holes, cracks:g.cracks, window:mcWindow, win:[], rhoMin:64, flight:true, items:true,
-           camT:null, camHold:false, camOff:0, deco:mcDeco(g.segs), wide:false, wideK:0, watch:null, layers:g.layers, hot:g.hot };
+           camT:null, camHold:false, camOff:0, deco:mcDeco(g.segs), wide:false, wideK:0, watch:null, layers:g.layers, hot:g.hot,
+           zsegs:g.zsegs || [], zwin:[], furnTop:g.layers ? g.layers[g.K].rTop : g.shellTop + 420 };
 }
 // THE LAYERS AT WORK (mcGen's layers): a body's layer by the radius of its middle -- each runs from the underside of its floor to the underside
 // of the floor above, so a body in a hole's mouth already has the layer above's, and the core under the shell is the deepest's -- and that
@@ -3320,7 +3423,7 @@ function mcLayerOf(r){ const Ls = MCAVE.layers; for(let L = 0; L < Ls.length; L+
 function mcOverCrack(th){ const C = MCAVE.cracks; for(let i = 0; i < C.length; i++) if(Math.abs(mcWrap(th - C[i].a)) < C[i].h) return true; return false; }
 function mcGravAt(r, th){
   const M = MCAVE;
-  if(r < M.shellTop || (th != null && r < M.shellTop + 420 && mcOverCrack(th)) || M.layers[mcLayerOf(r)].low) return GRAV*0.7;
+  if(r < M.shellTop || (th != null && r < M.furnTop && mcOverCrack(th)) || M.layers[mcLayerOf(r)].low) return GRAV*0.7;
   return GRAV;
 }
 // THE FURNACE (the owner: "the lowest ones an effect like the incinerator"): the deepest cave's floor flares as The Incinerator's does -- 70
@@ -3358,8 +3461,10 @@ function mcGapHop(f, inp, R){
     if(level(x1)) return;   // floor ahead, at its own level
     if(R && !R.up && standAt(x1, feet + 20) && Math.abs(R.x - f.x) < 220) return;   // the hole it is going down: in
     if(level(f.x + dir*300) || level(f.x + dir*380)) inp.jump = true;
-  } else if(f.jumps > 0 && f.vy > 1 && !f._jp && !standAt(f.x, feet + 20)) inp.jump = true;
+  } else if(f.jumps > 0 && f.vy > 1 && !f._jp && (R && !R.up && Math.abs(R.x - f.x) < 220 ? !standAt(f.x, feet + 20) : !mcFloorNear(f.x, feet, 60))) inp.jump = true;   // (its other jump: over nothing near its own level -- a hole's steps far under it were 'something' and it dropped back down the hole it had just climbed, 4 climbs in 6 at 10 a side never out; not the hole a route down is going for)
 }
+// Floor under x near the feet (a top from just over them to d px under them, in the open frame): mcGapHop's "landing at its own level".
+function mcFloorNear(x, feet, d){ for(const p of platRects()) if(!p.rot && x > p.x && x < p.x + p.w && p.y >= feet - 4 && p.y <= feet + d) return true; return false; }
 // A rock on the floor just ahead (the columns' rock: its top 2-130 px over the feet): hopped, as brainWalk hops one (navAround's {jump}).
 // Not a step of the tunnels' slopes: walked up.
 function mcRockHop(f, inp, dir){
@@ -3471,6 +3576,25 @@ function mcWindow(phi, rho, E, far){
   }
   return out;
 }
+// ...and the frame's ZONES (the layers' springs, ice, updrafts, belts and water: mcGen's zsegs), the same arc, as boxes in the chart that
+// applyZone reads as any map's (worldZones, in the fighter step; dir along the chart's x, as the zone's own turn). Outside a frame there
+// are none (the disc draws its own: mcDrawZones).
+function mcZoneWindow(phi, rho, E, far){
+  const M = MCAVE, out = M.zwin, Z = M.zsegs;
+  out.length = 0;
+  if(!Z || !Z.length) return out;
+  const half = Math.min(Math.PI, (((E && E.controller === 'ai') ? 3000 : 900) + (far || 0))/rho);
+  for(const z of Z){
+    const a = mcWrap(z.a0 - phi), span = z.a1 - z.a0;
+    if(half < Math.PI && !(a <= half && a + span >= -half) && !(a + span - MC_TAU >= -half)) continue;
+    const y = M.cy - z.r1, h = z.r1 - z.r0, base = { y:y, h:h, type:z.type, dir:z.dir || 1, strength:z.strength || 1, mcId:-z.id };
+    if(a + span <= Math.PI){ out.push(Object.assign({ x:M.cx + rho*a, w:rho*span }, base)); continue; }
+    const s1 = Math.PI - a;
+    out.push(Object.assign({ x:M.cx + rho*a, w:rho*s1 }, base));
+    out.push(Object.assign({ x:M.cx - rho*Math.PI, w:rho*(span - s1) }, base));
+  }
+  return out;
+}
 // A real point d px further out from the middle (a spawn pad's place over its floor).
 function mcLift(x, y, d){ const M = MCAVE, r = mcRad(x, y) || 1, k = (r + d)/r; return { x:M.cx + (x - M.cx)*k, y:M.cy + (y - M.cy)*k }; }
 // The host's camera here: it eases after its target as everywhere (0.12), and the view turns to keep the point it looks at upright, so the
@@ -3573,6 +3697,11 @@ const MC_LOOK = {
   galleries: { back:'#2a2f3b', rock:'#6c6f77', plank:'#c4d8e6' },
   columns:   { back:'#2f2925', rock:'#7a6c5d', plank:'#d2c7b6' },
   tunnels:   { back:'#222429', rock:'#5a5d66', plank:'#c9ccd3' },
+  springs:   { back:'#2c2836', rock:'#6c6680', plank:'#e9b8d6' },
+  ice:       { back:'#1e2a36', rock:'#8db3cc', plank:'#dcf2ff' },
+  updrafts:  { back:'#222b2f', rock:'#687a80', plank:'#d0e6ea' },
+  mines:     { back:'#2a231d', rock:'#6b5946', plank:'#c79a5f' },
+  flooded:   { back:'#1a2632', rock:'#4e6372', plank:'#a8885a' },
   furnace:   { back:'#341d17', rock:'#523b35', plank:'#d39a74', hot:'#f0521f88', heat:'rgba(255,140,60,0.10)' },
 };
 function mcLookOf(p){ const Ls = MCAVE.layers, Y = Ls && Ls[p.L | 0]; return (Y && MC_LOOK[Y.kind]) || MC_LOOK.surface; }
@@ -3595,9 +3724,10 @@ function mcDrawDisc(){
     c.fillStyle = p.oneway ? lk.plank : (p.r1 >= M.Rout ? '#9a9da5' : lk.rock); c.fill();
     c.lineWidth = p.oneway ? 2 : 3; c.stroke();
   }
+  mcDrawZones(V);
   if(M.layers && M.cracks){ c.fillStyle = MC_LOOK.furnace.heat;   // the core's heat rising through each crack, to the furnace's roof (mcGravAt: the Moon's low gravity in it)
-    for(const k of M.cracks){ if(!mcInView(k.a - k.h, k.a + k.h, M.shellTop, M.shellTop + 420, V)) continue;
-      c.beginPath(); c.arc(cx, cy, M.shellTop + 420, k.a - k.h - Q, k.a + k.h - Q, false); c.arc(cx, cy, M.shellBot, k.a + k.h - Q, k.a - k.h - Q, true); c.closePath(); c.fill(); } }
+    for(const k of M.cracks){ if(!mcInView(k.a - k.h, k.a + k.h, M.shellTop, M.furnTop, V)) continue;
+      c.beginPath(); c.arc(cx, cy, M.furnTop, k.a - k.h - Q, k.a + k.h - Q, false); c.arc(cx, cy, M.shellBot, k.a + k.h - Q, k.a - k.h - Q, true); c.closePath(); c.fill(); } }
   if(M.hot && mcHotOn()){ c.fillStyle = MC_LOOK.furnace.hot;   // the furnace's floor alight
     for(const h of M.hot){ if(!mcInView(h[0], h[1], M.shellTop - 2, M.shellTop + 8, V)) continue;
       c.beginPath(); c.arc(cx, cy, M.shellTop + 8, h[0] - Q, h[1] - Q, false); c.arc(cx, cy, M.shellTop - 2, h[1] - Q, h[0] - Q, true); c.closePath(); c.fill(); } }
@@ -3616,6 +3746,32 @@ function mcDrawDisc(){
     c.restore();
   }
   c.restore();
+}
+// THE ZONES on the disc (the layers' mcGen zsegs): each its own look, moving where it moves you -- a spring's pad, glossy ice, a column of
+// rising air with streaks going up, a belt with its chevrons running, water with a rippling top. No words; drawn in the world, round the
+// middle as the pieces are.
+function mcDrawZones(V){
+  const M = MCAVE, Z = M.zsegs; if(!Z || !Z.length) return;
+  const c = ctx, cx = M.cx, cy = M.cy, Q = Math.PI/2, t = hazardT;
+  const band = (r0, r1, a0, a1) => { c.beginPath(); c.arc(cx, cy, r1, a0 - Q, a1 - Q, false); c.arc(cx, cy, r0, a1 - Q, a0 - Q, true); c.closePath(); };
+  for(const z of Z){
+    if(!mcInView(z.a0, z.a1, z.r0, z.r1, V)) continue;
+    if(z.type === 'bounce'){ c.fillStyle = '#e84b9c'; band(z.r0, z.r0 + 10, z.a0, z.a1); c.fill(); c.fillStyle = 'rgba(232,75,156,0.18)'; band(z.r0 + 10, z.r1 + 40, z.a0, z.a1); c.fill();
+      const am = (z.a0 + z.a1)/2, k = (t % 40)/40, rr = z.r0 + 18 + k*50; c.strokeStyle = 'rgba(255,190,225,' + (0.8*(1 - k)).toFixed(3) + ')'; c.lineWidth = 3;
+      const w = 18/rr; c.beginPath(); c.moveTo(cx + (rr - 8)*Math.sin(am - w), cy - (rr - 8)*Math.cos(am - w)); c.lineTo(cx + rr*Math.sin(am), cy - rr*Math.cos(am)); c.lineTo(cx + (rr - 8)*Math.sin(am + w), cy - (rr - 8)*Math.cos(am + w)); c.stroke(); }
+    else if(z.type === 'ice'){ c.fillStyle = 'rgba(214,240,255,0.55)'; band(z.r0, z.r0 + 6, z.a0, z.a1); c.fill(); c.fillStyle = 'rgba(191,232,255,0.12)'; band(z.r0 + 6, z.r1, z.a0, z.a1); c.fill(); }
+    else if(z.type === 'updraft'){ c.fillStyle = 'rgba(200,236,245,0.13)'; band(z.r0, z.r1, z.a0, z.a1); c.fill();
+      c.strokeStyle = 'rgba(225,248,255,0.45)'; c.lineWidth = 2; const am = (z.a0 + z.a1)/2, hw = (z.a1 - z.a0)/2;
+      for(let i = 0; i < 4; i++){ const q = ((t*0.02 + i/4) % 1), rr = z.r0 + q*(z.r1 - z.r0), aa = am + hw*0.6*Math.sin(i*2.1 + rr*0.01);
+        c.beginPath(); c.moveTo(cx + rr*Math.sin(aa), cy - rr*Math.cos(aa)); c.lineTo(cx + (rr + 26)*Math.sin(aa), cy - (rr + 26)*Math.cos(aa)); c.stroke(); } }
+    else if(z.type === 'belt'){ c.fillStyle = '#3a3f46'; band(z.r0, z.r0 + 12, z.a0, z.a1); c.fill();
+      c.strokeStyle = '#f2c84b'; c.lineWidth = 2; const rr = z.r0 + 6, sp = 28/rr, off = ((t*2.2*(z.dir || 1)/rr) % sp + sp) % sp;
+      for(let a = z.a0 + off; a < z.a1 - 4/rr; a += sp){ const d = (z.dir || 1)*5/rr; c.beginPath(); c.moveTo(cx + (rr + 4)*Math.sin(a - d), cy - (rr + 4)*Math.cos(a - d)); c.lineTo(cx + rr*Math.sin(a + d), cy - rr*Math.cos(a + d)); c.lineTo(cx + (rr - 4)*Math.sin(a - d), cy - (rr - 4)*Math.cos(a - d)); c.stroke(); } }
+    else if(z.type === 'water'){ c.fillStyle = 'rgba(70,140,210,0.42)'; band(z.r0, z.r1, z.a0, z.a1); c.fill();
+      c.strokeStyle = 'rgba(190,225,255,0.7)'; c.lineWidth = 2; c.beginPath(); const n = Math.max(2, Math.ceil((z.a1 - z.a0)*z.r1/14));
+      for(let i = 0; i <= n; i++){ const a = z.a0 + (z.a1 - z.a0)*i/n, rr = z.r1 + 2*Math.sin(i*0.9 + t*0.08); if(i) c.lineTo(cx + rr*Math.sin(a), cy - rr*Math.cos(a)); else c.moveTo(cx + rr*Math.sin(a), cy - rr*Math.cos(a)); }
+      c.stroke(); }
+  }
 }
 // For pictures while it is built: your fighter to a clock position, on the surface, on a cave's floor (1 the first cave ... 'cave' the
 // shell), in the console: mcDevPut(3), mcDevPut(6.5, 'cave'), mcDevPut(9, 2).
@@ -65926,10 +66082,10 @@ function aiThink(f){
     if(focus && (!f.aiTarget || f.aiTarget.dead || f.aiTimer<=0 || wentHome())){ f.aiTarget=focus; f.aiTimer=brainR(L.target); }
     if(!f.aiTarget||f.aiTarget.dead||f.aiTarget.team===f.team||f.aiTimer<=0||wentHome()||f.aiTarget._isBoss){
       let best=1e9; const cur=f.aiTarget; f.aiTarget=focus||pickFrom[0];
-      if(!focus) for(const t of pickFrom){ const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;f.aiTarget=t;} }
+      if(!focus) for(const t of pickFrom){ const d=(MCAVE && MCAVE.on) ? mcPathCost(f, t) : Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;f.aiTarget=t;} }   // (MOON CAVES: nearest by the way there, mcPathCost)
       // MOON CAVES: the foe it is after stays its foe until another is clearly nearer. Foes come from both ways round the ring, and the nearest
       // changed every second or two as they moved: at 10 a side a CPU turned round each time, and three spent a whole minute far from everyone.
-      if(MCAVE && MCAVE.on && !focus && cur && cur!==f.aiTarget && !cur.dead && cur.team!==f.team && pickFrom.includes(cur) && best > 0.7*Math.hypot(cur.x-f.x,cur.y-f.y) - 150) f.aiTarget=cur;
+      if(MCAVE && MCAVE.on && !focus && cur && cur!==f.aiTarget && !cur.dead && cur.team!==f.team && pickFrom.includes(cur) && best > 0.7*mcPathCost(f, cur) - 150) f.aiTarget=cur;
       f.aiTimer=brainR(L.target);
     }
   }
@@ -65969,7 +66125,7 @@ function aiThink(f){
     else if(now - B.progT > 240){
       B.progD = null; B.progT = now; B.detour = { dir: (mcR ? mcR.x - f.x : dx) < 0 ? 1 : -1, until: now + 70 };
       const other = pickFrom.filter(o => o !== ts);
-      if(other.length){ f.aiTarget = other[Math.floor(Math.random()*other.length)]; f.aiTimer = 300; }
+      if(other.length){ f.aiTarget = (MCAVE && MCAVE.on) ? mcCrowd(f, other) : other[Math.floor(Math.random()*other.length)]; f.aiTimer = 300; }   // (MOON CAVES: the biggest fight on the map, mcCrowd)
     }
   } else B.progD = null;
   if(B.detour && now < B.detour.until){
@@ -79830,7 +79986,8 @@ function netPredRun(a, pr, to, team){
     const vx0 = Math.abs(P.vx), mv = P.g ? k[0] : k[1];
     if(L){ P.vx -= mv; P.face = -1; }
     if(R){ P.vx += mv; P.face = 1; }
-    if(!L && !R && P.g) P.vx *= FRICTION;
+    if(!L && !R && P.g) P.vx *= (P.ice > 0 ? 0.99 : FRICTION);
+    if(P.ice > 0) P.ice--;
     let cap = P.g ? k[2] : k[3];
     if(!P.g && k[2] > k[3] && vx0 > cap) cap = Math.min(runEaseCap(cap, k[2], P.at + 1), vx0);
     P.vx = Math.max(-cap, Math.min(cap, P.vx));
@@ -79881,6 +80038,15 @@ function netPredRun(a, pr, to, team){
         P.y = p.y - P.r;
         if(p.bouncy){ P.vy = -14; P.j = 2; } else { P.vy = 0; P.g = true; P.j = 2; }
       }
+    }
+    if(MCAVE && MCAVE.on && worldZones.length) for(const z of worldZones){   // MOON CAVES: the layers' zones (applyZone's, the parts that move you), in the frame's chart
+      if(!(P.x >= z.x && P.x <= z.x + z.w && P.y + P.r >= z.y && P.y <= z.y + z.h)) continue;
+      const s = z.strength || 1;
+      if(z.type === 'ice'){ if(P.g) P.vx *= 1 - 0.02*s; P.ice = 6; }
+      else if(z.type === 'bounce'){ const top = P.vy > 0 && P.y - P.vy + P.r < z.y; if(top || P.g){ if(top) P.y = z.y - P.r; P.vy = -BOUNCE_VY*Math.sqrt(s); P.g = false; P.j = 2; } }
+      else if(z.type === 'updraft'){ if(!D){ P.vy = Math.max(P.vy - 1.35*s, -9.5*s); if(P.vy < 0) P.g = false; } }
+      else if(z.type === 'belt'){ if(P.g) P.x += (z.dir || 1)*2.2*s; }
+      else if(z.type === 'water'){ P.vx *= 1 - 0.13*s; P.vy *= 1 - 0.05*s; }
     }
     if(clLim && mt && !P.g && P.ws && P.wt === g && (P.ws > 0 ? R : L) && P.vy > 0 && P.clT < clLim){ P.vy = Math.min(P.vy, 0.7); P.clT++; }   // the cling (mtCling)
     if(P.g){ P.ff = false; P.at = 0; P.used = []; P.clT = 0; } else P.at++;
