@@ -2905,12 +2905,45 @@ function mcFallArc(p, T){
 // about the spot (the design's mcUpright; a no-op off this map). Called inside a save/restore.
 function mcUpright(x, y){ if(MCAVE && MCAVE.on){ ctx.translate(x, y); ctx.rotate(mcTh(x, y)); ctx.translate(-x, -y); } }
 // A finisher's record is drawn in the chart it runs in (mcAnchor): its owner's frame opened in it, and the canvas set so that chart lands
-// on the world at the owner -- turned by the owner's angle, exact there and a few px off far round the curve, as the chart is.
+// on the world at THE PIN -- exact there, turned by the angle there, and off round the curve the further from it (as the chart is). The
+// pin is, of the place the record was made (its chart's middle) and its owner now, the point between them nearest the view's middle: the
+// two are one while the owner stands where it made it, and what it left behind stays where it was when the owner goes. Pinned at the
+// owner always (the owner's screenshot, 2026-11-01: Sidewalky's crack hanging in a cave's air, tilted), a crack, a fuse, a belt, a patch
+// went wherever the owner went, laid along its tangent there. Long art on the floor bends each point onto the curve (mcBendPt) or pins
+// each piece where it is (mcRepin): a 400 px crack drawn straight lifted 45-75 px off the floor at its far end.
+const MC_PIV = { on:false, qx:0, qy:0, px:0, py:0, th:0, c:1, s:0 };
 function mcFinxDraw(o, f, fn, layer){
   if(!(MCAVE && MCAVE.on && o._mcRho)){ fn(o, f, layer); return; }
-  const rx = f.x, ry = f.y;
+  const M = MCAVE, vx = camX + W/2, vy = camY + H/2, B = MC_PIV;
   mcEnter(f, o);
-  try { ctx.translate(rx, ry); ctx.rotate(mcTh(rx, ry)); ctx.translate(-f.x, -f.y); fn(o, f, layer); } finally { mcExit(); }
+  try {
+    const ax = M.cx, ay = M.cy - MC_FR.rho, ux = f.x - ax, uy = f.y - ay, uu = ux*ux + uy*uy;
+    mcToChart(vx, vy, MC_PT);
+    const t = uu > 1 ? clamp(((MC_PT.x - ax)*ux + (MC_PT.y - ay)*uy)/uu, 0, 1) : 1, qx = ax + t*ux, qy = ay + t*uy;
+    mcFromChart(qx, qy, MC_PT);
+    const px = MC_PT.x, py = MC_PT.y, th = mcTh(px, py);
+    ctx.translate(px, py); ctx.rotate(th); ctx.translate(-qx, -qy);
+    B.on = true; B.qx = qx; B.qy = qy; B.px = px; B.py = py; B.th = th; B.c = Math.cos(th); B.s = Math.sin(th);
+    fn(o, f, layer);
+  } finally { B.on = false; mcExit(); }
+}
+// A point of a record's art (its chart's) moved so that the pinned canvas draws it at its true place on the curve; off this map, or
+// outside a record's drawing, the point itself.
+function mcBendPt(x, y){
+  const B = MC_PIV;
+  if(!B.on) return { x, y };
+  mcFromChart(x, y, MC_PT);
+  const dx = MC_PT.x - B.px, dy = MC_PT.y - B.py;
+  return { x:B.qx + B.c*dx + B.s*dy, y:B.qy - B.s*dx + B.c*dy };
+}
+function mcBendPts(P){ if(MC_PIV.on) for(const p of P){ const b = mcBendPt(p[0], p[1]); p[0] = b.x; p[1] = b.y; } return P; }   // (P's own points: a fresh list)
+// ...and a piece of it drawn round (x, y), pinned there instead: at its true place, turned by its own angle. Inside a save/restore.
+function mcRepin(x, y){
+  const B = MC_PIV;
+  if(!B.on) return;
+  const b = mcBendPt(x, y);
+  mcFromChart(x, y, MC_PT);
+  ctx.translate(b.x, b.y); ctx.rotate(mcWrap(mcTh(MC_PT.x, MC_PT.y) - B.th)); ctx.translate(-x, -y);
 }
 // A beam is an arc round the disc (mcFxTurn's {r, a0, a1}): its band and its bright line, as the straight one is drawn.
 function mcDrawBeam(bm, a){
@@ -52738,7 +52771,7 @@ function fxFuseStep(o, f){
   if(hazardT - o.et >= F.end) o.dead = true;   // 'end': the last smoke
 }
 function fxDrawFuse(o, f, layer){
-  const F = FX5.fuse, T = o.tr || [], P = fx5FusePts(T);
+  const F = FX5.fuse, T = o.tr || [], P = mcBendPts(fx5FusePts(T));   // (MOON CAVES: each point on the floor's curve)
   if(!P.length) return;
   const fr = o.ph === 'burn' ? fx5FuseFront(P, o.fd || 0) : (o.ph === 'end' ? { x:P[0][0], y:P[0][1], i:0 } : null);
   if(layer === 'under'){   // the powder line on the floor: grey where it waits, charred black where the flame has been
@@ -53196,6 +53229,7 @@ function fxDrawCrack(o, f, layer){
   if(open <= 0) return;
   const n = Math.max(1, Math.ceil(open/16)), pts = [];
   for(let i=0;i<=n;i++){ const s = Math.min(open, i*16); pts.push([o.x0 + o.face*s, o.y - 2 - (i%2 ? 4 : 0) - ((i*5) % 3)]); }
+  mcBendPts(pts);   // (MOON CAVES: each point on the floor's curve)
   const w = o.ph === 'crack' ? clamp((hazardT - o.zt + 1)/C.grow, 0, 1) : 1;   // GROW-IN: a hairline that widens and spiders out until it is fully open
   ctx.globalAlpha = fade*(closing ? 0.45 : 1)*(0.55 + 0.45*w); ctx.lineJoin = 'round';
   ctx.strokeStyle = '#c8c8c8'; ctx.lineWidth = 2 + 5*w; ctx.beginPath(); pts.forEach(function(p, i){ if(i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); }); ctx.stroke();   // the broken edge
@@ -53203,7 +53237,7 @@ function fxDrawCrack(o, f, layer){
   ctx.lineWidth = 0.5 + 1.5*w;
   for(let i=1;i<pts.length;i+=3){ const p = pts[i], s = i%2 ? 1 : -1; ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(p[0] + o.face*6*w, p[1] - 5*s*w); ctx.lineTo(p[0] + o.face*10*w, p[1] - 3*s*w); ctx.stroke(); }   // little branches
   ctx.lineJoin = 'miter';
-  if(o.ph === 'crack' && open < o.len){ const tx = o.x0 + o.face*open; ctx.globalAlpha = 1; fxStar(tx, o.y - 4, 7, '#ffffff'); }   // the tip, racing out
+  if(o.ph === 'crack' && open < o.len){ const tp = mcBendPt(o.x0 + o.face*open, o.y - 4); ctx.globalAlpha = 1; fxStar(tp.x, tp.y, 7, '#ffffff'); }   // the tip, racing out
 }
 Object.assign(FINX_STEP, { crack:fxCrackStep });
 Object.assign(FINX_DRAW_UNDER, { crack:fxDrawCrack });
@@ -53428,20 +53462,29 @@ function fxDrawPress(o, f, layer){
   if(layer === 'under'){   // the belt, unrolling out ahead of him, its rollers, and arrows running back toward him while it drags
     const L = o.len*k, xa = o.x0, xb = o.x0 + dir*L;
     if(L <= 2) return;
-    ctx.globalAlpha = 1; ctx.fillStyle = '#3a4048'; ctx.beginPath(); ctx.rect(Math.min(xa, xb), y - 10, Math.abs(xb - xa), 10); ctx.fill(); fxEdge(1.5);
-    ctx.fillStyle = '#8a96a0'; for(let s=8;s<L - 4;s+=28){ ctx.beginPath(); ctx.arc(xa + dir*s, y - 5, 3.5, 0, 7); ctx.fill(); }
-    ctx.fillStyle = '#5a646e'; ctx.beginPath(); ctx.arc(xb, y - 5, 6, 0, 7); ctx.fill(); fxEdge(1.2);   // the end drum
+    ctx.globalAlpha = 1; ctx.fillStyle = '#3a4048'; ctx.beginPath();
+    if(MC_PIV.on){   // (MOON CAVES: the belt's edges along the floor's curve)
+      const n = Math.max(1, Math.ceil(L/24)), top = [], bot = [];
+      for(let i = 0; i <= n; i++){ const x = xa + dir*L*i/n; top.push([x, y - 10]); bot.push([x, y]); }
+      mcBendPts(top); mcBendPts(bot);
+      ctx.moveTo(top[0][0], top[0][1]); for(let i = 1; i <= n; i++) ctx.lineTo(top[i][0], top[i][1]); for(let i = n; i >= 0; i--) ctx.lineTo(bot[i][0], bot[i][1]); ctx.closePath();
+    } else ctx.rect(Math.min(xa, xb), y - 10, Math.abs(xb - xa), 10);
+    ctx.fill(); fxEdge(1.5);
+    ctx.fillStyle = '#8a96a0'; for(let s=8;s<L - 4;s+=28){ const c = mcBendPt(xa + dir*s, y - 5); ctx.beginPath(); ctx.arc(c.x, c.y, 3.5, 0, 7); ctx.fill(); }
+    { const c = mcBendPt(xb, y - 5); ctx.fillStyle = '#5a646e'; ctx.beginPath(); ctx.arc(c.x, c.y, 6, 0, 7); ctx.fill(); fxEdge(1.2); }   // the end drum
     if(o.ph === 'run'){ const off = (hazardT*P.spd) % 24; ctx.strokeStyle = '#f2c84b'; ctx.lineWidth = 2;
-      for(let s=24 - off;s<L - 8;s+=24){ const x = xa + dir*s; ctx.beginPath(); ctx.moveTo(x + dir*4, y - 8.5); ctx.lineTo(x - dir*2, y - 5); ctx.lineTo(x + dir*4, y - 1.5); ctx.stroke(); } }
+      for(let s=24 - off;s<L - 8;s+=24){ const x = xa + dir*s; ctx.save(); mcRepin(x, y - 5); ctx.beginPath(); ctx.moveTo(x + dir*4, y - 8.5); ctx.lineTo(x - dir*2, y - 5); ctx.lineTo(x + dir*4, y - 1.5); ctx.stroke(); ctx.restore(); } }
     return;
   }
   const px = fx6PressX(o), w = P.pw, yb = fx6PressPlate(o), hy = o.y - P.ph - 58;   // the press: a housing up top, a piston, the plate
+  ctx.save(); mcRepin(px, o.y);   // (MOON CAVES: upright over its own spot on the belt)
   ctx.globalAlpha = k; ctx.fillStyle = '#5a646e'; ctx.beginPath(); ctx.rect(px - w*0.45, hy - 14, w*0.9, 14); ctx.fill(); fxEdge(1.5);
   ctx.fillStyle = '#c0c8d0'; ctx.beginPath(); ctx.rect(px - 4, hy, 8, Math.max(0, yb - 22 - hy)); ctx.fill(); fxEdge(1.2);
   ctx.fillStyle = '#8a96a0'; ctx.beginPath(); ctx.rect(px - w/2, yb - 22, w, 22); ctx.fill(); fxEdge(2);
   ctx.save(); ctx.beginPath(); ctx.rect(px - w/2, yb - 7, w, 7); ctx.clip(); ctx.fillStyle = '#f2c84b'; ctx.fillRect(px - w/2, yb - 7, w, 7);
   ctx.fillStyle = '#1c1c1c'; for(let i=-3;i<4;i++){ ctx.beginPath(); ctx.moveTo(px + i*12, yb); ctx.lineTo(px + i*12 + 6, yb); ctx.lineTo(px + i*12 + 13, yb - 7); ctx.lineTo(px + i*12 + 7, yb - 7); ctx.closePath(); ctx.fill(); } ctx.restore();   // hazard stripes on its face
   if(yb >= o.y - 1){ ctx.globalAlpha = 1; for(const s of [-1, 1]){ ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px + s*(w/2 + 3), o.y - 4); ctx.lineTo(px + s*(w/2 + 14), o.y - 10); ctx.stroke(); } }   // the bang
+  ctx.restore();
 }
 Object.assign(FINX_STEP, { press:fxPressStep });
 Object.assign(FINX_DRAW_UNDER, { press:fxDrawPress });
@@ -54240,9 +54283,10 @@ function fxDrawDisco(o, f, layer){
     }
     for(const tl of tz){   // each tile's zap: bolts crackling up off it
       const ta = hazardT - tl[2]; if(ta < D.glow || ta >= D.glow + 10) continue;
-      const q = (ta - D.glow)/10; ctx.globalAlpha = 1 - q; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5;
+      const q = (ta - D.glow)/10; ctx.save(); mcRepin(tl[0], tl[1]); ctx.globalAlpha = 1 - q; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5;   // (MOON CAVES: at its tile)
       for(let j=0;j<4;j++){ const x = tl[0] - D.w/2 + D.w*(j + 0.5)/4; fx6Zig(x, tl[1] - 2, x + ((j*5) % 3 - 1)*6, tl[1] - 46 - (j%2)*14, 4, 5, (hazardT >> 1) + j); }
       ctx.strokeStyle = '#ffe14b'; ctx.lineWidth = 1.5; for(let j=0;j<3;j++){ const x = tl[0] - D.w/3 + j*D.w/3; fx6Zig(x, tl[1] - 2, x, tl[1] - 34, 3, 4, (hazardT >> 1) + j + 7); }
+      ctx.restore();
     }
     return;
   }
@@ -54252,10 +54296,12 @@ function fxDrawDisco(o, f, layer){
     const k = clamp(ta/D.glow, 0, 1), fade = ta < D.glow + D.live ? 1 : clamp(1 - (ta - D.glow - D.live)/D.end, 0, 1);
     const pulse = ta < D.glow ? 0.55 + 0.45*Math.abs(Math.sin(ta*(0.1 + 0.25*k))) : 1;
     const gw = D.w*clamp(ta/FIN_GROW, 0.1, 1), x0 = tl[0] - gw/2, y = tl[1];   // GROW-IN: the tile spreads out from its middle, then brightens
+    ctx.save(); mcRepin(tl[0], tl[1]);   // (MOON CAVES: each tile where it is on the curve)
     ctx.globalAlpha = fade*(0.35 + 0.5*k)*pulse; ctx.fillStyle = col; ctx.beginPath(); ctx.rect(x0, y - 8, gw, 8); ctx.fill();
     ctx.globalAlpha = fade; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 1.5; ctx.strokeRect(x0, y - 8, gw, 8);
     ctx.beginPath(); for(let j=1;j<4;j++){ ctx.moveTo(x0 + gw*j/4, y - 8); ctx.lineTo(x0 + gw*j/4, y); } ctx.stroke();
     if(ta < D.glow){ ctx.globalAlpha = 0.25*k*pulse; ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x0, y - 8); ctx.lineTo(x0 + gw*0.14, y - 8 - 30*k); ctx.lineTo(x0 + gw*0.86, y - 8 - 30*k); ctx.lineTo(x0 + gw, y - 8); ctx.closePath(); ctx.fill(); }   // its light rising off it
+    ctx.restore();
   }
 }
 Object.assign(FINX_STEP, { disco:fxDiscoStep });
