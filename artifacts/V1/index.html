@@ -2594,10 +2594,11 @@ function mcFromChart(x, y, out){ const M = MCAVE, F = MC_FR, th = F.phi + (x - M
 // far point half a lap from E. Its face angles ride along: the wall-jump rule counts a face, not a piece (mcWallId).
 function mcPieceBoxes(seg, out){
   const M = MCAVE, rho = MC_FR.rho, a = mcWrap(seg.a0 - MC_FR.phi), span = seg.a1 - seg.a0, y = M.cy - seg.r1, h = seg.r1 - seg.r0, solid = !seg.oneway;
-  if(a + span <= Math.PI){ out.push({ x:M.cx + rho*a, y:y, w:rho*span, h:h, solid:solid, mcId:seg.id, mcA0:seg.a0, mcA1:seg.a1 }); return out; }
+  const ramp = seg.kind === 'slope';   // (the tunnels' slopes: a step walked up, as Capture the Flag's -- the fighter step's ramp step-up)
+  if(a + span <= Math.PI){ out.push({ x:M.cx + rho*a, y:y, w:rho*span, h:h, solid:solid, ramp:ramp, mcId:seg.id, mcA0:seg.a0, mcA1:seg.a1 }); return out; }
   const s1 = Math.PI - a;   // up to the far point, then the rest from the other side
-  out.push({ x:M.cx + rho*a, y:y, w:rho*s1, h:h, solid:solid, mcId:seg.id, mcA0:seg.a0, mcA1:NaN });
-  out.push({ x:M.cx - rho*Math.PI, y:y, w:rho*(span - s1), h:h, solid:solid, mcId:seg.id, mcA0:NaN, mcA1:seg.a1 });
+  out.push({ x:M.cx + rho*a, y:y, w:rho*s1, h:h, solid:solid, ramp:ramp, mcId:seg.id, mcA0:seg.a0, mcA1:NaN });
+  out.push({ x:M.cx - rho*Math.PI, y:y, w:rho*(span - s1), h:h, solid:solid, ramp:ramp, mcId:seg.id, mcA0:NaN, mcA1:seg.a1 });
   return out;
 }
 // A wall's id on this map: its side and its face's angle (a face's place in a chart moves as the chart does). step() and the guest's
@@ -2835,13 +2836,28 @@ function mcRouteSteer(f, inp, R, sp){
   }
   const d = aim - (f.onground ? f.x : f.x + (f.vx || 0)*10);
   if(Math.abs(d) > 6){ inp.left = d < 0; inp.right = d > 0; if(f.onground) mcRockHop(f, inp, d < 0 ? -1 : 1); }
-  if(f.onground){ if(gap <= CLIMB_REACH && feet < s.r && (!top || under)) inp.jump = true; }   // (in the air the aim is the step itself)
+  if(f.onground){ if(gap <= CLIMB_REACH && feet < s.r && (!top || under) && !mcRoofOver(f, s.r - feet + 40)) inp.jump = true; }   // (in the air the aim is the step itself; under a tunnel's roof it walks out first)
   // In the air, the other jump and the up-special go for the step only when it is in reach to the side (the layers: hopping the columns'
   // rock on the way to a hole across the cave, every hop became a double jump at the roof and an up-special on the way down -- half the run's
   // pace through the cave, the CPU probe's 10 a side)
   else if(gap > CLIMB_REACH + 60){}
   else if(feet < s.r - 4 && climbJump(f)) inp.jump = true;
   else if(feet < s.r - 60 && f.vy > 0 && f.jumps <= 0 && f.spCd <= 0 && sp !== 'chair'){ inp.special = true; inp.up = true; }
+}
+// A solid piece over the body's head, less than h px over its feet: a roof a jump would bonk (the tunnels': mcRouteSteer waits to be out from
+// under it before jumping for a shaft's first step).
+function mcRoofOver(f, h){
+  const head = f.y - f.r, feet = f.y + f.r;
+  for(const p of platRects()){ if(!p.solid || p.x + p.w <= f.x - f.r || p.x >= f.x + f.r) continue; const b = p.y + (p.h || 16); if(b <= head + 1 && b > feet - h) return true; }
+  return false;
+}
+// WALKING DOWN THE TUNNELS' SLOPES (ctfRampSnap's, on the moon): a fighter just off a step and a hair above the next one down (a step is 22
+// px, a fall of several frames at a run) stays on it -- the highest top under its middle within 30 px of its feet, in its own frame.
+function mcRampSnap(f){
+  const feet = f.y + f.r; let best = null;
+  for(const p of platRects()){ if(!p.solid || p.rot || f.x <= p.x || f.x >= p.x + p.w || p.y < feet - 2 || p.y > feet + 30) continue; if(best === null || p.y < best) best = p.y; }
+  if(best === null) return;
+  f.y = best - f.r; f.vy = 0; f.onground = true; f.jumps = 2; f._usedAirSpecial = false; f._rampT = 4;
 }
 // A drop is only over something: under the shell's cracks there is nothing but the core (the pit sense; standAt reads the charted pieces).
 function mcDropOk(f, x){ return !(MCAVE && MCAVE.on) || standAt(x, f.y + f.r + 20); }
@@ -3060,11 +3076,13 @@ function worldToScreen(x, y, z){
 //   layers  (the owner, 2026-10-31: "make the platforming different across the layers of the moon; the lower layers should have normal
 //           gravity, and the lowest ones an effect like the incinerator. by different, i mean different apart from these stage
 //           conditions") the surface and each cave are a layer (mcLayerOf), each with its own pieces (G.kinds, laid on the arcs the passages
-//           leave free) and its own look (MC_LOOK): the surface its hop-tops; the GALLERIES (the first cave, with two caves or more)
-//           one-way ledges in tiers; the COLUMNS (the next, with three or more) no ledges, rock to hop up from the floor and rock hanging
-//           from the roof; the TUNNELS (the next, with four) the roof down to 160 px between the passages; and always the deepest cave,
-//           the FURNACE: its floor flares as The Incinerator's (mcHotFloor), with low stepping stones over it. The upper half of the
-//           layers has the Moon's low gravity, the lower half normal (mcGravAt). Every climb on a route is still the steps under a hole.
+//           leave free) and its own look (MC_LOOK): the surface its hop-tops; the GALLERIES (the first cave, with three caves or more)
+//           one-way ledges in tiers; the COLUMNS (the next, with four) no ledges, rock to hop up from the floor and rock hanging from the
+//           roof; the TUNNELS (the owner, 2026-11-01: "tunnels should have layers of tunnels. as you go deeper, the concept of caves should
+//           become tunnels, with slopes as well" -- "use the slopes from ctf"; always the cave over the furnace, from two caves) two
+//           tunnels one over the other between the shafts, the upper one's floor over hills of Capture the Flag's slopes; and always the
+//           deepest cave, the FURNACE: its floor flares as The Incinerator's (mcHotFloor), with low stepping stones over it. The upper half
+//           of the layers has the Moon's low gravity, the lower half normal (mcGravAt). Every climb on a route is still the steps under a hole.
 // Fighters only until M3 (no items, assists or Smash Balls: itemSpawnInterval). The view turns with your fighter (mcCamera), and every
 // fighter stands upright on its own part of the disc.
 const MC_GEN = { perFighter:620, rMin:1700, rMax:3400, crust:140, pitch:560, floor:140, cavesMax:4, innerMin:800, blast:1300, kill:200,
@@ -3072,16 +3090,24 @@ const MC_GEN = { perFighter:620, rMin:1700, rMax:3400, crust:140, pitch:560, flo
   // ...and under a hole into a cave of normal gravity (the layers): four, 112 apart -- one jump each (a jump rises 120 there; 140 took both,
   // so every climb was slower, and a CPU that missed a step had no jump left to save it: the CPU probe's falls into the core)
   stepsN:[[112, -191, -50], [224, 55, 186], [336, -191, -50], [448, -110, 11]],
+  // ...and into the tunnels a narrow shaft (stepReachT each way): each step 110 px across, in turn either side of the middle with 20 px
+  // over it, so the two tunnels run up to the steps -- the lower one's floor under them, the upper one's floor 6 px over the second
+  stepsT:[[112, -100, 10], [224, -10, 100], [336, -100, 10], [448, -55, 55]], stepReachT:100,
   ledgeUp:210, ledgeW:300, hopUp:[180, 260], hopW:220, crackW:260, cracks6At:16, strip:700, stripPast:400,
   padsFloor:[-290, -170, 170, 290], padsShell:[-200, 0, 200], padsHop:[-240, 0, 240], padHopUp:200, padHopW:160,
-  // THE LAYERS (mcGen): the caves' kinds from the top (the deepest is always the furnace); what each keeps clear, px past the reach of the
-  // steps under a hole above (col) and past the edge of a hole in its floor (hole); and its pieces (px; heights over the cave's floor)
-  // (crackClear: the furnace's stones keep that far from a crack's edge; hotRim: the floor that far from one does not burn; popRim: nor
-  // does it pop you up that far from one -- mcHotFloor)
+  // THE LAYERS (mcGen): the caves' kinds from the top (the deepest is always the furnace, the one over it always the tunnels: deeper is
+  // more tunnel -- one cave over the furnace the tunnels, two the galleries and the tunnels, three all three); what each keeps clear, px
+  // past the reach of the steps under a hole above (col) and past the edge of a hole in its floor (hole: the tunnels bridge theirs); and
+  // its pieces (px; heights over the cave's floor) (crackClear: the furnace's stones keep that far from a crack's edge; hotRim: the floor
+  // that far from one does not burn; popRim: nor does it pop you up that far from one -- mcHotFloor)
   caveKinds:['galleries', 'columns', 'tunnels'], crackClear:100, hotRim:20, popRim:220,
   kinds:{ galleries:{ col:140, hole:60, w:150, gap:130, lo:140, hi:280, top:330, topW:150 },
           columns:{ col:60, hole:60, w:90, gap:170, rockH:[70, 50], dripUp:250, dripW:120, holeDripUp:260, holeDripW:150 },
-          tunnels:{ col:150, hole:100, up:160, min:200 },
+          // (the tunnels: the lower one `low` px high under a divider `div` thick, the upper one over it up to the roof; the upper one's
+          // floor rises over a hill of `steps` CTF steps (sw wide, sh high: walked up, the ramp step-up), `edge` px in from the run's
+          // ends and `top` px across its top -- two hills in a run `two` px and longer, with a bump of steps on the lower one's floor
+          // between them, `bump` px across, from the bottom)
+          tunnels:{ col:0, hole:null, min:140, low:150, div:80, sw:40, sh:22, steps:3, edge:30, top:60, two:900, bump:[220, 120] },
           furnace:{ col:40, hole:60, w:130, gap:100, up:110 } } };
 function mcGen(N, k){
   const G = MC_GEN, TAU = MC_TAU;
@@ -3095,8 +3121,9 @@ function mcGen(N, k){
   // THE LAYERS (mcLayerOf): 0 the surface, c cave c -- each from the underside of its floor up to the underside of the floor above (rBot,
   // rTop) -- with its kind (caves 1..K-1 take G.caveKinds from the top, the deepest is always the furnace) and its gravity: the upper half
   // of the layers keeps the Moon's low gravity, the lower half is normal (mcGravAt)
-  const lowN = Math.max(1, Math.floor((K + 1)/2)), layers = [];
-  for(let L = 0; L <= K; L++) layers.push({ kind:L === 0 ? 'surface' : L === K ? 'furnace' : G.caveKinds[L - 1], low:L < lowN, rBot:tops[L] - thick(L), rTop:L === 0 ? 1e9 : tops[L - 1] - thick(L - 1) });
+  const lowN = Math.max(1, Math.floor((K + 1)/2)), layers = [], CK = G.caveKinds;
+  const ck = K - 1 >= 3 ? CK.slice(0, 3) : K - 1 === 2 ? [CK[0], CK[2]] : [CK[2]];   // (deeper is more tunnel: the cave over the furnace is the tunnels)
+  for(let L = 0; L <= K; L++) layers.push({ kind:L === 0 ? 'surface' : L === K ? 'furnace' : ck[L - 1], low:L < lowN, rBot:tops[L] - thick(L), rTop:L === 0 ? 1e9 : tops[L - 1] - thick(L - 1) });
   const WW = Math.ceil(TAU*Rb) + 1000, WH = 2*Rb + 800, cx = WW/2, cy = WH/2;   // every chart place stays inside the box: no clamp or side line fires
   const segs = [], holes = [];
   const put = (r0, r1, a0, a1, oneway, kind, L) => { if(a1 - a0 > 1e-6 && r1 - r0 > 0.5) segs.push({ id:segs.length + 1, r0, r1, a0, a1, oneway:!!oneway, kind, L:L | 0 }); };   // (L: its layer)
@@ -3144,7 +3171,7 @@ function mcGen(N, k){
   for(const h of holes){
     const low = tops[h.band + 1], sg = h.a < 0 ? -1 : 1;
     h.steps = [];
-    for(const st of (layers[h.band + 1].low ? G.steps : G.stepsN)){   // (the cave's own gravity: the layers)
+    for(const st of (layers[h.band + 1].kind === 'tunnels' ? G.stepsT : layers[h.band + 1].low ? G.steps : G.stepsN)){   // (the cave's own gravity: the layers; the tunnels' narrow shaft)
       const r1 = low + st[0], p0 = sg*st[1], p1 = sg*st[2], a0 = h.a + Math.min(p0, p1)/r1, a1 = h.a + Math.max(p0, p1)/r1;
       put(r1 - G.stepT, r1, a0, a1, true, h.lift ? 'lift' : 'step', h.band + 1);
       h.steps.push({ r:r1, a0, a1 });
@@ -3204,7 +3231,7 @@ function mcGen(N, k){
   };
   for(let c = 1; c <= K; c++){
     const Y = layers[c], Q = G.kinds[Y.kind], rf = tops[c], rc = Y.rTop, res = [];
-    for(const h of holes){ if(h.band === c - 1) res.push([h.a, (G.stepReach + Q.col)/rf]); else if(h.band === c) res.push([h.a, (G.holeW/2 + Q.hole)/rf]); }
+    for(const h of holes){ if(h.band === c - 1) res.push([h.a, ((Y.kind === 'tunnels' ? G.stepReachT : G.stepReach) + Q.col)/rf]); else if(h.band === c && Q.hole != null) res.push([h.a, (G.holeW/2 + Q.hole)/rf]); }   // (hole null: over them)
     for(const s of SIDES) res.push([s, stripHalf(rf) + 60/rf]);
     if(c === K) for(const a of cracks) res.push([a, crackH + G.crackClear/rf]);
     for(const m of mids) if(m.c === c) res.push([m.a, (G.ledgeW/2 + 40)/rf]);
@@ -3216,8 +3243,22 @@ function mcGen(N, k){
           if(q.k % 2){ const hw = Q.dripW/2/rc; put(rf + Q.dripUp, rc, q.a - hw, q.a + hw, false, 'drip', c); }
           else { const hw = Q.w/2/rf; put(rf, rf + Q.rockH[(q.k/2) % 2], q.a - hw, q.a + hw, false, 'rock', c); }
         }
-      } else if(Y.kind === 'tunnels'){   // the roof down low over the whole run: no room to jump
-        if((run[1] - run[0])*rf >= Q.min) put(rf + Q.up, rc, run[0], run[1], false, 'roof', c);
+      } else if(Y.kind === 'tunnels'){   // TWO TUNNELS, one over the other, from shaft to shaft: the divider between them across the run
+        // (over the holes in the floor: the lower tunnel has them, the upper one passes over), the upper one's floor rising over hills of
+        // Capture the Flag's slopes (each step a 'slope' piece: a ramp, walked up without a jump), and in a long run the lower one's floor
+        // over a bump of them between its two hills. Every piece is centred on its run or its half, so the halves still mirror.
+        const len = (run[1] - run[0])*rf;
+        if(len >= Q.min){
+          const rd = rf + Q.low, rb = rd + Q.div, mid = (run[0] + run[1])/2, two = len >= Q.two;
+          put(rd, rb, run[0], run[1], false, 'divider', c);
+          const hill = (a0, a1) => {
+            const L = (a1 - a0)*rb, n = Math.min(Q.steps, Math.floor((L - 2*Q.edge - Q.top)/(2*Q.sw))), m = (a0 + a1)/2;
+            for(let i = 1; i <= n; i++){ const r1 = rb + Q.sh*i, hw = (L/2 - Q.edge - (i - 1)*Q.sw)/r1; put(r1 - Q.sh, r1, m - hw, m + hw, false, 'slope', c); }
+          };
+          if(two){ hill(run[0], mid); hill(mid, run[1]); } else hill(run[0], run[1]);
+          if(two && !holes.some(h => h.band === c && dist(h.a, mid) < (G.holeW/2 + Q.bump[0]/2 + 40)/rf))
+            for(let i = 1; i <= Q.bump.length; i++){ const r1 = rf + Q.sh*i, hw = Q.bump[i - 1]/2/r1; put(r1 - Q.sh, r1, mid - hw, mid + hw, false, 'slope', c); }
+        }
       } else if(Y.kind === 'furnace'){   // low one-way stepping stones over the hot floor: hop to keep your feet off it
         for(const q of rowOf(run, rf, Q.w, Q.gap)){ const r = rf + Q.up, hw = Q.w/2/r; put(r - G.stepT, r, q.a - hw, q.a + hw, true, 'stone', c); }
       }
@@ -3296,7 +3337,7 @@ function mcGapHop(f, inp, R){
   const dir = inp.right && !inp.left ? 1 : (inp.left && !inp.right ? -1 : 0), feet = f.y + f.r;
   if(f.onground){
     if(!dir) return;
-    const P = platRects(), level = x => P.some(p => !p.rot && x > p.x && x < p.x + p.w && Math.abs(p.y - feet) < 10);
+    const sl = f._rampT > 0, P = platRects(), level = x => P.some(p => !p.rot && x > p.x && x < p.x + p.w && (Math.abs(p.y - feet) < 10 || ((p.ramp || sl) && Math.abs(p.y - feet) <= 26)));   // (on a slope: its next step, up or down)
     const x1 = f.x + dir*(f.r + 30);
     if(level(x1)) return;   // floor ahead, at its own level
     if(R && !R.up && standAt(x1, feet + 20) && Math.abs(R.x - f.x) < 220) return;   // the hole it is going down: in
@@ -3304,11 +3345,12 @@ function mcGapHop(f, inp, R){
   } else if(f.jumps > 0 && f.vy > 1 && !f._jp && !standAt(f.x, feet + 20)) inp.jump = true;
 }
 // A rock on the floor just ahead (the columns' rock: its top 2-130 px over the feet): hopped, as brainWalk hops one (navAround's {jump}).
+// Not a step of the tunnels' slopes: walked up.
 function mcRockHop(f, inp, dir){
   if(!f.onground || !dir) return;
   const feet = f.y + f.r;
   for(const p of worldPlats){
-    if(!p.solid || p.y >= feet - 2 || p.y < feet - 130 || p.y + (p.h || 16) < feet - 2) continue;
+    if(!p.solid || p.ramp || p.y >= feet - 2 || p.y < feet - 130 || p.y + (p.h || 16) < feet - 2) continue;
     const d = dir > 0 ? p.x - (f.x + f.r) : (f.x - f.r) - (p.x + p.w);
     if(d > -4 && d < 36){ inp.jump = true; return; }
   }
@@ -6756,6 +6798,7 @@ function ctfNeed(L, t){ let n = 0; for(const fl of L.flags) if(fl.team !== t) n+
 function ctfMyFlag(L, f){ const own = L.flags[f.idx], x = L.xFlag; return (own && own.st === 1 && x && x.owner === f.idx && x.st !== 1) ? x : own; }
 // A fighter who has just been walking a slope and is a hair above its next step down stays on it (a step down is 24 px at most, a fall of several frames at a run).
 function ctfRampSnap(f){
+  if(MCAVE && MCAVE.on){ mcRampSnap(f); return; }   // (MOON CAVES: the tunnels' slopes -- CTF.rampIx is the last Capture the Flag map's, never this one's)
   const ix = CTF.rampIx; if(!ix) return;
   const l = ix[Math.floor(f.x/60)]; if(!l) return;
   const feet = f.y + f.r;
