@@ -597,6 +597,33 @@ How a source became a picture (the `method` of its row), as in batch 1, plus:
 - `Yinyang Hurt.png` (Season 3, S3E14): their hit until the fourth pass (2026-10-28). Its bandaged grey look did not match their render, and the
   owner chose "Redraw both from render": their hit is drawn on their render (`yin-yang-hurt.png`), and their KO's mouth redrawn in their own ink.
 
+## Event fighter 8-Ball: his pictures (event kit 3, 2026-11-01)
+
+8-Ball (he/him), the third event fighter (`smash-bal/reports/event-fighters-phase1.md`, 3.3), keeps his TPOT render (`8-ball.png`, the picture
+his assist trophy already used: see Assist trophies below) and gains a pose set (`POSE_SETS['8-Ball']` in `index.html`), BFB+TPOT art only. The
+eleven files below were downloaded once from their BFDI wiki file pages and approved by the owner (the event art list, files 06-16); every
+picture was made from them and his render by `scripts/make-event-8ball-art.py`: each cut out along its own alpha, the ball scaled to the
+ball in his render (183 px across on its 199x200 canvas, so he is drawn the same size in every pose), at most 200 px tall. Each has a manifest
+row of its own (`scripts/sprite-manifest.json`, key `8-Ball (<pose>)`, `pose` set) with every source it was made from. Same provenance as
+the table at the top: jacknjellify's character artwork via the BFDI wiki, used under fan-work norms in a disclaimed, non-commercial fan game.
+
+| Picture | Shown | Made from | Source |
+|---|---|---|---|
+| `8-ball-spin-1.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0001.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0001.png |
+| `8-ball-spin-2.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0006.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0006.png |
+| `8-ball-spin-3.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0012.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0012.png |
+| `8-ball-spin-4.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0017.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0017.png |
+| `8-ball-spin-5.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0023.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0023.png |
+| `8-ball-spin-6.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0028.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0028.png |
+| `8-ball-spin-7.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0034.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0034.png |
+| `8-ball-spin-8.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0039.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0039.png |
+| `8-ball-mad.png` (199x200) | Break Shot, a held smash and the Trebuchet Basket | File:8-Ballmad.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ballmad.png |
+| `8-ball-scared.png` (199x200) | hit | File:8bscared.png; `8-ball.png` (his body, the painted face taken off); face swap: the white strokes of his scared face (an episode frame) on his own render, its painted face taken off | https://battlefordreamisland.fandom.com/wiki/File:8bscared.png |
+| `8-ball-bite.png` (199x200) | Jawbreaker Bite and the grab | `8-ball.png` (the picture itself); drawn: his own render with the mouth opened wide (question 42: cut from his TPOT render) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a5/Tpot_renders0044.png/revision/latest?cb=20241208104355 |
+| `8-ball-flat.png` (238x48) | launched (his KO picture, question 42) | File:8-Ball Flat.png; cut-out (wiki pose), 1.3 balls wide | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_Flat.png |
+
+All eleven downloads are used. His trebuchet, basket and the seven coloured balls of The Break are drawn in code (no picture).
+
 ## One (the secret boss)
 
 One is not a roster fighter, so her render sits outside the generated inventory above (a re-run of
