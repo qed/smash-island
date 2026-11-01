@@ -47782,7 +47782,9 @@ const SMASH_SPEC = {
   rubout:   {pat:'lunge', step:5, reach:30, dmg:14, kb:14, effect:'weaken', n:150, cost:{stun:24}, color:'#e47e93'},
   // Black Hole: EVENT HORIZON -- a pull that reels in every foe within 220 px, from all round, then a hit at his rim (70 px round his middle):
   // 21%, slows them, launching up or flat, never down (event-fighters-phase1.md, 3.4; question 49: it slows instead of breaking armour).
-  accrete:  {pat:'horizon', draw:16, pull:220, force:10, rim:70, dmg:14, kb:13, up:-11, effect:'slow', n:90, cost:{stun:28}, color:'#7b6cff'},
+  // force 10 -> 7 (2026-11-01, the owner's rule of 2026-10-26: "you can weaken fighters if they are too good"): at 10 he won 37 of 45 on
+  // three seed sets, 36 of his 80 KOs this, and a foe running away was reeled in from about 180 px. The design's numbers (220 px, 21%) stay.
+  accrete:  {pat:'horizon', draw:16, pull:220, force:7, rim:70, dmg:14, kb:13, up:-11, effect:'slow', n:90, cost:{stun:28}, color:'#7b6cff'},
 };
 
 function doSmash(f){
@@ -59272,7 +59274,7 @@ function fireSpecialInner(f, inp){
     }
     return;
   }
-  if(inp.down){ if(f.kit && f.kit.special === 'accrete' && f._bhSingCd > hazardT) return;   // (Black Hole's Singularity waits on its own cooldown: pressed in it, nothing happens)
+  if(inp.down){ if(f.kit && f.kit.special === 'accrete'){ if(!(f._bhSingCd > hazardT)) doDownSpecial(f); return; }   // Black Hole's Singularity has only its own cooldown (_bhSingCd, 150): pressed in it, nothing happens, and it spends no shared one -- so it never locks his Wormhole
     doDownSpecial(f); f.spCd=Math.max(f.spCd, (f.kit && f.kit.special==='serve') ? GADGET_SWAP_CD : (f.kit && f.kit.special==='chair') ? BOW_SNOW.cd : 64); return; }   // (Bow's snowballs: BOW_SNOW.cd)
   if(dashKit && !mtAirDashOk(f)) return;   // one air dash an airtime (dashers)
   doSpecial(f); if(!(f.kit && (f.kit.special==='serve' || f.kit.special==='accrete'))) f.spCd=Math.max(f.spCd,55);   // (Black Hole's Accretion and Slingshot set their own, 50 and 30: bhAccretion)   // Tennis Ball's gadgets carry their own (GADGET_SPECIAL_CD)
@@ -61935,7 +61937,8 @@ function bhStep(f){
 
 // ---- EVENT HORIZON (smash, V) ----
 // A pull that reels in every foe within 220 px, from any side, for `draw` frames -- `force` px a frame nearer, eased in over the first four, none
-// once they are at his rim: one standing still at 220 px is brought in, one running away gets clear -- then a hit at his rim
+// once they are at his rim: with the pull of 7 (it was 10 until 2026-11-01), one standing still is brought in from about 180 px and one
+// running away gets clear from about 150 px (measured on Pen; a foe further out is slowed by it, not caught) -- then a hit at his rim
 // (`rim` px round his middle): 21%, slows them, and launches up or flat -- away from him and up, never down (question 49: it slows instead of
 // breaking armour). A hit on him in the pull ends it. It costs him 28 frames of stun (SMASH_SPEC.accrete). The pull is live while his swing
 // runs (armAtk: a guest draws its streaks from the swing it is sent).
@@ -61992,10 +61995,16 @@ function finSpag(f){
 }
 function bhSpagOf(f){ for(const o of FINX) if(o.k === 'spag' && o.o === f.idx && !o.dead) return o; return null; }
 function bhSpagFree(t){ if(!t) return; fxFree(t); t._fxLock = 0; }
-// Where the one he swings is this frame: round his middle at the orbit's angle, never out of the world or into the floor.
+// Where the one he swings is this frame: round his middle at the orbit's angle, never out of the world or into the floor. NEAR A FLOOR (the
+// orbit's low half would reach the floor under him -- standing, it ran flat along the floor straight through his core): the low half is
+// turned over his head instead (`spU`), so they swing up over him, down to his middle's height on the far side and back over, never
+// through him. It is switched only while they are on the high half, where both ways are the same spot, so they never jump. `spV` is
+// the way round they are going as seen (the turned half runs back the other way): the trail is drawn behind them by it.
 function bhSpagSpot(f, o, t){
-  const r = t.r || 24;
-  let x = f.x + Math.cos(o.ang)*o.rr, y = f.y + Math.sin(o.ang)*o.rr*0.85;
+  const r = t.r || 24, s = Math.sin(o.ang);
+  if(s <= 0){ const fl = surfaceBelow(f.x, feetY(f) - 2); o.spU = (fl !== null && f.y + o.rr*0.85 > fl - r) ? 1 : 0; }
+  o.spV = (o.spU && s > 0) ? -o.dir : o.dir;
+  let x = f.x + Math.cos(o.ang)*o.rr, y = f.y + (o.spU ? -Math.abs(s) : s)*o.rr*0.85;
   x = clamp(x, r + 4, WW - r - 4); y = Math.max(r + 4, y);
   if(!isBig() && y > groundY() - r && !floorOpenAt(x)) y = groundY() - r;
   return { x:Math.round(x), y:Math.round(y) };
@@ -62057,8 +62066,10 @@ function fxSpagStep(o, f){
   if(hazardT - o.et >= (o.ph === 'whiff' ? S.whiff : S.end)) o.dead = true;
 }
 // Let go along their path: the way round they were going (never down: the Death P.A.C.T. rule).
+// The way they are going along the orbit as it is drawn (a turned half runs back the other way: bhSpagSpot), as { x, y }.
+function bhSpagWay(o){ const s = Math.sin(o.ang), k = (o.spU && s > 0) ? -1 : 1; return { x:-s*o.dir, y:Math.cos(o.ang)*o.dir*k }; }
 function bhSpagFling(f, o, t){
-  const S = BLACK_HOLE.spag, tx = -Math.sin(o.ang)*o.dir, ty = Math.cos(o.ang)*o.dir;
+  const S = BLACK_HOLE.spag, wy = bhSpagWay(o), tx = wy.x, ty = wy.y;
   bhSpagFree(t);
   fxArt(f, 'spagF', fxCircle(t.x, t.y, (t.r || 24) + 6), { color:BH_INK.glow, fade:6 });
   fxHit(f, t, o, S.fin, tx*S.kb, Math.min(-2.5, ty*S.kb));
@@ -62072,7 +62083,7 @@ FX5_PRESS.spag = function(f, o){
   if(c === 'local' || c === 'remote'){ const bits = fxKeyBits(f) & 2, prev = o.pk == null ? bits : o.pk; o.pk = bits; if(o.ph === 'orbit' && (bits & ~prev) && hazardT - o.st > 4) o.pr = 1; return; }
   if(c === 'still' || c === 'trainer' || o.ph !== 'orbit' || hazardT - o.st < 12) return;
   const t = fxHeld(o, o.tgt); if(!t) return;
-  const tx = -Math.sin(o.ang)*o.dir, ty = Math.cos(o.ang)*o.dir, out = t.x < WW/2 ? -1 : 1;
+  const wy = bhSpagWay(o), tx = wy.x, ty = wy.y, out = t.x < WW/2 ? -1 : 1;
   if(ty < -0.45 && tx*out > 0.25) o.pr = 1;
 };
 // The one being swung mashes: a new press of attack, special, smash or jump (a person), or now and then (a CPU, more on Hard).
@@ -62094,15 +62105,16 @@ function fxDrawSpag(o, f){
     for(let i = -1; i <= 1; i++){ ctx.beginPath(); ctx.moveTo(x1, f.y + i*S.r*0.25); ctx.lineTo(x0 + o.face*8, f.y + i*S.r*0.7); ctx.stroke(); }
   } else if(o.ph === 'orbit' && o.tgt >= 0){
     const t = fighters[o.tgt]; if(!t || t.dead) return;
-    const ang = Math.atan2((t.y - f.y)/0.85, t.x - f.x), rr = o.rr || Math.hypot(t.x - f.x, t.y - f.y), dir = o.dir || 1;
+    const ang = Math.atan2((t.y - f.y)/0.85, t.x - f.x), rr = o.rr || Math.hypot(t.x - f.x, t.y - f.y), dir = o.spV || o.dir || 1;
+    const sy = (a)=>o.spU ? -Math.abs(Math.sin(a)) : Math.sin(a);   // (near a floor the low half is turned over his head: bhSpagSpot)
     ctx.lineCap = 'round';
     for(let i = 1; i <= 6; i++){   // the trail along the way they came round
       const a = ang - dir*i*0.16; ctx.globalAlpha = 0.45*(1 - i/7); ctx.strokeStyle = i % 2 ? BH_INK.glow : BH_INK.violet; ctx.lineWidth = 9 - i;
       const a2 = ang - dir*(i - 1)*0.16;
-      ctx.beginPath(); ctx.moveTo(f.x + Math.cos(a2)*rr, f.y + Math.sin(a2)*rr*0.85); ctx.lineTo(f.x + Math.cos(a)*rr, f.y + Math.sin(a)*rr*0.85); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(f.x + Math.cos(a2)*rr, f.y + sy(a2)*rr*0.85); ctx.lineTo(f.x + Math.cos(a)*rr, f.y + sy(a)*rr*0.85); ctx.stroke();
     }
     ctx.globalAlpha = 0.55; ctx.strokeStyle = BH_INK.violet; ctx.lineWidth = 3;   // the stretch from his middle to them
-    ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.quadraticCurveTo(f.x + Math.cos(ang - dir*0.6)*rr*0.6, f.y + Math.sin(ang - dir*0.6)*rr*0.5, t.x, t.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.quadraticCurveTo(f.x + Math.cos(ang - dir*0.6)*rr*0.6, f.y + sy(ang - dir*0.6)*rr*0.5, t.x, t.y); ctx.stroke();
   }
 }
 // drawFighter: the one he swings is drawn long and thin along the way they are going (render-only; read from the row and where they are).
@@ -62118,7 +62130,7 @@ function bhSpagWarp(t){
 Object.assign(FINX_STEP, { spag:fxSpagStep });
 Object.assign(FINX_DRAW_OVER, { spag:fxDrawSpag });
 FX5_LETGO.push('spag');   // a KO, a jail or a Final Smash's catch of the foe being swung ends it
-FINX_NET.push('dir', 'rr');
+FINX_NET.push('dir', 'rr', 'spU', 'spV');
 ATKSPECIALS.accrete = function(f){ return finSpag(f); };   // Black Hole -- Spaghettify (EVENT FIGHTERS: BLACK HOLE)
 FINX_AI_KITS.add('accrete');   // the CPU finisher list: it presses his finisher on its own read (finEventWant)
 FIN_AI_EAGER.accrete = 2;
@@ -63889,11 +63901,13 @@ function drawSpongeFloor(gy){
 // THE PULL (Black Hole's "Gravity" duel: "a gentle pull toward the middle, never more than a quarter of walking speed, so you can always walk
 // out"). Every fighter free to move (not held, caught or in a Wormhole) is drawn toward the middle of the stage by PULL.max px a frame at the edge
 // of its reach (PULL.reach of the stage's width either side of the middle) and beyond, less nearer the middle and none at it: under a quarter of
-// the slowest walk (MAXVX 6.4 x the lowest run stat), so walking out always works, and a slowed fighter still walks out. It eases in over the
+// the slowest walk there is -- a fighter's walk is MAXVX 6.4 x its run stat x heavySlowK(weight) (HEAVIES MOVE SLOWER, 2026-10-29); the
+// slowest today is Tree's, 4.85 px a frame (run 0.89 x 0.85 at weight 138), a quarter of it 1.21 -- so walking out always works, and a slowed
+// fighter (0.55 of that, 2.66) still walks out. 1.2 until 2026-11-01 (worked out without HEAVY_SLOW); 1.0 leaves room under 1.21. It eases in over the
 // grow-in time as the match starts. It adds nothing that can hurt. Shown by art only (drawTwistAir: dust drifting in): no words, no lines.
 // ONLINE: the host runs it in step(); a guest's prediction of its own fighter (netPredRun) is pulled by the same rule, so the guest never snaps
 // back. MATCH_TWIST is all either side needs; an event room (build step 14) will carry it in the start that already carries the room's rules.
-const PULL = { max:1.2, reach:0.45, motes:22 };
+const PULL = { max:1.0, reach:0.45, motes:22 };
 function pullOn(){ return MATCH_TWIST === 'pull'; }
 function pullNudge(x){ const dx = WW*0.5 - x, k = Math.min(1, Math.abs(dx)/(WW*PULL.reach)); return (dx < 0 ? -1 : 1)*PULL.max*k*growK(hazardT + 1); }
 function pullFree(f){ return !(f.dead || f._fsLock || f._heldBy != null || f._fxBy != null || f._tp || f._bhWT || f._jail != null || f._grabbed != null); }

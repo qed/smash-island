@@ -1287,6 +1287,60 @@ Open: the owner tries Firey, Bomby and a few buffed fighters by hand.
 - **2026-11-01, finishers' art on the moon stays where it was left, along the floor (the owner's screenshot: Sidewalky's crack hanging tilted in a cave's air; "bug with traps/ finishers like sidewalky's on the moon"):** a finisher's record keeps its points in the chart it was made in (`mcAnchor`), and `mcFinxDraw` set the canvas so that chart landed on the world at the record's OWNER, turned by the owner's angle. Exact while the owner stands where it made it; but what a finisher leaves behind -- the crack, Match's fuse, the press's belt, the disco floor, a patch, a griddle, a campfire -- went wherever the owner went, laid along the owner's tangent there (in the air, at a tilt, or off the screen); and even with the owner beside it a 400 px crack, drawn straight, rose off the curved floor -- 45 px at its far end on the surface at 2 a side, 70 and more in the deepest caves. Now the canvas is pinned at THE PIN: of the record's own place (its chart's middle) and its owner now, the point between them nearest the view's middle -- the same point as before while the owner has not moved, and the record's own place when the view is on what it left. Long art on the floor is bent onto the curve: the crack's and the fuse's points (`mcBendPt`: each point moved so the pinned canvas draws it at its true place), the belt's edges, rollers and arrows, and the press and each disco tile pinned where they are (`mcRepin`). Drawing only: the records' play is unchanged (it always ran in the exact chart). Pictures (headless Chromium): the crack on the surface at 2 a side with its owner beside it and gone, and a crack, a press and a disco floor in the deepest cave at 5 a side -- before, the crack rose off the floor and vanished with its owner; after, it lies along the floor and stays.
 - **2026-11-01, Moon Caves: deeper is tunnels -- two tunnels one over the other, with Capture the Flag's slopes (the owner: "tunnels should have layers of tunnels. as you go deeper, the concept of caves should become tunnels, with slopes as well" -- "use the slopes from ctf"):** THE ORDER: the cave over the furnace is always the tunnels, from two caves (5 a side and up); the galleries are the first cave from three (8 and up), the columns the next with four (13-15). So 2-4 a side surface / furnace (as it was), 5-7 surface / tunnels / furnace (the galleries were there), 8-12 surface / galleries / tunnels / furnace (the columns were there), 13-15 all five. THE TUNNELS: between two shafts up, two tunnels one over the other -- the lower one 200 px high, a divider 50 px thick, the upper one up to the roof (170 px) -- the upper one's floor rising over a hill of Capture the Flag's slopes (`'slope'` pieces: steps 22 px high and 40 wide, walked up without a jump: the boxes are `ramp`, the fighter step's ramp step-up), and in a run 900 px and longer two hills, with a bump of the same steps on the lower one's floor between them. The steps under a hole into the tunnels zigzag in a NARROW SHAFT (`stepsT`: 110 px steps either side of the middle in turn, 100 px each way, the four heights as before), so the two tunnels run up to them -- the lower one's floor under them, the upper one's floor 26 px over the second. The tunnels' floor keeps every other hole down (in mirror pairs): a run between two shafts with a hole down in it is an OPEN CHAMBER round the hole; one without is the two tunnels. On the moon a slope is walked down from its own frame (`mcRampSnap`: `ctfRampSnap` read Capture the Flag's index, which is the last CTF map's; the guest's prediction steps up as on CTF and does not snap, as on CTF), and the CPUs walk the slopes (`mcGapHop`: a slope's next step up or down is floor at its own level; `mcRockHop`: never hopped), wait to be out from under a tunnel's roof before jumping for a shaft's first step (`mcRoofOver`), and come out of a hole's top step on their target's side (`R.tx`). Every piece is centred on its run or its half: the halves still mirror exactly, every size. WHAT THE CLIMB TEST FOUND (a CPU from the furnace's floor to the surface, six starts): with the lower tunnel 150 px high, three climbs in six at 10 a side never got out in a minute -- out of a hole into the lower tunnel, a CPU's double jump over the next hole in its floor bonked the roof and it fell back to the furnace, again and again; and with a hole down between every two shafts no run was without one. Hence the 200 px, and every other hole with its chamber. The test itself placed a foe over a hole in the crust: it fell onto the hole's top step, the climber was on its layer then and never went up (that start's 58 s on main was the same) -- the foes now stand clear of the holes. Every climb gets out: 5 a side 14-40 s (main 14-22), 10 a side 16-39 s (main 20-31). THE CPU PROBE (CPU-only, 3 minutes, items; 5 a side seeds 7 and 3, 10 a side seeds 7, 3, 11 and 5): nobody stuck, no quiet falls into the core, no errors; KOs 20 at 5 a side (the layers' build 14, live main before the layers 20) and 47 at 10 a side (main 43) -- the KOs the layers cost are back; near a foe 0.66 / 0.68 at 5 a side (main 0.60 / 0.64) and 0.41-0.56 at 10 (mean 0.48; main 0.47-0.51, mean 0.49). The longest a CPU went without a foe within 300 px: 25-49 s at 5 a side (main 41-64) and 54-180 s at 10 (main 76-101) -- the 180 s Snowball circling its own strip on the surface and in the galleries the whole match, no tunnel near it: the old loitering main shows at 75-100 s. THE GATES: the replay of the 11 recorded matches on the other maps is identical to main's (Capture the Flag's among them: its slopes are as they were); online, a host and a guest at 5 a side in three spots build the same disc, no errors, and the guest's corrections are main's or smaller (mean 3.4 / 5.5 / 2.6 px, main 3.4 / 7.0 / 5.4; none over 160 px, main three); a step at 30 CPUs is 24.3 / 23.8 ms in jsdom against main's 23.6 / 23.5 (2% more; the 95th percentile 37-39 against 34). Pictures (headless Chromium): the tunnels at 5, 10 and 15 a side, in the lower tunnel and on the upper one's hills.
 
+### O31 · Event fighters: kit 4 (Black Hole) -- what it left  [BUILT on `g-ev-blackhole`, NOT PUSHED: two decisions for you first]
+
+Kit 4 (branch `g-ev-blackhole`, build step 11 of event-fighters-phase1.md) is Black Hole (he/him), from section 3.4 and the approved
+questions 43 to 49. He is the fourth event row in ROSTER (`event:true`, kit `accrete`). His code is the section EVENT FIGHTERS: BLACK HOLE
+(`BLACK_HOLE`, the `bh*` functions): Tug (jab), the tilts, the five aerials, the grab and four throws, Accretion / Slingshot, Wormhole,
+Singularity, Event Horizon (SMASH_SPEC `horizon`), Spaghettify (FINX `spag`) and Mass of Twenty Suns (`FINAL_SMASHES['Black Hole']`). The Death
+P.A.C.T. rule (`bhNoDown`): none of his hits sends a foe downward. His hurtbox is his black middle only (HURTBOX's circle, question 47).
+His side special (Gravity Slide) stays off, kept as a data row. His assist row left the bag (`ASSIST_LEAVES_AT_LAUNCH`). His three event
+matches are data (`EVENT_MATCHES['Black Hole']`), with two new twists, the pull and low gravity anywhere (`EVENT_TWISTS_BUILT`: `pull`,
+`lowgrav`). Art: no downloads; his one render (already in the game as his assist picture), scaled, spun, squashed and stretched; the clod
+and the pull streaks are drawn in code (CREDITS.md, `scripts/sprite-manifest.json`). Online: everything he draws rides the snapshot.
+Contact sheet: `smash-bal/reports/moves/event-blackhole-sheet.png`.
+
+- **Picks the design left open (the builder's own, not the owner's):**
+  - *Death P.A.C.T. Again* (the 3 vs 1): the Teams arena with Yoyle Canyon's sky, items on (his Accretion pulls in loose items), no Smash Balls.
+  - *Gravity* (the duel): Goiky Field, items off, no Smash Balls.
+  - *Back to the Top*: Sky Towers in low gravity, items on, with Smash Balls.
+- **Fixed after the check (2026-11-01):**
+  - Spaghettify on the floor: the foe slid along the floor straight through his core. Now near a floor the low half of the orbit is turned
+    over his head (`spU`), so they swing over him and back. In the air the full circle stays.
+  - Singularity also spent the shared special cooldown, so it locked his Wormhole for 51 frames. Now it has only its own cooldown (150), as
+    its comment said. The Wormhole fires the frame the Singularity ends.
+  - The pull twist: `PULL.max` 1.2 -> 1.0. The old number left out HEAVIES MOVE SLOWER. The slowest walk is Tree's, 4.85 px a frame, and a
+    quarter of it is 1.21, so 1.2 had almost no room.
+  - Event Horizon's pull 10 -> 7 (the nerf rule of 2026-10-26). The design's 220 px and 21% are unchanged. A foe running away now gets clear
+    from about 150 px; before, it was reeled in from about 180 px.
+  - `scripts/trace-hurtboxes.mjs` skips him, so a re-trace cannot replace his middle-only circle with his whole render.
+- **Balance: still well above the middle of the pack (YOUR DECISION).** The tournament: 15 1v1 matches against 15 mid-pack Hard CPUs, run
+  on three seed sets.
+  - Before the fixes: 10, 12 and 15 wins out of 15, so 37 of 45.
+  - After them: 14, 11 and 13, so 38 of 45.
+  - Event Horizon still scores the most KOs (median KO about 120%).
+  - Nerfs measured but not kept, each on two seed sets (30 matches):
+    - pull 7 with 18%: 12 wins on one set;
+    - reach 150, pull 7 and 18%: 23 of 30 (Spaghettify then took most KOs);
+    - weaker launches on Event Horizon and Spaghettify: 27 of 30;
+    - his hurtbox at the normal 24 (question 47's answer reversed, as a test only): 21 of 30.
+  - No single Event Horizon change brings him to the middle: he is strong all round. The normal-size hurtbox gave the lowest number, but
+    15 matches a set are noisy (one set went 10 -> 14 after a nerf). Choose the nerf.
+- **OWNER DECISION BEFORE THIS IS PUSHED: how a kit joins the lap (O28's open question).** `eventLapOrder` runs the lap only through the
+  kits that are built. So his row alone RE-DEALS EVERY WEEK SINCE THE LAUNCH: Eraser 10-26, Black Hole 11-02, Eraser 11-09, Black Hole 11-16,
+  and so on. Today every week is Eraser's. Next week's card would change at once, against "a new lap is announced at least two weeks ahead".
+  Spongy and 8-Ball come before him in the lap, so each of them landing would re-deal the weeks again. Two ways out:
+  - O28's rule: each kit joins on a Monday of its own, at least two weeks after its build goes live;
+  - or merge the kits strictly in lap order (Spongy, 8-Ball, Black Hole), with your OK.
+- **Before merging:** the assist bag. Live main has 16 assists (Eraser left), and his leaving makes 15. The design says never below 17. Assist
+  batch A2 (`g-ev-a2`, +7) is built but not merged. Merge it first, or together with this kit.
+- **Moon Caves:** nothing of his was changed for it, and it was not touched. A read-only check on the moon found no errors.
+
+Checks (2026-11-01, the scratchpad's `events2/blackhole-fix/`): syntax; boot (FFA and Teams clean); every move fires and lands its numbers
+on a still Pen, including the fixes above; his CPU at Hard uses every part of the kit (6 matches); his three event matches run CPU vs CPU to
+the end and pay; the in-process online pair shows the special, finisher (with the turned-over orbit) and Final Smash the same on both
+screens; the pull and low gravity predicted on the guest without snapping back.
+
 ---
 
 ## Scoreboard
@@ -1294,7 +1348,7 @@ Open: the owner tries Firey, Bomby and a few buffed fighters by hand.
 | | Count |
 |---|---|
 | Done | 161 |
-| Open | 10 (O20, O22, O23, O24, O25, O26, O27, O28, O29, O30) |
+| Open | 11 (O20, O22, O23, O24, O25, O26, O27, O28, O29, O30, O31) |
 | Superseded | 2 (O1, B12) |
 | Blocked on you | 1 (G11: the Cloudflare MCP authorization) |
 
