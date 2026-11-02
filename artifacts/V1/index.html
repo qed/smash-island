@@ -23848,8 +23848,7 @@ function fsRun(f){
     f.vx *= 0.7; if(!f.onground) f.vy = 0;
     st.c++; f.fsC = FS_CATCH - st.c;
     if(st.c < FS_CATCH) return;
-    hitArt(f, 'fscatch', st.cs, { color:f.color, world:true, fade:10 });
-    fsCatch(f, st);
+    if(d.catchAt == null){ hitArt(f, 'fscatch', st.cs, { color:f.color, world:true, fade:10 }); fsCatch(f, st); }   // (a row with a `catchAt` lands its catch later: below)
     f.fsAx = Math.round(f.x); f.fsAy = Math.round(f.y);
     if(d.start) d.start(f, st);
     return;
@@ -23857,6 +23856,10 @@ function fsRun(f){
   const t = st.t;
   f.fsT = t;
   if(t < d.wind){ f.vx *= 0.7; if(!f.onground) f.vy = 0; }
+  // A LATE CATCH (`catchAt`: the row frame it lands on): a row that opens with an entrance (Pencil's van) lays its catch when the entrance is
+  // done, FS_WIND frames before its blast -- nobody is held through the entrance, and the hold is as long as it ever was. The area is the one
+  // fixed when it was fired (st.cs); the row's own `catch` and `lockEnd` are as for any row.
+  if(d.catchAt != null && t === d.catchAt){ hitArt(f, 'fscatch', st.cs, { color:f.color, world:true, fade:10 }); fsCatch(f, st); }
   FS.by = f;   // every hit this frame deals, and every shot it throws, is the Final Smash's (fsHitBy)
   try { d.tick(f, st, t); } finally { FS.by = null; }
   fsLockStep(f, st);   // the locked foes stay where the row left them; any it is done with is let go
@@ -24013,6 +24016,8 @@ function fsCatchKb(t, L){
 let FS_VIEW = { on:false };  // render-only: the close-up draw() worked out for this picture (fsDrawScreen reads it)
 // The catch area for a row, from the holder where they stand now. A row without its own: a circle of its reach.
 function fsCatchOf(d, f){ return d.catch ? d.catch(f) : { kind:'circle', x:f.x, y:f.y, r:Math.min(d.reach || 200, 400) }; }
+// (A row's `catchAt`: the frame of the row its catch lands on, in place of the first -- see fsRun. A row's `hides(f)`: the holder is not
+// drawn while it is true, a pure function of the fighter's wire fields (fsT, fsC, fsWind) -- Pencil, inside her van: fsHides.)
 // Does fighter t's body touch the catch area? (hit art's own rule: touch the drawn shape with any part of you and you are in it)
 function fsCatchTouch(sh, t){
   if(!sh) return false;
@@ -24428,6 +24433,8 @@ function fsDrawAura(f){
   for(let i = 0; i < 6; i++){ const a = hazardT*0.06 + i*1.047, rr = f.r + 16 + 6*Math.sin(hazardT*0.11 + i*2); c.fillStyle = fsRainbow(i, 9); c.beginPath(); c.arc(Math.cos(a)*rr, Math.sin(a)*rr, 2.6, 0, 7); c.fill(); }
   c.restore();
 }
+// Is the holder hidden this frame (inside what their row summoned)? Drawn from the wire fields, so a client hides them the same.
+function fsHides(f){ const d = FINAL_SMASHES[f.name]; return !!(d && d.id === f.fsId && d.hides && d.hides(f)); }
 // World-space effects of a Final Smash in progress (what it summons and its blast; nothing where it will hit before it does), over the fighters.
 function fsDrawFx(){
   for(const f of fighters){
@@ -24582,34 +24589,126 @@ FINAL_SMASHES['Leafy'] = {
 };
 
 // PENCIL -- THE POWER OF TWO AND FOUR. "The Power of Two": she takes all the power of Two and Four and cannot control it (the design
-// doc's finisher for her, "left staggered/vulnerable afterward"). Two rings, drawn in the tell, go off 14 frames apart: the inner 300 px
-// (20%), the outer 420 px (14%) for whoever the first did not reach; then she is dizzy for 70 frames and takes the hit she can no longer
-// shrug off (`exposed`: no grace at the end).
+// doc's finisher for her, "left staggered/vulnerable afterward"). THE VAN (the owner, 2026-11-02: "Pencil should have an animation where she
+// hops into the van, exhaust comes out of the exhaust tube, and then the final smash comes out like normal, but she gets knocked back out of
+// the explosion"): her Supervan -- the van her special drives, attacks/van.png -- grows in over 12 frames on the spot she stands, and she hops
+// into it (18 frames; inside it she is not drawn). Its exhaust pipe puffs smoke while it shakes and builds (30 frames), then the catch lands
+// (FS_WIND frames before the blast: `catchAt`, nobody is held through the entrance) and the blast goes off from the van's middle exactly as
+// it always did: two rings 14 frames apart, the inner 300 px (20%) and the outer 420 px (14%) for whoever the first did not reach. The van
+// blows apart with it and throws her out: a 240 px arc away from the foes, facing the blast (cut short where the surface she stands on
+// ends or a wall is in the way: fsPencilRoom), and then she is dizzy for 70 frames and takes the hit she can no longer shrug off
+// (`exposed`: no grace at the end). Untouchable the whole way, as every Final Smash's holder is. Name and id kept. Nothing is drawn where
+// the blast will land before it does.
+const PENCIL_FS = { hop:18, exh:30, grow:12, vw:150, seat:26, hopH:54, kb:240, kbT:26, kbH:76, room:28 };
+PENCIL_FS.catchAt = PENCIL_FS.hop + PENCIL_FS.exh;       // 48: the catch lands, FS_WIND frames before the blast
+PENCIL_FS.wind = PENCIL_FS.catchAt + FS_WIND;            // 62: the blast
+PENCIL_FS.puffs = (function(){ const a = []; for(let tb = PENCIL_FS.hop; tb < PENCIL_FS.wind; tb += (tb < PENCIL_FS.catchAt ? 3 : 2)) a.push(tb); return a; })();   // the exhaust's puffs: one every 3 frames, every 2 as it revs
+// Hold her at (x, y) this frame: the step's own gravity and her speed come on top, so the speed is put in her y first (her picture reads it).
+function fsPencilPlace(f, x, y, vy){ f.x = x; f.y = y - vy; f.vx = 0; f.vy = vy; f.onground = false; }
+// How far she can be flung along `s` (+1 right, -1 left) from x0 and still come down on what she stood on (feet at fy), a body inside the edge:
+// the surface under her must go on (in the air she stood in: any surface below), and no solid block may be in the way. Her flight is
+// scripted, so it never carries her past a ledge or into a wall, and so never to a blast line from a normal place. On the Moon, none.
+function fsPencilRoom(x0, fy, s, want, r, air){
+  if(MCAVE && MCAVE.on) return 0;
+  const plats = platRects(); let ok = 0;
+  for(let d = 8; d <= want; d += 8){
+    const x = x0 + s*d;
+    if(x < 70 || x > WW - 70) return Math.max(0, ok - PENCIL_FS.room);
+    let hold = air ? landable(x, fy) : false;
+    if(!air) for(const tp of vanTopsAt(x)) if(Math.abs(tp.y - fy) <= 12){ hold = true; break; }
+    if(!hold) return Math.max(0, ok - PENCIL_FS.room);
+    for(const p of plats){ if(!p.solid || p.rot) continue; if(x > p.x - r && x < p.x + p.w + r && p.y < fy - 4 && p.y + (p.h || 16) > fy - 2*r) return Math.max(0, ok - PENCIL_FS.room); }
+    ok = d;
+  }
+  return want;   // all the way: nothing in the way (a margin is kept only where the surface or a wall cuts it short)
+}
+// How high she may hop: not into a solid block over her.
+function fsPencilHeadroom(x, fy, r){
+  let h = PENCIL_FS.hopH;
+  for(const p of platRects()){ if(!p.solid || p.rot) continue; if(x > p.x - r && x < p.x + p.w + r){ const bottom = p.y + (p.h || 16); if(bottom <= fy - 2*r + 2) h = Math.min(h, Math.max(0, fy - 2*r - bottom - 4)); } }
+  return h;
+}
+// The van, standing on the floor line fy, its middle at x, `k` of its size (grown in from its wheels), nose to `dir`: the Supervan's own art,
+// and its drawn stand-in (vanShape) until that has loaded. `pipe`: the exhaust pipe sticking out of its back.
+function fsPencilVan(c, x, fy, dir, k, a, pipe){
+  const P = PENCIL_FS, im = attackImage('van');
+  c.save(); c.globalAlpha = a; c.translate(x, fy); c.scale(dir*k, k);
+  if(im){ const h = P.vw*im.naturalHeight/im.naturalWidth; c.drawImage(im, -P.vw/2, -h, P.vw, h); }
+  else { const r = P.vw/3.1; c.translate(-0.15*r, -0.7*r); c.fillStyle = '#f2d84b'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; vanShape(c, r, { vx:1 }); c.translate(0.15*r, 0.7*r); }
+  if(pipe){ c.fillStyle = '#8a8f98'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.rect(-P.vw/2 - 13, -17, 17, 8); c.fill(); c.stroke(); c.fillStyle = '#c4c8d0'; c.fillRect(-P.vw/2 - 11, -15.5, 13, 2.2); }
+  c.restore();
+}
 FINAL_SMASHES['Pencil'] = {
-  id:'twofour', wind:FS_WIND, dur:FS_WIND + 82, reach:300, exposed:true,
-  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:300 }; }, lockEnd:'one',   // CATCH: the inner ring
-  start(f, st){ st.hit2 = new Set(); armAtk(f, this.wind, 'fsgather'); },
+  id:'twofour', wind:PENCIL_FS.wind, dur:PENCIL_FS.wind + 82, reach:300, exposed:true, catchAt:PENCIL_FS.catchAt,
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:300 }; }, lockEnd:'one',   // CATCH: the inner ring (it lands at `catchAt`, FS_WIND frames before the blast)
+  hides(f){ const t = f.fsT || 0; return !(f.fsC > 0) && t >= PENCIL_FS.hop - 2 && t < (f.fsWind || PENCIL_FS.wind); },   // inside the van: from the hop's last frames to the blast
+  start(f, st){
+    const P = PENCIL_FS;
+    st.dir = f.face < 0 ? -1 : 1; st.air = !f.onground;
+    f.fsBx = Math.round(f.fsAx + st.dir*P.seat); f.fsBy = Math.round(f.fsAy - 10);   // her seat in the van (it is also which way the van faces: draw)
+    st.hh = fsPencilHeadroom(f.fsAx, f.fsAy + f.r, f.r);
+    st.hit2 = new Set();
+  },
   tick(f, st, t){
-    if(t === 0){ shake(6); for(let i = 0; i < 12; i++) puff(f.x, f.y, i % 2 ? '#f2d84b' : '#a78bfa', 6); }
-    if(t === this.wind){ armAtk(f, 40, 'fsburst'); shake(12); fsBurst(f, st, f.x, f.y, 300, 20, 20, -13); }
-    if(t === this.wind + 14){
+    const P = PENCIL_FS, w = this.wind, ax = f.fsAx, ay = f.fsAy, dir = st.dir, bx = f.fsBx, by = f.fsBy;
+    if(t === 0){ shake(3); for(let i = 0; i < 8; i++) puff(ax, ay + f.r - 6, i % 2 ? '#d8c8a8' : '#f2d84b', 5); }
+    if(t < P.hop){   // THE HOP: up and over, into the van's window
+      const u = (t + 1)/P.hop, u0 = t/P.hop, X = (v)=> ax + dir*P.seat*v, Y = (v)=> ay + (by - ay)*v - st.hh*4*v*(1 - v);
+      fsPencilPlace(f, X(u), Y(u), Y(u) - Y(u0));
+    } else if(t < w){ fsPencilPlace(f, bx, by, 0); }   // in the van, held at her seat
+    if(t === w){   // THE BLAST, from the van's middle: the rings as they always were
+      shake(12);
+      let sx = 0, n = 0; for(const o of fighters){ if(fsHurtMark(f, o) || hurtGap(o, ax, ay) > 430) continue; sx += o.x - ax; n++; }
+      let s = n && Math.abs(sx/n) > 6 ? -Math.sign(sx) : -dir;   // away from the foes the blast reaches (none, or dead centre: backwards)
+      const fy = ay + f.r, room = (q)=> fsPencilRoom(ax, fy, q, P.kb, f.r, st.air);
+      if(room(s) < 70 && room(-s) > room(s) + 60) s = -s;   // a ledge right there: the other way, rather than over it
+      const D = Math.min(P.kb, room(s));
+      st.kb = { s:s, xe:ax + s*D, D:D };
+      fsBurst(f, st, ax, ay, 300, 20, 20, -13);
+      f.face = -s; f._atkAnim = 0; f._hurtAnim = HURT_ANIM;   // (she faces the blast she is thrown from)
+      for(let i = 0; i < 18; i++) puff(ax, ay, i % 2 ? '#f2d84b' : '#fff', 7);
+    }
+    if(st.kb && t >= w && t < w + P.kbT){   // KNOCKED OUT OF THE EXPLOSION: a scripted arc from her seat to the floor she stood on
+      const u = (t - w + 1)/P.kbT, u0 = (t - w)/P.kbT, e = (v)=> 1 - (1 - v)*(1 - v);
+      const X = (v)=> bx + (st.kb.xe - bx)*e(v), Y = (v)=> by + (ay - by)*v - P.kbH*4*v*(1 - v);
+      fsPencilPlace(f, X(u), Y(u), Y(u) - Y(u0));
+      if(t === w + P.kbT - 1){ f.vy = 0; f.y = ay; f.x = st.kb.xe; }
+    }
+    if(t === w + 14){
       shake(10);
       for(const o of fighters){
         if(fsHurtMark(f, o) || st.hit.has(o.idx) || st.hit2.has(o.idx)) continue;
-        if(hurtGap(o, f.x, f.y) < 420){ st.hit2.add(o.idx); o.countering = 0; applyHit(o, 14, (Math.sign(o.x - f.x) || f.face)*18, -12, f); }
+        if(hurtGap(o, ax, ay) < 420){ st.hit2.add(o.idx); o.countering = 0; applyHit(o, 14, (Math.sign(o.x - ax) || st.dir)*18, -12, f); }
       }
     }
   },
   end(f){ stunFx(f, 70); },
   ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && hurtGap(o, f.x, f.y) < 280) return true; return false; },
   draw(f, c){
-    const t = f.fsT || 0, w = f.fsWind || 44;
-    c.save(); c.translate(f.x, f.y);
-    if(t >= w){
+    const P = PENCIL_FS, t = f.fsT || 0, w = f.fsWind || P.wind, ax = f.fsAx != null ? f.fsAx : f.x, ay = f.fsAy != null ? f.fsAy : f.y, fy = ay + f.r;
+    const dir = f.fsBx != null && f.fsBx < ax ? -1 : 1;   // the van's nose: toward her seat
+    c.save();
+    if(t < w){   // THE VAN: it grows in over its first 12 frames, shakes as it idles and harder as it builds
+      const k = Math.max(0.08, Math.min(1, (t + 1)/P.grow)), run = Math.max(0, Math.min(1, (t - P.hop)/(w - P.hop))), amp = t < P.hop ? 0 : 0.5 + 2.2*run*run + (t >= P.catchAt ? 0.8 : 0);
+      fsPencilVan(c, ax + Math.sin(t*1.9)*amp, fy + Math.sin(t*2.7 + 1)*amp*0.6, dir, k, 1, t >= P.grow);
+    } else if(t < w + 10){   // ...and it blows apart with the blast
+      const u = (t - w)/10; fsPencilVan(c, ax, fy, dir, 1 + 0.3*u, 1 - u, false); fsDisc(c, ax, ay, 40 + 130*u, '#fff', 0.7*(1 - u));
+    }
+    const px = ax - dir*(P.vw/2 + 11), py = fy - 13;   // THE EXHAUST: puffs off the end of the pipe, drifting back and up
+    if(t >= P.hop && t < w + 30) for(let i = 0; i < P.puffs.length; i++){
+      const tb = P.puffs[i], age = t - tb; if(age < 0 || age >= 26) continue;
+      const k = age/26, x = px - dir*(6 + 56*k + 5*Math.sin(tb*1.7)), y = py - 3 - 40*k*(1 - 0.25*k) + 2.5*Math.sin(tb*2.3 + age*0.3), r = 5 + 13*k;
+      c.globalAlpha = 0.85*(1 - k); c.fillStyle = k < 0.45 ? '#6f737b' : '#c9cbd2'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5;
+      c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); c.stroke();
+    }
+    c.globalAlpha = 1;
+    if(t >= w){   // THE RINGS, round the van's middle (the blast's)
+      c.save(); c.translate(ax, ay);
       const u1 = Math.min(1, (t - w)/18), u2 = t >= w + 14 ? Math.min(1, (t - w - 14)/20) : -1;
       if(u1 < 1){ fsDisc(c, 0, 0, 300*u1, '#fff', 0.5*(1 - u1)); fsRing(c, 0, 0, 300*u1, '#f2d84b', 16*(1 - u1) + 2, 1 - u1); }
       if(u2 >= 0 && u2 < 1){ fsRing(c, 0, 0, 420*u2, '#a78bfa', 12*(1 - u2) + 2, 1 - u2); }
-      if(t > w + 30 && t < w + 100){ c.globalAlpha = 0.9; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; for(let i = 0; i < 3; i++){ const a = hazardT*0.2 + i*2.1; c.beginPath(); c.arc(Math.cos(a)*18, -f.r - 14 + Math.sin(a)*5, 4, 0, 7); c.stroke(); } }   // dizzy
+      c.restore();
+      if(t > w + 30 && t < w + 100){ c.save(); c.translate(f.x, f.y); c.globalAlpha = 0.9; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; for(let i = 0; i < 3; i++){ const a = hazardT*0.2 + i*2.1; c.beginPath(); c.arc(Math.cos(a)*18, -f.r - 14 + Math.sin(a)*5, 4, 0, 7); c.stroke(); } c.restore(); }   // dizzy, where she came down
     }
     c.restore();
   },
@@ -72108,7 +72207,7 @@ function draw(){
   // fighters
   drawKitFx('under');   // the Heat Explosion, behind the fighters it catches
   if(FINX.length) finxDraw('under');   // a corkboard, a puddle, a propped mirror (FINISHERS V2)
-  for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(FINX.length && finxHidden(f)) continue; if(f._oneGhost) drawOneGhostAura(f); if(f.fsGlow>0 || f.fsId){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); fsDrawAura(f); ctx.restore(); } else fsDrawAura(f); } drawFighter(f); if(f._soakT > hazardT){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); drawSoakDrips(f); ctx.restore(); } else drawSoakDrips(f); } if(SETTINGS.mode==='ctf'){ ctfDrawCarry(f); if(CTF.spec) ctfSpecDrawChip(f); } }
+  for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(FINX.length && finxHidden(f)) continue; if(f.fsId && fsHides(f)) continue; if(f._oneGhost) drawOneGhostAura(f); if(f.fsGlow>0 || f.fsId){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); fsDrawAura(f); ctx.restore(); } else fsDrawAura(f); } drawFighter(f); if(f._soakT > hazardT){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); drawSoakDrips(f); ctx.restore(); } else drawSoakDrips(f); } if(SETTINGS.mode==='ctf'){ ctfDrawCarry(f); if(CTF.spec) ctfSpecDrawChip(f); } }
   if(SETTINGS.mode==='ctf') ctfDrawCoverFront();   // the props a friend stands in, see-through, over the fighters
   if(CTUT.active) ctutDrawWorld();   // the Capture the Flag practice: where a flag may not go
   drawKitFx('over');    // the Fist Thingy's arm, over the fighters it reaches across
