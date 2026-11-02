@@ -25855,6 +25855,476 @@ FINAL_SMASHES['Balloon'] = fsCircle({ id:'tirade', c1:'#e0503a', c2:'#ffffff', R
 // and 14 frames later 260 (14%). It costs him: 8% for each.
 FINAL_SMASHES['Bomb'] = fsCircle({ id:'literally', c1:'#3a3a3a', c2:'#f0803a', R:180, R2:260, gap:14, dmg:24, dmg2:14, kb:20, kb2:16, art:FS_GLYPH.spark, tick(f, st, t){ if(t === 36 || t === 50) f.pct = Math.min(Math.max(0, f.koCap - 5), f.pct + 8); } });
 
+// ---- FSA lane b: begin ----------------------------------------------------------------------------------------------------------------------
+// FINAL SMASH ENTRANCES, lane b (the owner, 2026-11-02: every Final Smash gets an in-character entrance animation before its blast, which comes out
+// exactly as it does now; Pencil's hop into her van is the model): Silver Spoon, Tapey, Tea Kettle, Bot, Eraser, Knife, Lightbulb, Taco (II). Each row below is
+// its old row with an entrance built in front of it by fsaB_row:
+//   - The row's WIND grows to the entrance's length W. The old row runs on the shifted clock (t - S, S = W - FS_WIND): its blast, hits, numbers, lock and
+//     end are the old ones, S frames later, and its draw is called on that clock from the blast on. The entrance's own tick and draw run for t < W.
+//   - THE CATCH moves with the blast: it lands FS_WIND frames before it, as it always did, so nobody is held through the entrance and a caught foe is
+//     helpless no longer than before. The catch area is the one worked out when the Final Smash was fired (`late`); `catch` returns nothing for the
+//     framework's own landing, which then takes no one (fsCatch of a null area), and the CPU's "will it land?" (fsBotInput) still sees the real area.
+//   - `still`: the framework's gather (stupK: the lean back, the glow) is off through the entrance, so the entrance's own pose is what is seen.
+//   - Everything drawn is a pure function of the fighter's wire fields (fsT, fsWind, fsAx, fsAy, face, position): nothing here is random and the
+//     sim spends no dice in an entrance's own frames (no puff), so a seeded match is the same with or without it. No words anywhere.
+//   - The body: the fighter's FIGHTER_ANIM.deform calls fsaB_deform (a lean, a spin, a squash, a shudder: render only, the fighter's place does not change
+//     for it), and drawSpriteBody calls fsaB_body after the face layer (a silhouette, gold, a glow laid over the render itself). A knock-back (Tapey, Tea Kettle)
+//     is a scripted slide that starts the frame after the blast: fsaB_room keeps it on the surface the fighter stood on, a body inside the edge, and out of
+//     solid blocks (none on the Moon), so it never carries the fighter to a blast line from a normal place.
+function fsaB_e(u){ u = u < 0 ? 0 : (u > 1 ? 1 : u); return u*u*(3 - 2*u); }            // smooth 0 -> 1
+function fsaB_eo(u){ u = u < 0 ? 0 : (u > 1 ? 1 : u); return 1 - (1 - u)*(1 - u); }     // fast, then slow
+function fsaB_bump(u){ return u > 0 && u < 1 ? Math.sin(u*Math.PI) : 0; }              // 0 -> 1 -> 0
+function fsaB_row(base, o){
+  const W = o.W, S = W - base.wind, row = Object.assign({}, base);
+  row.wind = W; row.dur = base.dur + S; row.fsaB = o;
+  if(typeof base.lockEnd === 'number') row.lockEnd = base.lockEnd + S;
+  row.catch = function(f){
+    const sh = base.catch ? base.catch(f) : { kind:'circle', x:f.x, y:f.y, r:Math.min(base.reach || 200, 400) };
+    if(f._fs && f._fs.d === row && f._fs.cs === null){ f._fs.late = sh; return null; }   // fired just now: the area is kept for the late landing
+    return sh;
+  };
+  row.start = function(f, st){
+    if(base.start) base.start.call(base, f, st);
+    if(o.still){ f._atkAnim = 0; f._atkKind = null; } else armAtk(f, W, 'fsgather');
+    st.air = !f.onground;
+    if(o.start) o.start(f, st);
+  };
+  row.tick = function(f, st, t){
+    if(t === 0) st.y0 = f.y;
+    if(t > 0 && t <= S && !f.onground && !(MCAVE && MCAVE.on)){ f.y = st.y0; f.vy = 0; }   // an airborne holder sank a little each wind frame (the framework holds their speed, not their place): the entrance keeps them where the old row's first frame had them, and the old row's own wind frames sink them as they did, so its blast is on the same spot
+    if(t === S - 1 && st.late){ st.cs = st.late; hitArt(f, 'fscatch', st.cs, { color:f.color, world:true, fade:10 }); fsCatch(f, st); }   // the catch: FS_WIND frames before the blast, as it was
+    if(t >= S) base.tick.call(base, f, st, t - S);
+    if(o.still && t < W){ f._atkAnim = 0; f._atkKind = null; }
+    if(o.tick) o.tick(f, st, t);
+  };
+  row.draw = function(f, c){
+    const t = f.fsT || 0;
+    if(o.draw) o.draw(f, c, t, f.face < 0 ? -1 : 1);
+    if(t < W) return;
+    const T = f.fsT, Wd = f.fsWind;   // the old row's own picture, from its blast on, on its own clock
+    f.fsT = t - S; f.fsWind = (Wd || W) - S;
+    try{ base.draw.call(base, f, c); } finally { f.fsT = T; f.fsWind = Wd; }
+  };
+  return row;
+}
+// The row of the Final Smash this fighter is in the middle of, if it is one of lane b's (and past the catch phase).
+function fsaB_of(f){
+  if(!f || !f.fsId || f.fsC > 0) return null;
+  const d = FINAL_SMASHES[f.name];
+  return d && d.id === f.fsId && d.fsaB ? d : null;
+}
+function fsaB_deform(f, ctx, R){ const d = fsaB_of(f); return !!(d && d.fsaB.deform && d.fsaB.deform(f, ctx, R, f.fsT || 0, f.face < 0 ? -1 : 1) === true); }
+function fsaB_body(f, ctx, dw, dh, lay){ const d = fsaB_of(f); if(d && d.fsaB.body) d.fsaB.body(f, ctx, dw, dh, lay, f.fsT || 0, f.face < 0 ? -1 : 1); }
+// A `still` row: no gather through its entrance (the framework's startup would lean the holder back and light them in their colour).
+const fsaB_stupK0 = stupK;
+stupK = function(f){
+  if(f && f.fsId && !(f.fsC > 0)){ const d = FINAL_SMASHES[f.name]; if(d && d.id === f.fsId && d.fsaB && d.fsaB.still && (f.fsT || 0) < (f.fsWind || 0)) return -1; }
+  return fsaB_stupK0(f);
+};
+// How far the holder can be slid along `s` (+1 right, -1 left) from x0 and still stand on what they stood on (feet at fy), a body inside the edge: the surface
+// under them must go on (in the air they stood in: any surface below) and no solid block may be in the way. On the Moon, none.
+function fsaB_room(x0, fy, s, want, r, air){
+  if(MCAVE && MCAVE.on) return 0;
+  const plats = platRects(); let ok = 0;
+  for(let d = 8; d <= want; d += 8){
+    const x = x0 + s*d;
+    if(x < 70 || x > WW - 70) return Math.max(0, ok - 28);
+    let hold = air ? landable(x, fy) : false;
+    if(!air) for(const tp of vanTopsAt(x)) if(Math.abs(tp.y - fy) <= 12){ hold = true; break; }
+    if(!hold) return Math.max(0, ok - 28);
+    for(const p of plats){ if(!p.solid || p.rot) continue; if(x > p.x - r && x < p.x + p.w + r && p.y < fy - 4 && p.y + (p.h || 16) > fy - 2*r) return Math.max(0, ok - 28); }
+    ok = d;
+  }
+  return want;
+}
+// A knock-back, one frame at a time: from `x0`, `D` px along `s`, easing out over `T` frames; frame `u` (1..T) of it.
+function fsaB_slide(f, x0, s, D, T, u){ f.x = x0 + s*D*fsaB_eo(u/T); f.vx = 0; }
+// Small drawing pieces.
+function fsaB_star4(c, x, y, r, col){ c.beginPath(); c.moveTo(x, y - r); c.quadraticCurveTo(x, y, x + r, y); c.quadraticCurveTo(x, y, x, y + r); c.quadraticCurveTo(x, y, x - r, y); c.quadraticCurveTo(x, y, x, y - r); c.fillStyle = col; c.fill(); }
+function fsaB_puff(c, x, y, r, a, fill, edge){ c.globalAlpha = a; c.fillStyle = fill; c.strokeStyle = edge; c.lineWidth = 1.8; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); c.stroke(); }
+// A limb: a line out to a round hand (Taco's arms, Bot's stilt-leg's own look is drawn in fsaB_leg).
+function fsaB_limb(c, x0, y0, x1, y1, bx, by, lw, col, hr){
+  c.save(); c.lineCap = 'round'; c.lineJoin = 'round';
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = lw + 3; c.beginPath(); c.moveTo(x0, y0); c.quadraticCurveTo(bx, by, x1, y1); c.stroke();
+  c.strokeStyle = col; c.lineWidth = lw; c.beginPath(); c.moveTo(x0, y0); c.quadraticCurveTo(bx, by, x1, y1); c.stroke();
+  c.fillStyle = col; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.arc(x1, y1, hr, 0, 7); c.fill(); c.stroke();
+  c.restore();
+}
+
+// ---- SILVER SPOON -- GLOWING GOLD: he blacks out into a shuddering silhouette (his own words: "sort of blacks out when it activates"), gold climbs up him from the
+// foot of the handle to the bowl, a four-point gleam flashes on the bowl, he floats a few pixels off the floor, serene, and the flash goes. The body is the render
+// itself (fsaB_body: a black copy, then a gold one under a rising edge), his float and his shudder are in his deform.
+const FSAB_SPOON = { W:40, black:12, c0:16, c1:36, up:6, tail:8 };
+const fsaB_spoon = {
+  W:FSAB_SPOON.W, still:true,
+  deform(f, ctx, R, t){
+    const P = FSAB_SPOON;
+    const h = t < P.W ? P.up*fsaB_e((t - 14)/16) : P.up*(1 - fsaB_e((t - P.W)/P.tail));   // a few pixels off the floor, and down again after the flash
+    const sh = t < P.c0 + 6 ? Math.sin(t*2.9)*1.5*(1 - fsaB_e((t - P.c0)/6)) : 0;          // the shudder of the black-out, until the gold takes him
+    ctx.translate(sh, -h);
+    return false;   // (the chin-up idle goes on under it)
+  },
+  body(f, ctx, dw, dh, lay, t){
+    const P = FSAB_SPOON, a0 = ctx.globalAlpha;
+    if(t >= P.W + P.tail) return;
+    const out = t >= P.W ? 1 - fsaB_e((t - P.W)/P.tail) : 1;
+    const blk = t < P.c1 ? Math.min(1, (t + 1)/P.black) : 0;   // grown in over 12 frames
+    if(blk > 0) lay('#0b0b10', blk);
+    const k = Math.max(0, Math.min(1, (t - P.c0)/(P.c1 - P.c0)));
+    if(k > 0){
+      ctx.save(); ctx.beginPath(); ctx.rect(-dw/2 - 3, dh/2 - dh*k, dw + 6, dh*k + 3); ctx.clip(); lay('#f2c94c', out); ctx.restore();   // the gold, from the foot of the handle up
+      if(k < 1){ ctx.save(); ctx.beginPath(); ctx.rect(-dw/2 - 3, dh/2 - dh*k - 2, dw + 6, 5); ctx.clip(); lay('#fff6c0', 0.9); ctx.restore(); }
+      ctx.save(); ctx.globalAlpha = a0*out; ctx.fillStyle = '#ffffff';
+      for(let i = 0; i < 3; i++){ const y = dh/2 - dh*k + Math.sin(t*0.9 + i*2.1)*4, x = Math.sin(t*1.3 + i*2.4)*dw*0.3; ctx.beginPath(); ctx.arc(x, y, 1.3, 0, 7); ctx.fill(); }   // glints along the edge
+      ctx.restore();
+    }
+    if(t >= 33 && t < P.W + 5){   // the gleam on the bowl, flashing at the top
+      const u = t < 38 ? (t - 33)/5 : 1 - (t - 38)/(P.W + 5 - 38);
+      ctx.save(); ctx.globalAlpha = a0*Math.max(0, u); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.4;
+      fsaB_star4(ctx, -dw*0.02, -dh*0.3, 4 + 9*Math.max(0, u), '#ffffff');
+      ctx.restore();
+    }
+  },
+};
+
+// ---- TAPEY -- PLAYBACK: REWIND (she winds back with her whirring shake while a loop of brown tape spools out of her and is sucked back in), PLAY (her red button clicks
+// down and glows hard, her speaker grille swells), and the wave comes out; then EJECT: the full-volume wave rocks her back about 50 px, the tape streaming off her as it does
+// when she is hit (it starts the frame after the wave leaves).
+const FSAB_TAPE = { W:34, rew:17, kb:50, kbT:14, rib:26 };
+const fsaB_tapey = {
+  W:FSAB_TAPE.W, still:true,
+  tick(f, st, t){
+    const P = FSAB_TAPE;
+    if(t === P.W){ st.kx = f.x; st.ks = -st.dir; st.kD = Math.min(P.kb, fsaB_room(f.x, f.y + f.r, st.ks, P.kb, f.r, st.air)); }
+    if(t > P.W && t <= P.W + P.kbT && st.kD > 0) fsaB_slide(f, st.kx, st.ks, st.kD, P.kbT, t - P.W);
+  },
+  deform(f, ctx, R, t, dir){
+    const P = FSAB_TAPE;
+    let ang = 0, sy = 1, jx = 0;
+    if(t < P.rew){ const k = fsaB_e(t/5); ang = -dir*0.10*k + Math.sin(t*3.3)*0.035*k; jx = Math.sin(t*2.7)*1.3*k; }   // REWIND: wound back, whirring
+    else if(t < P.W){ const k = fsaB_e((t - P.rew)/6); ang = -dir*0.10*(1 - k) + dir*0.07*k; sy = 1 - 0.07*fsaB_bump((t - P.rew)/5); }   // PLAY: the click, then a steady push
+    else if(t < P.W + 22){ ang = -dir*0.13*(1 - fsaB_e((t - P.W)/22)); }   // EJECT: rocked back
+    ctx.translate(jx, 0); deformAboutFeet(ctx, R, ang, 1, sy);
+    return t < P.W;   // (after the blast the recoil is laid over her own swing)
+  },
+  draw(f, c, t, dir){
+    const P = FSAB_TAPE, R = f.r, x = f.x, y = f.y;
+    c.save(); c.lineCap = 'round'; c.lineJoin = 'round';
+    if(t < 20){   // the tape: a loop spooled out and sucked back in, twice over
+      for(let q = 0; q < 2; q++){
+        const k = fsaB_bump((t - q*4)/16); if(!(k > 0)) continue;
+        const ax = x - dir*(R*0.45 - q*R*0.2), ay = y - R*0.55 - q*R*0.1, rl = (20 + q*6)*k*(1 + 0.08*Math.sin(t*1.7 + q)), cx = ax - dir*(26 + q*8)*k, cy = ay - (24 + q*6)*k;
+        c.globalAlpha = 0.95;
+        const phi = Math.atan2(ay - cy, ax - cx);
+        c.beginPath(); c.moveTo(ax, ay); c.lineTo(cx + Math.cos(phi)*rl, cy + Math.sin(phi)*rl); c.arc(cx, cy, rl, phi, phi + 6.0);
+        c.lineWidth = 7; c.strokeStyle = '#1c1c1c'; c.stroke();
+        c.lineWidth = 4.4; c.strokeStyle = '#6b4a30'; c.stroke();
+        c.lineWidth = 1.4; c.strokeStyle = '#a07e5a'; c.stroke();
+      }
+    }
+    if(t >= P.rew){   // PLAY: the red button, clicked down, glowing hard; the grille swelling
+      const g = fsaB_e((t - P.rew)/10), fade = t > P.W + 30 ? Math.max(0, 1 - (t - P.W - 30)/12) : 1, bx = x + dir*R*0.58, by = y + R*1.0, press = t < P.rew + 4 ? 0.7 : 0.9;
+      if(fade > 0){
+        c.globalAlpha = (0.2 + 0.65*g)*fade*(0.9 + 0.1*Math.sin(t*1.3)); c.fillStyle = '#ff3a5a'; c.beginPath(); c.arc(bx, by, R*(0.3 + 0.5*g), 0, 7); c.fill();
+        c.globalAlpha = fade; c.fillStyle = '#e0203f'; c.strokeStyle = '#5a0a18'; c.lineWidth = 2; c.beginPath(); c.arc(bx, by, R*0.17*press, 0, 7); c.fill(); c.stroke();
+        const sw = fsaB_e((t - P.rew - 2)/10), gx = x + dir*R*0.95, gy = y + R*0.5;   // the speaker grille, swelling out of her front
+        if(sw > 0){
+          c.globalAlpha = 0.85*sw*fade; c.fillStyle = '#2a2630'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.ellipse(gx, gy, R*(0.12 + 0.16*sw), R*(0.34 + 0.2*sw), 0, 0, 7); c.fill(); c.stroke();
+          c.strokeStyle = '#d8d0c0'; c.lineWidth = 1.6; for(let i = -1; i <= 1; i++){ c.beginPath(); c.moveTo(gx - R*0.1*sw, gy + i*R*0.17*sw*1.4); c.lineTo(gx + R*0.1*sw, gy + i*R*0.17*sw*1.4); c.stroke(); }
+        }
+      }
+    }
+    if(t > P.W && t < P.W + P.rib){   // EJECT: the tape streaming off her, as when she is hit
+      const a = 1 - (t - P.W)/P.rib, x0 = x - dir*R*0.7, y0 = y + R*0.05;
+      c.globalAlpha = 0.95*a; c.strokeStyle = '#5a3d28'; c.lineWidth = 3; c.beginPath(); c.moveTo(x0, y0);
+      for(let i = 1; i <= 8; i++){ const u = i/8; c.lineTo(x0 - dir*u*R*1.9, y0 + Math.sin(u*5 + t*0.5)*R*0.25*u - u*R*0.2); }
+      c.stroke();
+    }
+    c.restore();
+  },
+};
+
+// ---- TEA KETTLE -- MAMA'S GOTCHA!: she comes to the boil (rattling, her face flushing pink, steam puffing from spout and lid three times, each bigger and quicker: her boiled-over look,
+// ramped up), then one long whistle as she tips her spout at the foe and a thick plume of steam rushes out and wraps round them like arms, arriving on the first squeeze. On the
+// boil-over the jet shoves her back about 60 px, skidding (her Steam Jet's recoil), starting the frame after the throw.
+const FSAB_KETTLE = { W:38, puffs:[4, 12, 18], size:[1, 1.5, 2.1], rec:60, recT:16, tip:8 };
+const fsaB_kettle = {
+  W:FSAB_KETTLE.W, still:true,
+  tick(f, st, t){
+    const P = FSAB_KETTLE, S = P.W - FS_WIND, tEnd = S + FS_WIND + 5*6 + 4;
+    if(t === S){ const dx = f.fsAx - f.x; if(Math.abs(dx) > 8) f.face = dx > 0 ? 1 : -1; st.fd = f.face < 0 ? -1 : 1; }   // she turns her spout to the foe (the spot the old row fixed)
+    if(t === tEnd){ st.kx = f.x; st.ks = -(st.fd || 1); st.kD = Math.min(P.rec, fsaB_room(f.x, f.y + f.r, st.ks, P.rec, f.r, st.air)); }
+    if(t > tEnd && t <= tEnd + P.recT && st.kD > 0) fsaB_slide(f, st.kx, st.ks, st.kD, P.recT, t - tEnd);
+  },
+  deform(f, ctx, R, t, dir){
+    const P = FSAB_KETTLE, S = P.W - FS_WIND, tEnd = S + FS_WIND + 34;
+    let ang = 0, sx = 1, sy = 1, jx = 0;
+    if(t < S){ const A = 0.5 + 2.4*(t/S)*(t/S); jx = Math.sin(t*3.1)*A; ang = Math.sin(t*2.3 + 1)*0.012*A; sy = 1 + Math.sin(t*3.7)*0.01*A; }   // the rattle, harder as she boils
+    else if(t < tEnd){ const k = fsaB_e((t - S)/P.tip); ang = dir*(t < P.W ? 0.16 : 0.08)*k; jx = Math.sin(t*3.3)*1.1*k; }   // spout tipped at the foe, shivering through the whistle
+    else if(t < tEnd + 26){ const u = (t - tEnd)/26; ang = -dir*0.2*(1 - fsaB_e(u)); sy = 1 - 0.05*fsaB_bump(u*2); }   // the recoil
+    ctx.translate(jx, 0); deformAboutFeet(ctx, R, ang, sx, sy);
+    return t < P.W;
+  },
+  draw(f, c, t, dir){
+    const P = FSAB_KETTLE, S = P.W - FS_WIND, tEnd = S + FS_WIND + 34, R = f.r, x = f.x, y = f.y;
+    const spx = x + dir*R*0.95, spy = y - R*0.05;   // the spout's mouth
+    c.save(); c.lineCap = 'round'; c.lineJoin = 'round';
+    // THE BOIL: her face flushes (her boiled-over look: the red wash), deepening to the whistle and fading after the boil-over
+    const fl = (t < S ? 0.1 + 0.3*(t/S) : 0.4)*(t > tEnd ? Math.max(0, 1 - (t - tEnd)/20) : 1) + 0.04*Math.sin(t*0.9);
+    if(fl > 0.01){ c.globalAlpha = fl; c.fillStyle = '#ff7a8a'; c.beginPath(); c.ellipse(x, y + R*0.35, R*1.0, R*0.85, 0, 0, 7); c.fill(); }
+    // THE PUFFS: from the spout and the lid, three times, bigger and quicker
+    for(let e = 0; e < 3; e++){
+      const age = t - P.puffs[e]; if(age < 0 || age >= 16) continue;
+      const u = age/16, m = P.size[e];
+      for(let i = 0; i < 4; i++){
+        const k = Math.max(0, u - i*0.07); if(k <= 0) continue;
+        fsaB_puff(c, spx + dir*(4 + k*(26 + 8*m) + i*4*m), spy - 3 - k*(22 + 12*m) - i*3*m, R*(0.16 + 0.24*k)*m*(0.7 + 0.1*i), 0.95*(1 - u*u), '#ffffff', '#8e98ae');   // out of the spout
+      }
+      for(let i = 0; i < 3; i++){
+        const k = Math.max(0, u - i*0.08); if(k <= 0) continue;
+        fsaB_puff(c, x + Math.sin(k*6 + i + e)*R*0.14, y - R*0.65 - k*(26 + 12*m) - i*3*m, R*(0.14 + 0.22*k)*m*0.85, 0.9*(1 - u*u), '#ffffff', '#8e98ae');   // off the lid
+      }
+    }
+    // THE WHISTLE AND THE PLUME: steam from the spout at the foe, a thick plume rushing out along the way to them and wrapping round them like arms
+    if(t >= S + 2){
+      const qx = f.fsAx, qy = f.fsAy, u = Math.min(1, (t - S - 2)/(P.W + 5 - S - 2)), q = fsaB_eo(u), fade = t > tEnd ? Math.max(0, 1 - (t - tEnd)/10) : 1;
+      if(fade > 0){
+        const tx = spx + (qx - spx)*q, ty = spy + (qy - spy)*q, w0 = 9 + 8*u, dx = qx - spx, dy = qy - spy, len = Math.hypot(dx, dy) || 1, nx = -dy/len, ny = dx/len;
+        const band = (wd, col, al)=>{ c.globalAlpha = al*fade; c.strokeStyle = col; c.lineWidth = wd; c.beginPath(); for(let i = 0; i <= 14; i++){ const s = i/14, off = Math.sin(s*Math.PI)*12*(1 - 0.5*u) + Math.sin(s*7 + t*0.5)*3; const px = spx + (tx - spx)*s + nx*off, py = spy + (ty - spy)*s + ny*off; if(i) c.lineTo(px, py); else c.moveTo(px, py); } c.stroke(); };
+        band(w0 + 4, '#1c1c1c', 0.85); band(w0, '#ffffff', 0.92);
+        if(u >= 1){   // the arms round them: two curls of steam that squeeze with each of the five holds
+          let sq = 0; for(let j = 0; j < 5; j++) sq = Math.max(sq, fsaB_bump((t - (P.W + 5 + 6*j) + 2)/5));
+          const rr = 34 - 7*sq;
+          for(let a = 0; a < 2; a++){
+            const a0 = (a ? Math.PI : 0) + 0.4 + Math.sin(t*0.12)*0.15;
+            c.globalAlpha = 0.92*fade; c.strokeStyle = '#1c1c1c'; c.lineWidth = 12; c.beginPath(); c.arc(qx, qy, rr, a0, a0 + 3.5); c.stroke();
+            c.strokeStyle = '#ffffff'; c.lineWidth = 8; c.beginPath(); c.arc(qx, qy, rr, a0, a0 + 3.5); c.stroke();
+          }
+        }
+      }
+    }
+    // THE JET: on the boil-over, steam out of the spout the way she is shoved from
+    if(t > tEnd && t < tEnd + 14){ const u = (t - tEnd)/14; c.strokeStyle = '#ffffff'; c.lineWidth = 3.5; for(let i = -1; i <= 1; i++){ c.globalAlpha = 0.9*(1 - u); c.beginPath(); c.moveTo(spx, spy + i*4); c.lineTo(spx + dir*(14 + 44*u), spy + i*(6 + 10*u)); c.stroke(); } }
+    c.restore();
+  },
+};
+
+// ---- BOT -- GOTCHA!: they hop with a spin for joy and land, then stretch one leg out across the gap to the foe, the same black stilt-leg and oval foot as Bridge the Gap!
+// growing in over 12 frames. The six kicks are that foot pistoning at the foe, and the last is a long wind-back and a whip; the snapping-back leg is the only recoil.
+const FSAB_BOT = { W:30, hop:16, hopH:44, grow:12 };
+const fsaB_bot = {
+  W:FSAB_BOT.W, still:true,
+  deform(f, ctx, R, t, dir){
+    const P = FSAB_BOT;
+    if(t >= P.W) return false;
+    if(t < P.hop){ const u = (t + 1)/P.hop; ctx.translate(0, -P.hopH*4*u*(1 - u)); ctx.rotate(dir*Math.PI*2*fsaB_e(u)); }   // the hop, one turn in the air
+    else if(t < P.hop + 4){ const q = 1 - (t - P.hop)/4; deformAboutFeet(ctx, R, 0, 1 + 0.1*q, 1 - 0.14*q); }   // landing
+    return true;
+  },
+  draw(f, c, t, dir){
+    const P = FSAB_BOT, S = P.W - FS_WIND, R = f.r, tf = P.W + 34;
+    if(t < S || t > tf + 12) return;
+    const qx = f.fsAx, qy = f.fsAy, sx = (qx - f.x) < 0 ? -1 : 1, rx = f.x + sx*R*0.3, ry = f.y + R*0.95;   // the hip, under the body, on the side of the foe
+    let ext;
+    if(t < S + P.grow) ext = fsaB_e((t - S + 1)/P.grow);   // growing out to them over 12 frames
+    else if(t > tf) ext = Math.max(0, 1.12*(1 - fsaB_e((t - tf)/10)));   // snapping back
+    else if(t === tf) ext = 1.12;   // the whip
+    else if(t >= tf - 4) ext = 1 - 0.55*fsaB_e((t - (tf - 4))/3.5);   // the long wind-back
+    else { ext = 1; for(let j = 0; j < 6; j++){ const dt = P.W + 4 + 5*j - t; if(dt >= 0 && dt <= 3){ ext = 1 - 0.3*(dt/3); break; } } }   // the kicks: drawn back, then in
+    if(ext <= 0.001) return;
+    const vx = qx - rx, vy = qy - ry, len = Math.hypot(vx, vy) || 1, ux = vx/len, uy = vy/len, reach = Math.max(10, len - 20);
+    const fx = rx + ux*reach*ext, fy = ry + uy*reach*ext, bend = ext > 1 ? 12*(ext - 1)/0.12 : 0;
+    c.save(); c.strokeStyle = '#1c1c1c'; c.fillStyle = '#1c1c1c'; c.lineWidth = 3.2; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(rx, ry); c.quadraticCurveTo((rx + fx)/2 - uy*bend, (ry + fy)/2 + ux*bend, fx, fy); c.stroke();
+    c.beginPath(); c.ellipse(fx, fy, R*0.12, R*0.28, Math.atan2(uy, ux), 0, 7); c.fill();
+    c.restore();
+  },
+};
+
+// ---- ERASER -- WIPE THE SLATE CLEAN: bored, he slumps and rolls his head, then gives the air in front of him one slow, lazy wipe from side to side (his Rub Out wobble, slower and
+// wider), a pale smear growing over where he rubs (over 12 frames) and pink crumbs shedding off him. On the last pass he shrugs, the smear snaps clean away, and the slate is wiped.
+const FSAB_ERASER = { W:34, slump:8, wipe0:8, wipe1:31, smear0:10 };
+const fsaB_eraser = {
+  W:FSAB_ERASER.W, still:true,
+  deform(f, ctx, R, t, dir){
+    const P = FSAB_ERASER;
+    let jx = 0, ang = 0, sy = 1;
+    if(t < P.wipe0){ const k = fsaB_e(t/P.slump); ang = dir*0.09*k + Math.sin(t*0.8)*0.03*k; sy = 1 - 0.07*k; }   // the slump, his head rolling
+    else if(t < P.wipe1){ const ph = (t - P.wipe0)/(P.wipe1 - P.wipe0); jx = Math.sin(ph*Math.PI*2)*R*0.42; ang = dir*0.09*(1 - fsaB_e((ph - 0.7)/0.3)) + Math.sin(ph*Math.PI*2)*0.1; sy = 0.93; }   // one slow, lazy wipe, side to side
+    else if(t < P.W){ const u = (t - P.wipe1)/(P.W - P.wipe1); ang = dir*0.02; sy = 0.93 + 0.13*fsaB_bump(u); ctx.translate(0, -3*fsaB_bump(u)); }   // the shrug
+    else return false;
+    ctx.translate(jx, 0); deformAboutFeet(ctx, R, ang, 1, sy);
+    return t < P.W;
+  },
+  draw(f, c, t, dir){
+    const P = FSAB_ERASER, R = f.r, x = f.x, y = f.y;
+    if(t >= P.W) return;   // the smear snaps clean away with the blast
+    c.save();
+    const g = fsaB_e((t - P.smear0 + 1)/12);
+    if(g > 0){
+      const sway = Math.sin(((t - P.wipe0)/(P.wipe1 - P.wipe0))*Math.PI*2), x0 = x + dir*R*0.75, wd = 96*g, top = y - R*0.95, h = R*2.0;
+      c.globalAlpha = 0.5*g; c.fillStyle = ERASER_INK.clean; c.fillRect(Math.min(x0, x0 + dir*wd), top, wd, h);
+      c.globalAlpha = 0.8*g; c.strokeStyle = '#ffffff'; c.lineWidth = 4; c.lineCap = 'round';
+      for(let i = 1; i <= 3; i++){ const yy = top + h*i/4; c.beginPath(); c.moveTo(x0 + dir*(6 + sway*8), yy); c.lineTo(x0 + dir*(wd - 8 + sway*6), yy + (i - 2)*3); c.stroke(); }
+      c.globalAlpha = 0.7*g; c.fillStyle = ERASER_INK.body; c.fillRect(x0 + dir*wd - (dir > 0 ? 6 : 0) + dir*sway*8, top, 6, h);   // his pink on the leading edge of the smear
+    }
+    c.fillStyle = ERASER_INK.crumb;   // the crumbs, shed off him
+    for(let i = 0; i < 9; i++){ const tb = 6 + i*3, age = t - tb; if(age < 0 || age >= 16) continue; const sd = i % 2 ? 1 : -1; c.globalAlpha = 1 - age/16; c.fillRect(x + sd*(R*0.55 + age*0.9 + (i*5)%7) - 2, y - R*0.2 + (i%3)*5 + age*1.2 + age*age*0.04, 4, 3); }
+    c.restore();
+  },
+};
+
+// ---- KNIFE -- BAG OF TRICKS: he swings a drawstring sack off his back and drops it at his feet (it grows in over 12 frames), digs in up to the shoulder with a smirk and pulls a blade
+// glint, a red caltrop and a yellow spark up out of its mouth in turn, then hoists the sack and upends it toward the foe: the nine things pour out as they do now.
+const FSAB_KNIFE = { W:40, drop:12, pulls:[16, 24, 32], hoist:34, pour:9*5 };
+function fsaB_sack(c, x, y, s, rot){   // a drawstring sack: its mouth is up, at (0, -18 s)
+  c.save(); c.translate(x, y); c.rotate(rot); c.scale(s, s);
+  c.lineJoin = 'round'; c.lineCap = 'round';
+  c.fillStyle = '#b08a5a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.6;
+  c.beginPath(); c.moveTo(-9, -15); c.bezierCurveTo(-24, -6, -19, 15, 0, 16); c.bezierCurveTo(19, 15, 24, -6, 9, -15); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#7a5a34'; c.beginPath(); c.ellipse(0, -15, 9, 3.4, 0, 0, 7); c.fill(); c.stroke();   // the mouth
+  c.strokeStyle = '#d8c28a'; c.lineWidth = 2.4; c.beginPath(); c.moveTo(-9, -12); c.quadraticCurveTo(0, -8, 9, -12); c.stroke();   // the drawstring
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.6; c.beginPath(); c.moveTo(7, -11); c.lineTo(12, -4); c.moveTo(8, -11); c.lineTo(5, -3); c.stroke();
+  c.restore();
+}
+function fsaB_trick(c, i, x, y, s){   // what he pulls out: a blade glint, a red caltrop, a yellow spark
+  c.save(); c.translate(x, y); c.scale(s, s); c.lineJoin = 'round'; c.lineCap = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2;
+  if(i === 0){ c.fillStyle = '#dfe6ee'; c.beginPath(); c.moveTo(-9, 3); c.lineTo(5, -6); c.lineTo(9, -3); c.lineTo(-5, 7); c.closePath(); c.fill(); c.stroke(); fsaB_star4(c, 7, -7, 5, '#ffffff'); }
+  else if(i === 1){ c.fillStyle = '#d6304a'; c.beginPath(); for(let k = 0; k < 8; k++){ const a = k*Math.PI/4 + 0.4, r = k % 2 ? 4 : 10; c.lineTo(Math.cos(a)*r, Math.sin(a)*r); } c.closePath(); c.fill(); c.stroke(); }
+  else { c.fillStyle = '#ffe45e'; c.beginPath(); c.moveTo(2, -10); c.lineTo(-6, 1); c.lineTo(-1, 1); c.lineTo(-3, 10); c.lineTo(6, -2); c.lineTo(1, -2); c.closePath(); c.fill(); c.stroke(); }
+  c.restore();
+}
+const fsaB_knife = {
+  W:FSAB_KNIFE.W, still:true,
+  deform(f, ctx, R, t, dir){
+    const P = FSAB_KNIFE;
+    let ang = 0, sy = 1;
+    if(t < P.drop){ const u = t/P.drop; ang = -dir*0.12*fsaB_bump(u*1.6) + dir*0.10*fsaB_e((u - 0.5)/0.5); }   // the swing of the sack off his back
+    else if(t < P.hoist){ let jerk = 0; for(const tp of P.pulls) jerk = Math.max(jerk, fsaB_bump((t - tp + 3)/6)); ang = dir*(0.2 + 0.03*jerk); sy = 0.96 - 0.02*jerk; }   // leaning into the sack, jerking at each pull
+    else if(t < P.W + P.pour + 8){ const u = fsaB_e((t - P.hoist)/6), rel = t > P.W + P.pour ? fsaB_e((t - P.W - P.pour)/8) : 0; ang = dir*0.2*(1 - u) - dir*0.12*u*(1 - rel); }   // hoisting it, leaning back under the weight
+    deformAboutFeet(ctx, R, ang, 1, sy);
+    return t < P.W;   // (through the pour it is laid over his own swing)
+  },
+  draw(f, c, t, dir){
+    const P = FSAB_KNIFE, R = f.r, x = f.x, y = f.y, fy = y + R;
+    const end = P.W + P.pour + 8;
+    if(t >= end) return;
+    const Fx = x + dir*(R + 26), Fy = fy - 14, Hx = x + dir*(R + 18), Hy = y - R*0.05;
+    let sx, sy, rot, sc;
+    if(t < P.drop){ const u = fsaB_e((t + 1)/P.drop); sx = (x - dir*R*0.7) + (Fx - x + dir*R*0.7)*u; sy = (y - R*0.1) + (Fy - y + R*0.1)*u - Math.sin(u*Math.PI)*34; rot = dir*0.6*(1 - u); sc = 0.2 + 0.8*u; }   // off his back to the floor, growing in
+    else if(t < P.hoist){ sx = Fx; sy = Fy; rot = 0; sc = 1; }
+    else { const u = fsaB_e((t - P.hoist)/6), jolt = t >= P.W && t < P.W + P.pour ? ((t - P.W) % 5 === 0 ? 1 : Math.max(0, 1 - ((t - P.W) % 5)/2)) : 0; sx = Fx + (Hx - Fx)*u + dir*2*jolt; sy = Fy + (Hy - Fy)*u + 1.5*jolt; rot = dir*0.95*u; sc = t > P.W + P.pour ? Math.max(0, 1 - (t - P.W - P.pour)/8) : 1; }   // hoisted and upended toward the foe, jolting as each thing leaves it
+    if(sc <= 0) return;
+    const mx = sx + Math.sin(rot)*18*sc, my = sy - Math.cos(rot)*18*sc;   // the mouth
+    c.save();
+    c.globalAlpha = 1;
+    // the tricks, pulled up out of the mouth in turn (and dropped back in as he hoists it)
+    if(t < P.hoist + 6){
+      for(let i = 0; i < 3; i++){
+        const age = t - P.pulls[i]; if(age < 0) continue;
+        const rise = fsaB_eo(age/10), back = fsaB_e((t - P.hoist)/6), s = Math.min(1, (age + 1)/12)*(1 - back);
+        if(s > 0.02) fsaB_trick(c, i, mx + (i - 1)*15, my - 6 - 26*rise*(1 - back) + Math.sin(t*0.5 + i)*1.5, s*1.35);
+      }
+    }
+    fsaB_sack(c, sx, sy, sc, rot);
+    if(t >= P.drop + 2 && t < P.hoist){   // digging in up to the shoulder: his arm, down into the sack (and up with each thing)
+      let hy = my + 5; for(let i = 0; i < 3; i++){ const age = t - P.pulls[i]; if(age >= 0 && age < 10) hy = my + 5 - 20*fsaB_eo(age/10) + (age < 2 ? 0 : 0); else if(age > -4 && age < 0) hy = my + 12; }
+      c.strokeStyle = '#1c1c1c'; c.lineWidth = 3.2; c.lineCap = 'round'; c.beginPath(); c.moveTo(x + dir*R*0.15, y + R*0.1); c.quadraticCurveTo(x + dir*R*0.9, y + R*0.1, mx, hy); c.stroke();
+      c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(mx, hy, 3.6, 0, 7); c.fill();
+    }
+    c.restore();
+  },
+};
+
+// ---- LIGHTBULB -- BRIGHT FLASH: a grey threaded socket cap grows in over her head (12 frames); she hops up into it, base first (her base is at her feet, so she turns over on the way), and is
+// screwed in, wobbling as the threads turn, while her glow stutters out of rhythm (dark, a weak flicker, dark, a bigger flicker) and then holds full white. She drops back to the
+// floor as the flash goes off, so the flash goes off where it always did.
+const FSAB_BULB = { W:36, grow:12, hop0:4, hop1:16, drop0:30, H:62, capY:-88, capH:34 };
+function fsaB_bulbH(t){   // how high she is (px), and how far over (0 upright .. 1 turned right over)
+  const P = FSAB_BULB;
+  if(t < P.hop0) return { h:0, o:0 };
+  if(t < P.hop1) { const u = (t - P.hop0)/(P.hop1 - P.hop0); return { h:P.H*fsaB_eo(u), o:fsaB_e(u*1.15) }; }
+  if(t < P.drop0) return { h:P.H + 4*fsaB_e((t - P.hop1)/(P.drop0 - P.hop1)), o:1 };
+  if(t < P.W){ const u = (t - P.drop0 + 1)/(P.W - P.drop0); return { h:(P.H + 4)*(1 - u*u), o:1 - fsaB_e(u*1.4) }; }
+  return { h:0, o:0 };
+}
+function fsaB_bulbLit(t){   // her glow: 0 dark .. 1 full white
+  if(t < 8) return 0;
+  if(t < 12) return 0.3*fsaB_bump((t - 8)/4);
+  if(t < 17) return 0;
+  if(t < 25) return (t % 4 < 2 ? 0.75 : 0.15);
+  return Math.min(1, 0.6 + 0.4*(t - 25)/4);
+}
+const fsaB_bulb = {
+  W:FSAB_BULB.W, still:true,
+  deform(f, ctx, R, t, dir){
+    const P = FSAB_BULB, b = fsaB_bulbH(t);
+    let wob = 0, sx = 1;
+    if(t >= P.hop1 && t < P.drop0){ const k = (t - P.hop1); wob = Math.sin(k*0.9)*0.08; sx = 0.7 + 0.3*Math.abs(Math.cos(k*0.45)); }   // the screwing: wobbling, turning on the threads
+    ctx.translate(0, -b.h); ctx.rotate(b.o*Math.PI + wob); if(sx !== 1) ctx.scale(sx, 1);
+    return t < P.W;
+  },
+  body(f, ctx, dw, dh, lay, t){
+    if(t >= FSAB_BULB.W + 1) return;
+    const L = fsaB_bulbLit(t);
+    if(L < 0.5) lay('#25252d', 0.4*(1 - L*2)); else lay('#fffbe8', 0.25 + 0.55*L);
+    if(L >= 0.5 && L < 0.99) lay('#ffffff', 0.3*L);
+  },
+  draw(f, c, t, dir){
+    const P = FSAB_BULB, R = f.r, x = f.x, y = f.y, b = fsaB_bulbH(t);
+    if(t > P.W + 4) return;
+    c.save();
+    // the glow round her: it stutters, then holds full white
+    const L = fsaB_bulbLit(t), cy = y - b.h;
+    if(L > 0.02){ c.globalAlpha = 0.26*L; c.fillStyle = '#fff6b0'; c.beginPath(); c.arc(x, cy, R*(1.6 + 0.9*L), 0, 7); c.fill(); c.globalAlpha = 0.16*L; c.fillStyle = '#ffffff'; c.beginPath(); c.arc(x, cy, R*(1.1 + 0.5*L), 0, 7); c.fill(); }
+    // the socket cap, over her head: it grows in over 12 frames, grey and threaded, and the threads turn as she is screwed in
+    const k = fsaB_e((t + 1)/P.grow)*(t >= P.W ? Math.max(0, 1 - (t - P.W)/4) : 1), capB = y + P.capY, capT = capB - P.capH*k, w = 32*k;
+    if(k > 0.02){
+      c.globalAlpha = 1; c.lineJoin = 'round'; c.lineCap = 'round';
+      c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.fillStyle = '#9aa2ac';
+      c.beginPath(); c.moveTo(x - w*0.5, capB); c.lineTo(x - w*0.5, capT + P.capH*k*0.25); c.quadraticCurveTo(x - w*0.5, capT, x - w*0.28, capT); c.lineTo(x + w*0.28, capT); c.quadraticCurveTo(x + w*0.5, capT, x + w*0.5, capT + P.capH*k*0.25); c.lineTo(x + w*0.5, capB); c.closePath(); c.fill(); c.stroke();
+      c.strokeStyle = '#5e6670'; c.lineWidth = 2;
+      const turn = t >= P.hop1 && t < P.drop0 ? (t - P.hop1)*0.5 : 0;
+      for(let i = 0; i < 4; i++){ const yy = capB - 5*k - ((i*7*k + turn*k) % (P.capH*k - 8*k)); c.beginPath(); c.moveTo(x - w*0.5 + 1, yy + 2*k); c.lineTo(x + w*0.5 - 1, yy - 2*k); c.stroke(); }
+      c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.moveTo(x, capT); c.lineTo(x, capT - 10*k); c.stroke();   // the flex it hangs on
+      c.fillStyle = '#c9d0d8'; c.beginPath(); c.ellipse(x, capB, w*0.5, 2.6*k, 0, 0, 7); c.fill(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.stroke();   // its open mouth
+    }
+    c.restore();
+  },
+};
+
+// ---- TACO (II) -- LEMON SPIT: she goes dead still with her sideways smile and only her arms work: her stretchy arms (her Retractable Arms) shoot out to either side and bring back a lemon in
+// each hand (the lemons grow in over 12 frames), she pops them in her mouth without a change of face, and her cheeks puff in one wide snap. The spit comes out as now.
+const FSAB_TACO = { W:36, out:8, lem0:8, back0:20, back1:30, pop:32, reach:130 };
+const fsaB_taco = {
+  W:FSAB_TACO.W, still:true,
+  deform(f, ctx, R, t, dir){
+    const P = FSAB_TACO;
+    let sx = 1;
+    if(t >= P.pop + 1 && t < P.W + 8){ const u = t < P.pop + 3 ? fsaB_e((t - P.pop - 1)/2) : (t < P.W + 2 ? 1 : 1 - fsaB_e((t - P.W - 2)/6)); sx = 1 + 0.16*u; }   // the cheeks: one wide snap
+    deformAboutFeet(ctx, R, 0, sx, 1 - 0.03*(sx - 1)/0.16);
+    return t < P.W;   // (the cheeks go down again over her own swing)
+  },
+  draw(f, c, t, dir){
+    const P = FSAB_TACO, R = f.r, x = f.x, y = f.y;
+    if(t >= P.pop + 4) return;
+    const mx = x + dir*R*0.2, my = y + R*0.3, ry = y + R*0.15;   // her mouth; the shoulders
+    c.save();
+    for(const sd of [-1, 1]){
+      const rx = x + sd*R*0.8, ox = rx + sd*P.reach;
+      let hx, hy, bx, by;
+      if(t < P.back0){ const u = fsaB_eo((t + 1)/P.out); hx = rx + sd*P.reach*u; hy = ry; bx = (rx + hx)/2; by = ry; }   // out to the side
+      else if(t < P.pop){ const u = fsaB_e((t - P.back0)/(P.back1 - P.back0)); hx = ox + (mx - ox)*u; hy = ry + (my - ry)*u; bx = (rx + hx)/2; by = Math.min(ry, hy) - 22*fsaB_bump(u); }   // back to the mouth, a lemon in each hand
+      else { const u = fsaB_e((t - P.pop)/4); hx = mx + (rx - mx)*u; hy = my + (ry - my)*u; bx = (rx + hx)/2; by = Math.min(ry, hy) - 8; }   // and in again
+      fsaB_limb(c, rx, ry, hx, hy, bx, by, 7, '#f2b544', 6.5);
+      const g = fsaB_e((t - P.lem0 + 1)/12), pop = t >= P.pop ? Math.max(0, 1 - (t - P.pop)/3) : 1;   // the lemon grows in over 12 frames, and is popped in
+      if(g > 0 && pop > 0){ c.globalAlpha = 1; FS_GLYPH.lemon(c, hx + (t < P.back0 ? sd*7 : 0), hy - 6, 12*g*pop, 1, f); }
+    }
+    c.restore();
+  },
+};
+// ---- FSA lane b: end ------------------------------------------------------------------------------------------------------------------------
+
 // ---- BATCH I: Knife, Lightbulb, Paintbrush, Taco (II), Marshmallow, Apple, Baseball, Pickle ----------------------------------------------------
 Object.assign(FS_GLYPH, {
   blade(c, x, y, s){ c.save(); c.translate(x, y); c.rotate(hazardT*0.2 + x*0.02); c.fillStyle = '#dfe6ee'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.moveTo(-s, 0); c.lineTo(s*0.4, -s*0.35); c.lineTo(s, 0); c.lineTo(s*0.4, s*0.2); c.closePath(); c.fill(); c.stroke(); c.restore(); },
@@ -25868,10 +26338,12 @@ Object.assign(FS_GLYPH, {
 // platform (the design doc, A Lemony Lesson). Nine things out of the bag, five frames apart, in a rotation of blade (flat, through everyone), caltrops (lobbed) and a spark of shock (5-6%, and they keep hitting).
 FINAL_SMASHES['Knife'] = fsHose({ id:'bagoftricks', lockGrace:5, c1:'#dfe6ee', n:9, every:5, v0:12, art:FS_GLYPH.blade, reach:520,
   shots:[{ color:'#dfe6ee', dmg:5, kb:7, r:11, grav:false, vy:0, pierce:true, life:70 }, { color:'#c0304a', dmg:4, kb:7, r:10, grav:true, vy:-5, life:90 }, { color:'#fff27a', dmg:4, kb:7, r:10, grav:false, vy:0, life:60 }] });
+FINAL_SMASHES['Knife'] = fsaB_row(FINAL_SMASHES['Knife'], fsaB_knife);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 
 // LIGHTBULB -- BRIGHT FLASH. "OMGA!" -- the new OMG (the II wiki, quoted at her card); "laid back, free-spirited and optimistic ... erratic and unpredictable" (the design doc). Her own card is the Bright
 // Flash, which scrambles everyone near's controls. The flash is 270 px (14%), and whoever it reaches has their controls scrambled for about a second.
 FINAL_SMASHES['Lightbulb'] = fsCircle({ id:'brightflash', c1:'#fff27a', c2:'#ffffff', R:270, dmg:14, kb:17, S:{ rev:50 }, art:FS_GLYPH.spark });
+FINAL_SMASHES['Lightbulb'] = fsaB_row(FINAL_SMASHES['Lightbulb'], fsaB_bulb);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 
 // PAINTBRUSH -- HEAT WAVES. "prone to angry outbursts"; "bristles react to their emotions and can glow with heat" (the design doc; her own cards are the Heat Explosion and the Heat Waves). A wave of heat
 // goes out along the floor both ways, 600 px at 20 a frame, 70 tall (12%, and it sets them burning).
@@ -25880,6 +26352,7 @@ FINAL_SMASHES['Paintbrush'] = fsLane({ id:'heatwaves', c1:'#f0803a', both:true, 
 // TACO (II) -- LEMON SPIT. "completely oblivious ... motionless with a sideways smile", and under it a plan (the design doc); her own card is the Lemon Spit. Five lemons in a fan, three volleys eight
 // frames apart (6%, and they slow whoever they hit).
 FINAL_SMASHES['Taco (II)'] = fsFan({ id:'lemonspit', c1:'#f5e04a', n:5, cone:0.5, spd:12, vols:[0, 8, 16], dmg:6, kb:11, r:13, life:55, reach:420, kind:'spit', proj:{ slow:true }, art:FS_GLYPH.lemon });
+FINAL_SMASHES['Taco (II)'] = fsaB_row(FINAL_SMASHES['Taco (II)'], fsaB_taco);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 
 // MARSHMALLOW -- NO WAY! "Shattering Scream -- the voice that killed Test Tube" (her own card); on the boardwalk over the saw she shouted "NO WAY!" (quoted at her special). The scream goes out 300 px (15%) and a
 // second one to 420 (10%) twelve frames after it.
@@ -26048,14 +26521,17 @@ FINAL_SMASHES['Poppy'] = fsFan({ id:'popcorn', c1:'#fff4c0', n:12, spd:11, vols:
 // thrown), and then he glows: stronger and faster for 6 seconds after (the Attack Up and haste a pickup gives). It is his gold (_glowGoldT): his smash in
 // the glow launches x0.81 as in Glowing Gold (goldKb, smashRowAsFired), so it KOs from about 30%, not 11% (2026-10-27).
 FINAL_SMASHES['Silver Spoon'] = fsCircle({ id:'glowinggold', c1:'#f2c94c', c2:'#ffffff', R:230, dmg:20, kb:21, art:FS_GLYPH.star, end(f){ f._empowerT = Math.max(f._empowerT || 0, 360); f._hasteT = Math.max(f._hasteT || 0, 360); f._glowGoldT = Math.max(f._glowGoldT || 0, 360); } });
+FINAL_SMASHES['Silver Spoon'] = fsaB_row(FINAL_SMASHES['Silver Spoon'], fsaB_spoon);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 
 // TAPEY -- PLAYBACK. "observant and meticulous"; a cassette player (the design doc: REWIND, PLAY, EJECT); her own card plays back the biggest hit she taped as a wave from her speaker. The wave goes out along the floor, 700 px at 22 a frame,
 // 100 tall (20%).
 FINAL_SMASHES['Tapey'] = fsLane({ id:'playback', c1:'#e8e0d0', L:700, spd:22, H:100, hw:42, dmg:20, kb:22, ky:-10, kind:'spit', art:FS_GLYPH.tape });
+FINAL_SMASHES['Tapey'] = fsaB_row(FINAL_SMASHES['Tapey'], fsaB_tapey);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 
 // TEA KETTLE -- MAMA'S GOTCHA! Her catchphrase, and her hugs are firm "familial holds" (quoted at her card); "Motherly, flushed and steaming when she boils over" (the design doc). The marker is on the nearest foe within 380, fixed 18
 // frames ahead (85 px: step out); whoever is in it is held in a firm hug, takes five squeezes (3%), and the boil-over (20%) throws them.
 FINAL_SMASHES['Tea Kettle'] = fsLock({ id:'mamasgotcha', c1:'#f4f4f4', c2:'#ffb0a0', R:85, bx:380, by:240, effect:'pin', hits:5, every:6, hitDmg:3, dmg:20, kb:23, art:FS_GLYPH.steam });
+FINAL_SMASHES['Tea Kettle'] = fsaB_row(FINAL_SMASHES['Tea Kettle'], fsaB_kettle);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 
 // TEDDY BEAR -- YES!!! SMASH!!! "YES!!! SMASH!!!" (her frame row): the Rage Room, a wild swing that leans in; her own card is the Front of the Crowd shoulder barge. The swing is a smash all round her, 230 px (26%, thrown hard).
 FINAL_SMASHES['Teddy Bear'] = fsCircle({ id:'ragesmash', c1:'#b8742e', c2:'#ffffff', R:230, dmg:26, kb:22, art:FS_GLYPH.burst, kind:'slam' });
@@ -26063,6 +26539,7 @@ FINAL_SMASHES['Teddy Bear'] = fsCircle({ id:'ragesmash', c1:'#b8742e', c2:'#ffff
 // BOT -- GOTCHA! "I am Bot. The one and only! WOOHOO!" (their frame row, the design doc); their own card lunges at the nearest foe, tackles and holds them. It goes for the nearest foe within 420, its spot fixed as the startup begins (80 px: step
 // out); whoever is in it is held while six kicks land (2%) and "THERE'S MORE!" the last (20%) throws them.
 FINAL_SMASHES['Bot'] = fsLock({ id:'gotcha', c1:'#7cf0a8', c2:'#ffffff', R:80, bx:420, by:240, effect:'pin', hits:6, every:5, hitDmg:2, dmg:20, kb:23, art:FS_GLYPH.star });
+FINAL_SMASHES['Bot'] = fsaB_row(FINAL_SMASHES['Bot'], fsaB_bot);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 // @finalsmash:end
 // EVENT FIGHTERS: an assist who has become an event fighter leaves the bag only once events have launched (eventsLaunched: THE CALENDAR's
 // EVENT_LAUNCH, still unset), so no player loses an assist before they can earn the fighter it became. Each kit job adds its name.
@@ -61663,6 +62140,7 @@ FINAL_SMASHES['Eraser'] = {
     drawSlateEraser(c, eraserFsFront(dir, t - w), eraserFsFloor(f), E.hw, E.H, dir);
   },
 };
+FINAL_SMASHES['Eraser'] = fsaB_row(FINAL_SMASHES['Eraser'], fsaB_eraser);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 // The giant eraser: a block of pink rubber like himself -- its face, its top and its edge in his own pinks, his outline -- standing on the
 // floor, and the floor behind it rubbed clean.
 function drawSlateEraser(c, x, fy, hw, H, dir){
@@ -72623,6 +73101,7 @@ const FIGHTER_ANIM = {
     // EJECT (the click of the button at the end).
     idle: 0.85,
     deform(f, ctx, R){
+      if(fsaB_deform(f, ctx, R)) return;   // FSA lane b: its Final Smash's entrance
       const u = atkU(f);
       if(u < 0) return;
       const rew = animBump(u, 0, 0.3), play = animBump(u, 0.28, 0.72), eject = animBump(u, 0.7, 0.92);
@@ -72650,6 +73129,7 @@ const FIGHTER_ANIM = {
   // ---- Tea Kettle — flushed and steaming from spout and lid while she has boiled over (a refused tray). ----
   "Tea Kettle": {
     squash: 0.7,   // porcelain
+    deform(f, ctx, R){ fsaB_deform(f, ctx, R); },   // FSA lane b: its Final Smash's entrance
     over(f, ctx){
       if(!(f._boil > hazardT)) return;
       const R = f.r, a0 = ctx.globalAlpha, fade = Math.min(1, (f._boil - hazardT)/80);
@@ -72685,6 +73165,7 @@ const FIGHTER_ANIM = {
   // ---- Bot (they/them) -- the passes their kit needs and the render cannot do: the ring of CHEER FACTORY!, the clump of SPAGGERS! and the
   //      stilts of BRIDGE THE GAP! (their extendable legs, shot straight up from where they stood). Drawn, no words. Render-only. ----
   Bot: {
+    deform(f, ctx, R){ fsaB_deform(f, ctx, R); },   // FSA lane b: their Final Smash's entrance
     over(f, ctx){
       const R = f.r, a0 = ctx.globalAlpha;
       // BRIDGE THE GAP!: two thin black legs from the body's underside down to where they planted them (`_castX`, `_castY`, set as the
@@ -72729,6 +73210,7 @@ const FIGHTER_ANIM = {
   //      (`swingMove`), `_flipT` and the finisher's row (FINX). Drawn, no words. Render-only. ----
   Eraser: {
     deform(f, ctx, R){
+      if(fsaB_deform(f, ctx, R)) return;   // FSA lane b: its Final Smash's entrance
       const wu = f._windup, face = visualFace(f);
       if(wu && wu.t0 === ERASER.rubOut.wind){ const w = Math.sin((wu.t0 - wu.t)*1.6); ctx.translate(w*R*0.2, 0); ctx.rotate(w*0.12); return; }   // RUB OUT: rubbing side to side
       if(wu && wu.t0 === ERASER.rub.t){ const s = Math.sin((wu.t0 - wu.t)*2.4); deformAboutFeet(ctx, R, s*0.07, 1 + 0.05*s, 1 - 0.05*s); return; }   // RUB IT OFF: scrubbing himself
@@ -72817,6 +73299,7 @@ const FIGHTER_ANIM = {
       ctx.globalAlpha = a0;
     },
     deform(f, ctx, R){
+      if(fsaB_deform(f, ctx, R)) return;   // FSA lane b: its Final Smash's entrance
       const u = atkU(f);
       if(u < 0) return;
       const cock = animBump(u, 0, 0.3), flick = animBump(u, 0.22, 0.62), hang = animBump(u, 0.55, 0.95);
@@ -72827,6 +73310,7 @@ const FIGHTER_ANIM = {
   //      her swing wobbles side to side before it goes anywhere. ----
   Lightbulb: {
     deform(f, ctx, R){
+      if(fsaB_deform(f, ctx, R)) return;   // FSA lane b: its Final Smash's entrance
       const u = atkU(f), sw = Math.sin(hazardT*0.05 + f.idx*2.1)*0.035, fl = ((hazardT + f.idx*29) % 173) < 4 ? 0.07 : 0;   // the flicker: a quick pop, every few seconds
       let wob = 0, p = 0;
       if(u >= 0){ wob = Math.sin(u*Math.PI*5)*(1 - u)*0.22; p = animBump(u, 0, 0.92); }
@@ -72851,6 +73335,7 @@ const FIGHTER_ANIM = {
   "Taco (II)": {
     idle: 0.25, squash: 0.75,
     deform(f, ctx, R){
+      if(fsaB_deform(f, ctx, R)) return;   // FSA lane b: its Final Smash's entrance
       const u = atkU(f);
       if(u < 0) return;
       const k = animHold(u, 0, 0.28, 0.58, 0.93);
@@ -73079,6 +73564,7 @@ const FIGHTER_ANIM = {
       ctx.globalAlpha = a0;
     },
     deform(f, ctx, R){
+      if(fsaB_deform(f, ctx, R)) return;   // FSA lane b: its Final Smash's entrance
       const u = atkU(f);
       if(u < 0){ deformAboutFeet(ctx, R, -f.face*0.025, 1, 1); return; }
       const back = animBump(u, 0, 0.3), scoop = animBump(u, 0.28, 0.72);
@@ -76733,6 +77219,7 @@ function drawSpriteBody(f, sp, anim){
   if(f.bleed>0) lay("#c0304a",0.22);            // bleed: a darker red under the burn tint             // burn reads on top of any other state, as on the blob
   // THE FACE of the frame (FRAME LAYER): drawn over the painted one, after the tints so a hit's white flash gets the same face on it.
   if(fd){ const fc = FR_FACE[frPicKey(sp)]; if(fc) frFace(ctx, fc, dw, dh, _FP, !!(tint && tint[0] === '#ffffff'), a0); }
+  if(im && f.fsId) fsaB_body(f, ctx, dw, dh, lay);   // FSA lane b: a Final Smash's entrance on the render itself (Silver Spoon's black-out and gold, Lightbulb's glow)
   if(_cst) cosCostumeDraw(ctx, _cst, 'front', dw, dh, f, !!sp.flip, _cstLay);   // the costume, over the body and its face, in the body's tints
   // PUNCH / KICK. Every attack used to be the whole body lunging; now the jab throws an arm and the
   // ground move throws a leg, out on the release beat and back on the recover. Drawn after the art
