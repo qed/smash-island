@@ -56563,8 +56563,10 @@ Object.assign(FINX_LEFT, { clap:['grow', 'hold', 'close', 'end'] });   // they a
 // and a launch (9 sideways, 10 up), popcorn flying. Anyone's hit wrecks it: a foe's swing or shot (never theirs or a friend's), one hit, and
 // whoever it held is let go. A wall or the end of the floor stops it; stopped with nobody, it winds down 24 frames and falls apart. They need a
 // floor to set it on. Hold back during the winding to send it the other way (fxAimWay). They are free from the winding. A boss it reaches is not
-// clamped: the zaps are only the show, and it takes the whole move (the three zaps and the pop, 13%) as ONE plain hit when it pops (a boss's own
-// hit grace, 17 to 30 frames, swallowed a 3% zap 16 frames after the last and always the pop). One at a time: the finisher waits for the walker.
+// clamped: each zap is a plain 3% hit if no grace of the owner's own is open on it (a boss's grace is 17 to 30 frames and the zaps are 16 apart, so
+// one can be turned away), and at the pop it takes what is missing of the whole move (13%: the three zaps and the pop) as one plain hit, tried
+// each frame until it lands. So an intact walker deals 13 in all, a walker wrecked first keeps the zaps that landed, and never more than 13.
+// One at a time: the finisher waits for the walker.
 function fxWalkerSpot(f, dir){
   const W = FXC2.walker, fy = feetY(f), x = clamp(f.x + dir*(f.r + W.off), 24, WW - 24), sb = surfaceBelow(x, fy - 10);
   if(sb === null || Math.abs(sb - fy) > 24) return null;   // no floor in front of them
@@ -56581,12 +56583,17 @@ function finWalker(f){
   o._a = p; o._b = fxWalkerSpot(f, -dir);   // WHICH WAY: where it sets itself down if they turn round
   fxLock(f, W.build + 2); armAtk(f, W.build + 6, 'cast');
 }
-// A boss is not clamped, so its share is one plain hit of everything the move would have done (W.dmg*W.zaps + W.pop), at the pop; tried each
-// frame (up to 30 after the pop) until it lands: a hit of the owner's own a moment before may have a grace open on the boss. True: it has landed.
-function fxWalkerBossPop(f, o, s){
-  const W = FXC2.walker, S = o._bs || (o._bs = {}), once = S.pop || (S.pop = new Set());
-  if(!once.size) damageSummons(f, s.x, s.y, 0, W.dmg*W.zaps + W.pop, s, once);
+// A boss is not clamped. Each zap is one plain hit (W.dmg) tried on its frame: a grace of the owner's own on the boss (their jab a moment before, or
+// the last zap 16 frames back) turns it away and it is lost. What landed is counted (o.bl); at the pop the boss takes what is missing of the move's
+// whole W.dmg*W.zaps + W.pop, in one plain hit tried each frame (up to 30 after the pop) until it lands. True: the hit has landed.
+function fxWalkerBossHit(f, o, s, key, dmg){
+  const S = o._bs || (o._bs = {}), once = S[key] || (S[key] = new Set());
+  if(!once.size) damageSummons(f, s.x, s.y, 0, dmg, s, once);
   return once.size > 0;
+}
+function fxWalkerBossPop(f, o, s){
+  const W = FXC2.walker, rest = W.dmg*W.zaps + W.pop - (o.bl || 0);   // (never more than the 13 in all: what the zaps landed is taken off)
+  return rest <= 0 || fxWalkerBossHit(f, o, s, 'pop', rest);
 }
 function fxWalkerWreck(o){
   if(o.ph === 'wreck' || o.ph === 'pop') return;
@@ -56643,7 +56650,7 @@ function fxWalkerStep(o, f){
       o.zn++; o.zt = hazardT; shake(2);
       for(let i=0;i<4;i++) puff(o.x + o.face*W.r, o.y - 16, i%2 ? '#ffffff' : '#e6d21c', 3);
       if(t){ if(!fxHit(f, t, o, W.dmg, 0, 0)){ fxFree(t); o.ph = 'down'; o.dt = hazardT; o.tgt = -1; return; } }   // (a zap that KO'd them lets them go)
-      // (a boss: the zap is only the show; its whole share lands at the pop, fxWalkerBossPop)
+      else if(s && fxWalkerBossHit(f, o, s, 'z' + o.zn, W.dmg)) o.bl = (o.bl || 0) + W.dmg;   // (a boss: a plain hit, if no grace turns it away; the pop pays the rest)
     }
     if(o.zn >= W.zaps && a >= W.first + (W.zaps - 1)*W.every + W.every){   // it pops
       o.ph = 'pop'; o.pt = hazardT; shake(4);
@@ -56872,6 +56879,8 @@ function finC2_safe(t, x, y){
 }
 // No solid block round t if they stood at (x, y): the wall test the reel's every point and its landing go through.
 function finC2_clear(t, x, y){ return !fxWallSpan(x - t.r*0.8, x + t.r*0.8, y - t.r*0.8, y + t.r - 4); }
+// A floor or a platform right under t's feet if they stood at (x, y) (within 6 px): where the reel's wait point must be, or they would be freed in the air.
+function finC2_floored(t, x, y){ const sb = surfaceBelow(x, y + t.r - 10); return sb !== null && Math.abs(sb - (y + t.r)) <= 6; }
 // Where the rewind puts t: the oldest place in the last 2 s that is safe, with the way back to it (newest first). null: nothing to wind back to.
 function finC2_dest(t){
   const path = finC2_trace(t, FXC2.rewind.back);
@@ -56999,7 +57008,8 @@ FX5_LETGO.push('c2bag');   // a Final Smash's catch of the foe he bought ends th
 // 2 s, host-side. A boss is not rewound: it takes the 8 as a plain hit. If there is nothing to wind them back to (they have not moved: a KO or a
 // respawn emptied the memory) the 8 lands where they stand. A hit on her while the tape is out snaps it and lets them go where they are. A block that rises
 // on the way (or at the place they were to land) stops the reel: every point of it goes through the wall test (finC2_clear) and they wait at the last clear
-// one, so they are never held inside a block, never freed in one, and land where they can stand. One at a time.
+// one that has a floor under it (finC2_floored; a point on a jump's arc over a pit is clear but is air, so then the place where the tape caught them), so
+// they are never held inside a block, never freed in one or in the air over a pit, and land on a floor. One at a time.
 function finRewind(f){
   const R = FXC2.rewind;
   if(MCAVE && MCAVE.on) return false;   // the moon's discs: no memory of where anyone stood (their places are in a chart of their own)
@@ -57032,7 +57042,7 @@ function fxRewindStep(o, f){
     o.rt = hazardT;
     if(!d){ o.ph = 'reel'; o._path = [[t.x, t.y, 0], [t.x, t.y, 0]]; o.hx = Math.round(t.x); o.hy = Math.round(t.y); o.tp = null; }   // nothing to wind back to: the 8 lands where they stand
     else { o._path = d.path; o.hx = Math.round(d.x); o.hy = Math.round(d.y); const tp = []; for(let i = 0; i < d.path.length; i += R.step) tp.push(Math.round(d.path[i][0]*10)/10, Math.round(d.path[i][1]*10)/10); tp.push(o.hx, o.hy); o.tp = tp; o.ph = 'reel'; }
-    fxHold(t, o, t.x, t.y); o.lg = [t.x, t.y];   // (o.lg: the last place on the way with no block round it)
+    fxHold(t, o, t.x, t.y); o.lg = [t.x, t.y]; o.sp = [t.x, t.y];   // (o.lg: the last place on the way with no block round it; o.sp: where the tape caught them)
     return;
   }
   if(o.ph === 'reel'){
@@ -57043,7 +57053,10 @@ function fxRewindStep(o, f){
     const k = clamp((hazardT - o.rt + 1)/R.reel, 0, 1), p = finC2_along(o._path, k);
     let px = p[0], py = p[1];
     if(!o.stall && finC2_clear(h, px, py)) o.lg = [px, py];   // every point of the way (and where they land) goes through the wall test
-    else if(o.lg){ o.stall = true; px = o.lg[0]; py = o.lg[1]; }   // a block that has risen on the way is not passed through, nor landed in: the tape catches on it and they wait at the last clear place
+    else if(o.lg){   // a block that has risen on the way is not passed through, nor landed in: the tape catches on it and they wait at the last clear place
+      if(!o.stall){ o.stall = true; if(!finC2_floored(h, o.lg[0], o.lg[1])) o.lg = o.sp; }   // ...with a floor under it: a place on a jump's arc over a pit is clear but is not somewhere to stand, so then it is where the tape caught them
+      px = o.lg[0]; py = o.lg[1];
+    }
     fxHold(h, o, px, py);
     if(k < 1) return;
     if(o.stall){ o.hx = Math.round(o.lg[0]); o.hy = Math.round(o.lg[1]); }   // (they land there, so the snap always frees them where they can stand)
@@ -57122,10 +57135,16 @@ FX5_LETGO.push('c2rewind');   // a KO, a jail or a Final Smash's catch of the fo
 function finPour(f){
   // Up is the jump key and the aim: held with the press it jumps her in the same frame, before the finisher is read (jump block, then attacks), and
   // a key that lands a frame or two ahead of V + C has done the same. That jump is taken back (the pour is the move she chose): she is put back on
-  // the floor she left (a jump of up to 2 frames, ~24 px), the jump is not spent, and Up is the aim as the pour starts.
+  // the floor she left (a jump of up to 2 frames, ~24 px), the jump is not spent, and Up is the aim as the pour starts. Only if that floor is still
+  // under her: the keys that jumped her (Right or Left with Up) may have carried her a few px sideways, off the end of a ledge, and then the pour
+  // would have started on air. With no floor under her the jump stands as it was (nothing is spent); with it she is stopped where she is.
   const jm = f._jmp0, hop = !f.onground && !!jm && jm.ground && hazardT - jm.t <= 2 && f.vy < 0 && f.y > jm.y - 40;
   if(!f.onground && !hop) return false;   // she pours standing on a floor (a jump 3 frames old or more is a jump)
-  if(hop){ f.onground = true; f.vy = 0; f.y = jm.y; f.jumps = jm.jumps; f._hop = false; }
+  if(hop){
+    const fl = jm.y + f.r, sb = surfaceBelow(f.x, fl - 10);
+    if(sb === null || Math.abs(sb - fl) > 4) return false;   // the floor she left is not under her now (a ledge's end): the jump stands, the finisher is not spent
+    f.onground = true; f.vy = 0; f.vx = 0; f.y = jm.y; f.jumps = jm.jumps; f._hop = false;   // (vx 0: the step that follows must not carry her on past the floor's end; the pour holds her still)
+  }
   fxAimStart(f);
   finxAdd(f, 'c2pour', { ph:'tip', pp:null, n:{}, tk:0, bn:0, bt:0 });
   fxLock(f, FXC2.pour.tip + 2); armAtk(f, FXC2.pour.tip + 6, 'spit');
