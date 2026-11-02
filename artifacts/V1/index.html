@@ -23827,6 +23827,7 @@ function fsCanFire(f){
 // The finisher input (V + C) while glowing: the Final Smash instead. True if it took the press.
 function fsTryFire(f){
   if(!fsCanFire(f)) return false;
+  { const d0 = f._fsForce || fsOf(f); if(d0.needFoe){ const cf = fsCatchFoes(d0, f); if(!cf.length){ if(!fsIsCpu(f)) fsFizzle(f); return true; } if(d0.botOk && fsIsCpu(f) && !cf.some((t)=> d0.botOk(f, t))) return true; } }   // (needFoe: nobody in its catch: spent at once, nothing else happens)
   if(f._mv) mvCancel(f);
   const d = f._fsForce || fsOf(f);   // (_fsForce: a test's way to play the default whoever the fighter is)
   f._fs = { d:d, hit:new Set(), t:0, bonus:{}, c:0, held:[], cs:null };   // bonus: idx -> the extra % this Final Smash has dealt them (fsKbMult); c, held, cs: the catch (CATCH, THEN CINEMATIC)
@@ -24033,8 +24034,20 @@ function fsCatchInset(sh, k){
 // The catch lands: every foe touching it is locked to this Final Smash. How many it took.
 // A row that aims at one foe (a lock-on's marker, a stream thrown at them) or at its k nearest (a rain) catches only that many
 // (catchMax), the nearest first by its marker's own rule (nearestFoe: across, and twice up or down); the rest are free, as before.
+// A row's `catchOk(f, t)` narrows who its catch may take beyond the area (Bow's chairs: only a foe below her). fsCatchFoes: who it would take now.
+function fsCatchOk(d, f, t){ return !d.catchOk || d.catchOk(f, t); }
+function fsCatchFoes(d, f){ const cs = fsCatchOf(d, f); return fighters.filter((t)=> fsCatchable(f, t) && fsCatchTouch(cs, t) && fsCatchOk(d, f, t)); }
+// A Final Smash spent on nothing (a row's `needFoe`, pressed with nobody in its catch): the glow is gone and there is a small puff. No intro, no pause, no catch.
+// (A CPU's press that finds nobody -- its keys come a few frames after it chose -- is swallowed and the glow kept: a CPU never throws it away. `botOk`: the
+// row's own cue for the CPU, on top of the catch, where it leads a moving foe.)
+function fsIsCpu(f){ return (f.controller || (f.you ? 'local' : 'ai')) === 'ai'; }
+function fsFizzle(f){
+  f.fsGlow = 0; f.fnCd = Math.max(f.fnCd || 0, 30);
+  for(let i = 0; i < 8; i++) puff(f.x, f.y - 6, i % 2 ? f.color : '#fff', 4);
+  fsArm();
+}
 function fsCatch(f, st){
-  const C = fighters.filter((t)=> fsCatchable(f, t) && fsCatchTouch(st.cs, t)), max = st.d.catchMax || C.length;
+  const C = fighters.filter((t)=> fsCatchable(f, t) && fsCatchTouch(st.cs, t) && fsCatchOk(st.d, f, t)), max = st.d.catchMax || C.length;
   if(C.length > max){ const near = (t)=> Math.abs(t.x - f.x) + 2*Math.abs(t.y - f.y); C.sort((a, b)=> near(a) - near(b)); C.length = max; }
   for(const t of C) fsLockOn(f, st, t);
   if(C.length){ shake(6); f.flash = 8; }
@@ -24353,8 +24366,8 @@ function fsBotInput(f, inp){
     // drawn: the catch lands a sixth of a second after the intro, and they may step out)
     const d = f._fsForce || fsOf(f), cs = fsCatchInset(fsCatchOf(d, f), 0.85);
     let ready = false;
-    for(const t of fighters) if(fsCatchable(f, t) && fsCatchTouch(cs, t)){ ready = true; break; }
-    if(ready || (f.fsGlow < 150 && fsFoeNear(f, 420))){ inp.fin = true; inp.attack = false; inp.special = false; inp.smash = false; inp.left = false; inp.right = false; inp.jump = false; }   // (and stands still to fire: a step this frame would turn it, or lift it, before the catch is laid out)
+    for(const t of fighters) if(fsCatchable(f, t) && fsCatchTouch(cs, t) && fsCatchOk(d, f, t) && (!d.botOk || d.botOk(f, t))){ ready = true; break; }
+    if(ready || (!d.exact && f.fsGlow < 150 && fsFoeNear(f, 420))){ inp.fin = true; inp.attack = false; inp.special = false; inp.smash = false; inp.left = false; inp.right = false; inp.jump = false; }   // (and stands still to fire: a step this frame would turn it, or lift it, before the catch is laid out)
     return inp;
   }
   const b = SMASHBALL;
@@ -24481,7 +24494,7 @@ function fsDrawScreen(){
 // fighter's fs* fields (fsT, fsWind, fsAx, fsAy, face, colour) and, for what other fighters are doing, their own wire fields.
 // NO TELLS (the owner, 2026-10-22: "i didnt mean telegraphs ... like a small startup animation"): a row's notes below still say what its "tell"
 // was -- a circle, a lane, a marker, marks on the floor. None of those is drawn any more: the startup is FS_WIND frames of the holder winding
-// up (stupK), and what a row summons that is really there (Leafy's void opening, Bow's snowballs, Bomby's fuse, Snowball's ball) is drawn.
+// up (stupK), and what a row summons that is really there (Leafy's void opening, Bow's chairs, Bomby's fuse, Snowball's ball) is drawn.
 function fsFeetY(f){ return (f.fsAy != null ? f.fsAy : f.y) + f.r; }
 function fsRing(c, x, y, r, col, lw, a){ c.globalAlpha = a; c.strokeStyle = '#1c1c1c'; c.lineWidth = lw + 3; c.beginPath(); c.arc(x, y, r, 0, 7); c.stroke(); c.strokeStyle = col; c.lineWidth = lw; c.stroke(); }
 function fsDisc(c, x, y, r, col, a){ c.globalAlpha = a; c.fillStyle = col; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); }
@@ -24659,41 +24672,106 @@ FINAL_SMASHES['Puffball'] = {
   },
 };
 
-// BOW -- SNOW BOW. Telekinesis: "In "Snow Bow", Bow was able to levitate snowballs without touching them" (the II wiki, Abilities; the
-// same note sits on her old special). She rises (the tell: a ring of snowballs lifts around her, pink glow) and sends the snowballs down
-// on the stage, 13 of them four frames apart, each over a mark drawn on the floor for a beat before it lands: one on each foe in turn
-// and the rest scattered about them. Keep moving: no single mark is on you for long.
+// BOW -- SNOW BOW. The name and the id are the old ones (the owner did not rename it); the Final Smash is a chair trap now. Telekinesis, as ever (the II
+// wiki, Abilities: "In "Snow Bow", Bow was able to levitate snowballs without touching them"): what she levitates here is her chairs. THE OWNER,
+// 2026-11-02: "make it so that if you are standing above your opponent she traps you with a chair (make an animation for this) then she slams chairs on
+// you, turning 45 degrees each time, finishing with one from below, which launches you ... each chair should deal 12.5 percent damage."
+// CARD. Reach: the nearest foe BELOW her -- her feet above their top, within 160 px across (to their body) and 560 px down (the catch: a box under her).
+// With no foe there the Final Smash is spent: a small puff, and nothing else (no intro, no pause: `needFoe`; a CPU only fires it with a foe below:
+// `exact`). A chair comes down over them from above and clamps round them like a cage, a leg either side (no damage: it holds them; they cannot act).
+// Then eight chairs, 14 frames apart, the first 14 frames after the clamp, each swung in from a new side, turning 45 degrees a time round the foe,
+// clockwise: lower left, left, upper left, above, upper right, right, lower right, and the eighth from straight below. 12.5% a chair, 100% in all; the
+// eighth flings them up (a KO-level launch: from a foe's 0% it takes out a light or mid-weight fighter on a small stage, the heaviest from 10%). She hangs where she is. A boss or an add is never caught or hit (the catch
+// only takes fighters), and neither is a teammate. Each chair is her own drawing (PROP_ART.chair), swung in growing from small over 12 frames.
+// Everything drawn comes from the fighter's fs* fields and the foe the catch holds (fsLk), so a guest draws the same: the foe's spot and size are on
+// the wire in fsBx, fsBy and fsCx (set when the catch lands), for the frames after the let-go.
+const FS_CHAIR = { reach:160, depth:560, hit:12.5, n:8, clamp:FS_WIND - 1, first:FS_WIND + 14, gap:14, swing:12, out:9, tail:14, kb:5, up:-28, upx:6, S:2.3, trapS:4.3 };
+FS_CHAIR.last = FS_CHAIR.first + (FS_CHAIR.n - 1)*FS_CHAIR.gap;   // the frame of the eighth blow (and of the let-go's launch, a beat on)
+FS_CHAIR.dur = FS_CHAIR.last + FS_CHAIR.tail;
+// the way each chair comes from, as a unit step from the foe to it (screen: x right, y down): lower left, then clockwise to straight below
+const FS_CHAIR_DIR = [[-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1]].map((v)=>{ const l = Math.hypot(v[0], v[1]); return [v[0]/l, v[1]/l]; });
+// Is foe t below Bow f: the top of their body under her feet?
+function fsChairBelow(f, t){ return hurtCY(t) - hurtRY(t) >= f.y + f.r; }
+// Bow's blow number i (0..7) on the foe her catch holds, on the row's frame. A KO that this blow deals (the damage cap) ends the Final Smash there: nothing
+// more is thrown at whoever comes back (ONE FALL, ONE STOCK: koSince; the row's tick checks the same before every frame of it).
+function fsChairHit(f, st, i){
+  const C = FS_CHAIR, tg = fighters[st.tg];
+  const u = FS_CHAIR_DIR[i], last = i === C.n - 1, side = Math.sign(tg.x - f.x) || f.face || 1;
+  armAtk(f, 12, 'cast'); shake(last ? 13 : 6);
+  tg.countering = 0;
+  applyHit(tg, C.hit/FS_DMG_MULT/(statDmg(f, 1) || 1), last ? side*C.upx : -u[0]*C.kb, last ? C.up : -u[1]*C.kb, f, last ? undefined : { stun:4 });   // (the row's own size: KO-level doubles it to 12.5; the first seven stun briefly, so the eighth is no link of a chain and its let-go stuns in full: the slow-mo sees the launch)
+  const R = tg.r || 24;
+  for(let q = 0; q < (last ? 14 : 6); q++) puff(tg.x + u[0]*R*0.9, tg.y + u[1]*R*0.9, q % 2 ? '#f06fa8' : '#fff', last ? 7 : 4);
+  if(koSince(tg, st.n0)){ st.over = true; st.t = st.d.dur - 1; }
+}
+// One chair (Bow's own drawing) at (x, y), turned `rot`, S times the raw drawing (her hand-held one is 1.2), squashed to sy along its length.
+function fsChairArt(c, x, y, rot, S, sy, a, glow){
+  if(!(a > 0.01) || !(S > 0.01)) return;
+  c.save(); c.translate(x, y); c.rotate(rot); c.scale(S/1.2, S*sy/1.2); c.globalAlpha = a; PROP_ART.chair.draw(c, { glow:glow }); c.restore();
+}
+function fsChairDraw(f, c){
+  const t = f.fsT || 0, C = FS_CHAIR, L = fsLockedOf(f);
+  if(!L && f.fsBx == null) return;
+  const x = L ? L.x : f.fsBx, y = L ? L.y : f.fsBy, R = (L ? L.r : f.fsCx) || 24, k = R/24, ease = (p)=> 1 - (1 - p)*(1 - p);
+  c.save();
+  c.globalAlpha = 0.14 + 0.1*Math.sin(hazardT*0.3); c.fillStyle = '#f06fa8'; c.beginPath(); c.arc(f.x, f.y, f.r + 30, 0, 7); c.fill();   // her glow, while her chairs are out
+  c.translate(x, y);
+  // THE TRAP: it comes down over the foe from above, growing in over the startup, and clamps (its legs end at their feet); it holds, jolting at each blow,
+  // and goes up with the launch
+  const S0 = C.trapS*k, base = (R + 12) - 18.6*S0, pulse = 0.55 + 0.15*Math.sin(hazardT*0.3);
+  if(t <= C.last + 10){
+    let ty = 0, ts = 1, ta = 1, sq = 1, jx = 0;
+    if(t < C.clamp){ const p = t/C.clamp; ty = -330*k*(1 - p*p); ts = 0.3 + 0.7*ease(p); ta = Math.min(1, (t + 1)/3); }
+    else if(t < C.clamp + 4) sq = 1 - 0.1*(1 - (t - C.clamp)/4);
+    if(t >= C.clamp + 3) ta = Math.max(0.55, 1 - 0.45*(t - C.clamp - 3)/9);   // it holds, going see-through so the blows read through it
+    if(t >= C.first && t <= C.last + 2){ const q = (t - C.first) % C.gap; if(q < 3){ jx = (q % 2 ? 1 : -1)*3*k*(1 - q/3); ta = Math.min(1, ta + 0.25*(1 - q/3)); } }
+    if(t > C.last){ const p = Math.min(1, (t - C.last)/10); ty = -150*k*p*p; ta = 0.55*(1 - p); }
+    fsChairArt(c, jx, base + ty, 0, S0*ts, sq, ta, pulse);
+  }
+  // THE BLOWS: each chair swings in clockwise from its side, growing in over 12 frames, its legs toward the foe; it hits, and goes on round and out
+  const by = 4*k, S1 = C.S*k;
+  for(let i = 0; i < C.n; i++){
+    const hit = C.first + i*C.gap, u = t - (hit - C.swing);   // 0 as it starts to swing in, C.swing on the blow
+    if(u < 0 || u > C.swing + C.out) continue;
+    const d = FS_CHAIR_DIR[i], phi = Math.atan2(d[1], d[0]), last = i === C.n - 1;
+    let tip, s, al, arc, sq = 1;
+    if(u <= C.swing){ const p = u/C.swing, e = p*p; tip = 160*k + (0.95*R - 160*k)*e; s = 0.3 + 0.7*ease(p); al = Math.min(1, (u + 1)/4); arc = -1.05*(1 - e); }
+    else { const p = (u - C.swing)/C.out; tip = 0.95*R + 46*k*p; s = 1 - 0.25*p; al = 1 - p; arc = 0.6*p; if(u < C.swing + 2) sq = 0.88; }
+    const ang = phi + arc, r = tip + 18.6*S1*s, rot = Math.atan2(Math.cos(ang), -Math.sin(ang));
+    if(u > 3 && u <= C.swing + 1){   // the whirl behind it
+      c.save(); c.lineCap = 'round'; c.globalAlpha = 0.5*al; c.strokeStyle = '#ffd6ec'; c.lineWidth = 9*k; c.beginPath(); c.arc(0, by, r, ang - 0.7, ang); c.stroke(); c.restore(); }
+    fsChairArt(c, Math.cos(ang)*r, by + Math.sin(ang)*r, rot, S1*s, sq, al, 0.5);
+    if(u >= C.swing && u < C.swing + 5){   // the crack of it: a flash and spokes at the spot it hit, bigger for the last
+      const p = (u - C.swing)/5, cx = d[0]*0.95*R, cy = by + d[1]*0.95*R, g = last ? 1.6 : 1;
+      c.save(); c.globalAlpha = 0.5*(1 - p); c.fillStyle = '#fff'; c.beginPath(); c.arc(cx, cy, (10 + 12*p)*k*g, 0, 7); c.fill();
+      c.globalAlpha = 1 - p; c.strokeStyle = '#fff'; c.lineWidth = 2.5; c.lineCap = 'round';
+      for(let q = 0; q < 7; q++){ const a = phi + (q - 3)*0.42, r0 = (14 + 10*p)*k*g, r1 = (26 + 20*p)*k*g; c.beginPath(); c.moveTo(cx + Math.cos(a)*r0, cy + Math.sin(a)*r0); c.lineTo(cx + Math.cos(a)*r1, cy + Math.sin(a)*r1); c.stroke(); }
+      c.restore(); }
+  }
+  c.restore();
+}
 FINAL_SMASHES['Bow'] = {
-  id:'snowbow', wind:FS_WIND, dur:FS_WIND + 88, reach:600,
-  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FS_RAIN_CATCH }; }, lockEnd:FS_WIND + 48,   // CATCH: a circle round her; the snowballs go for a locked foe
-  start(f, st){ st.n = 0; armAtk(f, this.wind, 'fsgather'); },
+  id:'snowbow', wind:FS_WIND, dur:FS_CHAIR.dur, reach:FS_CHAIR.reach, needFoe:true, exact:true,   // needFoe: pressed with no foe below, it is spent (fsTryFire); exact: a CPU fires it only when the catch will take someone (fsBotInput)
+  catch(f){ const X = FS_CHAIR.reach - HURT_R0; return { kind:'box', x:f.x - X, y:f.y + f.r, w:2*X, h:FS_CHAIR.depth }; },   // CATCH: under her feet: a standard body (24 px each way) touches it from 160 px across
+  catchOk(f, t){ return fsChairBelow(f, t); }, lockEnd:FS_CHAIR.last, catchMax:1,   // only a foe whose top is under her feet; the nearest one only (the chairs are for one foe)
+  start(f, st){
+    const t = fighters[st.held[0]];
+    if(!t){ for(let i = 0; i < 8; i++) puff(f.x, f.y - 6, i % 2 ? f.color : '#fff', 4); f._atkAnim = 0; fsEnd(f); return; }   // the catch took nobody (the foe stepped out in its 10 frames): spent, a small puff, as with no foe at the press
+    st.tg = t.idx; st.n0 = t._koN || 0; st.over = false; st.ay = f.y;
+    f.fsBx = Math.round(t.x); f.fsBy = Math.round(t.y); f.fsCx = Math.round(t.r || 24);   // where the chairs go, and how big the foe is: all a guest needs after the let-go
+    armAtk(f, this.wind, 'fsgather');
+  },
   tick(f, st, t){
-    const w = this.wind;
-    if(t < 18) f.vy = -4.5; else if(t < this.dur - 16) f.vy = 0;   // she lifts herself, and hangs there
-    if(t === 0){ shake(4); for(let i = 0; i < 12; i++) puff(f.x, f.y, i % 2 ? '#f06fa8' : '#fff', 6); }
-    if(t === w) armAtk(f, 60, 'fsburst');
-    if(t >= w && t < w + 52 && (t - w) % 4 === 0){
-      const foes = fighters.filter(o=>!o.dead && o.team !== f.team);
-      if(!foes.length) return;
-      const lk = foes.filter(o=>fsIsLockedBy(o, f)), pool = lk.length ? lk : foes;   // (a locked foe's turn every time: CATCH, THEN CINEMATIC)
-      const o = pool[st.n % pool.length], jit = (fsRand() - 0.5)*(st.n % 2 ? 40 : 200);
-      st.n++;
-      dropProj(f, clamp(o.x + jit, 30, WW - 30), o.y + o.r, { dmg:12, kb:17, r:22, color:'#eaf6ff', life:150 }, true);
-    }
+    f.vx = 0; if(!f.onground){ f.vy = 0; f.y = st.ay; }   // she hangs where she is while the chairs go (gravity would sink her a few px a frame)
+    if(st.over) return;
+    if(t <= FS_CHAIR.last){ const tg = fighters[st.tg]; if(!tg || tg.dead || koSince(tg, st.n0) || !fsIsLockedBy(tg, f)){ st.over = true; st.t = this.dur - 1; return; } }   // the foe gone (a KO, a respawn, the lock lost): nothing more is thrown, whoever comes back
+    if(t === FS_CHAIR.clamp){ const tg = fighters[st.tg]; shake(6); if(tg) for(let i = 0; i < 12; i++) puff(tg.x + (i - 5.5)*9, tg.y + (tg.r || 24) + 10, i % 2 ? '#fff' : '#f06fa8', 5); }
+    const q = t - FS_CHAIR.first;
+    if(q >= 0 && q % FS_CHAIR.gap === 0 && q/FS_CHAIR.gap < FS_CHAIR.n) fsChairHit(f, st, q/FS_CHAIR.gap);
   },
-  ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && Math.hypot(o.x - f.x, o.y - f.y) < 650) return true; return false; },
-  draw(f, c){
-    const t = f.fsT || 0, w = f.fsWind || 36;
-    if(t >= w + 56) return;
-    c.save(); c.translate(f.x, f.y);
-    const left = t < w ? 12 : Math.max(0, 12 - Math.floor((t - w)/4)), rise = t < w ? t/w : 1;
-    c.globalAlpha = 0.18 + 0.12*Math.sin(hazardT*0.3); c.fillStyle = '#f06fa8'; c.beginPath(); c.arc(0, 0, f.r + 34, 0, 7); c.fill();
-    for(let i = 0; i < left; i++){   // the snowballs, orbiting and lifting, then going one by one
-      const a = hazardT*0.07 + i*Math.PI*2/12, rr = (f.r + 34)*(0.4 + 0.6*rise), yy = -f.r*0.6 - 44*rise + Math.sin(a)*rr*0.35;
-      c.globalAlpha = 1; c.fillStyle = '#eaf6ff'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.arc(Math.cos(a)*rr, yy, 9, 0, 7); c.fill(); c.stroke();
-    }
-    c.restore();
-  },
+  botOk(f, t){ const N = FS_CATCH; return hurtCY(t) + (t.vy || 0)*N - hurtRY(t) >= f.y + f.r + 14 && Math.abs(t.x + (t.vx || 0)*N - f.x) <= FS_CHAIR.reach - 40; },   // a CPU's cue: the foe clearly below her (14 px to spare) and where the catch will find them 10 frames on, at the speed they are going (a person leads a runner too)
+  ai(f){ return fsCatchFoes(this, f).length > 0; },
+  draw(f, c){ fsChairDraw(f, c); },
 };
 
 // FLOWER -- PETAL TANTRUM. Flower is vain and quick to anger ("Of COURSE I won. Look at me."; a tantrum is her most characteristic state,
