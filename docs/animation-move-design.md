@@ -474,8 +474,8 @@ and a win style. A skin the measurer cannot honestly find a face on keeps the fa
 | **Teardrop** | `deadpan`, 0.9; smug sway to win | Eyes only: she is mute, so her mouth is a flat line through every moment, and a smirk to win; she does not breathe or blink | drops of water | The one contestant who has never spoken (Teardrop, Personality); a smirk she never loses; the WINNER sign |
 | **Flower** | `fierce`, 1.1; twirls to win | Glare, grit and the anger mark on a wind-up (the tantrum is her most characteristic state); a smug smile to win | petals | Vain and quick-tempered; "Of COURSE I won. Look at me." |
 
-Skins: Algebralien Needle's eyes bulge, white, past her body, so they are patched white; Sweater Teardrop's two eyes are not alike (a flat closed one and an open one), so the second has
-radii of its own; Bandaged Bomby and Robot Pin shade between their eyes, so the second eye has its own fill (`c2`); Blindfolded Teardrop has no row (her eyes are under the blindfold and
+Skins: Outline Needle's eyes bulge, white, past her body, so they are patched white; Starry Jumper Teardrop's two eyes are not alike (a flat closed one and an open one), so the second has
+radii of its own; Bandaged Bomby and Robot Pin shade between their eyes, so the second eye has its own fill (`c2`); Blue Blindfold Teardrop has no row (her eyes are under the blindfold and
 her mouth is under her own hand), so she keeps the face she has.
 
 ### Batch 2: Tennis Ball, Blocky, Coiny, Pencil, Golf Ball, Rocky
@@ -489,8 +489,8 @@ her mouth is under her own hand), so she keeps the face she has.
 | **Golf Ball** | `smug`, 0.6; sways to win | A cool, superior face: half-lidded, a smirk, grit when hit | white bits of the dimples | The control-freak perfectionist; a hard ball that hardly moves |
 | **Rocky** | `deadpan`, 0.7; hops to win | Eyes only: his smile is blank and never changes (no mouth row); `> <` when hit, `^ ^` to win | chips of rock | "a blank happy smile", who "speaks" only by barfing ("bulleh") |
 
-Skins: Chef Tennis Ball, Gear Earrings Pencil, Purple Shoes Pencil and Tangerine Rocky are in profile, one eye; Glove Blocky's face is on the right of the picture, half behind the glove;
-Sleepy and Yoyle Metal Tennis Ball and Shades Blocky have eyes drawn as arcs, so their patches are taller than the arcs; Robo Coiny's mouth is the frown between his eyes.
+Skins: Chef Tennis Ball, Gear Earrings Pencil, Purple Shoes Pencil and Sandstone Rocky are in profile, one eye; Glove Blocky's face is on the right of the picture, half behind the glove;
+Nightcap Tennis Ball and Chrome Tennis Ball and Shades Blocky have eyes drawn as arcs, so their patches are taller than the arcs; Robo Coiny's mouth is the frown between his eyes.
 
 ### Batch 3: Book, Fries, Gelatin, Nickel, Ruby, Yellow Face
 
@@ -503,8 +503,8 @@ Sleepy and Yoyle Metal Tennis Ball and Shades Blocky have eyes drawn as arcs, so
 | **Ruby** | `gentle`, 0.9; twirls to win | Eyes only: her painted smile stays (it is drawn over facets that a flat patch would smear) | red shards | Bubbly and a little ditzy, always smiling |
 | **Yellow Face** | `smug`, 1.3; hops to win | The same grin all through (smug), a shout on the hit | sparkles | The infomercial salesman, who oversells everything with the same grin |
 
-Skins: Snowy Ruby has no row (snow covers her eyes and half her mouth); Broken Fries, Square Hole Nickel and Bandaged Ruby are in profile, one eye; Book's two brows sit on a green half and a
-blue half, so the second has its own fill (`bc2`); Frozen Yellow Face's eyes are big U shapes, so their patches are large.
+Skins: Snow-Capped Ruby has no row (snow covers her eyes and half her mouth); Torn Fries, Square Hole Nickel and Bandaged Ruby are in profile, one eye; Book's two brows sit on a green half and a
+blue half, so the second has its own fill (`bc2`); Icy Yellow Face's eyes are big U shapes, so their patches are large.
 
 ### Batch 4: Barf Bag, Basketball, Bell, Bracelety, Fanny, Gaty
 
@@ -517,7 +517,7 @@ blue half, so the second has its own fill (`bc2`); Frozen Yellow Face's eyes are
 | **Fanny** | `smug`, 0.9; sways to win | A smirk, then a glare and a shout on the hit; grit when hurt | bits of blade | Rude, blunt and pleased with her puns: "You BLEW it. Get it? Because I'm a fan." |
 | **Gaty** | `deadpan`, 0.9; sways to win | A flat face and a squint; a smirk to win | flakes of paint | Unbothered, a gate: "Honestly, I don't care. But like, clap." |
 
-Skins: Zombie Barf Bag's eyes are white with dark rims, so they are patched green and drawn with whites and pupils; Yoyle Metal Barf Bag and Purple Bracelety are in profile, one eye; Gaty's eyes
+Skins: Green Barf Bag's eyes are white with dark rims, so they are patched green and drawn with whites and pupils; Tin Barf Bag and Violet Bracelety are in profile, one eye; Gaty's eyes
 in her render are an eyebrow and an eye joined, so one patch covers each pair; Basketball keeps her painted brows (the left one is on the very edge of the ball).
 
 ### Batch 5: Grassy, Lightning, Liy, Lollipop, Marker, Money
@@ -531,7 +531,7 @@ in her render are an eyebrow and an eye joined, so one patch covers each pair; B
 | **Marker** | `deadpan`, 0.7; sways to win | A flat face and a squint; `> <` when hit | drops of purple ink | Deadpan, a hard plastic barrel whose nib is the business end: "Permanent record." |
 | **Money** | `smug`, 1.3; twirls to win | Smug through every moment; a shout on the hit | scraps of green paper | Rich and pleased about it, paper with no rigidity: "Oh, my tree! Wins don't grow on trees." |
 
-Skins: Sunglasses Lightning's eyes are behind the shades, so that row is a mouth alone; Uncapped Marker and Burnt Marker show one eye; Lollipop and Uncapped Marker keep their painted brows (a patch
+Skins: Sunglasses Lightning's eyes are behind the shades, so that row is a mouth alone; Uncapped Marker and Purple Cap Marker show one eye; Lollipop and Uncapped Marker keep their painted brows (a patch
 on Lollipop's left brow would paint outside the ball); Scribbled Lollipop is scribbled over in blue ink, which the patches leave alone where they do not reach.
 
 ### Batch 6: Naily, Remote, Rose, Saw, TV, Woody
@@ -545,7 +545,7 @@ on Lollipop's left brow would paint outside the ball); Scribbled Lollipop is scr
 | **TV** | `deadpan`, 0.6; sway to win | No face (its render shows a teapot on the screen): the body, the limbs and the effects | static | A screen that tears when it is hit: "Broadcast complete." |
 | **Woody** | `gentle`, 1.0; hops to win | Wide eyes and a small round mouth; a shy, relieved smile to win | drops of nervous sweat | The most fearful of them all: "...(hides, victorious)" |
 
-Skins: the Remotes' faces are white on a dark body and Upgraded TV's is light grey on black, so those rows give the ink the new features are drawn in (`k`), and the fill under them is the body's own;
+Skins: the Remotes' faces are white on a dark body and Tank Tread TV's is light grey on black, so those rows give the ink the new features are drawn in (`k`), and the fill under them is the body's own;
 Flamethrower Rose and Sizzling Saw show one eye; Siren Remote has eyes (white squares) and no mouth to find; Mech Woody's eyes are the small ovals under its arcs, and the arcs are its brows.
 
 ### Batch 7: Toothpaste, Dora, Match, David, Firey Jr., Fern
@@ -559,7 +559,7 @@ Flamethrower Rose and Sizzling Saw show one eye; Siren Remote has eyes (white sq
 | **Firey Jr.** | `fierce`, 1.0; hops to win | Glare, grit and the anger mark on a wind-up | embers | Copies his dad in everything: "Just like my dad!" |
 | **Fern** | `gentle`, 1.0; hops to win | Wide eyes and a small round mouth; a relieved smile to win | pine needles | Surrenders the moment a fight finds him: "Oh, my soil! I was gonna surrender!" |
 
-Skins: Dora's and David's faces (and Bob Cut Dora's) are pencil lines, grey, or brown on Tangerine David, so their rows give the ink (`k`); Half Frozen Toothpaste is small beside its block of ice, so its
+Skins: Dora's and David's faces (and Bob Cut Dora's) are pencil lines, grey, or brown on Citrus David, so their rows give the ink (`k`); Glacier Toothpaste is small beside its block of ice, so its
 patches are small; Knight Match's face sits under the visor of her helmet, and her patches stop short of the chin strap.
 
 ### Batch 8: Ruler, Sidewalky, Balloony, Roboty, Profily, Ice Cube
@@ -574,7 +574,7 @@ patches are small; Knight Match's face sits under the visor of her helmet, and h
 | **Ice Cube** | `smug`, 0.7; sways to win | Half-lidded and smirking | chips of ice | Cool in every sense: "Cool." |
 
 Skins: Profily's features are white on a blue disc, so its rows give the ink (`k`). Roboty's eyes are green screens in a red head, covered whole by a patch of the head's red. The Ice Cubes are
-translucent, so their patches are opaque flat fills of the picture's own colour (the accepted limitation, as for Bubble, Teardrop and Gelatin). Snowy Sidewalky and Springy Shoes Ice Cube show
+translucent, so their patches are opaque flat fills of the picture's own colour (the accepted limitation, as for Bubble, Teardrop and Gelatin). Snow-Dusted Sidewalky and Springy Shoes Ice Cube show
 one eye. Shades Sidewalky and Watch Profily have no row: the shades run into the mouth, so a patch would bite into the lens, and the watch skin's face runs over the edge of the head.
 
 ### Batch 9: Cake, Donut, Bomb, Lightbulb, Paintbrush, Taco (II)
@@ -588,8 +588,8 @@ one eye. Shades Sidewalky and Watch Profily have no row: the shades run into the
 | **Paintbrush** | `fierce`, 0.8; hops to win | Glare, grit and the anger mark on a wind-up; wide eyes and an open mouth to win | drops of yellow paint | Prone to angry outbursts, bristles that react to them: "Well actually, I had a question—" |
 | **Taco (II)** | `deadpan`, 0.75; sways to win | A flat face; a smirk to win | bits of lettuce and tomato | Oblivious on the surface and a plan under it: "IQ of 7? I merely pretended." |
 
-Skins: Cake's features are white on dark chocolate, so its row gives the ink (`k`). Rockstar Lightbulb has white eyes in black makeup (`k`) and a black mouth on the pale glass below (`mk`, new: the mouth's own ink
-where it differs). Snorkel Bomb's eyes are dark teal arcs inside the dive mask (`k`), and the snorkel covers the mouth. Doughnut and Caked Cake show one eye. Blindfolded Taco has the mouth alone. Caked Cake's mouth patch
+Skins: Cake's features are white on dark chocolate, so its row gives the ink (`k`). Stage Paint Lightbulb has white eyes in black makeup (`k`) and a black mouth on the pale glass below (`mk`, new: the mouth's own ink
+where it differs). Snorkel Bomb's eyes are dark teal arcs inside the dive mask (`k`), and the snorkel covers the mouth. Iced Donut and Strawberry Cake show one eye. Orange Blindfold Taco has the mouth alone. Strawberry Cake's mouth patch
 starts under the red band and leaves the first dot of the painted smile, so that the band stays whole.
 
 ### Batch 10: Bow, Marshmallow, Apple, Baseball, Pickle, Nickel (II)
@@ -603,8 +603,8 @@ starts under the red band and leaves the first dot of the painted smile, so that
 | **Pickle** | `plain`, 1.0; hops to win | A plain game face; wide eyes and a grin to win | drops of brine | A laid-back boxer, sweet and dim: "Okay, let's do this! Oh, we did." |
 | **Nickel (II)** | `smug`, 0.6; sways to win | Half-lidded and smirking | silver glints | Sarcasm as an art: "Great. Now spell my name right." |
 
-Skins: Boxing Pickle's row is the one eye (the other is under the eyepatch) and no mouth, because the glove is in front of the grin and a patch would bite into it. Snazzy Nickel's is the mouth alone, the shades hide
-the eyes. Snotty Apple's right eye sits on the snot, so its fill is the green one (`c2`). Baseball and Chocolate Baseball keep their painted brows, as do Bow, Marshmallow, Apple and Nickel (II). The Nickel and
+Skins: Boxing Pickle's row is the one eye (the other is under the eyepatch) and no mouth, because the glove is in front of the grin and a patch would bite into it. Fedora Nickel's is the mouth alone, the shades hide
+the eyes. Slimy Apple's right eye sits on the snot, so its fill is the green one (`c2`). Baseball and Chocolate Baseball keep their painted brows, as do Bow, Marshmallow, Apple and Nickel (II). The Nickel and
 Baseball patches are big and shiny bodies show them as flat plates (the accepted limitation); Baseball's mouth patch is wider than its painted mouth so that the sharp corner of the grin is inside it.
 
 ### Batch 11: Paper, Microphone, Salt, Test Tube, Trophy, Bonesaw
@@ -618,8 +618,8 @@ Baseball patches are big and shiny bodies show them as flat plates (the accepted
 | **Trophy** | `smug`, 0.7; sways, chin up, to win | Half-lidded and smirking | gold flecks | Proud, and sore about a loss: "No cardboard box beats me twice." |
 | **Bonesaw** | `plain`, 0.6; hops to win | A plain game face; a grin to win | flakes of rust | Grateful and plain-spoken in the third person: "Bonesaw win! Bonesaw finally useful!" |
 
-Skins: Rockstar Paper, Blindfolded Microphone, Face Mask Salt and Blindfolded Trophy have the mouth alone, because the eyes are under makeup (the left one plain, the right one white in black paint, which would need two inks), a blindfold or cucumber slices.
-Lab-Coat Test Tube shows one eye. Blindfolded Bonesaw has no row: its mouth and the dark bars that run across it are one shape. Test Tube's body is banded light and dark, so its mouth patch is the colour between them; the textured bodies
+Skins: Flying-V Paper, Orange Blindfold Microphone, Face Mask Salt and Lime Blindfold Trophy have the mouth alone, because the eyes are under makeup (the left one plain, the right one white in black paint, which would need two inks), a blindfold or cucumber slices.
+Lab-Coat Test Tube shows one eye. Lime Blindfold Bonesaw has no row: its mouth and the dark bars that run across it are one shape. Test Tube's body is banded light and dark, so its mouth patch is the colour between them; the textured bodies
 (Microphone's mesh, Paper's ruled lines, Bonesaw's rusty blade) show a patch as a flat plate, the accepted limitation.
 
 ### Batch 12: Spikey, Cheesy, Dough, Box, Goo, Lifering
@@ -633,8 +633,8 @@ Lab-Coat Test Tube shows one eye. Blindfolded Bonesaw has no row: its mouth and 
 | **Goo** | `plain`, 1.5; twirls to win | A plain game face; a shout of joy to win | drops of goo | Cheerful, and his analogies never stick: "Winning is like glue! This one stuck!" |
 | **Lifering** | `gentle`, 0.9; hops to win | Wide eyes (the painted mouth stays) | flecks of foam | The lifeguard, earnest: "Everyone okay? I can perform CPR!" |
 
-Skins: Spikey is grey on one side and red on the other, so the mouth patches (which cross the join) are the colour between the two; Blindfolded Spikey, Blindfolded Box and Blindfolded Goo are the mouth alone, and Tangled Spikey
-(rope across the face) and Blindfolded Cheesy (the grin runs into the blindfold) have no row. Dough and Solid Dough: Dough is translucent and its painted features are pale brown (`k` gives the deeper brown the new ones are drawn in), so its patches
+Skins: Spikey is grey on one side and red on the other, so the mouth patches (which cross the join) are the colour between the two; Lime Blindfold Spikey, Lime Blindfold Box and Lime Blindfold Goo are the mouth alone, and Tangled Spikey
+(rope across the face) and Blue Blindfold Cheesy (the grin runs into the blindfold) have no row. Dough and Buttery Dough: Dough is translucent and its painted features are pale brown (`k` gives the deeper brown the new ones are drawn in), so its patches
 are opaque fills of the colour it shows on a light stage. Lifering's two rows are eyes only: its mouth runs across red and white stripes, and a patch would wipe them out.
 
 **Pose swaps on a skin** (new, for Box, Goo and Lifering, the way Puffball's are): their own pictures for a moment (Box with her flaps open, or lying limp; Goo giant while Puffed Up, or melted to a puddle; Lifering in his dive, or kneeling to
@@ -654,8 +654,8 @@ Spikey stays as it was on a skin.
 | **Starfruit** | `gentle`, 1.0; twirls to win | Wide eyes and a small round mouth; a sheepish round mouth to win | yellow sparkles | Sheepish and silly: "Sorry about the tuna dip, Guava." |
 | **Blueberry** | `deadpan`, 1.1; sways to win | A flat face in white on the navy; a blink and a flat mouth to win | drops of dark juice | Nothing matters: "Nothing matters. Start clapping." |
 
-Skins: Cammy's and Camera Cammy's features and Blueberry's are white on a dark body, so their rows give the ink (`k`) and force the dark fill under it (`c`; the white features would otherwise be taken for the body); both Cammys show one eye. Blindfolded
-Candle is the mouth alone, Oily Soap one eye and a mouth. Blindfolded Soap (the mouth is out of sight) and Rockstar Starfruit (the face is in the black star makeup) have no row. The textured bodies (Battered Fan's burnt paper, Starfruit's glow) show a patch
+Skins: Cammy's and Compact Cammy's features and Blueberry's are white on a dark body, so their rows give the ink (`k`) and force the dark fill under it (`c`; the white features would otherwise be taken for the body); both Cammys show one eye. Blue Blindfold
+Candle is the mouth alone, Oily Soap one eye and a mouth. Orange Blindfold Soap (the mouth is out of sight) and Star Paint Starfruit (the face is in the black star makeup) have no row. The textured bodies (Battered Fan's burnt paper, Starfruit's glow) show a patch
 as a flat plate, the accepted limitation.
 
 **Pose swaps on a skin, continued** (Candle and Cammy): Candle's Inner-Flame (the third eye, in a Crystal grip, a reel or a smash charge) and her flame put out are pictures cut from her own render, and Cammy's flash (a snap or a smash charge) is one from his;
@@ -673,8 +673,8 @@ and a frown; Cammy's flash is a squint, a grin, a sparkle and a small pulse of s
 | **Jack** | `deadpan`, 0.7; sways to win | (no face row: his eyes sit on the join of white and blue) | scraps of card | Callous and blunt: "I only came to win. Handcuffs and all." |
 | **Magnet** | `smug`, 0.8; sways to win | Half-lidded and smirking, in white on the blue | blue sparks | A very magnetic presence: "By popular demand!" |
 
-Skins: Detective Clover's mouth is under a moustache, so its row is eyes only; Deerstalker Clover is the full face; Snotty Tissues is eyes and mouth with the eyes' boxes drawn by hand (the whites of its eyes run wider than the dark of them). No row for Detective
-Yin-Yang (the glasses sit on the mouth), Blindfolded Cherries, Tattered Jack (the cracks run over the face) or Blindfolded Magnet (the blindfold and a hand cover the face): they keep their body, limbs and effects, and a pose swap where they have one.
+Skins: Detective Clover's mouth is under a moustache, so its row is eyes only; Deerstalker Clover is the full face; Mucky Tissues is eyes and mouth with the eyes' boxes drawn by hand (the whites of its eyes run wider than the dark of them). No row for Detective
+Yin-Yang (the glasses sit on the mouth), Orange Blindfold Cherries, Tattered Jack (the cracks run over the face) or Blue Blindfold Magnet (the blindfold and a hand cover the face): they keep their body, limbs and effects, and a pose swap where they have one.
 
 **Pose swaps on a skin, continued** (Tissues and Yin-Yang): Tissues' nap (the sleep stand-in, in the sit-down windup) and Yin-Yang's Yang (when Yang takes over) and Mindful poses are pictures cut from their own render; `frTissuesPose` and `frYinYangPose` give a skin the same
 moments, for the same flags: Tissues sits low and wide, tipped a little, eyes shut and a round mouth; Yang is a glare, a clenched jaw and a lean in; Mindful is closed eyes and a flat mouth in a low, calm sit.
@@ -690,8 +690,8 @@ moments, for the same flags: Tissues sits low and wide, tipped a little, eyes sh
 | **Bot** | `plain`, 1.0; twirls to win | Mouth only: a plain game face's mouth, a shout of joy to win | sparks | Exuberant: "I am Bot. The one and only! WOOHOO!" |
 | **Loser** | `gentle`, 0.9; hops to win | Wide eyes and a small round mouth; a grin to win | chips of yellow | Kind, and means it: "Aw, you did great too. Really." |
 
-Skins: no row for Blindfolded MeTag (no face) or Rockstar Poppy (the face is in the black makeup under the hair). Poppy's row is the eyes, because the toothy grin runs into the hand and a patch would bite into it. Bot's and Damaged Bot's are the mouth alone (the face is under a leaf),
-Tired Teddy Bear's the eyes (the pupils inside their dark rings; the nose and the snarl run together) and Blindfolded Tea Kettle's the mouth alone. Teddy Bear's mouth box starts under the nose, so the nose stays. Backpack Loser's eyes sit on the join of a white and a yellow facet,
+Skins: no row for Gold Blindfold MeTag (no face) or Spiky Wig Poppy (the face is in the black makeup under the hair). Poppy's row is the eyes, because the toothy grin runs into the hand and a patch would bite into it. Bot's and Screaming Bot's are the mouth alone (the face is under a leaf),
+Pistol Teddy Bear's the eyes (the pupils inside their dark rings; the nose and the snarl run together) and Orange Blindfold Tea Kettle's the mouth alone. Teddy Bear's mouth box starts under the nose, so the nose stays. Backpack Loser's eyes sit on the join of a white and a yellow facet,
 so the patches are small; the eyes' ellipses are widened a little to cover a tilt. Pose swaps: none of these has one.
 
 ### Batch 16: Pillow, Taco
@@ -701,5 +701,5 @@ so the patches are small; the eyes' ellipses are widened a little to cover a til
 | **Pillow** | `deadpan`, 1.5; sways to win | A flat face; a flat, knowing look to win | feathers | The softest silhouette in the cast, dry about it: "Soft landing. For me." |
 | **Taco** | `plain`, 1.1; hops to win | A plain game face; a shout of joy to win | bits of lettuce and tomato | Upbeat and fond of a pun, a fold that is the whole silhouette: "Shell yeah." |
 
-Skins: Charred Pillow and Fishless Taco are full faces. Evil Taco has no row (the leafy snakes of its head run over its face). Pillow's and Taco's mouth patches are the colour between the body and the shaded band along its foot, because the painted mouth sits on the join.
+Skins: Charred Pillow and Fishless Taco are full faces. Snake Hair Taco has no row (the leafy snakes of its head run over its face). Pillow's and Taco's mouth patches are the colour between the body and the shaded band along its foot, because the painted mouth sits on the join.
 (This is the Taco of the first show; Taco (II) of the second was batch 9.) With this batch every fighter in the roster but Tree has a row in `FRAME_SRC`; the three secret prize fighters are not in the roster.
