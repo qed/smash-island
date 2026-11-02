@@ -24958,38 +24958,394 @@ FINAL_SMASHES['Bomby'] = {
   },
 };
 
-// ROCKY -- INFINITE MATTER OVERLOAD. The Infinite Matter Generator makes "an infinite amount" of not just vomit but red balls ("Don't Lose
-// Your Marbles"), blocks ("The Worst Day of Black Hole's Life") and cake batter ("Today's Very Special Episode") (the design doc). He
-// becomes a fountain: for 70 frames, a shot every three, in a rotation of sludge, red ball, block and batter, thrown forward over a spread of
-// distances (6-8% each); then one acid cannonball (22%, goes through). Behind him is safe; the shots land in front, so it is a wall to get over.
-FINAL_SMASHES['Rocky'] = {
-  id:'matter', wind:FS_WIND, dur:FS_WIND + 108,reach:420,
-  catch(f){ return fsBoxAhead(f, 0, 330, 160, f.r + 8); }, lockEnd:FS_WIND + 78, catchMax:1,   // CATCH: the part of the fountain's reach in front of him its shots rain on (past it they thin out)
-  start(f, st){ armAtk(f, this.wind, 'fsgather'); },
-  tick(f, st, t){
-    const w = this.wind;
-    if(t === w){ armAtk(f, 80, 'spit'); shake(6); }
-    if(t >= w && t < w + 70 && (t - w) % 3 === 0){
-      const i = (t - w)/3, k = i % 4, vx = f.face*(6 + (i*5) % 6), vy = -(2 + (i*7) % 6);
-      const P = [
-        { color:'#7cb342', dmg:6, kb:6, r:13, grav:true, shape:'barfglob' },
-        { color:'#e53935', dmg:7, kb:7, r:12, grav:true, bounce:true, maxBounces:3 },
-        { color:'#9e9e9e', dmg:8, kb:8, r:15, grav:true },
-        { color:'#e8b4c8', dmg:6, kb:6, r:13, grav:true },
-      ][k];
-      spawnProj(f, Object.assign({ vx:vx, vy:vy, life:110, noAim:true }, P));
+// ---- FSC lane 2: begin --------------------------------------------------------------------------------------------------------------------
+// The owner, 2026-11-02: "just dont make them TOO complicated; you can vary the damage and knockback as well." Lane 2's Final Smashes (Rocky, Soap,
+// Basketball) are short staged scenes on the catch-then-cinematic lock: the foe the catch holds is placed by the row (fsc2_pin), takes a few hits in turn,
+// and the last hit is the launch (the let-go). Everything a row draws is a function of the holder's fs* fields (fsT, fsAx, fsAy, fsBx, fsBy, fsCx, fsCy,
+// face) and the foe the catch holds (fsLockedOf), so a guest draws the same. No words; every prop grows in over 12 frames; own art.
+function fsc2_ease(p){ p = p < 0 ? 0 : (p > 1 ? 1 : p); return p*p*(3 - 2*p); }
+function fsc2_k(t, t0, n){ const p = (t - t0)/(n || 12); return p < 0 ? 0 : (p > 1 ? 1 : p); }   // 0 -> 1 over n frames from t0 (a prop growing in: 12 frames)
+function fsc2_lerp(a, b, p){ return a + (b - a)*p; }
+function fsc2_rnd(i, s){ const v = Math.sin(i*127.1 + (s || 0)*311.7)*43758.5453; return v - Math.floor(v); }   // render-only dice: a function of the index, the same on every screen
+function fsc2_mix(a, b, p){ const A = parseInt(a.slice(1), 16), B = parseInt(b.slice(1), 16), q = (s)=> Math.round(((A >> s) & 255)*(1 - p) + ((B >> s) & 255)*p); return 'rgb(' + q(16) + ',' + q(8) + ',' + q(0) + ')'; }
+function fsc2_dir(f){ return f.face < 0 ? -1 : 1; }
+// The row's start, once the catch has landed: the one foe it holds -- or nobody (the foe stepped out of the catch in its 10 frames): it is spent at once with a small puff.
+function fsc2_begin(f, st){
+  const t = fighters[st.held[0]];
+  if(!t){ for(let i = 0; i < 8; i++) puff(f.x, f.y - 6, i % 2 ? f.color : '#fff', 4); f._atkAnim = 0; fsEnd(f); return null; }
+  st.tg = t.idx; st.n0 = t._koN || 0; st.over = false; st.ay = f.y;
+  return t;
+}
+// She hangs where she is while it plays (gravity would sink her a few px a frame); on the floor she stands still.
+function fsc2_hang(f, st){ f.vx = 0; if(!f.onground){ f.vy = 0; f.y = st.ay; } }
+// Is the row still on, up to its last blow `last`? The foe gone (a KO, a respawn, the lock lost) ends it there and then: nothing more is thrown at whoever comes back
+// (one fall, one stock: koSince).
+function fsc2_live(f, st, last, t){
+  if(st.over) return false;
+  if(t <= last){ const tg = fighters[st.tg]; if(!tg || tg.dead || koSince(tg, st.n0) || !fsIsLockedBy(tg, f)){ st.over = true; st.t = st.d.dur - 1; return false; } }
+  return true;
+}
+function fsc2_pin(t, x, y){ if(!t || t.dead || !t._fsLock) return; t.x = x; t.y = y; t.vx = 0; t.vy = 0; }   // (only while the catch holds them: once let go they fly)
+// One blow on the held foe: pct is the % on screen (the row's own size: KO-level doubles it, and the holder's damage stat is taken back out, so the tally is exactly what is
+// written here). The blows before the last stun briefly, so the last is no link of a chain and its let-go stuns in full. false: that blow KO'd them (the row is over).
+function fsc2_hit(f, st, pct, kbx, kby, o){
+  const tg = fighters[st.tg]; if(!tg || tg.dead) return false;
+  tg.countering = 0;
+  applyHit(tg, pct/FS_DMG_MULT/(statDmg(f, 1) || 1), kbx, kby, f, o);
+  if(koSince(tg, st.n0)){ st.over = true; st.t = st.d.dur - 1; return false; }
+  return true;
+}
+// Is there a surface to stand on at x (its top within 6 px of the feet line)? The floor (over a span, not a gap) and every platform; the tower's floors are platforms.
+function fsc2_standOk(x, feet){
+  if(x < 50 || x > WW - 50) return false;
+  for(const q of vanTopsAt(x)) if(Math.abs(q.y - feet) <= 6) return true;
+  return isBig() && Math.abs(groundY() - feet) <= 6 && groundAt(x);
+}
+// How far (at most `want`) she can walk d-ward along what she stands on, staying 40 px in from its edge; 0 in the air.
+function fsc2_walkRoom(f, d, want){
+  if(!f.onground) return 0;
+  const feet = f.y + f.r; let ok = 0;
+  for(let s = 8; s <= want + 40; s += 8){ if(!fsc2_standOk(f.x + d*s, feet)) break; ok = s; }
+  return Math.max(0, Math.min(want, ok - 40));
+}
+// ---- shared drawing ---------------------------------------------------------------------------------------------------------------------------
+function fsc2_blob(c, x, y, r, col, a, hi){ c.globalAlpha = a; c.fillStyle = col; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); c.stroke(); if(hi){ c.globalAlpha = a*0.6; c.fillStyle = '#fff'; c.beginPath(); c.arc(x - r*0.35, y - r*0.35, r*0.28, 0, 7); c.fill(); } }
+function fsc2_box(c, x, y, s, rot, col, a){ c.save(); c.translate(x, y); c.rotate(rot); c.globalAlpha = a; c.fillStyle = col; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.rect(-s, -s, 2*s, 2*s); c.fill(); c.stroke(); c.restore(); }
+function fsc2_limb(c, x0, y0, x1, y1, w){ c.lineCap = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = w + 3; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke(); c.strokeStyle = '#8c8c8c'; c.lineWidth = w; c.stroke(); }
+function fsc2_key(t, K){ if(t <= K[0][0]) return K[0][1]; for(let i = 1; i < K.length; i++) if(t <= K[i][0]){ const p = (t - K[i - 1][0])/(K[i][0] - K[i - 1][0]); return K[i - 1][1] + (K[i][1] - K[i - 1][1])*p; } return K[K.length - 1][1]; }
+// a crack: jagged lines out of (x, y), flattened by fl, for a floor
+function fsc2_crack(c, x, y, R, n, seed, a, fl){
+  c.save(); c.globalAlpha = a; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.lineCap = 'round'; c.lineJoin = 'round';
+  for(let i = 0; i < n; i++){
+    const ang = (i + fsc2_rnd(i, seed)*0.7)*Math.PI*2/n; let px = x, py = y;
+    c.beginPath(); c.moveTo(px, py);
+    for(let s = 1; s <= 4; s++){ const rr = R*s/4*(0.8 + 0.4*fsc2_rnd(i*5 + s, seed)), aa = ang + (fsc2_rnd(i*9 + s, seed + 2) - 0.5)*0.7; px = x + Math.cos(aa)*rr; py = y + Math.sin(aa)*rr*fl; c.lineTo(px, py); }
+    c.stroke();
+  }
+  c.restore();
+}
+
+// ---- ROCKY: the generator ---------------------------------------------------------------------------------------------------------------------
+// Six frames of numbers the row and its picture share. The blows: [row frame, % on screen, colour]; the overload (the last, the launch) at `boom`.
+const FSC2_ROCKY = { dist:118, hits:[[20, 14, '#7cb342'], [36, 18, '#e53935'], [52, 20, '#e8b4c8']], boom:80, boomPct:48, tail:26, kb:[17, -25] };
+FSC2_ROCKY.dur = FSC2_ROCKY.boom + FSC2_ROCKY.tail;
+// The Infinite Matter Generator in his open mouth (the BFDI wiki: "an infinite matter generator inside of Rocky", it makes vomit, red balls, blocks and cake batter), drawn facing d.
+// heat 0..1 turns the core from green through yellow to red; it shakes as it climbs. Own art.
+function fsc2_rockyGen(c, x, y, d, k, heat, t){
+  const j = heat > 0.3 ? (t % 2 ? 1 : -1)*2*heat : 0;
+  c.save(); c.translate(x + j, y); c.scale(d*k, k);
+  c.globalAlpha = Math.min(1, k*1.3);
+  c.fillStyle = '#3b1a1a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.ellipse(1, 0, 8, 12, 0, 0, 7); c.fill(); c.stroke();   // the open mouth
+  c.fillStyle = '#8f98a3'; c.beginPath(); c.rect(3, -9, 22, 18); c.fill(); c.stroke();   // the barrel
+  c.fillStyle = '#5d6670'; c.beginPath(); c.rect(23, -12, 7, 24); c.fill(); c.stroke();   // the flange
+  c.fillStyle = '#6a7480'; c.beginPath(); c.rect(8, -12, 7, 3); c.fill(); c.stroke();
+  c.save(); c.translate(12, -15); c.rotate(t*(0.22 + 0.5*heat)); c.fillStyle = '#b4bcc6'; c.beginPath(); for(let i = 0; i < 12; i++){ const a = i*Math.PI/6, r = i % 2 ? 5 : 8; c.lineTo(Math.cos(a)*r, Math.sin(a)*r); } c.closePath(); c.fill(); c.stroke(); c.restore();   // the gear
+  const col = heat < 0.5 ? fsc2_mix('#7cf07a', '#ffe45e', heat*2) : fsc2_mix('#ffe45e', '#ff4a3a', heat*2 - 1);
+  c.fillStyle = col; c.beginPath(); c.arc(29, 0, 6 + 2*heat, 0, 7); c.fill(); c.stroke();   // the core, at the muzzle
+  c.fillStyle = col; c.beginPath(); c.arc(9, 5, 2.6, 0, 7); c.fill(); c.stroke();   // the lamp
+  if(heat > 0.5){ c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.moveTo(6, -9); c.lineTo(11, -2); c.lineTo(8, 3); c.lineTo(14, 9); c.moveTo(19, -9); c.lineTo(17, -1); c.lineTo(21, 6); c.stroke(); }   // the cracks, the hotter it gets
+  c.restore();
+}
+// A piece of what it makes, centre (x, y): 0 acid barf, 1 red ball, 2 grey block, 3 pink cake batter.
+function fsc2_rockyBit(c, kind, x, y, s, rot, a){
+  if(kind === 0) fsc2_blob(c, x, y, s*1.05, '#7cb342', a, true);
+  else if(kind === 1) fsc2_blob(c, x, y, s*0.9, '#e53935', a, true);
+  else if(kind === 2) fsc2_box(c, x, y, s*0.8, rot, '#9e9e9e', a);
+  else { fsc2_blob(c, x, y, s, '#e8b4c8', a, true); }
+}
+function fsc2_rockyDraw(f, c){
+  const R = FSC2_ROCKY, t = f.fsT || 0, d = f.fsCx || fsc2_dir(f), L = fsLockedOf(f);
+  const T = L ? { x:L.x, y:L.y } : (f.fsBx != null ? { x:f.fsBx, y:f.fsBy } : null);
+  if(!T) return;
+  const M = { x:f.x + d*f.r*0.55, y:f.y + f.r*0.12 }, M0 = { x:M.x + d*26, y:M.y }, w = f.fsWind || FS_WIND;
+  const h2 = R.hits[2][0], heat = t < h2 ? 0.1 + 0.2*fsc2_k(t, w, h2 - w) : Math.min(1, 0.3 + 0.7*(t - h2)/(R.boom - h2));
+  c.save();
+  if(t >= h2 && t < R.boom){   // he glows through the overload: a red flush that pulses (the rare anger of the design doc)
+    c.globalAlpha = (0.12 + 0.14*Math.sin(t*0.9))*(heat); c.fillStyle = '#ff3a2a'; c.beginPath(); c.arc(f.x, f.y, f.r + 7, 0, 7); c.fill();
+  }
+  if(t < R.boom) fsc2_rockyGen(c, M.x, M.y, d, 0.25 + 0.75*fsc2_k(t, 0, 12), heat, t);
+  // the torrent: one piece a few frames, quicker as it builds (3, then 2, then every frame), thrown from the muzzle at the foe, landing as a splat on them
+  if(t >= w && t < R.boom + 10){
+    let ts = w, i = 0;
+    while(ts < R.boom){
+      const age = t - ts;
+      if(age >= 0 && age <= 20){
+        const kind = ts < R.hits[1][0] ? 0 : (ts < h2 ? (i % 2 ? 1 : 2) : i % 4), r0 = fsc2_rnd(i, 1), r1 = fsc2_rnd(i, 2), r2 = fsc2_rnd(i, 3);
+        const ex = T.x + (r0 - 0.5)*30, ey = T.y + (r1 - 0.5)*28;
+        if(age <= 12){ const u = age/12, x = fsc2_lerp(M0.x, ex, u), y = fsc2_lerp(M0.y, ey, u) - Math.sin(Math.PI*u)*(18 + 30*r2); fsc2_rockyBit(c, kind, x, y, 6.5 + 4*r2, age*0.5 + i, 0.9); }
+        else { const u = (age - 12)/8; fsc2_rockyBit(c, kind, ex, ey, 5 + 2*r2, i, 0.5*(1 - u)); }
+      }
+      ts += ts < R.hits[1][0] ? 3 : (ts < h2 ? 2 : 1); i++;
     }
-    if(t === w + 78){ armAtk(f, 30, 'fsburst'); shake(11); spawnProj(f, fsAimShot(f, { vx:f.face*13, vy:-2, grav:false, dmg:22, kb:24, r:28, color:'#b2ff59', life:60, pierce:true, noAim:true, _fsVol:'big' })); for(let i = 0; i < 16; i++) puff(f.x + f.face*20, f.y, '#b2ff59', 6); }   // (the cannonball: at a locked foe, and through the grace a late shot of the fountain left them -- a wave of its own: fsVolleyThrough)
-  },
-  ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && (o.x - f.x)*f.face > 0 && (o.x - f.x)*f.face < 430 && Math.abs(o.y - f.y) < 160) return true; return false; },
-  draw(f, c){
-    const t = f.fsT || 0, w = f.fsWind || 30;
-    if(t >= w + 80) return;
-    c.save(); c.translate(f.x, f.y);
-    if(t < w){ const k = t/w; c.globalAlpha = 0.5*k; c.strokeStyle = '#fff'; c.lineWidth = 4; for(let i = 0; i < 6; i++){ const a = i*1.047 + hazardT*0.1; c.beginPath(); c.moveTo(Math.cos(a)*(f.r + 4), Math.sin(a)*(f.r + 4)); c.lineTo(Math.cos(a)*(f.r + 4 + 16*k), Math.sin(a)*(f.r + 4 + 16*k)); c.stroke(); }
-    } else if(t < w + 72){ c.globalAlpha = 0.9; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillStyle = '#7cb342'; c.beginPath(); c.arc(f.face*(f.r*0.5), -4, f.r*0.5 + 4*Math.sin(hazardT*0.8), 0, 7); c.fill(); c.stroke(); }
+  }
+  for(const h of R.hits){ const a = t - h[0]; if(a >= 0 && a < 9){ fsRing(c, T.x, T.y, 18 + 5*a, h[2], 6*(1 - a/9) + 1, 1 - a/9); c.globalAlpha = 0.4*(1 - a/9); c.fillStyle = '#fff'; c.beginPath(); c.arc(T.x, T.y, 14 + 4*a, 0, 7); c.fill(); } }
+  if(t >= h2 && t < R.boom){   // the overload: steam off it, and a pulse every few frames
+    for(let q = 0; q < 4; q++){ const age = ((t - h2) + q*6) % 24; c.globalAlpha = 0.5*(1 - age/24); c.fillStyle = '#f2f2f2'; c.beginPath(); c.arc(M0.x + (fsc2_rnd(q, 5) - 0.5)*24, M0.y - 12 - age*1.6, 4 + age*0.2, 0, 7); c.fill(); }
+    for(const pt of [h2 + 6, h2 + 14, h2 + 22]){ const a = t - pt; if(a >= 0 && a < 8) fsRing(c, M0.x, M0.y, 8 + 5*a, '#ffffff', 4*(1 - a/8) + 1, 0.8*(1 - a/8)); }
+  }
+  const ba = t - R.boom;
+  if(ba >= 0 && ba < 26){   // THE OVERLOAD: the generator goes up (the episode's moment: it is destroyed); the foe is in the middle of it
+    const u = ba/26, e = fsc2_ease(Math.min(1, ba/12));
+    c.globalAlpha = 0.9*(1 - u); c.fillStyle = '#ffffff'; c.beginPath(); c.arc(T.x, T.y, 30 + 110*Math.sqrt(u), 0, 7); c.fill();
+    fsRing(c, T.x, T.y, 30 + 170*e, '#ffb347', 16*(1 - u) + 2, 1 - u);
+    fsRing(c, T.x, T.y, 20 + 125*e, '#b2ff59', 10*(1 - u) + 1, 0.9*(1 - u));
+    for(let j = 0; j < 20; j++){   // what it made, thrown out of the middle of it, up and over
+      const a = -Math.PI/2 + (fsc2_rnd(j, 7) - 0.5)*3.4 + d*0.4, v = 6 + fsc2_rnd(j, 8)*9;
+      fsc2_rockyBit(c, j % 4, T.x + Math.cos(a)*v*ba, T.y + Math.sin(a)*v*ba + 0.45*ba*ba, 6 + 4*fsc2_rnd(j, 9), ba*0.3 + j, 1 - u*0.85);
+    }
+    for(let j = 0; j < 9; j++){   // and the generator's own pieces, out of his mouth
+      const a = (d > 0 ? -0.2 : Math.PI + 0.2) + (fsc2_rnd(j, 11) - 0.5)*2.2 - 0.6, v = 4 + fsc2_rnd(j, 12)*7, x = M0.x + Math.cos(a)*v*ba, y = M0.y + Math.sin(a)*v*ba + 0.4*ba*ba;
+      c.globalAlpha = 1 - u; if(j % 3 === 0) FS_GLYPH.gear(c, x, y, 7 + 3*fsc2_rnd(j, 13), 1, f); else fsc2_box(c, x, y, 4 + 3*fsc2_rnd(j, 14), ba*0.4 + j, j % 2 ? '#8f98a3' : '#5d6670', 1 - u);
+    }
+  }
+  if(ba >= 0 && ba < 34){   // his mouth, smoking: the generator is gone
+    for(let q = 0; q < 3; q++){ const age = (ba + q*8) % 24; c.globalAlpha = 0.45*(1 - ba/34)*(1 - age/24); c.fillStyle = '#9a9a9a'; c.beginPath(); c.arc(M0.x - d*8 + (fsc2_rnd(q, 6) - 0.5)*10, M0.y - 6 - age*1.3, 4 + age*0.25, 0, 7); c.fill(); }
+  }
+  c.restore();
+}
+// ---- SOAP: the hall ------------------------------------------------------------------------------------------------------------------------
+// The blows: spray, two wipes, the suck, two cobwebs, and the blow through the window (on screen %: 8 + 8 + 8 + 10 + 8 + 8 + 40 = 90). walk: the frames she walks the hall with
+// the foe on the nozzle, up to `room` px (what she stands on allows: fsc2_walkRoom).
+const FSC2_SOAP = { pre:100, spray:14, wipe:[28, 40], suck:54, yank:8, walk:[64, 112], webs:[82, 98], dial:114, blow:122, tail:26, room:250, pct:{ spray:8, wipe:8, suck:10, web:8, blow:40 }, kb:[22, -9] };
+FSC2_SOAP.dur = FSC2_SOAP.blow + FSC2_SOAP.tail;
+FSC2_SOAP.nozzle = 24 + 62;   // from her centre to where the foe sticks on the nozzle
+// A cobweb (a fan of threads and three arcs), centre (x, y), radius r.
+function fsc2_web(c, x, y, r, a){
+  c.save(); c.globalAlpha = a; c.lineCap = 'round';
+  for(let pass = 0; pass < 2; pass++){
+    c.strokeStyle = pass ? '#eef0f6' : '#1c1c1c'; c.lineWidth = pass ? 1.6 : 3.4;
+    c.beginPath(); for(let i = 0; i < 8; i++){ const an = i*Math.PI/4; c.moveTo(x, y); c.lineTo(x + Math.cos(an)*r, y + Math.sin(an)*r); } c.stroke();
+    for(let k = 1; k <= 3; k++){ c.beginPath(); for(let i = 0; i <= 8; i++){ const an = i*Math.PI/4, rr = r*k/3*(i % 2 ? 0.86 : 1); const px = x + Math.cos(an)*rr, py = y + Math.sin(an)*rr; if(i) c.lineTo(px, py); else c.moveTo(px, py); } c.stroke(); }
+  }
+  c.restore();
+}
+function fsc2_bunny(c, x, y, s, a){ c.globalAlpha = a; c.fillStyle = '#b9b4ae'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.arc(x, y, s, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#d2cec8'; for(let i = 0; i < 4; i++){ c.beginPath(); c.arc(x + Math.cos(i*1.6 + 0.5)*s*0.9, y + Math.sin(i*1.6 + 0.5)*s*0.9, s*0.45, 0, 7); c.fill(); } }
+function fsc2_arrow(c, x, y, s, dir, col){ c.save(); c.translate(x, y); c.scale(dir, 1); c.fillStyle = col; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.moveTo(-s, -s*0.28); c.lineTo(0, -s*0.28); c.lineTo(0, -s*0.7); c.lineTo(s, 0); c.lineTo(0, s*0.7); c.lineTo(0, s*0.28); c.lineTo(-s, s*0.28); c.closePath(); c.fill(); c.stroke(); c.restore(); }
+// Where the foe is on row frame t (tick): pulled to her front, held there through the spray and the wipes, yanked to the nozzle, and carried on it.
+function fsc2_soapFoe(t, G){
+  const S = FSC2_SOAP, d = G.d, nx = G.x + d*S.nozzle, ny = G.y - 4;
+  if(t < FS_WIND){ const p = fsc2_ease(t/FS_WIND); return { x:fsc2_lerp(G.x0, G.p0x, p), y:fsc2_lerp(G.y0, G.p0y, p) }; }
+  if(t < S.suck) return { x:G.p0x + (S.wipe.indexOf(t) >= 0 || t === S.spray ? d*3 : 0), y:G.p0y };
+  if(t < S.suck + S.yank){ const p = fsc2_ease((t - S.suck)/S.yank); return { x:fsc2_lerp(G.p0x, nx, p), y:fsc2_lerp(G.p0y, ny, p) }; }
+  return { x:nx + ((t % 3) - 1)*1.5, y:ny + 2.5*Math.sin(t*0.9) };
+}
+function fsc2_soapDraw(f, c){
+  const S = FSC2_SOAP, t = f.fsT || 0, d = f.fsCx || fsc2_dir(f), ax = f.fsAx != null ? f.fsAx : f.x, wx = f.fsBx, fy = f.fsBy, room = f.fsCy || 0, L = fsLockedOf(f);
+  if(wx == null || fy == null) return;
+  const hall = t < S.blow + 8 ? fsc2_k(t, 0, 12) : 1 - fsc2_k(t, S.blow + 8, 18);
+  c.save();
+  // THE HALL: the stage dims to a mansion hall -- a veil, dark wallpaper, a skirting board, cobwebs in the corners, dust bunnies, and a window at the far end
+  if(hall > 0.01){
+    const V = viewRect();
+    c.globalAlpha = 0.3*hall; c.fillStyle = '#150c26'; c.fillRect(V.x, V.y, V.w, V.h);
+    for(let x = Math.floor(V.x/70)*70; x < V.x + V.w; x += 70){ c.globalAlpha = 0.16*hall; c.fillStyle = '#4a2358'; c.fillRect(x, V.y, 30, Math.max(0, fy - V.y)); }
+    c.globalAlpha = 0.5*hall; c.fillStyle = '#2b1a12'; c.fillRect(V.x, fy - 1, V.w, 12);
+    fsc2_web(c, V.x, V.y, 130, 0.55*hall); fsc2_web(c, V.x + V.w, V.y, 130, 0.55*hall);
+    for(let q = -3; q <= 9; q++){ const x = ax + q*130 + fsc2_rnd(q, 4)*60; if(x > V.x - 20 && x < V.x + V.w + 20) fsc2_bunny(c, x, fy - 9, 8 + 4*fsc2_rnd(q, 5), 0.6*hall); }
+    // the window: a frame, a dark pane with a moon, the muntins -- it bursts with the blow
+    const wy = fy - 78, gone = t >= S.blow;
+    c.globalAlpha = hall; c.fillStyle = '#6b4226'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.rect(wx - 50, wy - 70, 100, 140); c.fill(); c.stroke();
+    if(!gone){
+      c.fillStyle = '#1b2748'; c.beginPath(); c.rect(wx - 40, wy - 60, 80, 120); c.fill(); c.stroke();
+      c.fillStyle = '#e8ecf8'; c.beginPath(); c.arc(wx + 14, wy - 26, 11, 0, 7); c.fill();
+      c.beginPath(); c.moveTo(wx, wy - 60); c.lineTo(wx, wy + 60); c.moveTo(wx - 40, wy); c.lineTo(wx + 40, wy); c.stroke();
+    } else {
+      c.fillStyle = '#0d1226'; c.beginPath(); c.rect(wx - 40, wy - 60, 80, 120); c.fill(); c.stroke();
+      const a = t - S.blow;
+      if(a < 28){ const u = a/28;   // the glass bursts out the way the foe went; the dust bunnies trail them
+        for(let j = 0; j < 14; j++){ const an = (d > 0 ? 0 : Math.PI) + (fsc2_rnd(j, 21) - 0.5)*2.2 - 0.25, v = 5 + fsc2_rnd(j, 22)*9, x = wx + Math.cos(an)*v*a, y = wy + Math.sin(an)*v*a + 0.35*a*a; c.globalAlpha = 1 - u; c.fillStyle = j % 2 ? '#bfe4ff' : '#ffffff'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(x, y - 7); c.lineTo(x + 6, y + 5); c.lineTo(x - 6, y + 4); c.closePath(); c.fill(); c.stroke(); }
+        for(let j = 0; j < 9; j++){ const v = 4 + j*1.1, x = wx + d*v*a*(0.6 + 0.4*fsc2_rnd(j, 23)), y = wy - 8 + (fsc2_rnd(j, 24) - 0.5)*60 + 0.1*a*a; fsc2_bunny(c, x, y, 7 + 4*fsc2_rnd(j, 25), 0.85*(1 - u)); }
+        fsRing(c, wx, wy, 20 + 110*fsc2_ease(Math.min(1, a/10)), '#ffffff', 10*(1 - u) + 1, 0.8*(1 - u)); }
+    }
+  }
+  // her pump, pressed three times as she builds (and the mist off it)
+  if(t < S.spray + 12){
+    const k = fsc2_k(t, 0, 4), press = t < FS_WIND ? 0.5 - 0.5*Math.cos(Math.PI*2*3*t/FS_WIND) : 0, py = f.y - f.r - 9 + 7*press*(1 - 0.2), sx = f.x + d*f.r*0.5;
+    c.globalAlpha = k; c.fillStyle = '#f06fa8'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.rect(f.x - 9, py - 7, 18, 8); c.fill(); c.stroke();
+    c.beginPath(); c.rect(Math.min(f.x, f.x + d*18), py - 6, 18, 4); c.fill(); c.stroke();
+    if(t < FS_WIND && press > 0.85) for(let q = 0; q < 5; q++){ const u = 0.4 + q*0.12; c.globalAlpha = 0.6; c.fillStyle = '#ffd9ec'; c.beginPath(); c.arc(sx + d*(10 + u*30), py - 2 + u*8, 3, 0, 7); c.fill(); }
+  }
+  if(L || f.fsBx != null){
+    const tx = L ? L.x : wx, ty = L ? L.y : fy - 24;
+    // SPRAY: a mist off her pump onto the foe, and little germs popping off them
+    const a0 = t - S.spray;
+    if(L && a0 >= 0 && a0 < 14){ const u = a0/14, sx = f.x + d*f.r*0.5, sy = f.y - f.r - 10;
+      for(let q = 0; q < 14; q++){ const p = Math.min(1, (a0 + q*0.2)/9), jx = (fsc2_rnd(q, 31) - 0.5)*34*p, jy = (fsc2_rnd(q, 32) - 0.5)*30*p; c.globalAlpha = 0.55*(1 - u); c.fillStyle = q % 2 ? '#fff0f8' : '#ffc4e2'; c.beginPath(); c.arc(fsc2_lerp(sx, tx, p) + jx, fsc2_lerp(sy, ty, p) + jy, 5 + 4*p, 0, 7); c.fill(); }
+      for(let q = 0; q < 6; q++){ const an = q*1.05 + 0.4, v = 2.2 + fsc2_rnd(q, 33)*2; c.globalAlpha = 1 - u; c.fillStyle = '#7bd34e'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.5; c.beginPath(); c.arc(tx + Math.cos(an)*v*a0*1.6, ty + Math.sin(an)*v*a0*1.6 - 6, 3, 0, 7); c.fill(); c.stroke(); } }
+    // WIPE, WIPE: the small blue cloth, a fussy pass across them each time, a shiny streak and a puff of grime
+    for(let wi = 0; wi < 2; wi++){ const a = t - S.wipe[wi]; if(L && a >= -8 && a < 14){
+      const u = Math.max(0, Math.min(1, (a + 8)/12)), sgn = wi ? -1 : 1, cx = tx + sgn*(-34 + 68*fsc2_ease(u)), cy = ty - 6 + Math.sin(u*Math.PI)*-8;
+      c.save(); c.translate(cx, cy); c.rotate(sgn*0.5*Math.sin(u*Math.PI*2)); c.globalAlpha = Math.min(1, (a + 8)/4)*(a > 8 ? 1 - (a - 8)/6 : 1); c.fillStyle = '#4aa3e8'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.rect(-15, -11, 30, 22); c.fill(); c.stroke(); c.strokeStyle = '#bfe4ff'; c.lineWidth = 2; c.beginPath(); c.moveTo(-9, -4); c.lineTo(9, -4); c.moveTo(-9, 3); c.lineTo(9, 3); c.stroke(); c.restore();
+      if(a >= 0){ c.globalAlpha = 0.8*(1 - a/14); c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.lineCap = 'round'; c.beginPath(); c.moveTo(tx - 22, ty - 16); c.lineTo(tx + 18, ty + 10); c.stroke();
+        for(let q = 0; q < 5; q++){ c.globalAlpha = 0.65*(1 - a/14); c.fillStyle = '#7a5a3a'; c.beginPath(); c.arc(tx + sgn*(10 + q*7 + a*2), ty - 8 + q*3 - a*0.6, 4 - q*0.4, 0, 7); c.fill(); } } } }
+    // SUCK, SWEEP: the vacuum -- a canister rolls in behind her (grows in over 12 frames), a pipe in her hand with a flared nozzle, the foe stuck on it
+    if(t >= S.suck - 12 && t < S.blow + 14){
+      const k = fsc2_k(t, S.suck - 12, 12), fade = t > S.blow ? 1 - fsc2_k(t, S.blow, 14) : 1, cx = f.x - d*(f.r + 26), cy = f.y + 8, hx = f.x + d*(f.r - 4), hy = f.y + 2;
+      const nx = f.x + d*(S.nozzle - 26), ny = f.y - 4;
+      c.save(); c.globalAlpha = k*fade;
+      c.strokeStyle = '#1c1c1c'; c.lineWidth = 8; c.lineCap = 'round'; c.beginPath(); c.moveTo(cx, cy - 14); c.quadraticCurveTo(f.x - d*10, f.y - 56, hx, hy); c.stroke();   // the hose
+      c.strokeStyle = '#6f7a8a'; c.lineWidth = 5; c.stroke();
+      c.fillStyle = '#8d97a8'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.rect(cx - 17, cy - 22, 34, 44); c.fill(); c.stroke();   // the canister
+      c.fillStyle = '#6a52a8'; c.beginPath(); c.rect(cx - 17, cy - 6, 34, 9); c.fill(); c.stroke();
+      c.fillStyle = '#d8dde6'; c.beginPath(); c.arc(cx, cy - 22, 8, Math.PI, 0); c.fill(); c.stroke();
+      c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(cx - 10, cy + 24, 6, 0, 7); c.fill(); c.beginPath(); c.arc(cx + 10, cy + 24, 6, 0, 7); c.fill();
+      c.lineWidth = 7; c.strokeStyle = '#1c1c1c'; c.beginPath(); c.moveTo(hx, hy); c.lineTo(nx, ny); c.stroke(); c.lineWidth = 4; c.strokeStyle = '#a9b3c2'; c.stroke();   // the pipe
+      const fl = 26;
+      c.fillStyle = '#a9b3c2'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.moveTo(nx, ny - 6); c.lineTo(nx + d*fl*0.8, ny - 18); c.lineTo(nx + d*fl*0.8, ny + 18); c.lineTo(nx, ny + 6); c.closePath(); c.fill(); c.stroke();   // the nozzle
+      // the dial on the pipe: an arrow in (it pulls), then out (it blows)
+      const dx = hx + d*14, dy = hy - 12, click = t >= S.dial, big = 1 + (t >= S.dial && t < S.dial + 8 ? 0.7*Math.sin(Math.PI*(t - S.dial)/8) : 0);
+      c.fillStyle = '#f2f2f2'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.arc(dx, dy - 4, 11*big, 0, 7); c.fill(); c.stroke();
+      fsc2_arrow(c, dx, dy - 4, 7.5*big, click ? d : -d, click ? '#e8506a' : '#2f8fd0');
+      if(t >= S.suck && t < S.suck + 22){ const u = (t - S.suck)/22; for(let q = 0; q < 6; q++){ const p = ((u*2 + q/6) % 1); c.globalAlpha = k*0.6*(1 - p); c.strokeStyle = '#ffffff'; c.lineWidth = 2.5; c.beginPath(); c.moveTo(tx + d*(60 - 40*p), ty - 24 + q*9); c.lineTo(tx + d*(60 - 40*p) - d*14, ty - 24 + q*9); c.stroke(); } }   // the draw: lines running in
+      c.restore();
+    }
+    // THE COBWEBS: one hangs across the foe's way each time, and tears as they go through
+    for(let wi = 0; wi < 2; wi++){
+      const th = S.webs[wi], a = t - th, fx = ax + d*(S.nozzle + room*(th - S.walk[0] + 1)/(S.walk[1] - S.walk[0])), fyy = fy - 40;
+      if(a > -22 && a < 12){
+        const k = fsc2_k(t, th - 22, 12);
+        if(a < 0){ fsc2_web(c, fx, fyy, 48, k); fsc2_bunny(c, fx - d*40 + a*-1.2, fyy + 30, 9, k); }
+        else { const u = a/12; c.save(); c.translate(-d*u*30, u*8); fsc2_web(c, fx, fyy, 48, 1 - u); c.restore(); c.save(); c.translate(d*u*30, u*8); fsc2_web(c, fx, fyy, 48, 1 - u); c.restore(); fsRing(c, fx, fyy, 16 + 20*u, '#ffffff', 5*(1 - u) + 1, 0.7*(1 - u)); }
+      }
+    }
+    // THE BLOW: a burst at the nozzle as the foe goes, and the dust it throws
+    const b = t - S.blow;
+    if(b >= 0 && b < 14){ const u = b/14, bx = f.x + d*S.nozzle; c.globalAlpha = 0.5*(1 - u); c.fillStyle = '#ffffff'; c.beginPath(); c.arc(bx, f.y - 4, 16 + 44*Math.sqrt(u), 0, 7); c.fill(); fsRing(c, bx, f.y - 4, 16 + 66*fsc2_ease(u), '#ffd9ec', 12*(1 - u) + 2, 1 - u); }
+  }
+  c.restore();
+}
+// ---- BASKETBALL: Robot Flower -------------------------------------------------------------------------------------------------------------------
+// FAST BREAK. Basketball calls her best friend (the BFDI wiki: Robot Flower is Basketball's best friend; she runs "to the moon in 2 seconds", lifts "something twice her size with
+// zero effort", and in Balancing P.A.C.T. slams Basketball "so hard, she completely deflates"; five metal petals that work as buttons, a lens for a centre, bolts, grey limbs).
+// The blows: [row frame, % on screen]: slam, slam, the throw, and Basketball's bounce (Bounciness: anything that falls on her gets bounced back) -- 22 + 28 + 12 + 38 = 100.
+const FSC2_BB = { gap:150, rf:70, pull:14, l1:[16, 24], s1:[27, 30], l2:[34, 46], s2:[49, 52], spin:[52, 64], arc:[64, 86], hit:[30, 52, 64, 86], pct:[22, 28, 12, 38], tail:24, kb:[14, -25], exit:90 };
+FSC2_BB.dur = FSC2_BB.arc[1] + FSC2_BB.tail;
+// G: { x0, y0 (where the catch took them), px (their spot), fy (the floor line), d (the way she faces), rx (Robot Flower's x), bx, by (Basketball), rr (their radius) }
+function fsc2_bbFoe(t, G){
+  const B = FSC2_BB, rr = G.rr, d = G.d, py = G.fy - rr, cx = G.rx - d*10, up1 = G.fy - 124, up2 = G.fy - 150, cy = G.fy - 135;
+  const orb = (phi)=> ({ x:cx - d*56*Math.cos(phi), y:cy - 36*Math.sin(phi) });
+  const lift = (a, b, top)=> { const p = fsc2_ease((t - a)/(b - a)); return { x:fsc2_lerp(G.px, cx, p), y:fsc2_lerp(py, top, p), ph:'lift' }; };
+  const slam = (a, b, top)=> { const p = Math.pow((t - a)/(b - a), 2); return { x:fsc2_lerp(cx, G.px, p), y:fsc2_lerp(top, py, p), ph:'slam' }; };
+  if(t < B.pull){ const p = fsc2_ease(t/B.pull); return { x:fsc2_lerp(G.x0, G.px, p), y:fsc2_lerp(G.y0, py, p), ph:'pull' }; }
+  if(t < B.l1[0]) return { x:G.px, y:py, ph:'rest' };
+  if(t < B.l1[1]) return lift(B.l1[0], B.l1[1], up1);
+  if(t < B.s1[0]) return { x:cx, y:up1, ph:'hold' };
+  if(t < B.s1[1]) return slam(B.s1[0], B.s1[1], up1);
+  if(t < B.l2[0]) return { x:G.px, y:py, ph:'rest' };
+  if(t < B.l2[1]) return lift(B.l2[0], B.l2[1], up2);
+  if(t < B.s2[0]) return { x:cx, y:up2, ph:'hold' };
+  if(t < B.s2[1]) return slam(B.s2[0], B.s2[1], up2);
+  if(t < B.spin[1]){ const phi = Math.PI*2*(t - B.spin[0])/(B.spin[1] - B.spin[0]), o = orb(phi), w = fsc2_ease((t - B.spin[0])/5); return { x:fsc2_lerp(G.px, o.x, w), y:fsc2_lerp(py, o.y, w), ph:'spin' }; }
+  const S = orb(Math.PI*2), E = { x:G.bx, y:G.by - 24 - rr + 4 };
+  if(t < B.arc[1]){ const u = (t - B.arc[0])/(B.arc[1] - B.arc[0]); return { x:fsc2_lerp(S.x, E.x, u), y:fsc2_lerp(S.y, E.y, u) - Math.max(40, Math.min(140, G.by - 60))*Math.sin(Math.PI*u), ph:'fly' }; }   // (the arc is lower when she is high up: it stays in the picture)
+  return { x:E.x, y:E.y, ph:'land' };
+}
+// Robot Flower, standing on y (her feet), facing d. o: { a (alpha), blur (0..1: she is running: her legs a wheel), spin, arms: where her hands are { y } or null, lit (0..1 buttons flash) }
+function fsc2_rf(c, x, y, s, d, o){
+  const hx = x, hy = y - 58*s, R = 19*s;
+  c.save(); c.globalAlpha = o.a; c.lineCap = 'round'; c.lineJoin = 'round';
+  if(o.blur > 0.05){
+    c.globalAlpha = o.a*0.6; c.fillStyle = '#c4c4c4'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.arc(x, y - 17*s, 17*s, 0, 7); c.fill(); c.stroke();
+    c.strokeStyle = '#6e6e6e'; c.lineWidth = 3*s; for(let i = 0; i < 4; i++){ const a = o.spin + i*Math.PI/4; c.beginPath(); c.moveTo(x + Math.cos(a)*15*s, y - 17*s + Math.sin(a)*15*s); c.lineTo(x - Math.cos(a)*15*s, y - 17*s - Math.sin(a)*15*s); c.stroke(); }
+    c.globalAlpha = o.a;
+  } else { fsc2_limb(c, x - 5*s, hy + 16*s, x - 9*s, y, 5.5*s); fsc2_limb(c, x + 5*s, hy + 16*s, x + 9*s, y, 5.5*s); }
+  for(const sd of [-1, 1]){   // the arms: down and a little out, or up to the hands' mark
+    const sx = x + sd*R*0.95, sy = hy + 6*s;
+    if(o.arms){ const tx = x + sd*13*s, ty = o.arms.y; fsc2_limb(c, sx, sy, sx + sd*8*s, (sy + ty)/2, 5*s); fsc2_limb(c, sx + sd*8*s, (sy + ty)/2, tx, ty, 5*s); }
+    else { fsc2_limb(c, sx, sy, sx + sd*10*s, sy + 18*s, 5*s); fsc2_limb(c, sx + sd*10*s, sy + 18*s, sx + sd*7*s, sy + 34*s, 5*s); }
+  }
+  for(let k = 0; k < 5; k++){   // five petals, metal, each a button
+    const an = -Math.PI/2 + k*Math.PI*2/5, px = hx + Math.cos(an)*R*1.35, py = hy + Math.sin(an)*R*1.35;
+    c.save(); c.translate(px, py); c.rotate(an + Math.PI/2); c.fillStyle = '#d76bcd'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.ellipse(0, 0, 10*s, 15*s, 0, 0, 7); c.fill(); c.stroke();
+    c.strokeStyle = '#a935a1'; c.lineWidth = 1.6; c.beginPath(); c.ellipse(0, 0, 7.5*s, 12*s, 0, 0, 7); c.stroke();
+    c.fillStyle = o.lit > 0 ? fsc2_mix('#7f2f78', '#fff7a0', o.lit) : '#7f2f78'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.6; c.beginPath(); c.arc(0, -3*s, 3.4*s, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = '#4a4a4a'; c.beginPath(); c.arc(0, 8*s, 1.6*s, 0, 7); c.fill();
     c.restore();
+  }
+  c.fillStyle = '#9a9a9a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.arc(hx, hy, R, 0, 7); c.fill(); c.stroke();   // the head plate
+  c.fillStyle = '#e3e928'; c.beginPath(); c.arc(hx, hy, R*0.62, 0, 7); c.fill(); c.stroke();   // the lens
+  c.fillStyle = '#ffffff'; c.globalAlpha = o.a*0.7; c.beginPath(); c.arc(hx - R*0.2, hy - R*0.2, R*0.18, 0, 7); c.fill();
+  c.restore();
+}
+function fsc2_bbDraw(f, c){
+  const B = FSC2_BB, t = f.fsT || 0, d = f.fsCx || fsc2_dir(f), px = f.fsBx, fy = f.fsBy, rx = f.fsCy, bx = f.fsAx != null ? f.fsAx : f.x, L = fsLockedOf(f);
+  if(px == null || fy == null || rx == null) return;
+  const rr = L ? (L.r || 24) : 24, G = { x0:px, y0:fy - rr, px:px, fy:fy, d:d, rx:rx, bx:bx, by:f.y, rr:rr };
+  const F = fsc2_bbFoe(t, G), k = fsc2_k(t, 0, 12);
+  c.save();
+  // THE COURT: a plank rolls out under the whole scene (grows in), with a key marked round where the foe stands
+  const x0 = Math.min(bx, rx) - 90, x1 = Math.max(bx, rx) + 90, tail = t > B.arc[1] + 8 ? 1 - fsc2_k(t, B.arc[1] + 8, 14) : 1;
+  c.globalAlpha = k*tail; c.fillStyle = '#d9a05b'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.rect(fsc2_lerp(px, x0, k), fy, fsc2_lerp(0, x1 - x0, k), 9); c.fill(); c.stroke();
+  c.globalAlpha = 0.8*k*tail; c.strokeStyle = '#ffffff'; c.lineWidth = 2; c.beginPath(); c.ellipse(px, fy + 1, 58*k, 8, 0, 0, 7); c.stroke(); c.beginPath(); c.moveTo(bx, fy + 1); c.lineTo(rx, fy + 1); c.stroke();
+  for(let i = 0; i < 2; i++){ const a = t - B.hit[i]; if(a >= 0) fsc2_crack(c, px, fy - 1, 34 + 22*i, 7 + 3*i, i + 1, 0.65*tail, 0.22); }   // the cracks the slams leave in it
+  // ROBOT FLOWER: she streams in at a runner's speed (her legs a blur), skids to a stop at the foe, and works her buttons
+  const arrive = 13, ex = rx + d*(560*(1 - fsc2_ease(Math.min(1, t/arrive)))), out = t >= B.exit ? (t - B.exit) : 0;
+  const xr = out > 0 ? rx + d*out*out*2.2 : ex, run = t < arrive + 3 ? 1 : (out > 0 ? 1 : 0), sc = 0.9*(0.4 + 0.6*k)*(out > 0 ? Math.max(0.2, 1 - out/14) : 1);
+  const hits = B.hit.map((h)=> t - h), lit = Math.max(0, ...hits.map((a)=> a >= 0 && a < 8 ? 1 - a/8 : 0));
+  if(t < B.exit + 14){
+    const bd = out > 0 ? -d : d;   // (behind her: she runs in toward Basketball, and off the other way)
+    if(run){ for(let q = 0; q < 6; q++){ c.globalAlpha = 0.6*(out > 0 ? Math.max(0, 1 - out/12) : 1)*Math.min(1, (t + 1)/3); c.strokeStyle = '#1c1c1c'; c.lineWidth = 5; c.lineCap = 'round'; const yy = fy - 10 - q*16, l0 = 26 + 34*fsc2_rnd(q, 41), l1 = l0 + 90 + 90*fsc2_rnd(q, 42); c.beginPath(); c.moveTo(xr + bd*l0, yy); c.lineTo(xr + bd*l1, yy); c.stroke(); c.strokeStyle = '#ffffff'; c.lineWidth = 2.4; c.stroke(); } }
+    let arms = null;
+    if(F.ph === 'lift' || F.ph === 'hold' || F.ph === 'slam' || F.ph === 'spin') arms = { y:F.y + 16 };
+    fsc2_rf(c, xr, fy, sc, -d, { a:Math.min(1, 0.25 + k), blur:run, spin:t*1.3, arms:arms, lit:lit });
+    if(t >= arrive && t < arrive + 6){ const u = (t - arrive)/6; c.globalAlpha = 0.7*(1 - u); c.fillStyle = '#f2f2f2'; for(let q = 0; q < 5; q++){ c.beginPath(); c.arc(xr + d*(14 + q*10)*(0.6 + u), fy - 4 - u*14 - q*2, 5 + 4*u, 0, 7); c.fill(); } }   // the skid
+  }
+  // the blows: the slams' dust ring and flash on the floor; the throw's swish; Basketball's bounce
+  for(let i = 0; i < 2; i++){ const a = t - B.hit[i]; if(a >= 0 && a < 11){ const u = a/11; c.globalAlpha = 0.7*(1 - u); c.fillStyle = '#f2f2f2'; c.beginPath(); c.ellipse(px, fy - 2, 24 + 80*u, 5 + 12*u, 0, 0, 7); c.fill(); fsRing(c, px, fy - 8, 20 + 70*u, '#ffffff', 6*(1 - u) + 1, 0.8*(1 - u)); for(let q = 0; q < 6; q++){ const an = Math.PI + q*Math.PI/5.2; c.globalAlpha = 1 - u; c.fillStyle = '#c8b08a'; c.beginPath(); c.arc(px + Math.cos(an)*(14 + 40*u)*(1 + i*0.2), fy - 4 + Math.sin(an)*(10 + 38*u), 3.5, 0, 7); c.fill(); } } }
+  { const a = t - B.hit[2]; if(a >= 0 && a < 8){ const u = a/8; fsRing(c, F.x, F.y, 20 + 40*u, '#ff9bd6', 6*(1 - u) + 1, 0.8*(1 - u)); } }
+  { const a = t - B.hit[3];
+    if(a >= 0 && a < 26){   // THE BOUNCE: Basketball takes them on her top and sends them back (her seams, a ring, stars)
+      const u = a/26, e = fsc2_ease(Math.min(1, a/10)), cx = bx, cy = f.y - f.r;
+      c.globalAlpha = 0.85*(1 - u); c.fillStyle = '#ffffff'; c.beginPath(); c.ellipse(cx, cy, 30 + 90*Math.sqrt(u), 14 + 40*Math.sqrt(u), 0, 0, 7); c.fill();
+      fsRing(c, cx, cy, 24 + 150*e, '#e87a2a', 14*(1 - u) + 2, 1 - u);
+      c.globalAlpha = 1 - u; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4; c.beginPath(); c.arc(cx, cy - 26, 30 + 40*e, 0.5, 2.6); c.stroke(); c.beginPath(); c.arc(cx, cy - 26, 30 + 40*e, 3.7, 5.8); c.stroke();
+      for(let q = 0; q < 8; q++){ const an = -Math.PI/2 + (q - 3.5)*0.5 + d*0.3, v = 8 + 3*fsc2_rnd(q, 51); c.globalAlpha = 1 - u; FS_GLYPH.star(c, cx + Math.cos(an)*v*a, cy + Math.sin(an)*v*a + 0.2*a*a, 8 + 3*fsc2_rnd(q, 52), 1, f); }
+    } }
+  c.restore();
+}
+// ---- FSC lane 2: end ----------------------------------------------------------------------------------------------------------------------------
+
+// ROCKY -- INFINITE MATTER OVERLOAD. The name is the old one; the id is new (matteroverload: the old one, matter, had a launch cut in FS_CATCH_KB, measured for the old stream). THE OWNER,
+// 2026-11-02: "use the 'rocky generator' thing from bfdi 13" -- the Infinite Matter Generator, a device inside his mouth (the BFDI wiki, Rocky, Abilities: "an infinite matter generator inside of Rocky ...
+// able to produce and project an infinite amount of vomit", and red balls ("Don't Lose Your Marbles"), blocks ("The Worst Day of Black Hole's Life") and cake batter ("Today's Very Special Episode")); he loses it
+// in "Return of the Hang Glider" (the wiki numbers that one BFDI 25; the owner wrote 13): "Rocky can't barf anymore". The wiki does not say how it was destroyed: the blast is this row's own staging.
+// CARD. Reach: the nearest foe in front of him within 330 px (a box ahead of him; a foe behind him or past that is not taken). With nobody in it the Final Smash is spent (a small puff). The foe is drawn in to 118 px
+// in front of his mouth over the startup (14 frames), where the generator has whirred into view in his open mouth (grows in over 12 frames; his smile never changes). Then it pours on them and builds: acid barf
+// (14%, frame 20 of the row), red balls and blocks (18%, frame 36), cake batter (20%, frame 52) -- each a hit that rings on them, the stream thickening and quickening between (a piece every 3 frames, then 2, then
+// every frame) -- while the generator heats from green to red, shakes and steams. At frame 80 it OVERLOADS and is destroyed (48%, the launch: forward and up, KO-level; his mouth is left smoking). 100% in all.
+// The foe is held about 83 frames. He hangs where he is (floating, by fluttering his legs, in the air). A boss or an add is never caught or hit, nor a teammate (the catch only takes fighters). If the foe is KO'd or
+// lost mid-way the row ends there and then. Everything drawn comes from the fighter's fs* fields and the foe the catch holds (fsLk): the foe's spot is on the wire in fsBx, fsBy, fsCx (set when the catch lands).
+FINAL_SMASHES['Rocky'] = {
+  id:'matteroverload', wind:FS_WIND, dur:FSC2_ROCKY.dur, reach:330,
+  catch(f){ return fsBoxAhead(f, 0, 330, 160, f.r + 8); }, lockEnd:FSC2_ROCKY.boom, catchMax:1,   // CATCH: a box in front of him; the one nearest foe
+  start(f, st){
+    const R = FSC2_ROCKY, t = fsc2_begin(f, st); if(!t) return;
+    let d = fsc2_dir(f); if(f.x + d*R.dist < 60 || f.x + d*R.dist > WW - 60) d = -d;   // (no room before a wall: the other side)
+    f.face = d; st.dr = d; st.x0 = t.x; st.y0 = t.y; st.tx = clamp(f.x + d*R.dist, 40, WW - 40); st.ty = f.y + f.r - (t.r || 24);
+    f.fsBx = Math.round(st.tx); f.fsBy = Math.round(st.ty); f.fsCx = d;   // where the foe is held, and the way he faces: all a guest needs after the let-go
+    armAtk(f, this.wind, 'fsgather');
   },
+  tick(f, st, t){
+    const R = FSC2_ROCKY, d = st.dr;
+    fsc2_hang(f, st);
+    if(!fsc2_live(f, st, R.boom, t)) return;
+    const tg = fighters[st.tg], p = fsc2_ease(t/this.wind), jx = (t >= R.hits[2][0] && t < R.boom) ? (t % 2 ? 2 : -2) : 0;   // (the overload shakes them)
+    fsc2_pin(tg, fsc2_lerp(st.x0, st.tx, p) + jx, fsc2_lerp(st.y0, st.ty, p));
+    if(t === 0){ shake(4); for(let i = 0; i < 10; i++) puff(f.x + d*f.r*0.5, f.y, i % 2 ? '#9e9e9e' : '#7cb342', 5); }
+    if(t === this.wind){ armAtk(f, R.boom - this.wind + 4, 'spit'); shake(5); }
+    for(let i = 0; i < R.hits.length; i++) if(t === R.hits[i][0]){
+      shake(5 + 2*i);
+      if(!fsc2_hit(f, st, R.hits[i][1], d*3, -2, { stun:4 })) return;
+      for(let q = 0; q < 8; q++) puff(tg.x, tg.y, q % 2 ? R.hits[i][2] : '#fff', 5);
+    }
+    if(t === R.boom){
+      armAtk(f, 30, 'fsburst'); shake(14);
+      if(!fsc2_hit(f, st, R.boomPct, d*R.kb[0], R.kb[1])) return;
+      for(let q = 0; q < 26; q++) puff(tg.x, tg.y, ['#b2ff59', '#e53935', '#9e9e9e', '#e8b4c8', '#fff'][q % 5], 7);
+    }
+  },
+  ai(f){ const cs = fsCatchInset(fsCatchOf(this, f), 0.85); return fighters.some((t)=> fsCatchable(f, t) && fsCatchTouch(cs, t)); },
+  draw(f, c){ fsc2_rockyDraw(f, c); },
 };
 
 // ---- BATCH C: Lightning, Fanny, Dora, Saw, Tennis Ball, Snowball, Book, Ruby ------------------------------------------------------
@@ -25751,10 +26107,44 @@ Object.assign(FS_GLYPH, {
 // Outbreak, the sick cloud that bursts around her. The cloud is 240 px (16%, poisons) and spreads on to 340 (8%) 14 frames later.
 FINAL_SMASHES['Barf Bag'] = fsCircle({ id:'outbreak', c1:'#8ab04b', c2:'#d8f0a0', R:240, R2:340, gap:14, dmg:16, dmg2:8, kb:15, kb2:8, S:{ poison:200 }, art:FS_GLYPH.goo });
 
-// BASKETBALL -- NOTHING BUT NET. "Nothing but net." (her frame row): the roster's sports competitor, inflated rubber, and her own card is the
-// Self-Dribble, a ball that speeds up with every bounce. Four balls, ten frames apart, bounce down the floor in front of her (6%, up to six bounces, and they keep hitting).
-FINAL_SMASHES['Basketball'] = fsHose({ id:'nothingbutnet', lockGrace:10, c1:'#e87a2a', n:4, every:10, v0:11, art:FS_GLYPH.bball, reach:520,
-  shots:[{ color:'#e87a2a', dmg:6, kb:7, r:22, bounce:true, maxBounces:6, grav:true, vy:-1, life:140 }] });
+// BASKETBALL -- FAST BREAK. (The pitch's name; the old one was NOTHING BUT NET, id nothingbutnet, which carries a launch boost in FS_KO_FIX measured for four bouncing balls: so the id is new.) THE OWNER, 2026-11-02:
+// "Summons robot flower. you choose the rest." Canon (the BFDI wiki): Robot Flower is Basketball's best friend, a robotic metal-plated Flower replica with five metal petals that work as buttons, a lens for a centre,
+// bolts and grey limbs; she runs "to the moon in 2 seconds", lifts "something twice her size with zero effort", and in "Balancing P.A.C.T." slams Basketball "so hard, she completely deflates"; and
+// Basketball's own Bounciness is anything that falls on her getting bounced back. The rest is this row's own staging: a fast break.
+// CARD. Reach: the nearest foe in front of her within 420 px (a box ahead of her). With nobody in it the Final Smash is spent (a small puff). She calls; a court plank rolls out under the scene (grows in over 12 frames) and Robot
+// Flower streams in at a runner's speed (her legs a blur), skidding to a stop beside the foe, who is drawn to 150 px in front of Basketball. SLAM (frame 30, 22%): Robot Flower lifts them overhead with zero effort and
+// slams them into the court, the plank cracking. SLAM (frame 52, 28%): higher, harder. THE THROW (frame 64, 12%): she swings them round overhead once and hurls them in an arc at Basketball. BOUNCE (frame 86, 38%, the
+// launch: up and back, KO-level): they come down on Basketball and Bounciness sends them back; Robot Flower is off again at speed. 100% in all, the foe held about 89 frames. Her petals' buttons light on every blow.
+// She hangs where she is (a foe is placed relative to her, on a plank drawn under her feet, so it plays the same on a platform or in the air). A boss or an add is never caught or hit, nor a teammate. If the foe is KO'd or
+// lost mid-way the row ends there and then. Everything drawn comes from the fighter's fs* fields and the foe the catch holds (fsLk): fsBx, fsBy, fsCx, fsCy (the foe's spot, the floor line, the way she faces, Robot Flower's spot).
+FINAL_SMASHES['Basketball'] = {
+  id:'fastbreak', wind:FS_WIND, dur:FSC2_BB.dur, reach:420,
+  catch(f){ return fsBoxAhead(f, 0, 420, 170, f.r + 8); }, lockEnd:FSC2_BB.arc[1], catchMax:1,   // CATCH: a box in front of her; the one nearest foe
+  start(f, st){
+    const B = FSC2_BB, t = fsc2_begin(f, st); if(!t) return;
+    let d = fsc2_dir(f); if(f.x + d*(B.gap + B.rf) < 70 || f.x + d*(B.gap + B.rf) > WW - 70) d = -d;
+    f.face = d; const fy = Math.max(f.y + f.r, 200);   // (the plank is under her feet; near the very top of the picture it is lowered, so the scene above it stays on screen)
+    st.G = { x0:t.x, y0:t.y, px:f.x + d*B.gap, fy:fy, d:d, rx:f.x + d*(B.gap + B.rf), bx:f.x, by:f.y, rr:t.r || 24 };
+    f.fsBx = Math.round(st.G.px); f.fsBy = Math.round(fy); f.fsCx = d; f.fsCy = Math.round(st.G.rx);
+    armAtk(f, this.wind, 'fsgather');
+  },
+  tick(f, st, t){
+    const B = FSC2_BB, G = st.G, d = G.d;
+    fsc2_hang(f, st);
+    if(!fsc2_live(f, st, B.arc[1], t)) return;
+    const tg = fighters[st.tg], F = fsc2_bbFoe(t, G);
+    fsc2_pin(tg, F.x, F.y);
+    if(t === 0){ shake(3); armAtk(f, this.wind, 'fsgather'); }
+    for(let i = 0; i < 4; i++) if(t === B.hit[i]){
+      const last = i === 3;
+      shake(last ? 14 : 6 + 2*i); if(last) armAtk(f, 26, 'fsburst');
+      if(!fsc2_hit(f, st, B.pct[i], last ? d*B.kb[0] : d*2, last ? B.kb[1] : (i === 2 ? -4 : 2), last ? undefined : { stun:4 })) return;
+      for(let q = 0; q < (last ? 22 : 8); q++) puff(tg.x, tg.y + (i < 2 ? G.rr*0.8 : 0), q % 2 ? (last ? '#e87a2a' : '#c8b08a') : '#fff', last ? 7 : 5);
+    }
+  },
+  ai(f){ const cs = fsCatchInset(fsCatchOf(this, f), 0.85); return fighters.some((t)=> fsCatchable(f, t) && fsCatchTouch(cs, t)); },
+  draw(f, c){ fsc2_bbDraw(f, c); },
+};
 
 // BELL -- SAVED BY THE BELL. "Saved by the bell. Mine." (her frame row): cast metal that rings when it is struck; her own card is the RING that bursts
 // out round her and stuns. The ring is 200 px (12%, stuns) and a second, wider one follows 14 frames later to 320 px (9%).
@@ -26049,8 +26439,54 @@ Object.assign(FS_GLYPH, {
 });
 
 // SOAP -- SCRUB FOR HOURS. A germophobe who will "scrub for hours until she knows bacteria aren't anywhere near her" (Soap, Official Description, quoted in the design doc); "They're the mess, we clean it." (her frame
-// row). She scrubs on the spot, a lather 110 px round her: whoever is in it when she starts is kept in it and scrubbed eight times (3%), and the last rinse (16%) throws them.
-FINAL_SMASHES['Soap'] = fsOrbit({ id:'scrubforhours', c1:'#cfeeff', c2:'#ffffff', R:110, n:8, every:6, hitDmg:3, dmg:16, kb:22, art:FS_GLYPH.bubbles });
+// row). The scene is the vacuum from "Let Er' R.I.P." (the II wiki: she cleans cobwebs and dust bunnies with a vacuum, a foe gets stuck on it, she switches it to blow to get them off, and they fly out of the house; the
+// vacuum is a replica of a Poltergust -- here a plain canister of our own drawing), played as a walk down a mansion hall.
+// CARD. Reach: the nearest foe in front of her within 340 px (a box ahead of her). With nobody in it the Final Smash is spent (a small puff). The stage dims into a mansion hall as she pumps her head three times (the
+// startup): dark wallpaper, a skirting board, cobwebs in the corners, dust bunnies, a window at the far end. The foe is drawn to 100 px in front of her. SPRAY (frame 14, 8%): a pink mist off her pump, germs popping off them.
+// WIPE, WIPE (frames 28 and 40, 8% each): the small blue cloth, a pass across them each time. SUCK (frame 54, 10%): a vacuum canister rolls in behind her (grows in over 12 frames), the foe is yanked onto its nozzle and
+// sticks, flailing. SWEEP: she goes back to cleaning as if nothing had happened and walks the hall toward the window with them on the nozzle (up to 250 px, never past 40 px from the edge of what she stands on; in the air she
+// stays where she is), through two cobwebs (frames 82 and 98, 8% each), each torn through. At the window she notices them: the dial on the pipe clicks from an inward arrow to an outward one (frame 114, icons, no
+// words), and the BLOW (frame 122, 40%, the launch: forward and a little up, KO-level) sends them out through the window -- the glass bursts, dust bunnies trail them. 90% in all, the foe held about 125 frames.
+// A boss or an add is never caught or hit, nor a teammate. If the foe is KO'd or lost mid-way the row ends there and then. The hall and the window are drawn about the view (no stage geometry changes). Everything drawn
+// comes from the fighter's fs* fields and the foe the catch holds (fsLk): fsBx, fsBy, fsCx, fsCy (the window's spot, the floor line, the way she faces, the walk) are set when the catch lands.
+FINAL_SMASHES['Soap'] = {
+  id:'scrubforhours', wind:FS_WIND, dur:FSC2_SOAP.dur, reach:340,
+  catch(f){ return fsBoxAhead(f, 0, 340, 170, f.r + 8); }, lockEnd:FSC2_SOAP.blow, catchMax:1,   // CATCH: a box in front of her; the one nearest foe
+  start(f, st){
+    const S = FSC2_SOAP, t = fsc2_begin(f, st); if(!t) return;
+    let d = fsc2_dir(f); if(f.x + d*(S.pre + 24) < 60 || f.x + d*(S.pre + 24) > WW - 60) d = -d;
+    f.face = d; const room = fsc2_walkRoom(f, d, S.room), fy = f.y + f.r;
+    st.G = { d:d, x:f.x, y:f.y, x0:t.x, y0:t.y, p0x:clamp(f.x + d*(S.pre + 24), 40, WW - 40), p0y:fy - (t.r || 24) };
+    st.room = room; st.feet = fy; st.dr = d; st.sx = f.x;
+    f.fsBx = Math.round(f.x + d*(room + S.nozzle + 130)); f.fsBy = Math.round(fy); f.fsCx = d; f.fsCy = Math.round(room);   // the window, the floor line, the way she faces, the walk
+    armAtk(f, this.wind, 'fsgather');
+  },
+  tick(f, st, t){
+    const S = FSC2_SOAP, d = st.dr, G = st.G;
+    fsc2_hang(f, st);
+    if(!fsc2_live(f, st, S.blow, t)) return;
+        if(t >= S.walk[0] && t < S.walk[1] && st.room > 0){   // SWEEP: she walks the hall, each frame only where there is still a floor under her
+      const nx = st.sx + d*st.room*(t - S.walk[0] + 1)/(S.walk[1] - S.walk[0]);
+      if(fsc2_standOk(nx, st.feet)){ f.x = nx; if(t % 8 === 0) puff(f.x - d*10, f.y + f.r, '#d8d0c4', 3); }
+    }
+    G.x = f.x; G.y = f.y;
+    const tg = fighters[st.tg], F = fsc2_soapFoe(t, G);
+    fsc2_pin(tg, clamp(F.x, 40, WW - 40), F.y);
+    if(t === 0){ shake(3); for(let i = 0; i < 8; i++) puff(f.x, f.y - f.r, i % 2 ? '#f5a3cb' : '#fff', 4); }
+    const hit = (pct, ox, oy, col, big)=> {
+      shake(big ? 13 : 5); if(!fsc2_hit(f, st, pct, d*(big ? S.kb[0] : 2), big ? S.kb[1] : -2, big ? undefined : { stun:4 })) return false;
+      for(let q = 0; q < (big ? 22 : 7); q++) puff(tg.x + (ox || 0), tg.y + (oy || 0), q % 2 ? col : '#fff', big ? 7 : 4);
+      return true;
+    };
+    if(t === S.spray){ armAtk(f, 20, 'spit'); if(!hit(S.pct.spray, 0, 0, '#ffc4e2')) return; }
+    if(t === S.wipe[0] || t === S.wipe[1]){ armAtk(f, 12, 'punch'); if(!hit(S.pct.wipe, 0, 0, '#7a5a3a')) return; }
+    if(t === S.suck){ armAtk(f, 14, 'throw'); if(!hit(S.pct.suck, 0, 0, '#cfd6e0')) return; }
+    if(t === S.webs[0] || t === S.webs[1]){ if(!hit(S.pct.web, 0, 0, '#eef0f6')) return; }
+    if(t === S.blow){ armAtk(f, 28, 'fsburst'); if(!hit(S.pct.blow, 0, 0, '#ffd9ec', true)) return; }
+  },
+  ai(f){ const cs = fsCatchInset(fsCatchOf(this, f), 0.85); return fighters.some((t)=> fsCatchable(f, t) && fsCatchTouch(cs, t)); },
+  draw(f, c){ fsc2_soapDraw(f, c); },
+};
 
 // TISSUES -- ACHOO. "very sickly ... the condiShAWn"; his sneezes are uncontrollable (Tissues, Personality, the design doc); his own card sneezes a jet of snot straight ahead. Fourteen blobs, two frames apart, in a stream
 // in front of him (5%, they keep hitting), and the last is the big one that goes through everyone (18%).
