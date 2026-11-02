@@ -64475,6 +64475,10 @@ function fxFallStep(o, f){
   }
   if(o.ph === 'swoop'){
     fxLock(f, 2); fxFallHold(o, f);
+    // A WALL HOLDS THE SWOOP (2026-11-02): beside a ledge's face at his own height the wall pushed him back out each frame, so `room` was a few px
+    // every time and dx was never under 0.5 -- the swoop never ended: he hung in the air, held still by fxFallHold, for the rest of a match (the
+    // checker's runs on the teams map, x 3135, 4000 frames). A swoop whose last frame took him nowhere is over, whiff or end by what it hit.
+    const blocked = o._bx != null && Math.abs(f.x - o._bx) < 0.5; o._bx = f.x;   // (_bx: not a FINX_NET field, the row's snapshot is as it was)
     const left = S.dist - Math.abs(f.x - o.x0);
     const room = Math.max(0, fxWallDist(f.x + o.face*f.r*0.8, o.face, S.spd, f.y - f.r*0.6, f.y + f.r));
     const dx = Math.max(0, Math.min(S.spd, left, room));
@@ -64491,7 +64495,7 @@ function fxFallStep(o, f){
       for(let i = 0; i < 8; i++) puff(t.x + (i % 4 - 1.5)*8, t.y - t.r, i % 2 ? CLOUDY_INK.drop : '#ffffff', 3);
     }
     if(summons.length) fxBossShape(f, o, 0, sh, S.dmg);
-    if(dx < 0.5 || left <= 0.5){ o.ph = o.hit.length ? 'end' : 'whiff'; o.et = hazardT; f.vx = 0; armAtk(f, o.hit.length ? S.end : S.whiff, 'cast', mvId(f, 'finisher')); }
+    if(dx < 0.5 || left <= 0.5 || blocked){ o.ph = o.hit.length ? 'end' : 'whiff'; o.et = hazardT; f.vx = 0; armAtk(f, o.hit.length ? S.end : S.whiff, 'cast', mvId(f, 'finisher')); }
     return;
   }
   // 'end' (he settles) and 'whiff' (left floating)
@@ -68768,6 +68772,21 @@ function aiClimbWall(f, inp, dir, sp){
   if(climbJump(f)) inp.jump = true;
   else if(!f.onground && f.jumps <= 0 && f.vy > -1.5 && f.spCd <= 0 && !f._usedAirSpecial && sp !== 'chair'){ inp.special = true; inp.up = true; }
 }
+// THE SPARE UP-SPECIAL OF A CLIMB WAITS FOR THE TOP, ON THE TEAMS MAP (Cloudy's stall, 2026-11-02). The climbs (the long way, another level, the
+// flank) pressed the up-special the moment the second jump went off, whatever step they were climbing for. It sets vy rather than adding to
+// it, so it threw away what the jump had left, and it flew a CPU 140 px past a step the jump alone would have landed it on: Cloudy came up
+// off the home ledge in the right-hand band, rose through the first pad (188 px up) with his Thunderhead, dropped the pad from his steps
+// (it is no step once the feet are above it), flew right at the next one, which his rise came 70 px short of, and fell past the first pad
+// to the floor -- and again, every 4 s, for 40 s with his foe a thousand px up (the checker's report; Leafy's dash did the same, 3 of 10
+// Beep matches, x 3134-3266 on the lower decks; Fanny and Lifering in Teams matches, on the same pads). A person in the air with the jumps spent waits for the top of the rise before the special
+// (aiClimbWall's spare did already), and with the step he is climbing for already under his feet he lands on it and goes on from there.
+// True: hold the special now. Teams map only (the other modes keep their replays); never in Moon Caves.
+function aiSpareWait(f){
+  if(SETTINGS.mode !== 'teams' || (MCAVE && MCAVE.on) || f.onground || f.jumps > 0 || f._aimAt !== hazardT) return false;
+  if(f.vy < -1.5) return true;                                                 // still rising: the special would cut the rise short
+  const st = f._aimS;
+  return !!st && f.y + f.r <= st.y + 2 && f.x >= st.xL && f.x <= st.xR;   // over the step it is climbing for, above its top: down onto it
+}
 // navAround's {tall}: a wall the two jumps do not clear stands between the fighter and goalX. FIND ANOTHER WAY (owner, 2026-10-18),
 // never into it: up the steps on this side of it toward its top (steerClimb, the ordinary climb, kept off steps past the wall; near
 // the top navAround calls it a hop or a climb), else off the end of the floor the fighter stands on, the near end or the far one, to a
@@ -68827,7 +68846,7 @@ function navUp(f, t, wallX, wallX2){
       let sx = (f.x < st.xL) ? st.xL + 12 : (f.x > st.xR) ? st.xR - 12 : f.x;
       const bx = navBeside(f, st); if(bx != null) sx = bx; else sx = navUnderEnd(f, st, sx);
       // hold: already over the step, so nothing else may steer it off (teams only, see steerClimb)
-      return { x:sx, y:st.y, landing: feet <= st.y + 2, hold: !wideFFA && sx === f.x };
+      return { x:sx, y:st.y, landing: feet <= st.y + 2, hold: !wideFFA && sx === f.x, xL:st.xL, xR:st.xR };
     }
   }
   // IN THE ARM'S TUNNEL (teams): under a solid roof close over the head, a step 30 px up counts. The doorway's step is 43 px over the tunnel's
@@ -68933,6 +68952,35 @@ function nearestCeilingGapX(f, t){
   }
   return null;
 }
+// LAND ON WHAT IS UNDER IT (the teams map; Cloudy's stall, 2026-11-02). In the air with both jumps gone and the up-special spent (or not
+// ready), falling, and the step it climbs for still up over its feet, that step is out of reach for the rest of this fall -- and navUp,
+// which only looks for steps above the feet, had dropped the pad it had just risen through and sent it flying at the next one up, whose
+// x is a pad's width off: it came down past the first pad, onto the floor, and tried again, every 4 s for 40 s (the checker's report,
+// his 3 vs 1 on the teams map, a foe a thousand px up; Leafy, Fanny and Lifering did it too -- the band of pads up either
+// wall is a ladder of 188 px steps, one jump and a half for a fighter with a short jump). A person with nothing left steers for the
+// nearest platform under him and climbs again from there: that is this, a platform within the drift of the fall, the near and the
+// shallow one before the floor. The nav it returns is a landing (it stands still over the platform). Teams map only, never in Moon Caves.
+function aiLandNav(f, nav){
+  if(SETTINGS.mode !== 'teams' || (MCAVE && MCAVE.on) || f.onground || f.jumps > 0 || f.vy < 0.5) return null;
+  if(f.spCd <= 0 && !f._usedAirSpecial) return null;   // (the special may still come: the callers press it)
+  const feet = f.y + f.r;
+  if(!nav || nav.y > feet - 8) return null;            // the step is not up over its feet: the ordinary aim lands it
+  const g = gravAt(f), drift = Math.max(6, Math.abs(f.vx));
+  let best = null, bd = 1e9;
+  for(const p of worldPlats){
+    if(p.y < feet - 2 || p.y > feet + 700 || p.w < 2*f.r) continue;   // (under the feet; not a wall's thin top)
+    const dy = p.y - feet, t = (-f.vy + Math.sqrt(f.vy*f.vy + 2*g*dy))/g;
+    const hx = f.x < p.x ? p.x - f.x : f.x > p.x + p.w ? f.x - (p.x + p.w) : 0;
+    if(hx > drift*t*0.8) continue;                      // not within the drift of this fall
+    const x = clamp(f.x, p.x + 14, p.x + p.w - 14);
+    if(worldPlats.some(q => q !== p && q.solid && q.y > feet - 2 && q.y < p.y - 2 && x > q.x - 4 && x < q.x + q.w + 4)) continue;   // (a solid between: not down to it)
+    const d = hx + dy*0.5;
+    if(d < bd){ bd = d; best = p; }
+  }
+  if(!best) return null;
+  const x = clamp(f.x, best.x + 14, best.x + best.w - 14);
+  return { x, y: best.y, landing: true, hold: x === f.x, xL: best.x, xR: best.x + best.w };
+}
 // Drive one frame of a climb toward `t`, steering and jumping TOGETHER.
 //
 // That combination is the whole point. Both callers used to do one or the other — steer if more
@@ -68963,6 +69011,8 @@ function steerClimb(f, t, inp, wallX){
       const d = w.edgeX < f.x ? -1 : 1; aiWallWay(f, inp, w, w.edgeX + d*60); return true;
     }
   }
+  const land = aiLandNav(f, nav);   // (teams map: nothing left in the air and the step out of reach: down onto the nearest platform)
+  if(land) nav = land;
   const aimX = nav ? nav.x : t.x;
   const dxn = aimX - f.x;
   // Steering and jumping TOGETHER only on the teams arena. There it is a clear win — the platform
@@ -68978,13 +69028,27 @@ function steerClimb(f, t, inp, wallX){
     if(Math.abs(dxn) > 12){ inp.left = dxn < 0; inp.right = dxn > 0; }
     // Teams: over the step it jumped for, it lets go of the stick and lands. The traversal branch has already pressed toward the
     // target, and that walked a CPU straight off the end of the step it was dropping onto (navUp's sticky step).
-    else if(nav && nav.hold){ inp.left = false; inp.right = false; }
+    else if(nav && nav.hold){
+      inp.left = false; inp.right = false;
+      // LEAN AGAINST THE DRIFT (teams map; Cloudy's and Leafy's stall, 2026-11-02): over the step with the stick let go of, the air kept its
+      // speed and carried a fighter a few px past the step's end before the feet got down to it (a dash-up special, a run's momentum:
+      // 7 px a frame is 100 px in the time a jump's top takes to come down). Where the fall will end -- the speed times the frames the feet
+      // need to reach the step's top -- is off the step, it presses the other way: a person over a pad does not let go of the stick.
+      if(SETTINGS.mode === 'teams' && !(MCAVE && MCAVE.on) && nav.xL != null && !f.onground && Math.abs(f.vx) > 1.5){
+        const dy = nav.y - (f.y + f.r);
+        if(dy >= -2){
+          const g = gravAt(f), tl = (-f.vy + Math.sqrt(f.vy*f.vy + 2*g*Math.max(0, dy)))/g, px = f.x + f.vx*tl;
+          if(f.vx < 0 && px < nav.xL + 12) inp.right = true; else if(f.vx > 0 && px > nav.xR - 12) inp.left = true;
+        }
+      }
+    }
     if(f.onground){ if(Math.abs(dxn) <= CLIMB_REACH) inp.jump = true; }
     else if(!(nav && nav.landing) && climbJump(f)) inp.jump = true;
   } else {
     if(Math.abs(dxn) > 22){ inp.left = dxn < 0; inp.right = dxn > 0; }
     else if(!(nav && nav.landing) && climbJump(f)) inp.jump = true;
   }
+  f._aimAt = hazardT; f._aimS = (nav && f._navStep && f._navStep.y === nav.y) ? f._navStep : null;   // (the step it climbs for, for aiSpareWait)
   return !!nav;
 }
 // Where is the nearest gap edge on the fighter's current floor to drop through?
@@ -69406,7 +69470,7 @@ function aiThink(f){
     const wl = adx > 30 ? navAround(f, dx < 0 ? -1 : 1) : null;
     if(wl && wl.tall && aiWallWay(f, inp, wl, t.x)) return brainOut(f, inp, B, L, t, false);
     if(adx > 30){ if(dx < 0) inp.left = true; else inp.right = true; }
-    if(f.y > above.y + 40){ const climbing = steerClimb(f, above, inp); if(!climbing && !f.onground && f.jumps <= 0 && f.spCd <= 0 && sp !== 'chair'){ inp.special = true; inp.up = true; } }
+    if(f.y > above.y + 40){ const climbing = steerClimb(f, above, inp); if(!climbing && !f.onground && f.jumps <= 0 && f.spCd <= 0 && sp !== 'chair' && !aiSpareWait(f)){ inp.special = true; inp.up = true; } }
     return brainOut(f, inp, B, L, t, false);
   }
   // THE LONG WAY (scrolling arenas): a far foe is closed on decisively -- around or over what is in the way, up to a foe above, down to one below.
@@ -69422,7 +69486,7 @@ function aiThink(f){
       brainEdges(f, inp, 90); return brainOut(f, inp, B, L, t, false);
     }
     if(adx>30){ if(dx<0) inp.left=true; else inp.right=true; }
-    if(dy < -90){ steerClimb(f, t, inp); if(f._wallWayAt !== hazardT && dy<-160 && f.spCd<=0 && f.jumps<=0 && sp !== 'chair' && Math.random()<0.4){ inp.special=true; inp.up=true; } }
+    if(dy < -90){ steerClimb(f, t, inp); if(f._wallWayAt !== hazardT && dy<-160 && f.spCd<=0 && f.jumps<=0 && sp !== 'chair' && !aiSpareWait(f) && Math.random()<0.4){ inp.special=true; inp.up=true; } }
     else if(dy > 130){
       if(isBig()){ const gx=mcSafeDropX(f); if(gx!=null && Math.abs(gx-f.x)>22){ inp.left=gx<f.x; inp.right=gx>=f.x; } else if(f.onground && mcDropOk(f, f.x)){ inp.down=true; inp.jump=true; } }   // (MOON CAVES: only over something)
       else if(f.onground){ const ex=nearestDropX(f); if(ex!=null){ inp.left=ex<f.x; inp.right=ex>=f.x; } }
@@ -69441,8 +69505,8 @@ function aiThink(f){
   const onLevel = !!ts._isBoss || B.tAir > 90 || footT == null || footM == null || Math.abs(footT - footM) > 40;
   if(ady > 70 && dy < -80 && onLevel){
     if(sp === 'chair' && f.spCd <= 0 && hazardT >= B.specAt && !f._tpUsed && Math.random() < 0.3*L.kit && aiBowTpInto(f, ts)){ inp.special = true; B.specAt = hazardT + brainSpecGap(f, L); return brainOut(f, inp, B, L, t, false); }   // BOW: a Teleport up onto them
-    if(steerClimb(f, t, inp)){ if(f._wallWayAt !== hazardT && dy < -150 && f.spCd<=0 && sp !== 'chair' && (f.jumps<=0 || Math.random()<0.3)){ inp.special=true; inp.up=true; } }
-    else if(f.jumps<=0 && !f.onground && dy<-120 && f.spCd<=0 && sp !== 'chair' && Math.random()<0.5){ inp.special=true; inp.up=true; }
+    if(steerClimb(f, t, inp)){ if(f._wallWayAt !== hazardT && dy < -150 && f.spCd<=0 && sp !== 'chair' && !aiSpareWait(f) && (f.jumps<=0 || Math.random()<0.3)){ inp.special=true; inp.up=true; } }
+    else if(f.jumps<=0 && !f.onground && dy<-120 && f.spCd<=0 && sp !== 'chair' && !aiSpareWait(f) && Math.random()<0.5){ inp.special=true; inp.up=true; }
     return brainOut(f, inp, B, L, t, false);
   }
   if(ady > 70 && dy > 110 && onLevel){
