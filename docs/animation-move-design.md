@@ -504,7 +504,7 @@ Nightcap Tennis Ball and Chrome Tennis Ball and Shades Blocky have eyes drawn as
 | **Yellow Face** | `smug`, 1.3; hops to win | The same grin all through (smug), a shout on the hit | sparkles | The infomercial salesman, who oversells everything with the same grin |
 
 Skins: Snow-Capped Ruby has no row (snow covers her eyes and half her mouth); Torn Fries, Square Hole Nickel and Bandaged Ruby are in profile, one eye; Book's two brows sit on a green half and a
-blue half, so the second has its own fill (`bc2`); Pale Blue Yellow Face's eyes are big U shapes, so their patches are large.
+blue half, so the second has its own fill (`bc2`); Icy Yellow Face's eyes are big U shapes, so their patches are large.
 
 ### Batch 4: Barf Bag, Basketball, Bell, Bracelety, Fanny, Gaty
 
@@ -517,7 +517,7 @@ blue half, so the second has its own fill (`bc2`); Pale Blue Yellow Face's eyes 
 | **Fanny** | `smug`, 0.9; sways to win | A smirk, then a glare and a shout on the hit; grit when hurt | bits of blade | Rude, blunt and pleased with her puns: "You BLEW it. Get it? Because I'm a fan." |
 | **Gaty** | `deadpan`, 0.9; sways to win | A flat face and a squint; a smirk to win | flakes of paint | Unbothered, a gate: "Honestly, I don't care. But like, clap." |
 
-Skins: Stitched Barf Bag's eyes are white with dark rims, so they are patched green and drawn with whites and pupils; Tin Barf Bag and Violet Bracelety are in profile, one eye; Gaty's eyes
+Skins: Green Barf Bag's eyes are white with dark rims, so they are patched green and drawn with whites and pupils; Tin Barf Bag and Violet Bracelety are in profile, one eye; Gaty's eyes
 in her render are an eyebrow and an eye joined, so one patch covers each pair; Basketball keeps her painted brows (the left one is on the very edge of the ball).
 
 ### Batch 5: Grassy, Lightning, Liy, Lollipop, Marker, Money
@@ -531,7 +531,7 @@ in her render are an eyebrow and an eye joined, so one patch covers each pair; B
 | **Marker** | `deadpan`, 0.7; sways to win | A flat face and a squint; `> <` when hit | drops of purple ink | Deadpan, a hard plastic barrel whose nib is the business end: "Permanent record." |
 | **Money** | `smug`, 1.3; twirls to win | Smug through every moment; a shout on the hit | scraps of green paper | Rich and pleased about it, paper with no rigidity: "Oh, my tree! Wins don't grow on trees." |
 
-Skins: Sunglasses Lightning's eyes are behind the shades, so that row is a mouth alone; Uncapped Marker and Singed Marker show one eye; Lollipop and Uncapped Marker keep their painted brows (a patch
+Skins: Sunglasses Lightning's eyes are behind the shades, so that row is a mouth alone; Uncapped Marker and Purple Cap Marker show one eye; Lollipop and Uncapped Marker keep their painted brows (a patch
 on Lollipop's left brow would paint outside the ball); Scribbled Lollipop is scribbled over in blue ink, which the patches leave alone where they do not reach.
 
 ### Batch 6: Naily, Remote, Rose, Saw, TV, Woody
@@ -654,7 +654,7 @@ Spikey stays as it was on a skin.
 | **Starfruit** | `gentle`, 1.0; twirls to win | Wide eyes and a small round mouth; a sheepish round mouth to win | yellow sparkles | Sheepish and silly: "Sorry about the tuna dip, Guava." |
 | **Blueberry** | `deadpan`, 1.1; sways to win | A flat face in white on the navy; a blink and a flat mouth to win | drops of dark juice | Nothing matters: "Nothing matters. Start clapping." |
 
-Skins: Cammy's and Camera Cammy's features and Blueberry's are white on a dark body, so their rows give the ink (`k`) and force the dark fill under it (`c`; the white features would otherwise be taken for the body); both Cammys show one eye. Blue Blindfold
+Skins: Cammy's and Compact Cammy's features and Blueberry's are white on a dark body, so their rows give the ink (`k`) and force the dark fill under it (`c`; the white features would otherwise be taken for the body); both Cammys show one eye. Blue Blindfold
 Candle is the mouth alone, Oily Soap one eye and a mouth. Orange Blindfold Soap (the mouth is out of sight) and Star Paint Starfruit (the face is in the black star makeup) have no row. The textured bodies (Battered Fan's burnt paper, Starfruit's glow) show a patch
 as a flat plate, the accepted limitation.
 
