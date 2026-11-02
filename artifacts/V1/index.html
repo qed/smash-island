@@ -25822,9 +25822,224 @@ Object.assign(FS_GLYPH, {
   angry(c, x, y, s){ c.strokeStyle = '#1c1c1c'; c.lineWidth = 5; c.lineCap = 'round'; c.beginPath(); c.moveTo(x - s, y - s*0.2); c.lineTo(x - s*0.2, y - s*0.2); c.lineTo(x - s*0.2, y - s); c.moveTo(x + s, y + s*0.2); c.lineTo(x + s*0.2, y + s*0.2); c.lineTo(x + s*0.2, y + s); c.stroke(); c.strokeStyle = '#e0503a'; c.lineWidth = 2.5; c.stroke(); },
 });
 
-// BALLOONY -- AIR LEAK. "Air Leak: jets of released air zip Balloony around." (quoted at his special); bright and buoyant, a balloon that deflates and snaps back. He lets go: a jet of
-// air along the floor in front of him, 900 px at 30 a frame, 110 tall, through everyone it meets (16%, thrown far).
-FINAL_SMASHES['Balloony'] = fsLane({ id:'airleak', c1:'#ff9ac0', L:900, spd:30, H:110, hw:40, dmg:16, kb:22, ky:-10, kind:'dash', art:FS_GLYPH.puffair });
+// ---- FSA lane r: begin ----------------------------------------------------------------------------------------------------------------
+// FINAL SMASH ENTRANCES, lane r (the owner, 2026-11-02: every Final Smash gets an in-character entrance before its blast, and a knock-back or a redesign where
+// the design says so). The helpers for the rows this lane builds, one section a fighter; every name starts fsaR_ (a merge only has to keep both sides).
+//
+// BALLOONY -- AIR LEAK. The card's own line: "Air Leak: jets of released air zip Balloony around." The owner, 2026-11-02 (redesign): after three swelling
+// breaths he lets go and ZIPS about the stage like a released balloon, four fast zig-zag runs, each leaving a jet that hits whoever it passes (6% each), the
+// last a big wobbling blast that launches (16%, the old blast's own launch), and he drops flat and deflated for a second. The row's own frames t (the intro and
+// the catch come before them, as for every row; nothing here is a word):
+//    0-29  three breaths of 10 frames: he gulps air and swells (his width 1.15, then 1.30, then 1.45: each wider and tauter, a creak-shake as it holds), white
+//          puffair wisps streaming into his mouth (grown in over the first 12 frames);   30-33  he squeaks and pinches his knot for one tight beat
+//    20    THE CATCH lands (FS_WIND frames before he lets go: nobody is held through the whole entrance, so the hold before the first blow is as long as it was)
+//    34-73 he lets go: four zips of 11, 9, 9 and 11 frames, a white jet left behind each (the corners puff), the last run ending in a wobbling blast (150 px)
+//    74-133 he drops flat and deflated for 60 frames, the last 14 of them blowing back up; then the row ends as every row does
+// THE ZIG-ZAG: the foe the catch took (the nearest; else a spot 320 px ahead) is the hub. Run 1 goes from where he stood straight through the hub and 280 px out the
+// far side; each next run is a chord from there that passes within 58 px of the hub (a tangent to a circle round it), alternately above and below, so every jet
+// crosses the held foe; the last chord goes in to the hub and stops 30 px short, in the blast. The corners stay inside the stage (70 px from the sides, 100 px
+// from the top, and no lower than the floor the hub's foe stands on; a run is cut short where the box ends, never bent), and the last stop is over a surface (landable): the hub is walked back toward where he stood until it is. On
+// Moon Caves, or if no hub gives a safe stop, he stays where he is and each run is a ring round him instead. He is placed along it each frame (untouchable, as every
+// holder is) and never thrown, so he can never be carried past a blast zone by it: his last place is over what he stood on. All of it is a function of what a guest has
+// (fsT; fsAx/fsAy where he stood; fsBx/fsBy the hub; his place): the jets and his body are drawn from those (fsaR_balPlan), so both screens show the same.
+const FSAR_NONE = { kind:'box', x:-100000, y:-100000, w:1, h:1 };   // a catch that holds nobody: Balloony lays his own later (catch below)
+const FSAR_BAL = {
+  w:34, breath:10, swell:[1.15, 1.30, 1.45],      // the entrance (the row's wind), and how wide each breath leaves him
+  runs:[11, 9, 9, 11], flat:60, tail:14,          // the zips, in frames; the flat drop; its last frames blowing up again
+  dmg:[6, 6, 6, 16], kb:[7, 7, 7, 22], ky:[-7, -7, -7, -10],   // each jet's blow: the last is the old blast's own (16%, knock 22, up 10)
+  jr:[54, 54, 54, 76], burst:[100, 120, 140, 150],  // how far each jet hits to either side (110 tall, as the old lane; the last wider); the rings when he cannot move, the last the blast's
+  D:280, rho:58, stop:30, hub:320, reach:600,     // the zig-zag's corner distance, how near each chord passes the hub, where the last stops short, the hub with no foe caught, the catch's length
+};
+FSAR_BAL.start = FSAR_BAL.runs.map((n, i)=> FSAR_BAL.w + FSAR_BAL.runs.slice(0, i).reduce((a, b)=> a + b, 0));   // 34, 45, 54, 63
+FSAR_BAL.end = FSAR_BAL.w + FSAR_BAL.runs.reduce((a, b)=> a + b, 0);   // 74: the zips are done
+FSAR_BAL.dur = FSAR_BAL.end + FSAR_BAL.flat;
+FSAR_BAL.catchAt = FSAR_BAL.w - FS_WIND;
+// The catch he lays: a box in front of him (30 px behind to 600 ahead, 170 up to 120 down: a balloon in the air catches the foes under it) -- as tall as he can zip.
+function fsaR_balCatch(f){ return fsBoxAhead(f, -30, FSAR_BAL.reach, 170, 120); }
+// How far along the ray from (ox, oy) in the direction (dx, dy) a corner may go, at most smax: inside the stage box (70 px from the sides, 100 px from the top) and no lower than
+// yb, just under the hub's middle (the floor its foe stands on: the Teams tower's floors are not at groundY). A run is cut short where the box ends, never bent, so it keeps its line.
+function fsaR_balReach(ox, oy, dx, dy, smax, yb){
+  let s = smax;
+  if(dx > 1e-6) s = Math.min(s, (WW - 70 - ox)/dx); else if(dx < -1e-6) s = Math.min(s, (70 - ox)/dx);
+  if(dy > 1e-6) s = Math.min(s, (yb - oy)/dy); else if(dy < -1e-6) s = Math.min(s, (100 - oy)/dy);
+  return Math.max(0, s);
+}
+// His five places: where he stood, then the end of each zip. (hx null: he does not move.)
+function fsaR_balPlan(ax, ay, hx, hy){
+  const B = FSAR_BAL, P = [[ax, ay]];
+  if(hx == null){ for(let k = 0; k < 4; k++) P.push([ax, ay]); return P; }
+  const yb = Math.max(110, hy + 4); let ux = hx - ax, uy = hy - ay; const L = Math.hypot(ux, uy);
+  if(L < 30){ ux = ax <= hx ? 1 : -1; uy = 0; } else { ux /= L; uy /= L; }
+  const s1 = fsaR_balReach(hx, hy, ux, uy, B.D, yb);
+  P.push([hx + ux*s1, hy + uy*s1]);
+  const sq = Math.sqrt(B.D*B.D - B.rho*B.rho);
+  for(let k = 2; k <= 3; k++){
+    const q = P[k - 1], vx = q[0] - hx, vy = q[1] - hy, d = Math.hypot(vx, vy);
+    if(d < B.rho + 8){ const a = d > 1 ? [vx/d, vy/d] : [ux, uy], s = fsaR_balReach(hx, hy, -a[0], -a[1], B.D, yb); P.push([hx - a[0]*s, hy - a[1]*s]); continue; }
+    const phi = Math.acos(B.rho/d), a0 = Math.atan2(vy, vx), cand = [];
+    for(const sg of [1, -1]){
+      const ang = a0 + sg*phi, tx = hx + B.rho*Math.cos(ang), ty = hy + B.rho*Math.sin(ang), dx = tx - q[0], dy = ty - q[1], dl = Math.hypot(dx, dy) || 1, ex = dx/dl, ey = dy/dl;
+      const s = fsaR_balReach(tx, ty, ex, ey, sq, yb);
+      cand.push({ p:[tx + ex*s, ty + ey*s], s:s, y:ty + ey*sq });
+    }
+    cand.sort((a, b)=> k === 2 ? a.y - b.y : b.y - a.y);   // the second run goes over the hub, the third under it (or the one with room)
+    P.push((cand.find((c)=> c.s >= 120) || (cand[0].s >= cand[1].s ? cand[0] : cand[1])).p);
+  }
+  const q = P[3], dx = hx - q[0], dy = hy - q[1], dl = Math.hypot(dx, dy) || 1, stop = Math.min(B.stop, dl*0.5);
+  P.push([hx - dx/dl*stop, hy - dy/dl*stop]);   // the last run: in to the hub, and it ends in the blast just short of it
+  return P;
+}
+function fsaR_balPt(P, k, u){ return [P[k][0] + (P[k + 1][0] - P[k][0])*u, P[k][1] + (P[k + 1][1] - P[k][1])*u]; }
+// The hub, once the catch has landed (the row's frame w - 1): the nearest foe it took (else a spot ahead), walked back toward where he stood until the last stop is
+// over a surface; fsBx/fsBy carry it to a guest (null: he stays). st.P: the five places.
+function fsaR_balHub(f, st){
+  const ax = f.fsAx, ay = f.fsAy, dir = f.face < 0 ? -1 : 1;
+  f.fsBx = f.fsBy = null; st.P = fsaR_balPlan(ax, ay, null, null);
+  if(!(MCAVE && MCAVE.on)){   // (Moon Caves: his chart is turned: he stays, and each run is a ring)
+    const L = fsLockedOf(f), fx = L ? L.x : ax + dir*FSAR_BAL.hub, fy = L ? hurtCY(L) : ay - 10;
+    for(let i = 0; i <= 12; i++){
+      const hx = Math.round(fx + (ax - fx)*i/12), hy = Math.round(fy + (ay - fy)*i/12), e = fsaR_balPlan(ax, ay, hx, hy)[4];
+      if(landable(e[0], e[1]) && landable(e[0] - 16, e[1]) && landable(e[0] + 16, e[1])){ f.fsBx = hx; f.fsBy = hy; st.P = fsaR_balPlan(ax, ay, hx, hy); return; }
+    }
+  }
+  for(const i of st.held){ const o = fighters[i]; if(o && o._fsLock && hurtGap(o, ax, ay) >= FSAR_BAL.burst[3]) fsLockOff(o, true); }   // he stays: a foe held out of the rings' reach is let go, in place, unhurt
+}
+// One zip's jet from a to b this frame: whoever it touches (not yet hit by this run), the run's blow.
+function fsaR_balSweep(f, st, k, a, b){
+  const B = FSAR_BAL, hit = st.runHit[k], n = Math.max(2, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1])/20) + 1), dir = k === 3 || Math.abs(b[0] - a[0]) <= 6 ? st.dir : Math.sign(b[0] - a[0]);   // (a jet shoves along its run; the last blow goes the way the old blast did: away from where he stood)
+  for(const o of fighters){
+    if(fsHurtMark(f, o) || hit.has(o.idx)) continue;
+    for(let i = 0; i < n; i++){
+      const s = i/(n - 1);
+      if(hurtGap(o, a[0] + (b[0] - a[0])*s, a[1] + (b[1] - a[1])*s) < B.jr[k]){ hit.add(o.idx); o.countering = 0; applyHit(o, B.dmg[k], dir*B.kb[k], B.ky[k], f); shake(k === 3 ? 9 : 4); break; }
+    }
+  }
+}
+// A ring of the run's size round (x, y): the last run's blast, and every run's when he cannot move.
+function fsaR_balBurst(f, st, k, x, y){
+  const B = FSAR_BAL, hit = st.runHit[k];
+  for(const o of fighters){
+    if(fsHurtMark(f, o) || hit.has(o.idx)) continue;
+    if(hurtGap(o, x, y) < B.burst[k]){ hit.add(o.idx); o.countering = 0; applyHit(o, B.dmg[k], (k === 3 ? st.dir : (Math.sign(o.x - x) || st.dir))*B.kb[k], B.ky[k], f); }
+  }
+  shake(k === 3 ? 12 : 5);
+  for(let i = 0; i < (k === 3 ? 22 : 8); i++) puff(x, y, i % 2 ? '#ffffff' : '#9fe8dc', k === 3 ? 7 : 5);
+}
+// The row's frame t of the zips: he is placed on the run (a straight line, as fast as the run is short), its jet hits, a corner puffs, the last run ends in the blast.
+function fsaR_balStep(f, st, t){
+  const B = FSAR_BAL, P = st.P; let k = 0;
+  while(k < 3 && t >= B.start[k + 1]) k++;
+  const n = B.runs[k], u0 = (t - B.start[k])/n, u1 = (t - B.start[k] + 1)/n, a = fsaR_balPt(P, k, u0), b = fsaR_balPt(P, k, u1), stat = f.fsBx == null;
+  if(!stat){
+    f.x = b[0]; f.y = b[1]; f.vx = 0; f.vy = 0; f.onground = false;   // (the step's gravity and floors still come after: he is placed, not thrown)
+    if(Math.abs(b[0] - a[0]) > 6) f.face = b[0] < a[0] ? -1 : 1;
+    fsaR_balSweep(f, st, k, a, b);
+    if(u1 >= 1 && k < 3){ shake(3); for(let i = 0; i < 8; i++) puff(b[0], b[1], i % 2 ? '#ffffff' : '#9fe8dc', 5); }
+  }
+  if(u1 >= 1 && (stat || k === 3)) fsaR_balBurst(f, st, k, stat ? f.fsAx : P[4][0], stat ? f.fsAy : P[4][1]);
+}
+// How swollen he is on entrance frame t: his width and height (feet-pivoted), a creak-shake that grows as each breath holds, a lean back as he pinches the knot.
+function fsaR_balSwell(t){
+  const B = FSAR_BAL, S = B.swell, i = Math.min(2, Math.floor(t/B.breath)), u = (t - i*B.breath + 1)/B.breath, pre = i ? S[i - 1] : 1, to = S[i];
+  const g = Math.min(1, u/0.55), e = 1 - (1 - g)*(1 - g) + (g < 1 ? 0.10*Math.sin(g*Math.PI) : 0);   // out fast, a little past, then held
+  const sx = pre + (to - pre)*e, hold = Math.min(1, Math.max(0, (u - 0.55)/0.45)), pinch = t >= B.w - 4 ? 1 : 0;
+  return { sx:sx, sy:1 + (sx - 1)*0.8, shake:Math.sin(t*2.9)*(0.3 + 0.55*hold*(i + 1) + 1.4*pinch), lean:pinch*-0.07 };
+}
+// His body (FIGHTER_ANIM.Balloony.deform): true when Air Leak shapes it this frame. The breaths swell it; through the zips it is stretched along the run, knot trailing,
+// and tumbling a little; then it drops flat, and blows back up over the last frames. A function of the wire fields only.
+function fsaR_balDeform(f, ctx, R){
+  if(f.fsId !== 'airleak' || f.dead) return false;
+  const B = FSAR_BAL, t = f.fsT || 0, w = f.fsWind || B.w;
+  if(f.fsC > 0) return true;   // (through the catch he is as he stands)
+  if(t < w){ const s = fsaR_balSwell(t); ctx.translate(s.shake, 0); deformAboutFeet(ctx, R, f.face*s.lean, s.sx, s.sy); return true; }
+  if(t < B.end){
+    const P = fsaR_balPlan(f.fsAx != null ? f.fsAx : f.x, f.fsAy != null ? f.fsAy : f.y, f.fsBx, f.fsBy);
+    let k = 0; while(k < 3 && t >= B.start[k + 1]) k++;
+    const dx = P[k + 1][0] - P[k][0], dy = P[k + 1][1] - P[k][1];
+    ctx.rotate((Math.hypot(dx, dy) > 4 ? Math.atan2(dx, -dy) : 0) + Math.sin(t*0.9 + k*1.3)*0.30);
+    ctx.scale(0.78 - 0.04*k, 1.30 - 0.03*k);
+    return true;
+  }
+  const fall = Math.min(1, (t - B.end + 1)/6), back = Math.min(1, Math.max(0, 1 - ((f.fsDur || B.dur) - t)/B.tail)), sq = fall*(1 - back);
+  deformAboutFeet(ctx, R, 0, 1 + 0.55*sq*(1 + 0.03*Math.sin(t*0.3)), 1 - 0.62*sq);
+  return true;
+}
+// The wisps that stream into his mouth (six a breath, spiralling in over 8 frames), and the squeak at the knot.
+function fsaR_balBreaths(f, c, t, w){
+  const B = FSAR_BAL, s = fsaR_balSwell(t), feet = f.r + 12, mx = f.x, my = f.y + feet + (-6 - feet)*s.sy, ramp = Math.min(1, (t + 1)/12);
+  for(let i = 0; i < 3; i++) for(let j = 0; j < 6; j++){
+    const age = t - (i*B.breath + (j & 1)*2); if(age < 0 || age >= 8) continue;
+    const u = age/8, a = j*Math.PI/3 + i*0.6 + 0.5*u, rr = 8 + 62*(1 - u)*(1 - u*0.4);
+    c.save(); c.translate(mx + Math.cos(a)*rr, my + Math.sin(a)*rr*0.75); c.rotate(a + Math.PI); c.globalAlpha = ramp*(1 - 0.5*u); FS_GLYPH.puffair(c, 0, 0, 5 + 3*(1 - u)); c.restore();
+  }
+  if(t >= w - 4){
+    const kx = f.x - f.face*4*s.sx, ky = f.y + feet + (8 - feet)*s.sy, u = (t - (w - 4))/4;
+    c.save(); c.globalAlpha = ramp; c.lineCap = 'round';
+    for(const pass of [0, 1]){ c.strokeStyle = pass ? '#ffffff' : '#1c1c1c'; c.lineWidth = pass ? 2 : 4.5;
+      c.beginPath(); for(const sd of [-1, 1]) for(let i = 0; i < 2; i++){ c.moveTo(kx + sd*(7 + 2*u), ky - 3 + i*7); c.lineTo(kx + sd*(14 + 3*u), ky - 8 + i*12); } c.stroke(); }
+    c.restore();
+  }
+}
+// One zip's jet: a wobbling white band from where the run began to where he is (thin at its tail, widest at him), puffair along it.
+function fsaR_balJet(c, x0, y0, x1, y1, wd, fade, t){
+  const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy); if(L < 3) return;
+  const nx = -dy/L, ny = dx/L, seg = Math.max(4, Math.ceil(L/26));
+  const edge = (i, ph, sg)=> { const s = i/seg, ww = wd*(0.2 + 0.8*s)*(1 + 0.13*Math.sin(i*1.9 + ph + t*0.8)); return [x0 + dx*s + sg*nx*ww, y0 + dy*s + sg*ny*ww]; };
+  c.save(); c.lineJoin = 'round'; c.globalAlpha = 0.55*fade; c.fillStyle = '#ffffff'; c.beginPath();
+  for(let i = 0; i <= seg; i++){ const p = edge(i, 0, 1); if(i) c.lineTo(p[0], p[1]); else c.moveTo(p[0], p[1]); }
+  for(let i = seg; i >= 0; i--){ const p = edge(i, 2.1, -1); c.lineTo(p[0], p[1]); }
+  c.closePath(); c.fill(); c.globalAlpha = 0.9*fade; c.strokeStyle = '#9fe8dc'; c.lineWidth = 4; c.stroke();
+  const n = Math.max(2, Math.floor(L/48));
+  for(let i = 1; i <= n; i++){ const s = i/(n + 1); c.save(); c.translate(x0 + dx*s, y0 + dy*s); c.rotate(Math.atan2(dy, dx)); c.globalAlpha = fade; FS_GLYPH.puffair(c, 0, 0, 7 + wd*0.12*s); c.restore(); }
+  c.restore();
+}
+// The last run's blast: a wobbling ring swelling to 150 px round where he stops, puffair thrown out of it (26 frames).
+function fsaR_balBlast(c, x, y, u, t){
+  const R = FSAR_BAL.burst[3], r = R*(0.25 + 0.75*Math.min(1, u*2.2)), a = 1 - u;
+  c.save(); c.translate(x, y); c.lineJoin = 'round'; c.globalAlpha = 0.5*a; c.fillStyle = '#ffffff'; c.beginPath();
+  for(let i = 0; i <= 28; i++){ const th = i/28*Math.PI*2, rr = r*(1 + 0.12*Math.sin(th*5 + t*0.8)*(1 - 0.5*u)); if(i) c.lineTo(Math.cos(th)*rr, Math.sin(th)*rr); else c.moveTo(Math.cos(th)*rr, Math.sin(th)*rr); }
+  c.closePath(); c.fill(); c.globalAlpha = a; c.strokeStyle = '#1c1c1c'; c.lineWidth = 12*a + 4; c.stroke(); c.strokeStyle = '#9fe8dc'; c.lineWidth = 8*a + 2; c.stroke();
+  for(let i = 0; i < 8; i++){ const th = i*Math.PI/4 + t*0.15, rr = r*(0.55 + 0.5*u); c.save(); c.translate(Math.cos(th)*rr, Math.sin(th)*rr); c.rotate(th); c.globalAlpha = a; FS_GLYPH.puffair(c, 0, 0, 12); c.restore(); }
+  c.restore();
+}
+// The jets of the runs so far (each stays 16 frames after its run) and the blast.
+function fsaR_balJets(f, c, t){
+  const B = FSAR_BAL, ax = f.fsAx != null ? f.fsAx : f.x, ay = f.fsAy != null ? f.fsAy : f.y, stat = f.fsBx == null, P = fsaR_balPlan(ax, ay, f.fsBx, f.fsBy);
+  for(let k = 0; k < 4; k++){
+    const a = t - B.start[k], n = B.runs[k]; if(a < 0 || a >= n + 16) continue;
+    if(stat){ if(a >= n - 1) fsLandRing(c, ax, ay, B.burst[k], '#9fe8dc', Math.min(1, (a - n + 1)/20)); continue; }
+    const u = Math.min(1, (a + 1)/n), h = fsaR_balPt(P, k, u);
+    fsaR_balJet(c, P[k][0], P[k][1], h[0], h[1], B.jr[k]*(k === 3 ? 1.1 : 0.9), a < n ? 1 : 1 - (a - n + 1)/16, t);
+  }
+  const tb = t - (B.end - 1);
+  if(tb >= 0 && tb < 26) fsaR_balBlast(c, stat ? ax : P[4][0], stat ? ay : P[4][1], tb/26, t);
+}
+// ---- FSA lane r: end ------------------------------------------------------------------------------------------------------------------
+
+// BALLOONY -- AIR LEAK, the Final Smash (see the lane r block above for the frames and the zig-zag). "Air Leak: jets of released air zip Balloony around." (quoted at his special);
+// bright and buoyant, a balloon that deflates and snaps back. Three breaths swell him, he pinches his knot and lets go: four zips, a jet each (6%, 6%, 6%), the last a wobbling blast
+// (16%, thrown far: the old blast's launch), and he drops flat and deflated.
+FINAL_SMASHES['Balloony'] = {
+  id:'airleak', wind:FSAR_BAL.w, dur:FSAR_BAL.dur, reach:FSAR_BAL.reach,
+  catch(f){ return f._fs ? FSAR_NONE : fsaR_balCatch(f); },   // CATCH: nobody when it is fired (the framework's catch finds no one: nobody is held through the breaths); the box he lays himself at row frame catchAt (below). The CPU asks with no Final Smash running: the real box
+  lockEnd:FSAR_BAL.end - 1, catchMax:1,   // the nearest foe is held until a beat after the last run's blast
+  start(f, st){ st.dir = f.face < 0 ? -1 : 1; st.runHit = [new Set(), new Set(), new Set(), new Set()]; st.P = fsaR_balPlan(f.fsAx, f.fsAy, null, null); armAtk(f, this.wind, 'fsgather'); },
+  tick(f, st, t){
+    const B = FSAR_BAL, w = this.wind;
+    if(t === 0){ shake(3); for(let i = 0; i < 6; i++) puff(f.x, f.y + 10, i % 2 ? '#ffffff' : '#9fe8dc', 4); }
+    if(t === B.catchAt){ st.cs = fsaR_balCatch(f); hitArt(f, 'fscatch', st.cs, { color:f.color, world:true, fade:10 }); fsCatch(f, st); }   // THE CATCH, FS_WIND frames before he lets go
+    if(t === w - 1) fsaR_balHub(f, st);
+    if(t === w){ f._atkAnim = 0; f._atkKind = null; shake(7); for(let i = 0; i < 10; i++) puff(f.x, f.y + 14, i % 2 ? '#ffffff' : '#9fe8dc', 5); }   // he lets go: a hiss of white puffs from the knot
+    if(t >= w && t < B.end) fsaR_balStep(f, st, t);
+  },
+  end(f, st){ f.fsBx = f.fsBy = null; f.vx = 0; },
+  ai(f){ const s = fsaR_balCatch(f); for(const x of fighters) if(!fsHurtMark(f, x) && fsCatchTouch(s, x)) return true; return false; },
+  draw(f, c){
+    const t = f.fsT || 0, w = f.fsWind || FSAR_BAL.w;
+    if(t < w) fsaR_balBreaths(f, c, t, w);
+    else if(t < FSAR_BAL.end + 26) fsaR_balJets(f, c, t);
+  },
+};
 
 // ROBOTY -- ANTENNA SPRING. "beep. beep beep. (I won.)" (his frame row): a monotone that wastes nothing, moving in servo steps; his own card is the Antenna Spring that launches foes straight
 // up. Antennas spring up out of the floor, six a side, 70 px apart, one every three frames (10%, thrown nearly straight up).
@@ -71564,6 +71779,7 @@ const FIGHTER_ANIM = {
   Balloony: {
     squash: 1.45,
     deform(f, ctx, R){
+      if(fsaR_balDeform(f, ctx, R)) return;   // (Air Leak, the Final Smash: the breaths that swell him, the zips, the flat drop: FSA lane r)
       const p = atkPulse(f);
       if(!p) return;
       const deflate = Math.sin(p*Math.PI*0.85);
