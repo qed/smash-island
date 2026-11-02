@@ -1361,6 +1361,7 @@ Checks (2026-11-01, the scratchpad's `events2/blackhole-fix/`): syntax; boot (FF
 on a still Pen, including the fixes above; his CPU at Hard uses every part of the kit (6 matches); his three event matches run CPU vs CPU to
 the end and pay; the in-process online pair shows the special, finisher (with the turned-over orbit) and Final Smash the same on both
 screens; the pull and low gravity predicted on the guest without snapping back.
+- **2026-11-02, every difficulty's "late" recovery start is its own reaction (the owner, "do all four", of the CPU follow-ups):** the Expert change shortened the flat 26-frame blank of the recovery slip to one reaction; the other levels still froze for 26 frames (Hard slips 2.5 times as often as Expert, Normal 5 times, Easy 8.75 times). Now the blank at every level is that level's own `CPU_HUMAN.react`: Easy 30, Normal 20, Hard 10, Expert 10 (Easy is 4 frames longer than before, Hard 16 shorter). The slip itself, its rate and the drift and early slips are unchanged.
 
 ---
 
