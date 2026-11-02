@@ -16549,7 +16549,7 @@ let WW=1100, WH=720, camX=0, camY=0, bases=[], worldPlats=[], floors=[], worldZo
 // null is the endless floor every other stage keeps. setupWorld builds it (buildFloorSegs) for a plain match only: never Boss Rush, the
 // tutorial, Training or a test, a custom level, the teams map, Capture the Flag or RUNNING!.
 let FLOOR_SEGS = null;
-let DIG = null;   // THE DIG FLOOR (an event twist, Get Digging): null in every other match; else { base, holes, at, live, made } -- see digBegin. The holes are FLOOR_SEGS's gaps
+let DIG = null;   // THE DIG FLOOR (an event twist, Get Digging): null in every other match; else { base, holes, at, live, made, sl } -- see digBegin. The holes are FLOOR_SEGS's gaps
 const EDGE_GAP_MAX = 320;   // the widest a gap between two floor spans gets, in px: a Huge map's wider world never stretches a pit past a double jump
 const LEDGE_CATCH = 30;     // feet within this of a cliff's top, moving into it out of a stun: put up onto the ledge (the ledge catch)
 // MORE ROOM PAST THE LEDGES (the owner, 2026-10-27, after the edge-KO study found smashes KO'ing at 0% beside a ledge: "Make the stages have
@@ -66240,7 +66240,7 @@ const EVENT_TWIST_WORDS = {
   food:   { icon:'🍎', short:'food only', words:'Food only: the only items that drop are snacks that heal.' },
   throw:  { icon:'🏀', short:'throwables only', words:'Throwables only: the only items that drop are things to pick up and throw.' },
   sponge: { icon:'🧽', short:'sponge floor', words:'Sponge floor: land hard on the ground and it bounces you back up. Standing and walking are normal.' },
-  dig:    { icon:'⛏', short:'dig floor', words:'Dig floor: land hard and you dig a hole in the ground beside you. Holes stay, and the whole floor can be dug away. Standing and walking are normal.' },
+  dig:    { icon:'⛏', short:'dig floor', words:'Dig floor: land hard and you dig a hole in the ground beside you. Holes stay, scraps of floor too small to stand on crumble away, and the whole floor can be dug away. Standing and walking are normal.' },
   pull:    { icon:'🌀', short:'pull', words:'Pull: a gentle pull toward the middle of the stage. You can always walk out of it.' },
   lowgrav: { icon:'🪐', short:'low gravity', words:'Low gravity: everyone jumps higher and falls slower, as on Yoyleland.' },
   windback: { icon:'⏪', short:'wind back', words:"Wind back: every 20 seconds a tick-tock plays, then everyone's damage goes back to what it was 10 seconds earlier. Damage only goes down, and a lost stock never comes back." },
@@ -66398,11 +66398,16 @@ function drawSpongeFloor(gy){
 // speed read against the fighter's own fall stat (a heavy faller drops faster from the same height, a light one slower: the landing's speed over
 // the fall stat). Measured in the real step, a normal fighter (fall stat 1) lands a short hop at 9.8, a full jump at 12.3, a fast fall from a short
 // hop's top at 16.1, and a fast fall from a FULL JUMP's top at 17.3 (fall 0.88: 14.2 and 15.8; fall 1.11: 17.2 and 19.3, so each is about its own
-// fall stat times the normal). DIGK.hard 16.7 is between 16.1 and 17.3: a fast fall from about a jump's height digs, a short hop never does, and
-// it holds for the whole roster (fall 0.88-1.11); a ground slam, which launches down at 14 or more, digs from a jump's height too. So does a
+// fall stat times the normal). DIGK.hard 16.7 is between 16.1 and 17.3: a fast fall from about a jump's height digs, a short hop never does.
+// Measured for all 108 fighters in the real step (2026-11-02): a plain hop and a plain full jump dig for none of them (0 of 108), and a fast fall
+// from a full jump digs for 106 of 108 -- not Balloon (lands at 14.6 against its 15.2) nor Spongy (17.7 against 18.4), who still dig from a double
+// jump, a ground slam or a platform drop; a fast fall from a SHORT hop digs for 7 of 108 (jump stat about 1.04 or more; they land at 0.88-1.00 of
+// the threshold). The threshold goes with the fall stat alone, not jump x fall. A ground slam, which launches down at 14 or more, digs from a jump's height too. So does a
 // plain drop from the high platform to the floor (245 px: about 17.5), and a long fall after a launch. The drop back in from a KO (a fighter
 // just back: _backAir, until it touches down) comes down at 29 and does not dig: it is not a landing of the fighter's own.
-// THE HOLE. DIGK.w 72 px wide (a body is 48: r 24; so a body and a half), its near edge at the lander's body edge on the side it faces, running
+// THE HOLE. DIGK.w 72 px wide on open floor (a body is 48: r 24; so a body and a half) -- but a hole that comes up against an older one or the world's
+// end snaps or merges, and one under the 24 px minimum bite is none, so a stored hole is 24 to 143 px wide (digSpan: the far end snaps to an older
+// hole within 72 px of it, up to 72 + 71 px) -- its near edge at the lander's body edge on the side it faces, running
 // away from it: THE LANDER STANDS ON THE LIP OF ITS OWN HOLE and never falls with it, and keeps its jumps (the landing gives them back as ever).
 // It crumbles open over DIGK.crumble 12 frames (GROW_IN, as everything that appears grows in), quick at first, from the lander's lip outward
 // (digEase), with a puff of dirt and chunks at the start and twice more as it opens (impact: render-only, no dice, and it rides the snapshot).
@@ -66411,20 +66416,25 @@ function drawSpongeFloor(gy){
 // or open already, there is no hole this time (the floor holds). A fighter in the air above it falls in, which it can see coming, and a fighter
 // who steps in (or is knocked) falls as at any pit. A bit of floor narrower than a hole is wide (DIGK.scrap 72 px: a body and a half) is not floor: one the new hole would
 // leave against an older one, or against the world's end, crumbles with it (the hole's far end runs on to it), and any that is left between holes
-// crumbles away too (digScraps, every 12 frames) as soon as nobody is standing on it or right beside it, so no one is left on a splinter and
-// the last of a floor does not hold out for ever. Holes only ever accumulate: they stay, they merge, and enough of them is a pit; when they have
+// is a sliver and crumbles away too (digScraps, every 12 frames): at once when nobody is on it (on the floor within half a body of it, or in the air
+// straight above it within a jump's reach), and DIGK.hold 192 frames (3.2 s) after it was left when someone is, with a little dust shaking loose at the
+// half and at three quarters; they fall as off any edge. (Without that, two CPUs stood on a 46 px sliver in a corner for 70 s and the match never ended:
+// a CPU's ledge look-ahead holds it back from a span that narrow. Now the last of a floor cannot be camped on, and no one is stranded on an island.) Holes only ever accumulate: they stay, they merge, and enough of them is a pit; when they have
 // taken every span of it, the floor is GONE, and the match is played on the platforms. The Smash Ball floats above the stage (fsClampPos) and is never on the floor, so no hole touches it.
 // Respawns come back over something to stand on (digRespawnX): the nearest x to the middle with a floor span or a platform under it.
+// THE REAL EDGES' OTHER RULES COME WITH IT, in this match only: a fighter's own 'rec' stat (recK) applies off the floor and over a hole (Spongy 1.25,
+// 8-Ball 1.15, Cloudy 1.1), the off-screen ring arrows show for any fighter off the view, the forest's floor ends at 0 and WW (walking off is a fall),
+// and a knocked fighter who lands hard in hit-stun digs too (the rule is any hard landing).
 // ONLINE: the host runs it. The holes ride every snapshot (`dg`: the clock of the host's last rebuild, the span the floor was built from and
 // the list [from, to, direction, frame it began]), and a guest rebuilds FLOOR_SEGS from them (digNetIn) at that clock, so its floor is the host's
 // of that very frame; its own prediction (netPredRun) reads FLOOR_SEGS as it reads any floor, and the hole opens beside the lander, so it never
 // snaps back. Event rooms do not exist yet (startEventMatch refuses in a room), so only the pair test carries it. Shown by art only: the pit's
 // colours (twistVoid), the soil on each face (drawDigRims) and the dirt; a thud and a hiss of earth as it opens. No words in the match.
-const DIGK = { hard:16.7, w:72, crumble:12, scrap:72, min:24, void:['#3b2c1c', '#0b0804'] };
+const DIGK = { hard:16.7, w:72, crumble:12, scrap:72, min:24, hold:192, void:['#3b2c1c', '#0b0804'] };
 function digEase(u){ return u <= 0 ? 0 : u >= 1 ? 1 : 1 - (1 - u)*(1 - u); }
 // The match starts: one span, and no hole (beginMatchNow).
 function digBegin(){
-  DIG = { base:[0, WW], holes:[], at:hazardT, live:0, made:0 };
+  DIG = { base:[0, WW], holes:[], at:hazardT, live:0, made:0, sl:[] };
   digRebuild(hazardT);
 }
 // The open stretches of the floor at frame t, sorted and merged: [from, to] each. A hole is [from, to, direction, frame it began]; it opens
@@ -66473,16 +66483,34 @@ function digSpans(){
   if(x < D.base[1]) out.push([x, D.base[1]]);
   return out;
 }
-// A span narrower than a hole is wide (DIGK.scrap) with nobody on it or right beside it (a fighter on the floor within half a body of it) crumbles away: it
-// is a hole of its own, opening from its left end the same 12 frames.
+// A span narrower than a hole is wide (DIGK.scrap) is a sliver, and a sliver does not stay. With nobody on it (a fighter on the floor within half
+// a body of it, or in the air straight above it within a jump's reach) it crumbles away at the next look: it is a hole of its own, opening from its
+// left end the same 12 frames. With someone on it, it holds for DIGK.hold frames (3.2 s: the clock per sliver, D.sl, kept from look to look and
+// carried over when a bit of it crumbles away), a little dust shaking loose at the half and at three quarters, and then crumbles under them as well:
+// they fall as off any edge. So a last bit of floor too narrow to walk on (a CPU's edge sense holds it back from a span under about two look-aheads)
+// can never be camped on: the match cannot stall on it, and no one is stranded on an island.
+function digOnSpan(q, gy){
+  return fighters.some(o=>{
+    if(o.dead) return false;
+    const fy = feetY(o);
+    if(o.onground && Math.abs(fy - gy) <= 4) return o.x >= q[0] - o.r*0.5 && o.x <= q[1] + o.r*0.5;
+    return !o.onground && fy < gy && gy - fy <= 200 && o.x >= q[0] && o.x <= q[1];
+  });
+}
 function digScraps(){
-  const D = DIG, gy = groundY(); let n = 0;
+  const D = DIG, gy = groundY(), old = D.sl || [], now = []; let n = 0;
   for(const q of digSpans()){
     if(q[1] - q[0] >= DIGK.scrap || q[1] - q[0] < 1) continue;
-    if(fighters.some(o=>!o.dead && o.onground && Math.abs(feetY(o) - gy) <= 4 && o.x >= q[0] - o.r*0.5 && o.x <= q[1] + o.r*0.5)) continue;
+    const was = old.find(r=>r[0] < q[1] && r[1] > q[0]), held = was ? was[2] + DIGK.crumble : 0;
+    if(held < DIGK.hold && digOnSpan(q, gy)){
+      now.push([q[0], q[1], held]);
+      if(held === DIGK.hold/2 || held === DIGK.hold*3/4) impact((q[0] + q[1])/2, gy, { shake:0, dust:1, debris:2, r:Math.max(20, (q[1] - q[0])*0.6) });
+      continue;
+    }
     D.holes.push([Math.round(q[0]), Math.round(q[1]), 1, hazardT]); D.made++; n++;
     impact((q[0] + q[1])/2, gy, { shake:0, dust:1, debris:3, r:34 });
   }
+  D.sl = now;
   if(n) digRebuild(hazardT);
 }
 // The span a landing at f would open on side dir (+1 right, -1 left): { lo, hi, dir }, or null where it would be pointless or off the view.
