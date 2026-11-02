@@ -23655,6 +23655,7 @@ function fsReset(){
   FS.next = Math.round(fsInterval()*0.55*(0.8 + 0.4*fsRand()));   // the first one comes a little early
   for(const f of fighters){ f.fsGlow = 0; f.fsId = ''; f.fsT = 0; f._fs = null; f.fsC = 0; f.fsLk = 0; f._fsLock = null; f._fsVolDone = null; }
   FS.lastT = hazardT; FS.freeze = 0; FS.slow = 0; FS.fz = -1; FS.game = 0;
+  FSF.pend.length = 0;   // FS FLOOR: a new match forgets the Final Smashes that were waiting to settle
 }
 function fsClampPos(x, y){ const gy = groundY(); return { x:clamp(x, 50, WW - 50), y:clamp(y, 70, Math.max(120, isBig() ? WH - 320 : gy - 70)) }; }
 function fsSpawn(){
@@ -23682,6 +23683,7 @@ function fsStep(){
       else if(--f.fsGlow === 0) fsArm();   // the glow ran out unused
     }
   }
+  if(FSF.pend.length) fsfStep();   // FS FLOOR: a Final Smash that is over settles its foes (fsfStep)
   if(!fsAllowed()){ if(SMASHBALL) fsPop(SMASHBALL, false); return; }
   if(!SMASHBALL){
     if(!busy && --FS.next <= 0) fsSpawn();
@@ -23826,6 +23828,71 @@ function fsHitBy(from){
   const p = SMASH_PROJ;
   return (p && p._fs === from && p.ownerObj === from && !p.reflected && p._fsSt) || null;
 }
+// ---- FS FLOOR: begin ----------------------------------------------------------------------------------------------------------------
+// THE ORANGE FLOOR (the owner, 2026-11-02): "final smashes, if they dont kill you, should put you in the orange at MINIMUM". A foe a Final Smash
+// HITS, and who is still alive when its effect on them is over, ends with at least FS_FLOOR_FRAC of their KO threshold (koCap) as damage: 0.35,
+// where pctColor turns the number from dark to orange. A foe already past it is unchanged, a foe the Final Smash (or anything else) KOs is left
+// to the KO, and nobody who was not hit is touched: a Final Smash that hits no one (all heal, all buff) does nothing here. Foes only: a hit that
+// friendly fire turns away (a teammate), the holder, and a boss or an add (not fighters: no % of the game's) never get this far.
+//   Recorded: applyHit calls fsfNote at the line the damage lands (the one place every row's hit passes: a frame of its own, fsBurst, fxHit,
+//   hitShape, hitCircle, and a shot it threw, which keeps hitting as the Final Smash's after it ended -- fsHitBy). Each Final Smash keeps its own
+//   list on its state (st._fl: the foes, and their KO stamp, _koN), so two Final Smashes on one foe each top up alone (the second does nothing if
+//   the first got there).
+//   Settled: once the holder's Final Smash is over for any reason (its end; its holder's KO ends it too: its effect on the foes it had hit had
+//   landed, so they are topped up as if it had run out), and none of its shots is still on the way (a drop's snowball, a petal), at most
+//   FS_FLOOR_WAIT frames on (a shot that lands later still counts: its foe is topped up as it lands). A foe whose flight, untouched, still
+//   carries them out past a blast line waits for it, FS_FLOOR_FLIGHT frames at most: they are KO'd, or they are not and are topped up then (a
+//   KO by the Final Smash needs nothing). The top-up is only damage, as a hit's: the % (and the stats of it: damage taken and dealt), no
+//   launch, no stun, no word; a ring and a few sparks in the orange of the number show it (the dice are the spot and the frame, as every hit
+//   effect's: a seeded match draws the same numbers with or without them).
+const FS_FLOOR_FRAC = 0.35;   // of the foe's koCap (pctColor: r < 0.35 dark, up to 0.6 orange)
+const FS_FLOOR_WAIT = 90;     // frames after a Final Smash ends that its shots still on the way are waited for, at most
+const FS_FLOOR_FLIGHT = 100;  // frames a foe whose flight carries them out is waited for, at most
+const FSF = { pend:[] };      // the Final Smashes that hit someone and have not settled: their lists (st._fl: { st, by, foes:[{ t, n, top }], over, done })
+function fsfNote(t, from, st){
+  if(!st || t.dead || t === from || t.team === from.team || BOSSRUSH.active) return;
+  let e = st._fl;
+  if(!e){ e = st._fl = { st:st, by:from, foes:[], over:0, done:false }; FSF.pend.push(e); }
+  else if(e.done){ e.done = false; e.foes = []; FSF.pend.push(e); }   // (a shot that outlived the wait: its foe is topped up as it lands)
+  for(const r of e.foes) if(r.t === t) return;
+  e.foes.push({ t:t, n:t._koN || 0, top:false, w:0 });
+}
+// The foe's % up to the floor (a flat add, nothing else of a hit), with the orange ring. The % it was added.
+function fsfTop(t, by){
+  if(TESTMODE.active && !TESTMODE.damage) return 0;
+  const cap = t.koCap; if(!(cap > 0)) return 0;
+  const want = Math.ceil(Math.min(FS_FLOOR_FRAC, 0.95)*cap*1000)/1000;   // (rounded up, never a hair under the line the colour reads)
+  if(!(t.pct < want)) return 0;
+  const add = want - t.pct;
+  t.pct += add; t._dmgTaken = (t._dmgTaken || 0) + add; if(by) by._dmgDealt = (by._dmgDealt || 0) + add;
+  if(particles.length <= HITFX.room*1.5){
+    const x = t.x, y = t.y - 6, rnd = hitFxDice(x, y, 41);
+    particles.push({ x, y, vx:0, vy:-0.6, life:HITFX.ring, r:34, color:'r|#e0803a' });
+    particles.push({ x, y, vx:0, vy:-0.6, life:HITFX.ring, r:20, color:'r|#ffc07a' });
+    for(let i = 0; i < 8; i++){ const a = i/8*Math.PI*2 + rnd()*0.4, v = 3 + rnd()*2.5; particles.push({ x, y, vx:Math.cos(a)*v, vy:Math.sin(a)*v - 0.4, life:10 + rnd()*5, r:2 + rnd()*0.6, color:'s|' + (i % 2 ? '#e0803a' : '#ffd29a') }); }
+  }
+  return add;
+}
+// Once a step (fsStep): the Final Smashes that are over settle their foes.
+function fsfStep(){
+  for(const e of FSF.pend.slice()){
+    const h = e.by;
+    if(h._fs === e.st) continue;   // still playing
+    if(!e.over) e.over = hazardT;
+    if(hazardT - e.over < FS_FLOOR_WAIT){ let air = false; for(const p of projectiles) if(p._fsSt === e.st && p.life > 0 && !p.trap && !p.turret){ air = true; break; } if(air) continue; }   // (a shot of it still on the way)
+    let left = 0;
+    for(const r of e.foes){
+      if(r.top) continue;
+      const t = r.t;
+      if(fighters[t.idx] !== t || koSince(t, r.n)){ r.top = true; continue; }   // KO'd since (or the match is over): nothing to do
+      if(r.w < FS_FLOOR_FLIGHT && fsKoFlight(t)){ r.w++; left++; continue; }   // about to be carried out: wait and see
+      r.top = true;
+      if(t.team !== h.team) fsfTop(t, h);   // (never a teammate: one turned to the holder's side since is not topped up)
+    }
+    if(!left){ e.done = true; const i = FSF.pend.indexOf(e); if(i >= 0) FSF.pend.splice(i, 1); }
+  }
+}
+// ---- FS FLOOR: end ------------------------------------------------------------------------------------------------------------------
 // Is a foe in reach of this Final Smash right now (the CPU's cue to fire)?
 function fsFoeNear(f, R){
   for(const t of fighters) if(!t.dead && t.team !== f.team && !hardInvuln(t) && !(t._ghostT > 0) && hurtGap(t, f.x, f.y) < R) return true;
@@ -62238,6 +62305,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(t._yoyleT>0){ dmg*=0.45; kbx*=0.6; kby*=0.6; }              // ITEM: Yoyleberry — metal, takes less damage
   if(TESTMODE.active && !TESTMODE.damage){ dmg=0; }   // test mode: damage toggle off = no % buildup
   t.pct+=dmg;
+  if(dmg > 0 && from && from !== t && (fsSt || (from._fs && !SMASH_PROJ))) fsfNote(t, from, fsSt || from._fs);   // FS FLOOR: a foe this Final Smash hit (a frame of its row, its start or end, or a shot it threw, even after it ended) is remembered
   if((FINX.length || t._sleepT > hazardT) && from && from !== t && !(opts && opts.tick)) finx4Landed(t, from);   // Naily's tack hammered home, Pillow's sleep broken (FINISHERS V2, batch 4)
   // Tapey's tape (DOWNSPECIALS.tape / case "tape"): the biggest SINGLE hit anyone on it takes, kept per entry (s[3]). Playback
   // used to read the damage racked up since Record (two 5% pokes replayed as 10%) and skipped a whole entry when her own poke
