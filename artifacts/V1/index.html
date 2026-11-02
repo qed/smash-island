@@ -66272,9 +66272,10 @@ function brainRecover(f, inp, B, sp){
   const mc = MCAVE && MCAVE.on;   // MOON CAVES: no sides and no bottom; under the shell the way back is up through the nearest crack
   const offLeft = !mc && f.x < (tq ? tq.x : 50), offRight = !mc && f.x > (tq ? tq.x + tq.w : WW-50), fallingOut = !mc && f.y>WH-90 && f.vy>0;
   const goal = mc ? mcCrackGoal(f) : edgeGoal(f, B);   // REAL EDGES: off the stage over nothing -- where it heads back to (null: not off, or a stage without edges)
-  if(!(offLeft||offRight||fallingOut||goal||(sp==='chair' && aiBowAdrift(f)))){ B.recEp = null; return false; }
+  if(!(offLeft||offRight||fallingOut||goal||(sp==='chair' && aiBowAdrift(f)))){ B.recEp = null; if(f.onground) B.cross = null; return false; }
   B.press = null; B.str = null; if(B.st === 'string' || B.st === 'smash') B.st = 'approach';
   const held = !!f._jp;
+  const soft = !!(goal && goal.soft);   // (PITS: still in the air over the floor's last stretch after a trip off it: steer in, spend nothing -- pitSoftGoal)
   // A PERSON OFF THE STAGE (REAL EDGES): once a trip, by level (BRAIN_LV recMiss), it may get one thing wrong -- a late start (nothing pressed
   // for a moment while it falls), a moment's drift without steering, or its jump and its up-special thrown away at once. So a CPU makes it
   // back most of the time and is lost now and then, as a person is. As the trip begins, a press decided on the floor and still waiting for
@@ -66283,8 +66284,8 @@ function brainRecover(f, inp, B, sp){
   if(goal && !B.recEp){ cpuHandsForget(f); const r = Math.random(), miss = BRAIN_LV[brainLevel(f)].recMiss || 0; B.recEp = { at:hazardT, err: r < miss ? ['late', 'drift', 'early'][Math.floor(Math.random()*3)] : null }; }
   const E = goal ? B.recEp : null, age = E ? hazardT - E.at : 0;
   if(offLeft) inp.right=true; if(offRight) inp.left=true;
-  if(goal && !(E && E.err === 'drift' && age < 22)){ inp.left = goal.dir < 0; inp.right = goal.dir > 0; }
-  if(sp==='chair'){ aiBowRecover(f, inp, 0); return true; }
+  if(goal && !(E && E.err === 'drift' && age < 22)){ inp.left = goal.dir < 0; inp.right = goal.dir > 0; }   // (dir 0: a soft goal it is already at)
+  if(sp==='chair' && !soft){ aiBowRecover(f, inp, 0); return true; }
   // A 'LATE' START is one human reaction at Expert, not a freeze (the owner, World Cup #31, Firey's final: "firey DID NOT RECOVER AT ALL DURING THE SECOND STOCK";
   // asked, "Shorten it to one reaction"): the flat 26 frames of nothing was 2.6x Expert's own reaction and a certain fall from ledge height. The other levels keep 26.
   if(E && E.err === 'late' && age < (BRAIN_LV[brainLevel(f)].recSmart ? CPU_HUMAN.react[brainLevel(f)] : 26)) return true;
@@ -66293,13 +66294,16 @@ function brainRecover(f, inp, B, sp){
     else if(f.spCd<=0 && !brainKit(f).uStance){ inp.special=true; inp.up=true; }
     return true;
   }
-  if(f._wallSide && f._wallT >= hazardT - 2 && f.vy > 0.5 && !(f._wallUsed && f._wallUsed[f._wallId]) && !(f.flying > 0) && !f._tp && mtOn(f)){
+  if(!soft && f._wallSide && f._wallT >= hazardT - 2 && f.vy > 0.5 && !(f._wallUsed && f._wallUsed[f._wallId]) && !(f.flying > 0) && !f._tp && mtOn(f)){
     f._aiWJ = hazardT; inp.jump = !held; inp.left = f._wallSide < 0; inp.right = f._wallSide > 0;
+  } else if(soft){
+    // (over the floor again, a step from its end: the arrows are all it uses -- a jump or the up-special now would be one thrown away)
   } else if(goal && BRAIN_LV[brainLevel(f)].recSmart){
     // EXPERT (recSmart): over the drop it drifts back first, and spends its jump, then its up-special, only once it is sinking to the
     // ledge's height (a moment before, for its hands): each rise then starts where it is needed. A jump spent high up, or while a launch
     // still carries it up, is a rise it does not have when it is under the ledge.
-    if(f.vy > 0.5 && f.y + f.r + f.vy*6 > groundY() - 20){
+    const Cx = B.cross, ly = (Cx && !Cx.done && hazardT < Cx.until && Cx.y != null) ? Cx.y : groundY();   // (the height of the ledge it is after: a crossing to a platform, that platform's)
+    if(f.vy > 0.5 && f.y + f.r + f.vy*6 > ly - 20){
       if(f.jumps > 0) inp.jump = !held;
       else if(f.spCd<=0 && !brainKit(f).uStance){ inp.special=true; inp.up=true; }
     }
@@ -66312,19 +66316,41 @@ function brainRecover(f, inp, B, sp){
 // REAL EDGES, for the CPU: off the stage (overDrop), the place it heads back to -- the floor span nearest where its speed is taking it, or
 // the far side of a gap it jumped on purpose (B.cross, brainLedge) while that trip lasts. Null when it is not off the stage.
 function edgeGoal(f, B){
-  if(!overDrop(f)) return null;
+  if(!overDrop(f)) return pitSoftGoal(f, B);
   const C = B.cross;
-  if(C && hazardT < C.until) return { x:C.x, dir:(C.x - f.x) < 0 ? -1 : 1 };
+  if(C && !C.done && hazardT < C.until) return { x:C.x, dir:(C.x - f.x) < 0 ? -1 : 1 };   // (done: it got to the far side -- brainAirEdge -- and what is off it now is a fall from there)
   const px = f.x + (f.vx||0)*10;
   let best = null, bd = Infinity;
   for(const q of FLOOR_SEGS){ const gx = clamp(px, q.x0 + 30, q.x1 - 30), d = Math.abs(gx - px); if(d < bd){ bd = d; best = gx; } }
   return best == null ? null : { x:best, dir:(best - f.x) < 0 ? -1 : 1 };
 }
+// A TRIP OFF THE STAGE LASTS UNTIL THE FEET ARE ON SOMETHING (the pit falls, 2026-11-02: CPUs fell into the pits with nobody near, at 0-96%, after
+// spending BOTH jumps and the up-special near a lip). Over the drop the recovery had the keys and steered back; over the floor again, a
+// pixel in from its end, it gave them up -- and the brain's own errand (the foe across the gap, a hop, an unstick burst) pushed it straight
+// back out, where the recovery pulled it in again: 13 frames each way, a lip dithered over for a hundred frames, each swing spending a jump
+// or the up-special, and the last one fell. A person who has just got back holds in until they are standing. So while the trip is on
+// (B.recEp), in the air, with something under it (the floor, or a platform) but nothing PIT_SOFT px to one side of it, the recovery still
+// has the arrows: a goal in the nearest place that has something under it PIT_SOFT px either side (soft: it steers, and spends nothing).
+// Well inside, or on the ground (the ledge catch is the ground too), the trip is over and the brain goes on as before. A platform's end
+// over a pit is a lip like the floor's (Tree on Grand Plains' middle platform dithered at its end the same way).
+const PIT_SOFT = 56;
+function pitSoftGoal(f, B){
+  if(!B || !B.recEp || f.onground || !FLOOR_SEGS || (MCAVE && MCAVE.on) || f.hitstun > 0) return null;
+  const feet = f.y + f.r, safe = (x) => surfaceBelow(clamp(x, 1, WW - 1), feet) != null;
+  if(!safe(f.x)) return null;   // over nothing: the hard goal's
+  if(safe(f.x - PIT_SOFT) && safe(f.x + PIT_SOFT)) return null;   // well inside
+  for(let d = 8; d <= 220; d += 8) for(const sd of [-1, 1]){
+    const x = f.x + sd*d;
+    if(safe(x - PIT_SOFT) && safe(x) && safe(x + PIT_SOFT)) return { x, dir:sd, soft:true };
+  }
+  return null;
+}
 // REAL EDGES: a CPU on its feet does not walk off into the drop by accident. At the end of what it stands on, with nothing under its next
 // step, it jumps the gap when what it is after is across it and the far side is in a jump's reach (and remembers the trip: B.cross), else it
 // stops at the edge. (Its hands still go at a person's pace in a fight, so now and then it is a step late -- and then it recovers.)
 function brainLedge(f, inp, B){
-  if(!(FLOOR_SEGS || (MCAVE && MCAVE.on)) || !f.onground || inp.jump || f._fileRide) return;   // (MOON CAVES: the shell's cracks are drops)
+  const edged = !!FLOOR_SEGS && !(MCAVE && MCAVE.on);   // (a stage with edges: a jump pressed by the rest of the brain is looked at too -- PITS, below)
+  if(!(FLOOR_SEGS || (MCAVE && MCAVE.on)) || !f.onground || (inp.jump && !edged) || f._fileRide) return;   // (MOON CAVES: the shell's cracks are drops)
   const dir = (inp.left && !inp.right) ? -1 : (inp.right && !inp.left) ? 1 : 0;
   if(!dir) return;
   const feet = f.y + f.r, ax = f.x + dir*(f.r*0.5 + 4 + Math.abs(f.vx||0)*3);
@@ -66335,12 +66361,93 @@ function brainLedge(f, inp, B){
   if(f.face !== dir && (inp.attack || inp.special || inp.smash) && Math.abs(f.vx || 0) < 1.5 && standAt(f.x + dir*8, feet)) return;
   // (a running double jump carries about 470 px back to the height it left from; 360 at the stats' 1, and a landing up to MAX_HOP_RISE above
   // the feet, keeps it to gaps it makes every time: the low jumpers -- Roboty, Snowball, Ice Cube -- still clear the widest pit, EDGE_GAP_MAX)
-  const fst = f.st || STAT_ONE, reach = 360*fst.jump*fst.air;
+  const fst = f.st || STAT_ONE, reach = edged ? brainGapReach(f) : 360*fst.jump*fst.air;   // (edged: what its jumps really carry it, brainGapReach)
   let land = null;
-  for(let d = 40; d <= reach; d += 20){ const x = f.x + dir*d; if(x < 0 || x > WW) break; if(standAt(x, feet - MAX_HOP_RISE)){ land = x + dir*30; break; } }
+  if(edged){
+    // (PITS: from the end of what it stands on, not from 40 px out: a CPU that came at the lip fast was 46 px from it with ground still under
+    // that spot, so "the landing" was a point 30 px past the lip, over the drop. The recovery steered for it, a frame left, a frame right,
+    // for the whole trip -- Snowball, seed 105076 -- and fell.)
+    let d = 10;
+    while(d <= reach && standAt(f.x + dir*d, feet - MAX_HOP_RISE)) d += 10;
+    for(; d <= reach; d += 10){ const x = f.x + dir*d; if(x < 0 || x > WW) break; if(standAt(x, feet - MAX_HOP_RISE)){ land = x + dir*30; break; } }
+  } else {
+    for(let d = 40; d <= reach; d += 20){ const x = f.x + dir*d; if(x < 0 || x > WW) break; if(standAt(x, feet - MAX_HOP_RISE)){ land = x + dir*30; break; } }
+  }
   const t = f.aiTarget;
-  if(land != null && t && !t.dead && (t.x - f.x)*dir > 40){ inp.jump = true; B.cross = { x:land, until:hazardT + 90 }; return; }
+  if(land != null && t && !t.dead && (t.x - f.x)*dir > 40){
+    if(edged){
+      // (PITS: the way back is the up-special, and the special's cooldown is one for all of them: a shot a moment ago, and the crossing that
+      // goes now has no up-special for its first 50 frames -- Golf Ball's, seed 230416, pressed it 170 px under the ledge. So it waits at the
+      // lip for it, a beat; and the up-special is never part of the crossing itself (a climb for a foe above, pressed with the hop).)
+      const ks = f.kit && f.kit.special;
+      if(ks !== 'fly' && ks !== 'float' && ks !== 'chair'){
+        if(f.spCd > 40){ inp.left = false; inp.right = false; inp.jump = false; return; }
+        if(inp.special && inp.up && !inp.attack){ inp.special = false; inp.up = false; }
+      }
+    }
+    inp.jump = true;
+    // (edged: y is the top of what it means to land on -- a platform hop, 130 px up, is not a trip to the floor, and its second jump is for that height: brainRecover)
+    const ty = edged ? surfaceBelow(clamp(land - dir*30, 1, WW - 1), feet - MAX_HOP_RISE) : null;
+    B.cross = { x:land, y:ty, dir, until:hazardT + (edged ? 140 : 90) };   // (a crossing in the air takes up to 130 frames: it must not lapse half way)
+    return;
+  }
   inp.left = false; inp.right = false;
+}
+// PITS (2026-11-02): how far across a gap its jumps carry this body from a lip -- brainWayBack without the up-special, which is for the way
+// back, not the crossing. Measured on the real jump from the lip (a standing double jump, held toward the far side): Tree 353 px, Firey 461,
+// against this 351 and 450; the old figure (360 x jump x air) said 306 for Tree, under every gap in the game, and so a Tree at a lip did
+// not cross on purpose -- and was sent over by the stuck burst or a hop, with the recovery pulling it back half way. A little off for
+// what it cannot be sure of (GAP_REACH_K).
+const GAP_REACH_K = 0.95;
+function brainGapReach(f){
+  const spent = Object.create(f); spent._usedAirSpecial = true; spent.flying = 0;
+  return brainWayBack(spent).across*GAP_REACH_K;
+}
+// PITS: IN THE AIR over something that holds it -- the floor or a platform -- near the end of it (a lip, with a drop beyond), a CPU keeps what
+// it has left to come back with:
+//  - it does not drift out over the drop when it has nothing left to come back with (a person holds the arrow in): its arrows, or its drift,
+//    would take it past the end and brainCanReturn from there says no. (Firey on Grand Plains came down on the high platform's end with
+//    its jumps gone, the stairs-down errand turned it round in the air twice, and the third time there was nothing left.)
+//  - it does not spend its special on anything else there. The special's cooldown is one for all three (spCd), and the up-special needs it
+//    clear: Firey's Ember Shot, pressed 3 frames before it walked off a lip with both jumps gone, left the up-special 44 frames away, and
+//    it fell 270 px waiting (seed 10048). An up-special for climbing toward a foe above goes the same way (30% of the time with a jump still
+//    in hand), and so does a shot or a trap with no jump left.
+// Not while the recovery has the keys (B.recEp: over the drop, and the stretch after it), nor on a crossing it set out on and has not yet got
+// to the far side of (B.cross; once there it is marked done). Rolled once an airborne stretch by the level's edge sense (BRAIN_LV edge), as the
+// dash's and the cart's are: a person looks, or does not. Fliers and Bubble's float (their special IS their air) and Bow (her up-special is a
+// drop, her way back the Teleport) keep their specials.
+const AIR_EDGE_ZONE = 150;   // px from the end of what holds it (and 8 more per px/frame of drift) inside which the special is kept
+function brainAirEdge(f, inp, B, L){
+  if(!FLOOR_SEGS || (MCAVE && MCAVE.on)) return;
+  const Cc = B.cross;
+  if(Cc && Cc.dir && !Cc.done && (f.x - Cc.x)*Cc.dir >= -20) Cc.done = true;   // it has got to the far side
+  if(f.onground || f.hitstun > 0 || B.recEp || f._fileRide){ if(f.onground) B.airLook = null; return; }
+  if(Cc && hazardT < Cc.until && Cc.dir && !Cc.done) return;   // a crossing it set out on, still on its way
+  const feet = f.y + f.r, safe = (x) => surfaceBelow(clamp(x, 1, WW - 1), feet) != null;   // something under x to come down on (the floor, or a platform)
+  if(!safe(f.x)) return;   // over nothing: it is the recovery's
+  const vx = f.vx || 0, zone = AIR_EDGE_ZONE + 8*Math.abs(vx);
+  const near = !safe(f.x - zone) || !safe(f.x + zone);
+  if(!near) return;
+  if(B.airLook == null) B.airLook = Math.random() < L.edge;
+  if(!B.airLook) return;
+  // its special is for the way back
+  const ks = f.kit && f.kit.special;
+  if(ks !== 'fly' && ks !== 'float' && ks !== 'chair' && inp.special && !inp.attack){
+    if(inp.up){ inp.special = false; inp.up = false; B.airKeep = (B.airKeep || 0) + 1; }
+    else if(f.jumps <= 0){ inp.special = false; inp.down = false; B.airKeep = (B.airKeep || 0) + 1; }
+  }
+  // its drift
+  const dir = (inp.right && !inp.left) ? 1 : (inp.left && !inp.right) ? -1 : 0;
+  const mv = dir || (Math.abs(vx) > 1.5 ? (vx > 0 ? 1 : -1) : 0);   // where it is going: its arrow, else its drift
+  if(!mv) return;
+  const px = f.x + mv*(Math.abs(vx)*7 + f.r + 12);   // about where that leaves it
+  if(safe(px)) return;                                // something to come down on there
+  // (the way back it really uses -- jumps, the up-special, Bow's Teleport: brainRecover never presses a dash, which brainWayBack counts as
+  // "across", nor does Puffball get "her hover, again and again" once her Float Boost is spent: seed 215942, 35 frames of it pressed, none came out)
+  const noDash = Object.create(f); noDash._airDash = true; if(!(f.flying > 0)) noDash.flying = 1;
+  if(brainCanReturn(noDash, 1.5, px, f.y)) return;   // it has the way back from there
+  inp.left = mv > 0; inp.right = mv < 0;             // holds in (and brakes, if it is drifting out)
+  B.airHold = (B.airHold || 0) + 1;
 }
 // Something to stand on under x whose top is at or below `top`: the floor where there is floor, or a platform.
 function standAt(x, top){
@@ -66604,6 +66711,7 @@ function brainSpent(f){ return brainKit(f).down === 'refresh' && !!f._hasBeen &&
 // not used it, Puffball's flight, a dash's reach across, and the drift its airtime buys. -> { up: px it can still climb, across: px it can still
 // come }. How high and far a fighter goes (its jump, its drift, its recovery: FIGHTER STATS) is what anyone watching it sees.
 function brainWayBack(o){
+  if(o._stall && o._stall.phase === 'fall') return { up:0, across:0 };   // PITS: a plunge in its dive (Tree, Golf Ball, Naily...: the up-special's fall) holds vy at 12+ until it lands: a jump is thrown away, nothing climbs
   const st = o.st || STAT_ONE, k = o.kit && o.kit.special, U = UPSPEC[k], M = BRAIN_SPEC[k], rec = Math.sqrt(st.rec || 1);
   let up = 0, air = 0, across = 0;
   const g = gravAt(o), rise = (v) => { v = Math.abs(v)*rec; up += v*v/(2*g); air += 2*v/g; };   // (the gravity where it is: higher and longer in low gravity)
@@ -67031,7 +67139,12 @@ function brainOut(f, inp, B, L, t, fight){
   brainHazards(f, inp, B, L);   // HAZARD SENSE: not into a foe's live trap, puddle or prism it noticed
   brainDashEdge(f, inp, B, L);   // EDGE SENSE: no dash or leap off the stage it could not come back from
   brainCart(f, inp, B, L);   // ...and a ridden cart turned round before the edge
+  // PITS: a plunge (the up-special's dive: Tree, Golf Ball, Naily...) that has caught the ledge is still in its fall until the landing frame has
+  // run, and the jump pressed on that frame is thrown away by it -- vy held at 12 and up for good, over the drop: Tree, seed 214578, 13 frames
+  // after climbing back. It lets the landing happen first.
+  if(FLOOR_SEGS && !(MCAVE && MCAVE.on) && f.onground && f._stall && f._stall.phase === 'fall') inp.jump = false;
   brainLedge(f, inp, B);   // REAL EDGES: never off a ledge by accident
+  brainAirEdge(f, inp, B, L);   // PITS: nor drifting out over the drop in the air with nothing left to come back with
   return inp;
 }
 // CPUS AND THE EFFECT ZONES (the level creator review, 2026-10-26: CPUs stood in damage zones and walked into bounce zones; they could not see zones at all).
