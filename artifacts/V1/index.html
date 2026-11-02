@@ -25893,7 +25893,11 @@ function fsaB_row(base, o){
     if(t === 0) st.y0 = f.y;
     if(t > 0 && t <= S && !f.onground && !(MCAVE && MCAVE.on)){ f.y = st.y0; f.vy = 0; }   // an airborne holder sank a little each wind frame (the framework holds their speed, not their place): the entrance keeps them where the old row's first frame had them, and the old row's own wind frames sink them as they did, so its blast is on the same spot
     if(t === S - 1 && st.late){ st.cs = st.late; hitArt(f, 'fscatch', st.cs, { color:f.color, world:true, fade:10 }); fsCatch(f, st); }   // the catch: FS_WIND frames before the blast, as it was
-    if(t >= S) base.tick.call(base, f, st, t - S);
+    if(t >= S){
+      const pp = o.pin ? o.pin(f, st, t) : null;   // (`pin`: the old row sees the holder where she stood when its blast went, not where the knock-back has put her)
+      if(pp){ const px = f.x, py = f.y; f.x = pp.x; f.y = pp.y; try{ base.tick.call(base, f, st, t - S); } finally { f.x = px; f.y = py; } }
+      else base.tick.call(base, f, st, t - S);
+    }
     if(o.still && t < W){ f._atkAnim = 0; f._atkKind = null; }
     if(o.tick) o.tick(f, st, t);
   };
@@ -25901,9 +25905,10 @@ function fsaB_row(base, o){
     const t = f.fsT || 0;
     if(o.draw) o.draw(f, c, t, f.face < 0 ? -1 : 1);
     if(t < W) return;
-    const T = f.fsT, Wd = f.fsWind;   // the old row's own picture, from its blast on, on its own clock
+    const T = f.fsT, Wd = f.fsWind, pp = o.pin ? o.pin(f, null, t) : null, px = f.x, py = f.y;   // the old row's own picture, from its blast on, on its own clock
     f.fsT = t - S; f.fsWind = (Wd || W) - S;
-    try{ base.draw.call(base, f, c); } finally { f.fsT = T; f.fsWind = Wd; }
+    if(pp){ f.x = pp.x; f.y = pp.y; }
+    try{ base.draw.call(base, f, c); } finally { f.fsT = T; f.fsWind = Wd; f.x = px; f.y = py; }
   };
   return row;
 }
@@ -26333,6 +26338,491 @@ const fsaB_taco = {
     c.restore();
   },
 };
+// ---- FSA lane b, batch 2: Marshmallow, Apple, Baseball, Pickle, Nickel (II), Paper, Microphone, Salt ---------------------------------------------
+// (the same rules as the batch above; each row below is its old row with an entrance in front of it by fsaB_row, and every frame of it is a pure function of the wire fields)
+//   - `pin` (Marshmallow only): the old row's tick and draw see the holder where she stood when the scream went (fsAx, fsAy: set on that frame), not where the knock-back has flung her,
+//     so both rings are centred on that spot as before.
+//   - A render-only move (a hop, a leap, a float, a look to one side) is in the fighter's deform: the fighter's place does not change for it. A real one (Marshmallow's fling, Microphone's
+//     skid) is a scripted slide from the frame after the blast, kept on the surface by fsaB_room and out of the top of the world by fsaB_rise.
+function fsaB_ramp(t, t0, n){ return fsaB_e((t - t0 + 1)/(n || 12)); }   // 0 -> 1 over n (12) frames, from frame t0: whatever appears grows in over 12 frames
+// How far the holder at (x, y) may be flung straight up (px, at most `want`): the body ends no higher than 100 px above the top of the world (160 px inside the top blast line) and below any solid block overhead.
+function fsaB_rise(x, y, r, want){
+  if(MCAVE && MCAVE.on) return 0;
+  let up = Math.max(0, Math.min(want, y + 100));
+  for(const p of platRects()){
+    if(!p.solid || p.rot || !(x > p.x - r && x < p.x + p.w + r)) continue;
+    const under = p.y + (p.h || 16);
+    if(under <= y - r + 2 && y - r - under < up) up = Math.max(0, y - r - under - 4);
+  }
+  return up;
+}
+// A thin black arm to a round hand (the sprites' own look).
+function fsaB_arm(c, x0, y0, x1, y1, bx, by, hr){
+  c.save(); c.lineCap = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.4; c.beginPath(); c.moveTo(x0, y0); c.quadraticCurveTo(bx, by, x1, y1); c.stroke();
+  c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(x1, y1, hr || 3.4, 0, 7); c.fill(); c.restore();
+}
+// A puff of dust off the floor at (x, fy), frame t0 on: it spreads and thins over n frames, from next to nothing.
+function fsaB_dust(c, x, fy, t, t0, R, n){
+  const a = t - t0, N = n || 14; if(a < 0 || a >= N) return;
+  const u = a/N;
+  c.save();
+  for(const sd of [-1, 1]) for(let i = 0; i < 2; i++) fsaB_puff(c, x + sd*(R*0.5 + u*(14 + 10*i)), fy - 3 - u*(5 + 4*i), 0.5 + R*(0.1 + 0.2*u)*(1 - 0.25*i), 0.8*(1 - u), '#efe8d4', '#9a917c');
+  c.restore();
+}
+// A circular saw blade lying flat on the floor, seen from the side (a wide ellipse), spinning: teeth all round the rim. k: how grown (0..1).
+function fsaB_saw(c, x, y, rx, ry, spin, k, a){
+  if(!(k > 0.01)) return;
+  rx *= k; ry *= k;
+  c.save(); c.globalAlpha = a; c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2;
+  c.fillStyle = '#6a7380'; c.beginPath(); c.ellipse(x, y + 4*k, rx, ry, 0, 0, 7); c.fill(); c.stroke();   // its thickness
+  c.fillStyle = '#c9d1db'; c.beginPath(); c.ellipse(x, y, rx, ry, 0, 0, 7); c.fill(); c.stroke();
+  const N = 16; c.fillStyle = '#e4eaf1';
+  for(let i = 0; i < N; i++){   // the teeth: a hooked point on each of sixteen, going round
+    const a0 = spin + i*Math.PI*2/N, a1 = a0 + 0.36, am = a0 + 0.3;
+    c.beginPath(); c.moveTo(x + Math.cos(a0)*rx, y + Math.sin(a0)*ry); c.lineTo(x + Math.cos(am)*rx*1.2, y + Math.sin(am)*ry*1.2); c.lineTo(x + Math.cos(a1)*rx, y + Math.sin(a1)*ry); c.closePath(); c.fill(); c.stroke();
+  }
+  c.strokeStyle = '#7d8794'; c.lineWidth = 1.4; c.beginPath(); c.ellipse(x, y, rx*0.62, ry*0.62, 0, 0, 7); c.stroke();
+  for(let i = 0; i < 3; i++){ const a0 = spin + i*2.094; c.beginPath(); c.moveTo(x + Math.cos(a0)*rx*0.2, y + Math.sin(a0)*ry*0.2); c.lineTo(x + Math.cos(a0)*rx*0.6, y + Math.sin(a0)*ry*0.6); c.stroke(); }
+  c.fillStyle = '#3a3f48'; c.beginPath(); c.ellipse(x, y, rx*0.13, ry*0.13, 0, 0, 7); c.fill();
+  c.restore();
+}
+// Nickel's zinger bubble (the jab's: an empty speech bubble with a zig in it), tail at the lower left (flip: lower right); s: its size.
+function fsaB_bubble(c, x, y, s, flip, fill, line, zig, a){
+  if(!(s > 0.01)) return;
+  c.save(); c.translate(x, y); c.scale(flip ? -s : s, s); c.globalAlpha = a; c.lineJoin = 'round';
+  c.fillStyle = fill; c.strokeStyle = line; c.lineWidth = 1.5;
+  c.beginPath(); c.moveTo(-9, -8); c.lineTo(9, -8); c.quadraticCurveTo(13, -8, 13, -4); c.lineTo(13, 3); c.quadraticCurveTo(13, 7, 9, 7); c.lineTo(-2, 7); c.lineTo(-9, 12); c.lineTo(-6, 7); c.lineTo(-9, 7);
+  c.quadraticCurveTo(-13, 7, -13, 3); c.lineTo(-13, -4); c.quadraticCurveTo(-13, -8, -9, -8); c.closePath(); c.fill(); c.stroke();
+  c.strokeStyle = zig; c.lineWidth = 2.2; c.beginPath(); c.moveTo(-6, -3); c.lineTo(-1, 1); c.lineTo(1, -3); c.lineTo(6, 2); c.stroke();
+  c.restore();
+}
+// A speaker cabinet standing on the floor (x, fy): its cone faces `side` (+1: it is left of her, facing right); s grown 0..1, thr: how far the cone is thrown 0..1.
+function fsaB_cab(c, x, fy, s, thr, a){
+  if(!(s > 0.01)) return;
+  c.save(); c.translate(x, fy); c.scale(s, s); c.globalAlpha = a; c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.4;
+  c.fillStyle = '#2c2c34'; c.beginPath(); c.rect(-19, -64, 38, 64); c.fill(); c.stroke();
+  c.fillStyle = '#3d3d49'; c.fillRect(-16, -61, 32, 3); c.fillRect(-16, -5, 32, 3);
+  c.fillStyle = '#17171c'; c.beginPath(); c.arc(0, -47, 6.5, 0, 7); c.fill(); c.strokeStyle = '#6a6a78'; c.lineWidth = 1.2; c.stroke();
+  c.fillStyle = '#8a8a9a'; c.beginPath(); c.arc(0, -47, 2.2 + 0.9*thr, 0, 7); c.fill();
+  const cy = -21, rr = 12.5*(1 + 0.24*thr);
+  c.fillStyle = '#101014'; c.beginPath(); c.arc(0, cy, 15.5, 0, 7); c.fill();
+  c.fillStyle = '#4a4a58'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.6; c.beginPath(); c.arc(0, cy, rr, 0, 7); c.fill(); c.stroke();
+  c.fillStyle = '#8c8c9c'; c.beginPath(); c.arc(0, cy, rr*0.36, 0, 7); c.fill();
+  c.restore();
+}
+// A shaker standing on (x, y) (its base): glass body with its contents showing, a lid with holes; s grown 0..1, tilt about its base.
+function fsaB_shaker(c, x, y, s, tilt, glass, fill, lid, edge, a){
+  if(!(s > 0.01)) return;
+  c.save(); c.translate(x, y); c.rotate(tilt); c.scale(s, s); c.globalAlpha = a; c.lineJoin = 'round'; c.lineWidth = 1.8; c.strokeStyle = edge;
+  c.fillStyle = glass; c.beginPath(); c.moveTo(-9, 0); c.lineTo(-10, -23); c.lineTo(10, -23); c.lineTo(9, 0); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = fill; c.beginPath(); c.moveTo(-8.4, -1); c.lineTo(-9.2, -17); c.lineTo(9.2, -17); c.lineTo(8.4, -1); c.closePath(); c.fill();
+  c.fillStyle = lid; c.beginPath(); c.moveTo(-10.5, -23); c.lineTo(-10.5, -26); c.quadraticCurveTo(-9, -33, 0, -33); c.quadraticCurveTo(9, -33, 10.5, -26); c.lineTo(10.5, -23); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#3a3f48'; for(let i = -1; i <= 1; i++){ c.beginPath(); c.arc(i*4.2, -28.5 + (i === 0 ? -1.5 : 0), 1.1, 0, 7); c.fill(); }
+  c.restore();
+}
+// Paper's folded sheet turned piano: the glyph's own shape and keys, in paper.
+function fsaB_paperPiano(c, x, y, s, rot, a){
+  if(!(s > 0.01)) return;
+  c.save(); c.translate(x, y); c.rotate(rot); c.globalAlpha = a; c.lineJoin = 'round';
+  c.fillStyle = '#f6f6f0'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.8; c.beginPath(); c.rect(-s, -s*0.7, s*2, s*1.4); c.fill(); c.stroke();
+  c.fillStyle = '#2a2a30'; for(let i = 0; i < 5; i++) c.fillRect(-s*0.9 + i*s*0.36, s*0.1, s*0.3, s*0.5);
+  c.strokeStyle = '#9fb4d8'; c.lineWidth = 1; c.beginPath(); c.moveTo(-s*0.9, -s*0.35); c.lineTo(s*0.9, -s*0.35); c.stroke();
+  c.restore();
+}
+// A small gold bell: it hangs from a hook above (x, y) and swings by `sw` radians; its clapper swings the other way; s grown 0..1.
+function fsaB_bell(c, x, y, s, sw, a){
+  if(!(s > 0.01)) return;
+  c.save(); c.translate(x, y); c.rotate(sw); c.scale(s, s); c.globalAlpha = a; c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.8;
+  c.beginPath(); c.moveTo(0, -17); c.lineTo(0, -9); c.stroke();
+  c.fillStyle = '#f2c94c'; c.beginPath(); c.moveTo(-12, 8); c.quadraticCurveTo(-12, -9, 0, -10); c.quadraticCurveTo(12, -9, 12, 8); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#d9a82b'; c.beginPath(); c.ellipse(0, 8, 13, 3.2, 0, 0, 7); c.fill(); c.stroke();
+  c.fillStyle = '#fff3b0'; c.beginPath(); c.ellipse(-4.5, -2, 2.2, 5, 0.2, 0, 7); c.fill();
+  c.fillStyle = '#7a5a10'; c.beginPath(); c.arc(-sw*10, 12.5, 3.2, 0, 7); c.fill(); c.stroke();
+  c.restore();
+}
+// A red boxing glove (white cuff) at (x, y), facing dir; s grown 0..1.
+function fsaB_glove(c, x, y, s, dir, a){
+  if(!(s > 0.01)) return;
+  c.save(); c.translate(x, y); c.scale(dir*s, s); c.globalAlpha = a; c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.8;
+  c.fillStyle = '#f4f4f4'; c.beginPath(); c.rect(-9, -4.5, 5, 9); c.fill(); c.stroke();
+  c.fillStyle = '#d6303a'; c.beginPath(); c.arc(1.5, 0, 7.5, 0, 7); c.fill(); c.stroke();
+  c.fillStyle = '#ff8a90'; c.beginPath(); c.ellipse(-0.3, -3, 3.2, 1.8, -0.5, 0, 7); c.fill();
+  c.restore();
+}
+// ---- MARSHMALLOW -- NO WAY!: a saw blade grows in on the floor under her (12 frames) while she is up off it, floating down, feet paddling, and she stops dead a hair above the teeth;
+// she fills with breath and screams. The scream flings her up (70 px) and back (40 px) and she floats down after it (the show: halted at the saw and flung back up). Both rings are
+// centred where she stood (the row's `pin`). Her place does not change until the frame after the scream; the float is her render.
+const FSAB_MARSH = { W:42, grow:12, rise:5, fall:22, halt:4, hover:26, top:52, kb:40, up:70, kbT:10, fl:1.5 };
+function fsaB_marshDy(t){   // her height above her place (up is negative), from her first frame to a beat past the scream
+  const P = FSAB_MARSH;
+  if(t < P.rise) return -(P.hover + P.top)*fsaB_eo((t + 1)/P.rise);
+  if(t < P.fall) return -(P.hover + P.top*(1 - (t - P.rise)/(P.fall - P.rise)));
+  if(t < P.W) return -P.hover;
+  return -P.hover*(1 - fsaB_e((t - P.W)/4));
+}
+const fsaB_marsh = {
+  W:FSAB_MARSH.W, still:true,
+  start(f, st){ st.dir = f.face < 0 ? -1 : 1; },
+  pin(f, st, t){   // the host's tick has the exact spot (st); the picture, on either screen, has the wire's (fsAx, fsAy: the same spot, whole pixels)
+    if(t <= FSAB_MARSH.W) return null;
+    if(st && st.kx != null) return { x:st.kx, y:st.ky };
+    return f.fsAx != null && f.fsAy != null ? { x:f.fsAx, y:f.fsAy } : null;
+  },
+  tick(f, st, t){
+    const P = FSAB_MARSH;
+    if(t === P.W){
+      st.kx = f.x; st.ky = f.y; f.fsAx = Math.round(f.x); f.fsAy = Math.round(f.y);   // where she stood: both rings are centred here
+      st.ks = -st.dir; st.kD = Math.min(P.kb, fsaB_room(f.x, f.y + f.r, st.ks, P.kb, f.r, st.air)); st.kU = fsaB_rise(f.x, f.y, f.r, P.up);
+    }
+    if(t > P.W && t <= P.W + P.kbT && st.kx != null){ const e = fsaB_eo((t - P.W)/P.kbT); f.x = st.kx + st.ks*st.kD*e; f.y = st.ky - st.kU*e; f.vx = 0; f.vy = 0; }
+    else if(t > P.W + P.kbT && !f.onground && f.vy > P.fl) f.vy = P.fl;   // and floats down after it
+  },
+  deform(f, ctx, R, t, dir){
+    const P = FSAB_MARSH;
+    if(t >= P.W + 4) return false;
+    let ang = 0, sx = 1, sy = 1, jx = 0;
+    const bst = P.fall + P.halt;
+    if(t >= P.rise && t < P.fall){ ang = Math.sin(t*1.3)*0.09; sy = 1 + Math.sin(t*1.3 + 1.6)*0.03; }   // feet paddling
+    else if(t >= P.fall && t < bst){ const q = 1 - (t - P.fall)/P.halt; sx = 1 + 0.10*q; sy = 1 - 0.14*q; }   // stopped dead
+    else if(t >= bst && t < P.W){ const k = fsaB_e((t - bst)/(P.W - bst)); sx = 1 + 0.16*k; sy = 1 + 0.10*k; jx = Math.sin(t*2.9)*0.9*k; ang = -dir*0.05*k; }   // filling with breath
+    else if(t >= P.W){ const k = 1 - fsaB_e((t - P.W)/4); sx = 1 + 0.16*k; sy = 1 + 0.10*k; }
+    ctx.translate(jx, fsaB_marshDy(t)); deformAboutFeet(ctx, R, ang, sx, sy);
+    return t < P.W;
+  },
+  draw(f, c, t, dir){
+    const P = FSAB_MARSH, R = f.r, ax = f.fsAx != null ? f.fsAx : f.x, ay = f.fsAy != null ? f.fsAy : f.y, fy = ay + R, dy = fsaB_marshDy(t), feet = fy + 12 + dy;
+    const sk = t < P.W ? fsaB_ramp(t, 0, P.grow) : Math.max(0, 1 - fsaB_e((t - P.W)/12));
+    c.save(); c.lineCap = 'round';
+    fsaB_saw(c, ax, fy + 4, 50, 11, t*0.7, sk, 1);   // the saw: its teeth go round
+    if(t >= P.rise && t < P.fall){   // the feet paddling, the air under them
+      const ph = t*1.3;
+      for(const j of [-1, 1]){ c.globalAlpha = 0.6; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.arc(ax + j*9, feet + 5, 7, 0.15*Math.PI + Math.sin(ph + (j > 0 ? 3.1 : 0))*0.5, 0.85*Math.PI + Math.sin(ph + (j > 0 ? 3.1 : 0))*0.5); c.stroke(); }
+    }
+    if(t >= P.fall && t < P.fall + 8){   // the jolt at the stop
+      const u = (t - P.fall)/8, e = fsaB_eo(u);
+      c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.globalAlpha = 1 - u;
+      for(const j of [-1, 1]) for(let i = 0; i < 3; i++){ const a = -0.25 - i*0.32, r0 = R*0.95 + 4, r1 = r0 + 13*e; c.beginPath(); c.moveTo(ax + j*Math.cos(a)*r0, feet - 6 + Math.sin(a)*r0*0.7); c.lineTo(ax + j*Math.cos(a)*r1, feet - 6 + Math.sin(a)*r1*0.7); c.stroke(); }
+    }
+    const bst = P.fall + P.halt;
+    if(t >= bst && t < P.W){   // breath drawn in: short streaks closing on her mouth
+      const k = fsaB_e((t - bst)/(P.W - bst)), mx = ax + dir*R*0.25, my = ay + dy + R*0.15;
+      c.strokeStyle = '#bfe8ff'; c.lineWidth = 2.6;
+      for(let i = 0; i < 4; i++){ const ph = (t*0.07 + i/4) % 1, rr = R*(2.0 - 1.55*ph), a = i*1.6 + 0.4, px = mx + Math.cos(a)*rr, py = my + Math.sin(a)*rr*0.8; c.globalAlpha = 0.85*k*(1 - 0.4*ph); c.beginPath(); c.moveTo(px, py); c.lineTo(px + (mx - px)*0.22, py + (my - py)*0.22); c.stroke(); }
+    }
+    c.restore();
+  },
+};
+
+// ---- APPLE -- PENCIL THROW: she looks left, then right (turning to face each way, her render mirrored: the throw's direction does not change) for her pony and finds nothing, sulks (her body
+// sags and hangs forward, the leaf with it), stamps twice in outrage with little hops and dust, and yanks a pencil out from behind her (it grows in over 12 frames, her thin black arm
+// sweeping it up and over to the front); she ends facing the foe and the three throws follow as before.
+const FSAB_APPLE = { W:34, a0:3, a1:10, a2:17, st:[24, 29], pen0:21, yank0:29 };
+const fsaB_apple = {
+  W:FSAB_APPLE.W, still:true,
+  deform(f, ctx, R, t, dir){
+    const P = FSAB_APPLE;
+    if(t >= P.W) return false;
+    let ang = 0, sx = 1, sy = 1, dy = 0;
+    const look = t < P.a0 ? dir : (t < P.a1 ? -1 : (t < P.a2 ? 1 : dir));
+    if(t >= P.a0 && t < P.a2){ const L = t < P.a1 ? -1 : 1, s0 = t < P.a1 ? P.a0 : P.a1; ang = L*0.07*fsaB_e((t - s0)/3) + Math.sin(t*1.1)*0.015; }   // leaning to look
+    const sag = t >= P.a2 ? fsaB_e((t - P.a2)/4)*(1 - fsaB_e((t - 27)/4)) : 0;   // the sulk: sagging, her head hangs forward
+    ang += dir*0.10*sag; sy -= 0.10*sag; sx += 0.03*sag;
+    for(const s of P.st){
+      const a = t - s;
+      if(a >= 0 && a < 4) dy = Math.min(dy, -6*fsaB_bump(a/4));   // the little hop
+      if(a >= 0 && a < 6){ ang += Math.sin(t*4.2)*0.03; if(a >= 3){ const q = 1 - (a - 3)/3; sy *= 1 - 0.10*q; sx *= 1 + 0.06*q; } }   // the stamp, and the shake of temper
+    }
+    if(t >= P.yank0) ang -= dir*0.12*fsaB_bump((t - P.yank0)/5);   // the yank: she arches back with it
+    ctx.translate(0, dy); deformAboutFeet(ctx, R, ang, sx, sy);
+    if(look !== dir) ctx.scale(-1, 1);   // turned the other way (render only)
+    return true;
+  },
+  draw(f, c, t, dir){
+    const P = FSAB_APPLE, R = f.r, x = f.x, y = f.y, fy = y + R;
+    c.save();
+    if(f.onground) for(const s of P.st) fsaB_dust(c, x, fy + 6, t, s + 3, R, 14);   // dust where each foot comes down
+    if(t >= P.pen0 && t < P.W){
+      const g = fsaB_ramp(t, P.pen0, 12), u = fsaB_e((t - P.yank0 + 1)/5);   // grown in over 12 frames; the yank, 5 frames
+      const sxp = x - dir*R*0.5, syp = y - R*0.1;
+      const bx0 = x - dir*R*1.25, by0 = y - R*0.3, fx0 = x + dir*R*1.05, fy0 = y - R*0.8;
+      const hx = bx0 + (fx0 - bx0)*u, hy = by0 + (fy0 - by0)*u - 26*fsaB_bump(u);
+      fsaB_arm(c, sxp, syp, hx, hy, (sxp + hx)/2, Math.min(syp, hy) - 8 - 20*fsaB_bump(u), 3.8);
+      c.save(); c.translate(hx, hy); c.scale(dir, 1); c.rotate(-2.3 + 2.15*u); c.globalAlpha = 1;
+      FS_GLYPH.pencil(c, 0, 0, 15*g, 1, f);
+      c.restore();
+    }
+    c.restore();
+  },
+};
+
+// ---- BASEBALL -- GROUND POUND: two embarrassed little hops that barely leave the floor (dust and a small shake at each landing: he is too heavy to get far up), then a deep crouch and one huge
+// leap off his legs, and he comes down on the frame the shockwave goes. All legs and body (he has no arms): every move is his render's, his place does not change.
+const FSAB_BASE = { W:40, hops:[[2, 9], [11, 18]], hh:5, cr0:19, lp0:26, H:100 };
+const fsaB_base = {
+  W:FSAB_BASE.W, still:true,
+  tick(f, st, t){ for(const h of FSAB_BASE.hops) if(t === h[1]) shake(3); },
+  deform(f, ctx, R, t, dir){
+    const P = FSAB_BASE;
+    if(t >= P.W + 4) return false;
+    let dy = 0, sx = 1, sy = 1, ang = 0;
+    for(const h of P.hops){
+      if(t >= h[0] && t < h[1]){ const u = (t - h[0])/(h[1] - h[0]); dy = -P.hh*4*u*(1 - u); }
+      if(t >= h[1] && t < h[1] + 3){ const q = 1 - (t - h[1])/3; sx = 1 + 0.10*q; sy = 1 - 0.10*q; }   // the thump of each landing
+    }
+    if(t >= P.cr0 && t < P.lp0){ const k = fsaB_e((t - P.cr0)/(P.lp0 - P.cr0)); sx = 1 + 0.20*k; sy = 1 - 0.30*k; ang = -dir*0.06*k; }   // the deep crouch
+    else if(t >= P.lp0 && t < P.W){
+      const u = (t - P.lp0)/(P.W - P.lp0); dy = -P.H*4*u*(1 - u);   // the huge leap, up and down in one arc
+      const st = fsaB_bump(Math.min(1, u*1.8)); sx = 1 - 0.07*st; sy = 1 + 0.14*st; ang = dir*0.04*fsaB_bump(u);   // stretching tall as he goes up
+    }
+    else if(t >= P.W){ const q = 1 - (t - P.W)/4; sx = 1 + 0.16*q; sy = 1 - 0.22*q; }   // down on it
+    ctx.translate(0, dy); deformAboutFeet(ctx, R, ang, sx, sy);
+    return t < P.W;
+  },
+  draw(f, c, t, dir){
+    const P = FSAB_BASE, R = f.r, x = f.x, fy = f.y + R;
+    if(!f.onground) return;
+    c.save();
+    for(const h of P.hops) fsaB_dust(c, x, fy + 6, t, h[1], R, 14);
+    c.restore();
+  },
+};
+
+// ---- PICKLE -- LOADS OF EXPERIENCE: a small bell swings in above him (12 frames) and dings twice; he is a beat late: he bobs and weaves on his toes (gloves up, they grow on over 12 frames), throws a loose
+// one-two (a white flash at each glove), then sinks into a deep crouch for the belly-flop. His render turns to the spot the old row fixed at the catch's end (his facing in the sim does not change:
+// the blast's throw for a foe right on the spot is his facing). The dive lands as before.
+const FSAB_PICKLE = { W:36, dings:[6, 13], bob0:9, bob1:22, p1:22, p2:27, pe:32, cr0:30 };
+function fsaB_pickleDir(f, t, dir){   // which way he faces on screen: the spot the old row fixed (from its first frame on), else the way he was facing
+  const dx = (f.fsAx || 0) - f.x;
+  return t >= FSAB_PICKLE.W - FS_WIND && f.fsAx != null && Math.abs(dx) > 8 ? (dx > 0 ? 1 : -1) : dir;
+}
+const fsaB_pickle = {
+  W:FSAB_PICKLE.W, still:true,
+  deform(f, ctx, R, t, face){
+    const P = FSAB_PICKLE;
+    if(t >= P.W) return false;
+    const dir = fsaB_pickleDir(f, t, face);
+    let ang = 0, sx = 1, sy = 1, dy = 0, jx = 0;
+    if(t >= P.bob0 && t < P.p1){ const q = (t - P.bob0)*0.85, k = fsaB_e((t - P.bob0)/3); jx = Math.sin(q)*3.2*k; ang = Math.sin(q)*0.10*k; dy = -2.6*Math.abs(Math.sin(q*0.5 + 0.3))*k; sy = 1 + 0.04*k; }   // bobbing and weaving on his toes
+    for(const p of [P.p1, P.p2]){ const a = t - p; if(a >= 0 && a < 5){ const b = fsaB_bump(a/5); ang += dir*0.20*b; sx += 0.04*b; jx += dir*3*b; } }   // the loose one-two
+    if(t >= P.cr0){ const k = fsaB_e((t - P.cr0)/(P.W - P.cr0)); sx = 1 + 0.14*k; sy = 1 - 0.28*k; ang += -dir*0.07*k; }   // the deep crouch
+    ctx.translate(jx, dy); deformAboutFeet(ctx, R, ang, sx, sy);
+    if(dir !== face) ctx.scale(-1, 1);   // turned to the spot (render only)
+    return true;
+  },
+  draw(f, c, t, face){
+    const P = FSAB_PICKLE, dir = fsaB_pickleDir(f, t, face), R = f.r, x = f.x, y = f.y, aw = t >= P.W ? Math.max(0, 1 - (t - P.W)/8) : 1;
+    c.save();
+    // the bell: it swings in over 12 frames and dings twice (its clapper and a pair of arcs each time)
+    if(aw > 0.01){
+      const g = t >= P.W ? aw : fsaB_ramp(t, 0, 12);
+      let sw = 0.34*Math.cos(t*0.45)*Math.max(0, 1 - t/48);
+      for(const d of P.dings) if(t >= d && t < d + 8) sw += 0.5*Math.sin((t - d)*1.5)*(1 - (t - d)/8);
+      const bx = x + dir*R*0.15, by = y - R*2.35;
+      fsaB_bell(c, bx, by, g, sw, 1);
+      for(const d of P.dings){ const a = t - d; if(a >= 0 && a < 12){ const u = fsaB_eo(a/12); c.globalAlpha = 0.9*(1 - a/12); c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; for(const j of [-1, 1]){ c.beginPath(); c.arc(bx, by, 14 + 14*u, j > 0 ? -0.55 : Math.PI - 0.55 + 0.0, j > 0 ? 0.55 : Math.PI + 0.55); c.stroke(); } } }
+    }
+    // the gloves: up as he starts to bob (grown on over 12 frames), out for each punch, with a white flash growing and thinning at each
+    if(t >= P.bob0 && aw > 0.01){
+      const g = fsaB_ramp(t, P.bob0, 12)*aw, q = (t - P.bob0)*0.85, bobx = t < P.p1 ? Math.sin(q)*3.2*fsaB_e((t - P.bob0)/3) : 0, boby = t < P.p1 ? -2.6*Math.abs(Math.sin(q*0.5 + 0.3)) : 0;
+      let ex1 = 0, ex2 = 0;
+      { const a = t - P.p1; if(a >= 0 && a < 5) ex1 = fsaB_bump(a/5); }
+      { const a = t - P.p2; if(a >= 0 && a < 5) ex2 = fsaB_bump(a/5); }
+      const sh = [[x + dir*R*0.5 + bobx, y + R*0.15 + boby], [x + dir*R*0.3 + bobx, y + R*0.3 + boby]];
+      const g1 = [x + dir*(R*0.95 + 24*ex1) + bobx, y - R*0.05 - 3*ex1 + boby], g2 = [x + dir*(R*0.7 + 30*ex2) + bobx, y + R*0.25 - 2*ex2 + boby];
+      fsaB_arm(c, x + dir*R*0.15, y + R*0.1, g1[0], g1[1], (x + g1[0])/2, g1[1] + 8, 0.1); fsaB_glove(c, g1[0], g1[1], g, dir, 1);
+      fsaB_arm(c, x, y + R*0.3, g2[0], g2[1], (x + g2[0])/2, g2[1] + 8, 0.1); fsaB_glove(c, g2[0], g2[1], g, dir, 1);
+      for(const [p, gx, gy] of [[P.p1, x + dir*(R*0.95 + 24) + bobx, y - R*0.05 - 3], [P.p2, x + dir*(R*0.7 + 30) + bobx, y + R*0.25 - 2]]){
+        const a = t - (p + 2); if(a >= 0 && a < 12){ const u = a/12; c.globalAlpha = 0.95*(1 - u); const sr = 4 + 15*fsaB_eo(u); fsaB_star4(c, gx + dir*8, gy, sr*1.3 + 1.5, '#1c1c1c'); fsaB_star4(c, gx + dir*8, gy, sr, '#ffffff'); c.fillStyle = '#ffffff'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.5; c.beginPath(); c.arc(gx + dir*8, gy, sr*0.4, 0, 7); c.fill(); c.stroke(); }
+      }
+    }
+    c.restore();
+  },
+};
+
+// ---- NICKEL (II) -- DOUBLE ZINGER: he leans back, smug, while two empty speech bubbles with a zig in them (his jab's bubble), one pale for Light Nickel and one dark for Dark Nickel, grow in
+// on either side of him over 12 frames and swell side by side (two remarks at once); he gives the shrug, and the bubbles burst into the two rings: the pale one on the first, the dark one
+// on the second, eight frames after it.
+const FSAB_NICKEL = { W:30, grow:12, swell0:12, swell1:26, sh0:24, gap:8 };
+const fsaB_nickel = {
+  W:FSAB_NICKEL.W, still:true,
+  deform(f, ctx, R, t, dir){
+    const P = FSAB_NICKEL;
+    if(t >= P.W) return false;
+    let ang = 0, sx = 1, sy = 1, dy = 0;
+    const k = fsaB_e(t/8)*(1 - fsaB_e((t - P.sh0)/3));   // leaning back, smug
+    ang = -dir*0.14*k; sy = 1 + 0.03*k;
+    if(t >= P.sh0){ const u = (t - P.sh0)/(P.W - P.sh0); dy = -3.5*fsaB_bump(u); sy *= 1 - 0.07*fsaB_bump(u); sx *= 1 + 0.04*fsaB_bump(u); }   // the shrug
+    ctx.translate(0, dy); deformAboutFeet(ctx, R, ang, sx, sy);
+    return true;
+  },
+  draw(f, c, t, dir){
+    const P = FSAB_NICKEL, R = f.r, x = f.x, y = f.y, W = P.W;
+    c.save();
+    for(const b of [{ side:-1, fill:'#ffffff', line:'#1c1c1c', zig:'#e8b400', burst:0 }, { side:1, fill:'#3b4254', line:'#1c1c1c', zig:'#e8b400', burst:P.gap }]){
+      const tb = W + b.burst;   // the frame it bursts
+      if(t > tb + 6) continue;
+      let s, a = 1;
+      const sw = fsaB_e((t - P.swell0)/(P.swell1 - P.swell0));
+      if(t < tb){ const g = fsaB_ramp(t, 0, P.grow); s = 1.6*g*(1 + 0.25*sw) + 0.04*Math.sin(t*0.9 + b.side)*sw; }
+      else { const u = (t - tb)/6; s = 1.6*1.25*(1 + 0.8*fsaB_eo(u)); a = 1 - u; }   // it bursts: out and gone
+      const bx = x + b.side*(R + 38 + 8*sw), by = y - R*0.8 - 4*sw;
+      fsaB_bubble(c, bx, by, s, b.side < 0, b.fill, b.line, b.zig, a);
+      if(t >= tb && t < tb + 6){ const u = (t - tb)/6; c.globalAlpha = 1 - u; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; for(let i = 0; i < 6; i++){ const an = i*1.047 + 0.3, r0 = 14*s, r1 = r0 + 16*fsaB_eo(u); c.beginPath(); c.moveTo(bx + Math.cos(an)*r0, by + Math.sin(an)*r0*0.8); c.lineTo(bx + Math.cos(an)*r1, by + Math.sin(an)*r1*0.8); c.stroke(); } }
+    }
+    c.restore();
+  },
+};
+
+// ---- PAPER -- SOMEBODY CHECK FOR PIANOS: he folds a flat white sheet in his hands (it grows in over 12 frames), crease by crease (three folds, 9 frames apart), into a tiny paper piano, glances up
+// nervously and tosses it out of sight overhead. The real pianos come down as before.
+const FSAB_PAPER = { W:36, folds:[11, 20, 29], glance:30, toss:32 };
+const fsaB_paper = {
+  W:FSAB_PAPER.W, still:true,
+  deform(f, ctx, R, t, dir){
+    const P = FSAB_PAPER;
+    if(t >= P.W + 8) return false;
+    let ang = 0, sx = 1, sy = 1, dy = 0;
+    if(t < P.glance){ const k = fsaB_e(t/6); ang = dir*0.05*k; sy = 1 - 0.04*k; for(const fo of P.folds){ const b = fsaB_bump((t - fo)/5); ang += dir*0.03*b; sy -= 0.03*b; } }   // hunched over the folding
+    else { const k = fsaB_e((t - P.glance)/4)*(1 - fsaB_e((t - P.W - 2)/6)); ang = -dir*0.12*k; sy = 1 + 0.04*k; if(t >= P.toss && t < P.toss + 4) dy = -3*fsaB_bump((t - P.toss)/4); }   // the nervous glance up, and the toss
+    ctx.translate(0, dy); deformAboutFeet(ctx, R, ang, sx, sy);
+    return t < P.W;
+  },
+  draw(f, c, t, dir){
+    const P = FSAB_PAPER, R = f.r, x = f.x, y = f.y;
+    if(t >= P.W + 14) return;
+    const hx = x + dir*R*0.95, hy = y + R*0.1;   // where he holds it, in front of him
+    c.save(); c.lineJoin = 'round';
+    if(t < P.toss){
+      const g = fsaB_ramp(t, 0, 12), p1 = fsaB_e((t - P.folds[0])/5), p2 = fsaB_e((t - P.folds[1])/5), p3 = fsaB_e((t - P.folds[2])/5);
+      const w = 26*(1 - 0.5*p2), h = 34*(1 - 0.5*p1), k = g;
+      // the sheet: flat and white with its ruled lines; each fold halves it (the flap shown under the crease), the last turns it into the piano
+      const ww = w*k, hh = h*k, cx = hx, cy = hy - 2;
+      if(p3 < 1){
+        c.globalAlpha = 1 - p3; c.fillStyle = '#ffffff'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.8; c.beginPath(); c.rect(cx - ww/2, cy - hh/2, ww, hh); c.fill(); c.stroke();
+        if(p1 < 0.5 && ww > 4){ c.strokeStyle = '#9fb4d8'; c.lineWidth = 1; for(let i = 1; i <= 4; i++){ c.beginPath(); c.moveTo(cx - ww/2 + 2, cy - hh/2 + i*hh/5); c.lineTo(cx + ww/2 - 2, cy - hh/2 + i*hh/5); c.stroke(); } c.strokeStyle = '#e88aa0'; c.beginPath(); c.moveTo(cx - ww/2 + ww*0.18, cy - hh/2 + 1); c.lineTo(cx - ww/2 + ww*0.18, cy + hh/2 - 1); c.stroke(); }
+        c.strokeStyle = '#8c96ad'; c.lineWidth = 1.4;   // the creases
+        if(p1 > 0 && p1 < 1.01){ c.globalAlpha = (1 - p3)*(0.5 + 0.5*p1); c.beginPath(); c.moveTo(cx - ww/2, cy - hh/2 + 1); c.lineTo(cx + ww/2, cy - hh/2 + 1); c.stroke(); }
+        if(p2 > 0){ c.globalAlpha = (1 - p3)*(0.5 + 0.5*p2); c.beginPath(); c.moveTo(cx + ww/2 - 1, cy - hh/2); c.lineTo(cx + ww/2 - 1, cy + hh/2); c.stroke(); }
+      }
+      if(p3 > 0) fsaB_paperPiano(c, cx, cy + 1, (9 + 3*p3)*k, 0, p3);
+      // his hands, at the sheet's sides
+      c.globalAlpha = 1;
+      fsaB_arm(c, x + dir*R*0.5, y + R*0.1, cx - ww/2 - 1, cy + 3, x + dir*R*0.5, y + R*0.55, 3.4);
+      fsaB_arm(c, x + dir*R*0.15, y - R*0.05, cx + ww/2 + 1, cy - 3, x + dir*R*0.6, y - R*0.35, 3.4);
+    } else {   // tossed up out of sight: it climbs faster and faster and turns over as it goes
+      const a = t - P.toss, px = hx + dir*(2 + 1.2*a), py = hy - a*3 - a*a*0.95;
+      fsaB_paperPiano(c, px, py, 12*Math.max(0.15, 1 - a/18), dir*a*0.35, Math.max(0, 1 - a/16));
+    }
+    c.restore();
+  },
+};
+
+// ---- MICROPHONE -- DEAFENINGLY LOUD: two speaker cabinets grow in on either side of her (12 frames) and their cones throb once, twice, three times, each bigger, shaking her so she rings like feedback; she
+// draws a breath (her body stretches tall) and shouts; the cabinets drop away. The shout kicks her back about 40 px (a skid, like a speaker kicking) from the frame after it leaves; the lane stays where she
+// stood (the row's lane is worked out from the spot she fired on).
+const FSAB_MIC = { W:36, grow:12, thr:[13, 20, 27], amp:[0.5, 0.75, 1], breath:29, kb:40, kbT:10, gap:42 };
+function fsaB_micThr(t){ const P = FSAB_MIC; let v = 0; for(let i = 0; i < 3; i++) v = Math.max(v, P.amp[i]*fsaB_bump((t - P.thr[i] + 1)/7)); return v; }
+const fsaB_mic = {
+  W:FSAB_MIC.W, still:true,
+  tick(f, st, t){
+    const P = FSAB_MIC;
+    if(t === P.W){ st.kx = f.x; st.ks = -st.dir; st.kD = Math.min(P.kb, fsaB_room(f.x, f.y + f.r, st.ks, P.kb, f.r, st.air)); }
+    if(t > P.W && t <= P.W + P.kbT && st.kD > 0) fsaB_slide(f, st.kx, st.ks, st.kD, P.kbT, t - P.W);
+  },
+  deform(f, ctx, R, t, dir){
+    const P = FSAB_MIC;
+    if(t >= P.W + 10) return false;
+    let ang = 0, sx = 1, sy = 1, jx = 0;
+    const lv = Math.max(fsaB_micThr(t), 0), grown = fsaB_e(t/12);
+    if(t < P.W){
+      jx = Math.sin(t*3.1)*(0.3 + 2.4*lv)*grown; ang = Math.sin(t*3.7)*0.03*Math.min(1, lv*1.6)*grown;   // ringing like feedback
+      if(t >= P.breath){ const k = fsaB_e((t - P.breath)/(P.W - P.breath)); sy = 1 + 0.11*k; sx = 1 - 0.04*k; ang += -dir*0.10*k; }   // the breath in: stretching tall
+    } else { ang = -dir*0.12*(1 - fsaB_e((t - P.W)/10)); }   // rocked back by it
+    ctx.translate(jx, 0); deformAboutFeet(ctx, R, ang, sx, sy);
+    return t < P.W;
+  },
+  draw(f, c, t, dir){
+    const P = FSAB_MIC, R = f.r, ax = f.fsAx != null ? f.fsAx : f.x, fy = (f.fsAy != null ? f.fsAy : f.y) + R + 6;
+    if(t > P.W + 12) return;
+    const g = t < P.W ? fsaB_ramp(t, 0, P.grow) : 1, u = t >= P.W ? (t - P.W)/12 : 0, a = 1 - u, drop = 46*u*u;
+    const lv = fsaB_micThr(t);
+    c.save(); c.lineCap = 'round';
+    for(const side of [-1, 1]){
+      const cx = ax + side*(R + 40);
+      fsaB_cab(c, cx, fy + drop, g, lv, a);
+      for(let i = 0; i < 3; i++){   // the sound off each cone: arcs spreading toward her
+        const age = t - P.thr[i]; if(age < 0 || age >= 12) continue;
+        const e = fsaB_eo(age/12), cy = fy + drop - 21*g;
+        c.globalAlpha = 0.85*(1 - age/12)*a; c.lineWidth = 2.6; c.strokeStyle = '#d8c8ff';
+        const r = 8 + (22 + 8*i)*e;
+        c.beginPath(); c.arc(cx, cy, r, side < 0 ? -0.7 : Math.PI - 0.7, side < 0 ? 0.7 : Math.PI + 0.7); c.stroke();
+      }
+    }
+    c.restore();
+  },
+};
+
+// ---- SALT -- SHAKE: she raises a glass salt shaker with a silver lid over her head in both hands (it grows in over 12 frames) and shakes it three times with grains pattering round her; if
+// Pepper is up, her black shaker jiggles a beat behind each of Salt's (the beat her echoes use). Then she tips it toward the foe and the salt comes out in its arc as before.
+const FSAB_SALT = { W:32, grow:12, shakes:[12, 18, 24], tip:27, lag:7 };
+function fsaB_shk(t, P){   // one shaker's shaking at frame t: how far it is lifted, how far it is rocked
+  let dy = 0, tilt = 0;
+  for(const s of P.shakes){ const u = (t - s)/6; if(u > 0 && u < 1){ dy = Math.max(dy, 7*Math.sin(u*Math.PI)); tilt = Math.sin(u*Math.PI*2)*0.26; } }
+  return { dy, tilt };
+}
+// Pepper, if she is up: her summon (a guest's summons carry no owner on the wire, so the one nearest Salt, within 220 px, on either screen: she walks a step behind her).
+function fsaB_pepperUp(f){
+  let best = null, bd = 220;
+  for(const s of summons){
+    if(s.type !== 'pepper' || (s.owner != null && s.owner !== f.idx) || s.hp <= 0) continue;
+    const d = Math.hypot(s.x - f.x, s.y - f.y); if(d < bd){ bd = d; best = s; }
+  }
+  return best;
+}
+function fsaB_saltOne(c, f, ox, oy, rr, t, dir, dark, lag){   // one of the pair: shaker held up over (ox, oy) (a body of radius rr), her shaking `lag` frames behind
+  const P = FSAB_SALT, tt = t - lag, g = fsaB_ramp(t, 0, P.grow)*(t >= P.W ? Math.max(0, 1 - (t - P.W)/8) : 1);
+  if(!(g > 0.01)) return;
+  const sh = fsaB_shk(tt, P), tp = tt >= P.tip ? dir*1.25*fsaB_e((tt - P.tip)/5) : 0;
+  const bx = ox, by = oy - rr*1.3 - sh.dy, s = 0.95;
+  const col = dark ? { glass:'#4a4a56', fill:'#23232b', lid:'#5a5a66', edge:'#1c1c1c', grain:'#2a2a32' } : { glass:'#dff0ff', fill:'#ffffff', lid:'#c3cad4', edge:'#1c1c1c', grain:'#ffffff' };
+  fsaB_arm(c, ox - rr*0.75, oy - rr*0.1, bx - 8*s, by - 7*s, ox - rr*0.95, oy - rr*0.65, 3.4);   // both hands on it
+  fsaB_arm(c, ox + rr*0.75, oy - rr*0.1, bx + 8*s, by - 7*s, ox + rr*0.95, oy - rr*0.65, 3.4);
+  fsaB_shaker(c, bx, by, g*s, sh.tilt + tp, col.glass, col.fill, col.lid, col.edge, 1);
+  c.save();   // grains pattering round her
+  for(let k = 0; k < 3; k++) for(let j = 0; j < 6; j++){
+    const a = tt - (P.shakes[k] + 1) - j*0.8; if(a <= 0 || a >= 22) continue;
+    const gx = bx + (j - 2.5)*3 + (j - 2.5)*0.95*a + Math.sin(j*2.3 + k)*0.7*a*0.3, gy = by - 32*s + 0.9*a + 0.12*a*a, q = Math.min(1, a/12)*(1 - a/22);
+    c.globalAlpha = q; c.fillStyle = col.grain; c.strokeStyle = '#6a6a76'; c.lineWidth = 0.8; c.beginPath(); c.rect(gx - 1.6*q, gy - 1.6*q, 3.2*q, 3.2*q); c.fill(); c.stroke();
+  }
+  if(tt >= P.tip && tt < P.W + 6){   // the salt running out of the lid as she tips it toward the foe
+    const u = Math.min(1, (tt - P.tip)/5), len = 8 + 22*u;
+    c.globalAlpha = 0.9*(tt > P.W ? 1 - (tt - P.W)/6 : 1); c.strokeStyle = col.grain; c.lineWidth = 2.2;
+    const ta = sh.tilt + tp, lx = bx + Math.sin(ta)*32*s, ly = by - Math.cos(ta)*32*s;   // the lid, tipped
+    for(let i = -1; i <= 1; i++){ c.beginPath(); c.moveTo(lx + i*2, ly + Math.abs(i)); c.lineTo(lx + dir*len + i*2, ly + len*0.6 + i*2); c.stroke(); }
+  }
+  c.restore();
+}
+const fsaB_salt = {
+  W:FSAB_SALT.W, still:true,
+  deform(f, ctx, R, t, dir){
+    const P = FSAB_SALT;
+    if(t >= P.W + 6) return false;
+    let ang = 0, sy = 1;
+    if(t < P.W){ const k = fsaB_e(t/8); sy = 1 + 0.03*k; ang = fsaB_shk(t, P).tilt*0.18 + (t >= P.tip ? dir*0.10*fsaB_e((t - P.tip)/5) : 0); }   // reaching up, rocking with the shaking, then tipping with it
+    else { const k = 1 - fsaB_e((t - P.W)/6); ang = dir*0.10*k; sy = 1 + 0.03*k; }
+    deformAboutFeet(ctx, R, ang, 1, sy);
+    return t < P.W;
+  },
+  draw(f, c, t, dir){
+    const P = FSAB_SALT;
+    if(t >= P.W + 10) return;
+    c.save(); c.lineCap = 'round';
+    const p = fsaB_pepperUp(f);
+    if(p) fsaB_saltOne(c, f, p.x, p.y, p.r || 20, t, p.face < 0 ? -1 : (p.face > 0 ? 1 : dir), true, P.lag);   // Pepper's, a beat behind
+    fsaB_saltOne(c, f, f.x, f.y, f.r, t, dir, false, 0);
+    c.restore();
+  },
+};
 // ---- FSA lane b: end ------------------------------------------------------------------------------------------------------------------------
 
 // ---- BATCH I: Knife, Lightbulb, Paintbrush, Taco (II), Marshmallow, Apple, Baseball, Pickle ----------------------------------------------------
@@ -26367,18 +26857,22 @@ FINAL_SMASHES['Taco (II)'] = fsaB_row(FINAL_SMASHES['Taco (II)'], fsaB_taco);   
 // MARSHMALLOW -- NO WAY! "Shattering Scream -- the voice that killed Test Tube" (her own card); on the boardwalk over the saw she shouted "NO WAY!" (quoted at her special). The scream goes out 300 px (15%) and a
 // second one to 420 (10%) twelve frames after it.
 FINAL_SMASHES['Marshmallow'] = fsCircle({ id:'noway', c1:'#bfe8ff', c2:'#ffffff', R:300, R2:420, gap:12, dmg:15, dmg2:10, kb:19, kb2:14, art:FS_GLYPH.scream, kind:'fsburst' });
+FINAL_SMASHES['Marshmallow'] = fsaB_row(FINAL_SMASHES['Marshmallow'], fsaB_marsh);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 
 // APPLE -- PENCIL THROW. "I won? Where's my pony?" (her frame row): naive and childish and quick to take offence; her own card is the Pencil Throw, "point first; it tears straight through everyone in its way". Three
 // pencils, ten frames apart, each straight and through everyone (12%): a hop clears a low one.
 FINAL_SMASHES['Apple'] = fsFan({ id:'pencilthrow', c1:'#f2b84b', n:1, cone:0.02, spd:22, vols:[0, 10, 20], dmg:12, kb:20, r:11, life:80, reach:520, kind:'throw', proj:{ pierce:true }, art:FS_GLYPH.pencil });
+FINAL_SMASHES['Apple'] = fsaB_row(FINAL_SMASHES['Apple'], fsaB_apple);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 
 // BASEBALL -- GROUND POUND. "We won! Nobody got thrown as ammo!" (his frame row): the largest contestant, strongest in the legs, and self-conscious about his size (the design doc); his own card is the
 // Ground Pound, a shockwave along the floor both ways. The shockwave goes out both ways, 700 px at 16 a frame, 60 tall (18%). Hop them.
 FINAL_SMASHES['Baseball'] = fsLane({ id:'groundpound', c1:'#e8e0d0', both:true, L:700, spd:16, H:60, hw:34, dmg:18, kb:22, ky:-12, kind:'slam', art:FS_GLYPH.burst });
+FINAL_SMASHES['Baseball'] = fsaB_row(FINAL_SMASHES['Baseball'], fsaB_base);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 
 // PICKLE -- LOADS OF EXPERIENCE. "Okay, let's do this! Oh, we did." (his frame row): a laid-back boxer, sweet and dim; his own card is the diving belly-flop. The marker is on the nearest foe within 440,
 // fixed 18 frames ahead (100 px: step out); he comes down on it, 24%.
 FINAL_SMASHES['Pickle'] = fsLock({ id:'loadsofexperience', c1:'#6aa83a', c2:'#ffffff', R:100, bx:440, by:260, effect:'blast', delay:8, dmg:24, kb:21, ky:-16, art:FS_GLYPH.pickle });
+FINAL_SMASHES['Pickle'] = fsaB_row(FINAL_SMASHES['Pickle'], fsaB_pickle);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 
 // ---- BATCH J: Nickel (II), Paper, Microphone, Salt, Test Tube, Box, Trophy, Goo ---------------------------------------------------------------------
 Object.assign(FS_GLYPH, {
@@ -26390,18 +26884,22 @@ Object.assign(FS_GLYPH, {
 // NICKEL (II) -- DOUBLE ZINGER. "sarcasm as an art, and himself an artist"; blunt, snarky, armless (the design doc); his own card is the Double Zinger, "two remarks at once". Two remarks:
 // the first goes out 230 px (14%), the second, eight frames later, to 330 (14%).
 FINAL_SMASHES['Nickel (II)'] = fsCircle({ id:'doublezinger', c1:'#8aa0c0', c2:'#ffffff', R:230, R2:330, gap:8, dmg:14, dmg2:14, kb:20, kb2:19, art:FS_GLYPH.burst, kind:'fsburst' });
+FINAL_SMASHES['Nickel (II)'] = fsaB_row(FINAL_SMASHES['Nickel (II)'], fsaB_nickel);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 
 // PAPER -- SOMEBODY CHECK FOR PIANOS. "Somebody check for pianos." (his frame row): wary and jumpy, a sheet. For once there is one: a mark under the nearest foe, a piano falling on it (24%), twice,
 // twenty frames apart, and it is about as hard to miss as a piano.
 FINAL_SMASHES['Paper'] = fsRain({ id:'pianos', c1:'#2a2a30', k:1, n:2, every:20, walk:90, dmg:24, kb:26, r:34, art:FS_GLYPH.piano });
+FINAL_SMASHES['Paper'] = fsaB_row(FINAL_SMASHES['Paper'], fsaB_paper);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 
 // MICROPHONE -- DEAFENINGLY LOUD. "her voice getting deafeningly loud" (the design doc: outspoken and honest); her own card is Yell at the Ball, a shout that sends it forward fast. The shout goes out
 // along the floor, 800 px at 24 a frame, 120 tall (16%, thrown far).
 FINAL_SMASHES['Microphone'] = fsLane({ id:'deafening', c1:'#7a4fd2', L:800, spd:24, H:120, hw:44, dmg:16, kb:22, ky:-10, kind:'spit', art:FS_GLYPH.scream });
+FINAL_SMASHES['Microphone'] = fsaB_row(FINAL_SMASHES['Microphone'], fsaB_mic);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 
 // SALT -- SHAKE. "Peps, that's us! Recognition!" (her frame row): vapid, a little vain, and half of a pair; her own card throws salt in an arc, and Pepper throws pepper after it. Ten grains in an
 // arc ahead of her, and ten more twelve frames behind (8%).
 FINAL_SMASHES['Salt'] = fsFan({ id:'shake', c1:'#f4f4f4', n:10, cone:0.9, spd:11, vols:[0, 12], dmg:8, kb:22, r:10, life:60, reach:420, kind:'throw', proj:{ grav:true, weak:true }, art:FS_GLYPH.spark });
+FINAL_SMASHES['Salt'] = fsaB_row(FINAL_SMASHES['Salt'], fsaB_salt);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 
 // TEST TUBE -- GLASS UP. "an extreme form of atychiphobia (fear of being wrong)": the most knowledgeable contestant (the design doc); her own card braces, and the next hit shatters her and
 // poisons everything near. The glass goes: 250 px (14%, it poisons), and a wider shower of it at 340 (8%) twelve frames after.
@@ -73367,6 +73865,7 @@ const FIGHTER_ANIM = {
   Marshmallow: {
     squash: 1.8,
     deform(f, ctx, R){
+      if(fsaB_deform(f, ctx, R)) return;   // FSA lane b: its Final Smash's entrance
       const u = atkU(f);
       if(u < 0) return;
       const arc = animBump(u, 0, 0.95), sway = -0.28*animBump(u, 0, 0.35) + 0.30*animBump(u, 0.3, 0.95);
@@ -73378,6 +73877,7 @@ const FIGHTER_ANIM = {
   Apple: {
     idle: 0.9, squash: 0.9,
     deform(f, ctx, R){
+      if(fsaB_deform(f, ctx, R)) return;   // FSA lane b: its Final Smash's entrance
       const u = atkU(f);
       if(u < 0) return;
       const slap = animBump(u, 0.1, 0.5), hop = animBump(u, 0.05, 0.45), sulk = animBump(u, 0.5, 0.95);
@@ -73389,6 +73889,7 @@ const FIGHTER_ANIM = {
   Baseball: {
     idle: 0.45, squash: 0.5,
     deform(f, ctx, R){
+      if(fsaB_deform(f, ctx, R)) return;   // FSA lane b: its Final Smash's entrance
       const u = atkU(f);
       if(u < 0) return;
       const crouch = animBump(u, 0, 0.35), drive = animBump(u, 0.3, 0.62), settle = animBump(u, 0.55, 0.95);
@@ -73399,6 +73900,7 @@ const FIGHTER_ANIM = {
   Pickle: {
     idle: 0.7,
     deform(f, ctx, R){
+      if(fsaB_deform(f, ctx, R)) return;   // FSA lane b: its Final Smash's entrance
       const u = atkU(f);
       if(u < 0) return;
       const bob = Math.sin(u*Math.PI*4)*animBump(u, 0, 1), jab = animBump(u, 0.2, 0.4) + animBump(u, 0.45, 0.65);
@@ -73411,6 +73913,7 @@ const FIGHTER_ANIM = {
     idle: 0.5, squash: 0.6,
     deform(f, ctx, R){
       if(f._nsplit){ try { ctx.filter = "brightness(0.5) saturate(0.75)"; } catch(e){} }   // Experiment 626: this is Dark Nickel at work (Light Nickel waits where he split: drawCardStates); drawSpriteBody's own save/restore ends it
+      if(fsaB_deform(f, ctx, R)) return;   // FSA lane b: its Final Smash's entrance
       const u = atkU(f);
       if(u < 0) return;
       const smug = animBump(u, 0, 0.35), zing = animBump(u, 0.3, 0.55), shrug = animBump(u, 0.55, 0.95);
@@ -73422,6 +73925,7 @@ const FIGHTER_ANIM = {
   Paper: {
     squash: 1.6,
     deform(f, ctx, R){
+      if(fsaB_deform(f, ctx, R)) return;   // FSA lane b: its Final Smash's entrance
       const u = atkU(f);
       if(u < 0) return;
       const fold = animBump(u, 0, 0.4), flap = animBump(u, 0.35, 0.85), feet = R + 12;
@@ -73433,6 +73937,7 @@ const FIGHTER_ANIM = {
   Microphone: {
     squash: 0.8,
     deform(f, ctx, R){
+      if(fsaB_deform(f, ctx, R)) return;   // FSA lane b: its Final Smash's entrance
       const u = atkU(f);
       if(u < 0) return;
       const inh = animBump(u, 0, 0.3), yell = animBump(u, 0.28, 0.72), ring = Math.sin(u*90)*0.035*yell;
@@ -73444,6 +73949,7 @@ const FIGHTER_ANIM = {
   Salt: {
     idle: 0.9, squash: 0.9,
     deform(f, ctx, R){
+      if(fsaB_deform(f, ctx, R)) return;   // FSA lane b: its Final Smash's entrance
       const u = atkU(f), sw = Math.sin(hazardT*0.06 + f.idx*1.1)*0.03;
       let toss = 0, slap = 0;
       if(u >= 0){ toss = -Math.sin(u*Math.PI*3)*(1 - u); slap = animBump(u, 0.25, 0.6); }
