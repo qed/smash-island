@@ -26207,6 +26207,303 @@ function fsaR_profBlast(f, c, t, w){
     c.globalAlpha = 1;
   } else if(a < P.pop + 26) fsaR_profPop(c, bx, by, ay + fr + 6, (a - P.pop)/26);
 }
+//
+// TEDDY BEAR -- YES!!! SMASH!!! "YES!!! SMASH!!!" (her frame row): the Rage Room (Fan the Flames), where she pitches the wrecked restaurant as a rage room and smashes a table (the game's own text:
+// the table is the one canon prop; the plate and the TV are the designers'). The owner, 2026-11-02 (redesign): RAGE ROOM AS THREE SMASHES, a plate, then a TV, then the table, each swing wilder with
+// a wider ring (110, 170, then today's 230 px with the 26% finish), stuffing flying, and she ends puffed out in her tired pose. No word is drawn anywhere in it. The row's frames t (the intro and
+// the catch come before them, as for every row):
+//    0-11   ENTRANCE, glaring: her angry picture (fists on her hips), gritting (a tremble) and stamping twice (3 and 9); a wooden table grows in beside her over 12 frames, a plate and a TV standing on it
+//           (on the side with no foe close by: she turns to it)
+//    12-35  she takes her paint gun in both paws (black stick arms, as her 'mad' picture has: it grows in over 12 frames) and hoists it overhead, wobbling more and more, tufts of stuffing shaking loose
+//    22     THE CATCH lands (FS_WIND frames before the first smash, so nobody is held through the whole entrance): every foe within 230 px is held, as the old blast caught them
+//    36     SMASH 1, the plate (a = 0):  a 110 px ring, 3% (knock 8, up 6); the plate bursts in shards
+//    51     SMASH 2, the TV (a = 15):    a 170 px ring, 5% (knock 13, up 9); sparks, glass, smoke
+//    63     SMASH 3, the table (a = 27): the old blast's own, 230 px, 26% (knock 22, up 14); the table bursts into planks, the gun flies from her paws; she is flung back
+//    64-79  she slides back about 90 px in her shaken picture, to a stop (never past a ledge or into a wall: the distance is cut to what is safe: fsaR_tedSlide); the rings stay where she stood
+//    80-124 puffed out: on her knees in her kit's tired state (sweat drop, puffs of stuffing), standing again for the last 14; the row ends 62 frames after the finish (as the old row ended 62 after its
+//           blast): 125 frames in all (was 76). A foe the catch holds is held to a beat after the finish (the old blast's let-go, one blow: the table's launch)
+// The ring of each smash is round where she stood (fsAx/fsAy, fixed when the catch lands) and hits each foe in it once; a foe within 110 px takes all three, a foe at the edge of 230 only the finish.
+// Everything drawn is a function of fsT, fsWind, fsAx/fsAy, her facing and her place (the slide is her own place on the wire): no new wire field.
+const FSAR_TED = {
+  w:36, glare:12, stomp:[3, 9], catchAt:22,                 // the entrance (the row's wind), its glare and two stamps, the row frame the catch lands
+  hit:[36, 51, 63], R:[110, 170, 230], dmg:[3, 5, 26], kb:[8, 13, 22], ky:[-6, -9, -14],   // the three smashes: row frame, ring, row-% (the last the old blast's own), knock and rise (the last the old blast's own)
+  slide:16, D:90, tail:62, gun:40, tired:14,                // the slide back after the finish, how far, the row's old ending after its blast, the gun's length, the frames she takes to stand up again
+};
+FSAR_TED.fin = FSAR_TED.hit[2];
+FSAR_TED.dur = FSAR_TED.fin + FSAR_TED.tail;
+const FSAR_TED_TGT = [[38, -10], [66, -10], [50, 4]];   // where each smash lands, from her centre, facing right: the plate, the TV, the table's top
+const FSAR_TED_SH = [[2, 0], [-4, 2]];                   // her two shoulders (front, back), facing right
+const FSAR_TED_UP = [-0.30, -0.42, -0.56];               // how far back the gun is hoisted before each swing (angle from straight up; wilder each time)
+const FSAR_TED_RING = ['#9fd0ff', '#ffd75e', '#b8742e'];
+function fsaR_tedEase(u){ u = Math.max(0, Math.min(1, u)); return u*u*(3 - 2*u); }
+function fsaR_tedGrow(u){ u = Math.max(0, Math.min(1, u)); const s = u - 1; return 1 + 2.2*s*s*s + 1.2*s*s; }   // out, a little past, back (grown in over 12 frames)
+// Which side the table goes: the side she faces, unless a foe stands within 100 px of her there (the table is drawn over the fighters): then the other one, if it is clearer.
+function fsaR_tedSide(f){
+  const near = [1e9, 1e9];   // the nearest foe on the right, on the left (within 130 px across and 100 up or down)
+  for(const o of fighters){
+    if(o.dead || o.idx === f.idx || o.team === f.team) continue;
+    const dx = o.x - f.x; if(Math.abs(dx) > 130 || Math.abs(o.y - f.y) > 100) continue;
+    const i = dx >= 0 ? 0 : 1; near[i] = Math.min(near[i], Math.abs(dx));
+  }
+  const cur = f.face < 0 ? 1 : 0;
+  return near[1 - cur] > near[cur] + 8 && near[cur] < 100 ? (cur ? 1 : -1) : (cur ? -1 : 1);
+}
+// How far the blast throws her back: up to 90 px along the floor, cut to what is safe: every spot on the way (and a body's width either side of it) over a surface and clear of a solid slab beside her.
+// She is placed along it (never thrown), so it can never carry her past a blast zone. Moon Caves: her chart is turned, she stays.
+function fsaR_tedSlide(f, dir){
+  if(MCAVE && MCAVE.on) return 0;
+  const x0 = f.x, y = f.y, slabs = platRects().filter((p)=> p.solid && !p.rot);
+  for(let D = FSAR_TED.D; D > 0; D -= 6){
+    let ok = true;
+    for(let s = 0; s <= D && ok; s += 6){
+      const x = x0 - dir*s;
+      if(!landable(x, y) || !landable(x - 16, y) || !landable(x + 16, y)) ok = false;
+      for(const p of slabs) if(x + 20 > p.x && x - 20 < p.x + p.w && y + 10 > p.y && y - 31 < p.y + (p.h || 16)) ok = false;
+    }
+    if(ok) return D;
+  }
+  return 0;
+}
+// Where each smash lands and how she gets there: the swing's angle (from straight up, forward positive) and how far her arms reach, for smash k.
+function fsaR_tedAim(k, r){
+  const G = FSAR_TED_TGT[k], S = FSAR_TED_SH[0], feet = r + 12; let th = 1.2, arm = 6;
+  for(let i = 0; i < 4; i++){
+    const lean = 0.26*Math.sin(th), cs = Math.cos(lean), sn = Math.sin(lean), qx = S[0], qy = S[1] - feet;
+    const sx = qx*cs - qy*sn, sy = feet + qx*sn + qy*cs, dx = G[0] - sx, dy = G[1] - sy;
+    th = Math.atan2(dx, -dy); arm = Math.max(5, Math.hypot(dx, dy) - FSAR_TED.gun);
+  }
+  return { th:th, arm:arm };
+}
+// The gun on row frame t: its angle th (from straight up, forward positive), the arms' reach, its size g (it grows in over 12 frames), and `hit`: the smash it has just landed (else -1). null: no gun.
+// It comes out at her side (12), is hoisted overhead (by 24) and wobbles there, swings down in the last 3 frames before each smash, rebounds a little, and is hoisted again, further back each time.
+function fsaR_tedSwing(t, r){
+  const T = FSAR_TED, H = T.hit, U = FSAR_TED_UP;
+  if(t < T.glare || t > H[2] + 2) return null;
+  const A = [fsaR_tedAim(0, r), fsaR_tedAim(1, r), fsaR_tedAim(2, r)];
+  let k = 0; while(k < 2 && t > H[k] + 2) k++;
+  const g = Math.min(1, (t - T.glare + 1)/12);
+  if(t > H[k]) return { th:A[k].th - 0.14*(t - H[k]), arm:A[k].arm + 2*(t - H[k]), g:1, hit:k };   // the rebound, two frames
+  const sw0 = H[k] - 3;
+  if(t >= sw0){ const u = (t - sw0)/3; return { th:U[k] + (A[k].th - U[k])*u*u, arm:16 + (A[k].arm - 16)*u, g:g, hit:-1 }; }   // the swing down: it speeds up
+  const st = k === 0 ? T.glare : H[k - 1] + 3, from = k === 0 ? 1.15 : A[k - 1].th - 0.28, a0 = k === 0 ? 9 : A[k - 1].arm + 4;
+  const u = (t - st + 1)/(k === 0 ? 12 : sw0 - st), e = fsaR_tedEase(u);
+  const amp = (k === 0 ? (t < 24 ? 0 : 0.05 + 0.012*(t - 24)) : 0.06 + 0.035*k)*(k === 0 ? 1 : Math.min(1, u));
+  return { th:from + (U[k] - from)*e + Math.sin(t*(1.8 + 0.5*k))*amp, arm:a0 + (16 - a0)*e, g:g, hit:-1 };
+}
+function fsaR_tedTired(f){   // 0..1: how worn out she is (sinks over 6 frames once the slide is done, rises over the last 14)
+  if(f.fsId !== 'ragesmash' || f.dead || f.fsC > 0) return 0;
+  const T = FSAR_TED, t = f.fsT || 0, a = t - T.fin - T.slide; if(a < 0) return 0;
+  const dur = f.fsDur || T.dur;
+  return Math.min(1, (a + 1)/6)*(1 - Math.min(1, Math.max(0, 1 - (dur - t)/T.tired)));
+}
+// Her body on row frame t: a small tremble and hop (the glare, the stamps), a lean with the gun (back as it goes up, forward as it comes down), the squash of a landed smash, thrown back, then on her knees.
+function fsaR_tedPose(f, t){
+  const T = FSAR_TED, P = { shake:0, hop:0, lean:0, sx:1, sy:1 };
+  if(t < T.glare){
+    P.shake = Math.sin(t*2.7)*1.3*Math.min(1, (t + 1)/4);
+    for(const s of T.stomp){ const a = t - (s - 3); if(a >= 0 && a <= 3) P.hop = 4*Math.sin(Math.PI*a/3); if(t === s || t === s + 1){ P.sy = 0.92; P.sx = 1.05; } }
+    return P;
+  }
+  if(t <= T.fin){
+    const sw = fsaR_tedSwing(t, f.r);
+    if(sw){
+      P.lean = 0.26*Math.sin(sw.th); P.sy = 1 + 0.045*Math.max(0, Math.min(1, -sw.th/0.5)); P.shake = Math.sin(t*3.3)*(sw.hit < 0 && sw.th < 0.3 ? 1.5 : 0.5);
+      if(sw.hit >= 0){ P.sy = 0.93; P.sx = 1.06; }
+    }
+    return P;
+  }
+  const a = t - T.fin;
+  if(a <= T.slide){ const u = a/T.slide; P.lean = -0.30*(1 - 0.7*u); P.shake = Math.sin(t*2.2)*0.8*(1 - u); return P; }   // flung back: leaning away from the blast
+  const k = fsaR_tedTired(f); P.sx = 1 + 0.10*k; P.sy = 1 - 0.26*k - 0.025*k*Math.sin(t*0.5);   // on her knees (her kit's tired: wider, 0.74 tall), heaving
+  return P;
+}
+// Her picture (FIGHTER_ANIM['Teddy Bear'].body): undefined when the Final Smash does not choose it; else the key of the picture of her that this frame wears.
+function fsaR_tedKey(f){
+  if(f.fsId !== 'ragesmash' || f.dead) return undefined;
+  const T = FSAR_TED, t = f.fsT || 0;
+  if(f.fsC > 0 || t < T.glare) return 'angry';   // glaring, fists on her hips
+  if(t <= T.fin) return 'mad';                  // the swing: leaning in, teeth bared
+  return 'shaken';                               // flung back, then puffed out (her kit's tired state wears this picture too)
+}
+// Her body's deform: true when the Final Smash shapes it this frame (through the catch she stands as she is).
+function fsaR_tedDeform(f, ctx, R){
+  if(f.fsId !== 'ragesmash' || f.dead) return false;
+  if(f.fsC > 0) return true;
+  const P = fsaR_tedPose(f, f.fsT || 0);
+  ctx.translate(P.shake, -P.hop); deformAboutFeet(ctx, R, (f.face < 0 ? -1 : 1)*P.lean, P.sx, P.sy);
+  return true;
+}
+// A point of her (px, py from her centre, facing right) where her body's deform has put it, in the world (the arms are drawn from her shoulders).
+function fsaR_tedXf(f, dir, px, py, P){
+  const feet = f.r + 12, ang = dir*P.lean, qx = px*dir*P.sx, qy = (py - feet)*P.sy, cs = Math.cos(ang), sn = Math.sin(ang);
+  return [f.x + P.shake + qx*cs - qy*sn, f.y - P.hop + feet + qx*sn + qy*cs];
+}
+// ---- the pieces: stuffing, the table, the plate, the TV, the paint gun ----
+function fsaR_tedBlob(c, x, y, r, fill, stroke, lw){ c.beginPath(); c.arc(x, y, r, 0, 7); if(fill){ c.fillStyle = fill; c.fill(); } if(stroke){ c.strokeStyle = stroke; c.lineWidth = lw; c.stroke(); } }
+function fsaR_tedTuft(c, x, y, s, rot, a){   // a tuft of stuffing: three round blobs of cream fluff, outlined as one
+  c.save(); c.translate(x, y); c.rotate(rot); c.globalAlpha = a;
+  const B = [[-s*0.55, s*0.1, s*0.62], [s*0.5, -s*0.1, s*0.55], [0, -s*0.45, s*0.6]];
+  for(const b of B) fsaR_tedBlob(c, b[0], b[1], b[2], null, '#c89a52', 1.6);
+  for(const b of B) fsaR_tedBlob(c, b[0], b[1], b[2] - 0.5, '#fff3d0', null, 0);
+  c.restore();
+}
+function fsaR_tedRect(c, x, y, w, h, fill, lw){ c.beginPath(); c.rect(x, y, w, h); c.fillStyle = fill; c.fill(); c.strokeStyle = '#1c1c1c'; c.lineWidth = lw || 2; c.stroke(); }
+// The table (66 px long, 26 tall) with its near end at x0, growing in about its foot (k 0..1).
+function fsaR_tedTable(c, x0, dir, fy, k){
+  const L = dir > 0 ? x0 : x0 - 66, mx = L + 33;
+  c.save(); c.translate(mx, fy); c.scale(k, k); c.translate(-mx, -fy);
+  fsaR_tedRect(c, L + 4, fy - 20, 6, 20, '#b8742e'); fsaR_tedRect(c, L + 56, fy - 20, 6, 20, '#b8742e');   // legs
+  fsaR_tedRect(c, L + 4, fy - 21, 58, 4, '#a8692f', 1.6);                                                    // the apron
+  fsaR_tedRect(c, L, fy - 26, 66, 6, '#d49a58');                                                             // the top
+  c.strokeStyle = '#a8692f'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(L + 8, fy - 24); c.lineTo(L + 24, fy - 24); c.moveTo(L + 32, fy - 22.5); c.lineTo(L + 52, fy - 22.5); c.stroke();   // grain
+  c.restore();
+}
+function fsaR_tedPlate(c, x, fy, k){   // a plate stood on its edge on a small stand, on the table's top
+  c.save(); c.translate(x, fy - 26); c.scale(k, k);
+  c.beginPath(); c.moveTo(-6, 0); c.lineTo(0, -4); c.lineTo(6, 0); c.closePath(); c.fillStyle = '#7a4a1e'; c.fill(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.6; c.stroke();
+  fsaR_tedBlob(c, 0, -10, 8, '#ffffff', '#1c1c1c', 2); fsaR_tedBlob(c, 0, -10, 5, null, '#7fb3e6', 1.6);
+  c.restore();
+}
+function fsaR_tedTV(c, x, fy, dir, k){   // a small TV on the table's top: a casing, a screen, two knobs, rabbit ears
+  c.save(); c.translate(x, fy - 26); c.scale(k, k);
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.moveTo(-1, -20); c.lineTo(-9, -33); c.moveTo(1, -20); c.lineTo(9, -32); c.stroke();
+  fsaR_tedRect(c, -13, -20, 26, 20, '#7a7f8a');
+  fsaR_tedRect(c, -10, -17, 16, 14, '#bfe4ff', 1.6);
+  c.strokeStyle = '#ffffff'; c.lineWidth = 1.6; c.beginPath(); c.moveTo(-8, -9); c.lineTo(-3, -15); c.stroke();
+  fsaR_tedBlob(c, dir*9.5, -14, 1.8, '#1c1c1c', null, 0); fsaR_tedBlob(c, dir*9.5, -8, 1.8, '#1c1c1c', null, 0);
+  c.restore();
+}
+// The paint gun, in the paws: its grip at (gx, gy), pointing the way (dir, th) says, s its size. A body, a pink hopper, a barrel.
+function fsaR_tedGun(c, gx, gy, dir, th, s){
+  c.save(); c.translate(gx, gy); c.scale(dir, 1); c.rotate(Math.atan2(-Math.cos(th), Math.sin(th))); c.scale(s*1.18, s*1.18);   // (drawn for a 34 px gun: 40 px long)
+  fsaR_tedRect(c, 1, 2, 5, 9, '#4a4a52', 1.8);                // the handle
+  fsaR_tedRect(c, -3, -3, 10, 7, '#6a6a74', 1.8);             // the stock
+  fsaR_tedRect(c, 7, -5, 15, 9, '#9a9aa6', 1.8);              // the body
+  fsaR_tedRect(c, 22, -3, 12, 5, '#5e5e68', 1.8);             // the barrel
+  fsaR_tedBlob(c, 13, -10, 5.5, '#f06fb4', '#9a2f6a', 1.8);   // the hopper of paint
+  c.restore();
+}
+// Her arms and the gun at row frame t: two black sticks from her shoulders (how her 'mad' picture draws her arms) to two round paws on the gun, over it.
+function fsaR_tedArms(f, c, t, dir){
+  const sw = t > FSAR_TED.fin ? null : fsaR_tedSwing(t, f.r); if(!sw) return;
+  const P = fsaR_tedPose(f, t), dx = dir*Math.sin(sw.th), dy = -Math.cos(sw.th), g = sw.g;
+  const s1 = fsaR_tedXf(f, dir, FSAR_TED_SH[0][0], FSAR_TED_SH[0][1], P), s2 = fsaR_tedXf(f, dir, FSAR_TED_SH[1][0], FSAR_TED_SH[1][1], P);
+  const p1 = [s1[0] + dx*sw.arm*g, s1[1] + dy*sw.arm*g], p2 = [p1[0] + dx*9*g, p1[1] + dy*9*g];
+  c.save(); c.lineCap = 'round';
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 3.2; c.beginPath(); c.moveTo(s1[0], s1[1]); c.lineTo(p1[0], p1[1]); c.moveTo(s2[0], s2[1]); c.lineTo(p2[0], p2[1]); c.stroke();   // the arms, behind the gun
+  fsaR_tedGun(c, p1[0] - dx*3*g, p1[1] - dy*3*g, dir, sw.th, g);
+  fsaR_tedBlob(c, p1[0], p1[1], 3.4*g, '#1c1c1c', null, 0); fsaR_tedBlob(c, p2[0], p2[1], 3.4*g, '#1c1c1c', null, 0);
+  c.restore();
+}
+// Tufts of stuffing: shaken loose as she hoists the gun (one every three frames from 13 to 34), flung from her at each smash, and puffed out of her when she is spent.
+function fsaR_tedStuffing(f, c, t, dir){
+  const T = FSAR_TED;
+  for(let j = 0; j < 8; j++){   // shaken loose
+    const age = t - (13 + j*3); if(age < 0 || age >= 16) continue;
+    const vx = ((j*5) % 7 - 3)*0.55, vy = -1.4 - (j % 3)*0.4;
+    fsaR_tedTuft(c, f.x + dir*(-14 + (j % 3)*7) + vx*age, f.y - 24 + (j % 2)*14 + vy*age + 0.12*age*age, 4.5 + (j % 3), j + age*0.2*(j % 2 ? 1 : -1), 1 - age/16);
+  }
+  for(let k = 0; k < 3; k++){   // flung out at each smash
+    const e = t - T.hit[k]; if(e < 0 || e >= 22) continue;
+    const ox = k < 2 ? f.x : (f.fsAx != null ? f.fsAx : f.x), oy = (f.fsAy != null ? f.fsAy : f.y) - 6;
+    for(let i = 0; i < 6; i++){
+      const a = -Math.PI/2 + (i - 2.5)*0.55 + k*0.1, v = 2.6 + (i % 3)*0.9 + k*0.6;
+      fsaR_tedTuft(c, ox + Math.cos(a)*v*e, oy + Math.sin(a)*v*e + 0.14*e*e, 5 + (i % 2) + k, i + e*0.25*(i % 2 ? 1 : -1), 1 - e/22);
+    }
+  }
+  const tr = t - T.fin - T.slide;   // puffed out: a few puffs of stuffing from her mouth
+  if(tr >= 6) for(let j = 0; j < 3; j++){
+    const age = (tr - 6 - j*10) % 30; if(age < 0 || age >= 16) continue;
+    fsaR_tedTuft(c, f.x + dir*16 + Math.sin(age*0.4 + j)*3, f.y - 4 - age*0.9, 3 + age*0.12, age*0.2, 1 - age/16);
+  }
+}
+// What each smash breaks (a: frames since it): the plate in shards, the TV into casing, glass, sparks and smoke, the table into planks and legs.
+function fsaR_tedPlateBits(c, x, y, e){
+  if(e < 0 || e >= 26) return;
+  const fade = 1 - Math.max(0, (e - 16)/10);
+  for(let i = 0; i < 8; i++){
+    const a = -Math.PI/2 + (i - 3.5)*0.42, v = 3.2 + (i % 3)*1.1;
+    c.save(); c.translate(x + Math.cos(a)*v*e, y + Math.sin(a)*v*e + 0.22*e*e); c.rotate(i + e*0.35*(i % 2 ? 1 : -1)); c.globalAlpha = fade;
+    const s = 4 + (i % 3)*1.6; c.beginPath(); c.moveTo(s, 0); c.lineTo(-s*0.6, s*0.55); c.lineTo(-s*0.5, -s*0.5); c.closePath();
+    c.fillStyle = '#ffffff'; c.fill(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.5; c.stroke(); c.restore();
+  }
+  c.globalAlpha = 1;
+}
+function fsaR_tedTVBits(c, x, y, dir, e){
+  if(e < 0 || e >= 28) return;
+  const fade = 1 - Math.max(0, (e - 18)/10);
+  for(const sd of [-1, 1]){   // the casing, in two halves
+    c.save(); c.translate(x + sd*2.2*e, y + 0.2*e*e - 3*e); c.rotate(sd*e*0.12); c.globalAlpha = fade; fsaR_tedRect(c, -7, -10, 14, 20, '#7a7f8a', 1.8); c.restore();
+  }
+  for(let i = 0; i < 6; i++){   // glass
+    const a = -Math.PI/2 + (i - 2.5)*0.6, v = 3 + (i % 2)*1.2;
+    c.save(); c.translate(x + Math.cos(a)*v*e, y + Math.sin(a)*v*e + 0.2*e*e); c.rotate(i*1.3 + e*0.3); c.globalAlpha = fade;
+    const s = 4 + (i % 3); c.beginPath(); c.moveTo(s, 0); c.lineTo(-s*0.5, s*0.6); c.lineTo(-s*0.6, -s*0.4); c.closePath(); c.fillStyle = '#bfe4ff'; c.fill(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.4; c.stroke(); c.restore();
+  }
+  c.globalAlpha = 1;
+  if(e < 12) for(let i = 0; i < 7; i++){   // sparks
+    const a = i*Math.PI*2/7 + 0.3, d0 = 6 + e*1.6, d1 = d0 + 7 + (i % 3)*3;
+    c.strokeStyle = '#1c1c1c'; c.lineWidth = 4.2; c.lineCap = 'round'; c.beginPath(); c.moveTo(x + Math.cos(a)*d0, y + Math.sin(a)*d0); c.lineTo(x + Math.cos(a)*d1, y + Math.sin(a)*d1); c.stroke();
+    c.strokeStyle = '#fff27a'; c.lineWidth = 2.2; c.stroke();
+  }
+  c.save(); c.globalAlpha = 0.45*fade; for(let i = 0; i < 3; i++) fsaR_tedBlob(c, x + (i - 1)*7 + Math.sin(e*0.3 + i)*3, y - 8 - e*0.9 - i*5, 5 + e*0.55, '#8a8a92', null, 0); c.restore();   // smoke
+  c.save(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.globalAlpha = fade;   // the ears
+  for(const sd of [-1, 1]){ c.save(); c.translate(x + sd*5, y - 8 - e*2.2 + 0.16*e*e); c.rotate(sd*(0.4 + e*0.2)); c.beginPath(); c.moveTo(0, 0); c.lineTo(sd*5, -12); c.stroke(); c.restore(); }
+  c.restore(); c.globalAlpha = 1;
+}
+function fsaR_tedPlanks(c, x, y, e){
+  if(e < 0 || e >= 32) return;
+  const fade = 1 - Math.max(0, (e - 20)/12);
+  for(let i = 0; i < 10; i++){
+    const a = -Math.PI/2 + (i - 4.5)*0.46, v = 3 + (i % 4)*0.9, len = i < 8 ? 18 + (i % 3)*5 : 16, wd = i < 8 ? 5 : 4;   // seven planks of the top and two legs
+    c.save(); c.translate(x + Math.cos(a)*v*e*1.1, y + Math.sin(a)*v*e + 0.22*e*e); c.rotate(i*0.9 + e*0.25*(i % 2 ? 1 : -1)); c.globalAlpha = fade;
+    fsaR_tedRect(c, -len/2, -wd/2, len, wd, i < 8 ? '#d49a58' : '#b8742e', 1.6); c.restore();
+  }
+  c.globalAlpha = fade; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.4;   // splinters
+  c.beginPath(); for(let i = 0; i < 12; i++){ const a = i*0.52 + 0.2, d0 = 10 + e*2.4 + (i % 3)*4; c.moveTo(x + Math.cos(a)*d0, y + Math.sin(a)*d0*0.8 - e); c.lineTo(x + Math.cos(a)*(d0 + 5), y + Math.sin(a)*(d0 + 5)*0.8 - e); } c.stroke();
+  c.globalAlpha = 1;
+}
+// The gun flung from her paws by the finish: it spins away, lands on the floor and is gone (e: frames since the finish).
+function fsaR_tedGunToss(f, c, e, dir, fy){
+  if(e < 0 || e >= 44) return;
+  const sw = fsaR_tedSwing(FSAR_TED.fin + 1, f.r), ax = f.fsAx != null ? f.fsAx : f.x, ay = f.fsAy != null ? f.fsAy : f.y;
+  const gx = ax + dir*(FSAR_TED_SH[0][0] + Math.sin(sw.th)*(sw.arm - 6)), gy = ay + FSAR_TED_SH[0][1] - Math.cos(sw.th)*(sw.arm - 6);   // (where the grip was at the finish)
+  const land = fy - 8, ey = gy - 5.5*e + 0.25*e*e, onfloor = ey >= land, y = onfloor ? land : ey, x = gx - dir*3.4*Math.min(e, 18);
+  c.save(); c.globalAlpha = 1 - Math.max(0, (e - 30)/14);
+  fsaR_tedGun(c, x, y, dir, onfloor ? 1.45 : 1.2 + e*0.4, 0.9);
+  c.restore(); c.globalAlpha = 1;
+}
+// The whole row's drawing: the rings of the three smashes (round where she stood), the table with its plate and TV, what each smash breaks, stuffing, the arms and the gun.
+function fsaR_tedDraw(f, c){
+  const T = FSAR_TED, t = f.fsT || 0, dir = f.face < 0 ? -1 : 1, ax = f.fsAx != null ? f.fsAx : f.x, ay = f.fsAy != null ? f.fsAy : f.y, fy = ay + f.r + 6;
+  for(let k = 0; k < 3; k++){   // the rings: each full size on the frame it lands, fading from there
+    const u = (t - T.hit[k])/20; if(u < 0 || u >= 1) continue;
+    fsLandRing(c, ax, ay, T.R[k], FSAR_TED_RING[k], u);
+    if(k === 2){ c.save(); c.translate(ax, ay); c.globalAlpha = 1 - u; fsGlyphRing(c, 0, 0, 10, T.R[2]*(0.2 + 0.8*u), 10 + 8*u, u, FS_GLYPH.burst, f, 0); c.restore(); }
+  }
+  const grow = fsaR_tedGrow((t + 1)/12), x0 = ax + dir*22;
+  if(t < T.hit[2]){   // the table, with the plate and the TV on it while they stand
+    fsaR_tedTable(c, x0, dir, fy, grow);
+    if(t < T.hit[0]) fsaR_tedPlate(c, ax + dir*38, fy, grow);
+    if(t < T.hit[1]) fsaR_tedTV(c, ax + dir*66, fy, dir, grow);
+  }
+  fsaR_tedPlateBits(c, ax + dir*38, fy - 36, t - T.hit[0]);
+  fsaR_tedTVBits(c, ax + dir*66, fy - 36, dir, t - T.hit[1]);
+  fsaR_tedPlanks(c, ax + dir*55, fy - 22, t - T.hit[2]);
+  fsaR_tedStuffing(f, c, t, dir);
+  fsaR_tedArms(f, c, t, dir);
+  fsaR_tedGunToss(f, c, t - T.fin, dir, fy);
+}
+// One smash's ring: every foe within R_k of where she stood that this smash has not hit yet, its blow (the last is exactly fsBurst's: the old blast).
+function fsaR_tedRing(f, st, k){
+  const T = FSAR_TED, x = f.fsAx, y = f.fsAy, R = T.R[k], seen = st.seen[k];
+  for(const t of fighters){
+    if(t.dead || t.idx === f.idx || t.team === f.team || seen.has(t.idx) || hardInvuln(t)) continue;
+    if(hurtGap(t, x, y) < R){ seen.add(t.idx); t.countering = 0; applyHit(t, T.dmg[k], (Math.sign(t.x - x) || f.face || 1)*T.kb[k], T.ky[k], f); }
+  }
+  if(summons.length) damageSummons(f, x, y, R, T.dmg[k]);
+  shake(k === 2 ? 11 : 5 + 2*k);
+}
 // ---- FSA lane r: end ------------------------------------------------------------------------------------------------------------------
 
 // BALLOONY -- AIR LEAK, the Final Smash (see the lane r block above for the frames and the zig-zag). "Air Leak: jets of released air zip Balloony around." (quoted at his special);
@@ -26501,8 +26798,37 @@ FINAL_SMASHES['Tapey'] = fsLane({ id:'playback', c1:'#e8e0d0', L:700, spd:22, H:
 // frames ahead (85 px: step out); whoever is in it is held in a firm hug, takes five squeezes (3%), and the boil-over (20%) throws them.
 FINAL_SMASHES['Tea Kettle'] = fsLock({ id:'mamasgotcha', c1:'#f4f4f4', c2:'#ffb0a0', R:85, bx:380, by:240, effect:'pin', hits:5, every:6, hitDmg:3, dmg:20, kb:23, art:FS_GLYPH.steam });
 
-// TEDDY BEAR -- YES!!! SMASH!!! "YES!!! SMASH!!!" (her frame row): the Rage Room, a wild swing that leans in; her own card is the Front of the Crowd shoulder barge. The swing is a smash all round her, 230 px (26%, thrown hard).
-FINAL_SMASHES['Teddy Bear'] = fsCircle({ id:'ragesmash', c1:'#b8742e', c2:'#ffffff', R:230, dmg:26, kb:22, art:FS_GLYPH.burst, kind:'slam' });
+// TEDDY BEAR -- YES!!! SMASH!!! "YES!!! SMASH!!!" (her frame row): the Rage Room (Fan the Flames); her own card is the Front of the Crowd shoulder barge. The owner, 2026-11-02 (redesign): three smashes, a plate (a 110 px ring, 3%), a TV
+// (170 px, 5%) and then the table, today's blast, all round her 230 px (26%, thrown hard); everyone within 230 px is held through all three and let go with the table's launch. The entrance and every frame are in the `FSA lane r` block above.
+FINAL_SMASHES['Teddy Bear'] = {
+  id:'ragesmash', wind:FSAR_TED.w, dur:FSAR_TED.dur, reach:FSAR_TED.R[2],
+  catch(f){ return f._fs ? FSAR_NONE : { kind:'circle', x:f.x, y:f.y, r:FSAR_TED.R[2] }; },   // CATCH: nobody when it is fired (the framework's catch finds no one: nobody is held through the entrance); the same circle she lays herself at row frame catchAt. The CPU asks with no Final Smash running: the real circle
+  lockEnd:FSAR_TED.fin,   // everyone the catch took is held until a beat after the finish (the row frame of its last blow)
+  start(f, st){ st.dir = fsaR_tedSide(f); f.face = st.dir; st.seen = [new Set(), new Set(), new Set()]; armAtk(f, this.wind, 'fsgather'); },   // (she turns to the clear side, where the table grows in)
+  tick(f, st, t){
+    const T = FSAR_TED, dir = st.dir;
+    if(t === 0){ shake(3); for(let i = 0; i < 6; i++) puff(f.x + dir*30, f.y + f.r, i % 2 ? '#d49a58' : '#ffffff', 4); }   // the table pops in beside her
+    if(t === T.stomp[0] || t === T.stomp[1]){ shake(3); for(let i = 0; i < 4; i++) puff(f.x + (i - 1.5)*10, f.y + f.r, i % 2 ? '#b8742e' : '#ffffff', 3); }   // a stamp
+    if(t === T.catchAt){   // THE CATCH, FS_WIND frames before the first smash; the rings are round this spot (fsAx/fsAy), the same one the catch is laid on
+      f.fsAx = Math.round(f.x); f.fsAy = Math.round(f.y);
+      st.cs = { kind:'circle', x:f.fsAx, y:f.fsAy, r:T.R[2] }; hitArt(f, 'fscatch', st.cs, { color:f.color, world:true, fade:10 }); fsCatch(f, st);
+    }
+    if(t >= T.catchAt && t <= T.fin){ f.vx = 0; if(!f.onground) f.vy = 0; }   // she stays where she stood (in the air too) through the three smashes
+    for(let k = 0; k < 3; k++) if(t === T.hit[k]){
+      armAtk(f, k < 2 ? 18 : 34, 'slam'); fsaR_tedRing(f, st, k);
+      for(let i = 0; i < (k === 2 ? 20 : 10); i++) puff(f.fsAx, f.fsAy, i % 2 ? '#b8742e' : '#ffffff', k === 2 ? 7 : 5);
+    }
+    if(t === T.fin){ st.D = fsaR_tedSlide(f, dir); st.x0 = f.x; }   // the blast throws her back: how far is safe, fixed now
+    if(t > T.fin && t <= T.fin + T.slide){   // ...she is placed along the slide (decelerating), never thrown
+      const u = (t - T.fin)/T.slide;
+      f.x = st.x0 - dir*st.D*(1 - (1 - u)*(1 - u)); f.vx = 0; if(!f.onground) f.vy = 0;
+      if(t % 3 === 0 && st.D > 0) puff(f.x + dir*10, f.y + f.r, '#d9c9a8', 2);
+    }
+  },
+  end(f, st){ f.vx = 0; },
+  ai(f){ for(const x of fighters) if(!fsHurtMark(f, x) && hurtGap(x, f.x, f.y) < FSAR_TED.R[2]*0.85) return true; return false; },
+  draw(f, c){ fsaR_tedDraw(f, c); },
+};
 
 // BOT -- GOTCHA! "I am Bot. The one and only! WOOHOO!" (their frame row, the design doc); their own card lunges at the nearest foe, tackles and holds them. It goes for the nearest foe within 420, its spot fixed as the startup begins (80 px: step
 // out); whoever is in it is held while six kicks land (2%) and "THERE'S MORE!" the last (20%) throws them.
@@ -73112,15 +73438,16 @@ const FIGHTER_ANIM = {
   // ---- Teddy Bear — a wild swing leans in; tired, she sinks to her knees (War De Guacamole). Drawn, no words. ----
   "Teddy Bear": {
     poses: poseSpritesOf("Teddy Bear"),   // POSE_SETS.['Teddy Bear']: assets/sprites/teddy-bear-*.png
-    body(f){ return poseBody(this, f); },   // POSE SETS: the picture poseKey names, else the render
+    body(f){ const k = fsaR_tedKey(f); return k === undefined ? poseBody(this, f) : poseBody(this, f, k); },   // POSE SETS: the picture poseKey names, else the render (YES!!! SMASH!!!, the Final Smash, picks its own: FSA lane r)
     deform(f, ctx, R){
+      if(fsaR_tedDeform(f, ctx, R)) return;   // (YES!!! SMASH!!!, the Final Smash: the glare and stamps, the gun hoisted and swung, flung back, on her knees: FSA lane r)
       if(f._tired > hazardT){ deformAboutFeet(ctx, R, 0, 1.1, 0.74); return; }   // on her knees
       const p = atkPulse(f);
       if(!p) return;
       deformAboutFeet(ctx, R, f.face*0.16*p, 1 + 0.06*p, 1 - 0.04*p);
     },
     over(f, ctx){
-      if(!(f._tired > hazardT)) return;
+      if(!(f._tired > hazardT) && !(fsaR_tedTired(f) > 0.3)) return;   // (spent by YES!!! SMASH!!!: the same sweat drop, from the wire fields)
       const R = f.r, a0 = ctx.globalAlpha, u = (hazardT*0.05) % 1;   // a sweat drop sliding off her head
       const x = -visualFace(f)*R*0.55, y = -R*0.2 + u*R*0.6;
       ctx.globalAlpha = a0*(1-u); ctx.fillStyle = "#bfe8ff"; ctx.strokeStyle = "#4a8ab5"; ctx.lineWidth = 1.2;
