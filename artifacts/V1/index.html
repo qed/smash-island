@@ -26014,6 +26014,199 @@ function fsaR_balJets(f, c, t){
   const tb = t - (B.end - 1);
   if(tb >= 0 && tb < 26) fsaR_balBlast(c, stat ? ax : P[4][0], stat ? ay : P[4][1], tb/26, t);
 }
+//
+// PROFILY -- DON'T HUG THE CACTUS! The Four page: "In 'Chapter Complete', touching a cactus representation of Four causes Profily to warp, ascend, and pop." The owner, 2026-11-02 (redesign,
+// "make it deal more damage, otherwise 1"): the canon's three steps done to the foe. The cactus warps up under the nearest foe and CATCHES them (they flicker flat and edge-on, the way
+// he turns), carries them UP, then POPS and throws them: 30% in all (was 24%), split over the catch, the carry and the pop. The row's frames t (the intro and the catch come before them as for
+// every row; no word is drawn anywhere in it):
+//    0-11   ENTRANCE: he throws both hands up in a stop (black stick arms, white mittens: he has none of his own) and a small cactus grows in beside him; both grow in over 12 frames
+//    12-24  he turns edge-on and back (a full turn on his vertical axis, as a flat frame does: a thin sliver at the edge, then facing the other way, then round again; 13 frames);   25-33 and again, quicker (9 frames)
+//    24-33  his hands come down; the cactus is spun into a point of blue-white warp shards (24-29) and yanked away to where the foe stands (30-33)
+//    20     THE CATCH lands (FS_WIND frames before the warp, so nobody is held through the whole entrance): the nearest foe in a box 400 either side and 240 up and down (the old row's) is
+//           held and the spot is fixed there (a 90 px ring: step out); nobody there: a spot 150 px ahead
+//    34-45  WARP (a = 0-11 frames after the wind): the point of the cactus comes up under them, lifting them 24 px; they flicker flat and edge-on. The catch's blow at a = 8: 6% (a 90 px ring on
+//           the floor spot: whoever stands there takes it, a small bump; the held foe is held)
+//    46-75  ASCEND (a = 12-41): they ride the point up, 30 frames, to 160 px above the spot in all (never above 40 px under the top of the stage, and never into a solid slab over them);
+//           turning slowly. The carry's blows: 3% at a = 18, 28, 38
+//    76     POP (a = 42): the cactus bursts in a 90 px ring where they are: 15% (knock 22, up 18: the old blast's own launch). They are let go a beat after, with that launch
+//    77-145 he stands, as he did (the old row ended 70 frames after its blast): 146 frames in all (was 94)
+// The held foe is carried by the row (fsPin) and never thrown by it; the only launch is the pop's. A guest draws all of it from fsT, fsWind, fsAx/fsAy (the spot), fsBx/fsBy (where the pop is:
+// the top of the carry) and the foe's own wire flag (fsLk): no new wire field.
+const FSAR_PROF = {
+  w:34, grow:12, turn1:[12, 25], turn2:[25, 34], spin:24, catchAt:20,   // the entrance (the row's wind), in row frames
+  warp:12, lift:24, ascend:30, rise:160, top:40, tail:70,               // the blast, in frames after the wind (a): the point comes up (12, lifting 24), they rise (30) to 160 in all, the old row's 70-frame ending
+  hit:[8, 18, 28, 38], dmg:[6, 3, 3, 3, 15], kb:[5, 0, 0, 0, 22], ky:[-8, -1, -1, -1, -18],   // the blows by a (the catch's, three of the carry's), then the pop's: 6 + 9 + 15 = 30 row-%
+  R:90, bx:400, by:240, fall:150, popStun:24,                           // the ring (the old blast's), the catch box (the old row's), the spot ahead when nobody is caught, the pop's stun (what the old 24% blow gave: hitStunFrames(24))
+};
+FSAR_PROF.pop = FSAR_PROF.warp + FSAR_PROF.ascend;   // a = 42: the pop
+FSAR_PROF.dur = FSAR_PROF.w + FSAR_PROF.pop + FSAR_PROF.tail;
+FSAR_PROF.shard = ['#ffffff', '#8fb0ee', '#3b67cf'];
+function fsaR_profCatch(f){ return { kind:'box', x:f.x - FSAR_PROF.bx, y:f.y - FSAR_PROF.by, w:2*FSAR_PROF.bx, h:2*FSAR_PROF.by }; }
+// The most they can be carried up from (x, y) (r: their body): 160 px, never above 40 px under the top of the stage, and a solid slab over them stops it under the slab (Moon Caves: his chart is turned,
+// the carry is in it as it is).
+function fsaR_profRise(x, y, r){
+  let up = FSAR_PROF.rise;
+  if(MCAVE && MCAVE.on) return up;
+  up = Math.min(up, y - FSAR_PROF.top);
+  for(const p of platRects()){
+    if(!p.solid || p.rot || p.x + p.w <= x - r || p.x >= x + r) continue;
+    const b = p.y + (p.h || 16);
+    if(b <= y - r + 2) up = Math.min(up, y - r - b - 2);
+  }
+  return Math.max(0, Math.round(up));
+}
+// How far up the point has carried them, a frames after the wind: 24 px in the warp, then the ascend to the top (it gathers, carries, slows).
+function fsaR_profLift(a, rise){
+  const P = FSAR_PROF, wl = Math.min(P.lift, rise);
+  if(a < 0) return 0;
+  if(a < P.warp){ const u = (a + 1)/P.warp; return wl*u*u*(3 - 2*u); }
+  if(a < P.pop){ const u = (a - P.warp + 1)/P.ascend; return wl + (rise - wl)*u*u*(3 - 2*u); }
+  return rise;
+}
+// His turn at entrance frame t, as the width scale of his body about its middle (1 facing you, +-0.12 edge-on and never singular, below 0 facing the way he was not): two full turns on his vertical
+// axis, the second quicker. (His own card-turn, FIGHTER_ANIM.Profily below, squashes his height about his feet and flips him through the floor: this one turns the way the design says, as a flat frame.)
+function fsaR_profTurn(t){
+  const P = FSAR_PROF; let th = 0;
+  if(t >= P.turn2[0]) th = (t - P.turn2[0] + 1)/(P.turn2[1] - P.turn2[0])*Math.PI*2;
+  else if(t >= P.turn1[0]) th = (t - P.turn1[0] + 1)/(P.turn1[1] - P.turn1[0])*Math.PI*2;
+  const s = Math.cos(th);
+  return s < 0 ? Math.min(-0.12, s) : Math.max(0.12, s);
+}
+// FIGHTER_ANIM.Profily.deform: true when the Final Smash shapes his body this frame (the entrance: hands up, then the two turns; the blast is his own pulse, as before).
+function fsaR_profDeform(f, ctx, R){
+  if(f.fsId !== 'cactus' || f.dead) return false;
+  const P = FSAR_PROF, t = f.fsT || 0, w = f.fsWind || P.w;
+  if(f.fsC > 0) return true;   // (through the catch he is as he stands)
+  if(t >= w) return false;
+  const k = Math.min(1, (t + 1)/P.grow);
+  deformAboutFeet(ctx, R, 0, fsaR_profTurn(t)*(1 - 0.05*k), 1 + 0.07*k);
+  return true;
+}
+// A foe the cactus holds, flat and edge-on (drawSpriteBody, from the foe's own wire flag fsLk and the holder's frame): flickering through the warp (a card turning on its vertical axis faster and
+// faster: a thin sliver, then the other way round), then turning slowly on the point through the carry; whole again at the pop.
+function fsaR_profCaught(f, ctx, R){
+  const h = fighters[f.fsLk - 1];
+  if(!h || h.fsId !== 'cactus' || h.fsC > 0) return;
+  const P = FSAR_PROF, a = (h.fsT || 0) - (h.fsWind || P.w);
+  if(a < 0 || a >= P.pop) return;
+  const th = a < P.warp ? 0.2*(a + 1)*(a + 1) : (a - P.warp + 1)/P.ascend*Math.PI*2, s = Math.cos(th);
+  deformAboutFeet(ctx, R, 0, s < 0 ? Math.min(-0.12, s) : Math.max(0.12, s), 1);
+}
+// The catch has landed: where the foe stands (the spot, fsAx/fsAy), how far up they can go, and where the pop is (fsBx/fsBy, the top of the carry): st.x0, st.y0, st.rise.
+function fsaR_profSpot(f, st){
+  const L = fsLockedOf(f), x = L ? L.x : f.fsAx, y = L ? L.y : f.fsAy;
+  st.x0 = x; st.y0 = y;
+  st.rise = fsaR_profRise(x, y, L ? L.r : 24);
+  f.fsBx = f.fsAx; f.fsBy = f.fsAy - st.rise;
+}
+// A 90 px ring at (x, y): every foe in it this blow has not hit, but the one the catch holds (it is hit by the row directly: the row's blows come faster than a hit's grace). The catch's blow and the pop.
+function fsaR_profRing(f, st, k, x, y, dmg, kb, ky, opts){
+  const seen = st.seen[k], L = fsLockedOf(f);
+  for(const o of fighters){
+    if(o.dead || o.idx === f.idx || o.team === f.team || o === L || seen.has(o.idx) || hardInvuln(o)) continue;
+    if(hurtGap(o, x, y) < FSAR_PROF.R){ seen.add(o.idx); o.countering = 0; applyHit(o, dmg, (Math.sign(o.x - x) || f.face || 1)*kb, ky, f, opts); }
+  }
+  if(summons.length) damageSummons(f, x, y, FSAR_PROF.R, dmg);
+}
+// One shard of warp glass (a thin kite, white or blue) at (x, y), pointing along ang, s long.
+function fsaR_profShard(c, x, y, ang, s, col){
+  c.save(); c.translate(x, y); c.rotate(ang); c.beginPath(); c.moveTo(s, 0); c.lineTo(0, -s*0.32); c.lineTo(-s*0.7, 0); c.lineTo(0, s*0.32); c.closePath();
+  c.fillStyle = col; c.fill(); c.lineWidth = 1.6; c.strokeStyle = '#1c1c1c'; c.stroke(); c.restore();
+}
+// The cactus: a trunk from the ground (base) up to its point (top), rounded at the point; arms that stay where they grew on the ground, shown as the trunk passes them; white spines. s: its size
+// (1 the real one's, 0.5 the small one beside him).
+function fsaR_profCactus(c, x, base, top, s){
+  const h = base - top; if(h < 4) return;
+  const hw = 15*s;
+  c.save(); c.lineJoin = 'round'; c.lineCap = 'round';
+  for(let i = 0; i < 3; i++){
+    const side = i % 2 ? 1 : -1, ah = (38 + 40*i)*s; if(h < ah + 20*s) continue;
+    const ay = base - ah, ex = x + side*(hw + 13*s);
+    c.beginPath(); c.moveTo(x + side*hw*0.5, ay); c.lineTo(ex, ay); c.lineTo(ex, ay - 24*s);
+    c.strokeStyle = '#1c1c1c'; c.lineWidth = 13*s + 4; c.stroke(); c.strokeStyle = '#4f9a4a'; c.lineWidth = 13*s; c.stroke();
+  }
+  c.beginPath(); c.moveTo(x - hw, base); c.lineTo(x - hw, top + hw); c.quadraticCurveTo(x - hw, top, x, top); c.quadraticCurveTo(x + hw, top, x + hw, top + hw); c.lineTo(x + hw, base); c.closePath();
+  c.fillStyle = '#4f9a4a'; c.fill(); c.lineWidth = 3.5; c.strokeStyle = '#1c1c1c'; c.stroke();
+  c.lineWidth = 2; c.strokeStyle = '#3c7a3a'; c.beginPath(); c.moveTo(x - hw*0.45, base - 3); c.lineTo(x - hw*0.45, top + hw); c.moveTo(x + hw*0.45, base - 3); c.lineTo(x + hw*0.45, top + hw); c.stroke();
+  c.lineWidth = 1.8; c.strokeStyle = '#ffffff'; c.beginPath();
+  for(let y = base - 14*s, i = 0; y > top + hw*0.8; y -= 20*s, i++){ const sd = i % 2 ? 1 : -1; c.moveTo(x + sd*hw, y); c.lineTo(x + sd*(hw + 5*s), y - 3*s); }
+  c.stroke(); c.restore();
+}
+// His hands up in a stop: black stick arms from his sides to white mittens, an open palm showing, four fanned fingers and a thumb (k: grown in, 0..1).
+function fsaR_profHands(c, f, k){
+  const r = f.r;
+  c.save(); c.lineCap = 'round'; c.lineJoin = 'round';
+  for(const sd of [-1, 1]){
+    const hx = f.x + sd*(r + 12*k), hy = f.y - r*(0.15 + 0.85*k);
+    c.strokeStyle = '#1c1c1c'; c.lineWidth = 6; c.beginPath(); c.moveTo(f.x + sd*r*0.92, f.y + r*0.05); c.lineTo(hx, hy); c.stroke();
+    c.save(); c.translate(hx, hy - 8*k); c.scale(k, k);
+    const fin = (x0, y0, x1, y1)=> { c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.strokeStyle = '#1c1c1c'; c.lineWidth = 8; c.stroke(); c.strokeStyle = '#ffffff'; c.lineWidth = 4.2; c.stroke(); };
+    for(let i = 0; i < 4; i++){ const an = -Math.PI/2 + (i - 1.5)*0.36, len = i === 1 || i === 2 ? 19 : 16; fin(Math.cos(an)*6, Math.sin(an)*6, Math.cos(an)*len, Math.sin(an)*len); }   // the fingers
+    fin(-sd*7, 3, -sd*15, -4);   // the thumb, toward his body
+    c.beginPath(); c.arc(0, 0, 9.5, 0, 7); c.fillStyle = '#ffffff'; c.fill(); c.lineWidth = 3; c.strokeStyle = '#1c1c1c'; c.stroke();   // the palm
+    c.restore();
+  }
+  c.restore();
+}
+// The entrance: hands up and a small cactus growing beside him (0-11), then the cactus spun into a point of warp shards (24-29) and yanked to the spot (30-33).
+function fsaR_profEntrance(f, c, t, w){
+  const P = FSAR_PROF, dir = f.face < 0 ? -1 : 1, k = Math.min(1, (t + 1)/P.grow), feet = f.y + f.r + 6, cx = f.x + dir*(f.r + 36), cy = feet - 24;
+  const down = t < P.spin ? 1 : Math.max(0, 1 - (t - P.spin + 1)/6);   // his hands come down as the cactus goes
+  if(down > 0) fsaR_profHands(c, f, k*down);
+  if(t < P.spin){ fsaR_profCactus(c, cx, feet, feet - 48*k, 0.5); return; }
+  const u = (t - P.spin + 1)/(w - P.spin), sz = Math.max(0, 1 - 1.12*u);
+  if(sz > 0){ c.save(); c.translate(cx, cy); c.rotate(14*u*u); c.scale(sz, sz); c.translate(-cx, -cy); fsaR_profCactus(c, cx, feet, feet - 48, 0.5); c.restore(); }
+  for(let i = 0; i < 7; i++){   // the shards spiral in to the point as it spins
+    const a = i*0.9 + u*9, rr = 6 + 38*(1 - u)*(0.6 + 0.4*((i*3) % 4)/3);
+    fsaR_profShard(c, cx + Math.cos(a)*rr, cy + Math.sin(a)*rr, a + Math.PI/2, 7 + 3*((i*5) % 3), P.shard[i % 3]);
+  }
+  c.save(); c.globalAlpha = Math.min(1, u*1.3); c.fillStyle = '#ffffff'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.arc(cx, cy, 2 + 3*u, 0, 7); c.fill(); c.stroke(); c.restore();
+  if(t >= 30 && f.fsAx != null){   // yanked away to the spot: a streak of shards, its head racing to where the foe stands
+    const e = Math.min(1, (t - 29)/4), sx = f.fsAx, sy = f.fsAy, hx = cx + (sx - cx)*e, hy = cy + (sy - cy)*e, tx = cx + (sx - cx)*Math.max(0, e - 0.5), ty = cy + (sy - cy)*Math.max(0, e - 0.5);
+    c.save(); c.lineCap = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 8; c.beginPath(); c.moveTo(tx, ty); c.lineTo(hx, hy); c.stroke();
+    c.strokeStyle = '#ffffff'; c.lineWidth = 4; c.stroke(); c.restore();
+    for(let i = 0; i < 4; i++){ const s = i/3; fsaR_profShard(c, tx + (hx - tx)*s, ty + (hy - ty)*s, Math.atan2(hy - ty, hx - tx), 9 - 3*s, P.shard[i % 3]); }
+  }
+}
+// The warp: blue-white shards spiral in and up round the spot and gather under their feet (a: 0-11), a flat flash on the floor.
+function fsaR_profWarp(c, x, base, a){
+  const u = (a + 1)/FSAR_PROF.warp;
+  c.save(); c.translate(x, base); c.scale(1, 0.28); c.globalAlpha = 0.6*(1 - u); c.fillStyle = '#ffffff'; c.beginPath(); c.arc(0, 0, 40 + 50*u, 0, 7); c.fill(); c.restore();
+  for(let i = 0; i < 12; i++){
+    const ang = i*0.62 + a*0.5, rad = (58 - 34*u)*(0.7 + 0.3*((i*5) % 4)/3), yy = base - 4 - ((i*7) % 12)*5*u;
+    fsaR_profShard(c, x + Math.cos(ang)*rad, yy + Math.sin(ang)*rad*0.28, ang + Math.PI/2, 8 + 3*((i*3) % 3), FSAR_PROF.shard[i % 3]);
+  }
+}
+// The pop (b: 0-1 over 26 frames after it): the ring at exactly its 90 px (the blow's reach), the trunk bursting into chunks, spines flying, shards.
+function fsaR_profPop(c, x, y, base, b){
+  const P = FSAR_PROF, e = b*26;
+  fsLandRing(c, x, y, P.R, '#4f9a4a', Math.min(1, e/20));
+  c.save(); c.globalAlpha = 1 - b; c.lineCap = 'round';
+  for(let i = 0; i < 8; i++){   // chunks of trunk
+    const y0 = Math.min(base - 8, y + 36) + (base - Math.min(base - 8, y + 36))*(i + 0.5)/8, vx = (i % 2 ? 1 : -1)*(1.4 + (i % 3)*0.9), vy = -3 - (i % 3)*1.2;
+    c.save(); c.translate(x + (i % 2 ? 4 : -4) + vx*e, y0 + vy*e + 0.28*e*e); c.rotate(e*0.25*(i % 2 ? 1 : -1)); c.fillStyle = '#4f9a4a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.fillRect(-8, -6, 16, 12); c.strokeRect(-8, -6, 16, 12); c.restore();
+  }
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 5; c.beginPath();
+  for(let i = 0; i < 12; i++){ const ang = i*Math.PI/6 + 0.2, d0 = 16 + 6*e; c.moveTo(x + Math.cos(ang)*d0, y + Math.sin(ang)*d0); c.lineTo(x + Math.cos(ang)*(d0 + 15), y + Math.sin(ang)*(d0 + 15)); }
+  c.stroke(); c.strokeStyle = '#ffffff'; c.lineWidth = 2.5; c.stroke(); c.restore();
+  for(let i = 0; i < 10; i++){ const ang = i*Math.PI/5 + 0.5, d0 = 14 + 4.5*e + (i % 2)*10; c.save(); c.globalAlpha = 1 - b; fsaR_profShard(c, x + Math.cos(ang)*d0, y + Math.sin(ang)*d0, ang, 9 + (i % 3)*2, P.shard[i % 3]); c.restore(); }
+  c.globalAlpha = 1;
+}
+// The blast: the warp round the spot, the point rising under them with the trunk growing behind it, a small ring at their feet for each blow of the carry, the pop.
+function fsaR_profBlast(f, c, t, w){
+  const P = FSAR_PROF, a = t - w, ax = f.fsAx, ay = f.fsAy;
+  if(ax == null || ay == null) return;
+  const bx = f.fsBx != null ? f.fsBx : ax, by = f.fsBy != null ? f.fsBy : ay - P.rise, rise = Math.max(0, ay - by);
+  const L = fsLockedOf(f), fr = L ? L.r : 24, base = ay + fr + 6;
+  if(a < P.pop){
+    const top = ay + fr + 12 - fsaR_profLift(a, rise);
+    if(a < P.warp) fsaR_profWarp(c, ax, base, a);
+    fsaR_profCactus(c, ax, base, top, 1);
+    if(a >= P.hit[0] && a < P.hit[0] + 20) fsLandRing(c, ax, ay, P.R, '#8fb0ee', (a - P.hit[0])/20);   // the catch's blow, on the floor spot
+    for(let i = 1; i < 4; i++){ const u = (a - P.hit[i])/10; if(u >= 0 && u < 1) fsRing(c, ax, top - fr, fr + 8 + 18*u, '#ffffff', 4*(1 - u) + 1, 1 - u); }   // a ring round them for each blow of the carry
+    c.globalAlpha = 1;
+  } else if(a < P.pop + 26) fsaR_profPop(c, bx, by, ay + fr + 6, (a - P.pop)/26);
+}
 // ---- FSA lane r: end ------------------------------------------------------------------------------------------------------------------
 
 // BALLOONY -- AIR LEAK, the Final Smash (see the lane r block above for the frames and the zig-zag). "Air Leak: jets of released air zip Balloony around." (quoted at his special);
@@ -26045,9 +26238,45 @@ FINAL_SMASHES['Balloony'] = {
 // up. Antennas spring up out of the floor, six a side, 70 px apart, one every three frames (10%, thrown nearly straight up).
 FINAL_SMASHES['Roboty'] = fsCols({ id:'antennaspring', c1:'#c8c8d0', c2:'#e8506a', nc:6, sp:70, H:260, hw:30, dmg:10, kb:4, ky:-24, art:FS_GLYPH.gear });
 
-// PROFILY -- DON'T HUG THE CACTUS! "In 'Chapter Complete', touching a cactus representation of Four causes Profily to warp, ascend, and pop." (the Four page, quoted at the
-// move); his own card is the Price Tag. It goes for the nearest foe within 400, its spot fixed as the startup begins (90 px: step out): a cactus warps up under them, 24%, thrown hard.
-FINAL_SMASHES['Profily'] = fsLock({ id:'cactus', c1:'#4f9a4a', c2:'#ffffff', R:90, bx:400, by:240, effect:'blast', delay:10, dmg:24, kb:22, ky:-18, art:FS_GLYPH.cactus });
+// PROFILY -- DON'T HUG THE CACTUS! "In 'Chapter Complete', touching a cactus representation of Four causes Profily to warp, ascend, and pop." (the Four page, quoted at the move); his own card is the
+// Price Tag. The owner, 2026-11-02 (redesign): the cactus warps up under the nearest foe within 400 (the spot is fixed where the catch took them: 90 px, step out) and catches them, carries them up
+// 160 px, and pops: 6% + 3% + 3% + 3% + 15% = 30% (was 24%, one blow), the last thrown as hard as the old blast was. The entrance and every frame are in the `FSA lane r` block above.
+FINAL_SMASHES['Profily'] = {
+  id:'cactus', wind:FSAR_PROF.w, dur:FSAR_PROF.dur, reach:FSAR_PROF.bx,
+  catch(f){ return f._fs ? FSAR_NONE : fsaR_profCatch(f); },   // CATCH: nobody when it is fired (the framework's catch finds no one: nobody is held through the entrance); the same box he lays himself at row frame catchAt. The CPU asks with no Final Smash running: the real box
+  lockEnd:FSAR_PROF.w + FSAR_PROF.pop, catchMax:1,   // the nearest foe is held until a beat after the pop (the row frame of its last blow)
+  start(f, st){ st.seen = [new Set(), new Set()]; armAtk(f, this.wind, 'fsgather'); },
+  tick(f, st, t){
+    const P = FSAR_PROF, w = this.wind, a = t - w;
+    if(t === 0){ shake(3); for(let i = 0; i < 6; i++) puff(f.x + (f.face < 0 ? -1 : 1)*(f.r + 36), f.y + f.r, i % 2 ? '#8fb0ee' : '#ffffff', 4); }   // the small cactus pops in beside him
+    if(t === P.catchAt){   // THE CATCH, FS_WIND frames before the warp; the spot is fixed on the foe it took (or ahead of him, with nobody)
+      st.cs = fsaR_profCatch(f); hitArt(f, 'fscatch', st.cs, { color:f.color, world:true, fade:10 }); fsCatch(f, st);
+      fsLockAt(f, st, fsPick(f, P.bx, P.by, false), P.fall); fsaR_profSpot(f, st);
+    }
+    if(t === w){ armAtk(f, 34, 'fsburst'); shake(5); for(let i = 0; i < 12; i++) puff(f.fsAx, f.fsAy + 14, i % 2 ? '#8fb0ee' : '#ffffff', 5); }   // the warp: the point comes up under them
+    const L = fsLockedOf(f);
+    if(a >= 0 && a <= P.pop && L) fsPin(L, L.x, st.y0 - fsaR_profLift(a, st.rise));   // the cactus carries the foe it holds: up, and nothing else moves them
+    const i = P.hit.indexOf(a);
+    if(i >= 0){   // the catch's blow (a ring on the spot) and the carry's: the held foe takes each one where it hangs
+      shake(i ? 3 : 6);
+      if(L) applyHit(L, P.dmg[i], (Math.sign(L.x - f.fsAx) || f.face || 1)*P.kb[i], P.ky[i], f);
+      if(i === 0){ fsaR_profRing(f, st, 0, f.fsAx, f.fsAy, P.dmg[0], P.kb[0], P.ky[0]); for(let k = 0; k < 10; k++) puff(f.fsAx, f.fsAy + 10, k % 2 ? '#4f9a4a' : '#ffffff', 5); }
+      else if(L) for(let k = 0; k < 5; k++) puff(L.x, L.y + L.r, k % 2 ? '#4f9a4a' : '#ffffff', 3);
+    }
+    if(a === P.pop){   // the pop: the 90 px ring where they hang, the old blast's own launch
+      armAtk(f, 34, 'fsburst'); shake(13);
+      if(L) applyHit(L, P.dmg[4], (Math.sign(L.x - f.fsBx) || f.face || 1)*P.kb[4], P.ky[4], f, { stun:P.popStun });   // (its stun: the old blast's, whatever its % now)
+      fsaR_profRing(f, st, 1, f.fsBx, f.fsBy, P.dmg[4], P.kb[4], P.ky[4], { stun:P.popStun });
+      for(let k = 0; k < 18; k++) puff(f.fsBx, f.fsBy, k % 2 ? '#4f9a4a' : '#ffffff', 7);
+    }
+  },
+  end(f, st){ f.fsBx = f.fsBy = null; },
+  ai(f){ return !!fsPick(f, FSAR_PROF.bx*0.9, FSAR_PROF.by*0.9); },
+  draw(f, c){
+    const t = f.fsT || 0, w = f.fsWind || FSAR_PROF.w;
+    if(t < w) fsaR_profEntrance(f, c, t, w); else fsaR_profBlast(f, c, t, w);
+  },
+};
 
 // TREE -- TIMBER. His own card: a heavy branch dropped on the nearest foe after a warning; the design doc has him enormous and rooted. Marks under the nearest foe, three branches
 // fourteen frames apart, 80 px along each time (18%, a hard knock): keep moving.
@@ -71800,6 +72029,7 @@ const FIGHTER_ANIM = {
   // ---- Profily — a flat frame turning on its VERTICAL axis (Coiny turns horizontally). ----
   Profily: {
     deform(f, ctx, R){
+      if(fsaR_profDeform(f, ctx, R)) return;   // (Don't Hug the Cactus!, the Final Smash: hands up, then two turns edge-on: FSA lane r)
       const p = atkPulse(f);
       if(!p) return;
       const turn = Math.cos(p*Math.PI*1.5);
@@ -76876,6 +77106,7 @@ function drawSpriteBody(f, sp, anim){
   // spear, Blocky toppling like felled timber, Ice Cube tipping onto an edge — without giving up
   // the render the way a full `body` replacement does.
   if(anim && anim.deform) anim.deform(f, ctx, R);
+  if(f.fsLk > 0) fsaR_profCaught(f, ctx, R);   // (a foe Profily's cactus holds: flat and edge-on, from the wire flag fsLk: FSA lane r)
   if(fd) frDeform(ctx, R);
   if(f.idx != null && typeof ctx.getTransform === 'function') CP_XF = { o:f.idx, m:ctx.getTransform() };   // the space the body is drawn in: a thing in its hand is drawn in it too (cpFollow)
   let dw=0, dh=0;
