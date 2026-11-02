@@ -25932,9 +25932,102 @@ FINAL_SMASHES['Box'] = fsLock({ id:'everythingpacked', c1:'#c9a46c', c2:'#ffffff
 // the nearest foe within 420, fixed 18 frames ahead (110 px: step out); the flash goes off and the picture is the blow, 22%, and their hits are weaker for 6 seconds.
 FINAL_SMASHES['Trophy'] = fsLock({ id:'blackmail', c1:'#f2c94c', c2:'#ffffff', R:110, bx:420, by:260, effect:'blast', delay:6, dmg:22, kb:21, ky:-15, S:{ weak:360 }, art:FS_GLYPH.spark });
 
+// ---- FSA lane a: begin ----------------------------------------------------------------------------------------------------------------
+// ENTRANCES (the owner, 2026-11-02: every Final Smash gets an in-character ENTRANCE ANIMATION before its blast, which comes out exactly as it
+// does now; Pencil's hop into the van is the model). Lane a: Goo, Lifering, Bonesaw, Spikey, Candle, Cammy, Cheesy, Fan. fsaA_wrap(base, E) takes
+// the row the shapes built and puts E.W frames of entrance in front of it:
+//   - the row's own frames run on, E.W - FS_WIND frames later (base.tick gets t - S), so its blast -- its damage, launch, reach, shape, hit
+//     count, stun and effects -- is the old one frame for frame; wind, dur and a numeric lockEnd move with it
+//   - the CATCH lands where it always landed relative to the blast (FS_WIND + 1 frames before it): nobody is held through the entrance, and a
+//     foe is held no longer than before. The area is the one fixed when it was fired. (At fire the row's `catch` hands the framework a shape
+//     that holds nobody -- 'fsaA_late' -- and the real one is laid in tick; the CPU, asking with no Final Smash running, gets the real one.)
+//   - what is drawn is a pure function of the wire fields (fsT, fsWind, fsAx/fsAy, face, position): E.draw (world space, over the fighters),
+//     E.pose(t) (a forced picture of the fighter's pose set, fsaA_pose), E.deform (the body, in FIGHTER_ANIM). Nothing is drawn where the blast
+//     will land, and no words. The sim adds nothing of its own to the entrance (no dice are spent): only Spikey's release (E.tick).
+//   - the generic startup (the gather's lean-back and crouch) would fight these motions: the entrance re-arms the swing as 'spit', whose drive
+//     a fighter's FIGHTER_ANIM may set (atkDrive, spriteRig): it is 0 through the entrance, the shared one the rest of the time.
+function fsaA_k(t, a, b){ return t <= a ? 0 : (t >= b ? 1 : (t - a)/(b - a)); }   // 0 -> 1 across frames a..b
+function fsaA_ease(k){ return k*k*(3 - 2*k); }
+function fsaA_h(i, j){ const v = Math.sin(i*127.1 + (j || 0)*311.7)*43758.5453; return v - Math.floor(v); }   // a fixed 0..1 for a fleck (a picture, never a die)
+function fsaA_row(f){ if(!f || !f.fsId || f.dead || f.fsC > 0) return null; const d = FINAL_SMASHES[f.name]; return (d && d.fsaA && d.id === f.fsId) ? d : null; }
+function fsaA_on(f){ const d = fsaA_row(f); return d && (f.fsT || 0) < (d.fsaA.span || f.fsWind || 0) ? d.fsaA : null; }   // the entrance of this fighter's Final Smash is playing: its E, or null
+function fsaA_pose(f){ const E = fsaA_on(f); if(!E || !E.pose || (typeof cosCostumeOf === 'function' && cosCostumeOf(f))) return null; return E.pose(f.fsT | 0) || null; }   // a costume is drawn on the plain render
+function fsaA_sparkle(c, x, y, s, col, a){ c.globalAlpha = a; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4; c.lineCap = 'round'; c.beginPath(); c.moveTo(x - s, y); c.lineTo(x + s, y); c.moveTo(x, y - s); c.lineTo(x, y + s); c.stroke(); c.strokeStyle = col; c.lineWidth = 2; c.stroke(); }
+function fsaA_wrap(base, E){
+  const S = E.W - base.wind, row = Object.assign({}, base, { wind:E.W, dur:base.dur + S, fsaA:E });
+  if(typeof base.lockEnd === 'number') row.lockEnd = base.lockEnd + S;
+  row.catch = function(f){
+    const sh = base.catch(f), st = f._fs;
+    return (st && st.d === row && st.cs == null) ? { kind:'fsaA_late', real:sh } : sh;
+  };
+  row.start = function(f, st){ if(base.start) base.start.call(base, f, st); armAtk(f, E.W, 'spit'); if(E.start) E.start(f, st); };
+  row.tick = function(f, st, t){
+    // In the air the holder hangs where they were fired (the old startup let them sink a little each frame: 14 frames of it, 40 would be
+    // a lot more): held in place through the entrance, so the blast goes off from where it always did relative to its own frames.
+    if(t === 0) st.fsaY0 = f.y;
+    if(t <= S && !f.onground && st.fsaY0 != null) f.y = st.fsaY0;
+    if(t === S - 1 && st.cs && st.cs.kind === 'fsaA_late'){ st.cs = st.cs.real; hitArt(f, 'fscatch', st.cs, { color:f.color, world:true, fade:10 }); fsCatch(f, st); }
+    if(t >= S) base.tick.call(base, f, st, t - S);
+    if(E.tick) E.tick(f, st, t);
+  };
+  row.draw = function(f, c){
+    const t = f.fsT || 0, sp = E.span || E.W;
+    if(t < sp){ if(E.draw) E.draw(f, c, t); }
+    else if(E.after) E.after(f, c, t - sp);
+    if(t >= E.W && base.draw) base.draw(f, c);
+  };
+  return row;
+}
+// How far the holder may be moved along `s` (+1 right, -1 left) from x0, feet at fy, and still stand on what they stood on (in the air they
+// stood in: any surface below), a body inside the edge, no solid block in the way. A knock-back out of a blast is scripted short and clamped
+// here, so it never carries a fighter over a ledge or past a blast line by itself. On the Moon, none.
+function fsaA_room(x0, fy, s, want, r, air){
+  if(MCAVE && MCAVE.on) return 0;
+  const plats = platRects(); let ok = 0;
+  for(let d = 8; d <= want; d += 8){
+    const x = x0 + s*d;
+    if(x < 70 || x > WW - 70) return Math.max(0, ok - 8);
+    let hold = air ? landable(x, fy) : false;
+    if(!air) for(const tp of vanTopsAt(x)) if(Math.abs(tp.y - fy) <= 12){ hold = true; break; }
+    if(!hold) return Math.max(0, ok - 8);
+    for(const p of plats){ if(!p.solid || p.rot) continue; if(x > p.x - r && x < p.x + p.w + r && p.y < fy - 4 && p.y + (p.h || 16) > fy - 2*r) return Math.max(0, ok - 8); }
+    ok = d;
+  }
+  return want;
+}
+// How high a hop may go from (x, fy): not into a solid block over the head.
+function fsaA_head(x, fy, r, want){
+  let h = want;
+  for(const p of platRects()){ if(!p.solid || p.rot) continue; if(x > p.x - r && x < p.x + p.w + r){ const bottom = p.y + (p.h || 16); if(bottom <= fy - 2*r + 2) h = Math.min(h, Math.max(0, fy - 2*r - bottom - 4)); } }
+  return h;
+}
+// ---- FSA lane a: end ------------------------------------------------------------------------------------------------------------------
+
 // GOO -- ENGULF. "Winning is like glue! This one stuck!" (the design doc, his analogies never stick); his own card surges forward, swallows whoever he reaches, holds them, and spits them out. He swells to 120 px round
 // him: whoever is in it when he does is held and hit ten times (2%) and spat out by the last (16%).
-FINAL_SMASHES['Goo'] = fsOrbit({ id:'engulf', c1:'#5ad08a', c2:'#ffffff', R:120, n:10, every:5, hitDmg:2, dmg:16, kb:24, art:FS_GLYPH.slime });
+// THE ENTRANCE (32 frames, his own engulf pictures; the pool is ours): he flops flat on the floor (engulf-1) while a small blue pool, no wider than
+// he is, spreads under him over 12 frames; then he rears straight up tall, mouth wide open (engulf-2, engulf-3), as the pool is drawn up into him
+// (14 frames), and on the last 6 frames he gulps and swells (engulf-4): that is the moment the swell goes out, as it always did.
+FINAL_SMASHES['Goo'] = fsaA_wrap(fsOrbit({ id:'engulf', c1:'#5ad08a', c2:'#ffffff', R:120, n:10, every:5, hitDmg:2, dmg:16, kb:24, art:FS_GLYPH.slime }), {
+  W:32,
+  pose(t){ return t < 12 ? 'engulf-1' : (t < 19 ? 'engulf-2' : (t < 26 ? 'engulf-3' : 'engulf-4')); },
+  draw(f, c, t){
+    const R = f.r, vf = f.face < 0 ? -1 : 1, x = f.x, fy = fsFeetY(f) + 11;
+    const k = t < 12 ? fsaA_ease(fsaA_k(t + 1, 0, 12)) : (t < 26 ? 1 - fsaA_ease(fsaA_k(t, 12, 26)) : 0);   // the pool: spreads, then is drawn up
+    c.save();
+    if(k > 0.02){
+      const rx = R*k, ry = Math.max(3, R*0.26*k);
+      c.globalAlpha = 0.95; c.fillStyle = '#4aa0ff'; c.strokeStyle = '#1c4fa8'; c.lineWidth = 2; c.beginPath(); c.ellipse(x, fy, rx, ry, 0, 0, 7); c.fill(); c.stroke();
+      c.globalAlpha = 0.85; c.fillStyle = '#b8ecff'; c.beginPath(); c.ellipse(x - rx*0.3, fy - ry*0.2, rx*0.35, ry*0.3, 0, 0, 7); c.fill();
+    }
+    if(t >= 12 && t < 30) for(let i = 0; i < 5; i++){   // drops of it rising into his mouth
+      const u = fsaA_k(t, 12 + i*2, 20 + i*2); if(u <= 0 || u >= 1) continue;
+      const sx = x + (i - 2)*R*0.38, ex = x + vf*R*0.05, ey = f.y + R*0.05, py = (fy - 4) + (ey - (fy - 4))*u, px = sx + (ex - sx)*fsaA_ease(u);
+      c.globalAlpha = 0.9*(1 - 0.5*u); c.fillStyle = i % 2 ? '#2b79ee' : '#76dafe'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.5; c.beginPath(); c.arc(px, py, 4 - 2*u, 0, 7); c.fill(); c.stroke();
+    }
+    c.restore();
+  },
+});
 
 // ---- BATCH K: Lifering, Bonesaw, Spikey, Candle, Cammy, Cheesy, Dough, Fan ---------------------------------------------------------------------------
 Object.assign(FS_GLYPH, {
@@ -25948,29 +26041,219 @@ Object.assign(FS_GLYPH, {
 
 // LIFERING -- WE'VE GOT A SINKER! His own card: "a whistle, then a flat-out sprint that bowls over the first fighter he reaches"; the lifeguard, earnest ("Everyone okay? I can perform CPR!", his
 // frame row). The whistle, and then the sprint along the floor in front of him, 800 px at 26 a frame, 90 tall, through everyone it meets (17%).
-FINAL_SMASHES['Lifering'] = fsLane({ id:'sinker', c1:'#ff5a4a', L:800, spd:26, H:90, hw:44, dmg:17, kb:21, ky:-10, kind:'dash', art:FS_GLYPH.lifebuoy });
+// THE ENTRANCE (28 frames; the code's own note on his whistle, Tri Your Best: he blew it, then dived): he plants his feet and blows the whistle
+// (his whistle picture; three short curved white sound arcs a few pixels long, one every 6 frames, each growing out of the mouthpiece over 12
+// frames and fading), then drops into a sprinter's crouch (frames 16-23) and tips into his dive picture for the last 5 frames, as the lifebuoys leave.
+FINAL_SMASHES['Lifering'] = fsaA_wrap(fsLane({ id:'sinker', c1:'#ff5a4a', L:800, spd:26, H:90, hw:44, dmg:17, kb:21, ky:-10, kind:'dash', art:FS_GLYPH.lifebuoy }), {
+  W:28,
+  pose(t){ return t < 23 ? 'whistle' : 'dive'; },
+  deform(f, ctx, R, t){ const c = fsaA_ease(fsaA_k(t, 16, 21)) * (t < 23 ? 1 : 0); if(c > 0) deformAboutFeet(ctx, R, f.face*0.10*c, 1 + 0.08*c, 1 - 0.18*c); },   // the sprinter's crouch
+  draw(f, c, t){
+    const R = f.r, vf = f.face < 0 ? -1 : 1, mx = f.x + vf*R*0.66, my = f.y + R*0.72;   // the mouthpiece (the whistle of his picture)
+    c.save(); c.lineCap = 'round';
+    for(let i = 0; i < 3; i++){
+      const a = t - 6*i; if(a < 0 || a >= 12) continue;
+      const g = (a + 1)/12, rr = 5 + 13*g, base = vf > 0 ? -0.35 : Math.PI + 0.35, span = 0.62;
+      c.globalAlpha = 0.95*(1 - g*g); c.strokeStyle = '#1c1c1c'; c.lineWidth = 5.2; c.beginPath(); c.arc(mx, my, rr, base - span, base + span); c.stroke();
+      c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.stroke();
+    }
+    c.restore();
+  },
+});
 
 // BONESAW -- CUTS RIGHT TO THE CORE. "Bonesaw cuts right to the core." -- after getting through to Box (quoted at his card); "a saw cuts in strokes, and he is never fast". The marker is on the nearest foe within
 // 400, fixed 18 frames ahead (80 px: step out); whoever is in it takes three slow strokes (6%) and then the last (20%), thrown.
-FINAL_SMASHES['Bonesaw'] = fsLock({ id:'cutstothecore', c1:'#b4764a', c2:'#dfe6ee', R:80, bx:400, by:240, effect:'pin', hits:3, every:10, hitDmg:6, dmg:20, kb:23, art:FS_GLYPH.blade });
+// THE ENTRANCE (36 frames; the row's own note, a saw cuts in strokes and is never fast): he rocks on the spot in two slow, heavy strokes of 14
+// frames (the body tips 8 degrees forward and back, then 8 the other way, the same speed both times), with rust flecks and a puff of grit shaking
+// off the teeth on each; the drawn teeth of Truly Groundbreaking bite a few pixels into the floor (growing in over 12 frames) and small cracks spread
+// round his feet; he holds planted the last 6 frames, and then the three strokes proper land on the foe.
+FINAL_SMASHES['Bonesaw'] = fsaA_wrap(fsLock({ id:'cutstothecore', c1:'#b4764a', c2:'#dfe6ee', R:80, bx:400, by:240, effect:'pin', hits:3, every:10, hitDmg:6, dmg:20, kb:23, art:FS_GLYPH.blade }), {
+  W:36,
+  deform(f, ctx, R, t){
+    const ang = t < 2 ? 0 : (t < 16 ? Math.sin(Math.PI*(t - 2)/14) : (t < 30 ? -Math.sin(Math.PI*(t - 16)/14) : 0));
+    if(ang) deformAboutFeet(ctx, R, f.face*ang*8*Math.PI/180, 1, 1);
+  },
+  draw(f, c, t){
+    const R = f.r, x = f.x, fy = fsFeetY(f) + 6, vf = f.face < 0 ? -1 : 1;
+    c.save(); c.lineJoin = 'round';
+    const kb = fsaA_ease(fsaA_k(t + 1, 2, 14));
+    if(kb > 0.02){   // the teeth, bitten into the floor
+      c.globalAlpha = 1; c.fillStyle = '#d8d4c4'; c.strokeStyle = '#3a2a20'; c.lineWidth = 1.6;
+      for(let i = 0; i < 6; i++){ const tx = x + (i - 2.5)*7.5*kb; c.beginPath(); c.moveTo(tx - 3.4*kb, fy - 6*kb); c.lineTo(tx + 3.4*kb, fy - 6*kb); c.lineTo(tx, fy + 3); c.closePath(); c.fill(); c.stroke(); }
+    }
+    const kc = fsaA_k(t, 6, 36);
+    if(kc > 0){ c.save(); c.translate(x, fy + 1); c.globalAlpha = 0.95; PROJ_SHAPE.coresaw.draw(c, 3 + 7*fsaA_ease(kc)); c.restore(); }   // small cracks spreading round the feet
+    for(const t0 of [2, 16]){   // flecks and grit shaking off the teeth on each stroke
+      const a = t - t0; if(a < 0 || a >= 14) continue;
+      for(let i = 0; i < 7; i++){
+        const hx = fsaA_h(i, t0), hy = fsaA_h(i, t0 + 5), age = a - i*0.8; if(age < 0) continue;
+        const px = x + (hx - 0.5)*R*2.4 + vf*(hx - 0.5)*age*1.6, py = f.y + R*0.65 - age*(0.8 + 1.4*hy) + 0.09*age*age*6;
+        c.globalAlpha = Math.max(0, 1 - age/12); c.fillStyle = i % 2 ? '#b4764a' : '#8c5a3c'; c.save(); c.translate(px, py); c.rotate(age*0.7 + i); c.fillRect(-2, -1.2, 4, 2.4); c.restore();
+      }
+      const g = a/14; c.globalAlpha = 0.5*(1 - g); c.fillStyle = '#9a8f80'; c.beginPath(); c.arc(x + vf*R*0.2, fy - 6 - 8*g, 5 + 11*g, 0, 7); c.fill();
+    }
+    c.restore();
+  },
+});
 
 // SPIKEY -- CAN'T HOLD IT IN. His own card: "hold it in, let go, and every spike shoots off at once, all ways"; lost and a little slow ("Wait, I won? Did I miss something?", his frame row). Eighteen spikes, all at once,
 // in every direction (12%, they fly 700 px): the gaps between them are the way through, and he is bald afterwards.
-FINAL_SMASHES['Spikey'] = fsFan({ id:'cantholditin', c1:'#8a8a96', n:18, spd:14, vols:[0], dmg:12, kb:18, r:11, life:52, reach:340, kind:'fsburst', art:FS_GLYPH.spike,
-  lockShots:2 });   // (the foe his catch holds takes two spikes, as one right beside him does: the catch does not halve it)
+// THE ENTRANCE (40 frames of holding it in; the early spike is our gag): he swells to 1.2 times his size and trembles harder every few frames (a
+// 1 px shake growing to 4 px), his red half glowing hotter, grey steam leaking from his sides; on frame 26 one spike pops loose early, spins up and
+// drops (a small drawn spike); from frame 32 he is completely still, swollen to the full, until he lets go. THE RELEASE throws him: up about 30 px
+// and back about 40 px (away from the way he faces; shorter where the surface under him ends or a block is in the way, fsaA_room), and he lands
+// bald (_baldUntil, 150 frames, as his own Can't Hold It In leaves him: the row's old comment said so, nothing set it). On the wire: _baldUntil.
+const SPIKEY_FS = { W:40, pop:26, still:32, up:33, back:40, flight:22.2 };   // (up: the hop's height wanted; the real apex is about 30. flight: frames the push back lasts)
+function fsaA_spikeyPop(f, c, u){   // the early spike, u frames after it popped: up, spinning, and down
+  const R = f.r, vf = f.face < 0 ? -1 : 1, x0 = f.x + vf*R*0.30, y0 = f.y + R + 12 - 2.4*R*1.2;
+  const px = x0 + vf*u*1.1, py = y0 - 5.2*u + 0.27*u*u;
+  c.save(); c.translate(px, py); c.rotate(u*0.55); c.globalAlpha = 1; FS_GLYPH.spike(c, 0, 0, 9*(0.4 + 0.6*fsaA_k(u, 0, 12)), 0, f); c.restore();   // (it grows in over 12 frames, like everything that appears)
+}
+FINAL_SMASHES['Spikey'] = fsaA_wrap(fsFan({ id:'cantholditin', c1:'#8a8a96', n:18, spd:14, vols:[0], dmg:12, kb:18, r:11, life:52, reach:340, kind:'fsburst', art:FS_GLYPH.spike,
+  lockShots:2 }), {   // (the foe his catch holds takes two spikes, as one right beside him does: the catch does not halve it)
+  W:SPIKEY_FS.W,
+  deform(f, ctx, R, t){
+    const s = 1 + 0.2*(t >= SPIKEY_FS.still ? 1 : fsaA_ease(fsaA_k(t, 0, SPIKEY_FS.still))), a = t >= SPIKEY_FS.still ? 0 : 1 + 3*Math.floor(t/4)/7;
+    deformAboutFeet(ctx, R, 0, s, s);
+    if(a > 0) ctx.translate(a*Math.sin(t*3.1), a*0.6*Math.sin(t*4.7 + 1));
+  },
+  draw(f, c, t){
+    const R = f.r, vf = f.face < 0 ? -1 : 1, hot = t >= SPIKEY_FS.still ? 1 : fsaA_k(t, 0, SPIKEY_FS.still), s = 1 + 0.2*(t >= SPIKEY_FS.still ? 1 : fsaA_ease(hot));
+    const cy = f.y + R + 12 - 1.255*R*s, rb = 0.80*R*s;   // the ball's middle and radius, as he is drawn
+    c.save();
+    c.globalAlpha = 0.07 + 0.36*hot*hot; c.fillStyle = '#ff4a30'; c.beginPath(); c.arc(f.x, cy, rb, vf > 0 ? -Math.PI/2 : Math.PI/2, vf > 0 ? Math.PI/2 : Math.PI*1.5); c.closePath(); c.fill();   // the red half, hotter
+    for(let i = 0; i < 14; i++){   // grey steam leaking from his sides
+      const b = 3 + i*2.2, a = t - b; if(a < 0 || a >= 15) continue;
+      const side = i % 2 ? 1 : -1, g = a/15, px = f.x + side*(rb*0.95 + 10*g + 3*Math.sin(i*2.1 + a*0.3)), py = cy - R*0.1 - 24*g;
+      c.globalAlpha = 0.7*(1 - g); c.fillStyle = '#c4cad2'; c.beginPath(); c.arc(px, py, 3 + 4*g, 0, 7); c.fill();
+    }
+    if(t >= SPIKEY_FS.pop) fsaA_spikeyPop(f, c, t - SPIKEY_FS.pop);
+    c.restore();
+  },
+  after(f, c, u){ if(u < 14){ c.save(); c.globalAlpha = 1 - u/14; fsaA_spikeyPop(f, c, SPIKEY_FS.W - SPIKEY_FS.pop + u); c.restore(); } },
+  tick(f, st, t){
+    const K = SPIKEY_FS;
+    if(t === K.W){   // THE RELEASE (after the spikes went): up and back, and bald
+      const fy = f.y + f.r, air = !f.onground, room = (q)=> fsaA_room(f.x, fy, q, K.back, f.r, air);
+      let sg = f.face < 0 ? 1 : -1;
+      if(room(sg) < 24 && room(-sg) > room(sg) + 16) sg = -sg;
+      const D = Math.min(K.back, room(sg)), hh = (MCAVE && MCAVE.on) ? 0 : fsaA_head(f.x, fy, f.r, K.up);   // (on the Moon: no hop, and no push: fsaA_room is 0 there)
+      st.kb = { vx:sg*D/K.flight };
+      if(hh > 4){ f.vy = -Math.sqrt(2*GRAV*hh); f.onground = false; }
+      f._baldUntil = hazardT + 150;
+    }
+    if(st.kb && t >= K.W){ if(t > K.W + 2 && f.onground) st.kb = null; else if(t >= K.W + K.flight){ st.kb = null; f.vx = 0; } else f.vx = st.kb.vx; }
+  },
+});
 
 // CANDLE -- CRYSTAL CHIME. "There is no magic. JUST, your inner..." (The Overthinkers, quoted at her card); her own card chimes her crystal with the tuning fork "and every grounded foe near her trips". Crystals
 // come up out of the floor out from under her, seven a side, 60 px apart, one every three frames (13%, and a stun).
-FINAL_SMASHES['Candle'] = fsCols({ id:'crystalchime', c1:'#b894f0', c2:'#ffffff', nc:7, sp:60, H:170, hw:34, dmg:13, kb:15, ky:-16, S:{ stun:20 }, art:FS_GLYPH.crystal });
+// THE ENTRANCE (34 frames; the fork she already holds in her Crystal Chime special): she takes out the tuning fork (her drawn fork-and-crystal
+// prop, growing in beside her over 12 frames), strikes it against her wax with a small spark (frames 13-17), and holds it up with her eyes shut,
+// humming (her chime picture from 17), thin rings of sound shivering out of the fork while her flame leans and flickers with the note; on the
+// last 5 frames she stabs the fork point-down into the floor and the first crystal comes up under it.
+const CANDLE_FS = { W:34, strike:12, hold:17, stab:29 };
+function fsaA_candleFork(f, t){   // where the fork's stem-top is, and how big: { x, y, s } (world)
+  const R = f.r, vf = f.face < 0 ? -1 : 1, K = CANDLE_FS, rest = vf*(R*0.9 + 10), fy = fsFeetY(f) + 4;
+  let px = rest, py = -R*0.3, s = fsaA_ease(fsaA_k(t + 1, 0, 12));
+  if(t >= K.strike && t < K.hold){ const u = fsaA_k(t, K.strike, K.hold), q = Math.sin(Math.PI*u); px = rest*(1 - 0.62*q); }   // out to her wax and back
+  if(t >= K.hold){ px = rest + Math.sin(t*2.3)*0.7; py = -R*0.3 - R*0.75*fsaA_ease(fsaA_k(t, K.hold, K.hold + 4)); }   // held up beside her head
+  const out = { x:f.x + px, y:f.y + py, s:s };
+  if(t >= K.stab){ const u = fsaA_ease(fsaA_k(t + 1, K.stab, K.W)), x1 = f.x + vf*R*0.6, y1 = fy - 10*1.3, x0 = f.x + rest, y0 = f.y - R*0.3 - R*0.75; out.x = x0 + (x1 - x0)*u; out.y = y0 + (y1 - y0)*u; }   // down into the floor beside her, under the first crystal
+  return out;
+}
+FINAL_SMASHES['Candle'] = fsaA_wrap(fsCols({ id:'crystalchime', c1:'#b894f0', c2:'#ffffff', nc:7, sp:60, H:170, hw:34, dmg:13, kb:15, ky:-16, S:{ stun:20 }, art:FS_GLYPH.crystal }), {
+  W:CANDLE_FS.W,
+  pose(t){ return t >= CANDLE_FS.hold ? 'chime' : null; },
+  deform(f, ctx, R, t){ const hk = fsaA_k(t, CANDLE_FS.hold - 2, CANDLE_FS.hold + 3); deformAboutFeet(ctx, R, f.face*(0.02 + 0.055*hk*Math.sin(t*0.95)), 1, 1 + 0.03*hk*Math.sin(t*2.4)); },   // the flame leans and flickers with the note
+  draw(f, c, t){
+    const K = CANDLE_FS, R = f.r, vf = f.face < 0 ? -1 : 1, F = fsaA_candleFork(f, t);
+    c.save();
+    if(t >= K.hold && t < K.stab) for(let i = 0; i < 3; i++){   // rings of sound, shivering out of the tines
+      const a = t - (K.hold + 2 + 4*i); if(a < 0 || a >= 11) continue;
+      const g = a/11; c.globalAlpha = 0.75*(1 - g); c.strokeStyle = '#e4d8ff'; c.lineWidth = 1.6; c.beginPath(); c.ellipse(F.x - vf*0.6*8, F.y - 8.5, 4 + 20*g, 3 + 14*g + Math.sin(t*3 + i)*1.2, 0, 0, 7); c.stroke();
+    }
+    c.translate(F.x, F.y); c.scale(vf*F.s, F.s); c.globalAlpha = 1; PROJ_SHAPE.crystalchime.draw(c, 10);   // the fork and the crystal, drawn
+    c.restore();
+    if(t >= 15 && t < 20){ const g = (t - 15)/5; c.save(); fsaA_sparkle(c, f.x + vf*R*0.42, f.y - R*0.3, 2 + 5*Math.sin(Math.PI*g), '#fff6c0', 1 - g*0.4); c.restore(); }   // the strike's spark
+  },
+  after(f, c, u){ if(u < 10){ const F = fsaA_candleFork(f, CANDLE_FS.W - 1), vf = f.face < 0 ? -1 : 1; c.save(); c.globalAlpha = 1 - u/10; c.translate(F.x, F.y); c.scale(vf, 1); PROJ_SHAPE.crystalchime.draw(c, 10); c.restore(); } },
+});
 
 // CAMMY -- SAY CHEESE! "The power of MePhone compels you: say cheese!" (his frame row): theatrical, a camera that compels you; his own card, Snapshot, goes off "at a point well ahead". The marker is on the
 // nearest foe in front of him within 560, fixed 20 frames ahead (130 px: step out); the flash catches whoever is in frame, 22%, and a stun.
-FINAL_SMASHES['Cammy'] = fsLock({ id:'saycheese', lead:20, c1:'#ffffff', c2:'#8ad8ff', R:130, bx:560, by:240, fwd:true, effect:'blast', delay:6, dmg:22, kb:21, ky:-14, S:{ stun:30 }, art:FS_GLYPH.spark });
+// THE ENTRANCE (30 frames up to the flash; they/them, no pronoun: the sources disagree): they squint (the squint picture) and the zoom lens slides
+// out in front of the camera (a drawn barrel growing in over 12 frames) while the aperture irises shut to a pin point and a small red record light
+// blinks twice on top; for the last 8 frames the flash picture takes over (it is the startup picture of their own special) with a white four-point
+// glint growing on the lens. Nothing is drawn at the foe: the flash is the blast. The row's wind is 24 and its own 6-frame delay follows: the
+// flash goes off on frame 30.
+const CAMMY_FS = { W:24, span:30, flash:22 };
+FINAL_SMASHES['Cammy'] = fsaA_wrap(fsLock({ id:'saycheese', lead:20, c1:'#ffffff', c2:'#8ad8ff', R:130, bx:560, by:240, fwd:true, effect:'blast', delay:6, dmg:22, kb:21, ky:-14, S:{ stun:30 }, art:FS_GLYPH.spark }), {
+  W:CAMMY_FS.W, span:CAMMY_FS.span,
+  pose(t){ return t < CAMMY_FS.flash ? 'squint' : 'flash'; },
+  draw(f, c, t){
+    const K = CAMMY_FS, R = f.r, vf = f.face < 0 ? -1 : 1, lx = f.x + vf*R*0.0, ly = f.y + R*0.25;   // the lens
+    const g = fsaA_ease(fsaA_k(t + 1, 0, 12)), r0 = R*0.40, r1 = R*0.50, ex = lx + vf*R*0.95*g, ey = ly - R*0.15*g;   // the barrel's far end
+    const ik = fsaA_ease(fsaA_k(t, 0, K.span - 2));   // the aperture: shut to a pin point
+    c.save(); c.lineJoin = 'round';
+    if(g > 0.02){
+      c.globalAlpha = 1; c.fillStyle = '#6c737e'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5;
+      c.beginPath(); c.moveTo(lx, ly - r0); c.lineTo(ex, ey - r1*g); c.lineTo(ex, ey + r1*g); c.lineTo(lx, ly + r0); c.closePath(); c.fill(); c.stroke();
+      c.strokeStyle = '#3a3f48'; c.lineWidth = 1.6; for(let i = 1; i < 4; i++){ const q = i/4, bx = lx + (ex - lx)*q, by = ly + (ey - ly)*q, rr = (r0 + (r1*g - r0)*q); c.beginPath(); c.moveTo(bx, by - rr*0.92); c.lineTo(bx, by + rr*0.92); c.stroke(); }
+      c.fillStyle = '#9aa1ac'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.ellipse(ex, ey, Math.max(1, r1*0.5*g), r1*g, 0, 0, 7); c.fill(); c.stroke();
+      c.fillStyle = '#10161f'; c.beginPath(); c.ellipse(ex, ey, Math.max(1, r1*0.36*g), r1*0.8*g, 0, 0, 7); c.fill();
+      const ap = Math.max(1, r1*0.7*g*(1 - 0.94*ik)); c.fillStyle = '#9ec6ea'; c.beginPath(); c.ellipse(ex, ey, Math.max(0.8, ap*0.45), ap, 0, 0, 7); c.fill();   // the glass left open by the iris
+    }
+    const on = (t >= 8 && t < 12) || (t >= 17 && t < 21);   // the red record light, blinking twice
+    c.globalAlpha = 1; c.fillStyle = on ? '#ff3030' : '#6a2020'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.6; c.beginPath(); c.arc(f.x + vf*R*0.28, f.y - R*0.5, 2.8, 0, 7); c.fill(); c.stroke();
+    if(on){ c.globalAlpha = 0.45; c.fillStyle = '#ff6a5a'; c.beginPath(); c.arc(f.x + vf*R*0.28, f.y - R*0.5, 6, 0, 7); c.fill(); }
+    if(t >= K.flash){ const q = (t - K.flash + 1)/(K.span - K.flash); fsaA_sparkle(c, ex, ey, 4 + 16*q, '#ffffff', 0.55 + 0.45*q); }   // the glint on the lens
+    c.restore();
+  },
+});
 
 // CHEESY -- KICK! SOCCER! PUN! "Who knew all that slapping would give my leg endurance?" (A Kick in the Right Direction, quoted at the move); his own card kicks a ball low along the floor. Five balls, eight
 // frames apart, bounce along the floor in front of him (6%, and they keep hitting), and the last is the goal: a big one that goes through everyone (18%).
-FINAL_SMASHES['Cheesy'] = fsHose({ id:'kicksoccerpun', c1:'#f4f4f4', n:5, every:8, v0:11, art:FS_GLYPH.soccer, reach:520,
-  shots:[{ color:'#f4f4f4', dmg:6, kb:8, r:14, bounce:true, maxBounces:5, grav:true, vy:-2, life:130 }], big:{ dmg:18, kb:23, r:26, color:'#f4f4f4', life:70, pierce:true } });
+// THE ENTRANCE (36 frames, in his joke rhythm, ba, dum, TSS; the juggle is game text only): two knee slaps (frames 3 and 10), each with the twinkle he
+// already shows on the knee and a puff of crumbs; a soccer ball drops in at his feet (growing in over 12 frames, 13-25) and he juggles it once on
+// the knee (25-32, a drawn ball hopping), and leans back on his planted foot to wind up the kick (30-36). The first ball of the stream leaves from
+// that same ball: it ends the entrance where the stream's shots are born.
+const CHEESY_FS = { W:36, slap:[3, 10], grow:13, juggle:25, lean:30 };
+function fsaA_cheesyBall(f, t){   // { x, y, s } of the drawn ball, or null
+  const R = f.r, vf = f.face < 0 ? -1 : 1, K = CHEESY_FS, fy = fsFeetY(f) + 4, rb = 10;
+  const p0 = { x:f.x + vf*(R + 6), y:fy - rb }, pk = { x:f.x + vf*(R*0.45 + 8), y:f.y + R*0.55 }, pS = { x:f.x + vf*20, y:f.y - 6 };
+  if(t < K.grow) return null;
+  if(t < K.juggle){ const u = fsaA_ease(fsaA_k(t + 1, K.grow, K.juggle)); return { x:p0.x, y:p0.y - 26*(1 - u), s:u }; }
+  if(t < 32){ const u = fsaA_k(t, K.juggle, 32); if(u < 0.45){ const q = u/0.45; return { x:p0.x + (pk.x - p0.x)*q, y:p0.y + (pk.y - p0.y)*q - 16*Math.sin(Math.PI*q), s:1 }; }
+              const q = (u - 0.45)/0.55; return { x:pk.x + (pS.x - pk.x)*q, y:pk.y + (pS.y - pk.y)*q - 14*Math.sin(Math.PI*q), s:1 }; }
+  return { x:pS.x, y:pS.y - 2*Math.sin(Math.PI*fsaA_k(t, 32, 36)), s:1 };
+}
+FINAL_SMASHES['Cheesy'] = fsaA_wrap(fsHose({ id:'kicksoccerpun', c1:'#f4f4f4', n:5, every:8, v0:11, art:FS_GLYPH.soccer, reach:520,
+  shots:[{ color:'#f4f4f4', dmg:6, kb:8, r:14, bounce:true, maxBounces:5, grav:true, vy:-2, life:130 }], big:{ dmg:18, kb:23, r:26, color:'#f4f4f4', life:70, pierce:true } }), {
+  W:CHEESY_FS.W,
+  deform(f, ctx, R, t){
+    const K = CHEESY_FS; let h = 0; for(const s0 of K.slap) h += Math.sin(Math.PI*fsaA_k(t, s0, s0 + 5));
+    const lean = fsaA_ease(fsaA_k(t, K.lean, K.W - 2));
+    deformAboutFeet(ctx, R, f.face*(0.13*h - 0.20*lean), 1 + 0.04*h, 1 - 0.06*h);
+  },
+  draw(f, c, t){
+    const K = CHEESY_FS, R = f.r, vf = f.face < 0 ? -1 : 1, kx = f.x + vf*R*0.3, ky = f.y + R*0.95;   // the knee
+    c.save();
+    for(let j = 0; j < 2; j++){
+      const a = t - K.slap[j]; if(a < 0 || a >= 9) continue;
+      const g = a/9, s = 3 + 4*Math.sin(Math.PI*Math.min(1, g*1.4));   // the twinkle he already shows on the knee
+      c.globalAlpha = 0.95*(1 - g*g); c.beginPath(); c.moveTo(kx, ky - s*2); c.lineTo(kx + s*0.5, ky - s*0.5); c.lineTo(kx + s*2, ky); c.lineTo(kx + s*0.5, ky + s*0.5); c.lineTo(kx, ky + s*2); c.lineTo(kx - s*0.5, ky + s*0.5); c.lineTo(kx - s*2, ky); c.lineTo(kx - s*0.5, ky - s*0.5); c.closePath();
+      c.fillStyle = '#fffbe0'; c.fill(); c.strokeStyle = '#d99a00'; c.lineWidth = 1.2; c.stroke();
+      for(let i = 0; i < 6; i++){   // a puff of crumbs
+        const hx = fsaA_h(i, j + 3), ang = -0.4 - 2.3*hx, d = (6 + 20*fsaA_h(i, j + 9))*g, px = kx + Math.cos(ang)*d*vf, py = ky + Math.sin(ang)*d + 7*g*g*4;
+        c.globalAlpha = 1 - g; c.fillStyle = i % 2 ? '#f9c616' : '#faed6b'; c.beginPath(); c.arc(px, py, 1.8, 0, 7); c.fill();
+      }
+    }
+    const B = fsaA_cheesyBall(f, t);
+    if(B){ c.globalAlpha = 1; c.save(); c.translate(B.x, B.y); c.scale(B.s, B.s); FS_GLYPH.soccer(c, 0, 0, 10, 0, f); c.restore(); }
+    c.restore();
+  },
+});
 
 // DOUGH -- SHAMELESS KNOCKOFF. "enjoys mimicking everything Bow does mere seconds after she does it" (the design doc: the whole beat arrives a beat late); his own card is the Shameless Knockoff. He bounces down
 // and the ring goes out 220 px (18%), and then, a beat late, it does it again, to 320 (12%), twenty frames behind.
@@ -25978,7 +26261,45 @@ FINAL_SMASHES['Dough'] = fsCircle({ id:'knockoff', c1:'#f0d8a8', c2:'#ffffff', R
 
 // FAN -- YOU LEAVE US ALONE! His own card: "an armoured charge straight through everyone in his way"; "talkative, awkward, and passionate", the show's biggest fan (the design doc). The charge, 700 px at 24 a frame,
 // 100 tall, through everyone it meets (20%).
-FINAL_SMASHES['Fan'] = fsLane({ id:'leaveusalone', c1:'#e8506a', L:700, spd:24, H:100, hw:46, dmg:20, kb:22, ky:-10, kind:'dash', art:FS_GLYPH.fanblade });
+// THE ENTRANCE (34 frames; his existing deform already folds shut, shakes, then snaps open): he folds himself shut into a slim red spear (about half
+// his width, the yellow handle showing) and quivers with nerves, shaking harder each beat, loose red paper flecks falling off; then he leans back on
+// his heels (16-22) and snaps open, a pleated red half-disc (the armour) growing in ahead of him over 12 frames (22-34) to his own height, no wider
+// than he is, and the charge goes out from behind it (the armour goes with the charge's front for six frames and is gone).
+const FAN_FS = { W:34, fold:6, lean:16, snap:22 };
+function fsaA_fanArmour(f, c, g, push, a){   // the pleated half-disc ahead of him, g: how far grown in (0..1), push: px it has gone out with the charge
+  const R = f.r, vf = f.face < 0 ? -1 : 1, H = 2.64*R*g, rad = H/2, hx = f.x + vf*(R*0.45 + push), cy = f.y + R*0.1;
+  if(g < 0.02) return;
+  c.save(); c.globalAlpha = a; c.lineJoin = 'round';
+  c.fillStyle = '#e63a30'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  c.beginPath(); c.moveTo(hx, cy - rad); for(let i = 0; i <= 14; i++){ const th = -Math.PI/2 + i*Math.PI/14; c.lineTo(hx + vf*Math.cos(th)*rad*0.85, cy + Math.sin(th)*rad); } c.closePath(); c.fill(); c.stroke();
+  c.strokeStyle = '#a82018'; c.lineWidth = 1.8;
+  for(let i = 1; i < 14; i++){ const th = -Math.PI/2 + i*Math.PI/14; c.beginPath(); c.moveTo(hx, cy); c.lineTo(hx + vf*Math.cos(th)*rad*0.85, cy + Math.sin(th)*rad); c.stroke(); }
+  c.strokeStyle = '#ff8a7a'; c.lineWidth = 1.2; for(let i = 1; i < 14; i += 2){ const th = -Math.PI/2 + (i + 0.5)*Math.PI/14; c.beginPath(); c.moveTo(hx + vf*Math.cos(th)*rad*0.3, cy + Math.sin(th)*rad*0.35); c.lineTo(hx + vf*Math.cos(th)*rad*0.8, cy + Math.sin(th)*rad*0.9); c.stroke(); }
+  c.restore();
+}
+FINAL_SMASHES['Fan'] = fsaA_wrap(fsLane({ id:'leaveusalone', c1:'#e8506a', L:700, spd:24, H:100, hw:46, dmg:20, kb:22, ky:-10, kind:'dash', art:FS_GLYPH.fanblade }), {
+  W:FAN_FS.W,
+  deform(f, ctx, R, t){
+    const K = FAN_FS, fold = fsaA_ease(fsaA_k(t, 0, K.fold)), open = fsaA_ease(fsaA_k(t, K.snap, K.snap + 3));
+    const amp = t < K.snap ? 0.015 + 0.08*Math.pow(fsaA_k(t, K.fold, K.snap), 1.3) : 0;   // the nerves: harder each beat
+    const lean = t < K.snap ? fsaA_ease(fsaA_k(t, K.lean, K.snap)) : 0;
+    const sx = (1 - 0.5*fold) + 0.5*open*fold + (t >= K.snap ? 0.07*Math.sin(Math.PI*fsaA_k(t, K.snap + 2, K.snap + 8)) : 0);
+    deformAboutFeet(ctx, R, f.face*(-0.2*lean + (t >= K.snap ? 0.08*(1 - fsaA_k(t, K.snap, K.W)) : 0)) + amp*Math.sin(t*2.7), sx, 1);
+  },
+  draw(f, c, t){
+    const K = FAN_FS, R = f.r;
+    c.save();
+    for(let i = 0; i < 9; i++){   // loose red paper flecks falling off him
+      const born = 4 + i*1.9, a = t - born; if(a < 0 || a >= 15 || born > K.snap) continue;
+      const hx = fsaA_h(i, 2), px = f.x + (hx - 0.5)*R*0.9 + (hx - 0.5)*a*1.2, py = f.y - R*0.3 + 0.07*a*a*5 + a*0.6;
+      c.globalAlpha = Math.max(0, 1 - a/15); c.fillStyle = i % 3 === 2 ? '#ffe08a' : '#e63a30'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 0.8;
+      c.save(); c.translate(px, py); c.rotate(a*0.5 + i); c.fillRect(-2.6, -1.8, 5.2, 3.6); c.strokeRect(-2.6, -1.8, 5.2, 3.6); c.restore();
+    }
+    fsaA_fanArmour(f, c, fsaA_ease(fsaA_k(t + 1, K.snap, K.W)), 0, 1);
+    c.restore();
+  },
+  after(f, c, u){ if(u < 6) fsaA_fanArmour(f, c, 1, 24*u, 1 - u/6); },
+});
 
 // ---- BATCH L: Soap, Tissues, Yin-Yang, Starfruit, Blueberry, Cherries, Clover, Jack ------------------------------------------------------------------
 Object.assign(FS_GLYPH, {
@@ -72458,7 +72779,9 @@ const FIGHTER_ANIM = {
   // ...and, when neither is on, batch 1's set (POSE_SETS.Goo): Engulf out of his official forms and mouths, his muscular arm, his raised hand.
   Goo: {
     poses: Object.assign(poseSpritesOf("Goo"), { giant: renderSprite("goo-giant.png", { flip:true, imgH:4.6, imgW:5.2 }), puddle: renderSprite("goo-puddle.png", { imgW:4.4 }) }),
+    atkDrive(f){ return fsaA_on(f) ? 0 : atkDrive(f); },   // (FSA lane a: no gather's lean through the entrance)
     body(f, c){
+      const fk = fsaA_pose(f); if(fk && this.poses[fk] && poseBody(this, f, fk)) return true;   // the Final Smash's entrance (FSA lane a)
       const k = ((f._windup && f._windup.smash) || (f._sm && f._sm.pat === 'burst')) ? 'giant'
               : (f._g1Pose === 'puddle' && hazardT < (f._g1PoseUntil||0)) ? 'puddle' : null;
       if(k) return FIGHTER_ANIM._g1PoseBody(f, c, this.poses[k]);
@@ -72471,7 +72794,10 @@ const FIGHTER_ANIM = {
   // the dive for as long as the sprint runs (the host's `_dashing`) and First Aid while he heals (`healing` and `rooted` reach every client).
   Lifering: {
     poses: poseSpritesOf("Lifering"),   // (the dive and First Aid at their old sizes: their k)
+    atkDrive(f){ return fsaA_on(f) ? 0 : atkDrive(f); },   // (FSA lane a)
+    deform(f, ctx, R){ const E = fsaA_on(f); if(E && E.deform) E.deform(f, ctx, R, f.fsT | 0); },   // the sprinter's crouch of the entrance
     body(f, c){
+      const fk = fsaA_pose(f); if(fk && this.poses[fk] && poseBody(this, f, fk)){ this._posed = f; return true; }   // the Final Smash's entrance (FSA lane a)
       if(poseBody(this, f)){ this._posed = f; return true; }
       this._posed = null;   // (render-only, on the hook: the whistle picture has its own whistle, so the drawn one below stays off it)
       const k = f._dashing > 0 ? 'dive' : (f.healing > 0 && f.rooted > 0) ? 'first-aid' : null;
@@ -72493,6 +72819,8 @@ const FIGHTER_ANIM = {
   //      drawSpriteBody under its own name, so the plain render's LIMB_RIG never cuts limbs out of the wrong picture.
   //      Until a pose has loaded (and in a headless boot) the plain render stays.
   Bonesaw: {
+    atkDrive(f){ return fsaA_on(f) ? 0 : atkDrive(f); },   // (FSA lane a)
+    deform(f, ctx, R){ const E = fsaA_on(f); if(E && E.deform) E.deform(f, ctx, R, f.fsT | 0); },   // the two strokes of the entrance's rocking
     over(f, ctx){   // TRULY GROUNDBREAKING: the floor breaks up round his teeth while he saws in (Q2: drawn, PROJ_SHAPE.coresaw)
       const m = f._sm; if(!m || m.pat !== 'plant') return;
       const k = 1 - Math.max(0, m.t)/18;
@@ -72502,9 +72830,11 @@ const FIGHTER_ANIM = {
   },
   Spikey: {
     pose: renderSprite("spikey-spikeless.png"),   // Spikey without the spikes.png: bald until they grow back
-    body(f){ if(!(f._baldUntil > hazardT) || !spriteImage(this.pose)) return false;
+    atkDrive(f){ return fsaA_on(f) ? 0 : atkDrive(f); },   // (FSA lane a)
+    body(f){ if(!(f._baldUntil > hazardT) || fsaA_on(f) || !spriteImage(this.pose)) return false;   // (he holds it in with his spikes on: the entrance)
       drawSpriteBody(Object.create(f, {name:{value:"Spikey (spikeless)"}}), this.pose, null); return true; },
     deform(f, ctx, R){
+      const E = fsaA_on(f); if(E && E.deform){ E.deform(f, ctx, R, f.fsT | 0); return; }   // the Final Smash's holding it in (FSA lane a)
       if(f._sm && f._sm.pat === 'through'){ const c = R*0.25; ctx.translate(0, c); ctx.rotate(f.face*hazardT*0.55); ctx.translate(0, -c); }   // BE THE WHEEL!: he is the wheel
       else if(f._windup && f._windup.b3 === 'spikes') ctx.translate(Math.sin(hazardT*2.1)*2, 0);   // Rock the Boat: the spikes shake as it builds
     }
@@ -72513,7 +72843,10 @@ const FIGHTER_ANIM = {
     flame: renderSprite("candle-inner-flame.png"),   // Candle Flame.png: the purple Inner-Flame and the third eye
     weak: renderSprite("candle-flame-out.png"),      // Candle Weak.png: the flame punched out
     poses: poseSpritesOf("Candle"),   // POSE_SETS.Candle (animation batch 2): Crystal Chime, the smash, a hit, a KO, the win
+    atkDrive(f){ return fsaA_on(f) ? 0 : atkDrive(f); },   // (FSA lane a)
+    deform(f, ctx, R){ const E = fsaA_on(f); if(E && E.deform) E.deform(f, ctx, R, f.fsT | 0); },   // her flame leaning and flickering with the note
     body(f){
+      const fk = fsaA_pose(f); if(fk && this.poses[fk] && poseBody(this, f, fk)) return true;   // the Final Smash's entrance (FSA lane a)
       if(poseBody(this, f)) return true;   // (the smash is hers now, "mad"; Inner-Flame, its hold and the flame going out keep their pictures below)
       const eye = (f._windup && f._windup.b3 === 'grip') || (f._sm && f._sm.pat === 'reel') || f.smashHold > 0;
       const sp = eye ? this.flame : (f._flameOutUntil > hazardT && f.weakened > 0) ? this.weak : null;
@@ -72529,7 +72862,10 @@ const FIGHTER_ANIM = {
   Cammy: {
     pose: renderSprite("cammy-flash.png"),   // Cammy Flash.png, white-balanced to his day render (scripts/fix-cammy-flash.mjs)
     poses: poseSpritesOf("Cammy"),   // POSE_SETS.Cammy (animation batch 2): the squint into the flash, their specials, smash, hit, KO and win
-    body(f){ if(poseBody(this, f)) return true;
+    atkDrive(f){ return fsaA_on(f) ? 0 : atkDrive(f); },   // (FSA lane a)
+    body(f){
+      const fk = fsaA_pose(f); if(fk && this.poses[fk] && poseBody(this, f, fk)) return true;   // the Final Smash's entrance (FSA lane a)
+      if(poseBody(this, f)) return true;
       const up = (f._windup && f._windup.b3 === 'snap') || f.smashHold > 0;
       if(!up || !spriteImage(this.pose)) return false;
       drawSpriteBody(Object.create(f, {name:{value:"Cammy (flash)"}}), this.pose, null); return true; },
@@ -72981,7 +73317,9 @@ const FIGHTER_ANIM = {
   // ---- Fan -- the show's biggest fan ("talkative, awkward"): a folding fan, shut and shaking on the gather, snapped open on the hit. ----
   Fan: {
     idle: 0.8, squash: 0.6,
+    atkDrive(f){ return fsaA_on(f) ? 0 : atkDrive(f); },   // (FSA lane a)
     deform(f, ctx, R){
+      const E = fsaA_on(f); if(E && E.deform){ E.deform(f, ctx, R, f.fsT | 0); return; }   // the Final Smash's fold, quiver and snap (FSA lane a)
       const u = atkU(f);
       if(u < 0) return;
       const shut = animBump(u, 0, 0.3), open = animBump(u, 0.28, 0.7), nerves = Math.sin(u*70)*0.025*shut;
@@ -73670,7 +74008,9 @@ const SPRITES = {
   Cheesy: (FIGHTER_ANIM.Cheesy = {
     // Batch 7: "Ha! Kick! Soccer! Pun!": a joke has a rhythm, so the swing is ba, dum, TSS (two little hits and then the crash).
     idle: 1, squash: 1.1,
+    atkDrive(f){ return fsaA_on(f) ? 0 : atkDrive(f); },   // (FSA lane a)
     deform(f, ctx, R){
+      const E = fsaA_on(f); if(E && E.deform){ E.deform(f, ctx, R, f.fsT | 0); return; }   // the Final Smash's ba, dum, TSS (FSA lane a)
       const u = atkU(f);
       if(u < 0) return;
       const hit = animBump(u, 0.12, 0.28) + animBump(u, 0.28, 0.44), tss = animBump(u, 0.5, 0.85);
@@ -79355,6 +79695,7 @@ const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering
   '_soakT',   // (EVENT FIGHTERS: SOAKED, until when -- the drips are drawn from it)
   '_flipT',   // (EVENT FIGHTERS: ERASER -- frames left of a backflip's turn: STEAKHOUSE FLIP and his wall jump)
   '_growT',   // (Puffball's Grow: until when she is grown -- the pink Attack Up icon; her size itself rides in r)
+  '_baldUntil',   // (FSA lane a: Spikey's spikes are gone until then -- his Can't Hold It In special, and now his Final Smash's release)
   'fsGlow','fsId','fsT','fsWind','fsDur','fsAx','fsAy','fsBx','fsBy','fsCx','fsCy',   // FINAL SMASH BALLS: the glow, and which Final Smash is on, how far in, and where it began (all a client needs to draw it)
   'fsC','fsLk'];   // ...the catch's frames left, and whose catch holds this fighter (+1) (CATCH, THEN CINEMATIC)
 function netFighter(f){
