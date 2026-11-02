@@ -597,6 +597,88 @@ How a source became a picture (the `method` of its row), as in batch 1, plus:
 - `Yinyang Hurt.png` (Season 3, S3E14): their hit until the fourth pass (2026-10-28). Its bandaged grey look did not match their render, and the
   owner chose "Redraw both from render": their hit is drawn on their render (`yin-yang-hurt.png`), and their KO's mouth redrawn in their own ink.
 
+## Event fighters: Spongy's pictures (kit 2, 2026-10-30)
+
+Spongy (he/him) is the second event fighter (`event-fighters-phase1.md`, section 3.2). His art is BFB+TPOT only (approval question 29): his body is
+his TPOT 25 render, `spongy.png`, the picture his assist trophy already used (credited under Assist trophies below; the assist keeps it for the boss
+endings and the crowd), drawn 3.0 tall and up to 4.3 wide in `SPRITES` (the biggest body in the game), and his poses are the five BFB files the
+owner approved, downloaded once from their wiki file pages. Each was decoded to a plain RGBA PNG (the GIF to one PNG a frame) and made into a
+picture by `scripts/make-event-spongy.mjs` (with `scripts/anim-pose-lib.mjs`): trimmed, area-averaged to 200 px tall, held to `fetch-sprites.mjs`'s
+checks, and drawn at his own pixel size by `POSE_SETS.Spongy` (the jet at `k` 0.514, 140 px tall). Each has a manifest row of its own in
+`scripts/sprite-manifest.json` (key `Spongy (<pose>)`, `pose` set) with its source. The same jacknjellify artwork via the BFDI wiki as every row
+here, under the same fan-work terms.
+
+| Picture | Shown | Made from | Source |
+|---|---|---|---|
+| `spongy-vote.png` (291x200) | the result screen (his win), and the end of Soak Up | File:SpongyVoting.png; cut-out (wiki pose), trimmed and scaled | https://battlefordreamisland.fandom.com/wiki/File:SpongyVoting.png |
+| `spongy-zapped.png` (286x200) | hit, and launched | File:Spoogy.png (X eyes, a grimace); cut-out, trimmed and scaled | https://battlefordreamisland.fandom.com/wiki/File:Spoogy.png |
+| `spongy-suck.png` (240x200) | Soak Up's swelling, and his grab ("his holes soak them in") | File:Spongy Sucking Stapy Up0024.png (an official body with no face, its holes opened up), mirrored to the render's way round; the face and legs of `spongy.png` laid on (liftFace) | https://battlefordreamisland.fandom.com/wiki/File:Spongy_Sucking_Stapy_Up0024.png |
+| `spongy-jet.png` (351x200) | his Final Smash, Cannonballs Were on Sale: his body is the jet while he flies it, and it flies off as he parachutes down | File:Spongy in his Private Jet.png (BFB 15), trimmed and scaled | https://battlefordreamisland.fandom.com/wiki/File:Spongy_in_his_Private_Jet.png |
+| `spongy-walk-01.png` to `spongy-walk-14.png` (273x200 each) | running, a frame every 3 ticks | File:Spongy---walk.gif, its 14 frames, one crop for all; the dark round shadow baked into every frame lifted (its darkening measured from his own yellow by distance from its middle and divided out; its core, where too little was left to read, refilled with his yellow and his dark-gold outline), and the green fringe round the cut-out recoloured to his outline; then, at 200 px, the shadow's middle re-skinned with the sponge of his TPOT 25 render (`spongy.png`, flipped, its face painted out), feathered in by how much shadow there was, his outline redrawn as the GIF draws it (2026-11-01: the plain refill had left a flat disc, banded rings and a black speck) | https://battlefordreamisland.fandom.com/wiki/File:Spongy---walk.gif |
+
+Everything else of his kit is drawn in code: Wring Out's gush and Hole Squirt's soapy water (SOAKED's blues), his water as darker holes and drips,
+the loaves of Baker's Dozen, the cannonballs, and the red and white parachute.
+
+## Event fighter 8-Ball: his pictures (event kit 3, 2026-11-01)
+
+8-Ball (he/him), the third event fighter (`smash-bal/reports/event-fighters-phase1.md`, 3.3), keeps his TPOT render (`8-ball.png`, the picture
+his assist trophy already used: see Assist trophies below) and gains a pose set (`POSE_SETS['8-Ball']` in `index.html`), BFB+TPOT art only. The
+eleven files below were downloaded once from their BFDI wiki file pages and approved by the owner (the event art list, files 06-16); every
+picture was made from them and his render by `scripts/make-event-8ball-art.py`: each cut out along its own alpha, the ball scaled to the
+ball in his render (183 px across on its 199x200 canvas, so he is drawn the same size in every pose), at most 200 px tall. Each has a manifest
+row of its own (`scripts/sprite-manifest.json`, key `8-Ball (<pose>)`, `pose` set) with every source it was made from. Same provenance as
+the table at the top: jacknjellify's character artwork via the BFDI wiki, used under fan-work norms in a disclaimed, non-commercial fan game.
+
+| `8-ball-spin-1.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0001.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0001.png |
+| `8-ball-spin-2.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0006.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0006.png |
+| `8-ball-spin-3.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0012.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0012.png |
+| `8-ball-spin-4.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0017.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0017.png |
+| `8-ball-spin-5.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0023.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0023.png |
+| `8-ball-spin-6.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0028.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0028.png |
+| `8-ball-spin-7.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0034.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0034.png |
+| `8-ball-spin-8.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0039.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0039.png |
+| `8-ball-mad.png` (199x200) | Break Shot, a held smash and the Trebuchet Basket | File:8-Ballmad.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ballmad.png |
+| `8-ball-scared.png` (199x200) | hit | File:8bscared.png; `8-ball.png` (his body, the painted face taken off); face swap: the white strokes of his scared face (an episode frame) on his own render, its painted face taken off | https://battlefordreamisland.fandom.com/wiki/File:8bscared.png |
+| `8-ball-bite.png` (199x200) | Jawbreaker Bite and the grab | `8-ball.png` (the picture itself); drawn: his own render with the mouth opened wide (question 42: cut from his TPOT render) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a5/Tpot_renders0044.png/revision/latest?cb=20241208104355 |
+| `8-ball-flat.png` (238x48) | launched (his KO picture, question 42) | File:8-Ball Flat.png; cut-out (wiki pose), 1.3 balls wide | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_Flat.png |
+
+All eleven downloads are used. His trebuchet, basket and the seven coloured balls of The Break are drawn in code (no picture).
+
+## Event fighters: Black Hole's pictures (kit 4, 2026-11-01)
+
+Black Hole (he/him) is the fourth event fighter (`event-fighters-phase1.md`, section 3.4). Nothing was downloaded for him: his art is BFB+TPOT only,
+his one render, `black-hole.png` (475x200, 200 px tall like every render here), the picture his assist trophy already used (credited under Assist
+trophies below, with its source; his render never changed between seasons). He has no face and no limbs, so every pose is that render scaled,
+spun, squashed or stretched in code by `FIGHTER_ANIM['Black Hole']` (drawn 3.0 tall, `renderSprite("black-hole.png", { imgW:7.2, imgH:3.0 })`):
+the gentle bob as he floats, his disk speeding up for Accretion, shrinking to a point for Singularity, turning edge-on into the Wormhole's tunnel,
+winding tight and reaching out for Spaghettify, spreading wide for Event Horizon, swelling to his true size for Mass of Twenty Suns. His manifest
+row in `scripts/sprite-manifest.json` notes the same.
+
+Everything else of his kit is drawn in code: the floor clod Accretion tears up (it grows in over 12 frames), the pull streaks (only while a pull
+is live), the Wormhole's tunnel, the Singularity's point, Spaghettify's stretched path and the foe drawn long and thin while they orbit, the core
+of Mass of Twenty Suns, and the two twists his event matches use (the pull's dust drifting in, low gravity's slow motes). No words are drawn.
+
+## Event fighter Cloudy: his pictures (event kit 6, 2026-10-30)
+
+Cloudy (he/him), the sixth event fighter (`smash-bal/reports/event-fighters-phase1.md`, 3.6), keeps his TPOT render (`cloudy.png`, the picture
+his assist trophy already used: see Assist trophies below) and gains a pose set (`POSE_SETS.Cloudy` in `index.html`), BFB+TPOT art only. The
+two files below were downloaded once from their BFDI wiki file pages and approved by the owner (the event art list, files 20-21); every
+picture was made from them and his render by `scripts/make-event-cloudy-art.py`: cut out along its own alpha, scaled to his render (302x200,
+drawn at imgW 3.4), at most 200 px tall, the faint resize halo erased. Each has a manifest row of its own (`scripts/sprite-manifest.json`, key
+`Cloudy (<pose>)`, `pose` set) with every source it was made from. Same provenance as the table at the top: jacknjellify's character artwork
+via the BFDI wiki, used under fan-work norms in a disclaimed, non-commercial fan game.
+
+| Picture | Shown | Made from | Source |
+|---|---|---|---|
+| `cloudy-thunder.png` (302x200) | his temper (Hey, My Window!'s 14 frames and its strike), Fell Right Through and Perfect Storm | File:CloudyTransThunder.png (the cloud; the white lightning strokes under him left out: the bolt is drawn in code in their style); cut-out (wiki pose), the lightning strokes under him taken off, sized to his render's width (the same cloud) | https://battlefordreamisland.fandom.com/wiki/File:CloudyTransThunder.png |
+| `cloudy-puffed.png` (174x200) | Spit Out the Earth's charge (he swells), and its first frames | File:Cloudy puffed up by jawbreaker.png; cut-out (wiki pose), swollen: its area 1.35x his render's, then fitted to 200 px tall | https://battlefordreamisland.fandom.com/wiki/File:Cloudy_puffed_up_by_jawbreaker.png |
+| `cloudy-rain.png` (302x200) | Rain Cloud (its wind-up, and while it rains) | `cloudy.png` (the picture itself); tinted: his own render rain-grey, his smile turned down (question 58: his moods are tints of his TPOT render; no show file) | https://static.wikia.nocookie.net/battlefordreamisland/images/1/13/Tpot_renders0024.png/revision/latest?cb=20210113223940 |
+
+Both downloads are used. His bolt, his rain, the thunderhead, the downpour and Perfect Storm's clouds are drawn in code (no picture). Spit Out
+the Earth is drawn with the game's TPOT Earth (`attacks/oneearth.png`, File:EarthTPOT4.png, credited under One (the secret boss) below),
+the picture One's OUT OF ORBIT! already kicks. `cloudy-puffed.png` has no face: the source shows none (he is swollen round with the
+jawbreakers), so its facial-ink count is low (8 px) and it was checked by eye.
+
 ## One (the secret boss)
 
 One is not a roster fighter, so her render sits outside the generated inventory above (a re-run of
@@ -1148,6 +1230,54 @@ keyed by the assist's name; MePhone4's hostile adds wear the same art.
   of this file (no art beats wrong art), it keeps the drawn body every assist had before.
 - **`beach-ball.png`** -- the Beach Ball page's own image, `Elswerebeachball.png`: the ball with its face, arms and legs.
   Drawn centred on the body, and squashed for a few frames on each ricochet.
+
+### Assist batch A2 (event-fighters-phase1.md, section 4)
+
+Seven TPOT newcomers to the assist bag: 9-Ball, Battery, Clapboard, Conch Shell, Rubber Spatula, Scissors and Snare Drum. Each
+is the character's TPOT 14 vote picture from `battlefordreamisland.fandom.com` (Rubber Spatula's is his TPOT 7 render, the file the
+owner approved for him), one group only (BFB+TPOT). The owner approved the downloads (the event art list); they were not fetched by
+`scripts/fetch-sprites.mjs` but cut down here the way the second skins were: trimmed to the drawing, area-averaged to 200 px tall,
+the invisible halo erased, the same checks (alpha, coverage, a face found, facing measured), and each looked at before it was kept.
+Same provenance as the table at the top: jacknjellify's character artwork via the BFDI wiki, used under fan-work norms in a
+disclaimed, non-commercial fan game. Drawn by `drawAssistRender` from `ASSIST_SPRITE_SRC` (ASSIST BATCH A2's rows); listed in
+`scripts/sprite-manifest.json` under the assists' names.
+
+| Assist | File | Source |
+|---|---|---|
+| 9-Ball | `9-ball.png` | https://battlefordreamisland.fandom.com/wiki/File:9ballTPOT14.png (1425x1425 at the source, 200x200 here) |
+| Battery | `battery.png` | https://battlefordreamisland.fandom.com/wiki/File:BatteryTPOT14.png (1914x848 at the source, 451x200 here) |
+| Clapboard | `clapboard.png` | https://battlefordreamisland.fandom.com/wiki/File:ClapboardTPOT14.png (1561x1583 at the source, 197x200 here) |
+| Conch Shell | `conch-shell.png` | https://battlefordreamisland.fandom.com/wiki/File:ConchshellTPOT14.png (1470x1782 at the source, 165x200 here) |
+| Rubber Spatula | `rubber-spatula.png` | https://battlefordreamisland.fandom.com/wiki/File:Rubber_Spatula_TPOT_7.png (684x1556 at the source, 79x200 here) |
+| Scissors | `scissors.png` | https://battlefordreamisland.fandom.com/wiki/File:ScissorsTPOT14steakhouse.png (2807x1177 at the source, 478x200 here) |
+| Snare Drum | `snare-drum.png` | https://battlefordreamisland.fandom.com/wiki/File:SnaredrumTPOT14.png (2111x1737 at the source, 243x200 here) |
+
+- **`9-ball.png`** is drawn centred on the body (`mid`) and never mirrored (`still`), so the 9 on top always reads the right way round.
+- **`conch-shell.png`** faces left in its source (facing -0.096) and is drawn mirrored (`flip`), so his horn points the way he blows.
+- **`battery.png`** and **`scissors.png`** are wide (451x200 and 478x200): fit by width (`w`) so they do not tower; the scissors'
+  blades lead (facing 0.24).
+- Their acts draw the rest in code: Battery's wire, Conch Shell's sound rings and Snare Drum's floor ripples (no file of a sound or a
+  spark is a character).
+
+## Event fighters: pose pictures
+
+The event fighters (event-fighters-phase1.md) play from their assist trophy's render (credited under Assist trophies); a kit
+that needs more pictures adds them here, one art group per fighter (the design's "art from one group only"). Each file was downloaded
+once from its wiki file page after the owner approved the list, cut out and scaled to the fighter's own render's pixel size (at most 200px
+tall), and has a manifest row of its own (`scripts/sprite-manifest.json`, key `<Fighter> (<pose>)`, `pose` set). Pixels under the
+fetch script's alpha floor (24) are erased, as `fetch-sprites.mjs` does.
+
+### Clock (BFDI wiki; BFB+TPOT, kit 5)
+
+| Picture | Shown | Made from | Source |
+|---|---|---|---|
+| `clock-face.png` (191x200) | in a match, his body: his hands are drawn on it in code (clockDrawHands), showing Natural Time and every hand move; clock.png stays for the select screen, the HUD and the result screen | `clock.png` (the picture itself: File:Tpot renders0028.png); drawn: his own render with its two hands painted out in his face's colour (the eyes' ink kept), so the game draws his hands turning on it | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a5/Tpot_renders0028.png/revision/latest?cb=20210113224052 |
+| `clock-hurt.png` (185x200) | hit, and launched | File:Bruise Clock.png; cut-out (wiki pose), at his render's pixel size | https://battlefordreamisland.fandom.com/wiki/File:Bruise_Clock.png |
+| `clock-ring.png` (197x200) | Strike Twelve's charge (his alarm ringing; never for any other startup) | File:Clock ringaling.png; cut-out (wiki pose), at his render's pixel size; drawn mirrored (flip: his face sits left of the bells' middle) | https://battlefordreamisland.fandom.com/wiki/File:Clock_ringaling.png |
+| `clock-win.png` (232x188) | the result screen | File:Happy Clocky.png; cut-out (wiki pose), at his render's pixel size (188 tall: he lies on his side, legs out) | https://battlefordreamisland.fandom.com/wiki/File:Happy_Clocky.png |
+
+His hands, the swingset of Daylight Savings Swingset and the face of Infinitely Powerful are drawn in code (no file: his hands are the
+render's own, redrawn turning; the swingset is BFB's playground swing, drawn).
 
 ## Per-fighter skins (Wardrobe)
 
