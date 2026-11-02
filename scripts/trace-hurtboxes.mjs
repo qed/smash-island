@@ -29,7 +29,10 @@ w.eval("if(typeof syncPrizeRoster==='function'){ PROFILE = Object.assign({}, PRO
 // are keyed [PZ_A]: and so on; every other row by its quoted name.
 const PZ_KEY = w.eval("(function(){ var o = {}; o[PZ_A] = '[PZ_A]'; o[PZ_B] = '[PZ_B]'; o[PZ_C] = '[PZ_C]'; return o; })()");
 const rowKey = (n) => PZ_KEY[n] || JSON.stringify(n);
-const roster = w.eval('ROSTER.filter(function(r){ return r.play; }).map(function(r){ var s = SPRITES[r.name] || {}; return { name:r.name, src:s.src||null, imgH:s.imgH==null?2.8:s.imgH, imgW:s.imgW==null?2.3:s.imgW, flip:!!s.flip }; })');
+// NOT TRACED: Black Hole. His hurtbox is his black middle only (approval question 47): HURTBOX's circle (rx/ry 20.5), with no polygon.
+// A trace would take his whole 475x200 render, the disk and halo too, and its polygon would override that circle.
+const NO_TRACE = ['Black Hole'];
+const roster = w.eval('ROSTER.filter(function(r){ return r.play && ' + JSON.stringify(NO_TRACE) + '.indexOf(r.name) < 0; }).map(function(r){ var s = SPRITES[r.name] || {}; return { name:r.name, src:s.src||null, imgH:s.imgH==null?2.8:s.imgH, imgW:s.imgW==null?2.3:s.imgW, flip:!!s.flip }; })');
 
 function trace(png) {
   const { width: W, height: H, data } = png;

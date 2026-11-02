@@ -597,6 +597,88 @@ How a source became a picture (the `method` of its row), as in batch 1, plus:
 - `Yinyang Hurt.png` (Season 3, S3E14): their hit until the fourth pass (2026-10-28). Its bandaged grey look did not match their render, and the
   owner chose "Redraw both from render": their hit is drawn on their render (`yin-yang-hurt.png`), and their KO's mouth redrawn in their own ink.
 
+## Event fighters: Spongy's pictures (kit 2, 2026-10-30)
+
+Spongy (he/him) is the second event fighter (`event-fighters-phase1.md`, section 3.2). His art is BFB+TPOT only (approval question 29): his body is
+his TPOT 25 render, `spongy.png`, the picture his assist trophy already used (credited under Assist trophies below; the assist keeps it for the boss
+endings and the crowd), drawn 3.0 tall and up to 4.3 wide in `SPRITES` (the biggest body in the game), and his poses are the five BFB files the
+owner approved, downloaded once from their wiki file pages. Each was decoded to a plain RGBA PNG (the GIF to one PNG a frame) and made into a
+picture by `scripts/make-event-spongy.mjs` (with `scripts/anim-pose-lib.mjs`): trimmed, area-averaged to 200 px tall, held to `fetch-sprites.mjs`'s
+checks, and drawn at his own pixel size by `POSE_SETS.Spongy` (the jet at `k` 0.514, 140 px tall). Each has a manifest row of its own in
+`scripts/sprite-manifest.json` (key `Spongy (<pose>)`, `pose` set) with its source. The same jacknjellify artwork via the BFDI wiki as every row
+here, under the same fan-work terms.
+
+| Picture | Shown | Made from | Source |
+|---|---|---|---|
+| `spongy-vote.png` (291x200) | the result screen (his win), and the end of Soak Up | File:SpongyVoting.png; cut-out (wiki pose), trimmed and scaled | https://battlefordreamisland.fandom.com/wiki/File:SpongyVoting.png |
+| `spongy-zapped.png` (286x200) | hit, and launched | File:Spoogy.png (X eyes, a grimace); cut-out, trimmed and scaled | https://battlefordreamisland.fandom.com/wiki/File:Spoogy.png |
+| `spongy-suck.png` (240x200) | Soak Up's swelling, and his grab ("his holes soak them in") | File:Spongy Sucking Stapy Up0024.png (an official body with no face, its holes opened up), mirrored to the render's way round; the face and legs of `spongy.png` laid on (liftFace) | https://battlefordreamisland.fandom.com/wiki/File:Spongy_Sucking_Stapy_Up0024.png |
+| `spongy-jet.png` (351x200) | his Final Smash, Cannonballs Were on Sale: his body is the jet while he flies it, and it flies off as he parachutes down | File:Spongy in his Private Jet.png (BFB 15), trimmed and scaled | https://battlefordreamisland.fandom.com/wiki/File:Spongy_in_his_Private_Jet.png |
+| `spongy-walk-01.png` to `spongy-walk-14.png` (273x200 each) | running, a frame every 3 ticks | File:Spongy---walk.gif, its 14 frames, one crop for all; the dark round shadow baked into every frame lifted (its darkening measured from his own yellow by distance from its middle and divided out; its core, where too little was left to read, refilled with his yellow and his dark-gold outline), and the green fringe round the cut-out recoloured to his outline; then, at 200 px, the shadow's middle re-skinned with the sponge of his TPOT 25 render (`spongy.png`, flipped, its face painted out), feathered in by how much shadow there was, his outline redrawn as the GIF draws it (2026-11-01: the plain refill had left a flat disc, banded rings and a black speck) | https://battlefordreamisland.fandom.com/wiki/File:Spongy---walk.gif |
+
+Everything else of his kit is drawn in code: Wring Out's gush and Hole Squirt's soapy water (SOAKED's blues), his water as darker holes and drips,
+the loaves of Baker's Dozen, the cannonballs, and the red and white parachute.
+
+## Event fighter 8-Ball: his pictures (event kit 3, 2026-11-01)
+
+8-Ball (he/him), the third event fighter (`smash-bal/reports/event-fighters-phase1.md`, 3.3), keeps his TPOT render (`8-ball.png`, the picture
+his assist trophy already used: see Assist trophies below) and gains a pose set (`POSE_SETS['8-Ball']` in `index.html`), BFB+TPOT art only. The
+eleven files below were downloaded once from their BFDI wiki file pages and approved by the owner (the event art list, files 06-16); every
+picture was made from them and his render by `scripts/make-event-8ball-art.py`: each cut out along its own alpha, the ball scaled to the
+ball in his render (183 px across on its 199x200 canvas, so he is drawn the same size in every pose), at most 200 px tall. Each has a manifest
+row of its own (`scripts/sprite-manifest.json`, key `8-Ball (<pose>)`, `pose` set) with every source it was made from. Same provenance as
+the table at the top: jacknjellify's character artwork via the BFDI wiki, used under fan-work norms in a disclaimed, non-commercial fan game.
+
+| `8-ball-spin-1.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0001.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0001.png |
+| `8-ball-spin-2.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0006.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0006.png |
+| `8-ball-spin-3.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0012.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0012.png |
+| `8-ball-spin-4.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0017.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0017.png |
+| `8-ball-spin-5.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0023.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0023.png |
+| `8-ball-spin-6.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0028.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0028.png |
+| `8-ball-spin-7.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0034.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0034.png |
+| `8-ball-spin-8.png` (199x200) | Stop Shot's spin-up and roll, Top Spin and Spinning Eight (in order), Reverse English (backwards) | File:8-Ball spinning0039.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_spinning0039.png |
+| `8-ball-mad.png` (199x200) | Break Shot, a held smash and the Trebuchet Basket | File:8-Ballmad.png; cut-out (wiki pose), the ball scaled to the render's | https://battlefordreamisland.fandom.com/wiki/File:8-Ballmad.png |
+| `8-ball-scared.png` (199x200) | hit | File:8bscared.png; `8-ball.png` (his body, the painted face taken off); face swap: the white strokes of his scared face (an episode frame) on his own render, its painted face taken off | https://battlefordreamisland.fandom.com/wiki/File:8bscared.png |
+| `8-ball-bite.png` (199x200) | Jawbreaker Bite and the grab | `8-ball.png` (the picture itself); drawn: his own render with the mouth opened wide (question 42: cut from his TPOT render) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a5/Tpot_renders0044.png/revision/latest?cb=20241208104355 |
+| `8-ball-flat.png` (238x48) | launched (his KO picture, question 42) | File:8-Ball Flat.png; cut-out (wiki pose), 1.3 balls wide | https://battlefordreamisland.fandom.com/wiki/File:8-Ball_Flat.png |
+
+All eleven downloads are used. His trebuchet, basket and the seven coloured balls of The Break are drawn in code (no picture).
+
+## Event fighters: Black Hole's pictures (kit 4, 2026-11-01)
+
+Black Hole (he/him) is the fourth event fighter (`event-fighters-phase1.md`, section 3.4). Nothing was downloaded for him: his art is BFB+TPOT only,
+his one render, `black-hole.png` (475x200, 200 px tall like every render here), the picture his assist trophy already used (credited under Assist
+trophies below, with its source; his render never changed between seasons). He has no face and no limbs, so every pose is that render scaled,
+spun, squashed or stretched in code by `FIGHTER_ANIM['Black Hole']` (drawn 3.0 tall, `renderSprite("black-hole.png", { imgW:7.2, imgH:3.0 })`):
+the gentle bob as he floats, his disk speeding up for Accretion, shrinking to a point for Singularity, turning edge-on into the Wormhole's tunnel,
+winding tight and reaching out for Spaghettify, spreading wide for Event Horizon, swelling to his true size for Mass of Twenty Suns. His manifest
+row in `scripts/sprite-manifest.json` notes the same.
+
+Everything else of his kit is drawn in code: the floor clod Accretion tears up (it grows in over 12 frames), the pull streaks (only while a pull
+is live), the Wormhole's tunnel, the Singularity's point, Spaghettify's stretched path and the foe drawn long and thin while they orbit, the core
+of Mass of Twenty Suns, and the two twists his event matches use (the pull's dust drifting in, low gravity's slow motes). No words are drawn.
+
+## Event fighter Cloudy: his pictures (event kit 6, 2026-10-30)
+
+Cloudy (he/him), the sixth event fighter (`smash-bal/reports/event-fighters-phase1.md`, 3.6), keeps his TPOT render (`cloudy.png`, the picture
+his assist trophy already used: see Assist trophies below) and gains a pose set (`POSE_SETS.Cloudy` in `index.html`), BFB+TPOT art only. The
+two files below were downloaded once from their BFDI wiki file pages and approved by the owner (the event art list, files 20-21); every
+picture was made from them and his render by `scripts/make-event-cloudy-art.py`: cut out along its own alpha, scaled to his render (302x200,
+drawn at imgW 3.4), at most 200 px tall, the faint resize halo erased. Each has a manifest row of its own (`scripts/sprite-manifest.json`, key
+`Cloudy (<pose>)`, `pose` set) with every source it was made from. Same provenance as the table at the top: jacknjellify's character artwork
+via the BFDI wiki, used under fan-work norms in a disclaimed, non-commercial fan game.
+
+| Picture | Shown | Made from | Source |
+|---|---|---|---|
+| `cloudy-thunder.png` (302x200) | his temper (Hey, My Window!'s 14 frames and its strike), Fell Right Through and Perfect Storm | File:CloudyTransThunder.png (the cloud; the white lightning strokes under him left out: the bolt is drawn in code in their style); cut-out (wiki pose), the lightning strokes under him taken off, sized to his render's width (the same cloud) | https://battlefordreamisland.fandom.com/wiki/File:CloudyTransThunder.png |
+| `cloudy-puffed.png` (174x200) | Spit Out the Earth's charge (he swells), and its first frames | File:Cloudy puffed up by jawbreaker.png; cut-out (wiki pose), swollen: its area 1.35x his render's, then fitted to 200 px tall | https://battlefordreamisland.fandom.com/wiki/File:Cloudy_puffed_up_by_jawbreaker.png |
+| `cloudy-rain.png` (302x200) | Rain Cloud (its wind-up, and while it rains) | `cloudy.png` (the picture itself); tinted: his own render rain-grey, his smile turned down (question 58: his moods are tints of his TPOT render; no show file) | https://static.wikia.nocookie.net/battlefordreamisland/images/1/13/Tpot_renders0024.png/revision/latest?cb=20210113223940 |
+
+Both downloads are used. His bolt, his rain, the thunderhead, the downpour and Perfect Storm's clouds are drawn in code (no picture). Spit Out
+the Earth is drawn with the game's TPOT Earth (`attacks/oneearth.png`, File:EarthTPOT4.png, credited under One (the secret boss) below),
+the picture One's OUT OF ORBIT! already kicks. `cloudy-puffed.png` has no face: the source shows none (he is swollen round with the
+jawbreakers), so its facial-ink count is low (8 px) and it was checked by eye.
+
 ## One (the secret boss)
 
 One is not a roster fighter, so her render sits outside the generated inventory above (a re-run of
@@ -1149,6 +1231,54 @@ keyed by the assist's name; MePhone4's hostile adds wear the same art.
 - **`beach-ball.png`** -- the Beach Ball page's own image, `Elswerebeachball.png`: the ball with its face, arms and legs.
   Drawn centred on the body, and squashed for a few frames on each ricochet.
 
+### Assist batch A2 (event-fighters-phase1.md, section 4)
+
+Seven TPOT newcomers to the assist bag: 9-Ball, Battery, Clapboard, Conch Shell, Rubber Spatula, Scissors and Snare Drum. Each
+is the character's TPOT 14 vote picture from `battlefordreamisland.fandom.com` (Rubber Spatula's is his TPOT 7 render, the file the
+owner approved for him), one group only (BFB+TPOT). The owner approved the downloads (the event art list); they were not fetched by
+`scripts/fetch-sprites.mjs` but cut down here the way the second skins were: trimmed to the drawing, area-averaged to 200 px tall,
+the invisible halo erased, the same checks (alpha, coverage, a face found, facing measured), and each looked at before it was kept.
+Same provenance as the table at the top: jacknjellify's character artwork via the BFDI wiki, used under fan-work norms in a
+disclaimed, non-commercial fan game. Drawn by `drawAssistRender` from `ASSIST_SPRITE_SRC` (ASSIST BATCH A2's rows); listed in
+`scripts/sprite-manifest.json` under the assists' names.
+
+| Assist | File | Source |
+|---|---|---|
+| 9-Ball | `9-ball.png` | https://battlefordreamisland.fandom.com/wiki/File:9ballTPOT14.png (1425x1425 at the source, 200x200 here) |
+| Battery | `battery.png` | https://battlefordreamisland.fandom.com/wiki/File:BatteryTPOT14.png (1914x848 at the source, 451x200 here) |
+| Clapboard | `clapboard.png` | https://battlefordreamisland.fandom.com/wiki/File:ClapboardTPOT14.png (1561x1583 at the source, 197x200 here) |
+| Conch Shell | `conch-shell.png` | https://battlefordreamisland.fandom.com/wiki/File:ConchshellTPOT14.png (1470x1782 at the source, 165x200 here) |
+| Rubber Spatula | `rubber-spatula.png` | https://battlefordreamisland.fandom.com/wiki/File:Rubber_Spatula_TPOT_7.png (684x1556 at the source, 79x200 here) |
+| Scissors | `scissors.png` | https://battlefordreamisland.fandom.com/wiki/File:ScissorsTPOT14steakhouse.png (2807x1177 at the source, 478x200 here) |
+| Snare Drum | `snare-drum.png` | https://battlefordreamisland.fandom.com/wiki/File:SnaredrumTPOT14.png (2111x1737 at the source, 243x200 here) |
+
+- **`9-ball.png`** is drawn centred on the body (`mid`) and never mirrored (`still`), so the 9 on top always reads the right way round.
+- **`conch-shell.png`** faces left in its source (facing -0.096) and is drawn mirrored (`flip`), so his horn points the way he blows.
+- **`battery.png`** and **`scissors.png`** are wide (451x200 and 478x200): fit by width (`w`) so they do not tower; the scissors'
+  blades lead (facing 0.24).
+- Their acts draw the rest in code: Battery's wire, Conch Shell's sound rings and Snare Drum's floor ripples (no file of a sound or a
+  spark is a character).
+
+## Event fighters: pose pictures
+
+The event fighters (event-fighters-phase1.md) play from their assist trophy's render (credited under Assist trophies); a kit
+that needs more pictures adds them here, one art group per fighter (the design's "art from one group only"). Each file was downloaded
+once from its wiki file page after the owner approved the list, cut out and scaled to the fighter's own render's pixel size (at most 200px
+tall), and has a manifest row of its own (`scripts/sprite-manifest.json`, key `<Fighter> (<pose>)`, `pose` set). Pixels under the
+fetch script's alpha floor (24) are erased, as `fetch-sprites.mjs` does.
+
+### Clock (BFDI wiki; BFB+TPOT, kit 5)
+
+| Picture | Shown | Made from | Source |
+|---|---|---|---|
+| `clock-face.png` (191x200) | in a match, his body: his hands are drawn on it in code (clockDrawHands), showing Natural Time and every hand move; clock.png stays for the select screen, the HUD and the result screen | `clock.png` (the picture itself: File:Tpot renders0028.png); drawn: his own render with its two hands painted out in his face's colour (the eyes' ink kept), so the game draws his hands turning on it | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a5/Tpot_renders0028.png/revision/latest?cb=20210113224052 |
+| `clock-hurt.png` (185x200) | hit, and launched | File:Bruise Clock.png; cut-out (wiki pose), at his render's pixel size | https://battlefordreamisland.fandom.com/wiki/File:Bruise_Clock.png |
+| `clock-ring.png` (197x200) | Strike Twelve's charge (his alarm ringing; never for any other startup) | File:Clock ringaling.png; cut-out (wiki pose), at his render's pixel size; drawn mirrored (flip: his face sits left of the bells' middle) | https://battlefordreamisland.fandom.com/wiki/File:Clock_ringaling.png |
+| `clock-win.png` (232x188) | the result screen | File:Happy Clocky.png; cut-out (wiki pose), at his render's pixel size (188 tall: he lies on his side, legs out) | https://battlefordreamisland.fandom.com/wiki/File:Happy_Clocky.png |
+
+His hands, the swingset of Daylight Savings Swingset and the face of Infinitely Powerful are drawn in code (no file: his hands are the
+render's own, redrawn turning; the swingset is BFB's playground swing, drawn).
+
 ## Per-fighter skins (Wardrobe)
 
 215 second renders, each worn by ONE fighter only (its Wardrobe skin), in `assets/sprites/skins/`; every playable fighter has at least
@@ -1175,81 +1305,81 @@ used under fan-work norms in a disclaimed, non-commercial fan game.
 
 | Skin | Fighter | File | Size | Wiki file | Source |
 |---|---|---|---|---|---|
-| Broken Fries | Fries | `skins/broken-fries.png` | 124×200 | `File:Empty damaged Fries BFDIA 18.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/31/Empty_damaged_Fries_BFDIA_18.png/revision/latest?cb=20250327225508 |
+| Torn Fries | Fries | `skins/broken-fries.png` | 124×200 | `File:Empty damaged Fries BFDIA 18.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/31/Empty_damaged_Fries_BFDIA_18.png/revision/latest?cb=20250327225508 |
 | Robot Pin | Pin | `skins/robot-pin.png` | 171×200 | `File:WirelessPin is Good.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f5/WirelessPin_is_Good.png/revision/latest?cb=20250810010917 |
 | Mech Firey | Firey | `skins/mech-firey.png` | 148×200 | `File:FireyMech.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/0/06/FireyMech.png/revision/latest?cb=20260518190524 |
 | Mech Woody | Woody | `skins/mech-woody.png` | 250×200 | `File:Mech Woody.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c6/Mech_Woody.png/revision/latest?cb=20260911072052 |
 | Robo Coiny | Coiny | `skins/robo-coiny.png` | 151×200 | `File:Robo Coiny.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/1c/Robo_Coiny.png/revision/latest?cb=20251029225401 |
-| Upgraded TV | TV | `skins/upgraded-tv.png` | 193×200 | `File:UpgradedTV.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/7/75/UpgradedTV.png/revision/latest?cb=20240914194347 |
-| Glow Fries | Fries | `skins/glow-fries.png` | 141×200 | `File:FriesBFDIA16.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b2/FriesBFDIA16.png/revision/latest?cb=20250129154150 |
+| Tank Tread TV | TV | `skins/upgraded-tv.png` | 193×200 | `File:UpgradedTV.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/7/75/UpgradedTV.png/revision/latest?cb=20240914194347 |
+| Aqua Fries | Fries | `skins/glow-fries.png` | 141×200 | `File:FriesBFDIA16.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b2/FriesBFDIA16.png/revision/latest?cb=20250129154150 |
 | Zombieball | Snowball | `skins/zombieball.png` | 200×200 | `File:Zombie snowball.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/96/Zombie_snowball.png/revision/latest?cb=20240507170928 |
-| Cracked Golf Ball | Golf Ball | `skins/cracked-golf-ball.png` | 159×200 | `File:CrackedGB.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/93/CrackedGB.png/revision/latest?cb=20250509223836 |
+| Fractured Golf Ball | Golf Ball | `skins/cracked-golf-ball.png` | 159×200 | `File:CrackedGB.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/93/CrackedGB.png/revision/latest?cb=20250509223836 |
 | Shattered Book | Book | `skins/shattered-book.png` | 195×200 | `File:BookGlass.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a6/BookGlass.png/revision/latest?cb=20251206143042 |
 | Bandaged Bomby | Bomby | `skins/bandaged-bomby.png` | 196×200 | `File:BMBO1.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c7/BMBO1.png/revision/latest?cb=20190704163912 |
 | Knight Match | Match | `skins/knight-match.png` | 102×200 | `File:MatchHelmet.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2c/MatchHelmet.png/revision/latest?cb=20240615092905 |
 | Chef Grassy | Grassy | `skins/chef-grassy.png` | 134×200 | `File:Chef Grassy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d6/Chef_Grassy.png/revision/latest?cb=20260629095836 |
-| Witch Leafy | Leafy | `skins/witch-leafy.png` | 154×200 | `File:WitchLeafy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/7/72/WitchLeafy.png/revision/latest?cb=20241112172729 |
-| Yoyle Metal Leafy | Leafy | `skins/yoyle-metal-leafy.png` | 120×200 | `File:Metallicleafy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2c/Metallicleafy.png/revision/latest?cb=20190410173553 |
-| Sweater Leafy | Leafy | `skins/sweater-leafy.png` | 155×200 | `File:Leafy - Ayo firey wanna come.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/63/Leafy_-_Ayo_firey_wanna_come.png/revision/latest?cb=20210409033424 |
-| Algebralien Needle | Needle | `skins/algebralien-needle.png` | 82×200 | `File:AlgebralienNeedle.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/24/AlgebralienNeedle.png/revision/latest?cb=20260628221438 |
-| Yoyleball | Bubble | `skins/yoyleball.png` | 173×200 | `File:Yoyleball.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/91/Yoyleball.png/revision/latest?cb=20200323030627 |
+| Pointy Hat Leafy | Leafy | `skins/witch-leafy.png` | 154×200 | `File:WitchLeafy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/7/72/WitchLeafy.png/revision/latest?cb=20241112172729 |
+| Steel Leafy | Leafy | `skins/yoyle-metal-leafy.png` | 120×200 | `File:Metallicleafy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2c/Metallicleafy.png/revision/latest?cb=20190410173553 |
+| Teal Pullover Leafy | Leafy | `skins/sweater-leafy.png` | 155×200 | `File:Leafy - Ayo firey wanna come.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/63/Leafy_-_Ayo_firey_wanna_come.png/revision/latest?cb=20210409033424 |
+| Outline Needle | Needle | `skins/algebralien-needle.png` | 82×200 | `File:AlgebralienNeedle.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/24/AlgebralienNeedle.png/revision/latest?cb=20260628221438 |
+| Slate Bubble | Bubble | `skins/yoyleball.png` | 173×200 | `File:Yoyleball.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/91/Yoyleball.png/revision/latest?cb=20200323030627 |
 | Balloon Bubble | Bubble | `skins/balloon-bubble.png` | 122×200 | `File:Balloonbubble.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/5/5b/Balloonbubble.png/revision/latest?cb=20250621055445 |
 | Aloe Bubble | Bubble | `skins/aloe-bubble.png` | 185×200 | `File:Blubblel.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/32/Blubblel.png/revision/latest?cb=20200524035036 |
-| Sweater Teardrop | Teardrop | `skins/sweater-teardrop.png` | 149×200 | `File:Teardrop - Magnifying Glass.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/9c/Teardrop_-_Magnifying_Glass.png/revision/latest?cb=20210515164103 |
-| Blindfolded Teardrop | Teardrop | `skins/blindfolded-teardrop.png` | 189×200 | `File:Teardrop - making puns of teardrop's name drop.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3f/Teardrop_-_making_puns_of_teardrop%27s_name_drop.png/revision/latest?cb=20210422031143 |
+| Starry Jumper Teardrop | Teardrop | `skins/sweater-teardrop.png` | 149×200 | `File:Teardrop - Magnifying Glass.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/9c/Teardrop_-_Magnifying_Glass.png/revision/latest?cb=20210515164103 |
+| Blue Blindfold Teardrop | Teardrop | `skins/blindfolded-teardrop.png` | 189×200 | `File:Teardrop - making puns of teardrop's name drop.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3f/Teardrop_-_making_puns_of_teardrop%27s_name_drop.png/revision/latest?cb=20210422031143 |
 | Missing Petal Flower | Flower | `skins/missing-petal-flower.png` | 155×200 | `File:Flower Missing 1 Petal.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c2/Flower_Missing_1_Petal.png/revision/latest?cb=20240402100149 |
-| Yoyle Metal Flower | Flower | `skins/yoyle-metal-flower.png` | 145×200 | `File:Metal Flower Idle.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0d/Metal_Flower_Idle.png/revision/latest?cb=20200403005416 |
-| Frozen Flower | Flower | `skins/frozen-flower.png` | 174×200 | `File:Flower frozen.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/86/Flower_frozen.png/revision/latest?cb=20250110193306 |
+| Iron Flower | Flower | `skins/yoyle-metal-flower.png` | 145×200 | `File:Metal Flower Idle.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0d/Metal_Flower_Idle.png/revision/latest?cb=20200403005416 |
+| Icy Flower | Flower | `skins/frozen-flower.png` | 174×200 | `File:Flower frozen.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/86/Flower_frozen.png/revision/latest?cb=20250110193306 |
 | Chef Tennis Ball | Tennis Ball | `skins/chef-tennis-ball.png` | 191×200 | `File:ChefTB.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/36/ChefTB.png/revision/latest?cb=20250527012103 |
-| Yoyle Metal Tennis Ball | Tennis Ball | `skins/yoyle-metal-tennis-ball.png` | 182×200 | `File:Metal Tennis Ball.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a8/Metal_Tennis_Ball.png/revision/latest?cb=20230902142315 |
-| Sleepy Tennis Ball | Tennis Ball | `skins/sleepy-tennis-ball.png` | 172×200 | `File:SleepyTB.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c0/SleepyTB.png/revision/latest?cb=20250619003530 |
+| Chrome Tennis Ball | Tennis Ball | `skins/yoyle-metal-tennis-ball.png` | 182×200 | `File:Metal Tennis Ball.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a8/Metal_Tennis_Ball.png/revision/latest?cb=20230902142315 |
+| Nightcap Tennis Ball | Tennis Ball | `skins/sleepy-tennis-ball.png` | 172×200 | `File:SleepyTB.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c0/SleepyTB.png/revision/latest?cb=20250619003530 |
 | Shades Blocky | Blocky | `skins/shades-blocky.png` | 227×200 | `File:BlockyGlasses.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/1b/BlockyGlasses.png/revision/latest?cb=20250621231625 |
 | Glove Blocky | Blocky | `skins/glove-blocky.png` | 200×200 | `File:Blocky - SUPER SPIKY GLOVE.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2d/Blocky_-_SUPER_SPIKY_GLOVE.png/revision/latest?cb=20210529171524 |
 | Capless Pen | Pen | `skins/capless-pen.png` | 81×200 | `File:Pen Without Cap (TPOT 16).png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a5/Pen_Without_Cap_%28TPOT_16%29.png/revision/latest?cb=20250414010735 |
 | Gear Earrings Pencil | Pencil | `skins/gear-earrings-pencil.png` | 66×200 | `File:EarringPencil.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/9d/EarringPencil.png/revision/latest?cb=20250611003316 |
 | Purple Shoes Pencil | Pencil | `skins/purple-shoes-pencil.png` | 67×200 | `File:PencilInPurpleShoesHD.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/30/PencilInPurpleShoesHD.png/revision/latest?cb=20241008082217 |
-| Tangerine Rocky | Rocky | `skins/tangerine-rocky.png` | 279×200 | `File:Why isn't rocky orange anymore it makes me sad.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/ac/Why_isn%27t_rocky_orange_anymore_it_makes_me_sad.png/revision/latest?cb=20180823172456 |
-| Cracked Rocky | Rocky | `skins/cracked-rocky.png` | 258×200 | `File:Cracked Rocky.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c8/Cracked_Rocky.png/revision/latest?cb=20260706053525 |
-| Frozen Rocky | Rocky | `skins/frozen-rocky.png` | 253×200 | `File:Team freeze name.PNG-removebg-preview.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e8/Team_freeze_name.PNG-removebg-preview.png/revision/latest?cb=20260719005911 |
+| Sandstone Rocky | Rocky | `skins/tangerine-rocky.png` | 279×200 | `File:Why isn't rocky orange anymore it makes me sad.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/ac/Why_isn%27t_rocky_orange_anymore_it_makes_me_sad.png/revision/latest?cb=20180823172456 |
+| Jigsaw Rocky | Rocky | `skins/cracked-rocky.png` | 258×200 | `File:Cracked Rocky.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c8/Cracked_Rocky.png/revision/latest?cb=20260706053525 |
+| Iceberg Rocky | Rocky | `skins/frozen-rocky.png` | 253×200 | `File:Team freeze name.PNG-removebg-preview.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e8/Team_freeze_name.PNG-removebg-preview.png/revision/latest?cb=20260719005911 |
 | Headphone Gelatin | Gelatin | `skins/headphone-gelatin.png` | 166×200 | `File:Jelloheadphone.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fc/Jelloheadphone.png/revision/latest?cb=20231002231013 |
-| Sweater Gelatin | Gelatin | `skins/sweater-gelatin.png` | 200×200 | `File:55BA9FDA-3486-4325-B614-E1EA3DD6F69F.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a4/55BA9FDA-3486-4325-B614-E1EA3DD6F69F.png/revision/latest?cb=20210107175827 |
-| Dyed Gelatin | Gelatin | `skins/dyed-gelatin.png` | 167×200 | `File:Gelatin27-.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/69/Gelatin27-.png/revision/latest?cb=20210104204521 |
+| Celtic Knit Gelatin | Gelatin | `skins/sweater-gelatin.png` | 200×200 | `File:55BA9FDA-3486-4325-B614-E1EA3DD6F69F.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a4/55BA9FDA-3486-4325-B614-E1EA3DD6F69F.png/revision/latest?cb=20210107175827 |
+| Tie-Dye Gelatin | Gelatin | `skins/dyed-gelatin.png` | 167×200 | `File:Gelatin27-.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/69/Gelatin27-.png/revision/latest?cb=20210104204521 |
 | Triangle Hole Nickel | Nickel | `skins/triangle-hole-nickel.png` | 176×200 | `File:TriangleNickle.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/99/TriangleNickle.png/revision/latest?cb=20250105214259 |
 | Pink Nickel | Nickel | `skins/pink-nickel.png` | 179×200 | `File:PinkNickel.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fd/PinkNickel.png/revision/latest?cb=20251210021450 |
 | Square Hole Nickel | Nickel | `skins/square-hole-nickel.png` | 176×200 | `File:Nickle Half.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/15/Nickle_Half.png/revision/latest?cb=20241004224524 |
-| Frozen Puffball | Puffball | `skins/frozen-puffball.png` | 190×200 | `File:PBFROZEN.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a4/PBFROZEN.png/revision/latest?cb=20250720194357 |
-| Thinking Hat Puffball | Puffball | `skins/thinking-hat-puffball.png` | 172×200 | `File:Puffballwithtthinkhat.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fe/Puffballwithtthinkhat.png/revision/latest?cb=20230128203401 |
-| Yoyle Metal Ruby | Ruby | `skins/yoyle-metal-ruby.png` | 352×200 | `File:Met rob.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/80/Met_rob.png/revision/latest?cb=20200323061249 |
-| Snowy Ruby | Ruby | `skins/snowy-ruby.png` | 283×200 | `File:SnowRuby.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/86/SnowRuby.png/revision/latest?cb=20250601223757 |
+| Frosty Puffball | Puffball | `skins/frozen-puffball.png` | 190×200 | `File:PBFROZEN.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a4/PBFROZEN.png/revision/latest?cb=20250720194357 |
+| Antenna Helmet Puffball | Puffball | `skins/thinking-hat-puffball.png` | 172×200 | `File:Puffballwithtthinkhat.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fe/Puffballwithtthinkhat.png/revision/latest?cb=20230128203401 |
+| Gunmetal Ruby | Ruby | `skins/yoyle-metal-ruby.png` | 352×200 | `File:Met rob.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/80/Met_rob.png/revision/latest?cb=20200323061249 |
+| Snow-Capped Ruby | Ruby | `skins/snowy-ruby.png` | 283×200 | `File:SnowRuby.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/86/SnowRuby.png/revision/latest?cb=20250601223757 |
 | Bandaged Ruby | Ruby | `skins/bandaged-ruby.png` | 279×200 | `File:Punished Ruby.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2e/Punished_Ruby.png/revision/latest?cb=20240402100255 |
-| Yoyle Metal Yellow Face | Yellow Face | `skins/yoyle-metal-yellow-face.png` | 195×200 | `File:Metal yf 20001.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/82/Metal_yf_20001.png/revision/latest?cb=20170729163056 |
-| Frozen Yellow Face | Yellow Face | `skins/frozen-yellow-face.png` | 194×200 | `File:Yellow Face Frozen.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b9/Yellow_Face_Frozen.png/revision/latest?cb=20200528015714 |
-| Zombie Barf Bag | Barf Bag | `skins/zombie-barf-bag.png` | 197×200 | `File:Barf Bag zombie.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/b/ba/Barf_Bag_zombie.png/revision/latest?cb=20240509072130 |
-| Yoyle Metal Barf Bag | Barf Bag | `skins/yoyle-metal-barf-bag.png` | 207×200 | `File:Metal Barf bag.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/27/Metal_Barf_bag.png/revision/latest?cb=20230818115830 |
-| Yoyle Metal Basketball | Basketball | `skins/yoyle-metal-basketball.png` | 179×200 | `File:Metal Basketball .png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/17/Metal_Basketball_.png/revision/latest?cb=20250918014355 |
-| Snowy Bell | Bell | `skins/snowy-bell.png` | 145×200 | `File:SnowBell.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f2/SnowBell.png/revision/latest?cb=20250520192230 |
-| Twinkle Bell | Bell | `skins/twinkle-bell.png` | 135×200 | `File:TwinkleBell.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/11/TwinkleBell.png/revision/latest?cb=20250610234023 |
+| Pewter Yellow Face | Yellow Face | `skins/yoyle-metal-yellow-face.png` | 195×200 | `File:Metal yf 20001.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/82/Metal_yf_20001.png/revision/latest?cb=20170729163056 |
+| Icy Yellow Face | Yellow Face | `skins/frozen-yellow-face.png` | 194×200 | `File:Yellow Face Frozen.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b9/Yellow_Face_Frozen.png/revision/latest?cb=20200528015714 |
+| Green Barf Bag | Barf Bag | `skins/zombie-barf-bag.png` | 197×200 | `File:Barf Bag zombie.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/b/ba/Barf_Bag_zombie.png/revision/latest?cb=20240509072130 |
+| Tin Barf Bag | Barf Bag | `skins/yoyle-metal-barf-bag.png` | 207×200 | `File:Metal Barf bag.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/27/Metal_Barf_bag.png/revision/latest?cb=20230818115830 |
+| Graphite Basketball | Basketball | `skins/yoyle-metal-basketball.png` | 179×200 | `File:Metal Basketball .png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/17/Metal_Basketball_.png/revision/latest?cb=20250918014355 |
+| Snowdrift Bell | Bell | `skins/snowy-bell.png` | 145×200 | `File:SnowBell.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f2/SnowBell.png/revision/latest?cb=20250520192230 |
+| Ivory Bell | Bell | `skins/twinkle-bell.png` | 135×200 | `File:TwinkleBell.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/11/TwinkleBell.png/revision/latest?cb=20250610234023 |
 | Jetpack Fanny | Fanny | `skins/jetpack-fanny.png` | 173×200 | `File:Fanny Jetpack.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/68/Fanny_Jetpack.png/revision/latest?cb=20241115055313 |
 | Soaked Money | Money | `skins/soaked-money.png` | 185×200 | `File:Money wet.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/94/Money_wet.png/revision/latest?cb=20260227000422 |
-| Happy Naily | Naily | `skins/happy-naily.png` | 349×200 | `File:Nailyhappy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c5/Nailyhappy.png/revision/latest?cb=20231014221639 |
+| Charcoal Naily | Naily | `skins/happy-naily.png` | 349×200 | `File:Nailyhappy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c5/Nailyhappy.png/revision/latest?cb=20231014221639 |
 | Charred Pillow | Pillow | `skins/charred-pillow.png` | 153×200 | `File:Charred Pillow Pose.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/4/43/Charred_Pillow_Pose.png/revision/latest?cb=20230713193406 |
 | Acid Remote | Remote | `skins/acid-remote.png` | 239×200 | `File:AcidRemote.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e1/AcidRemote.png/revision/latest?cb=20250701010500 |
 | Siren Remote | Remote | `skins/siren-remote.png` | 165×200 | `File:Remote controlled.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/98/Remote_controlled.png/revision/latest?cb=20210408062010 |
-| Frozen Rose | Rose | `skins/frozen-rose.png` | 154×200 | `File:Frozen rose.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/24/Frozen_rose.png/revision/latest?cb=20260208081146 |
+| Frostbitten Rose | Rose | `skins/frozen-rose.png` | 154×200 | `File:Frozen rose.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/24/Frozen_rose.png/revision/latest?cb=20260208081146 |
 | Flamethrower Rose | Rose | `skins/flamethrower-rose.png` | 163×200 | `File:Rose with a cool flamethrower.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/ff/Rose_with_a_cool_flamethrower.png/revision/latest?cb=20260122175032 |
 | Sizzling Saw | Saw | `skins/sizzling-saw.png` | 163×200 | `File:Saw sizzlin.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/81/Saw_sizzlin.png/revision/latest?cb=20221214222443 |
 | Handleless Saw | Saw | `skins/handleless-saw.png` | 156×200 | `File:Saw how are we going to win with such a disadvantage.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/5/58/Saw_how_are_we_going_to_win_with_such_a_disadvantage.png/revision/latest?cb=20180908230400 |
 | Fishless Taco | Taco | `skins/fishless-taco.png` | 179×200 | `File:Taco we were recovered.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/dc/Taco_we_were_recovered.png/revision/latest?cb=20220103052149 |
-| Evil Taco | Taco | `skins/evil-taco.png` | 227×200 | `File:Evil taco.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/db/Evil_taco.png/revision/latest?cb=20200825150609 |
-| Half-Frozen Toothpaste | Toothpaste | `skins/half-frozen-toothpaste.png` | 160×200 | `File:Half Frozen Toothpaste.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0c/Half_Frozen_Toothpaste.png/revision/latest?cb=20260130172115 |
+| Snake Hair Taco | Taco | `skins/evil-taco.png` | 227×200 | `File:Evil taco.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/db/Evil_taco.png/revision/latest?cb=20200825150609 |
+| Glacier Toothpaste | Toothpaste | `skins/half-frozen-toothpaste.png` | 160×200 | `File:Half Frozen Toothpaste.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0c/Half_Frozen_Toothpaste.png/revision/latest?cb=20260130172115 |
 | Bob-Cut Dora | Dora | `skins/bob-cut-dora.png` | 155×200 | `File:Dora Mouth Closed.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7d/Dora_Mouth_Closed.png/revision/latest?cb=20210227225807 |
-| Tangerine David | David | `skins/tangerine-david.png` | 103×200 | `File:Orange david.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d1/Orange_david.png/revision/latest?cb=20241217041531 |
+| Citrus David | David | `skins/tangerine-david.png` | 103×200 | `File:Orange david.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d1/Orange_david.png/revision/latest?cb=20241217041531 |
 | Grinning Firey Jr. | Firey Jr. | `skins/grinning-firey-jr.png` | 190×200 | `File:BFDIA Firey Jr.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c3/BFDIA_Firey_Jr.png/revision/latest?cb=20200422083111 |
-| Frozen Fern | Fern | `skins/frozen-fern.png` | 153×200 | `File:Frozen fern.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/6a/Frozen_fern.png/revision/latest?cb=20260606183155 |
+| Icicle Fern | Fern | `skins/frozen-fern.png` | 153×200 | `File:Frozen fern.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/6a/Frozen_fern.png/revision/latest?cb=20260606183155 |
 | Crowned Ruler | Ruler | `skins/crowned-ruler.png` | 131×200 | `File:Rulerbfdia8.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/24/Rulerbfdia8.png/revision/latest?cb=20240701185050 |
 | Shades Sidewalky | Sidewalky | `skins/shades-sidewalky.png` | 220×200 | `File:Angry cool Sidewalky.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/4/4c/Angry_cool_Sidewalky.png/revision/latest?cb=20260212223613 |
-| Snowy Sidewalky | Sidewalky | `skins/snowy-sidewalky.png` | 224×200 | `File:Sidewalky snowy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7e/Sidewalky_snowy.png/revision/latest?cb=20260226211026 |
-| Cracked Sidewalky | Sidewalky | `skins/cracked-sidewalky.png` | 219×200 | `File:Sidewalky cracked.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/31/Sidewalky_cracked.png/revision/latest?cb=20260228093735 |
+| Snow-Dusted Sidewalky | Sidewalky | `skins/snowy-sidewalky.png` | 224×200 | `File:Sidewalky snowy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7e/Sidewalky_snowy.png/revision/latest?cb=20260226211026 |
+| Weathered Sidewalky | Sidewalky | `skins/cracked-sidewalky.png` | 219×200 | `File:Sidewalky cracked.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/31/Sidewalky_cracked.png/revision/latest?cb=20260228093735 |
 | Leaf Profily | Profily | `skins/leaf-profily.png` | 158×200 | `File:Leafy Profily.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7c/Leafy_Profily.png/revision/latest?cb=20210104073933 |
 | Watch Profily | Profily | `skins/watch-profily.png` | 218×200 | `File:Profilywatch.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/17/Profilywatch.png/revision/latest?cb=20240731173849 |
 | Open Chest Roboty | Roboty | `skins/open-chest-roboty.png` | 153×200 | `File:RobotyChestCompartment.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a7/RobotyChestCompartment.png/revision/latest?cb=20240616190457 |
@@ -1257,50 +1387,50 @@ used under fan-work norms in a disclaimed, non-commercial fan game.
 | Headphone Ice Cube | Ice Cube | `skins/headphone-ice-cube.png` | 157×200 | `File:ICRHBFDIA.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/63/ICRHBFDIA.png/revision/latest?cb=20240513212633 |
 | Pink Ice Cube | Ice Cube | `skins/pink-ice-cube.png` | 165×200 | `File:PinkIcy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/de/PinkIcy.png/revision/latest?cb=20231116223747 |
 | Springy Shoes Ice Cube | Ice Cube | `skins/springy-shoes-ice-cube.png` | 216×200 | `File:ICY1.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2e/ICY1.png/revision/latest?cb=20190627233652 |
-| Caked Cake | Cake | `skins/caked-cake.png` | 154×200 | `File:Rc Caked.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b8/Rc_Caked.png/revision/latest?cb=20210228233106 |
-| Doughnut | Donut | `skins/doughnut.png` | 169×200 | `File:Rc Doughnut BFDI25.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/db/Rc_Doughnut_BFDI25.png/revision/latest?cb=20230919044443 |
-| Tangerine Balloony | Balloony | `skins/tangerine-balloony.png` | 115×200 | `File:Orange Balloony.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/4/42/Orange_Balloony.png/revision/latest?cb=20210226034949 |
+| Strawberry Cake | Cake | `skins/caked-cake.png` | 154×200 | `File:Rc Caked.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b8/Rc_Caked.png/revision/latest?cb=20210228233106 |
+| Iced Donut | Donut | `skins/doughnut.png` | 169×200 | `File:Rc Doughnut BFDI25.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/db/Rc_Doughnut_BFDI25.png/revision/latest?cb=20230919044443 |
+| Apricot Balloony | Balloony | `skins/tangerine-balloony.png` | 115×200 | `File:Orange Balloony.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/4/42/Orange_Balloony.png/revision/latest?cb=20210226034949 |
 | One-Eyed Balloony | Balloony | `skins/one-eyed-balloony.png` | 95×200 | `File:Screenshot 20241201-152151.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/4/44/Screenshot_20241201-152151.png/revision/latest?cb=20250410072620 |
 | Magenta Bracelety | Bracelety | `skins/magenta-bracelety.png` | 293×200 | `File:BFDIA Bracelety.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d0/BFDIA_Bracelety.png/revision/latest?cb=20200402125837 |
-| Purple Bracelety | Bracelety | `skins/purple-bracelety.png` | 278×200 | `File:FirstBracelety.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/0/00/FirstBracelety.png/revision/latest?cb=20210228203903 |
+| Violet Bracelety | Bracelety | `skins/purple-bracelety.png` | 278×200 | `File:FirstBracelety.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/0/00/FirstBracelety.png/revision/latest?cb=20210228203903 |
 | Holey Gaty | Gaty | `skins/holey-gaty.png` | 236×200 | `File:GatyWithHole.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fa/GatyWithHole.png/revision/latest?cb=20250118165045 |
 | Unpainted Gaty | Gaty | `skins/unpainted-gaty.png` | 283×200 | `File:GatyUnpainted.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/ab/GatyUnpainted.png/revision/latest?cb=20240719141926 |
 | Sunglasses Lightning | Lightning | `skins/sunglasses-lightning.png` | 238×200 | `File:Lighting just relaxing.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/6e/Lighting_just_relaxing.png/revision/latest?cb=20230505021352 |
 | Glowing Lightning | Lightning | `skins/glowing-lightning.png` | 182×200 | `File:Lightning Icon Pose.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d3/Lightning_Icon_Pose.png/revision/latest?cb=20200901051408 |
 | Jetpack Liy | Liy | `skins/jetpack-liy.png` | 214×200 | `File:Liy jetpack.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/96/Liy_jetpack.png/revision/latest?cb=20250216181634 |
 | Big Boots Liy | Liy | `skins/big-boots-liy.png` | 189×200 | `File:BigOlBoots.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/91/BigOlBoots.png/revision/latest?cb=20240616220037 |
-| Sweater Lollipop | Lollipop | `skins/sweater-lollipop.png` | 104×200 | `File:SweaterLollipop.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fb/SweaterLollipop.png/revision/latest?cb=20210817163646 |
+| Berry Cardigan Lollipop | Lollipop | `skins/sweater-lollipop.png` | 104×200 | `File:SweaterLollipop.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fb/SweaterLollipop.png/revision/latest?cb=20210817163646 |
 | Scribbled Lollipop | Lollipop | `skins/scribbled-lollipop.png` | 98×200 | `File:Lollipop - It means one of us....is leaving. .png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fc/Lollipop_-_It_means_one_of_us....is_leaving._.png/revision/latest?cb=20210607221949 |
 | Backpack Loser | Loser | `skins/backpack-loser.png` | 215×200 | `File:LoserBackpack.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/b/bc/LoserBackpack.png/revision/latest?cb=20250621232021 |
 | Uncapped Marker | Marker | `skins/uncapped-marker.png` | 97×200 | `File:Uncapped marker.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/8b/Uncapped_marker.png/revision/latest?cb=20191026124851 |
-| Burnt Marker | Marker | `skins/burnt-marker.png` | 97×200 | `File:Burnt Marker (TPOT 6).png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3d/Burnt_Marker_%28TPOT_6%29.png/revision/latest?cb=20230710043409 |
-| Tree the Green | Tree | `skins/tree-the-green.png` | 170×200 | `File:Tpot renders0002.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d0/Tpot_renders0002.png/revision/latest |
-| Snowy Tree | Tree | `skins/snowy-tree.png` | 170×200 | `File:SnowTree.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f1/SnowTree.png/revision/latest |
+| Purple Cap Marker | Marker | `skins/burnt-marker.png` | 97×200 | `File:Burnt Marker (TPOT 6).png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3d/Burnt_Marker_%28TPOT_6%29.png/revision/latest?cb=20230710043409 |
+| Green Tree | Tree | `skins/tree-the-green.png` | 170×200 | `File:Tpot renders0002.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d0/Tpot_renders0002.png/revision/latest |
+| Winter Tree | Tree | `skins/snowy-tree.png` | 170×200 | `File:SnowTree.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f1/SnowTree.png/revision/latest |
 | Backpack Firey | Firey | `skins/backpack-firey.png` | 179×200 | `File:Fireywithbackpack.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/df/Fireywithbackpack.png/revision/latest?cb=20250102205925 |
-| CGI Needle | Needle | `skins/cgi-needle.png` | 43×200 | `File:Needle11.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/19/Needle11.png/revision/latest?cb=20230215143100 |
-| Early BFB Pin | Pin | `skins/early-bfb-pin.png` | 140×200 | `File:Pin pin pin.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/80/Pin_pin_pin.png/revision/latest?cb=20180213182855 |
-| Yoyle Metal Snowball | Snowball | `skins/yoyle-metal-snowball.png` | 177×200 | `File:Metal Snowball minding his own business.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/4/44/Metal_Snowball_minding_his_own_business.png/revision/latest?cb=20230711131425 |
+| Glossy Needle | Needle | `skins/cgi-needle.png` | 43×200 | `File:Needle11.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/19/Needle11.png/revision/latest?cb=20230215143100 |
+| Tilted Pin | Pin | `skins/early-bfb-pin.png` | 140×200 | `File:Pin pin pin.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/80/Pin_pin_pin.png/revision/latest?cb=20180213182855 |
+| Lead Snowball | Snowball | `skins/yoyle-metal-snowball.png` | 177×200 | `File:Metal Snowball minding his own business.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/4/44/Metal_Snowball_minding_his_own_business.png/revision/latest?cb=20230711131425 |
 | Bracelet Bomby | Bomby | `skins/bracelet-bomby.png` | 210×200 | `File:Bomby with yellow bracelet .png` | https://static.wikia.nocookie.net/battlefordreamisland/images/7/73/Bomby_with_yellow_bracelet_.png/revision/latest?cb=20250607232337 |
 | Bread Coiny | Coiny | `skins/bread-coiny.png` | 240×200 | `File:Bread Coiny.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c9/Bread_Coiny.png/revision/latest?cb=20230709211240 |
-| Zombie Pen | Pen | `skins/zombie-pen.png` | 93×200 | `File:ZombiePen.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/0/09/ZombiePen.png/revision/latest?cb=20240507174456 |
+| Drooling Pen | Pen | `skins/zombie-pen.png` | 93×200 | `File:ZombiePen.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/0/09/ZombiePen.png/revision/latest?cb=20240507174456 |
 | Headset Golf Ball | Golf Ball | `skins/headset-golf-ball.png` | 185×200 | `File:Golf ball headset.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/98/Golf_ball_headset.png/revision/latest?cb=20190801152006 |
-| Twinkle Book | Book | `skins/twinkle-book.png` | 212×200 | `File:TwinkleBook.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/ff/TwinkleBook.png/revision/latest?cb=20251017113553 |
-| Orange Basketball | Basketball | `skins/orange-basketball.png` | 181×200 | `File:BB orange.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e0/BB_orange.png/revision/latest?cb=20201001022116 |
+| Neon Book | Book | `skins/twinkle-book.png` | 212×200 | `File:TwinkleBook.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/ff/TwinkleBook.png/revision/latest?cb=20251017113553 |
+| Peach Basketball | Basketball | `skins/orange-basketball.png` | 181×200 | `File:BB orange.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e0/BB_orange.png/revision/latest?cb=20201001022116 |
 | Power Arm Fanny | Fanny | `skins/power-arm-fanny.png` | 138×196 | `File:GreenArmFanny.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/4/46/GreenArmFanny.png/revision/latest?cb=20250717225553 |
-| Twinkle Grassy | Grassy | `skins/twinkle-grassy.png` | 156×200 | `File:TWINKLEBURNINGGRASSY!.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/60/TWINKLEBURNINGGRASSY%21.png/revision/latest?cb=20251017112851 |
-| Early BFB Naily | Naily | `skins/early-bfb-naily.png` | 300×200 | `File:Naily BFB Cute with feet.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/18/Naily_BFB_Cute_with_feet.png/revision/latest?cb=20210204232657 |
+| Green Flame Grassy | Grassy | `skins/twinkle-grassy.png` | 156×200 | `File:TWINKLEBURNINGGRASSY!.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/60/TWINKLEBURNINGGRASSY%21.png/revision/latest?cb=20251017112851 |
+| Long-Legged Naily | Naily | `skins/early-bfb-naily.png` | 300×200 | `File:Naily BFB Cute with feet.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/18/Naily_BFB_Cute_with_feet.png/revision/latest?cb=20210204232657 |
 | Moon Pillow | Pillow | `skins/moon-pillow.png` | 193×200 | `File:Moon pillow.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/8b/Moon_pillow.png/revision/latest?cb=20251027172743 |
 | Wheeled TV | TV | `skins/wheeled-tv.png` | 206×200 | `File:TV with wheels.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3a/TV_with_wheels.png/revision/latest?cb=20230710023438 |
-| Tangerine Woody | Woody | `skins/tangerine-woody.png` | 170×200 | `File:Woody scared.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f0/Woody_scared.png/revision/latest?cb=20180704220001 |
-| Announcer Toothpaste | Toothpaste | `skins/announcer-toothpaste.png` | 113×200 | `File:Announcer Costume Toothpaste.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2b/Announcer_Costume_Toothpaste.png/revision/latest?cb=20260116021745 |
+| Marmalade Woody | Woody | `skins/tangerine-woody.png` | 170×200 | `File:Woody scared.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f0/Woody_scared.png/revision/latest?cb=20180704220001 |
+| Porthole Toothpaste | Toothpaste | `skins/announcer-toothpaste.png` | 113×200 | `File:Announcer Costume Toothpaste.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2b/Announcer_Costume_Toothpaste.png/revision/latest?cb=20260116021745 |
 | Ponytail Dora | Dora | `skins/ponytail-dora.png` | 129×200 | `File:Dora3.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/29/Dora3.png/revision/latest?cb=20190908012201 |
 | Rainbow Match | Match | `skins/rainbow-match.png` | 52×200 | `File:RainbowMatchhh.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/da/RainbowMatchhh.png/revision/latest?cb=20250729000726 |
-| Announcer David | David | `skins/announcer-david.png` | 94×200 | `File:Babid.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d3/Babid.png/revision/latest?cb=20261025004800 |
-| Poisoned Firey Jr. | Firey Jr. | `skins/poisoned-firey-jr.png` | 206×200 | `File:Poisoned Firey.jr.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a3/Poisoned_Firey.jr.png/revision/latest?cb=20260701035537 |
-| Announcer Fern | Fern | `skins/announcer-fern.png` | 128×200 | `File:Announcer Costume fern.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/4/45/Announcer_Costume_fern.png/revision/latest?cb=20260116013632 |
-| BFDIA Ruler | Ruler | `skins/bfdia-ruler.png` | 97×200 | `File:BFDIA 11 Ruler.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/ac/BFDIA_11_Ruler.png/revision/latest?cb=20250601132730 |
-| Twinkle Cake | Cake | `skins/twinkle-cake.png` | 133×200 | `File:CakeOfContagion-removebg-preview.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/1b/CakeOfContagion-removebg-preview.png/revision/latest?cb=20250723163651 |
-| Twinkle Donut | Donut | `skins/twinkle-donut.png` | 181×200 | `File:Right Twinkle.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c3/Right_Twinkle.png/revision/latest?cb=20180304055635 |
+| Speaker Box David | David | `skins/announcer-david.png` | 94×200 | `File:Babid.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d3/Babid.png/revision/latest?cb=20261025004800 |
+| Toxic Firey Jr. | Firey Jr. | `skins/poisoned-firey-jr.png` | 206×200 | `File:Poisoned Firey.jr.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a3/Poisoned_Firey.jr.png/revision/latest?cb=20260701035537 |
+| Hooded Fern | Fern | `skins/announcer-fern.png` | 128×200 | `File:Announcer Costume fern.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/4/45/Announcer_Costume_fern.png/revision/latest?cb=20260116013632 |
+| Honey Ruler | Ruler | `skins/bfdia-ruler.png` | 97×200 | `File:BFDIA 11 Ruler.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/ac/BFDIA_11_Ruler.png/revision/latest?cb=20250601132730 |
+| Whipped Cream Cake | Cake | `skins/twinkle-cake.png` | 133×200 | `File:CakeOfContagion-removebg-preview.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/1b/CakeOfContagion-removebg-preview.png/revision/latest?cb=20250723163651 |
+| Glazed Donut | Donut | `skins/twinkle-donut.png` | 181×200 | `File:Right Twinkle.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c3/Right_Twinkle.png/revision/latest?cb=20180304055635 |
 
 ### Inanimate Insanity wiki skins
 
@@ -1310,88 +1440,88 @@ inanimateinsanity.fandom.com.
 
 | Skin | Fighter | File | Size | Wiki file | Source |
 |---|---|---|---|---|---|
-| Rockstar Poppy | Poppy | `skins/rockstar-poppy.png` | 196×200 | `File:KISS poppy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/ba/KISS_poppy.png/revision/latest?cb=20260331024508 |
-| Rockstar Paper | Paper | `skins/rockstar-paper.png` | 174×200 | `File:KISS paper.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/21/KISS_paper.png/revision/latest?cb=20260331024124 |
-| Rockstar Tapey | Tapey | `skins/rockstar-tapey.png` | 237×200 | `File:KISS tapey.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/9b/KISS_tapey.png/revision/latest?cb=20260331024423 |
-| Rockstar Starfruit | Starfruit | `skins/rockstar-starfruit.png` | 194×200 | `File:KISS starfruit.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f3/KISS_starfruit.png/revision/latest?cb=20260331024322 |
-| Rockstar Lightbulb | Lightbulb | `skins/rockstar-lightbulb.png` | 124×200 | `File:KISS lightbulb.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/2e/KISS_lightbulb.png/revision/latest?cb=20260331024012 |
+| Spiky Wig Poppy | Poppy | `skins/rockstar-poppy.png` | 196×200 | `File:KISS poppy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/ba/KISS_poppy.png/revision/latest?cb=20260331024508 |
+| Flying-V Paper | Paper | `skins/rockstar-paper.png` | 174×200 | `File:KISS paper.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/21/KISS_paper.png/revision/latest?cb=20260331024124 |
+| Rocker Tapey | Tapey | `skins/rockstar-tapey.png` | 237×200 | `File:KISS tapey.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/9b/KISS_tapey.png/revision/latest?cb=20260331024423 |
+| Star Paint Starfruit | Starfruit | `skins/rockstar-starfruit.png` | 194×200 | `File:KISS starfruit.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f3/KISS_starfruit.png/revision/latest?cb=20260331024322 |
+| Stage Paint Lightbulb | Lightbulb | `skins/rockstar-lightbulb.png` | 124×200 | `File:KISS lightbulb.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/2e/KISS_lightbulb.png/revision/latest?cb=20260331024012 |
 | Battered Fan | Fan | `skins/battered-fan.png` | 170×200 | `File:HealedFan.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/ec/HealedFan.png/revision/latest?cb=20260803183634 |
 | Tattered Jack | Jack | `skins/tattered-jack.png` | 171×200 | `File:Jack Hurt.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1f/Jack_Hurt.png/revision/latest?cb=20260403164336 |
 | Tattered Bow | Bow | `skins/tattered-bow.png` | 208×200 | `File:Tattered Bow (Season 2).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/fe/Tattered_Bow_%28Season_2%29.png/revision/latest?cb=20260325034805 |
-| Snazzy Nickel | Nickel (II) | `skins/snazzy-nickel.png` | 141×200 | `File:Nicklesnazzy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1e/Nicklesnazzy.png/revision/latest?cb=20160808213230 |
+| Fedora Nickel | Nickel (II) | `skins/snazzy-nickel.png` | 141×200 | `File:Nicklesnazzy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1e/Nicklesnazzy.png/revision/latest?cb=20160808213230 |
 | Lab-Coat Test Tube | Test Tube | `skins/lab-coat-test-tube.png` | 86×200 | `File:Lab Coat Test Tube (S2E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/4d/Lab_Coat_Test_Tube_%28S2E3%29.png/revision/latest?cb=20260317124319 |
 | Detective Yin-Yang | Yin-Yang | `skins/detective-yin-yang.png` | 184×200 | `File:Yin-Yang's Detective Disguise (S4E4).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/86/Yin-Yang%27s_Detective_Disguise_%28S4E4%29.png/revision/latest?cb=20260315063438 |
 | Investigator Lifering | Lifering | `skins/investigator-lifering.png` | 184×200 | `File:Investigator's Top Hat Lifering (S3E15).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/e7/Investigator%27s_Top_Hat_Lifering_%28S3E15%29.png/revision/latest?cb=20260315063442 |
-| Blindfolded Taco | Taco (II) | `skins/blindfolded-taco.png` | 240×200 | `File:Blindfolded Taco (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/5e/Blindfolded_Taco_%28S4E3%29.png/revision/latest?cb=20260307055739 |
-| Blindfolded Microphone | Microphone | `skins/blindfolded-microphone.png` | 115×200 | `File:Blindfolded Microphone (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/21/Blindfolded_Microphone_%28S4E3%29.png/revision/latest?cb=20260307055741 |
-| Blindfolded Box | Box | `skins/blindfolded-box.png` | 282×200 | `File:Blindfolded Box Running (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/09/Blindfolded_Box_Running_%28S4E3%29.png/revision/latest?cb=20260427060517 |
-| Blindfolded Trophy | Trophy | `skins/blindfolded-trophy.png` | 181×200 | `File:Blindfolded Trophy (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/fb/Blindfolded_Trophy_%28S4E3%29.png/revision/latest?cb=20260307055742 |
-| Blindfolded Goo | Goo | `skins/blindfolded-goo.png` | 298×200 | `File:Season 4 Goo Blindfold (Transparent PNG).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/11/Season_4_Goo_Blindfold_%28Transparent_PNG%29.png/revision/latest?cb=20260110215246 |
-| Blindfolded Spikey | Spikey | `skins/blindfolded-spikey.png` | 186×200 | `File:Blindfolded Spikey (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/58/Blindfolded_Spikey_%28S4E3%29.png/revision/latest?cb=20260331021021 |
-| Blindfolded Candle | Candle | `skins/blindfolded-candle.png` | 111×200 | `File:Blindfolded Candle (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/07/Blindfolded_Candle_%28S4E3%29.png/revision/latest?cb=20260307055742 |
-| Blindfolded Cheesy | Cheesy | `skins/blindfolded-cheesy.png` | 310×200 | `File:Cheesy Blindfold.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/67/Cheesy_Blindfold.png/revision/latest?cb=20260426151316 |
-| Blindfolded Soap | Soap | `skins/blindfolded-soap.png` | 164×200 | `File:Soap Blindfold.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c6/Soap_Blindfold.png/revision/latest?cb=20260426153248 |
-| Blindfolded Tea Kettle | Tea Kettle | `skins/blindfolded-tea-kettle.png` | 233×200 | `File:Blindfolded Tea Kettle (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f4/Blindfolded_Tea_Kettle_%28S4E3%29.png/revision/latest?cb=20260331021203 |
-| Blindfolded Cherries | Cherries | `skins/blindfolded-cherries.png` | 211×200 | `File:Climbing Gear Cherries (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/23/Climbing_Gear_Cherries_%28S4E3%29.png/revision/latest?cb=20260306112717 |
-| Blindfolded Magnet | Magnet | `skins/blindfolded-magnet.png` | 168×200 | `File:Climbing Gear Magnet (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/17/Climbing_Gear_Magnet_%28S4E3%29.png/revision/latest?cb=20260331021258 |
-| Blindfolded MeTag | MeTag | `skins/blindfolded-metag.png` | 198×200 | `File:Climbing Gear MeTag (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/d2/Climbing_Gear_MeTag_%28S4E3%29.png/revision/latest?cb=20260307055742 |
-| Blindfolded Bonesaw | Bonesaw | `skins/blindfolded-bonesaw.png` | 394×200 | `File:Climbing Gear Bonesaw (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/63/Climbing_Gear_Bonesaw_%28S4E3%29.png/revision/latest?cb=20260307061151 |
-| Damaged Bot | Bot | `skins/damaged-bot.png` | 276×200 | `File:Season 4 Bot Damaged (Transparent PNG).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/d6/Season_4_Bot_Damaged_%28Transparent_PNG%29.png/revision/latest?cb=20260122022718 |
-| Camera #1 | Cammy | `skins/camera-1.png` | 263×200 | `File:Camera 1.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/84/Camera_1.png/revision/latest?cb=20210705173708 |
-| Tired Teddy Bear | Teddy Bear | `skins/tired-teddy-bear.png` | 169×200 | `File:Teddy Bear Tired.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/a6/Teddy_Bear_Tired.png/revision/latest?cb=20260216215543 |
-| Hard Hat Balloon | Balloon | `skins/hard-hat-balloon.png` | 133×200 | `File:Hard Hat Balloon (S3E17).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/29/Hard_Hat_Balloon_%28S3E17%29.png/revision/latest?cb=20260315063441 |
+| Orange Blindfold Taco | Taco (II) | `skins/blindfolded-taco.png` | 240×200 | `File:Blindfolded Taco (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/5e/Blindfolded_Taco_%28S4E3%29.png/revision/latest?cb=20260307055739 |
+| Orange Blindfold Microphone | Microphone | `skins/blindfolded-microphone.png` | 115×200 | `File:Blindfolded Microphone (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/21/Blindfolded_Microphone_%28S4E3%29.png/revision/latest?cb=20260307055741 |
+| Lime Blindfold Box | Box | `skins/blindfolded-box.png` | 282×200 | `File:Blindfolded Box Running (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/09/Blindfolded_Box_Running_%28S4E3%29.png/revision/latest?cb=20260427060517 |
+| Lime Blindfold Trophy | Trophy | `skins/blindfolded-trophy.png` | 181×200 | `File:Blindfolded Trophy (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/fb/Blindfolded_Trophy_%28S4E3%29.png/revision/latest?cb=20260307055742 |
+| Lime Blindfold Goo | Goo | `skins/blindfolded-goo.png` | 298×200 | `File:Season 4 Goo Blindfold (Transparent PNG).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/11/Season_4_Goo_Blindfold_%28Transparent_PNG%29.png/revision/latest?cb=20260110215246 |
+| Lime Blindfold Spikey | Spikey | `skins/blindfolded-spikey.png` | 186×200 | `File:Blindfolded Spikey (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/58/Blindfolded_Spikey_%28S4E3%29.png/revision/latest?cb=20260331021021 |
+| Blue Blindfold Candle | Candle | `skins/blindfolded-candle.png` | 111×200 | `File:Blindfolded Candle (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/07/Blindfolded_Candle_%28S4E3%29.png/revision/latest?cb=20260307055742 |
+| Blue Blindfold Cheesy | Cheesy | `skins/blindfolded-cheesy.png` | 310×200 | `File:Cheesy Blindfold.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/67/Cheesy_Blindfold.png/revision/latest?cb=20260426151316 |
+| Orange Blindfold Soap | Soap | `skins/blindfolded-soap.png` | 164×200 | `File:Soap Blindfold.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c6/Soap_Blindfold.png/revision/latest?cb=20260426153248 |
+| Orange Blindfold Tea Kettle | Tea Kettle | `skins/blindfolded-tea-kettle.png` | 233×200 | `File:Blindfolded Tea Kettle (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f4/Blindfolded_Tea_Kettle_%28S4E3%29.png/revision/latest?cb=20260331021203 |
+| Orange Blindfold Cherries | Cherries | `skins/blindfolded-cherries.png` | 211×200 | `File:Climbing Gear Cherries (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/23/Climbing_Gear_Cherries_%28S4E3%29.png/revision/latest?cb=20260306112717 |
+| Blue Blindfold Magnet | Magnet | `skins/blindfolded-magnet.png` | 168×200 | `File:Climbing Gear Magnet (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/17/Climbing_Gear_Magnet_%28S4E3%29.png/revision/latest?cb=20260331021258 |
+| Gold Blindfold MeTag | MeTag | `skins/blindfolded-metag.png` | 198×200 | `File:Climbing Gear MeTag (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/d2/Climbing_Gear_MeTag_%28S4E3%29.png/revision/latest?cb=20260307055742 |
+| Lime Blindfold Bonesaw | Bonesaw | `skins/blindfolded-bonesaw.png` | 394×200 | `File:Climbing Gear Bonesaw (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/63/Climbing_Gear_Bonesaw_%28S4E3%29.png/revision/latest?cb=20260307061151 |
+| Screaming Bot | Bot | `skins/damaged-bot.png` | 276×200 | `File:Season 4 Bot Damaged (Transparent PNG).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/d6/Season_4_Bot_Damaged_%28Transparent_PNG%29.png/revision/latest?cb=20260122022718 |
+| Compact Cammy | Cammy | `skins/camera-1.png` | 263×200 | `File:Camera 1.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/84/Camera_1.png/revision/latest?cb=20210705173708 |
+| Pistol Teddy Bear | Teddy Bear | `skins/tired-teddy-bear.png` | 169×200 | `File:Teddy Bear Tired.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/a6/Teddy_Bear_Tired.png/revision/latest?cb=20260216215543 |
+| Builder Balloon | Balloon | `skins/hard-hat-balloon.png` | 133×200 | `File:Hard Hat Balloon (S3E17).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/29/Hard_Hat_Balloon_%28S3E17%29.png/revision/latest?cb=20260315063441 |
 | Snorkel Bomb | Bomb | `skins/snorkel-bomb.png` | 154×200 | `File:Bomb Snorkel.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/46/Bomb_Snorkel.png/revision/latest?cb=20260424030546 |
-| Damaged Knife | Knife | `skins/damaged-knife.png` | 94×200 | `File:Knife damaged.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/90/Knife_damaged.png/revision/latest?cb=20241015012537 |
-| Painted Paintbrush | Paintbrush | `skins/painted-paintbrush.png` | 97×200 | `File:Painted Paintbrush.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1d/Painted_Paintbrush.png/revision/latest?cb=20250802193652 |
-| Burnt Marshmallow | Marshmallow | `skins/burnt-marshmallow.png` | 140×200 | `File:Marshmallow Burnt 2.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b3/Marshmallow_Burnt_2.png/revision/latest?cb=20260307185716 |
-| Snotty Apple | Apple | `skins/snotty-apple.png` | 171×200 | `File:Apple Snot.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/af/Apple_Snot.png/revision/latest?cb=20260426194855 |
+| Scratched Knife | Knife | `skins/damaged-knife.png` | 94×200 | `File:Knife damaged.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/90/Knife_damaged.png/revision/latest?cb=20241015012537 |
+| Yellow-Tipped Paintbrush | Paintbrush | `skins/painted-paintbrush.png` | 97×200 | `File:Painted Paintbrush.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1d/Painted_Paintbrush.png/revision/latest?cb=20250802193652 |
+| Roasted Marshmallow | Marshmallow | `skins/burnt-marshmallow.png` | 140×200 | `File:Marshmallow Burnt 2.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b3/Marshmallow_Burnt_2.png/revision/latest?cb=20260307185716 |
+| Slimy Apple | Apple | `skins/snotty-apple.png` | 171×200 | `File:Apple Snot.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/af/Apple_Snot.png/revision/latest?cb=20260426194855 |
 | Chocolate Baseball | Baseball | `skins/chocolate-baseball.png` | 158×200 | `File:BaseballChocolate.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/7/76/BaseballChocolate.png/revision/latest?cb=20230506070528 |
 | Boxing Pickle | Pickle | `skins/boxing-pickle.png` | 100×200 | `File:Pickle Eyepatch Boxing.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/9c/Pickle_Eyepatch_Boxing.png/revision/latest?cb=20260217013034 |
 | Face Mask Salt | Salt | `skins/face-mask-salt.png` | 106×200 | `File:Salt Face Gel.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/83/Salt_Face_Gel.png/revision/latest?cb=20260424024034 |
-| Solid Dough | Dough | `skins/solid-dough.png` | 183×200 | `File:DoughForm.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/4f/DoughForm.png/revision/latest?cb=20140212190207 |
-| Snotty Tissues | Tissues | `skins/snotty-tissues.png` | 175×200 | `File:Tissues Snot.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/6b/Tissues_Snot.png/revision/latest?cb=20260424025752 |
-| Golden Blueberry | Blueberry | `skins/golden-blueberry.png` | 166×200 | `File:Unbotheredgoldenblueberry.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/bb/Unbotheredgoldenblueberry.png/revision/latest?cb=20231001152648 |
+| Buttery Dough | Dough | `skins/solid-dough.png` | 183×200 | `File:DoughForm.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/4f/DoughForm.png/revision/latest?cb=20140212190207 |
+| Mucky Tissues | Tissues | `skins/snotty-tissues.png` | 175×200 | `File:Tissues Snot.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/6b/Tissues_Snot.png/revision/latest?cb=20260424025752 |
+| Amber Blueberry | Blueberry | `skins/golden-blueberry.png` | 166×200 | `File:Unbotheredgoldenblueberry.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/bb/Unbotheredgoldenblueberry.png/revision/latest?cb=20231001152648 |
 | Detective Clover | Clover | `skins/detective-clover.png` | 145×200 | `File:Clover's Detective Disguise (S4E4).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/6e/Clover%27s_Detective_Disguise_%28S4E4%29.png/revision/latest?cb=20260315063442 |
-| Glowing Gold Spoon | Silver Spoon | `skins/glowing-gold-spoon.png` | 67×200 | `File:Semi-Powerful Silver Spoon (S3E18).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/3/34/Semi-Powerful_Silver_Spoon_%28S3E18%29.png/revision/latest?cb=20260315072657 |
+| Gilded Silver Spoon | Silver Spoon | `skins/glowing-gold-spoon.png` | 67×200 | `File:Semi-Powerful Silver Spoon (S3E18).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/3/34/Semi-Powerful_Silver_Spoon_%28S3E18%29.png/revision/latest?cb=20260315072657 |
 | Whistle Trophy | Trophy | `skins/whistle-trophy.png` | 207×200 | `File:Trophy wearing a Whistle Necklace (S4E4).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/ec/Trophy_wearing_a_Whistle_Necklace_%28S4E4%29.png/revision/latest?cb=20260322064653 |
 | Muscular Goo | Goo | `skins/muscular-goo.png` | 252×200 | `File:Goo's Muscular Arm (S4E4).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b3/Goo%27s_Muscular_Arm_%28S4E4%29.png/revision/latest?cb=20260427061025 |
 | Tangled Spikey | Spikey | `skins/tangled-spikey.png` | 222×200 | `File:Spikey Tangled in Ropes (S4E4).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/d7/Spikey_Tangled_in_Ropes_%28S4E4%29.png/revision/latest?cb=20260315063443 |
 | Oily Soap | Soap | `skins/oily-soap.png` | 130×200 | `File:Soap Vinegar.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/4c/Soap_Vinegar.png/revision/latest?cb=20260424163856 |
-| Blue Ray Balloon | Balloon | `skins/blue-ray-balloon.png` | 162×200 | `File:Balloongugu.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/5c/Balloongugu.png/revision/latest?cb=20251129200337 |
+| Sky Blue Balloon | Balloon | `skins/blue-ray-balloon.png` | 162×200 | `File:Balloongugu.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/5c/Balloongugu.png/revision/latest?cb=20251129200337 |
 | Soggy Taco | Taco (II) | `skins/soggy-taco.png` | 268×200 | `File:Taco Soggy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f1/Taco_Soggy.png/revision/latest?cb=20260802002730 |
 | Deerstalker Clover | Clover | `skins/deerstalker-clover.png` | 144×200 | `File:Detective's Hat Clover (S3E15).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/26/Detective%27s_Hat_Clover_%28S3E15%29.png/revision/latest?cb=20260315063443 |
 | Ice Cream Spoon | Silver Spoon | `skins/ice-cream-spoon.png` | 78×200 | `File:SS Ice Cream.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/9e/SS_Ice_Cream.png/revision/latest?cb=20260420042741 |
-| Hard Hat Silver Spoon | Silver Spoon | `skins/hard-hat-silver-spoon.png` | 74×200 | `File:Hard Hat Silver Spoon (S3E17).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c6/Hard_Hat_Silver_Spoon_%28S3E17%29.png/revision/latest?cb=20260315063442 |
+| Yellow Cap Silver Spoon | Silver Spoon | `skins/hard-hat-silver-spoon.png` | 74×200 | `File:Hard Hat Silver Spoon (S3E17).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c6/Hard_Hat_Silver_Spoon_%28S3E17%29.png/revision/latest?cb=20260315063442 |
 | Ice Cream Paintbrush | Paintbrush | `skins/ice-cream-paintbrush.png` | 83×200 | `File:1645292052660.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b1/1645292052660.png/revision/latest?cb=20220219173519 |
 | Guacamole Marshmallow | Marshmallow | `skins/guacamole-marshmallow.png` | 238×200 | `File:Guacamolemellow.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/03/Guacamolemellow.png/revision/latest?cb=20251005170934 |
 | Oxygen Mask Apple | Apple | `skins/oxygen-mask-apple.png` | 215×200 | `File:AppleOxygenMask.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/69/AppleOxygenMask.png/revision/latest?cb=20260411214025 |
-| Burnt Baseball | Baseball | `skins/burnt-baseball.png` | 162×200 | `File:Burnt Baseball.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f1/Burnt_Baseball.png/revision/latest?cb=20250707013425 |
-| Blue Paint Blueberry | Blueberry | `skins/blue-paint-blueberry.png` | 178×200 | `File:CE3C605E-2943-4813-80B0-23C9A95748BB.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/bc/CE3C605E-2943-4813-80B0-23C9A95748BB.png/revision/latest?cb=20231004073226 |
-| Purple Bomb | Bomb | `skins/purple-bomb.png` | 186×200 | `File:Purple bomb.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/50/Purple_bomb.png/revision/latest?cb=20250404170647 |
-| MePhone Costume Bot | Bot | `skins/mephone-costume-bot.png` | 228×200 | `File:Greetings and Salutations!.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/4a/Greetings_and_Salutations%21.png/revision/latest?cb=20250720000233 |
-| Ghost Bow | Bow | `skins/ghost-bow.png` | 209×200 | `File:BowGhost2017Pose.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/fd/BowGhost2017Pose.png/revision/latest?cb=20260614151046 |
-| Safety Vest Box | Box | `skins/safety-vest-box.png` | 178×200 | `File:BoxSafetySquad.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/69/BoxSafetySquad.png/revision/latest?cb=20260414082000 |
+| Scorched Baseball | Baseball | `skins/burnt-baseball.png` | 162×200 | `File:Burnt Baseball.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f1/Burnt_Baseball.png/revision/latest?cb=20250707013425 |
+| Light Blue Blueberry | Blueberry | `skins/blue-paint-blueberry.png` | 178×200 | `File:CE3C605E-2943-4813-80B0-23C9A95748BB.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/bc/CE3C605E-2943-4813-80B0-23C9A95748BB.png/revision/latest?cb=20231004073226 |
+| Plum Bomb | Bomb | `skins/purple-bomb.png` | 186×200 | `File:Purple bomb.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/50/Purple_bomb.png/revision/latest?cb=20250404170647 |
+| Smartphone Bot | Bot | `skins/mephone-costume-bot.png` | 228×200 | `File:Greetings and Salutations!.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/4a/Greetings_and_Salutations%21.png/revision/latest?cb=20250720000233 |
+| Spirit Bow | Bow | `skins/ghost-bow.png` | 209×200 | `File:BowGhost2017Pose.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/fd/BowGhost2017Pose.png/revision/latest?cb=20260614151046 |
+| Neon Strap Box | Box | `skins/safety-vest-box.png` | 178×200 | `File:BoxSafetySquad.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/69/BoxSafetySquad.png/revision/latest?cb=20260414082000 |
 | Flash Cammy | Cammy | `skins/flash-cammy.png` | 234×200 | `File:Cammy Flash.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/fa/Cammy_Flash.png/revision/latest?cb=20260419233749 |
-| Inner Flame Candle | Candle | `skins/inner-flame-candle.png` | 105×200 | `File:Inner Flame Candle (S4E8).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/cf/Inner_Flame_Candle_%28S4E8%29.png/revision/latest?cb=20261017131752 |
-| Snotty Cherries | Cherries | `skins/snotty-cherries.png` | 184×200 | `File:Cherries in Nasal Mucus (S2E7).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/8e/Cherries_in_Nasal_Mucus_%28S2E7%29.png/revision/latest?cb=20260306112718 |
+| Magenta Flame Candle | Candle | `skins/inner-flame-candle.png` | 105×200 | `File:Inner Flame Candle (S4E8).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/cf/Inner_Flame_Candle_%28S4E8%29.png/revision/latest?cb=20261017131752 |
+| Gooey Cherries | Cherries | `skins/snotty-cherries.png` | 184×200 | `File:Cherries in Nasal Mucus (S2E7).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/8e/Cherries_in_Nasal_Mucus_%28S2E7%29.png/revision/latest?cb=20260306112718 |
 | Bowtie Fan | Fan | `skins/bowtie-fan.png` | 188×200 | `File:THE FANBOW IS BACK!!!.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/2c/THE_FANBOW_IS_BACK%21%21%21.png/revision/latest?cb=20260806003205 |
 | Headband Jack | Jack | `skins/headband-jack.png` | 153×200 | `File:Jack Wearing a Headband (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/e4/Jack_Wearing_a_Headband_%28S4E3%29.png/revision/latest?cb=20260307055741 |
-| Ghost Knife | Knife | `skins/ghost-knife.png` | 90×200 | `File:Knife IIS4 Ghost.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/57/Knife_IIS4_Ghost.png/revision/latest?cb=20260530021840 |
-| Safety Vest Lifering | Lifering | `skins/safety-vest-lifering.png` | 222×200 | `File:LiferingII4StickerSheet.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/56/LiferingII4StickerSheet.png/revision/latest?cb=20250715164441 |
+| Phantom Knife | Knife | `skins/ghost-knife.png` | 90×200 | `File:Knife IIS4 Ghost.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/57/Knife_IIS4_Ghost.png/revision/latest?cb=20260530021840 |
+| Hi-Vis Lifering | Lifering | `skins/safety-vest-lifering.png` | 222×200 | `File:LiferingII4StickerSheet.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/56/LiferingII4StickerSheet.png/revision/latest?cb=20250715164441 |
 | Pirate Lightbulb | Lightbulb | `skins/pirate-lightbulb.png` | 143×200 | `File:Lightbulb Pirate.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/a2/Lightbulb_Pirate.png/revision/latest?cb=20240605220958 |
-| Safety Vest MeTag | MeTag | `skins/safety-vest-metag.png` | 240×200 | `File:Metags4.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1b/Metags4.png/revision/latest?cb=20260803172416 |
-| Season 4 Microphone | Microphone | `skins/season-4-microphone.png` | 76×200 | `File:UnfliteredMicrophoneS4.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/fa/UnfliteredMicrophoneS4.png/revision/latest?cb=20250811055007 |
-| Hard Hat Nickel | Nickel (II) | `skins/hard-hat-nickel.png` | 141×200 | `File:Hard Hat Nickel (S3E17).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/ee/Hard_Hat_Nickel_%28S3E17%29.png/revision/latest?cb=20260315063441 |
-| Celebration Paper | Paper | `skins/celebration-paper.png` | 174×200 | `File:PaperII4StickerSheet.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/7/7a/PaperII4StickerSheet.png/revision/latest?cb=20250715164441 |
+| Cross-Strap MeTag | MeTag | `skins/safety-vest-metag.png` | 240×200 | `File:Metags4.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1b/Metags4.png/revision/latest?cb=20260803172416 |
+| Laughing Microphone | Microphone | `skins/season-4-microphone.png` | 76×200 | `File:UnfliteredMicrophoneS4.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/fa/UnfliteredMicrophoneS4.png/revision/latest?cb=20250811055007 |
+| Construction Nickel | Nickel (II) | `skins/hard-hat-nickel.png` | 141×200 | `File:Hard Hat Nickel (S3E17).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/ee/Hard_Hat_Nickel_%28S3E17%29.png/revision/latest?cb=20260315063441 |
+| Party Hat Paper | Paper | `skins/celebration-paper.png` | 174×200 | `File:PaperII4StickerSheet.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/7/7a/PaperII4StickerSheet.png/revision/latest?cb=20250715164441 |
 | Lemon Cap Pickle | Pickle | `skins/lemon-cap-pickle.png` | 87×200 | `File:Lemon Cap Eyepatch Pickle (S1E15R).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/91/Lemon_Cap_Eyepatch_Pickle_%28S1E15R%29.png/revision/latest?cb=20261026005019 |
 | Goggles Poppy | Poppy | `skins/goggles-poppy.png` | 182×200 | `File:Popp6Goggles.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/51/Popp6Goggles.png/revision/latest?cb=20260405112624 |
-| Season 1 Salt | Salt | `skins/season-1-salt.png` | 118×200 | `File:Saltidlenew.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1d/Saltidlenew.png/revision/latest?cb=20120908015401 |
-| Possessed Starfruit | Starfruit | `skins/possessed-starfruit.png` | 163×200 | `File:Starfruit Possessed by Bow.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/a9/Starfruit_Possessed_by_Bow.png/revision/latest?cb=20260503191746 |
-| Blindfolded Tapey | Tapey | `skins/blindfolded-tapey.png` | 315×200 | `File:Blindfolded Tapey (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/cf/Blindfolded_Tapey_%28S4E3%29.png/revision/latest?cb=20260313111117 |
-| Season 3 Tea Kettle | Tea Kettle | `skins/season-3-tea-kettle.png` | 229×200 | `File:Tea Kettle S3 21.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/61/Tea_Kettle_S3_21.png/revision/latest?cb=20250807183936 |
+| Plump Salt | Salt | `skins/season-1-salt.png` | 118×200 | `File:Saltidlenew.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1d/Saltidlenew.png/revision/latest?cb=20120908015401 |
+| Radiant Starfruit | Starfruit | `skins/possessed-starfruit.png` | 163×200 | `File:Starfruit Possessed by Bow.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/a9/Starfruit_Possessed_by_Bow.png/revision/latest?cb=20260503191746 |
+| Gold Blindfold Tapey | Tapey | `skins/blindfolded-tapey.png` | 315×200 | `File:Blindfolded Tapey (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/cf/Blindfolded_Tapey_%28S4E3%29.png/revision/latest?cb=20260313111117 |
+| Smiling Tea Kettle | Tea Kettle | `skins/season-3-tea-kettle.png` | 229×200 | `File:Tea Kettle S3 21.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/61/Tea_Kettle_S3_21.png/revision/latest?cb=20250807183936 |
 | Painted Teddy Bear | Teddy Bear | `skins/painted-teddy-bear.png` | 135×200 | `File:Teddy Bear Paint.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/00/Teddy_Bear_Paint.png/revision/latest?cb=20260216203828 |
-| Season 3 Test Tube | Test Tube | `skins/season-3-test-tube.png` | 99×200 | `File:Test Tube S3 21.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/21/Test_Tube_S3_21.png/revision/latest?cb=20220705203908 |
-| Season 2 Tissues | Tissues | `skins/season-2-tissues.png` | 196×200 | `File:Tissues2017Pose.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f6/Tissues2017Pose.png/revision/latest?cb=20170513025241 |
+| Mint Test Tube | Test Tube | `skins/season-3-test-tube.png` | 99×200 | `File:Test Tube S3 21.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/21/Test_Tube_S3_21.png/revision/latest?cb=20220705203908 |
+| Startled Tissues | Tissues | `skins/season-2-tissues.png` | 196×200 | `File:Tissues2017Pose.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f6/Tissues2017Pose.png/revision/latest?cb=20170513025241 |
 | Knife Costume Yin-Yang | Yin-Yang | `skins/knife-costume-yin-yang.png` | 136×200 | `File:YinYangKnifeCostume.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/7/7d/YinYangKnifeCostume.png/revision/latest?cb=20250714183255 |
 
 ### Steve Cobs's prize skins
@@ -1425,7 +1555,7 @@ character, area-averaged to 200 px tall and the invisible halo erased, the same 
 - **The blindfolded skins** (`skins/blindfolded-*.png`) -- how each of these Inanimate Insanity fighters looks in the challenge Heavy Metal Pop Stars
   lose: the blindfolded relay of Inanimate Insanity IV episode 3, "Run the Risk!" (the owner: "the challenge where hmps loses" -- "the hmps thing is
   for e3" -- "in s4"). Each is the wiki's own render of that episode, with the blindfold of its team's colour; no one else is in the picture.
-- **Where each look comes from.** The first 25 are the owner's own list (Rockstar Poppy and the rest). The Inanimate Insanity fighters who
+- **Where each look comes from.** The first 25 are the owner's own list (Spiky Wig Poppy and the rest). The Inanimate Insanity fighters who
   were in the challenge Heavy Metal Pop Stars lose in Inanimate Insanity IV episode 3, "Run the Risk!" (the blindfolded relay), wear the
   wiki's render of that episode. The cast of "Fan the Flames" (episode 4: the rock show, the Rockstar skins) have their episode-4 looks too
   (a whistle, a muscular arm, ropes, olive oil, the Blue Ray, a fedora). A fighter who has no render from either episode, or was not in them
@@ -1435,8 +1565,8 @@ character, area-averaged to 200 px tall and the invisible halo erased, the same 
   is in each caption there). The "Climbing Gear" renders of episode 3 (Cherries, Magnet, MeTag, Bonesaw) are the blindfold plus the harness
   of the rock-climbing leg. No render with lettering, no render with a second character in it, and none whose face is hidden was kept.
 - **Tree's two** (`skins/tree-the-green.png`, `skins/snowy-tree.png`; the owner said yes to both on 2026-10-25, when Tree was the only fighter
-  with no skin). Tree the Green (what Four calls him) is his TPOT render, the very drawing his purple `tree.png` is, in green; Snowy Tree is his
-  TPOT 14 look, as Snowy Ruby and Jetpack Fanny are theirs. These two were not fetched by the script: the wiki files were saved by hand and put
+  with no skin). Green Tree (the wiki's "Tree the Green", what Four calls him) is his TPOT render, the very drawing his purple `tree.png` is, in green; Winter Tree (the wiki's "Snowy Tree") is his
+  TPOT 14 look, as Snow-Capped Ruby and Jetpack Fanny are theirs. These two were not fetched by the script: the wiki files were saved by hand and put
   through its steps locally (cut to the drawing, scaled to 200 px tall, the invisible halo erased, the same checks). Both face the way `tree.png`
   does, so both are flipped as it is.
 - **Left out on purpose.** Renders under 200 px tall at the source (the blue Ruler of BFDIA 8). Renders
