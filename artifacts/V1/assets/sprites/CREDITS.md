@@ -597,6 +597,28 @@ How a source became a picture (the `method` of its row), as in batch 1, plus:
 - `Yinyang Hurt.png` (Season 3, S3E14): their hit until the fourth pass (2026-10-28). Its bandaged grey look did not match their render, and the
   owner chose "Redraw both from render": their hit is drawn on their render (`yin-yang-hurt.png`), and their KO's mouth redrawn in their own ink.
 
+## Event fighters: Spongy's pictures (kit 2, 2026-10-30)
+
+Spongy (he/him) is the second event fighter (`event-fighters-phase1.md`, section 3.2). His art is BFB+TPOT only (approval question 29): his body is
+his TPOT 25 render, `spongy.png`, the picture his assist trophy already used (credited under Assist trophies below; the assist keeps it for the boss
+endings and the crowd), drawn 3.0 tall and up to 4.3 wide in `SPRITES` (the biggest body in the game), and his poses are the five BFB files the
+owner approved, downloaded once from their wiki file pages. Each was decoded to a plain RGBA PNG (the GIF to one PNG a frame) and made into a
+picture by `scripts/make-event-spongy.mjs` (with `scripts/anim-pose-lib.mjs`): trimmed, area-averaged to 200 px tall, held to `fetch-sprites.mjs`'s
+checks, and drawn at his own pixel size by `POSE_SETS.Spongy` (the jet at `k` 0.514, 140 px tall). Each has a manifest row of its own in
+`scripts/sprite-manifest.json` (key `Spongy (<pose>)`, `pose` set) with its source. The same jacknjellify artwork via the BFDI wiki as every row
+here, under the same fan-work terms.
+
+| Picture | Shown | Made from | Source |
+|---|---|---|---|
+| `spongy-vote.png` (291x200) | the result screen (his win), and the end of Soak Up | File:SpongyVoting.png; cut-out (wiki pose), trimmed and scaled | https://battlefordreamisland.fandom.com/wiki/File:SpongyVoting.png |
+| `spongy-zapped.png` (286x200) | hit, and launched | File:Spoogy.png (X eyes, a grimace); cut-out, trimmed and scaled | https://battlefordreamisland.fandom.com/wiki/File:Spoogy.png |
+| `spongy-suck.png` (240x200) | Soak Up's swelling, and his grab ("his holes soak them in") | File:Spongy Sucking Stapy Up0024.png (an official body with no face, its holes opened up), mirrored to the render's way round; the face and legs of `spongy.png` laid on (liftFace) | https://battlefordreamisland.fandom.com/wiki/File:Spongy_Sucking_Stapy_Up0024.png |
+| `spongy-jet.png` (351x200) | his Final Smash, Cannonballs Were on Sale: his body is the jet while he flies it, and it flies off as he parachutes down | File:Spongy in his Private Jet.png (BFB 15), trimmed and scaled | https://battlefordreamisland.fandom.com/wiki/File:Spongy_in_his_Private_Jet.png |
+| `spongy-walk-01.png` to `spongy-walk-14.png` (273x200 each) | running, a frame every 3 ticks | File:Spongy---walk.gif, its 14 frames, one crop for all; the dark round shadow baked into every frame lifted (its darkening measured from his own yellow by distance from its middle and divided out; its core, where too little was left to read, refilled with his yellow and his dark-gold outline), and the green fringe round the cut-out recoloured to his outline; then, at 200 px, the shadow's middle re-skinned with the sponge of his TPOT 25 render (`spongy.png`, flipped, its face painted out), feathered in by how much shadow there was, his outline redrawn as the GIF draws it (2026-11-01: the plain refill had left a flat disc, banded rings and a black speck) | https://battlefordreamisland.fandom.com/wiki/File:Spongy---walk.gif |
+
+Everything else of his kit is drawn in code: Wring Out's gush and Hole Squirt's soapy water (SOAKED's blues), his water as darker holes and drips,
+the loaves of Baker's Dozen, the cannonballs, and the red and white parachute.
+
 ## One (the secret boss)
 
 One is not a roster fighter, so her render sits outside the generated inventory above (a re-run of
