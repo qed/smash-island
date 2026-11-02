@@ -18351,7 +18351,7 @@ function resize(){
   // a much larger world); setupWorld() recomputes them for those.
   // A Tall/Huge CUSTOM level is a scrolling world too — collapsing it here left the camera clamped
   // to one screen of a map the player had just built at three times that.
-  if(!isBig() && !isBigFFA() && !customScrolls()){ WW=W; WH=H; } }
+  if(!isBig() && !isBigFFA() && !customScrolls() && !algBigOn()){ WW=W; WH=H; } }   // (the Algebralien Rush's big stage keeps its world: algBigOn, rush M3)
 // A resize (a window dragged, F11, the browser's zoom) and fullscreen coming or going refit the box, in a menu as well as in a match.
 addEventListener('resize',()=>{ if(running){ resize(); } else fitApp(); });
 document.addEventListener('fullscreenchange', ()=>{ if(running){ resize(); } else fitApp(); });
@@ -21468,7 +21468,7 @@ function setupWorld(){
   if(SETTINGS.mode==='ctf'){ ctfBuildWorld(); return; }   // Capture the Flag: one of its own huge maps (see the CTF block)
   CAM_ZOOM = 0.72;
   if(ONEFIGHT.active || COBSFIGHT.active){ buildOneArena(); return; }   // One's arena, and Steve Cobs's: the teams map without its walls (see buildOneArena)
-  if(BOSSRUSH.alg && ALGRUSH.run) stage = algStage();   // Algebralien Rush: its own stage (rush M2: today's flat one; the big stage is built from here)
+  if(BOSSRUSH.alg && ALGRUSH.run){ stage = algStage(); if(algBuildBig()) return; }   // Algebralien Rush: its own stage; the big one (rush M3, algBuildBig) builds the whole world and is done
   if(SETTINGS.mode === 'teams' && (MCAVE_DEV || MCAVE_OPEN) && stage && stage.layout === 'disc'){ buildMoonCaves(); return; }   // MOON CAVES (while it is built: MCAVE_DEV only, MCAVE_OPEN once released; Teams only)
   if(RACE.active){ buildRaceLane(); return; }       // RUNNING!: the Red Line Game's lane (see buildRaceLane)
   const MS = mapSize();                       // MAP SIZE match setting → arena W/H multipliers
@@ -23143,6 +23143,7 @@ function pctColor(p, cap){ const r = cap ? p/cap : p/200;   // fraction of this 
 // writes the client's own line now).
 function banner(txt,ms,kind,local){
   if(PCAM.bg) return;   // PLAYS CAMERA: a match nobody sees puts up no line
+  if(BOSSRUSH.alg && kind === 'boss') return;   // the Algebralien Rush: no move-name popups, for any boss (the yellow lines; the phase cards are 'sys'; rush M3)
   const b=document.getElementById('banner');
   // A boss's attack warning is the one line that says what is about to hit you, and there is only one line. A popup that
   // arrived during the wind-up used to replace it: the cookie poison's popup wiped "I'LL BE BACK!" two frames into the
@@ -23458,6 +23459,7 @@ const GROTATO_MINES = Math.round(4*ASSIST_TROPHY_DMG), GROTATO_GAP = 60;
 // an empty pair is a slot the boss does not use yet, and the 'void' arena that Two and Four share stays outside both. The slots:
 //   roster     BOSS_ROSTER: the boss's row (its arena key, sprite key...)
 //   algrow     ALG_ROSTER: the boss's row in the Algebralien Rush's list (rush M2): a pair of nine, one boss each, in that run's order
+//   algfoot    ALG_FOOT: the giant Zero's foot (rush M10, drawn once; a later ending reuses it through algDrawFoot): one pair, Zero's
 //   extra      BOSS_EXTRA: its second moves (the picker draws among them and the signature: there is no fixed turn order any more)
 //   rushonly   BOSS_RUSH_ONLY: second moves an item boss never throws
 //   pick       BOSS_PICK: each move's tags (what it punishes), the moves it has unlocked by phase, and the small hooks its own turn rules need (THE PICKER)
@@ -27563,7 +27565,7 @@ function updateBossAttack(s, tgt){
   }
 
   // 3-PHASE system: phase 1 (>66% HP), phase 2 (33–66%), phase 3 (<33%). Each escalates.
-  const newPhase = s.hp > s.maxHp*0.66 ? 1 : (s.hp > s.maxHp*0.33 ? 2 : 3);
+  const newPhase = (s._algId != null && BOSSRUSH.alg) ? algPhase(s) : (s.hp > s.maxHp*0.66 ? 1 : (s.hp > s.maxHp*0.33 ? 2 : 3));   // (a rush boss's own lines, ALG_CUTS: rush M3)
   if(newPhase !== s._phase){
     s._phase = newPhase;
     onBossPhaseChange(s, newPhase);   // announce + apply per-boss phase behavior
@@ -27654,6 +27656,7 @@ function updateBossAttack(s, tgt){
   // count down to the next attack; when ready, begin a telegraph
   s._atkTimer--;
   if(s._atkTimer<=0){
+    if(s._algId != null && BOSSRUSH.alg) algTurnStart(s, tgt);   // the Algebralien Rush (rush M3): the leash and the local window, as a turn begins
     s._tel = bossTelLen(s);
     // "bosses should have varied attacks": the signature attack, then one of its second moves, in turn
     s._moveN = (s._moveN||0) + 1;
@@ -27873,10 +27876,10 @@ const BOSS_TEL_PACE = { announcer:0.8, soundwave:0.8, firewall:0.8, two:1.5, spr
 function bossTelStep(s){ return (bossPaced(s) && BOSS_TEL_PACE[s.attack]) ? 1/BOSS_TEL_PACE[s.attack] : 1; }
 // the frames until the wind-up fires: what a boss that plans on the clock (hazardT, or a frame counter) adds, not s._tel itself
 function bossTelFrames(s){ return Math.ceil(s._tel/bossTelStep(s) - 1e-9); }
-function bossPaced(s){ return !!s && !!s.attack && BOSS_ROSTER.some(r => r.attack === s.attack); }
+function bossPaced(s){ return !!s && !!s.attack && (BOSS_ROSTER.some(r => r.attack === s.attack) || (s._algId != null && ALG_ROSTER.some(r => r.id === s._algId))); }   // (and the Algebralien Rush's rows, rush M3)
 function bossAtkGap(s){
   const g = bossAtkGapBase(s);
-  return (bossPaced(s) && g < 1e5) ? Math.round(g*BOSS_PACE) : g;
+  return (bossPaced(s) && g < 1e5) ? Math.round(g*BOSS_PACE*(s._gapMult || 1)) : g;   // (s._gapMult: a rush boss's own knob, 1 unless its row sets gapMult, rush M3)
 }
 function bossAtkGapBase(s){
   if(s.attack==="cobs") return COBS.gaps[Math.min(3, s._phase||1)];   // Steve Cobs has his own (see COBS)
@@ -45573,6 +45576,7 @@ function updateSummons(){
     // BOSS: telegraphed attack system (Silksong-style wind-up before each attack)
     if(s.type==="boss"){
       updateBossAttack(s, tgt);
+      if(s._algId != null && BOSSRUSH.alg) algBossTick(s, tgt);   // the Algebralien Rush (rush M3): the exposed and pop-in clocks, the leash through a long gap
       if(s.hp<=0 && !s._oneFight && !s._cobsFight){ s.life=0; banner("BOSS DOWN!",700,'sys'); for(let i=0;i<30;i++) puff(s.x,s.y,s.color,7); }
       continue;
     }
@@ -61633,7 +61637,7 @@ function damageSummon(f, s, cx, cy, dmg){
     // TWO: while their power is ungrounded they are immune — you must ground it first (twoUngroundedBlocks).
     if(twoUngroundedBlocks(s)) return;
     bossGraceNote(s, f, dmg);
-    s.hp -= dmg; s.vx += Math.sign(s.x-cx||1)*2; for(let i=0;i<4;i++) puff(s.x,s.y,'#fff',4);
+    s.hp -= s._algId != null ? algBossHit(s, f, dmg) : dmg; s.vx += Math.sign(s.x-cx||1)*2; for(let i=0;i<4;i++) puff(s.x,s.y,'#fff',4);   // (a rush boss: algBossHit, rush M3)
   }
   // An assist is a CAMEO, not a combatant: it can be shoved around, but it cannot be killed.
   // It used to lose 30 life a connect out of 480, so any fighter who wandered into one deleted
@@ -65264,7 +65268,7 @@ function bossTakeHit(s, dmg, from){
   let d = 0;
   if(s._oneFight) d = oneTakeDamage(s, dmg, from);
   else if(s._cobsFight) d = cobsTakeDamage(s, dmg, from);
-  else if(!twoUngroundedBlocks(s)){ s.hp -= dmg; d = dmg; }
+  else if(!twoUngroundedBlocks(s)){ s.hp -= s._algId != null ? algBossHit(s, from, dmg) : dmg; d = dmg; }   // (a rush boss: algBossHit, rush M3)
   if(d > 0 && from) bossGraceNote(s, from, dmg);
   return d;
 }
@@ -67324,7 +67328,107 @@ const ALG_ORD = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'sevent
 function algSrc(row){ return row.ptr ? (BOSS_ROSTER.find(r=>r.attack === row.ptr) || row) : row; }   // the row the boss is made from
 function algHidden(row){ return !!row.secret && rushState().seen.indexOf(row.id) < 0; }
 function algBossLabel(boss){ return boss._algCard != null ? boss._algCard : boss.name.toUpperCase(); }   // the boss bar's word: a secret boss's card says "???" until its own sign
-function algStage(){ return STAGES.find(st=>st.id === 'goiky') || STAGES.find(st=>!st.big) || stage; }   // rush M2: today's flat stage
+// ---------- ALGEBRALIEN RUSH: THE BIG STAGE AND THE BOSS HOOKS (rush M3) ----------
+// The kit every rush boss shares, landed once so each boss milestone edits only its own marker pairs (its ALG_ROSTER row, its own code): the stage, the camera, the leash, the one hit pipeline with
+// its shared "exposed" state, the phase lines and the local window the Two and Four rush versions read. Every hook in the shared engine is guarded by BOSSRUSH.alg and the boss's _algId (or algBigOn()),
+// so the ordinary Boss Rush and every other mode are as they were. The rush has no move-name popups: banner() drops every yellow ('boss') line while BOSSRUSH.alg is set (the phase cards are 'sys').
+// THE STAGE: one common 2,400 x 860 stage (2.2 screens) for every rush boss but One, who keeps her teams map: the floor at 82% of the height, no pits, a solid wall at each end (so "toward the middle" never
+// means off the world), a centre platform `mid` wide and `up` up and a ledge `ledge` wide at 20% and 80%. A row's own stagePlats(std, floorY) replaces the standard three where its arena needs it (X's pyramid,
+// Six's branch and roof). THE CAMERA is the engine's big-arena one (CAM_ZOOM: about 1,528 px of world on a screen), centred between you and the boss, never letting you out of the middle `keep` of the view, and
+// it may look wallVis px into a wall. THE LEASH: at the start of every turn (and after `idle` frames idle) a boss farther than `leash` px from the nearest fighter pops to `near`..`far` px from them, on the
+// side with more room; a row's own leashFx(s, fromX, fromY) is its look for it (default: a puff at both ends and a grow-in), leash:false opts out. Nothing here is a boss's own fight.
+const ALG_BIG = { W:2400, H:860, wall:200, wallVis:70, mid:393, ledge:200, up:144, ledgeAt:[0.2, 0.8], keep:0.7, leash:650, near:300, far:500, idle:90 };
+const ALG_STAGE = { id:'algbig', name:'The Big Stage', blurb:'Two screens and more, with a wall at each end.', sky:['#1b2a4a', '#6b4a7e'], ground:'#3a3d55', plats:[], hazard:null };
+const ALG_POP = 12;                                       // a boss that pops in grows in over this many frames
+const ALG_CUTS = { six:[0.5], x:[0.5], three:[0.5] };     // the phase lines, as shares of a boss's HP: the engine's 66% and 33% unless listed (a two-phase boss never shows a "PHASE 3" card)
+const ALG_HIT = {};                                       // a boss's own filter on the damage it takes, by id: ALG_HIT.six = (s, f, d) => what gets through (Six's bubble); it runs last in algBossHit
+const ALG_WIN = { x0:0, x1:ALG_BIG.W };                   // the LOCAL WINDOW (below)
+function algBigRow(row){ return !!row && row.id !== 'one' && row.flat !== true; }
+function algStage(){ const run = ALGRUSH.run; return algBigRow(run && run.list[run.i]) ? ALG_STAGE : (STAGES.find(st=>st.id === 'goiky') || STAGES.find(st=>!st.big) || stage); }
+function algBigOn(){ return !!(BOSSRUSH.alg && ALGRUSH.run && ALGRUSH.big && !ONEFIGHT.active && !COBSFIGHT.active); }   // the big stage is the world now
+function algRowOf(s){ return ALG_ROSTER.find(r=>r.id === s._algId) || null; }
+function algBoss(){ for(const s of summons) if(s.type === 'boss' && s._algId != null && s.hp > 0) return s; return null; }
+// Called from setupWorld for a rush boss: true once the big world is built (the match then has no more to set up).
+function algBuildBig(){
+  const run = ALGRUSH.run, row = run && run.list[run.i], B = ALG_BIG;
+  ALGRUSH.big = algBigRow(row);
+  if(!ALGRUSH.big) return false;
+  WW = B.W; WH = B.H; camX = 0; camY = 0; bases = []; worldZones = []; spawnZones = [];
+  const gy = groundY(), up = gy - B.up;
+  const std = [{ x:WW/2 - B.mid/2, y:up, w:B.mid, h:14, hop:true }].concat(B.ledgeAt.map(k=>({ x:WW*k - B.ledge/2, y:up, w:B.ledge, h:14, hop:true })));
+  const walls = [{ x:-B.wall, y:-700, w:B.wall, h:WH + 1000, solid:true, wall:true }, { x:WW, y:-700, w:B.wall, h:WH + 1000, solid:true, wall:true }];
+  worldPlats = (typeof row.stagePlats === 'function' ? row.stagePlats(std, gy) : std).concat(walls);
+  return true;
+}
+// The view's middle: between you and the boss, but you stay in the middle `keep` of what the screen shows (the stage is shorter than the view, so the height centres itself).
+function algCamTarget(you){
+  const b = algBoss(), lim = (W/2)/CAM_ZOOM*ALG_BIG.keep;
+  if(!b) return camTarget(you.x, you.y, CAM_ZOOM);
+  return camTarget(clamp((you.x + b.x)/2, you.x - lim, you.x + lim), (you.y + b.y)/2, CAM_ZOOM);
+}
+// THE LEASH. Returns true if it moved the boss.
+function algLeash(s, tgt){
+  if(!tgt || !(s.hp > 0) || !algBigOn()) return false;
+  const row = algRowOf(s), B = ALG_BIG;
+  if((row && row.leash === false) || !(Math.hypot(tgt.x - s.x, tgt.y - s.y) > B.leash)) return false;
+  const pad = s.r*0.5 + 20, dist = B.near + (B.far - B.near)*Math.random(), x0 = s.x, y0 = s.y;
+  let side = tgt.x < WW/2 ? 1 : -1, x = tgt.x + side*dist;
+  if(x < pad || x > WW - pad){ side = -side; x = tgt.x + side*dist; }
+  s.x = clamp(x, pad, WW - pad); s.y = Math.min(s.y, groundY() - s.r); s.vx = 0; s.vy = 0; s.homeX = s.x; s.face = Math.sign(tgt.x - s.x) || s.face;
+  s._algPop = ALG_POP; s._leashN = (s._leashN|0) + 1;
+  if(row && typeof row.leashFx === 'function') row.leashFx(s, x0, y0); else { puff(x0, y0, s.color, 16); puff(s.x, s.y, s.color, 16); }
+  return true;
+}
+// THE LOCAL WINDOW (Two and Four, whose moves anchor on the world's middle and edges): a window the width of the camera's view, centred on the fighter as a turn begins and held for the turn. Their anchors read
+// aL() (the left end, was 0), aR() (the right, was WW) and aM() (the middle, was WW*0.5); anywhere but the big stage they are exactly those, so the ordinary fight is unchanged.
+function algWinOpen(tgt){ const w = Math.min(WW, W/CAM_ZOOM); ALG_WIN.x0 = clamp((tgt ? tgt.x : WW/2) - w/2, 0, WW - w); ALG_WIN.x1 = ALG_WIN.x0 + w; }
+function aL(){ return algBigOn() ? ALG_WIN.x0 : 0; }
+function aR(){ return algBigOn() ? ALG_WIN.x1 : WW; }
+function aM(){ return algBigOn() ? (ALG_WIN.x0 + ALG_WIN.x1)/2 : WW*0.5; }
+function algTurnStart(s, tgt){ algLeash(s, tgt); algWinOpen(tgt); }   // updateBossAttack, as a turn begins (before the wind-up)
+function algBossTick(s, tgt){   // updateSummons, every frame after the boss's own: the timers, and the leash for a boss left far away through a long gap
+  if(s._xposeT > 0) s._xposeT--;
+  if(s._algPop > 0) s._algPop--;
+  const far = !!tgt && s.hp > 0 && !(s._tel > 0) && !s._atkLive && !s._algBusy && algBigOn() && Math.hypot(tgt.x - s.x, tgt.y - s.y) > ALG_BIG.leash;
+  s._leashFar = far ? (s._leashFar|0) + 1 : 0;
+  if(s._leashFar >= ALG_BIG.idle){ s._leashFar = 0; algLeash(s, tgt); }
+}
+// THE PHASE LINES: a rush boss's own (ALG_CUTS), else the engine's 66% and 33%; its phase is one more than the lines it is at or under.
+function algCuts(s){ return ALG_CUTS[s._algId] || [0.66, 0.33]; }
+function algPhase(s){ let p = 1; for(const k of algCuts(s)) if(!(s.hp > s.maxHp*k)) p++; return p; }
+// ONE HIT PIPELINE for a rush boss's HP, at the two places that lower it (damageSummon and bossTakeHit): the damage the engine means, then ALG_RUSH.dmgToBoss (the length knob, built at 1.0), then the exposed
+// multiplier, then the boss's own filter (ALG_HIT[its id]). Returns what comes off the HP (never below 0). Only a rush boss asks.
+function algBossHit(s, f, dmg){
+  let d = dmg*ALG_RUSH.dmgToBoss;
+  if(s._xposeT > 0) d *= s._xposeMult || 1.5;
+  const flt = ALG_HIT[s._algId]; if(flt) d = flt(s, f, d);
+  return d > 0 ? d : 0;
+}
+// THE EXPOSED STATE, one for every boss that opens up (Nine after a dodged stunt, X found, Six's popped bubble, Zero's fizzle): algExpose(s, frames, mult) opens it for `frames` frames of `mult` times the damage (Nine's
+// 1.5; X's 1.5 found and 1.25 burning); the latest call wins. algBossHit reads it, algDrawExposed shows it: three stars circling the head, grown in over 12 frames and gone over the last 12 (a row's own exposeLook(s, ctx, k) replaces it).
+function algExpose(s, frames, mult){ if(!(s._xposeT > 0)) s._xposeAt = hazardT; s._xposeT = Math.max(0, frames|0); s._xposeMult = mult > 0 ? mult : 1.5; }
+function algExposed(s){ return s._xposeT > 0; }
+function algDrawBoss(s){   // drawSummon's boss branch: the pop-in grow, then the body, then the exposed look (the context is at the boss)
+  const k = s._algPop > 0 ? Math.max(0.08, 1 - s._algPop/ALG_POP) : 1;
+  if(k < 1){ ctx.save(); ctx.scale(k, k); drawBossSprite(s); ctx.restore(); } else drawBossSprite(s);
+  if(s._xposeT > 0) algDrawExposed(s);
+}
+function algDrawExposed(s){
+  const k = growK(hazardT - (s._xposeAt || 0) + 1)*growK(s._xposeT), row = algRowOf(s);
+  if(row && typeof row.exposeLook === 'function'){ row.exposeLook(s, ctx, k); return; }
+  ctx.save(); ctx.translate(0, -s.r*1.2); ctx.globalAlpha = k; ctx.fillStyle = '#ffe27a'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2;
+  for(let i = 0; i < 3; i++){
+    const a = hazardT*0.12 + i*2.094, cx = Math.cos(a)*s.r*0.5*k, cy = Math.sin(a)*s.r*0.14*k, R = 8*k;
+    ctx.beginPath(); for(let j = 0; j < 10; j++){ const b = -Math.PI/2 + j*Math.PI/5, q = j%2 ? R*0.45 : R; ctx.lineTo(cx + Math.cos(b)*q, cy + Math.sin(b)*q); } ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+  ctx.restore();
+}
+// @boss:zero:begin algfoot
+// THE GIANT ZERO'S FOOT (drawn once, by rush M10, and reused by 2,763's ending): ALG_FOOT.draw(c, x, y, sc, k) paints it with its sole at (x, y), at scale sc, k (0 to 1) how much of it there is. Until M10 it is a plain grey boot.
+const ALG_FOOT = { draw:(c, x, y, sc, k)=>{ c.save(); c.translate(x, y); c.scale(sc*k, sc*k); c.fillStyle = '#8b8f9c'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4;
+  c.beginPath(); c.ellipse(0, -60, 70, 60, 0, 0, 7); c.fill(); c.stroke(); c.beginPath(); c.ellipse(24, -14, 110, 26, 0, 0, 7); c.fill(); c.stroke(); c.restore(); } };
+// @boss:zero:end algfoot
+function algDrawFoot(c, x, y, sc, k){ ALG_FOOT.draw(c, x, y, sc == null ? 1 : sc, k == null ? 1 : k); }
 function algNewRun(fighter){
   const n = rushNext(shopNow());
   return { key:n ? n.key : 0, list:algRushList(), i:0, entry:ALG_RUSH.start, secs:[], continues:0, fighter, state:'', beaten:0, paid:0, inter:null, holdTo:0, jump:null, nextEntry:ALG_RUSH.start, boss:null };
@@ -67366,7 +67470,7 @@ function algRushBegin(i){
   DAILY_ACTIVE = false; PENDING_DAILY = null; EVENT_RUN = null;
   SETTINGS.mode = 'boss'; SETTINGS.count = 1; SETTINGS.stocks = run.entry; SETTINGS.itemRate = ALG_RUSH.itemRate;
   chosen = ROSTER.find(r=>r.name === run.fighter) || chosen;
-  BOSSRUSH = { active:true, alg:true, bossIdx:i, cleared:0, defeated:false, loop:0, dmgMult:1 };
+  BOSSRUSH = { active:true, alg:true, bossIdx:i, cleared:0, defeated:false, loop:0, dmgMult:run.list[i].dmgMult || 1 };   // (a row's own dmgMult, 1 unless set: rush M3)
   { const rr = document.getElementById('resultRush'); if(rr) rr.style.display = 'none'; }
   beginMatchNow();
 }
@@ -67383,11 +67487,12 @@ function algRushSpawn(){
   try{ musicRerollContext('boss'); }catch(e){}
   BOSS_ARENA = src.arena || null;
   const boss = makeBossSummon(src, row.stub ? ALG_RUSH.stubHp : row.hp);
-  boss._algId = row.id; boss._algCard = row.card != null ? row.card : null;
+  boss._algId = row.id; boss._algCard = row.card != null ? row.card : null; boss._gapMult = row.gapMult || 1;   // (gapMult: a row's own pace knob, 1 unless set: rush M3)
   run.boss = boss;   // the conductor holds the boss itself: updateSummons drops a boss at 0 HP from `summons` on the next step, and the fall must still be seen
   summons.push(boss);
+  algWinOpen(fighters.find(f=>!f.dead));   // the local window (rush M3)
   if(typeof row.spawn === 'function') row.spawn(boss);
-  if(run.jump){ const j = run.jump; run.jump = null; if(j.phase > 1) boss.hp = Math.round(boss.maxHp*(j.phase > 2 ? 0.32 : 0.65)); }   // algJump: just under the line
+  if(run.jump){ const j = run.jump, c = algCuts(boss); run.jump = null; if(j.phase > 1) boss.hp = Math.round(boss.maxHp*(c[Math.min(c.length, j.phase - 1) - 1] - 0.01)); }   // algJump: just under the boss's own line (a two-phase boss has no third)
   rushSee(row.id);
 }
 // THE RUSH'S WIN AND LOSS, once a frame from checkWin. A defeat: the old 800 ms beat, then the result screen with Retry boss. A boss down: its exit scene plays
@@ -71495,6 +71600,7 @@ function camTarget(x, y, z){
   if(MCAVE && MCAVE.on) return { x: x - W/2, y: y - H/2 };   // MOON CAVES: no world box to keep inside (the view turns)
   const halfW=(W/2)/z, halfH=(H/2)/z;
   let x0 = 0, x1 = WW, y0 = 0, y1 = WH;
+  if(algBigOn()){ x0 -= ALG_BIG.wallVis; x1 += ALG_BIG.wallVis; }   // the Algebralien Rush's big stage: its walls show a little (rush M3)
   if(SETTINGS.mode === 'ctf' && CTF.map && CTF.map.pocketY != null){ const vr = ctfViewRoom(), iv = vr && !CTF.map.ivBand && CTF.map.ivOf ? CTF.map.ivOf[vr] : null; if(iv){ x0 = iv.x; x1 = iv.x + iv.w; y0 = iv.y; y1 = iv.y + iv.h; } else if(vr) y0 = CTF.map.pocketY; else y1 = CTF.map.pocketY; }   // (a map with a room apart under it: the view stays in the map, or in the room; in an interior, in its box both ways)
   const cx = (x1 - x0 <= 2*halfW) ? (x0 + x1)/2 : clamp(x, x0 + halfW, x1 - halfW);
   const cy = (y1 - y0 <= 2*halfH) ? (y0 + y1)/2 : clamp(y, y0 + halfH, y1 - halfH);
@@ -71512,7 +71618,7 @@ function updateCamera(){
   let you=live || fighters.find(f=>!f.dead);
   if(SETTINGS.mode==='ctf' && you) you = ctfCamFighter(you);   // a prisoner watches a teammate
   if(!you) return;
-  const t = camTarget(you.x + (RACE.active ? raceCamLead() : 0), you.y, CAM_ZOOM);   // RUNNING!: the camera looks ahead of the runner, and further at the edge (raceCamLead)
+  const t = algBigOn() ? algCamTarget(you) : camTarget(you.x + (RACE.active ? raceCamLead() : 0), you.y, CAM_ZOOM);   // (the Algebralien Rush: the boss and you, algCamTarget)   RUNNING!: the camera looks ahead of the runner, and further at the edge (raceCamLead)
   if(MCAVE && MCAVE.on){ mcCamera(t); return; }   // MOON CAVES: the same follow, and the view turns with it
   camX += (t.x-camX)*0.12;   // smooth follow
   camY += (t.y-camY)*0.12;
@@ -73304,7 +73410,7 @@ function drawArenaDecor(key){
 function drawSummon(s){
   ctx.save(); ctx.translate(s.x, s.y);
   if(s.type==="boss"){
-    drawBossSprite(s);
+    if(s._algId != null && BOSSRUSH.alg) algDrawBoss(s); else drawBossSprite(s);   // (a rush boss: the pop-in grow and the exposed look, rush M3)
     ctx.restore(); return;
   }
   if(s.type==="springyend"){ drawSpringyEnd(s); ctx.restore(); return; }   // Springy's ending (springyEnding); _endT rides the snapshot
