@@ -26212,6 +26212,16 @@ function refreshSpongyPlats(){
   }
   SPONGY_PLATS = out;
 }
+// THE BIG MAPS' FLOOR (found re-checking assist batch A2 on the Teams arena after it was scaled to its players, teamsArenaFit): on a big map
+// groundY() is not the floor the fighters stand on (their gate is !isBig()) -- the strips the teams start on sit a few px under it, the
+// floor slab WH*0.052 under it (105 px on a 2v2) -- and a trophy's body stopped at groundY(), standing in the air over the slab, where a
+// swat, a clap or a drum's ripples went over the foes' heads. There a trophy's floor is the surface under its feet, as on Moon Caves
+// (mcSummonFloor, which this leaves alone); groundY() where there is none.
+function assistBodyFloor(s, gy){
+  if(!isBig() || (MCAVE && MCAVE.on)) return gy;
+  const t = surfaceBelow(s.x, s.y + s.r - 8);
+  return t !== null ? t : gy;
+}
 function stepAssistBody(s, gy){
   // Blender "opens at center stage" — it is a placed trap, not a chaser. It holds its ground.
   if(s.fixed){ s.vx=0; s.vy=0; if(s.y > gy - s.r) s.y = gy - s.r; s.onground=true; return; }
@@ -26348,6 +26358,7 @@ function asPose(s){
   if(s._boltT > 0) P.b = s._boltT;
   if(s._hw) P.hw = s._hw;
   if(s._waves && s._waves.length) P.w = s._waves.map(w=>[Math.round(w.x), Math.round(w.y), w.dir]);
+  if(s._apx) P.a2 = s._apx;   // ASSIST BATCH A2: what an act put in the world (Battery's wire, Conch Shell's rings, Snare Drum's ripples)
   s._ap = P;
 }
 function assistBrain(s, tgt){
@@ -26846,6 +26857,283 @@ AS_ACT.warp = function(s, tgt, T, owner){
   if(own){ const dx = (own.x - (own.face||1)*62) - s.x; if(Math.abs(dx) > 30) navAssist(s, own, dx, T.walk); s.face = own.face || s.face; }
   if(s._ph === 'idle' && own && tgt && tgt.type !== "boss" && Math.hypot(tgt.x - s.x, tgt.y - s.y) < T.reach){ s._mark = tgt; asGo(s, 'wind'); }
 };
+// ==== ASSIST BATCH A2 (event-fighters-phase1.md, section 4; build plan step 12) ==============================================================
+// Seven TPOT newcomers join the bag: 9-Ball, Battery, Clapboard, Conch Shell, Rubber Spatula, Scissors and Snare Drum, each with the act
+// the design gives it -- the review's toned-down numbers for Conch Shell, Snare Drum, Rubber Spatula, Clapboard and Battery. Every rule of
+// THE ASSIST TROPHIES, REWORKED holds: out of the trophy over ASSIST_ARRIVE harmless frames, never walking past ASSIST_WALK (a lunge or a
+// hop is committed after a wind-up of the character's own body: asPoseBegin), nothing drawn where a hit WILL be, everything an act puts
+// in the world (the wire, a sound ring, a ripple) growing in over A2_GROW frames, no words (no name tag: drawSummon), and damage through
+// addDmg (x ASSIST_TROPHY_DMG). What a guest draws rides the snapshot: the pose (asPose: the phase, its clock and s._apx) and the
+// fighters' own statuses (frozen, _cutT, bleed, the stun: NET_FIGHTER_FLAGS). No new relay message. Each act fights the boss's side too
+// (assistFoes, assistHitSummon). Each stays until its count is used ("N a stay"), then leaves, as Toilet does. Pronouns: 9-Ball,
+// Battery and Scissors are they/them until checked against the wiki (question 101; the wiki would not answer this batch either).
+const A2_GROW = 12;   // the grow-in time
+const A2_NAMES = ['9-Ball', 'Battery', 'Clapboard', 'Conch Shell', 'Rubber Spatula', 'Scissors', 'Snare Drum'];
+ASSIST_ROSTER.push(
+  {name:"9-Ball",         color:"#f2c94c", act:"stay", r:28},   // Stay Put: hops in between the summoner and the nearest foe and stays, a bumper
+  {name:"Battery",        color:"#1f9e7a", act:"wire"},         // Live Wire: clips on; a live wire to the summoner for 3 s
+  {name:"Clapboard",      color:"#2a2a2e", act:"cut"},          // CUT!: the clap holds grounded foes near him still until their next hit
+  {name:"Conch Shell",    color:"#f4b48a", act:"horn"},         // Horn Blast: puffs up, then a slow sound ring the way he faces
+  {name:"Rubber Spatula", color:"#f2e070", act:"swat"},         // Swat: flinches back, hops and swats down
+  {name:"Scissors",       color:"#8ccf4a", act:"snip"},         // Snip: blades spread, a lunge and a snap that bleeds -- or cuts the summoner free
+  {name:"Snare Drum",     color:"#2a3aa0", act:"drum"}          // Drumroll: beats that send floor ripples, then the crash
+);
+Object.assign(AS, {
+  stay: { hop:-9, air:30, vmax:8, dmg:5, kb:7, ky:-6, gap:60 },                                                        // 9-Ball
+  wire: { walk:3.0, out:200, clip:36, live:180, snap:380, dmg:5, stun:6, again:45, hw:8 },                              // Battery
+  cut:  { walk:3.2, reach:170, lift:32, R:240, freeze:40, n:2, rest:60 },                                               // Clapboard
+  horn: { walk:3.0, reach:380, level:120, puff:40, spd:4, dist:480, H:46, dmg:4, kb:9, ky:-6, n:3, rest:50 },          // Conch Shell
+  swat: { walk:3.4, reach:150, flinch:30, air:30, up:-9, vmax:8, w:110, h:120, dmg:8, stun:30, n:3, rest:45 },          // Rubber Spatula
+  snip: { walk:3.4, reach:120, spread:30, lunge:100, spd:10, tip:36, cr:16, dmg:9, kb:8, bleed:120, free:200, n:3, rest:40 },   // Scissors
+  drum: { walk:3.0, plant:220, settle:16, slow:24, fast:10, nSlow:4, nFast:6, crash:170, spd:6, dist:260, H:22, dmg:1, stun:6, crashW:260, crashDmg:10, kb:10 },   // Snare Drum
+});
+function a2Open(s, f){ return asFoe(s, f) && !hardInvuln(f) && !(s.hostile && f.invuln > 0); }   // a foe it may hit (not one just back from a KO, or starred)
+function a2Hit(s, f, dmg, kbx, kby, opts){ applyHit(f, addDmg(s, dmg), kbx, kby, assistFighter(s), opts); }
+function a2Near(ax, ay, bx, by, px, py){ const dx = bx - ax, dy = by - ay, L = dx*dx + dy*dy, u = L > 0 ? clamp(((px - ax)*dx + (py - ay)*dy)/L, 0, 1) : 0; return { x:ax + dx*u, y:ay + dy*u }; }   // the point of a segment nearest a point
+function a2InBox(f, x0, y0, x1, y1){ return hurtGap(f, clamp(f.x, x0, x1), clamp(hurtCY(f), y0, y1)) < 2; }   // a fighter's hurtbox overlaps the box
+function a2BossInBox(b, x0, y0, x1, y1){ const r = b.r || 20; return b.x + r > x0 && b.x - r < x1 && b.y + r > y0 && b.y - r < y1; }
+// 9-BALL (TPOT) -- STAY PUT. They hop into place between the summoner and the nearest foe (a hop of their own, harmless) and refuse to move for
+// the whole stay: a solid billiard ball that never rolls (fixed, as the Blender is: no shove moves it). A foe who touches them is bounced back
+// the way they came, 5% and a light knockback, once a foe per AS.stay.gap frames.
+AS_ACT.stay = function(s, tgt, T, owner){
+  s.face = 1;   // never mirrored: the 9 on top reads the right way round
+  if(s._ph === 'idle'){
+    const from = owner && !owner.dead ? owner : s, top = Math.min(s.y, from.y) - 60;
+    let x = clamp(tgt ? (from.x + tgt.x)/2 : from.x + (from.face||1)*80, 40, WW - 40);
+    const sb = surfaceBelow(x, top);
+    if(sb == null || (!isBig() && sb === groundY() && floorOpenAt(x))) x = s.x;   // nothing to stand on there (a gap, a hole): a hop in place
+    s.vx = clamp((x - s.x)/T.air, -T.vmax, T.vmax); s.vy = T.hop; s.onground = false; s._commit = 1;
+    asGo(s, 'hop'); return;
+  }
+  if(s._ph === 'hop'){
+    if((s.onground && s._pt > 3) || s._pt > 90){ s._commit = 0; s.vx = 0; s.vy = 0; s.fixed = 'stay'; asGo(s, 'stay'); }
+    return;
+  }
+  const L = s._bumpT || (s._bumpT = new Map());
+  for(const f of fighters){ if(!a2Open(s, f) || hazardT - (L.get(f) ?? -1e9) < T.gap || hurtGap(f, s.x, s.y) >= s.r) continue;
+    L.set(f, hazardT);
+    const d = Math.sign(f.x - s.x) || -Math.sign(f.vx) || 1;   // back the way they came
+    a2Hit(s, f, T.dmg, d*T.kb, T.ky); s._squash = 8;
+    hitArt(haAssistOwner(s), haAssistKey(s, 'bump'), { kind:'circle', x:s.x, y:s.y, r:s.r }, { color:'#f2c94c', world:true, fade:8 });   // HIT ART: the ball, as it bounces them
+    for(let i=0;i<6;i++) puff((s.x + f.x)/2, (s.y + f.y)/2, i % 2 ? '#ffffff' : '#f2c94c', 4); }
+  for(const b of assistFoes(s)){ if(hazardT - (L.get(b) ?? -1e9) < T.gap || Math.hypot(b.x - s.x, b.y - s.y) >= s.r + (b.r || 20)) continue;
+    L.set(b, hazardT); assistHitSummon(s, b, addDmg(s, T.dmg), false); s._squash = 8;
+    if(b.type !== "boss") b.vx = (Math.sign(b.x - s.x) || 1)*T.kb; }   // an add bounces; a boss holds its place (its attack pattern's)
+};
+// BATTERY (TPOT) -- LIVE WIRE. They walk out from the summoner toward the nearest foe and clip on (AS.wire.clip frames: their own body
+// crouching and buzzing, harmless). A crackling wire grows in between them and the summoner over A2_GROW frames and is live for
+// AS.wire.live: a foe who touches it takes 5% and a 6-frame flinch (no stun), then can't be zapped again for AS.wire.again frames.
+// Stretched past AS.wire.snap it snaps. One wire a stay, then they leave.
+function a2WireEnds(s, own){ return { ax:s.x + (Math.sign(own.x - s.x) || -s.face || 1)*s.r*2, ay:s.y, bx:own.x, by:own.y }; }   // their terminal facing the summoner, and the summoner
+AS_ACT.wire = function(s, tgt, T, owner){
+  const own = owner && !owner.dead ? owner : null;
+  s._apx = null;
+  if(s._ph === 'done'){ s.vx *= 0.5; s._apx = s._wireEnd ? { bx:s._wireEnd[0], by:s._wireEnd[1], sn:s._snap ? 1 : 0 } : null; if(s._pt >= A2_GROW + 2) s.life = 0; return; }
+  if(s._ph === 'idle'){
+    if(!own){ if(s._pt > 60) s.life = 0; return; }
+    const dir = tgt ? (Math.sign(tgt.x - own.x) || own.face || 1) : (own.face || 1), want = clamp(own.x + dir*T.out, 30, WW - 30), dx = want - s.x;
+    s.face = dir;
+    if(s.onground && (Math.abs(dx) < 24 || s._pt > 90) && Math.hypot(own.x - s.x, own.y - s.y) < T.snap - 80){
+      s.vx = 0; asGo(s, 'clip'); s.life = Math.max(s.life, T.clip + T.live + 3*A2_GROW); return; }
+    if(Math.abs(dx) >= 24) navAssist(s, { x:want, y:own.y }, dx, T.walk); else s.vx *= 0.6;
+    return;
+  }
+  const E = own ? a2WireEnds(s, own) : null;
+  if(!E || Math.hypot(E.bx - E.ax, E.by - E.ay) > T.snap){   // the summoner is gone or ran off: it snaps
+    s._snap = 1; if(E){ s._wireEnd = [Math.round(E.bx), Math.round(E.by)]; for(let i=0;i<6;i++) puff((E.ax + E.bx)/2, (E.ay + E.by)/2, '#fff27a', 3); }
+    asGo(s, 'done'); return; }
+  s.vx *= 0.5;
+  if(s._ph === 'clip'){ if(s._pt % 6 === 0) puff(E.ax, E.ay, '#fff27a', 2); if(s._pt >= T.clip) asGo(s, 'live'); return; }
+  const k = Math.min(1, s._pt/A2_GROW);
+  s._wireEnd = [Math.round(E.bx), Math.round(E.by)];
+  s._apx = { o:own.idx, bx:s._wireEnd[0], by:s._wireEnd[1], k:Math.round(k*100)/100 };
+  if(k >= 1){   // live once grown
+    const Z = s._zapT || (s._zapT = new Map());
+    for(const f of fighters){ if(!a2Open(s, f) || hazardT - (Z.get(f) ?? -1e9) < T.again) continue;
+      const p = a2Near(E.ax, E.ay, E.bx, E.by, f.x, hurtCY(f));
+      if(hurtGap(f, p.x, p.y) >= T.hw) continue;
+      Z.set(f, hazardT); a2Hit(s, f, T.dmg, (Math.sign(f.x - p.x) || 1)*1.5, -1.5, { stun:T.stun });
+      for(let i=0;i<6;i++) puff(p.x, p.y, i % 2 ? '#fff27a' : '#ffffff', 3); }
+    for(const b of assistFoes(s)){ if(hazardT - (Z.get(b) ?? -1e9) < T.again) continue;
+      const p = a2Near(E.ax, E.ay, E.bx, E.by, b.x, b.y);
+      if(Math.hypot(b.x - p.x, b.y - p.y) >= (b.r || 20) + T.hw) continue;
+      Z.set(b, hazardT); assistHitSummon(s, b, addDmg(s, T.dmg), false); for(let i=0;i<6;i++) puff(p.x, p.y, '#fff27a', 3); }
+  }
+  if(s._pt >= A2_GROW + T.live) asGo(s, 'done');
+};
+// CLAPBOARD (he/him, TPOT) -- CUT! He walks up to the nearest foe, his clapstick lifts (AS.cut.lift frames: he tips back, harmless) and on the
+// clap every grounded foe within AS.cut.R of him freezes for AS.cut.freeze frames. The freeze ends on the first hit they take, and that hit's
+// knockback is halved (applyHit reads f._cutT). Jumping dodges it. Twice a stay. A boss is never frozen (nothing on a boss reads it); an add on
+// the ground holds its act as long (_cd, as the Selfie Stick's flash holds one).
+AS_ACT.cut = function(s, tgt, T){
+  if(s._ph === 'rest'){ s.vx *= 0.8; if(s._pt < T.rest) return; if((s._claps||0) >= T.n){ s.life = 0; return; } asGo(s, 'idle'); }
+  if(s._ph === 'lift'){ s.vx *= 0.5; if(s._pt >= T.lift){ a2Clap(s, T); asGo(s, 'rest'); } return; }
+  if(!tgt) return;
+  const dx = tgt.x - s.x; s.face = Math.sign(dx) || s.face;
+  if(s.onground && Math.abs(dx) < T.reach + asBig(tgt) && Math.abs(asFeet(tgt) - (s.y + s.r)) < 90){ asGo(s, 'lift'); return; }
+  navAssist(s, tgt, dx, T.walk);
+};
+function a2Clap(s, T){
+  s._claps = (s._claps||0) + 1;
+  hitArt(haAssistOwner(s), haAssistKey(s, 'cut'), { kind:'circle', x:s.x, y:s.y, r:haEdgeR(T.R) }, { color:'#ffffff', style:'ring', world:true, fade:10 });   // HIT ART: the clap's reach (centre-judged)
+  for(let i=0;i<10;i++) puff(s.x + s.face*s.r*0.4, s.y - s.r, i % 2 ? '#ffffff' : '#2a2a2e', 4);
+  for(const f of fighters){ if(!a2Open(s, f) || !f.onground || Math.hypot(f.x - s.x, f.y - s.y) >= T.R) continue;
+    f.frozen = Math.max(f.frozen||0, T.freeze); f._cutT = hazardT + T.freeze; f.vx = 0;
+    for(let i=0;i<5;i++) puff(f.x, f.y - 6, '#e8e8f0', 3); }
+  for(const b of assistFoes(s)){ if(b.type === "boss" || !b.onground || Math.hypot(b.x - s.x, b.y - s.y) >= T.R) continue; b._cd = Math.max(b._cd||0, T.freeze); }
+}
+// CONCH SHELL (he/him, TPOT) -- HORN BLAST. He gets the nearest foe in range at about his height, puffs up (AS.horn.puff frames, harmless) and
+// blows a slow sound ring the way he faces: AS.horn.spd px a frame for AS.horn.dist px, growing in over A2_GROW frames; 4% and an ordinary
+// knockback, each foe once a ring. A wall or the world's edge ends it. Three a stay.
+AS_ACT.horn = function(s, tgt, T){
+  a2StepRings(s, T);
+  if(s._ph === 'rest'){ s.vx *= 0.8; if(s._pt < T.rest) return; if((s._blasts||0) >= T.n){ if(!(s._rings && s._rings.length)) s.life = 0; return; } asGo(s, 'idle'); }
+  if(s._ph === 'puff'){ s.vx *= 0.5; s.face = s._dir; if(s._pt >= T.puff){ a2Blast(s, T); asGo(s, 'rest'); } return; }
+  if(!tgt) return;
+  const dx = tgt.x - s.x, ty = tgt.type === "boss" ? tgt.y : hurtCY(tgt); s.face = Math.sign(dx) || s.face;
+  if(s.onground && Math.abs(dx) < T.reach + asBig(tgt) && Math.abs(ty - s.y) < T.level + asBig(tgt)){ s._dir = s.face; asGo(s, 'puff'); return; }
+  navAssist(s, tgt, dx, T.walk);
+};
+function a2Blast(s, T){
+  s._blasts = (s._blasts||0) + 1;
+  (s._rings || (s._rings = [])).push({ x:s.x + s._dir*s.r*0.9, y:s.y - s.r*0.2, dir:s._dir, d:0, age:0, hit:new Set() });
+  s.life = Math.max(s.life, Math.ceil(T.dist/T.spd) + 4);   // a ring blown is a ring seen out
+  for(let i=0;i<6;i++) puff(s.x + s._dir*s.r, s.y - s.r*0.2, '#fde6d2', 3);
+}
+function a2StepRings(s, T){
+  if(s._rings && s._rings.length){
+    for(const g of s._rings){
+      g.x += g.dir*T.spd; g.d += T.spd; g.age++;
+      const h = T.H*Math.min(1, g.age/A2_GROW);   // the ring hits at the size it is drawn
+      let end = g.d >= T.dist || g.x < 12 || g.x > WW - 12;
+      if(!end) for(const p of platRects()){ if(p.solid && !p.rot && g.x > p.x && g.x < p.x + p.w && g.y > p.y && g.y < p.y + (p.h||16)){ end = true; break; } }
+      if(end){ g.dead = true; continue; }
+      for(const f of fighters){ if(!a2Open(s, f) || g.hit.has(f) || hurtGap(f, g.x, clamp(hurtCY(f), g.y - h, g.y + h)) >= 8) continue;
+        g.hit.add(f); a2Hit(s, f, T.dmg, g.dir*T.kb, T.ky); }
+      for(const b of assistFoes(s)){ if(g.hit.has(b)) continue; const big = b.r || 20;
+        if(Math.abs(b.x - g.x) < big + 8 && Math.abs(b.y - g.y) < big + h){ g.hit.add(b); assistHitSummon(s, b, addDmg(s, T.dmg), false); } }
+    }
+    s._rings = s._rings.filter(g=>!g.dead);
+  }
+  s._apx = (s._rings && s._rings.length) ? { r:s._rings.map(g=>[Math.round(g.x), Math.round(g.y), g.dir, g.age]) } : null;
+}
+// RUBBER SPATULA (he/him, TPOT) -- SWAT. He walks up to the nearest foe, flinches back (AS.swat.flinch frames: his body leans away, harmless),
+// hops to where they stood as he flinched and swats down AS.swat.w px wide as he lands. A grounded foe takes 8%, a 30-frame stun and a small
+// pop; an airborne one 8% and is popped up and sideways. Never a spike. Three a stay.
+AS_ACT.swat = function(s, tgt, T){
+  if(s._ph === 'rest'){ s.vx *= 0.8; if(s._pt < T.rest) return; if((s._swats||0) >= T.n){ s.life = 0; return; } asGo(s, 'idle'); }
+  if(s._ph === 'flinch'){ s.vx *= 0.5; s.face = s._dir;
+    if(s._pt >= T.flinch){ s.vx = clamp((s._lx - s.x)/T.air, -T.vmax, T.vmax); s.vy = T.up; s.onground = false; s._commit = 1; asGo(s, 'hop'); }
+    return; }
+  if(s._ph === 'hop'){ s.face = s._dir;
+    if((s.onground && s._pt > 3) || s._pt > 90){ s._commit = 0; s.vx = 0; a2Swat(s, T); asGo(s, 'rest'); }
+    return; }
+  if(!tgt) return;
+  const dx = tgt.x - s.x; s.face = Math.sign(dx) || s.face;
+  if(s.onground && Math.abs(dx) < T.reach + asBig(tgt) && Math.abs(asFeet(tgt) - (s.y + s.r)) < 140){ s._dir = s.face; s._lx = tgt.x; asGo(s, 'flinch'); return; }
+  navAssist(s, tgt, dx, T.walk);
+};
+function a2Swat(s, T){
+  s._swats = (s._swats||0) + 1;
+  const bot = s.y + s.r, x0 = s.x - T.w/2, x1 = s.x + T.w/2, y0 = bot - T.h, y1 = bot + 8;
+  hitArt(haAssistOwner(s), haAssistKey(s, 'swat'), { kind:'box', x:x0, y:y0, w:T.w, h:T.h + 8 }, { color:'#f2e070', world:true, fade:10 });   // HIT ART: the swat as it lands
+  impact(s.x, bot, { shake:3, dust:2, debris:2, r:T.w/2 });
+  for(const f of fighters){ if(!a2Open(s, f) || !a2InBox(f, x0, y0, x1, y1)) continue;
+    const d = Math.sign(f.x - s.x) || s._dir || 1;
+    if(f.onground){ a2Hit(s, f, T.dmg, d*2, -4); stunFx(f, T.stun); }   // grounded: the stun and a small pop
+    else a2Hit(s, f, T.dmg, d*7, -8); }                                   // airborne: up and sideways, never down
+  for(const b of assistFoes(s)){ if(a2BossInBox(b, x0, y0, x1, y1)) assistHitSummon(s, b, addDmg(s, T.dmg), false); }
+}
+// SCISSORS (TPOT) -- SNIP. Their blades spread (AS.snip.spread frames, harmless), then they lunge AS.snip.lunge px and snap: 9%, and the foe
+// bleeds. If the summoner is held, rooted (a staple, a root, a trap), cuffed or swallowed within AS.snip.free px, the next snip goes to them
+// instead and cuts them free (a2CutFree). No fighter can be caged in the game yet, so there is no cage to cut. Three a stay.
+function a2Stuck(o){ return !!o && !o.dead && (o._heldBy != null || o.rooted > 0 || !!o._mtCuff || o._swallow > 0); }
+function a2CutFree(o){
+  if(o._heldBy != null){ const h = fighters[o._heldBy]; if(h && h._hold && h._hold.idx === o.idx) holdRelease(h, o, 0); o._heldBy = null; }
+  if(o._mtCuff){ o._mtCuff = null; o._mtFreed = hazardT; }
+  o.rooted = 0;
+  if(o._swallow > 0) freeFromStomach(o);
+  for(let i=0;i<10;i++) puff(o.x, o.y - 6, i % 2 ? '#ffffff' : '#8ccf4a', 4);
+}
+AS_ACT.snip = function(s, tgt, T, owner){
+  const own = owner && !owner.dead ? owner : null;
+  if(s._ph === 'rest'){ s.vx *= 0.8; if(s._pt < T.rest) return; if((s._snips||0) >= T.n){ s.life = 0; return; } asGo(s, 'idle'); }
+  if(s._ph === 'spread'){ s.vx *= 0.5; s.face = s._dir; if(s._pt >= T.spread){ s._x0 = s.x; s._px = s.x; s._commit = 1; asGo(s, 'lunge'); } return; }
+  if(s._ph === 'lunge'){
+    s.face = s._dir; s.vx = s._dir*T.spd;
+    const there = s._free && own && Math.abs(own.x - s.x) < s.r + 16, stopped = s._pt > 2 && Math.abs(s._px - s.x) < 1;   // at the summoner; a wall took the lunge
+    s._px = s.x;
+    if(there || stopped || Math.abs(s.x - s._x0) >= T.lunge || s._pt > 20){ s._commit = 0; s.vx = 0; a2Snip(s, T, own); asGo(s, 'rest'); }
+    return;
+  }
+  if(own && a2Stuck(own) && Math.hypot(own.x - s.x, own.y - s.y) < T.free){ s._free = 1; s._dir = Math.sign(own.x - s.x) || s.face; s.face = s._dir; asGo(s, 'spread'); return; }
+  s._free = 0;
+  if(!tgt) return;
+  const dx = tgt.x - s.x, ty = tgt.type === "boss" ? tgt.y : hurtCY(tgt); s.face = Math.sign(dx) || s.face;
+  if(s.onground && Math.abs(dx) < T.reach + asBig(tgt) && Math.abs(ty - s.y) < 90 + asBig(tgt)){ s._dir = s.face; asGo(s, 'spread'); return; }
+  navAssist(s, tgt, dx, T.walk);
+};
+function a2Snip(s, T, own){
+  s._snips = (s._snips||0) + 1;
+  if(s._free && own && a2Stuck(own) && Math.hypot(own.x - s.x, own.y - s.y) < T.free){ a2CutFree(own); return; }   // this snip is the summoner's
+  const d = s._dir || s.face || 1, x2 = s.x + d*(s.r + T.tip);
+  hitArt(haAssistOwner(s), haAssistKey(s, 'snip'), { kind:'capsule', x1:s.x, y1:s.y, x2:x2, y2:s.y, r:T.cr }, { color:'#d8dde4', world:true, fade:8 });   // HIT ART: the snap
+  for(const f of fighters){ if(!a2Open(s, f)) continue;
+    const p = a2Near(s.x, s.y, x2, s.y, f.x, hurtCY(f));
+    if(hurtGap(f, p.x, p.y) >= T.cr) continue;
+    a2Hit(s, f, T.dmg, d*T.kb, -6); SM_FX.bleed(f, null, T.bleed); }
+  for(const b of assistFoes(s)){ const p = a2Near(s.x, s.y, x2, s.y, b.x, b.y); if(Math.hypot(b.x - p.x, b.y - p.y) < (b.r || 20) + T.cr) assistHitSummon(s, b, addDmg(s, T.dmg), false); }
+}
+// SNARE DRUM (she/her, TPOT) -- DRUMROLL. She walks to within AS.drum.plant px (the design's "within 260") of the nearest foe on her level
+// and plants herself (AS.drum.settle frames, harmless). Four beats, then six quick ones: each sends a floor ripple both ways along the
+// surface she stands on (AS.drum.spd px a frame for AS.drum.dist px, growing in over A2_GROW frames), 1% and a tiny flinch to a foe standing
+// on it. Then the crash, AS.drum.crashW px wide around her, 10%. Jumping on the beat dodges: ripples and crash touch only foes on the
+// ground. One song a stay.
+function a2DrumBeats(T){ const out = []; for(let i=0;i<T.nSlow;i++) out.push(i*T.slow); for(let i=0;i<T.nFast;i++) out.push(T.nSlow*T.slow + i*T.fast); return out; }
+AS_ACT.drum = function(s, tgt, T){
+  a2StepRipples(s, T);
+  if(s._ph === 'done'){ s.vx *= 0.8; if(s._pt >= 16 && !(s._rip && s._rip.length)) s.life = 0; return; }
+  if(s._ph === 'settle'){ s.vx = 0; if(s._pt >= T.settle){ asGo(s, 'song'); s.life = Math.max(s.life, T.crash + Math.ceil(T.dist/T.spd) + 30); } return; }
+  if(s._ph === 'song'){
+    s.vx = 0;
+    if(a2DrumBeats(T).indexOf(s._pt) >= 0) a2Beat(s, T);
+    if(s._pt >= T.crash){ a2Crash(s, T); asGo(s, 'done'); }
+    return;
+  }
+  if(!tgt) return;
+  const dx = tgt.x - s.x; s.face = Math.sign(dx) || s.face;
+  if(s.onground && Math.abs(dx) < T.plant + asBig(tgt) && Math.abs(asFeet(tgt) - (s.y + s.r)) < 60){
+    const sb = surfaceBelow(s.x, s.y + s.r - 6);   // the surface under her: a trophy's body stands on groundY()'s line, and on a big map (the Teams arena) the floor can sit below it
+    s._fy = (sb != null && sb - (s.y + s.r) < 48) ? sb : s.y + s.r; s.vx = 0; asGo(s, 'settle'); return; }
+  navAssist(s, tgt, dx, T.walk);
+};
+function a2Beat(s, T){
+  const y = s._fy != null ? s._fy : s.y + s.r;
+  (s._rip || (s._rip = [])).push({ x:s.x - s.r*0.6, y, dir:-1, d:0, age:0, hit:new Set() }, { x:s.x + s.r*0.6, y, dir:1, d:0, age:0, hit:new Set() });
+  for(let i=0;i<3;i++) puff(s.x + (i - 1)*s.r*0.5, s.y - s.r*0.6, '#e8ecff', 2);
+}
+function a2StepRipples(s, T){
+  if(s._rip && s._rip.length){
+    for(const w of s._rip){
+      w.x += w.dir*T.spd; w.d += T.spd; w.age++;
+      if(w.d >= T.dist || w.x < 12 || w.x > WW - 12 || !waveFloorAt(w.x, w.y) || waveWallAt(w.x, w.y, T.H)){ w.dead = true; continue; }   // an edge, a hole or a wall ends it
+      for(const f of fighters){ if(!a2Open(s, f) || w.hit.has(f) || !f.onground) continue;
+        if(Math.abs(f.x - w.x) < 14 + f.r*0.5 && Math.abs(feetY(f) - w.y) < 10){ w.hit.add(f); a2Hit(s, f, T.dmg, w.dir, 0, { stun:T.stun }); } }
+      for(const b of assistFoes(s)){ if(w.hit.has(b)) continue;
+        if(Math.abs(b.x - w.x) < (b.r || 20) + 10 && Math.abs(asFeet(b) - w.y) < 14){ w.hit.add(b); assistHitSummon(s, b, addDmg(s, T.dmg), false); } }
+    }
+    s._rip = s._rip.filter(w=>!w.dead);
+  }
+  s._apx = (s._rip && s._rip.length) ? { r:s._rip.map(w=>[Math.round(w.x), Math.round(w.y), w.dir, w.age]) } : null;
+}
+function a2Crash(s, T){
+  const hw = T.crashW/2, y = s._fy != null ? s._fy : s.y + s.r;
+  hitArt(haAssistOwner(s), haAssistKey(s, 'crash'), { kind:'box', x:s.x - hw, y:y - 40, w:T.crashW, h:46 }, { color:'#c8d4ff', world:true, fade:10 });   // HIT ART: the crash as it lands
+  impact(s.x, y, { shake:4, dust:2, debris:3, r:hw });
+  for(const f of fighters){ if(!a2Open(s, f) || !f.onground || Math.abs(f.x - s.x) >= hw + f.r*0.5 || Math.abs(feetY(f) - y) >= 30) continue;
+    a2Hit(s, f, T.crashDmg, (Math.sign(f.x - s.x) || s.face || 1)*T.kb, -T.kb); }
+  for(const b of assistFoes(s)){ if(Math.abs(b.x - s.x) < hw + (b.r || 20) && Math.abs(asFeet(b) - y) < 34) assistHitSummon(s, b, addDmg(s, T.crashDmg), false); }
+}
 function summonBoss(owner){
   const b = BOSS_ROSTER[Math.floor(Math.random()*BOSS_ROSTER.length)];
   // a boss is hostile to EVERYONE (team -1), big and tough
@@ -44952,7 +45240,7 @@ function updateSummons(){
     }
     // gravity + ground — an assist gets the fighter-grade body (platforms, jumps, world edges);
     // a boss keeps the floor-snap it was tuned against.
-    if(s.type==="assist"){ stepAssistBody(s, sgy); }
+    if(s.type==="assist"){ stepAssistBody(s, assistBodyFloor(s, sgy)); }   // (a big map: the surface under it, assistBodyFloor)
     else if(s.hover){ }   // One flies (canon): no gravity and no floor snap, oneMove steers her
     else {
       s.vy += 0.6; s.y += s.vy; s.x += s.vx; s.vx*=0.9;
@@ -63929,6 +64217,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(t.cloud>0){ dmg*=0.6; kbx*=0.6; kby*=0.6; }   // Teardrop cloud form: -40% dmg & knockback
   if(t.armor>0){ dmg*=0.6; kbx*=0.4; kby*=0.4; }
   if(t._patch > hazardT && from && from !== t && !(opts && opts.tick)){ dmg*=0.5; kbx*=0.5; kby*=0.5; t._patch = 0; for(let i=0;i<5;i++) puff(t.x, t.y - 6, i%2 ? '#f2d0a0' : '#d94f6a', 3); }   // Needle's patch (Thread the Needle): it halves the next hit, once
+  if(t._cutT > hazardT && from !== t && !(opts && opts.tick)){ kbx*=0.5; kby*=0.5; t._cutT = 0; t.frozen = 0; }   // Clapboard's CUT! (ASSIST BATCH A2): the first hit they take ends the freeze, at half the launch
   if(from && from._empowerT>0){ dmg*=1.4; kbx*=1.2; kby*=1.2; }   // ITEM: Attack Up powerup
   if(from && from !== t && from._growT > hazardT){ dmg*=FX2.grow.atk; kbx*=FX2.grow.kbk; kby*=FX2.grow.kbk; }   // Puffball grown (Grow, FX2.grow): her hits land harder
   if(t._yoyleT>0){ dmg*=0.45; kbx*=0.6; kby*=0.6; }              // ITEM: Yoyleberry — metal, takes less damage
@@ -71142,6 +71431,7 @@ function drawSummon(s){
   ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(-s.r*0.3,-s.r*0.15,s.r*0.08,0,7); ctx.arc(s.r*0.3,-s.r*0.15,s.r*0.08,0,7); ctx.fill();
   }
   if(apose) ctx.restore();   // (the pose asPoseBegin opened)
+  if(s.type==="assist" && A2_NAMES.indexOf(s.name) >= 0){ ctx.restore(); return; }   // ASSIST BATCH A2: no name tag -- no words in a match (batch A1 takes every assist's off: question 22)
   // nametag
   ctx.font="700 12px 'Baloo 2', system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle";
   const w=ctx.measureText(s.name).width+12;
@@ -71384,7 +71674,7 @@ function drawAssistRender(s, im, sp){
   let dh = (sp.h||2.8)*R, dw = dh*ar;
   const maxW = (sp.w||3.4)*R; if(dw > maxW){ dw = maxW; dh = dw/ar; }
   ctx.save();
-  if(((s.face||1) < 0) !== !!sp.flip) ctx.scale(-1, 1);
+  if(!sp.still && ((s.face||1) < 0) !== !!sp.flip) ctx.scale(-1, 1);   // (`still`: a render never mirrored -- 9-Ball's 9)
   if(s.hostile && s.flash>0) ctx.globalAlpha = 0.6;
   if(s._squash>0){ const k = Math.min(1, s._squash/8); ctx.scale(1+0.22*k, 1-0.22*k); }
   if(sp.mid) ctx.drawImage(im, -dw/2, -dh/2, dw, dh); else ctx.drawImage(im, -dw/2, R - dh, dw, dh);
@@ -71404,6 +71694,7 @@ function asPoseBegin(s){
     const k = Math.min(1, t/ASSIST_ARRIVE), e = Math.max(0.15, (1 - Math.pow(1 - k, 3))*(1 + 0.18*Math.sin(k*Math.PI)));
     atFeet(e, e); return true;
   }
+  const a2p = A2_POSE[s.name]; if(a2p){ a2p(s, P, R, t, ph, face, atFeet); return true; }   // ASSIST BATCH A2's wind-ups
   switch(s.name){
     case 'Eraser': if(ph === 'wind'){ const w = Math.sin(t*0.9); ctx.translate(w*6, 0); ctx.rotate(w*0.12); } break;   // rubbing side to side
     case 'Spongy':   // the squat, the stretch of the leap, the squash of the landing
@@ -71435,6 +71726,7 @@ function asPoseBegin(s){
 // What an act puts in the world round the trophy (local space, under its body): Cloudy's rain and bolt, Toilet's waves.
 function drawAssistFx(s){
   const P = s._ap; if(!P || P.p === 'arrive') return;
+  const a2f = A2_FX[s.name]; if(a2f){ a2f(s, P); return; }   // ASSIST BATCH A2: the wire, the rings, the ripples
   if(s.name === 'Cloudy'){
     const T = AS.steal, bottom = asSolidBelow(s.x, s.y + s.r) - s.y, top = s.r*0.5, span = Math.max(20, bottom - top);
     ctx.save(); ctx.lineCap = 'round';
@@ -71591,6 +71883,90 @@ function drawMePad(s){
   ctx.restore();
 }
 ASSIST_DRAWN['MePad'] = drawMePad;
+// ---- ASSIST BATCH A2: their art, their wind-ups and what they put in the world ------------------------------------------------------------
+// The renders are the characters' TPOT 14 vote pictures (Rubber Spatula's is his TPOT 7 render) from the BFDI wiki, cut out and scaled to
+// 200 px tall here (assets/sprites/CREDITS.md, scripts/sprite-manifest.json). Every wind-up is the body's own (A2_POSE, from asPoseBegin);
+// what an act puts in the world is drawn from the pose the snapshot carries (P.a2, from asPose), so a guest draws the same.
+Object.assign(ASSIST_SPRITE_SRC, {
+  "9-Ball":         { src:"assets/sprites/9-ball.png",         h:2.2, w:2.2, mid:true, still:true },   // File:9ballTPOT14.png, 200x200, facing 0.034 (`still`: never mirrored, so the 9 reads right)
+  "Battery":        { src:"assets/sprites/battery.png",        h:2.0, w:4.6 },             // File:BatteryTPOT14.png, 451x200, facing 0.004
+  "Clapboard":      { src:"assets/sprites/clapboard.png",      h:2.8, w:3.0 },             // File:ClapboardTPOT14.png, 197x200, facing -0.01
+  "Conch Shell":    { src:"assets/sprites/conch-shell.png",    h:2.8, w:2.6, flip:true },  // File:ConchshellTPOT14.png, 165x200, facing -0.096: faces left
+  "Rubber Spatula": { src:"assets/sprites/rubber-spatula.png", h:3.2, w:1.6 },             // File:Rubber Spatula TPOT 7.png, 79x200, facing 0.007
+  "Scissors":       { src:"assets/sprites/scissors.png",       h:2.0, w:4.8 },             // File:ScissorsTPOT14steakhouse.png, 478x200, facing 0.24: the blades lead
+  "Snare Drum":     { src:"assets/sprites/snare-drum.png",     h:2.6, w:3.4 },             // File:SnaredrumTPOT14.png, 243x200, facing 0
+});
+// Each wind-up, in the transform asPoseBegin opened (feet at y = R; `atFeet` scales about the feet). Nothing is drawn ahead of a hit.
+const A2_POSE = {
+  '9-Ball'(s, P, R, t, ph, face, atFeet){ if(ph === 'hop') ctx.rotate(t*0.25); },   // the hop in: a spin (the bounce itself squashes: _squash)
+  'Battery'(s, P, R, t, ph, face, atFeet){
+    if(ph === 'clip'){ const k = Math.min(1, t/AS.wire.clip); atFeet(1 + 0.1*k, 1 - 0.14*k); ctx.translate(Math.sin(t*1.9)*1.5*k, 0); }   // crouching, buzzing harder
+    else if(ph === 'live') ctx.translate(Math.sin(t*2.3)*0.8, 0); },
+  'Clapboard'(s, P, R, t, ph, face, atFeet){
+    if(ph === 'lift'){ const k = Math.min(1, t/AS.cut.lift); ctx.translate(0, R); ctx.rotate(-face*0.28*k); ctx.scale(1, 1 + 0.1*k); ctx.translate(0, -R); }   // the clapstick lifts: he tips back, stretching
+    else if(ph === 'rest' && t < 8){ const k = 1 - t/8; ctx.translate(0, R); ctx.rotate(face*0.18*k); ctx.scale(1 + 0.08*k, 1 - 0.1*k); ctx.translate(0, -R); } },   // ...the clap
+  'Conch Shell'(s, P, R, t, ph, face, atFeet){
+    if(ph === 'puff'){ const k = Math.min(1, t/AS.horn.puff); atFeet(1 + 0.28*k, 1 + 0.22*k); }   // puffing up
+    else if(ph === 'rest' && t < 10){ const k = 1 - t/10; ctx.translate(-face*4*k, 0); atFeet(1 + 0.1*k, 1 - 0.08*k); } },   // ...the blast's recoil
+  'Rubber Spatula'(s, P, R, t, ph, face, atFeet){
+    const T = AS.swat;
+    if(ph === 'flinch'){ const k = Math.min(1, t/T.flinch); ctx.translate(-face*5*k, R); ctx.rotate(-face*0.45*k); ctx.translate(0, -R); }   // flinching back
+    else if(ph === 'hop'){ const k = Math.min(1, t/T.air); ctx.translate(0, R); ctx.rotate(face*(-0.45 + 1.5*k*k)); ctx.translate(0, -R); }   // swinging over as he comes down
+    else if(ph === 'rest' && t < 10){ ctx.translate(0, R); ctx.rotate(face*1.05*(1 - t/10)); ctx.translate(0, -R); } },   // ...the swat, flat
+  'Scissors'(s, P, R, t, ph, face, atFeet){
+    if(ph === 'spread'){ const k = Math.min(1, t/AS.snip.spread); ctx.rotate(-face*0.22*k); atFeet(1 + 0.12*k, 1 + 0.06*k); }   // the blades spread: rearing, opening out
+    else if(ph === 'lunge') ctx.rotate(face*0.12);
+    else if(ph === 'rest' && t < 6){ const k = 1 - t/6; atFeet(1 - 0.12*k, 1 + 0.05*k); } },   // ...snap
+  'Snare Drum'(s, P, R, t, ph, face, atFeet){
+    const T = AS.drum;
+    if(ph === 'settle'){ const k = Math.min(1, t/T.settle); atFeet(1 + 0.1*k, 1 - 0.1*k); }   // planting herself
+    else if(ph === 'song'){ let a = 99; for(const b of a2DrumBeats(T)) if(t >= b) a = t - b;
+      const k = Math.max(0, 1 - a/6), up = t > T.crash - 18 ? (t - (T.crash - 18))/18 : 0;
+      atFeet(1 + 0.14*k - 0.06*up, 1 - 0.14*k + 0.12*up); }   // a bounce on every beat, rising for the crash
+    else if(ph === 'done' && t < 12){ const k = 1 - t/12; atFeet(1 + 0.25*k, 1 - 0.25*k); } },   // the crash
+};
+// What the acts put in the world, under the body (drawAssistFx: local space).
+const A2_FX = {
+  'Battery'(s, P){ if(P.a2) a2DrawWire(s, P, P.a2); },
+  'Conch Shell'(s, P){ if(P.a2 && P.a2.r) for(const g of P.a2.r) a2DrawRing(s, g); },
+  'Snare Drum'(s, P){ if(P.a2 && P.a2.r) for(const w of P.a2.r) a2DrawRipple(s, w); },
+};
+// The wire: from their terminal facing the summoner to the summoner, crackling (its kinks move with the pose's clock), grown out to `k` of
+// the way. Snapped, its two ends whip back and fade; run out, it fades.
+function a2DrawWire(s, P, A){
+  const own = (A.o != null && Array.isArray(fighters)) ? fighters.find(f=>f.idx === A.o && !f.dead) : null;
+  const ex = (own ? own.x : A.bx) - s.x, ey = (own ? own.y : A.by) - s.y, side = Math.sign(ex) || -(s.face || 1), ax = side*s.r*2, ay = 0;
+  const t = P.t || 0, done = P.p === 'done', fade = done ? Math.max(0, 1 - t/A2_GROW) : 1, k = done ? 1 : (A.k == null ? 1 : A.k);
+  const zig = (x0, y0, x1, y1, ph)=>{ const L = Math.hypot(x1 - x0, y1 - y0); if(L < 2) return; const n = Math.max(2, Math.round(L/14)), ux = (x1 - x0)/L, uy = (y1 - y0)/L;
+    ctx.beginPath(); ctx.moveTo(x0, y0);
+    for(let i=1;i<n;i++){ const o = ((i + ph) % 2 ? 1 : -1)*(3 + ((i*7 + ph) % 3)); ctx.lineTo(x0 + (x1 - x0)*i/n - uy*o, y0 + (y1 - y0)*i/n + ux*o); }
+    ctx.lineTo(x1, y1);
+    ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 5; ctx.stroke(); ctx.strokeStyle = '#fff27a'; ctx.lineWidth = 2.5; ctx.stroke(); };
+  ctx.save(); ctx.globalAlpha = fade; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  if(done && A.sn){ const r = 0.5*(1 - Math.min(1, t/A2_GROW)), mx = ax + (ex - ax)*0.5, my = ay + (ey - ay)*0.5;
+    zig(ax, ay, ax + (mx - ax)*r*2, ay + (my - ay)*r*2 + 10*(1 - r*2), t); zig(ex, ey, ex + (mx - ex)*r*2, ey + (my - ey)*r*2 + 10*(1 - r*2), t + 1); }
+  else zig(ax, ay, ax + (ex - ax)*k, ay + (ey - ay)*k, (t >> 1));
+  ctx.fillStyle = '#fff27a'; ctx.beginPath(); ctx.arc(ax, ay, 3.5, 0, 7); ctx.fill();   // the clip on their terminal
+  ctx.restore(); ctx.globalAlpha = 1;
+}
+// A sound ring: three arcs opening the way it travels, the front one at the ring's line, growing in; it fades over its last 40 px.
+function a2DrawRing(s, g){
+  const T = AS.horn, k = Math.min(1, g[3]/A2_GROW), h = Math.max(2, T.H*k), dir = g[2] || 1, left = T.dist - g[3]*T.spd;
+  ctx.save(); ctx.translate(g[0] - s.x, g[1] - s.y); ctx.globalAlpha = Math.max(0, Math.min(1, left/40)); ctx.lineCap = 'round';
+  for(let j=0;j<3;j++){ const rr = h*(1 - 0.25*j), cx = -dir*(h*0.9 + j*h*0.25), a0 = dir > 0 ? -0.95 : Math.PI - 0.95, a1 = a0 + 1.9;
+    ctx.strokeStyle = 'rgba(60,40,30,0.45)'; ctx.lineWidth = 6 - j; ctx.beginPath(); ctx.arc(cx, 0, rr, a0, a1); ctx.stroke();
+    ctx.strokeStyle = j ? '#fde6d2' : '#ffffff'; ctx.lineWidth = 3.2 - j*0.7; ctx.beginPath(); ctx.arc(cx, 0, rr, a0, a1); ctx.stroke(); }
+  ctx.restore(); ctx.globalAlpha = 1;
+}
+// A floor ripple: a crest along the surface, leaning the way it runs, growing in; it fades over its last 40 px.
+function a2DrawRipple(s, w){
+  const T = AS.drum, k = Math.min(1, w[3]/A2_GROW), H = Math.max(1.5, T.H*k), dir = w[2] || 1, left = T.dist - w[3]*T.spd;
+  ctx.save(); ctx.translate(w[0] - s.x, w[1] - s.y); ctx.globalAlpha = Math.max(0, Math.min(1, left/40)); ctx.lineJoin = 'round';
+  ctx.fillStyle = 'rgba(205,216,255,0.9)'; ctx.strokeStyle = '#2a3aa0'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-16, 1); ctx.quadraticCurveTo(dir*5, -2*H, 16, 1); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(-6, -H*0.55); ctx.quadraticCurveTo(dir*3, -H*0.95, 7, -H*0.5); ctx.stroke();
+  ctx.restore(); ctx.globalAlpha = 1;
+}
 // Procedural boss "sprites" — each boss drawn distinctly. Sprite hook: if BOSS_SPRITE_IMG[s.sprite]
 // is later populated with an Image, it'll be drawn instead (image-sprite path for the future).
 const BOSS_SPRITE_IMG = {};
@@ -78754,7 +79130,8 @@ const STATUS_ICONS = [
   { key:'poison',   on:f=>f.burn>0 && (f._poisonT||0)>0,     glyph:'flask',  color:'#9bd24b' },   // poisoned
   { key:'bleed',    on:f=>f.bleed>0,                         glyph:'drop',   color:'#c0304a' },
   { key:'stunned',  on:f=>f._stunFx>0 && f.hitstun>0,        glyph:'dizzy',  color:'#fff29a' },   // stunned by an effect, not just hit
-  { key:'frozen',   on:f=>f.frozen>0,                        glyph:'flake',  color:'#7ad0f0' },
+  { key:'frozen',   on:f=>f.frozen>0 && !(f._cutT > hazardT), glyph:'flake', color:'#7ad0f0' },
+  { key:'cut',      on:f=>f.frozen>0 && f._cutT > hazardT,   glyph:'clap',   color:'#f2f2f2' },   // Clapboard's CUT! (ASSIST BATCH A2): held still until the first hit
   { key:'slowed',   on:f=>f.slowed>0,                        glyph:'slow',   color:'#f2c84b' },
   { key:'rooted',   on:f=>f.rooted>0,                        glyph:'root',   color:'#8a6a3a' },
   { key:'ctrlRev',  on:f=>f.ctrlRev>0,                       glyph:'swap',   color:'#c04be0' },
@@ -78802,6 +79179,7 @@ function statusGlyph(c, g, r){
     case 'flame':  c.beginPath(); c.moveTo(0,-r); c.quadraticCurveTo(r,-r*0.2,r*0.5,r*0.6); c.quadraticCurveTo(0,r,-r*0.5,r*0.6); c.quadraticCurveTo(-r,-r*0.2,0,-r); c.fill(); break;
     case 'drop':   c.beginPath(); c.moveTo(0,-r); c.quadraticCurveTo(r,r*0.2,0,r); c.quadraticCurveTo(-r,r*0.2,0,-r); c.fill(); break;
     case 'flake':  c.lineWidth=1.5; for(let i=0;i<3;i++){ const a=i*Math.PI/3; c.beginPath(); c.moveTo(Math.cos(a)*r,Math.sin(a)*r); c.lineTo(-Math.cos(a)*r,-Math.sin(a)*r); c.stroke(); } break;
+    case 'clap':   c.fillRect(-r*0.85,-r*0.15,r*1.7,r*1.05); c.save(); c.translate(-r*0.85,-r*0.3); c.rotate(-0.4); c.fillRect(0,-r*0.32,r*1.7,r*0.36); c.restore(); break;   // a clapperboard, its stick up
     case 'slow':   c.beginPath(); c.moveTo(-r*0.7,-r); c.lineTo(r*0.7,-r); c.lineTo(-r*0.7,r); c.lineTo(r*0.7,r); c.closePath(); c.fill(); break;
     case 'root':   c.fillRect(-r*0.2,-r,r*0.4,r*1.6); c.fillRect(-r,r*0.6,r*2,r*0.4); break;
     case 'swap':   c.lineWidth=2; c.beginPath(); c.moveTo(-r,-r*0.4); c.lineTo(r*0.4,-r*0.4); c.moveTo(r*0.4,-r*0.9); c.lineTo(r,-r*0.4); c.lineTo(r*0.4,r*0.1);
@@ -81357,6 +81735,7 @@ const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering
   '_momentumT','_hasteT','_bulletT','_starT','_yoyleT','healing','reflecting','_noBattery','_taunted','_grasstree','curse','iceUntil',
   'reform','_floatT','_swallow','_fury','koCount','_poisonT','_tpT','_patch','_dazzle','_sinkT','_jellyT',   // (FINISHERS V2: Needle's patch, Flower's daze, Golf Ball's sand, Gelatin's jelly)
   '_sleepT','_slowmoT','_hushT',   // (FINISHERS V2, batch 4: Pillow's sleep, Remote's slow motion, Rose's hush)
+  '_cutT',   // (ASSIST BATCH A2: Clapboard's CUT!, until when -- its icon; the freeze itself is 'frozen')
   '_zeroT',   // (FINISHERS V2, batch 6: Donut's zero)
   '_soakT',   // (EVENT FIGHTERS: SOAKED, until when -- the drips are drawn from it)
   '_flipT',   // (EVENT FIGHTERS: ERASER -- frames left of a backflip's turn: STEAKHOUSE FLIP and his wall jump)

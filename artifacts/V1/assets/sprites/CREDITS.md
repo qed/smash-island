@@ -1210,6 +1210,34 @@ keyed by the assist's name; MePhone4's hostile adds wear the same art.
 - **`beach-ball.png`** -- the Beach Ball page's own image, `Elswerebeachball.png`: the ball with its face, arms and legs.
   Drawn centred on the body, and squashed for a few frames on each ricochet.
 
+### Assist batch A2 (event-fighters-phase1.md, section 4)
+
+Seven TPOT newcomers to the assist bag: 9-Ball, Battery, Clapboard, Conch Shell, Rubber Spatula, Scissors and Snare Drum. Each
+is the character's TPOT 14 vote picture from `battlefordreamisland.fandom.com` (Rubber Spatula's is his TPOT 7 render, the file the
+owner approved for him), one group only (BFB+TPOT). The owner approved the downloads (the event art list); they were not fetched by
+`scripts/fetch-sprites.mjs` but cut down here the way the second skins were: trimmed to the drawing, area-averaged to 200 px tall,
+the invisible halo erased, the same checks (alpha, coverage, a face found, facing measured), and each looked at before it was kept.
+Same provenance as the table at the top: jacknjellify's character artwork via the BFDI wiki, used under fan-work norms in a
+disclaimed, non-commercial fan game. Drawn by `drawAssistRender` from `ASSIST_SPRITE_SRC` (ASSIST BATCH A2's rows); listed in
+`scripts/sprite-manifest.json` under the assists' names.
+
+| Assist | File | Source |
+|---|---|---|
+| 9-Ball | `9-ball.png` | https://battlefordreamisland.fandom.com/wiki/File:9ballTPOT14.png (1425x1425 at the source, 200x200 here) |
+| Battery | `battery.png` | https://battlefordreamisland.fandom.com/wiki/File:BatteryTPOT14.png (1914x848 at the source, 451x200 here) |
+| Clapboard | `clapboard.png` | https://battlefordreamisland.fandom.com/wiki/File:ClapboardTPOT14.png (1561x1583 at the source, 197x200 here) |
+| Conch Shell | `conch-shell.png` | https://battlefordreamisland.fandom.com/wiki/File:ConchshellTPOT14.png (1470x1782 at the source, 165x200 here) |
+| Rubber Spatula | `rubber-spatula.png` | https://battlefordreamisland.fandom.com/wiki/File:Rubber_Spatula_TPOT_7.png (684x1556 at the source, 79x200 here) |
+| Scissors | `scissors.png` | https://battlefordreamisland.fandom.com/wiki/File:ScissorsTPOT14steakhouse.png (2807x1177 at the source, 478x200 here) |
+| Snare Drum | `snare-drum.png` | https://battlefordreamisland.fandom.com/wiki/File:SnaredrumTPOT14.png (2111x1737 at the source, 243x200 here) |
+
+- **`9-ball.png`** is drawn centred on the body (`mid`) and never mirrored (`still`), so the 9 on top always reads the right way round.
+- **`conch-shell.png`** faces left in its source (facing -0.096) and is drawn mirrored (`flip`), so his horn points the way he blows.
+- **`battery.png`** and **`scissors.png`** are wide (451x200 and 478x200): fit by width (`w`) so they do not tower; the scissors'
+  blades lead (facing 0.24).
+- Their acts draw the rest in code: Battery's wire, Conch Shell's sound rings and Snare Drum's floor ripples (no file of a sound or a
+  spark is a character).
+
 ## Per-fighter skins (Wardrobe)
 
 215 second renders, each worn by ONE fighter only (its Wardrobe skin), in `assets/sprites/skins/`; every playable fighter has at least
