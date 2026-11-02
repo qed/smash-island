@@ -27124,6 +27124,222 @@ FINAL_SMASHES['Loser'] = {
   ai(f){ for(const x of fighters) if(!fsHurtMark(f, x) && hurtGap(x, f.x, f.y) < FSAR_LO.R[0]*0.85) return true; return false; },   // (the CPU's cue is the old row's: a foe within 0.85 of the first ring)
   draw(f, c){ fsaR_loseDraw(f, c); },
 };
+//
+// PAINTBRUSH -- HEAT WAVES. "prone to angry outbursts"; "bristles react to their emotions and can glow with heat" (the design doc; the show moment is S4E5: the scowl, then the bristles on fire). The owner, 2026-11-02 ("1, but partial
+// redesign"; the lead's reading, to be confirmed with the owner): they climb through their three angry faces, leap and dive bristles-first into the floor, and TWO waves go along the floor both ways, a smaller BLUE one that slows
+// (the first slam) and TODAY'S red burning wave (the second slam: 12%, burning, the old blast to the number). The row's frames t (the intro and the catch come before them, as for every row; no letter is drawn anywhere in it):
+//    0-26   THE FACES: rage-1 (the scowl) 0-8, rage-2 9-17, rage-3 (the bristles on fire) 18-26, each shaking harder (0.8, 1.6, 2.6 px), a small pop at each change, yellow paint drops flicked off the bristles (2, 3, then 4 a face);
+//           drawn flame tongues grow up off the bristle tips over 12 frames (14-25) as the last face comes
+//    27-31  they crouch and lean back;   32-40  they LEAP (52 px up) and turn over in the air, bristles-first: a half turn, faster and faster
+//    41     THE FIRST SLAM: the bristles hit the floor under them (a squash, a blue splat);  THE CATCH lands (FS_WIND frames before the red wave, as the old row's catch landed before its blast: nobody is held through the whole
+//           entrance, and a foe is held no longer before the red wave than before the old blast);  THE BLUE WAVE leaves along the floor both ways: 420 px at 14 a frame, 50 tall (4%, slows them for 2 s, a small push)
+//    42-46  planted, shaking;   47-52 the brush heaves up 16 px;   53-55 and slams down again
+//    55     THE SECOND SLAM: the red wave leaves along the floor both ways -- the old Heat Waves, to the number and the frame (the old row's frame 14, 41 frames later): 600 px at 20 a frame, 70 tall, 12%, thrown 18 and 12 up,
+//           sets them burning for 160 frames. (A foe the catch holds takes the blue wave's 4% on the way, is held through the red, and is let go a beat after it: the old row's own let-go.)
+//    56-62  planted;   63-74 they flip back up (30 px high) and land on their feet;   75+ they stand, the waves run out (to frame 84), and the row ends at frame 125 (the old row's 84 + 41)
+// THE BLUE WAVE: its own hit set (a foe the blue wave has hit is still hit by the red one); a foe it hits while the catch holds them keeps its hit as damage and the slow, and has no stun left when the red wave lands (a held foe's
+// stun runs down and is cleared at once), so the red hit is not a link of a chain, as on the old row: the let-go is the old one. The red wave is the old row's own tick (FSAR_PB_LANE.tick, called 41 frames later), so
+// its hit set, damage, launch, stun and burn are the old blast's; its launch is worked out from the foe's % as it stands then (the blue wave's 4% in), as any later hit in a match is.
+// All of it a function of what a guest has (fsT, fsWind, fsAx/fsAy where they stood, their facing and place; a held foe's wire flag fsLk): the pose, the drops, the flames and both waves are drawn from those. No knock-back (the waves
+// leave from their feet).
+const FSAR_PB = {
+  faces:[0, 9, 18], A:[0.8, 1.6, 2.6],           // the three faces (rage-1, rage-2, rage-3): the frame each begins, and how hard each shakes (px)
+  flame:14, crouch:27, leap:32, blue:41,         // the flames begin to grow, the crouch, the leap, the first slam (the blue wave, the catch)
+  heave:47, red:55,                              // the brush heaves up, the second slam (the red wave: the old blast)
+  flip:63, land:75,                              // the flip back up, the landing
+  hop:[52, 16, 30],                              // how high the leap, the heave and the flip-up go (px)
+  dh:2.9,                                        // the height of the rage-3 picture, in body radii (POSE_SETS.Paintbrush: its render fits 2.8 x 2.3, this picture 1/0.9615 larger)
+  B:{ L:420, spd:14, H:50, hw:28, dmg:4, kb:4, ky:-3, slow:120 },   // the blue wave (the old lane's keys: reach, speed a frame, height, half width; the hit and the slow)
+  drops:[2, 6, 10, 12, 15, 19, 21, 23, 25, 28, 30, 33, 35],         // the frames a yellow drop is flicked off the bristles
+};
+const FSAR_PB_LANE = fsLane({ id:'heatwaves', c1:'#e8452c', both:true, L:600, spd:20, H:70, hw:36, dmg:12, kb:18, ky:-12, S:{ burn:160 }, art:FS_GLYPH.flame });   // TODAY'S blast, as it was: the red wave is this row's tick
+FSAR_PB.shift = FSAR_PB.red - FS_WIND;                          // 41: how much later than the old row the red wave goes
+FSAR_PB.runB = Math.ceil(FSAR_PB.B.L/FSAR_PB.B.spd);            // 30 frames of the blue wave
+FSAR_PB.runR = Math.ceil(600/20);                               // 30 frames of the red one
+FSAR_PB.dur = FSAR_PB_LANE.dur + FSAR_PB.shift;                 // 125
+function fsaR_pbEase(u){ u = u < 0 ? 0 : (u > 1 ? 1 : u); return u*u*(3 - 2*u); }
+// Their pose on entrance frame t: the shake (px, sideways), the height (px up), the turn (rad, forward), the squash about the feet (top: 0) or the bristle end (top: 1, planted).
+function fsaR_pbPose(t){
+  const B = FSAR_PB, P = { sh:0, hop:0, rot:0, sx:1, sy:1, top:0 }, shk = (a)=> Math.sin(t*2.9)*a;
+  if(t < B.crouch){
+    const k = t < B.faces[1] ? 0 : (t < B.faces[2] ? 1 : 2), a = t - B.faces[k];
+    P.sh = shk(B.A[k]); if(k && a < 3){ P.sy = 1.05 - 0.015*a; P.sx = 0.97 + 0.01*a; }   // (a pop at each new face)
+    return P;
+  }
+  if(t < B.leap){ const u = (t - B.crouch + 1)/(B.leap - B.crouch); P.sh = shk(3.2); P.sy = 1 - 0.10*u; P.sx = 1 + 0.07*u; P.rot = -0.10*u; return P; }
+  if(t < B.blue){ const u = (t - B.leap + 1)/(B.blue - B.leap + 1); P.hop = B.hop[0]*4*u*(1 - u); P.rot = -0.10*(1 - u) + Math.PI*Math.pow(u, 1.7); return P; }
+  P.top = 1; P.rot = Math.PI;
+  if(t < B.heave){ const k = t - B.blue, f = Math.max(0, 1 - k/4); P.sh = shk(2.8); P.sy = 0.90 - 0.12*f; P.sx = 1.04 + 0.10*f; return P; }
+  if(t < B.red - 2){ const u = (t - B.heave + 1)/(B.red - 2 - B.heave); P.sh = shk(3.4); P.hop = B.hop[1]*fsaR_pbEase(u); P.sy = 0.90 + 0.10*u; return P; }
+  if(t < B.red){ const u = (t - (B.red - 3))/3; P.sh = shk(3.4); P.hop = B.hop[1]*(1 - u*u); P.sy = 1 - 0.05*u; return P; }
+  if(t < B.flip){ const k = t - B.red, f = Math.max(0, 1 - k/5); P.sh = shk(3.4*(1 - k/9)); P.sy = 0.90 - 0.16*f; P.sx = 1.04 + 0.14*f; return P; }
+  if(t < B.land){ const u = (t - B.flip + 1)/(B.land - B.flip + 1); P.top = 0; P.hop = B.hop[2]*4*u*(1 - u); P.rot = Math.PI + Math.PI*fsaR_pbEase(u); return P; }
+  P.rot = 0; const k = t - B.land, f = Math.max(0, 1 - k/6); P.sh = shk(1.2*f); P.sy = 1 - 0.12*f; P.sx = 1 + 0.08*f;
+  return P;
+}
+// Their body (FIGHTER_ANIM.Paintbrush.deform): true when Heat Waves shapes it this frame (through the catch they stand as they are, scowling).
+function fsaR_pbDeform(f, ctx, R){
+  if(f.fsId !== 'heatwaves' || f.dead) return false;
+  const B = FSAR_PB, P = fsaR_pbPose(f.fsC > 0 ? 0 : (f.fsT || 0)), dir = f.face < 0 ? -1 : 1, cy0 = R + 12 - B.dh*R/2;   // cy0: the middle of the picture (it is turned about that)
+  ctx.translate(P.sh, -P.hop);
+  if(P.rot){ ctx.translate(0, cy0); ctx.rotate(dir*P.rot); ctx.translate(0, -cy0); }
+  if(P.sx !== 1 || P.sy !== 1){ const yp = P.top ? cy0 - B.dh*R/2 : R + 12; ctx.translate(0, yp); ctx.scale(P.sx, P.sy); ctx.translate(0, -yp); }
+  return true;
+}
+// Their picture (FIGHTER_ANIM.Paintbrush.body): undefined when the Final Smash does not choose it; else the key of the picture of them this frame wears.
+function fsaR_pbKey(f){
+  if(f.fsId !== 'heatwaves' || f.dead) return undefined;
+  const B = FSAR_PB, t = f.fsC > 0 ? 0 : (f.fsT || 0);
+  return t < B.faces[1] ? 'rage-1' : (t < B.faces[2] ? 'rage-2' : 'rage-3');
+}
+// A point of them (lx, ly from their middle, on their own axis) where their body's deform has put it, in the world.
+function fsaR_pbPt(f, P, lx, ly){
+  const B = FSAR_PB, R = f.r, dir = f.face < 0 ? -1 : 1, cy0 = R + 12 - B.dh*R/2, yp = P.top ? cy0 - B.dh*R/2 : R + 12;
+  let x = lx*P.sx, y = yp + (ly - yp)*P.sy;
+  if(P.rot){ const a = dir*P.rot, c = Math.cos(a), s = Math.sin(a), dx = x, dy = y - cy0; x = dx*c - dy*s; y = cy0 + dx*s + dy*c; }
+  return [f.x + P.sh + x, f.y - P.hop + y];
+}
+// Where the bristles are (the middle of the head), on entrance frame t.
+function fsaR_pbBristles(f, t){
+  const B = FSAR_PB, R = f.r, P = fsaR_pbPose(t), cy0 = R + 12 - B.dh*R/2, top = cy0 - B.dh*R/2;
+  return fsaR_pbPt(f, P, 0, top + 0.15*B.dh*R);
+}
+// One flame tongue: its base at (x, y), its tip h above, swaying; outlined, orange with a yellow core.
+function fsaR_pbFlame(c, x, y, h, w, ph){
+  const sw = Math.sin(ph)*w*0.45;
+  c.beginPath(); c.moveTo(x - w, y); c.quadraticCurveTo(x - w*0.9, y - h*0.55, x + sw, y - h); c.quadraticCurveTo(x + w*0.9, y - h*0.5, x + w, y); c.closePath();
+  c.fillStyle = '#ff7a1c'; c.fill(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.stroke();
+  c.beginPath(); c.moveTo(x - w*0.5, y); c.quadraticCurveTo(x - w*0.45, y - h*0.35, x + sw*0.6, y - h*0.62); c.quadraticCurveTo(x + w*0.45, y - h*0.3, x + w*0.5, y); c.closePath();
+  c.fillStyle = '#ffd84a'; c.fill();
+}
+// The yellow paint drops flicked off the bristles: each leaves on its frame (FSAR_PB.drops), thrown out to one side and up, falling (16 frames).
+function fsaR_pbDrops(f, c, t){
+  const D = FSAR_PB.drops;
+  for(let i = 0; i < D.length; i++){
+    const a = t - D[i]; if(a < 0 || a >= 16) continue;
+    const o = fsaR_pbBristles(f, D[i]), s = i % 2 ? 1 : -1, sp = 3.1 + (i % 3)*0.8, th = 0.45 + 0.22*(i % 4);
+    const x = o[0] + s*sp*Math.cos(th)*a, y = o[1] - sp*Math.sin(th)*a*1.15 + 0.2*a*a, r = (3.4 - 0.08*a)*Math.min(1, (a + 1)/4);
+    c.globalAlpha = 1 - 0.45*a/16; c.beginPath(); c.arc(x, y, Math.max(0.5, r), 0, 7); c.fillStyle = '#ffe45c'; c.fill(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.6; c.stroke();
+  }
+  c.globalAlpha = 1;
+}
+// The flame tongues on the bristles: grown in over 12 frames from FSAR_PB.flame, and put out as they flip back up (63-74); always upward, from the bristles wherever they are.
+function fsaR_pbFlames(f, c, t){
+  const B = FSAR_PB; let u = Math.min(1, (t - B.flame + 1)/12);
+  if(t >= B.flip) u = Math.min(u, 1 - (t - B.flip + 1)/12);
+  if(u < 0.3) return;   // (a tongue only a few px tall is all outline)
+  const o = fsaR_pbBristles(f, t), R = f.r, big = 1 + 0.15*(t >= B.blue && t < B.flip ? 1 : 0);
+  c.save(); c.globalAlpha = Math.min(1, u*1.4);
+  for(let i = -2; i <= 2; i++){
+    const h = (13 + 11*(1 - Math.abs(i)/3))*u*big*(1 + 0.18*Math.sin(t*0.9 + i*1.7));
+    fsaR_pbFlame(c, o[0] + i*R*0.30, o[1] - 5 + Math.abs(i)*1.5, h, 4.2 + 2*u, t*0.5 + i*1.3);
+  }
+  c.restore();
+}
+// The blue splat where the first slam lands (spreads over 8 frames along the floor, flicks droplets, fades by 22), and the burst of the second (8 frames).
+function fsaR_pbSplat(c, x, fy, a){
+  if(a < 0 || a >= 22) return;
+  const u = Math.min(1, (a + 1)/8), fade = a > 14 ? 1 - (a - 14)/8 : 1, wd = 16 + 64*fsaR_pbEase(u);
+  c.save(); c.globalAlpha = fade; c.beginPath(); c.moveTo(x - wd, fy + 1);
+  for(let i = 0; i <= 8; i++){ const th = Math.PI + i*Math.PI/8, rr = wd*(1 + 0.10*Math.sin(i*2.3)); c.lineTo(x + Math.cos(th)*rr, fy + 1 + Math.sin(th)*(4 + 5*u)*(1 + 0.2*Math.sin(i*1.7))); }
+  c.closePath(); c.fillStyle = '#3f8cff'; c.fill(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.4; c.stroke();
+  for(let k = 0; k < 7; k++){
+    const s = k % 2 ? 1 : -1, sp = 2.4 + (k % 3)*0.9, th = 0.7 + 0.18*(k % 4), x2 = x + s*sp*Math.cos(th)*a*1.6, y2 = fy - sp*Math.sin(th)*a*1.5 + 0.22*a*a;
+    c.beginPath(); c.arc(x2, y2, Math.max(0.5, 3.6 - 0.12*a), 0, 7); c.fillStyle = '#3f8cff'; c.fill(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.6; c.stroke();
+  }
+  c.restore();
+}
+function fsaR_pbBurst(c, x, fy, a){
+  if(a < 0 || a >= 8) return;
+  const u = (a + 1)/8;
+  c.save(); c.globalAlpha = 1 - 0.85*u; FS_GLYPH.burst(c, x, fy - 12, 38*(0.45 + 0.55*Math.sqrt(u)), u, null);
+  for(let i = -2; i <= 2; i++) fsaR_pbFlame(c, x + i*20, fy + 2, (26 - Math.abs(i)*5)*(0.6 + 0.4*u), 6, a*0.7 + i);
+  c.restore();
+}
+// One wave's front at (x, fy) going the way d (+1 right, -1 left), `a` frames after it left: a rolling crest with a curling lip and a lighter swell under it, the body falling away behind to the floor (as far behind as the wave
+// has run less 22 px, so it grows out from under them, to 110), foam thrown off the front; the red one has flame tongues along the crest. K: { H, hw, fill, hi, flames }; fade: 1, less over the last frames. The hit area is as tall as H and hw either side of the front.
+function fsaR_pbWave(c, x, fy, d, a, K, trav, fade){
+  const T = Math.max(12, Math.min(110, trav - 22)), H = K.H*(0.6 + 0.4*Math.min(1, (a + 1)/12)), hw = K.hw, n = 9, hs = [];
+  c.save(); c.translate(x, fy); c.scale(d, 1); c.globalAlpha = fade;
+  c.beginPath(); c.moveTo(-T, 0);
+  for(let i = 0; i <= n; i++){ const s = i/n, px = -T + T*s, h = H*(0.16 + 0.84*Math.pow(s, 1.6))*(1 + 0.06*Math.sin(i*1.9 + a*0.8)); hs.push([px, h]); c.lineTo(px, -h); }
+  c.lineTo(hw*0.30, -H*1.04); c.lineTo(hw*0.68, -H*0.90); c.lineTo(hw*0.82, -H*0.64); c.lineTo(hw*0.62, -H*0.52); c.lineTo(hw*0.80, -H*0.30); c.lineTo(hw*0.90, 0); c.closePath();
+  c.fillStyle = K.fill; c.fill(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 3.2; c.stroke();
+  c.beginPath(); for(let i = 2; i <= n; i++){ const p = hs[i]; if(i === 2) c.moveTo(p[0], -p[1]*0.62); else c.lineTo(p[0], -p[1]*0.62); } c.lineTo(hw*0.45, -H*0.55);
+  c.strokeStyle = K.hi; c.lineWidth = 3.4; c.stroke();
+  if(K.flames) for(let i = 0; i < 5; i++){ const p = hs[n - i*2 > 1 ? n - i*2 : 1]; fsaR_pbFlame(c, p[0], -p[1] + 3, (14 + 10*p[1]/H)*(1 + 0.2*Math.sin(a*0.8 + i*1.9)), 5.5, a*0.6 + i*1.1); }
+  for(let k = 0; k < 4; k++){ const ph = a*0.5 + k*1.6; c.beginPath(); c.arc(hw*0.7 + 6 + 5*Math.sin(ph), -H*(0.55 + 0.17*k) - 3*Math.cos(ph), 2.6 - 0.3*k, 0, 7); c.fillStyle = K.hi; c.fill(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.4; c.stroke(); }
+  c.globalAlpha = 0.45*fade; c.strokeStyle = K.fill; c.lineWidth = 4;
+  for(let i = 1; i < 4; i++){ c.beginPath(); c.moveTo(-T - 10 - i*6, -H*0.2*i); c.lineTo(-T - 46 - i*6, -H*0.2*i); c.stroke(); }
+  c.restore();
+}
+const FSAR_PB_BLUE = { H:50, hw:28, fill:'#3f8cff', hi:'#a8d2ff', flames:false }, FSAR_PB_RED = { H:70, hw:36, fill:'#e8452c', hi:'#ffb347', flames:true };
+// The row's whole drawing, over the fighters: the drops, the flames, the splat and the burst, both waves, the paint on a held foe.
+function fsaR_pbDraw(f, c){
+  const B = FSAR_PB, t = f.fsT || 0, ax = f.fsAx != null ? f.fsAx : f.x, fy = fsFeetY(f);
+  const waves = [[B.blue, FSAR_PB_BLUE, B.B.spd, B.runB], [B.red, FSAR_PB_RED, 20, B.runR]];
+  for(const w of waves){
+    const a = t - w[0], run = w[3]; if(a < 0 || a >= run + 6) continue;
+    const fade = a < run ? 1 : 1 - (a - run + 1)/6, trav = w[2]*Math.min(a, run - 1);
+    for(const d of [1, -1]) fsaR_pbWave(c, ax + d*trav, fy, d, a, w[1], trav, fade);
+  }
+  fsaR_pbSplat(c, ax, fy, t - B.blue);
+  fsaR_pbBurst(c, ax, fy, t - B.red);
+  fsaR_pbFlames(f, c, t);
+  if(t < B.land) fsaR_pbDrops(f, c, t);
+  // the blue wave's paint on a foe it has passed while it holds them (16 frames), the red wave's flames on one the red has
+  for(const q of fighters){
+    if(q.dead || q.fsLk !== f.idx + 1) continue;
+    const dx = Math.abs(q.x - ax);
+    const ab = t - (B.blue + Math.max(0, dx - (B.B.hw + q.r))/B.B.spd);
+    if(ab >= 0 && ab < 16){ c.save(); c.globalAlpha = ab > 10 ? 1 - (ab - 10)/6 : 1; for(let k = 0; k < 4; k++){ const th = k*1.7 + 0.5; c.beginPath(); c.arc(q.x + Math.cos(th)*q.r*0.5, q.y - q.r*0.15 + Math.sin(th)*q.r*0.55 + ab*0.3, 4.4 - k*0.5, 0, 7); c.fillStyle = '#3f8cff'; c.fill(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.6; c.stroke(); } c.restore(); }
+    const ar = t - (B.red + Math.max(0, dx - (36 + q.r))/20);
+    if(ar >= 0 && ar < 10){ c.save(); c.globalAlpha = 1 - ar/12; for(let i = -1; i <= 1; i++) fsaR_pbFlame(c, q.x + i*q.r*0.5, q.y + q.r*0.8, (q.r*(1.1 - Math.abs(i)*0.25))*(0.7 + 0.3*Math.min(1, (ar + 1)/6)), 6, t*0.6 + i*1.2); c.restore(); }
+  }
+  c.globalAlpha = 1;
+}
+// The blue wave's sweep along the floor both ways (its own hit set, st.hitB): every foe in its band takes 4% and the slow; a foe the catch holds keeps the damage and the slow and has no stun left (see the notes above).
+function fsaR_pbBlue(f, st, a){
+  const K = FSAR_PB.B;
+  for(const dir of [1, -1]){
+    const fx = f.fsAx + dir*K.spd*a;
+    for(const x of fighters){
+      if(fsHurtMark(f, x) || st.hitB.has(x.idx)) continue;
+      if(Math.abs(x.x - fx) < K.hw + x.r && x.y > st.fy - K.H - x.r && x.y < st.fy + 30){
+        st.hitB.add(x.idx); x.countering = 0;
+        applyHit(x, K.dmg, (Math.sign(x.x - f.fsAx) || dir)*K.kb, K.ky, f); fsStatus(x, f, { slow:K.slow });
+        if(x._fsLock) x.hitstun = 0;   // (held: the stun the hit gave runs out in the hold, so the red hit is not a link of a chain, as on the old row)
+        shake(4);
+      }
+    }
+    if(a % 2 === 0) puff(fx - dir*K.hw, st.fy - 8, '#3f8cff', 4);
+  }
+}
+// PAINTBRUSH -- HEAT WAVES, the Final Smash (the frames and every piece are in the helpers above, fsaR_pb*). "prone to angry outbursts"; "bristles react to their emotions and can glow with heat" (the design doc). Three angry faces, a
+// leap and a dive bristles-first into the floor: a smaller blue wave that slows (4%), then today's red burning wave along the floor both ways (600 px at 20 a frame, 70 tall, 12%, thrown 18 and 12 up, sets them burning for 160 frames),
+// which is the old row's own tick 41 frames later. The catch lands as the blue wave leaves, 14 frames before the red one, as the old catch landed 14 frames before the old blast.
+FINAL_SMASHES['Paintbrush'] = {
+  id:'heatwaves', wind:FSAR_PB.blue, dur:FSAR_PB.dur, reach:FSAR_PB_LANE.reach,
+  catch(f){ return f._fs ? FSAR_NONE : FSAR_PB_LANE.catch(f); },   // CATCH: nobody when it is fired (the framework's catch finds no one: nobody is held through the entrance); the old lane's own box, laid at row frame `blue`. The CPU asks with no Final Smash running: the real box
+  lockEnd:FSAR_PB.red + FSAR_PB.runR,   // a foe the red wave never touches is let go when it is done; one it touches is let go a beat after, by the row (tick below: the old lockEnd 'one')
+  start(f, st){ FSAR_PB_LANE.start(f, st); st.hitB = new Set(); st.y0 = f.y; f.vx = 0; armAtk(f, this.wind, 'fsgather'); },   // (the lane's own start: where they stand, the floor; then the wind-up lasts the entrance)
+  tick(f, st, t){
+    const B = FSAR_PB;
+    if(t < B.red){ f.vx = 0; if(!f.onground){ f.vy = 0; f.y = st.y0; } }   // they stay where they stood, in the air too (hung at that height: the step's gravity would sink them), until the red slam (the framework holds them for the wind: this holds the rest)
+    if(t === B.blue){   // THE FIRST SLAM and THE CATCH: the old lane's box, from where they stand
+      st.cs = FSAR_PB_LANE.catch(f); hitArt(f, 'fscatch', st.cs, { color:f.color, world:true, fade:10 }); fsCatch(f, st);
+      shake(5); for(let i = 0; i < 10; i++) puff(f.fsAx + (i - 4.5)*10, st.fy - 4, i % 2 ? '#3f8cff' : '#ffffff', 5);
+    }
+    if(t >= B.blue && t < B.blue + B.runB) fsaR_pbBlue(f, st, t - B.blue);
+    if(t >= B.red){ FSAR_PB_LANE.tick(f, st, t - B.shift); if(t === B.red) f._atkAnim = 0; }   // THE RED WAVE: the old blast, to the frame (its swing timeline is not wanted: their body is the row's own)
+    for(const i of st.held){   // the old row's `lockEnd:'one'`: a held foe the red wave hit is let go a beat after that hit, with its launch
+      const q = fighters[i], L = q && q._fsLock;
+      if(L && L.st === st && L.hit && st.hit.has(q.idx) && hazardT - L.last >= FS_LOCK_BEAT) fsLockOff(q);
+    }
+  },
+  ai: FSAR_PB_LANE.ai,   // (the CPU's cue is the old row's)
+  draw(f, c){ fsaR_pbDraw(f, c); },
+};
 // ---- FSA lane r: end ------------------------------------------------------------------------------------------------------------------
 
 // BALLOONY -- AIR LEAK, the Final Smash (see the lane r block above for the frames and the zig-zag). "Air Leak: jets of released air zip Balloony around." (quoted at his special);
@@ -27235,8 +27451,9 @@ FINAL_SMASHES['Knife'] = fsHose({ id:'bagoftricks', lockGrace:5, c1:'#dfe6ee', n
 FINAL_SMASHES['Lightbulb'] = fsCircle({ id:'brightflash', c1:'#fff27a', c2:'#ffffff', R:270, dmg:14, kb:17, S:{ rev:50 }, art:FS_GLYPH.spark });
 
 // PAINTBRUSH -- HEAT WAVES. "prone to angry outbursts"; "bristles react to their emotions and can glow with heat" (the design doc; her own cards are the Heat Explosion and the Heat Waves). A wave of heat
-// goes out along the floor both ways, 600 px at 20 a frame, 70 tall (12%, and it sets them burning).
-FINAL_SMASHES['Paintbrush'] = fsLane({ id:'heatwaves', c1:'#f0803a', both:true, L:600, spd:20, H:70, hw:36, dmg:12, kb:18, ky:-12, S:{ burn:160 }, art:FS_GLYPH.flame });
+// goes out along the floor both ways, 600 px at 20 a frame, 70 tall (12%, and it sets them burning). The row was that one lane; the owner, 2026-11-02 ("1, but partial redesign"), gave it an entrance (three angry
+// faces, a leap and a dive into the floor) and a smaller blue wave that slows before it, with the red wave as it was. Its row is FINAL_SMASHES['Paintbrush'] at the end of the `FSA lane r` block above: it runs
+// this lane (FSAR_PB_LANE, with the same numbers) 41 frames later.
 
 // TACO (II) -- LEMON SPIT. "completely oblivious ... motionless with a sideways smile", and under it a plan (the design doc); her own card is the Lemon Spit. Five lemons in a fan, three volleys eight
 // frames apart (6%, and they slow whoever they hit).
@@ -74233,8 +74450,9 @@ const FIGHTER_ANIM = {
   Paintbrush: {
     idle: 0.85, squash: 0.7,
     poses: poseSpritesOf("Paintbrush"),   // POSE_SETS.Paintbrush: assets/sprites/paintbrush-*.png
-    body(f){ return poseBody(this, f); },   // POSE SETS: the picture poseKey names, else the render
+    body(f){ const k = fsaR_pbKey(f); return k === undefined ? poseBody(this, f) : poseBody(this, f, k); },   // POSE SETS: the picture poseKey names, else the render (Heat Waves, the Final Smash, picks its own faces: FSA lane r)
     deform(f, ctx, R){
+      if(fsaR_pbDeform(f, ctx, R)) return;   // (Heat Waves, the Final Smash: the shaking faces, the leap and the dive bristles-first, the flip back up: FSA lane r)
       const fury = Math.min(1, (f._fury||0)/100), big = 1 + 0.6*fury, sh = Math.sin(hazardT*2.1 + f.idx*2.9)*0.03*fury, u = atkU(f);
       if(u < 0){ if(sh) deformAboutFeet(ctx, R, sh, 1, 1); return; }
       const rear = animBump(u, 0, 0.3), down = animBump(u, 0.25, 0.75);
