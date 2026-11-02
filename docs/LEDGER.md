@@ -1291,6 +1291,61 @@ Open: the owner tries Firey, Bomby and a few buffed fighters by hand.
 - **2026-11-01, event kit 3, 8-Ball (build step 11 of `smash-bal/reports/event-fighters-phase1.md`, section 3.3; branch `g-ev-8ball`; the kit job was stopped on 2026-10-30 and finished after the owner's "resume all work save for moon caves"):** 8-Ball (he/him) is the second event row in ROSTER (`event:true`, kit `stopshot`, weight 110, archetype Momentum heavy), built from the design and the owner's yes to every recommended answer (questions 36-42). His code is the section EVENT FIGHTERS: 8-BALL: STOP SHOT (`eightStopShot`, `eightRollStart`, `eightStep`: hold C to spin up 10-40 frames, roll 130-340 px, the first foe takes 6-12% low and flat while he stops dead; the Draw; stops at ledges and walls; a 100 px air roll once per airtime; jump-cancel from 10 frames of rolling; a whiff leaves him open 16 frames; cooldown 55), CUSHION BOUNCE (`UPSPECIALS.stopshot`: a 5-frame squash, then a spring, 7% / 5% at his feet, no wall rebound), JAWBREAKER BITE (`DOWNSPECIALS.stopshot`: bites through armour, a brace, ice, a freeze or a root -- Taco's jawbreaker is a root -- for 14% instead of 9%, frees a stuck teammate unharmed), BREAK SHOT (SMASH_SPEC burst, 21%, knocks down), TREBUCHET BASKET (FINX `treb`: Tennis Ball's plain wooden trebuchet grows in behind him, he hops on its counterweight, the basket lobs at the nearest foe ahead within 420 px or 300 px straight on and hurts only coming down, from frame 40: 12%, knocks down; a hit on him before the throw tips it over), THE BREAK (`FINAL_SMASHES['8-Ball']`: a 220 px burst three times, 3/3/14 (6/6/28), then seven coloured balls, each harmless for 12 frames, bouncing twice for 3 (6)), his moveset (`MOVESETS.stopshot`, the side tilt and side special kept as data rows) and his CPU (`aiEightOut`, `finEventWant`, on `FINX_AI_KITS`). Art BFB+TPOT only: his TPOT render turns as he rolls (`eightRollAngle`, render-only); POSE_SETS from the owner-approved downloads 06-16 (the eight BFB spin frames, mad, scared, flat) and the bite cut from his render, made by `scripts/make-event-8ball-art.py`, credited in the sprites' CREDITS.md and `scripts/sprite-manifest.json` (`8-Ball (<pose>)`). Event data: `EVENT_INFO['8-Ball']`, `EVENT_MATCHES['8-Ball']` -- Basket Into X (Goiky Field, throwables only), A Better Name Than That (the 3 vs 1, O29: you vs 8-Ball, Golf Ball and Tennis Ball; the design names no stage: the Teams arena in Grand Plains' sky, items on, no Smash Balls) and Lick Your Way to Freedom (Stone Pillars, food only; you vs 8-Ball, Golf Ball and Lollipop) -- the throwables-only items rule (`EVENT_THROW_POOL`, its words; it changes nobody's speed, so the guest's prediction has nothing to add), `ASSIST_LEAVES_AT_LAUNCH` gains him. Online: nothing new rides the relay -- the wind-ups, the swing, his place and speed, the FINX row (`tx`, `ty`, `gy`, `lt` added to FINX_NET) and the fs* fields; the host marks the roll as busy for the guest's prediction (`netPredOut`). BALANCE (`FIGHTER_STATS`): REC measured off a stage's edge, where rec counts (every fighter: an air jump and the up special from a standstill): 271 px at 1.15 against the roster's median 270, so 1.15 stays. Against the 15 mid-pack Hard CPUs (winrates.mjs, two seed sets) the design's numbers went 5 + 3 of 30; the design's knobs first, rec 1.25: 4 of 15, air 1.0: 3; then his damage: dmg 1.15 5 + 5, DMG 1.3 7 + 6 (43%; the roster's median is 40%), kept (his ROSTER line says 7.8% / 15.6%; MOVE_TEXT follows by itself). AIR-HIT JUMP BACK: no loop at HIT_JUMP_K 1, 0.7 or 0.5 (still Pen, Tree, Puffball and a CPU Pen; 0% and 50%; every aerial and his three specials), so he has no row. Also fixed: the event strip said "throwables only" twice. Checks (jsdom and the in-process pair only, relay.invalid; no browser): syntax, boot (FFA and Teams clean); every move fires and lands as its card times 1.3 (jab 9.1, tilts 7.8 / 6.5, aerials 9.1 (5.2 late) / 11.7 / 13.7 / 7.8 / 11.7 spike (6.5), grab and throws 2.3 / 10.4 / 11.2 / 7.2 / 7.8, Stop Shot 7.8-15.6, bounce 9.1 / 6.5, Bite 11.7 or 18.2, Break Shot 27.3, basket 15.6, The Break 52); his CPU at Hard bites a frozen, braced or rooted foe and frees a rooted teammate (10-12 of 12 seeds each), Break Shots two foes within 110 px (12 of 12), taps Stop Shot at 100 px (10 of 12) and spins it full at 260 px (6 of 12), and over 6 Hard 1v1s, 2 glowing runs and a 4-way: jab 148, Stop Shot 39 pressed / 21 rolled / 12 hit, Cushion Bounce 57, Break Shot 15, The Break 3, every tilt, aerial and throw; the three event matches ran CPU against CPU to the end (68 s, 253 s, 69 s), paid through `eventPay`, every setting handed back; the pair (the guest plays 8-Ball, the host has not unlocked him) shows the same wind-ups, swings, basket path and Final Smash phases and the same % on both screens, the guest's own fighter 0 px apart after each move. LEFT FOR THE OWNER: (1) the lap (O28's open question): his row joins `eventLapOrder` the moment this build goes live, so with Eraser and 8-Ball built the week of 2026-11-02 becomes 8-Ball's and the weeks alternate (Spongy, once built, goes between them) -- the rule for how a kit joins is still yours; (2) the assist bag: batch A1 is not built, so with Eraser and 8-Ball gone it holds 15 of its 17 (the design's floor is 17); (3) his CPU's basket is a slow lob at a foe 180-420 px ahead and rarely lands (thrown 4 times in the first CPU run, none landed); (4) on the big Teams arena his CPU climbs with Cushion Bounce often (about one every 4 s).
 
 - **2026-11-01, Moon Caves v3: more layers, a kind for each, new things to play on, CPUs that find people (the owner: "it does not feel like there are enough layers. if the cpus cant find ppl, teach them to use the minimap. and also,VARY THE PLAFORMING MORE!!!!"; asked, they chose thinner layers deeper and a bigger moon, new mechanics, mixed layouts and a kind per layer, the nearest foe by the way there, and the speed kept; then "push. I saidddddd NO MORE TESTS!!"):** LAYERS: each kind has its own height (`MC_GEN.head`: ice and mines 260 px, flooded 280, columns 340, furnace 360, galleries 380, springs 400, updrafts and tunnels 420), floors thinner deeper (140, 120, then 100), and as many kinds come in as the disc's depth holds (`caveRank`), each in its place from the top (`caveOrder`); the moon is about 30% wider (800 px per root of the fighters, 2550 to 4500): 5 layers at 2-6 a side, 6 at 7-8, 7 at 10, 8 at 12, 9 at 15. The steps under a hole are made for each climb and each cave's gravity. NEW KINDS through the game's own effect zones, charted into each frame as the pieces are (`mcZoneWindow`, worldZones swapped in `mcEnter`/`mcExit`) and drawn on the disc (`mcDrawZones`): SPRINGS (bounce pads to high ledges), ICE (slick floors, icicles, ice shelves, an ice hill), UPDRAFTS (columns of rising air to ledges and islands), MINES (conveyor belts, scaffolds, rocks), FLOODED (water that drags at you, rafts). MIXED LAYOUTS: every kind lays each run out one of 2-4 ways (by its distance from 12 o'clock, so a run and its mirror image alike). CPUs: the foe they go for is the nearest by the way there (`mcPathCost`), and when the way to one goes nowhere, the biggest fight (`mcCrowd`); a CPU over a hole uses its other jump when there is no floor near its own level (`mcFloorNear`: the hole's steps far under it were 'something', and climbing out it fell back down, again and again). Online the guest predicts the zones. Checked before the owner's stop: no errors at 2, 5, 10 and 15 a side; every climb from the furnace to the surface gets out (5 a side 16-25 s, 10 a side 22-38 s, 15 a side 22-39 s). NOT checked (the owner's call): the CPU probe, online, the replay of the other maps and the speed -- the pieces at 15 a side are 570 against 296, so a step there is likely slower than before.
+
+### O31 · Event fighters: kit 4 (Black Hole) -- what it left  [BUILT on `g-ev-blackhole`, NOT PUSHED: two decisions for you first]
+
+Kit 4 (branch `g-ev-blackhole`, build step 11 of event-fighters-phase1.md) is Black Hole (he/him), from section 3.4 and the approved
+questions 43 to 49. He is the fourth event row in ROSTER (`event:true`, kit `accrete`). His code is the section EVENT FIGHTERS: BLACK HOLE
+(`BLACK_HOLE`, the `bh*` functions): Tug (jab), the tilts, the five aerials, the grab and four throws, Accretion / Slingshot, Wormhole,
+Singularity, Event Horizon (SMASH_SPEC `horizon`), Spaghettify (FINX `spag`) and Mass of Twenty Suns (`FINAL_SMASHES['Black Hole']`). The Death
+P.A.C.T. rule (`bhNoDown`): none of his hits sends a foe downward. His hurtbox is his black middle only (HURTBOX's circle, question 47).
+His side special (Gravity Slide) stays off, kept as a data row. His assist row left the bag (`ASSIST_LEAVES_AT_LAUNCH`). His three event
+matches are data (`EVENT_MATCHES['Black Hole']`), with two new twists, the pull and low gravity anywhere (`EVENT_TWISTS_BUILT`: `pull`,
+`lowgrav`). Art: no downloads; his one render (already in the game as his assist picture), scaled, spun, squashed and stretched; the clod
+and the pull streaks are drawn in code (CREDITS.md, `scripts/sprite-manifest.json`). Online: everything he draws rides the snapshot.
+Contact sheet: `smash-bal/reports/moves/event-blackhole-sheet.png`.
+
+- **Picks the design left open (the builder's own, not the owner's):**
+  - *Death P.A.C.T. Again* (the 3 vs 1): the Teams arena with Yoyle Canyon's sky, items on (his Accretion pulls in loose items), no Smash Balls.
+  - *Gravity* (the duel): Goiky Field, items off, no Smash Balls.
+  - *Back to the Top*: Sky Towers in low gravity, items on, with Smash Balls.
+- **Fixed after the check (2026-11-01):**
+  - Spaghettify on the floor: the foe slid along the floor straight through his core. Now near a floor the low half of the orbit is turned
+    over his head (`spU`), so they swing over him and back. In the air the full circle stays.
+  - Singularity also spent the shared special cooldown, so it locked his Wormhole for 51 frames. Now it has only its own cooldown (150), as
+    its comment said. The Wormhole fires the frame the Singularity ends.
+  - The pull twist: `PULL.max` 1.2 -> 1.0. The old number left out HEAVIES MOVE SLOWER. The slowest walk is Tree's, 4.85 px a frame, and a
+    quarter of it is 1.21, so 1.2 had almost no room.
+  - Event Horizon's pull 10 -> 7 (the nerf rule of 2026-10-26). The design's 220 px and 21% are unchanged. A foe running away now gets clear
+    from about 150 px; before, it was reeled in from about 180 px.
+  - `scripts/trace-hurtboxes.mjs` skips him, so a re-trace cannot replace his middle-only circle with his whole render.
+- **Balance: still well above the middle of the pack (YOUR DECISION).** The tournament: 15 1v1 matches against 15 mid-pack Hard CPUs, run
+  on three seed sets.
+  - Before the fixes: 10, 12 and 15 wins out of 15, so 37 of 45.
+  - After them: 14, 11 and 13, so 38 of 45.
+  - Event Horizon still scores the most KOs (median KO about 120%).
+  - Nerfs measured but not kept, each on two seed sets (30 matches):
+    - pull 7 with 18%: 12 wins on one set;
+    - reach 150, pull 7 and 18%: 23 of 30 (Spaghettify then took most KOs);
+    - weaker launches on Event Horizon and Spaghettify: 27 of 30;
+    - his hurtbox at the normal 24 (question 47's answer reversed, as a test only): 21 of 30.
+  - No single Event Horizon change brings him to the middle: he is strong all round. The normal-size hurtbox gave the lowest number, but
+    15 matches a set are noisy (one set went 10 -> 14 after a nerf). Choose the nerf.
+- **OWNER DECISION BEFORE THIS IS PUSHED: how a kit joins the lap (O28's open question).** `eventLapOrder` runs the lap only through the
+  kits that are built. So his row alone RE-DEALS EVERY WEEK SINCE THE LAUNCH: Eraser 10-26, Black Hole 11-02, Eraser 11-09, Black Hole 11-16,
+  and so on. Today every week is Eraser's. Next week's card would change at once, against "a new lap is announced at least two weeks ahead".
+  Spongy and 8-Ball come before him in the lap, so each of them landing would re-deal the weeks again. Two ways out:
+  - O28's rule: each kit joins on a Monday of its own, at least two weeks after its build goes live;
+  - or merge the kits strictly in lap order (Spongy, 8-Ball, Black Hole), with your OK.
+- **Before merging:** the assist bag. Live main has 16 assists (Eraser left), and his leaving makes 15. The design says never below 17. Assist
+  batch A2 (`g-ev-a2`, +7) is built but not merged. Merge it first, or together with this kit.
+- **Moon Caves:** nothing of his was changed for it, and it was not touched. A read-only check on the moon found no errors.
+
+Checks (2026-11-01, the scratchpad's `events2/blackhole-fix/`): syntax; boot (FFA and Teams clean); every move fires and lands its numbers
+on a still Pen, including the fixes above; his CPU at Hard uses every part of the kit (6 matches); his three event matches run CPU vs CPU to
+the end and pay; the in-process online pair shows the special, finisher (with the turned-over orbit) and Final Smash the same on both
+screens; the pull and low gravity predicted on the guest without snapping back.
+
 ---
 
 ## Scoreboard
@@ -1298,7 +1353,7 @@ Open: the owner tries Firey, Bomby and a few buffed fighters by hand.
 | | Count |
 |---|---|
 | Done | 161 |
-| Open | 10 (O20, O22, O23, O24, O25, O26, O27, O28, O29, O30) |
+| Open | 11 (O20, O22, O23, O24, O25, O26, O27, O28, O29, O30, O31) |
 | Superseded | 2 (O1, B12) |
 | Blocked on you | 1 (G11: the Cloudflare MCP authorization) |
 
