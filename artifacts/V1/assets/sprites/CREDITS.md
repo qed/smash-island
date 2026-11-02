@@ -658,6 +658,27 @@ Everything else of his kit is drawn in code: the floor clod Accretion tears up (
 is live), the Wormhole's tunnel, the Singularity's point, Spaghettify's stretched path and the foe drawn long and thin while they orbit, the core
 of Mass of Twenty Suns, and the two twists his event matches use (the pull's dust drifting in, low gravity's slow motes). No words are drawn.
 
+## Event fighter Cloudy: his pictures (event kit 6, 2026-10-30)
+
+Cloudy (he/him), the sixth event fighter (`smash-bal/reports/event-fighters-phase1.md`, 3.6), keeps his TPOT render (`cloudy.png`, the picture
+his assist trophy already used: see Assist trophies below) and gains a pose set (`POSE_SETS.Cloudy` in `index.html`), BFB+TPOT art only. The
+two files below were downloaded once from their BFDI wiki file pages and approved by the owner (the event art list, files 20-21); every
+picture was made from them and his render by `scripts/make-event-cloudy-art.py`: cut out along its own alpha, scaled to his render (302x200,
+drawn at imgW 3.4), at most 200 px tall, the faint resize halo erased. Each has a manifest row of its own (`scripts/sprite-manifest.json`, key
+`Cloudy (<pose>)`, `pose` set) with every source it was made from. Same provenance as the table at the top: jacknjellify's character artwork
+via the BFDI wiki, used under fan-work norms in a disclaimed, non-commercial fan game.
+
+| Picture | Shown | Made from | Source |
+|---|---|---|---|
+| `cloudy-thunder.png` (302x200) | his temper (Hey, My Window!'s 14 frames and its strike), Fell Right Through and Perfect Storm | File:CloudyTransThunder.png (the cloud; the white lightning strokes under him left out: the bolt is drawn in code in their style); cut-out (wiki pose), the lightning strokes under him taken off, sized to his render's width (the same cloud) | https://battlefordreamisland.fandom.com/wiki/File:CloudyTransThunder.png |
+| `cloudy-puffed.png` (174x200) | Spit Out the Earth's charge (he swells), and its first frames | File:Cloudy puffed up by jawbreaker.png; cut-out (wiki pose), swollen: its area 1.35x his render's, then fitted to 200 px tall | https://battlefordreamisland.fandom.com/wiki/File:Cloudy_puffed_up_by_jawbreaker.png |
+| `cloudy-rain.png` (302x200) | Rain Cloud (its wind-up, and while it rains) | `cloudy.png` (the picture itself); tinted: his own render rain-grey, his smile turned down (question 58: his moods are tints of his TPOT render; no show file) | https://static.wikia.nocookie.net/battlefordreamisland/images/1/13/Tpot_renders0024.png/revision/latest?cb=20210113223940 |
+
+Both downloads are used. His bolt, his rain, the thunderhead, the downpour and Perfect Storm's clouds are drawn in code (no picture). Spit Out
+the Earth is drawn with the game's TPOT Earth (`attacks/oneearth.png`, File:EarthTPOT4.png, credited under One (the secret boss) below),
+the picture One's OUT OF ORBIT! already kicks. `cloudy-puffed.png` has no face: the source shows none (he is swollen round with the
+jawbreakers), so its facial-ink count is low (8 px) and it was checked by eye.
+
 ## One (the secret boss)
 
 One is not a roster fighter, so her render sits outside the generated inventory above (a re-run of
