@@ -26032,9 +26032,313 @@ Object.assign(FS_GLYPH, {
   horseshoe(c, x, y, s){ c.strokeStyle = '#1c1c1c'; c.lineWidth = 9; c.lineCap = 'round'; c.beginPath(); c.arc(x, y, s*0.7, 0.6, Math.PI*2 - 0.6, true); c.stroke(); c.strokeStyle = '#d6304a'; c.lineWidth = 5; c.beginPath(); c.arc(x, y, s*0.7, 0.6, Math.PI - 0.9, false); c.stroke(); c.strokeStyle = '#dfe6ee'; c.beginPath(); c.arc(x, y, s*0.7, Math.PI + 0.9, Math.PI*2 - 0.6, false); c.stroke(); },
 });
 
-// MAGNET -- LIKE POLES REPEL. "a very magnetic presence and personality" (the design doc); her own cards are C'mon, Bestie! (pulls the nearest foe in) and Like Poles Repel (a blast that shoves everyone away hard). Both, one after the
-// other: for 36 frames everyone within 360 of her is drawn in, 3.2 px a frame (walk away faster), and then the poles flip: 200 px round her, 20%, thrown hard.
-FINAL_SMASHES['Magnet'] = fsPull({ id:'likepolesrepel', c1:'#d6304a', c2:'#dfe6ee', R:360, ahead:0, rate:3.2, pull:36, R2:200, dmg:20, kb:26, ky:-10, art:FS_GLYPH.horseshoe });
+// ---- FSB lane 1: begin -------------------------------------------------------------------------------------------------------------
+// MAGNET -- ORBIT AND SLING: the helpers (the row and its card are at her place below, in BATCH M). Row frames (after the 30-frame intro and the
+// 10-frame catch): 0-27 the entrance, 28-43 the pull-in, 44-91 the orbit and its six clacks, 92-97 the poles flip, 98 the sling, 112 the end.
+const FSB1_MAG = {
+  wind:28, pull0:28, pullN:16, orb0:44, flip:92, sling:98, tail:14,
+  catchR:310, catchMax:3,            // the old pull's own reach (fsPullCatch: 310), the three nearest foes in it
+  A:[105, 140, 175], ratio:0.4, metalK:1.3, lift:128,   // the three rings' half-widths (nearest foe first), their flattening, a metal fighter's wider ring (wider, not taller), how far over her middle the loop is held (its lowest foe clears her head)
+  w0:6.5*Math.PI/180, w2:0.099*Math.PI/180,   // the orbit's turn: 6.5 degrees a frame at first, rising by 0.198 a frame: 540 degrees (six quarter turns) in 48 frames, 640 by the sling
+  clackN:6, clackDmg:10, slingDmg:40, kb:26, metalKb:1.4, back:70, backN:9,   // %, %, the sling's launch (the old blast's), a metal fighter's x1.4, her shove back
+};
+FSB1_MAG.dur = FSB1_MAG.sling + FSB1_MAG.tail;
+function fsb1_phi(tau){ const M = FSB1_MAG; tau = tau > 0 ? tau : 0; return M.w0*tau + M.w2*tau*tau; }     // how far round the orbit has turned, tau frames in
+function fsb1_omega(tau){ const M = FSB1_MAG; return M.w0 + 2*M.w2*(tau > 0 ? tau : 0); }              // ...and how fast, a frame
+// the frames of the six clacks: each time the orbit has turned another quarter
+FSB1_MAG.clackT = (function(){ const M = FSB1_MAG, out = []; for(let t = M.orb0; t < M.flip && out.length < M.clackN; t++) if(fsb1_phi(t - M.orb0 + 1) >= (out.length + 1)*Math.PI/2 - 1e-9) out.push(t); return out; })();
+function fsb1_dir(f){ return f.face < 0 ? -1 : 1; }                       // the way the foes turn: the way she faces (mirrored with her)
+// The foes her catch holds, by fighter number (the ring each is on follows: nearest ring to the lowest number): from the wire flag fsLk, so a guest reads the same list.
+function fsb1_held(f){ const o = []; for(const t of fighters) if(!t.dead && t.fsLk === f.idx + 1) o.push(t); o.sort((a, b)=> a.idx - b.idx); return o; }
+function fsb1_ring(t, rank){ const M = FSB1_MAG, a0 = M.A[Math.min(rank, M.A.length - 1)]; return { a:a0*(METAL_FIGHTERS.has(t.name) ? M.metalK : 1), b:a0*M.ratio }; }
+function fsb1_slotAng(rank){ return Math.PI/2 + rank*Math.PI*2/3; }       // where on its ring each foe starts: the first at the bottom, the others a third round
+// The middle of the loop: over her middle, kept inside the stage and under its top (not on Moon Caves' turned discs).
+function fsb1_nuc(f){
+  const M = FSB1_MAG, ax = f.fsAx != null ? f.fsAx : f.x, ay = f.fsAy != null ? f.fsAy : f.y;
+  if(MCAVE && MCAVE.on) return { x:ax, y:ay - M.lift };
+  const am = M.A[M.A.length - 1], bm = am*M.ratio;
+  return { x:clamp(ax, 60 + am, Math.max(60 + am, WW - 60 - am)), y:Math.max(ay - M.lift, 62 + bm) };   // (the widest ring is a metal fighter's: its end may press on the stage's edge, kept inside by fsb1_place)
+}
+// Where a foe is on its way in, u (0..1) of the way: round their field line (a turning curve) from where they were caught to their place on the ring.
+function fsb1_pullPt(st, foe, rank, u, N, dir){
+  const ring = fsb1_ring(foe, rank), p0 = st.p0[foe.idx] || [foe.x, foe.y];
+  const dx0 = p0[0] - N.x, dy0 = p0[1] - N.y, r0 = Math.hypot(dx0, dy0), a0 = Math.atan2(dy0, dx0);
+  const sa = fsb1_slotAng(rank), sx = ring.a*Math.cos(sa), sy = ring.b*Math.sin(sa), r1 = Math.hypot(sx, sy), a1 = Math.atan2(sy, sx);
+  const da = Math.atan2(Math.sin(a1 - a0), Math.cos(a1 - a0)), e = u*u*(3 - 2*u);
+  const r = r0 + (r1 - r0)*e, a = a0 + da*e + dir*0.6*Math.sin(Math.PI*e);
+  return [N.x + Math.cos(a)*r, N.y + Math.sin(a)*r];
+}
+// Set a held foe's place (the row moves them; nobody else can): inside the stage, under the top, and not below the floor she stands on (lim) -- a body is never put under a floor.
+function fsb1_place(foe, x, y, lim){
+  if(!(MCAVE && MCAVE.on)){ x = clamp(x, 60, WW - 60); y = Math.max(60, y); if(lim != null) y = Math.min(y, lim); }
+  foe.x = x; foe.y = y; foe.vx = 0; foe.vy = 0; foe.onground = false;
+}
+function fsb1_lim(st, foe, pull){ if(st.floorY == null) return null; const l = st.floorY - hurtRY(foe) - 2; return pull ? Math.max(l, (st.p0[foe.idx] || [0, -1e9])[1]) : l; }
+// The foes still held and not out since the catch (the same list the draw ranks).
+function fsb1_live(f, st){
+  const out = [];
+  for(const i of st.held){ const t = fighters[i]; if(!t || t.dead || !fsIsLockedBy(t, f) || koSince(t, st.n0[i])) continue; out.push(t); }
+  out.sort((a, b)=> a.idx - b.idx);
+  return out;
+}
+function fsb1_sfx(kind){
+  if(!(SND && SND.on)) return;
+  try {
+    if(kind === 'clack'){ tone(980, 0.05, 'square', 0.15, 0, 420); noise(0.05, 0.22, 3200, 0, 1400); }
+    else if(kind === 'snap'){ tone(520, 0.14, 'sawtooth', 0.16, 0, 1300); noise(0.1, 0.2, 2400, 0, 800); }
+    else if(kind === 'flip'){ tone(240, 0.2, 'sawtooth', 0.2, 0, 90); tone(1200, 0.12, 'triangle', 0.1, 0, 2400); }
+    else if(kind === 'sling'){ SFX.smash(); tone(130, 0.35, 'sine', 0.3, 0, 40); noise(0.3, 0.4, 1200, 0, 300); }
+  } catch(e){}
+}
+// One clack: the horseshoe snaps shut on a held foe: 10% (the row's 5, doubled by KO-LEVEL), a small shove toward its mouth, stunned 4 frames so the last blow is no link of a chain.
+function fsb1_clack(f, st, foe, N){
+  const M = FSB1_MAG;
+  foe.countering = 0;
+  applyHit(foe, M.clackDmg/FS_DMG_MULT/(statDmg(f, 1) || 1), (Math.sign(N.x - foe.x) || 1)*2, -2, f, { stun:4 });
+  for(let q = 0; q < 6; q++) puff(foe.x + (q - 2.5)*5, foe.y, q % 2 ? '#9aa8ff' : '#fff', 4);
+}
+// The sling: the poles flip to like poles and the foe is thrown the way they were travelling on their ring: that direction's level or a little up (never below level, the upward
+// part capped), at least four fifths of it sideways (a foe at the top or the bottom of the ring goes along it, one at a side, where it is travelling up or down, goes out from her); 40% (the row's 20, doubled) and
+// the old blast's launch (26), x1.4 for a metal fighter. The foe is held on the spot for the three beats of the catch's let-go, then it is one blow.
+function fsb1_sling(f, st, foe, rank, N, dir){
+  const M = FSB1_MAG, ring = fsb1_ring(foe, rank), th = fsb1_slotAng(rank) + dir*fsb1_phi(M.sling - M.orb0 + 1);
+  let tx = -dir*ring.a*Math.sin(th), ty = dir*ring.b*Math.cos(th); const l = Math.hypot(tx, ty) || 1; tx /= l; ty /= l;
+  const out = Math.sign(foe.x - f.x) || fsb1_dir(f), sx = Math.abs(tx) >= 0.5 ? Math.sign(tx) : out;
+  const dy = ty >= -0.08 ? -0.08 : Math.max(-0.55, ty), mag = Math.max(Math.abs(tx), 0.8), k = METAL_FIGHTERS.has(foe.name) ? M.metalKb : 1;
+  foe.countering = 0;
+  applyHit(foe, M.slingDmg/FS_DMG_MULT/(statDmg(f, 1) || 1), sx*mag*M.kb*k, dy*M.kb*k, f);
+  for(let q = 0; q < 14; q++) puff(foe.x, foe.y, q % 2 ? '#d6304a' : '#fff', 7);
+}
+// Does she stand on something at x (her recoil must not carry her off a ledge)?
+function fsb1_standsAt(f, x){ if(!f.onground || (MCAVE && MCAVE.on)) return true; const feet = f.y + f.r, top = surfaceBelow(x, feet - 8); return top != null && Math.abs(top - feet) <= 6; }
+
+// ---- the picture: all from the holder's fs* fields, the foes her catch holds (fsLk) and the row frame (fsT), so a guest draws what the host does ----
+function fsb1_ease(p){ p = p < 0 ? 0 : (p > 1 ? 1 : p); return 1 - (1 - p)*(1 - p); }
+function fsb1_hash(a, b){ const s = Math.sin(a*127.1 + b*311.7)*43758.5453; return s - Math.floor(s); }
+function fsb1_tips(f){ const y = f.y - 24; return [[f.x - 15, y], [f.x + 15, y]]; }   // the two pole tips
+// A horseshoe: a ring open toward `rot` (gap: the half-opening), its two ends in colA and colB.
+function fsb1_horseshoe(c, x, y, R, rot, gap, lw, colA, colB){
+  const a0 = rot + gap, a1 = rot + Math.PI*2 - gap, ts = Math.min(0.6, (a1 - a0)*0.2);
+  c.save(); c.lineCap = 'butt';
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = lw + 6; c.beginPath(); c.arc(x, y, R, a0, a1); c.stroke();
+  c.strokeStyle = '#4046b8'; c.lineWidth = lw; c.beginPath(); c.arc(x, y, R, a0, a1); c.stroke();
+  c.strokeStyle = '#7d89ff'; c.lineWidth = lw*0.3; c.beginPath(); c.arc(x, y, R + lw*0.2, a0 + ts, a1 - ts); c.stroke();
+  c.strokeStyle = colA; c.lineWidth = lw; c.beginPath(); c.arc(x, y, R, a0, a0 + ts); c.stroke();
+  c.strokeStyle = colB; c.beginPath(); c.arc(x, y, R, a1 - ts, a1); c.stroke();
+  c.restore();
+}
+// The ring of dashes (a field line), sliding round by `spin`.
+function fsb1_track(c, cx, cy, a, b, spin, al, col, n){
+  const step = Math.PI*2/n;
+  c.save(); c.lineCap = 'round';
+  c.beginPath();
+  for(let i = 0; i < n; i++){ const a0 = i*step + spin; c.moveTo(cx + a*Math.cos(a0), cy + b*Math.sin(a0)); c.ellipse(cx, cy, a, b, 0, a0, a0 + step*0.55); }
+  c.globalAlpha = al*0.45; c.strokeStyle = '#1c1c1c'; c.lineWidth = 6; c.stroke();
+  c.globalAlpha = al; c.strokeStyle = col; c.lineWidth = 3; c.stroke();
+  c.restore();
+}
+function fsb1_chev(c, x, y, ang, s, col){
+  c.fillStyle = col; c.beginPath(); c.moveTo(x + Math.cos(ang)*s, y + Math.sin(ang)*s); c.lineTo(x + Math.cos(ang + 2.5)*s*0.8, y + Math.sin(ang + 2.5)*s*0.8); c.lineTo(x + Math.cos(ang - 2.5)*s*0.8, y + Math.sin(ang - 2.5)*s*0.8); c.closePath(); c.fill();
+}
+function fsb1_filing(c, x0, y0, x1, y1, a){
+  c.globalAlpha = a; c.strokeStyle = '#aab4c8'; c.lineWidth = 3.6; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+  c.strokeStyle = '#23262f'; c.lineWidth = 2.2; c.stroke();
+}
+function fsb1_star(c, x, y, p, big){
+  const g = big ? 1.6 : 1;
+  c.save(); c.lineCap = 'round';
+  c.globalAlpha = 0.55*(1 - p); c.fillStyle = '#fff'; c.beginPath(); c.arc(x, y, (11 + 14*p)*g, 0, 7); c.fill();
+  c.globalAlpha = 1 - p; c.strokeStyle = '#fff'; c.lineWidth = 2.6;
+  for(let q = 0; q < 8; q++){ const a = q*Math.PI/4 + 0.2, r0 = (12 + 8*p)*g, r1 = (24 + 18*p)*g; c.beginPath(); c.moveTo(x + Math.cos(a)*r0, y + Math.sin(a)*r0); c.lineTo(x + Math.cos(a)*r1, y + Math.sin(a)*r1); c.stroke(); }
+  c.restore();
+}
+function fsb1_magDraw(f, c){
+  const M = FSB1_MAG, t = f.fsT || 0, dir = fsb1_dir(f), N = fsb1_nuc(f), held = fsb1_held(f), tau = t - M.orb0 + 1, S = M.sling;
+  const tips = fsb1_tips(f), mx = f.x, my = f.y - 25;
+  const ax = f.fsAx != null ? f.fsAx : f.x, ay = f.fsAy != null ? f.fsAy : f.y;
+  const clacks = M.clackT, nc = clacks.filter((q)=> q <= t).length, tc = nc ? clacks[nc - 1] : null;
+  const fade = t <= S ? 1 : Math.max(0, 1 - (t - S)/6);   // the rings and the horseshoe go out over six frames after the sling
+  c.save(); c.lineCap = 'round'; c.lineJoin = 'round';
+  // her glow, while the field is up
+  if(t <= S + 8){ c.globalAlpha = (0.12 + 0.06*Math.sin(hazardT*0.3))*(t <= S ? 1 : Math.max(0, 1 - (t - S)/8)); c.fillStyle = '#9aa8ff'; c.beginPath(); c.arc(f.x, f.y, f.r + 28, 0, 7); c.fill(); }
+  // ---- THE ENTRANCE: the poles drawn toward each other (field arcs closing over her mouth), iron filings jumping in from a body-length out and bristling on the tips ----
+  if(t <= S){
+    const g = fsb1_ease((t + 1)/12), sq = fsb1_ease(t/M.wind);
+    const hh = 26 - 12*sq;   // the arc over the mouth tightens as the poles come together
+    const ka = g*(t < M.pull0 ? 1 : Math.max(0, 1 - (t - M.pull0)/10));
+    for(let i = 0; i < 2; i++){ c.beginPath(); c.moveTo(tips[0][0] + 4, tips[0][1] - 6); c.quadraticCurveTo(mx, my - hh*(1 + 0.5*i), tips[1][0] - 4, tips[1][1] - 6);
+      c.globalAlpha = 0.5*ka; c.strokeStyle = '#1c1c1c'; c.lineWidth = 5; c.stroke(); c.globalAlpha = 0.9*ka; c.strokeStyle = i ? '#9aa8ff' : '#fff'; c.lineWidth = 2.6; c.stroke(); }
+    // each pole's glow: the north end red, the south end platinum; both red from the flip
+    const red = '#d6304a', plat = '#dfe6ee', pl = 0.5 + 0.5*Math.sin(hazardT*0.5);
+    for(let s = 0; s < 2; s++){
+      const col = (s === 0 || t >= M.flip) ? red : plat;
+      c.globalAlpha = (0.35 + 0.2*pl)*g; c.fillStyle = col; c.beginPath(); c.arc(tips[s][0], tips[s][1] - 3, 11 + 3*pl, 0, 7); c.fill();
+      c.globalAlpha = 0.85*g; c.fillStyle = '#fff'; c.beginPath(); c.arc(tips[s][0], tips[s][1] - 4, 3.2, 0, 7); c.fill();
+      if(t < M.pull0){ const inw = s ? -1 : 1, off = Math.sin(hazardT*0.5)*2; fsb1_chev(c, tips[s][0] + inw*(12 + off), tips[s][1] - 5, s ? Math.PI : 0, 5, '#fff'); }
+    }
+    for(let s = 0; s < 2; s++) for(let k = 0; k < 11; k++){
+      const h1 = fsb1_hash(k + s*11, 3.1), h2 = fsb1_hash(k + s*11, 7.7), inw = s ? -1 : 1;
+      const ang = -Math.PI/2 + (h1 - 0.5)*2.3 + inw*0.32, len = 4 + 8*h2, far = (1 - g)*(26 + 26*h1);
+      const tr = t >= 12 ? Math.sin(t*1.9 + k*2.3)*1.1 : 0, ca = Math.cos(ang), sa = Math.sin(ang);
+      fsb1_filing(c, tips[s][0] + ca*(len*0.35 + far) + tr, tips[s][1] - 2 + sa*(len*0.35 + far), tips[s][0] + ca*(len + far) + tr, tips[s][1] - 2 + sa*(len + far), Math.min(1, 0.35 + g));
+    }
+  }
+  // ---- THE FIELD: a ring of field lines for each foe held, spinning out from her mouth over 14 frames and then streaming round with the foes ----
+  const gr = fsb1_ease((t - 14)/14);
+  if(gr > 0 && t <= S + 6){
+    const cx = mx + (N.x - mx)*gr, cy = my + (N.y - my)*gr, spin = dir*(0.04*Math.min(t, M.orb0 - 1) + (tau > 0 ? 0.85*fsb1_phi(tau) : 0)), cols = ['#bfe6ff', '#9aa8ff', '#ffffff'];
+    const hot = t >= M.flip && t <= S + 2;
+    held.forEach((g, r)=> {
+      const ring = fsb1_ring(g, r), col = hot ? '#ff9aa8' : cols[Math.min(r, 2)], sh = hot ? Math.sin(hazardT*2.1 + r)*2 : 0;
+      fsb1_track(c, cx, cy + sh, ring.a*gr, ring.b*gr, spin*(1 - 0.15*r), 0.8*fade, col, 26);
+      if(t >= M.pull0 && t < S) for(let q = 0; q < 4; q++){ const an = q*Math.PI/2 + spin*1.25*(1 - 0.15*r); fsb1_chev(c, cx + ring.a*gr*Math.cos(an), cy + ring.b*gr*Math.sin(an), Math.atan2(ring.b*Math.cos(an), -ring.a*Math.sin(an)) + (dir < 0 ? Math.PI : 0), 6, hot ? '#fff' : '#bfe6ff'); }
+    });
+  }
+  // ---- THE PULL-IN: each foe's field line bowing out of them into the mouth, chevrons riding it in ----
+  if(t >= M.pull0 && t < M.orb0 + 4){
+    const k = t < M.orb0 ? 1 : Math.max(0, 1 - (t - M.orb0)/4);
+    held.forEach((g, r)=> {
+      c.globalAlpha = 0.8*k; c.lineWidth = 2;
+      for(let i = 0; i < 3; i++){
+        const o = (i - 1)*14, qx = (N.x + g.x)/2 + o*0.5, qy = (N.y + g.y)/2 + o*2;
+        c.strokeStyle = i === 1 ? '#fff' : '#9aa8ff'; c.beginPath(); c.moveTo(g.x, g.y + o*0.3); c.quadraticCurveTo(qx, qy, N.x, N.y + o*0.2); c.stroke();
+        const u = ((hazardT*0.06) + i/3 + r*0.17) % 1, ux = (1 - u)*(1 - u)*g.x + 2*(1 - u)*u*qx + u*u*N.x, uy = (1 - u)*(1 - u)*(g.y + o*0.3) + 2*(1 - u)*u*qy + u*u*(N.y + o*0.2);
+        fsb1_chev(c, ux, uy, Math.atan2(N.y - g.y, N.x - g.x), 6, '#fff');
+      }
+    });
+  }
+  // ---- THE ORBIT: a comet's tail behind each foe along its ring, thickest at the foe ----
+  if(tau > 0 && t <= S){
+    const om = fsb1_omega(tau);
+    held.forEach((g, r)=> {
+      const ring = fsb1_ring(g, r), th = Math.atan2((g.y - N.y)/ring.b, (g.x - N.x)/ring.a), col = g.color || '#9aa8ff';
+      for(let j = 0; j < 9; j++){
+        const a0 = th - dir*om*1.35*j, a1 = th - dir*om*1.35*(j + 1);
+        c.globalAlpha = 0.55*(1 - j/9); c.strokeStyle = col; c.lineWidth = Math.max(2, 20*(1 - j/9));
+        c.beginPath(); c.moveTo(N.x + ring.a*Math.cos(a0), N.y + ring.b*Math.sin(a0)); c.lineTo(N.x + ring.a*Math.cos((a0 + a1)/2), N.y + ring.b*Math.sin((a0 + a1)/2)); c.lineTo(N.x + ring.a*Math.cos(a1), N.y + ring.b*Math.sin(a1)); c.stroke();
+      }
+    });
+  }
+  // ---- THE HORSESHOE: the field gathers into one over her mouth, rises to the middle of the loop, and snaps shut on a foe at every clack; both ends red at the flip ----
+  const gh = fsb1_ease((t - 14)/12);
+  if(gh > 0 && t <= S + 8){
+    const px = mx + (N.x - mx)*fsb1_ease((t - 14)/14), py = my + (N.y - my)*fsb1_ease((t - 14)/14);
+    const tg = held.length ? held[nc % held.length] : null, rot = tg ? Math.atan2(tg.y - py, tg.x - px) : -Math.PI/2;
+    const sn = tc != null ? Math.max(0, 1 - (t - tc)/6) : 0, shk = t >= M.flip && t <= S ? Math.sin(hazardT*2.3)*2 : 0;
+    const rad = 15*gh*(t > S ? Math.max(0, 1 - (t - S)/8) : 1);
+    if(rad > 0.5){ c.globalAlpha = 1; fsb1_horseshoe(c, px + shk, py, rad, rot, 0.65 - 0.5*sn - (t >= M.flip ? 0.12 : 0), 9*gh, '#d6304a', t >= M.flip ? '#d6304a' : '#dfe6ee'); }
+  }
+  // ---- THE CLACKS: a bolt from the horseshoe to the foe, a star where it lands, a ring off the mouth ----
+  if(tc != null && t - tc < 7 && t <= S){
+    const p = (t - tc)/7;
+    if(p < 0.72) held.forEach((g, r)=> {
+      const dx = g.x - N.x, dy = g.y - N.y, L = Math.hypot(dx, dy) || 1, nx = -dy/L, ny = dx/L, n = 7;
+      c.beginPath(); c.moveTo(N.x + dx/L*14, N.y + dy/L*14);
+      for(let j = 1; j < n; j++){ const q = j/n, o = (fsb1_hash(j + r*7, tc) - 0.5)*18*Math.min(1, 1.4 - q); c.lineTo(N.x + dx*q + nx*o, N.y + dy*q + ny*o); }
+      c.lineTo(g.x, g.y);
+      c.globalAlpha = 0.6*(1 - p); c.strokeStyle = '#1c1c1c'; c.lineWidth = 8; c.stroke();
+      c.globalAlpha = 1 - p; c.strokeStyle = '#9aa8ff'; c.lineWidth = 4.5; c.stroke();
+      c.strokeStyle = '#fff'; c.lineWidth = 2; c.stroke();
+    });
+    held.forEach((g)=> fsb1_star(c, g.x, g.y, p, false));
+    fsRing(c, N.x, N.y, 16 + 26*p, '#fff', 4, 0.8*(1 - p));
+  }
+  // ---- THE FLIP: both poles red, a white pulse off the horseshoe ----
+  if(t >= M.flip && t < S){
+    const p = (t - M.flip)/(S - M.flip);
+    fsDisc(c, N.x, N.y, 18 + 30*p, '#fff', 0.5*(1 - p*0.4)); fsRing(c, N.x, N.y, 26 + 20*p, '#d6304a', 5, 0.9);
+  }
+  // ---- THE SLING: the shock off the horseshoe, a pinwheel of rays, a streak behind each foe, the filings thrown off her tips ----
+  if(t >= S && t <= M.dur){
+    const p = Math.min(1, (t - S)/14);
+    if(p < 1){
+      fsDisc(c, N.x, N.y, 40 + 80*p, '#fff', 0.8*Math.max(0, 1 - p*2.5));
+      fsRing(c, N.x, N.y, 30 + 250*fsb1_ease(p), '#d6304a', 12*(1 - p) + 2, 1 - p);
+      if(p > 0.12) fsRing(c, N.x, N.y, 20 + 200*fsb1_ease((p - 0.12)/0.88), '#fff', 6*(1 - p) + 1, 0.9*(1 - p));
+      c.lineCap = 'round';
+      for(let i = 0; i < 10; i++){
+        const a = i*Math.PI/5*1 + dir*p*1.7, r0 = 24 + 150*fsb1_ease(p), r1 = r0 + 56*(1 - p) + 14, sw = 0.28*dir;
+        c.globalAlpha = 1 - p; c.strokeStyle = i % 2 ? '#fff' : '#d6304a'; c.lineWidth = 6*(1 - p) + 1;
+        c.beginPath(); c.moveTo(N.x + Math.cos(a)*r0, N.y + Math.sin(a)*r0*0.8); c.quadraticCurveTo(N.x + Math.cos(a + sw*0.5)*(r0 + r1)/2, N.y + Math.sin(a + sw*0.5)*(r0 + r1)/2*0.8, N.x + Math.cos(a + sw)*r1, N.y + Math.sin(a + sw)*r1*0.8); c.stroke();
+      }
+    }
+    for(const g of fighters){ if(g.dead || g.idx === f.idx || g.team === f.team) continue; const sp = Math.hypot(g.vx || 0, g.vy || 0);
+      if(sp > 14 && t - S < 12 && Math.hypot(g.x - N.x, g.y - N.y) < 520){ const k = 3.2; c.globalAlpha = 0.6*(1 - (t - S)/12); c.strokeStyle = '#fff'; c.lineWidth = 12; c.beginPath(); c.moveTo(g.x, g.y); c.lineTo(g.x - g.vx*k, g.y - g.vy*k); c.stroke();
+        c.strokeStyle = g.color || '#9aa8ff'; c.lineWidth = 6; c.stroke(); } }
+    const q = t - S;
+    if(q < 22){ c.globalAlpha = 1 - q/22; for(let s = 0; s < 2; s++) for(let k = 0; k < 7; k++){
+      const h1 = fsb1_hash(k + s*7, 5.3), h2 = fsb1_hash(k + s*7, 9.1), vx = (s ? 1 : -1)*(2 + 5*h1), vy = -(2 + 5*h2);
+      const x0 = ax + (s ? 15 : -15) + vx*q, y0 = ay - 24 + vy*q + 0.22*q*q;
+      fsb1_filing(c, x0, y0, x0 + vx*1.6, y0 + vy*1.6 + 0.4*q, 1 - q/22); } }
+  }
+  c.restore();
+}
+// ---- FSB lane 1: end -----------------------------------------------------------------------------------------------------------------
+
+// MAGNET -- LIKE POLES REPEL (the design: ORBIT AND SLING; the name and the id are the old ones). Her own cards are C'mon, Bestie! (pulls the nearest foe in) and Like Poles Repel (a blast that shoves everyone away hard), and "a very magnetic
+// presence and personality" is the wiki's line for her (the II wiki's Magnet page: a blue horseshoe magnet with two platinum poles, popular, with "a large influence on their decisions"): everyone ends up in her orbit. So she pulls everyone into
+// orbit round her, spins them up, and then the poles flip. THE OWNER, 2026-11-02: the redesign "Orbit and Sling", "DUDE, WHAT DID I SAY ABOUT HIGH DAMAGE" (the total on the held foe is about 100%, the orange at the least), and the entrance she approved.
+// CARD. Reach: every foe within 310 of her (the old pull's own reach), the three nearest, caught 10 frames after the intro and held to the end (never a teammate, a boss or an add: the catch only takes fighters). Nobody in the catch: nothing happens
+// (a small flash, the Final Smash is spent; a CPU's `exact` flag, once Bow's framework change is in, fires it only with someone in reach). The sequence (row frames after the catch; the foes held in the air where they were):
+//   0-27   the entrance (the approved one): she hunkers and the two poles are drawn toward each other (field arcs close over her mouth), iron filings jump in from a body-length out and bristle on the tips, trembling; from 14 the field
+//          gathers into a drawn horseshoe over her mouth and rings of field lines spin out round her, rising into the loop. No damage.
+//   28-43  the pull-in (a flash): each foe is carried along their field line to their own ring, 105, 140 and 175 px out (a metal fighter's x1.3), the loop flattened and held 92 px over her middle so its lower half clears the floor. No damage.
+//   44-91  the orbit: they circle her like planets, 6.5 degrees a frame speeding up to 16, comet tails behind them, the field lines streaming round with them; every quarter turn the horseshoe snaps shut on each of them (a clack), six clacks, 10% each
+//          (frames 55, 64, 72, 79, 86, 91: a quickening beat), 60% in all, a small shove, no launch.
+//   92-97  the poles flip to like poles (both ends red, a white pulse); the orbit is still turning.
+//   98     the sling: the orbit breaks and each foe is thrown along the line they were travelling, level or a little up (never below level, the upward part capped), mostly sideways: 40% and the old blast's launch (26), x1.4 for a metal
+//          fighter (Knife, Silver Spoon, Needle, Saw...: they orbit wider too), so a crowd leaves like a pinwheel. They are let go three frames on (the catch's let-go: one blow, KO-level). TOTAL 100% on each foe held (6 x 10 + 40).
+//   99-112 she is shoved back about 70 px (like poles repel), the filings flying off her tips, never off the ledge she stands on; the shock and the pinwheel of rays go out from the loop's middle, which stays put. 112 frames in all.
+// WHAT THE SLING KOs AT, from the foe's damage before the Final Smash (the foe a CPU from the let-go, steering back; starts 0, 5, 10, 15, 20, 30%): on Goiky Field a light fighter (Puffball) from 0%, a mid-weight (Pen) from 5% (from 0% it
+// leaves them at 100%, past the orange), the heavy (Tree) from 20% (once from 0%, by their steering back); on Yoyleland Puffball from 0%, Pen from 0-5%, Tree from 30%.
+// A foe or the user KO'd mid-way ends it for them (the others go on; none left: it ends); the user hangs where she is. Online the guest draws it all from the holder's fs* fields, the held foes' fsLk and the row frame (no new wire field).
+FINAL_SMASHES['Magnet'] = {
+  id:'likepolesrepel', wind:FSB1_MAG.wind, dur:FSB1_MAG.dur, reach:FSB1_MAG.catchR, needFoe:true, exact:true,   // needFoe / exact: read by Bow's framework change (fsTryFire, fsBotInput) once it is in; on this base they do nothing
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FSB1_MAG.catchR }; }, catchMax:FSB1_MAG.catchMax, lockEnd:FSB1_MAG.sling,   // CATCH: the old pull's reach, the three nearest foes
+  start(f, st){
+    st.n0 = {}; st.p0 = {}; st.over = false; st.ay = f.y;
+    st.floorY = (MCAVE && MCAVE.on) ? null : (f.onground ? f.y + f.r : surfaceBelow(f.x, f.y + f.r));   // the floor she stands over: the loop's foes are kept above it
+    if(!st.held.length){   // the catch took nobody (nobody in reach, or they stepped out in its 10 frames): spent, a small flash
+      for(let q = 0; q < 12; q++) puff(f.x + (q - 5.5)*3, f.y - 26, q % 2 ? '#9aa8ff' : '#fff', 4);
+      f._atkAnim = 0; fsEnd(f); return;
+    }
+    for(const i of st.held){ const g = fighters[i]; st.n0[i] = g._koN || 0; st.p0[i] = [g.x, g.y]; }
+    armAtk(f, this.wind, 'fsgather');
+  },
+  tick(f, st, t){
+    const M = FSB1_MAG;
+    f.vx = 0; if(!f.onground){ f.vy = 0; f.y = st.ay; }   // she hangs where she is (gravity would sink her a few px a frame)
+    if(st.over) return;
+    const live = t <= M.sling ? fsb1_live(f, st) : [];
+    if(t <= M.sling && !live.length){ st.over = true; f._atkAnim = 0; st.t = this.dur - 1; return; }   // every foe gone (a KO, a respawn, the lock lost): nothing more is thrown
+    const N = fsb1_nuc(f), dir = fsb1_dir(f);
+    if(t === 0){ shake(4); for(const tp of fsb1_tips(f)) for(let q = 0; q < 6; q++) puff(tp[0], tp[1] - 8, q % 2 ? '#aab4c8' : '#23262f', 4); fsb1_sfx('snap'); }
+    if(t === M.pull0){ shake(7); armAtk(f, 18, 'cast'); fsb1_sfx('snap'); for(let q = 0; q < 14; q++) puff(N.x, N.y, q % 2 ? '#9aa8ff' : '#fff', 6); }
+    if(t >= M.pull0 && t <= M.sling){   // the pull-in, then the orbit: the row puts each foe on its place (nobody else can move them)
+      live.forEach((g, r)=> {
+        let p;
+        if(t < M.orb0) p = fsb1_pullPt(st, g, r, (t - M.pull0 + 1)/M.pullN, N, dir);
+        else { const ring = fsb1_ring(g, r), th = fsb1_slotAng(r) + dir*fsb1_phi(t - M.orb0 + 1); p = [N.x + ring.a*Math.cos(th), N.y + ring.b*Math.sin(th)]; }
+        fsb1_place(g, p[0], p[1], fsb1_lim(st, g, t < M.orb0));
+      });
+    }
+    const k = M.clackT.indexOf(t);
+    if(k >= 0){ shake(3 + k*0.8); armAtk(f, 10, 'cast'); fsb1_sfx('clack'); for(const g of live) fsb1_clack(f, st, g, N); }
+    if(t === M.flip){ shake(8); fsb1_sfx('flip'); for(let q = 0; q < 12; q++) puff(N.x, N.y, q % 2 ? '#d6304a' : '#fff', 5); }
+    if(t === M.sling){
+      shake(15); armAtk(f, 24, 'fsburst'); fsb1_sfx('sling');
+      live.forEach((g, r)=> fsb1_sling(f, st, g, r, N, dir));
+      for(let q = 0; q < 26; q++) puff(N.x, N.y, q % 2 ? '#d6304a' : '#fff', 8);
+      for(const tp of fsb1_tips(f)) for(let q = 0; q < 6; q++) puff(tp[0], tp[1] - 6, q % 2 ? '#aab4c8' : '#23262f', 6);
+    }
+    if(t > M.sling && t <= M.sling + M.backN){   // like poles repel: she is shoved back (never off the ledge she is on, never out of the stage)
+      const nx = f.x - f.face*M.back/M.backN;
+      if((MCAVE && MCAVE.on) || (nx > 50 && nx < WW - 50 && fsb1_standsAt(f, nx))) f.x = nx;
+    }
+  },
+  ai(f){ return fsFoeNear(f, FSB1_MAG.catchR*0.85); },
+  draw(f, c){ fsb1_magDraw(f, c); },
+};
 
 // METAG -- BARRIERS. "Generation: MeTag is able to generate seemingly indestructible and transparent walls"; "Their logo will glow when they're currently tracking someone's location." (the MeTag page, quoted at their card).
 // Walls come up out of the floor out from under them, five a side, 80 px apart, one every three frames (12%, 280 tall).
