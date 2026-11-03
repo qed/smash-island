@@ -16649,18 +16649,23 @@ function scrolls(){ return isBig() || isBigFFA() || WW>W+2 || WH>H+2; }   // any
 //      px of air above it, shifted the least that holds them all inside the screen (less LG.ins* px of border for the cards) and pulled back
 //      only as far as that still takes (LG.pull is the share of the plain zoom it may keep: 1 = none is spent when the union already fits; a
 //      first try at 0.90 zoomed out for every trip and, in a CPU brawl, breathed 30 times a minute), never past the floor LG.zmin: the nearest
-//      fighter first, one that no longer fits is left to its marker. It eases in over LG.inF frames and out over LG.outF, the zoom never changes
+//      fighter first, one that no longer fits is left to its marker. Who is in that plan has a margin of its own (LG.zhys): a fighter joins only if
+//      it fits at LG.zmin + LG.zhys and stays until it needs LG.zmin - LG.zhys (or has not fitted LG.zmin for LG.missF frames), so you swaying around
+//      the distance the floor can just hold does not pump the zoom; where the union does not fit at the floor it is centred, but never so far that
+//      you are out of the picture. It eases in over LG.inF frames and out over LG.outF, the zoom never changes
 //      faster than LG.dz (of its log) a frame, and what the recovering fighters needed of each edge is held for LG.hold frames and then let go of
 //      slowly (LG.rel a frame), so a fighter bobbing in and out under the ledge moves the view once and not with every bob.
 //   3. THE MARKER (lgDrawMarkers): a recovering fighter outside the view gets a chevron at the screen's border in its colour (team colour in teams),
 //      a stem that grows with the distance, grown in over LG.growF frames, at most LG.maxMarks at once, nearest first; it goes LG.mkHold frames
-//      after the fighter is back over the stage, and with a KO at once. No words.
+//      after the fighter is back over the stage, and with a KO at once. Markers that would sit on one another are slid along the border LG.gap px
+//      apart (the nearest stays), and a marker keeps clear of the minimap, the Teams standings strip and the cards' strip (lgHud). No words.
 const LG = { wide:1.09, below:1.13, pull:1.00, zmin:0.50, inF:24, outF:40, dz:0.02, enter:6, leave:36, land:36,
   pad:70, air:200, lead:10, leadMax:180, insX:48, insT:84, insB:36, follow:0.12, ease2:0.25, hold:36, rel:0.05,
-  growF:12, maxMarks:3, mkHold:6, ko:90 };
+  growF:12, maxMarks:3, mkHold:6, ko:90, zhys:0.04, missF:30, gap:26 };
 const LGC = { off:false, ok:false, init:false, mode:null, t:-1, k:0, held:null, z:0, c0:{ x:0, y:0 }, cr:{ x:0, y:0 }, last:null,
-  cur:{ cx:0, cy:0, z:1 }, prev:{ cx:0, cy:0, z:1 }, f:Object.create(null), draw:0, sx:null, sy:null, marks:[], markSet:Object.create(null), dbg:null };
-function lgReset(){ LGC.init = false; LGC.ok = false; LGC.k = 0; LGC.held = null; LGC.last = null; LGC.f = Object.create(null); LGC.marks.length = 0; LGC.markSet = Object.create(null); LGC.t = -1; }
+  cur:{ cx:0, cy:0, z:1 }, prev:{ cx:0, cy:0, z:1 }, f:Object.create(null), draw:0, sx:null, sy:null, marks:[], markSet:Object.create(null), dbg:null,
+  hud:{ top:84, st:null }, hudN:0 };
+function lgReset(){ LGC.init = false; LGC.ok = false; LGC.k = 0; LGC.held = null; LGC.last = null; LGC.f = Object.create(null); LGC.marks.length = 0; LGC.markSet = Object.create(null); LGC.t = -1; LGC.hudN = 0; }
 // Which view this match has, or null for every mode that keeps its own camera (a boss, Capture the Flag, Moon Caves, Training, the tutorial, a custom
 // level, One, Steve Cobs's fight, RUNNING!, the plays camera, a spectated flag match, a watched World Cup fixture on a scrolling map).
 function lgMode(){
@@ -16739,19 +16744,26 @@ function lgHold(Hd, U, n){
 }
 // What must be seen: the subject (S), then each recovering fighter with its ledge and the air above it (G, the groups together), nearest first,
 // while it fits above the floor. U is both.
-function lgPlan(subj, b, c0){
+// Does a fighter whose group fits at `fit` belong to the plan? A new one joins at LG.zmin + LG.zhys; one already in stays down to LG.zmin - LG.zhys,
+// unless it has not fitted LG.zmin itself for LG.missF frames (s.miss counts those).
+function lgTake(s, fit, n){
+  if(!s || !s.pl) return fit >= LG.zmin + LG.zhys;
+  return fit >= LG.zmin - LG.zhys && (fit >= LG.zmin || s.miss + n <= LG.missF);
+}
+function lgPlan(subj, b, c0, n0){
   const cands = [];
-  for(const f of fighters){ const s = LGC.f[f.idx]; if(s && s.on && !f.dead) cands.push(f); }
+  for(const f of fighters){ const s = LGC.f[f.idx]; if(s && s.on && !f.dead) cands.push(f); else if(s){ s.pl = false; s.miss = 0; } }
   if(!cands.length) return null;
   const ax = subj ? subj.x : c0.x, ay = subj ? subj.y : c0.y;
   cands.sort((p, q) => (Math.hypot(p.x - ax, p.y - ay) - Math.hypot(q.x - ax, q.y - ay)) || (p.idx - q.idx));
   const S = subj ? lgBody(subj) : null;
   let U = S, G = null, n = 0; const ids = [];
   for(const f of cands){
-    const g = lgGroup(f), V = U ? lgUnion(U, g) : g;
-    if(lgFit(V) >= LG.zmin){ U = V; G = G ? lgUnion(G, g) : g; n++; ids.push(f.idx); continue; }
-    const g2 = lgBody(f), V2 = U ? lgUnion(U, g2) : g2;   // its ledge does not fit with the rest: the fighter alone, if that does
-    if(lgFit(V2) >= LG.zmin){ U = V2; G = G ? lgUnion(G, g2) : g2; n++; ids.push(f.idx); }
+    const s = LGC.f[f.idx], g = lgGroup(f), V = U ? lgUnion(U, g) : g, v1 = lgFit(V);
+    if(lgTake(s, v1, n0)){ U = V; G = G ? lgUnion(G, g) : g; n++; ids.push(f.idx); s.pl = true; s.miss = v1 >= LG.zmin ? 0 : s.miss + n0; continue; }
+    const g2 = lgBody(f), V2 = U ? lgUnion(U, g2) : g2, v2 = lgFit(V2);   // its ledge does not fit with the rest: the fighter alone, if that does
+    if(lgTake(s, v2, n0)){ U = V2; G = G ? lgUnion(G, g2) : g2; n++; ids.push(f.idx); s.pl = true; s.miss = v2 >= LG.zmin ? 0 : s.miss + n0; }
+    else { s.pl = false; s.miss = 0; }
   }
   return n ? { U, S, G, n, ids } : null;
 }
@@ -16769,8 +16781,8 @@ function lgStepIn(n){
   // who is recovering (hysteresis)
   for(const f of fighters){
     let s = LGC.f[f.idx];
-    if(!s) s = LGC.f[f.idx] = { on:false, up:0, dn:0, ground:0, mk:0, st:f.stocks, px:f.x, py:f.y };
-    if(f.dead || f.stocks < s.st || Math.abs(f.x - s.px) + Math.abs(f.y - s.py) > 320){ s.on = false; s.up = 0; s.dn = 0; s.ground = 0; s.mk = 0; }   // a KO, or a teleport: at once
+    if(!s) s = LGC.f[f.idx] = { on:false, up:0, dn:0, ground:0, mk:0, pl:false, miss:0, mr:-1, st:f.stocks, px:f.x, py:f.y };
+    if(f.dead || f.stocks < s.st || Math.abs(f.x - s.px) + Math.abs(f.y - s.py) > 320 + 40*n){ s.on = false; s.up = 0; s.dn = 0; s.ground = 0; s.mk = 0; s.pl = false; s.miss = 0; }   // a KO, or a teleport (a fighter at 25 px a frame is 375 px away after a 15-frame hitch: the allowance grows with the steps this call stands for): at once
     else if(lgRaw(f)){ s.up += n; s.dn = 0; s.ground = 0; if(!s.on && s.up >= LG.enter) s.on = true; }
     else { s.up = 0; if(s.on){ s.dn += n; s.ground = f.onground ? s.ground + n : 0; if(s.dn >= LG.leave || s.ground >= LG.land) s.on = false; } }
     s.st = f.stocks; s.px = f.x; s.py = f.y;
@@ -16783,17 +16795,22 @@ function lgStepIn(n){
   }
   if(mode === 'follow'){ const sm = n === 1 ? LG.follow : 1 - Math.pow(1 - LG.follow, n); LGC.c0.x += (b.cx - LGC.c0.x)*sm; LGC.c0.y += (b.cy - LGC.c0.y)*sm; }
   else { LGC.c0.x = b.cx; LGC.c0.y = b.cy; }
-  const plan = lgPlan(subj, b, LGC.c0), k0 = LGC.k;
+  const plan = lgPlan(subj, b, LGC.c0, n), k0 = LGC.k;
   LGC.k = clamp(LGC.k + (plan ? n/LG.inF : -n/LG.outF), 0, 1);
   if(!plan && LGC.k <= 0){ LGC.held = null; LGC.last = null; }
   const e = LGC.k*LGC.k*(3 - 2*LGC.k);
   let zr = b.z;
   if(plan){
     let Gh = lgHold(LGC.held, plan.G, n), U = plan.S ? lgUnion(plan.S, Gh) : Gh;
-    if(lgFit(U) < LG.zmin){ Gh = lgHold(null, plan.G, n); U = plan.S ? lgUnion(plan.S, Gh) : Gh; }   // (what it remembers does not fit with you: the need of this moment alone)
+    if(lgFit(U) < LG.zmin - LG.zhys){ Gh = lgHold(null, plan.G, n); U = plan.S ? lgUnion(plan.S, Gh) : Gh; }   // (what it remembers does not fit with you, even with the margin: the need of this moment alone)
     LGC.held = Gh;
     zr = clamp(Math.min(b.z*LG.pull, lgFit(U)), LG.zmin, b.z);
     const sp = lgSpan(U, zr), sm2 = n === 1 ? LG.ease2 : 1 - Math.pow(1 - LG.ease2, n);
+    if(plan.S && (sp.lox > sp.hix || sp.loy > sp.hiy)){   // (U does not fit at this zoom: its middle, but never so far that you are out of the picture)
+      const q = lgSpan(plan.S, zr);
+      if(sp.lox > sp.hix) sp.lox = sp.hix = clamp((sp.lox + sp.hix)/2, q.lox, q.hix);
+      if(sp.loy > sp.hiy) sp.loy = sp.hiy = clamp((sp.loy + sp.hiy)/2, q.loy, q.hiy);
+    }
     if(k0 <= 0){ LGC.cr.x = LGC.c0.x; LGC.cr.y = LGC.c0.y; }   // (an episode starts from the ordinary view)
     LGC.cr.x += (lgClampR(LGC.c0.x, sp.lox, sp.hix) - LGC.cr.x)*sm2; LGC.cr.y += (lgClampR(LGC.c0.y, sp.loy, sp.hiy) - LGC.cr.y)*sm2;
     LGC.cr.x = lgClampR(LGC.cr.x, sp.lox, sp.hix); LGC.cr.y = lgClampR(LGC.cr.y, sp.loy, sp.hiy);   // (the smoothing never lets them out of the screen)
@@ -16827,21 +16844,60 @@ function lgEnd(){ if(LGC.sx != null){ camX = LGC.sx; camY = LGC.sy; LGC.sx = nul
 function lgReachL(){ return LGC.draw ? viewRect().x - 60 : Infinity; }
 function lgReachR(){ if(!LGC.draw) return -Infinity; const v = viewRect(); return v.x + v.w + 60; }
 function lgMarked(f){ return !!LGC.markSet[f.idx]; }
-// THE MARKER: a chevron at the border for each recovering fighter outside the view (at most LG.maxMarks, the nearest first).
+// The room the page's own HUD takes, read at most every 30 pictures (a layout read): how far down the cards' strip reaches (84 px at least, and more when
+// the cards wrap to a second row) and, in Teams, the box of the standings strip in the bottom right corner. A page with no layout (a headless one) reads 84 and none.
+function lgHud(){
+  if(LGC.hudN-- > 0) return LGC.hud;
+  LGC.hudN = 30; let top = 84, st = null;
+  try {
+    const bar = document.getElementById('hudbar'), box = SETTINGS.mode === 'teams' ? document.getElementById('standings') : null;
+    if(bar && bar.offsetHeight) top = clamp(bar.offsetHeight + 8, 84, 156);
+    if(box && box.offsetWidth && box.style.display !== 'none') st = { x0:W - 8 - box.offsetWidth - 24, y0:H - 12 - box.offsetHeight - 24 };
+  } catch(e){}
+  return LGC.hud = { top, st };
+}
+// A point on the border the markers keep to (22 px in, T below the top for the cards), by its way round clockwise from the top left corner, and back.
+function lgRimAt(p, T){
+  const w = W - 44, h = H - 22 - T, P = 2*(w + h); p = ((p % P) + P) % P;
+  if(p < w) return { x:22 + p, y:T };
+  p -= w; if(p < h) return { x:W - 22, y:T + p };
+  p -= h; if(p < w) return { x:W - 22 - p, y:H - 22 };
+  p -= w; return { x:22, y:H - 22 - p };
+}
+function lgRimOf(x, y, T){
+  const w = W - 44, h = H - 22 - T, dT = Math.abs(y - T), dR = Math.abs(x - (W - 22)), dB = Math.abs(y - (H - 22)), dL = Math.abs(x - 22), m = Math.min(dT, dR, dB, dL);
+  return m === dT ? x - 22 : m === dR ? w + (y - T) : m === dB ? w + h + (W - 22 - x) : 2*w + h + (H - 22 - y);
+}
+// THE MARKER: a chevron at the border for each recovering fighter outside the view (at most LG.maxMarks, the nearest first; the one that was nearest
+// last picture keeps the lead through a near tie). Two that would sit on one another are slid along the border LG.gap px apart, toward the middle
+// of it, the nearest where it is; none sits on the minimap, the standings strip, or under the cards.
 function lgDrawMarkers(){
   LGC.marks.length = 0; LGC.markSet = Object.create(null);
   if(!LGC.draw) return;
   const z = viewZoom(), c = ctx, list = [];
   for(const f of fighters){
-    const s = LGC.f[f.idx]; if(!s || !s.on || s.dn >= LG.mkHold || !(s.mk > 0) || f.dead) continue;
+    const s = LGC.f[f.idx]; if(!s) continue;
+    const was = s.mr; s.mr = -1;
+    if(!s.on || s.dn >= LG.mkHold || !(s.mk > 0) || f.dead) continue;
     const sx = W/2 + z*(f.x - camX - W/2), sy = H/2 + z*(f.y - camY - H/2);
     if(sx >= 0 && sx <= W && sy >= 0 && sy <= H) continue;
-    list.push({ f, s, sx, sy, d:Math.hypot(sx - W/2, sy - H/2) });
+    list.push({ f, s, sx, sy, d:Math.hypot(sx - W/2, sy - H/2) - (was >= 0 ? 30*(LG.maxMarks - was) : 0) });
   }
   list.sort((a, b) => (a.d - b.d) || (a.f.idx - b.f.idx));
   if(list.length > LG.maxMarks) list.length = LG.maxMarks;
-  for(const m of list){
-    const f = m.f, g = Math.min(1, m.s.mk/LG.growF), ge = g*g*(3 - 2*g), ex = clamp(m.sx, 22, W - 22), ey = clamp(m.sy, 84, H - 22);
+  const hd = lgHud(), T = hd.top, st = hd.st;
+  const mm = viewScrolls() ? { x0:W - 164 - 24, y0:64 - 16, y1:64 + Math.max(50, 150*WH/WW) + 3 + 16 } : null;   // (drawMinimap's box, and room for a stem)
+  for(let i = 0; i < list.length; i++){
+    const m = list[i], f = m.f, g = Math.min(1, m.s.mk/LG.growF), ge = g*g*(3 - 2*g);
+    m.s.mr = i;
+    let ex = clamp(m.sx, 22, W - 22), ey = clamp(m.sy, T, H - 22);
+    const p0 = lgRimOf(ex, ey, T), qa = lgRimAt(p0 + LG.gap, T), qb = lgRimAt(p0 - LG.gap, T), s0 = Math.hypot(qa.x - W/2, qa.y - H/2) <= Math.hypot(qb.x - W/2, qb.y - H/2) ? 1 : -1;
+    for(let t = 0; t < 14; t++){
+      const q = t === 0 ? { x:ex, y:ey } : lgRimAt(p0 + (t % 2 ? 1 : -1)*s0*Math.ceil(t/2)*LG.gap, T);
+      let free = !(mm && q.x >= mm.x0 && q.y >= mm.y0 && q.y <= mm.y1) && !(st && q.x >= st.x0 && q.y >= st.y0);
+      for(let j = 0; free && j < i; j++) if(Math.hypot(LGC.marks[j].x - q.x, LGC.marks[j].y - q.y) < LG.gap - 0.5) free = false;
+      if(free){ ex = q.x; ey = q.y; break; }
+    }
     const ang = Math.atan2(m.sy - ey, m.sx - ex), far = Math.hypot(m.sx - ex, m.sy - ey)/z, stem = 6 + 26*clamp(far/900, 0, 1);
     const col = SETTINGS.mode === 'teams' ? (TEAM_COLORS[f.team % TEAM_COLORS.length] || f.color) : f.color;
     c.save(); c.translate(ex, ey); c.rotate(ang); const sc = 0.5 + 0.5*ge; c.scale(sc, sc); c.globalAlpha = 0.95*ge; c.lineCap = 'round'; c.lineJoin = 'round';
@@ -21651,7 +21707,7 @@ function wallBand(team, g){
 
 // Set up world dimensions, floors, and team bases for the current match.
 function setupWorld(){
-  lgReset();   // LEDGEGUARD CAMERA: a new match's view starts afresh
+  LGC.off = false; lgReset();   // LEDGEGUARD CAMERA: a new match's view starts afresh (and one that broke once tries again)
   spawnZones=[];
   FLOOR_SEGS = null;   // REAL EDGES: built again below for the stages that have them (buildFloorSegs)
   SIDE_ROOM = 0;       // MORE ROOM PAST THE LEDGES: given below to the single-screen stages with ledges only
