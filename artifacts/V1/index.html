@@ -27110,7 +27110,7 @@ FINAL_SMASHES['Woody'] = fsaA_wrap(fsLane({ id:'fraidystampede', c1:'#c9a46c', L
 // frame 22 the blue cap pops off her top and spins away behind her, and a fat swirl of white-and-blue paste curls up out of the opening (growing in over 12 frames) while her eyes
 // narrow at the foe (the frame layer's own wind-up squint); the pads let go (31-34) and the blobs fly. THE RECOIL: while the fourteen blobs go (not the big glob) she is
 // pushed back 30 px, evenly (fsaA_slide: a slide, no launch, clamped to what she stands on).
-const TOOTHPASTE_FS = { W:34, pulses:[8, 15, 22], amp:[0.45, 0.75, 1], pop:22, slide:30, slideFrames:42 };
+const TOOTHPASTE_FS = { W:34, pulses:[8, 15, 22], amp:[0.45, 0.75, 1], pop:22, slide:30, slideFrames:42, late:3 };   // (late: as Tissues: the blobs leave from the sliding tube and the last lands up to 3 frames later)
 function fsaA_toothBody(f, t){   // [lean, sx, sy]
   const K = TOOTHPASTE_FS; let p = 0; for(let j = 0; j < 3; j++) p += K.amp[j]*Math.sin(Math.PI*fsaA_k(t, K.pulses[j], K.pulses[j] + 7));
   return [0, 1 + 0.16*p, 1 - 0.14*p];
@@ -27143,7 +27143,7 @@ function fsaA_toothSwirl(f, c, g, B, al){   // the swirl of paste curling up out
 }
 FINAL_SMASHES['Toothpaste'] = fsaA_wrap(fsHose({ id:'enemynow', c1:'#4cc3ff', n:14, every:3, v0:8, art:FS_GLYPH.paste, reach:440,
   shots:[{ color:'#e8f8ff', dmg:7, kb:24, r:13, grav:true, vy:-3, life:100 }, { color:'#4cc3ff', dmg:7, kb:24, r:13, grav:true, vy:-5, life:100 }], big:{ dmg:18, kb:26, r:26, color:'#e8f8ff', life:60, pierce:true } }), {
-  W:TOOTHPASTE_FS.W,
+  W:TOOTHPASTE_FS.W, late:TOOTHPASTE_FS.late,
   deform(f, ctx, R, t){ const B = fsaA_toothBody(f, t); deformAboutFeet(ctx, R, B[0], B[1], B[2]); },
   draw(f, c, t){
     const K = TOOTHPASTE_FS, vf = f.face < 0 ? -1 : 1, B = fsaA_toothBody(f, t), v = fsaA_toothHeight(t), y0 = (f.r + 12) - 2.8*f.r + v*2.8*f.r;
@@ -27783,7 +27783,8 @@ FINAL_SMASHES['Trophy'] = fsLock({ id:'blackmail', c1:'#f2c94c', c2:'#ffffff', R
 //   - the row's own frames run on, E.W - FS_WIND frames later (base.tick gets t - S), so its blast -- its damage, launch, reach, shape, hit
 //     count, stun and effects -- is the old one frame for frame; wind, dur and a numeric lockEnd move with it
 //   - the CATCH lands where it always landed relative to the blast (FS_WIND + 1 frames before it): nobody is held through the entrance, and a
-//     foe is held no longer than before. The area is the one fixed when it was fired. (At fire the row's `catch` hands the framework a shape
+//     foe is held no longer than before (E.late, second round: a row whose shots leave from a holder who slides back -- Tissues, Toothpaste -- has its last
+//     shot land that much later and the let-go waits for it, so its catch is laid that many frames later and the hold is no longer than main's). The area is the one fixed when it was fired. (At fire the row's `catch` hands the framework a shape
 //     that holds nobody -- 'fsaA_late' -- and the real one is laid in tick; the CPU, asking with no Final Smash running, gets the real one.)
 //   - what is drawn is a pure function of the wire fields (fsT, fsWind, fsAx/fsAy, face, position): E.draw (world space, over the fighters),
 //     E.pose(t) (a forced picture of the fighter's pose set, fsaA_pose), E.deform (the body, in FIGHTER_ANIM). Nothing is drawn where the blast
@@ -27811,7 +27812,7 @@ function fsaA_wrap(base, E){
     // a lot more): held in place through the entrance, so the blast goes off from where it always did relative to its own frames.
     if(t === 0) st.fsaY0 = f.y;
     if(t <= S && !f.onground && st.fsaY0 != null) f.y = st.fsaY0;
-    if(t === S - 1 && st.cs && st.cs.kind === 'fsaA_late'){ st.cs = st.cs.real; hitArt(f, 'fscatch', st.cs, { color:f.color, world:true, fade:10 }); fsCatch(f, st); }
+    if(t === S - 1 + (E.late || 0) && st.cs && st.cs.kind === 'fsaA_late'){ st.cs = st.cs.real; hitArt(f, 'fscatch', st.cs, { color:f.color, world:true, fade:10 }); fsCatch(f, st); }
     if(t >= S){
       if(E.pin){   // (batch 4: a knock-back out of the blast: its hits, centres and puffs are worked out from where the holder stood when it began; the height only when that was on the floor: in the air the holder sinks and falls through the blast's frames exactly as they always did)
         if(t === S) st.fsaP = { x:f.x, y:f.y, og:!!f.onground };
@@ -27855,14 +27856,20 @@ function fsaA_room(x0, fy, s, want, r, air){
   }
   return want;
 }
-// On the floor, or no more than 10 px over a surface (a hop of his own still coming down: on a low-gravity stage the second volley comes before he lands): a hop may go again.
-function fsaA_low(f){ if(f.onground) return true; const fy = f.y + f.r, sb = surfaceBelow(f.x, fy); return sb !== null && sb - fy < 10; }
+// On the floor, or no more than `slack` px (10) over a surface (a hop of his own still coming down: on a low-gravity stage the second volley comes before he lands; Poppy passes 32: the lava
+// stages' flare pops a standing fighter up about 30 px every 6 frames): a hop may go again.
+function fsaA_low(f, slack){ if(f.onground) return true; const fy = f.y + f.r, sb = surfaceBelow(f.x, fy); return sb !== null && sb - fy < (slack == null ? 10 : slack); }
 // How high a hop may go from (x, fy): not into a solid block over the head.
 function fsaA_head(x, fy, r, want){
   let h = want;
   for(const p of platRects()){ if(!p.solid || p.rot) continue; if(x > p.x - r && x < p.x + p.w + r){ const bottom = p.y + (p.h || 16); if(bottom <= fy - 2*r + 2) h = Math.min(h, Math.max(0, fy - 2*r - bottom - 4)); } }
   return h;
 }
+// (second round) The floor under the holder: the top of the surface at or below their feet at their own x, or null (nothing there: a gap, the Moon). Loose flecks come to rest on it and are never drawn below it.
+function fsaA_floorOf(f){ return surfaceBelow(f.x, fsFeetY(f)); }
+// The age a fleck is drawn at: its own `a`, or, once it has fallen to the line `lim` (null: no floor), the last age before it crossed it (py(age) is its height by age; the same age every frame after, so it lies there
+// still, at the angle it landed at) while it goes on fading with its true age.
+function fsaA_rest(py, a, lim){ if(lim === null || py(a) <= lim) return a; let q = 0; while(q < a && py(q + 0.25) <= lim) q += 0.25; return q; }
 // (batch 2) A point of the body, given from its centre as the picture is laid out, once deformAboutFeet(ang, sx, sy) has moved it: what a prop that rides the
 // body (a dollop on a shoulder, a bottle in a hand) is anchored to, so it goes with the lean and the squash.
 function fsaA_xf(f, px, py, ang, sx, sy){ const fe = f.r + 12, dx = px*sx, dy = (py - fe)*sy, c = Math.cos(ang), sn = Math.sin(ang); return { x:f.x + dx*c - dy*sn, y:f.y + fe + dx*sn + dy*c }; }
@@ -28059,6 +28066,29 @@ function fsaA_tintedPlain(anim, f, ta){
     ctx.globalAlpha = g0;
   } catch(e){}
 }
+// (second round) A fighter's own picture laid over again as one shape of it (the polygon `poly.pts`, in px of a poly.w x poly.h picture), in a colour at an alpha: a copy of the picture that is the colour only inside the shape, drawn
+// through drawSpriteBody (the same rig, deform and mirror as the body, so it sits on the painted art however the body swells, trembles or turns). Spikey's red half, hotter. Not on a skin or a costume (their pictures are not this
+// one). Render-only, and it can never take the frame down.
+function fsaA_hotHalf(anim, f, a, poly, col){
+  if(!(a > 0.01)) return;
+  try {
+    const cs = cosOf(f); if(cs && cs.skin) return;
+    const sp = SPRITES[f.name], im = sp && spriteImage(sp); if(!im || (typeof cosCostumeOf === 'function' && cosCostumeOf(f))) return;
+    const T = sp._fsaT || (sp._fsaT = {}); let d = T.hot;
+    if(!d){
+      const W = im.naturalWidth, H = im.naturalHeight, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      const g = cv.getContext('2d'); g.fillStyle = col; g.beginPath();
+      for(let i = 0; i < poly.pts.length; i++){ const x = poly.pts[i][0]*W/poly.w, y = poly.pts[i][1]*H/poly.h; if(i) g.lineTo(x, y); else g.moveTo(x, y); }
+      g.closePath(); g.fill(); g.globalCompositeOperation = 'destination-in'; g.drawImage(im, 0, 0);
+      cv.complete = true; cv.naturalWidth = W; cv.naturalHeight = H;
+      const bl = document.createElement('canvas'); bl.width = W; bl.height = H;
+      d = T.hot = Object.assign(Object.create(sp), { _req:true, img:cv, _tints:new Proxy({}, { get(){ return bl; } }) });
+    }
+    const g0 = ctx.globalAlpha; ctx.globalAlpha = g0*a;
+    drawSpriteBody(Object.create(f, { name:{ value:f.name + ' (hot)' }, flash:{ value:0 }, _pose:{ value:'hot' } }), d, anim);
+    ctx.globalAlpha = g0;
+  } catch(e){}
+}
 // ---- FSA lane a: end ------------------------------------------------------------------------------------------------------------------
 
 // GOO -- ENGULF. "Winning is like glue! This one stuck!" (the design doc, his analogies never stick); his own card surges forward, swallows whoever he reaches, holds them, and spits them out. He swells to 120 px round
@@ -28141,12 +28171,14 @@ FINAL_SMASHES['Bonesaw'] = fsaA_wrap(fsLock({ id:'cutstothecore', c1:'#b4764a', 
     }
     const kc = fsaA_k(t, 6, 36);
     if(kc > 0){ c.save(); c.translate(x, fy + 1); c.globalAlpha = 0.95; PROJ_SHAPE.coresaw.draw(c, 3 + 7*fsaA_ease(kc)); c.restore(); }   // small cracks spreading round the feet
+    const fl = fsaA_floorOf(f), lim = fl === null ? null : fl - 3;   // (the flecks come down onto the floor line and lie there, fading: never drawn below it)
     for(const t0 of [2, 16]){   // flecks and grit shaking off the teeth on each stroke
       const a = t - t0; if(a < 0 || a >= 14) continue;
       for(let i = 0; i < 7; i++){
         const hx = fsaA_h(i, t0), hy = fsaA_h(i, t0 + 5), age = a - i*0.8; if(age < 0) continue;
-        const px = x + (hx - 0.5)*R*2.4 + vf*(hx - 0.5)*age*1.6, py = f.y + R*0.65 - age*(0.8 + 1.4*hy) + 0.09*age*age*6;
-        c.globalAlpha = Math.max(0, 1 - age/12); c.fillStyle = i % 2 ? '#b4764a' : '#8c5a3c'; c.save(); c.translate(px, py); c.rotate(age*0.7 + i); c.fillRect(-2, -1.2, 4, 2.4); c.restore();
+        const pyf = (q)=> f.y + R*0.65 - q*(0.8 + 1.4*hy) + 0.54*q*q, ag = fsaA_rest(pyf, age, lim);
+        const px = x + (hx - 0.5)*R*2.4 + vf*(hx - 0.5)*ag*1.6, py = lim === null ? pyf(age) : Math.min(pyf(ag), lim);
+        c.globalAlpha = Math.max(0, 1 - age/12); c.fillStyle = i % 2 ? '#b4764a' : '#8c5a3c'; c.save(); c.translate(px, py); c.rotate(ag*0.7 + i); c.fillRect(-2, -1.2, 4, 2.4); c.restore();
       }
       const g = a/14; c.globalAlpha = 0.5*(1 - g); c.fillStyle = '#9a8f80'; c.beginPath(); c.arc(x + vf*R*0.2, fy - 6 - 8*g, 5 + 11*g, 0, 7); c.fill();
     }
@@ -28157,11 +28189,15 @@ FINAL_SMASHES['Bonesaw'] = fsaA_wrap(fsLock({ id:'cutstothecore', c1:'#b4764a', 
 // SPIKEY -- CAN'T HOLD IT IN. His own card: "hold it in, let go, and every spike shoots off at once, all ways"; lost and a little slow ("Wait, I won? Did I miss something?", his frame row). Eighteen spikes, all at once,
 // in every direction (12%, they fly 700 px): the gaps between them are the way through, and he is bald afterwards.
 // THE ENTRANCE (40 frames of holding it in; the early spike is our gag): he swells to 1.2 times his size and trembles harder every few frames (a
-// 1 px shake growing to 4 px), his red half glowing hotter, grey steam leaking from his sides; on frame 26 one spike pops loose early, spins up and
-// drops (a small drawn spike); from frame 32 he is completely still, swollen to the full, until he lets go. THE RELEASE throws him: up about 30 px
-// and back about 40 px (away from the way he faces; shorter where the surface under him ends or a block is in the way, fsaA_room), and he lands
-// bald (_baldUntil, 150 frames, as his own Can't Hold It In leaves him: the row's old comment said so, nothing set it). On the wire: _baldUntil.
-const SPIKEY_FS = { W:40, pop:26, still:32, up:33, back:40, flight:22.2 };   // (up: the hop's height wanted; the real apex is about 30. flight: frames the push back lasts)
+// 1 px shake growing to 4 px), his red half glowing hotter (the red crescent of his own picture laid over again, traced from it and drawn through the body's own pass
+// by his FIGHTER_ANIM over hook: it sits on the painted split however he swells and trembles, and is not drawn on a skin or a costume), grey steam leaking from his sides;
+// on frame 26 one spike pops loose early, spins up and drops (a small drawn spike); from frame 32 he is completely still, swollen to the full, until he lets go. THE RELEASE
+// throws him: up about 25-30 px and back about 40 px (away from the way he faces; shorter where the surface under him ends or a block is in the way, fsaA_room; exactly that
+// far: the push is spread over the hop's own airtime, 2 x the lift-off speed over this stage's gravity, and he is stopped dead the moment he lands), and he lands bald for 150 frames. The bald look is RENDER-ONLY (_fsBaldUntil):
+// his own Can't Hold It In special keeps its own lock (_baldUntil), so it is not refused for 2.5 s after the Final Smash. On the wire: _fsBaldUntil.
+const SPIKEY_FS = { W:40, pop:26, still:32, up:33, back:40 };   // (up: the hop's height wanted; the real apex is about 24 on a normal floor)
+// His red crescent in his picture (spikey.png, 183 x 200): the ball's red half right of the painted split, 3 px in from its rim.
+const FSA_SPIKEY_RED = { w:183, h:200, pts:[[110,55],[113,63],[117,71],[120,79],[122,87],[123,95],[124,103],[124,111],[124,119],[123,127],[122,135],[120,143],[117,151],[114,159],[109,167],[102,175],[113,175],[132,167],[142,159],[149,151],[154,143],[158,135],[160,127],[162,119],[162,111],[161,103],[160,95],[157,87],[153,79],[147,71],[140,63],[128,55]] };
 function fsaA_spikeyPop(f, c, u){   // the early spike, u frames after it popped: up, spinning, and down
   const R = f.r, vf = f.face < 0 ? -1 : 1, x0 = f.x + vf*R*0.30, y0 = f.y + R + 12 - 2.4*R*1.2;
   const px = x0 + vf*u*1.1, py = y0 - 5.2*u + 0.27*u*u;
@@ -28170,6 +28206,7 @@ function fsaA_spikeyPop(f, c, u){   // the early spike, u frames after it popped
 FINAL_SMASHES['Spikey'] = fsaA_wrap(fsFan({ id:'cantholditin', c1:'#8a8a96', n:18, spd:14, vols:[0], dmg:12, kb:18, r:11, life:52, reach:340, kind:'fsburst', art:FS_GLYPH.spike,
   lockShots:2 }), {   // (the foe his catch holds takes two spikes, as one right beside him does: the catch does not halve it)
   W:SPIKEY_FS.W,
+  hot(t){ const k = t >= SPIKEY_FS.still ? 1 : fsaA_k(t, 0, SPIKEY_FS.still); return 0.07 + 0.36*k*k; },   // how much hotter the red half is (an alpha)
   deform(f, ctx, R, t){
     const s = 1 + 0.2*(t >= SPIKEY_FS.still ? 1 : fsaA_ease(fsaA_k(t, 0, SPIKEY_FS.still))), a = t >= SPIKEY_FS.still ? 0 : 1 + 3*Math.floor(t/4)/7;
     deformAboutFeet(ctx, R, 0, s, s);
@@ -28179,7 +28216,6 @@ FINAL_SMASHES['Spikey'] = fsaA_wrap(fsFan({ id:'cantholditin', c1:'#8a8a96', n:1
     const R = f.r, vf = f.face < 0 ? -1 : 1, hot = t >= SPIKEY_FS.still ? 1 : fsaA_k(t, 0, SPIKEY_FS.still), s = 1 + 0.2*(t >= SPIKEY_FS.still ? 1 : fsaA_ease(hot));
     const cy = f.y + R + 12 - 1.255*R*s, rb = 0.80*R*s;   // the ball's middle and radius, as he is drawn
     c.save();
-    c.globalAlpha = 0.07 + 0.36*hot*hot; c.fillStyle = '#ff4a30'; c.beginPath(); c.arc(f.x, cy, rb, vf > 0 ? -Math.PI/2 : Math.PI/2, vf > 0 ? Math.PI/2 : Math.PI*1.5); c.closePath(); c.fill();   // the red half, hotter
     for(let i = 0; i < 14; i++){   // grey steam leaking from his sides
       const b = 3 + i*2.2, a = t - b; if(a < 0 || a >= 15) continue;
       const side = i % 2 ? 1 : -1, g = a/15, px = f.x + side*(rb*0.95 + 10*g + 3*Math.sin(i*2.1 + a*0.3)), py = cy - R*0.1 - 24*g;
@@ -28196,11 +28232,14 @@ FINAL_SMASHES['Spikey'] = fsaA_wrap(fsFan({ id:'cantholditin', c1:'#8a8a96', n:1
       let sg = f.face < 0 ? 1 : -1;
       if(room(sg) < 24 && room(-sg) > room(sg) + 16) sg = -sg;
       const D = Math.min(K.back, room(sg)), hh = (MCAVE && MCAVE.on) ? 0 : fsaA_head(f.x, fy, f.r, K.up);   // (on the Moon: no hop, and no push: fsaA_room is 0 there)
-      st.kb = { vx:sg*D/K.flight };
-      if(hh > 4){ f.vy = -Math.sqrt(2*GRAV*hh); f.onground = false; }
-      f._baldUntil = hazardT + 150;
+      st.kb = null;
+      if(hh > 4){
+        const g = gravAt(f), vy0 = Math.sqrt(2*g*hh), n = Math.max(8, Math.floor(2*vy0/g));   // (on this stage's gravity: the frames the hop takes to come down to where it went up from; the push is spread over them, so D px is exactly what he travels)
+        f.vy = -vy0; f.onground = false; st.kb = { vx:sg*D/n, n:n };
+      }
+      f._fsBaldUntil = hazardT + 150;   // (render-only: his special's own lock, _baldUntil, is not touched)
     }
-    if(st.kb && t >= K.W){ if(t > K.W + 2 && f.onground) st.kb = null; else if(t >= K.W + K.flight){ st.kb = null; f.vx = 0; } else f.vx = st.kb.vx; }
+    if(st.kb && t >= K.W){ if(t > K.W + 2 && f.onground){ st.kb = null; f.vx = 0; } else if(t >= K.W + st.kb.n){ st.kb = null; f.vx = 0; } else f.vx = st.kb.vx; }   // (landed: stopped dead, no slide on)
   },
 });
 
@@ -28345,13 +28384,14 @@ FINAL_SMASHES['Fan'] = fsaA_wrap(fsLane({ id:'leaveusalone', c1:'#e8506a', L:700
     deformAboutFeet(ctx, R, f.face*(-0.2*lean + (t >= K.snap ? 0.08*(1 - fsaA_k(t, K.snap, K.W)) : 0)) + amp*Math.sin(t*2.7), sx, 1);
   },
   draw(f, c, t){
-    const K = FAN_FS, R = f.r;
+    const K = FAN_FS, R = f.r, fl = fsaA_floorOf(f), lim = fl === null ? null : fl - 4;   // (the flecks come down onto the floor line and lie there, fading: never drawn below it)
     c.save();
     for(let i = 0; i < 9; i++){   // loose red paper flecks falling off him
       const born = 4 + i*1.9, a = t - born; if(a < 0 || a >= 15 || born > K.snap) continue;
-      const hx = fsaA_h(i, 2), px = f.x + (hx - 0.5)*R*0.9 + (hx - 0.5)*a*1.2, py = f.y - R*0.3 + 0.07*a*a*5 + a*0.6;
+      const hx = fsaA_h(i, 2), pyf = (q)=> f.y - R*0.3 + 0.35*q*q + q*0.6, ag = fsaA_rest(pyf, a, lim);
+      const px = f.x + (hx - 0.5)*R*0.9 + (hx - 0.5)*ag*1.2, py = lim === null ? pyf(a) : Math.min(pyf(ag), lim);
       c.globalAlpha = Math.max(0, 1 - a/15); c.fillStyle = i % 3 === 2 ? '#ffe08a' : '#e63a30'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 0.8;
-      c.save(); c.translate(px, py); c.rotate(a*0.5 + i); c.fillRect(-2.6, -1.8, 5.2, 3.6); c.strokeRect(-2.6, -1.8, 5.2, 3.6); c.restore();
+      c.save(); c.translate(px, py); c.rotate(ag*0.5 + i); c.fillRect(-2.6, -1.8, 5.2, 3.6); c.strokeRect(-2.6, -1.8, 5.2, 3.6); c.restore();
     }
     fsaA_fanArmour(f, c, fsaA_ease(fsaA_k(t + 1, K.snap, K.W)), 0, 1);
     c.restore();
@@ -28423,7 +28463,7 @@ FINAL_SMASHES['Soap'] = fsaA_wrap(fsOrbit({ id:'scrubforhours', c1:'#cfeeff', c2
 // back further each time and swelling a little, green flecks drawn sucked in toward his face as dots), a single tissue rising out of his top on the second sniff (12-24, growing in,
 // quivering), and the sneeze picture from frame 32. THE SNEEZE (33) snaps him forward and blows the tissue off his top, and it throws him back: he skids 60 px over the stream (frames 38-66,
 // slowing to a stop: fsaA_slide, clamped to what he stands on) with the shots leaving from his mouth as he slides. The entrance's pose and deform run through the stream (span 68).
-const TISSUES_FS = { W:38, span:68, sniff:[2, 12, 22], sneeze:32, tissue:12, slide:60, flight:28 };
+const TISSUES_FS = { W:38, span:68, sniff:[2, 12, 22], sneeze:32, tissue:12, slide:60, flight:28, late:5 };   // (late: the catch is laid 5 frames later: the shots leave from the sliding mouth, so the last one lands 5 frames later and the let-go waits for it)
 const TISSUES_LEAN = [[0, 0], [2, 0], [8, -0.08], [10, -0.04], [12, -0.04], [18, -0.15], [20, -0.07], [22, -0.07], [30, -0.24], [32, -0.24], [33, 0.26], [48, 0.10], [66, 0]];
 const TISSUES_SWELL = [[0, 1], [2, 1], [8, 1.035], [10, 1.01], [12, 1.01], [18, 1.055], [20, 1.03], [22, 1.03], [30, 1.085], [32, 1.085], [33, 0.94], [44, 1]];
 function fsaA_tissuesBody(f, t){ const sw = fsaA_tab(t, TISSUES_SWELL); return [f.face*fsaA_tab(t, TISSUES_LEAN), sw, 1 + (sw - 1)*0.8]; }   // [lean, sx, sy]
@@ -28434,7 +28474,7 @@ function fsaA_tissuesSheet(c, H, w, q){   // a tissue standing H tall on its bas
 }
 FINAL_SMASHES['Tissues'] = fsaA_wrap(fsHose({ id:'achoo', c1:'#9ad84a', n:14, every:2, v0:14, art:FS_GLYPH.goo, reach:480,
   shots:[{ color:'#9ad84a', dmg:5, kb:7, r:12, grav:false, vy:0, life:60 }, { color:'#b8e86a', dmg:5, kb:7, r:11, grav:true, vy:-2, life:70 }], big:{ dmg:18, kb:23, r:28, color:'#9ad84a', life:60, pierce:true } }), {
-  W:TISSUES_FS.W, span:TISSUES_FS.span,
+  W:TISSUES_FS.W, span:TISSUES_FS.span, late:TISSUES_FS.late,
   pose(t){ return t < TISSUES_FS.sneeze ? 'sniff' : 'sneeze'; },
   deform(f, ctx, R, t){ const B = fsaA_tissuesBody(f, t); deformAboutFeet(ctx, R, B[0], B[1], B[2]); },
   draw(f, c, t){
@@ -28496,7 +28536,6 @@ FINAL_SMASHES['Yin-Yang'] = fsaA_wrap(fsLane({ id:'yangthrowsyin', c1:'#1c1c1c',
   draw(f, c, t){
     const K = YIN_FS, d = fsaA_yinDisc(f, t), vf = f.face < 0 ? -1 : 1;
     c.save();
-    if(t >= K.take && t < K.take + 4){ const g = (t - K.take)/4; fsaA_sparkle(c, f.x + vf*3, f.y - 12, 3 + 7*Math.sin(Math.PI*g), '#ffffff', 1 - g*0.5); }   // the swap
     if(d){ c.globalAlpha = 1; fsaA_yinyang(c, d.x, d.y, d.r, d.rot); }
     c.restore();
   },
@@ -28860,7 +28899,7 @@ FINAL_SMASHES['MeTag'] = fsaA_wrap(fsCols({ id:'barrierwalls', c1:'#8ad8ff', c2:
 // THE ENTRANCE (40 frames, and the hop after it; their own picture and a drawn pan, grown in over 12 frames; no words): "The jig is up!" (their frame row) and the design doc's "a kernel in a pan". A black frying pan slides under their feet from behind them (0-12, growing in as it comes, its
 // handle trailing out behind, a red-hot ring on its rim and a little steam) and they sizzle in it: rattling faster and faster (their body shakes at a rising rate and size, 4-34) and flushing hot orange (the picture laid over again in orange, 0 to half over 2-34) while single kernels spit
 // off them at a rising rate (one at 11, two at 19 and 22, four at 28, 30, 32 and 34: each a popcorn glyph, growing in over 12 frames as it arcs up and out under gravity and thinning away). Then a hard crouch (33-40: wide and low) and the big pop (40): the pan clangs away behind them,
-// spinning, a flash where it leaves, as the kernels burst out as they always did. THE KNOCK-BACK: their own second volley (54) pops them straight up about 90 px and a little back (26 px) -- a hop of 96 (the speed is worked out for that: the first step takes a little), the slide along what they stand on
+// spinning, a flash where it leaves, as the kernels burst out as they always did. THE KNOCK-BACK: their own second volley (54) pops them straight up about 90 px and a little back (26 px) -- a hop of 96 (the speed is worked out for that: the first step takes a little; counted from the surface they stand over, so on the lava stages, where the flare has popped them up to about 30 px by then, they still hop and top out as high), the slide along what they stand on
 // clamped to it with a margin at its ends (fsaA_slide), the rise cut to what is left under the top KO line and under any block over their head, none on the Moon, no launch: nothing the foes can hit -- landing deflated (the sag after landing, wide and low, over about fifteen frames). Both volleys
 // are worked out from where they stood (E.pin: they leave the same spot).
 const POPPY_FS = { W:40, vol2:14, pan:[0, 12], spit:[11, 19, 22, 28, 30, 32, 34], crouch:[33, 40], rise:96, back:26, backFrames:34, span:110 };
@@ -28917,10 +28956,13 @@ FINAL_SMASHES['Poppy'] = fsaA_wrap(fsFan({ id:'popcorn', c1:'#fff4c0', n:12, spd
   draw(f, c, t){ fsaA_poppyDraw(f, c, t); },
   tick(f, st, t){
     const K = POPPY_FS, t0 = K.W + K.vol2; fsaA_swing(f, K, t, 'spit');
-    if(t === t0) st.fsaHop = fsaA_low(f) && !(MCAVE && MCAVE.on);
+    if(t === t0) st.fsaHop = fsaA_low(f, 32) && !(MCAVE && MCAVE.on);   // (32: the lava stages' flare has popped a standing fighter up to about 30 px by now, and still she hops)
     if(st.fsaHop){
       fsaA_slide(f, st, t, t0, K.backFrames, K.back, false);
-      if(t === t0){ const up = Math.max(0, Math.min(K.rise, f.y + 200, fsaA_head(f.x, f.y + f.r, f.r, K.rise))); if(up > 8) f.vy = -Math.sqrt(2*gravAt(f)*up); }   // up on the second volley (and back down)
+      if(t === t0){   // up on the second volley (and back down): the rise is counted from the surface, so a fighter the flare has lifted hops the rest and tops out as high
+        const fy = f.y + f.r, sb = f.onground ? fy : surfaceBelow(f.x, fy), h0 = sb === null ? 0 : Math.max(0, sb - fy), rise = K.rise - h0;
+        const up = Math.max(0, Math.min(rise, f.y + 200, fsaA_head(f.x, fy, f.r, rise))); if(up > 8) f.vy = -Math.sqrt(2*gravAt(f)*up);
+      }
     }
   },
 });
@@ -81480,7 +81522,8 @@ const FIGHTER_ANIM = {
   Spikey: {
     pose: renderSprite("spikey-spikeless.png"),   // Spikey without the spikes.png: bald until they grow back
     atkDrive(f){ return fsaA_on(f) ? 0 : atkDrive(f); },   // (FSA lane a)
-    body(f){ if(!(f._baldUntil > hazardT) || fsaA_on(f) || !spriteImage(this.pose)) return false;   // (he holds it in with his spikes on: the entrance)
+    over(f, ctx){ const E = fsaA_on(f); if(E && E.hot) fsaA_hotHalf(this, f, E.hot(f.fsT | 0), FSA_SPIKEY_RED, '#ff4a30'); },   // his red half, hotter, as he holds it in (FSA lane a)
+    body(f){ if(!(f._baldUntil > hazardT || f._fsBaldUntil > hazardT) || fsaA_on(f) || !spriteImage(this.pose)) return false;   // (he holds it in with his spikes on: the entrance; bald after the Final Smash: _fsBaldUntil, render-only)
       drawSpriteBody(Object.create(f, {name:{value:"Spikey (spikeless)"}}), this.pose, null); return true; },
     deform(f, ctx, R){
       const E = fsaA_on(f); if(E && E.deform){ E.deform(f, ctx, R, f.fsT | 0); return; }   // the Final Smash's holding it in (FSA lane a)
@@ -84390,6 +84433,7 @@ function frYinYangPose(f, P, sp){
 FRAME_SRC.Tissues.pose = frTissuesPose; FRAME_SRC['Yin-Yang'].pose = frYinYangPose;
 for(const _n of ['Blocky', 'Pen', 'Match', 'Ice Cube', 'Teardrop', 'Bomby', 'Rocky', 'Lightning']) FRAME_SRC[_n].pose = fsaA_framePose;   // an entrance's own face and body (FSA lane a, batch 5)
 for(const _n of ['Fanny', 'Dora', 'Clover', 'Jack', 'Magnet', 'MeTag', 'Poppy']) FRAME_SRC[_n].pose = fsaA_framePose6;   // an entrance's own body, shed and legs (FSA lane a, batch 6)
+for(const _n of ['Bonesaw', 'Spikey', 'Cheesy', 'Fan']) FRAME_SRC[_n].pose = fsaA_framePose;   // an entrance's own body: the held spit frame's lean, squash, cheeks and effects are off, so the designed numbers are exact (FSA lane a, second round)
 frBuild(FRAME_SRC);
 /* FRAME-LAYER-END */
 
@@ -88674,7 +88718,7 @@ const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering
   '_boltT', '_boltY',   // (EVENT FIGHTERS: CLOUDY -- when HEY, MY WINDOW! struck, and the floor it struck: 0 for the crackle on the ground)
   '_rain0', '_rainT',   // (EVENT FIGHTERS: CLOUDY -- when RAIN CLOUD began and ends)
   '_growT',   // (Puffball's Grow: until when she is grown -- the pink Attack Up icon; her size itself rides in r)
-  '_baldUntil',   // (FSA lane a: Spikey's spikes are gone until then -- his Can't Hold It In special, and now his Final Smash's release)
+  '_baldUntil', '_fsBaldUntil',   // (FSA lane a: Spikey's spikes are gone until then -- his Can't Hold It In special, and his Final Smash's release (the render-only one))
   'fsGlow','fsId','fsT','fsWind','fsDur','fsAx','fsAy','fsBx','fsBy','fsCx','fsCy',   // FINAL SMASH BALLS: the glow, and which Final Smash is on, how far in, and where it began (all a client needs to draw it)
   'fsC','fsLk'];   // ...the catch's frames left, and whose catch holds this fighter (+1) (CATCH, THEN CINEMATIC)
 function netFighter(f){
