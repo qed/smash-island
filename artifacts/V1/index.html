@@ -26405,11 +26405,15 @@ Object.assign(FS_GLYPH, {
 //    74-133 he drops flat and deflated for 60 frames, the last 14 of them blowing back up; then the row ends as every row does
 // THE ZIG-ZAG: the foe the catch took (the nearest; else a spot 320 px ahead) is the hub. Run 1 goes from where he stood straight through the hub and 280 px out the
 // far side; each next run is a chord from there that passes within 58 px of the hub (a tangent to a circle round it), alternately above and below, so every jet
-// crosses the held foe; the last chord goes in to the hub and stops 30 px short, in the blast. The corners stay inside the stage (70 px from the sides, 100 px
-// from the top, and no lower than the floor the hub's foe stands on; a run is cut short where the box ends, never bent), and the last stop is over a surface (landable): the hub is walked back toward where he stood until it is. On
+// crosses the held foe (a foe standing on a floor cuts the below chord: the third run is then its own diagonal, never the second run's way back: fsaR_balAlt, unless the hub is within 120 px of the box's wall); the last chord goes in to the hub and stops 30 px short, in the blast. The corners stay inside the stage (70 px from the sides, 100 px
+// from the top, and no lower than the floor the hub's foe stands on; a run is cut short where the box ends, never bent), and the last stop is over a surface (landable) and the runs pass the foe he holds, so it takes all four blows (fsaR_balPasses): the hub is walked back toward where he stood until both are so; if the runs can
+// never pass a foe (one well off the stage), he zips on the first safe hub and that foe is let go, unhurt, at the wind's end (row frame 33) rather than held. On
 // Moon Caves, or if no hub gives a safe stop, he stays where he is and each run is a ring round him instead. He is placed along it each frame (untouchable, as every
 // holder is) and never thrown, so he can never be carried past a blast zone by it: his last place is over what he stood on. All of it is a function of what a guest has
 // (fsT; fsAx/fsAy where he stood; fsBx/fsBy the hub; his place): the jets and his body are drawn from those (fsaR_balPlan), so both screens show the same.
+// Is the spot x, under a fighter at height y, over the same surface she stands on (its top within 10 px of `top`)? `landable` is true over ANY surface below, even one far down, so a knock-back that only asked it
+// carried a fighter off a platform's end and left her hanging at its height. A slide asks this of every spot on the way (and a body's width either side) when she starts on a surface; from the air it asks `landable` only.
+function fsaR_sameTop(x, y, top){ const s = surfaceBelow(x, y); return s !== null && Math.abs(s - top) <= 10; }
 const FSAR_NONE = { kind:'box', x:-100000, y:-100000, w:1, h:1 };   // a catch that holds nobody: Balloony lays his own later (catch below)
 const FSAR_BAL = {
   w:34, breath:10, swell:[1.15, 1.30, 1.45],      // the entrance (the row's wind), and how wide each breath leaves him
@@ -26417,6 +26421,7 @@ const FSAR_BAL = {
   dmg:[6, 6, 6, 16], kb:[7, 7, 7, 22], ky:[-7, -7, -7, -10],   // each jet's blow: the last is the old blast's own (16%, knock 22, up 10)
   jr:[54, 54, 54, 76], burst:[100, 120, 140, 150],  // how far each jet hits to either side (110 tall, as the old lane; the last wider); the rings when he cannot move, the last the blast's
   D:280, rho:58, stop:30, hub:320, reach:600,     // the zig-zag's corner distance, how near each chord passes the hub, where the last stops short, the hub with no foe caught, the catch's length
+  cap:150, aim:46, altMin:120,                    // when the floor cuts the third run's under-the-hub chord: how far the second run goes on past its touch, how far from the hub the third may aim, how far past the hub the first run must reach for the rebuild to apply
 };
 FSAR_BAL.start = FSAR_BAL.runs.map((n, i)=> FSAR_BAL.w + FSAR_BAL.runs.slice(0, i).reduce((a, b)=> a + b, 0));   // 34, 45, 54, 63
 FSAR_BAL.end = FSAR_BAL.w + FSAR_BAL.runs.reduce((a, b)=> a + b, 0);   // 74: the zips are done
@@ -26432,6 +26437,39 @@ function fsaR_balReach(ox, oy, dx, dy, smax, yb){
   if(dy > 1e-6) s = Math.min(s, (yb - oy)/dy); else if(dy < -1e-6) s = Math.min(s, (100 - oy)/dy);
   return Math.max(0, s);
 }
+// The end of the chord from q that touches the circle (rho) round the hub: of its two tangents the second run's goes over the hub and the third's under it (or the one with room); the chord runs on past its
+// touch by up to `cap` (0: the full D, cut where the box ends).
+function fsaR_balTan(q, hx, hy, k, yb, cap){
+  const B = FSAR_BAL, sq = Math.sqrt(B.D*B.D - B.rho*B.rho), vx = q[0] - hx, vy = q[1] - hy, d = Math.hypot(vx, vy), phi = Math.acos(B.rho/d), a0 = Math.atan2(vy, vx), cand = [];
+  for(const sg of [1, -1]){
+    const ang = a0 + sg*phi, tx = hx + B.rho*Math.cos(ang), ty = hy + B.rho*Math.sin(ang), dx = tx - q[0], dy = ty - q[1], dl = Math.hypot(dx, dy) || 1, ex = dx/dl, ey = dy/dl;
+    const s = fsaR_balReach(tx, ty, ex, ey, cap ? Math.min(cap, sq) : sq, yb);
+    cand.push({ p:[tx + ex*s, ty + ey*s], s:s, y:ty + ey*sq });
+  }
+  cand.sort((a, b)=> k === 2 ? a.y - b.y : b.y - a.y);   // the second run goes over the hub, the third under it (or the one with room)
+  return (cand.find((c)=> c.s >= 120) || (cand[0].s >= cand[1].s ? cand[0] : cand[1])).p;
+}
+// Would the run from P[2] to p go straight back along the one that came (P[1] to P[2], within 3 degrees)? The floor cuts the under-the-hub chord for a foe standing on it, and the other tangent is that very line.
+function fsaR_balRetrace(P, p){
+  const ax = P[1][0] - P[2][0], ay = P[1][1] - P[2][1], bx = p[0] - P[2][0], by = p[1] - P[2][1], la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
+  return la > 1 && lb > 1 && (ax*bx + ay*by)/(la*lb) > 0.9986;
+}
+// The third run when it would only retrace the second: the second turns a little sooner (it goes on past its touch by `cap`, a wider turn at its end), and the third is a chord aimed at a spot beside the hub (at most
+// `aim` px from it, so it still passes well inside the circle), cut where the box ends (the floor, for a foe on it). The pick is the one that ends farthest from where the second began, with the longest last run in to the
+// hub, and the widest turn. [the second's end, the third's end], or null if none reaches the hub.
+function fsaR_balAlt(P, hx, hy, yb){
+  const B = FSAR_BAL, p2 = fsaR_balTan(P[1], hx, hy, 2, yb, B.cap); if(Math.hypot(p2[0] - hx, p2[1] - hy) < B.rho + 8) return null;
+  const vx = hx - p2[0], vy = hy - p2[1], d = Math.hypot(vx, vy), nx = -vy/d, ny = vx/d; let best = null;
+  for(let tau = -B.aim; tau <= B.aim; tau += 6){
+    const tx = hx + nx*tau, ty = hy + ny*tau, dl = Math.hypot(tx - p2[0], ty - p2[1]), ex = (tx - p2[0])/dl, ey = (ty - p2[1])/dl;
+    const c = vx*ex + vy*ey, s = fsaR_balReach(p2[0], p2[1], ex, ey, d + B.D, yb); if(s < c) continue;   // (it must get as near the hub as the line goes)
+    const p = [p2[0] + ex*s, p2[1] + ey*s], a = [P[1][0] - p2[0], P[1][1] - p2[1]], b = [p[0] - p2[0], p[1] - p2[1]];
+    const apex = Math.acos(Math.max(-1, Math.min(1, (a[0]*b[0] + a[1]*b[1])/((Math.hypot(a[0], a[1])*Math.hypot(b[0], b[1])) || 1))))*180/Math.PI;
+    const sc = Math.min(1, Math.hypot(p[0] - P[1][0], p[1] - P[1][1])/120) + Math.min(1, Math.max(0, Math.hypot(hx - p[0], hy - p[1]) - B.stop)/70) + Math.min(1, apex/12);
+    if(!best || sc > best.sc) best = { sc:sc, p:p };
+  }
+  return best ? [p2, best.p] : null;
+}
 // His five places: where he stood, then the end of each zip. (hx null: he does not move.)
 function fsaR_balPlan(ax, ay, hx, hy){
   const B = FSAR_BAL, P = [[ax, ay]];
@@ -26440,34 +26478,50 @@ function fsaR_balPlan(ax, ay, hx, hy){
   if(L < 30){ ux = ax <= hx ? 1 : -1; uy = 0; } else { ux /= L; uy /= L; }
   const s1 = fsaR_balReach(hx, hy, ux, uy, B.D, yb);
   P.push([hx + ux*s1, hy + uy*s1]);
-  const sq = Math.sqrt(B.D*B.D - B.rho*B.rho);
   for(let k = 2; k <= 3; k++){
     const q = P[k - 1], vx = q[0] - hx, vy = q[1] - hy, d = Math.hypot(vx, vy);
     if(d < B.rho + 8){ const a = d > 1 ? [vx/d, vy/d] : [ux, uy], s = fsaR_balReach(hx, hy, -a[0], -a[1], B.D, yb); P.push([hx - a[0]*s, hy - a[1]*s]); continue; }
-    const phi = Math.acos(B.rho/d), a0 = Math.atan2(vy, vx), cand = [];
-    for(const sg of [1, -1]){
-      const ang = a0 + sg*phi, tx = hx + B.rho*Math.cos(ang), ty = hy + B.rho*Math.sin(ang), dx = tx - q[0], dy = ty - q[1], dl = Math.hypot(dx, dy) || 1, ex = dx/dl, ey = dy/dl;
-      const s = fsaR_balReach(tx, ty, ex, ey, sq, yb);
-      cand.push({ p:[tx + ex*s, ty + ey*s], s:s, y:ty + ey*sq });
-    }
-    cand.sort((a, b)=> k === 2 ? a.y - b.y : b.y - a.y);   // the second run goes over the hub, the third under it (or the one with room)
-    P.push((cand.find((c)=> c.s >= 120) || (cand[0].s >= cand[1].s ? cand[0] : cand[1])).p);
+    let pick = fsaR_balTan(q, hx, hy, k, yb, 0);
+    if(k === 3 && Math.hypot(P[1][0] - hx, P[1][1] - hy) >= B.altMin && fsaR_balRetrace(P, pick)){ const alt = fsaR_balAlt(P, hx, hy, yb); if(alt){ P[2] = alt[0]; pick = alt[1]; } }   // (not the way back: two different diagonals; a hub within altMin of the box's wall has no room for a turn, and keeps the old plan, whose last run ends at the wall)
+    P.push(pick);
   }
   const q = P[3], dx = hx - q[0], dy = hy - q[1], dl = Math.hypot(dx, dy) || 1, stop = Math.min(B.stop, dl*0.5);
   P.push([hx - dx/dl*stop, hy - dy/dl*stop]);   // the last run: in to the hub, and it ends in the blast just short of it
   return P;
 }
 function fsaR_balPt(P, k, u){ return [P[k][0] + (P[k + 1][0] - P[k][0])*u, P[k][1] + (P[k + 1][1] - P[k][1])*u]; }
-// The hub, once the catch has landed (the row's frame w - 1): the nearest foe it took (else a spot ahead), walked back toward where he stood until the last stop is
-// over a surface; fsBx/fsBy carry it to a guest (null: he stays). st.P: the five places.
+// Do the five places P take him past foe o, held where it stands, the way the row hits? Each zip's jet within its reach of them on some frame (the sweep's own test, a little inside it), and the last run's blast within
+// its ring: the foe takes all four blows. Whoever the walked-back hub's runs would miss (a foe well off the stage) must not be held for nothing.
+function fsaR_balPasses(o, P){
+  const B = FSAR_BAL;
+  for(let k = 0; k < 4; k++){
+    let hit = k === 3 && hurtGap(o, P[4][0], P[4][1]) < B.burst[3] - 4;
+    for(let j = 0; j < B.runs[k] && !hit; j++){
+      const a = fsaR_balPt(P, k, j/B.runs[k]), b = fsaR_balPt(P, k, (j + 1)/B.runs[k]), n = Math.max(2, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1])/20) + 1);
+      for(let i = 0; i < n; i++){ const u = i/(n - 1); if(hurtGap(o, a[0] + (b[0] - a[0])*u, a[1] + (b[1] - a[1])*u) < B.jr[k] - 4){ hit = true; break; } }
+    }
+    if(!hit) return false;
+  }
+  return true;
+}
+// The hub, once the catch has landed (the row's frame w - 1): the nearest foe it took (else a spot ahead), walked back toward where he stood until the last stop is over a surface AND the runs pass the foe it holds (so
+// the foe takes all four blows); fsBx/fsBy carry it to a guest (null: he stays). If no hub does both, the first with a safe last stop is his and the foe is let go, unhurt, in place. st.P: the five places.
 function fsaR_balHub(f, st){
   const ax = f.fsAx, ay = f.fsAy, dir = f.face < 0 ? -1 : 1;
   f.fsBx = f.fsBy = null; st.P = fsaR_balPlan(ax, ay, null, null);
   if(!(MCAVE && MCAVE.on)){   // (Moon Caves: his chart is turned: he stays, and each run is a ring)
-    const L = fsLockedOf(f), fx = L ? L.x : ax + dir*FSAR_BAL.hub, fy = L ? hurtCY(L) : ay - 10;
+    const L = fsLockedOf(f), fx = L ? L.x : ax + dir*FSAR_BAL.hub, fy = L ? hurtCY(L) : ay - 10, held = st.held.map((i)=> fighters[i]).filter((o)=> o && o._fsLock && o._fsLock.st === st);
+    let first = null;
     for(let i = 0; i <= 12; i++){
-      const hx = Math.round(fx + (ax - fx)*i/12), hy = Math.round(fy + (ay - fy)*i/12), e = fsaR_balPlan(ax, ay, hx, hy)[4];
-      if(landable(e[0], e[1]) && landable(e[0] - 16, e[1]) && landable(e[0] + 16, e[1])){ f.fsBx = hx; f.fsBy = hy; st.P = fsaR_balPlan(ax, ay, hx, hy); return; }
+      const hx = Math.round(fx + (ax - fx)*i/12), hy = Math.round(fy + (ay - fy)*i/12), Q = fsaR_balPlan(ax, ay, hx, hy), e = Q[4];
+      if(!(landable(e[0], e[1]) && landable(e[0] - 16, e[1]) && landable(e[0] + 16, e[1]))) continue;
+      if(!first) first = { hx:hx, hy:hy, Q:Q };
+      if(held.every((o)=> fsaR_balPasses(o, Q))){ f.fsBx = hx; f.fsBy = hy; st.P = Q; return; }
+    }
+    if(first){   // no hub does both: he zips on the first safe one, and a foe his runs will not pass is let go, quietly
+      f.fsBx = first.hx; f.fsBy = first.hy; st.P = first.Q;
+      for(const o of held) if(!fsaR_balPasses(o, first.Q)) fsLockOff(o, true);
+      return;
     }
   }
   for(const i of st.held){ const o = fighters[i]; if(o && o._fsLock && hurtGap(o, ax, ay) >= FSAR_BAL.burst[3]) fsLockOff(o, true); }   // he stays: a foe held out of the rings' reach is let go, in place, unhurt
@@ -26787,7 +26841,7 @@ function fsaR_profBlast(f, c, t, w){
 //    36     SMASH 1, the plate (a = 0):  a 110 px ring, 3% (knock 8, up 6); the plate bursts in shards
 //    51     SMASH 2, the TV (a = 15):    a 170 px ring, 5% (knock 13, up 9); sparks, glass, smoke
 //    63     SMASH 3, the table (a = 27): the old blast's own, 230 px, 26% (knock 22, up 14); the table bursts into planks, the gun flies from her paws; she is flung back
-//    64-79  she slides back about 90 px in her shaken picture, to a stop (never past a ledge or into a wall: the distance is cut to what is safe: fsaR_tedSlide); the rings stay where she stood
+//    64-79  she slides back about 90 px in her shaken picture, to a stop (never past a ledge, a platform's end included, or into a wall: the distance is cut to what is safe: fsaR_tedSlide); the rings stay where she stood
 //    80-124 puffed out: on her knees in her kit's tired state (sweat drop, puffs of stuffing), standing again for the last 14; the row ends 62 frames after the finish (as the old row ended 62 after its
 //           blast): 125 frames in all (was 76). A foe the catch holds is held to a beat after the finish (the old blast's let-go, one blow: the table's launch)
 // The ring of each smash is round where she stood (fsAx/fsAy, fixed when the catch lands) and hits each foe in it once; a foe within 110 px takes all three, a foe at the edge of 230 only the finish.
@@ -26804,7 +26858,6 @@ const FSAR_TED_SH = [[2, 0], [-4, 2]];                   // her two shoulders (f
 const FSAR_TED_UP = [-0.30, -0.42, -0.56];               // how far back the gun is hoisted before each swing (angle from straight up; wilder each time)
 const FSAR_TED_RING = ['#9fd0ff', '#ffd75e', '#b8742e'];
 function fsaR_tedEase(u){ u = Math.max(0, Math.min(1, u)); return u*u*(3 - 2*u); }
-function fsaR_tedGrow(u){ u = Math.max(0, Math.min(1, u)); const s = u - 1; return 1 + 2.2*s*s*s + 1.2*s*s; }   // out, a little past, back (grown in over 12 frames)
 // Which side the table goes: the side she faces, unless a foe stands within 100 px of her there (the table is drawn over the fighters): then the other one, if it is clearer.
 function fsaR_tedSide(f){
   const near = [1e9, 1e9];   // the nearest foe on the right, on the left (within 130 px across and 100 up or down)
@@ -26816,16 +26869,17 @@ function fsaR_tedSide(f){
   const cur = f.face < 0 ? 1 : 0;
   return near[1 - cur] > near[cur] + 8 && near[cur] < 100 ? (cur ? 1 : -1) : (cur ? -1 : 1);
 }
-// How far the blast throws her back: up to 90 px along the floor, cut to what is safe: every spot on the way (and a body's width either side of it) over a surface and clear of a solid slab beside her.
+// How far the blast throws her back: up to 90 px along the floor, cut to what is safe: every spot on the way (and a body's width either side of it) over the surface she stands on (a platform's end is a ledge) and clear of a solid slab beside her.
 // She is placed along it (never thrown), so it can never carry her past a blast zone. Moon Caves: her chart is turned, she stays.
 function fsaR_tedSlide(f, dir){
   if(MCAVE && MCAVE.on) return 0;
-  const x0 = f.x, y = f.y, slabs = platRects().filter((p)=> p.solid && !p.rot);
+  const x0 = f.x, y = f.y, slabs = platRects().filter((p)=> p.solid && !p.rot), top = f.onground ? surfaceBelow(x0, y) : null;   // (top: the surface she stands on; null in the air)
   for(let D = FSAR_TED.D; D > 0; D -= 6){
     let ok = true;
     for(let s = 0; s <= D && ok; s += 6){
       const x = x0 - dir*s;
       if(!landable(x, y) || !landable(x - 16, y) || !landable(x + 16, y)) ok = false;
+      if(top !== null && !(fsaR_sameTop(x, y, top) && fsaR_sameTop(x - 16, y, top) && fsaR_sameTop(x + 16, y, top))) ok = false;   // (a platform's end is a ledge too)
       for(const p of slabs) if(x + 20 > p.x && x - 20 < p.x + p.w && y + 10 > p.y && y - 31 < p.y + (p.h || 16)) ok = false;
     }
     if(ok) return D;
@@ -27049,11 +27103,11 @@ function fsaR_tedDraw(f, c){
     fsLandRing(c, ax, ay, T.R[k], FSAR_TED_RING[k], u);
     if(k === 2){ c.save(); c.translate(ax, ay); c.globalAlpha = 1 - u; fsGlyphRing(c, 0, 0, 10, T.R[2]*(0.2 + 0.8*u), 10 + 8*u, u, FS_GLYPH.burst, f, 0); c.restore(); }
   }
-  const grow = fsaR_tedGrow((t + 1)/12), x0 = ax + dir*22;
-  if(t < T.hit[2]){   // the table, with the plate and the TV on it while they stand
+  const grow = Math.min(1, (t + 1)/12), x0 = ax + dir*22, tm = x0 + dir*33, rise = (x)=> tm + (x - tm)*grow, lift = fy + 26*(1 - grow);   // (grown in over 12 frames, the same linear ramp as everything else here: no overshoot)
+  if(t < T.hit[2]){   // the table, with the plate and the TV on it while they stand: they grow with it, about its middle, and ride on its top as it rises
     fsaR_tedTable(c, x0, dir, fy, grow);
-    if(t < T.hit[0]) fsaR_tedPlate(c, ax + dir*38, fy, grow);
-    if(t < T.hit[1]) fsaR_tedTV(c, ax + dir*66, fy, dir, grow);
+    if(t < T.hit[0]) fsaR_tedPlate(c, rise(ax + dir*38), lift, grow);
+    if(t < T.hit[1]) fsaR_tedTV(c, rise(ax + dir*66), lift, dir, grow);
   }
   fsaR_tedPlateBits(c, ax + dir*38, fy - 36, t - T.hit[0]);
   fsaR_tedTVBits(c, ax + dir*66, fy - 36, dir, t - T.hit[1]);
@@ -27926,7 +27980,7 @@ FINAL_SMASHES['Paintbrush'] = {
 //           (the door, planks and the key fly out the far side), the foes it held are let go with that launch three frames on (107; the let-go is one blow, the biggest)
 //    124    the old second ring (320 px, 12%, knock 15) takes whoever the first one missed, 20 frames behind, as before
 //    104-120 THE KNOCK-BACK: he springs up about 30 px and lands about 30 px behind where he stood (placed along the floor over 16 frames, never thrown; the distance is cut to the longest of 30, 24, 18 ... for which every spot on the way and a body's
-//           width either side is over a surface and clear of a solid slab: it can never carry him past a ledge, a wall or a blast zone; 0 on Moon Caves; the spring up is drawn only), then a smaller bounce (12 px, drawn only) as the second ring goes
+//           width either side is over the surface he stands on and clear of a solid slab: it can never carry him past a ledge (a platform's end too), a wall or a blast zone; 0 on Moon Caves; the spring up is drawn only), then a smaller bounce (12 px, drawn only) as the second ring goes
 //    166    the row ends, 62 frames after the door bursts (as the old row ended 62 after its blast)
 // A foe the catch did not take (outside 220 when it lands) is not drawn in: the room stands with nobody in it and its five kinds come all the same, and the rings take whoever is in them when they go. Everything drawn is a function of fsT, fsWind,
 // fsAx/fsAy (where he stood: the rings' centre), fsBx/fsBy (the mansion: its middle and its floor, fixed at the start), his facing and his place, and the wire flag fsLk of the foes it holds: no new wire field.
@@ -27980,15 +28034,17 @@ function fsaR_dgSpot(f, st){
   if(!(MCAVE && MCAVE.on)){ if(!fits(f.x + d0*L.dx) && fits(f.x - d0*L.dx)) sd = -d0; }
   st.dir = sd; f.fsBx = Math.round(f.x + sd*L.dx); f.fsBy = Math.round(gy + 12);
 }
-// How far the door's shock throws him back along the floor: up to 30 px, away from the mansion, cut to what is safe. Placed, never thrown. Moon Caves: his chart is turned, he stays.
+// How far the door's shock throws him back along the floor: up to 30 px, away from the mansion, cut to what is safe: every spot on the way (and a body's width either side) over the surface he stands on (a platform's end is a
+// ledge too) and clear of a solid slab. Placed, never thrown. Moon Caves: his chart is turned, he stays.
 function fsaR_dgSlide(f, sd){
   if(MCAVE && MCAVE.on) return 0;
-  const x0 = f.x, y = f.y, slabs = platRects().filter((p)=> p.solid && !p.rot);
+  const x0 = f.x, y = f.y, slabs = platRects().filter((p)=> p.solid && !p.rot), top = f.onground ? surfaceBelow(x0, y) : null;   // (top: the surface he stands on; null in the air)
   for(let D = FSAR_DG.back; D > 0; D -= 6){
     let ok = true;
     for(let s = 0; s <= D && ok; s += 6){
       const x = x0 - sd*s;
       if(!landable(x, y) || !landable(x - 16, y) || !landable(x + 16, y)) ok = false;
+      if(top !== null && !(fsaR_sameTop(x, y, top) && fsaR_sameTop(x - 16, y, top) && fsaR_sameTop(x + 16, y, top))) ok = false;   // (a platform's end is a ledge too)
       for(const p of slabs) if(x + 26 > p.x && x - 26 < p.x + p.w && y + 10 > p.y && y - 31 < p.y + (p.h || 16)) ok = false;
     }
     if(ok) return D;
@@ -28707,7 +28763,7 @@ FINAL_SMASHES['Teddy Bear'] = {
   start(f, st){ st.dir = fsaR_tedSide(f); f.face = st.dir; st.seen = [new Set(), new Set(), new Set()]; armAtk(f, this.wind, 'fsgather'); },   // (she turns to the clear side, where the table grows in)
   tick(f, st, t){
     const T = FSAR_TED, dir = st.dir;
-    if(t === 0){ shake(3); for(let i = 0; i < 6; i++) puff(f.x + dir*30, f.y + f.r, i % 2 ? '#d49a58' : '#ffffff', 4); }   // the table pops in beside her
+    if(t < 12 && t % 2 === 0) puff(f.x + dir*55, f.y + f.r, t % 4 ? '#d49a58' : '#ffffff', 3);   // the table grows in beside her: a little dust at its foot every other frame, no pop
     if(t === T.stomp[0] || t === T.stomp[1]){ shake(3); for(let i = 0; i < 4; i++) puff(f.x + (i - 1.5)*10, f.y + f.r, i % 2 ? '#b8742e' : '#ffffff', 3); }   // a stamp
     if(t === T.catchAt){   // THE CATCH, FS_WIND frames before the first smash; the rings are round this spot (fsAx/fsAy), the same one the catch is laid on
       f.fsAx = Math.round(f.x); f.fsAy = Math.round(f.y);
