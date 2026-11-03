@@ -23697,7 +23697,7 @@ const FS_KB = { lo:1, hi:1.4, from:20, at:60 };
 // in with the launch (none at FS_KB.from%, all of it from FS_KB.at%): a spray of light pushes, which never KO'd, and still lands every
 // shot on a foe at low %. The measure's numbers are in the report.
 const FS_KO_FIX = { enemynow:0.5, achoo:0.5, detonation:0.75, nailedit:0.92, kicksoccerpun:0.7, pencilthrow:0.87, rant:0.9, saycheese:0.97,
-  pianos:0.95, swingopen:0.95, butterflies:0.85, refraction:0.95, bagoftricks:4, nothingbutnet:4, ballmachine:4, cakeatstake:2.35 };
+  pianos:0.95, swingopen:0.95, refraction:0.95, bagoftricks:4, nothingbutnet:4, ballmachine:4, cakeatstake:2.35 };
 function fsKbMult(t, st){
   const p = Math.max(0, (t.pct || 0) - (st.bonus[t.idx] || 0)), r = clamp((p - FS_KB.from)/(FS_KB.at - FS_KB.from), 0, 1), fix = FS_KO_FIX[st.d.id] || 1;
   return (FS_KB.lo + (FS_KB.hi - FS_KB.lo)*r)*(fix < 1 ? fix : 1 + (fix - 1)*r);   // a cut holds at every %; a boost grows in with the launch
@@ -25524,45 +25524,194 @@ function fsBolt(c, x0, y0, x1, y1, a, seed){   // a jagged bolt, the same on eve
   c.restore();
 }
 
-// LIGHTNING -- CHAIN BOLT OVERLOAD. His Chain Bolt (this game's own card for him): "lightning instantly zaps the nearest foe, then arcs on to up
-// to two more foes near them", and he "does not wind up; it is already there" (the design doc). The tell is the marker on the nearest
-// foe within 520, fixed 18 frames before the strike (70 px: step out of it and the strike lands on nothing, and so there is no chain); a foe
-// struck passes it on, 14 frames apart, to the nearest unstruck foe within 280 of it, twice: 14%, then 12%, then 12%.
+// LIGHTNING -- THE STORM OF GOIKY. (The name and the id are the pitch's: the old Chain Bolt Overload, which was also the name of his own card, is gone; its stale `chainbolt` entry in
+// FS_CATCH_KB is left alone, nothing carries that id.) Canon (the Battle for Dream Island wiki: the Lightning page, he/him, "Electrocution": he orients himself over a victim and impales
+// them, "Lightning glows, the background darkens, and the person being zapped starts shaking"; "The Seven Wonders of Goiky": enraged, he "unleashes a thunderstorm that destroys the
+// Hotel's roof, the glass panel of the World's Largest Oven, the volcano, part of Puffball's roller coaster, the balance beam, the moon, and the Goiky Canal"). THE OWNER PICKED THE
+// PITCH (2026-11-02, round three; then "just dont make them TOO complicated; you can vary the damage and knockback as well"): so it is that rampage, five beats, on the one foe the catch holds.
+// CARD. Reach: the nearest foe within 320 px (the catch: a circle round him; nobody there and a press is spent in a puff, a CPU presses it only with a foe there). 1) THE PIT: the foe is
+// held and set on the floor under him (a foe caught in the air is brought down), the view darkens at its edges (never past about half; the two of them stay lit) and thunderheads roll in
+// from the top, his body glowing, as he flies up over them. 2) THE IMPALE: he drives down onto them and the electrocution starts: an X-ray of their bones through a bolt, a soft blink of
+// white, the foe shaking: 14%. 3) THE RAMPAGE, three strikes, each quicker than the last: a row of drawn landmarks stands along the floor, and bolts bring them down in the episode's order,
+// each sending a shock arc across the ground and through the foe -- the Hotel's roof (the shingles blow off), the glass panel of the World's Largest Oven (it shatters), the Goiky Canal
+// (the water drains away into a black chasm): 12% each. 4) THE MOON: all the storm gathers into one thick column from the moon, drawn at the top of the view; it comes down through the foe,
+// the stage lights white and it launches them straight up: 50%, and two arcs off the column to up to two other foes within 280 px of them, 25% each (his Chain Bolt, kept) -- 100% on the
+// foe in all, about 104 frames, held throughout. 5) The clouds clear and he settles on the floor, a little guilty (the gather pose). He is untouchable all through it. A boss or an add is
+// never caught, a teammate is neither struck nor caught; a KO of the foe or of him ends it where it is (he is set down on firm ground). The flashes are soft blooms round a bolt and the
+// foe (the whole-view blinks come twice, the impale's and the column's, 78 frames apart). The landmarks stand on firm ground at the foe's level, x inside [90, WW - 90], mirrored to the other side if one would be off the
+// stage (fsc1_gkSpots; on a narrow platform they stand on the floor below), and the thunderheads are 0.7 thick, so whoever jumps up there shows through; the Hotel and the Oven are seen through (0.4) while another fighter stands at them (fsc1_seeThru). Nothing is written: the bolts, the bones and the landmarks are pictures.
+const FSC1_GK = { catchR:320, up:20, imp:26, s1:50, s2:68, s3:82, moon:104, tail:20, p:[14, 12, 12, 12, 50], ky:-30, hover:150, arcD:280, arcP:25 };
+FSC1_GK.dur = FSC1_GK.moon + FSC1_GK.tail;
+const FSC1_GK_AT = [FSC1_GK.imp, FSC1_GK.s1, FSC1_GK.s2, FSC1_GK.s3, FSC1_GK.moon];
+// Where the three landmarks stand (a pure function of the foe's spot and the stage, so every screen draws the same): the Hotel on the side toward the middle of the stage 235 px from the foe, the Oven on the other side 215 px, each x inside
+// [90, WW - 90] and at least 100 px from the foe, on firm ground 40 px to each side too (fsc1_firm: never over a pit, never hanging off a platform's edge). The order of choice: on the foe's own surface on its side, stepping in toward the foe 15 px at a time; the same on the other side
+// (mirrored); then the same two on the floor or platform below them (a foe on a narrow platform); each first keeping 130 px from the other landmark and then 105. One that fits nowhere is not drawn (x null: its bolt falls on the foe's side
+// instead). The Canal is under the foe, as wide as the firm ground there allows (200 at most). Returns { hx, hy, ox, oy, cx, cw }.
+function fsc1_gkSpots(sx, base){
+  const d = sx < WW/2 ? 1 : -1, used = [], wide = (x, fy)=> fsc1_firm(x, fy) && fsc1_firm(x - 40, fy) && fsc1_firm(x + 40, fy);   // a landmark is 100 px wide: firm ground 40 px to each side of its centre, so it never hangs over a pit or a platform's edge
+
+  const place = (dir, off)=>{
+    for(const gap of [130, 105]) for(const lower of [false, true]) for(const sd of [dir, -dir]) for(let o = off; o >= 100; o -= 15){
+      const x = clamp(sx + sd*o, 90, WW - 90);
+      if(Math.abs(x - sx) < 100 || !used.every((u)=> Math.abs(u.x - x) >= gap)) continue;
+      if(!lower){ if(wide(x, base)){ const q = { x:x, y:base }; used.push(q); return q; } }
+      else { const S = fsc1_stand(x, base + 16, 700); if(S.x === x && S.y > base + 8 && wide(x, S.y)){ used.push(S); return S; } }
+    }
+    return null;
+  };
+  const H = place(d, 235), O = place(-d, 215);
+  let hw = 100; while(hw > 30 && !(fsc1_firm(sx - hw, base) && fsc1_firm(sx + hw, base))) hw -= 10;
+  return { hx:H ? H.x : null, hy:H ? H.y : base, ox:O ? O.x : null, oy:O ? O.y : base, cx:sx, cw:2*hw };
+}
+function fsc1_gkHit(f, st, tg, i){
+  const L = FSC1_GK, last = i === 4;
+  armAtk(f, last ? 26 : 12, 'cast'); shake(last ? 16 : 7);
+  fsc1_hit(f, tg, L.p[i], 0, last ? L.ky : -2, last ? undefined : { stun:4 });
+  for(let q = 0; q < (last ? 18 : 9); q++) puff(tg.x, tg.y, q % 2 ? '#fffbd0' : '#8ad8ff', last ? 7 : 5);
+  if(last){   // the column's two arcs: up to two other foes within 280 px of the held one (never a teammate, a boss or an add)
+    st.hit.add(tg.idx);
+    const near = fighters.filter((o)=> !o.dead && o.idx !== f.idx && o.idx !== tg.idx && o.team !== f.team && !hardInvuln(o) && !(o._ghostT > 0) && o._heldBy == null && o._fxBy == null && !o._fs && !inOwnTeamZone(o) && Math.hypot(o.x - st.sx, o.y - st.ty) < L.arcD)   // fsCatchable's rules less its _fsLock clause: a foe another Final Smash holds takes an arc too
+      .sort((a, b)=> Math.hypot(a.x - st.sx, a.y - st.ty) - Math.hypot(b.x - st.sx, b.y - st.ty)).slice(0, 2);
+    near.forEach((o, k)=>{
+      st.hit.add(o.idx); o.countering = 0;
+      applyHit(o, L.arcP/(FS_DMG_MULT*(statDmg(f, 1) || 1)), (Math.sign(o.x - st.sx) || 1)*12, -12, f);
+      for(let q = 0; q < 8; q++) puff(o.x, o.y, '#fffbd0', 5);
+      if(k === 0){ f.fsCx = Math.round(o.x); f.fsCy = Math.round(o.y); } else { f.fsAx = Math.round(o.x); f.fsAy = Math.round(o.y); }
+    });
+  }
+  if(koSince(tg, st.n0)){ st.over = true; st.t = FINAL_SMASHES['Lightning'].dur - 1; }
+}
+function fsc1_gkHotel(c, x, base, a, roof){   // the Hotel: a tan block with windows and a red roof (roof: 1 whole, 0 gone)
+  c.save(); c.globalAlpha = a; c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  c.fillStyle = '#d9c7a0'; c.beginPath(); c.rect(x - 40, base - 112, 80, 112); c.fill(); c.stroke();
+  for(let r = 0; r < 4; r++) for(let q = 0; q < 3; q++){ c.fillStyle = roof ? '#7fb4d8' : '#5b86a4'; c.beginPath(); c.rect(x - 31 + q*22, base - 102 + r*24, 14, 15); c.fill(); c.stroke(); }
+  c.fillStyle = '#8a5a26'; c.beginPath(); c.rect(x - 9, base - 26, 18, 26); c.fill(); c.stroke();
+  if(roof){ c.fillStyle = '#b8472f'; c.beginPath(); c.moveTo(x - 50, base - 112); c.lineTo(x, base - 160); c.lineTo(x + 50, base - 112); c.closePath(); c.fill(); c.stroke(); }
+  else { c.strokeStyle = '#6b4a2a'; c.lineWidth = 3; c.beginPath(); c.moveTo(x - 30, base - 112); c.lineTo(x - 22, base - 128); c.moveTo(x + 4, base - 112); c.lineTo(x + 12, base - 134); c.moveTo(x + 28, base - 112); c.lineTo(x + 24, base - 124); c.stroke(); }
+  c.restore();
+}
+function fsc1_gkOven(c, x, base, a, glass){   // the World's Largest Oven: a dark iron box with a chimney and a glass panel (glass: 1 whole, 0 shattered)
+  c.save(); c.globalAlpha = a; c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  c.fillStyle = '#5a4636'; c.beginPath(); c.rect(x - 50, base - 84, 100, 84); c.fill(); c.stroke();
+  c.fillStyle = '#463627'; c.beginPath(); c.rect(x + 22, base - 118, 18, 34); c.fill(); c.stroke();
+  c.fillStyle = glass ? '#ffb347' : '#ff7a2a'; c.beginPath(); c.rect(x - 32, base - 68, 64, 46); c.fill(); c.stroke();
+  if(glass){ c.fillStyle = 'rgba(190,230,255,0.55)'; c.beginPath(); c.rect(x - 32, base - 68, 64, 46); c.fill(); c.strokeStyle = '#ffffff'; c.lineWidth = 2.5; c.beginPath(); c.moveTo(x - 24, base - 60); c.lineTo(x - 8, base - 40); c.moveTo(x - 14, base - 62); c.lineTo(x, base - 48); c.stroke(); }
+  else { c.fillStyle = '#1c1c1c'; c.beginPath(); c.moveTo(x - 32, base - 68); c.lineTo(x - 18, base - 58); c.lineTo(x - 26, base - 46); c.lineTo(x - 32, base - 44); c.closePath(); c.moveTo(x + 32, base - 68); c.lineTo(x + 18, base - 60); c.lineTo(x + 26, base - 40); c.lineTo(x + 32, base - 38); c.closePath(); c.fill(); }
+  c.fillStyle = '#463627'; c.beginPath(); c.rect(x - 50, base - 12, 100, 12); c.fill(); c.stroke();
+  c.restore();
+}
+function fsc1_gkCanal(c, x, base, W, a, drain){   // the Goiky Canal: a blue strip let into the floor under them; drain 0 -> 1 empties it into a black chasm
+  c.save(); c.globalAlpha = a; c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  const x0 = x - W/2, h = 16;
+  if(drain > 0){ c.fillStyle = '#0a0a12'; c.beginPath(); c.rect(x0, base, W, h); c.fill(); c.stroke(); }
+  const wv = W*(1 - drain);
+  if(wv > 2){
+    c.fillStyle = '#3f8fd8'; c.beginPath(); c.rect(x0, base, wv/2, h); c.rect(x0 + W - wv/2, base, wv/2, h); c.fill();
+    c.strokeStyle = '#bfe4ff'; c.lineWidth = 2; c.beginPath(); for(let q = 0; q < 5; q++){ const rx = x0 + 12 + q*(W - 24)/4; if(Math.abs(rx - x) > wv/2 - 6) continue; c.moveTo(rx - 7, base + 6); c.lineTo(rx + 7, base + 6); } c.stroke();
+  }
+  c.restore();
+}
 FINAL_SMASHES['Lightning'] = {
-  id:'chainbolt', wind:FS_WIND, dur:FS_WIND + 60, reach:520,
-  catch(f){ return { kind:'box', x:f.x - 520, y:f.y - 320, w:1040, h:640 }; }, lockEnd:'one', catchMax:1,   // CATCH: the box the marker looks in
-  start(f, st){ armAtk(f, this.wind, 'fsgather'); },
-  tick(f, st, t){
-    const w = this.wind;
-    if(t === Math.max(0, w - 18)){ fsLockAt(f, st, fsPick(f, 520, 320), 200); st.px = f.fsAx; st.py = f.fsAy; st.chain = false; }
-    if(t === w){
-      armAtk(f, 30, 'fsburst'); shake(9);
-      st.chain = fsBurst(f, st, f.fsAx, f.fsAy, 70, 14, 12, -14) > 0;
-      for(let i = 0; i < 12; i++) puff(f.fsAx, f.fsAy, i % 2 ? '#fffbd0' : '#8ad8ff', 6);
-    }
-    if((t === w + 14 || t === w + 28) && st.chain){
-      let best = null, bd = 280;
-      for(const o of fighters){ if(fsHurtMark(f, o) || st.hit.has(o.idx)) continue; const d = Math.hypot(o.x - st.px, o.y - st.py); if(d < bd){ bd = d; best = o; } }
-      if(best){
-        const first = t === w + 14; st.px = best.x; st.py = best.y;
-        if(first){ f.fsBx = Math.round(best.x); f.fsBy = Math.round(best.y); } else { f.fsCx = Math.round(best.x); f.fsCy = Math.round(best.y); }
-        st.hit.add(best.idx); best.countering = 0; applyHit(best, 12, (Math.sign(best.x - f.x) || f.face)*14, -14, f); shake(6);
-        for(let i = 0; i < 8; i++) puff(best.x, best.y, '#fffbd0', 5);
-      } else st.chain = false;
-    }
+  id:'goikystorm', wind:FS_WIND, dur:FSC1_GK.dur, reach:FSC1_GK.catchR, needFoe:true, exact:true,   // needFoe / exact (fsTryFire, fsBotInput): pressed with nobody in the catch it is spent at once (a small puff, no intro); a CPU presses it only when the catch will take someone
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FSC1_GK.catchR }; }, lockEnd:FSC1_GK.moon, catchMax:1,   // CATCH: a circle round him; the nearest foe only (the storm is for one)
+  start(f, st){
+    const t = fighters[st.held[0]];
+    if(!t){ fsc1_spent(f); return; }   // the catch took nobody (they stepped out in its 10 frames): spent
+    const fy = t.y + t.r, S = t.onground ? { x:t.x, y:fy } : fsc1_stand(t.x, fy, 600);
+    st.tg = t.idx; st.n0 = t._koN || 0; st.over = false; st.cx = t.x; st.cy = t.y; st.fr = t.r; st.ax = f.x; st.ay = f.y;
+    st.sx = S.x; st.sy = S.y; st.ty = S.y - t.r;
+    f.fsBx = Math.round(S.x); f.fsBy = Math.round(S.y); f.fsCx = f.fsCy = f.fsAx = f.fsAy = null;   // the spot on the floor they are held at; the column's two arcs (set at the last blow)
+    armAtk(f, this.wind, 'fsgather');
   },
-  ai(f){ return !!fsPick(f, 500, 300); },
+  tick(f, st, t){
+    const L = FSC1_GK, tg = fighters[st.tg], sm = (p)=> p*p*(3 - 2*p);
+    f.vx = 0; f.vy = 0; f.onground = false;
+    if(st.over) return;
+    if(t <= L.moon && (!tg || tg.dead || koSince(tg, st.n0) || !fsIsLockedBy(tg, f))){ st.over = true; st.t = this.dur - 1; return; }   // the foe gone (a KO, a respawn, the lock lost): nothing more is done, whoever comes back
+    // him: up and over them, down onto them for the impale, back up to hang in the storm, then down to the floor once they are gone
+    const hov = Math.max(40, st.ty - L.hover), con = st.ty - st.fr - f.r*0.5;
+    let hx = st.sx, hy;
+    if(t < L.up){ hx = fsc1_mix(st.ax, st.sx, sm(t/L.up)); hy = fsc1_mix(st.ay, hov, sm(t/L.up)); }
+    else if(t <= L.imp) hy = fsc1_mix(hov, con, Math.pow((t - L.up)/(L.imp - L.up), 2));
+    else if(t < 36) hy = fsc1_mix(con, hov, sm((t - L.imp)/(36 - L.imp)));
+    else if(t < L.moon + 4){ hy = hov + Math.sin(t*0.5)*2.5; hx = st.sx + Math.sin(t*0.37)*2.5; }
+    else hy = fsc1_mix(hov, st.sy - f.r, sm(Math.min(1, (t - L.moon - 4)/14)));
+    f.x = hx; f.y = hy;
+    if(t === L.moon + 6){ armAtk(f, 30, 'fsgather'); for(let i = 0; i < 6; i++) puff(f.x, f.y, '#fffbd0', 4); }   // left sparking, a little guilty
+    if(t > L.moon) return;   // (after the column they are let go and thrown)
+    // the foe: brought down to the floor if they were caught in the air, then held; they shake at each blow
+    const e = 1 - Math.pow(1 - Math.min(1, (t + 1)/13), 2);
+    let px = fsc1_mix(st.cx, st.sx, e); const py = fsc1_mix(st.cy, st.ty, e);
+    for(const h of FSC1_GK_AT) if(t >= h && t < h + (h === L.imp ? 10 : 5)) px += (t % 2 ? 3 : -3);
+    fsPin(tg, px, py);
+    if(t === 0){ shake(4); for(let i = 0; i < 8; i++) puff(f.x, f.y, '#fffbd0', 5); }
+    FSC1_GK_AT.forEach((h, i)=>{ if(t === h) fsc1_gkHit(f, st, tg, i); });
+  },
+  end(f, st){ if(st.tg != null) fsc1_settle(f); },   // he is put down on firm ground, if a KO ended it in the air
+  botOk(f, t){ const N = FS_CATCH; return Math.hypot(t.x + (t.vx || 0)*N - f.x, t.y + (t.vy || 0)*N - f.y) <= FSC1_GK.catchR - 50; },   // a CPU's cue (fsBotInput reads it): the foe where the catch will find them 10 frames on, at the speed they are going
+  ai(f){ return !!fsPick(f, FSC1_GK.catchR, FSC1_GK.catchR, false); },
   draw(f, c){
-    const t = f.fsT || 0, w = f.fsWind || 36, V = viewRect(), top = V.y - 40;
+    const L = FSC1_GK, t = f.fsT || 0;
+    if(f.fsBx == null || t > L.dur) return;
+    const tg = fsLockedOf(f), sx = f.fsBx, base = f.fsBy, rr = tg ? (tg.r || 24) : 24, fcx = tg ? tg.x : sx, fcy = tg ? tg.y : base - rr;
+    const w = fsc1_grow(t, 0, 12)*(t > L.moon + 8 ? Math.max(0, 1 - (t - L.moon - 8)/(L.dur - L.moon - 8)) : 1), V = viewRect(), cloudY = V.y - 70 + 120*w, K = fsc1_gkSpots(sx, base);
+    const lk = fsc1_grow(t, 4, 12), off = (i)=> t - FSC1_GK_AT[i];
     c.save();
-    if(t < w){ c.globalAlpha = 0.2*t/w; c.fillStyle = '#8ad8ff'; c.fillRect(V.x, V.y, V.w, V.h); }   // the air charging (the whole view: no marker on anyone)
-    if(t >= w && t < w + 10) fsBolt(c, f.fsAx + 20, top, f.fsAx, f.fsAy, 1 - (t - w)/10, 1);
-    if(f.fsBx != null && t >= w + 14 && t < w + 24){ const a = 1 - (t - w - 14)/10; fsBolt(c, f.fsAx, f.fsAy, f.fsBx, f.fsBy, a, 2); fsBolt(c, f.fsBx + 10, top, f.fsBx, f.fsBy, a, 3); }
-    if(f.fsCx != null && f.fsBx != null && t >= w + 28 && t < w + 38){ const a = 1 - (t - w - 28)/10; fsBolt(c, f.fsBx, f.fsBy, f.fsCx, f.fsCy, a, 4); fsBolt(c, f.fsCx + 10, top, f.fsCx, f.fsCy, a, 5); }
+    // THE DARKENING: the edges dim (about half at most), a hole round the two of them; thunderheads roll in; he glows
+    fsc1_dim(c, (f.x + fcx)/2, (f.y + fcy)/2, 0.5*w, 190 + Math.hypot(f.x - fcx, f.y - fcy)/2);
+    fsc1_clouds(c, V, w, cloudY);
+    fsc1_bloom(c, f.x, f.y, 80 + 10*Math.sin(t*0.5), 0.42*w);
+    // THE LANDMARKS: standing along the floor, brought down one by one
+    if(w > 0.02){
+      const stand = (x, y, fn)=>{ c.save(); c.translate(x, y); c.scale(lk, lk); c.translate(-x, -y); fn(); c.restore(); };
+      const e1 = off(1), e2 = off(2), e3 = off(3), fade = t > L.moon + 8 ? w : 1;
+      if(K.hx != null){ const ah = fade*fsc1_seeThru(f, tg, K.hx, 50, K.hy - 160, K.hy); stand(K.hx, K.hy, ()=>{ fsc1_gkHotel(c, K.hx, K.hy, ah, e1 < 0 ? 1 : 0); }); if(e1 >= 0) fsc1_chunks(c, K.hx, K.hy - 130, e1, 12, 1.8, 3, ['#b8472f', '#8f3320', '#d9c7a0'], fade); }
+      if(K.ox != null){ const ao = fade*fsc1_seeThru(f, tg, K.ox, 50, K.oy - 118, K.oy); stand(K.ox, K.oy, ()=>{ fsc1_gkOven(c, K.ox, K.oy, ao, e2 < 0 ? 1 : 0); }); if(e2 >= 0) fsc1_chunks(c, K.ox, K.oy - 46, e2, 14, 1.7, 5, ['rgba(190,230,255,0.9)', '#ffffff', '#ffb347'], fade); }
+      stand(K.cx, base, ()=>{ fsc1_gkCanal(c, K.cx, base, K.cw, fade, e3 < 0 ? 0 : Math.min(1, (e3 + 1)/14)); });
+    }
+    // THE IMPALE: a bolt through him into the foe, an X-ray of their bones, one soft blink of white
+    { const e = off(0);
+      if(e >= 0 && e < 10){ const a = 1 - e/10; fsc1_bolt(c, f.x + 14, cloudY, f.x, f.y - 24, 12, a, 1, t); fsc1_bolt(c, f.x, f.y, fcx, fcy, 12, a, 2, t); fsc1_bloom(c, fcx, fcy, 170, 0.5*a); if(e % 2 === 0) fsc1_bones(c, fcx, fcy, rr/24, a); }
+      if(e >= 0 && e < 7) fsc1_wash(c, '#ffffff', 0.3*(1 - e/7)); }
+    // THE RAMPAGE: a bolt on each landmark in turn, a shock arc along the ground and through the foe
+    const tops = [K.hx != null ? [K.hx, K.hy - 152] : [sx - 50, base - 130], K.ox != null ? [K.ox, K.oy - 70] : [sx + 50, base - 130], [K.cx + K.cw*0.4, base + 6]], gnd = [K.hy, K.oy, base];
+    for(let i = 1; i <= 3; i++){
+      const e = off(i); if(e < 0 || e >= 8) continue;
+      const a = 1 - e/8, T = tops[i - 1];
+      fsc1_bolt(c, T[0] + 12, cloudY, T[0], T[1], 10, a, i*3, t);
+      fsc1_bolt(c, T[0], gnd[i - 1] - 5, fcx, fcy + 12, 6, a, i*3 + 7, t);
+      fsc1_bloom(c, T[0], T[1], 120, 0.4*a); fsc1_bloom(c, fcx, fcy, 140, 0.4*a);
+      if(e < 3) fsc1_bones(c, fcx, fcy, rr/24, a);
+    }
+    // THE MOON: it drawn at the top of the view; all the storm gathers into one column from it, through the foe; the stage lights white; two arcs off it
+    { const mk = fsc1_grow(t, L.moon - 22, 14), my = V.y + 62, R = 48, e = off(4);
+      if(mk > 0.01) fsc1_moon(c, sx, my, R*mk, Math.min(1, mk*1.4)*(t > L.moon + 8 ? w : 1), e >= 4 ? (e - 4)/6 : 0);
+      const q = (t - (L.moon - 18))/18;
+      if(q > 0 && e < 14){
+        const wd = e >= 8 ? 70*(1 - (e - 8)/6) : 8 + 62*Math.min(1, q)*Math.min(1, q), a = e >= 0 ? 1 : 0.35 + 0.5*q, y0 = my + R*0.7;
+        c.save(); c.globalAlpha = a;
+        c.fillStyle = 'rgba(255,240,150,0.35)'; c.fillRect(sx - wd*0.8, y0, wd*1.6, base - y0);
+        c.fillStyle = 'rgba(191,228,255,0.85)'; c.fillRect(sx - wd/2, y0, wd, base - y0);
+        c.fillStyle = 'rgba(255,255,255,0.97)'; c.fillRect(sx - wd*0.2, y0, wd*0.4, base - y0);
+        c.restore();
+        if(e < 8) for(const sd of [-1, 1]) fsc1_bolt(c, sx + sd*8, y0, sx + sd*wd*0.5, base - 6, 5, 0.9*a, 20 + sd, t);
+      }
+      if(e >= 0){
+        const p = Math.min(1, e/14), a = Math.max(0, 1 - e/14);
+        fsc1_ring(c, sx, base - 6, 30 + 200*(1 - (1 - p)*(1 - p)), '#fff6a8', 12*(1 - p) + 2, a);
+        fsc1_bloom(c, sx, fcy, 260, 0.55*Math.max(0, 1 - e/8));
+        if(e < 10) fsc1_wash(c, '#ffffff', 0.5*(1 - e/10));
+        if(e < 8){
+          const tg0 = [f.fsCx != null ? [f.fsCx, f.fsCy] : null, f.fsAx != null ? [f.fsAx, f.fsAy] : null];
+          tg0.forEach((P, k)=>{ if(P){ fsc1_bolt(c, sx, base - rr, P[0], P[1], 8, 1 - e/8, 40 + k, t); fsc1_bloom(c, P[0], P[1], 90, 0.4*(1 - e/8)); } });
+          if(e < 4) fsc1_bones(c, sx, base - rr, rr/24, 1 - e/4);
+        }
+      }
+    }
     c.restore();
   },
 };
-// (Lightning's arcs are sent as the fighter's fsBx/fsBy and fsCx/fsCy)
+// (Lightning's column arcs are sent as the fighter's fsCx/fsCy and fsAx/fsAy)
 
 // FANNY -- HURRICANE. An electric fan, rude and blunt: the push should feel dismissive (the design doc). Her Push Away already "shoves every
 // foe near you away, with no damage"; this does it for 40 frames to everyone within 400 (hard up close, gently at the edge: 5.5 px a
@@ -26248,9 +26397,405 @@ FINAL_SMASHES['Fries'] = fsFan({ id:'fryfan', c1:'#e0443a', n:9, cone:0.55, spd:
 // slams down and the quake rings out, 230 px (18%, a launch) and again to 320 (12%): the second ring freezes whoever it reaches, 45 frames.
 FINAL_SMASHES['Gelatin'] = fsCircle({ id:'jellyquake', c1:'#7ee89a', c2:'#ffffff', R:230, R2:320, gap:12, dmg:18, dmg2:12, kb:20, S2:{ freeze:45 }, art:FS_GLYPH.jelly, kind:'slam' });
 
-// NICKEL -- SPARE CHANGE. Sarcastic, unimpressed, and worth five cents (the design doc; he is on the roster's list of canon metal). He tips his pocket out:
-// two marks on the nearest foes, eight times, seven frames apart, a nickel dropping on each (12%), walking 50 px along; keep moving.
-FINAL_SMASHES['Nickel'] = fsRain({ id:'sparechange', c1:'#b8c0c8', k:2, n:8, every:7, walk:50, dmg:12, kb:16, r:20, art:FS_GLYPH.nickel });
+// ---- FSC lane 1: begin ------------------------------------------------------------------------------------------------------------------
+// FINAL SMASH REDESIGNS, lane 1 (the owner, 2026-11-02: "just dont make them TOO complicated; you can vary the damage and knockback as well").
+// What Liy's, Taco (II)'s and Nickel's rows share; the lane's later batches add to this block. Everything here is fsc1_*.
+//   WHERE BODIES GO. A row that moves a held foe, or its holder, by position puts it down only on firm ground: the floor where it has no gap, or the top of a
+//   platform (fsc1_firm); the nearest such spot below is fsc1_stand; a holder an interrupted row left in the air over nothing is set down at once (fsc1_settle).
+//   HITS. fsc1_hit lands one blow at the size a row names, on the foe its catch holds. KO-LEVEL doubles every hit a Final Smash deals (FS_DMG_MULT), the holder's
+//   own damage stat scales it (statDmg) and Nickel's sarcasm (applyHit) adds up to 60% by the foe's %: all three are divided out, so a beat is its size.
+//   DRAWING. Everything is drawn from the holder's fs* fields, the foe the catch holds (fsLockedOf) and the points a row keeps in fsBx / fsBy / fsCx / fsCy
+//   (on the wire), so a guest draws the same. Anything that appears grows in over 12 frames (fsc1_grow). No letters anywhere.
+function fsc1_grow(t, t0, n){ const k = clamp((t - t0)/(n || 12), 0, 1); return 1 - (1 - k)*(1 - k); }   // 0 -> 1 over n (12) frames from t0, easing out
+function fsc1_mix(a, b, p){ return a + (b - a)*p; }
+// Firm ground at x with its top at feet line fy: the floor (where it has no gap) or a platform's top.
+function fsc1_firm(x, fy){
+  if(x < 60 || x > WW - 60) return false;
+  if(Math.abs(fy - groundY()) < 6 && groundAt(x)) return true;
+  for(const p of worldPlats) if(p.w > 0 && !p.barrier && !p.rot && !p.tm && !p.raceFloor && x >= p.x + 8 && x <= p.x + p.w - 8 && Math.abs(p.y - fy) < 6) return true;
+  return false;
+}
+// The nearest firm top at or under feet line fy below x (down to `drop` px), else the nearest floor to x: { x, y } (y: the feet line there).
+function fsc1_stand(x, fy, drop){
+  const gy = groundY(); let best = null;
+  if(groundAt(x) && gy >= fy - 8 && gy - fy <= drop) best = gy;
+  for(const p of worldPlats){
+    if(!(p.w > 0) || p.barrier || p.rot || p.tm || p.raceFloor) continue;
+    if(x >= p.x + 8 && x <= p.x + p.w - 8 && p.y >= fy - 8 && p.y - fy <= drop && (best === null || p.y < best)) best = p.y;
+  }
+  if(best !== null) return { x:x, y:best };
+  return { x:floorSafeX(clamp(x, 60, WW - 60), 70), y:gy };
+}
+// A holder an interrupted row left over nothing is put down on the nearest firm ground; one with ground under it is left to fall to it.
+function fsc1_settle(f){
+  if(f.dead) return;
+  const s = fsc1_stand(f.x, f.y + f.r - 4, 500);
+  if(Math.abs(s.x - f.x) > 1){ f.x = s.x; f.y = s.y - f.r; f.vx = 0; f.vy = 0; f.onground = true; }
+}
+// A Final Smash that spent itself on nobody (the catch took no one): a small puff, nothing else.
+function fsc1_spent(f){ for(let i = 0; i < 8; i++) puff(f.x, f.y - 6, i % 2 ? f.color : '#fff', 4); f._atkAnim = 0; fsEnd(f); }
+// One blow of a row, at its own size (pct: what lands), on the foe the catch holds.
+function fsc1_hit(f, tg, pct, kbx, kby, opts){
+  let k = FS_DMG_MULT*(statDmg(f, 1) || 1);
+  if(f.kit && f.kit.special === 'snark') k *= 1 + Math.min(0.6, tg.pct/220);   // Nickel's sarcasm, taken out
+  tg.countering = 0;
+  applyHit(tg, pct/k, kbx, kby, f, opts);
+}
+// How solid a prop standing on the line yBot is drawn (the framework draws a Final Smash's effects over the fighters, so an opaque prop hides whoever stands at it): 1 when nobody is near,
+// easing down to 0.4 as another fighter (never the holder f or the foe tg it holds) comes to its edge (a box hw to a side of x, from yTop down to yBot; a sprite counts 1.5 radii, the
+// widest are about that), so whoever walks or jumps in is seen through it. A pure function of the fighters' x and y (on the wire), so a guest draws the same, and continuous, so it never pops.
+function fsc1_seeThru(f, tg, x, hw, yTop, yBot){
+  let m = 1;
+  for(const o of fighters){
+    if(!o || o.dead || o === f || o === tg) continue;
+    const r = 1.5*(o.r || 24), dx = Math.max(0, Math.abs(o.x - x) - hw), dy = Math.max(0, yTop - o.y, o.y - yBot), k = clamp((Math.hypot(dx, dy) - r)/36, 0, 1);
+    m = Math.min(m, 0.4 + 0.6*k*k*(3 - 2*k));
+  }
+  return m;
+}
+// ---- drawing: a darkening with a hole, a soft white bloom, a bolt, bones, boards, rocks, lemons, stone ---------------------------------------
+function fsc1_dim(c, cx, cy, a, rIn, spread){   // the view darkened but for a hole round (cx, cy): whoever stands there stays lit
+  if(!(a > 0.01)) return;
+  const V = viewRect(), R = Math.hypot(V.w, V.h)*0.5, g = c.createRadialGradient(cx, cy, rIn, cx, cy, rIn + R*(spread || 0.55));
+  g.addColorStop(0, 'rgba(4,6,18,0)'); g.addColorStop(1, 'rgba(4,6,18,' + a + ')');
+  c.save(); c.globalAlpha = 1; c.fillStyle = g; c.fillRect(V.x - 30, V.y - 30, V.w + 60, V.h + 60); c.restore();
+}
+function fsc1_bloom(c, x, y, R, a){   // a soft white flash round a point: short and gentle, never a strobe
+  if(!(a > 0.01)) return;
+  const g = c.createRadialGradient(x, y, 0, x, y, R);
+  g.addColorStop(0, 'rgba(255,255,255,' + a + ')'); g.addColorStop(0.5, 'rgba(255,255,255,' + (a*0.45) + ')'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  c.save(); c.globalAlpha = 1; c.fillStyle = g; c.beginPath(); c.arc(x, y, R, 0, 7); c.fill(); c.restore();
+}
+function fsc1_ring(c, x, y, R, col, lw, a){   // a ring with a dark edge
+  if(!(a > 0.01) || !(R > 1)) return;
+  c.save(); c.globalAlpha = a; c.strokeStyle = '#1c1c1c'; c.lineWidth = lw + 3; c.beginPath(); c.arc(x, y, R, 0, 7); c.stroke(); c.strokeStyle = col; c.lineWidth = lw; c.stroke(); c.restore();
+}
+function fsc1_bolt(c, x0, y0, x1, y1, w, a, seed, t){   // a jagged bolt, w thick; the same on every screen (the jitter is a function of the row frame and the seed)
+  if(!(a > 0.01)) return;
+  c.save(); c.globalAlpha = a; c.lineCap = 'round'; c.lineJoin = 'round';
+  const n = 10, dx = (x1 - x0)/n, dy = (y1 - y0)/n, L = Math.hypot(dx, dy) || 1, nx = -dy/L, ny = dx/L;
+  for(let pass = 0; pass < 3; pass++){
+    c.strokeStyle = pass === 0 ? '#1c1c1c' : pass === 1 ? '#bfe4ff' : '#ffffff'; c.lineWidth = pass === 0 ? w + 6 : pass === 1 ? w + 1 : Math.max(1.5, w*0.4);
+    c.beginPath(); c.moveTo(x0, y0);
+    for(let i = 1; i < n; i++){ const j = ((((t >> 1)*131 + i*71 + seed*17) % 29) - 14)*(w > 6 ? 1.4 : 1); c.lineTo(x0 + dx*i + nx*j, y0 + dy*i + ny*j); }
+    c.lineTo(x1, y1); c.stroke();
+  }
+  c.restore();
+}
+function fsc1_bones(c, x, y, k, a){   // a skeleton in white (the x-ray of a bolt going through someone), k: their size over a standard body's
+  if(!(a > 0.01)) return;
+  c.save(); c.translate(x, y); c.scale(k, k); c.globalAlpha = a; c.lineCap = 'round'; c.lineJoin = 'round';
+  const bone = (fn)=>{ c.strokeStyle = '#1c1c1c'; c.lineWidth = 7; fn(); c.stroke(); c.strokeStyle = '#ffffff'; c.lineWidth = 3.4; fn(); c.stroke(); };
+  bone(()=>{ c.beginPath(); c.moveTo(0, -12); c.lineTo(0, 12); });
+  for(let i = 0; i < 3; i++){ const yy = -8 + i*6, w = 13 - i*2; bone(()=>{ c.beginPath(); c.moveTo(-w, yy + 3); c.quadraticCurveTo(0, yy - 2, w, yy + 3); }); }
+  bone(()=>{ c.beginPath(); c.moveTo(-9, -9); c.lineTo(-20, 2); c.lineTo(-24, 14); c.moveTo(9, -9); c.lineTo(20, 2); c.lineTo(24, 14); });
+  bone(()=>{ c.beginPath(); c.moveTo(-8, 12); c.lineTo(8, 12); c.moveTo(-6, 12); c.lineTo(-10, 28); c.moveTo(6, 12); c.lineTo(10, 28); });
+  c.fillStyle = '#fff'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.arc(0, -22, 10, 0, 7); c.fill(); c.stroke();
+  c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(-4, -23, 2.8, 0, 7); c.arc(4, -23, 2.8, 0, 7); c.fill();
+  c.restore();
+}
+// A wooden rowboat, side view (s: its size, 1 is 110 wide), and its boards flying when it bursts (e: frames since).
+function fsc1_boat(c, x, y, s, a){
+  if(!(a > 0.01) || !(s > 0.01)) return;
+  c.save(); c.translate(x, y); c.scale(s, s); c.globalAlpha = a; c.lineJoin = 'round';
+  c.fillStyle = '#b9843f'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3.5;
+  c.beginPath(); c.moveTo(-52, -16); c.lineTo(52, -16); c.quadraticCurveTo(42, 20, 22, 20); c.lineTo(-22, 20); c.quadraticCurveTo(-42, 20, -52, -16); c.closePath(); c.fill(); c.stroke();
+  c.strokeStyle = '#7a5428'; c.lineWidth = 2.4; c.beginPath(); c.moveTo(-44, -4); c.lineTo(44, -4); c.moveTo(-36, 8); c.lineTo(36, 8); c.stroke();
+  c.fillStyle = '#d9a35c'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.rect(-55, -22, 110, 8); c.fill(); c.stroke();
+  c.fillStyle = '#8a5a26'; c.beginPath(); c.rect(-12, -34, 24, 12); c.fill(); c.stroke();
+  c.restore();
+}
+function fsc1_planks(c, x, y, e, n, s, seed){   // n boards flying out of (x, y) for 18 frames
+  if(e < 0 || e > 18) return;
+  const a = 1 - e/18;
+  for(let i = 0; i < n; i++){
+    const th = -Math.PI/2 + (i - (n - 1)/2)*(Math.PI*1.6/n) + (((i*37 + seed*11) % 7) - 3)*0.06, v = (5.5 + (i % 3)*2.4)*s;
+    c.save(); c.translate(x + Math.cos(th)*v*e, y + Math.sin(th)*v*e + 0.3*e*e*s); c.rotate((i % 2 ? 1 : -1)*(0.2 + 0.07*i)*e); c.globalAlpha = a;
+    c.fillStyle = i % 2 ? '#b9843f' : '#c99a52'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.rect(-17*s, -4.5*s, 34*s, 9*s); c.fill(); c.stroke();
+    c.restore();
+  }
+}
+function fsc1_burstLines(c, x, y, e, n, r0, r1, col, a){   // n spokes flying out over e (0 -> 1)
+  if(e < 0 || e > 1) return;
+  c.save(); c.globalAlpha = a*(1 - e); c.strokeStyle = col; c.lineWidth = 3; c.lineCap = 'round';
+  for(let i = 0; i < n; i++){ const th = i*Math.PI*2/n + 0.3, ra = r0 + (r1 - r0)*e, rb = ra + 10 + 14*(1 - e); c.beginPath(); c.moveTo(x + Math.cos(th)*ra, y + Math.sin(th)*ra); c.lineTo(x + Math.cos(th)*rb, y + Math.sin(th)*rb); c.stroke(); }
+  c.restore();
+}
+// Stone: a low plinth under a fighter's feet (fy: the feet line; h: its height now, a full one is 34, its top 22 above the line), a rock, an obelisk, rubble, shards.
+function fsc1_plinth(c, x, fy, h, a){
+  if(!(h > 0.5) || !(a > 0.01)) return;
+  const top = fy + 12 - h;
+  c.save(); c.globalAlpha = a; c.lineJoin = 'round'; c.fillStyle = '#a9a9a4'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  c.beginPath(); c.moveTo(x - 34, fy + 2); c.lineTo(x - 30, top); c.lineTo(x + 30, top); c.lineTo(x + 34, fy + 2); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#cfcfc9'; c.beginPath(); c.rect(x - 37, top - 5, 74, 6); c.fill(); c.stroke();
+  c.strokeStyle = '#7f7f7a'; c.lineWidth = 2; c.beginPath(); c.moveTo(x - 12, top + 4); c.lineTo(x - 9, fy + 2); c.moveTo(x + 14, top + 4); c.lineTo(x + 11, fy + 2); c.stroke();
+  c.restore();
+}
+function fsc1_rock(c, x, y, s, rot, a){
+  c.save(); c.translate(x, y); c.rotate(rot); c.globalAlpha = a; c.fillStyle = '#8f8f8a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.lineJoin = 'round';
+  const P = [[-1, -0.3], [-0.5, -0.9], [0.4, -0.95], [1, -0.2], [0.8, 0.7], [-0.2, 0.95], [-0.9, 0.5]];
+  c.beginPath(); for(let i = 0; i < P.length; i++){ if(i) c.lineTo(P[i][0]*s, P[i][1]*s); else c.moveTo(P[i][0]*s, P[i][1]*s); } c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#b8b8b0'; c.beginPath(); c.arc(-s*0.25, -s*0.3, s*0.28, 0, 7); c.fill();
+  c.restore();
+}
+function fsc1_chunks(c, x, y, e, n, s, seed, cols, a){   // n lumps of stone, glass or metal flying out of (x, y) for 22 frames
+  if(e < 0 || e > 22) return;
+  const f = 1 - e/22;
+  for(let i = 0; i < n; i++){
+    const th = -Math.PI/2 + (i - (n - 1)/2)*(Math.PI*1.9/n) + (((i*53 + seed*7) % 9) - 4)*0.05, v = (4.5 + (i*7 % 5)*1.5)*s;
+    c.save(); c.translate(x + Math.cos(th)*v*e, y + Math.sin(th)*v*e + 0.32*e*e*s); c.rotate((i % 2 ? 1 : -1)*(0.15 + 0.05*i)*e); c.globalAlpha = a*f;
+    c.fillStyle = cols[i % cols.length]; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.lineJoin = 'round';
+    const z = (5 + (i % 4)*2.2)*s; c.beginPath(); c.moveTo(-z, z*0.5); c.lineTo(-z*0.2, -z); c.lineTo(z, z*0.3); c.closePath(); c.fill(); c.stroke();
+    c.restore();
+  }
+}
+function fsc1_lemon(c, x, y, s, rot, a){   // a lemon, s its half-length (a giant one is 40)
+  if(!(a > 0.01) || !(s > 0.5)) return;
+  c.save(); c.translate(x, y); c.rotate(rot); c.globalAlpha = a; c.lineJoin = 'round';
+  c.fillStyle = '#f7e04a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3.5;
+  c.beginPath(); c.moveTo(-s*1.12, 0); c.quadraticCurveTo(-s*0.8, -s*0.82, 0, -s*0.78); c.quadraticCurveTo(s*0.8, -s*0.82, s*1.12, 0); c.quadraticCurveTo(s*0.8, s*0.82, 0, s*0.78); c.quadraticCurveTo(-s*0.8, s*0.82, -s*1.12, 0); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#fff6a8'; c.beginPath(); c.ellipse(-s*0.25, -s*0.3, s*0.34, s*0.17, -0.4, 0, 7); c.fill();
+  c.strokeStyle = '#c9a91c'; c.lineWidth = 2; c.beginPath(); c.moveTo(s*0.2, -s*0.55); c.lineTo(s*0.45, -s*0.3); c.moveTo(s*0.35, s*0.1); c.lineTo(s*0.6, s*0.3); c.stroke();
+  c.restore();
+}
+function fsc1_juice(c, x, y, e, a){   // a lemon bursting: droplets and rind, 22 frames
+  if(e < 0 || e > 22) return;
+  const f = 1 - e/22;
+  c.save(); c.globalAlpha = a*f;
+  for(let i = 0; i < 18; i++){
+    const th = i*Math.PI*2/18 + (i % 3)*0.12, d = (10 + (i % 4)*9)*e*0.62 + 6, px = x + Math.cos(th)*d, py = y + Math.sin(th)*d + 0.1*e*e, r = (3.4 + (i % 3)*1.6)*f + 0.6;
+    c.fillStyle = i % 2 ? '#f6f08a' : '#fffbd0'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.5; c.beginPath(); c.arc(px, py, r, 0, 7); c.fill(); c.stroke();
+  }
+  c.lineCap = 'round';
+  for(let i = 0; i < 6; i++){
+    const th = i*Math.PI/3 + 0.5, d = 16 + 26*e, px = x + Math.cos(th)*d, py = y + Math.sin(th)*d + 0.12*e*e;
+    c.strokeStyle = '#1c1c1c'; c.lineWidth = 9; c.beginPath(); c.arc(px, py, 9, th, th + 2); c.stroke(); c.strokeStyle = '#f7e04a'; c.lineWidth = 5; c.stroke();
+    c.strokeStyle = '#fffbd0'; c.lineWidth = 1.6; c.beginPath(); c.arc(px, py, 7, th + 0.2, th + 1.8); c.stroke();
+  }
+  c.restore();
+}
+function fsc1_obelisk(c, x, base, h, a){   // a tall tungsten-and-glass obelisk standing on the line `base`, h tall now (a full one is 230)
+  if(!(h > 2) || !(a > 0.01)) return;
+  const w = 24, shaft = Math.max(1, h - 40), y0 = base - 10;
+  const wd = (q)=> w*(1 - 0.2*q);
+  c.save(); c.globalAlpha = a; c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  c.fillStyle = '#5d6270'; c.beginPath(); c.rect(x - w - 8, base - 10, 2*w + 16, 10); c.fill(); c.stroke();
+  for(let i = 0; i < 5; i++){
+    const q0 = i/5, q1 = (i + 1)/5, ya = y0 - shaft*q0, yb = y0 - shaft*q1;
+    c.fillStyle = i % 2 ? '#3f4552' : 'rgba(166,224,255,0.88)';
+    c.beginPath(); c.moveTo(x - wd(q0), ya); c.lineTo(x + wd(q0), ya); c.lineTo(x + wd(q1), yb); c.lineTo(x - wd(q1), yb); c.closePath(); c.fill(); c.stroke();
+    if(i % 2 === 0){ c.strokeStyle = '#ffffff'; c.lineWidth = 2; c.beginPath(); c.moveTo(x - wd(q0)*0.55, ya - 5); c.lineTo(x - wd(q1)*0.55, yb + 5); c.stroke(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; }
+  }
+  const yt = y0 - shaft;
+  c.fillStyle = '#3f4552'; c.beginPath(); c.moveTo(x - wd(1), yt); c.lineTo(x + wd(1), yt); c.lineTo(x, yt - 32); c.closePath(); c.fill(); c.stroke();
+  c.restore();
+}
+function fsc1_rubble(c, x, base, a){   // what is left of it: a low heap of glass and tungsten
+  if(!(a > 0.01)) return;
+  c.save(); c.globalAlpha = a; c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2;
+  const L = [[-44, 0, 11, 0], [-30, -5, 13, 1], [-14, -9, 12, 0], [2, -12, 14, 1], [18, -8, 12, 0], [32, -4, 13, 1], [44, 0, 10, 0], [-6, -2, 15, 1], [12, -1, 11, 0]];
+  for(const q of L){ c.fillStyle = q[3] ? 'rgba(166,224,255,0.92)' : '#4b5160'; c.beginPath(); c.moveTo(x + q[0] - q[2]*0.9, base); c.lineTo(x + q[0] - q[2]*0.2, base + q[1] - q[2]*0.7); c.lineTo(x + q[0] + q[2], base + 1); c.closePath(); c.fill(); c.stroke(); }
+  c.restore();
+}
+function fsc1_switch(c, x, y, up, a, k){   // a light switch plate (her secret switch): the lever up (1) or down (0)
+  c.save(); c.translate(x, y); c.scale(k, k); c.globalAlpha = a; c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  c.fillStyle = '#d9e4fb'; c.beginPath(); c.rect(-13, -19, 26, 38); c.fill(); c.stroke();
+  c.fillStyle = '#7d8fb8'; c.beginPath(); c.rect(-5, -11, 10, 22); c.fill(); c.stroke();
+  c.fillStyle = '#ffffff'; c.beginPath(); c.rect(-5, fsc1_mix(1, -11, up), 10, 10); c.fill(); c.stroke();
+  c.restore();
+}
+function fsc1_cheeks(c, x, y, d, k, a){   // her cheeks, puffing (k: 0 slack -> 1 full): a round one either side of her face
+  if(!(a > 0.01)) return;
+  const R = 4 + 11*k;
+  c.save(); c.globalAlpha = a; c.fillStyle = '#f7cf66'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5;
+  for(const s of [-1, 1]){ c.beginPath(); c.arc(x + s*(12 + 7*k), y + 8 + 2*k, R, 0, 7); c.fill(); c.stroke(); }
+  c.fillStyle = 'rgba(255,255,255,0.55)'; for(const s of [-1, 1]){ c.beginPath(); c.arc(x + s*(12 + 7*k) - 2, y + 5 + 2*k, R*0.28, 0, 7); c.fill(); }
+  c.restore();
+}
+// ---- batch 2 (Lightning, Clover, Donut): a moon, a ceiling of thunderheads, a white wash --------------------------------------------------
+function fsc1_moon(c, x, y, R, a, crack){   // a pale cratered moon, centre (x, y), radius R; crack (0 -> 1): a zig-zag crack opening across it
+  if(!(a > 0.01) || !(R > 2)) return;
+  c.save(); c.globalAlpha = a; c.lineJoin = 'round';
+  c.fillStyle = '#e6e3d6'; c.strokeStyle = '#1c1c1c'; c.lineWidth = Math.max(3, R*0.03); c.beginPath(); c.arc(x, y, R, 0, 7); c.fill(); c.stroke();
+  const C = [[-0.38, -0.3, 0.2], [0.34, -0.45, 0.14], [0.1, 0.1, 0.24], [-0.45, 0.36, 0.13], [0.5, 0.32, 0.16], [-0.05, -0.64, 0.09], [0.62, -0.05, 0.08]];
+  for(const q of C){
+    c.fillStyle = 'rgba(158,154,138,0.6)'; c.beginPath(); c.arc(x + q[0]*R, y + q[1]*R, q[2]*R, 0, 7); c.fill();
+    c.strokeStyle = 'rgba(255,255,250,0.7)'; c.lineWidth = Math.max(1.5, R*0.014); c.beginPath(); c.arc(x + q[0]*R, y + q[1]*R, q[2]*R, 0.5, 2.6); c.stroke();
+  }
+  if(crack > 0){
+    const k = Math.min(1, crack), n = 7; c.lineCap = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = Math.max(3, R*0.04);
+    c.beginPath(); c.moveTo(x - R*0.15, y - R*0.98);
+    for(let i = 1; i <= n*k; i++){ const q = i/n; c.lineTo(x + ((i % 2) ? 1 : -1)*R*0.14 + R*0.05*Math.sin(i*2.1), y - R*0.98 + q*R*1.96); }
+    c.stroke();
+  }
+  c.restore();
+}
+function fsc1_clouds(c, V, w, y){   // a ceiling of dark thunderheads across the top of the view (y: its lower edge now), w in 0 -> 1
+  if(!(w > 0.01)) return;
+  c.save(); c.fillStyle = 'rgba(52,60,76,' + (0.7*w) + ')'; c.beginPath();
+  for(let x = V.x - 60, i = 0; x < V.x + V.w + 80; x += 66, i++){ const cy = y - 36 + (i % 2)*10, R = 52 + (i % 3)*8; c.moveTo(x + R, cy); c.arc(x, cy, R, 0, 7); }
+  c.fill();
+  c.fillStyle = 'rgba(112,124,150,' + (0.4*w) + ')'; c.beginPath();
+  for(let x = V.x - 30, i = 0; x < V.x + V.w + 60; x += 66, i++){ const cy = y + 6 + (i % 2)*8; c.moveTo(x + 30, cy); c.arc(x, cy, 30, 0, 7); }
+  c.fill();
+  c.restore();
+}
+function fsc1_wash(c, col, a){   // the whole view washed over in a colour, once and softly (a blink of light, a hit's flash): never repeated within a quarter second
+  if(!(a > 0.01)) return;
+  const V = viewRect(); c.save(); c.globalAlpha = a; c.fillStyle = col; c.fillRect(V.x - 30, V.y - 30, V.w + 60, V.h + 60); c.restore();
+}
+// ---- batch 3 (Tree): a deck of white clouds, an axe, a leaf --------------------------------------------------------------------------------
+function fsc1_cloudDeck(c, V, y, w){   // a deck of white clouds across the view, its middle line at y; w in 0 -> 1 (fades and rises in)
+  if(!(w > 0.01)) return;
+  const yy = y + 30*(1 - w);
+  c.save(); c.globalAlpha = Math.min(1, w*1.3); c.lineJoin = 'round';
+  const P = [];
+  for(let x = V.x - 70, i = 0; x < V.x + V.w + 90; x += 58, i++) P.push([x, yy + ((i*5) % 3)*7 - 8, 44 + (i % 3)*9]);
+  for(let x = V.x - 40, i = 0; x < V.x + V.w + 70; x += 62, i++) P.push([x, yy + 30 + (i % 2)*6, 30 + (i % 3)*5]);
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 7; for(const q of P){ c.beginPath(); c.arc(q[0], q[1], q[2], 0, 7); c.stroke(); }
+  c.fillStyle = '#f4f8ff'; for(const q of P){ c.beginPath(); c.arc(q[0], q[1], q[2], 0, 7); c.fill(); }
+  c.fillStyle = '#d6e4f6'; for(const q of P){ if(q[2] < 40){ c.beginPath(); c.arc(q[0] + 4, q[1] + 6, q[2]*0.7, 0, 7); c.fill(); } }
+  c.restore();
+}
+function fsc1_leaf(c, x, y, rot, s, a){   // a purple leaf, s its half-length
+  if(!(a > 0.01)) return;
+  c.save(); c.translate(x, y); c.rotate(rot); c.globalAlpha = a; c.lineJoin = 'round'; c.lineCap = 'round';
+  c.fillStyle = '#8a4fc0'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.2;
+  c.beginPath(); c.moveTo(-s, 0); c.quadraticCurveTo(0, -s*0.7, s, 0); c.quadraticCurveTo(0, s*0.7, -s, 0); c.closePath(); c.fill(); c.stroke();
+  c.strokeStyle = '#c9a0ee'; c.lineWidth = 1.4; c.beginPath(); c.moveTo(-s*0.7, 0); c.lineTo(s*0.7, 0); c.stroke();
+  c.restore();
+}
+function fsc1_axe(c, hx, hy, s, ang, a){   // an axe with its blade at (hx, hy) turned toward +s (s: 1 or -1), its handle going back and up at ang (radians) toward off-screen
+  if(!(a > 0.01)) return;
+  c.save(); c.translate(hx, hy); c.scale(s, 1); c.globalAlpha = a; c.lineJoin = 'round'; c.lineCap = 'round';
+  const hl = 190, ex = -Math.cos(ang)*hl, ey = -Math.sin(ang)*hl;
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 11; c.beginPath(); c.moveTo(-4, 0); c.lineTo(ex, ey); c.stroke();
+  c.strokeStyle = '#a8703a'; c.lineWidth = 6.5; c.beginPath(); c.moveTo(-4, 0); c.lineTo(ex, ey); c.stroke();
+  c.fillStyle = '#cfd6de'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3.5;
+  c.beginPath(); c.moveTo(-9, -13); c.lineTo(6, -19); c.lineTo(20, -27); c.lineTo(22, 27); c.lineTo(6, 19); c.lineTo(-9, 13); c.closePath(); c.fill(); c.stroke();
+  c.strokeStyle = '#ffffff'; c.lineWidth = 2; c.beginPath(); c.moveTo(17, -20); c.lineTo(18, 20); c.stroke();
+  c.restore();
+}
+// ---- FSC lane 1: end --------------------------------------------------------------------------------------------------------------------
+
+// NICKEL -- STATIC STORM. (The id and the name are the pitch's: the old Spare Change, a rain of nickels, is gone.) Canon (the Battle for Dream Island wiki: the Nickel page,
+// Abilities -- Electricity Manipulation via Bundle O' Balloons, "lightning strong enough to reduce Tennis Ball's tungsten-reinforced Obelisk to rubble"; "Respect to the
+// Wicked"): Nickel floats off on a bundle of balloons into a storm and sends down ray after ray of lightning; the first two kill Fries and Coiny, the third destroys the
+// obelisk and its tungsten-and-tempered-glass shell, and he then tags a piece of rubble to win. THE OWNER PICKED THE PITCH (2026-11-02, round three; then "just dont make
+// them TOO complicated; you can vary the damage and knockback as well"): so it is those rays, five beats, on the one foe the catch holds.
+// CARD. Reach: the nearest foe within 500 px (the catch: a circle round him; nobody there and a press is spent in a puff, a CPU presses it only with a foe there). 1) A storm
+// front rolls over: the view dims at its edges, rain streaks and a ceiling of cloud gathers; a bundle of coloured balloons grows over him and lifts him 150 px, static crawling
+// between the bundle and his rim, as he drifts over the foe (a foe caught in the air is brought down to the floor under them first). 2) RAY ONE: a bolt from the cloud through
+// the balloons into the foe, a soft flash and an x-ray of their bones: 14%. 3) RAY TWO, 16 frames on, thicker, jumping along the floor round them: 18%. 4) A tall tungsten-and-glass
+// obelisk shoots up beside them (80 px away, on the side away from him); RAY THREE hits it and it bursts in glass and tungsten (a foe other than the held one within 90 px of it
+// takes a ring of 8%): 28% on the foe. 5) The balloons pop away, the foe is dragged 24 px onto the near edge of the rubble and he drops onto the pile with a stomp that throws them toward the middle of the stage: 40% and a
+// KO-level launch (the heaviest foe survives 0% and is KO'd from about 10%; nerfed 2026-11-02, the owner's word) -- 100% in all, about 100 frames, the foe held throughout. He is untouchable while he hangs there (nobody can hit the bundle). A boss or an add is never caught, and neither is a teammate; a KO of the
+// foe or of him ends it where it is (he is set down on firm ground). The flashes are soft blooms round the bolt and the foe, never the whole view, and sixteen frames apart.
+// The obelisk is seen through (0.4) while another fighter stands at its foot (fsc1_seeThru). Nothing is written: the balloons, the bolts, the bones and the obelisk are pictures.
+const FSC1_NICK = { lift:150, up:28, r1:30, r2:46, rise:48, r3:64, pop:66, fall:70, hit:82, tail:17, p1:14, p2:18, p3:28, p4:40, kb:14, ky:-10, hold:500, obH:230, away:80, drag:24 };
+FSC1_NICK.dur = FSC1_NICK.hit + FSC1_NICK.tail;
+const FSC1_BALLOONS = [[0, -78, '#4b8fe0'], [-28, -66, '#e8506a'], [28, -66, '#f2c94c'], [-52, -46, '#6dbe45'], [52, -46, '#e8883a'], [-14, -50, '#c04be0'], [18, -48, '#58d6d0']];
+function fsc1_nickHit(f, st, tg, i){
+  const L = FSC1_NICK, last = i === 3, side = st.ld || st.so;
+  armAtk(f, last ? 26 : 12, last ? 'stomp' : 'cast'); shake(last ? 14 : 7);
+  fsc1_hit(f, tg, [L.p1, L.p2, L.p3, L.p4][i], last ? side*L.kb : 0, last ? L.ky : -2, last ? undefined : { stun:4 });
+  for(let q = 0; q < (last ? 18 : 9); q++) puff(tg.x, tg.y, q % 2 ? '#bfe4ff' : '#fff', last ? 7 : 5);
+  if(i === 2){   // the obelisk bursts: a foe other than the held one within 90 px of it takes a ring
+    st.hit.add(tg.idx); fsBurst(f, st, st.ox, st.sy - 40, 90, 4, 10, -12);
+    for(let q = 0; q < 16; q++) puff(st.ox, st.sy - 80, q % 3 === 0 ? '#3f4552' : '#a6e0ff', 6);
+  }
+  if(koSince(tg, st.n0)){ st.over = true; st.t = FINAL_SMASHES.Nickel.dur - 1; }
+}
+FINAL_SMASHES['Nickel'] = {
+  id:'staticstorm', wind:FS_WIND, dur:FSC1_NICK.dur, reach:FSC1_NICK.hold, needFoe:true, exact:true,   // needFoe / exact (fsTryFire, fsBotInput): pressed with nobody in the catch it is spent at once (a small puff, no intro); a CPU presses it only when the catch will take someone
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FSC1_NICK.hold }; }, lockEnd:FSC1_NICK.hit, catchMax:1,   // CATCH: a circle round him; the nearest foe only (the rays are for one)
+  start(f, st){
+    const t = fighters[st.held[0]];
+    if(!t){ fsc1_spent(f); return; }   // the catch took nobody (they stepped out in its 10 frames): spent
+    const L = FSC1_NICK, fy = t.y + t.r, S = t.onground ? { x:t.x, y:fy } : fsc1_stand(t.x, fy, 600), away = Math.sign(S.x - f.x) || f.face || 1;
+    const ox = [away, -away].map((d)=> S.x + d*L.away).find((x)=> fsc1_firm(x, S.y));   // the obelisk, beside them, on firm ground: the side away from him first
+    st.tg = t.idx; st.n0 = t._koN || 0; st.over = false; st.so = away;
+    st.tx = S.x; st.ty = S.y - t.r; st.sy = S.y; st.ox = ox == null ? S.x : ox; st.dx = clamp(st.ox - S.x, -L.drag, L.drag); if(!fsc1_firm(S.x + st.dx, S.y)) st.dx = st.ox - S.x; st.cx = t.x; st.cy = t.y; st.ax = f.x; st.ay = f.y;
+    st.ld = Math.sign(WW*0.5 - st.ox) || away;   // NERFED 2026-11-02 (the owner: "nerf nickel"): the stomp throws them toward the middle of the stage (it was always away from him, so toward the nearest ledge half the time) and the drag is 24 px onto the pile's near edge (it was 80, to its middle), or the whole way when 24 px would end off firm ground (a foe at a wall or a platform's edge): the heaviest foe survives 0%
+    f.fsBx = Math.round(st.ox); f.fsBy = Math.round(S.y); f.fsCx = Math.round(S.x); f.fsCy = null;   // the obelisk's foot, and the foe's column: all a guest needs
+    armAtk(f, this.wind, 'fsgather');
+  },
+  tick(f, st, t){
+    const L = FSC1_NICK, tg = fighters[st.tg];
+    f.vx = 0; f.vy = 0;
+    if(st.over || t > L.hit) return;   // (after the stomp they are let go and thrown; he is where he landed)
+    if(!tg || tg.dead || koSince(tg, st.n0) || !fsIsLockedBy(tg, f)){ st.over = true; st.t = this.dur - 1; return; }   // the foe gone (a KO, a respawn, the lock lost): nothing more is done, whoever comes back
+    // the foe: brought down to the floor under them if they were caught in the air, then held
+    const e = 1 - Math.pow(1 - Math.min(1, (t + 1)/13), 2);
+    let px = fsc1_mix(st.cx, st.tx, e); const py = fsc1_mix(st.cy, st.ty, e);
+    if(t > L.r3){ const q = clamp((t - L.r3 - 2)/10, 0, 1); px = fsc1_mix(st.tx, st.tx + st.dx, q*q*(3 - 2*q)); }   // after ray three they are dragged onto the rubble, where he lands
+    fsPin(tg, px, py);
+    // him: up on his balloons, drifting over the foe, then down onto the rubble
+    const yH = Math.min(st.ay, Math.max(40, st.ay - L.lift)), yL = st.sy - f.r, sm = (p)=> p*p*(3 - 2*p);
+    if(t < L.fall){ f.x = t < 14 ? st.ax : fsc1_mix(st.ax, st.ox, sm(Math.min(1, (t - 14)/(L.fall - 14)))); f.y = fsc1_mix(st.ay, yH, 1 - Math.pow(1 - Math.min(1, (t + 1)/L.up), 2)); }
+    else { const p = (t - L.fall + 1)/(L.hit - L.fall + 1); f.x = st.ox; f.y = fsc1_mix(yH, yL, p*p); }
+    f.onground = false;
+    if(t === 0){ shake(4); for(let i = 0; i < 8; i++) puff(f.x, f.y - 20, ['#e8506a', '#4b8fe0', '#f2c94c', '#6dbe45'][i % 4], 5); }
+    if(t === L.r1) fsc1_nickHit(f, st, tg, 0);
+    if(t === L.r2) fsc1_nickHit(f, st, tg, 1);
+    if(t === L.r3) fsc1_nickHit(f, st, tg, 2);
+    if(t === L.hit) fsc1_nickHit(f, st, tg, 3);
+  },
+  end(f, st){ if(st.tg != null) fsc1_settle(f); },   // he is put down on firm ground, if a KO ended it in the air
+  botOk(f, t){ const N = FS_CATCH; return Math.hypot(t.x + (t.vx || 0)*N - f.x, t.y + (t.vy || 0)*N - f.y) <= FSC1_NICK.hold - 50; },   // a CPU's cue (fsBotInput reads it): the foe where the catch will find them 10 frames on, at the speed they are going
+  ai(f){ return !!fsPick(f, FSC1_NICK.hold, FSC1_NICK.hold, false); },
+  draw(f, c){
+    const L = FSC1_NICK, t = f.fsT || 0;
+    if(f.fsBx == null || t > L.hit + L.tail) return;
+    const tg = fsLockedOf(f), ox = f.fsBx, base = f.fsBy, tx = f.fsCx, rr = tg ? (tg.r || 24) : 24, fcx = tg ? tg.x : tx, fcy = tg ? tg.y : base - rr;
+    const w = fsc1_grow(t, 0, 12)*(t > L.hit + 6 ? Math.max(0, 1 - (t - L.hit - 6)/11) : 1), V = viewRect(), nx = f.x, ny = f.y, cloudY = V.y + 50*w;
+    c.save();
+    // THE STORM FRONT: the edges of the view dim round the two of them, a ceiling of cloud, rain
+    const mx = (nx + fcx)/2, my = (ny + fcy)/2;
+    fsc1_dim(c, mx, my, 0.5*w, 170 + Math.hypot(nx - fcx, ny - fcy)/2);
+    c.fillStyle = 'rgba(52,60,76,' + (0.94*w) + ')'; c.beginPath();
+    for(let x = V.x - 60, i = 0; x < V.x + V.w + 80; x += 66, i++){ const cy = cloudY - 36 + (i % 2)*10, R = 52 + (i % 3)*8; c.moveTo(x + R, cy); c.arc(x, cy, R, 0, 7); }
+    c.fill();
+    c.fillStyle = 'rgba(112,124,150,' + (0.5*w) + ')'; c.beginPath();
+    for(let x = V.x - 30, i = 0; x < V.x + V.w + 60; x += 66, i++){ const cy = cloudY + 6 + (i % 2)*8; c.moveTo(x + 30, cy); c.arc(x, cy, 30, 0, 7); }
+    c.fill();
+    c.strokeStyle = 'rgba(196,220,255,' + (0.55*w) + ')'; c.lineWidth = 1.8; c.lineCap = 'round'; c.beginPath();
+    for(let i = 0; i < 46; i++){ const rx = V.x + ((i*97 + t*5) % Math.max(60, Math.round(V.w))), ry = V.y + ((i*61 + t*19) % Math.max(60, Math.round(V.h))); c.moveTo(rx, ry); c.lineTo(rx - 4, ry + 17); }
+    c.stroke();
+    // THE BUNDLE: seven balloons on strings to his rim, static crawling between them and it; they pop away before he drops
+    if(t < L.fall + 4){
+      const k = fsc1_grow(t, 0, 12), rim = [nx, ny - f.r + 2];
+      for(let i = 0; i < FSC1_BALLOONS.length; i++){
+        const B = FSC1_BALLOONS[i], bx = nx + B[0]*k + Math.sin(t*0.12 + i)*2.5, by = ny + B[1]*k + Math.cos(t*0.1 + i*1.7)*2, pe = t - (L.pop + i);
+        if(pe >= 0){ if(pe < 6){ fsc1_burstLines(c, bx, by, pe/6, 6, 6, 22, B[2], 1); } continue; }
+        c.save(); c.lineCap = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.moveTo(bx, by + 14*k); c.lineTo(rim[0], rim[1]); c.stroke();
+        c.strokeStyle = '#f3f3f3'; c.lineWidth = 1.2; c.stroke();
+        c.fillStyle = B[2]; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.ellipse(bx, by, 12*k, 15*k, 0, 0, 7); c.fill(); c.stroke();
+        c.fillStyle = 'rgba(255,255,255,0.6)'; c.beginPath(); c.ellipse(bx - 4*k, by - 5*k, 3*k, 5*k, 0.4, 0, 7); c.fill();
+        c.restore();
+        if(t >= 8 && t < L.pop && ((t >> 1) + i) % 3 !== 0){ c.save(); c.lineCap = 'round'; c.lineJoin = 'round'; const mxp = (bx + rim[0])/2 + (((t*13 + i*29) % 9) - 4), myp = (by + rim[1])/2;
+          for(let pass = 0; pass < 2; pass++){ c.strokeStyle = pass ? '#fffbd0' : '#1c1c1c'; c.lineWidth = pass ? 2 : 5; c.beginPath(); c.moveTo(bx, by + 12*k); c.lineTo(mxp, myp); c.lineTo(rim[0], rim[1]); c.stroke(); } c.restore(); }
+      }
+    }
+    // THE OBELISK: it shoots up beside the foe, the third ray bursts it, and what is left is a heap
+    if(t >= L.rise && t < L.r3){ const oh = L.obH*fsc1_grow(t, L.rise, 12); fsc1_obelisk(c, ox, base, oh, Math.min(1, (t - L.rise + 1)/3)*fsc1_seeThru(f, tg, ox, 32, base - oh - 4, base)); }   // (seen through while another fighter stands at its foot)
+    if(t >= L.r3){ const e = t - L.r3; fsc1_chunks(c, ox, base - L.obH*0.45, e, 20, 1.5, 5, ['rgba(166,224,255,0.92)', '#3f4552', '#5d6270'], 1); fsc1_rubble(c, ox, base, Math.min(1, (e + 1)/6)*(t > L.hit + 6 ? Math.max(0, 1 - (t - L.hit - 6)/11) : 1)); }
+    // THE RAYS: the bolt from the cloud through the balloons, on through him into the foe; each with a soft flash and an x-ray of the foe's bones
+    const ray = (H, wd, seed, kind)=>{
+      const e = t - H; if(e < 0 || e >= 6) return;
+      const a = 1 - e/6, top = kind === 3 ? [ox, base - L.obH - 30] : [nx, ny - 92], from = kind === 3 ? [ox, base - 24] : [nx, ny];
+      fsc1_bolt(c, top[0] + (kind === 3 ? 10 : 14), cloudY, top[0], top[1], wd, a, seed, t);
+      fsc1_bolt(c, from[0], from[1], fcx, fcy, wd, a, seed + 5, t);
+      if(kind === 2) for(let q = -1; q <= 1; q += 2) for(let m = 0; m < 2; m++){ const x0 = fcx + q*(30 + m*34); fsc1_bolt(c, x0, base - 5, x0 + q*60, base - 8 - m*6, 4, a, seed + 9 + m, t); }
+      fsc1_bloom(c, fcx, fcy, 150, 0.45*a); fsc1_bloom(c, top[0], cloudY + 20, 130, 0.3*a);
+      if(e < 5) fsc1_bones(c, fcx, fcy, rr/24, a);
+    };
+    ray(L.r1, 8, 1, 1); ray(L.r2, 14, 2, 2); ray(L.r3, 14, 3, 3);
+    // THE TAG: the stomp on the rubble
+    if(t >= L.hit){ const e = (t - L.hit)/14; fsc1_ring(c, ox, base - 6, 24 + 190*(1 - (1 - e)*(1 - e)), '#bfe4ff', 12*(1 - e) + 2, Math.max(0, 1 - e)); if(e < 0.4) fsc1_bloom(c, ox, base - 20, 230, 0.5*(1 - e/0.4)); }
+    c.restore();
+  },
+};
 
 // YELLOW FACE -- BUY NOW! The infomercial salesman, and his whole shtick is overselling (the design doc); his own card is the BUY NOW! soundwave that stuns. The
 // ring is 260 px (16%, a stun), and the hard sell goes on to 380 (11%) twelve frames later. Out of the biggest ring, or it gets you.
@@ -26293,10 +26838,122 @@ FINAL_SMASHES['Gaty'] = fsPull({ id:'swingopen', c1:'#c9a46c', c2:'#ffffff', R:3
 // each way (14%, 230 tall).
 FINAL_SMASHES['Grassy'] = fsCols({ id:'nobodysteps', c1:'#6dbe45', c2:'#c8f08a', nc:7, sp:60, H:230, hw:34, dmg:14, kb:15, ky:-16, art:FS_GLYPH.leaf });
 
-// LIY -- LIGHTS OUT. "Lights out." (her frame row): a light switch whose kit is a grapple; her own card dashes forward, grabs and Hurls. The marker is on the
-// nearest foe in front of her within 520, fixed 18 frames ahead (90 px: step out); then the lights go and she throws them, 26% and a hard launch.
-FINAL_SMASHES['Liy'] = fsLock({ id:'lightsout', c1:'#ffe45e', c2:'#1c1c1c', R:90, bx:520, by:200, fwd:true, effect:'blast', delay:6, dmg:26, kb:24, ky:-14, art:FS_GLYPH.spark });
-
+// LIY -- LIGHTS OUT. The name and the id are the old ones. Canon (the Battle for Dream Island wiki, Liy: Abilities; "Seasonal Shift"): she is a light switch, and her
+// "power switching" is a secret switch -- on her plain wooden back -- that makes her stronger and quicker; in "Seasonal Shift", falling straight down with everyone, she
+// smashes through a boat, grabs Kitchen Sink, drags him across to another boat and smashes him, flips her switch, slams him onto the boat, then reverts. Her own card is
+// Flip Switch (a blitz-grab) and her frame row is "Lights out." THE OWNER PICKED THE PITCH (2026-11-02, round three; then "just dont make them TOO complicated; you can
+// vary the damage and knockback as well"): so it is that fall, five beats, two boats and not three.
+// CARD. Reach: the nearest foe in front of her within 520 px across and 200 up or down (the catch: a box ahead of her; nobody there and a press is spent in a puff, a CPU
+// presses it only with a foe there). 1) She blitzes forward and clamps onto them (the startup). 2) The lights go out: the screen dims to near black but for the two of
+// them, and the cut hides her turning over onto her wooden back and the click of her switch; when the lights come back the two of them are high above the spot (up to 450
+// px, less on a short stage), falling together. 3) BOAT: a boat hangs in the air and she drives the foe through the hull, planks bursting: 24%. 4) She drags them across to
+// the other side and through a second boat: 30%. 5) The last boat sits on the floor where they were; she slams them onto it, it bursts in planks and sparks, the lights
+// blaze back on for good and the foe is flung out: 46% and a KO-level launch -- 100% in all, about 100 frames, the foe held throughout. She is untouchable and still
+// where she is meanwhile (her own hands are the blows), and the switch clicks back as it ends. A boss or an add is never caught, and neither is a teammate; a KO of the
+// foe or of her ends it where it is (she is set down on firm ground; the foe is let go). The two of them are put down where there is floor (fsc1_stand), so a gap in the floor
+// never ends the fall over a pit. Nothing is written: the switch, the boats and the planks are pictures.
+const FSC1_LIY = { snap:22, dark:14, on:26, h1:40, h2:54, h3:68, tail:18, p1:24, p2:30, p3:46, off:36, kb:9, ky:-9 };
+FSC1_LIY.dur = FSC1_LIY.h3 + FSC1_LIY.tail;
+// The fall's geometry from the landing spot (x0, yl: the pair's centre when landed) and the top (yt): boat 1 a third of the way down on the left, boat 2 two thirds down on the right.
+function fsc1_liyGeo(x0, yt, yl){
+  const H = yl - yt;
+  return { x0:x0, xl:clamp(x0 - 100, 70, WW - 70), xr:clamp(x0 + 100, 70, WW - 70), yt:yt, yb1:yt + 0.34*H, yb2:yt + 0.67*H, yl:yl };
+}
+// The pair's centre on row frame t, from the lights coming on: down through boat 1, swung across and down through boat 2, across and down to the floor.
+function fsc1_liyPair(t, P){
+  const L = FSC1_LIY, sm = (p)=> p*p*(3 - 2*p), fl = (p)=> 0.35*p + 0.65*p*p;
+  if(t < L.on) return [P.xl, P.yt];
+  if(t < L.h1){ const p = (t - L.on)/(L.h1 - L.on); return [P.xl, fsc1_mix(P.yt, P.yb1, p*p)]; }
+  if(t < L.h2){ const p = (t - L.h1)/(L.h2 - L.h1); return [fsc1_mix(P.xl, P.xr, sm(p)), fsc1_mix(P.yb1, P.yb2, fl(p))]; }
+  if(t < L.h3){ const p = (t - L.h2)/(L.h3 - L.h2); return [fsc1_mix(P.xr, P.x0, sm(p)), fsc1_mix(P.yb2, P.yl, fl(p))]; }
+  return [P.x0, P.yl];
+}
+function fsc1_liyHit(f, st, tg, i){
+  const L = FSC1_LIY, last = i === 2, side = Math.sign(tg.x - f.x) || st.dir;
+  armAtk(f, last ? 26 : 14, 'slam'); shake(last ? 14 : 7);
+  fsc1_hit(f, tg, [L.p1, L.p2, L.p3][i], last ? side*L.kb : 0, last ? L.ky : 2, last ? undefined : { stun:4 });   // (the first two hold them; the third is the launch the let-go throws)
+  for(let q = 0; q < (last ? 16 : 8); q++) puff(tg.x, tg.y, q % 2 ? '#c99a52' : '#fff', last ? 7 : 5);
+  if(koSince(tg, st.n0)){ st.over = true; st.t = FINAL_SMASHES.Liy.dur - 1; }
+}
+FINAL_SMASHES['Liy'] = {
+  id:'lightsout', wind:FS_WIND, dur:FSC1_LIY.dur, reach:520, needFoe:true, exact:true,   // needFoe / exact (fsTryFire, fsBotInput): pressed with nobody in the catch it is spent at once (a small puff, no intro); a CPU presses it only when the catch will take someone
+  catch(f){ return fsBoxAhead(f, 0, 520, 200, 200); }, lockEnd:FSC1_LIY.h3, catchMax:1,   // CATCH: the box ahead of her; the nearest foe only (the fall is for one)
+  start(f, st){
+    const t = fighters[st.held[0]];
+    if(!t){ fsc1_spent(f); return; }   // the catch took nobody (they stepped out in its 10 frames): spent
+    const L = FSC1_LIY, fy = t.y + t.r, S = t.onground ? { x:t.x, y:fy } : fsc1_stand(t.x, fy, 600);   // where they land: the floor under them
+    const yl = S.y - t.r, yt = Math.max(80, yl - Math.min(450, Math.max(170, yl - 130)));
+    st.tg = t.idx; st.n0 = t._koN || 0; st.over = false; st.dir = Math.sign(t.x - f.x) || f.face || 1;
+    st.sx = f.x; st.sy = f.y; st.cx = t.x; st.cy = t.y;   // where her blitz starts, and where she clamps on
+    st.so = [-st.dir, st.dir].find((d)=> fsc1_firm(S.x + d*L.off, S.y)) || -st.dir;   // the side she lands on: one with floor under it
+    f.fsBx = Math.round(S.x); f.fsBy = Math.round(yl); f.fsCx = Math.round(S.x); f.fsCy = Math.round(yt);   // the landing spot and the top of the fall: all a guest needs
+    armAtk(f, 12, 'dash');
+  },
+  tick(f, st, t){
+    const L = FSC1_LIY, tg = fighters[st.tg];
+    f.vx = 0; f.vy = 0;
+    if(st.over || t > L.h3) return;   // (after the blow they are let go and thrown; she is where she landed)
+    if(!tg || tg.dead || koSince(tg, st.n0) || !fsIsLockedBy(tg, f)){ st.over = true; st.t = this.dur - 1; return; }   // the foe gone (a KO, a respawn, the lock lost): nothing more is done, whoever comes back
+    const P = fsc1_liyGeo(f.fsBx, f.fsCy, f.fsBy);
+    let px = st.cx, py = st.cy;
+    if(t >= L.snap){ const q = fsc1_liyPair(t, P); px = q[0]; py = q[1]; }
+    fsPin(tg, px, py);
+    // her: the blitz onto them, then clamped to their side; on the way down she is beside them, a little above
+    const hx = px + st.so*L.off, hy = py - 4;
+    if(t < 12){ const p = 1 - Math.pow(1 - (t + 1)/12, 3); f.x = fsc1_mix(st.sx, hx, p); f.y = fsc1_mix(st.sy, hy, p); }
+    else { f.x = hx; f.y = hy; }
+    f.onground = false;
+    if(t === 0){ shake(4); for(let i = 0; i < 8; i++) puff(f.x, f.y, i % 2 ? '#ffe45e' : '#fff', 5); }
+    if(t === 12) shake(5);
+    if(t === L.snap){ shake(5); armAtk(f, 8, 'spin'); for(let i = 0; i < 10; i++) puff(px, py, i % 2 ? '#cfe0ff' : '#fff', 5); }
+    if(t === L.h1) fsc1_liyHit(f, st, tg, 0);
+    if(t === L.h2) fsc1_liyHit(f, st, tg, 1);
+    if(t === L.h3) fsc1_liyHit(f, st, tg, 2);
+  },
+  end(f, st){ if(st.tg != null) fsc1_settle(f); },   // she is put down on firm ground, if a KO ended it in the air
+  botOk(f, t){ const N = FS_CATCH, ahead = (t.x + (t.vx || 0)*N - f.x)*(f.face < 0 ? -1 : 1); return ahead >= 0 && ahead <= 460 && Math.abs(t.y + (t.vy || 0)*N - f.y) <= 170; },   // a CPU's cue (fsBotInput reads it): the foe where the catch will find them 10 frames on, at the speed they are going
+  ai(f){ return !!fsPick(f, 520, 200, true); },
+  draw(f, c){
+    const L = FSC1_LIY, t = f.fsT || 0;
+    if(f.fsBx == null || t > L.h3 + 34) return;
+    const tg = fsLockedOf(f), P = fsc1_liyGeo(f.fsBx, f.fsCy, f.fsBy), q = t < L.snap ? (tg ? [tg.x, tg.y] : [f.x, f.y]) : fsc1_liyPair(t, P), ease = (p)=> 1 - (1 - p)*(1 - p);
+    c.save();
+    // THE DARK: the view dims to near black but for a hole round the two of them (the cut), stays dim through the fall, and blazes back on at the landing
+    const dim = t < L.dark ? 0 : t < L.snap ? 0.88*(t - L.dark)/(L.snap - L.dark) : t < L.on ? 0.88 : t < L.h3 ? 0.6 : 0.6*Math.max(0, 1 - (t - L.h3)/12);
+    fsc1_dim(c, q[0], q[1], dim, 100, 0.3);
+    // the blitz: a streak behind her
+    if(t < 18 && f.fsAx != null){ const a = 0.8*(1 - t/18); c.lineCap = 'round'; for(let pass = 0; pass < 2; pass++){ c.globalAlpha = a; c.strokeStyle = pass ? '#fffbd0' : '#1c1c1c'; c.lineWidth = pass ? 5 : 10; c.beginPath(); c.moveTo(f.fsAx, f.fsAy); c.lineTo(f.x, f.y); c.stroke(); } }
+    // the switch: it clicks over in the dark (she turns onto her wooden back), and clicks back at the end
+    const sw = (t0, from, to)=>{
+      const e = t - t0; if(e < 0 || e > 16) return;
+      const a = Math.min(1, (e + 1)/8)*Math.min(1, (16 - e)/4), up = e < 4 ? from : e < 7 ? fsc1_mix(from, to, (e - 4)/3) : to;
+      fsc1_switch(c, f.x, f.y - f.r - 50 - 4*Math.sin(e*0.4), up, a, 1.8);
+      if(e >= 6 && e < 12) fsc1_burstLines(c, f.x, f.y - f.r - 50, (e - 6)/6, 8, 28, 62, '#fffbd0', 0.9);
+    };
+    sw(L.dark, 0, 1); sw(L.h3 + 4, 1, 0);
+    if(t >= L.dark && t < L.snap){   // her turning over: a whirl round her
+      const e = (t - L.dark)/(L.snap - L.dark); c.lineCap = 'round';
+      for(let k = 0; k < 3; k++){ c.globalAlpha = 0.85*(1 - e*0.6); c.strokeStyle = '#1c1c1c'; c.lineWidth = 9; c.beginPath(); c.arc(f.x, f.y, f.r + 12 + k*5, e*12 + k*2.1, e*12 + k*2.1 + 1.5); c.stroke(); c.strokeStyle = k % 2 ? '#fffbd0' : '#cfe0ff'; c.lineWidth = 5; c.stroke(); }
+    }
+    // the fall: streaks above the two of them
+    if(t >= L.on && t < L.h3){ c.lineCap = 'round'; c.strokeStyle = '#ffffff'; c.lineWidth = 3; for(let i = 0; i < 5; i++){ const sx = q[0] + (i - 2)*17 + ((i*37) % 11 - 5), ln = 26 + (i*29) % 24; c.globalAlpha = 0.45; c.beginPath(); c.moveTo(sx, q[1] - 40 - ln - ((t*7 + i*19) % 22)); c.lineTo(sx, q[1] - 40); c.stroke(); } }
+    // the boats: each grows in over the 12 frames before the pair reaches it, and bursts into boards as they pass through
+    const surface = P.yl + 24;
+    const boat = (x, y, s, appear, hit, seed)=>{
+      if(t < appear || t > hit + 18) return;
+      if(t < hit){ fsc1_boat(c, x, y, s*(0.3 + 0.7*fsc1_grow(t, appear, 12)), Math.min(1, (t - appear + 1)/3)); }
+      else { fsc1_planks(c, x, y, t - hit, 8, s, seed); fsc1_burstLines(c, x, y, (t - hit)/8, 9, 22*s, 60*s, '#fffbd0', 0.9); }
+    };
+    boat(P.xl, P.yb1, 1, L.on, L.h1, 1); boat(P.xr, P.yb2, 1.1, L.h1, L.h2, 2); boat(P.x0, surface - 24*1.6, 1.6, L.h2, L.h3, 3);
+    // the lights: a soft white bloom at each blow and when they come on, and a bigger one at the end
+    if(t >= L.on && t < L.on + 5) fsc1_bloom(c, q[0], q[1], 230, 0.3*(1 - (t - L.on)/5));
+    if(t >= L.h1 && t < L.h1 + 5) fsc1_bloom(c, P.xl, P.yb1, 190, 0.34*(1 - (t - L.h1)/5));
+    if(t >= L.h2 && t < L.h2 + 5) fsc1_bloom(c, P.xr, P.yb2, 190, 0.34*(1 - (t - L.h2)/5));
+    if(t >= L.h3 && t < L.h3 + 9){ const e = (t - L.h3)/9; fsc1_bloom(c, P.x0, P.yl, 300, 0.5*(1 - e)); }
+    if(t >= L.h3 && t < L.h3 + 18){ const e = (t - L.h3)/18; fsc1_ring(c, P.x0, surface - 6, 24 + 170*ease(e), '#fffbd0', 12*(1 - e) + 2, 1 - e); }
+    c.restore();
+  },
+};
 // LOLLIPOP -- STICKY TRAP. "Was that supposed to be difficult?" (her frame row): glass-hard and haughty; her own cards are the Sticky Sucker and the Rooting
 // Trap. A sticky patch opens 120 px ahead of her and, for 40 frames, drags everyone within 300 of it slowly in (2.6 px a frame: walk away faster); then it
 // snaps shut, 90 px round it (22%, a launch).
@@ -26410,18 +27067,373 @@ FINAL_SMASHES['Roboty'] = fsCols({ id:'antennaspring', c1:'#c8c8d0', c2:'#e8506a
 // move); his own card is the Price Tag. It goes for the nearest foe within 400, its spot fixed as the startup begins (90 px: step out): a cactus warps up under them, 24%, thrown hard.
 FINAL_SMASHES['Profily'] = fsLock({ id:'cactus', c1:'#4f9a4a', c2:'#ffffff', R:90, bx:400, by:240, effect:'blast', delay:10, dmg:24, kb:22, ky:-18, art:FS_GLYPH.cactus });
 
-// TREE -- TIMBER. His own card: a heavy branch dropped on the nearest foe after a warning; the design doc has him enormous and rooted. Marks under the nearest foe, three branches
-// fourteen frames apart, 80 px along each time (18%, a hard knock): keep moving.
-FINAL_SMASHES['Tree'] = fsRain({ id:'timber', c1:'#8a6a3a', k:1, n:3, every:14, walk:80, dmg:18, kb:22, r:30, art:FS_GLYPH.branch });
+// TREE -- CUT DOWN TO SIZE. (The name and the id are new: the old Timber, three branches dropped on the foe, shared its name with his own card's special.) Canon (the Battle for Dream
+// Island wiki: the Tree page, appearance changes: TPOT 8 four vines and giant, TPOT 9 six vines and larger, TPOT 10 eleven vines, tangled and reaching the clouds, TPOT 12 chopped down
+// and back to normal size; and Tree/Coverage, "What's Up Bell's String?": Tree has grown tall enough to reach the clouds, Fanny chops his roots while he winces, and he falls on Marker).
+// THE OWNER PICKED THE PITCH (2026-11-02, round three: "REDESIGN as pitched"; then "just dont make them TOO complicated; you can vary the damage and knockback as well"): so it is that
+// climb and fall, five beats, six blows, on the one foe the catch holds; the camera is never moved (the crown stops well under the top of the world) and the axe is only a drawn axe.
+// CARD. Reach: the nearest foe within 420 px (the catch: a circle round him; nobody there and a press is spent in a puff, a CPU presses it only with a foe there). He is the tree: he is
+// hidden and the swelling tree is drawn from his feet, his own face on its trunk. 1) Roots run along the floor to the foe and four vines wrap them: 8%. He swells to twice his size and the
+// vines lift them a third of the way up. 2) Six vines: 10%; he swells again and they are hoisted two thirds up. 3) Eleven vines: 14%; the last swell punches his crown up through a deck of
+// clouds and the foe hangs tangled in it, branches whipping (the crown is never higher than 420 px over the floor, nor under 146 px from the top of the world). 4) The chop: two axe
+// blows land on his roots from off screen, 7% then 9%; each shudders the trunk and whipsaws the foe, leaves rain down, he winces. 5) The fall: he topples toward the middle of the stage,
+// slow then quick, the foe at the very top whipped through the arc and slammed into the floor where the crown lands, 52% and the launch (almost straight up, a little back toward him: from where the crown lands a launch outward would only be the ledge), a ring of
+// dust, a big shake. 100% on the foe in all, about 124 frames held (a little over two seconds), then the tree fades and he stands where he was. Anyone else under the trunk as it falls takes one
+// clip of 10%, and anyone within 130 px of the landing a ring of 10%. He is untouchable throughout. A boss or an add is never caught, a teammate neither struck nor caught; a KO of the
+// foe or of him ends it where it is. The landing is picked on firm ground at the same level (fsc1_firm), the nearest to 420 px away toward the middle (the other way if that is a pit,
+// then the nearest firm top below), so the tree always falls onto the stage; the foe is never covered: the crown is a wreath of ten lumps round them with a hole 55 px in radius at the full size (it was 24; a sprite is up to about 36 px to a side), and a lump that would still cross the foe (while they slide in, or on a huge sprite) is drawn at 0.4. Nothing is written.
+const FSC1_TRE = { catchR:420, rise:420, yMin:146, minLen:200, A:10, B:30, C:50, K1:72, K2:86, F0:92, imp:124, tail:24, p:[8, 10, 14, 7, 9, 52], kb:-3, ky:-22, ring:130 };
+FSC1_TRE.dur = FSC1_TRE.imp + FSC1_TRE.tail;
+const FSC1_TRE_AT = [FSC1_TRE.A, FSC1_TRE.B, FSC1_TRE.C, FSC1_TRE.K1, FSC1_TRE.K2, FSC1_TRE.imp];
+// where the tree falls: { dir, len, x, y } -- the farthest firm spot at the holder's level between 420 and 200 px out toward the middle of the stage, else the other side, else the nearest firm top below
+function fsc1_treLand(x0, base, d0){
+  const L = FSC1_TRE;
+  for(const d of [d0, -d0]) for(let len = L.rise; len >= L.minLen; len -= 20){ const x = x0 + d*len; if(fsc1_firm(x, base)) return { dir:d, len:len, x:x, y:base }; }
+  const S = fsc1_stand(x0 + d0*L.minLen, base - 8, 600);
+  return { dir:Math.sign(S.x - x0) || d0, len:clamp(Math.abs(S.x - x0), L.minLen, L.rise), x:S.x, y:S.y };
+}
+function fsc1_treWhip(t, dir){   // the axe's shove and the shudder after it: the top of the trunk swings off and back, dying out
+  const L = FSC1_TRE; let w = 0;
+  for(const k of [L.K1, L.K2]){ const e = t - k; if(e >= 0 && e < 30) w += dir*26*Math.exp(-e/9)*Math.cos(e*0.75); }
+  return w;
+}
+// the foe's centre at row frame t, a pure function of the row's fixed spots S (x0: his column, base: his feet line, yT: the foe's height in the crown, cx / cy: where the catch took them, lx / ly: where the crown lands)
+function fsc1_treSpot(t, S){
+  const L = FSC1_TRE, ease = (p)=> 1 - (1 - p)*(1 - p), H = S.base - S.yT, y1 = S.base - H/3, y2 = S.base - 2*H/3, y3 = S.yT;
+  const ox = S.dir*62*(t < L.C ? 1 : 1 - ease(clamp((t - L.C)/12, 0, 1)));   // they hang on the vines 62 px beside the trunk, on the side toward the middle (the drawing is over bodies: the trunk must not cover them; the stage's edge is on the other side), and slide into the crown at the third beat
+  let x = S.x0 + ox, y = y3;
+  if(t < L.A){ x = S.cx; y = S.cy; }
+  else if(t < L.A + 14){ const e = ease((t - L.A)/14); x = fsc1_mix(S.cx, S.x0 + ox, e); y = fsc1_mix(S.cy, y1, e); }
+  else if(t < L.B) y = y1;
+  else if(t < L.B + 14) y = fsc1_mix(y1, y2, ease((t - L.B)/14));
+  else if(t < L.C) y = y2;
+  else if(t < L.C + 12) y = fsc1_mix(y2, y3, ease((t - L.C)/12));
+  const p = clamp((t - L.F0)/(L.imp - L.F0), 0, 1), th = Math.PI/2*p*p;
+  const sway = t >= L.A + 14 ? Math.sin(t*0.33)*(t >= L.C ? 6 : 3)*(1 - p) : 0, whip = fsc1_treWhip(t, S.dir)*(1 - p*0.5);
+  if(p > 0){ x = S.x0 + (S.lx - S.x0)*Math.sin(th); y = S.ly + (y3 - S.ly)*Math.cos(th); }
+  return { x:x + sway + whip, y:y - Math.abs(whip)*0.2 };
+}
+// the crown's centre and size at row frame t: above the foe while they are lifted (the trunk's top), round them from the third beat on; sp: the foe's centre now
+function fsc1_treCrown(t, S, sp){
+  const L = FSC1_TRE, ease = (p)=> 1 - (1 - p)*(1 - p), H = S.base - S.yT, h0 = 62, h1 = Math.min(H/3 + 124, H - 12), h2 = Math.min(2*H/3 + 124, H - 12), h3 = H, s0 = 0.36, s1 = 0.75, s2 = 1.0, s3 = 1.25;
+  if(t >= L.C + 12) return { x:sp.x, y:sp.y, s:s3 };
+  let h, s;
+  if(t < L.A + 14){ const e = ease(clamp(t/(L.A + 14), 0, 1)); h = fsc1_mix(h0, h1, e); s = fsc1_mix(s0, s1, e); }
+  else if(t < L.B){ h = h1; s = s1; }
+  else if(t < L.B + 14){ const e = ease((t - L.B)/14); h = fsc1_mix(h1, h2, e); s = fsc1_mix(s1, s2, e); }
+  else if(t < L.C){ h = h2; s = s2; }
+  else { const e = ease((t - L.C)/12); h = fsc1_mix(h2, h3, e); s = fsc1_mix(s2, s3, e); }
+  return { x:S.x0 + (t >= L.A + 14 ? Math.sin(t*0.33)*(t >= L.C ? 6 : 3) : 0), y:S.base - h, s:s };
+}
+function fsc1_treHit(f, st, tg, i){
+  const L = FSC1_TRE, last = i === 5, chop = i === 3 || i === 4;
+  armAtk(f, last ? 26 : 12, 'cast'); shake(last ? 20 : chop ? 10 : 6);
+  fsc1_hit(f, tg, L.p[i], last ? st.dir*L.kb : 0, last ? L.ky : -2, last ? undefined : { stun:4 });
+  for(let q = 0; q < (last ? 22 : 9); q++) puff(tg.x, tg.y, q % 2 ? '#8a4fc0' : '#6fb04a', last ? 7 : 5);
+  if(chop) for(let q = 0; q < 6; q++) puff(st.x0 - st.dir*30, st.base - 24, q % 2 ? '#d9b98a' : '#a8703a', 4);
+  if(last){ st.hit.add(tg.idx); fsBurst(f, st, tg.x, tg.y, L.ring, 5, 10, -12); }   // anyone else near the landing takes a ring (10% on screen)
+  if(koSince(tg, st.n0)){ st.over = true; st.t = FINAL_SMASHES['Tree'].dur - 1; }
+}
+function fsc1_treClip(f, st, tg){   // anyone else under the trunk as it falls takes one clip (10% on screen)
+  const ax = st.x0, ay = st.base, dx = tg.x - ax, dy = tg.y - ay, l2 = dx*dx + dy*dy || 1;
+  for(const o of fighters){
+    if(o === tg || fsHurtMark(f, o) || st.hit.has(o.idx) || o._fsLock || o._ghostT > 0) continue;
+    const cy = hurtCY(o), u = clamp(((o.x - ax)*dx + (cy - ay)*dy)/l2, 0, 1);
+    if(Math.hypot(o.x - (ax + dx*u), cy - (ay + dy*u)) < (o.r || 24) + 30 + 45*u){ st.hit.add(o.idx); o.countering = 0; applyHit(o, 5, st.dir*9, -11, f); }
+  }
+}
+// ---- drawing: the trunk (a bent strip from his feet to the crown, his face on it), the crown (a wreath of lumps round the foe), the vines, the roots ---------------------------------
+function fsc1_treBez(P0, P1, P2, u){ const k = 1 - u; return [k*k*P0[0] + 2*k*u*P1[0] + u*u*P2[0], k*k*P0[1] + 2*k*u*P1[1] + u*u*P2[1]]; }
+function fsc1_treTan(P0, P1, P2, u){ const k = 1 - u; return [2*k*(P1[0] - P0[0]) + 2*u*(P2[0] - P1[0]), 2*k*(P1[1] - P0[1]) + 2*u*(P2[1] - P1[1])]; }
+function fsc1_treTrunk(c, P0, P1, P2, W, a, look){   // look: { wince, worry, dx }
+  if(!(a > 0.01)) return;
+  const n = 14, A = [], B = [];
+  for(let i = 0; i <= n; i++){ const u = i/n, p = fsc1_treBez(P0, P1, P2, u), T = fsc1_treTan(P0, P1, P2, u), m = Math.hypot(T[0], T[1]) || 1, w = W*(1 - 0.38*u)*0.5; A.push([p[0] - T[1]/m*w, p[1] + T[0]/m*w]); B.push([p[0] + T[1]/m*w, p[1] - T[0]/m*w]); }
+  c.save(); c.globalAlpha = a; c.lineJoin = 'round'; c.lineCap = 'round';
+  c.beginPath(); c.moveTo(A[0][0], A[0][1]); for(let i = 1; i <= n; i++) c.lineTo(A[i][0], A[i][1]); for(let i = n; i >= 0; i--) c.lineTo(B[i][0], B[i][1]); c.closePath();
+  c.fillStyle = '#d9b98a'; c.fill(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 4; c.stroke();
+  c.strokeStyle = 'rgba(168,132,90,0.75)'; c.lineWidth = 2.5;   // bark grooves
+  for(const g of [-0.3, 0.05, 0.3]){ c.beginPath(); for(let i = 1; i < n; i++){ const u = i/n, p = fsc1_treBez(P0, P1, P2, u), T = fsc1_treTan(P0, P1, P2, u), m = Math.hypot(T[0], T[1]) || 1, w = W*(1 - 0.38*u)*g; const x = p[0] - T[1]/m*w, y = p[1] + T[0]/m*w; if(i === 1) c.moveTo(x, y); else c.lineTo(x, y); } c.stroke(); }
+  if(P0[1] - P2[1] > Math.abs(P2[0] - P0[0])*0.8){   // roots flaring at the foot while he stands
+    c.fillStyle = '#d9b98a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+    for(const s of [-1, 1]){ const bx = P0[0] + s*W*0.5; c.beginPath(); c.moveTo(bx + s*20, P0[1] + 2); c.lineTo(bx - s*2, P0[1] - 18); c.lineTo(bx - s*8, P0[1] + 2); c.closePath(); c.fill(); c.stroke(); }
+  }
+  // his face, a little below the crown
+  const u = 0.62, p = fsc1_treBez(P0, P1, P2, u), T = fsc1_treTan(P0, P1, P2, u), q = W*(1 - 0.38*u);
+  c.translate(p[0], p[1]); c.rotate(Math.atan2(T[1], T[0]) + Math.PI/2);
+  const ex = q*0.22, ey = -q*0.05, er = q*0.16;
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = Math.max(2, q*0.06);
+  if(look.wince){
+    for(const s of [-1, 1]){ c.beginPath(); c.moveTo(s*ex - s*er*1.1, ey - er*0.9); c.lineTo(s*ex + s*er*0.8, ey); c.lineTo(s*ex - s*er*1.1, ey + er*0.9); c.stroke(); }
+    c.beginPath(); c.moveTo(-q*0.2, q*0.32); for(let i = 1; i <= 4; i++) c.lineTo(-q*0.2 + i*q*0.1, q*0.32 + (i % 2 ? -1 : 1)*q*0.05); c.stroke();
+  } else {
+    for(const s of [-1, 1]){
+      c.fillStyle = '#ffffff'; c.beginPath(); c.ellipse(s*ex, ey, er, er*1.3, 0, 0, 7); c.fill(); c.stroke();
+      c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(s*ex + (look.dx || 0)*er*0.4, ey + er*0.25, er*(look.worry ? 0.32 : 0.46), 0, 7); c.fill();
+      c.beginPath(); c.moveTo(s*ex - s*er*1.3, ey - er*(look.worry ? 2.1 : 1.7)); c.lineTo(s*ex + s*er*1.0, ey - er*(look.worry ? 1.7 : 2.0)); c.stroke();   // brows: stern; raised when worried
+    }
+    c.beginPath(); c.arc(0, q*0.4, q*0.13, Math.PI*1.15, Math.PI*1.85); c.stroke();
+  }
+  c.restore();
+}
+function fsc1_treCrownDraw(c, x, y, s, a, fill, ko){   // a wreath of ten leafy lumps round (x, y), the hole in it at least 44*s in radius (55 px at the full size, where it was 24: a foe's sprite, up to about 1.5 radii to a side, fits in it); fill (0 -> 1): the middle closed over too (no foe in it yet); ko: { x, y, r }, a foe the crown must not hide: a lump that crosses its disc is drawn at 0.4 (fading in over the lump's own width)
+  if(!(a > 0.01)) return;
+  const R = 80*s, r = 26*s, n = 10, M = [];
+  for(let i = 0; i < n; i++){ const th = i*Math.PI*2/n + 0.3, rr = R*(0.94 + 0.1*((i*5) % 3)/2); M.push([x + Math.cos(th)*rr, y + Math.sin(th)*rr*0.92, r*(0.9 + 0.2*((i*7) % 4)/3)]); }
+  const K = M.map((m)=> ko ? 1 - 0.6*clamp((ko.r + m[2] - Math.hypot(m[0] - ko.x, m[1] - ko.y))/m[2], 0, 1) : 1);
+  c.save(); c.lineJoin = 'round';
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 7; M.forEach((m, i)=>{ c.globalAlpha = a*K[i]; c.beginPath(); c.arc(m[0], m[1], m[2], 0, 7); c.stroke(); });
+  c.fillStyle = '#8a4fc0'; M.forEach((m, i)=>{ c.globalAlpha = a*K[i]; c.beginPath(); c.arc(m[0], m[1], m[2], 0, 7); c.fill(); });
+  c.fillStyle = '#a56ad8'; for(let i = 0; i < n; i += 2){ const m = M[i]; c.globalAlpha = a*K[i]; c.beginPath(); c.arc(m[0] - m[2]*0.25, m[1] - m[2]*0.3, m[2]*0.45, 0, 7); c.fill(); }
+  c.fillStyle = '#6d3a9e'; for(let i = 1; i < n; i += 3){ const m = M[i]; c.globalAlpha = a*K[i]; c.beginPath(); c.arc(m[0] + m[2]*0.3, m[1] + m[2]*0.35, m[2]*0.3, 0, 7); c.fill(); }
+  if(fill > 0.01){
+    const fk = ko ? 1 - 0.6*clamp((ko.r + R*0.92 - Math.hypot(x - ko.x, y - ko.y))/(ko.r*2), 0, 1) : 1;   // the closed middle fades as a foe comes into it
+    c.globalAlpha = a*fill*fk; c.fillStyle = '#8a4fc0'; c.beginPath(); c.arc(x, y, R*0.92, 0, 7); c.fill(); c.fillStyle = '#a56ad8'; c.beginPath(); c.arc(x - R*0.2, y - R*0.25, R*0.4, 0, 7); c.fill();
+  }
+  c.restore();
+}
+function fsc1_treVines(c, cr, sp, fr, n, nPrev, tB, t, a){   // n vines from the lower arc of the crown to the foe, and n coils round them (those past nPrev grow in over 10 frames from tB)
+  if(!(a > 0.01) || n < 1) return;
+  c.save(); c.globalAlpha = a; c.lineCap = 'round'; c.lineJoin = 'round';
+  for(let i = 0; i < n; i++){
+    const gi = i < nPrev ? 1 : fsc1_grow(t, tB, 10); if(gi < 0.02) continue;
+    const phi = Math.PI/2 + (i - (n - 1)/2)*(2.4/Math.max(n, 3)), ax = cr.x + Math.cos(phi)*55*cr.s, ay = cr.y + Math.sin(phi)*55*cr.s;
+    const gp = clamp((sp.y - cr.y)/100, 0, 1), th = fsc1_mix(phi, -Math.PI/2 + (i - (n - 1)/2)*0.4, gp), tx = sp.x + Math.cos(th)*fr*1.02, ty = sp.y + Math.sin(th)*fr*1.02;   // each ends on the rim of the foe: in the crown at the angle it came in, hanging from above on their top
+    const ex = fsc1_mix(ax, tx, gi), ey = fsc1_mix(ay, ty, gi), mx = (ax + ex)/2 + Math.sin(t*0.2 + i*1.7)*12, my = (ay + ey)/2;
+    c.strokeStyle = '#1c1c1c'; c.lineWidth = 6.5; c.beginPath(); c.moveTo(ax, ay); c.quadraticCurveTo(mx, my, ex, ey); c.stroke();
+    c.strokeStyle = '#4f9a3a'; c.lineWidth = 3.6; c.stroke();
+    // the coil round their body (three at most, half see-through: eleven would hide them)
+    if(i >= 3) continue;
+    c.globalAlpha = a*0.6;
+    const yy = sp.y - fr*0.7 + (i + 0.5)*(fr*1.4/3), hf = Math.sqrt(Math.max(0, 1 - ((yy - sp.y)/(fr*0.98))*((yy - sp.y)/(fr*0.98))));
+    c.strokeStyle = '#1c1c1c'; c.lineWidth = 4.6; c.beginPath(); c.ellipse(sp.x, yy, hf*fr*1.02 + 3, 4, (i % 2 ? 0.18 : -0.18), 0, Math.PI*gi); c.stroke();
+    c.strokeStyle = '#6fb04a'; c.lineWidth = 2.4; c.stroke();
+    c.globalAlpha = a;
+  }
+  c.restore();
+}
+function fsc1_treRoots(c, x0, base, gx, gy, sp, fr, t, a){   // t < A + 16: a root along the floor to under the foe, and four vines rising round them
+  const g = fsc1_grow(t, 0, 10), out = 1 - fsc1_grow(t, FSC1_TRE.A + 4, 12), k = g*out;
+  if(!(k > 0.01) || !(a > 0.01)) return;
+  c.save(); c.globalAlpha = a*out; c.lineCap = 'round'; c.lineJoin = 'round';
+  const ex = fsc1_mix(x0, gx, g), n = 10;
+  c.beginPath(); for(let i = 0; i <= n; i++){ const u = i/n, x = fsc1_mix(x0, ex, u), y = fsc1_mix(base, gy, u) - 4 + Math.sin(u*9 + t*0.2)*4; if(i) c.lineTo(x, y); else c.moveTo(x, y); }
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 11; c.stroke(); c.strokeStyle = '#8a5a2a'; c.lineWidth = 7; c.stroke();
+  for(let i = 0; i < 4; i++){
+    const sx = gx + (i - 1.5)*11, tx = sp.x + (i - 1.5)*fr*0.42, ty = fsc1_mix(gy, sp.y + fr*(0.7 - 0.3*i), g), mx = (sx + tx)/2 + Math.sin(t*0.25 + i*2)*9, my = (gy + ty)/2;
+    c.strokeStyle = '#1c1c1c'; c.lineWidth = 6.5; c.beginPath(); c.moveTo(sx, gy - 2); c.quadraticCurveTo(mx, my, fsc1_mix(sx, tx, g), ty); c.stroke();
+    c.strokeStyle = '#4f9a3a'; c.lineWidth = 3.6; c.stroke();
+  }
+  c.restore();
+}
+FINAL_SMASHES['Tree'] = {
+  id:'cutdown', wind:FS_WIND, dur:FSC1_TRE.dur, reach:FSC1_TRE.catchR, needFoe:true, exact:true,   // needFoe / exact (fsTryFire, fsBotInput): pressed with nobody in the catch it is spent at once (a small puff, no intro); a CPU presses it only when the catch will take someone
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FSC1_TRE.catchR }; }, lockEnd:FSC1_TRE.imp, catchMax:1,   // CATCH: a circle round him; the nearest foe only (the tree takes one)
+  hides(f){ const t = f.fsT || 0; return !(f.fsC > 0) && t >= 12 && t < FSC1_TRE.imp + 12; },   // he is the tree: hidden once it has grown in over him (a pure function of the wire fields)
+  start(f, st){
+    const t = fighters[st.held[0]];
+    if(!t){ fsc1_spent(f); return; }   // the catch took nobody (they stepped out in its 10 frames): spent
+    const L = FSC1_TRE, B = f.onground ? { x:f.x, y:f.y + f.r } : fsc1_stand(f.x, f.y + f.r - 4, 600);
+    if(!f.onground || Math.abs(B.x - f.x) > 1){ f.x = B.x; f.y = B.y - f.r; f.vx = 0; f.vy = 0; f.onground = true; }   // cast in the air: he is set down on the firm ground below (the tree is rooted there)
+    const base = f.y + f.r, N = fsc1_treLand(f.x, base, f.x < WW/2 ? 1 : -1);
+    st.tg = t.idx; st.n0 = t._koN || 0; st.over = false; st.cx = t.x; st.cy = t.y; st.x0 = f.x; st.base = base; st.hy = f.y; st.dir = N.dir;
+    st.yT = Math.max(L.yMin, base - N.len); st.lx = N.x; st.ly = N.y - t.r;
+    f.fsBx = Math.round(st.lx); f.fsBy = Math.round(st.ly); f.fsCx = Math.round(st.yT); f.fsCy = Math.round(base);   // where the crown lands (the foe's centre), the foe's height in the crown, his feet line: all a guest needs
+    armAtk(f, this.wind, 'fsgather');
+  },
+  tick(f, st, t){
+    const L = FSC1_TRE, tg = fighters[st.tg];
+    f.vx = 0; f.vy = 0; f.x = st.x0; f.y = st.hy; f.onground = true;   // he stands where he is (hidden: the tree is him)
+    if(st.over || t > L.imp) return;   // (after the landing they are let go and thrown)
+    if(!tg || tg.dead || koSince(tg, st.n0) || !fsIsLockedBy(tg, f)){ st.over = true; st.t = this.dur - 1; return; }   // the foe gone (a KO, a respawn, the lock lost): nothing more is done, whoever comes back
+    const P = fsc1_treSpot(t, st);
+    fsPin(tg, P.x, P.y);
+    if(t === 0){ shake(4); for(let i = 0; i < 8; i++) puff(st.x0, st.base - 6, i % 2 ? '#6fb04a' : '#8a5a2a', 5); }
+    FSC1_TRE_AT.forEach((h, i)=>{ if(t === h) fsc1_treHit(f, st, tg, i); });
+    if(t >= L.F0 + 4 && t <= L.imp && !st.over) fsc1_treClip(f, st, tg);
+  },
+  end(f, st){ if(st.tg != null) fsc1_settle(f); },   // he is put down on firm ground, if a KO ended it in the air
+  botOk(f, t){ const N = FS_CATCH; return Math.hypot(t.x + (t.vx || 0)*N - f.x, t.y + (t.vy || 0)*N - f.y) <= FSC1_TRE.catchR - 50; },   // a CPU's cue (fsBotInput reads it): the foe where the catch will find them 10 frames on, at the speed they are going
+  ai(f){ return !!fsPick(f, FSC1_TRE.catchR, FSC1_TRE.catchR, false); },
+  draw(f, c){
+    const L = FSC1_TRE, t = f.fsT || 0;
+    if(f.fsBx == null || f.fsCx == null || t > L.dur || t < 1) return;
+    const x0 = f.x, base = f.y + f.r, tg = fsLockedOf(f), rr = tg ? (tg.r || 24) : 24, V = viewRect();
+    const S = { x0:x0, base:base, yT:f.fsCx, lx:f.fsBx, ly:f.fsBy, dir:Math.sign(f.fsBx - x0) || 1 }, H = base - S.yT;
+    const sp = (tg && t <= L.imp) ? { x:tg.x, y:tg.y } : fsc1_treSpot(t, Object.assign({ cx:x0, cy:base - H/3 }, S));
+    const cr = fsc1_treCrown(t, S, sp), ease = (p)=> 1 - (1 - p)*(1 - p);
+    const fade = t > L.imp + 8 ? Math.max(0, 1 - (t - L.imp - 8)/(L.dur - L.imp - 8)) : 1, a = fade*fsc1_grow(t, 0, 12);
+    const vine = fade*(1 - fsc1_grow(t, L.imp, 6)), off = (k)=> t - k;
+    c.save();
+    // 1) THE CLOUD DECK, from the third beat to the fall; the crown punches up through it
+    { const w = fsc1_grow(t, L.C - 14, 12)*(t > L.F0 ? Math.max(0, 1 - (t - L.F0)/20) : 1);
+      fsc1_cloudDeck(c, V, S.yT - 66, w); }
+    // 2) THE ROOTS and the first four vines, rising round the foe where the catch took them
+    if(t < L.A + 18){ const g = fsc1_stand(sp.x, sp.y + rr, 600); fsc1_treRoots(c, x0, base, g.x, g.y, sp, rr, t, a); }
+    // 3) THE TRUNK, from his feet to under the crown (it stops short of the foe once they are in the crown), bent by the whip and straightening as it falls
+    { const e = fsc1_grow(t, L.C, 12), dx = cr.x - x0, dy = cr.y - base, len = Math.hypot(dx, dy) || 1, ex = e*(rr*1.45 + 8);
+      const P0 = [x0, base], P2 = [cr.x - dx/len*ex, cr.y - dy/len*ex];
+      const q = clamp((t - L.F0)/(L.imp - L.F0)*3, 0, 1), P1v = [x0, fsc1_mix(P0[1], P2[1], 0.55)], M = [(P0[0] + P2[0])/2, (P0[1] + P2[1])/2], P1 = [fsc1_mix(P1v[0], M[0], q), fsc1_mix(P1v[1], M[1], q)];
+      const W = 18 + 69.7*(cr.s - 0.36), wince = (off(L.K1) >= 0 && off(L.K1) < 12) || (off(L.K2) >= 0 && off(L.K2) < 12);
+      fsc1_treTrunk(c, P0, P1, P2, W, a, { wince:wince, worry:t >= L.K2 + 12, dx:S.dir*(t >= L.F0 ? 1 : 0) }); }
+    // 4) THE VINES: four, six, eleven, tangled round the foe; they let go with the landing
+    if(t >= L.A + 2){ const n = t < L.B ? 4 : t < L.C ? 6 : 11, nP = t < L.B ? 0 : t < L.C ? 4 : 6, tB = t < L.B ? L.A + 2 : t < L.C ? L.B + 2 : L.C + 2; fsc1_treVines(c, cr, sp, rr*1.45, n, nP, tB, t, vine); }   // (rr*1.45: the rim of the foe's sprite: the vines hold them from outside)
+    // 5) THE CROWN, a wreath of leaves round the foe; rings where the vines tighten
+    fsc1_treCrownDraw(c, cr.x, cr.y, cr.s, a, 1 - fsc1_grow(t, L.C, 12), { x:sp.x, y:sp.y, r:rr*1.5 });   // (the foe's sprite is up to about 1.5 times its radius to a side)
+    { const at = [L.A, L.B, L.C];
+      for(let i = 0; i < 3; i++){ const e = off(at[i]); if(e >= 0 && e < 10){ const p = e/10; fsc1_ring(c, sp.x, sp.y, 20 + 54*ease(p), '#7ad05a', 7*(1 - p) + 2, 1 - p); } } }
+    // 6) THE CHOPS: an axe in from off screen at his roots, chips and leaves
+    for(const k of [L.K1, L.K2]){
+      const e = off(k);
+      if(e >= -8 && e < 14){
+        const Wb = 18 + 69.7*(1.25 - 0.36), o = e < 0 ? fsc1_mix(260, 0, ease((e + 8)/8)) : e <= 6 ? 0 : fsc1_mix(0, 260, ease((e - 6)/8)), ang = e < 0 ? fsc1_mix(0.95, 0.1, ease((e + 8)/8)) : e <= 6 ? 0.1 : fsc1_mix(0.1, 0.95, ease((e - 6)/8));
+        fsc1_axe(c, x0 - S.dir*(Wb*0.5 + 22 + o), base - 34 - o*0.12, S.dir, ang, fade);
+        if(e >= 0 && e < 8){ const p = e/8; fsc1_ring(c, x0 - S.dir*Wb*0.5, base - 34, 12 + 30*ease(p), '#fff0c0', 5*(1 - p) + 1, 1 - p); fsc1_burstLines(c, x0 - S.dir*Wb*0.5, base - 34, p, 6, 10, 46, '#d9b98a', 1); }
+      }
+      if(e >= 0 && e < 34){ const p = e/34; for(let i = 0; i < 9; i++){ fsc1_leaf(c, x0 + (i - 4)*17 + Math.sin(e*0.15 + i)*12, S.yT - 50 + e*(1.7 + (i % 3)*0.5) + ((i*37) % 26), e*0.1*(i % 2 ? 1 : -1) + i, 12, fade*(1 - p)); } }
+    }
+    // 7) THE LANDING: a big white blink, a ring of dust, leaves thrown out, the floor shaken
+    { const e = off(L.imp);
+      if(e >= 0){
+        const p = Math.min(1, e/16);
+        fsc1_ring(c, S.lx, base - 6, 30 + 230*ease(p), '#fff0d0', 14*(1 - p) + 2, 1 - p); fsc1_ring(c, S.lx, base - 6, 20 + 150*ease(p), '#8a4fc0', 8*(1 - p) + 2, 1 - p);
+        if(e < 8) fsc1_bloom(c, S.lx, S.ly, 240, 0.6*(1 - e/8));
+        c.save(); c.globalAlpha = 0.6*(1 - p); c.fillStyle = '#d9d2c4'; for(let i = 0; i < 12; i++){ const sd = i < 6 ? -1 : 1, d = 20 + 190*ease(p)*(0.5 + (i % 6)/6); c.beginPath(); c.arc(S.lx + sd*d, base - 6 - (i % 3)*6, 9 + (i % 4)*3, 0, 7); c.fill(); } c.restore();
+        if(e < 26){ for(let i = 0; i < 14; i++){ const th = -Math.PI*0.95 + i*Math.PI*0.9/13, v = 5 + (i % 4)*1.8; fsc1_leaf(c, S.lx + Math.cos(th)*v*e, S.ly + Math.sin(th)*v*e + 0.26*e*e, e*0.2*(i % 2 ? 1 : -1) + i, 13, 1 - e/26); } }
+        if(e < 6) fsc1_wash(c, '#ffffff', 0.35*(1 - e/6));
+      } }
+    c.restore();
+  },
+};
 
 // CAKE -- CAKE AT STAKE. "the prize is tossed from the Cake Tosser on the centre cylinder" (Barriers and Pitfalls, quoted at the stage); her own card lobs a slice that bounces along
 // ahead of her. Eight slices, five frames apart, lobbed low and flat over two distances and bouncing on (6%, they keep hitting).
 FINAL_SMASHES['Cake'] = fsHose({ id:'cakeatstake', lockGrace:5, c1:'#f4d9a8', n:8, every:5, v0:8, art:FS_GLYPH.slice, reach:520,
   shots:[{ color:'#f4d9a8', dmg:6, kb:9, r:17, bounce:true, maxBounces:4, grav:true, vy:-3, life:130 }, { color:'#f4d9a8', dmg:6, kb:9, r:17, bounce:true, maxBounces:4, grav:true, vx:12, vy:-5, life:130 }] });
 
-// DONUT -- SPRINKLE ROLL. "multiplied by Donut [zero]" -- the zero that liquefied Four (the Four page, quoted at his art); his own card is the Sprinkle Roll, a spinning wheel that hits everyone
-// around him. He rolls round on the spot, 105 px: whoever is in it when it starts is kept in it and hit eight times (2.5%) and thrown by the last (14%).
-FINAL_SMASHES['Donut'] = fsOrbit({ id:'sprinkleroll', c1:'#d8a060', c2:'#f08ab8', R:105, n:8, every:6, hitDmg:2.5, dmg:14, kb:22, art:FS_GLYPH.donut });
+// DONUT -- GRAVITY BACK ON. (The name and the id are the pitch's: the old Sprinkle Roll was also the name of his own card, and the 105 px orbit is gone.) Canon (the Battle for Dream Island wiki,
+// "Questions Answered", BFB 8: Donut hosts Cake at Stake, warps the Earth over the Moon with his camera, shoots 8-Ball out between them, teases him, then turns gravity back on and crushes him
+// between Earth and Moon; his page: his hole is his mouth, and it stretches). THE OWNER PICKED THE PITCH (2026-11-02, round three; then "just dont make them TOO complicated; you can vary the
+// damage and knockback as well"): so it is that crush, five beats, on the one foe the catch holds. (The three bounces between the Moon and the Earth are the game's own addition, to give it hits.)
+// CARD. Reach: the nearest foe within 300 px (the catch: a circle round him; nobody there and a press is spent in a puff, a CPU presses it only with a foe there). 1) The foe is lifted in front
+// of him, his hole stretches wide, and he shoots them straight up out of it like a cannon, 280 px (less under a low sky), tumbling: 12%. 2) Gravity goes off: they hang and turn while sprinkles,
+// crumbs and dust drift up around them; a huge pale cratered Moon slides down from the top of the view until its underside is about 100 px over them, and the Earth rises under them from the floor
+// (the floor swells up). 3) Weightless pinball: they are flicked off the Moon's underside, down off the Earth, and up off the Moon again, each a ring flash and a shake, the tumble quickening: 14% a
+// time. 4) He grins and turns gravity back on: the Moon drops and the Earth rises and they close on the foe, squashing them flat for about 8 frames, a giant dust ring (anyone else within 150 px of
+// them takes a ring of 12%) and a big shake: 46% and the launch, up and sideways the way he faces -- 100% on the foe in all, about 100 frames, held throughout. He stays where he is,
+// untouchable. A boss or an add is never caught, a teammate neither struck nor caught; a KO of the foe or of him ends it where it is. The Moon and the Earth are pictures drawn from the top of the
+// view down and up from below, and the foe is never hidden: they close on a gap of 40 px, which is as far as they go, and after the last bounce they turn glassy (0.68), so the foe between them and whoever else stands or jumps under them show through; they are 200 px in radius (the Earth at its highest covers no more than 200 px either side of him at the floor). Nothing is written.
+const FSC1_DON = { catchR:300, front:56, slide:12, shot:16, apex:30, moonIn:40, f1:44, f2:58, f3:70, mid:84, close:92, hit:100, tail:20, rise:280, gap:100, p:[12, 14, 14, 14, 46], kb:12, ky:-14, floorMax:330, R1:200, R2:200, g:20 };
+FSC1_DON.dur = FSC1_DON.hit + FSC1_DON.tail;
+const FSC1_DON_AT = [FSC1_DON.shot, FSC1_DON.f1, FSC1_DON.f2, FSC1_DON.f3, FSC1_DON.hit];
+// where the foe's centre is at row frame t (y), given the apex ya, the floor contact yb and the Moon contact yu; and where the Moon's underside and the Earth's top are
+function fsc1_donY(t, hy, ya, yb, yu){
+  const L = FSC1_DON, ease = (p)=> 1 - (1 - p)*(1 - p), ein = (p)=> p*p, sm = (p)=> p*p*(3 - 2*p), ym = (yu + yb)/2;
+  if(t < L.shot) return hy;
+  if(t < L.apex) return fsc1_mix(hy, ya, ease((t - L.shot)/(L.apex - L.shot)));
+  if(t < 36) return ya + Math.sin((t - L.apex)*0.5)*3;
+  if(t < L.f1) return fsc1_mix(ya, yu, ein((t - 36)/(L.f1 - 36)));
+  if(t < L.f2) return fsc1_mix(yu, yb, ein((t - L.f1)/(L.f2 - L.f1)));
+  if(t < L.f3) return fsc1_mix(yb, yu, ein((t - L.f2)/(L.f3 - L.f2)));
+  if(t < L.mid) return fsc1_mix(yu, ym, sm((t - L.f3)/(L.mid - L.f3)));
+  return ym;
+}
+function fsc1_donSky(t, yu, yb, ym, r){   // { moon: y of the Moon's underside, earth: y of the Earth's top }
+  const L = FSC1_DON, ease = (p)=> 1 - (1 - p)*(1 - p), ein = (p)=> p*p;
+  let moon = yu - r, earth = yb + r;
+  const gin = (p)=> ease(Math.min(1, Math.max(0, p)));
+  moon = fsc1_mix(yu - r - 640, yu - r, gin((t - 12)/(L.moonIn - 12)));
+  earth = fsc1_mix(yb + r + 420, yb + r, gin((t - 14)/(L.moonIn - 14)));
+  if(t >= L.mid){ const p = ein(Math.min(1, (t - L.mid)/(L.close - L.mid))); moon = fsc1_mix(yu - r, ym - L.g, p); earth = fsc1_mix(yb + r, ym + L.g, p); }
+  if(t >= L.hit){ const p = Math.min(1, (t - L.hit)/14), q = p*p; moon = fsc1_mix(ym - L.g, ym - L.g - 160, q); earth = fsc1_mix(ym + L.g, ym + L.g + 160, q); }
+  return { moon:moon, earth:earth };
+}
+function fsc1_donHit(f, st, tg, i){
+  const L = FSC1_DON, last = i === 4;
+  armAtk(f, last ? 26 : 12, 'cast'); shake(last ? 16 : 7);
+  fsc1_hit(f, tg, L.p[i], last ? st.out*L.kb : 0, last ? L.ky : -2, last ? undefined : { stun:4 });
+  for(let q = 0; q < (last ? 20 : 9); q++) puff(tg.x, tg.y, q % 2 ? '#f08ab8' : '#fff0d0', last ? 7 : 5);
+  if(last){ st.hit.add(tg.idx); fsBurst(f, st, tg.x, tg.y, 150, 6, 10, -12); }   // anyone else under the crush takes a ring (12% on screen)
+  if(koSince(tg, st.n0)){ st.over = true; st.t = FINAL_SMASHES['Donut'].dur - 1; }
+}
+function fsc1_donEarth(c, x, y, R, a){   // the Earth: blue, with green land and white cloud, its top at y (the land and cloud kept inside the disc, so nothing needs clipping)
+  if(!(a > 0.01)) return;
+  const cy = y + R;
+  c.save(); c.globalAlpha = a; c.lineJoin = 'round'; c.fillStyle = '#3f86d6'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 5; c.beginPath(); c.arc(x, cy, R, 0, 7); c.fill(); c.stroke();
+  c.fillStyle = '#5fae4c'; c.beginPath(); c.ellipse(x - R*0.34, cy - R*0.56, R*0.2, R*0.1, 0.4, 0, 7); c.fill(); c.beginPath(); c.ellipse(x + R*0.3, cy - R*0.5, R*0.15, R*0.085, -0.3, 0, 7); c.fill();
+  c.beginPath(); c.ellipse(x, cy - R*0.2, R*0.22, R*0.07, 0.1, 0, 7); c.fill();
+  c.fillStyle = 'rgba(255,255,255,0.75)'; c.beginPath(); c.ellipse(x - R*0.04, cy - R*0.78, R*0.2, R*0.03, 0.1, 0, 7); c.fill(); c.beginPath(); c.ellipse(x + R*0.5, cy - R*0.35, R*0.12, R*0.03, -0.2, 0, 7); c.fill(); c.beginPath(); c.ellipse(x - R*0.5, cy - R*0.3, R*0.14, R*0.03, 0.3, 0, 7); c.fill();
+  c.restore();
+}
+function fsc1_donBits(c, x, y0, t, n, a){   // sprinkles, crumbs and dust drifting upward round (x, y0) while gravity is off
+  if(!(a > 0.01)) return;
+  const cols = ['#f08ab8', '#7fd0f2', '#ffe45e', '#9be22d', '#c9a0ff'];
+  c.save(); c.lineCap = 'round'; c.lineJoin = 'round';
+  for(let i = 0; i < n; i++){
+    const sp = 0.55 + (i % 5)*0.17, px = x + ((i*53) % 240) - 120 + Math.sin(t*0.07 + i)*8, py = y0 + 70 - (((t*sp) + i*47) % 260), k = i % 3, al = a*Math.min(1, ((((t*sp) + i*47) % 260))/30)*Math.min(1, (260 - (((t*sp) + i*47) % 260))/40);
+    c.globalAlpha = al;
+    if(k === 0){ c.strokeStyle = '#1c1c1c'; c.lineWidth = 6; c.beginPath(); c.moveTo(px - 4, py - 2); c.lineTo(px + 4, py + 2); c.stroke(); c.strokeStyle = cols[i % 5]; c.lineWidth = 3.4; c.stroke(); }
+    else if(k === 1){ c.fillStyle = '#b98a52'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.arc(px, py, 3.4 + (i % 4)*0.6, 0, 7); c.fill(); c.stroke(); }
+    else { c.fillStyle = 'rgba(205,205,205,0.75)'; c.beginPath(); c.arc(px, py, 5 + (i % 3)*2, 0, 7); c.fill(); }
+  }
+  c.restore();
+}
+FINAL_SMASHES['Donut'] = {
+  id:'gravityon', wind:FS_WIND, dur:FSC1_DON.dur, reach:FSC1_DON.catchR, needFoe:true, exact:true,   // needFoe / exact (fsTryFire, fsBotInput): pressed with nobody in the catch it is spent at once (a small puff, no intro); a CPU presses it only when the catch will take someone
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FSC1_DON.catchR }; }, lockEnd:FSC1_DON.hit, catchMax:1,   // CATCH: a circle round him; the nearest foe only (the crush is for one)
+  start(f, st){
+    const t = fighters[st.held[0]];
+    if(!t){ fsc1_spent(f); return; }   // the catch took nobody (they stepped out in its 10 frames): spent
+    const L = FSC1_DON, side = Math.sign(t.x - f.x) || f.face || 1, B = f.onground ? { x:f.x, y:f.y + f.r } : fsc1_stand(f.x, f.y + f.r - 4, 600);
+    st.tg = t.idx; st.n0 = t._koN || 0; st.over = false; st.cx = t.x; st.cy = t.y; st.fr = t.r; st.ay = f.y; st.ground = !!f.onground; st.side = side; st.out = f.face || side;
+    st.hx = f.x; st.hy = f.y; st.fl = Math.min(B.y, f.y + f.r + L.floorMax);   // his hole, and the Earth's top: the floor line below him (at most 330 px under his feet)
+    st.ya = Math.max(80, f.y - L.rise);   // the apex of the cannon: 280 px up (less under a low sky)
+    st.yb = st.fl - t.r; st.yu = Math.min(st.ya - L.gap + 0, st.yb - 80); st.ym = (st.yu + st.yb)/2;
+    f.fsBx = Math.round(f.x); f.fsBy = Math.round(st.fl); f.fsCx = Math.round(f.x); f.fsCy = Math.round(st.ya);   // his column, the Earth's top, the cannon's apex: all a guest needs
+    armAtk(f, this.wind, 'fsgather');
+  },
+  tick(f, st, t){
+    const L = FSC1_DON, tg = fighters[st.tg];
+    f.vx = 0; if(!st.ground){ f.vy = 0; f.y = st.ay; }   // (airborne he hangs where he is; grounded he stands)
+    if(st.over || t > L.hit) return;   // (after the crush they are let go and thrown)
+    if(!tg || tg.dead || koSince(tg, st.n0) || !fsIsLockedBy(tg, f)){ st.over = true; st.t = this.dur - 1; return; }   // the foe gone (a KO, a respawn, the lock lost): nothing more is done, whoever comes back
+    let px = st.hx, py;
+    if(t < L.shot){ const e = 1 - Math.pow(1 - Math.min(1, (t + 1)/L.slide), 2); px = fsc1_mix(st.cx, st.hx + st.side*L.front, e); py = fsc1_mix(st.cy, st.hy - 14, e); }   // lifted in front of him
+    else py = fsc1_donY(t, st.hy, st.ya, st.yb, st.yu);
+    if(t >= L.shot && t < L.shot + 3) px = fsc1_mix(st.hx + st.side*L.front, st.hx, (t - L.shot + 1)/3);   // into the hole
+    fsPin(tg, px, py);
+    if(t === 0){ shake(4); for(let i = 0; i < 8; i++) puff(f.x, f.y, '#f08ab8', 5); }
+    FSC1_DON_AT.forEach((h, i)=>{ if(t === h) fsc1_donHit(f, st, tg, i); });
+  },
+  end(f, st){ if(st.tg != null) fsc1_settle(f); },   // he is put down on firm ground, if a KO ended it in the air
+  botOk(f, t){ const N = FS_CATCH; return Math.hypot(t.x + (t.vx || 0)*N - f.x, t.y + (t.vy || 0)*N - f.y) <= FSC1_DON.catchR - 50; },   // a CPU's cue (fsBotInput reads it): the foe where the catch will find them 10 frames on, at the speed they are going
+  ai(f){ return !!fsPick(f, FSC1_DON.catchR, FSC1_DON.catchR, false); },
+  draw(f, c){
+    const L = FSC1_DON, t = f.fsT || 0;
+    if(f.fsBx == null || t > L.dur) return;
+    const tg = fsLockedOf(f), hx = f.fsCx, fl = f.fsBy, ya = f.fsCy, rr = tg ? (tg.r || 24) : 24;
+    const yb = fl - rr, yu = Math.min(ya - L.gap, yb - 80), ym = (yu + yb)/2, sky = fsc1_donSky(t, yu, yb, ym, rr), ease = (p)=> 1 - (1 - p)*(1 - p);
+    const fade = t > L.hit + 6 ? Math.max(0, 1 - (t - L.hit - 6)/(L.dur - L.hit - 6)) : 1, off = (i)=> t - [L.shot, L.f1, L.f2, L.f3, L.hit][i];
+    c.save();
+    // 1) HIS HOLE: it stretches wide, the foe is shot up out of it; a ring at the muzzle
+    { const e = t - 4;
+      if(e >= 0 && e < 26){ const k = e < 12 ? e/12 : Math.max(0, 1 - (e - 12)/14); c.save(); c.globalAlpha = 0.95; c.fillStyle = '#2a1a22'; c.strokeStyle = '#f08ab8'; c.lineWidth = 4; c.beginPath(); c.ellipse(f.x, f.y - 2, 8 + 14*k, 9 + 11*k, 0, 0, 7); c.fill(); c.stroke(); c.restore(); }
+      const q = off(0); if(q >= 0 && q < 10){ const p = q/10; fsc1_ring(c, f.x, f.y - 6, 14 + 56*ease(p), '#f08ab8', 8*(1 - p) + 2, 1 - p); fsc1_burstLines(c, f.x, f.y - 6, p, 8, 16, 60, '#fff0d0', 1); } }
+    // 2) GRAVITY OFF: sprinkles, crumbs and dust drift up; the Moon slides down, the Earth rises under
+    if(t >= L.apex - 4 && t < L.hit) fsc1_donBits(c, hx, ya, t, 26, Math.min(1, (t - L.apex + 4)/12)*(t > L.close ? Math.max(0, 1 - (t - L.close)/8) : 1));
+    const ta = 1 - 0.32*fsc1_grow(t, L.f3, 12);   // after the last bounce they are glassy (0.68): nobody under them is hidden, the foe between them least of all
+    fsc1_donEarth(c, hx, sky.earth, L.R2, Math.min(1, (t - 12)/12)*fade*ta);
+    fsc1_moon(c, hx, sky.moon - L.R1, L.R1, Math.min(1, (t - 10)/12)*fade*ta, 0);
+    // 3) THE PINBALL: a ring flash where each blow lands
+    { const spots = [null, [hx, yu - rr*0.2], [hx, yb + rr*0.6], [hx, yu - rr*0.2]];
+      for(let i = 1; i <= 3; i++){ const e = off(i); if(e >= 0 && e < 10){ const p = e/10; fsc1_ring(c, spots[i][0], spots[i][1], 16 + 62*ease(p), '#ffffff', 7*(1 - p) + 2, 1 - p); fsc1_burstLines(c, spots[i][0], spots[i][1], p, 7, 14, 52, i === 2 ? '#7fd0f2' : '#fff0d0', 1); } } }
+    // 4) THE CRUSH: they close on the foe; a giant dust ring and a big flash
+    { const e = off(4);
+      if(e >= 0){ const p = Math.min(1, e/16); fsc1_ring(c, hx, ym + 12, 30 + 230*ease(p), '#fff0d0', 14*(1 - p) + 2, 1 - p); fsc1_ring(c, hx, ym + 12, 20 + 150*ease(p), '#f08ab8', 8*(1 - p) + 2, 1 - p); if(e < 8) fsc1_bloom(c, hx, ym, 260, 0.6*(1 - e/8));
+        c.save(); c.globalAlpha = 0.6*(1 - p); c.fillStyle = '#d9d2c4'; for(let i = 0; i < 12; i++){ const sd = i < 6 ? -1 : 1, d = 20 + 190*ease(p)*(0.5 + (i % 6)/6); c.beginPath(); c.arc(hx + sd*d, ym + 14 - (i % 3)*6, 9 + (i % 4)*3, 0, 7); c.fill(); } c.restore(); } }
+    c.restore();
+  },
+};
 
 // BALLOON -- INSULT TIRADE. "OH, C'MON!" -- his catchphrase since The Crappy Cliff (the II wiki, quoted at his card); "I demand a prize! Now!" (A Lemony Lesson, the design doc): a petulant, bossy
 // season-1 captain. His own card is the Insult Tirade, which weakens everyone near. The tirade is 260 px (14%, and their hits are weaker for 5 seconds).
@@ -26453,10 +27465,122 @@ FINAL_SMASHES['Lightbulb'] = fsCircle({ id:'brightflash', c1:'#fff27a', c2:'#fff
 // goes out along the floor both ways, 600 px at 20 a frame, 70 tall (12%, and it sets them burning).
 FINAL_SMASHES['Paintbrush'] = fsLane({ id:'heatwaves', c1:'#f0803a', both:true, L:600, spd:20, H:70, hw:36, dmg:12, kb:18, ky:-12, S:{ burn:160 }, art:FS_GLYPH.flame });
 
-// TACO (II) -- LEMON SPIT. "completely oblivious ... motionless with a sideways smile", and under it a plan (the design doc); her own card is the Lemon Spit. Five lemons in a fan, three volleys eight
-// frames apart (6%, and they slow whoever they hit).
-FINAL_SMASHES['Taco (II)'] = fsFan({ id:'lemonspit', c1:'#f5e04a', n:5, cone:0.5, spd:12, vols:[0, 8, 16], dmg:6, kb:11, r:13, life:55, reach:420, kind:'spit', proj:{ slow:true }, art:FS_GLYPH.lemon });
-
+// TACO (II) -- THE ARENA OF DEATH. (The id and the name are the pitch's: the old Lemon Spit, a fan of lemons, is gone.) Canon (the Inanimate Insanity wiki: "The Arena of
+// Death"; Inanimate Smackdown, round three; the Taco page): in the Arena of Death all of Team Epic throw rocks at Taco, she swallows each and spits it back, then Baseball
+// jumps off his platform at hers and a lemon knocks him down (the page captions it "the famous scene"); in Inanimate Smackdown she says in a dark voice that she will never
+// fall, and one lemon shatters OJ; "motionless with a sideways smile". THE OWNER PICKED THE PITCH (2026-11-02, round three; then "just dont make them TOO complicated; you
+// can vary the damage and knockback as well"): so it is that scene, four beats, three rounds and not four. She stays where she is the whole time (cast in the air she is first set down on the floor or platform under her) and only her cheeks move.
+// CARD. Reach: the nearest foe within 380 px (the catch: a circle round her; nobody there and a press is spent in a puff, a CPU presses it only with a foe there). 1) Two low
+// stone plinths rise, one under her and one 280 px across on the side she faces (the foe is slid over to it; where the floor is not 280 across on that side it is the longest
+// gap there is floor for, else the other side). 2) Three rounds of swallow and spit, 20 frames each: the foe lobs rocks at her (one, two, then three, in drawn arcs), she gulps
+// them in one puff of her cheeks and the same rocks come straight back out of her mouth into them: 10%, 14%, 18%. 3) The foe is flung up and across the gap in a high arc and
+// hangs over her for a held beat while she swells a giant lemon in her cheeks. 4) She spits it point-blank: 58%, a burst of juice and rind and a KO-level launch up and away over
+// the far edge -- 100% in all, about 120 frames, the foe held throughout. She is untouchable and does not move (she drops the few px of the plinth when it ends). A boss or an
+// add is never caught, and neither is a teammate; a KO of the foe or of her ends it where it is. Nothing is written.
+const FSC1_TACO = { G:280, lift:34, s0:14, rl:20, hit:18, fling:73, hang:87, grow:87, fly:99, lem:103, tail:18, h:[10, 14, 18], pct:58, kb:10, ky:-13, hold:380 };
+FSC1_TACO.dur = FSC1_TACO.lem + FSC1_TACO.tail;
+// The far plinth: G across on her facing side, shorter (down to 150) where the floor ends, else the other side; the last resort is 170 across with none under it.
+function fsc1_arena(x0, fy, face){   // from her plinth's x and its feet line fy, facing `face`
+  const d0 = face < 0 ? -1 : 1;
+  for(const d of [d0, -d0]) for(let G = FSC1_TACO.G; G >= 150; G -= 20){ const x = x0 + d*G; if(fsc1_firm(x, fy)) return { x:x, d:d }; }
+  return { x:clamp(x0 + d0*170, 60, WW - 60), d:d0 };
+}
+// Where the foe is on her plinth, and where it hangs over her (from her feet line fy, her x, her way d).
+function fsc1_tacoSpots(f, fx, fy, d, rr){
+  const L = FSC1_TACO, yF = fy - L.lift - rr;
+  return { yF:yF, hx:f.x + d*50, hy:Math.max(40, fy - L.lift - f.r - 52) };
+}
+// Round r's start, and the frame its rocks land (the blow).
+function fsc1_tacoStart(r){ return FSC1_TACO.s0 + FSC1_TACO.rl*r; }
+function fsc1_tacoHit(f, st, tg, kind){   // kind 0..2: round r's rocks; 3: the lemon
+  const L = FSC1_TACO, d = st.way, last = kind === 3;
+  armAtk(f, last ? 24 : 12, 'spit'); shake(last ? 14 : 5);
+  fsc1_hit(f, tg, last ? L.pct : L.h[kind], last ? d*L.kb : -d*2, last ? L.ky : -2, last ? undefined : { stun:4 });
+  for(let q = 0; q < (last ? 18 : 7); q++) puff(tg.x, tg.y, last ? (q % 2 ? '#f7e04a' : '#fffbd0') : (q % 2 ? '#8f8f8a' : '#fff'), last ? 7 : 4);
+  if(koSince(tg, st.n0)){ st.over = true; st.t = FINAL_SMASHES['Taco (II)'].dur - 1; }
+}
+FINAL_SMASHES['Taco (II)'] = {
+  id:'arenaofdeath', wind:FS_WIND, dur:FSC1_TACO.dur, reach:FSC1_TACO.hold, needFoe:true, exact:true,   // needFoe / exact (fsTryFire, fsBotInput): pressed with nobody in the catch it is spent at once (a small puff, no intro); a CPU presses it only when the catch will take someone
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FSC1_TACO.hold }; }, lockEnd:FSC1_TACO.lem, catchMax:1,   // CATCH: a circle round her; the nearest foe only (the arena is for one)
+  start(f, st){
+    const t = fighters[st.held[0]];
+    if(!t){ fsc1_spent(f); return; }   // the catch took nobody (they stepped out in its 10 frames): spent
+    const fy0 = f.y + f.r, S = fsc1_firm(f.x, fy0) ? { x:f.x, y:fy0 } : fsc1_stand(f.x, fy0, 600);   // her plinth stands on firm ground: where she is, or the floor or platform under her (cast in the air she is brought down to it)
+    const A = fsc1_arena(S.x, S.y, f.face);
+    st.tg = t.idx; st.n0 = t._koN || 0; st.over = false; st.way = A.d; st.fx = A.x; st.fy = S.y; st.ay = S.y - f.r; st.ax = S.x; st.sx = f.x; st.sy = f.y;   // the plinths, her feet line, and where she was
+    st.cx = t.x; st.cy = t.y;   // where the foe was caught
+    f.face = A.d;   // she faces the arena
+    f.fsBx = Math.round(A.x); f.fsBy = Math.round(st.fy); f.fsCx = A.d; f.fsCy = Math.round(S.x);   // the far plinth, her feet line, her way and her own plinth's x: all a guest needs
+    armAtk(f, this.wind, 'fsgather');
+  },
+  tick(f, st, t){
+    const L = FSC1_TACO, tg = fighters[st.tg];
+    f.vx = 0; f.vy = 0;
+    if(st.over){ return; }
+    if(t > L.lem){ f.x = st.ax; f.y = st.ay - L.lift; return; }   // (after the blow they are let go and thrown; she stays up on her plinth until it ends)
+    if(!tg || tg.dead || koSince(tg, st.n0) || !fsIsLockedBy(tg, f)){ st.over = true; st.t = this.dur - 1; return; }   // the foe gone (a KO, a respawn, the lock lost): nothing more is done, whoever comes back
+    const d = st.way, e = 1 - Math.pow(1 - Math.min(1, (t + 1)/13), 2), S = fsc1_tacoSpots(f, st.fx, st.fy, d, tg.r || 24);
+    f.x = fsc1_mix(st.sx, st.ax, e); f.y = fsc1_mix(st.sy, st.ay, e) - L.lift*e; f.onground = false;   // she is brought onto her plinth (from the air, if she was cast there), rises on it and stays
+    // the foe: slid over to the far plinth, held through the rounds, flung over the gap, hung over her
+    let px, py;
+    if(t < L.fling - 1){ px = fsc1_mix(st.cx, st.fx, e); py = fsc1_mix(st.cy, S.yF, e); }
+    else if(t < L.hang){ const p = (t - (L.fling - 1))/(L.hang - L.fling + 1); px = fsc1_mix(st.fx, S.hx, p); py = Math.max(30, fsc1_mix(S.yF, S.hy, p) - 120*4*p*(1 - p)); }
+    else { px = S.hx; py = S.hy + 2*Math.sin(t*0.5); }
+    fsPin(tg, px, py);
+    if(t === 0){ shake(5); for(let i = 0; i < 10; i++) puff(i % 2 ? st.fx : st.ax, st.fy, i % 4 < 2 ? '#a9a9a4' : '#fff', 5); }
+    for(let r = 0; r < 3; r++) if(t === fsc1_tacoStart(r) + L.hit) fsc1_tacoHit(f, st, tg, r);
+    if(t === L.lem) fsc1_tacoHit(f, st, tg, 3);
+  },
+  end(f, st){ if(st.tg != null) fsc1_settle(f); },   // she is put down on firm ground, if a KO ended it in the air
+  botOk(f, t){ const N = FS_CATCH; return Math.hypot(t.x + (t.vx || 0)*N - f.x, t.y + (t.vy || 0)*N - f.y) <= FSC1_TACO.hold - 50; },   // a CPU's cue (fsBotInput reads it): the foe where the catch will find them 10 frames on, at the speed they are going
+  ai(f){ return !!fsPick(f, FSC1_TACO.hold, FSC1_TACO.hold, false); },
+  draw(f, c){
+    const L = FSC1_TACO, t = f.fsT || 0;
+    if(f.fsBx == null || t > L.lem + L.tail) return;
+    const tg = fsLockedOf(f), d = f.fsCx < 0 ? -1 : 1, fy = f.fsBy, fx = f.fsBx, rr = tg ? (tg.r || 24) : 24, S = fsc1_tacoSpots(f, fx, fy, d, rr);
+    const mx = f.x + d*8, my = f.y + 8;   // her mouth
+    const fade = t > L.lem + 6 ? Math.max(0, 1 - (t - L.lem - 6)/12) : 1, rise = fsc1_grow(t, 0, 12);
+    c.save();
+    // THE PLINTHS: one under her, one under the foe, rising out of the floor
+    fsc1_plinth(c, f.fsCy != null ? f.fsCy : f.x, fy, L.lift*rise, fade); fsc1_plinth(c, fx, fy, L.lift*rise, fade);
+    // THE ROUNDS
+    for(let r = 0; r < 3; r++){
+      const s = fsc1_tacoStart(r), n = r + 1;
+      if(t < s || t > s + L.hit + 6) continue;
+      const fcx = fx, fcy = tg ? tg.y : S.yF;
+      for(let j = 0; j < n; j++){
+        const a0 = s + 2*j, p = (t - a0)/5;   // the lob: foe -> her mouth
+        if(p >= 0 && p <= 1){ const k = 1 - p, ox = fcx + d*(-8), oy = fcy - 10, ux = fsc1_mix(ox, mx, p), uy = fsc1_mix(oy, my, p) - 4*p*k*(90 + 16*j); fsc1_rock(c, ux, uy, 14 + (j % 2)*2, p*7 + j, 1); }
+        const b0 = s + 11 + j, q = (t - b0)/5;   // the spit: her mouth -> the foe, the same rocks, back
+        if(q >= 0 && q <= 1){ const k = 1 - q, ux = fsc1_mix(mx, fcx, q), uy = fsc1_mix(my, fcy, q) - 4*q*k*(30 + 8*j); fsc1_rock(c, ux, uy, 14 + (j % 2)*2, q*9 + j, 1);
+          c.globalAlpha = 0.5*k; c.strokeStyle = '#fff'; c.lineWidth = 3; c.lineCap = 'round'; c.beginPath(); c.moveTo(ux - d*14*q, uy); c.lineTo(ux - d*30*q, uy); c.stroke(); c.globalAlpha = 1; }
+      }
+      const gq = t - (s + 10);   // the gulp: a flash and a ring at her mouth
+      if(gq >= 0 && gq < 5){ const u = gq/5; fsc1_bloom(c, mx, my, 40, 0.55*(1 - u)); fsc1_ring(c, mx, my, 8 + 24*u, '#fffbd0', 4, 1 - u); }
+      const hf = s + L.hit;
+      if(t >= hf && t < hf + 7){ const u = (t - hf)/7; fsc1_chunks(c, fcx, fcy, t - hf, 9, 1.1, r + 1, ['#8f8f8a', '#b8b8b0'], 1); fsc1_burstLines(c, fcx, fcy, u, 8, 16, 40, '#fff', 0.9); }
+    }
+    // HER CHEEKS: a puff for each gulp, swelling with the lemon
+    let k = 0.15;
+    for(let r = 0; r < 3; r++){ const s = fsc1_tacoStart(r), q = Math.abs(t - (s + 10)); if(q < 4) k = Math.max(k, 0.9 - q*0.2); }
+    if(t >= L.grow && t < L.fly) k = Math.max(k, 0.25 + 0.75*fsc1_grow(t, L.grow, 12));
+    else if(t >= L.fly && t < L.fly + 4) k = Math.max(k, 0.5);
+    if(t < L.lem + 6) fsc1_cheeks(c, f.x, f.y, d, k, fade);
+    // THE LEMON: it swells in her mouth while they hang, and is spat point-blank
+    if(t >= L.grow && t < L.lem){
+      const g = t < L.fly ? 0.3 + 0.7*fsc1_grow(t, L.grow, 12) : 1, q = t < L.fly ? 0 : (t - L.fly)/(L.lem - L.fly), s = 38*g;
+      const lx = fsc1_mix(mx + d*s*0.55, tg ? tg.x : S.hx, q), ly = fsc1_mix(my - 4, tg ? tg.y : S.hy, q);
+      fsc1_lemon(c, lx, ly, s, Math.atan2(S.hy - my, S.hx - mx), Math.min(1, (t - L.grow + 1)/3));
+    }
+    if(t >= L.lem){
+      const e = t - L.lem, ex = S.hx, ey = S.hy;
+      fsc1_juice(c, ex, ey, e, 1);
+      if(e < 8) fsc1_bloom(c, ex, ey, 200, 0.55*(1 - e/8));
+      if(e < 18){ const u = e/18; fsc1_ring(c, ex, ey, 20 + 190*(1 - (1 - u)*(1 - u)), '#f7e04a', 12*(1 - u) + 2, 1 - u); }
+    }
+    c.restore();
+  },
+};
 // MARSHMALLOW -- NO WAY! "Shattering Scream -- the voice that killed Test Tube" (her own card); on the boardwalk over the saw she shouted "NO WAY!" (quoted at her special). The scream goes out 300 px (15%) and a
 // second one to 420 (10%) twelve frames after it.
 FINAL_SMASHES['Marshmallow'] = fsCircle({ id:'noway', c1:'#bfe8ff', c2:'#ffffff', R:300, R2:420, gap:12, dmg:15, dmg2:10, kb:19, kb2:14, art:FS_GLYPH.scream, kind:'fsburst' });
@@ -26591,9 +27715,195 @@ FINAL_SMASHES['Blueberry'] = fsLock({ id:'palanquin', lead:24, c1:'#4a5ac8', c2:
 // runs out along the floor in front of them, 600 px at 14 a frame, only 40 tall (14%): hop it.
 FINAL_SMASHES['Cherries'] = fsLane({ id:'playdirty', c1:'#d6c040', L:600, spd:14, H:40, hw:44, dmg:14, kb:18, ky:-12, kind:'throw', art:FS_GLYPH.cherry });
 
-// CLOVER -- BUTTERFLIES. "bubbly and cheery", easily distracted by butterflies (the design doc); her own card calls them. Ten butterflies drift out all round her, three flights, fourteen frames apart, slow (7 px a frame) and soft
-// (8%), each flight between the last: they are easy to see and hard to be everywhere at once.
-FINAL_SMASHES['Clover'] = fsFan({ id:'butterflies', c1:'#7bd8ff', n:10, spd:7, vols:[0, 14, 28], dmg:8, kb:23, r:13, life:80, reach:330, proj:{ breaksOnSurface:false }, art:FS_GLYPH.butterfly });
+// CLOVER -- LUCK CHAIN. (The name and the id are new, 2026-11-02, the checker's fix: the old Butterflies, the volleys of ten, shared its name with her own card's special, and her four butterflies are in the set piece but are not its name.) Canon (the Inanimate Insanity wiki: Clover, "Luckiness": luck is
+// reduced from fellow players and may cause them harm instead; her paint bomb that did not go off in "Stranded in Paradise"; "Clover's Butterflies": Cordelia bobs a little when she flies, Catalina
+// hovers 2-3 inches above the rest, Cassandra breathes a bit too loud, Jake has fewer flaps a minute; "Tragedy at 60 Feet": Test Tube's hammer "flying all over the place" going straight for Clover
+// and hitting Box instead, Nickel slipping on a banana peel; "Snapshot Showdown": Nickel's photo crushed by a safe; she/her). THE OWNER PICKED THE PITCH (2026-11-02, round three; then "just dont make
+// them TOO complicated; you can vary the damage and knockback as well"): so it is her luck turned on a foe, five beats, on the one foe the catch holds.
+// CARD. Reach: the nearest foe within 400 px (the catch: a circle round her; nobody there and a press is spent in a puff, a CPU presses it only with a foe there). 1) Her four butterflies rise round
+// her, each in its own quirk (one bobs, one hovers higher, one pulses, one flaps slow); she shuts her eyes and hums (drawn notes) and does not move, bar a hop and a hand's breadth lift. The foe is
+// slid across the floor to 150 px in front of her (a foe caught in the air is brought down) and held in a soft green ring. 2) A paint bomb drops from above and pops over them in a lime splat: 8%.
+// 3) A banana peel slides in along the floor, past her (she hops it neatly), and they slip, feet up, hung in the air a beat: 10%. 4) A shadow grows on the floor under them and a grey SAFE
+// comes down on them mid-slip, flattening them into the floor in a cloud of dust: 24%. 5) A hammer spins in out of control from off the screen, ricochets across the floor and clips them once: 18%;
+// it goes on, swings round and comes straight for HER; she lifts a hand's breadth on her butterflies, it runs under her and on into them, the wallop launches them away from her: 40% -- 100% on the foe
+// in all, about 122 frames, held throughout. She is untouchable all through it. Props only ever fall on the foe the catch holds: a boss or an add is never caught, a teammate is neither struck nor
+// caught; a KO of the foe or of her ends it where it is (she is set down on firm ground). The safe and the hammer each show a shadow or a streak ahead of them. Nothing is written: the props are pictures.
+const FSC1_CLV = { catchR:400, dist:150, slide:12, bomb:14, paint:28, peel0:28, slip:46, warn:50, safe:64, tip:76, up:76, clip:84, hit0:60, wal:120, tail:16, lift:44, p:[8, 10, 24, 18, 40], kb:12, ky:-8.5 };   // (kb 12 / ky -8.5: the launch with the old id-keyed cut of 0.85 folded into the row, so the heaviest foe still survives 0% as in the rest of the lane)
+FSC1_CLV.dur = FSC1_CLV.wal + FSC1_CLV.tail;
+const FSC1_CLV_AT = [FSC1_CLV.paint, FSC1_CLV.slip, FSC1_CLV.safe, FSC1_CLV.clip, FSC1_CLV.wal];
+function fsc1_clvHit(f, st, tg, i){
+  const L = FSC1_CLV, last = i === 4, away = -st.dC;
+  armAtk(f, last ? 26 : 12, 'cast'); shake(last ? 14 : i === 2 ? 10 : 6);
+  fsc1_hit(f, tg, L.p[i], last ? away*L.kb : 0, last ? L.ky : -2, last ? undefined : { stun:4 });
+  const col = ['#9be22d', '#f4d03f', '#bdbdbd', '#ffe08a', '#ffffff'][i];
+  for(let q = 0; q < (last ? 18 : 9); q++) puff(tg.x, tg.y, q % 2 ? col : '#fff', last ? 7 : 5);
+  if(koSince(tg, st.n0)){ st.over = true; st.t = FINAL_SMASHES['Clover'].dur - 1; }
+}
+// the foe's body, as a height offset over the floor, at row frame t: popped up by the slip, hung, slammed flat by the safe, back up when it tips away
+function fsc1_clvDy(t){
+  const L = FSC1_CLV, ease = (p)=> 1 - (1 - p)*(1 - p), sm = (p)=> p*p*(3 - 2*p);
+  if(t < L.slip) return 0;
+  if(t < L.slip + 8) return -38*ease((t - L.slip)/8);
+  if(t < L.safe - 1) return -38 + Math.sin((t - L.slip)*0.5)*1.5;
+  if(t < L.safe + 3) return fsc1_mix(-38, 12, sm((t - L.safe + 1)/4));
+  if(t < L.up) return 12;
+  if(t < L.up + 8) return 12*(1 - sm((t - L.up)/8));
+  return 0;
+}
+// the hammer: along the line from the foe (u = 0) toward her (u = D, signed by dC) and up (h above the floor); keyframes [frame, u, h]
+function fsc1_clvHammer(t, D){
+  const L = FSC1_CLV, K = [[L.hit0, -380, 250], [72, -210, 16], [L.clip, 0, 38], [94, D*0.55, 20], [102, D + 170, 130], [108, D + 250, 18], [L.wal, 0, 38], [130, -170, 80]];
+  if(t < K[0][0] || t > K[K.length - 1][0]) return null;
+  for(let i = 1; i < K.length; i++) if(t <= K[i][0]){ const p = (t - K[i - 1][0])/(K[i][0] - K[i - 1][0]); return { u:fsc1_mix(K[i - 1][1], K[i][1], p), h:fsc1_mix(K[i - 1][2], K[i][2], p) }; }
+  return null;
+}
+// her lift on her butterflies: a hand's breadth while the hammer runs under her (the frames it crosses her), and a small hop over the peel as it passes
+function fsc1_clvLift(t){
+  const L = FSC1_CLV;
+  if(t >= 110 && t <= 122) return L.lift*Math.sin(Math.PI*(t - 110)/12);
+  return 0;
+}
+function fsc1_clvHop(t, D){   // the peel crosses her at row frame L.peel0 + 18*(260/(D + 260))...: she hops it
+  const L = FSC1_CLV, tc = L.peel0 + 18*260/(D + 260), e = t - tc;
+  return e >= -3 && e <= 5 ? 16*Math.sin(Math.PI*(e + 3)/8) : 0;
+}
+function fsc1_clvNote(c, x, y, s, a){   // a music note (a drawn picture, no letters)
+  if(!(a > 0.01)) return;
+  c.save(); c.globalAlpha = a; c.fillStyle = '#7a3d8f'; c.strokeStyle = '#7a3d8f'; c.lineWidth = 2.4; c.lineCap = 'round';
+  c.beginPath(); c.ellipse(x, y, 5*s, 3.6*s, -0.4, 0, 7); c.fill();
+  c.beginPath(); c.moveTo(x + 4.4*s, y - 1*s); c.lineTo(x + 4.4*s, y - 16*s); c.quadraticCurveTo(x + 11*s, y - 12*s, x + 9*s, y - 6*s); c.stroke();
+  c.restore();
+}
+function fsc1_clvSafe(c, x, y, s, rot, a){   // the safe, (x, y) the middle of its base: a grey box with a dial and a handle
+  if(!(a > 0.01) || !(s > 0.02)) return;
+  c.save(); c.translate(x, y); c.rotate(rot); c.scale(s, s); c.globalAlpha = a; c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3.5;
+  c.fillStyle = '#8b9096'; c.beginPath(); c.rect(-33, -62, 66, 62); c.fill(); c.stroke();
+  c.fillStyle = '#a9aeb4'; c.beginPath(); c.rect(-27, -56, 54, 50); c.fill(); c.stroke();
+  c.fillStyle = '#d9dde2'; c.beginPath(); c.arc(-4, -31, 10, 0, 7); c.fill(); c.stroke();
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.moveTo(-4, -31); c.lineTo(-4, -38); c.stroke();
+  c.fillStyle = '#4b4f55'; c.beginPath(); c.rect(14, -38, 8, 14); c.fill(); c.stroke();
+  c.fillStyle = '#4b4f55'; c.beginPath(); c.rect(-30, 0, 10, 5); c.rect(20, 0, 10, 5); c.fill(); c.stroke();
+  c.restore();
+}
+function fsc1_clvHammerArt(c, x, y, rot, a){   // a mallet: a wooden handle and a heavy red head
+  if(!(a > 0.01)) return;
+  c.save(); c.translate(x, y); c.rotate(rot); c.globalAlpha = a; c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  c.fillStyle = '#b9843f'; c.beginPath(); c.rect(-5, -4, 40, 8); c.fill(); c.stroke();
+  c.fillStyle = '#c0392b'; c.beginPath(); c.rect(-30, -15, 28, 30); c.fill(); c.stroke();
+  c.fillStyle = 'rgba(255,255,255,0.4)'; c.beginPath(); c.rect(-27, -12, 5, 24); c.fill();
+  c.restore();
+}
+function fsc1_clvBomb(c, x, y, s, a){   // her paint bomb: a round lime-green bag of paint with a knot
+  if(!(a > 0.01) || !(s > 0.02)) return;
+  c.save(); c.translate(x, y); c.scale(s, s); c.globalAlpha = a; c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  c.fillStyle = '#9be22d'; c.beginPath(); c.ellipse(0, 0, 15, 17, 0, 0, 7); c.fill(); c.stroke();
+  c.fillStyle = '#d6f78a'; c.beginPath(); c.ellipse(-5, -6, 4, 6, 0.4, 0, 7); c.fill();
+  c.fillStyle = '#9be22d'; c.beginPath(); c.moveTo(-5, -16); c.lineTo(0, -24); c.lineTo(5, -16); c.closePath(); c.fill(); c.stroke();
+  c.restore();
+}
+function fsc1_clvSplat(c, x, y, s, a){   // a lime splat over the foe: a blob with droplets
+  if(!(a > 0.01)) return;
+  c.save(); c.translate(x, y); c.globalAlpha = a; c.fillStyle = '#9be22d'; c.strokeStyle = '#4f8a10'; c.lineWidth = 2.5; c.lineJoin = 'round';
+  c.beginPath(); for(let i = 0; i < 14; i++){ const th = i*Math.PI*2/14, r = s*(i % 2 ? 0.62 : 1.0)*(0.9 + 0.15*Math.sin(i*2.3)); c.lineTo(Math.cos(th)*r, Math.sin(th)*r*0.9); } c.closePath(); c.fill(); c.stroke();
+  for(let i = 0; i < 7; i++){ const th = i*0.9 + 0.3, d = s*(1.1 + 0.2*(i % 3)); c.beginPath(); c.arc(Math.cos(th)*d, Math.sin(th)*d, 3 + (i % 3), 0, 7); c.fill(); }
+  c.restore();
+}
+function fsc1_clvArt(c, key, x, y, r, a){   // the game's own picture of a projectile of hers (its sprite once loaded, else its drawn stand-in): centred on (x, y), r its half-size
+  c.save(); c.translate(x, y); c.globalAlpha = a;
+  let im = null; try { im = attackImage(key); } catch(e){ im = null; }
+  if(im){ const h = r*2, w = h*im.naturalWidth/im.naturalHeight; c.drawImage(im, -w/2, -h/2, w, h); }
+  else { try { PROJ_SHAPE[key].draw(c, r); } catch(e){} }
+  c.restore();
+}
+function fsc1_clvButterfly(c, x, y, s, flap, a){   // one of her butterflies, its wings opening and closing (flap 0 -> 1)
+  c.save(); c.translate(x, y); c.scale(s*(0.45 + 0.55*flap), s); fsc1_clvArt(c, 'clover', 0, 0, 12, a); c.restore();
+}
+FINAL_SMASHES['Clover'] = {
+  id:'luckchain', wind:FS_WIND, dur:FSC1_CLV.dur, reach:FSC1_CLV.catchR, needFoe:true, exact:true,   // needFoe / exact (fsTryFire, fsBotInput): pressed with nobody in the catch it is spent at once (a small puff, no intro); a CPU presses it only when the catch will take someone
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FSC1_CLV.catchR }; }, lockEnd:FSC1_CLV.wal, catchMax:1,   // CATCH: a circle round her; the nearest foe only (the luck is for one)
+  start(f, st){
+    const t = fighters[st.held[0]];
+    if(!t){ fsc1_spent(f); return; }   // the catch took nobody (they stepped out in its 10 frames): spent
+    const L = FSC1_CLV, side = Math.sign(t.x - f.x) || f.face || 1, B = f.onground ? { x:f.x, y:f.y + f.r } : fsc1_stand(f.x, f.y + f.r - 4, 600);
+    let S = null;   // where they are held: 150 px in front of her, on firm ground, on the side they are on (else the other); else where they stand
+    for(const d of [side, -side]){ const x = f.x + d*L.dist; if(fsc1_firm(x, B.y)){ S = { x:x, y:B.y }; break; } }
+    if(!S){ const fy = t.y + t.r; S = t.onground ? { x:t.x, y:fy } : fsc1_stand(t.x, fy, 600); }
+    st.tg = t.idx; st.n0 = t._koN || 0; st.over = false; st.cx = t.x; st.cy = t.y; st.fr = t.r; st.ay = f.y; st.ground = !!f.onground;
+    st.sx = S.x; st.sy = S.y; st.ty = S.y - t.r; st.dC = (f.x - S.x) >= 0 ? 1 : -1;
+    f.fsBx = Math.round(S.x); f.fsBy = Math.round(S.y); f.fsCx = f.fsCy = null;   // the spot they are held at: all a guest needs (her own place is her place)
+    armAtk(f, this.wind, 'fsgather');
+  },
+  tick(f, st, t){
+    const L = FSC1_CLV, tg = fighters[st.tg], D = Math.abs(f.x - st.sx);
+    f.vx = 0;
+    const off = fsc1_clvLift(t) + fsc1_clvHop(t, D);   // her hop over the peel and her lift over the hammer
+    if(off > 0.5){ f.y = st.ay - off; f.vy = 0; f.onground = false; }
+    else if(!st.ground){ f.vy = 0; f.y = st.ay; }   // (airborne she hangs where she is; grounded she stands)
+    if(st.over || t > L.wal) return;   // (after the wallop they are let go and thrown)
+    if(!tg || tg.dead || koSince(tg, st.n0) || !fsIsLockedBy(tg, f)){ st.over = true; st.t = this.dur - 1; return; }   // the foe gone (a KO, a respawn, the lock lost): nothing more is done, whoever comes back
+    // the foe: slid across the floor to the spot in front of her (brought down if they were caught in the air), then held where the props land on them
+    const e = 1 - Math.pow(1 - Math.min(1, (t + 1)/L.slide), 2);
+    fsPin(tg, fsc1_mix(st.cx, st.sx, e), fsc1_mix(st.cy, st.ty, e) + fsc1_clvDy(t));
+    if(t === 0){ shake(4); for(let i = 0; i < 8; i++) puff(f.x, f.y - 20, ['#f58ac0', '#c9a0ff', '#fff'][i % 3], 5); }
+    if(t === L.safe) for(let i = 0; i < 12; i++) puff(st.sx + (i - 5.5)*8, st.sy - 4, i % 2 ? '#d9d4c8' : '#bdb8ac', 6);
+    FSC1_CLV_AT.forEach((h, i)=>{ if(t === h) fsc1_clvHit(f, st, tg, i); });
+  },
+  end(f, st){ if(st.tg != null) fsc1_settle(f); },   // she is put down on firm ground, if a KO ended it in the air
+  botOk(f, t){ const N = FS_CATCH; return Math.hypot(t.x + (t.vx || 0)*N - f.x, t.y + (t.vy || 0)*N - f.y) <= FSC1_CLV.catchR - 50; },   // a CPU's cue (fsBotInput reads it): the foe where the catch will find them 10 frames on, at the speed they are going
+  ai(f){ return !!fsPick(f, FSC1_CLV.catchR, FSC1_CLV.catchR, false); },
+  draw(f, c){
+    const L = FSC1_CLV, t = f.fsT || 0;
+    if(f.fsBx == null || t > L.dur) return;
+    const tg = fsLockedOf(f), sx = f.fsBx, base = f.fsBy, rr = tg ? (tg.r || 24) : 24, dC = (f.x - sx) >= 0 ? 1 : -1, D = Math.abs(f.x - sx);
+    const fcx = tg ? tg.x : sx, fcy = tg ? tg.y : base - rr, fade = t > L.wal + 4 ? Math.max(0, 1 - (t - L.wal - 4)/12) : 1, ease = (p)=> 1 - (1 - p)*(1 - p);
+    const X = (u)=> sx + dC*u;
+    c.save();
+    // HER: four butterflies, each in its quirk, notes drifting up from her humming
+    const bf = [[-46, -34, 'bob'], [-16, -76, 'high'], [42, -30, 'pulse'], [20, -52, 'slow']], k = fsc1_grow(t, 0, 12);
+    bf.forEach((B, i)=>{
+      const bob = B[2] === 'bob' ? Math.sin(t*0.3)*7 : Math.sin(t*0.12 + i)*2.5, s = (B[2] === 'pulse' ? 1.2 + 0.18*Math.sin(t*0.25) : 1.05)*k, flap = 0.5 + 0.5*Math.sin(t*(B[2] === 'slow' ? 0.14 : 0.42) + i*1.3);
+      fsc1_clvButterfly(c, f.x + B[0]*k, f.y + B[1]*k + bob, s*1.35, flap, fade*Math.min(1, k*1.4));
+    });
+    for(let i = 0; i < 3; i++){ const u = ((t*1.3 + i*30) % 90)/90; fsc1_clvNote(c, f.x + 30 + 12*Math.sin(u*6 + i) + i*10, f.y - 30 - 70*u, 1.1, Math.min(1, u*5)*(1 - u)*fade*k); }
+    // THE FOE: a soft green ring while they are held
+    if(tg && t < L.wal) fsc1_ring(c, fcx, fcy, rr + 16 + Math.sin(t*0.3)*2, 'rgba(120,224,90,0.7)', 5, 0.5*Math.min(1, k*1.4));
+    // 2) THE PAINT BOMB: down from above, a lime splat over them
+    { const e = t - L.bomb, hy = base - rr*2 - 4;
+      if(e >= 0 && t < L.paint){ const p = e/(L.paint - L.bomb); fsc1_clvBomb(c, sx, fsc1_mix(hy - 330, hy, p*p), fsc1_grow(t, L.bomb, 12), 1); }
+      const q = t - L.paint; if(q >= 0 && q < 34) fsc1_clvSplat(c, fcx, fcy, 22 + 12*ease(Math.min(1, q/5)), 0.85*(q > 20 ? 1 - (q - 20)/14 : 1)*fade);
+      if(q >= 0 && q < 8) fsc1_burstLines(c, fcx, fcy, q/8, 8, 14, 52, '#9be22d', 1); }
+    // 3) THE BANANA PEEL: slides in along the floor from beyond her, past her, to them; it stays under them
+    { const e = t - L.peel0, run = 18;
+      if(e >= 0){ const p = Math.min(1, e/run), u = fsc1_mix(D + 260, 0, p); const al = Math.min(1, (e + 1)/6)*fade;
+        fsc1_clvArt(c, 'bananapeel', X(u), base - 14, 20, al); }
+      const q = t - L.slip; if(q >= 0 && q < 8) fsc1_burstLines(c, fcx, fcy + 8, q/8, 6, 12, 44, '#f4d03f', 1); }
+    // 4) THE SAFE: a shadow on the floor first, then down on them; it tips away
+    { const e = t - L.warn;
+      if(e >= 0 && t < L.tip + 12){
+        const sw = fsc1_mix(10, 44, Math.min(1, e/(L.safe - L.warn))), al = (t < L.safe ? 0.18 + 0.3*(e/(L.safe - L.warn)) : 0.45)*(t > L.tip ? 1 - (t - L.tip)/12 : 1);
+        c.save(); c.globalAlpha = al; c.fillStyle = '#000'; c.beginPath(); c.ellipse(sx, base + 1, sw, 7, 0, 0, 7); c.fill(); c.restore();
+      }
+      const fall = L.safe - 12;
+      if(t >= fall && t < L.tip + 12){
+        let y = base, rot = 0, al = 1;
+        if(t < L.safe){ const p = (t - fall)/12; y = fsc1_mix(base - 330, base, p*p); }
+        else if(t >= L.tip){ const p = (t - L.tip)/12; rot = -0.5*p*dC; al = 1 - p; y = base; }
+        const onFoe = t >= L.safe - 3 && t < L.tip; al *= onFoe ? 0.78 : 1;   // translucent while it sits on them: the foe stays visible
+        fsc1_clvSafe(c, sx + (t >= L.tip ? dC*(t - L.tip)*2 : 0), y + 4, fsc1_grow(t, fall, 12), rot, al*fade);
+      }
+      const q = t - L.safe; if(q >= 0 && q < 24){ c.save(); c.globalAlpha = 0.6*(1 - q/24); c.fillStyle = '#cfc9bb'; for(let i = 0; i < 9; i++){ const d = 10 + 56*ease(Math.min(1, q/20)); c.beginPath(); c.arc(sx + (i - 4)*d/4, base - 6 - (i % 3)*5 - q*0.25, 8 + (i % 3)*3, 0, 7); c.fill(); } c.restore(); }
+      if(q >= 0 && q < 8) fsc1_burstLines(c, sx, base - 8, q/8, 8, 16, 60, '#d9d4c8', 1); }
+    // 5) THE HAMMER: out of control from off the screen, a streak behind it; it runs under her and into them
+    { const H = fsc1_clvHammer(t, D);
+      if(H){
+        for(let tr = 6; tr >= 2; tr -= 2){ const Q = fsc1_clvHammer(t - tr, D); if(Q) fsc1_clvHammerArt(c, X(Q.u), base - Q.h, (t - tr)*0.55, (0.1 + 0.05*(6 - tr)/2)*fade); }
+        fsc1_clvHammerArt(c, X(H.u), base - H.h, t*0.55, Math.min(1, (t - L.hit0 + 1)/12)*(t > L.wal + 4 ? Math.max(0, 1 - (t - L.wal - 4)/6) : 1)); }
+      const q = t - L.clip; if(q >= 0 && q < 8) fsc1_burstLines(c, sx, base - 36, q/8, 7, 12, 46, '#ffe08a', 1);
+      const w = t - L.wal;
+      if(w >= 0){ const p = Math.min(1, w/14); fsc1_ring(c, sx, base - 14, 24 + 170*ease(p), '#ffffff', 11*(1 - p) + 2, 1 - p); if(w < 6) fsc1_bloom(c, sx, base - 30, 200, 0.5*(1 - w/6)); } }
+    c.restore();
+  },
+};
 
 // JACK -- KNUCKLES. "Knuckles" was his word in Cob Mentality; he glared and cracked them at each person he talked to (quoted at his card). It goes for the nearest foe within 420, its spot fixed as the startup begins (80 px: step out); whoever is in
 // it takes four cracks (4%) and the last, 22%, thrown.
