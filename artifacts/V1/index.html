@@ -16655,13 +16655,24 @@ function scrolls(){ return isBig() || isBigFFA() || WW>W+2 || WH>H+2; }   // any
 //      you are out of the picture. It eases in over LG.inF frames and out over LG.outF, the zoom never changes
 //      faster than LG.dz (of its log) a frame, and what the recovering fighters needed of each edge is held for LG.hold frames and then let go of
 //      slowly (LG.rel a frame), so a fighter bobbing in and out under the ledge moves the view once and not with every bob.
+//      FAR RECOVERERS (the owner, 2026-11-03: "Only a marker if far"): a recovering fighter more than LG.far (900 px, the straight line from your
+//      fighter's centre to its centre in world px: a fixed distance, so it does not move with the zoom, which is itself decided by who is in the plan)
+//      from the fighter the view follows is never in the plan: the offstage zoom and pan do not include it, only its marker (3.) tells you where it is,
+//      so the view never drags you away from the fight you are in. It is far from LG.far + LG.farH (960 px) and near again under LG.far - LG.farH
+//      (840 px), so a fighter hovering at the line does not flap; one that starts recovering is far if it is over 900. Near, it joins the plan as ever.
 //   3. THE MARKER (lgDrawMarkers): a recovering fighter outside the view gets a chevron at the screen's border in its colour (team colour in teams),
 //      a stem that grows with the distance, grown in over LG.growF frames, at most LG.maxMarks at once, nearest first; it goes LG.mkHold frames
 //      after the fighter is back over the stage, and with a KO at once. Markers that would sit on one another are slid along the border LG.gap px
 //      apart (the nearest stays), and a marker keeps clear of the minimap, the Teams standings strip and the cards' strip (lgHud). No words.
+//      THE UP ARROW (the owner, 2026-11-03: "Yes, an up arrow at the top edge"): a live fighter (lgAlive: the test the markers use) whose body is above
+//      the view and over the stage's x range of it -- launched high, not past a ledge (that one has its chevron) -- gets a small up-pointing arrow at
+//      the top edge (the cards' strip's lower edge) at its x, in its colour (team colour in teams), grown in over LG.growF frames, gone the moment its
+//      centre is back in the view (it is shown once its whole body is above) or it is out; no zoom or pan for it. The chevrons and the arrows share
+//      LG.maxMarks (3) and the LG.gap spacing; chevrons (recoverers) come first, then the arrows nearest first. An arrow only slides along the top
+//      edge (clear of the minimap, the other markers), never round a corner onto a side; its stem is how far above the top edge the fighter is.
 const LG = { wide:1.09, below:1.13, pull:1.00, zmin:0.50, inF:24, outF:40, dz:0.02, enter:6, leave:36, land:36,
   pad:70, air:200, lead:10, leadMax:180, insX:48, insT:84, insB:36, follow:0.12, ease2:0.25, hold:36, rel:0.05,
-  growF:12, maxMarks:3, mkHold:6, ko:90, zhys:0.04, missF:30, gap:26 };
+  growF:12, maxMarks:3, mkHold:6, ko:90, zhys:0.04, missF:30, gap:26, far:900, farH:60 };
 const LGC = { off:false, ok:false, init:false, mode:null, t:-1, k:0, held:null, z:0, c0:{ x:0, y:0 }, cr:{ x:0, y:0 }, last:null,
   cur:{ cx:0, cy:0, z:1 }, prev:{ cx:0, cy:0, z:1 }, f:Object.create(null), draw:0, sx:null, sy:null, marks:[], markSet:Object.create(null), dbg:null,
   hud:{ top:84, st:null }, hudN:0 };
@@ -16691,10 +16702,14 @@ function lgDoomed(f){
   const h = Math.min(f.hitstun, LG.ko), x1 = f.x + (f.vx || 0)*h, y1 = f.y + (f.vy || 0)*h + 0.5*GRAV*h*h;
   return pastSideLine(x1) || y1 > WH + 160 || y1 < -260;
 }
+// A fighter the view has a use for: in the match, not held or carried, a place that is a number, and not past saving (lgDoomed).
+function lgAlive(f){
+  if(f.dead || f._fsLock || f._heldBy != null || f._backAir || !isFinite(f.x) || !isFinite(f.y)) return false;
+  return !lgDoomed(f);
+}
 // Off the stage right now: over the drop (the CPU's own edgeGoal test), past a side of the world, or falling out of the bottom (brainRecover's).
 function lgRaw(f){
-  if(f.dead || f._fsLock || f._heldBy != null || f._backAir || !isFinite(f.x) || !isFinite(f.y)) return false;
-  if(lgDoomed(f)) return false;
+  if(!lgAlive(f)) return false;
   return !!((FLOOR_SEGS && overDrop(f)) || f.x < 0 || f.x > WW || (f.y > WH - 90 && f.vy > 0));
 }
 // The end of the floor it is heading for: the nearest span end (the world's own sides where the floor is endless), at the floor's height.
@@ -16752,14 +16767,18 @@ function lgTake(s, fit, n){
 }
 function lgPlan(subj, b, c0, n0){
   const cands = [];
-  for(const f of fighters){ const s = LGC.f[f.idx]; if(s && s.on && !f.dead) cands.push(f); else if(s){ s.pl = false; s.miss = 0; } }
+  for(const f of fighters){ const s = LGC.f[f.idx]; if(s && s.on && !f.dead) cands.push(f); else if(s){ s.pl = false; s.miss = 0; s.far = null; } }
   if(!cands.length) return null;
   const ax = subj ? subj.x : c0.x, ay = subj ? subj.y : c0.y;
   cands.sort((p, q) => (Math.hypot(p.x - ax, p.y - ay) - Math.hypot(q.x - ax, q.y - ay)) || (p.idx - q.idx));
   const S = subj ? lgBody(subj) : null;
   let U = S, G = null, n = 0; const ids = [];
   for(const f of cands){
-    const s = LGC.f[f.idx], g = lgGroup(f), V = U ? lgUnion(U, g) : g, v1 = lgFit(V);
+    const s = LGC.f[f.idx];
+    // FAR (LG.far): further than that from the fighter the view follows, a recoverer is the marker's and never the plan's (with a margin each way: LG.farH)
+    s.far = s.far == null ? Math.hypot(f.x - ax, f.y - ay) > LG.far : s.far ? Math.hypot(f.x - ax, f.y - ay) > LG.far - LG.farH : Math.hypot(f.x - ax, f.y - ay) > LG.far + LG.farH;
+    if(s.far){ s.pl = false; s.miss = 0; continue; }
+    const g = lgGroup(f), V = U ? lgUnion(U, g) : g, v1 = lgFit(V);
     if(lgTake(s, v1, n0)){ U = V; G = G ? lgUnion(G, g) : g; n++; ids.push(f.idx); s.pl = true; s.miss = v1 >= LG.zmin ? 0 : s.miss + n0; continue; }
     const g2 = lgBody(f), V2 = U ? lgUnion(U, g2) : g2, v2 = lgFit(V2);   // its ledge does not fit with the rest: the fighter alone, if that does
     if(lgTake(s, v2, n0)){ U = V2; G = G ? lgUnion(G, g2) : g2; n++; ids.push(f.idx); s.pl = true; s.miss = v2 >= LG.zmin ? 0 : s.miss + n0; }
@@ -16776,13 +16795,15 @@ function lgStepIn(n){
   const mode = lgMode();
   if(!mode){ LGC.ok = false; LGC.init = false; LGC.marks.length = 0; LGC.markSet = Object.create(null); return; }
   if(LGC.mode !== mode || hazardT < LGC.t - 1) lgReset();
+  // the steps this call stands for: n, or -- a guest sees the host's steps in snapshots, 3 at a time, and a lag spike's worth at once -- the host steps since the last call
+  const stood = Math.max(n, LGC.t >= 0 ? clamp(hazardT - LGC.t, 0, 30) : 0);
   LGC.mode = mode; LGC.t = hazardT;
   const subj = lgSubject(mode);
   // who is recovering (hysteresis)
   for(const f of fighters){
     let s = LGC.f[f.idx];
-    if(!s) s = LGC.f[f.idx] = { on:false, up:0, dn:0, ground:0, mk:0, pl:false, miss:0, mr:-1, st:f.stocks, px:f.x, py:f.y };
-    if(f.dead || f.stocks < s.st || Math.abs(f.x - s.px) + Math.abs(f.y - s.py) > 320 + 40*n){ s.on = false; s.up = 0; s.dn = 0; s.ground = 0; s.mk = 0; s.pl = false; s.miss = 0; }   // a KO, or a teleport (a fighter at 25 px a frame is 375 px away after a 15-frame hitch: the allowance grows with the steps this call stands for): at once
+    if(!s) s = LGC.f[f.idx] = { on:false, up:0, dn:0, ground:0, mk:0, pl:false, miss:0, mr:-1, st:f.stocks, px:f.x, py:f.y, far:null, hi:false };
+    if(f.dead || f.stocks < s.st || Math.abs(f.x - s.px) + Math.abs(f.y - s.py) > 320 + 40*stood){ s.on = false; s.up = 0; s.dn = 0; s.ground = 0; s.mk = 0; s.pl = false; s.miss = 0; s.far = null; s.hi = false; }   // a KO, or a teleport (a fighter at 25 px a frame is 375 px away after a 15-frame hitch: the allowance grows with the steps this call stands for): at once
     else if(lgRaw(f)){ s.up += n; s.dn = 0; s.ground = 0; if(!s.on && s.up >= LG.enter) s.on = true; }
     else { s.up = 0; if(s.on){ s.dn += n; s.ground = f.onground ? s.ground + n : 0; if(s.dn >= LG.leave || s.ground >= LG.land) s.on = false; } }
     s.st = f.stocks; s.px = f.x; s.py = f.y;
@@ -16827,7 +16848,10 @@ function lgStepIn(n){
   for(const f of fighters){
     const s = LGC.f[f.idx]; if(!s) continue;
     const sx = W/2 + z*(f.x - LGC.cur.cx), sy = H/2 + z*(f.y - LGC.cur.cy);
-    s.mk = (s.on && s.dn < LG.mkHold && !f.dead && (sx < 0 || sx > W || sy < 0 || sy > H)) ? s.mk + n : 0;   // (not past LG.mkHold frames of being back on the stage)
+    const rec = s.on && s.dn < LG.mkHold && !f.dead && (sx < 0 || sx > W || sy < 0 || sy > H);   // (not past LG.mkHold frames of being back on the stage)
+    // THE UP ARROW: a live fighter that is not a chevron's, over the view's x range and above it -- shown once its whole body is above the top, kept until its centre is back in
+    s.hi = !rec && lgAlive(f) && sx >= 0 && sx <= W && (s.hi ? sy < 0 : sy < -(f.r || 24)*z);
+    s.mk = (rec || s.hi) ? s.mk + n : 0;   // (one age for both, so a chevron that turns into an arrow does not grow in again)
   }
 }
 // drawView lends the view to one picture (a = how far between the last two steps: 1 when nothing is blended), then takes it back.
@@ -16878,12 +16902,15 @@ function lgDrawMarkers(){
   for(const f of fighters){
     const s = LGC.f[f.idx]; if(!s) continue;
     const was = s.mr; s.mr = -1;
-    if(!s.on || s.dn >= LG.mkHold || !(s.mk > 0) || f.dead) continue;
+    if(f.dead || !(s.mk > 0)) continue;
     const sx = W/2 + z*(f.x - camX - W/2), sy = H/2 + z*(f.y - camY - H/2);
-    if(sx >= 0 && sx <= W && sy >= 0 && sy <= H) continue;
-    list.push({ f, s, sx, sy, d:Math.hypot(sx - W/2, sy - H/2) - (was >= 0 ? 30*(LG.maxMarks - was) : 0) });
+    let kind = -1;   // 0: a recovering fighter's chevron; 1: the up arrow
+    if(s.on && s.dn < LG.mkHold && !(sx >= 0 && sx <= W && sy >= 0 && sy <= H)) kind = 0;
+    else if(s.hi && sy < 0 && sx >= 0 && sx <= W) kind = 1;
+    if(kind < 0) continue;
+    list.push({ f, s, kind, sx, sy, d:Math.hypot(sx - W/2, sy - H/2) - (was >= 0 ? 30*(LG.maxMarks - was) : 0) });
   }
-  list.sort((a, b) => (a.d - b.d) || (a.f.idx - b.f.idx));
+  list.sort((a, b) => (a.kind - b.kind) || (a.d - b.d) || (a.f.idx - b.f.idx));
   if(list.length > LG.maxMarks) list.length = LG.maxMarks;
   const hd = lgHud(), T = hd.top, st = hd.st;
   const mm = viewScrolls() ? { x0:W - 164 - 24, y0:64 - 16, y1:64 + Math.max(50, 150*WH/WW) + 3 + 16 } : null;   // (drawMinimap's box, and room for a stem)
@@ -16892,13 +16919,14 @@ function lgDrawMarkers(){
     m.s.mr = i;
     let ex = clamp(m.sx, 22, W - 22), ey = clamp(m.sy, T, H - 22);
     const p0 = lgRimOf(ex, ey, T), qa = lgRimAt(p0 + LG.gap, T), qb = lgRimAt(p0 - LG.gap, T), s0 = Math.hypot(qa.x - W/2, qa.y - H/2) <= Math.hypot(qb.x - W/2, qb.y - H/2) ? 1 : -1;
-    for(let t = 0; t < 14; t++){
+    for(let t = 0; t < (m.kind ? 30 : 14); t++){
       const q = t === 0 ? { x:ex, y:ey } : lgRimAt(p0 + (t % 2 ? 1 : -1)*s0*Math.ceil(t/2)*LG.gap, T);
+      if(m.kind && Math.abs(q.y - T) > 0.5) continue;   // (an up arrow stays on the top edge: it slides along it, never round a corner onto a side)
       let free = !(mm && q.x >= mm.x0 && q.y >= mm.y0 && q.y <= mm.y1) && !(st && q.x >= st.x0 && q.y >= st.y0);
       for(let j = 0; free && j < i; j++) if(Math.hypot(LGC.marks[j].x - q.x, LGC.marks[j].y - q.y) < LG.gap - 0.5) free = false;
       if(free){ ex = q.x; ey = q.y; break; }
     }
-    const ang = Math.atan2(m.sy - ey, m.sx - ex), far = Math.hypot(m.sx - ex, m.sy - ey)/z, stem = 6 + 26*clamp(far/900, 0, 1);
+    const ang = m.kind ? -Math.PI/2 : Math.atan2(m.sy - ey, m.sx - ex), far = (m.kind ? ey - m.sy : Math.hypot(m.sx - ex, m.sy - ey))/z, stem = 6 + 26*clamp(far/900, 0, 1);
     const col = SETTINGS.mode === 'teams' ? (TEAM_COLORS[f.team % TEAM_COLORS.length] || f.color) : f.color;
     c.save(); c.translate(ex, ey); c.rotate(ang); const sc = 0.5 + 0.5*ge; c.scale(sc, sc); c.globalAlpha = 0.95*ge; c.lineCap = 'round'; c.lineJoin = 'round';
     const path = () => { c.beginPath(); c.moveTo(-5 - stem, 0); c.lineTo(-3, 0); c.moveTo(-4, -9); c.lineTo(6, 0); c.lineTo(-4, 9); };
@@ -16906,7 +16934,7 @@ function lgDrawMarkers(){
     path(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 7; c.stroke();
     path(); c.strokeStyle = col; c.lineWidth = 3.5; c.stroke();
     c.restore();
-    LGC.marks.push({ idx:f.idx, x:ex, y:ey, color:col, a:ge, mk:m.s.mk });
+    LGC.marks.push({ idx:f.idx, x:ex, y:ey, color:col, a:ge, mk:m.s.mk, up:m.kind === 1 });
     LGC.markSet[f.idx] = true;
   }
   c.globalAlpha = 1;
