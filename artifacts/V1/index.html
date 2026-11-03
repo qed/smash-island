@@ -21232,8 +21232,9 @@ function cliffWalls(f, gy){
     if(f.x + f.r <= q.x0 || f.x - f.r >= q.x1) continue;
     const toL = (f.x + f.r) - q.x0, toR = q.x1 - (f.x - f.r), side = toL < toR ? -1 : 1, over = side < 0 ? toL : toR;
     const into = f.vx*side < -0.2;
-    if(into && feet - gy <= LEDGE_CATCH && !(f.hitstun > 0) && f.vy > -6 && f._heldBy == null){
+    if(into && feet - gy <= LEDGE_CATCH && !(f.hitstun > 0) && f.vy > -6 && f._heldBy == null && !lgNoRegrab(f, side, q)){
       f.y = gy - f.r; f.x = side < 0 ? q.x0 + 2 : q.x1 - 2; f.vy = 0; f.onground = true; f.jumps = 2; f._usedAirSpecial = false;
+      lgCaught(f, side, q);   // LEDGEGUARD RULES (b): this ledge is not caught again until the stage has been stood on
       return;
     }
     f.x += side*(into ? over : Math.min(over, 5));
@@ -21256,6 +21257,93 @@ function recK(f){
   return (!groundAt(f.x) || feet > groundY() + 2 || overDrop(f)) ? r : 1;
 }
 function recV(f){ const r = recK(f); return r === 1 ? 1 : Math.sqrt(r); }
+
+// LEDGEGUARD RULES (the owner, 2026-11-02: "it is hard to ledgeguard, because cpus always go so high, i would never be able to hit them."; chosen in the
+// question boxes: shorter recoveries for everyone, a shorter ledge (and no re-grab of the same ledge until the stage has been touched), no jump back after
+// an offstage air hit, a recovery lockout after a hit; 2026-11-03: "if you are standing above someone when doing a move, they should at least be slightly be
+// knocked downwards"). ONE block of knobs, to tune after playing: `on:false` puts every rule back as it was, and each rule has its own `on`. They apply
+// in a plain fighter-versus-fighter match (free-for-all, teams, an event, the World Cup); (a) to (d) are about being OFF the stage, so they only exist on a
+// stage with real edges (FLOOR_SEGS) -- never Training, Boss Rush, the teams map, Capture the Flag or Moon Caves, which have none -- and (e) is a rule
+// about any launch, kept out of Training, Boss Rush, RUNNING!, Moon Caves, a boss's own hits, a shot, a tick, a Final Smash and a finisher.
+const LG_RULES = {
+  on: true,
+  // (a) SHORTER RECOVERIES FOR EVERYONE: what an up-special (and Puffball's flight, and Bow's Teleport) carries a fighter OFF THE STAGE. The height it would
+  // rise (the launch speed squared over twice gravity, so a stage's low gravity does not change the cap) is scaled by hScale, bent by hSlope above
+  // hKnee px and never more than hMax px; a sideways push or warp by dxScale; a flight's frames by flyScale; Bow's Teleport's distance by tpScale. A
+  // fighter's `rec` stat (recK / recV) still comes first, so the poor recoverers keep their lead on everyone else.
+  cap: { on:true, hScale:0.85, hKnee:150, hSlope:0.5, hMax:190, dxScale:0.85, flyScale:0.75, tpScale:0.85 },
+  // (b) THE LEDGE. This build has no hang and no ledge invincibility: the ledge catch (cliffWalls) puts a fighter straight up on the stage, with nothing
+  // to shorten (so the cut of the brief is 0 frames of 0). The re-grab rule: after a catch, the SAME ledge cannot be caught again until the fighter has
+  // stood on the stage (any floor or platform) for `stand` frames in a row since.
+  ledge: { on:true, stand:10 },
+  // (c) NO JUMP BACK AFTER AN OFFSTAGE AIR HIT. hitter: the jump a hit gives its hitter (hitJumpBack) is not given when the foe it hit is OFF the stage.
+  // victim: the jump and the up-special a launch gives the fighter it hits (knock) are not given when that fighter is OFF the stage in the air (OFF: the
+  // brief did not ask for it; one switch if it is what was meant).
+  jump: { on:true, hitter:true, victim:false },
+  // (d) RECOVERY LOCKOUT: a fighter hit while off the stage cannot use an up-special (or the angled up-dash) for `frames` frames, counted from the moment
+  // its stun ends (the stun cannot press anything anyway, and is often as long as 30 frames, so counted from the hit it would add little: `fromHit`
+  // true counts from the hit); cleared on landing, on a ledge catch and on a KO.
+  lock: { on:true, frames:30, fromHit:false },
+  // (e) DOWNWARD KNOCKBACK FROM ABOVE: an attacker whose FEET are more than `margin` px above the victim's (the feet, so that two fighters of different
+  // sizes on one floor are level: their middles are not) gives the launch a downward bias that grows smoothly (smoothstep) to its full size at `full` px
+  // above: the upward part of the launch is faded by `fade` (1: all of it at full) and the launch gets `push` px/frame downward, so a hit from `full` px
+  // above or more always knocks the victim at least slightly down. (A real melee hit from the stage's edge reaches a victim at the ledge's catch height, 30
+  // px under it, and rarely more than about 45 -- measured, 49 real hits of 8 fighters -- so the ramp has to be over by then to matter at a ledge.)
+  down: { on:true, margin:12, full:45, fade:1, push:1.5 },
+};
+function lgRule(k){ return LG_RULES.on && LG_RULES[k].on && !!FLOOR_SEGS; }   // an edge rule is on (and this stage has edges)
+// Off the stage in the air, by the game's own test (the one the `rec` stat uses, recK): over no floor, below the stage's top, or over a drop.
+function lgOffstage(f){
+  if(!FLOOR_SEGS || !f || f.dead || f.onground) return false;
+  return !groundAt(f.x) || (f.y + f.r) > groundY() + 2 || overDrop(f);
+}
+// (a) the height in px a rise carries (px: before the cap) -> after it
+function lgPx(f, px){
+  if(!(px > 0) || !lgRule('cap') || !lgOffstage(f)) return px;
+  const C = LG_RULES.cap;
+  let h = px*C.hScale; if(h > C.hKnee) h = C.hKnee + (h - C.hKnee)*C.hSlope;
+  return Math.min(h, C.hMax);
+}
+function lgUpV(f, v){   // a launch speed (negative: up) -> the one that rises the capped height
+  if(!(v < 0) || !lgRule('cap') || !lgOffstage(f)) return v;
+  const g = gravAt(f);
+  return -Math.sqrt(2*g*lgPx(f, v*v/(2*g)));
+}
+function lgDx(f, v){ return (lgRule('cap') && lgOffstage(f)) ? v*LG_RULES.cap.dxScale : v; }   // a sideways push or warp
+function lgFly(f, n){   // a flight's frames (and where it began: a flight off the stage lifts no more once its rise would pass hMax, lgFlyTop)
+  const off = lgRule('cap') && lgOffstage(f);
+  f._lgFlyY0 = off ? ((f.flying > 0 && f._lgFlyY0 != null) ? f._lgFlyY0 : f.y) : null;
+  return Math.max(f.flying || 0, off ? Math.round(n*LG_RULES.cap.flyScale) : n);
+}
+function lgFlyTop(f){ return f._lgFlyY0 != null && lgRule('cap') && f._lgFlyY0 - (f.y + f.vy*0.94/0.06) > LG_RULES.cap.hMax; }   // (the flight's lift decays by 0.94 a frame: where it would stop rising if it lifted no more)
+function lgDash(f){   // the angled dashes (Leafy's, Woody's, Liy's): fewer frames at the same speed, and the rise (frames x speed, and the coast after it) capped
+  if(!lgRule('cap') || !lgOffstage(f) || !(f._dashing > 0)) return;
+  const n = f._dashing, n2 = Math.max(1, Math.round(n*LG_RULES.cap.dxScale)), u = -f._dashVY;
+  f._dashing = n2;
+  if(u > 0){
+    const g = gravAt(f), h1 = lgPx(f, n*u + u*u/(2*g)), u2 = g*(-n2 + Math.sqrt(n2*n2 + 2*h1/g));
+    f._dashVY = -Math.min(u, u2);
+  }
+}
+function lgTpK(f){ return (lgRule('cap') && lgOffstage(f)) ? LG_RULES.cap.tpScale : 1; }   // Bow's Teleport
+// (b) the ledge: which one (a face by side and place, as the wall jump names it), the catch, the standing that clears it
+function lgLedgeId(side, q){ return side + ':' + Math.round((side < 0 ? q.x0 : q.x1)/WALL_FACE_SNAP); }
+function lgNoRegrab(f, side, q){ return lgRule('ledge') && !!f._lgCatch && f._lgCatch.id === lgLedgeId(side, q); }
+function lgCaught(f, side, q){ f._lgLock = 0; f._lgCatch = lgRule('ledge') ? { id:lgLedgeId(side, q), g:0 } : null; }
+function lgCatchTick(f){ const C = f._lgCatch; if(f.onground){ if(++C.g >= LG_RULES.ledge.stand) f._lgCatch = null; } else C.g = 0; }
+// (c)
+function lgJumpOff(f, k){ return LG_RULES.on && LG_RULES.jump.on && LG_RULES.jump[k] && lgOffstage(f); }
+// (d)
+function lgLocked(f){ return LG_RULES.on && LG_RULES.lock.on && f._lgLock > 0 && !f.onground; }
+// (e) the launch (vx, vy in px/frame, up negative) a hit from `from` gives `t`, with the bias from above
+function lgDownKb(t, from, vx, vy, opts, fsSt){
+  if(!from || from === t || fighters[from.idx] !== from || fsSt || t._fsLock || from._fs || (opts && (opts.tick || opts.shot)) || SMASH_PROJ
+    || hitStopFin(from) || TESTMODE.active || RACE.active || (MCAVE && MCAVE.on) || bhNoDown(from)) return [vx, vy];
+  const D = LG_RULES.down, above = (t.y + t.r) - (from.y + from.r) - D.margin;   // (screen y grows downward: the attacker is above when its feet's y is the smaller)
+  if(!(above > 0)) return [vx, vy];
+  let k = Math.min(1, above/(D.full - D.margin)); k = k*k*(3 - 2*k);
+  return [vx, vy < 0 ? vy*(1 - k*D.fade) + k*D.push : Math.max(vy, k*D.push)];
+}
 
 // A double jump gains roughly this much height. Any vertical gap between successive platform
 // LAYERS wider than this can strand a fighter on the floor of a tall arena, so fillClimbGaps()
@@ -46023,6 +46111,8 @@ function step(){
     if(f.smCd>0) f.smCd-=aS;
     if(f.fnCd>0) f.fnCd-=aS;   // and the finisher its own   // smashes have their own cooldown: X and C never wait on it, and it never waits on them
     if(f.spCd>0) f.spCd-=aS;
+    if(f._lgLock>0 && (!(f.hitstun>0) || LG_RULES.lock.fromHit)) f._lgLock--;   // LEDGEGUARD RULES (d): the lockout runs once the stun is over
+    if(f._lgCatch) lgCatchTick(f);   // (b): standing on the stage clears the ledge it caught
     if(f._aiSpGap>0) f._aiSpGap--;
     if(f._smAngleT>0 && !(f._sm || (f._windup && f._windup.smash) || f._slam || f._nail || f._plunge)) f._smAngleT--;
     if(f.dropCd>0) f.dropCd--;
@@ -46442,7 +46532,7 @@ function step(){
     if(f.onground){ f._aiFloorY = f.y + f.r; f._aiFloorT = hazardT; }   // the floor its jumps go up from (aiJumpFloor, a CPU's walls)
     // ---- move ----
     f._airT = f.onground ? 0 : (f._airT || 0) + 1;   // frames in the air (1 on the first): a running jump eases down over them (runEaseCap)
-    if(f.onground) f._hjN = 0;   // jumps hits gave back this airtime (HIT_JUMP_MAX)
+    if(f.onground){ f._hjN = 0; f._lgLock = 0; }   // jumps hits gave back this airtime (HIT_JUMP_MAX); a landing ends the recovery lockout (LEDGEGUARD RULES (d))
     let _walkCap = -1;   // the run's speed cap, when this frame's speed is the fighter's own keys' (THE WORLD'S EDGE IS A WALL FOR WALKING: edgeWalkWall)
     if(f.hitstun<=0){
       f._freeAt = hazardT; f._freeIn = (inp.left ? 1 : 0) | (inp.right ? 2 : 0) | (inp.jump ? 4 : 0);   // (moved by these keys this step: a guest's prediction runs only when they are the guest's own, netPredOut)
@@ -46568,7 +46658,7 @@ function step(){
       const wantUp = f.you ? (down[KEYS.jump]||pollPad()?.jump)
                            : f.controller==='remote' ? !!(window.NET && window.NET.inputs[f.idx] && window.NET.inputs[f.idx].jump)   // (a guest's Puffball was flown by the CPU's rule: up did nothing and she sank)
                            : (f.aiTarget && f.aiTarget.y < f.y-20);   // AI climbs only if target is above
-      if(wantUp) f.vy-=0.9;
+      if(wantUp && !lgFlyTop(f)) f.vy-=0.9;   // (LEDGEGUARD RULES (a): not past the cap's height off the stage)
       else if(!f.you && f.controller!=='remote' && f.aiTarget && f.aiTarget.y > f.y+20) f.vy+=0.7; // AI dives toward lower targets
       f.vy += f.vy > 0 ? gv*0.15*fst.fall : gv*0.15; f.vy*=0.94;   // (FIGHTER STATS: fall pulls on the way down)
     } else if(f._tp || f._tpHang > 0){
@@ -48221,6 +48311,7 @@ function hitJumpK(f){
 function hitJumpBack(f, t){
   if(!f || f === t || fighters[f.idx] !== f || f.dead || f.onground || f.jumps > 0 || RACE.active || !ownHit(f, t)) return false;
   if((f._hjN||0) >= HIT_JUMP_MAX) return false;   // two given back this airtime: no more until they land
+  if(lgJumpOff(t, 'hitter')) return false;   // LEDGEGUARD RULES (c): no jump back for a hit on a foe who is off the stage
   const k = hitJumpK(f); if(!(k > 0)) return false;   // (0: none for them -- a jump of no height would still stop their fall)
   f.jumps = 1; f._hitJumpV = Math.sqrt(k); f._hjN = (f._hjN||0) + 1;
   return true;
@@ -48862,10 +48953,10 @@ function doSmash(f){
 // ============================================================
 //  UP-SPECIALS  — mix of recovery and anti-air per character
 // ============================================================
-function upLaunch(f, power){ f.vy=power; f.onground=false; }   // launches, but does NOT hand back a jump
+function upLaunch(f, power){ f.vy=lgUpV(f, power); f.onground=false; }   // (LEDGEGUARD RULES (a): off the stage the rise is capped)   // launches, but does NOT hand back a jump
 const UPSPECIALS = {
   // Every other fighter's up-special is an UPSPEC row now; the ten bodies that lived here were shadowed by them.
-  fly(f){ upLaunch(f,-10*recV(f)); f.flying=Math.max(f.flying,70); f.jumps=1; for(let i=0;i<6;i++) puff(f.x,f.y+14,'#e6a6e0',5);  }, // Puffball — float boost
+  fly(f){ upLaunch(f,-10*recV(f)); f.flying=lgFly(f, 70); f.jumps=1; for(let i=0;i<6;i++) puff(f.x,f.y+14,'#e6a6e0',5);  }, // Puffball — float boost
 };
 // ============================================================
 //  UP-SPECIAL SHAPES — one table, one function, four ways to rise
@@ -49016,12 +49107,12 @@ function riseShape(f, s){
   const wasAir = !f.onground;   // a plunge that hits on the way down (`fall`) only does it from a cast in the air
   f._castX=f.x; f._castY=f.y;   // where the cast happened (a warp moves before its leave is applied)
   if(s.shape==='warp'){
-    f.y = Math.max(40, f.y - (s.dist||140)*recK(f)); f.x += dir*(s.dx||0); f.vy = -4; f.onground=false;   // (rec: a warp off the stage goes that much higher)
+    f.y = Math.max(40, f.y - lgPx(f, (s.dist||140)*recK(f))); f.x += dir*lgDx(f, s.dx||0); f.vy = -4; f.onground=false;   // (rec: a warp off the stage goes that much higher)
     f.invuln = Math.max(f.invuln, s.invuln||8);
     for(let i=0;i<10;i++) puff(f.x,f.y+(Math.random()*40-20),f.color,4);
   } else {
     upLaunch(f, (s.power==null ? -13 : s.power)*recV(f));   // a row may ask for no lift at all (Bow), and 0 is a real value (rec: more lift off the stage)
-    if(s.push && dir) f.vx = dir*s.push;           // a row may push her the way she steers (Tea Kettle's steam jet)
+    if(s.push && dir) f.vx = dir*lgDx(f, s.push);           // a row may push her the way she steers (Tea Kettle's steam jet)
     // The aura ticks when _sawing (after its decrement) is a multiple of 6. Round the length up to 6k+1 so the
     // FIRST tick is the launch frame, while the neighbour is still beside you: an 18-frame spin used to tick
     // first on frame 5, by which point a -13 rise had carried the aura clear, and it landed once.
@@ -49357,7 +49448,7 @@ const DOWNSPECIALS = {
   freeze(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*24,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:4,kb:3,r:12,color:'#9ad24b',life:220,trap:true,freeze:true,arm:20});  }, // Gelatin — freeze mine
   flip(f){ f.flash=8; if(Math.random()<0.5){ f.armor=44; braceUp(f, 44); } else { f.pct+=6; } }, // Nickel — gamble defense
   // ---- new down-specials ----
-  fly(f){ f.flash=8; f.flying=Math.max(f.flying,90); f.vy=Math.min(f.vy,-2); puff(f.x,f.y-8,'#e6a6e0',6);  }, // Puffball — sustained hover
+  fly(f){ f.flash=8; f.flying=lgFly(f, 90); f.vy=Math.min(f.vy,-2); puff(f.x,f.y-8,'#e6a6e0',6);  }, // Puffball — sustained hover
   beam(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:6,kb:4,r:12,color:'#e0384b',life:220,trap:true});  }, // Ruby — gem trap
   gust(f){ f.flash=8; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(Math.abs(t.y-f.y)<70 && Math.abs(t.x-f.x)<170){ t.vx += Math.sign(t.x-f.x||f.face)*7; t.onground=false; } } for(let i=0;i<10;i++) puff(f.x+(Math.random()*120-60),f.y,'#bfe8ff',4);  }, // Fanny — push everyone away
   reflect(f){ f.flash=10; f.reflecting=44; f._reflAtk=false; puff(f.x,f.y-8,'#e8e8e8',6);  }, // Gaty — long reflect stance
@@ -63025,6 +63116,7 @@ function fireSpecial(f, inp){
 }
 function fireSpecialInner(f, inp){
   if(f._noBattery>0 || f._hushT > hazardT) return;   // Remote on reserve power (see BATTERY_OUT); hushed by Rose (FINISHERS V2, batch 4)
+  if(inp.up && lgLocked(f)) return;   // LEDGEGUARD RULES (d): hit off the stage a moment ago, no up-special (nor the angled up-dash) yet
   // remember held directions so dash-type specials can go diagonally (up-dash / down-dash)
   f._inLeft=!!inp.left; f._inRight=!!inp.right; f._inUp=!!inp.up; f._inDown=!!inp.down;
   const dashKit = DASH_KITS.has(f.kit&&f.kit.special);
@@ -63095,6 +63187,7 @@ function applyDashVY(f, upSpeed, downSpeed){
   if(f._inUp)   f._dashVY = -(upSpeed||16);     // up-dash
   else if(f._inDown) f._dashVY = (downSpeed||14); // down-dash
   if(f._dashVY){ f.onground=false; }             // leave the floor so a vertical dash actually rises/dips
+  lgDash(f);   // LEDGEGUARD RULES (a): off the stage a dash goes less far, and its rise is capped like an up-special's
 }
 // ---- TENNIS BALL'S GADGETS. The design doc gave his down-special as a "Factory Hatch" handing out Golf
 // Ball's gadgets -- mine, turret, battery -- at random. Here it is a rack he steps through on purpose: the
@@ -63302,7 +63395,7 @@ function batteryShape(c, r){
 const TP = { dist:240, vanish:8, hang:6, dmg:6, kb:[1.5,-7], reach:30, step:4, stepUp:28, cd:100, carrier:0.5, copy:0.7 };
 const TP_DIRS = [[0,-1],[1,-1],[-1,-1],[1,0],[-1,0],[1,1],[-1,1],[0,1]];   // the 8 ways the arrows aim it (up first: the CPU's ties go up)
 function tpScale(f){   // how far, as a share of TP.dist: Dough's copy is the 0.7x knockoff; a flag carrier goes half as far
-  return (f._knockoff && f._knockoff.until > hazardT ? TP.copy : 1) * (SETTINGS.mode==='ctf' && f._cf >= 0 ? TP.carrier : 1);
+  return (f._knockoff && f._knockoff.until > hazardT ? TP.copy : 1) * (SETTINGS.mode==='ctf' && f._cf >= 0 ? TP.carrier : 1) * lgTpK(f);   // (LEDGEGUARD RULES (a): shorter off the stage)
 }
 function tpBurst(x, y, r){ for(let i=0;i<12;i++){ const a = i/12*Math.PI*2; puff(x + Math.cos(a)*r*0.8, y + Math.sin(a)*r*0.8, i%2 ? '#ffb3dc' : '#fff', 4); } }
 function startTeleport(f){
@@ -65094,7 +65187,7 @@ UPSPECIALS.rubout = function(f){   // Eraser -- STEAKHOUSE FLIP (EVENT FIGHTERS:
 function eraserFlip(f){
   const E = ERASER.flip, d = f.face < 0 ? -1 : 1, wasAir = !f.onground;
   armAtk(f, E.spin, 'kick', mvId(f, 'up'));
-  upLaunch(f, E.power*recV(f)); f.vx = -d*E.back;   // up, and back
+  upLaunch(f, E.power*recV(f)); f.vx = -d*lgDx(f, E.back);   // up, and back
   f._flipT = E.spin; f._wallKickT = hazardT + E.wall; if(!wasAir) f._wallKicked = false;
   const sh = { kind:'capsule', x1:f.x + d*f.r*0.6, y1:f.y + 6, x2:f.x + d*(f.r + E.reach), y2:f.y - 4, r:12 };
   hitShape(f, sh, E.tip, E.close, d*E.kb[0], E.kb[1], E.band);   // the kick: sweet in its near half (hitShape judges a capsule's band from its first end), sour at the tip
@@ -66628,7 +66721,7 @@ UPSPECIALS.accrete = function(f){   // Black Hole -- WORMHOLE (EVENT FIGHTERS: B
 function bhWormOut(f){
   const W = BLACK_HOLE.worm;
   let ax = f._bhWax | 0, ay = f._bhWay | 0; if(!ax && !ay) ay = -1;
-  const n = Math.hypot(ax, ay), p = teleportDest(f, f.x, f.y, ax/n*W.dist, ay/n*W.dist);
+  const n = Math.hypot(ax, ay), p = teleportDest(f, f.x, f.y, ax/n*W.dist*lgTpK(f), ay/n*W.dist*lgTpK(f));   // (LEDGEGUARD RULES (a): shorter off the stage)
   for(let i = 0; i < 8; i++){ const a = i/8*Math.PI*2; puff(f.x + Math.cos(a)*f.r, f.y + Math.sin(a)*f.r*0.5, i % 2 ? BH_INK.violet : BH_INK.glow, 3); }
   f.x = p.x; f.y = p.y; f.vx = ax/n*1.5; f.vy = ay < 0 ? -2.5 : 0; f.onground = false; f._bhWT = 0;
   hitArt(f, 'worm', haGrownBody(f, W.pop), { color:BH_INK.glow, style:'ring', world:true, fade:6 });   // HIT ART: the pop is his body grown by W.pop
@@ -67154,7 +67247,7 @@ UPSPECIALS.clockhands = function(f){   // Clock -- SPRING FORWARD (EVENT FIGHTER
 function clockSpring(f){
   const S = CLOCK.spring, d = f.face < 0 ? -1 : 1;
   armAtk(f, 18, 'uppercut', mvId(f, 'up'));
-  upLaunch(f, S.power*recV(f)); f.vx = d*S.fwd;
+  upLaunch(f, S.power*recV(f)); f.vx = d*lgDx(f, S.fwd);
   const sh = { kind:'capsule', x1:f.x + d*f.r*0.3, y1:f.y - 2, x2:f.x + d*(f.r*0.3 + S.reach*0.62), y2:f.y - 2 - S.reach*0.78, r:S.r };
   hitShape(f, sh, S.near, S.tip, d*S.kb[0], S.kb[1], S.band);   // sweet at the tips of his hands (band < 0), sour near him
   for(let i = 0; i < 5; i++) puff(f.x, f.y + f.r, i % 2 ? CLOCK_INK.rim : '#ffffff', 4);
@@ -68437,7 +68530,11 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   }
   const hitGround = t.onground;   // (for the dust a launch kicks up: hitFx)
   if(from !== t) t._backAir = false;   // hit by someone else: the respawn's ceiling is over (ONE FALL, ONE STOCK, in step)
-  knock(t, kbx*scale, kby*scale - kp*0.025);
+  const _lgOff = LG_RULES.on && LG_RULES.lock.on && dmg > 0 && !fsSt && !t._fsLock && !(opts && opts.tick) && lgOffstage(t);   // LEDGEGUARD RULES (d): hit while off the stage (before the launch: knock takes it off the ground)
+  let _kx = kbx*scale, _ky = kby*scale - kp*0.025;
+  if(LG_RULES.on && LG_RULES.down.on){ const _d = lgDownKb(t, from, _kx, _ky, opts, fsSt); _kx = _d[0]; _ky = _d[1]; }   // (e): a hit from above knocks them at least slightly down
+  knock(t, _kx, _ky);
+  if(_lgOff) t._lgLock = LG_RULES.lock.frames;
   if(SETTINGS.mode==='ctf') ctfBigHit(t, from);   // a big enough launch makes a flag carrier drop the flag
   // The stun, the chain and the hit-grace this hit gives are all set by stampHit: the one place that says what a hit does to its target's grace, which a
   // boss's grace for each attacker (bossGraceNote) runs through as well.
@@ -68465,13 +68562,14 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(t.pct>=t.koCap && !t.dead) eliminate(t);   // no "maxed out!" line ("Remove them all"): eliminate puts up the KO line, the one line a KO keeps
 }
 function knock(t,kx,ky){
+  const _lgNoRefund = lgJumpOff(t, 'victim');   // LEDGEGUARD RULES (c): off the stage in the air, a launch gives back no jump and no up-special (read before the launch takes them off the ground)
   // TEST MODE: an "anchored" dummy absorbs knockback entirely so it stays put — lets you measure
   // sustained damage/DPS on a stationary target instead of chasing it around the stage.
   if(TESTMODE.active && TESTMODE.anchored && t.controller!=="local"){ t.vx=0; t.vy=0; return; }
   t.vx=kx; t.vy=ky; t.onground=false; t._hop=false; t._ff=false; t._hyperT=0;
   // REAL EDGES: knocked into the air where a fall is a fall, a fighter gets a jump and the up-special back, as in the games this one
   // follows -- so anyone knocked off a ledge has a way back to try, and getting back is up to the player
-  if(FLOOR_SEGS){ t.jumps = Math.max(t.jumps||0, 1); t._usedAirSpecial = false; t._hitJumpV = 0; }   // (a full jump: not the one a hit gave back, hitJumpBack)
+  if(FLOOR_SEGS && !_lgNoRefund){ t.jumps = Math.max(t.jumps||0, 1); t._usedAirSpecial = false; t._hitJumpV = 0; }   // (a full jump: not the one a hit gave back, hitJumpBack)
 }
 const WIND_DRIFT = 3.2, PIN_STEPS = 36, PIN_FREE = 150;
 const BOUNCE_VY = 14;   // a bounce zone's throw at x1 strength: Spongy's (p.bouncy), so a bounce zone is landing on Spongy
@@ -68749,6 +68847,7 @@ function dropInFlightMoves(f){
   for(const g of fighters) if(g._fs && g._fs.caught && g._fs.caught.indexOf(f.idx) >= 0) g._fs.caught = g._fs.caught.filter((i)=>i !== f.idx);
 }
 function eliminate(f){
+  f._lgLock = 0; f._lgCatch = null;   // LEDGEGUARD RULES: a KO clears the lockout and the caught ledge
   f._koN = (f._koN||0) + 1;   // a KO stamp, whatever this KO turns out to be: a hit that holds its target after it asks (ONE FALL, ONE STOCK: koSince)
   if(RACE.active){ raceEliminate(f); return; }   // RUNNING!: a fall or a knockout ends your race; a runner is deleted, Marshmallow is put back
   if(SETTINGS.mode==='ctf' && ctfEliminate(f)) return;   // Capture the Flag: no stocks; a KO is a trip home, or to the enemy's jail
@@ -72743,7 +72842,7 @@ function brainRecover(f, inp, B, sp){
   if(E && E.err === 'late' && age < CPU_HUMAN.react[brainLevel(f)]) return true;   // (Expert 2026-11-02; every level 2026-11-02, the owner: "do all four": the blank is that level's own reaction, Easy 30, Normal 20, Hard 10, Expert 10; it was a flat 26)
   if(E && E.err === 'early' && age < 24){
     if(f.jumps > 0) inp.jump = !held;
-    else if(f.spCd<=0 && !brainKit(f).uStance){ inp.special=true; inp.up=true; }
+    else if(f.spCd<=0 && !brainKit(f).uStance && !lgLocked(f)){ inp.special=true; inp.up=true; }   // (a lockout, LEDGEGUARD RULES (d): the press waits for it to end, as a person's would)
     return true;
   }
   if(f._wallSide && f._wallT >= hazardT - 2 && f.vy > 0.5 && !(f._wallUsed && f._wallUsed[f._wallId]) && !(f.flying > 0) && !f._tp && mtOn(f)){
@@ -72754,11 +72853,11 @@ function brainRecover(f, inp, B, sp){
     // still carries it up, is a rise it does not have when it is under the ledge.
     if(f.vy > 0.5 && f.y + f.r + f.vy*6 > groundY() - 20){
       if(f.jumps > 0) inp.jump = !held;
-      else if(f.spCd<=0 && !brainKit(f).uStance){ inp.special=true; inp.up=true; }
+      else if(f.spCd<=0 && !brainKit(f).uStance && !lgLocked(f)){ inp.special=true; inp.up=true; }   // (a lockout, LEDGEGUARD RULES (d): the press waits for it to end, as a person's would)
     }
   } else if(f.vy>0.5 || f.y>WH-140 || (goal && f.y + f.r > groundY() + 30)){
     if(f.jumps > 0) inp.jump = !held;
-    else if(f.spCd<=0 && !brainKit(f).uStance){ inp.special=true; inp.up=true; }
+    else if(f.spCd<=0 && !brainKit(f).uStance && !lgLocked(f)){ inp.special=true; inp.up=true; }   // (a lockout, LEDGEGUARD RULES (d): the press waits for it to end, as a person's would)
   }
   return true;
 }
@@ -86851,6 +86950,7 @@ function netPredOut(f){
   o.k = [r3(mvB*fst.run), r3(mvB*fst.air), r3(capB*fst.run), r3(capB*fst.air), r3(jv), r3(recV(f)), r3(SH_V*fst.jump), r3(FF_V*fst.fall), r3(fst.fall), r3(lowGravOn() ? GRAV*0.7 : GRAV), r3(JUMP*WJ_VY*fst.jump)];   // (the gravity: the stage's, or the low-gravity twist -- lowGravOn)
   if(f._wallSide && typeof f._wallT === 'number' && hazardT - f._wallT <= WALL_WINDOW) o.w = [f._wallSide, hazardT - f._wallT, f._wallId];   // (mtWallJump)
   if(f._wallUsed){ const u = Object.keys(f._wallUsed); if(u.length) o.wu = u; }
+  if(f._lgCatch) o.lg = f._lgCatch.id;   // (the ledge it caught and has not left the stage since: LEDGEGUARD RULES (b))
   { const lim = f.kit && CLINGERS[f.kit.special]; if(lim) o.cl = [lim, f._clingT || 0]; }   // (mtCling: how long it may cling, and has this airtime)
   return o;
 }
@@ -86868,6 +86968,7 @@ function netPredRun(a, pr, to, team, sq){   // sq: the Spongys on the stage (SQU
   // the walls: the one touched last (side, the frame, which face: mtWallJump's window and once-per-face rule), the faces kicked off this airtime
   const wjv = k[10], cliffs = !!FLOOR_SEGS && !big, w = Array.isArray(pr.w) && pr.w.length === 3 ? pr.w : null, cl = Array.isArray(pr.cl) ? pr.cl : null, clLim = cl ? +cl[0] || 0 : 0;
   P.sqU = !!pr.q;
+  P._lgCatch = typeof pr.lg === 'string' ? { id:pr.lg, g:0 } : null;
   P.ws = w ? w[0] : 0; P.wt = w ? pr.a - w[1] : -1e9; P.wid = w ? String(w[2]) : ''; P.used = Array.isArray(pr.wu) ? pr.wu.slice(0, 32).map(String) : []; P.clT = cl ? +cl[1] || 0 : 0;
   for(let g = from; g <= to; g++){ mcEnter(P); try {   // (MOON CAVES: in the predicted body's own chart)
     if(MCAVE && MCAVE.on) plats = platRects();
@@ -86907,6 +87008,7 @@ function netPredRun(a, pr, to, team, sq){   // sq: the Spongys on the stage (SQU
       if(sp){ P.vy = sp; P.j = 2; P.used = []; } else { if(P.vy > 0) P.vy = 0; P.g = true; P.j = 2; } }   // (a bounce gives the wall jumps back: spongeBounce)
     if(cliffs){   // the cliff faces and the ledge catch: the host's own cliffWalls, on the prediction's fighter
       P.onground = P.g; P.jumps = P.j; P._wallT = null; cliffWalls(P, gy); P.g = P.onground; P.j = P.jumps;
+      if(P._lgCatch) lgCatchTick(P);   // (LEDGEGUARD RULES (b): standing on the stage clears the ledge it caught, as step() does)
       if(P._wallT != null){ P.ws = P._wallSide; P.wt = g; P.wid = P._wallId; }
     }
     for(const p of plats){
