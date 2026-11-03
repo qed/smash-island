@@ -4636,6 +4636,55 @@ function mc4Rock(R0, R1, boxes, emit){
   if(last) out.push(last);
   for(const p of out) for(const v of p.rock) emit(v[0], v[1], p.a0, p.a1);
 }
+// ---- V2: THE NATURAL ROOMS AS PIECES ----
+// A natural room is its recipe's grid (MC4_NAT.build with the head the planner sized it with, the plan's flip, symmetric on a pole, the bed's marker) laid in the chart: a cell is 16 px along the arc at the BED radius (the cave floor: the room's lowest floor stands
+// on it) and 16 px radial, so everything above the bed is a little wider than drawn (the roof clearances are radial and exact). The room is: an air box of its envelope (the cave floor up to the roof's top); the grid's rock cells inside it as column runs
+// (floor treads from the cave floor up, roof slabs down from the box top, a floating lump by rows if a recipe ever draws one), each tread that is one 16 px step over a lower neighbour a 'slope' piece (a ramp: walked up, as Capture the Flag's); its planks
+// (one-way, 14 px, at the top of their cell); and its BED (the lowest continuous floor) as zones that take the cave's footing (spring pads, ice, a belt, water, a draught; plain or the furnace's flare need none: the flare burns the hot arcs under the bed).
+// mc4NatCut is pure (no page state): the cell runs, the envelope, the end floors in px (e0 at the room's first column, e1 at its last) and the bed runs; mc4Build lays them on the angles of the room's place.
+const MC4_SOLID = '#%><^H';   // the rock cells of a recipe grid (a bed's marker is rock too)
+const MC4_BEDCH = { bounce:'^', slick:'%', belt:'>', heat:'H', water:'H', air:'H' };   // the marker the recipe puts on its bed floor, by the cave's footing (plain: none)
+const MC4_FOOTN = { padW:100, padH:24, sLow:1.3, sN:1.9, iceH:40, beltH:30, waterUp:120, shaftW:90, shaftTop:50 };   // v3's footing numbers, frozen here
+function mc4NatCut(x){
+  const hc = MC4_HEADC[x.kind], bc = MC4_BEDCH[x.foot];
+  const b = MC4_NAT.build(x.arch.toLowerCase(), x.seed, { hc, flip:!!x.flip, sym:!!x.pole, bedChar:bc }), g = b.grid, Hr = g.length, W = g[0].length, env = b.meta.env;
+  if(Hr !== env + 4) throw new Error('Moon Caves v4: a natural grid is not its envelope plus two rows of rock a side (' + x.arch + ' seed ' + x.seed + ')');
+  const sol = (c, j) => MC4_SOLID.indexOf(g[Hr - 3 - j][c]) >= 0;   // cell (column c, row j up from the lowest floor)
+  const fh = [], rb = [];
+  for(let c = 0; c < W; c++){ let a = 0; while(a < env && sol(c, a)) a++; let t = 0; while(t < env - a && sol(c, env - 1 - t)) t++; fh.push(a); rb.push(env - t); }
+  const runs = arr => { const out = []; for(let c = 0; c < W;){ let d = c; while(d + 1 < W && arr[d + 1] === arr[c]) d++; out.push({ c0:c, c1:d + 1, v:arr[c] }); c = d + 1; } return out; };
+  const fr = runs(fh), floors = [], roofs = [], lumps = [], planks = [], beds = [];
+  fr.forEach((q, i) => { if(q.v > 0) floors.push({ c0:q.c0, c1:q.c1, h:q.v, slope:[fr[i - 1], fr[i + 1]].some(n => n && q.v - n.v === 1) }); });   // (a step of one cell, 16 px, over a neighbour is a ramp's: walked up)
+  for(const q of runs(rb)) if(q.v < env) roofs.push({ c0:q.c0, c1:q.c1, y0:q.v });
+  for(let j = 0; j < env; j++){ let c = 0; while(c < W){ if(sol(c, j) && j >= fh[c] && j < rb[c]){ let d = c; while(d + 1 < W && sol(d + 1, j) && j >= fh[d + 1] && j < rb[d + 1]) d++; lumps.push({ c0:c, c1:d + 1, y0:j, y1:j + 1 }); c = d + 1; } else c++; } }
+  for(let j = 0; j < env; j++){ const row = g[Hr - 3 - j]; let c = 0; while(c < W){ if(row[c] === '='){ let d = c; while(d + 1 < W && row[d + 1] === '=') d++; planks.push({ c0:c, c1:d + 1, top:j + 1 }); c = d + 1; } else c++; } }
+  if(bc && bc !== '#'){
+    // (a room that is its own mirror image has the belt run in to its middle from both halves: the recipe marks the whole bed one way, so the halves are told apart here, and an odd room's middle column, its own mirror, carries none)
+    const mid = W >> 1, sym = !!x.pole && bc === '>', isBed = c => g[Hr - 2 - fh[c]][c] === bc && !(sym && (W & 1) && c === mid);
+    for(let c = 0; c < W;){ if(!isBed(c)){ c++; continue; } let d = c; while(d + 1 < W && isBed(d + 1) && fh[d + 1] === fh[c] && !(sym && d + 1 === ((W + 1) >> 1) && c < mid)) d++;
+      // (pads keep 48 px clear of a room's ends: a CPU landing on a pad at the exit is thrown up again and cannot hop the sill of the throat beyond)
+      const q0 = x.foot === 'bounce' && c === 0 ? 3 : c, q1 = x.foot === 'bounce' && d + 1 === W ? W - 3 : d + 1; if(q1 - q0 < 3){ c = d + 1; continue; }
+      beds.push({ c0:q0, c1:q1, fh:fh[c], roof:Math.min(...rb.slice(c, d + 1)), dc:sym ? (c < mid ? 1 : -1) : g[Hr - 2 - fh[c]][c] === '<' ? -1 : 1 }); c = d + 1; }
+  }
+  return { key:b.key, W, env, e0:fh[0]*16, e1:fh[W - 1]*16, floors, roofs, lumps, planks, beds, foot:x.foot, fh, rb };
+}
+// the cut laid on a place (pure: the pieces and zones go to the two callbacks): `e` the room's angles, `dir` +1 when its columns run with the angle (the mirror half runs the other way, so a belt or a ramp is its mirror image), `rc` the floor it stands on
+// (its lowest floor), `low` the cave's low gravity (a pad's strength). piece(r0, r1, a0, a1, oneway, kind), zone(r0, r1, a0, a1, type, extra).
+function mc4NatLay(nat, e, dir, rc, low, piece, zone){
+  const dA = (e[1] - e[0])/nat.W, span = (c0, c1) => dir > 0 ? [e[0] + c0*dA, e[0] + c1*dA] : [e[1] - c1*dA, e[1] - c0*dA], F = MC4_FOOTN, top = rc + nat.env*16;
+  for(const q of nat.floors){ const s = span(q.c0, q.c1); piece(rc, rc + q.h*16, s[0], s[1], false, q.slope ? 'slope' : 'rock'); }
+  for(const q of nat.roofs){ const s = span(q.c0, q.c1); piece(rc + q.y0*16, top, s[0], s[1], false, 'rock'); }
+  for(const q of nat.lumps){ const s = span(q.c0, q.c1); piece(rc + q.y0*16, rc + q.y1*16, s[0], s[1], false, 'rock'); }
+  for(const q of nat.planks){ const s = span(q.c0, q.c1), t = rc + q.top*16; piece(t - MC4_B.stepT, t, s[0], s[1], true, 'plank'); }
+  for(const z of nat.beds){
+    const s = span(z.c0, z.c1), r0 = rc + z.fh*16, w = (z.c1 - z.c0)*16, mid = (s[0] + s[1])/2;
+    if(nat.foot === 'slick') zone(r0, r0 + F.iceH, s[0], s[1], 'ice');
+    else if(nat.foot === 'belt') zone(r0, r0 + F.beltH, s[0], s[1], 'belt', { dir:z.dc*dir });
+    else if(nat.foot === 'water') zone(r0, r0 + F.waterUp, s[0], s[1], 'water');
+    else if(nat.foot === 'bounce'){ const pw = Math.min(F.padW, w), n = Math.max(1, Math.floor((w + 48)/(pw + 48))); for(let k = 0; k < n; k++){ const am = mid + (k - (n - 1)/2)*(pw + 48)/rc; zone(r0, r0 + F.padH, am - pw/2/rc, am + pw/2/rc, 'bounce', { strength:low ? F.sLow : F.sN }); } }
+    else if(nat.foot === 'air' && w >= 64){ const sw = Math.min(F.shaftW, w), r1 = rc + z.roof*16 - F.shaftTop; if(r1 - r0 >= 100) zone(r0, r1, mid - sw/2/rc, mid + sw/2/rc, 'updraft'); }
+  }
+}
 function mc4Build(side, moon){
   const G = MC4_DISC.G, B = MC4_B, TAU = MC_TAU, P = Math.PI, seed = MC4.seed(side, moon), plan = mc4PlanOf(side, seed);
   if(plan.fallback && typeof console !== 'undefined') console.warn('Moon Caves v4: the plan of moon ' + side + '-' + (moon + 1) + ' (seed ' + seed + ') failed its score within 8 tries: ' + plan.score.hard.join(','));
@@ -4646,6 +4695,8 @@ function mc4Build(side, moon){
   const WW = Math.ceil(TAU*Rb) + 1000, WH = 2*Rb + 800, cx = WW/2, cy = WH/2;
   const segs = [], holes = [], pads = [[], []], liftPads = [[], []], zsegs = [];
   const put = (r0, r1, a0, a1, oneway, kind, L) => { if(a1 - a0 > 1e-9 && r1 - r0 > 0.5) segs.push({ id:segs.length + 1, r0, r1, a0, a1, oneway:!!oneway, kind, L:L | 0 }); };
+  const putW = (r0, r1, a0, a1, oneway, kind, L) => { while(a0 >= P){ a0 -= TAU; a1 -= TAU; } while(a1 <= -P){ a0 += TAU; a1 += TAU; } if(a0 < -P){ put(r0, r1, a0 + TAU, P, oneway, kind, L); put(r0, r1, -P, a1, oneway, kind, L); } else if(a1 > P){ put(r0, r1, a0, P, oneway, kind, L); put(r0, r1, -P, a1 - TAU, oneway, kind, L); } else put(r0, r1, a0, a1, oneway, kind, L); };   // (a piece over the south pole is cut at the far point, as the sweep cuts the rock)
+  const zoneAt = (r0, r1, a0, a1, type, L, o) => { const z = (p, q) => { if(q - p > 1e-6) zsegs.push(Object.assign({ id:zsegs.length + 1, r0, r1, a0:p, a1:q, type, L }, o || {})); }; while(a0 >= P){ a0 -= TAU; a1 -= TAU; } while(a1 <= -P){ a0 += TAU; a1 += TAU; } if(a0 < -P){ z(a0 + TAU, P); z(-P, a1); } else if(a1 > P){ z(a0, P); z(-P, a1 - TAU); } else z(a0, a1); };
   const SIDES = [-P/2, P/2], stripHalf = r => Math.asin(Math.min(1, G.strip/2/r)), dist = (a, b) => Math.abs(mcWrap(a - b));
   const inStrip = (a, hw, r, m) => SIDES.some(s => dist(a, s) < stripHalf(r) + hw + m/r);
   const cracks = [0, P].concat(D.cracks > 2 ? [P/4, 3*P/4, -P/4, -3*P/4] : []), crackH = G.crackW/2/shellTop;
@@ -4684,6 +4735,21 @@ function mc4Build(side, moon){
   const addAir = (j, a0, a1, r0, r1, tag) => { addBox(air[j], a0, a1, r0, r1); spaces.push({ c:j, a0, a1, r0, r1, tag }); };
   const addCut = (b, a0, a1) => addBox(cuts[b], a0, a1, -1, 1e9);
   const newNode = o => { o.id = nodes.length; nodes.push(o); adj.push([]); return o; };
+  const natApply = (nat, c, e, dir, rc) => mc4NatLay(nat, e, dir, rc, layers[c].low, (r0, r1, a0, a1, ow, kind) => putW(r0, r1, a0, a1, ow, kind, c), (r0, r1, a0, a1, type, o) => zoneAt(r0, r1, a0, a1, type, c, o));
+  // THE LINK THROUGH A PLUG (V2): the throat is a tube at least 128 px high; where the two floors it joins agree it is flat, where they differ by 64 px or less a SILL (one step in the middle), by more a SLOPE-MOUTH (a ramp of 16 px risers and 32 px treads,
+  // flat for 96 px or more each side; steeper, risers up to 24 px, only where the plug is short). yA and yB are the floors (px over the cave floor) at the room on the low-angle side and the one on the high-angle side.
+  const linkStat = [];
+  const linkAt = (c, rc, g0, g1, yA, yB, th) => {
+    const lo = Math.min(yA, yB), hi = Math.max(yA, yB), d = yB - yA, sg = d < 0 ? -1 : 1, L = (g1 - g0)*rc;
+    addAir(c, g0, g1, rc + lo, Math.min(airTop(c), rc + hi + th), 'throat');
+    if(d === 0) return;
+    const fill = (x0, x1, y, step) => { if(y > lo) putW(rc + lo, rc + y, g0 + x0/rc, g0 + x1/rc, false, step <= 24 ? 'slope' : 'rock', c); };
+    let n = Math.abs(d)/16; if(L < 32*(n - 1) + 192) n = Math.ceil(Math.abs(d)/24);
+    if(Math.abs(d) <= 64 || L < 32*(n - 1) + 96){ const m = L/2; if(yA > lo) fill(0, m, yA, Math.abs(d)); else fill(m, L, yB, Math.abs(d)); linkStat.push({ c, type:'sill', d, L, a0:g0, a1:g1, yA, yB }); return; }   // (a short plug, 60 px at a strip, takes one step of at most 96 px, a ledge inside the locked 110)
+    const st = Math.abs(d)/n, run = 32*(n - 1), x0 = (L - run)/2;
+    fill(0, x0, yA, st); for(let i = 1; i < n; i++) fill(x0 + 32*(i - 1), x0 + 32*i, yA + sg*st*i, st); fill(x0 + run, L, yB, st);
+    linkStat.push({ c, type:'mouth', d, L, n, flat:x0, a0:g0, a1:g1, yA, yB });
+  };
   const edge = (u, v, cost, o) => { adj[u].push(Object.assign({ to:v, cost }, o)); };
   const nodeS = newNode({ kind:'S', c:0, name:'surface' }), nodeF = newNode({ kind:'F', c:K, name:'furnace' });
   const homes = [];   // homes[c][team]: the home chamber of cave c (c 1 to K-1)
@@ -4696,12 +4762,20 @@ function mc4Build(side, moon){
   const halls = [];
   for(const x of plan.rooms){
     if(x.claimed || x.c < 1 || x.c >= K) continue;
-    const c = x.c, rc = tops[c], aS = x.u0/rc, aE = Math.min(x.u1, qa[c] - B.stripEnd)/rc, top = (x.top >= 1 && x.top < c) ? x.top : c;
+    // (a built room's box is cut at the strip's end, 41 px short of the plan's, so the rock between it and the home is the 100 px of the locked invariant; a natural room cannot be cut -- its recipe is its width -- so one that ends within 41 px of the
+    // strip's end is slid toward its pole by the difference: the plan's plugs are 250 px or more, so the rock to its neighbour stays over 200)
+    const c = x.c, rc = tops[c], sh = x.form && !x.pole ? Math.max(0, x.u1 - (qa[c] - B.stripEnd)) : 0, aS = (x.u0 - sh)/rc, aE = (x.form && !x.pole ? x.u1 - sh : Math.min(x.u1, qa[c] - B.stripEnd))/rc, top = (x.top >= 1 && x.top < c) ? x.top : c;
     if(!(aE > aS + 1e-6)) continue;
-    const cap = airTop(c) - rc, hh = x.form ? Math.max(x.h, Math.min(x.env || x.h, cap)) : (x.ext || x.h), roof = top < c ? Math.min(Math.max(rc + hh, tops[top] + B.throat), airTop(top)) : Math.min(rc + hh, airTop(c));   // (V1 fix: the air over a hall's top foot is never under a throat's height -- a roof the plan put in the first 128 px above the bridge is lifted to it, so the tallest body walks the foot as it walks the doors; geometry only, the plan and its hash are unchanged)
+    const nat = x.form ? mc4NatCut(x) : null;   // (V2: a natural room is its recipe's pieces; its roof is its envelope's top)
+    if(nat && Math.abs((x.pole ? 2*aE : aE - aS)*rc - nat.W*16) > 1) throw new Error('Moon Caves v4: a natural room was clipped (' + x.arch + ' seed ' + x.seed + ' cave ' + c + ')');
+    const cap = airTop(c) - rc, hh = nat ? nat.env*16 : (x.ext || x.h), roof = top < c ? Math.min(Math.max(rc + hh, tops[top] + B.throat), airTop(top)) : Math.min(rc + hh, airTop(c));   // (V1 fix: the air over a hall's top foot is never under a throat's height -- a roof the plan put in the first 128 px above the bridge is lifted to it, so the tallest body walks the foot as it walks the doors; geometry only, the plan and its hash are unchanged)
     const ents = x.pole ? [x.q ? [P - aE, P + aE] : [-aE, aE]] : x.q === 0 ? [[aS, aE], [-aE, -aS]] : [[P - aE, P - aS], [-P + aS, -P + aE]];
-    for(const e of ents){
+    const dirs = x.pole ? [1] : x.q === 0 ? [1, -1] : [-1, 1];   // (the columns of the half with the higher angle run with u from the pole; at the south pole they run against the angle)
+    for(let ei = 0; ei < ents.length; ei++){
+      const e = ents[ei], dir = dirs[ei];
       const own = newNode({ kind:'R', c, a0:e[0], a1:e[1], cen:(e[0] + e[1])/2, half:(e[1] - e[0])/2, arch:x.arch, h:roof - rc, name:x.arch, top, w:x.w });
+      own.dir = dir; own.room = x;   // (which way its columns run, and the plan's room: the checks read them)
+      if(nat){ natApply(nat, c, e, dir, rc); own.e0 = dir > 0 ? nat.e0 : nat.e1; own.e1 = dir > 0 ? nat.e1 : nat.e0; }
       items[c].push(own); addAir(c, e[0], e[1], rc, top < c ? airTop(c) : roof, 'room:' + x.arch);
       if(top < c){
         halls.push(own);
@@ -4723,7 +4797,7 @@ function mc4Build(side, moon){
       const poleGap = (g0 < 0 && g1 > 0) || (g0 < P && g1 > P) || (g0 < -P && g1 > -P);
       if(poleGap && !lapAt) continue;
       const th = Math.max(B.throatMin, Math.min(B.throat, A.h === undefined ? 1e9 : A.h, Bn.h === undefined ? 1e9 : Bn.h));
-      addAir(c, g0, g1, rc, rc + th, 'throat');
+      linkAt(c, rc, g0, g1, A.e1 || 0, Bn.e0 || 0, th);
       const cost = Math.abs(cenB - A.cen)*rc, wA = Math.min(B.wp/rc, Bn.half), wB = Math.min(B.wp/rc, A.half);
       edge(A.id, Bn.id, cost, { type:'lat', wp:Bn.a0 + wA }); edge(Bn.id, A.id, cost, { type:'lat', wp:A.a1 - wB });
     }
@@ -4754,8 +4828,17 @@ function mc4Build(side, moon){
     for(let c = 1; c <= K; c++) for(const off of (c < K ? B.padsFloor : B.padsShell)) Pd.push(pt(tops[c], s + m*off/tops[c]));
     Pd.push(...liftPads[team]);
   });
-  // THE FURNACE'S FLOOR: v3's (its bays are plain): low one-way stones over the hot floor in the free runs, the hot arcs, the strips
+  // THE FURNACE'S FLOOR: v3's: low one-way stones over the hot floor in the free runs, the hot arcs, the strips. A bay with a natural room (V2) is that room: its floors stand on the shell's top (its bed burns on the flare: the hot arcs are the same ring), a perch,
+  // bar or stair is cool, its roof is rock up to the tunnels' floor, its two ends open on the ring's free floor; v3's stones keep clear of it. A bay with no room is v3's floor with v3's stones.
   { const rf = tops[K], Q = B.furn, res = [];
+    for(const x of plan.rooms){
+      if(!x.form || x.c !== K) continue;
+      if(x.pole) throw new Error('Moon Caves v4: a natural room on the furnace pole');
+      const nat = mc4NatCut(x), aS = x.u0/rf, aE = (x.u0 + nat.W*16)/rf;
+      if(Math.abs(x.u1 - x.u0 - nat.W*16) > 1) throw new Error('Moon Caves v4: a furnace room is not its recipe wide (' + x.arch + ' seed ' + x.seed + ')');
+      const ents = x.q === 0 ? [[aS, aE], [-aE, -aS]] : [[P - aE, P - aS], [-P + aS, -P + aE]], dirs = x.q === 0 ? [1, -1] : [-1, 1];
+      for(let ei = 0; ei < 2; ei++){ const e = ents[ei]; natApply(nat, K, e, dirs[ei], rf); putW(rf + nat.env*16, airTop(K), e[0], e[1], false, 'rock', K); res.push([(e[0] + e[1])/2, (e[1] - e[0])/2 + 40/rf]); }
+    }
     for(const h of holes) if(h.band === K - 1) res.push([h.a, (B.stepReach + Q.col)/rf]);
     for(const s of SIDES) res.push([s, stripHalf(rf) + 60/rf]);
     for(const a of cracks) res.push([a, crackH + G.crackClear/rf]);
@@ -4769,7 +4852,7 @@ function mc4Build(side, moon){
   const hot = freeRuns(cracks.map(a => [a, crackH + G.hotRim/shellTop]).concat(SIDES.map(s => [s, stripHalf(shellTop)])));
   const zones = [{ x:cx - Rb - B.stripPast, y:cy - G.strip/2, w:Rb + B.stripPast - shellBot, h:G.strip }, { x:cx + shellBot, y:cy - G.strip/2, w:Rb + B.stripPast - shellBot, h:G.strip }];
   // THE GRAPH: the items of each cave in order round the circle (for finding the room a body is in), and the next-hop tables
-  const V = { N:nodes.length, nodes, adj, items:items.map(l => l.map(q => ({ id:q.id, cen:q.cen, half:q.half }))), spaces, halls:halls.length };
+  const V = { N:nodes.length, nodes, adj, items:items.map(l => l.map(q => ({ id:q.id, cen:q.cen, half:q.half }))), spaces, halls:halls.length, links:linkStat };
   const paths = mc4Paths(V); V.next = paths.map(q => q.next); V.dist = paths.map(q => q.dist); V.hops = paths.map(q => q.hops);
   const g = { N:2*side, k:1, v:4, moon:{ id:side + '-' + String(moon + 1).padStart(2, '0'), s:side, m:moon, tag:MC4_TAG, seed, hash:plan.hash }, plan, Rout, K, tops, crustBot, shellTop, shellBot, Rb, rKill, WW, WH, cx, cy, segs, holes, zsegs,
     cracks:cracks.map(a => ({ a, h:crackH })), pads, zones, layers, hot, g4:V };
