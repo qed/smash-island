@@ -25537,46 +25537,314 @@ FINAL_SMASHES['Teardrop'] = {
   },
 };
 
-// BOMBY -- SELFLESS DETONATION. His late-series heroism: he lights his own fuse on lava to save his team ("Don't Dig Straight Down") and blows
-// himself up to end Pillow's killing spree ("Outbreak At Stake") (the design doc). Calm, a fuse burning (the tell: 200 px, closing in over
-// 50 frames), then a point-blank blast, 34% and a launch that takes anyone it reaches at moderate %. The price is his: he takes 35% himself and is
-// stunned for 90 frames (`exposed`), and the circle is only 200 px.
-FINAL_SMASHES['Bomby'] = {
-  id:'detonation', wind:FS_WIND, dur:FS_WIND + 84, reach:200, exposed:true,
-  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:200 }; }, lockEnd:'one',   // CATCH: the blast's circle
-  start(f, st){ armAtk(f, this.wind, 'fsgather'); },
-  tick(f, st, t){
-    const w = this.wind;
-    if(t === 0) shake(3);
-    if(t < w && t % 5 === 0) puff(f.x + f.face*6, f.y - f.r - 8, '#ffd23f', 3);   // the fuse
-    if(t === w){
-      shake(15); armAtk(f, 40, 'fsburst');
-      fsBurst(f, st, f.x, f.y, 200, 34, 28, -16);
-      f.pct = Math.min(Math.max(0, f.koCap - 5), f.pct + 35);
-      for(let i = 0; i < 30; i++) puff(f.x, f.y, i % 3 ? '#fff' : '#ffb347', 8);
+// ---- FSC lane 3: begin ----------------------------------------------------------------------------------------------------------------
+// The pieces Coiny's, Fries's and Bomby's Final Smashes share (the owner, 2026-11-02: each is rebuilt as a staged set piece on Bow's chairs' model --
+// catch the nearest foe, hold them, a scene of props drawn round them, timed hits on the held foe, the last the launch -- and "just dont make them
+// TOO complicated; you can vary the damage and knockback as well"). A row's numbers on the wire (the fighter's own fsAx .. fsCx, all a guest
+// needs after the let-go): fsAx, fsAy where the holder stood when the catch landed; fsBx, fsBy the held foe's place in the scene; fsCx the foe's size.
+// The rest is drawn from the holder's fsT and the foe the catch holds (fsLk). Everything that appears grows in over 12 frames.
+// THE CATCH of all three is a circle of FSC3.reach round the holder; it takes the nearest foe only (catchMax 1). Bow's chairs' model for a press and a cue (the framework's):
+// `needFoe` -- pressed with nobody the catch can take, it is spent at once (a small puff, no intro, no pause: fsFizzle); `exact` + `botOk` -- a CPU fires only when the catch will
+// take someone (a foe clearly inside it, led 10 frames at the speed they go), never into a foe it cannot take (held, locked, a finisher's) and never on the old "glow nearly out" fallback. A boss, an add or a teammate is never taken (the catch only takes fighters)
+// and the rows touch no summon: their rings (fsc3_ring) are fighters only.
+const FSC3 = { reach:420 };
+function fsc3_ease(p){ p = p < 0 ? 0 : (p > 1 ? 1 : p); return 1 - (1 - p)*(1 - p); }
+function fsc3_in(t, t0, n){ return fsc3_ease((t - t0 + 1)/(n || 12)); }   // 0 before frame t0, 1 once n (12) frames on: whatever appears grows in over 12 frames
+// The held foe is gone (a KO, a respawn, the lock lost): nothing more is thrown at whoever comes back (ONE FALL, ONE STOCK: koSince).
+function fsc3_gone(f, st, tg){ return !tg || tg.dead || koSince(tg, st.n0) || !fsIsLockedBy(tg, f); }
+// A CPU's cue for the three rows: the foe clearly inside the catch (40 px to spare), where the catch will find them 10 frames on at the speed they are going.
+function fsc3_botOk(f, t){ const N = FS_CATCH; return Math.hypot(t.x + (t.vx || 0)*N - f.x, t.y + (t.vy || 0)*N - f.y) <= FSC3.reach - 40; }
+// The catch took nobody (the foe stepped out in its 10 frames, or the scene has nowhere safe to stand): spent, a small puff, nothing else.
+function fsc3_spent(f){ for(let i = 0; i < 8; i++) puff(f.x, f.y - 6, i % 2 ? f.color : '#fff', 4); f._atkAnim = 0; fsEnd(f); }
+// One blow on the held foe, pct the on-screen % it deals (the row's own size is half: KO-LEVEL doubles it; statDmg is the holder's own multiplier, taken out so
+// the printed numbers hold). Every blow but the last stuns briefly, so the last is no link of a chain and its let-go stuns in full (the slow-mo sees it).
+function fsc3_hit(f, st, tg, pct, kbx, kby, last){
+  tg.countering = 0;
+  applyHit(tg, pct/FS_DMG_MULT/(statDmg(f, 1) || 1), kbx, kby, f, last ? undefined : { stun:4 });
+  for(let q = 0; q < (last ? 14 : 5); q++) puff(tg.x, tg.y, q % 2 ? '#fff' : f.color, last ? 7 : 4);
+  if(koSince(tg, st.n0)){ st.over = true; st.t = st.d.dur - 1; }   // a KO the blow dealt (the damage cap) ends the Final Smash there
+}
+// A burst round (x, y) for whoever else stands in it: fighters only (a second foe at the spot), each once, never the held foe, never a teammate, never a boss or an add.
+function fsc3_ring(f, st, x, y, R, pct, kbx, kby){
+  let n = 0;
+  for(const t of fighters){
+    if(t.dead || t.idx === f.idx || t.team === f.team || st.hit.has(t.idx) || hardInvuln(t) || t._fsLock) continue;
+    if(hurtGap(t, x, y) < R){ st.hit.add(t.idx); t.countering = 0; applyHit(t, pct/FS_DMG_MULT/(statDmg(f, 1) || 1), (Math.sign(t.x - x) || f.face || 1)*kbx, kby, f); n++; }
+  }
+  return n;
+}
+// Is there floor under a body whose feet are at `feet`, at x? (the stage's floor, or a platform's top)
+function fsc3_supported(x, feet){
+  if(!isBig() && Math.abs(feet - groundY()) <= 8 && !floorOpenAt(x)) return true;
+  for(const p of platRects()) if(!p.rot && x > p.x + 4 && x < p.x + p.w - 4 && Math.abs(p.y - feet) <= 8) return true;
+  return false;
+}
+function fsc3_inSolid(x, y, r){ for(const p of platRects()) if(p.solid && !p.rot && x + r > p.x && x - r < p.x + p.w && y + r > p.y + 2 && y - r < p.y + (p.h || 16)) return true; return false; }
+// Where the held foe is brought to stand beside the holder (at his level, `gaps` px off, the foe's own side first, then the other; the first spot that is inside the
+// world, clear of a solid block and, with the holder on the ground, on the same floor). null: nowhere safe.
+function fsc3_meet(f, tg, gaps){
+  const sgn = Math.sign(tg.x - f.x) || f.face || 1, feet = f.y + f.r, y = f.y + f.r - tg.r;
+  for(const g of gaps) for(const s of [sgn, -sgn]){
+    const x = f.x + s*g;
+    if(x < 60 || x > WW - 60) continue;
+    if(f.onground && !fsc3_supported(x, feet)) continue;
+    if(fsc3_inSolid(x, y, tg.r)) continue;
+    return { x:x, y:y };
+  }
+  return null;
+}
+// The top of the floor under a foe, within 380 px below their feet (a standing foe: the floor they are on): the surface Fries digs into. null: none (over a drop).
+function fsc3_floorUnder(t){
+  const feet = t.y + t.r, x = t.x; let best = null;
+  if(!isBig() && !floorOpenAt(x) && groundY() >= feet - 6 && groundY() - feet <= 380) best = groundY();
+  for(const p of platRects()){ if(p.rot || x <= p.x + 4 || x >= p.x + p.w - 4 || p.y < feet - 6 || p.y - feet > 380) continue; if(best === null || p.y < best) best = p.y; }
+  return best;
+}
+// ---- drawing helpers (world space, over the fighters) ----
+function fsc3_glow(c, x, y, r, rgb, a){   // a soft additive light
+  if(!(a > 0.01) || !(r > 1)) return;
+  c.save(); c.globalAlpha = 1; c.globalCompositeOperation = 'lighter';
+  const g = c.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, 'rgba(' + rgb + ',' + Math.min(1, a).toFixed(3) + ')'); g.addColorStop(1, 'rgba(' + rgb + ',0)');
+  c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); c.restore();
+}
+function fsc3_vig(c, x, y, clear, a, rgb){   // the dark closing in round a clear middle
+  if(!(a > 0.01)) return;
+  c.save(); c.globalAlpha = 1;
+  const g = c.createRadialGradient(x, y, Math.max(1, clear*0.55), x, y, clear + 260);
+  g.addColorStop(0, 'rgba(' + rgb + ',0)'); g.addColorStop(1, 'rgba(' + rgb + ',' + Math.min(1, a).toFixed(3) + ')');
+  c.fillStyle = g; c.beginPath(); c.arc(x, y, 1500, 0, 7); c.fill(); c.restore();
+}
+function fsc3_flash(c, x, y, a, rgb){ if(!(a > 0.01)) return; c.save(); c.globalAlpha = Math.min(1, a); c.fillStyle = rgb || '#fff'; c.fillRect(x - 1700, y - 1300, 3400, 2600); c.restore(); }
+function fsc3_chunk(c, x, y, s, rot, col, a){   // a rock or a clod
+  c.save(); c.globalAlpha = a; c.translate(x, y); c.rotate(rot); c.fillStyle = col; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.lineJoin = 'round';
+  c.beginPath(); c.moveTo(-s, -s*0.6); c.lineTo(s*0.8, -s); c.lineTo(s, s*0.7); c.lineTo(-s*0.6, s); c.closePath(); c.fill(); c.stroke(); c.restore();
+}
+// A copy of a fighter's own picture (its render, as it is drawn on the fighter), or a plain round stand-in until it has loaded.
+function fsc3_sprite(c, name, x, y, r, face, a, rot, k, col){
+  const sp = SPRITES[name], im = sp && spriteImage(sp);
+  c.save(); c.translate(x, y); if(rot) c.rotate(rot); c.globalAlpha = a;
+  if(im && im.naturalWidth){ const ar = im.naturalWidth/im.naturalHeight, dh = Math.min((sp.imgH || 2.8)*r, ((sp.imgW || 2.3)*r)/ar)*(k || 1), dw = dh*ar; if((face < 0) !== !!sp.flip) c.scale(-1, 1); c.drawImage(im, -dw/2, -dh/2, dw, dh); }
+  else { const q = r*(k || 1); c.fillStyle = col || '#3a3a3a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.arc(0, 0, q, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#fff'; c.beginPath(); c.arc(-q*0.3*face, -q*0.15, q*0.2, 0, 7); c.arc(q*0.3*face, -q*0.15, q*0.2, 0, 7); c.fill(); }
+  c.restore();
+}
+// (batch 3b: Dora, MeTag and Ruler) Three more pieces the batch shares. A CPU's cue with the row's own reach R, and a standing stand-in for a holder who is dropped onto the floor below
+// (a scene that needs a floor: Dora's stairs, Ruler's heap of balls; a press from the air still plays, the holder lands at the foot of it).
+function fsc3_botOkR(f, t, R){ const N = FS_CATCH; return Math.hypot(t.x + (t.vx || 0)*N - f.x, t.y + (t.vy || 0)*N - f.y) <= R - 40; }
+function fsc3_proxy(f, fl){ return { x:f.x, y:fl - f.r, r:f.r, onground:true, face:f.face, idx:f.idx }; }
+// The floors a holder can stand a scene on: a body on the ground, its own floor; one in the air (a press mid-jump), every floor within 380 px under it, nearest first (it is dropped onto the one that has room).
+function fsc3_floorsUnder(f){
+  const feet = f.y + f.r, x = f.x, out = [];
+  if(!isBig() && !floorOpenAt(x) && groundY() >= feet - 6 && groundY() - feet <= 380) out.push(groundY());
+  for(const p of platRects()){ if(p.rot || x <= p.x + 4 || x >= p.x + p.w - 4 || p.y < feet - 6 || p.y - feet > 380) continue; if(out.indexOf(p.y) < 0) out.push(p.y); }
+  out.sort((a, b)=> a - b);
+  return f.onground ? out.slice(0, 1) : out;
+}
+function fsc3_lerp(a, b, p){ return a + (b - a)*p; }
+// (batch 3b3, round 2) The holder's own body tinted, the way the game lays a state tint on a fighter (drawSpriteBody's lay): a copy of her render in one colour (tintedSprite: cached per colour),
+// laid over her at alpha a, bottom on the sole line (R + 12) and facing as she does; the details of the picture show through. The picture is the one drawFighter draws (a skin that has decoded, else the plain render);
+// before it has decoded, a round stand-in at her body.
+function fsc3_tintBody(c, f, col, a){
+  if(!(a > 0.01)) return;
+  let drawn = false;
+  try{
+    const cos = (typeof cosOf === 'function') ? cosOf(f) : null, skin = cos && cos.skin ? cosItem(cos.skin) : null, ssp = skin ? cosSkinSprite(skin, f.name) : null;
+    const sp = (ssp && spriteImage(ssp)) ? ssp : SPRITES[f.name], im = sp ? spriteImage(sp) : null;   // (as drawFighter: a skin's own picture once it has decoded, else the plain render)
+    if(im && im.naturalWidth){
+      const ar = im.naturalWidth/im.naturalHeight; let dh = Math.min((sp.imgH || 2.8)*f.r, ((sp.imgW || 2.3)*f.r)/ar);
+      if(sp.skin){ const bx = cosSkinBox(sp, f.r); dh = Math.min(bx.h, bx.w/ar); }   // (a skin: inside what its fighter's own render fills, as drawSpriteBody)
+      const dw = dh*ar;
+      c.save(); c.translate(f.x, f.y + (f.r + 12) - dh/2); if((visualFace(f) < 0) !== !!sp.flip) c.scale(-1, 1);
+      c.globalAlpha = Math.min(1, a); c.drawImage(tintedSprite(sp, im, col), -dw/2, -dh/2, dw, dh); c.restore(); drawn = true;
     }
-  },
-  end(f){ stunFx(f, 90); },
-  ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && hurtGap(o, f.x, f.y) < 185 && o.pct > 25) return true; return false; },
-  draw(f, c){
-    const t = f.fsT || 0, w = f.fsWind || 50;
-    c.save(); c.translate(f.x, f.y);
-    if(t < w){
-      const k = t/w;   // (the fuse, burning down on him: no circle)
-      c.globalAlpha = 1; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.moveTo(f.face*4, -f.r); c.quadraticCurveTo(f.face*14, -f.r - 14, f.face*6, -f.r - 20 + 14*k); c.stroke();
-      c.fillStyle = '#ffd23f'; c.beginPath(); c.arc(f.face*6, -f.r - 20 + 14*k, 4 + 2*Math.sin(hazardT), 0, 7); c.fill();
-    } else if(t < w + 40){
-      const u = (t - w)/40;
-      fsDisc(c, 0, 0, 200*Math.min(1, u*3), '#ffffff', 0.9*(1 - u));
-      fsRing(c, 0, 0, 200*Math.min(1, u*1.6), '#ffb347', 20*(1 - u) + 2, 1 - u);
-      fsRing(c, 0, -40*u, 120*u + 40, '#f0521f', 10*(1 - u) + 1, 0.8*(1 - u));
-      c.globalAlpha = 0.85*(1 - u); c.fillStyle = '#5a5048'; c.beginPath(); c.ellipse(0, -90*u - 30, 40 + 70*u, 26 + 30*u, 0, 0, 7); c.fill();   // the mushroom's cap
-      c.fillRect(-14 - 10*u, -90*u - 30, 28 + 20*u, 90*u + 30);
-    } else if(t < w + 90){
-      c.globalAlpha = Math.max(0, 1 - (t - w - 40)/50); c.strokeStyle = '#fff'; c.lineWidth = 3; c.beginPath(); c.arc(0, -f.r - 34 - (t - w - 40)*0.6, 12, 0, 7); c.stroke();   // the halo of the ghost that rises
-    }
+  }catch(e){ drawn = false; }
+  if(!drawn){ c.save(); c.globalAlpha = Math.min(1, a*0.7); c.fillStyle = col; c.beginPath(); c.ellipse(f.x, f.y + f.r*0.15, f.r*0.95, f.r*1.05, 0, 0, 7); c.fill(); c.restore(); }
+}
+// (round 4) How far a body's picture reaches either side of its middle: the sprite box (imgW times the radius, as the game draws it), never less than the radius and never more than 70 px past it.
+// Coiny's walls close on this, not on the bare radius (Black Hole, Spongy and Cloudy are much wider than they are round).
+const FSC3_HW = [];   // the held foe's half-width by holder, kept on the draw side only while the lock holds (the lock is gone from the last blow on)
+function fsc3_halfW(t){
+  const r = (t && t.r) || 24, sp = (typeof SPRITES !== 'undefined' && t && SPRITES[t.name]) || null;
+  return Math.min(r + 70, Math.max(r, ((sp && sp.imgW) || 2.3)*r/2));
+}
+// ---- FSC lane 3: end ------------------------------------------------------------------------------------------------------------------
+
+// BOMBY -- THE SEVEN BLASTS OF MEATY (id meaty; the old Selfless Detonation is gone). THE OWNER PICKED THE PITCH, 2026-11-02. CANON (the BFDI wiki, read 2026-11-02): "Bomby's
+// explosions": in "Meaty" he "exploded six times after being repeatedly thrown by Needle, and once by Yellow Face onto the Eiffel Tower". The Meaty page: the challenge is to paint the
+// Eiffel Tower in your team colour; the French-themed hand-powered recovery centre (a crank) is how Nickel and Spongy recover him again and again; Needle "throws Bomby onto the tower,
+// with him exploding and getting more purple paint on the tower"; Spongy tells her to "repeat at super speed", which she does; Yellow Face knocks him off the tower and "Bomby can explode
+// purple paint on the tower". The booth and the tower here are the row's own drawings (the wiki only names them).
+// CARD. Reach: the nearest foe within 420 px (a circle round him; one foe) that can be brought to stand by his booth: pressed with none, it is spent at once (no intro). He is brought to stand a short way from his booth, on the same floor (nowhere safe: it is spent), and an iron
+// tower (the Eiffel Tower, as lines, so they stay in view) rises behind them (its top 340 px over the foe, in view); Bomby is in a French hand-cranked recovery booth beside them (it hides him: a bell, a
+// crank, no letters). SEVEN BLASTS, 100% in all, the rhythm speeding up and then one drop: SIX THROWS, a copy of Bomby popped out of the booth with his fuse lit and thrown in an arc at
+// the foe, bursting on them in a white flash and a splash of purple paint over the foe and the tower (the tower turns purple, a soot husk drops, the crank turns, he is back in the booth
+// for the next): 6%, 7%, 8%, 9%, 10%, 11% = 51%, 24, 18, 14, 10 and 8 frames apart (the last ones a strobe, the foe jittering in place); a SILENCE (12 frames: the booth is empty, the paint
+// drips, one calm Bomby stands at the top of the tower, 340 px over the foe); and THE DROP, 49%: he falls the whole height of the tower with a long burning fuse and lands on the foe in one huge
+// purple-white mushroom (twice the size it was, with a flash) with shock rings, throwing them out sideways and up (a ring of 200 px for anyone else at the spot, 26%). The price is his, as it was: every blast costs him 5%
+// (7 x 5 = the old 35%, never past the KO point) and he ends stunned for 90 frames, exposed. Frames after the catch: the first throw lands on 22, then 46, 64, 78, 88, 96; the silence
+// from 102; the drop on 132; 162 in all. A boss, an add or a teammate is never caught or hit. The throws are drawn copies; only the drop is the real Bomby moving. Everything drawn
+// comes from fsT, the foe the catch holds, fsAx, fsAy (the booth), fsBx, fsBy (the foe's place) and fsCx (their size).
+const FSC3_BOMBY = { hits:[22, 46, 64, 78, 88, 96], dmg:[6, 7, 8, 9, 10, 11], big:49, calm:102, fall:18, drop:132, tail:30, fl:10, kb:19, up:-12, ring:200, ringDmg:26 };
+FSC3_BOMBY.dur = FSC3_BOMBY.drop + FSC3_BOMBY.tail;
+// the top of the tower, where the calm Bomby waits: 340 px over the foe (in the camera), never above the world's top
+function fsc3_bombyTop(my){ return Math.max(70, my - 340); }
+// the real Bomby: in the booth to the calm, at the tower's top through it, falling, then on the foe
+function fsc3_bombyAt(st, t){
+  const C = FSC3_BOMBY;
+  if(t < C.calm) return { x:st.hx, y:st.hy };
+  if(t < C.drop - C.fall) return { x:st.mx, y:st.top };
+  const p = Math.min(1, (t - (C.drop - C.fall))/C.fall);
+  return { x:st.mx, y:st.top + (st.land - st.top)*p*p };
+}
+// The tower's iron as lines (the foe in front of it stays in view), rising from its base; col its colour.
+function fsc3_tower(c, x, base, h, gr, col, a){
+  if(!(a > 0.01) || !(gr > 0.01)) return;
+  const W = Math.min(150, h*0.2), half = (p)=> W*Math.pow(1 - p, 1.7) + 6, yy = (p)=> base - h*gr*p;
+  c.save(); c.globalAlpha = a; c.strokeStyle = col; c.lineWidth = 3.5; c.lineCap = 'round'; c.lineJoin = 'round';
+  for(const sg of [-1, 1]){ c.beginPath(); for(let i = 0; i <= 24; i++){ const p = i/24; if(i) c.lineTo(x + sg*half(p), yy(p)); else c.moveTo(x + sg*half(p), yy(p)); } c.stroke(); }
+  c.lineWidth = 2;
+  for(let j = 0; j < 12; j++){ const p0 = j/12, p1 = (j + 1)/12; c.beginPath(); c.moveTo(x - half(p0), yy(p0)); c.lineTo(x + half(p1), yy(p1)); c.moveTo(x + half(p0), yy(p0)); c.lineTo(x - half(p1), yy(p1)); c.stroke(); }
+  c.lineWidth = 4; for(const p of [0.17, 0.42, 0.7]){ c.beginPath(); c.moveTo(x - half(p) - 6, yy(p)); c.lineTo(x + half(p) + 6, yy(p)); c.stroke(); }
+  c.lineWidth = 3; c.beginPath(); c.arc(x, base, half(0.02) - 4, Math.PI, 2*Math.PI); c.stroke();   // the arch between the legs
+  c.restore();
+}
+// The French recovery booth (a hand-cranked one): blue walls, a red roof, a brass bell, a crank on the side; floor is its bottom edge; k how far it has risen. Nothing in it shows.
+function fsc3_booth(c, x, floor, k, crank, bell, a){
+  if(!(k > 0.01) || !(a > 0.01)) return;
+  c.save(); c.globalAlpha = a; c.translate(x, floor); c.scale(1, k); c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = '#1c1c1c';
+  c.fillStyle = '#2f5fa8'; c.fillRect(-42, -92, 84, 92); c.strokeRect(-42, -92, 84, 92);
+  c.fillStyle = '#e8f0ff'; c.fillRect(-42, -92, 84, 8); c.fillRect(-42, -14, 84, 8);
+  c.fillStyle = '#1b2230'; c.fillRect(-26, -76, 52, 46); c.strokeRect(-26, -76, 52, 46);
+  c.fillStyle = '#c0392b'; c.beginPath(); c.moveTo(-50, -92); c.lineTo(0, -122); c.lineTo(50, -92); c.closePath(); c.fill(); c.stroke();
+  c.save(); c.translate(0, -122); c.rotate(bell); c.fillStyle = '#e0b43a'; c.beginPath(); c.moveTo(-9, 0); c.quadraticCurveTo(-11, 14, -13, 16); c.lineTo(13, 16); c.quadraticCurveTo(11, 14, 9, 0); c.closePath(); c.fill(); c.stroke(); c.beginPath(); c.arc(0, 18, 3, 0, 7); c.fill(); c.stroke(); c.restore();
+  c.save(); c.translate(42, -52); c.rotate(crank); c.strokeStyle = '#1c1c1c'; c.lineWidth = 6; c.beginPath(); c.moveTo(0, 0); c.lineTo(20, 0); c.stroke(); c.strokeStyle = '#c9ced6'; c.lineWidth = 3; c.stroke(); c.fillStyle = '#c0392b'; c.beginPath(); c.arc(20, 0, 5, 0, 7); c.fill(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.stroke(); c.restore();
+  c.restore();
+}
+function fsc3_bombyDraw(f, c){
+  const t = f.fsT || 0, B = FSC3_BOMBY, H = B.hits, L = fsLockedOf(f);
+  if(!L && f.fsBx == null) return;
+  const hx = f.fsAx, hy = f.fsAy, mx = f.fsBx, my = f.fsBy, R = (L ? L.r : f.fsCx) || 24, feet = my + R, fx = L ? L.x : mx, fy = L ? L.y : my;
+  const sg = mx >= hx ? 1 : -1, base = hy + f.r, tx = (hx + mx)/2, boothY = hy + f.r + 13;
+  const nHit = H.filter((h)=> t >= h).length, pur = Math.min(1, nHit/6 + (t >= B.drop ? 1 : 0));
+  const du = t - B.drop, outA = du > 10 ? Math.max(0, 1 - (du - 10)/20) : 1, grow = fsc3_in(t, 0, 12);
+  c.save(); c.lineJoin = 'round'; c.lineCap = 'round'; c.globalAlpha = 1;
+  // THE TOWER, behind them: iron turning purple with every blast; the deck under the booth
+  const TH = Math.max(160, base - fsc3_bombyTop(my) + 30);   // the tower's height: its tip just over the calm Bomby at the top
+  fsc3_tower(c, tx, base, TH, grow, 'rgb(' + Math.round(106 + 32*pur) + ',' + Math.round(88 - 9*pur) + ',' + Math.round(72 + 152*pur) + ')', 0.55*outA);
+  c.save(); c.globalAlpha = grow*outA; c.fillStyle = '#4a3a2c'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillRect(hx - 62, base, 124, 8); c.strokeRect(hx - 62, base, 124, 8); c.restore();
+  // THE BOOTH: the crank turns faster with every blast, the bell dings as each throw leaves
+  {
+    let ang = 0; for(let s = 0; s < Math.min(t, B.calm); s++) ang += 0.14 + 0.06*H.filter((h)=> s >= h).length;
+    let bell = 0; for(let k = 0; k < 6; k++){ const u = t - (H[k] - B.fl); if(u >= 0 && u < 14) bell += 0.5*Math.sin(u*1.4)*(1 - u/14); }
+    fsc3_booth(c, hx, boothY, grow, ang, bell, outA);
+  }
+  // THE PAINT: a purple splash on the foe and the tower with every blast, dripping
+  for(let k = 0; k < nHit; k++){
+    const u = t - H[k], sx = fx + ((k*53) % 29) - 14, sy = fy + ((k*37) % 21) - 10, drip = Math.min(26, u*0.45);
+    c.save(); c.globalAlpha = 0.62*outA; c.fillStyle = '#7a3fd0';
+    for(let q = 0; q < 5; q++){ c.beginPath(); c.arc(sx + ((q*17) % 13) - 6, sy + ((q*11) % 9) - 4, 5 + (q % 3)*3, 0, 7); c.fill(); }
+    c.fillRect(sx - 2, sy, 4, drip);
+    c.globalAlpha = 0.75*outA; c.fillStyle = '#8a4fe0'; c.beginPath(); c.arc(tx + ((k*61) % 60) - 30, base - Math.min(TH - 30, 70 + k*52), 12 + (k % 3)*4, 0, 7); c.fill(); c.fillRect(tx + ((k*61) % 60) - 32, base - Math.min(TH - 30, 70 + k*52), 4, drip);
     c.restore();
+  }
+  // THE THROWS: a copy of Bomby out of the booth, fuse lit, in an arc at the foe; it bursts in white and purple; a soot husk drops
+  for(let k = 0; k < 6; k++){
+    const h = H[k], u = (t - (h - B.fl))/B.fl;
+    if(u >= 0 && u < 1){
+      const sx = hx + sg*4, sy = base - 128, ex = fx, ey = fy - 4, lift = 50 + 0.18*Math.abs(ex - sx);
+      const x = sx + (ex - sx)*u, y = sy + (ey - sy)*u - lift*Math.sin(Math.PI*u);
+      fsc3_sprite(c, 'Bomby', x, y, f.r, sg, 1, sg*u*Math.PI*4, 0.8, '#3a3a3a');
+      fsc3_glow(c, x + Math.sin(u*20)*3, y - f.r*0.9, 16, '255,200,60', 0.85);
+    }
+    const p = (t - h)/8;
+    if(p >= 0 && p < 1){
+      c.save(); c.globalAlpha = 0.85*(1 - p); c.fillStyle = '#fff'; c.beginPath(); c.arc(fx, fy, 22 + 38*p, 0, 7); c.fill();
+      c.globalAlpha = 1 - p; c.strokeStyle = '#8a4fe0'; c.lineWidth = 3.5; c.beginPath();
+      for(let q = 0; q < 9; q++){ const a = q*Math.PI*2/9 + k; c.moveTo(fx + Math.cos(a)*(26 + 20*p), fy + Math.sin(a)*(26 + 20*p)); c.lineTo(fx + Math.cos(a)*(44 + 52*p), fy + Math.sin(a)*(44 + 52*p)); }
+      c.stroke(); c.restore();
+    }
+    const v = (t - h)/14;
+    if(v >= 0 && v < 1){   // the soot husk drops
+      const x = fx + (k % 2 ? 9 : -9)*v, y = fy + (feet - R*0.5 - fy)*v*v;
+      c.save(); c.globalAlpha = 0.9*(1 - v*0.5)*outA; c.fillStyle = '#26221f'; c.strokeStyle = '#6a625a'; c.lineWidth = 2.5; c.beginPath(); c.arc(x, y, f.r*0.62, 0, 7); c.fill(); c.stroke();
+      c.strokeStyle = '#d8d0c8'; c.lineWidth = 2; c.beginPath(); c.moveTo(x - 8, y - 6); c.lineTo(x - 2, y); c.moveTo(x - 2, y - 6); c.lineTo(x - 8, y); c.moveTo(x + 2, y - 6); c.lineTo(x + 8, y); c.moveTo(x + 8, y - 6); c.lineTo(x + 2, y); c.stroke(); c.restore();
+    }
+    if(k >= 3){ const w = (t - h)/3; if(w >= 0 && w < 1) fsc3_flash(c, fx, fy, 0.16*(1 - w), '#fff'); }   // the strobe
+  }
+  // THE SILENCE: everything stops; the booth is empty; one calm Bomby stands at the very top of the tower
+  if(t >= B.calm && t < B.drop - B.fall + 4){
+    const q = fsc3_in(t, B.calm, 8);
+    fsc3_vig(c, fx, fy, 240, 0.38*q, '10,6,30');
+    fsc3_glow(c, f.x, f.y, 80, '255,255,255', 0.3*q);
+  }
+  // THE DROP: a long burning fuse and streaks as he falls the whole tower
+  if(t >= B.drop - B.fall && t < B.drop){
+    const p = (t - (B.drop - B.fall))/B.fall, len = 84 - 58*p, x0 = f.x + sg*5, y0 = f.y - f.r*0.9;
+    c.save(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 4; c.beginPath(); c.moveTo(x0, y0);
+    for(let i = 1; i <= 8; i++) c.lineTo(x0 + Math.sin(i*1.3 + t*0.5)*5, y0 - len*i/8);
+    c.stroke(); c.strokeStyle = '#d8c48a'; c.lineWidth = 2; c.stroke(); c.restore();
+    fsc3_glow(c, x0 + Math.sin(8*1.3 + t*0.5)*5, y0 - len, 22, '255,190,50', 0.95);
+    c.save(); c.strokeStyle = 'rgba(255,255,255,0.5)'; c.lineWidth = 3;
+    for(let i = 0; i < 5; i++){ c.beginPath(); c.moveTo(f.x + (i - 2)*15, f.y - 24 - i*4); c.lineTo(f.x + (i - 2)*15, f.y - 100 - i*14); c.stroke(); }
+    c.restore();
+  }
+  // THE LANDING: a white flash, a big glow, shock rings, and one huge purple-white mushroom (twice the size of the booth and more)
+  if(du >= 0){
+    fsc3_flash(c, fx, fy, 0.9*(1 - du/14), '#fff');
+    if(du < 26) fsc3_glow(c, fx, feet - 50, 340*(0.4 + du/26), '255,230,255', 0.95*(1 - du/26));
+    const cap = Math.max(0, 1 - Math.max(0, du - 20)/12);
+    if(cap > 0.02){
+      const cy = feet - 70 - du*6.4, rx = 56 + du*6, ry = 38 + du*3, sw = 22 + du*1;
+      c.save(); c.globalAlpha = 0.9*cap; c.fillStyle = '#ece0ff'; c.strokeStyle = '#7a3fd0'; c.lineWidth = 5;
+      c.beginPath(); c.moveTo(fx - sw, feet); c.lineTo(fx - sw*0.6, cy); c.lineTo(fx + sw*0.6, cy); c.lineTo(fx + sw, feet); c.closePath(); c.fill(); c.stroke();   // the stem
+      c.beginPath(); c.ellipse(fx, cy, rx, ry, 0, 0, 7); c.fill(); c.stroke();
+      c.fillStyle = 'rgba(122,63,208,0.55)'; c.beginPath(); c.ellipse(fx, cy + ry*0.35, rx*0.82, ry*0.5, 0, 0, 7); c.fill();
+      c.restore();
+    }
+    const cols = ['#ffffff', '#b78cff', '#ffffff'];
+    for(let r = 0; r < 3; r++){ const u = (du - r*3)/16; if(u < 0 || u >= 1) continue; c.save(); c.globalAlpha = 0.9*(1 - u); c.strokeStyle = cols[r]; c.lineWidth = 8*(1 - u) + 1; c.beginPath(); c.ellipse(fx, feet, 40 + 230*fsc3_ease(u), 10 + 36*fsc3_ease(u), 0, 0, 7); c.stroke(); c.restore(); }
+    if(du < 14){ const e = fsc3_ease(du/12); c.save(); c.globalAlpha = 1 - du/14; c.strokeStyle = '#8a4fe0'; c.lineWidth = 5; c.beginPath(); for(let q = 0; q < 16; q++){ const a = q*Math.PI*2/16; c.moveTo(fx + Math.cos(a)*40, fy + Math.sin(a)*40); c.lineTo(fx + Math.cos(a)*(40 + 150*e), fy + Math.sin(a)*(40 + 150*e)); } c.stroke(); c.restore(); }
+  }
+  c.restore();
+}
+FINAL_SMASHES['Bomby'] = {
+  id:'meaty', wind:FS_WIND, dur:FSC3_BOMBY.dur, reach:FSC3.reach, exposed:true, needFoe:true, exact:true,   // needFoe: pressed with no foe it can take, it is spent at once (fsTryFire); exact: a CPU fires only when the catch will take someone (fsBotInput)
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FSC3.reach }; }, lockEnd:FSC3_BOMBY.drop, catchMax:1,   // CATCH: the nearest foe in 420 px; the blasts are for one foe
+  catchOk(f, t){ return !!fsc3_meet(f, t, [150, 100, 60]); },   // ...that can be brought to stand by his booth (a safe stand, on the same floor): with none, a human's press is spent at once and a CPU does not fire
+  botOk(f, t){ return fsc3_botOk(f, t); },
+  start(f, st){
+    const tg = fighters[st.held[0]];
+    if(!tg){ fsc3_spent(f); return; }   // the foe stepped out in the catch's 10 frames
+    const m = fsc3_meet(f, tg, [150, 100, 60]);   // brought to stand a short way from his booth, on the same floor
+    if(!m){ fsc3_spent(f); return; }   // nowhere safe to bring them (a narrow spot, a solid block either side): spent
+    st.tg = tg.idx; st.n0 = tg._koN || 0; st.over = false; st.x0 = tg.x; st.y0 = tg.y; st.mx = m.x; st.my = m.y; st.hx = f.x; st.hy = f.y;
+    st.side = Math.sign(m.x - f.x) || f.face || 1; st.top = fsc3_bombyTop(m.y); st.land = m.y - (tg.r + f.r) + 10;
+    f.face = st.side;
+    f.fsBx = Math.round(m.x); f.fsBy = Math.round(m.y); f.fsCx = Math.round(tg.r || 24);
+    armAtk(f, this.wind, 'fsgather');
   },
+  tick(f, st, t){
+    const C = FSC3_BOMBY, tg = fighters[st.tg];
+    if(st.over) return;
+    if(t < C.calm){ f.vx = 0; if(!f.onground){ f.vy = 0; f.y = st.hy; } }   // in the booth: he stays where he is (hanging, in the air)
+    else { const p = fsc3_bombyAt(st, Math.min(t, C.drop)); f.x = p.x; f.y = p.y; f.vx = 0; f.vy = 0; f.onground = false; }   // the calm at the top, the fall, and then on the foe
+    if(t > C.drop) return;
+    if(fsc3_gone(f, st, tg)){ st.over = true; st.t = this.dur - 1; return; }   // the foe gone (a KO, a respawn, the lock lost): nothing more, whoever comes back
+    if(t < 10){ const p = fsc3_ease((t + 1)/10), nx = st.x0 + (st.mx - st.x0)*p, ny = st.y0 + (st.my - st.y0)*p; if(t >= 9 || !fsc3_inSolid(nx, ny, tg.r)){ tg.x = nx; tg.y = ny; } }   // brought to the tower (never through a solid block on the way)
+    else { tg.x = st.mx + ((t >= C.hits[3] - 6 && t <= C.hits[5] + 6) ? ((t & 1) ? 3 : -3) : 0); tg.y = st.my; }   // (the strobe: they jitter in place)
+    if(t === C.calm){ shake(3); for(let i = 0; i < 10; i++) puff(st.hx, st.hy, i % 2 ? '#fff' : '#8a4fe0', 4); }   // he is gone from the booth
+    const i = C.hits.indexOf(t);
+    if(i >= 0){ armAtk(f, 8, 'throw'); shake(5); fsc3_hit(f, st, tg, C.dmg[i], 0, 0, false); f.pct = Math.min(Math.max(0, f.koCap - 5), f.pct + 5); }   // (the price: 5% a blast, as it was 35% in all)
+    if(t === C.drop){
+      armAtk(f, 16, 'fsburst'); shake(18);
+      fsc3_hit(f, st, tg, C.big, st.side*C.kb, C.up, true); f.pct = Math.min(Math.max(0, f.koCap - 5), f.pct + 5);
+      fsc3_ring(f, st, tg.x, tg.y, C.ring, C.ringDmg, 24, -16);
+      for(let q = 0; q < 24; q++) puff(tg.x, tg.y, q % 3 ? '#fff' : '#8a4fe0', 8);
+    }
+  },
+  end(f, st){ if(st && st.tg != null) stunFx(f, 90); },   // the price: stunned for 90 frames (a spent one never started)
+  ai(f){ return fsCatchFoes(this, f).length > 0; },
+  draw(f, c){ fsc3_bombyDraw(f, c); },
 };
 
 // ---- FSC lane 2: begin --------------------------------------------------------------------------------------------------------------------
@@ -26554,40 +26822,188 @@ FINAL_SMASHES['Fanny'] = {
   draw(f, c){ fsc2_fannyDraw(f, c); },
 };
 
-// DORA -- RAPID RANT. She "speaks in rapid untranslated bursts" (the design doc), and her own card is the Rapid Rant: "three hard jabs right in
-// front of you, and the last one launches". This is the whole rant: whoever is in the zone drawn in front of her (140 px by 140) when it starts is
-// held and takes 20 jabs, two frames apart, of 1.8%, and then the last, 10%, launches them. Be out of the zone, or behind her.
-FINAL_SMASHES['Dora'] = {
-  id:'rant', wind:FS_WIND, dur:FS_WIND + 70, reach:140,
-  catch(f){ return fsBoxAhead(f, HURT_R0 - 10, 150, 80, 80); }, lockEnd:FS_WIND + 44,   // CATCH: the zone in front of her
-  start(f, st){ st.caught = []; st.dir = f.face; armAtk(f, this.wind, 'fsgather'); },
-  tick(f, st, t){
-    const w = this.wind, dir = st.dir;
-    if(t === w){
-      armAtk(f, 46, 'punch'); shake(4);
-      for(const o of fighters){ if(fsHurtMark(f, o) || o._heldBy != null) continue; if((o.x - f.x)*dir > -10 && (o.x - f.x)*dir < 150 + o.r && Math.abs(o.y - f.y) < 80 + o.r){ st.caught.push(o.idx); o.countering = 0; } }
+// DORA -- GET TO THE TOP IN 500 STEPS (id rant is kept; the old Rapid Rant, 21 jabs in a box, is gone). THE OWNER PICKED THE PITCH, 2026-11-02. CANON (the BFDI wiki, read 2026-11-02): her page lists
+// Energy boost (she charges, then runs 500 steps in two seconds) and super-human strength; in BFB "Get to the Top in 500 Steps" the team has to climb a 500-step staircase and press the button at the
+// top, and Dora "blasts from the bottom of the stairs to press the button so fast that not even Flower's Non-Slip Shoes So Ha were strong enough to stick to the stairs" (the wiki). The staircase,
+// the buzzer on its post and the white-gold streak are the row's own drawings (the wiki only names the stairs and the button); the five knocks and the buzzer's launch are the game's.
+// CARD. Reach: the nearest foe within 380 px (a circle round her; one foe) that she can stage a staircase for: pressed with none, it is spent at once (no intro). A steep staircase unrolls out of the
+// floor in front of her (the foe's side first; ten steps, 330 px long and up to 300 px high, with a small platform and a big round red buzzer on a post at the top; no letters; it is never built
+// off the world's sides, over a drop or through a solid block, and it is lower where the floor is high up), and the foe is set on a step a third of the way up. A press from the air still plays: she lands at its foot.
+// BEATS, 100% in all: STILL (from frame 12, 36 frames, no damage: she drops into a crouch, the stage goes quiet, dust trickles down the steps, white-gold light leaks off her and thin lines draw in toward
+// her); FIVE BLASTS, each a white-gold streak up the steps that overtakes the held foe and knocks them up to the next landing (the steps light under the streak; she flashes at the top of the streak for
+// three frames and is back at the foot): 8%, 10%, 12%, 14%, 16% = 60% on frames 48, 58, 66, 73 and 79 (10, 8, 7, 6 frames apart: faster); THE BUZZER, 40% on frame 92: she hits it with her whole body as the
+// foe reaches the platform: three rings go off, the whole staircase flashes from the top down, and the foe is flung up and away off the top (a ring of 190 px at the buzzer for anyone else up there, 18%).
+// Anyone else standing on the stair band when the first blast goes takes one flat hit (10%, knocked off it): step off the band. Then the stairs fade and she drops back to the foot of them; 122 frames
+// in all (the foe is held about 1.5 seconds). A boss, an add or a teammate is never caught or hit; the foe KO'd or the lock lost mid-way ends it there, and she is back at the foot. Everything drawn
+// comes from fsT, the foe the catch holds and fsAx, fsAy (her place at the foot), fsBx, fsBy (the top of the steps: which way they climb and how high) and fsCx (the foe's size).
+const FSC3_DORA = { reach:380, run:330, top:70, foot:56, steps:10, rise:300, idx:[3, 4, 6, 7, 8], still:12, hits:[48, 58, 66, 73, 79], dmg:[8, 10, 12, 14, 16], buzz:92, big:40, hop:6, band:10, ring:190, ringDmg:18, kb:12, up:-13, tail:30 };
+FSC3_DORA.dur = FSC3_DORA.buzz + FSC3_DORA.tail;
+// where the staircase goes: out from her foot on the foe's side (else the other), inside the world, clear of solid blocks; null: nowhere (no floor under her, a floor too high, no room)
+function fsc3_doraPlan(f, tg){
+  const C = FSC3_DORA, s0 = Math.sign(tg.x - f.x) || f.face || 1;
+  for(const fl of fsc3_floorsUnder(f)){
+    const rise = Math.min(C.rise, fl - 150); if(rise < 170) continue;
+    for(const s of [s0, -s0]){
+      const x0 = f.x + s*C.foot, x1 = x0 + s*(C.run + C.top);
+      if(Math.min(x0, x1) < 36 || Math.max(x0, x1) > WW - 36) continue;
+      if(!fsc3_supported(x0, fl) || !fsc3_supported(x0 + s*C.run*0.5, fl)) continue;   // the steps stand on a floor (not out over a drop)
+      let bad = false;
+      for(let i = 0; i <= 10 && !bad; i++){ const d = C.run*i/10; if(fsc3_inSolid(x0 + s*d, fl - rise*d/C.run - 30, 24)) bad = true; }
+      if(!bad) return { s:s, x0:x0, fl:fl, rise:rise };
     }
-    if(t >= w && t < w + 42){
-      if((t - w) % 3 === 0) armAtk(f, 8, (t - w) % 6 === 0 ? 'punch' : 'kick');
-      for(const i of st.caught){ const o = fighters[i]; if(o && !o.dead){ fsPin(o, f.x + dir*(f.r + o.r + 14), f.y); if((t - w) % 2 === 0) applyHit(o, 1.8, 0, -0.5, f); } }
+  }
+  return null;
+}
+// the staircase's numbers from the wire (hx, hy her place at the foot; ex, ey the top of the steps; tr the foe's size): where the foe stands before each blast and on the platform, where she flashes, the button
+function fsc3_doraGeo(hx, hy, hr, ex, ey, tr){
+  const C = FSC3_DORA, s = ex >= hx ? 1 : -1, fl = hy + hr, rise = fl - ey, x0 = ex - s*C.run, sw = C.run/C.steps, sh = rise/C.steps;
+  const G = { s:s, fl:fl, rise:rise, x0:x0, sw:sw, sh:sh, pos:[], q:[], iq:[] }, tread = (i)=> fl - sh*(i + 1);
+  for(let k = 0; k < 5; k++){
+    const i = C.idx[k], iq = Math.min(C.steps - 1, i + 1);
+    G.pos.push({ x:x0 + s*(i + 0.5)*sw, y:tread(i) - tr }); G.iq.push(iq); G.q.push({ x:x0 + s*(iq + 0.5)*sw, y:tread(iq) - hr });
+  }
+  G.pos.push({ x:x0 + s*(C.run + 24), y:fl - rise - tr });
+  G.bx = x0 + s*(C.run + C.top - 18); G.by = fl - rise - 56;   // the button's middle
+  G.bz = { x:G.bx - s*(hr + 14), y:fl - rise - hr };   // where she hits it
+  return G;
+}
+function fsc3_doraDraw(f, c){
+  const t = f.fsT || 0, D = FSC3_DORA;
+  if(f.fsBx == null || f.fsAx == null) return;
+  const hr = f.r, G = fsc3_doraGeo(f.fsAx, f.fsAy, hr, f.fsBx, f.fsBy, f.fsCx || 24), s = G.s, fl = G.fl, sx = (d)=> G.x0 + s*d;
+  const grow = fsc3_in(t, 0, 12), outA = t > D.buzz + 14 ? Math.max(0, 1 - (t - D.buzz - 14)/14) : 1;
+  if(!(outA > 0.01)) return;
+  const lit = (i)=>{   // how lit step i is: the streak runs up under every blast, and the whole staircase flashes from the top down at the buzzer
+    let a = 0;
+    for(let k = 0; k < 5; k++){ if(i > G.iq[k]) continue; const u = t - (D.hits[k] - 6) - i*0.5; if(u >= 0 && u < 16) a += 1 - u/16; }
+    const w = t - D.buzz - Math.max(0, D.steps - 1 - i)*1.4; if(w >= 0 && w < 14) a += 1 - w/14;
+    return Math.min(1, a);
+  };
+  c.save(); c.lineJoin = 'round'; c.lineCap = 'round'; c.globalAlpha = 1;
+  // THE STAIRCASE: ten steps, then the platform; each lights under the streak
+  c.save(); c.globalAlpha = outA; c.lineWidth = 2.5; c.strokeStyle = '#2b2418';
+  for(let i = 0; i < D.steps; i++){
+    const top = fl - G.sh*(i + 1)*grow, xa = sx(i*G.sw), xb = sx((i + 1)*G.sw), x = Math.min(xa, xb), w = Math.abs(xb - xa), h = fl - top;
+    if(h < 1) continue;
+    c.fillStyle = '#b6a586'; c.fillRect(x, top, w, h); c.fillStyle = '#dccfb0'; c.fillRect(x, top, w, 7);
+    const L = lit(i); if(L > 0.02){ c.fillStyle = 'rgba(255,240,160,' + (0.7*L).toFixed(3) + ')'; c.fillRect(x, top, w, h); }
+    c.strokeRect(x, top, w, h);
+  }
+  {
+    const ptop = fl - G.rise*grow, xa = sx(D.run), xb = sx(D.run + D.top), x = Math.min(xa, xb), w = Math.abs(xb - xa), L = lit(D.steps), by = G.by + (t >= D.buzz && t < D.buzz + 16 ? 9 : 0);
+    if(fl - ptop > 16){
+      c.fillStyle = '#8f8068'; c.fillRect(x, ptop + 14, w, fl - ptop - 14); c.strokeRect(x, ptop + 14, w, fl - ptop - 14);
+      c.fillStyle = '#d3c4a2'; c.fillRect(x, ptop, w, 14); if(L > 0.02){ c.fillStyle = 'rgba(255,240,160,' + (0.75*L).toFixed(3) + ')'; c.fillRect(x, ptop, w, 14); } c.strokeRect(x, ptop, w, 14);
+      // the post and the big round red buzzer (it sinks when it is hit)
+      const k = grow;
+      c.fillStyle = '#6a6f78'; c.fillRect(G.bx - 6, ptop - 56*k + 12, 12, 56*k - 12); c.strokeRect(G.bx - 6, ptop - 56*k + 12, 12, 56*k - 12);
+      const by2 = ptop - 56*k + (by - G.by);
+      c.fillStyle = '#4a4f58'; c.beginPath(); c.ellipse(G.bx, by2 + 14, 27*k, 8*k, 0, 0, 7); c.fill(); c.stroke();
+      c.fillStyle = '#d9302f'; c.beginPath(); c.arc(G.bx, by2, Math.max(0.1, 22*k), 0, 7); c.fill(); c.stroke();
+      c.fillStyle = 'rgba(255,255,255,0.55)'; c.beginPath(); c.arc(G.bx - 7*k, by2 - 8*k, Math.max(0.1, 6*k), 0, 7); c.fill();
     }
-    if(t === w + 44){
-      shake(12); armAtk(f, 30, 'fsburst');
-      for(const i of st.caught){ const o = fighters[i]; if(o && !o.dead) applyHit(o, 10, dir*22, -14, f); }
+  }
+  c.restore();
+  // DUST: the stage goes quiet; it trickles down the steps while she crouches
+  if(t >= D.still && t < D.hits[0] + 4){
+    c.save(); c.fillStyle = '#d9cbac';
+    for(let j = 0; j < 14; j++){
+      const d = ((j*71) % 300) + 15, i = Math.min(D.steps - 1, Math.floor(d/G.sw)), fall = (t*0.7 + j*9) % 34;
+      c.globalAlpha = 0.55*(1 - fall/34)*outA; c.beginPath(); c.arc(sx(d) + Math.sin(t*0.2 + j)*2, fl - G.sh*(i + 1) + fall, 2.2, 0, 7); c.fill();
     }
-  },
-  ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && (o.x - f.x)*f.face > -10 && (o.x - f.x)*f.face < 140 && Math.abs(o.y - f.y) < 70) return true; return false; },
-  draw(f, c){
-    const t = f.fsT || 0, w = f.fsWind || 30, dir = f.face;
-    if(t >= w + 56) return;
-    c.save(); c.translate(f.x, f.y);
-    if(t >= w && t < w + 44){   // the rant: jagged bursts and fists, flying out in front, quicker than the eye
-      for(let i = 0; i < 9; i++){ const ph = (hazardT*3 + i*29) % 40, x = dir*(f.r + 8 + ph*3), y = ((i*47) % 90) - 45 + Math.sin(hazardT*0.7 + i)*6;
-        c.globalAlpha = 1 - ph/44; c.fillStyle = i % 2 ? '#ffe45e' : '#ffffff'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5;
-        c.beginPath(); for(let k = 0; k < 8; k++){ const a = k*Math.PI/4, r = (k % 2 ? 7 : 15); c.lineTo(x + Math.cos(a)*r, y + Math.sin(a)*r); } c.closePath(); c.fill(); c.stroke(); }
-    } else { const u = (t - w - 44)/12; fsRing(c, dir*100, 0, 30 + 110*u, '#e25b8a', 14*(1 - u) + 2, 1 - u); }
     c.restore();
+  }
+  // THE GATHERING: white-gold light leaks off her and thin lines draw in toward her (no damage: all tension)
+  if(t >= D.still && t < D.hits[0] + 2){
+    const p = Math.min(1, (t - D.still)/(D.hits[0] - D.still));
+    fsc3_glow(c, f.x, f.y, 36 + 70*p, '255,236,150', 0.12 + 0.5*p);
+    c.save(); c.lineWidth = 2; c.strokeStyle = 'rgba(255,240,170,' + (0.25 + 0.5*p).toFixed(3) + ')'; c.beginPath();
+    for(let j = 0; j < 14; j++){ const a = j*Math.PI*2/14 + 0.3, ph = (t*0.05 + j*0.0714) % 1, ro = 36 + 150*(1 - ph), ri = Math.max(28, ro - 30); c.moveTo(f.x + Math.cos(a)*ro, f.y + Math.sin(a)*ro); c.lineTo(f.x + Math.cos(a)*ri, f.y + Math.sin(a)*ri); }
+    c.stroke(); c.restore();
+  }
+  // THE BLASTS: a white-gold streak from the foot up to where she overtakes them, a flare there, a ring on the foe
+  for(let k = 0; k < 5; k++){
+    const u = t - (D.hits[k] - 3), q = G.q[k];
+    if(u >= 0 && u < 10){
+      const a = 1 - u/10;
+      c.save(); c.globalAlpha = 0.45*a*outA; c.strokeStyle = '#ffd24a'; c.lineWidth = 22*a + 3; c.beginPath(); c.moveTo(f.fsAx, f.fsAy); c.lineTo(q.x, q.y); c.stroke();
+      c.globalAlpha = 0.95*a*outA; c.strokeStyle = '#fffbe0'; c.lineWidth = 9*a + 1.5; c.stroke(); c.restore();
+      fsc3_glow(c, q.x, q.y, 70*(0.5 + a), '255,230,140', 0.9*a*outA);
+    }
+    const v = (t - D.hits[k])/8;
+    if(v >= 0 && v < 1){ const p = G.pos[k]; c.save(); c.globalAlpha = (1 - v)*outA; c.strokeStyle = '#fff6c0'; c.lineWidth = 5*(1 - v) + 1; c.beginPath(); c.arc(p.x, p.y, 24 + 46*v, 0, 7); c.stroke(); c.restore(); }
+  }
+  // THE BUZZER: the run up the whole staircase, the hit, a flash, rings going off from the button
+  { const u = t - (D.buzz - 6);
+    if(u >= 0 && u < 12){ const a = 1 - u/12; c.save(); c.globalAlpha = 0.9*a*outA; c.strokeStyle = '#fffbe0'; c.lineWidth = 8*a + 1.5; c.beginPath(); c.moveTo(f.fsAx, f.fsAy); c.lineTo(G.bz.x, G.bz.y); c.stroke(); c.restore(); }
+    const du = t - D.buzz;
+    if(du >= 0){
+      fsc3_flash(c, G.bx, G.by, 0.5*(1 - du/8), '#fff');
+      fsc3_glow(c, G.bx, G.by, 300*(0.3 + Math.min(1, du/20)), '255,214,150', 0.9*Math.max(0, 1 - du/22)*outA);
+      const cols = ['#ffffff', '#ff5a4a', '#ffd24a'];
+      for(let r = 0; r < 3; r++){ const w = (du - r*3)/18; if(w < 0 || w >= 1) continue; c.save(); c.globalAlpha = 0.9*(1 - w)*outA; c.strokeStyle = cols[r]; c.lineWidth = 9*(1 - w) + 1.5; c.beginPath(); c.arc(G.bx, G.by, 26 + 330*fsc3_ease(w), 0, 7); c.stroke(); c.restore(); }
+    }
+  }
+  c.restore();
+}
+FINAL_SMASHES['Dora'] = {
+  id:'rant', wind:FS_WIND, dur:FSC3_DORA.dur, reach:FSC3_DORA.reach, needFoe:true, exact:true,   // needFoe: pressed with no foe it can take, it is spent at once (fsTryFire); exact: a CPU fires only when the catch will take someone (fsBotInput)
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FSC3_DORA.reach }; }, lockEnd:FSC3_DORA.buzz, catchMax:1,   // CATCH: the nearest foe in 380 px; the staircase is for one foe
+  catchOk(f, t){ return !!fsc3_doraPlan(f, t); },   // ...that she can build a staircase for (a floor under her, room for it, no block through it): with none a human's press is spent at once and a CPU does not fire
+  botOk(f, t){ return fsc3_botOkR(f, t, FSC3_DORA.reach); },
+  start(f, st){
+    const tg = fighters[st.held[0]];
+    if(!tg){ fsc3_spent(f); return; }   // the foe stepped out in the catch's 10 frames
+    const P = fsc3_doraPlan(f, tg);
+    if(!P){ fsc3_spent(f); return; }   // nowhere to build it: spent
+    const C = FSC3_DORA;
+    f.x = Math.round(f.x); f.y = P.fl - f.r; f.vx = 0; f.vy = 0; f.onground = true; f.face = P.s;   // (a press from the air: she lands at the foot)
+    f.fsAx = f.x; f.fsAy = Math.round(f.y); f.fsBx = Math.round(P.x0 + P.s*C.run); f.fsBy = Math.round(P.fl - P.rise); f.fsCx = Math.round(tg.r || 24);
+    st.tg = tg.idx; st.n0 = tg._koN || 0; st.over = false; st.xf = tg.x; st.yf = tg.y; st.hx = f.x; st.hy = f.y;
+    st.G = fsc3_doraGeo(f.fsAx, f.fsAy, f.r, f.fsBx, f.fsBy, f.fsCx);
+    armAtk(f, this.wind, 'fsgather');
   },
+  tick(f, st, t){
+    const C = FSC3_DORA, G = st.G, tg = fighters[st.tg];
+    if(st.over) return;
+    // HER PLACE: at the foot; a flash of her up the steps on every blast; the run at the buzzer; the drop back to the foot
+    let px = st.hx, py = st.hy;
+    for(let k = 0; k < 5; k++) if(t >= C.hits[k] - 1 && t <= C.hits[k] + 2){ px = G.q[k].x; py = G.q[k].y; }
+    if(t >= C.buzz - 6 && t <= C.buzz + 8){ const p = Math.min(1, (t - (C.buzz - 6))/6); px = fsc3_lerp(st.hx, G.bz.x, p); py = fsc3_lerp(st.hy, G.bz.y, p); }
+    else if(t > C.buzz + 8 && t < C.buzz + 20){ const p = Math.min(1, (t - C.buzz - 8)/12); px = fsc3_lerp(G.bz.x, st.hx, fsc3_ease(p)); py = fsc3_lerp(G.bz.y, st.hy, p*p); }
+    f.x = px; f.y = py; f.vx = 0; f.vy = 0; f.onground = (px === st.hx && py === st.hy);
+    if(t > C.buzz) return;
+    if(fsc3_gone(f, st, tg)){ st.over = true; st.t = this.dur - 1; return; }   // the foe gone (a KO, a respawn, the lock lost): nothing more, whoever comes back
+    // THE FOE: set on a step a third of the way up (never through a solid block on the way), knocked up one landing by every blast
+    if(t < 10){ const p = fsc3_ease((t + 1)/10), P0 = G.pos[0], nx = fsc3_lerp(st.xf, P0.x, p), ny = fsc3_lerp(st.yf, P0.y, p); if(t >= 9 || !fsc3_inSolid(nx, ny, tg.r)){ tg.x = nx; tg.y = ny; } }
+    else {
+      let x = G.pos[0].x, y = G.pos[0].y;
+      for(let k = 0; k < 5; k++) if(t >= C.hits[k]){ const p = fsc3_ease(Math.min(1, (t - C.hits[k])/C.hop)); x = fsc3_lerp(G.pos[k].x, G.pos[k + 1].x, p); y = fsc3_lerp(G.pos[k].y, G.pos[k + 1].y, p) - 18*Math.sin(Math.PI*p); }
+      tg.x = x; tg.y = y;
+    }
+    if(t === C.still){ armAtk(f, C.hits[0] - C.still, 'fsgather'); shake(2); }   // she drops into a crouch and holds it
+    const i = C.hits.indexOf(t);
+    if(i >= 0){
+      armAtk(f, 8, 'punch'); shake(4 + i); fsc3_hit(f, st, tg, C.dmg[i], 0, 0, false);
+      if(i === 0){   // anyone else standing on the stair band takes one flat hit, knocked off it: dodge it by stepping off
+        for(const o of fighters){
+          if(o.dead || o.idx === f.idx || o.team === f.team || o.idx === tg.idx || st.hit.has(o.idx) || hardInvuln(o) || o._fsLock) continue;
+          const d = (o.x - G.x0)*G.s; if(d < -12 || d > C.run + C.top + 12) continue;
+          const surf = G.fl - G.sh*Math.min(C.steps, Math.floor(Math.max(0, d)/G.sw) + 1), feet = o.y + o.r;
+          if(feet > surf - 110 && feet < surf + 36){ st.hit.add(o.idx); o.countering = 0; applyHit(o, C.band/FS_DMG_MULT/(statDmg(f, 1) || 1), G.s*9, -13, f); for(let q = 0; q < 6; q++) puff(o.x, o.y, q % 2 ? '#fff' : '#ffd24a', 4); }
+        }
+      }
+    }
+    if(t === C.buzz){
+      armAtk(f, 20, 'fsburst'); shake(18);
+      fsc3_hit(f, st, tg, C.big, G.s*C.kb, C.up, true);
+      fsc3_ring(f, st, G.bx, G.by + 30, C.ring, C.ringDmg, 18, -18);
+      for(let q = 0; q < 26; q++) puff(G.bx, G.by, q % 3 ? '#fff' : (q % 2 ? '#ff5a4a' : '#ffd24a'), 8);
+    }
+  },
+  end(f, st){ if(st && st.tg != null){ f.x = st.hx; f.y = st.hy; f.vx = 0; f.vy = 0; f.onground = true; } },   // she is back at the foot of the stairs (the stairs fade)
+  ai(f){ return fsCatchFoes(this, f).length > 0; },
+  draw(f, c){ fsc3_doraDraw(f, c); },
 };
 
 // SAW -- SPIN CYCLE OVERDRIVE. A circular saw blade: spinning is the only motion the object has (the design doc), and her own card is "Spin Cycle: a
@@ -27185,18 +27601,393 @@ FINAL_SMASHES['Needle'] = fsLane({ id:'cutinhalf', c1:'#c8d0d8', L:720, spd:36, 
 // Grapes. A marker on the nearest foe within 420, fixed 18 frames before the pin comes down on it (75 px: step out): 28%, thrown hard.
 FINAL_SMASHES['Pin'] = fsLock({ id:'popped', c1:'#e8506a', c2:'#d8d8d8', R:75, bx:420, by:260, dmg:28, kb:22, ky:-16, delay:10, art:FS_GLYPH.pin });
 
-// COINY -- THE MONITOR. In "She Deserves This": "Golf Ball uses freeze juice to freeze Evil Leafy ... Coiny grabs a computer monitor and throws it at
-// her, shattering and killing her" (the II wiki, quoted at elEndBegin). Six coin slaps flat and fast, then the monitor: a heavy lob (34 px, 26%).
-FINAL_SMASHES['Coiny'] = fsHose({ id:'monitor', c1:'#f2c94c', n:6, every:4, v0:11, art:FS_GLYPH.coin, reach:460,
-  shots:[{ color:'#f2c94c', dmg:5, kb:5, r:11, grav:false, vy:0, life:60 }], big:{ vy:-9, grav:true, dmg:26, kb:22, r:34, color:'#9aa6b2', life:100, pierce:false } });
+// COINY -- THE MONITOR (the name and the id are the old ones: the pitch does not rename it; the monitor lob is gone). THE OWNER PICKED THE PITCH, 2026-11-02:
+// "I'm the Main Character" (BFDIA 22), the Earth's core. CANON (the BFDI wiki, read 2026-11-02): "Coiny feeds Leafy a Yoyleberry, making her metal. Coiny then
+// grabs Leafy and jumps down the hole." Then "Coiny and Needle running down the sides of the chasm, hitting and shoving each other" ... "Needle and Leafy finally
+// make it to the core of the Earth, which is a marble ... due to the core's bouncy properties" ... "a burst of lava" ... "the Earth closes up". The Coiny page: immune
+// to lava (a melting point near 1100 C), superhuman strength. Kit: Slap, Counter.
+// CARD. Reach: the nearest foe within 420 px (a circle round him; one foe); pressed with none, it is spent at once (no intro). He pulls them to his side (the pair stands together), shoves a Yoyleberry in their mouth
+// (a drawn berry; they are tinted silver till the end: a tint only, no armour) and jumps; a crack runs out from his feet and the ground peels open into a chasm: the screen goes dark
+// but for a lit pocket round the pair (no sky, no lawn: a dark bowl with a glowing rim at their feet while the ground peels, then the mouth of the hole, a round of daylight, rushing away overhead; the dark is never past 0.56 black, so anyone else on the stage stays in view), and see-through rock walls (a narrow rim on their face, strata inside, glowing veins streaming up) close in on both sides, stopping short of the pair's pictures, not just their radii. SIX BLOWS on the held foe, 90% in all (a strong fighter: the launch carries it): the left wall 11%, the
+// right wall 11% (he runs them down one wall, then the other), a dunk in a lava river 14% (it rises to their ankles with a wavy bright skin and drifting crust plates, never a slab: both stay in view, the foe lit orange; lava is nothing to him), then the core: a glossy marble
+// rises under them and bounces them, 12% and, a higher bounce on, 14%; then the Earth closes (the walls slam shut, never on the pair: a wide soft glow on their inner faces, the dark closing in, no thin lines; no hit), and the eruption, 28%, a lava
+// geyser through the floor that throws them straight up, with a ring at the spot for anyone else standing at it (14%). Frames after the catch: the berry and the crack 0-13,
+// walls 14-26, blows on 26, 40, 54, 70, 84 and 112; 136 in all. He hangs where he is. A boss, an add or a teammate is never caught or hit. Everything drawn comes from
+// fsT, the foe the catch holds and fsBx, fsBy (the foe's place), fsCx (their size).
+const FSC3_COINY = { hits:[26, 40, 54, 70, 84, 112], dmg:[11, 11, 14, 12, 14, 28], dive:FS_WIND, shut:100, D:128, tail:24, up:-27, upx:2.5, ring:130 };
+FSC3_COINY.dur = FSC3_COINY.hits[5] + FSC3_COINY.tail;
+// the foe's height above their place on the marble: a bounce after the first slam, a higher one after the second (zero at every slam, and from the Earth's closing on)
+function fsc3_coinyBob(t){
+  const h = FSC3_COINY.hits, s = FSC3_COINY.shut;
+  if(t > h[3] && t <= h[4]) return -52*Math.sin(Math.PI*(t - h[3])/(h[4] - h[3]));
+  if(t > h[4] && t <= s) return -96*Math.sin(Math.PI*(t - h[4])/(s - h[4]));
+  return 0;
+}
+function fsc3_coinyDraw(f, c){
+  const t = f.fsT || 0, C = FSC3_COINY, H = C.hits, L = fsLockedOf(f);
+  if(!L && f.fsBx == null) return;
+  const bx = f.fsBx, by = f.fsBy, R = (L ? L.r : f.fsCx) || 24, feet = by + R, fx = L ? L.x : bx, fy = L ? L.y : by;
+  const cx = Math.abs(bx - f.x) <= 100 ? (bx + f.x)/2 : bx;   // the shaft is round the pair
+  const open = fsc3_in(t, C.dive, 12), er = t - H[5], gone = er > 0 ? Math.max(0, 1 - er/12) : 1;
+  if(L) FSC3_HW[f.idx] = fsc3_halfW(L); else if(t < 3) FSC3_HW[f.idx] = 0;   // the foe's picture half-width (a wide body: the walls close on it, not on its radius)
+  const shutK = t < C.shut ? 0 : Math.min(1, fsc3_ease((t - C.shut)/(H[5] - C.shut)));
+  c.save(); c.lineJoin = 'round'; c.lineCap = 'round'; c.globalAlpha = 1;
+  // THE BERRY (a Yoyleberry into the foe's mouth) and the silver it turns them: a tint, no armour
+  if(t < 10){
+    const u = t/9, sx = f.x, sy = f.y - f.r*0.2, ex = fx, ey = fy - R*0.2, x = sx + (ex - sx)*u, y = sy + (ey - sy)*u - 26*Math.sin(Math.PI*u);
+    c.fillStyle = '#6a3cc8'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.arc(x, y, 7, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = '#7ad04a'; c.beginPath(); c.ellipse(x + 3, y - 8, 5, 2.5, -0.6, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = 'rgba(255,255,255,0.7)'; c.beginPath(); c.arc(x - 2, y - 2, 2, 0, 7); c.fill();
+  }
+  // THE CRACK from the feet, running out both ways, then the ground peels away into the chasm
+  if(t >= 6 && t < C.dive + 12){
+    const len = 240*fsc3_ease((t - 6)/12), al = t < C.dive + 6 ? 1 : Math.max(0, 1 - (t - C.dive - 6)/6);
+    c.save(); c.globalAlpha = al;
+    for(let pass = 0; pass < 2; pass++){
+      c.strokeStyle = pass ? '#ffb14a' : '#1c1c1c'; c.lineWidth = pass ? 2.5 : 7;
+      for(const sg of [-1, 1]){ c.beginPath(); c.moveTo(cx, feet); for(let i = 1; i <= 8; i++) c.lineTo(cx + sg*len*i/8, feet + ((i*53) % 7 - 3)*2.4); c.stroke(); }
+    }
+    c.restore();
+  }
+  if(t >= C.dive){
+    const sa = open*gone, pair = Math.abs(bx - f.x)/2 + Math.max(R, f.r || 24, FSC3_HW[f.idx] || 0, fsc3_halfW(f)), Dn = Math.max(76, pair + 16), mu = t - C.dive;   // pair: how far the two of them reach from the middle, pictures and all (the walls never close on them)
+    const DD = Math.max(C.D, Dn + 28);   // where the walls stand before they close: never closer than the closing stop, so they always close in (a wide body)
+    const wallD = (sg)=>{ let D = DD + (1 - open)*150; if(t >= C.shut) D = t < H[5] ? DD - (DD - Dn)*shutK : Dn + er*26; return D - 15*Math.max(0, 1 - Math.abs(t - H[sg < 0 ? 0 : 1])/4); };
+    const y0 = by - 560, y1 = by + 560;
+    // THE WALLS: rock with strata (laid first: the dark goes over it, so it fades into the black away from the pair), then the veins glowing through the dark, streaming up; each wall slams in on its blow, then both slam shut, then burst
+    const wall = (sg, veins)=>{
+      if(sa < 0.02) return;
+      const D = wallD(sg), x0 = cx + sg*D, x1 = cx + sg*(D + 96), lo = Math.min(x0, x1) - 12;
+      c.save(); c.globalAlpha = sa*(veins ? 1 : 0.38);   // the rock is see-through (a fighter standing behind a wall is still seen), a narrow rim marks its face
+      c.beginPath(); c.moveTo(x1, y0);
+      for(let y = y0, i = 0; y <= y1; y += 36, i++) c.lineTo(x0 + sg*(((i*37) % 11) - 5)*1.5, y);
+      c.lineTo(x1, y1); c.closePath();
+      if(!veins){
+        c.fillStyle = '#35261e'; c.fill(); c.clip();
+        const off = (t*22) % 72;
+        for(let y = y0 - 72, j = 0; y < y1 + 72; y += 36, j++){ c.fillStyle = (j % 2) ? '#4a3428' : '#2a1c16'; c.fillRect(lo, y - off, 130, 16 + (j % 3)*4); }
+      } else {
+        c.clip(); c.globalCompositeOperation = 'lighter';
+        for(let v = 0; v < 3; v++){
+          c.strokeStyle = 'rgba(255,150,40,0.6)'; c.lineWidth = 4 - v; c.beginPath();
+          for(let y = y0 - 60, i = 0; y < y1 + 60; y += 30, i++){ const px = x0 + sg*(16 + v*28 + ((i*29 + v*7) % 9) - 4), py = y - ((t*(24 + v*5) + v*20) % 60); if(i) c.lineTo(px, py); else c.moveTo(px, py); }
+          c.stroke();
+        }
+      }
+      c.restore();
+      if(!veins){
+        c.save(); c.globalAlpha = sa*0.8; c.strokeStyle = '#6a4a38'; c.lineWidth = 4; c.beginPath();
+        for(let y = y0, i = 0; y <= y1; y += 36, i++){ const px = x0 + sg*(((i*37) % 11) - 5)*1.5; if(i) c.lineTo(px, y); else c.moveTo(px, y); }
+        c.stroke(); c.restore();
+      }
+    };
+    wall(-1, false); wall(1, false);
+    // THE DARK: the whole screen goes black but a lit pocket round the pair (the chasm: no sky, no lawn, no light but theirs); it closes in as the Earth does. Under their soles the lawn is gone too.
+    {
+      const rx0 = (24 + 0.85*pair)*(1 - 0.3*shutK), ex = rx0 + 96, pk = 0.2 + 0.1*shutK + 0.08*fsc3_ease((t - 40)/20);   // (the dark outside the pocket never goes past 0.56: the others on the stage stay in view)
+      c.save(); c.globalAlpha = sa; c.translate(cx, by - 22); c.scale(1, 0.8);
+      const g = c.createRadialGradient(0, 0, 0, 0, 0, ex);
+      g.addColorStop(0, 'rgba(9,5,3,' + pk.toFixed(3) + ')'); g.addColorStop(rx0/ex, 'rgba(9,5,3,' + (pk + 0.05).toFixed(3) + ')'); g.addColorStop((rx0 + 0.45*(ex - rx0))/ex, 'rgba(9,5,3,0.46)'); g.addColorStop(1, 'rgba(9,5,3,0.56)');
+      c.fillStyle = g; c.fillRect(-2400, -2400, 4800, 4800); c.restore();
+      c.save(); c.globalAlpha = sa;
+      const fg = c.createLinearGradient(0, feet + 8, 0, feet + 34); fg.addColorStop(0, 'rgba(9,5,3,0)'); fg.addColorStop(1, 'rgba(9,5,3,0.66)');
+      c.fillStyle = fg; c.fillRect(cx - 2400, feet + 8, 4800, 1800); c.restore();
+    }
+    // THE HOLE the ground peeled open: a dark bowl under the pair with a glowing rim (the lower half only: their feet stay in view) ...
+    {
+      const hk = fsc3_in(t, C.dive, 12)*(1 - fsc3_ease((mu - 6)/8))*gone;
+      if(hk > 0.02){
+        const sy = feet + 12;
+        c.save(); c.globalAlpha = hk; c.beginPath(); c.rect(cx - 900, sy, 1800, 500); c.clip();
+        c.fillStyle = '#050201'; c.strokeStyle = '#ffb14a'; c.lineWidth = 4;
+        c.beginPath(); c.ellipse(cx, sy, (DD + 44)*Math.min(1, hk*1.5), 26, 0, 0, 7); c.fill(); c.stroke(); c.restore();
+      }
+      // ... and its mouth, far up the shaft and rushing away as they fall: a round of daylight in a rock rim
+      const dk = fsc3_in(t, C.dive + 6, 8)*(1 - fsc3_ease((mu - 34)/10))*gone;
+      if(dk > 0.02){
+        const u = fsc3_ease(Math.min(1, Math.max(0, (mu - 6)/36))), my = by - 150 - 300*u, mrx = (DD + 30)*(1 - 0.78*u), mry = mrx*0.2;
+        c.save(); c.globalAlpha = dk; c.fillStyle = '#c8e8fa'; c.strokeStyle = '#4a3428'; c.lineWidth = 8;
+        c.beginPath(); c.ellipse(cx, my, mrx, mry, 0, 0, 7); c.fill(); c.stroke();
+        c.strokeStyle = '#7ad04a'; c.lineWidth = 3; c.beginPath(); c.ellipse(cx, my, mrx + 6, mry + 2, 0, 0, 7); c.stroke(); c.restore();
+      }
+    }
+    wall(-1, true); wall(1, true);
+    // THE SLAMS on the walls: a flash, spokes and rock chips at the face
+    for(let i = 0; i < 2; i++){
+      const u = (t - H[i])/6; if(u < 0 || u >= 1) continue;
+      const sg = i ? 1 : -1, wx = cx + sg*(DD - 12), g = 1 + u;
+      c.save(); c.globalAlpha = 0.55*(1 - u); c.fillStyle = '#fff'; c.beginPath(); c.arc(wx, fy, 14*g, 0, 7); c.fill();
+      c.globalAlpha = 1 - u; c.strokeStyle = '#fff'; c.lineWidth = 2.5;
+      for(let q = 0; q < 7; q++){ const a = (q - 3)*0.42 + (sg < 0 ? 0 : Math.PI); c.beginPath(); c.moveTo(wx + Math.cos(a)*16*g, fy + Math.sin(a)*16*g); c.lineTo(wx + Math.cos(a)*34*g, fy + Math.sin(a)*34*g); c.stroke(); }
+      c.restore();
+      for(let q = 0; q < 4; q++) fsc3_chunk(c, wx - sg*(8 + u*50 + q*7), fy - 16 + q*10 + u*u*40, 5, u*4 + q, '#6a4a38', 1 - u);
+    }
+    // THE LAVA RIVER: it rises to the ankles (the soles are 12 px under the feet), a wavy surface with a bright skin and leaping blobs, never a slab; the two of them stay in view, the foe lit orange from below; it drains as the core comes up
+    const lv = fsc3_in(t, 42, 12)*(t > 66 ? Math.max(0, 1 - (t - 66)/8) : 1)*gone;
+    if(lv > 0.01){
+      const topY = feet + 24 - lv*22, surf = (x)=> topY + Math.sin(t*0.3 + x*0.07)*5.5 + Math.sin(t*0.17 - x*0.13)*3.5;
+      c.save(); c.globalAlpha = Math.min(0.95, lv*1.2);
+      const g = c.createLinearGradient(0, topY - 10, 0, topY + 150); g.addColorStop(0, '#ffe066'); g.addColorStop(0.1, '#ff9a2a'); g.addColorStop(0.32, '#d8420e'); g.addColorStop(0.75, '#4a0f04'); g.addColorStop(1, '#1a0602');
+      c.fillStyle = g; c.beginPath(); c.moveTo(cx - DD, topY + 160);
+      for(let x = -DD; x <= DD; x += 8) c.lineTo(cx + x, surf(cx + x));
+      c.lineTo(cx + DD, topY + 160); c.closePath(); c.fill();
+      c.strokeStyle = '#fff0a8'; c.lineWidth = 3; c.beginPath();
+      for(let x = -DD, i = 0; x <= DD; x += 8, i++){ if(i) c.lineTo(cx + x, surf(cx + x)); else c.moveTo(cx + x, surf(cx + x)); }
+      c.stroke();
+      c.fillStyle = 'rgba(60,15,5,0.7)';   // plates of cooling crust drifting across it
+      for(let i = 0; i < 7; i++){ const px = cx - DD + 24 + ((t*1.3 + i*47) % (2*DD - 48)); c.beginPath(); c.ellipse(px, surf(px) + 9 + (i % 3)*13, 12 + (i % 3)*7, 3 + (i % 2)*2, 0, 0, 7); c.fill(); }
+      c.fillStyle = '#ffd36a';
+      for(let i = 0; i < 10; i++){ const px = cx - DD + 12 + i*((2*DD - 24)/9), ph = (t*0.2 + i*1.7) % 3, h = Math.abs(Math.sin(ph))*(8 + 16*Math.abs(px - cx)/DD); c.beginPath(); c.arc(px, surf(px) - 2 - h, 3 + (i % 3)*2, 0, 7); c.fill(); }
+      c.restore();
+      c.save(); c.globalAlpha = lv; const lg = c.createRadialGradient(cx, topY, 8, cx, topY, 150);
+      lg.addColorStop(0, 'rgba(255,120,30,0.34)'); lg.addColorStop(1, 'rgba(255,120,30,0)');
+      c.fillStyle = lg; c.beginPath(); c.arc(cx, topY, 150, 0, 7); c.fill(); c.restore();
+      fsc3_glow(c, cx, topY - 6, 190, '255,110,20', 0.22*lv);
+    }
+    // THE CORE: a glossy marble comes up under them; they come down on it and it bounces them
+    const mk = fsc3_in(t, 56, 14)*(t > H[5] ? Math.max(0, 1 - er/4) : 1);
+    if(mk > 0.01){
+      let sq = 1; for(const h of [H[3], H[4], C.shut]) if(t >= h && t < h + 6) sq = Math.min(sq, 1 - 0.16*(1 - (t - h)/6));
+      const mr = 66, my = feet + mr + 6 + (1 - mk)*180;
+      c.save(); c.translate(bx, my); c.scale(1, sq); c.globalAlpha = Math.min(1, mk*1.4);
+      const g = c.createRadialGradient(-mr*0.3, -mr*0.35, mr*0.08, 0, 0, mr);
+      g.addColorStop(0, '#fff6c8'); g.addColorStop(0.25, '#ffb43c'); g.addColorStop(0.7, '#d2431a'); g.addColorStop(1, '#5a1206');
+      c.fillStyle = g; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4; c.beginPath(); c.arc(0, 0, mr, 0, 7); c.fill(); c.stroke();
+      c.strokeStyle = 'rgba(255,240,170,0.55)'; c.lineWidth = 3;
+      for(let i = 0; i < 3; i++){ c.beginPath(); c.arc(0, 0, mr*(0.35 + 0.2*i), t*0.04 + i*2, t*0.04 + i*2 + 1.6); c.stroke(); }
+      c.restore();
+      for(const h of [H[3], H[4]]){ const u = (t - h)/12; if(u >= 0 && u < 1){ c.save(); c.globalAlpha = 0.8*(1 - u); c.strokeStyle = '#fff'; c.lineWidth = 3; c.beginPath(); c.ellipse(bx, feet + 6, 30 + 120*u, 7 + 18*u, 0, 0, 7); c.stroke(); c.restore(); } }
+    }
+    // THE EARTH CLOSES: the walls' inner faces glow like a hot seam as they come together over the pair (a wide soft glow, no thin lines), the dark closing in
+    if(t >= C.shut && t < H[5]){
+      c.save(); c.globalCompositeOperation = 'lighter';
+      for(const sg of [-1, 1]){
+        const edge = cx + sg*(DD - (DD - Dn)*shutK), g = c.createLinearGradient(edge, 0, edge - sg*46, 0);
+        g.addColorStop(0, 'rgba(255,140,40,' + (0.2 + 0.2*shutK).toFixed(3) + ')'); g.addColorStop(1, 'rgba(255,100,20,0)');
+        c.fillStyle = g; c.fillRect(Math.min(edge, edge - sg*46), by - 420, 46, 840);
+      }
+      c.restore();
+    }
+    // THE ERUPTION: a white flash, a lava geyser straight up through the floor, rocks and sparks, a ring at the spot
+    if(er >= 0){
+      fsc3_flash(c, bx, by, 0.85*(1 - er/8), '#fff6dc');
+      const gh = 840*fsc3_ease(er/7), gw = 96 - 30*Math.min(1, er/24), ga = er < 14 ? 1 : Math.max(0, 1 - (er - 14)/10);
+      if(ga > 0.02){
+        c.save(); c.globalAlpha = ga; c.globalCompositeOperation = 'lighter';
+        const g = c.createLinearGradient(bx - gw, 0, bx + gw, 0);
+        g.addColorStop(0, 'rgba(255,90,20,0)'); g.addColorStop(0.25, 'rgba(255,150,40,0.75)'); g.addColorStop(0.5, 'rgba(255,250,210,0.95)'); g.addColorStop(0.75, 'rgba(255,150,40,0.75)'); g.addColorStop(1, 'rgba(255,90,20,0)');
+        c.fillStyle = g; c.fillRect(bx - gw, feet - gh, 2*gw, gh + 10); c.restore();
+        for(let i = 0; i < 12; i++) fsc3_chunk(c, bx + (((i*47) % 100) - 50)*(0.6 + er*0.05), feet - er*(14 + (i % 5)*5) + er*er*0.3*(i % 3), 7 + (i % 4)*3, er*0.3*(i % 2 ? 1 : -1) + i, i % 3 ? '#4a3428' : '#ff9a2e', ga);
+      }
+      const ru = Math.min(1, er/16);
+      if(ru < 1){ c.save(); c.globalAlpha = 0.9*(1 - ru); c.strokeStyle = '#fff'; c.lineWidth = 5*(1 - ru) + 1; c.beginPath(); c.ellipse(bx, feet, 20 + C.ring*1.2*fsc3_ease(ru), 6 + 20*fsc3_ease(ru), 0, 0, 7); c.stroke(); c.restore(); }
+    }
+  }
+  // the foe: silver from the berry (a tint) to the let-go
+  if(L && t >= 8 && t <= H[5] + 2){
+    const a = fsc3_in(t, 8, 12);
+    c.save(); const g = c.createRadialGradient(fx, fy, R*0.2, fx, fy, R*1.1);
+    g.addColorStop(0, 'rgba(215,225,240,' + (0.3*a).toFixed(3) + ')'); g.addColorStop(1, 'rgba(215,225,240,' + (0.1*a).toFixed(3) + ')');
+    c.fillStyle = g; c.beginPath(); c.arc(fx, fy, R*1.05, 0, 7); c.fill();
+    c.globalAlpha = 0.5*a; c.strokeStyle = '#fff'; c.lineWidth = 3; c.beginPath(); c.arc(fx, fy, R*0.78, 3.6, 4.5); c.stroke();
+    c.restore();
+  }
+  c.restore();
+}
+FINAL_SMASHES['Coiny'] = {
+  id:'monitor', wind:FS_WIND, dur:FSC3_COINY.dur, reach:FSC3.reach, needFoe:true, exact:true,   // needFoe: pressed with no foe in the catch, it is spent at once (fsTryFire); exact: a CPU fires only when the catch will take someone (fsBotInput)
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FSC3.reach }; }, lockEnd:FSC3_COINY.hits[5], catchMax:1,   // CATCH: the nearest foe in 420 px; the dive is for one foe
+  botOk(f, t){ return fsc3_botOk(f, t); },
+  start(f, st){
+    const tg = fighters[st.held[0]];
+    if(!tg){ fsc3_spent(f); return; }   // the foe stepped out in the catch's 10 frames
+    st.tg = tg.idx; st.n0 = tg._koN || 0; st.over = false; st.ay = f.y; st.x0 = tg.x; st.y0 = tg.y;
+    const m = fsc3_meet(f, tg, [66, 48]);   // brought to his side, on the same floor (nowhere safe: they stay where they were caught)
+    st.mx = m ? m.x : tg.x; st.my = m ? m.y : tg.y;
+    f.face = Math.sign(st.mx - f.x) || f.face;
+    f.fsBx = Math.round(st.mx); f.fsBy = Math.round(st.my); f.fsCx = Math.round(tg.r || 24);
+    armAtk(f, this.wind, 'fsgather');
+  },
+  tick(f, st, t){
+    const C = FSC3_COINY, tg = fighters[st.tg];
+    f.vx = 0; if(!f.onground){ f.vy = 0; f.y = st.ay; }   // he hangs where he is while the Earth goes by (gravity would sink him a few px a frame)
+    if(st.over || t > C.hits[5]) return;
+    if(fsc3_gone(f, st, tg)){ st.over = true; st.t = this.dur - 1; return; }   // the foe gone (a KO, a respawn, the lock lost): nothing more, whoever comes back
+    if(t < 10){ const p = fsc3_ease((t + 1)/10), nx = st.x0 + (st.mx - st.x0)*p, ny = st.y0 + (st.my - st.y0)*p; if(t >= 9 || !fsc3_inSolid(nx, ny, tg.r)){ tg.x = nx; tg.y = ny; } }   // pulled to his side (never through a solid block on the way)
+    else { tg.x = st.mx; tg.y = Math.max(40, st.my + fsc3_coinyBob(t)); }   // (the bounces on the marble)
+    if(t === 4) for(let i = 0; i < 8; i++) puff(tg.x, tg.y, i % 2 ? '#7ad04a' : '#6a3cc8', 4);   // the berry goes in
+    if(t === C.dive){ shake(7); for(let i = 0; i < 12; i++) puff(tg.x, tg.y + (tg.r || 24), i % 2 ? '#4a3428' : '#ffb14a', 6); }   // the ground peels open
+    if(t >= 44 && t <= 66 && t % 3 === 0) puff(f.x, f.y - f.r, '#e8f4ff', 3);   // lava is nothing to him: he stands in it steaming
+    const i = C.hits.indexOf(t);
+    if(i >= 0){
+      const last = i === 5, side = Math.sign(tg.x - f.x) || f.face || 1;
+      armAtk(f, 10, last ? 'fsburst' : 'slam'); shake(last ? 14 : 6);
+      fsc3_hit(f, st, tg, C.dmg[i], last ? side*C.upx : 0, last ? C.up : 0, last);
+      if(last) fsc3_ring(f, st, tg.x, tg.y, C.ring, 14, 14, -14);
+    }
+  },
+  ai(f){ return fsCatchFoes(this, f).length > 0; },
+  draw(f, c){ fsc3_coinyDraw(f, c); },
+};
 
 // GOLF BALL -- FREEZE JUICE. The same scene: "Golf Ball uses freeze juice to freeze Evil Leafy". The marker is on the nearest foe within 520, fixed 18
 // frames ahead (80 px: step out); whoever is in it is frozen solid and held 30 frames while six cold hits land (3%), and the last one (20%) throws them.
 FINAL_SMASHES['Golf Ball'] = fsLock({ id:'freezejuice', c1:'#9fe4ff', c2:'#ffffff', R:80, bx:520, by:320, effect:'pin', hits:6, every:5, hitDmg:3, dmg:20, kb:22, S:{ freeze:50 }, art:FS_GLYPH.golf });
 
-// FRIES -- FRY FAN. A carton of loose fries, proud and short-tempered (the design doc: "the contents splay"); her own card fires the Fry Dart. Nine
-// darts in a fan ahead of her, three volleys ten frames apart (6%), each one aimed between the last: the gaps are the way through.
-FINAL_SMASHES['Fries'] = fsFan({ id:'fryfan', c1:'#e0443a', n:9, cone:0.55, spd:13, vols:[0, 10, 20], dmg:6, kb:9, r:10, life:50, reach:420, kind:'throw', art:FS_GLYPH.fry });
+// FRIES -- GET DIGGING (id getdigging; the old Fry Fan is gone). THE OWNER PICKED THE PITCH, 2026-11-02. CANON (the BFDI wiki, read 2026-11-02): the Fries page,
+// Powers: Persuasion -- "Fries can make anyone dig for him should he give his target a shovel and it lands in the target's hand" (first seen in "Get Digging", where he
+// has his teammates dig for ingredients). "Respect to the Wicked": Fries digs to Earth's lower mantle, "the ground collapses before him, causing him to land in the
+// Noctiluca yoylean Cavern", where he eats the fungus and his body glows azure. "Start the Shift": a Yoylite chunk lands inside Fries and the reaction makes him blow up.
+// The Fry Dart as the spark is the design's own link (the dart is the game's). The cavern, the shovel and the pit are the row's own drawings.
+// CARD. Reach: the nearest foe within 420 px (a circle round him; one foe); pressed with none, it is spent at once (no intro). The foe digs on the floor they stand over (a foe in the air is driven down onto the floor
+// under them; with none within 380 px they dig a floating slab of earth Fries conjures under their feet: the held foe falls nowhere); Fries hurls a spinning shovel that lands blade-down in their grip, and they dig. FIVE BEATS, 74% in all (a weak fighter hits fewer: the launch is kept): THREE SCOOPS, 10 frames
+// apart, each 5% (a clod over the foe's shoulder, the pit widening and a dirt mound in front of them rising over their legs); THE PIT CRUMBLES 8%: they drop into a glowing azure
+// hollow hung with glowing fungus (a cutaway under the floor line, lit from the rim, the foe still standing in view); TWO FRY DARTS, 9% each, dropped one after the other from above into the hollow: each lands with a blue-white pop and the
+// glow swells like a lit fuse; and THE BLOW, 33%: the hollow flares white and blows up through the floor in a column of light and dirt, the shovel spinning away, and the foe
+// is thrown straight up out of the crater (a ring at the crater, 22%, for anyone else standing at the hole). Frames after the catch: the shovel 0-12, scoops 24, 34, 44, the
+// crumble 54, darts 68 and 82, the blow 98; 124 in all. The foe is drawn where they stand (the mound hides their legs only), and held there; Fries stays where he is. A boss, an
+// add or a teammate is never caught or hit. Drawn from fsT, the foe the catch holds and fsBx, fsBy (their place), fsCx (their size).
+const FSC3_FRIES = { hits:[24, 34, 44, 54, 68, 82, 98], dmg:[5, 5, 5, 8, 9, 9, 33], tail:26, up:-30, upx:3, ring:120 };
+FSC3_FRIES.dur = FSC3_FRIES.hits[6] + FSC3_FRIES.tail;
+// The shovel, blade down at its origin (the blade's tip at 0, 0), the handle up; k scales it to the foe's size.
+function fsc3_shovel(c, x, y, rot, k, a){
+  if(!(a > 0.01)) return;
+  c.save(); c.globalAlpha = a; c.translate(x, y); c.rotate(rot); c.scale(k, k); c.lineJoin = 'round'; c.lineWidth = 2.5; c.strokeStyle = '#1c1c1c';
+  c.fillStyle = '#a8793c'; c.fillRect(-2.5, -64, 5, 44); c.strokeRect(-2.5, -64, 5, 44);   // the handle
+  c.fillRect(-9, -66, 18, 5); c.strokeRect(-9, -66, 18, 5);   // the grip
+  c.fillStyle = '#aab6c2'; c.beginPath(); c.moveTo(-9, -22); c.lineTo(9, -22); c.lineTo(8, -4); c.lineTo(0, 4); c.lineTo(-8, -4); c.closePath(); c.fill(); c.stroke();   // the blade
+  c.strokeStyle = 'rgba(255,255,255,0.7)'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(-3, -19); c.lineTo(-3, -6); c.stroke();
+  c.restore();
+}
+function fsc3_friesDraw(f, c){
+  const t = f.fsT || 0, F = FSC3_FRIES, H = F.hits, L = fsLockedOf(f);
+  if(!L && f.fsBx == null) return;
+  const px = f.fsBx, by = f.fsBy, R = (L ? L.r : Math.abs(f.fsCx)) || 24, k = R/24, feet = by + R, fx = L ? L.x : px, fy = L ? L.y : by, slab = f.fsCx < 0;   // (fsCx: the foe's size, minus when Fries conjured the slab: one scalar, so the charted fsCx/fsCy pair stays free)
+  const sd = f.x < px ? -1 : 1;   // Fries is on this side of them: the shovel is in their hand on the far side
+  const gx = px - sd*R*0.8, ok = t >= H[3];   // ok: the pit has given way
+  const pitK = fsc3_in(t, H[0] - 12, 12) + fsc3_in(t, H[1] - 12, 12) + fsc3_in(t, H[2] - 12, 12);   // 0..3 scoops dug
+  const bl = t - H[6], blown = bl >= 0;
+  c.save(); c.lineJoin = 'round'; c.lineCap = 'round'; c.globalAlpha = 1;
+  // THE HOLLOW: after the crumble, a cutaway of the cavern UNDER the floor line (the dark is clipped there; above it only light), hung with glowing fungus; the darts swell its glow like a lit fuse
+  const cav = fsc3_in(t, H[3], 12)*(blown ? Math.max(0, 1 - bl/10) : 1), lay = feet + 64;
+  if(cav > 0.01){
+    const rx = 215*cav, ry = 150*cav, cy = feet + 4, swell = 1 + 0.5*fsc3_in(t, H[4], 8) + 0.5*fsc3_in(t, H[5], 8) + (blown ? 1.5*fsc3_ease(bl/6) : 0);
+    c.save(); c.beginPath(); c.rect(px - 700, feet + 1, 1400, 1000); c.clip();
+    const g = c.createRadialGradient(px, cy, Math.min(rx, ry)*0.2, px, cy, Math.max(rx, ry));
+    g.addColorStop(0, 'rgba(14,52,120,0.55)'); g.addColorStop(0.7, 'rgba(6,18,60,0.8)'); g.addColorStop(1, 'rgba(4,8,30,0.92)');
+    c.fillStyle = g; c.beginPath();
+    for(let i = 0; i < 32; i++){ const a = i*Math.PI*2/32, q = 1 + ((i*37) % 9)*0.02; const x = px + Math.cos(a)*rx*q, y = cy + Math.sin(a)*ry*q; if(i) c.lineTo(x, y); else c.moveTo(x, y); }
+    c.closePath(); c.fill(); c.strokeStyle = '#0c1a3c'; c.lineWidth = 6; c.stroke();
+    c.fillStyle = '#0c1a3c'; for(let i = 0; i < 9; i++){ const sx = px + (i - 4)*rx*0.2; c.beginPath(); c.moveTo(sx - 9, feet + 1); c.lineTo(sx + 9, feet + 1); c.lineTo(sx, feet + 22 + (i % 3)*12); c.closePath(); c.fill(); }   // stalactites hanging from the floor
+    c.restore();
+    c.save(); c.globalAlpha = Math.min(1, cav*1.4); c.strokeStyle = 'rgba(150,240,255,0.9)'; c.lineWidth = 3; c.fillStyle = 'rgba(8,20,64,0.9)';   // the pit's mouth in the floor: a lit rim
+    c.beginPath(); c.ellipse(px, feet + 2, 70*cav + 20, 9, 0, 0, 7); c.fill(); c.stroke(); c.restore();
+    fsc3_glow(c, px, feet + 2, 110*cav, '120,230,255', 0.35*cav);
+    for(let i = 0; i < 16; i++){   // the fungus along the hollow's floor and walls, pulsing
+      const a = Math.PI*(0.04 + 0.92*i/15), x = px + Math.cos(a)*rx*0.9, y = cy + Math.sin(a)*ry*0.9, pulse = 0.65 + 0.3*Math.sin(t*0.2 + i);
+      fsc3_glow(c, x, y, (14 + (i % 3)*5)*swell*cav, '120,230,255', pulse*0.8);
+      c.save(); c.globalAlpha = Math.min(1, cav*1.5); c.fillStyle = '#c4f8ff'; c.beginPath(); c.arc(x, y, 3.5 + (i % 3), 0, 7); c.fill(); c.restore();
+    }
+    fsc3_glow(c, px, lay, 150*swell*cav, '110,220,255', 0.34*Math.min(2.2, swell));   // the hollow lit azure, swelling with each dart
+    fsc3_glow(c, fx, fy, 100*swell*cav, '110,220,255', 0.26*Math.min(2.2, swell));   // the foe lit azure from below
+  }
+  // THE SLAB: with no floor under them, a floating chunk of earth grows in under their feet to dig in
+  if(slab){
+    const g = fsc3_in(t, 0, 12)*(blown ? Math.max(0, 1 - Math.max(0, bl - 14)/12) : 1);
+    c.save(); c.globalAlpha = g; c.fillStyle = '#6b4524'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(px - 96*k, feet + 2); c.quadraticCurveTo(px - 70*k, feet + 14, px - 30*k, feet + 44*k + 8); c.lineTo(px + 6*k, feet + 70*k); c.lineTo(px + 38*k, feet + 40*k + 8); c.quadraticCurveTo(px + 78*k, feet + 14, px + 96*k, feet + 2); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = '#8aa05a'; c.beginPath(); c.ellipse(px, feet + 2, 96*k, 7, 0, 0, 7); c.fill(); c.stroke();
+    c.restore();
+  }
+  // THE PIT and the MOUND: the pit widens with every scoop; a mound of dirt in front of the foe rises over their legs
+  if(!ok){
+    c.save(); c.fillStyle = '#2a170c'; c.strokeStyle = '#6b4524'; c.lineWidth = 3;
+    c.beginPath(); c.ellipse(px, feet + 2, 14 + 34*pitK, 3 + 6*pitK, 0, 0, 7); c.fill(); c.stroke(); c.restore();
+  }
+  const mh = R*(0.18 + 0.32*Math.min(3, pitK))*(ok ? Math.max(0, 1 - (t - H[3])/8) : 1);
+  if(mh > 1 && t >= H[0] - 12){
+    c.save(); c.fillStyle = '#7b5330'; c.strokeStyle = '#3b2614'; c.lineWidth = 3;
+    const w = R*1.5; c.beginPath(); c.moveTo(px - w, feet + 5); c.quadraticCurveTo(px - w*0.8, feet - mh*1.1, px - w*0.35, feet - mh*0.9); c.quadraticCurveTo(px, feet - mh*1.25, px + w*0.4, feet - mh*0.95); c.quadraticCurveTo(px + w*0.85, feet - mh, px + w, feet + 5); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = '#9a6d42'; for(let i = 0; i < 5; i++){ c.beginPath(); c.arc(px - w*0.6 + i*w*0.3, feet - mh*(0.35 + ((i*3) % 4)*0.12), 3 + (i % 2)*1.5, 0, 7); c.fill(); }
+    c.restore();
+  }
+  // THE SHOVEL: hurled in a spin, it lands blade-down in the foe's grip; it dips with every scoop, and spins away on the blow
+  {
+    let sx = gx, sy = feet + 2, rot = 0, a = 1;
+    if(t < 12){ const u = t/12, x0 = f.x, y0 = f.y - f.r*0.3; sx = x0 + (gx - x0)*u; sy = y0 + (feet + 2 - y0)*u - 70*Math.sin(Math.PI*u); rot = u*10*Math.PI*-sd; a = Math.min(1, (t + 1)/12); }
+    else if(!blown){
+      for(let i = 0; i < 3; i++){ const u = (t - (H[i] - 8))/8; if(u >= 0 && u < 1){ rot = -sd*0.9*Math.sin(Math.PI*u); sy -= R*0.6*Math.sin(Math.PI*u); } }
+    } else { sx = gx - sd*bl*8; sy = feet - R - bl*17 + bl*bl*0.35; rot = -sd*bl*0.45; a = Math.max(0, 1 - bl/32); }
+    fsc3_shovel(c, sx, sy, rot, k, a);
+    if(t >= 11 && t < 16){ const u = (t - 11)/5; c.save(); c.globalAlpha = 0.6*(1 - u); c.fillStyle = '#c9a36b'; c.beginPath(); c.arc(gx - 8, feet, 8 + 10*u, 0, 7); c.arc(gx + 8, feet, 7 + 9*u, 0, 7); c.fill(); c.restore(); }   // the landing's dust
+  }
+  // THE CLODS flung over the foe's shoulder, one a scoop
+  for(let i = 0; i < 3; i++){ const u = (t - (H[i] - 2))/10; if(u < 0 || u >= 1) continue; fsc3_chunk(c, gx - sd*u*(70 + i*14), feet - R*0.5 - 90*Math.sin(Math.PI*u) + 20*u*u, 5 + 1.5*k, u*6, '#7b5330', 1 - u*0.3); }
+  // THE FRY DARTS: dropped one after the other from above, down into the hollow, each a blue-white pop where it lands
+  for(let d = 0; d < 2; d++){
+    const h = H[4 + d], u = (t - (h - 14))/14, ex = px + (d ? 22 : -22);
+    if(u >= 0 && u < 1){
+      const x = ex + Math.sin(u*9 + d)*5, y = (by - 320) + (lay - (by - 320))*u*u;
+      c.save(); c.translate(x, y); c.rotate(u*5*(d ? 1 : -1)); c.fillStyle = '#f2c94c'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.fillRect(-4, -18, 8, 36); c.strokeRect(-4, -18, 8, 36); c.fillStyle = '#e8506a'; c.fillRect(-4, 10, 8, 8); c.restore();
+      fsc3_glow(c, x, y, 26, '170,235,255', 0.5);
+    }
+    const p = (t - h)/9;
+    if(p >= 0 && p < 1){
+      c.save(); c.globalAlpha = 0.75*(1 - p); c.fillStyle = '#fff'; c.beginPath(); c.arc(ex, lay, 12 + 34*p, 0, 7); c.fill();
+      c.globalAlpha = 1 - p; c.strokeStyle = '#bfefff'; c.lineWidth = 3; c.beginPath(); for(let q = 0; q < 8; q++){ const a = q*Math.PI/4 + d; c.moveTo(ex + Math.cos(a)*(16 + 26*p), lay + Math.sin(a)*(16 + 26*p)); c.lineTo(ex + Math.cos(a)*(30 + 40*p), lay + Math.sin(a)*(30 + 40*p)); } c.stroke();
+      c.restore();
+    }
+  }
+  // THE BLOW: the hollow flares white and blows up through the floor in a column of light and dirt; the crater stays
+  if(blown){
+    fsc3_flash(c, px, by, 0.9*(1 - bl/12), '#f4ffff');
+    const gh = 860*fsc3_ease(bl/7), gw = 62 + 22*Math.min(1, bl/10), ga = bl < 16 ? 1 : Math.max(0, 1 - (bl - 16)/10);
+    if(ga > 0.02){
+      c.save(); c.globalAlpha = ga; c.globalCompositeOperation = 'lighter';
+      const g = c.createLinearGradient(px - gw, 0, px + gw, 0);
+      g.addColorStop(0, 'rgba(60,170,255,0)'); g.addColorStop(0.3, 'rgba(120,225,255,0.8)'); g.addColorStop(0.5, 'rgba(255,255,255,0.97)'); g.addColorStop(0.7, 'rgba(120,225,255,0.8)'); g.addColorStop(1, 'rgba(60,170,255,0)');
+      c.fillStyle = g; c.fillRect(px - gw, feet - gh, 2*gw, gh + 10); c.restore();
+      for(let i = 0; i < 12; i++) fsc3_chunk(c, px + (((i*43) % 100) - 50)*(0.5 + bl*0.07), feet - bl*(13 + (i % 5)*5) + bl*bl*0.3*(i % 3), 6 + (i % 4)*3, bl*0.3*(i % 2 ? 1 : -1) + i, i % 3 ? '#7b5330' : '#9a6d42', ga);
+    }
+    const ca = Math.min(1, 1.4 - bl/F.tail*0.9);
+    c.save(); c.globalAlpha = ca; c.fillStyle = '#2a170c'; c.strokeStyle = '#6b4524'; c.lineWidth = 4; c.beginPath(); c.ellipse(px, feet + 3, 74, 12, 0, 0, 7); c.fill(); c.stroke(); c.restore();   // the crater
+    const ru = Math.min(1, bl/16);
+    if(ru < 1){ c.save(); c.globalAlpha = 0.9*(1 - ru); c.strokeStyle = '#fff'; c.lineWidth = 5*(1 - ru) + 1; c.beginPath(); c.ellipse(px, feet, 20 + F.ring*1.3*fsc3_ease(ru), 6 + 20*fsc3_ease(ru), 0, 0, 7); c.stroke(); c.restore(); }
+  }
+  c.restore();
+}
+FINAL_SMASHES['Fries'] = {
+  id:'getdigging', wind:FS_WIND, dur:FSC3_FRIES.dur, reach:FSC3.reach, needFoe:true, exact:true,   // needFoe: pressed with no foe in the catch, it is spent at once (fsTryFire); exact: a CPU fires only when the catch will take someone (fsBotInput)
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FSC3.reach }; }, lockEnd:FSC3_FRIES.hits[6], catchMax:1,   // CATCH: the nearest foe in 420 px; the dig is for one foe
+  botOk(f, t){ return fsc3_botOk(f, t); },
+  start(f, st){
+    const tg = fighters[st.held[0]];
+    if(!tg){ fsc3_spent(f); return; }   // the foe stepped out in the catch's 10 frames
+    const top = fsc3_floorUnder(tg);   // null: no floor within reach under them (over a drop, or high in the air): they dig a floating slab of earth of Fries's own (the held foe falls nowhere)
+    st.tg = tg.idx; st.n0 = tg._koN || 0; st.over = false; st.ay = f.y; st.y0 = tg.y; st.my = top === null ? tg.y : top - tg.r; st.mx = tg.x;
+    f.face = Math.sign(tg.x - f.x) || f.face;
+    f.fsBx = Math.round(st.mx); f.fsBy = Math.round(st.my); f.fsCx = (top === null ? -1 : 1)*Math.round(tg.r || 24);   // (fsCx: their size, minus for the slab; fsCy is left alone: Moon Caves charts the (fsCx, fsCy) pair as a point)
+    armAtk(f, this.wind, 'fsgather');
+  },
+  tick(f, st, t){
+    const C = FSC3_FRIES, tg = fighters[st.tg];
+    f.vx = 0; if(!f.onground){ f.vy = 0; f.y = st.ay; }   // he stays where he is while the dig goes on
+    if(st.over || t > C.hits[6]) return;
+    if(fsc3_gone(f, st, tg)){ st.over = true; st.t = this.dur - 1; return; }   // the foe gone (a KO, a respawn, the lock lost): nothing more, whoever comes back
+    { const ny = t < 8 ? st.y0 + (st.my - st.y0)*fsc3_ease((t + 1)/8) : st.my; if(t >= 7 || !fsc3_inSolid(st.mx, ny, tg.r)){ tg.x = st.mx; tg.y = ny; } }   // a foe in the air is driven down onto the floor under them (never into a solid block on the way)
+    if(t === 11){ shake(5); for(let i = 0; i < 8; i++) puff(st.mx, st.my + (tg.r || 24), i % 2 ? '#c9a36b' : '#7b5330', 4); }   // the shovel lands
+    if(t === C.hits[3]){ shake(8); for(let i = 0; i < 12; i++) puff(st.mx, st.my + (tg.r || 24), i % 2 ? '#7b5330' : '#7ee0ff', 6); }   // the pit crumbles
+    const i = C.hits.indexOf(t);
+    if(i >= 0){
+      const last = i === 6, side = Math.sign(tg.x - f.x) || f.face || 1;
+      armAtk(f, 10, last ? 'fsburst' : 'throw'); shake(last ? 15 : 5);
+      fsc3_hit(f, st, tg, C.dmg[i], last ? side*C.upx : 0, last ? C.up : 0, last);
+      if(last) fsc3_ring(f, st, tg.x, tg.y, C.ring, 22, 16, -14);
+    }
+  },
+  ai(f){ return fsCatchFoes(this, f).length > 0; },
+  draw(f, c){ fsc3_friesDraw(f, c); },
+};
 
 // GELATIN -- JELLY QUAKE. A block of jelly: nothing about him is ever fully still (the design doc); his own card freezes a foe once they are past 40%. He
 // slams down and the quake rings out, 230 px (18%, a launch) and again to 320 (12%): the second ring freezes whoever it reaches, 45 frames.
@@ -27876,9 +28667,157 @@ FINAL_SMASHES['Firey Jr.'] = fsFan({ id:'sparkjr', c1:'#f0803a', n:10, spd:11, v
 // is healed 12% for it.
 FINAL_SMASHES['Fern'] = fsLock({ id:'photosynthesis', c1:'#4f8a3c', c2:'#bfe8a0', R:80, bx:440, by:260, effect:'pin', hits:6, every:5, hitDmg:3, dmg:16, kb:20, heal:12, art:FS_GLYPH.leaf });
 
-// RULER -- BY EXACTLY MY MEASURE. "By exactly my measure." (his frame row): the definition of straight, who does not bend; his own card, Measure Twice, is a fast straight shot the
-// whole stage long. One straight edge sweeps out along the floor, 900 px at 45 a frame, 60 tall, and does not bend (14%). Hop it.
-FINAL_SMASHES['Ruler'] = fsLane({ id:'exactmeasure', c1:'#e8d49a', L:900, spd:45, H:60, hw:22, dmg:14, kb:18, ky:-9, kind:'dash', art:FS_GLYPH.ruler });
+// RULER -- BY EXACTLY MY MEASURE, REBUILT AS THE BARE MINIMUM (id exactmeasure is kept; the old sweeping straight edge is gone). THE OWNER PICKED THE PITCH, 2026-11-02. CANON (the BFDI wiki, read 2026-11-02):
+// in "The Bare Minimum" (BFDIE 2) Ruler and Jammy collect balls; "Ruler finds a pile of balls next to them, and then starts to shove the balls in Jammy's mouth while she tells him to stop", until Sticker
+// bumps into him and knocks the ball he was holding away; his page has him strong (he holds Jammy with one arm), cruel and cheerful. The gauge made of his own measuring lines and the last flick (his chop)
+// are the game's: the game's Ruler is measure-exact (his Measure Twice card). The wiki has no burst for this episode's balls, so the burst and the flying balls are the row's own.
+// CARD. Reach: the nearest foe within 300 px (a circle round him; one foe) that can be brought to stand at his side on his floor (clear above them for the hoist): pressed with none, it is spent at once (no intro).
+// A press from the air still plays: he lands first. No letters. BEATS, 100% in all, at his exact even beat (a strong fighter: the last blow is the big one): THE GRAB, 7% on frame 10: the foe is brought to
+// his side, seized in ONE arm (a straight tan bar) and hoisted 44 px off the floor, a smirk (a glint); a heap of balls rolls in at his feet and a gauge made of his own tan measuring lines stands up beside the foe;
+// THE CRAMS, six, every 12 frames on 24, 36, 48, 60, 72 and 84: he picks a ball off the heap and shoves it in their mouth, 4%, 5%, 6% and then 7%, 8%, 9% = 39% (the foe swells a size with each ball, one
+// gauge line lights; from the fourth they are round, cheeks bulging, quivering harder, and the gauge climbs to its top mark: exactly full); A BEAT, 0%, frames 85-107: he turns his smirk to us and sets the
+// last ball on his own straight edge; THE FLICK, 54% on frame 108: one rigid, no-wind-up flick taps the ball into them: they burst, the balls fly out in every direction and bounce round the stage (drawn: they
+// are not shots; a ring of 240 px at the spot for anyone else, 14%, once each) and the foe is launched hard (sideways, a little up). 144 frames in all (the foe is held about 1.9 seconds). He stands where he is.
+// A boss, an add or a teammate is never caught or hit; the foe KO'd or the lock lost mid-way ends it there. Everything drawn comes from fsT, the foe the catch holds and fsAx, fsAy (him, on the floor),
+// fsBx, fsBy (where the foe stands before the hoist: which side they are on) and fsCx (the foe's size).
+const FSC3_RULER = { reach:300, hits:[10, 24, 36, 48, 60, 72, 84, 108], dmg:[7, 4, 5, 6, 7, 8, 9, 54], lift:44, sw:0.085, tail:36, kb:18, up:-10, ring:240, ringDmg:14 };
+FSC3_RULER.dur = FSC3_RULER.hits[7] + FSC3_RULER.tail;
+const FSC3_BALLS = ['#e0463f', '#3b7de0', '#f2c230', '#41b36a', '#b25ae0', '#f08a2c'];
+// where the foe is brought to stand: at his side on his floor (a floor under him; never through a solid block, with room above them for the hoist); null: nowhere
+function fsc3_rulerMeet(f, tg){
+  const C = FSC3_RULER, g = f.r + tg.r + 14;
+  for(const fl of fsc3_floorsUnder(f)){
+    const pr = fsc3_proxy(f, fl);
+    for(const gap of [g, g + 26, g - 8]){ const m = fsc3_meet(pr, tg, [gap]); if(m && !fsc3_inSolid(m.x, m.y - C.lift, tg.r)) return { x:m.x, y:m.y, fl:fl }; }
+  }
+  return null;
+}
+function fsc3_ball(c, x, y, r, col, a){
+  c.save(); c.globalAlpha = a; c.fillStyle = col; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5;
+  c.beginPath(); c.arc(x, y, Math.max(0.5, r), 0, 7); c.fill(); c.stroke();
+  c.fillStyle = 'rgba(255,255,255,0.65)'; c.beginPath(); c.arc(x - r*0.35, y - r*0.38, Math.max(0.3, r*0.27), 0, 7); c.fill();
+  c.restore();
+}
+// the foe's own picture drawn over them a size bigger (the engine's fit: feet on R + 12), cheeks bulging; a plain ball in their colour until the picture has loaded
+function fsc3_swell(c, L, k, sw, a){
+  const sp = SPRITES[L.name], im = sp && spriteImage(sp), R = L.r;
+  c.save(); c.globalAlpha = a;
+  if(im && im.naturalWidth){
+    const ar = im.naturalWidth/im.naturalHeight, dh = Math.min((sp.imgH || 2.8)*R, ((sp.imgW || 2.3)*R)/ar), dw = dh*ar;
+    c.translate(L.x, L.y + (R + 12) - dh/2); c.scale(k, k*0.96); if(((L.face || 1) < 0) !== !!sp.flip) c.scale(-1, 1);
+    c.drawImage(im, -dw/2, -dh/2, dw, dh);
+  } else { c.translate(L.x, L.y); c.fillStyle = L.color || '#bbb'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.arc(0, 0, Math.max(1, R*k), 0, 7); c.fill(); c.stroke(); }
+  c.restore();
+  c.save(); c.globalAlpha = 0.75*Math.min(1, sw/2)*a; c.fillStyle = '#f0867a';   // the cheeks
+  c.beginPath(); c.arc(L.x - R*0.5*k, L.y + R*0.12, Math.max(0.1, R*0.2*Math.min(1.6, 0.5 + sw*0.18)), 0, 7); c.arc(L.x + R*0.5*k, L.y + R*0.12, Math.max(0.1, R*0.2*Math.min(1.6, 0.5 + sw*0.18)), 0, 7); c.fill();
+  c.restore();
+}
+function fsc3_rulerDraw(f, c){
+  const t = f.fsT || 0, C = FSC3_RULER, H = C.hits, L = fsLockedOf(f);
+  if(f.fsBx == null || f.fsAx == null) return;
+  const hx = f.fsAx, hy = f.fsAy, hr = f.r, fl = hy + hr, mx = f.fsBx, my = f.fsBy, tr = f.fsCx || 24, s = mx >= hx ? 1 : -1, du = t - H[7];
+  const grow = fsc3_in(t, 10, 12), growH = fsc3_in(t, 8, 12), outA = du > 18 ? Math.max(0, 1 - (du - 18)/18) : 1;
+  const lift = C.lift*fsc3_ease(Math.min(1, Math.max(0, (t - 10)/8)));
+  const fx = L ? L.x : mx, fy = L ? L.y : my - C.lift;   // (after the let-go, the burst's own place)
+  const bx = mx, by = my - C.lift;   // the burst's place
+  c.save(); c.lineJoin = 'round'; c.lineCap = 'round'; c.globalAlpha = 1;
+  // THE HEAP: balls rolled in at his feet behind him; the top ones are taken as he uses them
+  const rows = [5, 4, 3, 2], hpx = hx - s*(hr + 54), order = [];
+  for(let r = 3; r >= 0; r--) for(let i = 0; i < rows[r]; i++) order.push({ x:hpx + (i - (rows[r] - 1)/2)*25, y:fl - 12 - r*21, col:FSC3_BALLS[(i + r*2) % 6] });
+  let taken = 0; for(let k = 1; k <= 6; k++) if(t >= H[k] - 9) taken = k; if(t >= 86) taken = 7;
+  if(t >= 10 && du < 24) for(let j = taken; j < order.length; j++){ const o = order[j], e = Math.max(0, Math.min(1, grow*1.4 - (order.length - j)*0.04)); const roll = (1 - e)*s*-60; fsc3_ball(c, o.x + roll, o.y, 12, o.col, e*outA); }
+  // THE GAUGE: his own measuring lines, tan, standing beside the foe; one segment lights per ball, the top mark when it is full
+  { const gx = mx + s*(tr + 56), gh = 132*growH*(du >= 0 ? Math.max(0, 1 - du/10) : 1), nLit = H.slice(1, 7).filter((h)=> t >= h).length;
+    if(t >= 8 && gh > 3 && outA > 0.01){
+      c.save(); c.globalAlpha = outA; c.fillStyle = '#e8d49a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillRect(gx - 12, fl - gh, 24, gh); c.strokeRect(gx - 12, fl - gh, 24, gh);
+      for(let k = 0; k < 6; k++){ const y0 = fl - gh*(k + 1)/6, h0 = gh/6; if(k < nLit){ c.fillStyle = '#ffd24a'; c.fillRect(gx - 10, y0 + 2, 20, h0 - 3); } c.beginPath(); c.moveTo(gx - 12, y0); c.lineTo(gx + (k % 2 ? 2 : 4), y0); c.stroke(); }
+      if(nLit >= 6 && t < H[7]){ fsc3_glow(c, gx, fl - gh, 40, '255,220,90', 0.7 + 0.25*Math.sin(t*0.5)); }
+      c.restore();
+    }
+  }
+  // HIS ARM: one straight tan bar from his shoulder to the foe, the foe held up at the end of it
+  if(t >= 4 && t <= H[7] && L){
+    const e = fsc3_ease(Math.min(1, (t - 4)/8)), x0 = hx + s*hr*0.5, y0 = hy - 2, x1 = fsc3_lerp(x0, fx - s*tr*0.5, e), y1 = fsc3_lerp(y0, fy + 4, e);
+    c.save(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 15; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke(); c.strokeStyle = '#e8d49a'; c.lineWidth = 10; c.stroke();
+    c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); for(let q = 1; q < 6; q++){ const u = q/6, px = fsc3_lerp(x0, x1, u), py = fsc3_lerp(y0, y1, u); c.moveTo(px, py - 5); c.lineTo(px, py + (q % 2 ? 3 : 5)); } c.stroke(); c.restore();
+  }
+  // THE SWELL: the foe's own picture a size bigger with every ball, quivering, cheeks bulging
+  if(L && t >= 10 && t < H[7]){
+    let sw = 0; for(let k = 1; k <= 6; k++) sw += Math.max(0, Math.min(1, (t - H[k] + 3)/6));
+    const q = t >= H[4] ? 2.4 : (t >= H[1] ? 1.2 : 0), jx = q*((t & 1) ? 1 : -1);
+    fsc3_swell(c, { name:L.name, x:L.x + jx, y:L.y, r:L.r, face:L.face, color:L.color }, 1 + C.sw*sw, sw, 1);
+  }
+  // THE CRAMS: a ball from the heap's top to their mouth, in an arc; a small puff of the ball's colour as it goes in
+  for(let k = 1; k <= 6; k++){
+    const u = (t - (H[k] - 9))/9;
+    if(u >= 0 && u < 1){ const o = order[k - 1], x = fsc3_lerp(o.x, fx - s*tr*0.3, u), y = fsc3_lerp(o.y, fy - 2, u) - 34*Math.sin(Math.PI*u); fsc3_ball(c, x, y, 12 - 3*u, o.col, 1); }
+    const v = (t - H[k])/8; if(v >= 0 && v < 1){ c.save(); c.globalAlpha = (1 - v)*0.9; c.strokeStyle = FSC3_BALLS[k % 6]; c.lineWidth = 4*(1 - v) + 1; c.beginPath(); c.arc(fx, fy, 22 + 30*v, 0, 7); c.stroke(); c.restore(); }
+  }
+  // THE BEAT AND THE FLICK: he sets the last ball on his own straight edge, a glint of a smirk; the edge flicks, the ball goes in
+  if(t >= 84 && t < H[7] + 4){
+    const e = fsc3_in(t, 84, 12), x0 = hx + s*hr*0.55, y0 = hy - 6, ang = t >= 102 ? -s*0.9*fsc3_ease(Math.min(1, (t - 102)/3)) : 0, len = 78*e;
+    c.save(); c.translate(x0, y0); c.rotate(ang*s); c.scale(s, 1);
+    c.strokeStyle = '#1c1c1c'; c.lineWidth = 13; c.beginPath(); c.moveTo(0, 0); c.lineTo(len, 0); c.stroke(); c.strokeStyle = '#e8d49a'; c.lineWidth = 8; c.stroke();
+    c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); for(let q = 1; q < 8; q++){ const px = len*q/8; c.moveTo(px, -4); c.lineTo(px, q % 2 ? 0 : 3); } c.stroke();
+    c.restore();
+    const o = order[6];
+    if(t < 98){ const u = Math.max(0, Math.min(1, (t - 86)/12)); fsc3_ball(c, fsc3_lerp(o.x, x0 + s*len, u), fsc3_lerp(o.y, y0 - 12, u) - 40*Math.sin(Math.PI*u), 12, o.col, 1); }
+    else if(t < 102) fsc3_ball(c, x0 + s*len, y0 - 12, 12, o.col, 1);
+    else if(t < H[7]){ const u = (t - 102)/(H[7] - 102); fsc3_ball(c, fsc3_lerp(x0 + s*len, fx, u), fsc3_lerp(y0 - 12, fy, u), 12, o.col, 1); }
+    if(t >= 88 && t < 98){ c.save(); c.globalAlpha = 0.8; c.strokeStyle = '#fff'; c.lineWidth = 2.5; const gx = hx + s*hr*0.2, gy = hy - hr*0.7; c.beginPath(); c.moveTo(gx - 7, gy); c.lineTo(gx + 7, gy); c.moveTo(gx, gy - 7); c.lineTo(gx, gy + 7); c.stroke(); c.restore(); }   // the glint
+  }
+  // THE BURST: a flash, rings, and the balls flying out in every direction and bouncing round (drawn, not shots)
+  if(du >= 0){
+    fsc3_flash(c, bx, by, 0.8*(1 - du/8), '#fff');
+    if(du < 22) fsc3_glow(c, bx, by, 280*(0.4 + du/22), '255,230,170', 0.95*(1 - du/22));
+    for(let r = 0; r < 3; r++){ const w = (du - r*3)/16; if(w < 0 || w >= 1) continue; c.save(); c.globalAlpha = 0.9*(1 - w); c.strokeStyle = r === 1 ? '#e0463f' : '#fff'; c.lineWidth = 8*(1 - w) + 1.5; c.beginPath(); c.arc(bx, by, 30 + 230*fsc3_ease(w), 0, 7); c.stroke(); c.restore(); }
+    const a1 = Math.max(0, 1 - Math.max(0, du - 26)/10);
+    if(a1 > 0.02) for(let j = 0; j < 18; j++){
+      const ang = j*Math.PI*2/18 + 0.3, sp = 6 + (j*5) % 6; let x = bx, y = by, vx = Math.cos(ang)*sp, vy = Math.sin(ang)*sp - 3, bn = 0;
+      for(let q = 0; q < du; q++){ x += vx; y += vy; vy += 0.55; vx *= 0.99; if(y > fl - 11 && vy > 0 && bn < 4){ y = fl - 11; vy = -vy*0.6; bn++; } if(y > fl - 11 && vy > 0) { y = fl - 11; vy = 0; vx *= 0.9; } }
+      fsc3_ball(c, x, y, 10, FSC3_BALLS[j % 6], a1*outA);
+    }
+  }
+  c.restore();
+}
+FINAL_SMASHES['Ruler'] = {
+  id:'exactmeasure', wind:FS_WIND, dur:FSC3_RULER.dur, reach:FSC3_RULER.reach, needFoe:true, exact:true,   // needFoe: pressed with no foe it can take, it is spent at once (fsTryFire); exact: a CPU fires only when the catch will take someone (fsBotInput)
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FSC3_RULER.reach }; }, lockEnd:FSC3_RULER.hits[7], catchMax:1,   // CATCH: the nearest foe in 300 px; the grab is for one foe
+  catchOk(f, t){ return !!fsc3_rulerMeet(f, t); },   // ...that can be brought to stand at his side on his floor with room to be hoisted: with none a human's press is spent at once and a CPU does not fire
+  botOk(f, t){ return fsc3_botOkR(f, t, FSC3_RULER.reach); },
+  start(f, st){
+    const tg = fighters[st.held[0]];
+    if(!tg){ fsc3_spent(f); return; }   // the foe stepped out in the catch's 10 frames
+    const m = fsc3_rulerMeet(f, tg);
+    if(!m){ fsc3_spent(f); return; }   // nowhere to stand them: spent
+    f.x = Math.round(f.x); f.y = m.fl - f.r; f.vx = 0; f.vy = 0; f.onground = true;   // (a press from the air: he lands first)
+    const sd = Math.sign(m.x - f.x) || f.face || 1; f.face = sd;
+    f.fsAx = f.x; f.fsAy = Math.round(f.y); f.fsBx = Math.round(m.x); f.fsBy = Math.round(m.y); f.fsCx = Math.round(tg.r || 24);
+    st.tg = tg.idx; st.n0 = tg._koN || 0; st.over = false; st.xf = tg.x; st.yf = tg.y; st.hx = f.x; st.hy = f.y; st.mx = f.fsBx; st.my = f.fsBy; st.side = sd;
+    armAtk(f, this.wind, 'fsgather');
+  },
+  tick(f, st, t){
+    const C = FSC3_RULER, H = C.hits, tg = fighters[st.tg];
+    if(st.over) return;
+    f.x = st.hx; f.y = st.hy; f.vx = 0; f.vy = 0; f.onground = true;   // he stands where he is
+    if(t > H[7]) return;
+    if(fsc3_gone(f, st, tg)){ st.over = true; st.t = this.dur - 1; return; }   // the foe gone (a KO, a respawn, the lock lost): nothing more, whoever comes back
+    // THE FOE: brought to stand at his side (never through a solid block on the way), then hoisted in his one arm and quivering more with every ball
+    if(t < 10){ const p = fsc3_ease((t + 1)/10), nx = fsc3_lerp(st.xf, st.mx, p), ny = fsc3_lerp(st.yf, st.my, p); if(t >= 9 || !fsc3_inSolid(nx, ny, tg.r)){ tg.x = nx; tg.y = ny; } }
+    else { const q = t >= H[4] ? 2.4 : (t >= H[1] ? 1.2 : 0); tg.x = st.mx + q*((t & 1) ? 1 : -1); tg.y = st.my - C.lift*fsc3_ease(Math.min(1, (t - 10)/8)); }
+    const i = H.indexOf(t);
+    if(i === 0){ armAtk(f, 12, 'throw'); shake(5); fsc3_hit(f, st, tg, C.dmg[0], 0, 0, false); }   // the grab
+    else if(i >= 1 && i <= 6){ armAtk(f, 8, 'punch'); shake(2 + (i > 3 ? 2 : 0)); fsc3_hit(f, st, tg, C.dmg[i], 0, 0, false); }   // the crams
+    else if(i === 7){   // the flick
+      armAtk(f, 14, 'fsburst'); shake(18);
+      fsc3_hit(f, st, tg, C.dmg[7], st.side*C.kb, C.up, true);
+      fsc3_ring(f, st, tg.x, tg.y, C.ring, C.ringDmg, 18, -14);
+      for(let q = 0; q < 26; q++) puff(tg.x, tg.y, q % 3 ? '#fff' : FSC3_BALLS[q % 6], 8);
+    }
+  },
+  ai(f){ return fsCatchFoes(this, f).length > 0; },
+  draw(f, c){ fsc3_rulerDraw(f, c); },
+};
 
 // SIDEWALKY -- PHYSICALLY. "I won. Sorry? Can't. Physically." (his frame row): everything about him is mass; his own card is the armoured Pavement Slam. A slab comes down on the nearest foe
 // within 380: the marker is fixed 26 frames ahead, he is slow (120 px: step out), and it is 28%, thrown hard.
@@ -29015,9 +29954,151 @@ Object.assign(FS_GLYPH, {
 // other: for 36 frames everyone within 360 of her is drawn in, 3.2 px a frame (walk away faster), and then the poles flip: 200 px round her, 20%, thrown hard.
 FINAL_SMASHES['Magnet'] = fsPull({ id:'likepolesrepel', c1:'#d6304a', c2:'#dfe6ee', R:360, ahead:0, rate:3.2, pull:36, R2:200, dmg:20, kb:26, ky:-10, art:FS_GLYPH.horseshoe });
 
-// METAG -- BARRIERS. "Generation: MeTag is able to generate seemingly indestructible and transparent walls"; "Their logo will glow when they're currently tracking someone's location." (the MeTag page, quoted at their card).
-// Walls come up out of the floor out from under them, five a side, 80 px apart, one every three frames (12%, 280 tall).
-FINAL_SMASHES['MeTag'] = fsCols({ id:'barrierwalls', c1:'#8ad8ff', c2:'#ffffff', nc:5, sp:80, H:280, hw:30, dmg:12, kb:15, ky:-16, art:FS_GLYPH.wall });
+// METAG -- BARRIERS (id barrierwalls is kept; the old row of five glass walls a side is gone). THE OWNER PICKED THE PITCH, 2026-11-02. CANON (the Inanimate Insanity wiki, read 2026-11-02): the MeTag page lists
+// Tracking ("Their logo will glow when they're currently tracking someone's location") and Barrier Generation ("walls that can presumably be in any shape and size", seemingly indestructible and
+// transparent); in "Through No Choice of Your Own" several MeTags arrest Knife, cuff him and lock him in a padded cell, and in "Fan the Flames" they put up a see-through force field. The zig-zag is built
+// from their own kit (their smash drives a foe into a wall that crushes and bounces them), not from one scene: the panes, the reticle, the cell and the cuffs are the row's own drawings.
+// CARD. Reach: the nearest foe within 420 px (a circle round them; one foe) over a floor (the scene needs ground within 380 px under the foe, room at the sides and a clear space: with none a human's press is spent
+// at once, no intro). No letters. BEATS, 90% in all: THE FIND (the logo lights, the reticle's four brackets close in on the foe, a thin tracking line runs out to them, a ping swells; the foe is brought
+// up to hover in the middle of the scene); THE ZIG-ZAG (four glass panes flick up one after another at different angles, a steep one, a floor slant, another steep one, a ceiling slant; the foe is knocked
+// into each in turn and rebounds into the next across the scene, each pane flashing and ringing and never breaking): 8%, 10%, 12%, 14% on frames 22, 36, 48 and 58 (the beat quickens);
+// THE CELL (the four panes slide together into a see-through cell round the foe and a pair of cuffs clicks shut on them): 16% on frame 76; THE SQUEEZE (every pane closes in at once, and bursts outward in a ring of light):
+// 30% on frame 100, the launch, away from them and up (a ring of 230 px for anyone else at the spot, 24%). 130 frames in all (the foe is held about 1.7 seconds). They hang where they are. A boss, an add or a
+// teammate is never caught or hit; the foe KO'd or the lock lost mid-way ends it there. The foe is moved on a smooth path between the panes (never through a solid block, never off the world's sides).
+// Everything drawn comes from fsT, the foe the catch holds and fsAx, fsAy (them), fsBx, fsBy (the middle of the scene, where the foe starts) and fsCx (the foe's size; its sign is which side the first pane is on).
+const FSC3_METAG = { reach:420, hits:[22, 36, 48, 58, 76, 100], dmg:[8, 10, 12, 14, 16, 30], come:10, slide:[62, 74], sq0:84, half:78, halfEnd:26, tail:30, kb:20, up:-14, ring:230, ringDmg:24, hover:100 };
+FSC3_METAG.dur = FSC3_METAG.hits[5] + FSC3_METAG.tail;
+// the foe's stops, from the scene's middle (x is mirrored by the side): the ping to the first pane, then a floor slant, a steep one, a ceiling slant, and the middle of the cell
+const FSC3_MPATH = [[0, 0], [115, -10], [60, 90], [-110, 20], [-20, -130], [0, -20]];
+function fsc3_metagStops(ax, ay, s){ return FSC3_MPATH.map((p)=> ({ x:ax + s*p[0], y:ay + p[1] })); }
+// where the scene goes: over the floor under the foe, the middle clear of the world's sides, every stop and the lines between them clear of solid blocks; null: nowhere
+function fsc3_metagPlan(f, tg){
+  const C = FSC3_METAG, fl = fsc3_floorUnder(tg); if(fl === null || fl < 330) return null;
+  const s0 = Math.sign(tg.x - f.x) || f.face || 1, ax = Math.max(250, Math.min(WW - 250, tg.x)), ay = fl - tg.r - C.hover;
+  for(const s of [s0, -s0]){
+    const P = fsc3_metagStops(ax, ay, s); let bad = false;
+    for(let i = 0; i < P.length - 1 && !bad; i++) for(let q = 0; q <= 6 && !bad; q++){ const u = q/6; if(fsc3_inSolid(fsc3_lerp(P[i].x, P[i + 1].x, u), fsc3_lerp(P[i].y, P[i + 1].y, u), tg.r + 6)) bad = true; }
+    if(!bad) return { s:s, ax:ax, ay:ay, fl:fl };
+  }
+  return null;
+}
+// pane k's pose at the foe's stop (k = 0..3): where the foe hits it (a little past the stop, along the way they travel), square to it
+function fsc3_metagPane(P, k, tr){
+  const a = P[k], b = P[k + 1], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, ux = dx/d, uy = dy/d;
+  return { x:b.x + ux*(tr + 10), y:b.y + uy*(tr + 10), ang:Math.atan2(uy, ux) + Math.PI/2, len:150 };
+}
+// a pane of glass: a see-through slab with a dark outline, a white glint and, on contact, a flash
+function fsc3_pane(c, x, y, ang, len, a, flash){
+  if(!(a > 0.01) || !(len > 2)) return;
+  c.save(); c.translate(x, y); c.rotate(ang); c.globalAlpha = a; c.lineJoin = 'round';
+  c.fillStyle = 'rgba(176,228,255,0.34)'; c.fillRect(-len/2, -8, len, 16);
+  c.strokeStyle = '#1b2a3a'; c.lineWidth = 3; c.strokeRect(-len/2, -8, len, 16);
+  c.strokeStyle = 'rgba(255,255,255,0.9)'; c.lineWidth = 2; c.beginPath(); c.moveTo(-len*0.38, -2); c.lineTo(-len*0.12, -2); c.moveTo(-len*0.06, -2); c.lineTo(len*0.05, -2); c.stroke();
+  if(flash > 0.02){ c.globalAlpha = Math.min(1, flash)*a; c.fillStyle = '#fff'; c.fillRect(-len/2, -8, len, 16); }
+  c.restore();
+}
+function fsc3_metagDraw(f, c){
+  const t = f.fsT || 0, C = FSC3_METAG, H = C.hits, L = fsLockedOf(f);
+  if(f.fsBx == null || f.fsAx == null) return;
+  const s = (f.fsCx || 1) < 0 ? -1 : 1, tr = Math.abs(f.fsCx) || 24, P = fsc3_metagStops(f.fsBx, f.fsBy, s), cc = P[5], hx = f.fsAx, hy = f.fsAy;
+  const du = t - H[5], outA = du > 6 ? Math.max(0, 1 - (du - 6)/14) : 1, grow = fsc3_in(t, 0, 12);
+  const fx = L ? L.x : cc.x, fy = L ? L.y : cc.y;
+  c.save(); c.lineJoin = 'round'; c.lineCap = 'round'; c.globalAlpha = 1;
+  // THE LOGO: glowing while they track
+  if(t < H[5] + 6) fsc3_glow(c, hx, hy, 74, '170,232,255', (0.4 + 0.15*Math.sin(t*0.35))*Math.min(1, grow + 0.3));
+  // THE FIND: a ping swells from them, a thin tracking line runs out to the foe, four brackets close in
+  if(t < 18){ const p = t/18; c.save(); c.globalAlpha = 0.8*(1 - p); c.strokeStyle = '#bff0ff'; c.lineWidth = 4*(1 - p) + 1; c.beginPath(); c.arc(hx, hy, 22 + 110*fsc3_ease(p), 0, 7); c.stroke(); c.restore(); }
+  if(t < H[4]){
+    const kc = t < 12 ? 92 - 58*fsc3_ease(t/12) : 34 + (t % 16 < 3 ? 3 : 0);
+    c.save(); c.globalAlpha = Math.min(1, 0.35 + t/10)*(t > H[3] ? Math.max(0, 1 - (t - H[3])/18) : 1); c.strokeStyle = '#d6f6ff'; c.lineWidth = 3;
+    if(t < 30){ c.globalAlpha *= 0.55; c.lineWidth = 1.5; c.beginPath(); c.moveTo(hx, hy); c.lineTo(fx, fy); c.stroke(); c.lineWidth = 3; c.globalAlpha /= 0.55; }
+    const q = kc, b = 14;
+    c.beginPath();
+    for(const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]){ c.moveTo(fx + sx*q, fy + sy*(q - b)); c.lineTo(fx + sx*q, fy + sy*q); c.lineTo(fx + sx*(q - b), fy + sy*q); }
+    c.stroke(); c.restore();
+  }
+  // THE PANES: each flicks up at its angle just before the foe reaches it, flashes on contact, slides into the cell, closes in, and bursts outward
+  const half = t < C.sq0 ? C.half : fsc3_lerp(C.half, C.halfEnd, Math.min(1, fsc3_ease((t - C.sq0)/(H[5] - C.sq0))));
+  const cell = [{ x:cc.x + half, y:cc.y, ang:Math.PI/2 }, { x:cc.x, y:cc.y + half, ang:0 }, { x:cc.x - half, y:cc.y, ang:Math.PI/2 }, { x:cc.x, y:cc.y - half, ang:0 }];
+  for(let k = 0; k < 4; k++){
+    const A = fsc3_metagPane(P, k, tr), appear = fsc3_in(t, H[k] - 12, 8);
+    if(appear <= 0.01) continue;
+    const sl = fsc3_ease(Math.max(0, Math.min(1, (t - C.slide[0])/(C.slide[1] - C.slide[0])))), B = cell[k];
+    let x = fsc3_lerp(A.x, B.x, sl), y = fsc3_lerp(A.y, B.y, sl), len = fsc3_lerp(A.len, 2*half + 12, sl), ang = A.ang;
+    let da = B.ang - A.ang; while(da > Math.PI/2) da -= Math.PI; while(da < -Math.PI/2) da += Math.PI; ang = A.ang + da*sl;
+    let a = appear*outA;
+    if(du >= 0){ const e = fsc3_ease(Math.min(1, du/14)); x += (B.x - cc.x)*e*6; y += (B.y - cc.y)*e*6; }
+    const flash = t >= H[k] ? Math.max(0, 1 - (t - H[k])/8) : 0, sc = t < H[k] ? Math.max(0.15, appear) : 1;
+    fsc3_pane(c, x, y, ang, len*sc, a, flash);
+    // the contact: a white glint and a ring on the pane where the foe hit it
+    const v = (t - H[k])/10;
+    if(v >= 0 && v < 1){ c.save(); c.globalAlpha = (1 - v)*outA; c.strokeStyle = '#ffffff'; c.lineWidth = 4*(1 - v) + 1; c.beginPath(); c.arc(A.x - Math.cos(A.ang - Math.PI/2)*(tr + 10), A.y - Math.sin(A.ang - Math.PI/2)*(tr + 10), 12 + 40*v, 0, 7); c.stroke();
+      c.beginPath(); for(let q = 0; q < 8; q++){ const g = q*Math.PI/4 + k; c.moveTo(A.x + Math.cos(g)*(10 + 18*v), A.y + Math.sin(g)*(10 + 18*v)); c.lineTo(A.x + Math.cos(g)*(24 + 26*v), A.y + Math.sin(g)*(24 + 26*v)); } c.stroke(); c.restore(); }
+  }
+  // THE CUFFS: a pair of rings and a chain click shut on the foe
+  if(t >= H[4] && t < H[5] + 2){
+    const u = (t - H[4])/6, k = Math.min(1, u), r0 = tr*0.55;
+    c.save(); c.globalAlpha = Math.min(1, 0.25 + k)*outA; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3.5;
+    c.fillStyle = 'rgba(0,0,0,0)';
+    for(const sg of [-1, 1]){ c.beginPath(); c.arc(fx + sg*(tr*0.85), fy + tr*0.35, Math.max(0.1, r0*(1.6 - 0.6*k)), 0, 7); c.stroke(); c.strokeStyle = '#d6dde6'; c.lineWidth = 2; c.stroke(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 3.5; }
+    for(let j = 1; j <= 4; j++){ c.beginPath(); c.arc(fsc3_lerp(fx - tr*0.85 + r0, fx + tr*0.85 - r0, j/5), fy + tr*0.35, 3, 0, 7); c.stroke(); }   // the chain
+    if(u < 1.2){ c.globalAlpha = (1.2 - u)*0.6; c.fillStyle = '#fff'; c.beginPath(); c.arc(fx, fy + tr*0.35, 8 + 30*u, 0, 7); c.fill(); }
+    c.restore();
+  }
+  // THE SQUEEZE'S BURST: a ring of light, rays, a flash
+  if(du >= 0){
+    fsc3_flash(c, cc.x, cc.y, 0.85*(1 - du/8), '#fff');
+    if(du < 24) fsc3_glow(c, cc.x, cc.y, 300*(0.4 + du/24), '190,236,255', 0.95*(1 - du/24));
+    for(let r = 0; r < 3; r++){ const w = (du - r*3)/18; if(w < 0 || w >= 1) continue; c.save(); c.globalAlpha = 0.9*(1 - w); c.strokeStyle = r === 1 ? '#8ad8ff' : '#fff'; c.lineWidth = 9*(1 - w) + 1.5; c.beginPath(); c.arc(cc.x, cc.y, 30 + 240*fsc3_ease(w), 0, 7); c.stroke(); c.restore(); }
+    if(du < 14){ const e = fsc3_ease(du/12); c.save(); c.globalAlpha = 1 - du/14; c.strokeStyle = '#d6f6ff'; c.lineWidth = 4.5; c.beginPath(); for(let q = 0; q < 18; q++){ const a = q*Math.PI*2/18; c.moveTo(cc.x + Math.cos(a)*50, cc.y + Math.sin(a)*50); c.lineTo(cc.x + Math.cos(a)*(50 + 190*e), cc.y + Math.sin(a)*(50 + 190*e)); } c.stroke(); c.restore(); }
+  } else if(t >= C.sq0){   // the squeeze: the light gathers in the cell
+    const w = (t - C.sq0)/(H[5] - C.sq0); fsc3_glow(c, cc.x, cc.y, 40 + 60*w, '200,240,255', 0.2 + 0.5*w);
+  }
+  c.restore();
+}
+FINAL_SMASHES['MeTag'] = {
+  id:'barrierwalls', wind:FS_WIND, dur:FSC3_METAG.dur, reach:FSC3_METAG.reach, exposed:false, needFoe:true, exact:true,   // needFoe: pressed with no foe it can take, it is spent at once (fsTryFire); exact: a CPU fires only when the catch will take someone (fsBotInput)
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FSC3_METAG.reach }; }, lockEnd:FSC3_METAG.hits[5], catchMax:1,   // CATCH: the nearest foe in 420 px; the scene is for one foe
+  catchOk(f, t){ return !!fsc3_metagPlan(f, t); },   // ...that has a floor under it and room for the scene: with none a human's press is spent at once and a CPU does not fire
+  botOk(f, t){ return fsc3_botOkR(f, t, FSC3_METAG.reach); },
+  start(f, st){
+    const tg = fighters[st.held[0]];
+    if(!tg){ fsc3_spent(f); return; }   // the foe stepped out in the catch's 10 frames
+    const P = fsc3_metagPlan(f, tg);
+    if(!P){ fsc3_spent(f); return; }   // nowhere to build it: spent
+    st.tg = tg.idx; st.n0 = tg._koN || 0; st.over = false; st.xf = tg.x; st.yf = tg.y; st.hx = f.x; st.hy = f.y; st.s = P.s;
+    f.fsBx = Math.round(P.ax); f.fsBy = Math.round(P.ay); f.fsCx = P.s*Math.round(tg.r || 24);
+    st.P = fsc3_metagStops(f.fsBx, f.fsBy, P.s);
+    f.face = Math.sign(st.P[1].x - f.x) || f.face;
+    armAtk(f, this.wind, 'fsgather');
+  },
+  tick(f, st, t){
+    const C = FSC3_METAG, H = C.hits, P = st.P, tg = fighters[st.tg];
+    if(st.over) return;
+    f.vx = 0; if(!f.onground){ f.vy = 0; f.y = st.hy; }   // they hang where they are
+    if(t > H[5]) return;
+    if(fsc3_gone(f, st, tg)){ st.over = true; st.t = this.dur - 1; return; }   // the foe gone (a KO, a respawn, the lock lost): nothing more, whoever comes back
+    // THE FOE'S PATH: brought up to the middle, then pinged from stop to stop (each leg arrives on its blow, speeding in), then drawn into the middle of the cell
+    let x, y;
+    if(t < C.come){ const p = fsc3_ease((t + 1)/C.come); x = fsc3_lerp(st.xf, P[0].x, p); y = fsc3_lerp(st.yf, P[0].y, p); if(t < C.come - 1 && fsc3_inSolid(x, y, tg.r)){ x = tg.x; y = tg.y; } }
+    else {
+      const legs = [C.come, H[0], H[1], H[2], H[3], H[3] + 14]; x = P[5].x; y = P[5].y;
+      for(let k = 0; k < 5; k++) if(t >= legs[k] && t < legs[k + 1]){ const p = (t - legs[k])/(legs[k + 1] - legs[k]), e = k < 4 ? p*p : fsc3_ease(p); x = fsc3_lerp(P[k].x, P[k + 1].x, e); y = fsc3_lerp(P[k].y, P[k + 1].y, e); }
+      if(t >= H[3] + 14){ const j = t >= H[4] ? 3 : 1.5; x = P[5].x + ((t & 1) ? j : -j); y = P[5].y; }   // in the cell: a shiver
+    }
+    tg.x = x; tg.y = y;
+    const i = H.indexOf(t);
+    if(i >= 0 && i < 5){ armAtk(f, 8, 'throw'); shake(3 + i); fsc3_hit(f, st, tg, C.dmg[i], 0, 0, false); }
+    if(t === H[5]){
+      armAtk(f, 16, 'fsburst'); shake(18);
+      fsc3_hit(f, st, tg, C.dmg[5], st.s*C.kb, C.up, true);
+      fsc3_ring(f, st, tg.x, tg.y, C.ring, C.ringDmg, 20, -14);
+      for(let q = 0; q < 24; q++) puff(tg.x, tg.y, q % 3 ? '#fff' : '#8ad8ff', 8);
+    }
+  },
+  ai(f){ return fsCatchFoes(this, f).length > 0; },
+  draw(f, c){ fsc3_metagDraw(f, c); },
+};
 
 // POPPY -- THE JIG IS UP! "The jig is up!" (their frame row): all enthusiasm, a kernel in a pan; their own card is the Ghost Vacuum. They pop: twelve kernels all round them, twice, fourteen frames apart (9%), thrown up in arcs
 // and coming down: the gaps between them are the way through.
@@ -29032,9 +30113,223 @@ FINAL_SMASHES['Silver Spoon'] = fsCircle({ id:'glowinggold', c1:'#f2c94c', c2:'#
 // 100 tall (20%).
 FINAL_SMASHES['Tapey'] = fsLane({ id:'playback', c1:'#e8e0d0', L:700, spd:22, H:100, hw:42, dmg:20, kb:22, ky:-10, kind:'spit', art:FS_GLYPH.tape });
 
-// TEA KETTLE -- MAMA'S GOTCHA! Her catchphrase, and her hugs are firm "familial holds" (quoted at her card); "Motherly, flushed and steaming when she boils over" (the design doc). The marker is on the nearest foe within 380, fixed 18
-// frames ahead (85 px: step out); whoever is in it is held in a firm hug, takes five squeezes (3%), and the boil-over (20%) throws them.
-FINAL_SMASHES['Tea Kettle'] = fsLock({ id:'mamasgotcha', c1:'#f4f4f4', c2:'#ffb0a0', R:85, bx:380, by:240, effect:'pin', hits:5, every:6, hitDmg:3, dmg:20, kb:23, art:FS_GLYPH.steam });
+// TEA KETTLE -- MAMA'S GOTCHA! (id mamasgotcha kept: the pitch does not rename it). THE OWNER PICKED THE PITCH, 2026-11-02 ("just dont make them TOO complicated; you can vary the damage and knockback as well").
+// The old hug and five squeezes is gone: her Final Smash is a dinner for one, served to the nearest foe, and the boil-over at the end of it. CANON (the Inanimate Insanity wiki, read 2026-11-02): her page, Oversteam
+// from spout and lid, and the official bio's warning that crossing her gets you a mouthful, "sometimes literally" of food; "The Shame of the Name": she insists on her hors d'oeuvres, turns red and steams when they are
+// refused, throws the food down and stomps The Floor to make it get lost; "Fan the Flames": she is ready to make her famous soup; her kit: the tray special, Blow Her Lid, the Get Lost stomp. The table, tureen and
+// geyser are the game's own. THE CATCH is a circle of 420 px round her (nearest foe only, catchMax 1; a foe caught in the air is set down in the chair; she lands at the table's foot if she was in the air). Bow's chairs'
+// model for a press and a cue: pressed with no foe the catch can take (or none that has floor for a chair and a table), it is spent at once (a small puff, no intro, no pause); a CPU fires only when the catch will take
+// someone. FIVE BEATS, 150 frames after the catch (100% on the held foe, then the framework's orange floor tops up whatever is short): (1) THE HUG AND THE SEAT: the foe is pulled in 110-odd px in front of her in a
+// firm hug, 6% (two arms wrap them, hearts), and set in a chair while a round table pops up between them, a tablecloth snaps over it, a candle is lit and a napkin tucked in; her tray skids along the floor to the
+// table; (2) HORS D'OEUVRES: three mouthfuls, 10 frames apart (frames 38, 48, 58 after the catch), 9% each = 27% (canapes fly in, the cheeks bulge, the head jerks back each time); (3) THE POUR AND THE SOUP: a long
+// scalding stream of tea over their head from her spout, steam rolling off, 14% (frame 68), then she heaves up a whole tureen of her famous soup and upends it on them, 12% (frame 88): running total 59%; (4) REFUSED,
+// no damage: her body goes red-orange (a tint of her own picture, building through the 24 frames 96-120), the screen takes a warm, light red wash, steam climbs the screen and she and the table rattle harder; (5) THE BOIL OVER, 41%, the launch (frame 120): the lid blows off like a cork, she
+// stomps the floor, a geyser of steam under the table throws the foe up and out, hard (kb 15, up 17). Total 100% in 7 hits. The props are scenery: nobody else is hurt (no ring), a boss, an add or a teammate is
+// never caught. No letters on screen. Everything that appears grows in over 12 frames. Numbers on the wire: the existing fsAx, fsAy (where she stands at the table), fsBx, fsBy (the foe's place in the chair) and fsCx
+// (their size); everything drawn comes from them, fsT and the foe the catch holds.
+const FSC3_TEA = { reach:420, gaps:[116, 96, 76], come:10, hits:[10, 38, 48, 58, 68, 88, 120], dmg:[6, 9, 9, 9, 14, 12, 41], fly:6, refuse:96, boil:120, tail:30, kb:15, up:-17, jit:2.6 };
+FSC3_TEA.dur = FSC3_TEA.boil + FSC3_TEA.tail;
+// the table's and her rattle in the build-up (the same on both: grows as she turns redder)
+function fsc3_teaRat(t){ const C = FSC3_TEA; if(t < C.refuse || t >= C.boil) return 0; return C.jit*(0.5 + 0.5*(t - C.refuse)/(C.boil - C.refuse))*((t & 1) ? 1 : -1); }
+// where the chair goes: a floor she can stand the table on (her own; one in the air: the nearest below), the foe's side first, then the other; the chair and the table on that floor, clear of solid blocks. null: nowhere.
+function fsc3_teaPlan(f, tg){
+  const C = FSC3_TEA, s0 = Math.sign(tg.x - f.x) || f.face || 1;
+  for(const fl of fsc3_floorsUnder(f)){
+    if(fsc3_inSolid(f.x, fl - f.r, f.r)) continue;
+    for(const g of C.gaps) for(const s of [s0, -s0]){
+      const x = f.x + s*g, m = f.x + s*g/2;
+      if(x < 60 || x > WW - 60 || !fsc3_supported(x, fl) || !fsc3_supported(m, fl)) continue;   // the chair and the table stand on the floor, not out over a drop
+      if(fsc3_inSolid(x, fl - tg.r, tg.r) || fsc3_inSolid(m, fl - 26, 24)) continue;
+      return { s:s, x:x, y:fl - tg.r, fl:fl, g:g };
+    }
+  }
+  return null;
+}
+function fsc3_teaDraw(f, c){
+  const t = f.fsT || 0, C = FSC3_TEA, H = C.hits, L = fsLockedOf(f);
+  if(!L && f.fsBx == null) return;
+  const hx = f.fsAx, hy = f.fsAy, cx = f.fsBx, cy = f.fsBy, R = (L ? L.r : f.fsCx) || 24, s = cx >= hx ? 1 : -1;
+  const fl = hy + f.r, fx = L ? L.x : cx, fy = L ? L.y : cy, tx = (hx + cx)/2, rat = fsc3_teaRat(t), O = '#1c1c1c';
+  const du = t - C.boil, outA = du > 12 ? Math.max(0, 1 - (du - 12)/16) : 1, ez = (a, b)=> fsc3_ease((t - a)/b);
+  const lerp = fsc3_lerp, mouth = { x:fx - s*R*0.15, y:fy - R*0.1 }, spout = { x:hx + s*f.r*0.95, y:hy - f.r*0.3 };
+  const puff = (x, y, r, a, col)=>{ if(!(a > 0.01) || !(r > 0.5)) return; c.save(); c.globalAlpha = Math.min(1, a); c.fillStyle = col || '#ffffff'; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); c.restore(); };
+  const heart = (x, y, z, a)=>{ c.save(); c.globalAlpha = a; c.translate(x, y); c.fillStyle = '#ff5f87'; c.strokeStyle = O; c.lineWidth = 2; c.beginPath(); c.moveTo(0, z*0.9); c.bezierCurveTo(-z*1.6, -z*0.2, -z*0.7, -z*1.3, 0, -z*0.4); c.bezierCurveTo(z*0.7, -z*1.3, z*1.6, -z*0.2, 0, z*0.9); c.closePath(); c.fill(); c.stroke(); c.restore(); };
+  const canape = (x, y, a)=>{ c.save(); c.globalAlpha = a; c.fillStyle = '#d9a35a'; c.strokeStyle = O; c.lineWidth = 1.8; c.fillRect(x - 5, y - 4, 10, 8); c.strokeRect(x - 5, y - 4, 10, 8); c.fillStyle = (Math.round(x) & 1) ? '#e0463f' : '#5aa05a'; c.beginPath(); c.arc(x, y - 2, 3, 0, 7); c.fill(); c.restore(); };
+  c.save(); c.lineJoin = 'round'; c.lineCap = 'round'; c.globalAlpha = 1;
+  // THE CHAIR (behind the foe: the seat, the back on the far side) and THE TABLE (between them), rising from the floor
+  const gr = fsc3_in(t, 8, 12), gt = fsc3_in(t, 12, 12);
+  if(gr > 0.01){
+    c.save(); c.globalAlpha = outA; c.translate(cx, fl); c.scale(1, gr); c.fillStyle = '#9a6a38'; c.strokeStyle = O; c.lineWidth = 3;
+    const bk = s*R*0.92;
+    c.fillRect(bk - 3, -R*2.1, 6, R*1.6); c.strokeRect(bk - 3, -R*2.1, 6, R*1.6); c.fillRect(bk - 5, -R*2.1, 10, 5); c.strokeRect(bk - 5, -R*2.1, 10, 5);
+    c.fillRect(-R*0.8, -R*0.55 + 7, 5, R*0.55 - 7); c.fillRect(R*0.8 - 5, -R*0.55 + 7, 5, R*0.55 - 7);
+    c.fillRect(-R*0.9, -R*0.55, R*1.8, 7); c.strokeRect(-R*0.9, -R*0.55, R*1.8, 7);
+    c.restore();
+  }
+  if(gt > 0.01){
+    const lift = du > 0 ? 7*du : 0, rot = du > 0 ? -s*0.1*du : 0, cl = ez(22, 8), cw = (1 - cl)*(1 - cl)*-52 + (cl < 1 ? Math.sin(t*1.7)*3 : 0);
+    c.save(); c.globalAlpha = outA; c.translate(tx + rat, fl - lift); c.rotate(rot); c.scale(1, gt); c.strokeStyle = O; c.lineWidth = 3;
+    c.fillStyle = '#6b4a2a'; c.fillRect(-4, -34, 8, 34); c.strokeRect(-4, -34, 8, 34);
+    c.beginPath(); c.ellipse(0, -2, 17, 4, 0, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = '#b07c46'; c.beginPath(); c.ellipse(0, -34, 25, 7, 0, 0, 7); c.fill(); c.stroke();
+    if(t >= 20){   // the tablecloth snaps over it: white, with red stripes down the skirt
+      c.save(); c.translate(0, cw); c.fillStyle = '#f2ece2';
+      c.beginPath(); c.moveTo(-27, -34); c.lineTo(-24, -14); for(let i = 0; i < 6; i++) c.quadraticCurveTo(-24 + 8*i + 4, -9, -24 + 8*(i + 1), -14); c.lineTo(27, -34); c.quadraticCurveTo(0, -42, -27, -34); c.closePath(); c.fill(); c.stroke();
+      c.fillStyle = '#d6453d'; for(let i = 0; i < 3; i++) c.fillRect(-16 + i*14, -30, 6, 15);
+      c.beginPath(); c.ellipse(0, -36, 22, 5.5, 0, 0, 7); c.fillStyle = '#fbf7f0'; c.fill(); c.lineWidth = 2; c.stroke(); c.restore();
+      if(t >= 28){   // a candle, lit
+        const k = fsc3_in(t, 28, 8); c.globalAlpha = outA*k; c.fillStyle = '#f4ecd0'; c.lineWidth = 2; c.fillRect(-14, -52, 6, 14); c.strokeRect(-14, -52, 6, 14);
+        c.fillStyle = '#ffb02e'; c.beginPath(); c.ellipse(-11, -57 + Math.sin(t*0.9), 2.6, 5, 0, 0, 7); c.fill();
+      }
+    }
+    c.restore();
+    if(t >= 28) fsc3_glow(c, tx - 11 + rat, fl - 56 - lift, 22, '255,190,80', 0.5*outA*fsc3_in(t, 28, 8));
+  }
+  if(t >= 22 && L && outA > 0.02){   // the napkin, tucked in at the foe's neck
+    c.save(); c.globalAlpha = outA*fsc3_in(t, 22, 10); c.fillStyle = '#fbf7f0'; c.strokeStyle = O; c.lineWidth = 2.5;
+    c.beginPath(); c.moveTo(fx - R*0.55, fy + R*0.18); c.lineTo(fx + R*0.55, fy + R*0.18); c.lineTo(fx, fy + R*0.9); c.closePath(); c.fill(); c.stroke(); c.restore();
+  }
+  // THE HUG: two arms wrap the foe as they are pulled in, a squeeze, hearts
+  if(t >= 1 && t < 24 && L){
+    const k = fsc3_in(t, 1, 8), sq = (t >= H[0] && t < H[0] + 6) ? 1 : 0, a = t < 14 ? 1 : Math.max(0, 1 - (t - 14)/10);
+    c.save(); c.globalAlpha = a;
+    for(const o of [-1, 1]){
+      const sx = hx + s*f.r*0.7, sy = hy + o*8, ex = lerp(sx, fx + s*R*(0.55 - 0.15*sq), k), ey = lerp(sy, fy + o*R*0.3, k);
+      c.beginPath(); c.moveTo(sx, sy); c.quadraticCurveTo(lerp(sx, fx - s*R*0.7, k), lerp(sy, fy + o*R*(0.8 - 0.2*sq), k), ex, ey);
+      c.strokeStyle = O; c.lineWidth = 10; c.stroke(); c.strokeStyle = '#fdf6ee'; c.lineWidth = 6; c.stroke();
+    }
+    c.restore();
+    if(t >= H[0]) for(let i = 0; i < 3; i++){ const u = (t - H[0] - i*3)/16; if(u > 0 && u < 1) heart(fx + (i - 1)*R*0.7, fy - R*0.8 - u*46, 6 + i, 1 - u); }
+  }
+  // THE TRAY: skids along the floor to the table, hops up on it; the canapes go one at a time
+  if(t >= 18 && outA > 0.02){
+    const u = Math.min(1, (t - 18)/12), h = Math.min(1, Math.max(0, (t - 30)/4)), ga = fsc3_in(t, 18, 8);
+    const x = lerp(hx + s*f.r*0.9, tx + rat, fsc3_ease(u)), y = lerp(fl - 5, fl - 41, fsc3_ease(h)) - 12*Math.sin(Math.PI*h);
+    c.save(); c.globalAlpha = ga*outA; c.fillStyle = '#d4d9e0'; c.strokeStyle = O; c.lineWidth = 2.5; c.beginPath(); c.ellipse(x, y, 22, 6, 0, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = '#eef1f5'; c.beginPath(); c.ellipse(x, y - 1, 17, 4, 0, 0, 7); c.fill();
+    const left = 6 - 2*[1, 2, 3].filter((k)=> t >= H[k] - C.fly).length;
+    for(let i = 0; i < left; i++) canape(x - 12 + i*5, y - 6 + (i % 2)*2, 1);
+    if(u < 1 && u > 0){ c.strokeStyle = 'rgba(255,255,255,0.7)'; c.lineWidth = 3; for(let i = 0; i < 3; i++){ c.beginPath(); c.moveTo(x - s*26, y - 4 + i*4); c.lineTo(x - s*(40 + 10*i), y - 4 + i*4); c.stroke(); } }
+    c.restore();
+  }
+  // THE MOUTHFULS: canapes fly in from the tray, the crumbs fly, the cheeks bulge
+  for(let k = 1; k <= 3; k++){
+    for(let q = 0; q < 2; q++){
+      const u = (t - (H[k] - C.fly) - q*1.5)/C.fly;
+      if(u >= 0 && u < 1) canape(lerp(tx, mouth.x, u), lerp(fl - 46, mouth.y, u) - 26*Math.sin(Math.PI*u), 1);
+    }
+    const p = (t - H[k])/9;
+    if(p >= 0 && p < 1) for(let q = 0; q < 6; q++){ const a = q*1.05 + k; puff(mouth.x + Math.cos(a)*(6 + 26*p), mouth.y + Math.sin(a)*(6 + 22*p) - 8*p, 3, 1 - p, q % 2 ? '#d9a35a' : '#e0463f'); }
+  }
+  { const nk = [1, 2, 3].filter((k)=> t >= H[k]).length;   // two puffed cheeks, bigger with every mouthful, down again with the pour
+    if(nk > 0 && t < H[4] + 4 && L) for(const o of [-1, 1]) puff(fx + o*R*0.5, fy + R*0.02, 3.5 + 2.6*nk, 0.5*outA, '#ffb0b0'); }
+  // THE POUR: a long scalding stream of tea from her spout over their head, steam rolling off
+  if(t >= 62 && t < 84){
+    const a0 = t >= 76 ? fsc3_ease((t - 76)/6) : 0, a1 = fsc3_ease((t - 61)/6), T = { x:fx - s*R*0.05, y:fy - R*0.85 };
+    c.save(); c.globalAlpha = 1;
+    for(const pass of [[9, '#9a5a18'], [5, '#e0a050'], [2, '#ffe0a8']]){
+      c.strokeStyle = pass[1]; c.lineWidth = pass[0]; c.beginPath();
+      for(let i = 0; i <= 14; i++){ const p = a0 + (a1 - a0)*i/14; const x = lerp(spout.x, T.x, p), y = lerp(spout.y, T.y, p) - 70*Math.sin(Math.PI*p); if(i) c.lineTo(x, y); else c.moveTo(x, y); }
+      c.stroke();
+    }
+    c.restore();
+    if(t >= H[4] && t < H[4] + 12) for(let q = 0; q < 6; q++){ const p = (t - H[4])/12, a = q*1.1; puff(T.x + Math.cos(a)*(8 + 22*p), T.y + Math.sin(a)*(4 + 12*p) - 10*p, 3, 1 - p, '#c07a2a'); }
+  }
+  if(t >= H[4] && t < H[4] + 36 && L) for(let i = 0; i < 6; i++){   // the steam rolling off them
+    const ph = (t - H[4] + i*5) % 30; puff(fx + Math.sin(ph*0.4 + i)*R*0.55, fy - R*0.8 - ph*2.4, 8 + ph*0.6, 0.45*(1 - ph/30)*(1 - Math.max(0, t - H[4] - 24)/12)*outA, '#ffffff');
+  }
+  // THE TUREEN: heaved up from her to over the foe, upended; the soup pours down, a splotch stays
+  if(t >= 72 && t < 108){
+    const p = ez(72, 12), up = t > 100 ? Math.max(0, 1 - (t - 100)/8) : 1, a = fsc3_in(t, 72, 10)*up;
+    const px = lerp(hx + s*4, fx - s*R*0.1, p), py = lerp(hy - f.r - 8, fy - R*2.3, p), tilt = s*fsc3_ease((t - 84)/8)*2.1;
+    c.save(); c.globalAlpha = a; c.translate(px, py); c.rotate(tilt); c.strokeStyle = O; c.lineWidth = 3;
+    c.fillStyle = '#c9ced6'; c.beginPath(); c.moveTo(-18, -4); c.quadraticCurveTo(-18, 18, 0, 20); c.quadraticCurveTo(18, 18, 18, -4); c.closePath(); c.fill(); c.stroke();
+    c.beginPath(); c.ellipse(0, -4, 18, 5, 0, 0, 7); c.fillStyle = '#d4572a'; c.fill(); c.stroke();
+    c.fillStyle = '#c9ced6'; c.fillRect(-9, 19, 18, 5); c.strokeRect(-9, 19, 18, 5);
+    for(const o of [-1, 1]){ c.beginPath(); c.arc(o*20, 2, 5, 0, 7); c.stroke(); }
+    c.restore();
+    if(t >= 86 && t < 100){   // the soup falling from the lip onto them
+      const lipx = px + s*Math.cos(tilt)*17 + Math.sin(tilt)*-6, lipy = py + Math.sin(tilt)*17 - 4, e = fsc3_ease((t - 85)/4), y1 = lerp(lipy, fy - R*0.8, e);
+      c.save(); c.globalAlpha = (t > 94 ? Math.max(0, 1 - (t - 94)/6) : 1); c.strokeStyle = '#a63a1a'; c.lineWidth = 11; c.beginPath(); c.moveTo(lipx, lipy); c.lineTo(lerp(lipx, fx, e), y1); c.stroke();
+      c.strokeStyle = '#e0703a'; c.lineWidth = 6; c.stroke(); c.restore();
+      for(let q = 0; q < 4; q++){ const ph = ((t*5 + q*17) % 40)/40; puff(lerp(lipx, fx, 0.6) + (q - 1.5)*5, lerp(lipy, fy - R*0.8, ph), 3.2, 1, q % 2 ? '#f08a2c' : '#5aa05a'); }
+    }
+  }
+  if(t >= H[5] && L){   // soaked: a red-orange splotch with drips, till the boil
+    const k = fsc3_in(t, H[5], 6), dr = Math.min(18, (t - H[5])*0.5);
+    c.save(); c.globalAlpha = 0.6*k*outA; c.fillStyle = '#d4572a';
+    c.beginPath(); c.ellipse(fx, fy + R*0.05, R*0.85, R*0.7, 0, 0, 7); c.fill();
+    c.fillRect(fx - R*0.4, fy + R*0.5, 4, dr); c.fillRect(fx + R*0.25, fy + R*0.45, 4, dr*0.8); c.restore();
+  }
+  // REFUSED: she turns red, the screen tints, steam climbs the screen, she and the table rattle
+  if(t >= C.refuse && t < C.boil + 4){
+    const u = Math.min(1, (t - C.refuse)/(C.boil - C.refuse)), v = t >= C.boil ? Math.max(0, 1 - (t - C.boil)/4) : 1;
+    fsc3_tintBody(c, f, '#ff4a1f', 0.66*u*v);   // her body goes red-orange, more with every frame of the 96-120 ramp
+    fsc3_flash(c, hx, hy, 0.46*u*v, '#ff3a14'); fsc3_vig(c, hx, hy, 300, 0.2*u*v, '255,30,10');   // the screen takes a warm, light red wash (no dark vignette, no halo)
+    for(let i = 0; i < 10; i++){ const ph = (t*8 + i*97) % 800; puff(hx + (i - 4.5)*36 + Math.sin(t*0.2 + i)*12, fl - 50 - ph, 16 + ph*0.04, 0.5*u*v*(1 - ph/800)); }
+    c.save(); c.strokeStyle = 'rgba(255,255,255,0.85)'; c.lineWidth = 5;
+    for(let i = 0; i < 3; i++){ const w = Math.sin(t*1.3 + i*2)*6; c.beginPath(); c.moveTo(spout.x, spout.y); c.lineTo(spout.x + s*(30 + 10*u + i*6), spout.y - 16 - i*9 + w); c.stroke(); }
+    for(let i = 0; i < 3; i++){ const w = Math.sin(t*1.7 + i*2)*5; c.beginPath(); c.moveTo(hx + (i - 1)*8, hy - f.r*0.95); c.lineTo(hx + (i - 1)*8 + w, hy - f.r*0.95 - 24 - 14*u*(1 + i%2)); c.stroke(); }
+    c.restore();
+  }
+  // THE BOIL OVER: the lid blows off like a cork, she stomps, a geyser under the table, the foe thrown up and out
+  if(du >= 0){
+    fsc3_flash(c, cx, fy, 0.6*(1 - du/12), '#ffffff');
+    if(du < 26) fsc3_glow(c, cx, fl - R, 300*(0.35 + du/26), '255,240,220', 0.95*(1 - du/26));
+    const lx = hx + s*2*du, ly = hy - f.r - 4 - 23*du + 0.3*du*du, la = 1 - Math.max(0, (du - 26)/10);
+    if(la > 0.02){
+      c.save(); c.globalAlpha = la; c.translate(lx, ly); c.rotate(s*du*0.5); c.fillStyle = '#f4f4f4'; c.strokeStyle = O; c.lineWidth = 3;
+      c.beginPath(); c.ellipse(0, 0, 14, 6, 0, 0, 7); c.fill(); c.stroke(); c.beginPath(); c.arc(0, -6, 5, 0, 7); c.fill(); c.stroke(); c.restore();
+      if(du < 8) for(let i = 0; i < 5; i++){ const w = du/8; puff(hx + (i - 2)*10, hy - f.r - 10 - w*30, 8 + w*12, 0.8*(1 - w)); }
+    }
+    for(let r = 0; r < 2; r++){ const u = (du - r*4)/16; if(u < 0 || u >= 1) continue; c.save(); c.globalAlpha = 0.9*(1 - u); c.strokeStyle = r ? '#ffd9c8' : '#ffffff'; c.lineWidth = 8*(1 - u) + 1.5; c.beginPath(); c.ellipse(hx, fl, 30 + 230*fsc3_ease(u), 8 + 30*fsc3_ease(u), 0, 0, 7); c.stroke(); c.restore(); }
+    if(du < 30){
+      const Hh = 520*fsc3_ease(du/10), ga = 0.85*(1 - du/30);
+      c.save(); c.globalAlpha = ga*0.7; c.fillStyle = '#e8f6ff'; c.beginPath(); c.moveTo(cx - 26, fl); c.lineTo(cx - 12, fl - Hh); c.lineTo(cx + 12, fl - Hh); c.lineTo(cx + 26, fl); c.closePath(); c.fill(); c.restore();
+      for(let i = 0; i <= 14; i++) puff(cx + Math.sin(i*0.9 + t*0.5)*(10 + i*1.4), fl - Hh*i/14, 22 + i*2.2, ga*(1 - 0.5*i/14));
+    }
+  }
+  c.restore();
+}
+FINAL_SMASHES['Tea Kettle'] = {
+  id:'mamasgotcha', wind:FS_WIND, dur:FSC3_TEA.dur, reach:FSC3.reach, exposed:false, needFoe:true, exact:true,   // needFoe: pressed with no foe it can take, it is spent at once (fsTryFire); exact: a CPU fires only when the catch will take someone (fsBotInput)
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FSC3.reach }; }, lockEnd:FSC3_TEA.boil, catchMax:1,   // CATCH: the nearest foe in 420 px; the dinner is for one foe
+  catchOk(f, t){ return !!fsc3_teaPlan(f, t); },   // ...that she can seat (a floor under her with room for a chair and a table, no block through them): with none a human's press is spent at once and a CPU does not fire
+  botOk(f, t){ return fsc3_botOk(f, t); },
+  start(f, st){
+    const tg = fighters[st.held[0]];
+    if(!tg){ fsc3_spent(f); return; }   // the foe stepped out in the catch's 10 frames
+    const P = fsc3_teaPlan(f, tg);
+    if(!P){ fsc3_spent(f); return; }   // nowhere to seat them: spent
+    f.x = Math.round(f.x); f.y = P.fl - f.r; f.vx = 0; f.vy = 0; f.onground = true; f.face = P.s;   // (a press from the air: she lands at the foot of the table)
+    f.fsAx = f.x; f.fsAy = Math.round(f.y); f.fsBx = Math.round(P.x); f.fsBy = Math.round(P.y); f.fsCx = Math.round(tg.r || 24);
+    st.tg = tg.idx; st.n0 = tg._koN || 0; st.over = false; st.x0 = tg.x; st.y0 = tg.y; st.cx = P.x; st.cy = P.y; st.hx = f.x; st.hy = f.y; st.side = P.s;
+    armAtk(f, this.wind, 'fsgather');
+  },
+  tick(f, st, t){
+    const C = FSC3_TEA, H = C.hits, tg = fighters[st.tg];
+    if(st.over) return;
+    f.x = st.hx + fsc3_teaRat(t); f.y = st.hy; f.vx = 0; f.vy = 0; f.onground = true; f.face = st.side;   // rooted at the table, rattling through the build-up
+    if(t > C.boil) return;
+    if(fsc3_gone(f, st, tg)){ st.over = true; st.t = this.dur - 1; return; }   // the foe gone (a KO, a respawn, the lock lost): nothing more, whoever comes back
+    if(t < C.come){ const p = fsc3_ease((t + 1)/C.come), nx = st.x0 + (st.cx - st.x0)*p, ny = st.y0 + (st.cy - st.y0)*p; if(t >= C.come - 1 || !fsc3_inSolid(nx, ny, tg.r)){ tg.x = nx; tg.y = ny; } }   // pulled in to the chair (never through a solid block on the way)
+    else {
+      let j = 0; for(let k = 1; k <= 3; k++){ const u = t - H[k]; if(u >= 0 && u < 4) j = st.side*6*(1 - u/4); }   // the head jerks back with each mouthful
+      tg.x = st.cx + j; tg.y = st.cy;
+    }
+    const i = H.indexOf(t);
+    if(i < 0) return;
+    if(i < H.length - 1){ armAtk(f, 8, i >= 4 ? 'throw' : 'punch'); shake(2 + i); fsc3_hit(f, st, tg, C.dmg[i], 0, 0, false); }
+    else {
+      armAtk(f, 22, 'fsburst'); shake(20);
+      fsc3_hit(f, st, tg, C.dmg[i], st.side*C.kb, C.up, true);
+      for(let q = 0; q < 26; q++) puff(st.cx, st.cy, q % 3 ? '#fff' : (q % 2 ? '#ff7a5a' : '#ffd9c8'), 8);
+    }
+  },
+  end(f, st){ if(st && st.tg != null){ f.x = st.hx; f.y = st.hy; f.vx = 0; f.vy = 0; f.onground = true; } },   // she is at the table's foot (the props fade)
+  ai(f){ return fsCatchFoes(this, f).length > 0; },
+  draw(f, c){ fsc3_teaDraw(f, c); },
+};
 
 // TEDDY BEAR -- YES!!! SMASH!!! "YES!!! SMASH!!!" (her frame row): the Rage Room, a wild swing that leans in; her own card is the Front of the Crowd shoulder barge. The swing is a smash all round her, 230 px (26%, thrown hard).
 FINAL_SMASHES['Teddy Bear'] = fsCircle({ id:'ragesmash', c1:'#b8742e', c2:'#ffffff', R:230, dmg:26, kb:22, art:FS_GLYPH.burst, kind:'slam' });
