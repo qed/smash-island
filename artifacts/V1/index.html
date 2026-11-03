@@ -17902,7 +17902,17 @@ const LEDGE_CATCH = 30;     // feet within this of a cliff's top, moving into it
 // so those play and look exactly as before. Pure: derived from the match settings, like FLOOR_SEGS.
 const OFFSTAGE_ROOM = 160;
 let SIDE_ROOM = 0;
-function pastSideLine(x){ return x < -120 - SIDE_ROOM || x > WW + 120 + SIDE_ROOM; }   // past a side KO line: 120 px out from the stage's box, and SIDE_ROOM more
+// THE KO LINES, IN ONE PLACE (the owner, 2026-11-03: "the place where you die when you fall should be honest -- I keep dying when I dont hit the
+// floor of the screen", and "the camera LIMIT (not the init. camera) should be the ko line"). The four lines of a stage: the sides 120 px out from the
+// stage's box (and SIDE_ROOM more), the top 260 px above it, the bottom 160 px under it. They are where they always were. eliminate, the Final Smash's
+// flight test, the ledgeguard camera's "past saving" test and its limit all read koRect / pastKo, so they cannot drift apart.
+const KO_TOP = -260, KO_SIDE = 120, KO_DROP = 160;
+function koL(){ return -KO_SIDE - SIDE_ROOM; }
+function koR(){ return WW + KO_SIDE + SIDE_ROOM; }
+function koB(){ return WH + KO_DROP; }
+function koRect(){ return { x0:koL(), x1:koR(), y0:KO_TOP, y1:koB() }; }
+function pastSideLine(x){ return x < koL() || x > koR(); }   // past a side KO line: 120 px out from the stage's box, and SIDE_ROOM more
+function pastKo(x, y){ return x < koL() || x > koR() || y > koB() || y < KO_TOP; }   // past any of the four
 function sideRoomTop(){ return SIDE_ROOM ? Math.round(H/2 - H*(WW + 2*SIDE_ROOM)/(2*W)) : 0; }   // the world y of the top of the view there (above 0: the zoomed-out view shows more sky); 0 elsewhere
 // THE TEAMS ARENA FITS ITS PLAYERS (the owner, 2026-10-31: "do 1" -- CPU team matches dragged: "most of the match is running around").
 // The arena was the same 2,700 px tower for 2v2 as for 10v10, its KO lines the world's edges: from mid-floor a strong smash needed 187-220%
@@ -18011,9 +18021,19 @@ function scrolls(){ return isBig() || isBigFFA() || WW>W+2 || WH>H+2; }   // any
 //      centre is back in the view (it is shown once its whole body is above) or it is out; no zoom or pan for it. The chevrons and the arrows share
 //      LG.maxMarks (3) and the LG.gap spacing; chevrons (recoverers) come first, then the arrows nearest first. An arrow only slides along the top
 //      edge (clear of the minimap, the other markers), never round a corner onto a side; its stem is how far above the top edge the fighter is.
+//   5. THE KO LINES ARE THE CAMERA'S LIMIT (the owner, 2026-11-03: "the place where you die when you fall should be honest", then "the camera
+//      LIMIT (not the init. camera) should be the ko line"). The KO lines do not move (koRect), and the default view is as it was. The furthest the
+//      picture can go is exactly that rectangle: (a) its zoom never goes under the one at which the view just fits inside the KO rectangle
+//      (lgKoZoom: the real fit for the screen's shape, 0.66 on the edge stages at 1100 x 720, where the width binds; a huge arena's is far under
+//      0.50, but a recoverer's pull still stops at LG.zmin there), so a fighter anywhere in the rectangle can be brought on screen by panning;
+//      (b) its centre is held so that the view stays inside the rectangle, so nothing past a line is ever drawn, on any side; (c) a fighter within LG.koM (140 px) of a line (it leaves at LG.koM + LG.koH),
+//      or in hitstun on a flight that ends past one, is "threatened" whatever else it is doing (LGC.f[].kt, the sides as bits): it joins the plan at
+//      once, its group reaching out to the line it threatens, the plan's rectangles clipped to the KO rectangle, and the view eases in over LG.koF
+//      (8) frames. So the line is brought to the screen's very edge as the fighter nears it and it dies as it reaches the edge, on every side. A
+//      fighter just back from a KO is no threat to the top line (its respawn ceiling).
 const LG = { wide:1.09, below:1.13, pull:1.00, zmin:0.50, inF:24, outF:40, dz:0.02, enter:6, leave:36, land:36,
   pad:70, air:200, lead:10, leadMax:180, insX:48, insT:84, insB:36, follow:0.12, ease2:0.25, hold:36, rel:0.05,
-  growF:12, maxMarks:3, mkHold:6, ko:90, zhys:0.04, missF:30, gap:26, far:900, farH:60 };
+  growF:12, maxMarks:3, mkHold:6, ko:90, zhys:0.04, missF:30, gap:26, far:900, farH:60, koM:140, koH:50, koF:8 };
 const LGC = { off:false, ok:false, init:false, mode:null, t:-1, k:0, held:null, z:0, c0:{ x:0, y:0 }, cr:{ x:0, y:0 }, last:null,
   cur:{ cx:0, cy:0, z:1 }, prev:{ cx:0, cy:0, z:1 }, f:Object.create(null), draw:0, sx:null, sy:null, marks:[], markSet:Object.create(null), dbg:null,
   hud:{ top:84, st:null }, hudN:0 };
@@ -18041,7 +18061,7 @@ function lgSubject(mode){
 function lgDoomed(f){
   if(!(f.hitstun > 0)) return false;
   const h = Math.min(f.hitstun, LG.ko), x1 = f.x + (f.vx || 0)*h, y1 = f.y + (f.vy || 0)*h + 0.5*GRAV*h*h;
-  return pastSideLine(x1) || y1 > WH + 160 || y1 < -260;
+  return pastKo(x1, y1);
 }
 // A fighter the view has a use for: in the match, not held or carried, a place that is a number, and not past saving (lgDoomed).
 function lgAlive(f){
@@ -18103,29 +18123,65 @@ function lgHold(Hd, U, n){
 // Does a fighter whose group fits at `fit` belong to the plan? A new one joins at LG.zmin + LG.zhys; one already in stays down to LG.zmin - LG.zhys,
 // unless it has not fitted LG.zmin itself for LG.missF frames (s.miss counts those).
 function lgTake(s, fit, n){
-  if(!s || !s.pl) return fit >= LG.zmin + LG.zhys;
-  return fit >= LG.zmin - LG.zhys && (fit >= LG.zmin || s.miss + n <= LG.missF);
+  const zm = lgFloor();
+  if(!s || !s.pl) return fit >= zm + LG.zhys;
+  return fit >= zm - LG.zhys && (fit >= zm || s.miss + n <= LG.missF);
+}
+// THE KO LINES AS THE VIEW'S LIMIT (see 5. above). The zoom at which the view just fits inside the KO rectangle (its tighter side: 0.66 on the edge
+// stages at 1100 x 720, where the width binds; wider than that it would show past a line on the other side); the floor of a plan's pull (a recoverer's
+// pull has never gone under LG.zmin, and does not now); a group clipped to the rectangle; the lines a fighter threatens (bits 1 left, 2 right, 4 top,
+// 8 bottom): within LG.koM of one (LG.koM + LG.koH once it has been), or in hitstun on a flight that ends past one; and its group reaching out to them.
+function lgKoZoom(){ const K = koRect(); return Math.max(W/Math.max(1, K.x1 - K.x0), H/Math.max(1, K.y1 - K.y0)); }
+function lgFloor(){ return Math.max(LG.zmin, lgKoZoom()); }
+function lgClipK(g){
+  const K = koRect(), x0 = clamp(g.x0, K.x0, K.x1), y0 = clamp(g.y0, K.y0, K.y1);
+  return { x0, x1:Math.max(x0, clamp(g.x1, K.x0, K.x1)), y0, y1:Math.max(y0, clamp(g.y1, K.y0, K.y1)) };
+}
+function lgKoSides(f, prev){
+  if(f.dead || f._fsLock || f._heldBy != null || !isFinite(f.x) || !isFinite(f.y)) return 0;
+  const K = koRect(); let m = 0;
+  const near = (d, bit) => { if(d < LG.koM + ((prev & bit) ? LG.koH : 0)) m |= bit; };
+  near(f.x - K.x0, 1); near(K.x1 - f.x, 2); if(!f._backAir) near(f.y - K.y0, 4); near(K.y1 - f.y, 8);
+  if(f.hitstun > 0) m |= lgKoFlight(f, K);
+  return m;
+}
+// The line a fighter in hitstun is flying at: its flight for as long as the stun lasts (at most LG.ko frames) -- gravity and fall speed as the sim has
+// them, the floor stopping it where fsKoFlight's does -- and the first line it crosses (the same bits).
+function lgKoFlight(f, K){
+  let x = f.x, y = f.y, vx = f.vx || 0, vy = f.vy || 0;
+  const g = GRAV*(lowGravOn() ? 0.7 : 1), fall = (f.st || STAT_ONE).fall, gy = groundY(), n = Math.min(f.hitstun, LG.ko);
+  for(let i = 0; i < n; i++){
+    vy += vy > 0 ? g*fall : g; x += vx; y += vy;
+    if(x < K.x0) return 1; if(x > K.x1) return 2; if(y < K.y0) return f._backAir ? 0 : 4; if(y > K.y1) return 8;
+    if(!isBig() && vy > 0 && y >= gy - f.r && groundAt(x)) return 0;
+  }
+  return 0;
+}
+function lgKoGroup(g, kt){
+  const K = koRect(), o = { x0:g.x0, x1:g.x1, y0:g.y0, y1:g.y1 };
+  if(kt & 1) o.x0 = K.x0; if(kt & 2) o.x1 = K.x1; if(kt & 4) o.y0 = K.y0; if(kt & 8) o.y1 = K.y1;
+  return lgClipK(o);
 }
 function lgPlan(subj, b, c0, n0){
   const cands = [];
-  for(const f of fighters){ const s = LGC.f[f.idx]; if(s && s.on && !f.dead) cands.push(f); else if(s){ s.pl = false; s.miss = 0; s.far = null; } }
+  for(const f of fighters){ const s = LGC.f[f.idx]; if(s && (s.on || s.kt) && !f.dead) cands.push(f); else if(s){ s.pl = false; s.miss = 0; s.far = null; } }
   if(!cands.length) return null;
   const ax = subj ? subj.x : c0.x, ay = subj ? subj.y : c0.y;
   cands.sort((p, q) => (Math.hypot(p.x - ax, p.y - ay) - Math.hypot(q.x - ax, q.y - ay)) || (p.idx - q.idx));
-  const S = subj ? lgBody(subj) : null;
-  let U = S, G = null, n = 0; const ids = [];
+  const S = subj ? lgKoGroup(lgBody(subj), (LGC.f[subj.idx] || {}).kt || 0) : null;
+  let U = S, G = null, n = 0, ko = !!(S && (LGC.f[subj.idx] || {}).kt); const ids = [];
   for(const f of cands){
     const s = LGC.f[f.idx];
     // FAR (LG.far): further than that from the fighter the view follows, a recoverer is the marker's and never the plan's (with a margin each way: LG.farH)
     s.far = s.far == null ? Math.hypot(f.x - ax, f.y - ay) > LG.far : s.far ? Math.hypot(f.x - ax, f.y - ay) > LG.far - LG.farH : Math.hypot(f.x - ax, f.y - ay) > LG.far + LG.farH;
     if(s.far){ s.pl = false; s.miss = 0; continue; }
-    const g = lgGroup(f), V = U ? lgUnion(U, g) : g, v1 = lgFit(V);
-    if(lgTake(s, v1, n0)){ U = V; G = G ? lgUnion(G, g) : g; n++; ids.push(f.idx); s.pl = true; s.miss = v1 >= LG.zmin ? 0 : s.miss + n0; continue; }
-    const g2 = lgBody(f), V2 = U ? lgUnion(U, g2) : g2, v2 = lgFit(V2);   // its ledge does not fit with the rest: the fighter alone, if that does
-    if(lgTake(s, v2, n0)){ U = V2; G = G ? lgUnion(G, g2) : g2; n++; ids.push(f.idx); s.pl = true; s.miss = v2 >= LG.zmin ? 0 : s.miss + n0; }
+    const g = lgKoGroup(s.on ? lgGroup(f) : lgBody(f), s.kt || 0), V = U ? lgUnion(U, g) : g, v1 = lgFit(V);
+    if(lgTake(s, v1, n0)){ U = V; G = G ? lgUnion(G, g) : g; n++; ids.push(f.idx); s.pl = true; s.miss = v1 >= lgFloor() ? 0 : s.miss + n0; if(s.kt) ko = true; continue; }
+    const g2 = lgKoGroup(lgBody(f), s.kt || 0), V2 = U ? lgUnion(U, g2) : g2, v2 = lgFit(V2);   // its ledge does not fit with the rest: the fighter alone, if that does
+    if(lgTake(s, v2, n0)){ U = V2; G = G ? lgUnion(G, g2) : g2; n++; ids.push(f.idx); s.pl = true; s.miss = v2 >= lgFloor() ? 0 : s.miss + n0; if(s.kt) ko = true; }
     else { s.pl = false; s.miss = 0; }
   }
-  return n ? { U, S, G, n, ids } : null;
+  return n ? { U, S, G, n, ids, ko } : null;
 }
 // One step of the view (the host: once a step; a guest: once a picture, kk the steps it stands for).
 function lgStep(kk){
@@ -18143,10 +18199,11 @@ function lgStepIn(n){
   // who is recovering (hysteresis)
   for(const f of fighters){
     let s = LGC.f[f.idx];
-    if(!s) s = LGC.f[f.idx] = { on:false, up:0, dn:0, ground:0, mk:0, pl:false, miss:0, mr:-1, st:f.stocks, px:f.x, py:f.y, far:null, hi:false };
-    if(f.dead || f.stocks < s.st || Math.abs(f.x - s.px) + Math.abs(f.y - s.py) > 320 + 40*stood){ s.on = false; s.up = 0; s.dn = 0; s.ground = 0; s.mk = 0; s.pl = false; s.miss = 0; s.far = null; s.hi = false; }   // a KO, or a teleport (a fighter at 25 px a frame is 375 px away after a 15-frame hitch: the allowance grows with the steps this call stands for): at once
+    if(!s) s = LGC.f[f.idx] = { on:false, up:0, dn:0, ground:0, mk:0, pl:false, miss:0, mr:-1, st:f.stocks, px:f.x, py:f.y, far:null, hi:false, kt:0 };
+    if(f.dead || f.stocks < s.st || Math.abs(f.x - s.px) + Math.abs(f.y - s.py) > 320 + 40*stood){ s.on = false; s.up = 0; s.dn = 0; s.ground = 0; s.mk = 0; s.pl = false; s.miss = 0; s.far = null; s.hi = false; s.kt = 0; }   // a KO, or a teleport (a fighter at 25 px a frame is 375 px away after a 15-frame hitch: the allowance grows with the steps this call stands for): at once
     else if(lgRaw(f)){ s.up += n; s.dn = 0; s.ground = 0; if(!s.on && s.up >= LG.enter) s.on = true; }
     else { s.up = 0; if(s.on){ s.dn += n; s.ground = f.onground ? s.ground + n : 0; if(s.dn >= LG.leave || s.ground >= LG.land) s.on = false; } }
+    s.kt = lgKoSides(f, s.kt);   // THE KO LINES: a fighter near one, or flying at one, is in the plan whatever else it is doing
     s.st = f.stocks; s.px = f.x; s.py = f.y;
   }
   const b = lgBase(mode, subj) || (LGC.init ? { cx:LGC.c0.x, cy:LGC.c0.y, z:CAM_ZOOM/LG.wide } : null);
@@ -18158,15 +18215,15 @@ function lgStepIn(n){
   if(mode === 'follow'){ const sm = n === 1 ? LG.follow : 1 - Math.pow(1 - LG.follow, n); LGC.c0.x += (b.cx - LGC.c0.x)*sm; LGC.c0.y += (b.cy - LGC.c0.y)*sm; }
   else { LGC.c0.x = b.cx; LGC.c0.y = b.cy; }
   const plan = lgPlan(subj, b, LGC.c0, n), k0 = LGC.k;
-  LGC.k = clamp(LGC.k + (plan ? n/LG.inF : -n/LG.outF), 0, 1);
+  LGC.k = clamp(LGC.k + (plan ? n/(plan.ko ? LG.koF : LG.inF) : -n/LG.outF), 0, 1);
   if(!plan && LGC.k <= 0){ LGC.held = null; LGC.last = null; }
   const e = LGC.k*LGC.k*(3 - 2*LGC.k);
   let zr = b.z;
   if(plan){
     let Gh = lgHold(LGC.held, plan.G, n), U = plan.S ? lgUnion(plan.S, Gh) : Gh;
-    if(lgFit(U) < LG.zmin - LG.zhys){ Gh = lgHold(null, plan.G, n); U = plan.S ? lgUnion(plan.S, Gh) : Gh; }   // (what it remembers does not fit with you, even with the margin: the need of this moment alone)
+    if(lgFit(U) < lgFloor() - LG.zhys){ Gh = lgHold(null, plan.G, n); U = plan.S ? lgUnion(plan.S, Gh) : Gh; }   // (what it remembers does not fit with you, even with the margin: the need of this moment alone)
     LGC.held = Gh;
-    zr = clamp(Math.min(b.z*LG.pull, lgFit(U)), LG.zmin, b.z);
+    zr = clamp(Math.min(b.z*LG.pull, lgFit(U)), lgFloor(), b.z);
     const sp = lgSpan(U, zr), sm2 = n === 1 ? LG.ease2 : 1 - Math.pow(1 - LG.ease2, n);
     if(plan.S && (sp.lox > sp.hix || sp.loy > sp.hiy)){   // (U does not fit at this zoom: its middle, but never so far that you are out of the picture)
       const q = lgSpan(plan.S, zr);
@@ -18179,10 +18236,15 @@ function lgStepIn(n){
     LGC.last = { zr, U };
   } else if(LGC.last) zr = LGC.last.zr;   // easing out: back from where it was
   const zT = Math.exp(Math.log(b.z) + (Math.log(zr) - Math.log(b.z))*e), dzm = LG.dz*Math.max(0, n);
-  const z = clamp(zT, LGC.z*Math.exp(-dzm), LGC.z*Math.exp(dzm));
+  let z = clamp(zT, LGC.z*Math.exp(-dzm), LGC.z*Math.exp(dzm));
+  // THE KO LINES ARE THE LIMIT (5. above): never zoomed out past the whole KO rectangle, never panned so that anything past a line is in view (a side
+  // the zoom leaves wider than the rectangle is centred on it). The default view lies inside it on every stage, so this changes nothing until a fighter is near a line.
+  const K = koRect(), zf = Math.min(lgKoZoom(), b.z);
+  if(z < zf) z = zf;
   LGC.z = z;
   LGC.prev = LGC.cur;
-  LGC.cur = { cx:LGC.c0.x + (LGC.cr.x - LGC.c0.x)*e, cy:LGC.c0.y + (LGC.cr.y - LGC.c0.y)*e, z };
+  const hw = W/(2*z), hh = H/(2*z);
+  LGC.cur = { cx:lgClampR(LGC.c0.x + (LGC.cr.x - LGC.c0.x)*e, K.x0 + hw, K.x1 - hw), cy:lgClampR(LGC.c0.y + (LGC.cr.y - LGC.c0.y)*e, K.y0 + hh, K.y1 - hh), z };
   LGC.ok = true;
   LGC.dbg = { mode, k:LGC.k, e, zr, z, n:plan ? plan.n : 0, ids:plan ? plan.ids : [], base:b, U:LGC.last ? LGC.last.U : null };
   // the marker's age: a recovering fighter outside this view
@@ -25383,7 +25445,7 @@ function fsAllowed(){
 function fsReset(){
   SMASHBALL = null; FS.seq = 0; FS.rng = ((0x9e3779b9 ^ Math.imul(fighters.length, 2654435761)) >>> 0) || 1;
   FS.next = Math.round(fsInterval()*0.55*(0.8 + 0.4*fsRand()));   // the first one comes a little early
-  for(const f of fighters){ f.fsGlow = 0; f.fsId = ''; f.fsT = 0; f._fs = null; f.fsC = 0; f.fsLk = 0; f._fsLock = null; f._fsVolDone = null; }
+  for(const f of fighters){ f.fsGlow = 0; f.fsId = ''; f.fsT = 0; f._fs = null; f.fsC = 0; f.fsLk = 0; f.fsPd = 0; f._fsLock = null; f._fsVolDone = null; }
   FS.lastT = hazardT; FS.freeze = 0; FS.slow = 0; FS.fz = -1; FS.game = 0;
   FSF.pend = [];   // FS FLOOR: a new match forgets the Final Smashes that were waiting to settle (a NEW list: a saved Plays Camera state holds the old one)
 }
@@ -25484,7 +25546,7 @@ function fsGrant(f){
 function fsOnKo(f){
   const had = f.fsGlow > 0;
   if(f._fs) fsLockAll(f, f._fs);   // whoever their catch held is let go (CATCH, THEN CINEMATIC)
-  f.fsGlow = 0; f._fs = null; f.fsId = ''; f.fsT = 0; f.fsC = 0;
+  f.fsGlow = 0; f._fs = null; f.fsId = ''; f.fsT = 0; f.fsC = 0; f.fsPd = 0;
   if(had && !SMASHBALL) FS.next = 150 + Math.floor(fsRand()*120);
 }
 // ---- firing -------------------------------------------------------------------------------------------------------------
@@ -25513,7 +25575,7 @@ function fsTryFire(f){
 }
 function fsRun(f){
   const st = f._fs, d = st.d;
-  if(f.dead){ fsLockAll(f, st); f._fs = null; f.fsId = ''; f.fsC = 0; return; }
+  if(f.dead){ fsLockAll(f, st); f._fs = null; f.fsId = ''; f.fsC = 0; f.fsPd = 0; return; }
   f.invuln = Math.max(f.invuln, 2); f._lag = Math.max(f._lag || 0, 3);   // untouchable and still while it plays
   if(st.c < FS_CATCH){   // THE CATCH (CATCH, THEN CINEMATIC): its area drawn, filling in; on its last frame it lands, and the row begins
     f.vx *= 0.7; if(!f.onground) f.vy = 0;
@@ -25539,7 +25601,7 @@ function fsRun(f){
 function fsEnd(f){
   const st = f._fs; if(st && st.d.end) st.d.end(f, st);
   if(st) fsLockAll(f, st);   // the lock ends with the Final Smash (CATCH, THEN CINEMATIC)
-  f._fs = null; f.fsId = ''; f.fsT = 0; f.fsWind = 0; f.fsDur = 0; f.fsC = 0;
+  f._fs = null; f.fsId = ''; f.fsT = 0; f.fsWind = 0; f.fsDur = 0; f.fsC = 0; f.fsPd = 0;
   if(!(st && st.d.exposed)){ f._lag = Math.max(f._lag || 0, 6); f.invuln = Math.max(f.invuln, 10); }   // (a row marked `exposed` ends with no grace at all)
   fsArm();
 }
@@ -25878,8 +25940,8 @@ function fsKoFlight(t, strict){
   if(MCAVE && MCAVE.on) return mcKoFlight(t, n, saved);   // MOON CAVES: out past the blast ring or down into the core
   for(let i = 0; i < n; i++){
     vy += vy > 0 ? g*fall : g; x += vx; y += vy;
-    if(saved && vy > 0 && y > WH + 60 && y <= WH + 160) return false;   // (MARSHMALLOW'S GRAVITY: halted above the bottom line, flung back up)
-    if(pastSideLine(x) || y > WH + 160 || y < -260) return true;
+    if(saved && vy > 0 && y > WH + 60 && y <= koB()) return false;   // (MARSHMALLOW'S GRAVITY: halted above the bottom line, flung back up)
+    if(pastKo(x, y)) return true;
     if(!isBig() && vy > 0 && y >= gy - t.r && groundAt(x)) return false;   // (REAL EDGES: over a gap the flight goes on down)
   }
   return false;
@@ -26416,10 +26478,57 @@ FINAL_SMASHES['Leafy'] = {
 // ends or a wall is in the way: fsPencilRoom), and then she is dizzy for 70 frames and takes the hit she can no longer shrug off
 // (`exposed`: no grace at the end). Untouchable the whole way, as every Final Smash's holder is. Name and id kept. Nothing is drawn where
 // the blast will land before it does.
-const PENCIL_FS = { hop:18, exh:30, grow:12, vw:150, seat:26, hopH:54, kb:240, kbT:26, kbH:76, room:28 };
-PENCIL_FS.catchAt = PENCIL_FS.hop + PENCIL_FS.exh;       // 48: the catch lands, FS_WIND frames before the blast
-PENCIL_FS.wind = PENCIL_FS.catchAt + FS_WIND;            // 62: the blast
-PENCIL_FS.puffs = (function(){ const a = []; for(let tb = PENCIL_FS.hop; tb < PENCIL_FS.wind; tb += (tb < PENCIL_FS.catchAt ? 3 : 2)) a.push(tb); return a; })();   // the exhaust's puffs: one every 3 frames, every 2 as it revs
+// THE VAN DRIVES (the owner, 2026-11-03: "the supervan does not drive"; asked what they meant: "make the van drive across the stage"): once
+// the catch lands (row frame 48) the van sets off along the floor the way she faces, speeding up over 36 frames for up to 420 px (wheels
+// turning, exhaust streaming behind it, dust at the back wheel, a little bounce), hits every foe it overruns ONCE (8 -> 16% on screen,
+// forward and up), and the blast goes off from its middle where the road ends (frame 84): inner ring 12 -> 24%, outer 12 -> 24%, so a foe
+// the van ran down and the blast then reached takes 40%, the 40% the old inner ring alone dealt (with no road the old blast is whole: 20 -> 40%, 14 -> 28%). The road is fixed at the start
+// (fsPencilDrive): its front wheel stays over the surface, its nose inside the stage walls and short of any solid block; in the air and in
+// Moon Caves it is 0 and the van stays put (the old blast, centred on where she stood). The catch takes only the foes in the van's way
+// (catchOk: ahead, low enough to be met, within the road and a van's length), so nobody is held for nothing; whoever it took and nothing
+// reached is let go at frame w + 15. Everything drawn is a pure function of fsT, her wire place and facing, fsAx/fsAy and `fsPd` (the road,
+// the one new wire field): no position is kept in fsBx/fsBy/fsCx/fsCy beyond her seat, as before.
+const PENCIL_FS = { hop:18, exh:30, grow:12, vw:150, seat:26, hopH:54, kb:240, kbT:26, kbH:76, room:28,
+  run:36, dist:420, wheel:60, runDmg:8, runKx:13, runKy:-14, inDmg:12, outDmg:12, inOld:20, outOld:14, out:12 };
+PENCIL_FS.catchAt = PENCIL_FS.hop + PENCIL_FS.exh;       // 48: the catch lands, and the van sets off
+PENCIL_FS.wind = PENCIL_FS.catchAt + PENCIL_FS.run;      // 84: the blast, at the end of the run (36 frames after the catch)
+PENCIL_FS.puffs = (function(){ const a = []; for(let tb = PENCIL_FS.hop; tb < PENCIL_FS.wind; tb += (tb < PENCIL_FS.catchAt ? 3 : 2)) a.push(tb); return a; })();   // the exhaust's puffs: one every 3 frames, every 2 once it is off
+// THE RUN. The van's middle on row frame t, from where it stood (ax), going `dir`, for D px (0: it stays): it sits revving until its run
+// begins (a short run, a wall or a ledge near, starts later and ends with the blast all the same), then speeds up (distance goes with the
+// square of the time) and is at the end of its road on the last frame, the blast's. A pure function of (ax, dir, D, t): a guest draws the
+// van in the same place from the fighter's wire fields (fsAx, her facing, fsT) and fsPd, the length of the road.
+function fsPencilRunT0(D){ const P = PENCIL_FS; return P.catchAt + P.run - clamp(Math.round(P.run*Math.sqrt(D/P.dist)), 10, P.run); }
+function fsPencilVanX(ax, dir, D, t){
+  if(!(D > 0)) return ax;
+  const t0 = fsPencilRunT0(D), u = clamp((t + 1 - t0)/(PENCIL_FS.catchAt + PENCIL_FS.run - t0), 0, 1);
+  return ax + dir*D*u*u;
+}
+// How far the van may drive from x0 along the floor she stands on (feet at fy), `dir` (+1 right, -1 left): its front wheel stays over the
+// surface (the floor or the platform she stood on: never over a ledge or a gap), its nose stays inside the walls of the stage (70 px) and
+// short of any solid block as tall as the van. 0 when that is under 24 px, in the air (nothing to drive on) and in Moon Caves (the
+// van stays put there and the old blast plays: the stage's floor is the frame's, not a line a guest can work out from three numbers).
+function fsPencilDrive(x0, fy, dir, air){
+  const P = PENCIL_FS;
+  if(air || (MCAVE && MCAVE.on)) return 0;
+  const plats = platRects(); let ok = 0;
+  for(let d = 8; d <= P.dist; d += 8){
+    const x = x0 + dir*d, nose = x + dir*P.vw/2, fx = x + dir*P.wheel;
+    if(nose < 70 || nose > WW - 70) break;
+    let hold = false; for(const tp of vanTopsAt(fx)) if(Math.abs(tp.y - fy) <= 12){ hold = true; break; }
+    if(!hold) break;
+    let wall = false; const lo = Math.min(x, nose) - 4, hi = Math.max(x, nose) + 4;
+    for(const p of plats){ if(!p.solid || p.rot) continue; if(hi > p.x && lo < p.x + p.w && p.y < fy - 4 && p.y + (p.h || 16) > fy - 72){ wall = true; break; } }
+    if(wall) break;
+    ok = d;
+  }
+  return ok >= 24 ? ok : 0;
+}
+// Is this foe in the van's way: ahead of where it starts (or just under it), no further than the road and the van's length on, and low
+// enough for the van to meet (its body within a van's height of the floor)? The catch takes only these, so nobody is held for nothing.
+function fsPencilLane(ax, fy, dir, D, t){
+  const dx = (t.x - ax)*dir;
+  return dx > -10 && dx < D + 90 && hurtGap(t, t.x, fy - 36) < 36;
+}
 // Hold her at (x, y) this frame: the step's own gravity and her speed come on top, so the speed is put in her y first (her picture reads it).
 function fsPencilPlace(f, x, y, vy){ f.x = x; f.y = y - vy; f.vx = 0; f.vy = vy; f.onground = false; }
 // How far she can be flung along `s` (+1 right, -1 left) from x0 and still come down on what she stood on (feet at fy), a body inside the edge:
@@ -26447,47 +26556,78 @@ function fsPencilHeadroom(x, fy, r){
 }
 // The van, standing on the floor line fy, its middle at x, `k` of its size (grown in from its wheels), nose to `dir`: the Supervan's own art,
 // and its drawn stand-in (vanShape) until that has loaded. `pipe`: the exhaust pipe sticking out of its back.
-function fsPencilVan(c, x, fy, dir, k, a, pipe){
+function fsPencilVan(c, x, fy, dir, k, a, pipe, spin){
   const P = PENCIL_FS, im = attackImage('van');
   c.save(); c.globalAlpha = a; c.translate(x, fy); c.scale(dir*k, k);
   if(im){ const h = P.vw*im.naturalHeight/im.naturalWidth; c.drawImage(im, -P.vw/2, -h, P.vw, h); }
   else { const r = P.vw/3.1; c.translate(-0.15*r, -0.7*r); c.fillStyle = '#f2d84b'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; vanShape(c, r, { vx:1 }); c.translate(0.15*r, 0.7*r); }
   if(pipe){ c.fillStyle = '#8a8f98'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.rect(-P.vw/2 - 13, -17, 17, 8); c.fill(); c.stroke(); c.fillStyle = '#c4c8d0'; c.fillRect(-P.vw/2 - 11, -15.5, 13, 2.2); }
+  if(spin != null && im){   // THE WHEELS TURNING: spokes over the two hubs, turned by the road the van has covered (`spin`, in px)
+    c.strokeStyle = '#1c1c1c'; c.fillStyle = '#d9dde4'; c.lineWidth = 2.2; c.lineCap = 'round';
+    for(const wx of [-34, 37]){
+      c.save(); c.translate(wx, -10); c.rotate(spin/9);
+      c.beginPath(); c.arc(0, 0, 5.2, 0, 7); c.fill(); c.stroke();
+      c.beginPath(); c.moveTo(-5.2, 0); c.lineTo(5.2, 0); c.moveTo(0, -5.2); c.lineTo(0, 5.2); c.stroke();
+      c.restore();
+    }
+  }
   c.restore();
 }
 FINAL_SMASHES['Pencil'] = {
-  id:'twofour', wind:PENCIL_FS.wind, dur:PENCIL_FS.wind + 82, reach:300, exposed:true, catchAt:PENCIL_FS.catchAt,
-  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:300 }; }, lockEnd:'one',   // CATCH: the inner ring (it lands at `catchAt`, FS_WIND frames before the blast)
+  id:'twofour', wind:PENCIL_FS.wind, dur:PENCIL_FS.wind + 82, reach:300, exposed:true, catchAt:PENCIL_FS.catchAt, exact:true,   // (exact: a CPU fires it only when the catch will take someone -- a foe in the van's way)
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:300 }; }, lockEnd:'one',   // CATCH: the circle round her, narrowed to the foes in the van's way (catchOk); it lands at `catchAt`, as the van sets off
+  catchOk(f, t){   // (once the row has begun, its own road; before it -- the CPU's look -- the road it would have from where she stands)
+    const st = f._fs, live = !!(st && st.D != null), ax = live ? f.fsAx : f.x, ay = live ? f.fsAy : f.y, dir = live ? st.dir : (f.face < 0 ? -1 : 1);
+    const D = live ? st.D : fsPencilDrive(ax, ay + f.r, dir, !f.onground);
+    return !(D > 0) || fsPencilLane(ax, ay + f.r, dir, D, t);
+  },
   hides(f){ const t = f.fsT || 0; return !(f.fsC > 0) && t >= PENCIL_FS.hop - 2 && t < (f.fsWind || PENCIL_FS.wind); },   // inside the van: from the hop's last frames to the blast
   start(f, st){
     const P = PENCIL_FS;
     st.dir = f.face < 0 ? -1 : 1; st.air = !f.onground;
     f.fsBx = Math.round(f.fsAx + st.dir*P.seat); f.fsBy = Math.round(f.fsAy - 10);   // her seat in the van (it is also which way the van faces: draw)
     st.hh = fsPencilHeadroom(f.fsAx, f.fsAy + f.r, f.r);
-    st.hit2 = new Set();
+    st.hit2 = new Set(); st.run = new Set(); st.runS = new Set();
+    st.D = Math.round(fsPencilDrive(f.fsAx, f.fsAy + f.r, st.dir, st.air));   // the road, fixed now (0: it stays and the old blast plays)
+    f.fsPd = Math.round(st.D);   // ...and on the wire (a guest draws the van from it, her facing, fsT and where she began)
   },
   tick(f, st, t){
-    const P = PENCIL_FS, w = this.wind, ax = f.fsAx, ay = f.fsAy, dir = st.dir, bx = f.fsBx, by = f.fsBy;
+    const P = PENCIL_FS, w = this.wind, ax = f.fsAx, ay = f.fsAy, dir = st.dir, by = f.fsBy, D = f.fsPd, fy = ay + f.r;
+    const ex = ax + dir*D, vx = fsPencilVanX(ax, dir, D, t);   // the end of the road: the blast's centre; the van's middle this frame
+    const dIn = D > 0 ? P.inDmg : P.inOld, dOut = D > 0 ? P.outDmg : P.outOld;   // (no road -- the air, Moon Caves, a wall at her nose: no run hit, so the old blast whole)
     if(t === 0){ shake(3); for(let i = 0; i < 8; i++) puff(ax, ay + f.r - 6, i % 2 ? '#d8c8a8' : '#f2d84b', 5); }
     if(t < P.hop){   // THE HOP: up and over, into the van's window
       const u = (t + 1)/P.hop, u0 = t/P.hop, X = (v)=> ax + dir*P.seat*v, Y = (v)=> ay + (by - ay)*v - st.hh*4*v*(1 - v);
       fsPencilPlace(f, X(u), Y(u), Y(u) - Y(u0));
-    } else if(t < w){ fsPencilPlace(f, bx, by, 0); }   // in the van, held at her seat
-    if(t === w){   // THE BLAST, from the van's middle: the rings as they always were
+    } else if(t < w){ fsPencilPlace(f, vx + dir*P.seat, by, 0); }   // in the van, held at her seat: it goes where the van goes
+    if(t >= P.catchAt && t < w && D > 0){   // THE RUN: every foe the van overruns takes one heavy hit, once, forward and up
+      for(const o of fighters){
+        if(fsHurtMark(f, o) || st.run.has(o.idx) || hurtGap(o, vx + dir*52, fy - 36) >= 44) continue;
+        st.run.add(o.idx); o.countering = 0;
+        applyHit(o, P.runDmg, dir*P.runKx, P.runKy, f);
+        shake(8); for(let i = 0; i < 10; i++) puff(o.x, o.y, i % 2 ? '#fff' : '#f2d84b', 5);
+      }
+      if(summons.length) damageSummons(f, vx + dir*52, fy - 36, 44, P.runDmg, null, st.runS);   // (a boss or an assist in the way: the same one plain hit, once)
+    }
+    if(t === w){   // THE BLAST, from the van's middle at the end of its road: the rings as they always were (a lighter inner and outer: the run took its share)
       shake(12);
-      let sx = 0, n = 0; for(const o of fighters){ if(fsHurtMark(f, o) || hurtGap(o, ax, ay) > 430) continue; sx += o.x - ax; n++; }
+      let sx = 0, n = 0; for(const o of fighters){ if(fsHurtMark(f, o) || hurtGap(o, ex, ay) > 430) continue; sx += o.x - ex; n++; }
       let s = n && Math.abs(sx/n) > 6 ? -Math.sign(sx) : -dir;   // away from the foes the blast reaches (none, or dead centre: backwards)
-      const fy = ay + f.r, room = (q)=> fsPencilRoom(ax, fy, q, P.kb, f.r, st.air);
+      const room = (q)=> fsPencilRoom(ex, fy, q, P.kb, f.r, st.air);
       if(room(s) < 70 && room(-s) > room(s) + 60) s = -s;   // a ledge right there: the other way, rather than over it
-      const D = Math.min(P.kb, room(s));
-      st.kb = { s:s, xe:ax + s*D, D:D };
-      fsBurst(f, st, ax, ay, 300, 20, 20, -13);
+      const Dk = Math.min(P.kb, room(s));
+      st.kb = { s:s, xe:ex + s*Dk, D:Dk };
+      for(const o of fighters){   // the inner ring (fsBurst's rule), a foe the van ran down is thrown on the way it was going, the rest away from the centre
+        if(o.dead || o.idx === f.idx || o.team === f.team || st.hit.has(o.idx) || hardInvuln(o) || !(hurtGap(o, ex, ay) < 300)) continue;
+        st.hit.add(o.idx); o.countering = 0; applyHit(o, dIn, (st.run.has(o.idx) ? dir : (Math.sign(o.x - ex) || dir))*20, -13, f);
+      }
+      if(summons.length) damageSummons(f, ex, ay, 300, dIn);
       f.face = -s; f._atkAnim = 0; f._hurtAnim = HURT_ANIM;   // (she faces the blast she is thrown from)
-      for(let i = 0; i < 18; i++) puff(ax, ay, i % 2 ? '#f2d84b' : '#fff', 7);
+      for(let i = 0; i < 18; i++) puff(ex, ay, i % 2 ? '#f2d84b' : '#fff', 7);
     }
     if(st.kb && t >= w && t < w + P.kbT){   // KNOCKED OUT OF THE EXPLOSION: a scripted arc from her seat to the floor she stood on
-      const u = (t - w + 1)/P.kbT, u0 = (t - w)/P.kbT, e = (v)=> 1 - (1 - v)*(1 - v);
-      const X = (v)=> bx + (st.kb.xe - bx)*e(v), Y = (v)=> by + (ay - by)*v - P.kbH*4*v*(1 - v);
+      const sx0 = ex + dir*P.seat, u = (t - w + 1)/P.kbT, u0 = (t - w)/P.kbT, e = (v)=> 1 - (1 - v)*(1 - v);
+      const X = (v)=> sx0 + (st.kb.xe - sx0)*e(v), Y = (v)=> by + (ay - by)*v - P.kbH*4*v*(1 - v);
       fsPencilPlace(f, X(u), Y(u), Y(u) - Y(u0));
       if(t === w + P.kbT - 1){ f.vy = 0; f.y = ay; f.x = st.kb.xe; }
     }
@@ -26495,32 +26635,49 @@ FINAL_SMASHES['Pencil'] = {
       shake(10);
       for(const o of fighters){
         if(fsHurtMark(f, o) || st.hit.has(o.idx) || st.hit2.has(o.idx)) continue;
-        if(hurtGap(o, ax, ay) < 420){ st.hit2.add(o.idx); o.countering = 0; applyHit(o, 14, (Math.sign(o.x - ax) || st.dir)*18, -12, f); }
+        if(hurtGap(o, ex, ay) < 420){ st.hit2.add(o.idx); o.countering = 0; applyHit(o, dOut, (Math.sign(o.x - ex) || st.dir)*18, -12, f); }
       }
     }
+    if(t === w + 15){   // whoever the catch took and neither the van nor the blast reached is let go, unhurt (never held for nothing)
+      for(const i of st.held){ const o = fighters[i]; if(o && o._fsLock && o._fsLock.st === st && !o._fsLock.hit) fsLockOff(o); }
+    }
   },
-  end(f){ stunFx(f, 70); },
-  ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && hurtGap(o, f.x, f.y) < 280) return true; return false; },
+  end(f){ stunFx(f, 70); f.fsPd = 0; },
+  ai(f){
+    const dir = f.face < 0 ? -1 : 1, fy = f.y + f.r, D = fsPencilDrive(f.x, fy, dir, !f.onground);
+    for(const o of fighters){ if(fsHurtMark(f, o)) continue; if(D > 0 ? fsPencilLane(f.x, fy, dir, D, o) : hurtGap(o, f.x, f.y) < 280) return true; }
+    return false;
+  },
   draw(f, c){
     const P = PENCIL_FS, t = f.fsT || 0, w = f.fsWind || P.wind, ax = f.fsAx != null ? f.fsAx : f.x, ay = f.fsAy != null ? f.fsAy : f.y, fy = ay + f.r;
     const dir = f.fsBx != null && f.fsBx < ax ? -1 : 1;   // the van's nose: toward her seat
+    const D = f.fsPd || 0, ex = ax + dir*D, vx = fsPencilVanX(ax, dir, D, t);   // the end of the road; the van's middle now
     c.save();
-    if(t < w){   // THE VAN: it grows in over its first 12 frames, shakes as it idles and harder as it builds
-      const k = Math.max(0.08, Math.min(1, (t + 1)/P.grow)), run = Math.max(0, Math.min(1, (t - P.hop)/(w - P.hop))), amp = t < P.hop ? 0 : 0.5 + 2.2*run*run + (t >= P.catchAt ? 0.8 : 0);
-      fsPencilVan(c, ax + Math.sin(t*1.9)*amp, fy + Math.sin(t*2.7 + 1)*amp*0.6, dir, k, 1, t >= P.grow);
-    } else if(t < w + 10){   // ...and it blows apart with the blast
-      const u = (t - w)/10; fsPencilVan(c, ax, fy, dir, 1 + 0.3*u, 1 - u, false); fsDisc(c, ax, ay, 40 + 130*u, '#fff', 0.7*(1 - u));
+    if(t < w){   // THE VAN: it grows in over its first 12 frames, shakes as it idles and harder as it builds; once it is off, the shake is a bounce
+      const k = Math.max(0.08, Math.min(1, (t + 1)/P.grow)), run = Math.max(0, Math.min(1, (t - P.hop)/(P.catchAt - P.hop))), s = Math.abs(vx - ax), go = s > 0.5;
+      const amp = t < P.hop ? 0 : (0.5 + 2.2*run*run + (t >= P.catchAt ? 0.8 : 0))*(go ? 0.35 : 1), bob = go ? -Math.abs(Math.sin(s*0.11))*3 : 0;
+      fsPencilVan(c, vx + Math.sin(t*1.9)*amp, fy + bob + Math.sin(t*2.7 + 1)*amp*0.6, dir, k, 1, t >= P.grow, go ? s : null);
+    } else if(t < w + P.out){   // ...and it blows apart with the blast, over 12 frames
+      const u = (t - w)/P.out; fsPencilVan(c, ex, fy, dir, 1 + 0.3*u, 1 - u, false); fsDisc(c, ex, ay, 40 + 130*u, '#fff', 0.7*(1 - u));
     }
-    const px = ax - dir*(P.vw/2 + 11), py = fy - 13;   // THE EXHAUST: puffs off the end of the pipe, drifting back and up
-    if(t >= P.hop && t < w + 30) for(let i = 0; i < P.puffs.length; i++){
+    if(D > 0){   // THE DUST at the back wheel: a puff every 2 frames while it rolls, spreading and fading as it ages (from the road, so a guest draws it too)
+      for(let te = fsPencilRunT0(D); te < w && te <= t; te += 2){
+        const age = t - te; if(age >= 18) continue;
+        const k = age/18, x = fsPencilVanX(ax, dir, D, te) - dir*(P.vw/2 - 12 + 22*k), y = fy - 4 - 14*k - 2*Math.sin(te*1.9);
+        c.globalAlpha = 0.6*(1 - k); c.fillStyle = '#d8c8a8'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2;
+        c.beginPath(); c.arc(x, y, 4 + 9*k, 0, 7); c.fill(); c.stroke();
+      }
+    }
+    if(t >= P.hop && t < w + 30) for(let i = 0; i < P.puffs.length; i++){   // THE EXHAUST: puffs off the end of the pipe where it was, drifting back and up (it streams behind a van that is going)
       const tb = P.puffs[i], age = t - tb; if(age < 0 || age >= 26) continue;
+      const px = fsPencilVanX(ax, dir, D, tb) - dir*(P.vw/2 + 11), py = fy - 13;
       const k = age/26, x = px - dir*(6 + 56*k + 5*Math.sin(tb*1.7)), y = py - 3 - 40*k*(1 - 0.25*k) + 2.5*Math.sin(tb*2.3 + age*0.3), r = 5 + 13*k;
       c.globalAlpha = 0.85*(1 - k); c.fillStyle = k < 0.45 ? '#6f737b' : '#c9cbd2'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5;
       c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); c.stroke();
     }
     c.globalAlpha = 1;
-    if(t >= w){   // THE RINGS, round the van's middle (the blast's)
-      c.save(); c.translate(ax, ay);
+    if(t >= w){   // THE RINGS, round the van's middle at the end of its road (the blast's)
+      c.save(); c.translate(ex, ay);
       const u1 = Math.min(1, (t - w)/18), u2 = t >= w + 14 ? Math.min(1, (t - w - 14)/20) : -1;
       if(u1 < 1){ fsDisc(c, 0, 0, 300*u1, '#fff', 0.5*(1 - u1)); fsRing(c, 0, 0, 300*u1, '#f2d84b', 16*(1 - u1) + 2, 1 - u1); }
       if(u2 >= 0 && u2 < 1){ fsRing(c, 0, 0, 420*u2, '#a78bfa', 12*(1 - u2) + 2, 1 - u2); }
@@ -66074,7 +66231,7 @@ function step(){
     f._footing = f.onground;   // where its own step left it: on a floor or not (WALKING OFF CANCELS THE TILT reads this, not a push that only marks it airborne)
     // MARSHMALLOW'S GRAVITY, the half that helps: halted right before the saw and flung back upwards (War De
     // Guacamole). Involuntary, once a stock, and only on the way down to a knockout.
-    if(f.kit && f.kit.special==='wallmart' && !f._gravSaved && f.vy > 0 && !f.dead && (MCAVE && MCAVE.on ? (MCAVE.cy - f.y < MCAVE.rKill + 100 && MCAVE.cy - f.y >= MCAVE.rKill) : (f.y > WH + 60 && f.y <= WH + 160))){   // (MOON CAVES: just short of the core, on the way in)
+    if(f.kit && f.kit.special==='wallmart' && !f._gravSaved && f.vy > 0 && !f.dead && (MCAVE && MCAVE.on ? (MCAVE.cy - f.y < MCAVE.rKill + 100 && MCAVE.cy - f.y >= MCAVE.rKill) : (f.y > WH + 60 && f.y <= koB()))){   // (MOON CAVES: just short of the core, on the way in)
       f._gravSaved = true; f.vy = -17; f.vx *= 0.3; f.hitstun = 0;
       for(let i=0;i<16;i++) puff(f.x + (Math.random()*50-25), f.y, '#ffe9f2', 5);   // no "...GRAVITY?!" line ("Remove them all"); the save itself is the joke
     }
@@ -66091,8 +66248,8 @@ function step(){
     if(f._backAir && f.onground) f._backAir = false;
     if(MCAVE && MCAVE.on){ const _r = MCAVE.cy - f.y; if(_r > MCAVE.Rblast || _r < MCAVE.rKill) eliminate(f); }   // MOON CAVES: past the blast ring, or down in the core (in its own chart cy - y is the true radius)   (no respawn ceiling here: that is the normal maps' top line)
     else {
-      if(f._backAir && f.y < -260){ f.y = -260; if(f.vy < 0) f.vy = 0; }
-      if(pastSideLine(f.x)||f.y>WH+160||f.y<-260){ eliminate(f); }
+      if(f._backAir && f.y < KO_TOP){ f.y = KO_TOP; if(f.vy < 0) f.vy = 0; }
+      if(pastKo(f.x, f.y)){ eliminate(f); }
     }
 
     // hazards
@@ -106145,7 +106302,7 @@ const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering
   '_growT',   // (Puffball's Grow: until when she is grown -- the pink Attack Up icon; her size itself rides in r)
   '_baldUntil', '_fsBaldUntil',   // (FSA lane a: Spikey's spikes are gone until then -- his Can't Hold It In special, and his Final Smash's release (the render-only one))
   'fsGlow','fsId','fsT','fsWind','fsDur','fsAx','fsAy','fsBx','fsBy','fsCx','fsCy',   // FINAL SMASH BALLS: the glow, and which Final Smash is on, how far in, and where it began (all a client needs to draw it)
-  'fsC','fsLk'];   // ...the catch's frames left, and whose catch holds this fighter (+1) (CATCH, THEN CINEMATIC)
+  'fsC','fsLk','fsPd'];   // (fsPd: Pencil's van's road in px, 0 when it stays) ...the catch's frames left, and whose catch holds this fighter (+1) (CATCH, THEN CINEMATIC)
 function netFighter(f){
   const o = { idx:f.idx, name:f.name, color:f.color, x:Math.round(f.x), y:Math.round(f.y), r:f.r, face:f.face,
     pct:Math.round(f.pct*10)/10, stocks:(f.stocks===Infinity?-1:f.stocks), koCap:f.koCap, dead:f.dead, team:f.team,
