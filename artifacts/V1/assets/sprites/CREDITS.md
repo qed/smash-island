@@ -1184,6 +1184,11 @@ episode frame), the hills and the Four cactus, I DO THIS!'s shards (in the marke
 rooms -- Eternal Algebra Class and The Fourest, whose files are frames and backdrops, not assets.
 <!-- @boss:four:end credits -->
 
+TV, Static Burst (his Final Smash, 2026-11-03). The Robotic Spider of TPOT 16 ('Bottle For Dream Island') is drawn from the show's own picture, as the Four renders are: Battle for Smash Island is an unaffiliated, non-commercial fan work and
+jacknjellify's designs are theirs. `attacks/tvspider.png` (336x300, transparent) is the BODY of File:Robotic Spider.png (the Battle for Dream Island wiki; 1600x720, front-on) -- https://battlefordreamisland.fandom.com/wiki/File:Robotic_Spider.png --
+with its legs taken off by `scripts/make-tv-spider.mjs` (the fur's own pixels; the Final Smash draws its own animated legs, in the picture's brown-grey) and the rest cropped and scaled to 300 px tall. Its pick is `tvspider` in
+`scripts/fetch-attack-sprites.mjs` and its manifest row is in `scripts/attack-sprite-manifest.json`. A static file: a guest draws the same picture; nothing about it is sent online. The drawn ring is what shows until the file loads.
+
 ## Assist trophies
 
 "sprites for assist trophies." The thirteen assists of ASSIST_ROSTER are BFDI characters; twelve have a render on
