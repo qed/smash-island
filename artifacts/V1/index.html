@@ -16568,7 +16568,17 @@ const LEDGE_CATCH = 30;     // feet within this of a cliff's top, moving into it
 // so those play and look exactly as before. Pure: derived from the match settings, like FLOOR_SEGS.
 const OFFSTAGE_ROOM = 160;
 let SIDE_ROOM = 0;
-function pastSideLine(x){ return x < -120 - SIDE_ROOM || x > WW + 120 + SIDE_ROOM; }   // past a side KO line: 120 px out from the stage's box, and SIDE_ROOM more
+// THE KO LINES, IN ONE PLACE (the owner, 2026-11-03: "the place where you die when you fall should be honest -- I keep dying when I dont hit the
+// floor of the screen", and "the camera LIMIT (not the init. camera) should be the ko line"). The four lines of a stage: the sides 120 px out from the
+// stage's box (and SIDE_ROOM more), the top 260 px above it, the bottom 160 px under it. They are where they always were. eliminate, the Final Smash's
+// flight test, the ledgeguard camera's "past saving" test and its limit all read koRect / pastKo, so they cannot drift apart.
+const KO_TOP = -260, KO_SIDE = 120, KO_DROP = 160;
+function koL(){ return -KO_SIDE - SIDE_ROOM; }
+function koR(){ return WW + KO_SIDE + SIDE_ROOM; }
+function koB(){ return WH + KO_DROP; }
+function koRect(){ return { x0:koL(), x1:koR(), y0:KO_TOP, y1:koB() }; }
+function pastSideLine(x){ return x < koL() || x > koR(); }   // past a side KO line: 120 px out from the stage's box, and SIDE_ROOM more
+function pastKo(x, y){ return x < koL() || x > koR() || y > koB() || y < KO_TOP; }   // past any of the four
 function sideRoomTop(){ return SIDE_ROOM ? Math.round(H/2 - H*(WW + 2*SIDE_ROOM)/(2*W)) : 0; }   // the world y of the top of the view there (above 0: the zoomed-out view shows more sky); 0 elsewhere
 // THE TEAMS ARENA FITS ITS PLAYERS (the owner, 2026-10-31: "do 1" -- CPU team matches dragged: "most of the match is running around").
 // The arena was the same 2,700 px tower for 2v2 as for 10v10, its KO lines the world's edges: from mid-floor a strong smash needed 187-220%
@@ -16677,9 +16687,19 @@ function scrolls(){ return isBig() || isBigFFA() || WW>W+2 || WH>H+2; }   // any
 //      centre is back in the view (it is shown once its whole body is above) or it is out; no zoom or pan for it. The chevrons and the arrows share
 //      LG.maxMarks (3) and the LG.gap spacing; chevrons (recoverers) come first, then the arrows nearest first. An arrow only slides along the top
 //      edge (clear of the minimap, the other markers), never round a corner onto a side; its stem is how far above the top edge the fighter is.
+//   5. THE KO LINES ARE THE CAMERA'S LIMIT (the owner, 2026-11-03: "the place where you die when you fall should be honest", then "the camera
+//      LIMIT (not the init. camera) should be the ko line"). The KO lines do not move (koRect), and the default view is as it was. The furthest the
+//      picture can go is exactly that rectangle: (a) its zoom never goes under the one at which the view just fits inside the KO rectangle
+//      (lgKoZoom: the real fit for the screen's shape, 0.66 on the edge stages at 1100 x 720, where the width binds; a huge arena's is far under
+//      0.50, but a recoverer's pull still stops at LG.zmin there), so a fighter anywhere in the rectangle can be brought on screen by panning;
+//      (b) its centre is held so that the view stays inside the rectangle, so nothing past a line is ever drawn, on any side; (c) a fighter within LG.koM (140 px) of a line (it leaves at LG.koM + LG.koH),
+//      or in hitstun on a flight that ends past one, is "threatened" whatever else it is doing (LGC.f[].kt, the sides as bits): it joins the plan at
+//      once, its group reaching out to the line it threatens, the plan's rectangles clipped to the KO rectangle, and the view eases in over LG.koF
+//      (8) frames. So the line is brought to the screen's very edge as the fighter nears it and it dies as it reaches the edge, on every side. A
+//      fighter just back from a KO is no threat to the top line (its respawn ceiling).
 const LG = { wide:1.09, below:1.13, pull:1.00, zmin:0.50, inF:24, outF:40, dz:0.02, enter:6, leave:36, land:36,
   pad:70, air:200, lead:10, leadMax:180, insX:48, insT:84, insB:36, follow:0.12, ease2:0.25, hold:36, rel:0.05,
-  growF:12, maxMarks:3, mkHold:6, ko:90, zhys:0.04, missF:30, gap:26, far:900, farH:60 };
+  growF:12, maxMarks:3, mkHold:6, ko:90, zhys:0.04, missF:30, gap:26, far:900, farH:60, koM:140, koH:50, koF:8 };
 const LGC = { off:false, ok:false, init:false, mode:null, t:-1, k:0, held:null, z:0, c0:{ x:0, y:0 }, cr:{ x:0, y:0 }, last:null,
   cur:{ cx:0, cy:0, z:1 }, prev:{ cx:0, cy:0, z:1 }, f:Object.create(null), draw:0, sx:null, sy:null, marks:[], markSet:Object.create(null), dbg:null,
   hud:{ top:84, st:null }, hudN:0 };
@@ -16707,7 +16727,7 @@ function lgSubject(mode){
 function lgDoomed(f){
   if(!(f.hitstun > 0)) return false;
   const h = Math.min(f.hitstun, LG.ko), x1 = f.x + (f.vx || 0)*h, y1 = f.y + (f.vy || 0)*h + 0.5*GRAV*h*h;
-  return pastSideLine(x1) || y1 > WH + 160 || y1 < -260;
+  return pastKo(x1, y1);
 }
 // A fighter the view has a use for: in the match, not held or carried, a place that is a number, and not past saving (lgDoomed).
 function lgAlive(f){
@@ -16769,29 +16789,65 @@ function lgHold(Hd, U, n){
 // Does a fighter whose group fits at `fit` belong to the plan? A new one joins at LG.zmin + LG.zhys; one already in stays down to LG.zmin - LG.zhys,
 // unless it has not fitted LG.zmin itself for LG.missF frames (s.miss counts those).
 function lgTake(s, fit, n){
-  if(!s || !s.pl) return fit >= LG.zmin + LG.zhys;
-  return fit >= LG.zmin - LG.zhys && (fit >= LG.zmin || s.miss + n <= LG.missF);
+  const zm = lgFloor();
+  if(!s || !s.pl) return fit >= zm + LG.zhys;
+  return fit >= zm - LG.zhys && (fit >= zm || s.miss + n <= LG.missF);
+}
+// THE KO LINES AS THE VIEW'S LIMIT (see 5. above). The zoom at which the view just fits inside the KO rectangle (its tighter side: 0.66 on the edge
+// stages at 1100 x 720, where the width binds; wider than that it would show past a line on the other side); the floor of a plan's pull (a recoverer's
+// pull has never gone under LG.zmin, and does not now); a group clipped to the rectangle; the lines a fighter threatens (bits 1 left, 2 right, 4 top,
+// 8 bottom): within LG.koM of one (LG.koM + LG.koH once it has been), or in hitstun on a flight that ends past one; and its group reaching out to them.
+function lgKoZoom(){ const K = koRect(); return Math.max(W/Math.max(1, K.x1 - K.x0), H/Math.max(1, K.y1 - K.y0)); }
+function lgFloor(){ return Math.max(LG.zmin, lgKoZoom()); }
+function lgClipK(g){
+  const K = koRect(), x0 = clamp(g.x0, K.x0, K.x1), y0 = clamp(g.y0, K.y0, K.y1);
+  return { x0, x1:Math.max(x0, clamp(g.x1, K.x0, K.x1)), y0, y1:Math.max(y0, clamp(g.y1, K.y0, K.y1)) };
+}
+function lgKoSides(f, prev){
+  if(f.dead || f._fsLock || f._heldBy != null || !isFinite(f.x) || !isFinite(f.y)) return 0;
+  const K = koRect(); let m = 0;
+  const near = (d, bit) => { if(d < LG.koM + ((prev & bit) ? LG.koH : 0)) m |= bit; };
+  near(f.x - K.x0, 1); near(K.x1 - f.x, 2); if(!f._backAir) near(f.y - K.y0, 4); near(K.y1 - f.y, 8);
+  if(f.hitstun > 0) m |= lgKoFlight(f, K);
+  return m;
+}
+// The line a fighter in hitstun is flying at: its flight for as long as the stun lasts (at most LG.ko frames) -- gravity and fall speed as the sim has
+// them, the floor stopping it where fsKoFlight's does -- and the first line it crosses (the same bits).
+function lgKoFlight(f, K){
+  let x = f.x, y = f.y, vx = f.vx || 0, vy = f.vy || 0;
+  const g = GRAV*(lowGravOn() ? 0.7 : 1), fall = (f.st || STAT_ONE).fall, gy = groundY(), n = Math.min(f.hitstun, LG.ko);
+  for(let i = 0; i < n; i++){
+    vy += vy > 0 ? g*fall : g; x += vx; y += vy;
+    if(x < K.x0) return 1; if(x > K.x1) return 2; if(y < K.y0) return f._backAir ? 0 : 4; if(y > K.y1) return 8;
+    if(!isBig() && vy > 0 && y >= gy - f.r && groundAt(x)) return 0;
+  }
+  return 0;
+}
+function lgKoGroup(g, kt){
+  const K = koRect(), o = { x0:g.x0, x1:g.x1, y0:g.y0, y1:g.y1 };
+  if(kt & 1) o.x0 = K.x0; if(kt & 2) o.x1 = K.x1; if(kt & 4) o.y0 = K.y0; if(kt & 8) o.y1 = K.y1;
+  return lgClipK(o);
 }
 function lgPlan(subj, b, c0, n0){
   const cands = [];
-  for(const f of fighters){ const s = LGC.f[f.idx]; if(s && s.on && !f.dead) cands.push(f); else if(s){ s.pl = false; s.miss = 0; s.far = null; } }
+  for(const f of fighters){ const s = LGC.f[f.idx]; if(s && (s.on || s.kt) && !f.dead) cands.push(f); else if(s){ s.pl = false; s.miss = 0; s.far = null; } }
   if(!cands.length) return null;
   const ax = subj ? subj.x : c0.x, ay = subj ? subj.y : c0.y;
   cands.sort((p, q) => (Math.hypot(p.x - ax, p.y - ay) - Math.hypot(q.x - ax, q.y - ay)) || (p.idx - q.idx));
-  const S = subj ? lgBody(subj) : null;
-  let U = S, G = null, n = 0; const ids = [];
+  const S = subj ? lgKoGroup(lgBody(subj), (LGC.f[subj.idx] || {}).kt || 0) : null;
+  let U = S, G = null, n = 0, ko = !!(S && (LGC.f[subj.idx] || {}).kt); const ids = [];
   for(const f of cands){
     const s = LGC.f[f.idx];
     // FAR (LG.far): further than that from the fighter the view follows, a recoverer is the marker's and never the plan's (with a margin each way: LG.farH)
     s.far = s.far == null ? Math.hypot(f.x - ax, f.y - ay) > LG.far : s.far ? Math.hypot(f.x - ax, f.y - ay) > LG.far - LG.farH : Math.hypot(f.x - ax, f.y - ay) > LG.far + LG.farH;
     if(s.far){ s.pl = false; s.miss = 0; continue; }
-    const g = lgGroup(f), V = U ? lgUnion(U, g) : g, v1 = lgFit(V);
-    if(lgTake(s, v1, n0)){ U = V; G = G ? lgUnion(G, g) : g; n++; ids.push(f.idx); s.pl = true; s.miss = v1 >= LG.zmin ? 0 : s.miss + n0; continue; }
-    const g2 = lgBody(f), V2 = U ? lgUnion(U, g2) : g2, v2 = lgFit(V2);   // its ledge does not fit with the rest: the fighter alone, if that does
-    if(lgTake(s, v2, n0)){ U = V2; G = G ? lgUnion(G, g2) : g2; n++; ids.push(f.idx); s.pl = true; s.miss = v2 >= LG.zmin ? 0 : s.miss + n0; }
+    const g = lgKoGroup(s.on ? lgGroup(f) : lgBody(f), s.kt || 0), V = U ? lgUnion(U, g) : g, v1 = lgFit(V);
+    if(lgTake(s, v1, n0)){ U = V; G = G ? lgUnion(G, g) : g; n++; ids.push(f.idx); s.pl = true; s.miss = v1 >= lgFloor() ? 0 : s.miss + n0; if(s.kt) ko = true; continue; }
+    const g2 = lgKoGroup(lgBody(f), s.kt || 0), V2 = U ? lgUnion(U, g2) : g2, v2 = lgFit(V2);   // its ledge does not fit with the rest: the fighter alone, if that does
+    if(lgTake(s, v2, n0)){ U = V2; G = G ? lgUnion(G, g2) : g2; n++; ids.push(f.idx); s.pl = true; s.miss = v2 >= lgFloor() ? 0 : s.miss + n0; if(s.kt) ko = true; }
     else { s.pl = false; s.miss = 0; }
   }
-  return n ? { U, S, G, n, ids } : null;
+  return n ? { U, S, G, n, ids, ko } : null;
 }
 // One step of the view (the host: once a step; a guest: once a picture, kk the steps it stands for).
 function lgStep(kk){
@@ -16809,10 +16865,11 @@ function lgStepIn(n){
   // who is recovering (hysteresis)
   for(const f of fighters){
     let s = LGC.f[f.idx];
-    if(!s) s = LGC.f[f.idx] = { on:false, up:0, dn:0, ground:0, mk:0, pl:false, miss:0, mr:-1, st:f.stocks, px:f.x, py:f.y, far:null, hi:false };
-    if(f.dead || f.stocks < s.st || Math.abs(f.x - s.px) + Math.abs(f.y - s.py) > 320 + 40*stood){ s.on = false; s.up = 0; s.dn = 0; s.ground = 0; s.mk = 0; s.pl = false; s.miss = 0; s.far = null; s.hi = false; }   // a KO, or a teleport (a fighter at 25 px a frame is 375 px away after a 15-frame hitch: the allowance grows with the steps this call stands for): at once
+    if(!s) s = LGC.f[f.idx] = { on:false, up:0, dn:0, ground:0, mk:0, pl:false, miss:0, mr:-1, st:f.stocks, px:f.x, py:f.y, far:null, hi:false, kt:0 };
+    if(f.dead || f.stocks < s.st || Math.abs(f.x - s.px) + Math.abs(f.y - s.py) > 320 + 40*stood){ s.on = false; s.up = 0; s.dn = 0; s.ground = 0; s.mk = 0; s.pl = false; s.miss = 0; s.far = null; s.hi = false; s.kt = 0; }   // a KO, or a teleport (a fighter at 25 px a frame is 375 px away after a 15-frame hitch: the allowance grows with the steps this call stands for): at once
     else if(lgRaw(f)){ s.up += n; s.dn = 0; s.ground = 0; if(!s.on && s.up >= LG.enter) s.on = true; }
     else { s.up = 0; if(s.on){ s.dn += n; s.ground = f.onground ? s.ground + n : 0; if(s.dn >= LG.leave || s.ground >= LG.land) s.on = false; } }
+    s.kt = lgKoSides(f, s.kt);   // THE KO LINES: a fighter near one, or flying at one, is in the plan whatever else it is doing
     s.st = f.stocks; s.px = f.x; s.py = f.y;
   }
   const b = lgBase(mode, subj) || (LGC.init ? { cx:LGC.c0.x, cy:LGC.c0.y, z:CAM_ZOOM/LG.wide } : null);
@@ -16824,15 +16881,15 @@ function lgStepIn(n){
   if(mode === 'follow'){ const sm = n === 1 ? LG.follow : 1 - Math.pow(1 - LG.follow, n); LGC.c0.x += (b.cx - LGC.c0.x)*sm; LGC.c0.y += (b.cy - LGC.c0.y)*sm; }
   else { LGC.c0.x = b.cx; LGC.c0.y = b.cy; }
   const plan = lgPlan(subj, b, LGC.c0, n), k0 = LGC.k;
-  LGC.k = clamp(LGC.k + (plan ? n/LG.inF : -n/LG.outF), 0, 1);
+  LGC.k = clamp(LGC.k + (plan ? n/(plan.ko ? LG.koF : LG.inF) : -n/LG.outF), 0, 1);
   if(!plan && LGC.k <= 0){ LGC.held = null; LGC.last = null; }
   const e = LGC.k*LGC.k*(3 - 2*LGC.k);
   let zr = b.z;
   if(plan){
     let Gh = lgHold(LGC.held, plan.G, n), U = plan.S ? lgUnion(plan.S, Gh) : Gh;
-    if(lgFit(U) < LG.zmin - LG.zhys){ Gh = lgHold(null, plan.G, n); U = plan.S ? lgUnion(plan.S, Gh) : Gh; }   // (what it remembers does not fit with you, even with the margin: the need of this moment alone)
+    if(lgFit(U) < lgFloor() - LG.zhys){ Gh = lgHold(null, plan.G, n); U = plan.S ? lgUnion(plan.S, Gh) : Gh; }   // (what it remembers does not fit with you, even with the margin: the need of this moment alone)
     LGC.held = Gh;
-    zr = clamp(Math.min(b.z*LG.pull, lgFit(U)), LG.zmin, b.z);
+    zr = clamp(Math.min(b.z*LG.pull, lgFit(U)), lgFloor(), b.z);
     const sp = lgSpan(U, zr), sm2 = n === 1 ? LG.ease2 : 1 - Math.pow(1 - LG.ease2, n);
     if(plan.S && (sp.lox > sp.hix || sp.loy > sp.hiy)){   // (U does not fit at this zoom: its middle, but never so far that you are out of the picture)
       const q = lgSpan(plan.S, zr);
@@ -16845,10 +16902,15 @@ function lgStepIn(n){
     LGC.last = { zr, U };
   } else if(LGC.last) zr = LGC.last.zr;   // easing out: back from where it was
   const zT = Math.exp(Math.log(b.z) + (Math.log(zr) - Math.log(b.z))*e), dzm = LG.dz*Math.max(0, n);
-  const z = clamp(zT, LGC.z*Math.exp(-dzm), LGC.z*Math.exp(dzm));
+  let z = clamp(zT, LGC.z*Math.exp(-dzm), LGC.z*Math.exp(dzm));
+  // THE KO LINES ARE THE LIMIT (5. above): never zoomed out past the whole KO rectangle, never panned so that anything past a line is in view (a side
+  // the zoom leaves wider than the rectangle is centred on it). The default view lies inside it on every stage, so this changes nothing until a fighter is near a line.
+  const K = koRect(), zf = Math.min(lgKoZoom(), b.z);
+  if(z < zf) z = zf;
   LGC.z = z;
   LGC.prev = LGC.cur;
-  LGC.cur = { cx:LGC.c0.x + (LGC.cr.x - LGC.c0.x)*e, cy:LGC.c0.y + (LGC.cr.y - LGC.c0.y)*e, z };
+  const hw = W/(2*z), hh = H/(2*z);
+  LGC.cur = { cx:lgClampR(LGC.c0.x + (LGC.cr.x - LGC.c0.x)*e, K.x0 + hw, K.x1 - hw), cy:lgClampR(LGC.c0.y + (LGC.cr.y - LGC.c0.y)*e, K.y0 + hh, K.y1 - hh), z };
   LGC.ok = true;
   LGC.dbg = { mode, k:LGC.k, e, zr, z, n:plan ? plan.n : 0, ids:plan ? plan.ids : [], base:b, U:LGC.last ? LGC.last.U : null };
   // the marker's age: a recovering fighter outside this view
@@ -24544,8 +24606,8 @@ function fsKoFlight(t, strict){
   if(MCAVE && MCAVE.on) return mcKoFlight(t, n, saved);   // MOON CAVES: out past the blast ring or down into the core
   for(let i = 0; i < n; i++){
     vy += vy > 0 ? g*fall : g; x += vx; y += vy;
-    if(saved && vy > 0 && y > WH + 60 && y <= WH + 160) return false;   // (MARSHMALLOW'S GRAVITY: halted above the bottom line, flung back up)
-    if(pastSideLine(x) || y > WH + 160 || y < -260) return true;
+    if(saved && vy > 0 && y > WH + 60 && y <= koB()) return false;   // (MARSHMALLOW'S GRAVITY: halted above the bottom line, flung back up)
+    if(pastKo(x, y)) return true;
     if(!isBig() && vy > 0 && y >= gy - t.r && groundAt(x)) return false;   // (REAL EDGES: over a gap the flight goes on down)
   }
   return false;
@@ -64740,7 +64802,7 @@ function step(){
     f._footing = f.onground;   // where its own step left it: on a floor or not (WALKING OFF CANCELS THE TILT reads this, not a push that only marks it airborne)
     // MARSHMALLOW'S GRAVITY, the half that helps: halted right before the saw and flung back upwards (War De
     // Guacamole). Involuntary, once a stock, and only on the way down to a knockout.
-    if(f.kit && f.kit.special==='wallmart' && !f._gravSaved && f.vy > 0 && !f.dead && (MCAVE && MCAVE.on ? (MCAVE.cy - f.y < MCAVE.rKill + 100 && MCAVE.cy - f.y >= MCAVE.rKill) : (f.y > WH + 60 && f.y <= WH + 160))){   // (MOON CAVES: just short of the core, on the way in)
+    if(f.kit && f.kit.special==='wallmart' && !f._gravSaved && f.vy > 0 && !f.dead && (MCAVE && MCAVE.on ? (MCAVE.cy - f.y < MCAVE.rKill + 100 && MCAVE.cy - f.y >= MCAVE.rKill) : (f.y > WH + 60 && f.y <= koB()))){   // (MOON CAVES: just short of the core, on the way in)
       f._gravSaved = true; f.vy = -17; f.vx *= 0.3; f.hitstun = 0;
       for(let i=0;i<16;i++) puff(f.x + (Math.random()*50-25), f.y, '#ffe9f2', 5);   // no "...GRAVITY?!" line ("Remove them all"); the save itself is the joke
     }
@@ -64757,8 +64819,8 @@ function step(){
     if(f._backAir && f.onground) f._backAir = false;
     if(MCAVE && MCAVE.on){ const _r = MCAVE.cy - f.y; if(_r > MCAVE.Rblast || _r < MCAVE.rKill) eliminate(f); }   // MOON CAVES: past the blast ring, or down in the core (in its own chart cy - y is the true radius)   (no respawn ceiling here: that is the normal maps' top line)
     else {
-      if(f._backAir && f.y < -260){ f.y = -260; if(f.vy < 0) f.vy = 0; }
-      if(pastSideLine(f.x)||f.y>WH+160||f.y<-260){ eliminate(f); }
+      if(f._backAir && f.y < KO_TOP){ f.y = KO_TOP; if(f.vy < 0) f.vy = 0; }
+      if(pastKo(f.x, f.y)){ eliminate(f); }
     }
 
     // hazards
