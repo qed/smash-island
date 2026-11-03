@@ -16633,6 +16633,319 @@ let CAM_ZOOM = 0.72;   // scrolling arenas render zoomed out so more of the big 
 // setting asks for extra height (those ride this same, proven scrolling path).
 function isBigFFA(){ return (SETTINGS.mode!=='teams') && SETTINGS.mode!=='ctf' && (!!stage.big || forcedScroll()) && !CUSTOM_LEVEL && !ONEFIGHT.active && !COBSFIGHT.active && !RACE.active; }
 function scrolls(){ return isBig() || isBigFFA() || WW>W+2 || WH>H+2; }   // any arena wider/taller than the screen
+// ============================================================
+//  LEDGEGUARD CAMERA  (the owner, 2026-11-02: "it is hard to ledgeguard, because cpus always go so high, i would never be able to hit them."
+//  Asked what would make ledgeguarding better, for seeing offstage they chose "Camera zooms out offstage", "Wider default view" and
+//  "Offscreen marker for a recovering fighter".)
+// ============================================================
+// LOCAL VIEW ONLY. The sim's camera (camX, camY, CAM_ZOOM, what updateCamera and clientCamera keep) is exactly what it was: respawns, boss
+// shots and the guest's fallback follow read it, and none of them may move. This block keeps a camera of its own (LGC.cur) that only the
+// PICTURE uses: drawView lends it to draw() for the length of one picture (lgBegin / lgEnd put camX and camY back), viewZoom() answers with
+// its zoom while that picture is drawn, and nothing here is written to a snapshot. A host steps it in updateCamera, a guest in clientCamera
+// (from its own snapshot's fighters and the floor its own setupWorld built), through the same functions: both compute the same target.
+//   1. THE WIDER DEFAULT, always (normal stages only, see lgMode): every view is LG.wide (1.09) wider and taller than before, so 9% more of
+//      the world shows beside the stage; on a single screen the extra height goes below first -- the view's bottom edge sits LG.below
+//      (1.13) times as far under the floor line as it did (Goiky Field: 234 px of drop under the floor in view, now 265); a scrolling arena
+//      widens about the centre the sim's own camera has (camTarget at CAM_ZOOM, smoothed as it is), so it shows the same 9% more beside, 9% more
+//      above and, standing on the floor, 14% more under it (324 px of drop in view before, 369).
+//   2. THE OFFSTAGE PULL: a fighter is RECOVERING (lgRaw) when it is alive, not past saving (lgDoomed: in hitstun on a flight that ends past a KO
+//      line), and off the stage by the game's own tests: over the drop (overDrop, the one the CPU's edgeGoal uses), past a side of the world, or
+//      falling out of the bottom (brainRecover's own fallingOut). A fighter must be it for LG.enter frames in a row to count and is let go after
+//      LG.leave frames of not being (LG.land on the ground), a KO or a teleport at once: a fighter bobbing at the line never flaps the zoom. While
+//      one counts, the view is the union of what must be seen: your own fighter, the recovering one and the ledge it is heading for with LG.air
+//      px of air above it, shifted the least that holds them all inside the screen (less LG.ins* px of border for the cards) and pulled back
+//      only as far as that still takes (LG.pull is the share of the plain zoom it may keep: 1 = none is spent when the union already fits; a
+//      first try at 0.90 zoomed out for every trip and, in a CPU brawl, breathed 30 times a minute), never past the floor LG.zmin: the nearest
+//      fighter first, one that no longer fits is left to its marker. Who is in that plan has a margin of its own (LG.zhys): a fighter joins only if
+//      it fits at LG.zmin + LG.zhys and stays until it needs LG.zmin - LG.zhys (or has not fitted LG.zmin for LG.missF frames), so you swaying around
+//      the distance the floor can just hold does not pump the zoom; where the union does not fit at the floor it is centred, but never so far that
+//      you are out of the picture. It eases in over LG.inF frames and out over LG.outF, the zoom never changes
+//      faster than LG.dz (of its log) a frame, and what the recovering fighters needed of each edge is held for LG.hold frames and then let go of
+//      slowly (LG.rel a frame), so a fighter bobbing in and out under the ledge moves the view once and not with every bob.
+//      FAR RECOVERERS (the owner, 2026-11-03: "Only a marker if far"): a recovering fighter more than LG.far (900 px, the straight line from your
+//      fighter's centre to its centre in world px: a fixed distance, so it does not move with the zoom, which is itself decided by who is in the plan)
+//      from the fighter the view follows is never in the plan: the offstage zoom and pan do not include it, only its marker (3.) tells you where it is,
+//      so the view never drags you away from the fight you are in. It is far from LG.far + LG.farH (960 px) and near again under LG.far - LG.farH
+//      (840 px), so a fighter hovering at the line does not flap; one that starts recovering is far if it is over 900. Near, it joins the plan as ever.
+//   3. THE MARKER (lgDrawMarkers): a recovering fighter outside the view gets a chevron at the screen's border in its colour (team colour in teams),
+//      a stem that grows with the distance, grown in over LG.growF frames, at most LG.maxMarks at once, nearest first; it goes LG.mkHold frames
+//      after the fighter is back over the stage, and with a KO at once. Markers that would sit on one another are slid along the border LG.gap px
+//      apart (the nearest stays), and a marker keeps clear of the minimap, the Teams standings strip and the cards' strip (lgHud). No words.
+//      THE UP ARROW (the owner, 2026-11-03: "Yes, an up arrow at the top edge"): a live fighter (lgAlive: the test the markers use) whose body is above
+//      the view and over the stage's x range of it -- launched high, not past a ledge (that one has its chevron) -- gets a small up-pointing arrow at
+//      the top edge (the cards' strip's lower edge) at its x, in its colour (team colour in teams), grown in over LG.growF frames, gone the moment its
+//      centre is back in the view (it is shown once its whole body is above) or it is out; no zoom or pan for it. The chevrons and the arrows share
+//      LG.maxMarks (3) and the LG.gap spacing; chevrons (recoverers) come first, then the arrows nearest first. An arrow only slides along the top
+//      edge (clear of the minimap, the other markers), never round a corner onto a side; its stem is how far above the top edge the fighter is.
+const LG = { wide:1.09, below:1.13, pull:1.00, zmin:0.50, inF:24, outF:40, dz:0.02, enter:6, leave:36, land:36,
+  pad:70, air:200, lead:10, leadMax:180, insX:48, insT:84, insB:36, follow:0.12, ease2:0.25, hold:36, rel:0.05,
+  growF:12, maxMarks:3, mkHold:6, ko:90, zhys:0.04, missF:30, gap:26, far:900, farH:60 };
+const LGC = { off:false, ok:false, init:false, mode:null, t:-1, k:0, held:null, z:0, c0:{ x:0, y:0 }, cr:{ x:0, y:0 }, last:null,
+  cur:{ cx:0, cy:0, z:1 }, prev:{ cx:0, cy:0, z:1 }, f:Object.create(null), draw:0, sx:null, sy:null, marks:[], markSet:Object.create(null), dbg:null,
+  hud:{ top:84, st:null }, hudN:0 };
+function lgReset(){ LGC.init = false; LGC.ok = false; LGC.k = 0; LGC.held = null; LGC.last = null; LGC.f = Object.create(null); LGC.marks.length = 0; LGC.markSet = Object.create(null); LGC.t = -1; LGC.hudN = 0; }
+// Which view this match has, or null for every mode that keeps its own camera (a boss, Capture the Flag, Moon Caves, Training, the tutorial, a custom
+// level, One, Steve Cobs's fight, RUNNING!, the plays camera, a spectated flag match, a watched World Cup fixture on a scrolling map).
+function lgMode(){
+  if(LGC.off) return null;
+  const m = SETTINGS.mode;
+  if(m !== 'ffa' && m !== 'teams') return null;
+  if(BOSS_ARENA || (MCAVE && MCAVE.on) || TESTMODE.active || CUSTOM_LEVEL || ONEFIGHT.active || COBSFIGHT.active || RACE.active || TUT.active || PCAM.on || PCAM.bg) return null;
+  if(stage && stage.id === 'custom') return null;
+  const sc = viewScrolls();
+  if(sc && !isNetClient() && TOURNEY_WATCHING && !fighters.some(f => f.you && !f.dead)) return null;
+  return sc ? 'follow' : 'fixed';
+}
+// The fighter a scrolling view follows (as updateCamera and clientCamera pick it); on a single screen only a live fighter of yours.
+function lgSubject(mode){
+  if(mode === 'fixed') return fighters.find(f => f.you && !f.dead) || null;
+  if(isNetClient()) return clientFollow();
+  return fighters.find(f => f.you && !f.dead) || fighters.find(f => !f.dead) || null;
+}
+// A fighter that has already been launched where it cannot come back from: in hitstun and, flying on as it is for as long as the stun lasts
+// (at most LG.ko frames), past a KO line. No pull for it: it is gone before the camera has moved.
+function lgDoomed(f){
+  if(!(f.hitstun > 0)) return false;
+  const h = Math.min(f.hitstun, LG.ko), x1 = f.x + (f.vx || 0)*h, y1 = f.y + (f.vy || 0)*h + 0.5*GRAV*h*h;
+  return pastSideLine(x1) || y1 > WH + 160 || y1 < -260;
+}
+// A fighter the view has a use for: in the match, not held or carried, a place that is a number, and not past saving (lgDoomed).
+function lgAlive(f){
+  if(f.dead || f._fsLock || f._heldBy != null || f._backAir || !isFinite(f.x) || !isFinite(f.y)) return false;
+  return !lgDoomed(f);
+}
+// Off the stage right now: over the drop (the CPU's own edgeGoal test), past a side of the world, or falling out of the bottom (brainRecover's).
+function lgRaw(f){
+  if(!lgAlive(f)) return false;
+  return !!((FLOOR_SEGS && overDrop(f)) || f.x < 0 || f.x > WW || (f.y > WH - 90 && f.vy > 0));
+}
+// The end of the floor it is heading for: the nearest span end (the world's own sides where the floor is endless), at the floor's height.
+function lgLedge(f){
+  let best = null, bd = Infinity;
+  const one = x => { const d = Math.abs(x - f.x); if(d < bd){ bd = d; best = x; } };
+  if(FLOOR_SEGS && FLOOR_SEGS.length){ for(const q of FLOOR_SEGS){ one(q.x0); one(q.x1); } } else { one(0); one(WW); }
+  return best == null ? null : { x:best, y:groundY() };
+}
+function lgUnion(a, b){ return { x0:Math.min(a.x0, b.x0), x1:Math.max(a.x1, b.x1), y0:Math.min(a.y0, b.y0), y1:Math.max(a.y1, b.y1) }; }
+function lgBody(f){
+  const r = (f.r || 24) + LG.pad, dx = clamp((f.vx || 0)*LG.lead, -LG.leadMax, LG.leadMax), dy = clamp((f.vy || 0)*LG.lead, -LG.leadMax, LG.leadMax);
+  return { x0:Math.min(f.x, f.x + dx) - r, x1:Math.max(f.x, f.x + dx) + r, y0:Math.min(f.y, f.y + dy) - r, y1:Math.max(f.y, f.y + dy) + r };
+}
+function lgGroup(f){
+  const B = lgBody(f), L = lgLedge(f);
+  return L ? lgUnion(B, { x0:L.x - 40, x1:L.x + 40, y0:L.y - LG.air, y1:L.y + 40 }) : B;
+}
+// The zoom at which U fits the screen less its borders.
+function lgFit(U){ return Math.min((W - 2*LG.insX)/Math.max(1, U.x1 - U.x0), (H - LG.insT - LG.insB)/Math.max(1, U.y1 - U.y0)); }
+// The centres that hold U inside the screen at zoom z (an empty range -- U does not fit -- is its middle).
+function lgSpan(U, z){
+  const hx = (W/2 - LG.insX)/z;
+  return { lox:U.x1 - hx, hix:U.x0 + hx, loy:U.y1 - (H/2 - LG.insB)/z, hiy:U.y0 + (H/2 - LG.insT)/z };
+}
+function lgClampR(v, lo, hi){ return lo <= hi ? clamp(v, lo, hi) : (lo + hi)/2; }
+// THE WIDER DEFAULT: the view with nobody offstage.
+function lgBase(mode, subj){
+  if(mode === 'fixed'){
+    const zOld = Math.min(W/Math.max(1, WW + 2*SIDE_ROOM), H/Math.max(1, WH)), z0 = zOld/LG.wide, gy = groundY(), oldBottom = WH/2 + H/(2*zOld);
+    return { cx:WW/2, cy:gy + LG.below*(oldBottom - gy) - H/(2*z0), z:z0 };
+  }
+  if(!subj) return null;
+  const t = camTarget(subj.x, subj.y, CAM_ZOOM);   // the sim's own centre, at the sim's own zoom: the view widens about it
+  return { cx:t.x + W/2, cy:t.y + H/2, z:CAM_ZOOM/LG.wide };
+}
+// What each edge of the recovering fighters' rectangle needed lately: it grows at once, is held LG.hold frames, then lets go slowly.
+function lgHold(Hd, U, n){
+  if(!Hd) return { x0:U.x0, x1:U.x1, y0:U.y0, y1:U.y1, t:[0, 0, 0, 0] };
+  const o = { x0:Hd.x0, x1:Hd.x1, y0:Hd.y0, y1:Hd.y1, t:Hd.t.slice() }, ed = ['x0', 'x1', 'y0', 'y1'], rel = n === 1 ? LG.rel : 1 - Math.pow(1 - LG.rel, n);
+  for(let i = 0; i < 4; i++){
+    const key = ed[i], need = U[key];
+    if(i % 2 === 0 ? need <= o[key] : need >= o[key]){ o[key] = need; o.t[i] = 0; }
+    else { o.t[i] += n; if(o.t[i] > LG.hold) o[key] += (need - o[key])*rel; }
+  }
+  return o;
+}
+// What must be seen: the subject (S), then each recovering fighter with its ledge and the air above it (G, the groups together), nearest first,
+// while it fits above the floor. U is both.
+// Does a fighter whose group fits at `fit` belong to the plan? A new one joins at LG.zmin + LG.zhys; one already in stays down to LG.zmin - LG.zhys,
+// unless it has not fitted LG.zmin itself for LG.missF frames (s.miss counts those).
+function lgTake(s, fit, n){
+  if(!s || !s.pl) return fit >= LG.zmin + LG.zhys;
+  return fit >= LG.zmin - LG.zhys && (fit >= LG.zmin || s.miss + n <= LG.missF);
+}
+function lgPlan(subj, b, c0, n0){
+  const cands = [];
+  for(const f of fighters){ const s = LGC.f[f.idx]; if(s && s.on && !f.dead) cands.push(f); else if(s){ s.pl = false; s.miss = 0; s.far = null; } }
+  if(!cands.length) return null;
+  const ax = subj ? subj.x : c0.x, ay = subj ? subj.y : c0.y;
+  cands.sort((p, q) => (Math.hypot(p.x - ax, p.y - ay) - Math.hypot(q.x - ax, q.y - ay)) || (p.idx - q.idx));
+  const S = subj ? lgBody(subj) : null;
+  let U = S, G = null, n = 0; const ids = [];
+  for(const f of cands){
+    const s = LGC.f[f.idx];
+    // FAR (LG.far): further than that from the fighter the view follows, a recoverer is the marker's and never the plan's (with a margin each way: LG.farH)
+    s.far = s.far == null ? Math.hypot(f.x - ax, f.y - ay) > LG.far : s.far ? Math.hypot(f.x - ax, f.y - ay) > LG.far - LG.farH : Math.hypot(f.x - ax, f.y - ay) > LG.far + LG.farH;
+    if(s.far){ s.pl = false; s.miss = 0; continue; }
+    const g = lgGroup(f), V = U ? lgUnion(U, g) : g, v1 = lgFit(V);
+    if(lgTake(s, v1, n0)){ U = V; G = G ? lgUnion(G, g) : g; n++; ids.push(f.idx); s.pl = true; s.miss = v1 >= LG.zmin ? 0 : s.miss + n0; continue; }
+    const g2 = lgBody(f), V2 = U ? lgUnion(U, g2) : g2, v2 = lgFit(V2);   // its ledge does not fit with the rest: the fighter alone, if that does
+    if(lgTake(s, v2, n0)){ U = V2; G = G ? lgUnion(G, g2) : g2; n++; ids.push(f.idx); s.pl = true; s.miss = v2 >= LG.zmin ? 0 : s.miss + n0; }
+    else { s.pl = false; s.miss = 0; }
+  }
+  return n ? { U, S, G, n, ids } : null;
+}
+// One step of the view (the host: once a step; a guest: once a picture, kk the steps it stands for).
+function lgStep(kk){
+  try { lgStepIn(kk === undefined ? 1 : kk); }
+  catch(e){ LGC.off = true; LGC.ok = false; if(typeof console !== 'undefined') console.error('ledgeguard camera', e); }   // (the view is only a picture: it never stops a match)
+}
+function lgStepIn(n){
+  const mode = lgMode();
+  if(!mode){ LGC.ok = false; LGC.init = false; LGC.marks.length = 0; LGC.markSet = Object.create(null); return; }
+  if(LGC.mode !== mode || hazardT < LGC.t - 1) lgReset();
+  // the steps this call stands for: n, or -- a guest sees the host's steps in snapshots, 3 at a time, and a lag spike's worth at once -- the host steps since the last call
+  const stood = Math.max(n, LGC.t >= 0 ? clamp(hazardT - LGC.t, 0, 30) : 0);
+  LGC.mode = mode; LGC.t = hazardT;
+  const subj = lgSubject(mode);
+  // who is recovering (hysteresis)
+  for(const f of fighters){
+    let s = LGC.f[f.idx];
+    if(!s) s = LGC.f[f.idx] = { on:false, up:0, dn:0, ground:0, mk:0, pl:false, miss:0, mr:-1, st:f.stocks, px:f.x, py:f.y, far:null, hi:false };
+    if(f.dead || f.stocks < s.st || Math.abs(f.x - s.px) + Math.abs(f.y - s.py) > 320 + 40*stood){ s.on = false; s.up = 0; s.dn = 0; s.ground = 0; s.mk = 0; s.pl = false; s.miss = 0; s.far = null; s.hi = false; }   // a KO, or a teleport (a fighter at 25 px a frame is 375 px away after a 15-frame hitch: the allowance grows with the steps this call stands for): at once
+    else if(lgRaw(f)){ s.up += n; s.dn = 0; s.ground = 0; if(!s.on && s.up >= LG.enter) s.on = true; }
+    else { s.up = 0; if(s.on){ s.dn += n; s.ground = f.onground ? s.ground + n : 0; if(s.dn >= LG.leave || s.ground >= LG.land) s.on = false; } }
+    s.st = f.stocks; s.px = f.x; s.py = f.y;
+  }
+  const b = lgBase(mode, subj) || (LGC.init ? { cx:LGC.c0.x, cy:LGC.c0.y, z:CAM_ZOOM/LG.wide } : null);
+  if(!b || !isFinite(b.cx) || !isFinite(b.cy) || !(b.z > 0)){ LGC.ok = false; LGC.init = false; return; }   // (no view from a place that is no number)
+  if(!LGC.init){
+    LGC.init = true; LGC.c0 = { x:b.cx, y:b.cy }; LGC.cr = { x:b.cx, y:b.cy }; LGC.z = b.z; LGC.k = 0; LGC.held = null; LGC.last = null;
+    LGC.cur = { cx:b.cx, cy:b.cy, z:b.z }; LGC.prev = LGC.cur;
+  }
+  if(mode === 'follow'){ const sm = n === 1 ? LG.follow : 1 - Math.pow(1 - LG.follow, n); LGC.c0.x += (b.cx - LGC.c0.x)*sm; LGC.c0.y += (b.cy - LGC.c0.y)*sm; }
+  else { LGC.c0.x = b.cx; LGC.c0.y = b.cy; }
+  const plan = lgPlan(subj, b, LGC.c0, n), k0 = LGC.k;
+  LGC.k = clamp(LGC.k + (plan ? n/LG.inF : -n/LG.outF), 0, 1);
+  if(!plan && LGC.k <= 0){ LGC.held = null; LGC.last = null; }
+  const e = LGC.k*LGC.k*(3 - 2*LGC.k);
+  let zr = b.z;
+  if(plan){
+    let Gh = lgHold(LGC.held, plan.G, n), U = plan.S ? lgUnion(plan.S, Gh) : Gh;
+    if(lgFit(U) < LG.zmin - LG.zhys){ Gh = lgHold(null, plan.G, n); U = plan.S ? lgUnion(plan.S, Gh) : Gh; }   // (what it remembers does not fit with you, even with the margin: the need of this moment alone)
+    LGC.held = Gh;
+    zr = clamp(Math.min(b.z*LG.pull, lgFit(U)), LG.zmin, b.z);
+    const sp = lgSpan(U, zr), sm2 = n === 1 ? LG.ease2 : 1 - Math.pow(1 - LG.ease2, n);
+    if(plan.S && (sp.lox > sp.hix || sp.loy > sp.hiy)){   // (U does not fit at this zoom: its middle, but never so far that you are out of the picture)
+      const q = lgSpan(plan.S, zr);
+      if(sp.lox > sp.hix) sp.lox = sp.hix = clamp((sp.lox + sp.hix)/2, q.lox, q.hix);
+      if(sp.loy > sp.hiy) sp.loy = sp.hiy = clamp((sp.loy + sp.hiy)/2, q.loy, q.hiy);
+    }
+    if(k0 <= 0){ LGC.cr.x = LGC.c0.x; LGC.cr.y = LGC.c0.y; }   // (an episode starts from the ordinary view)
+    LGC.cr.x += (lgClampR(LGC.c0.x, sp.lox, sp.hix) - LGC.cr.x)*sm2; LGC.cr.y += (lgClampR(LGC.c0.y, sp.loy, sp.hiy) - LGC.cr.y)*sm2;
+    LGC.cr.x = lgClampR(LGC.cr.x, sp.lox, sp.hix); LGC.cr.y = lgClampR(LGC.cr.y, sp.loy, sp.hiy);   // (the smoothing never lets them out of the screen)
+    LGC.last = { zr, U };
+  } else if(LGC.last) zr = LGC.last.zr;   // easing out: back from where it was
+  const zT = Math.exp(Math.log(b.z) + (Math.log(zr) - Math.log(b.z))*e), dzm = LG.dz*Math.max(0, n);
+  const z = clamp(zT, LGC.z*Math.exp(-dzm), LGC.z*Math.exp(dzm));
+  LGC.z = z;
+  LGC.prev = LGC.cur;
+  LGC.cur = { cx:LGC.c0.x + (LGC.cr.x - LGC.c0.x)*e, cy:LGC.c0.y + (LGC.cr.y - LGC.c0.y)*e, z };
+  LGC.ok = true;
+  LGC.dbg = { mode, k:LGC.k, e, zr, z, n:plan ? plan.n : 0, ids:plan ? plan.ids : [], base:b, U:LGC.last ? LGC.last.U : null };
+  // the marker's age: a recovering fighter outside this view
+  for(const f of fighters){
+    const s = LGC.f[f.idx]; if(!s) continue;
+    const sx = W/2 + z*(f.x - LGC.cur.cx), sy = H/2 + z*(f.y - LGC.cur.cy);
+    const rec = s.on && s.dn < LG.mkHold && !f.dead && (sx < 0 || sx > W || sy < 0 || sy > H);   // (not past LG.mkHold frames of being back on the stage)
+    // THE UP ARROW: a live fighter that is not a chevron's, over the view's x range and above it -- shown once its whole body is above the top, kept until its centre is back in
+    s.hi = !rec && lgAlive(f) && sx >= 0 && sx <= W && (s.hi ? sy < 0 : sy < -(f.r || 24)*z);
+    s.mk = (rec || s.hi) ? s.mk + n : 0;   // (one age for both, so a chevron that turns into an arrow does not grow in again)
+  }
+}
+// drawView lends the view to one picture (a = how far between the last two steps: 1 when nothing is blended), then takes it back.
+function lgBegin(a){
+  LGC.draw = 0; LGC.sx = null;
+  if(!LGC.ok || !lgMode()) return;
+  LGC.sx = camX; LGC.sy = camY;
+  const c = LGC.cur, p = LGC.prev;
+  const k = (a == null || Math.abs(c.cx - p.cx) + Math.abs(c.cy - p.cy) > 400) ? 1 : a;   // (a cut is not blended)
+  camX = p.cx + (c.cx - p.cx)*k - W/2; camY = p.cy + (c.cy - p.cy)*k - H/2; LGC.draw = p.z + (c.z - p.z)*k;
+}
+function lgEnd(){ if(LGC.sx != null){ camX = LGC.sx; camY = LGC.sy; LGC.sx = null; } LGC.draw = 0; }
+// The world's x range this picture shows, for what is drawn out past the stage (Infinity / -Infinity when the picture is the sim's own).
+function lgReachL(){ return LGC.draw ? viewRect().x - 60 : Infinity; }
+function lgReachR(){ if(!LGC.draw) return -Infinity; const v = viewRect(); return v.x + v.w + 60; }
+function lgMarked(f){ return !!LGC.markSet[f.idx]; }
+// The room the page's own HUD takes, read at most every 30 pictures (a layout read): how far down the cards' strip reaches (84 px at least, and more when
+// the cards wrap to a second row) and, in Teams, the box of the standings strip in the bottom right corner. A page with no layout (a headless one) reads 84 and none.
+function lgHud(){
+  if(LGC.hudN-- > 0) return LGC.hud;
+  LGC.hudN = 30; let top = 84, st = null;
+  try {
+    const bar = document.getElementById('hudbar'), box = SETTINGS.mode === 'teams' ? document.getElementById('standings') : null;
+    if(bar && bar.offsetHeight) top = clamp(bar.offsetHeight + 8, 84, 156);
+    if(box && box.offsetWidth && box.style.display !== 'none') st = { x0:W - 8 - box.offsetWidth - 24, y0:H - 12 - box.offsetHeight - 24 };
+  } catch(e){}
+  return LGC.hud = { top, st };
+}
+// A point on the border the markers keep to (22 px in, T below the top for the cards), by its way round clockwise from the top left corner, and back.
+function lgRimAt(p, T){
+  const w = W - 44, h = H - 22 - T, P = 2*(w + h); p = ((p % P) + P) % P;
+  if(p < w) return { x:22 + p, y:T };
+  p -= w; if(p < h) return { x:W - 22, y:T + p };
+  p -= h; if(p < w) return { x:W - 22 - p, y:H - 22 };
+  p -= w; return { x:22, y:H - 22 - p };
+}
+function lgRimOf(x, y, T){
+  const w = W - 44, h = H - 22 - T, dT = Math.abs(y - T), dR = Math.abs(x - (W - 22)), dB = Math.abs(y - (H - 22)), dL = Math.abs(x - 22), m = Math.min(dT, dR, dB, dL);
+  return m === dT ? x - 22 : m === dR ? w + (y - T) : m === dB ? w + h + (W - 22 - x) : 2*w + h + (H - 22 - y);
+}
+// THE MARKER: a chevron at the border for each recovering fighter outside the view (at most LG.maxMarks, the nearest first; the one that was nearest
+// last picture keeps the lead through a near tie). Two that would sit on one another are slid along the border LG.gap px apart, toward the middle
+// of it, the nearest where it is; none sits on the minimap, the standings strip, or under the cards.
+function lgDrawMarkers(){
+  LGC.marks.length = 0; LGC.markSet = Object.create(null);
+  if(!LGC.draw) return;
+  const z = viewZoom(), c = ctx, list = [];
+  for(const f of fighters){
+    const s = LGC.f[f.idx]; if(!s) continue;
+    const was = s.mr; s.mr = -1;
+    if(f.dead || !(s.mk > 0)) continue;
+    const sx = W/2 + z*(f.x - camX - W/2), sy = H/2 + z*(f.y - camY - H/2);
+    let kind = -1;   // 0: a recovering fighter's chevron; 1: the up arrow
+    if(s.on && s.dn < LG.mkHold && !(sx >= 0 && sx <= W && sy >= 0 && sy <= H)) kind = 0;
+    else if(s.hi && sy < 0 && sx >= 0 && sx <= W) kind = 1;
+    if(kind < 0) continue;
+    list.push({ f, s, kind, sx, sy, d:Math.hypot(sx - W/2, sy - H/2) - (was >= 0 ? 30*(LG.maxMarks - was) : 0) });
+  }
+  list.sort((a, b) => (a.kind - b.kind) || (a.d - b.d) || (a.f.idx - b.f.idx));
+  if(list.length > LG.maxMarks) list.length = LG.maxMarks;
+  const hd = lgHud(), T = hd.top, st = hd.st;
+  const mm = viewScrolls() ? { x0:W - 164 - 24, y0:64 - 16, y1:64 + Math.max(50, 150*WH/WW) + 3 + 16 } : null;   // (drawMinimap's box, and room for a stem)
+  for(let i = 0; i < list.length; i++){
+    const m = list[i], f = m.f, g = Math.min(1, m.s.mk/LG.growF), ge = g*g*(3 - 2*g);
+    m.s.mr = i;
+    let ex = clamp(m.sx, 22, W - 22), ey = clamp(m.sy, T, H - 22);
+    const p0 = lgRimOf(ex, ey, T), qa = lgRimAt(p0 + LG.gap, T), qb = lgRimAt(p0 - LG.gap, T), s0 = Math.hypot(qa.x - W/2, qa.y - H/2) <= Math.hypot(qb.x - W/2, qb.y - H/2) ? 1 : -1;
+    for(let t = 0; t < (m.kind ? 30 : 14); t++){
+      const q = t === 0 ? { x:ex, y:ey } : lgRimAt(p0 + (t % 2 ? 1 : -1)*s0*Math.ceil(t/2)*LG.gap, T);
+      if(m.kind && Math.abs(q.y - T) > 0.5) continue;   // (an up arrow stays on the top edge: it slides along it, never round a corner onto a side)
+      let free = !(mm && q.x >= mm.x0 && q.y >= mm.y0 && q.y <= mm.y1) && !(st && q.x >= st.x0 && q.y >= st.y0);
+      for(let j = 0; free && j < i; j++) if(Math.hypot(LGC.marks[j].x - q.x, LGC.marks[j].y - q.y) < LG.gap - 0.5) free = false;
+      if(free){ ex = q.x; ey = q.y; break; }
+    }
+    const ang = m.kind ? -Math.PI/2 : Math.atan2(m.sy - ey, m.sx - ex), far = (m.kind ? ey - m.sy : Math.hypot(m.sx - ex, m.sy - ey))/z, stem = 6 + 26*clamp(far/900, 0, 1);
+    const col = SETTINGS.mode === 'teams' ? (TEAM_COLORS[f.team % TEAM_COLORS.length] || f.color) : f.color;
+    c.save(); c.translate(ex, ey); c.rotate(ang); const sc = 0.5 + 0.5*ge; c.scale(sc, sc); c.globalAlpha = 0.95*ge; c.lineCap = 'round'; c.lineJoin = 'round';
+    const path = () => { c.beginPath(); c.moveTo(-5 - stem, 0); c.lineTo(-3, 0); c.moveTo(-4, -9); c.lineTo(6, 0); c.lineTo(-4, 9); };
+    if(f.you){ path(); c.strokeStyle = '#ffffff'; c.lineWidth = 11; c.stroke(); }
+    path(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 7; c.stroke();
+    path(); c.strokeStyle = col; c.lineWidth = 3.5; c.stroke();
+    c.restore();
+    LGC.marks.push({ idx:f.idx, x:ex, y:ey, color:col, a:ge, mk:m.s.mk, up:m.kind === 1 });
+    LGC.markSet[f.idx] = true;
+  }
+  c.globalAlpha = 1;
+}
 // ---- what an online CLIENT draws with ----
 // "camera is weird on multiplayer, there is an input delay sometimes. I think this is what was happening on boss rush
 // before." (2026-09-27). A client never runs step(), and step() is where updateCamera() lives, so a client drew with
@@ -16646,7 +16959,8 @@ const NET_VIEW = { applied:null, at:0, gap:33, lastArrive:0, lerp:false, ft:0, t
                    scroll:false, z:1, camReady:false, follow:null, bannerAt:0, slowG:false, slowP:false, hold:false };   // slowG, slowP, hold: the slow-mo's glide (applySnapshot)
 function isNetClient(){ return !!(window.NET && window.NET.role==='client'); }
 function viewScrolls(){ return isNetClient() ? NET_VIEW.scroll : scrolls(); }
-function viewZoom(){ if(MCAVE && MCAVE.on && MCAVE.wideK > 0 && !isNetClient()) return mcWideZoom();   // MOON CAVES: the watching view's whole disc (Z)
+function viewZoom(){ if(LGC.draw) return LGC.draw;   // LEDGEGUARD CAMERA: while one picture is drawn, its own zoom (lgBegin)
+  if(MCAVE && MCAVE.on && MCAVE.wideK > 0 && !isNetClient()) return mcWideZoom();   // MOON CAVES: the watching view's whole disc (Z)
   return isNetClient() ? NET_VIEW.z : (scrolls() ? CAM_ZOOM : (SIDE_ROOM ? W/(WW + 2*SIDE_ROOM) : 1)); }   // (SIDE_ROOM: the stage and its air either side, centred)
 // The rectangle of the world the view shows (at zoom 1: camX, camY, W, H). For a drawing that covers the whole view, in world space.
 function viewRect(){ const z = viewZoom(), hw = W/(2*z), hh = H/(2*z), cx = camX + W/2, cy = camY + H/2;
@@ -21428,6 +21742,7 @@ function wallBand(team, g){
 
 // Set up world dimensions, floors, and team bases for the current match.
 function setupWorld(){
+  LGC.off = false; lgReset();   // LEDGEGUARD CAMERA: a new match's view starts afresh (and one that broke once tries again)
   spawnZones=[];
   FLOOR_SEGS = null;   // REAL EDGES: built again below for the stages that have them (buildFloorSegs)
   SIDE_ROOM = 0;       // MORE ROOM PAST THE LEDGES: given below to the single-screen stages with ledges only
@@ -23296,10 +23611,11 @@ function interpEnd(){
 // draw(), blended or not
 function drawView(blended, client){
   try{
-    if(!blended){ draw(); return; }
+    if(!blended){ try{ lgBegin(null); draw(); } finally { lgEnd(); } return; }   // (LEDGEGUARD CAMERA: lgBegin lends the picture its own view, lgEnd puts the sim's camera back)
     const sb = client ? null : fsSlowBlend();   // (a Final Smash's slow-mo KO: by the slow clock, so the slowed steps glide: fsSlowBlend)
-    interpBegin(sb != null ? sb : clamp(STEP_CLOCK.owed/STEP_CLOCK.ms, 0, 1), client);
-    try{ draw(); } finally { interpEnd(); }
+    const ia = sb != null ? sb : clamp(STEP_CLOCK.owed/STEP_CLOCK.ms, 0, 1);
+    interpBegin(ia, client);
+    try{ lgBegin(client ? null : ia); draw(); } finally { lgEnd(); interpEnd(); }
   }catch(err){ unwindMainCtx(); throw err; }   // a picture that threw half-way: its saves, transforms and clips do not carry into the next (loop's catch reports it)
 }
 
@@ -87658,6 +87974,7 @@ function camTarget(x, y, z){
   return { x: cx - W/2, y: cy - H/2 };
 }
 function updateCamera(){
+  lgStep();   // LEDGEGUARD CAMERA: the picture's own view (the sim's camera below is as it was)
   if(!scrolls()){ camX=0; camY=0; return; }
   if(SETTINGS.mode==='ctf' && ctfSpecOn()){ ctfSpecCam(); return; }   // a spectated Capture the Flag match: the auto camera (ctfSpecCam)
   const live=fighters.find(f=>f.you&&!f.dead);
@@ -88581,8 +88898,9 @@ function saGround(gy){
   if(!SA.on || !SA.S) return false;
   const S = SA.S, A = S.A, G = A.ground, c = ctx, z = viewZoom();
   const x0 = camX + W/2 - W/(2*z) - 60, x1 = camX + W/2 + W/(2*z) + 60;
-  c.fillStyle = G.fill; c.fillRect(-20, gy + G.th - 1, WW + 40, WH - gy + H);
-  const lo = Math.max(-20, x0), hi = Math.min(WW + 20, x1);
+  const gx0 = Math.min(-20, lgReachL()), gx1 = Math.max(WW + 20, lgReachR());   // (LEDGEGUARD CAMERA: as far as its view reaches)
+  c.fillStyle = G.fill; c.fillRect(gx0, gy + G.th - 1, gx1 - gx0, WH - gy + H);
+  const lo = Math.max(gx0, x0), hi = Math.min(gx1, x1);
   for(let x = Math.floor(lo/256)*256; x < hi; x += 256) c.drawImage(S.gtile, x, gy, 257, G.th);
   if(G.anim) G.anim(c, SA.F, Math.max(lo, 0), Math.min(hi, WW), gy);
   return true;
@@ -88713,15 +89031,16 @@ function draw(){
     // below the world's bottom edge, and it should see more ground there, not sky
     // A boss arena may lay its own ground (BOSS_ARENA_GROUND); every other stage, and an arena with no entry, is as it was.
     const arenaG = arenaGround();
+    const gx0 = Math.min(-20, lgReachL()), gx1 = Math.max(WW + 20, lgReachR());   // (LEDGEGUARD CAMERA: the floor as far as its view reaches; -20 and WW + 20 as ever when the picture is the sim's own)
     if(FLOOR_SEGS) drawEdgedGround(gy);   // REAL EDGES: the floor's spans, their cliffs, and the drop between and beyond them
     else {
     if(!saGround(gy)){   // (STAGE ART lays the textured ground band of the ten normal stages; everything else keeps its flat floor)
-      ctx.fillStyle=(arenaG && arenaG.fill) || stage.ground; ctx.fillRect(-20,gy,WW+40,WH-gy+H);
-      if(arenaG && typeof arenaG.pattern === 'function'){ ctx.save(); arenaG.pattern(ctx, gy, -20, WW+20, WH+H, arenaG); ctx.restore(); }
+      ctx.fillStyle=(arenaG && arenaG.fill) || stage.ground; ctx.fillRect(gx0,gy,gx1-gx0,WH-gy+H);
+      if(arenaG && typeof arenaG.pattern === 'function'){ ctx.save(); arenaG.pattern(ctx, gy, gx0, gx1, WH+H, arenaG); ctx.restore(); }
     }
-    ctx.strokeStyle=(arenaG && arenaG.line) || "#1c1c1c"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(-20,gy); ctx.lineTo(WW+20,gy); ctx.stroke();
+    ctx.strokeStyle=(arenaG && arenaG.line) || "#1c1c1c"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(gx0,gy); ctx.lineTo(gx1,gy); ctx.stroke();
     }
-    if(stage.hazard==='lava' && (hazardT%260)<70){ ctx.fillStyle="#f0521f88"; ctx.fillRect(-20,gy-8,WW+40,10); }
+    if(stage.hazard==='lava' && (hazardT%260)<70){ ctx.fillStyle="#f0521f88"; ctx.fillRect(gx0,gy-8,gx1-gx0,10); }
     if(spongeOn()) drawSpongeFloor(gy);   // THE SPONGE FLOOR (an event twist): shown by its art
     if(rainOn()) drawRainSky(gy);   // THE RAIN (an event twist): the sky darkens while it rains
   } else if(MCAVE && MCAVE.on){
@@ -88730,7 +89049,7 @@ function draw(){
     // tower: dark blast pit at the very bottom (visual danger cue)
     const pitY=WH-40;
     const pg=ctx.createLinearGradient(0,pitY,0,WH); pg.addColorStop(0,'#0000'); pg.addColorStop(1,'#1a0a0acc');
-    ctx.fillStyle=pg; ctx.fillRect(-20,pitY,WW+40,WH-pitY+80);
+    { const px0 = Math.min(-20, lgReachL()), px1 = Math.max(WW + 20, lgReachR()); ctx.fillStyle=pg; ctx.fillRect(px0,pitY,px1-px0,WH-pitY+80 + (LGC.draw ? 240 : 0)); }   // (LEDGEGUARD CAMERA: out past the world and further down, where its view reaches)
   }
 
   // team bases — colored decks teams spawn on
@@ -88959,7 +89278,7 @@ function draw(){
   // ---- screen-space overlays ----
   if(MCAVE && MCAVE.on){ mcDrawMinimap(); mcDrawArrows(); }   // MOON CAVES: the disc minimap and the marks at the edge
   if(viewScrolls() && !RACE.active && SETTINGS.mode!=='ctf' && !(MCAVE && MCAVE.on)) drawMinimap();   // the race has its progress bar instead (drawRaceBar); MOON CAVES gets its disc minimap and arrows with the full view
-  if(!(MCAVE && MCAVE.on)) drawOffscreenArrows();
+  if(!(MCAVE && MCAVE.on)){ lgDrawMarkers(); drawOffscreenArrows(); }   // (LEDGEGUARD CAMERA: a recovering fighter outside the view has its chevron, not the ring)
   fsDrawScreen();   // a Final Smash's flash and silhouette sweep
   if(SETTINGS.mode==='ctf') drawCtfHud();
   if(SETTINGS.mode==='boss' && BOSSRUSH.active) drawBossBar();
@@ -89046,9 +89365,9 @@ function drawMinimap(){
 function drawEdgedGround(gy){
   const c = ctx, E = stage.edges || {}, V = twistVoid() || E.void || ['#c8dff0', '#2a3a4a'], arenaG = arenaGround(), bot = WH + H, segs = FLOOR_SEGS;
   const gaps = [];
-  let x = -60 - SIDE_ROOM;   // (MORE ROOM PAST THE LEDGES: out across the open air either side)
+  let x = Math.min(-60 - SIDE_ROOM, lgReachL());   // (MORE ROOM PAST THE LEDGES: out across the open air either side; LEDGEGUARD CAMERA: and as far as its view reaches)
   for(const q of segs){ if(q.x0 > x) gaps.push([x, q.x0]); x = Math.max(x, q.x1); }
-  if(x < WW + 60 + SIDE_ROOM) gaps.push([x, WW + 60 + SIDE_ROOM]);
+  { const xe = Math.max(WW + 60 + SIDE_ROOM, lgReachR()); if(x < xe) gaps.push([x, xe]); }
   const gr = c.createLinearGradient(0, gy, 0, gy + Math.max(260, WH - gy + 140));
   gr.addColorStop(0, V[0]); gr.addColorStop(1, V[1]);
   c.fillStyle = gr;
@@ -89093,7 +89412,7 @@ function drawOffscreenArrows(){
   const ring = !!FLOOR_SEGS && !isBig() && !scrolls();
   if(!isBig() && !ring) return;
   const z=viewZoom();
-  for(const f of fighters){ if(f.dead||(f.you && !ring))continue;
+  for(const f of fighters){ if(f.dead||(f.you && !ring))continue; if(lgMarked(f)) continue;
     // where it is drawn on screen at this zoom: tested at zoom 1, a fighter in the outer 19% of the view on either
     // side was on screen AND got an edge dot
     const sx=W/2+z*(f.x-camX-W/2), sy=H/2+z*(f.y-camY-H/2);
@@ -100449,6 +100768,7 @@ function clientFollow(){
 // `k`: how many 60ths of a second this frame is (1 at 60 fps). The host eases once per step; a client eases once per picture, so its
 // 0.12 is spread over the time instead: the same pace on any screen, and a faster screen still gets a smoother camera.
 function clientCamera(k){
+  lgStep(k);   // LEDGEGUARD CAMERA: the picture's own view, from this client's snapshot (the camera below is as it was)
   if(MCAVE && MCAVE.on){ NET_VIEW.z = CAM_ZOOM; mcNetCamera(k); return; }   // MOON CAVES (M6): the host's camera, turning with the view
   if(!NET_VIEW.scroll){
     // The host's arena is one screen -- the HOST's screen. Fit all of it into this one, centred. Equal windows: zoom 1,
