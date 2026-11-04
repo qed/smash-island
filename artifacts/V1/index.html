@@ -23107,6 +23107,7 @@ function haSame(a, b){
 //   tick   this frame is one of a multi-hit's hits: the shape flashes, so the hits can be counted
 function hitArt(f, key, sh, o){
   if(o && o.tell) return null;   // NO TELLS (the owner, 2026-10-22): nothing is drawn where a hit WILL be -- the fighter's own startup shows it (stupK)
+  if(key === 'fscatch') sh = fsCapSh(sh, f);   // (JURY 1 DECISIONS: the catch is drawn as small as it lands)
   const g = haShape(sh); if(!g) return null;
   const own = f && f.idx != null ? f.idx : -1, k = own + ':' + key;
   let e = null;
@@ -24385,7 +24386,7 @@ function fsFoeNear(f, R){
 //      (step() runs none of the match: fsTimeGate), the screen darkens and the camera closes in on the holder, who is lit in their own
 //      colour (fsCamFocus, fsDrawScreen). No words.
 //   2. THE CATCH. The row's catch area (its `catch`: the reach of its first hit, a circle or a box, see each shape) lands FS_CATCH frames
-//      after the match moves again (a sixth of a second; the holder gathering through it, and nothing drawn ahead of it -- NO TELLS,
+//      after the match moves again (22 frames, 0.37 s since jury 1; it was a sixth of a second; the holder gathering through it, and nothing drawn ahead of it -- NO TELLS,
 //      2026-10-22; it is drawn as it lands): every foe whose body touches it is LOCKED (fsCatch). It misses a foe outside it, and a foe who cannot be
 //      hurt on that frame (a dodge's, a dash's or a respawn's invulnerability: hardInvuln, the rule every Final Smash hit already has), a
 //      ghost, and one already held. A counter stance does not stop it: a Final Smash beats a counter, as its hits always have (the stance
@@ -24406,7 +24407,24 @@ function fsFoeNear(f, R){
 // The KO-level numbers are untouched (FS_DMG_MULT, FS_KB, FS_KO_FIX). Online the host runs all of it; a client gets the lock (fsLk), the
 // catch phase (fsC), the intro and the slow-mo (s.fsx), and the catch area as hit art. Training never has a Smash Ball; a replay is the
 // frames as they were drawn.
-const FS_INTRO = 30, FS_CATCH = 10;
+const FS_INTRO = 30, FS_CATCH = 22;
+// JURY 1 DECISIONS (2026-11-04), 'longer, smaller window': the catch used to land 10 frames after the freeze with circles of 230-400 px, so
+// a foe who saw the glow could not leave (a human's reaction is longer than 10 frames). It lands FS_CATCH = 22 frames after the freeze
+// (about 0.37 s) and its reach is capped at FS_CATCH_CAP (fsCapSh): a foe who sees the freeze can run out. Only the catch area is cut: a
+// row's blast, props and hits keep their own sizes, and a foe the catch did take is held as before.
+const FS_CATCH_CAP = 300;
+// The catch shape cut to the cap: a circle to a radius of at most FS_CATCH_CAP; a box to at most FS_CATCH_CAP either side of the holder
+// (its height is kept). Any other shape, and a shape that is not here yet (null, a late marker), is returned as it is. A copy, never the row's own.
+function fsCapSh(sh, f){
+  if(!sh) return sh;
+  if(sh.kind === 'circle') return sh.r > FS_CATCH_CAP ? Object.assign({}, sh, { r:FS_CATCH_CAP }) : sh;
+  if(sh.kind === 'box' && f){
+    const lo = Math.max(sh.x, f.x - FS_CATCH_CAP), hi = Math.min(sh.x + sh.w, f.x + FS_CATCH_CAP);
+    return (lo === sh.x && hi === sh.x + sh.w) ? sh : Object.assign({}, sh, { x:lo, w:Math.max(0, hi - lo) });
+  }
+  if(sh.real) return Object.assign({}, sh, { real:fsCapSh(sh.real, f) });
+  return sh;
+}
 // THE STARTUP of every row (its `wind`): frames from the catch landing to the row's first hit. They were 28-50, each drawing its reach,
 // lane or marker ahead of it. The owner, 2026-10-22: "i didnt mean telegraphs ... like a small startup animation", "EVERYTHING IS
 // TELEGRAPHED". So it is a small startup now, the same for every row, shown on the holder (stupK: the gather, the glow) -- and a foe the
@@ -24432,7 +24450,7 @@ function fsCatchKb(t, L){
 }
 let FS_VIEW = { on:false };  // render-only: the close-up draw() worked out for this picture (fsDrawScreen reads it)
 // The catch area for a row, from the holder where they stand now. A row without its own: a circle of its reach.
-function fsCatchOf(d, f){ return d.catch ? d.catch(f) : { kind:'circle', x:f.x, y:f.y, r:Math.min(d.reach || 200, 400) }; }
+function fsCatchOf(d, f){ return fsCapSh(d.catch ? d.catch(f) : { kind:'circle', x:f.x, y:f.y, r:Math.min(d.reach || 200, 400) }, f); }
 // (A row's `catchAt`: the frame of the row its catch lands on, in place of the first -- see fsRun. A row's `hides(f)`: the holder is not
 // drawn while it is true, a pure function of the fighter's wire fields (fsT, fsC, fsWind) -- Pencil, inside her van: fsHides.)
 // Does fighter t's body touch the catch area? (hit art's own rule: touch the drawn shape with any part of you and you are in it)
@@ -24469,6 +24487,7 @@ function fsFizzle(f){
   fsArm();
 }
 function fsCatch(f, st){
+  st.cs = fsCapSh(st.cs, f);   // (a row that lays its own area late, or sets st.cs itself, is cut to the cap here too)
   const C = fighters.filter((t)=> fsCatchable(f, t) && fsCatchTouch(st.cs, t) && fsCatchOk(st.d, f, t)), max = st.d.catchMax || C.length;
   if(C.length > max){ const near = (t)=> Math.abs(t.x - f.x) + 2*Math.abs(t.y - f.y); C.sort((a, b)=> near(a) - near(b)); C.length = max; }
   for(const t of C) fsLockOn(f, st, t);
@@ -24785,7 +24804,7 @@ function fsBotInput(f, inp){
     inp.fin = false;
     if(fsRebounds(f)) return inp;   // infected: it would come back on them (fsRebounds)
     // CATCH, THEN CINEMATIC: it fires when the catch will take someone -- a foe well inside the catch area now (a little smaller than
-    // drawn: the catch lands a sixth of a second after the intro, and they may step out)
+    // drawn: the catch lands FS_CATCH frames after the intro, and they may step out)
     const d = f._fsForce || fsOf(f), cs = fsCatchInset(fsCatchOf(d, f), 0.85);
     let ready = false;
     for(const t of fighters) if(fsCatchable(f, t) && fsCatchTouch(cs, t) && fsCatchOk(d, f, t) && (!d.botOk || d.botOk(f, t))){ ready = true; break; }
