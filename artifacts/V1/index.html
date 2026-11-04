@@ -266,6 +266,11 @@
     flex:0 0 auto; margin-top:auto}
   .cell.locked .cellimg{filter:grayscale(1) brightness(.75); opacity:.45}
   .cell.locked .dot{opacity:.35}
+  /* JURY 2C: a locked card read as a loading card (flat grey): a darker tint, a thin dark inner edge and a small padlock; and a card whose portrait is still loading shows its
+     fighter's colour as a soft dot (img.phold, set in fighterThumb) instead of an empty box */
+  .cell.locked:not(.erased){background:#cbc4b2; color:#5a5546; box-shadow:inset 0 0 0 2px rgba(0,0,0,.12)}
+  .cell.locked:not(.erased)::after{content:"F512"; position:absolute; top:1px; right:2px; font-size:9px; line-height:1; filter:grayscale(.3) drop-shadow(0 0 1px #fff); opacity:.9; pointer-events:none}
+  img.phold{background:radial-gradient(circle at 50% 62%, var(--ph, #bbb) 0 26%, transparent 29%)}
   /* ERASED FROM THE TIMELINE (One's chain, see oneBanned): greyed, struck through and crossed out in red, so an erased
      fighter never reads as one that is merely still locked */
   .cell.erased{background:#2a2530; color:#e0a39a}
@@ -872,7 +877,8 @@
   .rr-video{width:100%;border:3px solid #1c1c1c;border-radius:10px;background:#000;max-height:288px}
   .rr-actions{margin-top:8px;display:flex;gap:8px;justify-content:center}
   .rr-note{font-size:12px;opacity:.65;padding:8px}
-  .winstage{display:none;margin:0 auto;width:min(360px,88%);height:auto;aspect-ratio:360/190}
+  .winstage{display:none;margin:0 auto;width:min(360px,88%);height:auto;aspect-ratio:360/190;
+    background:radial-gradient(ellipse 52% 58% at 50% 58%, rgba(255,255,255,.55) 0%, rgba(255,246,214,.32) 45%, rgba(255,255,255,0) 72%)}   /* JURY 2C: a pale glow behind the winner, so a dark one (the default Blueberry, #2a1f6e) is not the least visible thing on the screen */
   .resultquip{margin:6px auto 2px;max-width:560px;text-align:center;font-style:italic;font-weight:700;color:var(--gold,#ffd23f);font-size:15px}
   .rr-share{margin-top:10px}
   .dailycard{max-width:340px;margin:10px auto;padding:9px 12px;border:2px dashed var(--gold,#ffd23f);border-radius:12px;background:#ffffff14}
@@ -16963,7 +16969,10 @@ function lgStepIn(n){
   }
   if(mode === 'follow'){ const sm = n === 1 ? LG.follow : 1 - Math.pow(1 - LG.follow, n); LGC.c0.x += (b.cx - LGC.c0.x)*sm; LGC.c0.y += (b.cy - LGC.c0.y)*sm; }
   else { LGC.c0.x = b.cx; LGC.c0.y = b.cy; }
-  const plan = lgPlan(subj, b, LGC.c0, n), k0 = LGC.k;
+  // JURY 2C: while a Final Smash plays (anybody's), the view does not leave it to chase a recoverer or a respawn bubble: Pencil's van scene had the picture pulled up
+  // to the bubbles (cy 373 -> 247 in the test), the holder and the van down at the bottom edge. A fighter at a KO line still gets the KO view (plan.ko).
+  let plan = lgPlan(subj, b, LGC.c0, n); const k0 = LGC.k;
+  if(plan && !plan.ko && fighters.some(f => f.fsId && !f.dead)) plan = null;
   LGC.k = clamp(LGC.k + (plan ? n/(plan.ko ? LG.koF : LG.inF) : -n/LG.outF), 0, 1);
   if(!plan && LGC.k <= 0){ LGC.held = null; LGC.last = null; }
   const e = LGC.k*LGC.k*(3 - 2*LGC.k);
@@ -17548,7 +17557,8 @@ function fighterThumb(r, cls){
     const im=document.createElement('img');
     im.className=cls||'cellimg'; im.alt=''; im.draggable=false;
     im.setAttribute('decoding','async');
-    im.onload=()=>{ if(!sp.img){ sp.img=im; sp._req=true; } };
+    im.classList.add('phold'); if(r.color) im.style.setProperty('--ph', r.color);   // (a colour dot until the render has loaded)
+    im.onload=()=>{ im.classList.remove('phold'); if(!sp.img){ sp.img=im; sp._req=true; } };
     im.onerror=()=>{ try{ im.replaceWith(blobDot(r)); }catch(e){} };
     im.setAttribute('data-src', sp.src);   // promoted to src by loadSelectArt when the select screen is shown (the Vault promotes its own)
     return im;
@@ -42558,6 +42568,12 @@ function fsb2_gelDoor(c, x, fy, open, fly, al){
   }
   c.restore(); c.globalAlpha = 1;
 }
+// The floor segment the dome stands on (FLOOR_SEGS: x0..x1), or null where the floor is endless: what the dining room's checkered floor is kept to.
+function fsb2_gelFloorRange(x){
+  if(!FLOOR_SEGS || !FLOOR_SEGS.length) return null;
+  for(const q of FLOOR_SEGS) if(x >= q.x0 && x <= q.x1) return q;
+  return null;
+}
 // THE DINING ROOM, drawn as a cutaway round the dome at (D, fy): burgundy wallpaper over a wainscot, a checkered floor, tall windows with curtains on his side, the glowing portrait over the dome, two tables, chairs, two chandeliers, the swing doors on the launch side.
 // al: how much of it shows; rx: how far it has opened out from the middle (0.5 behind the facade, 1 whole).
 function fsb2_gelRoom(c, B, al, rx, t, doorOpen, doorFly){
@@ -42570,8 +42586,11 @@ function fsb2_gelRoom(c, B, al, rx, t, doorOpen, doorFly){
   c.fillStyle = '#5a3418'; for(let i = 0; i < 8; i++) c.fillRect(D - RW + 14 + i*80, fy - 82, 62, 62);
   c.fillStyle = '#3d220f'; c.fillRect(D - RW, fy - 101, 2*RW, 6);
   c.fillStyle = '#26101a'; c.fillRect(D - RW, fy - RH, 2*RW, 28); c.fillStyle = '#d8b24a'; c.fillRect(D - RW, fy - RH + 28, 2*RW, 3);
-  c.globalAlpha = al*0.97; for(let r = 0; r < 2; r++) for(let i = 0; i < 16; i++){ c.fillStyle = ((i + r) & 1) ? '#2a2224' : '#f1e8d2'; c.fillRect(D - RW + i*40, fy + r*13, 40, 13); }
-  c.fillStyle = '#1c1c1c'; c.fillRect(D - RW, fy - 1.5, 2*RW, 3);
+  // JURY 2C: the checkered floor is drawn only over the floor he stands on (a room wider than the floor left a tile floating past the cliff, over the water): its x range is
+  // the floor segment under the dome, mapped back through this room's opening-out scale (rx)
+  const fr = fsb2_gelFloorRange(D), fa = fr ? D + (fr.x0 - D)/rx : -1e9, fb = fr ? D + (fr.x1 - D)/rx : 1e9;
+  c.globalAlpha = al*0.97; for(let r = 0; r < 2; r++) for(let i = 0; i < 16; i++){ const x0 = Math.max(D - RW + i*40, fa), x1 = Math.min(D - RW + i*40 + 40, fb); if(x1 <= x0) continue; c.fillStyle = ((i + r) & 1) ? '#2a2224' : '#f1e8d2'; c.fillRect(x0, fy + r*13, x1 - x0, 13); }
+  { const x0 = Math.max(D - RW, fa), x1 = Math.min(D + RW, fb); if(x1 > x0){ c.fillStyle = '#1c1c1c'; c.fillRect(x0, fy - 1.5, x1 - x0, 3); } }
   c.globalAlpha = 1;
   fsb2_gelWindow(c, D - d*212, fy - 330, al);
   fsb2_gelWindow(c, D + d*118, fy - 330, al);
@@ -94280,8 +94299,10 @@ function draw(){
   if(isBigFFA() && spawnZones.length){
     for(const z of spawnZones){
       if(z.kind==="safe"){
-        ctx.fillStyle="#6fd0a0"; ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=3;
-        ctx.fillRect(z.x,z.y,z.w,z.h); ctx.strokeRect(z.x,z.y,z.w,z.h);   // (no "SAFE SPAWN" label: a match draws no words; its green says it)
+        // JURY 2C: the safe island is a real standable platform, so it wears the stage's own platform art (grass top) like its neighbours, not a flat green box
+        // that looked like a stray rectangle in the sky; a thin mint strip under it keeps it readable as the safe spot (no words: a match draws none)
+        paintPlat(ctx, { x:z.x, y:z.y, w:z.w, h:z.h, hop:false }, platStyle);
+        ctx.fillStyle="#6fd0a0"; ctx.fillRect(z.x + 2, z.y + z.h + 1, z.w - 4, 3);
       } else {
         const ownerCol = z.owner!=null && fighters[z.owner] ? fighters[z.owner].color : "#c9a34b";
         ctx.fillStyle = z.owner!=null ? ownerCol : "#d9c48a";
@@ -94559,6 +94580,11 @@ function drawEdgedGround(gy){
   c.fillStyle = gr;
   for(const g of gaps) c.fillRect(g[0], gy - 1, g[1] - g[0], bot - gy + 1);
   { const A = SA.on && SA.S ? SA.S.A : null; if(A && A.voidArt) A.voidArt(c, SA.F, gaps, gy, bot); }   // a stage's own drop (STAGE ART: The Moon's space and hole)
+  if(stage.id === 'goiky' && !twistVoid()){   // JURY 2C: Goiky Field's water met the hills with a hard edge: a ~30 px blend from the hill's green into the water at the top of the band, and a thin dark waterline
+    const hg = c.createLinearGradient(0, gy - 1, 0, gy + 30); hg.addColorStop(0, 'rgba(123,192,67,0.85)'); hg.addColorStop(1, 'rgba(123,192,67,0)');
+    c.fillStyle = hg; for(const g of gaps) c.fillRect(g[0], gy - 1, g[1] - g[0], 31);
+    c.fillStyle = 'rgba(28,28,28,0.45)'; for(const g of gaps) c.fillRect(g[0], gy - 1, g[1] - g[0], 2);
+  }
   if(E.clouds){   // a sky stage: clouds drifting by below the edge
     const T = saClock();
     c.save(); c.fillStyle = 'rgba(255,255,255,0.55)';
@@ -104054,7 +104080,12 @@ function drawFighter(f){
     // ---- BODY: real character art when this fighter has a sprite, else the generic blob ----
     // Both paths render inside the squash/stretch transform above, so the deform is identical. A skin is that fighter's second render.
     const sprite = skinLive ? skinSp : SPRITES[f.name];
-    if(sprite){ drawSpriteBody(f, sprite, anim); }
+    if(sprite){
+      // JURY 2C: a dark skin (a row's `dark`: Robot Pin, Bandaged Bomby, Scorched Baseball, Lead Snowball, Hooded Fern) was a black blob at match size: a thin light halo under it
+      // (a white shadow round the picture's own shape, drawn with the body; art only)
+      if(skinLive && skin && skin.dark){ ctx.save(); ctx.shadowColor = 'rgba(255,255,255,0.95)'; ctx.shadowBlur = 5; try { drawSpriteBody(f, sprite, anim); } finally { ctx.restore(); } }
+      else drawSpriteBody(f, sprite, anim);
+    }
     else{
       // limbs (stubby)
       drawStubLimbs(f, f.r, true, true, f.r);
@@ -104076,7 +104107,10 @@ function drawFighter(f){
   // team ring (team mode only) — a colored ground shadow so allies read at a glance
   if(SETTINGS.mode==='teams' || SETTINGS.mode==='ctf'){ ctx.strokeStyle=TEAM_COLORS[f.team%TEAM_COLORS.length]; ctx.lineWidth=4; ctx.globalAlpha=1;   // (JURY 2: 3 px at 0.9 was the only team cue in an 8-fighter match)
    
+    // JURY 2C: a dark under-stroke (2 px each side) so the coloured ring reads on any ground, and -- in a crowded match, more than six fighters -- a small team-coloured pip above the head
+    { const tc = ctx.strokeStyle; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 8; ctx.beginPath(); ctx.ellipse(0,f.r+8,f.r*0.8,5,0,0,7); ctx.stroke(); ctx.strokeStyle = tc; ctx.lineWidth = 4; }
     ctx.beginPath(); ctx.ellipse(0,f.r+8,f.r*0.8,5,0,0,7); ctx.stroke(); ctx.globalAlpha=1;
+    if(fighters.length > 6 && f.team >= 0){ ctx.fillStyle = TEAM_COLORS[f.team%TEAM_COLORS.length]; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, -f.r - 7, 4.5, 0, 7); ctx.fill(); ctx.stroke(); }
     if(f.team >= 0) drawTeamMark(ctx, f.team, 0, f.r + 22, 5.5); }   // (the shape that says the team without the colour; One's ghost fights on team -1: none)
   // you marker (upright over her, whichever way her picture is turned)
   if(f.you){ ctx.save(); if(FS_TURN) ctx.rotate(-FS_TURN); ctx.fillStyle="#ffd23f"; ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=2;
@@ -110143,7 +110177,7 @@ const COSMETICS = [
   // Hits never use the picture (HURT_POLY is the base render's outline), so a skin is a look like the rest.
   { id:'sk_poppy_rock',        kind:'skin', fighter:'Poppy',      name:'Spiky Wig Poppy',       price:150, src:'assets/sprites/skins/rockstar-poppy.png', imgH:3.22, imgW:2.64 },
   { id:'sk_fries_broken',      kind:'skin', fighter:'Fries',      name:'Torn Fries',            price:115, src:'assets/sprites/skins/broken-fries.png', imgH:2.94, imgW:2.42 },
-  { id:'sk_pin_robot',         kind:'skin', fighter:'Pin',        name:'Robot Pin',             price:150, src:'assets/sprites/skins/robot-pin.png', imgH:3.08, imgW:2.53 },
+  { id:'sk_pin_robot',         kind:'skin', fighter:'Pin',        name:'Robot Pin',             price:150, src:'assets/sprites/skins/robot-pin.png', imgH:3.08, imgW:2.53, room:1.28, dark:true },
   { id:'sk_firey_mech',        kind:'skin', fighter:'Firey',      name:'Mech Firey',            price:150, src:'assets/sprites/skins/mech-firey.png', imgH:3.36, imgW:2.76 },
   { id:'sk_woody_mech',        kind:'skin', fighter:'Woody',      name:'Mech Woody',            price:150, src:'assets/sprites/skins/mech-woody.png', imgH:3.22, imgW:4.02 },
   { id:'sk_coiny_robo',        kind:'skin', fighter:'Coiny',      name:'Robo Coiny',            price:150, src:'assets/sprites/skins/robo-coiny.png', flip:true, imgH:3.22, imgW:2.64 },
@@ -110159,7 +110193,7 @@ const COSMETICS = [
   { id:'sk_fan_battered',      kind:'skin', fighter:'Fan',        name:'Battered Fan',          price:115, src:'assets/sprites/skins/battered-fan.png', imgH:2.8, imgW:2.3 },
   { id:'sk_jack_tattered',     kind:'skin', fighter:'Jack',       name:'Tattered Jack',         price:75,  src:'assets/sprites/skins/tattered-jack.png', imgH:2.8, imgW:2.3 },
   { id:'sk_bow_tattered',      kind:'skin', fighter:'Bow',        name:'Tattered Bow',          price:115, src:'assets/sprites/skins/tattered-bow.png', imgH:2.94, imgW:2.42 },
-  { id:'sk_bomby_bandaged',    kind:'skin', fighter:'Bomby',      name:'Bandaged Bomby',        price:75,  src:'assets/sprites/skins/bandaged-bomby.png', imgH:2.7, imgW:2.6 },
+  { id:'sk_bomby_bandaged',    kind:'skin', fighter:'Bomby',      name:'Bandaged Bomby',        price:75,  src:'assets/sprites/skins/bandaged-bomby.png', imgH:2.7, imgW:2.6, room:1.28, dark:true },
   { id:'sk_match_knight',      kind:'skin', fighter:'Match',      name:'Knight Match',          price:75,  src:'assets/sprites/skins/knight-match.png', flip:true, imgH:3, imgW:2.2 },
   { id:'sk_grassy_chef',       kind:'skin', fighter:'Grassy',     name:'Chef Grassy',           price:75,  src:'assets/sprites/skins/chef-grassy.png', imgH:3.5, imgW:2.88 },
   { id:'sk_nickel_snazzy',     kind:'skin', fighter:'Nickel (II)',name:'Fedora Nickel',         price:75,  src:'assets/sprites/skins/snazzy-nickel.png', imgH:3.5, imgW:2.88 },
@@ -110463,10 +110497,10 @@ const COSMETICS = [
   // render; a `room` (cosSkinSprite) where the picture holds more than that: a backpack, a moon, a hat, a costume, arms spread wide. Appended after
   // every skin above, so no online code moves.
   // (Renamed 2026-11-02: the family words above are the old names; the skins now show their looks, e.g. Twinkle Bell is Ivory Bell, Yoyle Metal Leafy is Steel Leafy. docs/LEDGER.md has the whole list.)
-  { id:'sk_firey_pack',        kind:'skin', fighter:'Firey',      name:'Backpack Firey',        price:75,  src:'assets/sprites/skins/backpack-firey.png', flip:true, imgH:2.8, imgW:2.73, room:1.19 },
+  { id:'sk_firey_pack',        kind:'skin', fighter:'Firey',      name:'Backpack Firey',        price:75,  src:'assets/sprites/skins/backpack-firey.png', flip:true, imgH:2.8, imgW:2.73, room:1.3 },
   { id:'sk_needle_cgi',        kind:'skin', fighter:'Needle',     name:'Glossy Needle',         price:115, src:'assets/sprites/skins/cgi-needle.png', imgH:2.8, imgW:2.36 },
   { id:'sk_pin_early',         kind:'skin', fighter:'Pin',        name:'Tilted Pin',            price:115, src:'assets/sprites/skins/early-bfb-pin.png', imgH:2.8, imgW:2.68, room:1.17 },
-  { id:'sk_snowball_metal',    kind:'skin', fighter:'Snowball',   name:'Lead Snowball',         price:115, src:'assets/sprites/skins/yoyle-metal-snowball.png', imgH:2.8, imgW:2.3 },
+  { id:'sk_snowball_metal',    kind:'skin', fighter:'Snowball',   name:'Lead Snowball',         price:115, src:'assets/sprites/skins/yoyle-metal-snowball.png', imgH:2.8, imgW:2.3, dark:true },
   { id:'sk_bomby_bracelet',    kind:'skin', fighter:'Bomby',      name:'Bracelet Bomby',        price:75,  src:'assets/sprites/skins/bracelet-bomby.png', flip:true, imgH:2.8, imgW:2.3 },
   { id:'sk_coiny_bread',       kind:'skin', fighter:'Coiny',      name:'Bread Coiny',           price:75,  src:'assets/sprites/skins/bread-coiny.png', imgH:2.8, imgW:2.64, room:1.15 },
   { id:'sk_pen_zombie',        kind:'skin', fighter:'Pen',        name:'Drooling Pen',          price:115, src:'assets/sprites/skins/zombie-pen.png', imgH:2.8, imgW:3.56, room:1.55 },
@@ -110484,12 +110518,12 @@ const COSMETICS = [
   { id:'sk_match_rainbow',     kind:'skin', fighter:'Match',      name:'Rainbow Match',         price:115, src:'assets/sprites/skins/rainbow-match.png', imgH:2.8, imgW:2.3 },
   { id:'sk_david_announcer',   kind:'skin', fighter:'David',      name:'Speaker Box David',     price:75,  src:'assets/sprites/skins/announcer-david.png', imgH:2.8, imgW:2.3 },
   { id:'sk_fjr_poison',        kind:'skin', fighter:'Firey Jr.',  name:'Toxic Firey Jr.',       price:115, src:'assets/sprites/skins/poisoned-firey-jr.png', imgH:2.8, imgW:2.3 },
-  { id:'sk_fern_announcer',    kind:'skin', fighter:'Fern',       name:'Hooded Fern',           price:75,  src:'assets/sprites/skins/announcer-fern.png', imgH:2.8, imgW:2.3 },
+  { id:'sk_fern_announcer',    kind:'skin', fighter:'Fern',       name:'Hooded Fern',           price:75,  src:'assets/sprites/skins/announcer-fern.png', imgH:2.8, imgW:2.3, dark:true },
   { id:'sk_ruler_bfdia',       kind:'skin', fighter:'Ruler',      name:'Honey Ruler',           price:115, src:'assets/sprites/skins/bfdia-ruler.png', imgH:2.8, imgW:2.3 },
   { id:'sk_cake_twinkle',      kind:'skin', fighter:'Cake',       name:'Whipped Cream Cake',    price:115, src:'assets/sprites/skins/twinkle-cake.png', imgH:2.8, imgW:2.3 },
   { id:'sk_donut_twinkle',     kind:'skin', fighter:'Donut',      name:'Glazed Donut',          price:115, src:'assets/sprites/skins/twinkle-donut.png', flip:true, imgH:2.8, imgW:2.3 },
   { id:'sk_apple_mask',        kind:'skin', fighter:'Apple',      name:'Oxygen Mask Apple',     price:75,  src:'assets/sprites/skins/oxygen-mask-apple.png', imgH:2.8, imgW:2.34 },
-  { id:'sk_baseball_burnt',    kind:'skin', fighter:'Baseball',   name:'Scorched Baseball',     price:115, src:'assets/sprites/skins/burnt-baseball.png', flip:true, imgH:2.8, imgW:2.3 },
+  { id:'sk_baseball_burnt',    kind:'skin', fighter:'Baseball',   name:'Scorched Baseball',     price:115, src:'assets/sprites/skins/burnt-baseball.png', flip:true, imgH:2.8, imgW:2.3, dark:true },
   { id:'sk_blueberry_paint',   kind:'skin', fighter:'Blueberry',  name:'Light Blue Blueberry',  price:115, src:'assets/sprites/skins/blue-paint-blueberry.png', imgH:2.8, imgW:2.3 },
   { id:'sk_bomb_purple',       kind:'skin', fighter:'Bomb',       name:'Plum Bomb',             price:115, src:'assets/sprites/skins/purple-bomb.png', imgH:2.8, imgW:2.53, room:1.11 },
   { id:'sk_bot_mephone',       kind:'skin', fighter:'Bot',        name:'Smartphone Bot',        price:75,  src:'assets/sprites/skins/mephone-costume-bot.png', imgH:2.8, imgW:2.3 },
@@ -116165,6 +116199,8 @@ function buildStore(){
     }
     box.appendChild(grid);
   }
+  // JURY 2C: out of October the costumes have no section at all, so a player who saw them (or heard of them) could not tell where they went: one greyed line says it
+  if(!seasonal.length){ const ln = document.createElement('div'); ln.className = 'shopsoon'; ln.textContent = 'Halloween costumes return in October'; ln.style.cssText = 'margin:10px 4px 4px;text-align:center;font-size:12px;font-weight:700;color:#8a8578;opacity:.85'; box.appendChild(ln); }
 }
 // THE PLAYER CARD: a fighter in your skin and hat, on your card, with your title -- striking your victory pose when you
 // have just won. The Wardrobe shows it as a preview and the result screen shows it after a match.
