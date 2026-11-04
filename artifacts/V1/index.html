@@ -1756,6 +1756,7 @@
     <h1 style="font-size:30px">Controls</h1>
     <div class="sub">Gamepad-style layout. Click a key and press a new one to remap. A controller works too — face buttons and D-pad are auto-detected in-match.</div>
     <div class="maps" id="maps"></div>
+    <div class="foot" id="mapNote" role="status" aria-live="polite" style="margin-top:6px;min-height:18px"></div>
     <div class="brand" style="margin-top:20px">Custom Music</div>
     <div class="foot" style="margin-top:2px;max-width:560px;text-align:center">Plays only on this device — use music you own. Nothing is uploaded.</div>
     <!-- Music on/off lives HERE as well as on the title screen: this is where a player who wants
@@ -1801,7 +1802,15 @@
         <button class="btn" onclick="setPaused(false)">Resume ▶</button>
         <button class="btn ghost sm" id="pauseMovesBtn" onclick="togglePauseMoves()">Move list</button>
         <button class="btn ghost sm" id="pauseEditorBtn" style="display:none" onclick="backToEditor()">◀ Back to editor</button>
-        <button class="btn ghost sm" onclick="quitMatch()">Quit to title</button>
+        <button class="btn ghost sm" onclick="quitAsk()">Quit to title</button>
+      </div>
+      <!-- QUIT CONFIRM (jury 1): shown in place of the buttons, only when a quit would throw something away (quitNeedsConfirm) -->
+      <div id="pauseQuitAsk" style="display:none;margin-top:12px;border-top:3px solid #1c1c1c;padding-top:12px">
+        <div id="pauseQuitText" style="font-weight:800;font-size:15px;margin-bottom:10px"></div>
+        <div class="row" style="justify-content:center;gap:10px">
+          <button class="btn" onclick="quitAskNo()">Keep playing</button>
+          <button class="btn ghost sm" onclick="quitMatch()">Quit</button>
+        </div>
       </div>
       <div id="pauseMoves" class="movecard" style="display:none;text-align:left;margin-top:12px"></div>
     </div>
@@ -3937,6 +3946,47 @@ const DEFAULT_KEYS = {left:"ArrowLeft",right:"ArrowRight",jump:"ArrowUp",down:"A
 let KEYS = JSON.parse(JSON.stringify(DEFAULT_KEYS));
 const KEY_LABELS = {left:"Move Left",right:"Move Right",jump:"Jump",down:"Down / Crouch",
   attack:"Attack (+ ↑/↓: tilts; + an arrow in the air: aerials)",special:"Special (+ arrows; with Attack: grab)",smash:"Smash (with Special: finisher)",pause:"Pause",flag:"Put flag down (Capture the Flag)",edit:"Next piece (Capture the Flag editing)", plan:"Team plan menu (Capture the Flag)"};
+// JURY 1 DECISIONS (2026-11-04): the key remaps are kept on this device (they vanished on every reload). 'bfsi:keymap' holds {action: code}
+// for the actions in KEY_LABELS. Storage can be blocked or full: every read and write is guarded, and the game plays on the defaults.
+// Escape and R are the game's own (Escape pauses and goes back, R restarts a match): no action may be bound to either, except that Pause
+// may be put back on Escape. A key another action already uses is swapped with it (the two exchange keys) unless that swap would put a
+// reserved key on the other action; nothing is ever bound to two actions (keyBindCheck).
+const KEYMAP_STORE = 'bfsi:keymap';
+function keyReserved(code, action){ return (code === 'Escape' && action !== 'pause') || code === 'KeyR' || (action === 'pause' && code === 'KeyR'); }
+function keyBindCheck(map, action, code){
+  // -> { ok, map, note }: the new map, or the reason for the refusal
+  if(!KEY_LABELS[action] || typeof code !== 'string' || !code) return { ok:false, note:'That key cannot be used.' };
+  if(keyReserved(code, action)) return { ok:false, note:(code === 'Escape' ? 'Escape is the Pause key and cannot be given to anything else.' : 'R restarts the match and cannot be given to anything else.') };
+  const out = Object.assign({}, map);
+  const other = Object.keys(KEY_LABELS).find(k => k !== action && out[k] === code);
+  if(other){
+    const old = out[action];
+    if(keyReserved(old, other)) return { ok:false, note:KEY_LABELS[other].split(' (')[0] + ' is on ' + niceKey(code) + ' and cannot take ' + niceKey(old) + '.' };
+    out[other] = old; out[action] = code;
+    return { ok:true, map:out, note:niceKey(code) + ' was on ' + KEY_LABELS[other].split(' (')[0] + ': the two swapped keys.' };
+  }
+  out[action] = code;
+  return { ok:true, map:out, note:'' };
+}
+function keysLoad(){
+  try{
+    const raw = localStorage.getItem(KEYMAP_STORE); if(!raw) return;
+    const saved = JSON.parse(raw); if(!saved || typeof saved !== 'object') return;
+    const m = Object.assign({}, DEFAULT_KEYS), seen = {};
+    for(const k of Object.keys(DEFAULT_KEYS)){
+      const v = saved[k]; if(typeof v !== 'string' || !v || v.length > 24 || keyReserved(v, k)) continue;
+      m[k] = v;
+    }
+    for(const k of Object.keys(m)){ if(seen[m[k]]) return; seen[m[k]] = 1; }   // a stored map that binds one key twice is not trusted: the defaults stay
+    KEYS = m;
+  }catch(e){}
+}
+function keysSave(){
+  try{
+    if(JSON.stringify(KEYS) === JSON.stringify(DEFAULT_KEYS)) localStorage.removeItem(KEYMAP_STORE);
+    else localStorage.setItem(KEYMAP_STORE, JSON.stringify(KEYS));
+  }catch(e){}
+}
 
 // ---------- state ----------
 let chosen = ROSTER.find(r=>r.play);
@@ -4059,6 +4109,25 @@ function teamSplitsFor(N){
   return opts;
 }
 const TEAM_COLORS = ["#e0503a","#3a8ee0","#7bc043","#f2c033"]; // red, blue, green, gold (max 4 teams)
+// JURY 1 DECISIONS (2026-11-04): colour is not the only signal of a team (a red-green colour-blind player could not tell red from green, and
+// the team words were unreadable). Each team also has a SHAPE, drawn under its fighters, always on, no words: team 1 a circle, team 2 a
+// triangle, team 3 a square, team 4 a diamond, in the team's colour with a dark and a white outline (drawTeamMark, in the team ring's place).
+const TEAM_SHAPES = ['circle', 'triangle', 'square', 'diamond'];
+function drawTeamMark(c, team, x, y, s){
+  const k = TEAM_SHAPES[((team | 0) % 4 + 4) % 4], col = TEAM_COLORS[((team | 0) % TEAM_COLORS.length + TEAM_COLORS.length) % TEAM_COLORS.length];
+  const path = () => {
+    c.beginPath();
+    if(k === 'circle') c.arc(x, y, s, 0, 7);
+    else if(k === 'triangle'){ c.moveTo(x, y - s*1.15); c.lineTo(x + s*1.1, y + s*0.8); c.lineTo(x - s*1.1, y + s*0.8); c.closePath(); }
+    else if(k === 'square'){ c.rect(x - s*0.9, y - s*0.9, s*1.8, s*1.8); }
+    else { c.moveTo(x, y - s*1.2); c.lineTo(x + s*1.2, y); c.lineTo(x, y + s*1.2); c.lineTo(x - s*1.2, y); c.closePath(); }
+  };
+  c.save(); c.globalAlpha = 1; c.lineJoin = 'round';
+  path(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 5; c.stroke();
+  path(); c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.stroke();
+  path(); c.fillStyle = col; c.fill();
+  c.restore();
+}
 // @ctf:begin
 // ---------------------------------------------------------------------------------------------------------------
 //  CTF MAPS. A map is a grid of 120 px cells (180 columns x 39 rows = 21600 x 4680 world px, 75% of what it was), written for the LEFT half
@@ -18091,7 +18160,9 @@ function buildMaps(){
   });
 }
 function niceKey(code){return code.replace('Arrow','').replace('Key','').replace('Digit','').replace('Space','SPACE');}
-function resetKeys(){KEYS=JSON.parse(JSON.stringify(DEFAULT_KEYS)); buildMaps();}
+function keyNote(t){ const n = document.getElementById('mapNote'); if(n) n.textContent = t || ''; }
+function resetKeys(){KEYS=JSON.parse(JSON.stringify(DEFAULT_KEYS)); keysSave(); buildMaps(); keyNote('Keys put back to the defaults.');}
+keysLoad();
 
 // ---------- input ----------
 const down={};
@@ -18121,7 +18192,11 @@ function typingBox(ae){
   return true;
 }
 addEventListener('keydown',e=>{
-  if(listening){ KEYS[listening]=e.code; listening=null; buildMaps(); e.preventDefault(); return; }
+  if(listening){
+    const r = keyBindCheck(KEYS, listening, e.code); e.preventDefault();
+    if(!r.ok){ keyNote(r.note); return; }   // refused: the row keeps listening for another key
+    KEYS = r.map; listening = null; keysSave(); buildMaps(); keyNote(r.note); return;
+  }
   // If the player is typing in a text field (a level name, a room code), let them type freely -- in one they can see (typingBox).
   const ae=document.activeElement;
   if(ae && (ae.tagName==='INPUT' || ae.tagName==='TEXTAREA' || ae.tagName==='SELECT')){
@@ -103904,7 +103979,8 @@ function drawFighter(f){
   }
   // team ring (team mode only) — a colored ground shadow so allies read at a glance
   if(SETTINGS.mode==='teams' || SETTINGS.mode==='ctf'){ ctx.strokeStyle=TEAM_COLORS[f.team%TEAM_COLORS.length]; ctx.lineWidth=3; ctx.globalAlpha=0.9;
-    ctx.beginPath(); ctx.ellipse(0,f.r+8,f.r*0.8,5,0,0,7); ctx.stroke(); ctx.globalAlpha=1; }
+    ctx.beginPath(); ctx.ellipse(0,f.r+8,f.r*0.8,5,0,0,7); ctx.stroke(); ctx.globalAlpha=1;
+    if(f.team >= 0) drawTeamMark(ctx, f.team, 0, f.r + 22, 5.5); }   // (the shape that says the team without the colour; One's ghost fights on team -1: none)
   // you marker (upright over her, whichever way her picture is turned)
   if(f.you){ ctx.save(); if(FS_TURN) ctx.rotate(-FS_TURN); ctx.fillStyle="#ffd23f"; ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=2;
     ctx.beginPath(); ctx.moveTo(0,-f.r-16); ctx.lineTo(-7,-f.r-6); ctx.lineTo(7,-f.r-6); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); }
@@ -107273,6 +107349,7 @@ function exitTest(){
 function setPaused(on){
   const was = paused;
   paused = !!on;
+  quitAskNo();   // (a pause starts, and ends, with no quit question open)
   const el = document.getElementById('pauseCard'); if(el) el.style.display = paused ? 'flex' : 'none';
   { const eb = document.getElementById('pauseEditorBtn'); if(eb) eb.style.display = (paused && customFromEditor()) ? '' : 'none'; }   // a level played from the editor: the way back to it (backToEditor)
   if(paused){ try{ syncPauseMoves(); }catch(e){} } else PAUSE_MOVES_OPEN = false;
@@ -107280,7 +107357,24 @@ function setPaused(on){
   if(was && !paused) netInResume();   // a host's guests pick up from now, not with what they pressed while it stood still
   if(!paused && (running || PCAM.on)) startLoop();
 }
+// QUIT CONFIRM (jury 1, 2026-11-04, 'only when it matters'): Quit to title asks first for a Boss Rush run, the Daily and an online match, where
+// a quit throws something away; a practice match, a test, a tutorial and a custom match quit at once. Returns the question, or '' for none.
+function quitNeedsConfirm(){
+  try{
+    if(BOSSRUSH && BOSSRUSH.active) return 'Quit this Boss Rush run? The bosses you have beaten so far are lost.';
+    if(typeof DAILY_ACTIVE !== 'undefined' && DAILY_ACTIVE) return 'Quit the Daily? Your attempt for today is used up.';
+    if(inNetSession()) return 'Leave the online match? You cannot come back to it.';
+  }catch(e){}
+  return '';
+}
+function quitAskNo(){ const a = document.getElementById('pauseQuitAsk'); if(a) a.style.display = 'none'; }
+function quitAsk(){
+  const q = quitNeedsConfirm(), a = document.getElementById('pauseQuitAsk'), t = document.getElementById('pauseQuitText');
+  if(!q || !a || !t){ quitMatch(); return; }
+  t.textContent = q; a.style.display = 'block';
+}
 function quitMatch(){
+  quitAskNo();
   setPaused(false);
   go('title');
 }
