@@ -24769,7 +24769,7 @@ function fsCamFocus(){
   if(FS.slow > 0){   // the spot the blow landed, a little way after the foe (FS_SLOW.follow): it snaps in, and eases out over the last frames
     const t = fighters[FS.sf]; let x = FS.sx, y = FS.sy; if(t && (!t.dead || FS.game)){ x += (t.x - x)*FS_SLOW.follow; y += (t.y - y)*FS_SLOW.follow; }   // (the last KO: out for good, they stay where they went out)
     const e = (FS.slowN || FS_SLOW.frames) - FS.slow; return { x:x, y:y, z:FS_SLOW.zoom, k:Math.min(1, (e + 1)/5)*Math.min(1, FS.slow/16) }; }
-  return null;
+  return fsPolishFocus();   // FS POLISH 1: a short push-in on the hit beats of a showpiece row (null for every other row)
 }
 // ---- THE LAST KO (the owner, 2026-10-28) ------------------------------------------------------------------------------------------------
 // "at last stock and kill, there should be a ko cinematic when ko-ed. Also, use the "GAME" sfx from smash." The KO that ends a match (the last
@@ -25037,6 +25037,72 @@ function fsDrawScreen(){
     c.restore();
     if(t >= w && t < w + 4){ c.save(); c.globalAlpha = 0.5*(1 - (t - w)/4); c.fillStyle = '#fff'; c.fillRect(0, 0, W, H); c.restore(); }
     break;   // one at a time is plenty
+  }
+  fsPolishScreen(c);   // FS POLISH 1: a name banner, a spotlight dim and a flash on the hit beats for Blueberry's and Cake's rows
+}
+// ---- FS POLISH 1 (2026-11-04; the owner: Blueberry's and Cake's Final Smashes read like small floor-level props next to Pillow's and Gelatin's) --------------
+// A picture layer only, a pure function of the wire fields (fsId, fsC, fsT, fsLk) and FS.freeze: nothing here moves a fighter or a hit, and the catch
+// (FS_CATCH frames after the freeze, FS_CATCH_CAP) is untouched. Per row (FSP, by Final Smash id): `name` for the banner (the first FSP_BANNER = 60
+// frames since the press: the 30-frame freeze, the 22-frame catch, then 8 frames of the row; it slides in, holds and fades, in the upper third of the
+// screen, clear of the holder who is centred by the intro close-up); `dim` [from, to, strength] (row frames: the rest of the screen dimmed round a
+// clear spot on the pair); `hits` (row frames: a ring runs out from the held foe); `flash` (row frames: a 3-frame white flash, `big` the strongest);
+// `push` [from, to, zoom] (row frames: a short camera push-in on the midpoint of the holder and the foe held, through fsCamFocus; the foe is held
+// then, and the catch window is never covered: the first push frame is after the catch has landed).
+const FSP_BANNER = 60;
+const FSP = {
+  palanquin:    { name:'THE ROYAL PROCESSION', c1:'#f2c94c', dim:[76, 183, 0.36], hits:[76, 130, 180], flash:[130, 180], big:180, push:[100, 186, 1.25] },   // Blueberry: the grip, the drop, the blaze
+  cakeceremony: { name:'THE CEREMONY',         c1:'#ff9ec4', dim:[27, 114, 0.26], hits:[27, 39, 62, 70, 96, 106], flash:[70, 96, 106], big:106, push:[22, 112, 1.25] },   // Cake: the six prizes
+};
+function fsPolishRow(f){ return (f && !f.dead && f.fsId) ? FSP[f.fsId] || null : null; }
+// Frames since the press, from the wire fields: the freeze, then the catch, then the row.
+function fsPolishClock(f){
+  if(f.fsC > 0) return (FS.freeze > 0 && FS.fz === f.idx) ? FS_INTRO - FS.freeze : FS_INTRO + (FS_CATCH - f.fsC);
+  return FS_INTRO + FS_CATCH + (f.fsT || 0);
+}
+// The push-in, as fsCamFocus's {x, y, z, k}: on the midpoint of the holder and the foe their catch holds, only once the catch has landed.
+function fsPolishFocus(){
+  for(const f of fighters){
+    const P = fsPolishRow(f); if(!P || !P.push || f.fsC > 0) continue;
+    const t = f.fsT || 0, a = P.push[0], b = P.push[1]; if(t < a || t > b) continue;
+    const L = fsLockedOf(f);
+    return { x:L ? (f.x + L.x)/2 : f.x, y:L ? (f.y + L.y)/2 : f.y, z:P.push[2], k:Math.min(1, (t - a + 1)/12)*Math.min(1, (b - t + 1)/12) };
+  }
+  return null;
+}
+function fsPolishBanner(c, P, f, u){
+  const k = Math.min(1, (u + 1)/9), e = 1 - (1 - k)*(1 - k), o = Math.min(1, (FSP_BANNER - u)/10), y0 = 118, h = 78, ox = (1 - e)*-170;
+  c.save(); c.globalAlpha = 0.74*Math.min(1, (u + 1)/6)*o; c.fillStyle = '#08041a'; c.fillRect(0, y0, W, h);
+  c.globalAlpha = o; c.fillStyle = P.c1; c.fillRect(0, y0, W, 3); c.fillRect(0, y0 + h - 3, W, 3);
+  c.globalAlpha = e*o; c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+  c.font = '700 14px sans-serif'; c.fillStyle = P.c1; c.fillText(String(f.name || '').toUpperCase() + "'S FINAL SMASH", W/2 + ox, y0 + 25);
+  let px = 42; c.font = '800 ' + px + 'px sans-serif'; const w0 = c.measureText(P.name).width; if(w0 > W - 80){ px = Math.max(20, Math.floor(px*(W - 80)/w0)); c.font = '800 ' + px + 'px sans-serif'; }
+  c.lineJoin = 'round'; c.lineWidth = 6; c.strokeStyle = '#1c1c1c'; c.strokeText(P.name, W/2 + ox, y0 + 64); c.fillStyle = '#ffffff'; c.fillText(P.name, W/2 + ox, y0 + 64);
+  c.restore();
+}
+function fsPolishScreen(c){
+  for(const f of fighters){
+    const P = fsPolishRow(f); if(!P) continue;
+    const u = fsPolishClock(f);
+    if(u >= 0 && u < FSP_BANNER) fsPolishBanner(c, P, f, u);
+    if(f.fsC > 0) continue;
+    const t = f.fsT || 0, L = fsLockedOf(f), mx = L ? (f.x + L.x)/2 : f.x, my = L ? (f.y + L.y)/2 : f.y, half = L ? Math.hypot(f.x - L.x, f.y - L.y)/2 : 0;
+    const D = P.dim, ramp = Math.max(0, Math.min(1, (t - D[0] + 1)/10)*Math.min(1, (D[1] - t)/12));
+    if(ramp > 0.01){   // the rest of the screen dims round a clear spot on the pair
+      const s = fsToScreen(mx, my), R0 = (110 + half)*s.s, R1 = Math.max(R0*2.6, Math.hypot(W, H)*0.6);
+      c.save(); c.globalAlpha = 1;
+      const g = c.createRadialGradient(s.x, s.y, R0, s.x, s.y, R1);
+      g.addColorStop(0, 'rgba(10,4,30,0)'); g.addColorStop(1, 'rgba(10,4,30,' + (D[2]*ramp).toFixed(3) + ')');
+      c.fillStyle = g; c.fillRect(0, 0, W, H); c.restore();
+    }
+    if(L) for(const h of P.hits){   // a ring runs out from the held foe on each blow
+      const a = t - h; if(a < 0 || a >= 10) continue;
+      const u2 = a/10, s = fsToScreen(L.x, L.y);
+      c.save(); fsRing(c, s.x, s.y, (26 + 120*(1 - (1 - u2)*(1 - u2)))*s.s, P.c1, (7*(1 - u2) + 2)*Math.min(1.4, s.s), 0.85*(1 - u2)); c.restore();
+    }
+    for(const h of P.flash){   // a short white flash on the hit beat
+      const a = t - h; if(a < 0 || a >= 3) continue;   // (3 row frames: the slow-mo that follows the last blow holds the row clock still, so the flash does not hang)
+      c.save(); c.globalAlpha = (h === P.big ? 0.5 : 0.3)*(1 - a/3); c.fillStyle = '#ffffff'; c.fillRect(0, 0, W, H); c.restore();
+    }
   }
 }
 // ---- BATCH A: Firey, Leafy, Pencil, Puffball, Bow, Flower (each from a show moment; the canon is quoted on its row) --------------------
@@ -42602,9 +42668,12 @@ function fsb2_gelRoom(c, B, al, rx, t, doorOpen, doorFly){
   fsb2_gelWindow(c, D + d*118, fy - 330, al);
   fsb2_gelSign(c, D, fy - 262, 40, al, t);
   fsb2_gelLamp(c, D - 175, fy - RH + 31, 52, al, t); fsb2_gelLamp(c, D + 175, fy - RH + 31, 52, al, t);
-  fsb2_gelTable(c, D - d*212, fy, al, t, 1); fsb2_gelChair(c, D - d*262, fy, -d, al);
-  fsb2_gelTable(c, D + d*188, fy, al, t, 2);
-  fsb2_gelDoor(c, D + d*282, fy, doorOpen, doorFly, al);
+  // FS POLISH 1: the tables and the chair stand only where the floor is (a room wider than the floor left them hanging over the water, like the tile did)
+  const onF = (x, m)=> x - m >= fa && x + m <= fb;
+  if(onF(D - d*212, 46)) fsb2_gelTable(c, D - d*212, fy, al, t, 1);
+  if(onF(D - d*262, 16)) fsb2_gelChair(c, D - d*262, fy, -d, al);
+  if(onF(D + d*188, 46)) fsb2_gelTable(c, D + d*188, fy, al, t, 2);
+  fsb2_gelDoor(c, D + d*282, fy, doorOpen, doorFly, al);   // (the far doors are always drawn: the foe is thrown out through them, and they are blown off)
   c.restore(); c.globalAlpha = 1;
 }
 // THE STEAKHOUSE'S FRONT (the BFDIA one: a black building outlined in neon under a grey roof, a green and white awning, and a glowing portrait of him on the roof), stood up on the floor at (D, fy) over 12 frames (g 0..1), its double door swinging open (open 0..1), then falling
