@@ -64555,6 +64555,7 @@ function step(){
     if(f._taunted>0){ if(--f._taunted===0) f._tauntedBy=null; }   // Teardrop's mark wears off
     if(f._momentumT>0) f._momentumT--;
     if(f._fury>0) f._fury = Math.max(0, f._fury - 0.05);   // Paintbrush calms down, slowly
+    cbTellTick(f);   // COMEBACK TELLS: the wire fields the aura, pips and '+N%' are drawn from (nothing else reads them)
     // ---- Inanimate Insanity DLC, batch 2 ----
     if(f._paperBag>0) f._paperBag--;
     if(f._shatter>0) f._shatter--;
@@ -65607,6 +65608,97 @@ function comebackShots(f){
 function comebackRange(f){
   if(!f.kit || !COMEBACK[f.kit.special] || COMEBACK[f.kit.special].type!=="shock") return 0;
   return comebackPoints(f)*14;   // capped at COMEBACK_MAX_POINTS*14 = 70px
+}
+// ---------------------------------------------------------------------------------------------------------------------------------------------
+// COMEBACK TELLS (the owner, 2026-11-04: "anything a player cannot see coming or answer is a bug; a power spike needs a visible tell").
+// The 11 COMEBACK kits (stock-scaled: +2 shots, +14 px reach, -1 hit-grace frame a point) used to show a small icon and nothing else, and Nickel's
+// damage (+1 to +60% by the foe's percent) showed nothing at all. Now both are on the body: a warm aura that grows with the comeback points (with a
+// pulse that quickens), a ring flash, a float 'COMEBACK +1' and a chime when a point is gained, and pips beside the name tag; Nickel's body heats from
+// yellow to red with the bonus, with a '+N%' beside his tag and a spark when it ticks up. DRAWN ONLY: the numbers (comebackPoints, comebackShots,
+// comebackRange, the hit-grace, Nickel's pct/220 cap 0.6) are untouched. cbTellTick (once a frame, in the fighter step) only copies them into
+// wire fields (_cbQ points in quarters, _cbT the frame of the last gain, _cbD its size in quarters, _snQ Nickel's bonus in percent, _snT the frame it
+// ticked up), so a guest draws the same picture (NET_FIGHTER_FLAGS); nothing reads them but the drawing below.
+// ---------------------------------------------------------------------------------------------------------------------------------------------
+const CB_COL = '#ffb347';
+function cbTellTick(f){
+  const k = f.kit && f.kit.special;
+  if(!k) return;
+  if(COMEBACK[k]){
+    const q = Math.round(comebackPoints(f)*4), was = f._cbQ;
+    if(was != null && q > was){ f._cbT = hazardT; f._cbD = q - was; }   // a point (a death) or a quarter (a KO) was gained
+    f._cbQ = q;
+  } else if(k === 'snark'){
+    let best = null, bd = 1e9;
+    for(const t of fighters){ if(t === f || t.dead || t.team === f.team) continue; const d = Math.abs(t.x - f.x) + Math.abs(t.y - f.y); if(d < bd){ bd = d; best = t; } }   // the foe his next hit most likely lands on
+    const q = best ? Math.round(Math.min(0.6, (best.pct||0)/220)*100) : 0, was = f._snQ;
+    if(was != null && Math.floor(q/5) > Math.floor(was/5) && (f._snT == null || hazardT - f._snT > 20)) f._snT = hazardT;   // the bonus ticked up (a step of 5%)
+    f._snQ = q;
+  }
+}
+function snarkHeat(sn){ const k = Math.min(1, sn/60); return { k:k, col:'rgb(255,' + Math.round(210 - 150*k) + ',' + Math.round(80 - 55*k) + ')' }; }
+// world space, behind the body (the fighter loop calls it before drawFighter); render only
+function drawTellFx(f){
+  const q = f._cbQ|0, sn = f._snQ|0;
+  const age = f._cbT != null ? hazardT - f._cbT : 9999, sage = f._snT != null ? hazardT - f._snT : 9999;
+  if(!(q > 0 || sn > 0 || age < 60 || sage < 14)) return;
+  const c = ctx;
+  c.save(); mcUpright(f.x, f.y); c.translate(f.x, f.y);
+  try{
+    if(q > 0){
+      const pts = q/4, pulse = 0.5 + 0.5*Math.sin(hazardT*(0.08 + 0.03*pts)), flash = age < 20 ? 1 - age/20 : 0, R = f.r + 5 + 3*pts + 8*flash;
+      c.globalCompositeOperation = 'lighter';
+      const g = c.createRadialGradient(0, 0, f.r*0.7, 0, 0, R + 8), a = Math.min(0.9, 0.10 + 0.05*pts + 0.12*pulse + 0.35*flash);
+      g.addColorStop(0, 'rgba(255,179,71,0)'); g.addColorStop(0.6, 'rgba(255,179,71,' + a + ')'); g.addColorStop(1, 'rgba(255,179,71,0)');
+      c.fillStyle = g; c.beginPath(); c.arc(0, 0, R + 8, 0, 7); c.fill();
+      c.globalCompositeOperation = 'source-over';
+      c.globalAlpha = Math.min(1, 0.35 + 0.35*pulse + 0.4*flash); c.strokeStyle = CB_COL; c.lineWidth = 1.5 + 0.4*pts;
+      c.beginPath(); c.arc(0, 0, R, 0, 7); c.stroke();
+      c.globalAlpha = 1;
+    }
+    if(sn > 0){
+      const H = snarkHeat(sn), flick = 0.5 + 0.5*Math.sin(hazardT*0.35 + f.idx), R = f.r + 4 + 10*H.k;
+      c.globalCompositeOperation = 'lighter';
+      const g = c.createRadialGradient(0, 0, f.r*0.5, 0, 0, R + 6);
+      g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.65, H.col.replace('rgb', 'rgba').replace(')', ',' + Math.min(0.9, 0.08 + 0.4*H.k + 0.1*flick*H.k) + ')')); g.addColorStop(1, 'rgba(255,60,30,0)');
+      c.fillStyle = g; c.beginPath(); c.arc(0, 0, R + 6, 0, 7); c.fill();
+      c.globalCompositeOperation = 'source-over';
+    }
+    if(sage < 14){   // a spark where the bonus just ticked up
+      c.strokeStyle = '#ffe9a0'; c.lineWidth = 2; c.globalAlpha = 1 - sage/14;
+      for(let i = 0; i < 6; i++){ const an = i*1.047 + 0.4, r0 = f.r + 2 + sage*0.9, r1 = r0 + 6; c.beginPath(); c.moveTo(Math.cos(an)*r0, Math.sin(an)*r0); c.lineTo(Math.cos(an)*r1, Math.sin(an)*r1); c.stroke(); }
+      c.globalAlpha = 1;
+    }
+    if(age < 60){   // 'COMEBACK +1' rises above the head and fades
+      const big = (f._cbD|0) >= 4, txt = 'COMEBACK +' + (big ? String(Math.round((f._cbD|0)/4)) : '¼'), y = -(f.r + 78) - age*0.45;
+      c.globalAlpha = Math.min(1, (60 - age)/20); c.font = "800 " + (big ? 15 : 12) + "px 'Baloo 2', system-ui, sans-serif"; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.lineWidth = 4; c.strokeStyle = '#1c1c1c'; c.lineJoin = 'round'; c.strokeText(txt, 0, y); c.fillStyle = CB_COL; c.fillText(txt, 0, y);
+      c.globalAlpha = 1; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+    }
+  } finally { c.restore(); }
+  if(age < 3 && f._cbSnd !== f._cbT){   // the chime, once per gain (heard by a guest too: it is read from the wire field)
+    f._cbSnd = f._cbT;
+    if((f._cbD|0) >= 4){ tone(330, 0.22, 'triangle', 0.16, 0, 660); tone(495, 0.28, 'triangle', 0.12, 0.09, 990); }
+    else tone(660, 0.1, 'triangle', 0.08, 0, 880);
+  }
+}
+// beside the name tag (the matrix is the tag's): the comeback pips, or Nickel's '+N%'. x is the pill's right edge.
+function drawTellTag(f, x, y){
+  const q = f._cbQ|0, sn = f._snQ|0, c = ctx;
+  if(q > 0){
+    const pts = q/4, cap = (SETTINGS.mode === 'boss' && f.kit && f.kit.special !== 'fry') ? BOSS_COMEBACK_MAX : COMEBACK_MAX_POINTS;
+    c.save(); c.lineWidth = 1.2;
+    for(let i = 0; i < cap; i++){
+      const px = x + 3 + i*8, part = Math.max(0, Math.min(1, pts - i));
+      c.strokeStyle = '#1c1c1c'; c.fillStyle = 'rgba(28,28,28,0.7)'; c.beginPath(); c.arc(px, y, 3, 0, 7); c.fill(); c.stroke();
+      if(part > 0){ c.fillStyle = CB_COL; c.beginPath(); if(part < 1){ c.moveTo(px, y); c.arc(px, y, 3, -Math.PI/2, -Math.PI/2 + part*Math.PI*2); c.closePath(); } else c.arc(px, y, 3, 0, 7); c.fill(); }
+    }
+    c.restore();
+  } else if(sn > 0){
+    const H = snarkHeat(sn), txt = '+' + sn + '%';
+    c.save(); c.font = "800 12px 'Baloo 2', system-ui, sans-serif"; c.textAlign = 'left'; c.textBaseline = 'middle'; c.lineJoin = 'round';
+    c.lineWidth = 3.5; c.strokeStyle = '#1c1c1c'; c.strokeText(txt, x, y + 1); c.fillStyle = H.col; c.fillText(txt, x, y + 1);
+    c.restore();
+  }
 }
 const RANGE_PROFILE = {
   // Inanimate Insanity DLC
@@ -82074,6 +82166,14 @@ function dashTell(f, fire){
   for(let i = 0; i < 6; i++) puff(f.x - f.face*(f.r*0.5 + i*5), feetY(f) - 3, '#e3dccb', 3);   // dust kicked up at the feet
   return true;
 }
+// Paintbrush's Heat Explosion at full rage (18%, a 120-frame burn, radius body + 120 px, spends the meter). Called when the wind-up ends (doSpecial 'fury').
+function heatExplosion(f){
+  if(f.dead) return;
+  for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t,f.x,f.y) < f.r+120){ applyHit(t,18,Math.sign(t.x-f.x||1)*12,-9,f); t.burn=Math.max(t.burn||0,120); } }
+  f._fury=0; shake(8); for(let i=0;i<24;i++){ const a=Math.random()*Math.PI*2, d=Math.random()*110; puff(f.x+Math.cos(a)*d,f.y+Math.sin(a)*d*0.6,i%2?'#ff6a2a':'#ffd24b',7); }
+  f._heatFx = hazardT;   // render-only: drawKitFx blooms the burst under the fire puffs (and a net client gets it as heatFx)
+  f.flash=14; f.spCd=70;
+}
 // set the fighter's vertical dash velocity from the directions they were holding at cast time
 function applyDashVY(f, upSpeed, downSpeed){
   f._dashVY = 0;
@@ -82772,10 +82872,12 @@ function doSpecial(f){
       spawnProj(f,{vx:f.face*9,vy:-3,grav:true,dmg:8,kb:6,r:10,color:'#fff27a',life:80,fxTag:'stun',fxN:24,arc:true}); f.flash=8; f.spCd=58; break;
     case "fury": { // Paintbrush: at full rage the Heat Explosion; before that, a flick of paint that slows
       if((f._fury||0) >= 100){
-        for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t,f.x,f.y) < f.r+120){ applyHit(t,18,Math.sign(t.x-f.x||1)*12,-9,f); t.burn=Math.max(t.burn||0,120); } }
-        f._fury=0; shake(8); for(let i=0;i<24;i++){ const a=Math.random()*Math.PI*2, d=Math.random()*110; puff(f.x+Math.cos(a)*d,f.y+Math.sin(a)*d*0.6,i%2?'#ff6a2a':'#ffd24b',7); }
-        f._heatFx = hazardT;   // render-only: drawKitFx blooms the burst under the fire puffs (and a net client gets it as heatFx)
-        f.flash=14; f.spCd=70;
+        // COMEBACK TELLS: the burst used to land on the press frame (18% and a burn, radius body + 120 px, nothing to react to). It now begins with the
+        // shared 16-frame gather (dashTell: the body glows, dust, the rising whistle); a hit on her in that time cancels it and keeps her rage. Her
+        // press during the gather is eaten (a second press cannot start another). What the burst does is unchanged (heatExplosion).
+        if(f._windup) break;
+        if(dashTell(f, function(){ heatExplosion(f); })) break;
+        heatExplosion(f);
       } else { spawnProj(f,{vx:f.face*9,vy:-4,grav:true,dmg:7,kb:5,r:9,color:'#5aa0ff',life:70,fxTag:'slow',fxN:80}); f.flash=6; f.spCd=48; }
       break; }
     case "collide": // Bomb: Collision -- his running gag: he charges, and bumping into anyone blows up (it hurts him a little too)
@@ -94690,7 +94792,7 @@ function draw(){
   // fighters
   drawKitFx('under');   // the Heat Explosion, behind the fighters it catches
   if(FINX.length) finxDraw('under');   // a corkboard, a puddle, a propped mirror (FINISHERS V2)
-  NAMETAG_Q = []; try{ for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(FINX.length && finxHidden(f)) continue; if(f.fsId && fsHides(f)) continue; if(f._oneGhost) drawOneGhostAura(f); if(f.fsGlow>0 || f.fsId){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); fsDrawAura(f); ctx.restore(); } else fsDrawAura(f); } drawFighter(f); if(f._soakT > hazardT){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); drawSoakDrips(f); ctx.restore(); } else drawSoakDrips(f); } if(SETTINGS.mode==='ctf'){ ctfDrawCarry(f); if(CTF.spec) ctfSpecDrawChip(f); } } } finally { nameTagFlush(); }
+  NAMETAG_Q = []; try{ for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(FINX.length && finxHidden(f)) continue; if(f.fsId && fsHides(f)) continue; if(f._oneGhost) drawOneGhostAura(f); try{ drawTellFx(f); }catch(e){} if(f.fsGlow>0 || f.fsId){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); fsDrawAura(f); ctx.restore(); } else fsDrawAura(f); } drawFighter(f); if(f._soakT > hazardT){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); drawSoakDrips(f); ctx.restore(); } else drawSoakDrips(f); } if(SETTINGS.mode==='ctf'){ ctfDrawCarry(f); if(CTF.spec) ctfSpecDrawChip(f); } } } finally { nameTagFlush(); }
   if(SETTINGS.mode==='ctf') ctfDrawCoverFront();   // the props a friend stands in, see-through, over the fighters
   if(CTUT.active) ctutDrawWorld();   // the Capture the Flag practice: where a flag may not go
   drawKitFx('over');    // the Fist Thingy's arm, over the fighters it reaches across
@@ -104187,6 +104289,7 @@ function drawNameTagRow(f, lift){
     ctx.fillStyle = "#fff";
     ctx.fillText(label, 0, tagY+1);
     ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    try{ drawTellTag(f, w/2 + 4, tagY); }catch(e){}   // COMEBACK TELLS: pips, or Nickel's '+N%', right of the pill
   }
   if(lift) ctx.translate(0, -lift);
   drawStatusIcons(f, ctx);   // buffs and debuffs, above the name tag and after it, so nothing covers the row
@@ -106026,6 +106129,7 @@ const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering
   '_sleepT','_slowmoT','_hushT',   // (FINISHERS V2, batch 4: Pillow's sleep, Remote's slow motion, Rose's hush)
   '_cutT',   // (ASSIST BATCH A2: Clapboard's CUT!, until when -- its icon; the freeze itself is 'frozen')
   '_zeroT',   // (FINISHERS V2, batch 6: Donut's zero)
+  '_cbQ','_cbT','_cbD','_snQ','_snT',   // (COMEBACK TELLS: comeback points in quarters, the frame and size of the last gain; Nickel's bonus in percent, the frame it ticked up)
   '_soakT',   // (EVENT FIGHTERS: SOAKED, until when -- the drips are drawn from it)
   '_flipT',   // (EVENT FIGHTERS: ERASER -- frames left of a backflip's turn: STEAKHOUSE FLIP and his wall jump)
   '_water',   // (EVENT FIGHTERS: SPONGY -- the water he holds, 0 to 3: his darker holes and drips)
