@@ -438,6 +438,9 @@
   .hudbar.many .hudbreak{flex-basis:100%; height:0}
   .hudbar.many .pcard .nm{font-size:8px; max-width:44px}
   .hudbar.many .pcard .pct{font-size:12px}
+  .pcard .pct.bump{animation:pctbump .22s ease-out}
+  @keyframes pctbump{0%{transform:scale(1.5)}100%{transform:scale(1)}}
+  @media (prefers-reduced-motion:reduce){ .pcard .pct.bump{animation:none} }
   .hudbar.many .pcard .stk{font-size:7px; letter-spacing:0}
   .tut-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;width:100%;max-width:620px;margin:16px auto 4px;box-sizing:border-box}
   .tut-card{background:rgba(255,255,255,0.72);border:3px solid #1c1c1c;border-radius:12px;padding:10px;text-align:center}
@@ -15606,10 +15609,10 @@ function noiseSwell(dur, peak, gain, freq, whenOff){
 // event sounds — layered & swept so they read as impacts/zaps, not menu beeps
 const SFX = {
   hit(dmg){ if(!SND.on) return; const now=performance.now(); if(now-SND._lastHit<26) return; SND._lastHit=now;
-    const big=(dmg||8)>14;
+    const big=(dmg||8)>14, pj = 0.93 + pcRand()*0.14;   // (JURY 1: pj, a little pitch variety: a string of jabs was a machine gun of one note)
     // punchy body: a quick noise burst + a downward pitch thump
     noise(big?0.11:0.05, big?0.42:0.24, big?1400:2200, 0, big?400:700);
-    tone(big?220:340, big?0.09:0.05, 'square', 0.14, 0, big?90:150); },
+    tone((big?220:340)*pj, big?0.09:0.05, 'square', 0.14, 0, (big?90:150)*pj); },
   ko(){ // big boom: sweep-down sub + noise crack + a rising whoosh
     tone(300,0.5,'sawtooth',0.32,0,60); noise(0.45,0.5,900,0,200);
     tone(90,0.55,'sine',0.3,0.02,40); tone(600,0.3,'triangle',0.14,0,1400); },
@@ -23487,6 +23490,8 @@ function updateHUD(){
     c.classList.toggle('dead',f.dead);
     c.querySelector('.pct').textContent=(Math.round(f.pct*10)/10).toFixed(1)+'%';   // damage is tracked to 0.1 now, and shown to it
     c.querySelector('.pct').style.color=pctColor(f.pct, f.koCap);
+    if(f._hudPct != null && f.pct > f._hudPct + 0.05){ const pe = c.querySelector('.pct'); pe.classList.remove('bump'); void pe.offsetWidth; pe.classList.add('bump'); }   // JURY 1: a hit makes the number jump
+    f._hudPct = f.pct;
     c.querySelector('.stk').textContent = (SETTINGS.mode==='ctf') ? ((f._cf>=0?'\u2691':'')+(f._ck>=0?'\u26BF':'')+(f._jail!=null?'\u26D3':'')) : (f.stocks===Infinity) ? '∞' : '●'.repeat(Math.max(0, Math.min(20, f.stocks|0)));
   });
 }
@@ -23628,7 +23633,7 @@ addEventListener('visibilitychange', ()=>{ stepClockReset(); });
 // hitbox overlay's red boxes fade. They used to age inside draw(), once per animation frame -- twice as fast on a 120 Hz screen.
 function ageView(k){
   for(let i = 0; i < k; i++){
-    if(shakeAmt > 0.2) shakeAmt *= 0.85;
+    if(shakeAmt > 0.2){ shakeAmt *= 0.85; SHK_X = Math.random()*2 - 1; SHK_Y = Math.random()*2 - 1; }   // (JURY 1: one offset a step; a new one every drawn frame read as static at 144 Hz)
     for(let j = DEBUG_HITS.length - 1; j >= 0; j--){ if(--DEBUG_HITS[j].t <= 0) DEBUG_HITS.splice(j, 1); }
   }
 }
@@ -64199,6 +64204,7 @@ function step(){
     f._rawKeys = (ctrl==='local' || ctrl==='remote') ? [!!inp.attack, !!inp.special, !!inp.smash, !!inp.jump] : null;   // a human's buttons as pressed, before the pairing below: what a cuff's mash counts (cuffKeys)
     const inpPaired = inp;   // (the pairing changes this input in place; anything below that masks the input makes a new one: heldStruggle)
     if((ctrl==='local' || ctrl==='remote') && !RACE.active && !(SETTINGS.mode==='ctf' && CTF.live && (CTF.live.phase==='hide' || CTF.live.phase==='fix'))) comboInput(f, inp);   // X+C grab, V+C finisher (the Capture the Flag hiding phase reads the raw keys)
+    if(isHumanCtrl(f)){ const a0 = !!inp.attack; if(a0 && !f._aPrev) f._aEdgeT = hazardT; f._aPrev = a0; }   // INPUT BUFFER (JURY 1): the frame X goes down, noted BEFORE the lag and the stun below can mask it
 
     // OUTBREAK: while infected by Barf Bag, this fighter mirrors HER inputs (puppet) and
     // temporarily counts as her team. Copy the infector's most recent input snapshot.
@@ -64713,6 +64719,15 @@ function step(){
         // down (a drift against it still slows it), and it is never added to.
         if(!f.onground && fst.run > fst.air && vx0 > cap) cap = Math.min(runEaseCap(cap, cb*fst.run, f._airT), vx0);
         f.vx=Math.max(-cap,Math.min(cap,f.vx)); _walkCap = cap; }
+      // INPUT BUFFER (JURY 1: "a jump or attack pressed a hair early is eaten"). A person's jump pressed in the air with none left, or X pressed in
+      // the last 8 frames of the last move's cooldown, is kept and played the first frame it can be (6 frames for the jump, 8 for the attack); a key
+      // still down then plays as it always did. Smash already had this (_smBuf). A CPU's keys are exact and are not buffered.
+      if(isHumanCtrl(f)){
+        if(inp.jump && !f._jp && f.jumps <= 0 && !f.onground) f._jBuf = hazardT;
+        else if(f._jBuf != null){ if(!inp.jump && f.onground && f.jumps > 0 && hazardT - f._jBuf <= 6){ inp = Object.assign({}, inp, { jump:true }); f._jBuf = null; } else if(hazardT - f._jBuf > 6) f._jBuf = null; }
+        if(f._aEdgeT === hazardT && (!inp.attack || f.atkCd > 0)) f._aBuf = hazardT;   // pressed, but not played: the move's lag or cooldown took it
+        else if(f._aBuf != null){ if(!inp.attack && !inp.grab && f.atkCd <= 0 && !(f._lag > 0) && hazardT - f._aBuf <= 8){ inp = Object.assign({}, inp, { attack:true }); f._aBuf = null; } else if(hazardT - f._aBuf > 8) f._aBuf = null; }
+      }
       // jump
       if(inp.jump && !f._jp && mtDashJump(f, inp)){ f._jp=true; }   // a hyper, a super or a reverse hyper out of a dash (dashers)
       else if(inp.jump && !f._jp && mtWallJump(f, inp)){ f._jp=true; }   // a wall jump (movetech): in the air, toward a wall, once per wall per airtime
@@ -75660,7 +75675,7 @@ function fxPalmShape(o, f, a){ const P = FXC12.palm, u = clamp((a + 1)/P.live, 0
 function finC12_meet(f, t, o){
   const P = FXC12.palm, d = (TESTMODE.active && !TESTMODE.damage) ? 0 : clamp((f.pct - t.pct)/2, -P.shift, P.shift);   // (a practice room with damage off shifts none)
   o.c12a = Math.round(d*10)/10;
-  t.lastHitBy = f;
+  t.lastHitBy = f; t._lastHitT = hazardT;
   if(d >= 0){
     f.pct = Math.max(0, f.pct - d);
     if(d > 0) holdDamage(f, t, d);
@@ -79419,7 +79434,7 @@ function holdTick(f, inp){
 function holdDamage(f, t, dmg){
   if(TESTMODE.active && !TESTMODE.damage) dmg = 0;
   dmg = statDmg(f, dmg);   // FIGHTER STATS: the holder's dmg
-  t.pct += dmg; t._dmgTaken = (t._dmgTaken || 0) + dmg; f._dmgDealt = (f._dmgDealt || 0) + dmg; t.lastHitBy = f;
+  t.pct += dmg; t._dmgTaken = (t._dmgTaken || 0) + dmg; f._dmgDealt = (f._dmgDealt || 0) + dmg; t.lastHitBy = f; t._lastHitT = hazardT;
   t.flash = 6; t._hurtAnim = HURT_ANIM;
   if(dmg > 0) SFX.hit(dmg);
   if(t.pct >= t.koCap && !t.dead) eliminate(t);
@@ -87362,7 +87377,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   // rage) reads the row's own damage: with the doubled one a spray's later shots passed through the foe's longer grace, and a taped Final
   // Smash replayed at double.
   const fsRow = fsSt ? 1/FS_DMG_MULT : 1;
-  if(from && from.idx!==t.idx){ t.lastHitBy=from; }   // remember who last damaged us
+  if(from && from.idx!==t.idx){ t.lastHitBy=from; t._lastHitT=hazardT; }   // remember who last damaged us
   // Show-accurate: Firey (and Firey Jr.) have aquaphobia — water-y attackers hurt them extra & douse them
   if(from && (t.name==="Firey"||t.name==="Firey Jr.") && /Teardrop|Barf Bag|Bubble/.test(from.name)){
     dmg*=1.5; kbx*=1.2; kby*=1.2; t.burn=0; t.bleed=0; t._nail=null; t._stall=null; t._sm=null; if(!t.dead){ for(let i=0;i<6;i++) puff(t.x,t.y-6,'#6fb7ff',4); }   // no "DOUSED!" line: it went up for every water hit on Firey, AI on AI included ("remove all text for smashes and specials"); the splash says it
@@ -87580,7 +87595,7 @@ const SHAKE_PREF_KEY = 'bfsi:shake';
 function shakePrefLoad(){ try{ return localStorage.getItem(SHAKE_PREF_KEY) !== '0'; }catch(e){ return true; } }   // default ON
 function shakePrefSave(v){ try{ localStorage.setItem(SHAKE_PREF_KEY, v ? '1' : '0'); }catch(e){} }
 let SHAKE_ON = shakePrefLoad();
-let shakeAmt=0; function shake(n){ if(!SHAKE_ON || PCAM.bg) return; shakeAmt=Math.min(12,shakeAmt+n*0.4); }
+let shakeAmt=0, SHK_X=0.7, SHK_Y=-0.5; function shake(n){ if(!SHAKE_ON || PCAM.bg) return; shakeAmt=Math.min(12,shakeAmt+n*0.4); }
 function toggleShake(){
   SHAKE_ON = !SHAKE_ON; shakePrefSave(SHAKE_ON);
   if(!SHAKE_ON) shakeAmt = 0;
@@ -87870,8 +87885,9 @@ function eliminate(f){
   { const vt = sideRoomTop(); puff(f.x, Math.max(20 + vt,Math.min(WH-20-vt,f.y)), '#fff', 22); puff(f.x, Math.max(20 + vt,Math.min(WH-20-vt,f.y)), f.color, 14); }
   koStarburst(f.x, f.y, f.color);   // the star at the blast zone (HIT EFFECTS)
   try{ cosKoBurst(f); }catch(e){}   // the KO effect of whoever knocked them out: drawn only, and never a roll of the dice
-  shake(9);
-  if(f.you) banner(f.stocks>0 ? "KO'd! − a stock" : "You're out!", 1100, null, true);   // local: a client gets its own (applySnapshot)
+  shake((f.you || (f.lastHitBy && f.lastHitBy.you)) ? 30 : 15);   // JURY 1: a KO shook less (3.6 px) than a plain 10% hit (4 px); yours, or one you scored, now shakes to the cap, others half
+  if(f.you){ const kb = f.lastHitBy, by = (kb && kb !== f && kb.name && hazardT - (f._lastHitT != null ? f._lastHitT : -1e9) <= 600) ? kb.name : '';   // JURY 1: who did it, if someone hit them in the last 10 s
+    banner(f.stocks>0 ? (by ? "KO'd by " + by : "KO'd!") + " − a stock" : (by ? "You're out! KO'd by " + by : "You're out!"), 1100, null, true); }   // local: a client gets its own (applySnapshot)
   if(f.stocks<=0){
     f.dead=true; f.alive=false;
     f._outT = hazardT;   // the frame they went out: how long they lasted (an event match's loss pays for 60 s: eventFinish)
@@ -90529,7 +90545,7 @@ function drawCrowd(){
     const hop = react > 0 ? -Math.abs(Math.sin((hazardT + i*5) * 0.35)) * react * 0.45 : 0;
     const y = gy - 6 + sway + hop;
     const r = 11;
-    ctx.globalAlpha = 0.5;
+    ctx.globalAlpha = 0.28;   // (JURY 1: was 0.5; on the floor line they read as items or minions)
     ctx.fillStyle = c.color;
     ctx.strokeStyle = "#1c1c1c"; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.ellipse(x, y, r, r*1.1, 0, 0, 7); ctx.fill(); ctx.stroke();
@@ -90839,7 +90855,7 @@ function puff(x,y,color,n){ for(let i=0;i<n;i++) particles.push({x,y,vx:Math.ran
 // are not round: a particle whose colour reads "s|#rrggbb" is a STREAK (a short line along its way) and "r|#rrggbb" a RING (swelling and fading over its 8 steps); the prefix
 // rides the colour string through the snapshot unchanged, and a client that knows neither just draws a small dot. The count is capped: past HITFX.room particles alive the
 // extras give way, so an 8-fighter free-for-all stays smooth.
-const HITFX = { room:260, ring:8 };
+const HITFX = { room:260, ring:8, koRing:14 };   // koRing: the KO star's rings (JURY 1: was the same 8 frames and r 46 / 28, about 33 px on screen)
 function hitFxPower(dmg, sp){ return Math.max(0, Math.min(1.6, (+dmg || 0)/20 + (+sp || 0)/26)); }
 function hitFxDice(x, y, salt){ return impactRand(Math.imul(Math.round(x), 73856093) ^ Math.imul(Math.round(y), 19349663) ^ Math.imul(hazardT | 0, 83492791) ^ salt); }   // the dice come from the spot and the frame, never from Math.random: a seeded simulation draws the same numbers with or without these effects
 function hitFx(t, from, dmg, grounded){
@@ -90868,8 +90884,8 @@ function koStarburst(x, y, color){
   x = Math.max(64 - SIDE_ROOM, Math.min(WW - 64 + SIDE_ROOM, x)); y = Math.max(64 + vt, Math.min(WH - 64 - vt, y));
   const rnd = hitFxDice(x, y, 23);
   const tint = (typeof color === 'string' && color.charAt(0) === '#' && color.length === 7) ? color : '#ffd34d', cols = ['#ffffff', '#ffe27a', tint];
-  particles.push({ x, y, vx:0, vy:-0.6, life:HITFX.ring, r:46, color:'r|#ffffff' });
-  particles.push({ x, y, vx:0, vy:-0.6, life:HITFX.ring, r:28, color:'r|' + tint });
+  particles.push({ x, y, vx:0, vy:-0.6, life:HITFX.koRing, mx:HITFX.koRing, r:90, color:'r|#ffffff' });
+  particles.push({ x, y, vx:0, vy:-0.6, life:HITFX.koRing, mx:HITFX.koRing, r:56, color:'r|' + tint });
   const j = rnd()*0.4;
   for(let i = 0; i < 14; i++){ const a = i/14*Math.PI*2 + j, v = 8 + rnd()*6; particles.push({ x, y, vx:Math.cos(a)*v, vy:Math.sin(a)*v, life:17 + rnd()*8, r:2.4 + (i % 2)*0.8, color:'s|' + cols[i % 3] }); }
 }
@@ -94021,7 +94037,7 @@ function drawStageEvilLeafy(e){
 function draw(){
   baseTransform(ctx);   // whatever state the canvas was left in (see THE WHOLE CANVAS, EVERY PICTURE): the clear and the backdrop below then cover all of it
   ctx.save();
-  let sx=0,sy=0; if(shakeAmt>0.2){ sx=(Math.random()*2-1)*shakeAmt; sy=(Math.random()*2-1)*shakeAmt; }   // it dies down on the 60 Hz clock, not per picture (ageView)
+  let sx=0,sy=0; if(shakeAmt>0.2){ sx=SHK_X*shakeAmt; sy=SHK_Y*shakeAmt; }   // it dies down on the 60 Hz clock, not per picture (ageView)
   ctx.clearRect(0,0,W,H); ctx.translate(sx,sy);
 
   // sky — screen-fixed (parallax backdrop). Boss arenas override with a themed backdrop.
@@ -94298,7 +94314,7 @@ function draw(){
       ctx.strokeStyle='#1c1c1c'; ctx.lineWidth=p.r*1.5 + 2.4; ctx.stroke(); ctx.strokeStyle=p._c; ctx.lineWidth=p.r*1.5; ctx.stroke(); continue;   // (a thin dark edge, so a white spark shows on a bright sky)
     }
     if(p._k === 114){   // a ring: swells over its life and fades
-      const u = Math.max(0, Math.min(1, p.life/HITFX.ring)); ctx.globalAlpha=0.15 + 0.85*u; ctx.strokeStyle=p._c; ctx.lineWidth=1.5 + 4*u;
+      const u = Math.max(0, Math.min(1, p.life/(p.mx || HITFX.ring))); ctx.globalAlpha=0.15 + 0.85*u; ctx.strokeStyle=p._c; ctx.lineWidth=1.5 + 4*u;
       ctx.beginPath(); ctx.arc(p.x,p.y,p.r*(0.55 + 1.2*(1-u)),0,7); const lw = 1.5 + 4*u; ctx.strokeStyle='#1c1c1c'; ctx.lineWidth=lw + 2.4; ctx.stroke(); ctx.strokeStyle=p._c; ctx.lineWidth=lw; ctx.stroke(); continue;
     }
     ctx.globalAlpha=Math.max(0,Math.min(1,p.life/22)); ctx.fillStyle=p.color;   // (a fresh puff lives up to 24: past 1 the canvas keeps the last alpha)
@@ -103728,10 +103744,10 @@ function drawCardStates(f){
 }
 
 // NAME TAGS WITH MANY FIGHTERS (the owner, 2026-10-31: "do 3" -- with 10 fighters there was a pill over every head, overlapping where they
-// met). Up to 4 fighters, everyone's name rides over them, as before. Past that, yours, and in a team mode your teammates'; watching a
+// met). Up to 6 fighters (JURY 1: was 4, so the default 5-fighter match showed only your own tag), everyone's name rides over them, as before. Past that, yours, and in a team mode your teammates'; watching a
 // match with nobody of yours in it, none: the cards along the top say who is who, and the colour ring under each fighter whose side.
 function nameTagShown(f){
-  if(f.you || fighters.length <= 4) return true;
+  if(f.you || fighters.length <= 6) return true;
   const me = fighters.find(o => o.you);
   return !!me && (SETTINGS.mode === 'teams' || SETTINGS.mode === 'ctf') && f.team === me.team;
 }
@@ -106058,7 +106074,7 @@ function clientFrame(ticks){
   if(s && s !== NET_VIEW.applied) applySnapshot(s);
   if(SETTINGS.mode==='ctf' && ctfMenuOpen()){ const me = fighters.find(q=>q.you); if(me && me.hitstun > 0) ctfMenuToggle(false); }   // (the planning menu closes when you are hit, online as on the host: ctfFilterInput)
   netInterpolate(now);
-  try{ netPredict(now); }catch(e){ NET_PRED.on = false; console.error('netPredict', e); }   // its own fighter moves at once (GUEST PREDICTION)
+  try{ netPredict(now, camK); }catch(e){ NET_PRED.on = false; console.error('netPredict', e); }   // its own fighter moves at once (GUEST PREDICTION)
   for(let i = 0; i < k; i++){
     if(ticks !== undefined && INTERP) interpRecord(true);   // (render interpolation: only a loop() frame, which counts ticks)
     netStepParticles();
@@ -106198,7 +106214,7 @@ function netPredRun(a, pr, to, team, sq){   // sq: the Spongys on the stage (SQU
   for(let g = from; g <= to; g++){ mcEnter(P); try {   // (MOON CAVES: in the predicted body's own chart)
     if(MCAVE && MCAVE.on) plats = platRects();
     const m = N.inMaskAt(g);
-    if(m & NET_IN_ACT) break;
+    if((m & NET_IN_ACT) && !(N.inMaskAt(g - 1) & NET_IN_ACT)) break;   // (JURY 1: only a PRESS starts a move; a key already down when the host said "free" did not, and used to stop the fighter dead)
     if(sq && sq.length && !P.g && !P.sqU && P.vy > 0){ for(const s of sq){ const top = spongyTopHit(P.x, P.y, P.r, P.vy, s); if(top != null){ P.y = top - P.r; P.vy = -SPONGY.top.v; P.sqU = true; P.ff = false; P.hop = false; break; } } }   // SQUISHY TOP (spongyStep: the host's rule, before it moves)
     const L = m & 1, R = m & 2, J = m & 4, D = m & 8;
     if(D && P.g) break;
@@ -106276,7 +106292,7 @@ function netPredRun(a, pr, to, team, sq){   // sq: the Spongys on the stage (SQU
 }
 // Every client frame, after the glide: this device's own fighter drawn where its prediction has it (or where the host has it, while it is not
 // free), with any jump between the two eased out.
-function netPredict(now){
+function netPredict(now, camK){   // camK: real time since the last frame in steps (JURY 1: the slide-back was once per drawn frame, a snap at 144 Hz and a drag at 30)
   const N = window.NET, S = NET_PRED;
   const me = N && N.role === 'client' ? fighters.find(f=>f.idx===N.myIdx) : null;
   if(!me || me.dead || !S.on || N._inT0 == null || me._tx === undefined){ S.ox = S.oy = 0; S.mode = 0; S.auth = null; return; }
@@ -106304,7 +106320,7 @@ function netPredict(now){
   if(P){ me.face = P.face; me.vx = P.vx; me.vy = P.vy; me.onground = P.g; }   // (the run cycle, the lean, the jump stretch)
   // (THE LAST KO: through the slow-mo KO and a Final Smash's intro the gap from running ahead is held, not eased out -- eased out against a
   // match moving at a quarter speed, or not at all, it slid the fighter back to where the host had it, 16 px a frame at 50 ms; a hit's is still eased)
-  if(!((FS.slow > 0 || FS.freeze > 0) && !(me.hitstun > 0))){ const e = S.fastT > 0 ? S.hitEase : S.ease; if(S.fastT > 0) S.fastT--; S.ox *= e; S.oy *= e; }
+  if(!((FS.slow > 0 || FS.freeze > 0) && !(me.hitstun > 0))){ const kk = camK > 0 ? camK : 1, e = Math.pow(S.fastT > 0 ? S.hitEase : S.ease, kk); if(S.fastT > 0) S.fastT = Math.max(0, S.fastT - kk); S.ox *= e; S.oy *= e; }
   if(Math.abs(S.ox) < 0.05) S.ox = 0; if(Math.abs(S.oy) < 0.05) S.oy = 0;
 }
 // The input step() uses for a remote player this frame. A guest sending frames: what netPlayStep gave them. A guest from before that: what
