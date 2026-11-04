@@ -64637,6 +64637,7 @@ function step(){
     // has already cleared it in applyHit.
     if(f._windup){
       const wu = f._windup;
+      if(wu.dashTell && hazardT % 3 === 0 && f.onground) puff(f.x - f.face*(f.r*0.5), feetY(f) - 3, '#e3dccb', 2);   // (DASH TELL: the gather kicks up dust)
       if(wu.falls !== (f._falls||0)) f._windup = null;          // KO'd since it started
       else if((wu.t -= aS) <= 0){ f._windup = null; f._wuRoot = wu.root || wu; try{ wu.fire(); } finally { f._wuRoot = null; } }   // (_wuRoot: which string of wind-ups this is -- HIT FREEZE)
     }
@@ -68187,6 +68188,7 @@ function doDownSpecial(f){
   f._atkSeq = (f._atkSeq||0) + 1;   // a new move (see chainOpen: only a NEW move may chain, never the same hitbox re-landing)
   armAtk(f, ATK_ANIM, animKindOf(f, 'down'), mvId(f, 'down'));
   const k=f.kit && f.kit.special;
+  if(DASH_TELL_DOWN.has(k) && !f._dashTellGo && dashTell(f, function(){ f._dashTellGo = true; try { doDownSpecial(f); } finally { f._dashTellGo = false; } })) return;   // DASH TELL
   if(DOWNSPECIALS[k]) DOWNSPECIALS[k](f);
   else { f.countering=22; f.flash=8;  }
 }
@@ -82035,6 +82037,24 @@ function startWindup(f, frames, fire, color, sh){
   // before a KO can never go off at the respawn point, whichever respawn route ran.
   f._windup = { t: frames, t0: frames, fire: fire, color: color || f.color, falls: f._falls||0, root: f._wuRoot || null, seq: f._atkSeq||0 };   // (root: the wind-up this one was started from, for a move that strikes in strokes; seq: the move that started it -- HIT FREEZE)
 }
+// DASH TELL (the owner, 2026-11-04: dash attacks "are very annoying, with no tell. I can think that the cpu is just using a lunge smash, but NOPE,
+// it is an undodgeable (or nearly) dash"; Life Ring's, with its whistle, is "more fair": "I have time to think - oh wait, that isnt coming out,
+// better dodge!"). Every special that dashes at a foe now begins with the same STARTUP Life Ring's has (startWindup, drawn by stupK: the body
+// gathers and glows in its colour), DASH_TELL_FRAMES long, with a rising whistle and a puff of dust at the feet. The dash itself is unchanged
+// and starts when the wind-up ends; a hit in the meantime cancels it (applyHit clears _windup), and the fighter is as open as in any startup.
+// A smash dash already has its 24-frame charge. The CPU needs nothing more: it presses, and the wind-up is part of the press.
+const DASH_TELL_FRAMES = 16;
+const DASH_TELL_KINDS = new Set(["dash", "tackle", "collide", "airrel", "pickle", "leavealone", "switch", "barrier", "fraidy"]);   // neutral specials that dash at a foe (Life Ring's lifeguard has its own 10-frame whistle)
+const DASH_TELL_DOWN = new Set(["paintball", "cheer"]);   // down specials that do (Teddy Bear's Front of the Crowd, Bot's Gotcha)
+function dashTell(f, fire){
+  if(f._windup) return false;
+  startWindup(f, DASH_TELL_FRAMES, fire, f.color);
+  if(!f._windup) return false;
+  f._windup.dashTell = true; f.flash = 8;
+  tone(210, 0.2, 'sawtooth', 0.12, 0, 640); noise(0.12, 0.08, 900, 0, 2600);   // the rising whistle of the gather
+  for(let i = 0; i < 6; i++) puff(f.x - f.face*(f.r*0.5 + i*5), feetY(f) - 3, '#e3dccb', 3);   // dust kicked up at the feet
+  return true;
+}
 // set the fighter's vertical dash velocity from the directions they were holding at cast time
 function applyDashVY(f, upSpeed, downSpeed){
   f._dashVY = 0;
@@ -82382,6 +82402,7 @@ function doSpecial(f){
   f._lastSpecialKind = k;   // Two's MIND READ copies this back at you
   f._lastSpecialAt = hazardT;   // ...and Dough's Knockoff tells a special from a smash by which was thrown last
   springyBotHear(f, k);   // ...and a Spring-Bot that is listening (Springy's MY PURPOSE!) writes it down
+  if(DASH_TELL_KINDS.has(k) && !f._dashTellGo && dashTell(f, function(){ f._dashTellGo = true; try { doSpecial(f); } finally { f._dashTellGo = false; } })) return;   // DASH TELL: the dash begins after its wind-up
   switch(k){
     case "ember": spawnProj(f, {vx:f.face*8,vy:-2,grav:true,dmg:8,kb:6,r:9,color:"#f0803a",burn:true,life:60}); f.flash=8; f.spCd=48; break;
     case "dash": f.vx=f.face*22; f._dashing=16; f.invuln=22; f._dashHits=new Set(); f.flash=10; applyDashVY(f,17,15);
