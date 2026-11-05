@@ -1853,7 +1853,7 @@
         <li>It <b>goes off by itself</b>, turned toward the nearest foe (Bow's goes the way she's facing). Holding ← or → points it that way instead.</li>
         <li>Want to wait for the right moment? <b>Keep V held</b>: the smash stays charged until you let go.</li>
         <li>If it touches them, they take <b>all</b> of its damage and its effect. (Freezing only works once they're hurt.)</li>
-        <li><b>Angle it:</b> once it's charged, hold ↑ or ↓ and it waits for you. Let go to fire it, angled up or flatter. ↑ also jumps, so you can jump, wait, and fire on the way down.</li>
+        <li><b>Up smash and down smash:</b> once it's charged, hold ↑ or ↓ and it waits for you. Let go to fire it: ↑ is an up smash (a swing over your head that launches them straight up), ↓ a down smash (a low sweep that hits both sides). ↑ also jumps, so you can jump, wait, and fire on the way down. ← or → with V is still the smash, turned that way.</li>
       </ol>
       <div class="tut-smash-h">Every fighter's smash moves differently</div>
       <div class="tut-kinds">
@@ -17962,11 +17962,19 @@ const SMASH_NO_HIT = new Set(['counter', 'kick', 'zapshooter']);   // Needle, Te
 function smashHowText(f){
   const sp = f && f.kit && f.kit.special;
   let t = "Press V once: it charges for " + (smashFullOf(f)/60).toFixed(1) + " s, then goes off by itself -- or keep V held to keep it charged, and let go to fire";
-  const wait = " Once it's charged, hold ↑ or ↓ to keep it waiting (↑ also jumps); let go to fire it angled up or flatter.";
+  const wait = " Once it's charged, hold ↑ (the up smash) or ↓ (the down smash) to keep it waiting (↑ also jumps); let go to fire it.";
   if(SMASH_NO_HIT.has(sp)) return t + ".";
   if(sp === 'fly') return t + "." + wait;
   if(sp === 'chair') return t + ", the way you're facing (← or → turns you while it charges)." + wait;   // Bow (BOW'S CHAIR TAKES SKILL)
   return t + ", turned toward the nearest foe." + wait;
+}
+// The up and the down smash for the move lists: the name, how to press it, what it does, and the damage (the fighter's own damage setting, as the smash line does).
+function dirSmashText(r, dir){
+  const N = dirSmashNums(r && r.kit && r.kit.special, r && r.name), up = dir > 0, dm = (typeof statsFor === 'function' ? statsFor(r.name).dmg : 1);
+  const nm = (up ? DSM_NAMES.up : DSM_NAMES.down)[N.pat] || (up ? DSM_NAMES.up.none : DSM_NAMES.down.none);
+  const dmg = Math.round(N.D*(up ? DSM.upDmg : DSM.downDmg)*dm);
+  return up ? nm + ' — hold ↑ as the smash goes off (the same charge; ↑ also jumps): a wide swing over your head that launches foes straight up. On hit: ' + dmg + '%, launches up.'
+            : nm + ' — hold ↓ as the smash goes off (the same charge): a low sweep that hits both sides at once and sends foes low and out. On hit: ' + dmg + '%.';
 }
 function smashKindOf(f){ const sp = f && f.kit && f.kit.special, row = (typeof SMASH_SPEC !== 'undefined' && SMASH_SPEC[sp]) || null; return row ? SMASH_KIND[row.pat] : null; }
 
@@ -18107,6 +18115,8 @@ function refreshSel(){
       ["↑+C", mt ? esc(mt.up) : "Up special (recovery)", !!mt],
       ["↓+C", mt ? esc(mt.down) : "Down special", !!mt],
       ["V", esc((smashKindOf(chosen) ? smashKindOf(chosen) + " · " : "") + smashBlurb(chosen)) + '<div class="mc-sub">' + esc(smashHowText(chosen)) + '</div>', true],
+      ["↑+V", esc(dirSmashText(chosen, 1)), true],
+      ["↓+V", esc(dirSmashText(chosen, -1)), true],
       ["V+C", mt ? esc(mt.finisher) : "Finisher", !!mt],
       ["Z", esc(zsMenuText(chosen)), true],
     ];
@@ -65043,7 +65053,13 @@ function step(){
           const dir = inp.up ? 1 : (inp.down ? -1 : 0);
           if(heldV){ if(dir) f._smQ.angle = dir; }                              // V still down: keep it charged
           else if(dir && !f._smQ.letGo && f.controller!=='ai' && f._smQ.wait < SMASH_WAIT_MAX){ f._smQ.angle = dir; f._smQ.wait++; }
-          else { const a = dir || f._smQ.angle; f._smQ = null; f.smashHold = 0; fireSmash(f, inp, a); }
+          else {
+            // UP / DOWN SMASH: a person holding ↑ or ↓ as it goes off gets the up or the down smash; a CPU only when its brain asked (f._aiSmDir, brainSmDir)
+            const human = isHumanCtrl(f), ai = (f._aiSmDir || 0) !== 0 && hazardT - (f._aiSmDirT || 0) <= 150;
+            const a = ai && !human ? f._aiSmDir : (dir || f._smQ.angle);
+            f._smQ = null; f.smashHold = 0; f._aiSmDir = 0;
+            fireSmash(f, inp, a, human ? a !== 0 : ai);
+          }
         }
       }
     }
@@ -66873,14 +66889,77 @@ function smashAim(f, inp){
   const t = nearestFoe(f, rx, flat ? f.r + 60 : SMASH_AIM_Y, mover ? function(t){ return landable(t.x, t.y); } : null);
   if(t && Math.abs(t.x - f.x) > 4) f.face = t.x > f.x ? 1 : -1;
 }
-function fireSmash(f, inp, angle){
+function fireSmash(f, inp, angle, dirMove){
   smashAim(f, inp);
   if(TUT.active && f.you){ const d = fighters.find(function(x){ return !x.you; }); TUT.smashPct = d ? d.pct : null; }
+  if(dirMove && angle && dirSmash(f, angle)) return;   // UP / DOWN SMASH (below): its own move, not the neutral smash tilted
   f._smAngle = angle != null ? angle : (inp && inp.up ? 1 : (inp && inp.down ? -1 : 0));   // see SMASH_ANGLE_TILT
   f._smAngleT = f._smAngle ? SMASH_ANGLE_FRAMES : 0;
   doSmash(f);
   f.smCd = Math.max(f.smCd||0, SMASH_ENDLAG);
 }
+// ============================================================
+//  UP SMASH AND DOWN SMASH  (the owner, 2026-11-04)
+// ============================================================
+// "Direction + the smash key", like ← and → today (those, and the neutral smash, are untouched: ← → V is still the neutral smash turned that way). The charge is
+// the smash's own -- the same visible ring, 24 to 32 frames by weight -- and the arrow held as it goes off picks the move: ↑ the UP SMASH, a vertical launcher
+// (a wide swing above and in front of and a little behind you, the foe goes up); ↓ the DOWN SMASH, a low sweep that hits both sides at once and sends them low and
+// out. Each is GENERATED from the fighter's own neutral smash (its row in SMASH_SPEC: dmg and kb; the hand-written ones get a middling row), the way the move
+// runner (MOVESETS) takes a spec: up is 12% under the neutral smash's damage, down 18% under, with the launch at 0.9 of its strength and no status, so neither
+// is new kill power; the swing starts 4 or 5 frames after the charge ends (the neutral smash's own wind-up is longer for most), and the recovery grows with the damage.
+// The name comes from the neutral smash's pattern (lunge, dash, hop, shockwave...). A CPU uses them only when its brain asked (brainSmDir): a foe above it, or close in.
+// Before the shield and reflector update, ↑ or ↓ held tilted the neutral smash's launch (SMASH_ANGLE_TILT): that is now the up and down smash, for a person.
+const DSM_NAMES = {
+  up:   { lunge:'Rising Lunge', through:'Rising Rush', leap:'Sky Hop', burst:'Skyburst', walk:'Rolling Uppercut', beam:'Sky Line', rain:'Updraft', mine:'Spring Trap', plant:'Rooted Uppercut', reel:'Haul Up', horizon:'Event Skyline', none:'Rising Smash' },
+  down: { lunge:'Low Lunge', through:'Low Rush', leap:'Ground Pound', burst:'Floor Ring', walk:'Low Roll', beam:'Floor Line', rain:'Low Drop', mine:'Floor Trap', plant:'Rooted Sweep', reel:'Foot Drag', horizon:'Event Floor', none:'Low Sweep Smash' },
+};
+const DSM = { upDmg:0.88, downDmg:0.82, kb:0.9, upSt:5, downSt:4, upAct:4, downAct:5 };
+// Launch strength per kit where the neutral smash's own launch is not what its row says (a lunge, leap or plant row with a low real launch; a hand-written body; Yin-Yang's
+// -20 rise): measured against the neutral smash on a dummy at the same damage, so the up and the down smash never throw further than the smash they come from.
+const DSM_K = { quake:4.2, timber:5.6, packed:5.7, reflect:7.4, cool:6.9, clockhands:7.0, pricetag:3.3, tackle:6.0, spike:4.8, yinyang:11, serve:14, payday:14, fly:15 };
+function dirSmashNums(sp, name){
+  const row = (typeof SMASH_SPEC !== 'undefined' && SMASH_SPEC[sp]) || null, noHit = typeof SMASH_NO_HIT !== 'undefined' && SMASH_NO_HIT.has(sp);
+  const dmg = row ? row.dmg : (noHit ? 7 : 12), kb = row ? row.kb : (noHit ? 8 : 10);
+  return { D:Math.round(dmg*SMASH_DMG_MULT), K:DSM_K[sp] != null ? DSM_K[sp] : Math.min(15, kb)*DSM.kb, pat:row ? row.pat : 'none' };
+}
+function dirSmashSpec(f, dir){
+  const sp = f.kit && f.kit.special, up = dir > 0, key = f.name + '|' + dir + '|' + Math.round(f.r);
+  let S = DSM_CACHE.get(key); if(S) return S;
+  const N = dirSmashNums(sp, f.name), r = f.r, name = (up ? DSM_NAMES.up : DSM_NAMES.down)[N.pat] || (up ? DSM_NAMES.up.none : DSM_NAMES.down.none);
+  const end = 20 + Math.round(N.D*0.45);
+  if(up){
+    const dmg = Math.round(N.D*DSM.upDmg*10)/10, K = N.K;
+    S = { n:name, d:'a wide swing over your head that launches them upward', pose:'uppercut', st:DSM.upSt, act:DSM.upAct, end:end, land:12, ac:999, smash:true,
+      boxes:[{ s:MvF(r*0.25, r + 66, -2.35, -0.75, -2, 0), dmg:dmg, kb:[K*0.1, -K] }] };
+  } else {
+    const dmg = Math.round(N.D*DSM.downDmg*10)/10, K = N.K, y = r*0.7;
+    S = { n:name, d:'a low sweep that hits both sides and sends them low and out', pose:'kick', st:DSM.downSt, act:DSM.downAct, end:end, land:12, ac:999, smash:true,
+      boxes:[{ s:MvC(r*0.2, y, r + 64, y, 16), dmg:dmg, kb:[K*0.85, -K*0.4], g:'df' }, { s:MvC(-r*0.2, y, -(r + 64), y, 16), dmg:dmg, kb:[-K*0.85, -K*0.4], g:'db' }] };
+  }
+  DSM_CACHE.set(key, S);
+  return S;
+}
+const DSM_CACHE = new Map();
+function dirSmash(f, angle){
+  if(inOwnTeamZone(f) || f._mv) return false;
+  const S = dirSmashSpec(f, angle > 0 ? 1 : -1);
+  if(!mvStart(f, S, angle > 0 ? 'usmash' : 'dsmash')) return false;
+  if(f.you) questSmashArm(f);
+  playSmashSfx(smashIdOf(f));
+  f.smCd = Math.max(f.smCd || 0, SMASH_ENDLAG + Math.round(dirSmashNums(f.kit && f.kit.special, f.name).D*0.3));
+  return true;
+}
+// What the CPU asks for when it presses a smash: up at a foe well above and close, the low sweep now and then at a foe close in; else the neutral smash.
+function brainSmDir(f, t){
+  f._aiSmDir = 0;
+  if(!t || !f.onground) return;
+  const dx = Math.abs(t.x - f.x), dy = t.y - f.y;
+  let d = 0;
+  if(dy < -60 && dx < 90 && Math.random() < 0.7) d = 1;
+  else if(dx < f.r + (t.r || 24) + 40 && Math.abs(dy) < 40 && Math.random() < 0.18) d = -1;
+  f._aiSmDir = d; f._aiSmDirT = hazardT;
+}
+function brainSmash(f, t, toward){ brainSmDir(f, t); return brainFace({ smash:true }, toward); }
 // THREE COOLDOWNS ("Specials and smashes should have seperate cooldowns, and also attacks"): X and ↓+X wait on atkCd,
 // C, ↑+C and ↓+C on spCd, V on smCd, and nothing one of them does touches the others. A smash's declared cd used to
 // land on atkCd and spCd both, and its endlag on atkCd, so throwing one locked your jab and your special for up to
@@ -82170,6 +82249,7 @@ function moveRowsFor(r){
   add('←/→ + C', SIDE_SPECIALS && ms ? mt.side : 'The neutral special, aimed that way.');
   add('↑ + C', mt.up); add('↓ + C', mt.down);
   add('V', (smashKindOf(r) ? smashKindOf(r) + ' · ' : '') + smashBlurb(r) + ' ' + smashHowText(r), true);
+  add('↑ + V', dirSmashText(r, 1), true); add('↓ + V', dirSmashText(r, -1), true);   // UP SMASH, DOWN SMASH
   add('V + C', mt.finisher);
   add('Z', zsMenuText(r), true);   // SHIELD / REFLECTOR (Z)
   { const fl = fsMenuLine(r); if(fl) add('Final Smash', fl[0] + ' — ' + fl[1], true); }   // FS MENU LINES (the All moves tab and the pause menu's Move list)
@@ -92697,8 +92777,8 @@ function brainShotTell(f, B){
     if(p.ownerObj && p.ownerObj.team === f.team) continue;
     const dx = (p.x - f.x)*d, dy = p.y - f.y, sp = (p.vx || 0)*-d;
     if(dx < 0 || sp < 1.5 || Math.abs(dy) > f.r*1.3 + (p.r || 6)) continue;
-    const eta = (dx - f.r)/sp;
-    if(eta > RF.start + 10 || eta < 0) continue;   // not yet (or already on it)
+    const eta = (dx - f.r)/(sp + Math.max(0, (f.vx || 0)*d)), react = (typeof CPU_HUMAN !== 'undefined' && CPU_HUMAN.react[f._lvlCache != null ? f._lvlCache : brainLevel(f)]) || 0;
+    if(eta > RF.start + 8 + react || eta < 0) continue;   // not yet (or already on it); it sees the shot a moment late, so it starts that much earlier
     if(!B.shSeenShot) B.shSeenShot = new WeakSet();
     if(!B.shSeenShot.has(p)){ B.shSeenShot.add(p); B.shShotOk = Math.random(); }
     return true;
@@ -92707,21 +92787,21 @@ function brainShotTell(f, B){
 }
 function brainShield(f, t, B, L, dist, awake){
   const now = hazardT, rf = isReflector(f);
-  if(!(L.shd > 0) || !awake || f.hitstun > 0 || f._zsBrk > 0 || !f.onground && !rf || RACE.active){ B.shOn = false; return; }
+  if(!(L.shd > 0) || !awake || f.hitstun > 0 || f._zsBrk > 0 || !f.onground && !rf || RACE.active){ B.shOn = false; f._aiShU = 0; return; }
   if(B.shOn){
     const tell = rf ? brainShotTell(f, B) : brainSwingTell(f, t, dist);
     if(tell) B.shSeen = now;
-    if(now - B.shSeen > (rf ? 3 : AIS_AFTER) || now - B.shT0 > (rf ? RF.start + RF.active - 2 : AIS_MAXHOLD) || (!rf && zsMeter(f) < 3)){ B.shOn = false; B.shCd = now + (rf ? 0 : AIS_CD); return; }
-    f._aiShU = now + 2; return;
+    if(now - B.shSeen > (rf ? 3 : AIS_AFTER) || now - B.shT0 > (rf ? RF.start + RF.active - 2 : AIS_MAXHOLD) || (!rf && zsMeter(f) < 3)){ B.shOn = false; f._aiShU = 0; B.shCd = now + (rf ? 0 : AIS_CD); return; }
+    f._aiShU = now + 10; return;
   }
   if(now < (B.shCd || 0)) return;
   if(rf){
     if(f._rfCd > 0 || f._rfT > 0) return;
-    if(brainShotTell(f, B) && B.shShotOk < L.shd){ B.shOn = true; B.shT0 = B.shSeen = now; B.shShotOk = 9; f._aiShU = now + 2; }
+    if(brainShotTell(f, B) && B.shShotOk < L.shd){ B.shOn = true; B.shT0 = B.shSeen = now; B.shShotOk = 9; f._aiShU = now + 10; }
     return;
   }
   const tell = brainSwingTell(f, t, dist), fresh = tell && !B.shTell; B.shTell = tell;
-  if(fresh && Math.random() < L.shd){ B.shOn = true; B.shT0 = B.shSeen = now; f._aiShU = now + 2; }
+  if(fresh && Math.random() < L.shd){ B.shOn = true; B.shT0 = B.shSeen = now; f._aiShU = now + 10; }
 }
 function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   const now = hazardT, K = brainKit(f), toward = dx < 0 ? -1 : 1, awake = now >= B.wake;
@@ -92784,7 +92864,7 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
     const alt = f.spCd <= 0 && !(f._aiSpGap > 0) && (!smOk || Math.random() < 0.4) && Math.random() < L.kit;
     if(alt && K.near && K.spDmg >= 10 && !K.nStance && !brainSpent(f) && brainLands(K, adx) && ady < 44){ brainTap(B, brainFace({ special:true }, toward), 3); B.specAt = now + brainSpecGap(f, L); return; }
     if(alt && K.upDmg >= 10 && brainUpLands(f, K, t)){ brainTap(B, { special:true, up:true }, 3); B.specAt = now + brainSpecGap(f, L); return; }
-    if(smOk){ brainTap(B, brainFace({ smash:true }, toward), 3); B.st = 'smash'; B.until = now + 75; return; }
+    if(smOk){ brainTap(B, brainSmash(f, t, toward), 3); B.st = 'smash'; B.until = now + 75; return; }
   }
   // the finisher at kill percent (or on a boss), a foe in reach: FINX kits check their own reach (finB1Ai), the rest go
   if(inReach && f.fnCd <= 0 && f.onground && ((t.pct||0) >= 85 || t._isBoss) && Math.random() < L.fin){ brainTap(B, brainFace({ attack:true, special:true }, toward), 3); return; }
@@ -92822,7 +92902,7 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   if(K.dBand && ready && f.onground && ady < 60 && adx > Math.max(brainReach(f), K.dBand[0]) && adx < K.dBand[1] && Math.random() < (K.dDmg > 0 ? 0.3 : 0.12)*L.kit){ brainTap(B, { special:true, down:true }, 3); B.specAt = now + brainSpecGap(f, L); return; }
   // a beam smash down the stage at a foe level with it (Lightbulb's, Tissues', TV's, Remote's, Ruler's...): on an opening it saw, or now and then
   if(K.beam && f.onground && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && !K.smStance && ady < 24 && adx > brainReach(f) + 20 && adx < K.beam*0.8
-     && Math.random() < (open ? L.smash : L.smash*0.08)*L.kit){ brainTap(B, brainFace({ smash:true }, toward), 3); B.st = 'smash'; B.until = now + 75; return; }
+     && Math.random() < (open ? L.smash : L.smash*0.08)*L.kit){ brainTap(B, brainSmash(f, t, toward), 3); B.st = 'smash'; B.until = now + 75; return; }
   // X is a shot for some (Puffball, Ruby, Fanny, Ruler): from range, a string of shots
   if(K.shotX && dist < 300 && ady < 40){ B.st = 'string'; B.str = { move:'jab', left:2, n:0, next:now, dmg0:f._dmgDealt||0, extra:false }; return; }
   // STARFRUIT: Recycle once his One-Hit Wonder is spent, or to shake off an ailment, away from the foe (it costs him 3% and has its own clock, _recycleT)
@@ -93044,7 +93124,7 @@ function brainGuard(f, ts, t, inp, B, L, targets, sp){
   // self-buff smash) -- a foe it has just knocked out there is one
   const open = (t.hitstun > 10) || (t.frozen > 0) || (t.atkCd > 12 && t._atkAnim > 0) || (t.smashHold > 0);
   if(open && brainInReach(f, t, 20) && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && !K.smStance && !K.smBuff && Math.random() < L.smash){
-    brainTap(B, brainFace({ smash:true }, toward), 3); E.smAt = now; return true;
+    brainTap(B, brainSmash(f, t, toward), 3); E.smAt = now; return true;
   }
   // IF THEY JUMP: up to the ledge or over it and into its reach (or out there level with it, in its reach) -- the strong jab, as they arrive
   if(reach){
