@@ -79730,7 +79730,7 @@ function zsRadius(f){
   return f.r*ZS.bubble*(0.4 + 0.6*k)*(0.5 + 0.5*up);
 }
 function zsClear(f, full){
-  f._zsOn = 0; f._rfT = 0; f._zsBrk = 0; f._zsF = 0; f._rfF = 0; f._zsLast = null; f._rfCd = 0; f._zKey = false;
+  f._zsOn = 0; f._rfT = 0; f._zsBrk = 0; f._zsF = 0; f._rfF = 0; f._zsLast = null; f._rfCd = 0; f._zKey = false; f._zsOut = null;
   if(full) f._zsM = ZS.max;
 }
 // Why it cannot be up: a hit, a freeze, a grab, a move of its own, a charge, a cinematic.
@@ -79815,6 +79815,42 @@ function zsShot(f, pr){
   }
   return false;
 }
+// MOVES OUT OF THE BUBBLE (the owner, 2026-11-05: "moves out of shield have different cooldowns", a balancing tool). Holding Z, a bubble fighter can grab (X+C), jab or tilt (X; with Down
+// a down tilt), smash (V; with Down the down smash) or special (C) -- each one only SHIELD_OUT_CD[move] frames after the bubble went up (the Z press is frame 0), never instantly.
+// A press that comes too early is kept for SHIELD_OUT_BUF frames (longer while its key stays down) and goes out the first frame the cooldown allows; the bubble drops the frame the move
+// starts (no end lag), and the move's own tell and start-up run as ever. There is no shield in the air, so no aerial row. The grab is the slowest and riskiest on purpose ("grabs should
+// be hard to use out of shield"): 28 frames, then the grab's own 4 frames of start-up and 28 of whiff lag (GRAB_DEFAULT: about half a second open if it misses), so a shield grab is a read.
+// SHIELD_OUT_CD_FIGHTER is empty: put a fighter's own numbers there ('Name': { smash:30, jab:6 }) to balance one fighter's one move; a row that is missing falls back to SHIELD_OUT_CD.
+// The nine reflector fighters are not touched (their Z is not a bubble: the reflector keeps its own 6 + 36 + 22 frames).
+const SHIELD_OUT_CD = { grab:28, jab:8, tilt:12, smash:22, special:30 };
+const SHIELD_OUT_CD_FIGHTER = {};
+const SHIELD_OUT_BUF = 12;
+function zsOutCd(f, kind){ const o = SHIELD_OUT_CD_FIGHTER[f.name]; return o && o[kind] != null ? o[kind] : SHIELD_OUT_CD[kind]; }
+// This frame's presses while the bubble is up (a CPU's keys come the same way): the latest one is kept as the move to play.
+function zsOutScan(f, inp){
+  const L = f._zsL || (f._zsL = {});
+  let kind = null;
+  if(inp.grab) kind = 'grab';
+  else if(inp.attack && !L.a) kind = inp.down ? 'tilt' : 'jab';
+  else if(inp.special && !L.s) kind = 'special';
+  if(f._smBuf){ kind = 'smash'; f._smBuf = false; }
+  L.a = !!inp.attack; L.s = !!inp.special;
+  f._aBuf = null;   // (the input buffer would throw an X pressed in the bubble the moment it drops)
+  const P = f._zsOut;
+  if(kind) f._zsOut = { kind:kind, t:hazardT };
+  else if(P){
+    if(P.kind === 'jab' || P.kind === 'tilt' ? inp.attack : P.kind === 'special' ? inp.special : P.kind === 'smash' ? f._smRaw : P.kind === 'grab' ? !!(inp.grab || (f._ci && f._ci.grab)) : false) P.t = hazardT;   // (a grab is X and C both held)
+    if(hazardT - P.t > SHIELD_OUT_BUF) f._zsOut = null;
+  }
+}
+// The move that may start this frame (its cooldown is over and the fighter could start it), or null.
+function zsOutGo(f, age){
+  const P = f._zsOut; if(!P || age < zsOutCd(f, P.kind)) return null;
+  const k = P.kind, ok = k === 'smash' ? (f.smCd <= 0 && !f._smQ && !(f.frozen > 0))
+    : k === 'special' ? (f.spCd <= 0 && !f._windup && !(f._spPend > 0))
+    : (f.atkCd <= 0 && !f._hold && !f._gb && !f._mv);
+  return ok ? k : null;
+}
 // Once a frame, before the fighter's keys are read: raises, holds and drops the bubble or the reflector, and returns the keys that are left to it.
 function zsStep(f, inp){
   if(f.dead){ zsClear(f, false); return inp; }
@@ -79857,13 +79893,22 @@ function zsStep(f, inp){
       if(lag){ f._lag = Math.max(f._lag || 0, ZS.endLag); return { left:false, right:false, jump:false, attack:false, special:false, smash:false, up:false, down:false, grab:false, fin:false, shield:false }; }
       return jump && !hard ? Object.assign({}, inp, lockAtk) : inp;
     }
+    const age = f._zsOn;   // frames since it went up (the Z press is frame 0)
+    zsOutScan(f, inp);
+    const go = zsOutGo(f, age);
     f._zsOn++; f._zsM = zsMeter(f) - ZS.drain;
     if(f._zsM <= 0){ zsBreak(f); return { left:false, right:false, jump:false, attack:false, special:false, smash:false, up:false, down:false, grab:false, fin:false, shield:false }; }
+    if(go){   // a move out of the bubble: it drops now, with no end lag, and the move starts this frame
+      f._zsOn = 0; f._zsLast = null; f._zsOut = null; f._zsOutT = hazardT;
+      const o = Object.assign({}, inp, lockAtk, { jump:false, up:false });
+      if(go === 'grab') o.grab = true; else if(go === 'special') o.special = true; else if(go === 'smash') f._smBuf = true; else o.attack = true;
+      return o;
+    }
     return Object.assign({}, inp, lockAtk, { left:false, right:false, up:false, down:false });
   }
   if(f._zsM < ZS.max) f._zsM = Math.min(ZS.max, f._zsM + ZS.regen);
-  if(key && !hard && f.onground && f._zsM > 0 && !(f._lag > 0) && f.atkCd <= 0){
-    f._zsOn = 1; f._zsLast = null; zsSfx('up');
+  if(key && !hard && f.onground && f._zsM > 0 && !(f._lag > 0) && f.atkCd <= 0 && !(f._spPend > 0)){
+    f._zsOn = 1; f._zsLast = null; f._zsOut = null; f._zsL = { a:!!inp.attack, s:!!inp.special }; f._smBuf = false; zsSfx('up');
     return Object.assign({}, inp, lockAtk, { left:false, right:false, up:false, down:false });
   }
   return inp;
@@ -82329,9 +82374,13 @@ function fsMenuLine(r){
 }
 const SHARED_FALLBACK = 'Until this fighter’s batch of moves arrives it is the jab.';
 // The Z row of the move lists: the bubble, or -- for the nine strong fighters -- the reflector.
+function zsOutText(r){
+  const o = (r && SHIELD_OUT_CD_FIGHTER[r.name]) || {}, v = (k) => (o[k] != null ? o[k] : SHIELD_OUT_CD[k]);
+  return 'grab ' + v('grab') + ' frames after you raise it (a miss leaves you open), jab ' + v('jab') + ', down tilt ' + v('tilt') + ', smash ' + v('smash') + ', special ' + v('special');
+}
 function zsMenuText(r){
   if(r && isReflector(r)) return 'Reflector — hold Z: a pane in front of you turns enemy shots back at their owner, 1.8x faster and 1.3x the damage (at most 12%). It takes ' + RF.start + ' frames to come up, lasts up to ' + RF.active + ' while Z is held, and leaves you open for ' + RF.endLag + ' frames after (then ' + RF.cd + ' more before you can raise it again). It does nothing against melee or grabs. The strong fighters have this instead of a shield.';
-  return 'Shield — hold Z: a bubble in your colour blocks every hit and shot (a grab still gets you). It shrinks as it takes damage and refills when you let go; at zero it breaks and you are stunned for 2 s. It comes up in ' + ZS.start + ' frames and costs ' + ZS.endLag + ' to drop; you cannot attack from it, jump leaves it, and it cannot be raised in the air.';
+  return 'Shield — hold Z: a bubble in your colour blocks every hit and shot (a grab still gets you). It shrinks as it takes damage and refills when you let go; at zero it breaks and you are stunned for 2 s. It comes up in ' + ZS.start + ' frames and costs ' + ZS.endLag + ' to drop; jump leaves it at once, and it cannot be raised in the air. Out of it: ' + zsOutText(r) + ' (the bubble drops when the move starts).';
 }
 function moveRowsFor(r){
   const mt = MOVE_TEXT[r.name] || {}, ms = r.kit && MOVESETS[r.kit.special], rows = [], dk = statsFor(r.name).dmg, GT = (k) => statWords(dk, GRAB_TEXT_SHARED[k]);   // (FIGHTER STATS: the shared grab lines in the fighter's dmg)
@@ -92892,6 +92941,7 @@ function brainShotTell(f, B){
 function brainShield(f, t, B, L, dist, awake){
   const now = hazardT, rf = isReflector(f);
   if(!(L.shd > 0) || !awake || f.hitstun > 0 || f._zsBrk > 0 || !f.onground && !rf || RACE.active){ B.shOn = false; f._aiShU = 0; return; }
+  if(B.shOn && !rf && (f._zsOutT || -1) >= B.shT0){ B.shOn = false; f._aiShU = 0; B.shCd = now + AIS_CD; return; }   // it played a move out of the bubble: the hold is over
   if(B.shOn){
     const tell = rf ? brainShotTell(f, B) : brainSwingTell(f, t, dist);
     if(tell) B.shSeen = now;
