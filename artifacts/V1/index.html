@@ -64474,6 +64474,7 @@ function step(){
     // HIT FREEZE: held still by a hit they are in. Nothing of theirs runs this frame -- no move, no timer, no thinking -- so every
     // countdown picks up where it stopped; a person's presses wait for the frame it ends (hitStopHold).
     if(f._hitStop > 0 && f._hsAt !== hazardT){
+      if(f._spr || f._sprD){ f._spr = 0; f._sprD = 0; }   // SPRINT: held still by a hit (it ends when hit)
       if(f.frozen > 0) f.frozen--;   // SMASH AUDIT FIXES (2026-11-04): a freeze is FREEZE_MAX (45) frames of wall time, hit-stop included: its timer and the 70-frame gap kept still through the hit-stop (3 frames for a light hit, 6 for a smash), so a 45-frame freeze held a foe 48-51 frames
       if(f._freezeLock > 0) f._freezeLock--;
       hitStopHold(f, f.controller || (f.you ? "local" : "ai"), pad); continue; }
@@ -65019,6 +65020,7 @@ function step(){
       if(f._hold) holdTick(f, inp);
       if(f._mv) mvTick(f, inp);   // a tilt, an aerial or a side special in progress
       if(f.ctrlRev>0){ const l=inp.left; inp.left=inp.right; inp.right=l; }  // Remote hack: reversed controls
+      if(f._spr) sprintTick(f, inp);   // SPRINT: goes on while the same arrow is down on the ground (sprintTick)
       // HASTE EASES OFF. It used to be 1.5x flat and then nothing, so the frame it ran out felt like the
       // fighter had stopped dead while you were still holding the key. Over the last 20 frames it slides back.
       const fsk = f.onground ? fst.run : fst.air;   // FIGHTER STATS: the run on the ground, the drift in the air (on top of everything else)
@@ -65044,6 +65046,7 @@ function step(){
       else { const hk = f._hasteT>0 ? (1 + 0.4*Math.min(1, f._hasteT/20)) : 1;
         const cb = (f.slowed>0?MAXVX*0.55:MAXVX)*hk*(f._grasstree>0?0.85:1)*(f._noBattery>0?0.75:1)*(f._slowmoT>hazardT?0.5:1)*ctfSpeedK(f)*rainRunK();   // a tree walks; reserve power is slow (THE RAIN twist: slower while it rains)
         let cap = cb*fsk;
+        if(f._spr) cap *= SPRINT.k;   // SPRINT: 1.4 times the run's cap while it lasts (sprintTick has ended it in the air)
         // FIGHTER STATS: a running jump eases down from the run's speed to the drift's (runEaseCap). In the air the cap is the drift's,
         // but it never cuts the speed the fighter already had below the easing ceiling: the momentum is kept while the ceiling slides
         // down (a drift against it still slows it), and it is never added to.
@@ -79769,7 +79772,7 @@ function zsRadius(f){
   return f.r*ZS.bubble*(0.4 + 0.6*k)*(0.5 + 0.5*up);
 }
 function zsClear(f, full){
-  f._zsOn = 0; f._rfT = 0; f._zsBrk = 0; f._zsF = 0; f._rfF = 0; f._zsLast = null; f._rfCd = 0; f._zKey = false; f._zsOut = null;
+  f._zsOn = 0; f._rfT = 0; f._zsBrk = 0; f._zsF = 0; f._rfF = 0; f._zsLast = null; f._rfCd = 0; f._zKey = false; f._zsOut = null; f._spr = 0; f._sprD = 0;
   if(full) f._zsM = ZS.max;
 }
 // Why it cannot be up: a hit, a freeze, a grab, a move of its own, a charge, a cinematic.
@@ -79890,20 +79893,68 @@ function zsOutGo(f, age){
     : (f.atkCd <= 0 && !f._hold && !f._gb && !f._mv);
   return ok ? k : null;
 }
+// ============================================================
+//  SPRINT  (the owner, 2026-11-05: "while moving and then tapping z, you should sprint")
+// ============================================================
+// Z does two things on the ground. Standing still it is the shield (or the reflector) exactly as it ever was. While a PERSON is moving left or right on the ground, a press of
+// Z starts a 6-frame decision (SPRINT.decide): let go inside it and it was a TAP, so the fighter SPRINTS; still held on frame 6 and the bubble (or the reflector) comes up right
+// then as a normal hold, so from a run it comes up 6 frames later than from standing still (its own timings after that are unchanged). A sprint is SPRINT.k (1.4) times the run's
+// speed cap, lasts while the same arrow stays down, and ends on a stop, a turn, a jump, an attack, a hit, the air or a raised shield. No cost, no meter, no cooldown. Ground only.
+// A CPU never sprints and its Z (brainShield) is unchanged. Walking, running, jumping and the air are not touched: without a Z tap nothing here changes a number.
+// f._spr is the way (-1 or 1) while it lasts (it rides the snapshot: the lean and the dust); f._sprD is the frames since the press while the decision runs (1 on the press frame).
+// A guest's prediction plays the same decision and the same speed (netPredOut: z, sp, zd; netPredRun).
+const SPRINT = { k:1.4, decide:6, minVx:0.8 };
+// Could Z start a decision here: the same rules that let the shield or the reflector come up, and the fighter free to just run.
+function sprintCan(f){
+  if(f.dead || !f.onground || f.ctrlRev > 0 ||stanceStill(f) || f.rooted > 0 || f._lag > 0 || f.atkCd > 0 || f._spPend > 0 || f._smBuf || f._zsBrk > 0 || f._zsOn > 0 || f._rfT > 0 || zsHard(f)) return false;
+  return isReflector(f) ? !(f._rfCd > 0) : zsMeter(f) > 0;
+}
+function sprintSfx(){ noise(0.16, 0.05, 1500, 0, 600); tone(240, 0.12, 'sine', 0.025, 0, 420); }   // a faint whoosh
+function sprintStart(f, d){ f._spr = d; sprintSfx(); for(let i = 0; i < 3; i++) puff(f.x - d*f.r*0.7, f.y + f.r - 3, '#e9e0cc', 1); }
+// Once a frame for a person, from zsStep. 0: nothing, carry on as ever. 1: the decision is running (the keys go through untouched, no shield yet). 2: the decision is over and Z is
+// still down: raise the shield or the reflector now.
+function sprintZ(f, inp, key, edge, hard){
+  if(hard || f.dead || !f.onground || f._zsOn > 0 || f._rfT > 0 || f.ctrlRev > 0){ f._spr = 0; f._sprD = 0; return 0; }
+  const dir = inp.left && !inp.right ? -1 : inp.right && !inp.left ? 1 : 0;
+  if(f._sprD > 0){
+    const n = f._sprD++;   // frames since the press (this frame is n)
+    if(!key){   // let go in time: a tap
+      f._sprD = 0;
+      if(dir && n <= SPRINT.decide && f.atkCd <= 0 && !(f._lag > 0)) sprintStart(f, dir);
+      return 1;
+    }
+    if(!dir || n >= SPRINT.decide){ f._sprD = 0; return 2; }   // stopped moving, or still held at frame 6: it is a hold
+    return 1;
+  }
+  if(edge && dir && f.vx*dir > SPRINT.minVx && sprintCan(f)){ f._sprD = 1; return 1; }
+  return 0;
+}
+// Once a frame in the move step, while it lasts: does it go on, and the dust.
+function sprintTick(f, inp){
+  const d = f._spr;
+  if(!f.onground || f.dead || f.ctrlRev > 0 || (d > 0 ? !(inp.right && !inp.left) : !(inp.left && !inp.right)) || inp.jump || inp.attack || inp.special || inp.smash || inp.grab || inp.fin
+    || f._zsOn > 0 || f._rfT > 0 || f._mv || f._hold || f._gb || f._lag > 0 || f._dashing > 0 || stanceStill(f) || f.rooted > 0){ f._spr = 0; return; }
+  if(hazardT % 3 === 0) puff(f.x - d*f.r*0.7, f.y + f.r - 3, '#e9e0cc', 2);
+}
 // Once a frame, before the fighter's keys are read: raises, holds and drops the bubble or the reflector, and returns the keys that are left to it.
 function zsStep(f, inp){
   if(f.dead){ zsClear(f, false); return inp; }
   if(f._zsF > 0) f._zsF--;
   if(f._rfF > 0) f._rfF--;
   if(f._rfCd > 0) f._rfCd--;
-  const key = !!(inp && inp.shield), edge = key && !f._zKey; f._zKey = key;
+  const key = !!(inp && inp.shield); let edge = key && !f._zKey; f._zKey = key;
   if(f._zsBrk > 0){   // broken: stunned, dizzy, nothing at all
-    f._zsOn = 0; f._rfT = 0;
+    f._zsOn = 0; f._rfT = 0; f._spr = 0; f._sprD = 0;
     if(--f._zsBrk <= 0){ f._zsM = ZS.brkMeter; }
     return { left:false, right:false, jump:false, attack:false, special:false, smash:false, up:false, down:false, grab:false, fin:false, shield:false };
   }
   const hard = zsHard(f);
   const lockAtk = { attack:false, special:false, smash:false, grab:false, fin:false };
+  if(isHumanCtrl(f)){   // SPRINT: a person's Z while moving on the ground is a 6-frame decision (a CPU's Z is unchanged)
+    const sr = sprintZ(f, inp, key, edge, hard);
+    if(sr === 1) return inp;
+    if(sr === 2) edge = true;
+  } else if(f._spr || f._sprD){ f._spr = 0; f._sprD = 0; }
   if(isReflector(f)){
     f._zsOn = 0;
     if(f._rfT > 0){
@@ -104955,6 +105006,7 @@ function drawFighter(f){
       const k=Math.min(1,(f.vy-6)/10); sy=1+0.18*k; sx=1-0.12*k; shear=-0.10*k*f.face;
     } else if(Math.abs(f.vx)>2){                 // running: slight forward lean/stretch
       const k=Math.min(1,(Math.abs(f.vx)-2)/4.4); shear=-0.12*k*Math.sign(f.vx); sy=1+0.04*k; sx=1-0.02*k;
+      if(f._spr){ shear=-0.22*Math.sign(f.vx||f._spr); sy=1.06; sx=0.97; }   // SPRINT: a deeper forward lean
     }
     // A fighter can OPT OUT of some of the universal deform. Rocky is a solid stone: a rock that
     // stretches like taffy on every hop reads as rubber, so `squash` scales how much of the shared
