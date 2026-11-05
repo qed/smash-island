@@ -17127,6 +17127,7 @@ function viewRect(){ const z = viewZoom(), hw = W/(2*z), hh = H/(2*z), cx = camX
   return { x:cx - hw, y:cy - hh, w:2*hw, h:2*hh }; }
 // The buttons an online input message carries (NET.sendInput, NET.onMessage, netRemoteInput).
 const NET_BUTTONS = ['left','right','jump','down','attack','special','smash','flag','edit','shield'];   // (shield last: a bit the older rooms never set)
+const NET_IN_Z = 1 << NET_BUTTONS.indexOf('shield');   // (SPRINT: Z is a tap or a hold: netPredRun plays that decision, so Z alone does not stop the prediction)
 const NET_IN_MASK = (1 << NET_BUTTONS.length) - 1, NET_IN_ACT = NET_IN_MASK & ~15;   // (bit i is NET_BUTTONS[i]); every button; the ones that start a move
 
 // ============================================================
@@ -106767,6 +106768,7 @@ const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering
   '_growT',   // (Puffball's Grow: until when she is grown -- the pink Attack Up icon; her size itself rides in r)
   '_baldUntil', '_fsBaldUntil',   // (FSA lane a: Spikey's spikes are gone until then -- his Can't Hold It In special, and his Final Smash's release (the render-only one))
   'fsGlow','fsId','fsT','fsWind','fsDur','fsAx','fsAy','fsBx','fsBy','fsCx','fsCy',   // FINAL SMASH BALLS: the glow, and which Final Smash is on, how far in, and where it began (all a client needs to draw it)
+  '_spr',   // (SPRINT: the way a sprinting fighter runs, -1 or 1 -- the lean drawFighter draws)
   'fsC','fsLk','fsPd'];   // (fsPd: Pencil's van's road in px, 0 when it stays) ...the catch's frames left, and whose catch holds this fighter (+1) (CATCH, THEN CINEMATIC)
 function netFighter(f){
   const o = { idx:f.idx, name:f.name, color:f.color, x:Math.round(f.x), y:Math.round(f.y), r:f.r, face:f.face,
@@ -107370,6 +107372,7 @@ function netPredOut(f){
   const capB = (f.slowed>0?MAXVX*0.55:MAXVX)*(f._hasteT>0 ? (1 + 0.4*Math.min(1, f._hasteT/20)) : 1)*(f._grasstree>0?0.85:1)*(f._noBattery>0?0.75:1)*(f._slowmoT>hazardT?0.5:1)*sk;
   const jv = (SETTINGS.mode==='ctf' ? ctfJumpV(f) : JUMP*fst.jump) * (f._sinkT > hazardT ? FX2.sand.jump : 1);
   const hopOk = mtOn(f) && jv === JUMP*fst.jump;   // (step(): a boosted, laden or sunk jump is never cut short)
+  if(isHumanCtrl(f) && (sprintCan(f) || f._spr || f._sprD > 0)){ o.z = 1; if(f._spr) o.sp = f._spr; if(f._sprD > 0) o.zd = f._sprD; }   // SPRINT: Z may start a decision (z), the sprint's way (sp) and how far the decision is (zd)
   o.j = f.jumps; o.at = f._airT || 0; if(f._sqUsed) o.q = 1;   // (q: Squishy Top's bounce spent this airtime)
   if(f._hitJumpV && f._hitJumpV !== 1 && f.jumps === 1 && !f.onground) o.hj = r3(f._hitJumpV);   // the one jump left is the one a hit gave back, lower (hitJumpBack)
   o.s = (f._jp ? 1 : 0) | (f._hop ? 2 : 0) | (f._ff ? 4 : 0) | (f._dnPrev ? 8 : 0) | (mtOn(f) ? 16 : 0) | (hopOk ? 32 : 0) | ((f.kit && f.kit.special==='airrel') ? 64 : 0);
@@ -107393,14 +107396,25 @@ function netPredRun(a, pr, to, team, sq){   // sq: the Spongys on the stage (SQU
   // the walls: the one touched last (side, the frame, which face: mtWallJump's window and once-per-face rule), the faces kicked off this airtime
   const wjv = k[10], cliffs = !!FLOOR_SEGS && !big, w = Array.isArray(pr.w) && pr.w.length === 3 ? pr.w : null, cl = Array.isArray(pr.cl) ? pr.cl : null, clLim = cl ? +cl[0] || 0 : 0;
   P.sqU = !!pr.q;
+  P.sp = +pr.sp || 0; P.zd = +pr.zd || 0; const zm = pr.z ? NET_IN_Z : 0;   // SPRINT (see sprintZ)
   P.ws = w ? w[0] : 0; P.wt = w ? pr.a - w[1] : -1e9; P.wid = w ? String(w[2]) : ''; P.used = Array.isArray(pr.wu) ? pr.wu.slice(0, 32).map(String) : []; P.clT = cl ? +cl[1] || 0 : 0;
   for(let g = from; g <= to; g++){ mcEnter(P); try {   // (MOON CAVES: in the predicted body's own chart)
     if(MCAVE && MCAVE.on) plats = platRects();
-    const m = N.inMaskAt(g);
-    if((m & NET_IN_ACT) && !(N.inMaskAt(g - 1) & NET_IN_ACT)) break;   // (JURY 1: only a PRESS starts a move; a key already down when the host said "free" did not, and used to stop the fighter dead)
+    const m = N.inMaskAt(g), mp = N.inMaskAt(g - 1);
+    if((m & NET_IN_ACT & ~zm) && !(mp & NET_IN_ACT & ~zm)) break;   // (JURY 1: only a PRESS starts a move; a key already down when the host said "free" did not, and used to stop the fighter dead)
     if(sq && sq.length && !P.g && !P.sqU && P.vy > 0){ for(const s of sq){ const top = spongyTopHit(P.x, P.y, P.r, P.vy, s); if(top != null){ P.y = top - P.r; P.vy = -SPONGY.top.v; P.sqU = true; P.ff = false; P.hop = false; break; } } }   // SQUISHY TOP (spongyStep: the host's rule, before it moves)
     const L = m & 1, R = m & 2, J = m & 4, D = m & 8;
     if(D && P.g) break;
+    if(zm){   // SPRINT: the host's sprintZ and sprintTick on the guest's keys. A Z that is not a tap in a run (a shield, a reflector) is the host's alone.
+      const dir = L && !R ? -1 : R && !L ? 1 : 0, zOn = !!(m & zm), zEdge = zOn && !(mp & zm);
+      if(!P.g){ P.sp = 0; P.zd = 0; }
+      if(P.zd > 0){
+        const n = P.zd++;
+        if(!zOn){ P.zd = 0; if(dir && n <= SPRINT.decide) P.sp = dir; }
+        else if(!dir || n >= SPRINT.decide) break;   // the bubble or the reflector comes up here
+      } else if(zEdge){ if(P.g && dir && P.vx*dir > SPRINT.minVx) P.zd = 1; else break; }
+      if(P.sp && (!P.g || J || (P.sp > 0 ? !(R && !L) : !(L && !R)))) P.sp = 0;
+    }
     // move (step(): ---- move ----)
     const vx0 = Math.abs(P.vx), mv = P.g ? k[0] : k[1];
     if(L){ P.vx -= mv; P.face = -1; }
@@ -107408,6 +107422,7 @@ function netPredRun(a, pr, to, team, sq){   // sq: the Spongys on the stage (SQU
     if(!L && !R && P.g) P.vx *= (P.ice > 0 ? 0.99 : FRICTION);
     if(P.ice > 0) P.ice--;
     let cap = P.g ? k[2] : k[3];
+    if(P.sp) cap *= SPRINT.k;   // SPRINT: 1.4 times the run's cap
     if(!P.g && k[2] > k[3] && vx0 > cap) cap = Math.min(runEaseCap(cap, k[2], P.at + 1), vx0);
     P.vx = Math.max(-cap, Math.min(cap, P.vx));
     // jump, and the short hop
