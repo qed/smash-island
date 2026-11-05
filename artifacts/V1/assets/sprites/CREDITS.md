@@ -1189,6 +1189,8 @@ jacknjellify's designs are theirs. `attacks/tvspider.png` (336x300, transparent)
 with its legs taken off by `scripts/make-tv-spider.mjs` (the fur's own pixels; the Final Smash draws its own animated legs, in the picture's brown-grey) and the rest cropped and scaled to 300 px tall. Its pick is `tvspider` in
 `scripts/fetch-attack-sprites.mjs` and its manifest row is in `scripts/attack-sprite-manifest.json`. A static file: a guest draws the same picture; nothing about it is sent online. The drawn ring is what shows until the file loads.
 
+Show sprites, batch 1 (Final Smash props, 2026-11-04). Battle for Smash Island is an unaffiliated, non-commercial fan work and jacknjellify's designs are theirs. Five props are drawn from the show's own pictures on the Battle for Dream Island wiki (battlefordreamisland.fandom.com), scaled down and, for the trebuchet, cut in two by `scripts/make-fs-show-props.mjs`: `attacks/gelsign.png` (300x123, File:SteakhouseSign.png, Gelatin's sign), `attacks/poppan.png` (300x88, File:Pan new asset 2020 (2).png, Poppy's pan), `attacks/trebpost.png` and `attacks/trebarm.png` (480x426 each, File:Tennis Ball's Trebuchet.png, the frame and the arm), `attacks/bbnet.png` (300x253, File:Basketball Net.png, Basketball's rim and net) and `attacks/pinballoon.png` (201x256, File:RedBalloon.png, Pin's balloon). Static files: a guest draws the same pictures; nothing about them is sent online. The drawn shapes are what show until a file loads.
+
 ## Assist trophies
 
 "sprites for assist trophies." The thirteen assists of ASSIST_ROSTER are BFDI characters; twelve have a render on
