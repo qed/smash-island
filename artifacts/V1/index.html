@@ -64468,6 +64468,7 @@ function step(){
     mcEnter(f); try {   // MOON CAVES: the rest of this fighter's frame runs in its own chart (mcEnter: nothing at all on any other map)
     if(MCAVE && MCAVE.on) plats = platRects();
     STEP_F = f;
+    zsGuard(f);   // SHIELD (Z): a blocked hit leaves no new burn, poison, freeze or other status (zsGuard)
     // ---- input (local human / remote player / AI) ----
     let inp={left:false,right:false,jump:false,attack:false,special:false,smash:false};
     const ctrl = f.controller || (f.you ? "local" : "ai");
@@ -79753,11 +79754,29 @@ function zsBreak(f){
   zsSfx('break');
   for(let i = 0; i < 14; i++) puff(f.x, f.y, f.color || '#ffffff', 6);
 }
+// NO NEW STATUS THROUGH THE BUBBLE (the owner, 2026-11-05): a burn, poison, bleed, freeze, slow, root, DoT or stun that was ALREADY on the shielder keeps running (burn and the like
+// tick through zsBlock: opts.tick), but a blocked hit applies no new one. A hit's effects are written by about seventy callers after applyHit returns, so they are caught
+// where they land: while the bubble is up the fighter's statuses are noted at the start of each frame (zsGuard), and if a blow was blocked since the note (a count, _zsBlk), anything that grew
+// goes back to the noted value (a new _ticks object goes too). Nothing grows on a frame with no blocked blow, so a real status from another source is only caught
+// in the same frame as a block.
+const ZS_STATUS = ['burn', '_poisonT', 'bleed', 'frozen', 'slowed', '_soakT', 'rooted', 'ctrlRev', 'iceUntil', 'weakened', 'curseStacks', 'defined', 'defineStacks', '_cookieT', '_hushT', 'hitstun', '_stunFx'];
+function zsGuard(f){
+  const g = f._zsG;
+  if(g && (f._zsBlk || 0) !== g.n){
+    for(const k of ZS_STATUS){ if(typeof f[k] === 'number' && f[k] > g.v[k]) f[k] = g.v[k]; }
+    if(f._ticks !== g.ticks) f._ticks = g.ticks;
+  }
+  if(f._zsOn > 0 && !f.dead){
+    const v = {}; for(const k of ZS_STATUS) v[k] = typeof f[k] === 'number' ? f[k] : 0;
+    f._zsG = { n:(f._zsBlk || 0), v:v, ticks:f._ticks };
+  } else f._zsG = null;
+}
 // A blow on a raised bubble (called from applyHit). True: it was taken. Only an enemy fighter's hit counts; burn and the like (opts.tick) go on.
 function zsBlock(t, dmg, from, opts){
   if(!(t._zsOn >= ZS.start) || !from || from === t || fighters[from.idx] !== from || from.team === t.team || !(dmg > 0)) return false;
   if(opts && (opts.tick || opts.unblockable)) return false;
   if(t._fsLock || t.hitstun > 0) return false;
+  t._zsBlk = (t._zsBlk || 0) + 1;   // (zsGuard: statuses that land after this go back)
   const L = t._zsLast || (t._zsLast = {}), again = L[from.idx] != null && hazardT - L[from.idx] < ZS.grace;
   L[from.idx] = hazardT;
   if(!again){
