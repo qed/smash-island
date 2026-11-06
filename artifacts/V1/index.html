@@ -79815,7 +79815,7 @@ const SPECIAL_CD_SCALE = 0.8;
 // SHOTS only (melee and grabs go through it, so the user is open): the shot becomes the reflector's, with 1.3x its damage (at most 12) and 1.8x its
 // speed, and a streak behind it. Gaty's Reflect Stance (the down special) is a different move and is untouched.
 const REFLECTOR_FIGHTERS = new Set(['Toothpaste', 'Magnet', 'Tennis Ball', 'David', 'Puffball', 'Firey', 'Bomby', 'Lollipop', 'Pencil']);
-const ZS = { max:50, start:4, endLag:8, drain:0.06, regen:0.12, brkFrames:120, brkMeter:30, grace:8, push:3.5, bubble:1.55 };
+const ZS = { max:50, start:4, endLag:5, dropGrace:3, drain:0.06, regen:0.12, brkFrames:120, brkMeter:30, grace:8, push:3.5, bubble:1.55 };
 const RF = { start:6, active:36, endLag:22, cd:30, dmgK:1.3, dmgCap:12, spdK:1.8, maxTurns:3 };
 // A GRAB BREAKS A SHIELD (the owner, 2026-11-06: "while in shield, ppl can just grab to force me out of it" -- "grabs should break shield and stun the grabber. no damage tho."):
 // a grab that connects with a raised bubble does not start the grab: the bubble BREAKS (the shatter and the sound; the meter goes to 0 and the shield stays down for ZS.brkFrames,
@@ -79830,7 +79830,7 @@ function zsRadius(f){
   return f.r*ZS.bubble*(0.4 + 0.6*k)*(0.5 + 0.5*up);
 }
 function zsClear(f, full){
-  f._zsOn = 0; f._rfT = 0; f._zsBrk = 0; f._zsLk = 0; f._zsGS = false; f._zsF = 0; f._rfF = 0; f._zsLast = null; f._rfCd = 0; f._zKey = false; f._zsOut = null; f._spr = 0; f._sprD = 0;
+  f._zsOn = 0; f._zsDropT = 0; f._rfT = 0; f._zsBrk = 0; f._zsLk = 0; f._zsGS = false; f._zsF = 0; f._rfF = 0; f._zsLast = null; f._rfCd = 0; f._zKey = false; f._zsOut = null; f._spr = 0; f._sprD = 0;
   if(full) f._zsM = ZS.max;
 }
 // Why it cannot be up: a hit, a freeze, a grab, a move of its own, a charge, a cinematic.
@@ -79882,7 +79882,7 @@ function zsGuard(f){
 }
 // A blow on a raised bubble (called from applyHit). True: it was taken. Only an enemy fighter's hit counts; burn and the like (opts.tick) go on.
 function zsBlock(t, dmg, from, opts){
-  if(!(t._zsOn >= ZS.start) || !from || from === t || fighters[from.idx] !== from || from.team === t.team || !(dmg > 0)) return false;
+  if(!(t._zsOn >= ZS.start || t._zsDropT > 0) || !from || from === t || fighters[from.idx] !== from || from.team === t.team || !(dmg > 0)) return false;
   if(opts && (opts.tick || opts.unblockable)) return false;
   if(t._fsLock || t.hitstun > 0) return false;
   t._zsBlk = (t._zsBlk || 0) + 1;   // (zsGuard: statuses that land after this go back)
@@ -79900,7 +79900,7 @@ function zsBlock(t, dmg, from, opts){
 function zsShot(f, pr){
   const own = pr.ownerObj;
   if(!own || own === f || own.team === f.team || !(pr.dmg > 0) || pr.life <= 0) return false;
-  if(f._zsOn >= ZS.start){
+  if(f._zsOn >= ZS.start || f._zsDropT > 0){
     const R = Math.max(zsRadius(f), f.r);
     if(Math.hypot(pr.x - f.x, pr.y - f.y) >= R + (pr.r || 6)) return false;
     f._zsM = zsMeter(f) - pr.dmg; f._zsF = 8; zsSfx('block'); pr.life = 0;
@@ -80008,6 +80008,7 @@ function zsStep(f, inp){
   if(f.dead){ zsClear(f, false); return inp; }
   if(f._zsF > 0) f._zsF--;
   if(f._rfF > 0) f._rfF--;
+  if(f._zsDropT > 0) f._zsDropT--;   // the 3 frames after a let-go in which the lowering bubble still blocks (ZS.dropGrace)
   if(f._rfCd > 0) f._rfCd--;
   const key = !!(inp && inp.shield); let edge = key && !f._zKey; f._zKey = key;
   if(f._zsBrk > 0){   // broken: stunned, dizzy, nothing at all
@@ -80050,7 +80051,7 @@ function zsStep(f, inp){
       if(jump && !hard && f.onground) f._zsJump = { t:hazardT, age:f._zsOn };   // (a jump out of the bubble: smashCancel holds its up smash to the smash cooldown)
       const lag = !hard && f.onground && !key && !jump;   // let go: the end lag; a jump, a hit, the air: none
       f._zsOn = 0; f._zsLast = null;
-      if(lag){ f._lag = Math.max(f._lag || 0, ZS.endLag); return { left:false, right:false, jump:false, attack:false, special:false, smash:false, up:false, down:false, grab:false, fin:false, shield:false }; }
+      if(lag){ f._zsDropT = ZS.dropGrace; f._lag = Math.max(f._lag || 0, ZS.endLag); return { left:false, right:false, jump:false, attack:false, special:false, smash:false, up:false, down:false, grab:false, fin:false, shield:false }; }
       return jump && !hard ? Object.assign({}, inp, lockAtk) : inp;
     }
     const age = f._zsOn;   // frames since it went up (the Z press is frame 0)

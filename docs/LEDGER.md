@@ -1502,3 +1502,4 @@ Every dash now reaches the Life Ring window or more at both distances, and a foe
 
 Counted row by row: A1-A5, B1-B11, C1-C8, D1-D7, E1-E8, E10-E19, F1-F26, G1-G10, G12-G49, H1-H20, O3-O19 and O21.
 Suite: **2604 passed (135 files) on the shipped file, with H20**.
+- **SHIELD DROP (2026-11-06, the owner: "it felt like the fighters were hitting me immediately oos"; chose 'Both'):** the bubble's end lag is 5 frames (was 8: `ZS.endLag`), and for 3 frames after a let-go on the ground the lowering bubble still blocks hits and shots (`ZS.dropGrace`, `_zsDropT`). Measured with a scripted let-go: blocks at 0, 1, 2 frames after the drop, a hit at 3 and 4. A jump out of the shield, a hit, or the air still drop it at once with no lag and no grace. Nothing else changed; no render seen.
