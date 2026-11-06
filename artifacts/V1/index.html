@@ -20099,6 +20099,8 @@ function pcSave(){
     BOSS_ATK_ID, tendrils, JAB_BY, STEP_F, HITSTOP_WU, FINX_SEQ, VOLLEY_SEQ, HIT_CAST, IMPACT_DUST, IMPACT_DEBRIS, IMPACT_SCARS,
     IMPACT_OUT, MATCH_TWIST, CAKE_FX, RIVAL_NAME, RIVAL_KILLS, _cpuSeeT, SMASH_PROJ, NET_PROJ_SEQ, COS_KO_FX, COS_KO_OUT, HA_FADE_NEXT,
     oneFx, cobsFx, MCAVE, camAng,   // (MOON CAVES: the disc and the view's turn are one match's too, like the world; null and 0 on every other map)
+    BASKET,   // (REACH THE BASKET: null on every other map)
+    JAWB,   // (SOMEBODY'S INSIDE: null on every other map)
     _koc:Object.assign({}, KOC), _fs:Object.assign({}, FS), _hsf:Object.assign({}, HITSTOP_FIN), _stom:Object.assign({}, STOMACH),
     _fsf:FSF.pend,   // (FS FLOOR: the Final Smashes waiting to settle their foes are one match's own; fsReset gives a match a NEW list, never clears one in place)
     _han:pcCopyHaN(HA_N), _ha:HIT_ART.slice(), _dh:DEBUG_HITS.slice(),
@@ -20117,6 +20119,7 @@ function pcLoad(s){
   MATCH_TWIST = s.MATCH_TWIST; CAKE_FX = s.CAKE_FX; RIVAL_NAME = s.RIVAL_NAME; RIVAL_KILLS = s.RIVAL_KILLS; _cpuSeeT = s._cpuSeeT;
   SMASH_PROJ = s.SMASH_PROJ; NET_PROJ_SEQ = s.NET_PROJ_SEQ; COS_KO_FX = s.COS_KO_FX; COS_KO_OUT = s.COS_KO_OUT; HA_FADE_NEXT = s.HA_FADE_NEXT;
   oneFx = s.oneFx; cobsFx = s.cobsFx; MCAVE = s.MCAVE; camAng = s.camAng;
+  BASKET = s.BASKET; JAWB = s.JAWB;
   pcSetObj(KOC, s._koc); pcSetObj(FS, s._fs); pcSetObj(HITSTOP_FIN, s._hsf); pcSetObj(STOMACH, s._stom);
   pcSetObj(HA_N, pcCopyHaN(s._han));
   FSF.pend = s._fsf;
@@ -20137,6 +20140,7 @@ function pcBase(){
     tendrils:[], JAB_BY:null, STEP_F:null, HITSTOP_WU:0, FINX_SEQ:0, VOLLEY_SEQ:0, HIT_CAST:0, IMPACT_DUST:[], IMPACT_DEBRIS:[],
     IMPACT_SCARS:[], IMPACT_OUT:[], MATCH_TWIST:null, CAKE_FX:null, RIVAL_NAME:null, RIVAL_KILLS:{}, _cpuSeeT:0, SMASH_PROJ:null,
     NET_PROJ_SEQ:0, COS_KO_FX:[], COS_KO_OUT:[], HA_FADE_NEXT:0, oneFx:[], cobsFx:[], MCAVE:null, camAng:0,
+    BASKET:null, JAWB:null,
     _koc:Object.assign({}, PCAM_BOOT.koc), _fs:Object.assign({}, PCAM_BOOT.fs), _hsf:Object.assign({}, PCAM_BOOT.hsf), _stom:Object.assign({}, PCAM_BOOT.stom),
     _fsf:[], _han:{}, _ha:[], _dh:[], _live:0, _elim:0 });
   return s;
@@ -21495,6 +21499,9 @@ function beginMatchNow(){
   try{ blurFormControl(); }catch(e){}   // a dropdown or text box the lobby left focused would take every key of this match (see blurFormControl)
   running=true; paused=false; hazardT=0;
   MATCH_TWIST = (EVENT_RUN && !inNetSession()) ? eventTwistKey(EVENT_RUN.m) : null;   // an event match's twist, and no other match's (EVENT FIGHTERS: THE TWISTS)
+  basketBegin();   // REACH THE BASKET (an event twist): X's basket, in every match null but the one that has it
+  jawbBegin();   // SOMEBODY'S INSIDE (an event twist): the jawbreakers, in every match null but the one that has them
+  collectBegin();   // A COMPLETE COLLECTION (an event twist): an empty collection for every fighter, in every match but the one that has it nothing
   EVENT_RESULT = null;   // (the result note is this match's: set at its last KO by eventFinish)
   try{ releaseMappedKeys(); }catch(e){}   // and a new match: a key still down from the last one must not act on this one's first frame
   if(ONEFIGHT.active){ ONEFIGHT.frames = 0; ONEFIGHT.over = false; ONEFIGHT.won = false; ONEFIGHT.result = null; ONEFIGHT.retry = null; }   // her clock starts at zero
@@ -24116,6 +24123,7 @@ function itemSpawnInterval(){
   switch(SETTINGS.itemRate){ case 1: return 780; case 2: return 460; case 3: return 260; default: return 0; }
 }
 function spawnItem(){
+  if(BASKET) return;   // REACH THE BASKET (an event twist): no crate falls from the sky; the basket hands them out (basketStep)
   if(MCAVE && MCAVE.on){ mcSpawnItem(); return; }   // MOON CAVES: on a floor, never from space
   const gy = groundY();
   const x = floorSafeX(120 + Math.random()*(WW-240), 50);   // (REAL EDGES: it comes down over the floor, not a gap)
@@ -24198,6 +24206,7 @@ function updateItems(){
 }
 function pickUpItem(f, it){
   it.taken = true;
+  if(f._col) collectTake(f, it.kind);   // A COMPLETE COLLECTION (an event twist): a fighter with the number is in the twist, and no other match has one
   switch(it.kind){
     case "heal":      f.pct = Math.max(0, f.pct - 25); for(let i=0;i<10;i++) puff(f.x,f.y-10,'#6ff07a',5); break;
     case "marmalade": f.pct = Math.max(0, f.pct - 40); for(let i=0;i<12;i++) puff(f.x,f.y-10,'#f0a83a',5); break;
@@ -82883,6 +82892,7 @@ function damageTurret(pr, dmg){
 function hitTurrets(f, cx, cy, rad, dmg){
   if(!f || f.team === undefined) return;
   if(SMASHBALL) fsBallHit(f, cx, cy, rad, dmg);   // every melee hitbox passes here: the Smash Ball is struck by it too (FINAL SMASH BALLS)
+  if(JAWB) jawbHit(f, cx, cy, rad, dmg);   // ...and a jawbreaker (SOMEBODY'S INSIDE, an event twist: null in every other match)
   for(const pr of projectiles){
     if(!pr.turret || pr.life <= 0) continue;
     const o = pr.ownerObj;
@@ -89381,6 +89391,7 @@ function eliminate(f){
   if(KOC.over) return;   // THE LAST KO decided the match: nobody else is knocked out while it plays out (kocHold)
   SFX.ko();
   if(f.fsGlow>0 || f._fs) fsOnKo(f);   // the glow (or a Final Smash under way) goes with the stock
+  if(f._col > 1) collectSpill(f);   // A COMPLETE COLLECTION (an event twist): the kinds held fall back onto the stage as loose items
   if(f._fsLock) fsLockOff(f, true);   // a foe a Final Smash caught is let go (CATCH, THEN CINEMATIC)
   // ONE FALL, ONE STOCK (the owner, 2026-10-29: "i take two stocks sometimes when falling"). Whoever was dragging this fighter down (DROPS CARRY)
   // or holding them in a grab lets go of them here. The drop kept a fighter it carried off the stage on its list, and the frame after they came
@@ -89886,12 +89897,12 @@ const EVENT_MATCHES = {
   // is 8-Ball, Golf Ball and Tennis Ball (BFB 1: Golf Ball's basket plan, Tennis Ball's trebuchet); "Lick Your Way to Freedom" is BFB 2, the jawbreaker
   // he bit Golf Ball out of -- not re-checked against the wiki in this job (question 15), which had no way to it.
   '8-Ball': [
-    { n:1, name:'Basket Into X', kind:'duel', stage:'goiky', sides:[['you'], ['8-Ball']], items:'throw', smashBalls:false, twist:null, stocks:2 },   // Goiky Field, throwables only (the BFB 1 basket)
+    { n:1, name:'Basket Into X', kind:'duel', stage:'goiky', sides:[['you'], ['8-Ball']], items:'throw', smashBalls:false, twist:'basket', stocks:2 },   // Goiky Field, throwables only (the BFB 1 basket) -- and no crates fall: they come from X's one floating basket (REACH THE BASKET)
     // THE 3 VS 1 (O29): you alone against 8-Ball, Golf Ball and Tennis Ball -- his team (the design's "8-Ball + Golf Ball + Tennis Ball vs you + Blocky
     // + Pencil", Blocky and Pencil gone); the name still fits. The design names no stage or items for it: the Teams arena in Grand Plains' sky and
     // ground (no hazard, and neither of his other two stages), the usual items and no Smash Balls, as The Alliance has none. One word each to change.
     { n:2, name:'A Better Name Than That', kind:'3v1', stage:'grandplains', sides:[['you'], ['8-Ball', 'Golf Ball', 'Tennis Ball']], items:'on', smashBalls:false, twist:null, stocks:2, youStocks:3 },
-    { n:3, name:'Lick Your Way to Freedom', kind:'challenge', stage:'pillars', sides:[['you'], ['8-Ball'], ['Golf Ball'], ['Lollipop']], items:'food', smashBalls:false, twist:null, stocks:2 },   // Stone Pillars, food only
+    { n:3, name:'Lick Your Way to Freedom', kind:'challenge', stage:'pillars', sides:[['you'], ['8-Ball'], ['Golf Ball'], ['Lollipop']], items:'food', smashBalls:false, twist:'inside', stocks:2 },   // Stone Pillars, food only -- and jawbreakers drop, most empty, one in three with somebody inside (SOMEBODY'S INSIDE)
   ],
   // BLACK HOLE (build step 11, kit 4). The design's three (event-fighters-phase1.md, "The 30 event matches"): Gravity, Death P.A.C.T. Again and
   // Back to the Top. THE TEAM, CHECKED (question 15): Remote and Tree are his teammates in TPOT's Death P.A.C.T. Again -- the wiki's episode pages
@@ -89933,8 +89944,9 @@ const EVENT_MATCHES = {
     // and not the duel's; the design names none). The usual items, but no Smash Balls (one would nearly always fall to the side with three).
     { n:2, name:'Beep', kind:'3v1', stage:'grandplains', sides:[['you'], ['Cloudy', 'Leafy', 'Woody']], items:'on', smashBalls:false, twist:null, stocks:2, youStocks:3 },
     // THE COLLECTION: he collects everything. Sky Towers with lots of items, a free-for-all of four: you, Cloudy, Yellow Face and Rocky (his TPOT
-    // team, the design says). Smash Balls as usual.
-    { n:3, name:'The Collection', kind:'challenge', stage:'skytower', sides:[['you'], ['Cloudy'], ['Yellow Face'], ['Rocky']], items:'lots', smashBalls:true, twist:null, stocks:2 },
+    // team, the design says; the wiki's TPOT 1, as read for this twist's pick, has Rocky forming a team with Yellow Face and Cloudy). Smash Balls as usual -- they stay,
+    // and a complete collection is a second way to a Final Smash (A COMPLETE COLLECTION: every fighter keeps one of the kinds of item they pick up).
+    { n:3, name:'The Collection', kind:'challenge', stage:'skytower', sides:[['you'], ['Cloudy'], ['Yellow Face'], ['Rocky']], items:'lots', smashBalls:true, twist:'collect', stocks:2 },
   ],
   // PIE (build step 13). The design's three ("The 30 event matches"), the team slot a 3 vs 1 as every event fighter's. The teams are the design's: the BFDI wiki
   // refuses requests from here (HTTP 402), as it did for the design and its reviewer, so they could not be checked against it (question 15's check, left to the owner).
@@ -90115,7 +90127,7 @@ function eventCap(t){ return t ? t.charAt(0).toUpperCase() + t.slice(1) : t; }
 // What a match's items setting is as an item rate (eventItemPool narrows the kinds).
 const EVENT_ITEM_RATE = { off:0, food:2, on:2, lots:3, throw:2 };
 // The twists built so far (build step 8: "only the twists his matches use"). A match that needs one not built yet is not played without it.
-const EVENT_TWISTS_BUILT = ['sponge', 'pull', 'lowgrav', 'windback', 'fast', 'rain'];   // (pull and lowgrav: Black Hole's two, kit 4; windback and fast: Clock's two, kit 5; rain: Cloudy's, kit 6)
+const EVENT_TWISTS_BUILT = ['sponge', 'pull', 'lowgrav', 'windback', 'fast', 'rain', 'basket', 'inside', 'collect'];   // (pull and lowgrav: Black Hole's two, kit 4; windback and fast: Clock's two, kit 5; rain: Cloudy's, kit 6; basket: 8-Ball's Basket Into X; inside: 8-Ball's Lick Your Way to Freedom; collect: Cloudy's The Collection)
 // Each match's twist in plain words, for the event page and the select screen's strip (never in a match). 'edges' and 'food' are a stage's own
 // edges and an items rule rather than a twist row, shown the same way.
 const EVENT_TWIST_WORDS = {
@@ -90128,6 +90140,9 @@ const EVENT_TWIST_WORDS = {
   windback: { icon:'⏪', short:'wind back', words:"Wind back: every 20 seconds a tick-tock plays, then everyone's damage goes back to what it was 10 seconds earlier. Damage only goes down, and a lost stock never comes back." },
   fast:   { icon:'⏩', short:'fast forward', words:'Fast forward: everyone has the speed power-up all match.' },
   rain:   { icon:'🌧', short:'rain', words:'Rain: 8 seconds of rain, then 8 dry, over and over. Everyone runs 15% slower while it rains.' },
+  basket: { icon:'🧺', short:'reach the basket', words:'Reach the basket: no crates fall from the sky. The only crates come from one floating basket drifting over the middle of the field. Jump into it and a crate lands in your hands to throw. Then it floats off and is back in about 6 seconds, and the longer nobody takes one, the lower it sinks.' },
+  collect: { icon:'🧩', short:'a complete collection', words:"A complete collection: everyone keeps a collection of the kinds of item they pick up, in four slots over their head: a heart, a jam jar, a crate, a power-up, a helper trophy, a Yoyleberry. A kind counts once, so a second heart adds nothing. Fill all four and you glow with a Final Smash, as if you had broken a Smash Ball, and your slots empty. Lose a stock and your kinds fall back onto the stage for anyone to grab. Three of four makes you a target." },
+  inside: { icon:'🍬', short:"somebody's inside", words:"Somebody's inside: about every 20 seconds a jawbreaker drops. Hit it to chip it. Halfway, the top pops off so everyone can see inside, and whoever popped it heals 10%. Most are empty and crumble with a puff of air that pushes you. But one in three has someone inside: whoever lands the last hit lets them out and is safe for 5 seconds. A jawbreaker nobody opens melts. It bonks anyone it falls on, a little." },
 };
 // THE BACKDROPS (section 2, "Twists": "the Cake at Stake place or the A-twos-ment Park, drawn behind a normal stage without their boss or
 // hazards"): the place's sky (BOSS_ARENA_SKY) and its scenery, drawn in the sky behind the stage (drawEventSky), and the colour of the drop under
@@ -90154,6 +90169,8 @@ let EVENT_RUN = null;      // { name, n, m, week, done }: the event match being 
 let EVENT_LOAN = null;     // the player's own settings, lent to it until they are handed back (returnEventLoan)
 let EVENT_RESULT = null;   // { name, n, title, won, alive, pay }: what the last event match paid, for its result screen (showEventNote)
 let MATCH_TWIST = null;    // this match's twists ('sponge'; 'fast+bd:twopark': eventTwistKey), or null: set by beginMatchNow from EVENT_RUN, and by nothing else
+let JAWB = null;           // SOMEBODY'S INSIDE (an event twist, 8-Ball's Lick Your Way to Freedom): null in every other match; else { next, rng, seq, sh } -- see jawbBegin (sh: the one shell now, or null). A guest holds { sh } from the snapshot (s.jw)
+let BASKET = null;         // REACH THE BASKET (an event twist, 8-Ball's Basket Into X): null in every other match; else { t0, n, sx, sy } -- see basketBegin. A guest holds the host's, from the snapshot (s.bk)
 function startEventMatch(){
   const P = EVENT_PICK, ev = eventThisWeek(), m = (P && ev && P.name === ev.name) ? eventMatchOf(ev.name, P.n) : null;
   if(!m || !eventMatchReady(m) || inNetSession()){ EVENT_PICK = null; go(ev ? 'event' : 'title'); return; }   // the week turned under the pick, or no such match
@@ -90171,7 +90188,7 @@ function startEventMatch(){
 }
 // The player's own settings back, every one the match set; and the match is over (no twist, no lineup).
 function returnEventLoan(){
-  EVENT_RUN = null; MATCH_TWIST = null;
+  EVENT_RUN = null; MATCH_TWIST = null; BASKET = null; JAWB = null;
   const L = EVENT_LOAN; if(!L) return;
   EVENT_LOAN = null;
   SETTINGS.mode = L.mode; SETTINGS.count = L.count; SETTINGS.stocks = L.stocks; SETTINGS.teamKey = L.teamKey; SETTINGS.itemRate = L.itemRate;
@@ -90318,7 +90335,7 @@ function twistOn(k){ return !!MATCH_TWIST && (MATCH_TWIST === k || MATCH_TWIST.s
 function twistBackdrop(){ if(!MATCH_TWIST || MATCH_TWIST.indexOf('bd:') < 0) return null; const p = MATCH_TWIST.split('+').find(x=>x.indexOf('bd:') === 0); return p ? p.slice(3) : null; }
 function twistVoid(){ const b = twistBackdrop(), D = b && EVENT_BACKDROPS[b]; return D ? D.void : null; }
 // Once a frame, from step() (the host's): the twists that act through the match.
-function twistStep(){ if(twistOn('fast')) fastForwardStep(); if(twistOn('windback')) windBackStep(); }
+function twistStep(){ if(twistOn('fast')) fastForwardStep(); if(twistOn('windback')) windBackStep(); if(BASKET) basketStep(); if(JAWB) jawbStep(); }
 
 // FAST FORWARD ("everyone has the speed power-up all match"): every fighter holds the speed power-up (`_hasteT`, the item's own effect: run and
 // drift up, its icon), from the match's first frame -- eased in on the power-up's own 20-frame ramp then -- and through every stock. It rides the
@@ -90440,6 +90457,459 @@ function drawRainStreaks(){
     ctx.moveTo(x, y); ctx.lineTo(x - 4, y + 15);
   }
   ctx.stroke(); ctx.restore();
+}
+
+// ---------- EVENT FIGHTERS: REACH THE BASKET (8-Ball's "Basket Into X", the BFB 1 basket; an event twist) ----------
+// The design: no crates fall from the sky. The match's one crate source is X's basket -- the wicker bowl lifted by a propeller on two strings from the
+// BFB 1 baskets ("contents: air") -- drifting slowly side to side over the middle of Goiky Field. A fighter who jumps into it is handed a crate
+// (pickUpItem's 'throw': 16 damage and a solid launch, thrown with the jab as any crate is), unless their hands are full already. Then the
+// propeller whirs, the basket rises out of reach, floats across to the far side and is back over the middle BASK.away frames (6 s) later. It
+// comes back hanging BASK.hiUp px (243) over the centre platform's top: out of reach of the floor (even the strongest jumper's two jumps, jump
+// stat 1.1, stop about 10 px short of it at their best, measured with real keys) and reachable by every fighter's two jumps from the platform (the
+// weakest's, 0.9, comes within about 20 px at its best, a take needs under 54, with the second jump pressed near the top: a late one finds it a
+// little lower soon enough). All of these numbers are the game's own 1100x720 world, where the platform's top is 144 px over the floor. WEIGHED
+// DOWN is the other half of the rule: the longer nobody takes a crate, the lower it sinks, over BASK.sink frames (18 s) down to just over the
+// platform, so a weak jumper can always reach it in the end (measured with real keys from the floor: the strongest, jump 1.1, after 0.8 s of it,
+// an average jumper (1.0) after about 5 s and the weakest (0.9) after about 9 s). The duel becomes a fight over the middle: whoever owns the platform and the basket's
+// air holds the only ranged weapon, and the other has to contest the air or knock the carrier before they throw. Both play it the same way.
+//   Where it is: a PURE FUNCTION of the match clock and its last take (basketAt): B = { t0: the frame of the last take, n: takes so far, sx, sy:
+// where it was taken }. Ready (BASK.away frames after t0) it sways and sinks by the clock alone; for BASK.away frames from t0 it is away, flying
+// from where it was taken to where it returns (basketAt, 'away') and not to be taken. Nothing else of it is kept. The host runs the takes
+// (basketStep, from twistStep); the snapshot carries B in every one (s.bk: a snapshot dropped for a newer takes no take with it) and a guest draws
+// it, and sounds a take, from that and its own copy of the clock (hazardT is the snapshot's frame), so it is where the host has it, frame for frame.
+// It hurts nobody (a crate is thrown, not dropped), grows in over GROW_IN frames as the match starts, and is shown by art and sound only: the bowl
+// (eightDrawBasket, 8-Ball's own), its two strings, a propeller turning (fast for a moment after a take) and a soft glow while it can be taken.
+//   The CPU's item hunt sees it as a crate: basketCrate hands the brain a crate at the basket's place while it is ready and the CPU's hands are
+// empty, and the hunt scores it as it does any crate and jumps for it as for any item above it. Two numbers carry the reach of a field -- BASK.want
+// (the score of a crate for a person who has seen the only one there is) and BASK.reach (the distance the hunt looks, 380 for any other pickup).
+// ONLINE: an event match is offline for now (event rooms are build step 14), so a guest sees it only through the snapshot's s.bk, as the dig floor
+// does; nothing about a fighter's speed, jump or fall is changed, so a guest's own prediction has nothing to add.
+const BASK = { r:30, hiUp:243, loUp:30, floorUp:215, topUp:400, away:360, sink:1080, sway:720, swayK:0.17, far:0.38, rise:0.14, desc:0.3, want:300, reach:900 };
+function basketBegin(){ BASKET = twistOn('basket') ? { t0:-BASK.away, n:0, sx:Math.round(WW*0.5), sy:0 } : null; }   // (ready from the match's first frame: t0 a whole absence ago)
+// The field's own heights it flies by: the centre platform's top (the highest ledge over the middle) and the floor. Rounded the way worldGeo rounds a
+// platform, so a guest, who has the host's rounded ledges, works out the same number.
+function basketGeo(){
+  const gy = groundY(); let pt = null;
+  for(const p of worldPlats){ if(p.solid || !(p.w > 0) || p.x > WW*0.5 || p.x + p.w < WW*0.5 || p.y > gy - 60) continue; if(pt === null || p.y < pt) pt = p.y; }
+  return { gy:gy, pt:Math.round(pt === null ? gy - WH*0.2 : pt) };
+}
+// Where the basket is at frame t, given its last take B: { x, y, ready (it can be taken), u (0..1 through its absence; 1 when ready) }.
+function basketAt(t, B){
+  const g = basketGeo(), cx = WW*0.5, A = WW*BASK.swayK, sway = q=>cx + A*Math.sin(q*2*Math.PI/BASK.sway), bob = q=>3*Math.sin(q*0.07);
+  const hiY = g.pt - BASK.hiUp, loY = Math.max(g.pt - BASK.loUp, g.gy - BASK.floorUp), tR = B.t0 + BASK.away;
+  if(t >= tR){ const k = clamp((t - tR)/BASK.sink, 0, 1); return { x:sway(t), y:hiY + (loY - hiY)*k + bob(t), ready:true, u:1 }; }
+  // away: it rises out of reach at once, floats across to the far side (the one it was not taken on) and comes round to where it hangs again,
+  // coming down over the last of the time
+  const u = clamp((t - B.t0)/BASK.away, 0, 1), top = g.pt - BASK.topUp, e = v=>v*v*(3 - 2*v);
+  const r = e(clamp(u/BASK.rise, 0, 1)), d = e(clamp((u - 1 + BASK.desc)/BASK.desc, 0, 1));
+  const ex = sway(tR), ey = hiY + bob(tR), dir = B.sx < cx ? 1 : -1;
+  let y = B.sy + (top - B.sy)*r; y += (ey - y)*d;
+  return { x:B.sx + (ex - B.sx)*e(u) + dir*Math.sin(Math.PI*u)*WW*BASK.far, y:y, ready:false, u:u };
+}
+// Once a frame, from twistStep (the host's): the nearest living fighter with empty hands in the basket's reach is handed a crate, and it goes away.
+function basketStep(){
+  const B = BASKET; if(!B || hazardT < GROW_IN) return;   // (not before it has grown in)
+  const b = basketAt(hazardT, B); if(!b.ready) return;
+  let best = null, bd = 1e9;
+  for(const f of fighters){
+    if(f.dead || f._holding) continue;
+    const dx = Math.abs(f.x - b.x), dy = Math.abs(f.y - b.y), R = f.r + BASK.r;
+    if(dx < R && dy < R){ const q = Math.hypot(dx, dy); if(q < bd){ bd = q; best = f; } }
+  }
+  if(!best) return;
+  B.t0 = hazardT; B.n++; B.sx = Math.round(b.x); B.sy = Math.round(b.y);
+  pickUpItem(best, { kind:'throw', taken:false });   // a crate in the hands, thrown with the jab (the usual item's own)
+  for(let i = 0; i < 8; i++) puff(best.x, best.y - 10, i % 2 ? EIGHT_INK.wicker : EIGHT_INK.wickerDark, 3);
+  basketWhirr();
+}
+function basketWhirr(){ tone(170, 0.55, 'sawtooth', 0.045, 0, 460); noise(0.5, 0.04, 1900, 0, 900); }   // the propeller as it lifts off
+// The brain's crate: the basket's place while it can be taken and the CPU's hands are empty (a CPU with a crate has no use for one more).
+function basketCrate(f){
+  const B = BASKET; if(!B || f.dead || f._holding || hazardT < GROW_IN) return null;
+  const b = basketAt(hazardT, B); if(!b.ready) return null;
+  return { kind:'throw', x:b.x, y:b.y, r:BASK.r, taken:false, _bk:true };
+}
+// The art, in the world over the items: two strings up from the rim to a hub, the propeller on it (the blades' width goes with the turn; a
+// fainter disc behind them), the bowl below, and a soft glow round it while it can be taken.
+function drawBasket(){
+  const B = BASKET; if(!B) return;
+  const b = basketAt(hazardT, B), t = hazardT, k = growK(t + 1), c = ctx, r = BASK.r, s = r/EIGHT.treb.r;
+  const since = t - B.t0, whirr = (since >= 0 && since < 40) ? 1 - since/40 : 0, ang = t*(0.5 + 0.9*whirr), hy = -r*2.05, L = r*1.1;
+  c.save(); c.translate(b.x, b.y); c.scale(k, k); c.rotate(Math.sin(t*0.045)*0.04);
+  if(b.ready){ c.fillStyle = EIGHT_INK.wicker; for(let i = 0; i < 3; i++){ c.globalAlpha = 0.1 + 0.05*i; c.beginPath(); c.arc(0, -r*0.2, r*(1.9 - 0.3*i), 0, 7); c.fill(); } }
+  c.globalAlpha = 1; c.lineCap = 'round';
+  c.strokeStyle = EIGHT_INK.woodDark; c.lineWidth = 2;
+  c.beginPath(); c.moveTo(-r*0.98, -r*0.55); c.lineTo(0, hy); c.moveTo(r*0.98, -r*0.55); c.lineTo(0, hy); c.stroke();
+  eightDrawBasket(0, 0, s, 0);
+  c.globalAlpha = 0.16 + 0.2*whirr; c.fillStyle = EIGHT_INK.white; c.beginPath(); c.ellipse(0, hy, L, 3.2, 0, 0, 7); c.fill();
+  c.globalAlpha = 1; c.fillStyle = EIGHT_INK.wood; c.strokeStyle = EIGHT_INK.woodDark; c.lineWidth = 1.6;
+  c.beginPath(); c.ellipse(0, hy, Math.max(2, L*Math.abs(Math.cos(ang))), 2.6, 0, 0, 7); c.fill(); c.stroke();
+  c.fillStyle = EIGHT_INK.woodDark; c.beginPath(); c.arc(0, hy, 3.4, 0, 7); c.fill();
+  c.restore();
+}
+
+// ---------- EVENT FIGHTERS: SOMEBODY'S INSIDE (8-Ball's "Lick Your Way to Freedom", BFB 2, the jawbreakers; an event twist) ----------
+// The design: BFB 2's challenge is eight jawbreakers with the dead sealed in them, most of them empty ("jam-packed with air"), and a team is SAFE once
+// it has found someone inside (Four's own word). Here a jawbreaker -- a big striped candy ball -- drops about every 20 seconds (JB.every, 15% either
+// way; the first at 8 s) onto the middle platform or the floor, a coin's toss, and sits there: not solid, in nobody's way, and nobody's food or stock.
+// Anyone's hits chip it by the Smash Ball's own rule (fsBallHit: each hit takes what it deals, at least FSBALL.minHit and at most FSBALL.maxHit, and
+// one fighter's lingering hitbox lands once per FSBALL.grace frames) off JB.hp = 40 (the Smash Ball's 34, "a little tougher": about five ordinary
+// hits -- a jab 6-9, a tilt about 10, a smash 15+). At half its health the top pops off (Black Hole's trick) and everyone can see inside. Two in
+// three are EMPTY: the shell crumbles JB.beat frames later with a puff of air that shoves anyone close (Remote's "jam-packed with air": a push, no
+// damage) and nothing else happens. One in three has SOMEBODY inside: the rest of the shell is still to be broken, and whoever lands the LAST hit lets
+// the contestant out (a small figure that scurries off) and is SAFE for JB.safe frames (5 s): nothing can hurt them, the Star power-up's own effect
+// (pickUpItem's 'star': invuln and _starT 300), which does no damage. Whoever pops the top has a lick of the candy (heals JB.lick %). So the half-open
+// shell is a contested last hit: wait for a rival to do the chipping and steal it, or ignore it and keep fighting. A shell nobody pops melts JB.melt
+// frames (14 s) after it lands; a half-open one with somebody inside, JB.openMelt (7 s) after its top came off, and the contestant slips out on their own.
+//   FALLING THINGS HIT WHILE FALLING (the house rule): a jawbreaker coming down bonks whoever it passes through, once each: JB.bonk of a boss hit
+// (about 6%, and a small launch at any damage: at most JB.bonkVx across and JB.bonkVy up). Once down it is harmless. A fighter in grace or under a Star is skipped, as every hazard's hit skips them (arenaHazardHit).
+//   THE HOST runs it all (jawbStep, from twistStep): the drop, the chip (jawbHit, from hitTurrets for a swing and jawbShots for a shot), the top, the
+// last hit, the melt. One shell at a time (a drop waits until the last one is gone). It is shown by art and sound only: a shell grows in over
+// GROW_IN frames as it appears, the figure in the open shell grows in over GROW_IN frames when the top comes off; no words, no marks on the ground.
+// The CPU's item hunt sees a shell it can hit as an item (jawbItem), worth more with somebody inside, and swings at it when it is close (no number of the brain changed).
+// ONLINE: an event match is offline for now (event rooms are build step 14), so a guest sees it only through the snapshot's s.jw (the shell's record:
+// jawbNet), as the basket's s.bk; the prize it gives is on the fighter (invuln, _starT, pct), which the snapshot already carries.
+const JB = { r:30, hp:40, half:20, left:8, every:1200, jit:0.15, first:480, gap:240, melt:840, openMelt:420, beat:36, out:75, gone:24, safe:300, lick:10, bonk:0.27, bonkVx:5, bonkVy:6, inside:3, puffR:96, puffK:6.5, want:70, wantOpen:110, grav:0.5 };
+const JB_ST = ['fall', 'sit', 'open', 'puff', 'melt'];
+const JB_PALS = [['#ff5c8a', '#ffd23f', '#4fd1c5', '#7aa7ff', '#ff9f43'], ['#7aa7ff', '#ff5c8a', '#ffd23f', '#7ae582', '#c084fc'], ['#ffd23f', '#4fd1c5', '#c084fc', '#ff5c8a', '#7ae582']];
+const JB_INK = '#3b2a4a';
+function jawbRand(){ const J = JAWB; J.rng = (Math.imul(J.rng, 1664525) + 1013904223) >>> 0; return J.rng/4294967296; }
+function jawbBegin(){ JAWB = twistOn('inside') ? { next:JB.first, rng:((Math.random()*4294967296) >>> 0) || 1, seq:0, sh:null } : null; }   // (in every match null but the one that has it; the dice are its own, seeded once)
+// Where the next one comes down: the middle platform (the widest thin ledge over the middle of the field) or the floor, as a coin falls; the stretch it
+// then rests on (lo..hi) is where the contestant runs.
+function jawbSpot(){
+  const gy = groundY(), R = JB.r; let mid = null;
+  for(const p of worldPlats){ if(p.solid || !(p.w > 0) || p.x > WW*0.5 || p.x + p.w < WW*0.5 || p.y > gy - 60) continue; if(!mid || p.w > mid.w) mid = p; }
+  if(mid && jawbRand() < 0.5) return { x:Math.round(mid.x + 30 + jawbRand()*Math.max(0, mid.w - 60)), y0:mid.y - R, lo:mid.x, hi:mid.x + mid.w };
+  const x = Math.round(floorSafeX(120 + jawbRand()*(WW - 240), R + 20)); let lo = 40, hi = WW - 40;
+  if(FLOOR_SEGS) for(const q of FLOOR_SEGS) if(x >= q.x0 && x <= q.x1){ lo = q.x0; hi = q.x1; }
+  return { x:x, y0:gy - R, lo:lo, hi:hi };
+}
+function jawbDrop(){
+  const J = JAWB, p = jawbSpot(), t = hazardT;
+  J.sh = { id:++J.seq, x:p.x, y:sideRoomTop() - JB.r*2.5, y0:p.y0, vy:0, st:'fall', t0:t, tl:-1, hp:JB.hp, flash:0, lid:-1, end:-1, inn:jawbRand()*JB.inside < 1 ? 1 : 0,
+    face:Math.floor(jawbRand()*4), dir:jawbRand() < 0.5 ? -1 : 1, lo:p.lo, hi:p.hi, who:-1, gr:{}, bk:{} };
+  J.next = t + Math.round(JB.every*(1 - JB.jit + 2*JB.jit*jawbRand()));
+}
+// Once a frame, from twistStep (the host's).
+function jawbStep(){
+  const J = JAWB; if(!J) return;
+  const s = J.sh, t = hazardT;
+  if(!s){ if(t >= J.next) jawbDrop(); return; }
+  if(s.flash > 0) s.flash--;
+  if(s.st === 'fall') jawbFall(s);
+  else if(s.st === 'sit'){ jawbSit(s); jawbShots(); }
+  else if(t - s.end >= JB.out){ J.sh = null; J.next = Math.max(J.next, t + JB.gap); }
+}
+// It comes down like an item does (0.5 a frame of gravity, from over the top of the view), and bonks whoever it passes through, once each.
+function jawbFall(s){
+  const y1 = s.y; s.vy += JB.grav; s.y = Math.min(s.y + s.vy, s.y0);
+  for(const f of fighters){
+    if(f.dead || s.bk[f.idx] || Math.abs(f.x - s.x) >= f.r + JB.r*0.85 || f.y + f.r < y1 - JB.r || f.y - f.r > s.y + JB.r) continue;
+    s.bk[f.idx] = 1;
+    if(arenaHazardHit(f, JB.bonk, (Math.sign(f.x - s.x) || f.face || 1)*5, -5)){ f.vx = clamp(f.vx, -JB.bonkVx, JB.bonkVx); f.vy = Math.max(f.vy, -JB.bonkVy); }   // (a small launch, whatever their damage: the boss hit's launch grows with it)
+  }
+  if(s.y >= s.y0){
+    s.st = 'sit'; s.tl = hazardT; s.vy = 0;
+    for(let i = 0; i < 6; i++) puff(s.x + (i - 2.5)*10, s.y0 + JB.r - 2, '#e8dff0', 3);
+    jawbSfx('land');
+  }
+}
+// Sitting: the melt, and an empty one's crumble once its top has been off for a moment.
+function jawbSit(s){
+  const t = hazardT;
+  if(s.lid >= 0 && !s.inn){ if(t - s.lid >= JB.beat) jawbCrumble(s); }
+  else if(s.lid >= 0 ? t - s.lid >= JB.openMelt : t - s.tl >= JB.melt) jawbMelt(s);
+}
+// A swing's hitbox (hitTurrets calls this for every melee hitbox) meets the shell. Returns true if it landed.
+function jawbHit(f, cx, cy, rad, dmg){
+  const s = JAWB && JAWB.sh;
+  if(!s || s.st !== 'sit' || !f || f.dead || !(dmg > 0) || (s.lid >= 0 && !s.inn)) return false;   // (an empty one with its top off is crumbling: nothing to chip)
+  if(Math.hypot(s.x - cx, s.y - cy) >= rad + JB.r) return false;
+  if((s.gr[f.idx] || 0) > hazardT) return false;   // a lingering hitbox does not melt it in a frame
+  s.gr[f.idx] = hazardT + FSBALL.grace;
+  dmg = statDmg(f, dmg);   // FIGHTER STATS: the striker's dmg, before the clamp
+  s.hp -= clamp(dmg, FSBALL.minHit, FSBALL.maxHit); s.flash = 8; s.who = f.idx;
+  for(let i = 0; i < 5; i++) puff(s.x, s.y, JB_PALS[s.id % JB_PALS.length][i], 4);
+  SFX.hit(dmg);
+  if(s.lid < 0){ if(s.hp <= JB.half) jawbLid(s, f); }
+  else if(s.hp <= 0) jawbOpen(s, f);
+  return true;
+}
+// A shot meets the shell (a copy of fsShotHits: a shot from a fighter, at 0.8 of its damage).
+function jawbShots(){
+  for(const pr of projectiles){
+    const s = JAWB && JAWB.sh; if(!s || s.st !== 'sit') return;
+    if(!(pr.life > 0) || pr.turret || pr.trap || !(pr.dmg > 0)) continue;
+    const o = pr.ownerObj;
+    if(!o || !(o.idx >= 0) || fighters[o.idx] !== o) continue;
+    if(Math.hypot(pr.x - s.x, pr.y - s.y) < pr.r + JB.r) jawbHit(o, pr.x, pr.y, pr.r, pr.dmg*0.8);
+  }
+}
+// The top pops off (the hit that does it cannot also finish the shell: JB.left is the least it keeps); whoever did it has a lick of the candy.
+function jawbLid(s, f){
+  s.lid = hazardT; s.hp = clamp(s.hp, JB.left, JB.half);
+  f.pct = Math.max(0, f.pct - JB.lick);
+  for(let i = 0; i < 10; i++) puff(s.x, s.y - JB.r*0.5, i % 2 ? '#ffd23f' : '#ff5c8a', 5);
+  for(let i = 0; i < 6; i++) puff(f.x, f.y - 10, '#ff8fb8', 4);
+  jawbSfx('pop');
+}
+// The last hit on one with somebody inside: the contestant is out, and whoever landed it is safe -- the Star's own effect, whole.
+function jawbOpen(s, f){
+  s.st = 'open'; s.end = hazardT; s.who = f.idx; s.hp = 0;
+  f.invuln = Math.max(f.invuln, JB.safe); f._starT = JB.safe;
+  for(let i = 0; i < 14; i++) puff(s.x, s.y, i % 2 ? '#ffd23f' : '#ffffff', 6);
+  jawbSfx('found');
+}
+// An empty one goes off with a puff of air that shoves anyone close: a push only, no damage, no stun.
+function jawbCrumble(s){
+  s.st = 'puff'; s.end = hazardT;
+  for(const f of fighters){
+    if(f.dead) continue;
+    const dx = f.x - s.x, d = Math.hypot(dx, f.y - s.y);
+    if(d >= JB.puffR) continue;
+    const k = 1 - d/JB.puffR;
+    f.vx += (Math.sign(dx) || f.face || 1)*JB.puffK*k;
+    if(!f.onground) f.vy -= 1.2*k;
+  }
+  for(let i = 0; i < 10; i++) puff(s.x, s.y, i % 2 ? '#ffffff' : '#dfeaf2', 5);
+  jawbSfx('air');
+}
+function jawbMelt(s){
+  s.st = 'melt'; s.end = hazardT;
+  for(let i = 0; i < 8; i++) puff(s.x, s.y + JB.r*0.6, JB_PALS[s.id % JB_PALS.length][i % 5], 3);
+  jawbSfx('melt');
+}
+function jawbSfx(k){
+  if(k === 'land') tone(120, 0.14, 'sine', 0.05, 0, 70);
+  else if(k === 'pop'){ tone(520, 0.1, 'triangle', 0.05, 0, 980); noise(0.12, 0.04, 2200, 0, 900); }
+  else if(k === 'found'){ tone(660, 0.1, 'triangle', 0.05, 0, 0); tone(880, 0.16, 'triangle', 0.05, 0.08, 0); tone(1320, 0.2, 'triangle', 0.04, 0.17, 0); }
+  else if(k === 'air') noise(0.35, 0.05, 1600, 0, 500);
+  else if(k === 'melt') tone(260, 0.4, 'sine', 0.03, 0, 90);
+}
+// The CPU's item hunt: a shell it can hit is an item it can see, a closed one worth JB.want and one with somebody inside, JB.wantOpen (the hunt scores
+// an item as its worth less 0.3 a px, and goes for it above 25). Within a swing of it, it faces it and hits it (the hunt's own branch of aiThink).
+function jawbItem(f){
+  const s = JAWB && JAWB.sh;
+  if(!s || s.st !== 'sit' || f.dead || (s.lid >= 0 && !s.inn)) return null;
+  return { kind:'jaw', x:s.x, y:s.y, r:JB.r, taken:false, _jb:true, _want:s.lid >= 0 ? JB.wantOpen : JB.want };
+}
+function jawbInReach(f, it){ return Math.abs(f.x - it.x) < f.r + JB.r + 14 && Math.abs(f.y - it.y) < f.r + JB.r + 10; }
+// The snapshot's record of the shell (s.jw): [] when there is none now, else its numbers; what is inside is not told before the top is off.
+function jawbNet(){
+  const s = JAWB && JAWB.sh; if(!s) return [];
+  return [s.id, Math.round(s.x), Math.round(s.y), Math.round(s.y0), Math.max(0, Math.round(s.hp)), s.flash > 0 ? 1 : 0, JB_ST.indexOf(s.st), s.lid >= 0 ? s.inn : 0, s.face, s.dir, s.t0, s.tl, s.lid, s.end, Math.round(s.lo), Math.round(s.hi)];
+}
+function jawbFromNet(a){
+  return { id:a[0] | 0, x:+a[1] || 0, y:+a[2] || 0, y0:+a[3] || 0, vy:0, hp:+a[4] || 0, flash:a[5] ? 8 : 0, st:JB_ST[a[6] | 0] || 'sit', inn:a[7] ? 1 : 0, face:a[8] | 0, dir:a[9] < 0 ? -1 : 1,
+    t0:+a[10] || 0, tl:+a[11] || 0, lid:a[12] == null ? -1 : +a[12], end:a[13] == null ? -1 : +a[13], lo:+a[14] || 0, hi:+a[15] || 0, who:-1, gr:{}, bk:{} };
+}
+// A guest hears what the host's shell just did (a new state or its top coming off), as the host's own sounds.
+function jawbHear(was, now){
+  if(!now || !was || was.id !== now.id){ return; }
+  if(was.st !== now.st){ jawbSfx(now.st === 'sit' ? 'land' : now.st === 'open' ? 'found' : now.st === 'puff' ? 'air' : 'melt'); }
+  else if(was.lid < 0 && now.lid >= 0) jawbSfx('pop');
+}
+// ---- the art (drawn in the world, over the items and under the fighters; `c` is the canvas, the screen's own unless a test hands it another) ----
+// The striped ball: five layers of candy, white stripes across, cracks as it is chipped, a shine; clipped to what is below (or above) the cut once the top is off.
+function jawbBall(c, R, pal, ang, crack, cut, flash){
+  c.save();
+  if(cut){ c.beginPath(); if(cut.top) c.rect(-R - 8, -R - 8, 2*R + 16, cut.y + R + 8); else c.rect(-R - 8, cut.y, 2*R + 16, 2*R + 8); c.clip(); }
+  c.fillStyle = JB_INK; c.beginPath(); c.arc(0, 0, R + 2.5, 0, 7); c.fill();
+  c.save(); c.beginPath(); c.arc(0, 0, R, 0, 7); c.clip(); c.rotate(ang);
+  for(let i = 0; i < 5; i++){ c.fillStyle = pal[i]; c.beginPath(); c.arc(0, 0, R*(1 - i*0.19), 0, 7); c.fill(); }
+  c.globalAlpha = 0.4; c.fillStyle = '#ffffff';
+  for(let i = -2; i <= 2; i++){ c.save(); c.rotate(0.55); c.fillRect(-R*1.3, i*R*0.42 - 3, R*2.6, 6); c.restore(); }
+  c.restore();
+  c.strokeStyle = JB_INK; c.lineWidth = 2.2; c.lineCap = 'round';
+  for(let i = 0; i < crack; i++){ const a = i*1.9 + 0.5; c.beginPath(); c.moveTo(Math.cos(a)*R*0.15, Math.sin(a)*R*0.15); c.lineTo(Math.cos(a + 0.3)*R*0.6, Math.sin(a + 0.3)*R*0.6); c.lineTo(Math.cos(a)*R, Math.sin(a)*R); c.stroke(); }
+  c.fillStyle = 'rgba(255,255,255,0.7)'; c.beginPath(); c.ellipse(-R*0.4, -R*0.42, R*0.2, R*0.11, -0.7, 0, 7); c.fill();
+  if(flash > 0){ c.globalAlpha = 0.55*flash; c.fillStyle = '#ffffff'; c.beginPath(); c.arc(0, 0, R + 1, 0, 7); c.fill(); }
+  c.restore();
+}
+// A contestant: a round body of its own, two eyes and a mouth, standing with its feet at y + 1.1 body radii; kind 0 Golf Ball, 1 Lollipop, 2 Taco, 3 Book
+// (the ones the episode's jawbreakers had in them), `face` which way it looks, `ph` the feet's step.
+function jawbFigure(c, x, y, k, kind, face, ph){
+  const r = JB.r*0.5*Math.max(0.05, k), st = Math.sin(ph)*3*k;
+  c.save(); c.translate(x, y); c.scale(face, 1); c.lineCap = 'round'; c.lineJoin = 'round';
+  c.fillStyle = JB_INK; c.beginPath(); c.ellipse(-r*0.4 + st, r*1.0, r*0.3, r*0.17, 0, 0, 7); c.fill(); c.beginPath(); c.ellipse(r*0.4 - st, r*1.0, r*0.3, r*0.17, 0, 0, 7); c.fill();
+  c.strokeStyle = JB_INK; c.lineWidth = 1.8;
+  if(kind === 0){   // Golf Ball: white, dimpled
+    c.fillStyle = '#f7f7f2'; c.beginPath(); c.arc(0, 0, r, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = '#c9c9c0'; for(let i = 0; i < 5; i++){ const a = i*1.3 + 0.4; c.beginPath(); c.arc(Math.cos(a)*r*0.62, Math.sin(a)*r*0.62 + r*0.1, r*0.09, 0, 7); c.fill(); }
+  } else if(kind === 1){   // Lollipop: a red and white swirl on a stick
+    c.strokeStyle = '#d8c9a8'; c.lineWidth = 3; c.beginPath(); c.moveTo(0, r*0.9); c.lineTo(0, r*1.5); c.stroke(); c.strokeStyle = JB_INK; c.lineWidth = 1.8;
+    c.fillStyle = '#ff5c8a'; c.beginPath(); c.arc(0, 0, r, 0, 7); c.fill(); c.stroke();
+    c.strokeStyle = '#ffffff'; c.lineWidth = 2.4; c.beginPath(); c.arc(0, 0, r*0.72, 0.4, 5.2); c.stroke(); c.beginPath(); c.arc(0, 0, r*0.38, 3.5, 8.3); c.stroke();
+  } else if(kind === 2){   // Taco: a folded yellow shell with lettuce
+    c.fillStyle = '#ffd23f'; c.beginPath(); c.arc(0, r*0.1, r, Math.PI, 0); c.lineTo(r, r*0.5); c.lineTo(-r, r*0.5); c.closePath(); c.fill(); c.stroke();
+    c.strokeStyle = '#7ae582'; c.lineWidth = 3; c.beginPath(); c.moveTo(-r*0.8, -r*0.55); c.lineTo(-r*0.3, -r*0.85); c.lineTo(r*0.2, -r*0.6); c.lineTo(r*0.7, -r*0.85); c.stroke();
+  } else {   // Book: a blue cover and its pages
+    c.fillStyle = '#7aa7ff'; c.fillRect(-r*0.85, -r*0.95, r*1.7, r*1.9); c.strokeRect(-r*0.85, -r*0.95, r*1.7, r*1.9);
+    c.fillStyle = '#f4ecd0'; c.fillRect(-r*0.85, r*0.7, r*1.7, r*0.25);
+  }
+  c.fillStyle = '#ffffff'; c.beginPath(); c.ellipse(-r*0.3, -r*0.15, r*0.2, r*0.26, 0, 0, 7); c.fill(); c.beginPath(); c.ellipse(r*0.3, -r*0.15, r*0.2, r*0.26, 0, 0, 7); c.fill();
+  c.fillStyle = JB_INK; c.beginPath(); c.arc(-r*0.26, -r*0.12, r*0.09, 0, 7); c.fill(); c.beginPath(); c.arc(r*0.34, -r*0.12, r*0.09, 0, 7); c.fill();
+  c.strokeStyle = JB_INK; c.lineWidth = 1.6; c.beginPath(); c.arc(0, r*0.22, r*0.22, 0.2, Math.PI - 0.2); c.stroke();
+  c.restore();
+}
+// The contestant out of a shell (one that was opened, or melted round them): up out of the opening, down to the surface, then off along it, and gone.
+function jawbRunner(c, s, a){
+  const R = JB.r, fr = JB.r*0.5, surf = s.y0 + R, ground = surf - fr*1.1, cutY = -R*0.38, hop = Math.min(1, a/10);
+  const run = Math.max(0, a - 10)*3, x = clamp(s.x + s.dir*run, s.lo + 16, s.hi - 16);
+  const y = (s.y + cutY)*(1 - hop*hop) + ground*(hop*hop) - (a > 10 ? Math.abs(Math.sin(a*0.5))*5 : Math.sin(hop*Math.PI)*14);
+  c.save(); c.globalAlpha = clamp((JB.out - a)/15, 0, 1);
+  jawbFigure(c, x, y, 1, s.face, s.dir, a*0.5);
+  c.restore();
+}
+function drawJawbreakers(c){
+  c = c || ctx;
+  const J = JAWB, s = J && J.sh; if(!s) return;
+  const t = hazardT, R = JB.r, pal = JB_PALS[s.id % JB_PALS.length], k = growK(t - s.t0 + 1), ended = s.st === 'open' || s.st === 'puff' || s.st === 'melt';
+  const a = ended ? t - s.end : 0, la = s.lid >= 0 ? t - s.lid : -1, cutY = -R*0.38, fl = s.flash > 0 ? s.flash/8 : 0;
+  const crack = Math.min(4, Math.floor((1 - Math.max(0, s.hp)/JB.hp)*5)), ang = s.dir*0.35;
+  c.save();
+  if(s.st === 'fall'){
+    c.translate(s.x, s.y); c.scale(k, k);
+    jawbBall(c, R, pal, (t - s.t0)*0.1*s.dir, 0, null, 0);
+  } else if(s.st === 'sit' || (ended && a < JB.gone)){
+    c.translate(s.x, s.y);
+    if(s.st === 'sit' && fl > 0) c.translate(Math.sin(t*2.2)*2.2*fl, 0);
+    if(s.st === 'sit' && s.tl >= 0 && t - s.tl < 8){ const q = 0.18*(1 - (t - s.tl)/8); c.translate(0, R); c.scale(1 + q, 1 - q); c.translate(0, -R); }   // it lands with a squash
+    if(s.st === 'melt'){ const u = a/JB.gone; c.translate(0, R); c.scale(1 + 0.4*u, 1 - 0.85*u); c.translate(0, -R); c.globalAlpha = 1 - 0.9*u; }
+    if(s.st === 'puff'){
+      for(let i = 0; i < 7; i++){   // the shell comes apart: seven chunks flung out
+        const th = i*Math.PI*2/7 + 0.4, v = 2.6 + (i % 3)*0.9, u = a/JB.gone;
+        c.save(); c.globalAlpha = 1 - u; c.translate(Math.cos(th)*v*a, Math.sin(th)*v*a*0.7 + 0.05*a*a); c.rotate(a*0.2*(i % 2 ? 1 : -1));
+        c.fillStyle = pal[i % 5]; c.strokeStyle = JB_INK; c.lineWidth = 2; c.beginPath(); c.arc(0, 0, R*0.34, 0, 7); c.fill(); c.stroke(); c.restore();
+      }
+      const u = clamp(a/14, 0, 1);   // the puff of air: a ring that opens out to the push's reach
+      c.globalAlpha = 0.6*(1 - u); c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.beginPath(); c.arc(0, 0, Math.max(1, JB.puffR*u), 0, 7); c.stroke();
+    } else if(s.st === 'open'){
+      for(let sg = -1; sg <= 1; sg += 2){   // the shell's bowl splits and drops apart
+        c.save(); c.globalAlpha = 1 - a/JB.gone; c.translate(sg*a*1.4, a*a*0.03); c.rotate(sg*a*0.012);
+        c.beginPath(); c.rect(sg < 0 ? -R - 10 : 0, -R - 10, R + 10, 2*R + 20); c.clip();
+        jawbBall(c, R, pal, ang, crack, { y:cutY, top:false }, 0); c.restore();
+      }
+    } else if(s.lid < 0){
+      jawbBall(c, R, pal, ang, crack, null, fl);
+    } else {
+      const cw = Math.sqrt(R*R - cutY*cutY), ch = R*0.26;
+      jawbBall(c, R, pal, ang, crack, { y:cutY, top:false }, fl);
+      c.fillStyle = '#4a2a42'; c.beginPath(); c.ellipse(0, cutY, cw, ch, 0, 0, 7); c.fill();   // the opening
+      c.fillStyle = '#7a4a6a'; c.beginPath(); c.ellipse(0, cutY + 2, cw*0.78, ch*0.6, 0, 0, 7); c.fill();
+      if(s.inn){   // somebody inside: they grow in over GROW_IN frames, up to the rim
+        c.save(); c.beginPath(); c.rect(-R, cutY - R, 2*R, R + ch*0.55); c.clip();
+        jawbFigure(c, 0, cutY - 4, growK(la + 1), s.face, 1, 0); c.restore();
+      } else {   // empty: air, and a few bubbles of it
+        c.fillStyle = 'rgba(234,246,255,0.35)'; c.beginPath(); c.ellipse(0, cutY, cw*0.8, ch*0.7, 0, 0, 7); c.fill();
+        c.strokeStyle = '#eaf6ff'; c.lineWidth = 1.6;
+        for(let i = 0; i < 3; i++){ const ph = ((t*0.03 + i/3) % 1); c.globalAlpha = 0.7*(1 - ph); c.beginPath(); c.arc((i - 1)*cw*0.45, cutY - ph*R*0.8, 2 + ph*2.5, 0, 7); c.stroke(); }
+        c.globalAlpha = 1;
+      }
+      c.strokeStyle = 'rgba(255,255,255,0.75)'; c.lineWidth = 2.4; c.beginPath(); c.ellipse(0, cutY, cw, ch, 0, 0, Math.PI); c.stroke();   // the front lip over them
+      if(la >= 0 && la < 28){   // the top, flung up and turning, and gone
+        c.save(); c.globalAlpha = 1 - clamp((la - 10)/16, 0, 1); c.translate(s.dir*la*1.5, -(la*4.2 - 0.16*la*la)); c.rotate(la*0.15*s.dir);
+        jawbBall(c, R, pal, ang, 0, { y:cutY, top:true }, 0); c.restore();
+      }
+    }
+  }
+  c.restore();
+  if(s.st === 'melt' && a < JB.gone){   // a puddle of candy where it was
+    const u = a/JB.gone;
+    c.save(); c.globalAlpha = 0.5*Math.min(1, a/GROW_IN)*(1 - u); c.fillStyle = pal[1]; c.beginPath(); c.ellipse(s.x, s.y0 + R - 1, R*(0.6 + 0.9*u), 4, 0, 0, 7); c.fill(); c.restore();
+  }
+  if(s.inn && s.lid >= 0 && (s.st === 'open' || s.st === 'melt')) jawbRunner(c, s, a);
+}
+
+// ---------- EVENT FIGHTERS: A COMPLETE COLLECTION (Cloudy's "The Collection", the wiki's "Cloudy's collection": "he collects everything"; an event twist) ----------
+// The design: every fighter keeps a collection of the KINDS of item they pick up -- the six the item pool drops: a heart (heal), a jam jar (marmalade), a
+// crate (throw), a power-up (power), a helper trophy (assist) and a Yoyleberry (yoyle) -- and a kind counts ONCE: a second heart adds nothing. COLLECT.need
+// (4) slots over the head fill with the little item pictures, in the order they were picked up (no letters). Fill all four and the collection is COMPLETE:
+// the fighter glows with a Final Smash ready, exactly as if they had broken a Smash Ball (fsGrant: the glow, the finisher input, the usual 20 s to use it),
+// and the slots empty to start again. The Smash Ball is still in this match, as everywhere (the row's smashBalls stays true): a complete collection is a
+// second way to a Final Smash, not the only one. While a fighter holds a Final Smash (glowing, or firing it) what they pick up is not collected -- the
+// slots keep what they held and go on from there when it is gone. LOSE A STOCK and the slots spill: each kind held falls from the top of the stage as a
+// loose item of that kind (the same fall as any item's: itemFallDrift), over the nearest floor to where the stock was lost, for anyone -- and the
+// fighter starts over. So items stop being 'grab the nearest' and become 'grab what I do not have yet' (a heart at 0% is worth taking when it is your
+// fourth kind), and a fighter on three of four is a target: a KO ends the Final Smash before it starts and drops three items, so their row pulses gold.
+// The rule is the same for all four fighters, the CPUs' too: they pick up as they always do (no number of the brain changed), by accident, where a
+// person can chase variety on purpose -- that is skill, not a bot tune.
+// WHAT IS KEPT: one number per fighter, f._col, in base 7 with a 1 in front: 1 is empty, and a kind k (0..5, COLLECT_KINDS) added puts k + 1 after it
+// (v*7 + k + 1), so 1 -> 8..13 -> ... and the digits read back in the order picked up (collectKinds). It is a flag the snapshot already carries (NET_FIGHTER_FLAGS),
+// set only in this match, so a fighter that has it is in the twist: a guest, who has no twist of its own, draws the slots on every fighter that has one
+// and nothing on a fighter that has none. The host runs every rule (pickUpItem, eliminate); the loose items ride the snapshot's items, the glow its fs* fields.
+// Shown by art and sound only: the row of slots (drawCollectSlots, render-only), a puff where a kind is added and a soft blip for the player's own; it grows
+// in over GROW_IN frames when the match starts, and a new picture (and the gold of three of four) grows in over GROW_IN frames. No words. Nothing in it can hurt anyone.
+// THE NUMBER: 4 of the 6 kinds (COLLECT.need; the slots drawn are that many). The pool draws the six alike (two of each in its twelve), so four different kinds take
+// 1 + 6/5 + 6/4 + 6/3 = 5.7 pickups for someone who takes whatever comes, fewer for someone who chooses. At 'lots' (an item about every 5.4 s) the four CPUs, who pick up
+// as they always do, filled it 7 times in 29 minutes of ten CPU matches (0.24 a minute for all four together, beside the Smash Ball's 0.72); a collector who chases the kinds
+// they lack (an oracle that walks 6 px a frame to the nearest one and cannot be KO'd: the most a person could do) completed one every 16 to 79 s, 1.5 a minute. Five slots
+// (COLLECT.need 5: five of the six kinds, 8.7 pickups) is the one-number way to make it rarer.
+const COLLECT_KINDS = ['heal', 'marmalade', 'throw', 'power', 'assist', 'yoyle'];
+const COLLECT = { need:4, life:1800, spread:56, slot:25, disc:11, pic:9 };
+function collectBegin(){ if(twistOn('collect')) for(const f of fighters) f._col = 1; }   // (in every match but the one that has it, no fighter has the number)
+function collectKinds(v){ const a = []; for(v = v | 0; v > 1; v = Math.floor(v/7)) a.unshift((v % 7) - 1); return a; }
+function collectAdd(v, k){ return ((v | 0) || 1)*7 + k + 1; }
+// pickUpItem, for a fighter in the twist: the kind goes in the collection if it is one it does not hold; the fourth completes it.
+function collectTake(f, kind){
+  const k = COLLECT_KINDS.indexOf(kind);
+  if(k < 0 || f.dead || f.fsGlow > 0 || f._fs || collectKinds(f._col).indexOf(k) >= 0) return;   // (a boss capsule is no kind; a Final Smash in hand collects nothing)
+  f._col = collectAdd(f._col, k);
+  const n = collectKinds(f._col).length;
+  if(n >= COLLECT.need){ f._col = 1; fsGrant(f); return; }
+  for(let i = 0; i < 6; i++) puff(f.x, f.y - f.r - 10, ITEM_ICON[kind].c, 4);
+  if(f.you) tone(520 + 110*n, 0.07, 'triangle', 0.15, 0, 720 + 110*n);
+}
+// eliminate, beside fsOnKo: a stock lost spills the slots -- each kind held falls back onto the stage as a loose item -- and the collection starts over.
+function collectSpill(f){
+  const kinds = collectKinds(f._col), n = kinds.length, gy = groundY(), cx = clamp(f.x, 120 + COLLECT.spread, WW - 120 - COLLECT.spread);
+  f._col = 1;
+  kinds.forEach((k, i)=>{
+    if(!COLLECT_KINDS[k]) return;
+    const x = floorSafeX(cx + (i - (n - 1)/2)*COLLECT.spread, 50);   // (side by side round the nearest spot inside the stage, over the floor; never over a gap)
+    items.push(itemFallDrift({ kind:COLLECT_KINDS[k], x, y:sideRoomTop() - 40, vx:0, vy:0, r:16, taken:false, life:COLLECT.life, _land:false }, gy));
+  });
+}
+// The art. For each fighter: when its slot count last rose (a render-only memory by slot, so a guest, who has only the number, grows the picture in too).
+const COLL_SEEN = {};
+// One kind's picture in a slot: the art the loose item wears once it has loaded, else the item's drawn icon (drawItem's own two ways).
+function collectPicture(c, kind, r){
+  const ic = ITEM_ICON[kind]; if(!ic) return;
+  const im = itemImage(kind);
+  if(im){ const h = r*ITEM_ART[kind].h, w = h*(im.naturalWidth/im.naturalHeight); c.drawImage(im, -w/2, -h/2, w, h); }
+  else { c.strokeStyle = '#1c1c1c'; c.lineWidth = Math.max(1.2, r*0.14); c.lineJoin = 'round'; ic.draw(c, r); }
+}
+// draw(), after the fighter: COLLECT.need round slots in a row over the head -- above the name tag and the status icons, whichever are there -- a
+// picture in each one filled and a dark empty ring in the rest; one short of full, a gold glow pulses behind the row and the last empty slot rings in gold.
+function drawCollectSlots(f, cx){
+  const c = cx || ctx, N = COLLECT.need, kinds = collectKinds(f._col).slice(0, N), n = kinds.length;
+  let m = COLL_SEEN[f.idx];
+  if(!m || m.t > hazardT) m = COLL_SEEN[f.idx] = { n:n, t:-1e9 };   // (the first look, or a new match: nothing grows in yet)
+  if(n > m.n) m.t = hazardT;
+  m.n = n;
+  const R = COLLECT.disc, st = COLLECT.slot, hw = (N - 1)*st/2 + R + 4, age = hazardT - m.t + 1, hot = n === N - 1, pulse = 0.5 + 0.5*Math.sin(hazardT*0.22), gk = hot ? growK(age) : 1;
+  const nStat = STATUS_ICONS.filter(s=>{ try { return !!s.on(f); } catch(e){ return false; } }).length, marks = f.ctrlRev > 0 || (f._stunFx > 0 && f.hitstun > 0);
+  const base = nStat ? statusIconY(f) - STATUS_ICON_R - 3 : (nameTagShown(f) ? -(f.r + (f.you ? 28 : 16)) - 9 : -f.r - 6);   // (the top of whatever is over the head)
+  c.save(); c.translate(f.x, f.y + base - R - 8 - (marks ? 26 : 0)); const k0 = growK(hazardT + 1); c.scale(k0, k0); c.lineJoin = 'round';
+  if(hot){ c.globalAlpha = (0.2 + 0.3*pulse)*gk; c.fillStyle = '#ffd23f'; itemRoundRect(c, -hw - 5, -R - 8, 2*hw + 10, 2*R + 16, R + 8); c.fill(); }
+  c.globalAlpha = 0.55; c.fillStyle = '#1c1c1c'; itemRoundRect(c, -hw, -R - 3, 2*hw, 2*R + 6, R + 3); c.fill();
+  for(let i = 0; i < N; i++){
+    const x = -(N - 1)*st/2 + i*st;
+    c.save(); c.translate(x, 0); c.globalAlpha = 1;
+    if(i < n){
+      c.fillStyle = 'rgba(28,28,28,0.9)'; c.beginPath(); c.arc(0, 0, R, 0, 7); c.fill();
+      const g = (i === n - 1) ? growK(age) : 1;
+      if(g > 0){ c.scale(g, g); collectPicture(c, COLLECT_KINDS[kinds[i]], COLLECT.pic); }
+    } else {
+      c.fillStyle = 'rgba(28,28,28,0.45)'; c.beginPath(); c.arc(0, 0, R, 0, 7); c.fill();
+      c.strokeStyle = 'rgba(255,255,255,0.5)'; c.lineWidth = 1.5;
+      c.beginPath(); c.arc(0, 0, R - 1, 0, 7); c.stroke();
+      if(hot && i === n){ c.strokeStyle = 'rgba(255,210,63,' + ((0.55 + 0.45*pulse)*gk) + ')'; c.lineWidth = 2.6; c.stroke(); }   // (the last empty slot, ringed in gold)
+    }
+    c.restore();
+  }
+  c.restore();
 }
 
 // ---------- EVENT FIGHTERS: THE SCREENS (event-fighters-phase1.md, section 2, "Screens"; build step 9) ----------
@@ -93348,19 +93818,23 @@ function aiThink(f){
     return out;
   }
   // ITEMS: a pickup close by and no foe on top of it -- healing first when hurt.
-  if(items.length && dist > 140 && B.st !== 'string'){
+  const bkIt = BASKET ? basketCrate(f) : null, jbIt = JAWB ? jawbItem(f) : null;   // REACH THE BASKET (an event twist): the basket is a crate source it can see and jump to, as any crate (basketCrate); SOMEBODY'S INSIDE: a jawbreaker it can hit is an item it can see (jawbItem)
+  if((items.length || bkIt || jbIt) && dist > 140 && B.st !== 'string'){
     let bestItem=null, bestScore=-1;
-    for(const it of items){ if(it.taken) continue;
-      const d=Math.hypot(it.x-f.x, it.y-f.y); if(d>380) continue;
+    for(const it of ((bkIt || jbIt) ? items.concat(bkIt ? [bkIt] : [], jbIt ? [jbIt] : []) : items)){ if(it.taken) continue;
+      const d=Math.hypot(it.x-f.x, it.y-f.y); if(d>(it._bk ? BASK.reach : 380)) continue;
       if(brainItemDanger(f, B, L, it)) continue;   // HAZARD SENSE: not into a live trap or a prism for it (World Cup #8)
       const isHeal = (it.kind==="heal"||it.kind==="marmalade"||it.kind==="yoyle");
       let want = isHeal ? 40 + f.pct*1.1 : (it.kind==="power"||it.kind==="assist"||it.kind==="boss") ? 90 : it.kind==="throw" ? 55 : 0;
       if(it.kind==="yoyle") want = 60 + f.pct*0.5;
+      if(it._bk) want = BASK.want;   // (the basket: the only crate there is, a field away)
+      if(it._jb) want = it._want;   // (a jawbreaker: one with somebody inside, open, is worth more than a closed one)
       const score = want - d*0.3;
       if(score>bestScore){ bestScore=score; bestItem=it; }
     }
     if(bestItem && bestScore>25){
       const idx=bestItem.x-f.x, idy=bestItem.y-f.y;
+      if(bestItem._jb && jawbInReach(f, bestItem)){ inp.left = idx < -6; inp.right = idx > 6; inp.attack = true; return brainOut(f, inp, B, L, t, false); }   // within a swing of the jawbreaker: face it and hit it
       if(Math.abs(idx)>16){ inp.left=idx<0; inp.right=idx>=0; }
       if(idy<-40 && (f.onground||f.jumps>0) && climbJump(f)) inp.jump=true;
       brainEdges(f, inp, 90); return brainOut(f, inp, B, L, t, false);
@@ -95831,6 +96305,8 @@ function draw(){
     if(MCAVE && MCAVE.on){ const g = it._born != null ? Math.min(1, Math.max(0.05, (hazardT - it._born + 1)/MC_ITEM_GROW)) : 1;   // MOON CAVES: upright, and grown in over 12 frames
       ctx.save(); mcUpright(it.x, it.y); if(g < 1){ ctx.translate(it.x, it.y); ctx.scale(g, g); ctx.translate(-it.x, -it.y); } drawItem(it); ctx.restore(); }
     else drawItem(it); }
+  if(BASKET) drawBasket();   // REACH THE BASKET (an event twist): X's basket, over the items and under the fighters
+  if(JAWB) drawJawbreakers();   // SOMEBODY'S INSIDE (an event twist): the jawbreaker, over the items and under the fighters
   if(SMASHBALL){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(SMASHBALL.x, SMASHBALL.y); fsDrawBall(SMASHBALL); ctx.restore(); } else fsDrawBall(SMASHBALL); }
   // active summons (assists & bosses)
   for(const s of summons){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(s.x, s.y); drawSummon(s); ctx.restore(); } else drawSummon(s); }
@@ -95914,7 +96390,7 @@ function draw(){
   // fighters
   drawKitFx('under');   // the Heat Explosion, behind the fighters it catches
   if(FINX.length) finxDraw('under');   // a corkboard, a puddle, a propped mirror (FINISHERS V2)
-  NAMETAG_Q = []; try{ for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(FINX.length && finxHidden(f)) continue; if(f.fsId && fsHides(f)) continue; if(f._oneGhost) drawOneGhostAura(f); try{ drawTellFx(f); }catch(e){} if(f.fsGlow>0 || f.fsId){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); fsDrawAura(f); ctx.restore(); } else fsDrawAura(f); } drawFighter(f); if(f._soakT > hazardT){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); drawSoakDrips(f); ctx.restore(); } else drawSoakDrips(f); } if(SETTINGS.mode==='ctf'){ ctfDrawCarry(f); if(CTF.spec) ctfSpecDrawChip(f); } } } finally { nameTagFlush(); }
+  NAMETAG_Q = []; try{ for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(FINX.length && finxHidden(f)) continue; if(f.fsId && fsHides(f)) continue; if(f._oneGhost) drawOneGhostAura(f); try{ drawTellFx(f); }catch(e){} if(f.fsGlow>0 || f.fsId){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); fsDrawAura(f); ctx.restore(); } else fsDrawAura(f); } drawFighter(f); if(f._col) drawCollectSlots(f); if(f._soakT > hazardT){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); drawSoakDrips(f); ctx.restore(); } else drawSoakDrips(f); } if(SETTINGS.mode==='ctf'){ ctfDrawCarry(f); if(CTF.spec) ctfSpecDrawChip(f); } } } finally { nameTagFlush(); }
   if(SETTINGS.mode==='ctf') ctfDrawCoverFront();   // the props a friend stands in, see-through, over the fighters
   if(CTUT.active) ctutDrawWorld();   // the Capture the Flag practice: where a flag may not go
   drawKitFx('over');    // the Fist Thingy's arm, over the fighters it reaches across
@@ -107356,6 +107832,7 @@ const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering
   '_zsOn','_zsM','_zsBrk','_zsLk','_zsF','_rfT','_rfF',   // (SHIELD / REFLECTOR: frames the bubble has been up, its meter, the break stun, the block flash; the reflector's frame and flash -- drawShieldArt reads them)
   '_growT',   // (Puffball's Grow: until when she is grown -- the pink Attack Up icon; her size itself rides in r)
   '_baldUntil', '_fsBaldUntil',   // (FSA lane a: Spikey's spikes are gone until then -- his Can't Hold It In special, and his Final Smash's release (the render-only one))
+  '_col',   // (EVENT FIGHTERS: A COMPLETE COLLECTION -- the kinds held, one number, 1 when empty: a guest draws the slots from it, on a fighter that has one)
   'fsGlow','fsId','fsT','fsWind','fsDur','fsAx','fsAy','fsBx','fsBy','fsCx','fsCy',   // FINAL SMASH BALLS: the glow, and which Final Smash is on, how far in, and where it began (all a client needs to draw it)
   '_spr',   // (SPRINT: the way a sprinting fighter runs, -1 or 1 -- the lean drawFighter draws)
   'fsC','fsLk','fsPd'];   // (fsPd: Pencil's van's road in px, 0 when it stays) ...the catch's frames left, and whose catch holds this fighter (+1) (CATCH, THEN CINEMATIC)
@@ -107571,6 +108048,8 @@ function serializeState(withGeo){
   if(FINX.length) s.fnx = finxNet();   // the finishers running (FINISHERS V2): what a guest draws of them
   if(FILE_RIDES.length) s.frd = FILE_RIDES.map(p=>[Math.round(p.x), Math.round(p.y), p.w, p.h, p.face, p.on ? 1 : 0, p.vx ? 1 : 0, p.owner ? p.owner.idx : -1]);   // the big files being ridden: where, which way, glowing, gliding, whose
   if(SMASHBALL) s.fsb = [Math.round(SMASHBALL.x), Math.round(SMASHBALL.y), Math.max(0, Math.round(SMASHBALL.hp/SMASHBALL.hpMax*100)), SMASHBALL.flash > 0 ? 1 : 0];   // the Smash Ball: where it is, how much is left, a hit's flash
+  if(JAWB) s.jw = jawbNet();   // SOMEBODY'S INSIDE (an event twist): the shell now, as numbers ([] when there is none), in every snapshot; it is drawn from these and the clock
+  if(BASKET) s.bk = [BASKET.t0, BASKET.n, BASKET.sx, BASKET.sy];   // REACH THE BASKET (an event twist): the last take, in every snapshot (a snapshot dropped for a newer takes no take with it); the basket's place is the clock's (basketAt)
   if(FS.freeze > 0 || FS.slow > 0) s.fsx = [FS.freeze, FS.fz, FS.slow, FS.sf, Math.round(FS.sx), Math.round(FS.sy), FS.slowN, FS.game | 0];   // a Final Smash's intro and slow-mo KO: frames left, whose, the close-up's point, the slow-mo's length (CATCH, THEN CINEMATIC); the last KO's (THE LAST KO)
   if(SETTINGS.mode==='ctf') s.ctf = ctfNetOut();   // Capture the Flag: the map by its id and the live state (ctfNetOut)
   if(COS_KO_OUT.length) s.ko = COS_KO_OUT.splice(0);   // cosmetic KO bursts since the last snapshot, [x, y, which]: only on a KO
@@ -107702,6 +108181,12 @@ function applySnapshot(s){
   { const wasE = evil; evil = Array.isArray(s.evil) ? {x:s.evil[0], y:s.evil[1]} : null; if(evil) netGlide(evil, fresh ? null : wasE); }
   tendrils = (s.tend||[]).map(r=>({ x:r[0], h:r[1], maxH:r[1], grow:0, life:1, _hit:true }));   // drawTendrils reads x and h
   items=(s.items||[]).map(it=>({...it, taken:false}));
+  { const was = fresh ? null : BASKET;   // REACH THE BASKET (an event twist): the host's last take; where the basket is, is the clock's (basketAt: hazardT is the snapshot's frame)
+    BASKET = Array.isArray(s.bk) ? { t0:+s.bk[0] || 0, n:s.bk[1] | 0, sx:+s.bk[2] || 0, sy:+s.bk[3] || 0 } : null;
+    if(BASKET && was && BASKET.n > was.n) basketWhirr(); }
+  { const was = fresh ? null : JAWB;   // SOMEBODY'S INSIDE (an event twist): the host's shell; a guest hears what it just did (jawbHear)
+    JAWB = Array.isArray(s.jw) ? { sh:s.jw.length ? jawbFromNet(s.jw) : null } : null;
+    if(JAWB && was) jawbHear(was.sh, JAWB.sh); }
   { const wasB = fresh ? null : SMASHBALL;   // the Smash Ball, glided like a fighter
     SMASHBALL = Array.isArray(s.fsb) ? { x:s.fsb[0], y:s.fsb[1], r:FSBALL.r, hp:s.fsb[2], hpMax:100, flash:s.fsb[3] ? 8 : 0 } : null;
     if(SMASHBALL) netGlide(SMASHBALL, wasB); }
