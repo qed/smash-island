@@ -89987,7 +89987,7 @@ const EVENT_MATCHES = {
     // arena (Grand Plains' sky and ground; the design names no stage); food items only (the show's Free Food), no Smash Balls (one would nearly always fall to the side with three).
     { n:2, name:'Free Food', kind:'3v1', stage:'grandplains', sides:[['you'], ['Stapy', 'Marker', 'Fries']], items:'food', smashBalls:false, twist:null, stocks:2, youStocks:3 },
     // THE SEARCH PARTY: the Evil Forest, a free-for-all of four: you, Stapy, Liy and Match (his search group). The usual items; Smash Balls as usual.
-    { n:3, name:'The Search Party', kind:'challenge', stage:'forest', sides:[['you'], ['Stapy'], ['Liy'], ['Match']], items:'on', smashBalls:true, twist:null, stocks:2 },
+    { n:3, name:'The Search Party', kind:'challenge', stage:'forest', sides:[['you'], ['Stapy'], ['Liy'], ['Match']], items:'on', smashBalls:true, twist:'dark', stocks:2 },   // LIGHTS OUT (twist 'dark')
   ],
 };
 
@@ -90147,6 +90147,7 @@ const EVENT_ITEM_RATE = { off:0, food:2, on:2, lots:3, throw:2 };
 // The twists built so far (build step 8: "only the twists his matches use"). A match that needs one not built yet is not played without it.
 const EVENT_TWISTS_BUILT = ['sponge', 'pull', 'lowgrav', 'windback', 'fast', 'rain', 'basket', 'inside', 'collect', 'dig', 'bar'];   // (pull and lowgrav: Black Hole's two, kit 4; windback and fast: Clock's two, kit 5; rain: Cloudy's, kit 6; basket: 8-Ball's Basket Into X; inside: 8-Ball's Lick Your Way to Freedom; collect: Cloudy's The Collection)
 // (dig: Spongy's Get Digging; bar: Eraser's Take the Plunge, LAST ON THE BAR)
+EVENT_TWISTS_BUILT.push('dark');   // (dark: Stapy's The Search Party, LIGHTS OUT)
 EVENT_TWISTS_BUILT.push('sticky');   // (sticky: Stapy's Wall to Wall, STICKY PILLARS)
 // Each match's twist in plain words, for the event page and the select screen's strip (never in a match). 'edges' and 'food' are a stage's own
 // edges and an items rule rather than a twist row, shown the same way.
@@ -90168,6 +90169,9 @@ const EVENT_TWIST_WORDS = {
 };
 Object.assign(EVENT_TWIST_WORDS, {
   sticky: { icon:'📎', short:'sticky pillars', words:'Sticky pillars: hit the side of a pillar hard, thrown at it by a blow or in a fast dash, and you stick to it like a staple for half a second. It does no damage. Press jump and you peel off at once, and a hit knocks you off. You cannot stick again straight away. Stapy never sticks.' },
+});
+Object.assign(EVENT_TWIST_WORDS, {
+  dark: { icon:'🔦', short:'lights out', words:'Lights out: the forest is dark. Everyone carries a lit patch around them, and the rest of the stage is dim but still easy to read. Other fighters fade away when they are far from you and show up as they come close. It is only how the match looks: nobody is hurt or hidden from the computer fighters.' },
 });
 // THE BACKDROPS (section 2, "Twists": "the Cake at Stake place or the A-twos-ment Park, drawn behind a normal stage without their boss or
 // hazards"): the place's sky (BOSS_ARENA_SKY) and its scenery, drawn in the sky behind the stage (drawEventSky), and the colour of the drop under
@@ -90858,6 +90862,60 @@ function drawStickyPins(){
     for(let i = -1; i <= 1; i++) stDrawStaple(c, f.x + o.side*(f.r*0.9), f.y + i*12, 12, 8, STAPY_INK.steel, 1.571);
     c.restore();
   }
+}
+
+// ---------- EVENT FIGHTERS: LIGHTS OUT (Stapy's "The Search Party", the Evil Forest; an event twist) ----------
+// The forest is dark, as a search party sees it. Purely a drawing effect: no fighter, hit, item or CPU reads any of it, nobody is hurt or hidden from the AI.
+//   THE DARK: a bluish veil over the whole world picture (DARKK.tint, 70% dark: the stage and its platforms stay readable), with a soft lit patch cut out of it
+//     around each fighter (DARKK.r, 220 px of the world, clear in the middle, fading to the dark at its rim; it grows and shrinks with the view's zoom).
+//     One offscreen canvas at half size, one fill and one radial gradient per fighter, one drawImage: no per-pixel loop.
+//   THE SEEING: a fighter on another team than yours is drawn at full strength inside DARKK.r of you, and fades over the next 100 px to a faint silhouette
+//     (DARKK.far, from DARKK.see on) -- darkSeeK, read by drawFighter. Teammates, and you, always show.
+//   WHAT STAYS BRIGHT: the name tags (held back and drawn over the dark: nameTagFlush), the off-screen arrows, the minimap, the Final Smash flashes and
+//     everything drawn after the world; the percent cards and the banner are the page's own, not the canvas's.
+// The twist is the match's MATCH_TWIST, so nothing is kept between matches but the offscreen canvas.
+const DARKK = { r:220, see:320, far:0.12, tint:'rgba(5,9,22,0.7)' };
+const DARKFX = { cv:null, c:null, me:null, q:null };
+function darkOn(){ return !!MATCH_TWIST && (MATCH_TWIST === 'dark' || twistOn('dark')); }
+function darkSeeK(f){
+  const me = DARKFX.me;
+  if(!me || me.dead || f === me || f.team === me.team) return 1;
+  const d = Math.hypot(f.x - me.x, f.y - me.y);
+  if(d <= DARKK.r) return 1;
+  if(d >= DARKK.see) return DARKK.far;
+  const u = (d - DARKK.r)/(DARKK.see - DARKK.r);
+  return 1 - (1 - DARKK.far)*u*u*(3 - 2*u);
+}
+// The world's place on the canvas in device pixels (the canvas's own matrix at the camera; worked out from the view when a canvas cannot say).
+function darkCapture(){
+  DARKFX.me = fighters.find(f=>f.you) || null;
+  let m = null;
+  try{ m = ctx.getTransform(); }catch(e){}
+  if(m && typeof m.a === 'number' && typeof m.e === 'number') return { a:m.a, b:m.b, c:m.c, d:m.d, e:m.e, f:m.f };
+  const z = viewZoom();
+  return { a:z*UI.sx, b:0, c:0, d:z*UI.sy, e:(W/2 - z*(camX + W/2))*UI.sx, f:(H/2 - z*(camY + H/2))*UI.sy };
+}
+function darkDraw(m){
+  const D = DARKFX;
+  try{
+    const cw = cv.width, ch = cv.height, hw = Math.max(2, Math.ceil(cw/2)), hh = Math.max(2, Math.ceil(ch/2));
+    if(!D.cv){ D.cv = document.createElement('canvas'); D.c = D.cv.getContext('2d'); }
+    if(D.cv.width !== hw || D.cv.height !== hh){ D.cv.width = hw; D.cv.height = hh; }
+    const o = D.c, rad = DARKK.r*Math.hypot(m.a, m.b)*0.5;
+    o.setTransform(1, 0, 0, 1, 0, 0); o.globalCompositeOperation = 'source-over';
+    o.clearRect(0, 0, hw, hh); o.fillStyle = DARKK.tint; o.fillRect(0, 0, hw, hh);
+    o.globalCompositeOperation = 'destination-out';
+    for(const f of fighters){
+      if(f.dead) continue;
+      const x = (m.a*f.x + m.c*f.y + m.e)*0.5, y = (m.b*f.x + m.d*f.y + m.f)*0.5;
+      const g = o.createRadialGradient(x, y, 0, x, y, rad);
+      g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.5, 'rgba(0,0,0,0.85)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      o.fillStyle = g; o.fillRect(x - rad, y - rad, rad*2, rad*2);
+    }
+    o.globalCompositeOperation = 'source-over';
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(D.cv, 0, 0, cw, ch); ctx.restore();
+  }catch(e){}
+  if(D.q){ const q = D.q; D.q = null; nameTagFlush(q); }
 }
 
 // ---------- EVENT FIGHTERS: REACH THE BASKET (8-Ball's "Basket Into X", the BFB 1 basket; an event twist) ----------
@@ -96574,6 +96632,7 @@ function draw(){
     ctx.translate(W/2, H/2); ctx.scale(zoom, zoom); ctx.translate(-W/2, -H/2);
   }
   ctx.translate(-camX, -camY);
+  const darkM = darkOn() ? darkCapture() : null;   // LIGHTS OUT (an event twist): where the world is on the canvas, for the lit patches (darkDraw, below the world)
 
   const gy=groundY();
   if(twistOn('pull') || twistOn('lowgrav')) drawTwistAir(gy);   // THE PULL and LOW GRAVITY ANYWHERE (event twists): shown by their art
@@ -96834,6 +96893,7 @@ function draw(){
   drawCosKoFx();   // cosmetic KO bursts (see WIN TOKENS): drawn from their own list, never from `particles`
 
   ctx.restore();   // end world space
+  if(darkM) darkDraw(darkM); else if(DARKFX.q){ nameTagFlush(DARKFX.q); DARKFX.q = null; }   // LIGHTS OUT: the dark over the world, then the name tags over it; the HUD, the arrows and the banner come after, untouched
 
   // ---- screen-space overlays ----
   if(MCAVE && MCAVE.on){ mcDrawMinimap(); mcDrawArrows(); }   // MOON CAVES: the disc minimap and the marks at the edge
@@ -106366,8 +106426,9 @@ function drawNameTagRow(f, lift){
   if(lift) ctx.translate(0, -lift);
   drawStatusIcons(f, ctx);   // buffs and debuffs, above the name tag and after it, so nothing covers the row
 }
-function nameTagFlush(){
-  const q = NAMETAG_Q; NAMETAG_Q = null;
+function nameTagFlush(again){
+  let q = NAMETAG_Q; NAMETAG_Q = null;
+  if(again) q = again; else if(q && q.length && darkOn()){ DARKFX.q = q; return; }   // LIGHTS OUT (an event twist): the tags wait for the darkness and are drawn over it (darkDraw)
   if(!q || !q.length) return;
   const placed = [], order = q.filter(e => e.f.you).concat(q.filter(e => !e.f.you));
   ctx.save();
@@ -106405,7 +106466,8 @@ function drawFighter(f){
   if(FINX.length){ const fk = spongyFlatK(f); if(fk < 1){ const F = f.r + 12; ctx.translate(0, F); ctx.scale(2 - fk, fk); ctx.translate(0, -F); } }   // pinned flat under Spongy (Falls From the Sky)
   const fading = f._tpT > 0;   // Bow fading into her Teleport: the body fades out (no blink, no bubble: the fade says she cannot be hit)
   const blink=f.invuln>0 && !fading && (f.invuln%8<4);
-  const ghostA = (f._oneGhost ? 0.55 : 1) * (fading ? Math.max(0.1, f._tpT/TP.vanish) : 1) * (FINX.length ? ootpFade(f) : 1);   // One's ghost fighter is a ghost: you can see through it (and a foe Eraser is rubbing out fades: ootpFade)
+  const dkK = darkOn() ? darkSeeK(f) : 1;   // LIGHTS OUT (an event twist): a fighter far from you is faint (darkSeeK); its name tag is not (below)
+  const ghostA = (f._oneGhost ? 0.55 : 1) * (fading ? Math.max(0.1, f._tpT/TP.vanish) : 1) * (FINX.length ? ootpFade(f) : 1) * dkK;   // One's ghost fighter is a ghost: you can see through it (and a foe Eraser is rubbing out fades: ootpFade)
   ctx.globalAlpha=(blink?0.4:1)*ghostA;
   drawAlpha=(blink?0.4:1)*ghostA;   // sprites composite against this instead of reading back ctx.globalAlpha
   if(f.onground && !FS_TURN && !(MCAVE && MCAVE.on)){ ctx.save(); ctx.globalAlpha *= 0.2; ctx.fillStyle = '#10200c'; ctx.beginPath(); ctx.ellipse(0, f.r - 1, f.r*0.85, 4, 0, 0, 7); ctx.fill(); ctx.restore(); }   // JURY 2: a soft contact shadow, so a small fighter on grass is anchored to it
@@ -106562,7 +106624,7 @@ function drawFighter(f){
   // ---- NAMETAG: name label above the head so you always know who's who ---- (only some of them past 4 fighters: nameTagShown)
   const fsTu = FS_TURN; if(fsTu){ ctx.save(); ctx.rotate(-fsTu); }   // (the tag and the icons stay upright over a picture that is turned)
   const tagM = (NAMETAG_Q && typeof ctx.getTransform === 'function') ? ctx.getTransform() : null;
-  if(tagM && typeof tagM.a === 'number') NAMETAG_Q.push({ f:f, m:tagM, a:ctx.globalAlpha });   // (JURY 2: the tag and the icons are drawn after every body, nameTagFlush)
+  if(tagM && typeof tagM.a === 'number') NAMETAG_Q.push({ f:f, m:tagM, a:(dkK < 1 ? Math.min(1, ctx.globalAlpha/dkK) : ctx.globalAlpha) });   // (JURY 2: the tag and the icons are drawn after every body, nameTagFlush)
   else drawNameTagRow(f, 0);
   if(fsTu) ctx.restore();
   if(f.kit && f.kit.special === 'serve') drawGadgetBadge(f);   // what Tennis Ball has loaded
