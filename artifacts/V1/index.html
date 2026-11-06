@@ -79768,7 +79768,7 @@ const SPECIAL_CD_SCALE = 0.8;
 // Z, held. Everyone but nine fighters raises a BUBBLE around themselves: ~4 frames to come up, a meter of 50 that drains slowly while it is held and
 // fills again once it is down, shrinking as it takes hits (the damage a blow would have dealt goes to the meter instead -- no damage, no launch, and
 // a little pushback on whoever hit it). At zero it BREAKS: the fighter pops up and is stunned for 120 frames, and the meter comes back at 30. ~8 frames
-// of end lag on letting go. It blocks hits and shots, NOT grabs (a grab is not a hit: grabbable() never asked, and holdStart drops it). Ground only;
+// of end lag on letting go. It blocks hits and shots; a GRAB breaks it (2026-11-06, SHIELD_GRAB_STUN below: no damage, the grabber is stunned). Ground only;
 // while it is up you cannot attack, cast, smash or walk, but jump leaves it at once. Not raised in the air, in hitstun, held, frozen, mid-move.
 // The nine strong fighters (REFLECTOR_FIGHTERS) never get the bubble (the owner: more defence on top of their stats would be too much). Their Z is a
 // REFLECTOR: 6 frames before it reflects, then up to 36 frames while Z is held; 22 frames of end lag, and 30 more before it can be raised again. It turns
@@ -79777,6 +79777,11 @@ const SPECIAL_CD_SCALE = 0.8;
 const REFLECTOR_FIGHTERS = new Set(['Toothpaste', 'Magnet', 'Tennis Ball', 'David', 'Puffball', 'Firey', 'Bomby', 'Lollipop', 'Pencil']);
 const ZS = { max:50, start:4, endLag:8, drain:0.06, regen:0.12, brkFrames:120, brkMeter:30, grace:8, push:3.5, bubble:1.55 };
 const RF = { start:6, active:36, endLag:22, cd:30, dmgK:1.3, dmgCap:12, spdK:1.8, maxTurns:3 };
+// A GRAB BREAKS A SHIELD (the owner, 2026-11-06: "while in shield, ppl can just grab to force me out of it" -- "grabs should break shield and stun the grabber. no damage tho."):
+// a grab that connects with a raised bubble does not start the grab: the bubble BREAKS (the shatter and the sound; the meter goes to 0 and the shield stays down for ZS.brkFrames,
+// then comes back at ZS.brkMeter, as after any break) but the one who was grabbed is NOT stunned -- free to move, jump and attack, just with no shield for a while -- and the
+// GRABBER is stunned for SHIELD_GRAB_STUN frames (the same dizzy stars as a break; cannot act, can be hit). No damage to either, no throw, no pummel. Tune the stun here.
+const SHIELD_GRAB_STUN = 40;
 function isReflector(f){ return !!f && REFLECTOR_FIGHTERS.has(f.name); }
 function zsMeter(f){ return f._zsM == null ? ZS.max : f._zsM; }
 // The bubble's radius: it follows the meter (full 1.55 bodies wide, down to 0.62), and grows over the first frames.
@@ -79785,7 +79790,7 @@ function zsRadius(f){
   return f.r*ZS.bubble*(0.4 + 0.6*k)*(0.5 + 0.5*up);
 }
 function zsClear(f, full){
-  f._zsOn = 0; f._rfT = 0; f._zsBrk = 0; f._zsF = 0; f._rfF = 0; f._zsLast = null; f._rfCd = 0; f._zKey = false; f._zsOut = null; f._spr = 0; f._sprD = 0;
+  f._zsOn = 0; f._rfT = 0; f._zsBrk = 0; f._zsLk = 0; f._zsGS = false; f._zsF = 0; f._rfF = 0; f._zsLast = null; f._rfCd = 0; f._zKey = false; f._zsOut = null; f._spr = 0; f._sprD = 0;
   if(full) f._zsM = ZS.max;
 }
 // Why it cannot be up: a hit, a freeze, a grab, a move of its own, a charge, a cinematic.
@@ -79808,6 +79813,15 @@ function zsBreak(f){
   f.vy = Math.min(f.vy || 0, -6.5); f.onground = false; f.vx = (f.vx || 0)*0.3; f.flash = 10;
   zsSfx('break');
   for(let i = 0; i < 14; i++) puff(f.x, f.y, f.color || '#ffffff', 6);
+}
+// A grab met a raised bubble (gbTick): the bubble breaks, nobody is stunned on the defender's side (zsStep: _zsLk is the no-shield time, the meter 0 and then ZS.brkMeter),
+// and the grabber is stunned SHIELD_GRAB_STUN frames (_zsBrk with _zsGS, so the meter is not touched when it ends). No damage, no throw.
+function zsGrabBreak(f, t){
+  t._zsOn = 0; t._zsM = 0; t._zsBrk = 0; t._zsLk = ZS.brkFrames; t._zsF = 0; t._zsLast = null; t._zsOut = null;
+  t.flash = 10; zsSfx('break');
+  for(let i = 0; i < 14; i++) puff(t.x, t.y, t.color || '#ffffff', 6);
+  f._gb = null; f._zsOn = 0; f._rfT = 0; f._zsBrk = SHIELD_GRAB_STUN; f._zsGS = true; f.vx = 0; f.flash = 8;
+  for(let i = 0; i < 6; i++) puff(f.x, f.y - f.r, '#ffe36b', 4);
 }
 // NO NEW STATUS THROUGH THE BUBBLE (the owner, 2026-11-05): a burn, poison, bleed, freeze, slow, root, DoT or stun that was ALREADY on the shielder keeps running (burn and the like
 // tick through zsBlock: opts.tick), but a blocked hit applies no new one. A hit's effects are written by about seventy callers after applyHit returns, so they are caught
@@ -79958,9 +79972,11 @@ function zsStep(f, inp){
   const key = !!(inp && inp.shield); let edge = key && !f._zKey; f._zKey = key;
   if(f._zsBrk > 0){   // broken: stunned, dizzy, nothing at all
     f._zsOn = 0; f._rfT = 0; f._spr = 0; f._sprD = 0;
-    if(--f._zsBrk <= 0){ f._zsM = ZS.brkMeter; }
+    if(--f._zsBrk <= 0){ if(f._zsGS) f._zsGS = false; else f._zsM = ZS.brkMeter; }   // (a grab stun, SHIELD_GRAB_STUN, leaves the meter alone)
     return { left:false, right:false, jump:false, attack:false, special:false, smash:false, up:false, down:false, grab:false, fin:false, shield:false };
   }
+  const lk = f._zsLk > 0 && !isReflector(f);   // no shield after a grab broke it (the fighter is free otherwise); the meter comes back at ZS.brkMeter
+  if(lk){ f._zsOn = 0; f._zsM = 0; if(--f._zsLk <= 0) f._zsM = ZS.brkMeter; } else if(f._zsLk > 0) f._zsLk = 0;
   const hard = zsHard(f);
   const lockAtk = { attack:false, special:false, smash:false, grab:false, fin:false };
   if(isHumanCtrl(f)){   // SPRINT: a person's Z while moving on the ground is a 6-frame decision (a CPU's Z is unchanged)
@@ -80010,6 +80026,7 @@ function zsStep(f, inp){
     }
     return Object.assign({}, inp, lockAtk, { left:false, right:false, up:false, down:false });
   }
+  if(lk) return inp;
   if(f._zsM < ZS.max) f._zsM = Math.min(ZS.max, f._zsM + ZS.regen);
   if(key && !hard && f.onground && f._zsM > 0 && !(f._lag > 0) && f.atkCd <= 0 && !(f._spPend > 0) && !f._smBuf){   // (a smash press that is waiting comes before the bubble)
     f._zsOn = 1; f._zsLast = null; f._zsOut = null; f._zsL = { a:!!inp.attack, s:!!inp.special }; zsSfx('up');
@@ -80029,13 +80046,13 @@ function zsDrawTrail(pr){
   c.restore();
 }
 function drawShieldArt(){
-  let any = false; for(const f of fighters) if(!f.dead && (f._zsOn > 0 || f._rfT > 0 || f._zsBrk > 0)){ any = true; break; }
+  let any = false; for(const f of fighters) if(!f.dead && (f._zsOn > 0 || f._rfT > 0 || f._zsBrk > 0 || f._zsLk > 0)){ any = true; break; }
   if(!any) return;
   const c = ctx; c.save(); c.lineJoin = 'round'; c.lineCap = 'round';
   for(const f of fighters){
     if(f.dead || haHidden(f)) continue;
-    const on = f._zsOn > 0, rf = f._rfT > 0, brk = f._zsBrk > 0;
-    if(!on && !rf && !brk) continue;
+    const on = f._zsOn > 0, rf = f._rfT > 0, brk = f._zsBrk > 0, shat = brk || (f._zsLk > 0 && ZS.brkFrames - f._zsLk < 16);
+    if(!on && !rf && !shat) continue;
     const up = MCAVE && MCAVE.on; if(up){ c.save(); mcUpright(f.x, f.y); }
     if(on){
       const M = zsMeter(f), low = M < 12 && (hazardT & 4), fl = f._zsF > 0 ? f._zsF/8 : 0, R = zsRadius(f), col = f.color || '#8fd3ff';
@@ -80061,13 +80078,13 @@ function drawShieldArt(){
         }
       }
     }
-    if(brk){
-      const t = ZS.brkFrames - f._zsBrk;
+    if(shat){
+      const t = brk ? ZS.brkFrames - f._zsBrk : ZS.brkFrames - f._zsLk;
       if(t < 16){   // the shatter: shards flying out
         for(let i = 0; i < 9; i++){ const a = i*Math.PI*2/9 + 0.3, r0 = f.r*(1.0 + t*0.09), r1 = r0 + 16*(1 - t/16);
           c.globalAlpha = 1 - t/16; c.strokeStyle = f.color || '#ffffff'; c.lineWidth = 3; c.beginPath(); c.moveTo(f.x + Math.cos(a)*r0, f.y + Math.sin(a)*r0); c.lineTo(f.x + Math.cos(a)*r1, f.y + Math.sin(a)*r1); c.stroke(); }
       }
-      for(let i = 0; i < 3; i++){   // dizzy: stars circling the head
+      if(brk) for(let i = 0; i < 3; i++){   // dizzy: stars circling the head
         const a = hazardT*0.12 + i*Math.PI*2/3, sx = f.x + Math.cos(a)*f.r*0.9, sy = f.y - f.r - 8 + Math.sin(a)*5;
         haStar(c, sx, sy, 7, 3.5); c.globalAlpha = 0.6; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.stroke(); c.globalAlpha = 1; c.fillStyle = '#ffe36b'; c.fill();
       }
@@ -80264,6 +80281,7 @@ function gbTick(f, inp){
       const d = Math.abs(t.x - f.x); if(d < bd){ bd = d; best = t; }
     }
     hitArt(f, 'grab', sh, { color: best ? '#ffffff' : '#9aa7b0', style:'grab' });
+    if(best && best._zsOn > 0 && !isReflector(best)){ zsGrabBreak(f, best); return; }   // A GRAB BREAKS A SHIELD: no hold, no throw, no damage (SHIELD_GRAB_STUN)
     if(best) holdStart(f, best, G);
   }
   if(++g.t > G.whiff + 2) f._gb = null;
@@ -88351,7 +88369,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   // BOT'S GOTCHA! (DOWNSPECIALS.cheer): "Bot takes no damage while holding." Nothing that hits them lands while they hold a foe -- no
   // damage, no launch, no status -- so the hold cannot be broken by hitting the holder. (The foe they hold can be hit.)
   if(t._holdT > hazardT && from && from !== t){ for(let i=0;i<3;i++) puff(t.x, t.y - t.r, '#f0fff3', 3); return; }
-  if(t._zsOn > 0 && zsBlock(t, dmg, from, opts)) return;   // SHIELD (Z): a raised bubble takes the hit: no damage, no launch (a grab goes round it: it is not a hit)
+  if(t._zsOn > 0 && zsBlock(t, dmg, from, opts)) return;   // SHIELD (Z): a raised bubble takes the hit: no damage, no launch (a grab breaks it instead: gbTick, SHIELD_GRAB_STUN)
   // BOSS DAMAGE CAP: any single boss attack can deal at most bossDmg() to a fighter total,
   // even if it's made of many projectiles (e.g. Four's Screechy ring). Tracked per attack ID.
   if(opts && opts.bossAtk!=null && opts.volley){
@@ -93045,7 +93063,7 @@ function brainShotTell(f, B){
 }
 function brainShield(f, t, B, L, dist, awake){
   const now = hazardT, rf = isReflector(f);
-  if(!(L.shd > 0) || !awake || f.hitstun > 0 || f._zsBrk > 0 || !f.onground && !rf || RACE.active){ B.shOn = false; f._aiShU = 0; return; }
+  if(!(L.shd > 0) || !awake || f.hitstun > 0 || f._zsBrk > 0 || f._zsLk > 0 || !f.onground && !rf || RACE.active){ B.shOn = false; f._aiShU = 0; return; }
   if(B.shOn && !rf && (f._zsOutT || -1) >= B.shT0){ B.shOn = false; f._aiShU = 0; B.shCd = now + AIS_CD; return; }   // it played a move out of the bubble: the hold is over
   if(B.shOn){
     const tell = rf ? brainShotTell(f, B) : brainSwingTell(f, t, dist);
@@ -93139,8 +93157,8 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   if(K.catch && f._packed && ready && !t._isBoss && ady < 50 && adx > brainReach(f) && adx < 420 && Math.random() < 0.5){ brainTap(B, brainFace({ special:true }, toward), 3); B.specAt = now + brainSpecGap(f, L); return; }
   if(inReach || (Math.random() < L.miss && brainInReach(f, t, 30))){   // (a swing from too far is one of its mistakes)
     // a grab instead, now and then (more against a foe it sees in a stance)
-    const stanced = (t.countering > 0 || t.armor > 0 || t.reflecting > 0), shielded = t._zsOn > 0;   // (a raised bubble: a grab goes through it)
-    if(f.onground && !t._isBoss && t.onground !== false && adx < f.r + (t.r||24) + 20 && ady < 30 && Math.random() < L.grab*(shielded ? 6 : stanced ? 3 : 1)){ brainTap(B, { grab:true }, 3); B.next = now + 30; return; }
+    const stanced = (t.countering > 0 || t.armor > 0 || t.reflecting > 0), shielded = t._zsOn > 0;   // (a raised bubble: a grab breaks it but stuns the grabber (SHIELD_GRAB_STUN), so no extra liking for it: the plain rate)
+    if(f.onground && !t._isBoss && t.onground !== false && adx < f.r + (t.r||24) + 20 && ady < 30 && Math.random() < L.grab*(shielded ? 1 : stanced ? 3 : 1)){ brainTap(B, { grab:true }, 3); B.next = now + 30; return; }
     // its special up close, when it lands up close (BRAIN_SPEC: not Cammy's far flash, not a warp, a catch or a stance), now and then --
     // more often when it is a launcher (10% or more) and the kit's smash is no swing (Teardrop's THE KICK, 14%, beside a cloud for a smash:
     // a person reaches for the one strong move they have), by level
@@ -106781,7 +106799,7 @@ const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering
   '_boltT', '_boltY',   // (EVENT FIGHTERS: CLOUDY -- when HEY, MY WINDOW! struck, and the floor it struck: 0 for the crackle on the ground)
   '_rain0', '_rainT',   // (EVENT FIGHTERS: CLOUDY -- when RAIN CLOUD began and ends)
   '_flutT', '_flutT0', '_crumbT',   // (EVENT FIGHTERS: PIE -- until when ARM FLUTTER flaps and when it began; until when she lies in crumbs after her fork)
-  '_zsOn','_zsM','_zsBrk','_zsF','_rfT','_rfF',   // (SHIELD / REFLECTOR: frames the bubble has been up, its meter, the break stun, the block flash; the reflector's frame and flash -- drawShieldArt reads them)
+  '_zsOn','_zsM','_zsBrk','_zsLk','_zsF','_rfT','_rfF',   // (SHIELD / REFLECTOR: frames the bubble has been up, its meter, the break stun, the block flash; the reflector's frame and flash -- drawShieldArt reads them)
   '_growT',   // (Puffball's Grow: until when she is grown -- the pink Attack Up icon; her size itself rides in r)
   '_baldUntil', '_fsBaldUntil',   // (FSA lane a: Spikey's spikes are gone until then -- his Can't Hold It In special, and his Final Smash's release (the render-only one))
   'fsGlow','fsId','fsT','fsWind','fsDur','fsAx','fsAy','fsBx','fsBy','fsCx','fsCy',   // FINAL SMASH BALLS: the glow, and which Final Smash is on, how far in, and where it began (all a client needs to draw it)
