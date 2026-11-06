@@ -1286,6 +1286,15 @@ fetch script's alpha floor (24) are erased, as `fetch-sprites.mjs` does.
 His hands, the swingset of Daylight Savings Swingset and the face of Infinitely Powerful are drawn in code (no file: his hands are the
 render's own, redrawn turning; the swingset is BFB's playground swing, drawn).
 
+### Stapy (BFDI wiki; BFB+TPOT, kit 8)
+
+| Picture | Shown | Made from | Source |
+|---|---|---|---|
+| `stapy-win.png` (256x143) | the result screen | File:Stapy book.png; cut-out (wiki pose), scaled to his render's size (his stapler as big as the render's); `scripts/make-event-stapy-art.py` | https://battlefordreamisland.fandom.com/wiki/File:Stapy_book.png |
+| `stapy-hurt.png` (240x183) | hit, launched, and the daze at the end of Stapler Instincts | File:Stapy stapler instincts just took over.png; cut-out (wiki pose), scaled to his render's size; drawn mirrored (his face sits on the left); `scripts/make-event-stapy-art.py` | https://battlefordreamisland.fandom.com/wiki/File:Stapy_stapler_instincts_just_took_over.png |
+
+His jaw, staples, ladder, crack, glazed eyes and daze stars are drawn in code (no file). The second-choice picture (File:Stapy ow.png) was not needed.
+
 ## Per-fighter skins (Wardrobe)
 
 215 second renders, each worn by ONE fighter only (its Wardrobe skin), in `assets/sprites/skins/`; every playable fighter has at least
