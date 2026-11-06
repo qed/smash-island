@@ -88147,7 +88147,7 @@ function pieLimb(c, x0, y0, x1, y1, bend, R){
 //           into the crack; four stitches, then the ground snaps shut and throws them up (about 100% on a foe held at 0%, as the redesigned ones).
 const STAPY = {
   staple:  { wind:20, spd:13, life:40, r:9, out:30, dmg:6, kb:[2.4, -3.4], cd:70, near:170, tie:80, tieHold:120, wallHold:42, floorHold:36, hard:26, ai:[120, 480] },
-  plunge:  { power:-12.4, hang:20, drop:15, reach:34, r:26, dmg:10, kb:[1.2, 4.6], down:30, steer:0.5, vmax:3.6 },
+  plunge:  { power:-13.2, hang:20, drop:15, reach:34, r:26, dmg:10, kb:[1.2, 4.6], down:30, steer:0.5, vmax:3.6 },
   trance:  { wind:20, dur:180, cd:300, stapleHold:18, gap:60, slow:0.9, daze:20, ai:200, aiGap:360 },
   ladder:  { lean:20, near:70, far:[90, 260], gap:16, live:6, open:20, fade:14, w:44, h:[58, 86, 120], dmg:[5, 5, 11], kb:[[0.5, -8.5], [0.5, -8.5], [3.6, -12.5]], ai:[100, 260], aiGap:300 },
   fs:      { r:400, near:160, band:26, stitch:[30, 40, 50, 60], snap:84, dmg:5.5, last:28, skb:[0.2, -0.6], kb:[5.5, -14], lockEnd:90, dur:104 },
@@ -88257,7 +88257,7 @@ function stapleStep(pr){
 function stapleLand(f, pr, t){
   const S = STAPY.staple, d = Math.sign(pr.vx) || f.face;
   pr.life = 0;
-  const p0 = t.pct;
+  const p0 = t.pct, stood = !!t.onground, atWall = !!(t._wallSide && t._wallT >= hazardT - 3);   // (read before the hit: it lifts them off the floor)
   applyHit(t, S.dmg, d*S.kb[0], S.kb[1], f, { shot:1 });
   if(t.dead || t.pct === p0 || !stOk(t)) return;   // blocked (a shield) or gone: nothing to staple
   let other = null, od = 1e9;
@@ -88267,8 +88267,8 @@ function stapleLand(f, pr, t){
     if(g < S.near && g < od){ od = g; other = o; }
   }
   if(other){ stLink(f, t, other); return; }
-  if(t._wallSide && t._wallT >= hazardT - 3){ stPin(f, t, 'wall', S.wallHold); return; }
-  if(t.onground) stPin(f, t, 'floor', S.floorHold);
+  if(atWall){ stPin(f, t, 'wall', S.wallHold); return; }
+  if(stood) stPin(f, t, 'floor', S.floorHold);
 }
 
 // ---- STAPLE DOWN (up special, ↑ + C) ----
@@ -88312,20 +88312,22 @@ DOWNSPECIALS.stapler = function(f){   // Stapy -- STAPLER INSTINCTS (EVENT FIGHT
   if((f._trCd || 0) > hazardT || f._trT > hazardT){ puff(f.x, f.y - f.r, STAPY_INK.glaze, 2); return; }
   f._trCd = hazardT + T.cd;
   armAtk(f, T.wind + 4, 'cast', mvId(f, 'down'));
-  startWindup(f, T.wind, function(){ f._aiTranceAt = hazardT; f._trT0 = hazardT; f._trT = hazardT + T.dur; f._trPin = null; f._trSeen = null; for(let i = 0; i < 6; i++) puff(f.x + (i - 3)*8, f.y - f.r, STAPY_INK.glaze, 4); tone(180, 0.25, 'sawtooth', 0.14, 0, 360); }, STAPY_INK.glaze);
+  startWindup(f, T.wind, function(){ f._aiTranceAt = hazardT; f._trT0 = hazardT; f._trT = hazardT + T.dur; f._trPin = null; f._trSeen = null; f._trStood = null; for(let i = 0; i < 6; i++) puff(f.x + (i - 3)*8, f.y - f.r, STAPY_INK.glaze, 4); tone(180, 0.25, 'sawtooth', 0.14, 0, 360); }, STAPY_INK.glaze);
   if(f._windup){ f._windup.trance = true; f.flash = 6; }
 };
 function stapyTrance(f){
   const T = STAPY.trance;
   if(f.hitstun > 0 || f.dead) return;
-  const seen = f._trSeen || (f._trSeen = {}), pinned = f._trPin || (f._trPin = {});
+  const seen = f._trSeen || (f._trSeen = {}), pinned = f._trPin || (f._trPin = {}), was = f._trStood || {}, now = {};
   for(const t of fighters){
+    now[t.idx] = !!t.onground;   // (who stood last frame: a hit lifts them off the floor, so "standing" is read from before it)
     if(t.dead || t === f || t.team === f.team || t.lastHitBy !== f || !(t._lastHitT > (seen[t.idx] == null ? -1 : seen[t.idx]))) continue;
     seen[t.idx] = t._lastHitT;
-    if(!t.onground || !stOk(t) || t._fxBy != null || hazardT - (pinned[t.idx] == null ? -1e9 : pinned[t.idx]) < T.gap) continue;
+    if(!(was[t.idx] || t.onground) || !stOk(t) || t._fxBy != null || hazardT - (pinned[t.idx] == null ? -1e9 : pinned[t.idx]) < T.gap) continue;
     pinned[t.idx] = hazardT;
     stPin(f, t, 'floor', T.stapleHold);
   }
+  f._trStood = now;
 }
 
 // ---- HIS FRAME (step: once a frame for every fighter, before it moves; cheap for anyone not doing any of this) ----
