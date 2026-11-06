@@ -1298,7 +1298,13 @@ His jaw, staples, ladder, crack, glazed eyes and daze stars are drawn in code (n
 
 ### Foldy (BFDI wiki; BFB+TPOT, kit 9)
 
-One picture, her TPOT render: `foldy.png` (258x200), made from File:Tpot renders0034.png (700x543) by `scripts/make-event-foldy-art.py` (trimmed, scaled to 200 px tall). Source: https://battlefordreamisland.fandom.com/wiki/File:Tpot_renders0034.png . Her fold, plane, glide, fist, bell, hand signs and the dodecahedron are drawn from it and in code (no file). NOT downloaded (waiting for the owner): File:Weirdfoldy.png (half-folded), File:FLD1.png (unfolded), File:Vomitfoldy.png (soggy).
+Her TPOT render, `foldy.png` (258x200), made from File:Tpot renders0034.png (700x543) by `scripts/make-event-foldy-art.py` (trimmed, scaled to 200 px tall). Source: https://battlefordreamisland.fandom.com/wiki/File:Tpot_renders0034.png . Her fold, glide, fist, bell, hand signs and the dodecahedron are drawn from it and in code (no file).
+
+| Picture | Shown | Made from | Source |
+|---|---|---|---|
+| `foldy-plane.png` (256x124) | the dart of Fold and Fly | File:Weirdfoldy.png (2248x1096; BFB 12, partly folded); cut-out (wiki pose), scaled to 256 wide, drawn 0.85 of the render's pixel size; `scripts/make-event-foldy-pose-art.py` | https://battlefordreamisland.fandom.com/wiki/File:Weirdfoldy.png |
+| `foldy-hurt.png` (256x206) | hit and launched | File:FLD1.png (878x705; BFB 12, her KO picture, unfolded); cut-out (wiki pose), scaled to 256 wide; `scripts/make-event-foldy-pose-art.py` | https://battlefordreamisland.fandom.com/wiki/File:FLD1.png |
+| `foldy-soggy.png` (256x171) | while she is soaked | File:Vomitfoldy.png (538x360; TPOT 1, covered in Rocky's barf); cut-out (wiki pose), scaled to 256 wide; `scripts/make-event-foldy-pose-art.py` | https://battlefordreamisland.fandom.com/wiki/File:Vomitfoldy.png |
 
 ## Per-fighter skins (Wardrobe)
 
