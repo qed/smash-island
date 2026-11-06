@@ -1213,6 +1213,7 @@ keyed by the assist's name; MePhone4's hostile adds wear the same art.
 | Grotato (the Grotatoes page; Grotatoes! Transparent.png) | `grotato.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/96/Grotatoes%21_Transparent.png/revision/latest?cb=20240401034516 |
 | Pie | `pie.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fa/Tpot_renders0005.png/revision/latest?cb=20210113223416 |
 | Stapy | `stapy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3b/Tpot_renders0053.png/revision/latest?cb=20240622133301 |
+| Foldy | `foldy.png` (258x200) | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e5/Tpot_renders0034.png/revision/latest?cb=20210113224312 |
 | Blender | `blender.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/5/5a/BlenderTPOT14.png/revision/latest?cb=20251018182459 |
 | Shopping Cart | `shopping-cart.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0f/ShoppingcartTPOT14.png/revision/latest?cb=20251018183502 |
 | Beach Ball | `beach-ball.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3b/Elswerebeachball.png/revision/latest?cb=20260102211016 |
@@ -1294,6 +1295,10 @@ render's own, redrawn turning; the swingset is BFB's playground swing, drawn).
 | `stapy-hurt.png` (240x183) | hit, launched, and the daze at the end of Stapler Instincts | File:Stapy stapler instincts just took over.png; cut-out (wiki pose), scaled to his render's size; drawn mirrored (his face sits on the left); `scripts/make-event-stapy-art.py` | https://battlefordreamisland.fandom.com/wiki/File:Stapy_stapler_instincts_just_took_over.png |
 
 His jaw, staples, ladder, crack, glazed eyes and daze stars are drawn in code (no file). The second-choice picture (File:Stapy ow.png) was not needed.
+
+### Foldy (BFDI wiki; BFB+TPOT, kit 9)
+
+One picture, her TPOT render: `foldy.png` (258x200), made from File:Tpot renders0034.png (700x543) by `scripts/make-event-foldy-art.py` (trimmed, scaled to 200 px tall). Source: https://battlefordreamisland.fandom.com/wiki/File:Tpot_renders0034.png . Her fold, plane, glide, fist, bell, hand signs and the dodecahedron are drawn from it and in code (no file). NOT downloaded (waiting for the owner): File:Weirdfoldy.png (half-folded), File:FLD1.png (unfolded), File:Vomitfoldy.png (soggy).
 
 ## Per-fighter skins (Wardrobe)
 
