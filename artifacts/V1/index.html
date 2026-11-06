@@ -20103,6 +20103,7 @@ function pcSave(){
     oneFx, cobsFx, MCAVE, camAng,   // (MOON CAVES: the disc and the view's turn are one match's too, like the world; null and 0 on every other map)
     BASKET,   // (REACH THE BASKET: null on every other map)
     JAWB,   // (SOMEBODY'S INSIDE: null on every other map)
+    STICKY,   // (STICKY PILLARS: null on every other map)
     _koc:Object.assign({}, KOC), _fs:Object.assign({}, FS), _hsf:Object.assign({}, HITSTOP_FIN), _stom:Object.assign({}, STOMACH),
     _fsf:FSF.pend,   // (FS FLOOR: the Final Smashes waiting to settle their foes are one match's own; fsReset gives a match a NEW list, never clears one in place)
     _han:pcCopyHaN(HA_N), _ha:HIT_ART.slice(), _dh:DEBUG_HITS.slice(),
@@ -20122,6 +20123,7 @@ function pcLoad(s){
   SMASH_PROJ = s.SMASH_PROJ; NET_PROJ_SEQ = s.NET_PROJ_SEQ; COS_KO_FX = s.COS_KO_FX; COS_KO_OUT = s.COS_KO_OUT; HA_FADE_NEXT = s.HA_FADE_NEXT;
   oneFx = s.oneFx; cobsFx = s.cobsFx; MCAVE = s.MCAVE; camAng = s.camAng;
   BASKET = s.BASKET; JAWB = s.JAWB;
+  STICKY = s.STICKY;
   pcSetObj(KOC, s._koc); pcSetObj(FS, s._fs); pcSetObj(HITSTOP_FIN, s._hsf); pcSetObj(STOMACH, s._stom);
   pcSetObj(HA_N, pcCopyHaN(s._han));
   FSF.pend = s._fsf;
@@ -20143,6 +20145,7 @@ function pcBase(){
     IMPACT_SCARS:[], IMPACT_OUT:[], MATCH_TWIST:null, CAKE_FX:null, RIVAL_NAME:null, RIVAL_KILLS:{}, _cpuSeeT:0, SMASH_PROJ:null,
     NET_PROJ_SEQ:0, COS_KO_FX:[], COS_KO_OUT:[], HA_FADE_NEXT:0, oneFx:[], cobsFx:[], MCAVE:null, camAng:0,
     BASKET:null, JAWB:null,
+    STICKY:null,
     _koc:Object.assign({}, PCAM_BOOT.koc), _fs:Object.assign({}, PCAM_BOOT.fs), _hsf:Object.assign({}, PCAM_BOOT.hsf), _stom:Object.assign({}, PCAM_BOOT.stom),
     _fsf:[], _han:{}, _ha:[], _dh:[], _live:0, _elim:0 });
   return s;
@@ -21507,6 +21510,7 @@ function beginMatchNow(){
   EVENT_RESULT = null;   // (the result note is this match's: set at its last KO by eventFinish)
   if(twistOn('dig')) digBegin();   // THE DIG FLOOR (an event twist): the floor cut into spans a hard landing can break (FLOOR_SEGS, from here on)
   if(twistOn('bar')) barBegin();   // THE BAR (an event twist): the floor's strips, dropping from the outside in on a timetable (FLOOR_SEGS follows the clock from here on)
+  STICKY = twistOn('sticky') ? { n:0 } : null;   // STICKY PILLARS (an event twist): the side of a pillar hit hard holds a fighter for half a second
   try{ releaseMappedKeys(); }catch(e){}   // and a new match: a key still down from the last one must not act on this one's first frame
   if(ONEFIGHT.active){ ONEFIGHT.frames = 0; ONEFIGHT.over = false; ONEFIGHT.won = false; ONEFIGHT.result = null; ONEFIGHT.retry = null; }   // her clock starts at zero
   if(COBSFIGHT.active){ COBSFIGHT.frames = 0; COBSFIGHT.over = false; COBSFIGHT.won = false; COBSFIGHT.result = null; COBSFIGHT.retry = null; }   // and his
@@ -65087,6 +65091,7 @@ function step(){
         else if(f._aBuf != null){ if(!inp.attack && !inp.grab && f.atkCd <= 0 && !(f._lag > 0) && hazardT - f._aBuf <= 8){ inp = Object.assign({}, inp, { attack:true }); f._aBuf = null; } else if(hazardT - f._aBuf > 8) f._aBuf = null; }
       }
       // jump
+      if(f._stk) stickyTick(f, inp);   // STICKY PILLARS: a press of jump peels a stuck fighter off, and the jump below plays as it always does
       if(f._upCancel){ if(f._rawKeys ? f._rawKeys[3] : inp.jump) f._jp = true; else f._upCancel = false; }   // (UP SMASH: the up that cancelled its jump does not jump when the smash is let go of or charging)
       if(inp.jump && !f._jp && mtDashJump(f, inp)){ f._jp=true; }   // a hyper, a super or a reverse hyper out of a dash (dashers)
       else if(inp.jump && !f._jp && mtWallJump(f, inp)){ f._jp=true; }   // a wall jump (movetech): in the air, toward a wall, once per wall per airtime
@@ -65235,6 +65240,7 @@ function step(){
         // the wall is its FACE, not the piece (the owner, 2026-10-19: "walljump can double up if you go from 1 wall section to another"):
         // a wall built of stacked pieces is one wall, so its face line (side + x, to WALL_FACE_SNAP px) is what the once-per-airtime rule counts
         f._wallId = (MCAVE && MCAVE.on && p.mcA0 !== undefined) ? mcWallId(f._wallSide, p, ax < 0) : f._wallSide + ':' + Math.round((ax < 0 ? p.x : p.x + p.w) / WALL_FACE_SNAP);
+        if(STICKY) stickyHit(f, p, ax, inp);   // STICKY PILLARS (an event twist): a hard hit on a pillar's side sticks (the speed is read before it is stopped below)
         if(ax < 0 && f.vx > 0) f.vx = 0;      // pushed left  => was moving right into it
         if(ax > 0 && f.vx < 0) f.vx = 0;      // pushed right => was moving left into it
       } else {
@@ -65285,6 +65291,7 @@ function step(){
       }
     }
     if(f._rampT > 0){ f._rampT--; if(!f.onground && f.vy >= 0 && f.vy < 7 && !f._tp && !(f._tpHang > 0)) ctfRampSnap(f); }   // (Capture the Flag: walking down a slope keeps the feet on it. Not Bow fading into her Teleport or hanging where she appeared: she is held still, and a snap pulled her into the corner of the next step)
+    if(STICKY) stickyPin(f);   // STICKY PILLARS: a stuck fighter is held where it hit, until the half second or a hit ends it
     mtCling(f, inp);
     if(f.onground){ f._wallUsed = null; f._clingT = 0; f._ff = false; f._airDash = false; f._hyperT = 0; }   // landing refreshes the wall jump and the air dash
     // land-squash: airborne last frame, grounded now, coming down with real speed → brief cartoony squat
@@ -89975,7 +89982,7 @@ const EVENT_MATCHES = {
   // the teams are the design's and were not checked against it (question 15's check, left to the owner).
   'Stapy': [
     // WALL TO WALL: Stone Pillars (walls to staple to), no items: the pillars are the walls his staple pins a foe against and his cling holds him to. No Smash Balls.
-    { n:1, name:'Wall to Wall', kind:'duel', stage:'pillars', sides:[['you'], ['Stapy']], items:'off', smashBalls:false, twist:null, stocks:2 },
+    { n:1, name:'Wall to Wall', kind:'duel', stage:'pillars', sides:[['you'], ['Stapy']], items:'off', smashBalls:false, twist:'sticky', stocks:2 },   // STICKY PILLARS (twist 'sticky')
     // FREE FOOD, THE 3 VS 1 (the design's "Stapy + Marker + Fries vs you + Lollipop + Saw" with his side kept): you alone against Stapy, Marker and Fries on the Teams
     // arena (Grand Plains' sky and ground; the design names no stage); food items only (the show's Free Food), no Smash Balls (one would nearly always fall to the side with three).
     { n:2, name:'Free Food', kind:'3v1', stage:'grandplains', sides:[['you'], ['Stapy', 'Marker', 'Fries']], items:'food', smashBalls:false, twist:null, stocks:2, youStocks:3 },
@@ -90140,6 +90147,7 @@ const EVENT_ITEM_RATE = { off:0, food:2, on:2, lots:3, throw:2 };
 // The twists built so far (build step 8: "only the twists his matches use"). A match that needs one not built yet is not played without it.
 const EVENT_TWISTS_BUILT = ['sponge', 'pull', 'lowgrav', 'windback', 'fast', 'rain', 'basket', 'inside', 'collect', 'dig', 'bar'];   // (pull and lowgrav: Black Hole's two, kit 4; windback and fast: Clock's two, kit 5; rain: Cloudy's, kit 6; basket: 8-Ball's Basket Into X; inside: 8-Ball's Lick Your Way to Freedom; collect: Cloudy's The Collection)
 // (dig: Spongy's Get Digging; bar: Eraser's Take the Plunge, LAST ON THE BAR)
+EVENT_TWISTS_BUILT.push('sticky');   // (sticky: Stapy's Wall to Wall, STICKY PILLARS)
 // Each match's twist in plain words, for the event page and the select screen's strip (never in a match). 'edges' and 'food' are a stage's own
 // edges and an items rule rather than a twist row, shown the same way.
 const EVENT_TWIST_WORDS = {
@@ -90158,6 +90166,9 @@ const EVENT_TWIST_WORDS = {
   collect: { icon:'🧩', short:'a complete collection', words:"A complete collection: everyone keeps a collection of the kinds of item they pick up, in four slots over their head: a heart, a jam jar, a crate, a power-up, a helper trophy, a Yoyleberry. A kind counts once, so a second heart adds nothing. Fill all four and you glow with a Final Smash, as if you had broken a Smash Ball, and your slots empty. Lose a stock and your kinds fall back onto the stage for anyone to grab. Three of four makes you a target." },
   inside: { icon:'🍬', short:"somebody's inside", words:"Somebody's inside: about every 20 seconds a jawbreaker drops. Hit it to chip it. Halfway, the top pops off so everyone can see inside, and whoever popped it heals 10%. Most are empty and crumble with a puff of air that pushes you. But one in three has someone inside: whoever lands the last hit lets them out and is safe for 5 seconds. A jawbreaker nobody opens melts. It bonks anyone it falls on, a little." },
 };
+Object.assign(EVENT_TWIST_WORDS, {
+  sticky: { icon:'📎', short:'sticky pillars', words:'Sticky pillars: hit the side of a pillar hard, thrown at it by a blow or in a fast dash, and you stick to it like a staple for half a second. It does no damage. Press jump and you peel off at once, and a hit knocks you off. You cannot stick again straight away. Stapy never sticks.' },
+});
 // THE BACKDROPS (section 2, "Twists": "the Cake at Stake place or the A-twos-ment Park, drawn behind a normal stage without their boss or
 // hazards"): the place's sky (BOSS_ARENA_SKY) and its scenery, drawn in the sky behind the stage (drawEventSky), and the colour of the drop under
 // a stage's cliffs. Built so far: the park (Clock's Fast Forward) and the Cake at Stake place (Pie's duel).
@@ -90185,6 +90196,7 @@ let EVENT_RESULT = null;   // { name, n, title, won, alive, pay }: what the last
 let MATCH_TWIST = null;    // this match's twists ('sponge'; 'fast+bd:twopark': eventTwistKey), or null: set by beginMatchNow from EVENT_RUN, and by nothing else
 let JAWB = null;           // SOMEBODY'S INSIDE (an event twist, 8-Ball's Lick Your Way to Freedom): null in every other match; else { next, rng, seq, sh } -- see jawbBegin (sh: the one shell now, or null). A guest holds { sh } from the snapshot (s.jw)
 let BASKET = null;         // REACH THE BASKET (an event twist, 8-Ball's Basket Into X): null in every other match; else { t0, n, sx, sy } -- see basketBegin. A guest holds the host's, from the snapshot (s.bk)
+let STICKY = null;         // STICKY PILLARS (an event twist, Stapy's Wall to Wall): null in every other match; else { n } -- see stickyBegin. Who is stuck is on the fighter (`_stk`: { x, y, side, t0, j }), and a guest gets it from the snapshot (s.sk)
 function startEventMatch(){
   const P = EVENT_PICK, ev = eventThisWeek(), m = (P && ev && P.name === ev.name) ? eventMatchOf(ev.name, P.n) : null;
   if(!m || !eventMatchReady(m) || inNetSession()){ EVENT_PICK = null; go(ev ? 'event' : 'title'); return; }   // the week turned under the pick, or no such match
@@ -90203,6 +90215,7 @@ function startEventMatch(){
 // The player's own settings back, every one the match set; and the match is over (no twist, no lineup).
 function returnEventLoan(){
   EVENT_RUN = null; MATCH_TWIST = null; BASKET = null; JAWB = null;
+  STICKY = null;   // STICKY PILLARS: nobody is stuck after the match (the stuck fighters themselves go with the fighters)
   const L = EVENT_LOAN; if(!L) return;
   EVENT_LOAN = null;
   SETTINGS.mode = L.mode; SETTINGS.count = L.count; SETTINGS.stocks = L.stocks; SETTINGS.teamKey = L.teamKey; SETTINGS.itemRate = L.itemRate;
@@ -90795,6 +90808,56 @@ function drawRainStreaks(){
     ctx.moveTo(x, y); ctx.lineTo(x - 4, y + 15);
   }
   ctx.stroke(); ctx.restore();
+}
+
+// ---------- EVENT FIGHTERS: STICKY PILLARS (Stapy's "Wall to Wall", Stone Pillars; an event twist) ----------
+// The owner's pick for Stapy's duel: a fighter who hits the SIDE of a pillar HARD -- thrown at it by a blow, or in a fast dash -- sticks to it like a staple
+// for half a second (STK.hold, 30 frames), with no damage. "Hard" is a speed into the wall of STK.hard (11 px a frame): above the run's cap (MAXVX 6.4, 9.6
+// with the speed power-up), so only a launch or a dash gets there. A fighter who sticks has its stun taken off, so a press of jump peels it off at once (a
+// fresh press: a jump key already down when it hit does not), and the jump then plays as any jump does (a wall jump if it holds toward the wall). Nothing is
+// unescapable: the half second ends by itself, a hit on the stuck fighter knocks it off, and after any stick it cannot stick again for STK.imm (60 frames).
+// Stapy never sticks (he clings to walls by himself: CLINGERS). It changes no damage and no knockback. Shown by art and sound only: a row of staples through
+// the fighter into the pillar (drawStickyPins, the same staple his own pin draws, flickering over the last STK.tell frames) and a small clack.
+// ONLINE: the host runs it; a guest draws the staples from the snapshot's s.sk (an event match is offline until event rooms, build step 14).
+const STK = { hard:11, hold:30, imm:60, tell:8 };
+function stickyOk(f){ return !!f && !f.dead && !(f.kit && f.kit.special === 'stapler') && f._heldBy == null && f._jail == null && !f._tp && !(f.flying > 0) && !f._fsLock; }
+// From the wall branch of the fighter's step, after it was pushed out of the pillar and before its speed is stopped: p the solid piece, ax the push (negative: pushed left, so the pillar is on its right).
+function stickyHit(f, p, ax, inp){
+  if(!p.solid) return;
+  if(f._stk){ if(hazardT - f._stk.t0 < STK.hold && !f.dead) return; f._stk = null; }   // (an old one left by a KO is not one)
+  const into = ax < 0 ? f.vx : -f.vx;
+  if(!(into >= STK.hard) || hazardT < (f._stkImm || 0) || !stickyOk(f)) return;
+  f._stk = { x:f.x, y:f.y, side:ax < 0 ? 1 : -1, t0:hazardT, j:!!(f._rawKeys ? f._rawKeys[3] : (inp && inp.jump)) };   // (j: jump already down when it hit -- a human's keys as pressed through the stun, f._rawKeys -- is not a press that peels it off)
+  f.hitstun = 0; f.vx = 0; f.vy = 0; if(STICKY) STICKY.n++;
+  for(let i = 0; i < 5; i++) puff(f.x + f._stk.side*f.r, f.y + (i - 2)*7, STAPY_INK.steel, 3);
+  tone(560, 0.06, 'square', 0.1, 0, 280);
+}
+function stickyFree(f, why){
+  f._stk = null; f._stkImm = hazardT + STK.imm;
+  puff(f.x, f.y, STAPY_INK.steel, 2);
+  if(why === 'jump') tone(380, 0.05, 'triangle', 0.07, 0, 620);
+}
+// In the fighter's move step, before its jump: a fresh press of jump frees it.
+function stickyTick(f, inp){
+  const o = f._stk; if(!o) return;
+  if(inp.jump && !o.j) stickyFree(f, 'jump'); else o.j = !!inp.jump;
+}
+// After the pillars have pushed it about: held where it stuck, until the time is up, a hit lands, or something takes it (a hold, a teleport, a KO).
+function stickyPin(f){
+  const o = f._stk; if(!o) return;
+  if(f.dead || hazardT - o.t0 >= STK.hold || f.hitstun > 0 || !stickyOk(f)){ stickyFree(f, 'end'); return; }
+  f.x = o.x; f.y = o.y; f.vx = 0; f.vy = 0; f._wallSide = o.side; f._wallT = hazardT;
+}
+function stickyNet(){ const a = []; for(const f of fighters){ const o = f._stk; if(o && !f.dead && hazardT - o.t0 < STK.hold) a.push([f.idx, Math.round(f.x), Math.round(f.y), o.side, o.t0]); } return a; }
+function drawStickyPins(){
+  const c = ctx;
+  for(const f of fighters){
+    const o = f._stk; if(!o || f.dead) continue;
+    const left = STK.hold - (hazardT - o.t0); if(left <= 0) continue;
+    c.save(); c.globalAlpha = (left < STK.tell && (left | 0) % 4 < 2) ? 0.4 : 1;
+    for(let i = -1; i <= 1; i++) stDrawStaple(c, f.x + o.side*(f.r*0.9), f.y + i*12, 12, 8, STAPY_INK.steel, 1.571);
+    c.restore();
+  }
 }
 
 // ---------- EVENT FIGHTERS: REACH THE BASKET (8-Ball's "Basket Into X", the BFB 1 basket; an event twist) ----------
@@ -96738,6 +96801,7 @@ function draw(){
   if(SETTINGS.mode==='ctf') ctfDrawCoverFront();   // the props a friend stands in, see-through, over the fighters
   if(CTUT.active) ctutDrawWorld();   // the Capture the Flag practice: where a flag may not go
   drawKitFx('over');    // the Fist Thingy's arm, over the fighters it reaches across
+  if(STICKY || isNetClient()) drawStickyPins();   // STICKY PILLARS (an event twist): the staples that hold a stuck fighter to the pillar
   if(FINX.length || fighters.some(function(t){ return t._dazzle > hazardT || t._patch > hazardT || t._sinkT > hazardT || t._jellyT > hazardT || fx4StatusOn(t) || t._zeroT > hazardT; })) finxDraw('over');   // the jets, the whirl, the thread, the snowball, the bubble, the geyser, the smack, the swap line, the slap fight (FINISHERS V2)
   drawStanceArt();      // HIT ART: a counter's or a reflect's window, lit on the outline it answers with
   drawShieldArt();      // SHIELD / REFLECTOR (Z): the bubble that shrinks as it takes hits, the reflector's pane, the break
@@ -108398,6 +108462,7 @@ function serializeState(withGeo){
   if(SMASHBALL) s.fsb = [Math.round(SMASHBALL.x), Math.round(SMASHBALL.y), Math.max(0, Math.round(SMASHBALL.hp/SMASHBALL.hpMax*100)), SMASHBALL.flash > 0 ? 1 : 0];   // the Smash Ball: where it is, how much is left, a hit's flash
   if(JAWB) s.jw = jawbNet();   // SOMEBODY'S INSIDE (an event twist): the shell now, as numbers ([] when there is none), in every snapshot; it is drawn from these and the clock
   if(BASKET) s.bk = [BASKET.t0, BASKET.n, BASKET.sx, BASKET.sy];   // REACH THE BASKET (an event twist): the last take, in every snapshot (a snapshot dropped for a newer takes no take with it); the basket's place is the clock's (basketAt)
+  if(STICKY) s.sk = stickyNet();   // STICKY PILLARS (an event twist): who is stuck where, in every snapshot (a few numbers each)
   if(FS.freeze > 0 || FS.slow > 0) s.fsx = [FS.freeze, FS.fz, FS.slow, FS.sf, Math.round(FS.sx), Math.round(FS.sy), FS.slowN, FS.game | 0];   // a Final Smash's intro and slow-mo KO: frames left, whose, the close-up's point, the slow-mo's length (CATCH, THEN CINEMATIC); the last KO's (THE LAST KO)
   if(SETTINGS.mode==='ctf') s.ctf = ctfNetOut();   // Capture the Flag: the map by its id and the live state (ctfNetOut)
   if(COS_KO_OUT.length) s.ko = COS_KO_OUT.splice(0);   // cosmetic KO bursts since the last snapshot, [x, y, which]: only on a KO
@@ -108539,6 +108604,7 @@ function applySnapshot(s){
   { const was = fresh ? null : JAWB;   // SOMEBODY'S INSIDE (an event twist): the host's shell; a guest hears what it just did (jawbHear)
     JAWB = Array.isArray(s.jw) ? { sh:s.jw.length ? jawbFromNet(s.jw) : null } : null;
     if(JAWB && was) jawbHear(was.sh, JAWB.sh); }
+  if(Array.isArray(s.sk)) for(const r of s.sk){ const f = fighters.find(q=>q.idx === (r[0] | 0)); if(f) f._stk = { x:+r[1] || 0, y:+r[2] || 0, side:r[3] < 0 ? -1 : 1, t0:+r[4] || 0, j:false }; }   // STICKY PILLARS: the host's stuck fighters (stickyNet), drawn as there
   { const wasB = fresh ? null : SMASHBALL;   // the Smash Ball, glided like a fighter
     SMASHBALL = Array.isArray(s.fsb) ? { x:s.fsb[0], y:s.fsb[1], r:FSBALL.r, hp:s.fsb[2], hpMax:100, flash:s.fsb[3] ? 8 : 0 } : null;
     if(SMASHBALL) netGlide(SMASHBALL, wasB); }
