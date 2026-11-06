@@ -65547,7 +65547,7 @@ function step(){
           hitArt(f, 'turn', { kind:'circle', x:pr.x, y:pr.y, r:pr.r }, { style:'glint', color:'#e8eef5', world:true, fade:6 });   // HIT ART: a glint on the rim where it turned
           pr.vx*=-1; pr.vy*=-0.5; pr.owner=f.idx; pr.ownerObj=f; pr.reflected=true; pr._cast=0; f.flash=8; puff(pr.x,pr.y,'#e8e8e8',5); continue;   // (turned back, it is no one's volley: _cast)
         }
-        const ffOpts = {reflected: !!pr.reflected, bossAtk: pr.bossAtk, bossCap: pr.bossCap, volley: pr.volley, shot:1};   // reflected shots ignore FF; bossAtk caps boss damage; shot: scaled at spawn, not again by Dough's window
+        const ffOpts = {reflected: !!pr.reflected, bossAtk: pr.bossAtk, bossCap: pr.bossCap, volley: pr.volley, shot:1, clvFly: !!pr._cloverFly};   // reflected shots ignore FF; bossAtk caps boss damage; shot: scaled at spawn, not again by Dough's window
         if(pr.van){
           const vx0=f.vx, vy0=f.vy;
           (pr._rammed = pr._rammed || {})[f.idx] = true;   // the blast is not dodged by the i-frames this ram just gave (see vanBoom)
@@ -66773,6 +66773,20 @@ const SELF_STUN_SCALE = 0.6;                      // cost.stun freezes movement 
 const HIT_STUN_PLUS = 6;
 function hitStunPlus(from, tick){ return (!tick && from && fighters[from.idx] === from) ? HIT_STUN_PLUS : 0; }
 function chainOpen(t, f){ return !!f && t.hitstun > 0 && t._chainBy === f.idx && t._chainSeq !== f._atkSeq; }
+// CLOVER CHAIN SCALE (2026-11-06; the owner approved recommendation 1 of reports/clover-vs-0-to-death.md). A chain has no end of its own (see above), and
+// Clover's butterflies into a cross-up into butterflies again was a loop with no way to shrink it. Now each butterfly catch on the same foe while the
+// chain is open (CLOVER_CHAIN_GAP frames or fewer since the last catch, and the foe has not landed a hit since) is one link more, and the stun that
+// catch gives is multiplied by the scale for its link: a long chain gives the foe more and more time to get out. The damage, the weakening and the
+// grace are not touched, only the stun (so the foe is free sooner, and her normals link for less time too). Her butterflies are the only hits that count.
+// TUNE HERE: CLOVER_CHAIN_SCALE[0] is catch 1, [1] catch 2, ... and the last number is the floor for every later catch. 1 = the stun it always had.
+const CLOVER_CHAIN_SCALE = [1, 1, 0.8, 0.6, 0.45];
+const CLOVER_CHAIN_GAP = 50;   // frames: a catch more than this long after the last one starts a new chain (a foe free this long, or one that landed a hit, is out). 50 = her recast loop (a catch about every 46 frames: stun 16-18, then about 30 free) -- at 25, as first asked, the count reset on every recast and only the first three catches were ever scaled (measured 2026-11-06)
+function cloverChainCatch(t, from){   // called from applyHit right after the stun is stamped, for a butterfly's catch only
+  const open = t._cvBy === from.idx && t._cvN > 0 && hazardT - (t._cvAt||0) <= CLOVER_CHAIN_GAP;
+  t._cvN = open ? t._cvN + 1 : 1; t._cvBy = from.idx; t._cvAt = hazardT;
+  const k = CLOVER_CHAIN_SCALE[Math.min(t._cvN, CLOVER_CHAIN_SCALE.length) - 1];
+  if(k < 1 && t.hitstun > 0){ t.hitstun = Math.max(3, Math.round(t.hitstun*k)); if(t._stunFx > t.hitstun) t._stunFx = t.hitstun; }
+}
 // THE JAB LOCK (the owner, 2026-10-28: "Yes, stop the jab lock" -- jab-study.md option 3). A jab cannot combo into your own jab: while a foe is
 // still in the stun of your jab, your next jab does not land on them (it passes through, as a hit into their grace does, and so it is a whiff with
 // the whiff's 22-frame recovery). Holding X and walking forward used to carry a foe from the middle of the stage off the edge (2 to 13 jabs in a
@@ -88560,6 +88574,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   const isTick = !!(opts && opts.tick);
   const pcStun = PCAM.on && !!from && t.hitstun > 0 && t._chainBy === from.idx;   // PLAYS CAMERA: still in this attacker's stun (a string)
   stampHit(t, dmg*fsRow, from, isTick, opts && opts.stun, opts && opts.mvKey);   // (fsRow: a Final Smash's hit stamps its row's own size)
+  if(!isTick && from && from !== t){ if(from._cvN) from._cvN = 0; if(opts && opts.clvFly) cloverChainCatch(t, from); }   // CLOVER CHAIN SCALE: landing a hit gets a foe out of the chain; a butterfly's catch is one more link (cloverChainCatch)
   if(PCAM.on) pcHit(t, dmg*fsRow, from, opts, fsSt, pcStun);   // PLAYS CAMERA: the plays (read only)
   if(t._fsLock) fsLockKeep(t, dmg*fsRow);   // CATCH, THEN CINEMATIC: a locked foe's launch waits for the let-go (fsLockOff)...
   else if(fsSt && !t.dead){ t._fsHitT = hazardT; if(fsKoFlight(t)) fsSlowStart(t); }   // ...and a launch that will carry them out plays slowed down
