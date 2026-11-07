@@ -21514,6 +21514,7 @@ function beginMatchNow(){
   basketBegin();   // REACH THE BASKET (an event twist): X's basket, in every match null but the one that has it
   jawbBegin();   // SOMEBODY'S INSIDE (an event twist): the jawbreakers, in every match null but the one that has them
   collectBegin();   // A COMPLETE COLLECTION (an event twist): an empty collection for every fighter, in every match but the one that has it nothing
+  contestBegin();   // A CONTEST (an event fighter's third match): its rule's state, in every match but the one that has it null
   EVENT_RESULT = null;   // (the result note is this match's: set at its last KO by eventFinish)
   if(twistOn('dig')) digBegin();   // THE DIG FLOOR (an event twist): the floor cut into spans a hard landing can break (FLOOR_SEGS, from here on)
   if(twistOn('stairs')) stairsBegin();   // A RISING STAIRCASE (an event twist): the steps that join the stage one after another on the clock (after setupWorld has built its platforms)
@@ -24223,7 +24224,7 @@ function updateItems(){
     it.life--;
     // pickup: any living fighter overlapping grabs it
     for(const f of fighters){
-      if(f.dead) continue;
+      if(f.dead || (it._npBy === f.idx && it._npT > hazardT)) continue;   // (A CONTEST: an item knocked out of their hands is not theirs again for a moment: contestDrop)
       if(Math.abs(f.x-it.x) < f.r+it.r && Math.abs(f.y-it.y) < f.r+it.r){
         pickUpItem(f, it); break;
       }
@@ -24235,6 +24236,7 @@ function updateItems(){
 }
 function pickUpItem(f, it){
   it.taken = true;
+  if(CONTEST) contestTake(f, it);   // A CONTEST: the kind goes into what the fighter holds (the item's own effect still follows)
   if(f._col) collectTake(f, it.kind);   // A COMPLETE COLLECTION (an event twist): a fighter with the number is in the twist, and no other match has one
   switch(it.kind){
     case "heal":      f.pct = Math.max(0, f.pct - 25); for(let i=0;i<10;i++) puff(f.x,f.y-10,'#6ff07a',5); break;
@@ -65074,7 +65076,7 @@ function step(){
       // fighter had stopped dead while you were still holding the key. Over the last 20 frames it slides back.
       const fsk = f.onground ? fst.run : fst.air;   // FIGHTER STATS: the run on the ground, the drift in the air (on top of everything else)
       const vx0 = Math.abs(f.vx);   // (the speed before this frame's push: see the cap)
-      const mv = (f.slowed>0 ? MOVE*0.5 : MOVE) * (f._hasteT>0 ? (1 + 0.5*Math.min(1, f._hasteT/20)) : 1) * ctfSpeedK(f) * fsk * rainRunK();   // (Capture the Flag: everyone 1.5x as fast, a flag carrier slower; THE RAIN twist: slower while it rains)
+      const mv = (f.slowed>0 ? MOVE*0.5 : MOVE) * (f._hasteT>0 ? (1 + 0.5*Math.min(1, f._hasteT/20)) : 1) * ctfSpeedK(f) * fsk * rainRunK(f);   // (Capture the Flag: everyone 1.5x as fast, a flag carrier slower; THE RAIN twist: slower while it rains)
       const _still = stanceStill(f);   // HOLD THEM STILL: a counter, reflect or armour stance is up -- the arrows neither walk nor turn (stanceStill)
       f._pushIn = _still ? 0 : (inp.left ? -1 : 0) + (inp.right ? 1 : 0); f._pushDn = !!inp.down; f._pushUp = !!inp.jump;   // (the keys this step, for the push zones: see pushPin)
       const _face0 = f.face;
@@ -65093,7 +65095,7 @@ function step(){
       // The speed CAP eases off with the haste, the same way the acceleration does. This is where the cliff was:
       // 1.4x flat and then nothing, so the frame the buff expired took 2.56 off a held run in one step (G28).
       else { const hk = f._hasteT>0 ? (1 + 0.4*Math.min(1, f._hasteT/20)) : 1;
-        const cb = (f.slowed>0?MAXVX*0.55:MAXVX)*hk*(f._grasstree>0?0.85:1)*(f._noBattery>0?0.75:1)*(f._slowmoT>hazardT?0.5:1)*ctfSpeedK(f)*rainRunK();   // a tree walks; reserve power is slow (THE RAIN twist: slower while it rains)
+        const cb = (f.slowed>0?MAXVX*0.55:MAXVX)*hk*(f._grasstree>0?0.85:1)*(f._noBattery>0?0.75:1)*(f._slowmoT>hazardT?0.5:1)*ctfSpeedK(f)*rainRunK(f);   // a tree walks; reserve power is slow (THE RAIN twist: slower while it rains)
         let cap = cb*fsk;
         if(f._spr) cap *= SPRINT.k;   // SPRINT: 1.4 times the run's cap while it lasts (sprintTick has ended it in the air)
         // FIGHTER STATS: a running jump eases down from the run's speed to the drift's (runEaseCap). In the air the cap is the drift's,
@@ -89533,6 +89535,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(t._yoyleT>0){ dmg*=0.45; kbx*=0.6; kby*=0.6; }              // ITEM: Yoyleberry — metal, takes less damage
   if(TESTMODE.active && !TESTMODE.damage){ dmg=0; }   // test mode: damage toggle off = no % buildup
   t.pct+=dmg;
+  if(CONTEST && dmg > 0 && from && from !== t && !(opts && opts.tick)) contestHit(t, from, dmg);   // A CONTEST: a landed hit counts toward the steal, and knocks the seed (and a hard one the window) loose
   if(dmg > 0 && from && from !== t && (fsSt || (from._fs && !SMASH_PROJ))) fsfNote(t, from, fsSt || from._fs);   // FS FLOOR: a foe this Final Smash hit (a frame of its row, its start or end, or a shot it threw, even after it ended) is remembered
   if((FINX.length || t._sleepT > hazardT) && from && from !== t && !(opts && opts.tick)) finx4Landed(t, from);   // Naily's tack hammered home, Pillow's sleep broken (FINISHERS V2, batch 4)
   // Tapey's tape (DOWNSPECIALS.tape / case "tape"): the biggest SINGLE hit anyone on it takes, kept per entry (s[3]). Playback
@@ -89888,6 +89891,7 @@ function eliminate(f){
   SFX.ko();
   if(f.fsGlow>0 || f._fs) fsOnKo(f);   // the glow (or a Final Smash under way) goes with the stock
   if(f._col > 1) collectSpill(f);   // A COMPLETE COLLECTION (an event twist): the kinds held fall back onto the stage as loose items
+  if(CONTEST) contestKo(f);   // A CONTEST: a stock lost drops everything the fighter held onto the stage
   if(f._fsLock) fsLockOff(f, true);   // a foe a Final Smash caught is let go (CATCH, THEN CINEMATIC)
   // ONE FALL, ONE STOCK (the owner, 2026-10-29: "i take two stocks sometimes when falling"). Whoever was dragging this fighter down (DROPS CARRY)
   // or holding them in a grab lets go of them here. The drop kept a fighter it carried off the stage on its list, and the frame after they came
@@ -90446,7 +90450,7 @@ const EVENT_MATCHES = {
     // THE COLLECTION: he collects everything. Sky Towers with lots of items, a free-for-all of four: you, Cloudy, Yellow Face and Rocky (his TPOT
     // team, the design says; the wiki's TPOT 1, as read for this twist's pick, has Rocky forming a team with Yellow Face and Cloudy). Smash Balls as usual -- they stay,
     // and a complete collection is a second way to a Final Smash (A COMPLETE COLLECTION: every fighter keeps one of the kinds of item they pick up).
-    { n:3, name:'The Collection', kind:'challenge', stage:'skytower', sides:[['you'], ['Cloudy'], ['Yellow Face'], ['Rocky']], items:'lots', smashBalls:true, twist:'collect', stocks:2 },
+    { n:3, name:'The Collection', kind:'challenge', stage:'skytower', sides:[['you'], ['Cloudy'], ['Yellow Face'], ['Rocky']], items:'lots', smashBalls:true, twist:'contest', contest:'collection', stocks:3 },   // CLOUDY'S CONTEST (contestBegin): hold all nine kinds for 10 s
   ],
   // PIE (build step 13). The design's three ("The 30 event matches"), the team slot a 3 vs 1 as every event fighter's. The teams are the design's: the BFDI wiki
   // refuses requests from here (HTTP 402), as it did for the design and its reviewer, so they could not be checked against it (question 15's check, left to the owner).
@@ -90645,6 +90649,7 @@ const EVENT_TWISTS_BUILT = ['sponge', 'pull', 'lowgrav', 'windback', 'fast', 'ra
 EVENT_TWISTS_BUILT.push('dark');   // (dark: Stapy's The Search Party, LIGHTS OUT)
 EVENT_TWISTS_BUILT.push('gusts');   // (gusts: Foldy's Windy, GUSTS)
 EVENT_TWISTS_BUILT.push('sticky');   // (sticky: Stapy's Wall to Wall, STICKY PILLARS)
+EVENT_TWISTS_BUILT.push('contest');   // (contest: an event fighter's third match as a CONTEST, its rule in CONTEST_RULES; the first is Cloudy's 'collection')
 // Each match's twist in plain words, for the event page and the select screen's strip (never in a match). 'edges' and 'food' are a stage's own
 // edges and an items rule rather than a twist row, shown the same way.
 const EVENT_TWIST_WORDS = {
@@ -90672,6 +90677,9 @@ Object.assign(EVENT_TWIST_WORDS, {
   gusts: { icon:'🍃', short:'gusts of wind', words:'Gusts of wind: about every 6 seconds leaves and paper start to blow in from one side, and a moment later a gust blows from that side for a second and a half. It pushes everyone who is in the air sideways, gently enough that you can fight it, and does no damage. It cannot carry you off unless you let it.' },
 });
 Object.assign(EVENT_TWIST_WORDS, {
+  'contest:collection': { icon:'🧩', short:"Cloudy's contest: the collection", words:"Cloudy's contest: hold all 9 kinds of item at once for 10 seconds and you win. The six kinds that drop as usual count, plus three of this contest's own: the Window (a hit of 10% or more knocks it loose), the Raindrop Jar (it fills while it rains, and weighs its holder down a little) and the Golden Seed (one in the whole match; any hit knocks it loose, and if it is lost it comes back somewhere new). Every third hit you take, the hitter takes one of your items. Lose a stock and everything you held falls onto the stage for anyone. 3 stocks each: run out and you are out. The panel at the top shows everyone's items and the 10 second hold." },
+});
+Object.assign(EVENT_TWIST_WORDS, {
   dark: { icon:'🔦', short:'lights out', words:'Lights out: the forest is dark. Everyone carries a lit patch around them, and the rest of the stage is dim but still easy to read. Other fighters fade away when they are far from you and show up as they come close. It is only how the match looks: nobody is hurt or hidden from the computer fighters.' },
 });
 // THE BACKDROPS (section 2, "Twists": "the Cake at Stake place or the A-twos-ment Park, drawn behind a normal stage without their boss or
@@ -90684,6 +90692,7 @@ const EVENT_BACKDROPS = {
     sky:'cakeatstake', void:['#2b2a55', '#14142e'], draw(){ annDecor(); } },   // (Pie's duel; the boss arena's own backdrop, with no boss)
 };
 function eventTwistOf(m){
+  if(m.contest) return 'contest:' + m.contest;   // (a contest's words are its rule's: EVENT_TWIST_WORDS['contest:collection'])
   if(m.twist) return m.twist;
   if(m.items === 'food') return 'food';
   if(m.items === 'throw') return 'throw';
@@ -90692,7 +90701,7 @@ function eventTwistOf(m){
 }
 function eventMatchOf(name, n){ return (EVENT_MATCHES[name] || []).find(m=>m.n === n) || null; }
 function eventMatchReady(m){
-  return !!m && !!STAGES.find(s=>s.id === m.stage) && (!m.twist || EVENT_TWISTS_BUILT.indexOf(m.twist) >= 0) && (!m.backdrop || !!EVENT_BACKDROPS[m.backdrop]) && EVENT_ITEM_RATE[m.items] != null;
+  return !!m && !!STAGES.find(s=>s.id === m.stage) && (!m.twist || EVENT_TWISTS_BUILT.indexOf(m.twist) >= 0) && (!m.contest || !!CONTEST_RULES[m.contest]) && (!m.backdrop || !!EVENT_BACKDROPS[m.backdrop]) && EVENT_ITEM_RATE[m.items] != null;
 }
 let EVENT_PICK = null;     // { name, n }: the event match picked on the event page, held through the select screen, the match and its result
 let EVENT_RUN = null;      // { name, n, m, week, done }: the event match being played (week: the one it started in)
@@ -90703,6 +90712,7 @@ let JAWB = null;           // SOMEBODY'S INSIDE (an event twist, 8-Ball's Lick Y
 let STAIRS = null;         // A RISING STAIRCASE (an event twist, Pie's 500 Steps): null in every other match; else { steps, log, heard } -- see stairsBegin. Each step joins worldPlats once it is whole
 let BERRIES = null;        // BERRIES RAIN (an event twist, Pie's Cake at Stake): null in every other match; else { seed, eaten, heard, healed, n } -- see berriesBegin. The schedule is the clock's
 let BASKET = null;         // REACH THE BASKET (an event twist, 8-Ball's Basket Into X): null in every other match; else { t0, n, sx, sy } -- see basketBegin. A guest holds the host's, from the snapshot (s.bk)
+let CONTEST = null;        // A CONTEST (an event fighter's third match: contestBegin): null in every other match; else { rule, ...the rule's own state } -- see CONTEST_RULES
 let STICKY = null;         // STICKY PILLARS (an event twist, Stapy's Wall to Wall): null in every other match; else { n } -- see stickyBegin. Who is stuck is on the fighter (`_stk`: { x, y, side, t0, j }), and a guest gets it from the snapshot (s.sk)
 function startEventMatch(){
   const P = EVENT_PICK, ev = eventThisWeek(), m = (P && ev && P.name === ev.name) ? eventMatchOf(ev.name, P.n) : null;
@@ -90722,6 +90732,7 @@ function startEventMatch(){
 // The player's own settings back, every one the match set; and the match is over (no twist, no lineup).
 function returnEventLoan(){
   EVENT_RUN = null; MATCH_TWIST = null; BASKET = null; JAWB = null; BERRIES = null; STAIRS = null;
+  CONTEST = null;   // A CONTEST: over with the match (what each fighter held goes with the fighters)
   STICKY = null;   // STICKY PILLARS: nobody is stuck after the match (the stuck fighters themselves go with the fighters)
   const L = EVENT_LOAN; if(!L) return;
   EVENT_LOAN = null;
@@ -91423,7 +91434,7 @@ function twistOn(k){ return !!MATCH_TWIST && (MATCH_TWIST === k || MATCH_TWIST.s
 function twistBackdrop(){ if(!MATCH_TWIST || MATCH_TWIST.indexOf('bd:') < 0) return null; const p = MATCH_TWIST.split('+').find(x=>x.indexOf('bd:') === 0); return p ? p.slice(3) : null; }
 function twistVoid(){ const b = twistBackdrop(), D = b && EVENT_BACKDROPS[b]; return D ? D.void : (DIG ? DIGK.void : null); }
 // Once a frame, from step() (the host's): the twists that act through the match.
-function twistStep(){ if(twistOn('fast')) fastForwardStep(); if(twistOn('windback')) windBackStep(); if(BASKET) basketStep(); if(JAWB) jawbStep(); if(DIG) digStep(); if(BAR) barStep(); if(BERRIES) berriesStep(); if(STAIRS) stairsStep(); if(twistOn('gusts')) gustTwistStep(); }
+function twistStep(){ if(CONTEST) contestStep(); if(twistOn('fast')) fastForwardStep(); if(twistOn('windback')) windBackStep(); if(BASKET) basketStep(); if(JAWB) jawbStep(); if(DIG) digStep(); if(BAR) barStep(); if(BERRIES) berriesStep(); if(STAIRS) stairsStep(); if(twistOn('gusts')) gustTwistStep(); }
 
 // FAST FORWARD ("everyone has the speed power-up all match"): every fighter holds the speed power-up (`_hasteT`, the item's own effect: run and
 // drift up, its icon), from the match's first frame -- eased in on the power-up's own 20-frame ramp then -- and through every stock. It rides the
@@ -91516,14 +91527,14 @@ function drawEventSky(){
 // guest never snaps back from it and nothing new rides the relay; MATCH_TWIST is all either side needs (an event room, build step 14, would
 // carry it in the start that already carries the room's rules, as for the sponge floor).
 const RAIN = { on:480, off:480, slow:0.35, dark:0.26 };   // slow: 0.15 -> 0.35 on 2026-11-06 (the owner: 'even slower movespeed on the cloudy challenge')
-function rainOn(){ return twistOn('rain'); }
+function rainOn(){ return twistOn('rain') || !!(CONTEST && CONTEST.rain); }   // (A CONTEST that has rain: showers, and no slow: rainRunK)
 // How much it is raining now, 0..1 (eased over GROW_IN frames at each end of a shower).
 function rainK(){
   if(!rainOn()) return 0;
   const P = RAIN.on + RAIN.off, a = ((hazardT % P) + P) % P - RAIN.off;
   return a < 0 ? 0 : clamp(Math.min(a + 1, RAIN.on - a)/GROW_IN, 0, 1);
 }
-function rainRunK(){ return rainOn() ? 1 - RAIN.slow*rainK() : 1; }
+function rainRunK(f){ return (twistOn('rain') ? 1 - RAIN.slow*rainK() : 1) * ((CONTEST && f) ? contestSpeedK(f) : 1); }   // (f: A CONTEST's own weight on a holder, the jar)
 // Once a step (step(): beside fsStep): the sound of a shower starting.
 function rainTwistStep(){
   const P = RAIN.on + RAIN.off, ph = ((hazardT % P) + P) % P;
@@ -92152,6 +92163,199 @@ function drawCollectSlots(f, cx){
   }
   c.restore();
 }
+
+// ---------- EVENT FIGHTERS: THE CONTESTS (a contest replaces an event fighter's third match: its own goal and its own rules, the fight still the core) ----------
+// A contest is an EVENT_MATCHES row with twist:'contest' and contest:'<rule>'. The twist key keeps it in the twist machinery (MATCH_TWIST,
+// twistOn('contest'), eventMatchReady, returnEventLoan) and the pre-match words sit under 'contest:<rule>' in EVENT_TWIST_WORDS (eventTwistOf).
+// CONTEST_RULES holds each rule's hooks, every one optional: begin() (the state, after the fighters stand), step() (once a frame, from twistStep),
+// take(f, it) (a pickup, from pickUpItem), hit(t, from, dmg) (a landed hit, from applyHit), ko(f) (a stock lost, from eliminate), speedK(f) (a
+// holder's run, through rainRunK), hud() (screen space), badge(f) (over a head, in world space), focus(f, foes) (whom a CPU should fight) and
+// want(f, inp, t, dist) (what a CPU goes for beside fighting: true when it took the keys). CONTEST is the running one: { rule, rain, ...the rule's
+// state }, null in every other match. An event match is offline (startEventMatch), so nothing here rides the relay.
+// THE FIRST, the model for the others: CLOUDY'S COLLECTION (the owner, 2026-11-07). Hold ALL NINE kinds of item at once for 10 seconds: the six the
+// pool drops (COLLECT_KINDS) and three of this contest's own, each one of a kind on the stage -- the WINDOW ("Hey, My Window!": a hit of CC.loose%
+// or more knocks it out of your hands), the RAINDROP JAR (it fills while it rains, CC.fill a frame of rain, and weighs its holder down CC.slowEmpty
+// to CC.slowFull of their run) and the GOLDEN SEED (ONE in the match, dropped at CC.seedAt; ANY hit knocks it loose; lost down a gap, it comes back
+// CC.back frames later somewhere new -- so do the window and the jar). THE STEAL: every CC.steal hits a fighter takes, the hitter takes one of their
+// items at random (one the hitter does not hold; if they hold every kind the victim has, the item falls loose beside the victim instead), and the
+// count starts over. A STOCK LOST drops everything the fighter held onto the stage (from the sky, over the floor nearest where they went out, as
+// collectSpill drops its kinds), for anyone. At 0 stocks you are out, and the drop is the same. THE WIN: nine held for CC.hold frames, and the
+// rest are out (contestWin: checkWin ends the match as ever, so an event's pay and result screen follow). A kind counts once: a second heart heals
+// as always and adds nothing. The showers are the rain twist's own (RAIN's clock, rainOn), for the jar, with none of its slow (rainRunK).
+// CPUs: one goes for an item it lacks when no foe is in its face (contestCpuWant: the nearest loose kind it lacks, on its own level), and all of
+// them turn on a rival at CC.gang kinds or more (contestCpuFocus): the leader is everyone's foe. No number of the brain's fighting changed.
+const CONTEST_KINDS = COLLECT_KINDS.concat(['window', 'jar', 'seed']);
+const CC = { need:9, hold:600, steal:3, loose:10, slowEmpty:0.04, slowFull:0.12, fill:1/900, dropAt:150, seedAt:1200, back:150, life:60*60, spread:56, hop:7, gang:6, reach:560, climb:170 };
+function contestHeld(f){ return f._cst || (f._cst = []); }
+function contestHas(f, k){ return contestHeld(f).indexOf(k) >= 0; }
+function contestCount(f){ return contestHeld(f).length; }
+function contestBegin(){
+  CONTEST = null;
+  const m = EVENT_RUN && EVENT_RUN.m, R = m && twistOn('contest') && CONTEST_RULES[m.contest];
+  if(!R) return;
+  CONTEST = { rule:m.contest, rain:false, winner:null };
+  for(const f of fighters){ f._cst = []; f._cHits = 0; f._cHold = 0; }
+  if(R.begin) R.begin();
+}
+function contestRule(){ return (CONTEST && CONTEST_RULES[CONTEST.rule]) || null; }
+function contestStep(){ const R = contestRule(); if(R && R.step && running) R.step(); }
+function contestTake(f, it){ const R = contestRule(); if(R && R.take) R.take(f, it); }
+function contestHit(t, from, dmg){ const R = contestRule(); if(R && R.hit) R.hit(t, from, dmg); }
+function contestKo(f){ const R = contestRule(); if(R && R.ko) R.ko(f); }
+function contestSpeedK(f){ const R = contestRule(); return (R && R.speedK) ? R.speedK(f) : 1; }
+function drawContestHud(cx){ const R = contestRule(); if(R && R.hud) R.hud(cx || ctx); }   // (cx: a test hands in a recording context)
+function drawContestBadge(f, cx){ const R = contestRule(); if(R && R.badge && !f.dead) R.badge(f, cx || ctx); }
+function contestCpuFocus(f, foes){ const R = contestRule(); if(R && R.focus) R.focus(f, foes); }
+function contestCpuWant(f, inp, t, dist){ const R = contestRule(); return !!(R && R.want && R.want(f, inp, t, dist)); }
+// A loose item out of a fighter's hands: beside them with a hop (and not theirs again for 30 frames), or from the sky over the floor (sky: the
+// KO drop, where they went out is past a blast zone). A contest's own kinds never time out; the pool's lie CC.life frames.
+function contestDrop(f, kind, sky, i, n){
+  const idx = contestHeld(f).indexOf(kind); if(idx < 0) return null;
+  contestHeld(f).splice(idx, 1);
+  const own = COLLECT_KINDS.indexOf(kind) < 0, gy = groundY();
+  let it;
+  if(sky){
+    const cx = clamp(f.x, 120 + CC.spread, WW - 120 - CC.spread), x = floorSafeX(cx + ((i || 0) - ((n || 1) - 1)/2)*CC.spread, 50);
+    it = itemFallDrift({ kind, x, y:sideRoomTop() - 40, vx:0, vy:0, r:16, taken:false, life:own ? 1e9 : CC.life, _land:false }, gy);
+  } else {
+    const dir = (f.face || 1) * -1;
+    it = { kind, x:f.x, y:f.y - 10, vx:dir*(2 + Math.random()*2), vy:-CC.hop, r:16, taken:false, life:own ? 1e9 : CC.life, _land:false, _npBy:f.idx, _npT:hazardT + 30 };
+  }
+  items.push(it);
+  for(let k = 0; k < 6; k++) puff(f.x, f.y - 10, (ITEM_ICON[kind] || ITEM_ICON.power).c, 4);
+  return it;
+}
+// A contest's own kind onto the stage from the sky, somewhere over the floor (the first drop, and the way back after a loss down a gap).
+function contestDropNew(kind){
+  const gy = groundY(), x = floorSafeX(120 + Math.random()*(WW - 240), 50);
+  items.push(itemFallDrift({ kind, x, y:sideRoomTop() - 40, vx:0, vy:0, r:16, taken:false, life:1e9, _land:false }, gy));
+}
+function contestOnStage(kind){ return items.some(it => it.kind === kind && !it.taken && it.life > 0) || fighters.some(f => !f.dead && contestHas(f, kind)); }
+// The win: the rest are out, and checkWin ends the match as any other (eventFinish pays, showResult shows the holder).
+function contestWin(f){
+  if(!CONTEST || CONTEST.winner != null) return;
+  CONTEST.winner = f.idx;
+  const rest = fighters.filter(o => o !== f && !o.dead).sort((a, b) => contestCount(b) - contestCount(a));
+  rest.forEach((o, i) => { o.stocks = 0; o.dead = true; o.alive = false; o._outT = hazardT; if(o.placement == null) o.placement = i + 2; });
+  if(f.placement == null) f.placement = 1;
+  banner(f.name + ' holds all ' + CC.need + '!', 1600);
+  SFX.ko && SFX.ko();
+  for(let k = 0; k < 24; k++) puff(f.x, f.y - f.r, k % 2 ? '#ffd23f' : '#fff', 5);
+}
+const CONTEST_RULES = {};
+CONTEST_RULES.collection = {
+  begin(){
+    CONTEST.rain = true; CONTEST.jarFill = 0;
+    CONTEST.due = { window:CC.dropAt, jar:CC.dropAt + 40, seed:CC.seedAt };   // (the frame each of the three first comes down; null while it is on the stage or in hands)
+  },
+  step(){
+    const S = CONTEST;
+    for(const k of ['window', 'jar', 'seed']){
+      if(S.due[k] != null){ if(hazardT >= S.due[k]){ contestDropNew(k); S.due[k] = null; } }
+      else if(!contestOnStage(k)) S.due[k] = hazardT + CC.back;   // (lost down a gap: back somewhere new)
+    }
+    const rk = rainK(); if(rk > 0) S.jarFill = Math.min(1, S.jarFill + CC.fill*rk);
+    for(const f of fighters){
+      if(f.dead){ f._cHold = 0; continue; }
+      if(contestCount(f) >= CC.need){
+        f._cHold = (f._cHold || 0) + 1;
+        if(f._cHold % 60 === 0 && f._cHold < CC.hold) tone(f.you ? 880 : 660, 0.05, 'triangle', 0.12);
+        if(f._cHold >= CC.hold) contestWin(f);
+      } else f._cHold = 0;
+    }
+  },
+  take(f, it){
+    const k = it.kind; if(CONTEST_KINDS.indexOf(k) < 0 || f.dead || contestHas(f, k)) return;
+    contestHeld(f).push(k);
+    const n = contestCount(f);
+    for(let i = 0; i < 6; i++) puff(f.x, f.y - f.r - 10, ITEM_ICON[k].c, 4);
+    if(f.you) tone(440 + 60*n, 0.07, 'triangle', 0.15, 0, 620 + 60*n);
+  },
+  hit(t, from, dmg){
+    if(contestHas(t, 'seed')) contestDrop(t, 'seed');
+    if(dmg >= CC.loose && contestHas(t, 'window')) contestDrop(t, 'window');
+    t._cHits = (t._cHits || 0) + 1;
+    if(t._cHits < CC.steal) return;
+    t._cHits = 0;
+    const mine = contestHeld(t); if(!mine.length) return;
+    let taker = (!from.dead && from.idx != null) ? from : null;
+    if(!taker){ const rivals = fighters.filter(o => o !== t && !o.dead && o.team !== t.team); taker = rivals.length ? rivals[Math.floor(Math.random()*rivals.length)] : null; }
+    const want = taker ? mine.filter(k => !contestHas(taker, k)) : [];
+    if(!taker || !want.length){ contestDrop(t, mine[Math.floor(Math.random()*mine.length)]); return; }   // (nothing the taker lacks: it falls loose beside the victim)
+    const k = want[Math.floor(Math.random()*want.length)];
+    mine.splice(mine.indexOf(k), 1); contestHeld(taker).push(k);
+    for(let i = 0; i < 8; i++){ puff(t.x, t.y - t.r - 10, ITEM_ICON[k].c, 4); puff(taker.x, taker.y - taker.r - 10, ITEM_ICON[k].c, 4); }
+    if(t.you) tone(300, 0.12, 'sawtooth', 0.12, 0, 180); else if(taker.you) tone(520, 0.08, 'triangle', 0.14, 0, 760);
+  },
+  ko(f){
+    const held = contestHeld(f).slice(), n = held.length;
+    held.forEach((k, i) => contestDrop(f, k, true, i, n));
+    f._cst = []; f._cHits = 0; f._cHold = 0;
+  },
+  speedK(f){ return contestHas(f, 'jar') ? 1 - (CC.slowEmpty + (CC.slowFull - CC.slowEmpty)*(CONTEST.jarFill || 0)) : 1; },
+  // The panel: the goal in one line, then a row per fighter -- colour, name, the nine slots (a picture in each kind held), the count, and the
+  // hold's bar with its seconds once they hold all nine.
+  hud(c){
+    const rows = fighters.slice().sort((a, b) => (a.you ? -1 : 0) - (b.you ? -1 : 0)), N = CC.need, st = 15, R = 6;
+    const pw = 300, rh = 18, ph = 24 + rh*rows.length + 6, px = W - pw - 12, py = 10;
+    c.save(); c.globalAlpha = 0.9;
+    c.fillStyle = 'rgba(28,24,38,0.78)'; itemRoundRect(c, px, py, pw, ph, 8); c.fill();
+    c.font = "800 12px 'Baloo 2', system-ui"; c.textBaseline = 'middle'; c.textAlign = 'left';
+    c.fillStyle = '#ffd23f'; c.fillText('THE COLLECTION', px + 10, py + 12);
+    c.font = "700 10px 'Baloo 2', system-ui"; c.fillStyle = '#fff'; c.textAlign = 'right';
+    c.fillText('hold all ' + N + ' for ' + (CC.hold/60) + ' s' + (CONTEST.jarFill > 0 ? '  ·  jar ' + Math.round(CONTEST.jarFill*100) + '%' : ''), px + pw - 10, py + 12);
+    rows.forEach((f, i) => {
+      const y = py + 24 + rh*i + rh/2, n = contestCount(f), held = contestHeld(f), full = n >= N;
+      c.globalAlpha = f.dead ? 0.4 : 0.9;
+      c.fillStyle = f.color || '#fff'; c.beginPath(); c.arc(px + 14, y, 5, 0, 7); c.fill();
+      c.font = (f.you ? "800" : "700") + " 11px 'Baloo 2', system-ui"; c.textAlign = 'left'; c.fillStyle = '#fff';
+      c.fillText((f.you ? 'YOU' : f.name).slice(0, 11), px + 24, y);
+      const x0 = px + 106;
+      for(let s = 0; s < N; s++){
+        const x = x0 + s*st, k = held[s];
+        c.fillStyle = k ? 'rgba(28,28,28,0.9)' : 'rgba(255,255,255,0.18)'; c.beginPath(); c.arc(x, y, R, 0, 7); c.fill();
+        if(k){ c.save(); c.translate(x, y); collectPicture(c, k, 5); c.restore(); }
+      }
+      c.textAlign = 'right'; c.font = "800 11px 'Baloo 2', system-ui"; c.fillStyle = full ? '#ffd23f' : (n >= CC.gang ? '#ffe27a' : '#fff');
+      if(f.dead) c.fillText('out', px + pw - 10, y);
+      else if(full){ const k = Math.min(1, (f._cHold || 0)/CC.hold); c.fillStyle = 'rgba(255,255,255,0.25)'; c.fillRect(px + pw - 58, y - 5, 36, 10); c.fillStyle = '#ffd23f'; c.fillRect(px + pw - 58, y - 5, 36*k, 10); c.fillText((Math.max(0, CC.hold - (f._cHold || 0))/60).toFixed(1) + 's', px + pw - 10, y); }
+      else c.fillText(n + '/' + N, px + pw - 10, y);
+    });
+    c.restore();
+  },
+  // Over the head: a small pill with the count, gold near the goal, and the hold's ring at nine.
+  badge(f, c){
+    const n = contestCount(f), full = n >= CC.need, hot = n >= CC.gang;
+    const base = nameTagShown(f) ? -(f.r + (f.you ? 28 : 16)) - 9 : -f.r - 6;
+    c.save(); c.translate(f.x, f.y + base - 10);
+    c.globalAlpha = 0.85; c.fillStyle = full ? '#ffd23f' : 'rgba(28,28,28,0.75)'; itemRoundRect(c, -16, -8, 32, 16, 8); c.fill();
+    if(hot && !full){ c.strokeStyle = 'rgba(255,210,63,' + (0.5 + 0.5*Math.sin(hazardT*0.22)) + ')'; c.lineWidth = 2; c.stroke(); }
+    if(full){ const k = (f._cHold || 0)/CC.hold; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.arc(0, -16, 7, -Math.PI/2, -Math.PI/2 + Math.PI*2*k); c.stroke(); }
+    c.font = "800 10px 'Baloo 2', system-ui"; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = full ? '#1c1c1c' : '#fff';
+    c.fillText(n + '/' + CC.need, 0, 0.5);
+    c.restore();
+  },
+  focus(f, foes){
+    let lead = null;
+    for(const o of foes) if(contestCount(o) >= CC.gang && (!lead || contestCount(o) > contestCount(lead) || (contestCount(o) === contestCount(lead) && (o._cHold || 0) > (lead._cHold || 0)))) lead = o;
+    if(lead && f.aiTarget !== lead){ f.aiTarget = lead; f.aiTimer = 45; }
+  },
+  want(f, inp, t, dist){
+    if(contestCount(f) >= CC.need || !f.onground && !(f.vy < 0)) return false;
+    let best = null, bd = CC.reach;
+    for(const it of items){
+      if(it.taken || !(it.life > 0) || CONTEST_KINDS.indexOf(it.kind) < 0 || contestHas(f, it.kind) || (it._npBy === f.idx && it._npT > hazardT)) continue;
+      const dy = f.y - it.y; if(dy < -40 || dy > CC.climb) continue;   // (below them, or higher than a jump: not this one)
+      const d = Math.hypot(it.x - f.x, dy); if(d < bd){ bd = d; best = it; }
+    }
+    if(!best) return false;
+    if(dist < 150 && dist < bd) return false;   // (a foe in its face comes first)
+    const dir = best.x < f.x ? -1 : 1, adx = Math.abs(best.x - f.x);
+    if(adx > 8){ if(!aiSafeStep(f, dir)){ if(f.onground && f.y - best.y > 30) inp.jump = true; else return false; } if(dir < 0) inp.left = true; else inp.right = true; }
+    if(f.onground && f.y - best.y > 30 && adx < 90) inp.jump = true;
+    return true;
+  },
+};
 
 // ---------- EVENT FIGHTERS: THE SCREENS (event-fighters-phase1.md, section 2, "Screens"; build step 9) ----------
 // The title's event card (refreshEventCard, beside the Daily card: the title keeps its six buttons), the event page (buildEventPage), the select
@@ -94889,6 +95093,7 @@ function aiThink(f){
   // recovery and it stood down: a CPU that chased its foe off the stage and KO'd it fell after it with its jumps unused -- Eraser's checks.)
   if(!targets.length){ B.press = null; B.eg = null; brainRecover(f, inp, B, f.kit && f.kit.special); return brainOut(f, inp, B, L, null, false); }
   // --- pick / keep a target: the team plan's focus, else the nearest; looked at again every second or so ---
+  if(CONTEST) contestCpuFocus(f, targets);   // A CONTEST: a rival close to the goal is everyone's foe
   // TEAMS: a foe standing in its own safe zone cannot be hit (applyHit), so while another foe is out in the open the CPU picks from the open ones.
   let pickFrom = targets;
   if(SETTINGS.mode==='teams'){ const open = targets.filter(t=>!inOwnTeamZone(t)); if(open.length) pickFrom = open; }
@@ -94927,6 +95132,8 @@ function aiThink(f){
   if(brainCatch(f, inp, B, L)) return brainOut(f, inp, B, L, t, true);
   // EDGE-GUARD: its foe off the stage, judged by that foe's real way back (brainGuard).
   if(brainGuard(f, ts, t, inp, B, L, pickFrom, sp)) return brainOut(f, inp, B, L, t, true);
+  // A CONTEST: an item it wants, where the fight allows it (contestCpuWant); it never leaves a foe in its face for one.
+  if(CONTEST && contestCpuWant(f, inp, t, dist)) return brainOut(f, inp, B, L, t, false);
   // PROTECT: if the plan told this team to guard an ally, a guardian hovers near them.
   const plan = TEAM_PLAN && TEAM_PLAN[f.team];
   if(plan && plan.protectName && f.name!==plan.protectName){
@@ -97643,7 +97850,7 @@ function draw(){
   // fighters
   drawKitFx('under');   // the Heat Explosion, behind the fighters it catches
   if(FINX.length) finxDraw('under');   // a corkboard, a puddle, a propped mirror (FINISHERS V2)
-  NAMETAG_Q = []; try{ for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(FINX.length && finxHidden(f)) continue; if(f.fsId && fsHides(f)) continue; if(f._oneGhost) drawOneGhostAura(f); try{ drawTellFx(f); }catch(e){} if(f.fsGlow>0 || f.fsId){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); fsDrawAura(f); ctx.restore(); } else fsDrawAura(f); } drawFighter(f); if(f._col) drawCollectSlots(f); if(f._soakT > hazardT){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); drawSoakDrips(f); ctx.restore(); } else drawSoakDrips(f); } if(SETTINGS.mode==='ctf'){ ctfDrawCarry(f); if(CTF.spec) ctfSpecDrawChip(f); } } } finally { nameTagFlush(); }
+  NAMETAG_Q = []; try{ for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(FINX.length && finxHidden(f)) continue; if(f.fsId && fsHides(f)) continue; if(f._oneGhost) drawOneGhostAura(f); try{ drawTellFx(f); }catch(e){} if(f.fsGlow>0 || f.fsId){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); fsDrawAura(f); ctx.restore(); } else fsDrawAura(f); } drawFighter(f); if(f._col) drawCollectSlots(f); if(CONTEST) drawContestBadge(f); if(f._soakT > hazardT){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); drawSoakDrips(f); ctx.restore(); } else drawSoakDrips(f); } if(SETTINGS.mode==='ctf'){ ctfDrawCarry(f); if(CTF.spec) ctfSpecDrawChip(f); } } } finally { nameTagFlush(); }
   if(SETTINGS.mode==='ctf') ctfDrawCoverFront();   // the props a friend stands in, see-through, over the fighters
   if(CTUT.active) ctutDrawWorld();   // the Capture the Flag practice: where a flag may not go
   drawKitFx('over');    // the Fist Thingy's arm, over the fighters it reaches across
@@ -97689,6 +97896,7 @@ function draw(){
   if(!(MCAVE && MCAVE.on)){ lgDrawMarkers(); drawOffscreenArrows(); }   // (LEDGEGUARD CAMERA: a recovering fighter outside the view has its chevron, not the ring)
   fsDrawScreen();   // a Final Smash's flash and silhouette sweep
   if(SETTINGS.mode==='ctf') drawCtfHud();
+  if(CONTEST) drawContestHud();   // A CONTEST: its progress panel (the goal is hidden otherwise)
   if(SETTINGS.mode==='boss' && BOSSRUSH.active) drawBossBar();
   if(ONEFIGHT.active) drawOneBar();
   if(RACE.active) drawRaceBar();
@@ -97929,6 +98137,25 @@ const ITEM_ICON = {
     c.lineTo(0, -r*0.42); c.lineTo(r*0.25, r*0.02); c.lineTo(r*0.5, -r*0.25); c.lineTo(r*0.5, r*0.3); c.closePath(); c.fill(); c.stroke();
     c.fillStyle="rgba(255,255,255,0.4)"; c.beginPath(); c.ellipse(-r*0.4, -r*0.45, r*0.18, r*0.1, -0.6, 0, 7); c.fill(); } },
 };
+// A CONTEST's own items (Cloudy's collection): a window, a jar of raindrops (its water at the contest's fill), a golden seed.
+Object.assign(ITEM_ICON, {
+  window: { c:"#8fd0ff", draw(c, r){
+    c.fillStyle="#f4f4f8"; c.fillRect(-r*0.8, -r*0.8, r*1.6, r*1.6); c.strokeRect(-r*0.8, -r*0.8, r*1.6, r*1.6);
+    c.fillStyle="#7cc4ff"; c.fillRect(-r*0.62, -r*0.62, r*1.24, r*1.24);
+    c.save(); c.strokeStyle="#f4f4f8"; c.lineWidth=Math.max(1.5, r*0.16); c.beginPath(); c.moveTo(0, -r*0.62); c.lineTo(0, r*0.62); c.moveTo(-r*0.62, 0); c.lineTo(r*0.62, 0); c.stroke(); c.restore();
+    c.fillStyle="rgba(255,255,255,0.55)"; c.beginPath(); c.moveTo(-r*0.55, -r*0.1); c.lineTo(-r*0.1, -r*0.55); c.lineTo(r*0.05, -r*0.55); c.lineTo(-r*0.55, 0.05*r); c.closePath(); c.fill(); } },
+  jar: { c:"#6fb8f0", draw(c, r){
+    const fill = (CONTEST && CONTEST.jarFill) || 0;
+    itemRoundRect(c, -r*0.7, -r*0.45, r*1.4, r*1.3, r*0.28); c.fillStyle="#dceeff"; c.fill(); c.stroke();
+    if(fill > 0){ c.save(); c.beginPath(); itemRoundRect(c, -r*0.7, -r*0.45, r*1.4, r*1.3, r*0.28); c.clip(); c.fillStyle="#4aa0e8"; c.fillRect(-r*0.7, r*0.85 - r*1.3*fill, r*1.4, r*1.3*fill); c.restore(); }
+    itemRoundRect(c, -r*0.8, -r*0.82, r*1.6, r*0.4, r*0.1); c.fillStyle="#6a7a8a"; c.fill(); c.stroke();
+    c.fillStyle="rgba(255,255,255,0.5)"; c.fillRect(-r*0.58, -r*0.3, r*0.14, r*0.9); } },
+  seed: { c:"#ffd23f", draw(c, r){
+    c.fillStyle="#f2c230"; c.beginPath(); c.ellipse(0, 0, r*0.55, r*0.85, 0.35, 0, 7); c.fill(); c.stroke();
+    c.save(); c.strokeStyle="#b8860b"; c.lineWidth=Math.max(1, r*0.1); c.beginPath(); c.moveTo(-r*0.15, r*0.55); c.quadraticCurveTo(r*0.2, 0, -r*0.05, -r*0.6); c.stroke(); c.restore();
+    c.fillStyle="rgba(255,255,255,0.6)"; c.beginPath(); c.ellipse(-r*0.22, -r*0.35, r*0.16, r*0.09, -0.8, 0, 7); c.fill();
+    const s = 0.5 + 0.5*Math.sin(hazardT*0.2); c.fillStyle="rgba(255,255,255," + (0.4 + 0.5*s) + ")"; c.beginPath(); c.moveTo(r*0.75, -r*0.75); c.lineTo(r*0.82, -r*0.9); c.lineTo(r*0.89, -r*0.75); c.lineTo(r*0.82, -r*0.6); c.closePath(); c.fill(); } },
+});
 const ITEM_IMG = {};
 // The art for an item kind, or null until it has loaded (or where there is none). Lazy, like attackImage: the first
 // item of a kind asks for it, so a boot pays nothing for kinds that never drop.
