@@ -22009,10 +22009,12 @@ function setupWorld(){
   SIDE_ROOM = 0;       // MORE ROOM PAST THE LEDGES: given below to the single-screen stages with ledges only
   MCAVE = null;        // MOON CAVES: set again only by its own builder
   SPLEEF = null;       // SPLEEF: built by spleefBuildWorld below, for the one event match that has it
+  DIGC = null;         // THE DIG: built by digcBuildWorld below, for the one event match that has it
   camAng = 0;
   if(SETTINGS.mode==='ctf'){ ctfBuildWorld(); return; }   // Capture the Flag: one of its own huge maps (see the CTF block)
   CAM_ZOOM = 0.72;
   if(spleefWanted()){ spleefBuildWorld(); return; }   // SPLEEF (an event contest): the shaft of ten tile floors, in place of the stage's own world
+  if(digcWanted()){ digcBuildWorld(); return; }   // THE DIG (Spongy's contest): the dirt field over the arena, in place of the stage's own world
   if(ONEFIGHT.active || COBSFIGHT.active){ buildOneArena(); return; }   // One's arena, and Steve Cobs's: the teams map without its walls (see buildOneArena)
   if(SETTINGS.mode === 'teams' && (MCAVE_DEV || MCAVE_OPEN) && stage && stage.layout === 'disc'){ buildMoonCaves(); return; }   // MOON CAVES (while it is built: MCAVE_DEV only, MCAVE_OPEN once released; Teams only)
   if(RACE.active){ buildRaceLane(); return; }       // RUNNING!: the Red Line Game's lane (see buildRaceLane)
@@ -65128,14 +65130,15 @@ function step(){
       const atkSp = !!inp.fin;   // V+C together = finisher (it was X+C until the grab took that pair, 2026-10-14)
       // The finisher has its own cooldown too (fnCd): it no longer locks the jab or the special, and they do not hold it back.
       // C still has to be let go before the special fires again, so a finisher does not spill into a special.
-      if(atkSp && f.fsGlow>0 && (fsTryFire(f) || fsRebounds(f))){ f._sp=true; }   // glowing: the finisher input is the FINAL SMASH (once); infected, it is held (fsRebounds)
+      if(atkSp && DIGC && digcLocked(f, 'fin')){ digcFallback(f, 's'); f._sp=true; }   // THE DIG (Spongy's contest): a finisher not dug up yet is the jab
+      else if(atkSp && f.fsGlow>0 && (fsTryFire(f) || fsRebounds(f))){ f._sp=true; }   // glowing: the finisher input is the FINAL SMASH (once); infected, it is held (fsRebounds)
       else if(atkSp && f.fnCd<=0 && (f._hsAgo | 0) >= FIN_HS_DELAY){   // (a finisher cannot start in the first FIN_HS_DELAY frames after hitstun: the owner, 2026-11-04, about Toothpaste's Squeeze Rocket as a frame-one hitstun escape)
         if(doAttackSpecial(f) !== false) f.fnCd = ATKSPECIALS[f.kit && f.kit.special] ? FIN_CD : FIN_CD_SHARED; f._sp=true;   // (false: it could not start here, and is not spent)
       } else if(atkSp){ } else {
         f._legacyMv = false;
         if(inp.attack && f.atkCd<=0 && !inp.grab){ f._xDir = inp.down ? 'd' : (inp.up ? 'u' : ((inp.left||inp.right) ? 's' : 'n')); f._xAir = !f.onground; f._xT = hazardT; }
-        if(inp.grab){ if(!f._hold && !f._gb && mvGrabStart(f)) f._spPend = 0; }   // X+C: the grab (anyone's; a converted fighter's own throws, MOVESETS)
-        else if(inp.attack && f.atkCd<=0 && mvAttack(f, inp)){ }   // a converted fighter's tilt or aerial (MOVESETS)
+        if(inp.grab){ if(!f._hold && !f._gb && !(DIGC && DIGC.phase !== 'fight') && mvGrabStart(f)) f._spPend = 0; }   // X+C: the grab (anyone's; a converted fighter's own throws, MOVESETS) (THE DIG: no grabbing before the fight)
+        else if(inp.attack && f.atkCd<=0 && !(DIGC && digcDigging(f)) && mvAttack(f, inp)){ }   // a converted fighter's tilt or aerial (MOVESETS) (THE DIG: in the dirt everyone swings the plain jab and tilts, and digs with them)
         else if(inp.attack && f.atkCd<=0){
           f._legacyMv = !isHumanCtrl(f);   // a CPU that did not ask for a moveset move swings today's jab, sweep and uppercut (doGroundMove, doUpTilt)
           // Land it and you recover sooner; whiff and you pay the full price (see JAB_HIT_CD).
@@ -65143,6 +65146,7 @@ function step(){
           // up+X is the uppercut -- except while Puffball is flying, where holding up is how she climbs
           else if(inp.up && !(f.flying>0)){ f._confirm=0; doUpTilt(f); f.atkCd = f._confirm ? JAB_HIT_CD : 24; }
           else { f._confirm=0; doAttack(f); f.atkCd = f._confirm ? JAB_HIT_CD : 22; }
+          if(DIGC) digcSwing(f, inp.down ? 'd' : inp.up ? 'u' : 's');   // THE DIG: the swing digs the dirt it faces (nothing outside that match)
         }
         // SPECIAL. The direction used to be read on the exact frame special was pressed, so you
         // had to be ALREADY holding up: pressing special and THEN tilting gave the neutral every
@@ -65225,6 +65229,7 @@ function step(){
       // almost all of her air speed instead of bleeding it off, so she drifts a long way from where she jumped.
       if(f.kit && f.kit.special==='wallmart' && !f.onground) f.vx *= 1.008;
     }
+    if(DIGC) digcCrawl(f, inp);   // THE DIG (Spongy's contest): in the dirt there is no falling, only the crawl (nothing outside that match)
     mtFastFall(f, inp);   // movetech: Down in the air past the peak
     f.x+=f.vx; f.y+=f.vy;
     if(twistOn('pull') && pullFree(f)) f.x += pullNudge(f.x);   // THE PULL (an event twist): a gentle pull toward the middle, at most a quarter of walking speed
@@ -65321,6 +65326,7 @@ function step(){
     if(f._rampT > 0){ f._rampT--; if(!f.onground && f.vy >= 0 && f.vy < 7 && !f._tp && !(f._tpHang > 0)) ctfRampSnap(f); }   // (Capture the Flag: walking down a slope keeps the feet on it. Not Bow fading into her Teleport or hanging where she appeared: she is held still, and a snap pulled her into the corner of the next step)
     if(STICKY) stickyPin(f);   // STICKY PILLARS: a stuck fighter is held where it hit, until the half second or a hit ends it
     if(SPLEEF) spleefHold(f);   // SPLEEF: the floors passed are a ceiling, and the walls hold
+    if(DIGC) digcHold(f);   // THE DIG: a fighter out of the dirt keeps to the arena's floor while the rest dig
     mtCling(f, inp);
     if(f.onground){ f._wallUsed = null; f._clingT = 0; f._ff = false; f._airDash = false; f._hyperT = 0; }   // landing refreshes the wall jump and the air dash
     // land-squash: airborne last frame, grounded now, coming down with real speed → brief cartoony squat
@@ -67078,6 +67084,7 @@ function smashAim(f, inp){
   if(t && Math.abs(t.x - f.x) > 4) f.face = t.x > f.x ? 1 : -1;
 }
 function fireSmash(f, inp, angle, dirMove){
+  if(DIGC && digcLocked(f, 'smash')){ digcFallback(f, angle > 0 ? 'u' : angle < 0 ? 'd' : 's'); f.smCd = Math.max(f.smCd||0, SMASH_ENDLAG); return; }   // THE DIG (Spongy's contest): a smash not dug up yet is the jab or the tilt
   smashAim(f, inp);
   if(TUT.active && f.you){ const d = fighters.find(function(x){ return !x.you; }); TUT.smashPct = d ? d.pct : null; }
   if(dirMove && angle && dirSmash(f, angle)) return;   // UP / DOWN SMASH (below): its own move, not the neutral smash tilted
@@ -82734,6 +82741,7 @@ function fireSpecial(f, inp){
 }
 function fireSpecialInner(f, inp){
   if(f._noBattery>0 || f._hushT > hazardT) return;   // Remote on reserve power (see BATTERY_OUT); hushed by Rose (FINISHERS V2, batch 4)
+  if(DIGC && digcLocked(f, inp.up ? 'upspec' : inp.down ? 'dspec' : 'spec')){ digcFallback(f, inp.up ? 'u' : inp.down ? 'd' : 's'); f.spCd = Math.max(f.spCd, 30); return; }   // THE DIG (Spongy's contest): a special not dug up yet is the jab or the tilt
   // remember held directions so dash-type specials can go diagonally (up-dash / down-dash)
   f._inLeft=!!inp.left; f._inRight=!!inp.right; f._inUp=!!inp.up; f._inDown=!!inp.down;
   const dashKit = DASH_KITS.has(f.kit&&f.kit.special);
@@ -89347,6 +89355,7 @@ function bossTakeHit(s, dmg, from){
 }
 function applyHit(t, dmg, kbx, kby, from, opts){
   if(RACE.active && t && t.you && !RACE.over && dmg > 0){ RACE.lossWhy = 'hit'; endRace(false, 'hit'); return; }   // RUNNING!: one hit ends the run (raceBump)
+  if(DIGC && DIGC.phase !== 'fight' && from && from !== t) return;   // THE DIG (Spongy's contest): nobody is hit until everyone is out of the dirt
   // SAFE IN YOUR OWN ZONE. Checked before anything else so no damage, knockback, burn or status
   // can be applied — a partial exemption would still let a fighter be juggled out of their spawn.
   if(SETTINGS.mode==='ctf' && ctfNoHit(t, from)) return;   // a prisoner cannot hit or be hit
@@ -89381,6 +89390,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
       t._bossHitId = opts.bossAtk; t._bossHitDmg = Math.min(dmg, cap); dmg = t._bossHitDmg;
     }
   }
+  if(DIGC && from && from !== t && from._dgBuff > 1) dmg *= from._dgBuff;   // THE DIG: an early arrival hits harder (DGK.buff)
   if(from && from !== t) dmg = statDmg(from, dmg);   // FIGHTER STATS: the attacker's dmg, first: an infected rebound takes it (its nested call has from === t, so nothing scales twice), and a counter answers the hit as it landed
   // OUTBREAK (FFA): an infected puppet is disoriented — its own attacks rebound onto itself
   // instead of hurting others. (In teams the puppet just fights for Barf Bag's team normally.)
@@ -89978,7 +89988,9 @@ function eliminate(f){
     return;
   }
   // reform — claimed spawn point or safe island (big FFA), team base (tower), else stage center
-  if(isBigFFA()){
+  if(DIGC){
+    f.x=Math.round((DIGC.floor.x0 + DIGC.floor.x1)/2); f.y=DIGC.floor.y - DGK.floorPad;   // THE DIG (Spongy's contest): back in over the arena's floor, under the dirt field
+  } else if(isBigFFA()){
     const rp=ffaRespawn(f); f.x=rp.x; f.y=rp.y;
   } else if(isBig() && f.homeBase!=null && bases[f.homeBase]){
     const sp = pickSpawnPad(bases[f.homeBase], f);
@@ -90400,7 +90412,8 @@ const EVENT_MATCHES = {
     // THE CHALLENGE: the Evil Forest, Evil Leafy roaming as she always does there, a free-for-all of four (the format column); the usual items and
     // Smash Balls (the design names none). THE DIG FLOOR (2026-11-02, the owner: "for get digging, landing hard could 'dig' out a piece of floor, and
     // you could eventually destroy the floor"): twist 'dig', see DIGK.
-    { n:3, name:'Get Digging', kind:'challenge', stage:'forest', sides:[['you'], ['Spongy'], ['Ice Cube'], ['Book']], items:'on', smashBalls:true, twist:'dig', stocks:2 },
+    // THE DIG (2026-11-07, the owner's CONTEST for his third match, in place of the dig floor): two parts -- a crawl through a dirt field with your moves buried in it, then the fight; see DIGC.
+    { n:3, name:'The Dig', kind:'challenge', stage:'goiky', sides:[['you'], ['Spongy'], ['Ice Cube'], ['Book']], items:'off', smashBalls:false, twist:'contest', contest:'dig', stocks:2 },   // SPONGY'S CONTEST (CONTEST_RULES.dig)
   ],
   // 8-BALL (build step 11). The design's three matches (section 2, "The 30 event matches"). The canon casts are the design's -- A Better Name Than That
   // is 8-Ball, Golf Ball and Tennis Ball (BFB 1: Golf Ball's basket plan, Tennis Ball's trebuchet); "Lick Your Way to Freedom" is BFB 2, the jawbreaker
@@ -90655,7 +90668,7 @@ EVENT_TWISTS_BUILT.push('dark');   // (dark: Stapy's The Search Party, LIGHTS OU
 EVENT_TWISTS_BUILT.push('gusts');   // (gusts: Foldy's Windy, GUSTS)
 EVENT_TWISTS_BUILT.push('sticky');   // (sticky: Stapy's Wall to Wall, STICKY PILLARS)
 EVENT_TWISTS_BUILT.push('spleef');   // (spleef: Eraser's contest, SPLEEF)
-EVENT_TWISTS_BUILT.push('contest');   // (contest: an event fighter's third match as a CONTEST, its rule in CONTEST_RULES; the first is Cloudy's 'collection')
+EVENT_TWISTS_BUILT.push('contest');   // (contest: an event fighter's third match as a CONTEST, its rule in CONTEST_RULES; the first is Cloudy's 'collection', the second Spongy's 'dig')
 // Each match's twist in plain words, for the event page and the select screen's strip (never in a match). 'edges' and 'food' are a stage's own
 // edges and an items rule rather than a twist row, shown the same way.
 const EVENT_TWIST_WORDS = {
@@ -90684,6 +90697,7 @@ Object.assign(EVENT_TWIST_WORDS, {
   gusts: { icon:'🍃', short:'gusts of wind', words:'Gusts of wind: about every 6 seconds leaves and paper start to blow in from one side, and a moment later a gust blows from that side for a second and a half. It pushes everyone who is in the air sideways, gently enough that you can fight it, and does no damage. It cannot carry you off unless you let it.' },
 });
 Object.assign(EVENT_TWIST_WORDS, {
+  'contest:dig': { icon:'⛏️', short:"Spongy's contest: the dig", words:"Spongy's contest: dig out to a corner exit. Your moves are buried in the dirt; the first out fight stronger." },
   'contest:collection': { icon:'🧩', short:"Cloudy's contest: the collection", words:"Cloudy's contest: hold all 9 kinds of item at once for 10 seconds and you win. The six kinds that drop as usual count, plus three of this contest's own: the Window (a hit of 10% or more knocks it loose), the Raindrop Jar (it fills while it rains, and weighs its holder down a little) and the Golden Seed (one in the whole match; any hit knocks it loose, and if it is lost it comes back somewhere new). Every third hit you take, the hitter takes one of your items. Lose a stock and everything you held falls onto the stage for anyone. 3 stocks each: run out and you are out. The panel at the top shows everyone's items and the 10 second hold." },
 });
 Object.assign(EVENT_TWIST_WORDS, {
@@ -90740,7 +90754,7 @@ function startEventMatch(){
 function returnEventLoan(){
   EVENT_RUN = null; MATCH_TWIST = null; BASKET = null; JAWB = null; BERRIES = null; STAIRS = null;
   CONTEST = null;   // A CONTEST: over with the match (what each fighter held goes with the fighters)
-  STICKY = null; SPLEEF = null;   // STICKY PILLARS: nobody is stuck after the match (the stuck fighters themselves go with the fighters)
+  STICKY = null; SPLEEF = null; DIGC = null;   // STICKY PILLARS: nobody is stuck after the match (the stuck fighters themselves go with the fighters); THE DIG: its field goes with the match
   const L = EVENT_LOAN; if(!L) return;
   EVENT_LOAN = null;
   SETTINGS.mode = L.mode; SETTINGS.count = L.count; SETTINGS.stocks = L.stocks; SETTINGS.teamKey = L.teamKey; SETTINGS.itemRate = L.itemRate;
@@ -92316,7 +92330,8 @@ function drawCollectSlots(f, cx){
 // CONTEST_RULES holds each rule's hooks, every one optional: begin() (the state, after the fighters stand), step() (once a frame, from twistStep),
 // take(f, it) (a pickup, from pickUpItem), hit(t, from, dmg) (a landed hit, from applyHit), ko(f) (a stock lost, from eliminate), speedK(f) (a
 // holder's run, through rainRunK), hud() (screen space), badge(f) (over a head, in world space), focus(f, foes) (whom a CPU should fight) and
-// want(f, inp, t, dist) (what a CPU goes for beside fighting: true when it took the keys). CONTEST is the running one: { rule, rain, ...the rule's
+// want(f, inp, t, dist) (what a CPU goes for beside fighting: true when it took the keys). THE SECOND RULE is Spongy's 'dig' (CONTEST_RULES.dig, below
+// Cloudy's, with its own world DIGC in place of the stage). CONTEST is the running one: { rule, rain, ...the rule's
 // state }, null in every other match. An event match is offline (startEventMatch), so nothing here rides the relay.
 // THE FIRST, the model for the others: CLOUDY'S COLLECTION (the owner, 2026-11-07). Hold ALL NINE kinds of item at once for 10 seconds: the six the
 // pool drops (COLLECT_KINDS) and three of this contest's own, each one of a kind on the stage -- the WINDOW ("Hey, My Window!": a hit of CC.loose%
@@ -92502,6 +92517,282 @@ CONTEST_RULES.collection = {
     return true;
   },
 };
+
+// ---------- EVENT FIGHTERS: THE DIG (Spongy's CONTEST, his third event match: the second rule in CONTEST_RULES) ----------
+// The owner's design (2026-11-07). TWO PARTS. PART ONE, THE DIG, no fighting: everyone starts in the middle of a wide field of dirt blocks
+// (DGK.cols by DGK.rows cells of DGK.cell px, a rock rim round it) and digs a tunnel out; the four CORNERS are the exits, each with a sign.
+// In the dirt there is no falling: you crawl four ways at DGK.crawl px a frame (the arrows; up or jump climbs, down sinks), and a swing of the
+// jab digs the block you face (down + attack the one under you, up + attack the one over you): DGK.hp swings and it is gone. Your kit is
+// BURIED: you start with the jab and the tilts only, and the five others (DGK.moves: the smash, the special, the up special, the down special
+// and the finisher) each lie in one cell of your own (digcBury: at growing distances from the start, DGK.ring, in random directions -- nobody
+// else's cell is yours). A move you have not found is its jab or tilt instead (digcLocked, digcFallback), in the dig and in the fight alike.
+// A move of yours within DGK.hint cells shows a glint (you, drawn; a CPU, felt the same way), but not which move it is: the judgement is how
+// long to keep digging. Nobody hits anybody in the dig (applyHit, and no grab), and bodies never block a tunnel (they pass through each other).
+// PART TWO, THE ARENA: a corner exit drops you onto the floor below the field, where you wait (held on the floor) until everyone is out; then
+// DGK.ready frames and the fight is the ordinary one (two stocks, checkWin). The FIRST out hits DGK.buff[0] times as hard, the second
+// DGK.buff[1], the third DGK.buff[2]; each place behind the first STARTS the fight at DGK.pct percent more (capped at DGK.pctCap). The stall:
+// at DGK.stall frames the dirt starts caving in, and DGK.cave frames later anyone still in it is dropped out, in last place together.
+// CPUs (digcBrain): each wants DGK.cpu.want[level] moves and gives the dig DGK.cpu.budget[level] seconds; it digs toward a glint it feels while
+// it wants more and the time allows, else toward the nearest exit; out, it stands and waits. Not online (startEventMatch refuses in a room).
+let DIGC = null;   // null in every other match; else { x0, y0, cols, rows, cell, grid, exits, mc, mr, phase ('dig' | 'fight'), out, fightAt, start, floor, cave } -- see digcBuildWorld. grid: DGK.hp..1 dirt, 0 open, -1 rock
+const DGK = { cols:27, rows:11, cell:64, top:120, gap:520, hp:5, crawl:2.6, moves:['smash', 'spec', 'upspec', 'dspec', 'fin'], ring:[2, 3, 5, 7, 9], hint:2,
+  stall:150*60, cave:10*60, ready:150, buff:[1.25, 1.15, 1.05, 1], pct:15, pctCap:45, floorPad:260, cpu:{ want:[1, 1, 3, 4], budget:[40, 45, 70, 90] } };
+const DGC_NAMES = { smash:'SMASH', spec:'SPECIAL', upspec:'UP SPECIAL', dspec:'DOWN SPECIAL', fin:'FINISHER' };
+const DGC_SHORT = { smash:'SM', spec:'SP', upspec:'UP', dspec:'DN', fin:'FN' };
+function digcWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.contest === 'dig'; }
+function digcCellAt(x, y){ const D = DIGC; return [Math.floor((x - D.x0)/D.cell), Math.floor((y - D.y0)/D.cell)]; }
+function digcIn(c, r){ const D = DIGC; return c >= 0 && r >= 0 && c < D.cols && r < D.rows; }
+function digcHp(c, r){ return digcIn(c, r) ? DIGC.grid[r*DIGC.cols + c] : -1; }
+function digcMid(c, r){ const D = DIGC; return [D.x0 + c*D.cell + D.cell/2, D.y0 + r*D.cell + D.cell/2]; }
+function digcIsExit(c, r){ return DIGC.exits.findIndex(e => e[0] === c && e[1] === r); }
+// In the dig, in the dirt, and not out yet: the one who crawls and digs.
+function digcDigging(f){ if(!DIGC || DIGC.phase !== 'dig' || f.dead || f._dgOut != null) return false; const q = digcCellAt(f.x, f.y); return digcIn(q[0], q[1]); }
+// The world (from setupWorld, in place of the stage's own): the field of dirt in a rock rim, hung over an arena floor with real edges and two platforms.
+function digcBuildWorld(){
+  const K = DGK, C = K.cell, gc = K.cols + 2, gr = K.rows + 2, fw = gc*C;
+  WW = fw + 2*C*3; camX = 0; camY = 0; bases = []; floors = []; worldZones = []; spawnZones = []; worldPlats = [];
+  const x0 = Math.round((WW - fw)/2), y0 = K.top, gy = y0 + gr*C + K.gap;
+  WH = Math.round(gy/0.82);   // (groundY = WH*0.82 is the arena's floor)
+  const grid = new Int8Array(gc*gr);
+  for(let r = 0; r < gr; r++) for(let c = 0; c < gc; c++) grid[r*gc + c] = (r === 0 || c === 0 || r === gr - 1 || c === gc - 1) ? -1 : K.hp;
+  const mc = (gc - 1) >> 1, mr = (gr - 1) >> 1;
+  for(let c = mc - 1; c <= mc + 1; c++) grid[mr*gc + c] = 0;   // the start chamber, three cells wide
+  const exits = [[1, 1], [gc - 2, 1], [1, gr - 2], [gc - 2, gr - 2]];
+  for(const e of exits) grid[e[1]*gc + e[0]] = 0;
+  const fx0 = Math.round(WW*0.2), fx1 = WW - fx0;
+  DIGC = { x0, y0, cols:gc, rows:gr, cell:C, grid, exits, mc, mr, phase:'dig', out:[], fightAt:null, start:0, floor:{ x0:fx0, x1:fx1, y:gy }, cave:false, dug:0 };
+  FLOOR_SEGS = [{ x0:fx0, x1:fx1 }];
+  floors = [{ level:0, y:gy, x:fx0, w:fx1 - fx0 }];
+  worldPlats.push({ x:Math.round(WW/2 - 440), y:gy - 150, w:200, h:14, solid:false }, { x:Math.round(WW/2 + 240), y:gy - 150, w:200, h:14, solid:false });
+  digcRebuildPlats();
+  SIDE_ROOM = 0;
+}
+// The dirt and the rock as solid blocks (a run of cells in a row is one block): built again each time a cell goes.
+function digcRebuildPlats(){
+  const D = DIGC, C = D.cell, keep = worldPlats.filter(p => !p.dg);
+  for(let r = 0; r < D.rows; r++){
+    let c = 0;
+    while(c < D.cols){
+      if(D.grid[r*D.cols + c] === 0){ c++; continue; }
+      let e = c; while(e < D.cols && D.grid[r*D.cols + e] !== 0) e++;
+      keep.push({ x:D.x0 + c*C, y:D.y0 + r*C, w:(e - c)*C, h:C, solid:true, dg:true });
+      c = e;
+    }
+  }
+  worldPlats = keep;
+}
+// A fighter's five moves into the dirt: the i-th at DGK.ring[i] cells (the longer stride) from the start, in a random direction, in a cell of dirt no other move of theirs has.
+function digcBury(f){
+  const D = DIGC, keys = DGK.moves.slice().sort(() => Math.random() - 0.5), used = {};
+  f._dgBur = {}; f._dgMoves = {}; f._dgN = 0;
+  keys.forEach((k, i) => {
+    const want = DGK.ring[i], cand = [];
+    for(let r = 1; r < D.rows - 1; r++) for(let c = 1; c < D.cols - 1; c++){
+      const d = Math.max(Math.abs(c - D.mc), Math.abs(r - D.mr));
+      if(d !== want || D.grid[r*D.cols + c] <= 0 || used[c + ':' + r] || digcIsExit(c, r) >= 0) continue;
+      cand.push([c, r]);
+    }
+    const p = cand.length ? cand[Math.floor(Math.random()*cand.length)] : [D.mc + 2, D.mr];
+    used[p[0] + ':' + p[1]] = true; f._dgBur[k] = p;
+  });
+}
+// A move not dug up yet (false outside the contest, and for a fighter with no burial).
+function digcLocked(f, key){ return !!DIGC && !f.dead && !!f._dgMoves && !f._dgMoves[key]; }
+// The jab or the tilt in a locked move's place (and, in the dirt, the dig that goes with it).
+function digcFallback(f, dir){
+  if(f.atkCd > 0) return;
+  f._confirm = 0;
+  if(dir === 'd'){ doGroundMove(f); f.atkCd = f._confirm ? GROUND_HIT_CD : 26; }
+  else if(dir === 'u' && !(f.flying > 0)){ doUpTilt(f); f.atkCd = f._confirm ? JAB_HIT_CD : 24; }
+  else { doAttack(f); f.atkCd = f._confirm ? JAB_HIT_CD : 22; }
+  digcSwing(f, dir);
+}
+// A swing in the dirt: the block faced ('s': the way the fighter faces; 'u' over; 'd' under) loses one of its DGK.hp; at none it is gone.
+function digcSwing(f, dir){
+  if(!digcDigging(f)) return;
+  const D = DIGC, q = digcCellAt(f.x, f.y), tc = dir === 's' ? q[0] + (f.face < 0 ? -1 : 1) : q[0], tr = dir === 'u' ? q[1] - 1 : dir === 'd' ? q[1] + 1 : q[1];
+  const hp = digcHp(tc, tr); if(hp <= 0) return;
+  D.grid[tr*D.cols + tc] = hp - 1;
+  const m = digcMid(tc, tr);
+  for(let i = 0; i < 5; i++) puff(m[0], m[1], '#6b4a2b', 4);
+  if(hp - 1 > 0){ noise(0.08, 0.05, 1800, 0, 600); return; }
+  digcRebuildPlats(); D.dug++;
+  impact(m[0], m[1], { shake:1, dust:1, debris:4, r:30 });
+  noise(0.14, 0.08, 1200, 0, 300);
+  digcTakeAt(f, tc, tr);   // (the digger's own move in it, if any: taken at once; anyone else's waits for its owner to crawl in)
+}
+// A fighter in (or opening) a cell with one of its own moves in it: found.
+function digcTakeAt(f, c, r){
+  if(!f._dgBur) return;
+  for(const k in f._dgBur){
+    const p = f._dgBur[k]; if(p[0] !== c || p[1] !== r) continue;
+    delete f._dgBur[k]; f._dgMoves[k] = true; f._dgN = (f._dgN || 0) + 1;
+    const m = digcMid(c, r);
+    for(let i = 0; i < 10; i++) puff(m[0], m[1], i % 2 ? '#ffd23f' : '#fff', 4);
+    if(f.you){ tone(520, 0.08, 'triangle', 0.16, 0, 880); banner(DGC_NAMES[k] + ' found!', 900); }
+  }
+}
+// Out of the dirt (a corner exit, or the cave-in): placed, and down onto the arena's floor to wait.
+function digcOut(f, ex){
+  const D = DIGC; if(f._dgOut != null) return;
+  f._dgPlace = ex < 0 ? D.out.filter(i => fighters[i]._dgOutT < hazardT).length : D.out.length;   // (places: in the order out; the cave-in's are last together)
+  f._dgOut = D.out.length; f._dgOutT = hazardT; f._dgExit = ex; D.out.push(f.idx);
+  f._dgBuff = DGK.buff[Math.min(3, f._dgPlace)]; f._dgPct = Math.min(DGK.pctCap, DGK.pct*f._dgPlace);
+  const F = D.floor;
+  for(let i = 0; i < 8; i++) puff(f.x, f.y, '#c9a36b', 4);
+  f.x = Math.round(F.x0 + (F.x1 - F.x0)*(0.2 + 0.2*(f._dgOut % 4))); f.y = F.y - f.r; f.vx = 0; f.vy = 0; f.onground = true; f.jumps = 2; f._dashing = 0;
+  for(let i = 0; i < 8; i++) puff(f.x, f.y, '#fff', 4);
+  if(f.you){ tone(660, 0.1, 'triangle', 0.16, 0, 990); banner(ex < 0 ? 'Caved in!' : 'Out! #' + (f._dgPlace + 1), 1100); }
+  else if(ex < 0) tone(180, 0.2, 'sawtooth', 0.08, 0, 90);
+}
+// The crawl (in the fighter's frame, after gravity and before the move): no falling in the dirt; the arrows move you at the crawl, and a move
+// up or down lines you up with the column, a move along with the row, so a tunnel one cell wide is easy to take.
+function digcCrawl(f, inp){
+  if(!digcDigging(f)) return;
+  const K = DGK, D = DIGC, q = digcCellAt(f.x, f.y), m = digcMid(q[0], q[1]);
+  const up = !!(inp && (inp.up || inp.jump)), dn = !!(inp && inp.down), lf = !!(inp && inp.left), rt = !!(inp && inp.right);
+  f.vy = up && !dn ? -K.crawl : dn && !up ? K.crawl : 0;
+  f.vx = Math.max(-K.crawl, Math.min(K.crawl, f.vx));
+  if((up || dn) && !(lf || rt) && Math.abs(f.x - m[0]) > 0.5) f.x += Math.sign(m[0] - f.x)*Math.min(1.5, Math.abs(f.x - m[0]));
+  if((lf || rt) && !(up || dn) && Math.abs(f.y - m[1]) > 0.5) f.y += Math.sign(m[1] - f.y)*Math.min(1.5, Math.abs(f.y - m[1]));
+  f.onground = true; f.jumps = 2; f._usedAirSpecial = false; f._hop = false;
+  const half = f.r + 2;   // the rim is rock: never past it (the blocks hold too)
+  f.x = Math.max(D.x0 + D.cell + half, Math.min(D.x0 + (D.cols - 1)*D.cell - half, f.x));
+  f.y = Math.max(D.y0 + D.cell + half, Math.min(D.y0 + (D.rows - 1)*D.cell - half, f.y));
+}
+// After the move: one out of the dirt keeps to the arena's floor until the fight (it would be a free stock to walk off before it).
+function digcHold(f){
+  const D = DIGC; if(D.phase === 'fight' || f.dead || f._dgOut == null) return;
+  const F = D.floor;
+  if(f.x < F.x0 + f.r){ f.x = F.x0 + f.r; if(f.vx < 0) f.vx = 0; } else if(f.x > F.x1 - f.r){ f.x = F.x1 - f.r; if(f.vx > 0) f.vx = 0; }
+}
+// The CPU in the dig: toward a glint while it wants more moves and has time, else toward the nearest exit; a block in the way is dug; out, it stands.
+function digcBrain(f, inp, lvl){
+  const D = DIGC, K = DGK;
+  if(!digcDigging(f)) return;
+  const S = f._dgAi || (f._dgAi = { want:(K.cpu.want[lvl] != null ? K.cpu.want[lvl] : 1) + (Math.random() < 0.4 ? 1 : 0), budget:((K.cpu.budget[lvl] != null ? K.cpu.budget[lvl] : 35) + Math.round(Math.random()*20 - 10))*60,
+    at:null, atT:hazardT, skip:null, exit:Math.floor(Math.random()*D.exits.length) });   // (want: one more now and then; budget: give or take ten seconds; exit: its own pick, the nearest once that one fails it)
+  const q = digcCellAt(f.x, f.y), c = q[0], r = q[1], t = hazardT - D.start;
+  if(!S.at || S.at[0] !== c || S.at[1] !== r){ S.at = [c, r]; S.atT = hazardT; }
+  let goal = null, bd = 1e9;
+  if((f._dgN || 0) < S.want && t < S.budget) for(const k in f._dgBur){ const p = f._dgBur[k], d = Math.max(Math.abs(p[0] - c), Math.abs(p[1] - r)); if(d <= K.hint && d < bd){ bd = d; goal = p; } }
+  if(!goal && S.skip == null) goal = D.exits[S.exit];
+  if(!goal){ bd = 1e9; D.exits.forEach((e, i) => { if(i === S.skip) return; const d = Math.abs(e[0] - c) + Math.abs(e[1] - r); if(d < bd){ bd = d; goal = e; } }); }
+  if(hazardT - S.atT > 420){ const sk = digcIsExit(goal[0], goal[1]); if(sk >= 0) S.skip = sk; S.atT = hazardT; }   // (seven seconds in one cell: another exit)
+  const dc = goal[0] - c, dr = goal[1] - r;
+  if(dc === 0 && dr === 0) return;
+  const horiz = dc !== 0 && (Math.abs(dc) >= Math.abs(dr) || (hazardT >> 6) % 2 === 0 || dr === 0);
+  if(horiz){ const nc = c + (dc < 0 ? -1 : 1); inp.left = dc < 0; inp.right = dc > 0; if(digcHp(nc, r) > 0 && (f.face < 0) === (dc < 0)) inp.attack = true; }
+  else { const nr = r + (dr < 0 ? -1 : 1); inp.up = dr < 0; inp.down = dr > 0; if(digcHp(c, nr) > 0) inp.attack = true; }
+}
+CONTEST_RULES.dig = {
+  begin(){
+    const D = DIGC; if(!D) return;
+    const live = fighters.filter(f => !f.dead), x0 = D.x0 + (D.mc - 1)*D.cell, span = 3*D.cell;
+    live.forEach((f, i) => { f.x = Math.round(x0 + span*(i + 1)/(live.length + 1)); f.y = D.y0 + D.mr*D.cell + D.cell/2; f.vx = 0; f.vy = 0; f.onground = true; f.face = i % 2 ? -1 : 1;
+      f._dgOut = null; f._dgPlace = null; f._dgBuff = 1; f._dgPct = 0; f._dgAi = null; digcBury(f); });
+    D.start = hazardT;
+  },
+  step(){
+    const D = DIGC; if(!D || D.phase === 'fight') return;
+    const t = hazardT - D.start;
+    for(const f of fighters){
+      if(f.dead || f._dgOut != null) continue;
+      const q = digcCellAt(f.x, f.y);
+      if(!digcIn(q[0], q[1])){ digcOut(f, -1); continue; }   // (out of the field some other way: out, last)
+      if(digcHp(q[0], q[1]) === 0) digcTakeAt(f, q[0], q[1]);
+      const ex = digcIsExit(q[0], q[1]); if(ex >= 0) digcOut(f, ex);
+    }
+    if(t >= DGK.stall && !D.cave){ D.cave = true; banner('The dirt is caving in!', 1500); noise(0.4, 0.12, 900, 0, 200); }
+    if(t >= DGK.stall + DGK.cave) for(const f of fighters) if(!f.dead && f._dgOut == null) digcOut(f, -1);
+    if(D.fightAt == null && fighters.every(f => f.dead || f._dgOut != null)) D.fightAt = hazardT + DGK.ready;
+    if(D.fightAt != null && hazardT >= D.fightAt){
+      D.phase = 'fight';
+      for(const f of fighters){ if(!f.dead && f._dgPct > 0) f.pct = Math.max(f.pct, f._dgPct); }
+      banner('FIGHT!', 900); SFX.ko && SFX.ko();
+    }
+  },
+  // The panel (top right): the part and its clock, then a row per fighter -- colour, name, the five moves (lit when found), and where they stand.
+  hud(c){
+    const D = DIGC; if(!D) return;
+    const rows = fighters.slice().sort((a, b) => (a.you ? -1 : 0) - (b.you ? -1 : 0)), N = DGK.moves.length, st = 22;
+    const pw = 300, rh = 18, ph = 24 + rh*rows.length + 6, px = W - pw - 12, py = 10, t = hazardT - D.start;
+    const mmss = (s) => Math.floor(s/60) + ':' + ('0' + Math.floor(s % 60)).slice(-2);
+    c.save(); c.globalAlpha = 0.9;
+    c.fillStyle = 'rgba(28,24,38,0.78)'; itemRoundRect(c, px, py, pw, ph, 8); c.fill();
+    c.font = "800 12px 'Baloo 2', system-ui"; c.textBaseline = 'middle'; c.textAlign = 'left';
+    c.fillStyle = '#ffd23f'; c.fillText('THE DIG', px + 10, py + 12);
+    c.font = "700 10px 'Baloo 2', system-ui"; c.fillStyle = '#fff'; c.textAlign = 'right';
+    const head = D.phase === 'fight' ? 'FIGHT' : D.fightAt != null ? 'fight in ' + Math.ceil((D.fightAt - hazardT)/60) : (D.cave ? 'caving in!' : 'dig to a corner') + '  ·  ' + mmss(t/60);
+    c.fillText(head, px + pw - 10, py + 12);
+    rows.forEach((f, i) => {
+      const y = py + 24 + rh*i + rh/2;
+      c.globalAlpha = f.dead ? 0.4 : 0.9;
+      c.fillStyle = f.color || '#fff'; c.beginPath(); c.arc(px + 14, y, 5, 0, 7); c.fill();
+      c.font = (f.you ? "800" : "700") + " 11px 'Baloo 2', system-ui"; c.textAlign = 'left'; c.fillStyle = '#fff';
+      c.fillText((f.you ? 'YOU' : f.name).slice(0, 11), px + 24, y);
+      const x0 = px + 100;
+      DGK.moves.forEach((k, s) => {
+        const x = x0 + s*st, has = !!(f._dgMoves && f._dgMoves[k]);
+        c.fillStyle = has ? '#ffd23f' : 'rgba(255,255,255,0.18)'; itemRoundRect(c, x - 9, y - 6, 18, 12, 4); c.fill();
+        c.font = "800 8px 'Baloo 2', system-ui"; c.textAlign = 'center'; c.fillStyle = has ? '#1c1c1c' : 'rgba(255,255,255,0.6)'; c.fillText(DGC_SHORT[k], x, y + 0.5);
+      });
+      c.textAlign = 'right'; c.font = "800 11px 'Baloo 2', system-ui";
+      let txt, col = '#fff';
+      if(f.dead){ txt = 'out'; }
+      else if(f._dgOut == null){ txt = 'digging'; }
+      else if(D.phase !== 'fight'){ txt = f._dgExit < 0 ? 'caved in' : '#' + (f._dgPlace + 1); col = '#ffd23f'; }
+      else { txt = (f._dgBuff > 1 ? 'x' + f._dgBuff.toFixed(2) : '') + (f._dgPct > 0 ? ' +' + f._dgPct + '%' : ''); col = f._dgBuff > 1 ? '#ffd23f' : '#fff'; if(!txt) txt = '-'; }
+      c.fillStyle = col; c.fillText(txt.trim(), px + pw - 10, y);
+    });
+    c.restore();
+  },
+  // Over the head: the count of moves found (through the dig only; the fight shows nothing more).
+  badge(f, c){
+    if(!DIGC || DIGC.phase === 'fight') return;
+    const n = f._dgN || 0, N = DGK.moves.length;
+    const base = nameTagShown(f) ? -(f.r + (f.you ? 28 : 16)) - 9 : -f.r - 6;
+    c.save(); c.translate(f.x, f.y + base - 10);
+    c.globalAlpha = 0.85; c.fillStyle = n >= N ? '#ffd23f' : 'rgba(28,28,28,0.75)'; itemRoundRect(c, -16, -8, 32, 16, 8); c.fill();
+    c.font = "800 10px 'Baloo 2', system-ui"; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = n >= N ? '#1c1c1c' : '#fff';
+    c.fillText(n + '/' + N, 0, 0.5);
+    c.restore();
+  },
+};
+// ART (over the platforms, under the fighters): the tunnels dark, the dirt in its blocks (cracked as it goes), the rock rim, a sign at each
+// exit, a glint on a cell of yours within DGK.hint cells (the move itself not named), and a nugget where one of yours lies open.
+function drawDigc(){
+  const D = DIGC, c = ctx, C = D.cell, t = hazardT; if(!D) return;
+  c.save();
+  c.fillStyle = '#1d140c'; c.fillRect(D.x0, D.y0, D.cols*C, D.rows*C);
+  for(let r = 0; r < D.rows; r++) for(let cc = 0; cc < D.cols; cc++){
+    const hp = D.grid[r*D.cols + cc], x = D.x0 + cc*C, y = D.y0 + r*C;
+    if(hp === 0) continue;
+    if(hp < 0){ c.fillStyle = '#4a4650'; c.fillRect(x, y, C, C); c.strokeStyle = '#2a2730'; c.lineWidth = 2; c.strokeRect(x + 1, y + 1, C - 2, C - 2); continue; }
+    c.fillStyle = hp >= DGK.hp ? '#7a5230' : hp === 2 ? '#6b4628' : '#5a3a20'; c.fillRect(x, y, C, C);
+    c.strokeStyle = '#4b3118'; c.lineWidth = 2; c.strokeRect(x + 1, y + 1, C - 2, C - 2);
+    c.fillStyle = 'rgba(0,0,0,0.18)'; c.fillRect(x + 10 + ((cc*7 + r*3) % 20), y + 14 + ((cc*5 + r*11) % 24), 8, 5);
+    if(hp < DGK.hp){ c.strokeStyle = '#2a1a0c'; c.lineWidth = 2; c.beginPath(); c.moveTo(x + 10, y + 8); c.lineTo(x + 30, y + 30); c.lineTo(x + 24, y + 52); if(hp === 1){ c.moveTo(x + 50, y + 10); c.lineTo(x + 34, y + 36); c.lineTo(x + 46, y + 56); } c.stroke(); }
+  }
+  D.exits.forEach((e, i) => {
+    const m = digcMid(e[0], e[1]), k = 0.6 + 0.4*Math.sin(t*0.15 + i);
+    c.globalAlpha = 0.9; c.fillStyle = '#ffd23f'; itemRoundRect(c, m[0] - 22, m[1] - 26, 44, 18, 4); c.fill();
+    c.fillStyle = '#1c1c1c'; c.font = "800 11px 'Baloo 2', system-ui"; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('EXIT', m[0], m[1] - 17);
+    c.globalAlpha = k; c.strokeStyle = '#ffd23f'; c.lineWidth = 3; c.beginPath(); c.arc(m[0], m[1] + 8, 14, 0, 7); c.stroke();
+  });
+  const you = fighters.find(f => f.you && !f.dead && f._dgOut == null && f._dgBur);
+  if(you && D.phase === 'dig'){
+    const q = digcCellAt(you.x, you.y);
+    for(const k in you._dgBur){
+      const p = you._dgBur[k], d = Math.max(Math.abs(p[0] - q[0]), Math.abs(p[1] - q[1])); if(d > DGK.hint) continue;
+      const m = digcMid(p[0], p[1]), open = digcHp(p[0], p[1]) === 0, a = 0.5 + 0.5*Math.sin(t*0.2 + p[0]);
+      c.globalAlpha = open ? 0.95 : 0.35 + 0.45*a; c.fillStyle = open ? '#ffd23f' : '#fff6c8';
+      c.beginPath(); for(let i = 0; i < 8; i++){ const rr = i % 2 ? 4 : (open ? 11 : 8), an = i*Math.PI/4 + t*0.03; c.lineTo(m[0] + Math.cos(an)*rr, m[1] + Math.sin(an)*rr); } c.closePath(); c.fill();
+      if(open){ c.fillStyle = '#1c1c1c'; c.font = "800 10px 'Baloo 2', system-ui"; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('?', m[0], m[1] + 0.5); }
+    }
+  }
+  c.restore();
+}
 
 // ---------- EVENT FIGHTERS: THE SCREENS (event-fighters-phase1.md, section 2, "Screens"; build step 9) ----------
 // The title's event card (refreshEventCard, beside the Daily card: the title keeps its six buttons), the event page (buildEventPage), the select
@@ -95218,6 +95509,7 @@ function aiThink(f){
   const B = brainOf(f), lvl = brainLevel(f), L = BRAIN_LV[lvl], now = hazardT;
   f._lvlCache = lvl;   // (the finishers' own CPU parts read the level from here)
   const inp = brainKeys();
+  if(DIGC && DIGC.phase !== 'fight'){ digcBrain(f, inp, lvl); return inp; }   // THE DIG (Spongy's contest): it digs, then waits; the fight is the brain's as ever
   if(f.onground && !(B.press && B.press.keys.jump)) f._aiHop = 0;   // a short hop is asked for one jump at a time (the hop-in below)
   f.aiTimer = (f.aiTimer || 0) - 1;
   let targets = fighters.filter(t=>!t.dead&&t.idx!==f.idx&&t.team!==f.team&&!(t._ghostT>0)&&!(t._hid&&Math.hypot(t.x-f.x,t.y-f.y)>130));   // (a ghost, or a fighter hidden in a prop, in Capture the Flag, is not seen)
@@ -97837,7 +98129,7 @@ function draw(){
   const platStyle = { yoyle: stage.hazard==='yoyle',
                       leafy: (stage.id==='goiky'||stage.id==='custom'), shadow: isBig(),
                       theme: SA.on ? stage.id : null };   // the ten normal stages' own platform looks (STAGE ART); art only, the geometry is the platform's own
-  if(SETTINGS.mode==='ctf') ctfDrawWorld(); else for(const p of worldPlats) paintPlat(ctx, p, platStyle);   // Capture the Flag paints its map from cached tiles
+  if(SETTINGS.mode==='ctf') ctfDrawWorld(); else for(const p of worldPlats) if(!p.dg) paintPlat(ctx, p, platStyle);   // Capture the Flag paints its map from cached tiles (THE DIG paints its dirt itself: drawDigc)
   drawImpactScars();          // impact's floor scars, on the surfaces they were made on
   drawArenaHazard('under');   // a boss arena's hazard, under the shots and the fighters (BOSS_ARENA_HAZARD)
 
@@ -97912,6 +98204,7 @@ function draw(){
     else drawItem(it); }
   if(BASKET) drawBasket();   // REACH THE BASKET (an event twist): X's basket, over the items and under the fighters
   if(SPLEEF) drawSpleef();   // SPLEEF (an event contest): the cracking tiles and the pieces of the ones that went, over the platforms and under the fighters
+  if(DIGC) drawDigc();   // THE DIG (Spongy's contest): the dirt field, its exits and the glints, over the platforms and under the fighters
   if(STAIRS) drawStairs();   // A RISING STAIRCASE (an event twist): the steps fading in and standing, over the platforms and under the fighters
   if(BERRIES) drawBerries();   // BERRIES RAIN (an event twist): the shadows, the berries and the splashes, over the items and under the fighters
   if(JAWB) drawJawbreakers();   // SOMEBODY'S INSIDE (an event twist): the jawbreaker, over the items and under the fighters
