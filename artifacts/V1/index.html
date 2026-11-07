@@ -90657,7 +90657,7 @@ const EVENT_TWIST_WORDS = {
   edges:  { icon:'⛰', short:'real edges', words:'Real edges: the field ends in cliffs, so a fall off either side costs a stock.' },
   food:   { icon:'🍎', short:'food only', words:'Food only: the only items that drop are snacks that heal.' },
   throw:  { icon:'🏀', short:'throwables only', words:'Throwables only: the only items that drop are things to pick up and throw.' },
-  spleef: { icon:'🧱', short:'spleef', words:'Spleef: ten floors of small tiles stacked down a walled shaft, nothing under the lowest. A tile cracks as soon as anyone stands on it and is gone half a second later, so everyone is forced down floor by floor, and a floor you have fallen past cannot be climbed back to. One stock each, and damage never KOs: a hit only knocks you about. The only way out is falling past the lowest floor; the last one standing wins.' },
+  spleef: { icon:'🧱', short:'spleef', words:'Spleef: ten floors of small tiles stacked down a walled shaft, nothing under the lowest. A tile cracks as soon as anyone stands on it and is gone half a second later, so everyone is forced down floor by floor. A floor that has nobody on it or above it breaks all at once; jump as high as you like. One stock each, and damage never KOs: a hit only knocks you about. The only way out is falling past the lowest floor; the last one standing wins.' },
   sponge: { icon:'🧽', short:'sponge floor', words:'Sponge floor: land hard on the ground and it bounces you back up. Standing and walking are normal.' },
   dig:    { icon:'⛏', short:'dig floor', words:'Dig floor: land hard and you dig a hole in the ground beside you. Holes stay, scraps of floor too small to stand on crumble away, and the whole floor can be dug away. Standing and walking are normal.' },
   stairs: { icon:'🪜', short:'rising staircase', words:'Rising staircase: a staircase of steps appears across the field, one new step about every 2 seconds, climbing higher and higher. Each step fades in and only holds you once it is solid. The top step is the safest place to stand, and the throwables land on it.' },
@@ -91439,7 +91439,7 @@ function twistVoid(){ const b = twistBackdrop(), D = b && EVENT_BACKDROPS[b]; re
 // has cracked a tile by standing for SPLK.stall frames, the tile nearest each fighter cracks on its own every SPLK.stallEvery frames, so a match always ends.
 // Not online (startEventMatch refuses in a room), so nothing of it rides the snapshot. Items and Smash Balls as the row says; what falls past the lowest floor is gone.
 let SPLEEF = null;   // null in every other match; else { tiles, x0, x1, top, gap, start, last, gone, n } -- see spleefBuildWorld. A fighter's floor is f._spL (0 the top)
-const SPLK = { rows:10, cols:12, wall:80, top:170, gap:200, h:14, crack:30, settle:60, stall:600, stallEvery:90, pctCap:300, voidPad:60 };   // settle: frames stood on one tile before it cracks (a second: measured with four CPUs, 12 gave layers of 2-3 s, 30 of 5-14 s, 60 top layers of 22-26 s, the owner's 20-40 s)
+const SPLK = { rows:10, cols:12, wall:80, top:170, gap:200, h:14, crack:30, settle:1, stall:600, stallEvery:90, pctCap:300, voidPad:60 };   // settle: frames stood on one tile before it cracks (1 = at once, the owner 2026-11-07: 'platforms should fall no matter how long you stand on them'; it was 60)
 function spleefWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.twist === 'spleef'; }
 function spleefRowY(i){ return SPLEEF.top + i*SPLEEF.gap; }
 // The world (from setupWorld, in place of the stage's own): a shaft a screen and a bit wide, the walls as solid blocks, the ten floors as one-way tiles, no floor at all under them.
@@ -91479,9 +91479,8 @@ function spleefUnder(f){
 function spleefHold(f){
   const S = SPLEEF, K = SPLK;
   if(f._spL == null) f._spL = 0;
-  while(f._spL < K.rows - 1 && f.y - f.r > spleefRowY(f._spL) + K.h + 1) f._spL++;   // the whole body under a floor: that floor is passed
-  if(f._spL > 0){ const cy = spleefRowY(f._spL - 1) + K.h; if(f.y - f.r < cy){ if(f.vy < -4) puff(f.x, cy, '#d8dde6', 3); f.y = cy + f.r; if(f.vy < 0) f.vy = 0; } }   // no way back up
-  else if(f.y - f.r < 8){ f.y = 8 + f.r; if(f.vy < 0) f.vy = 0; }
+  f._spL = 0; while(f._spL < K.rows - 1 && f.y - f.r > spleefRowY(f._spL) + K.h + 1) f._spL++;   // the floors whose plane is wholly above the body: its floor (it can go back UP: the tiles are one-way, and jumping is free)
+  if(f.y - f.r < 8){ f.y = 8 + f.r; if(f.vy < 0) f.vy = 0; }
   if(f.x < S.x0 + f.r){ f.x = S.x0 + f.r; if(f.vx < 0) f.vx = 0; } else if(f.x > S.x1 - f.r){ f.x = S.x1 - f.r; if(f.vx > 0) f.vx = 0; }   // the walls (solid blocks too)
 }
 // A CPU on a cracking tile (brainOut, after the ledge sense) walks to the nearest whole tile of its floor, if there is one in reach; else it lets the drop come.
@@ -91513,6 +91512,9 @@ function spleefStep(){
     if(p && p.t0 == null){ f._spStand = (f._spTile === p) ? (f._spStand || 0) + 1 : 1; f._spTile = p; if(f._spStand >= K.settle) spleefCrack(p, t, false); }
     else { f._spStand = 0; f._spTile = null; }
   }
+  let minL = 99;   // a floor with nobody ON it or ABOVE it (every living fighter is below) breaks all at once
+  for(const f of fighters){ if(!f.dead && f._spL != null && f._spL < minL) minL = f._spL; }
+  if(minL < 99) for(const p of S.tiles){ if(!p.gone && p.t0 == null && p.r < minL) spleefCrack(p, t, true); }
   if(t - S.last >= K.stall && (t - S.last - K.stall) % K.stallEvery === 0){   // the stall rule
     for(const f of fighters){
       if(f.dead) continue;
