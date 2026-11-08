@@ -1879,6 +1879,7 @@
         <li><b>Aerials:</b> in the air, X is a neutral air; add → (forward), ↑ (up) or ↓ (down); turn round and press X for a back-air. Land during one and you pay for it, so end it before you land. (Puffball's X is her puff: in the air X, or ← or → with X, still puffs it, aimed that way; ↑ or ↓ with X are her air moves.)</li>
         <li><b>Grab:</b> press X and C together close to a foe on the ground. While you hold them, X pummels (hold X to keep pummelling); ← → ↑ or ↓ throws. A down or up throw at low damage sets up an aerial. The one you hold struggles free faster the more they press.</li>
         <li><b>Movement:</b> a quick press of ↑ is a short hop, a held one a full jump. ↓ in the air after the top of your jump fast-falls. In the air against a wall, hold toward it and press ↑ to wall jump (once per wall). Some fighters cling to a wall first. In Capture the Flag only, a dasher (Leafy, Liy, Woody) can jump out of a dash for a hyper or a super, as in Celeste; everywhere else a jump out of a dash is a plain jump.</li>
+        <li><b>When you are hit:</b> hold a direction as the hit lands to bend your launch a little (DI); tap directions during the hit freeze to slip out of a multi-hit move (SDI).</li>
         <li><b>Learn them:</b> the Move list on the pause menu and the All moves tab on the character card show every move and its keys. Training (under the title) is a room with a dummy, hitboxes and any damage.</li>
       </ol>
     </div>
@@ -64816,7 +64817,8 @@ function step(){
     if(!inp.smash) f._smBuf = false;
     f._smRaw = !!inp.smash;
     if(f.hitstun>0 && (f._hold || f._heldBy!=null || f._gb || f._mv)) mvCancel(f);   // a hit lets go of a grab, a hold or a move in progress
-    if(f.hitstun>0){ f.hitstun--; f._spPend=0; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
+    f._dirPrev = mdiMask(inp);   // MDI: the ways held this frame (a press in the hit-freeze is fresh against these: mdiSDI)
+    if(f.hitstun>0){ mdiDI(f, inp); f.hitstun--; f._spPend=0; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }   // (mdiDI: the way held bends the launch of the hit just taken; everything else is thrown away in stun)
     if(f._selfStun > 0) f._selfStun = f.hitstun > 0 ? f._selfStun - 1 : 0;   // its own stun runs down with the hitstun (edgeOwnStun)
     if(f._fsHitT != null && f.onground && hazardT - f._fsHitT > 3) f._fsHitT = null;   // landed after a Final Smash's launch: a later KO is not its (fsKoSlow)
     if(f.frozen>0){ inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
@@ -67117,6 +67119,84 @@ function jabHitPress(from){
 // positions as they are, so it sees them hold.
 const HITSTOP_MIN = 2, HITSTOP_MAX = 6;
 const HITSTOP_KEYS = ['attack', 'special', 'smash', 'jump'];
+// MDI (2026-11-08): DIRECTIONAL INFLUENCE and SMASH DI, as in the games this one follows. The owner's design.
+//   DI: the way the victim holds when the hit lands bends the launch, up to DI.maxDeg, with the speed kept: held square to the launch
+//   bends it most toward that side; held along or against it, nothing. applyHit marks the hit (mdiHit); the victim's first stun frame
+//   that runs reads the held way from the one input every controller fills (inp.left/right/up/down: keys, the relayed input or the
+//   brain) and bends it (mdiDI); nothing held yet and the window stays open through the hit-freeze and a few frames after it.
+//   SDI: while the hit-freeze holds them (hitStopHold), each FRESH press of a way (down this frame, up the frame before) shifts them
+//   SDI.px that way, SDI.maxPerHit at most for one hit, so a later hit of a many-hit move or a chain can be slipped. Nothing else
+//   unlocks in stun. No shift down for a victim hit standing on the floor. Both for everyone, ground and air alike.
+//   Neither for a victim held in place by a move (mdiExempt): grabbed, carried by a finisher, frozen, rooted, cuffed, asleep, caught
+//   by a Final Smash.
+//   The CPU does both by level (CPU_DI, like BRAIN_LV shd): Easy seldom and any way, Expert nearly always and the way that keeps it on
+//   the stage (brainDI, brainSdiKeys): its choices go through the same inp fields, so one code path serves a person and a CPU, and
+//   the host's sim online (a guest's prediction never runs in stun or hit-freeze: netPredOut busy).
+const DI = { maxDeg: 15 };
+const SDI = { px: 6, maxPerHit: 18 };
+const CPU_DI = { rate:[0.10, 0.35, 0.65, 0.90], smart:[0, 0.5, 0.8, 1], sdi:[0.03, 0.15, 0.35, 0.60] };   // by level: the chance it DIs a hit; that the way is the surviving one (else any); a fresh SDI press per freeze frame
+function mdiExempt(f){ return !!(f._heldBy != null || f._grabHold || f._fxBy != null || f.frozen > 0 || f.rooted > 0 || f._mtCuff || f._fsLock || f._sleepT > hazardT); }
+function mdiMask(r){ return r ? ((r.left ? 1 : 0) | (r.right ? 2 : 0) | ((r.up || r.jump) ? 4 : 0) | (r.down ? 8 : 0)) : 0; }
+// The launch (vx, vy) bent toward the held way (L R U D), its length kept; null when nothing is held or nothing moves.
+function diBend(vx, vy, L, R, U, D, maxDeg){
+  const hx = (R ? 1 : 0) - (L ? 1 : 0), hy = (D ? 1 : 0) - (U ? 1 : 0);
+  if(!hx && !hy) return null;
+  const sp = Math.hypot(vx, vy); if(!(sp > 0.01)) return null;
+  const s = (vx*hy - vy*hx) / (sp*Math.hypot(hx, hy));   // the sine of the angle from the launch to the held way: 1 square to it, 0 along or against
+  const a = (maxDeg == null ? DI.maxDeg : maxDeg)*Math.PI/180*s, c = Math.cos(a), sn = Math.sin(a);
+  return { vx: vx*c - vy*sn, vy: vx*sn + vy*c };
+}
+function mdiHit(t, isTick, onGround){   // applyHit: this hit may be DI'd and SDI'd
+  if(isTick || t.dead || !(t.hitstun > 0)) return;
+  if(TESTMODE.active && TESTMODE.anchored && t.controller !== "local") return;
+  t._diAt = hazardT; t._sdiN = 0; t._sdiG = !!onGround;
+}
+function mdiDI(f, inp){   // step, in stun: the hit marked is bent by the way held now
+  if(f._diAt == null) return;
+  if(!(f.hitstun > 0) || hazardT - f._diAt > HITSTOP_MAX + 4 || mdiExempt(f)){ f._diAt = null; return; }
+  const b = inp ? diBend(f.vx, f.vy, inp.left, inp.right, inp.up || inp.jump, inp.down) : null;
+  if(!b) return;
+  f._diAt = null; f.vx = b.vx; f.vy = b.vy;
+}
+function mdiSDI(f, r){   // hitStopHold: a fresh press of a way shifts them (r: the ways down this frame, or null)
+  const cur = mdiMask(r), fresh = cur & ~(f._dirPrev | 0); f._dirPrev = cur;
+  if(!fresh || !(f.hitstun > 0) || mdiExempt(f)) return;
+  const left = SDI.maxPerHit - (f._sdiN || 0); if(!(left > 0)) return;
+  let dx = ((fresh & 2) ? 1 : 0) - ((fresh & 1) ? 1 : 0), dy = ((fresh & 8) ? 1 : 0) - ((fresh & 4) ? 1 : 0);
+  if(f._sdiG && dy > 0) dy = 0;
+  if(!dx && !dy) return;
+  const n = Math.hypot(dx, dy), px = Math.min(SDI.px, left);
+  f.x += dx/n*px; f.y += dy/n*px; f._sdiN = (f._sdiN || 0) + px;
+}
+// THE CPU. The way that keeps it on the stage: square to the launch, on the side toward the middle of the stage.
+function diSurvive(f){
+  const vx = f.vx, vy = f.vy; if(!(Math.hypot(vx, vy) > 0.01)) return null;
+  const cx = WW/2 - f.x, cy = (groundY() - 120) - f.y;
+  let px = -vy, py = vx; if(px*cx + py*cy < 0){ px = -px; py = -py; }
+  const n = Math.hypot(px, py); px /= n; py /= n;
+  return { left: px < -0.38, right: px > 0.38, up: py < -0.38, down: py > 0.38 };
+}
+function brainDI(f, inp, lvl){   // aiThink, hurt: decided once a hit, held while the hit's window is open
+  if(f._diAt == null || mdiExempt(f)) return;
+  const B = brainOf(f);
+  if(!B.di || B.di.at !== f._diAt){
+    let d = null;
+    if(Math.random() < CPU_DI.rate[lvl]){
+      if(Math.random() < CPU_DI.smart[lvl]) d = diSurvive(f);
+      else { const k = Math.floor(Math.random()*4); d = { left:k === 0, right:k === 1, up:k === 2, down:k === 3 }; }
+    }
+    B.di = { at:f._diAt, d };
+  }
+  const d = B.di.d; if(d){ inp.left = d.left; inp.right = d.right; inp.up = d.up; inp.down = d.down; }
+}
+function brainSdiKeys(f){   // hitStopHold, a CPU: a tap toward the middle of the stage by chance, let go the frame after so the next is fresh
+  if(!(f.hitstun > 0) || mdiExempt(f)) return null;
+  if(f._sdiAi === hazardT - 1){ f._sdiAi = -1; return null; }
+  const lvl = f._lvlCache == null ? brainLevel(f) : f._lvlCache;
+  if(Math.random() >= CPU_DI.sdi[lvl]) return null;
+  f._sdiAi = hazardT;
+  return f.x > WW/2 ? { left:true } : { right:true };
+}
 let STEP_F = null;   // the fighter whose own frame is running in step(), or null
 function hitStopFrames(dmg){ return Math.max(HITSTOP_MIN, Math.min(HITSTOP_MAX, Math.round(2 + (dmg - 3)*4/15))); }   // 3% -> 2, 10% -> 4, 18% -> 6
 function hitStopOff(){
@@ -67246,8 +67326,10 @@ function hitStopHit(t, from, dmg){
 function hitStopHold(f, ctrl, pad){
   f._hitStop--; f._hsHeld = hazardT;
   let r = null;
-  if(ctrl === 'local'){ const K = KEYS; r = { attack:down[K.attack]||pad?.attack, special:down[K.special]||pad?.special, smash:down[K.smash]||pad?.smash, jump:down[K.jump]||pad?.jump }; }
+  if(ctrl === 'local'){ const K = KEYS; r = { attack:down[K.attack]||pad?.attack, special:down[K.special]||pad?.special, smash:down[K.smash]||pad?.smash, jump:down[K.jump]||pad?.jump, left:down[K.left]||pad?.left, right:down[K.right]||pad?.right, down:down[K.down]||pad?.down }; }
   else if(ctrl === 'remote') r = netRemoteInput(f.idx);
+  else if(ctrl === 'ai') r = brainSdiKeys(f);   // MDI: a CPU's SDI taps
+  mdiSDI(f, r);   // MDI: a fresh press of a way in the freeze shifts them a little (SDI)
   if(!r) return;
   for(const b of HITSTOP_KEYS) if(r[b]) (f._hsBuf || (f._hsBuf = {}))[b] = true;
 }
@@ -89882,6 +89964,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   else if(fsSt && !t.dead){ t._fsHitT = hazardT; if(fsKoFlight(t)) fsSlowStart(t); }   // ...and a launch that will carry them out plays slowed down
   else if(dmg > 0) t._fsHitT = null;   // (a hit that is not a Final Smash's: a KO from here on is not one: fsKoSlow)
   if(!t._fsLock && !t.dead) kocLaunch(t);   // THE LAST KO: a launch that will carry a match-ending foe out plays slowed down, from any move
+  mdiHit(t, isTick, hitGround);   // MDI: this hit may be DI'd / SDI'd (mdiDI, mdiSDI)
   if(!isTick) hitStopHit(t, from, dmg*fsRow);   // HIT FREEZE: the two of them are held still a moment (none while a Final Smash plays: hitStopOff)
   if(!isTick && !(opts && opts.shot)) hitJumpBack(from, t);   // A JUMP BACK FOR A HIT: the attacker's own swing, in the air with no jumps left (hitJumpBack)
   // A circle still winding up is lost to any hit that connects first -- the counterplay that turns
@@ -96010,7 +96093,7 @@ function aiThink(f){
     else if(boss){ targets = [{ x:boss.x, y:boss.y, r:boss.r, dead:false, team:-1, idx:-9, pct:40, hitstun:0, frozen:0, invuln:0, vx:0, atkCd:0, _isBoss:true }]; }
   }
   // HURT: in hitstun, frozen, held, asleep -- nothing pressed, nothing kept for later.
-  if(f.hitstun > 0 || f.frozen > 0 || f._heldBy != null || f._sleepT > now){ B.hurt = true; B.press = null; B.str = null; return inp; }
+  if(f.hitstun > 0 || f.frozen > 0 || f._heldBy != null || f._sleepT > now){ B.hurt = true; B.press = null; B.str = null; brainDI(f, inp, lvl); return inp; }   // (brainDI: its DI, by level -- MDI)
   if(B.hurt){   // the stun is over: a moment before it notices, and now and then it backs off first
     B.hurt = false; B.hurtEnd = now; B.wake = now + Math.round(brainR(L.wake));
     if(B.st === 'string' || B.st === 'smash') B.st = 'approach';
@@ -97448,7 +97531,7 @@ function cpuHumanKeys(f, inp, gap, fight){
   // No foe near: its own pace (see CPU_HUMAN). And while Bow fades into her Teleport the arrows are the aim of the press she has already
   // made (teleportHold reads the last ones held): they go as she holds them, as a person holds the way with the C or just after it.
   if(!fight || f._tp){ h.pend = null; if(want !== h.sig){ h.sig = want; h.keys = Object.assign({}, inp); } return inp; }
-  if(f.hitstun > 0) h.pend = null;   // hit: whatever press was waiting for the hands is forgotten, never fired the frame the stun ends
+  if(f.hitstun > 0){ h.pend = null; h.sig = want; h.keys = Object.assign({}, inp); return inp; }   // MDI: in stun the only keys are its DI, held at once as a person does on the hit; hit: whatever press was waiting for the hands is forgotten, never fired the frame the stun ends
   if(h.pend && now - h.pend.at > CPU_PEND_MAX) h.pend = null;
   // A button it no longer wants is let go of at once, free, once it has been down tapMin frames: a tap is ONE input, the press. (Counted as
   // a change of its own, the release waited for the hands like any press, and a jab key held on that long was a held X -- the engine swings
