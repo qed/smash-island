@@ -80775,12 +80775,81 @@ function mvTick(f, inp){
   mv.t++;
   if(mv.t >= total){ f._mv = null; }
 }
+// ============================================================
+//  SWEPT HITBOXES (2026-11-08)
+// ============================================================
+// A moveset box used to be STATIC: the whole shape was live on every one of its frames, so a swing (Bow's chair heaved over her head, a
+// branch swung from high to low) could hit a foe at the far end of the arc on its first frame, as far from the drawn swing as the shape
+// reached. Now a box whose motion is a SWING is swept: on each of its live frames only a SLICE of the authored shape can hit -- the part
+// of the arc the swing has reached on that frame, tip leading, from the start angle to the end angle (a fan), or along the line from the
+// near end to the far end (a capsule that swings) -- and the slices together are EXACTLY the old shape (they partition it), so the envelope,
+// the reach, the damage, the launch and every frame number are what they were: only WHEN each part of it can hit has changed. A foe is
+// hit once per swing, as before (mvStrike's per-group set). The slice is a pure function of the move's own frame (mv.t) and the row, so a
+// guest works out the same one. The hit art is the slice, so the streak is drawn where the hit is on that frame. This was the cheapest way
+// that keeps the old area as the envelope: a time-windowed slice of the authored shape, no new shape kind, no new sampling.
+// What is swept, by a rule on the row (swClassOf); nothing below runs for any other box:
+//   swing   every fan (MvF: an arc by construction) and a capsule whose words say it swings (SW_WORDS) unless they also say it goes straight;
+//   thrust  a straight thrust, slap, stab, poke, shove, stomp or drop (a capsule with no swing in its words), every disc (MvO: a burst, a
+//           stomp, a spin), every box that re-hits (a spin is a multi-hit, not one swing), and a box live for one frame (nothing to sweep);
+//   SW_EXC  the explicit exceptions, 'kit.slot' -> class.
+// Projectiles, the jab (one frame), the smashes and the specials are untouched. Every row's class is listed in reports/sweep-classification.csv.
+const SW_WORDS = /swing|sweep|swipe|swat|chop|whip|\bround\b|wheel|hook|backhand|\barcs?\b|slash|smack|flail|lash|flick/i;
+const SW_STRAIGHT = /straight|stab|poke|thrust|\bjab|punch|shove|pound|spike|column|\bdrops?\b|\bslaps?\b/i;
+const SW_EXC = { 'chair.fa':'swing' };   // Bow's Chair Swing (the owner's example): its words already say swing; pinned so a rewording cannot lose it
+function swClassOf(kit, key, S, b){
+  const e = SW_EXC[kit + '.' + key]; if(e) return e;
+  if(!b || !b.s || b.rehit) return 'thrust';
+  if(b.s.k === 'f') return 'swing';
+  if(b.s.k !== 'c') return 'thrust';
+  const w = (S.n || '') + ' ' + (S.d || '');
+  return SW_WORDS.test(w) && !SW_STRAIGHT.test(w) ? 'swing' : 'thrust';
+}
+// A fan that rises (its middle points up) sweeps from its low angle to its high one; any other from high to low (a > 0 is down).
+function swRises(s){ return (s.a0 + s.a1)/2 < -1.0; }
+// The slice of shape `sh` (mvShape of the row shape `s`) between sweep parameters u0 and u1 (0..1 along the swing).
+function swSlice(sh, s, u0, u1){
+  if(sh.kind === 'fan'){
+    const A = swRises(s) ? sh.a1 : sh.a0, B = swRises(s) ? sh.a0 : sh.a1, p = A + (B - A)*u0, q = A + (B - A)*u1;
+    return { kind:'fan', cx:sh.cx, cy:sh.cy, r0:sh.r0, r1:sh.r1, a0:Math.min(p, q), a1:Math.max(p, q), face:sh.face };
+  }
+  const dx = sh.x2 - sh.x1, dy = sh.y2 - sh.y1;
+  return { kind:'capsule', x1:sh.x1 + dx*u0, y1:sh.y1 + dy*u0, x2:sh.x1 + dx*u1, y2:sh.y1 + dy*u1, r:sh.r };
+}
+function swLive1(S, b){ return b.t1 == null ? S.st + S.act - 1 : b.t1; }
+// The shape box `b` of move S tests on frame t (the move's own frame): the whole shape for a thrust, the frame's slice for a swing. `g` is the
+// fighter (or a stand-in with x, y, face). Null on a frame the box is not live.
+function swShapeAt(g, kit, key, S, b, t){
+  const b0 = b.t0 == null ? S.st : b.t0, b1 = swLive1(S, b);
+  if(t < b0 || t > b1) return null;
+  const sh = mvShape(g, b.s), n = b1 - b0 + 1;
+  if(n < 2) return sh;
+  const c = b._swc || (b._swc = swClassOf(kit, key, S, b));
+  return c === 'swing' ? swSlice(sh, b.s, (t - b0)/n, (t - b0 + 1)/n) : sh;
+}
+// Is a swing of `att` (a move out, _mv) about to reach `foe`: does one of its swept boxes' slices on this or the next `within` frames touch it?
+// For the CPU's shield (brainSwingTell): the shield used to read only the startup, which is when a static box arrived; a swept box arrives when
+// its slice does, so the CPU reads that too (a back-air's sweep, behind the swinger, reaches it from any facing). Nothing runs for a move with no swing.
+function swReaches(att, foe, within){
+  const mv = att._mv; if(!mv || !mv.s.boxes) return false;
+  const S = mv.s, kit = att.kit ? att.kit.special : '';
+  for(const b of S.boxes){
+    if(swLive1(S, b) - (b.t0 == null ? S.st : b.t0) < 1) continue;
+    const c = b._swc || (b._swc = swClassOf(kit, mv.key, S, b));
+    if(c !== 'swing') continue;
+    for(let k = 0; k <= within; k++){ const sh = swShapeAt(att, kit, mv.key, S, b, mv.t + k); if(sh && shapeHits(sh, foe)) return true; }
+  }
+  return false;
+}
 function mvStrike(f, mv, b, gi){
-  const sh = mvShape(f, b.s), bb = shapeBounds(sh), key = b.g || ('b' + gi);
+  const S = mv.s, b0 = b.t0 == null ? S.st : b.t0;
+  // SWEPT HITBOXES: a swing's box tests only this frame's slice of its shape (swShapeAt); a thrust's, a disc's and a re-hitting box's the whole shape, as ever
+  const sh = swShapeAt(f, f.kit ? f.kit.special : '', mv.key, S, b, mv.t) || mvShape(f, b.s), bb = shapeBounds(sh), key = b.g || ('b' + gi);
+  const swept = b._swc === 'swing' && swLive1(S, b) - b0 >= 1;
   if(SHOW_HITBOXES) DEBUG_HITS.push({ shape:sh, pts:shapePts(sh), t:6 });
   // HIT ART: each box on each of its live frames, mirrored as the move faces -- a back-air behind, a down-air under -- and flashing on
-  // each of a rehitting box's hits (a neutral air's spins can be counted)
-  { const b0 = b.t0 == null ? mv.s.st : b.t0; hitArt(f, 'mv' + gi, sh, { tick: !!b.rehit && (mv.t - b0) % b.rehit === 0 }); }
+  // each of a rehitting box's hits (a neutral air's spins can be counted). A swept box records its slice under its own key each frame, so
+  // the streak is drawn where the hit is and the earlier slices fade behind it: the arc you see is the arc that hits.
+  hitArt(f, 'mv' + gi + (swept ? 's' + (mv.t - b0) : ''), sh, { tick: !!b.rehit && (mv.t - b0) % b.rehit === 0 });
   hitTurrets(f, bb.cx, bb.cy, bb.rad, b.dmg);
   if(FINX.length && f.kit) fx8DoughRec(f, sh, b.dmg, f.face*(b.kb || [4, -3])[0], (b.kb || [4, -3])[1], key, b.rehit, mv.t);   // Dough's copy throws it again a beat later (FINISHERS V2, batch 8)
   const hs = mv.hit[key] || (mv.hit[key] = new Map());
@@ -96315,8 +96384,10 @@ function brainPickMove(f, t){
 // (never longer than AIS_MAXHOLD, so a CPU cannot sit in a bubble and freeze a match), then waits AIS_CD before it will raise it again. A reflector
 // CPU raises it for a shot of a foe's that is coming at its face, timed so the pane is up as the shot arrives (rolled once per shot by level).
 const AIS_MAXHOLD = 90, AIS_CD = 50, AIS_AFTER = 8;
+const AIS_SWEEP_AHEAD = 6;   // SWEPT HITBOXES: a swing whose slice reaches the CPU within this many frames is a tell too (swReaches)
 function brainSwingTell(f, t, dist){
   if(t._isBoss || t.dead) return false;
+  if(t._mv && dist < 420 && swReaches(t, f, AIS_SWEEP_AHEAD)) return true;   // SWEPT HITBOXES: the sweep is about to reach it, whichever way the swinger faces
   if(!(t.smashHold > 0 || !!t._windup || !!t._mv || t._atkAnim > 0)) return false;
   if(dist > f.r + (t.r || 24) + 130) return false;
   const toMe = f.x < t.x ? -1 : 1;
