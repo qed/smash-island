@@ -4756,6 +4756,110 @@ function mc4NatLay(nat, e, dir, rc, low, piece, zone, open){   // (V4: `open`, t
 //   Barricade one wall 192 px thick across the middle with three ways past (a low door, a window slit reached from plank firing steps, the ridge on top reached by planks); its own mirror image
 //   Warren    six cells in two storeys: three in the cave, three above them in the hall's foot, on the cave floor above (kept, with a hatch in each cell); the doors are 128 px high, the partitions 100 px thick
 //   Attic     the corridor (the room's box lowered to 128 px) with a sealed pocket over it (112 px or more high, over 100 px of rock) and ONE hatch 144 px wide up through that rock by plank steps (a cave under 324 px of air keeps the corridor alone)
+// V7: IDENTITIES AND SCENERY (spec sections 3.2 and 5; v4 only: the v3 moon keeps MC_LOOK). The colours of each cave kind (back wall, rock, plank), a BACK-WALL KIT per kind (props fixed when the moon is first drawn, from a
+// hash of the cave and the prop's number, no dice: a replay and a guest draw the same; no collision; culled by mcInView; about 3 to 4 props per 1,000 px of a cave's ring, each placed twice, mirrored, so the moon
+// is its own mirror image) and a MOOD TINT, a wash over the whole picture whose colour is the cave the camera is in, eased over about 150 px as the camera crosses a floor (so the picture changes when you drop
+// through a floor). No words are drawn.
+const MC4_LOOK = {
+  surface:   { back:null,      rock:'#6c6f77', plank:'#c9ccd3' },
+  galleries: { back:'#2b2a33', rock:'#77747c', plank:'#d9cdb4' },
+  columns:   { back:'#161f2b', rock:'#35607a', plank:'#bfeaff' },
+  tunnels:   { back:'#222429', rock:'#5a5d66', plank:'#c9ccd3' },
+  springs:   { back:'#241f33', rock:'#5d4f7a', plank:'#e9b8d6' },
+  ice:       { back:'#1e2a36', rock:'#8db3cc', plank:'#dcf2ff' },
+  updrafts:  { back:'#1b2430', rock:'#687a80', plank:'#d0e6ea' },
+  mines:     { back:'#2a231d', rock:'#6b5946', plank:'#c79a5f' },
+  flooded:   { back:'#17262a', rock:'#3f6a5f', plank:'#a8885a' },
+  furnace:   { back:'#341d17', rock:'#523b35', plank:'#d39a74', hot:'#f0521f88', heat:'rgba(255,140,60,0.10)' },
+};
+const MC4_MOOD = { surface:[0, 0, 0, 0], galleries:[255, 184, 77, 0.05], springs:[190, 90, 255, 0.07], columns:[64, 200, 216, 0.07], ice:[160, 216, 255, 0.08], updrafts:[96, 128, 255, 0.06],
+  mines:[208, 138, 58, 0.07], flooded:[48, 160, 128, 0.10], tunnels:[0, 0, 6, 0.18], furnace:[255, 80, 32, 0.08] };
+function mc4DrawMood(){
+  const M = MCAVE, Ls = M.layers; if(!Ls || !Ls.length) return;
+  const x = camX + W/2, y = camY + H/2, r = mcRad(x, y), L = mcLayerOf(r), R = 75, sm = q => q*q*(3 - 2*q); let A = MC4_MOOD[Ls[L].kind] || MC4_MOOD.surface, B = A, k = 1, d;
+  if(L > 0 && (d = Ls[L].rTop - r) < R){ B = MC4_MOOD[Ls[L - 1].kind] || A; k = 0.5 + 0.5*sm(Math.max(0, d)/R); }
+  else if(L < Ls.length - 1 && (d = r - Ls[L].rBot) < R){ B = MC4_MOOD[Ls[L + 1].kind] || A; k = 0.5 + 0.5*sm(Math.max(0, d)/R); }
+  const a = (A[3]*k + B[3]*(1 - k))*(1 - (M.wideK || 0)); if(a < 0.004) return;
+  ctx.fillStyle = 'rgba(' + Math.round(A[0]*k + B[0]*(1 - k)) + ',' + Math.round(A[1]*k + B[1]*(1 - k)) + ',' + Math.round(A[2]*k + B[2]*(1 - k)) + ',' + a.toFixed(3) + ')'; ctx.fillRect(0, 0, W, H);
+}
+const MC4_KITS = { galleries:[0, 1, 2], springs:[3, 4, 5], columns:[6, 7, 8], ice:[9, 10, 11], updrafts:[12, 13, 14], mines:[15, 16, 17, 18], flooded:[19, 20, 21], tunnels:[22, 23, 24], furnace:[25, 26, 27, 28] };
+const MC4_STAND = { 0:1, 3:1, 5:1, 6:1, 15:1, 18:1, 19:1, 24:1, 28:1 }, MC4_HANG = { 1:1, 2:1, 7:1, 9:1, 10:1, 16:1, 20:1, 23:1, 26:1 };   // (the rest float in the air)
+function mc4KitBuild(M){
+  const out = [], hs = (a, b, c) => (Math.imul(Math.imul(a + 1, 0x9E3779B1) ^ Math.imul(b + 7, 0x85EBCA6B) ^ Math.imul(c + 3, 0xC2B2AE35), 0x27D4EB2D) >>> 0)/4294967296;
+  const Ls = M.layers || [];
+  for(let L = 1; L < Ls.length; L++){
+    const set = MC4_KITS[Ls[L].kind]; if(!set) continue;
+    const floor = M.tops[L], ceil = Ls[L].rTop, nHalf = Math.max(3, Math.round(Math.PI*floor/1000*3.5));
+    for(let i = 0; i < nHalf; i++){
+      const a = (i + 0.15 + 0.7*hs(L, i, 1))/nHalf*Math.PI, k = set[Math.floor(hs(L, i, 2)*set.length)], s = 0.75 + 0.6*hs(L, i, 3), w = hs(L, i, 4);
+      const r = MC4_STAND[k] ? floor : MC4_HANG[k] ? ceil : floor + (0.25 + 0.5*hs(L, i, 5))*(ceil - floor), ext = 130*s;
+      for(const fl of [1, -1]) out.push({ a:a*fl, r, k, s, w, fl, hw:ext/r, rh:ext, top:0 });
+    }
+  }
+  const sf = M.tops[0], nS = Math.max(2, Math.round(Math.PI*sf/4000*2));   // the surface: rover tracks in the crust's face and a mast here and there on the lap (the ground's own props are v3's hop-tops and the Crater)
+  for(let i = 0; i < nS; i++){
+    const a = (i + 0.2 + 0.6*hs(0, i, 1))/nS*Math.PI, w = hs(0, i, 4);
+    for(const fl of [1, -1]){ out.push({ a:a*fl, r:sf - 26, k:29, s:1, w, fl, hw:300/sf, rh:40, top:1 }); if(i % 2) out.push({ a:(a + 0.5*Math.PI/nS/2)*fl, r:sf, k:30, s:0.8 + 0.4*w, w, fl, hw:60/sf, rh:110, top:0 }); }
+  }
+  return out;
+}
+function mc4KitDraw(c, p, t){
+  const u = 56*p.s, w = p.w, TAU = MC_TAU;
+  switch(p.k){
+    case 0: c.strokeStyle = 'rgba(14,12,22,0.55)'; c.lineWidth = 9; c.beginPath(); c.moveTo(-u*0.9, 0); c.lineTo(-u*0.9, -u*1.2); c.arc(0, -u*1.2, u*0.9, Math.PI, 0); c.lineTo(u*0.9, 0); c.stroke();
+      c.strokeStyle = 'rgba(217,205,180,0.2)'; c.lineWidth = 3; c.stroke(); break;                                   // an arch
+    case 1: c.fillStyle = 'rgba(176,58,58,0.5)'; c.beginPath(); c.moveTo(-u*0.35, 0); c.lineTo(u*0.35, 0); c.lineTo(u*0.35, u*1.5); c.lineTo(0, u*1.2); c.lineTo(-u*0.35, u*1.5); c.closePath(); c.fill();
+      c.strokeStyle = 'rgba(255,184,77,0.45)'; c.lineWidth = 3; c.beginPath(); c.moveTo(-u*0.45, 0); c.lineTo(u*0.45, 0); c.stroke(); break;   // a banner
+    case 2: case 16: { const g = 0.85 + 0.15*Math.sin(t*0.07 + w*9), warm = p.k === 2 ? '255,184,77' : '255,150,60';
+      c.strokeStyle = 'rgba(60,50,40,0.7)'; c.lineWidth = 2; c.beginPath(); c.moveTo(0, 0); c.lineTo(0, u*0.8); c.stroke();
+      c.fillStyle = 'rgba(' + warm + ',' + (0.14*g).toFixed(3) + ')'; c.beginPath(); c.arc(0, u, u*0.9, 0, TAU); c.fill();
+      c.fillStyle = 'rgba(' + warm + ',' + (0.75*g).toFixed(3) + ')'; c.beginPath(); c.arc(0, u, u*0.16, 0, TAU); c.fill(); break; }   // a hanging lantern or lamp
+    case 3: c.fillStyle = 'rgba(70,52,100,0.7)'; c.fillRect(-u*0.12, -u*1.2, u*0.24, u*1.2); c.fillStyle = 'rgba(233,120,190,0.45)'; c.beginPath(); c.ellipse(0, -u*1.25, u*0.7, u*0.38, 0, 0, TAU); c.fill();
+      c.fillStyle = 'rgba(255,220,240,0.35)'; c.beginPath(); c.arc(-u*0.25, -u*1.3, u*0.07, 0, TAU); c.arc(u*0.2, -u*1.22, u*0.06, 0, TAU); c.fill(); break;   // a giant mushroom
+    case 4: c.fillStyle = 'rgba(127,240,224,0.5)'; for(let j = 0; j < 5; j++){ c.beginPath(); c.arc(Math.sin(t*0.02 + j*1.7 + w*6)*u*0.7, u*0.8 - ((t*0.15 + j*13 + w*100) % (u*1.6)), 2.2, 0, TAU); c.fill(); } break;   // spore motes
+    case 5: for(let j = -1; j <= 1; j++){ c.fillStyle = 'rgba(70,52,100,0.7)'; c.fillRect(j*u*0.5 - u*0.05, -u*0.45 + Math.abs(j)*u*0.12, u*0.1, u*0.45 - Math.abs(j)*u*0.12);
+      c.fillStyle = 'rgba(233,120,190,0.42)'; c.beginPath(); c.ellipse(j*u*0.5, -u*0.48 + Math.abs(j)*u*0.12, u*0.3, u*0.16, 0, 0, TAU); c.fill(); } break;   // small mushrooms
+    case 6: case 7: { const sg = p.k === 6 ? -1 : 1; c.fillStyle = 'rgba(70,170,200,0.4)'; c.strokeStyle = 'rgba(190,240,255,0.35)'; c.lineWidth = 2;
+      for(let j = 0; j < 3; j++){ const x0 = (j - 1)*u*0.32, h = u*(0.9 + 0.5*((j*0.37 + w*3) % 1)); c.beginPath(); c.moveTo(x0 - u*0.14, 0); c.lineTo(x0, sg*h); c.lineTo(x0 + u*0.14, 0); c.closePath(); c.fill(); c.stroke(); } break; }   // crystals
+    case 8: case 17: { const a = Math.max(0, Math.sin(t*0.1 + w*20)), col = p.k === 8 ? '220,250,255' : '240,200,90'; c.strokeStyle = 'rgba(' + col + ',' + (0.55*a).toFixed(3) + ')'; c.lineWidth = 2;
+      c.beginPath(); c.moveTo(-u*0.25, 0); c.lineTo(u*0.25, 0); c.moveTo(0, -u*0.25); c.lineTo(0, u*0.25); c.stroke(); break; }   // glints
+    case 9: c.fillStyle = 'rgba(200,235,255,0.4)'; for(let j = 0; j < 3; j++){ const x0 = (j - 1)*u*0.3, h = u*(0.5 + 0.5*((j*0.41 + w*3) % 1)); c.beginPath(); c.moveTo(x0 - u*0.1, 0); c.lineTo(x0, h); c.lineTo(x0 + u*0.1, 0); c.closePath(); c.fill(); } break;   // icicles
+    case 10: c.fillStyle = 'rgba(190,230,255,0.14)'; c.fillRect(-u*0.18, 0, u*0.36, u*1.8); c.fillStyle = 'rgba(230,248,255,0.25)'; c.fillRect(-u*0.18, 0, 2, u*1.8); c.fillRect(u*0.18 - 2, 0, 2, u*1.8); break;   // a frozen fall
+    case 11: c.fillStyle = 'rgba(240,248,255,0.4)'; for(let j = 0; j < 6; j++){ c.beginPath(); c.arc(Math.sin(t*0.015 + j*2.1 + w*5)*u*0.9, -u*0.8 + ((t*0.3 + j*29 + w*90) % (u*1.6)), 1.8, 0, TAU); c.fill(); } break;   // snow
+    case 12: c.fillStyle = 'rgba(110,130,150,0.3)'; c.beginPath(); c.ellipse(0, 0, u*1.1, u*0.26, 0, 0, TAU); c.fill(); c.beginPath(); c.moveTo(-u*0.9, 0); c.lineTo(0, u*0.7); c.lineTo(u*0.9, 0); c.closePath(); c.fill(); break;   // a far floating isle
+    case 13: c.fillStyle = 'rgba(210,225,240,0.1)'; for(let j = -1; j <= 1; j++){ c.beginPath(); c.ellipse(j*u*0.6, Math.abs(j)*u*0.1, u*0.6, u*0.2, 0, 0, TAU); c.fill(); } break;   // a cloud wisp
+    case 14: c.strokeStyle = 'rgba(210,235,245,0.25)'; c.lineWidth = 2; for(let j = 0; j < 4; j++){ const y = -((t*0.6 + j*40 + w*50) % (u*2)) + u; c.beginPath(); c.moveTo((j - 1.5)*u*0.4, y); c.lineTo((j - 1.5)*u*0.4, y - u*0.35); c.stroke(); } break;   // rising streaks
+    case 15: c.fillStyle = 'rgba(120,84,50,0.65)'; c.fillRect(-u*0.8, -u*1.4, u*0.16, u*1.4); c.fillRect(u*0.64, -u*1.4, u*0.16, u*1.4); c.fillRect(-u*0.9, -u*1.5, u*1.8, u*0.18);
+      c.strokeStyle = 'rgba(120,84,50,0.5)'; c.lineWidth = 4; c.beginPath(); c.moveTo(-u*0.64, -u*0.5); c.lineTo(-u*0.2, -u*1.35); c.moveTo(u*0.64, -u*0.5); c.lineTo(u*0.2, -u*1.35); c.stroke(); break;   // timber supports
+    case 18: c.strokeStyle = 'rgba(150,150,160,0.4)'; c.lineWidth = 3; c.beginPath(); c.moveTo(-u*1.4, -6); c.lineTo(u*1.4, -6); c.moveTo(-u*1.4, -14); c.lineTo(u*1.4, -14); c.stroke();
+      c.fillStyle = 'rgba(120,84,50,0.5)'; for(let j = -3; j <= 3; j++) c.fillRect(j*u*0.4 - 3, -16, 6, 12); break;   // rails
+    case 19: c.strokeStyle = 'rgba(10,20,22,0.5)'; c.lineWidth = 9; c.beginPath(); c.moveTo(-u*0.9, 0); c.lineTo(-u*0.9, -u*1.1); c.arc(0, -u*1.1, u*0.9, Math.PI, 0); c.lineTo(u*0.9, 0); c.stroke();
+      c.fillStyle = 'rgba(40,110,120,0.35)'; c.fillRect(-u*1.1, -u*0.45, u*2.2, u*0.45); c.fillStyle = 'rgba(160,220,230,0.3)'; c.fillRect(-u*1.1, -u*0.45, u*2.2, 2); break;   // a half-sunk arch with its waterline
+    case 20: c.fillStyle = 'rgba(60,90,90,0.5)'; c.beginPath(); c.moveTo(-u*0.12, 0); c.lineTo(0, u*0.4); c.lineTo(u*0.12, 0); c.closePath(); c.fill();
+      c.fillStyle = 'rgba(150,210,230,0.55)'; c.beginPath(); c.arc(0, u*0.4 + ((t*0.8 + w*100) % (u*1.4)), 2.2, 0, TAU); c.fill(); break;   // a drip
+    case 21: c.strokeStyle = 'rgba(170,225,235,0.4)'; c.lineWidth = 1.5; for(let j = 0; j < 4; j++){ c.beginPath(); c.arc(Math.sin(j*2.3 + w*6)*u*0.5, u*0.6 - ((t*0.35 + j*23 + w*80) % (u*1.4)), 2.5 + j, 0, TAU); c.stroke(); } break;   // bubbles
+    case 22: c.fillStyle = 'rgba(5,5,8,0.55)'; c.beginPath(); c.ellipse(0, 0, u*0.7, u*0.55, 0, 0, TAU); c.fill(); c.strokeStyle = 'rgba(120,125,135,0.25)'; c.lineWidth = 3; c.stroke(); break;   // a burrow mouth in the back wall
+    case 23: c.strokeStyle = 'rgba(95,70,50,0.55)'; c.lineWidth = 3; for(let j = -1; j <= 1; j++){ c.beginPath(); c.moveTo(j*u*0.2, 0); c.quadraticCurveTo(j*u*0.5 + u*0.15, u*0.6, j*u*0.35 - u*0.1, u*(1.0 + 0.3*((j + 2 + w*3) % 1))); c.stroke(); } break;   // roots
+    case 24: c.strokeStyle = 'rgba(220,215,200,0.3)'; c.fillStyle = 'rgba(220,215,200,0.3)'; c.lineWidth = 3; c.beginPath(); c.moveTo(-u*0.5, -4); c.lineTo(u*0.5, -9); c.stroke();
+      c.beginPath(); c.arc(-u*0.5, -4, 4, 0, TAU); c.arc(u*0.5, -9, 4, 0, TAU); c.fill(); break;   // a bone
+    case 25: c.strokeStyle = 'rgba(95,60,50,0.6)'; c.lineWidth = 10; c.beginPath(); c.moveTo(-u*1.4, 0); c.lineTo(u*0.6, 0); c.lineTo(u*0.6, -u*0.7); c.stroke();
+      c.fillStyle = 'rgba(150,100,80,0.5)'; c.fillRect(-u*0.4 - 3, -9, 6, 18); c.fillRect(u*0.6 - 9, -u*0.35 - 3, 18, 6); break;   // a pipe
+    case 26: c.strokeStyle = 'rgba(80,70,70,0.6)'; c.lineWidth = 2.5; for(let j = 0; j < 8; j++){ c.beginPath(); if(j % 2) c.ellipse(0, j*u*0.2 + u*0.1, 2, u*0.12, 0, 0, TAU); else c.ellipse(0, j*u*0.2 + u*0.1, u*0.07, u*0.12, 0, 0, TAU); c.stroke(); } break;   // a chain
+    case 27: c.fillStyle = 'rgba(255,140,60,0.6)'; for(let j = 0; j < 5; j++){ c.beginPath(); c.arc(Math.sin(t*0.03 + j*1.9 + w*5)*u*0.6, u*0.8 - ((t*0.5 + j*17 + w*60) % (u*1.6)), 1.8, 0, TAU); c.fill(); } break;   // embers
+    case 28: c.fillStyle = 'rgba(240,90,30,0.3)'; c.beginPath(); c.ellipse(0, -2, u*0.9, u*0.16, 0, 0, TAU); c.fill(); c.fillStyle = 'rgba(255,170,80,0.35)'; c.beginPath(); c.ellipse(0, -3, u*0.45, u*0.08, 0, 0, TAU); c.fill(); break;   // a slag pool
+    case 29: c.fillStyle = 'rgba(40,42,48,0.45)'; for(let j = -9; j <= 9; j++){ c.fillRect(j*16 - 2, -3, 4, 3); c.fillRect(j*16 - 2, 11, 4, 3); } break;   // rover tracks (two dotted lines in the crust's face)
+    case 30: c.strokeStyle = 'rgba(70,72,80,0.5)'; c.lineWidth = 3; c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -u*1.5); c.moveTo(-u*0.35, -u*1.2); c.lineTo(u*0.35, -u*1.2); c.stroke();
+      c.fillStyle = 'rgba(255,90,70,' + (0.35 + 0.3*Math.sin(t*0.05 + w*9)).toFixed(3) + ')'; c.beginPath(); c.arc(0, -u*1.5, 3, 0, TAU); c.fill(); break;   // a mast with its light
+  }
+}
+function mc4DrawKit(V, pass){
+  const M = MCAVE; let K = M.kit; if(!K) K = M.kit = mc4KitBuild(M);
+  const c = ctx, t = hazardT;
+  for(let i = 0; i < K.length; i++){
+    const p = K[i]; if(p.top !== pass || !mcInView(p.a - p.hw, p.a + p.hw, p.r - p.rh, p.r + p.rh, V)) continue;
+    c.save(); c.translate(M.cx + p.r*Math.sin(p.a), M.cy - p.r*Math.cos(p.a)); c.rotate(p.a); if(p.fl < 0) c.scale(-1, 1); mc4KitDraw(c, p, t); c.restore();
+  }
+}
 // V7: KIND-OWNED PASSAGES (spec section 5, "each kind owns its passages"). The climb up a 144 px column (a hatch, a window, a hub's hatch, a room's own ladder) belongs to the kind of the cave
 // it climbs FROM: SPRINGS have no stairs, a chain of pads (a pad on the floor under the hole and one on each plank, the planks 200 px apart: a throw reaches about 296 px, v3's strengths 1.3
 // low and 1.9 normal); UPDRAFTS have only a draught (a column of rising air 90 px wide, no planks); MINES put a belt on each plank (30 px, running toward the next plank's end, so the
@@ -5594,18 +5698,19 @@ const MC_LOOK = {
   flooded:   { back:'#1a2632', rock:'#4e6372', plank:'#a8885a' },
   furnace:   { back:'#341d17', rock:'#523b35', plank:'#d39a74', hot:'#f0521f88', heat:'rgba(255,140,60,0.10)' },
 };
-function mcLookOf(p){ const Ls = MCAVE.layers, Y = Ls && Ls[p.L | 0]; return (Y && MC_LOOK[Y.kind]) || MC_LOOK.surface; }
+function mcLookOf(p){ const Ls = MCAVE.layers, Y = Ls && Ls[p.L | 0], LK = MCAVE.g4 ? MC4_LOOK : MC_LOOK; return (Y && LK[Y.kind]) || LK.surface; }   // (V7: the v4 moon has its own palette)
 function mcDrawDisc(){
   const M = MCAVE, c = ctx, cx = M.cx, cy = M.cy, Q = Math.PI/2, V = mcViewWin();
   c.save();
   c.fillStyle = '#2b2d34'; c.beginPath(); c.arc(cx, cy, M.Rout, 0, MC_TAU); c.fill();
-  const Ls = M.layers || [];
-  for(let L = 1; L < Ls.length; L++){ const col = MC_LOOK[Ls[L].kind] && MC_LOOK[Ls[L].kind].back; if(!col || Ls[L].rTop < V.rl || Ls[L].rBot > V.rh) continue;   // each cave's back wall
+  const Ls = M.layers || [], LK = M.g4 ? MC4_LOOK : MC_LOOK;
+  for(let L = 1; L < Ls.length; L++){ const col = LK[Ls[L].kind] && LK[Ls[L].kind].back; if(!col || Ls[L].rTop < V.rl || Ls[L].rBot > V.rh) continue;   // each cave's back wall
     c.fillStyle = col; c.beginPath(); c.arc(cx, cy, Ls[L].rTop, 0, MC_TAU, false); c.arc(cx, cy, Ls[L].rBot, MC_TAU, 0, true); c.fill(); }
   c.fillStyle = '#0a0a10'; c.beginPath(); c.arc(cx, cy, M.shellBot, 0, MC_TAU); c.fill();
   const gr = M.shellBot*0.55, g = c.createRadialGradient(cx, cy, 0, cx, cy, gr);
   g.addColorStop(0, 'rgba(255,214,140,0.95)'); g.addColorStop(0.3, 'rgba(255,150,70,0.5)'); g.addColorStop(1, 'rgba(255,120,40,0)');
   c.fillStyle = g; c.beginPath(); c.arc(cx, cy, gr, 0, MC_TAU); c.fill();
+  if(M.g4) mc4DrawKit(V, 0);   // (V7: the back-wall kit, behind the pieces)
   c.strokeStyle = '#1c1c1c';
   for(const p of M.segs){
     if(!mcInView(p.a0, p.a1, p.r0, p.r1, V)) continue;
@@ -5626,6 +5731,7 @@ function mcDrawDisc(){
       const k = (((hazardT - p.ph) % MC_HOT.every) + MC_HOT.every) % MC_HOT.every, hotNow = k < MC_HOT.on, warn = !hotNow && k >= MC_HOT.every - 10;
       c.fillStyle = hotNow ? MC_LOOK.furnace.hot : warn ? 'rgba(240,130,50,0.7)' : 'rgba(70,32,26,0.8)';
       c.beginPath(); c.arc(cx, cy, M.shellTop + 8, p.a0 - Q, p.a1 - Q, false); c.arc(cx, cy, M.shellTop - 2, p.a1 - Q, p.a0 - Q, true); c.closePath(); c.fill(); } }
+  if(M.g4) mc4DrawKit(V, 1);   // (V7: the surface's rover tracks, over the crust's face)
   for(const d of (M.deco || [])){
     if(!mcInView(d.a, d.a, d.r - d.s, d.r + d.s, V)) continue;
     c.save(); c.translate(cx + d.r*Math.sin(d.a), cy - d.r*Math.cos(d.a)); c.rotate(d.a);
@@ -102027,7 +102133,7 @@ function draw(){
   if(darkM) darkDraw(darkM); else if(DARKFX.q){ nameTagFlush(DARKFX.q); DARKFX.q = null; }   // LIGHTS OUT: the dark over the world, then the name tags over it; the HUD, the arrows and the banner come after, untouched
 
   // ---- screen-space overlays ----
-  if(MCAVE && MCAVE.on){ mcDrawMinimap(); mcDrawArrows(); }   // MOON CAVES: the disc minimap and the marks at the edge
+  if(MCAVE && MCAVE.on){ if(MCAVE.g4) mc4DrawMood(); mcDrawMinimap(); mcDrawArrows(); }   // MOON CAVES: the disc minimap and the marks at the edge (V7: the v4 moon's mood tint first, under them)
   if(viewScrolls() && !RACE.active && SETTINGS.mode!=='ctf' && !(MCAVE && MCAVE.on) && !SPLEEF) drawMinimap();   // the race has its progress bar instead (drawRaceBar); MOON CAVES gets its disc minimap and arrows with the full view; SPLEEF its depth bar
   if(!(MCAVE && MCAVE.on)){ lgDrawMarkers(); drawOffscreenArrows(); }   // (LEDGEGUARD CAMERA: a recovering fighter outside the view has its chevron, not the ring)
   fsDrawScreen();   // a Final Smash's flash and silhouette sweep
