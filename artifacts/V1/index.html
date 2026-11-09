@@ -65686,7 +65686,7 @@ function step(){
           if(pr.freeze && f.pct>freezePct(pr.ownerObj)){ applyFreeze(f, freezeDuration(f.pct,50) + comebackFlavor(pr.ownerObj||{}, "freeze")); }
           // a trap's effect lands when it is stepped on, the way a thrown one's does (it never did here)
           if(pr.fxTag && SM_FX[pr.fxTag]) SM_FX[pr.fxTag](f, pr.ownerObj, pr.fxN);
-          if(pr.root && tpRootTake(f, pr)){ f.rooted=Math.max(f.rooted||0, 60); }   // (ROOT CHAIN BROKEN: her trap still hits, it may not root)
+          if(pr.root && tpRootTake(f, pr)){ lockRoot(f, 60); }   // (ROOT CHAIN BROKEN: her trap still hits, it may not root)
           puff(pr.x,pr.y,pr.color,10);
           if(pr.arm!==undefined || pr.dmg>=8){ pr.life=0; }  // mines/heavy traps detonate once; puddles linger
         }
@@ -65854,7 +65854,7 @@ function step(){
           if(pr.burn) f.burn=Math.max(f.burn,110);
           if(pr.poison){ f.burn=Math.max(f.burn,80); f._poisonT=Math.max(f._poisonT||0,80); }
           if(pr.freeze && f.pct>freezePct(pr.ownerObj)){ applyFreeze(f, freezeDuration(f.pct,50) + comebackFlavor(pr.ownerObj||{}, "freeze")); }
-          if(pr.root && tpRootTake(f, pr)){ f.rooted=Math.max(f.rooted||0,60); }   // (ROOT CHAIN BROKEN)
+          if(pr.root && tpRootTake(f, pr)){ lockRoot(f, 60); }   // (ROOT CHAIN BROKEN)
           if(pr.reverseCtrl){ applyCtrlRev(f,70); }
           // A smash whose PATTERN is a projectile (walk / rain / mine) carries its row's effect as
           // a tag rather than a rider, so the effect vocabulary is the same one the melee patterns
@@ -66857,13 +66857,20 @@ function popUpBurst(f, R, dmg, stun, color){
   for(let i=0;i<10;i++) puff(f.x + (Math.random()*R*1.4 - R*0.7), f.y - 10 - Math.random()*40, color, 5);
   return near.length;
 }
+// MAX LOCK TIME (the owner, 2026-11-09: nothing may hold a foe without control for long). LOCK.max is how long any ONE move may keep a foe
+// held, rooted, pinned, packed, capped or frozen, in frames, not counting the hit-stun of a launch. It is applied where those locks are set:
+// freezes (FREEZE_MAX), the Snowball's pack (FX1.snow.hold), the grab's hold (holdStart), Bot's Gotcha (GOTCHA_HOLD), the roots a hit leaves
+// (SM_FX.root: the smash rows ask 70 and 90, the up-special drops and Toothpaste's trap 60), Pin's corkboard pins (fxPin), Candle's swallow (48),
+// Fries' carton cap (48) and the fridge drag (90), each through lockRoot or Math.min with LOCK.max. Clover's chain is not a lock (CLOVER_CHAIN_SCALE).
+const LOCK = { max:45 };
+function lockRoot(t, n){ t.rooted = Math.max(t.rooted || 0, Math.min(n || 0, LOCK.max)); }   // a root a move puts on a FOE: never past LOCK.max (a fighter's own root, its commitment, is not capped)
 const PRICEHIKE_KB = 1.06;   // Profily: how much farther his smash launches a foe wearing his Price Tag
 const SM_FX = {
   bleed:   (t,f,n)=>{ t.bleed=Math.max(t.bleed||0, n||150); },
   burn:    (t,f,n)=>{ t.burn=Math.max(t.burn||0, n||110); },
   poison:  (t,f,n)=>{ t.burn=Math.max(t.burn||0, n||80); t._poisonT=Math.max(t._poisonT||0, n||80); },
   freeze:  (t,f,n)=>{ if(t.pct>freezePct(f)) applyFreeze(t, freezeDuration(t.pct,50)); },
-  root:    (t,f,n)=>{ t.rooted=Math.max(t.rooted||0, n||60); },
+  root:    (t,f,n)=>{ lockRoot(t, n||60); },   // (MAX LOCK TIME: at most LOCK.max; the rows ask 60 to 90)
   slow:    (t,f,n)=>{ t.slowed=Math.max(t.slowed||0, n||90); },
   ice:     (t,f,n)=>{ t.iceUntil=Math.max(t.iceUntil||0, n||120); },
   curse:   (t,f,n)=>{ t.curseStacks=Math.min(CURSE_MAX_STACKS,(t.curseStacks||0)+(n||2)); },
@@ -68247,6 +68254,7 @@ function doUpSpecial(f){
   f._atkSeq = (f._atkSeq||0) + 1;   // a new move (see chainOpen: only a NEW move may chain, never the same hitbox re-landing)
   armAtk(f, ATK_ANIM, animKindOf(f, 'up'), mvId(f, 'up'));      // render-only: a recovery is the fighter ACTING, not being hit
   const k=f.kit && f.kit.special;
+  if(tellAdd(f, 'up', function(){ doUpSpecial(f); })) return;   // NO-TELL SWEEP (no row today: a recovery's hit on the rise is the owner's call)
   if(UPSPEC[k]){ riseShape(f, UPSPEC[k]); }
   else if(UPSPECIALS[k]){ UPSPECIALS[k](f); }
   else { upLaunch(f,-13*recV(f)); puff(f.x,f.y+14,f.color,6); }  // default recovery hop
@@ -68878,6 +68886,7 @@ function doDownSpecial(f){
   armAtk(f, ATK_ANIM, animKindOf(f, 'down'), mvId(f, 'down'));
   const k=f.kit && f.kit.special;
   if(DASH_TELL_DOWN.has(k) && !f._dashTellGo && dashTell(f, function(){ f._dashTellGo = true; try { doDownSpecial(f); } finally { f._dashTellGo = false; } })) return;   // DASH TELL
+  if(tellAdd(f, 'down', function(){ doDownSpecial(f); })) return;   // NO-TELL SWEEP
   if(DOWNSPECIALS[k]) DOWNSPECIALS[k](f);
   else { f.countering=22; f.flash=8;  }
 }
@@ -68982,6 +68991,7 @@ function doAttackSpecial(f){
 
   armAtk(f, ATK_ANIM, animKindOf(f, 'finisher'), mvId(f, 'finisher'));
   const k=f.kit && f.kit.special;
+  if(tellAdd(f, 'finisher', function(){ doAttackSpecial(f); })) return;   // NO-TELL SWEEP: a finisher in TELL_ADD winds up first (it is spent at the press, as a dash is)
   // A row that returns false could not start here (the Big File off the ground): nothing happened. The pose and the move count are put back,
   // and the caller does not spend the finisher (it returns false too).
   HA_FADE_NEXT = FIN_ART_FADE;   // HIT ART: the disc it hits with stays up as an impact (the shared finisher's: centred 28 px ahead, f.r+26 to the outline)
@@ -69032,7 +69042,7 @@ const FX1 = {
   whirl:  { tell:FIN_STARTUP, grow:FIN_GROW, dist:350, spd:9, r:28, h:76, every:9, hits:4, dmg:2, end:30, boss:12 },
   thread: { aim:FIN_STARTUP, spd:24, reach:264, r:7, pull:18, reel:16, dmg:12, bleed:150, patch:480, whiff:12 },
   cork:   { tell:FIN_STARTUP, off:30, w:30, h:100, life:240, pin:30, dmg:9, fast:6 },
-  snow:   { reach:8, grab:20, pack:10, swing:0.34, spd:7.5, dist:360, r0:26, r1:46, dmg:6, d0:6, d1:12, whiff:18, hold:45, mash:3, cpu:[0.06, 0.08, 0.10, 0.125] },   // hold, mash, cpu: the foe is let go after at most 45 frames (the freeze cap) and each new press takes 3 frames off (the grab's STRUGGLE); a CPU mashes at the slap fight's pace (2026-11-04, the owner: nothing may be unescapable)
+  snow:   { reach:8, grab:20, pack:10, swing:0.34, spd:7.5, dist:360, r0:26, r1:46, dmg:6, d0:6, d1:12, whiff:18, hold:LOCK.max, mash:3, cpu:[0.06, 0.08, 0.10, 0.125] },   // hold, mash, cpu: the foe is let go after at most 45 frames (the freeze cap) and each new press takes 3 frames off (the grab's STRUGGLE); a CPU mashes at the slap fight's pace (2026-11-04, the owner: nothing may be unescapable)
   bubble: { blow:12, grow:FIN_GROW, life:180, spd:1.3, r:38, dmg:10, kx:7.08, ky:-12.98, pop:8 },   // Raft Bump hits harder: dmg 10, launch (7.08, -12.98) (were 7 and (6, -11)): 2026-11-01, the owner, when Bubble's reform passive went; reach, startup, growth and life are as they were
   puddle: { range:300, melt:8, spd:6, slide:50, bubble:FIN_GROW, geyser:16, live:6, r:24, h:130, w:64, dmg:11, alone:120 },
   mirror: { preen:FIN_STARTUP, reach:46, live:4, dmg:10, daze:30, life:180, w:24, h:54, off:24 },
@@ -69328,7 +69338,7 @@ function finCork(f){
 }
 function fxCorkShape(o){ const C = FX1.cork, r = C.w/2; return fxCap(o.x, o.y - r, o.y - C.h + r, r); }
 function fxPin(t, o, n){
-  t.vx = 0; t.vy = 0; t.rooted = Math.max(t.rooted || 0, n); stunFx(t, n); o.pin.push(t.idx);
+  t.vx = 0; t.vy = 0; lockRoot(t, n); stunFx(t, Math.min(n, LOCK.max)); o.pin.push(t.idx);
   for(let i=0;i<5;i++) puff(t.x, t.y - 4, i%2 ? '#e04b6a' : '#c8955a', 3);
 }
 function fxCorkStep(o, f){
@@ -70372,7 +70382,7 @@ function fxCartonStep(o, f){
     if(!r) return;
     if(r === 'end'){ o.ph = 'spill'; o.st = hazardT; for(let i=0;i<6;i++) puff(o.x + (i - 2.5)*5, o.y, i%2 ? '#f2c84b' : '#e04b3a', 3); return; }
     if(r.s){ damageSummon(f, r.s, o.x, o.y, C.dmg); o.ph = 'spill'; o.st = hazardT; for(let i=0;i<8;i++) puff(o.x, o.y, i%2 ? '#f2c84b' : '#e04b3a', 4); return; }
-    o.ph = 'cap'; o.tgt = r.idx; o.ct = hazardT; r.rooted = Math.max(r.rooted || 0, C.cap); r.vx = 0; shake(2);
+    o.ph = 'cap'; o.tgt = r.idx; o.ct = hazardT; lockRoot(r, C.cap); r.vx = 0; shake(2);
   }
   if(o.ph === 'cap'){
     const t = fxFoe(o.tgt);
@@ -70381,7 +70391,7 @@ function fxCartonStep(o, f){
     if(t.hitstun > 0 && hazardT > o.ct){ o.ph = 'spill'; o.st = hazardT; for(let i=0;i<6;i++) puff(t.x, t.y - t.r, i%2 ? '#f2c84b' : '#e04b3a', 3); return; }   // knocked off them: it bursts for nothing
     t.vx = 0; if(t.vy < 0) t.vy = 0; t.rooted = Math.max(t.rooted || 0, 2);
     const sh = fxCircle(t.x, t.y, t.r + 14), a = hazardT - o.ct;
-    if(a < C.cap) return;   // capped (the carton on their head is what is drawn; nothing for the burst until it bursts)
+    if(a < Math.min(C.cap, LOCK.max)) return;   // capped (MAX LOCK TIME: at most LOCK.max frames) (the carton on their head is what is drawn; nothing for the burst until it bursts)
     fxArt(f, 'carton', sh, { color:'#e04b3a' });
     if(fxCanHit(f, t, o)) fxHit(f, t, o, C.dmg, o.face*3, -9);
     for(let i=0;i<10;i++){ const an = i/10*Math.PI*2; puff(t.x + Math.cos(an)*t.r, t.y + Math.sin(an)*t.r, i%2 ? '#f2c84b' : '#e04b3a', 4); }
@@ -77462,9 +77472,9 @@ function fxFridgeStep(o, f){
     if(!t){ o.ph = 'end'; o.et = hazardT; return; }
     if(hazardT - o.pt < M.mark) return;
     const u = finC2_near(f, M.other, o.tgt, t.x, t.y);   // the nearest other foe of hers, in clear sight of them
-    o.be = hazardT + M.total; o.dt = hazardT;
-    if(u){ o.ot = u.idx; o.ur = u.rooted || 0; u.rooted = Math.max(u.rooted || 0, M.total); u.vx = 0; o.ph = 'drag'; fxHold(t, o, t.x, t.y); }   // (o.ur: their own root from before, put back if no clash comes: fxFridgeUnroot)
-    else { t.rooted = Math.max(t.rooted || 0, M.total); o.ph = 'stuck'; }   // nobody to stick them to: just rooted
+    o.be = hazardT + Math.min(M.total, LOCK.max); o.dt = hazardT;   // (MAX LOCK TIME: the drag and the stick end by LOCK.max; M.total asks 90)
+    if(u){ o.ot = u.idx; o.ur = u.rooted || 0; lockRoot(u, M.total); u.vx = 0; o.ph = 'drag'; fxHold(t, o, t.x, t.y); }   // (o.ur: their own root from before, put back if no clash comes: fxFridgeUnroot)
+    else { lockRoot(t, M.total); o.ph = 'stuck'; }   // nobody to stick them to: just rooted
     return;
   }
   if(o.ph === 'drag'){
@@ -80117,7 +80127,7 @@ const GRASSTREE_FRAMES = 240;
 const CHEER_R = 260, CHEER_HEAL = 3, CHEER_HASTE = 120, CHEER_PAL_HEAL = 6, CHEER_PAL_HASTE = 180, CHEER_SELF_HIT = 1.3;
 const CHEER_PALS = new Set(["Goo", "Balloon", "Nickel (II)", "Test Tube"]);
 const CHEER_CONFETTI = ['#ff6fae', '#ffd23f', '#5fd0ff', '#7cf0a8', '#c98bff'];
-const GOTCHA_LUNGE = 14, GOTCHA_SPEED = 11, GOTCHA_HOLD = 60, GOTCHA_LOCK = 120;
+const GOTCHA_LUNGE = 14, GOTCHA_SPEED = 11, GOTCHA_HOLD = LOCK.max, GOTCHA_LOCK = 120;   // (GOTCHA_HOLD was 60: MAX LOCK TIME)
 // TEST TUBE's TRANQUILIZING TRACKING DART BLASTER! ("Test Tube pulls out the Tranquilizing Tracking Dart Blaster ...", Mine Your Own
 // Business): the dart flies straight ahead (it tracked the nearest foe until the owner's "MAKE IT STOP HOMING", 2026-10-30); a hit knocks
 // them out for DART_KO frames (1.2 s), after which they are groggy -- proof against a second
@@ -80658,7 +80668,7 @@ function gbTick(f, inp){
 function holdStart(f, t, G){
   t.countering = 0; t.reflecting = 0; t.armor = 0; t._riposte = false; t._windup = null; t._sm = null; t._mv = null; t._gb = null;   // a grab beats a stance
   f._gb = null;
-  const max = Math.max(40, Math.min(G.hold.max, G.hold.base + t.pct * G.hold.perPct));
+  const max = Math.min(LOCK.max, Math.max(40, Math.min(G.hold.max, G.hold.base + t.pct * G.hold.perPct)));   // MAX LOCK TIME: no hold past LOCK.max (it ran 56 to 150 by their %)
   f._hold = { idx: t.idx, t: 0, max: max, pumCd: 0, G: G, prev: { l: false, r: false, u: false, d: false, a: true } };   // (a direction must go down again to throw; X pummels while it is down, holdTick)
   t._heldBy = f.idx; t._stPrev = null;
   f.atkCd = 0; f.vx = 0; f.flash = 6;
@@ -80688,6 +80698,7 @@ function holdTick(f, inp){
   const dirs = { l: !!inp.left, r: !!inp.right, u: !!inp.up || !!inp.jump, d: !!inp.down, a: !!inp.attack };
   const P = H.prev; H.prev = dirs;
   inp.left = false; inp.right = false; inp.jump = false; inp.up = false; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; inp.fin = false;
+  if(f._windup && f._windup.throwTell){ holdPlace(f, t); return; }   // NO-TELL SWEEP: the throw is winding up -- the hold waits for it (no struggle, no timeout, no second throw)
   H.t++; if(H.pumCd > 0) H.pumCd--;
   holdPlace(f, t);
   if(H.t >= H.max){ holdRelease(f, t, -3); f.atkCd = 14; for(let i = 0; i < 6; i++) puff(t.x, t.y - 6, '#fff', 3); return; }   // they wriggled out
@@ -80721,6 +80732,10 @@ function holdDamage(f, t, dmg){
 }
 function doThrow(f, t, kind){
   const G = f._hold.G, T = G[kind];
+  if(!f._tellGo && !f._windup && (T.dmg >= TELL.light.dmg || Math.hypot(T.kx || 0, T.ky || 0) >= TELL.light.kb)){   // NO-TELL SWEEP: a throw that launches winds up first (TELL.throw), the hold waiting for it
+    const n = Math.max(6, Math.min(TELL.throw, LOCK.max - f._hold.t));
+    if(dashTell(f, function(){ if(f._hold && f._hold.idx === t.idx && t._heldBy === f.idx && !t.dead && !f.dead){ f._tellGo = true; try { doThrow(f, t, kind); } finally { f._tellGo = false; } } }, n)){ f._windup.throwTell = true; return; }
+  }
   holdRelease(f, t, 0);
   if(kind === 'b') f.face = -f.face;
   const dir = f.face;
@@ -80740,6 +80755,7 @@ function doThrow(f, t, kind){
 function heldStruggle(f, inp, R){
   const h = fighters[f._heldBy];
   if(!h || h.dead || !h._hold || h._hold.idx !== f.idx){ f._heldBy = null; return false; }
+  if(h._windup && h._windup.throwTell) return true;   // NO-TELL SWEEP: no struggle while the throw winds up (the hold is as long as it was going to be)
   const A = R ? R[0] : inp.attack, S = R ? R[1] : inp.special, M = R ? R[2] : inp.smash, J = R ? R[3] : inp.jump;
   const k = (A ? 1 : 0) | (S ? 2 : 0) | (J ? 4 : 0) | (inp.left ? 8 : 0) | (inp.right ? 16 : 0) | (inp.down ? 32 : 0) | (M ? 64 : 0);
   const prev = f._stPrev || 0; f._stPrev = k;
@@ -83108,7 +83124,7 @@ function fireSpecialInner(f, inp){
     doSpecial(f); f.spCd=Math.max(f.spCd,55); return;   // diagonal dash: forward dash, angled
   }
   const sideS = sideSpecialOf(f, inp);   // ←/→ + C for a converted fighter
-  if(sideS){ if(!f._mv){ f.spCd = Math.max(f.spCd, sideS.cd || 55); mvStart(f, sideS, 'side'); } return; }
+  if(sideS){ if(!f._mv){ f.spCd = Math.max(f.spCd, sideS.cd || 55); if(!tellAdd(f, 'side', function(){ if(!f._mv) mvStart(f, sideS, 'side'); })) mvStart(f, sideS, 'side'); } return; }   // (NO-TELL SWEEP: a side special in TELL_ADD winds up first)
   f._aiSpGap = Math.max(0, aiSpecialGap(f, !inp.up && !inp.down));   // read only by the CPU brain (brainSpecReady), so the human path is untouched
   if(inp.up){
     // an up-special can only be used ONCE per airtime — on the ground it's always allowed,
@@ -83172,14 +83188,65 @@ function startWindup(f, frames, fire, color, sh){
 const DASH_TELL_FRAMES = 16;
 const DASH_TELL_KINDS = new Set(["dash", "tackle", "collide", "airrel", "pickle", "leavealone", "switch", "barrier", "fraidy", "glaze", "saw", "slam", "airleak"]);   // neutral specials that dash at a foe (Life Ring's lifeguard has its own 10-frame whistle)
 const DASH_TELL_DOWN = new Set(["paintball", "cheer"]);   // down specials that do (Teddy Bear's Front of the Crowd, Bot's Gotcha)
-function dashTell(f, fire){
+function dashTell(f, fire, frames){
   if(f._windup) return false;
-  startWindup(f, DASH_TELL_FRAMES, fire, f.color);
+  startWindup(f, frames || DASH_TELL_FRAMES, fire, f.color);
   if(!f._windup) return false;
   f._windup.dashTell = true; f.flash = 8;
   tone(210, 0.2, 'sawtooth', 0.12, 0, 640); noise(0.12, 0.08, 900, 0, 2600);   // the rising whistle of the gather
   for(let i = 0; i < 6; i++) puff(f.x - f.face*(f.r*0.5 + i*5), feetY(f) - 3, '#e3dccb', 3);   // dust kicked up at the feet
   return true;
+}
+// NO-TELL SWEEP (2026-11-09; the owner's TELL RULE: every move that can launch shows a wind-up of about TELL.frames frames before it can hurt,
+// unless it is a light poke). A headless audit (reports/no-tell-audit.csv) measured every special, smash, finisher and throw from the press to
+// the first damaging frame. A smash has its charge, a finisher FIN_STARTUP, a dash DASH_TELL; what was left without one gets it here, through the
+// same gather dashTell draws (stupK: the body winds up and glows in its colour, dust at the feet, the rising whistle), and the move itself is
+// unchanged after it (same damage, launch and frames):
+//   TELL_ADD   kit.slot -> frames of wind-up put before the move (slots: neutral, side, up, down, finisher): TELL.frames minus the startup the
+//              move already had. Nothing at all happens for a kit and slot not in the table (tellAdd returns false and the move runs as before).
+//   TELL.throw a throw that is not light (TELL.light: under 8% and a launch under 9) winds up this long before it launches (doThrow); the hold
+//              waits for it (no struggle, no timeout, no second throw: holdTick, heldStruggle), the victim can set their DI, and the wind-up is
+//              cut so the hold and the throw together stay within LOCK.max (MAX LOCK TIME).
+// A hit in the wind-up cancels it (applyHit clears _windup); the CPU's shield reads it as it reads every wind-up (brainSwingTell).
+const TELL = { frames:20, throw:20, light:{ dmg:8, kb:9 } };
+const TELL_ADD = {
+  'stopshot.down': 12,   // 8-Ball: startup was 8, 9%, launch 6.4
+  'blueberry.neutral': 20,   // Blueberry: startup was 0, 10%, launch 9.5
+  'bomb.neutral': 20,   // Bomby: startup was 0, 16.5%, launch 16.1
+  'bomb.finisher': 20,   // Bomby: startup was 0, 18%, launch 15.8
+  'sign.neutral': 17,   // Bracelety: startup was 3, 10%, launch 9.3
+  'atstake.neutral': 16,   // Cake: startup was 4, 9%, launch 8.2
+  'seriously.neutral': 20,   // David: startup was 0, 10.1%, launch 12.8
+  'ember.neutral': 16,   // Firey: startup was 4, 8%, launch 7
+  'quake.neutral': 20,   // Flower: startup was 0, 14%, launch 20
+  'quake.down': 20,   // Flower: startup was 0, 5%, launch 10.3
+  'lifeguard.neutral': 9,   // Lifering: startup was 11, 8%, launch 12.2
+  'switch.down': 20,   // Liy: startup was 0, 13%, launch 18
+  'bestie.down': 8,   // Magnet: startup was 12, 7%, launch 15.7
+  'wallmart.neutral': 20,   // Marshmallow: startup was 0, 8%, launch 10
+  'wallmart.down': 20,   // Marshmallow: startup was 0, 9%, launch 11.4
+  'flip.neutral': 17,   // Nickel: startup was 3, 12%, launch 11.7
+  'snark.neutral': 20,   // Nickel (II): startup was 0, 7%, launch 15.3
+  'van.neutral': 19,   // Pencil: startup was 1, 15%, launch 0
+  'pieberry.neutral': 12,   // Pie: startup was 8, 7%, launch 9.8
+  'fluff.neutral': 12,   // Pillow: startup was 8, 16%, launch 12.6
+  'pierce.neutral': 20,   // Pin: startup was 0, 11%, launch 11.7
+  'battery.neutral': 17,   // Remote: startup was 3, 12%, launch 9.3
+  'antenna.neutral': 20,   // Roboty: startup was 0, 8%, launch 16.5
+  'glowgold.neutral': 20,   // Silver Spoon: startup was 0, 4%, launch 11.2
+  'glowgold.down': 20,   // Silver Spoon: startup was 0, 5%, launch 10.2
+  'onehit.neutral': 20,   // Starfruit: startup was 0, 14%, launch 16.6
+  'jawbreaker.neutral': 17,   // Taco: startup was 3, 12%, launch 9.3
+  'kick.neutral': 20,   // Teardrop: startup was 0, 14%, launch 17.2
+  'serve.neutral': 16,   // Tennis Ball: startup was 4, 8%, launch 7
+  'serve.finisher': 17,   // Tennis Ball: startup was 3, 14%, launch 12.8
+  'paste.neutral': 17,   // Toothpaste: startup was 3, 12%, launch 7
+  'blackmail.neutral': 20,   // Trophy: startup was 0, 10%, launch 9.2
+};
+function tellAdd(f, slot, fire){
+  const n = TELL_ADD[((f.kit && f.kit.special) || '') + '.' + slot];
+  if(!(n > 0) || f._tellGo || f._windup) return false;
+  return dashTell(f, function(){ f._tellGo = true; try { fire(); } finally { f._tellGo = false; } }, n);
 }
 // Paintbrush's Heat Explosion at full rage (18%, a 120-frame burn, radius body + 120 px, spends the meter). Called when the wind-up ends (doSpecial 'fury').
 function heatExplosion(f){
@@ -83538,6 +83605,7 @@ function doSpecial(f){
   f._lastSpecialAt = hazardT;   // ...and Dough's Knockoff tells a special from a smash by which was thrown last
   springyBotHear(f, k);   // ...and a Spring-Bot that is listening (Springy's MY PURPOSE!) writes it down
   if(DASH_TELL_KINDS.has(k) && !f._dashTellGo && dashTell(f, function(){ f._dashTellGo = true; try { doSpecial(f); } finally { f._dashTellGo = false; } })) return;   // DASH TELL: the dash begins after its wind-up
+  if(tellAdd(f, 'neutral', function(){ doSpecial(f); })) return;   // NO-TELL SWEEP: the wind-up TELL_ADD gives this special, then the special itself
   switch(k){
     case "ember": spawnProj(f, {vx:f.face*8,vy:-2,grav:true,dmg:8,kb:6,r:9,color:"#f0803a",burn:true,life:60}); f.flash=8; f.spCd=48; break;
     case "dash": f.vx=f.face*22; f._dashing=16; f.invuln=22; f._dashHits=new Set(); f.flash=10; applyDashVY(f,17,15);
@@ -84063,7 +84131,7 @@ function doSpecial(f){
       applyHit(held, 2, 0, 0, f);
       if(koSince(held, n0)){ f.spCd=96; break; }   // ONE FALL, ONE STOCK: the swallow KO'd them (the damage cap) -- they came back elsewhere, not inside him (the spit 45 frames on put them back beside him, launched)
       held.x=f.x+f.face*8; held.y=f.y; held.vx=0; held.vy=0;
-      held.rooted=Math.max(held.rooted||0,48); stunFx(held, 48);
+      lockRoot(held, 48); stunFx(held, Math.min(48, LOCK.max));   // (MAX LOCK TIME)
       f.vx=0; f.rooted=Math.max(f.rooted||0,48); f.atkCd=Math.max(f.atkCd||0,46);
       startWindup(f, 45, function(){
         if(koSince(held, n0)) return;   // KO'd while inside him (by anyone): they came back elsewhere, and the spit does not fetch them back
@@ -89481,7 +89549,7 @@ function freezeDuration(pct, base){
   const bonus = Math.min(18, Math.max(0, (pct - 15)) * 0.18);
   return Math.min(FREEZE_MAX, Math.round(b*0.55 + bonus));
 }
-const FREEZE_MAX = 45;   // absolute ceiling on any freeze, before or after comeback bonuses
+const FREEZE_MAX = LOCK.max;   // absolute ceiling on any freeze, before or after comeback bonuses (45: LOCK.max, MAX LOCK TIME)
 // BLEED — Naily's status. 150 frames, front-loaded and DECAYING: about 6.75% total, most of it in
 // the first second. Re-wounding refreshes the clock rather than stacking, so it cannot be farmed.
 const BLEED_FRAMES = 150;
