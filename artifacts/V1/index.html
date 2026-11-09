@@ -4290,14 +4290,20 @@ function mc4Sample(D0, pseed){
       // 4. the built FILL, from the pole to the strip (a natural room stands here only on the surface or as a pole room: the quota and the gap filler place the rest)
       let natRun = 0;
       const RUN_MAX = c >= K - 1 ? 3 : 2;
+      // V7: STACKING. The cave below is finished (deepest first): its rooms that can take a window (not a foot, not a pole room) stand as angle spans. A built room of this cave scores the best common span it has with one of them (px at the lower radius, capped
+      // at 720: a window needs 144 px of shaft and 72 px of margin each side, and furniture stands mid-room); the fill takes the best of several valid draws and puts the next room after the gap that stacks best (a soft term; ties fall to the first draw).
+      const lowIv = c + 1 < K ? rooms.filter(y => y.c === c + 1 && y.q === qi && !y.claimed && !y.pole && y.u0 != null && !(y.top >= 1 && y.top < y.c)).map(y => [y.u0/tops[c + 1], Math.min(y.u1, D.quarterPx[c + 1] - 41)/tops[c + 1]]) : [];
+      const stackSc = (s0, e0) => { let b = 0; for(const v of lowIv){ const ov = (Math.min(e0/rf, v[1]) - Math.max(s0/rf, v[0]))*tops[c + 1]; if(ov > b) b = ov; } return Math.min(b, 720); };
       let cur = lapAt ? 0 : 220, prev = null, lastLink = null, first = true, guard = 0; const widths = [];
       while(cur < qArc && guard++ < 80){
         const poleRoom = first && lapAt;
         const inCl = cl2.find(v => v[0] <= cur && v[1] > cur);
         if(inCl){ const ro = inCl[2].own ? inCl[2] : Object.assign({}, inCl[2], { c, q:qi, claimed:true, kind, u0:inCl[0], u1:inCl[1] }); rooms.push(ro); natRun = ro.form && inCl[2].own ? natRun + 1 : 0; prev = inCl[2]; cur = inCl[1] + MC4_GAP0; first = false; continue; }
         const nextClaim = cl2.find(v => v[0] > cur);
-        const limit = Math.min(qArc, nextClaim ? nextClaim[0] - MC4_GAP0 : qArc), room = limit - cur;
+        const limit = Math.min(qArc, nextClaim ? nextClaim[0] - MC4_GAP0 : qArc); let room = limit - cur;
         if(room < 280){ cur = nextClaim ? Math.max(cur + 1, nextClaim[0]) : qArc; continue; }
+        // V7: the seek: a built room starting here would stack under 400 px on the cave below: look up to 400 px ahead (a nominal 600 px room) for a start that does (the skipped rock is left to the gap filler)
+        if(lowIv.length && !poleRoom && c >= 1 && stackSc(cur, cur + 600) < 400){ let bs = cur, bv = -1; for(let d = 40; d <= 400 && cur + d + 600 <= limit; d += 40){ const v = stackSc(cur + d, cur + d + 600) - d/4; if(v > bv){ bv = v; bs = cur + d; } } if(bs !== cur && stackSc(bs, bs + 600) >= 400){ cur = bs; room = limit - cur; } }
         const nextRoom = nextClaim ? nextClaim[2] : null;
         const fits = a => {
           if(!canStand(a, c)) return false;
@@ -4313,7 +4319,8 @@ function mc4Sample(D0, pseed){
         if(c > 1 && 2*(c - 1) >= K - 1) cands = cands.filter(a => a.form || aff(a, c) === '+');   // the lower caves spend only built rooms that are at home there
         if(wantHall && !reqd.length && !first && !must[c].length){ const wide = cands.filter(a => a.wr[1] >= 1500 && !rooms.some(x => x.c === c && x.w >= 1500)); if(wide.length && r.n(10) < 7) cands = wide; }
         const pickFrom = cs => {
-          for(let t = 0; t < 40; t++){
+          let bestRo = null, bestSc = -1, got = 0;
+          for(let t = 0; t < 40 && got < 6; t++){
             const a = pickW(cs, z => aff(z, c) === '+' ? 4 : 1), wMax = Math.min(a.wr[1], rf175, poleRoom ? 2*room : room); let w, hd, seed;
             if(a.form){ const nd = natDraw(a, c, wMax); if(!nd) continue; w = nd.v.w; hd = nd.hd; seed = nd.s; }
             else { hd = drawH(a, c); if(!hd) continue; w = a.wr[0] + r.n(wMax - a.wr[0] + 1); }
@@ -4324,9 +4331,10 @@ function mc4Sample(D0, pseed){
             if(nextRoom && !mc4OkPair(nextRoom, ro) && limit - cur - w < 900) continue;
             const half = poleRoom ? w >> 1 : w;
             if(!claimsOK(ro, cur, cur + half) || !vert(ro, c, qi, cur, cur + half)) continue;
-            return ro;
+            got++; const sc = ro.form || !lowIv.length ? 0 : stackSc(cur, cur + half);
+            if(sc > bestSc){ bestSc = sc; bestRo = ro; }
           }
-          return null;
+          return bestRo;
         };
         const pick = cands.length ? pickFrom(cands) : null;
         if(!pick){ first = false; cur = Math.min(cur + 300, nextClaim ? nextClaim[0] : cur + 300); continue; }   // (never past a foot from below: it is a room of this cave)
@@ -4335,7 +4343,9 @@ function mc4Sample(D0, pseed){
         const mi = must[c].findIndex(o => o.name === pick.arch); if(mi >= 0){ must[c][mi].done = true; must[c].splice(mi, 1); }
         claimUp(pick, pick.u0, pick.u1);
         if(prev && !first){ const set = MC4_LAT[kind]; let ty, t = 0; do { ty = set[r.n(set.length)]; t++; } while(ty === lastLink && t < 8 && set.length > 1); lastLink = ty; links.push({ c, type:ty, lat:true }); }
-        natRun = pick.form ? natRun + 1 : 0; prev = pick; cur = pick.u1 + MC4_GAP0 + r.n(MC4_GAP1 - MC4_GAP0 + 1); if(nextClaim) cur = Math.min(cur, Math.max(nextClaim[0], pick.u1 + MC4_GAP0)); first = false;
+        natRun = pick.form ? natRun + 1 : 0; prev = pick; cur = pick.u1 + MC4_GAP0 + r.n(MC4_GAP1 - MC4_GAP0 + 1);
+        if(lowIv.length){ let bu = -1e9; for(let g = MC4_GAP0; g <= MC4_GAP1 + 270; g += 30){ const s0 = pick.u1 + g, u = stackSc(s0, s0 + 620) - (g > MC4_GAP1 ? (g - MC4_GAP1)/2 : 0) + r.n(40); if(u > bu){ bu = u; cur = s0; } } }
+        if(nextClaim) cur = Math.min(cur, Math.max(nextClaim[0], pick.u1 + MC4_GAP0)); first = false;
       }
       // 5. STRETCH: a built room next to a gap grows toward its own maximum width (never past the 3-axis rule or over a room of the cave below), so the gap is not left as empty rock
       const chain = () => rooms.filter(x => x.c === c && x.q === qi && x.u0 != null).sort((p, q) => p.u0 - q.u0);
@@ -5060,20 +5070,24 @@ function mc4Build(side, moon){
   // neither is a hall, and the hub is not the room nearest the pole (that one has only one throat, so a hatch would make two links, not three). The graph gets the drop (the upper room lets itself down the hatch); the climb by the steps is the CPU's in V8a, as the
   // other hatches'. The choice is made on the plan's numbers, so both halves agree and the moon stays its own mirror image.
   const colClear = (nd, x0, x1, y0, y1) => !nd.cut || nd.cut.rock.concat(nd.cut.plank.map(q => [q[0], q[1], q[2] - B.stepT, q[2]])).every(q => q[1] <= x0 || q[0] >= x1 || q[3] <= y0 || q[2] >= y1);
+  // V7: the floor hole of the UPPER room needs the floor clear (rock, a plank under 48 px, a zone on the floor); a one-way plank higher up may stand over the hole (a body on it lets itself down; the Lake's shelves, the Garden's pyramid)
+  const colClearUp = (nd, x0, x1) => !nd.cut || (nd.cut.rock.concat(nd.cut.plank.filter(q => q[2] < 48).map(q => [q[0], q[1], q[2] - B.stepT, q[2]])).every(q => q[1] <= x0 || q[0] >= x1 || q[3] <= 0 || q[2] >= 130) && (nd.cut.zones || []).every(z => z[1] <= x0 || z[0] >= x1 || z[3] <= 0 || z[2] >= 130));
+  // V7: the column in a BUILT lower room: 1 = clear to the roof (a hatch with plank steps, two-way), 2 = only furniture stands in it, none hangs to the roof (a drop-only window, no steps), 0 = blocked
+  const lowClearBuilt = (nd, hxL) => colClear(nd, hxL - 8, hxL + 152, 0, 1e9) ? 1 : (nd.cut && nd.cut.rock.every(q => q[1] <= hxL - 8 || q[0] >= hxL + 152 || q[3] < nd.h - 8) ? 2 : 0);
   const plainRoom = (x, c, q) => x.c === c && x.q === q && !x.claimed && !x.form && !x.pole && x.u0 != null && !(x.top >= 1 && x.top < c) && !!nodeOf[rid(x) + ':0'];
   const endU = x => Math.min(x.u1, qa[x.c] - B.stripEnd);
   // V6: the column for a hatch or window between an upper room x and a lower room y (lo, hi: their common span as angles): the clear 144 px column nearest the middle of the common span, tried in 8 px steps either side (the footing rooms' furniture stands mid-room); a natural lower room
   // must be flat and roofless for the 144 px (nothing in the column). null when none fits.
   const colFor = (x, y, lo, hi, nd) => {
-    const cu = x.c, cl = y.c, nat = nd && nd.nat, st = nat ? 16 : 8, wU = endU(x) - x.u0, wL = endU(y) - y.u0, mid0 = (lo + hi)/2, half = (hi - lo)*tops[cl]/2 - 72;
+    let lw = 0; const cu = x.c, cl = y.c, nat = nd && nd.nat, st = nat ? 16 : 8, wU = endU(x) - x.u0, wL = endU(y) - y.u0, mid0 = (lo + hi)/2, half = (hi - lo)*tops[cl]/2 - 72;
     for(let k = 0; k*8 <= half; k++) for(const sg of (k ? [-1, 1] : [1])){
       const mid = mid0 + sg*k*8/tops[cl], hxU = Math.round((mid*tops[cu] - x.u0 - 72)/8)*8, hxL = Math.round((mid*tops[cl] - y.u0 - 72)/st)*st;
       if(hxU < 72 || hxU + 144 > wU - 72 || hxL < 72 || hxL + 144 > wL - 72) continue;
-      if(!colClear(nodeOf[rid(x) + ':0'], hxU - 8, hxU + 152, 0, 130)) continue;
+      if(!colClearUp(nodeOf[rid(x) + ':0'], hxU - 8, hxU + 152)) continue;
       if(nat){ const c0 = hxL/16, c1 = c0 + 9; let ok = true; for(let q = c0; q < c1 && ok; q++) if(nat.fh[q] !== nat.fh[c0] || nat.rb[q] !== nat.env) ok = false;
         if(ok && (nat.lumps.some(l => l.c1 > c0 && l.c0 < c1) || nat.planks.some(l => l.c1 > c0 && l.c0 < c1))) ok = false; if(!ok) continue; }
-      else if(!colClear(nodeOf[rid(y) + ':0'], hxL - 8, hxL + 152, 0, 1e9)) continue;
-      return { hxU, hxL };
+      else { lw = lowClearBuilt(nodeOf[rid(y) + ':0'], hxL); if(!lw) continue; }
+      return { hxU, hxL, drop:lw === 2 };
     }
     return null;
   };
@@ -5100,7 +5114,7 @@ function mc4Build(side, moon){
       if(rc + ln.h < airTop(cl) - 0.5) addAir(cl, sp[0], sp[1], rc + ln.h, airTop(cl), 'hatch');
       addCut(cl - 1, sp[0], sp[1]); pass('hatch', cl - 1, sp[0], sp[1]);
       const n = Math.ceil((yb - 20)/72); for(let i = 1; i <= n; i++){ const t = Math.round(i*(yb - 20)/n/8)*8, s2 = [xa(hx + (i % 2 ? 0 : 64)), xa(hx + (i % 2 ? 80 : 144))].sort(srt); putW(rc + t - B.stepT, rc + t, s2[0], s2[1], true, 'plank', cl); }
-      un.dropA = xa(hx + 72); edge(un.id, ln.id, B.liftDown, { type:'drop', down:true, pass:'hatch' }); hn.hub = true;
+      un.dropA = xa(hx + 72); edge(un.id, ln.id, B.liftDown, { type:'drop', down:true, pass:'hatch' }); edge(ln.id, un.id, B.liftUp, { type:'lat', wp:xa(hx + 72), climb:true }); hn.hub = true;
     }
   }
   // V6: WINDOWS (the owner, on V5: "the moon could be more interconnected ... not wholly entrances or exits, just the feel"). Where a built room of cave c stands over a room of cave c+1 in the same quarter (240 px or more in common), a SHAFT 144 px wide is cut
@@ -5116,9 +5130,25 @@ function mc4Build(side, moon){
         const lo = Math.max(x.u0/tops[c], y.u0/tops[c + 1]), hi = Math.min(endU(x)/tops[c], endU(y)/tops[c + 1]), ov = (hi - lo)*tops[c + 1];
         if(ov < 240) continue;
         const nd = nodeOf[rid(y) + ':0'], col = colFor(x, y, lo, hi, nd); if(!col) continue;
-        cand.push({ x, y, ov, hxL:col.hxL, isNat:!!nd.nat }); } }
-    cand.sort((p, q2) => q2.ov - p.ov || p.x.u0 - q2.x.u0);   // (the widest common span first; at most three to a quarter and pair of caves, each room once)
-    let nW = 0; for(const cd of cand){ if(nW >= 3 || usedW[rid(cd.x)] || usedW[rid(cd.y)]) continue; winds.push(cd); usedW[rid(cd.x)] = 1; usedW[rid(cd.y)] = 1; nW++; }
+        cand.push({ x, y, ov, hxL:col.hxL, isNat:!!nd.nat || !!col.drop }); } }
+    // V7: PLUG SHAFTS. A plug of 360 px or more between two rooms of cave c (a flat throat: the one next to it is a built plain room, the other built too) that stands over a room of cave c+1 gets the shaft in the throat's floor: 144 px, 100 px clear of both walls, a
+    // drop-only window (no steps: the throat above is a tube 128 px high, too low to jump out of); the built room beside the plug is the one that lets itself down (its drop point is in the throat). Candidates come after the windows (3 more a quarter).
+    const chn = plan.rooms.filter(z => z.c === c && z.q === q && z.u0 != null).sort((p, q2) => p.u0 - q2.u0);
+    for(let i = 0; i + 1 < chn.length; i++){
+      const a1 = chn[i], b1 = chn[i + 1], p0 = a1.pole ? a1.u1 : Math.min(a1.u1, qa[c] - B.stripEnd), p1 = b1.u0; if(p1 - p0 < 360 || a1.form || b1.form) continue;
+      for(const nb of [a1, b1]){ if(!plainRoom(nb, c, q) || usedW[rid(nb)]) continue;
+        for(const y of plan.rooms){ if(y.c !== c + 1 || y.q !== q || !lowRoom(y) || usedW[rid(y)]) continue;
+          const nd = nodeOf[rid(y) + ':0'], nat = nd.nat, st = nat ? 16 : 8; let dr = 0; const wL = endU(y) - y.u0, ctr = (p0 + p1)/2/tops[c]*tops[c + 1] - y.u0 - 72; let got = null;
+          for(let k = 0; k*8 <= 400 && !got; k++) for(const sg of (k ? [-1, 1] : [1])){
+            const hxL = Math.round((ctr + sg*k*8)/st)*st; if(hxL < 72 || hxL + 144 > wL - 72) continue;
+            const aS = (y.u0 + hxL)/tops[c + 1], u0c = aS*tops[c], u1c = (aS + 144/tops[c + 1])*tops[c]; if(u0c < p0 + 100 || u1c > p1 - 100) continue;
+            if(nat){ const c0 = hxL/16, c1 = c0 + 9; let ok = true; for(let qq = c0; qq < c1 && ok; qq++) if(nat.fh[qq] !== nat.fh[c0] || nat.rb[qq] !== nat.env) ok = false;
+              if(ok && (nat.lumps.some(l => l.c1 > c0 && l.c0 < c1) || nat.planks.some(l => l.c1 > c0 && l.c0 < c1))) ok = false; if(!ok) continue; }
+            else { dr = lowClearBuilt(nd, hxL); if(!dr) continue; }
+            got = { hxL, drop:dr === 2 }; break; }
+          if(got) cand.push({ x:nb, y, ov:100, hxL:got.hxL, isNat:true, plug:true }); } } }
+    cand.sort((p, q2) => q2.ov - p.ov || p.x.u0 - q2.x.u0);   // (the widest common span first; at most three to a quarter and pair of caves, each room once; then up to three plug shafts)
+    let nW = 0, nP = 0; for(const cd of cand){ if(cd.plug ? nP >= 3 : nW >= 3) continue; if(usedW[rid(cd.x)] || usedW[rid(cd.y)]) continue; winds.push(cd); usedW[rid(cd.x)] = 1; usedW[rid(cd.y)] = 1; if(cd.plug) nP++; else nW++; }
   }
   for(const wd of winds){
     const cl = wd.y.c, rc = tops[cl], yb = tops[cl - 1] - rc, hx = wd.hxL;
@@ -5128,7 +5158,7 @@ function mc4Build(side, moon){
       if(rc + ln.h < airTop(cl) - 0.5) addAir(cl, sp[0], sp[1], rc + ln.h, airTop(cl), 'hatch');
       addCut(cl - 1, sp[0], sp[1]); pass(wd.isNat ? 'window' : 'hatch', cl - 1, sp[0], sp[1]);
       if(!wd.isNat){ const n = Math.ceil((yb - 20)/72); for(let i = 1; i <= n; i++){ const t = Math.round(i*(yb - 20)/n/8)*8, s2 = [xa(hx + (i % 2 ? 0 : 64)), xa(hx + (i % 2 ? 80 : 144))].sort(srt); putW(rc + t - B.stepT, rc + t, s2[0], s2[1], true, 'plank', cl); } }
-      un.dropA = xa(hx + 72); edge(un.id, ln.id, B.liftDown, { type:'drop', down:true, pass:wd.isNat ? 'window' : 'hatch' });
+      un.dropA = xa(hx + 72); edge(un.id, ln.id, B.liftDown, { type:'drop', down:true, pass:wd.isNat ? 'window' : 'hatch' }); if(!wd.isNat) edge(ln.id, un.id, B.liftUp, { type:'lat', wp:xa(hx + 72), climb:true });
       if(plan.shapes[wd.x.c] === 'FAN') un.hub = true; if(plan.shapes[cl] === 'FAN') ln.hub = true;   // (in a FAN cave a window is the room's third link, as a hub's hatch)
     }
   }
@@ -5230,7 +5260,7 @@ function mc4Build(side, moon){
   const hot = freeRuns(cracks.map(a => [a, crackH + G.hotRim/shellTop]).concat(SIDES.map(s => [s, stripHalf(shellTop)])).concat(bayRes));
   const zones = [{ x:cx - Rb - B.stripPast, y:cy - G.strip/2, w:Rb + B.stripPast - shellBot, h:G.strip }, { x:cx + shellBot, y:cy - G.strip/2, w:Rb + B.stripPast - shellBot, h:G.strip }];
   // THE GRAPH: the items of each cave in order round the circle (for finding the room a body is in), and the next-hop tables
-  const V = { N:nodes.length, nodes, adj, items:items.map(l => l.map(q => ({ id:q.id, cen:q.cen, half:q.half }))), spaces, halls:halls.length, hallBoxes:halls.map(o => ({ r0:tops[o.c], r1:tops[o.c] + o.h, cen:o.cen, half:o.half, low:!!layers[o.c].low })), hubs:hubs.length, windows:winds.length, links:linkStat, v3:V3stat, passages, stash, surf };
+  const V = { N:nodes.length, nodes, adj, items:items.map(l => l.map(q => ({ id:q.id, cen:q.cen, half:q.half }))), spaces, halls:halls.length, hallBoxes:halls.map(o => ({ r0:tops[o.c], r1:tops[o.c] + o.h, cen:o.cen, half:o.half, low:!!layers[o.c].low })), hubs:hubs.length, windows:winds.length, plugShafts:winds.filter(w => w.plug).length, winQ:(function(){ const k = {}; hubs.forEach(h => { k[h.Lw.c + ':' + h.Lw.q] = 1; }); winds.forEach(w => { k[w.y.c + ':' + w.y.q] = 1; }); return Object.keys(k).length; })(), links:linkStat, v3:V3stat, passages, stash, surf };
   const paths = mc4Paths(V); V.next = paths.map(q => q.next); V.dist = paths.map(q => q.dist); V.hops = paths.map(q => q.hops);
   const g = { N:2*side, k:1, v:4, moon:{ id:side + '-' + String(moon + 1).padStart(2, '0'), s:side, m:moon, tag:MC4_TAG, seed, hash:plan.hash }, plan, Rout, K, tops, crustBot, shellTop, shellBot, Rb, rKill, WW, WH, cx, cy, segs, holes, zsegs,
     cracks:cracks.map(a => ({ a, h:crackH })), pads, zones, layers, hot, plates:plates.length ? plates : null, g4:V };
