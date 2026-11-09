@@ -4715,10 +4715,10 @@ function mc4NatCut(x){
 }
 // the cut laid on a place (pure: the pieces and zones go to the two callbacks): `e` the room's angles, `dir` +1 when its columns run with the angle (the mirror half runs the other way, so a belt or a ramp is its mirror image), `rc` the floor it stands on
 // (its lowest floor), `low` the cave's low gravity (a pad's strength). piece(r0, r1, a0, a1, oneway, kind), zone(r0, r1, a0, a1, type, extra).
-function mc4NatLay(nat, e, dir, rc, low, piece, zone){
+function mc4NatLay(nat, e, dir, rc, low, piece, zone, open){   // (V4: `open`, the surface: the recipe's roof slabs are not laid)
   const dA = (e[1] - e[0])/nat.W, span = (c0, c1) => dir > 0 ? [e[0] + c0*dA, e[0] + c1*dA] : [e[1] - c1*dA, e[1] - c0*dA], F = MC4_FOOTN, top = rc + nat.env*16;
   for(const q of nat.floors){ const s = span(q.c0, q.c1); piece(rc, rc + q.h*16, s[0], s[1], false, q.slope ? 'slope' : 'rock'); }
-  for(const q of nat.roofs){ const s = span(q.c0, q.c1); piece(rc + q.y0*16, top, s[0], s[1], false, 'rock'); }
+  if(!open) for(const q of nat.roofs){ const s = span(q.c0, q.c1); piece(rc + q.y0*16, top, s[0], s[1], false, 'rock'); }
   for(const q of nat.lumps){ const s = span(q.c0, q.c1); piece(rc + q.y0*16, rc + q.y1*16, s[0], s[1], false, 'rock'); }
   for(const q of nat.planks){ const s = span(q.c0, q.c1), t = rc + q.top*16; piece(t - MC4_B.stepT, t, s[0], s[1], true, 'plank'); }
   for(const z of nat.beds){
@@ -4740,11 +4740,21 @@ function mc4NatLay(nat, e, dir, rc, low, piece, zone){
 //   Barricade one wall 192 px thick across the middle with three ways past (a low door, a window slit reached from plank firing steps, the ridge on top reached by planks); its own mirror image
 //   Warren    six cells in two storeys: three in the cave, three above them in the hall's foot, on the cave floor above (kept, with a hatch in each cell); the doors are 128 px high, the partitions 100 px thick
 //   Attic     the corridor (the room's box lowered to 128 px) with a sealed pocket over it (112 px or more high, over 100 px of rock) and ONE hatch 144 px wide up through that rock by plank steps (a cave under 324 px of air keeps the corridor alone)
-const MC4_V3 = ['Crawl', 'Span', 'Teeth', 'Barricade', 'Warren', 'Attic'];
+const MC4_V3 = ['Crawl', 'Span', 'Teeth', 'Barricade', 'Warren', 'Attic'], MC4_V4 = ['LongRamp', 'GrandStair', 'Chimney', 'Chute', 'Sinkhole', 'Crater'];   // (the rooms a cut exists for: V3's and V4's)
 const MC4_BOX = { Crawl:{ h:h => Math.max(112, h) }, Attic:{ h:() => 128 }, Barricade:{ roofMin:() => 432 + 112 }, Warren:{ roofMin:yb => yb + 160 } };   // (the box a built room stands in: the Crawl never under 112 px (the throat's), the Attic's corridor, the Barricade's roof 112 px over its ridge, the Warren's upper cells at least 160 px high)
 function mc4BuiltCut(arch, L, o){
   const cap = o.cap, yb = o.yb, hu = o.hu, R = [], P = [], A = [], H = [], r8 = v => Math.round(v/8)*8; let drop = null, keep = false;
-  const rock = (x0, x1, y0, y1) => { if(x1 > x0 + 0.5 && y1 > y0 + 0.5) R.push([x0, x1, y0, y1]); }, plank = (x0, x1, top) => P.push([x0, x1, top]);
+  const rock = (x0, x1, y0, y1, k) => { if(x1 > x0 + 0.5 && y1 > y0 + 0.5) R.push(k ? [x0, x1, y0, y1, k] : [x0, x1, y0, y1]); }, plank = (x0, x1, top) => P.push([x0, x1, top]);
+  // V4: a stair from x0 over `run` px up to `rise`: 16 px risers on treads of 32 px or more (each a 'slope' piece, walked up with no jump) or uneven steps of 40 to 80 px (jumped: the weakest jumper rises about 91 px in normal gravity); null when it does not fit
+  const stair = (x0, run, rise, slope, rng) => {
+    const out = []; rise = Math.round(rise);
+    if(slope){ const n = Math.ceil(rise/16), tr = Math.floor(run/n/8)*8; if(tr < 32) return null; for(let i = 1; i <= n; i++) out.push([x0 + tr*(i - 1), x0 + tr*i, Math.min(rise, 16*i), 'slope']); out[n - 1][1] = x0 + run; return out; }
+    const n = Math.max(1, Math.round(rise/60)), ys = []; let acc = 0;
+    for(let i = 0; i < n; i++){ const left = rise - acc, rem = n - i - 1, lo = Math.max(40, left - 80*rem), hi = Math.min(80, left - 40*rem); if(lo > hi) return null; const st = Math.max(lo, Math.min(hi, 40 + 8*rng.n(6))); acc += st; ys.push(acc); }
+    if(acc !== rise) return null;
+    const tr = Math.floor(run/n/8)*8; if(tr < 96) return null;
+    for(let i = 0; i < n; i++) out.push([x0 + tr*i, x0 + tr*(i + 1), ys[i], 'rock']); out[n - 1][1] = x0 + run; return out;
+  };
   const mir = (x0, x1) => [L - x1, L - x0];
   // the hatch of a cell: a hole 144 px wide in the floor above, with plank steps up it (alternately on its left and right half, 72 px apart, the last 20 px under the lip): the way up and down, climbed by one jump a step
   const hatch = (hx, floorY, steps) => { const n = Math.ceil((floorY - 20)/72); for(let i = 1; i <= n; i++){ const t = r8(i*(floorY - 20)/n); if(i % 2) plank(hx, hx + 80, t); else plank(hx + 64, hx + 144, t); } };
@@ -4798,21 +4808,63 @@ function mc4BuiltCut(arch, L, o){
     for(const c of cells){ const hx = c[0] + 80; if(hx + 144 > c[1] - 48) return null; H.push([hx, hx + 144]); hatch(hx, yb, 0); }
     return { rock:R, plank:P, air:A, holes:H, drop:null, keep:true };
   }
+  // ---- V4: slopes, the surface, up and down ----
+  if(arch === 'LongRamp' || arch === 'GrandStair'){
+    const rng = mc4Rng(o.seed), slope = arch === 'LongRamp';
+    if(o.surface){   // the Grand Stair as a MESA on the surface: uneven steps up to a plateau 240-320 px over the lap and uneven steps down the other side (the lap stays one walk; the plateau is nearer to space by its height)
+      const rise = Math.max(240, Math.min(320, r8((o.h || 700)*0.4))), plat = Math.max(256, r8(L/6)), run = Math.floor((L - plat - 256)/2/8)*8; if(run < 384) return null;
+      const up = stair(128, run, rise, false, rng), dn = stair(128, run, rise, false, rng); if(!up || !dn) return null;
+      for(const q of up) rock(q[0], q[1], 0, q[2]); for(const q of dn){ const m = mir(q[0], q[1]); rock(m[0], m[1], 0, q[2]); }
+      rock(128 + run, L - 128 - run, 0, rise);
+      return { rock:R, plank:P, air:A, holes:H, drop:null, keep:false };
+    }
+    // a hall (the plan gives both rooms more height than any cave has): the road climbs from the pole end to a PLATEAU at the strip end whose top is the floor of the cave above (kept there): up and down between two caves with no jump (the Long Ramp)
+    // or by steps (the Grand Stair). The floor above is cut over the climb (a one-way bridge over it, as any hall's); under the plateau a tube at the cave floor runs in from the strip end to a hatch (144 px, plank steps) up through the plateau,
+    // so the room is passed at the floor from both ends and nothing is a dead end. The plateau's rock is 232 px or more thick over the tube.
+    if(!(yb >= 360) || L < 1400 || cap < 240) return null;
+    const plat = Math.max(384, r8(L/4)), run = L - plat - 128, st = stair(128, run, yb, slope, rng); if(!st) return null;
+    for(const q of st) rock(q[0], q[1], 0, q[2], q[3]);
+    const hx = L - plat + 64; rock(L - plat, hx, 128, yb); rock(hx + 144, L, 128, yb); H.push([0, L - plat, 'bridge']); H.push([hx, hx + 144, 'hatch']); hatch(hx, yb, 0);
+    return { rock:R, plank:P, air:A, holes:H, drop:null, keep:true, bridge:[[0, L - plat]], dropHole:(128 + L - plat)/2, climbX:L - plat/2 };
+  }
+  if(arch === 'Chimney'){   // a shaft 150-190 wide up through 1 or 2 floors (a hall: its floors are cut, each keeps its one-way bridge); plank ledges alternate up its sides from each floor it passes to 20 px under the next, at most 72 px a step (the bridge is a step: jumped through from under)
+    if(!(yb >= 360) || L < 148 || L > 192) return null;
+    const Ht = o.hTot || (yb + hu), lv = [0].concat((o.floors || [yb]).slice().sort((a, b) => a - b), [Ht]); let i = 1;
+    for(let k = 0; k + 1 < lv.length; k++){ const b0 = lv[k], sp = lv[k + 1] - b0 - 20, n = Math.ceil(sp/72); for(let q = 1; q <= n; q++, i++){ const y = r8(b0 + q*sp/n); if(i % 2) plank(0, 80, y); else plank(L - 80, L, y); } }
+    return { rock:R, plank:P, air:A, holes:H, drop:L/2, keep:false };
+  }
+  if(arch === 'Chute'){   // the floor of the cave above is kept except ONE hole 144 px wide in its middle: a one-way drop into the belly (the room's box, a hall's height), no steps, no way back up
+    if(!(yb >= 360) || L < 398) return null;
+    const hx = o.pole ? (L - 144)/2 : r8((L - 144)/2); H.push([hx, hx + 144, 'chute']);
+    return { rock:R, plank:P, air:A, holes:H, drop:null, keep:true, dropHole:hx + 72, chute:true };
+  }
+  if(arch === 'Sinkhole'){   // the corridor is the floor of the cave above, kept: a pit 192 px wide in its middle between two lips of rock 96 wide and 200 px deep (the neck; the belly below is the whole room), and past the strip-side lip a hatch with plank steps: the way out, behind the lip
+    if(!(yb >= 360) || L < 1000) return null;
+    const cm = L/2; H.push([cm - 96, cm + 96, 'pore']); rock(cm - 192, cm - 96, yb - 200, yb); rock(cm + 96, cm + 192, yb - 200, yb);
+    const hx = cm + 256; if(hx + 144 > L - 128) return null; H.push([hx, hx + 144, 'hatch']); hatch(hx, yb, 0);
+    return { rock:R, plank:P, air:A, holes:H, drop:null, keep:true, dropHole:cm, pore:true };
+  }
+  if(arch === 'Crater'){   // the surface's north pole: nothing is dug (the crust stays whole); a ring of terraces 112 px wide climbs 80, 160, 240 px and comes down again round a bowl at the lap's own level, with a peak of 96 px in the middle: the rim is nearer to space by 240 px
+    if(L < 1700) return null;
+    const tw = 112, rim = [80, 160, 240, 160, 80]; for(let k = 0; k < 5; k++){ rock(tw*k, tw*(k + 1), 0, rim[k]); const m = mir(tw*k, tw*(k + 1)); rock(m[0], m[1], 0, rim[k]); }
+    const cm = L/2; rock(cm - 96, cm + 96, 0, 96); rock(cm - 176, cm - 96, 0, 48); rock(cm + 96, cm + 176, 0, 48);
+    return { rock:R, plank:P, air:A, holes:H, drop:null, keep:false };
+  }
   if(arch === 'Attic'){
     if(cap < 324) return { rock:R, plank:P, air:A, holes:H, drop:null, keep:false, corridor:true };
     const hx = r8((L - 144)/2); if(hx < 48) return null;
     A.push([0, L, 228, cap, 'pocket']); A.push([hx, hx + 144, 128, 228, 'hatch']); hatch(hx, 228, 0);
-    return { rock:R, plank:P, air:A, holes:H, drop:null, keep:false };
+    return { rock:R, plank:P, air:A, holes:H, drop:null, keep:false, stash:[L/2, 252] };   // (V4: the prize's spot, the middle of the pocket; V6 spawns from stash spots)
   }
   return null;
 }
 // the cut laid on a place (pure: pieces and air boxes go to the callbacks): `e` the room's angles, `dir` +1 when its columns run with the angle (the mirror half runs the other way), `rc` the floor radius. piece(r0, r1, a0, a1, oneway, kind), air(a0, a1, r0, r1, tag), hole(a0, a1)
 function mc4BuiltLay(cut, e, dir, rc, piece, air, hole){
   const span = (x0, x1) => dir > 0 ? [e[0] + x0/rc, e[0] + x1/rc] : [e[1] - x1/rc, e[1] - x0/rc];
-  for(const q of cut.rock){ const s = span(q[0], q[1]); piece(rc + q[2], rc + q[3], s[0], s[1], false, 'rock'); }
+  for(const q of cut.rock){ const s = span(q[0], q[1]); piece(rc + q[2], rc + q[3], s[0], s[1], false, q[4] || 'rock'); }
   for(const q of cut.plank){ const s = span(q[0], q[1]); piece(rc + q[2] - MC4_B.stepT, rc + q[2], s[0], s[1], true, 'plank'); }
   for(const q of cut.air){ const s = span(q[0], q[1]); air(s[0], s[1], rc + q[2], rc + q[3], q[4]); }
-  for(const q of cut.holes){ const s = span(q[0], q[1]); hole(s[0], s[1]); }
+  for(const q of cut.holes){ const s = span(q[0], q[1]); hole(s[0], s[1], q[2] || 'hatch'); }
 }
 function mc4Build(side, moon){
   const G = MC4_DISC.G, B = MC4_B, TAU = MC_TAU, P = Math.PI, seed = MC4.seed(side, moon), plan = mc4PlanOf(side, seed);
@@ -4889,7 +4941,8 @@ function mc4Build(side, moon){
   }
   for(const team of [0, 1]) addCut(0, SIDES[team] - B.holeW/2/tops[0], SIDES[team] + B.holeW/2/tops[0]);
   // THE ROOMS: each own room of caves 1 to K-1 is a box of its footprint, in its half and mirrored (a pole room is one box over its pole); a room whose roof is in a cave above leaves a foot there
-  const halls = [], V3stat = { built:0, plain:0 };
+  const halls = [], V3stat = { built:0, plain:0 }, passages = [], stash = [];
+  const pass = (type, c, a0, a1) => passages.push({ type, c, a0, a1 });   // (V4: the ways between caves by type: lift, bridge, hatch (plank steps, two-way), pore (the Sinkhole's pit, down only), chute (down only), crack)
   for(const x of plan.rooms){
     if(x.claimed || x.c < 1 || x.c >= K) continue;
     // (a built room's box is cut at the strip's end, 41 px short of the plan's, so the rock between it and the home is the 100 px of the locked invariant; a natural room cannot be cut -- its recipe is its width -- so one that ends within 41 px of the
@@ -4902,25 +4955,32 @@ function mc4Build(side, moon){
     const yb0 = top < c ? tops[c - 1] - rc : 0;
     const ents = x.pole ? [x.q ? [P - aE, P + aE] : [-aE, aE]] : x.q === 0 ? [[aS, aE], [-aE, -aS]] : [[P - aE, P - aS], [-P + aS, -P + aE]];
     const dirs = x.pole ? [1] : x.q === 0 ? [1, -1] : [-1, 1];   // (the columns of the half with the higher angle run with u from the pole; at the south pole they run against the angle)
-    const bu = nat ? null : mc4BuiltCut(x.arch, (ents[0][1] - ents[0][0])*rc, { cap, yb:top < c ? tops[c - 1] - rc : 0, hu:(c - 1 === top ? roof : airTop(c - 1)) - tops[c - 1], seed:mc4Fnv(x.arch + ':' + x.c + ':' + x.u0 + ':' + x.w), h:hh });   // (V3: the built rooms of boxes and planks; null = a plain box, as V1: counted in V.plain)
-    if(!nat && MC4_V3.indexOf(x.arch) >= 0){ if(bu) V3stat.built++; else V3stat.plain++; }
+    const bu = nat ? null : mc4BuiltCut(x.arch, (ents[0][1] - ents[0][0])*rc, { cap, yb:top < c ? tops[c - 1] - rc : 0, hu:(c - 1 === top ? roof : airTop(c - 1)) - tops[c - 1], seed:mc4Fnv(x.arch + ':' + x.c + ':' + x.u0 + ':' + x.w), h:hh, pole:!!x.pole, hTot:roof - rc, floors:(() => { const f = []; for(let j = c - 1; j >= top; j--) f.push(tops[j] - rc); return f; })() });   // (V3: the built rooms of boxes and planks; null = a plain box, as V1: counted in V.plain; V4 adds the room's whole height and the floors it passes, for the Chimney)
+    if(!nat && (MC4_V3.indexOf(x.arch) >= 0 || MC4_V4.indexOf(x.arch) >= 0)){ if(bu) V3stat.built++; else V3stat.plain++; }
     for(let ei = 0; ei < ents.length; ei++){
       const e = ents[ei], dir = dirs[ei];
       const own = newNode({ kind:'R', c, a0:e[0], a1:e[1], cen:(e[0] + e[1])/2, half:(e[1] - e[0])/2, arch:x.arch, h:roof - rc, name:x.arch, top, w:x.w });
       own.dir = dir; own.room = x;   // (which way its columns run, and the plan's room: the checks read them)
       if(nat){ natApply(nat, c, e, dir, rc); own.e0 = dir > 0 ? nat.e0 : nat.e1; own.e1 = dir > 0 ? nat.e1 : nat.e0; }
-      if(bu) mc4BuiltLay(bu, e, dir, rc, (r0, r1, a0, a1, ow, kind) => putW(r0, r1, a0, a1, ow, kind, yb0 && r0 >= rc + yb0 - 1 ? c - 1 : c), (a0, a1, r0, r1, tag) => addAir(c, a0, a1, r0, r1, tag), (a0, a1) => addCut(c - 1, a0, a1));
+      const xa = v => dir > 0 ? e[0] + v/rc : e[1] - v/rc;   // (a cut's x, px from the pole end, as an angle)
+      if(bu) mc4BuiltLay(bu, e, dir, rc, (r0, r1, a0, a1, ow, kind) => putW(r0, r1, a0, a1, ow, kind, yb0 && r0 >= rc + yb0 - 1 ? c - 1 : c), (a0, a1, r0, r1, tag) => addAir(c, a0, a1, r0, r1, tag), (a0, a1, tp) => { addCut(c - 1, a0, a1); pass(tp, c - 1, a0, a1); });
+      if(bu && bu.stash) stash.push({ c, a:mcWrap(xa(bu.stash[0])), r:rc + bu.stash[1], arch:x.arch });
       items[c].push(own); addAir(c, e[0], e[1], rc, top < c ? airTop(c) : roof, 'room:' + x.arch);
       if(top < c){
         halls.push(own);
         for(let j = c - 1; j >= top; j--){
           const ft = newNode({ kind:'foot', c:j, a0:e[0], a1:e[1], cen:own.cen, half:own.half, arch:x.arch, h:1e9, name:x.arch + '^', owner:own.id, top });
           items[j].push(ft); addAir(j, e[0], e[1], tops[j], j === top ? roof : airTop(j), 'foot:' + x.arch);
-          if(bu && bu.keep) continue;   // (V3: a hall that keeps its floors, the Warren: the floor of cave c-1 has only its hatches cut, no bridge, no drop)
+          if(bu && bu.keep){   // (V3: a hall that keeps its floors, the Warren: the floor of cave c-1 has only its hatches cut, no bridge, no drop. V4: the Chute, the Sinkhole and the hall ramps keep it too, except their holes: a one-way bridge over a ramp's climb, the CPU's way down through the hole (down only), the ramps' way up)
+            if(j === c - 1 && bu.bridge) for(const q of bu.bridge){ const sp = [xa(q[0]), xa(q[1])].sort((p, q2) => p - q2); put(tops[j] - B.stepT, tops[j], sp[0], sp[1], true, 'bridge', j); }
+            if(j === c - 1 && bu.dropHole !== undefined){ ft.dropA = xa(bu.dropHole); edge(ft.id, own.id, B.liftDown, { type:'drop', down:true, pass:bu.chute ? 'chute' : bu.pore ? 'pore' : 'bridge' }); }
+            if(j === c - 1 && bu.climbX !== undefined) edge(own.id, ft.id, B.liftUp, { type:'lat', wp:xa(bu.climbX), climb:true });
+            continue;
+          }
           addCut(j, e[0], e[1]);   // (the floor of cave j is cut for the hall; the cave keeps a one-way bridge over it)
-          put(tops[j] - B.stepT, tops[j], e[0], e[1], true, 'bridge', j);
-          if(bu && bu.drop !== null && bu.drop !== undefined) ft.dropA = dir > 0 ? e[0] + bu.drop/rc : e[1] - bu.drop/rc;   // (where a CPU lets itself through the bridge: over clear floor, not over the wall or a tooth)
-          edge(ft.id, own.id, B.liftDown*(c - j), { type:'drop' });
+          put(tops[j] - B.stepT, tops[j], e[0], e[1], true, 'bridge', j); pass('bridge', j, e[0], e[1]);
+          if(bu && bu.drop !== null && bu.drop !== undefined) ft.dropA = xa(bu.drop);   // (where a CPU lets itself through the bridge: over clear floor, not over the wall or a tooth)
+          edge(ft.id, own.id, B.liftDown*(c - j), { type:'drop', down:true, pass:'bridge' });
         }
       }
     }
@@ -4942,7 +5002,7 @@ function mc4Build(side, moon){
   // THE LIFTS in the graph: the hole in band b joins cave b+1's home (the furnace under cave K-1) below it to cave b's home (the surface over cave 1) above it
   for(const h of holes){
     const b = h.band, lo = b + 1 === K ? nodeF : homes[b + 1][h.team], up = b === 0 ? nodeS : homes[b][h.team];
-    edge(lo.id, up.id, B.liftUp, { type:'lift', hole:h, up:true }); edge(up.id, lo.id, B.liftDown, { type:'lift', hole:h, up:false });
+    edge(lo.id, up.id, B.liftUp, { type:'lift', hole:h, up:true }); edge(up.id, lo.id, B.liftDown, { type:'lift', hole:h, up:false }); pass('lift', b, h.a - h.w/2/h.r, h.a + h.w/2/h.r);
   }
   // THE ROCK: the floors (the crust, one floor per cave, the shell) as v3's rings with their openings, and each cave's air band less its spaces
   for(let b = 0; b <= K; b++){
@@ -4950,11 +5010,28 @@ function mc4Build(side, moon){
     mc4Rock(tops[b] - thick(b), tops[b], bx, (r0, r1, a0, a1) => put(r0, r1, a0, a1, false, b === 0 ? 'crust' : b === K ? 'shell' : 'floor', b));
   }
   for(let c = 1; c < K; c++) mc4Rock(tops[c], airTop(c), air[c], (r0, r1, a0, a1) => put(r0, r1, a0, a1, false, 'rock', c));
-  // THE SURFACE LAP: v3's hop-tops where its holes' midpoints are, clear of the strips (v4 cuts no stair-holes in the crust: the lifts are the ways down); the strips' pads, as v3's
+  for(const a of cracks) pass('crack', K, a - crackH, a + crackH);
+  // THE SURFACE (V4): the plan's open-sky features laid along the lap on the crust's top (no plug, no throat, nothing dug: the crust stays whole): the Crater at the north pole (terraces up 240 px and down again round a bowl at the lap's level, a peak in the middle:
+  // the rim is nearer to space by its height), the Flat at the south pole (a plain run), the Grand Stair as a mesa, the open Reef and Breakdown (their recipes' floors, lumps and planks with no roof: tors and a boulder pile). The Chimney, the Chute and the Span of the
+  // surface stay plain in V4 (a tower, a sinkhole and a rift need the crust cut or a wall across the lap). v3's hop-tops stand only on the plain stretches between the features.
+  const surf = [];
+  for(const x of plan.rooms){
+    if(x.claimed || x.c !== 0) continue;
+    const rc = Rout, aS = x.u0/rc, aE = x.u1/rc, ents = x.pole ? [x.q ? [P - aE, P + aE] : [-aE, aE]] : x.q === 0 ? [[aS, aE], [-aE, -aS]] : [[P - aE, P - aS], [-P + aS, -P + aE]], dirs = x.pole ? [1] : x.q === 0 ? [1, -1] : [-1, 1];
+    const nat = x.form ? mc4NatCut(x) : null, L = (ents[0][1] - ents[0][0])*rc, plain = x.arch === 'Flat' || x.arch === 'Chimney' || x.arch === 'Chute' || x.arch === 'Span';
+    const bu = nat || plain ? null : mc4BuiltCut(x.arch, L, { cap:1e9, yb:0, hu:0, seed:mc4Fnv(x.arch + ':0:' + x.u0 + ':' + x.w), h:x.ext || x.h, surface:true });
+    if(!nat && !plain){ if(bu) V3stat.built++; else V3stat.plain++; }
+    for(let ei = 0; ei < ents.length; ei++){
+      const e = ents[ei], dir = dirs[ei]; surf.push([mcWrap((e[0] + e[1])/2), (e[1] - e[0])/2, x.arch]);
+      if(nat) mc4NatLay(nat, e, dir, rc, layers[0].low, (r0, r1, a0, a1, ow, kind) => putW(r0, r1, a0, a1, ow, kind, 0), (r0, r1, a0, a1, type, o) => zoneAt(r0, r1, a0, a1, type, 0, o), true);
+      if(bu) mc4BuiltLay(bu, e, dir, rc, (r0, r1, a0, a1, ow, kind) => putW(r0, r1, a0, a1, ow, kind, 0), () => {}, () => {});
+    }
+  }
+  // THE SURFACE LAP: v3's hop-tops where its holes' midpoints are, clear of the strips and (V4) of the surface's features (v4 cuts no stair-holes in the crust: the lifts are the ways down); the strips' pads, as v3's
   { const n = Math.max(B.holesMin, 2*Math.round(TAU*Rout/B.holeArc/2));
     for(let i = 0; i < n; i++){
       const m = mcWrap(i*TAU/n), hu = (Math.round(Math.abs(m)/(TAU/n)) % 2) ? B.hopUp[1] : B.hopUp[0], r = Rout + hu, hw = B.hopW/2/r;
-      if(inStrip(m, hw, r, 80)) continue;
+      if(inStrip(m, hw, r, 80) || surf.some(q => dist(m, q[0]) < q[1] + hw + 80/r)) continue;
       put(r - B.stepT, r, m - hw, m + hw, true, 'hop', 0);
     } }
   SIDES.forEach((s, team) => {
@@ -4989,11 +5066,11 @@ function mc4Build(side, moon){
   const hot = freeRuns(cracks.map(a => [a, crackH + G.hotRim/shellTop]).concat(SIDES.map(s => [s, stripHalf(shellTop)])));
   const zones = [{ x:cx - Rb - B.stripPast, y:cy - G.strip/2, w:Rb + B.stripPast - shellBot, h:G.strip }, { x:cx + shellBot, y:cy - G.strip/2, w:Rb + B.stripPast - shellBot, h:G.strip }];
   // THE GRAPH: the items of each cave in order round the circle (for finding the room a body is in), and the next-hop tables
-  const V = { N:nodes.length, nodes, adj, items:items.map(l => l.map(q => ({ id:q.id, cen:q.cen, half:q.half }))), spaces, halls:halls.length, links:linkStat, v3:V3stat };
+  const V = { N:nodes.length, nodes, adj, items:items.map(l => l.map(q => ({ id:q.id, cen:q.cen, half:q.half }))), spaces, halls:halls.length, links:linkStat, v3:V3stat, passages, stash, surf };
   const paths = mc4Paths(V); V.next = paths.map(q => q.next); V.dist = paths.map(q => q.dist); V.hops = paths.map(q => q.hops);
   const g = { N:2*side, k:1, v:4, moon:{ id:side + '-' + String(moon + 1).padStart(2, '0'), s:side, m:moon, tag:MC4_TAG, seed, hash:plan.hash }, plan, Rout, K, tops, crustBot, shellTop, shellBot, Rb, rKill, WW, WH, cx, cy, segs, holes, zsegs,
     cracks:cracks.map(a => ({ a, h:crackH })), pads, zones, layers, hot, g4:V };
-  if(MC_V4 && typeof console !== 'undefined') console.log('Moon Caves v4 (skeleton, tag ' + MC4_TAG + ', preview table): moon ' + g.moon.id + ' seed ' + seed + ' plan hash ' + plan.hash + ' pieces ' + segs.length + ' nodes ' + nodes.length);
+  if(MC_V4 && typeof console !== 'undefined') console.log('Moon Caves v4 (V4, tag ' + MC4_TAG + ', preview table): moon ' + g.moon.id + ' seed ' + seed + ' plan hash ' + plan.hash + ' pieces ' + segs.length + ' nodes ' + nodes.length);
   return g;
 }
 // the next-hop tables: from every node, Dijkstra over the graph's edges, one table for each team (a team never goes through the other team's home; a node of the other home can be left, not entered)
@@ -5042,9 +5119,9 @@ function mc4Route(f, t){
   // (the way on is sideways, out of the home: it comes down the shaft over the side it goes on to -- over the shaft's middle it fell on through the next band's opening, the straight column the homes are)
   if(e.type !== 'lift'){ const sh = mc4Shaft(M, rf - f.r, thF); if(sh){ const sg = e.type === 'lat' ? Math.sign(mcWrap(e.wp - sh.a)) : 0; return { up:false, x:M.cx + F.rho*mcWrap(sh.a - F.phi) + sg*(F.rho*(sh.w/2 + 70)/sh.r), upperY:M.cy - M.tops[sh.band], lowY:M.cy - M.tops[sh.band + 1], gap, hole:sh, tx:t.x }; } }
   if(e.hole){ const h = e.hole; return { up:e.up, x:M.cx + F.rho*mcWrap(h.a - F.phi), upperY:M.cy - M.tops[h.band], lowY:M.cy - M.tops[h.band + 1], gap, hole:h, tx:t.x }; }
-  let x = e.type === 'drop' ? M.cx + F.rho*mcWrap((V.nodes[a].dropA !== undefined ? V.nodes[a].dropA : V.nodes[a].cen) - F.phi) : M.cx + F.rho*mcWrap(e.wp - F.phi);
+  let x = e.down ? M.cx + F.rho*mcWrap((V.nodes[a].dropA !== undefined ? V.nodes[a].dropA : V.nodes[a].cen) - F.phi) : M.cx + F.rho*mcWrap(e.wp - F.phi);   // (V4: a down-only edge, a bridge's drop, a chute or a pore, is walked to its drop point; a ramp's climb is a walk to its plateau)
   if(!f.onground && f.vy > 0) x = f.x;   // (coming down through a hall's air: straight down -- aimed at a far waypoint over nothing, the gap hop spent its other jump on the way and it went back up onto the bridge it had just left)
-  return { up:false, lat:true, drop:e.type === 'drop', x, upperY:y, lowY:y, gap, hole:null, tx:t.x };   // (a plug's walk, or the middle of a hall's bridge, where it lets itself down)
+  return { up:false, lat:true, drop:!!e.down, x, upperY:y, lowY:y, gap, hole:null, tx:t.x };   // (a plug's walk, or the middle of a hall's bridge, where it lets itself down)
 }
 function mc4Shaft(M, rFeet, th){
   for(const h of M.holes){ const lo = M.tops[h.band + 1], hi = M.tops[h.band]; if(rFeet > lo + 10 && rFeet < hi && Math.abs(mcWrap(th - h.a)) < (h.w/2 + 30)/hi) return h; }
