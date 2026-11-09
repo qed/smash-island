@@ -65367,7 +65367,7 @@ function step(){
       if(atkSp && DIGC && digcLocked(f, 'fin')){ digcFallback(f, 's'); f._sp=true; }   // THE DIG (Spongy's contest): a finisher not dug up yet is the jab
       else if(atkSp && f.fsGlow>0 && (fsTryFire(f) || fsRebounds(f))){ f._sp=true; }   // glowing: the finisher input is the FINAL SMASH (once); infected, it is held (fsRebounds)
       else if(atkSp && f.fnCd<=0 && (f._hsAgo | 0) >= FIN_HS_DELAY){   // (a finisher cannot start in the first FIN_HS_DELAY frames after hitstun: the owner, 2026-11-04, about Toothpaste's Squeeze Rocket as a frame-one hitstun escape)
-        if(doAttackSpecial(f) !== false) f.fnCd = ATKSPECIALS[f.kit && f.kit.special] ? FIN_CD : FIN_CD_SHARED; f._sp=true;   // (false: it could not start here, and is not spent)
+        const finRet = doAttackSpecial(f); if(finRet !== false) f.fnCd = (finRet !== 'shared' && ATKSPECIALS[f.kit && f.kit.special]) ? FIN_CD : FIN_CD_SHARED; f._sp=true; f._spPend=0;   // (false: it could not start here, and is not spent; either way the press is the finisher's: no neutral special may fire out of it, the owner 2026-11-09)
       } else if(atkSp){ } else {
         f._legacyMv = false;
         if(inp.attack && f.atkCd<=0 && !inp.grab){ f._xDir = inp.down ? 'd' : (inp.up ? 'u' : ((inp.left||inp.right) ? 's' : 'n')); f._xAir = !f.onground; f._xT = hazardT; }
@@ -69034,7 +69034,11 @@ function doAttackSpecial(f){
   HA_FADE_NEXT = FIN_ART_FADE;   // HIT ART: the disc it hits with stays up as an impact (the shared finisher's: centred 28 px ahead, f.r+26 to the outline)
   const pre = new Set(projectiles);   // (what was out before it: what is new after it is the finisher's, TAKE_NEVER)
   try{
-    if(ATKSPECIALS[k]){ if(ATKSPECIALS[k](f) === false){ f._atkSeq = seq0; [f._atkKind, f._atkMove, f._atkAnim, f._atkLen, f._atkPhase, f._atkProg] = was; f._eLag = null; return false; } }   // (f._eLag: nothing happened, no end lag either -- FRAME BUDGET)
+    if(ATKSPECIALS[k]){ if(ATKSPECIALS[k](f) === false){
+      // (the owner, 2026-11-09: a finisher that finds no room (the new stages' small platforms) used to do nothing, and combos built on it broke: ON THE GROUND the press
+      // now gives the shared finisher swing instead, with the shared (long) cooldown; in the air, as before, it does nothing and is not spent)
+      if(f.onground){ const cx2 = f.x + f.face*28; f.flash = 12; hitCircle(f, cx2, f.y, f.r + 26, 14, 14, f.face*12, -9); return 'shared'; }
+      f._atkSeq = seq0; [f._atkKind, f._atkMove, f._atkAnim, f._atkLen, f._atkPhase, f._atkProg] = was; f._eLag = null; return false; } }   // (f._eLag: nothing happened, no end lag either -- FRAME BUDGET)
     else { const cx=f.x+f.face*28; f.flash=12; hitCircle(f,cx,f.y,f.r+26,14,14,f.face*12,-9);  }
   } finally { HA_FADE_NEXT = 0; for(const p of projectiles) if(!pre.has(p) && p.owner === f.idx) p._slot = 'finisher'; }
 }
@@ -74711,7 +74715,7 @@ Object.assign(FINX_LEFT, { disco:['dance'] });   // she is free while the tiles 
 const FX7 = {
   stroke:   { wind:FIN_STARTUP, reach:120, r:30, live:5, dmg:10, yellow:34, red:67, slow:120, kbx:6, kby:-6, far:[13, -12], burn:150, end:12, whiff:14 },
   pretend:  { flop:FIN_STARTUP, life:120, R:80, arm:8, grab:20, pull:8, spin:18, dmg:10, stun:36, kbx:5, kby:-7, up:14 },
-  showroom: { lift:FIN_STARTUP, n:3, every:8, len:300, ch:[30, 64], topple:20, live:4, band:22, dmg:12, stun:30, kbx:4, kby:-6, rise:12, end:18, fall:22 },
+  showroom: { lift:FIN_STARTUP, n:3, every:8, len:300, ch:[22, 64], topple:20, live:4, band:22, dmg:12, stun:30, kbx:4, kby:-6, rise:12, end:18, fall:22 },
   campfire: { wind:FIN_STARTUP, grow:FIN_GROW, off:30, r:13, len:44, spd:8, dist:400, dmg:9, burn:120, kbx:5, kby:-7, embers:120, ew:70, heal:0.05, kick:8, end:14 },
   pony:     { hop:FIN_STARTUP, grow:FIN_GROW, life:150, spd:6, jump:-11, off:-9, pad:4, dmg:9, kbx:8, kby:-7, end:12 },
   sit:      { rock:FIN_STARTUP, dist:70, spd:9, pad:2, hold:60, every:15, dmg:3, fin:6, kbx:6, kby:-12, mash:6, cpu:[0.06, 0.08, 0.10, 0.125], boss:9, whiff:16, end:12 },
@@ -74950,8 +74954,10 @@ function fx7ShowRun(f, fy, dir){
   while(run < S.len){
     const nl = Math.min(S.len, run + 6), x = f.x + dir*nl;
     if(x < 12 || x > WW - 12) break;
+    // (the owner, 2026-11-09: Bow's finisher would not start on the new stages' small platforms and her neutral special came out instead: a ledge's edge is no longer
+    // the end of the run -- the tower may topple off a ledge into the air -- only a wall, a step face or a higher surface in the way is)
     const sb = surfaceBelow(x, fy - 10);
-    if(sb === null || Math.abs(sb - fy) > 8 || fxWallSpan(f.x, x, fy - S.band*2, fy - 2)) break;
+    if((sb !== null && sb < fy - 8) || fxWallSpan(f.x, x, fy - S.band*2, fy - 2)) break;
     run = nl;
   }
   return run;
@@ -74959,10 +74965,15 @@ function fx7ShowRun(f, fy, dir){
 function finShowroom(f){
   const S = FX7.showroom;
   if(!f.onground) return false;   // a tower needs a floor
-  const fy = feetY(f), dir = f.face < 0 ? -1 : 1, run = fx7ShowRun(f, fy, dir);
-  const ch = Math.min(S.ch[1], (run - 2*f.r)/3.3);   // three chairs and her, lying along the floor ahead, fit the run (3.3: the chair's half-width at the foot it tips over)
+  const fy = feetY(f);
+  let dir = f.face < 0 ? -1 : 1, run = fx7ShowRun(f, fy, dir);
+  // (the owner, 2026-11-09: no room ahead (a wall, a step, the ledge's far side): the tower comes down the OTHER way if that has room, as she turns to it, rather than not at all)
+  if((run - 2*f.r)/3.3 < S.ch[0]){ const run2 = fx7ShowRun(f, fy, -dir); if(run2 > run){ dir = -dir; run = run2; f.face = dir; } }
+  let ch = Math.min(S.ch[1], (run - 2*f.r)/3.3);   // three chairs and her, lying along the floor ahead, fit the run (3.3: the chair's half-width at the foot it tips over)
   if(ch < S.ch[0]) return false;
-  if(!fxClear(f.x, fy - 4, f.x, fy - 3*ch - 2*f.r - 4)) return false;   // no room overhead for the tower
+  // (the owner, 2026-11-09: a ledge overhead no longer stops it: the tower is built as tall as the room allows, down to the smallest size)
+  while(ch > S.ch[0] && !fxClear(f.x, fy - 4, f.x, fy - 3*ch - 2*f.r - 4)) ch = Math.max(S.ch[0], ch - 4);
+  if(!fxClear(f.x, fy - 4, f.x, fy - 3*ch - 2*f.r - 4)) return false;   // no room overhead even for the smallest tower
   fxAimStart(f);
   const o = finxAdd(f, 'showroom', { ph:'stack', x0:Math.round(f.x), y0:Math.round(fy), ch:Math.round(ch*10)/10, hh:0, hit:[], c:[], cx:[] });   // (hit: dealt the tower's hit, once; c: held now, [idx, x, y]; cx: ever caught)
   o._bk = (fx7ShowRun(f, fy, -dir) - 2*f.r)/3.3 >= o.ch - 0.1;   // WHICH WAY: room behind her for the same tower to come down that way
