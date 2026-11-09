@@ -96295,6 +96295,7 @@ const BRAIN_LV = [
 // only a kit missing from BRAIN_SPEC below reads it now. Five had gone stale and are out: Barf Bag's Outbreak, Yellow Face's cone, Bell's ring,
 // Marker's splash and Money's burst all land within 100 px.)
 [0.12, 0.4, 0.6, 0.7].forEach(function(v, i){ BRAIN_LV[i].shd = v; });   // SHIELD / REFLECTOR (Z): the chance it acts on a tell it saw, by level (Easy reads least, Expert most): brainShield
+[0.05, 0.2, 0.5, 0.8].forEach(function(v, i){ BRAIN_LV[i].punish = v; });   // FRAME BUDGET: the chance it punishes a foe it sees in end lag within its reach, once per recovery (brainPunish)
 const BRAIN_SHOOTERS = new Set(["ember","cap","fry","barf","serve","freeze","beam","sign","dribble","zapshooter","fly","gust","zap","spark",
   "jawbreaker","spike","sucker","battery","emberjr","measure","shatter","timber","pricetag"]);
 // WHERE EACH KIT'S SPECIALS LAND, measured from the moves themselves (the bot fixes, 2026-10-28): every fighter's neutral special and its
@@ -96893,12 +96894,24 @@ function brainShield(f, t, B, L, dist, awake){
   const tell = brainSwingTell(f, t, dist), fresh = tell && !B.shTell; B.shTell = tell;
   if(fresh && Math.random() < L.shd){ B.shOn = true; B.shT0 = B.shSeen = now; f._aiShU = now + 10; }
 }
+// PUNISH (FRAME BUDGET): a foe within its reach that is in END LAG -- recovering from a whiffed or blocked move, unable to act (endLagStep) -- is
+// hit, by a roll once per recovery at BRAIN_LV.punish (Easy 5%, Medium 20%, Hard 50%, Expert 80%): the jab, aimed, at once, the moment its own
+// hands are free. Nothing else of the brain changes; a foe not in end lag never comes here. (B.punAt: the frame it last did, for the checks.)
+function brainPunish(f, t, inp, B, L, toward){
+  const E = t._eLag;
+  if(!E || !E.on || !(t._lag > 0) || t._isBoss || t.dead || t.hitstun > 0 || !(L.punish > 0)) return false;
+  if(!f.onground || f.atkCd > 0 || f._lag > 0 || f._mv || f.hitstun > 0 || !brainInReach(f, t, 10)) return false;   // (its own hands not free yet, or not in reach: it looks again next frame)
+  if(B.punE !== E){ B.punE = E; B.punOk = Math.random() < L.punish; }   // one roll a recovery, at the first moment it could take it
+  if(!B.punOk) return false;
+  B.punOk = false; B.punAt = hazardT; brainTap(B, brainFace({ attack:true }, toward), 3); Object.assign(inp, B.press.keys); B.next = hazardT + 4; return true;
+}
 function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   const now = hazardT, K = brainKit(f), toward = dx < 0 ? -1 : 1, awake = now >= B.wake;
   brainGuess(f, t, B, L, dist, awake);
   brainShield(f, t, B, L, dist, awake);   // SHIELD / REFLECTOR (Z): on a tell it saw
   // a press in progress (a tap is held a few frames, then let go)
   if(B.press){ if(now <= B.press.until){ Object.assign(inp, B.press.keys); return; } B.press = null; }
+  if(brainPunish(f, t, inp, B, L, toward)) return;   // FRAME BUDGET: a foe in end lag within reach, hit by level
   const inReach = brainInReach(f, t);
   // a smash it pressed: it waits for it to go off
   if(B.st === 'smash'){ if((!f._smQ && !(f.smashHold > 0)) || now > B.until){ B.st = 'approach'; B.next = now + 6; } return; }
