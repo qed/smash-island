@@ -23619,7 +23619,8 @@ function haCrest(f, key, half, own, color){
 // WEIGHT (ROSTER w) was the only per-fighter raw stat; these five sit beside it. Each is a MULTIPLIER, and 1 is the game as it was:
 //   run   on the ground: the run's acceleration (MOVE) and its top speed (MAXVX)
 //   air   the same two in the air (drift)
-//         A fighter above weight 100 has a share taken off both, the heavier the more (HEAVIES MOVE SLOWER: HEAVY_SLOW, below).
+//         The run follows the WEIGHT (RUN SPEED BY WEIGHT: runK, below: about +25% at the lightest, -25% at the heaviest); a fighter
+//         above weight 100 has a share taken off the air, the heavier the more (HEAVIES MOVE SLOWER: HEAVY_SLOW, below).
 //   jump  every jump's launch speed (JUMP: first and double jumps, wall jumps, dash jumps, ctfJumpV) and the short-hop cut (SH_V)
 //   fall  gravity on the way down (a flyer's Flight included) and the fast-fall speed (FF_V). The engine has no terminal speed,
 //         so "falls faster" is "is pulled down harder": the fall speed at every moment scales by it. The way up is untouched.
@@ -23766,22 +23767,47 @@ const STAT_ONE = Object.freeze(Object.fromEntries(STAT_KEYS.map(k => [k, 1]))); 
 // from weight 100: at or below 100 nothing changes (a light fighter is NOT made faster); above it, the heavier the slower -- about 2%
 // at 101, 8% at 110 and 15% at the heaviest (Tree, 138; Roboty, 134, about 14%). The share taken off is
 //     slow(w) = 0.15 x sqrt((w - 100) / 38)        (w > 100; 0 otherwise)    -> 101: 2.4%, 104: 4.9%, 110: 7.7%, 120: 10.9%, 138: 15%
-// and it multiplies BOTH the fighter's run and its air (drift): its own FIGHTER_STATS run and air x (1 - slow), rounded to 3 places,
+// and it multiplied BOTH the fighter's run and its air (drift) until 2026-11-09; since RUN SPEED BY WEIGHT (runK, below) took the run, it is the AIR's
+// only: its own FIGHTER_STATS air x (1 - slow), rounded to 3 places,
 // so each fighter keeps its own run/air identity on top (fighters of the same weight keep their order; a heavier one loses more). Jump, fall, dmg and rec are untouched (jump height and fall speed
 // stay). It is read in ONE place: makeFighter hands statsFor the fighter's weight (its own row's w -- prize and event fighters too),
 // and everything that moves a fighter reads that st (step's run and drift, the netcode's prediction numbers, the CTF route checks).
 // RUNNING! and a boss's ghost fighter still run on 1 (they replace st with STAT_ONE: see above). Above 138 it keeps growing (sqrt).
 const HEAVY_SLOW = { from:100, ref:138, max:0.15 };   // from: the weight it starts above; ref: the weight that loses `max` (Tree)
 function heavySlowK(w){ const x = (+w || 0) - HEAVY_SLOW.from; return x > 0 ? 1 - HEAVY_SLOW.max*Math.sqrt(x/(HEAVY_SLOW.ref - HEAVY_SLOW.from)) : 1; }
+// RUN SPEED BY WEIGHT (the owner, 2026-11-05: ground run speed should follow weight -- TV, 117, and Bow, 74, ran almost alike, 5.41 and 5.82, and
+// Puffball, 46, ran like Bow). One multiplier on the GROUND run (its top speed MAXVX and its acceleration MOVE together: a heavy is slower to get
+// going too), from the fighter's weight: the released roster's median weight (RUN_W.med) runs at 1, the lightest (RUN_W.min) at 1 + RUN_W.span
+// (1.25), the heaviest (RUN_W.max) at 1 - RUN_W.span (0.75), two straight legs meeting at the median (continuous, monotone; clamped at the ends,
+// so a fighter beyond the range gets the end's value). The roster numbers are the 102 released fighters' on 2026-11-09 (Puffball 46, median 85,
+// Tree 138), written down rather than read from ROSTER so a hidden or later fighter does not move everyone else's speed. It replaces HEAVY_SLOW's
+// share of the RUN (it was -15% at Tree; the two together would have been -36%); HEAVY_SLOW still slows a heavy's AIR. It touches nothing else: not
+// the air drift, jumps, dashes, rolls, specials, knockback or the fall. A sprint (SPRINT.k) multiplies the run's cap after it, so it is 1.4 x the
+// new speed. It is folded into the fighter's st.run in statsFor (the one place), which only the ground branch of the move block reads (fsk =
+// onground ? run : air); in the air st.run is only the ceiling a running jump's carried speed eases down from (runEaseCap), never a push. RUN_EXC
+// is the per-fighter EXCEPTIONS table: 'Name': the multiplier to use instead of the curve's (1 = the curve switched off for that fighter). Empty
+// on 2026-11-09: no released fighter came out silly (the fastest run is Lightning's 8.5 px a frame, the slowest Tree's 4.27, still over
+// ASSIST_WALK 4.2 and PULL.max x 4). RUNNING! and a boss's ghost run on STAT_ONE and are untouched.
+const RUN_W = { min:46, med:85, max:138, span:0.25 };
+const RUN_EXC = { };
+function runK(w, name){
+  if(name && RUN_EXC[name] != null) return +RUN_EXC[name] > 0 ? +RUN_EXC[name] : 1;
+  const x = +w; if(!(x > 0)) return 1;
+  const W = RUN_W, u = x <= W.med ? (W.med - x)/(W.med - W.min) : -(x - W.med)/(W.max - W.med);
+  return Math.round((1 + W.span*Math.max(-1, Math.min(1, u)))*1000)/1000;
+}
 // A fighter's own stats, read once (makeFighter): its row's value, else the default's; anything that is not a positive number reads 1.
-// With a weight `w` (makeFighter's), a heavy fighter's run and air are slowed by HEAVY_SLOW; without one (the move words' dmg, a
-// jump's height) nothing is.
+// With a weight `w` (makeFighter's), the run follows the weight (RUN SPEED BY WEIGHT, runK) and a heavy fighter's air is slowed by HEAVY_SLOW;
+// without one (the move words' dmg, a jump's height) nothing is.
 function statsFor(name, w){
   const D = FIGHTER_STATS['*'] || STAT_ONE;
   const R = (name && Object.prototype.hasOwnProperty.call(FIGHTER_STATS, name)) ? FIGHTER_STATS[name] : null, o = {};
   for(const k of STAT_KEYS){ const v = +(R && R[k] != null ? R[k] : D[k]); o[k] = v > 0 ? v : 1; }
-  const hk = w != null ? heavySlowK(w) : 1;
-  if(hk !== 1){ o.run = Math.round(o.run*hk*1000)/1000; o.air = Math.round(o.air*hk*1000)/1000; }   // HEAVIES MOVE SLOWER
+  if(w != null){
+    const rk = runK(w, name), hk = heavySlowK(w);
+    if(rk !== 1) o.run = Math.round(o.run*rk*1000)/1000;   // RUN SPEED BY WEIGHT
+    if(hk !== 1) o.air = Math.round(o.air*hk*1000)/1000;   // HEAVIES MOVE SLOWER (the air)
+  }
   return o;
 }
 // The damage `d` of a hit landed by `f` (a fighter, or anything else: only a fighter has stats).
@@ -23817,7 +23843,7 @@ function makeFighter(r,x,y,idx){
     rooted:0, ctrlRev:0, _revLock:0, slowed:0, _sawing:0, koCount:0, iceUntil:0, healing:0, _hurt:0, deaths:0, killCount:0, placement:null, _downOrder:0, _kos:0, _falls:0, _dmgDealt:0, _dmgTaken:0, _infected:0, _infectedBy:null, _origTeam:0, _lastInput:null, _empowerT:0, _hasteT:0, _bulletT:0, _plunge:null, _starT:0, _glowGoldT:0, _yoyleT:0, _holding:null, _bossHitId:-1, _bossHitDmg:0, _swallow:0, _swallowTick:0,
     flash:0, _atkAnim:0, _atkLen:ATK_ANIM, _atkPhase:null, _atkProg:0, _hurtAnim:0, _rigState:"idle", aiTimer:Math.random()*40, aiTarget:null, aiMode:0, _lastX:undefined, _stuck:0, _recover:0, _seekingSpawn:false,
     hurt: hurtboxFor(r && r.name),   // see HURTBOX; null falls back to the 24px circle
-    st: statsFor(r && r.name, w),   // FIGHTER STATS: run, air, jump, fall, dmg (all 1 unless FIGHTER_STATS says otherwise); above weight 100 the run and air are slowed (HEAVY_SLOW)
+    st: statsFor(r && r.name, w),   // FIGHTER STATS: run, air, jump, fall, dmg (all 1 unless FIGHTER_STATS says otherwise); the run follows the weight (runK), above weight 100 the air is slowed (HEAVY_SLOW)
     size:1,   // PER-FIGHTER SIZE (setFighterSize): 1, the size every fighter has always been; r and hurt here are the size-1 ones
     r:24
   };
@@ -45644,7 +45670,7 @@ function navAssist(s, tgt, dx, vmax){
 // TELEGRAPHED (2026-10-22): the cue is the trophy's own body, never a drawn warning. The rules every trophy keeps now:
 //   * it pops out of the trophy first (ASSIST_ARRIVE frames, growing in) and hurts nobody while it does;
 //   * it never walks faster than ASSIST_WALK, under the slowest run the roster allows (FIGHTER_STATS' 0.85 bound x MAXVX = 5.4;
-//     x 0.85 more for weight 138, HEAVY_SLOW, 4.6 -- Tree today, run 0.89, is 4.84),
+//     x 0.85 more for weight 138, HEAVY_SLOW, 4.6 -- Tree was 4.84; RUN SPEED BY WEIGHT, 2026-11-09: run 0.89 x runK 0.75, 4.27, still over 4.2),
 //     and walking it touches nobody: nothing walks you down;
 //   * anything faster is COMMITTED: a wind-up with its own body (8-Ball spins in place, Spongy squats, Foldy folds herself, Stapy
 //     opens wide, the Selfie Stick raises its phone), then one straight line fixed when the wind-up began -- jump it or step out;
@@ -91855,9 +91881,9 @@ function drawBerries(){
 // THE PULL (Black Hole's "Gravity" duel: "a gentle pull toward the middle, never more than a quarter of walking speed, so you can always walk
 // out"). Every fighter free to move (not held, caught or in a Wormhole) is drawn toward the middle of the stage by PULL.max px a frame at the edge
 // of its reach (PULL.reach of the stage's width either side of the middle) and beyond, less nearer the middle and none at it: under a quarter of
-// the slowest walk there is -- a fighter's walk is MAXVX 6.4 x its run stat x heavySlowK(weight) (HEAVIES MOVE SLOWER, 2026-10-29); the
-// slowest today is Tree's, 4.85 px a frame (run 0.89 x 0.85 at weight 138), a quarter of it 1.21 -- so walking out always works, and a slowed
-// fighter (0.55 of that, 2.66) still walks out. 1.2 until 2026-11-01 (worked out without HEAVY_SLOW); 1.0 leaves room under 1.21. It eases in over the
+// the slowest walk there is -- a fighter's walk is MAXVX 6.4 x its run stat x runK(weight) (RUN SPEED BY WEIGHT, 2026-11-09; HEAVY_SLOW before it); the
+// slowest today is Tree's, 4.27 px a frame (run 0.89 x 0.75 at weight 138; 4.85 before), a quarter of it 1.07 -- so walking out always works, and a slowed
+// fighter (0.55 of that, 2.35) still walks out. 1.2 until 2026-11-01 (worked out without HEAVY_SLOW); 1.0 leaves room under 1.07. It eases in over the
 // grow-in time as the match starts. It adds nothing that can hurt. Shown by art only (drawTwistAir: dust drifting in): no words, no lines.
 // ONLINE: the host runs it in step(); a guest's prediction of its own fighter (netPredRun) is pulled by the same rule, so the guest never snaps
 // back. MATCH_TWIST is all either side needs; an event room (build step 14) will carry it in the start that already carries the room's rules.
