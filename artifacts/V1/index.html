@@ -3493,7 +3493,7 @@ function buildMoonCaves(){
 function mcState(g){
   return { on:true, cx:g.cx, cy:g.cy, N:g.N, k:g.k, Rout:g.Rout, Rblast:g.Rb, rKill:g.rKill, K:g.K, tops:g.tops, shellTop:g.shellTop, shellBot:g.shellBot,
            crustBot:g.crustBot, segs:g.segs, holes:g.holes, cracks:g.cracks, window:mcWindow, win:[], rhoMin:64, flight:true, items:true,
-           camT:null, camHold:false, camOff:0, deco:mcDeco(g.segs), wide:false, wideK:0, watch:null, layers:g.layers, hot:g.hot,
+           camT:null, camHold:false, camOff:0, deco:mcDeco(g.segs), wide:false, wideK:0, watch:null, layers:g.layers, hot:g.hot, plates:g.plates || null,
            zsegs:g.zsegs || [], zwin:[], furnTop:g.layers ? g.layers[g.K].rTop : g.shellTop + 420, v:g.v || 3, moon:g.moon, g4:g.g4 };
 }
 // THE LAYERS AT WORK (mcGen's layers): a body's layer by the radius of its middle -- each runs from the underside of its floor to the underside
@@ -3529,6 +3529,10 @@ function mcHotFloor(f){
   if(Math.abs(r - f.r - M.shellTop) > 3) return 0;   // its feet on the shell's top (a stone, a ledge or a step is not the floor)
   const a = mcTh(P.x, P.y);
   let on = false;
+  if(M.plates){   // (V6, v4's Hot Plates: each plate on its own phase; the rest of the floor on the old clock)
+    for(const p of M.plates){ const d = mcWrap(a - p.a0); if((d < 0 ? d + MC_TAU : d) <= p.a1 - p.a0) return (((hazardT - p.ph) % MC_HOT.every) + MC_HOT.every) % MC_HOT.every < MC_HOT.on ? 2 : 0; }
+    if(!mcHotOn()) return 0;
+  }
   for(const h of M.hot){ const d = mcWrap(a - h[0]); if((d < 0 ? d + MC_TAU : d) <= h[1] - h[0]){ on = true; break; } }
   if(!on) return 0;
   for(const c of M.cracks) if(Math.abs(mcWrap(a - c.a)) < c.h + MC_GEN.popRim/M.shellTop) return 1;
@@ -4742,10 +4746,10 @@ function mc4NatLay(nat, e, dir, rc, low, piece, zone, open){   // (V4: `open`, t
 //   Barricade one wall 192 px thick across the middle with three ways past (a low door, a window slit reached from plank firing steps, the ridge on top reached by planks); its own mirror image
 //   Warren    six cells in two storeys: three in the cave, three above them in the hall's foot, on the cave floor above (kept, with a hatch in each cell); the doors are 128 px high, the partitions 100 px thick
 //   Attic     the corridor (the room's box lowered to 128 px) with a sealed pocket over it (112 px or more high, over 100 px of rock) and ONE hatch 144 px wide up through that rock by plank steps (a cave under 324 px of air keeps the corridor alone)
-const MC4_V3 = ['Crawl', 'Span', 'Teeth', 'Barricade', 'Warren', 'Attic'], MC4_V4 = ['LongRamp', 'GrandStair', 'Chimney', 'Chute', 'Sinkhole', 'Crater'], MC4_V5 = ['Cathedral', 'Racetrack'];   // (the rooms a cut exists for: V3's and V4's)
+const MC4_V3 = ['Crawl', 'Span', 'Teeth', 'Barricade', 'Warren', 'Attic'], MC4_V4 = ['LongRamp', 'GrandStair', 'Chimney', 'Chute', 'Sinkhole', 'Crater'], MC4_V5 = ['Cathedral', 'Racetrack', 'Garden', 'Lake', 'Geode', 'Aerie', 'Headframe'];   // (the rooms a cut exists for: V3's and V4's)
 const MC4_BOX = { Crawl:{ h:h => Math.max(112, h) }, Attic:{ h:() => 128 }, Barricade:{ roofMin:() => 432 + 112 }, Warren:{ roofMin:yb => yb + 160 } };   // (the box a built room stands in: the Crawl never under 112 px (the throat's), the Attic's corridor, the Barricade's roof 112 px over its ridge, the Warren's upper cells at least 160 px high)
 function mc4BuiltCut(arch, L, o){
-  const cap = o.cap, yb = o.yb, hu = o.hu, R = [], P = [], A = [], H = [], r8 = v => Math.round(v/8)*8; let drop = null, keep = false;
+  const cap = o.cap, yb = o.yb, hu = o.hu, R = [], P = [], A = [], H = [], Zn = [], r8 = v => Math.round(v/8)*8; let drop = null, keep = false;
   const rock = (x0, x1, y0, y1, k) => { if(x1 > x0 + 0.5 && y1 > y0 + 0.5) R.push(k ? [x0, x1, y0, y1, k] : [x0, x1, y0, y1]); }, plank = (x0, x1, top) => P.push([x0, x1, top]);
   // V4: a stair from x0 over `run` px up to `rise`: 16 px risers on treads of 32 px or more (each a 'slope' piece, walked up with no jump) or uneven steps of 40 to 80 px (jumped: the weakest jumper rises about 91 px in normal gravity); null when it does not fit
   const stair = (x0, run, rise, slope, rng) => {
@@ -4878,15 +4882,59 @@ function mc4BuiltCut(arch, L, o){
     A.push([0, L, 228, cap, 'pocket']); A.push([hx, hx + 144, 128, 228, 'hatch']); hatch(hx, 228, 0);
     return { rock:R, plank:P, air:A, holes:H, drop:null, keep:false, stash:[L/2, 252] };   // (V4: the prize's spot, the middle of the pocket; V6 spawns from stash spots)
   }
+  // ---- V6: the footing rooms ----
+  // Their zones go in `Zn` ([x0, x1, y0, y1, type, extra], the room's own frame as the rock's): a pad, ice, water, a belt, an updraft, a heal pool. Every room here is its own mirror image except the Aerie (a stair of isles on one wall), none stands on a pole but the Geode (symmetric).
+  if(arch === 'Garden'){   // a pyramid of three one-way planks (80, 160, 240 px: one jump each) climbs from each side to a top perch over the middle pad; pads under the perch and under the lowest planks throw you up (v3's strength), 296 px at the top of a throw
+    if(L < 1000 || !(o.h >= 340) || o.pole) return null;
+    const cm = L/2, str = o.low ? 1.3 : 1.9, pad = x => Zn.push([x - 50, x + 50, 0, 24, 'bounce', { strength:str }]);
+    for(const s of [-1, 1]){ const pl = [[368, 240, 80], [256, 128, 160]]; for(const q of pl){ const a = cm + s*q[0], b = cm + s*q[1]; plank(Math.min(a, b), Math.max(a, b), q[2]); } }
+    plank(cm - 144, cm + 144, 240); pad(cm); pad(cm - 304); pad(cm + 304);
+    if(L >= 1460){ pad(288); pad(L - 288); }
+    return { rock:R, plank:P, air:A, holes:H, drop:null, keep:false, zones:Zn, stash:[cm, 256] };
+  }
+  if(arch === 'Lake'){   // a sheet of ice (or of water that drags everyone) between two ends, an island of rock in the middle (an apron 32 px high, then 64) and a shelf (80 px) at each end; the island is the one grip
+    if(L < 1000 || !(o.h >= 240) || o.pole) return null;
+    const cm = L/2, ice = o.kind !== 'flooded', top = ice ? [0, 40, 'ice'] : [0, 120, 'water'];
+    rock(cm - 256, cm - 192, 0, 32); rock(cm + 192, cm + 256, 0, 32); rock(cm - 192, cm + 192, 0, 64);
+    plank(192, 352, 80); plank(L - 352, L - 192, 80);
+    Zn.push([192, cm - 256, top[0], top[1], top[2]]); Zn.push([cm + 256, L - 192, top[0], top[1], top[2]]);
+    return { rock:R, plank:P, air:A, holes:H, drop:null, keep:false, zones:Zn, stash:[cm, 80] };
+  }
+  if(arch === 'Geode'){   // two squeeze doors (a lintel 64 px long at each end, the door 128 high), two hanging pillars (168 px clear under them) with a heal pool between them, two stumps (48 px) for cover, and the cache on the pool's floor
+    if(L < 1100 || !(o.h >= 300)) return null;
+    const cm = L/2, hh = o.h;
+    rock(0, 64, 128, hh); rock(L - 64, L, 128, hh);
+    rock(cm - 320, cm - 224, 168, hh); rock(cm + 224, cm + 320, 168, hh);
+    rock(cm - 448, cm - 384, 0, 48); rock(cm + 384, cm + 448, 0, 48);
+    Zn.push([cm - 128, cm + 128, 0, 48, 'heal', { strength:0.5 }]);
+    return { rock:R, plank:P, air:A, holes:H, drop:null, keep:false, zones:Zn, stash:[cm, 24] };
+  }
+  if(arch === 'Aerie'){   // a hall: three columns of rising air (90 px wide, from the floor to the room's roof), a stair of isles up the left wall (each step 80 px at most) to a perch 72 px under the bridge, over the middle column; the right wall has only the air
+    if(!(yb >= 360) || L < 800 || o.pole) return null;
+    const cm = L/2, pw = 224, yp = r8(yb - 72), span = Math.max(0, cm - pw/2 - 128 - 176 - 128); if(cm - pw/2 - 304 < -16) return null;   // (in a narrow room the isles stack on the wall)
+    const m = Math.max(1, Math.ceil(yp/80) - 1);
+    for(let i = 0; i < m; i++){ const x0 = 128 + r8(i*span/Math.max(1, m - 1)), y = r8((i + 1)*yp/(m + 1)); plank(x0, x0 + 176, y); }
+    plank(cm - pw/2, cm + pw/2, yp);
+    for(const xc of [r8(L*0.22), r8(cm), r8(L*0.78)]){ Zn.push([xc - 45, xc + 45, 0, cap, 'updraft']); if(hu - 48 >= 100) Zn.push([xc - 45, xc + 45, yb, yb + hu - 48, 'updraft', { up:1 }]); }
+    return { rock:R, plank:P, air:A, holes:H, drop:64, keep:false, zones:Zn, stash:[cm, yp + 16] };
+  }
+  if(arch === 'Headframe'){   // a hall: belts on the floor and on each plank tier (80 px apart, one jump each), each running against the one under it; the top tier is bare, one jump under the bridge
+    if(!(yb >= 320) || L < 700 || o.pole) return null;
+    const n = Math.max(2, Math.ceil((yb - 72)/80));   // (tiers up to 72 px under the bridge, as the Cathedral's pulpit: a body stands under it)
+    for(let k = 1; k <= n; k++){ const y = r8(k*(yb - 72)/n), odd = k % 2 === 1; plank(odd ? 192 : 320, odd ? L - 320 : L - 192, y); if(k < n) Zn.push([odd ? 192 : 320, odd ? L - 320 : L - 192, y, y + 30, 'belt', { dir:odd ? -1 : 1 }]); }
+    Zn.push([192, L - 192, 0, 30, 'belt', { dir:1 }]);
+    return { rock:R, plank:P, air:A, holes:H, drop:64, keep:false, zones:Zn, stash:[L/2, r8(yb - 72) + 16] };
+  }
   return null;
 }
 // the cut laid on a place (pure: pieces and air boxes go to the callbacks): `e` the room's angles, `dir` +1 when its columns run with the angle (the mirror half runs the other way), `rc` the floor radius. piece(r0, r1, a0, a1, oneway, kind), air(a0, a1, r0, r1, tag), hole(a0, a1)
-function mc4BuiltLay(cut, e, dir, rc, piece, air, hole){
+function mc4BuiltLay(cut, e, dir, rc, piece, air, hole, zone){
   const span = (x0, x1) => dir > 0 ? [e[0] + x0/rc, e[0] + x1/rc] : [e[1] - x1/rc, e[1] - x0/rc];
   for(const q of cut.rock){ const s = span(q[0], q[1]); piece(rc + q[2], rc + q[3], s[0], s[1], false, q[4] || 'rock'); }
   for(const q of cut.plank){ const s = span(q[0], q[1]); piece(rc + q[2] - MC4_B.stepT, rc + q[2], s[0], s[1], true, 'plank'); }
   for(const q of cut.air){ const s = span(q[0], q[1]); air(s[0], s[1], rc + q[2], rc + q[3], q[4]); }
   for(const q of cut.holes){ const s = span(q[0], q[1]); hole(s[0], s[1], q[2] || 'hatch'); }
+  if(zone && cut.zones) for(const q of cut.zones){ const s = span(q[0], q[1]), o = q[5] ? Object.assign({}, q[5]) : undefined; if(o && o.dir) o.dir *= dir; zone(s[0], s[1], rc + q[2], rc + q[3], q[4], o); }   // (V6: a belt runs with the room's columns or against them, as the mirror half's)
 }
 function mc4Build(side, moon){
   const G = MC4_DISC.G, B = MC4_B, TAU = MC_TAU, P = Math.PI, seed = MC4.seed(side, moon), plan = mc4PlanOf(side, seed);
@@ -4977,16 +5025,16 @@ function mc4Build(side, moon){
     const yb0 = top < c ? tops[c - 1] - rc : 0;
     const ents = x.pole ? [x.q ? [P - aE, P + aE] : [-aE, aE]] : x.q === 0 ? [[aS, aE], [-aE, -aS]] : [[P - aE, P - aS], [-P + aS, -P + aE]];
     const dirs = x.pole ? [1] : x.q === 0 ? [1, -1] : [-1, 1];   // (the columns of the half with the higher angle run with u from the pole; at the south pole they run against the angle)
-    const bu = nat ? null : mc4BuiltCut(x.arch, (ents[0][1] - ents[0][0])*rc, { cap, yb:top < c ? tops[c - 1] - rc : 0, hu:(c - 1 === top ? roof : airTop(c - 1)) - tops[c - 1], seed:mc4Fnv(x.arch + ':' + x.c + ':' + x.u0 + ':' + x.w), h:hh, pole:!!x.pole, hTot:roof - rc, floors:(() => { const f = []; for(let j = c - 1; j >= top; j--) f.push(tops[j] - rc); return f; })() });   // (V3: the built rooms of boxes and planks; null = a plain box, as V1: counted in V.plain; V4 adds the room's whole height and the floors it passes, for the Chimney)
+    const bu = nat ? null : mc4BuiltCut(x.arch, (ents[0][1] - ents[0][0])*rc, { cap, yb:top < c ? tops[c - 1] - rc : 0, hu:(c - 1 === top ? roof : airTop(c - 1)) - tops[c - 1], seed:mc4Fnv(x.arch + ':' + x.c + ':' + x.u0 + ':' + x.w), h:hh, pole:!!x.pole, low:!!layers[c].low, kind:x.kind, hTot:roof - rc, floors:(() => { const f = []; for(let j = c - 1; j >= top; j--) f.push(tops[j] - rc); return f; })() });   // (V3: the built rooms of boxes and planks; null = a plain box, as V1: counted in V.plain; V4 adds the room's whole height and the floors it passes, for the Chimney)
     if(!nat && (MC4_V3.indexOf(x.arch) >= 0 || MC4_V4.indexOf(x.arch) >= 0 || MC4_V5.indexOf(x.arch) >= 0)){ if(bu) V3stat.built++; else V3stat.plain++; }
     for(let ei = 0; ei < ents.length; ei++){
       const e = ents[ei], dir = dirs[ei];
       const own = newNode({ kind:'R', c, a0:e[0], a1:e[1], cen:(e[0] + e[1])/2, half:(e[1] - e[0])/2, arch:x.arch, h:roof - rc, name:x.arch, top, w:x.w });
-      own.dir = dir; own.room = x; own.cut = bu; nodeOf[rid(x) + ':' + ei] = own;   // (V5: the hub pass finds a room's two nodes by its place)   // (which way its columns run, and the plan's room: the checks read them)
+      own.dir = dir; own.room = x; own.cut = bu; own.nat = nat; nodeOf[rid(x) + ':' + ei] = own;   // (V5: the hub pass finds a room's two nodes by its place)   // (which way its columns run, and the plan's room: the checks read them)
       if(nat){ natApply(nat, c, e, dir, rc); own.e0 = dir > 0 ? nat.e0 : nat.e1; own.e1 = dir > 0 ? nat.e1 : nat.e0; }
       const xa = v => dir > 0 ? e[0] + v/rc : e[1] - v/rc;   // (a cut's x, px from the pole end, as an angle)
-      if(bu) mc4BuiltLay(bu, e, dir, rc, (r0, r1, a0, a1, ow, kind) => putW(r0, r1, a0, a1, ow, kind, yb0 && r0 >= rc + yb0 - 1 ? c - 1 : c), (a0, a1, r0, r1, tag) => addAir(c, a0, a1, r0, r1, tag), (a0, a1, tp) => { addCut(c - 1, a0, a1); pass(tp, c - 1, a0, a1); });
-      if(bu && bu.stash) stash.push({ c, a:mcWrap(xa(bu.stash[0])), r:rc + bu.stash[1], arch:x.arch });
+      if(bu) mc4BuiltLay(bu, e, dir, rc, (r0, r1, a0, a1, ow, kind) => putW(r0, r1, a0, a1, ow, kind, yb0 && r0 >= rc + yb0 - 1 ? c - 1 : c), (a0, a1, r0, r1, tag) => addAir(c, a0, a1, r0, r1, tag), (a0, a1, tp) => { addCut(c - 1, a0, a1); pass(tp, c - 1, a0, a1); }, (a0, a1, r0, r1, type, o) => zoneAt(r0, r1, a0, a1, type, o && o.up ? c - 1 : c, o));
+      if(bu && bu.stash) stash.push({ c, a:mcWrap(xa(bu.stash[0])), r:rc + bu.stash[1], arch:x.arch });   // (V6: the Garden's perch, the Lake's island, the Aerie's perch, the Headframe's top tier and the Geode's pool hold a cache each)
       items[c].push(own); addAir(c, e[0], e[1], rc, top < c ? airTop(c) : roof, 'room:' + x.arch);
       if(top < c){
         halls.push(own);
@@ -5014,6 +5062,21 @@ function mc4Build(side, moon){
   const colClear = (nd, x0, x1, y0, y1) => !nd.cut || nd.cut.rock.concat(nd.cut.plank.map(q => [q[0], q[1], q[2] - B.stepT, q[2]])).every(q => q[1] <= x0 || q[0] >= x1 || q[3] <= y0 || q[2] >= y1);
   const plainRoom = (x, c, q) => x.c === c && x.q === q && !x.claimed && !x.form && !x.pole && x.u0 != null && !(x.top >= 1 && x.top < c) && !!nodeOf[rid(x) + ':0'];
   const endU = x => Math.min(x.u1, qa[x.c] - B.stripEnd);
+  // V6: the column for a hatch or window between an upper room x and a lower room y (lo, hi: their common span as angles): the clear 144 px column nearest the middle of the common span, tried in 8 px steps either side (the footing rooms' furniture stands mid-room); a natural lower room
+  // must be flat and roofless for the 144 px (nothing in the column). null when none fits.
+  const colFor = (x, y, lo, hi, nd) => {
+    const cu = x.c, cl = y.c, nat = nd && nd.nat, st = nat ? 16 : 8, wU = endU(x) - x.u0, wL = endU(y) - y.u0, mid0 = (lo + hi)/2, half = (hi - lo)*tops[cl]/2 - 72;
+    for(let k = 0; k*8 <= half; k++) for(const sg of (k ? [-1, 1] : [1])){
+      const mid = mid0 + sg*k*8/tops[cl], hxU = Math.round((mid*tops[cu] - x.u0 - 72)/8)*8, hxL = Math.round((mid*tops[cl] - y.u0 - 72)/st)*st;
+      if(hxU < 72 || hxU + 144 > wU - 72 || hxL < 72 || hxL + 144 > wL - 72) continue;
+      if(!colClear(nodeOf[rid(x) + ':0'], hxU - 8, hxU + 152, 0, 130)) continue;
+      if(nat){ const c0 = hxL/16, c1 = c0 + 9; let ok = true; for(let q = c0; q < c1 && ok; q++) if(nat.fh[q] !== nat.fh[c0] || nat.rb[q] !== nat.env) ok = false;
+        if(ok && (nat.lumps.some(l => l.c1 > c0 && l.c0 < c1) || nat.planks.some(l => l.c1 > c0 && l.c0 < c1))) ok = false; if(!ok) continue; }
+      else if(!colClear(nodeOf[rid(y) + ':0'], hxL - 8, hxL + 152, 0, 1e9)) continue;
+      return { hxU, hxL };
+    }
+    return null;
+  };
   for(let c = 1; c < K; c++){
     if(plan.shapes[c] !== 'FAN') continue;
     for(let q = 0; q < 2; q++){
@@ -5023,9 +5086,8 @@ function mc4Build(side, moon){
           const U = y.c < c ? y : x, Lw = y.c < c ? x : y, cu = U.c, cl = Lw.c;   // (the upper room and the lower)
           const lo = Math.max(U.u0/tops[cu], Lw.u0/tops[cl]), hi = Math.min(endU(U)/tops[cu], endU(Lw)/tops[cl]), ov = (hi - lo)*tops[cl], mid = (lo + hi)/2;
           if(ov < 400 || (best && ov <= best.ov + 1e-6)) continue;
-          const hxU = Math.round((mid*tops[cu] - U.u0 - 72)/8)*8, hxL = Math.round((mid*tops[cl] - Lw.u0 - 72)/8)*8;
-          if(!colClear(nodeOf[rid(Lw) + ':0'], hxL - 8, hxL + 152, 0, 1e9) || !colClear(nodeOf[rid(U) + ':0'], hxU - 8, hxU + 152, 0, 200)) continue;
-          best = { U, Lw, hub:x, ov, hxU, hxL }; } }
+          const col = colFor(U, Lw, lo, hi, null); if(!col) continue;   // (V6: the first clear column near the middle; V5 tried the middle alone)
+          best = { U, Lw, hub:x, ov, hxU:col.hxU, hxL:col.hxL }; } }
       if(best) hubs.push(best);
     }
   }
@@ -5039,6 +5101,35 @@ function mc4Build(side, moon){
       addCut(cl - 1, sp[0], sp[1]); pass('hatch', cl - 1, sp[0], sp[1]);
       const n = Math.ceil((yb - 20)/72); for(let i = 1; i <= n; i++){ const t = Math.round(i*(yb - 20)/n/8)*8, s2 = [xa(hx + (i % 2 ? 0 : 64)), xa(hx + (i % 2 ? 80 : 144))].sort(srt); putW(rc + t - B.stepT, rc + t, s2[0], s2[1], true, 'plank', cl); }
       un.dropA = xa(hx + 72); edge(un.id, ln.id, B.liftDown, { type:'drop', down:true, pass:'hatch' }); hn.hub = true;
+    }
+  }
+  // V6: WINDOWS (the owner, on V5: "the moon could be more interconnected ... not wholly entrances or exits, just the feel"). Where a built room of cave c stands over a room of cave c+1 in the same quarter (240 px or more in common), a SHAFT 144 px wide is cut
+  // through the floor between them and down through the rock to the lower room's roof: you can see into the room below and drop into it at once. Under a built room it is a HATCH (plank steps up its side, as the Warren's; the climb is the CPU's in V8a); under a natural
+  // room (cut only where the recipe is flat and roofless for 144 px, nothing in the column) it is a WINDOW: a drop, the way back is another door. Up to three to a quarter and pair of caves, each room once; not on a room the FAN's hubs (V5) already use. Both halves alike: the moon is its own mirror image.
+  const winds = [], usedW = {};
+  hubs.forEach(h => { usedW[rid(h.U)] = 1; usedW[rid(h.Lw)] = 1; });
+  const lowRoom = y => !y.claimed && !y.pole && y.u0 != null && !(y.top >= 1 && y.top < y.c) && !!nodeOf[rid(y) + ':0'];
+  for(let c = 1; c + 1 < K; c++) for(let q = 0; q < 2; q++){
+    const cand = [];
+    for(const x of plan.rooms){ if(!plainRoom(x, c, q) || usedW[rid(x)]) continue;
+      for(const y of plan.rooms){ if(y.c !== c + 1 || y.q !== q || !lowRoom(y) || usedW[rid(y)]) continue;
+        const lo = Math.max(x.u0/tops[c], y.u0/tops[c + 1]), hi = Math.min(endU(x)/tops[c], endU(y)/tops[c + 1]), ov = (hi - lo)*tops[c + 1];
+        if(ov < 240) continue;
+        const nd = nodeOf[rid(y) + ':0'], col = colFor(x, y, lo, hi, nd); if(!col) continue;
+        cand.push({ x, y, ov, hxL:col.hxL, isNat:!!nd.nat }); } }
+    cand.sort((p, q2) => q2.ov - p.ov || p.x.u0 - q2.x.u0);   // (the widest common span first; at most three to a quarter and pair of caves, each room once)
+    let nW = 0; for(const cd of cand){ if(nW >= 3 || usedW[rid(cd.x)] || usedW[rid(cd.y)]) continue; winds.push(cd); usedW[rid(cd.x)] = 1; usedW[rid(cd.y)] = 1; nW++; }
+  }
+  for(const wd of winds){
+    const cl = wd.y.c, rc = tops[cl], yb = tops[cl - 1] - rc, hx = wd.hxL;
+    for(let ei = 0; ei < 2; ei++){
+      const ln = nodeOf[rid(wd.y) + ':' + ei], un = nodeOf[rid(wd.x) + ':' + ei]; if(!ln || !un) continue;
+      const e = [ln.a0, ln.a1], dir = ln.dir, xa = v => dir > 0 ? e[0] + v/rc : e[1] - v/rc, srt = (p, q) => p - q, sp = [xa(hx), xa(hx + 144)].sort(srt);
+      if(rc + ln.h < airTop(cl) - 0.5) addAir(cl, sp[0], sp[1], rc + ln.h, airTop(cl), 'hatch');
+      addCut(cl - 1, sp[0], sp[1]); pass(wd.isNat ? 'window' : 'hatch', cl - 1, sp[0], sp[1]);
+      if(!wd.isNat){ const n = Math.ceil((yb - 20)/72); for(let i = 1; i <= n; i++){ const t = Math.round(i*(yb - 20)/n/8)*8, s2 = [xa(hx + (i % 2 ? 0 : 64)), xa(hx + (i % 2 ? 80 : 144))].sort(srt); putW(rc + t - B.stepT, rc + t, s2[0], s2[1], true, 'plank', cl); } }
+      un.dropA = xa(hx + 72); edge(un.id, ln.id, B.liftDown, { type:'drop', down:true, pass:wd.isNat ? 'window' : 'hatch' });
+      if(plan.shapes[wd.x.c] === 'FAN') un.hub = true; if(plan.shapes[cl] === 'FAN') ln.hub = true;   // (in a FAN cave a window is the room's third link, as a hub's hatch)
     }
   }
   // THE PLUGS: the rooms of a cave, sorted round the circle, with a flat throat through the rock between each two neighbours (never across a pole of a SPLIT or FAN cave; a long gap of unused rock is one long throat, so no room is an island); the graph's lateral edges
@@ -5100,6 +5191,7 @@ function mc4Build(side, moon){
   });
   // THE FURNACE'S FLOOR: v3's: low one-way stones over the hot floor in the free runs, the hot arcs, the strips. A bay with a natural room (V2) is that room: its floors stand on the shell's top (its bed burns on the flare: the hot arcs are the same ring), a perch,
   // bar or stair is cool, its roof is rock up to the tunnels' floor, its two ends open on the ring's free floor; v3's stones keep clear of it. A bay with no room is v3's floor with v3's stones.
+  const plates = [], bayRes = [];
   { const rf = tops[K], Q = B.furn, res = [];
     for(const x of plan.rooms){
       if(!x.form || x.c !== K) continue;
@@ -5108,6 +5200,22 @@ function mc4Build(side, moon){
       if(Math.abs(x.u1 - x.u0 - nat.W*16) > 1) throw new Error('Moon Caves v4: a furnace room is not its recipe wide (' + x.arch + ' seed ' + x.seed + ')');
       const ents = x.q === 0 ? [[aS, aE], [-aE, -aS]] : [[P - aE, P - aS], [-P + aS, -P + aE]], dirs = x.q === 0 ? [1, -1] : [-1, 1];
       for(let ei = 0; ei < 2; ei++){ const e = ents[ei]; natApply(nat, K, e, dirs[ei], rf); putW(rf + nat.env*16, airTop(K), e[0], e[1], false, 'rock', K); res.push([(e[0] + e[1])/2, (e[1] - e[0])/2 + 40/rf]); }
+    }
+    // V6: the HOT PLATES (a bay of the furnace with the clock in it): plates 96 px wide with a cool stone (48 px, one 16 px step) between each two, in the bay's span, in both halves alike. Each plate flares on its own phase, a quarter period (65 frames) behind the rest of the furnace's floor and
+    // 144 px/6.4 = 22 frames behind its neighbour toward the strip, so a wave runs along the bay at about running speed (mcHotFloor reads `plates`; the old arcs leave the bay).
+    for(const x of plan.rooms){
+      if(x.claimed || x.c !== K || x.arch !== 'HotPlates' || x.form || x.pole || x.u0 == null) continue;
+      const aS = x.u0/rf, aE = x.u1/rf, nP = Math.floor((x.u1 - x.u0 + 48)/144); if(nP < 2) continue;
+      const off = Math.floor(((x.u1 - x.u0) - (nP*96 + (nP - 1)*48))/2/8)*8, ents = x.q === 0 ? [[aS, aE], [-aE, -aS]] : [[P - aE, P - aS], [-P + aS, -P + aE]];
+      const ang = (ei, u) => x.q === 0 ? (ei === 0 ? u/rf : -u/rf) : (ei === 0 ? P - u/rf : -P + u/rf), srt = (p, q) => p - q;
+      for(let ei = 0; ei < 2; ei++){
+        const e = ents[ei]; res.push([(e[0] + e[1])/2, (e[1] - e[0])/2 + 40/rf]); bayRes.push([(e[0] + e[1])/2, (e[1] - e[0])/2]);
+        for(let k = 0; k < nP; k++){
+          const u0 = x.u0 + off + k*144, a = [ang(ei, u0), ang(ei, u0 + 96)].sort(srt);
+          plates.push({ a0:a[0], a1:a[1], ph:(65 + Math.round(k*144/6.4)) % 260, k });
+          if(k < nP - 1){ const st = [ang(ei, u0 + 96), ang(ei, u0 + 144)].sort(srt); put(rf, rf + 16, st[0], st[1], false, 'slope', K); }
+        }
+      }
     }
     for(const h of holes) if(h.band === K - 1) res.push([h.a, (B.stepReach + Q.col)/rf]);
     for(const s of SIDES) res.push([s, stripHalf(rf) + 60/rf]);
@@ -5119,13 +5227,13 @@ function mc4Build(side, moon){
       else if(t === 2) for(const q of R) plank(rf + (q.k % 2 ? Q.high : Q.up), q.a, Q.w);
       else for(const q of R) plank(rf + Q.up, q.a, Q.w);
     } }
-  const hot = freeRuns(cracks.map(a => [a, crackH + G.hotRim/shellTop]).concat(SIDES.map(s => [s, stripHalf(shellTop)])));
+  const hot = freeRuns(cracks.map(a => [a, crackH + G.hotRim/shellTop]).concat(SIDES.map(s => [s, stripHalf(shellTop)])).concat(bayRes));
   const zones = [{ x:cx - Rb - B.stripPast, y:cy - G.strip/2, w:Rb + B.stripPast - shellBot, h:G.strip }, { x:cx + shellBot, y:cy - G.strip/2, w:Rb + B.stripPast - shellBot, h:G.strip }];
   // THE GRAPH: the items of each cave in order round the circle (for finding the room a body is in), and the next-hop tables
-  const V = { N:nodes.length, nodes, adj, items:items.map(l => l.map(q => ({ id:q.id, cen:q.cen, half:q.half }))), spaces, halls:halls.length, hallBoxes:halls.map(o => ({ r0:tops[o.c], r1:tops[o.c] + o.h, cen:o.cen, half:o.half, low:!!layers[o.c].low })), hubs:hubs.length, links:linkStat, v3:V3stat, passages, stash, surf };
+  const V = { N:nodes.length, nodes, adj, items:items.map(l => l.map(q => ({ id:q.id, cen:q.cen, half:q.half }))), spaces, halls:halls.length, hallBoxes:halls.map(o => ({ r0:tops[o.c], r1:tops[o.c] + o.h, cen:o.cen, half:o.half, low:!!layers[o.c].low })), hubs:hubs.length, windows:winds.length, links:linkStat, v3:V3stat, passages, stash, surf };
   const paths = mc4Paths(V); V.next = paths.map(q => q.next); V.dist = paths.map(q => q.dist); V.hops = paths.map(q => q.hops);
   const g = { N:2*side, k:1, v:4, moon:{ id:side + '-' + String(moon + 1).padStart(2, '0'), s:side, m:moon, tag:MC4_TAG, seed, hash:plan.hash }, plan, Rout, K, tops, crustBot, shellTop, shellBot, Rb, rKill, WW, WH, cx, cy, segs, holes, zsegs,
-    cracks:cracks.map(a => ({ a, h:crackH })), pads, zones, layers, hot, g4:V };
+    cracks:cracks.map(a => ({ a, h:crackH })), pads, zones, layers, hot, plates:plates.length ? plates : null, g4:V };
   if(MC_V4 && typeof console !== 'undefined') console.log('Moon Caves v4 (V4, tag ' + MC4_TAG + ', preview table): moon ' + g.moon.id + ' seed ' + seed + ' plan hash ' + plan.hash + ' pieces ' + segs.length + ' nodes ' + nodes.length);
   return g;
 }
@@ -5456,6 +5564,11 @@ function mcDrawDisc(){
   if(M.hot && mcHotOn()){ c.fillStyle = MC_LOOK.furnace.hot;   // the furnace's floor alight
     for(const h of M.hot){ if(!mcInView(h[0], h[1], M.shellTop - 2, M.shellTop + 8, V)) continue;
       c.beginPath(); c.arc(cx, cy, M.shellTop + 8, h[0] - Q, h[1] - Q, false); c.arc(cx, cy, M.shellTop - 2, h[1] - Q, h[0] - Q, true); c.closePath(); c.fill(); } }
+  if(M.plates){   // V6: the plates, each on its own clock: alight, a warning glow for its last 10 frames, dark and cool otherwise
+    for(const p of M.plates){ if(!mcInView(p.a0, p.a1, M.shellTop - 2, M.shellTop + 8, V)) continue;
+      const k = (((hazardT - p.ph) % MC_HOT.every) + MC_HOT.every) % MC_HOT.every, hotNow = k < MC_HOT.on, warn = !hotNow && k >= MC_HOT.every - 10;
+      c.fillStyle = hotNow ? MC_LOOK.furnace.hot : warn ? 'rgba(240,130,50,0.7)' : 'rgba(70,32,26,0.8)';
+      c.beginPath(); c.arc(cx, cy, M.shellTop + 8, p.a0 - Q, p.a1 - Q, false); c.arc(cx, cy, M.shellTop - 2, p.a1 - Q, p.a0 - Q, true); c.closePath(); c.fill(); } }
   for(const d of (M.deco || [])){
     if(!mcInView(d.a, d.a, d.r - d.s, d.r + d.s, V)) continue;
     c.save(); c.translate(cx + d.r*Math.sin(d.a), cy - d.r*Math.cos(d.a)); c.rotate(d.a);
@@ -5492,6 +5605,9 @@ function mcDrawZones(V){
     else if(z.type === 'belt'){ c.fillStyle = '#3a3f46'; band(z.r0, z.r0 + 12, z.a0, z.a1); c.fill();
       c.strokeStyle = '#f2c84b'; c.lineWidth = 2; const rr = z.r0 + 6, sp = 28/rr, off = ((t*2.2*(z.dir || 1)/rr) % sp + sp) % sp;
       for(let a = z.a0 + off; a < z.a1 - 4/rr; a += sp){ const d = (z.dir || 1)*5/rr; c.beginPath(); c.moveTo(cx + (rr + 4)*Math.sin(a - d), cy - (rr + 4)*Math.cos(a - d)); c.lineTo(cx + rr*Math.sin(a + d), cy - rr*Math.cos(a + d)); c.lineTo(cx + (rr - 4)*Math.sin(a - d), cy - (rr - 4)*Math.cos(a - d)); c.stroke(); } }
+    else if(z.type === 'heal'){ c.fillStyle = 'rgba(120,200,110,0.34)'; band(z.r0, z.r1, z.a0, z.a1); c.fill(); c.fillStyle = 'rgba(200,255,190,0.55)'; band(z.r1 - 4, z.r1, z.a0, z.a1); c.fill();   // (V6: the Geode's pool, a green glow with motes rising)
+      const am = (z.a0 + z.a1)/2, hw = (z.a1 - z.a0)/2; c.fillStyle = 'rgba(235,255,225,0.7)';
+      for(let i = 0; i < 4; i++){ const q = ((t*0.012 + i/4) % 1), rr = z.r0 + q*(z.r1 - z.r0 + 24), aa = am + hw*0.7*Math.sin(i*2.3 + 1); c.beginPath(); c.arc(cx + rr*Math.sin(aa), cy - rr*Math.cos(aa), 3, 0, MC_TAU); c.fill(); } }
     else if(z.type === 'water'){ c.fillStyle = 'rgba(70,140,210,0.42)'; band(z.r0, z.r1, z.a0, z.a1); c.fill();
       c.strokeStyle = 'rgba(190,225,255,0.7)'; c.lineWidth = 2; c.beginPath(); const n = Math.max(2, Math.ceil((z.a1 - z.a0)*z.r1/14));
       for(let i = 0; i <= n; i++){ const a = z.a0 + (z.a1 - z.a0)*i/n, rr = z.r1 + 2*Math.sin(i*0.9 + t*0.08); if(i) c.lineTo(cx + rr*Math.sin(a), cy - rr*Math.cos(a)); else c.moveTo(cx + rr*Math.sin(a), cy - rr*Math.cos(a)); }
@@ -26065,7 +26181,17 @@ function mcFloorSpot(lift){
 }
 function mcSpawnItem(){
   const pool = eventItemPool() || ["heal","heal","marmalade","marmalade","throw","throw","power","power","assist","assist","yoyle","yoyle"];
-  const kind = pool[Math.floor(Math.random()*pool.length)], r = kind==="boss"?0:16, p = mcFloorSpot(r);
+  const kind = pool[Math.floor(Math.random()*pool.length)], r = kind==="boss"?0:16;
+  if(MCAVE.v === 4 && MCAVE.g4 && MCAVE.g4.stash && MCAVE.g4.stash.length){   // V6: v4's items are in its CACHES (the stash spots of the rooms), never on a random floor: a reason to go down; not on a spot already holding one or with a fighter at it
+    const S = MCAVE.g4.stash, M = MCAVE; let sp = null;
+    for(let t = 0; t < 14 && !sp; t++){ const q = S[Math.floor(Math.random()*S.length)], x = M.cx + q.r*Math.sin(q.a), y = M.cy - q.r*Math.cos(q.a);
+      if(items.some(it => !it.taken && Math.hypot(it.x - x, it.y - y) < 80)) continue;
+      if(fighters.some(f => { if(f.dead) return false; const P = mcRealPt(f); return Math.hypot(P.x - x, P.y - y) < 140; })) continue;
+      sp = { x, y }; }
+    if(sp) items.push({ kind, x:sp.x, y:sp.y, vx:0, vy:0, r, taken:false, life:60*30, _land:true, _born:hazardT });
+    return;
+  }
+  const p = mcFloorSpot(r);
   if(!p) return;
   items.push({ kind, x:p.x, y:p.y, vx:0, vy:0, r, taken:false, life:60*30, _land:true, _born:hazardT });
 }
@@ -67305,7 +67431,7 @@ function step(){
       if(flareOn && f.y>gy-f.r-2){ f.pct+=0.5; if(hazardT%6===0){ f.vy=-6; puff(f.x,f.y,'#f0521f',4);} }
     }
     // MOON CAVES: the furnace's floor flares and burns as The Incinerator's (mcHotFloor: the deepest cave's, outside the strips and the cracks' rims)
-    { const hf = (MCAVE && MCAVE.on && f.onground && f.name!=="Firey" && f.name!=="Firey Jr." && mcHotOn()) ? mcHotFloor(f) : 0;
+    { const hf = (MCAVE && MCAVE.on && f.onground && f.name!=="Firey" && f.name!=="Firey Jr." && (mcHotOn() || MCAVE.plates)) ? mcHotFloor(f) : 0;
       if(hf === 2){ f.pct+=0.5; if(hazardT%6===0){ f.vy=-6; f.vx*=0.5; puff(f.x,f.y,'#f0521f',4); } }   // (the pop throws you up, not along: half the run's speed)
       else if(hf === 1 && hazardT%6===0){ f.pct+=0.5; puff(f.x,f.y,'#f0521f',2); } }   // (by a crack: the burn, on the pop's beat, and no pop)
     } finally { mcExit(); }
