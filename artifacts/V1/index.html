@@ -110488,8 +110488,20 @@ function roundBlob(x,y,r){ ctx.beginPath();
 // - A fighter carries what drawFighter needs to show a press -- speed, footing, the swing, the smash charge, the hurt
 //   pose. A client pressing attack used to see nothing happen to its own fighter, only the target reacting.
 // - `sc` is the HOST's decision on whether the arena scrolls (see viewScrolls).
-const NET_GEO_EVERY = 3000;        // ms between repeats of the world geometry
-const NET_PARTICLE_BIRTHS = 48;    // new particles per snapshot, at most (the newest)
+const NET_GEO_EVERY = 8000;        // ms between repeats of the world geometry (ONLINE LAG: was 3000; a repeat is only a safety net -- the socket drops none, and netSnapshotArrived carries one past a skipped snapshot)
+const NET_PARTICLE_BIRTHS = 32;    // new particles per snapshot, at most (the newest) (ONLINE LAG: was 48 -- a hit's burst was the biggest thing in a snapshot: 48 rows were 1.7 KB of a 3.3 KB one)
+// ONLINE LAG (2026-11-09, "lag spikes high with 3+ players"): the slow fields -- a fighter's name, colour, kit, KO cap and team, and a guest's
+// prediction numbers (pr.k) -- went out in every snapshot (a third of a 4-player one), and a stage with moving ledges (Yoyle Needle) re-sent
+// its whole geometry 60 times a second because the ledges' places were in the geometry's key. Now a slow field goes when it changes, through
+// the first 2 s of a match, with the geometry, and once a second regardless -- a guest keeps the last it saw (applySnapshot, and
+// netSnapshotArrived for a snapshot it skipped) -- and a platform that has moved since the geometry went rides as an `mv` row.
+const NET_STAT = { key:{}, at:{}, k:{}, kAt:{}, force:false, every:1000, open:120, geoPos:null };
+function netStatDue(tab, atTab, idx, key){   // is this slow field due in this snapshot? (and remember that it went)
+  const now = performance.now();
+  if(!(hazardT < NET_STAT.open || NET_STAT.force || tab[idx] !== key || now - (atTab[idx] || 0) > NET_STAT.every)) return false;
+  tab[idx] = key; atTab[idx] = now; return true;
+}
+function netStatReset(){ NET_STAT.key = {}; NET_STAT.at = {}; NET_STAT.k = {}; NET_STAT.kAt = {}; NET_STAT.geoPos = null; }
 const NET_SENT = new WeakSet();    // particles already sent -- tracked here, never as a field on the sim's own objects
 const NET_PROJ_ID = new WeakMap(); // projectile -> the id a client glides it by
 let NET_PROJ_SEQ = 0;
@@ -110514,7 +110526,7 @@ function worldGeo(){
 function worldGeoKey(){
   let h = (WW*31 + WH) | 0;
   const mix = (v)=>{ h = (Math.imul(h, 33) + (v|0)) | 0; };
-  for(const p of worldPlats){ mix(p.x); mix(p.y); mix(p.w); mix(p.h); mix(p.solid?1:0); mix((p.rot||0)*100); }
+  for(const p of worldPlats){ mix(p.w); mix(p.h); mix(p.solid?1:0); mix((p.rot||0)*100); }   // (ONLINE LAG: not x and y -- a platform that moves rides as an mv row, not as a whole new geometry every frame)
   for(const fl of floors){ mix(fl.x); mix(fl.y); mix(fl.w); }
   for(const b of bases){ mix(b.x); mix(b.y); mix(b.w); }
   return stage.id + ':' + worldPlats.length + ':' + floors.length + ':' + bases.length + ':' + h;
@@ -110549,10 +110561,13 @@ const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering
   '_spr',   // (SPRINT: the way a sprinting fighter runs, -1 or 1 -- the lean drawFighter draws)
   'fsC','fsLk','fsPd'];   // (fsPd: Pencil's van's road in px, 0 when it stays) ...the catch's frames left, and whose catch holds this fighter (+1) (CATCH, THEN CINEMATIC)
 function netFighter(f){
-  const o = { idx:f.idx, name:f.name, color:f.color, x:Math.round(f.x), y:Math.round(f.y), r:f.r, face:f.face,
-    pct:Math.round(f.pct*10)/10, stocks:(f.stocks===Infinity?-1:f.stocks), koCap:f.koCap, dead:f.dead, team:f.team,
-    vx:nr1(f.vx), vy:nr1(f.vy), onground:!!f.onground,   // the run cycle, the lean, the jump stretch, the run dust
-    kit:{special:f.kit&&f.kit.special} };
+  const o = { idx:f.idx, x:Math.round(f.x), y:Math.round(f.y), r:f.r, face:f.face,
+    pct:Math.round(f.pct*10)/10, stocks:(f.stocks===Infinity?-1:f.stocks),
+    vx:nr1(f.vx), vy:nr1(f.vy) };   // the run cycle, the lean, the jump stretch, the run dust
+  if(f.dead) o.dead = true;         // (ONLINE LAG: a false rides as nothing; a guest reads a missing one as false)
+  if(f.onground) o.onground = true;
+  { const sp = f.kit && f.kit.special, key = f.name + '|' + f.color + '|' + sp + '|' + f.koCap + '|' + f.team;   // the slow fields (NET_STAT): when they change, early in a match, with the geometry, and once a second
+    if(netStatDue(NET_STAT.key, NET_STAT.at, f.idx, key)){ o.name = f.name; o.color = f.color; o.koCap = f.koCap; o.team = f.team; o.kit = { special:sp }; } }
   if(f.size && f.size !== 1) o.size = Math.round(f.size*100)/100;   // PER-FIGHTER SIZE: r rides already; the size is for the outline a guest's hit art is drawn on (haHurtOf)
   for(const k of NET_FIGHTER_FLAGS){ const v = f[k]; if(v) o[k] = (typeof v === 'number') ? Math.round(v) : v; }   // whole frames: _fury drifts by 0.05
   // The swing, the hurt pose and the smash charge: the sim's own render-only timers, so on the wire they go by names
@@ -110757,6 +110772,8 @@ function serializeState(withGeo){
     banner: (window.__lastBanner && Date.now()-window.__lastBanner.at < 400) ? window.__lastBanner : null,
     over: !running,
   };
+  if(s.pb.length){ const pc = [], pi = {}; for(const r of s.pb){ let k = pi[r[6]]; if(k === undefined){ k = pi[r[6]] = pc.length; pc.push(r[6]); } r[6] = k; } s.pc = pc; }   // ONLINE LAG: a particle's colour as an index into pc (the same dozen strings were written 48 times over)
+  { const G = NET_STAT.geoPos; if(G && G.length === worldPlats.length){ const mv = []; for(let i = 0; i < worldPlats.length; i++){ const p = worldPlats[i], x = Math.round(p.x), y = Math.round(p.y); if(x !== G[i][0] || y !== G[i][1]) mv.push([i, x, y]); } if(mv.length) s.mv = mv; } }   // ONLINE LAG: the platforms that have moved since the geometry went (Yoyle Needle's ledges), a row each
   if(FINX.length) s.fnx = finxNet();   // the finishers running (FINISHERS V2): what a guest draws of them
   if(FILE_RIDES.length) s.frd = FILE_RIDES.map(p=>[Math.round(p.x), Math.round(p.y), p.w, p.h, p.face, p.on ? 1 : 0, p.vx ? 1 : 0, p.owner ? p.owner.idx : -1]);   // the big files being ridden: where, which way, glowing, gliding, whose
   if(SMASHBALL) s.fsb = [Math.round(SMASHBALL.x), Math.round(SMASHBALL.y), Math.max(0, Math.round(SMASHBALL.hp/SMASHBALL.hpMax*100)), SMASHBALL.flash > 0 ? 1 : 0];   // the Smash Ball: where it is, how much is left, a hit's flash
@@ -110807,7 +110824,12 @@ function netSnapshotArrived(N, s){
   const prev = N.snapshot, now = performance.now();
   if(prev && prev !== NET_VIEW.applied){
     if(!s.geo && prev.geo) s.geo = prev.geo;
-    if(Array.isArray(prev.pb) && prev.pb.length) s.pb = prev.pb.concat(Array.isArray(s.pb) ? s.pb : []).slice(-2*NET_PARTICLE_BIRTHS);
+    if(Array.isArray(prev.pb) && prev.pb.length){ const pc = Array.isArray(prev.pc) ? prev.pc : null;   // (ONLINE LAG: the older rows' colours by name, so the newer snapshot's own colour table (pc) still fits its rows)
+      s.pb = prev.pb.map(r=>(pc && typeof r[6] === 'number') ? [r[0], r[1], r[2], r[3], r[4], r[5], pc[r[6]]] : r).concat(Array.isArray(s.pb) ? s.pb : []).slice(-2*NET_PARTICLE_BIRTHS); }
+    if(Array.isArray(prev.fighters) && Array.isArray(s.fighters)) for(const sf of s.fighters){   // ONLINE LAG: the slow fields and the prediction numbers the skipped snapshot carried
+      if(!sf) continue; const pf = prev.fighters.find(q=>q && q.idx === sf.idx); if(!pf) continue;
+      if(sf.name === undefined && pf.name !== undefined){ sf.name = pf.name; sf.color = pf.color; sf.koCap = pf.koCap; sf.team = pf.team; sf.kit = pf.kit; }
+      const k = (pf.pr && pf.pr.k) || pf._k; if(k){ if(sf.pr && !sf.pr.b && !sf.pr.k) sf.pr.k = k; else if(!(sf.pr && sf.pr.k)) sf._k = k; } }
     if(!s.banner && prev.banner) s.banner = prev.banner;
     if(Array.isArray(prev.ko) && prev.ko.length) s.ko = prev.ko.concat(Array.isArray(s.ko) ? s.ko : []).slice(-8);
     if(Array.isArray(prev.imp) && prev.imp.length) s.imp = prev.imp.concat(Array.isArray(s.imp) ? s.imp : []).slice(-IMPACT_FX.netMax);
@@ -110851,7 +110873,9 @@ function applySnapshot(s){
   const st=STAGES.find(x=>x.id===s.stage); if(st) stage=st;
   SETTINGS.mode=s.mode;
   const geo = s.geo || (s.worldPlats ? s : null);   // (before the geometry was split out, it sat at the top level)
-  if(geo){ floors=geo.floors||[]; worldPlats=geo.worldPlats||[]; bases=(geo.bases||[]).map(b=>({...b})); mcNetGeo(geo.moon); }   // (MOON CAVES: the host's disc, built here)
+  if(geo){ floors=geo.floors||[]; worldPlats=geo.worldPlats||[]; bases=(geo.bases||[]).map(b=>({...b})); mcNetGeo(geo.moon); NET_VIEW.geoBase = worldPlats.map(p=>[p.x, p.y]); }   // (MOON CAVES: the host's disc, built here)
+  else if(NET_VIEW.geoBase && NET_VIEW.geoBase.length === worldPlats.length) for(let i = 0; i < worldPlats.length; i++){ worldPlats[i].x = NET_VIEW.geoBase[i][0]; worldPlats[i].y = NET_VIEW.geoBase[i][1]; }   // ONLINE LAG: back where the geometry had them, then...
+  if(Array.isArray(s.mv)) for(const r of s.mv){ const p = worldPlats[r[0] | 0]; if(p){ p.x = +r[1]; p.y = +r[2]; } }   // ...the ones the host says have moved (Yoyle Needle's ledges), where it has them
   if(s.dg) digNetIn(s.dg);   // THE DIG FLOOR: the host's holes, so this floor is the host's floor of this very frame
   if(s.sq) stairsNetIn(s.sq);   // A RISING STAIRCASE: the host's steps, for the picture (the whole ones are in the host's geometry above)
   if(s.bq) berriesNetIn(s.bq);   // BERRIES RAIN: the host's seed and eaten berries, at the host's own clock (hazardT = s.t, above)
@@ -110860,9 +110884,12 @@ function applySnapshot(s){
   NET_VIEW.scroll = (s.sc != null) ? !!s.sc : scrolls();
   BOSS_ARENA = (typeof s.arena === 'string' && Object.prototype.hasOwnProperty.call(BOSS_ARENA_SKY, s.arena)) ? s.arena : null;
   if(Array.isArray(s.zones)) spawnZones = s.zones.map(z=>({ kind: z[0] ? 'claim' : 'safe', x:z[1], y:z[2], w:z[3], h:z[4], owner: z[5] >= 0 ? z[5] : null, progress: z[6]||0 }));
-  fighters=(s.fighters||[]).map(fd=>{
+  fighters=(s.fighters||[]).map(fd0=>{
+    const was0 = wasF.get(fd0.idx), fd = (fd0.name === undefined && was0) ? Object.assign({ name:was0.name, color:was0.color, koCap:was0.koCap, team:was0.team, kit:was0.kit }, fd0) : fd0;   // ONLINE LAG: the slow fields come now and then (NET_STAT); between, the last seen
+    const lastK = (fd.pr && fd.pr.k) || fd._k || (was0 && was0._prK) || null;   // ...and so do a guest's prediction numbers (pr.k): kept through the frames it is not free
+    if(fd.pr && !fd.pr.b && !fd.pr.k && lastK) fd.pr = Object.assign({}, fd.pr, { k:lastK });
     const f = {
-      ...fd, stocks:(fd.stocks===-1 ? Infinity : fd.stocks), kit:fd.kit||{special:"basic"}, homeBase:null,
+      ...fd, _prK:lastK, dead:!!fd.dead, onground:!!fd.onground, stocks:(fd.stocks===-1 ? Infinity : fd.stocks), kit:fd.kit||{special:"basic"}, homeBase:null,
       defineStacks:fd.defineStacks||0, curse:fd.curse||0, curseStacks:fd.curseStacks||0, weakened:fd.weakened||0, reflecting:fd.reflecting||0, dropping:0,
       placement:fd.place, killCount:0, deaths:0,   // (the comeback fighters' counters: a client keeps none)
       _kos:fd.kos||0, _falls:fd.falls||0, _dmgDealt:fd.dmg||0, _dmgTaken:fd.taken||0, _gone:fd.gone ? 1 : 0,   // the final snapshot's: the host's tallies, for the client's results
@@ -110924,7 +110951,7 @@ function applySnapshot(s){
   summons=(s.summons||[]).map((m,i)=>{ const e={...m}, p=wasS[i]; netGlide(e, (p && p.name===m.name && p.type===m.type) ? p : null); return e; });
   if(typeof s.bossCleared==='number') BOSSRUSH.cleared=s.bossCleared;
   if(Array.isArray(s.pb)){
-    for(const b of s.pb) if(Array.isArray(b)) particles.push({x:b[0], y:b[1], vx:b[2], vy:b[3], life:b[4], r:b[5], color:b[6]});
+    for(const b of s.pb) if(Array.isArray(b)) particles.push({x:b[0], y:b[1], vx:b[2], vy:b[3], life:b[4], r:b[5], color:(typeof b[6] === 'number' && Array.isArray(s.pc)) ? s.pc[b[6]] : b[6]});   // (ONLINE LAG: pc, the colour table)
     if(particles.length > 400) particles = particles.slice(-400);
   } else if(s.particles) particles=s.particles.map(p=>({...p, vx:0, vy:0}));
   // once per banner (it rides in every snapshot for 400 ms, and each one restarted it)
@@ -111066,8 +111093,9 @@ function clientFrame(ticks){
 }
 // A new match (beginMatchNow, on host and client alike).
 function netViewReset(){
-  Object.assign(NET_VIEW, { applied:null, lerp:false, camReady:false, follow:null, z:1, scroll:false, lastArrive:0, gap:33, lastFrame:0, frameDt:1000/60, slowG:false, slowP:false, hold:false });
+  Object.assign(NET_VIEW, { applied:null, lerp:false, camReady:false, follow:null, z:1, scroll:false, lastArrive:0, gap:33, lastFrame:0, frameDt:1000/60, slowG:false, slowP:false, hold:false, geoBase:null });
   if(window.NET) window.NET._geoKey = null;   // the host sends its world again with the first snapshot
+  netStatReset();   // (ONLINE LAG: and every slow field with it)
 }
 // ONLINE INPUT, FRAME BY FRAME. The owner, 2026-10-23: "controls are glitchy" -- "wrong move comes out", "only for guests"; 2026-10-24: "fix server
 // lag ... inputs are continuously read without letting overrides". A guest's input used to be the keys it held when each message ARRIVED, so
@@ -111174,6 +111202,7 @@ function netPredOut(f){
   if(f._hitJumpV && f._hitJumpV !== 1 && f.jumps === 1 && !f.onground) o.hj = r3(f._hitJumpV);   // the one jump left is the one a hit gave back, lower (hitJumpBack)
   o.s = (f._jp ? 1 : 0) | (f._hop ? 2 : 0) | (f._ff ? 4 : 0) | (f._dnPrev ? 8 : 0) | (mtOn(f) ? 16 : 0) | (hopOk ? 32 : 0) | ((f.kit && f.kit.special==='airrel') ? 64 : 0);
   o.k = [r3(mvB*fst.run), r3(mvB*fst.air), r3(capB*fst.run), r3(capB*fst.air), r3(jv), r3(recV(f)), r3(SH_V*fst.jump), r3(FF_V*fst.fall), r3(fst.fall), r3(lowGravOn() ? GRAV*0.7 : GRAV), r3(JUMP*WJ_VY*fst.jump)];   // (the gravity: the stage's, or the low-gravity twist -- lowGravOn)
+  if(!netStatDue(NET_STAT.k, NET_STAT.kAt, f.idx, o.k.join(','))) delete o.k;   // (ONLINE LAG: the same eleven numbers went 60 times a second; the guest keeps the last it saw -- applySnapshot)
   if(f._wallSide && typeof f._wallT === 'number' && hazardT - f._wallT <= WALL_WINDOW) o.w = [f._wallSide, hazardT - f._wallT, f._wallId];   // (mtWallJump)
   if(f._wallUsed){ const u = Object.keys(f._wallUsed); if(u.length) o.wu = u; }
   { const lim = f.kit && CLINGERS[f.kit.special]; if(lim) o.cl = [lim, f._clingT || 0]; }   // (mtCling: how long it may cling, and has this airtime)
@@ -112081,8 +112110,11 @@ window.NET = {
     // match that far in the past until it drained ("there is an input delay sometimes").
     if(!final && this.ws.bufferedAmount > Math.max(24000, 2*(this._lastBytes||0))) return;
     this._lastBroadcast=now;
-    const s = serializeState(false), key = worldGeoKey();
-    if(SETTINGS.mode !== 'ctf' && (key !== this._geoKey || now - (this._geoAt||0) > NET_GEO_EVERY)){ s.geo = worldGeo(); this._geoKey = key; this._geoAt = now; }   // (Capture the Flag's map goes by its id)
+    const key = worldGeoKey(), geo = SETTINGS.mode !== 'ctf' && (key !== this._geoKey || now - (this._geoAt||0) > NET_GEO_EVERY);   // (Capture the Flag's map goes by its id)
+    NET_STAT.force = geo; if(geo) NET_STAT.geoPos = worldPlats.map(p=>[Math.round(p.x), Math.round(p.y)]);   // ONLINE LAG: a geometry snapshot carries every slow field too, and is the base the mv rows are measured from
+    const s = serializeState(false);
+    NET_STAT.force = false;
+    if(geo){ s.geo = worldGeo(); this._geoKey = key; this._geoAt = now; }
     const text = JSON.stringify({t:"state", s});
     this._lastBytes = text.length;
     if(!s.geo) this._rateBytes = text.length;

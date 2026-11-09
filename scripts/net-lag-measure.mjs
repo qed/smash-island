@@ -23,9 +23,14 @@ H.eval(`chosen = ROSTER.find(function(r){ return r.name==='Pen'; }); NET.role='h
   for(var i=1;i<fighters.length;i++){ NET.inS[i] = { e:1, q:[], cur:0, lastG:-1e9, clk:0, wt:0, offs:[[0, 0]] }; }
   window.__encode = function(){
     var t0 = __now();
-    var s = serializeState(false), key = worldGeoKey();
+    var key = worldGeoKey(), geo = key !== NET._geoKey || performance.now() - (NET._geoAt||0) > NET_GEO_EVERY;   // as broadcastState decides it
+    if(typeof NET_STAT !== 'undefined'){ NET_STAT.force = geo; if(geo) NET_STAT.geoPos = worldPlats.map(function(p){ return [Math.round(p.x), Math.round(p.y)]; }); }
+    for(var i=1;i<fighters.length;i++) fighters[i].controller='remote';   // the guests' seats, for the encode only (pr rides on a remote seat): the AI keeps driving them
+    var s = serializeState(false);
+    for(var i=1;i<fighters.length;i++) fighters[i].controller='ai';
+    if(typeof NET_STAT !== 'undefined') NET_STAT.force = false;
     var t1 = __now();
-    if(key !== NET._geoKey || performance.now() - (NET._geoAt||0) > NET_GEO_EVERY){ s.geo = worldGeo(); NET._geoKey = key; NET._geoAt = performance.now(); }
+    if(geo){ s.geo = worldGeo(); NET._geoKey = key; NET._geoAt = performance.now(); }
     var text = JSON.stringify({t:'state', s:s});
     var t2 = __now();
     window.__sent = text;
@@ -47,11 +52,15 @@ G.eval(`chosen = ROSTER.find(function(r){ return r.name==='Firey'; }); NET.role=
     clientFrame(1); var t3 = __now();
     return { parse:t1-t0, arrive:t2-t1, frame:t3-t2 };
   };
-  window.__view = function(){ return JSON.stringify({ t:hazardT, f:fighters.map(function(f){ return [f.idx, f._tx, f._ty, f.pct, f.stocks, f.dead?1:0]; }),
-    pj:projectiles.map(function(p){ return [p._tx, p._ty]; }).sort(), it:items.map(function(i){ return [i.x, i.y, i.kind]; }).sort(), ha:HIT_ART.length, pb:particles.length }); };
+  window.__view = function(){ return JSON.stringify({ t:hazardT, f:fighters.map(function(f){ return [f.idx, f._tx, f._ty, f.pct, f.stocks, f.dead?1:0, f.name, f.color, f.kit.special, f.koCap, f.team, !!(f.pr && !f.pr.b && f.pr.k)]; }),
+    pj:projectiles.map(function(p){ return [p._tx, p._ty]; }).sort(), it:items.map(function(i){ return [i.x, i.y, i.kind]; }).sort(), ha:HIT_ART.length, pb:particles.length,
+    pl:worldPlats.map(function(p){ return [p.x, p.y]; }) }); };
 `);
-H.eval(`window.__hview = function(){ return JSON.stringify({ t:hazardT, f:fighters.map(function(f){ return [f.idx, Math.round(f.x), Math.round(f.y), Math.round(f.pct*10)/10, f.stocks, f.dead?1:0]; }),
-  pj:projectiles.map(function(p){ return [Math.round(p.x), Math.round(p.y)]; }).sort(), it:items.filter(function(i){ return !i.taken; }).map(function(i){ return [Math.round(i.x), Math.round(i.y), i.kind]; }).sort(), ha:HIT_ART.length }); };`);
+H.eval(`window.__hview = function(){ return JSON.stringify({ t:hazardT, f:fighters.map(function(f){ var S = NET.inS[f.idx]; return [f.idx, Math.round(f.x), Math.round(f.y), Math.round(f.pct*10)/10, f.stocks, f.dead?1:0, f.name, f.color, f.kit.special, f.koCap, f.team, !!(S && netPredOut_free(f))]; }),
+  pj:projectiles.map(function(p){ return [Math.round(p.x), Math.round(p.y)]; }).sort(), it:items.filter(function(i){ return !i.taken; }).map(function(i){ return [Math.round(i.x), Math.round(i.y), i.kind]; }).sort(), ha:HIT_ART.length,
+  pl:worldPlats.map(function(p){ return [Math.round(p.x), Math.round(p.y)]; }) }); };
+  // is this remote seat free to predict right now (the host's view: pr with k on an unforced, unfiltered call)? Through the real netPredOut, on a copy of the memory so the real send is not disturbed
+  window.netPredOut_free = function(f){ var sv = typeof NET_STAT !== 'undefined' ? JSON.stringify(NET_STAT) : null; var o = netPredOut(f); if(sv){ var b = JSON.parse(sv); NET_STAT.k = b.k; NET_STAT.kAt = b.kAt; } return !!(o && !o.b); };`);
 
 // GC pauses during the run
 const gcs = []; const obs = new PerformanceObserver((l) => { for (const e of l.getEntries()) gcs.push(e.duration); }); obs.observe({ entryTypes: ['gc'] });
@@ -72,7 +81,10 @@ for (let i = 0; i < FRAMES; i++) {
   const a = G.__apply(H.__sent); apply.push(a.parse + a.arrive + a.frame);
   if (i % 7 === 0 && i > 60) { const hv = H.__hview(), gv = G.__view(); const h = JSON.parse(hv), g = JSON.parse(gv);
     let bad = h.t !== g.t || h.f.length !== g.f.length || h.pj.length !== g.pj.length || h.it.length !== g.it.length || h.ha !== g.ha;
-    if (!bad) for (let j = 0; j < h.f.length; j++) { const a = h.f[j], b = g.f[j]; if (a[0] !== b[0] || Math.abs(a[1] - b[1]) > 1 || Math.abs(a[2] - b[2]) > 1 || Math.abs(a[3] - b[3]) > 0.11 || a[4] !== b[4] || a[5] !== b[5]) bad = true; }
+    if (!bad) for (let j = 0; j < h.f.length; j++) { const a = h.f[j], b = g.f[j]; if (a[0] !== b[0] || Math.abs(a[1] - b[1]) > 1 || Math.abs(a[2] - b[2]) > 1 || Math.abs(a[3] - b[3]) > 0.11 || a[4] !== b[4] || a[5] !== b[5]) bad = true;
+      for (let q = 6; q <= 10; q++) if (a[q] !== b[q]) bad = 'static:' + q;   // name, colour, kit, KO cap, team: the slow fields
+      if (a[11] && !b[11]) bad = 'pr.k missing on a free fighter'; }
+    if (!bad) { if (h.pl.length !== g.pl.length) bad = 'plats'; else for (let j = 0; j < h.pl.length; j++) if (Math.abs(h.pl[j][0] - g.pl[j][0]) > 1 || Math.abs(h.pl[j][1] - g.pl[j][1]) > 1) bad = 'plat ' + j; }
     if (!bad) for (let j = 0; j < h.pj.length; j++) { if (Math.abs(h.pj[j][0] - g.pj[j][0]) > 1 || Math.abs(h.pj[j][1] - g.pj[j][1]) > 1) bad = true; }
     if (!bad) for (let j = 0; j < h.it.length; j++) { if (h.it[j][0] !== g.it[j][0] || h.it[j][1] !== g.it[j][1] || h.it[j][2] !== g.it[j][2]) bad = true; }
     if (bad) { mism++; if (!mismEx) mismEx = { i, h: hv.slice(0, 300), g: gv.slice(0, 300) }; }
