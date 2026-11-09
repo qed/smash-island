@@ -85887,8 +85887,8 @@ FINAL_SMASHES['oc:zoner'] = {
 //  THE GRAPPLER (oc_grappler): closes in, big single hits and pushes; wins the exchange it starts. Ember.
 // ------------------------------------------------------------
 // The fixed kit, written as any converted fighter's (the mvStart runner): short reach, heavy hits, shoves that move the foe more than they hurt,
-// and the roster's longest plain grab. The jab is the default (RANGE_PROFILE's), the finisher the shared circle (the design's placeholder), the
-// final smash none. The strong aerials pay the strong class's end lag (18) on a whiff; the pokes the weak class's.
+// and the roster's longest plain grab. The jab is the default (RANGE_PROFILE's); the finisher (Lariat Drive) and the Final Smash (Pile Driver Supreme) are its own (OC VIABILITY 2, below).
+// The strong aerials pay the strong class's end lag (18) on a whiff; the pokes the weak class's.
 const OC_EMBER = '#e0663a';
 Object.assign(MOVESETS, {
   oc_grappler: {
@@ -85976,6 +85976,55 @@ ocDef('G-S4', 'grappler', 's', 'Utility', 'Grip Reel',      'reaches out and ree
 // own `end` is their whiff lag (24 for the kill punch, 22 for the pound, 8-14 for the pokes and the hops); the smashes pay the slow class.
 Object.assign(TELL_ADD, { 'G-N1.neutral':5, 'G-D1.down':6 });
 Object.assign(ENDLAG_ADD, { 'G-S1.smash':16, 'G-S2.smash':17, 'G-S3.smash':16, 'G-S4.smash':16 });
+
+// THE FINISHER -- LARIAT DRIVE (OC VIABILITY 2). The smash plant's pattern as a finisher: the wind-up of the no-tell sweep (12 frames), then rooted for the plant's
+// own wind (10), a huge ring (body + 64 px) slams the floor: 18%, floors, a big launch. It is answered by position: step out of the ring while the body winds
+// up and plants, or jump it. The self-stun the row pays is its end lag. FIN_CD 74.
+const OC_LARIAT = { pat:'plant', wind:10, rad:64, dmg:18, kb:16, effect:'knockdown', n:30, cost:{ stun:24 }, color:OC_EMBER };
+ATKSPECIALS.oc_grappler = function(f){ runSmashSpec(f, OC_LARIAT); };
+Object.assign(TELL_ADD, { 'oc_grappler.finisher':12 });
+// THE FINAL SMASH -- PILE DRIVER SUPREME. The catch is a box 96 px in front (the one nearest foe; with nobody there it is spent at once). Held through the 14-frame
+// wind, the foe is squeezed (8%), lifted overhead (8% at the top, frame 26), held a beat and driven into the floor on frame 34 (26%, a KO-level launch): 42% to the
+// foe it holds, let go 3 frames after the slam (about 38 frames of hold). Leave the box in the catch's 22 frames and nothing happens.
+const OC_PD = { reach:96, up:90, lift:[14, 26], slam:34, hits:[[14, 8], [26, 8]], big:26, kb:[13, -13], dur:58, color:OC_EMBER };
+FINAL_SMASHES['oc:grappler'] = {
+  id:'pilesupreme', wind:FS_WIND, dur:OC_PD.dur, reach:OC_PD.reach, needFoe:true, exact:true, catchMax:1,
+  catch(f){ return fsBoxAhead(f, 0, OC_PD.reach, 50, 44); }, lockEnd:OC_PD.slam,
+  start(f, st){
+    const tg = fsc2_begin(f, st); if(!tg) return;
+    st.x0 = tg.x; st.y0 = tg.y; st.dr = f.face < 0 ? -1 : 1;
+    armAtk(f, this.wind, 'fsgather');
+  },
+  tick(f, st, t){
+    const P = OC_PD, d = st.dr;
+    fsc2_hang(f, st);
+    if(!fsc2_live(f, st, P.slam, t)) return;
+    const tg = fighters[st.tg], top = Math.max(70, st.y0 - P.up), ox = f.x + d*28;
+    let x = st.x0, y = st.y0;
+    if(t >= P.lift[0] && t < P.lift[1]){ const e = fsc2_ease((t - P.lift[0])/(P.lift[1] - P.lift[0])); x = fsc2_lerp(st.x0, ox, e); y = fsc2_lerp(st.y0, top, e); }   // lifted overhead, in front of the holder
+    else if(t >= P.lift[1]){ const u = Math.min(1, (t - P.lift[1])/(P.slam - P.lift[1])); x = ox; y = fsc2_lerp(top, st.y0, u*u); }   // held a beat, then driven down
+    fsc2_pin(tg, x, y);
+    if(t === 0){ shake(4); for(let i = 0; i < 8; i++) puff(f.x + d*f.r, f.y, i % 2 ? OC_EMBER : '#fff', 5); }
+    for(let i = 0; i < P.hits.length; i++) if(t === P.hits[i][0]){
+      shake(5 + 2*i); armAtk(f, 10, 'uppercut');
+      if(!fsc2_hit(f, st, P.hits[i][1], d*2, -2, { stun:4 })) return;
+      for(let q = 0; q < 8; q++) puff(tg.x, tg.y, q % 2 ? OC_EMBER : '#fff', 5);
+    }
+    if(t === P.slam){
+      armAtk(f, 20, 'slam'); shake(16);
+      if(!fsc2_hit(f, st, P.big, d*P.kb[0], P.kb[1])) return;
+      for(let q = 0; q < 24; q++) puff(tg.x, tg.y + tg.r, q % 3 ? OC_EMBER : '#fff', 8);
+    }
+  },
+  ai(f){ const cs = fsCatchInset(fsCatchOf(this, f), 0.85); return fighters.some((t)=> fsCatchable(f, t) && fsCatchTouch(cs, t)); },
+  draw(f, c){
+    const P = OC_PD, t = f.fsT || 0, tg = fsLockedOf(f), d = f.face < 0 ? -1 : 1;
+    if(t >= P.slam && t < P.slam + 12){   // the shock ring along the floor where it came down
+      const u = (t - P.slam)/12, x = tg ? tg.x : f.x + d*28, y = tg ? tg.y + tg.r : f.y + f.r;
+      c.save(); c.globalAlpha = 1 - u; c.strokeStyle = P.color; c.lineWidth = 8*(1 - u) + 2; c.beginPath(); c.ellipse(x, y, 20 + 90*u, 8 + 18*u, 0, 0, 7); c.stroke(); c.restore();
+    }
+  },
+};
 
 // ------------------------------------------------------------
 //  THE TRAPPER (oc_trapper): puts things on the floor and makes the foe stand where they hurt. Violet.
