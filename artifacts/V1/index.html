@@ -86215,8 +86215,8 @@ FINAL_SMASHES['oc:trapper'] = {
 //  THE TRICKSTER (oc_trickster): fast, in and out, status mix-ups; wins by never being where the hit lands. Magenta.
 // ------------------------------------------------------------
 // The fixed kit, written as any converted fighter's (the mvStart runner): the quickest startups and the lightest hits of the four types, short
-// reach, a grab whose throws let go at once (lag 8-12). The jab is the default (RANGE_PROFILE's), the finisher the shared circle (the design's
-// placeholder), the final smash none. The kill aerial pays the strong class's end lag (14) on a whiff; the pokes the weak class's.
+// reach, a grab whose throws let go at once (lag 8-12). The jab is the default (RANGE_PROFILE's); the finisher (Thousand Cuts) and the Final Smash (Thousand Cuts Grand) are its own (OC VIABILITY 2, below).
+// The kill aerial pays the strong class's end lag (14) on a whiff; the pokes the weak class's.
 const OC_MAGENTA = '#d14fc9';
 Object.assign(MOVESETS, {
   oc_trickster: {
@@ -86295,6 +86295,128 @@ ocDef('K-S4', 'trickster', 's', 'Utility', 'Hex Ring',       'a quick small ring
 // smashes the slow class.
 Object.assign(TELL_ADD, { 'K-N1.neutral':6, 'K-N2.neutral':9, 'K-N4.neutral':8, 'K-D1.down':5, 'K-D2.down':8 });
 Object.assign(ENDLAG_ADD, { 'K-N1.neutral':20, 'K-N2.neutral':12, 'K-N4.neutral':14, 'K-D2.down':12, 'K-S1.smash':16, 'K-S2.smash':17, 'K-S3.smash':16, 'K-S4.smash':16 });
+
+// THE FINISHER -- THOUSAND CUTS (OC VIABILITY 2). A wind-up of FIN_STARTUP frames (the body gathers and glows; turn in it and the first dash turns with you), then
+// three dashes through whatever is ahead, 8 frames each at 17 px a frame (136 px), a beat apart; after each the Trickster turns round and goes back through. Every
+// dash cuts a foe on its line once for 6% (the first two barely push, so the next finds them), the third knocks them away. 18% to a foe who stays; open for a
+// beat at the end (longer on a miss). A dash stops short of a wall or a ledge. A hit on the Trickster in the wind-up or the dashes ends it. Jump the line, or roll past.
+const OC_CUTS = { lean:FIN_STARTUP, n:3, dash:8, spd:17, r:22, rest:6, dmg:6, kb:[[0.5, -0.6], [0.5, -0.6], [12, -8]], open:10, whiff:16 };
+function finOcCuts(f){
+  finxAdd(f, 'occuts', { ph:'lean', y0:f.y, x0:f.x, n:0, hit:[], hits:0 });
+  fxLock(f, OC_CUTS.lean + 2); armAtk(f, OC_CUTS.lean + 4, 'cast', mvId(f, 'finisher'));
+}
+ATKSPECIALS.oc_trickster = function(f){ return finOcCuts(f); };
+function fxOcCutsShape(f, d){ return { kind:'capsule', x1:f.x - d*f.r*0.6, y1:f.y, x2:f.x + d*(f.r + 10), y2:f.y, r:OC_CUTS.r }; }
+function fxOcCutsStep(o, f){
+  const C = OC_CUTS, age = hazardT - o.t0;
+  if(f.hitstun > 0){ o.dead = true; return; }   // a hit on the Trickster ends it (in the open, the hitstun is the only wait)
+  if(o.ph === 'lean'){
+    fxLock(f, 2); f.vx = 0; if(!f.onground){ f.vy = 0; f.y = o.y0; }
+    fxAimWay(f, o);
+    if(age < C.lean){ fxTell(f, 'occuts', null, age/C.lean); return; }
+    o.ph = 'dash'; o.st = hazardT; o.x0 = f.x; o.hit = []; f.face = o.face;
+    armAtk(f, C.dash + 4, 'dash', mvId(f, 'finisher')); tone(900, 0.12, 'sawtooth', 0.07, 0, 300);
+  }
+  if(o.ph === 'dash'){
+    fxLock(f, 2); f.vy = 0; f.y = o.y0;
+    const room = Math.max(0, fxWallDist(f.x + o.face*f.r*0.8, o.face, C.spd, f.y - f.r*0.6, f.y + f.r)), nx = f.x + o.face*Math.min(C.spd, room), ok = landable(nx, feetY(f) - 2);
+    if(ok) f.x = clamp(nx, f.r, WW - f.r);
+    f.vx = 0;
+    const sh = fxOcCutsShape(f, o.face);
+    fxArt(f, 'occuts', sh, { color:OC_MAGENTA, fade:4, world:true });
+    for(const t of fxTargets(f, o, sh, o.hit)){
+      o.hit.push(t.idx);
+      if(t._fxTok === o.id && t._graceBy === f.idx) t.invuln = 0;   // (its own grace between cuts: the next one lands)
+      const kb = C.kb[o.n];
+      fxHit(f, t, o, C.dmg, o.face*kb[0], kb[1]); o.hits++;
+      tone(1500 - 200*o.n, 0.04, 'square', 0.08); for(let i = 0; i < 4; i++) puff(t.x, t.y, i % 2 ? '#ffffff' : OC_MAGENTA, 3);
+      if(o.n === C.n - 1) shake(6);
+    }
+    if(summons.length) fxBossShape(f, o, 'c' + o.n, sh, C.dmg);
+    if(!ok || hazardT - o.st >= C.dash - 1){   // the dash is over
+      o.n++;
+      if(o.n >= C.n){ o.ph = 'open'; o.et = hazardT; o.op = o.hits ? C.open : C.whiff; armAtk(f, o.op, 'cast', mvId(f, 'finisher')); }
+      else { o.ph = 'turn'; o.et = hazardT; o.face = -o.face; f.face = o.face; }
+    }
+    return;
+  }
+  if(o.ph === 'turn'){   // a beat to turn round, then back through
+    fxLock(f, 2); f.vx = 0; f.vy = 0; f.y = o.y0;
+    if(hazardT - o.et >= C.rest){ o.ph = 'dash'; o.st = hazardT; o.x0 = f.x; o.hit = []; armAtk(f, C.dash + 4, 'dash', mvId(f, 'finisher')); tone(900 + 120*o.n, 0.12, 'sawtooth', 0.07, 0, 300); }
+    return;
+  }
+  fxLock(f, 2); f.vx = 0;   // 'open'
+  if(hazardT - o.et >= o.op) o.dead = true;
+}
+function fxDrawOcCuts(o, f){
+  const C = OC_CUTS, c = ctx, y = o.y0 == null ? f.y : o.y0, d = o.face < 0 ? -1 : 1;
+  c.save(); c.lineCap = 'round';
+  if(o.ph === 'dash'){   // the streak back to where this dash began, and afterimages of the Trickster
+    const x0 = o.x0 == null ? f.x : o.x0, g = c.createLinearGradient(x0, y, f.x, y); g.addColorStop(0, 'rgba(209,79,201,0)'); g.addColorStop(1, 'rgba(255,255,255,0.85)');
+    c.globalAlpha = 0.9; c.strokeStyle = g; c.lineWidth = C.r*1.2; c.beginPath(); c.moveTo(x0, y); c.lineTo(f.x, y); c.stroke();
+    c.globalAlpha = 0.35; c.fillStyle = OC_MAGENTA;
+    for(let i = 1; i <= 3; i++){ const ax = f.x - d*i*C.spd*0.9; c.beginPath(); c.arc(ax, y, f.r*(1 - i*0.18), 0, 7); c.fill(); }
+  } else if(o.ph === 'turn' || o.ph === 'open'){
+    const a = hazardT - (o.et == null ? hazardT : o.et), k = 1 - Math.min(1, a/12), x0 = o.x0 == null ? f.x : o.x0;
+    if(k > 0){ c.globalAlpha = 0.5*k; c.strokeStyle = '#ffffff'; c.lineWidth = C.r*0.9*k; c.beginPath(); c.moveTo(x0, y); c.lineTo(f.x, y); c.stroke(); }
+  }
+  c.restore();
+}
+Object.assign(FINX_STEP, { occuts:fxOcCutsStep });
+Object.assign(FINX_DRAW_OVER, { occuts:fxDrawOcCuts });
+// THE FINAL SMASH -- THOUSAND CUTS GRAND. The catch is a circle of 120 px round the Trickster, and takes everyone in it (a foe it holds stays where it stood). After the
+// 14-frame wind, eight cuts of 3% every 3 frames (frames 14 to 35), the first scrambling their controls for 30 frames; on frame 39 a last blast throws them (14%, a
+// KO-level launch, a ring of 125 px): 38% to a foe the catch holds, let go 3 frames after the blast (about 42 frames of hold). A foe who is out of the circle when the
+// catch lands is not cut (the blast reaches a little past the catch, and only that).
+const OC_GRAND = { R:120, at:14, every:3, n:8, pct:3, boom:39, boomPct:14, boomR:125, kb:[17, -9], scr:30, dur:56, color:OC_MAGENTA };
+FINAL_SMASHES['oc:trickster'] = {
+  id:'cutsgrand', wind:FS_WIND, dur:OC_GRAND.dur, reach:OC_GRAND.R, exact:true,
+  catch(f){ return { kind:'circle', x:f.x, y:f.y, r:OC_GRAND.R }; }, lockEnd:OC_GRAND.boom,
+  start(f, st){ st.ay = f.y; },
+  tick(f, st, t){
+    const G = OC_GRAND, q = t - G.at;
+    f.vx = 0; if(!f.onground){ f.vy = 0; f.y = st.ay; }
+    if(t === 0){ shake(4); armAtk(f, this.wind, 'fsgather'); }
+    if(q >= 0 && q % G.every === 0 && q/G.every < G.n){
+      const i = q/G.every;
+      armAtk(f, 5, i % 2 ? 'punch' : 'kick');
+      for(const j of st.held){
+        const tg = fighters[j]; if(!tg || tg.dead || !fsIsLockedBy(tg, f)) continue;
+        if(i === 0 && SM_FX.scramble) SM_FX.scramble(tg, f, G.scr);
+        ocFsHit(f, tg, G.pct, (i % 2 ? -1 : 1)*0.3, -0.5, { stun:4 });
+        for(let k = 0; k < 3; k++) puff(tg.x + (k - 1)*8, tg.y + (k - 1)*6, k % 2 ? '#ffffff' : G.color, 3);
+      }
+    }
+    if(t === G.boom){
+      fsBurst(f, st, f.x, f.y, G.boomR, G.boomPct/FS_DMG_MULT/(statDmg(f, 1) || 1), G.kb[0], G.kb[1]);
+      armAtk(f, 20, 'fsburst'); shake(14);
+      for(let k = 0; k < 22; k++) puff(f.x, f.y, k % 2 ? G.color : '#fff', 7);
+    }
+  },
+  ai(f){ const cs = fsCatchInset(fsCatchOf(this, f), 0.85); return fighters.some((t)=> fsCatchable(f, t) && fsCatchTouch(cs, t)); },
+  draw(f, c){
+    const G = OC_GRAND, t = f.fsT || 0, q = t - G.at;
+    c.save(); c.lineCap = 'round';
+    if(t < G.at){   // cards gather and spin round the Trickster, growing in
+      const k = t/G.at;
+      for(let i = 0; i < 6; i++){ const a = t*0.25 + i*Math.PI/3; c.globalAlpha = 0.4 + 0.5*k; c.fillStyle = i % 2 ? '#ffffff' : G.color; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2;
+        c.save(); c.translate(f.x + Math.cos(a)*(f.r + 18), f.y + Math.sin(a)*(f.r + 18)*0.8); c.rotate(a + 1.2); c.beginPath(); c.rect(-3*k - 1, -5*k - 1, 6*k + 2, 10*k + 2); c.fill(); c.stroke(); c.restore(); }
+    } else if(t < G.boom){   // the cuts: crossing slashes through every foe the catch holds, a new angle each time
+      const i = Math.max(0, Math.floor(q/G.every)), a = i*0.9 + 0.4;
+      for(const tg of fighters){
+        if(tg.dead || !fsIsLockedBy(tg, f)) continue;
+        c.globalAlpha = 0.9; c.strokeStyle = '#ffffff'; c.lineWidth = 4;
+        c.beginPath(); c.moveTo(tg.x - Math.cos(a)*(tg.r + 18), tg.y - Math.sin(a)*(tg.r + 18)); c.lineTo(tg.x + Math.cos(a)*(tg.r + 18), tg.y + Math.sin(a)*(tg.r + 18)); c.stroke();
+        c.strokeStyle = G.color; c.lineWidth = 2; c.stroke();
+      }
+    } else if(t < G.boom + 10){   // the last blast: a ring going out
+      const u = (t - G.boom)/10;
+      c.globalAlpha = 0.8*(1 - u); c.strokeStyle = G.color; c.lineWidth = 10*(1 - u) + 2; c.beginPath(); c.arc(f.x, f.y, 20 + (G.boomR)*u, 0, 7); c.stroke();
+      c.globalAlpha = 0.45*(1 - u); c.fillStyle = '#ffffff'; c.beginPath(); c.arc(f.x, f.y, G.boomR*0.8*u, 0, 7); c.fill();
+    }
+    c.restore();
+  },
+};
 function endLagBusy(f){ return !!f._windup || f._dashing > 0 || (!!f._mv && f._mv.t < f._mv.s.st + f._mv.s.act) || f._fxLock > hazardT || !!f._stall || f.flying > 0 || f._sawing > 0 || !!f._hold || f.smashHold > 0 || !!f._smQ || !!f._sm || !!f._gb || !!f._gotcha || !!f._tp || !!f._roll || !!f._plunge || !!f._nail; }
 function endLag(f, frames, slot){ if(!(frames > 0)) return; f._eLag = { n:frames, n0:frames, slot:slot || null, falls:f._falls || 0, on:false, hit:false }; }   // this move will pay `frames` of end lag once its commitment ends
 function endLagArm(f, slot){ const n = ENDLAG_ADD[ocKitKey(f, slot) + '.' + slot]; if(n > 0) endLag(f, n, slot); }   // (OC ENGINE: an OC's pick is keyed by its option id)
