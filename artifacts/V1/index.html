@@ -21669,7 +21669,7 @@ function refreshTeamChat(){
   }
 }
 // zoner list reused for plan threat assessment
-const ZONERS_PLAN=["ember","cap","fry","barf","serve","freeze","beam","sign","splash","dribble","zapshooter","buynow","ring","fly","gust","zap","spark","jawbreaker","spike","sucker","battery","ink","payday","emberjr","measure"];
+const ZONERS_PLAN=["ember","cap","fry","barf","serve","freeze","beam","sign","splash","dribble","zapshooter","buynow","ring","fly","gust","zap","spark","jawbreaker","spike","sucker","battery","ink","payday","emberjr","measure","oc_zoner"];   // (oc_zoner: an OC Zoner is ranged pressure too; no roster kit has that key)
 // A rough threat score for an enemy fighter: heavier is harder to KO, some kits are known dangerous, ranged pressure counts.
 function planThreat(e){
   let s=(e.w||70)*0.4;                                 // heavier = harder to KO
@@ -83463,6 +83463,25 @@ function ocStats(oc, w){ const T = OC_TYPES[oc && oc.type] || OC_TYPES.zoner, o 
   const rk = runK(w, null), hk = heavySlowK(w);
   if(rk !== 1) o.run = Math.round(o.run*rk*1000)/1000; if(hk !== 1) o.air = Math.round(o.air*hk*1000)/1000;
   return o; }
+// THE CPU (OC_AI): the brain's picture of a kit (brainKit) is read out of the roster's own code; an OC's is built from its options' `ai` rows
+// (kind: shot | melee | dash | hop | warp | stance | heal | trap | beam | rain | leap | burst; band: where it lands; dmg; up: a recovery), cached on
+// the fighter by its picks. Without this a CPU OC would jab and nothing else (cpu-kit-usage.md).
+function ocBrainKit(f){
+  const P = f.oc.picks, sig = P.n + '|' + P.d + '|' + P.u + '|' + P.s, c = f._ocBK;
+  if(c && c.sig === sig) return c;
+  const A = (sl) => (OC_OPTIONS[P[sl]] || {}).ai || {}, n = A('n'), d = A('d'), u = A('u'), sm = A('s'), U = (OC_OPTIONS[P.u] || {}).rise || null;
+  const K = Object.assign({}, BRAIN_KIT0, {
+    shot:n.kind === 'shot', shot0:n.kind === 'shot', near:n.kind === 'melee' || n.kind === 'dash', band:n.band || null, spDmg:n.dmg || 0,
+    nStance:n.kind === 'stance',
+    down:d.kind === 'stance' ? 'stance' : d.kind === 'heal' ? 'heal' : d.kind === 'trap' ? 'trap' : 'other',
+    dBand:(d.kind === 'melee' && d.band) || null, dDmg:d.dmg || 0, nTrap:false, trapX:30,
+    upDmg:u.dmg || 0,
+    up:(U && U.hit) ? { kind:'hit', fx:U.hit.fx || 0, off:U.hit.off == null ? -14 : U.hit.off, reach:U.hit.reach || 18 } : null,
+    beam:sm.kind === 'beam' ? (sm.len || 0) : 0, smStance:false, smBuff:false, uStance:false, dn:null, sig });
+  K.any = K.nStance || K.down === 'stance';
+  f._ocBK = K;
+  return K;
+}
 // DEV ENTRY (no menu; the console or the headless harness, until the editor job): ocDevMatch({ type, picks:{n,d,u,s}, rf, name, look, count, cpu })
 // starts a free-for-all of `count` (default 4) vs CPUs with the OC in your seat -- or, with cpu:true, in the first CPU seat, played by the computer.
 // Returns the OC fighter. Dev only: the match's record is credited as the seat's roster pick was.
@@ -83515,7 +83534,7 @@ Object.assign(MOVESETS, {
 // existing vocabularies. Locks on a foe never pass LOCK.max (a rider's root is capped there too); a stun or knockdown asks 30.
 // NEUTRAL SPECIAL
 ocDef('Z-N1', 'zoner', 'n', 'Damage',  'Skyfall Spark',  'lobs a spark high; it falls almost straight down about two body-lengths ahead',
-  { shot:{ vx:3, vy:-13, grav:true, dmg:11, kb:8, r:8, life:70 }, ai:{ kind:'shot', band:[60, 220], dmg:11 } });
+  { shot:{ vx:1.6, vy:-11, grav:true, dmg:11, kb:8, r:8, life:100 }, ai:{ kind:'shot', band:[70, 170], dmg:11 } });   // (measured: apex about 180 px, down at about 125 px ahead, 65 frames in the air)
 ocDef('Z-N2', 'zoner', 'n', 'Zoning',  'Drift Orb',      'a slow fat orb floats down the lane for two and a half seconds and passes through foes',
   { shot:{ vx:2.5, grav:false, dmg:5, kb:3, r:12, life:150, pierce:true }, ai:{ kind:'shot', band:[80, 380], dmg:5 } });
 ocDef('Z-N3', 'zoner', 'n', 'Escape',  'Backstep Flare', 'hops back a body-length with six safe frames and leaves a dart flying forward',
@@ -96545,6 +96564,7 @@ function brainCaseSrc(k){   // the neutral special's own case in doSpecial
   return s.slice(i, j < 0 ? s.length : j);
 }
 function brainKit(f){
+  if(f && f.oc) return ocBrainKit(f);   // OC ENGINE: an OC's picture comes from its options' ai rows (nothing for anyone else)
   const k = f.kit && f.kit.special;
   if(!k) return BRAIN_KIT0;
   const c = _brainKits[k]; if(c && c.dn === DOWNSPECIALS[k]) return c;   // (the prize kit's moves come and go: worked out again if they changed)
