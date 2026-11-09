@@ -18050,7 +18050,7 @@ function dirSmashText(r, dir){
   return up ? nm + ' — press ↑ and V together (the jump is cancelled; the same charge): a wide swing over your head that launches foes straight up. On hit: ' + dmg + '%, launches up.'
             : nm + ' — press ↓ and V together (on a platform the smash wins over dropping through; the same charge): a low sweep that hits both sides at once and sends foes low and out. On hit: ' + dmg + '%.';
 }
-function smashKindOf(f){ const sp = f && f.kit && f.kit.special, row = (typeof SMASH_SPEC !== 'undefined' && SMASH_SPEC[sp]) || null; return row ? SMASH_KIND[row.pat] : null; }
+function smashKindOf(f){ const sp = f && f.kit && f.kit.special, row = (f && f.oc) ? ((ocOpt(f, 's') || {}).smash || null) : ((typeof SMASH_SPEC !== 'undefined' && SMASH_SPEC[sp]) || null); return row ? SMASH_KIND[row.pat] : null; }   // (OC ENGINE: an OC's smash pick)
 
 // EVERY MOVE, IN WORDS ("add attack descriptions to everything"). One line per input for each fighter, written from the move's
 // code and measured in-game (first-hit damage at 40, 110 and 220 px), then checked line by line by a second reader.
@@ -23835,6 +23835,7 @@ function makeFighter(r,x,y,idx){
   return {
     name:r.name, color:r.color, w, you:!!r.you, idx,
     kit, arch:r.arch||"Contestant",
+    ...(r.oc ? { oc:r.oc } : null),   // OC ENGINE: an original character's type, picks and look (no field at all for a roster fighter)
     koCap: Math.round(150 + w),   // per-character damage-death threshold (heavier = tougher)
     x, y, vx:0, vy:0, face:1, onground:false,
     pct:0, stocks:3, alive:true, dead:false, team:idx,
@@ -23844,8 +23845,8 @@ function makeFighter(r,x,y,idx){
     flying:0, reflecting:0, dropping:0, dropCd:0, _empower:0, _dashing:0, _dashVY:0, _landSquash:0, _switchOn:false, _grabbed:null, _grabTimer:0,
     rooted:0, ctrlRev:0, _revLock:0, slowed:0, _sawing:0, koCount:0, iceUntil:0, healing:0, _hurt:0, deaths:0, killCount:0, placement:null, _downOrder:0, _kos:0, _falls:0, _dmgDealt:0, _dmgTaken:0, _infected:0, _infectedBy:null, _origTeam:0, _lastInput:null, _empowerT:0, _hasteT:0, _bulletT:0, _plunge:null, _starT:0, _glowGoldT:0, _yoyleT:0, _holding:null, _bossHitId:-1, _bossHitDmg:0, _swallow:0, _swallowTick:0,
     flash:0, _atkAnim:0, _atkLen:ATK_ANIM, _atkPhase:null, _atkProg:0, _hurtAnim:0, _rigState:"idle", aiTimer:Math.random()*40, aiTarget:null, aiMode:0, _lastX:undefined, _stuck:0, _recover:0, _seekingSpawn:false,
-    hurt: hurtboxFor(r && r.name),   // see HURTBOX; null falls back to the 24px circle
-    st: statsFor(r && r.name, w),   // FIGHTER STATS: run, air, jump, fall, dmg (all 1 unless FIGHTER_STATS says otherwise); the run follows the weight (runK), above weight 100 the air is slowed (HEAVY_SLOW)
+    hurt: r.oc ? null : hurtboxFor(r && r.name),   // see HURTBOX; null falls back to the 24px circle (an OC: always the circle, whatever its name)
+    st: r.oc ? ocStats(r.oc, w) : statsFor(r && r.name, w),   // FIGHTER STATS: run, air, jump, fall, dmg (all 1 unless FIGHTER_STATS says otherwise); the run follows the weight (runK), above weight 100 the air is slowed (HEAVY_SLOW)
     size:1,   // PER-FIGHTER SIZE (setFighterSize): 1, the size every fighter has always been; r and hurt here are the size-1 ones
     r:24
   };
@@ -66765,7 +66766,7 @@ const SMASH_ID = {
   stapler:   {name:"Heavy-Duty Clack", color:"#e45b78", tones:[{f:520,d:0.06,w:'square',g:0.2,t:0,to:200},{f:150,d:0.16,w:'sawtooth',g:0.18,t:0.05,to:70}], noise:{d:0.14,g:0.16,hz:2600,t:0.03,to:500}},   // Stapy -- a clack and a heavy chomp
   paperplane:{name:"Glide-Back Kick", color:"#7fd4c0", tones:[{f:700,d:0.1,w:'triangle',g:0.16,t:0,to:1200},{f:260,d:0.14,w:'sawtooth',g:0.16,t:0.08,to:120}], noise:{d:0.16,g:0.12,hz:3000,t:0.02,to:900}},   // Foldy -- a whoosh and a kick
 };
-function smashIdOf(f){ return (f && f.kit && SMASH_ID[f.kit.special]) || null; }
+function smashIdOf(f){ return (f && f.kit && SMASH_ID[ocKitKey(f, 'smash')]) || null; }   // (OC ENGINE: an OC's smash pick has no row here, so it plays the plain sound)
 function smashColorOf(f){ const id=smashIdOf(f); return (id && id.color) || '#ffd23f'; }
 // Keys are terse because this table is 59 rows of sound data and reads better dense:
 //   tone  f=freq d=dur w=wave g=gain t=delay to=sweep-to
@@ -67715,7 +67716,7 @@ function runSmashSpec(f, s, pool){
   f.flash = 14;
   const cost = s.cost;
   smashCost(f, cost, pool);
-  const k = f.kit && f.kit.special;
+  const k = ocKitKey(f, 'smash');   // (OC ENGINE: an OC's smash pick; the kit key for everyone else)
   if(SLAM_ROWS.has(k) && !f.onground){ slamThen(f, function(){ (SM_PAT[s.pat] || SM_PAT.lunge)(f, s); }); return; }   // slam, then hit
   (SM_PAT[s.pat] || SM_PAT.lunge)(f, s);
   // Recoil LAST, so it eats into the momentum the pattern just granted instead of being erased by it.
@@ -68074,6 +68075,7 @@ function doSmash(f){
   const tag = function(){ for(const p of projectiles) if(p.owner===f.idx && !before.has(p)){ p._slot = 'smash'; if(f._smAngle) p.smAngle = f._smAngle; } };   // shots carry the angle, and the move they came from (no taker takes a smash's: TAKE_NEVER)
   if(SMASH_SPEC[k] && SMASH_SPEC[k].uncopyable) f._noCopyT = hazardT + 150;   // Bot's THE ONE AND ONLY!: nothing may copy it (see applyHit's tape)
   f._smSync = true;   // SHIELD BREAKERS: a hit thrown by the body below is the smash's (brkSwing)
+  if(f.oc){ const o = ocOpt(f, 's'); if(o && o.smash){ ocUsed(f, 's'); runSmashSpec(f, smashRowAsFired(o.smash, f)); tag(); f._smSync = false; return; } }   // OC ENGINE: the smash pick, a SMASH_SPEC-style row
   if(SMASH_SPEC[k]){ runSmashSpec(f, smashRowAsFired(SMASH_SPEC[k], f)); tag(); f._smSync = false; return; }
   if(SMASHES[k]){ SMASHES[k](f); smashCost(f, LEGACY_SMASH_COST[k]); tag(); f._smSync = false; return; }
   f._smSync = false;
@@ -68252,11 +68254,7 @@ function riseShape(f, s){
   }
   // THE VOCABULARY ("they should actually DO stuff"): self{} buffs the caster at cast; hit.eff puts a
   // status on everyone the swing hits; shot{} fires one projectile; leave:'taunt' is Teardrop's mark.
-  if(s.self){ const S=s.self;
-    if(S.armor) f.armor=Math.max(f.armor||0,S.armor); if(S.invuln) f.invuln=Math.max(f.invuln,S.invuln);
-    if(S.heal) f.pct=Math.max(0,f.pct-S.heal); if(S.healing) f.healing=Math.max(f.healing||0,S.healing);
-    if(S.haste) f._hasteT=Math.max(f._hasteT||0,S.haste); if(S.empower) f._empower=1;
-    if(S.cloud) f.cloud=Math.max(f.cloud||0,S.cloud); if(S.jumps) f.jumps=Math.max(f.jumps||0,S.jumps); }
+  if(s.self) ocSelf(f, s.self);   // (the block lived here; ocSelf, OC ENGINE, is the same lines, shared with an OC's stance rows)
   if(s.hit){
     const h=s.hit, cx=f.x+f.face*(h.fx||0), cy=f.y+(h.off==null?-14:h.off), reach=f.r+(h.reach||18);
     const fan = upFan(f, cx, cy, reach), hitList = shapeTargets(f, fan);   // the arc of an uppercut, evaluated before the hit lands
@@ -68276,16 +68274,7 @@ function riseShape(f, s){
     hitArt(f, 'leave', { kind:'circle', x:x0, y:y0, r:R }, { color:'#6fb7ff', world:true, fade:8 });   // HIT ART: the taunt's reach, where she stood
     for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t, x0, y0)<R){ t._taunted=TAUNT_FRAMES; t._tauntedBy=f.idx; } }
     for(let i=0;i<8;i++) puff(x0+(Math.random()*R*2-R),y0-10,'#6fb7ff',4); }
-  if(s.drop){
-    const D=s.drop, R=DROP_RIDERS[D.rider]||{}, n=D.count||1;
-    const V = (D.volley && n>1) ? newVolley(D.volley) : null;   // drops built to land together are one cast, and a spin they fall from is that cast too (ONE VOLLEY IS ONE MOVE)
-    if(V && s.shape==='spin') f._sawCast = V._cast;
-    for(let i=0;i<n;i++){
-      const spread = n>1 ? (i-(n-1)/2)*(D.spread==null?2.5:D.spread) : 0;
-      spawnProj(f, Object.assign({vx:spread, vy:D.vy||5, grav:false, dmg:D.dmg||5, kb:D.kb==null?4:D.kb, r:D.r||8, color:D.color||f.color, life:D.life||24}, R,
-        D.shape ? {shape:D.shape} : null, V));   // a drop may name its own shape (Donut's sprinkles, Blocky's block)
-    }
-  }
+  if(s.drop) ocDrop(f, s.drop, s.shape==='spin');   // (the volley lived here; ocDrop, OC ENGINE, is the same lines, shared with an OC's drop rows)
   puff(f.x, f.y+14, f.color, 6);
 }
 function doUpSpecial(f){
@@ -68294,6 +68283,7 @@ function doUpSpecial(f){
   const k=f.kit && f.kit.special;
   if(tellAdd(f, 'up', function(){ doUpSpecial(f); })) return;   // NO-TELL SWEEP (no row today: a recovery's hit on the rise is the owner's call)
   endLagArm(f, 'up');   // FRAME BUDGET (no row today either: a recovery is not made to fall)
+  if(f.oc){ ocRun(f, 'u'); f.flash=8; return; }   // OC ENGINE: the up-special pick
   if(UPSPEC[k]){ riseShape(f, UPSPEC[k]); }
   else if(UPSPECIALS[k]){ UPSPECIALS[k](f); }
   else { upLaunch(f,-13*recV(f)); puff(f.x,f.y+14,f.color,6); }  // default recovery hop
@@ -68927,6 +68917,7 @@ function doDownSpecial(f){
   if(DASH_TELL_DOWN.has(k) && !f._dashTellGo && dashTell(f, function(){ f._dashTellGo = true; try { doDownSpecial(f); } finally { f._dashTellGo = false; } })) return;   // DASH TELL
   if(tellAdd(f, 'down', function(){ doDownSpecial(f); })) return;   // NO-TELL SWEEP
   endLagArm(f, 'down');   // FRAME BUDGET
+  if(f.oc){ ocRun(f, 'd'); return; }   // OC ENGINE: the down-special pick
   if(DOWNSPECIALS[k]) DOWNSPECIALS[k](f);
   else { f.countering=22; f.flash=8;  }
 }
@@ -80253,7 +80244,7 @@ function zsBreakerHit(t, from, dmg, shot){
   for(let i = 0; i < 8; i++) puff(t.x, t.y - t.r*0.5, BRK.glow, 5);
   applyHit(t, dmg*BRK.dmgK, 0, 0, from, shot ? { unblockable:true, shot:true } : { unblockable:true });
 }
-function isReflector(f){ return !!f && REFLECTOR_FIGHTERS.has(f.name); }
+function isReflector(f){ return !!f && (f.oc ? !!f.oc.rf : REFLECTOR_FIGHTERS.has(f.name)); }   // (OC ENGINE: an OC's own Z choice, never its name)
 function zsMeter(f){ return f._zsM == null ? ZS.max : f._zsM; }
 // The bubble's radius: it follows the meter (full 1.55 bodies wide, down to 0.62), and grows over the first frames.
 function zsRadius(f){
@@ -81018,7 +81009,7 @@ function swShapeAt(g, kit, key, S, b, t){
 // its slice does, so the CPU reads that too (a back-air's sweep, behind the swinger, reaches it from any facing). Nothing runs for a move with no swing.
 function swReaches(att, foe, within){
   const mv = att._mv; if(!mv || !mv.s.boxes) return false;
-  const S = mv.s, kit = att.kit ? att.kit.special : '';
+  const S = mv.s, kit = ocKitKey(att, mv.key);
   for(const b of S.boxes){
     if(swLive1(S, b) - (b.t0 == null ? S.st : b.t0) < 1) continue;
     const c = b._swc || (b._swc = swClassOf(kit, mv.key, S, b));
@@ -81030,7 +81021,7 @@ function swReaches(att, foe, within){
 function mvStrike(f, mv, b, gi){
   const S = mv.s, b0 = b.t0 == null ? S.st : b.t0;
   // SWEPT HITBOXES: a swing's box tests only this frame's slice of its shape (swShapeAt); a thrust's, a disc's and a re-hitting box's the whole shape, as ever
-  const sh = swShapeAt(f, f.kit ? f.kit.special : '', mv.key, S, b, mv.t) || mvShape(f, b.s), bb = shapeBounds(sh), key = b.g || ('b' + gi);
+  const sh = swShapeAt(f, ocKitKey(f, mv.key), mv.key, S, b, mv.t) || mvShape(f, b.s), bb = shapeBounds(sh), key = b.g || ('b' + gi);   // (OC ENGINE: SW_EXC may pin an OC option by its id)
   const swept = b._swc === 'swing' && swLive1(S, b) - b0 >= 1;
   if(SHOW_HITBOXES) DEBUG_HITS.push({ shape:sh, pts:shapePts(sh), t:6 });
   // HIT ART: each box on each of its live frames, mirrored as the move faces -- a back-air behind, a down-air under -- and flashing on
@@ -83331,7 +83322,7 @@ const TELL_ADD = {
   'blackmail.neutral': 6,   // Trophy: startup was 0 (the sweep added 20), 10%, launch 9.2
 };
 function tellAdd(f, slot, fire){
-  const n = TELL_ADD[((f.kit && f.kit.special) || '') + '.' + slot];
+  const n = TELL_ADD[ocKitKey(f, slot) + '.' + slot];   // (OC ENGINE: an OC's pick is keyed by its option id)
   if(!(n > 0) || f._tellGo || f._windup) return false;
   return dashTell(f, function(){ f._tellGo = true; try { fire(); } finally { f._tellGo = false; } }, n);
 }
@@ -83391,9 +83382,104 @@ const ENDLAG_ADD = {
   'testtube.smash':18, 'condishawn.down':13, 'condishawn.smash':18, 'paste.smash':14, 'timber.neutral':14, 'timber.smash':20, 'blackmail.down':12, 'blackmail.smash':20,
   'fraidy.neutral':15, 'fraidy.smash':15, 'buynow.smash':19, 'yinyang.smash':20,
 };
+// ============================================================
+//  OC ENGINE (2026-11-09): player-made original characters
+// ============================================================
+// An OC is a fighter whose row carries `oc` ({v, name, type, picks:{n,d,u,s}, rf, look}); makeFighter copies it to f.oc. Its FIXED moves hang on
+// the type's kit key exactly as a roster fighter's do (f.kit.special = 'oc_zoner': MOVESETS, RANGE_PROFILE's default jab, the shared finisher),
+// and its four PICKS -- neutral special (n), down special (d), up special (u), neutral smash (s) -- are rows of OC_OPTIONS run by ocRun, one
+// shared runner over the game's own move vocabularies (a MOVESETS row, a projectile, an UPSPEC row, a SMASH_SPEC row, a stance, a drop volley).
+// Nothing here runs for a fighter without f.oc: every hook below is `if(f.oc)`, and ocKitKey returns the kit key it replaced for everyone else.
+// The design: reports/oc-design.md. The editor, the saved list, the skins and the online code are later jobs: until then an OC is reachable only
+// through ocDevMatch (the console or the headless harness) and nothing in any menu knows it exists.
+const OC_W = 86;   // every OC weighs the roster's average (the owner's decision: weight is never chosen)
+const OC_SLOTS = ['n', 'd', 'u', 's'];
+const OC_SLOT_OF = { special:'n', neutral:'n', down:'d', up:'u', smash:'s' };   // the dispatchers' slot words -> the pick slot
+// The four types: fixed stats within 6% of the roster's medians (a flavour, not a tier); `ready` is the type whose options exist (the rest are 'coming').
+const OC_TYPES = {
+  zoner:     { name:'Zoner',     color:'#4ec9e0', arch:'Zoner',     st:{ run:0.97, air:1.00, jump:1.03, fall:0.96, dmg:1.00, rec:1.00 }, ready:true },
+  grappler:  { name:'Grappler',  color:'#e0663a', arch:'Grappler',  st:{ run:1.00, air:0.97, jump:0.96, fall:1.06, dmg:1.06, rec:1.00 }, ready:false },
+  trapper:   { name:'Trapper',   color:'#9a6ee0', arch:'Trapper',   st:{ run:0.95, air:1.00, jump:1.00, fall:1.00, dmg:1.03, rec:1.05 }, ready:false },
+  trickster: { name:'Trickster', color:'#d14fc9', arch:'Trickster', st:{ run:1.06, air:1.05, jump:1.05, fall:0.97, dmg:0.96, rec:1.00 }, ready:false },
+};
+const OC_OPTIONS = {};   // id -> { type, slot, role, name, text, mv | shot | rise | smash | stance | drop, spCd, ai }
+const OC_LISTS = { zoner:{ n:[], d:[], u:[], s:[] }, grappler:{ n:[], d:[], u:[], s:[] }, trapper:{ n:[], d:[], u:[], s:[] }, trickster:{ n:[], d:[], u:[], s:[] } };   // type -> slot -> ids in editor order (the first is the default)
+function ocDef(id, type, slot, role, name, text, row){ OC_OPTIONS[id] = Object.assign({ id, type, slot, role, name, text }, row); OC_LISTS[type][slot].push(id); }
+const OC_PALETTE = ROSTER.filter(r => r.play).slice(0, 16).map(r => r.color);   // the body colours an OC may wear: the roster's own, so nothing clashes with the maps
+// Keys. ocKey: the pick in a slot (n/d/u/s), else the kit key. ocKitKey: what the keyed tables (ENDLAG_ADD, TELL_ADD, SW_EXC, SLAM_ROWS, SMASH_ID) look
+// a move up by -- for an OC the option id in a pick slot, for everyone else exactly the kit key those tables always used.
+function ocKey(f, slot){ const o = f && f.oc; return (o && o.picks && o.picks[slot]) || (f && f.kit && f.kit.special) || ''; }
+function ocKitKey(f, slot){ const s = f && f.oc && OC_SLOT_OF[slot]; return s ? ocKey(f, s) : ((f && f.kit && f.kit.special) || ''); }
+function ocOpt(f, slot){ const o = f && f.oc; if(!o) return null; const id = o.picks && o.picks[slot]; return (id && OC_OPTIONS[id]) || null; }
+function ocUsed(f, slot){ const U = f._used || (f._used = {}); U['oc.' + slot] = (U['oc.' + slot] || 0) + 1; }   // (what an OC has used, for the tests and the trainer)
+// The self{} buffs a row grants its caster (lifted from riseShape, which calls this: armour, i-frames, a heal, a drip, haste, an empowered next hit, smoke, a jump back).
+function ocSelf(f, S){ if(!S) return;
+  if(S.armor) f.armor=Math.max(f.armor||0,S.armor); if(S.invuln) f.invuln=Math.max(f.invuln,S.invuln);
+  if(S.heal) f.pct=Math.max(0,f.pct-S.heal); if(S.healing) f.healing=Math.max(f.healing||0,S.healing);
+  if(S.haste) f._hasteT=Math.max(f._hasteT||0,S.haste); if(S.empower) f._empower=1;
+  if(S.cloud) f.cloud=Math.max(f.cloud||0,S.cloud); if(S.jumps) f.jumps=Math.max(f.jumps||0,S.jumps); }
+// A drop volley (lifted from riseShape, which calls this with `spin` for its spin shape): `count` riders fall from the caster, spread sideways.
+function ocDrop(f, D, spin){
+  const R=DROP_RIDERS[D.rider]||{}, n=D.count||1;
+  const V = (D.volley && n>1) ? newVolley(D.volley) : null;   // drops built to land together are one cast, and a spin they fall from is that cast too (ONE VOLLEY IS ONE MOVE)
+  if(V && spin) f._sawCast = V._cast;
+  for(let i=0;i<n;i++){
+    const spread = n>1 ? (i-(n-1)/2)*(D.spread==null?2.5:D.spread) : 0;
+    spawnProj(f, Object.assign({vx:spread, vy:D.vy||5, grav:false, dmg:D.dmg||5, kb:D.kb==null?4:D.kb, r:D.r||8, color:D.color||f.color, life:D.life||24}, R,
+      D.shape ? {shape:D.shape} : null, V));   // a drop may name its own shape (Donut's sprinkles, Blocky's block)
+  }
+}
+// The runner: the OC's pick in `slot` ('n' | 'd' | 'u'; the smash runs in doSmash). Called by the dispatchers after their tells and end lag are armed,
+// so TELL_ADD / ENDLAG_ADD rows keyed '<optionId>.<slot word>' apply as they do to every fighter. A row may carry several parts (a rise and a shot).
+function ocRun(f, slot){
+  const o = ocOpt(f, slot); if(!o) return false;
+  ocUsed(f, slot);
+  const col = (OC_TYPES[f.oc.type] || OC_TYPES.zoner).color;
+  if(o.mv) mvStart(f, o.mv, slot === 'n' ? 'special' : slot === 'd' ? 'down' : 'up');   // a MOVESETS-style melee or motion row
+  if(o.rise) riseShape(f, o.rise);                                                       // an UPSPEC row (up special)
+  if(o.stance){ const S = o.stance;                                                      // stand `frames` still (the keys are masked, as in any end lag) and take the buffs
+    f.flash = 10; f._lag = Math.max(f._lag || 0, S.frames + (S.end || 0)); f.atkCd = Math.max(f.atkCd, S.frames); ocSelf(f, S.self);
+    for(let i=0;i<8;i++) puff(f.x+(Math.random()*24-12), f.y-6, col, 4); }
+  if(o.shot){ const { count, spread, ...P } = o.shot, n = count || 1;                     // `count` shots; `spread` slows each one after the first by that share
+    for(let i=0;i<n;i++){ const k = 1 - i*(spread || 0);
+      spawnProj(f, Object.assign({}, P, { vx:f.face*(P.vx == null ? 8 : P.vx)*k, vy:(P.vy || 0), grav:!!P.grav, dmg:P.dmg == null ? 6 : P.dmg, kb:P.kb == null ? 5 : P.kb, r:P.r || 8, color:P.color || col, life:P.life || 60 })); }
+    f.flash = Math.max(f.flash, 8); }
+  if(o.drop){ ocDrop(f, Object.assign({ color:col }, o.drop), false); f.flash = Math.max(f.flash, 8); }
+  if(o.spCd) f.spCd = Math.max(f.spCd, o.spCd);
+  return true;
+}
+// The fighter. ocNorm fills a saved OC's defaults and drops an unknown type or pick to the type's first option (a loader never refuses the file);
+// ocRow builds the ROSTER-shaped row makeFighter takes; ocStats is statsFor for a type (the run follows the weight, as for everyone).
+function ocNorm(oc){
+  const T = (oc && OC_TYPES[oc.type]) ? oc.type : 'zoner', L = OC_LISTS[T], picks = {};
+  for(const s of OC_SLOTS){ const id = oc && oc.picks && oc.picks[s], r = id && OC_OPTIONS[id]; picks[s] = (r && r.type === T && r.slot === s) ? id : (L[s][0] || null); }
+  const k = oc && oc.look || {}, c = (n, hi) => { n = n | 0; return n < 0 ? 0 : n > hi ? hi : n; };
+  const look = { c:c(k.c, 15), c2:c(k.c2, 15), p:c(k.p, 4), e:c(k.e, 3), m:c(k.m, 3), hat:(typeof k.hat === 'string' && k.hat) || null };
+  return { v:1, name:String((oc && oc.name) || OC_TYPES[T].name).slice(0, 16), type:T, picks, rf:(oc && oc.rf) ? 1 : 0, look };
+}
+function ocRow(oc){ const o = ocNorm(oc), T = OC_TYPES[o.type];
+  return { name:o.name, w:OC_W, color:OC_PALETTE[o.look.c] || T.color, play:true, arch:T.arch, kit:{ special:'oc_' + o.type, desc:'An original character: a ' + T.name + '.' }, oc:o }; }
+function ocStats(oc, w){ const T = OC_TYPES[oc && oc.type] || OC_TYPES.zoner, o = Object.assign({ run:1, air:1, jump:1, fall:1, dmg:1, rec:1 }, T.st);
+  const rk = runK(w, null), hk = heavySlowK(w);
+  if(rk !== 1) o.run = Math.round(o.run*rk*1000)/1000; if(hk !== 1) o.air = Math.round(o.air*hk*1000)/1000;
+  return o; }
+// DEV ENTRY (no menu; the console or the headless harness, until the editor job): ocDevMatch({ type, picks:{n,d,u,s}, rf, name, look, count, cpu })
+// starts a free-for-all of `count` (default 4) vs CPUs with the OC in your seat -- or, with cpu:true, in the first CPU seat, played by the computer.
+// Returns the OC fighter. Dev only: the match's record is credited as the seat's roster pick was.
+function ocDevMatch(opts){
+  const o = opts || {}, row = ocRow({ type:o.type || 'zoner', picks:o.picks, rf:o.rf, name:o.name, look:o.look });
+  SETTINGS.mode = 'ffa'; SETTINGS.count = Math.max(2, Math.min(MAX_FFA, o.count || 4));
+  TESTMODE.active = false; PENDING_TOURNEY = null; TOURNEY.active = false;
+  beginMatchNow();
+  const i = o.cpu ? 1 : 0, old = fighters[i]; if(!old) return null;
+  const f = makeFighter(Object.assign({}, row, { you:old.you }), old.x, old.y, old.idx);
+  f.team = old.team; f.stocks = old.stocks; f.controller = old.controller; f.homeBase = old.homeBase;
+  fighters[i] = f; try{ buildHUD(); }catch(e){}
+  return f;
+}
 function endLagBusy(f){ return !!f._windup || f._dashing > 0 || (!!f._mv && f._mv.t < f._mv.s.st + f._mv.s.act) || f._fxLock > hazardT || !!f._stall || f.flying > 0 || f._sawing > 0 || !!f._hold || f.smashHold > 0 || !!f._smQ || !!f._sm || !!f._gb || !!f._gotcha || !!f._tp || !!f._roll || !!f._plunge || !!f._nail; }
 function endLag(f, frames, slot){ if(!(frames > 0)) return; f._eLag = { n:frames, n0:frames, slot:slot || null, falls:f._falls || 0, on:false, hit:false }; }   // this move will pay `frames` of end lag once its commitment ends
-function endLagArm(f, slot){ const n = ENDLAG_ADD[((f.kit && f.kit.special) || '') + '.' + slot]; if(n > 0) endLag(f, n, slot); }
+function endLagArm(f, slot){ const n = ENDLAG_ADD[ocKitKey(f, slot) + '.' + slot]; if(n > 0) endLag(f, n, slot); }   // (OC ENGINE: an OC's pick is keyed by its option id)
 function endLagStep(f){
   const E = f._eLag; if(!E) return;
   if(f.dead || E.falls !== (f._falls || 0) || f._heldBy != null){ f._eLag = null; return; }
@@ -83925,6 +84011,7 @@ function doSpecial(f){
   if(DASH_TELL_KINDS.has(k) && !f._dashTellGo && dashTell(f, function(){ f._dashTellGo = true; try { doSpecial(f); } finally { f._dashTellGo = false; } })) return;   // DASH TELL: the dash begins after its wind-up
   if(tellAdd(f, 'neutral', function(){ doSpecial(f); })) return;   // NO-TELL SWEEP: the wind-up TELL_ADD gives this special, then the special itself
   endLagArm(f, 'neutral');   // FRAME BUDGET: the end lag this special pays once it is done (nothing for a kit not in ENDLAG_ADD)
+  if(f.oc){ ocRun(f, 'n'); return; }   // OC ENGINE: an original character's neutral-special pick (nothing for anyone else)
   switch(k){
     case "ember": spawnProj(f, {vx:f.face*8,vy:-2,grav:true,dmg:8,kb:6,r:9,color:"#f0803a",burn:true,life:60}); f.flash=8; f.spCd=48; break;
     case "dash": f.vx=f.face*22; f._dashing=16; f.invuln=22; f._dashHits=new Set(); f.flash=10; applyDashVY(f,17,15);
@@ -107941,7 +108028,7 @@ msWords();
 
 mvaBuildAll();
 // the label a move is armed with (armAtk): the kit and the slot, or null for a fighter with no moveset yet
-function mvId(f, slot){ const k = f && f.kit && f.kit.special; return (k && MOVESETS[k]) ? k + '.' + slot : null; }
+function mvId(f, slot){ if(f && f.oc) return ocKitKey(f, slot) + '.' + slot; const k = f && f.kit && f.kit.special; return (k && MOVESETS[k]) ? k + '.' + slot : null; }   // (OC ENGINE: an OC's pick is labelled by its option id)
 // the painted limbs of a move (limbMoves hands over here when the move has an entry): each entry is aimed from the limb's rest to the move's wind-up, strike and back
 function mvaLimbMoves(f, rig, mva, fwd){
   const frontSide = fwd > 0 ? 'R' : 'L', out = [], ph = atkPhase(f), k = atkPhaseK(f), ease = (x)=> 1 - (1-x)*(1-x), E = mva.limbs;
@@ -109060,7 +109147,7 @@ function drawFighter(f){
     }
     // ---- BODY: real character art when this fighter has a sprite, else the generic blob ----
     // Both paths render inside the squash/stretch transform above, so the deform is identical. A skin is that fighter's second render.
-    const sprite = skinLive ? skinSp : SPRITES[f.name];
+    const sprite = f.oc ? null : (skinLive ? skinSp : SPRITES[f.name]);   // (OC ENGINE: an OC is the blob below in its own colour, whatever its name)
     if(sprite){
       // JURY 2C: a dark skin (a row's `dark`: Robot Pin, Bandaged Bomby, Scorched Baseball, Lead Snowball, Hooded Fern) was a black blob at match size: a thin light halo under it
       // (a white shadow round the picture's own shape, drawn with the body; art only)
@@ -109085,6 +109172,7 @@ function drawFighter(f){
       const vfb = visualFace(f);
       ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(-6*vfb+vfb*2,-4,6,0,7); ctx.arc(6*vfb+vfb*2,-4,6,0,7); ctx.fill();
       ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(-6*vfb+vfb*3,-4,2.6,0,7); ctx.arc(6*vfb+vfb*3,-4,2.6,0,7); ctx.fill();
+      if(f.oc){ ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(vfb*3, 5, 5.5, 0.35, Math.PI-0.35); ctx.stroke(); }   // OC ENGINE: the default look's mouth (the editor's looks come with it)
       if(cos && cos.hat){ ctx.save(); ctx.scale(vfb,1); try{ drawCosHat(ctx, cos.hat, f.r/24, -f.r, -4); }catch(e){ cosDrawFail(e); } ctx.restore(); }
     }
     ctx.restore();
