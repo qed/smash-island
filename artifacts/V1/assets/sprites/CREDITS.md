@@ -1189,6 +1189,8 @@ jacknjellify's designs are theirs. `attacks/tvspider.png` (336x300, transparent)
 with its legs taken off by `scripts/make-tv-spider.mjs` (the fur's own pixels; the Final Smash draws its own animated legs, in the picture's brown-grey) and the rest cropped and scaled to 300 px tall. Its pick is `tvspider` in
 `scripts/fetch-attack-sprites.mjs` and its manifest row is in `scripts/attack-sprite-manifest.json`. A static file: a guest draws the same picture; nothing about it is sent online. The drawn ring is what shows until the file loads.
 
+Show sprites, batch 1 (Final Smash props, 2026-11-04). Battle for Smash Island is an unaffiliated, non-commercial fan work and jacknjellify's designs are theirs. Five props are drawn from the show's own pictures on the Battle for Dream Island wiki (battlefordreamisland.fandom.com), scaled down and, for the trebuchet, cut in two by `scripts/make-fs-show-props.mjs`: `attacks/gelsign.png` (300x123, File:SteakhouseSign.png, Gelatin's sign), `attacks/poppan.png` (300x88, File:Pan new asset 2020 (2).png, Poppy's pan), `attacks/trebpost.png` and `attacks/trebarm.png` (480x426 each, File:Tennis Ball's Trebuchet.png, the frame and the arm), `attacks/bbnet.png` (300x253, File:Basketball Net.png, Basketball's rim and net) and `attacks/pinballoon.png` (201x256, File:RedBalloon.png, Pin's balloon). Static files: a guest draws the same pictures; nothing about them is sent online. The drawn shapes are what show until a file loads.
+
 ## Assist trophies
 
 "sprites for assist trophies." The thirteen assists of ASSIST_ROSTER are BFDI characters; twelve have a render on
@@ -1211,6 +1213,7 @@ keyed by the assist's name; MePhone4's hostile adds wear the same art.
 | Grotato (the Grotatoes page; Grotatoes! Transparent.png) | `grotato.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/96/Grotatoes%21_Transparent.png/revision/latest?cb=20240401034516 |
 | Pie | `pie.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fa/Tpot_renders0005.png/revision/latest?cb=20210113223416 |
 | Stapy | `stapy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3b/Tpot_renders0053.png/revision/latest?cb=20240622133301 |
+| Foldy | `foldy.png` (258x200) | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e5/Tpot_renders0034.png/revision/latest?cb=20210113224312 |
 | Blender | `blender.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/5/5a/BlenderTPOT14.png/revision/latest?cb=20251018182459 |
 | Shopping Cart | `shopping-cart.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0f/ShoppingcartTPOT14.png/revision/latest?cb=20251018183502 |
 | Beach Ball | `beach-ball.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3b/Elswerebeachball.png/revision/latest?cb=20260102211016 |
@@ -1283,6 +1286,25 @@ fetch script's alpha floor (24) are erased, as `fetch-sprites.mjs` does.
 
 His hands, the swingset of Daylight Savings Swingset and the face of Infinitely Powerful are drawn in code (no file: his hands are the
 render's own, redrawn turning; the swingset is BFB's playground swing, drawn).
+
+### Stapy (BFDI wiki; BFB+TPOT, kit 8)
+
+| Picture | Shown | Made from | Source |
+|---|---|---|---|
+| `stapy-win.png` (256x143) | the result screen | File:Stapy book.png; cut-out (wiki pose), scaled to his render's size (his stapler as big as the render's); `scripts/make-event-stapy-art.py` | https://battlefordreamisland.fandom.com/wiki/File:Stapy_book.png |
+| `stapy-hurt.png` (240x183) | hit, launched, and the daze at the end of Stapler Instincts | File:Stapy stapler instincts just took over.png; cut-out (wiki pose), scaled to his render's size; drawn mirrored (his face sits on the left); `scripts/make-event-stapy-art.py` | https://battlefordreamisland.fandom.com/wiki/File:Stapy_stapler_instincts_just_took_over.png |
+
+His jaw, staples, ladder, crack, glazed eyes and daze stars are drawn in code (no file). The second-choice picture (File:Stapy ow.png) was not needed.
+
+### Foldy (BFDI wiki; BFB+TPOT, kit 9)
+
+Her TPOT render, `foldy.png` (258x200), made from File:Tpot renders0034.png (700x543) by `scripts/make-event-foldy-art.py` (trimmed, scaled to 200 px tall). Source: https://battlefordreamisland.fandom.com/wiki/File:Tpot_renders0034.png . Her fold, glide, fist, bell, hand signs and the dodecahedron are drawn from it and in code (no file).
+
+| Picture | Shown | Made from | Source |
+|---|---|---|---|
+| `foldy-plane.png` (256x124) | the dart of Fold and Fly | File:Weirdfoldy.png (2248x1096; BFB 12, partly folded); cut-out (wiki pose), scaled to 256 wide, drawn 0.85 of the render's pixel size; `scripts/make-event-foldy-pose-art.py` | https://battlefordreamisland.fandom.com/wiki/File:Weirdfoldy.png |
+| `foldy-hurt.png` (256x206) | hit and launched | File:FLD1.png (878x705; BFB 12, her KO picture, unfolded); cut-out (wiki pose), scaled to 256 wide; `scripts/make-event-foldy-pose-art.py` | https://battlefordreamisland.fandom.com/wiki/File:FLD1.png |
+| `foldy-soggy.png` (256x171) | while she is soaked | File:Vomitfoldy.png (538x360; TPOT 1, covered in Rocky's barf); cut-out (wiki pose), scaled to 256 wide; `scripts/make-event-foldy-pose-art.py` | https://battlefordreamisland.fandom.com/wiki/File:Vomitfoldy.png |
 
 ## Per-fighter skins (Wardrobe)
 
