@@ -86030,8 +86030,8 @@ FINAL_SMASHES['oc:grappler'] = {
 //  THE TRAPPER (oc_trapper): puts things on the floor and makes the foe stand where they hurt. Violet.
 // ------------------------------------------------------------
 // The fixed kit, written as any converted fighter's (the mvStart runner): middling reach, light hits that pop the foe up or knock them down
-// toward the floor pieces, a wire lash and a trip line. The jab is the default (RANGE_PROFILE's), the finisher the shared circle (the
-// design's placeholder), the final smash none. The two strong aerials pay the strong class's end lag (16) on a whiff; the pokes the weak class's.
+// toward the floor pieces, a wire lash and a trip line. The jab is the default (RANGE_PROFILE's); the finisher (Mine Row) and the Final Smash (Minefield) are its own (OC VIABILITY 2, below).
+// The two strong aerials pay the strong class's end lag (16) on a whiff; the pokes the weak class's.
 const OC_VIOLET = '#9a6ee0';
 Object.assign(MOVESETS, {
   oc_trapper: {
@@ -86123,6 +86123,93 @@ ocDef('T-S4', 'trapper', 's', 'Utility', 'Tar Burst',      'a wide weak burst th
 // smashes the slow class.
 Object.assign(TELL_ADD, { 'T-N1.neutral':7, 'T-N2.neutral':10, 'T-N4.neutral':12, 'T-D1.down':4, 'T-D2.down':10 });
 Object.assign(ENDLAG_ADD, { 'T-N1.neutral':18, 'T-N2.neutral':14, 'T-N4.neutral':14, 'T-D2.down':14, 'T-S1.smash':16, 'T-S2.smash':17, 'T-S3.smash':16, 'T-S4.smash':16 });
+
+// THE FINISHER -- MINE ROW (OC VIABILITY 2). A wind-up of FIN_STARTUP frames (the body gathers and glows; the Trapper is held still), then three mines laid one
+// after another in a line ahead, 36, 100 and 164 px out, 20 frames apart: each is a floor piece like the rest of the kit's (it falls to the surface and ARMS for
+// 20 frames, drawn filling in, before it can hurt), and whoever treads on one takes 11% and a launch and is rooted 30 frames. They are the finisher's own: they
+// stand 4 s and the trap cap leaves them alone; one at a time -- the finisher waits while any of them stands, and its FIN_CD runs from when the last is gone.
+// A hit on the Trapper in the wind-up ends it; a ledge or a wall ahead lays nothing beyond it. Jump the row, or wait it out.
+const OC_ROW = { lean:FIN_STARTUP, at:[36, 100, 164], every:20, arm:20, dmg:7, kb:13, root:30, r:16, life:170 };
+function finOcRow(f){
+  finxAdd(f, 'ocrow', { ph:'lean', dr:f.face < 0 ? -1 : 1, x0:f.x, n:0 });
+  fxLock(f, OC_ROW.lean + 2); armAtk(f, OC_ROW.lean + 4, 'cast', mvId(f, 'finisher'));
+}
+ATKSPECIALS.oc_trapper = function(f){ return finOcRow(f); };
+function ocRowMine(f, o, k){
+  const R = OC_ROW, mx = o.x0 + o.dr*R.at[k], top = surfaceBelow(mx, feetY(f));
+  if(top === null || mx < 40 || mx > WW - 40 || fxWallSpan(o.x0, mx, f.y - f.r, f.y + f.r)) return false;
+  addProj({ owner:f.idx, ownerObj:f, x:mx, y:top - 8, vx:0, vy:0, grav:false, dmg:R.dmg, kb:R.kb, r:R.r, color:OC_VIOLET, life:R.life, trap:true, arm:R.arm, fxTag:'root', fxN:R.root, _slot:'finisher' });
+  for(let i = 0; i < 6; i++) puff(mx, top - 8, i % 2 ? OC_VIOLET : '#fff', 4);
+  return true;
+}
+function fxOcRowStep(o, f){
+  const R = OC_ROW, age = hazardT - o.t0;
+  if(o.ph === 'lean'){
+    if(f.hitstun > 0){ o.dead = true; return; }   // a hit in the wind-up stops it
+    fxLock(f, 2); f.vx = 0;
+    if(age < R.lean){ fxTell(f, 'ocrow', null, age/R.lean); return; }
+    o.ph = 'lay';
+  }
+  if(o.ph === 'lay'){
+    while(o.n < R.at.length && age >= R.lean + o.n*R.every){ ocRowMine(f, o, o.n); o.n++; }   // one after another, each with its own grow-in (the arm)
+    if(f.hitstun > 0) o.n = R.at.length;   // hit while laying: no more
+    if(o.n >= R.at.length) o.ph = 'stand';
+    return;
+  }
+  let up = false;   // 'stand': one at a time -- the finisher waits while any of its mines stands
+  for(const p of projectiles) if(p.owner === f.idx && p._slot === 'finisher' && p.trap && p.life > 0){ up = true; break; }
+  if(up) f.fnCd = Math.max(f.fnCd || 0, FIN_CD); else o.dead = true;
+}
+Object.assign(FINX_STEP, { ocrow:fxOcRowStep });
+// THE FINAL SMASH -- MINEFIELD. The catch is the lane ahead for 300 px (a foe held where it stood). Five mines grow in one after another across it, 64 px apart from
+// 48 px out (frames 14, 18, 22, 26 and 30, each growing in over 12), then go off in a chain along it, left to right, on frames 26, 30, 34, 38 and 42: each blast is a
+// ring (52 px and the body) of 22%, a launch away from its centre; a foe takes at most 44% in all (two rings, never more). The hold lets go 3 frames after the last
+// (about 45 frames). A foe the catch missed is hit by whatever blast finds them standing at it: leave the lane, or jump.
+const OC_MF = { n:5, first:48, gap:64, R:52, lay:14, step:4, grow:12, boom:26, pct:22, cap:44, kb:[11, -10], dur:60, color:OC_VIOLET };
+FINAL_SMASHES['oc:trapper'] = {
+  id:'minefield', wind:FS_WIND, dur:OC_MF.dur, reach:300, exact:true,
+  catch(f){ return fsBoxAhead(f, 0, 300, 50, 44); }, lockEnd:OC_MF.boom + OC_MF.step*(OC_MF.n - 1),
+  start(f, st){ st.ay = f.y; st.dr = f.face < 0 ? -1 : 1; st.ax = f.x; st.fy = f.y + f.r - 8; st.tot = {}; },
+  tick(f, st, t){
+    const M = OC_MF, d = st.dr;
+    f.vx = 0; if(!f.onground){ f.vy = 0; f.y = st.ay; }
+    if(t === 0){ shake(4); armAtk(f, this.wind, 'fsgather'); }
+    for(let i = 0; i < M.n; i++){
+      if(t === M.lay + M.step*i){ puff(st.ax + d*(M.first + M.gap*i), st.fy, M.color, 4); armAtk(f, 6, 'stomp'); }   // the next mine starts to grow in
+      if(t !== M.boom + M.step*i) continue;
+      const mx = st.ax + d*(M.first + M.gap*i), once = new Set();
+      shake(5 + i);
+      for(const u of fighters){
+        if(u.dead || u.idx === f.idx || u.team === f.team || hardInvuln(u) || !(hurtGap(u, mx, st.fy) < M.R)) continue;
+        const pct = Math.min(M.pct, M.cap - (st.tot[u.idx] || 0));
+        if(pct > 0.01 && ocFsHit(f, u, pct, (Math.sign(u.x - mx) || d)*M.kb[0], M.kb[1], i < M.n - 1 ? { stun:4 } : undefined)) st.tot[u.idx] = (st.tot[u.idx] || 0) + pct;
+      }
+      if(summons.length) damageSummons(f, mx, st.fy, M.R, M.pct/FS_DMG_MULT, null, once);
+      for(let q = 0; q < 14; q++) puff(mx + (q - 7)*5, st.fy - 4 - (q % 3)*8, q % 2 ? M.color : '#fff', 6);
+    }
+  },
+  ai(f){ const cs = fsCatchInset(fsCatchOf(this, f), 0.85); return fighters.some((t)=> fsCatchable(f, t) && fsCatchTouch(cs, t)); },
+  draw(f, c){
+    const M = OC_MF, t = f.fsT || 0, d = f.face < 0 ? -1 : 1, ax = f.fsAx != null ? f.fsAx : f.x, fy = (f.fsAy != null ? f.fsAy : f.y) + f.r - 8;
+    for(let i = 0; i < M.n; i++){
+      const t0 = M.lay + M.step*i, td = M.boom + M.step*i;
+      if(t < t0 || t > td + 8) continue;
+      const mx = ax + d*(M.first + M.gap*i);
+      c.save(); c.translate(mx, fy);
+      if(t <= td){   // a mine growing in (a disc and its spikes), blinking as it is about to go
+        const k = Math.min(1, (t - t0)/M.grow), r = 4 + 11*k, blink = td - t < 6 && (t % 2) ? 1 : 0;
+        c.globalAlpha = 0.45 + 0.55*k; c.fillStyle = blink ? '#ffffff' : M.color; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5;
+        for(let q = 0; q < 6; q++){ const a = -Math.PI/2 + (q - 2.5)*0.5; c.beginPath(); c.moveTo(Math.cos(a)*r, Math.sin(a)*r*0.6); c.lineTo(Math.cos(a)*(r + 8*k), Math.sin(a)*(r + 8*k)*0.8); c.lineTo(Math.cos(a + 0.2)*r, Math.sin(a + 0.2)*r*0.6); c.fill(); c.stroke(); }
+        c.beginPath(); c.ellipse(0, -2, r, r*0.6, 0, 0, 7); c.fill(); c.stroke();
+      } else {   // the blast: a ring going out
+        const u = (t - td)/8;
+        c.globalAlpha = 0.8*(1 - u); c.strokeStyle = M.color; c.lineWidth = 9*(1 - u) + 2; c.beginPath(); c.arc(0, -8, 14 + (M.R + 14)*u, 0, 7); c.stroke();
+        c.globalAlpha = 0.5*(1 - u); c.fillStyle = '#fff'; c.beginPath(); c.arc(0, -8, (M.R*0.7)*(1 - u*0.5), 0, 7); c.fill();
+      }
+      c.restore();
+    }
+  },
+};
 
 // ------------------------------------------------------------
 //  THE TRICKSTER (oc_trickster): fast, in and out, status mix-ups; wins by never being where the hit lands. Magenta.
