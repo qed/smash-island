@@ -24926,7 +24926,7 @@ function catchCut(t){
   // ...and what would carry them on over their launch once let go: a dash, a lunge, a dive, a stall, a teleport, a tackle, a stance
   t._windup = null; t._sm = null; t._dashing = 0; t._nail = null; t._stall = null; t._plunge = null; t._hyperT = 0; t._tp = null; t._tpHang = 0;
   t._roll = null;   // (8-Ball's Stop Shot roll)
-  t._gotcha = null; t._holdT = 0; t._attract = null; t._spPend = 0; t._smQ = null; t.smashHold = 0;
+  t._gotcha = null; t._holdT = 0; t._attract = null; t._spPend = 0; t._smQ = null; t.smashHold = 0; t._eLag = null;
 }
 function fsLockOn(f, st, t){
   catchCut(t);   // a grab, a hold, a move or a finisher in progress, and what would carry them on
@@ -64857,7 +64857,8 @@ function step(){
     if(f._heldBy!=null && heldStruggle(f, inp, inp === inpPaired ? f._rawKeys : null)) inp={left:false,right:false,jump:false,attack:false,special:false,smash:false};   // held: only the struggle (each press takes frames off the hold)
     if(f._fxLock > hazardT){ f._fxIn = (inp.left ? 1 : 0) | (inp.right ? 2 : 0) | ((inp.up || inp.jump) ? 4 : 0) | (inp.down ? 8 : 0); if(FINX.length) finxPress(f); inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; f._smQ = null; f.smashHold = 0; f._smBuf = false; }   // committed to a finisher (its tell, a reel, a slap fight): no input but the slap fight's mash, Nickel's beat, Liy's second click and the mash out of Yellow Face's tosses, and no smash charging through it; the arrows are kept for Rocky's jet (_fxIn) (FINISHERS V2)
     const aS = atkSpeedSteps(f);   // ATTACK SPEED: how many frames the attack timers run this frame -- 1, unless something speeds them up or slows them (atkSpeedSteps)
-    if(f._lag>0){ f._lag-=aS; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }   // the recovery of a throw, a whiffed grab or a landing
+    endLagStep(f);   // FRAME BUDGET: a move's end lag starts the frame its commitment ends (nothing for a fighter with none pending)
+    if(f._lag>0){ f._lag-=aS; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }   // the recovery of a throw, a whiffed grab, a landing, or a move's end lag (FRAME BUDGET)
     inp = zsStep(f, inp);   // SHIELD / REFLECTOR (Z): raised, held, dropped, broken (zsStep)
     if(f.invuln>0) f.invuln--;
     if(f._graceLeft>0) f._graceLeft--;   // runs down beside invuln: how much of it is hit-grace
@@ -67487,6 +67488,7 @@ function dirSmash(f, angle){
   if(inOwnTeamZone(f) || f._mv) return false;
   const S = dirSmashSpec(f, angle > 0 ? 1 : -1);
   if(!mvStart(f, S, angle > 0 ? 'usmash' : 'dsmash')) return false;
+  endLagArm(f, angle > 0 ? 'usmash' : 'dsmash');   // FRAME BUDGET
   if(f.you) questSmashArm(f);
   playSmashSfx(smashIdOf(f));
   f.smCd = Math.max(f.smCd || 0, SMASH_ENDLAG + Math.round(dirSmashNums(f.kit && f.kit.special, f.name).D*0.3));
@@ -68055,6 +68057,7 @@ function doSmash(f){
   if(inOwnTeamZone(f)) return;
 
   armAtk(f, ATK_ANIM+5, animKindOf(f, 'smash'), mvId(f, 'smash'));    // a smash lunges longer than a jab — the phase split scales with it
+  endLagArm(f, 'smash');   // FRAME BUDGET: the lighter end lag a smash with little recovery of its own pays (nothing for a kit not in ENDLAG_ADD)
   if(f.you) questSmashArm(f);   // Win Tokens: the "land smashes" quests (a tally outside the fighter; see QSTAT)
   if(f.kit && f.kit.special==='saltpepper') pepperEcho(f,'smash');
   // Announce it. The sound fires for everyone; the name banner only for the local player, because
@@ -68286,6 +68289,7 @@ function doUpSpecial(f){
   armAtk(f, ATK_ANIM, animKindOf(f, 'up'), mvId(f, 'up'));      // render-only: a recovery is the fighter ACTING, not being hit
   const k=f.kit && f.kit.special;
   if(tellAdd(f, 'up', function(){ doUpSpecial(f); })) return;   // NO-TELL SWEEP (no row today: a recovery's hit on the rise is the owner's call)
+  endLagArm(f, 'up');   // FRAME BUDGET (no row today either: a recovery is not made to fall)
   if(UPSPEC[k]){ riseShape(f, UPSPEC[k]); }
   else if(UPSPECIALS[k]){ UPSPECIALS[k](f); }
   else { upLaunch(f,-13*recV(f)); puff(f.x,f.y+14,f.color,6); }  // default recovery hop
@@ -68918,6 +68922,7 @@ function doDownSpecial(f){
   const k=f.kit && f.kit.special;
   if(DASH_TELL_DOWN.has(k) && !f._dashTellGo && dashTell(f, function(){ f._dashTellGo = true; try { doDownSpecial(f); } finally { f._dashTellGo = false; } })) return;   // DASH TELL
   if(tellAdd(f, 'down', function(){ doDownSpecial(f); })) return;   // NO-TELL SWEEP
+  endLagArm(f, 'down');   // FRAME BUDGET
   if(DOWNSPECIALS[k]) DOWNSPECIALS[k](f);
   else { f.countering=22; f.flash=8;  }
 }
@@ -69023,12 +69028,13 @@ function doAttackSpecial(f){
   armAtk(f, ATK_ANIM, animKindOf(f, 'finisher'), mvId(f, 'finisher'));
   const k=f.kit && f.kit.special;
   if(tellAdd(f, 'finisher', function(){ doAttackSpecial(f); })) return;   // NO-TELL SWEEP: a finisher in TELL_ADD winds up first (it is spent at the press, as a dash is)
+  endLagArm(f, 'finisher');   // FRAME BUDGET (two rows: Bomby's and Tennis Ball's, the fast ones)
   // A row that returns false could not start here (the Big File off the ground): nothing happened. The pose and the move count are put back,
   // and the caller does not spend the finisher (it returns false too).
   HA_FADE_NEXT = FIN_ART_FADE;   // HIT ART: the disc it hits with stays up as an impact (the shared finisher's: centred 28 px ahead, f.r+26 to the outline)
   const pre = new Set(projectiles);   // (what was out before it: what is new after it is the finisher's, TAKE_NEVER)
   try{
-    if(ATKSPECIALS[k]){ if(ATKSPECIALS[k](f) === false){ f._atkSeq = seq0; [f._atkKind, f._atkMove, f._atkAnim, f._atkLen, f._atkPhase, f._atkProg] = was; return false; } }
+    if(ATKSPECIALS[k]){ if(ATKSPECIALS[k](f) === false){ f._atkSeq = seq0; [f._atkKind, f._atkMove, f._atkAnim, f._atkLen, f._atkPhase, f._atkProg] = was; f._eLag = null; return false; } }   // (f._eLag: nothing happened, no end lag either -- FRAME BUDGET)
     else { const cx=f.x+f.face*28; f.flash=12; hitCircle(f,cx,f.y,f.r+26,14,14,f.face*12,-9);  }
   } finally { HA_FADE_NEXT = 0; for(const p of projectiles) if(!pre.has(p) && p.owner === f.idx) p._slot = 'finisher'; }
 }
@@ -80772,7 +80778,6 @@ function holdTick(f, inp){
   const dirs = { l: !!inp.left, r: !!inp.right, u: !!inp.up || !!inp.jump, d: !!inp.down, a: !!inp.attack };
   const P = H.prev; H.prev = dirs;
   inp.left = false; inp.right = false; inp.jump = false; inp.up = false; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; inp.fin = false;
-  if(f._windup && f._windup.throwTell){ holdPlace(f, t); return; }   // NO-TELL SWEEP: the throw is winding up -- the hold waits for it (no struggle, no timeout, no second throw)
   H.t++; if(H.pumCd > 0) H.pumCd--;
   holdPlace(f, t);
   if(H.t >= H.max){ holdRelease(f, t, -3); f.atkCd = 14; for(let i = 0; i < 6; i++) puff(t.x, t.y - 6, '#fff', 3); return; }   // they wriggled out
@@ -80805,11 +80810,7 @@ function holdDamage(f, t, dmg){
   if(t.pct >= t.koCap && !t.dead) eliminate(t);
 }
 function doThrow(f, t, kind){
-  const G = f._hold.G, T = G[kind];
-  if(!f._tellGo && !f._windup && (T.dmg >= TELL.light.dmg || Math.hypot(T.kx || 0, T.ky || 0) >= TELL.light.kb)){   // NO-TELL SWEEP: a throw that launches winds up first (TELL.throw), the hold waiting for it
-    const n = Math.max(6, Math.min(TELL.throw, LOCK.max - f._hold.t));
-    if(dashTell(f, function(){ if(f._hold && f._hold.idx === t.idx && t._heldBy === f.idx && !t.dead && !f.dead){ f._tellGo = true; try { doThrow(f, t, kind); } finally { f._tellGo = false; } } }, n)){ f._windup.throwTell = true; return; }
-  }
+  const G = f._hold.G, T = G[kind];   // (FRAME BUDGET: the 20-frame throw wind-up of the no-tell sweep is gone -- a throw launches at once, as it did before it; the hold is capped by LOCK.max)
   holdRelease(f, t, 0);
   if(kind === 'b') f.face = -f.face;
   const dir = f.face;
@@ -80829,7 +80830,6 @@ function doThrow(f, t, kind){
 function heldStruggle(f, inp, R){
   const h = fighters[f._heldBy];
   if(!h || h.dead || !h._hold || h._hold.idx !== f.idx){ f._heldBy = null; return false; }
-  if(h._windup && h._windup.throwTell) return true;   // NO-TELL SWEEP: no struggle while the throw winds up (the hold is as long as it was going to be)
   const A = R ? R[0] : inp.attack, S = R ? R[1] : inp.special, M = R ? R[2] : inp.smash, J = R ? R[3] : inp.jump;
   const k = (A ? 1 : 0) | (S ? 2 : 0) | (J ? 4 : 0) | (inp.left ? 8 : 0) | (inp.right ? 16 : 0) | (inp.down ? 32 : 0) | (M ? 64 : 0);
   const prev = f._stPrev || 0; f._stPrev = k;
@@ -83198,7 +83198,7 @@ function fireSpecialInner(f, inp){
     doSpecial(f); f.spCd=Math.max(f.spCd,55); return;   // diagonal dash: forward dash, angled
   }
   const sideS = sideSpecialOf(f, inp);   // ←/→ + C for a converted fighter
-  if(sideS){ if(!f._mv){ f.spCd = Math.max(f.spCd, sideS.cd || 55); if(!tellAdd(f, 'side', function(){ if(!f._mv) mvStart(f, sideS, 'side'); })) mvStart(f, sideS, 'side'); } return; }   // (NO-TELL SWEEP: a side special in TELL_ADD winds up first)
+  if(sideS){ if(!f._mv){ f.spCd = Math.max(f.spCd, sideS.cd || 55); if(!tellAdd(f, 'side', function(){ if(!f._mv && mvStart(f, sideS, 'side')) endLagArm(f, 'side'); })){ if(mvStart(f, sideS, 'side')) endLagArm(f, 'side'); } } return; }   // (NO-TELL SWEEP: a side special in TELL_ADD winds up first; FRAME BUDGET: its end lag, if ENDLAG_ADD lists it)
   f._aiSpGap = Math.max(0, aiSpecialGap(f, !inp.up && !inp.down));   // read only by the CPU brain (brainSpecReady), so the human path is untouched
   if(inp.up){
     // an up-special can only be used ONCE per airtime — on the ground it's always allowed,
@@ -83271,57 +83271,97 @@ function dashTell(f, fire, frames){
   for(let i = 0; i < 6; i++) puff(f.x - f.face*(f.r*0.5 + i*5), feetY(f) - 3, '#e3dccb', 3);   // dust kicked up at the feet
   return true;
 }
-// NO-TELL SWEEP (2026-11-09; the owner's TELL RULE: every move that can launch shows a wind-up of about TELL.frames frames before it can hurt,
-// unless it is a light poke). A headless audit (reports/no-tell-audit.csv) measured every special, smash, finisher and throw from the press to
-// the first damaging frame. A smash has its charge, a finisher FIN_STARTUP, a dash DASH_TELL; what was left without one gets it here, through the
-// same gather dashTell draws (stupK: the body winds up and glows in its colour, dust at the feet, the rising whistle), and the move itself is
-// unchanged after it (same damage, launch and frames):
-//   TELL_ADD   kit.slot -> frames of wind-up put before the move (slots: neutral, side, up, down, finisher): TELL.frames minus the startup the
-//              move already had. Nothing at all happens for a kit and slot not in the table (tellAdd returns false and the move runs as before).
-//   TELL.throw a throw that is not light (TELL.light: under 8% and a launch under 9) winds up this long before it launches (doThrow); the hold
-//              waits for it (no struggle, no timeout, no second throw: holdTick, heldStruggle), the victim can set their DI, and the wind-up is
-//              cut so the hold and the throw together stay within LOCK.max (MAX LOCK TIME).
+// NO-TELL SWEEP (2026-11-09), REWRITTEN THE SAME DAY BY THE FRAME BUDGET (below). The sweep's audit (reports/no-tell-audit.csv) measured every
+// special, smash, finisher and throw from the press to the first damaging frame and put a wind-up of about 20 frames before every strong move
+// that had none. The owner, the same day: "20 frames is enough to dodge easily" -- competitive play would not work. So the wind-up is now only
+// a READABLE FLOOR: a move whose original startup was under TELL.floor frames winds up for the difference (6 frames for a 0-frame burst, 2 for a
+// 4-frame throw of a shot), through the same gather dashTell draws (stupK: the body winds up and glows in its colour, dust at the feet, the
+// whistle), and the move pays for its speed in END LAG instead (ENDLAG_ADD). A move that already had 6 or more frames of its own (Lifering's
+// whistle, Pillow's and Pie's 8, 8-Ball's 8, Magnet's 12) has no row any more and runs exactly as it did before the sweep.
+//   TELL_ADD   kit.slot -> frames of wind-up put before the move (slots: neutral, side, up, down, finisher). Nothing at all happens for a kit
+//              and slot not in the table (tellAdd returns false and the move runs as before).
+//   TELL.light what counts as a strong move (8%+ or a launch of 9+): the frame budget's classes read it.
+// The throw wind-up the sweep added is gone: a throw launches at once again (doThrow), its hold capped by LOCK.max as before.
 // A hit in the wind-up cancels it (applyHit clears _windup); the CPU's shield reads it as it reads every wind-up (brainSwingTell).
-const TELL = { frames:20, throw:20, light:{ dmg:8, kb:9 } };
+const TELL = { floor:6, light:{ dmg:8, kb:9 } };
 const TELL_ADD = {
-  'stopshot.down': 12,   // 8-Ball: startup was 8, 9%, launch 6.4
-  'blueberry.neutral': 20,   // Blueberry: startup was 0, 10%, launch 9.5
-  'bomb.neutral': 20,   // Bomby: startup was 0, 16.5%, launch 16.1
-  'bomb.finisher': 20,   // Bomby: startup was 0, 18%, launch 15.8
-  'sign.neutral': 17,   // Bracelety: startup was 3, 10%, launch 9.3
-  'atstake.neutral': 16,   // Cake: startup was 4, 9%, launch 8.2
-  'seriously.neutral': 20,   // David: startup was 0, 10.1%, launch 12.8
-  'ember.neutral': 16,   // Firey: startup was 4, 8%, launch 7
-  'quake.neutral': 20,   // Flower: startup was 0, 14%, launch 20
-  'quake.down': 20,   // Flower: startup was 0, 5%, launch 10.3
-  'lifeguard.neutral': 9,   // Lifering: startup was 11, 8%, launch 12.2
-  'switch.down': 20,   // Liy: startup was 0, 13%, launch 18
-  'bestie.down': 8,   // Magnet: startup was 12, 7%, launch 15.7
-  'wallmart.neutral': 20,   // Marshmallow: startup was 0, 8%, launch 10
-  'wallmart.down': 20,   // Marshmallow: startup was 0, 9%, launch 11.4
-  'flip.neutral': 17,   // Nickel: startup was 3, 12%, launch 11.7
-  'snark.neutral': 20,   // Nickel (II): startup was 0, 7%, launch 15.3
-  'van.neutral': 19,   // Pencil: startup was 1, 15%, launch 0
-  'pieberry.neutral': 12,   // Pie: startup was 8, 7%, launch 9.8
-  'fluff.neutral': 12,   // Pillow: startup was 8, 16%, launch 12.6
-  'pierce.neutral': 20,   // Pin: startup was 0, 11%, launch 11.7
-  'battery.neutral': 17,   // Remote: startup was 3, 12%, launch 9.3
-  'antenna.neutral': 20,   // Roboty: startup was 0, 8%, launch 16.5
-  'glowgold.neutral': 20,   // Silver Spoon: startup was 0, 4%, launch 11.2
-  'glowgold.down': 20,   // Silver Spoon: startup was 0, 5%, launch 10.2
-  'onehit.neutral': 20,   // Starfruit: startup was 0, 14%, launch 16.6
-  'jawbreaker.neutral': 17,   // Taco: startup was 3, 12%, launch 9.3
-  'kick.neutral': 20,   // Teardrop: startup was 0, 14%, launch 17.2
-  'serve.neutral': 16,   // Tennis Ball: startup was 4, 8%, launch 7
-  'serve.finisher': 17,   // Tennis Ball: startup was 3, 14%, launch 12.8
-  'paste.neutral': 17,   // Toothpaste: startup was 3, 12%, launch 7
-  'blackmail.neutral': 20,   // Trophy: startup was 0, 10%, launch 9.2
+  'blueberry.neutral': 6,   // Blueberry: startup was 0 (the sweep added 20), 10%, launch 9.5
+  'bomb.neutral': 6,   // Bomby: startup was 0 (the sweep added 20), 16.5%, launch 16.1
+  'bomb.finisher': 6,   // Bomby: startup was 0 (the sweep added 20), 18%, launch 15.8
+  'sign.neutral': 3,   // Bracelety: startup was 3 (the sweep added 17), 10%, launch 9.3
+  'atstake.neutral': 2,   // Cake: startup was 4 (the sweep added 16), 9%, launch 8.2
+  'seriously.neutral': 6,   // David: startup was 0 (the sweep added 20), 10.1%, launch 12.8
+  'ember.neutral': 2,   // Firey: startup was 4 (the sweep added 16), 8%, launch 7
+  'quake.neutral': 6,   // Flower: startup was 0 (the sweep added 20), 14%, launch 20
+  'quake.down': 6,   // Flower: startup was 0 (the sweep added 20), 5%, launch 10.3
+  'switch.down': 6,   // Liy: startup was 0 (the sweep added 20), 13%, launch 18
+  'wallmart.neutral': 6,   // Marshmallow: startup was 0 (the sweep added 20), 8%, launch 10
+  'wallmart.down': 6,   // Marshmallow: startup was 0 (the sweep added 20), 9%, launch 11.4
+  'flip.neutral': 3,   // Nickel: startup was 3 (the sweep added 17), 12%, launch 11.7
+  'snark.neutral': 6,   // Nickel (II): startup was 0 (the sweep added 20), 7%, launch 15.3
+  'van.neutral': 5,   // Pencil: startup was 1 (the sweep added 19), 15%, launch 0
+  'pierce.neutral': 6,   // Pin: startup was 0 (the sweep added 20), 11%, launch 11.7
+  'battery.neutral': 3,   // Remote: startup was 3 (the sweep added 17), 12%, launch 9.3
+  'antenna.neutral': 6,   // Roboty: startup was 0 (the sweep added 20), 8%, launch 16.5
+  'glowgold.neutral': 6,   // Silver Spoon: startup was 0 (the sweep added 20), 4%, launch 11.2
+  'glowgold.down': 6,   // Silver Spoon: startup was 0 (the sweep added 20), 5%, launch 10.2
+  'onehit.neutral': 6,   // Starfruit: startup was 0 (the sweep added 20), 14%, launch 16.6
+  'jawbreaker.neutral': 3,   // Taco: startup was 3 (the sweep added 17), 12%, launch 9.3
+  'kick.neutral': 6,   // Teardrop: startup was 0 (the sweep added 20), 14%, launch 17.2
+  'serve.neutral': 2,   // Tennis Ball: startup was 4 (the sweep added 16), 8%, launch 7
+  'serve.finisher': 3,   // Tennis Ball: startup was 3 (the sweep added 17), 14%, launch 12.8
+  'paste.neutral': 3,   // Toothpaste: startup was 3 (the sweep added 17), 12%, launch 7
+  'blackmail.neutral': 6,   // Trophy: startup was 0 (the sweep added 20), 10%, launch 9.2
 };
 function tellAdd(f, slot, fire){
   const n = TELL_ADD[((f.kit && f.kit.special) || '') + '.' + slot];
   if(!(n > 0) || f._tellGo || f._windup) return false;
   return dashTell(f, function(){ f._tellGo = true; try { fire(); } finally { f._tellGo = false; } }, n);
 }
+// FRAME BUDGET (2026-11-09; the owner: "if moves have low startup, then they can be endlag heavy, which makes them fair even if they are hard
+// to read from before ... 20 frames is enough to dodge easily"; end lag "Lighter: 18-28 frames for strong moves"). The blanket 20-frame wind-up
+// of the no-tell sweep is replaced by a RISK / REWARD budget: a fast move keeps (about) its original startup, never under TELL.floor frames
+// (TELL_ADD above), and pays for it with END LAG -- frames after the move's active part in which its user cannot act (no keys, as _lag masks
+// them; gravity and momentum go on, and a hit lands on them normally): the window a foe punishes a whiffed or blocked move in. A STRONG fast move
+// (TELL.light or more; an original startup under 16) recovers ENDLAG.strong frames, 18 to 28 by its damage and launch; a WEAK fast move ENDLAG.weak
+// (8-14; a poke under 5% is left alone); a SLOW move (a startup of 16+: the smashes' charge, a special with a long wind-up) keeps its tell and gets
+// the lighter ENDLAG.slow (12-20) only where it had less, and nothing where it already recovers 18+. Up specials (recoveries) and throws are not in
+// it, nor are the finishers (a FINX finisher's commitment, _fxLock, is its own recovery), except the two the sweep had told: Bomby's and Tennis Ball's.
+// A move that CONNECTS (damage lands on a foe -- not on a bubble or a pane: zsBlock returns before endLagHit) recovers sooner: the lag left is
+// scaled to ENDLAG.hitK (35%, at least hitMin frames), so follow-ups and combos still work (the hit-confirm, as in Smash). A whiff and a blocked
+// hit pay in full.
+//   ENDLAG_ADD   kit.slot -> frames (slots: neutral, side, up, down, finisher, smash, usmash, dsmash), generated from the frame-budget audit
+//                (reports/frame-budget-audit.csv: the move's damage, launch, original startup and its measured recovery on a whiff): only a move
+//                whose own recovery was under its class target is listed. Nothing at all runs for a kit and slot not in the table.
+//   endLagArm    called as a move's body begins (after its tells); endLagStep (the fighter loop) starts the lag the frame the move's own
+//                commitment ends (endLagBusy: a wind-up, a dash, a move's active frames, a smash's lunge, a finisher's lock...), so a dash pays
+//                after the dash and a burst the frame after it; endLagHit (applyHit, once the damage lands) scales it; a hit taken ends it
+//                (hitstun takes over), so does a KO or a grab.
+//   frameData    (kit, slot) -> { startup, active, endLagWhiff, endLagHit } from FB_FRAME_DATA, the audit's measurements after this change, for a
+//                training-room readout (a later job).
+// The CPU punishes a foe it sees in end lag, by level (brainPunish, BRAIN_LV.punish); its shield reads the shorter tells as it did the long ones.
+const ENDLAG = { hitK:0.35, hitMin:4, strong:[18, 28], weak:[8, 14], slow:[12, 20] };
+const ENDLAG_ADD = {
+// @ENDLAG_ADD
+};
+function endLagBusy(f){ return !!f._windup || f._dashing > 0 || (!!f._mv && f._mv.t < f._mv.s.st + f._mv.s.act) || f._fxLock > hazardT || !!f._stall || f.flying > 0 || f._sawing > 0 || !!f._hold || f.smashHold > 0 || !!f._smQ || !!f._sm || !!f._gb || !!f._gotcha || !!f._tp || !!f._roll || !!f._plunge || !!f._nail; }
+function endLag(f, frames, slot){ if(!(frames > 0)) return; f._eLag = { n:frames, n0:frames, slot:slot || null, falls:f._falls || 0, on:false, hit:false }; }   // this move will pay `frames` of end lag once its commitment ends
+function endLagArm(f, slot){ const n = ENDLAG_ADD[((f.kit && f.kit.special) || '') + '.' + slot]; if(n > 0) endLag(f, n, slot); }
+function endLagStep(f){
+  const E = f._eLag; if(!E) return;
+  if(f.dead || E.falls !== (f._falls || 0) || f._heldBy != null){ f._eLag = null; return; }
+  if(!E.on){ if(endLagBusy(f)) return; E.on = true; E.t0 = hazardT; f._lag = Math.max(f._lag || 0, E.n); return; }
+  if(!(f._lag > 0)) f._eLag = null;
+}
+function endLagHit(from){   // the move connected: what is left of its end lag is cut to ENDLAG.hitK (once a move)
+  const E = from._eLag; if(!E || E.hit) return;
+  E.hit = true; const n = Math.max(ENDLAG.hitMin, Math.round(E.n * ENDLAG.hitK)); E.n = n;
+  if(E.on && from._lag > n) from._lag = n;
+}
+const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHit], frames, measured headless (reports/frame-budget-audit.csv)
+// @FB_FRAME_DATA
+};
+function frameData(kit, slot){ const r = FB_FRAME_DATA[kit + '.' + slot]; return r ? { startup:r[0], active:r[1], endLagWhiff:r[2], endLagHit:r[3] } : null; }
 // Paintbrush's Heat Explosion at full rage (18%, a 120-frame burn, radius body + 120 px, spends the meter). Called when the wind-up ends (doSpecial 'fury').
 function heatExplosion(f){
   if(f.dead) return;
@@ -83680,6 +83720,7 @@ function doSpecial(f){
   springyBotHear(f, k);   // ...and a Spring-Bot that is listening (Springy's MY PURPOSE!) writes it down
   if(DASH_TELL_KINDS.has(k) && !f._dashTellGo && dashTell(f, function(){ f._dashTellGo = true; try { doSpecial(f); } finally { f._dashTellGo = false; } })) return;   // DASH TELL: the dash begins after its wind-up
   if(tellAdd(f, 'neutral', function(){ doSpecial(f); })) return;   // NO-TELL SWEEP: the wind-up TELL_ADD gives this special, then the special itself
+  endLagArm(f, 'neutral');   // FRAME BUDGET: the end lag this special pays once it is done (nothing for a kit not in ENDLAG_ADD)
   switch(k){
     case "ember": spawnProj(f, {vx:f.face*8,vy:-2,grav:true,dmg:8,kb:6,r:9,color:"#f0803a",burn:true,life:60}); f.flash=8; f.spCd=48; break;
     case "dash": f.vx=f.face*22; f._dashing=16; f.invuln=22; f._dashHits=new Set(); f.flash=10; applyDashVY(f,17,15);
@@ -90061,6 +90102,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(t._yoyleT>0){ dmg*=0.45; kbx*=0.6; kby*=0.6; }              // ITEM: Yoyleberry — metal, takes less damage
   if(TESTMODE.active && !TESTMODE.damage){ dmg=0; }   // test mode: damage toggle off = no % buildup
   t.pct+=dmg;
+  if(dmg > 0 && from && from !== t && !(opts && opts.tick) && from._eLag) endLagHit(from);   // FRAME BUDGET: the move connected -- its end lag is cut (a blocked hit never gets here: zsBlock)
   if(CONTEST && dmg > 0 && from && from !== t && !(opts && opts.tick)) contestHit(t, from, dmg);   // A CONTEST: a landed hit counts toward the steal, and knocks the seed (and a hard one the window) loose
   if(dmg > 0 && from && from !== t && (fsSt || (from._fs && !SMASH_PROJ))) fsfNote(t, from, fsSt || from._fs);   // FS FLOOR: a foe this Final Smash hit (a frame of its row, its start or end, or a shot it threw, even after it ended) is remembered
   if((FINX.length || t._sleepT > hazardT) && from && from !== t && !(opts && opts.tick)) finx4Landed(t, from);   // Naily's tack hammered home, Pillow's sleep broken (FINISHERS V2, batch 4)
@@ -90112,6 +90154,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   // A circle still winding up is lost to any hit that connects first -- the counterplay that turns
   // a ring from an answer to everything into a read (see CIRCLE_WINDUP).
   if(t._windup) t._windup=null;
+  if(!isTick && from && from !== t && t._eLag){ t._eLag = null; if(t._lag > 0) t._lag = 0; }   // FRAME BUDGET: a hit taken in end lag -- the hitstun takes over
   if(!isTick && t._sm && t._sm.drive) t._sm = null;   // a lunge / dash / hop is lost to a hit (the dash's i-frames mostly spare it)
   t._hurtAnim=HURT_ANIM;   // render-only: the one unambiguous "was HIT" signal (see wasHit)
   t._hurt=90;   // any hit suppresses heal-over-time (Fern) for ~1.5s so aggression can break through
