@@ -65412,6 +65412,7 @@ function step(){
       if(f._smQ && !(f.frozen>0)){
         const full = smashFullOf(f);
         if(f.smashHold < full) f.smashHold++;
+        if(SHIELD_BREAKERS[f.kit && f.kit.special]) f._brkTell = !f._smQ.angle && !(f.onground && (inp.up || inp.down)) && !(!isHumanCtrl(f) && (f._aiSmDir || 0) !== 0);   // SHIELD BREAKERS: the tell is showing (brkTell: the render's hot glow, the CPU's read); an arrow held on the ground is the up or the down smash, which does not break
         if(f.smashHold >= full && f.smCd<=0){
           const dir = inp.up ? 1 : (inp.down ? -1 : 0);
           {
@@ -65419,7 +65420,7 @@ function step(){
             const human = isHumanCtrl(f), ai = (f._aiSmDir || 0) !== 0 && hazardT - (f._aiSmDirT || 0) <= 150;
             let a = ai && !human ? f._aiSmDir : (dir || f._smQ.angle);
             if(human && !f.onground) a = 0;   // a person's smash in the air is the neutral smash: no up or down smash off the ground
-            f._smQ = null; f.smashHold = 0; f._aiSmDir = 0;
+            f._smQ = null; f.smashHold = 0; f._aiSmDir = 0; f._brkTell = false;
             fireSmash(f, inp, a, human ? a !== 0 : ai);
           }
         }
@@ -68063,8 +68064,10 @@ function doSmash(f){
   const before = new Set(projectiles);
   const tag = function(){ for(const p of projectiles) if(p.owner===f.idx && !before.has(p)){ p._slot = 'smash'; if(f._smAngle) p.smAngle = f._smAngle; } };   // shots carry the angle, and the move they came from (no taker takes a smash's: TAKE_NEVER)
   if(SMASH_SPEC[k] && SMASH_SPEC[k].uncopyable) f._noCopyT = hazardT + 150;   // Bot's THE ONE AND ONLY!: nothing may copy it (see applyHit's tape)
-  if(SMASH_SPEC[k]){ runSmashSpec(f, smashRowAsFired(SMASH_SPEC[k], f)); tag(); return; }
-  if(SMASHES[k]){ SMASHES[k](f); smashCost(f, LEGACY_SMASH_COST[k]); tag(); return; }
+  f._smSync = true;   // SHIELD BREAKERS: a hit thrown by the body below is the smash's (brkSwing)
+  if(SMASH_SPEC[k]){ runSmashSpec(f, smashRowAsFired(SMASH_SPEC[k], f)); tag(); f._smSync = false; return; }
+  if(SMASHES[k]){ SMASHES[k](f); smashCost(f, LEGACY_SMASH_COST[k]); tag(); f._smSync = false; return; }
+  f._smSync = false;
   genericSmash(f);
 }
 
@@ -80186,6 +80189,47 @@ const RF = { start:6, active:36, endLag:22, cd:30, dmgK:1.3, dmgCap:12, spdK:1.8
 // then comes back at ZS.brkMeter, as after any break) but the one who was grabbed is NOT stunned -- free to move, jump and attack, just with no shield for a while -- and the
 // GRABBER is stunned for SHIELD_GRAB_STUN frames (the same dizzy stars as a break; cannot act, can be hit). No damage to either, no throw, no pummel. Tune the stun here.
 const SHIELD_GRAB_STUN = 40;
+// ============================================================
+//  SHIELD BREAKERS  (the owner, 2026-11-05; built 2026-11-09)
+// ============================================================
+// Twelve smashes BREAK a raised bubble in ONE hit: the bubble shatters at once (the normal break: ZS.brkFrames of stun, the meter back at ZS.brkMeter after),
+// and HALF of the smash's damage goes through to the shielder (BRK.dmgK; no launch of its own: the break's own pop). Only the NEUTRAL smash (slot 'n': the
+// fighter's own SMASH_SPEC row, by kit.special) -- not the up or the down smash, not tilts, aerials, jabs, specials, throws or ordinary shots. A smash that is
+// a thing it drops or leaves (Blocky's anvil, Gelatin's and Blueberry's mines) breaks the bubble too (zsShot: the shot carries _slot 'smash'). A multi-hit
+// breaker breaks on the first touch. The nine reflector fighters have no bubble: a breaker does nothing special to a pane (melee goes through it as ever,
+// a shot is turned as ever). THE TELL: a breaker's charge glows hot red, shaking and flickering white, for the whole 24-32 frames (brkTell; the render, below
+// smashColorOf's glow), so it can be read and dodged; a Hard or Expert CPU reads it and leaves the bubble (brainShield). ONE editable table: kit id -> slot.
+const SHIELD_BREAKERS = {
+  anvil:'n',       // Blocky -- Anvil Smash
+  timber:'n',      // Tree -- Deadfall
+  collide:'n',     // Bomb -- Big Kaboom
+  paintball:'n',   // Teddy Bear -- Rage Room
+  define:'n',      // Book -- Hardcover Slam
+  tricks:'n',      // Knife -- Blade Rush
+  freeze:'n',      // Gelatin -- Ice Breaker
+  tackle:'n',      // Snowball -- Ground Pound
+  blueberry:'n',   // Blueberry -- Oatmeal Raisin
+  fluff:'n',       // Pillow -- Bedspring Boom (the hammer smash)
+  splash:'n',      // Barf Bag -- Acid Reflux
+  wallmart:'n',    // Marshmallow -- One Purchase Later (her smash; Shattering Scream is her special)
+};
+const BRK = { dmgK:0.5, glow:'#ff4a2a' };   // the share of the smash's damage that goes through a broken bubble; the tell's colour
+function brkKit(f){ return !!(f && f.kit && SHIELD_BREAKERS[f.kit.special] === 'n'); }
+// Is this hit of the attacker's its breaker smash: the smash body as it runs (_smSync, doSmash), a ring's wind-up (_windup.smash) or the cross-frame state (_sm);
+// a shot's hit (opts.shot) only when the shot being applied (SMASH_PROJ) is the smash's own (_slot 'smash': a mine laid by it, long after the cast).
+function brkSwing(from, opts){
+  if(!brkKit(from)) return false;
+  if(opts && opts.shot) return !!(SMASH_PROJ && SMASH_PROJ._slot === 'smash' && SMASH_PROJ.ownerObj === from);
+  return !!(from._smSync || from._sm || (from._windup && from._windup.smash));
+}
+// The tell is showing: a breaker's charge (_brkTell is set on each charge frame; a press that carried an arrow is the up or the down smash, which does not break).
+function brkTell(f){ return !!f && f.smashHold > 0 && !!f._brkTell; }
+// A breaker met a raised bubble (zsBlock, zsShot): the bubble breaks as any break does, then half the damage lands (unblockable: the bubble is gone).
+function zsBreakerHit(t, from, dmg, shot){
+  zsBreak(t);
+  for(let i = 0; i < 8; i++) puff(t.x, t.y - t.r*0.5, BRK.glow, 5);
+  applyHit(t, dmg*BRK.dmgK, 0, 0, from, shot ? { unblockable:true, shot:true } : { unblockable:true });
+}
 function isReflector(f){ return !!f && REFLECTOR_FIGHTERS.has(f.name); }
 function zsMeter(f){ return f._zsM == null ? ZS.max : f._zsM; }
 // The bubble's radius: it follows the meter (full 1.55 bodies wide, down to 0.62), and grows over the first frames.
@@ -80249,6 +80293,7 @@ function zsBlock(t, dmg, from, opts){
   if(!(t._zsOn >= ZS.start || t._zsDropT > 0) || !from || from === t || fighters[from.idx] !== from || from.team === t.team || !(dmg > 0)) return false;
   if(opts && (opts.tick || opts.unblockable)) return false;
   if(t._fsLock || t.hitstun > 0) return false;
+  if(brkSwing(from, opts)){ zsBreakerHit(t, from, dmg, !!(opts && opts.shot)); return true; }   // SHIELD BREAKERS: the bubble breaks on this hit and half the damage lands
   t._zsBlk = (t._zsBlk || 0) + 1;   // (zsGuard: statuses that land after this go back)
   const L = t._zsLast || (t._zsLast = {}), again = L[from.idx] != null && hazardT - L[from.idx] < ZS.grace;
   L[from.idx] = hazardT;
@@ -80267,6 +80312,7 @@ function zsShot(f, pr){
   if(f._zsOn >= ZS.start || f._zsDropT > 0){
     const R = Math.max(zsRadius(f), f.r);
     if(Math.hypot(pr.x - f.x, pr.y - f.y) >= R + (pr.r || 6)) return false;
+    if(pr._slot === 'smash' && brkKit(own)){ pr.life = 0; zsBreakerHit(f, own, pr.dmg, true); return true; }   // SHIELD BREAKERS: a breaker's anvil or mine breaks the bubble
     f._zsM = zsMeter(f) - pr.dmg; f._zsF = 8; zsSfx('block'); pr.life = 0;
     for(let i = 0; i < 4; i++) puff(pr.x, pr.y, '#ffffff', 3);
     if(f._zsM <= 0) zsBreak(f);
@@ -96589,6 +96635,17 @@ function brainShield(f, t, B, L, dist, awake){
   const now = hazardT, rf = isReflector(f);
   if(!(L.shd > 0) || !awake || f.hitstun > 0 || f._zsBrk > 0 || f._zsLk > 0 || !f.onground && !rf || RACE.active){ B.shOn = false; f._aiShU = 0; return; }
   if(B.shOn && !rf && (f._zsOutT || -1) >= B.shT0){ B.shOn = false; f._aiShU = 0; B.shCd = now + AIS_CD; return; }   // it played a move out of the bubble: the hold is over
+  // SHIELD BREAKERS: a Hard or Expert CPU reads a breaker's tell (brkTell: the hot charge) and will not sit in the bubble for it -- rolled once per tell at its
+  // L.shd, it drops the shield (or does not raise it) and hops away from the charge. Easy and Medium read nothing here and keep blocking (and get broken).
+  if(!rf && t && brkTell(t) && brainLevel(f) >= 2 && dist < f.r + (t.r || 24) + 300){
+    if(!(B.brkT > 0) || now - B.brkT > 40){ B.brkT = now; B.brkOk = Math.random() < L.shd; }
+    if(B.brkOk){
+      if(B.shOn){ B.shOn = false; f._aiShU = 0; }
+      B.shCd = now + AIS_CD;
+      if(!B.press && f.onground) B.press = { until: now + 6, keys: Object.assign(brainKeys(), { jump:true, left: f.x < t.x, right: f.x > t.x }) };
+      return;
+    }
+  }
   if(B.shOn){
     const tell = rf ? brainShotTell(f, B) : brainSwingTell(f, t, dist);
     if(tell) B.shSeen = now;
@@ -107740,7 +107797,9 @@ function drawSpriteBody(f, sp, anim){
     const su = stupK(f);
     if(su >= 0){ lay(stupColor(f), 0.16 + 0.5*su*su); if(su > 0.7 && (hazardT & 2)) lay('#ffffff', 0.32); }
     else if(f.fsLk > 0 && typeof fsLockColor === 'function' && fsLockColor(f)) lay(fsLockColor(f), 0.3 + 0.14*Math.sin(hazardT*0.45));   // caught by a Final Smash: lit in the holder's colour
-    else if(f.smashHold > 0){ const ck = chargeK(f); lay(smashColorOf(f), 0.12 + 0.42*ck + ((ck >= 1 && (hazardT & 4)) ? 0.14 : 0)); }
+    else if(f.smashHold > 0){ const ck = chargeK(f);
+      if(brkTell(f)){ ctx.save(); ctx.translate(((hazardT & 1) ? 1 : -1)*dw*0.05, 0); lay(BRK.glow, 0.34 + 0.4*ck); if(hazardT & 2) lay('#ffffff', 0.3); ctx.restore(); }   // SHIELD BREAKERS: the tell -- a hot red glow that shakes and flickers white for the whole charge (brkTell)
+      else lay(smashColorOf(f), 0.12 + 0.42*ck + ((ck >= 1 && (hazardT & 4)) ? 0.14 : 0)); }
   }
   if(f.burn>0) lay("#f0521f",0.30);
   if(f.bleed>0) lay("#c0304a",0.22);            // bleed: a darker red under the burn tint             // burn reads on top of any other state, as on the blob
