@@ -67448,7 +67448,7 @@ function step(){
       if(top !== null){
         if(pr.warnX != null && Math.abs(pr.x - pr.warnX) < 0.5) pr.x = pr.warnX;   // a drifted drop lands on its shadow to the pixel (FALL_DRIFT)
         if(pr.landImpact){ impact(pr.x, top, pr.landImpact); pr.landImpact = null; }   // a heavy drop lands heavily: shake, dust, debris, a scar (impact)
-        if(pr.landsTrap){ pr.grav=false; pr.vx=0; pr.vy=0; pr.y=top-(pr.r||8)*0.6; pr.landsTrap=false; pr.trap=true; pr.arm=6; pr.life=Math.max(pr.life, 150); puff(pr.x, top, pr.color, 3); }
+        if(pr.landsTrap){ pr.grav=false; pr.vx=0; pr.vy=0; pr.y=top-(pr.r||8)*0.6; pr.landsTrap=false; pr.trap=true; pr.arm=pr.landArm>0?pr.landArm:6; pr.life=Math.max(pr.life, 150); puff(pr.x, top, pr.color, 3); }   // (OC TRAPPER: a row may ask a longer arming, landArm; no roster shot sets it)
         else { pr.y = top - (pr.r||8)*0.5; for(let i=0;i<4;i++) puff(pr.x, top-2, pr.color, 3); if(pr.springBox) springyPlaceBox(pr.x, top); if(pr.oneChips) oneRockChips(pr, top); if(pr.cobsPane) cobsPlacePane(pr.x, top, pr._paneT); if(pr.cobsKernel) cobsKernelLand(pr, top); pr.life = 0; continue; }   // Springy's box lands as a wall; Steve Cobs's pane as footing, his kernel as a sticky puddle
       }
     }
@@ -85062,7 +85062,7 @@ const OC_SLOT_OF = { special:'n', neutral:'n', down:'d', up:'u', smash:'s' };   
 const OC_TYPES = {
   zoner:     { name:'Zoner',     color:'#4ec9e0', arch:'Zoner',     st:{ run:0.97, air:1.00, jump:1.03, fall:0.96, dmg:1.00, rec:1.00 }, ready:true },
   grappler:  { name:'Grappler',  color:'#e0663a', arch:'Grappler',  st:{ run:1.00, air:0.97, jump:0.96, fall:1.06, dmg:1.06, rec:1.00 }, ready:true },
-  trapper:   { name:'Trapper',   color:'#9a6ee0', arch:'Trapper',   st:{ run:0.95, air:1.00, jump:1.00, fall:1.00, dmg:1.03, rec:1.05 }, ready:false },
+  trapper:   { name:'Trapper',   color:'#9a6ee0', arch:'Trapper',   st:{ run:0.95, air:1.00, jump:1.00, fall:1.00, dmg:1.03, rec:1.05 }, ready:true },
   trickster: { name:'Trickster', color:'#d14fc9', arch:'Trickster', st:{ run:1.06, air:1.05, jump:1.05, fall:0.97, dmg:0.96, rec:1.00 }, ready:false },
 };
 const OC_OPTIONS = {};   // id -> { type, slot, role, name, text, mv | shot | rise | smash | stance | drop, spCd, ai }
@@ -85108,6 +85108,7 @@ function ocRun(f, slot){
       spawnProj(f, Object.assign({}, P, { vx:f.face*(P.vx == null ? 8 : P.vx)*k, vy:(P.vy || 0), grav:!!P.grav, dmg:P.dmg == null ? 6 : P.dmg, kb:P.kb == null ? 5 : P.kb, r:P.r || 8, color:P.color || col, life:P.life || 60 })); }
     f.flash = Math.max(f.flash, 8); }
   if(o.drop){ ocDrop(f, Object.assign({ color:col }, o.drop), false); f.flash = Math.max(f.flash, 8); }
+  if(ocLaysTrap(o)) ocTrapCap(f);   // (OC TRAPPER: at most OC_TRAP_MAX of one owner's floor pieces, none past OC_TRAP_LIFE)
   if(o.spCd) f.spCd = Math.max(f.spCd, o.spCd);
   return true;
 }
@@ -85136,7 +85137,7 @@ function ocBrainKit(f){
   const K = Object.assign({}, BRAIN_KIT0, {
     shot:n.kind === 'shot', shot0:n.kind === 'shot', near:n.kind === 'melee' || n.kind === 'dash', band:n.band || null, spDmg:n.dmg || 0,
     nStance:n.kind === 'stance',
-    down:d.kind === 'stance' ? 'stance' : d.kind === 'heal' ? 'heal' : d.kind === 'trap' ? 'trap' : 'other',
+    down:d.kind === 'stance' ? 'stance' : d.kind === 'heal' ? 'heal' : d.kind === 'trap' ? 'trap' : d.kind === 'octrap' ? 'octrap' : 'other', trapLead:d.lead || null,   // (OC TRAPPER: 'octrap' is a mine laid at the feet; `lead` is how far off a foe coming in should be)
     dBand:(d.kind === 'melee' && d.band) || null, dDmg:d.dmg || 0, nTrap:false, trapX:30,
     upDmg:u.dmg || 0,
     up:(U && U.hit) ? { kind:'hit', fx:U.hit.fx || 0, off:U.hit.off == null ? -14 : U.hit.off, reach:U.hit.reach || 18 } : null,
@@ -85336,6 +85337,104 @@ ocDef('G-S4', 'grappler', 's', 'Utility', 'Grip Reel',      'reaches out and ree
 // own `end` is their whiff lag (24 for the kill punch, 22 for the pound, 8-14 for the pokes and the hops); the smashes pay the slow class.
 Object.assign(TELL_ADD, { 'G-N1.neutral':5, 'G-D1.down':6 });
 Object.assign(ENDLAG_ADD, { 'G-S1.smash':16, 'G-S2.smash':17, 'G-S3.smash':16, 'G-S4.smash':16 });
+
+// ------------------------------------------------------------
+//  THE TRAPPER (oc_trapper): puts things on the floor and makes the foe stand where they hurt. Violet.
+// ------------------------------------------------------------
+// The fixed kit, written as any converted fighter's (the mvStart runner): middling reach, light hits that pop the foe up or knock them down
+// toward the floor pieces, a wire lash and a trip line. The jab is the default (RANGE_PROFILE's), the finisher the shared circle (the
+// design's placeholder), the final smash none. The two strong aerials pay the strong class's end lag (16) on a whiff; the pokes the weak class's.
+const OC_VIOLET = '#9a6ee0';
+Object.assign(MOVESETS, {
+  oc_trapper: {
+    aiFit: true,
+    ft: { n:'Stake Thrust', d:'drives a sharpened stake straight ahead; a thrust with a little reach', pose:'punch', st:6, act:3, end:10,
+      boxes:[{ s:MvC(10, -2, 56, -2, 13), dmg:6, kb:[5, -3], stun:22 }] },
+    ut: { n:'Spring Lift', d:'a coiled spring snaps up under the chin and launches them straight up', pose:'uppercut', st:6, act:3, end:10,
+      boxes:[{ s:MvC(4, -8, 6, -56, 16), dmg:6, kb:[0.8, -10], stun:26 }] },
+    dt: { n:'Trip Line', d:'whips a line low along the floor; it sweeps their feet and pops them up', pose:'sweep', st:5, act:3, end:9,
+      boxes:[{ s:MvF(8, 58, 0.4, -0.15, 12, 2), dmg:4, kb:[2, -7], stun:24 }] },
+    na: { n:'Chain Whirl', d:'whirls a short chain once round the body; one catch', pose:'spin', st:5, act:5, end:8, land:8, ac:14,
+      boxes:[{ s:MvO(0, 0, 44), dmg:5.5, kb:[3, -3], stun:22 }] },
+    fa: { n:'Wire Lash', d:'lashes a wire out ahead and whips it down over them', pose:'chop', st:8, act:3, end:16, land:11, ac:22,
+      boxes:[{ s:MvF(12, 66, -0.6, 0.3, -2, 0), dmg:7.5, kb:[6, -2], stun:20 }] },
+    ba: { n:'Back Snap', d:'a snare snaps shut straight behind; the kill aerial', pose:'kickback', st:7, act:3, end:16, land:11, ac:21,
+      boxes:[{ s:MvC(-10, 0, -52, 2, 14), dmg:8.5, kb:[-9, -3.5], stun:14 }] },
+    ua: { n:'Hook Up', d:'flicks a hook straight up at whoever is above', pose:'kickup', st:5, act:3, end:9, land:8, ac:14,
+      boxes:[{ s:MvC(0, -8, 4, -52, 14), dmg:5.5, kb:[0.5, -8.5], stun:24 }] },
+    da: { n:'Anchor Drop', d:'drops a weighted anchor straight down under the body; a spike', pose:'stompdn', st:8, act:4, end:12, land:11, ac:22,
+      boxes:[{ s:MvC(0, 12, 4, 54, 14), dmg:7, kb:[0.8, 8.5], stun:14 }] },
+    grab: { reach:30, whiff:28, pummel:{ dmg:2, every:12, n:'Cinch' }, hold:{ base:64 },
+      f:{ n:'Line Toss', d:'swings them out on a line and lets go', dmg:7, kx:8, ky:-4, stun:0, pose:'throw', lag:18 },
+      b:{ n:'Snare Fling', d:'flings them over the shoulder and behind', dmg:7, kx:8.5, ky:-5.5, stun:0, pose:'throwb', lag:20 },
+      u:{ n:'Spring Launch', d:'a spring under them fires them straight up', dmg:5, kx:0.5, ky:-12.5, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Floor Stake', d:'stakes them flat to the floor', dmg:5.5, kx:2, ky:-8, stun:34, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'No cling.'],
+  },
+});
+// TRAPS ARE FAIR. Every floor piece an OC lays is a projectile like any other (the online snapshot sends it as one; it draws as the generic
+// circle in the type's colour with the idle shimmer and the arming decal): it arms OC_TRAP_ARM frames or more before it can hurt (the
+// roster's own trap branch does the counting), it can be jumped over, it expires. On top of that: at most OC_TRAP_MAX of one owner's rest
+// on the stage (the oldest goes when a fourth is laid) and none lives past OC_TRAP_LIFE frames, so nothing floods the stage or the snapshot.
+const OC_TRAP_MAX = 3, OC_TRAP_LIFE = 480, OC_TRAP_ARM = 20;
+function ocLaysTrap(o){ return !!((o.shot && (o.shot.trap || o.shot.landsTrap)) || (o.drop && (o.drop.rider === 'trap' || o.drop.rider === 'puddle'))); }
+function ocTrapCap(f){
+  const mine = projectiles.filter(p => p.owner === f.idx && p.life > 0 && (p.trap || p.landsTrap || p.landsPuddle));
+  for(const p of mine) if(p.life > OC_TRAP_LIFE) p.life = OC_TRAP_LIFE;
+  while(mine.length > OC_TRAP_MAX){ const p = mine.shift(); p.life = 0; puff(p.x, p.y, p.color, 4); }
+}
+// The sixteen options (reports/oc-design.md 2.6): four a slot, one of each role (Damage / floor control / Escape / Utility), every one a new move
+// in the existing vocabularies. The floor pieces are the roster's own trap idiom: a shot with trap:true falls from the hands to the surface
+// below and arms there (addProj, TRAPS FALL); a lobbed one settles where it lands (landsTrap). Locks on a foe never pass LOCK.max.
+// NEUTRAL SPECIAL
+ocDef('T-N1', 'trapper', 'n', 'Damage',  'Tack Volley',    'three tacks at three speeds that string out into one line; one dodge rarely clears all three',
+  { shot:{ count:3, spread:0.12, vx:9, grav:false, dmg:4, kb:3, r:4, life:40 }, ai:{ kind:'shot', band:[60, 300], dmg:4 } });   // (TELL_ADD 7: the design's st 7 (T3))
+ocDef('T-N2', 'trapper', 'n', 'Zoning',  'Tripwire Pod',   'lobs a pod that settles where it lands, arms, and roots whoever steps on it',
+  { shot:{ vx:6, vy:-4, grav:true, dmg:2, kb:1, r:8, life:60, landsTrap:true, landArm:OC_TRAP_ARM, root:true }, ai:{ kind:'shot', band:[110, 230], dmg:3 } });
+ocDef('T-N3', 'trapper', 'n', 'Escape',  'Smoke Pop',      'a back hop in a puff of smoke that hides the next tell for a second',
+  { mv:{ n:'Smoke Pop', d:'hops back in a puff of smoke', pose:'kickback', st:1, act:8, end:8,
+      mv:[{ t0:0, mode:'set', vx:-7, vy:-4 }, { t0:1, t1:7, mode:'set', vx:-7 }],
+      start:(f) => { f.cloud = Math.max(f.cloud || 0, 60); for(let i=0;i<10;i++) puff(f.x+(Math.random()*30-15), f.y-8+(Math.random()*20-10), '#d8d0ea', 5); } },
+    ai:{ kind:'dash', back:true } });
+ocDef('T-N4', 'trapper', 'n', 'Utility', 'Caltrop Patch',  'two slowing patches drop at the feet; nothing much on the throw, everything on the floor',
+  { drop:{ rider:'puddle', count:2, spread:3, dmg:1, kb:1, r:5, vy:5, life:40 }, spCd:150, ai:{ kind:'shot', band:[30, 110], dmg:1 } });   // (ocDrop reads dmg 0 as its default 5, so the glob asks 1; the puddle it becomes is the engine's 2)
+// DOWN SPECIAL
+ocDef('T-D1', 'trapper', 'd', 'Damage',  'Bear Trap Snap', 'a snap at the floor just ahead that launches straight up and leaves them bleeding',
+  { mv:{ n:'Bear Trap Snap', d:'a trap snaps shut at the floor just ahead; launches straight up and bleeds', pose:'slam', st:8, act:2, end:20,
+      boxes:[{ s:MvC(10, 16, 40, 16, 14), dmg:12, kb:[2, -10], stun:28, fx:(f, t) => smashFx(f, [t], 'bleed', 60) }] },
+    ai:{ kind:'melee', band:[0, 74], dmg:12 } });   // (TELL_ADD 4: the design's st 12 (T4)) (the band counts the foe's body, as the Grappler's down specials do: the brain fires a down special only past its own reach and inside it)
+ocDef('T-D2', 'trapper', 'd', 'Zoning',  'Mine Seed',      'drops a seed at the feet; it arms in a beat and goes off under the first foe to tread on it',
+  { shot:{ vx:0, vy:0, trap:true, arm:24, dmg:5.5, kb:6, r:9, life:300 }, ai:{ kind:'octrap', lead:[50, 170] } });   // (dmg 5.5 x TRAP_DMG_MULT = 8, the design's; life 300 x PROJ_LIFE = 420 frames, 7 s)
+ocDef('T-D3', 'trapper', 'd', 'Escape',  'Trapdoor Hop',   'a hop up and back that leaves a spark where the Trapper stood; it punishes the chase',
+  { mv:{ n:'Trapdoor Hop', d:'a hop up and back that leaves a spark behind', pose:'kickback', st:2, act:8, end:8,
+      mv:[{ t0:0, mode:'set', vx:-6, vy:-8 }, { t0:1, t1:7, mode:'set', vx:-6 }],
+      start:(f) => { ocDrop(f, { rider:'plain', count:1, dmg:3, kb:1, r:5, vy:5, life:30, color:OC_VIOLET }, false); } },
+    ai:{ kind:'hop', back:true, dmg:3 } });
+ocDef('T-D4', 'trapper', 'd', 'Utility', 'Lie Low',        'crouches thirty frames in smoke, healing about 2%; the smoke hides the next tell',
+  { stance:{ frames:30, end:8, self:{ cloud:120, healing:11 } }, spCd:200, ai:{ kind:'heal' } });
+// UP SPECIAL
+ocDef('T-U1', 'trapper', 'u', 'Damage',  'Spring Snap',    'a rise whose hit roots the foe where it catches them; short reach, heavy',
+  { rise:{ shape:'hop', power:-12, hit:{ off:-8, fx:4, reach:24, dmg:[8, 12], band:-0.5, kb:[4, -9], eff:'root', n:40 } }, ai:{ kind:'hop', up:true, dmg:12 } });
+ocDef('T-U2', 'trapper', 'u', 'Zoning',  'Seed Scatter',   'a hop that scatters three rooting seeds below',
+  { rise:{ shape:'hop', power:-11, drop:{ rider:'root', count:3, spread:4, dmg:3, kb:1, r:5, vy:6, life:40 } }, ai:{ kind:'hop', up:true, dmg:3 } });
+ocDef('T-U3', 'trapper', 'u', 'Escape',  'Cable Warp',     'a long warp mostly sideways with ten safe frames, no hit: the way back from under a ledge',
+  { rise:{ shape:'warp', dist:120, dx:60, invuln:10 }, ai:{ kind:'warp', up:true } });
+ocDef('T-U4', 'trapper', 'u', 'Utility', 'Trap Hop',       'a plain rise that leaves an armed trap where it was cast',
+  { rise:{ shape:'hop', power:-12 }, shot:{ vx:0, vy:0, trap:true, arm:24, dmg:4, kb:3, r:10, life:200 }, ai:{ kind:'hop', up:true } });   // (the design's leave:'trap' is a plunge's word; a hop leaves its trap as the roster's traps are laid)
+// NEUTRAL SMASH (SMASH_SPEC-style rows: dmg is the row's, fired at SMASH_DMG_MULT like every smash)
+ocDef('T-S1', 'trapper', 's', 'Damage',  'Spike Press',    'a slow press of spikes into the floor after a rooted wind-up; it bleeds',
+  { smash:{ pat:'plant', wind:10, rad:40, dmg:18, kb:14, effect:'bleed', n:90, cost:{ stun:26 }, color:OC_VIOLET }, ai:{ kind:'plant', dmg:18 } });
+ocDef('T-S2', 'trapper', 's', 'Zoning',  'Minefield',      'plants one big mine a step ahead that roots whoever treads on it; one out at a time',
+  { smash:{ pat:'mine', at:36, r:20, life:240, dmg:13, kb:11, effect:'root', n:40, cost:{ cd:60 }, color:OC_VIOLET }, ai:{ kind:'mine', dmg:13 } });
+ocDef('T-S3', 'trapper', 's', 'Escape',  'Rebound Dash',   'a short dash through them with a recoil back; the rush that ends behind where it began',
+  { smash:{ pat:'through', dash:8, spd:15, reach:26, dmg:10, kb:8, cost:{ stun:20, back:6 }, color:OC_VIOLET }, ai:{ kind:'through', dmg:10 } });
+ocDef('T-S4', 'trapper', 's', 'Utility', 'Tar Burst',      'a wide weak burst that slows whoever it touches; the floor pieces want a slow foe',
+  { smash:{ pat:'burst', frames:10, r0:24, rad:86, grow:20, dmg:7, kb:5, effect:'slow', n:80, cost:{ cd:54 }, color:OC_VIOLET }, ai:{ kind:'burst', dmg:7 } });
+// The frame budget (FRAME BUDGET above): a shot's whole startup is its tell (it fires on the frame it is cast); the snap shows a tell on top of its
+// st; the melee rows' own `end` is their whiff lag (20 for the snap, 8 for the hops); the volley pays the strong class, the lobs the weak, the
+// smashes the slow class.
+Object.assign(TELL_ADD, { 'T-N1.neutral':7, 'T-N2.neutral':10, 'T-N4.neutral':12, 'T-D1.down':4, 'T-D2.down':10 });
+Object.assign(ENDLAG_ADD, { 'T-N1.neutral':18, 'T-N2.neutral':14, 'T-N4.neutral':14, 'T-D2.down':14, 'T-S1.smash':16, 'T-S2.smash':17, 'T-S3.smash':16, 'T-S4.smash':16 });
 function endLagBusy(f){ return !!f._windup || f._dashing > 0 || (!!f._mv && f._mv.t < f._mv.s.st + f._mv.s.act) || f._fxLock > hazardT || !!f._stall || f.flying > 0 || f._sawing > 0 || !!f._hold || f.smashHold > 0 || !!f._smQ || !!f._sm || !!f._gb || !!f._gotcha || !!f._tp || !!f._roll || !!f._plunge || !!f._nail; }
 function endLag(f, frames, slot){ if(!(frames > 0)) return; f._eLag = { n:frames, n0:frames, slot:slot || null, falls:f._falls || 0, on:false, hit:false }; }   // this move will pay `frames` of end lag once its commitment ends
 function endLagArm(f, slot){ const n = ENDLAG_ADD[ocKitKey(f, slot) + '.' + slot]; if(n > 0) endLag(f, n, slot); }   // (OC ENGINE: an OC's pick is keyed by its option id)
@@ -98977,6 +99076,8 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   // BOW: a Teleport up or across onto the foe (aiBowTpInto: the trip ends on or beside them, over something to land on), now and then
   if(sp === 'chair' && ready && !t._isBoss && dist < 320 && !f._tpUsed && Math.random() < L.hop*L.kit && aiBowTpInto(f, t)){ brainTap(B, { special:true }, 3); B.specAt = now + brainSpecGap(f, L); return; }
   // a trap laid for a foe walking in; a heal taken when hurt and alone
+  // (OC TRAPPER: a mine that lands at the layer's own feet is laid only when a foe is on the way in -- walking toward it inside `lead`, or falling toward it -- so it sits on their path, never at idle feet)
+  if(K.down === 'octrap' && K.trapLead && ready && f.onground && ady < 70 && adx > K.trapLead[0] && adx < K.trapLead[1] && (t.vx*toward < -0.4 || (t.y < f.y - 30 && t.vy > 0)) && Math.random() < 0.4){ brainTap(B, { special:true, down:true }, 3); B.specAt = now + brainSpecGap(f, L); return; }
   if(K.down === 'trap' && ready && f.onground && dist > 80 && dist < 260 && Math.random() < 0.3){ brainTap(B, { special:true, down:true }, 3); B.specAt = now + brainSpecGap(f, L); return; }
   if(K.down === 'heal' && ready && f.onground && f.pct >= 30 && dist > 240){ brainTap(B, { special:true, down:true }, 3); B.specAt = now + brainSpecGap(f, L); return; }
   // a self-buff smash (Teardrop's cloud, Golf Ball's Presence) away from the fight, now and then
