@@ -5701,6 +5701,12 @@ function keysSave(){
 
 // ---------- state ----------
 let chosen = ROSTER.find(r=>r.play);
+// OC EDITOR (2026-11-09; block above the Zoner): hidden until the owner opens it. OC_OPEN is off for everyone; localStorage 'bfsi:ocopen' = '1' turns it on in one browser
+// (the console: localStorage.setItem('bfsi:ocopen','1'); location.reload()), OC_RELEASED = true opens it for all. OC_PUBLIC_TYPES: the types a player may pick (the rest read 'coming').
+const OC_RELEASED = false;
+const OC_OPEN = OC_RELEASED || (function(){ try{ return localStorage.getItem('bfsi:ocopen') === '1'; }catch(e){ return false; } })();
+const OC_PUBLIC_TYPES = ['zoner'];
+let OC_CPU = [];   // names of the saved OCs given a CPU seat in the next local match (only ever filled from the OC screen)
 let stage = STAGES[0];
 // PLAYS CAMERA (see that block, in the World Cup's): declared with the first state, since go(), loop(), applyHit and the sound ask it.
 // on: a session is live; bg: the match stepping now is one nobody sees; cur: the match stepping now; real: the game's own dice.
@@ -19035,6 +19041,7 @@ function go(id){
   if(id==='tourneySetup'){ cupSyncUI(); }
   if(id==='ctfCupSetup'){ ctfCupSyncUI(); }
   if(id==='ctfCupTeams'){ ctfCupTeamsRender(); }
+  if(id==='lobby' && OC_OPEN) ocDropPick();   // OC EDITOR: no OC goes online yet
   if(id==='lobby'){ try{ loadLobbyArt(); }catch(e){} }   // the lobby's portraits are fetched now, not when the page loaded
   if(id==='controls'){ buildMaps(); buildCustomMusic(); }
   if(id==='vault'){ try{ buildVault(); }catch(e){} }
@@ -19428,6 +19435,7 @@ function buildBoard(){
     }
     b.appendChild(c);
   });
+  if(OC_OPEN){ try{ ocBoardCells(b); }catch(e){ console.error('ocBoardCells', e); } }   // OC EDITOR: the saved OCs after the roster
   try{ if(wrap) wrap.scrollTop = keepScroll; }catch(e){}
   scrollChosenIntoView();
   const note=document.getElementById('lockNote'); if(note) note.style.display='none';
@@ -19817,6 +19825,7 @@ const MOVE_TEXT = {
 };
 
 function refreshSel(){
+  if(OC_OPEN && chosen && chosen.oc){ try{ if(ocRefreshSel()) return; }catch(e){ console.error('ocRefreshSel', e); } }   // OC EDITOR: a picked OC's own card
   document.getElementById('selName').textContent=chosen.name;
   document.getElementById('selArch').textContent=chosen.arch;
   const art=document.getElementById('selArt'); if(art){ art.innerHTML=''; art.appendChild(cosSelArt(chosen) || cosSelSkinArt(chosen) || fighterThumb(chosen, 'selartimg')); }   // (in the Halloween costume or the skin they wear, if any)
@@ -20611,6 +20620,7 @@ function startMatch(){
   // One's bans are on player 1's pick, and every way into a match comes through here -- the World Cup pick and Test mode
   // included -- so a fighter she has erased can never start one. (The tutorial always plays Firey and counts for nothing.)
   if(!TUT.active) oneCoercePick();
+  if(OC_OPEN && chosen && chosen.oc && ocStartBlocked()) return;   // OC EDITOR: an OC plays local Free-for-all and Teams only
   // An event match picked on the event page: its own fixed setup with the fighter just picked (startEventMatch). R mid-match and the result
   // screen's Rematch come here too, and play the same event match again.
   if(EVENT_PICK && !inNetSession()){ startEventMatch(); return; }
@@ -24438,6 +24448,7 @@ function buildFighters(){
       LINEUP_MEMO = { key: lineupKey(N), names: picks.map(p=>p.name), teamOf: null };
     }
     all=[{...chosen, you:true}, ...picks.map(p=>({...p, you:false}))];
+    if(OC_CPU.length) all = ocCpuSeat(all);   // OC EDITOR: the saved OCs the player put in a CPU seat (empty unless they did)
     // THE DAILY'S FOE. "The same seeded matchup for everyone" -- and since Wave 3.5 the fixed opponent was only ever put in
     // the Test Mode lineup above, so a real Daily drew slot 1 at random like any match (found on the bug pass: a Daily of
     // Lightning vs Pin came out Lightning vs Yellow Face, Ruler, Pencil). It is today's foe, a mirror match included.
@@ -85118,12 +85129,12 @@ function ocRun(f, slot){
 function ocNorm(oc){
   const T = (oc && OC_TYPES[oc.type]) ? oc.type : 'zoner', L = OC_LISTS[T], picks = {};
   for(const s of OC_SLOTS){ const id = oc && oc.picks && oc.picks[s], r = id && OC_OPTIONS[id]; picks[s] = (r && r.type === T && r.slot === s) ? id : (L[s][0] || null); }
-  const k = oc && oc.look || {}, c = (n, hi) => { n = n | 0; return n < 0 ? 0 : n > hi ? hi : n; };
-  const look = { c:c(k.c, 15), c2:c(k.c2, 15), p:c(k.p, 4), e:c(k.e, 3), m:c(k.m, 3), hat:(typeof k.hat === 'string' && k.hat) || null };
+  const k0 = oc && oc.look, k = (k0 && typeof k0 === 'object') ? k0 : {}, lid = (typeof k0 === 'string') ? k0 : k.id, c = (n, hi) => { n = n | 0; return n < 0 ? 0 : n > hi ? hi : n; };   // (OC EDITOR: the look may be a look id, a picture of OC_LOOKS)
+  const look = { c:c(k.c, 15), c2:c(k.c2, 15), p:c(k.p, 4), e:c(k.e, 3), m:c(k.m, 3), hat:(typeof k.hat === 'string' && k.hat) || null, id:ocLookOf(lid) ? lid : null };
   return { v:1, name:String((oc && oc.name) || OC_TYPES[T].name).slice(0, 16), type:T, picks, rf:(oc && oc.rf) ? 1 : 0, look };
 }
 function ocRow(oc){ const o = ocNorm(oc), T = OC_TYPES[o.type];
-  return { name:o.name, w:OC_W, color:OC_PALETTE[o.look.c] || T.color, play:true, arch:T.arch, kit:{ special:'oc_' + o.type, desc:'An original character: a ' + T.name + '.' }, oc:o }; }
+  return { name:o.name, w:OC_W, color:(ocLookOf(o.look.id) || {}).col || OC_PALETTE[o.look.c] || T.color, play:true, arch:T.arch, kit:{ special:'oc_' + o.type, desc:'An original character: a ' + T.name + '.' }, oc:o }; }
 function ocStats(oc, w){ const T = OC_TYPES[oc && oc.type] || OC_TYPES.zoner, o = Object.assign({ run:1, air:1, jump:1, fall:1, dmg:1, rec:1 }, T.st);
   const rk = runK(w, null), hk = heavySlowK(w);
   if(rk !== 1) o.run = Math.round(o.run*rk*1000)/1000; if(hk !== 1) o.air = Math.round(o.air*hk*1000)/1000;
@@ -85161,6 +85172,380 @@ function ocDevMatch(opts){
   fighters[i] = f; try{ buildHUD(); }catch(e){}
   return f;
 }
+
+// ============================================================
+//  OC EDITOR (2026-11-09): the player-facing side of OCs -- the looks, the editor, the saved list, the name filter, the fighter board
+// ============================================================
+// HIDDEN. Everything here is behind OC_OPEN (near `chosen`: localStorage 'bfsi:ocopen' = '1' in one browser, or OC_RELEASED, the owner's flip). With it off
+// no button, tile, screen or saved-OC code exists for a player: every hook outside this block is `if(OC_OPEN)` (or `f.oc`, which only an OC has), the screen
+// is built by JS on first use (no markup), and the saved list is never read. Local play only: an OC does not travel online yet (the online job).
+// The design is reports/oc-design.md (sections 5, 6.1-6.2, 7, 10); the owner's changes to it: the look is a PICTURE (OC_LOOKS, ten of them), the weight and the
+// stats are the type's, saved on this device, keyboard only, up to 8 OCs, a type is selectable only when it is in OC_PUBLIC_TYPES (the rest read 'coming').
+// An OC match is practice: it is not logged, awards no tokens or unlocks and counts for no record (recordMatch, awardMatchProgress).
+const OC_MAX = 8, OC_NAME_MAX = 12, OC_KEY = 'bfsi:ocs';
+// The ten looks (the owner approved them 2026-11-09): a picture of a mini-series character, ~200 px tall, in assets/sprites like every fighter's. `col` is the
+// colour the OC's tags and hit sparks take; `flip` marks a picture drawn facing left (the sprite rule: drawSpriteBody). Credit: the Thanks roll.
+const OC_LOOKS = [
+  { id:'juice-box',     name:'Juice Box',     img:'assets/sprites/oc-juice-box.png',     col:'#f7a21b', flip:true  },
+  { id:'frozen-yogurt', name:'Frozen Yogurt', img:'assets/sprites/oc-frozen-yogurt.png', col:'#f48fb1', flip:false },
+  { id:'frank',         name:'Frank',         img:'assets/sprites/oc-frank.png',         col:'#c8573a', flip:false },
+  { id:'kumquat',       name:'Kumquat',       img:'assets/sprites/oc-kumquat.png',       col:'#f28c1f', flip:false },
+  { id:'banana-apple',  name:'Banana Apple',  img:'assets/sprites/oc-banana-apple.png',  col:'#f2d324', flip:true  },
+  { id:'popsicle',      name:'Popsicle',      img:'assets/sprites/oc-popsicle.png',      col:'#3fa7e8', flip:false },
+  { id:'thermos',       name:'Thermos',       img:'assets/sprites/oc-thermos.png',       col:'#6b7684', flip:false },
+  { id:'traffic-light', name:'Traffic Light', img:'assets/sprites/oc-traffic-light.png', col:'#4a4c52', flip:false },
+  { id:'mocha',         name:'Mocha',         img:'assets/sprites/oc-mocha.png',         col:'#8a5a3c', flip:false },
+  { id:'duck',          name:'Duck',          img:'assets/sprites/oc-duck.png',          col:'#f5d33b', flip:true  },
+];
+const OC_BOX = { w:78, h:104 };   // the picture's fixed box in a match (the 24 px circle stays the hurtbox)
+function ocLookOf(id){ if(typeof id !== 'string') return null; for(const L of OC_LOOKS) if(L.id === id) return L; return null; }
+// The look as a sprite entry for the game's own loader (spriteImage: lazy, null until decoded and for ever if it 404s) and renderer (drawSpriteBody).
+function ocLookSpr(L){ return L.sp || (L.sp = { src:L.img, imgH:OC_BOX.h/24, imgW:OC_BOX.w/24, flip:!!L.flip }); }
+function ocLookSprite(f){   // the picture an OC is drawn with, or null (no look, or the image is missing or not there yet): the blob stays the fallback
+  const L = ocLookOf(f && f.oc && f.oc.look && f.oc.look.id); if(!L) return null;
+  const sp = ocLookSpr(L); return spriteImage(sp) ? sp : null;
+}
+function ocPreloadLooks(){ for(const L of OC_LOOKS){ try{ spriteImage(ocLookSpr(L)); }catch(e){} } }
+function ocImg(L, cls){   // a look as a picture for the screens (a missing file leaves the box empty, never a broken-image icon)
+  if(!L) return '<span class="ocnoimg"></span>';
+  return '<img class="' + (cls || 'ocimg') + '" src="' + esc(L.img) + '" alt="" draggable="false" onerror="this.style.visibility=\'hidden\'">';
+}
+
+// ---- THE NAME FILTER (section 7). One list, one function, so the editor, the saved list and the online job cannot disagree. ----
+// A name is 1-12 letters, digits and spaces; it is read case-blind, with leetspeak undone (0 o, 1 i or l, 3 e, 4 a, 5 s, 7 t, 8 b, @ a, $ s, ! i), spaces
+// removed (so "f u c k" is caught) and a repeated letter allowed ("fuuuck"). A short stem matches only as a whole word (so Class, Bass and Cockpit pass); the
+// longer ones match anywhere. Add a stem to the one-line arrays below to widen it. The list is short on purpose and cannot catch everything.
+const OC_BAD_SUB = ['fuck', 'shit', 'bitch', 'nigg', 'fagg', 'whore', 'slut', 'bastard', 'asshole', 'dildo', 'penis', 'vagina', 'pussy', 'cocksuck',
+  'blowjob', 'handjob', 'rapist', 'hitler', 'nazi', 'retard', 'tranny', 'molest', 'jizz', 'twat', 'chink', 'kike', 'wetback', 'bukkake', 'orgasm', 'horny',
+  'boner', 'cumshot', 'masturbat', 'paedo', 'pedophile', 'genocide'];
+const OC_BAD_WORD = ['ass', 'arse', 'cum', 'fag', 'tit', 'sex', 'dick', 'cock', 'piss', 'porn', 'anal', 'anus', 'rape', 'kkk', 'hoe', 'kys', 'gook', 'spic', 'coon',
+  'dyke', 'fuk', 'fck', 'sht', 'btch', 'dik', 'pedo', 'wank', 'nude', 'nudes', 'tits', 'boob', 'boobs', 'sperm', 'rapey', 'nigga', 'cunt'];
+let OC_BAD_RE = null;
+function ocBadRes(){
+  if(OC_BAD_RE) return OC_BAD_RE;
+  const rep = s => s.split('').map(c => c + '+').join('');
+  OC_BAD_RE = { sub:OC_BAD_SUB.map(s => new RegExp(rep(s))), word:OC_BAD_WORD.map(s => new RegExp('^' + rep(s) + '(?:s|es|er|ers|ed|ing|y|ie|ies)?$')) };
+  return OC_BAD_RE;
+}
+const OC_LEET = { '0':'o', '3':'e', '4':'a', '5':'s', '7':'t', '8':'b', '@':'a', '$':'s', '!':'i', '9':'g' };
+function ocLeet(s, one){ let out = ''; for(const ch of String(s).toLowerCase()){ out += (ch === '1' ? one : OC_LEET[ch]) || ch; } return out.replace(/[^a-z ]/g, ''); }
+function ocBadName(s){   // true when the name hits the list
+  const R = ocBadRes();
+  for(const one of ['i', 'l']){
+    const t = ocLeet(s, one).split(' ').filter(Boolean), j = t.join('');
+    if(!j) continue;
+    for(const re of R.sub) if(re.test(j)) return true;
+    for(const re of R.word){ if(re.test(j)) return true; for(const w of t) if(re.test(w)) return true; }
+  }
+  return false;
+}
+function ocKeyForm(x){ return String(x).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function ocImpersonates(s){   // a name that is a fighter's (the roster, the prize fighters, anything the picture and animation tables key by name)
+  const k = ocKeyForm(s); if(!k) return false;
+  try{
+    for(const T of [ROSTER, PRIZE_ROSTER]) for(const r of T) if(r && typeof r.name === 'string' && ocKeyForm(r.name) === k) return true;
+    for(const T of [SPRITES, FIGHTER_ANIM, LIMB_RIG, FRAME_DATA, POSE_SETS]) for(const n in T) if(ocKeyForm(n) === k) return true;
+  }catch(e){}
+  return false;
+}
+function ocNameClean(name){ return (typeof name === 'string' ? name : '').trim().replace(/ +/g, ' ').slice(0, OC_NAME_MAX * 4); }
+function ocNameWhy(name){   // '' when the name is good, else the short message to show
+  const s = ocNameClean(name);
+  if(!s) return 'Type a name';
+  if(s.length > OC_NAME_MAX || /[^A-Za-z0-9 ]/.test(s)) return 'Letters and numbers only, 12 at most';
+  if(ocBadName(s) || ocImpersonates(s)) return 'Pick another name';
+  return '';
+}
+function ocNameOk(name){ return typeof name === 'string' && ocNameWhy(name) === ''; }   // the online job's entry: the same test everywhere
+
+// ---- SAVING (section 6.2): bfsi:ocs = {v:1, list:[{v:1, name, type, look, picks:{n,d,u,s}, rf}]}, through BStore, up to 8 ----
+let OC_LIST = [], OC_LOADED = false, OC_LOADING = null;
+function ocTypeOk(t){ return typeof t === 'string' && !!OC_TYPES[t] && OC_TYPES[t].ready !== false && OC_PUBLIC_TYPES.indexOf(t) >= 0; }
+function ocDefaultType(){ return OC_PUBLIC_TYPES.find(ocTypeOk) || 'zoner'; }
+function ocClean(raw){   // any saved or typed thing -> a valid OC (an unknown type, pick or look is reset to the default, a bad name becomes "OC"); never refuses
+  const o = (raw && typeof raw === 'object') ? raw : {};
+  const type = ocTypeOk(o.type) ? o.type : ocDefaultType(), L = OC_LISTS[type], p = (o.picks && typeof o.picks === 'object') ? o.picks : {}, picks = {};
+  for(const s of OC_SLOTS){ const id = p[s], r = (typeof id === 'string' && Object.prototype.hasOwnProperty.call(OC_OPTIONS, id)) ? OC_OPTIONS[id] : null; picks[s] = (r && r.type === type && r.slot === s) ? id : L[s][0]; }
+  const nm = ocNameClean(o.name);
+  return { v:1, name:ocNameOk(nm) ? nm : 'OC', type, look:ocLookOf(o.look) ? o.look : OC_LOOKS[0].id, picks, rf:o.rf ? 1 : 0 };
+}
+function ocNameTaken(name, list, skip){ const k = ocKeyForm(name); return list.some((x, i) => i !== skip && ocKeyForm(x.name) === k); }
+function ocUniqName(name, list, skip){
+  if(!ocNameTaken(name, list, skip)) return name;
+  for(let n = 2; n < 100; n++){ const c = name.slice(0, OC_NAME_MAX - String(n).length - 1).trim() + ' ' + n; if(!ocNameTaken(c, list, skip)) return c; }
+  return name;
+}
+function ocLoad(){   // once; resolves with the list (an unreadable save is an empty list, never an error)
+  if(OC_LOADING) return OC_LOADING;
+  OC_LOADING = (async function(){
+    const list = [];
+    try{
+      const raw = await BStore.get(OC_KEY), d = raw ? JSON.parse(raw) : null, a = d && Array.isArray(d.list) ? d.list : [];
+      for(const x of a){ if(list.length >= OC_MAX) break; if(!x || typeof x !== 'object') continue; const c = ocClean(x); c.name = ocUniqName(c.name, list, -1); list.push(c); }
+    }catch(e){}
+    OC_LIST = list; OC_LOADED = true;
+    return list;
+  })();
+  return OC_LOADING;
+}
+function ocPersist(){ try{ return BStore.set(OC_KEY, JSON.stringify({ v:1, list:OC_LIST })); }catch(e){} }
+function ocFind(name){ return OC_LIST.find(x => x.name === name) || null; }
+function ocSaveNew(draft){   // -> { ok, msg, i }
+  if(OC_LIST.length >= OC_MAX) return { ok:false, msg:'Eight OCs is the most: delete one first' };
+  const c = ocClean(draft), why = ocNameWhy(draft && draft.name);
+  if(why) return { ok:false, msg:why };
+  if(ocNameTaken(c.name, OC_LIST, -1)) return { ok:false, msg:'That name is taken' };
+  OC_LIST.push(c); ocPersist(); return { ok:true, msg:'Saved', i:OC_LIST.length - 1 };
+}
+function ocSaveAt(i, draft){
+  if(!OC_LIST[i]) return ocSaveNew(draft);
+  const c = ocClean(draft), why = ocNameWhy(draft && draft.name);
+  if(why) return { ok:false, msg:why };
+  if(ocNameTaken(c.name, OC_LIST, i)) return { ok:false, msg:'That name is taken' };
+  const old = OC_LIST[i].name; OC_LIST[i] = c; OC_CPU = OC_CPU.map(n => n === old ? c.name : n); ocPersist(); return { ok:true, msg:'Saved', i };
+}
+function ocDelete(i){ const o = OC_LIST[i]; if(!o) return false; OC_LIST.splice(i, 1); OC_CPU = OC_CPU.filter(n => n !== o.name); ocPersist(); return true; }
+function ocDuplicate(i){
+  const o = OC_LIST[i]; if(!o) return { ok:false, msg:'' };
+  if(OC_LIST.length >= OC_MAX) return { ok:false, msg:'Eight OCs is the most: delete one first' };
+  const c = ocClean(o); c.name = ocUniqName(c.name, OC_LIST, -1); OC_LIST.push(c); ocPersist(); return { ok:true, msg:'Copied', i:OC_LIST.length - 1 };
+}
+function ocRowOf(o){ return ocRow({ type:o.type, picks:o.picks, rf:o.rf, name:o.name, look:o.look }); }   // the ROSTER-shaped row the engine builds the fighter from (the same path ocDevMatch uses)
+// CPU seats: the saved OCs the player has put in a CPU seat of the next local match (a session choice; the automatic rosters stay roster-only).
+function ocCpuSeat(all){
+  const ids = OC_CPU.map(ocFind).filter(Boolean).filter(o => !(all[0] && all[0].oc && all[0].name === o.name)).slice(0, Math.max(0, all.length - 1));
+  ids.forEach((o, k) => { all[1 + k] = Object.assign({}, ocRowOf(o), { you:false }); });
+  return all;
+}
+function ocDropPick(){ if(chosen && chosen.oc) chosen = ROSTER.find(r => r.play && !r.prize && isUnlocked(r)) || ROSTER.find(r => r.play) || chosen; }   // the online lobby has no OCs yet
+function ocStartBlocked(){   // an OC plays local Free-for-all and Teams only for now; says why in the note over the moves
+  let why = '';
+  if(inNetSession()) why = 'OCs are not online yet';
+  else if(PENDING_TOURNEY || EVENT_PICK || oneWanted() || cobsWanted() || (SETTINGS.mode !== 'ffa' && SETTINGS.mode !== 'teams')) why = 'OCs play Free-for-all and Teams';
+  if(!why) return false;
+  const n = document.getElementById('lockNote'); if(n){ n.textContent = why; n.style.display = 'block'; }
+  return true;
+}
+
+// ---- THE FIGHTER BOARD (section 5): the player's saved OCs as tiles after the roster, and a tile that opens the list ----
+function ocBoardCells(b){
+  const net = inNetSession();
+  if(!OC_LOADED){ ocLoad().then(() => { try{ const s = document.getElementById('select'); if(s && s.classList.contains('active')) buildBoard(); }catch(e){} }); return; }
+  if(cupPicking() || EVENT_PICK || (PENDING_TOURNEY && PENDING_TOURNEY.pickMates)) return;   // a cup's or an event's pick is roster-only
+  ocPreloadLooks();
+  if(chosen && chosen.oc && !ocFind(chosen.name)) chosen = ROSTER.find(r => r.play) || chosen;   // an OC deleted since: back to a fighter
+  const h = document.createElement('div'); h.className = 'dlchead';
+  h.innerHTML = '<span class="cellname">Your OCs' + (OC_CPU.length ? ' (CPU: ' + esc(OC_CPU.join(', ')) + ')' : '') + '</span>'; b.appendChild(h);
+  OC_LIST.forEach(o => {
+    const L = ocLookOf(o.look), c = document.createElement('div');
+    c.dataset.oc = o.name;
+    if(net){ c.className = 'cell locked'; c.title = 'OCs are not online yet'; c.setAttribute('aria-label', o.name + ' - OCs are not online yet'); }
+    else { c.className = 'cell play' + ((chosen && chosen.oc && chosen.name === o.name) ? ' sel' : ''); c.title = o.name + ' (OC, ' + OC_TYPES[o.type].name + ')'; }
+    c.innerHTML = ocImg(L, 'cellimg') + '<span class="cellname">' + esc(o.name) + '</span>';
+    if(!net) c.onclick = () => pickCell(ocRowOf(o), c);
+    else c.onclick = () => { const n = document.getElementById('lockNote'); if(n){ n.textContent = 'OCs are not online yet'; n.style.display = 'block'; } };
+    b.appendChild(c);
+  });
+  const m = document.createElement('div'); m.className = net ? 'cell locked' : 'cell play'; m.dataset.oc = '';
+  m.innerHTML = '<span class="dot" style="background:#e9e4d8"></span><span class="cellname">' + (net ? 'OCs: not online yet' : OC_LIST.length ? 'Your OCs' : 'Make an OC') + '</span>';
+  m.title = net ? 'OCs are not online yet' : 'Make, edit and pick your OCs';
+  m.onclick = () => { if(net){ const n = document.getElementById('lockNote'); if(n){ n.textContent = 'OCs are not online yet'; n.style.display = 'block'; } } else ocOpenList(); };
+  b.appendChild(m);
+}
+function ocRefreshSel(){   // the side panel for a picked OC: its picture, its picks with their roles, its Z; returns true when it drew
+  const o = chosen && chosen.oc; if(!o) return false;
+  const T = OC_TYPES[o.type] || OC_TYPES.zoner, L = ocLookOf(o.look && o.look.id), MS = MOVESETS['oc_' + o.type] || {};
+  document.getElementById('selName').textContent = chosen.name;
+  document.getElementById('selArch').textContent = 'OC · ' + T.name;
+  const art = document.getElementById('selArt'); if(art){ art.innerHTML = ocImg(L, 'selartimg'); }
+  const mc = document.getElementById('moveCard');
+  if(mc){
+    const row = (k, d, wide) => '<div class="mc-row' + (wide ? ' mc-wide' : '') + '"><span class="mc-k">' + k + '</span><span class="mc-d">' + d + '</span></div>';
+    const fx = (k, m) => m ? row(k, esc(m.n) + ' <div class="mc-sub">' + esc(m.d) + '</div>', true) : '';
+    const pk = (k, slot) => { const x = OC_OPTIONS[o.picks[slot]]; return x ? row(k, '<b>' + esc(x.name) + '</b> <span class="ocrole">' + esc(x.role) + '</span><div class="mc-sub">' + esc(x.text) + '</div>', true) : ''; };
+    mc.innerHTML = '<div class="mc-head">' + esc(chosen.name) + ' — an OC, ' + esc(T.name) + '</div>' + fx('X', MS.ft) + fx('↓+X', MS.dt) + fx('↑+X', MS.ut)
+      + pk('C', 'n') + pk('↓+C', 'd') + pk('↑+C', 'u') + pk('V', 's')
+      + row('Z', esc(o.rf ? OC_RF_TEXT.rf : OC_RF_TEXT.sh), true) + row('Edit', 'Pick the Your OCs tile', true);
+  }
+  loadSelectArt();
+  return true;
+}
+const OC_RF_TEXT = { sh:'Shield: a bubble that blocks everything and shrinks.', rf:'Reflector: no bubble; turns shots back harder. Melee goes through.' };
+
+// ---- THE SCREENS: the saved list and the editor, one screen built by JS on first use, keyboard only (the Store's look) ----
+const OC_STEPS = ['Type', 'Look', 'Neutral', 'Down', 'Up', 'Smash', 'Z', 'Name', 'Save'];
+const OC_SLOT_OF_STEP = { 2:'n', 3:'d', 4:'u', 5:'s' };
+const OC_SLOT_LABEL = { n:'NEUTRAL SPECIAL (C)', d:'DOWN SPECIAL (down + C)', u:'UP SPECIAL (up + C)', s:'NEUTRAL SMASH (V)' };
+const OC_TYPE_ORDER = ['zoner', 'grappler', 'trapper', 'trickster'];
+const OC_TYPE_BLURB = {
+  zoner:{ line:'holds a lane with shots', words:'Floaty, steady, ranged' },
+  grappler:{ line:'big hits up close', words:'Strong, grounded, close' },
+  trapper:{ line:'things on the floor', words:'Slow, sturdy, sneaky' },
+  trickster:{ line:'in and out, mix-ups', words:'Fast, bouncy, light' },
+};
+const OCUI = { mode:'list', sel:0, step:0, cur:0, draft:null, edit:-1, msg:'', ask:null, bound:false, from:'select' };
+function ocEnsureScreen(){
+  let el = document.getElementById('ocscreen');
+  if(el) return el;
+  const st = document.createElement('style'); st.id = 'ocstyle';
+  st.textContent = '#ocscreen{align-items:center;text-align:center}'
+    + '#ocscreen .ocbar{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:6px 0 10px}'
+    + '#ocscreen .ocstep{border:2px solid #1c1c1c;border-radius:8px;padding:3px 9px;font-size:12px;font-weight:800;background:var(--panel)}'
+    + '#ocscreen .ocstep.on{background:var(--gold);box-shadow:0 3px 0 #1c1c1c}#ocscreen .ocstep.done{background:#eef8e6}'
+    + '#ocscreen .ocmain{display:flex;gap:16px;width:min(980px,100%);text-align:left;align-items:flex-start}'
+    + '#ocscreen .oclist{flex:1 1 auto;display:flex;flex-direction:column;gap:6px;min-width:0}'
+    + '#ocscreen .ocrow{border:2px solid #1c1c1c;border-radius:10px;background:var(--panel);padding:7px 10px;font-weight:700;font-size:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}'
+    + '#ocscreen .ocrow.sel{background:var(--gold);box-shadow:0 3px 0 #1c1c1c}#ocscreen .ocrow.off{opacity:.5}'
+    + '#ocscreen .ocrole,#select .ocrole{font-size:10px;letter-spacing:.06em;padding:1px 6px;border-radius:6px;background:#1c1c1c;color:#fff;text-transform:uppercase}'
+    + '#ocscreen .ocdesc{flex:1 1 100%;font-size:12px;font-weight:600;color:#444}#ocscreen .ocsub{font-size:12px;font-weight:600;color:#555}'
+    + '#ocscreen .ocside{flex:0 0 230px;border:2px solid #1c1c1c;border-radius:12px;background:var(--panel);padding:10px;text-align:center}'
+    + '#ocscreen .ocside .ocimg{height:150px;width:auto;max-width:200px;object-fit:contain}#ocscreen .ocside b{display:block;font-size:18px;margin-top:4px}'
+    + '#ocscreen .ocgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;flex:1 1 auto}'
+    + '#ocscreen .occell{border:2px solid #1c1c1c;border-radius:10px;background:var(--panel);padding:6px 4px;font-size:12px;font-weight:700;text-align:center;display:flex;flex-direction:column;align-items:center;gap:3px}'
+    + '#ocscreen .occell.sel{background:var(--gold);box-shadow:0 3px 0 #1c1c1c}#ocscreen .occell .ocimg{height:72px;width:auto;max-width:70px;object-fit:contain}'
+    + '#ocscreen .rowimg{height:40px;width:auto;max-width:36px;object-fit:contain}'
+    + '#ocscreen .ocnote{min-height:22px;font-weight:800;font-size:14px;color:#9a3a2a;margin:6px 0 0}#ocscreen .ochelp{font-size:11px;font-family:"JetBrains Mono",monospace;color:#000a;margin-top:10px}'
+    + '#ocscreen .ocname{font-size:22px;font-weight:800;border:3px solid #1c1c1c;border-radius:10px;background:#fff;padding:6px 12px;min-width:240px;display:inline-block}';
+  document.head.appendChild(st);
+  el = document.createElement('div'); el.id = 'ocscreen'; el.className = 'screen';
+  el.innerHTML = '<div class="brand">Original characters</div><h1 style="font-size:34px" id="ocTitle">YOUR OCs</h1><div class="ocbar" id="ocBar"></div><div id="ocBody" class="ocmain"></div>'
+    + '<div class="ocnote" id="ocNote" role="status" aria-live="polite"></div><div class="ochelp" id="ocHelp"></div>';
+  const host = document.getElementById('title'); (host && host.parentElement ? host.parentElement : document.body).appendChild(el);
+  if(!OCUI.bound){ OCUI.bound = true; addEventListener('keydown', ocKeydown); }
+  return el;
+}
+function ocOpenList(){
+  ocEnsureScreen(); ocPreloadLooks();
+  OCUI.mode = 'list'; OCUI.msg = ''; OCUI.ask = null; OCUI.sel = Math.max(0, Math.min(OCUI.sel, OC_LIST.length - 1));
+  go('ocscreen'); ocRender();
+  if(!OC_LOADED) ocLoad().then(() => { OCUI.sel = 0; ocRender(); });
+}
+function ocNew(){ OCUI.draft = { name:'', type:ocDefaultType(), look:OC_LOOKS[0].id, picks:Object.assign({}, ocClean({ type:ocDefaultType() }).picks), rf:0 }; OCUI.edit = -1; ocEnter(0); }
+function ocEditAt(i){ const o = OC_LIST[i]; if(!o) return; OCUI.draft = JSON.parse(JSON.stringify(o)); OCUI.edit = i; ocEnter(0); }
+function ocEnter(step){
+  OCUI.mode = 'edit'; OCUI.step = step; OCUI.msg = ''; OCUI.ask = null; const d = OCUI.draft;
+  if(step === 0) OCUI.cur = Math.max(0, OC_TYPE_ORDER.indexOf(d.type));
+  else if(step === 1) OCUI.cur = Math.max(0, OC_LOOKS.findIndex(L => L.id === d.look));
+  else if(OC_SLOT_OF_STEP[step]) OCUI.cur = Math.max(0, OC_LISTS[d.type][OC_SLOT_OF_STEP[step]].indexOf(d.picks[OC_SLOT_OF_STEP[step]]));
+  else if(step === 6) OCUI.cur = d.rf ? 1 : 0;
+  else OCUI.cur = 0;
+  ocRender();
+}
+function ocStatWords(type){ const T = OC_TYPES[type], s = T.st; return 'run ' + s.run.toFixed(2) + ' · jump ' + s.jump.toFixed(2) + ' · fall ' + s.fall.toFixed(2) + ' · damage ' + s.dmg.toFixed(2) + ' · weight ' + OC_W; }
+function ocRender(){
+  const el = ocEnsureScreen(), body = document.getElementById('ocBody'), bar = document.getElementById('ocBar'), note = document.getElementById('ocNote'), help = document.getElementById('ocHelp');
+  if(!el) return;
+  note.textContent = OCUI.msg || '';
+  if(OCUI.mode === 'list'){
+    document.getElementById('ocTitle').textContent = 'YOUR OCs'; bar.innerHTML = '';
+    const rows = OC_LIST.map((o, i) => {
+      const L = ocLookOf(o.look), picks = OC_SLOTS.map(s => (OC_OPTIONS[o.picks[s]] || {}).name || '?').join(' · ');
+      return '<div class="ocrow' + (i === OCUI.sel ? ' sel' : '') + '" data-i="' + i + '">' + ocImg(L, 'rowimg') + '<b>' + esc(o.name) + '</b><span class="ocsub">' + esc(OC_TYPES[o.type].name)
+        + '</span><span class="ocsub">' + esc(picks) + '</span>' + (OC_CPU.indexOf(o.name) >= 0 ? '<span class="ocrole">CPU seat</span>' : '') + '</div>';
+    }).join('');
+    const sel = OC_LIST[OCUI.sel], side = sel ? '<div class="ocside">' + ocImg(ocLookOf(sel.look)) + '<b>' + esc(sel.name) + '</b><div class="ocsub">' + esc(OC_TYPES[sel.type].name) + '</div></div>' : '';
+    body.innerHTML = '<div class="oclist">' + (rows || '<div class="ocrow off">No OCs yet. Press N to make one.</div>') + '</div>' + side;
+    help.textContent = 'Enter play as it · E edit · U copy · D delete · S CPU seat · N new (' + OC_LIST.length + ' of ' + OC_MAX + ') · Esc back';
+    return;
+  }
+  const d = OCUI.draft, st = OCUI.step;
+  document.getElementById('ocTitle').textContent = OCUI.edit >= 0 ? 'EDIT AN OC' : 'MAKE AN OC';
+  bar.innerHTML = OC_STEPS.map((n, i) => '<span class="ocstep' + (i === st ? ' on' : i < st ? ' done' : '') + '">' + n + '</span>').join('');
+  let main = '';
+  if(st === 0){
+    main = '<div class="oclist"><div class="ocsub">TYPE</div>' + OC_TYPE_ORDER.map((t, i) => {
+      const ok = ocTypeOk(t);
+      return '<div class="ocrow' + (i === OCUI.cur ? ' sel' : '') + (ok ? '' : ' off') + '"><b>' + OC_TYPES[t].name + '</b>' + (ok ? (d.type === t ? '<span class="ocrole">picked</span>' : '') : '<span class="ocrole">coming</span>')
+        + '<span class="ocdesc">' + OC_TYPE_BLURB[t].line + '</span></div>';
+    }).join('') + '</div>';
+  } else if(st === 1){
+    main = '<div class="ocgrid">' + OC_LOOKS.map((L, i) => '<div class="occell' + (i === OCUI.cur ? ' sel' : '') + '">' + ocImg(L) + L.name + '</div>').join('') + '</div>';
+  } else if(OC_SLOT_OF_STEP[st]){
+    const slot = OC_SLOT_OF_STEP[st];
+    main = '<div class="oclist"><div class="ocsub">' + OC_SLOT_LABEL[slot] + ' (pick one)</div>' + OC_LISTS[d.type][slot].map((id, i) => {
+      const x = OC_OPTIONS[id];
+      return '<div class="ocrow' + (i === OCUI.cur ? ' sel' : '') + '"><b>' + esc(x.name) + '</b><span class="ocrole">' + esc(x.role) + '</span><span class="ocdesc">' + esc(x.text) + '</span></div>';
+    }).join('') + '</div>';
+  } else if(st === 6){
+    main = '<div class="oclist"><div class="ocsub">Z (hold)</div>' + [['Shield', OC_RF_TEXT.sh], ['Reflector', OC_RF_TEXT.rf]].map((x, i) => '<div class="ocrow' + (i === OCUI.cur ? ' sel' : '') + '"><b>' + x[0] + '</b><span class="ocdesc">' + x[1] + '</span></div>').join('') + '</div>';
+  } else if(st === 7){
+    main = '<div class="oclist"><div class="ocsub">NAME (letters and numbers, 12 at most)</div><div><span class="ocname">' + (esc(d.name) || '&nbsp;') + '_</span></div></div>';
+  } else {
+    const picks = OC_SLOTS.map(s => '<div class="ocsub">' + OC_SLOT_LABEL[s].split(' (')[0] + ': <b>' + esc((OC_OPTIONS[d.picks[s]] || {}).name) + '</b></div>').join('');
+    main = '<div class="oclist"><div class="ocrow sel"><b>' + (esc(d.name) || '(no name yet)') + '</b><span class="ocsub">' + OC_TYPES[d.type].name + ' · ' + esc((ocLookOf(d.look) || {}).name) + ' · ' + (d.rf ? 'Reflector' : 'Shield') + '</span></div>' + picks
+      + '<div class="ocsub">Press Enter to save.</div></div>';
+  }
+  const T = OC_TYPES[d.type], side = '<div class="ocside">' + ocImg(ocLookOf(d.look)) + '<b>' + (esc(d.name) || T.name) + '</b><div class="ocsub">' + T.name + ': ' + OC_TYPE_BLURB[d.type].words + '</div><div class="ocsub" style="font-size:10px">' + ocStatWords(d.type) + '</div></div>';
+  body.innerHTML = main + side;
+  help.textContent = st === 7 ? 'Type a name · Backspace · Enter next · Esc back' : (st === 8 ? 'Enter save · Esc back' : (st === 1 ? 'Arrows choose · Enter next · Esc back' : 'Up/Down choose · Enter or Right next · Esc or Left back'));
+}
+function ocBack(){   // Esc or C: one step back; from the first step (or the list) out
+  if(OCUI.mode === 'edit'){
+    if(OCUI.step > 0){ ocEnter(OCUI.step - 1); return; }
+    OCUI.mode = 'list'; OCUI.msg = ''; ocRender(); return;
+  }
+  go('select');
+}
+function ocCycle(n){   // Up/Down (and Left/Right in the look grid): the cursor of the step, applied to the draft at once
+  const d = OCUI.draft, st = OCUI.step; let len = 0;
+  if(st === 0) len = OC_TYPE_ORDER.length; else if(st === 1) len = OC_LOOKS.length; else if(OC_SLOT_OF_STEP[st]) len = OC_LISTS[d.type][OC_SLOT_OF_STEP[st]].length; else if(st === 6) len = 2;
+  if(!len) return;
+  OCUI.cur = (OCUI.cur + n + len) % len; OCUI.msg = '';
+  if(st === 0){ const t = OC_TYPE_ORDER[OCUI.cur]; if(ocTypeOk(t) && t !== d.type){ d.type = t; d.picks = Object.assign({}, ocClean({ type:t }).picks); } else if(!ocTypeOk(t)) OCUI.msg = 'Coming soon'; }
+  else if(st === 1) d.look = OC_LOOKS[OCUI.cur].id;
+  else if(OC_SLOT_OF_STEP[st]) d.picks[OC_SLOT_OF_STEP[st]] = OC_LISTS[d.type][OC_SLOT_OF_STEP[st]][OCUI.cur];
+  else if(st === 6) d.rf = OCUI.cur;
+  ocRender();
+}
+function ocConfirm(){   // Enter or X
+  const d = OCUI.draft, st = OCUI.step;
+  if(st === 0 && !ocTypeOk(OC_TYPE_ORDER[OCUI.cur])){ OCUI.msg = 'Coming soon'; ocRender(); return; }
+  if(st === 7){ const why = ocNameWhy(d.name); if(why){ OCUI.msg = why; ocRender(); return; } }
+  if(st < OC_STEPS.length - 1){ ocEnter(st + 1); return; }
+  const r = OCUI.edit >= 0 ? ocSaveAt(OCUI.edit, d) : ocSaveNew(d);
+  if(!r.ok){ if(r.msg !== 'Eight OCs is the most: delete one first') ocEnter(7); OCUI.msg = r.msg; ocRender(); return; }
+  OCUI.mode = 'list'; OCUI.sel = r.i; OCUI.msg = 'Saved'; ocRender();
+}
+function ocPlayAs(i){
+  const o = OC_LIST[i]; if(!o) return;
+  if(inNetSession()){ OCUI.msg = 'OCs are not online yet'; ocRender(); return; }
+  chosen = ocRowOf(o); go('select');
+}
+function ocKeydown(e){
+  const el = document.getElementById('ocscreen');
+  if(!el || !el.classList.contains('active') || running) return;
+  const c = e.code, k = e.key, enter = (c === 'Enter' || c === 'NumpadEnter');
+  const done = () => { e.preventDefault(); };
+  if(OCUI.mode === 'list'){
+    if(OCUI.ask){ const a = OCUI.ask; OCUI.ask = null; if(c === 'KeyD' && OC_LIST[a]){ const nm = OC_LIST[a].name; ocDelete(a); OCUI.sel = Math.max(0, Math.min(OCUI.sel, OC_LIST.length - 1)); OCUI.msg = 'Deleted ' + nm; } else OCUI.msg = ''; ocRender(); done(); return; }
+    OCUI.msg = '';
+    if(c === 'ArrowDown'){ if(OC_LIST.length) OCUI.sel = (OCUI.sel + 1) % OC_LIST.length; ocRender(); done(); }
+    else if(c === 'ArrowUp'){ if(OC_LIST.length) OCUI.sel = (OCUI.sel + OC_LIST.length - 1) % OC_LIST.length; ocRender(); done(); }
+    else if(enter || c === 'KeyX'){ ocPlayAs(OCUI.sel); done(); }
+    else if(c === 'KeyN'){ if(OC_LIST.length >= OC_MAX){ OCUI.msg = 'Eight OCs is the most: delete one first'; ocRender(); } else ocNew(); done(); }
+    else if(c === 'KeyE'){ if(OC_LIST[OCUI.sel]) ocEditAt(OCUI.sel); done(); }
+    else if(c === 'KeyU'){ const r = ocDuplicate(OCUI.sel); if(r.ok) OCUI.sel = r.i; OCUI.msg = r.msg; ocRender(); done(); }
+    else if(c === 'KeyD'){ if(OC_LIST[OCUI.sel]){ OCUI.ask = OCUI.sel; OCUI.msg = 'Delete ' + OC_LIST[OCUI.sel].name + '? Press D again'; } ocRender(); done(); }
+    else if(c === 'KeyS'){ const o = OC_LIST[OCUI.sel]; if(o){ const at = OC_CPU.indexOf(o.name); if(at >= 0) OC_CPU.splice(at, 1); else if(OC_CPU.length >= 3) OCUI.msg = 'Three CPU OCs at most'; else OC_CPU.push(o.name); } ocRender(); done(); }
+    else if(c === 'Escape' || c === 'KeyC'){ ocBack(); done(); }
+    return;
+  }
+  const st = OCUI.step, d = OCUI.draft;
+  if(st === 7){   // the name box: letters, digits and spaces
+    if(c === 'Backspace'){ d.name = d.name.slice(0, -1); OCUI.msg = ''; ocRender(); done(); }
+    else if(enter){ ocConfirm(); done(); }
+    else if(c === 'Escape'){ ocBack(); done(); }
+    else if(k && k.length === 1 && /[A-Za-z0-9 ]/.test(k) && !e.ctrlKey && !e.metaKey && !e.altKey){ if(d.name.length < OC_NAME_MAX) d.name += k; OCUI.msg = ''; ocRender(); done(); }
+    return;
+  }
+  if(c === 'ArrowDown'){ ocCycle(st === 1 ? 5 : 1); done(); }
+  else if(c === 'ArrowUp'){ ocCycle(st === 1 ? -5 : -1); done(); }
+  else if(c === 'ArrowRight'){ if(st === 1) ocCycle(1); else ocConfirm(); done(); }
+  else if(c === 'ArrowLeft'){ if(st === 1) ocCycle(-1); else ocBack(); done(); }
+  else if(enter || c === 'KeyX'){ ocConfirm(); done(); }
+  else if(c === 'Escape' || c === 'KeyC'){ ocBack(); done(); }
+}
+if(OC_OPEN){ window.addEventListener('load', () => { try{ ocLoad(); }catch(e){} }); }   // the saved list is read once the page is up (and never when the editor is closed)
 
 // ------------------------------------------------------------
 //  THE ZONER (oc_zoner): holds a lane with shots and arcs; wins by making the foe walk through fire. Teal.
@@ -96161,6 +96546,7 @@ function awardMatchProgress(winTeam){
   if(!PROFILE) return [];
   if(CUSTOM_LEVEL) return [];          // level-editor playtests are not progression (farmable)
   if(TESTMODE.active || TUT.active) return [];
+  if(fighters.some(f=>f.oc)) return [];   // OC EDITOR: a match with an OC in it is practice (no record, tokens or unlocks)
   PROFILE.matches++;
   const you = fighters.find(f=>f.you);
   // (An event match counts for the stats and the quests, never One's chain: no recordFighterGame, whose Lightning record opens it, and no
@@ -97197,6 +97583,7 @@ function awardCobsDefeated(secs){
 async function recordMatch(winTeam){
   try{
     if(!BStore.available()) return;
+    if(fighters.some(f=>f.oc)) return;   // OC EDITOR: a match with an OC in it is not logged
     const teams = SETTINGS.mode==='teams';
     const initialStocks = SETTINGS.stocks;
     const rec = {
@@ -111194,7 +111581,7 @@ function drawFighter(f){
     }
     // ---- BODY: real character art when this fighter has a sprite, else the generic blob ----
     // Both paths render inside the squash/stretch transform above, so the deform is identical. A skin is that fighter's second render.
-    const sprite = f.oc ? null : (skinLive ? skinSp : SPRITES[f.name]);   // (OC ENGINE: an OC is the blob below in its own colour, whatever its name)
+    const sprite = f.oc ? ocLookSprite(f) : (skinLive ? skinSp : SPRITES[f.name]);   // (OC ENGINE: an OC is its look's picture (OC EDITOR) or, with no picture, the blob below in its own colour, whatever its name)
     if(sprite){
       // JURY 2C: a dark skin (a row's `dark`: Robot Pin, Bandaged Bomby, Scorched Baseball, Lead Snowball, Hooded Fern) was a black blob at match size: a thin light halo under it
       // (a white shadow round the picture's own shape, drawn with the body; art only)
@@ -117361,8 +117748,9 @@ function buildThanksUI(){
   const grp = document.getElementById('thanksGrp'), list = document.getElementById('thanksList');
   if(!grp || !list) return;
   const names = thanksNames();
-  if(!names.length){ grp.style.display = 'none'; list.innerHTML = ''; return; }
-  list.innerHTML = '<div>'+names.map(esc).join(', ')+'</div>';
+  const ocCredit = OC_OPEN ? '<div>OC looks: characters by jacknjellify and the Inanimate Insanity creators; art from the BFDI and Inanimate Insanity wikis.</div>' : '';   // (OC EDITOR: the looks' credit, shown with the editor)
+  if(!names.length && !ocCredit){ grp.style.display = 'none'; list.innerHTML = ''; return; }
+  list.innerHTML = (names.length ? '<div>'+names.map(esc).join(', ')+'</div>' : '') + ocCredit;
   grp.style.display = '';
 }
 
