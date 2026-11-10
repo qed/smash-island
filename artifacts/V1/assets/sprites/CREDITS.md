@@ -184,6 +184,17 @@ non-commercial fan game.
 | Roboty | `roboty.png` | 84×200 | 0 | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f1/Roboty_book.png/revision/latest?cb=20190908174044 |
 | Rose | `rose.png` | 144×200 | 0.004 | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2d/RoseBFDIE.png/revision/latest?cb=20260102044136 |
 | Ruby | `ruby.png` | 237×200 | 0.001 | https://static.wikia.nocookie.net/battlefordreamisland/images/8/8a/Ruby_jumping.png/revision/latest?cb=20260617122628 |
+| Nine | `nine.png` | 205×200 | 0.047 | https://battlefordreamisland.fandom.com/wiki/File:NineCoolPose.png |
+| Nine Chill | `nine-chill.png` | 180×200 | -0.014 | https://battlefordreamisland.fandom.com/wiki/File:Nine_chill.png |
+| Nine Skate | `nine-skate.png` | 217×200 | -0.007 | https://battlefordreamisland.fandom.com/wiki/File:Nine_Skate.png |
+| Nine Tubular | `nine-tubular.png` | 154×200 | -0.024 | https://battlefordreamisland.fandom.com/wiki/File:NineTubular.png |
+| Nine Booyah | `nine-booyah.png` | 293×200 | 0.006 | https://battlefordreamisland.fandom.com/wiki/File:Booyah!.png |
+| Nine Annoyed | `nine-annoyed.png` | 177×200 | 0.013 | https://battlefordreamisland.fandom.com/wiki/File:Nine_Annoyed.png |
+| Nine Scared | `nine-scared.png` | 203×200 | 0.012 | https://battlefordreamisland.fandom.com/wiki/File:NineScared.png |
+| Nine Cry | `nine-cry.png` | 183×200 | 0.004 | https://battlefordreamisland.fandom.com/wiki/File:NoStylehaha.png |
+| Nine Board | `nine-board.png` | 188×60 | 0.0 | https://battlefordreamisland.fandom.com/wiki/File:Nine's_Skateboard.png |
+| Nine Crew Board | `nine-crew.png` | 107×60 | -0.075 | https://battlefordreamisland.fandom.com/wiki/File:Skateboarding_Alien.png |
+| Nine Glasses | `nine-glasses.png` | 168×40 | -0.009 | https://battlefordreamisland.fandom.com/wiki/File:Nine's_sunglasses.png |
 | Ruler | `ruler.png` | 104×200 | 0 | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a2/RulerBFDIE.png/revision/latest?cb=20260101212420 |
 | Saw | `saw.png` | 103×200 | -0.035 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/7/74/Tpot_renders0014.png/revision/latest?cb=20210113223714 |
 | Sidewalky | `sidewalky.png` | 202×200 | 0.164 | https://static.wikia.nocookie.net/battlefordreamisland/images/4/4f/Sidewalky.png/revision/latest?cb=20260102200752 |
@@ -1615,3 +1626,5 @@ character, area-averaged to 200 px tall and the invisible halo erased, the same 
   Pack Cheesy (`File:Cheesy Icepack.png`). Money, Bonesaw, Magnet and Dough have no clean second picture, so they got none.
 
 Six (the Algebralien Rush, M8; hidden behind RUSH_OPEN): `six.png` (the TPOT 20 promo art, her phase-1 look), `six-mad.png` (File:Malicious Six.png, her phase-2 look) and `six-powerless.png` (File:Six Powerless.png, her ending: the pale look the wiki gives her once her power is gone). The owner said "Yes, all 20" to the Rush's renders by file name (2026-11-02); the three were looked at by eye after the 200 px cut (2026-11-10). They are the Rush's vetted copies (`reports/algebralien-rush/art-vetted/`, fetched with format=original, all four corners transparent), trimmed to the drawn pixels and area-averaged down to 200 px tall, then run through the same facing, halo and face checks as `scripts/fetch-sprites.mjs` (`analyse`, `verdict`, `clean`): no flip. The source column of their rows is the wiki's File: page (the CDN path of each was not recorded when they were staged), and their rows are in `scripts/sprite-manifest.json` with the same fields as the others. Unaffiliated fan work, as the rest of this folder.
+
+Nine (the Algebralien Rush, M6-M7; hidden behind RUSH_OPEN): eleven renders, the owner's "Yes, all 20" by file name (2026-11-02), each looked at by eye after the cut (2026-11-10, one contact sheet): `nine.png` (File:NineCoolPose.png, the default), `nine-chill.png` (Nine chill, the cruise), `nine-skate.png` (Nine Skate, the board run), `nine-tubular.png` (NineTubular, BOOYAH! and GRIND!), `nine-booyah.png` (Booyah!, the entrance), `nine-annoyed.png` (Nine Annoyed, act 3), `nine-scared.png` (NineScared, wipeout, stuck landing and the ending), `nine-cry.png` (NoStylehaha, the act-2 cry), and three props: `nine-board.png` (Nine's Skateboard, trimmed), `nine-crew.png` (Skateboarding Alien, the crew's board) and `nine-glasses.png` (Nine's sunglasses; 40 px tall on purpose: a prop, not a render). Cut the way Six's were (trimmed to the drawn pixels, area-averaged, the same analyse/verdict/clean checks as `scripts/fetch-sprites.mjs`, no flip); the props are 60 px and 40 px tall, not 200. The source column is the wiki's File: page. Unaffiliated fan work, as the rest of this folder.
