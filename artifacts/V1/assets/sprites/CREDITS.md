@@ -198,6 +198,9 @@ non-commercial fan game.
 | TV | `tv.png` | 219×200 | 0.002 | https://static.wikia.nocookie.net/battlefordreamisland/images/c/cc/Tpot_renders0036.png/revision/latest?cb=20210113224339 |
 | Two | `two.png` | 255×200 | -0.006 | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2e/TwoTPOT20PromoArt.png/revision/latest?cb=20260131061643 |
 | Woody | `woody.png` | 167×200 | 0.02 | https://static.wikia.nocookie.net/battlefordreamisland/images/6/64/Woody_in_TPOT_%28fair_enough%29.png/revision/latest?cb=20260701141213 |
+| X | `x.png` | 243×200 | 0.001 | https://battlefordreamisland.fandom.com/wiki/File:X_talk0001.png |
+| X Oh | `x-oh.png` | 274×200 | -0.01 | https://battlefordreamisland.fandom.com/wiki/File:XPoseBFB13.png |
+| X Burning | `x-burn.png` | 381×200 | -0.02 | https://battlefordreamisland.fandom.com/wiki/File:Burning_X.png |
 | Yellow Face | `yellow-face.png` | 194×200 | -0.059 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a7/Yellowface.png/revision/latest?cb=20190908174021 |
 <!-- RENDER-INVENTORY-END -->
 
@@ -1615,3 +1618,5 @@ character, area-averaged to 200 px tall and the invisible halo erased, the same 
   Pack Cheesy (`File:Cheesy Icepack.png`). Money, Bonesaw, Magnet and Dough have no clean second picture, so they got none.
 
 Six (the Algebralien Rush, M8; hidden behind RUSH_OPEN): `six.png` (the TPOT 20 promo art, her phase-1 look), `six-mad.png` (File:Malicious Six.png, her phase-2 look) and `six-powerless.png` (File:Six Powerless.png, her ending: the pale look the wiki gives her once her power is gone). The owner said "Yes, all 20" to the Rush's renders by file name (2026-11-02); the three were looked at by eye after the 200 px cut (2026-11-10). They are the Rush's vetted copies (`reports/algebralien-rush/art-vetted/`, fetched with format=original, all four corners transparent), trimmed to the drawn pixels and area-averaged down to 200 px tall, then run through the same facing, halo and face checks as `scripts/fetch-sprites.mjs` (`analyse`, `verdict`, `clean`): no flip. The source column of their rows is the wiki's File: page (the CDN path of each was not recorded when they were staged), and their rows are in `scripts/sprite-manifest.json` with the same fields as the others. Unaffiliated fan work, as the rest of this folder.
+
+X (the Algebralien Rush, M11-M12; hidden behind RUSH_OPEN): `x.png` (File:X talk0001.png, his phase-1 look), `x-oh.png` (File:XPoseBFB13.png, the "oh!" look: the phase beat, the dive, the dizzy found state, his ending) and `x-burn.png` (File:Burning X.png, phase 2). The owner said "Yes, all 20" to the Rush's renders by file name (2026-11-02); the three were looked at by eye after the 200 px cut (2026-11-10). Same process as the Six rows above: the vetted copies (`reports/algebralien-rush/art-vetted/`), trimmed to the drawn pixels, area-averaged down to 200 px tall, run through `scripts/fetch-sprites.mjs`'s `analyse`, `verdict` and `clean`: no flip. Unaffiliated fan work, as the rest of this folder.

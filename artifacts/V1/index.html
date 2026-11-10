@@ -98479,7 +98479,8 @@ const ALG_ROSTER = [
   // @boss:zero:end algrow
 
   // @boss:x:begin algrow
-  { ...ALG_STUB, id:'x', name:'X', color:'#f2d23c', hp:algHp('x') },
+  { id:'x', name:'X', color:'#fefd33', hp:algHp('x'), big:2.7, attack:'x', arena:'x500', stationary:false, sprite:'x', stagePlats:(std, gy)=>xvStagePlats(std, gy), spawn:b=>xvSpawn(b), move:(s,t)=>xvMove(s,t), tick:(s,t)=>xvTick(s,t), tel:(s,t)=>xvTel(s,t), fire:(s,t,id)=>xvFire(s,t,id),
+    gap:s=>XB.gaps[xvPh(s)-1], telLen:s=>s._tl || 50, phase:(s,ph)=>xvPhase(s,ph), phaseName:(s,ph)=>ph >= 2 ? 'Pushed To The Limit' : 'The Host', look:s=>xvLook(s), tell:s=>xvTell(s), body:(s,R,b,f)=>xvBody(s,R,b,f), fx:s=>xvFx(s), decor:(s,k)=>xvDecor(s,k), shot:pr=>xvShotDraw(pr) },   // rush M11-M12: the real fight (2,100 HP); all of it is in his algcode pair
   // @boss:x:end algrow
 
   // @boss:one:begin algrow
@@ -104767,6 +104768,7 @@ function drawSummon(s){
     ctx.restore(); return;
   }
   if(s.type==="springyend"){ drawSpringyEnd(s); ctx.restore(); return; }   // Springy's ending (springyEnding); _endT rides the snapshot
+  if(s.type==="xbasket"){ ctx.restore(); return; }   // X's hostile baskets (HIDE AND SEEK!, the rush): his fx draws them
   if(s.type==="metag" || s.type==="mephoneunit"){ drawCobsMinion(s); ctx.restore(); return; }   // Steve Cobs's MeTags and MePhone units (COBS_MOVES.metags, .deploy)
   // MeLife download (the MeLife page; You Can't Do This Forever): a flat silhouette in the add's own colour, filling in
   // from the bottom up, a scanline at the edge, and nothing else until it has arrived.
@@ -115388,6 +115390,642 @@ function sixDecor(s, key){
 // @boss:zero:end algcode
 
 // @boss:x:begin algcode
+// X, THE HOST (rush M11 + M12, 2,100 HP; the 500-Step Platform, `x500`, and `x500sun` from phase 2). Everything of his lives in this pair and his ALG_ROSTER row, apart from two shared lines said in the ledger (a hostile
+// basket is a summon, so drawSummon skips its type; the summon's own drawing is X's fx).
+// X Variable, the BFB host: gentle, nervous, flammable ("Burning X", BFB 19-20 and 28), fond of baskets (BFB 1: he waits on top of the 500 steps, a bunch of baskets lifting him). Moves: BASKET RAIN!, SNAP!, ROCKET DIVE!,
+// ARROW DASH!, BURNING! (phase 2 only; it opens the phase), SQUIRT! (the owner's own: his juice box), and the signature HIDE AND SEEK! (every fifth turn). Two phases, cut at 50% (ALG_CUTS): THE HOST and PUSHED TO THE LIMIT.
+// Every move is driven by his state machine (s._sx) and hits through shots (baskets, drops, waves) or hits he tests himself (the snap, the dive, the dash, his body in the flight, an ember); every hit of a turn
+// carries that turn's ONE attack id, so a fighter takes at most one boss hit (bossDmg()) from it. Tells are the body's (BOSS_TELLS.x) plus what grows out of it (baskets, a shadow, a glitch, a carton); nothing grows in
+// under 12 frames. His bag `_hz` holds plain numbers; what he draws is a function of it and the clock.
+const XB = {
+  introF:100, firstAtk:120, beatF:60, gaps:[110, 84], stand:[260, 220], flt:[70, 230], bR:2.7,
+  tl:{ x:50, xrain:55, xsnap:60, xdive:50, xdash:45, xburn:45, xsquirt:[50, 32] },
+  rain:{ sp:[240, 215], edge:70, r:34, lock:14, fall:35, grow:12, row2:40, stagger:2, life:90, dmg:0.9, kb:8 },
+  snap:{ col:140, glitch:[44, 40], gap:28, hit:6, tall:360, black:24, dmg:1, kbx:3, kby:14 },
+  dive:{ rise:8, land:[50, 50], fall:18, lock:24, lag:2, r:100, dmg:1, kbx:6, kby:15, wave:{ h:36, sp:8, far:460, dmg:0.7, r:20 }, stuck:70, second:30, topY:520, body:0.8 },
+  dash:{ sp:[28, 32], r:32, rowLo:40, rowHi:260, lock:14, near:650, min:500, dmg:1, kb:14, kby:6, second:20 },
+  burn:{ ax:[300, 340, 380], ay:75, cy:175, period:[150, 120], passes:[1, 2], r:55, dmg:0.6, kb:12, ember:[9, 7], emDmg:0.3, patch:{ r:22, life:90, every:40, dmg:0.25, cap:8 }, drip:45, dripDmg:0.2 },
+  hide:{ n:[3, 4], per:[50, 36], gapX:170, h:140, r:40, clock:[330, 270], stun:100, bounty:0.025, bmult:1.5, burst:{ r:90, dmg:0.35 }, duck:10 },
+  sq:{ band:16, gap:[24, 18], sp:[24, 30], r:20, lo:20, hi:140, far:1400, n:[3, 5], dmg:0.6, kb:8, kbu:9, dry:[56, 42], hang:90,
+       order1:[[1, 0, 1], [0, 1, 0], [1, 1, 0], [0, 1, 1]], order2:[[1, 0, 1, 0, 1], [0, 1, 1, 0, 1], [1, 1, 0, 1, 0], [0, 1, 0, 1, 1]] },   // 1 = HIGH, 0 = LOW; phase 2 never puts two LOWs in a row
+  end:{ total:110, hold:2000 },
+};
+function xvHz(s){ return s._hz || (s._hz = {}); }
+function xvPh(s){ return (s._phase || 1) >= 2 ? 2 : 1; }
+function xvLiving(){ return fighters.filter(f => !f.dead); }
+function xvLive(f){ return !!f && !f.dead; }
+function xvNearest(s){ let b = null, bd = 1e9; for(const f of fighters){ if(f.dead) continue; const d = Math.hypot(f.x - s.x, f.y - s.y); if(d < bd){ bd = d; b = f; } } return b; }
+function xvIntro(s){ const Z = xvHz(s); return Z.in != null && hazardT - Z.in < XB.introF; }
+function xvHurt(f, id, frac, kbx, kby){ applyHit(f, bossDmg()*frac, kbx, kby, null, { bossAtk:id, volley:true, shot:1 }); }
+function xvShot(s, id, o){ return bossShot(s, Object.assign({ xv:'x', algShot:'x', volley:true, bossAtk:id, dmg:bossDmg(), kb:8, color:'#ffd23f' }, o)); }
+function xvFloorY(){ return groundY(); }
+// ---- the hit filter (algBossHit): nothing in the intro, the first 20 frames of the phase beat, or while he is off the top of the screen on a dive --------------------------------------------------
+function xvHit(s, f, d){
+  const Z = xvHz(s);
+  if(xvIntro(s) || Z.gone || (Z.beat || 0) > hazardT - (XB.beatF - 20)) return 0;
+  return d;
+}
+ALG_HIT.x = xvHit;
+// ---- the stage: the 500-step pyramid (one-way platforms, so nobody is wedged): a 190 px top landing 290 px over the floor, two steps each side at 175 and 85 px ------------------------------------------------
+function xvStagePlats(std, gy){
+  const cx = ALG_BIG.W/2, o = [];
+  o.push({ x:cx - 95, y:gy - 290, w:190, h:14, hop:true, _x:true });
+  for(const sg of [-1, 1]){ o.push({ x:sg < 0 ? cx - 245 : cx + 95, y:gy - 175, w:150, h:14, hop:true, _x:true }); o.push({ x:sg < 0 ? cx - 395 : cx + 245, y:gy - 85, w:150, h:14, hop:true, _x:true }); }
+  return o;
+}
+// ---- spawn, intro (he stands on the top landing in his baskets, which lift him; they float off and he drops to float over the pyramid), movement ---------------------------------------------------------------
+function xvSpawn(b){
+  const Z = xvHz(b), gy = groundY();
+  b._xr0 = b.r; b.x = WW*0.5; b.y = gy - 290 - b.r; Z.in = hazardT; b._atkTimer = XB.introF + XB.firstAtk; Z.turn = 0;
+  b._xe = []; b._xk = [];
+  for(const k of ['x', 'xoh', 'xburn']) bossImage(k);
+}
+function xvSide(s, tgt){ return tgt ? (s.x >= tgt.x ? 1 : -1) : 1; }
+function xvMove(s, tgt){
+  const Z = xvHz(s), gy = groundY(), t = hazardT, ph = xvPh(s), X = s._sx, tn = s._tn;
+  s.vy = 0; s.x += s.vx; s.vx *= 0.88;
+  const R = s.r;
+  if(xvIntro(s)){
+    const u = (t - Z.in)/XB.introF, top = gy - 290 - R, fl = gy - R - 150;
+    s.x = WW*0.5 + Math.sin(t*0.35)*(u < 0.6 ? 7 : 2); s.y = u < 0.6 ? top - 6 - Math.sin(t*0.3)*4 : top + (fl - top)*Math.pow((u - 0.6)/0.4, 2); return true;
+  }
+  if(Z.gone) return true;     // the dive places him
+  if(X && X.own) return true; // a move that places him itself (dive, dash, burn, hide)
+  const busy = s._tel > 0 || X;
+  let ty = gy - R - XB.flt[0] - (XB.flt[1] - XB.flt[0])*(0.5 + 0.5*Math.sin(t*0.03));
+  if(tn && tn.y != null && busy) ty = tn.y;
+  if(X && X.k === 'sq') ty = gy - R - XB.sq.hang;
+  s.y += (ty - s.y)*0.12;
+  if(tgt){
+    const dx = tgt.x - s.x;
+    if(Math.abs(dx) > 24) s.face = dx > 0 ? 1 : -1;
+    if(!busy || (tn && tn.k === 'xrain' && s._tel > 0) || (tn && tn.k === 'xdash' && s._tel > 0)){
+      let side = Z.side || xvSide(s, tgt), want = tgt.x + side*XB.stand[ph - 1];
+      if(want < R*0.5 || want > WW - R*0.5){ side = -side; want = tgt.x + side*XB.stand[ph - 1]; }
+      Z.side = side;
+      let wx = want; if(tn && tn.k === 'xdash' && s._tel > 0 && tn.sx != null) wx = tn.sx;
+      const sp = (tn && tn.k === 'xdash') ? 18 : 4;
+      s.x += clamp((wx - s.x)*0.05, -sp, sp);
+    }
+  }
+  s.x = clamp(s.x, R*0.4, WW - R*0.4);
+  return true;
+}
+// ---- the turn ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+function xvTel(s, tgt){
+  const k = s._telKind, ph = xvPh(s), Z = xvHz(s), gy = groundY(), R = s.r;
+  Z.turn = (Z.turn || 0) + 1;
+  let tl = XB.tl[k]; if(Array.isArray(tl)) tl = tl[ph - 1]; tl = tl || 50;
+  const tn = s._tn = { k, ph, row:tgt ? clamp(gy - tgt.y, XB.dash.rowLo, XB.dash.rowHi) : XB.dash.rowLo, dir:tgt ? (Math.sign(tgt.x - s.x) || s.face || 1) : (s.face || 1), y:null, sx:null };
+  if(k === 'xrain') tn.y = (typeof camY === 'number' ? camY : 0) + 110 + R*0.3;
+  else if(k === 'xsnap') tn.y = gy - 150;
+  else if(k === 'xsquirt') tn.y = gy - R - XB.sq.hang;
+  else if(k === 'xburn'){ tn.y = gy - XB.burn.cy; }
+  else if(k === 'xdash' && tgt){
+    const room = x => x > tgt.x ? WW - tgt.x : tgt.x, side = room(tgt.x + 1) >= room(tgt.x - 1) ? 1 : -1, D = Math.max(XB.dash.min, Math.min(XB.dash.near, side > 0 ? WW - 40 - tgt.x : tgt.x - 40));
+    tn.sx = clamp(tgt.x + side*D, 40, WW - 40); tn.dir = -side; tn.y = gy - tn.row; s.face = tn.dir;
+  }
+  s._tl = tl; s._tel = tl;
+}
+function xvTelStep(s, tgt, tn){
+  const gy = groundY();
+  if(tn.k === 'xdash'){
+    if(s._tel > XB.dash.lock && xvLive(tgt)){ tn.row = clamp(gy - tgt.y, XB.dash.rowLo, XB.dash.rowHi); tn.y = gy - tn.row; const D = XB.dash, side = tn.dir > 0 ? -1 : 1, room = side > 0 ? WW - 40 - tgt.x : tgt.x - 40; tn.sx = clamp(tgt.x + side*Math.max(D.min, Math.min(D.near, room)), 40, WW - 40); }   // the row and the start are locked 14 frames before the dash
+    s.face = tn.dir;
+  } else if(xvLive(tgt) && Math.abs(tgt.x - s.x) > 24 && tn.k !== 'xburn') s.face = tgt.x > s.x ? 1 : -1;
+}
+function xvTick(s, tgt){
+  const Z = xvHz(s), t = hazardT, gy = groundY(), ph = xvPh(s);
+  if(!(s.hp > 0)){ xvRestore(s); return; }
+  if(Z.in != null && !Z.burst && !xvIntro(s)){ Z.burst = 1; for(let i = 0; i < 14; i++) puff(s.x + (Math.random() - 0.5)*120, s.y - 50, '#e8c070', 4); }
+  if(s._tel > 0 && s._tn) xvTelStep(s, tgt, s._tn);
+  if(s._sx) xvStep(s, tgt);
+  xvEmbers(s);
+  // passive: phase 2, he is alight for good and an ember drips (the arena's hazard)
+  if(ph >= 2 && !xvIntro(s) && !Z.gone && !(s._sx && s._sx.k === 'hide') && t % XB.burn.drip === 0 && (Z.beat || 0) <= t - XB.beatF){
+    xvEmberAdd(s, s.x + (Math.random() - 0.5)*s.r, s.y + s.r*0.4, XB.burn.dripDmg, ++BOSS_ATK_ID);
+  }
+}
+function xvRestore(s){ if(s._xr0 != null && s.r !== s._xr0) s.r = s._xr0; const Z = xvHz(s); Z.hid = 0; Z.gone = 0; Z.dz = 0; xvClearBaskets(s); }
+function xvPhase(s, ph){
+  if(ph < 2) return;
+  const Z = xvHz(s);
+  Z.p2 = hazardT; Z.beat = hazardT; BOSS_ARENA = 'x500sun';
+  s._atkTimer = Math.max(s._atkTimer, XB.beatF + 30);
+  shake(8); for(let i = 0; i < 24; i++) puff(s.x + (Math.random() - 0.5)*s.r*1.4, s.y + (Math.random() - 0.5)*s.r, i % 2 ? '#ff8a2a' : '#ffd23f', 6);
+}
+function xvLook(s){
+  const Z = xvHz(s), t = hazardT;
+  if((Z.beat || 0) > 0 && t - Z.beat < XB.beatF*0.5) return 'xoh';
+  if(Z.dz > t || (s._sx && (s._sx.k === 'sq' && s._sx.dry))) return 'xoh';
+  if(s._sx && s._sx.k === 'dive') return 'xoh';
+  return xvPh(s) >= 2 ? 'xburn' : 'x';
+}
+// ---- the moves: the signature through the row's `fire`, the other six through BOSS_MOVES ---------------------------------------------------------------------------------------------------------------
+function xvFire(s, tgt, id){ xvHideStart(s, tgt, id); return true; }
+BOSS_MOVES.xrain = (s, tgt) => xvRainStart(s, tgt);
+BOSS_MOVES.xsnap = (s, tgt) => xvSnapStart(s, tgt);
+BOSS_MOVES.xdive = (s, tgt) => xvDiveStart(s, tgt);
+BOSS_MOVES.xdash = (s, tgt) => xvDashStart(s, tgt);
+BOSS_MOVES.xburn = (s, tgt) => xvBurnStart(s, tgt);
+BOSS_MOVES.xsquirt = (s, tgt) => xvSquirtStart(s, tgt);
+BOSS_PICK.x = {
+  tags:{ x:'any', xrain:['ground', 'spread'], xsnap:['ground', 'platform'], xdive:['close', 'ground'], xdash:'far', xburn:['air', 'far'], xsquirt:['far', 'ground'] },
+  moves:(s, ph) => { const last = s._pk && s._pk.last; let m = ['x', 'xrain', 'xsnap', 'xdive', 'xdash', 'xsquirt'].concat(ph >= 2 ? ['xburn'] : []);
+    if(last === 'xdash') m = m.filter(q => q !== 'xsquirt'); if(last === 'xsquirt') m = m.filter(q => q !== 'xdash'); return m; },   // never the dash and the jet back to back
+  force:(s, ph) => { const pk = s._pk; if(!pk || pk.last === 'x') return null; return ((pk.n + 1) % 5 === 0) ? 'x' : null; },   // HIDE AND SEEK! every fifth turn, never twice in a row
+  first:(s, ph) => { const Z = xvHz(s); if(ph >= 2 && !Z.b1){ Z.b1 = 1; return 'xburn'; } return null; },   // BURNING! opens phase 2
+  busy:(s) => !!s._sx
+};
+BOSS_EXTRA.X = ['xrain', 'xsnap', 'xdive', 'xdash', 'xburn', 'xsquirt'];
+BOSS_TELLS.x = {
+  x:{ pose:'crouch', glow:'#c89a5a', beats:1 }, xrain:{ pose:'rise', glow:'#fff6c0', beats:2 }, xsnap:{ pose:'tilt', glow:'#ffffff', beats:3 }, xdive:{ pose:'crouch', glow:'#ffd23f', beats:1 },
+  xdash:{ pose:'lunge', glow:'#fff04a', beats:2 }, xburn:{ pose:'shake', glow:'#ff8a2a', beats:1 }, xsquirt:{ pose:'lunge', glow:'#c8ff5a', beats:2 }, _:{ pose:'crouch', glow:'#ffd23f', beats:2 }
+};
+BOSS_SPRITE_SRC.x = 'assets/sprites/x.png'; BOSS_SPRITE_SRC.xoh = 'assets/sprites/x-oh.png'; BOSS_SPRITE_SRC.xburn = 'assets/sprites/x-burn.png';
+// ---- BASKET RAIN! ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// A row of propeller baskets across the whole stage at a high lane; one per fighter follows that fighter until 14 frames before the drop, then locks; the rest fill the row about 215-240 px apart (never closer than
+// 70 px to an edge). A real shadow grows under each from the lock; the drop is 35 frames of fall, hitting while falling (0.9 of a boss hit); a landed basket lies as a low one-way step for 90 frames. Phase 2: a second row 40 frames later.
+function xvRainPlan(ph, ww, fxs, off){
+  const sp = XB.rain.sp[ph - 1], row = [], e = XB.rain.edge;
+  for(let x = e + off; x <= ww - e; x += sp) row.push({ x, fo:-1 });
+  fxs.forEach((fx, i) => { let bi = -1, bd = 1e9; row.forEach((b, j) => { if(b.fo < 0 && Math.abs(b.x - fx) < bd){ bd = Math.abs(b.x - fx); bi = j; } }); if(bi >= 0){ row[bi].fo = i; } });
+  return row;
+}
+function xvRainStart(s, tgt){
+  const ph = xvPh(s), L = xvLiving(), id = ++BOSS_ATK_ID;
+  const rows = [xvRainRow(ph, L, 0, 0)]; if(ph >= 2) rows.push(xvRainRow(ph, L, XB.rain.row2, XB.rain.sp[ph - 1]*0.5));
+  s._sx = { k:'rain', t:0, id, ph, rows, lay:[], fx:L.map(f => f.idx) };
+}
+function xvRainRow(ph, L, start, off){
+  const plan = xvRainPlan(ph, WW, L.map(f => f.x), (off || 0) + Math.random()*XB.rain.sp[ph - 1]*(off ? 0 : 1));
+  const drop = start + 22 + XB.rain.lock;
+  return { start, drop, bk:plan.map((b, i) => ({ x:b.x, fo:b.fo, sy:null, dropAt:drop + (i % 4)*XB.rain.stagger, done:0 })) };
+}
+function xvRainStep(s, X){
+  const R = XB.rain, L = xvLiving();
+  for(const row of X.rows){
+    for(const b of row.bk){
+      if(b.done) continue;
+      if(b.fo >= 0){ const f = fighters[X.fx[b.fo]]; if(xvLive(f) && X.t < b.dropAt - R.lock){ b.x = clamp(f.x, R.edge, WW - R.edge); } else if(!xvLive(f)){ const nf = xvNearest(s); if(nf && X.t < b.dropAt - R.lock) b.x = clamp(nf.x, R.edge, WW - R.edge); } }
+      if(X.t === b.dropAt - R.lock){ const sf = surfaceBelow(b.x, (L[0] ? feetY(L[0]) : groundY()) - 2); b.sy = sf === null ? groundY() : sf; const g = xvBestSurface(b.x); b.sy = g; }
+      if(X.t >= b.dropAt){ b.done = 1; xvBasketDrop(s, X, b.x, b.sy != null ? b.sy : xvBestSurface(b.x), (typeof camY === 'number' ? camY : 0) + 40, X.id); }
+    }
+  }
+  // landed baskets lie as a low step, then lift off
+  for(const q of X.lay){ if(!q.on && hazardT >= q.at){ q.on = 1; q.p = { x:q.x - 34, y:q.y - 18, w:68, h:12, hop:true, _xb:true }; worldPlats.push(q.p); } if(q.on && hazardT >= q.at + XB.rain.life){ worldPlats = worldPlats.filter(p => p !== q.p); q.on = 0; q.gone = 1; } }
+  X.lay = X.lay.filter(q => !q.gone);
+  if(X.t > X.rows[X.rows.length - 1].drop + 14 + XB.rain.fall + 20 && X.rows.every(r => r.bk.every(b => b.done))){ s._sx = null; }
+}
+function xvBestSurface(x){ const gy = groundY(); let best = gy; for(const p of worldPlats){ if(p.solid || p.wall || !p.hop) continue; if(x >= p.x && x <= p.x + p.w && p.y < best && !p._xb) best = p.y; } return best; }
+function xvBasketDrop(s, X, x, sy, y0, id){
+  const T = XB.rain.fall, r = XB.rain.r, vy = (sy - r*0.5 - y0)/T;
+  addProj(xvShot(s, id, { xv:'bask', x, y:y0, vx:0, vy, grav:false, r, dmg:bossDmg()*XB.rain.dmg, kb:XB.rain.kb, life:T + 14, breaksOnSurface:true, noDrift:true, warnX:x, warnY:sy, warn:T,
+    landImpact:{ shake:4, dust:1, debris:5, scar:false, r:50, color:'#a88a5a' }, color:'#b8864a' }));
+  X.lay = X.lay || []; X.lay.push({ x, y:sy, at:hazardT + T, on:0 });
+}
+// ---- SNAP! -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// The floor is split into columns 150 px wide; the snap makes one half of them (alternate columns) glitch to static for 44 frames (38 in phase 2), then they are DELETED for 6 frames: anything in a column up to 360 px
+// high takes 1.0 of a boss hit and is launched up, with a small push toward the middle. A second snap 28 frames after the first deletion does the other half; phase 2 adds a third (the first half again).
+function xvSnapCols(){ return Math.ceil(WW/XB.snap.col); }
+function xvSnapStart(s, tgt){
+  const ph = xvPh(s), L = xvLiving(), n = xvSnapCols(), cnt = [0, 0];
+  for(const f of L) cnt[Math.floor(clamp(f.x, 0, WW - 1)/XB.snap.col) & 1]++;
+  const first = cnt[1] > cnt[0] ? 1 : 0, G = XB.snap.glitch[ph - 1], parts = [first, 1 - first].concat(ph >= 2 ? [first] : []);
+  const snaps = []; let at = 0; for(const par of parts){ snaps.push({ par, g0:at, d0:at + G, d1:at + G + XB.snap.hit, b1:at + G + XB.snap.hit + XB.snap.black }); at = at + G + XB.snap.gap; }
+  s._sx = { k:'snap', t:0, id:++BOSS_ATK_ID, ph, snaps, n };
+  s._sx.own = 0;
+}
+function xvSnapStep(s, X){
+  const S = XB.snap, gy = groundY();
+  for(const sn of X.snaps){
+    if(X.t >= sn.d0 && X.t < sn.d1){
+      for(const f of fighters){
+        if(f.dead || f.invuln > 0) continue;
+        const c0 = f.x - f.r, c1 = f.x + f.r;
+        let inCol = false; for(let c = Math.max(0, Math.floor(c0/S.col)); c <= Math.min(X.n - 1, Math.floor(c1/S.col)); c++){ if((c & 1) === sn.par){ const x0 = c*S.col, x1 = x0 + S.col; if(c1 > x0 && c0 < x1) inCol = true; } }
+        if(inCol && f.y + f.r > gy - S.tall && f.y - f.r < gy + 40){ xvHurt(f, X.id, S.dmg, Math.sign(WW*0.5 - f.x || 1)*S.kbx, -S.kby); for(let i = 0; i < 10; i++) puff(f.x, f.y, '#ffffff', 5); }
+      }
+    }
+  }
+  if(X.t >= X.snaps[X.snaps.length - 1].b1) s._sx = null;
+}
+// ---- ROCKET DIVE! ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// One beat of crouch, then he shoots up off the top of the screen. A real shadow grows under the fighter he marked, follows slowly (3 px a frame: a runner out-walks it) until the dive starts, then locks; 18 frames of fall
+// along a steep line onto the lock (hits while falling); impact radius 100 (1.0 of a boss hit, launched up and toward the middle) and two low shockwaves each way (0.7: jump them). Then he is stuck head-first in the floor
+// for 70 frames and can be hit. Phase 2: no window after the first dive; a second dive 30 frames later onto a new lock; the window comes after the second.
+function xvDiveStart(s, tgt){
+  const ph = xvPh(s), f = tgt || xvNearest(s);
+  s._sx = { k:'dive', t:0, id:++BOSS_ATK_ID, ph, n:ph >= 2 ? 2 : 1, i:0, mk:f ? f.idx : 0, lx:f ? f.x : s.x, st:'up', t0:0, own:1, dir:(f && f.x < WW/2) ? 1 : -1 };
+  xvHz(s).gone = 1;
+}
+function xvDiveStep(s, X){
+  const D = XB.dive, Z = xvHz(s), gy = groundY(), u = X.t - X.t0, land = D.land[X.i === 0 ? 0 : 1], topY = gy - D.topY;
+  let mk = fighters[X.mk]; if(!xvLive(mk)){ mk = xvNearest(s); if(mk) X.mk = mk.idx; }
+  if(X.st === 'up'){
+    s.y += (topY - s.y)*0.35; s.x += (X.lx - s.x)*0.2;
+    if(u < land - D.lock && mk) X.lx += clamp(mk.x - X.lx, -D.lag, D.lag);   // the shadow follows, slowly, until the fall begins
+    if(u >= land - D.fall){ X.st = 'fall'; X.fx0 = X.lx + X.dir*120; X.fy0 = topY; }
+  } else if(X.st === 'fall'){
+    const q = clamp((u - (land - D.fall))/D.fall, 0, 1), ly = gy - s.r*0.5;
+    s.x = X.fx0 + (X.lx - X.fx0)*q; s.y = X.fy0 + (ly - X.fy0)*q*q;
+    for(const f of fighters){ if(f.dead || f.invuln > 0) continue; if(hurtGap(f, s.x, s.y) < s.r*D.body){ xvHurt(f, X.id, D.dmg, Math.sign(WW*0.5 - f.x || 1)*D.kbx, -D.kby); } }
+    if(u >= land){
+      X.s0 = u; s.x = X.lx;
+      if(X.i + 1 < X.n){ X.st = 'between'; Z.gone = 1; s.y = topY; } else { X.st = 'stuck'; s.y = gy - s.r*0.45; Z.gone = 0; Z.stuck = hazardT; }
+      impact(s.x, gy, { shake:12, dust:2, debris:7, scar:true, r:110 });
+      for(const f of fighters){ if(f.dead || f.invuln > 0) continue; if(hurtGap(f, s.x, gy - 4) < D.r){ xvHurt(f, X.id, D.dmg, Math.sign(WW*0.5 - f.x || 1)*D.kbx, -D.kby); } }
+      for(const dir of [-1, 1]) addProj(xvShot(s, X.id, { xv:'wave', x:s.x + dir*(D.r*0.6), y:gy - D.wave.h/2, vx:dir*D.wave.sp, vy:0, r:D.wave.r, dmg:bossDmg()*D.wave.dmg, kb:8, life:Math.ceil(D.wave.far/D.wave.sp), noCull:true, color:'#c2a878' }));
+    }
+  } else if(X.st === 'stuck'){
+    const w = u - X.s0;
+    s.x = X.lx; s.y = gy - s.r*0.45; s.vx = 0;
+    if(w >= D.stuck){ X.st = 'out'; X.o0 = X.t; }
+  } else if(X.st === 'between'){
+    const w = u - X.s0; s.y = topY;
+    if(w >= D.second){ X.i++; X.t0 = X.t; X.st = 'up'; Z.gone = 1; const f2 = xvNearest(s); X.mk = f2 ? f2.idx : X.mk; X.lx = f2 ? f2.x : X.lx; X.dir = X.lx < WW/2 ? 1 : -1; }
+  } else if(X.st === 'out'){
+    s.y += (gy - s.r - 160 - s.y)*0.15;
+    if(X.t - X.o0 > 14){ s._sx = null; Z.stuck = 0; }
+  }
+}
+// ---- ARROW DASH! -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// He zips to a spot 500-650 px from you on the side with more room, on your row (clamped to 64..260 over the floor so the top step is the refuge), the row following you until 14 frames before the dash. He tilts into an
+// arrow (two beats, a bright yellow glow). The pass runs across the whole stage at 28 px a frame (32 in phase 2), 1.0 of a boss hit along the path. Phase 2: a second pass 20 frames later on a different row.
+function xvDashStart(s, tgt){
+  const tn = s._tn || {}, ph = xvPh(s), D = XB.dash;
+  s._sx = { k:'dash', t:0, id:++BOSS_ATK_ID, ph, own:1, dir:tn.dir || s.face || 1, row:tn.row || D.rowLo, x:s.x, n:ph >= 2 ? 2 : 1, i:0, st:'run', hit:{}, y:s.y };
+  if(tn.sx != null){ puff(s.x, s.y, '#fff04a', 10); s.x = tn.sx; s.y = groundY() - s._sx.row; puff(s.x, s.y, '#fff04a', 10); }   // he zips to the start
+  s._sx.sx = s.x; xvHz(s).dash = 1;
+}
+function xvDashStep(s, X){
+  const D = XB.dash, gy = groundY(), sp = D.sp[X.ph - 1];
+  if(X.st === 'run'){
+    X.sub = 0;
+    const steps = Math.ceil(sp/8);
+    for(let q = 0; q < steps; q++){
+      s.x += X.dir*sp/steps; s.y = gy - X.row;
+      for(const f of fighters){ if(f.dead || f.invuln > 0 || X.hit[f.idx]) continue; if(hurtGap(f, s.x, s.y) < D.r){ X.hit[f.idx] = 1; xvHurt(f, X.id, D.dmg, X.dir*D.kb, -D.kby); for(let i = 0; i < 10; i++) puff(f.x, f.y, '#fff04a', 5); } }
+    }
+    if((X.dir > 0 && s.x >= WW - 30) || (X.dir < 0 && s.x <= 30)){
+      X.i++; X.st = X.i < X.n ? 'between' : 'away'; X.b0 = X.t; s.x = clamp(s.x, 30, WW - 30);
+      X.prevRow = X.row;
+    }
+  } else if(X.st === 'between'){
+    const f = xvNearest(s), w = X.t - X.b0, gap = D.second;
+    if(w === 1 && f){   // pop to the start of the second pass: back the way he came if there is room (500+ px), else the same side as before
+      const dir2 = -X.dir, room = dir2 > 0 ? f.x - 40 : WW - 40 - f.x;   // room on the side he would start from, behind the first pass's start
+      const startRoom = X.dir > 0 ? f.x - 40 : WW - 40 - f.x;   // the side the first pass came from
+      if(startRoom >= D.min){ X.dir = X.dir; X.nx = clamp(f.x - X.dir*Math.min(D.near, startRoom), 40, WW - 40); }   // the same side again, the same direction
+      else { X.dir = -X.dir; const r2 = X.dir > 0 ? f.x - 40 : WW - 40 - f.x; X.nx = clamp(f.x - X.dir*Math.min(D.near, r2), 40, WW - 40); }
+      s._algPop = ALG_POP; puff(s.x, s.y, '#fff04a', 14);
+    }
+    if(w < gap - D.lock && f){ const r = clamp(gy - f.y, D.rowLo, D.rowHi); X.row = Math.abs(r - X.prevRow) < 80 ? (X.prevRow > 150 ? D.rowLo : D.rowHi) : r; }   // a different row than the pass before
+    if(w >= 2 && X.nx != null){ s.x = X.nx; s.y = gy - X.row; }
+    if(w >= gap){ X.st = 'run'; X.hit = {}; X.nx = null; }
+  } else if(X.st === 'away'){
+    const f = xvNearest(s); s._algPop = ALG_POP; puff(s.x, s.y, '#fff04a', 14);
+    s.y = gy - s.r - XB.flt[0]; s.x = clamp(f ? f.x + (f.x < WW/2 ? 1 : -1)*XB.stand[X.ph - 1] : s.x, s.r*0.5, WW - s.r*0.5); xvHz(s).dash = 0; s._sx = null;
+  }
+}
+// ---- BURNING! (phase 2 only, and it opens the phase) --------------------------------------------------------------------------------------------------------------------------------------------------------
+// A panic flight: a figure of eight (a lemniscate, 300-380 px each way) over 120 frames, 100-250 px over the floor, two passes in phase 2 (the second lower). His body hits (0.6, knock 12), he sheds an ember every 7 frames: it
+// falls (0.3) and lies burning 90 frames (a patch of radius 22 that hits for 0.25 every 40 frames; at most 8). The window: damage dealt to him is x1.25 for the whole flight (algExpose).
+function xvBurnPt(s, X, u){
+  const B = XB.burn, gy = groundY(), a = u/X.per*Math.PI*2, drop = X.pass*38;
+  return { x:X.cx + X.mir*X.ax*Math.sin(a), y:gy - (B.cy - drop + B.ay*Math.sin(2*a)) };
+}
+function xvBurnStart(s, tgt){
+  const B = XB.burn, ph = xvPh(s), n = (xvHz(s).bn = (xvHz(s).bn || 0) + 1), ax = B.ax[n % 3], per = B.period[ph - 1], gy = groundY();
+  const mir = (tgt && tgt.x > s.x) ? 1 : -1;
+  s._sx = { k:'burn', t:0, id:++BOSS_ATK_ID, ph, own:1, ax, per, mir, cx:clamp(s.x, ax + 80, WW - ax - 80), pass:0, hit:{}, last:0 };
+  algExpose(s, per*B.passes[ph - 1] + 14, 1.25);
+  shake(4); for(let i = 0; i < 18; i++) puff(s.x, s.y, '#ff8a2a', 6);
+}
+function xvBurnStep(s, X){
+  const B = XB.burn, u = X.t - X.pass*X.per, p = xvBurnPt(s, X, u);
+  s.x += (p.x - s.x)*(X.t < 8 ? 0.4 : 1); s.y += (p.y - s.y)*(X.t < 8 ? 0.4 : 1); s.face = Math.sign(p.x - X.last) || s.face; X.last = p.x;
+  algExpose(s, (X.per*B.passes[X.ph - 1] - X.t) + 14, 1.25);
+  for(const f of fighters){ if(f.dead || f.invuln > 0 || X.hit[f.idx]) continue; if(hurtGap(f, s.x, s.y) < B.r){ X.hit[f.idx] = 1; xvHurt(f, X.id, B.dmg, Math.sign(f.x - s.x || 1)*B.kb, -8); for(let i = 0; i < 8; i++) puff(f.x, f.y, '#ff8a2a', 5); } }
+  if(X.t % B.ember[X.ph - 1] === 0) xvEmberAdd(s, s.x, s.y + 20, B.emDmg, ++BOSS_ATK_ID);
+  if(u >= X.per){ X.pass++; if(X.pass >= B.passes[X.ph - 1]){ s._sx = null; xvHz(s).dz = 0; } }
+}
+// embers: falling (hits while falling), then a patch that lies burning; all in s._xe (plain numbers) and stepped every frame
+function xvEmberAdd(s, x, y, dmg, id){ const E = s._xe || (s._xe = []); E.push({ x, y, vy:0, dmg, id, st:0, t:0, h:{} }); }
+function xvEmbers(s){
+  const E = s._xe; if(!E || !E.length) return;
+  const P = XB.burn.patch, gy = groundY();
+  for(const e of E){
+    e.t++;
+    if(e.st === 0){
+      e.vy += 0.5; const y0 = e.y; e.y += e.vy; e.x += Math.sin(e.t*0.3)*0.3;
+      for(const f of fighters){ if(f.dead || f.invuln > 0 || e.h[f.idx]) continue; if(hurtGap(f, e.x, e.y) < 13){ e.h[f.idx] = 1; xvHurt(f, e.id, e.dmg, Math.sign(WW*0.5 - f.x || 1)*4, -6); } }
+      const sf = surfaceBelow(e.x, y0 - 2), sy = sf === null ? gy : sf;
+      if(e.y >= sy - 8){ e.y = sy - 8; e.st = e.dmg >= XB.burn.emDmg ? 1 : 2; e.t = 0; e.sy = sy; }
+    } else if(e.st === 1){
+      if(e.t % P.every === 1){ const id = ++BOSS_ATK_ID; for(const f of fighters){ if(f.dead || f.invuln > 0) continue; if(hurtGap(f, e.x, e.y) < P.r){ xvHurt(f, id, P.dmg, Math.sign(WW*0.5 - f.x || 1)*3, -5); } } }
+    }
+  }
+  const patches = E.filter(e => e.st === 1);
+  while(patches.length > P.cap){ const o = patches.shift(); o.st = 2; }
+  s._xe = E.filter(e => e.st === 0 || (e.st === 1 && e.t < P.life));
+}
+// ---- SQUIRT! (the owner's own: his juice box) ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+// He drops to 90 px over the floor, side-on, the box in his hand like a pistol; the first band's pose is held 14 frames (DIP = LOW, LIFT = HIGH). A band is 16 frames of a drop a frame, flat and straight at 24 px a frame
+// (30 in phase 2): LOW covers 0..40 px over the floor (jump it, or stand on a step), HIGH 120..160 (stay on the floor, or stand on the 175 step). 3 bands in phase 1, 5 in phase 2, gaps 24 (18); the side is re-read in each gap.
+// All the drops of the turn share one id (0.6). After the last band the box is empty: he pinches it flat, 56 frames (42) of damage x1.25, then it ends.
+function xvSquirtStart(s, tgt){
+  const ph = xvPh(s), orders = ph >= 2 ? XB.sq.order2 : XB.sq.order1, ord = orders[(xvHz(s).sqn = (xvHz(s).sqn || 0) + 1) % orders.length];
+  s._sx = { k:'sq', t:0, id:++BOSS_ATK_ID, ph, ord, bi:0, bt:0, st:'band', dir:tgt ? (Math.sign(tgt.x - s.x) || s.face || 1) : (s.face || 1), dry:0 };
+  s.face = s._sx.dir;
+}
+function xvSquirtStep(s, X){
+  const Q = XB.sq, gy = groundY(), ph = X.ph;
+  if(X.st === 'band'){
+    const hi = X.ord[X.bi] === 1, y = gy - (hi ? Q.hi : Q.lo), sp = Q.sp[ph - 1];
+    if(X.bt < Q.band){
+      const x = s.x + X.dir*s.r*0.95;
+      addProj(xvShot(s, X.id, { xv:'drop', x, y, vx:X.dir*sp, vy:0, r:Q.r, dmg:bossDmg()*Q.dmg, kb:Q.kb, life:Math.ceil(Q.far/sp), noCull:true, color:'#e8a62a', ph }));
+    }
+    X.bt++;
+    if(X.bt >= Q.band + Q.gap[ph - 1]){
+      X.bi++; X.bt = 0;
+      if(X.bi >= X.ord.length){ X.st = 'dry'; X.dry = 1; X.d0 = X.t; algExpose(s, Q.dry[ph - 1], 1.25); }
+      else { const f = xvNearest(s); if(f){ X.dir = Math.sign(f.x - s.x) || X.dir; s.face = X.dir; } }
+    }
+  } else if(X.st === 'dry'){
+    if(X.t - X.d0 >= Q.dry[ph - 1]) s._sx = null;
+  }
+}
+// ---- HIDE AND SEEK! (the signature) --------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// Three baskets (four in phase 2) hang in a row 140 px over the floor and swap places like cups (3 swaps 50 frames apart, 5 swaps 36 apart in phase 2); he is one of them (the boss himself, shrunk to the basket's size; he hangs
+// 6 px lower) and the others are 1-HP hostile baskets. The first hit on his basket finds him: he tumbles out dizzy for 100 frames (damage x1.5) and takes a flat 2.5% of his max HP as well. A decoy hit bursts and nicks the nearest
+// fighter within 90 px (0.35). If he is not found within 330 frames (270) of the shuffle's end he pops out annoyed and every basket still hanging falls on the nearest fighter (the rain's drop, shadows included).
+// The shuffle is a function of the clock and the swap list: nothing is random after the start. Every exit restores his radius.
+function xvHideStart(s, tgt, id){
+  const ph = xvPh(s), H = XB.hide, Z = xvHz(s), n = H.n[ph - 1], nsw = ph >= 2 ? 5 : 3, f = tgt || xvNearest(s);
+  const sw = []; for(let i = 0; i < nsw; i++){ const a = Math.floor(Math.random()*n); let b = Math.floor(Math.random()*(n - 1)); if(b >= a) b++; sw.push(a, b); }
+  const cx = clamp(f ? f.x : s.x, 260, WW - 260), real = Math.floor(Math.random()*n);
+  Object.assign(Z, { hn:n, hsw:sw, hnsw:nsw, hper:H.per[ph - 1], hcx:cx, hreal:real, hs0:hazardT + H.duck, hid:1, h0:s.hp });
+  s._sx = { k:'hide', t:0, id, ph, st:'duck', own:1, r0:s.r, found:0 };
+  xvClearBaskets(s);
+  s._algBusy = true;
+  for(let b = 0; b < n; b++){
+    if(b === real) continue;
+    const m = { type:'xbasket', name:'', color:'#b8864a', team:-1, owner:-1, hostile:true, hover:true, x:cx, y:groundY() - H.h, vx:0, vy:0, r:H.r, hp:1, maxHp:1, life:1e9, face:1, _cd:0, _xb:b };
+    summons.push(m); s._xk.push(m);
+  }
+}
+function xvClearBaskets(s){
+  if(s._xk){ for(const m of s._xk){ m.life = 0; } s._xk = []; }
+  s._algBusy = false;
+}
+// where basket b is `u` frames after the shuffle began (a pure function of the swap list)
+function xvBasketAt(Z, b, u){
+  const H = XB.hide, n = Z.hn, per = Z.hper, dur = per - 8, gy = groundY();
+  const slotX = sl => Z.hcx + (sl - (n - 1)/2)*H.gapX;
+  const slotOf = []; for(let i = 0; i < n; i++) slotOf[i] = i;   // slotOf[basket] = slot
+  const k = Math.max(0, Math.min(Z.hnsw, Math.floor(u/per))), nsw = Z.hnsw;
+  for(let i = 0; i < Math.min(k, nsw); i++){ const a = Z.hsw[2*i], c = Z.hsw[2*i + 1]; let pa = -1, pc = -1; for(let q = 0; q < n; q++){ if(slotOf[q] === a) pa = q; if(slotOf[q] === c) pc = q; } slotOf[pa] = c; slotOf[pc] = a; }
+  let x = slotX(slotOf[b]), y = gy - H.h;
+  if(k < nsw && u >= 0){
+    const w = Math.max(0, Math.min(1, (u - k*per)/dur)), a = Z.hsw[2*k], c = Z.hsw[2*k + 1], sm = w*w*(3 - 2*w);
+    if(slotOf[b] === a){ x = slotX(a) + (slotX(c) - slotX(a))*sm; y -= Math.sin(w*Math.PI)*48; }
+    else if(slotOf[b] === c){ x = slotX(c) + (slotX(a) - slotX(c))*sm; y += Math.sin(w*Math.PI)*34; }
+  }
+  return { x, y };
+}
+function xvHideStep(s, X){
+  const Z = xvHz(s), H = XB.hide, gy = groundY(), t = hazardT, ph = X.ph, u = t - Z.hs0, shufEnd = Z.hnsw*Z.hper + 6;
+  const place = (b, o) => xvBasketAt(Z, b, u + (o || 0));
+  const bob = Math.sin(t*0.09)*5;
+  if(X.st === 'duck'){
+    const q = clamp((t - (Z.hs0 - H.duck))/H.duck, 0, 1);
+    s.r = X.r0 + (H.r - X.r0)*q;
+    const p0 = place(Z.hreal, 0); s.x += (p0.x - s.x)*(0.2 + 0.6*q); s.y += (p0.y + 6 - s.y)*(0.2 + 0.6*q);
+    if(q >= 1){ X.st = 'shuf'; s.r = H.r; }
+    for(const m of (s._xk || [])){ const p = place(m._xb, 0); m.x = p.x; m.y = p.y; }
+    return;
+  }
+  for(const m of (s._xk || [])){ const p = place(m._xb, 0); if(u > shufEnd){ m.x = p.x + (m.x - p.x)*0; } m.x = p.x; m.y = p.y + (u > shufEnd ? bob : 0); }
+  const pr = place(Z.hreal, 0); s.x = pr.x; s.y = pr.y + 6 + (u > shufEnd ? bob : 0); s.vx = 0;
+  if(u > shufEnd){   // settled: the row drifts a few px toward the nearest fighter, so a far fighter is not made to cross a big stage
+    const f = xvNearest(s); if(f) Z.hcx += clamp((f.x - Z.hcx)*0.004, -0.8, 0.8);
+    if(X.st === 'shuf'){ X.st = 'hunt'; X.h0 = t; }
+  }
+  // a decoy that was hit bursts: it nicks the nearest fighter within 90 px
+  for(const m of (s._xk || [])){
+    if(m._xdone || m.life > 0 && m.hp > 0) continue;
+    m._xdone = 1;
+    const BU = H.burst, id = ++BOSS_ATK_ID; for(let i = 0; i < 14; i++) puff(m.x, m.y, '#f4efe0', 6);
+    let nf = null, nd = 1e9; for(const f of fighters){ if(f.dead) continue; const d = hurtGap(f, m.x, m.y); if(d < nd){ nd = d; nf = f; } }
+    if(nf && nd < BU.r && nf.invuln <= 0) xvHurt(nf, id, BU.dmg, Math.sign(nf.x - m.x || 1)*4, -5);
+  }
+  s._xk = (s._xk || []).filter(m => !m._xdone);
+  // FOUND: the boss's own hp fell while he was hidden
+  if(s.hp < Z.h0 - 1e-6 && !X.found){
+    X.found = 1; X.st = 'found'; X.f0 = t;
+    s.hp -= s.maxHp*H.bounty;
+    algExpose(s, H.stun, H.bmult);
+    Z.dz = t + H.stun; Z.hid = 0; s.r = X.r0; xvClearBaskets(s); s._algBusy = false;
+    shake(5); for(let i = 0; i < 22; i++) puff(s.x, s.y, i % 2 ? '#fff6c0' : '#ffd23f', 6);
+  }
+  Z.h0 = s.hp;
+  if(X.st === 'hunt' && t - X.h0 > H.clock[ph - 1]){   // timed out: he pops out annoyed and the baskets still hanging fall
+    X.st = 'drop'; X.f0 = t; Z.hid = 0; const baskets = (s._xk || []).map(m => ({ x:m.x, y:m.y })).concat([{ x:s.x, y:s.y }]);
+    s.r = X.r0; xvClearBaskets(s); s._algBusy = false;
+    const nf = xvNearest(s), id = X.id;
+    baskets.forEach((b, i) => { const x = clamp((nf ? nf.x : b.x) + (i - (baskets.length - 1)/2)*95, XB.rain.edge, WW - XB.rain.edge); xvBasketDrop(s, X, x, xvBestSurface(x), Math.min(b.y, groundY() - 200), id); });
+    for(let i = 0; i < 14; i++) puff(s.x, s.y, '#fff6c0', 5);
+    s.y = Math.min(s.y, groundY() - s.r - 60);
+  }
+}
+function xvHideAfter(s, X){   // found / drop: the tail of the move
+  const t = hazardT, H = XB.hide;
+  if(X.st === 'found'){ s.y += (groundY() - s.r - 110 + Math.sin(t*0.2)*6 - s.y)*0.15; s.vx = 0; if(t - X.f0 >= H.stun){ s._sx = null; xvHz(s).dz = 0; } }
+  else if(X.st === 'drop'){ s.y += (groundY() - s.r - 140 - s.y)*0.1; if(t - X.f0 >= XB.rain.fall + 24){ s._sx = null; } }
+}
+// ---- the dispatcher --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+function xvStep(s, tgt){
+  const X = s._sx; if(!X) return;
+  X.t++;
+  if(X.k === 'rain') xvRainStep(s, X);
+  else if(X.k === 'snap') xvSnapStep(s, X);
+  else if(X.k === 'dive') xvDiveStep(s, X);
+  else if(X.k === 'dash') xvDashStep(s, X);
+  else if(X.k === 'burn') xvBurnStep(s, X);
+  else if(X.k === 'sq') xvSquirtStep(s, X);
+  else if(X.k === 'hide'){ if(X.st === 'found' || X.st === 'drop') xvHideAfter(s, X); else xvHideStep(s, X); if(!s._sx) xvRestore(s); }
+  if(!s._sx && s.r !== s._xr0) s.r = s._xr0;
+}
+// ---- drawing -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+function xvBasket(c, x, y, r, spin, prop, tilt){
+  c.save(); c.translate(x, y); if(tilt) c.rotate(tilt);
+  const t = hazardT;
+  c.strokeStyle = '#f4f0e6'; c.lineWidth = 2.5; c.beginPath(); c.moveTo(-r*0.7, -r*0.1); c.lineTo(-r*0.15, -r*0.95); c.moveTo(r*0.7, -r*0.1); c.lineTo(r*0.15, -r*0.95); c.stroke();
+  c.fillStyle = '#a8703a'; c.strokeStyle = '#4a2c10'; c.lineWidth = 3; c.beginPath(); c.moveTo(-r*0.95, -r*0.2); c.quadraticCurveTo(-r*0.9, r*0.95, 0, r*0.95); c.quadraticCurveTo(r*0.9, r*0.95, r*0.95, -r*0.2); c.closePath(); c.fill(); c.stroke();
+  c.strokeStyle = 'rgba(74,44,16,0.55)'; c.lineWidth = 1.5; for(let i = -2; i <= 2; i++){ c.beginPath(); c.moveTo(i*r*0.3, -r*0.1); c.lineTo(i*r*0.24, r*0.85); c.stroke(); }
+  if(prop){ const w = Math.abs(Math.cos(t*(0.5 + spin*0.2)))*r*0.95 + 2; c.fillStyle = '#c9ced8'; c.strokeStyle = '#4a4f5c'; c.lineWidth = 2; c.beginPath(); c.ellipse(0, -r*1.02, w, r*0.12, 0, 0, 7); c.fill(); c.stroke(); }
+  c.restore();
+}
+function xvShadow(x, y, rx, k){ bossFallShadow(x, y, rx, k); }
+function xvTell(s){
+  const Z = xvHz(s), R = s.r, d = s.face < 0 ? -1 : 1, kind = s._telKind, tl = s._tl || 50, t = hazardT, X = s._sx;
+  const e = s._tel > 0 ? tl - s._tel : 0, g = s._tel > 0 ? growK(Math.max(0, e - (tl - 12)) + 1) : 0;
+  if(Z.gone) ctx.globalAlpha = 0;
+  if(X && X.k === 'dive' && (X.st === 'stuck' || X.st === 'out')) ctx.rotate(Math.PI + Math.sin(t*0.4)*0.12);   // head-first in the floor, legs kicking
+  if(Z.dz > t && X && X.k === 'hide') ctx.rotate(Math.sin(t*0.3)*0.18);
+  if(Z.dz > t && !(X && X.k === 'hide')) ctx.rotate(Math.sin(t*0.3)*0.14);
+  if(X && X.k === 'dash' && X.st === 'run'){ ctx.rotate(X.dir*0.0); ctx.scale(1.25, 0.6); }
+  if(s._tel > 0 && kind === 'xdash'){ const u = clamp(e/tl, 0, 1); ctx.scale(1 + 0.25*u, 1 - 0.4*u); }
+  if(s._tel > 0 && g > 0 && (kind === 'xrain' || kind === 'x')){   // a pile of baskets grows in above him / around him in the last 12 frames
+    ctx.save(); ctx.globalAlpha = g; const n = kind === 'x' ? 3 : 5;
+    for(let i = 0; i < n; i++){ const a = (i - (n - 1)/2); xvBasket(ctx, a*R*0.75, kind === 'x' ? -R*0.1 + (i % 2)*R*0.2 : -R*1.35 - (i % 2)*R*0.2, R*0.32*g, i, true, 0); }
+    ctx.restore();
+  }
+  if(X && X.k === 'sq' && !X.dry || (s._tel > 0 && kind === 'xsquirt')){   // the juice box like a pistol: DIP (low band) or LIFT (high band)
+    const hi = X && X.k === 'sq' ? X.ord[Math.min(X.ord.length - 1, X.bi)] === 1 : false;
+    let hiN = hi; if(s._tel > 0 && kind === 'xsquirt'){ const orders = xvPh(s) >= 2 ? XB.sq.order2 : XB.sq.order1; hiN = orders[((Z.sqn || 0) + 1) % orders.length][0] === 1; }
+    const y = hiN ? -R*0.55 : R*0.45, sq = (X && X.k === 'sq' && X.bt < 8) ? 0.82 : 1;
+    ctx.save(); ctx.translate(d*R*0.95, y); ctx.scale(sq, sq); ctx.fillStyle = '#e8a62a'; ctx.strokeStyle = '#6a3a08'; ctx.lineWidth = 3; ctx.fillRect(-12, -22, 24, 40); ctx.strokeRect(-12, -22, 24, 40);
+    ctx.strokeStyle = '#c8ff5a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(d*8, -22); ctx.lineTo(d*30, hiN ? -34 : -12); ctx.stroke();
+    if(s._tel > 0){ const gg = ctx.createRadialGradient(d*30, hiN ? -34 : -12, 1, d*30, hiN ? -34 : -12, 16*growK(e + 1)); gg.addColorStop(0, 'rgba(200,255,90,0.9)'); gg.addColorStop(1, 'rgba(200,255,90,0)'); ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(d*30, hiN ? -34 : -12, 16*growK(e + 1), 0, 7); ctx.fill(); }
+    ctx.restore();
+  }
+  if(s._tel > 0 && kind === 'xsnap'){   // one hand raised, the four fingers pinched, a small glint
+    const u = clamp(e/tl, 0, 1); ctx.save(); ctx.globalAlpha = 0.9; ctx.translate(d*R*0.9, -R*0.75); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-6, 0); ctx.lineTo(6, 0); ctx.moveTo(0, -6); ctx.lineTo(0, 6); ctx.stroke();
+    if(u > 0.8){ const gg = ctx.createRadialGradient(0, 0, 1, 0, 0, 18); gg.addColorStop(0, 'rgba(255,255,255,0.95)'); gg.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(0, 0, 18, 0, 7); ctx.fill(); } ctx.restore();
+  }
+  if(Z.hid && X && X.k === 'hide' && X.st !== 'duck'){ ctx.globalAlpha = 0; }   // he is a basket now (xvFx draws it)
+}
+function xvBody(s, R, body, flash){   // a drawn X until his renders load: a four-lobed yellow letter with a grin
+  const r = s._xr0 || R;
+  ctx.fillStyle = flash ? '#fff' : '#fefd33'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.lineJoin = 'round';
+  ctx.beginPath(); for(let i = 0; i < 4; i++){ const a = Math.PI/4 + i*Math.PI/2; ctx.moveTo(0, 0); ctx.ellipse(Math.cos(a)*r*0.5, Math.sin(a)*r*0.5, r*0.5, r*0.28, a, 0, 7); } ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#fff'; for(const sx of [-1, 1]){ ctx.beginPath(); ctx.arc(sx*r*0.16, -r*0.08, r*0.1, 0, 7); ctx.fill(); ctx.stroke(); }
+  ctx.strokeStyle = '#1c1c1c'; ctx.beginPath(); ctx.arc(0, r*0.1, r*0.18, 0.2, Math.PI - 0.2); ctx.stroke();
+  return true;
+}
+function xvSprite(c, key, R, face, a){
+  const im = bossImage(key); if(!im) return false;
+  const ar = im.naturalWidth/im.naturalHeight, box = R*2.15; let dh = box, dw = box*ar; if(dw > box*1.25){ dw = box*1.25; dh = dw/ar; }
+  c.save(); c.globalAlpha *= a; if(face < 0) c.scale(-1, 1); c.drawImage(im, -dw/2, -dh/2, dw, dh); c.restore(); return true;
+}
+function xvFx(s){
+  if(!(s.hp > 0) && !s._xk) return;
+  const Z = xvHz(s), t = hazardT, gy = groundY(), X = s._sx, ph = xvPh(s), cy = (typeof camY === 'number' ? camY : 0);
+  // the intro: the baskets that lift him float off up out of the screen
+  if(xvIntro(s)){ const u = (t - Z.in)/XB.introF; for(let i = 0; i < 5; i++){ const a = i - 2, up = Math.max(0, (u - 0.5)/0.5); xvBasket(ctx, WW*0.5 + a*46 + Math.sin(t*0.1 + i)*5, gy - 290 - s._xr0*1.5 - up*up*900, 30, i, true, a*0.12); } }
+  if(X && X.k === 'rain'){
+    for(const row of X.rows){ for(const b of row.bk){
+      if(b.done || X.t < row.start) continue;
+      const g = growK(X.t - row.start + 1), lane = cy + 70 + (b.x*0.37 % 40);
+      xvBasket(ctx, b.x, lane, 34*g, b.x, true, Math.sin(t*0.1 + b.x)*0.1);
+      if(X.t >= b.dropAt - XB.rain.lock && b.sy != null) xvShadow(b.x, b.sy, 34, growK(X.t - (b.dropAt - XB.rain.lock) + 1)*0.6);
+    } }
+    for(const q of X.lay){ if(q.on){ const k = 1 - Math.max(0, (hazardT - q.at - XB.rain.life + 14))/14; ctx.save(); ctx.globalAlpha = clamp(k, 0, 1); xvBasket(ctx, q.x, q.y - 14, 30, 0, false, Math.PI); ctx.restore(); } }
+  }
+  if(X && X.k === 'snap'){
+    const S = XB.snap; for(const sn of X.snaps){
+      if(X.t < sn.g0 || X.t >= sn.b1) continue;
+      const g = growK(X.t - sn.g0 + 1), del = X.t >= sn.d0, fade = X.t >= sn.d1 ? 1 - (X.t - sn.d1)/S.black : 1;
+      for(let c = sn.par; c < X.n; c += 2){ const x0 = c*S.col, w = Math.min(S.col, WW - x0);
+        ctx.save(); ctx.globalAlpha = (del ? 0.92 : 0.5*g)*clamp(fade, 0, 1); ctx.fillStyle = del ? '#050505' : '#2a2a30'; ctx.fillRect(x0, gy - (del ? S.tall : 24), w, del ? S.tall + 30 : 54);
+        if(!del){ const q = Math.floor(t/5); for(let i = 0; i < 30; i++){ const rx = x0 + ((i*53 + q*97) % w), ry = gy - 24 + ((i*29 + q*41) % 50); ctx.globalAlpha = 0.4*g; ctx.fillStyle = (i & 1) ? '#ff4d6d' : '#4dc3ff'; ctx.fillRect(rx, ry, 8, 3); } }
+        ctx.restore(); }
+    }
+  }
+  if(X && X.k === 'dive'){
+    const D = XB.dive;
+    if(X.st === 'up' || X.st === 'fall'){
+      const u = X.t - X.t0, land = D.land[X.i === 0 ? 0 : 1], k = growK(u - 3);
+      if(u < 10){ ctx.save(); ctx.strokeStyle = 'rgba(255,230,120,' + 0.6*(1 - u/10) + ')'; ctx.lineWidth = 10; ctx.beginPath(); ctx.moveTo(X.lx, gy - 40); ctx.lineTo(X.lx, gy - D.topY); ctx.stroke(); ctx.restore(); }
+      xvShadow(X.lx, gy, 80, k*(0.3 + 0.7*clamp(u/land, 0, 1)));
+      { const gg = ctx.createRadialGradient(X.lx, gy - D.topY, 4, X.lx, gy - D.topY, 70*k); gg.addColorStop(0, 'rgba(255,240,160,0.8)'); gg.addColorStop(1, 'rgba(255,240,160,0)'); ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(X.lx, gy - D.topY, 70*k, 0, 7); ctx.fill(); }
+      if(X.st === 'fall'){ ctx.save(); ctx.strokeStyle = 'rgba(255,230,120,0.5)'; ctx.lineWidth = 12; ctx.beginPath(); ctx.moveTo(s.x + (s.x - X.lx)*0.5, s.y - (gy - s.y)*0.3 - 120); ctx.lineTo(s.x, s.y); ctx.stroke(); ctx.restore(); }
+    }
+  }
+  if(X && X.k === 'dash' && X.st === 'run'){ ctx.save(); for(let j = 1; j <= 4; j++){ ctx.globalAlpha = 0.14*(5 - j); ctx.fillStyle = '#fff04a'; ctx.beginPath(); ctx.ellipse(s.x - X.dir*j*XB.dash.sp[X.ph - 1]*0.9, s.y, 44, 22, 0, 0, 7); ctx.fill(); } ctx.restore(); }
+  if(X && X.k === 'burn'){ ctx.save(); const gg = ctx.createRadialGradient(s.x, s.y, 10, s.x, s.y, s.r*1.5); gg.addColorStop(0, 'rgba(255,170,40,0.55)'); gg.addColorStop(1, 'rgba(255,100,20,0)'); ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(s.x, s.y, s.r*1.5, 0, 7); ctx.fill(); ctx.restore(); }
+  if(s._xe){ for(const e of s._xe){ ctx.save(); const f = e.st === 0 ? 1 : clamp(1 - Math.max(0, e.t - XB.burn.patch.life + 14)/14, 0, 1); ctx.globalAlpha = f; ctx.fillStyle = '#ff7a1a'; ctx.strokeStyle = '#8a2a00'; ctx.lineWidth = 2;
+    ctx.beginPath(); if(e.st === 0){ ctx.arc(e.x, e.y, 10, 0, 7); } else { ctx.ellipse(e.x, e.y + 2, XB.burn.patch.r, 9 + Math.sin(t*0.3 + e.x)*2, 0, 0, 7); } ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(e.x, e.y - 3, e.st === 0 ? 5 : 7, 0, 7); ctx.fill(); ctx.restore(); } }
+  // the hidden baskets (decoys and the one he is in)
+  if(Z.hid && X && X.k === 'hide'){
+    const real = s; ctx.save();
+    for(const m of (s._xk || [])) xvBasket(ctx, m.x, m.y, XB.hide.r, 0, true, 0);
+    xvBasket(ctx, s.x + (Math.floor(t/23) % 9 === 0 ? 1 : 0), s.y, XB.hide.r, 1, true, 0);
+    ctx.restore();
+  }
+  if(Z.hid && X && X.st === 'duck'){ const q = clamp((t - (Z.hs0 - XB.hide.duck))/XB.hide.duck, 0, 1); void q; }
+}
+function xvShotDraw(pr){
+  const k = pr.xv; if(!k) return false;
+  const t = hazardT;
+  if(k === 'end'){ xvEndDraw(pr); return true; }
+  if(pr.delay > 0) return true;
+  if(k === 'bask'){ ctx.save(); xvBasket(ctx, pr.x, pr.y, pr.r, 0, false, Math.sin(pr.y*0.03)*0.4); ctx.restore(); return true; }
+  if(k === 'drop'){
+    const a = (pr._born == null ? (pr._born = t) : pr._born), g = growK(t - a + 1), r = pr.r*(0.4 + 0.6*g);
+    ctx.save(); ctx.translate(pr.x, pr.y); ctx.fillStyle = pr.ph >= 2 ? '#f1d56a' : '#f09a1a'; ctx.strokeStyle = '#7a4a08'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.ellipse(-r*0.3, -r*0.35, r*0.28, r*0.12, -0.6, 0, 7); ctx.fill(); ctx.restore(); return true;
+  }
+  if(k === 'wave'){ const x = pr.x, g = groundY(); ctx.save(); ctx.fillStyle = 'rgba(200,170,110,0.75)'; ctx.strokeStyle = '#6a5230'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 12*Math.sign(pr.vx), g); ctx.quadraticCurveTo(x, g - XB.dive.wave.h*1.1, x + 14*Math.sign(pr.vx), g); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); return true; }
+  return false;
+}
+// ---- his ending (the stinger of BFB 1): the hovering baskets swoop in, clamp on to him, and lift him up and off the top of the screen, turning, getting smaller ---------------------------------------------------
+function xvEndSweep(b){
+  projectiles = projectiles.filter(p => !p.xv); worldPlats = worldPlats.filter(p => !p._xb);
+  summons = summons.filter(m => m.type !== 'xbasket');
+  if(b){ b._sx = null; b._tn = null; b._xe = []; if(b._xr0 != null) b.r = b._xr0; xvHz(b).hid = 0; xvHz(b).gone = 0; }
+}
+function xvEndBegin(b){
+  addProj({ owner:-2, ownerObj:{ team:-1, idx:-2 }, x:b.x, y:-5000, vx:0, vy:0, r:0, dmg:0, kb:0, grav:false, color:b.color, life:1, delay:XB.end.total + 1, noAim:true,
+    xv:'end', algShot:'x', shape:'xend', et0:hazardT, ex:Math.round(b.x), ey:Math.round(b.y), ef:b.face < 0 ? -1 : 1, er:Math.round(b._xr0 || b.r), ep:xvPh(b) });
+}
+function xvEndDraw(pr){
+  const u = hazardT - pr.et0, E = XB.end; if(!(u >= 0) || u > E.total) return;
+  const R = pr.er, cx = pr.ex, cy = pr.ey, gy = groundY();
+  const swoop = clamp(u/34, 0, 1), up = clamp((u - 46)/(E.total - 46), 0, 1), spin = up*up*14, sc = 1 - 0.75*up;
+  const px = cx + Math.sin(up*5)*30*up, py = cy - up*up*(cy + 400);
+  ctx.save(); ctx.translate(px, py); ctx.rotate(spin); ctx.scale(sc, sc);
+  if(!xvSprite(ctx, pr.ep >= 2 ? 'xburn' : 'xoh', R, pr.ef, 1)){ ctx.fillStyle = '#fefd33'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, R*0.8, 0, 7); ctx.fill(); ctx.stroke(); }
+  for(let i = 0; i < 5; i++){ const a = (i - 2)*0.62, sd = i % 2 ? 1 : -1, fx = Math.sin(a)*R*0.8, fy = -Math.cos(a)*R*0.75 - R*0.2, sx = fx + sd*(900 - 900*swoop), sy = fy - (700 - 700*swoop);
+    xvBasket(ctx, fx + (sx - fx)*(1 - swoop), fy + (sy - fy)*(1 - swoop) , 30, i, true, a*0.5); }
+  ctx.restore();
+  if(up > 0.1 && hazardT % 3 === 0) puff(px, py, '#fff6c0', 2);
+}
+BOSS_ENDINGS.x = { sweep: xvEndSweep, begin: xvEndBegin, holdMs: XB.end.hold };
+// ---- the 500-Step Platform: a bright grassland day, grey flagstones; the long stair rises behind the pyramid out of the top of the screen. Phase 2 is `x500sun`: the sky goes hot orange (the day sky fades over 90 frames), a big sun comes
+// close, a heat shimmer, embers rising. No hazard entry (the embers are his own).
+BOSS_ARENA_SKY.x500 = ['#8fcfff', '#f2fbff'];
+BOSS_ARENA_SKY.x500sun = ['#ff7a2e', '#ffd27a'];
+BOSS_ARENA_GROUND.x500 = { fill:'#6f6478', line:'#2e2638', pattern:function(c, gy, x0, x1, bottom){
+  c.strokeStyle = 'rgba(30,20,40,0.45)'; c.lineWidth = 2; for(let x = Math.floor(x0/90)*90; x < x1; x += 90){ c.beginPath(); c.moveTo(x, gy); c.lineTo(x - 30, Math.min(bottom, gy + 60)); c.stroke(); }
+  c.beginPath(); c.moveTo(x0, gy + 30); c.lineTo(x1, gy + 30); c.stroke(); } };
+BOSS_ARENA_GROUND.x500sun = BOSS_ARENA_GROUND.x500;
+function xvWorld(fn){ ctx.save(); const z = viewZoom(); ctx.translate(W/2, H/2); ctx.scale(z, z); ctx.translate(-W/2, -H/2); ctx.translate(-camX, -camY); try{ fn(); } finally { ctx.restore(); } }
+function xvDecor(s, key){
+  if(key !== 'x500' && key !== 'x500sun') return;
+  const Z = xvHz(s), t = hazardT, gy = groundY(), sun = key === 'x500sun', fade = sun && Z.p2 != null ? clamp((t - Z.p2)/90, 0, 1) : (sun ? 1 : 0);
+  if(sun && fade < 1){ const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#8fcfff'); g.addColorStop(1, '#f2fbff'); ctx.save(); ctx.globalAlpha = 1 - fade; ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40); ctx.restore(); }
+  if(sun){   // the sun comes close
+    const sr = 70 + 90*fade, sx = W*0.78 - camX*0.03, sy = H*0.2; const gg = ctx.createRadialGradient(sx, sy, sr*0.3, sx, sy, sr*2.4); gg.addColorStop(0, 'rgba(255,240,170,' + 0.95*fade + ')'); gg.addColorStop(0.4, 'rgba(255,170,60,' + 0.5*fade + ')'); gg.addColorStop(1, 'rgba(255,120,30,0)');
+    ctx.save(); ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(sx, sy, sr*2.4, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(255,246,200,' + fade + ')'; ctx.beginPath(); ctx.arc(sx, sy, sr, 0, 7); ctx.fill(); ctx.restore();
+  }
+  ctx.save();   // far hills at the horizon and the rest of the 500 steps going up behind the pyramid, in perspective
+  const hx = -camX*0.12; ctx.fillStyle = sun ? '#6b4a2a' : '#8fd07a'; ctx.beginPath(); ctx.moveTo(-50, H*0.82); for(let i = 0; i <= 12; i++){ ctx.lineTo(-50 + i*(W + 100)/12, H*0.7 + Math.sin(i*1.3 + hx*0.01)*26 + (i % 2)*10); } ctx.lineTo(W + 50, H); ctx.lineTo(-50, H); ctx.closePath(); ctx.fill();
+  const bx = W*0.5 - camX*0.18, topW = 60, botW = 260; ctx.fillStyle = '#8c8296'; ctx.strokeStyle = '#4a4054'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(bx - botW, H*0.78); ctx.lineTo(bx - topW, -10); ctx.lineTo(bx + topW, -10); ctx.lineTo(bx + botW, H*0.78); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = 'rgba(60,50,74,0.5)'; for(let i = 1; i < 18; i++){ const y = H*0.78 - i*i*2.3 - i*9, q = (H*0.78 - y)/(H*0.78 + 10), w = botW + (topW - botW)*q; if(y < 0) break; ctx.beginPath(); ctx.moveTo(bx - w, y); ctx.lineTo(bx + w, y); ctx.stroke(); }
+  ctx.fillStyle = 'rgba(255,255,255,0.8)'; for(let i = 0; i < 3; i++){ const cx2 = ((i*470 + t*0.18 - camX*0.08) % (W + 300) + W + 300) % (W + 300) - 150; ctx.beginPath(); ctx.ellipse(cx2, 80 + i*60, 66, 20, 0, 0, 7); ctx.ellipse(cx2 + 36, 70 + i*60, 42, 18, 0, 0, 7); ctx.fill(); }
+  for(let i = 0; i < 4; i++){ const bxx = ((i*310 + t*(0.25 + i*0.05) - camX*0.1) % (W + 200) + W + 200) % (W + 200) - 100; xvBasket(ctx, bxx, H*0.3 + Math.sin(t*0.02 + i)*18 + i*24, 14, i, true, 0); }
+  if(sun){ ctx.fillStyle = 'rgba(255,190,80,0.9)'; for(let i = 0; i < 16; i++){ const x = ((i*113 + Math.sin(t*0.02 + i)*20) % (W + 40)), y = H - ((t*(0.6 + (i % 4)*0.2) + i*57) % (H + 40)); ctx.globalAlpha = 0.7*fade; ctx.fillRect(x, y, 3, 3); } ctx.globalAlpha = 1; }
+  ctx.restore();
+  xvWorld(() => {   // the button on the top step
+    const cx = WW/2, y = gy - 290; ctx.fillStyle = '#7a1a1a'; ctx.strokeStyle = '#2a0a0a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(cx, y - 2, 40, 9, 0, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#e8383a'; ctx.beginPath(); ctx.ellipse(cx, y - 8, 30, 8, 0, 0, 7); ctx.fill(); ctx.stroke();
+  });
+}
 // @boss:x:end algcode
 
 // @boss:three:begin algcode
