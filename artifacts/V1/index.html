@@ -49100,6 +49100,7 @@ function bossAtkGapBase(s){
   if(s.attack==="two"){   // held while a move of his is in the air (twoDone starts the gap); otherwise the usual 100 / 72 -- and 60 (not 52) in phase 3: the derailed coaster is the park's hazard now ("if it makes sense for a hazard, reduce boss difficulty and add a hazard.")
     const g = twoGap(s);
     if(g != null) return g;
+    if(twoRush(s)) return s._tcP ? TWO_RUSH.comboGap : TWO_RUSH.gaps[twoPh(s)];   // (the rush, difficulty pass 2026-11-10: 96 / 72 / 56, about a third less rest; a combo's lead rests 10)
     return TWO.gaps[twoPh(s)];
   }
   // @boss:two:end gap
@@ -49608,6 +49609,7 @@ const BOSS_PICK = {
     tags:{ two:(s) => twoRush(s) ? ['any', 'far'] : ['any', 'close'], twosun:['ground', 'platform'], twopower:'close', twoblocks:(s) => twoRush(s) ? ['ground', 'wall'] : ['ground', 'bunch'], tworails:['ground', 'platform'], twoclap:'any',
       twolava:['far', 'ground'], twocrater:'any', twohail:['air', 'far'] },   // (the rush's three new moves)
     moves:(s, ph) => twoRush(s) ? ['two', 'twosun', 'twoblocks', 'twolava', 'twocrater', 'twohail'].concat(ph >= 2 ? ['twoclap'] : []).filter(m => m !== 'twocrater' || !s._grounded) : ['two', 'twosun', 'twopower', 'twoblocks'].concat(ph >= 2 ? ['tworails', 'twoclap'] : []).filter(m => m !== 'twopower' || !twoGrounding(s)),   // the rush's SEVEN (CLAP from phase 2, as the park's; no leap while grounded: that window is the player's); the park's six otherwise   // "No orbs while grounding" (the owner, 2026-10-05)
+    force:(s, ph) => { if(twoRush(s) && s._tcP){ const p = s._tcP; s._tcP = null; s._tcSkip = true; return p; } return null; },   // a rush combo's second move
     busy:(s) => !!s._tw
   },
   // @boss:two:end pick
@@ -49624,7 +49626,9 @@ const BOSS_PICK = {
     tags:{ screechy:['close', 'air'], zappies:'any', fourbye:['far', 'wall'], fourtower:(s) => fourRush(s) ? ['ground', 'far'] : ['ground', 'bunch'], fourido:'any', fourhearts:['air', 'wall'], fourcactus:'ground', fourarms:['ground', 'close'], foursoup:['ground', 'far'], fourmallets:'any' },
     moves:(s, ph) => fourRush(s) ? ['screechy', 'zappies', 'fourtower', 'fourarms', 'foursoup', 'fourmallets'].concat(ph >= 2 ? ['fourcactus'] : []) : ['screechy', 'zappies', 'fourbye', 'fourtower', 'fourido', 'fourhearts'].concat(ph >= 3 ? ['fourcactus'] : []),   // (the rush's SEVEN; the cactus drive from phase 2)
     kind:(k, s) => (k === 'screechy' || k === 'zappies') ? s.attack : k,
-    busy:(s) => !!(s._fr && s._fr.k !== 'slither' && s._fr.k !== 'enter')
+    force:(s, ph) => { if(fourRush(s) && s._fcP){ const p = s._fcP; s._fcP = null; s._fcSkip = true; return p; } return null; },   // a rush combo's second move
+    busy:(s) => !!(s._fr && s._fr.k !== 'slither' && s._fr.k !== 'enter'),
+    get scan(){ const b = (typeof algBoss === 'function') ? algBoss() : null; return !(b && b._algId === 'four' && fourPh(b) >= 2); }   // the rush, phase 2 on: the next wind-up may begin while the last move's shots are still in the air (his own move in progress, busy above, still holds it)
   },
   // @boss:four:end pick
 
@@ -58034,6 +58038,7 @@ function twoBeginTelegraph(s, tgt){
   s._telPh = ph;
   // (CLAP! and I LOVE RIDES! join in phase 2: the picker's `moves` list them only from then -- BOSS_PICK.two; their turns used to be the sun and the ring again until it.)
   const k = s._telKind;
+  if(rush && ph >= 3){ if(s._tcSkip) s._tcSkip = false; else if(TWO_RUSH.combo[k]){ s._tcN = (s._tcN|0) + 1; if(s._tcN % 2 === 0) s._tcP = TWO_RUSH.combo[k]; } }   // a COMBO (phase 3, every other turn that has a partner): this move, then its partner
   s._tel = bossTelLen(s);   // this slot runs once the turn's kind is chosen: its own length now
   H.rd = null; H.bk = null; H.cl = null; H.pw = null; H.mk = null;
   if(rush){ H.r2 = null; H.tk = null; }
@@ -58083,6 +58088,7 @@ function twoTick(s, tgt){
   twoTrack(s, tgt, H);
   if(twoRush(s)) twoRushTick(s, tgt, H);   // (the rush: the sky sun's place, the lava on the floor)
   if(s._tw) twoStep(s, tgt, s._tw, H);
+  if(s._twTail && s._twTail.length) twoTails(s);   // (the rush, phase 2 on: the last dust waves and moon chunks of a move run on while the next wind-up begins)
   twoMaceStep(s, tgt, H);
   twoPlatsStep(s, H);
   const dm = H.dm;
@@ -59010,6 +59016,7 @@ function twoDrawCoasterHaz(b, H){
 //   MOON HAIL       both arms up, lit; pale moon chunks fall in a line that leads your run, 6 / 8 / 10 of them, 220 / 200 / 180 px apart, one per 12 / 10 / 8 f, each with its shadow growing under it: 0.8 of a hit.
 // Every hit goes through applyHit under the move's one attack id, as a volley, so a fighter takes at most one boss hit (22%) from a move; a launch goes up and toward the middle near a wall (twoDirIn).
 const TWO_RUSH = {
+  gaps:[0, 96, 72, 56], comboGap:10, combo:{ twosun:'twocrater', twoclap:'twohail', twohail:'twoblocks', twolava:'twoclap' },   // the rest after a move (the park's was 140 / 110 / 95; BOSS_PACE x1.2 on top); phase 3's COMBOS: this move, then its partner after 10 frames, each with its own wind-up (every other turn)
   chase:{ follow:[0, 0.05, 0.08, 0.045], glide:[0, 0.08, 0.11, 0.075] },   // he keeps up with a runner (the park's were 0.03 / 0.05 / 0.034 and 0.06 / 0.09 / 0.06)
   hunt:{ hops:[0, 6, 7, 8], reach:[0, 380, 420, 460], squash:[0, 18, 16, 14], leg:30, lock:8, lead:0.7, first:26, lean:0.5 },   // hops after the drop; px a hop; the squash (the tell) in frames; a hop's flight; the frames before the leap its landing is fixed; how much of your run it leads; the first drop's lead in frames of your run
   row:{ n:[0, 5, 6, 6], space:400, every:[0, 10, 9, 8], grow:12, rock:[0, 16, 15, 14], life:[0, 180, 240, 300], lead:30, back:{ n:3, after:14 } },   // stacks; px apart; frames between two growing; grow-in; rock before the fall; frames the bars lie; the lead in frames of your run; phase 3's return row
@@ -59269,15 +59276,27 @@ function twoCraterWave(s, T, x, dir){
   const p = twoCarrier(s, { x:x + dir*40, y:gy - C.wr, r:4, shape:'twodust', color:'#cfc6b4', twoWave:true });   // (it grows in over wgrow frames)
   T.waves.push({ p, vx:dir*spd, x0:x, t:0, life:Math.round(reach/spd) + 2, hit:{}, dead:false });
 }
-function twoCraterStep(s, tgt, T, H){
-  const C = TWO_RUSH.crater, gy = groundY(), live = twoLive(tgt), top = gy - s.r - C.high, land = gy - s.r*0.9, ease = (u) => u*u*(3 - 2*u);
-  T.t++; s.vx = 0;
+function twoCraterWaves(s, T){
+  const C = TWO_RUSH.crater, gy = groundY();
   for(const w of T.waves){   // the dust runs along the floor to the wall (it hits once, 11%)
     if(w.dead) continue;
     w.p.x += w.vx; w.t++; w.p.r = 4 + (C.wr - 4)*Math.min(1, w.t/C.wgrow);
     for(const f of fighters) if(!f.dead && f.invuln <= 0 && !w.hit[f.idx] && hurtGap(f, w.p.x, gy - C.wr) < w.p.r){ w.hit[f.idx] = 1; twoHit(s, f, T.id, C.wfrac, w.x0, 8, 10); }
     if(w.t >= w.life){ w.dead = true; w.p.life = 0; }
   }
+}
+function twoTails(s){
+  const keep = [];
+  for(const T of s._twTail){
+    if(T.k === 'crater'){ twoCraterWaves(s, T); if(!T.waves.every(w => w.dead)) keep.push(T); }
+    else if(T.k === 'hail'){ if(twoHailChunks(s, T) > 0) keep.push(T); }
+  }
+  s._twTail = keep;
+}
+function twoCraterStep(s, tgt, T, H){
+  const C = TWO_RUSH.crater, gy = groundY(), live = twoLive(tgt), top = gy - s.r - C.high, land = gy - s.r*0.9, ease = (u) => u*u*(3 - 2*u);
+  T.t++; s.vx = 0;
+  twoCraterWaves(s, T);
   let sk = -1;   // the shadow's strength 0..1 (-1: none)
   if(T.st === 'up'){
     const u = Math.min(1, T.t/C.rise);
@@ -59314,6 +59333,7 @@ function twoCraterStep(s, tgt, T, H){
     if(T.h >= C.rest + C.crouch){ T.cur++; T.second = true; T.st = 'up'; T.t = 0; T.x0 = s.x; T.y0 = s.y; T.ax = live ? tgt.x : s.x; s._sqz = 0; }
   } else {   // 'end'
     if(T.waves.every(w => w.dead)){ s._sqz = 0; H.cg = null; twoDone(s); return; }
+    if(T.ph >= 2 && twoRush(s)){ s._sqz = 0; H.cg = null; (s._twTail || (s._twTail = [])).push(T); twoDone(s); return; }   // OVERLAP (phase 2 on): the dust runs on to the walls by itself while his next wind-up starts
   }
   if(sk >= 0) H.cg = [Math.round(T.sx), Math.round(sk*100)]; else if(H.cg) H.cg = null;
 }
@@ -59331,6 +59351,12 @@ function twoHailStep(s, tgt, T, H){
     const x = T.xs[T.next++], fy = twoSunSurface(x, 0) - HL.r*0.6;
     T.chunks.push({ p:twoCarrier(s, { x, y:HL.top, r:HL.r, shape:'twomoon', color:'#d8d4e8', twoFall:true }), x, y0:HL.top, fy, t:0, dead:false });
   }
+  const live = twoHailChunks(s, T);
+  if(T.next >= T.xs.length && live > 0 && T.ph >= 2 && twoRush(s)){ (s._twTail || (s._twTail = [])).push(T); twoDone(s); return; }   // OVERLAP (phase 2 on): the last moon chunks still fall while his next wind-up starts
+  if(!live && T.next >= T.xs.length) twoDone(s);
+}
+function twoHailChunks(s, T){
+  const HL = TWO_RUSH.hail;
   let live = 0;
   for(const c of T.chunks){
     if(c.dead) continue;
@@ -59341,7 +59367,7 @@ function twoHailStep(s, tgt, T, H){
     for(const f of fighters) if(!f.dead && f.invuln <= 0 && hurtGap(f, c.x, y) < HL.r) twoHit(s, f, T.id, HL.frac, c.x, 9, 11);   // a hit while it falls
     if(c.t >= HL.fall){ c.dead = true; c.p.life = 0; impact(c.x, c.fy + HL.r*0.6, { shake:3, dust:1, debris:3, r:80, color:'#cfc6d8' }); }
   }
-  if(!live && T.next >= T.xs.length) twoDone(s);
+  return live;
 }
 function twoBlockGlyph(c, r, ci){ c.fillStyle = TWO_BLOCK_COLOURS[ci & 3]; c.fillRect(-r, -r, 2*r, 2*r); c.strokeStyle = 'rgba(0,0,0,0.45)'; c.lineWidth = Math.max(2, r*0.14); c.strokeRect(-r*0.92, -r*0.92, 1.84*r, 1.84*r); }
 // @boss:two:end helpers
@@ -59532,7 +59558,7 @@ function fourSlitherStep(s, tgt, F, H){
   } else { s._fr = null; s._homeX = s.x; s._fl = (s._fl || 0); }
 }
 // ---- the engine's hooks ------------------------------------------------------------------------------------------------------------
-function fourGap(s){ return FOUR.gaps[fourPh(s)]; }
+function fourGap(s){ return fourRush(s) ? (s._fcP ? FOUR_RUSH.comboGap : FOUR_RUSH.gaps[fourPh(s)]) : FOUR.gaps[fourPh(s)]; }   // (the rush, difficulty pass 2026-11-10: 74 / 52 / 36, about a third less rest than the park's 104 / 78 / 56; a combo's lead rests 10)
 function fourTelLen(s){
   const H = s._hz;
   if(s._tel > 0 && H && H.tl) return H.tl;
@@ -59550,6 +59576,7 @@ function fourTelName(s){
 // `s._pickKey` says which; the others are their own kinds) and what it aims at, fixed now. `s._telKind` is the move, `s._telPh` the phase it is wound up in.
 function fourBeginTelegraph(s, tgt){
   const H = fourHz(s), ph = s._telPh || fourPh(s), pk = s._pickKey;
+  if(fourRush(s) && ph >= 3){ const ck = pk || s._telKind; if(s._fcSkip) s._fcSkip = false; else if(FOUR_RUSH.combo[ck]){ s._fcN = (s._fcN|0) + 1; if(s._fcN % 2 === 0) s._fcP = FOUR_RUSH.combo[ck]; } }   // a COMBO (phase 3, every other turn that has a partner): this move, then its partner
   s._pickKey = null;
   if(s._fr) s._fr = null;
   if(s._telKind === s.attack){
@@ -60634,6 +60661,7 @@ function drawFourEnd(pr){
 //   MALLETS         the owner's: EIGHT mallets rise round his raised hand (the last 20 frames of the wind-up are their tell), then each flies out toward its lane, makes a short CLOCKWISE loop (always clockwise, no mirror: the owner's drawing) and comes back to him.
 // Every hit is applyHit under the move's one attack id as a volley (a fighter takes at most one boss hit from a move; the ring and the columns are 1.0, the rest 0.8, soup's blob 0.5 and its pools 0.3 as their own ids), a launch goes up.
 const FOUR_RUSH = {
+  gaps:[0, 74, 52, 36], comboGap:10, combo:{ screechy:'zappies', fourarms:'foursoup', fourmallets:'fourtower', foursoup:'screechy' },   // the rest after a move (BOSS_PACE x1.2 on top); phase 3's COMBOS: this move, then its partner after 10 frames, each with its own wind-up (every other turn)
   slither:{ lo:500, hi:700, pad:90 },                                  // between turns he re-forms 500-700 px from you, on the side with more room (the old one went to the mirror of the world)
   note:{ spd:[0, 9.5, 10.5, 11.5], rings:[0, 2, 2, 3], gapF:[0, 22, 20, 18], margin:[0, 90, 75, 60], shift:[0, 0.8, 0.8, 0.5], nMin:5, nMax:9, nPer:180, reachK:5, react:18, frac:0.6, lMin:60, lMax:280, dMin:140, dMax:1500 },
   zap:{ n:[0, 3, 4, 5], every:[0, 18, 16, 14], lock:15, hist:10, vcap:8 },
@@ -94385,18 +94413,20 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(t._zsOn > 0 && zsBlock(t, dmg, from, opts)) return;   // SHIELD (Z): a raised bubble takes the hit: no damage, no launch (a grab breaks it instead: gbTick, SHIELD_GRAB_STUN)
   // BOSS DAMAGE CAP: any single boss attack can deal at most bossDmg() to a fighter total,
   // even if it's made of many projectiles (e.g. Four's Screechy ring). Tracked per attack ID.
+  const rushM = (opts && opts.bossAtk!=null && BOSSRUSH.alg) ? ALG_RUSH.dmgToPlayer : 1;   // the Algebralien Rush only: a boss hit lands 1.5x and its cap scales with it (the live Boss Rush and every other mode: 1)
+  if(rushM !== 1) dmg *= rushM;
   if(opts && opts.bossAtk!=null && opts.volley){
     // A LINGERING VOLLEY. MePhone4S's cookies lie on the floor through his next attack, and the one id remembered below
     // forgets a volley the moment any other boss hit lands -- five cookies could then deal 5 x 6.6. So a volley keeps its
     // own running total per attack id, capped the same way. Only a shot marked `volley` comes here.
     const L = t._volleyDmg || (t._volleyDmg = {}), already = L[opts.bossAtk] || 0;
-    if(already >= bossDmg()) return;
-    dmg = Math.min(dmg, bossDmg() - already); L[opts.bossAtk] = already + dmg;
+    if(already >= bossDmg()*rushM) return;
+    dmg = Math.min(dmg, bossDmg()*rushM - already); L[opts.bossAtk] = already + dmg;
     for(const k in L) if(+k < opts.bossAtk - 32) delete L[k];   // long-gone volleys
   } else if(opts && opts.bossAtk!=null){
     // One's hits carry their own cap (see oneShot): with the global bossDmg() here, "more damage" was clamped back to 22.
     // Every other boss passes no bossCap and is capped exactly as before.
-    const cap = (opts.bossCap!=null) ? opts.bossCap : bossDmg();
+    const cap = ((opts.bossCap!=null) ? opts.bossCap : bossDmg())*rushM;
     if(t._bossHitId===opts.bossAtk){
       const already = t._bossHitDmg||0;
       if(already>=cap) return;                 // already took the full 30% from this attack
@@ -98168,7 +98198,7 @@ function syncEventSelect(){
     if(sb) sb.textContent = 'Play ▶';
     const nm = document.getElementById('evStripName'), ln = document.getElementById('evStripLine');
     if(nm) nm.textContent = 'Algebralien Rush';
-    if(ln) ln.textContent = ' · you alone · 4 stocks, +2 after each boss (max 6) · items on';
+    if(ln) ln.textContent = ' · you alone · 3 stocks, +1 after each boss (max 5) · items on';
   } else if(m){
     if(!EVENT_SEL_SAVED) EVENT_SEL_SAVED = { t:t ? t.textContent : '', b:b ? b.textContent : '', h:h ? h.textContent : '' };
     if(t) t.textContent = 'Pick your fighter';
@@ -98401,7 +98431,7 @@ function rushRecordWords(){
   if(r.clean) p.push(r.clean === 1 ? '1 clean clear' : r.clean + ' clean clears');
   return p.length ? p.join(' · ') : 'No run yet.';
 }
-const RUSH_RULES = 'You alone, one fighter. Start with 4 stocks; each boss you beat gives 2 back, up to 6. Lose them all and you retry that boss. Each boss pays Win Tokens the first time in a window; a full clear pays more, up to ' + RUSH_PAY.cap + ' a window.';
+const RUSH_RULES = 'You alone, one fighter. Start with 3 stocks; each boss you beat gives 1 back, up to 5. Lose them all and you retry that boss. Each boss pays Win Tokens the first time in a window; a full clear pays more, up to ' + RUSH_PAY.cap + ' a window.';
 // THE TITLE'S CARD: on the live days only (RUSH_DEV: any day), the title and the strip, the status and "Rush ▶".
 function refreshRushCard(){
   if(typeof document === 'undefined' || !document || !rushOn()) return;
@@ -98442,14 +98472,15 @@ function rushPlay(){
 // ---------- ALGEBRALIEN RUSH: THE CONDUCTOR (rush M2) ----------
 // Each boss is its own match, as One's and Steve Cobs's fights are, so a retry is just "begin boss i again" and nothing leaks from one boss to the next. This
 // small conductor carries what runs between them: the run record { key, list, i, entry, secs, continues, fighter } -- the window the run began in (its pay
-// ledger key), this player's list of bosses, which one is up, the stocks walked in with (4 to start, +2 for each boss that falls, never more than 6), the
+// ledger key), this player's list of bosses, which one is up, the stocks walked in with (3 to start, +1 for each boss that falls, never more than 5), the
 // seconds each boss took on the way through (a retried boss counts once), the retries, and the fighter. It never calls awardBossCleared, never reaches the
 // Four-falls branch of bossRushCheck and never touches One's chain: a rush boss counts for the quests (questAdd) and for this block's own records and pay,
 // and for nothing else. Every hook in the shared engine is guarded by BOSSRUSH.alg (set when a boss begins, cleared by algRushEnd when the run is left), so
 // every other mode is as it was. Offline and solo: it refuses in a room (inNetSession), and off a live day unless RUSH_DEV.
 // dmgToBoss is the length knob (built at 1.0; the shared hit pipeline of rush M3 reads it). stubHp is what a stub row (below) has in the milestones before its
 // boss is built. itemRate is the usual one ("items on").
-const ALG_RUSH = { dmgToBoss:1, stubHp:60, itemRate:2, start:4, plus:2, max:6 };
+// RUSH DIFFICULTY PASS (2026-11-10): dmgToPlayer is how much harder a rush boss hits (applyHit scales the hit AND its per-move cap, so a move is still at most one boss hit, now 1.5 x bossDmg()); 3 stocks to start, +1 a boss, never more than 5.
+const ALG_RUSH = { dmgToBoss:1, dmgToPlayer:1.5, stubHp:60, itemRate:2, start:3, plus:1, max:5 };
 let ALGRUSH = { active:false, run:null };
 const algHp = id => (ALG_SLOTS.find(sl=>sl.id === id) || { hp:100 }).hp;
 // A STUB: a boss that stands still, stomps if you stand beside it and dies in a few hits (ALG_RUSH.stubHp), on today's flat stage, so the flow can be played
@@ -98482,7 +98513,7 @@ const ALG_ROSTER = [
 
   // @boss:x:begin algrow
   { id:'x', name:'X', color:'#fefd33', hp:algHp('x'), big:2.7, attack:'x', arena:'x500', stationary:false, sprite:'x', stagePlats:(std, gy)=>xvStagePlats(std, gy), spawn:b=>xvSpawn(b), move:(s,t)=>xvMove(s,t), tick:(s,t)=>xvTick(s,t), tel:(s,t)=>xvTel(s,t), fire:(s,t,id)=>xvFire(s,t,id),
-    gap:s=>XB.gaps[xvPh(s)-1], telLen:s=>s._tl || 50, phase:(s,ph)=>xvPhase(s,ph), phaseName:(s,ph)=>ph >= 2 ? 'Pushed To The Limit' : 'The Host', look:s=>xvLook(s), tell:s=>xvTell(s), body:(s,R,b,f)=>xvBody(s,R,b,f), fx:s=>xvFx(s), decor:(s,k)=>xvDecor(s,k), shot:pr=>xvShotDraw(pr) },   // rush M11-M12: the real fight (2,100 HP); all of it is in his algcode pair
+    gap:s=>xvGap(s), telLen:s=>s._tl || 50, phase:(s,ph)=>xvPhase(s,ph), phaseName:(s,ph)=>ph >= 2 ? 'Pushed To The Limit' : 'The Host', look:s=>xvLook(s), tell:s=>xvTell(s), body:(s,R,b,f)=>xvBody(s,R,b,f), fx:s=>xvFx(s), decor:(s,k)=>xvDecor(s,k), shot:pr=>xvShotDraw(pr) },   // rush M11-M12: the real fight (2,100 HP); all of it is in his algcode pair
   // @boss:x:end algrow
 
   // @boss:one:begin algrow
@@ -98644,7 +98675,7 @@ function startAlgRush(){
 function algStart(i, phase){
   algLend();
   const run = (ALGRUSH = { active:true, run:algNewRun(chosen.name) }).run;
-  if(i > 0) run.entry = ALG_RUSH.max;   // a jump walks in as a flawless run would
+  if(i > 0) run.entry = Math.min(ALG_RUSH.max, ALG_RUSH.start + i*ALG_RUSH.plus);   // a jump walks in as a flawless run would
   if(phase > 1) run.jump = { phase };
   BOSSRUSH.alg = true;   // (algRushBegin makes the whole record; this holds the run's place on the first card)
   if(i > 0 || phase > 1) algRushBegin(i); else algInterStart(0);   // the first card is the same card, with no slot filled
@@ -98715,7 +98746,7 @@ function algRushFelled(boss){
   for(const m of summons) if(m.hostile) for(let i=0;i<10;i++) puff(m.x, m.y, m.color, 4);
   summons = summons.filter(s=>s !== boss && !s.hostile);
   run.holdTo = BOSSRUSH.frames + 45 + Math.ceil(ending.hold*0.06);
-  run.nextEntry = Math.min(ALG_RUSH.max, (you && you.stocks > 0 ? you.stocks : 0) + ALG_RUSH.plus);   // +2 for the boss, never more than 6
+  run.nextEntry = Math.min(ALG_RUSH.max, (you && you.stocks > 0 ? you.stocks : 0) + ALG_RUSH.plus);   // +1 for the boss, never more than 5
   run.paid += rushPay(run.key, row.id);                                  // Win Tokens, the moment it falls (once a boss a window, never past the cap)
   try{ questAdd('boss', 1); }catch(e){}                                  // a rush boss counts for the quests, and for nothing else
   rushRecordRun({ beaten:run.beaten, cleared:false });                  // the best run so far, saved at the deed
@@ -114988,12 +115019,13 @@ PROJ_SHAPE.engulf = PROJ_SHAPE.goopuddle; PROJ_SHAPE.tape = PROJ_SHAPE.tapewave;
 // Acts: 1 Totally Tubular, 2 Not Radical (Nine cries, the planet cracks, the lights go out), 3 Clobber Time (a tempo bump). Every move is driven by Nine's state machine (s._sx) and hits through
 // nineStrike (a hit Nine tests itself, one hit per fighter per move, so a move deals at most one boss hit); tells are the body's (BOSS_TELLS.nine) plus what grows out of the world.
 const NINE = {
-  introF:80, firstAtk:100, gaps:[80, 66, 54], beatF:[0, 40, 22],
+  introF:80, firstAtk:100, gaps:[56, 44, 34], comboGap:10, combo:{ nine:'nineyah', ninebike:'ninecrew', ninecrew:'nineboot', nineyah:'nine' }, beatF:[0, 40, 22],   // (the rest after a move, difficulty pass 2026-11-10: it was 80 / 66 / 54, about a third less; act 3's COMBOS: this move, then its partner after 10 frames, each with its own wind-up, every other turn)
+
   cruise:{ want:380, near:300, far:460, spd:5, back:4, push:700, pushSpd:14 },
   tl:{ nine:44, ninebike:52, ninecrew:40, nineyah:38, nineboot:46, ninegrind:44, nineaway:46 },
   board:{ back:170, backF:28, lockF:18, ease:12, spd:[16, 18, 20], tail:260, cap:1700, r:28, up:28, dmg:1, kbx:6, kby:-14, tumble:24, rise:14, win:[56, 50, 44], miss:[38, 38, 38] },
   bike:{ spd:[22, 24], start:700, tree:760, r:30, up:28, ease:10, blastR:100, blastF:6, shards:8, sdmg:0.6, sr:14, g:0.4, win:[44, 38], dmg:1, kbx:12, kby:-13 },
-  crew:{ n:[4, 5, 6], spd:[8, 9, 10], gapF:[44, 40, 48], out:640, travel:1500, r:20, dmg:0.6, kb:9, lane:[0, 3, 3], laneDelay:60, wait:40, back:2, lockF:12 },
+  crew:{ tailAfter:20, n:[4, 5, 6], spd:[8, 9, 10], gapF:[44, 40, 48], out:640, travel:1500, r:20, dmg:0.6, kb:9, lane:[0, 3, 3], laneDelay:60, wait:40, back:2, lockF:12 },
   yah:{ fl:[54, 48, 44], apex:240, lockF:14, flip:[14, 36], flipR:100, fallR:76, flipDmg:0.8, fallDmg:1, pair:[0, 20, 16], win:[26, 22, 20] },
   boot:{ from:420, fall:22, fallR:72, fallDmg:1, kickWait:12, kick:[240, 240, 300], kickF:12, kickR:32, kickUp:30, kickDmg:0.9, rest:30, sink:12, second:32, lockF:20 },
   grind:{ spd:[13, 15, 17], ramp:130, rampF:14, minW:360, r:28, up:28, dmg:0.9, kbx:5, kby:-14, arc:46, lockF:20, fallR:70, win:[30, 26, 22] },
@@ -115058,6 +115090,7 @@ function nineMove(s, tgt){
 // ---- the turn: wind-up length, what is fixed now, what the wind-up does frame by frame --------------------------------------------------------------------------------------------------------
 function nineTel(s, tgt){
   const k = s._telKind, ph = nineAct(s), gy = groundY();
+  if(ph >= 3){ if(s._nxSkip) s._nxSkip = false; else if(NINE.combo[k]){ s._nxN = (s._nxN|0) + 1; if(s._nxN % 2 === 0) s._nxP = NINE.combo[k]; } }   // a COMBO (act 3, every other turn that has a partner): this move, then its partner
   const tn = s._tn = { k, ph, own:false, dir: tgt ? (Math.sign(tgt.x - s.x) || s.face || 1) : (s.face || 1), lx: tgt ? tgt.x : s.x, ly: tgt ? feetY(tgt) : gy, at:0 };
   s._tl = s._tel = NINE.tl[k] || 44; s.face = tn.dir;
   if(k === 'nine') tn.own = true;
@@ -115107,6 +115140,7 @@ function nineTick(s, tgt){
   if(nineIntro(s)){ nineIntroStep(s); return; }
   if(Z.in != null && !Z.done){ Z.done = 1; Z.fl = 0; }
   if(s._tel > 0 && s._tn) nineTelStep(s, tgt, s._tn);
+  if(s._nxTail && s._nxTail.length) nineTails(s);
   if(s._sx) nineStep(s, tgt);
   else if(Z.pend && !(s._tel > 0) && !s._atkLive){   // the act beat waits for an idle: a stunt in the air is never broken
     const ph = Z.pend; Z.pend = 0; s._sx = { k:'beat', own:true, t:0, len:NINE.beatF[ph - 1] || 22, ph, hs:{} };
@@ -115116,7 +115150,7 @@ function nineTick(s, tgt){
   if(s._xposeT > 0 && !(Z.exp > 0)) Z.exp = 1; if(!(s._xposeT > 0)) Z.exp = 0;
 }
 function nineHold(s){ const X = s._sx; return !!X; }
-function nineGap(s){ return NINE.gaps[nineAct(s) - 1]; }
+function nineGap(s){ return s._nxP ? NINE.comboGap : NINE.gaps[nineAct(s) - 1]; }
 function nineDone(s){ s._sx = null; }
 function ninePhase(s, ph){
   if(ph < 2) return;
@@ -115169,7 +115203,7 @@ function nineCrewStart(s, tgt){
     if(pl){ const rw = nineRampW(pl), dir = side, o0 = 300; let o2 = 0;
       for(let i = 0; i < lp; i++){ const x = dir > 0 ? pl.x - rw - o0 - o2 : pl.x + pl.w + rw + o0 + o2; boards.push({ x0:x, x, y:gy - C.r, dir, spd:sp, st:C.laneDelay, mode:'go', tr:0, w:0, on:1, lane:1, pl }); o2 += sp*C.gapF[i % 3]; } }
   }
-  s._sx = nineNew(s, 'crew', { own:false, side, boards, ret:ph >= 3, rw:-1 });
+  s._sx = nineNew(s, 'crew', { own:false, side, boards, ret:ph >= 3, rw:-1, lastSt:Math.max(...boards.map(b => b.st + Math.ceil(Math.abs(b.x0 - lx)/b.spd))) });   // lastSt: the frame the last board passes where you stood when it was called
   s.face = side;
 }
 function nineYahStart(s, tgt){
@@ -115209,6 +115243,28 @@ BOSS_MOVES.ninecrew = (s, tgt) => nineCrewStart(s, tgt);
 BOSS_MOVES.nineyah = (s, tgt) => nineYahStart(s, tgt);
 BOSS_MOVES.nineboot = (s, tgt) => nineBootStart(s, tgt);
 BOSS_MOVES.ninegrind = (s, tgt) => nineGrindStart(s, tgt);
+function nineCrewBoards(s, X){
+  const C = NINE.crew; let live = 0, waiting = 0, floorLive = 0;
+  for(const b of X.boards){
+    if(!b.on) continue; live++;
+    if(X.t < b.st) continue;
+    if(b.mode === 'go'){
+      b.x += b.dir*b.spd; b.tr += b.spd;
+      if(b.lane){ const ft = nineLaneFoot(b.pl, b.x); b.y = ft - C.r; b.arm = ft < groundY() - 8; if(b.arm) nineStrike(s, X, b.x, b.y, C.r, C.dmg, b.dir*C.kb, -9, false); if((b.x - (b.dir > 0 ? b.pl.x + b.pl.w + nineRampW(b.pl) + 60 : b.pl.x - nineRampW(b.pl) - 60))*b.dir > 0) b.on = 0; }
+      else { nineStrike(s, X, b.x, b.y, C.r, C.dmg, b.dir*C.kb, -9, false);
+        if(X.ret){ if(b.x <= 36 || b.x >= WW - 36){ b.mode = 'wait'; b.w = 0; } } else if(b.tr >= C.travel || b.x <= 36 || b.x >= WW - 36) b.on = 0; }
+    } else if(b.mode === 'wait'){ b.w++; if(b.w >= C.wait){ b.mode = 'back'; b.dir = -b.dir; b.spd += C.back; b.tr = 0; b.wx = b.x; } }   // out of sight in the stage-end quarter-pipe, then back, in the order it went
+    else if(b.mode === 'back'){ b.x += b.dir*b.spd; b.tr += b.spd; if(Math.abs(b.x - b.wx) > 190) nineStrike(s, X, b.x, b.y, C.r, C.dmg, b.dir*C.kb, -9, false); if(b.tr >= C.travel || b.x <= 36 || b.x >= WW - 36) b.on = 0; }
+    if(!b.lane && b.mode === 'go') floorLive++;
+    if(b.mode === 'wait') waiting++;
+  }
+  return live;
+}
+function nineTails(s){
+  const keep = [];
+  for(const X of s._nxTail){ if(nineCrewBoards(s, X) > 0) keep.push(X); }
+  s._nxTail = keep;
+}
 function nineStep(s, tgt){
   const X = s._sx; if(!X) return;
   const gy = groundY(), ph = X.ph; X.t++;
@@ -115261,20 +115317,8 @@ function nineStep(s, tgt){
     return;
   }
   if(X.k === 'crew'){
-    const C = NINE.crew; let live = 0, waiting = 0, floorLive = 0;
-    for(const b of X.boards){
-      if(!b.on) continue; live++;
-      if(X.t < b.st) continue;
-      if(b.mode === 'go'){
-        b.x += b.dir*b.spd; b.tr += b.spd;
-        if(b.lane){ const ft = nineLaneFoot(b.pl, b.x); b.y = ft - C.r; b.arm = ft < groundY() - 8; if(b.arm) nineStrike(s, X, b.x, b.y, C.r, C.dmg, b.dir*C.kb, -9, false); if((b.x - (b.dir > 0 ? b.pl.x + b.pl.w + nineRampW(b.pl) + 60 : b.pl.x - nineRampW(b.pl) - 60))*b.dir > 0) b.on = 0; }
-        else { nineStrike(s, X, b.x, b.y, C.r, C.dmg, b.dir*C.kb, -9, false);
-          if(X.ret){ if(b.x <= 36 || b.x >= WW - 36){ b.mode = 'wait'; b.w = 0; } } else if(b.tr >= C.travel || b.x <= 36 || b.x >= WW - 36) b.on = 0; }
-      } else if(b.mode === 'wait'){ b.w++; if(b.w >= C.wait){ b.mode = 'back'; b.dir = -b.dir; b.spd += C.back; b.tr = 0; b.wx = b.x; } }   // out of sight in the stage-end quarter-pipe, then back, in the order it went
-      else if(b.mode === 'back'){ b.x += b.dir*b.spd; b.tr += b.spd; if(Math.abs(b.x - b.wx) > 190) nineStrike(s, X, b.x, b.y, C.r, C.dmg, b.dir*C.kb, -9, false); if(b.tr >= C.travel || b.x <= 36 || b.x >= WW - 36) b.on = 0; }
-      if(!b.lane && b.mode === 'go') floorLive++;
-      if(b.mode === 'wait') waiting++;
-    }
+    const live = nineCrewBoards(s, X);
+    if(live && nineAct(s) >= 2 && X.t > X.lastSt + NINE.crew.tailAfter){ (s._nxTail || (s._nxTail = [])).push(X); nineDone(s); return; }   // OVERLAP (act 2 on): once every board has gone, the stragglers ride on while his next wind-up begins (the picker keeps him off another crew call until they are gone)
     if(!live) nineDone(s);
     return;
   }
@@ -115351,6 +115395,12 @@ function nineYahStep(s, tgt, X){
   }
   if(X.stage === 'stuck'){ X.wt++; if(X.wt >= X.len){ X.stuck = 0; nineDone(s); } }
 }
+function nineBootArt(c, sc){   // the Stone-O-Boot: a rounded grey stone boot with cracks, the toe along +x (Nine's own copy: the draw called Six's sixBoot, which Six's rework removed, so the boot's draw threw every frame)
+  c.save(); c.scale(sc, sc); c.fillStyle = '#9aa2b4'; c.strokeStyle = '#2a2f3d'; c.lineWidth = 4; c.lineJoin = 'round';
+  c.beginPath(); c.moveTo(-26, -52); c.lineTo(14, -52); c.lineTo(16, -14); c.quadraticCurveTo(58, -12, 60, 14); c.lineTo(60, 26); c.lineTo(-30, 26); c.closePath(); c.fill(); c.stroke();
+  c.strokeStyle = 'rgba(40,46,62,0.7)'; c.lineWidth = 2; c.beginPath(); c.moveTo(-8, -50); c.lineTo(-2, -28); c.lineTo(-12, -10); c.moveTo(34, 2); c.lineTo(42, 14); c.stroke();
+  c.fillStyle = 'rgba(255,255,255,0.22)'; c.fillRect(-22, -48, 8, 30); c.restore();
+}
 function nineBootPos(b, u){   // where a boot is, by the frames since it began to fall
   const B = NINE.boot, kk = B.fall + B.kickWait;
   if(u < B.fall) return { x:b.x, y:b.sy - 45 - B.from*Math.pow(1 - u/B.fall, 1.5), a:0, vis:true, live:true };
@@ -115406,7 +115456,8 @@ function nineGrindStep(s, tgt, X){
 }
 BOSS_PICK.nine = {
   tags:{ nineaway:'close', nine:['ground', 'far'], ninebike:['ground', 'wall'], ninecrew:['ground', 'platform'], nineyah:['close', 'air'], nineboot:['close', 'ground'], ninegrind:['platform', 'air', 'far'] },
-  moves:(s, ph) => { const m = ['nine', 'ninecrew', 'nineyah', 'nineaway']; if(nineGrindPlat(fighters.find(f=>f.you) || fighters[0])) m.push('ninegrind'); if(ph >= 2) m.push('ninebike', 'nineboot'); return m; },
+  moves:(s, ph) => { const m = ['nine', 'ninecrew', 'nineyah', 'nineaway']; if(nineGrindPlat(fighters.find(f=>f.you) || fighters[0])) m.push('ninegrind'); if(ph >= 2) m.push('ninebike', 'nineboot'); return (s._nxTail && s._nxTail.length) ? m.filter(q => q !== 'ninecrew') : m; },
+  force:(s, ph) => { if(s._nxP){ const p = s._nxP; s._nxP = null; s._nxSkip = true; return (s._nxTail && s._nxTail.length && p === 'ninecrew') ? null : p; } return null; },   // a combo's second move
   busy:(s) => !!s._sx
 };
 BOSS_EXTRA.Nine = ['nineaway', 'ninebike', 'ninecrew', 'nineyah', 'nineboot', 'ninegrind'];
@@ -115514,7 +115565,7 @@ function nineFx(s){
       if(u < N.boot.fall){ const k = clamp((u + N.boot.lockF + 12)/(N.boot.lockF + 12 + N.boot.fall), 0, 1); ctx.save(); ctx.globalAlpha = 0.18 + 0.3*k; ctx.fillStyle = '#000'; ctx.translate(b.x, b.sy - 3); const g = growK(u + N.boot.lockF + 13); ctx.scale(g, g); ctx.beginPath(); ctx.ellipse(0, 0, 84, 16, 0, 0, 7); ctx.ellipse(40, 2, 50, 12, 0, 0, 7); ctx.fill(); ctx.restore(); }
       if(u < 0) return;
       const P = nineBootPos(b, u); if(!P.vis) return;
-      ctx.save(); ctx.translate(P.x, P.y); if(b.dir < 0) ctx.scale(-1, 1); ctx.rotate(P.a); ctx.globalAlpha = P.sink ? 1 - P.sink : 1; sixBoot(ctx, 1.25); ctx.restore();
+      ctx.save(); ctx.translate(P.x, P.y); if(b.dir < 0) ctx.scale(-1, 1); ctx.rotate(P.a); ctx.globalAlpha = P.sink ? 1 - P.sink : 1; nineBootArt(ctx, 1.25); ctx.restore();
     });
   }
   if(X.k === 'grind'){
@@ -116095,7 +116146,7 @@ const ZR = {
   foot:{ w:110, h:110, v:40, fall:18, lockLead:26, plant:30, lift:12, second:28, dmg:1, kb:14, grow:12 },   // (the hit is 110 wide, the drawn foot 0.55 of its 220: the model says a 12-frame lock is unfair and 26 + 18 = 44 frames is fair)
   // GET HIM! (phases 2 and 3): a scuffle cloud drops out of a pipe mouth 300+ px from you, rolls along the floor after you (5.4 px/f rising 0.03 a frame to 8.6), skids 24 frames when it overshoots, turns and re-accelerates from 3,
   // bounces off an end wall, and bursts after its passes (tier 3 one cloud, 4 two from the ends 40 frames apart, 5 two that last through two bounces, 6 three). r 26: low enough to hop with the weakest jump.
-  get:{ v0:5.4, acc:0.03, vmax:7.4, v1:3, skid:24, r:14, n:[1, 2, 2, 3], gap:[0, 70, 55, 50], pass:[2, 2, 2, 2], bounce:[1, 1, 1, 1], life:[300, 300, 330, 330], drop:24, arm:12, burst:40, near:300, far:900, dmg:0.8, kb:10 },
+  get:{ v0:5.4, acc:0.04, vmax:7.8, v1:5.4, skid:24, r:14, n:[1, 2, 2, 3], gap:[0, 70, 55, 50], sep:56, wait:140, pass:[2, 2, 2, 2], bounce:[1, 1, 1, 1], life:[300, 300, 330, 330], drop:24, arm:12, burst:40, near:300, far:900, dmg:0.8, kb:10 },
   giant:1.8, end:{ total:170, hold:2800 },
 };
 function zrHz(s){ return s._hz || (s._hz = {}); }
@@ -116328,8 +116379,17 @@ function zrCloudPipe(tgt, i, tier, used){   // the pipe mouth a cloud drops from
   return best;
 }
 function zrGetStart(s, tgt){ s._zx = { k:'get', id:++BOSS_ATK_ID, t:0, tier:zrTier(s), cl:[], spawned:0, used:[] }; }
+// Tier 6 (three clouds): a cloud is not let go until it would reach you at least G.sep frames after the one before (its pipe and your spot now; at most G.wait frames of waiting), so a hopper has a clean landing between two arrivals.
+function zrCloudEta(x, fx){ const G = ZR.get; let d = Math.abs(fx - x), v = G.v0, t = G.drop; while(d > 0 && t < 600){ v = Math.min(G.vmax, v + G.acc); d -= v; t++; } return t; }
+function zrCloudDue(s, X, tgt){
+  if(X.tier < 6 || X.spawned === 0) return true;
+  const G = ZR.get, fx = tgt ? tgt.x : WW/2, x = zrCloudPipe(tgt, X.spawned, X.tier, X.used), eta = X.t + zrCloudEta(x, fx);
+  if(X.wt == null) X.wt = X.t;
+  return eta >= (X.lastEta || 0) + G.sep || X.t - X.wt >= G.wait;
+}
 function zrCloudSpawn(s, X, tgt){
   const G = ZR.get, i = X.spawned++, x = zrCloudPipe(tgt, i, X.tier, X.used); X.used.push(x);
+  X.lastEta = X.t + zrCloudEta(x, tgt ? tgt.x : WW/2); X.wt = null;
   X.cl.push({ x, px:x, born:hazardT, dir:tgt ? (Math.sign(tgt.x - x) || 1) : 1, v:G.v0, mode:'drop', age:0, pass:0, bounce:0, skidT:0, bt:0, gone:0 });
   for(let k = 0; k < 8; k++) puff(x, groundY() - 470, '#8f8f99', 5);
 }
@@ -116416,7 +116476,7 @@ function zrStepX(s, tgt, X){
     }
   } else if(X.k === 'get'){
     const G = ZR.get, n = G.n[X.tier - 3];
-    if(X.spawned < n && X.t - 1 >= X.spawned*G.gap[X.tier - 3]) zrCloudSpawn(s, X, tgt || zrNear(s));
+    if(X.spawned < n && X.t - 1 >= X.spawned*G.gap[X.tier - 3] && zrCloudDue(s, X, tgt || zrNear(s))) zrCloudSpawn(s, X, tgt || zrNear(s));
     for(const c of X.cl) if(!c.gone) zrCloudStep(s, X, c, f0);
     if(X.spawned >= n && X.cl.every(c => c.gone)) X.done = 1;
     else if(X.t > 900) X.done = 1;
@@ -116741,7 +116801,8 @@ function zrDecor(s, key){
 // carries that turn's ONE attack id, so a fighter takes at most one boss hit (bossDmg()) from it. Tells are the body's (BOSS_TELLS.x) plus what grows out of it (baskets, a shadow, a glitch, a carton); nothing grows in
 // under 12 frames. His bag `_hz` holds plain numbers; what he draws is a function of it and the clock.
 const XB = {
-  introF:100, firstAtk:120, beatF:60, gaps:[110, 84], stand:[260, 220], flt:[70, 230], bR:2.7,
+  introF:100, firstAtk:120, beatF:60, gaps:[76, 52], comboGap:10, combo:{ xrain:'xsnap', xsnap:'xdash', xdive:'xrain', xdash:'xdive' },   // (the rest after a move, difficulty pass 2026-11-10: it was 110 / 84, about a third less; phase 2's COMBOS: this move, then its partner after 10 frames, each with its own wind-up, every other turn)
+  stand:[260, 220], flt:[70, 230], bR:2.7,
   tl:{ x:50, xrain:55, xsnap:60, xdive:50, xdash:45, xburn:45, xsquirt:[50, 32] },
   rain:{ sp:[240, 215], edge:70, r:34, lock:14, fall:35, grow:12, row2:40, stagger:2, life:90, dmg:0.9, kb:8 },
   snap:{ col:140, glitch:[44, 40], gap:28, hit:6, tall:360, black:24, dmg:1, kbx:3, kby:14 },
@@ -116754,6 +116815,7 @@ const XB = {
   end:{ total:110, hold:2000 },
 };
 function xvHz(s){ return s._hz || (s._hz = {}); }
+function xvGap(s){ return s._xcP ? XB.comboGap : XB.gaps[xvPh(s) - 1]; }
 function xvPh(s){ return (s._phase || 1) >= 2 ? 2 : 1; }
 function xvLiving(){ return fighters.filter(f => !f.dead); }
 function xvLive(f){ return !!f && !f.dead; }
@@ -116818,6 +116880,7 @@ function xvMove(s, tgt){
 function xvTel(s, tgt){
   const k = s._telKind, ph = xvPh(s), Z = xvHz(s), gy = groundY(), R = s.r;
   Z.turn = (Z.turn || 0) + 1;
+  if(ph >= 2){ if(s._xcSkip) s._xcSkip = false; else if(XB.combo[k]){ s._xcN = (s._xcN|0) + 1; if(s._xcN % 2 === 0) s._xcP = XB.combo[k]; } }   // a COMBO (phase 2, every other turn that has a partner): this move, then its partner
   let tl = XB.tl[k]; if(Array.isArray(tl)) tl = tl[ph - 1]; tl = tl || 50;
   const tn = s._tn = { k, ph, row:tgt ? clamp(gy - tgt.y, XB.dash.rowLo, XB.dash.rowHi) : XB.dash.rowLo, dir:tgt ? (Math.sign(tgt.x - s.x) || s.face || 1) : (s.face || 1), y:null, sx:null };
   if(k === 'xrain') tn.y = (typeof camY === 'number' ? camY : 0) + 110 + R*0.3;
@@ -116876,9 +116939,10 @@ BOSS_PICK.x = {
   tags:{ x:'any', xrain:['ground', 'spread'], xsnap:['ground', 'platform'], xdive:['close', 'ground'], xdash:'far', xburn:['air', 'far'], xsquirt:['far', 'ground'] },
   moves:(s, ph) => { const last = s._pk && s._pk.last; let m = ['x', 'xrain', 'xsnap', 'xdive', 'xdash', 'xsquirt'].concat(ph >= 2 ? ['xburn'] : []);
     if(last === 'xdash') m = m.filter(q => q !== 'xsquirt'); if(last === 'xsquirt') m = m.filter(q => q !== 'xdash'); return m; },   // never the dash and the jet back to back
-  force:(s, ph) => { const pk = s._pk; if(!pk || pk.last === 'x') return null; return ((pk.n + 1) % 5 === 0) ? 'x' : null; },   // HIDE AND SEEK! every fifth turn, never twice in a row
+  force:(s, ph) => { if(s._xcP){ const p = s._xcP; s._xcP = null; s._xcSkip = true; return p; } const pk = s._pk; if(!pk || pk.last === 'x') return null; return ((pk.n + 1) % 5 === 0) ? 'x' : null; },   // HIDE AND SEEK! every fifth turn, never twice in a row
   first:(s, ph) => { const Z = xvHz(s); if(ph >= 2 && !Z.b1){ Z.b1 = 1; return 'xburn'; } return null; },   // BURNING! opens phase 2
-  busy:(s) => !!s._sx
+  busy:(s) => !!s._sx,
+  get scan(){ const b = algBoss(); return !(b && b._algId === 'x' && xvPh(b) >= 2); }   // phase 2: the next wind-up may begin while the last move's shots are still in the air (his own move in progress, busy above, still holds it)
 };
 BOSS_EXTRA.X = ['xrain', 'xsnap', 'xdive', 'xdash', 'xburn', 'xsquirt'];
 BOSS_TELLS.x = {
