@@ -98466,7 +98466,8 @@ const ALG_ROSTER = [
   // @boss:four:end algrow
 
   // @boss:nine:begin algrow
-  { ...ALG_STUB, id:'nine', name:'Nine', color:'#8a6ae0', hp:algHp('nine') },
+  { id:'nine', name:'Nine', color:'#8a6ae0', hp:algHp('nine'), big:2.4, attack:'nine', arena:'skatepark', stationary:false, sprite:'nine', spawn:b=>nineSpawn(b), move:(s,t)=>nineMove(s,t), tick:(s,t)=>nineTick(s,t), tel:(s,t)=>nineTel(s,t), fire:(s,t,id)=>nineFire(s,t,id),
+    gap:s=>nineGap(s), telLen:s=>s._tl || 44, phase:(s,ph)=>ninePhase(s,ph), phaseName:(s,ph)=>ph >= 3 ? 'Clobber Time' : 'Not Radical', look:s=>nineLook(s), tell:s=>nineTell(s), body:(s,R,b,f)=>nineBody(s,R,b,f), fx:s=>nineFx(s), decor:(s,k)=>nineDecor(s,k), shot:pr=>nineShotDraw(pr) },   // rush M6-M7: the real fight (1,400 HP); all of it is in his algcode pair
   // @boss:nine:end algrow
 
   // @boss:six:begin algrow
@@ -114964,6 +114965,572 @@ PROJ_SHAPE.engulf = PROJ_SHAPE.goopuddle; PROJ_SHAPE.tape = PROJ_SHAPE.tapewave;
 // Every const the old bosses' slots live in exists by here (BOSS_EXTRA, BOSS_PICK, BOSS_MOVES, BOSS_ENDINGS, BOSS_ARENA_SKY, BOSS_SPRITE_SRC, PROJ_SHAPE...), so a new rush boss fills its rows by assignment,
 // defines its own constants and functions, and its ALG_ROSTER row calls them through the row hooks (algHook, above): its milestone edits its own row and its own pair here, and no engine line.
 // @boss:nine:begin algcode
+// NINE, THE SKATER (rush M6 + M7, 1,400 HP; the Skate Park, `skatepark`). Everything of Nine's lives in this pair and their ALG_ROSTER row: no engine line and no kit line is edited.
+// "Nine glues their feet to the board" (the 900,000 special): GLUED TO THE BOARD. Nine cannot stop, turn or cancel a stunt, so the lane and the landing lock 14-20 frames before it starts, and a stunt that
+// is DODGED ends with Nine EXPOSED (algExpose: no attacks, x1.5 damage until back up). A stunt that connects ends the same way but with no window (the dodge is what opens the boss).
+// Moves (the owner's picks): TUBULAR! (the board run; from act 2 also the motorcycle run), CLEANUP CREW!, BOOYAH!, STONE-TO-BOOT! (act 2 on), GRIND! (needs a platform 360 px wide).
+// Acts: 1 Totally Tubular, 2 Not Radical (Nine cries, the planet cracks, the lights go out), 3 Clobber Time (a tempo bump). Every move is driven by Nine's state machine (s._sx) and hits through
+// nineStrike (a hit Nine tests itself, one hit per fighter per move, so a move deals at most one boss hit); tells are the body's (BOSS_TELLS.nine) plus what grows out of the world.
+const NINE = {
+  introF:80, firstAtk:100, gaps:[80, 66, 54], beatF:[0, 40, 22],
+  cruise:{ want:380, near:300, far:460, spd:5, back:4, push:700, pushSpd:14 },
+  tl:{ nine:44, ninebike:52, ninecrew:40, nineyah:38, nineboot:46, ninegrind:44 },
+  board:{ back:170, backF:28, lockF:18, ease:12, spd:[16, 18, 20], tail:260, cap:1700, r:36, up:36, dmg:1, kbx:6, kby:-14, tumble:24, rise:14, win:[56, 50, 44], miss:[38, 38, 38] },
+  bike:{ spd:[22, 24], start:700, tree:760, r:38, up:36, ease:10, blastR:100, blastF:6, shards:8, sdmg:0.6, sr:14, g:0.4, win:[44, 38], dmg:1, kbx:12, kby:-13 },
+  crew:{ n:[4, 5, 6], spd:[8, 9, 10], gapF:[44, 40, 48], out:640, travel:1500, r:20, dmg:0.6, kb:9, lane:[0, 3, 3], laneDelay:60, wait:40, back:2, lockF:12 },
+  yah:{ fl:[54, 48, 44], apex:240, lockF:14, flip:[14, 36], flipR:100, fallR:76, flipDmg:0.8, fallDmg:1, pair:[0, 20, 16], win:[26, 22, 20] },
+  boot:{ from:420, fall:22, fallR:72, fallDmg:1, kickWait:12, kick:[240, 240, 300], kickF:12, kickR:40, kickUp:38, kickDmg:0.9, rest:30, sink:12, second:32, lockF:20 },
+  grind:{ spd:[13, 15, 17], ramp:130, rampF:14, minW:360, r:36, up:36, dmg:0.9, kbx:5, kby:-14, arc:46, lockF:20, fallR:70, win:[30, 26, 22] },
+  end:{ total:122, hold:2000 },
+};
+function nineHz(s){ return s._hz || (s._hz = {}); }
+function nineAct(s){ return Math.min(3, Math.max(1, s._phase || 1)); }
+function nineLive(f){ return !!f && !f.dead; }
+function nineIntro(s){ const Z = nineHz(s); return Z.in != null && hazardT - Z.in < NINE.introF; }
+function nineSurf(x, feet){ let best = groundY(); for(const p of worldPlats){ if(p.wall || p.solid) continue; if(x >= p.x && x <= p.x + p.w && p.y >= feet - 14 && p.y < best) best = p.y; } return best; }
+function nineClampX(x, sy){ if(sy < groundY() - 1) for(const p of worldPlats){ if(!p.wall && !p.solid && Math.abs(p.y - sy) < 1 && x >= p.x - 4 && x <= p.x + p.w + 4) return clamp(x, p.x + 36, p.x + p.w - 36); } return clamp(x, 90, WW - 90); }
+function nineGrindPlat(tgt){
+  let best = null, bd = 1e9;
+  for(const p of worldPlats){ if(p.wall || p.solid || p.w < NINE.grind.minW || p.y > groundY() - 60) continue; const d = Math.abs((tgt ? tgt.x : WW/2) - (p.x + p.w/2)); if(d < bd){ bd = d; best = p; } }
+  return best;
+}
+// One hit Nine tests itself: every fighter inside the circle (cx, cy, r) that this move has not hit yet takes `mult` boss hits, once (the move's hit set X.hs). kbx is signed; `out` pushes away from the centre.
+function nineStrike(s, X, cx, cy, r, mult, kbx, kby, out){
+  let any = false;
+  for(const f of fighters){
+    if(f.dead || f.invuln > 0 || X.hs[f.idx] || hurtGap(f, cx, cy) >= r) continue;
+    X.hs[f.idx] = 1; X.hit = 1; any = true;
+    applyHit(f, bossDmg()*mult, out ? (Math.sign(f.x - cx) || 1)*Math.abs(kbx) : kbx, kby, null, { bossAtk:X.id, volley:true, shot:1 });
+    for(let i = 0; i < 8; i++) puff(f.x, f.y, '#ffffce', 5);
+  }
+  return any;
+}
+function nineShadow(x, y, rx, k){ bossFallShadow(x, y, rx, k); }
+// ---- the hit filter: nothing in the intro (Nine rolls in untouchable) -----------------------------------------------------------------------------------------------------------------------------
+ALG_HIT.nine = function(s, f, d){ return nineIntro(s) ? 0 : d; };
+// ---- spawn, intro (rolls in, ollies and flips, slides to a stop, a glint grows on the glasses), movement -------------------------------------------------------------------------------------
+function nineSpawn(b){
+  const Z = nineHz(b), you = fighters.find(f=>f.you) || fighters[0], px = you ? you.x : WW*0.5;
+  b._baseR = b.r; b.face = 1; Z.in = hazardT; Z.i1 = clamp(px + (px < WW/2 ? 420 : -420), 160, WW - 160); Z.i0 = clamp(Z.i1 + (Z.i1 > WW/2 ? 1 : -1)*900, 90, WW - 90);
+  b.x = Z.i0; b.y = groundY() - b.r; b._algPop = 0; b._atkTimer = NINE.introF + NINE.firstAtk;
+  for(const k of ['nine', 'ninechill', 'nineskate', 'ninetubular', 'nineyah', 'nineannoyed', 'ninescared', 'ninecry', 'nineboard', 'ninecrew', 'nineglasses']) bossImage(k);
+}
+function nineIntroStep(s){
+  const Z = nineHz(s), t = hazardT - Z.in, gy = groundY(), dir = Math.sign(Z.i1 - Z.i0) || 1;
+  s.face = dir; s.vx = 0; Z.fl = 0;
+  if(t < 36){ s.x = Z.i0 + (Z.i1 - Z.i0)*(t/36); s.y = gy - s.r; if(t % 3 === 0) puff(s.x - dir*40, gy - 6, '#c9c3d6', 3); }
+  else if(t < 60){ const u = (t - 36)/24; s.x = Z.i1 + dir*50*u; s.y = gy - s.r - 4*170*u*(1 - u); Z.fl = u; }
+  else { const u = (t - 60)/20; s.x = Z.i1 + dir*(50 + 70*(1 - (1 - u)*(1 - u))); s.y = gy - s.r; if(t === 60){ impact(s.x, gy, { shake:4, dust:1, debris:2, scar:false, r:50, color:'#c9c3d6' }); } if(t % 2 === 0 && u < 0.8) puff(s.x - dir*30, gy - 6, '#c9c3d6', 3); }
+}
+function nineMove(s, tgt){
+  const Z = nineHz(s), X = s._sx, gy = groundY(), C = NINE.cruise;
+  s.vx = 0;
+  if(nineIntro(s)){ return true; }
+  if((X && X.own) || (s._tel > 0 && s._tn && s._tn.own)) return true;
+  if(s.y < gy - s.r - 1.5){ s._fv = (s._fv || 0) + 0.8; s.y = Math.min(gy - s.r, s.y + s._fv); } else { s._fv = 0; s.y = gy - s.r; }
+  if(tgt && nineLive(tgt) && !(s._tel > 0)){
+    const dx = tgt.x - s.x, ad = Math.abs(dx);
+    if(ad > 24) s.face = dx > 0 ? 1 : -1;
+    if(ad > C.push) s.x += Math.sign(dx)*C.pushSpd;
+    else if(ad > C.far) s.x += Math.sign(dx)*C.spd;
+    else if(ad < C.near) s.x -= Math.sign(dx || 1)*C.back;
+  }
+  s.x = clamp(s.x, 70, WW - 70);
+  return true;
+}
+// ---- the turn: wind-up length, what is fixed now, what the wind-up does frame by frame --------------------------------------------------------------------------------------------------------
+function nineTel(s, tgt){
+  const k = s._telKind, ph = nineAct(s), gy = groundY();
+  const tn = s._tn = { k, ph, own:false, dir: tgt ? (Math.sign(tgt.x - s.x) || s.face || 1) : (s.face || 1), lx: tgt ? tgt.x : s.x, ly: tgt ? feetY(tgt) : gy, at:0 };
+  s._tl = s._tel = NINE.tl[k] || 44; s.face = tn.dir;
+  if(k === 'nine') tn.own = true;
+  if(k === 'ninebike' && tgt){
+    const dir = (WW - tgt.x >= tgt.x) ? 1 : -1, tree = clamp(tgt.x + dir*NINE.bike.tree, 160, WW - 160), start = clamp(tgt.x - dir*NINE.bike.start, 100, WW - 100);
+    tn.own = true; tn.bdir = dir; tn.tree = tree; tn.bstart = start; tn.dir = dir; s.face = dir; nineHz(s).tr = [Math.round(tree), hazardT, 0];
+  }
+  if(k === 'ninecrew' && tgt){ const side = tgt.x > WW/2 ? -1 : 1; tn.side = side; s.face = side; tn.dir = side; }
+  if(k === 'ninegrind'){ const p = nineGrindPlat(tgt); tn.plat = p; tn.own = true;
+    if(p){ const ed = (s.x < p.x + p.w/2) ? 1 : -1; tn.ed = ed; tn.bx = ed > 0 ? p.x - NINE.grind.ramp : p.x + p.w + NINE.grind.ramp; tn.dir = ed; s.face = ed; } }
+  if(k === 'nineyah' || k === 'nineboot'){ tn.sy = tgt ? nineSurf(tgt.x, feetY(tgt)) : gy; tn.sx = tn.lx; }
+}
+function nineTelStep(s, tgt, tn){
+  const e = s._tl - s._tel, k = tn.k, gy = groundY(), N = NINE;
+  if(k === 'nine'){
+    if(e < N.board.backF) s.x = clamp(s.x - tn.dir*N.board.back/N.board.backF, 70, WW - 70);
+    if(s._tel > N.board.lockF && nineLive(tgt)){ tn.dir = Math.sign(tgt.x - s.x) || tn.dir; tn.lx = tgt.x; }
+    s.face = tn.dir;
+  } else if(k === 'ninebike'){
+    const toward = tn.bstart - s.x; if(e > 3 && Math.abs(toward) > 4) s.x += Math.sign(toward)*Math.min(14, Math.abs(toward));
+    s.face = tn.bdir;
+  } else if(k === 'ninecrew'){
+    if(s._tel > N.crew.lockF && nineLive(tgt)) tn.lx = tgt.x;
+    s.face = tn.side;
+  } else if(k === 'nineyah'){
+    if(s._tel > N.yah.lockF && nineLive(tgt)){ tn.lx = tgt.x; tn.sy = nineSurf(tgt.x, feetY(tgt)); tn.sx = nineClampX(tgt.x, tn.sy); }
+    if(nineLive(tgt) && Math.abs(tgt.x - s.x) > 24) s.face = tgt.x > s.x ? 1 : -1;
+  } else if(k === 'nineboot'){
+    if(s._tel > N.boot.lockF && nineLive(tgt)){ tn.sy = nineSurf(tgt.x, feetY(tgt)); tn.sx = nineClampX(tgt.x, tn.sy); }
+    if(nineLive(tgt) && Math.abs(tgt.x - s.x) > 24) s.face = tgt.x > s.x ? 1 : -1;
+  } else if(k === 'ninegrind' && tn.plat){
+    const toward = tn.bx - s.x; if(Math.abs(toward) > 4) s.x += Math.sign(toward)*Math.min(7, Math.abs(toward)); s.x += Math.sin(e*0.5)*1.2*0;
+    s.face = tn.ed;
+  }
+}
+function nineTick(s, tgt){
+  const Z = nineHz(s), t = hazardT;
+  if(!(s.hp > 0)) return;
+  if(nineIntro(s)){ nineIntroStep(s); return; }
+  if(Z.in != null && !Z.done){ Z.done = 1; Z.fl = 0; }
+  if(s._tel > 0 && s._tn) nineTelStep(s, tgt, s._tn);
+  if(s._sx) nineStep(s, tgt);
+  else if(Z.pend && !(s._tel > 0) && !s._atkLive){   // the act beat waits for an idle: a stunt in the air is never broken
+    const ph = Z.pend; Z.pend = 0; s._sx = { k:'beat', own:true, t:0, len:NINE.beatF[ph - 1] || 22, ph, hs:{} };
+    s._atkTimer = Math.max(s._atkTimer, (NINE.beatF[ph - 1] || 22) + 30); if(ph === 2) Z.p2 = t; else Z.p3 = t;
+    shake(6);
+  }
+  if(s._xposeT > 0 && !(Z.exp > 0)) Z.exp = 1; if(!(s._xposeT > 0)) Z.exp = 0;
+}
+function nineHold(s){ const X = s._sx; return !!X; }
+function nineGap(s){ return NINE.gaps[nineAct(s) - 1]; }
+function nineDone(s){ s._sx = null; }
+function ninePhase(s, ph){
+  if(ph < 2) return;
+  const Z = nineHz(s); Z.pend = Math.max(Z.pend || 0, ph);   // the beat plays at the next idle
+}
+function nineLook(s){
+  const Z = nineHz(s), X = s._sx, ph = nineAct(s);
+  if(nineIntro(s)){ return hazardT - Z.in >= 60 ? 'nineyah' : 'nineskate'; }
+  if(X && X.k === 'beat' && X.ph === 2) return 'ninecry';
+  if(X && (X.k === 'wipe' || X.stuck)) return 'ninescared';
+  if(s._xposeT > 0) return 'ninescared';
+  if(X && X.k === 'bike' && X.stage !== 'ride') return 'ninescared';
+  const kd = s._tel > 0 ? s._telKind : (X ? X.k : null);
+  if(kd === 'nine' || kd === 'run' || kd === 'ninebike' || kd === 'bike') return 'nineskate';
+  if(kd === 'nineyah' || kd === 'yah' || kd === 'ninegrind' || kd === 'grind') return 'ninetubular';
+  if(ph >= 3) return 'nineannoyed';
+  return 'ninechill';
+}
+// ---- the moves. The signature through the row's `fire`, the others through BOSS_MOVES -----------------------------------------------------------------------------------------------------
+function nineFire(s, tgt, id){ nineRunStart(s, tgt, id); return true; }
+function nineNew(s, k, o){ return Object.assign({ k, own:true, t:0, id:++BOSS_ATK_ID, ph:nineAct(s), hs:{}, hit:0 }, o || {}); }
+function nineRunStart(s, tgt, id){
+  const tn = s._tn || {}, ph = nineAct(s), B = NINE.board;
+  const X = nineNew(s, 'run', { x0:s.x, dir:tn.dir || s.face || 1, lx:tn.lx != null ? tn.lx : s.x, fi: tgt ? tgt.idx : -1, v:B.spd[ph - 1] });
+  if(id != null) X.id = id;
+  s.face = X.dir; s._sx = X;
+}
+function nineBikeStart(s, tgt){
+  const tn = s._tn || {}, ph = nineAct(s), K = NINE.bike, gy = groundY();
+  if(Math.abs(s.x - tn.bstart) > 2){ for(let i = 0; i < 10; i++) puff(s.x, s.y, '#ff8a2a', 5); s.x = tn.bstart; for(let i = 0; i < 10; i++) puff(s.x, s.y, '#ff8a2a', 5); }
+  s._sx = nineNew(s, 'bike', { dir:tn.bdir, tree:tn.tree, v:K.spd[ph >= 3 ? 1 : 0], stage:'ride', x0:s.x, sh:[] });
+  s.face = tn.bdir;
+}
+function nineRampW(p){ return p.w >= NINE.grind.minW ? NINE.grind.ramp : 90; }
+function nineLaneFoot(p, x){   // the foot height of the floor, the quarter-pipe up to a platform, its top and the quarter-pipe down
+  const gy = groundY(), rw = nineRampW(p), H = gy - p.y;
+  if(x <= p.x - rw || x >= p.x + p.w + rw) return gy;
+  if(x < p.x){ const u = (x - (p.x - rw))/rw; return gy - H*(1 - Math.sqrt(Math.max(0, 1 - u*u))); }
+  if(x <= p.x + p.w) return p.y;
+  const u = (p.x + p.w + rw - x)/rw; return gy - H*(1 - Math.sqrt(Math.max(0, 1 - u*u)));
+}
+function nineCrewStart(s, tgt){
+  const tn = s._tn || {}, ph = nineAct(s), C = NINE.crew, side = tn.side || 1, lx = tn.lx != null ? tn.lx : s.x, gy = groundY(), boards = [];
+  const n = C.n[ph - 1], sp = C.spd[ph - 1]; let off = 0;
+  for(let i = 0; i < n; i++){ boards.push({ x0:lx + side*(C.out + off), x:lx + side*(C.out + off), y:gy - C.r, dir:-side, spd:sp, st:0, mode:'go', tr:0, w:0, on:1, lane:0 }); off += sp*C.gapF[i % 3]; }
+  const lp = ph >= 2 ? C.lane[ph - 1] : 0;
+  if(lp){   // the platform lane: boards roll the other way along the floor, up the quarter-pipe and across the nearest platform, a second after the floor boards
+    let pl = null, bd = 1e9; for(const p of worldPlats){ if(p.wall || p.solid || p.y > gy - 60) continue; const d = Math.abs(lx - (p.x + p.w/2)); if(d < bd){ bd = d; pl = p; } }
+    if(pl){ const rw = nineRampW(pl), dir = side, o0 = 300; let o2 = 0;
+      for(let i = 0; i < lp; i++){ const x = dir > 0 ? pl.x - rw - o0 - o2 : pl.x + pl.w + rw + o0 + o2; boards.push({ x0:x, x, y:gy - C.r, dir, spd:sp, st:C.laneDelay, mode:'go', tr:0, w:0, on:1, lane:1, pl }); o2 += sp*C.gapF[i % 3]; } }
+  }
+  s._sx = nineNew(s, 'crew', { own:false, side, boards, ret:ph >= 3, rw:-1 });
+  s.face = side;
+}
+function nineYahStart(s, tgt){
+  const tn = s._tn || {}, ph = nineAct(s), Y = NINE.yah;
+  s._sx = nineNew(s, 'yah', { n:0, wait:0, T:Y.fl[ph - 1] });
+  nineYahLaunch(s, s._sx, tn.sx != null ? tn.sx : s.x, tn.sy != null ? tn.sy : groundY());
+}
+function nineYahLaunch(s, X, lx, sy){
+  X.x0 = s.x; X.y0 = s.y; X.x1 = lx; X.y1 = sy - s.r; X.t = 0; X.stage = 'fly'; X.sy = sy; X.sx = lx; s.face = Math.sign(lx - s.x) || s.face;
+}
+function nineBootStart(s, tgt){
+  const tn = s._tn || {}, ph = nineAct(s), B = NINE.boot, sy = tn.sy != null ? tn.sy : groundY(), sx = tn.sx != null ? tn.sx : s.x;
+  const dr = Math.sign(WW*0.5 - sx) || 1, kd = B.kick[ph - 1], boots = [{ x:sx, sy, st:0, dir:dr, kickD:kd }];
+  if(ph >= 3) boots.push({ x:sx, sy, st:B.fall + B.kickWait + B.kickF + B.second, dir:dr, kickD:kd });
+  s._sx = nineNew(s, 'boot', { boots, own:true });
+}
+function nineGrindStart(s, tgt){
+  const tn = s._tn || {}, ph = nineAct(s), G = NINE.grind, p = tn.plat;
+  if(!p){ s._sx = null; return; }
+  s._sx = nineNew(s, 'grind', { plat:p, ed:tn.ed, bx:tn.bx, v:G.spd[ph - 1], stage:'floor', ru:0, stuck:0, T:G.arc });
+  s.face = tn.ed;
+}
+BOSS_MOVES.ninebike = (s, tgt) => nineBikeStart(s, tgt);
+BOSS_MOVES.ninecrew = (s, tgt) => nineCrewStart(s, tgt);
+BOSS_MOVES.nineyah = (s, tgt) => nineYahStart(s, tgt);
+BOSS_MOVES.nineboot = (s, tgt) => nineBootStart(s, tgt);
+BOSS_MOVES.ninegrind = (s, tgt) => nineGrindStart(s, tgt);
+function nineStep(s, tgt){
+  const X = s._sx; if(!X) return;
+  const gy = groundY(), ph = X.ph; X.t++;
+  if(X.k === 'beat'){ s.vx = 0; if(X.t >= X.len) nineDone(s); return; }
+  if(X.k === 'run'){
+    const B = NINE.board, v = X.v*Math.min(1, X.t/B.ease), dir = X.dir;
+    s.x += dir*v; s.y = gy - s.r; s.face = dir;
+    nineStrike(s, X, s.x + dir*20, gy - B.up, B.r, B.dmg, dir*B.kbx, B.kby, false);
+    if(X.t % 2 === 0) puff(s.x - dir*50, gy - 6, '#ffffce', 2);
+    const lf = fighters.find(f=>f.idx === X.fi), fx = nineLive(lf) ? lf.x : X.lx;
+    if((s.x - fx)*dir > B.tail || Math.abs(s.x - X.x0) > B.cap || s.x <= 74 || s.x >= WW - 74){
+      s.x = clamp(s.x, 74, WW - 74);
+      const win = X.hit ? B.miss[ph - 1] : B.win[ph - 1];
+      s._sx = nineNew(s, 'wipe', { id:X.id, dir, v0:Math.min(X.v, 18), len:win, expo:!X.hit, from:'run', hit:X.hit });
+      if(!X.hit) algExpose(s, win, 1.5);
+    }
+    return;
+  }
+  if(X.k === 'wipe'){
+    const B = NINE.board, sk = X.v0*Math.pow(0.9, X.t);
+    s.x = clamp(s.x + X.dir*sk, 74, WW - 74); s.y = gy - s.r; s.vx = 0;
+    if(X.t === 1){ shake(5); for(let i = 0; i < 14; i++) puff(s.x, gy - 8, '#c9c3d6', 5); }
+    if(X.t >= X.len) nineDone(s);
+    return;
+  }
+  if(X.k === 'bike'){
+    const K = NINE.bike;
+    if(X.stage === 'ride'){
+      const v = X.v*Math.min(1, (X.t + 1)/K.ease), dir = X.dir; s.x += dir*v; s.y = gy - s.r; s.face = dir;
+      nineStrike(s, X, s.x, gy - K.up, K.r, K.dmg, dir*K.kbx, K.kby, false);
+      if(X.t % 2 === 0) puff(s.x - dir*60, gy - 10, '#ff8a2a', 2);
+      if((s.x - X.tree)*dir >= 0){   // the tree: a blast, eight shards back the way the bike came
+        s.x = X.tree; X.stage = 'blast'; X.bt = 0;
+        const n = K.shards, o = X.dir;
+        for(let i = 0; i < n; i++){ const T = 36 + ((i*7) % 5)*5, L = 150 + (i*370/(n - 1)); X.sh.push({ x:s.x, y:gy - 60, vx:-o*L/T, vy:-K.g*T/2, t:0, on:1 }); }
+        const win = K.win[ph >= 3 ? 1 : 0]; X.len = Math.max(win, 70);
+        if(!X.hit) algExpose(s, win, 1.5);
+        impact(s.x, gy, { shake:8, dust:1, debris:8, scar:true, r:110, color:'#ff8a2a' });
+        for(let i = 0; i < 26; i++) puff(s.x + (Math.random() - 0.5)*120, gy - Math.random()*90, i % 2 ? '#ffb24a' : '#ff5a1a', 7);
+        nineHz(s).tr = [Math.round(X.tree), nineHz(s).tr ? nineHz(s).tr[1] : hazardT, hazardT];
+      }
+      return;
+    }
+    X.bt++;
+    if(X.bt <= K.blastF) nineStrike(s, X, X.tree, gy - 60, K.blastR, K.dmg, 10, K.kby, true);
+    for(const p of X.sh){ if(!p.on) continue; p.t++; p.vy += K.g; p.x += p.vx; p.y += p.vy; if(p.y >= gy - K.sr || p.t > 90){ p.on = 0; for(let i = 0; i < 4; i++) puff(p.x, gy - 6, '#ffb24a', 3); continue; }
+      nineStrike(s, X, p.x, p.y, K.sr, K.sdmg, p.vx > 0 ? 7 : -7, -9, false); }
+    s.y = gy - s.r;
+    if(X.bt >= X.len && !X.sh.some(p=>p.on)){ nineHz(s).tr = null; nineDone(s); }
+    return;
+  }
+  if(X.k === 'crew'){
+    const C = NINE.crew; let live = 0, waiting = 0, floorLive = 0;
+    for(const b of X.boards){
+      if(!b.on) continue; live++;
+      if(X.t < b.st) continue;
+      if(b.mode === 'go'){
+        b.x += b.dir*b.spd; b.tr += b.spd;
+        if(b.lane){ const ft = nineLaneFoot(b.pl, b.x); b.y = ft - C.r; b.arm = ft < groundY() - 8; if(b.arm) nineStrike(s, X, b.x, b.y, C.r, C.dmg, b.dir*C.kb, -9, false); if((b.x - (b.dir > 0 ? b.pl.x + b.pl.w + nineRampW(b.pl) + 60 : b.pl.x - nineRampW(b.pl) - 60))*b.dir > 0) b.on = 0; }
+        else { nineStrike(s, X, b.x, b.y, C.r, C.dmg, b.dir*C.kb, -9, false);
+          if(X.ret){ if(b.x <= 36 || b.x >= WW - 36){ b.mode = 'wait'; b.w = 0; } } else if(b.tr >= C.travel || b.x <= 36 || b.x >= WW - 36) b.on = 0; }
+      } else if(b.mode === 'wait'){ b.w++; if(b.w >= C.wait){ b.mode = 'back'; b.dir = -b.dir; b.spd += C.back; b.tr = 0; b.wx = b.x; } }   // out of sight in the stage-end quarter-pipe, then back, in the order it went
+      else if(b.mode === 'back'){ b.x += b.dir*b.spd; b.tr += b.spd; if(Math.abs(b.x - b.wx) > 190) nineStrike(s, X, b.x, b.y, C.r, C.dmg, b.dir*C.kb, -9, false); if(b.tr >= C.travel || b.x <= 36 || b.x >= WW - 36) b.on = 0; }
+      if(!b.lane && b.mode === 'go') floorLive++;
+      if(b.mode === 'wait') waiting++;
+    }
+    if(!live) nineDone(s);
+    return;
+  }
+  if(X.k === 'yah'){ nineYahStep(s, tgt, X); return; }
+  if(X.k === 'boot'){ nineBootStep(s, tgt, X); return; }
+  if(X.k === 'grind'){ nineGrindStep(s, tgt, X); return; }
+}
+function nineYahStep(s, tgt, X){
+  const Y = NINE.yah, gy = groundY();
+  if(X.stage === 'fly'){
+    const T = X.T, u = Math.min(1, X.t/T);
+    s.x = X.x0 + (X.x1 - X.x0)*u; s.y = X.y0 + (X.y1 - X.y0)*u - 4*Y.apex*u*(1 - u); X.fl = u;
+    if(X.t >= Y.flip[0] && X.t <= Y.flip[1]) nineStrike(s, X, s.x, s.y, Y.flipR, Y.flipDmg, (Math.sign(X.x1 - X.x0) || 1)*12, -11, false);
+    if(u >= 0.5) nineStrike(s, X, s.x, s.y, Y.fallR, Y.fallDmg, (Math.sign(X.x1 - X.x0) || 1)*10, -12, false);
+    if(X.t >= T){
+      s.x = X.x1; s.y = X.y1; X.fl = 0; X.n++;
+      if(X.sy < gy - 1){ impact(s.x, X.sy, { shake:4, dust:1, debris:3, scar:false, r:70, color:'#c9c3d6' }); } else impact(s.x, gy, { shake:5, dust:1, debris:4, scar:true, r:80, color:'#c9c3d6' });
+      const pw = Y.pair[X.ph - 1];
+      if(pw && X.n < 2){ X.stage = 'wait'; X.wt = 0; X.pw = pw; } else {
+        X.stage = 'stuck'; X.stuck = 1; X.wt = 0; X.len = Y.win[X.ph - 1];
+        if(!X.hit) algExpose(s, X.len, 1.5);
+      }
+    }
+    return;
+  }
+  if(X.stage === 'wait'){
+    X.wt++; X.crouch = 1;
+    if(X.wt === X.pw - Y.lockF && nineLive(tgt)){ X.sy = nineSurf(tgt.x, feetY(tgt)); X.sx = nineClampX(tgt.x, X.sy); }
+    if(X.wt >= X.pw){ X.crouch = 0; nineYahLaunch(s, X, X.sx, X.sy); }
+    return;
+  }
+  if(X.stage === 'stuck'){ X.wt++; if(X.wt >= X.len){ X.stuck = 0; nineDone(s); } }
+}
+function nineBootPos(b, u){   // where a boot is, by the frames since it began to fall
+  const B = NINE.boot, kk = B.fall + B.kickWait;
+  if(u < B.fall) return { x:b.x, y:b.sy - 45 - B.from*Math.pow(1 - u/B.fall, 1.5), a:0, vis:true, live:true };
+  if(u < kk) return { x:b.x, y:b.sy - 45, a:-0.35*Math.min(1, (u - B.fall)/(B.kickWait*0.8)), vis:true, live:false };
+  if(u < kk + B.kickF){ const q = (u - kk + 1)/B.kickF; return { x:b.x + b.dir*b.kickD*q, y:b.sy - 45, a:0.2, vis:true, live:true, kick:true }; }
+  return { x:b.x + b.dir*b.kickD, y:b.sy - 45, a:0, vis:u < kk + B.kickF + B.rest + B.sink, live:false, sink:Math.max(0, (u - kk - B.kickF - B.rest)/B.sink) };
+}
+function nineBootStep(s, tgt, X){
+  const B = NINE.boot, gy = groundY(); let done = true;
+  X.boots.forEach((b, i) => {
+    const u = X.t - b.st; if(u <= B.fall){ b.dir = Math.sign(WW*0.5 - b.x) || 1; b.kickD = B.kick[X.ph - 1]; }
+    if(u < 0){ if(i === 1 && X.t >= b.st - B.lockF - 12 && X.t < b.st - B.lockF && nineLive(tgt)){ b.sy = nineSurf(tgt.x, feetY(tgt)); b.x = nineClampX(tgt.x, b.sy); } done = false; return; }
+    const P = nineBootPos(b, u); if(P.vis) done = false;
+    if(P.live && !P.kick) nineStrike(s, X, P.x, P.y, B.fallR, B.fallDmg, b.dir*7, -12, false);
+    if(P.kick) nineStrike(s, X, P.x, b.sy - B.kickUp, B.kickR, B.kickDmg, b.dir*20, -10, false);
+    if(u === B.fall){ impact(b.x, b.sy, { shake:8, dust:1, debris:8, scar:true, r:90, color:'#a8a8b8' }); }
+  });
+  if(done) nineDone(s);
+}
+function nineGrindRamp(X, u){ const G = NINE.grind, p = X.plat, H = groundY() - p.y; return { x:X.bx + X.ed*G.ramp*u, y:groundY() - H*(1 - Math.sqrt(Math.max(0, 1 - u*u))) }; }
+function nineGrindStep(s, tgt, X){
+  const G = NINE.grind, p = X.plat, gy = groundY(), ed = X.ed;
+  if(X.stage === 'floor'){
+    const d = X.bx - s.x; s.x += Math.sign(d)*Math.min(Math.abs(d), X.v); s.y = gy - s.r; s.face = ed;
+    if(Math.abs(X.bx - s.x) < 1){ X.stage = 'ramp'; X.rt = 0; }
+    return;
+  }
+  if(X.stage === 'ramp'){
+    X.rt++; const u = Math.min(1, X.rt/G.rampF), q = nineGrindRamp(X, u);
+    s.x = q.x; s.y = q.y - s.r; X.fl = 0;
+    if(u > 0.6) nineStrike(s, X, s.x + ed*30, q.y - G.up, G.r, G.dmg, ed*G.kbx, G.kby, false);
+    if(X.rt % 2 === 0) puff(s.x, q.y, '#fed629', 2);
+    if(X.rt >= G.rampF){ X.stage = 'rail'; X.lk = 0; X.px1 = ed > 0 ? p.x + p.w - 20 : p.x + 20; }
+    return;
+  }
+  if(X.stage === 'rail'){
+    s.x += ed*X.v; s.y = p.y - s.r - 4; s.face = ed;
+    nineStrike(s, X, s.x + ed*40, p.y - G.up, G.r, G.dmg, ed*G.kbx, G.kby, false);
+    if(X.t % 2 === 0) puff(s.x - ed*20, p.y - 4, '#fed629', 2);
+    const rem = (X.px1 - s.x)*ed;
+    if(!X.lk && rem <= G.lockF*X.v){ X.lk = 1; const f = nineLive(tgt) ? tgt : null; X.sy = f ? nineSurf(f.x, feetY(f)) : gy; X.sx = f ? nineClampX(f.x, X.sy) : s.x; }
+    if(rem <= 0){ X.stage = 'arc'; X.at = 0; X.x0 = s.x; X.y0 = s.y; if(!X.lk){ X.sy = gy; X.sx = clamp(s.x + ed*300, 90, WW - 90); } X.x1 = X.sx; X.y1 = X.sy - s.r; }
+    return;
+  }
+  if(X.stage === 'arc'){
+    X.at++; const u = Math.min(1, X.at/G.arc); X.fl = u;
+    s.x = X.x0 + (X.x1 - X.x0)*u; s.y = X.y0 + (X.y1 - X.y0)*u - 4*150*u*(1 - u); s.face = Math.sign(X.x1 - X.x0) || ed;
+    if(u >= 0.5) nineStrike(s, X, s.x, s.y, G.fallR, 1, (Math.sign(X.x1 - X.x0) || 1)*9, -12, false);
+    if(X.at >= G.arc){ s.x = X.x1; s.y = X.y1; X.fl = 0; impact(s.x, X.sy, { shake:5, dust:1, debris:4, scar:X.sy >= gy - 1, r:80, color:'#c9c3d6' }); X.stage = 'stuck'; X.stuck = 1; X.wt = 0; X.len = G.win[X.ph - 1]; if(!X.hit) algExpose(s, X.len, 1.5); }
+    return;
+  }
+  if(X.stage === 'stuck'){ X.wt++; if(X.wt >= X.len){ X.stuck = 0; nineDone(s); } }
+}
+BOSS_PICK.nine = {
+  tags:{ nine:['ground', 'far'], ninebike:['ground', 'wall'], ninecrew:['ground', 'platform'], nineyah:['close', 'air'], nineboot:['close', 'ground'], ninegrind:['platform', 'air', 'far'] },
+  moves:(s, ph) => { const m = ['nine', 'ninecrew', 'nineyah']; if(nineGrindPlat(fighters.find(f=>f.you) || fighters[0])) m.push('ninegrind'); if(ph >= 2) m.push('ninebike', 'nineboot'); return m; },
+  busy:(s) => !!s._sx
+};
+BOSS_EXTRA.Nine = ['ninebike', 'ninecrew', 'nineyah', 'nineboot', 'ninegrind'];
+BOSS_TELLS.nine = {
+  nine:{ pose:'coil', glow:'#6ea9fd', beats:2 }, ninebike:{ pose:'crouch', glow:'#ff8a2a', beats:2 }, ninecrew:{ pose:'rear', glow:'#2e4a9e', beats:3 },
+  nineyah:{ pose:'crouch', glow:'#ffffce', beats:1 }, nineboot:{ pose:'shake', glow:'#8d8f98', beats:3 }, ninegrind:{ pose:'lunge', glow:'#fed629', beats:2 }, _:{ pose:'crouch', glow:'#6ea9fd', beats:2 }
+};
+BOSS_SPRITE_SRC.nine = 'assets/sprites/nine.png'; BOSS_SPRITE_SRC.ninechill = 'assets/sprites/nine-chill.png'; BOSS_SPRITE_SRC.nineskate = 'assets/sprites/nine-skate.png';
+BOSS_SPRITE_SRC.ninetubular = 'assets/sprites/nine-tubular.png'; BOSS_SPRITE_SRC.nineyah = 'assets/sprites/nine-booyah.png'; BOSS_SPRITE_SRC.nineannoyed = 'assets/sprites/nine-annoyed.png';
+BOSS_SPRITE_SRC.ninescared = 'assets/sprites/nine-scared.png'; BOSS_SPRITE_SRC.ninecry = 'assets/sprites/nine-cry.png'; BOSS_SPRITE_SRC.nineboard = 'assets/sprites/nine-board.png';
+BOSS_SPRITE_SRC.ninecrew = 'assets/sprites/nine-crew.png'; BOSS_SPRITE_SRC.nineglasses = 'assets/sprites/nine-glasses.png';
+// ---- drawing: what the body does (boss frame), the world's props, shots (the ending's carrier), a drawn body for the frames before the renders load -----------------------------------------------
+function nineImg(c, key, x, y, h, flip, rot, a){
+  const im = bossImage(key); if(!im) return false;
+  const w = h*im.naturalWidth/im.naturalHeight;
+  c.save(); c.translate(x, y); if(rot) c.rotate(rot); if(flip) c.scale(-1, 1); if(a != null) c.globalAlpha *= a; c.drawImage(im, -w/2, -h/2, w, h); c.restore(); return true;
+}
+function nineCrewBoard(c, x, y, dir, a){
+  if(nineImg(c, 'ninecrew', x, y, 56, dir > 0, 0, a)) return;
+  c.save(); c.translate(x, y); c.globalAlpha *= a; c.fillStyle = '#2e4a9e'; c.strokeStyle = '#141c3a'; c.lineWidth = 3;
+  c.beginPath(); c.rect(-48, -14, 96, 28); c.fill(); c.stroke(); c.fillStyle = '#fff'; for(const q of [-14, 14]){ c.beginPath(); c.arc(q, -2, 8, 0, 7); c.fill(); c.stroke(); } c.fillStyle = '#111'; for(const q of [-14, 14]){ c.beginPath(); c.arc(q + dir*2, -2, 3, 0, 7); c.fill(); }
+  c.fillStyle = '#141c3a'; for(const q of [-30, 30]){ c.beginPath(); c.arc(q, 16, 7, 0, 7); c.fill(); } c.restore();
+}
+function nineTell(s){
+  const Z = nineHz(s), X = s._sx, R = s._baseR || s.r, d = s.face < 0 ? -1 : 1, kind = s._telKind, tl = s._tl || 40, t = hazardT, gy = groundY() - s.y;
+  const e = s._tel > 0 ? tl - s._tel : 0, u = s._tel > 0 ? clamp(e/tl, 0, 1) : 0, g = s._tel > 0 ? growK(e + 1) : 0;
+  ctx.save();
+  if(s._xposeT > 0){ const pu = 0.5 + 0.5*Math.sin(t*0.22), gr = ctx.createRadialGradient(0, 0, R*0.2, 0, 0, R*1.3); gr.addColorStop(0, 'rgba(255,255,206,' + (0.35 + 0.25*pu) + ')'); gr.addColorStop(1, 'rgba(255,255,206,0)'); ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(0, 0, R*1.3, 0, 7); ctx.fill(); }
+  if(s._tel > 0){
+    if(kind === 'nine'){   // sparks and dust at the wheels as it gathers
+      if(e > 26) for(let i = 0; i < 3; i++){ const q = (t*0.2 + i*0.33) % 1; ctx.fillStyle = i % 2 ? '#fed629' : '#ffffce'; ctx.fillRect(-d*R*0.6 - d*q*30 + Math.sin(i*3)*8, gy - 8 - q*22, 4, 3); }
+    } else if(kind === 'ninecrew'){   // dust blows in from the far side
+      ctx.fillStyle = '#6a6a82'; for(let i = 0; i < 6; i++){ const q = (t*0.03 + i*0.17) % 1; ctx.globalAlpha = 0.5*g*(1 - q); ctx.fillRect(d*(R*0.6 + q*R*1.8), gy - 10 - (i % 3)*7, 5, 3); } ctx.globalAlpha = 1;
+    } else if(kind === 'ninegrind'){ ctx.globalAlpha = g*0.8; for(let i = 0; i < 3; i++){ ctx.fillStyle = '#fed629'; ctx.fillRect(-d*R*0.5 + (i - 1)*14, gy - 7, 4, 3 + (t >> 1) % 3); } ctx.globalAlpha = 1;
+    } else if(kind === 'nineboot'){   // pebbles and dust shaken loose over the spot
+      const tn = s._tn; ctx.restore(); ctx.save(); ctx.translate(-s.x, -s.y); if(tn) bossGrit(tn.sx - 70, tn.sx + 70, tn.sy - 420, tn.sy - 40, u, '#8d8f98'); ctx.restore(); ctx.save();
+    } else if(kind === 'nineyah' && s._tn && e > tl - 24){ ctx.globalAlpha = 0.5; }
+    if(kind === 'nine' && e > tl - 4){ ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; const gx = d*R*0.2, gy2 = -R*0.35; ctx.beginPath(); ctx.moveTo(gx - 10, gy2); ctx.lineTo(gx, gy2 - 3); ctx.lineTo(gx + 10, gy2); ctx.lineTo(gx, gy2 + 3); ctx.closePath(); ctx.fill(); }   // the glint on the glasses: "now"
+  }
+  if(nineIntro(s) && hazardT - Z.in >= 68){ const q = growK(hazardT - Z.in - 67); ctx.globalAlpha = q; ctx.fillStyle = '#fff'; const gx = s.face*R*0.18, gy2 = -R*0.35; ctx.beginPath(); ctx.moveTo(gx - 16*q, gy2); ctx.lineTo(gx, gy2 - 5*q); ctx.lineTo(gx + 16*q, gy2); ctx.lineTo(gx, gy2 + 5*q); ctx.closePath(); ctx.fill(); }
+  ctx.restore();
+  // the body's own motion carries on to the art
+  if(nineIntro(s) && Z.fl > 0){ ctx.rotate(d*Z.fl*Math.PI*2); }
+  else if(X && X.k === 'yah' && X.stage === 'fly'){ const fl = X.t; if(fl >= NINE.yah.flip[0] && fl <= NINE.yah.flip[1]) ctx.rotate(d*(fl - NINE.yah.flip[0])/(NINE.yah.flip[1] - NINE.yah.flip[0])*Math.PI*2); }
+  else if(X && X.k === 'yah' && X.stage === 'wait'){ ctx.translate(0, R*0.12); ctx.scale(1.1, 0.84); }
+  else if(X && X.k === 'grind' && X.stage === 'arc'){ ctx.rotate(X.ed*clamp(X.at/NINE.grind.arc, 0, 1)*0.7); }
+  else if(X && X.k === 'wipe'){
+    const B = NINE.board, tu = X.t; let rot, dy = 0;
+    if(tu < B.tumble){ rot = X.dir*tu/B.tumble*Math.PI*4; dy = -R*0.15*Math.sin(tu/B.tumble*Math.PI); } else if(tu < X.len - B.rise){ rot = X.dir*Math.PI*0.5; dy = R*0.42; } else { const q = (tu - (X.len - B.rise))/B.rise; rot = X.dir*Math.PI*0.5*(1 - q); dy = R*0.42*(1 - q); }
+    ctx.translate(0, dy); ctx.rotate(rot);
+  } else if(X && X.stuck){ ctx.translate(0, R*0.2); ctx.scale(1.12, 0.8); }
+  else if(X && X.k === 'bike' && X.stage !== 'ride'){ ctx.translate(0, R*0.25); ctx.scale(1.05, 0.85); }
+  else if(X && X.k === 'beat'){ ctx.translate(Math.sin(t*0.8)*2, 0); }
+  const k = R/s.r; if(k < 0.999) ctx.scale(k, k);
+}
+function nineBikeDraw(c, x, y, dir, k){   // the motorcycle: two wheels, a frame, a headlight, flames
+  c.save(); c.translate(x, y); c.scale(dir*k, k); c.fillStyle = '#2a2a34'; c.strokeStyle = '#111'; c.lineWidth = 3;
+  for(const wx of [-36, 40]){ c.beginPath(); c.arc(wx, -22, 22, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#9aa0b4'; c.beginPath(); c.arc(wx, -22, 8, 0, 7); c.fill(); c.fillStyle = '#2a2a34'; }
+  c.fillStyle = '#c8302a'; c.beginPath(); c.moveTo(-40, -26); c.lineTo(-10, -62); c.lineTo(30, -58); c.lineTo(44, -26); c.lineTo(10, -20); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#fff7c8'; c.beginPath(); c.arc(50, -50, 8, 0, 7); c.fill(); c.stroke();
+  c.fillStyle = '#ff8a2a'; c.beginPath(); c.moveTo(-40, -30); c.lineTo(-74 - (hazardT % 4)*3, -22); c.lineTo(-40, -14); c.closePath(); c.fill();
+  c.restore();
+}
+function nineTree(c, x, gy, k, burnt){
+  c.save(); c.translate(x, gy); c.scale(k, k); c.fillStyle = burnt ? '#2a2420' : '#4a3a2a'; c.strokeStyle = '#17120e'; c.lineWidth = 4;
+  c.beginPath(); c.moveTo(-18, 0); c.lineTo(-10, -170); c.lineTo(10, -170); c.lineTo(20, 0); c.closePath(); c.fill(); c.stroke();
+  c.lineWidth = 6; c.beginPath(); c.moveTo(-6, -120); c.lineTo(-52, -190); c.moveTo(6, -140); c.lineTo(56, -214); c.moveTo(0, -165); c.lineTo(-14, -230); c.stroke();
+  if(burnt){ c.fillStyle = '#ff8a2a'; c.globalAlpha = 0.6; c.beginPath(); c.arc(0, -20, 16 + (hazardT % 6), 0, 7); c.fill(); }
+  c.restore();
+}
+function nineFx(s){
+  if(!(s.hp > 0)) return;
+  const Z = nineHz(s), X = s._sx, t = hazardT, gy = groundY(), N = NINE;
+  if(Z.tr){ const g = growK(t - Z.tr[1] + 1); if(g > 0) nineTree(ctx, Z.tr[0], gy, g, Z.tr[2] > 0); }
+  const tn = s._tn;
+  if(s._tel > 0 && tn){
+    const e = s._tl - s._tel;
+    if(tn.k === 'ninebike' && e > 14){ const g = growK(e - 13); nineBikeDraw(ctx, s.x, gy, tn.bdir, g); if(e > 20){ const gl = ctx.createRadialGradient(s.x + tn.bdir*50, gy - 50, 4, s.x + tn.bdir*50, gy - 50, 90*g); gl.addColorStop(0, 'rgba(255,247,200,0.8)'); gl.addColorStop(1, 'rgba(255,247,200,0)'); ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(s.x + tn.bdir*50, gy - 50, 90*g, 0, 7); ctx.fill(); } }
+    if(tn.k === 'nineboot'){ const k = clamp(e/N.tl.nineboot, 0, 1), g = growK(e + 1); ctx.save(); ctx.globalAlpha = 0.18 + 0.3*k; ctx.fillStyle = '#000'; ctx.translate(tn.sx, tn.sy - 3); ctx.scale(g, g); ctx.beginPath(); ctx.ellipse(0, 0, 84, 16, 0, 0, 7); ctx.ellipse(40, 2, 50, 12, 0, 0, 7); ctx.fill(); ctx.restore(); }
+    if(tn.k === 'nineyah' && e > 0){ /* the shadow comes with the take-off (below) */ }
+    if(tn.k === 'ninegrind' && tn.plat){ const p = tn.plat, g = growK(e + 1); ctx.save(); ctx.globalAlpha = 0.55*g; ctx.strokeStyle = '#ffffce'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(p.x, p.y - 2); ctx.lineTo(p.x + p.w, p.y - 2); ctx.stroke(); ctx.restore(); }
+  }
+  if(!X) return;
+  if(X.k === 'run'){   // the three-colour ribbon behind the board
+    const len = Math.min(24*X.v, Math.abs(s.x - X.x0)), d = X.dir; if(len > 6){ for(let i = 0; i < 3; i++){ ctx.fillStyle = ['#fed629', '#ffffce', '#6ea9fd'][i]; const g = ctx.createLinearGradient(s.x, 0, s.x - d*len, 0); g.addColorStop(0, ctx.fillStyle); g.addColorStop(1, 'rgba(255,255,255,0)'); ctx.save(); ctx.fillStyle = g; ctx.fillRect(Math.min(s.x, s.x - d*len), gy - 8 - i*5, len, 4); ctx.restore(); } }
+  }
+  if(X.k === 'wipe' && X.from === 'run'){ const tu = X.t, sk = X.v0*(1 - Math.pow(0.9, tu))/0.1; nineImg(ctx, 'nineboard', s.x + X.dir*(60 + sk*0.4), gy - 14, 44, X.dir < 0, tu*0.3*X.dir, Math.min(1, (X.len - tu)/10 + 0.5)); }
+  if(X.k === 'bike' && X.stage === 'ride'){ nineBikeDraw(ctx, s.x, gy, X.dir, 1); }
+  if(X.k === 'bike' && X.stage !== 'ride'){
+    if(X.bt <= N.bike.blastF + 8){ const q = X.bt/(N.bike.blastF + 8); ctx.save(); ctx.globalAlpha = 0.85*(1 - q); const gr = ctx.createRadialGradient(X.tree, gy - 60, 6, X.tree, gy - 60, N.bike.blastR*(0.6 + q*0.5)); gr.addColorStop(0, '#fff2b0'); gr.addColorStop(0.5, '#ff8a2a'); gr.addColorStop(1, 'rgba(255,60,20,0)'); ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(X.tree, gy - 60, N.bike.blastR*(0.6 + q*0.5), 0, 7); ctx.fill(); ctx.restore(); }
+    for(const p of X.sh) if(p.on){ ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.t*0.4); ctx.fillStyle = '#c8302a'; ctx.strokeStyle = '#111'; ctx.lineWidth = 2; ctx.fillRect(-12, -7, 24, 14); ctx.strokeRect(-12, -7, 24, 14); ctx.restore(); }
+  }
+  if(X.k === 'crew'){
+    for(const b of X.boards){ if(!b.on || X.t < b.st) continue; if(b.mode !== 'wait') nineCrewBoard(ctx, b.x, b.y - 4, b.dir, growK(X.t - b.st + 1)*(b.lane && !b.arm ? 0.6 : 1)); }
+  }
+  if(X.k === 'yah' && X.stage === 'fly'){ const u = X.t/X.T; nineShadow(X.x1, X.sy, 76, u*u); }
+  if(X.k === 'yah' && X.stage === 'wait'){ nineShadow(X.sx != null ? X.sx : s.x, X.sy, 76, 0.2); }
+  if(X.k === 'boot'){
+    X.boots.forEach((b, i) => {
+      const u = X.t - b.st; if(u < -N.boot.lockF - 12) return;
+      if(u < N.boot.fall){ const k = clamp((u + N.boot.lockF + 12)/(N.boot.lockF + 12 + N.boot.fall), 0, 1); ctx.save(); ctx.globalAlpha = 0.18 + 0.3*k; ctx.fillStyle = '#000'; ctx.translate(b.x, b.sy - 3); const g = growK(u + N.boot.lockF + 13); ctx.scale(g, g); ctx.beginPath(); ctx.ellipse(0, 0, 84, 16, 0, 0, 7); ctx.ellipse(40, 2, 50, 12, 0, 0, 7); ctx.fill(); ctx.restore(); }
+      if(u < 0) return;
+      const P = nineBootPos(b, u); if(!P.vis) return;
+      ctx.save(); ctx.translate(P.x, P.y); if(b.dir < 0) ctx.scale(-1, 1); ctx.rotate(P.a); ctx.globalAlpha = P.sink ? 1 - P.sink : 1; sixBoot(ctx, 1.25); ctx.restore();
+    });
+  }
+  if(X.k === 'grind'){
+    if(X.stage === 'rail' || X.stage === 'ramp'){ ctx.save(); ctx.globalAlpha = 0.8; ctx.fillStyle = '#fed629'; for(let i = 0; i < 4; i++){ ctx.fillRect(s.x - X.ed*(14 + i*8), (X.stage === 'rail' ? X.plat.y : s.y + s.r) - 3 - (i % 2)*3, 4, 3); } ctx.restore(); }
+    if(X.stage === 'arc'){ nineShadow(X.sx, X.sy, 72, clamp(X.at/N.grind.arc, 0, 1)); }
+    if(X.stage === 'rail' && X.lk){ nineShadow(X.sx, X.sy, 72, 0.15); }
+  }
+}
+// the ending: a carrier that draws the whole scene from the clock (Nine is gone from the fight by then)
+function nineShotDraw(pr){
+  const k = pr.nine; if(!k) return false;
+  if(k === 'end'){ nineEndDraw(pr); return true; }
+  return false;
+}
+function nineBody(s, R, body, flash){   // a drawn Nine until the renders load: a white 9-shaped body, sunglasses, on a deck with wheels
+  const r = s._baseR || R;
+  ctx.fillStyle = '#6ea9fd'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.beginPath(); ctx.rect(-r*0.8, r*0.78, r*1.6, r*0.14); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#2a2a34'; for(const sx of [-1, 1]){ ctx.beginPath(); ctx.arc(sx*r*0.55, r*1.0, r*0.11, 0, 7); ctx.fill(); }
+  ctx.fillStyle = flash ? '#fff' : '#dde2ec'; ctx.beginPath(); ctx.arc(0, -r*0.25, r*0.5, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(r*0.4, -r*0.2); ctx.lineTo(r*0.45, r*0.7); ctx.lineTo(r*0.0, r*0.78); ctx.lineTo(r*0.0, r*0.1); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#111'; ctx.fillRect(-r*0.38, -r*0.42, r*0.76, r*0.2); ctx.fillStyle = '#fed629'; ctx.fillRect(-r*0.3, -r*0.4, r*0.18, r*0.05);
+  ctx.strokeStyle = '#1c1c1c'; ctx.beginPath(); ctx.arc(0, -r*0.12, r*0.18, 0.2, Math.PI - 0.2); ctx.stroke();
+  return true;
+}
+// ---- his ending: the last hit pops Nine up, the board and the glasses fly off, a drop tower grows up and Nine lands seated on it, the glasses come back and are thrown at the down button, the ring drops
+// a little and an orange glow rises along the floor (the 3,517,000 special's gag, and the first seed of the lava that belongs to the last boss). No text.
+function nineEndSweep(b){ projectiles = projectiles.filter(p => !p.nine); if(b){ b._sx = null; b._tn = null; } }
+function nineEndBegin(b){
+  addProj({ owner:-2, ownerObj:{ team:-1, idx:-2 }, x:b.x, y:-5000, vx:0, vy:0, r:0, dmg:0, kb:0, grav:false, color:b.color, life:1, delay:NINE.end.total + 1, noAim:true,
+    nine:'end', algShot:'nine', et0:hazardT, ex:Math.round(b.x), ey:Math.round(b.y), ef:b.face < 0 ? -1 : 1, er:Math.round(b._baseR || b.r) });
+}
+function nineEndDraw(pr){
+  const E = NINE.end, u = hazardT - pr.et0, gy = groundY(); if(!(u >= 0) || u > E.total) return;
+  const R = pr.er, f = pr.ef, tx = pr.ex, seat = gy - 300, fade = 1 - clamp((u - (E.total - 14))/14, 0, 1);
+  ctx.save(); ctx.globalAlpha = fade;
+  // the tower: a pole and a ring seat, grown over frames 4-28
+  const tk = clamp((u - 4)/24, 0, 1), ringDrop = u > 74 ? 26*clamp((u - 74)/10, 0, 1) : 0;
+  ctx.fillStyle = '#b8bcc8'; ctx.strokeStyle = '#2a2f3d'; ctx.lineWidth = 4;
+  ctx.fillRect(tx - 12, gy - 330*tk, 24, 330*tk); ctx.strokeRect(tx - 12, gy - 330*tk, 24, 330*tk);
+  if(tk > 0.9){ const sy = seat + ringDrop; ctx.fillStyle = '#d8402a'; ctx.beginPath(); ctx.ellipse(tx, sy, 64, 12, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#8a8f9c'; ctx.fillRect(tx + 12, sy + 20, 16, 20); ctx.strokeRect(tx + 12, sy + 20, 16, 20); ctx.fillStyle = u > 68 ? '#e84a2a' : '#c8302a'; ctx.beginPath(); ctx.arc(tx + 20, sy + 30, 4, 0, 7); ctx.fill(); }
+  // Nine: popped up, lands seated
+  const up = clamp(u/24, 0, 1), sx = pr.ex, sit = seat + ringDrop - R*0.78, ny = u < 24 ? pr.ey + (seat - 160 - R - pr.ey)*Math.sin(up*Math.PI/2) : (u < 40 ? (seat - 160 - R) + (sit - (seat - 160 - R))*clamp((u - 24)/16, 0, 1)*clamp((u - 24)/16, 0, 1) : sit);
+  if(!nineImg(ctx, 'ninescared', sx, ny, R*2.0, f < 0, u < 24 ? f*u*0.25 : 0, 1)){ ctx.fillStyle = '#dde2ec'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(sx, ny, R*0.7, 0, 7); ctx.fill(); ctx.stroke(); }
+  // the board and the glasses, flung off
+  if(u < 56){ const q = u, bx = tx - f*(80 + q*9), by = pr.ey - 40 - 150*q/20 + 0.5*0.6*q*q; nineImg(ctx, 'nineboard', bx, Math.min(by, gy - 22), 46, false, q*0.2, 1); }
+  else { nineImg(ctx, 'nineboard', tx - f*(80 + 56*9), gy - 22, 46, false, 11.2, 1); }
+  const gx0 = tx + f*40, gyy = ny - R*0.3;
+  if(u < 44){ const q = u, gx = gx0 + f*q*7, gy3 = gyy - 120*q/10 + 0.5*0.55*q*q; nineImg(ctx, 'nineglasses', gx, Math.min(gy3, gy - 12), 26, false, q*0.3, 1); }
+  else if(u < 58){ const q = (u - 44)/14, hx = sx + f*R*0.4, hy = sit - R*0.2; nineImg(ctx, 'nineglasses', hx, hy - 60*(1 - q), 26, false, 0, 1); }   // they come back down into Nine's hand
+  else if(u < 72){ const q = (u - 58)/14, bx = sx + f*R*0.4 + (tx + 20 - (sx + f*R*0.4))*q, by = sit - R*0.2 + (seat + 30 - (sit - R*0.2))*q - 40*Math.sin(q*Math.PI); nineImg(ctx, 'nineglasses', bx, by, 26, false, q*6, 1); }
+  // the glow along the floor
+  if(u > 78){ const q = clamp((u - 78)/30, 0, 1), pulse = 0.85 + 0.15*Math.sin(u*0.3); const gr = ctx.createLinearGradient(0, gy, 0, gy - 90*q); gr.addColorStop(0, 'rgba(255,120,30,' + (0.55*pulse) + ')'); gr.addColorStop(1, 'rgba(255,120,30,0)'); ctx.fillStyle = gr; ctx.fillRect(tx - 700, gy - 90*q, 1400, 90*q); }
+  ctx.restore();
+}
+BOSS_ENDINGS.nine = { sweep: nineEndSweep, begin: nineEndBegin, holdMs: NINE.end.hold };
+// ---- the Skate Park at dusk: indigo to pink, stars, a ringed planet far back, string lights, a collapsed loop, quarter-pipes, a rail on every platform. Act 2: the planet cracks into five pieces and drifts, the lights
+// go out one by one across 6 seconds and the pink drains to violet. Decor only; no hazard.
+BOSS_ARENA_SKY.skatepark = ['#1b1450', '#e0609a'];
+BOSS_ARENA_GROUND.skatepark = { fill:'#5b5f73', line:'#2c2f3d', pattern:function(c, gy, x0, x1, bottom){
+  c.save(); c.globalAlpha = 0.85; for(let i = 0; i < 3; i++){ c.fillStyle = ['#fed629', '#ffffce', '#6ea9fd'][i]; for(let x = x0 - (x0 % 60); x < x1; x += 60) c.fillRect(x, gy + 10 + i*7, 36, 3); } c.restore();
+  c.fillStyle = 'rgba(30,32,48,0.35)'; for(let i = 0, n = Math.ceil((x1 - x0)/40); i < n; i++){ const x = x0 + ((i*97.3) % (x1 - x0)), y = gy + 34 + (i*31) % Math.max(10, Math.min(60, bottom - gy - 34)); c.fillRect(x, y, 14, 2); }
+} };
+function nineWorld(fn){ ctx.save(); const z = viewZoom(); ctx.translate(W/2, H/2); ctx.scale(z, z); ctx.translate(-W/2, -H/2); ctx.translate(-camX, -camY); try{ fn(); } finally { ctx.restore(); } }
+function nineRamp(c, x, gy, h, w, dir){   // x is the wall (tall) side, the curve runs out toward x + dir*w and meets the floor flat
+  c.beginPath(); c.moveTo(x, gy); c.lineTo(x, gy - h);
+  for(let i = 0; i <= 14; i++){ const u = i/14; c.lineTo(x + dir*w*u, gy - h*(1 - Math.sqrt(Math.max(0, 1 - (1 - u)*(1 - u))))); }
+  c.lineTo(x + dir*w, gy); c.closePath();
+}
+function nineDecor(s, key){
+  if(key !== 'skatepark') return;
+  const Z = nineHz(s), t = hazardT, gy = groundY(), p2 = Z.p2 != null ? t - Z.p2 : -1, drain = p2 > 0 ? clamp(p2/180, 0, 1) : 0;
+  if(drain > 0){ const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, 'rgba(60,30,120,' + 0.35*drain + ')'); g.addColorStop(1, 'rgba(90,40,150,' + 0.5*drain + ')'); ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40); }
+  ctx.save(); ctx.fillStyle = '#fff';   // stars
+  for(let i = 0; i < 40; i++){ const x = (i*271 - camX*0.03 % 1) % (W + 40), y = (i*113) % (H*0.55); ctx.globalAlpha = 0.35 + 0.35*Math.sin(t*0.03 + i); ctx.fillRect(x < 0 ? x + W : x, y, 2, 2); }
+  ctx.restore();
+  ctx.save();   // the ringed planet, far back (cracks into five pieces in act 2)
+  const px = W*0.74 - camX*0.04, py = H*0.24, pr = 52;
+  const piece = (a0, a1, dx, dy) => { ctx.save(); ctx.translate(px + dx, py + dy); ctx.fillStyle = '#c987c8'; ctx.strokeStyle = 'rgba(70,40,90,0.7)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, pr, a0, a1); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); };
+  const dk = p2 > 0 ? clamp(p2/60, 0, 1) : 0;
+  if(dk <= 0){ ctx.fillStyle = '#c987c8'; ctx.strokeStyle = 'rgba(70,40,90,0.7)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(px, py, pr, 0, 7); ctx.fill(); ctx.stroke(); ctx.strokeStyle = 'rgba(255,230,255,0.7)'; ctx.lineWidth = 5; ctx.beginPath(); ctx.ellipse(px, py, pr*1.7, pr*0.32, -0.3, 0, 7); ctx.stroke(); }
+  else { for(let i = 0; i < 5; i++){ const a0 = i*1.2566, a1 = a0 + 1.2566, am = (a0 + a1)/2; piece(a0, a1, Math.cos(am)*26*dk + Math.sin(t*0.01 + i)*dk*3, Math.sin(am)*26*dk + Math.cos(t*0.012 + i)*dk*3); } }
+  ctx.restore();
+  nineWorld(() => {
+    ctx.save(); ctx.strokeStyle = 'rgba(40,30,70,0.7)'; ctx.lineWidth = 10;   // the collapsed loop, far background (a broken ring)
+    const lx = WW*0.62, ly = gy - 20; ctx.beginPath(); ctx.arc(lx, ly - 150, 150, Math.PI*0.9, Math.PI*2.35); ctx.stroke(); ctx.beginPath(); ctx.arc(lx + 40, ly - 12, 28, 0, Math.PI); ctx.stroke(); ctx.restore();
+    ctx.fillStyle = '#6a6e86'; ctx.strokeStyle = '#2c2f3d'; ctx.lineWidth = 4;   // quarter-pipes at the stage ends and every 1,100 px
+    nineRamp(ctx, 0, gy, 120, 190, 1); ctx.fill(); ctx.stroke(); nineRamp(ctx, WW, gy, 120, 190, -1); ctx.fill(); ctx.stroke();
+    for(let x = 1100; x < WW - 600; x += 1100){ ctx.globalAlpha = 0.9; nineRamp(ctx, x, gy, 80, 150, 1); ctx.fill(); ctx.stroke(); ctx.globalAlpha = 1; }
+    // string lights across the back; they go out one by one in act 2
+    const n = 24, off = p2 > 0 ? Math.floor(p2/(360/n)) : 0;
+    ctx.strokeStyle = 'rgba(20,16,40,0.8)'; ctx.lineWidth = 2; ctx.beginPath(); for(let i = 0; i <= 60; i++){ const x = WW*i/60, y = gy - 440 + 36*Math.sin(i/60*Math.PI*6); if(i) ctx.lineTo(x, y); else ctx.moveTo(x, y); } ctx.stroke();
+    for(let i = 0; i < n; i++){ const x = WW*(i + 0.5)/n, y = gy - 440 + 36*Math.sin((i + 0.5)/n*Math.PI*6) + 8, order = (i*7) % n, lit = order >= off; ctx.fillStyle = lit ? ['#fed629', '#ffffce', '#6ea9fd', '#ff6aa0'][i % 4] : '#2a2440'; ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fill(); }
+    for(const p of worldPlats){   // a rail along every platform, and a quarter-pipe at each end of a long one
+      if(p.wall || p.solid) continue;
+      ctx.strokeStyle = '#d8dce8'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(p.x, p.y - 12); ctx.lineTo(p.x + p.w, p.y - 12); ctx.stroke(); ctx.lineWidth = 3; for(const fx of [0.06, 0.94]){ ctx.beginPath(); ctx.moveTo(p.x + p.w*fx, p.y - 12); ctx.lineTo(p.x + p.w*fx, p.y); ctx.stroke(); }
+      { const rw = nineRampW(p); ctx.fillStyle = '#7a7e96'; ctx.strokeStyle = '#2c2f3d'; ctx.lineWidth = 4; nineRamp(ctx, p.x, gy, gy - p.y, rw, -1); ctx.fill(); ctx.stroke(); nineRamp(ctx, p.x + p.w, gy, gy - p.y, rw, 1); ctx.fill(); ctx.stroke(); }
+    }
+    const gs = s._sx && s._sx.k === 'grind' ? s._sx : (s._tel > 0 && s._tn && s._tn.k === 'ninegrind' ? s._tn : null);
+    if(gs && gs.plat){ ctx.save(); ctx.globalAlpha = 0.5; ctx.strokeStyle = '#ffffce'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(gs.plat.x, gs.plat.y - 12); ctx.lineTo(gs.plat.x + gs.plat.w, gs.plat.y - 12); ctx.stroke(); ctx.restore(); }
+  });
+}
 // @boss:nine:end algcode
 
 // @boss:six:begin algcode
