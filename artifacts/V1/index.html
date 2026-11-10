@@ -24550,7 +24550,10 @@ function setupWorld(){
 //  with ledges over it, a small CAVE inside (a drop hole in the grass, a hole in its floor, and a doorway out each side) and LEDGES HANGING UNDER
 //  it, with a climb back up outside. BRIDGES of planks join them (stairs of planks up to a high island, a flat one under the high ones); planks
 //  CRACK, BREAK and MEND. In the middle a CLUSTER: a drifting item island, a parkour of small stones climbing to it from the bridge below, and a
-//  perch above it to drop from. A hard fall hurts. DRM is this match's state (null everywhere else, so every di* hook does nothing elsewhere).
+//  perch above it to drop from. A hard fall hurts. v3 (the owner: more vertical, CTF-like richness): a PENTHOUSE islet above each team island, joined
+//  by a SCAFFOLD tower of stepping platforms; a SANCTUM of terraces high over the middle, reached only by CATAPULT pads (a charge, then a fixed flight
+//  that always lands on the sanctum: nobody is ever flung into the sea or a KO line), with a private healing area: the first team in holds it for 20 s,
+//  then it closes for 40 s. DRM is this match's state (null everywhere else, so every di* hook does nothing elsewhere).
 //  setupWorld stays PURE: diBuild reads only the match settings. The drifting islands are STG movers (the match's own frame count, riders carried,
 //  mv rows to a guest, like Yoyle Needle's ledges); a plank that breaks leaves worldPlats (a guest gets the new geometry), and one about to mend
 //  comes back as a ghost (p.ghost: drawn, not stood on: platRects). The CPUs walk a surface graph (diNavBuild: walk, hop and drop edges between
@@ -24558,7 +24561,8 @@ function setupWorld(){
 // ============================================================
 const DIK = { plank:60, stairStep:40, crack:18, rebuild:300, tell:80, breakGap:90, maxBroken:2, hitDmg:6, landVy:16, hardDrop:260,
   fallMin:1.0, fallSpan:1.0, fallBase:3, fallCap:15, healStr:0.5,
-  slab:90, wall:60, shaft:190, hole:150, floorY:250, floorT:34, doorY:160, l3:340, rise:95, stone:90, climbR:480, stairHz:960, isleW:560, teamW:640, gapC:780, margin:150 };
+  slab:90, wall:60, shaft:190, hole:150, floorY:250, floorT:34, doorY:160, l3:340, rise:95, stone:90, climbR:480, stairHz:960, isleW:560, teamW:640, gapC:780, margin:150,
+  grow:1.1, yt:1000, pentUp:545, sanUp:945, catCharge:25, healRate:0.15, healOpen:1200, healCool:2400 };
 function diWanted(){
   return SETTINGS.mode === 'teams' && !!(stage && stage.stg === 'isles') && !CUSTOM_LEVEL && !TESTMODE.active && !(typeof TUT !== 'undefined' && TUT.active)
     && !RACE.active && !ONEFIGHT.active && !COBSFIGHT.active;
@@ -24584,13 +24588,13 @@ function diIsle(P, x0, top, w, team, ix){
   S(x0 + wl/2 - 70, top - 95, 140, 'gplat'); S(x1 - wl/2 - 70, top - 95, 140, 'gplat'); S(cx - 75, top - 190, 150, 'gplat');   // over the grass
   const spawns = [];
   for(let k = 0; k < 3; k++){ spawns.push({ x:Math.round(x0 + wl*(k + 1)/4), y:top - 30, used:0 }); spawns.push({ x:Math.round(x1 - wl*(k + 1)/4), y:top - 30, used:0 }); }
-  return { x:x0, y:top, w, team, x1, cx, wl, spawns };
+  return { x:x0, y:top, w, team, x1, cx, wl, spawns, ix };
 }
 function diBuild(){
   const K = DIK, tc = Math.max(2, Math.min(4, (SETTINGS.teamKey || '').split('v').filter(Boolean).length || 2)), sz = diSize();
   const G = K.margin, TW = K.teamW, IW = K.isleW, HZ = K.stairHz, R = K.climbR, GC = K.gapC;
   const need = tc === 2 ? 2*G + 2*TW + IW + 2*GC : tc === 3 ? 2*G + 3*IW + 2*HZ : 2*G + 4*IW + 2*HZ + GC;
-  WW = Math.max(sz.WW, need); WH = sz.WH; camX = 0; camY = 0; floors = []; worldZones = []; spawnZones = []; bases = []; SIDE_ROOM = 0; FLOOR_SEGS = [];
+  WW = Math.max(Math.round(sz.WW*K.grow), need); WH = Math.round(sz.WH*K.grow);   // the generic Teams size and a margin of 10% (the owner: "very slightly bigger") camX = 0; camY = 0; floors = []; worldZones = []; spawnZones = []; bases = []; SIDE_ROOM = 0; FLOOR_SEGS = [];
   const P = [], bridges = [], drifts = [], infos = [];
   const bridge = (xa, ya, xb, yb, stairs)=>{
     const n = stairs ? Math.max(2, Math.ceil(Math.abs(yb - ya)/K.stairStep)) : Math.max(2, Math.round((xb - xa)/K.plank)), pw = (xb - xa)/n, Bg = { planks:[], last:-1e9 };
@@ -24612,23 +24616,23 @@ function diBuild(){
   };
   let sea = 0;
   if(tc === 2){
-    const gap = (WW - 2*G - 2*TW - IW)/2, Y0 = Math.round(WH*0.46);
+    const gap = (WW - 2*G - 2*TW - IW)/2, Y0 = K.yt;
     const A = diIsle(P, G, Y0, TW, 0, 0), N = diIsle(P, G + TW + gap, Y0 + 60, IW, -1, 1), Bt = diIsle(P, G + TW + gap + IW + gap, Y0, TW, 1, 2);
     infos.push(A, N, Bt);
     const b0 = bridge(A.x1, Y0, N.x, Y0 + 60, false), b1 = bridge(N.x1, Y0 + 60, Bt.x, Y0, false);
     cluster((A.x1 + N.x)/2, Math.round(Y0 + 30)); cluster((N.x1 + Bt.x)/2, Math.round(Y0 + 30));
     sea = Y0 + 60 + 354;
   } else {
-    const Yt = Math.round(WH*0.26), Yb = Yt + R, deck = Yb + K.l3;
+    const Yt = K.yt, Yb = Yt + R, deck = Yb + K.l3;
     if(tc === 3){
-      const x0 = Math.round((WW - (3*IW + 2*HZ))/2);
-      const BL = diIsle(P, x0, Yb, IW, 0, 0), T = diIsle(P, x0 + IW + HZ, Yt, IW, 2, 1), BR = diIsle(P, x0 + 2*IW + 2*HZ, Yb, IW, 1, 2);
+      const HZ3 = Math.round((WW - 2*G - 3*IW)/2), x0 = G;   // the width left over goes into the stairs
+      const BL = diIsle(P, x0, Yb, IW, 0, 0), T = diIsle(P, x0 + IW + HZ3, Yt, IW, 2, 1), BR = diIsle(P, x0 + 2*IW + 2*HZ3, Yb, IW, 1, 2);
       infos.push(BL, T, BR);
       bridge(BL.x1, Yb, T.x, Yt, true); bridge(T.x1, Yt, BR.x, Yb, true);
       bridge(BL.cx + 170, deck, BR.cx - 170, deck, false);
     } else {
-      const x0 = Math.round((WW - (4*IW + 2*HZ + GC))/2);
-      const BL = diIsle(P, x0, Yb, IW, 2, 0), TL = diIsle(P, x0 + IW + HZ, Yt, IW, 0, 1), TR = diIsle(P, x0 + 2*IW + HZ + GC, Yt, IW, 1, 2), BR = diIsle(P, x0 + 3*IW + 2*HZ + GC, Yb, IW, 3, 3);
+      const slack = WW - need, HZ4 = HZ + Math.floor(slack*0.35), GC4 = WW - 2*G - 4*IW - 2*HZ4, x0 = G;   // the width left over goes into the stairs and the top gap
+      const BL = diIsle(P, x0, Yb, IW, 2, 0), TL = diIsle(P, x0 + IW + HZ4, Yt, IW, 0, 1), TR = diIsle(P, x0 + 2*IW + HZ4 + GC4, Yt, IW, 1, 2), BR = diIsle(P, x0 + 3*IW + 2*HZ4 + GC4, Yb, IW, 3, 3);
       infos.push(BL, TL, TR, BR);
       bridge(BL.x1, Yb, TL.x, Yt, true); bridge(TL.x1, Yt, TR.x, Yt, false); bridge(TR.x1, Yt, BR.x, Yb, true);
       bridge(BL.cx + 170, deck, BR.cx - 170, deck, false);
@@ -24636,7 +24640,38 @@ function diBuild(){
     cluster(Math.round(WW/2), deck);
     sea = deck + 14;
   }
+  // v3: a penthouse over each team island's outer slab with a scaffold tower up to it, and the sanctum high over the middle
+  const pents = [];
+  for(const o of infos){
+    if(o.team < 0) continue;
+    const sd = (o.x + o.w/2) < WW/2 ? -1 : 1, top = o.y, py = top - K.pentUp, xa = sd < 0 ? o.x + 20 : o.x1 - 240, xb = xa + 220;
+    for(let i = 1; i <= 4; i++){
+      const lx = sd < 0 ? (i % 2 ? o.x + 120 : o.x + 20) : (i % 2 ? o.x1 - 230 : o.x1 - 130);
+      P.push(Object.assign({ x:Math.round(lx), y:top - 95 - 90*i, w:110, h:14, solid:false, floor:0, di:'scaf', ix:o.ix, cl:1 }, i === 1 ? { tw:[Math.round(xa), py, Math.round(xb), top] } : {}));
+    }
+    const pw = 300, px = sd < 0 ? o.x + 10 : o.x1 - 10 - pw;
+    const pent = { x:Math.round(px), y:py, w:pw, h:14, solid:false, floor:0, di:'pent', ix:o.ix }; P.push(pent);
+    const padx = sd < 0 ? px + pw : px - 80;
+    pents.push({ o, sd, pent, padx: Math.round(padx), py });
+  }
+  const sy = K.yt - K.sanUp, scx = Math.round(WW/2), sT = [];
+  for(let i = 0; i < 5; i++) sT.push(Object.assign({ x:scx - 250 + i*100, y:sy + (4 - i)*12, w:100, h:14, solid:false, floor:0, di:i === 0 || i === 4 ? 'cat' : 'san', cl:1 }, {}));
+  P.push(...sT);
+  P.push({ x:scx - 330, y:sy + 48 - 90, w:80, h:140, solid:true, floor:0, di:'rail', cl:1 }, { x:scx + 250, y:sy - 90, w:80, h:140, solid:true, floor:0, di:'rail', cl:1 });
+  const ctT = (x0, y0, tx, ty)=>Math.max(70, Math.min(130, Math.round(Math.hypot(tx - x0, ty - y0)/14)));
+  const pads = [];
+  for(const q of pents){   // each team's pad throws to the middle terrace
+    const tx = scx, ty = sT[2].y, x0 = q.padx + 40, y0 = q.py;
+    const pad = { x:q.padx, y:q.py, w:80, h:14, solid:false, floor:0, di:'cat', ix:q.o.ix, ct:[tx, ty, ctT(x0, y0, tx, ty)], cl:1 };
+    P.push(pad); pads.push(pad);
+  }
+  const penL = pents.slice().sort((a, b)=>a.pent.x - b.pent.x), pL = penL[0], pR = penL[penL.length - 1];
+  sT[0].ct = [pL.pent.x + pL.pent.w/2, pL.py, ctT(sT[0].x + 50, sT[0].y, pL.pent.x + pL.pent.w/2, pL.py)];
+  sT[4].ct = [pR.pent.x + pR.pent.w/2, pR.py, ctT(sT[4].x + 50, sT[4].y, pR.pent.x + pR.pent.w/2, pR.py)];
+  pads.push(sT[0], sT[4]);
+  sT[2].ss = [0, -1, 0];
   worldPlats = P;
+  WH = Math.max(WH, Math.round(sea + 120 + 300));
   // team bases, in team order (a fighter's homeBase is its team number); the base rect is the left grass slab only (the drop hole stays open)
   const mine = infos.filter(o=>o.team >= 0).sort((a, b)=>a.team - b.team);
   for(const o of mine){
@@ -24646,7 +24681,8 @@ function diBuild(){
   for(const d of drifts) worldZones.push({ type:'heal', strength:K.healStr, x:d.x, y:d.y - 60, w:d.w, h:70, di:d });
   STG = { kind:'dream', top:null, t:0, wall:0, movers:drifts, statics:[], soft:[] };
   stgPlace(0);
-  DRM = { teams:tc, t:0, isles:infos, bridges, drifts, all:P.filter(p=>p.di), nav:null, blocked:{}, sea:Math.max(Math.round(WH*0.80), sea + 120), broken:0, mended:0, cracked:0, fallHits:0, fallDmg:0, fallMax:0, plans:0, planFail:0, hopFail:0, failLog:[] };
+  DRM = { teams:tc, t:0, isles:infos, bridges, drifts, all:P.filter(p=>p.di), nav:null, blocked:{}, sea:Math.max(Math.round(WH*0.80), sea + 120), broken:0, mended:0, cracked:0, fallHits:0, fallDmg:0, fallMax:0, plans:0, planFail:0, hopFail:0, failLog:[], pads, launches:0, claims:0, healTot:0,
+    san:{ x0:scx - 150, x1:scx + 150, y0:sy - 140, y1:sy + 100, cx:scx, st:0, own:-1, t:0, p:sT[2] } };
   DRM_VIS = true; DRM_GH = false;
 }
 // every frame, after the drifting islands have moved
@@ -24658,13 +24694,47 @@ function diStep(){
     else if(pl.st === 'broken'){ if(--pl.t <= 0) diTell(pl); }
     else if(pl.st === 'tell'){ if(--pl.t <= 0) diMend(pl); }
   }
+  const S = DRM.san;
+  if(S){
+    if(S.st === 1){ if(--S.t <= 0){ S.st = 2; S.t = K.healCool; S.own = -1; } }
+    else if(S.st === 2){ if(--S.t <= 0){ S.st = 0; S.t = 0; } }
+  }
   for(const f of fighters){
-    if(f.dead){ f._diPl = null; continue; }
+    if(f.dead){ f._diPl = null; f._cat = null; continue; }
+    if(f._cat) continue;                                           // in a catapult flight: nothing else touches it
+    if(S && f.x >= S.x0 && f.x <= S.x1 && f.y + f.r >= S.y0 && f.y + f.r <= S.y1){   // the healing area: the first team in holds it
+      if(S.st === 0){ S.st = 1; S.own = f.team; S.t = K.healOpen; DRM.claims++; }
+      if(S.st === 1 && S.own === f.team && f.pct > 0){ const h = Math.min(f.pct, K.healRate); f.pct -= h; DRM.healTot += h; }
+    }
+    if(f.onground && !(f.hitstun > 0)){   // a catapult pad: stand on it to charge
+      const pd = diPadUnder(f);
+      if(pd){ f._catT = (f._catT || 0) + 1; if(f._catT >= K.catCharge) diLaunch(f, pd); } else f._catT = 0;
+    } else f._catT = 0;
     // a fresh stun with a real hit behind it, taken on a plank: the plank gives
     if(f.hitstun > 0 && !(f._diHS > 0) && f._diPl && (f.pct - (f._diPct || 0)) >= K.hitDmg) diCrack(f._diPl);
     f._diHS = f.hitstun; f._diPct = f.pct;
     f._diPl = f.onground ? diPlankUnder(f) : null;
   }
+  if(S){ const fr = S.st === 1 ? Math.ceil(S.t/150) : S.st === 2 ? Math.ceil(S.t/300) : 0, q = S.p.ss; if(!q || q[0] !== S.st || q[1] !== S.own || q[2] !== fr) S.p.ss = [S.st, S.own, fr]; }   // the healing area's state, as the guest paints it
+}
+function diPadUnder(f){
+  const feet = f.y + f.r;
+  for(const p of DRM.pads) if(f.x >= p.x && f.x <= p.x + p.w && Math.abs(feet - p.y) <= 3) return p;
+  return null;
+}
+function diLaunch(f, pd){
+  const c = pd.ct; f._catT = 0; DRM.launches++;
+  f._cat = { t:0, T:c[2], x0:f.x, y0:f.y, tx:c[0], ty:c[1] - f.r, h:260 };
+  f.onground = false; f.invuln = Math.max(f.invuln, c[2] + 40); f.hitstun = 0;
+  for(let k = 0; k < 10; k++) particles.push({ x:pd.x + pd.w*(k + 0.5)/10, y:pd.y, vx:(k - 4.5)*0.6, vy:-2 - (k % 3), life:26, color:'#ffe9a8', r:3 });
+}
+// a catapult flight, once a frame after the fighter's own step: a fixed arc from the pad to its landing spot, nothing on the way is touched
+function diFlight(f){
+  const c = f._cat; c.t++;
+  const u = Math.min(1, c.t/c.T), nx = c.x0 + (c.tx - c.x0)*u, ny = c.y0 + (c.ty - c.y0)*u - 4*c.h*u*(1 - u);
+  f.vx = nx - f.x; f.vy = ny - f.y; f.x = nx; f.y = ny; f.hitstun = 0; f.dropping = 0; f.invuln = Math.max(f.invuln, 5);
+  if(c.t >= c.T){ f.x = c.tx; f.y = c.ty; f.vx = 0; f.vy = 0; f.onground = true; f.jumps = 2; f._cat = null; f.invuln = Math.max(f.invuln, 45); f._diTop = null; for(let k = 0; k < 8; k++) puff(f.x, f.y + f.r, '#ffe9a8', 2); }
+  else f.onground = false;
 }
 function diPlankUnder(f){
   const feet = f.y + f.r;
@@ -24702,7 +24772,9 @@ function diDamageFor(drop){
   return Math.round(Math.min(DIK.fallCap, DIK.fallBase + (DIK.fallCap - DIK.fallBase)*(drop - lo)/(DIK.fallSpan*H))*10)/10;
 }
 function diLand(f, wasAir, vy){
-  if(f.dead || f._tp || f._tpHang > 0){ f._diTop = null; return; }
+  if(f.dead){ f._cat = null; f._diTop = null; return; }
+  if(f._cat){ diFlight(f); f._diTop = null; return; }
+  if(f._tp || f._tpHang > 0){ f._diTop = null; return; }
   if(!f.onground){ f._diTop = (wasAir && f._diTop != null) ? Math.min(f._diTop, f.y) : f.y; return; }
   const top = f._diTop; f._diTop = null;
   if(!wasAir || top == null) return;
@@ -24764,6 +24836,11 @@ function diNavBuild(){
     const e = diEdge(A, B, solids); if(e) A.adj.push({ to:B, e });
   }
   DRM.nav = { nodes, solids, drifts:nodes.filter(n=>n.drift) };
+  for(const n of nodes){   // a catapult pad: one edge, to the surface it lands on
+    const ct = n.p.ct; if(!ct) continue;
+    const g = diNodeFor(DRM.nav, ct[0], ct[1] - 2);
+    if(g) n.adj = n.adj.filter(a=>a.to !== g).concat([{ to:g, e:{ t:'cat', lx:n.p.x + n.p.w/2, tx:ct[0], c:12 } }]);
+  }
   return DRM.nav;
 }
 function diNodeAt(N, f){
@@ -24813,6 +24890,9 @@ function diGoal(f, N){
   const foe = f.aiTarget && !f.aiTarget.dead && f.aiTarget !== f && f.aiTarget.team !== f.team ? f.aiTarget : null;
   let it = null, bd = 1e9;
   for(const q of items){ if(q.taken || !q._di) continue; const d = Math.abs(q.x - f.x) + Math.abs(q.y - f.y); if(d < bd){ bd = d; it = q; } }
+  const S = DRM.san;
+  const sOpen = S && (S.st === 0 || (S.st === 1 && S.own === f.team && S.t > 300));
+  if(sOpen && (f.pct > 40 || (f.pct > 12 && Math.floor(DRM.t/600 + f.idx) % 3 === 0))) return diNodeFor(N, S.cx, S.p.y - 2);   // hurt (or, now and then, a little): up to the healing area
   const foeD = foe ? Math.hypot(foe.x - f.x, foe.y - f.y) : 1e9, heal = it && (it.kind === 'heal' || it.kind === 'marmalade');
   if(it && (foeD > 450 || (f.pct > 55 && heal))) return diNodeFor(N, it.x, it.y + 20);
   if(foe && (foeD > 320 || Math.abs(foe.y - f.y) > 150)) return diNodeFor(N, foe.x, foe.y + (foe.r || 24));
@@ -24821,8 +24901,18 @@ function diGoal(f, N){
 // The CPUs, after the usual brain (brainOut): follow a plan along the graph when its goal is on another surface; else never off an edge, never into
 // a gap, a hop over a missing plank.
 function diBrain(f, inp){
+  if(f._cat){ f._diPlan = null; return; }
   if(f.hitstun > 0 || f._tp){ f._diPlan = null; return; }
   const feet = f.y + f.r, N = DRM.nav || diNavBuild();
+  const S = DRM.san;
+  if(S && S.st === 1 && S.own === f.team && f.pct > 6 && f.onground && f.x >= S.x0 - 40 && f.x <= S.x1 + 40 && feet > S.y0 && feet < S.y1){   // healing in the sanctum: it paces the terraces, unless a foe is close
+    const foe = f.aiTarget;
+    if(!(foe && !foe.dead && foe.team !== f.team && Math.hypot(foe.x - f.x, foe.y - f.y) < 300)){
+      let d = (Math.floor(DRM.t/45 + f.idx) % 2) ? 1 : -1; if(f.x < S.x0 + 10) d = 1; else if(f.x > S.x1 - 10) d = -1;
+      inp.left = d < 0; inp.right = d > 0; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; inp.jump = false; inp.down = false;
+      return;
+    }
+  }
   if(f.onground && inp.down && !diCatchBelow(f.x, feet, 2400)) inp.down = false;   // never drop through a plank or an island ledge over the sea
   if(diFollow(f, inp, N, feet)) return;
   if(!f.onground) return;
@@ -24849,7 +24939,7 @@ function diFollow(f, inp, N, feet){
   if(!f.onground){
     const a = P && P.air;
     if(a && now < a.until){
-      a.seen = true; inp.left = a.tx < f.x - 6; inp.right = a.tx > f.x + 6; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false;
+      a.seen = true; if(a.cat) return true; inp.left = a.tx < f.x - 6; inp.right = a.tx > f.x + 6; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false;
       if(a.hop && f.vy < -1.5) inp.jump = true;                                    // hold the jump while it rises: a tap is a short hop
       else if(a.up && f.vy > 0.5 && f.jumps > 0 && feet > a.ty + 6 && !f._jp) inp.jump = true;   // and the second jump once it starts to fall short
       return true;
@@ -24860,7 +24950,7 @@ function diFollow(f, inp, N, feet){
   if(!node){ f._diPlan = null; return false; }
   if(P && P.air){
     const A = P.air;
-    if(A.seen || now - A.t0 > 30){   // it flew and landed (seen), or never left the ground
+    if(A.seen || now - A.t0 > (A.cat ? 90 : 30)){   // it flew and landed (seen), or never left the ground
       P.air = null;
       if(A.from === node){ f._diFail = (f._diFail || 0) + 1; if(f._diFail >= 2){ DRM.blocked[A.from.id + '>' + A.to.id] = now + 400; DRM.hopFail++; if(DRM.failLog.length < 40) DRM.failLog.push([A.e.t, A.from.p.di + ':' + Math.round(A.from.p.x) + ',' + Math.round(A.from.p.y) + ',w' + A.from.p.w, A.to.p.di + ':' + Math.round(A.to.p.x) + ',' + Math.round(A.to.p.y) + ',w' + A.to.p.w, Math.round(A.e.lx), Math.round(A.e.tx), Math.round(f.x), Math.round(f.y), A.seen ? 'seen' : 'noair', f.jumps, node.p.di + ':' + Math.round(node.p.x) + ',' + Math.round(node.p.y), f.dropping, now - A.t0]); f._diPlan = P = null; f._diFail = 0; } }
       else f._diFail = 0;
@@ -24881,6 +24971,11 @@ function diFollow(f, inp, N, feet){
   inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false;
   const go = (x)=>{ const d = dirTo(x); inp.left = d < 0; inp.right = d > 0; };
   if(e.t === 'walk'){ go(e.tx); return true; }
+  if(e.t === 'cat'){   // onto the pad and wait for the charge
+    if(Math.abs(f.x - e.lx) > 14){ go(e.lx); return true; }
+    if(!P.air) P.air = { tx:e.tx, ty:B.y, up:false, cat:true, until:now + 220, from:node, to:B, e, t0:now, seen:false };
+    return true;
+  }
   if(e.t === 'drop' && !e.soft){
     go(e.wx);
     if(!P.air && Math.abs(f.x - e.lx) < 60) P.air = { tx:e.tx, ty:B.y, up:false, until:now + 90, from:node, to:B, e, t0:now, seen:false };
@@ -24959,6 +25054,14 @@ function diDrawPlats(){
   const c = ctx, grass = (stage && stage.ground) || '#86c75a';
   c.save(); c.lineJoin = 'round';
   for(const p of worldPlats) if(p.ib) diDrawIsle(p.ib);
+  for(const p of worldPlats){   // scaffold frames: two poles, a rung at each step and a brace between
+    if(!p.tw) continue;
+    const xa = p.tw[0], y0 = p.tw[1], xb = p.tw[2], y1 = p.tw[3];
+    c.strokeStyle = '#6b4a2a'; c.lineWidth = 6; c.beginPath(); c.moveTo(xa, y0); c.lineTo(xa, y1); c.moveTo(xb, y0); c.lineTo(xb, y1); c.stroke();
+    c.strokeStyle = '#8a6a44'; c.lineWidth = 3; c.beginPath();
+    for(let y = y1; y > y0; y -= 90){ c.moveTo(xa, y); c.lineTo(xb, y - 90); c.moveTo(xb, y); c.lineTo(xa, y - 90); }
+    c.stroke();
+  }
   for(const p of worldPlats){
     const k = p.di; if(!k || k === 'isle') continue;
     c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
@@ -24973,6 +25076,37 @@ function diDrawPlats(){
       c.fillStyle = grass; c.fillRect(p.x, p.y, p.w, 12); c.strokeRect(p.x, p.y, p.w, 12);
       if(p.dh){ const u = 0.5 + 0.5*Math.sin(hazardT*0.08); c.fillStyle = 'rgba(123,192,67,' + (0.18 + 0.12*u) + ')'; c.fillRect(p.x, p.y - 60, p.w, 60);
         c.fillStyle = '#e9ffd8'; const cx = p.x + p.w/2, cy = p.y - 26 - 5*u; c.fillRect(cx - 3, cy - 10, 6, 20); c.fillRect(cx - 10, cy - 3, 20, 6); }
+    } else if(k === 'scaf'){
+      c.fillStyle = '#c9a56a'; c.fillRect(p.x, p.y, p.w, p.h); c.strokeRect(p.x, p.y, p.w, p.h);
+      c.strokeStyle = 'rgba(0,0,0,0.28)'; c.lineWidth = 1; c.beginPath(); c.moveTo(p.x + 8, p.y + 5); c.lineTo(p.x + p.w - 8, p.y + 5); c.stroke();
+    } else if(k === 'pent'){
+      c.fillStyle = '#9a7048'; c.beginPath(); c.moveTo(p.x + 6, p.y + 10); c.lineTo(p.x + p.w - 6, p.y + 10); c.lineTo(p.x + p.w*0.62, p.y + 96); c.lineTo(p.x + p.w*0.38, p.y + 96); c.closePath(); c.fill(); c.stroke();
+      c.fillStyle = grass; c.fillRect(p.x, p.y, p.w, 16); c.strokeRect(p.x, p.y, p.w, 16);
+    } else if(k === 'rail'){
+      c.fillStyle = '#7d848c'; c.fillRect(p.x, p.y, p.w, p.h); c.strokeRect(p.x, p.y, p.w, p.h);
+      c.fillStyle = '#9aa2aa'; c.fillRect(p.x, p.y, p.w, 10);
+    } else if(k === 'san' || k === 'cat'){
+      const isPad = k === 'cat';
+      c.fillStyle = '#9a7048'; c.beginPath(); c.moveTo(p.x + 2, p.y + 6); c.lineTo(p.x + p.w - 2, p.y + 6); c.lineTo(p.x + p.w*0.7, p.y + 44); c.lineTo(p.x + p.w*0.3, p.y + 44); c.closePath(); c.fill(); c.stroke();
+      c.fillStyle = isPad ? '#e8b23a' : grass; c.fillRect(p.x, p.y, p.w, 12); c.strokeRect(p.x, p.y, p.w, 12);
+      if(isPad && p.ct){   // the pad's tell: a springy chevron, the dotted flight and the ring where it lands
+        const u0 = 0.5 + 0.5*Math.sin(hazardT*0.15);
+        c.fillStyle = '#fff6c8'; c.beginPath(); c.moveTo(p.x + p.w/2 - 14, p.y - 4); c.lineTo(p.x + p.w/2, p.y - 18 - 4*u0); c.lineTo(p.x + p.w/2 + 14, p.y - 4); c.closePath(); c.fill(); c.stroke();
+        const x0 = p.x + p.w/2, y0 = p.y - 24, tx = p.ct[0], ty = p.ct[1] - 24;
+        c.fillStyle = 'rgba(255,233,168,0.85)';
+        for(let q = 1; q < 14; q++){ const u = q/14, ph = (u*14 - hazardT*0.12) % 2; if(ph < 1) c.fillRect(x0 + (tx - x0)*u - 3, y0 + (ty - y0)*u - 4*260*u*(1 - u) - 3, 6, 6); }
+        c.strokeStyle = 'rgba(255,233,168,' + (0.5 + 0.4*u0) + ')'; c.lineWidth = 3; c.beginPath(); c.ellipse(tx, ty + 24, 34, 9 + 3*u0, 0, 0, 7); c.stroke();
+      }
+      if(p.ss){   // the healing area: open (white-green), held by a team (its colour, a bar), closed (grey)
+        const st = p.ss[0], own = p.ss[1], fr = p.ss[2], x0 = p.x - 150, w = 300, u = 0.5 + 0.5*Math.sin(hazardT*0.07);
+        c.save();
+        c.fillStyle = st === 2 ? 'rgba(150,150,160,0.20)' : st === 1 ? (TEAM_COLORS[own % TEAM_COLORS.length] + '44') : 'rgba(150,235,150,' + (0.16 + 0.12*u) + ')';
+        c.fillRect(x0 + 50 - 0, p.y - 110, w - 100, 130);
+        c.strokeStyle = st === 2 ? '#8a8d96' : st === 1 ? TEAM_COLORS[own % TEAM_COLORS.length] : '#bff5b8'; c.setLineDash([8, 6]); c.lineWidth = 3; c.strokeRect(x0 + 50, p.y - 110, w - 100, 130); c.setLineDash([]);
+        if(st !== 2){ c.fillStyle = '#e9ffd8'; const cx = p.x + p.w/2, cy = p.y - 60 - 5*u; c.fillRect(cx - 3, cy - 12, 6, 24); c.fillRect(cx - 12, cy - 3, 24, 6); }
+        if(st === 1){ c.fillStyle = '#1c1c1c'; c.fillRect(p.x + p.w/2 - 42, p.y - 134, 84, 12); c.fillStyle = TEAM_COLORS[own % TEAM_COLORS.length]; c.fillRect(p.x + p.w/2 - 40, p.y - 132, 80*fr/8, 8); }
+        c.restore();
+      }
     } else if(k === 'plank'){
       const jx = p.crk ? Math.sin(hazardT*1.7 + p.x)*2 : 0;
       if(p.ghost){ const u = 0.5 + 0.5*Math.sin(hazardT*0.45); c.globalAlpha = 0.25 + 0.4*u; c.fillStyle = '#f4e2b0'; c.fillRect(p.x, p.y, p.w, p.h); c.setLineDash([6, 5]); c.strokeStyle = '#fff6d8'; c.lineWidth = 2; c.strokeRect(p.x, p.y, p.w, p.h); c.setLineDash([]); c.globalAlpha = 1; continue; }
@@ -114723,7 +114857,7 @@ function worldGeo(){
     floors: floors.map(fl=>({level:fl.level,y:Math.round(fl.y),x:Math.round(fl.x),w:Math.round(fl.w)})),
     // `solid` was missing here once, so on a client every stone landmark rendered as a thin ledge; `field` keeps the
     // client's minimap filtering out the scatter grid the way the host's does; `rot` is paintPlat's tilt.
-    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team,ib:p.ib})),
+    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team,ib:p.ib,tw:p.tw,ct:p.ct,ss:p.ss})),
     // `zone` and `wall` ride along so a client DRAWS the team's safe zone where the host plays it: without them it fell back
     // to the old column round the base, which is nowhere near a side-wall band (see wallBand).
     bases: bases.map(b=>({team:b.team,x:Math.round(b.x),y:Math.round(b.y),w:b.w,h:b.h,color:b.color,
@@ -114738,7 +114872,7 @@ function worldGeo(){
 function worldGeoKey(){
   let h = (WW*31 + WH) | 0;
   const mix = (v)=>{ h = (Math.imul(h, 33) + (v|0)) | 0; };
-  for(const p of worldPlats){ mix(p.w); mix(p.h); mix(p.solid?1:0); mix((p.rot||0)*100); if(p.di){ mix(p.ghost?1:0); mix(p.crk?1:0); } }   // (ONLINE LAG: not x and y -- a platform that moves rides as an mv row, not as a whole new geometry every frame)
+  for(const p of worldPlats){ mix(p.w); mix(p.h); mix(p.solid?1:0); mix((p.rot||0)*100); if(p.di){ mix(p.ghost?1:0); mix(p.crk?1:0); if(p.ss){ mix(p.ss[0]); mix(p.ss[1] + 1); mix(p.ss[2]); } } }   // (ONLINE LAG: not x and y -- a platform that moves rides as an mv row, not as a whole new geometry every frame)
   for(const fl of floors){ mix(fl.x); mix(fl.y); mix(fl.w); }
   for(const b of bases){ mix(b.x); mix(b.y); mix(b.w); }
   return stage.id + ':' + worldPlats.length + ':' + floors.length + ':' + bases.length + ':' + h;
