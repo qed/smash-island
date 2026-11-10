@@ -24561,7 +24561,7 @@ function setupWorld(){
 const DIK = { plank:60, stairStep:40, crack:18, rebuild:300, tell:80, breakGap:90, maxBroken:2, hitDmg:6, landVy:16, hardDrop:260,
   fallMin:1.0, fallSpan:1.0, fallBase:3, fallCap:15, healStr:0.5,
   slab:90, wall:60, shaft:190, hole:150, floorY:250, floorT:34, doorY:160, l3:340, rise:95, stone:88, margin:150,
-  grow:1.1, minW:3300, minH:2500, step:86,
+  grow:1.1, minW:3300, minH:2400, step:86,
   healRate:0.15, hold:1200, cool:2400, shieldHold:900, shieldCool:1800, shieldLinger:480, shieldKb:0.6,
   period:10800, nightOn:0.55, lanternLit:1200, balloonGone:2400, chestPlate:90, chestCool:3600, tokenCap:2, tokenCredit:60, crates:3 };
 function diWanted(){
@@ -24589,26 +24589,123 @@ const DIV = [
   { fx:[3, 2, 1, 0], balloon:-1, light:2, reach:[0, 1, 1, 0], flip:1, wx:2 },
   { fx:[1, 3, 0, 2], balloon:3, light:0, reach:[1, 1, 1, 1], flip:1, wx:3 },
 ];
-// One home base: the grass slabs (left and right of the drop hole), the cave inside (side walls above the doorways, a floor with a hole), the ledges under it
-// and the climb outside, the ledges over the grass, and two lanterns in the dark. Everything a guest draws is derived from ib = [x0, top, w, team] on the left slab.
-function diIsle(P, x0, top, w, team, ix, vr){
-  const K = DIK, x1 = x0 + w, cx = x0 + w/2, wl = (w - K.shaft)/2, fl = (w - K.hole)/2;
-  const B = (x, y, ww, h, extra)=>{ const p = Object.assign({ x:Math.round(x), y:Math.round(y), w:Math.round(ww), h, solid:true, floor:0, di:'isle', ix }, extra || {}); P.push(p); return p; };
-  const S = (x, y, ww, kind, extra)=>{ const p = Object.assign({ x:Math.round(x), y:Math.round(y), w:Math.round(ww), h:14, solid:false, floor:0, di:kind || 'ledge', ix }, extra || {}); P.push(p); return p; };
-  B(x0, top, wl, K.slab, { ib:[x0, top, w, team, vr] }); B(x1 - wl, top, wl, K.slab);
-  B(x0, top + K.slab, K.wall, K.doorY - K.slab); B(x1 - K.wall, top + K.slab, K.wall, K.doorY - K.slab);
-  B(x0, top + K.floorY, fl, K.floorT); B(x1 - fl, top + K.floorY, fl, K.floorT);
-  S(cx - 170, top + K.l3, 340, 'ledge', { und:1 });
-  S(x0 - 230, top + K.floorY, 250, 'ledge', { und:1 }); S(x1 - 20, top + K.floorY, 250, 'ledge', { und:1 });
-  S(x0 - 200, top + 165, 110); S(x0 - 130, top + 80, 110); S(x1 + 90, top + 165, 110); S(x1 + 20, top + 80, 110);
-  S(cx + 10, top + 165, 180); S(cx - 95, top + 80, 100);
-  S(x0 + wl/2 - 70, top - 95, 140, 'gplat'); S(x1 - wl/2 - 70, top - 95, 140, 'gplat'); S(cx - 75, top - 190, 150, 'gplat');
-  // two lanterns under the cave's roof (hit one to light the underground for a while): a tiny soft plat each, the state in ss = [bucket of time left]
-  const lan = [S(x0 + K.wall + 70, top + K.slab + 6, 22, 'lan', { ss:[0] }), S(x1 - K.wall - 92, top + K.slab + 6, 22, 'lan', { ss:[0] })];
-  const spawns = [];
-  for(let k = 0; k < 3; k++){ spawns.push({ x:Math.round(x0 + wl*(k + 1)/4), y:top - 30, used:0 }); spawns.push({ x:Math.round(x1 - wl*(k + 1)/4), y:top - 30, used:0 }); }
-  return { x:x0, y:top, w, team, x1, cx, wl, spawns, ix, lan, dark:{ x:x0, y:top + K.slab, w, h:K.l3 + 30 - K.slab } };
+// ---- v5: ISLANDS ARE CLUSTERS OF BLOCKS (the owner: "groups of blocks with platforms on the side"). Every solid below is real collision: a lumpy top line (steps up and
+// down), side walls, a ragged underside of hanging blocks, shelves sticking out of the faces; the cave is carved into the block mass. A guest draws the same blocks
+// from the plats it receives (diDrawSolid splits each rect into blocks from its own position: pure). Themes: 0 garden, 1 cliff, 2 beach, 3 harbor (the four bases,
+// each its own SHAPE: not mirrors), 4 hot spring, 5 shrine, 6 shipwreck, 7 treasure island (the outer islands), 8 resort (the middle cluster).
+const DIT = { garden:0, cliff:1, beach:2, harbor:3, spring:4, shrine:5, wreck:6, treasure:7, resort:8 };
+// The four bases by role: the two HIGH ones (garden, cliff) have the high ground and fewer, more exposed approaches (one shaft, one door, a trap block in the deck that
+// gives way under a camper, little cover underneath); the two LOW ones (beach, harbor) pay for it: a bigger underground (two shafts, two doors, a floor hole, four
+// strong shelves a side), the boat and the whale close by, more ways out (so they are hard to camp).
+const DBS = {
+  TL:{ th:DIT.garden, floorY:250, shafts:[0.30], doors:[1], hang:0, lump:2, shelfW:[100, 100], trap:1, tower:{ side:-1, tiers:2 }, seed:11 },
+  TR:{ th:DIT.cliff,  floorY:270, shafts:[0.64], doors:[-1], hang:1, lump:3, shelfW:[110, 80], trap:1, tower:{ side:1, tiers:4 }, seed:23 },
+  BL:{ th:DIT.beach,  floorY:335, shafts:[0.27, 0.74], doors:[-1, 1], hang:2, lump:1, shelfW:[160, 150], trap:0, sky:1, seed:37 },
+  BR:{ th:DIT.harbor, floorY:335, shafts:[0.20, 0.66], doors:[-1, 1], hang:2, lump:2, shelfW:[150, 170], trap:0, sky:1, tower:{ side:-1, tiers:3 }, seed:41 },
+};
+function diRnd(seed){ let a = seed | 0; return function(){ a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0)/4294967296; }; }
+// One home base as a block cluster. o = { x0, top, w, team, ix, v, spec, flats:[[a, b], ...] (deck ranges that stay flat: bridge ends, scaffold feet) }
+function diBase(P, o){
+  const K = DIK, S = o.spec, x0 = o.x0, top = o.top, w = o.w, x1 = x0 + w, cx = x0 + w/2, fy = S.floorY, rnd = diRnd(S.seed*977 + o.ix*131 + (o.v | 0)*7);
+  const flats = (o.flats || []).concat([[x0, x0 + 170], [x1 - 170, x1]]);
+  const B = (x, y, ww, h, extra)=>{ const p = Object.assign({ x:Math.round(x), y:Math.round(y), w:Math.round(ww), h:Math.round(h), solid:true, floor:0, di:'isle', ix:o.ix, th:S.th }, extra || {}); P.push(p); return p; };
+  const Sf = (x, y, ww, kind, extra)=>{ const p = Object.assign({ x:Math.round(x), y:Math.round(y), w:Math.round(ww), h:14, solid:false, floor:0, di:kind || 'ledge', ix:o.ix, th:S.th }, extra || {}); P.push(p); return p; };
+  const sxs = S.shafts.map(f=>Math.round(x0 + f*w)), holes = sxs.map(sx=>[sx - 95, sx + 95]);
+  // the deck, in segments between the drop holes; a trap block in the middle of the longest one on the high bases
+  const segs = []; let cur = x0; for(const h of holes){ if(h[0] - cur >= 60) segs.push([cur, h[0]]); cur = h[1]; } if(x1 - cur >= 60) segs.push([cur, x1]);
+  let trap = null, first = true;
+  const longest = segs.reduce((m, s, i)=>(s[1] - s[0] > segs[m][1] - segs[m][0] ? i : m), 0);
+  const deckRects = [];
+  segs.forEach((sg, i)=>{
+    const pieces = [];
+    if(S.sky && i === longest && sg[1] - sg[0] >= 520){ const m = Math.round(sg[0] + 230 + rnd()*(sg[1] - sg[0] - 480)); pieces.push([sg[0], m - 35, 0], [m + 35, sg[1], 0]); holes.push([m - 35, m + 35]); }
+    else if(S.trap && i === longest && sg[1] - sg[0] >= 360){ const m = Math.round((sg[0] + sg[1])/2 - 40*(rnd() - 0.5)); pieces.push([sg[0], m - 75, 0], [m - 75, m + 75, 1], [m + 75, sg[1], 0]); } else pieces.push([sg[0], sg[1], 0]);
+    for(const pc of pieces){ const p = B(pc[0], top, pc[1] - pc[0], K.slab, first ? { ib:[x0, top, w, o.team, o.v, S.th, fy, sxs] } : {}); first = false; if(pc[2]){ p.trap = 1; trap = p; } deckRects.push(p); }
+  });
+  // the walls (the doorways are the gaps), the floor with a hole under the middle
+  const doorTop = top + fy - 90;
+  B(x0, top + K.slab, K.wall, (S.doors.indexOf(-1) >= 0 ? doorTop : top + fy) - (top + K.slab)); B(x1 - K.wall, top + K.slab, K.wall, (S.doors.indexOf(1) >= 0 ? doorTop : top + fy) - (top + K.slab));
+  B(x0, top + fy, cx - 75 - x0, K.floorT); B(cx + 75, top + fy, x1 - (cx + 75), K.floorT);
+  // the ledges under the cave and the shelves out of the faces
+  Sf(cx - 170, top + fy + 90, 340, 'ledge', { und:1 });
+  const rungs = []; for(let y = fy - 85; y >= 70; y -= 85) rungs.push(y);
+  for(const sx of sxs){
+    rungs.forEach((ry, i)=>{
+      let a, b;
+      if(i === rungs.length - 1){ a = sx - 95; b = sx + 5; } else if(i % 2 === 0){ a = sx + 10; b = sx + 190; } else { a = sx - 190; b = sx - 10; }
+      a = Math.max(a, x0 + K.wall + 5); b = Math.min(b, x1 - K.wall - 5);
+      if(b - a < 70 && i < rungs.length - 1){ a = i % 2 === 0 ? sx - 190 : sx + 10; b = a + 180; a = Math.max(a, x0 + K.wall + 5); b = Math.min(b, x1 - K.wall - 5); }
+      if(b - a >= 50) Sf(top ? a : a, top + ry, b - a, 'ledge');
+    });
+  }
+  for(const sd of [-1, 1]){   // shelves: wooden or stone, out of each face at four (low) or three (high) heights; the widest at the foot
+    const ww = S.shelfW[sd < 0 ? 0 : 1];
+    for(let k = 0, y = fy; top + y >= top + 70; k++, y -= 85){
+      let a, b;
+      if(k === 0){ a = sd < 0 ? x0 - 120 - ww : x1 - 20; b = sd < 0 ? x0 + 20 : x1 + 120 + ww; }
+      else { const off = (k % 2) ? 90 : 20; a = sd < 0 ? x0 - off - ww : x1 + off; b = a + ww; }
+      Sf(a, top + y, b - a, 'ledge', k === 0 ? { und:1 } : { sh:1 });
+    }
+  }
+  const crumbs = []; for(const sd of [-1, 1]){ const ww = S.shelfW[sd < 0 ? 0 : 1]; crumbs.push(Sf(sd < 0 ? x0 - 120 - ww - 150 : x1 + 120 + ww + 40, top + fy - 42, 110, 'crumb', { cr:1 })); }
+  Sf(x0 + 60, top - 95, 140, 'gplat'); Sf(x1 - 200, top - 95, 140, 'gplat'); Sf(cx - 75, top - 190, 150, 'gplat');
+  // lumps on the deck: blocks of 60-120 px stacked in steps (flats stay clear), and the dune/hedge/rock/crate look is the theme's
+  const lumps = [], inFlat = (a, b)=>flats.some(f=>a < f[1] + 20 && b > f[0] - 20) || holes.some(h=>a < h[1] + 30 && b > h[0] - 30) || (trap && a < trap.x + trap.w + 30 && b > trap.x - 30);
+  const nl = S.lump*2;
+  for(let t = 0, made = 0; t < 30 && made < nl; t++){
+    const lw = 90 + Math.floor(rnd()*4)*30, lx = Math.round(x0 + 120 + rnd()*(w - 240 - lw));
+    if(inFlat(lx, lx + lw) || lumps.some(l=>lx < l.x + l.w + 70 && lx + lw > l.x - 70)) continue;
+    if(!deckRects.some(d=>lx >= d.x && lx + lw <= d.x + d.w)) continue;
+    const tall = rnd() < 0.45, L1 = B(lx, top - 60, lw, 60, { blk:1 }); lumps.push(L1); made++;
+    if(tall){ const w2 = Math.round(lw*0.6/10)*10, ox = rnd() < 0.5 ? 0 : lw - w2, L2 = B(lx + ox, top - 120, w2, 60, { blk:1 }); lumps.push({ x:L1.x, w:L1.w }); if(rnd() < 0.5){ const w3 = Math.max(40, Math.round(w2*0.55/10)*10); B(lx + ox + (ox ? w2 - w3 : 0), top - 180, w3, 60, { blk:1 }); } }
+  }
+  // an end tower: tall stacked blocks that step in, the base's own silhouette (the cliff's pillar, the harbor's warehouse stack, the garden's hedge wall)
+  if(S.tower){ const tw0 = 130, tx = S.tower.side > 0 ? x1 - 170 - tw0 - 24 : x0 + 170 + 24; for(let k = 0; k < S.tower.tiers; k++){ const inset = k*14; B(tx + inset, top - 60*(k + 1), tw0 - 2*inset, 60, { blk:1 }); } lumps.push({ x:tx, w:tw0 }); }
+  // the underside: hanging blocks in tiers that taper in (ragged, never under the lowest ledge), and stepped blocks out of each lower corner
+  if(S.hang > 0){
+    for(const zone of [[x0 + 80, cx - 190], [cx + 190, x1 - 80]]){
+      for(let tier = 0; tier < 2 + (S.hang > 1 ? 1 : 0); tier++){
+        let x = zone[0] + tier*55; const zEnd = zone[1] - tier*55, y0 = top + fy + K.floorT + (tier === 0 ? 0 : tier === 1 ? 70 : 125);
+        while(x < zEnd - 50){
+          const bw = Math.min(zEnd - x, 50 + Math.floor(rnd()*3)*30), bh = tier === 0 ? 55 + Math.floor(rnd()*(S.hang + 1))*20 : 45 + Math.floor(rnd()*2)*15;
+          if(rnd() < (tier === 0 ? 0.85 : 0.6)) B(x, y0, bw, bh, { blk:1, hg:1 });
+          x += bw + (rnd() < 0.5 ? 0 : 40);
+        }
+      }
+    }
+    for(const sd of [-1, 1]){ B(sd < 0 ? x0 - 40 : x1 - 70, top + fy + K.floorT, 110, 55, { blk:1, hg:1 }); B(sd < 0 ? x0 - 10 : x1 - 80, top + fy + K.floorT + 55, 90, 48, { blk:1, hg:1 }); B(sd < 0 ? x0 + 20 : x1 - 80, top + fy + K.floorT + 103, 60, 40, { blk:1, hg:1 }); }
+  }
+  // rooms in the dark: lintel blocks hanging from the roof and low blocks on the floor split the cave into block-shaped rooms and corridors (clear of the drop holes and the floor hole)
+  { const zones = holes.concat([[cx - 75, cx + 75]]), lint = [];
+    for(let t = 0; t < 24 && lint.length < 3; t++){ const lx = Math.round(x0 + 220 + rnd()*(w - 440)); if(zones.some(z=>lx < z[1] + 150 && lx + 120 > z[0] - 150) || lint.some(l=>Math.abs(l - lx) < 280)) continue; lint.push(lx); B(lx, top + K.slab, 120, 60, { blk:1 }); }
+    for(let t = 0, n = 0; t < 30 && n < 3; t++){ const bx = Math.round(x0 + 140 + rnd()*(w - 330)); if(zones.some(z=>bx < z[1] + 170 && bx + 90 > z[0] - 170) || lint.some(l=>bx < l + 220 && bx + 90 > l - 100)) continue; B(bx, top + fy - 40, 90, 40, { blk:1 }); n++; } }
+  // two lanterns in the dark
+  const lan = [Sf(x0 + K.wall + 70, top + K.slab + 6, 22, 'lan', { ss:[0] }), Sf(x1 - K.wall - 92, top + K.slab + 6, 22, 'lan', { ss:[0] })];
+  // spawn spots on the open deck
+  const ok = []; for(let x = x0 + 80; x <= x1 - 80; x += 50){ if(!inFlat(x - 25, x + 25) || flats.some(f=>x > f[0] && x < f[1]) && !holes.some(h=>x > h[0] - 30 && x < h[1] + 30) && !(trap && x > trap.x - 30 && x < trap.x + trap.w + 30)) if(!lumps.some(l=>x > l.x - 30 && x < l.x + l.w + 30) && !holes.some(h=>x > h[0] - 30 && x < h[1] + 30) && !(trap && x > trap.x - 30 && x < trap.x + trap.w + 30) && deckRects.some(d=>x >= d.x + 10 && x <= d.x + d.w - 10)) ok.push(x); }
+  const spawns = []; for(let k = 0; k < 6; k++){ const i = Math.min(ok.length - 1, Math.floor((k + 0.5)*ok.length/6)); if(i >= 0) spawns.push({ x:ok[i], y:top - 30, used:0 }); }
+  const seg0 = segs[0];
+  return { x:x0, y:top, w, team:o.team, x1, cx, wl:seg0[1] - seg0[0], decks:segs, spawns, ix:o.ix, lan, th:S.th, fy, trap, crumbs, sxs, l3y:top + fy + 90,
+    dark:{ x:x0, y:top + K.slab, w, h:fy + 90 + 30 - K.slab } };
 }
+// an outer island: a small cluster (a deck, an end block or two, a ragged underside, a shelf a side); the main deck plat is returned (the effect area, plates, flags sit on it)
+function diOuterIsle(P, x0, top, w, idx, th, seed){
+  const rnd = diRnd(seed*313 + idx*17), B = (x, y, ww, h, extra)=>{ const p = Object.assign({ x:Math.round(x), y:Math.round(y), w:Math.round(ww), h:Math.round(h), solid:true, floor:0, di:'isle', th, ix:20 + idx, blk:1 }, extra || {}); P.push(p); return p; };
+  const deck = B(x0, top, w, 60, { di:'outer', oi:idx, blk:0 });
+  for(const sd of [-1, 1]){ if(rnd() < 0.9){ const lw = 70 + Math.floor(rnd()*3)*20; B(sd < 0 ? x0 : x0 + w - lw, top - 60, lw, 60); } }
+  let x = x0 + 40; while(x < x0 + w - 80){ const bw = 60 + Math.floor(rnd()*3)*30, bh = 40 + Math.floor(rnd()*3)*30; if(rnd() < 0.8) B(x, top + 60, Math.min(bw, x0 + w - 40 - x), bh, { hg:1 }); x += bw + 30; }
+  for(const sd of [-1, 1]) P.push({ x:Math.round(sd < 0 ? x0 - 80 : x0 + w - 20), y:Math.round(top + 75), w:100, h:14, solid:false, floor:0, di:'ledge', ix:20 + idx, th, sh:1 });
+  return deck;
+}
+// a resort island of the middle cluster: a deck, hanging blocks, balconies (shelves) at the sides
+function diMidIsle(P, x, y, w, k, th, thick, seed, hang){
+  const rnd = diRnd(seed*71 + k), B = (x2, y2, ww, h, extra)=>{ const p = Object.assign({ x:Math.round(x2), y:Math.round(y2), w:Math.round(ww), h:Math.round(h), solid:true, floor:0, di:'isle', th, ix:30 + k, blk:1 }, extra || {}); P.push(p); return p; };
+  const deck = B(x, y, w, thick, { di:'islet', cl:1, blk:0 });
+  let hx = x + 100; while(hang !== false && hx < x + w - 160){ const bw = 50 + Math.floor(rnd()*2)*30; if(rnd() < 0.75) B(hx, y + thick, Math.min(bw, x + w - 30 - hx), 40 + Math.floor(rnd()*2)*30, { hg:1 }); hx += bw + 25; }
+  for(const sd of [-1, 1]) P.push({ x:Math.round(sd < 0 ? x - 70 : x + w - 40), y:Math.round(y + 70), w:110, h:14, solid:false, floor:0, di:'ledge', ix:30 + k, th, sh:1 });
+  return deck;
+}
+
 function diBuild(){
   const K = DIK, tc = Math.max(2, Math.min(4, (SETTINGS.teamKey || '').split('v').filter(Boolean).length || 2)), sz = diSize(), v = diVariant(), V = DIV[v];
   WW = Math.max(Math.round(sz.WW*K.grow), K.minW); WH = Math.max(Math.round(sz.WH*K.grow), K.minH);
@@ -24635,59 +24732,66 @@ function diBuild(){
     if(!out.length) St(ax - 55, ay - st, 'scaf', 110, { sc:[Math.round(ax), Math.round(ay), Math.round(bx), Math.round(by)] });
     return out;
   };
-  // the four home bases (design side; mirrored by R)
+  // the four home bases (design side; mirrored by R): four different shapes at four different heights
   const bw = (f, mn)=>Math.max(mn, Math.round(f*WW));
   const D = {
-    TL:{ x:px(0.150), w:bw(0.165, 660), top:py(0.140) }, TR:{ x:px(0.630), w:bw(0.270, 780), top:py(0.125) },
-    BL:{ x:px(0.135), w:bw(0.275, 780), top:py(0.600) }, BR:{ x:px(0.670), w:bw(0.240, 780), top:py(0.640) },
+    TL:{ x:px(0.150), w:bw(0.150, 640), top:py(0.140) }, TR:{ x:px(0.640), w:bw(0.265, 800), top:py(0.115) },
+    BL:{ x:px(0.125), w:bw(0.285, 860), top:py(0.610) }, BR:{ x:px(0.665), w:bw(0.235, 800), top:py(0.650) },
   };
   const owner = { TL:-1, TR:-1, BL:-1, BR:-1 };
   if(tc === 4){ owner.TL = 0; owner.TR = 1; owner.BL = 2; owner.BR = 3; }
   else if(tc === 3){ owner.TL = 0; owner.TR = 1; if(v & 1) owner.BR = 2; else owner.BL = 2; }
   else if(v < 2){ owner.TL = 0; owner.BR = 1; } else { owner.TR = 0; owner.BL = 1; }
+  for(const k of ['TL', 'TR', 'BL', 'BR']){ const d = D[k]; d.x = Math.min(d.x, WW - 120 - d.w); d.rx = R(d.x, d.w); }
+  // the scaffold feet on the two low bases: under the upper base's lowest ledge, on a flat of the deck and not over a drop hole
+  const foot = (lo, hi)=>{
+    const S = DBS[lo], d = D[lo], hx = D[hi].rx + D[hi].w/2; let fx = Math.max(d.rx + 140, Math.min(d.rx + d.w - 140, hx));
+    for(const f of S.shafts){ const sx = d.rx + f*d.w; if(Math.abs(fx - sx) < 150) fx = fx < sx ? sx - 150 : sx + 150; }
+    return Math.max(d.rx + 130, Math.min(d.rx + d.w - 130, fx));
+  };
+  const feet = { BL:foot('BL', 'TL'), BR:foot('BR', 'TR') };
   const IS = {}; let ixn = 0;
-  for(const k of ['TL', 'TR', 'BL', 'BR']){ const d = D[k]; d.x = Math.min(d.x, WW - 120 - d.w); IS[k] = diIsle(P, R(d.x, d.w), d.top, d.w, owner[k], ixn++, v); infos.push(IS[k]); }
+  for(const k of ['TL', 'TR', 'BL', 'BR']){ const d = D[k]; IS[k] = diBase(P, { x0:d.rx, top:d.top, w:d.w, team:owner[k], ix:ixn++, v, spec:DBS[k], flats:feet[k] !== undefined ? [[feet[k] - 100, feet[k] + 100]] : [] }); infos.push(IS[k]); }
   const TL = IS.TL, TR = IS.TR, BL = IS.BL, BR = IS.BR;
   const left = (a, b)=>a.x < b.x ? [a, b] : [b, a];
   // RED: the bridges across the top and the bottom
   { const [a, b] = left(TL, TR); bridge(a.x1, a.y, b.x, b.y, false); }
   const botB = (()=>{ const [a, b] = left(BL, BR); return bridge(a.x1, a.y, b.x, b.y, false); })();
   const topB = bridges[0];
-  // RED: the scaffolding up the two sides, from the lower base's grass to the upper base's lowest hanging ledge
-  const sideScaf = (hi, lo)=>{
-    const lx0 = hi.cx - 150, lx1 = hi.cx + 150;
-    const slabs = [[lo.x + 40, lo.x + lo.wl - 40], [lo.x1 - lo.wl + 40, lo.x1 - 40]];
-    let best = null, bd = 1e9;
-    for(const [a, b] of slabs){ const x = Math.max(a, Math.min(b, Math.max(lx0, Math.min(lx1, (a + b)/2)))); const d = Math.abs(x - hi.cx); if(d < bd){ bd = d; best = x; } }
-    scaffold(best, lo.y, Math.max(lx0 + 40, Math.min(lx1 - 40, best)), hi.y + K.l3, 60);
-  };
-  sideScaf(TL, BL); sideScaf(TR, BR);   // the left scaffold joins the left top base to the left bottom base; the right likewise
-  // MIDDLE: the cluster of independent islands, at different heights (design fractions, mirrored by R)
-  const isl = (fx, fw, fy, kind)=>{ const w = Math.round(fw*WW), p = St(R(px(fx), w), py(fy), kind || 'islet', w, { cl:1 }); return p; };
-  const M1 = isl(0.415, 0.050, 0.370), M2 = isl(0.555, 0.070, 0.362), M3 = isl(0.460, 0.104, 0.468), M4 = isl(0.387, 0.042, 0.530), M5 = isl(0.496, 0.094, 0.560);
+  // RED: the scaffolding up the two sides, from the lower base's deck to the upper base's lowest hanging ledge
+  const sideScaf = (hi, lo, fx)=>{ scaffold(fx, lo.y, Math.max(hi.cx - 130, Math.min(hi.cx + 130, fx)), hi.l3y, 60); };
+  sideScaf(TL, BL, feet.BL); sideScaf(TR, BR, feet.BR);
+  // MIDDLE: THE RESORT, a cluster of block islands (the lobby floor, the terrace over it, the rooftop pool, a sun deck, the bell tower), at different heights
+  const isl = (fx, fw, fy, k, thick, hang)=>{ const w = Math.round(fw*WW); return diMidIsle(P, R(px(fx), w), py(fy), w, k, DIT.resort, thick, 5 + k, hang); };
+  const M1 = isl(0.415, 0.050, 0.370, 1, 60, true), M2 = isl(0.555, 0.074, 0.362, 2, 60, true), M3 = isl(0.455, 0.112, 0.440, 3, 120, true), M4 = isl(0.382, 0.044, 0.530, 4, 60, true), M5 = isl(0.490, 0.100, 0.568, 5, 50, false);
   const cen = (p)=>p.x + p.w/2;
-  // the scaffolds of the cluster (a vertical one from the small left island up to the top one, the diagonals between the others, and down to the bottom bases)
-  scaffold(cen(M4), M4.y, cen(M1), M1.y, 50);
-  scaffold(M4.x + M4.w, M4.y, M3.x + 20, M3.y, 40);
-  scaffold(M3.x + M3.w - 10, M3.y, M2.x + 30, M2.y, 40);
-  scaffold(cen(M5) - 40, M5.y, cen(M3) - 40, M3.y, 50);
-  { const lo = BL, hi = BR, edgeX = (b, t)=>(t.x + t.w/2) > b.cx ? b.x1 - 70 : b.x + 70;   // from the design-left bottom base's inner end up to the left cluster island and to the bottom one, from the other base's inner end up to the bottom one
-    scaffold(edgeX(lo, M4), lo.y, cen(M4), M4.y, 70);
-    scaffold(edgeX(lo, M5), lo.y, M5.x + 40, M5.y, 70);
-    scaffold(edgeX(hi, M5), hi.y, M5.x + M5.w - 40, M5.y, 70);
-    scaffold(cen(M5), deckAt(botB, cen(M5)), cen(M5), M5.y, 60); }
+  const edge = (B, fromX)=>fromX < cen(B) ? B.x - 50 : B.x + B.w + 50;
+  const scafTo = (A, B, zig)=>{ const sd = cen(A) > cen(B) ? 1 : -1; return scaffold(sd > 0 ? A.x + A.w - 60 : A.x + 60, A.y, sd > 0 ? B.x + B.w + 62 : B.x - 62, B.y, Math.min(zig, 18)); };   // up the face of B that A's own centre is on
+  scafTo(M4, M1, 50); scafTo(M4, M3, 40); scafTo(M3, M2, 40); scafTo(M5, M3, 50);
+  { const lo = BL, hi = BR, ex = (b, t)=>(t.x + t.w/2) > b.cx ? b.x1 - 70 : b.x + 70;
+    scaffold(ex(lo, M4), lo.y, edge(M4, ex(lo, M4)), M4.y, 70);
+    scaffold(ex(lo, M5), lo.y, edge(M5, ex(lo, M5)), M5.y, 70);
+    scaffold(ex(hi, M5), hi.y, edge(M5, ex(hi, M5)), M5.y, 70);
+    scaffold(M5.x - 20, deckAt(botB, M5.x - 20), edge(M5, M5.x - 20), M5.y, 60); }
   // the CRANE: a platform that swings across the cluster between the top-left island and the big one, on the match clock
-  { const a = M1.y < M3.y ? M1 : M3; const x0 = Math.min(cen(M1), cen(M3)) + 60, x1 = Math.max(cen(M1), cen(M3)) - 60, y0 = Math.min(M1.y, M3.y) + 70, y1 = Math.max(M1.y, M3.y) - 10;
+  { const x0 = Math.min(cen(M1), cen(M3)) + 60, x1 = Math.max(cen(M1), cen(M3)) - 60, y0 = Math.min(M1.y, M3.y) + 70, y1 = Math.max(M1.y, M3.y) - 10;
     const d = { x:Math.round((x0 + x1)/2 - 70), y:Math.round((y0 + y1)/2), w:140, h:14, solid:false, floor:0, di:'crane', bx:Math.round((x0 + x1)/2 - 70), by:Math.round((y0 + y1)/2), mv:{ ax:Math.round((x1 - x0)/2), ay:Math.round((y1 - y0)/2), per:720, ph:0 }, mvx:0, mvy:0, cl:1 };
     drifts.push(d); P.push(d); }
-  // OUTSIDE the square: the four outer islands with their effect areas
-  const OUT = {};
-  const outer = (fx, fw, top, idx)=>{ const w = Math.max(400, Math.round(fw*WW)), p = St(R(px(fx), w), top, 'outer', w, { oi:idx }); OUT[idx] = p; return p; };
-  const topW = Math.max(400, Math.round(0.085*WW)), topX = R(px(0.375), topW), deckT = deckAt(topB, topX - 90 + 55);   // the deck under the first step
+  // the CHANDELIER of the lobby: it hangs under the terrace's floor, over the lobby floor; a swing brings it down (a tell first)
+  const chandP = St(cen(M3) - 60, M3.y + M3.h + 70, 'chand', 120, { ss:[0, 0] }), chand = { p:chandP, st:0, t:0, vy:0, y0:chandP.y, floorY:M5.y - 14, hit:{} };
+  // the rooftop pool on the pool island: water that slows (a splash tell)
+  const pool = { x:M2.x + 36, y:M2.y - 44, w:M2.w - 72, h:58 };
+  worldZones.push({ type:'water', strength:0.45, x:pool.x, y:pool.y, w:pool.w, h:pool.h });
+  M2.pool = [pool.x, pool.y, pool.w, pool.h];
+  // OUTSIDE the square: the four outer islands (small block clusters), each themed by what its purple area does
+  const OUT = {}, TH = [DIT.spring, DIT.shrine, DIT.wreck, DIT.treasure];
+  const outer = (fx, fw, top, idx)=>{ const w = Math.max(420, Math.round(fw*WW)); OUT[idx] = diOuterIsle(P, R(px(fx), w), top, w, idx, TH[V.fx[idx]], 3 + idx); return OUT[idx]; };
+  const topW = Math.max(420, Math.round(0.085*WW)), topX = R(px(0.375), topW), deckT = deckAt(topB, topX - 90 + 55);   // the deck under the first step
   outer(0.375, 0.085, Math.round(deckT - 176), 0);   // top-centre, above the top bridge: two rises of 88
   outer(0.045, 0.120, py(0.350), 1);                 // far left
   outer(0.860, 0.100, py(0.385), 2);                 // far right
-  outer(0.455, 0.115, Math.round(deckAt(botB, px(0.5)) + 380), 3);   // bottom-centre, below the bottom bridge
+  const [la, lb] = left(BL, BR), botTop = Math.round(((la.y + la.fy) + (lb.y + lb.fy))/2 + 170);
+  outer(0.455, 0.115, botTop, 3);   // bottom-centre, a lagoon island between the two low bases' shelves, under the bottom bridge
   // reaching them: stepping stones (hard jumps), or a ferry that drifts to and fro, by variant
   const reach = (o, idx)=>{
     const ferry = V.reach[idx] === 1;
@@ -24701,7 +24805,8 @@ function diBuild(){
     let anc, side = 1;
     if(idx === 1 || idx === 2){   // the near top base's outer hanging ledge
       const tb = (o.x + o.w/2) < WW/2 ? left(TL, TR)[0] : left(TL, TR)[1]; side = (o.x + o.w/2) < (tb.x + tb.w/2) ? -1 : 1;
-      anc = side < 0 ? { x0:tb.x - 230, x1:tb.x + 20, y:tb.y + K.floorY } : { x0:tb.x1 - 20, x1:tb.x1 + 230, y:tb.y + K.floorY };
+      const sw = DBS[tb === TL ? 'TL' : 'TR'].shelfW[side < 0 ? 0 : 1];
+      anc = side < 0 ? { x0:tb.x - 120 - sw, x1:tb.x + 20, y:tb.y + tb.fy } : { x0:tb.x1 - 20, x1:tb.x1 + 120 + sw, y:tb.y + tb.fy };
     } else { const bx = cen(o); anc = { x0:bx - 300, x1:bx + 300, y:deckAt(botB, bx) }; }
     const ex = idx === 3 ? cen(o) - 160 : (side < 0 ? anc.x0 + 20 : anc.x1 - 20), top = anc.y, low = o.y;
     if(ferry){
@@ -24715,7 +24820,6 @@ function diBuild(){
   };
   for(const idx of [0, 1, 2, 3]) reach(OUT[idx], idx);
   // PURPLE: what is on each outer island (heal, shield, the crates, the chest), by variant
-  const state = { heal:0, shield:1, crates:2, chest:3 };
   for(const idx of [0, 1, 2, 3]){
     const o = OUT[idx], t = V.fx[idx], rx = o.x + 30, rw = o.w - 60;
     o.ar = [t, rx, o.y - 150, rw, 170];
@@ -24729,22 +24833,34 @@ function diBuild(){
   const chestP = St(cx0 - 30, chestA.p.y, 'chest', 60, { ss:[0, 0] });
   // the balloon on the crate island (if this variant has one), the lighthouse on its island
   const balP = V.balloon >= 0 ? OUT[V.balloon] : null;
-  if(balP){ balP.bl = 1; balP.ss = [0, 0]; balP.mv = { ax:0, ay:26, per:900, ph:0 }; balP.bx = balP.x; balP.by = balP.y; balP.mvx = 0; balP.mvy = 0; drifts.push(balP); }
+  if(balP){ balP.bl = 1; balP.ss = [0, 0]; }
   OUT[V.light].lh = 1;
+  // THE HARBOR BOAT sails on the clock between the left low base's shelf and the lagoon island; THE WHALE surfaces between the island and the right low base's shelf (the low bases' own routes to the bottom island)
+  const whales = [];
+  { const o = OUT[3], wa = DBS[la === BL ? 'BL' : 'BR'].shelfW[1], wb = DBS[lb === BL ? 'BL' : 'BR'].shelfW[0];
+    const sa = la.x1 + 120 + wa, gl = o.x - sa, ya = la.y + la.fy, ym = Math.round((ya + o.y)/2), bwid = 140, axb = Math.max(30, Math.round((gl - bwid)/2 + 12));
+    const bt = { x:Math.round(sa + gl/2 - bwid/2), y:ym, w:bwid, h:14, solid:false, floor:0, di:'boat', bx:Math.round(sa + gl/2 - bwid/2), by:ym, mv:{ ax:axb, ay:14, per:1000, ph:0 }, mvx:0, mvy:0, cl:1 };
+    drifts.push(bt); P.push(bt);
+    const sb = lb.x - 120 - wb, gr = sb - (o.x + o.w), yb = lb.y + lb.fy, yw = Math.round((yb + o.y)/2), wwid = Math.max(220, gr - 50);
+    const wl = { x:Math.round(o.x + o.w + (gr - wwid)/2), y:yw, w:wwid, h:14, solid:false, floor:0, di:'whale', ghost:true, wo:0, cl:1 }; P.push(wl); whales.push(wl); }
+  // THE BLIMP: a high moving route over the top, from the top outer island's height down to a drop-in over the high bases
+  { const o = OUT[0], by = Math.round(o.y + 84), bwid = 300, bt = { x:Math.round(WW/2 - bwid/2), y:by, w:bwid, h:14, solid:false, floor:0, di:'blimp', bx:Math.round(WW/2 - bwid/2), by, mv:{ ax:Math.round(WW*0.27), ay:18, per:3000, ph:0 }, mvx:0, mvy:0, cl:1 };
+    drifts.push(bt); P.push(bt); }
   // night: stars between each outer island and the base it faces (lit and solid only at night)
   const stars = [];
   for(const idx of [0, 1, 2, 3]){
     const o = OUT[idx]; let tb = null, bd = 1e9;
     for(const b of [TL, TR, BL, BR]){ const d = Math.hypot(b.cx - (o.x + o.w/2), b.y - o.y); if(d < bd){ bd = d; tb = b; } }
-    const sx = o.x + o.w/2 < tb.cx ? o.x + o.w - 40 : o.x + 40, ex = o.x + o.w/2 < tb.cx ? tb.x + 30 : tb.x1 - 30;
+    const sx = o.x + o.w/2 < tb.cx ? o.x + o.w - 40 : o.x + 40, ex = o.x + o.w/2 < tb.cx ? tb.x - 70 : tb.x1 + 70;
+    if(Math.abs(ex - sx) < 200) continue;
     const n = Math.max(2, Math.ceil(Math.abs(ex - sx)/190)), tY = tb.y - 6;
     for(let i = 1; i < n; i++){ const t = i/n; stars.push(St(sx + (ex - sx)*t - 50, o.y + (tY - o.y)*t - 6 - 70*Math.sin(Math.PI*t), 'star', 100, { ghost:true })); }
   }
   worldPlats = P;
-  // team bases, in team order (a fighter's homeBase is its team number); the base rect is the left grass slab only (the drop hole stays open)
+  // team bases, in team order (a fighter's homeBase is its team number); the base rect is the first deck segment only (the drop holes stay open)
   const mine = infos.filter(o=>o.team >= 0).sort((a, b)=>a.team - b.team);
   for(const o of mine){
-    bases.push({ team:o.team, x:o.x, y:o.y, w:o.wl, h:18, color:TEAM_COLORS[o.team % TEAM_COLORS.length], spawnX:Math.round(o.x + o.wl/2), spawnY:o.y - 46, floor:0, spawns:o.spawns,
+    bases.push({ team:o.team, x:o.decks[0][0], y:o.y, w:o.wl, h:18, color:TEAM_COLORS[o.team % TEAM_COLORS.length], spawnX:Math.round(o.x + o.wl/2), spawnY:o.y - 46, floor:0, spawns:o.spawns,
       zone:{ x:Math.round(o.x + o.w*0.15), y:o.y - 200, w:Math.round(o.w*0.7), h:230 } });
   }
   // rain: slippery bridges (an ice zone over each, host-side), wind and fog are in diStep and the veil
@@ -24753,9 +24869,53 @@ function diBuild(){
   stgPlace(0);
   let lowY = 0; for(const p of P) if(p.di && p.y > lowY) lowY = p.y;
   DRM = { v, wx:V.wx, teams:tc, t:0, isles:infos, bridges, drifts, areas, itemsA, chestA, plA, plB, chestP, balP, stars, all:P.filter(p=>p.di), nav:null, blocked:{}, sea:lowY + 150,
+    traps:infos.filter(i=>i.trap).map(i=>({ p:i.trap, st:0, t:0, stand:0 })), crumbs:infos.flatMap(i=>i.crumbs.map(p=>({ p, st:0, t:0, stand:0 }))), crumbBreaks:0, chand, pool, whales, brokenTraps:0, drops:0, splashes:0,
     broken:0, mended:0, cracked:0, fallHits:0, fallDmg:0, fallMax:0, plans:0, planFail:0, hopFail:0, failLog:[],
     balT:0, claims:0, healTot:0, shieldTot:0, lanterns:0, pops:0, opens:0, tokenLeft:K.tokenCap, tokens:0, chestProg:0, chestT:0, crates:0, lit:0 };
   DRM_VIS = true; DRM_GH = true;
+}
+
+// ---- v5 set pieces that run every frame (host): the trap blocks of the high bases, the chandelier, the pool's splash, the whale's schedule
+function diWhaleUp(t, w){ return ((t + (w.wo || 0)) % 1500) < 480; }
+function diStep5(t){
+  const K = DIK;
+  // a trap block in a high base's deck gives way under a camper: 300 fighter-frames on it (one for 5 s, two for 2.5 s): it cracks (a tell), drops out, and mends after 10 s
+  for(const T of DRM.traps){
+    const p = T.p;
+    if(T.st === 0){
+      let n = 0; for(const f of fighters) if(!f.dead && f.onground && f.x >= p.x && f.x <= p.x + p.w && Math.abs(f.y + f.r - p.y) <= 4) n++;
+      T.stand = n ? T.stand + n : Math.max(0, T.stand - 3);
+      if(T.stand >= 300){ T.st = 1; T.t = 45; p.crk = true; }
+    } else if(T.st === 1){ if(--T.t <= 0){ T.st = 2; T.t = 600; p.crk = false; p.off = true; const i = worldPlats.indexOf(p); if(i >= 0) worldPlats.splice(i, 1); DRM.brokenTraps++; for(let k = 0; k < 10; k++) particles.push({ x:p.x + p.w*(k + 0.5)/10, y:p.y + 20, vx:(k - 4.5)*0.4, vy:-1 - (k % 3)*0.4, life:32, color:'#8a7a68', r:3 + (k % 3) }); } }
+    else if(T.st === 2){ if(--T.t <= 0){ T.st = 3; T.t = 80; p.ghost = true; worldPlats.push(p); } }
+    else if(T.st === 3){ if(--T.t <= 0){ T.st = 0; T.stand = 0; delete p.ghost; delete p.off; } }
+  }
+  // crumbling edge blocks: a fighter standing on one for a second (more fighters, sooner) starts it going: it cracks (a tell), falls away, and comes back after 8 s (a flashing outline first)
+  for(const T of DRM.crumbs){
+    const p = T.p;
+    if(T.st === 0){ let n = 0; for(const f of fighters) if(!f.dead && f.onground && f.x >= p.x && f.x <= p.x + p.w && Math.abs(f.y + f.r - p.y) <= 4) n++; T.stand = n ? T.stand + n : Math.max(0, T.stand - 2); if(T.stand >= 60){ T.st = 1; T.t = 40; p.crk = true; } }
+    else if(T.st === 1){ if(--T.t <= 0){ T.st = 2; T.t = 480; p.crk = false; p.off = true; const i = worldPlats.indexOf(p); if(i >= 0) worldPlats.splice(i, 1); DRM.crumbBreaks++; for(let k = 0; k < 8; k++) particles.push({ x:p.x + p.w*(k + 0.5)/8, y:p.y + 6, vx:(k - 3.5)*0.4, vy:-1 - (k % 3)*0.4, life:30, color:'#8a8a94', r:3 + (k % 2) }); } }
+    else if(T.st === 2){ if(--T.t <= 0){ T.st = 3; T.t = 80; p.ghost = true; worldPlats.push(p); } }
+    else if(T.st === 3){ if(--T.t <= 0){ T.st = 0; T.stand = 0; delete p.ghost; delete p.off; } }
+  }
+  // the chandelier: tell (it swings), fall (hurts what is under it once), rubble, back up
+  const C = DRM.chand;
+  if(C){
+    const p = C.p;
+    if(C.st === 1){ if(--C.t <= 0){ C.st = 2; C.vy = 0; C.hit = {}; } }
+    else if(C.st === 2){
+      C.vy += 1.1; p.y += C.vy;
+      for(const f of fighters){ if(f.dead || C.hit[f.idx]) continue; if(Math.abs(f.x - (p.x + p.w/2)) < 90 && f.y > p.y - 30 && f.y < p.y + 60){ C.hit[f.idx] = 1; f.pct += 10; f.vy = -9; f.vx = (f.x < p.x + p.w/2 ? -4 : 4); f.hitstun = Math.max(f.hitstun, 16); f.onground = false; DRM.drops++; } }
+      if(p.y >= C.floorY){ p.y = C.floorY; C.st = 3; C.t = 1500; shake(8); for(let k = 0; k < 14; k++) particles.push({ x:p.x + p.w*(k + 0.5)/14, y:p.y, vx:(k - 6.5)*0.5, vy:-1.5 - (k % 3), life:28, color:'#e8dca0', r:3 + (k % 3) }); }
+    } else if(C.st === 3){ if(--C.t <= 0){ C.st = 4; C.t = 60; } }
+    else if(C.st === 4){ if(--C.t <= 0){ C.st = 0; p.y = C.y0; } }
+    const b = C.st === 1 ? 1 + Math.floor(C.t/10) : 0, q = p.ss; if(!q || q[0] !== C.st || q[1] !== b) p.ss = [C.st, b];
+  }
+  // the pool: a splash (a tell) as a fighter enters the water
+  const pl = DRM.pool;
+  for(const f of fighters){ const inw = !f.dead && f.x >= pl.x && f.x <= pl.x + pl.w && f.y + f.r >= pl.y && f.y <= pl.y + pl.h; if(inw && !f._diPool){ DRM.splashes++; for(let k = 0; k < 12; k++) particles.push({ x:f.x + (k - 6)*4, y:pl.y + 6, vx:(k - 5.5)*0.5, vy:-2 - (k % 3)*0.7, life:24, color:'#8fd0ff', r:3 + (k % 2) }); } f._diPool = inw; }
+  // the whale: up for 8 s in every 25 (a ghost under the water otherwise)
+  for(const w of DRM.whales){ const up = diWhaleUp(hazardT, w); if(up){ if(w.ghost) delete w.ghost; } else if(!w.ghost){ w.ghost = true; } }
 }
 
 // ---- time: the day and the night, a pure function of the match clock (hazardT: the snapshot's frame on a guest), so host and guest agree. 0 = full day, 1 = deepest night.
@@ -24780,7 +24940,7 @@ function diInBeam(x, y, L, t){
 // the lit rects of the undergrounds, from the geometry (host and guest alike)
 function diDarkRects(){
   const out = [];
-  for(const p of worldPlats) if(p.ib){ const x0 = p.ib[0], top = p.ib[1], w = p.ib[2]; out.push({ x:x0, y:top + DIK.slab, w, h:DIK.l3 + 30 - DIK.slab }); }
+  for(const p of worldPlats) if(p.ib){ const x0 = p.ib[0], top = p.ib[1], w = p.ib[2], fy = p.ib[6] || 250; out.push({ x:x0, y:top + DIK.slab, w, h:fy + 90 + 30 - DIK.slab }); }
   return out;
 }
 function diInCave(x, y){
@@ -24845,6 +25005,7 @@ function diStep(){
       if(hum.length && DRM.tokenLeft > 0){ DRM.tokenLeft--; for(const f of hum){ f._dmgDealt = (f._dmgDealt || 0) + K.tokenCredit; DRM.tokens++; } }
     }
   }
+  diStep5(t);
   for(const f of fighters){
     if(f.dead){ f._diPl = null; continue; }
     // a fresh stun with a real hit behind it, taken on a plank: the plank gives
@@ -24859,6 +25020,8 @@ function diStrike(f){
   for(const I of DRM.isles) for(const p of I.lan){
     if(Math.hypot(p.x + 11 - sx, p.y - sy) < 100){ if(!(p._lit > 0)) DRM.lanterns++; p._lit = DIK.lanternLit; p.ss = [8]; }
   }
+  const ch = DRM.chand;
+  if(ch && ch.st === 0 && Math.hypot(ch.p.x + ch.p.w/2 - sx, ch.p.y + 10 - sy) < 120){ ch.st = 1; ch.t = 45; }
   const bp = DRM.balP;
   if(bp && bp.ss[0] === 0 && Math.hypot(bp.x + bp.w/2 - sx, bp.y - 250 - sy) < 120){
     bp.ss = [1, 8]; DRM.balT = DIK.balloonGone; DRM.pops++;
@@ -24962,10 +25125,13 @@ function diEdge(A, B, solids){
   }
   const reach = Math.min(420, 60 + Math.sqrt(h)*12);
   if(gx > reach*0.8) return null;
-  if(right ? B.x1 < A.x1 + 12 : B.x0 > A.x0 - 12) return null;   // B must reach past the edge it is walked off
-  const edge = right ? A.x1 : A.x0, tx = Math.min(B.x1 - 12, Math.max(B.x0 + 12, edge + (right ? 1 : -1)*(gx + 24)));
-  if(!free(Math.min(edge, tx) - 20, Math.max(edge, tx) + 20, A.y - 40, B.y - 10)) return null;
-  return { t:'drop', lx:right ? A.x1 - 8 : A.x0 + 8, wx:edge + (right ? 1 : -1)*40, tx, c:14 + h/30 + gx/10 + (h > K.fallMin*H*0.9 ? 150 : 0) };
+  for(const rt of [right, !right]){   // walked off either side (B under the middle of A is no 'right' or 'left' of it)
+    if(rt ? B.x1 < A.x1 + 12 : B.x0 > A.x0 - 12) continue;   // B must reach past the edge it is walked off
+    const edge = rt ? A.x1 : A.x0, tx = Math.min(B.x1 - 12, Math.max(B.x0 + 12, edge + (rt ? 1 : -1)*(gx + 24)));
+    if(!free(Math.min(edge, tx) - 10, Math.max(edge, tx) + 10, A.y - 40, B.y - 10)) continue;
+    return { t:'drop', lx:rt ? A.x1 - 8 : A.x0 + 8, wx:edge + (rt ? 1 : -1)*40, tx, c:14 + h/30 + gx/10 + (h > K.fallMin*H*0.9 ? 150 : 0) };
+  }
+  return null;
 }
 
 function diNavBuild(){
@@ -24981,7 +25147,7 @@ function diNavBuild(){
 
 function diNodeAt(N, f){
   const feet = f.y + f.r; let best = null, bd = 1e9;
-  for(const n of N.nodes){ if((n.p.off || n.p.ghost)) continue; const x0 = n.p.x, x1 = n.p.x + n.p.w; if(f.x < x0 - 6 || f.x > x1 + 6 || Math.abs(feet - n.p.y) > 8) continue; const d = Math.abs(f.x - (x0 + x1)/2); if(d < bd){ bd = d; best = n; } }
+  for(const n of N.nodes){ if((n.p.off || n.p.ghost)) continue; const x0 = n.p.x, x1 = n.p.x + n.p.w; if(f.x < x0 - 30 || f.x > x1 + 30 || Math.abs(feet - n.p.y) > 8) continue; const d = Math.abs(f.x - (x0 + x1)/2) + (f.x < x0 || f.x > x1 ? 400 : 0); if(d < bd){ bd = d; best = n; } }   // standing on the very lip (the body's edge past the top's) still counts
   return best;
 }
 function diNodeFor(N, x, y){   // the surface at or below a point (a foe in the air: what it will land on)
@@ -24998,8 +25164,9 @@ function diPlan(N, start, goal){
   const placeAt = (d, tt)=>{ const m = d.p.mv, a2 = 2*Math.PI*tt/m.per + m.ph; d.x0 = d.p.bx + m.ax*Math.sin(a2); d.x1 = d.x0 + d.p.w; d.y = d.p.by + m.ay*Math.sin(a2); };
   const addE = (from, to, e)=>{ const k = from.id + '>' + to.id; if(seenE.has(k)) return; seenE.add(k); e.dr = 1; if(!dyn.has(from)) dyn.set(from, []); dyn.get(from).push({ to, e }); };
   for(const d of N.drifts){
-    for(let k = 0; k < 8; k++){
-      const tt = tNow + k*d.p.mv.per/8; for(const q of N.drifts) placeAt(q, tt);
+    const KS = d.p.mv.ax > 400 ? 40 : 8;   // the blimp sweeps the whole width: sampled finely enough to meet a small ledge
+    for(let k = 0; k < KS; k++){
+      const tt = tNow + k*d.p.mv.per/KS; for(const q of N.drifts) placeAt(q, tt);
       for(const n of nodes){
         if(n === d || (n.drift && n.id < d.id) || (n.p.off || n.p.ghost)) continue;
         if(Math.max(0, n.x0 - d.x1, d.x0 - n.x1) > 450) continue;
@@ -25046,8 +25213,17 @@ function diBrain(f, inp){
     }
   }
   if(f._diPlT > 0 && !(f.x >= DRM.plA.x && f.x <= DRM.plA.x + DRM.plA.w) && !(f.x >= DRM.plB.x && f.x <= DRM.plB.x + DRM.plB.w)) f._diPlT = 0;
-  if(diFollow(f, inp, N, feet)) return;
-  if(!f.onground) return;
+  if(diFollow(f, inp, N, feet)){
+    // walking but not getting anywhere (a block in the way, 60 px up): a hop over it
+    if(f.onground && f._diStillN > 10 && (inp.left || inp.right)){ inp.jump = (f._diStillN % 30) < 3; f._diHopDir = inp.right ? 1 : -1; f._diHopUntil = DRM.t + 45; }
+    return;
+  }
+  if(!f.onground){ if(f._diHopUntil > DRM.t){ inp.left = f._diHopDir < 0; inp.right = f._diHopDir > 0; } return; }   // over the block it hopped: on in the same direction
+  // no plan and not moving (a perch with no way on that the graph knows): feel its way out, left then right, hopping, and down through it now and then
+  if(f._diStillN > 90){
+    const ph = Math.floor((f._diStillN - 90)/45), dirE = (ph % 2) ? 1 : -1;
+    inp.left = dirE < 0; inp.right = dirE > 0; inp.jump = ((f._diStillN - 90) % 45) < 3; inp.down = (ph % 4) === 3; return;
+  }
   let dir = inp.right ? 1 : inp.left ? -1 : 0;
   if(f._diTurn > hazardT){ dir = f._diDir; inp.left = dir < 0; inp.right = dir > 0; }
   if(!dir){ f._diBlk = 0; return; }
@@ -25104,7 +25280,7 @@ function diFollow(f, inp, N, feet){
   let e = P.edges[i]; const B = P.path[i + 1], dirTo = (x)=>x > f.x + 6 ? 1 : x < f.x - 6 ? -1 : 0;
   if(e.dr){   // a ferry edge: only when it can be made right now; else it waits for the moment (and gives up after a while)
     const live = diEdge(node, B, N.solids);
-    if(!live){ f._diWaitD = (f._diWaitD || 0) + 1; if(f._diWaitD > 200){ f._diWaitD = 0; f._diPlan = null; } inp.left = false; inp.right = false; return true; }
+    if(!live){ f._diWaitD = (f._diWaitD || 0) + 1; if(f._diWaitD > 150){ f._diWaitD = 0; f._diPlan = null; DRM.blocked[node.id + '>' + B.id] = now + 500; } /* waited long enough: that ferry is skipped for a while */ inp.left = false; inp.right = false; return true; }
     f._diWaitD = 0; live.dr = 1; e = live;
   }
   inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false;
@@ -25157,6 +25333,13 @@ function diGoal(f, N){
     const mates = fighters.filter(o=>!o.dead && o.team === f.team).sort((a, b)=>a.idx - b.idx), pl = mates[0] === f ? DRM.plA : DRM.plB;
     return diNodeFor(N, pl.x + pl.w/2, pl.y - 2);
   }
+  // a sightseeing trip now and then (foe not close, not hurt): the harbor boat, the whale, the lagoon island, the other outer islands, so the sea routes are used
+  { const slot = Math.floor(DRM.t/900 + f.idx*2);
+    if(foeD > 260 && f.pct < 90 && slot % 3 === 0){
+      const rank = (n)=>n.p.di === 'boat' ? 0 : n.p.di === 'whale' ? 1 : (n.p.di === 'outer' && n.p.oi === 3) ? 2 : 3;
+      const tour = N.nodes.filter(n=>!n.p.off && !n.p.ghost && (n.p.di === 'boat' || n.p.di === 'whale' || (n.p.di === 'outer' && n.p.oi !== undefined) || n.p.di === 'crane' || n.p.di === 'chand')).sort((a, b)=>rank(a) - rank(b) || a.id - b.id);
+      if(tour.length){ const k = (slot/3 | 0) + f.idx; DRM.tours = (DRM.tours || 0) + 1; return tour[k % Math.min(tour.length, 8)]; }
+    } }
   if(foe && (foeD > 320 || Math.abs(foe.y - f.y) > 150)) return diNodeFor(N, foe.x, foe.y + (foe.r || 24));
   return null;
 }
@@ -25218,8 +25401,9 @@ function diLights(o, m){
 }
 
 function diDrawSea(){
+  diDrawSky(ctx, hazardT);
   const c = ctx, V = (stage.edges && stage.edges.void) || ['#bfe3f5', '#2b5f8c'], x0 = -700, x1 = WW + 700, bot = WH + 700;
-  let sea = WH*0.80; for(const p of worldPlats) if(p.di && p.y + 130 > sea) sea = p.y + 130;   // under the lowest ledge (host and guest alike)
+  const sea = diSeaY();
   c.save();
   const g = c.createLinearGradient(0, sea, 0, bot); g.addColorStop(0, V[0]); g.addColorStop(1, V[1]);
   c.fillStyle = g; c.fillRect(x0, sea, x1 - x0, bot - sea);
@@ -25231,24 +25415,255 @@ function diDrawSea(){
   }
   c.restore();
 }
-function diDrawIsle(ib){
-  const c = ctx, K = DIK, x0 = ib[0], top = ib[1], w = ib[2], team = ib[3], x1 = x0 + w, cx = x0 + w/2, wl = (w - K.shaft)/2, grass = (stage && stage.ground) || '#86c75a', fb = top + K.floorY + K.floorT;
-  c.save(); c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
-  c.fillStyle = '#9a7048'; c.beginPath(); c.moveTo(x0, top); c.lineTo(x1, top); c.lineTo(x1, fb); c.lineTo(x1 - 40, fb + 12);
-  c.quadraticCurveTo(cx + 110, top + K.l3 + 70, cx, top + K.l3 + 120); c.quadraticCurveTo(cx - 110, top + K.l3 + 70, x0 + 40, fb + 12); c.lineTo(x0, fb); c.closePath(); c.fill(); c.stroke();
-  c.fillStyle = '#35271c';
-  c.fillRect(x0 + K.wall, top + K.slab, w - 2*K.wall, K.floorY - K.slab);                                          // the cave
-  c.fillRect(x0 - 2, top + K.doorY, K.wall + 2, K.floorY - K.doorY); c.fillRect(x1 - K.wall, top + K.doorY, K.wall + 2, K.floorY - K.doorY);   // the doorways
-  c.fillRect(cx - K.shaft/2, top, K.shaft, K.slab);                                                               // the drop hole
-  c.fillRect(cx - K.hole/2, top + K.floorY, K.hole, K.floorT);                                                    // the hole in the floor
-  c.strokeStyle = 'rgba(255,255,255,0.10)'; c.lineWidth = 2; c.beginPath(); c.moveTo(x0 + 80, top + 130); c.lineTo(x0 + 130, top + 110); c.moveTo(x1 - 80, top + 130); c.lineTo(x1 - 130, top + 110); c.stroke();
-  c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillStyle = grass;
-  c.fillRect(x0, top, wl, 16); c.strokeRect(x0, top, wl, 16); c.fillRect(x1 - wl, top, wl, 16); c.strokeRect(x1 - wl, top, wl, 16);
-  if(team >= 0){
-    const col = TEAM_COLORS[team % TEAM_COLORS.length];
-    c.fillStyle = col; c.fillRect(x0 + 10, top + 16, wl - 20, 7); c.fillRect(x1 - wl + 10, top + 16, wl - 20, 7);
-    c.fillStyle = '#1c1c1c'; c.fillRect(cx - 2 - K.shaft/2 - 30, top - 54, 4, 54); c.fillStyle = col; c.fillRect(cx + 2 - K.shaft/2 - 30, top - 54, 30, 18); c.strokeRect(cx + 2 - K.shaft/2 - 30, top - 54, 30, 18);
+// ---- v5 art: the islands drawn as the block clusters they are (host and guest alike: from the solid plats; nothing here is read by physics)
+const DPAL = [
+  { rock:'#8d7b5e', rock2:'#6a5c44', top:'#6dbb4a', top2:'#4f9a3a', line:'#2a2418' },   // 0 garden: earth and brick under green
+  { rock:'#80848c', rock2:'#585c66', top:'#7fae5a', top2:'#5f8c46', line:'#1a1c22' },   // 1 cliff: grey rock
+  { rock:'#dcc58b', rock2:'#b99f66', top:'#f1deA4', top2:'#d9c487', line:'#4a3b1f' },   // 2 beach: sand
+  { rock:'#8e6c48', rock2:'#684b31', top:'#aa8b5a', top2:'#8c6f46', line:'#2a1c10' },   // 3 harbor: timber and stone
+  { rock:'#9c9088', rock2:'#776c64', top:'#79b86a', top2:'#5c9a50', line:'#25201c' },   // 4 hot spring
+  { rock:'#abaab4', rock2:'#85848f', top:'#8fbf78', top2:'#6a9a58', line:'#1e1e26' },   // 5 shrine
+  { rock:'#8b6b4a', rock2:'#6b4f36', top:'#d9c692', top2:'#bfa974', line:'#2a1c10' },   // 6 wreck
+  { rock:'#d3ba81', rock2:'#b49b63', top:'#f2de9c', top2:'#d9c47c', line:'#4a3b1f' },   // 7 treasure
+  { rock:'#dad1c2', rock2:'#b9ae9c', top:'#ece4d4', top2:'#d0c5b1', line:'#3a3226' },   // 8 resort: marble
+];
+function diMix(a, b, t){ const h = (s, i)=>parseInt(s.slice(1 + i*2, 3 + i*2), 16), r = (i)=>Math.round(h(a, i) + (h(b, i) - h(a, i))*t); return 'rgb(' + r(0) + ',' + r(1) + ',' + r(2) + ')'; }
+// which solid rects have air over them (their top is a surface), and the top height of each island (for the darker shading lower down); rebuilt when the solids change
+let DRM_SOL = null;
+function diSolidInfo(){
+  const sol = worldPlats.filter(p=>p.solid && (p.di === 'isle' || p.di === 'outer' || p.di === 'islet'));
+  if(DRM_SOL && DRM_SOL.n === sol.length && DRM_SOL.a === worldPlats.length) return DRM_SOL;
+  const exp = new Map(), top = new Map();
+  for(const p of sol){ const k = p.ix; if(!top.has(k) || p.y < top.get(k)) top.set(k, p.y); }
+  for(const p of sol){ exp.set(p, !sol.some(q=>q !== p && Math.abs(q.y + q.h - p.y) <= 3 && Math.min(q.x + q.w, p.x + p.w) - Math.max(q.x, p.x) > 8)); }
+  DRM_SOL = { n:sol.length, a:worldPlats.length, sol, exp, top };
+  return DRM_SOL;
+}
+function diDrawSolid(c, p, info){
+  const pal = DPAL[p.th !== undefined ? p.th : 1], rnd = diRnd(Math.round(p.x*7 + p.y*13)), top0 = info.top.get(p.ix) !== undefined ? info.top.get(p.ix) : p.y, dep = Math.max(0, Math.min(1, (p.y - top0)/420));
+  const lump = p.blk && !p.hg && p.y < top0 + 1;
+  let x = p.x;
+  while(x < p.x + p.w - 1){
+    let bw = 60 + Math.floor(rnd()*4)*30; if(p.x + p.w - (x + bw) < 45) bw = p.x + p.w - x;
+    let y = p.y;
+    while(y < p.y + p.h - 1){
+      let bh = [60, 60, 90, 120][Math.floor(rnd()*4)]; if(p.y + p.h - (y + bh) < 30) bh = p.y + p.h - y;
+      const sh = rnd()*0.5 + dep*0.55 + ((y - p.y)/Math.max(60, p.h))*0.15;
+      c.fillStyle = lump && p.th === 0 ? diMix('#3f8f3a', '#2f6f2e', rnd()) : diMix(pal.rock, pal.rock2, Math.min(1, sh));
+      c.fillRect(x, y, bw, bh);
+      c.strokeStyle = 'rgba(0,0,0,0.55)'; c.lineWidth = 2; c.strokeRect(x, y, bw, bh);
+      c.fillStyle = 'rgba(255,255,255,0.10)'; c.fillRect(x + 2, y + 2, bw - 4, 4);   // a lit edge on every block
+      if(rnd() < 0.22){ c.strokeStyle = 'rgba(0,0,0,0.28)'; c.lineWidth = 2; c.beginPath(); c.moveTo(x + bw*0.3, y + 3); c.lineTo(x + bw*0.42, y + bh*0.45); c.lineTo(x + bw*0.34, y + bh - 4); c.stroke(); }
+      y += bh;
+    }
+    x += bw;
   }
+  if(info.exp.get(p) && !p.hg && p.y > top0 + 1){ c.fillStyle = 'rgba(255,255,255,0.14)'; c.fillRect(p.x, p.y, p.w, 6); c.strokeStyle = 'rgba(0,0,0,0.5)'; c.lineWidth = 2; c.strokeRect(p.x, p.y, p.w, 6); }   // a cave floor: bare stone
+  if(info.exp.get(p) && !p.hg && p.y <= top0 + 1){   // the top face: grass, sand, planks, hedge: a lit cap with ragged tufts
+    const th = p.th, cap = th === 3 ? '#b99a62' : th === 2 || th === 7 || th === 6 ? pal.top : pal.top;
+    c.fillStyle = cap; c.fillRect(p.x, p.y, p.w, th === 3 ? 10 : 14); c.strokeStyle = 'rgba(0,0,0,0.6)'; c.lineWidth = 2; c.strokeRect(p.x, p.y, p.w, th === 3 ? 10 : 14);
+    if(th === 3){ c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = 1; for(let q = p.x + 24; q < p.x + p.w; q += 24){ c.beginPath(); c.moveTo(q, p.y); c.lineTo(q, p.y + 10); c.stroke(); } }
+    else { c.fillStyle = pal.top2; for(let q = p.x + 6; q < p.x + p.w - 6; q += 18 + (Math.round(q*3) % 7)){ c.beginPath(); c.moveTo(q, p.y + 12); c.lineTo(q + 5, p.y + 20 + (Math.round(q) % 5)); c.lineTo(q + 10, p.y + 12); c.closePath(); c.fill(); } }
+  }
+  if(p.hg || (info.exp.get(p) === false && p.y > top0 + 200)){   // hanging blocks: roots and vines down from the underside
+    for(let q = p.x + 10; q < p.x + p.w - 6; q += 26 + Math.round(rnd()*22)){
+      const L = 18 + Math.round(rnd()*46); c.strokeStyle = (p.th === 2 || p.th === 7) ? '#6b8a3a' : (rnd() < 0.5 ? '#3f7a34' : '#5a4630'); c.lineWidth = 3;
+      c.beginPath(); c.moveTo(q, p.y + p.h - 2); c.quadraticCurveTo(q + 6, p.y + p.h + L*0.5, q - 2, p.y + p.h + L); c.stroke();
+    }
+  }
+  if(p.crk){ c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.moveTo(p.x + p.w*0.3, p.y); c.lineTo(p.x + p.w*0.5, p.y + p.h*0.4); c.lineTo(p.x + p.w*0.4, p.y + p.h); c.moveTo(p.x + p.w*0.7, p.y); c.lineTo(p.x + p.w*0.6, p.y + p.h*0.5); c.stroke(); }
+}
+function diPalm(c, x, y, h, lean, t){
+  c.save(); c.strokeStyle = '#7a5a33'; c.lineWidth = 9; c.beginPath(); c.moveTo(x, y); c.quadraticCurveTo(x + lean*0.2, y - h*0.5, x + lean, y - h); c.stroke();
+  c.strokeStyle = '#4a361c'; c.lineWidth = 2; for(let k = 1; k < 5; k++){ const u = k/5, qx = x + lean*u*u*1.0, qy = y - h*u; c.beginPath(); c.moveTo(qx - 6, qy); c.lineTo(qx + 6, qy - 4); c.stroke(); }
+  const hx = x + lean, hy = y - h;
+  for(let k = 0; k < 6; k++){ const a = -Math.PI/2 + (k - 2.5)*0.62 + Math.sin(t*0.03 + k)*0.05; c.fillStyle = k % 2 ? '#3f9a3a' : '#57b845'; c.strokeStyle = '#1c3a14'; c.lineWidth = 2; c.beginPath(); c.moveTo(hx, hy); c.quadraticCurveTo(hx + Math.cos(a)*50, hy + Math.sin(a)*50 - 14, hx + Math.cos(a)*90, hy + Math.sin(a)*90 + 24); c.quadraticCurveTo(hx + Math.cos(a)*50, hy + Math.sin(a)*50 + 6, hx, hy); c.fill(); c.stroke(); }
+  c.fillStyle = '#5a3a1c'; c.beginPath(); c.arc(hx - 5, hy + 5, 6, 0, 7); c.arc(hx + 6, hy + 7, 6, 0, 7); c.fill();
+  c.restore();
+}
+function diTree(c, x, y, h, kind){   // 0 round tree, 1 pine
+  c.save(); c.strokeStyle = '#5a3a1c'; c.lineWidth = 8; c.beginPath(); c.moveTo(x, y); c.lineTo(x, y - h*0.5); c.stroke();
+  c.lineWidth = 2; c.strokeStyle = '#1c3a14';
+  if(kind === 1){ for(let k = 0; k < 3; k++){ c.fillStyle = k % 2 ? '#2f7a3a' : '#3b8a44'; c.beginPath(); c.moveTo(x - 36 + k*6, y - h*0.25 - k*h*0.22); c.lineTo(x, y - h*0.62 - k*h*0.22); c.lineTo(x + 36 - k*6, y - h*0.25 - k*h*0.22); c.closePath(); c.fill(); c.stroke(); } }
+  else { c.fillStyle = '#4aa844'; c.beginPath(); c.arc(x, y - h*0.65, h*0.34, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#5cc055'; c.beginPath(); c.arc(x - h*0.14, y - h*0.72, h*0.16, 0, 7); c.fill(); }
+  c.restore();
+}
+function diBox(c, x, y, s, col){ c.fillStyle = col || '#b58a4a'; c.fillRect(x, y - s, s, s); c.strokeStyle = '#2a1c10'; c.lineWidth = 2; c.strokeRect(x, y - s, s, s); c.beginPath(); c.moveTo(x, y - s); c.lineTo(x + s, y); c.moveTo(x + s, y - s); c.lineTo(x, y); c.stroke(); }
+// the decoration of one island on its exposed tops, by theme (seeded by position: the same on host and guest)
+function diDecor(c, I, info, t){
+  const th = I.th, rnd = diRnd(Math.round(I.x*3 + I.top*5) + th);
+  const tops = info.sol.filter(p=>p.ix === I.ix && info.exp.get(p) && !p.hg && p.y <= I.top + 1);
+  for(const p of tops){
+    if(p.w < 80) continue;
+    const n = Math.max(1, Math.floor(p.w/170));
+    for(let k = 0; k < n; k++){
+      const x = p.x + 40 + rnd()*(p.w - 80), y = p.y;
+      if(th === 0){ if(rnd() < 0.7) diTree(c, x, y, 70 + rnd()*40, 0); for(let q = 0; q < 4; q++){ c.fillStyle = ['#ff6fa8', '#ffd23f', '#ffffff', '#c77bff'][Math.floor(rnd()*4)]; c.beginPath(); c.arc(p.x + 20 + rnd()*(p.w - 40), y + 4, 4, 0, 7); c.fill(); } }
+      else if(th === 1){ if(rnd() < 0.6) diTree(c, x, y, 90 + rnd()*50, 1); }
+      else if(th === 2){ if(rnd() < 0.75) diPalm(c, x, y, 120 + rnd()*50, (rnd() - 0.5)*70, t); else if(rnd() < 0.5){ c.strokeStyle = '#6b4a2a'; c.lineWidth = 4; c.beginPath(); c.moveTo(x, y); c.lineTo(x, y - 60); c.stroke(); c.fillStyle = '#e2503a'; c.beginPath(); c.moveTo(x - 38, y - 60); c.quadraticCurveTo(x, y - 100, x + 38, y - 60); c.closePath(); c.fill(); c.stroke(); } }
+      else if(th === 3){ if(rnd() < 0.7) diBox(c, x, y, 36 + Math.round(rnd()*3)*8, rnd() < 0.5 ? '#b58a4a' : '#9a6f3a'); else { c.fillStyle = '#6b6f78'; c.fillRect(x - 5, y - 28, 10, 28); c.strokeRect(x - 5, y - 28, 10, 28); } }
+    }
+  }
+}
+function diDrawBaseExtras(c, ib, t){   // the per-base landmarks: the arch and the flower beds (garden), the waterfall (cliff), the pier posts (beach), the dock and mast (harbor)
+  const x0 = ib[0], top = ib[1], w = ib[2], th = ib[5], fy = ib[6], x1 = x0 + w, sxs = ib[7] || [];
+  c.save(); c.lineJoin = 'round';
+  if(th === 0){ for(const sx of sxs){ c.strokeStyle = '#2a2418'; c.lineWidth = 3; c.fillStyle = '#4aa844'; c.fillRect(sx - 120, top - 120, 26, 120); c.strokeRect(sx - 120, top - 120, 26, 120); c.fillRect(sx + 94, top - 120, 26, 120); c.strokeRect(sx + 94, top - 120, 26, 120); c.beginPath(); c.arc(sx, top - 120, 120, Math.PI, 0); c.lineWidth = 22; c.strokeStyle = '#4aa844'; c.stroke(); c.lineWidth = 3; c.strokeStyle = '#2a2418'; c.beginPath(); c.arc(sx, top - 120, 131, Math.PI, 0); c.stroke(); c.fillStyle = '#ff9ec7'; for(let q = 0; q < 7; q++){ const a = Math.PI + q*Math.PI/6; c.beginPath(); c.arc(sx + Math.cos(a)*120, top - 120 + Math.sin(a)*120, 6, 0, 7); c.fill(); } } }
+  if(th === 1){   // the waterfall pours off the right shoulder of the cliff
+    const fx = x1 - 40, y0 = top + 20; c.fillStyle = 'rgba(160,215,255,0.8)'; c.fillRect(fx - 22, y0, 44, 620);
+    c.strokeStyle = 'rgba(255,255,255,0.8)'; c.lineWidth = 3; for(let q = 0; q < 6; q++){ const px2 = fx - 16 + q*6.4, off = (t*5 + q*70) % 620; c.beginPath(); c.moveTo(px2, y0 + off); c.lineTo(px2, y0 + Math.min(620, off + 90)); c.stroke(); }
+    c.fillStyle = 'rgba(255,255,255,0.85)'; for(let q = 0; q < 7; q++){ c.beginPath(); c.arc(fx - 30 + q*10, y0 + 620 + Math.sin(t*0.1 + q)*4, 9, 0, 7); c.fill(); }
+  }
+  if(th === 2){   // the pier: posts under the low right shelf, a rail
+    const px0 = x1 - 20, py0 = top + fy; c.strokeStyle = '#4a3320'; c.lineWidth = 8; for(let q = 0; q < 6; q++){ c.beginPath(); c.moveTo(px0 + 20 + q*50, py0 + 14); c.lineTo(px0 + 20 + q*50, py0 + 150); c.stroke(); }
+    c.strokeStyle = '#6b4a2a'; c.lineWidth = 4; c.beginPath(); c.moveTo(px0 + 10, py0 - 30); c.lineTo(px0 + 270, py0 - 30); c.stroke(); for(let q = 0; q < 6; q++){ c.beginPath(); c.moveTo(px0 + 20 + q*50, py0); c.lineTo(px0 + 20 + q*50, py0 - 30); c.stroke(); }
+  }
+  if(th === 3){   // the dock: the mast and crane on the deck, ropes, a lamp
+    const mx = x0 + w*0.5; c.strokeStyle = '#2a1c10'; c.lineWidth = 3; c.fillStyle = '#6b6f78'; c.fillRect(mx - 6, top - 250, 12, 250); c.strokeRect(mx - 6, top - 250, 12, 250);
+    c.beginPath(); c.moveTo(mx, top - 250); c.lineTo(mx + 120, top - 250); c.lineTo(mx + 120, top - 190); c.stroke(); c.strokeStyle = '#8a6e45'; c.lineWidth = 2; c.beginPath(); c.moveTo(mx + 120, top - 190); c.lineTo(mx + 120, top - 150); c.stroke(); diBox(c, mx + 100, top - 110, 40, '#9a6f3a');
+    c.fillStyle = '#ffe28a'; c.beginPath(); c.arc(mx, top - 262, 8, 0, 7); c.fill();
+  }
+  c.restore();
+}
+// the cave: a dark back wall of small bricks behind the open rooms, and the doorway frames
+function diDrawCave(c, ib){
+  const K = DIK, x0 = ib[0], top = ib[1], w = ib[2], fy = ib[6] || 250, x1 = x0 + w, pal = DPAL[ib[5] !== undefined ? ib[5] : 1];
+  c.save(); c.fillStyle = diMix('#2a2218', pal.rock2, 0.25); c.fillRect(x0, top + K.slab, w, fy + 90 + 14 - K.slab);
+  c.fillStyle = 'rgba(0,0,0,0.22)'; for(let y = top + K.slab; y < top + fy + 100; y += 30) for(let x = x0 + ((y/30) % 2)*30; x < x1; x += 60){ c.strokeStyle = 'rgba(255,255,255,0.05)'; c.lineWidth = 1; c.strokeRect(x, y, 60, 30); }
+  c.strokeStyle = 'rgba(255,255,255,0.10)'; c.lineWidth = 3; for(let x = x0 + 150; x < x1 - 160; x += 230){ c.beginPath(); c.moveTo(x, top + fy); c.lineTo(x, top + fy - 70); c.arc(x + 40, top + fy - 70, 40, Math.PI, 0); c.lineTo(x + 80, top + fy); c.stroke(); }
+  c.fillStyle = 'rgba(255,214,120,0.55)'; for(let x = x0 + 100; x < x1 - 60; x += 70){ c.beginPath(); c.arc(x, top + K.slab + 18 + Math.sin(x*0.05)*5, 3.5, 0, 7); c.fill(); }
+  c.restore();
+}
+
+// the themed outer islands: a steaming hot spring, a stone shrine, a beached shipwreck, a treasure island with an X and a palm
+function diDrawOuterTheme(c, p, t){
+  const th = p.th, cx = p.x + p.w/2, y = p.y;
+  c.save(); c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  if(th === 4){   // the hot spring: a rock rim, bright water, rising steam
+    const rw = Math.min(p.w*0.5, 230);
+    c.fillStyle = '#7c7068'; c.beginPath(); c.ellipse(cx, y + 2, rw/2 + 14, 22, 0, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = '#69c7e8'; c.beginPath(); c.ellipse(cx, y + 2, rw/2, 15, 0, 0, 7); c.fill(); c.strokeStyle = 'rgba(255,255,255,0.7)'; c.lineWidth = 2; c.beginPath(); c.ellipse(cx + Math.sin(t*0.05)*10, y + 2, rw/4, 6, 0, 0, 7); c.stroke();
+    for(let q = 0; q < 7; q++){ const u = ((t*0.6 + q*37) % 130)/130, sx = cx - rw/2 + 20 + q*(rw - 40)/6 + Math.sin(u*6 + q)*14; c.fillStyle = 'rgba(255,255,255,' + (0.5*(1 - u)).toFixed(2) + ')'; c.beginPath(); c.arc(sx, y - u*120, 10 + u*16, 0, 7); c.fill(); }
+  } else if(th === 5){   // the shrine: a stone gate and two stone lanterns
+    c.fillStyle = '#b7b7c0'; c.fillRect(cx - 70, y - 120, 18, 120); c.strokeRect(cx - 70, y - 120, 18, 120); c.fillRect(cx + 52, y - 120, 18, 120); c.strokeRect(cx + 52, y - 120, 18, 120);
+    c.fillStyle = '#c4452e'; c.fillRect(cx - 92, y - 140, 184, 16); c.strokeRect(cx - 92, y - 140, 184, 16); c.fillRect(cx - 78, y - 108, 156, 10); c.strokeRect(cx - 78, y - 108, 156, 10);
+    for(const sx of [cx - 130, cx + 130]){ c.fillStyle = '#a9a9b2'; c.fillRect(sx - 8, y - 36, 16, 36); c.strokeRect(sx - 8, y - 36, 16, 36); c.fillRect(sx - 16, y - 64, 32, 26); c.strokeRect(sx - 16, y - 64, 32, 26); c.fillStyle = '#ffe28a'; c.fillRect(sx - 7, y - 58, 14, 14); c.fillStyle = '#8a8a94'; c.beginPath(); c.moveTo(sx - 22, y - 64); c.lineTo(sx, y - 82); c.lineTo(sx + 22, y - 64); c.closePath(); c.fill(); c.stroke(); }
+  } else if(th === 6){   // the shipwreck: a broken hull on its side, ribs, a snapped mast
+    const hx = cx - 110;
+    c.fillStyle = '#7b5a3a'; c.beginPath(); c.moveTo(hx, y); c.quadraticCurveTo(hx + 20, y - 70, hx + 120, y - 66); c.lineTo(hx + 240, y - 90); c.lineTo(hx + 230, y); c.closePath(); c.fill(); c.stroke();
+    c.strokeStyle = '#3a281a'; c.lineWidth = 4; for(let q = 0; q < 6; q++){ c.beginPath(); c.moveTo(hx + 30 + q*34, y); c.lineTo(hx + 40 + q*34, y - 70 - (q % 2)*14); c.stroke(); }
+    c.strokeStyle = '#4a3320'; c.lineWidth = 9; c.beginPath(); c.moveTo(hx + 150, y - 78); c.lineTo(hx + 190, y - 210); c.stroke(); c.fillStyle = '#e8e0d0'; c.beginPath(); c.moveTo(hx + 190, y - 210); c.lineTo(hx + 250, y - 170); c.lineTo(hx + 180, y - 150); c.closePath(); c.fill(); c.lineWidth = 2; c.strokeStyle = '#1c1c1c'; c.stroke();
+  } else if(th === 7){   // treasure island: a red X in the sand, a palm, gold
+    c.strokeStyle = '#c4452e'; c.lineWidth = 9; c.beginPath(); c.moveTo(cx - 34, y + 18); c.lineTo(cx + 34, y + 44); c.moveTo(cx + 34, y + 18); c.lineTo(cx - 34, y + 44); c.stroke();
+    diPalm(c, p.x + p.w - 60, y, 170, -40, t); c.fillStyle = '#ffd24a'; for(let q = 0; q < 6; q++){ c.beginPath(); c.arc(cx + 70 + q*13, y - 3 - (q % 2)*3, 5, 0, 7); c.fill(); }
+  }
+  c.restore();
+}
+// the resort in the middle: marble, columns, windows, awnings, the pool, a sun umbrella, a bell tower
+function diDrawResort(c, info, t){
+  const isl = {}; for(const p of info.sol) if(p.th === 8 && p.di === 'islet') isl[p.ix - 30] = p;
+  c.save(); c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  const M3 = isl[3], M5 = isl[5], M2 = isl[2], M1 = isl[1], M4 = isl[4];
+  if(M3){ for(let q = 0; q < Math.floor(M3.w/90); q++){ c.fillStyle = q % 2 ? '#8fb8d8' : '#a8cbe4'; c.fillRect(M3.x + 14 + q*90, M3.y + 22, 52, 56); c.strokeRect(M3.x + 14 + q*90, M3.y + 22, 52, 56); c.beginPath(); c.moveTo(M3.x + 40 + q*90, M3.y + 22); c.lineTo(M3.x + 40 + q*90, M3.y + 78); c.stroke(); }
+    c.fillStyle = '#c4452e'; for(let q = 0; q < Math.floor(M3.w/60); q++){ c.fillRect(M3.x + q*60, M3.y - 38, 30, 14); c.fillStyle = q % 2 ? '#e8e0d0' : '#c4452e'; c.fillRect(M3.x + q*60 + 30, M3.y - 38, 30, 14); } }
+  if(M3 && M5){ const a = Math.max(M3.x, M5.x) + 24, b = Math.min(M3.x + M3.w, M5.x + M5.w) - 24, y0 = M3.y + M3.h, y1 = M5.y;
+    for(const sx of [a, b]){ c.fillStyle = '#e8e0d0'; c.fillRect(sx - 10, y0, 20, y1 - y0); c.strokeRect(sx - 10, y0, 20, y1 - y0); c.fillStyle = '#cfc4b0'; c.fillRect(sx - 15, y0, 30, 10); c.fillRect(sx - 15, y1 - 10, 30, 10); }
+    c.fillStyle = '#b8323a'; c.fillRect(a + 20, y1 - 7, Math.max(10, b - a - 40), 7); }
+  if(M2){ const pw = M2.w - 72, px0 = M2.x + 36; c.fillStyle = '#69c7e8'; c.fillRect(px0, M2.y - 40, pw, 44); c.strokeRect(px0, M2.y - 40, pw, 44); c.fillStyle = 'rgba(255,255,255,0.55)'; for(let q = 0; q < 5; q++){ const ry = M2.y - 28 + (q % 3)*8; c.fillRect(px0 + 10 + ((q*37 + t*0.6) % (pw - 40)), ry, 22, 3); }
+    c.strokeStyle = '#9aa0a8'; c.lineWidth = 3; c.beginPath(); c.moveTo(px0 + pw - 14, M2.y - 4); c.lineTo(px0 + pw - 14, M2.y - 58); c.quadraticCurveTo(px0 + pw - 14, M2.y - 70, px0 + pw - 28, M2.y - 70); c.stroke(); }
+  if(M1){ c.strokeStyle = '#6b4a2a'; c.lineWidth = 4; c.beginPath(); c.moveTo(M1.x + M1.w/2, M1.y); c.lineTo(M1.x + M1.w/2, M1.y - 70); c.stroke(); c.fillStyle = '#ffd23f'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.moveTo(M1.x + M1.w/2 - 56, M1.y - 70); c.quadraticCurveTo(M1.x + M1.w/2, M1.y - 118, M1.x + M1.w/2 + 56, M1.y - 70); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = '#ff6fa8'; c.fillRect(M1.x + 20, M1.y - 16, 46, 16); c.strokeRect(M1.x + 20, M1.y - 16, 46, 16); }
+  if(M4){ c.fillStyle = '#e8e0d0'; c.fillRect(M4.x + M4.w/2 - 22, M4.y - 120, 44, 120); c.strokeRect(M4.x + M4.w/2 - 22, M4.y - 120, 44, 120); c.fillStyle = '#c4452e'; c.beginPath(); c.moveTo(M4.x + M4.w/2 - 30, M4.y - 120); c.lineTo(M4.x + M4.w/2, M4.y - 160); c.lineTo(M4.x + M4.w/2 + 30, M4.y - 120); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = '#ffd24a'; c.beginPath(); c.arc(M4.x + M4.w/2, M4.y - 86, 10, 0, 7); c.fill(); c.stroke(); }
+  c.restore();
+}
+// the sky and the sea alive: far islands and clouds that move slower than the world (parallax), gulls, the sea; host and guest alike, from the match clock
+function diDrawSky(c, t){
+  const WWd = WW, sea = diSeaY();
+  c.save();
+  const par = (k, ky)=>({ ox:camX*(1 - k), oy:camY*(1 - ky) });
+  // far islands (a skyline on the horizon)
+  { const q = par(0.14, 0.10), rnd = diRnd(77);
+    for(let i = 0; i < 9; i++){ const bx = -700 + i*(WWd + 1400)/8 + q.ox, w = 360 + Math.floor(rnd()*4)*90, h = 120 + Math.floor(rnd()*4)*40, by = sea - 520 + Math.floor(rnd()*5)*70 + q.oy;
+      c.fillStyle = 'rgba(120,140,180,0.38)'; for(let b = 0; b < 5; b++){ const bw2 = w/5, bh = h*(0.5 + ((b*37 + i*11) % 10)/18); c.fillRect(bx + b*bw2, by - bh, bw2 + 1, bh + 40); }
+      c.fillStyle = 'rgba(110,150,120,0.40)'; c.fillRect(bx, by - h*0.6 - 8, w, 8); } }
+  // clouds
+  { const q = par(0.28, 0.2), rnd = diRnd(31);
+    for(let i = 0; i < 12; i++){ const sp = 0.1 + (i % 4)*0.05, x = ((i*540 + t*sp + 400) % (WWd + 1600)) - 800 + q.ox, y = 160 + Math.floor(rnd()*14)*120 + q.oy, w = 150 + Math.floor(rnd()*4)*50;
+      c.fillStyle = 'rgba(255,255,255,0.55)'; c.beginPath(); c.ellipse(x, y, w, w*0.22, 0, 0, 7); c.ellipse(x + w*0.4, y - w*0.1, w*0.55, w*0.2, 0, 0, 7); c.ellipse(x - w*0.45, y - w*0.04, w*0.5, w*0.17, 0, 0, 7); c.fill(); } }
+  // gulls
+  { c.strokeStyle = '#f4f4f4'; c.lineWidth = 3; for(let i = 0; i < 8; i++){ const x = ((i*913 + t*(1.4 + (i % 3)*0.5)) % (WWd + 900)) - 450, y = 420 + (i*337) % 1500 + Math.sin(t*0.04 + i)*26, fl = Math.sin(t*0.22 + i*1.7)*9;
+      c.beginPath(); c.moveTo(x - 16, y - fl); c.quadraticCurveTo(x - 7, y - 6 - fl*0.4, x, y); c.quadraticCurveTo(x + 7, y - 6 - fl*0.4, x + 16, y - fl); c.stroke(); } }
+  c.restore();
+}
+// the whale, the boat, the blimp, the chandelier
+function diDrawLiving(c, p, t){
+  const k = p.di; c.save(); c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  if(k === 'boat'){
+    c.fillStyle = '#7a4a2a'; c.beginPath(); c.moveTo(p.x - 6, p.y - 4); c.lineTo(p.x + p.w + 6, p.y - 4); c.lineTo(p.x + p.w - 20, p.y + 40); c.lineTo(p.x + 20, p.y + 40); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = '#a8703c'; c.fillRect(p.x, p.y, p.w, 10); c.strokeRect(p.x, p.y, p.w, 10);
+    c.strokeStyle = '#4a3320'; c.lineWidth = 5; c.beginPath(); c.moveTo(p.x + p.w*0.55, p.y); c.lineTo(p.x + p.w*0.55, p.y - 130); c.stroke(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+    c.fillStyle = '#f2ece0'; c.beginPath(); c.moveTo(p.x + p.w*0.55 + 4, p.y - 126); c.quadraticCurveTo(p.x + p.w*0.95, p.y - 70, p.x + p.w*0.9, p.y - 10); c.lineTo(p.x + p.w*0.55 + 4, p.y - 10); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = '#c4452e'; c.fillRect(p.x + p.w*0.55 - 2, p.y - 142, 26, 12); c.strokeRect(p.x + p.w*0.55 - 2, p.y - 142, 26, 12);
+  } else if(k === 'blimp'){
+    const cx = p.x + p.w/2;
+    c.fillStyle = '#b8c8dc'; c.beginPath(); c.ellipse(cx, p.y + 34, p.w/2 + 36, 44, 0, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = '#e24a4a'; for(let q = -2; q <= 2; q++){ c.beginPath(); c.ellipse(cx + q*46, p.y + 34, 12, 40, 0, 0, 7); c.fill(); }
+    c.fillStyle = '#8a9db8'; c.beginPath(); c.moveTo(cx + p.w/2 + 20, p.y + 28); c.lineTo(cx + p.w/2 + 70, p.y - 6); c.lineTo(cx + p.w/2 + 62, p.y + 48); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = '#6b4a2a'; c.fillRect(cx - 40, p.y + 70, 80, 24); c.strokeRect(cx - 40, p.y + 70, 80, 24); c.strokeStyle = '#4a3320'; c.lineWidth = 2; c.beginPath(); c.moveTo(cx - 30, p.y + 66); c.lineTo(cx - 30, p.y + 72); c.moveTo(cx + 30, p.y + 66); c.lineTo(cx + 30, p.y + 72); c.stroke();
+    c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillStyle = '#c9a56a'; c.fillRect(p.x, p.y, p.w, 10); c.strokeRect(p.x, p.y, p.w, 10);
+    c.strokeStyle = '#6b4a2a'; c.lineWidth = 3; c.beginPath(); c.moveTo(p.x + 2, p.y); c.lineTo(p.x + 2, p.y - 36); c.lineTo(p.x + p.w - 2, p.y - 36); c.lineTo(p.x + p.w - 2, p.y); c.stroke();
+    const ph = t*0.5; c.strokeStyle = '#444'; c.lineWidth = 4; c.beginPath(); c.moveTo(cx + p.w/2 + 74, p.y + 14 + Math.sin(ph)*16); c.lineTo(cx + p.w/2 + 74, p.y + 14 - Math.sin(ph)*16); c.stroke();
+  } else if(k === 'whale'){
+    const ph = (t + (p.wo || 0)) % 1500, up = !p.ghost, cx = p.x + p.w/2;
+    if(up){
+      const sink = ph > 420 ? Math.min(1, (ph - 420)/60) : 0, jit = ph > 400 ? Math.sin(t*1.3)*3 : 0;
+      c.save(); c.translate(jit, sink*40);
+      c.fillStyle = '#5b86b4'; c.beginPath(); c.ellipse(cx, p.y + 52, p.w/2 + 30, 70, 0, Math.PI, 0); c.lineTo(p.x + p.w + 30, p.y + 52); c.quadraticCurveTo(cx, p.y + 130, p.x - 30, p.y + 52); c.closePath(); c.fill(); c.stroke();
+      c.fillStyle = '#dfe9f3'; c.beginPath(); c.ellipse(cx - 20, p.y + 70, p.w/2 - 20, 26, 0, 0, Math.PI); c.fill();
+      c.fillStyle = '#5b86b4'; c.beginPath(); c.moveTo(p.x + p.w + 20, p.y + 40); c.quadraticCurveTo(p.x + p.w + 80, p.y - 20, p.x + p.w + 96, p.y - 70); c.lineTo(p.x + p.w + 54, p.y + 10); c.quadraticCurveTo(p.x + p.w + 30, p.y + 44, p.x + p.w + 20, p.y + 56); c.closePath(); c.fill(); c.stroke();
+      c.fillStyle = '#fff'; c.beginPath(); c.arc(p.x + 18, p.y + 30, 7, 0, 7); c.fill(); c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(p.x + 16, p.y + 31, 3, 0, 7); c.fill();
+      c.strokeStyle = 'rgba(190,225,255,0.85)'; c.lineWidth = 5; for(let q = 0; q < 3; q++){ c.beginPath(); c.moveTo(cx - 40, p.y); c.quadraticCurveTo(cx - 40 + (q - 1)*30, p.y - 60 - ((t + q*13) % 30), cx - 40 + (q - 1)*50, p.y - 90); c.stroke(); }
+      c.restore();
+    } else {
+      const tell = ph >= 1380;   // bubbles rise where it will surface
+      c.fillStyle = 'rgba(40,70,110,0.25)'; c.beginPath(); c.ellipse(cx, p.y + 90, p.w/2, 34, 0, 0, 7); c.fill();
+      if(tell){ c.strokeStyle = 'rgba(255,255,255,0.8)'; c.lineWidth = 3; for(let q = 0; q < 9; q++){ const u = ((t*1.6 + q*23) % 90)/90; c.beginPath(); c.arc(cx - 120 + q*30 + Math.sin(u*7 + q)*8, p.y + 100 - u*110, 5 + (q % 3)*2, 0, 7); c.stroke(); } }
+    }
+  } else if(k === 'chand'){
+    const st = p.ss ? p.ss[0] : 0, cx = p.x + p.w/2, sway = st === 1 ? Math.sin(t*0.9)*10 : 0;
+    if(st === 0 || st === 1){ c.strokeStyle = '#6b5a3a'; c.lineWidth = 3; c.beginPath(); c.moveTo(cx, p.y - 70); c.lineTo(cx + sway*0.6, p.y); c.stroke(); }
+    c.fillStyle = '#e9c35a'; c.beginPath(); c.ellipse(cx + sway, p.y + 6, p.w/2, 12, 0, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = 'rgba(200,235,255,0.85)'; for(let q = 0; q < 7; q++){ c.beginPath(); c.moveTo(cx + sway - 50 + q*17, p.y + 14); c.lineTo(cx + sway - 46 + q*17, p.y + 36 + (q % 2)*10); c.lineTo(cx + sway - 42 + q*17, p.y + 14); c.closePath(); c.fill(); }
+    c.fillStyle = '#ffe9a0'; for(let q = 0; q < 4; q++){ c.beginPath(); c.arc(cx + sway - 42 + q*28, p.y - 6, 5, 0, 7); c.fill(); }
+    if(st === 1){ c.fillStyle = '#fff'; c.font = 'bold 22px sans-serif'; c.fillText('!', cx - 5, p.y - 40); }
+  }
+  c.restore();
+}
+// a shelf sticking out of a block face: wooden planks with brackets (stone for the cliff and the shrine), or a grass-topped timber step
+function diDrawShelf(c, p, grass){
+  c.save(); c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  const stone = p.th === 1 || p.th === 5, col = stone ? '#9a9ea8' : '#a98a62', dark = stone ? '#6f737d' : '#7a5a37';
+  if(p.di === 'gplat'){ c.fillStyle = '#8a6a42'; c.fillRect(p.x, p.y + 4, p.w, 10); c.strokeRect(p.x, p.y + 4, p.w, 10); c.fillStyle = grass; c.fillRect(p.x - 2, p.y - 2, p.w + 4, 10); c.strokeRect(p.x - 2, p.y - 2, p.w + 4, 10); c.restore(); return; }
+  c.fillStyle = col; c.fillRect(p.x, p.y, p.w, 14); c.strokeRect(p.x, p.y, p.w, 14);
+  c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = 1.5; for(let q = p.x + 26; q < p.x + p.w - 6; q += 26){ c.beginPath(); c.moveTo(q, p.y); c.lineTo(q, p.y + 14); c.stroke(); }
+  if(p.sh || p.und){ c.fillStyle = dark; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; for(const bx of [p.x + 10, p.x + p.w - 26]){ c.beginPath(); c.moveTo(bx, p.y + 14); c.lineTo(bx + 16, p.y + 14); c.lineTo(bx + 16, p.y + 44); c.closePath(); c.fill(); c.stroke(); } }
+  c.fillStyle = grass; c.fillRect(p.x + 2, p.y, p.w - 4, 3);
+  c.restore();
+}
+
+// where the sea is: the lagoon island's deck is at the water's edge (host and guest alike)
+function diSeaY(){ for(const p of worldPlats) if(p.di === 'outer' && p.oi === 3) return p.y - 25; let s = WH*0.80; for(const p of worldPlats) if(p.di && p.y + 150 > s) s = p.y + 150; return s; }
+
+// a crumbling edge block: a loose stone that cracks and shakes when stood on, a faint outline while it is away
+function diDrawCrumb(c, p, t){
+  c.save(); c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  if(p.ghost){ const u = 0.5 + 0.5*Math.sin(t*0.45); c.globalAlpha = 0.25 + 0.4*u; c.fillStyle = '#d0d0dc'; c.fillRect(p.x, p.y, p.w, 22); c.setLineDash([6, 5]); c.strokeStyle = '#fff'; c.lineWidth = 2; c.strokeRect(p.x, p.y, p.w, 22); c.restore(); return; }
+  const jx = p.crk ? Math.sin(t*1.9 + p.x)*3 : 0, jy = p.crk ? Math.cos(t*2.3)*1.5 : 0;
+  c.fillStyle = '#9a9ca8'; c.beginPath(); c.moveTo(p.x + jx, p.y + jy); c.lineTo(p.x + p.w + jx, p.y + jy); c.lineTo(p.x + p.w*0.86 + jx, p.y + 34 + jy); c.lineTo(p.x + p.w*0.14 + jx, p.y + 34 + jy); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#b9bcc8'; c.fillRect(p.x + 3 + jx, p.y + jy, p.w - 6, 6);
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.moveTo(p.x + p.w*0.3 + jx, p.y + jy); c.lineTo(p.x + p.w*0.42 + jx, p.y + 14 + jy); c.lineTo(p.x + p.w*0.36 + jx, p.y + 30 + jy); if(p.crk){ c.moveTo(p.x + p.w*0.7 + jx, p.y + jy); c.lineTo(p.x + p.w*0.58 + jx, p.y + 18 + jy); c.lineTo(p.x + p.w*0.66 + jx, p.y + 32 + jy); } c.stroke();
+  if(p.crk){ c.fillStyle = 'rgba(220,215,200,0.7)'; for(let q = 0; q < 6; q++){ c.beginPath(); c.arc(p.x + 14 + q*16 + jx, p.y + 36 + ((t*2 + q*9) % 18), 3, 0, 7); c.fill(); } }
   c.restore();
 }
 
@@ -25263,7 +25678,12 @@ function diIcon(c, t, cx, cy, s, col){   // 0 heal cross, 1 shield, 2 crate, 3 c
 function diDrawPlats(){
   const c = ctx, grass = (stage && stage.ground) || '#86c75a', t = hazardT, night = diIsNight(t);
   c.save(); c.lineJoin = 'round';
-  for(const p of worldPlats) if(p.ib) diDrawIsle(p.ib);
+  const info = diSolidInfo();
+  for(const p of worldPlats) if(p.ib) diDrawCave(c, p.ib);
+  for(const p of info.sol) diDrawSolid(c, p, info);
+  for(const p of worldPlats) if(p.ib){ diDrawBaseExtras(c, p.ib, t); diDecor(c, { x:p.ib[0], top:p.ib[1], ix:p.ix, th:p.ib[5] }, info, t); }
+  for(const p of info.sol) if(p.di === 'outer'){ diDecor(c, { x:p.x, top:p.y, ix:p.ix, th:p.th }, info, t); diDrawOuterTheme(c, p, t); }
+  diDrawResort(c, info, t);
   for(const p of worldPlats){   // scaffold frames: two parallel poles along the climb and a rung at each step
     if(!p.sc) continue;
     const ax = p.sc[0], ay = p.sc[1], bx = p.sc[2], by = p.sc[3], dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1, nx = -dy/len*9, ny = dx/len*9;
@@ -25277,8 +25697,7 @@ function diDrawPlats(){
     const k = p.di; if(!k || k === 'isle') continue;
     c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
     if(k === 'ledge' || k === 'gplat'){
-      c.fillStyle = k === 'gplat' ? grass : '#a98a62'; c.fillRect(p.x, p.y, p.w, p.h); c.strokeRect(p.x, p.y, p.w, p.h);
-      if(k === 'ledge'){ c.fillStyle = grass; c.fillRect(p.x + 2, p.y, p.w - 4, 4); }
+      diDrawShelf(c, p, grass);
     } else if(k === 'scaf'){
       c.fillStyle = '#c9a56a'; c.fillRect(p.x, p.y, p.w, p.h); c.strokeRect(p.x, p.y, p.w, p.h);
       c.strokeStyle = 'rgba(0,0,0,0.28)'; c.lineWidth = 1; c.beginPath(); c.moveTo(p.x + 8, p.y + 5); c.lineTo(p.x + p.w - 8, p.y + 5); c.stroke();
@@ -25287,8 +25706,8 @@ function diDrawPlats(){
       c.fillStyle = grass; c.fillRect(p.x, p.y, p.w, 6);
     } else if(k === 'islet' || k === 'drift' || k === 'outer' || k === 'crane'){
       const big = k === 'outer' ? 96 : k === 'islet' ? 60 : 50, col = k === 'crane' ? '#b38a3c' : '#9a7048';
-      c.fillStyle = col; c.beginPath(); c.moveTo(p.x + 4, p.y + 8); c.lineTo(p.x + p.w - 4, p.y + 8); c.lineTo(p.x + p.w*0.68, p.y + big*0.7); c.lineTo(p.x + p.w*0.5, p.y + big); c.lineTo(p.x + p.w*0.32, p.y + big*0.7); c.closePath(); c.fill(); c.stroke();
-      c.fillStyle = k === 'crane' ? '#e0b14e' : grass; c.fillRect(p.x, p.y, p.w, 12); c.strokeRect(p.x, p.y, p.w, 12);
+      if(k === 'drift' || k === 'crane'){ c.fillStyle = col; c.beginPath(); c.moveTo(p.x + 4, p.y + 8); c.lineTo(p.x + p.w - 4, p.y + 8); c.lineTo(p.x + p.w*0.68, p.y + big*0.7); c.lineTo(p.x + p.w*0.5, p.y + big); c.lineTo(p.x + p.w*0.32, p.y + big*0.7); c.closePath(); c.fill(); c.stroke();
+      c.fillStyle = k === 'crane' ? '#e0b14e' : grass; c.fillRect(p.x, p.y, p.w, 12); c.strokeRect(p.x, p.y, p.w, 12); }
       if(k === 'crane'){ c.strokeStyle = '#6b4a2a'; c.lineWidth = 3; c.beginPath(); c.moveTo(p.x + p.w/2, p.y); c.lineTo(p.x + p.w/2, p.y - 120); c.moveTo(p.x + p.w*0.15, p.y); c.lineTo(p.x + p.w/2, p.y - 120); c.moveTo(p.x + p.w*0.85, p.y); c.lineTo(p.x + p.w/2, p.y - 120); c.stroke(); }
       if(k === 'outer' && p.ar){   // the purple effect area
         const ty = p.ar[0], rx = p.ar[1], ry = p.ar[2], rw = p.ar[3], rh = p.ar[4], ss = p.ss, st = ss ? ss[0] : 0, own = ss ? ss[1] : -1, fr = ss ? ss[2] : 0, u = 0.5 + 0.5*Math.sin(t*0.07);
@@ -25315,6 +25734,8 @@ function diDrawPlats(){
           c.fillStyle = 'rgba(255,255,255,0.35)'; c.beginPath(); c.ellipse(bx - 24, by - 30, 16, 26, -0.4, 0, 7); c.fill();
         } else { c.fillStyle = '#ff7aa8'; c.fillRect(bx - 30, by + 40, 18, 8); c.fillRect(bx + 8, by + 52, 22, 8); for(let q = 0; q < (p.ss[1] || 0); q++){ c.fillStyle = '#fff'; c.fillRect(bx - 40 + q*10, by - 70, 6, 6); } }
       }
+    } else if(k === 'crumb'){ diDrawCrumb(c, p, t);
+    } else if(k === 'boat' || k === 'blimp' || k === 'whale' || k === 'chand'){ diDrawLiving(c, p, t);
     } else if(k === 'plank'){
       const jx = p.crk ? Math.sin(t*1.7 + p.x)*2 : 0;
       if(p.ghost){ const u = 0.5 + 0.5*Math.sin(t*0.45); c.globalAlpha = 0.25 + 0.4*u; c.fillStyle = '#f4e2b0'; c.fillRect(p.x, p.y, p.w, p.h); c.setLineDash([6, 5]); c.strokeStyle = '#fff6d8'; c.lineWidth = 2; c.strokeRect(p.x, p.y, p.w, p.h); c.setLineDash([]); c.globalAlpha = 1; continue; }
@@ -25345,6 +25766,7 @@ function diDrawPlats(){
       if(pg > 0 && !open){ c.fillStyle = '#1c1c1c'; c.fillRect(cx - 32, p.y - 64, 64, 10); c.fillStyle = '#ffd24a'; c.fillRect(cx - 30, p.y - 62, 60*pg/8, 6); }
     }
   }
+  { const sy = diSeaY(); c.fillStyle = 'rgba(46,120,190,0.30)'; c.fillRect(-700, sy, WW + 1400, WH + 700 - sy); c.strokeStyle = 'rgba(255,255,255,0.5)'; c.lineWidth = 3; c.beginPath(); for(let x = -700; x <= WW + 700; x += 40){ const y = sy + Math.sin(x*0.012 + t*0.03)*5; if(x === -700) c.moveTo(x, y); else c.lineTo(x, y); } c.stroke(); }   // the sea in front of the low islands
   c.restore();
 }
 // leaves in a gust, rain: drawn only, from the match clock
@@ -25363,6 +25785,7 @@ function diDrawWeather(){
   }
   c.restore();
 }
+
 
 // Build spawn areas for big FFA maps:
 //  - two SAFE islands (far left + far right), raised above the arena, always a safe respawn
@@ -115118,7 +115541,7 @@ function worldGeo(){
     floors: floors.map(fl=>({level:fl.level,y:Math.round(fl.y),x:Math.round(fl.x),w:Math.round(fl.w)})),
     // `solid` was missing here once, so on a client every stone landmark rendered as a thin ledge; `field` keeps the
     // client's minimap filtering out the scatter grid the way the host's does; `rot` is paintPlat's tilt.
-    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team,ib:p.ib,sc:p.sc,ar:p.ar,lh:p.lh,bl:p.bl,ss:p.ss})),
+    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team,ib:p.ib,sc:p.sc,ar:p.ar,lh:p.lh,bl:p.bl,ss:p.ss,th:p.th,sh:p.sh,wo:p.wo,hg:p.hg,blk:p.blk,ix:p.ix,pool:p.pool,trap:p.trap,oi:p.oi})),
     // `zone` and `wall` ride along so a client DRAWS the team's safe zone where the host plays it: without them it fell back
     // to the old column round the base, which is nowhere near a side-wall band (see wallBand).
     bases: bases.map(b=>({team:b.team,x:Math.round(b.x),y:Math.round(b.y),w:b.w,h:b.h,color:b.color,
