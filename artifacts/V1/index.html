@@ -18861,6 +18861,7 @@ const LEDGE_CATCH = 30;     // feet within this of a cliff's top, moving into it
 // so those play and look exactly as before. Pure: derived from the match settings, like FLOOR_SEGS.
 const OFFSTAGE_ROOM = 160;
 let SIDE_ROOM = 0;
+let DRM = null, DRM_VIS = false, DRM_GH = false;   // DREAM ISLAND TEAMS: this match's state (diBuild; null elsewhere), whether to paint its art, whether a ghost plank is about to mend (platRects)
 let STG = null;   // STAGES A: The TLC's or Yoyle Needle's own state for this match (stgBuild); null in every other match, so every stg* hook is a no-op elsewhere
 // THE KO LINES, IN ONE PLACE (the owner, 2026-11-03: "the place where you die when you fall should be honest -- I keep dying when I dont hit the
 // floor of the screen", and "the camera LIMIT (not the init. camera) should be the ko line"). The four lines of a stage: the sides 120 px out from the
@@ -24199,6 +24200,7 @@ function setupWorld(){
   SIDE_ROOM = 0;       // MORE ROOM PAST THE LEDGES: given below to the single-screen stages with ledges only
   MCAVE = null;        // MOON CAVES: set again only by its own builder
   SPLEEF = null;       // SPLEEF: built by spleefBuildWorld below, for the one event match that has it
+  DRM = null; DRM_VIS = false; DRM_GH = false;   // DREAM ISLAND TEAMS: built by diBuild below, for Teams on Dream Island only
   STG = null;          // STAGES A: built by stgBuild below, for The TLC and Yoyle Needle in a plain FFA match
   DIGC = null;         // THE DIG: built by digcBuildWorld below, for the one event match that has it
   camAng = 0;
@@ -24208,6 +24210,7 @@ function setupWorld(){
   if(digcWanted()){ digcBuildWorld(); return; }   // THE DIG (Spongy's contest): the dirt field over the arena, in place of the stage's own world
   if(ONEFIGHT.active || COBSFIGHT.active){ buildOneArena(); return; }   // One's arena, and Steve Cobs's: the teams map without its walls (see buildOneArena)
   if(SETTINGS.mode === 'teams' && (MCAVE_DEV || MCAVE_OPEN) && stage && stage.layout === 'disc'){ buildMoonCaves(); return; }   // MOON CAVES (while it is built: MCAVE_DEV only, MCAVE_OPEN once released; Teams only)
+  if(diWanted()){ diBuild(); return; }   // DREAM ISLAND TEAMS: its own islands-and-bridges map (Teams on Dream Island only)
   if(RACE.active){ buildRaceLane(); return; }       // RUNNING!: the Red Line Game's lane (see buildRaceLane)
   if(stgWanted()){ stgBuild(); return; }   // STAGES A: The TLC's box or Yoyle Needle's shaft, in place of the flat layout (a plain FFA match only)
   const MS = mapSize();                       // MAP SIZE match setting → arena W/H multipliers
@@ -24539,6 +24542,232 @@ function setupWorld(){
   worldPlats = worldPlats.concat(fillClimbGaps(climbLayers(), WW));
 }
 
+// ============================================================
+//  DREAM ISLAND, TEAMS (2026-11-10, "pipis, build dream island"; the first stage with a big Teams map of its own, smash-bal/reports/teams-big-maps-design.md)
+//  Teams mode on Dream Island only (diWanted): islands over the sea in place of the generic cross. One island per team (2 teams: a team island,
+//  a low neutral island between, the other team island; 3 teams: the third team high in the middle; 4 teams: two high far teams and two low
+//  inner ones), joined by BRIDGES of planks that break and mend, small ledge-islands that DRIFT over the bridges and hold the items and the heal
+//  spots, and a fall that hurts. DRM is this match's state (null everywhere else, so every di* hook does nothing elsewhere).
+//  setupWorld stays PURE: diBuild reads only the match settings. The moving parts run on the match's own frame count (STG.t via stgStep: the
+//  drifting islands are STG movers, so they ride fighters and go to a guest as mv rows like Yoyle Needle's ledges); a plank that breaks leaves
+//  worldPlats (a guest gets the new geometry), and one that is about to mend comes back as a ghost (p.ghost: drawn, not stood on: platRects).
+// ============================================================
+const DIK = { plank:60, isleH:100, crack:18, rebuild:300, tell:80, breakGap:90, maxBroken:2, hitDmg:6, landVy:16, hardDrop:260,
+  fallMin:0.9, fallSpan:1.0, fallBase:3, fallCap:15, healStr:0.5 };
+function diWanted(){
+  return SETTINGS.mode === 'teams' && !!(stage && stage.stg === 'isles') && !CUSTOM_LEVEL && !TESTMODE.active && !(typeof TUT !== 'undefined' && TUT.active)
+    && !RACE.active && !ONEFIGHT.active && !COBSFIGHT.active;
+}
+function diBuild(){
+  const K = DIK, teamCount = Math.max(2, Math.min(4, (SETTINGS.teamKey || '').split('v').filter(Boolean).length || 2));
+  WH = Math.round(H*2.0); camX = 0; camY = 0; floors = []; worldZones = []; spawnZones = []; worldPlats = []; bases = []; SIDE_ROOM = 0; FLOOR_SEGS = [];
+  const T = Math.round(WH*0.60), M = 420;
+  let spec, gaps;
+  if(teamCount === 2){ spec = [{ t:0, w:560, top:T }, { t:-1, w:520, top:T + 70 }, { t:1, w:560, top:T }]; gaps = [420, 420]; }
+  else if(teamCount === 3){ spec = [{ t:0, w:520, top:T }, { t:2, w:480, top:T - 180 }, { t:1, w:520, top:T }]; gaps = [900, 900]; }
+  else { spec = [{ t:0, w:480, top:T - 160 }, { t:2, w:480, top:T + 20 }, { t:3, w:480, top:T + 20 }, { t:1, w:480, top:T - 160 }]; gaps = [900, 420, 900]; }
+  let x = M; spec.forEach((s, i)=>{ s.x = x; x += s.w + (gaps[i] || 0); });
+  WW = Math.round(x + M);
+  const isles = spec.map(s=>({ x:s.x, y:s.top, w:s.w, h:K.isleH, solid:true, floor:0, di:'isle', team:s.t }));
+  worldPlats = isles.slice();
+  const bridges = [], drifts = [];
+  for(let i = 0; i < spec.length - 1; i++){
+    const x0 = spec[i].x + spec[i].w, x1 = spec[i + 1].x, n = Math.max(2, Math.round((x1 - x0)/K.plank)), pw = (x1 - x0)/n, yA = spec[i].top, yB = spec[i + 1].top;
+    const B = { planks:[], last:-1e9, x0, x1, ya:yA, yb:yB };
+    for(let k = 0; k < n; k++){
+      const p = { x:Math.round(x0 + k*pw), y:Math.round(yA + (yB - yA)*(k + 0.5)/n), w:Math.round(pw) + 1, h:14, solid:false, floor:0, di:'plank' };
+      worldPlats.push(p); B.planks.push({ p, i:k, st:'ok', t:0 });
+    }
+    bridges.push(B);
+    // the drifting islands over this bridge: one over its middle, two when it is long. Even ones slide along it, odd ones rise and fall.
+    const fr = (x1 - x0) >= 800 ? [0.33, 0.67] : [0.5];
+    fr.forEach((u, q)=>{
+      const cx = x0 + (x1 - x0)*u, k = Math.min(n - 1, Math.floor(n*u)), by = B.planks[k].p.y - 120, w = 220, horiz = ((drifts.length) % 2) === 0;
+      const d = { x:Math.round(cx - w/2), y:by, w, h:14, solid:false, floor:0, di:'drift', bx:Math.round(cx - w/2), by,
+        mv: horiz ? { ax:130, ay:0, per:720, ph:q*Math.PI } : { ax:0, ay:35, per:600, ph:q*Math.PI/2 }, mvx:0, mvy:0, dh:(drifts.length % 3) === 0 };
+      drifts.push(d); worldPlats.push(d);
+    });
+  }
+  if(teamCount === 2){   // the neutral island has a ledge-island of its own
+    const N = isles[1], w = 200, by = N.y - 140;
+    const d = { x:Math.round(N.x + N.w/2 - w/2), y:by, w, h:14, solid:false, floor:0, di:'drift', bx:Math.round(N.x + N.w/2 - w/2), by, mv:{ ax:0, ay:30, per:840, ph:0 }, mvx:0, mvy:0, dh:true };
+    drifts.push(d); worldPlats.push(d);
+  }
+  // team bases, in team order (a fighter's homeBase is its team number)
+  const mine = spec.map((s, i)=>({ s, p:isles[i] })).filter(o=>o.s.t >= 0).sort((a, b)=>a.s.t - b.s.t);
+  for(const o of mine){
+    const p = o.p, spawns = [];
+    for(let k = 0; k < 6; k++) spawns.push({ x:Math.round(p.x + p.w*(k + 1)/7), y:p.y - 30, used:0 });
+    bases.push({ team:o.s.t, x:p.x, y:p.y, w:p.w, h:18, color:TEAM_COLORS[o.s.t % TEAM_COLORS.length], spawnX:Math.round(p.x + p.w/2), spawnY:p.y - 46, floor:0, spawns,
+      zone:{ x:Math.round(p.x + p.w*0.2), y:p.y - 170, w:Math.round(p.w*0.6), h:180 } });
+  }
+  // the heal spots ride on the drifting islands that hold one
+  for(const d of drifts) if(d.dh) worldZones.push({ type:'heal', strength:K.healStr, x:d.x, y:d.y - 60, w:d.w, h:70, di:d });
+  STG = { kind:'dream', top:null, t:0, wall:0, movers:drifts, statics:[], soft:[] };
+  stgPlace(0);
+  DRM = { teams:teamCount, t:0, isles, bridges, drifts, sea:Math.round(WH*0.80), broken:0, mended:0, cracked:0, fallHits:0, fallDmg:0, fallMax:0 };
+  DRM_VIS = true; DRM_GH = false;
+}
+// every frame, after the drifting islands have moved
+function diStep(){
+  const K = DIK; DRM.t++;
+  for(const z of worldZones) if(z.di){ z.x = z.di.x; z.y = z.di.y - 60; }
+  for(const B of DRM.bridges) for(const pl of B.planks){
+    if(pl.st === 'crack'){ if(--pl.t <= 0) diBreak(pl); }
+    else if(pl.st === 'broken'){ if(--pl.t <= 0) diTell(pl); }
+    else if(pl.st === 'tell'){ if(--pl.t <= 0) diMend(pl); }
+  }
+  for(const f of fighters){
+    if(f.dead){ f._diPl = null; continue; }
+    // a fresh stun with a real hit behind it, taken on a plank: the plank gives
+    if(f.hitstun > 0 && !(f._diHS > 0) && f._diPl && (f.pct - (f._diPct || 0)) >= K.hitDmg) diCrack(f._diPl);
+    f._diHS = f.hitstun; f._diPct = f.pct;
+    f._diPl = f.onground ? diPlankUnder(f) : null;
+  }
+}
+function diPlankUnder(f){
+  const feet = f.y + f.r;
+  for(const B of DRM.bridges) for(const pl of B.planks){ const p = pl.p; if(pl.st === 'ok' || pl.st === 'crack'){ if(f.x >= p.x && f.x <= p.x + p.w && Math.abs(feet - p.y) <= 3) return pl; } }
+  return null;
+}
+function diBridgeOf(pl){ for(const B of DRM.bridges) if(B.planks[pl.i] === pl) return B; return null; }
+function diCrack(pl){
+  if(pl.st !== 'ok') return;
+  const B = diBridgeOf(pl); if(!B) return;
+  const ne = (k)=>{ const q = B.planks[k]; return q && q.st !== 'ok'; };
+  if(ne(pl.i - 1) || ne(pl.i + 1)) return;                                        // one gap is a hop; never two side by side
+  if(B.planks.filter(q=>q.st !== 'ok').length >= DIK.maxBroken) return;
+  if(DRM.t - B.last < DIK.breakGap) return;
+  B.last = DRM.t; pl.st = 'crack'; pl.t = DIK.crack; pl.p.crk = true; DRM.cracked++;
+  puff(pl.p.x + pl.p.w/2, pl.p.y, '#c9a26a', 5);
+}
+function diBreak(pl){
+  pl.st = 'broken'; pl.t = DIK.rebuild; pl.p.crk = false;
+  const i = worldPlats.indexOf(pl.p); if(i >= 0) worldPlats.splice(i, 1);
+  for(const it of items) if(it._diPl === pl){ it._di = false; it.life = 0; }
+  for(let k = 0; k < 8; k++) particles.push({ x:pl.p.x + pl.p.w*(k + 0.5)/8, y:pl.p.y + 4, vx:(k - 3.5)*0.35, vy:-1 - (k % 3)*0.5, life:30, color:'#8a5a34', r:3 + (k % 2) });
+  DRM.broken++;
+}
+function diTell(pl){
+  pl.st = 'tell'; pl.t = DIK.tell; pl.p.ghost = true; worldPlats.push(pl.p); DRM_GH = true;
+}
+function diMend(pl){
+  pl.st = 'ok'; delete pl.p.ghost; DRM_GH = worldPlats.some(p=>p.ghost);
+  puff(pl.p.x + pl.p.w/2, pl.p.y, '#f4e2b0', 6); DRM.mended++;
+}
+// A hard landing: the drop from the highest point of this airtime to the feet. Under fallMin screen-heights nothing; over it 3% rising to the 15% cap.
+function diDamageFor(drop){
+  const lo = DIK.fallMin*H; if(!(drop > lo)) return 0;
+  return Math.round(Math.min(DIK.fallCap, DIK.fallBase + (DIK.fallCap - DIK.fallBase)*(drop - lo)/(DIK.fallSpan*H))*10)/10;
+}
+function diLand(f, wasAir, vy){
+  if(f.dead || f._tp || f._tpHang > 0){ f._diTop = null; return; }
+  if(!f.onground){ f._diTop = (wasAir && f._diTop != null) ? Math.min(f._diTop, f.y) : f.y; return; }
+  const top = f._diTop; f._diTop = null;
+  if(!wasAir || top == null) return;
+  const drop = f.y - top, dmg = diDamageFor(drop), feet = f.y + f.r;
+  if(dmg > 0){
+    f.pct += dmg; DRM.fallHits++; DRM.fallDmg += dmg; DRM.fallMax = Math.max(DRM.fallMax, dmg);
+    for(let k = 0; k < 12; k++) particles.push({ x:f.x + (k - 5.5)*5, y:feet - 2, vx:(k - 5.5)*0.5, vy:-0.8 - (k % 3)*0.5, life:22, color:'#d8caa8', r:3 + (k % 3) });
+    particles.push({ x:f.x, y:f.y - f.r - 8, vx:0, vy:-1.6, life:55, color:'t|#ff8a3a|' + (Math.round(dmg*10)/10) + '%', r:12 });
+    shake(f.you ? 10 : 5);
+  }
+  if(dmg > 0 || vy >= DIK.landVy || drop >= DIK.hardDrop){ const pl = diPlankUnder(f); if(pl) diCrack(pl); }
+}
+// ---- the CPUs: never off an edge, never into a gap
+function diFoot(x, feet){
+  for(const p of worldPlats){ if(!p.di || p.ghost) continue; if(x >= p.x - 2 && x <= p.x + p.w + 2 && Math.abs(p.y - feet) <= 20) return p; }
+  return null;
+}
+function diCatchBelow(x, feet, maxD){
+  for(const p of worldPlats){ if(!p.di || p.ghost) continue; if(x >= p.x && x <= p.x + p.w && p.y > feet + 6 && p.y < feet + maxD) return true; }
+  return false;
+}
+function diBrain(f, inp){
+  if(f.hitstun > 0 || f._tp) return;
+  const feet = f.y + f.r;
+  if(f.onground && inp.down && !diCatchBelow(f.x, feet, 560)) inp.down = false;   // never drop through a plank or an island ledge over the sea
+  if(!f.onground) return;
+  let dir = inp.right ? 1 : inp.left ? -1 : 0;
+  if(f._diTurn > hazardT){ dir = f._diDir; inp.left = dir < 0; inp.right = dir > 0; }
+  if(!dir){ f._diBlk = 0; return; }
+  const ahead = f.r + 16;
+  if(diFoot(f.x + dir*ahead, feet)){ f._diBlk = 0; return; }
+  for(let d = ahead + 20; d <= ahead + 150; d += 10){
+    if(diFoot(f.x + dir*d, feet)){ if(f.jumps > 0) inp.jump = true; f._diBlk = 0; return; }   // a missing plank (or the next ledge): a hop
+  }
+  inp.left = false; inp.right = false;                                               // nothing to land on that way: it stops at the edge
+  f._diBlk = (f._diBlk || 0) + 1;
+  if(f._diBlk > 40){
+    f._diBlk = 0;
+    const under = diFoot(f.x, feet);
+    if(under && !under.solid && diCatchBelow(f.x, feet, 560)){ inp.down = true; inp.jump = true; }   // on a ledge or a plank with something under it: down
+    else { f._diDir = -dir; f._diTurn = hazardT + 50; }                                            // else the other way for a moment
+  }
+}
+// ---- items and heal spots: mostly on the drifting islands
+function diSpawnItem(){
+  const pool = eventItemPool() || ["heal","heal","marmalade","marmalade","throw","throw","power","power","assist","assist","yoyle","yoyle"];
+  const kind = pool[Math.floor(Math.random()*pool.length)], r = kind === "boss" ? 0 : 16;
+  const free = (x, y)=>!items.some(it=>!it.taken && Math.abs(it.x - x) < 90 && Math.abs(it.y - y) < 120);
+  if(Math.random() < 0.8 && DRM.drifts.length){
+    for(let t = 0; t < 6; t++){
+      const d = DRM.drifts[Math.floor(Math.random()*DRM.drifts.length)], off = d.w*(0.25 + Math.random()*0.5);
+      if(!free(d.x + off, d.y - r)) continue;
+      items.push({ kind, x:d.x + off, y:d.y - r, vx:0, vy:0, r, taken:false, life:60*30, _land:true, _di:true, _diRide:d, _diDx:off }); return;
+    }
+    return;
+  }
+  const B = DRM.bridges[Math.floor(Math.random()*DRM.bridges.length)], n = B.planks.length, pl = B.planks[Math.floor(n*(0.25 + Math.random()*0.5))];
+  if(!pl || pl.st !== 'ok' || !free(pl.p.x + pl.p.w/2, pl.p.y - r)) return;
+  items.push({ kind, x:pl.p.x + pl.p.w/2, y:pl.p.y - r, vx:0, vy:0, r, taken:false, life:60*30, _land:true, _di:true, _diPl:pl });
+}
+function diItemStep(it){
+  const d = it._diRide; if(d){ it.x = d.x + it._diDx; it.y = d.y - it.r; }
+}
+// ---- art (host and guest alike: it reads worldPlats' own di flags)
+function diDrawSea(){
+  const c = ctx, V = (stage.edges && stage.edges.void) || ['#bfe3f5', '#2b5f8c'], sea = Math.round(WH*0.80), x0 = -700, x1 = WW + 700, bot = WH + 700;
+  c.save();
+  const g = c.createLinearGradient(0, sea, 0, bot); g.addColorStop(0, V[0]); g.addColorStop(1, V[1]);
+  c.fillStyle = g; c.fillRect(x0, sea, x1 - x0, bot - sea);
+  c.strokeStyle = 'rgba(255,255,255,0.55)'; c.lineWidth = 3;
+  for(let row = 0; row < 3; row++){
+    c.beginPath();
+    for(let x = x0; x <= x1; x += 40){ const y = sea + row*34 + Math.sin(x*0.012 + hazardT*0.03*(row % 2 ? -1 : 1) + row)*6; if(x === x0) c.moveTo(x, y); else c.lineTo(x, y); }
+    c.stroke(); c.lineWidth = 2;
+  }
+  c.restore();
+}
+function diDrawPlats(){
+  const c = ctx, grass = (stage && stage.ground) || '#86c75a';
+  c.save(); c.lineJoin = 'round';
+  for(const p of worldPlats){
+    if(!p.di) continue;
+    if(p.di === 'isle'){
+      c.fillStyle = '#9a7048'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+      c.beginPath(); c.moveTo(p.x + 3, p.y + 8); c.lineTo(p.x + p.w - 3, p.y + 8); c.lineTo(p.x + p.w*0.84, p.y + p.h + 36);
+      c.quadraticCurveTo(p.x + p.w*0.62, p.y + p.h + 84, p.x + p.w*0.5, p.y + p.h + 100); c.quadraticCurveTo(p.x + p.w*0.38, p.y + p.h + 84, p.x + p.w*0.16, p.y + p.h + 36); c.closePath(); c.fill(); c.stroke();
+      c.fillStyle = grass; c.fillRect(p.x, p.y, p.w, 18); c.strokeRect(p.x, p.y, p.w, 18);
+      if(p.team >= 0){ c.fillStyle = TEAM_COLORS[p.team % TEAM_COLORS.length]; c.fillRect(p.x + 12, p.y + 18, p.w - 24, 7);
+        c.fillStyle = '#1c1c1c'; c.fillRect(p.x + p.w/2 - 2, p.y - 54, 4, 54); c.fillStyle = TEAM_COLORS[p.team % TEAM_COLORS.length]; c.fillRect(p.x + p.w/2 + 2, p.y - 54, 30, 18); c.strokeRect(p.x + p.w/2 + 2, p.y - 54, 30, 18); }
+    } else if(p.di === 'drift'){
+      c.fillStyle = '#9a7048'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+      c.beginPath(); c.moveTo(p.x + 4, p.y + 8); c.lineTo(p.x + p.w - 4, p.y + 8); c.lineTo(p.x + p.w*0.5, p.y + 54); c.closePath(); c.fill(); c.stroke();
+      c.fillStyle = grass; c.fillRect(p.x, p.y, p.w, 12); c.strokeRect(p.x, p.y, p.w, 12);
+      if(p.dh){ const u = 0.5 + 0.5*Math.sin(hazardT*0.08); c.fillStyle = 'rgba(123,192,67,' + (0.18 + 0.12*u) + ')'; c.fillRect(p.x, p.y - 60, p.w, 60);
+        c.fillStyle = '#e9ffd8'; const cx = p.x + p.w/2, cy = p.y - 26 - 5*u; c.fillRect(cx - 3, cy - 10, 6, 20); c.fillRect(cx - 10, cy - 3, 20, 6); }
+    } else if(p.di === 'plank'){
+      const jx = p.crk ? Math.sin(hazardT*1.7 + p.x)*2 : 0;
+      if(p.ghost){ const u = 0.5 + 0.5*Math.sin(hazardT*0.45); c.globalAlpha = 0.25 + 0.4*u; c.fillStyle = '#f4e2b0'; c.fillRect(p.x, p.y, p.w, p.h); c.setLineDash([6, 5]); c.strokeStyle = '#fff6d8'; c.lineWidth = 2; c.strokeRect(p.x, p.y, p.w, p.h); c.setLineDash([]); c.globalAlpha = 1; continue; }
+      c.fillStyle = '#b98a52'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillRect(p.x + jx, p.y, p.w, p.h); c.strokeRect(p.x + jx, p.y, p.w, p.h);
+      c.strokeStyle = 'rgba(0,0,0,0.25)'; c.lineWidth = 1; c.beginPath(); c.moveTo(p.x + jx + 6, p.y + 5); c.lineTo(p.x + jx + p.w - 8, p.y + 5); c.stroke();
+      if(p.crk){ c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.moveTo(p.x + jx + p.w*0.3, p.y); c.lineTo(p.x + jx + p.w*0.45, p.y + 6); c.lineTo(p.x + jx + p.w*0.38, p.y + 10); c.lineTo(p.x + jx + p.w*0.6, p.y + p.h); c.stroke(); }
+    }
+  }
+  c.restore();
+}
+
 // Build spawn areas for big FFA maps:
 //  - two SAFE islands (far left + far right), raised above the arena, always a safe respawn
 //  - three CLAIMABLE points across the middle: stand on one for 5s to claim it as your spawn.
@@ -24851,6 +25080,7 @@ function platRects(){
   let base = isBigFFA() ? [...worldPlats, ...spawnPlatRects()]
              : !isBig()   ? worldPlats
              : [...worldPlats, ...bases.map(b=>({x:b.x,y:b.y,w:b.w,h:b.h}))];
+  if(DRM_GH) base = base.filter(p=>!p.ghost);   // DREAM ISLAND TEAMS: a plank about to mend is drawn, not stood on
   // Spongy is a summon that is ALSO terrain (design doc: "a colossal bounce platform"). Rebuilt
   // once per frame in updateSummons, and concat'd only when one is actually on the stage so the
   // common case still returns worldPlats untouched.
@@ -26523,6 +26753,7 @@ function itemSpawnInterval(){
 function spawnItem(){
   if(BASKET) return;   // REACH THE BASKET (an event twist): no crate falls from the sky; the basket hands them out (basketStep)
   if(MCAVE && MCAVE.on){ mcSpawnItem(); return; }   // MOON CAVES: on a floor, never from space
+  if(DRM){ diSpawnItem(); return; }   // DREAM ISLAND TEAMS: mostly on the drifting islands
   const gy = groundY();
   const x = floorSafeX(120 + Math.random()*(WW-240), 50);   // (REAL EDGES: it comes down over the floor, not a gap)
   // weight the pool: healing/marmalade common, powerups & throwables medium, assist/yoyle rarer, boss rarest
@@ -26599,6 +26830,7 @@ function updateItems(){
     if(it._stair != null){   // A RISING STAIRCASE: a throwable that was dealt to the top step drops onto it and stays there
       it.vy += 0.5; it.y += it.vy;
       if(it.y >= it._stair - it.r){ it.y = it._stair - it.r; it.vy = 0; it.vx = 0; it._land = true; }
+    } else if(it._di){ diItemStep(it);   // DREAM ISLAND TEAMS: it sits where it was put, on a drifting island riding it
     } else {
     it.vy += 0.5; it.y += it.vy; it.x += it.vx; it.vx*=0.98;
     // land on ground
@@ -66931,6 +67163,7 @@ function step(){
   if(MATCH_TWIST) twistStep();   // an event match's twists that act through it: fast forward, wind back (EVENT FIGHTERS: THE TWISTS)
   stbStep();   // STAGES B: Shifting Isles' floor and platforms, Windy Heights's gust sounds (stbSync inside: nothing on any other stage)
   if(STG) stgStep();   // STAGES A: Yoyle Needle's ledges move, carrying who stands on them (null elsewhere)
+  if(DRM) diStep();   // DREAM ISLAND TEAMS: the planks crack, break and mend (null elsewhere)
   clockTicks();   // Clock's Natural Time, ticking through hit freezes too (EVENT FIGHTERS: CLOCK)
   if(rainOn()) rainTwistStep();   // THE RAIN (an event twist): a shower's sound as it starts
   if(TOURNEY_WATCHING && !KOC.over) tourneyLiveTick();   // (not once the last KO decided it: the fight's clock is done)
@@ -67775,6 +68008,7 @@ function step(){
     // land-squash: airborne last frame, grounded now, coming down with real speed → brief cartoony squat
     if(_wasAir && f.onground) f._landT = hazardT;
     if(_wasAir && f.onground && _impactVY>5){ f._landSquash=6; }
+    if(DRM) diLand(f, _wasAir, _impactVY);   // DREAM ISLAND TEAMS: a long drop hurts, and a hard landing can break a plank
     if(f._landSquash>0) f._landSquash--;   // land-squash timer decays over the steps after touchdown (it was in drawFighter, so a faster screen squashed for less time)
     // SLAM, THEN HIT: a ground move used in the air drops the fighter fast and goes off on landing (David's
     // Aw Seriously, Snowball's Ground Pound, Rocky's Toxic Wave). The owner's call: "slam, then hit".
@@ -94932,7 +95166,7 @@ function startEventMatch(){
 function returnEventLoan(){
   EVENT_RUN = null; MATCH_TWIST = null; BASKET = null; JAWB = null; BERRIES = null; STAIRS = null;
   CONTEST = null;   // A CONTEST: over with the match (what each fighter held goes with the fighters)
-  STICKY = null; SPLEEF = null; DIGC = null; STG = null;   // STICKY PILLARS: nobody is stuck after the match (the stuck fighters themselves go with the fighters); THE DIG: its field goes with the match
+  STICKY = null; SPLEEF = null; DIGC = null; STG = null; DRM = null;   // STICKY PILLARS: nobody is stuck after the match (the stuck fighters themselves go with the fighters); THE DIG: its field goes with the match
   const L = EVENT_LOAN; if(!L) return;
   EVENT_LOAN = null;
   SETTINGS.mode = L.mode; SETTINGS.count = L.count; SETTINGS.stocks = L.stocks; SETTINGS.teamKey = L.teamKey; SETTINGS.itemRate = L.itemRate;
@@ -100976,6 +101210,7 @@ function brainOut(f, inp, B, L, t, fight){
   brainLedge(f, inp, B);   // REAL EDGES: never off a ledge by accident
   if(SPLEEF) spleefBrain(f, inp);   // SPLEEF: off a cracking tile onto a whole one of the same floor
   if(STG) stgBrain(f, inp);   // STAGES A: not off the end of an island or a ledge into the drop
+  if(DRM) diBrain(f, inp);   // DREAM ISLAND TEAMS: not into a gap or off an island, a hop over a missing plank
   return inp;
 }
 // CPUS AND THE EFFECT ZONES (the level creator review, 2026-10-26: CPUs stood in damage zones and walked into bounce zones; they could not see zones at all).
@@ -102540,8 +102775,10 @@ function draw(){
                       leafy: (stage.id==='goiky'||stage.id==='custom'), shadow: isBig(),
                       theme: SA.on ? stage.id : null };   // the ten normal stages' own platform looks (STAGE ART); art only, the geometry is the platform's own
   if(STG) stgDraw();   // STAGES A: the shaft's or the box's inside, behind the ledges
-  if(SETTINGS.mode==='ctf') ctfDrawWorld(); else for(const p of worldPlats) if(!p.dg) paintPlat(ctx, p, platStyle);   // Capture the Flag paints its map from cached tiles (THE DIG paints its dirt itself: drawDigc)
+  if(DRM_VIS) diDrawSea();   // DREAM ISLAND TEAMS: the sea under the islands
+  if(SETTINGS.mode==='ctf') ctfDrawWorld(); else for(const p of worldPlats) if(!p.dg && !p.di) paintPlat(ctx, p, platStyle);   // Capture the Flag paints its map from cached tiles (THE DIG paints its dirt itself: drawDigc)
   if(STG) stgDrawOver();   // STAGES A: Dream Island's grass caps
+  if(DRM_VIS) diDrawPlats();   // DREAM ISLAND TEAMS: islands, planks (cracked, ghost) and the drifting islands
   drawImpactScars();          // impact's floor scars, on the surfaces they were made on
   drawArenaHazard('under');   // a boss arena's hazard, under the shots and the fighters (BOSS_ARENA_HAZARD)
 
@@ -102723,6 +102960,9 @@ function draw(){
   ctx.lineCap='round';
   for(const p of particles){
     if(p._k === undefined){ const k = p.color; p._k = (typeof k === 'string' && k.charCodeAt(1) === 124) ? k.charCodeAt(0) : 0; if(p._k) p._c = k.slice(2); }   // "s|" a streak spark, "r|" a flash ring (HIT EFFECTS)
+    if(p._k === 116){   // a number (DREAM ISLAND TEAMS: a fall's damage): its colour, then its text
+      const q = p._c.split('|'); ctx.globalAlpha=Math.max(0,Math.min(1,p.life/20)); ctx.font='bold 22px sans-serif'; ctx.textAlign='center'; ctx.lineWidth=5; ctx.strokeStyle='#1c1c1c'; ctx.strokeText(q[1], p.x, p.y); ctx.fillStyle=q[0]; ctx.fillText(q[1], p.x, p.y); ctx.textAlign='left'; continue;
+    }
     if(p._k === 115){   // a spark: a short bright line along the way it is going
       ctx.globalAlpha=Math.max(0,Math.min(1,p.life/10)); ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(p.x-p.vx*1.5,p.y-p.vy*1.5);
       ctx.strokeStyle='#1c1c1c'; ctx.lineWidth=p.r*1.5 + 2.4; ctx.stroke(); ctx.strokeStyle=p._c; ctx.lineWidth=p.r*1.5; ctx.stroke(); continue;   // (a thin dark edge, so a white spark shows on a bright sky)
@@ -114200,7 +114440,7 @@ function worldGeo(){
     floors: floors.map(fl=>({level:fl.level,y:Math.round(fl.y),x:Math.round(fl.x),w:Math.round(fl.w)})),
     // `solid` was missing here once, so on a client every stone landmark rendered as a thin ledge; `field` keeps the
     // client's minimap filtering out the scatter grid the way the host's does; `rot` is paintPlat's tilt.
-    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot})),
+    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team})),
     // `zone` and `wall` ride along so a client DRAWS the team's safe zone where the host plays it: without them it fell back
     // to the old column round the base, which is nowhere near a side-wall band (see wallBand).
     bases: bases.map(b=>({team:b.team,x:Math.round(b.x),y:Math.round(b.y),w:b.w,h:b.h,color:b.color,
@@ -114215,7 +114455,7 @@ function worldGeo(){
 function worldGeoKey(){
   let h = (WW*31 + WH) | 0;
   const mix = (v)=>{ h = (Math.imul(h, 33) + (v|0)) | 0; };
-  for(const p of worldPlats){ mix(p.w); mix(p.h); mix(p.solid?1:0); mix((p.rot||0)*100); }   // (ONLINE LAG: not x and y -- a platform that moves rides as an mv row, not as a whole new geometry every frame)
+  for(const p of worldPlats){ mix(p.w); mix(p.h); mix(p.solid?1:0); mix((p.rot||0)*100); if(p.di){ mix(p.ghost?1:0); mix(p.crk?1:0); } }   // (ONLINE LAG: not x and y -- a platform that moves rides as an mv row, not as a whole new geometry every frame)
   for(const fl of floors){ mix(fl.x); mix(fl.y); mix(fl.w); }
   for(const b of bases){ mix(b.x); mix(b.y); mix(b.w); }
   return stage.id + ':' + worldPlats.length + ':' + floors.length + ':' + bases.length + ':' + h;
@@ -114562,7 +114802,7 @@ function applySnapshot(s){
   const st=STAGES.find(x=>x.id===s.stage); if(st) stage=st;
   SETTINGS.mode=s.mode;
   const geo = s.geo || (s.worldPlats ? s : null);   // (before the geometry was split out, it sat at the top level)
-  if(geo){ floors=geo.floors||[]; worldPlats=geo.worldPlats||[]; bases=(geo.bases||[]).map(b=>({...b})); mcNetGeo(geo.moon); NET_VIEW.geoBase = worldPlats.map(p=>[p.x, p.y]); }   // (MOON CAVES: the host's disc, built here)
+  if(geo){ floors=geo.floors||[]; worldPlats=geo.worldPlats||[]; DRM_VIS = worldPlats.some(p=>p.di); DRM_GH = worldPlats.some(p=>p.ghost); bases=(geo.bases||[]).map(b=>({...b})); mcNetGeo(geo.moon); NET_VIEW.geoBase = worldPlats.map(p=>[p.x, p.y]); }   // (MOON CAVES: the host's disc, built here)
   else if(NET_VIEW.geoBase && NET_VIEW.geoBase.length === worldPlats.length) for(let i = 0; i < worldPlats.length; i++){ worldPlats[i].x = NET_VIEW.geoBase[i][0]; worldPlats[i].y = NET_VIEW.geoBase[i][1]; }   // ONLINE LAG: back where the geometry had them, then...
   if(Array.isArray(s.mv)) for(const r of s.mv){ const p = worldPlats[r[0] | 0]; if(p){ p.x = +r[1]; p.y = +r[2]; } }   // ...the ones the host says have moved (Yoyle Needle's ledges), where it has them
   if(s.dg) digNetIn(s.dg);   // THE DIG FLOOR: the host's holes, so this floor is the host's floor of this very frame
