@@ -51096,7 +51096,8 @@ function annGroundPattern(c, gy, x0, x1, bottom, G){
 //              standing height a lane may be and still be a gap; n lanes by phase; speed by phase (phase 3: even lanes `speed[3]`,
 //              odd lanes `slow`, so a straight run fails); waves loops of the same lanes, `every` frames apart; wall the width of
 //              the wall panels that preview the lanes
-//   cons       CONSEQUENCES!: `cuts` knives, `every` frames apart by phase (phase 3's last one `fake` frames late), her dash `dash`
+//   cons       (2026-11-10, the owner: "consequences is impossible to hitless": the spot locks `lock` units (27 frames) before she goes -- it was 14, 11 frames -- and is drawn on the floor; each knife's LANE is locked and drawn `laneT` frames before the throw,
+//              so the first knife is thrown `laneT` frames after she lands and each next one `every` later; a knife flies the lane it was locked on, not where you are now) CONSEQUENCES!: `cuts` knives, `every` frames apart by phase (phase 3's last one `fake` frames late), her dash `dash`
 //              frames, the spotlight locks `lock` frames before she goes, she hangs winded `hang` frames, creeps `follow` px a frame
 //   barf       RAINBOW BARF!: a there-and-back sweep of `T` frames (`sweeps` of them by phase) over +-`half` radians, shots at `speed`
 //   priv       PRIVATE!: shutters `shutW` of the width each side, `beats` notes of `beatLen` frames by phase (about four seconds), each
@@ -51117,7 +51118,7 @@ const PSB = {
   // from phase 2 (the phase-3 pairs: one from each shutter, a floor note and a platform note). The song keeps its length, about four seconds (beats of 48 / 40 / 34 frames, they were 60 / 48 / 40: the
   // notes come quicker): a longer one would keep her out of reach and out of frame for six seconds on end
   lane:{ first:38, gap:42, r:13, clear:47, n:[0,6,6,7], speed:[0,8.6,10.2,13], slow:8.4, waves:[0,2,3,4], every:[0,40,36,30], life:130, kb:10, wall:46 },
-  cons:{ cuts:6, leads:2, every:[0,16,12,10], dash:[0,14,11,9], lock:14, speed:16, r:15, life:8, kb:11, hang:24, back:28, fake:14, follow:5 },
+  cons:{ cuts:6, leads:2, every:[0,16,12,10], dash:[0,14,11,9], lock:34, laneT:30, speed:16, r:15, life:8, kb:11, hang:24, back:28, fake:14, follow:5 },
   barf:{ T:40, half:0.87, speed:10.5, r:14, life:30, kb:13, sweeps:[0,0,1,2], streams:[0,0,2,2], lean:500 },
   // 2026-11-09 (boss fairness): PRIVATE!'s shutW was 0.2 (205 px a side, slammed on 0.6 of a hit with the shutter feet the only cue); 0.14 = 143 px a side, and the floor strip is marked for the slam's last 30 frames (psbHazard's draw)
   priv:{ shutW:0.14, beats:[0,5,6,7], beatLen:[0,48,40,34], lead:20, speed:[0,5.4,6.2,7.2], settle:12, up:12, out:24, back:30, r:16, kb:9,
@@ -51292,18 +51293,25 @@ function psbConsequences(s, tgt){
   const ph = Math.min(3, s._telPh || s._phase || 1), C = PSB.cons, id = ++BOSS_ATK_ID;
   const x = typeof s._psbSpX === 'number' ? s._psbSpX : s.x, floorY = typeof s._psbSpY === 'number' ? s._psbSpY : groundY();
   s._psbSpLk = 1;
-  s._psbRun = { phase:'dash', t:0, T:C.dash[ph], x0:s.x, y0:s.y, x1:clamp(x, s.r*0.5, WW - s.r*0.5), y1:clamp(floorY - s.r*1.08, 60, groundY() - s.r*1.08), n:0, id:id, ph:ph };
+  s._psbLn = [];
+  s._psbRun = { lanes:[], phase:'dash', t:0, T:C.dash[ph], x0:s.x, y0:s.y, x1:clamp(x, s.r*0.5, WW - s.r*0.5), y1:clamp(floorY - s.r*1.08, 60, groundY() - s.r*1.08), n:0, id:id, ph:ph };
   psbSing([392, 330, 262], 'sawtooth', 0.3);
 }
 // The last `leads` knives of a run are thrown where you are HEADING (Round 17: "the last two aimed ahead"): your speed carried for as long as the knife is in the air (its distance over its
 // speed), so a fighter running straight on is met, not followed -- the way out is to stop, turn or jump (or be out of its 180 px). The first ones go at where you are THEN.
-function psbKnife(s, R, f, lead){
+function psbLaneLock(s, R, f, lead){   // the knife's lane, locked now and thrown PSB.cons.laneT frames later: the aim point is where you are (or, for the last two, where you are heading)
+  const C = PSB.cons;
+  let tx = f ? f.x : s.x + (s.face < 0 ? -1 : 1)*100, ty = f ? f.y : s.y;
+  if(f && lead){ const t = Math.hypot(f.x - s.x, f.y - s.y)/C.speed + C.laneT; tx = clamp(f.x + (f.vx||0)*C.laneT*0.5 + (f.vx||0)*(t - C.laneT)*0.5, 20, WW - 20); ty = Math.min(f.y + (f.vy||0)*(t - C.laneT)*0.5, Math.max(f.y, groundY() - 24)); }
+  R.lanes.push({ ax:Math.round(tx), ay:Math.round(ty), due:C.laneT + C.every[R.ph]*R.lanes.length + ((R.ph >= 3 && R.lanes.length >= C.cuts - 1) ? C.fake : 0), done:false });
+}
+function psbKnife(s, R, f, lead, lane){
   const C = PSB.cons;
   let tx = f ? f.x : 0, ty = f ? f.y : 0;
-  if(f && lead){ const t = Math.hypot(f.x - s.x, f.y - s.y)/C.speed; tx = clamp(f.x + (f.vx||0)*t, 20, WW - 20); ty = Math.min(f.y + (f.vy||0)*t, Math.max(f.y, groundY() - 24)); }
-  const a = f ? Math.atan2(ty - s.y, tx - s.x) : (s.face < 0 ? Math.PI : 0), d0 = f ? Math.min(s.r*0.85, Math.hypot(tx - s.x, ty - s.y)*0.5) : s.r*0.85;
+  if(lane){ tx = lane.ax; ty = lane.ay; }
+  const a = (f || lane) ? Math.atan2(ty - s.y, tx - s.x) : (s.face < 0 ? Math.PI : 0), d0 = (f || lane) ? Math.min(s.r*0.85, Math.hypot(tx - s.x, ty - s.y)*0.5) : s.r*0.85;
   addProj(psbShot(s, { x:s.x + Math.cos(a)*d0, y:s.y + Math.sin(a)*d0, vx:Math.cos(a)*C.speed, vy:Math.sin(a)*C.speed,
-    r:C.r, kb:C.kb, dmg:bossDmg(), color:'#dfe4ea', shape:'psbknife', life:C.life, bossAtk:R.id, volley:true, psb:true }));   // (the spotlight, the dash and the glint told you where)
+    r:C.r, kb:C.kb, dmg:bossDmg(), color:'#dfe4ea', shape:'psbknife', life:C.life, bossAtk:R.id, volley:true, psb:true }));   // (the spotlight, the dash, the glint and the lane told you where)
   s.face = Math.sign(Math.cos(a)) || s.face;
   for(let i=0;i<4;i++) puff(s.x + Math.cos(a)*d0, s.y + Math.sin(a)*d0, '#ffffff', 3);
   try{ tone(880 + R.n*70, 0.08, 'square', 0.1, 0, 300); }catch(e){}
@@ -51331,12 +51339,16 @@ function psbRunMove(s, tgt){
       s.y += clamp((clamp(feetY(f) - s.r*1.08, s.r*0.8, gy - s.r*1.08) - s.y)*0.1, -C.follow, C.follow);
       s.face = Math.sign(f.x - s.x) || s.face;
     }
-    const due = C.every[R.ph]*(R.n + 1) + ((R.ph >= 3 && R.n >= C.cuts - 1) ? C.fake : 0);   // phase 3: the last is late, a fake-out
-    s.flash = (due - R.t <= 6 && due - R.t > 0) ? 1 : 0;   // she glints before each cut
-    if(R.t >= due){
-      psbKnife(s, R, f, R.n >= C.cuts - C.leads);   // the last two are thrown where you are heading
-      if(++R.n >= C.cuts){ R.phase = 'hang'; R.t = 0; s.flash = 0; }
+    // a lane is locked laneT frames before its knife flies: the first at the landing, then one every `every` frames (the last two where you are heading)
+    while(R.lanes.length < C.cuts && R.t >= C.every[R.ph]*R.lanes.length) psbLaneLock(s, R, f, R.lanes.length >= C.cuts - C.leads);
+    const ln = R.lanes[R.n];
+    s.flash = (ln && ln.due - R.t <= 6 && ln.due - R.t > 0) ? 1 : 0;   // she glints before each cut
+    if(ln && R.t >= ln.due){
+      ln.done = true;
+      psbKnife(s, R, f, R.n >= C.cuts - C.leads, ln);
+      if(++R.n >= C.cuts){ R.phase = 'hang'; R.t = 0; s.flash = 0; R.lanes = []; }
     }
+    s._psbLn = R.lanes.filter(l => !l.done).map(l => [l.ax, l.ay, l.due - R.t]);
     return;
   }
   if(R.phase === 'hang'){   // winded, for a beat
@@ -51345,7 +51357,7 @@ function psbRunMove(s, tgt){
   }
   const k = Math.min(1, R.t/C.back), e = k*k*(3 - 2*k);
   s.x = R.x0 + (R.x1 - R.x0)*e; s.y = R.y0 + (R.y1 - R.y0)*e;
-  if(R.t >= C.back) s._psbRun = null;
+  if(R.t >= C.back){ s._psbRun = null; s._psbLn = null; }
 }
 // ---- RAINBOW BARF! (phase 2 on) ---------------------------------------------------------------------------------------------
 // "Members of the puffball species are known to regurgitate a rainbow substance during times of distress" (Get in the Van); "The
@@ -51669,6 +51681,24 @@ function psbDrawFx(){
     c.globalAlpha = 0.12*a; c.fillStyle = '#fff2b0';
     c.beginPath(); c.moveTo(sx - 24, -20); c.lineTo(sx + 24, -20); c.lineTo(sx + b.r*1.2, sy + b.r); c.lineTo(sx - b.r*1.2, sy + b.r); c.closePath(); c.fill();
   }
+  // 3b. (2026-11-10, "consequences is impossible to hitless") WHERE SHE WILL LAND: a ring on the floor at the spot -- soft while it still follows you, solid white once it has locked -- and, once she is down, each knife's LANE: a line from her to the point it is aimed at,
+  // drawn from the moment it is locked until the throw (PSB.cons.laneT frames). A knife flies the lane it was locked on: step out of the line.
+  if(typeof b._psbSpX === 'number' && b._psbSpT > 0.05 && ((b._tel > 0 && b._telKind === 'consequences') || Math.abs(b.x - b._psbSpX) > 36)){
+    const lk = b._psbSpLk ? 1 : 0, px = b._psbSpX, py = (typeof b._psbSpY === 'number' ? b._psbSpY : gy) - 2, pu = 0.5 + 0.5*Math.sin(t*0.35);
+    c.save(); c.globalAlpha = (lk ? 0.30 : 0.14) + 0.10*pu; c.fillStyle = '#ffffff'; c.beginPath(); c.ellipse(px, py, 70, 12, 0, 0, 7); c.fill();
+    c.globalAlpha = lk ? 0.95 : 0.5; c.strokeStyle = '#ffffff'; c.lineWidth = lk ? 4 : 2; if(!lk) c.setLineDash([10, 8]);
+    c.beginPath(); c.ellipse(px, py, 150, 26, 0, 0, 7); c.stroke(); c.setLineDash([]); c.restore();
+  }
+  if(b._psbLn && b._psbLn.length){
+    c.save(); c.lineCap = 'round';
+    for(const L of b._psbLn){
+      const dx = L[0] - b.x, dy = L[1] - b.y, d = Math.hypot(dx, dy) || 1, ux = dx/d, uy = dy/d, k = Math.max(0, Math.min(1, 1 - L[2]/PSB.cons.laneT)), reach = 190;
+      c.globalAlpha = (0.25 + 0.55*k)*(L[2] < 8 ? (0.6 + 0.4*Math.sin(t*1.6)) : 1); c.strokeStyle = '#ffffff'; c.lineWidth = 3 + 5*k;
+      c.beginPath(); c.moveTo(b.x + ux*b.r*0.6, b.y + uy*b.r*0.6); c.lineTo(b.x + ux*reach, b.y + uy*reach); c.stroke();
+      c.globalAlpha = 0.4 + 0.5*k; c.lineWidth = 2; c.beginPath(); c.arc(L[0], L[1], 26 - 8*k, 0, 7); c.stroke();
+    }
+    c.restore();
+  }
   // 4. her colours change as she sings, and she sparkles: faster the lower her HP, and it jumps when she is hit (a smooth cycle, never a strobe)
   const im = bossImage('speaker');
   if(im && b.y > -b.r*1.4){
@@ -51808,12 +51838,17 @@ const FSB = {
   plateSp:[0, 10, 11.5, 13], plates:[0, 1, 2, 2], plateGap:42, plateR:34, plateKb:12,
   // 2026-11-09 (boss fairness): hookT was 26 / 22 / 20 (13 / 16 / 19 px a frame): a standing body needs ~8 frames of a held jump to clear a hook, so a human reaction (18) left 0 / -4 / -6 frames; now 8.5 / 10 / 12 px a frame, 14 / 10 / 6 frames of margin, the same span and hit
   hookT:[0, 40, 36, 32], hookSpan:340, hookR:30, hookKb:9, hookLow:46, hookHigh:100, pinchR:78, pinchKb:14, pinch2:{ from:2, follow:12, T:32 },
-  hops:6, hopT:[0, 30, 26, 22], hopStep:[0, 170, 180, 190], hopApex:64, bigApex:104, bigWait:14, ringSp:[0, 7, 7.6, 8.2], ringR:15, bigR:24, landR:64, ring2From:2,
+  hops:6, hopT:[0, 30, 28, 26], hopStep:[0, 170, 180, 190], hopApex:64, bigApex:104, bigWait:14, ringSp:[0, 7, 7.6, 8.2], ringR:15, bigR:24, landR:64, ring2From:2,
   vents:[0.27, 0.73], colW:30, colH:250, warn:30, erupt:44, beat:[0, 0, 85, 70], entryBeat:70, geyser:0.55,
   edgeW:92, biteRise:34, biteSnap:12, biteRest:70, bite:0.5,
   quake:120, waveStart:270, wavePeriod:540, waveTell:70, waveAdv:55, waveHold:45, waveRec:55, waveW:0.27, wave:0.7,
   endHold:1200,
   ledgeMin:40, ledgeFrom:2, ledgePlateIn:30,
+  // 2026-11-10 (the owner: "the tlc needs to be fixed is unbalanced at phase 3"): THE TLC's first landing used to fire the frame the wind-up ended, where he stood (0.00 dodge rate in every phase). Now the chain
+  // begins with a crouch of `tlcWait` frames, then a hop IN PLACE (hopT frames, his shadow on the spot the whole time), and the first ring comes with its landing: 18 + 30 / 16 + 26 / 14 + 22 frames after the wind-up.
+  // The six landings, the rings and every hit are as they were.
+  // and after every landing he stays down `tlcRest` frames before the next hop (a pause between a ring and the next hop's mark: the next landing is aimed when the hop starts)
+  tlcWait:[0, 18, 18, 18], tlcRest:[0, 14, 16, 18],
 };
 function fsbPh(s){ return Math.max(1, Math.min(3, (s && s._phase) || 1)); }
 // The phase a move fires in is the phase its wind-up was drawn in (_telPh, set as the wind-up starts): a hit that crossed a threshold
@@ -52160,13 +52195,13 @@ function fsbTlcStart(s, tgt){
   // sy0 / sy1: the surface a hop leaves and the one it comes down on (the floor line, or the top of a ledge: fsbHopAim); p1 the ledge it lands on, if any
   const F = { k:'tlc', P:ph, n:0, id, ph:'hop', t:0, x0:s.x, x1:s.x, D:FSB.hopT[ph], dur:FSB.hopT[ph], wait:0, big:false, sy0:gy, sy1:gy, p1:null };
   s._fs = F; fb.k = 'tlc'; fb.p = 1;
-  fsbLand(s, F);
-  F.n = 1; fsbHopAim(s, tgt, F);
+  F.n = 0; fsbHopAim(s, tgt, F);   // (the first landing is a hop in place, after a crouch)
+  F.wait = FSB.tlcWait[ph];
   return F;
 }
 function fsbHopAim(s, tgt, F){
   const step = FSB.hopStep[F.P], want = tgt && !tgt.dead ? tgt.x : s.x + (s.face || 1)*step;
-  F.x0 = s.x; F.x1 = clamp(s.x + clamp(want - s.x, -step, step), 80, WW - 80); F.t = 0;
+  F.x0 = s.x; F.x1 = F.n === 0 ? s.x : clamp(s.x + clamp(want - s.x, -step, step), 80, WW - 80); F.t = 0;   // (the first hop stays where he stands)
   // THE LEDGE ("TLC hops up", the owner, 2026-10-04): after a fighter standing on a ledge he hops up onto it -- a hop that comes down over that
   // ledge lands on its top (a fighter on the floor, or a hop that comes down beside the ledge, is the floor's, as ever)
   const st = tgt && !tgt.dead ? fsbStand(tgt) : null, up = !!(st && st.p && F.x1 >= st.p.x && F.x1 <= st.p.x + st.p.w);
@@ -52185,7 +52220,7 @@ function fsbTlc(s, tgt, F){
       fsbLand(s, F);
       F.n++;
       if(F.n >= FSB.hops){ F.ph = 'rest'; F.t = 0; }
-      else fsbHopAim(s, tgt, F);
+      else { fsbHopAim(s, tgt, F); if(!F.big) F.wait = FSB.tlcRest[F.P]; }
     }
   } else {
     F.t++; fsbSteer(s, s.x, fsbHoverY(s), 0.1, 14);
@@ -52231,7 +52266,7 @@ function fsbBeginTelegraph(s, tgt){
     if(L){ s._fsL = L; fb.pl = [Math.round(L.x), Math.round(L.x + L.w), Math.round(L.y)]; }
   }
   else if(kind === 'youmust'){ fb.k = 'hooks'; s._telX = clamp(live ? tgt.x : s.x, 70, WW - 70); s._telSY = live ? fsbStand(tgt).y : groundY(); fb.my = Math.round(s._telSY); }   // the mark is on the surface you stand on
-  else { fb.k = 'tlc'; fb.x = Math.round(s.x); fb.ty = Math.round(groundY()); }   // the stomp where he stands is the floor's (fsbHopAim marks the hops' own surfaces)
+  else { fb.k = 'tlc'; fb.x = Math.round(s.x); fb.ty = Math.round(groundY()); s._telX = s.x; }   // the stomp's spot is where he stands (his shadow marks it)   // the stomp where he stands is the floor's (fsbHopAim marks the hops' own surfaces)
 }
 function fsbTick(s, tgt){
   const fb = fsbLive(s), F = s._fs;
@@ -52694,20 +52729,17 @@ const SWARM = {
   // SKITTER: bugs move in bursts. approach / backoff: how near he lets you (he has no contact damage, so this is only pressure)
   move:{ approach:230, backoff:150, burst:[8, 14], pause:[10, 22], accel:[0, 1.15, 1.3, 1.5], vmax:[0, 9, 10, 11] },
   bug:9,   // a bug's radius: the hit is its own drawn size
-  // SWARM WAVE!  v: a crest's speed; n: crests; cols: columns of two bugs in a crest, dx apart; gaps: the clear floor between
-  // crests (px) -- a jump clears one crest (about 34 frames above the bugs) and the next comes no sooner than a landing
-  // and a second jump allow; alpha: SWARM ALPHA! at the head of the first crest, which hops out of the tide at you once;
-  // climb: the crests climb the platform and run along its top (from phase 2: "SWARM WAVE! one more crest a phase and platform
-  // climbing from P2", the owner, Round 17 -- crests 4 / 5 / 5, each phase one more than it had); chew: the fraction of the
-  // platform's own width each end loses when a wave reaches it (phase 3: 6% an end, 12% a wave); chewMin: it is never chewed
-  // below this fraction
-  // 2026-11-09 (boss fairness): from phase 2 every gap is 240 px (they were 200/160 and 200/175). A crest covers a standing body for ~18-21 frames and a held jump is ~40 frames in the air,
-  // so a 160-175 px gap (18-24 frames clear at the tide's speed) left no landing before the next crest; 240 px is 32-35 frames clear, an 8-frame window to jump again. Crests, speed and damage as they were.
-  tide:[null,
-    { v:6.0, n:4, cols:4, dx:22, gaps:[170, 170, 170],      alpha:false, climb:false, chew:0 },
-    { v:6.8, n:5, cols:4, dx:22, gaps:[240, 240, 240, 240], alpha:true,  climb:true,  chew:0.03 },
-    { v:7.4, n:5, cols:4, dx:22, gaps:[240, 240, 240, 240], alpha:true,  climb:true,  chew:0.06 }],
-  chewMin:0.5,
+  // SWARM WAVE! (REWORKED 2026-11-10, the owner: "swarm wave is UNDODGEABLE ... you have to rework this attack"; like Nightmare King Grimm's spike attack): the bugs FALL from the ceiling in
+  // COLUMNS across the whole arena with marked GAPS between them. Every column is shaded before anything falls (the wind-up, `tel` frames), and standing in a gap is the dodge: the bugs
+  // ignore the ledge and fall through it (positioning, not jump timing). n: columns; bugs: bugs across a column (dx apart); rows: rows (rowGap apart) in a column; v: fall speed;
+  // alpha: SWARM ALPHA, one bigger bug in a column of the first volley (phase 2 on, as before); shift: phase 3's gaps move ONCE -- a second volley whose columns stand over the first's
+  // gaps, marked from the start (dashed) and released `lag` frames after the first. Harder each phase: more columns, narrower gaps, quicker, a shift. Hit, knockback and bug size as they were
+  // (a bug is r 9, the alpha r 15 / kb 11; one move is one attack id, so still one boss hit).
+  drop:[null,
+    { n:3, bugs:4, rows:3, v:11, alpha:false, shift:false, lag:0 },
+    { n:4, bugs:4, rows:3, v:13, alpha:true,  shift:false, lag:0 },
+    { n:5, bugs:3, rows:4, v:15, alpha:true,  shift:true,  lag:50 }],
+  dropDx:22, rowGap:34, dropTel:40,
   // DODGEBALL!  A ball of bugs that ricochets: v its speed, r its size, bounces before it comes apart, shed the bugs each
   // bounce on a floor or a ledge sheds (they crawl at spd), aim: 'lock' fixes it as the wind-up starts, 'follow' tracks you
   // until ballLock frames before the throw; n: balls thrown at once ("DODGEBALL! two balls in P3", the owner, Round 17: the
@@ -52755,13 +52787,10 @@ const SWARM = {
 // ---- small things ----
 function swarmPhase(s){ return Math.max(1, Math.min(3, (s && (s._telPh || s._phase)) || 1)); }
 function swarmWallX(dir){ return dir > 0 ? 0 : WW; }   // where a move travelling `dir` (+1: to the right) comes in
-function swarmPlats(){   // the stage's own ledges: what the tide chews (a boss's props, solid blocks and pads are not)
-  return worldPlats.filter(p => !p.solid && !p.bouncy && !p.rot && !p.field && !p.ladder && !p._springy && (p.h || 14) <= 20);
-}
 // A shot that has to go, now: gone this frame, hitting nobody (a dead shot still runs the rest of this frame's hit tests).
 function swarmKill(p){ p.life = 0; p.delay = 0; p.dmg = 0; p.kb = 0; p.r = 0; p.y = groundY() + 500; }
 // The wind-up's length: the usual 36 frames, and POISON STING!'s own (the line is marked the whole time, so it is the dodge window and then some).
-function swarmTelLen(s){ return s._telKind === 'swarmsting' ? SWARM.sting[swarmPhase(s)].tel : 36; }
+function swarmTelLen(s){ return s._telKind === 'swarmsting' ? SWARM.sting[swarmPhase(s)].tel : (s._telKind === 'swarm' ? SWARM.dropTel : 36); }
 // DODGEBALL!'s second ball (phase 3): it goes for the floor `ballApart` px from where the first is aimed, toward the middle of the room.
 function swarmBallAim2(tx, ty){ return [clamp(Math.round(tx + (tx < WW*0.5 ? 1 : -1)*SWARM.ballApart), 90, WW - 90), Math.round(groundY() - 24)]; }
 // POISON STING!'s line, fixed as the wind-up starts: from the hive cell on the wall far from you whose height is nearest to yours, through the spot
@@ -52842,7 +52871,7 @@ function swarmBeginTelegraph(s, tgt){
 
   const tx = (tgt && !tgt.dead) ? tgt.x : (s._telX != null ? s._telX : s.x), ty = (tgt && !tgt.dead) ? tgt.y : (s._telY != null ? s._telY : s.y);
   sw.d = tx < WW*0.5 ? -1 : 1;
-  if(k === "swarm") swarmReform(s, sw.d > 0 ? s.r*0.62 : WW - s.r*0.62);
+  sw.wv = k === "swarm" ? swarmPlan(s._telPh) : null;   // SWARM WAVE!: every column (and so every gap) is fixed now and shaded for the whole wind-up
   sw.b = k === "dodgeball" ? [Math.round(tx), Math.round(ty)] : null;
   sw.b2 = (k === "dodgeball" && SWARM.ball[s._telPh].n > 1) ? swarmBallAim2(tx, ty) : null;   // phase 3's second ball: its first leg is marked beside the first's
   sw.sg = k === "swarmsting" ? swarmStingLine(s, tx, ty) : null;   // the stinger's perch and the line it will pounce along, marked from now
@@ -52862,6 +52891,7 @@ function swarmTick(s, tgt){
     sw.b = [Math.round(tgt.x), Math.round(tgt.y)];
     if(sw.b2) sw.b2 = swarmBallAim2(tgt.x, tgt.y);   // the second ball's mark follows the first's, and locks with it
   }
+  if(sw.wv && sw.wv.e != null && hazardT >= sw.wv.e) sw.wv = null;
   swarmStepShots(s, tgt);
   swarmStingTick(s);
 }
@@ -52892,82 +52922,44 @@ const SWARM_EGGS = [0.10, 0.30, 0.55, 0.72];   // the egg piles on the floor, as
 function swarmDressArena(b){
   b._sw = { d:0, f:hazardT, ox:Math.round(WW*SWARM_EGGS[1]), oy:Math.round(groundY() - 10) };
 }
-// ---- SWARM WAVE! (the signature): "The TLC gets destroyed by the wave of bugs" (Insectophobe's Nightmare 2/Transcript). The hive
-// pours a tide out of its wall cell along the floor, from the wall FAR from you: crests of bugs with clear floor between them,
-// each one a jump (a jump keeps you over the bugs for about 34 frames). Phase 2 quickens it, gives it an uneven rhythm, puts
-// SWARM ALPHA at its head, and climbs the platform and runs along its top, and the tide starts to chew the platform's ends; phase 3
-// is quicker and chews more. Four crests in phase 1, five in phases 2 and 3 (one more than it had, the owner's pick, Round 17).
+// ---- SWARM WAVE! (the signature): "The TLC gets destroyed by the wave of bugs" (Insectophobe's Nightmare 2/Transcript). Bugs pour out of the
+// ceiling in columns across the whole room with clear GAPS between them (swarmPlan: fixed as the wind-up starts and shaded for all of it); stand in a gap and they fall past you, and they
+// fall through the ledge too. Phase 3 shifts the gaps once: a second volley over the first's gaps, marked (dashed) from the start, released SWARM.drop[3].lag frames after the first.
+function swarmPlan(ph){
+  const D = SWARM.drop[ph], r = SWARM.bug, cw = (D.bugs - 1)*SWARM.dropDx + 2*r, gap = (WW - D.n*cw)/(D.n + 1), off = (Math.random()*2 - 1)*gap*0.25;
+  const a = []; for(let i = 0; i < D.n; i++){ const x0 = gap*(i + 1) + cw*i + off; a.push([Math.round(x0), Math.round(x0 + cw)]); }
+  let b = null;
+  if(D.shift){   // one column over the middle of every gap of the first volley: its own gaps lie over the first's columns
+    b = []; for(let i = 0; i <= D.n; i++){ const l = i === 0 ? 0 : a[i - 1][1], rr = i === D.n ? WW : a[i][0], c = (l + rr)/2; b.push([Math.round(c - cw/2), Math.round(c + cw/2)]); }
+  }
+  return { a, b, f:null, e:null };
+}
+function swarmFallFrames(ph){ const D = SWARM.drop[ph]; return Math.ceil((groundY() + 60 + D.rows*SWARM.rowGap)/D.v); }
 function swarmWave(s, tgt, id){
-  const ph = swarmPhase(s), T = SWARM.tide[ph], gy = groundY(), sw = s._sw || (s._sw = {});
-  const dir = sw.d || ((tgt && tgt.x < WW*0.5) ? -1 : 1), wall = swarmWallX(dir), r = SWARM.bug, crest = T.cols*T.dx;
-  s._tide = { id, dir, ph, done:{}, at:hazardT };
-  let off = 0;
-  for(let k=0;k<T.n;k++){
-    for(let c=0;c<T.cols;c++) for(let row=0;row<2;row++){
-      const alpha = T.alpha && k === 0 && c === 0 && row === 0;
-      addProj(swarmShot(s, { swarm: alpha ? 'alpha' : 'tide', shape: alpha ? 'bugbig' : ((ph >= 2 && (c + row) % 2) ? 'bugred' : 'bugpurple'),
-        x:wall - dir*(16 + off + c*T.dx), y:gy - r*1.05 - row*16.5, vx:dir*T.v, vy:0, r: alpha ? 15 : r, kb: alpha ? 11 : 8, bossAtk:id,
-        life:Math.ceil((WW + 90 + off + c*T.dx)/T.v/PROJ_LIFE) + 6, dir, lane:'floor', crest:k, ph, dy:row*16.5, bob:(k*7 + c*3 + row*5) % 13,
-        front: c === 0 && row === 0 }));
+  const ph = swarmPhase(s), D = SWARM.drop[ph], gy = groundY(), sw = s._sw || (s._sw = {}), r = SWARM.bug, dx = SWARM.dropDx;
+  const wv = sw.wv || (sw.wv = swarmPlan(ph));
+  const alphaCol = D.alpha ? Math.floor(D.n/2) : -1;
+  const volley = (cols, lag, first) => cols.forEach((cl, ci) => {
+    const cx = (cl[0] + cl[1])/2;
+    for(let row = 0; row < D.rows; row++) for(let b = 0; b < D.bugs; b++){
+      const alpha = first && ci === alphaCol && row === 0 && b === 1, y0 = -30 - row*SWARM.rowGap;
+      addProj(swarmShot(s, { swarm:'drop', shape: alpha ? 'bugbig' : ((ph >= 2 && (ci + row + b) % 2) ? 'bugred' : 'bugpurple'),
+        x:cx + (b - (D.bugs - 1)/2)*dx, y:y0, vx:0, vy:D.v, r: alpha ? 15 : r, kb: alpha ? 11 : 8, bossAtk:id, delay:lag,
+        life:Math.ceil((gy + 120 - y0)/D.v/PROJ_LIFE) + 10, bob:(ci*7 + b*3 + row*5) % 13 }));
     }
-    off += crest + (T.gaps[k] || 0);
-  }
-  impact(wall - dir*4, gy, { shake:9, dust:2, debris:8, r:90, color:'#8b4fc0' });   // the cell bursts
-  for(let i=0;i<10;i++) puff(wall - dir*(8 + Math.random()*20), gy - Math.random()*70, '#9f00ff', 4);
+  });
+  volley(wv.a, 0, true);
+  if(wv.b) volley(wv.b, D.lag, false);
+  wv.f = hazardT; wv.e = hazardT + D.lag + swarmFallFrames(ph) + 12;
+  wv.t0 = Math.ceil((gy - 72 + 30)/D.v);   // frames until a volley's first row is at a standing fighter's head
+  wv.t1 = wv.t0 + Math.ceil((D.rows*SWARM.rowGap + 72)/D.v);   // ...and until its last row has passed the floor
+  wv.lag = D.lag;
+  for(let i = 0; i < 12; i++) puff(Math.random()*WW, 14, '#9f00ff', 4);
 }
-// The crest bugs' tick: hug the surface they are on, and do what the tide does where it meets the platform.
-function swarmPlatId(pl){ const i = swarmPlats().indexOf(pl); return i < 0 ? 'x' : 'p' + i; }
-function swarmTideStep(p, s, tgt){
-  const gy = groundY(), T = SWARM.tide[p.ph] || SWARM.tide[1];
-  if(!p._in){ if(p.x >= 0 && p.x <= WW) p._in = true; }
-  else if(p.x < -30 || p.x > WW + 30){ swarmKill(p); return; }
-  if(p.lane === 'air'){   // SWARM ALPHA's one hop, at you
-    p.vy += 0.5;
-    if(p.vy > 0 && p.y >= gy - p.r*1.05){ p.y = gy - p.r*1.05; p.vy = 0; p.vx = p.dir*T.v; p.lane = 'floor'; impact(p.x, gy, { shake:5, dust:1.2, debris:3, r:60, color:'#8b4fc0' }); }
-    return;
-  }
-  if(p.lane === 'plat'){   // (phase 2 on) along the ledge's top, and off its far end
-    const pl = p.pl;
-    p.y = pl.y - p.r*1.05 - p.dy + Math.sin(hazardT*0.7 + p.bob)*1.5; p.vy = 0;
-    if(p.dir > 0 ? p.x > pl.x + pl.w + p.r : p.x < pl.x - p.r){ puff(p.x, p.y, '#9f00ff', 3); swarmKill(p); }   // over the far end: gone (it does not rain on the floor below)
-    return;
-  }
-  if(p.lane !== 'floor') return;
-  p.y = gy - p.r*1.05 - p.dy + Math.sin(hazardT*0.7 + p.bob)*1.5; p.vy = 0;
-  if(p.swarm === 'alpha' && !p._hop && tgt && !tgt.dead){
-    const dx = tgt.x - p.x;
-    if(Math.sign(dx) === p.dir && Math.abs(dx) < 260 && Math.abs(dx) > 80){ p._hop = 1; p.lane = 'air'; p.vy = -10.5; p.vx = clamp(dx/42, -9, 9); }
-  }
-  const W_ = s._tide;
-  if(!W_ || W_.id !== p.bossAtk || !p.front) return;
-  for(const pl of swarmPlats()){
-    const id = swarmPlatId(pl), near = p.dir > 0 ? pl.x : pl.x + pl.w, far = p.dir > 0 ? pl.x + pl.w : pl.x;
-    const past = (e) => p.dir > 0 ? p.x >= e : p.x <= e;
-    if(T.chew > 0 && p.crest === 0){   // the head of the first crest reaches each end of the ledge: a bite
-      if(past(near) && !W_.done[id + 'a']){ W_.done[id + 'a'] = 1; swarmChew(pl, p.dir > 0 ? 'L' : 'R', T.chew); }
-      if(past(far) && !W_.done[id + 'b']){ W_.done[id + 'b'] = 1; swarmChew(pl, p.dir > 0 ? 'R' : 'L', T.chew); }
-    }
-    if(T.climb && !W_.done[id + 'c' + p.crest]){   // a crest about to reach the ledge's near end sends a crest up it
-      const dist = p.dir > 0 ? near - p.x : p.x - near;
-      if(dist < 70 && dist > -20){ W_.done[id + 'c' + p.crest] = 1; swarmClimb(s, p, pl, near, dist); }
-    }
-  }
-}
-function swarmChew(pl, end, frac){   // the ledge's end is eaten: never below SWARM.chewMin of its own width
-  if(!pl._swx) pl._swx = { x:pl.x, w:pl.w };
-  const w0 = pl._swx.w, take = Math.min(w0*frac, Math.max(0, pl.w - w0*SWARM.chewMin));
-  if(take <= 0) return;
-  if(end === 'L'){ pl.x += take; pl.w -= take; } else pl.w -= take;
-  impact(end === 'L' ? pl.x : pl.x + pl.w, pl.y, { shake:3, dust:0.8, debris:5, r:40, color:'#8ab04a' });
-}
-function swarmClimb(s, p, pl, near, dist){   // phase 2 on: the crest's twin comes up the ledge's end and runs its top
-  const T = SWARM.tide[p.ph], r = SWARM.bug, v = T.v*0.95, gap = Math.max(0, dist)/T.v;
-  for(let c=0;c<T.cols;c++) for(let row=0;row<2;row++){
-    addProj(swarmShot(s, { swarm:'tide', shape:(c + row) % 2 ? 'bugred' : 'bugpurple', x:near + p.dir*4, y:pl.y - r*1.05 - row*16.5, vx:p.dir*v, vy:0, bossAtk:p.bossAtk,
-      life:Math.ceil((pl.w + 60)/v/PROJ_LIFE) + 8, dir:p.dir, lane:'plat', pl, crest:p.crest, ph:p.ph, dy:row*16.5, bob:(c*5 + row*3) % 13,
-      delay:Math.ceil(gap) + c*Math.ceil(T.dx/v) + 2, _in:true }));
-  }
-  for(let i=0;i<6;i++) puff(near + p.dir*6, pl.y - Math.random()*10, '#9f00ff', 3);
+// A falling bug: straight down, through the ledge, gone on the floor.
+function swarmDropStep(p){
+  const gy = groundY();
+  if(p.y >= gy - p.r*0.6){ if(p.x % 3 < 1) puff(p.x, gy - 4, '#9f00ff', 2); swarmKill(p); }
 }
 // ---- (The bug tunnel, DODGING PATTERN!, is not here any more: "remove the bug tunnel attack." -- the owner, 2026-10-01, Round 17.)
 // ---- SEEKERS!: the old seekers (the owner asked for them to stay), now real bugs: stinger bugs that peel off him and hunt you,
@@ -53204,8 +53196,8 @@ function swarmStepShots(s, tgt){
   for(const p of projectiles){
     if(!p.swarm || p.reflected) continue;
     if(p.swarm === 'sac'){ swarmSacStep(p, s); continue; }
-    if(p.delay > 0) continue;   // a crest waiting at the ledge's end has not begun
-    if(p.swarm === 'tide' || p.swarm === 'alpha') swarmTideStep(p, s, tgt);
+    if(p.delay > 0) continue;   // the second volley waits above the ceiling until its time
+    if(p.swarm === 'drop') swarmDropStep(p);
     else if(p.swarm === 'ball') swarmBallStep(p, s);
     else if(p.swarm === 'crawl' || p.swarm === 'hatch') swarmCrawlStep(p);
     else if(p.swarm === 'seek') swarmSeekStep(p);
@@ -53488,16 +53480,28 @@ function swarmDrawFx(){
     c.beginPath(); c.moveTo(x, y - 14); c.quadraticCurveTo(x + 11, y + 2, x, y + 11); c.quadraticCurveTo(x - 11, y + 2, x, y - 14); c.closePath(); c.fill(); c.stroke();
     c.restore();
   }
-  if(b._tel > 0 && b._telKind === 'swarm' && sw.d){   // SWARM WAVE! comes out of the wall: bugs spill out of its low cells and skitter at its foot, more as it nears (no dashed floor)
-    const d = sw.d, x0 = swarmWallX(d);
-    c.save(); for(let i = 0; i < Math.round(2 + 6*p); i++){ const q = (t*0.03 + i*0.23) % 1; c.globalAlpha = 0.5 + 0.5*p;
-      swarmBugAt(c, i % 3 ? 'bugpurple' : 'bugred', x0 + d*(8 + q*40 + (i % 2)*10), gy - 10 - ((i*13) % 60)*(1 - q), 14, d < 0); }
-    c.restore();
-  }
-  if(SWARM.tide[ph].climb){   // the way up (phase 2 on): a goo strand at each end of the ledge
-    c.save(); c.strokeStyle = 'rgba(140,210,70,0.55)'; c.lineWidth = 6; c.lineCap = 'round';
-    for(const pl of swarmPlats()){ for(const ex of [pl.x + 4, pl.x + pl.w - 4]){ c.beginPath(); c.moveTo(ex, pl.y + 6); c.bezierCurveTo(ex + 6, pl.y + (gy - pl.y)*0.35, ex - 6, pl.y + (gy - pl.y)*0.7, ex, gy - 2); c.stroke(); } }
-    c.restore();
+  const wv = sw.wv;   // SWARM WAVE!: every column shaded from the first frame of the wind-up (the bugs fall on the shaded; the clear strips are the gaps), the gaps' floor lit green
+  if(wv && ((b._tel > 0 && b._telKind === 'swarm') || (wv.f != null && (wv.e == null || t < wv.e)))){
+    const dt = wv.f != null ? t - wv.f : -1, pulse = 0.5 + 0.5*Math.sin(t*0.3), D = SWARM.drop[ph];
+    const col = (cl, dashed, armed) => {
+      const k = dashed ? (armed ? 0.8 : 0.45) : 1, a = (0.10 + 0.14*(b._tel > 0 ? p : 1))*k;
+      c.save(); c.globalAlpha = a; c.fillStyle = '#9a3fe0'; c.fillRect(cl[0], 0, cl[1] - cl[0], gy);
+      c.globalAlpha = (0.55 + 0.3*pulse)*k; c.strokeStyle = '#ff7ae0'; c.lineWidth = 3; if(dashed) c.setLineDash([12, 9]);
+      c.beginPath(); c.moveTo(cl[0], 0); c.lineTo(cl[0], gy); c.moveTo(cl[1], 0); c.lineTo(cl[1], gy); c.stroke(); c.setLineDash([]);
+      c.globalAlpha = 0.7*k; c.fillStyle = '#d23fb4'; c.fillRect(cl[0], gy - 7, cl[1] - cl[0], 7);   // the floor under a column: where it lands
+      for(let i = 0; i < 3; i++){ const x = cl[0] + (cl[1] - cl[0])*(i + 0.5)/3; c.globalAlpha = 0.75*k; c.beginPath(); c.moveTo(x - 9, 26 + i*3 + pulse*5); c.lineTo(x + 9, 26 + i*3 + pulse*5); c.lineTo(x, 42 + i*3 + pulse*5); c.closePath(); c.fillStyle = '#ffd0f4'; c.fill(); }   // arrows: it falls
+      c.restore();
+    };
+    const aOn = dt < 0 || dt < (wv.t1 || 0) + 6;   // the first volley's marks go once its last bug is past
+    if(aOn){
+      wv.a.forEach(cl => col(cl, false, true));
+      c.save(); c.globalAlpha = 0.5 + 0.3*pulse; c.fillStyle = '#7fe05a';   // a green strip on the floor in every gap
+      for(let i = 0; i <= wv.a.length; i++){ const l = i === 0 ? 0 : wv.a[i - 1][1], rr = i === wv.a.length ? WW : wv.a[i][0]; c.fillRect(l + 3, gy - 5, Math.max(0, rr - l - 6), 5); }
+      c.restore();
+    }
+    if(wv.b){ const armed = dt >= 0 && dt > (wv.t1 || 0) - 10; wv.b.forEach(cl => col(cl, true, armed)); }
+    // the swarm gathers at the ceiling above each column as the wind-up goes on
+    if(b._tel > 0){ c.save(); for(const cl of (aOn ? wv.a : [])) for(let i = 0; i < Math.round(2 + 6*p); i++){ const q = (t*0.04 + i*0.27) % 1; c.globalAlpha = 0.5 + 0.5*p; swarmBugAt(c, i % 3 ? 'bugpurple' : 'bugred', cl[0] + 8 + ((i*29) % Math.max(10, cl[1] - cl[0] - 16)), 6 + q*26, 14, false); } c.restore(); }
   }
 }
 // ---- THE BUG HIVE (arena key "hive"): "A bug hive resembles a purple beehive, with several holes that serve as entrances, and
@@ -53535,7 +53539,7 @@ function swarmDrawDecor(){
   const lit = (side, lane) => {
     if(!b || !(b._tel > 0) || !sw.d || side !== sw.d) return 0;
     if(b._telKind === 'swarmsting') return sw.sg && sw.sg.d === side && sw.sg.lane === lane ? 1 : 0;   // the stinger's perch
-    return b._telKind === 'swarm' && (lane === 0 || (SWARM.tide[ph].climb && lane === 1)) ? 1 : 0;
+    return 0;   // (SWARM WAVE! no longer comes in at a wall: it falls from the ceiling)
   };
   for(const side of [1, -1]) SWARM.cells.map(h => gy - h).forEach((hy, lane) => {
     const hx = side > 0 ? 0 : W, l = lit(side, lane), pulse = l ? 0.55 + 0.3*Math.sin(t*0.12) : 0;
@@ -114705,7 +114709,7 @@ function serializeState(withGeo){
       // @boss:announcer:end net
 
       // @boss:puffball:begin net
-      _psbSpX:typeof m._psbSpX==='number'?Math.round(m._psbSpX):undefined,_psbSpY:typeof m._psbSpY==='number'?Math.round(m._psbSpY):undefined,_psbSpT:m._psbSpT,_psbSpLk:m._psbSpLk,   // CONSEQUENCES!'s spotlight
+      _psbSpX:typeof m._psbSpX==='number'?Math.round(m._psbSpX):undefined,_psbSpY:typeof m._psbSpY==='number'?Math.round(m._psbSpY):undefined,_psbSpT:m._psbSpT,_psbSpLk:m._psbSpLk,_psbLn:m._psbLn,   // CONSEQUENCES!'s spotlight
       _psbPat:m._psbPat,_psbPatT:m._psbPatT,_psbPv:m._psbPv,_psbArc:m._psbArc,_psbKnifeT:m._psbKnifeT,_psbJump:m._psbJump,   // the wall panels' lanes, the shutters' grilles, the barf's arc, the knife, her colours jumping
       // @boss:puffball:end net
 

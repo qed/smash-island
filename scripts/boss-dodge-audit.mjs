@@ -1,3 +1,4 @@
+// 2026-11-10 (BOSS FIXES 2): the bot also reads the new tells: SWARM WAVE!'s shaded columns and gaps (obs.wv), CONSEQUENCES!'s locked spot and knife lanes (obs.ln), THE TLC's landing shadow (telX); and when it dodges a shot it also leaves a marked spot. Run from the build's cwd (artifacts/V1/index.html is read relative to it).
 // BOSS DODGE AUDIT (measurement only; never edits index.html).
 // Usage (cwd = the bossaudit worktree, one node process at a time, BelowNormal):
 //   node boss-dodge-audit.mjs <bossIdx> <phase> [seeds=5] [outDir]   -> writes <outDir>/cell-<idx>-<ph>.json
@@ -12,7 +13,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 try { os.setPriority(0, os.constants.priority.PRIORITY_BELOW_NORMAL); } catch (e) {}
-const WT = 'file:///C:/Users/carad/Aardvark/smash-island/.worktrees/bossfix/';
+const WT = new URL('../', import.meta.url).href;   // (the worktree this script lives in)
 const { loadMonolith } = await import(WT + 'scripts/helpers/load-monolith.js');
 const { SETUP_SRC } = await import(WT + 'scripts/helpers/match-setup.js');
 
@@ -68,11 +69,17 @@ window.__place = function(fx, plat, ax){
   f.x = x; f.y = y; f.vx = 0; f.vy = 0; f.onground = true; f.hitstun = 0; f.invuln = 0; f.pct = 0; f.dead = false; f._swallow = 0; f.jumps = 0;
   return onPlat;
 };
-window.__keys = function(o){ const K = KEYS; down[K.left] = !!(o && o.left); down[K.right] = !!(o && o.right); down[K.jump] = !!(o && o.jump); down[K.down] = !!(o && o.down); down[K.shield] = !!(o && o.shield); };
+window.__keys = function(o){ window.__LA = o; const K = KEYS; down[K.left] = !!(o && o.left); down[K.right] = !!(o && o.right); down[K.jump] = !!(o && o.jump); down[K.down] = !!(o && o.down); down[K.shield] = !!(o && o.shield); };
 window.__obs = function(){
   const s = __boss(), f = fighters[0];
   return { f:{ x:f.x, y:f.y, vx:f.vx, vy:f.vy, r:f.r, og:!!f.onground },
-    b: s ? { x:s.x, y:s.y, vx:s.vx, vy:s.vy, r:s.r, tel:s._tel, telX:s._telX, telY:s._telY } : null,
+    b: s ? (function(){ const o = { x:s.x, y:s.y, vx:s.vx, vy:s.vy, r:s.r, tel:s._tel, telX:s._telX, telY:s._telY };
+      const R = s._psbRun; if(typeof s._psbSpX === 'number' && (s._telKind === 'consequences' && s._tel > 0 || (R && R.phase === 'dash'))){ o.tel = Math.max(o.tel, 1); o.telX = s._psbSpX; o.telY = s._psbSpY; }
+      const F = s._fs; if(F && F.k === 'tlc' && F.ph === 'hop'){   // his shadow marks every landing (fb.x), the first included
+         o.tel = Math.max(o.tel, 1); o.telX = F.x1; }
+      return o; })() : null,
+    hz: hazardT, wv: (function(){ const s = __boss(), W = s && s._sw && s._sw.wv; return W ? { a:W.a, b:W.b, f:W.f, t1:W.t1 || 0 } : null; })(),
+    ln: (function(){ const s = __boss(), R = s && s._psbRun; return R && R.lanes ? R.lanes.filter(l => !l.done).map(l => ({ ax:l.ax, ay:l.ay, t:l.due - R.t })) : []; })(),
     p: projectiles.filter(p => p.life > 0 && p.dmg > 0 && (p.owner === -2 || (p.ownerObj && p.ownerObj.team === -1))).map(p => ({ x:p.x, y:p.y, vx:p.vx||0, vy:p.vy||0, r:p.r||8, g:!!p.grav, hom:!!p.homing, dl:p.delay > 0 ? p.delay : 0 })) };
 };
 // ---- the human-like survival bot: decides from the observation D frames old ----
@@ -86,6 +93,23 @@ window.__humanBot = function(st, obs, D){
   const me = { x:f.x, y:f.y, r:f.r, og:!!f.onground };
   let act = { left:false, right:false, jump:false, down:false };
   if(!obs) return act;
+  const WV = obs.wv;
+  if(WV){   // SWARM WAVE!: stand in a gap of the volley that is next to fall (the columns are shaded from the first wind-up frame)
+    const dtv = WV.f != null ? obs.hz - WV.f + D : -1;
+    const useB = WV.b && dtv >= WV.t1 - 4;
+    if(WV.f != null && !useB && dtv > WV.t1 + 8) return act;   // the last volley has passed
+    const cols = (useB ? WV.b : WV.a).slice().sort((p, q) => p[0] - q[0]), m = me.r + 4, ivs = [];
+    for(let i = 0; i <= cols.length; i++){ const l = i === 0 ? 0 : cols[i - 1][1], rr = i === cols.length ? W : cols[i][0]; const lo = Math.max(l + m, W*0.08), hi = Math.min(rr - m, W*0.92); if(hi - lo > 4) ivs.push([lo, hi]); }
+    if(!ivs.length) return act;
+    let bi = null, bd = 1e9; for(const iv of ivs){ const d = me.x < iv[0] ? iv[0] - me.x : me.x > iv[1] ? me.x - iv[1] : 0; if(d < bd){ bd = d; bi = iv; } }
+    const tx = Math.min(bi[1] - 3, Math.max(bi[0] + 3, me.x)), dx = tx - me.x;
+    if(Math.abs(dx) > 5){ act.left = dx < 0; act.right = dx > 0; }
+    return act;
+  }
+  if(obs.ln && obs.ln.length && obs.b){   // CONSEQUENCES!: a knife lane is drawn from her to where it is aimed (locked) before the throw: step out of any lane that passes through you
+    for(const L of obs.ln){ const ux0 = L.ax - obs.b.x, uy0 = L.ay - obs.b.y, ul = Math.hypot(ux0, uy0) || 1, ux = ux0/ul, uy = uy0/ul, qx = me.x - obs.b.x, qy = me.y - obs.b.y, t = qx*ux + qy*uy, pd = Math.abs(qx*uy - qy*ux);
+      if(t > -20 && t < 230 && pd < me.r + 15 + 22){ if(Math.abs(uy) > 0.25){ const lx = obs.b.x + ux*(qy/uy); st.dir = Math.sign(me.x - lx) || 1; st.hold = 10; } else if(me.og && !st.jHeld && !(st.jHold > 0)) st.jHold = 8; break; } }
+  }
   const room = (dir) => dir < 0 ? me.x - W*0.1 : W*0.9 - me.x;
   const awayFrom = (x) => { const d = Math.sign(me.x - x); if(d !== 0 && room(d) > 60) return d; return room(1) >= room(-1) ? 1 : -1; };
   let best = null, train = 0, trainVx = 0;
@@ -119,6 +143,7 @@ window.__humanBot = function(st, obs, D){
   } else if(bodyThreat){ const pl = me.og ? __platNear(me, 200) : null; if(pl && Math.abs(b.vy) < 2 && b.y - b.r*0.9 > pl.top - 60){ st.plat = pl; setDir(Math.sign(pl.cx - me.x) || 0, 4); if(pl.dx < 120) act.jump = true; } else { setDir(awayFrom(b.x), 10); if(bodyK <= 12 && (me.og || (f.jumps < 2 && bodyK <= 6))) act.jump = true; } }
   else if(tellNear){ setDir(awayFrom(b.telX), 10); }
   else if(train >= 3){ const flee = Math.sign(trainVx) || 1, pl = me.og ? __platNear(me, 260) : null; if(pl){ st.plat = pl; setDir(Math.sign(pl.cx - me.x) || 0, 4); if(pl.dx < 120) act.jump = true; } else if(room(flee) > 120) setDir(flee, 6); }
+  if(best && tellNear && !(st.hold > 0)) setDir(awayFrom(b.telX), 10);   // dodging a shot AND leaving a marked spot at once (a ring to jump while the next landing is marked)
   if(!me.og && st.plat){ const dx = st.plat.cx - me.x; st.hold = 0; if(Math.abs(dx) > 16){ act.left = dx < 0; act.right = dx > 0; } }   // in the air, steer onto the ledge
   if(me.og) st.plat = null;
   if(st.hold > 0){ st.hold--; if(st.dir < 0) act.left = true; else if(st.dir > 0) act.right = true; }
@@ -165,6 +190,7 @@ window.__trial = function(o){
       __keys(act);
     }
     ring.push(__obs()); if(ring.length > 40) ring.shift();
+    if(o.trace){ const F = s._fs; (window.__TR = window.__TR || []).push([i, Math.round(fighters[0].x), Math.round(fighters[0].y), Math.round(s.x), Math.round(s.y), Math.round(s._tel), F ? F.ph + F.n : '-', fighters[0].pct, __LA && (__LA.left ? 'L' : '') + (__LA.right ? 'R' : '') + (__LA.jump ? 'J' : '')]); }
     step();
     if(fighters[0].dead) ko = true;
     if(telStart == null){ if(s._tel > 0){ telStart = i; telT = hazardT; lo = s._atkLo; got = o.secret ? s._telKind : (s._pickKey || s._telKind); telLen = s._tel; try{ name = o.secret === 'one' ? ONE_MOVE_NAME[s._telKind] : o.secret === 'cobs' ? COBS_MOVE_NAME[s._telKind] : bossTelName(s); }catch(e){ name = '?'; } } else if(i > (o.secret ? 700 : 420)) break; }
