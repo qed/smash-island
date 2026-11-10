@@ -2973,6 +2973,117 @@ function mcRampSnap(f){
   if(best === null) return;
   f.y = best - f.r; f.vy = 0; f.onground = true; f.jumps = 2; f._usedAirSpecial = false; f._rampT = 4;
 }
+// ---- MOON CAVES v4: NEVER IN THE ROCK (2026-11-10, "MOON v4 stuck-in-rock fix") ----
+// The owner's picture: Pen, right after a launch, stuck in the wall at a corner where two rock faces meet, drifting at vx -4.8 with no stun left.
+// ROOT CAUSE: the fighter step pushes a body out of each solid piece in turn along that piece's SHORTEST axis, once, and never looks again. A
+// gap in the rock narrower than the body (a hatch or a slot 42 px wide against a 48 px body) with a piece on each side: the left piece pushed it
+// right by 6, the right piece pushed it back left by 6 (the pieces are processed one after the other), so it ended every frame 6 px into
+// one of them -- wedged by its corners, the push-outs fighting, until gravity happened to slide it out (13 frames in the repro, for ever
+// under a steady drift). A launch drives a body into such a gap at speed; walking never does.
+// FIX 1 (mc4Unstick, the end of a fighter's frame, inside its chart, v4 only): if the body still overlaps a solid piece by more than half a
+// pixel, find the shortest single shift (left, right, up or down, 96 px at most) after which it overlaps nothing, taking the way it came from (against its speed)
+// on a near tie, and make it; the speed into that face is dropped as the step's own push-out drops it.
+// FIX 2, the fallback (more than MC4_EMB.frames frames in a row, whatever the cause -- a snap, a zone, a respawn, a gap no single shift
+// clears): the nearest free place by rings round it, the last place it was clear of rock preferred; its speed is dropped. Damage, stun and
+// launch are never touched, and nothing runs off the v4 moon.
+// FIX 0, the tunnelling (mc4Sweep, in the step's move): a launch moves a body 30-60 px a frame and the rock is 16-21 px thin in places, so the
+// body could be carried clean through a piece (or half way into a thick one) before the push-out ever looked: the deep cases in the repro
+// (27-48 px in, for 20 frames). Past MC4_EMB.fast px a frame its move is cut at the first solid piece in its way, one axis at a time, and it
+// ends 0.02 px into that face, so the step's own push-out does the rest as it always did (wall side, bonk, landing, the speed dropped).
+const MC4_EMB = { eps:0.5, shift:96, frames:6, ring:240, dirs:16, fast:8, nudge:0.02 };
+function mc4Reach(f, d, horiz){   // how far the body may go along one axis by d before the first solid piece it is not yet in
+  let lim = d;
+  const e = MC4_EMB.eps;
+  for(const p of worldPlats){
+    if(!p.solid) continue;
+    const h = p.h || 16;
+    if(horiz){
+      if(f.y + f.r - p.y <= e || p.y + h - (f.y - f.r) <= e) continue;
+      if(d > 0){ if(p.x < f.x + f.r - e) continue; const gap = p.x - (f.x + f.r); if(gap < lim) lim = gap; }
+      else { if(p.x + p.w > f.x - f.r + e) continue; const gap = (p.x + p.w) - (f.x - f.r); if(gap > lim) lim = gap; }
+    } else {
+      if(f.x + f.r - p.x <= e || p.x + p.w - (f.x - f.r) <= e) continue;
+      if(d > 0){ if(p.y < f.y + f.r - e) continue; const gap = p.y - (f.y + f.r); if(gap < lim) lim = gap; }
+      else { if(p.y + h > f.y - f.r + e) continue; const gap = (p.y + h) - (f.y - f.r); if(gap > lim) lim = gap; }
+    }
+  }
+  return lim === d ? d : lim + (d > 0 ? MC4_EMB.nudge : -MC4_EMB.nudge);
+}
+function mc4Sweep(f){   // the step's `f.x += f.vx; f.y += f.vy` for a fast body on the v4 moon, cut at the rock
+  if(f._tp || f._tpHang > 0 || f._heldBy != null || !Number.isFinite(f.vx) || !Number.isFinite(f.vy)) return false;
+  f.x += mc4Reach(f, f.vx, true);
+  f.y += mc4Reach(f, f.vy, false);
+  return true;
+}
+function mc4Pen(f, x, y){   // the deepest overlap of the body (a square, as the step's) at (x, y) with any solid piece of the open chart
+  let m = 0;
+  for(const p of worldPlats){
+    if(!p.solid) continue;
+    const h = p.h || 16, dx = Math.min(x + f.r - p.x, p.x + p.w - (x - f.r));
+    if(dx <= 0) continue;
+    const dy = Math.min(y + f.r - p.y, p.y + h - (y - f.r));
+    if(dy <= 0) continue;
+    const d = dx < dy ? dx : dy; if(d > m) m = d;
+  }
+  return m;
+}
+function mc4Shift(f, ux, uy){   // the shortest shift along (ux, uy) (a unit axis) after which the body overlaps nothing, or -1
+  let s = 0;
+  for(let k = 0; k < 8; k++){
+    const x = f.x + ux*s, y = f.y + uy*s; let need = 0;
+    for(const p of worldPlats){
+      if(!p.solid) continue;
+      const h = p.h || 16;
+      if(x + f.r - p.x <= MC4_EMB.eps || p.x + p.w - (x - f.r) <= MC4_EMB.eps || y + f.r - p.y <= MC4_EMB.eps || p.y + h - (y - f.r) <= MC4_EMB.eps) continue;
+      const c = ux > 0 ? p.x + p.w - (x - f.r) : ux < 0 ? x + f.r - p.x : uy > 0 ? p.y + h - (y - f.r) : y + f.r - p.y;
+      if(c > need) need = c;
+    }
+    if(need <= 0) return s;
+    s += need + 0.05; if(s > MC4_EMB.shift) return -1;
+  }
+  return -1;
+}
+const MC_EMB_PT = { x:0, y:0 };
+function mc4Unstick(f){
+  const M = MCAVE, F = MC_FR;
+  if(!M || !M.on || M.v !== 4 || !F.open || F.E !== f || f.dead || f._fsLock || f._heldBy != null || !Number.isFinite(f.x) || !Number.isFinite(f.y)) return;
+  let pen = mc4Pen(f, f.x, f.y);
+  if(pen <= MC4_EMB.eps){ f._mc4Emb = 0; const q = f._mc4Ok || (f._mc4Ok = { x:0, y:0 }); mcFromChart(f.x, f.y, MC_EMB_PT); q.x = MC_EMB_PT.x; q.y = MC_EMB_PT.y; return; }
+  // 1. the shortest clean shift (tie: against the speed)
+  const sp = Math.hypot(f.vx || 0, f.vy || 0) || 1, wx = -(f.vx || 0)/sp, wy = -(f.vy || 0)/sp;
+  let best = null, bestScore = 1e9;
+  for(const d of [[1, 0], [-1, 0], [0, 1], [0, -1]]){
+    const s2 = mc4Shift(f, d[0], d[1]); if(s2 < 0) continue;
+    const score = s2 - 4*(d[0]*wx + d[1]*wy);
+    if(score < bestScore){ bestScore = score; best = [d[0], d[1], s2]; }
+  }
+  if(best){
+    f.x += best[0]*best[2]; f.y += best[1]*best[2];
+    if(best[0] > 0 && f.vx < 0) f.vx = 0; else if(best[0] < 0 && f.vx > 0) f.vx = 0;
+    else if(best[1] < 0){ f.vy = Math.min(0, f.vy); f.onground = true; f.jumps = 2; f._usedAirSpecial = false; }
+    else if(best[1] > 0){ f.vy = Math.max(0, f.vy); f._bonkT = hazardT; }
+    pen = mc4Pen(f, f.x, f.y);
+    if(pen <= MC4_EMB.eps){ f._mc4Emb = 0; f._mc4Fix = (f._mc4Fix || 0) + 1; return; }
+  }
+  // 2. the fallback: after more than a few frames of it, the nearest free place
+  f._mc4Emb = (f._mc4Emb || 0) + 1;
+  if(f._mc4Emb <= MC4_EMB.frames) return;
+  let bx = null, by = 0;
+  const q = f._mc4Ok;
+  if(q){ const c = mcToChart(q.x, q.y, MC_EMB_PT); if(Math.hypot(c.x - f.x, c.y - f.y) <= 900 && mc4Pen(f, c.x, c.y) <= MC4_EMB.eps){ bx = c.x; by = c.y; } }
+  if(bx === null){
+    let bs = 1e9;
+    for(let rr = 8; rr <= MC4_EMB.ring; rr += 8){
+      if(bx !== null && rr - 6 > bs) break;   // (no ring further out can score better)
+      for(let k = 0; k < MC4_EMB.dirs; k++){
+        const a = k*MC_TAU/MC4_EMB.dirs, x = f.x + rr*Math.cos(a), y = f.y + rr*Math.sin(a);
+        if(mc4Pen(f, x, y) > MC4_EMB.eps) continue;
+        const sc = rr - 6*(Math.cos(a)*wx + Math.sin(a)*wy); if(sc < bs){ bs = sc; bx = x; by = y; }
+      }
+    }
+  }
+  if(bx !== null){ f.x = bx; f.y = by; f.vx = 0; f.vy = 0; f._mc4Emb = 0; f._mc4Fix = (f._mc4Fix || 0) + 1; f._mc4Free = (f._mc4Free || 0) + 1; }
+}
 // A drop is only over something: under the shell's cracks there is nothing but the core (the pit sense; standAt reads the charted pieces).
 function mcDropOk(f, x){ return !(MCAVE && MCAVE.on) || standAt(x, f.y + f.r + 20); }
 function mcSafeDropX(f){ const x = nearestDropX(f); return x != null && mcDropOk(f, x) ? x : null; }
@@ -67560,7 +67671,7 @@ function step(){
     }
     if(DIGC) digcCrawl(f, inp);   // THE DIG (Spongy's contest): in the dirt there is no falling, only the crawl (nothing outside that match)
     mtFastFall(f, inp);   // movetech: Down in the air past the peak
-    f.x+=f.vx; f.y+=f.vy;
+    if(MCAVE && MCAVE.on && MCAVE.v === 4 && (f.vx > MC4_EMB.fast || f.vx < -MC4_EMB.fast || f.vy > MC4_EMB.fast || f.vy < -MC4_EMB.fast) && mc4Sweep(f)){} else { f.x+=f.vx; f.y+=f.vy; }   // (MOON CAVES v4: a fast body is cut at the rock it would pass through, mc4Sweep)
     if(twistOn('pull') && pullFree(f)) f.x += pullNudge(f.x);   // THE PULL (an event twist): a gentle pull toward the middle, at most a quarter of walking speed
     if(twistOn('gusts')) f.x += gustPush(f);
     if(STB.k === 'wind') stbWindPush(f);   // STAGES B: Windy Heights's wind, on the ground and in the air (nothing on any other stage)   // GUSTS (an event twist): a steady sideways drift on a fighter in the air, at most GUST.air px a frame, only while a gust blows
@@ -67723,6 +67834,7 @@ function step(){
     { const hf = (MCAVE && MCAVE.on && f.onground && f.name!=="Firey" && f.name!=="Firey Jr." && (mcHotOn() || MCAVE.plates)) ? mcHotFloor(f) : 0;
       if(hf === 2){ f.pct+=0.5; if(hazardT%6===0){ f.vy=-6; f.vx*=0.5; puff(f.x,f.y,'#f0521f',4); } }   // (the pop throws you up, not along: half the run's speed)
       else if(hf === 1 && hazardT%6===0){ f.pct+=0.5; puff(f.x,f.y,'#f0521f',2); } }   // (by a crack: the burn, on the pop's beat, and no pop)
+    if(MCAVE && MCAVE.on && MCAVE.v === 4) mc4Unstick(f);   // MOON CAVES v4: never left in the rock (mc4Unstick)
     } finally { mcExit(); }
   }
 
