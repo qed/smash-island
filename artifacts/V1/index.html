@@ -24544,68 +24544,109 @@ function setupWorld(){
 
 // ============================================================
 //  DREAM ISLAND, TEAMS (2026-11-10, "pipis, build dream island"; the first stage with a big Teams map of its own, smash-bal/reports/teams-big-maps-design.md)
-//  Teams mode on Dream Island only (diWanted): islands over the sea in place of the generic cross. One island per team (2 teams: a team island,
-//  a low neutral island between, the other team island; 3 teams: the third team high in the middle; 4 teams: two high far teams and two low
-//  inner ones), joined by BRIDGES of planks that break and mend, small ledge-islands that DRIFT over the bridges and hold the items and the heal
-//  spots, and a fall that hurts. DRM is this match's state (null everywhere else, so every di* hook does nothing elsewhere).
-//  setupWorld stays PURE: diBuild reads only the match settings. The moving parts run on the match's own frame count (STG.t via stgStep: the
-//  drifting islands are STG movers, so they ride fighters and go to a guest as mv rows like Yoyle Needle's ledges); a plank that breaks leaves
-//  worldPlats (a guest gets the new geometry), and one that is about to mend comes back as a ghost (p.ghost: drawn, not stood on: platRects).
+//  Teams mode on Dream Island only (diWanted): islands over the sea in place of the generic cross, in a world at least as big as the generic Teams
+//  map for the same match (diSize) and following MAP SIZE. One island per team (2 teams: team / low neutral / team; 3 teams: a triangle, two low
+//  corners and a high top; 4 teams: a square, two high and two low, each team the same distance from the middle). EACH ISLAND has a grass top
+//  with ledges over it, a small CAVE inside (a drop hole in the grass, a hole in its floor, and a doorway out each side) and LEDGES HANGING UNDER
+//  it, with a climb back up outside. BRIDGES of planks join them (stairs of planks up to a high island, a flat one under the high ones); planks
+//  CRACK, BREAK and MEND. In the middle a CLUSTER: a drifting item island, a parkour of small stones climbing to it from the bridge below, and a
+//  perch above it to drop from. A hard fall hurts. DRM is this match's state (null everywhere else, so every di* hook does nothing elsewhere).
+//  setupWorld stays PURE: diBuild reads only the match settings. The drifting islands are STG movers (the match's own frame count, riders carried,
+//  mv rows to a guest, like Yoyle Needle's ledges); a plank that breaks leaves worldPlats (a guest gets the new geometry), and one about to mend
+//  comes back as a ghost (p.ghost: drawn, not stood on: platRects). The CPUs walk a surface graph (diNavBuild: walk, hop and drop edges between
+//  every pair of surfaces, found by geometry; the drifting islands' edges are found fresh at each plan).
 // ============================================================
-const DIK = { plank:60, isleH:100, crack:18, rebuild:300, tell:80, breakGap:90, maxBroken:2, hitDmg:6, landVy:16, hardDrop:260,
-  fallMin:0.9, fallSpan:1.0, fallBase:3, fallCap:15, healStr:0.5 };
+const DIK = { plank:60, stairStep:40, crack:18, rebuild:300, tell:80, breakGap:90, maxBroken:2, hitDmg:6, landVy:16, hardDrop:260,
+  fallMin:1.0, fallSpan:1.0, fallBase:3, fallCap:15, healStr:0.5,
+  slab:90, wall:60, shaft:190, hole:150, floorY:250, floorT:34, doorY:160, l3:340, rise:95, stone:90, climbR:480, stairHz:960, isleW:560, teamW:640, gapC:780, margin:150 };
 function diWanted(){
   return SETTINGS.mode === 'teams' && !!(stage && stage.stg === 'isles') && !CUSTOM_LEVEL && !TESTMODE.active && !(typeof TUT !== 'undefined' && TUT.active)
     && !RACE.active && !ONEFIGHT.active && !COBSFIGHT.active;
 }
+// the generic Teams map's size for this match (setupWorld's teams arena): this map is never smaller
+function diSize(){
+  const MS = mapSize(), FIT = teamsArenaFit();
+  return { WW:Math.round(W*Math.min(3.6, 2.9 + SETTINGS.count*0.11)*MS.w*1.5*FIT), WH:Math.round(H*2.5*MS.h*1.5*FIT) };
+}
+// One island: the grass slabs (left and right of the drop hole), the cave inside (side walls above the doorways, a floor with a hole), the ledges
+// under it and the climb outside, and the ledges over the grass. Everything a guest draws is derived from ib = [x0, top, w, team] on the left slab.
+function diIsle(P, x0, top, w, team, ix){
+  const K = DIK, x1 = x0 + w, cx = x0 + w/2, wl = (w - K.shaft)/2, fl = (w - K.hole)/2;
+  const B = (x, y, ww, h, extra)=>{ const p = Object.assign({ x:Math.round(x), y:Math.round(y), w:Math.round(ww), h, solid:true, floor:0, di:'isle', ix }, extra || {}); P.push(p); return p; };
+  const S = (x, y, ww, kind, extra)=>{ const p = Object.assign({ x:Math.round(x), y:Math.round(y), w:Math.round(ww), h:14, solid:false, floor:0, di:kind || 'ledge', ix }, extra || {}); P.push(p); return p; };
+  B(x0, top, wl, K.slab, { ib:[x0, top, w, team] }); B(x1 - wl, top, wl, K.slab);
+  B(x0, top + K.slab, K.wall, K.doorY - K.slab); B(x1 - K.wall, top + K.slab, K.wall, K.doorY - K.slab);
+  B(x0, top + K.floorY, fl, K.floorT); B(x1 - fl, top + K.floorY, fl, K.floorT);
+  S(cx - 170, top + K.l3, 340, 'ledge', { und:1 });                                   // under the cave: the lowest ledge
+  S(x0 - 230, top + K.floorY, 250, 'ledge', { und:1 }); S(x1 - 20, top + K.floorY, 250, 'ledge', { und:1 });   // out of each doorway
+  S(x0 - 200, top + 165, 110); S(x0 - 130, top + 80, 110); S(x1 + 90, top + 165, 110); S(x1 + 20, top + 80, 110);   // the climb back up, outside
+  S(cx + 10, top + 165, 180); S(cx - 95, top + 80, 100);                               // in the cave: up to the shaft's ledge, then the grass
+  S(x0 + wl/2 - 70, top - 95, 140, 'gplat'); S(x1 - wl/2 - 70, top - 95, 140, 'gplat'); S(cx - 75, top - 190, 150, 'gplat');   // over the grass
+  const spawns = [];
+  for(let k = 0; k < 3; k++){ spawns.push({ x:Math.round(x0 + wl*(k + 1)/4), y:top - 30, used:0 }); spawns.push({ x:Math.round(x1 - wl*(k + 1)/4), y:top - 30, used:0 }); }
+  return { x:x0, y:top, w, team, x1, cx, wl, spawns };
+}
 function diBuild(){
-  const K = DIK, teamCount = Math.max(2, Math.min(4, (SETTINGS.teamKey || '').split('v').filter(Boolean).length || 2));
-  WH = Math.round(H*2.0); camX = 0; camY = 0; floors = []; worldZones = []; spawnZones = []; worldPlats = []; bases = []; SIDE_ROOM = 0; FLOOR_SEGS = [];
-  const T = Math.round(WH*0.60), M = 420;
-  let spec, gaps;
-  if(teamCount === 2){ spec = [{ t:0, w:560, top:T }, { t:-1, w:520, top:T + 70 }, { t:1, w:560, top:T }]; gaps = [420, 420]; }
-  else if(teamCount === 3){ spec = [{ t:0, w:520, top:T }, { t:2, w:480, top:T - 180 }, { t:1, w:520, top:T }]; gaps = [900, 900]; }
-  else { spec = [{ t:0, w:480, top:T - 160 }, { t:2, w:480, top:T + 20 }, { t:3, w:480, top:T + 20 }, { t:1, w:480, top:T - 160 }]; gaps = [900, 420, 900]; }
-  let x = M; spec.forEach((s, i)=>{ s.x = x; x += s.w + (gaps[i] || 0); });
-  WW = Math.round(x + M);
-  const isles = spec.map(s=>({ x:s.x, y:s.top, w:s.w, h:K.isleH, solid:true, floor:0, di:'isle', team:s.t }));
-  worldPlats = isles.slice();
-  const bridges = [], drifts = [];
-  for(let i = 0; i < spec.length - 1; i++){
-    const x0 = spec[i].x + spec[i].w, x1 = spec[i + 1].x, n = Math.max(2, Math.round((x1 - x0)/K.plank)), pw = (x1 - x0)/n, yA = spec[i].top, yB = spec[i + 1].top;
-    const B = { planks:[], last:-1e9, x0, x1, ya:yA, yb:yB };
+  const K = DIK, tc = Math.max(2, Math.min(4, (SETTINGS.teamKey || '').split('v').filter(Boolean).length || 2)), sz = diSize();
+  const G = K.margin, TW = K.teamW, IW = K.isleW, HZ = K.stairHz, R = K.climbR, GC = K.gapC;
+  const need = tc === 2 ? 2*G + 2*TW + IW + 2*GC : tc === 3 ? 2*G + 3*IW + 2*HZ : 2*G + 4*IW + 2*HZ + GC;
+  WW = Math.max(sz.WW, need); WH = sz.WH; camX = 0; camY = 0; floors = []; worldZones = []; spawnZones = []; bases = []; SIDE_ROOM = 0; FLOOR_SEGS = [];
+  const P = [], bridges = [], drifts = [], infos = [];
+  const bridge = (xa, ya, xb, yb, stairs)=>{
+    const n = stairs ? Math.max(2, Math.ceil(Math.abs(yb - ya)/K.stairStep)) : Math.max(2, Math.round((xb - xa)/K.plank)), pw = (xb - xa)/n, Bg = { planks:[], last:-1e9 };
     for(let k = 0; k < n; k++){
-      const p = { x:Math.round(x0 + k*pw), y:Math.round(yA + (yB - yA)*(k + 0.5)/n), w:Math.round(pw) + 1, h:14, solid:false, floor:0, di:'plank' };
-      worldPlats.push(p); B.planks.push({ p, i:k, st:'ok', t:0 });
+      const p = { x:Math.round(xa + k*pw), y:Math.round(ya + (yb - ya)*(k + 0.5)/n), w:Math.round(pw) + 1, h:14, solid:false, floor:0, di:'plank' };
+      P.push(p); Bg.planks.push({ p, i:k, st:'ok', t:0 });
     }
-    bridges.push(B);
-    // the drifting islands over this bridge: one over its middle, two when it is long. Even ones slide along it, odd ones rise and fall.
-    const fr = (x1 - x0) >= 800 ? [0.33, 0.67] : [0.5];
-    fr.forEach((u, q)=>{
-      const cx = x0 + (x1 - x0)*u, k = Math.min(n - 1, Math.floor(n*u)), by = B.planks[k].p.y - 120, w = 220, horiz = ((drifts.length) % 2) === 0;
-      const d = { x:Math.round(cx - w/2), y:by, w, h:14, solid:false, floor:0, di:'drift', bx:Math.round(cx - w/2), by,
-        mv: horiz ? { ax:130, ay:0, per:720, ph:q*Math.PI } : { ax:0, ay:35, per:600, ph:q*Math.PI/2 }, mvx:0, mvy:0, dh:(drifts.length % 3) === 0 };
-      drifts.push(d); worldPlats.push(d);
-    });
+    bridges.push(Bg); return Bg;
+  };
+  // a cluster in the middle: stones climbing from the deck (two columns, 90 px a step), the drifting item island at the second step's height, the perch above
+  const cluster = (cx, deck)=>{
+    const St = (x, y, kind, w)=>{ const p = { x:Math.round(x), y:Math.round(y), w:w || 110, h:14, solid:false, floor:0, di:kind || 'stone', cl:1 }; P.push(p); return p; };
+    for(const s of [-1, 1]){
+      St(s < 0 ? cx - 360 : cx + 250, deck - K.stone); St(s < 0 ? cx - 340 : cx + 230, deck - 2*K.stone); St(s < 0 ? cx - 250 : cx + 140, deck - 3*K.stone);
+    }
+    St(cx - 100, deck - 4*K.stone, 'perch', 200);
+    const d = { x:Math.round(cx - 120), y:deck - 2*K.stone, w:240, h:14, solid:false, floor:0, di:'drift', bx:Math.round(cx - 120), by:deck - 2*K.stone, mv:{ ax:70, ay:0, per:480, ph:0 }, mvx:0, mvy:0, dh:true, cl:1 };
+    drifts.push(d); P.push(d);
+  };
+  let sea = 0;
+  if(tc === 2){
+    const gap = (WW - 2*G - 2*TW - IW)/2, Y0 = Math.round(WH*0.46);
+    const A = diIsle(P, G, Y0, TW, 0, 0), N = diIsle(P, G + TW + gap, Y0 + 60, IW, -1, 1), Bt = diIsle(P, G + TW + gap + IW + gap, Y0, TW, 1, 2);
+    infos.push(A, N, Bt);
+    const b0 = bridge(A.x1, Y0, N.x, Y0 + 60, false), b1 = bridge(N.x1, Y0 + 60, Bt.x, Y0, false);
+    cluster((A.x1 + N.x)/2, Math.round(Y0 + 30)); cluster((N.x1 + Bt.x)/2, Math.round(Y0 + 30));
+    sea = Y0 + 60 + 354;
+  } else {
+    const Yt = Math.round(WH*0.26), Yb = Yt + R, deck = Yb + K.l3;
+    if(tc === 3){
+      const x0 = Math.round((WW - (3*IW + 2*HZ))/2);
+      const BL = diIsle(P, x0, Yb, IW, 0, 0), T = diIsle(P, x0 + IW + HZ, Yt, IW, 2, 1), BR = diIsle(P, x0 + 2*IW + 2*HZ, Yb, IW, 1, 2);
+      infos.push(BL, T, BR);
+      bridge(BL.x1, Yb, T.x, Yt, true); bridge(T.x1, Yt, BR.x, Yb, true);
+      bridge(BL.cx + 170, deck, BR.cx - 170, deck, false);
+    } else {
+      const x0 = Math.round((WW - (4*IW + 2*HZ + GC))/2);
+      const BL = diIsle(P, x0, Yb, IW, 2, 0), TL = diIsle(P, x0 + IW + HZ, Yt, IW, 0, 1), TR = diIsle(P, x0 + 2*IW + HZ + GC, Yt, IW, 1, 2), BR = diIsle(P, x0 + 3*IW + 2*HZ + GC, Yb, IW, 3, 3);
+      infos.push(BL, TL, TR, BR);
+      bridge(BL.x1, Yb, TL.x, Yt, true); bridge(TL.x1, Yt, TR.x, Yt, false); bridge(TR.x1, Yt, BR.x, Yb, true);
+      bridge(BL.cx + 170, deck, BR.cx - 170, deck, false);
+    }
+    cluster(Math.round(WW/2), deck);
+    sea = deck + 14;
   }
-  if(teamCount === 2){   // the neutral island has a ledge-island of its own
-    const N = isles[1], w = 200, by = N.y - 140;
-    const d = { x:Math.round(N.x + N.w/2 - w/2), y:by, w, h:14, solid:false, floor:0, di:'drift', bx:Math.round(N.x + N.w/2 - w/2), by, mv:{ ax:0, ay:30, per:840, ph:0 }, mvx:0, mvy:0, dh:true };
-    drifts.push(d); worldPlats.push(d);
-  }
-  // team bases, in team order (a fighter's homeBase is its team number)
-  const mine = spec.map((s, i)=>({ s, p:isles[i] })).filter(o=>o.s.t >= 0).sort((a, b)=>a.s.t - b.s.t);
+  worldPlats = P;
+  // team bases, in team order (a fighter's homeBase is its team number); the base rect is the left grass slab only (the drop hole stays open)
+  const mine = infos.filter(o=>o.team >= 0).sort((a, b)=>a.team - b.team);
   for(const o of mine){
-    const p = o.p, spawns = [];
-    for(let k = 0; k < 6; k++) spawns.push({ x:Math.round(p.x + p.w*(k + 1)/7), y:p.y - 30, used:0 });
-    bases.push({ team:o.s.t, x:p.x, y:p.y, w:p.w, h:18, color:TEAM_COLORS[o.s.t % TEAM_COLORS.length], spawnX:Math.round(p.x + p.w/2), spawnY:p.y - 46, floor:0, spawns,
-      zone:{ x:Math.round(p.x + p.w*0.2), y:p.y - 170, w:Math.round(p.w*0.6), h:180 } });
+    bases.push({ team:o.team, x:o.x, y:o.y, w:o.wl, h:18, color:TEAM_COLORS[o.team % TEAM_COLORS.length], spawnX:Math.round(o.x + o.wl/2), spawnY:o.y - 46, floor:0, spawns:o.spawns,
+      zone:{ x:Math.round(o.x + o.w*0.15), y:o.y - 200, w:Math.round(o.w*0.7), h:230 } });
   }
-  // the heal spots ride on the drifting islands that hold one
-  for(const d of drifts) if(d.dh) worldZones.push({ type:'heal', strength:K.healStr, x:d.x, y:d.y - 60, w:d.w, h:70, di:d });
+  for(const d of drifts) worldZones.push({ type:'heal', strength:K.healStr, x:d.x, y:d.y - 60, w:d.w, h:70, di:d });
   STG = { kind:'dream', top:null, t:0, wall:0, movers:drifts, statics:[], soft:[] };
   stgPlace(0);
-  DRM = { teams:teamCount, t:0, isles, bridges, drifts, sea:Math.round(WH*0.80), broken:0, mended:0, cracked:0, fallHits:0, fallDmg:0, fallMax:0 };
+  DRM = { teams:tc, t:0, isles:infos, bridges, drifts, all:P.filter(p=>p.di), nav:null, blocked:{}, sea:Math.max(Math.round(WH*0.80), sea + 120), broken:0, mended:0, cracked:0, fallHits:0, fallDmg:0, fallMax:0, plans:0, planFail:0, hopFail:0, failLog:[] };
   DRM_VIS = true; DRM_GH = false;
 }
 // every frame, after the drifting islands have moved
@@ -24642,7 +24683,7 @@ function diCrack(pl){
   puff(pl.p.x + pl.p.w/2, pl.p.y, '#c9a26a', 5);
 }
 function diBreak(pl){
-  pl.st = 'broken'; pl.t = DIK.rebuild; pl.p.crk = false;
+  pl.st = 'broken'; pl.t = DIK.rebuild; pl.p.crk = false; pl.p.off = true;
   const i = worldPlats.indexOf(pl.p); if(i >= 0) worldPlats.splice(i, 1);
   for(const it of items) if(it._diPl === pl){ it._di = false; it.life = 0; }
   for(let k = 0; k < 8; k++) particles.push({ x:pl.p.x + pl.p.w*(k + 0.5)/8, y:pl.p.y + 4, vx:(k - 3.5)*0.35, vy:-1 - (k % 3)*0.5, life:30, color:'#8a5a34', r:3 + (k % 2) });
@@ -24652,7 +24693,7 @@ function diTell(pl){
   pl.st = 'tell'; pl.t = DIK.tell; pl.p.ghost = true; worldPlats.push(pl.p); DRM_GH = true;
 }
 function diMend(pl){
-  pl.st = 'ok'; delete pl.p.ghost; DRM_GH = worldPlats.some(p=>p.ghost);
+  pl.st = 'ok'; delete pl.p.ghost; delete pl.p.off; DRM_GH = worldPlats.some(p=>p.ghost);
   puff(pl.p.x + pl.p.w/2, pl.p.y, '#f4e2b0', 6); DRM.mended++;
 }
 // A hard landing: the drop from the highest point of this airtime to the feet. Under fallMin screen-heights nothing; over it 3% rising to the 15% cap.
@@ -24674,25 +24715,123 @@ function diLand(f, wasAir, vy){
   }
   if(dmg > 0 || vy >= DIK.landVy || drop >= DIK.hardDrop){ const pl = diPlankUnder(f); if(pl) diCrack(pl); }
 }
-// ---- the CPUs: never off an edge, never into a gap
-function diFoot(x, feet){
-  for(const p of worldPlats){ if(!p.di || p.ghost) continue; if(x >= p.x - 2 && x <= p.x + p.w + 2 && Math.abs(p.y - feet) <= 20) return p; }
+// ---- the CPUs' surface graph. A node is one platform's top; an edge is a walk (touching, level), a hop (a jump up, across a gap, or onto the next
+// step) or a drop (walk off, or down through a ledge). Found by geometry, with the solid blocks in the way checked, for every pair of static
+// surfaces once per match; the drifting islands' edges are found fresh at each plan.
+function diEdge(A, B, solids){
+  const gx = Math.max(0, B.x0 - A.x1, A.x0 - B.x1), ov = Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0), up = A.y - B.y, K = DIK;
+  const free = (x0, x1, y0, y1)=>{ for(const s of solids){ if(s === A.p || s === B.p) continue; if(s.x < x1 && s.x + s.w > x0 && s.y < y1 && s.y + s.h > y0) return false; } return true; };
+  const right = (B.x0 + B.x1) > (A.x0 + A.x1);
+  if(gx <= 4 && Math.abs(up) <= 18) return { t:'walk', lx:right ? A.x1 - 8 : A.x0 + 8, tx:right ? B.x0 + 14 : B.x1 - 14, c:20 + Math.abs(B.x0 - A.x0)/8 };
+  if(up > 18 && up <= K.rise){            // B is higher: a hop
+    if(gx > 150) return null;
+    if(B.p.solid){   // a solid block cannot be jumped up through: up past its open side (the hole in a floor) and onto its top from the side
+      for(const sd of [[B.x0 - 40, B.x0 + 14], [B.x1 + 40, B.x1 - 14]]){
+        if(sd[0] < A.x0 + 8 || sd[0] > A.x1 - 8) continue;
+        if(free(sd[0] - 20, sd[0] + 20, B.y - 60, A.y - 30) && free(Math.min(sd[0], sd[1]) - 10, Math.max(sd[0], sd[1]) + 10, B.y - 60, B.y - 10)) return { t:'hop', lx:sd[0], tx:sd[1], up:up, c:34 + up*0.4 };
+      }
+    } else if(ov > 24){
+      for(const q of [0.5, 0.25, 0.75, 0.1, 0.9]){ const x = Math.max(A.x0, B.x0) + 12 + (ov - 24)*q; if(free(x - 20, x + 20, B.y - 50, A.y - 30)) return { t:'hop', lx:x, tx:x, up:up, c:30 + up*0.4 }; }
+    }
+    const lx = right ? A.x1 - 8 : A.x0 + 8, tx = right ? B.x0 + 14 : B.x1 - 14;
+    if(right ? B.x0 < A.x1 - 40 : B.x1 > A.x0 + 40) return null;
+    if(!free(Math.min(lx, tx) - 10, Math.max(lx, tx) + 10, B.y - 60, A.y - 30)) return null;
+    return { t:'hop', lx, tx, up:up, c:30 + gx/6 + up*0.4 };
+  }
+  if(up > K.rise) return null;
+  const h = -up;                              // B is level or lower
+  if(h <= 30){                                // across a gap, level
+    if(gx > 150 || gx < 4) return null;
+    const lx = right ? A.x1 - 8 : A.x0 + 8, tx = right ? B.x0 + 14 : B.x1 - 14;
+    if(!free(Math.min(lx, tx) - 10, Math.max(lx, tx) + 10, A.y - 60, A.y - 20)) return null;
+    return { t:'hop', lx, tx, up:0, c:28 + gx/6 };
+  }
+  if(!A.p.solid && ov > 24){                  // down through a ledge
+    for(const q of [0.5, 0.25, 0.75, 0.1, 0.9]){ const x = Math.max(A.x0, B.x0) + 12 + (ov - 24)*q; if(free(x - 20, x + 20, A.y + 10, B.y - 20)) return { t:'drop', soft:1, lx:x, tx:x, c:14 + h/30 + (h > K.fallMin*H*0.9 ? 150 : 0) }; }
+  }
+  const reach = Math.min(420, 60 + Math.sqrt(h)*12);
+  if(gx > reach*0.8) return null;
+  if(right ? B.x1 < A.x1 + 12 : B.x0 > A.x0 - 12) return null;   // B must reach past the edge it is walked off
+  const edge = right ? A.x1 : A.x0, tx = Math.min(B.x1 - 12, Math.max(B.x0 + 12, edge + (right ? 1 : -1)*(gx + 24)));
+  if(!free(Math.min(edge, tx) - 20, Math.max(edge, tx) + 20, A.y - 40, B.y - 10)) return null;
+  return { t:'drop', lx:right ? A.x1 - 8 : A.x0 + 8, wx:edge + (right ? 1 : -1)*40, tx, c:14 + h/30 + gx/10 + (h > K.fallMin*H*0.9 ? 150 : 0) };
+}
+function diNavBuild(){
+  const nodes = DRM.all.map((p, id)=>({ id, p, x0:p.x, x1:p.x + p.w, y:p.y, drift:!!p.mv, adj:[] })), solids = DRM.all.filter(p=>p.solid);
+  for(const A of nodes) for(const B of nodes){
+    if(A === B || A.drift || B.drift) continue;
+    if(Math.max(0, B.x0 - A.x1, A.x0 - B.x1) > 450 || Math.abs(A.y - B.y) > 1000) continue;
+    const e = diEdge(A, B, solids); if(e) A.adj.push({ to:B, e });
+  }
+  DRM.nav = { nodes, solids, drifts:nodes.filter(n=>n.drift) };
+  return DRM.nav;
+}
+function diNodeAt(N, f){
+  const feet = f.y + f.r; let best = null, bd = 1e9;
+  for(const n of N.nodes){ if(n.p.off) continue; const x0 = n.p.x, x1 = n.p.x + n.p.w; if(f.x < x0 - 6 || f.x > x1 + 6 || Math.abs(feet - n.p.y) > 8) continue; const d = Math.abs(f.x - (x0 + x1)/2); if(d < bd){ bd = d; best = n; } }
+  return best;
+}
+function diNodeFor(N, x, y){   // the surface at or below a point (a foe in the air: what it will land on)
+  let best = null, bd = 1e9;
+  for(const n of N.nodes){ if(n.p.off) continue; const x0 = n.p.x, x1 = n.p.x + n.p.w; if(x < x0 - 10 || x > x1 + 10 || n.p.y < y - 40) continue; const d = n.p.y - y; if(d < bd){ bd = d; best = n; } }
+  if(best) return best;
+  for(const n of N.nodes){ if(n.p.off) continue; const d = Math.hypot((n.p.x + n.p.w/2) - x, n.p.y - y); if(d < bd){ bd = d; best = n; } }
+  return best;
+}
+function diPlan(N, start, goal){
+  const nodes = N.nodes, now = DRM.t;
+  for(const n of N.drifts){ n.x0 = n.p.x; n.x1 = n.p.x + n.p.w; n.y = n.p.y; }
+  const dyn = new Map();   // the drifting islands' edges, from the positions they have now
+  for(const d of N.drifts){
+    const out = [];
+    for(const n of nodes){
+      if(n === d || n.drift || n.p.off) continue;
+      if(Math.max(0, n.x0 - d.x1, d.x0 - n.x1) > 450) continue;
+      const e1 = diEdge(d, n, N.solids); if(e1) out.push({ to:n, e:e1 });
+      const e2 = diEdge(n, d, N.solids); if(e2){ if(!dyn.has(n)) dyn.set(n, []); dyn.get(n).push({ to:d, e:e2 }); }
+    }
+    dyn.set(d, (dyn.get(d) || []).concat(out));
+  }
+  const dist = new Map(), prev = new Map(), done = new Set(); dist.set(start, 0);
+  for(let it = 0; it < nodes.length; it++){
+    let u = null, ud = 1e18; for(const [n, d] of dist) if(!done.has(n) && d < ud){ ud = d; u = n; }
+    if(!u) break; done.add(u); if(u === goal) break;
+    const lists = [u.adj]; if(dyn.has(u)) lists.push(dyn.get(u));
+    for(const L of lists) for(const a of L){
+      const v = a.to; if(v.p.off || done.has(v)) continue;
+      const bk = DRM.blocked[u.id + '>' + v.id]; if(bk && bk > now) continue;
+      const nd = ud + a.e.c; if(!dist.has(v) || nd < dist.get(v)){ dist.set(v, nd); prev.set(v, { u, e:a.e }); }
+    }
+  }
+  if(!done.has(goal) && !prev.has(goal)) return null;
+  const path = [goal], edges = []; let c = goal;
+  while(c !== start){ const p = prev.get(c); if(!p) return null; edges.unshift(p.e); path.unshift(p.u); c = p.u; }
+  return { path, edges, at:now, air:null };
+}
+// where a CPU wants to be: at an item on the map (hurt: a heal first), else at its foe when the foe is far or on another level; null: the usual AI
+function diGoal(f, N){
+  const foe = f.aiTarget && !f.aiTarget.dead && f.aiTarget !== f && f.aiTarget.team !== f.team ? f.aiTarget : null;
+  let it = null, bd = 1e9;
+  for(const q of items){ if(q.taken || !q._di) continue; const d = Math.abs(q.x - f.x) + Math.abs(q.y - f.y); if(d < bd){ bd = d; it = q; } }
+  const foeD = foe ? Math.hypot(foe.x - f.x, foe.y - f.y) : 1e9, heal = it && (it.kind === 'heal' || it.kind === 'marmalade');
+  if(it && (foeD > 450 || (f.pct > 55 && heal))) return diNodeFor(N, it.x, it.y + 20);
+  if(foe && (foeD > 320 || Math.abs(foe.y - f.y) > 150)) return diNodeFor(N, foe.x, foe.y + (foe.r || 24));
   return null;
 }
-function diCatchBelow(x, feet, maxD){
-  for(const p of worldPlats){ if(!p.di || p.ghost) continue; if(x >= p.x && x <= p.x + p.w && p.y > feet + 6 && p.y < feet + maxD) return true; }
-  return false;
-}
+// The CPUs, after the usual brain (brainOut): follow a plan along the graph when its goal is on another surface; else never off an edge, never into
+// a gap, a hop over a missing plank.
 function diBrain(f, inp){
-  if(f.hitstun > 0 || f._tp) return;
-  const feet = f.y + f.r;
-  if(f.onground && inp.down && !diCatchBelow(f.x, feet, 560)) inp.down = false;   // never drop through a plank or an island ledge over the sea
+  if(f.hitstun > 0 || f._tp){ f._diPlan = null; return; }
+  const feet = f.y + f.r, N = DRM.nav || diNavBuild();
+  if(f.onground && inp.down && !diCatchBelow(f.x, feet, 2400)) inp.down = false;   // never drop through a plank or an island ledge over the sea
+  if(diFollow(f, inp, N, feet)) return;
   if(!f.onground) return;
   let dir = inp.right ? 1 : inp.left ? -1 : 0;
   if(f._diTurn > hazardT){ dir = f._diDir; inp.left = dir < 0; inp.right = dir > 0; }
   if(!dir){ f._diBlk = 0; return; }
   const ahead = f.r + 16;
-  if(diFoot(f.x + dir*ahead, feet)){ f._diBlk = 0; return; }
+  const fp = diFoot(f.x + dir*ahead, feet);
+  if(fp){ f._diBlk = 0; if(fp.y < feet - 18 && f.jumps > 0) inp.jump = true; return; }          // a step up: hop it
   for(let d = ahead + 20; d <= ahead + 150; d += 10){
     if(diFoot(f.x + dir*d, feet)){ if(f.jumps > 0) inp.jump = true; f._diBlk = 0; return; }   // a missing plank (or the next ledge): a hop
   }
@@ -24701,9 +24840,65 @@ function diBrain(f, inp){
   if(f._diBlk > 40){
     f._diBlk = 0;
     const under = diFoot(f.x, feet);
-    if(under && !under.solid && diCatchBelow(f.x, feet, 560)){ inp.down = true; inp.jump = true; }   // on a ledge or a plank with something under it: down
+    if(under && !under.solid && diCatchBelow(f.x, feet, 2400)){ inp.down = true; inp.jump = true; }   // on a ledge or a plank with something under it: down
     else { f._diDir = -dir; f._diTurn = hazardT + 50; }                                            // else the other way for a moment
   }
+}
+function diFollow(f, inp, N, feet){
+  const now = DRM.t; let P = f._diPlan;
+  if(!f.onground){
+    const a = P && P.air;
+    if(a && now < a.until){
+      a.seen = true; inp.left = a.tx < f.x - 6; inp.right = a.tx > f.x + 6; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false;
+      if(a.hop && f.vy < -1.5) inp.jump = true;                                    // hold the jump while it rises: a tap is a short hop
+      else if(a.up && f.vy > 0.5 && f.jumps > 0 && feet > a.ty + 6 && !f._jp) inp.jump = true;   // and the second jump once it starts to fall short
+      return true;
+    }
+    return false;
+  }
+  const node = diNodeAt(N, f);
+  if(!node){ f._diPlan = null; return false; }
+  if(P && P.air){
+    const A = P.air;
+    if(A.seen || now - A.t0 > 30){   // it flew and landed (seen), or never left the ground
+      P.air = null;
+      if(A.from === node){ f._diFail = (f._diFail || 0) + 1; if(f._diFail >= 2){ DRM.blocked[A.from.id + '>' + A.to.id] = now + 400; DRM.hopFail++; if(DRM.failLog.length < 40) DRM.failLog.push([A.e.t, A.from.p.di + ':' + Math.round(A.from.p.x) + ',' + Math.round(A.from.p.y) + ',w' + A.from.p.w, A.to.p.di + ':' + Math.round(A.to.p.x) + ',' + Math.round(A.to.p.y) + ',w' + A.to.p.w, Math.round(A.e.lx), Math.round(A.e.tx), Math.round(f.x), Math.round(f.y), A.seen ? 'seen' : 'noair', f.jumps, node.p.di + ':' + Math.round(node.p.x) + ',' + Math.round(node.p.y), f.dropping, now - A.t0]); f._diPlan = P = null; f._diFail = 0; } }
+      else f._diFail = 0;
+    }
+  }
+  if(!P || now - P.at > 40 || P.path.indexOf(node) < 0){
+    if(f._diGoalAt && now - f._diGoalAt < 20 && !P){ return false; }
+    f._diGoalAt = now;
+    const goal = diGoal(f, N);
+    if(!goal || goal === node){ f._diPlan = null; return false; }
+    DRM.plans++;
+    P = f._diPlan = diPlan(N, node, goal);
+    if(!P){ DRM.planFail++; return false; }
+  }
+  const i = P.path.indexOf(node);
+  if(i < 0 || i >= P.path.length - 1){ f._diPlan = null; return false; }
+  const e = P.edges[i], B = P.path[i + 1], dirTo = (x)=>x > f.x + 6 ? 1 : x < f.x - 6 ? -1 : 0;
+  inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false;
+  const go = (x)=>{ const d = dirTo(x); inp.left = d < 0; inp.right = d > 0; };
+  if(e.t === 'walk'){ go(e.tx); return true; }
+  if(e.t === 'drop' && !e.soft){
+    go(e.wx);
+    if(!P.air && Math.abs(f.x - e.lx) < 60) P.air = { tx:e.tx, ty:B.y, up:false, until:now + 90, from:node, to:B, e, t0:now, seen:false };
+    return true;
+  }
+  if(Math.abs(f.x - e.lx) > 10){ go(e.lx); return true; }
+  if(e.t === 'drop'){ inp.down = true; inp.jump = true; if(!P.air) P.air = { tx:e.tx, ty:B.y, up:false, until:now + 90, from:node, to:B, e, t0:now, seen:false }; return true; }
+  inp.jump = true; go(e.tx);
+  if(!P.air) P.air = { tx:e.tx, ty:B.y, up:e.up > 0, hop:true, until:now + 80, from:node, to:B, e, t0:now, seen:false };
+  return true;
+}
+function diFoot(x, feet){
+  for(const p of worldPlats){ if(!p.di || p.ghost) continue; if(x >= p.x - 2 && x <= p.x + p.w + 2 && Math.abs(p.y - feet) <= 70 && p.y >= feet - 70 && p.y <= feet + 20) return p; }
+  return null;
+}
+function diCatchBelow(x, feet, maxD){
+  for(const p of worldPlats){ if(!p.di || p.ghost) continue; if(x >= p.x && x <= p.x + p.w && p.y > feet + 6 && p.y < feet + maxD) return true; }
+  return false;
 }
 // ---- items and heal spots: mostly on the drifting islands
 function diSpawnItem(){
@@ -24727,7 +24922,8 @@ function diItemStep(it){
 }
 // ---- art (host and guest alike: it reads worldPlats' own di flags)
 function diDrawSea(){
-  const c = ctx, V = (stage.edges && stage.edges.void) || ['#bfe3f5', '#2b5f8c'], sea = Math.round(WH*0.80), x0 = -700, x1 = WW + 700, bot = WH + 700;
+  const c = ctx, V = (stage.edges && stage.edges.void) || ['#bfe3f5', '#2b5f8c'], x0 = -700, x1 = WW + 700, bot = WH + 700;
+  let sea = WH*0.80; for(const p of worldPlats) if(p.di && p.y + 130 > sea) sea = p.y + 130;   // under the lowest ledge (host and guest alike)
   c.save();
   const g = c.createLinearGradient(0, sea, 0, bot); g.addColorStop(0, V[0]); g.addColorStop(1, V[1]);
   c.fillStyle = g; c.fillRect(x0, sea, x1 - x0, bot - sea);
@@ -24739,28 +24935,48 @@ function diDrawSea(){
   }
   c.restore();
 }
+function diDrawIsle(ib){
+  const c = ctx, K = DIK, x0 = ib[0], top = ib[1], w = ib[2], team = ib[3], x1 = x0 + w, cx = x0 + w/2, wl = (w - K.shaft)/2, grass = (stage && stage.ground) || '#86c75a', fb = top + K.floorY + K.floorT;
+  c.save(); c.lineJoin = 'round'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  c.fillStyle = '#9a7048'; c.beginPath(); c.moveTo(x0, top); c.lineTo(x1, top); c.lineTo(x1, fb); c.lineTo(x1 - 40, fb + 12);
+  c.quadraticCurveTo(cx + 110, top + K.l3 + 70, cx, top + K.l3 + 120); c.quadraticCurveTo(cx - 110, top + K.l3 + 70, x0 + 40, fb + 12); c.lineTo(x0, fb); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#35271c';
+  c.fillRect(x0 + K.wall, top + K.slab, w - 2*K.wall, K.floorY - K.slab);                                          // the cave
+  c.fillRect(x0 - 2, top + K.doorY, K.wall + 2, K.floorY - K.doorY); c.fillRect(x1 - K.wall, top + K.doorY, K.wall + 2, K.floorY - K.doorY);   // the doorways
+  c.fillRect(cx - K.shaft/2, top, K.shaft, K.slab);                                                               // the drop hole
+  c.fillRect(cx - K.hole/2, top + K.floorY, K.hole, K.floorT);                                                    // the hole in the floor
+  c.strokeStyle = 'rgba(255,255,255,0.10)'; c.lineWidth = 2; c.beginPath(); c.moveTo(x0 + 80, top + 130); c.lineTo(x0 + 130, top + 110); c.moveTo(x1 - 80, top + 130); c.lineTo(x1 - 130, top + 110); c.stroke();
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillStyle = grass;
+  c.fillRect(x0, top, wl, 16); c.strokeRect(x0, top, wl, 16); c.fillRect(x1 - wl, top, wl, 16); c.strokeRect(x1 - wl, top, wl, 16);
+  if(team >= 0){
+    const col = TEAM_COLORS[team % TEAM_COLORS.length];
+    c.fillStyle = col; c.fillRect(x0 + 10, top + 16, wl - 20, 7); c.fillRect(x1 - wl + 10, top + 16, wl - 20, 7);
+    c.fillStyle = '#1c1c1c'; c.fillRect(cx - 2 - K.shaft/2 - 30, top - 54, 4, 54); c.fillStyle = col; c.fillRect(cx + 2 - K.shaft/2 - 30, top - 54, 30, 18); c.strokeRect(cx + 2 - K.shaft/2 - 30, top - 54, 30, 18);
+  }
+  c.restore();
+}
 function diDrawPlats(){
   const c = ctx, grass = (stage && stage.ground) || '#86c75a';
   c.save(); c.lineJoin = 'round';
+  for(const p of worldPlats) if(p.ib) diDrawIsle(p.ib);
   for(const p of worldPlats){
-    if(!p.di) continue;
-    if(p.di === 'isle'){
-      c.fillStyle = '#9a7048'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
-      c.beginPath(); c.moveTo(p.x + 3, p.y + 8); c.lineTo(p.x + p.w - 3, p.y + 8); c.lineTo(p.x + p.w*0.84, p.y + p.h + 36);
-      c.quadraticCurveTo(p.x + p.w*0.62, p.y + p.h + 84, p.x + p.w*0.5, p.y + p.h + 100); c.quadraticCurveTo(p.x + p.w*0.38, p.y + p.h + 84, p.x + p.w*0.16, p.y + p.h + 36); c.closePath(); c.fill(); c.stroke();
-      c.fillStyle = grass; c.fillRect(p.x, p.y, p.w, 18); c.strokeRect(p.x, p.y, p.w, 18);
-      if(p.team >= 0){ c.fillStyle = TEAM_COLORS[p.team % TEAM_COLORS.length]; c.fillRect(p.x + 12, p.y + 18, p.w - 24, 7);
-        c.fillStyle = '#1c1c1c'; c.fillRect(p.x + p.w/2 - 2, p.y - 54, 4, 54); c.fillStyle = TEAM_COLORS[p.team % TEAM_COLORS.length]; c.fillRect(p.x + p.w/2 + 2, p.y - 54, 30, 18); c.strokeRect(p.x + p.w/2 + 2, p.y - 54, 30, 18); }
-    } else if(p.di === 'drift'){
-      c.fillStyle = '#9a7048'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
-      c.beginPath(); c.moveTo(p.x + 4, p.y + 8); c.lineTo(p.x + p.w - 4, p.y + 8); c.lineTo(p.x + p.w*0.5, p.y + 54); c.closePath(); c.fill(); c.stroke();
+    const k = p.di; if(!k || k === 'isle') continue;
+    c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+    if(k === 'ledge' || k === 'gplat'){
+      c.fillStyle = k === 'gplat' ? grass : '#a98a62'; c.fillRect(p.x, p.y, p.w, p.h); c.strokeRect(p.x, p.y, p.w, p.h);
+      if(k === 'ledge'){ c.fillStyle = grass; c.fillRect(p.x + 2, p.y, p.w - 4, 4); }
+    } else if(k === 'stone'){
+      c.fillStyle = '#8f98a2'; c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(p.x + p.w, p.y); c.lineTo(p.x + p.w*0.82, p.y + 24); c.lineTo(p.x + p.w*0.18, p.y + 24); c.closePath(); c.fill(); c.stroke();
+      c.fillStyle = grass; c.fillRect(p.x, p.y, p.w, 6);
+    } else if(k === 'drift' || k === 'perch'){
+      c.fillStyle = '#9a7048'; c.beginPath(); c.moveTo(p.x + 4, p.y + 8); c.lineTo(p.x + p.w - 4, p.y + 8); c.lineTo(p.x + p.w*0.5, p.y + (k === 'perch' ? 40 : 54)); c.closePath(); c.fill(); c.stroke();
       c.fillStyle = grass; c.fillRect(p.x, p.y, p.w, 12); c.strokeRect(p.x, p.y, p.w, 12);
       if(p.dh){ const u = 0.5 + 0.5*Math.sin(hazardT*0.08); c.fillStyle = 'rgba(123,192,67,' + (0.18 + 0.12*u) + ')'; c.fillRect(p.x, p.y - 60, p.w, 60);
         c.fillStyle = '#e9ffd8'; const cx = p.x + p.w/2, cy = p.y - 26 - 5*u; c.fillRect(cx - 3, cy - 10, 6, 20); c.fillRect(cx - 10, cy - 3, 20, 6); }
-    } else if(p.di === 'plank'){
+    } else if(k === 'plank'){
       const jx = p.crk ? Math.sin(hazardT*1.7 + p.x)*2 : 0;
       if(p.ghost){ const u = 0.5 + 0.5*Math.sin(hazardT*0.45); c.globalAlpha = 0.25 + 0.4*u; c.fillStyle = '#f4e2b0'; c.fillRect(p.x, p.y, p.w, p.h); c.setLineDash([6, 5]); c.strokeStyle = '#fff6d8'; c.lineWidth = 2; c.strokeRect(p.x, p.y, p.w, p.h); c.setLineDash([]); c.globalAlpha = 1; continue; }
-      c.fillStyle = '#b98a52'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillRect(p.x + jx, p.y, p.w, p.h); c.strokeRect(p.x + jx, p.y, p.w, p.h);
+      c.fillStyle = '#b98a52'; c.fillRect(p.x + jx, p.y, p.w, p.h); c.strokeRect(p.x + jx, p.y, p.w, p.h);
       c.strokeStyle = 'rgba(0,0,0,0.25)'; c.lineWidth = 1; c.beginPath(); c.moveTo(p.x + jx + 6, p.y + 5); c.lineTo(p.x + jx + p.w - 8, p.y + 5); c.stroke();
       if(p.crk){ c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.moveTo(p.x + jx + p.w*0.3, p.y); c.lineTo(p.x + jx + p.w*0.45, p.y + 6); c.lineTo(p.x + jx + p.w*0.38, p.y + 10); c.lineTo(p.x + jx + p.w*0.6, p.y + p.h); c.stroke(); }
     }
@@ -114507,7 +114723,7 @@ function worldGeo(){
     floors: floors.map(fl=>({level:fl.level,y:Math.round(fl.y),x:Math.round(fl.x),w:Math.round(fl.w)})),
     // `solid` was missing here once, so on a client every stone landmark rendered as a thin ledge; `field` keeps the
     // client's minimap filtering out the scatter grid the way the host's does; `rot` is paintPlat's tilt.
-    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team})),
+    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team,ib:p.ib})),
     // `zone` and `wall` ride along so a client DRAWS the team's safe zone where the host plays it: without them it fell back
     // to the old column round the base, which is nowhere near a side-wall band (see wallBand).
     bases: bases.map(b=>({team:b.team,x:Math.round(b.x),y:Math.round(b.y),w:b.w,h:b.h,color:b.color,
