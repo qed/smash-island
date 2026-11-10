@@ -5436,7 +5436,12 @@ function mc4Route(f, t){
   const M = MCAVE, F = MC_FR, V = M.g4; if(!V) return null;
   const rf = M.cy - f.y, rt = M.cy - t.y, thF = F.phi + (f.x - M.cx)/F.rho, thT = F.phi + (t.x - M.cx)/F.rho;
   const a = mc4NodeAt(V, rf - f.r, thF), b = mc4NodeAt(V, rt - (t.r || 24), thT);
-  if(a < 0 || b < 0 || a === b) return null;
+  if(a < 0 || b < 0) return null;
+  if(a === b){   // (V8a: a hall's foot and the hall under it are one node: a foe well below, in the pit under a foot's floor, is gone after through the foot's drop point -- standing on the solid floor beside it the brain had no way down)
+    const nd = V.nodes[a];
+    if(nd.kind === 'foot' && nd.dropA !== undefined && t.y - f.y > 100){ const yy = M.cy - M.tops[nd.c]; return { up:false, lat:true, drop:true, climb:null, x:M.cx + F.rho*mcWrap(nd.dropA - F.phi), upperY:yy, lowY:yy, gap:4, hole:null, tx:t.x }; }
+    return null;
+  }
   const T = f.team & 1, hop = V.next[T][a*V.N + b]; if(hop < 0) return null;
   const e = V.adj[a].find(q => q.to === hop); if(!e) return null;
   const gap = V.hops[T][a*V.N + b]*4, y = M.cy - M.tops[V.nodes[a].c];   // (a hop is worth more than any one walk, so the progress test of the brain only ever sees progress)
@@ -5478,7 +5483,7 @@ function mc4Walk(f, inp, R){
 // (the claim: only the nearest CPU goes for one) or, hurt, for a heal pool; it knows an item only within MC4G.know px of the graph's distance (a minimap's reach, not the whole disc), and a foe it is
 // after is still found by the minimap rule that was already there; (3) the STAND-STILL RULE: four seconds in the router without moving and the CPU gives the goal up (and does not go for it again for
 // a while), or, on a foe's route, takes another target and a detour, as the progress rule does.
-const MC4G = { near:600, drop:440, know:5200, still:240, hold:1500, healPct:50, cool:420, rest:300 };
+const MC4G = { near:600, drop:440, scavNear:340, scavDrop:230, know:12000, still:240, stillGoal:150, hold:1500, healPct:50, retreatPct:100, retreatNear:320, poolHold:200, cool:420, rest:150 };
 function mc4Spot(it){ return { x:it.x, y:it.y + (it.r || 16) - 24, r:24, vx:0, vy:0 }; }
 function mc4ClimbSteer(f, inp, R){
   const C = R.climb, M = MCAVE, F = MC_FR, feet = f.y + f.r, rise = feet - C.ty, dx = R.x - f.x, sp = f.kit && f.kit.special;
@@ -5514,20 +5519,21 @@ function mc4Cpu(f, inp, B, t, targets, pickFrom, sp, now){
   const th = F.phi + (f.x - M.cx)/F.rho, rr = M.cy - f.y;
   const mv = B.mcLt == null ? 9 : Math.hypot(mcWrap(th - B.mcLt)*rr, rr - B.mcLr); B.mcLt = th; B.mcLr = rr;
   let near = 1e9; for(const o of targets){ const d = Math.hypot(o.x - f.x, o.y - f.y); if(d < near) near = d; }
-  let G = B.mcg;
+  let G = B.mcg; const scav = teamSlotOf(f) % 2 === 1;   // (the odd slots are the scavengers -- the high road's CPUs of the surface -- who go for a goal with a foe a little nearer than the others would let)
   if(G){
-    const gone = G.kind === 'item' ? (G.it.taken || !(G.it.life > 0)) : (f.pct <= 12 || (G.tin && now - G.tin > 420));
-    if(gone || near < MC4G.drop || now - G.t0 > MC4G.hold){ B.mcg = G = null; B.mcgAt = now + (gone ? MC4G.rest : MC4G.cool); }
+    const gone = G.kind === 'item' ? (G.it.taken || !(G.it.life > 0)) : (f.pct <= 12 || (G.tin && now - G.tin > MC4G.poolHold));
+    if(gone || near < (G.kind === 'heal' && f.pct >= MC4G.retreatPct ? 150 : scav ? MC4G.scavDrop : MC4G.drop) || now - G.t0 > MC4G.hold){ B.mcg = G = null; B.mcgAt = now + (gone ? MC4G.rest : MC4G.cool); }
   }
-  if(!G && now >= (B.mcgAt || 0) && near > MC4G.near && !f._hold){
+  const calm = near > (scav ? MC4G.scavNear : MC4G.near), hurt = f.pct >= MC4G.retreatPct && near > MC4G.retreatNear;   // (a CPU hurt enough to retreat goes for a heal pool with a foe nearer than a calm one would allow)
+  if(!G && now >= (B.mcgAt || 0) && (calm || hurt) && !f._hold){
     B.mcgAt = now + 20;
     let best = null, bc = Infinity;
     const ban = B.mcBan || (B.mcBan = []); for(let i = ban.length - 1; i >= 0; i--) if(ban[i].until < now) ban.splice(i, 1);
-    if(f.pct >= MC4G.healPct && M.zsegs){ for(const z of M.zsegs){ if(z.type !== 'heal' || ban.some(b => b.z === z)) continue; const sp2 = mc4HealSpot(f, F, z), c = mc4PathCost(f, sp2)*0.6; if(c < MC4G.know && c < bc){ bc = c; best = { kind:'heal', zone:z, t0:now }; } } }
-    for(const it of items){
+    if((f.pct >= MC4G.healPct && calm || hurt) && M.zsegs){ for(const z of M.zsegs){ if(z.type !== 'heal' || ban.some(b => b.z === z)) continue; const sp2 = mc4HealSpot(f, F, z), c = mc4PathCost(f, sp2)*0.6; if(c < MC4G.know && c < bc){ bc = c; best = { kind:'heal', zone:z, t0:now }; } } }
+    if(calm) for(const it of items){
       if(it.taken || !(it.life > 90) || it.kind === 'boss' || !(it.r > 0) || ban.some(b => b.it === it)) continue;
       const spot = mc4Spot(it), c = mc4PathCost(f, spot); if(!(c < MC4G.know) || c >= bc) continue;
-      let claimed = false; for(const o of fighters){ if(o === f || o.dead || o.controller !== 'ai') continue; const og = brainOf(o).mcg; if((og && og.it === it) || mc4PathCost(o, spot) < c - 40){ claimed = true; break; } }   // (the nearest CPU goes for an item; the others keep to their fight)
+      let claimed = false, held = 0; for(const o of fighters){ if(o === f || o.dead || o.controller !== 'ai') continue; const og = brainOf(o).mcg; if(og && og.it === it && ++held >= 2){ claimed = true; break; } }   // (two CPUs at most to an item -- one to take it, one to dispute it)
       if(!claimed){ bc = c; best = { kind:'item', it, t0:now }; }
     }
     if(best){ best.best = bc + 1; best.tp = now; B.mcg = G = best; B.mcStill = 0; }
@@ -5539,7 +5545,7 @@ function mc4Cpu(f, inp, B, t, targets, pickFrom, sp, now){
     const c = mc4PathCost(f, spot);
     if(c < G.best - 40){ G.best = c; G.tp = now; }
     B.mcStill = (mv < 0.6 && !f.hitstun) ? (B.mcStill || 0) + 1 : 0;
-    if(B.mcStill >= MC4G.still || now - G.tp > 300){   // no progress, or four seconds on the spot: it gives this one up for a while and takes another
+    if(B.mcStill >= MC4G.stillGoal || now - G.tp > 300){   // no progress, or two and a half seconds on the spot (a goal it cannot get to; the foe's route gets the four): it gives this one up for a while and takes another
       (B.mcBan || (B.mcBan = [])).push({ it:G.it, z:G.zone, until:now + 1800 }); B.mcg = null; B.mcgAt = now + 45; B.mcStill = 0; B.detour = { dir: Math.random() < 0.5 ? 1 : -1, until: now + 50 };
       return false;
     }
@@ -5550,7 +5556,7 @@ function mc4Cpu(f, inp, B, t, targets, pickFrom, sp, now){
   }
   // no goal: the stand-still rule on a foe's route
   const R = mcRoute(f, t);
-  if(R && mv < 0.6 && !f.hitstun && f.onground) B.mcStill = (B.mcStill || 0) + 1; else B.mcStill = 0;
+  if((R || Math.hypot(t.x - f.x, t.y - f.y) > 200) && mv < 0.6 && !f.hitstun && f.onground && B.st !== 'wait' && !stanceStill(f)) B.mcStill = (B.mcStill || 0) + 1; else B.mcStill = 0;
   if(B.mcStill >= MC4G.still){
     B.mcStill = 0; B.progD = null; B.progT = now; B.detour = { dir: Math.random() < 0.5 ? 1 : -1, until: now + 70 };
     const other = pickFrom.filter(o => o !== f.aiTarget); if(other.length){ f.aiTarget = mcCrowd(f, other); f.aiTimer = 300; }
