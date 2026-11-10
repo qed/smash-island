@@ -21,6 +21,7 @@ import { PNG } from 'pngjs';
 // Steve Cobs's three prize fighters are secret: their names are read from the game at run time (scripts/prize-names.mjs), never
 // spelled here, and what this writes (manifest.json, credits.txt) and prints says {PZ_A}, {PZ_B} or {PZ_C} instead.
 import { PZ_C, hidePz } from './prize-names.mjs';
+import { spiderBody } from './make-tv-spider.mjs';   // TV's Final Smash: the Robotic Spider's body (the legs taken off it)
 
 const WIKIS = {
   bfdi: 'https://battlefordreamisland.fandom.com',
@@ -380,6 +381,12 @@ const PICKS = {
   fourheart: { who: 'Four (LOVE HEARTS!)', kits: ['fourheart'], file: 'Love hearts0001.png', region: [190, 222, 299, 326], srcH: 500, h: 48, note: 'a Love Heart, the middle one of the wiki bunch of BFB hearts (Love Hearts page: "Four shoots out of his body when he sees something he adores")' },
   // @boss:four:end picks
 
+  // ---- TV's Final Smash (Static Burst, 2026-11-03): the show's Robotic Spider ("the robot spider should look like that robot spider. I prefer show-accurate ones", the owner; "for the sprites, not the moves").
+  // File:Robotic Spider.png (TPOT 16, 'Bottle For Dream Island'; 1600x720, transparent, front-on). The Final Smash keeps its own animated legs, so key 'spiderbody' (scripts/make-tv-spider.mjs) takes the
+  // legs off the picture and leaves the body; `maxSide` lifts the projectile-size cap, the Final Smash draws it 168 x 150 and the file is 2x that for a sharp edge. The same file can be made offline from a
+  // copy of the wiki file: node scripts/make-tv-spider.mjs "Robotic Spider.png" (the fetch was not run for it; the owner's copy was vetted by hand).
+  tvspider: { who: 'TV (Static Burst)', kits: ['tvspider'], file: 'Robotic Spider.png', key: 'spiderbody', srcH: 720, h: 300, maxSide: 400, note: 'the Robotic Spider (TPOT 16), its body: the fuzzy black ball with the two red eyes, the legs taken off (the Final Smash draws its own)' },
+
   // ---- Steve Cobs's fight (the boss overhaul, 2026-09-30): what he throws, in the show's art ("Yes, cut or draw": cut from frames where the show
   // has them, draw where it has none). The MeKnife, the lollipops and the Fist Thingy (reused: fist.png) and the pencil (reused: pencil.png) are standalone
   // files; the boomerang, the van and the popcorn are lifted out of frames (the van and the popcorn hand-masked: poly is their silhouette, traced off the
@@ -458,9 +465,9 @@ function alphaBox(png) {
 }
 // box-filter downscale of a cropped region to height H (aspect kept, long side capped at MAX_SIDE);
 // pngjs RGBA, premultiplied average
-function shrink(png, box, H) {
+function shrink(png, box, H, maxSide = MAX_SIDE) {
   const sw = box.x1 - box.x0 + 1, sh = box.y1 - box.y0 + 1;
-  const scale = Math.min(1, H / sh, MAX_SIDE / sw), W = Math.max(1, Math.round(sw * scale)), HH = Math.max(1, Math.round(sh * scale));
+  const scale = Math.min(1, H / sh, maxSide / sw), W = Math.max(1, Math.round(sw * scale)), HH = Math.max(1, Math.round(sh * scale));
   const out = new PNG({ width: W, height: HH });
   for (let y = 0; y < HH; y++) for (let x = 0; x < W; x++) {
     const sx0 = box.x0 + Math.floor(x / scale), sx1 = Math.min(box.x1, box.x0 + Math.floor((x + 1) / scale) - 1);
@@ -686,7 +693,7 @@ function keyBall(png) {
     else png.data[i + 3] = 255;   // inside the disc the ball is whole: the green key must not eat its JPEG-soft seams
   }
 }
-const KEYS = { white: keyWhite, green: keyGreen, glow: keyGlow, orb: keyOrb, balloon: keyBalloon, piano: keyPiano, prop: keyProp, ball: keyBall, paintball: keyPaintball };
+const KEYS = { spiderbody: (png) => spiderBody(png), white: keyWhite, green: keyGreen, glow: keyGlow, orb: keyOrb, balloon: keyBalloon, piano: keyPiano, prop: keyProp, ball: keyBall, paintball: keyPaintball };
 // ---- batch 3 (g5): the rock, the slick and the pager, cut out of their frames (Q1 "Cut from the frames"). One PIECE key does
 // all three: a test says how much a pixel looks like the object, the biggest connected piece that passes is the object,
 // what it closes round stays (the rock's spots, the pager's screen and buttons), and its edge is as soft as the test.
@@ -814,7 +821,7 @@ for (const [name, pick] of Object.entries(PICKS)) {
     if (pick.crop) box.y1 = Math.min(box.y1, box.y0 + pick.crop - 1);   // a stream asset: keep its head
     const cw = box.x1 - box.x0 + 1, ch = box.y1 - box.y0 + 1;
     if (Math.max(cw, ch) < 24) { line(`skip ${cand}: ${cw}x${ch} after cropping`); continue; }
-    const small = shrink(png, box, pick.h || TARGET_H);
+    const small = shrink(png, box, pick.h || TARGET_H, pick.maxSide || MAX_SIDE);
     const file = `${name}.png`;
     writeFileSync(`${outDir}/${file}`, PNG.sync.write(small));
     manifest[name] = { who: pick.who, kits: pick.kits, file, wiki, source: hidePz(info.url), srcTitle: hidePz(cand), width: small.width, height: small.height,
