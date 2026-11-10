@@ -187,6 +187,9 @@ non-commercial fan game.
 | Ruler | `ruler.png` | 104×200 | 0 | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a2/RulerBFDIE.png/revision/latest?cb=20260101212420 |
 | Saw | `saw.png` | 103×200 | -0.035 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/7/74/Tpot_renders0014.png/revision/latest?cb=20210113223714 |
 | Sidewalky | `sidewalky.png` | 202×200 | 0.164 | https://static.wikia.nocookie.net/battlefordreamisland/images/4/4f/Sidewalky.png/revision/latest?cb=20260102200752 |
+| Six | `six.png` | 192×200 | 0.006 | https://battlefordreamisland.fandom.com/wiki/File:SixTPOT20PromoArt.png |
+| Six Mad | `six-mad.png` | 267×200 | 0.003 | https://battlefordreamisland.fandom.com/wiki/File:Malicious_Six.png |
+| Six Powerless | `six-powerless.png` | 183×200 | 0.006 | https://battlefordreamisland.fandom.com/wiki/File:Six_Powerless.png |
 | Snowball | `snowball.png` | 201×200 | 0.064 | https://static.wikia.nocookie.net/battlefordreamisland/images/6/6b/Tpot_renders0032.png/revision/latest?cb=20250111195131 |
 | Taco | `taco.png` | 220×200 | 0.037 | https://static.wikia.nocookie.net/battlefordreamisland/images/1/19/Taco-but-EHHHHHHHH.png/revision/latest?cb=20260228201027 |
 | Tennis Ball | `tennis-ball.png` | 183×200 | 0.074 | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e2/Tpot_renders0039.png/revision/latest?cb=20250620002606 |
@@ -1610,3 +1613,5 @@ character, area-averaged to 200 px tall and the invisible halo erased, the same 
   `flash-cammy.png` is the game's own cleaned copy of the same file, `cammy-flash.png` (the night-sky rim peeled back and white-balanced: see Cammy's
   pop-up flash above). Two of the 56 were not kept, because no face shows: Liar Ball Loser (`File:Liarball-0.PNG`, Loser hidden in the ball) and Ice
   Pack Cheesy (`File:Cheesy Icepack.png`). Money, Bonesaw, Magnet and Dough have no clean second picture, so they got none.
+
+Six (the Algebralien Rush, M8; hidden behind RUSH_OPEN): `six.png` (the TPOT 20 promo art, her phase-1 look), `six-mad.png` (File:Malicious Six.png, her phase-2 look) and `six-powerless.png` (File:Six Powerless.png, her ending: the pale look the wiki gives her once her power is gone). The owner said "Yes, all 20" to the Rush's renders by file name (2026-11-02); the three were looked at by eye after the 200 px cut (2026-11-10). They are the Rush's vetted copies (`reports/algebralien-rush/art-vetted/`, fetched with format=original, all four corners transparent), trimmed to the drawn pixels and area-averaged down to 200 px tall, then run through the same facing, halo and face checks as `scripts/fetch-sprites.mjs` (`analyse`, `verdict`, `clean`): no flip. The source column of their rows is the wiki's File: page (the CDN path of each was not recorded when they were staged), and their rows are in `scripts/sprite-manifest.json` with the same fields as the others. Unaffiliated fan work, as the rest of this folder.

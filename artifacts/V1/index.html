@@ -97965,7 +97965,8 @@ const ALG_ROSTER = [
   // @boss:nine:end algrow
 
   // @boss:six:begin algrow
-  { ...ALG_STUB, id:'six', name:'Six', color:'#e8b84a', hp:algHp('six') },
+  { id:'six', name:'Six', color:'#2da7e4', hp:algHp('six'), big:2.5, attack:'six', arena:'eqplayground', stationary:false, sprite:'six', spawn:b=>sixSpawn(b), move:(s,t)=>sixMove(s,t), tick:(s,t)=>sixTick(s,t), tel:(s,t)=>sixTel(s,t), fire:(s,t,id)=>sixFire(s,t,id),
+    gap:s=>SIX.gaps[sixPh(s)-1], telLen:s=>s._tl || 34, phase:(s,ph)=>sixPhase(s,ph), phaseName:(s,ph)=>ph >= 2 ? 'Revenge' : 'Staying Behind', look:s=>sixLook(s), tell:s=>sixTell(s), body:(s,R,b,f)=>sixBody(s,R,b,f), fx:s=>sixFx(s), decor:(s,k)=>sixDecor(s,k), shot:pr=>sixShotDraw(pr) },   // rush M8: the real fight (1,600 HP and two bubbles of 120); all of it is in her algcode pair
   // @boss:six:end algrow
 
   // @boss:zero:begin algrow
@@ -114461,6 +114462,421 @@ PROJ_SHAPE.engulf = PROJ_SHAPE.goopuddle; PROJ_SHAPE.tape = PROJ_SHAPE.tapewave;
 // @boss:nine:end algcode
 
 // @boss:six:begin algcode
+// SIX, THE BUBBLE BLOWER (rush M8, 1,600 HP and two bubbles of 120; the Equation Playground, `eqplayground`). Everything of hers lives in this pair and her ALG_ROSTER row: no engine line is edited.
+// "Six Integer ... dry, bored, irritable and sarcastic" (Six): she fights inside a soap bubble that soaks up the first 120 damage of each phase; popping it drops her to the floor, dazed 90 frames, and she
+// attacks no sooner than 100 frames after the pop. A new bubble forms at 50%. Moves (the owner's five): BUBBLES! (signature), LEAF RAKE!, SLAP!, ROCK DROP!, and KICK OUT! from phase 2 only.
+// Every one is driven by her state machine (s._sx) and hits through shots (bubbles, heaps, the arm, rocks) or, for the boot only, a hit she tests herself; every hit is a volley of one attack id, so a fighter
+// takes at most one boss hit (bossDmg()) a turn. Tells are the body's (BOSS_TELLS.six: pose, glow, beats) plus what grows out of her (a bubble at her mouth, the rake, the cocked arm, the cracked floor
+// and the slabs, the stone boot); nothing grows in under 12 frames. Her bag `_hz` holds plain numbers only, and what she draws is a function of it and the clock.
+const SIX = {
+  pool:120, bubK:1.25, lift:34, dazeF:90, quietF:100, introF:70, firstAtk:150, beatF:20,
+  stand:[480, 380], walk:3.2, gaps:[170, 130],
+  tl:{ six:34, sixrake:40, sixslap:30, sixrock:46, sixkick:46 },
+  bub:{ gap:9, r:26, spd:[3.4, 4.2], home:[0.012, 0.02], rise:0.25, life:220, extra:[0, 2], cap:8, dmg:0.8, kb:8 },
+  rake:{ spd:[9, 10.5], r:[34, 38], tall:70, again:[0, 22], grow:12, dmg:1, kb:9 },
+  slap:{ reach:[330, 420], r:34, out:11, lock:10, back2:20, k2:0.7, popAt:8, popLen:10, dmg:1, kb:12 },
+  rock:{ every:20, fling:14, fall:36, r:34, lead:20, extra:[0, 1], cap:6, dmg:1, kb:7 },
+  kick:{ beside:150, room:200, r:46, reach:[150, 190], swing:8, linger:18, goneAt:8, landAt:22, hits:[1, 4, 8], dmg:1, kbx:15, kby:14 },
+  end:{ total:130, hold:2200 },
+};
+function sixHz(s){ return s._hz || (s._hz = {}); }
+function sixPh(s){ return (s._phase || 1) >= 2 ? 2 : 1; }
+function sixLive(f){ return !!f && !f.dead; }
+function sixLiving(){ return fighters.filter(f => !f.dead); }
+function sixBubUp(s){ const b = sixHz(s).bb; return !!b && b[0] > 0; }
+function sixDazed(s){ return (sixHz(s).dz || 0) > hazardT; }
+function sixIntro(s){ const Z = sixHz(s); return Z.in != null && hazardT - Z.in < SIX.introF; }
+function sixShot(s, id, o){ return bossShot(s, Object.assign({ six:'x', algShot:'six', volley:true, bossAtk:id, dmg:bossDmg(), kb:8, color:'#7acdf3' }, o)); }
+function sixHomeY(s){ return groundY() - s._baseR - (sixBubUp(s) ? SIX.lift : 0); }
+// ---- the bubble: ALG_HIT.six filters what her HP takes (algBossHit): nothing in her intro or phase beat, the pool first, then what is left over ----------------------------------------------
+function sixHit(s, f, d){
+  const Z = sixHz(s), b = Z.bb;
+  if(sixIntro(s) || (Z.beat || 0) > hazardT) return 0;   // the pile cannot be hit; the 20-frame phase beat is the one other unhittable moment
+  if(!b || !(b[0] > 0)) return d;
+  { const an = Math.atan2((f && f.y - s.y) || 0, (f && f.x - s.x) || 1); Z.rp = [Math.round((isFinite(an) ? an : 0)*100)/100, hazardT]; }   // where it dents, and when (the blow's maker may be a shot with no place)
+  if(d < b[0]){ b[0] -= d; return 0; }
+  const left = d - b[0]; b[0] = 0; b[2] = hazardT; sixPopped(s); return left;
+}
+ALG_HIT.six = sixHit;
+// The pop: she drops, dazed for SIX.dazeF frames (the exposed stars, at 1.0 the damage), and attacks no sooner than SIX.quietF frames from now. What she had out is cancelled.
+function sixPopped(s){
+  const Z = sixHz(s);
+  Z.dz = hazardT + SIX.dazeF; s._tel = 0; s._telKind = null; s._sx = null; s._tn = null; s._atkLive = null; s._atkTimer = SIX.quietF; s._algPop = 0; s.vy = 0;
+  for(const p of projectiles) if(p.six && p.six !== 'end'){ p.retract = false; p.life = 0; }
+  algExpose(s, SIX.dazeF, 1);
+  shake(8);
+  for(let i = 0; i < 22; i++){ const a = Math.random()*7; puff(s.x + Math.cos(a)*s.r, s.y + Math.sin(a)*s.r, i % 2 ? '#bfeaff' : '#ffffff', 5); }
+}
+// ---- spawn, intro (a pile of leaves that trembles for SIX.introF frames, then bursts), movement --------------------------------------------------------------------------------------------------
+function sixSpawn(b){
+  const Z = sixHz(b);
+  b._baseR = b.r; b.x = WW*0.5; b.y = groundY() - b.r; b._algPop = 12; Z.in = hazardT; Z.bb = [SIX.pool, SIX.pool, 0, hazardT + SIX.introF];
+  b._atkTimer = SIX.introF + SIX.firstAtk;
+  for(const k of ['six', 'sixmad', 'sixpowerless']) bossImage(k);
+}
+function sixMove(s, tgt){
+  const Z = sixHz(s), t = hazardT, ph = sixPh(s);
+  if(s._baseR == null) s._baseR = s.r / (sixBubUp(s) ? SIX.bubK : 1);
+  const wantR = s._baseR*(sixBubUp(s) ? SIX.bubK : 1);
+  s.r += (wantR - s.r)*0.15;
+  s.x += s.vx; s.vx *= 0.88;   // a hit's shove (damageSummon) settles
+  const ty = sixHomeY(s);
+  if(sixIntro(s)){ s.x = WW*0.5; s.y = groundY() - s._baseR; return true; }
+  if(sixDazed(s)){ s.vy = (s.vy || 0) + 0.9; s.y = Math.min(groundY() - s._baseR, s.y + s.vy); s.x = clamp(s.x, s.r*0.4, WW - s.r*0.4); return true; }   // the pop drops her to the floor
+  s.vy = 0;
+  s.y += (ty + (sixBubUp(s) ? Math.sin(t*0.05)*4 : 0) - s.y)*0.2;
+  const busy = s._tel > 0 || s._sx;
+  if(tgt && !busy){
+    const dx = tgt.x - s.x, D = SIX.stand[ph - 1];
+    if(Math.abs(dx) > 24) s.face = dx > 0 ? 1 : -1;
+    if(Math.abs(dx) < D - 40) s.x -= Math.sign(dx || 1)*SIX.walk;   // she keeps her distance, and never chases on foot: her pops close it
+    else if(Math.abs(dx) > D + 110) s.x += Math.sign(dx)*SIX.walk;
+  }
+  s.x = clamp(s.x, s.r*0.4, WW - s.r*0.4);
+  return true;
+}
+// ---- the turn: wind-up length, what is fixed now, what the wind-up does frame by frame -----------------------------------------------------------------------------------------------------
+function sixTel(s, tgt){
+  const k = s._telKind, ph = sixPh(s), gy = groundY(), R = s._baseR;
+  const tn = s._tn = { k, ph, dir: tgt ? (Math.sign(tgt.x - s.x) || s.face || 1) : (s.face || 1), y: tgt ? tgt.y : s.y, pop:false, moved:false, at:0, x:s.x };
+  let tl = SIX.tl[k] || 34;
+  if(k === 'sixslap' && tgt && Math.abs(tgt.x - s.x) > SIX.slap.reach[ph - 1]*0.85){   // too far: she pops beside you first
+    const side = Math.sign(s.x - tgt.x) || 1;
+    tn.pop = true; tn.at = SIX.slap.popAt; tn.x = clamp(tgt.x + side*230, R*0.6, WW - R*0.6); tl += SIX.slap.popLen;
+  }
+  if(k === 'sixkick' && tgt){   // she is gone, a ring shows where she will land, then she is there with one leg back
+    const room = x => x > tgt.x ? WW - tgt.x : tgt.x, side = room(tgt.x + 1) >= room(tgt.x - 1) ? 1 : -1;
+    tn.pop = true; tn.at = SIX.kick.landAt; tn.x = clamp(tgt.x + side*SIX.kick.beside, 80, WW - 80); tn.dir = -side;
+  }
+  if(tn.pop) sixHz(s).kr = [Math.round(s.x), Math.round(s.y), Math.round(tn.x), Math.round(gy), hazardT, tn.at];
+  s._tl = tl; s._tel = tl; s.face = tn.dir;
+}
+function sixTelStep(s, tgt, tn){
+  const e = s._tl - s._tel, gy = groundY();
+  if(tn.pop){
+    if(e < SIX.kick.goneAt && tn.k === 'sixkick' || (tn.k === 'sixslap' && e < tn.at)) s._algPop = Math.min(12, Math.round(12*e/8) + 1);
+    else if(tn.k === 'sixkick' && !tn.moved && e < tn.at) s._algPop = 12;   // gone until the landing
+    if(!tn.moved && e >= tn.at){
+      tn.moved = true;
+      for(let i = 0; i < 12; i++) puff(s.x, s.y, '#7acdf3', 5);
+      s.x = tn.x; s.vx = 0; s.y = sixHomeY(s); s._algPop = 12;
+      for(let i = 0; i < 12; i++) puff(s.x, s.y + s.r*0.5, '#7acdf3', 5);
+    }
+  }
+  if(tn.k === 'sixslap'){
+    if(s._tel > SIX.slap.lock && sixLive(tgt)){ tn.y = tgt.y; tn.dir = Math.sign(tgt.x - s.x) || tn.dir; }   // the row is locked 10 frames before the arm goes
+    s.face = tn.dir;
+  } else if(tn.k === 'sixkick'){
+    if(tn.moved && s._tel > 10 && sixLive(tgt)) tn.dir = Math.sign(tgt.x - s.x) || tn.dir;   // and the kick's side 10 frames before the boot
+    s.face = tn.dir;
+  } else if(sixLive(tgt) && Math.abs(tgt.x - s.x) > 24) s.face = tgt.x > s.x ? 1 : -1;
+}
+function sixTick(s, tgt){
+  const Z = sixHz(s), t = hazardT;
+  if(!(s.hp > 0)) return;
+  if(sixIntro(s)){ s._algPop = 12; }
+  else if(Z.in != null && !Z.burst){
+    Z.burst = 1; shake(6); s._algPop = 12;
+    for(let i = 0; i < 60; i++) puff(s.x + (Math.random() - 0.5)*160, s.y + (Math.random() - 0.5)*70, ['#d8782b', '#c2432a', '#e8b83a', '#a85a22'][i & 3], 6);
+  }
+  if(s._tel > 0 && s._tn) sixTelStep(s, tgt, s._tn);
+  if(s._sx) sixStep(s, tgt);
+  for(const p of projectiles) if(p.six === 'bub' && !(p.delay > 0)) p.y -= SIX.bub.rise;   // a bubble drifts up as it comes
+}
+function sixPhase(s, ph){
+  if(ph < 2) return;
+  const Z = sixHz(s);
+  Z.bb = [SIX.pool, SIX.pool, 0, hazardT]; Z.p2 = hazardT; Z.beat = hazardT + SIX.beatF;   // the sun goes down and a new bubble forms round her
+  s._atkTimer = Math.max(s._atkTimer, 70);
+}
+function sixLook(s){ return (s._phase || 1) >= 2 ? 'sixmad' : 'six'; }
+// ---- the moves. The signature through the row's `fire`, the other four through BOSS_MOVES -------------------------------------------------------------------------------------------------
+function sixFire(s, tgt, id){ sixBubblesStart(s, tgt, id); return true; }
+function sixBubblesStart(s, tgt, id){
+  const ph = sixPh(s), n = Math.min(SIX.bub.cap, 3 + sixLiving().length + SIX.bub.extra[ph - 1]);
+  s._sx = { k:'bub', t:0, id, ph, n, i:0 };
+}
+function sixBubble(s, X, i){
+  const ph = X.ph, L = sixLiving(), f = L.length ? L[i % L.length] : null, d = s.face < 0 ? -1 : 1;
+  const x = s.x + d*s._baseR*0.55, y = s.y - s._baseR*0.15, ang = (f ? Math.atan2(f.y - y, f.x - x) : (d > 0 ? 0 : Math.PI)) + Math.sin(i*2.7 + X.id)*0.15, sp = SIX.bub.spd[ph - 1];
+  addProj(sixShot(s, X.id, { six:'bub', x, y, vx:Math.cos(ang)*sp, vy:Math.sin(ang)*sp, r:SIX.bub.r, dmg:bossDmg()*SIX.bub.dmg, kb:SIX.bub.kb, life:SIX.bub.life, homing:SIX.bub.home[ph - 1], color:'#9fe0ff' }));
+  for(let j = 0; j < 4; j++) puff(x, y, '#bfeaff', 3);
+}
+function sixHeap(s, id, ph, x, dir, delay){
+  const sp = SIX.rake.spd[ph - 1], r = SIX.rake.r[ph - 1], dist = dir > 0 ? WW - x : x;
+  addProj(sixShot(s, id, { six:'heap', x, y:groundY() - r, vx:dir*sp, vy:0, r, dmg:bossDmg()*SIX.rake.dmg, kb:SIX.rake.kb, life:Math.ceil(dist/sp) + 2, delay:delay || 0, color:'#d8782b', noCull:true }));
+}
+function sixRakeStart(s, tgt){
+  const id = ++BOSS_ATK_ID, tn = s._tn || {}, ph = sixPh(s), dir = tgt ? (Math.sign(tgt.x - s.x) || s.face || 1) : (s.face || 1);
+  s.face = dir; sixHeap(s, id, ph, s.x + dir*s._baseR*0.9, dir, 0); shake(3);
+  for(let i = 0; i < 12; i++) puff(s.x + dir*s._baseR*0.9, groundY() - 6, i % 2 ? '#e8a33a' : '#c2432a', 5);
+  if(ph >= 2) s._sx = { k:'rake', t:0, id, ph, dir };   // the second swing: the heap starts at the far wall, so the two reach you apart
+}
+function sixSlapStart(s, tgt){
+  const id = ++BOSS_ATK_ID, tn = s._tn || {}, ph = sixPh(s), dir = tn.dir || s.face || 1, gy = groundY();
+  const y = clamp(tn.y != null ? tn.y : s.y, gy - 420, gy - 24);
+  const hand = sixHand(s, id, ph, dir, y, 1);
+  s._sx = { k:'slap', t:0, id, ph, dir, y, hand, bh:0 };
+}
+function sixHand(s, id, ph, dir, y, k){
+  const reach = SIX.slap.reach[ph - 1]*k, x0 = s.x + dir*s._baseR*0.4, O = SIX.slap.out;
+  return addProj(sixShot(s, id, { six:'hand', x:x0, y, vx:dir*reach/O, vy:0, r:SIX.slap.r, dmg:bossDmg()*SIX.slap.dmg, kb:SIX.slap.kb, life:O, retract:true, armX0:x0, armY0:y, color:'#7acdf3', noCull:true }));
+}
+function sixRockStart(s, tgt){ const ph = sixPh(s), n = Math.min(SIX.rock.cap, 2 + sixLiving().length + SIX.rock.extra[ph - 1]); s._sx = { k:'rock', t:-1, id:++BOSS_ATK_ID, ph, n, i:0 }; shake(4); }
+function sixRock(s, X, i){
+  const L = sixLiving(), f = L.length ? L[i % L.length] : null; if(!f) return;
+  const lead = (X.ph >= 2 && i >= X.n - 2) ? (f.vx || 0)*SIX.rock.lead : 0, x = clamp(f.x + lead, 70, WW - 70), sf = surfaceBelow(x, feetY(f) - 2), sy = sf === null ? groundY() : sf;
+  const T = SIX.rock.fall, y0 = Math.min(-60, camY - 140), vy = (sy - SIX.rock.r*0.5 - y0)/T;   // down from above the top of the view, onto the surface you stood on
+  addProj(sixShot(s, X.id, { six:'rock', x, y:y0, vx:0, vy, grav:false, r:SIX.rock.r, dmg:bossDmg()*SIX.rock.dmg, kb:SIX.rock.kb, life:T + 12, delay:SIX.rock.fling, breaksOnSurface:true, noDrift:true, warnX:x, warnY:sy, warn:T,
+    landImpact:{ shake:5, dust:1, debris:6, scar:true, r:60, color:'#a8a8b8' }, color:'#9fb0c4' }));
+}
+function sixKickStart(s, tgt){ const tn = s._tn || {}; s._sx = { k:'kick', t:0, id:++BOSS_ATK_ID, ph:sixPh(s), dir:tn.dir || s.face || 1 }; s.face = s._sx.dir; }
+function sixBootPos(s, X, t){
+  const K = SIX.kick, u = clamp(t/K.swing, 0, 1), a = 0.4 - 1.6*u, rr = K.reach[0] + (K.reach[1] - K.reach[0])*u;
+  return { x:s.x + X.dir*(s._baseR*0.3 + rr*Math.cos(a)), y:s.y + s._baseR*0.4 + rr*Math.sin(a), a };
+}
+function sixStep(s, tgt){
+  const X = s._sx; if(!X) return;
+  X.t++;
+  if(X.k === 'bub'){
+    if(X.i < X.n && (X.t - 1) % SIX.bub.gap === 0) sixBubble(s, X, X.i++);
+    if(X.i >= X.n) s._sx = null;
+  } else if(X.k === 'rake'){
+    if(X.t === SIX.rake.again[1]){ const far = X.dir > 0 ? WW - 30 : 30; sixHeap(s, X.id, X.ph, far, -X.dir, SIX.rake.grow); for(let i = 0; i < 10; i++) puff(far, groundY() - 6, '#e8a33a', 5); s._sx = null; }
+  } else if(X.k === 'slap'){
+    if(X.ph < 2) s._sx = null;
+    else if(!X.back && (!X.hand || X.hand.life <= 0)){
+      X.bh++;
+      if(X.bh >= SIX.slap.back2){ X.back = 1; sixHand(s, X.id, X.ph, -X.dir, X.y, SIX.slap.k2); s._sx = null; }   // the backhand: the other way, at 70% of the reach, for whoever rolled past her
+    }
+  } else if(X.k === 'rock'){
+    if(X.i < X.n && X.t >= X.i*SIX.rock.every){ sixRock(s, X, X.i); X.i++; }
+    if(X.i >= X.n) s._sx = null;
+  } else if(X.k === 'kick'){
+    const K = SIX.kick;
+    if(X.t <= K.swing && K.hits.indexOf(X.t) >= 0){
+      const b = sixBootPos(s, X, X.t);
+      for(const f of fighters){
+        if(f.dead || f.invuln > 0 || hurtGap(f, b.x, b.y) >= K.r) continue;
+        applyHit(f, bossDmg()*K.dmg, Math.sign(WW*0.5 - f.x || 1)*K.kbx, -K.kby, null, { bossAtk:X.id, volley:true, shot:1 });   // toward the middle, whatever side she stands on
+        for(let i = 0; i < 10; i++) puff(f.x, f.y, '#9fb0c4', 5);
+      }
+    }
+    if(X.t >= K.swing + K.linger) s._sx = null;
+  }
+}
+BOSS_MOVES.sixrake = (s, tgt) => sixRakeStart(s, tgt);
+BOSS_MOVES.sixslap = (s, tgt) => sixSlapStart(s, tgt);
+BOSS_MOVES.sixrock = (s, tgt) => sixRockStart(s, tgt);
+BOSS_MOVES.sixkick = (s, tgt) => sixKickStart(s, tgt);
+BOSS_PICK.six = {
+  tags:{ six:['far', 'air'], sixrake:['ground', 'far'], sixslap:'close', sixrock:['spread', 'ground'], sixkick:'any' },
+  moves:(s, ph) => ['six', 'sixrake', 'sixslap', 'sixrock'].concat(ph >= 2 ? ['sixkick'] : []),   // KICK OUT! is phase 2 only
+  busy:(s) => !!s._sx
+};
+BOSS_EXTRA.Six = ['sixrake', 'sixslap', 'sixrock', 'sixkick'];
+BOSS_TELLS.six = {
+  six:{ pose:'puff', glow:'#7fd8ff', beats:2 }, sixrake:{ pose:'rear', glow:'#e8a33a', beats:2 }, sixslap:{ pose:'coil', glow:'#7acdf3', beats:2 },
+  sixrock:{ pose:'rise', glow:'#7acdf3', beats:3 }, sixkick:{ pose:'crouch', glow:'#9fb0c4', beats:2 }, _:{ pose:'crouch', glow:'#7acdf3', beats:2 }
+};
+BOSS_SPRITE_SRC.six = 'assets/sprites/six.png'; BOSS_SPRITE_SRC.sixmad = 'assets/sprites/six-mad.png'; BOSS_SPRITE_SRC.sixpowerless = 'assets/sprites/six-powerless.png';
+// ---- drawing: her tells (boss frame), the bubble and the rest (world), her shots, a drawn body for the frames before the renders load --------------------------------------------------------
+function sixLeaf(c, x, y, r, a, col){ c.save(); c.translate(x, y); c.rotate(a); c.fillStyle = col; c.strokeStyle = 'rgba(60,30,10,0.6)'; c.lineWidth = 1; c.beginPath(); c.ellipse(0, 0, r, r*0.5, 0, 0, 7); c.fill(); c.stroke(); c.restore(); }
+const SIX_LEAF = ['#d8782b', '#c2432a', '#e8b83a', '#a85a22', '#e08a2e'];
+function sixPile(x, gy, w, k, shk){
+  ctx.save(); ctx.translate(x + shk, gy);
+  for(let i = 0; i < 26; i++){ const a = i*2.399, rr = ((i*37) % 100)/100; sixLeaf(ctx, Math.cos(a)*w*0.5*rr*k, -Math.abs(Math.sin(a*1.7))*w*0.26*k*(1 - rr*0.45) - 4*k, (13 + (i % 4)*3)*k, i*0.9, SIX_LEAF[i % 5]); }
+  ctx.restore();
+}
+function sixTell(s){
+  const Z = sixHz(s), R = s._baseR || s.r, d = s.face < 0 ? -1 : 1, kind = s._telKind, tl = s._tl || 34, gy = groundY() - s.y, t = hazardT;
+  const e = s._tel > 0 ? tl - s._tel : 0, u = s._tel > 0 ? clamp(e/tl, 0, 1) : 0, g = s._tel > 0 ? growK(e + 1) : 0;
+  ctx.save();
+  if(s._tel > 0){
+    if(kind === 'six'){   // a bubble grows at her mouth
+      ctx.globalAlpha = 0.85*g; ctx.fillStyle = 'rgba(190,235,255,0.5)'; ctx.strokeStyle = '#7fd8ff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(d*R*0.55, -R*0.15, (5 + 22*u)*g, 0, 7); ctx.fill(); ctx.stroke();
+    } else if(kind === 'sixrake'){   // the rake lifted overhead, leaves kicked up at her feet
+      ctx.globalAlpha = g; ctx.strokeStyle = '#6a4a22'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(d*R*0.55, -R*0.1); ctx.lineTo(d*R*0.25, -R*1.25); ctx.stroke();
+      ctx.strokeStyle = '#3a2a14'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(d*R*0.25 - 26, -R*1.3); ctx.lineTo(d*R*0.25 + 26, -R*1.22); ctx.stroke();
+      for(let i = -2; i <= 2; i++){ ctx.beginPath(); ctx.moveTo(d*R*0.25 + i*11, -R*1.26 + i*0.8); ctx.lineTo(d*R*0.25 + i*11, -R*1.14 + i*0.8); ctx.stroke(); }
+      for(let i = 0; i < 7; i++){ const q = (t*0.04 + i*0.15) % 1; sixLeaf(ctx, (i - 3)*R*0.28 + Math.sin(t*0.1 + i)*8, gy - 10 - q*R*0.9*u, 9, t*0.1 + i, SIX_LEAF[i % 5]); }
+    } else if(kind === 'sixslap'){   // the far arm cocked behind her, the hand glowing
+      ctx.globalAlpha = g; ctx.strokeStyle = '#7acdf3'; ctx.lineWidth = 12; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-d*R*0.3, -R*0.05); ctx.quadraticCurveTo(-d*R*0.75, -R*0.35, -d*R*1.0, -R*0.1); ctx.stroke();
+      const gr = ctx.createRadialGradient(-d*R, -R*0.1, 2, -d*R, -R*0.1, 30*g); gr.addColorStop(0, 'rgba(210,245,255,0.95)'); gr.addColorStop(1, 'rgba(122,205,243,0)');
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(-d*R, -R*0.1, 30*g, 0, 7); ctx.fill();
+    } else if(kind === 'sixrock'){   // the floor cracks open at her feet and three slabs rise round her
+      ctx.globalAlpha = 1; bossCrack(0, gy, R*2.2, u, '#7acdf3'); ctx.globalAlpha = g;
+      for(let i = 0; i < 3; i++){ const a = -2.5 + i*0.85, px = Math.cos(a)*R*1.05, py = -R*0.25 + Math.sin(a)*R*0.8 - 40*u*(0.6 + 0.2*i);
+        ctx.save(); ctx.translate(px, py); ctx.rotate(Math.sin(t*0.06 + i)*0.15 + (i - 1)*0.3);
+        const gl = ctx.createRadialGradient(0, 0, 4, 0, 0, 44); gl.addColorStop(0, 'rgba(160,225,255,0.55)'); gl.addColorStop(1, 'rgba(122,205,243,0)'); ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(0, 0, 44, 0, 7); ctx.fill();
+        sixSlab(ctx, 26*g); ctx.restore(); }
+    } else if(kind === 'sixkick' && s._tn && s._tn.moved){   // one leg back and the stone boot growing on the foot
+      ctx.globalAlpha = 1; const bg = growK(e - s._tn.at + 1);
+      ctx.save(); ctx.translate(-d*R*0.5, R*0.62); ctx.rotate(-d*0.5); sixBoot(ctx, 0.75*bg); ctx.restore();
+    }
+  }
+  if(s._sx && s._sx.k === 'slap' && !s._sx.back && s._sx.bh > 0){   // the backhand: the other hand lights while she turns
+    const q = growK(s._sx.bh), gr = ctx.createRadialGradient(-d*R, -R*0.1, 2, -d*R, -R*0.1, 30*q); gr.addColorStop(0, 'rgba(210,245,255,0.9)'); gr.addColorStop(1, 'rgba(122,205,243,0)');
+    ctx.globalAlpha = 1; ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(-d*R, -R*0.1, 30*q, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+  if(sixDazed(s)) ctx.rotate(Math.sin(t*0.35)*0.1);   // dazed: she sways, stars over her head (algExpose)
+  const k = R/s.r; if(k < 0.999) ctx.scale(k, k);   // the art keeps one size inside the bubble (her hit box is the bubble's)
+}
+function sixSlab(c, r){ c.fillStyle = '#9fa9bd'; c.strokeStyle = '#2a2f3d'; c.lineWidth = 2.5; c.beginPath(); c.moveTo(-r, -r*0.55); c.lineTo(-r*0.35, -r); c.lineTo(r*0.85, -r*0.7); c.lineTo(r, r*0.3); c.lineTo(r*0.2, r*0.95); c.lineTo(-r*0.8, r*0.7); c.closePath(); c.fill(); c.stroke();
+  c.strokeStyle = 'rgba(40,46,62,0.7)'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(-r*0.35, -r*0.9); c.lineTo(0, 0); c.lineTo(r*0.6, r*0.4); c.stroke(); c.fillStyle = 'rgba(255,255,255,0.25)'; c.beginPath(); c.moveTo(-r*0.85, -r*0.45); c.lineTo(-r*0.3, -r*0.85); c.lineTo(0, -r*0.5); c.closePath(); c.fill(); }
+function sixBoot(c, sc){   // the Stone-O-Boot: a rounded grey stone boot with cracks, the toe along +x
+  c.save(); c.scale(sc, sc); c.fillStyle = '#9aa2b4'; c.strokeStyle = '#2a2f3d'; c.lineWidth = 4; c.lineJoin = 'round';
+  c.beginPath(); c.moveTo(-26, -52); c.lineTo(14, -52); c.lineTo(16, -14); c.quadraticCurveTo(58, -12, 60, 14); c.lineTo(60, 26); c.lineTo(-30, 26); c.closePath(); c.fill(); c.stroke();
+  c.strokeStyle = 'rgba(40,46,62,0.7)'; c.lineWidth = 2; c.beginPath(); c.moveTo(-8, -50); c.lineTo(-2, -28); c.lineTo(-12, -10); c.moveTo(34, 2); c.lineTo(42, 14); c.stroke();
+  c.fillStyle = 'rgba(255,255,255,0.22)'; c.fillRect(-22, -48, 8, 30); c.restore();
+}
+function sixWobble(c, R, a0, dentA, dent){
+  c.beginPath(); const t = hazardT;
+  for(let i = 0; i <= 40; i++){ const a = i/40*Math.PI*2, w = 1 + 0.02*Math.sin(t*0.13 + a*3) - (dent > 0 ? dent*Math.pow(Math.max(0, Math.cos(a - dentA)), 3) : 0), x = Math.cos(a)*R*w, y = Math.sin(a)*R*w; if(i) c.lineTo(x, y); else c.moveTo(x, y); }
+  c.closePath();
+}
+function sixBubbleDraw(s){
+  const Z = sixHz(s), b = Z.bb, t = hazardT; if(!b) return;
+  if(!(b[0] > 0)){   // the pop: a ring of shine and droplets, drawn from the clock
+    const u = (t - b[2])/24; if(!(b[2] > 0) || u < 0 || u > 1) return;
+    const R0 = s._baseR*SIX.bubK;
+    ctx.save(); ctx.translate(s.x, s.y); ctx.strokeStyle = 'rgba(255,255,255,' + (0.8*(1 - u)) + ')'; ctx.lineWidth = 3*(1 - u) + 1; ctx.beginPath(); ctx.arc(0, 0, R0*(1 + 0.45*u), 0, 7); ctx.stroke();
+    ctx.fillStyle = 'rgba(190,235,255,' + (0.9*(1 - u)) + ')'; for(let i = 0; i < 14; i++){ const a = i*0.449 + 0.3, dd = R0*(0.9 + 0.9*u + (i % 3)*0.12); ctx.beginPath(); ctx.arc(Math.cos(a)*dd, Math.sin(a)*dd + 14*u*u, 5*(1 - u) + 1, 0, 7); ctx.fill(); }
+    ctx.restore(); return;
+  }
+  const g = growK(t - b[3] + 1); if(!(g > 0)) return;
+  const q = b[0]/b[1], R = s._baseR*SIX.bubK*(0.86 + 0.14*q)*g, dusk = Z.p2 != null && b[3] >= Z.p2, rp = Z.rp, ago = rp ? t - rp[1] : 99, hue = (t*1.6) % 360;
+  ctx.save(); ctx.translate(s.x, s.y);
+  ctx.globalAlpha = (0.55 + 0.45*q)*((q < 0.25 && ((t >> 1) & 1)) ? 0.5 : 1);
+  const gr = ctx.createRadialGradient(-R*0.3, -R*0.35, R*0.1, 0, 0, R); gr.addColorStop(0, 'rgba(255,255,255,0.06)'); gr.addColorStop(0.72, dusk ? 'rgba(255,170,190,0.16)' : 'rgba(150,220,255,0.16)'); gr.addColorStop(1, 'rgba(255,255,255,0.4)');
+  ctx.fillStyle = gr; sixWobble(ctx, R, 0, rp ? rp[0] : 0, ago < 24 ? 0.07*(1 - ago/24)*Math.cos(ago*0.9) : 0); ctx.fill();
+  ctx.lineWidth = 3; for(let i = 0; i < 6; i++){ ctx.strokeStyle = 'hsla(' + Math.round(hue + i*60) + ',90%,' + (dusk ? 78 : 72) + '%,0.8)'; ctx.beginPath(); ctx.arc(0, 0, R*(1 + 0.012*Math.sin(t*0.13 + i*1.7)), i*1.047 + t*0.01, i*1.047 + 1.047 + t*0.01); ctx.stroke(); }
+  ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.beginPath(); ctx.ellipse(-R*0.45, -R*0.5, R*0.2, R*0.1, -0.7, 0, 7); ctx.fill(); ctx.beginPath(); ctx.ellipse(R*0.5, R*0.45, R*0.08, R*0.05, -0.7, 0, 7); ctx.fill();
+  ctx.restore();
+}
+function sixRing(x, y, age, life, rx){
+  if(age < 0 || age > life) return; const u = age/life;
+  ctx.save(); ctx.strokeStyle = 'rgba(122,205,243,' + (0.9*(1 - u)) + ')'; ctx.lineWidth = 4*(1 - u) + 1; ctx.beginPath(); ctx.ellipse(x, y - 3, rx*(0.4 + 0.8*u), rx*0.18*(0.4 + 0.8*u), 0, 0, 7); ctx.stroke(); ctx.restore();
+}
+function sixFx(s){
+  if(!(s.hp > 0)) return;
+  const Z = sixHz(s), t = hazardT, gy = groundY();
+  if(sixIntro(s)){ const u = (t - Z.in)/SIX.introF; sixPile(WW*0.5, gy, 190, growK(t - Z.in + 1), Math.sin(t*1.7)*3*(0.4 + u)); if(t % 7 === 0) puff(WW*0.5 + (Math.random() - 0.5)*120, gy - 40, SIX_LEAF[(t >> 3) % 5], 4); }
+  sixBubbleDraw(s);
+  if(Z.kr){ const K = Z.kr; sixRing(K[0], K[3], t - K[4], 22, 56); sixRing(K[2], K[3], t - K[4] - 8, 34, 64); }
+  const X = s._sx;
+  if(X && X.k === 'kick'){   // the boot's swing, low to high, a blue afterimage behind it, then it lingers and crumbles
+    const K = SIX.kick, tt = Math.min(X.t, K.swing), b = sixBootPos(s, X, tt), fade = X.t > K.swing ? 1 - (X.t - K.swing)/K.linger : 1;
+    ctx.save(); for(let j = 3; j >= 1; j--){ const q = sixBootPos(s, X, Math.max(0, tt - j*1.5)); ctx.globalAlpha = 0.16*fade*(4 - j); ctx.fillStyle = '#7acdf3'; ctx.beginPath(); ctx.arc(q.x, q.y, K.r*0.8, 0, 7); ctx.fill(); }
+    ctx.globalAlpha = Math.max(0, fade); ctx.translate(b.x, b.y); ctx.rotate(X.dir > 0 ? b.a + 0.4 : Math.PI - b.a - 0.4); sixBoot(ctx, 0.8 + (X.t > K.swing ? 0.1*(X.t - K.swing)/K.linger : 0)); ctx.restore();
+  }
+}
+// her shots: soap bubbles, the heap of leaves, the stretched arm, the falling slab, and the ending's scene (a delayed carrier drawn from the clock)
+function sixShotDraw(pr){
+  const k = pr.six; if(!k) return false;
+  const t = hazardT;
+  if(k === 'end'){ sixEndDraw(pr); return true; }
+  if(pr.delay > 0 && k !== 'heap') return true;
+  if(k === 'bub'){
+    const a = Math.min(1, pr.life/12), hue = (t*2 + pr.x*0.3) % 360;
+    ctx.save(); ctx.translate(pr.x, pr.y); ctx.globalAlpha = a; const gr = ctx.createRadialGradient(-pr.r*0.3, -pr.r*0.3, 2, 0, 0, pr.r); gr.addColorStop(0, 'rgba(255,255,255,0.35)'); gr.addColorStop(0.7, 'rgba(160,225,255,0.22)'); gr.addColorStop(1, 'rgba(255,255,255,0.5)');
+    ctx.fillStyle = gr; sixWobble(ctx, pr.r, 0, 0, 0); ctx.fill(); ctx.strokeStyle = 'hsla(' + Math.round(hue) + ',90%,72%,0.85)'; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.ellipse(-pr.r*0.4, -pr.r*0.45, pr.r*0.2, pr.r*0.1, -0.7, 0, 7); ctx.fill(); ctx.restore(); return true;
+  }
+  if(k === 'heap'){
+    const grown = pr.delay > 0 ? growK(SIX.rake.grow - pr.delay + 1)*0.6 : growK(t - (pr._born == null ? (pr._born = t) : pr._born) + 1), fade = Math.min(1, pr.life/10), sc = Math.max(0.05, grown)*fade, w = pr.r*1.5, h = SIX.rake.tall;
+    ctx.save(); ctx.translate(pr.x, groundY()); ctx.globalAlpha = fade;
+    for(let i = 0; i < 16; i++){ const a = i*2.399, rr = ((i*29) % 100)/100; sixLeaf(ctx, Math.cos(a)*w*rr*sc + Math.sin(t*0.3 + i)*2, -Math.abs(Math.sin(a*1.3))*h*0.85*sc*(1 - rr*0.4) - 6*sc, (13 + (i % 3)*3)*sc, t*0.15*(i % 2 ? 1 : -1) + i, SIX_LEAF[i % 5]); }
+    ctx.restore(); return true;
+  }
+  if(k === 'hand'){
+    const s = algBoss(), dir = Math.sign(pr.vx || 1) * (pr.retract === false ? -1 : 1), sx = s ? s.x + (pr.armX0 > s.x ? 1 : -1)*s._baseR*0.35 : pr.armX0, sy = s ? s.y - s._baseR*0.05 : pr.armY0;
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const mx = (sx + pr.x)/2, my = (sy + pr.y)/2 + Math.sin(t*0.5)*3;
+    ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 17; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.quadraticCurveTo(mx, my, pr.x, pr.y); ctx.stroke();
+    ctx.strokeStyle = '#7acdf3'; ctx.lineWidth = 11; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.quadraticCurveTo(mx, my, pr.x, pr.y); ctx.stroke();
+    ctx.fillStyle = '#7acdf3'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(pr.x, pr.y, pr.r*0.8, 0, 7); ctx.fill(); ctx.stroke();
+    for(let i = -1; i <= 1; i++){ ctx.beginPath(); ctx.ellipse(pr.x + Math.sign(pr.armX0 > pr.x ? -1 : 1)*0, pr.y + i*pr.r*0.5, pr.r*0.3, pr.r*0.17, 0, 0, 7); ctx.fill(); ctx.stroke(); }
+    ctx.restore(); return true;
+  }
+  if(k === 'rock'){ ctx.save(); ctx.translate(pr.x, pr.y); ctx.rotate(pr.y*0.012); sixSlab(ctx, pr.r); ctx.restore(); return true; }
+  return false;
+}
+function sixBody(s, R, body, flash){   // a drawn Six until her renders load: the Water Blue 6 with a point on top, two eyes, two fangs, Sky Blue limbs
+  const r = s._baseR || R;
+  ctx.fillStyle = flash ? '#fff' : '#7acdf3'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4;
+  for(const sx of [-1, 1]){ ctx.beginPath(); ctx.ellipse(sx*r*0.95, r*0.1, r*0.2, r*0.34, sx*0.4, 0, 7); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.ellipse(sx*r*0.38, r*0.86, r*0.2, r*0.14, 0, 0, 7); ctx.fill(); ctx.stroke(); }
+  ctx.fillStyle = body; ctx.beginPath(); ctx.arc(0, 0, r*0.82, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-r*0.35, -r*0.62); ctx.lineTo(r*0.05, -r*1.15); ctx.lineTo(r*0.38, -r*0.62); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#fff'; for(const sx of [-1, 1]){ ctx.beginPath(); ctx.arc(sx*r*0.3, -r*0.12, r*0.17, 0, 7); ctx.fill(); ctx.stroke(); }
+  ctx.fillStyle = '#1c1c1c'; for(const sx of [-1, 1]){ ctx.beginPath(); ctx.arc(sx*r*0.3 + (s.face < 0 ? -1 : 1)*r*0.04, -r*0.1, r*0.07, 0, 7); ctx.fill(); }
+  ctx.strokeStyle = '#1c1c1c'; ctx.beginPath(); ctx.arc(0, r*0.25, r*0.3, 0.2, Math.PI - 0.2); ctx.stroke(); ctx.fillStyle = '#fff'; for(const sx of [-1, 1]){ ctx.beginPath(); ctx.moveTo(sx*r*0.2, r*0.42); ctx.lineTo(sx*r*0.28, r*0.58); ctx.lineTo(sx*r*0.1, r*0.5); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+  return true;
+}
+// ---- her ending: the glow on her hands flickers out, her render fades to the pale one, she sways, the leaves of the fight sweep into a pile behind her and she falls backwards into it: "Yay." A lone bubble rises from the pile and pops.
+function sixEndSweep(b){ projectiles = projectiles.filter(p => !p.six); if(b){ b._sx = null; b._tn = null; } }
+function sixEndBegin(b){
+  addProj({ owner:-2, ownerObj:{ team:-1, idx:-2 }, x:b.x, y:-5000, vx:0, vy:0, r:0, dmg:0, kb:0, grav:false, color:b.color, life:1, delay:SIX.end.total + 1, noAim:true,
+    six:'end', algShot:'six', shape:'sixend', et0:hazardT, ex:Math.round(b.x), ey:Math.round(b.y), ef:b.face < 0 ? -1 : 1, er:Math.round(b._baseR || b.r), ep:sixPh(b) });
+  banner('Yay.', 1800, 'boss');
+}
+function sixSprite(c, key, R, face, a){
+  const im = bossImage(key); if(!im) return false;
+  const ar = im.naturalWidth/im.naturalHeight, box = R*2.15; let dh = box, dw = box*ar; if(dw > box*1.25){ dw = box*1.25; dh = dw/ar; }
+  c.save(); c.globalAlpha *= a; if(face < 0) c.scale(-1, 1); c.drawImage(im, -dw/2, -dh/2, dw, dh); c.restore(); return true;
+}
+function sixEndDraw(pr){
+  const E = SIX.end, u = hazardT - pr.et0, gy = groundY(); if(!(u >= 0) || u > E.total) return;
+  const R = pr.er, f = pr.ef, px = pr.ex - f*R*1.5, fall = clamp((u - 62)/34, 0, 1), fadeK = clamp((u - 10)/30, 0, 1);
+  const pk = clamp((u - 8)/60, 0, 1);
+  if(pk > 0){   // the leaves of the fight sweep together from both sides
+    ctx.save(); for(let i = 0; i < 22; i++){ const sd = i % 2 ? 1 : -1, v = clamp(pk*1.4 - (i % 5)*0.08, 0, 1), x0 = px + sd*(260 + (i*47) % 200), x = x0 + (px + Math.cos(i*2.1)*40 - x0)*v; sixLeaf(ctx, x, gy - 8 - Math.sin(v*Math.PI)*30, 11, i + u*0.2, SIX_LEAF[i % 5]); } ctx.restore();
+    sixPile(px, gy, 200, Math.max(0.2, pk), 0);
+  }
+  const rest = pr.ey, tx = pr.ex + (px - pr.ex)*fall, ty = rest + (gy - 30 - rest)*fall*fall, rot = -f*fall*1.45;
+  ctx.save(); ctx.translate(tx, ty); ctx.rotate(rot + Math.sin(u*0.2)*0.07*(1 - fall)*fadeK);
+  if(!sixSprite(ctx, pr.ep >= 2 ? 'sixmad' : 'six', R, f, 1 - fadeK)){ ctx.fillStyle = '#7acdf3'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.globalAlpha = 1 - fadeK; ctx.beginPath(); ctx.arc(0, 0, R*0.8, 0, 7); ctx.fill(); ctx.stroke(); }
+  if(!sixSprite(ctx, 'sixpowerless', R, f, fadeK)){ ctx.fillStyle = '#a8d4ee'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.globalAlpha = fadeK; ctx.beginPath(); ctx.arc(0, 0, R*0.8, 0, 7); ctx.fill(); ctx.stroke(); }
+  ctx.restore();
+  if(u > 96){   // one lone bubble drifts up from the pile and pops
+    const v = (u - 96)/30; ctx.save();
+    if(v < 0.85){ const bx = px + Math.sin(v*6)*10, by = gy - 70 - v*130; ctx.fillStyle = 'rgba(190,235,255,0.4)'; ctx.strokeStyle = 'rgba(150,215,255,0.9)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(bx, by, 14, 0, 7); ctx.fill(); ctx.stroke(); }
+    else { const w = (v - 0.85)/0.15, bx = px + Math.sin(0.85*6)*10, by = gy - 70 - 0.85*130; ctx.strokeStyle = 'rgba(255,255,255,' + (0.8*(1 - w)) + ')'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(bx, by, 14 + 14*w, 0, 7); ctx.stroke(); }
+    ctx.restore();
+  }
+}
+BOSS_ENDINGS.six = { sweep: sixEndSweep, begin: sixEndBegin, holdMs: SIX.end.hold };
+// ---- the Equation Playground at golden hour: a blue afternoon fading to gold, autumn grass with scattered leaves, a tree on the left whose low branch is the left ledge, the house Two built on the right whose roof is
+// the right ledge, a pale cracked Moon over it all, leaf piles on the floor and leaves drifting down; in phase 2 the sun sets (90 frames) and the sky turns rose. No hazard.
+BOSS_ARENA_SKY.eqplayground = ['#8fcff0', '#f6d9a0'];
+BOSS_ARENA_GROUND.eqplayground = { fill:'#8d7a3b', line:'#4a3b14', pattern:function(c, gy, x0, x1, bottom){
+  for(let i = 0, n = Math.ceil((x1 - x0)/26); i < n; i++){ const x = x0 + ((i*97.3) % (x1 - x0)), y = gy + 8 + (i*31) % Math.max(20, Math.min(70, bottom - gy - 8)); sixLeaf(c, x, y, 8 + (i % 3)*2, i*0.7, SIX_LEAF[i % 5]); }
+} };
+function sixWorld(fn){ ctx.save(); const z = viewZoom(); ctx.translate(W/2, H/2); ctx.scale(z, z); ctx.translate(-W/2, -H/2); ctx.translate(-camX, -camY); try{ fn(); } finally { ctx.restore(); } }
+function sixDecor(s, key){
+  if(key !== 'eqplayground') return;
+  const Z = sixHz(s), t = hazardT, dusk = Z.p2 != null ? clamp((t - Z.p2)/90, 0, 1) : 0, gy = groundY();
+  if(dusk > 0){ const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, 'rgba(70,40,110,' + 0.5*dusk + ')'); g.addColorStop(1, 'rgba(240,110,90,' + 0.42*dusk + ')'); ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40); }
+  ctx.save();   // the Moon: pale in the day, one crack, parallax
+  const mx = W*0.8 - camX*0.04, my = H*0.2; ctx.fillStyle = dusk > 0 ? '#f1ecf7' : '#eceaf4'; ctx.strokeStyle = 'rgba(120,110,140,0.6)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(mx, my, 48, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(mx - 14, my - 46); ctx.lineTo(mx - 4, my - 20); ctx.lineTo(mx - 20, my - 2); ctx.lineTo(mx - 8, my + 24); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.7)'; for(let i = 0; i < 3; i++){ const cx = ((i*430 + t*0.15 - camX*0.1) % (W + 300) + W + 300) % (W + 300) - 150; ctx.beginPath(); ctx.ellipse(cx, 70 + i*55, 62, 20, 0, 0, 7); ctx.ellipse(cx + 34, 62 + i*55, 40, 18, 0, 0, 7); ctx.fill(); }
+  ctx.restore();
+  sixWorld(() => {
+    const tx = WW*0.2, hx = WW*0.8, ly = gy - 144;
+    ctx.fillStyle = '#6a4a2a'; ctx.strokeStyle = '#2e1f10'; ctx.lineWidth = 4; ctx.fillRect(tx - 34, gy - 330, 68, 330); ctx.strokeRect(tx - 34, gy - 330, 68, 330);   // the tree, and its low branch at the ledge's height
+    ctx.fillRect(tx - 96, ly + 12, 140, 18); ctx.strokeRect(tx - 96, ly + 12, 140, 18);
+    for(const [dx, dy, r, col] of [[-70, -400, 110, '#d8782b'], [60, -420, 100, '#e8b83a'], [-4, -480, 96, '#c2432a'], [-120, -330, 70, '#e08a2e']]){ ctx.fillStyle = col; ctx.beginPath(); ctx.arc(tx + dx, gy + dy, r, 0, 7); ctx.fill(); ctx.stroke(); }
+    ctx.fillStyle = '#e9d9b6'; ctx.fillRect(hx - 90, ly - 4 - 120, 180, 120 + 4 + 144); ctx.strokeRect(hx - 90, ly - 124, 180, 268);   // the house: a box, a roof that is the ledge, a round window, a shut door
+    ctx.fillStyle = '#b5523a'; ctx.beginPath(); ctx.moveTo(hx - 118, ly - 4); ctx.lineTo(hx, ly - 96); ctx.lineTo(hx + 118, ly - 4); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#a6d6f0'; ctx.beginPath(); ctx.arc(hx, ly + 34, 20, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#8a5a34'; ctx.fillRect(hx - 24, gy - 86, 48, 86); ctx.strokeRect(hx - 24, gy - 86, 48, 86);
+    for(const k of [0.06, 0.36, 0.5, 0.64, 0.94]) sixPile(WW*k, gy, 130, 0.8, 0);   // leaf piles on the floor
+  });
+  ctx.save(); for(let i = 0; i < 14; i++){ const x = ((i*173 + t*(0.35 + (i % 3)*0.15)) % (W + 40)), y = ((i*61 + t*(0.5 + (i % 4)*0.2)) % (H + 40)); sixLeaf(ctx, x - 20, y - 20, 7, t*0.05 + i, SIX_LEAF[i % 5]); } ctx.restore();   // leaves drifting down (a pure function of the clock)
+}
 // @boss:six:end algcode
 
 // @boss:zero:begin algcode
