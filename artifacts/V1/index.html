@@ -85396,9 +85396,9 @@ const OC_SLOT_OF = { special:'n', neutral:'n', down:'d', up:'u', smash:'s' };   
 // The four types: fixed stats within 6% of the roster's medians (a flavour, not a tier); `ready` is the type whose options exist (the rest are 'coming').
 const OC_TYPES = {
   zoner:     { name:'Zoner',     color:'#4ec9e0', arch:'Zoner',     st:{ run:0.97, air:1.00, jump:1.03, fall:0.96, dmg:1.00, rec:1.00 }, ready:true },
-  grappler:  { name:'Grappler',  color:'#e0663a', arch:'Grappler',  st:{ run:1.00, air:0.97, jump:0.96, fall:1.06, dmg:1.06, rec:1.00 }, ready:true },
+  grappler:  { name:'Grappler',  color:'#e0663a', arch:'Grappler',  st:{ run:1.00, air:0.97, jump:0.96, fall:1.06, dmg:1.00, rec:1.00 }, ready:true },   // (OC CPU AND BALANCE: dmg 1.06 -> 1.00)
   trapper:   { name:'Trapper',   color:'#9a6ee0', arch:'Trapper',   st:{ run:0.95, air:1.00, jump:1.00, fall:1.00, dmg:1.03, rec:1.05 }, ready:true },
-  trickster: { name:'Trickster', color:'#d14fc9', arch:'Trickster', st:{ run:1.06, air:1.05, jump:1.05, fall:0.97, dmg:0.96, rec:1.00 }, ready:true },
+  trickster: { name:'Trickster', color:'#d14fc9', arch:'Trickster', st:{ run:1.04, air:1.05, jump:1.05, fall:0.97, dmg:0.96, rec:1.00 }, ready:true },
 };
 const OC_OPTIONS = {};   // id -> { type, slot, role, name, text, mv | shot | rise | smash | stance | drop, spCd, ai }
 const OC_LISTS = { zoner:{ n:[], d:[], u:[], s:[] }, grappler:{ n:[], d:[], u:[], s:[] }, trapper:{ n:[], d:[], u:[], s:[] }, trickster:{ n:[], d:[], u:[], s:[] } };   // type -> slot -> ids in editor order (the first is the default)
@@ -85474,7 +85474,7 @@ function ocBrainKit(f){
   if(c && c.sig === sig) return c;
   const A = (sl) => (OC_OPTIONS[P[sl]] || {}).ai || {}, n = A('n'), d = A('d'), u = A('u'), sm = A('s'), U = (OC_OPTIONS[P.u] || {}).rise || null;
   const K = Object.assign({}, BRAIN_KIT0, {
-    shot:n.kind === 'shot', shot0:n.kind === 'shot', near:n.kind === 'melee' || n.kind === 'dash', band:n.band || null, spDmg:n.dmg || 0,
+    shot:n.kind === 'shot', shot0:n.kind === 'shot', near:n.kind === 'melee', band:n.band || null, spDmg:n.dmg || 0,   // (OC CPU RULES: a dash row is an escape now, read below, not a hit up close)
     nStance:n.kind === 'stance',
     down:d.kind === 'stance' ? 'stance' : d.kind === 'heal' ? 'heal' : d.kind === 'trap' ? 'trap' : d.kind === 'octrap' ? 'octrap' : 'other', trapLead:d.lead || null,   // (OC TRAPPER: 'octrap' is a mine laid at the feet; `lead` is how far off a foe coming in should be)
     dBand:(d.kind === 'melee' && d.band) || null, dDmg:d.dmg || 0, nTrap:false, trapX:30,
@@ -85482,8 +85482,57 @@ function ocBrainKit(f){
     up:(U && U.hit) ? { kind:'hit', fx:U.hit.fx || 0, off:U.hit.off == null ? -14 : U.hit.off, reach:U.hit.reach || 18 } : null,
     beam:sm.kind === 'beam' ? (sm.len || 0) : 0, smStance:false, smBuff:false, uStance:false, dn:null, sig });
   K.any = K.nStance || K.down === 'stance';
+  K.esc = ocEscapes(P); K.smBand = ocSmashBand(f, sm.kind, (OC_OPTIONS[P.s] || {}).smash);   // (OC CPU RULES)
   f._ocBK = K;
   return K;
+}
+// OC CPU RULES (OC job 3). The escape rows (a back hop, a roll or dash through, a fake-out; the neutral and the down slot) and the smash's band are read off the
+// options' ai rows, only for an OC (brainKit calls ocBrainKit for nobody else). ocBrainFight is called from brainFight at a decision, and returns true if it pressed.
+function ocEscapes(P){
+  const out = [];
+  for(const slot of ['n', 'd']){
+    const a = (OC_OPTIONS[P[slot]] || {}).ai || {};
+    if(a.kind === 'hop' && !a.up) out.push({ slot, back:!!a.back, fwd:false, bait:false });
+    else if(a.kind === 'dash') out.push({ slot, back:!!a.back, fwd:!a.back, bait:!a.back && slot === 'd' });   // (the fake-out: forward and back to where it began, a bait)
+  }
+  return out.length ? out : null;
+}
+// Where the smash lands (centre to centre, from the row's own reach): [near, far, the most the foe may be above or below]. null: no band known (the jab's reach rules).
+function ocSmashBand(f, kind, row){
+  if(!row) return null;
+  const R = smashReach(f, row);
+  switch(kind){
+    case 'plant':   return [0, Math.max(40, R - 14), 40];       // a ring round the body
+    case 'burst':   return [0, (row.rad || 90)*0.85, 44];       // a ring that grows to its radius
+    case 'beam':    return [0, (row.len || 170)*0.8, 24];       // a lane ahead
+    case 'lunge':   return [24, R*0.75, 44];                    // a step and a strike
+    case 'through': return [36, R*0.75, 44];                    // a dash through
+    case 'leap':    return [60, R*0.7, 70];                     // a hop onto the nearest foe
+    case 'reel':    return [40, Math.min(R, 170)*0.9, 44];      // pulls the foe in
+    case 'rain':    return [40, R*0.95, 70];                    // drops on the nearest foe within its seek
+    case 'mine':    return [50, 150, 50];                       // a mine a step ahead, for a foe coming in
+  }
+  return null;
+}
+function ocSmashLands(K, adx, ady){ const b = K.smBand; return !!b && adx >= b[0] && adx <= b[1] && ady < b[2]; }
+function ocBrainFight(f, t, B, L, K, adx, ady, dist, toward, ready, open){
+  const now = hazardT;
+  if(K.esc && ready && f.onground && !(f.hitstun > 0) && !t._isBoss && ady < 60){
+    // a swing seen coming at it, close: a hop back where there is floor behind it, or -- with its back to a wall -- a roll or a dash through to the far side
+    if(adx < 120 && brainSwingTell(f, t, dist)){
+      const wall = (toward > 0 && f.x < 150) || (toward < 0 && f.x > WW - 150);
+      const e = K.esc.find(q => q.back && (!FLOOR_SEGS || groundAt(f.x - toward*70))) || (wall ? K.esc.find(q => q.fwd && !q.bait) : null) || null;
+      if(e && Math.random() < 0.6*L.kit){ brainTap(B, brainFace(e.slot === 'd' ? { special:true, down:true } : { special:true }, toward), 3); B.specAt = now + brainSpecGap(f, L); return true; }
+    }
+    // the fake-out baits a foe coming in at about a swing's distance
+    const bait = K.esc.find(q => q.bait);
+    if(bait && adx > 90 && adx < 170 && Math.random() < 0.2*L.kit){ brainTap(B, brainFace({ special:true, down:true }, toward), 3); B.specAt = now + brainSpecGap(f, L); return true; }
+  }
+  // the smash from where it lands (not only on the jab's reach), often on an opening it saw and now and then without one
+  if(K.smBand && f.onground && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && ocSmashLands(K, adx, ady) && Math.random() < (open ? L.smash : L.smash*0.12)*L.kit){
+    brainTap(B, brainSmash(f, t, toward), 3); B.st = 'smash'; B.until = now + 75; return true;
+  }
+  return false;
 }
 // DEV ENTRY (no menu; the console or the headless harness, until the editor job): ocDevMatch({ type, picks:{n,d,u,s}, rf, name, look, count, cpu })
 // starts a free-for-all of `count` (default 4) vs CPUs with the OC in your seat -- or, with cpu:true, in the first CPU seat, played by the computer.
@@ -85987,7 +86036,7 @@ ocDef('Z-U4', 'zoner', 'u', 'Utility', 'Glide Lamp',     'a modest rise that han
   { rise:{ shape:'hop', power:-10, self:{ jumps:1 }, drop:{ rider:'plain', count:1, dmg:3, kb:1, r:5, vy:5, life:30 } }, ai:{ kind:'hop', up:true, dmg:3 } });
 // NEUTRAL SMASH (SMASH_SPEC-style rows: dmg is the row's, fired at SMASH_DMG_MULT like every smash)
 ocDef('Z-S1', 'zoner', 's', 'Damage',  'Lance Beam',     'a long thin beam straight ahead that floors them',
-  { smash:{ pat:'beam', len:170, wide:16, dmg:16, kb:14, effect:'knockdown', n:30, cost:{ stun:24 }, color:OC_TEAL }, ai:{ kind:'beam', len:170, dmg:16 } });
+  { smash:{ pat:'beam', len:160, wide:16, dmg:13, kb:14, effect:'knockdown', n:24, cost:{ stun:28 }, color:OC_TEAL }, ai:{ kind:'beam', len:160, dmg:13 } });   // (OC CPU AND BALANCE: len 170 -> 160, 16% -> 13%, knockdown 30 -> 24, whiff stun 24 -> 28: the CPU now fires it from its band, 5 a match, and the Zoner's best builds rose to 46-51%)
 ocDef('Z-S2', 'zoner', 's', 'Zoning',  'Star Rain',      'four small stars fall ahead, on the nearest foe when one is near; each slows',
   { smash:{ pat:'rain', count:4, at:44, gap:40, seek:200, r:8, dmg:7, kb:6, effect:'slow', n:60, rider:{ vy:16 }, cost:{ cd:56 }, color:OC_TEAL }, ai:{ kind:'rain', band:[40, 200], dmg:7 } });
 ocDef('Z-S3', 'zoner', 's', 'Escape',  'Light Leap',     'leaps forward and up and hits round the body on landing; the way out of a corner',
@@ -86002,7 +86051,7 @@ Object.assign(ENDLAG_ADD, { 'Z-N1.neutral':22, 'Z-N2.neutral':12, 'Z-D2.down':14
 // THE FINISHER -- LAMP LANCE (OC VIABILITY 2). The smash beam's pattern as a finisher: the wind-up of the no-tell sweep (TELL_ADD, 18 frames: the body gathers
 // and glows), then a thin beam 420 px along the floor line: 16%, floors, launches. The beam is instant, so it is answered by position: jump it, or be off its
 // lane (a band 18 px either side of the body's line). The self-stun the row pays is its end lag. FIN_CD 74.
-const OC_LANCE = { pat:'beam', len:420, wide:18, dmg:16, kb:14, effect:'knockdown', n:30, cost:{ stun:22 }, color:OC_TEAL };
+const OC_LANCE = { pat:'beam', len:420, wide:18, dmg:14.5, kb:14, effect:'knockdown', n:30, cost:{ stun:22 }, color:OC_TEAL };
 ATKSPECIALS.oc_zoner = function(f){ runSmashSpec(f, OC_LANCE); };
 Object.assign(TELL_ADD, { 'oc_zoner.finisher':18 });
 // THE FINAL SMASH -- SUNLAMP. A lamp of light grows over the head (the 14-frame wind); the catch is the lane ahead for 300 px (a foe held where it stood), then three
@@ -86067,7 +86116,7 @@ Object.assign(MOVESETS, {
     fa: { n:'Hammer Fist', d:'swings a fist down over the top ahead; it sends them down a little', pose:'chop', st:9, act:3, end:18, land:12, ac:24,
       boxes:[{ s:MvF(10, 54, -0.9, 0.6, 4, -6), dmg:9, kb:[5, 3], stun:16 }] },
     ba: { n:'Mule Kick', d:'kicks straight back with both heels; the kill aerial', pose:'kickback', st:7, act:3, end:18, land:12, ac:22,
-      boxes:[{ s:MvC(-10, 2, -48, 6, 16), dmg:9.5, kb:[-10.6, -3.5], stun:14 }] },
+      boxes:[{ s:MvC(-10, 2, -48, 6, 16), dmg:9, kb:[-10.2, -3.5], stun:14 }] },
     ua: { n:'Head Toss', d:'butts straight up at whoever is above', pose:'uppercut', st:6, act:3, end:11, land:10, ac:16,
       boxes:[{ s:MvC(0, -8, 2, -50, 16), dmg:6, kb:[0.6, -8.5], stun:24 }] },
     da: { n:'Elbow Drop', d:'drops an elbow straight down under the body; a spike', pose:'slam', st:9, act:4, end:13, land:12, ac:24,
@@ -86090,8 +86139,8 @@ function ocCleanse(f){
 // NEUTRAL SPECIAL
 ocDef('G-N1', 'grappler', 'n', 'Damage',  'Haymaker',       'a wide hook that launches up and out; the Grappler\'s kill punch',
   { mv:{ n:'Haymaker', d:'a wide round hook swung into them; launches up and out', pose:'hook', st:3, act:3, end:24,
-      boxes:[{ s:MvC(10, -4, 54, -4, 14), dmg:13, kb:[11, -6], stun:26 }] },
-    ai:{ kind:'melee', band:[10, 66], dmg:13 } });   // (TELL_ADD 5: a readable 8-frame wind-up, as the design's st 8 (T6))
+      boxes:[{ s:MvC(10, -4, 54, -4, 14), dmg:12, kb:[10.5, -6], stun:26 }] },
+    ai:{ kind:'melee', band:[10, 66], dmg:12 } });   // (TELL_ADD 5: a readable 8-frame wind-up, as the design's st 8 (T6))
 ocDef('G-N2', 'grappler', 'n', 'Zoning',  'Shove Wave',     'a big push all round the body: little damage, a lot of distance',
   { mv:{ n:'Shove Wave', d:'a shove all round the body that pushes them far', pose:'punch', st:7, act:4, end:14,
       boxes:[{ s:MvO(8, 0, 44), dmg:5, kb:[8, -2], stun:18 }] },
@@ -86109,7 +86158,7 @@ ocDef('G-D1', 'grappler', 'd', 'Damage',  'Ground Pound',   'both fists into the
     ai:{ kind:'melee', band:[0, 70], dmg:12 } });   // (TELL_ADD 6: the design's st 10 (T6)) (the band counts the foe's body: the brain walks in to it)
 ocDef('G-D2', 'grappler', 'd', 'Zoning',  'Low Sweep',      'a long low sweep to both sides that floors them; buys the walk in',
   { mv:{ n:'Low Sweep', d:'a low sweep along the floor to both sides; knocks them down', pose:'sweep', st:8, act:3, end:18,
-      boxes:[{ s:MvC(-40, 18, 40, 18, 12), dmg:6, kb:[5, -3], stun:20, fx:(f, t) => smashFx(f, [t], 'knockdown', 30) }] },
+      boxes:[{ s:MvC(-40, 18, 40, 18, 12), dmg:6, kb:[5, -3], stun:20, fx:(f, t) => smashFx(f, [t], 'knockdown', 24) }] },
     ai:{ kind:'melee', band:[0, 80], dmg:6 } });
 ocDef('G-D3', 'grappler', 'd', 'Escape',  'Back Vault',     'a low backward hop with six safe frames; covers ground, not height',
   { mv:{ n:'Back Vault', d:'a low hop backward', pose:'kickback', st:1, act:8, end:8,
@@ -86119,7 +86168,7 @@ ocDef('G-D4', 'grappler', 'd', 'Utility', 'Shrug Off',      'stands thirty frame
   { stance:{ frames:30, end:8, cleanse:true, self:{ healing:11 } }, spCd:180, ai:{ kind:'heal' } });
 // UP SPECIAL
 ocDef('G-U1', 'grappler', 'u', 'Damage',  'Rising Knee',    'a rise whose knee comes out late and knocks them down; rewards the read',
-  { rise:{ shape:'hop', power:-13, hit:{ off:-10, fx:6, reach:22, dmg:[7, 11], band:-0.3, kb:[3, -10], eff:'knockdown', n:30 } }, ai:{ kind:'hop', up:true, dmg:11 } });
+  { rise:{ shape:'hop', power:-13, hit:{ off:-10, fx:6, reach:22, dmg:[7, 11], band:-0.3, kb:[3, -10], eff:'knockdown', n:24 } }, ai:{ kind:'hop', up:true, dmg:11 } });
 ocDef('G-U2', 'grappler', 'u', 'Zoning',  'Shockwave Hop',  'a hop that throws a rock chunk off to either side',
   { rise:{ shape:'hop', power:-11, drop:{ rider:'plain', count:2, spread:4, dmg:5, kb:5, r:8, vy:7, life:40 } }, ai:{ kind:'hop', up:true, dmg:5 } });
 ocDef('G-U3', 'grappler', 'u', 'Escape',  'Wall Spring',    'the highest plain hop there is, eight safe frames, no hit',
@@ -86128,7 +86177,7 @@ ocDef('G-U4', 'grappler', 'u', 'Utility', 'Armoured Climb', 'a rise under eighte
   { rise:{ shape:'hop', power:-12, self:{ armor:18 } }, ai:{ kind:'hop', up:true } });
 // NEUTRAL SMASH (SMASH_SPEC-style rows: dmg is the row's, fired at SMASH_DMG_MULT like every smash)
 ocDef('G-S1', 'grappler', 's', 'Damage',  'Pile Driver',    'both fists into the floor after a rooted wind-up: a big ring that floors them',
-  { smash:{ pat:'plant', wind:8, rad:52, dmg:16, kb:17, effect:'knockdown', n:30, cost:{ stun:26 }, color:OC_EMBER }, ai:{ kind:'plant', dmg:16 } });   // (OC VIABILITY 1: a wider ring, more launch, a little less damage: the opening sat at 48, the yardstick is 36-44)
+  { smash:{ pat:'plant', wind:10, rad:52, dmg:13, kb:16, effect:'knockdown', n:30, cost:{ stun:30 }, color:OC_EMBER }, ai:{ kind:'plant', dmg:13 } });   // (OC CPU AND BALANCE: wind 8 -> 10, 16% -> 13%, launch 17 -> 16, whiff stun 26 -> 30: the Grappler's best build sat at 54-69% once the CPU used the smash from its band)   // (OC VIABILITY 1: a wider ring, more launch, a little less damage: the opening sat at 48, the yardstick is 36-44)
 ocDef('G-S2', 'grappler', 's', 'Zoning',  'Shoulder Rush',  'a shoulder charge through the foe that strips armour and stances',
   { smash:{ pat:'through', dash:10, spd:13, reach:28, dmg:12, kb:10, effect:'strip', n:80, cost:{ stun:22 }, color:OC_EMBER }, ai:{ kind:'through', dmg:12 } });
 ocDef('G-S3', 'grappler', 's', 'Escape',  'Vault Slam',     'a high leap forward that lands on them; the Grappler\'s way over a wall of shots',
@@ -86143,7 +86192,7 @@ Object.assign(ENDLAG_ADD, { 'G-S1.smash':16, 'G-S2.smash':17, 'G-S3.smash':16, '
 // THE FINISHER -- LARIAT DRIVE (OC VIABILITY 2). The smash plant's pattern as a finisher: the wind-up of the no-tell sweep (12 frames), then rooted for the plant's
 // own wind (10), a huge ring (body + 64 px) slams the floor: 18%, floors, a big launch. It is answered by position: step out of the ring while the body winds
 // up and plants, or jump it. The self-stun the row pays is its end lag. FIN_CD 74.
-const OC_LARIAT = { pat:'plant', wind:10, rad:64, dmg:18, kb:16, effect:'knockdown', n:30, cost:{ stun:24 }, color:OC_EMBER };
+const OC_LARIAT = { pat:'plant', wind:10, rad:58, dmg:16, kb:16, effect:'knockdown', n:30, cost:{ stun:24 }, color:OC_EMBER };
 ATKSPECIALS.oc_grappler = function(f){ runSmashSpec(f, OC_LARIAT); };
 Object.assign(TELL_ADD, { 'oc_grappler.finisher':12 });
 // THE FINAL SMASH -- PILE DRIVER SUPREME. The catch is a box 96 px in front (the one nearest foe; with nobody there it is spent at once). Held through the 14-frame
@@ -86264,8 +86313,8 @@ ocDef('T-D3', 'trapper', 'd', 'Escape',  'Trapdoor Hop',   'a hop up and back th
 ocDef('T-D4', 'trapper', 'd', 'Utility', 'Lie Low',        'crouches thirty frames in smoke, healing about 2%; the smoke hides the next tell',
   { stance:{ frames:30, end:8, self:{ cloud:120, healing:11 } }, spCd:200, ai:{ kind:'heal' } });
 // UP SPECIAL
-ocDef('T-U1', 'trapper', 'u', 'Damage',  'Spring Snap',    'a rise whose hit roots the foe where it catches them; short reach, heavy',
-  { rise:{ shape:'hop', power:-12, hit:{ off:-8, fx:4, reach:24, dmg:[8, 12], band:-0.5, kb:[4, -9], eff:'root', n:40 } }, ai:{ kind:'hop', up:true, dmg:12 } });
+ocDef('T-U1', 'trapper', 'u', 'Damage',  'Spring Snap',    'a rise whose hit launches them high and roots them where they land; short reach, heavy',
+  { rise:{ shape:'hop', power:-12, hit:{ off:-8, fx:4, reach:24, dmg:[8, 12], band:-0.5, kb:[3, -12.5], eff:'root', n:40 } }, ai:{ kind:'hop', up:true, dmg:12 } });   // (OC CPU AND BALANCE: kb [4, -9] -> [3, -12.5]: the Trapper had no pick that ends a stock)
 ocDef('T-U2', 'trapper', 'u', 'Zoning',  'Seed Scatter',   'a hop that scatters three rooting seeds below',
   { rise:{ shape:'hop', power:-11, drop:{ rider:'root', count:3, spread:4, dmg:3, kb:1, r:5, vy:6, life:40 } }, ai:{ kind:'hop', up:true, dmg:3 } });
 ocDef('T-U3', 'trapper', 'u', 'Escape',  'Cable Warp',     'a long warp mostly sideways with ten safe frames, no hit: the way back from under a ledge',
@@ -86424,8 +86473,8 @@ ocDef('K-N4', 'trickster', 'n', 'Utility', 'Confetti',       'throws six harmles
   { shot:{ count:6, spread:0.08, vx:7, vy:-3, grav:true, r:4, dmg:1, kb:0, life:45, fxTag:'scramble', fxN:30 }, ai:{ kind:'shot', band:[50, 200], dmg:1 } });   // (TELL_ADD 8: the design's st 8)
 // DOWN SPECIAL
 ocDef('K-D1', 'trickster', 'd', 'Damage',  'Heel Spin',      'a grounded spin that hits once all round and launches diagonally',
-  { mv:{ n:'Heel Spin', d:'spins on the heel and kicks once all round; launches up and away', pose:'spin', st:2, act:6, end:20,
-      boxes:[{ s:MvO(0, 0, 40), dmg:10, kb:[7, -7], stun:22 }] },
+  { mv:{ n:'Heel Spin', d:'spins on the heel and kicks once all round; launches up and away', pose:'spin', st:2, act:6, end:22,
+      boxes:[{ s:MvO(0, 0, 40), dmg:10, kb:[8.5, -8], stun:22 }] },   // (OC CPU AND BALANCE: kb [7, -7] / end 20 -> [8.5, -8] / 22: the Trickster had no pick that ends a stock; a longer whiff pays for it)
     ai:{ kind:'melee', band:[0, 70], dmg:10 } });   // (TELL_ADD 5, OC VIABILITY 1: first damage at 7, over the 6-frame floor; the band counts the foe's body, as the Grappler's and the Trapper's)
 ocDef('K-D2', 'trickster', 'd', 'Zoning',  'Marble Spill',   'spills four marbles that bounce away along the floor: a rolling carpet of small hits',
   { drop:{ rider:'bounce', count:4, spread:5, dmg:3, kb:2, r:4, vy:4, life:60 }, ai:{ kind:'melee', band:[50, 150], dmg:3 } });   // (TELL_ADD 8, ENDLAG_ADD 12: the design's)
@@ -86446,7 +86495,7 @@ ocDef('K-U4', 'trickster', 'u', 'Utility', 'Spring Heel',    'a rise that hands 
   { rise:{ shape:'hop', power:-13, self:{ jumps:1 }, drop:{ rider:'puddle', count:1, dmg:1, kb:1, r:6, vy:4, life:40 } }, ai:{ kind:'hop', up:true } });   // (the design's leave:'puddle' is a plunge's word; a hop leaves its slick as a drop, as the Trapper's seeds)
 // NEUTRAL SMASH (SMASH_SPEC-style rows: dmg is the row's, fired at SMASH_DMG_MULT like every smash)
 ocDef('K-S1', 'trickster', 's', 'Damage',  'Pirouette Kick', 'a step and a spinning kick that floors them; the lightest-costed big hit',
-  { smash:{ pat:'lunge', step:5, reach:34, fx:40, dmg:16, kb:13, effect:'knockdown', n:30, cost:{ stun:22 }, color:OC_MAGENTA }, ai:{ kind:'lunge', dmg:16 } });   // (the design's n:90 knockdown is past the 45 lock; a knockdown asks 30)
+  { smash:{ pat:'lunge', step:5, reach:34, fx:40, dmg:14.5, kb:13, effect:'knockdown', n:30, cost:{ stun:22 }, color:OC_MAGENTA }, ai:{ kind:'lunge', dmg:14.5 } });   // (OC CPU AND BALANCE: 16% -> 14.5%)   // (the design's n:90 knockdown is past the 45 lock; a knockdown asks 30)
 ocDef('K-S2', 'trickster', 's', 'Zoning',  'Card Spray',     'five cards fall in a fan on the nearest foe, or ahead of you when none is near; each scrambles',
   { smash:{ pat:'rain', count:5, at:26, gap:34, seek:220, r:6, dmg:6, kb:5, effect:'scramble', n:45, rider:{ vy:16 }, cost:{ cd:58 }, color:OC_MAGENTA }, ai:{ kind:'rain', band:[30, 220], dmg:6 } });
 ocDef('K-S3', 'trickster', 's', 'Escape',  'Dash Through',   'the fastest dash through the foe: pure speed and distance',
@@ -86463,7 +86512,7 @@ Object.assign(ENDLAG_ADD, { 'K-N1.neutral':20, 'K-N2.neutral':12, 'K-N4.neutral'
 // three dashes through whatever is ahead, 8 frames each at 17 px a frame (136 px), a beat apart; after each the Trickster turns round and goes back through. Every
 // dash cuts a foe on its line once for 6% (the first two barely push, so the next finds them), the third knocks them away. 18% to a foe who stays; open for a
 // beat at the end (longer on a miss). A dash stops short of a wall or a ledge. A hit on the Trickster in the wind-up or the dashes ends it. Jump the line, or roll past.
-const OC_CUTS = { lean:FIN_STARTUP, n:3, dash:8, spd:17, r:22, rest:6, dmg:6, kb:[[0.5, -0.6], [0.5, -0.6], [12, -8]], open:10, whiff:16 };
+const OC_CUTS = { lean:FIN_STARTUP, n:3, dash:8, spd:17, r:22, rest:6, dmg:5, kb:[[0.5, -0.6], [0.5, -0.6], [12, -8]], open:10, whiff:16 };
 function finOcCuts(f){
   finxAdd(f, 'occuts', { ph:'lean', y0:f.y, x0:f.x, n:0, hit:[], hits:0 });
   fxLock(f, OC_CUTS.lean + 2); armAtk(f, OC_CUTS.lean + 4, 'cast', mvId(f, 'finisher'));
@@ -100190,7 +100239,7 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   // BRAIN_SPEC hit of 10% or more) or an up-special that hits hard (Bow's Chair Slam, 13% and a stun)
   const open = !t._isBoss && ((t.hitstun > 10) || (t.frozen > 0) || (t.atkCd > 12 && t._atkAnim > 0) || (t.smashHold > 0));
   if(open && f.onground && Math.random() < L.smash){
-    const smOk = brainInReach(f, t, 20) && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && !K.smStance && !K.smBuff;
+    const smOk = (K.smBand ? ocSmashLands(K, adx, ady) : brainInReach(f, t, 20)) && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && !K.smStance && !K.smBuff;
     const alt = f.spCd <= 0 && !(f._aiSpGap > 0) && (!smOk || Math.random() < 0.4) && Math.random() < L.kit;
     if(alt && K.near && K.spDmg >= 10 && !K.nStance && !brainSpent(f) && brainLands(K, adx) && ady < 44){ brainTap(B, brainFace({ special:true }, toward), 3); B.specAt = now + brainSpecGap(f, L); return; }
     if(alt && K.upDmg >= 10 && brainUpLands(f, K, t)){ brainTap(B, { special:true, up:true }, 3); B.specAt = now + brainSpecGap(f, L); return; }
@@ -100208,6 +100257,7 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   if(ready && f.onground && !t._isBoss && (dy < -24 || (K.up && K.up.kind === 'slam')) && brainUpLands(f, K, t) && Math.random() < L.upAtk){ brainTap(B, { special:true, up:true }, 3); B.specAt = now + brainSpecGap(f, L); return; }
   // BOX: a shot she has packed goes back at the foe from range (she is no shooter without one)
   if(K.catch && f._packed && ready && !t._isBoss && ady < 50 && adx > brainReach(f) && adx < 420 && Math.random() < 0.5){ brainTap(B, brainFace({ special:true }, toward), 3); B.specAt = now + brainSpecGap(f, L); return; }
+  if(f.oc && ocBrainFight(f, t, B, L, K, adx, ady, dist, toward, ready, open)) return;   // OC CPU RULES: an escape from a swing seen, the smash from its own band
   if(inReach || (Math.random() < L.miss && brainInReach(f, t, 30))){   // (a swing from too far is one of its mistakes)
     // a grab instead, now and then (more against a foe it sees in a stance)
     const stanced = (t.countering > 0 || t.armor > 0 || t.reflecting > 0), shielded = t._zsOn > 0;   // (a raised bubble: a grab breaks it but stuns the grabber (SHIELD_GRAB_STUN), so no extra liking for it: the plain rate)
