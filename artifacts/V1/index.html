@@ -98477,7 +98477,7 @@ const ALG_ROSTER = [
 
   // @boss:zero:begin algrow
   { id:'zero', name:'Zero', color:'#c7c7d0', hp:algHp('zero'), big:1.9, attack:'zero', arena:'zerobunker', stationary:false, sprite:'zero', spawn:b=>zrSpawn(b), move:(s,t)=>zrMove(s,t), tick:(s,t)=>zrTick(s,t), tel:(s,t)=>zrTel(s,t), fire:(s,t,id)=>zrFire(s,t,id),
-    gap:s=>ZR.gaps[zrPh(s)-1], telLen:s=>s._tl || 60, phase:(s,ph)=>zrPhase(s,ph), phaseName:(s,ph)=>zrPhaseName(s,ph), body:(s,R,b,f)=>zrBody(s,R,b,f), fx:s=>zrFx(s), decor:(s,k)=>zrDecor(s,k), shot:pr=>zrShotDraw(pr) },   // rush M9-M10: the real fight (1,800 HP); all of it is in his algcode pair
+    gap:s=>zrGap(s), telLen:s=>s._tl || 60, phase:(s,ph)=>zrPhase(s,ph), phaseName:(s,ph)=>zrPhaseName(s,ph), body:(s,R,b,f)=>zrBody(s,R,b,f), fx:s=>zrFx(s), decor:(s,k)=>zrDecor(s,k), shot:pr=>zrShotDraw(pr) },   // rush M9-M10: the real fight (1,800 HP); all of it is in his algcode pair
   // @boss:zero:end algrow
 
   // @boss:x:begin algrow
@@ -116044,14 +116044,17 @@ function sixDecor(s, key){
 // `_hz` holds plain numbers only, and what he draws is a function of it and the clock.
 const ZR = {
   introF:90, firstAtk:100, beatF:20, p2F:90, p3F:110, flustF:90, fizzle:18,
-  gaps:[100, 76, 58], tl:{ zero:60, zrtape:45, zrdiv:55, zrfridge:68, zrfoot:58 },
+  gaps:[72, 54, 40], free:50, combo:{ zero:'zrtape', zrtape:'zrdiv', zrdiv:'zero' }, comboGap:12, tl:{ zero:60, zrtape:45, zrdiv:55, zrfridge:68, zrfoot:58, zrget:40 },
   mid:[0.83, 0.495, 0.165],                        // each phase's midpoint, as a share of max HP: the tier rises there (six tiers, two a phase)
   flee:3.4, stand:300, walk:2.6, giantWalk:1.2, popCool:150, pitch:600,
   march:{ v:7, sp:310, r:18, grow:12, arm:12, dmg:0.8, kb:10, near:140, start:900, offset:155, lines:[[4], [5], [4, 4], [5, 5], [4, 4, 4], [6, 6, 5]] },
   tape:{ n:[4, 5, 6, 6, 7, 8], T:[44, 44, 42, 42, 40, 40], r:18, dmg:0.6, kb:8, comb:150, apex:300, shadow:30, lie:20 },
   div:{ reach:1.6, plus:60, tall:1.7, live:10, rest:24, step:70, stepF:14, lockAt:10, dmg:1, kb:14, dot:{ v:7, r:[18, 18, 26], dmg:0.6, kb:8 }, back:22 },
   fridge:{ doors:[350, 1050, 1750], min:600, max:900, bangs:[16, 38, 58], lockAt:24, v:12.5, flat:0.34, max:1400, thump:14, stun:55, dmg:1, kb:14, door:{ v:14, life:30, r:40, dmg:0.5, kb:12 } },
-  foot:{ w:140, h:110, v:40, fall:18, lockLead:26, plant:30, lift:12, second:28, dmg:1, kb:14, grow:12 },   // (the hit is 140 wide, the drawn foot 220: the model says a 12-frame lock is unfair and 26 + 18 = 44 frames is fair)
+  foot:{ w:110, h:110, v:40, fall:18, lockLead:26, plant:30, lift:12, second:28, dmg:1, kb:14, grow:12 },   // (the hit is 110 wide, the drawn foot 0.55 of its 220: the model says a 12-frame lock is unfair and 26 + 18 = 44 frames is fair)
+  // GET HIM! (phases 2 and 3): a scuffle cloud drops out of a pipe mouth 300+ px from you, rolls along the floor after you (5.4 px/f rising 0.03 a frame to 8.6), skids 24 frames when it overshoots, turns and re-accelerates from 3,
+  // bounces off an end wall, and bursts after its passes (tier 3 one cloud, 4 two from the ends 40 frames apart, 5 two that last through two bounces, 6 three). r 26: low enough to hop with the weakest jump.
+  get:{ v0:5.4, acc:0.03, vmax:7.4, v1:3, skid:24, r:14, n:[1, 2, 2, 3], gap:[0, 70, 55, 50], pass:[2, 2, 2, 2], bounce:[1, 1, 1, 1], life:[300, 300, 330, 330], drop:24, arm:12, burst:40, near:300, far:900, dmg:0.8, kb:10 },
   giant:1.8, end:{ total:170, hold:2800 },
 };
 function zrHz(s){ return s._hz || (s._hz = {}); }
@@ -116060,6 +116063,10 @@ function zrTier(s){ const p = zrPh(s); return 2*(p - 1) + 1 + (s.hp < s.maxHp*ZR
 function zrLiving(){ return fighters.filter(f => !f.dead); }
 function zrLive(f){ return !!f && !f.dead; }
 function zrNear(s){ let b = null, d = 1e9; for(const f of fighters){ if(f.dead) continue; const q = Math.abs(f.x - s.x); if(q < d){ d = q; b = f; } } return b; }
+function zrGap(s){ return s._zcPartner ? ZR.comboGap : ZR.gaps[zrPh(s) - 1]; }   // the rest between moves (30% less than the first build); a combo's lead rests 12 frames
+// A tail: the call's marchers go on walking while his next wind-up starts (phase 2 on, after ZR.free frames); only TAPE TOSS! may follow it (its pair was checked), and the tail keeps its own attack id and hits.
+function zrFree(s){ const X = s._zx; return !!X && X.k === 'call' && !X.done && zrPh(s) >= 2 && X.t >= ZR.free; }
+function zrPark(s){ const X = s._zx; if(X && X.k === 'call' && !X.done){ (s._zt || (s._zt = [])).push(X); s._zx = null; } }
 function zrIntro(s){ const Z = zrHz(s); return Z.in != null && hazardT - Z.in < ZR.introF; }
 function zrBeat(s){ return (zrHz(s).beat || 0) > hazardT; }
 function zrFlust(s){ return (zrHz(s).fl || 0) > hazardT; }
@@ -116106,7 +116113,7 @@ function zrMove(s, tgt){
   const fy = (Z.roll ? gy - s.r*0.9*ZR.fridge.flat : gy - s.r);
   s.y = fy; s.vy = 0;
   if(Z.hid || Z.roll){ s.x = clamp(s.x, 30, WW - 30); return true; }   // in the freezer or rolling: the move holds his place
-  if(zrBeat(s) || t < (Z.still || 0) || s._tel > 0 || s._zx || zrFlust(s) || zrStunned(s)) { s.x = clamp(s.x, s.r*0.5, WW - s.r*0.5); return true; }
+  if(zrBeat(s) || t < (Z.still || 0) || s._tel > 0 || (s._zx && !zrFree(s)) || zrFlust(s) || zrStunned(s)) { s.x = clamp(s.x, s.r*0.5, WW - s.r*0.5); return true; }
   if(tgt){
     const dx = tgt.x - s.x, ad = Math.abs(dx);
     if(ad > 24) s.face = dx > 0 ? 1 : -1;
@@ -116132,6 +116139,9 @@ function zrDoorFor(s, tgt){   // a freezer door 600-900 from you on the side wit
   return best;
 }
 function zrTel(s, tgt){
+  zrPark(s);
+  if(s._zcSkip) s._zcSkip = false;
+  else if(zrPh(s) >= 3 && ZR.combo[s._telKind]){ s._zcN = (s._zcN|0) + 1; if(s._zcN % 2 === 0) s._zcPartner = ZR.combo[s._telKind]; }   // a COMBO: this move, then its partner after a 12-frame rest, each with its own wind-up
   const k = s._telKind, Z = zrHz(s), tl = ZR.tl[k] || 60, tn = s._tn = { k, e0:hazardT, dir:tgt ? (Math.sign(tgt.x - s.x) || s.face || 1) : (s.face || 1) };
   s._tl = tl; s._tel = tl; s.face = tn.dir;
   if(k === 'zero'){ Z.hp0 = s.hp; Z.callT = hazardT; }
@@ -116165,6 +116175,7 @@ function zrTick(s, tgt){
   }
   if(s._tel > 0 && s._tn) zrTelStep(s, tgt, s._tn);
   if(s._zx) zrStep(s, tgt);
+  zrTails(s, tgt);
   // THE FIZZLE: 18 HP or more lost between the start of the call's wind-up and the end of its grow-in, and the call is off
   if(Z.hp0 != null){
     const calling = (s._tel > 0 && s._telKind === 'zero') || (s._zx && s._zx.k === 'call' && s._zx.t < ZR.march.grow);
@@ -116173,14 +116184,14 @@ function zrTick(s, tgt){
 }
 function zrFizzle(s){
   const Z = zrHz(s);
-  s._tel = 0; s._telKind = null; s._tn = null; s._zx = null; s._atkLive = null; Z.hp0 = null;
+  s._tel = 0; s._telKind = null; s._tn = null; s._zx = null; s._zt = null; s._zcPartner = null; s._atkLive = null; Z.hp0 = null;
   Z.fl = hazardT + ZR.flustF; Z.flAt = hazardT; Z.crack = hazardT; s._atkTimer = ZR.flustF + 20;
   algExpose(s, ZR.flustF, 1);
   shake(6); for(let i = 0; i < 14; i++) puff(s.x + s.face*s.r*0.6, s.y - s.r*0.5, i % 2 ? '#fff' : '#f4d53d', 5);
 }
 function zrPhase(s, ph){
   const Z = zrHz(s);
-  s._tel = 0; s._telKind = null; s._tn = null; s._zx = null; s._atkLive = null; Z.hid = 0; Z.roll = 0;
+  s._tel = 0; s._telKind = null; s._tn = null; s._zx = null; s._zt = null; s._zcPartner = null; s._atkLive = null; Z.hid = 0; Z.roll = 0;
   if(ph === 2){ Z.p2 = hazardT; Z.beat = hazardT + ZR.beatF; Z.still = hazardT + 70; s._atkTimer = ZR.p2F + 20; }
   else if(ph >= 3){ Z.p3 = hazardT; Z.beat = hazardT + ZR.beatF; Z.still = hazardT + 100; s._atkTimer = ZR.p3F + 20; s.stationary = false; }   // (a plain set: the watch may be holding the timer at 1e6 for a move this beat just cancelled)
 }
@@ -116264,8 +116275,49 @@ function zrFootStart(s, tgt){
   if(s._zx.two) s._zx.f.push({ x:null, at:F.fall + F.second });
   Z.fT = null;
 }
-function zrStep(s, tgt){
-  const X = s._zx; if(!X) return;
+function zrCloudPipe(tgt, i, tier, used){   // the pipe mouth a cloud drops from: 300+ px from you (nearest to 750 px away on the side with more room); tier 4 and up send the first two from the two ends
+  const G = ZR.get, fx = tgt ? tgt.x : WW/2, ends = [ZR.pitch/2, WW - ZR.pitch/2], pipes = []; for(let x = ZR.pitch/2; x < WW; x += ZR.pitch) pipes.push(x);
+  const roomSide = fx > WW/2 ? -1 : 1;
+  let cand = pipes.filter(x => Math.abs(x - fx) >= G.near && used.indexOf(x) < 0);
+  if(!cand.length) cand = pipes.filter(x => Math.abs(x - fx) >= G.near);
+  if(!cand.length) cand = pipes.slice();
+  // (the NEARER end first, so the two clouds reach you apart, not together)
+  if(tier >= 4 && i < 2){ const e = ends[(roomSide > 0 ? 0 : 1) ^ i], ok = cand.indexOf(e) >= 0; if(ok) return e; }
+  let best = cand[0], bs = 1e9; for(const x of cand){ const sc = Math.abs(Math.abs(x - fx) - 750) + (Math.sign(x - fx) === roomSide ? 0 : 150); if(sc < bs){ bs = sc; best = x; } }
+  return best;
+}
+function zrGetStart(s, tgt){ s._zx = { k:'get', id:++BOSS_ATK_ID, t:0, tier:zrTier(s), cl:[], spawned:0, used:[] }; }
+function zrCloudSpawn(s, X, tgt){
+  const G = ZR.get, i = X.spawned++, x = zrCloudPipe(tgt, i, X.tier, X.used); X.used.push(x);
+  X.cl.push({ x, px:x, born:hazardT, dir:tgt ? (Math.sign(tgt.x - x) || 1) : 1, v:G.v0, mode:'drop', age:0, pass:0, bounce:0, skidT:0, bt:0, gone:0 });
+  for(let k = 0; k < 8; k++) puff(x, groundY() - 470, '#8f8f99', 5);
+}
+function zrCloudStep(s, X, c, f0){
+  const G = ZR.get, T = X.tier - 3, gy = groundY();
+  c.age++;
+  if(c.mode === 'burst'){ c.bt++; if(c.bt >= G.burst) c.gone = 1; return; }
+  if(c.age <= G.drop){ if(c.age === G.drop){ shake(3); for(let k = 0; k < 8; k++) puff(c.x, gy - 6, '#b0a99c', 5); } return; }
+  if(c.mode === 'drop') c.mode = 'roll';   // landed: it rolls (armed after G.arm more frames)
+  let tg = null, bd = 1e9; for(const f of f0){ const d = Math.abs(f.x - c.x); if(d < bd){ bd = d; tg = f; } }
+  if(c.mode === 'roll'){
+    c.v = Math.min(G.vmax, c.v + G.acc); c.x += c.dir*c.v;
+    if(tg && (tg.x - c.x)*c.dir < -40){   // it overshot you: a pass
+      c.pass++;
+      if(c.pass >= G.pass[T]){ c.mode = 'burst'; c.bt = 0; for(let k = 0; k < 10; k++) puff(c.x, gy - 24, '#d9d2c4', 6); return; }
+      c.mode = 'skid'; c.skidT = 0;
+    }
+  } else if(c.mode === 'skid'){
+    c.x += c.dir*c.v*(1 - c.skidT/G.skid); c.skidT++;
+    if(c.skidT >= G.skid){ c.dir = tg ? (Math.sign(tg.x - c.x) || -c.dir) : -c.dir; c.v = G.v1; c.mode = 'roll'; }
+  }
+  if(c.x <= G.r || c.x >= WW - G.r){
+    c.x = clamp(c.x, G.r, WW - G.r);
+    if(c.mode === 'roll'){ c.bounce++; if(c.bounce > G.bounce[T]){ c.mode = 'burst'; c.bt = 0; for(let k = 0; k < 10; k++) puff(c.x, gy - 24, '#d9d2c4', 6); return; } c.dir = -c.dir; shake(3); }
+  }
+  if(c.age > G.life[T]){ c.mode = 'burst'; c.bt = 0; return; }
+  if(c.age >= G.drop + G.arm) for(const f of f0) if(hurtGap(f, c.x, gy - G.r) < G.r) zrHurt(s, X, f, G.dmg, zrMid(f, c.x)*G.kb, -9);
+}
+function zrStepX(s, tgt, X){
   X.t++;
   const gy = groundY(), f0 = zrLiving();
   if(X.k === 'call'){
@@ -116274,7 +116326,7 @@ function zrStep(s, tgt){
       const p = zrMarchPos(L, i, hazardT); if(p.gone || p.ageIn < M.arm) continue;
       for(const f of f0) if(hurtGap(f, p.x, p.y) < M.r) zrHurt(s, X, f, M.dmg, zrMid(f, p.x)*M.kb, -9);
     }
-    if(X.t >= X.end) s._zx = null;
+    if(X.t >= X.end) X.done = 1;
   } else if(X.k === 'tape'){
     const T = ZR.tape;
     for(const q of X.tapes){
@@ -116283,7 +116335,7 @@ function zrStep(s, tgt){
       for(const f of f0) if(hurtGap(f, p.x, p.y) < T.r) zrHurt(s, X, f, T.dmg, zrMid(f, p.x)*T.kb, -7);
     }
     if(X.t === X.T){ shake(4); for(const q of X.tapes) for(let i = 0; i < 4; i++) puff(q.lx, gy - 6, '#9aa0b4', 4); }
-    if(X.t >= X.T + T.lie + 8) s._zx = null;
+    if(X.t >= X.T + T.lie + 8) X.done = 1;
   } else if(X.k === 'div'){
     const D = ZR.div;
     if(X.t === 1){ shake(5); }
@@ -116303,8 +116355,8 @@ function zrStep(s, tgt){
     if(X.tier >= 6 && !X.back && X.t === D.live + D.back){ X.back = 1; X.dir2 = -X.dir; X.t2 = X.t; shake(5); }
     if(X.back && X.t - X.t2 < D.live){ const B = zrDivBox(s, X.dir2); for(const f of f0) if(zrBoxHurt(f, B)) zrHurt(s, X, f, D.dmg, zrMid(f, s.x)*D.kb, -10); }
     const endT = D.live + D.rest + (X.tier >= 6 ? D.back + D.live : 0);
-    if(X.t >= endT && !(X.d && X.d.some(d => !d.gone))) s._zx = null;
-    else if(X.t >= endT + 160) s._zx = null;
+    if(X.t >= endT && !(X.d && X.d.some(d => !d.gone))) X.done = 1;
+    else if(X.t >= endT + 160) X.done = 1;
   } else if(X.k === 'fridge'){
     const F = ZR.fridge, Z = zrHz(s);
     if(X.st === 'roll'){
@@ -116319,8 +116371,14 @@ function zrStep(s, tgt){
     } else if(X.st === 'thump'){
       X.tt++; if(X.tt >= F.thump){ X.dir = -X.dir; X.st = 'roll'; s.face = X.dir; X.doorD = F.door.life; }
     } else if(X.st === 'stun'){
-      X.tt++; if(X.tt >= F.stun){ s._zx = null; s._algPop = ALG_POP; }
+      X.tt++; if(X.tt >= F.stun){ X.done = 1; s._algPop = ALG_POP; }
     }
+  } else if(X.k === 'get'){
+    const G = ZR.get, n = G.n[X.tier - 3];
+    if(X.spawned < n && X.t - 1 >= X.spawned*G.gap[X.tier - 3]) zrCloudSpawn(s, X, tgt || zrNear(s));
+    for(const c of X.cl) if(!c.gone) zrCloudStep(s, X, c, f0);
+    if(X.spawned >= n && X.cl.every(c => c.gone)) X.done = 1;
+    else if(X.t > 900) X.done = 1;
   } else if(X.k === 'foot'){
     const F = ZR.foot, Z = zrHz(s);
     for(let j = 0; j < X.f.length; j++){
@@ -116338,10 +116396,12 @@ function zrStep(s, tgt){
       if(t === F.fall){ impact(ft.x, gy, { shake:12, dust:2, debris:7, scar:true, r:130 }); }
     }
     const last = X.f[X.f.length - 1];
-    if(X.t >= last.at + F.fall + F.plant + F.lift) s._zx = null;
-    else if(X.f.length === 2 && X.f[1].x == null && X.t > 120) s._zx = null;
+    if(X.t >= last.at + F.fall + F.plant + F.lift) X.done = 1;
+    else if(X.f.length === 2 && X.f[1].x == null && X.t > 120) X.done = 1;
   }
 }
+function zrStep(s, tgt){ const X = s._zx; if(!X) return; zrStepX(s, tgt, X); if(X.done) s._zx = null; }
+function zrTails(s, tgt){ const L = s._zt; if(!L || !L.length) return; for(const T of L) zrStepX(s, tgt, T); s._zt = L.filter(T => !T.done); }
 function zrBoxHurt(f, B){   // a fighter's hurtbox (an ellipse of the real size, 80% to be kind) against a box
   const h = f.hurt, rx = (h ? h.rx : f.r)*0.8, ry = (h ? h.ry : f.r)*0.8, cy = f.y + (h ? (h.oy || 0) : 0);
   return f.x + rx > B.x0 && f.x - rx < B.x1 && cy + ry > B.y0 && cy - ry < B.y1;
@@ -116350,15 +116410,17 @@ BOSS_MOVES.zrtape = (s, tgt) => zrTapeStart(s, tgt);
 BOSS_MOVES.zrdiv = (s, tgt) => zrDivStart(s, tgt);
 BOSS_MOVES.zrfridge = (s, tgt) => zrFridgeStart(s, tgt);
 BOSS_MOVES.zrfoot = (s, tgt) => zrFootStart(s, tgt);
+BOSS_MOVES.zrget = (s, tgt) => zrGetStart(s, tgt);
 BOSS_PICK.zero = {
-  tags:{ zero:'ground', zrtape:'bunch', zrdiv:'close', zrfridge:['ground', 'wall'], zrfoot:'any' },
-  moves:(s, ph) => ph >= 3 ? ['zero', 'zrtape', 'zrdiv', 'zrfoot'] : ph === 2 ? ['zero', 'zrtape', 'zrdiv', 'zrfridge'] : ['zero', 'zrtape', 'zrdiv'],   // STOP LAUGHING AT ME! is phase 2 only, THE FOOT! phase 3 only
-  busy:(s) => !!s._zx || zrFlust(s) || zrStunned(s) || zrBeat(s) || (zrHz(s).still || 0) > hazardT
+  tags:{ zero:'ground', zrtape:'bunch', zrdiv:'close', zrfridge:['ground', 'wall'], zrfoot:'any', zrget:'far' },
+  moves:(s, ph) => (s._zx && zrFree(s)) ? ['zrtape'] : ph >= 3 ? ['zero', 'zrtape', 'zrdiv', 'zrfoot', 'zrget'] : ph === 2 ? ['zero', 'zrtape', 'zrdiv', 'zrfridge', 'zrget'] : ['zero', 'zrtape', 'zrdiv'],   // STOP LAUGHING AT ME! is phase 2 only, THE FOOT! phase 3 only
+  force:(s, ph) => { const p = s._zcPartner; if(p){ s._zcPartner = null; s._zcSkip = true; return p; } return null; },
+  busy:(s) => (!!s._zx && !zrFree(s)) || !!(s._zt && s._zt.length) || zrFlust(s) || zrStunned(s) || zrBeat(s) || (zrHz(s).still || 0) > hazardT
 };
-BOSS_EXTRA.Zero = ['zrtape', 'zrdiv', 'zrfridge', 'zrfoot'];
+BOSS_EXTRA.Zero = ['zrtape', 'zrdiv', 'zrfridge', 'zrfoot', 'zrget'];
 BOSS_TELLS.zero = {
   zero:{ pose:'rise', glow:'#7f8cff', beats:3 }, zrtape:{ pose:'rear', glow:'#9aa0b4', beats:2 }, zrdiv:{ pose:'coil', glow:'#ffffff', beats:2 },
-  zrfridge:{ pose:null, glow:'#ff3b2a', beats:3 }, zrfoot:{ pose:'tilt', glow:'#f4d53d', beats:2 }, _:{ pose:'crouch', glow:'#7f8cff', beats:2 }
+  zrfridge:{ pose:null, glow:'#ff3b2a', beats:3 }, zrfoot:{ pose:'tilt', glow:'#f4d53d', beats:2 }, zrget:{ pose:'lunge', glow:'#b9a6ff', beats:2 }, _:{ pose:'crouch', glow:'#7f8cff', beats:2 }
 };
 BOSS_ARENA_ROOFED.add('zerobunker');
 // ---- drawing: his body (a drawn Zero: no render), the props of his tells, the shots of the fight (world), his ending, the Bunker ---------------------------------------------------------------------------
@@ -116416,6 +116478,7 @@ function zrBody(s, R, body, flash){
   else if(tel && kind === 'zero'){ arm(-d, d*R*0.55, -R*0.7*(st ? st.e : 1)); arm(d, d*R*0.95, R*0.0); }
   else if(tel && kind === 'zrtape'){ arm(-d, -d*R*0.95, -R*0.1); arm(d, -d*R*0.85, -R*0.3); }
   else if(tel && kind === 'zrdiv'){ arm(-d, -d*R*0.9, R*0.2); arm(d, d*R*1.0, -R*0.2); }
+  else if(tel && kind === 'zrget'){ const j = st ? st.bob : 0; arm(-d, -d*R*0.9, R*0.3); arm(d, d*R*(0.9 + 0.55*j), -R*(0.1 + 0.3*j)); }
   else { const sw = Math.sin(t*0.1)*R*0.05; arm(-1, -R*1.05, R*0.5 + sw); arm(1, R*1.05, R*0.5 - sw); }
   // the ring body
   ctx.fillStyle = col; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4;
@@ -116449,9 +116512,13 @@ function zrDoorDraw(c, x, gy, bang, open){   // a walk-in freezer door on the ba
 }
 function zrFx(s){
   if(!(s.hp > 0) && !s._zx) return;
-  const Z = zrHz(s), t = hazardT, gy = groundY(), X = s._zx;
+  zrFxOne(s, s._zx, true);
+  if(s._zt) for(const T of s._zt) zrFxOne(s, T, false);
+}
+function zrFxOne(s, X, main){
+  const Z = zrHz(s), t = hazardT, gy = groundY();
   // the freezer door: it IS the body while he is inside; the bangs push it out
-  if(Z.hid || (X && X.k === 'fridge')){
+  if(main && (Z.hid || (X && X.k === 'fridge'))){
     const dx = Z.hid ? Z.door : (X && X.doorX != null ? Z.door : Z.door), e = Z.hid ? t - Z.doorT : 99, B = ZR.fridge.bangs;
     let bang = 0, shk = 0; for(let i = 0; i < B.length; i++){ const q = e - B[i]; if(q >= 0 && q < 8){ bang = (1 - q/8)*(0.4 + 0.3*i); shk = Math.sin(q*3)*(3 + 4*i)*(1 - q/8); } }
     if(Z.hid) { ctx.save(); ctx.translate(shk, 0); zrDoorDraw(ctx, dx, gy, bang, false); ctx.restore();
@@ -116461,16 +116528,16 @@ function zrFx(s){
   // the flung door
   if(X && X.k === 'fridge' && X.doorD > 0 && X.doorD < ZR.fridge.door.life){ ctx.save(); ctx.translate(X.doorX, gy - 70); ctx.rotate(X.doorD*0.3*X.dir); ctx.globalAlpha = 1 - X.doorD/ZR.fridge.door.life*0.4; ctx.fillStyle = '#9aa7b4'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.fillRect(-26, -50, 52, 100); ctx.strokeRect(-26, -50, 52, 100); ctx.restore(); }
   // the foot's shadow, and the foot
-  if(Z.fT != null && s._tel > 0 && s._telKind === 'zrfoot'){ const e = t - Z.fT; bossFallShadow(Z.fx, gy, 95, clamp((e - 4)/(s._tl - 4), 0, 1)*0.85 + (Z.fLock ? 0.15 : 0)); bossGrit(Z.fx - 90, Z.fx + 90, gy - 500, gy - 100, clamp(e/s._tl, 0, 1), '#6a6a72'); }
+  if(main && Z.fT != null && s._tel > 0 && s._telKind === 'zrfoot'){ const e = t - Z.fT; bossFallShadow(Z.fx, gy, 70, clamp((e - 4)/(s._tl - 4), 0, 1)*0.85 + (Z.fLock ? 0.15 : 0)); bossGrit(Z.fx - 65, Z.fx + 65, gy - 500, gy - 100, clamp(e/s._tl, 0, 1), '#6a6a72'); }
   if(X && X.k === 'foot'){
     const F = ZR.foot;
     for(let j = 0; j < X.f.length; j++){
-      const ft = X.f[j], tt = X.t - ft.at; if(ft.x == null){ if(X.x2 != null){ bossFallShadow(X.x2, gy, 95, clamp((X.t - 8)/20, 0, 1)); } continue; }
-      if(tt < F.fall) bossFallShadow(ft.x, gy, 95, clamp(0.6 + 0.4*(tt/F.fall), 0, 1));
+      const ft = X.f[j], tt = X.t - ft.at; if(ft.x == null){ if(X.x2 != null){ bossFallShadow(X.x2, gy, 70, clamp((X.t - 8)/20, 0, 1)); } continue; }
+      if(tt < F.fall) bossFallShadow(ft.x, gy, 70, clamp(0.6 + 0.4*(tt/F.fall), 0, 1));
       let yb, k = 1;
       if(tt < 0) continue;
       if(tt < F.fall) yb = gy - F.v*(F.fall - tt); else if(tt < F.fall + F.plant) yb = gy; else { const u = (tt - F.fall - F.plant)/F.lift; yb = gy - u*u*900; k = 1; }
-      if(yb > gy - 1100) algDrawFoot(ctx, ft.x, yb, 1, k);
+      if(yb > gy - 1100) algDrawFoot(ctx, ft.x, yb, 0.55, k);
     }
   }
   // the marchers
@@ -116501,12 +116568,37 @@ function zrFx(s){
       } else { const lie = X.t - X.T, a = lie < T.lie ? 1 : Math.max(0, 1 - (lie - T.lie)/8); if(a > 0){ ctx.save(); ctx.globalAlpha = a; ctx.translate(q.lx, gy - 8); ctx.rotate(0.2*(q.i % 3 - 1)); ctx.scale(1, 0.7); zrTape(ctx, T.r); ctx.restore(); } }
     }
   }
+  if(X && X.k === 'get'){
+    const G = ZR.get;
+    for(const c of X.cl){
+      if(c.gone) continue;
+      if(c.mode === 'burst'){   // five dizzy Zeroes walk off
+        const u = c.bt/G.burst; ctx.save(); ctx.globalAlpha = 1 - u*u;
+        for(let i = 0; i < 5; i++){ const sd = i % 2 ? 1 : -1, xx = c.x + sd*(14 + i*10 + u*60), yy = gy - 20 - Math.abs(Math.sin(c.bt*0.4 + i))*4; zrMiniZero(ctx, xx, yy, 12, sd, 0); }
+        ctx.restore(); continue;
+      }
+      if(c.age <= G.drop){   // out of the pipe mouth and down to the floor
+        const u = c.age/G.drop, y0 = gy - 470, y1 = gy - G.r; bossFallShadow(c.x, gy, 40, u);
+        ctx.save(); ctx.translate(c.x, y0 + (y1 - y0)*u*u); zrCloudDraw(ctx, c, G, 1, c.age); ctx.restore(); continue;
+      }
+      const k = growK(c.age - G.drop + 1), armed = c.age >= G.drop + G.arm;
+      ctx.save(); ctx.translate(c.x, gy - G.r); ctx.globalAlpha = armed ? 1 : 0.75; zrCloudDraw(ctx, c, G, k, c.x/G.r); ctx.restore();
+    }
+  }
   // the dots, the rings of what the sign divided away
   if(X && X.k === 'div' && X.d){ for(const d of X.d){ if(d.gone) continue; ctx.save(); ctx.translate(d.x, gy - d.r); ctx.rotate(d.x*0.05); ctx.fillStyle = '#fff'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.globalAlpha = Math.min(1, growK(X.t - X.dT + 1)); ctx.beginPath(); ctx.arc(0, 0, d.r, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore(); } }
-  if(Z.rg){ for(const g of Z.rg){ const u = (t - g[2])/16; if(u < 0 || u > 1) continue; ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,' + (0.9*(1 - u)) + ')'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(g[0], g[1], 6 + 18*u, 0, 7); ctx.stroke(); ctx.restore(); } }
+  if(main && Z.rg){ for(const g of Z.rg){ const u = (t - g[2])/16; if(u < 0 || u > 1) continue; ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,' + (0.9*(1 - u)) + ')'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(g[0], g[1], 6 + 18*u, 0, 7); ctx.stroke(); ctx.restore(); } }
   // the backhand's sign
   if(X && X.k === 'div' && X.back && X.t - X.t2 < ZR.div.live + 6){ ctx.save(); ctx.translate(s.x + X.dir2*s.r*1.2, s.y - s.r*0.1); zrDivGlyph(ctx, s.r*1.1, 1); ctx.restore(); }
   // flustered: a puff of pink over his head; stunned: his stars are the shared ones (algExpose)
+}
+function zrCloudDraw(c, cl, G, k, rot){   // a scuffle: a tumbling tangle of small Zeroes, arms, a hat and dust puffs, round r 26
+  const r = G.r; c.scale(k, k);
+  c.fillStyle = 'rgba(214,206,190,0.8)'; for(let i = 0; i < 6; i++){ const a = rot*1.3 + i*1.05; c.beginPath(); c.arc(Math.cos(a)*r*0.8, Math.sin(a)*r*0.7, r*0.42, 0, 7); c.fill(); }
+  c.rotate(rot*1.3);
+  for(let i = 0; i < 3; i++){ const a = i*2.09; c.save(); c.translate(Math.cos(a)*r*0.5, Math.sin(a)*r*0.5); c.fillStyle = '#c7c7d0'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.arc(0, 0, r*0.42, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#fff'; c.beginPath(); c.arc(-3, -1, 2.6, 0, 7); c.arc(3, -1, 2.6, 0, 7); c.fill(); c.restore(); }
+  c.strokeStyle = '#8f9099'; c.lineWidth = 4; c.lineCap = 'round'; for(let i = 0; i < 4; i++){ const a = i*1.57 + 0.5; c.beginPath(); c.moveTo(Math.cos(a)*r*0.4, Math.sin(a)*r*0.4); c.lineTo(Math.cos(a + 0.3)*r*1.05, Math.sin(a + 0.3)*r*1.05); c.stroke(); }
+  c.fillStyle = '#5661d5'; c.beginPath(); c.arc(r*0.2, -r*0.5, r*0.28, Math.PI, 0); c.fill();
 }
 function zrTape(c, r){ c.fillStyle = '#17171b'; c.strokeStyle = '#6a6a74'; c.lineWidth = 2.5; c.fillRect(-r, -r*0.62, r*2, r*1.24); c.strokeRect(-r, -r*0.62, r*2, r*1.24); c.fillStyle = '#f4f4f4'; c.fillRect(-r*0.74, -r*0.5, r*1.48, r*0.4); c.fillStyle = '#bbb'; for(const sx of [-1, 1]){ c.beginPath(); c.arc(sx*r*0.5, r*0.2, r*0.2, 0, 7); c.fill(); } }
 function zrShotDraw(pr){
@@ -116514,7 +116606,7 @@ function zrShotDraw(pr){
   zrEndDraw(pr); return true;
 }
 // ---- the ending: the Giant shakes, bursts into a dozen small Zeroes that scatter, bump each other and march off both sides; the hat rolls last ------------------------------------------------------------------------
-function zrEndSweep(b){ projectiles = projectiles.filter(p => !p.zero); if(b){ b._zx = null; b._tn = null; const Z = zrHz(b); Z.hid = 0; Z.roll = 0; } }
+function zrEndSweep(b){ projectiles = projectiles.filter(p => !p.zero); if(b){ b._zx = null; b._zt = null; b._tn = null; const Z = zrHz(b); Z.hid = 0; Z.roll = 0; } }
 function zrEndBegin(b){
   addProj({ owner:-2, ownerObj:{ team:-1, idx:-2 }, x:b.x, y:-5000, vx:0, vy:0, r:0, dmg:0, kb:0, grav:false, color:b.color, life:1, delay:ZR.end.total + 1, noAim:true,
     zero:'end', algShot:'zero', shape:'zrend', et0:hazardT, ex:Math.round(b.x), ey:Math.round(b.y), ef:b.face < 0 ? -1 : 1, er:Math.round(b.r), ep:zrPh(b) });
