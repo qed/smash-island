@@ -98476,7 +98476,8 @@ const ALG_ROSTER = [
   // @boss:six:end algrow
 
   // @boss:zero:begin algrow
-  { ...ALG_STUB, id:'zero', name:'Zero', color:'#9aa4b4', hp:algHp('zero') },
+  { id:'zero', name:'Zero', color:'#c7c7d0', hp:algHp('zero'), big:1.9, attack:'zero', arena:'zerobunker', stationary:false, sprite:'zero', spawn:b=>zrSpawn(b), move:(s,t)=>zrMove(s,t), tick:(s,t)=>zrTick(s,t), tel:(s,t)=>zrTel(s,t), fire:(s,t,id)=>zrFire(s,t,id),
+    gap:s=>ZR.gaps[zrPh(s)-1], telLen:s=>s._tl || 60, phase:(s,ph)=>zrPhase(s,ph), phaseName:(s,ph)=>zrPhaseName(s,ph), body:(s,R,b,f)=>zrBody(s,R,b,f), fx:s=>zrFx(s), decor:(s,k)=>zrDecor(s,k), shot:pr=>zrShotDraw(pr) },   // rush M9-M10: the real fight (1,800 HP); all of it is in his algcode pair
   // @boss:zero:end algrow
 
   // @boss:x:begin algrow
@@ -98597,9 +98598,22 @@ function algDrawExposed(s){
   ctx.restore();
 }
 // @boss:zero:begin algfoot
-// THE GIANT ZERO'S FOOT (drawn once, by rush M10, and reused by 2,763's ending): ALG_FOOT.draw(c, x, y, sc, k) paints it with its sole at (x, y), at scale sc, k (0 to 1) how much of it there is. Until M10 it is a plain grey boot.
-const ALG_FOOT = { draw:(c, x, y, sc, k)=>{ c.save(); c.translate(x, y); c.scale(sc*k, sc*k); c.fillStyle = '#8b8f9c'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4;
-  c.beginPath(); c.ellipse(0, -60, 70, 60, 0, 0, 7); c.fill(); c.stroke(); c.beginPath(); c.ellipse(24, -14, 110, 26, 0, 0, 7); c.fill(); c.stroke(); c.restore(); } };
+// THE GIANT ZERO'S FOOT (drawn once, by rush M10, and reused by a later boss's ending): algDrawFoot(c, x, y, sc, k) paints it with its sole's middle at (x, y) (the floor it presses on), at scale sc (1 = 220 px wide), k (0 to 1) how much of it
+// there is (it grows in over 12 frames: GROW_IN). A rounded grey oval foot with five toes on the +x side, an ankle and a long leg going up out of the top of the screen; the whole of it is a function of its arguments (no clock,
+// so a client or an ending draws it the same), and the leg is drawn to `y - 1700 * sc`.
+const ALG_FOOT = { w:220, draw:(c, x, y, sc, k)=>{
+  if(!(k > 0) || !(sc > 0)) return;
+  c.save(); c.translate(x, y); c.scale(sc*k, sc*k); c.lineJoin = 'round'; c.lineCap = 'round';
+  const body = '#8b8f9c', dark = '#1c1c1c', shade = '#767a87';
+  c.fillStyle = shade; c.strokeStyle = dark; c.lineWidth = 6;   // the leg, going up
+  c.beginPath(); c.moveTo(-34, -80); c.lineTo(-30, -1700); c.lineTo(30, -1700); c.lineTo(34, -80); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = body; c.lineWidth = 5;   // the foot: a rounded oval, flat on the floor
+  c.beginPath(); c.moveTo(-100, 0); c.quadraticCurveTo(-118, -70, -50, -96); c.quadraticCurveTo(10, -112, 70, -84); c.quadraticCurveTo(116, -60, 112, 0); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = shade; c.beginPath(); c.moveTo(-96, -4); c.lineTo(108, -4); c.lineTo(108, 0); c.lineTo(-96, 0); c.closePath(); c.fill();
+  c.fillStyle = body; c.lineWidth = 4; for(let i = 0; i < 5; i++){ const tx = 36 + i*17, tr = 15 - i*1.6; c.beginPath(); c.ellipse(tx, -34 + i*5, tr, tr*1.1, 0, 0, 7); c.fill(); c.stroke(); }   // the toes
+  c.strokeStyle = 'rgba(30,30,40,0.5)'; c.lineWidth = 3; c.beginPath(); c.moveTo(-60, -40); c.quadraticCurveTo(-20, -62, 20, -48); c.stroke();
+  c.fillStyle = 'rgba(255,255,255,0.22)'; c.beginPath(); c.ellipse(-30, -78, 40, 9, -0.12, 0, 7); c.fill();
+  c.restore(); } };
 // @boss:zero:end algfoot
 function algDrawFoot(c, x, y, sc, k){ ALG_FOOT.draw(c, x, y, sc == null ? 1 : sc, k == null ? 1 : k); }
 // THE ROW HOOKS (rush M3). A rush boss's own code is called through its ALG_ROSTER row from ONE guarded line in each engine function (found by searching `algHook(`), so no boss milestone edits an
@@ -115952,6 +115966,568 @@ function sixDecor(s, key){
 // @boss:six:end algcode
 
 // @boss:zero:begin algcode
+// ZERO, THE LEADER OF THE ZEROES (rush M9-M10, 1,800 HP; Zero's Bunker, `zerobunker`). Everything of his lives in this pair and his ALG_ROSTER row (and the foot helper in the `algfoot` pair): no engine line is edited.
+// "Zero ... anxious, bossy, easily embarrassed ... a coward when it counts" (Zero): a small gray ring in a blue-and-yellow cap who keeps his distance and calls for backup (phase 1), goes pure red when the squad laughs at him
+// and walks at you (phase 2), and fuses with the Zeroes into the planted Giant (phase 3). THE SIGNATURE, THE MEGAPHONE FIZZLES: if he loses 18 HP or more between the start of ROLL CALL!'s wind-up and the moment its line has
+// grown in, the megaphone cracks, no Zeroes come, and he stands flustered 90 frames (exposed, the shared stars at 1.0). Moves (the owner's picks): ROLL CALL! (signature), TAPE TOSS!, DIVIDE BY ZERO!, STOP LAUGHING AT ME!
+// (phase 2 only) and THE FOOT! (phase 3 only). Every move is driven by his state machine (s._zx) and hits through a hit he tests himself (zrHurt: once per fighter per attack id, so a move is at most one boss hit); nothing is
+// a projectile except the ending's carrier. Tells are the body's (BOSS_TELLS.zero: pose, glow, beats) plus what grows out of him (the megaphone, the sign, the box of tapes, the lifted leg, the door, the shadow). His bag
+// `_hz` holds plain numbers only, and what he draws is a function of it and the clock.
+const ZR = {
+  introF:90, firstAtk:100, beatF:20, p2F:90, p3F:110, flustF:90, fizzle:18,
+  gaps:[100, 76, 58], tl:{ zero:60, zrtape:45, zrdiv:55, zrfridge:68, zrfoot:58 },
+  mid:[0.83, 0.495, 0.165],                        // each phase's midpoint, as a share of max HP: the tier rises there (six tiers, two a phase)
+  flee:3.4, stand:300, walk:2.6, giantWalk:1.2, popCool:150, pitch:600,
+  march:{ v:7, sp:310, r:18, grow:12, arm:12, dmg:0.8, kb:10, near:140, start:900, offset:155, lines:[[4], [5], [4, 4], [5, 5], [4, 4, 4], [6, 6, 5]] },
+  tape:{ n:[4, 5, 6, 6, 7, 8], T:[44, 44, 42, 42, 40, 40], r:18, dmg:0.6, kb:8, comb:150, apex:300, shadow:30, lie:20 },
+  div:{ reach:1.6, plus:60, tall:1.7, live:10, rest:24, step:70, stepF:14, lockAt:10, dmg:1, kb:14, dot:{ v:7, r:[18, 18, 26], dmg:0.6, kb:8 }, back:22 },
+  fridge:{ doors:[350, 1050, 1750], min:600, max:900, bangs:[16, 38, 58], lockAt:24, v:12.5, flat:0.34, max:1400, thump:14, stun:55, dmg:1, kb:14, door:{ v:14, life:30, r:40, dmg:0.5, kb:12 } },
+  foot:{ w:140, h:110, v:40, fall:18, lockLead:26, plant:30, lift:12, second:28, dmg:1, kb:14, grow:12 },   // (the hit is 140 wide, the drawn foot 220: the model says a 12-frame lock is unfair and 26 + 18 = 44 frames is fair)
+  giant:1.8, end:{ total:170, hold:2800 },
+};
+function zrHz(s){ return s._hz || (s._hz = {}); }
+function zrPh(s){ return Math.max(1, Math.min(3, s._phase || 1)); }
+function zrTier(s){ const p = zrPh(s); return 2*(p - 1) + 1 + (s.hp < s.maxHp*ZR.mid[p - 1] ? 1 : 0); }
+function zrLiving(){ return fighters.filter(f => !f.dead); }
+function zrLive(f){ return !!f && !f.dead; }
+function zrNear(s){ let b = null, d = 1e9; for(const f of fighters){ if(f.dead) continue; const q = Math.abs(f.x - s.x); if(q < d){ d = q; b = f; } } return b; }
+function zrIntro(s){ const Z = zrHz(s); return Z.in != null && hazardT - Z.in < ZR.introF; }
+function zrBeat(s){ return (zrHz(s).beat || 0) > hazardT; }
+function zrFlust(s){ return (zrHz(s).fl || 0) > hazardT; }
+function zrStunned(s){ return (zrHz(s).stun || 0) > hazardT; }
+function zrTapW(s){ const Z = zrHz(s); return Z.p3 != null && hazardT >= Z.p3 + 40; }   // the Giant (his body has swelled)
+function zrFloorY(s){ return groundY() - (s._zr0 || 65)*(zrHz(s).sw || 1); }
+ALG_HIT.zero = (s, f, d) => (zrIntro(s) || zrBeat(s)) ? 0 : d;   // the pile of arrival and the 20-frame phase beats cannot be hit; nothing else makes him unhittable
+// ---- one hit per fighter per attack id: the move's whole damage is at most one boss hit ----------------------------------------------------------------------------------------------------------
+function zrHurt(s, X, f, dmg, kbx, kby){
+  if(!f || f.dead || f.invuln > 0) return false;
+  const H = X.hit || (X.hit = {}); if(H[f.idx]) return false;
+  H[f.idx] = 1;
+  applyHit(f, bossDmg()*dmg, kbx, kby, null, { bossAtk:X.id, volley:true, shot:1 });
+  for(let i = 0; i < 8; i++) puff(f.x, f.y, '#c7c7d0', 5);
+  return true;
+}
+function zrMid(f, x){ return Math.sign(WW*0.5 - f.x) || Math.sign(f.x - x) || 1; }   // launches go toward the middle
+// ---- spawn: the chute coughs, he drops out without his hat, looks round, the hat spins down and lands on him ---------------------------------------------------------------------------------------------
+function zrSpawn(b){
+  const Z = zrHz(b);
+  b._zr0 = b.r; b.x = WW*0.5; b.y = groundY() - b.r - 700; b._algPop = 0; Z.in = hazardT; Z.sw = 1;
+  b._atkTimer = ZR.introF + ZR.firstAtk; b.vx = 0; b.vy = 0;
+}
+// ---- movement ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+function zrPipe(s, tgt){   // the pipe mouth (on a pitch of 600) farthest from you, at least 500 away if there is one
+  let best = null, bd = -1;
+  for(let x = ZR.pitch/2; x < WW; x += ZR.pitch){ const d = Math.abs(x - tgt.x); if(d >= 500 && d > bd){ bd = d; best = x; } }
+  if(best == null) for(let x = ZR.pitch/2; x < WW; x += ZR.pitch){ const d = Math.abs(x - tgt.x); if(d > bd){ bd = d; best = x; } }
+  return best;
+}
+function zrMove(s, tgt){
+  const Z = zrHz(s), t = hazardT, ph = zrPh(s), gy = groundY();
+  if(s._zr0 == null) s._zr0 = s.r;
+  s.x += s.vx; s.vx *= 0.88;
+  if(zrIntro(s)){   // the fall from the chute (0-40), then he stands; the hat spins down (40-80)
+    const e = t - Z.in; s.x = WW*0.5; s.vy = 0;
+    s.y = e < 40 ? (gy - s.r - 700 + 700*Math.pow(e/40, 2)) : gy - s.r;
+    return true;
+  }
+  const big = Z.p3 != null && t >= Z.p3 + 40;
+  if(Z.p3 != null){   // the fusion: from 40 frames in he swells from r 65 to r 116
+    const u = clamp((t - Z.p3 - 40)/30, 0, 1); Z.sw = 1 + (ZR.giant - 1)*u; s.r = s._zr0*Z.sw;
+  }
+  const fy = (Z.roll ? gy - s.r*0.9*ZR.fridge.flat : gy - s.r);
+  s.y = fy; s.vy = 0;
+  if(Z.hid || Z.roll){ s.x = clamp(s.x, 30, WW - 30); return true; }   // in the freezer or rolling: the move holds his place
+  if(zrBeat(s) || t < (Z.still || 0) || s._tel > 0 || s._zx || zrFlust(s) || zrStunned(s)) { s.x = clamp(s.x, s.r*0.5, WW - s.r*0.5); return true; }
+  if(tgt){
+    const dx = tgt.x - s.x, ad = Math.abs(dx);
+    if(ad > 24) s.face = dx > 0 ? 1 : -1;
+    if(ph === 1){   // the coward keeps his distance and never chases; cornered, he drops into a pipe and comes out of another
+      const back = -Math.sign(dx || 1), wallBehind = back < 0 ? s.x : WW - s.x;
+      if(ad < ZR.stand - 40){
+        if(wallBehind < 150 && ad < 200 && t >= (Z.popOk || 0)){
+          const px = zrPipe(s, tgt); if(px != null){ for(let i = 0; i < 10; i++) puff(s.x, s.y, '#7f8cff', 5); s.x = px; s._algPop = ALG_POP; Z.popOk = t + ZR.popCool; for(let i = 0; i < 10; i++) puff(s.x, s.y, '#7f8cff', 5); }
+        } else s.x += back*ZR.flee;
+      } else if(ad > ZR.stand + 120) s.x += Math.sign(dx)*ZR.flee;
+    } else if(ph === 2){ if(ad > 120) s.x += Math.sign(dx)*ZR.walk; }
+    else if(ad > 260){ s.x += Math.sign(dx)*ZR.giantWalk; }
+    else if(ad < 160) s.x -= Math.sign(dx || 1)*ZR.giantWalk;
+  }
+  s.x = clamp(s.x, s.r*0.5, WW - s.r*0.5);
+  if(ph === 3 && big) s.x = clamp(s.x, WW*0.3, WW*0.7);
+  return true;
+}
+// ---- the turn --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+function zrDoorFor(s, tgt){   // a freezer door 600-900 from you on the side with more room; the farther side if none is in range
+  const room = tgt.x > WW/2 ? -1 : 1, D = ZR.fridge.doors; let best = null, bs = -1e9;
+  for(const x of D){ const d = Math.abs(x - tgt.x), side = Math.sign(x - tgt.x) || 1; const okd = d >= ZR.fridge.min && d <= ZR.fridge.max; const sc = (okd ? 1000 : 0) + (side === room ? 300 : 0) + d*0.1; if(sc > bs){ bs = sc; best = x; } }
+  return best;
+}
+function zrTel(s, tgt){
+  const k = s._telKind, Z = zrHz(s), tl = ZR.tl[k] || 60, tn = s._tn = { k, e0:hazardT, dir:tgt ? (Math.sign(tgt.x - s.x) || s.face || 1) : (s.face || 1) };
+  s._tl = tl; s._tel = tl; s.face = tn.dir;
+  if(k === 'zero'){ Z.hp0 = s.hp; Z.callT = hazardT; }
+  if(k === 'zrfridge' && tgt){
+    const dx = zrDoorFor(s, tgt); for(let i = 0; i < 10; i++) puff(s.x, s.y, '#9aa0b4', 5);
+    s.x = dx; s._algPop = ALG_POP; Z.hid = 1; Z.door = dx; Z.doorT = hazardT; tn.dir = Math.sign(tgt.x - dx) || 1; s.face = tn.dir;
+  }
+  if(k === 'zrfoot'){ Z.fx = tgt ? tgt.x : s.x; Z.fT = hazardT; Z.fLock = 0; }
+  if(k === 'zrdiv'){ tn.dir = s.face = tgt ? (Math.sign(tgt.x - s.x) || s.face || 1) : (s.face || 1); }
+}
+function zrTelStep(s, tgt, tn){
+  const e = s._tl - s._tel, Z = zrHz(s);
+  if(tn.k === 'zrdiv'){
+    if(e < ZR.div.lockAt && zrLive(tgt) && Math.abs(tgt.x - s.x) > 24) tn.dir = s.face = Math.sign(tgt.x - s.x) || tn.dir;   // the sign's side is fixed 45 frames before it chops
+    else s.face = tn.dir;
+    if(s._tel <= ZR.div.stepF){ s.x = clamp(s.x + tn.dir*ZR.div.step/ZR.div.stepF, s.r*0.5, WW - s.r*0.5); }   // the last 14 frames: 70 px in
+  } else if(tn.k === 'zrfridge'){
+    if(e < ZR.fridge.lockAt && zrLive(tgt)) tn.dir = s.face = Math.sign(tgt.x - s.x) || tn.dir; else s.face = tn.dir;
+    s.x = Z.door;
+  } else if(tn.k === 'zrfoot'){
+    if(e < s._tl - ZR.foot.lockLead && zrLive(tgt)) Z.fx = tgt.x; else if(!Z.fLock) Z.fLock = hazardT;
+    Z.fx = clamp(Z.fx, 110, WW - 110);
+  } else if(zrLive(tgt) && Math.abs(tgt.x - s.x) > 24) s.face = tgt.x > s.x ? 1 : -1;
+}
+function zrTick(s, tgt){
+  const Z = zrHz(s), t = hazardT;
+  if(!(s.hp > 0)) return;
+  if(zrIntro(s)){
+    const e = t - Z.in; if(e === 40){ shake(6); for(let i = 0; i < 14; i++) puff(s.x + (Math.random() - 0.5)*80, groundY() - 6, '#8a8a92', 6); }
+    return;
+  }
+  if(s._tel > 0 && s._tn) zrTelStep(s, tgt, s._tn);
+  if(s._zx) zrStep(s, tgt);
+  // THE FIZZLE: 18 HP or more lost between the start of the call's wind-up and the end of its grow-in, and the call is off
+  if(Z.hp0 != null){
+    const calling = (s._tel > 0 && s._telKind === 'zero') || (s._zx && s._zx.k === 'call' && s._zx.t < ZR.march.grow);
+    if(calling){ if(Z.hp0 - s.hp >= ZR.fizzle) zrFizzle(s); } else Z.hp0 = null;
+  }
+}
+function zrFizzle(s){
+  const Z = zrHz(s);
+  s._tel = 0; s._telKind = null; s._tn = null; s._zx = null; s._atkLive = null; Z.hp0 = null;
+  Z.fl = hazardT + ZR.flustF; Z.flAt = hazardT; Z.crack = hazardT; s._atkTimer = ZR.flustF + 20;
+  algExpose(s, ZR.flustF, 1);
+  shake(6); for(let i = 0; i < 14; i++) puff(s.x + s.face*s.r*0.6, s.y - s.r*0.5, i % 2 ? '#fff' : '#f4d53d', 5);
+}
+function zrPhase(s, ph){
+  const Z = zrHz(s);
+  s._tel = 0; s._telKind = null; s._tn = null; s._zx = null; s._atkLive = null; Z.hid = 0; Z.roll = 0;
+  if(ph === 2){ Z.p2 = hazardT; Z.beat = hazardT + ZR.beatF; Z.still = hazardT + 70; s._atkTimer = ZR.p2F + 20; }
+  else if(ph >= 3){ Z.p3 = hazardT; Z.beat = hazardT + ZR.beatF; Z.still = hazardT + 100; s._atkTimer = ZR.p3F + 20; s.stationary = false; }   // (a plain set: the watch may be holding the timer at 1e6 for a move this beat just cancelled)
+}
+function zrPhaseName(s, ph){ return ph >= 3 ? 'All Zeroes, Combine!' : 'Embarrassing Tapes'; }
+// ---- ROLL CALL! the conga of blank-eyed Zeroes: the fire, then the lines -------------------------------------------------------------------------------------------------------------------------
+function zrMarchLine(x0, dir, n, born, lo, hi, yb, kind){ return { x0, dir, n, born, lo, hi, yb, kind }; }
+function zrMarchPos(L, i, t){   // marcher i of line L at frame t: { x, y, ageIn, gone } -- a pure function of the line and the clock
+  const M = ZR.march, s0 = L.x0 - L.dir*i*M.sp, v = M.v;
+  let tIn = L.born;
+  if(s0 < L.lo || s0 > L.hi){ const dist = L.dir > 0 ? L.lo - s0 : s0 - L.hi; if(dist < 0) return { x:s0, y:L.yb, ageIn:-1, gone:true }; tIn = L.born + dist/v; }
+  const x = s0 + L.dir*v*(t - L.born), out = L.dir > 0 ? x > L.hi : x < L.lo;
+  return { x, y:L.yb - M.r, ageIn:t - tIn, gone:out || t < tIn, tIn };
+}
+function zrCallPlan(s, tgt, tier){
+  const M = ZR.march, gy = groundY(), lines = M.lines[tier - 1], fx = tgt ? tgt.x : s.x, out = [];
+  const room = fx > WW/2 ? -1 : 1;   // the end with more room is where a single line starts
+  const t0 = hazardT;
+  if(lines.length === 1){
+    const dir = -room, x0 = clamp(fx - dir*M.start, 40, WW - 40); out.push(zrMarchLine(x0, dir, lines[0], t0, 8, WW - 8, gy, 'f'));
+  } else {
+    const xa = clamp(fx - M.start, 40, WW - 40), xb = clamp(fx + M.start + M.offset, 40, WW - 40);
+    out.push(zrMarchLine(xa, 1, lines[0], t0, 8, WW - 8, gy, 'f'));
+    out.push(zrMarchLine(xb, -1, lines[1], t0, 8, WW - 8, gy, 'f'));
+    if(lines.length > 2){   // the third line walks along the centre platform's top: it is no longer a hiding place
+      const px0 = WW/2 - ALG_BIG.mid/2, px1 = WW/2 + ALG_BIG.mid/2, dir = fx < WW/2 ? -1 : 1;   // it enters at the end farther from you
+      out.push(zrMarchLine(dir > 0 ? px0 : px1, dir, lines[2], t0 + 20, px0, px1, gy - ALG_BIG.up, 'p'));
+    }
+  }
+  for(const L of out){   // a leader never starts closer than 140 px: nudge it out
+    if(L.kind === 'f' && Math.abs(L.x0 - fx) < M.near) L.x0 = clamp(fx - L.dir*M.near, 40, WW - 40);
+  }
+  return out;
+}
+function zrFire(s, tgt, id){
+  const tier = zrTier(s), lines = zrCallPlan(s, tgt, tier);
+  let last = 0;
+  for(const L of lines) for(let i = 0; i < L.n; i++){ const p = zrMarchPos(L, i, L.born); const span = L.dir > 0 ? (L.hi - (L.x0 - L.dir*i*ZR.march.sp)) : ((L.x0 - L.dir*i*ZR.march.sp) - L.lo); last = Math.max(last, (L.born - hazardT) + span/ZR.march.v + 4); }
+  s._zx = { k:'call', t:0, id, tier, lines, end:Math.ceil(last) + 10 };
+  shake(3);
+  return true;
+}
+// ---- TAPE TOSS! -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+function zrShelf(i){ return { x:WW*(0.3 + 0.15*(i % 4)), y:groundY() - 250 }; }
+function zrTapePos(T, u){   // a tape's centre at share u (0..1) of its flight: a lob from the hand to the floor, apex ZR.tape.apex above the straighter line
+  return { x:T.sx + (T.lx - T.sx)*u, y:T.sy + (T.ly - T.sy)*u - 4*ZR.tape.apex*u*(1 - u) };
+}
+function zrTapeStart(s, tgt){
+  const id = ++BOSS_ATK_ID, tier = zrTier(s), n = ZR.tape.n[tier - 1], Tf = ZR.tape.T[tier - 1], gy = groundY(), ph = zrPh(s);
+  const fx = tgt ? tgt.x : s.x, tapes = [];
+  const order = [0]; for(let k = 1; order.length < n; k++){ order.push(k); if(order.length < n) order.push(-k); }
+  for(let i = 0; i < n; i++){
+    const off = order[i]*ZR.tape.comb, lx = clamp(fx + off, 60, WW - 60);
+    const from = ph >= 2 ? zrShelf(i) : { x:s.x + (s.face || 1)*s.r*0.5, y:s.y - s.r*0.2 };
+    tapes.push({ sx:Math.round(from.x), sy:Math.round(from.y), lx:Math.round(lx), ly:gy - ZR.tape.r, i });
+  }
+  s._zx = { k:'tape', t:0, id, tier, T:Tf, tapes };
+  shake(2);
+}
+// ---- DIVIDE BY ZERO! -------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+function zrDivBox(s, dir){   // the sign's box: from his centre out to 1.6 radius + 60, as tall as 1.7 radius, centred on his centre
+  const D = ZR.div, reach = D.reach*s.r + D.plus, x0 = dir > 0 ? s.x : s.x - reach;
+  return { x0, x1:x0 + reach, y0:s.y - D.tall*s.r*0.5, y1:s.y + D.tall*s.r*0.5 };
+}
+function zrDivStart(s, tgt){
+  const tn = s._tn || {}, tier = zrTier(s);
+  s._zx = { k:'div', t:0, id:++BOSS_ATK_ID, tier, dir:tn.dir || s.face || 1, dots:0, back:0 };
+  s.face = s._zx.dir;
+}
+// ---- STOP LAUGHING AT ME! ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+function zrFridgeStart(s, tgt){
+  const tn = s._tn || {}, Z = zrHz(s), tier = zrTier(s);
+  s._zx = { k:'fridge', t:0, id:++BOSS_ATK_ID, tier, dir:tn.dir || s.face || 1, st:'roll', trav:0, bounced:0, doorX:s.x, doorD:0 };
+  Z.hid = 0; Z.roll = 1; s.face = s._zx.dir; s._algPop = 0; shake(7);
+  for(let i = 0; i < 14; i++) puff(s.x, groundY() - 30, '#cfe6ff', 6);
+}
+// ---- THE FOOT! -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+function zrFootBox(F, yb){ return { x0:F.x - ZR.foot.w/2, x1:F.x + ZR.foot.w/2, y0:yb - ZR.foot.h, y1:yb }; }
+function zrFootStart(s, tgt){
+  const Z = zrHz(s), tier = zrTier(s), F = ZR.foot;
+  s._zx = { k:'foot', t:0, id:++BOSS_ATK_ID, tier, f:[{ x:Math.round(Z.fx), at:0 }], two:tier >= 6, x2:null, lock2:false };
+  if(s._zx.two) s._zx.f.push({ x:null, at:F.fall + F.second });
+  Z.fT = null;
+}
+function zrStep(s, tgt){
+  const X = s._zx; if(!X) return;
+  X.t++;
+  const gy = groundY(), f0 = zrLiving();
+  if(X.k === 'call'){
+    const M = ZR.march;
+    for(const L of X.lines) for(let i = 0; i < L.n; i++){
+      const p = zrMarchPos(L, i, hazardT); if(p.gone || p.ageIn < M.arm) continue;
+      for(const f of f0) if(hurtGap(f, p.x, p.y) < M.r) zrHurt(s, X, f, M.dmg, zrMid(f, p.x)*M.kb, -9);
+    }
+    if(X.t >= X.end) s._zx = null;
+  } else if(X.k === 'tape'){
+    const T = ZR.tape;
+    for(const q of X.tapes){
+      const u = X.t/X.T; if(u <= 0 || u >= 1) continue;
+      const p = zrTapePos(q, u);
+      for(const f of f0) if(hurtGap(f, p.x, p.y) < T.r) zrHurt(s, X, f, T.dmg, zrMid(f, p.x)*T.kb, -7);
+    }
+    if(X.t === X.T){ shake(4); for(const q of X.tapes) for(let i = 0; i < 4; i++) puff(q.lx, gy - 6, '#9aa0b4', 4); }
+    if(X.t >= X.T + T.lie + 8) s._zx = null;
+  } else if(X.k === 'div'){
+    const D = ZR.div;
+    if(X.t === 1){ shake(5); }
+    if(X.t <= D.live){
+      const B = zrDivBox(s, X.dir);
+      for(const f of f0) if(hurtGap(f, (B.x0 + B.x1)/2, (B.y0 + B.y1)/2) < 0 || zrBoxHurt(f, B)) zrHurt(s, X, f, D.dmg, zrMid(f, s.x)*D.kb, -10);
+      for(const p of projectiles){   // whatever it touches is divided away: your shots, with a small white ring where each vanished
+        if(p.owner === -2 || p.life <= 0 || p.x < B.x0 - p.r || p.x > B.x1 + p.r || p.y < B.y0 - p.r || p.y > B.y1 + p.r) continue;
+        p.life = 0; X.rings = (X.rings || 0) + 1; (zrHz(s).rg || (zrHz(s).rg = [])).push([Math.round(p.x), Math.round(p.y), hazardT]); if(zrHz(s).rg.length > 6) zrHz(s).rg.shift();
+      }
+    }
+    if(X.t === D.live && X.tier >= 3 && !X.dots){   // the two dots shake loose and roll away, one each way
+      X.dots = 1; const r = D.dot.r[X.tier >= 5 ? 2 : 0]; X.d = [{ x:s.x + X.dir*s.r, dir:X.dir, r }, { x:s.x - X.dir*s.r, dir:-X.dir, r }]; X.dT = X.t;
+    }
+    if(X.d){ for(const d of X.d){ d.x += d.dir*D.dot.v; if(d.x < 20 || d.x > WW - 20) d.gone = 1; if(d.gone) continue; const y = gy - d.r;
+        if(X.t - X.dT >= 12) for(const f of f0) if(hurtGap(f, d.x, y) < d.r) zrHurt(s, X, f, D.dot.dmg, zrMid(f, d.x)*D.dot.kb, -8); } }
+    if(X.tier >= 6 && !X.back && X.t === D.live + D.back){ X.back = 1; X.dir2 = -X.dir; X.t2 = X.t; shake(5); }
+    if(X.back && X.t - X.t2 < D.live){ const B = zrDivBox(s, X.dir2); for(const f of f0) if(zrBoxHurt(f, B)) zrHurt(s, X, f, D.dmg, zrMid(f, s.x)*D.kb, -10); }
+    const endT = D.live + D.rest + (X.tier >= 6 ? D.back + D.live : 0);
+    if(X.t >= endT && !(X.d && X.d.some(d => !d.gone))) s._zx = null;
+    else if(X.t >= endT + 160) s._zx = null;
+  } else if(X.k === 'fridge'){
+    const F = ZR.fridge, Z = zrHz(s);
+    if(X.st === 'roll'){
+      const v = F.v*X.dir; s.x += v; X.trav += F.v;
+      const hw = s.r*0.9; let hitWall = false;
+      if(s.x <= hw){ s.x = hw; hitWall = true; } else if(s.x >= WW - hw){ s.x = WW - hw; hitWall = true; }
+      const ry = s.r*0.9*F.flat, cy = gy - ry;   // the roll is a flat ellipse, hw wide and ry tall (drawn the same: the ring scaled to F.flat)
+      for(const f of f0){ for(const o of [-0.8, -0.4, 0, 0.4, 0.8]) if(hurtGap(f, s.x + o*hw, cy) < ry + 2){ zrHurt(s, X, f, F.dmg, zrMid(f, s.x)*F.kb, -9); break; } }
+      if(X.doorD < F.door.life){ X.doorX += X.dir*F.door.v; X.doorD++; for(const f of f0) if(hurtGap(f, X.doorX, gy - 55) < F.door.r) zrHurt(s, X, f, F.door.dmg, zrMid(f, X.doorX)*F.door.kb, -8); }
+      if(hitWall && X.tier >= 4 && !X.bounced && X.trav < F.max - 200){ X.bounced = 1; X.st = 'thump'; X.tt = 0; shake(8); for(let i = 0; i < 12; i++) puff(s.x + X.dir*hw, gy - 30, '#cfe6ff', 6); }
+      else if(hitWall || X.trav >= F.max){ X.st = 'stun'; Z.roll = 0; Z.stun = hazardT + F.stun; Z.stunAt = hazardT; algExpose(s, F.stun, 1); shake(10); for(let i = 0; i < 16; i++) puff(s.x + X.dir*hw, gy - 40, '#fff', 6); X.tt = 0; }
+    } else if(X.st === 'thump'){
+      X.tt++; if(X.tt >= F.thump){ X.dir = -X.dir; X.st = 'roll'; s.face = X.dir; X.doorD = F.door.life; }
+    } else if(X.st === 'stun'){
+      X.tt++; if(X.tt >= F.stun){ s._zx = null; s._algPop = ALG_POP; }
+    }
+  } else if(X.k === 'foot'){
+    const F = ZR.foot, Z = zrHz(s);
+    for(let j = 0; j < X.f.length; j++){
+      const ft = X.f[j], t = X.t - ft.at;
+      if(j === 1 && ft.x == null){   // the second foot's shadow follows you until 44 frames before it lands, then locks
+        const lockT = ft.at + F.fall - (F.lockLead + F.fall);
+        if(X.t <= lockT + 0 && zrLive(tgt)) X.x2 = clamp(tgt.x, 110, WW - 110);
+        if(X.t >= lockT){ ft.x = Math.round(X.x2 != null ? X.x2 : (tgt ? tgt.x : s.x)); }
+        continue;
+      }
+      if(t >= 0 && t < F.fall){
+        const yb = gy - F.v*(F.fall - t), B = zrFootBox(ft, yb);
+        for(const f of f0) if(zrBoxHurt(f, B)) zrHurt(s, X, f, F.dmg, zrMid(f, ft.x)*F.kb, -12);
+      }
+      if(t === F.fall){ impact(ft.x, gy, { shake:12, dust:2, debris:7, scar:true, r:130 }); }
+    }
+    const last = X.f[X.f.length - 1];
+    if(X.t >= last.at + F.fall + F.plant + F.lift) s._zx = null;
+    else if(X.f.length === 2 && X.f[1].x == null && X.t > 120) s._zx = null;
+  }
+}
+function zrBoxHurt(f, B){   // a fighter's hurtbox (an ellipse of the real size, 80% to be kind) against a box
+  const h = f.hurt, rx = (h ? h.rx : f.r)*0.8, ry = (h ? h.ry : f.r)*0.8, cy = f.y + (h ? (h.oy || 0) : 0);
+  return f.x + rx > B.x0 && f.x - rx < B.x1 && cy + ry > B.y0 && cy - ry < B.y1;
+}
+BOSS_MOVES.zrtape = (s, tgt) => zrTapeStart(s, tgt);
+BOSS_MOVES.zrdiv = (s, tgt) => zrDivStart(s, tgt);
+BOSS_MOVES.zrfridge = (s, tgt) => zrFridgeStart(s, tgt);
+BOSS_MOVES.zrfoot = (s, tgt) => zrFootStart(s, tgt);
+BOSS_PICK.zero = {
+  tags:{ zero:'ground', zrtape:'bunch', zrdiv:'close', zrfridge:['ground', 'wall'], zrfoot:'any' },
+  moves:(s, ph) => ph >= 3 ? ['zero', 'zrtape', 'zrdiv', 'zrfoot'] : ph === 2 ? ['zero', 'zrtape', 'zrdiv', 'zrfridge'] : ['zero', 'zrtape', 'zrdiv'],   // STOP LAUGHING AT ME! is phase 2 only, THE FOOT! phase 3 only
+  busy:(s) => !!s._zx || zrFlust(s) || zrStunned(s) || zrBeat(s) || (zrHz(s).still || 0) > hazardT
+};
+BOSS_EXTRA.Zero = ['zrtape', 'zrdiv', 'zrfridge', 'zrfoot'];
+BOSS_TELLS.zero = {
+  zero:{ pose:'rise', glow:'#7f8cff', beats:3 }, zrtape:{ pose:'rear', glow:'#9aa0b4', beats:2 }, zrdiv:{ pose:'coil', glow:'#ffffff', beats:2 },
+  zrfridge:{ pose:null, glow:'#ff3b2a', beats:3 }, zrfoot:{ pose:'tilt', glow:'#f4d53d', beats:2 }, _:{ pose:'crouch', glow:'#7f8cff', beats:2 }
+};
+BOSS_ARENA_ROOFED.add('zerobunker');
+// ---- drawing: his body (a drawn Zero: no render), the props of his tells, the shots of the fight (world), his ending, the Bunker ---------------------------------------------------------------------------
+function zrBodyCol(s){ const Z = zrHz(s); if(Z.p3 != null && hazardT >= Z.p3 + 40) return '#c7c7d0'; if(Z.p2 != null && hazardT >= Z.p2 + 30 && zrPh(s) === 2) return '#ff4a38'; if(Z.p2 != null && hazardT < Z.p2 + 30) return '#c7c7d0'; return '#c7c7d0'; }
+function zrHat(c, R, tilt){
+  c.save(); c.rotate(tilt || 0); c.fillStyle = '#5661d5'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  c.beginPath(); c.ellipse(0, -R*0.78, R*0.62, R*0.4, 0, Math.PI, 0); c.fill(); c.stroke();   // the dome
+  c.fillStyle = '#f4d53d'; c.beginPath(); c.ellipse(R*0.28, -R*0.8, R*0.45, R*0.09, 0.05, 0, 7); c.fill(); c.stroke();   // the brim
+  c.fillStyle = '#4c4a9e'; c.fillRect(-R*0.32, -R*1.05, R*0.22, R*0.1);
+  c.restore();
+}
+function zrFace(c, R, mood, face, tt){
+  c.fillStyle = '#fff'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5;
+  for(const sx of [-1, 1]){ c.beginPath(); c.ellipse(sx*R*0.21, -R*0.08, R*0.12, R*0.15, 0, 0, 7); c.fill(); c.stroke(); }
+  c.fillStyle = '#1c1c1c'; for(const sx of [-1, 1]){ c.beginPath(); c.arc(sx*R*0.21 + face*R*0.04, -R*0.06, R*0.055, 0, 7); c.fill(); }
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath();
+  if(mood === 'shout'){ c.fillStyle = '#4a1010'; c.ellipse(0, R*0.28, R*0.17, R*0.14 + Math.abs(Math.sin(tt*0.6))*R*0.05, 0, 0, 7); c.fill(); c.stroke(); }
+  else if(mood === 'worry'){ c.arc(0, R*0.36, R*0.14, Math.PI + 0.3, -0.3); c.stroke(); c.beginPath(); c.moveTo(-R*0.33, -R*0.3); c.lineTo(-R*0.1, -R*0.26); c.moveTo(R*0.33, -R*0.3); c.lineTo(R*0.1, -R*0.26); c.stroke(); }
+  else if(mood === 'angry'){ c.moveTo(-R*0.14, R*0.3); c.lineTo(R*0.14, R*0.3); c.stroke(); c.beginPath(); c.moveTo(-R*0.36, -R*0.32); c.lineTo(-R*0.08, -R*0.2); c.moveTo(R*0.36, -R*0.32); c.lineTo(R*0.08, -R*0.2); c.stroke(); }
+  else { c.moveTo(-R*0.12, R*0.3); c.lineTo(R*0.12, R*0.3); c.stroke(); }
+}
+function zrMega(c, R, d, k){   // the megaphone: a cone and a handle, in his hand
+  c.save(); c.scale(k, k); c.fillStyle = '#d8d8e0'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  c.beginPath(); c.moveTo(0, -R*0.1); c.lineTo(d*R*0.9, -R*0.42); c.lineTo(d*R*0.9, R*0.14); c.lineTo(0, R*0.06); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#f4d53d'; c.fillRect(d > 0 ? -R*0.16 : 0, -R*0.1, R*0.16, R*0.2); c.strokeRect(d > 0 ? -R*0.16 : 0, -R*0.1, R*0.16, R*0.2); c.restore();
+}
+function zrDivGlyph(c, w, k){   // the white division sign
+  c.save(); c.scale(k, k); c.fillStyle = '#fff'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  c.beginPath(); c.rect(-w*0.5, -w*0.1, w, w*0.2); c.fill(); c.stroke();
+  for(const dy of [-1, 1]){ c.beginPath(); c.arc(0, dy*w*0.42, w*0.14, 0, 7); c.fill(); c.stroke(); }
+  c.restore();
+}
+function zrBody(s, R, body, flash){
+  const Z = zrHz(s), t = hazardT, d = s.face < 0 ? -1 : 1, kind = s._telKind, tel = s._tel > 0;
+  if(Z.hid) return true;   // in the freezer: the door is the body
+  if(zrIntro(s) && t - Z.in < 6 && false) return true;
+  const col = flash ? '#fff' : zrBodyCol(s), flust = zrFlust(s), stun = zrStunned(s), roll = !!Z.roll, big = zrTapW(s);
+  let st = null; if(tel) st = bossTellState(s);
+  ctx.save();
+  if(roll){   // a red pancake rolling: the whole ring spins flat along the floor
+    ctx.scale(1, ZR.fridge.flat); ctx.rotate((t*0.35)*(s._zx ? s._zx.dir : 1)*0);
+  }
+  if(st && st.T.glow && kind !== 'zrfridge'){   // the body lights in the move's colour as it gathers
+    ctx.save(); ctx.globalAlpha = Math.min(0.55, 0.1 + 0.3*st.e + 0.14*st.bob); const g = ctx.createRadialGradient(0, 0, R*0.4, 0, 0, R*1.35); g.addColorStop(0, st.T.glow); g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, R*1.35, 0, 7); ctx.fill(); ctx.restore();
+  }
+  // limbs (darker gray, stick arms and legs)
+  ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+  const limb = '#8f9099';
+  const arm = (sx, ex, ey) => { ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = Math.max(5, R*0.13); ctx.beginPath(); ctx.moveTo(sx*R*0.85, R*0.05); ctx.quadraticCurveTo(sx*R*1.0, R*0.2, ex, ey); ctx.stroke(); ctx.strokeStyle = limb; ctx.lineWidth = Math.max(3, R*0.085); ctx.stroke(); ctx.beginPath(); ctx.arc(ex, ey, Math.max(4, R*0.07), 0, 7); ctx.fillStyle = limb; ctx.fill(); };
+  const leg = (sx, lift) => { ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = Math.max(5, R*0.13); ctx.beginPath(); ctx.moveTo(sx*R*0.3, R*0.9); ctx.lineTo(sx*R*0.34 + lift*d*R*0.5, R*1.12 - lift*R*0.5); ctx.stroke(); ctx.strokeStyle = limb; ctx.lineWidth = Math.max(3, R*0.085); ctx.stroke(); };
+  leg(-1, 0); leg(1, (kind === 'zrfoot' && tel && st) ? st.e : 0);
+  // arms: raised with the megaphone, back with the box, out with the sign, over the face when flustered
+  if(flust){ arm(-1, -R*0.25, -R*0.1); arm(1, R*0.25, -R*0.1); }
+  else if(tel && kind === 'zero'){ arm(-d, d*R*0.55, -R*0.7*(st ? st.e : 1)); arm(d, d*R*0.95, R*0.0); }
+  else if(tel && kind === 'zrtape'){ arm(-d, -d*R*0.95, -R*0.1); arm(d, -d*R*0.85, -R*0.3); }
+  else if(tel && kind === 'zrdiv'){ arm(-d, -d*R*0.9, R*0.2); arm(d, d*R*1.0, -R*0.2); }
+  else { const sw = Math.sin(t*0.1)*R*0.05; arm(-1, -R*1.05, R*0.5 + sw); arm(1, R*1.05, R*0.5 - sw); }
+  // the ring body
+  ctx.fillStyle = col; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(0, 0, R*0.9, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = flash ? '#fff' : (zrBodyCol(s) === '#ff4a38' ? '#d4281a' : '#b2b2bd'); ctx.beginPath(); ctx.arc(0, 0, R*0.56, 0, 7); ctx.fill(); ctx.stroke();
+  if(flust || (Z.fl && t - (Z.flAt || 0) < ZR.flustF + 6)){ ctx.fillStyle = 'rgba(255,120,150,0.65)'; for(const sx of [-1, 1]){ ctx.beginPath(); ctx.ellipse(sx*R*0.36, R*0.12, R*0.11, R*0.07, 0, 0, 7); ctx.fill(); } }
+  const mood = flust ? 'worry' : (tel && kind === 'zero') ? 'shout' : (zrBodyCol(s) === '#ff4a38' || big) ? 'angry' : (zrPh(s) === 1 ? 'worry' : 'calm');
+  zrFace(ctx, R*0.9, mood, d, t);
+  if(!(zrIntro(s) && t - Z.in < 40) && !(zrIntro(s) && t - Z.in >= 40 && t - Z.in < 78 && Z.in != null)) zrHat(ctx, R*0.9, Math.sin(t*0.05)*0.03);
+  else if(zrIntro(s) && t - Z.in >= 40 && t - Z.in < 78){ const u = (t - Z.in - 40)/38; ctx.save(); ctx.translate(-R*0.6*(1 - u), -R*(2.4 - 1.4*u)); ctx.rotate(u*12.6); zrHat(ctx, R*0.9, 0); ctx.restore(); }
+  // the props of the tell
+  if(tel && kind === 'zero'){ const k = growK(s._tl - s._tel + 1); ctx.save(); ctx.translate(d*R*0.55, -R*0.7*(st ? st.e : 1)); ctx.rotate(-d*0.5); zrMega(ctx, R*0.8, d, k); ctx.restore(); }
+  else if(Z.crack != null && t - Z.crack < ZR.flustF){ ctx.save(); ctx.translate(d*R*0.9, -R*0.1); ctx.rotate(-d*0.2); zrMega(ctx, R*0.8, d, 1); ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(d*R*0.3, -R*0.3); ctx.lineTo(d*R*0.45, -R*0.08); ctx.lineTo(d*R*0.35, R*0.1); ctx.stroke(); ctx.restore(); }
+  else if(!roll && !flust && zrPh(s) === 1 && !tel){ ctx.save(); ctx.translate(d*R*1.0, R*0.05); ctx.rotate(-d*0.3); zrMega(ctx, R*0.5, d, 1); ctx.restore(); }
+  if(tel && kind === 'zrtape'){ const k = growK(s._tl - s._tel + 1); ctx.save(); ctx.translate(-d*R*1.0, -R*0.25); ctx.scale(k, k); ctx.fillStyle = '#6b4a2a'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.fillRect(-R*0.3, -R*0.2, R*0.6, R*0.4); ctx.strokeRect(-R*0.3, -R*0.2, R*0.6, R*0.4);
+    ctx.fillStyle = '#111'; for(let i = 0; i < 3; i++) ctx.fillRect(-R*0.24 + i*R*0.17, -R*0.38, R*0.14, R*0.2); ctx.restore(); }
+  if(tel && kind === 'zrdiv'){ const k = growK(s._tl - s._tel + 1); ctx.save(); ctx.translate(d*R*1.0, -R*0.2); zrDivGlyph(ctx, R*0.8, k); ctx.restore(); }
+  if(s._zx && s._zx.k === 'div' && s._zx.t <= ZR.div.live + 6){ ctx.save(); ctx.translate(d*R*1.2, -R*0.1); zrDivGlyph(ctx, R*1.1, 1); ctx.restore(); }
+  if(st && st.flick){ ctx.globalAlpha = 0.45; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, R*0.9, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+  ctx.restore();
+  return true;
+}
+function zrDoorDraw(c, x, gy, bang, open){   // a walk-in freezer door on the back wall
+  c.save(); c.translate(x, gy);
+  c.fillStyle = '#6f7a86'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4;
+  c.fillRect(-52, -150, 104, 150); c.strokeRect(-52, -150, 104, 150);
+  c.fillStyle = '#9aa7b4'; c.fillRect(-44, -142, 88, 134); c.strokeRect(-44, -142, 88, 134);
+  c.fillStyle = '#c33'; c.fillRect(30, -80, 8, 26); c.fillStyle = '#d9e7f2'; c.fillRect(-36, -134, 24, 5);
+  if(bang > 0){ c.strokeStyle = 'rgba(210,235,255,' + bang + ')'; c.lineWidth = 3; for(let i = -2; i <= 2; i++){ c.beginPath(); c.moveTo(i*22, -150); c.lineTo(i*22 + 6, -168 - Math.abs(i)*3); c.stroke(); } }
+  c.restore();
+}
+function zrFx(s){
+  if(!(s.hp > 0) && !s._zx) return;
+  const Z = zrHz(s), t = hazardT, gy = groundY(), X = s._zx;
+  // the freezer door: it IS the body while he is inside; the bangs push it out
+  if(Z.hid || (X && X.k === 'fridge')){
+    const dx = Z.hid ? Z.door : (X && X.doorX != null ? Z.door : Z.door), e = Z.hid ? t - Z.doorT : 99, B = ZR.fridge.bangs;
+    let bang = 0, shk = 0; for(let i = 0; i < B.length; i++){ const q = e - B[i]; if(q >= 0 && q < 8){ bang = (1 - q/8)*(0.4 + 0.3*i); shk = Math.sin(q*3)*(3 + 4*i)*(1 - q/8); } }
+    if(Z.hid) { ctx.save(); ctx.translate(shk, 0); zrDoorDraw(ctx, dx, gy, bang, false); ctx.restore();
+      if(Z.hid && e > 4){ ctx.save(); ctx.globalAlpha = 0.35 + 0.25*Math.min(1, e/60); const g = ctx.createRadialGradient(dx, gy - 70, 5, dx, gy - 70, 120); g.addColorStop(0, 'rgba(255,60,40,0.55)'); g.addColorStop(1, 'rgba(255,60,40,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(dx, gy - 70, 120, 0, 7); ctx.fill(); ctx.restore(); } }
+    else { zrDoorDraw(ctx, Z.door, gy, 0, true); }
+  }
+  // the flung door
+  if(X && X.k === 'fridge' && X.doorD > 0 && X.doorD < ZR.fridge.door.life){ ctx.save(); ctx.translate(X.doorX, gy - 70); ctx.rotate(X.doorD*0.3*X.dir); ctx.globalAlpha = 1 - X.doorD/ZR.fridge.door.life*0.4; ctx.fillStyle = '#9aa7b4'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.fillRect(-26, -50, 52, 100); ctx.strokeRect(-26, -50, 52, 100); ctx.restore(); }
+  // the foot's shadow, and the foot
+  if(Z.fT != null && s._tel > 0 && s._telKind === 'zrfoot'){ const e = t - Z.fT; bossFallShadow(Z.fx, gy, 95, clamp((e - 4)/(s._tl - 4), 0, 1)*0.85 + (Z.fLock ? 0.15 : 0)); bossGrit(Z.fx - 90, Z.fx + 90, gy - 500, gy - 100, clamp(e/s._tl, 0, 1), '#6a6a72'); }
+  if(X && X.k === 'foot'){
+    const F = ZR.foot;
+    for(let j = 0; j < X.f.length; j++){
+      const ft = X.f[j], tt = X.t - ft.at; if(ft.x == null){ if(X.x2 != null){ bossFallShadow(X.x2, gy, 95, clamp((X.t - 8)/20, 0, 1)); } continue; }
+      if(tt < F.fall) bossFallShadow(ft.x, gy, 95, clamp(0.6 + 0.4*(tt/F.fall), 0, 1));
+      let yb, k = 1;
+      if(tt < 0) continue;
+      if(tt < F.fall) yb = gy - F.v*(F.fall - tt); else if(tt < F.fall + F.plant) yb = gy; else { const u = (tt - F.fall - F.plant)/F.lift; yb = gy - u*u*900; k = 1; }
+      if(yb > gy - 1100) algDrawFoot(ctx, ft.x, yb, 1, k);
+    }
+  }
+  // the marchers
+  if(X && X.k === 'call'){
+    const M = ZR.march;
+    for(const L of X.lines) for(let i = 0; i < L.n; i++){
+      const p = zrMarchPos(L, i, t); if(p.gone || p.ageIn < 0) continue;
+      const g = growK(p.ageIn + 1), tail = L.dir > 0 ? (L.hi - p.x) : (p.x - L.lo), sh = tail < 24 ? Math.max(0.1, tail/24) : 1, sc = g*sh;
+      const hop = Math.abs(Math.sin((t + i*7)*0.25))*4;
+      ctx.save(); ctx.translate(p.x, p.y - hop); ctx.scale(sc, sc);
+      ctx.globalAlpha = p.ageIn >= M.arm ? 1 : 0.75;
+      ctx.fillStyle = '#c7c7d0'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, M.r, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#a9a9b6'; ctx.beginPath(); ctx.arc(0, 0, M.r*0.58, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(L.dir*3 - 4, -2, 3.4, 0, 7); ctx.arc(L.dir*3 + 5, -2, 3.4, 0, 7); ctx.fill();   // a blank stare
+      ctx.fillStyle = '#1c1c1c'; ctx.beginPath(); ctx.arc(L.dir*4 - 4, -2, 1.2, 0, 7); ctx.arc(L.dir*4 + 5, -2, 1.2, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#5661d5'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, -M.r*0.95, M.r*0.55, Math.PI, 0); ctx.stroke();
+      ctx.restore();
+    }
+  }
+  // the tapes
+  if(X && X.k === 'tape'){
+    const T = ZR.tape;
+    for(const q of X.tapes){
+      const u = X.t/X.T;
+      if(u < 1){   // the shadow in the last 30 frames
+        const left = X.T - X.t; if(left <= T.shadow) bossFallShadow(q.lx, gy, 40, 1 - left/T.shadow);
+        if(u > 0){ const p = zrTapePos(q, u); ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(u*9*(q.i % 2 ? 1 : -1)); zrTape(ctx, T.r); ctx.restore(); }
+      } else { const lie = X.t - X.T, a = lie < T.lie ? 1 : Math.max(0, 1 - (lie - T.lie)/8); if(a > 0){ ctx.save(); ctx.globalAlpha = a; ctx.translate(q.lx, gy - 8); ctx.rotate(0.2*(q.i % 3 - 1)); ctx.scale(1, 0.7); zrTape(ctx, T.r); ctx.restore(); } }
+    }
+  }
+  // the dots, the rings of what the sign divided away
+  if(X && X.k === 'div' && X.d){ for(const d of X.d){ if(d.gone) continue; ctx.save(); ctx.translate(d.x, gy - d.r); ctx.rotate(d.x*0.05); ctx.fillStyle = '#fff'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.globalAlpha = Math.min(1, growK(X.t - X.dT + 1)); ctx.beginPath(); ctx.arc(0, 0, d.r, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore(); } }
+  if(Z.rg){ for(const g of Z.rg){ const u = (t - g[2])/16; if(u < 0 || u > 1) continue; ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,' + (0.9*(1 - u)) + ')'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(g[0], g[1], 6 + 18*u, 0, 7); ctx.stroke(); ctx.restore(); } }
+  // the backhand's sign
+  if(X && X.k === 'div' && X.back && X.t - X.t2 < ZR.div.live + 6){ ctx.save(); ctx.translate(s.x + X.dir2*s.r*1.2, s.y - s.r*0.1); zrDivGlyph(ctx, s.r*1.1, 1); ctx.restore(); }
+  // flustered: a puff of pink over his head; stunned: his stars are the shared ones (algExpose)
+}
+function zrTape(c, r){ c.fillStyle = '#17171b'; c.strokeStyle = '#6a6a74'; c.lineWidth = 2.5; c.fillRect(-r, -r*0.62, r*2, r*1.24); c.strokeRect(-r, -r*0.62, r*2, r*1.24); c.fillStyle = '#f4f4f4'; c.fillRect(-r*0.74, -r*0.5, r*1.48, r*0.4); c.fillStyle = '#bbb'; for(const sx of [-1, 1]){ c.beginPath(); c.arc(sx*r*0.5, r*0.2, r*0.2, 0, 7); c.fill(); } }
+function zrShotDraw(pr){
+  if(pr.zero !== 'end') return false;
+  zrEndDraw(pr); return true;
+}
+// ---- the ending: the Giant shakes, bursts into a dozen small Zeroes that scatter, bump each other and march off both sides; the hat rolls last ------------------------------------------------------------------------
+function zrEndSweep(b){ projectiles = projectiles.filter(p => !p.zero); if(b){ b._zx = null; b._tn = null; const Z = zrHz(b); Z.hid = 0; Z.roll = 0; } }
+function zrEndBegin(b){
+  addProj({ owner:-2, ownerObj:{ team:-1, idx:-2 }, x:b.x, y:-5000, vx:0, vy:0, r:0, dmg:0, kb:0, grav:false, color:b.color, life:1, delay:ZR.end.total + 1, noAim:true,
+    zero:'end', algShot:'zero', shape:'zrend', et0:hazardT, ex:Math.round(b.x), ey:Math.round(b.y), ef:b.face < 0 ? -1 : 1, er:Math.round(b.r), ep:zrPh(b) });
+}
+function zrEndDraw(pr){
+  const E = ZR.end, u = hazardT - pr.et0, gy = groundY(); if(!(u >= 0) || u > E.total) return;
+  const R = pr.er, f = pr.ef;
+  if(u < 26){   // the Giant: it shakes harder and harder, then a white flash
+    const sh = Math.sin(u*1.9)*(u/26)*7;
+    ctx.save(); ctx.translate(pr.ex + sh, pr.ey); zrBodyAt(ctx, R, f, u); ctx.restore();
+    if(u > 18){ ctx.save(); ctx.globalAlpha = (u - 18)/8*0.8; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(pr.ex, pr.ey, R*1.1, 0, 7); ctx.fill(); ctx.restore(); }
+    return;
+  }
+  const v = u - 26, n = 12, sr = 28;
+  for(let i = 0; i < n; i++){
+    const side = (i % 2) ? 1 : -1, sp = ((i*53) % 100)/100, a = (i/n)*Math.PI*2 + 0.4;
+    // 0-30: spray out along the floor in a hop; 30-48: bump about; then march to its own side
+    const hopU = clamp(v/30, 0, 1), landX = pr.ex + Math.cos(a)*(90 + 220*sp), mx = landX;
+    let x, y = gy - sr, al = 1;
+    if(v < 30){ x = pr.ex + (landX - pr.ex)*hopU; y = gy - sr - Math.sin(hopU*Math.PI)*(70 + 50*sp); }
+    else if(v < 54){ const bw = Math.sin((v - 30)*0.5 + i)*10; x = mx + bw*(i % 3 - 1); }
+    else { const w = v - 54; x = mx + side*w*3.6; al = clamp(1 - (w - 70)/40, 0, 1); }
+    if(al <= 0) continue;
+    ctx.save(); ctx.globalAlpha = al; ctx.translate(x, y + (v >= 54 ? -Math.abs(Math.sin((v + i*5)*0.3))*5 : 0));
+    ctx.fillStyle = '#c7c7d0'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, sr, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#a9a9b6'; ctx.beginPath(); ctx.arc(0, 0, sr*0.58, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-5, -2, 4, 0, 7); ctx.arc(6, -2, 4, 0, 7); ctx.fill(); ctx.fillStyle = '#1c1c1c'; ctx.beginPath(); ctx.arc(-4 + (side), -2, 1.6, 0, 7); ctx.arc(7 + side, -2, 1.6, 0, 7); ctx.fill();
+    ctx.restore();
+  }
+  // the hat tumbles last and rolls to a stop
+  const hv = clamp((v - 20)/(E.total - 26 - 20), 0, 1), hx = pr.ex + f*hv*190 + Math.sin(hv*6)*6*(1 - hv), hy = gy - 22 - Math.abs(Math.sin(hv*11))*40*(1 - hv)*(1 - hv);
+  ctx.save(); ctx.translate(hx, hy); ctx.rotate(hv*(1 - (1 - hv)*0.3)*12*f); zrHat(ctx, 46, 0); ctx.restore();
+}
+function zrBodyAt(c, R, face, t){   // the Giant (or a small Zero) drawn plain, for the ending's opening
+  c.fillStyle = '#c7c7d0'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 5; c.beginPath(); c.arc(0, 0, R*0.9, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#b2b2bd'; c.beginPath(); c.arc(0, 0, R*0.56, 0, 7); c.fill(); c.stroke();
+  const sv = ctx; zrFace(c, R*0.9, 'shout', face, t); zrHat(c, R*0.9, 0);
+}
+BOSS_ENDINGS.zero = { sweep: zrEndSweep, begin: zrEndBegin, holdMs: ZR.end.hold };
+// ---- Zero's Bunker: dusty concrete with a CRT TV, tapes and pipes; then the TV plays the pillow tape, four small Zeroes laugh on the shelf and a lava glow seeps in; then the wall is torn off onto a red world
+// with rows of tiny Zeroes marching in. The look is read from his state (p2 and p3 frames), so it never needs a swapped arena key.
+BOSS_ARENA_SKY.zerobunker = ['#1a1d24', '#2a2f38'];
+BOSS_ARENA_GROUND.zerobunker = { fill:'#3b3f48', line:'#15171c', pattern:function(c, gy, x0, x1, bottom){
+  c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = 2; for(let x = x0 - (x0 % 170); x < x1; x += 170){ c.beginPath(); c.moveTo(x, gy + 6); c.lineTo(x, Math.min(bottom, gy + 80)); c.stroke(); }
+  for(let i = 0, n = Math.ceil((x1 - x0)/230); i < n; i++){ const x = x0 + ((i*131.7) % (x1 - x0)), y = gy + 10 + (i*29) % 36; c.save(); c.translate(x, y); c.rotate(i*0.9); zrTape(c, 8); c.restore(); }
+} };
+function zrWorld(fn){ ctx.save(); const z = viewZoom(); ctx.translate(W/2, H/2); ctx.scale(z, z); ctx.translate(-W/2, -H/2); ctx.translate(-camX, -camY); try{ fn(); } finally { ctx.restore(); } }
+function zrMiniZero(c, x, y, r, face, lift){ c.save(); c.translate(x, y - lift); c.fillStyle = '#c7c7d0'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.arc(0, 0, r, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#a9a9b6'; c.beginPath(); c.arc(0, 0, r*0.58, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#fff'; c.beginPath(); c.arc(-r*0.25, -r*0.1, r*0.17, 0, 7); c.arc(r*0.25, -r*0.1, r*0.17, 0, 7); c.fill(); c.restore(); }
+function zrDecor(s, key){
+  if(key !== 'zerobunker') return;
+  const Z = zrHz(s), t = hazardT, gy = groundY();
+  const p2 = Z.p2 != null ? clamp((t - Z.p2)/60, 0, 1) : 0, p3 = Z.p3 != null ? clamp((t - Z.p3 - 50)/50, 0, 1) : 0;
+  if(p3 > 0){   // the wall is torn off: a red world behind, tiny Zeroes marching in from both horizons
+    const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, 'rgba(60,8,16,' + p3 + ')'); g.addColorStop(1, 'rgba(210,50,40,' + (0.85*p3) + ')'); ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40);
+    ctx.save(); ctx.globalAlpha = p3; for(let row = 0; row < 3; row++) for(let i = 0; i < 26; i++){ const sd = (i % 2) ? 1 : -1, x = W/2 + sd*(((i >> 1)*70 + t*(0.3 + 0.1*row)) % (W/2 + 40)) * 1 - camX*(0.05 + 0.03*row), y = H*0.5 + row*22 + (i % 3)*3; ctx.fillStyle = 'rgba(30,6,10,0.8)'; ctx.beginPath(); ctx.arc(x, y, 6 + row*1.5, 0, 7); ctx.fill(); } ctx.restore();
+  }
+  zrWorld(() => {
+    const wall = 1 - p3;
+    if(wall > 0.02){
+      ctx.save(); ctx.globalAlpha = wall;
+      ctx.fillStyle = '#242830'; ctx.fillRect(-100, gy - 560, WW + 200, 560);
+      // pipes with a mouth on the ceiling at every 600 px, and freezer doors every 700
+      for(let x = ZR.pitch/2; x < WW; x += ZR.pitch){ ctx.fillStyle = '#51565f'; ctx.strokeStyle = '#15171c'; ctx.lineWidth = 3; ctx.fillRect(x - 24, gy - 560, 48, 90); ctx.strokeRect(x - 24, gy - 560, 48, 90); ctx.fillStyle = '#15171c'; ctx.beginPath(); ctx.ellipse(x, gy - 470, 24, 8, 0, 0, 7); ctx.fill(); }
+      for(const dx of ZR.fridge.doors) if(!(Z.hid && Math.abs(Z.door - dx) < 2)) zrDoorDraw(ctx, dx, gy, 0, false);
+      // the CRT TV in the middle: static, then the pillow tape
+      const tx = WW*0.5, ty = gy - 380; ctx.fillStyle = '#3a3d44'; ctx.strokeStyle = '#15171c'; ctx.lineWidth = 4; ctx.fillRect(tx - 120, ty - 20, 240, 190); ctx.strokeRect(tx - 120, ty - 20, 240, 190);
+      ctx.fillStyle = p2 > 0 ? '#2a1830' : '#7f93a6'; ctx.fillRect(tx - 100, ty, 200, 150);
+      if(p2 > 0){ ctx.fillStyle = '#e48aa8'; ctx.beginPath(); ctx.moveTo(tx, ty + 112); ctx.bezierCurveTo(tx - 70, ty + 56, tx - 26, ty + 22, tx, ty + 56); ctx.bezierCurveTo(tx + 26, ty + 22, tx + 70, ty + 56, tx, ty + 112); ctx.fill(); }
+      else { for(let i = 0; i < 24; i++){ ctx.fillStyle = 'rgba(' + (120 + (i*37 + t*3) % 100) + ',150,170,0.35)'; ctx.fillRect(tx - 100 + (i*29 + t*2) % 190, ty + (i*17) % 140, 12, 4); } }
+      // the shelf of tapes and crates, a cot at the left, water jugs at the right
+      ctx.fillStyle = '#4b3f33'; ctx.fillRect(WW*0.25, gy - 270, WW*0.55, 14);
+      for(let i = 0; i < 18; i++){ ctx.fillStyle = i % 3 ? '#17171b' : '#2a2a30'; ctx.fillRect(WW*0.25 + 14 + i*(WW*0.55 - 28)/18, gy - 306, 20, 36); }
+      ctx.fillStyle = '#60646f'; ctx.fillRect(WW*0.07, gy - 66, 190, 34); ctx.fillRect(WW*0.9, gy - 110, 60, 110);
+      for(const bx of [WW*0.18, WW*0.82]){ ctx.strokeStyle = '#15171c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(bx, gy - 560); ctx.lineTo(bx, gy - 470); ctx.stroke(); ctx.fillStyle = 'rgba(255,230,150,' + (0.55 + 0.1*Math.sin(t*0.1 + bx)) + ')'; ctx.beginPath(); ctx.arc(bx, gy - 458, 12, 0, 7); ctx.fill(); }
+      if(p2 > 0){   // four small Zeroes laugh on the shelf; the pink glow of the tape; a lava glow seeps in at the floor's ends
+        for(let i = 0; i < 4; i++){ const hop = Math.abs(Math.sin(t*0.35 + i*1.7))*6*p2; zrMiniZero(ctx, WW*(0.3 + 0.15*i), gy - 270 - 22*p2, 22, 1, hop); }
+        for(const ex of [0, WW]){ const g = ctx.createRadialGradient(ex, gy, 10, ex, gy, 280); g.addColorStop(0, 'rgba(255,110,40,' + 0.5*p2 + ')'); g.addColorStop(1, 'rgba(255,110,40,0)'); ctx.fillStyle = g; ctx.fillRect(ex - 280, gy - 280, 560, 300); }
+      }
+      ctx.restore();
+    } else {   // the torn edge: a ragged jag of wall at each end, flooded floor edges
+      for(const ex of [0, WW]){ const g = ctx.createRadialGradient(ex, gy, 10, ex, gy, 320); g.addColorStop(0, 'rgba(120,200,255,' + 0.35*p3 + ')'); g.addColorStop(1, 'rgba(120,200,255,0)'); ctx.fillStyle = g; ctx.fillRect(ex - 320, gy - 320, 640, 340); }
+    }
+  });
+}
 // @boss:zero:end algcode
 
 // @boss:x:begin algcode
