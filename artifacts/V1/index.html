@@ -98494,7 +98494,8 @@ const ALG_ROSTER = [
   // @boss:three:end algrow
 
   // @boss:n2763:begin algrow
-  { ...ALG_STUB, id:'n2763', name:'2,763', color:'#d0506a', hp:algHp('n2763'), big:2.8, secret:true, card:'???' },   // `secret`: a dark "?" on the interlude until met; `card`: what the boss bar says until its sign
+  { id:'n2763', name:'2,763', color:'#b771e7', hp:algHp('n2763'), big:3.0, attack:'n2763', arena:'void2763', stationary:false, sprite:'n2763', secret:true, card:'???', spawn:b=>nbSpawn(b), move:(s,t)=>nbMove(s,t), tick:(s,t)=>nbTick(s,t), tel:(s,t)=>nbTel(s,t), fire:(s,t,id)=>{ nbLightsStart(s,t,id); return true; },
+    gap:s=>nbGap(s), telLen:s=>s._tl || 50, phase:(s,ph)=>nbPhase(s,ph), phaseName:(s,ph)=>nbPhaseName(s,ph), body:(s,R,b,f)=>nbBody(s,R,b,f), fx:s=>nbFx(s), decor:(s,k)=>nbDecor(s,k), shot:pr=>nbShotDraw(pr) },   // rush M15-M16: the real fight (3,000 HP); `secret`: a dark "?" on the interlude until met; `card`: what the boss bar says until its sign; all of it is in its algcode pair
   // @boss:n2763:end algrow
 ];
 // THIS player's list: One's row only once they have beaten her (nothing names her before her chain does), so a fresh player's rush is one boss shorter.
@@ -117375,6 +117376,733 @@ function xvDecor(s, key){
 // @boss:three:end algcode
 
 // @boss:n2763:begin algcode
+// THE LAST BOSS (rush M15 + M16, 3,000 HP; The Void, `void2763`). Everything of it lives in this pair and its ALG_ROSTER row. A code-drawn Algebralien of four tube numerals (a rose 2, a cyan 7, a lavender 6, a yellow 3),
+// ten eyes, six black arms; it names itself only in its own fight (the sign at its intro). Its signature is THE HUNGER (the owner's change to the drain: in a radius it hurts you and heals it; the glow grows as you hurt it),
+// and the lights it drains from fighters (LIGHTS). Eight moves: SLAM, WINDMILL, LIGHTS, CAGE, FLOOD (phase 2 on, it opens the phase), PAN ACROSS, ROOT THEM OUT, HERCULEAN (phase 2 on). Three bands (the engine's 66% / 33%):
+// CALM, THE FINAL PHASE (the first tide leaves a dry island), ALL SIX ARMS (a smaller island, a double tide, combos). Nothing here is a projectile: every hit is tested here against the real hurtbox and carries the move's ONE
+// attack id (nbHit: a fighter takes at most one hit from a move; the tide's ticks share their id and the engine's cap), so one move is never more than one boss hit. The owner's rule for the last boss: little rest, moves
+// that overlap (a move's tail while the next one winds up), and in the last band COMBOS (two moves chained, each with its own tell). Its bag `_hz` holds plain numbers; what it draws is a function of it and the clock.
+const NG = {
+  introF:170, firstAtk:90, beatF:60, gaps:[80, 56, 34], chainGap:12, belly:[60, 30, 30], glide:0.6,
+  tl:{ n2763:[56, 52, 50], ngslam:[58, 52, 48], ngwind:[68, 62, 72], ngcage:[70, 66, 62], ngflood:[88, 88, 80], ngpan:[38, 34, 32], ngroot:[44, 40, 38], ngherc:[40, 36, 34] },
+  chainTl:30,   // a chained move's wind-up is never shorter than this (the tell is the body's)
+  chain:{ n2763:'ngslam', ngslam:'ngpan', ngwind:'ngherc', ngcage:'ngroot', ngpan:'ngwind', ngroot:'ngslam', ngherc:'n2763' },
+  hunger:{ r0:150, r1:220, dps0:0.25, dps1:0.5, heal0:2.5, heal1:2.0, cap:4.4, budget:[100, 150, 200], last:150 },   // radius 150 + 70 m; %/s 0.25 + 0.5 m; HP per 1% 2.5 + 2 m; m = 1 - hp/maxHp
+  lights:{ per:0.3, min:3, max:8, sp:[4.4, 4.4, 5.2], gap:7, turn:0.62, r:12, dmg:0.6, plus:[0, 0, 2], second:28, life:520 },
+  slam:{ n:[2, 4, 6], track:[30, 26, 22], lock:[18, 18, 18], fall:14, sit:40, out:12, hw:56, space:250, dmg:0.9, kbx:7, kby:12, chase:7 },
+  wind:{ arms:[3, 6, 6], len:[240, 240, 270], w:14, om:[0.045, 0.04, 0.04], rev:[1, 1.5, 2], slow:10, dmg:0.8, kbx:10, kby:9 },
+  cage:{ w:110, h:130, n:[1, 2, 2], gap:[40, 40, 32], stay:[220, 220, 260], lock:22, track:20, fall:14, out:20, dmg:0.9, kbx:9, kby:11, lead:20, minLead:110 },
+  flood:{ lvl1:56, lvl2:84, rise:12, hold:70, ebb:20, second:30, sym:{ w:300, up:100, grow:12 }, tickEvery:36, tickDmg:0.2, riseDmg:0.7, isl:[0, 720, 560], islGrow:12, lavaPct:0.25, lavaEvery:40, lavaGrace:12, lavaBase:14, sleepAfter:20, symAt:40 },
+  pan:{ head:90, out:[12, 13, 14], back:[14, 15, 15.5], w:60, h:22, band2:16, dmg:0.7, kbx:6, kby:13, second:30, maxOut:1300 },
+  root:{ top:[8, 9, 10], start:3, acc:0.045, ahead:380, w:130, h:18, near:70, swell:[28, 28, 28], col:[140, 150, 160], colH:240, live:14, dmg:0.8, slide:0.3, life:240, second:50 },
+  herc:{ glide:28, vmax:10, stop:[260, 260, 290], blow:[[24, 22, 32], [24, 22, 32], [20, 18, 28]], reach:[300, 300, 330], dmg:[0.5, 0.5, 0.8, 0.5], fourth:26, live:6, tell:16, tellWide:[24, 24, 24], lowH:40 },
+  end:{ total:210, hold:3400 },
+  cols:['#ff9a3c', '#8ae04a', '#a07af0', '#2da7e4', '#d0d0dc', '#fefd33', '#7fd9c3', '#f08a5d'],   // the colours of the bosses it has seen go, in the rush's order (Two, Four, Nine, Six, Zero, X, One, Three)
+  num:['#f1527f', '#50e1e4', '#b771e7', '#f4d37b'],
+};
+function nbHz(s){ return s._hz || (s._hz = {}); }
+function nbPh(s){ return Math.max(1, Math.min(3, s._phase || 1)); }
+function nbLive(f){ return !!f && !f.dead; }
+function nbNearest(s, x, y){ let b = null, bd = 1e9; for(const f of fighters){ if(f.dead) continue; const d = Math.hypot(f.x - (x == null ? s.x : x), f.y - (y == null ? s.y : y)); if(d < bd){ bd = d; b = f; } } return b; }
+function nbFarthest(s){ let b = null, bd = -1; for(const f of fighters){ if(f.dead) continue; const d = Math.hypot(f.x - s.x, f.y - s.y); if(d > bd){ bd = d; b = f; } } return b; }
+function nbIntro(s){ const Z = nbHz(s); return Z.in != null && hazardT - Z.in < NG.introF; }
+function nbU(s){ const Z = nbHz(s); return Z.in == null ? 0 : hazardT - Z.in; }
+function nbAwake(s){ const Z = nbHz(s); return s.hp > 0 && !nbIntro(s) && !(Z.sleep > hazardT) && !s._ngEnd && !((Z.beat || 0) > hazardT - 20) && Z.in != null; }
+// ONE hit per move: a fighter is hit at most once by one attack id; the tide's ticks and the glow use applyHit directly under the engine's cap.
+function nbHit(f, id, frac, kbx, kby){
+  if(!nbLive(f) || f.invuln > 0 || f._ngId === id) return false;
+  f._ngId = id; applyHit(f, bossDmg() * frac, kbx, kby, null, { bossAtk:id, volley:true, shot:1 }); return true;
+}
+function nbRectHit(f, x0, y0, x1, y1){ return hurtGap(f, clamp(f.x, x0, x1), clamp(hurtCY(f), y0, y1)) < 0.5; }
+// ---- the hit filter (algBossHit): nothing in the intro, the first 20 frames of a phase beat, or in the ending ---------------------------------------------------------------------------------------------------
+function nbHitFilter(s, f, d){ const Z = nbHz(s); if(nbIntro(s) || (Z.beat || 0) > hazardT - (NG.beatF - 40) || s._ngEnd) return 0; return d; }
+ALG_HIT.n2763 = nbHitFilter;
+// ---- the island and the lava ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+function nbIslHalf(Z){ const I = Z.isl; if(!I) return 0; const u = I.t0 == null ? 1 : clamp((hazardT - I.t0) / NG.flood.islGrow, 0, 1); return (I.from + (I.hw - I.from) * u) / 2; }
+function nbOnIsland(Z, x){ const I = Z.isl; return !I || Math.abs(x - I.cx) <= nbIslHalf(Z); }
+// the lava surface at x, as a height over the floor: the tide where it is up, else the lava floor outside the island once there is one
+function nbLavaAt(Z, x){ let h = (Z.tide && x >= Z.tx0 && x <= Z.tx1) ? Z.tide : 0; if(Z.isl && !nbOnIsland(Z, x)) h = Math.max(h, NG.flood.lavaBase); return h; }
+function nbInLava(Z, f){ const h = nbLavaAt(Z, f.x); return h > 0 && feetY(f) > groundY() - h + 1; }
+function nbSpawn(b){
+  const Z = nbHz(b), gy = groundY();
+  b._ngR = b.r; b.x = WW * 0.5; b.y = gy - b.r - NG.belly[0]; Z.in = hazardT; b._atkTimer = NG.introF + NG.firstAtk; Z.turn = 0; Z.lit = NG.lights.min; Z.heal = 0; Z.healB = [0, 0, 0]; Z.rad = NG.hunger.r0;
+  Z.hands = []; Z.orbs = []; Z.cages = []; Z.syms = []; Z.roots = []; Z.pans = []; Z.blows = []; Z.tide = 0; Z.nTaken = 0; Z.hd = [];
+}
+// ---- movement: it hovers, glides toward the fighters' middle (0.6 px a frame), and is held to the island from the first tide on ----------------------------------------------------------------------------------
+function nbMove(s, tgt){
+  const Z = nbHz(s), gy = groundY(), R = s._ngR || s.r, ph = nbPh(s), X = s._sx;
+  s.vy = 0; s.vx = 0;
+  let ty = gy - R - NG.belly[ph - 1] - 3 * Math.sin(hazardT * 0.04);
+  if(X && X.k === 'herc' && X.own) ty = gy - R - 40;
+  s.y += (ty - s.y) * (nbIntro(s) ? 0.2 : 0.1);
+  if(nbIntro(s)){ s.x += (WW * 0.5 - s.x) * 0.02; return true; }
+  if(s._ngEnd) return true;
+  if(X && X.own){ nbClampIsland(s, Z, R); return true; }
+  if(tgt) s.face = (tgt.x - s.x) > 18 ? 1 : ((tgt.x - s.x) < -18 ? -1 : s.face);
+  const L = fighters.filter(f => !f.dead); let cx = 0; for(const f of L) cx += f.x; cx = L.length ? cx / L.length : s.x;
+  s.x += clamp(cx - s.x, -NG.glide, NG.glide);
+  nbClampIsland(s, Z, R);
+  return true;
+}
+function nbClampIsland(s, Z, R){
+  s.x = clamp(s.x, R * 0.4, WW - R * 0.4);
+  const I = Z.isl; if(I){ const hw = nbIslHalf(Z) - 30; s.x = clamp(s.x, I.cx - hw, I.cx + hw); }
+}
+// ---- the turn ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+function nbTel(s, tgt){
+  const k = s._telKind, ph = nbPh(s), Z = nbHz(s);
+  Z.turn = (Z.turn || 0) + 1;
+  let tl = NG.tl[k]; tl = Array.isArray(tl) ? tl[Math.min(tl.length, ph) - 1] : tl; tl = tl || 50;
+  if(Z.chained){ Z.nChain = (Z.nChain | 0) + 1; tl = Math.max(NG.chainTl, Math.round(tl * 0.7)); Z.chained = 0; }
+  s._tl = tl; s._tel = tl; Z.telStart = hazardT; s._tn = { k, ph };
+  if(k === 'ngwind'){ Z.wm = null; nbWindArms(s); }
+  if(k === 'ngflood' && !Z.isl){ let m = 0; const q = fighters.filter(f => !f.dead); for(const f of q) m += f.x; const c = q.length ? (m + s.x) / (q.length + 1) : s.x; Z.tx0 = clamp(c - 715, 0, WW); Z.tx1 = clamp(c + 715, 0, WW); }   // the span the tell shows
+}
+function nbGap(s){ const Z = nbHz(s); return (Z.chainNext && nbPh(s) >= 3) ? NG.chainGap : NG.gaps[nbPh(s) - 1]; }
+function nbPhase(s, ph){
+  const Z = nbHz(s);
+  if(ph < 2) return;
+  Z.beat = hazardT; s._atkTimer = Math.max(s._atkTimer, NG.beatF + 20);
+  shake(10); for(let i = 0; i < 22; i++) puff(s.x + (Math.random() - 0.5) * s.r * 1.6, s.y + (Math.random() - 0.5) * s.r, NG.num[i % 4], 6);
+  if(ph >= 3 && Z.isl){ Z.isl.from = Z.isl.hw; Z.isl.hw = NG.flood.isl[2]; Z.isl.t0 = hazardT; }   // the lava creeps in: the island gets smaller over 12 frames
+}
+function nbPhaseName(s, ph){ return ph >= 3 ? 'All Six Arms' : (ph >= 2 ? 'The Final Phase' : 'Calm'); }
+BOSS_MOVES.ngslam = (s, tgt) => nbSlamStart(s, tgt);
+BOSS_MOVES.ngwind = (s, tgt) => nbWindStart(s, tgt);
+BOSS_MOVES.ngcage = (s, tgt) => nbCageStart(s, tgt);
+BOSS_MOVES.ngflood = (s, tgt) => nbFloodStart(s, tgt);
+BOSS_MOVES.ngpan = (s, tgt) => nbPanStart(s, tgt);
+BOSS_MOVES.ngroot = (s, tgt) => nbRootStart(s, tgt);
+BOSS_MOVES.ngherc = (s, tgt) => nbHercStart(s, tgt);
+BOSS_PICK.n2763 = {
+  tags:{ n2763:['far', 'air'], ngslam:['ground', 'platform'], ngwind:'close', ngcage:['far', 'wall'], ngflood:'ground', ngpan:['air', 'platform'], ngroot:['ground', 'far'], ngherc:['far', 'ground'] },
+  moves:(s, ph) => ['n2763', 'ngslam', 'ngwind', 'ngcage', 'ngpan', 'ngroot'].concat(ph >= 2 ? ['ngflood', 'ngherc'] : []),
+  force:(s, ph) => { const Z = nbHz(s); if(Z.chainNext && ph >= 3){ const k = Z.chainNext; Z.chainNext = null; Z.chained = 1; return k; } Z.chainNext = null; return null; },
+  first:(s, ph) => { const Z = nbHz(s); if(ph >= 2 && !Z.b1){ Z.b1 = 1; return 'ngflood'; } return null; },   // the first tide opens the second phase (and leaves the island)
+  busy:(s) => !!s._sx || !!nbHz(s).floodOn
+};
+BOSS_EXTRA['2,763'] = ['ngslam', 'ngwind', 'ngcage', 'ngflood', 'ngpan', 'ngroot', 'ngherc'];
+BOSS_TELLS.n2763 = {
+  n2763:{ pose:'rise', glow:'#50e1e4', beats:3 }, ngslam:{ pose:'rise', glow:'#f1527f', beats:2 }, ngwind:{ pose:'crouch', glow:'#b771e7', beats:3 }, ngcage:{ pose:'rise', glow:'#f4d37b', beats:2 },
+  ngflood:{ pose:'crouch', glow:'#ff7a2e', beats:2 }, ngpan:{ pose:'tilt', glow:'#ffb3a0', beats:2 }, ngroot:{ pose:'crouch', glow:'#f4d37b', beats:2 }, ngherc:{ pose:'lunge', glow:'#f1527f', beats:2 }, _:{ pose:'crouch', glow:'#b771e7', beats:2 }
+};
+// a move's start: its state and id; in the last band every second turn arms a combo (the partner follows after a very short gap, with its own wind-up)
+function nbKindOf(k){ return ({ lights:'n2763', slam:'ngslam', wind:'ngwind', cage:'ngcage', flood:'ngflood', pan:'ngpan', root:'ngroot', herc:'ngherc' })[k] || k; }
+function nbBegin(s, k, o){
+  const Z = nbHz(s), ph = nbPh(s), id = ++BOSS_ATK_ID;
+  s._sx = Object.assign({ k, id, t:0, ph }, o || {}); Z.curId = id;
+  const part = NG.chain[nbKindOf(k)];
+  Z.chainNext = (ph >= 3 && part && (Z.turn % 2 === 0)) ? part : null;
+  return s._sx;
+}
+// ---- every frame ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+function nbTick(s, tgt){
+  const Z = nbHz(s);
+  if(!(s.hp > 0)) return;
+  if(s._algCard != null && nbU(s) >= 100) s._algCard = null;   // the sign is up: the bar says its name now
+  const f0 = nbNearest(s); Z.lx = f0 ? clamp((f0.x - s.x) / 400, -1, 1) : 0; Z.ly = f0 ? clamp((f0.y - s.y) / 400, -1, 1) : 0;
+  if(s._tel > 0 && s._telKind === 'ngwind'){ const M = nbWindArms(s), e = (s._tl || 60) - s._tel, W = NG.wind, om = W.om[nbPh(s) - 1]; M.k = Math.min(1, M.k + 1 / 12); M.a += om * (0.18 + 0.82 * clamp((e - ((s._tl || 60) - 12)) / 12, 0, 1)) * ((Z.turn % 2) ? 1 : -1); }   // the slow turn that is the warning, quickening over the last 12 frames
+  Z.hd = [];   // the hands the moves set this frame
+  if(s._tel > 0 && nbLive(tgt) && Math.abs(tgt.x - s.x) > 20 && s._telKind !== 'ngherc') s.face = tgt.x > s.x ? 1 : -1;
+  nbAura(s);
+  nbLavaStep(s);
+  nbCagesStep(s); nbSymsStep(s);
+  nbHandsStep(s); nbOrbsStep(s); nbRootsStep(s); nbPansStep(s); nbBlowsStep(s);
+  if(s._sx) nbStep(s, tgt);
+}
+// ---- THE HUNGER (the drain): inside the glow it hurts you and heals it; the glow grows as you hurt it. Asleep while FLOOD runs and for 20 frames after the ebb. No hit, no knock, no banner. ---------------------------------------
+function nbM(s){ return clamp(1 - s.hp / (s.maxHp || 3000), 0, 1); }
+function nbAura(s){
+  const Z = nbHz(s), H = NG.hunger, m = nbM(s), want = H.r0 + (H.r1 - H.r0) * m, ph = nbPh(s);
+  Z.rad += clamp(want - Z.rad, -1, 1);
+  const aw = nbAwake(s); Z.glow = aw ? Math.min(12, (Z.glow || 0) + 1) : Math.max(0, (Z.glow || 0) - 1);   // the glow grows in / sinks over 12 frames
+  if(!aw) return;
+  const per = (H.dps0 + H.dps1 * m) / 60;
+  for(const f of fighters){
+    if(f.dead || f.invuln > 0 || f._fsLock) continue;
+    if(!(hurtGap(f, s.x, s.y) < Z.rad)) continue;
+    f._hushT = Math.max(f._hushT || 0, hazardT + 20);   // no specials, no finishers (a Final Smash still goes)
+    // the turn clip: this move's hit and the glow together never pass one boss hit; the glow alone never passes H.cap per turn
+    if(f._ngTurn !== Z.curId || !(f._ngTaken >= 0)){ f._ngTurn = Z.curId; f._ngTaken = 0; }
+    const moveDmg = (f._bossHitId === Z.curId) ? (f._bossHitDmg || 0) : 0, room = Math.min(H.cap - f._ngTaken, bossDmg() - moveDmg);
+    const dealt = Math.max(0, Math.min(per, room)); if(!(dealt > 0)) continue;
+    f.pct += dealt; f._ngTaken += dealt; Z.nTaken = (Z.nTaken || 0) + dealt;
+    Z.lit = Math.min(NG.lights.max, (Z.lit || 0) + dealt / NG.lights.per);   // what it drains becomes the lights it throws
+    // the heal: from damage actually dealt, to this band's budget, never above the top of the band, never in the last 150 HP, 450 HP in all
+    const hs = (H.heal0 + H.heal1 * m) * dealt * ALG_RUSH.dmgToBoss, top = s.maxHp * (ph >= 3 ? 0.33 : (ph >= 2 ? 0.66 : 1));
+    if(s.hp > H.last){
+      const room2 = Math.min(H.budget[ph - 1] - Z.healB[ph - 1], 450 - Z.heal, top - s.hp, hs);
+      if(room2 > 0){ s.hp += room2; Z.healB[ph - 1] += room2; Z.heal += room2; Z.mote = hazardT; }
+    }
+  }
+}
+// ---- lava: the floor outside the island, and the tide --------------------------------------------------------------------------------------------------------------------------------------------------------------------
+function nbLavaStep(s){
+  const Z = nbHz(s);
+  if(Z.isl && Z.isl.t0 != null && hazardT - Z.isl.t0 > NG.flood.islGrow){ Z.isl.from = Z.isl.hw; Z.isl.t0 = null; }
+  for(const f of fighters){
+    if(f.dead){ f._ngLv = 0; continue; }
+    if(nbInLava(Z, f) && !(f.invuln > 0)){
+      f._ngLv = (f._ngLv || 0) + 1;
+      if(!Z.floodOn && f._ngLv >= NG.flood.lavaGrace && (f._ngLv - NG.flood.lavaGrace) % NG.flood.lavaEvery === 0){
+        applyHit(f, bossDmg() * NG.flood.lavaPct, 0, -10, null, { bossAtk:++BOSS_ATK_ID, volley:true, shot:1 });   // a small hop up, no knock away: never a trap
+        for(let i = 0; i < 4; i++) puff(f.x, feetY(f), '#ff7a2e', 3);
+      }
+    } else f._ngLv = 0;
+  }
+}
+function nbStep(s, tgt){
+  const X = s._sx; if(!X) return;
+  X.t++;
+  if(X.k === 'lights') nbLightsStep(s, X);
+  else if(X.k === 'slam') nbSlamStep(s, X);
+  else if(X.k === 'wind') nbWindStep(s, X);
+  else if(X.k === 'cage') nbCageStep(s, X);
+  else if(X.k === 'flood') nbFloodStep(s, X);
+  else if(X.k === 'pan') nbPanStep(s, X);
+  else if(X.k === 'root') nbRootStep(s, X);
+  else if(X.k === 'herc') nbHercStep(s, X);
+}
+function nbEnd(s){ s._sx = null; }
+function nbHitCap(f, id, frac, kbx, kby){   // a hit under the engine's cap for the id (a patch then its column, a blow then the next): the sum is never more than one boss hit
+  if(!nbLive(f) || f.invuln > 0) return false;
+  applyHit(f, bossDmg() * frac, kbx, kby, null, { bossAtk:id, volley:true, shot:1 }); return true;
+}
+// ---- LIGHTS (the signature): the lights it has drained lift off one at a time in a spiral. N = however many it carries (3 to 8, +2 in the last band), then it drops back to 3. Phase 2: a second spiral the other way 28 frames later;
+// the last band's orbs are quicker. Orbs are 12 px, 4.4 px a frame (5.2 in the last band): slower than a run, so you weave, jump or stand where it is thin. -------------------------------------------------------------------------
+function nbLightsStart(s, tgt, id){
+  const Z = nbHz(s), L = NG.lights, ph = nbPh(s), n = Math.round(clamp(Z.lit, L.min, L.max)) + L.plus[ph - 1];
+  const X = nbBegin(s, 'lights', { n, sp:L.sp[ph - 1], emit:0, dir:(Z.turn % 2) ? 1 : -1, a0:null, second:ph >= 2, e2:0, a1:null });
+  X.cols = []; for(let i = 0; i < n; i++) X.cols.push(NG.cols[i % NG.cols.length]);
+  Z.lit = L.min; Z.litFlash = hazardT;
+}
+function nbLightsAim(s){ const f = nbNearest(s); return f ? Math.atan2(f.y - s.y, f.x - s.x) : (s.face > 0 ? 0 : Math.PI); }
+function nbLightsStep(s, X){
+  const Z = nbHz(s), L = NG.lights;
+  const emit = (arr, dir, a0, i) => { const a = a0 + dir * L.turn * i; Z.orbs.push({ x:s.x, y:s.y, vx:Math.cos(a) * X.sp, vy:Math.sin(a) * X.sp, id:X.id, t:0, col:X.cols[i % X.cols.length], r:L.r }); };
+  const t = X.t - 1;
+  if(X.emit < X.n && t % L.gap === 0){ if(X.a0 == null) X.a0 = nbLightsAim(s); emit(null, X.dir, X.a0, X.emit); X.emit++; }
+  if(X.second){
+    const u = t - L.second;
+    if(u >= 0 && X.e2 < X.n && u % L.gap === 0){ if(X.a1 == null) X.a1 = nbLightsAim(s); emit(null, -X.dir, X.a1, X.e2); X.e2++; }
+  }
+  if(X.emit >= X.n && (!X.second || X.e2 >= X.n)) nbEnd(s);
+}
+function nbOrbsStep(s){
+  const Z = nbHz(s), o = Z.orbs, gy = groundY();
+  for(let i = o.length - 1; i >= 0; i--){
+    const b = o[i]; b.t++; b.x += b.vx; b.y += b.vy;
+    if(b.t > NG.lights.life || b.x < -120 || b.x > WW + 120 || b.y < -900 || b.y > gy + 80){ o.splice(i, 1); continue; }
+    for(const f of fighters){ if(f.dead || f.invuln > 0) continue; if(hurtGap(f, b.x, b.y) < b.r){ if(nbHit(f, b.id, NG.lights.dmg, Math.sign(b.vx || 1) * 6, -7)){ puff(b.x, b.y, b.col, 6); b.t = 1e5; } } }
+  }
+}
+// ---- SLAM: black hands on shadows, 2 / 4 / 6 by band. One hand on each fighter (it follows, then locks for the last 16-18 frames); the rest land where a lone fighter would run (alternating sides, 250 px apart: a corridor
+// between two hands is 92 px wide and the far side is always open). A real shadow grows under each hand. A hand falls over 14 frames (live the whole way), sits 40, withdraws in 12. ----------------------------------------------------------
+function nbSlamStart(s, tgt){
+  const Z = nbHz(s), S = NG.slam, ph = nbPh(s), L = fighters.filter(f => !f.dead), n = S.n[ph - 1];
+  const X = nbBegin(s, 'slam', { n });
+  const gy = groundY(), id = X.id;
+  for(let i = 0; i < n; i++){
+    const f = L[i % Math.max(1, L.length)] || tgt, own = i < L.length, k = i - L.length + 1;   // k: 1.. for the extras
+    const side = (f && Math.abs(f.vx) > 0.6) ? Math.sign(f.vx) : (f && f.x < WW / 2 ? 1 : -1);
+    const off = own ? 0 : (side * (k % 2 ? 1 : -1)) * S.space * Math.ceil(k / 2);
+    Z.hands.push({ i, id, fi:f ? f.idx : 0, off, x:f ? f.x + off : s.x, st:'track', t:0, tr:S.track[ph - 1], lk:S.lock[ph - 1], ys:gy, y:gy - 700 });
+  }
+  X.hold = Z.hands.length;
+}
+function nbSlamStep(s, X){
+  const Z = nbHz(s); let busy = false;
+  for(const h of Z.hands) if(h.id === X.id && (h.st === 'track' || h.st === 'lock' || h.st === 'fall')) busy = true;
+  if(!busy) nbEnd(s);
+}
+function nbHandsStep(s){
+  const Z = nbHz(s), S = NG.slam, gy = groundY();
+  for(let j = Z.hands.length - 1; j >= 0; j--){
+    const h = Z.hands[j]; h.t++;
+    const f = fighters[h.fi];
+    if(h.st === 'track' || h.st === 'lock'){
+      if(h.st === 'track'){
+        if(f && !f.dead){ h.x += clamp(f.x + h.off - h.x, -S.chase, S.chase); h.ys = (f.onground && feetY(f) < gy - 20) ? feetY(f) : gy; }
+        if(h.t >= h.tr) h.st = 'lock';
+      } else if(h.t >= h.tr + h.lk){ h.st = 'fall'; h.t0 = h.t; }
+      h.y = gy - 700 + 60 * Math.sin(h.t * 0.1);
+    }
+    if(h.st === 'fall'){
+      const u = (h.t - h.t0) / S.fall, from = gy - 700;
+      h.y = from + (h.ys - S.hw * 0.55 - from) * Math.min(1, u * u * 0.4 + u * 0.6);
+      for(const g of fighters){ if(g.dead || g.invuln > 0) continue; if(hurtGap(g, h.x, h.y) < S.hw) nbHit(g, h.id, S.dmg, Math.sign(g.x - h.x || 1) * S.kbx, -S.kby); }
+      if(h.t - h.t0 >= S.fall){ h.st = 'sit'; h.t1 = h.t; impact(h.x, h.ys, { shake:6, dust:1.5, debris:5, scar:true, r:70 }); }
+    } else if(h.st === 'sit'){ if(h.t - h.t1 >= S.sit) { h.st = 'out'; h.t2 = h.t; } }
+    else if(h.st === 'out'){ if(h.t - h.t2 >= S.out) Z.hands.splice(j, 1); }
+  }
+}
+// ---- WINDMILL: it coils on a three-count and the arms grow out round the compass (3, then 6) and start to turn slowly: that slow turn is the warning, and it speeds up over the last 12 frames of the wind-up. The arms turn
+// one revolution (3 arms), 1.5 (6 arms), 2 with the direction reversing at the midpoint after a 10 frame slowdown (the last band; arms 270 px). Thin arms (28 px) can be hopped; outside the reach is safe. The arms never draw below the floor. ----
+function nbWindArms(s){ const Z = nbHz(s), W = NG.wind, ph = nbPh(s); return Z.wm || (Z.wm = { n:W.arms[ph - 1], len:W.len[ph - 1], a:0, k:0, on:0, fold:null }); }
+function nbWindStart(s, tgt){
+  const Z = nbHz(s), W = NG.wind, ph = nbPh(s), M = nbWindArms(s);
+  M.n = W.arms[ph - 1]; M.len = W.len[ph - 1]; M.on = 1; M.fold = null;
+  const total = W.rev[ph - 1] * Math.PI * 2, om = W.om[ph - 1];
+  nbBegin(s, 'wind', { om, total, rot:0, dir:(Z.turn % 2) ? 1 : -1, rev:ph >= 3, flip:0, hold:0 });
+}
+function nbWindStep(s, X){
+  const Z = nbHz(s), M = nbWindArms(s), W = NG.wind, gy = groundY();
+  let sp = X.om;
+  if(X.rev){   // the last band: halfway round it slows over 10 frames, stops, and turns the other way
+    if(!X.flip && X.rot >= X.total / 2){ X.flip = 1; X.fl0 = X.t; }
+    if(X.flip){ const u = (X.t - X.fl0) / W.slow; sp = u < 1 ? X.om * (1 - 2 * u) : -X.om; }
+  }
+  M.a += sp * X.dir; X.rot += sp; M.k = Math.min(1, M.k + 1 / 12);
+  const done = X.rev ? (X.flip && X.rot <= 0) : X.rot >= X.total;
+  for(let i = 0; i < M.n; i++){
+    const a = M.a + i * Math.PI * 2 / M.n, ca = Math.cos(a), sa = Math.sin(a);
+    for(let r = 36; r <= M.len; r += 18){
+      const px = s.x + ca * r, py = s.y + sa * r; if(py > gy - 2) break;
+      for(const f of fighters){ if(f.dead || f.invuln > 0) continue; if(hurtGap(f, px, py) < W.w) nbHit(f, X.id, W.dmg, Math.sign(f.x - s.x || 1) * W.kbx, -W.kby); }
+    }
+  }
+  if(done || X.t > 420){ M.on = 0; M.fold = hazardT; nbEnd(s); }
+}
+// ---- CAGE: it lifts a barred cage and rattles it; a real shadow grows under the FARTHEST fighter (follows, then locks 16 frames before the cage falls). It falls over 14 frames (live while it falls), throws whoever it hits out and up, and STANDS as a
+// solid box (110 x 130) for 220 frames, a wall and a place to stand, then an arm lifts it away. Phase 2: two cages 40 frames apart; the last band 32 apart, and the second is led by 20 frames of your run (never closer than 90 px). ----
+function nbCageStart(s, tgt){
+  const Z = nbHz(s), C = NG.cage, ph = nbPh(s), n = C.n[ph - 1], X = nbBegin(s, 'cage', { n });
+  for(let i = 0; i < n; i++){
+    const f = nbFarthest(s) || tgt;
+    Z.cages.push({ id:X.id, i, st:'wait', t:-i * C.gap[ph - 1], x:f ? f.x : s.x, fi:f ? f.idx : 0, stay:C.stay[ph - 1], y:groundY() - 760, n });
+  }
+}
+function nbCageStep(s, X){ const Z = nbHz(s); if(!Z.cages.some(c => c.id === X.id && (c.st === 'wait' || c.st === 'track' || c.st === 'lock' || c.st === 'fall'))) nbEnd(s); }
+function nbCagesStep(s){
+  const Z = nbHz(s), C = NG.cage, gy = groundY();
+  for(let j = Z.cages.length - 1; j >= 0; j--){
+    const c = Z.cages[j]; c.t++;
+    if(c.st === 'wait' && c.t >= 0){ c.st = 'track'; c.t = 0; c.tr = C.track; const f = nbFarthest(s); if(f){ c.fi = f.idx; c.x = f.x; } }
+    if(c.st === 'track'){
+      const f = fighters[c.fi];
+      if(f && !f.dead) c.x += clamp(f.x - c.x, -8, 8);
+      c.y = gy - 760 + 30 * Math.sin(c.t * 0.2);
+      if(c.t >= c.tr){ c.st = 'lock'; c.t = 0; const g = fighters[c.fi]; if(g && !g.dead && c.i > 0 && nbPh(s) >= 3){ const lead = g.vx * C.lead; if(Math.abs(lead) >= C.minLead && !Z.cages.some(o => o !== c && o.id === c.id && Math.abs(o.x - (c.x + lead)) < C.w + 20)) c.x += lead; } }
+    } else if(c.st === 'lock'){ c.y = gy - 760; if(c.t >= C.lock){ c.st = 'fall'; c.t = 0; } }
+    else if(c.st === 'fall'){
+      const u = Math.min(1, c.t / C.fall), from = gy - 760; c.y = from + (gy - C.h - from) * (u * u * 0.4 + u * 0.6);
+      for(const g of fighters){ if(g.dead || g.invuln > 0) continue; if(nbRectHit(g, c.x - C.w / 2, c.y, c.x + C.w / 2, c.y + C.h)) nbHit(g, c.id, C.dmg, Math.sign(g.x - c.x || 1) * C.kbx, -C.kby); }
+      if(c.t >= C.fall){
+        c.st = 'stand'; c.t = 0; c.y = gy - C.h; impact(c.x, gy, { shake:9, dust:2, debris:6, scar:true, r:90 });
+        for(const g of fighters){ if(g.dead) continue; if(nbRectHit(g, c.x - C.w / 2, gy - C.h, c.x + C.w / 2, gy)){ const sd = Math.sign(g.x - c.x) || 1; g.x = c.x + sd * (C.w / 2 + g.r + 6); g.vx = sd * 5; } }   // nobody is left inside it
+        c.plat = { x:c.x - C.w / 2, y:gy - C.h, w:C.w, h:C.h, solid:true, _ng:true }; worldPlats.push(c.plat);
+      }
+    } else if(c.st === 'stand'){ if(c.t >= c.stay){ c.st = 'out'; c.t = 0; const k = worldPlats.indexOf(c.plat); if(k >= 0) worldPlats.splice(k, 1); } }
+    else if(c.st === 'out'){ c.y = gy - C.h - 760 * Math.pow(c.t / C.out, 2); if(c.t >= C.out) Z.cages.splice(j, 1); }
+  }
+}
+// ---- FLOOD (phase 2 on; the first tide opens the phase): embers and bubbling at both ends of the tide's span, the floor's cracks glow from both ends toward the middle, Division Symbols rise as a refuge; the lava rises over 12 frames to
+// 56 px (live while rising, 0.7), holds 70 (0.2 every 36 frames to anyone in it), ebbs over 20. The last band: a second surge to 84 px after 30 frames. The first tide leaves a DRY ISLAND centred on the boss (720 px; 560 in the last band), lava
+// everywhere else for good, so nobody outruns it. The glow sleeps from the first frame of the rise until 20 frames after the ebb. ------------------------------------------------------------------------------------------
+function nbSymPlan(s, Z){
+  const L = fighters.filter(f => !f.dead).length, n = L >= 3 ? 3 : 2, I = Z.isl, F = NG.flood;
+  let c = I ? I.cx : s.x; if(!I){ let m = 0; const q = fighters.filter(f => !f.dead); for(const f of q) m += f.x; c = q.length ? (m + s.x) / (q.length + 1) : s.x; }
+  const half = I ? nbIslHalf(Z) : 360, off = clamp(half - 140, 140, 220), xs = n === 3 ? [c - off - 80, c, c + off + 80] : [c - off, c + off];
+  return xs.map(x => clamp(x, F.sym.w / 2 + 40, WW - F.sym.w / 2 - 40));
+}
+function nbSymsRise(s){
+  const Z = nbHz(s), F = NG.flood, gy = groundY(); if(Z.syms.length) return;
+  for(const x of nbSymPlan(s, Z)){ const p = { x:x - F.sym.w / 2, y:gy - F.sym.up, w:F.sym.w, h:14, hop:true, _ng:true }; worldPlats.push(p); Z.syms.push({ x, t:0, plat:p, st:'up' }); }
+}
+function nbSymsStep(s){
+  const Z = nbHz(s), F = NG.flood;
+  for(let j = Z.syms.length - 1; j >= 0; j--){ const q = Z.syms[j]; q.t++; if(q.st === 'up') q.plat.y = groundY() - F.sym.up * growK(q.t + 1); else if(q.st === 'down') q.plat.y = groundY() - F.sym.up * clamp(1 - q.t / F.ebb, 0, 1); if(q.st === 'down' && q.t >= F.ebb){ const k = worldPlats.indexOf(q.plat); if(k >= 0) worldPlats.splice(k, 1); Z.syms.splice(j, 1); } }
+  if(s._tel > 0 && s._telKind === 'ngflood' && s._tl - s._tel === F.symAt) nbSymsRise(s);   // the symbols rise in the middle of the wind-up, so there is time to climb
+}
+function nbFloodStart(s, tgt){
+  const Z = nbHz(s), F = NG.flood, ph = nbPh(s), n = Z.isl ? 2 : 1;
+  const X = nbBegin(s, 'flood', { st:'rise', t1:0, surge:1, n:ph >= 3 ? 2 : 1, hits:0 });
+  nbSymsRise(s);
+  Z.floodOn = 1; Z.sleep = 1e9;
+  if(!Z.isl){ let m = 0; const q = fighters.filter(f => !f.dead); for(const f of q) m += f.x; const c = q.length ? (m + s.x) / (q.length + 1) : s.x; Z.tx0 = clamp(c - 715, 0, WW); Z.tx1 = clamp(c + 715, 0, WW); }
+  else { Z.tx0 = 0; Z.tx1 = WW; }
+}
+function nbFloodStep(s, X){
+  const Z = nbHz(s), F = NG.flood, gy = groundY(), ph = nbPh(s), t = X.t - X.t1, lvl = X.surge === 2 ? F.lvl2 : F.lvl1;
+  if(X.st === 'rise'){
+    Z.tide = lvl * clamp(t / F.rise, 0, 1);
+    for(const f of fighters){ if(f.dead || f.invuln > 0) continue; if(f.x >= Z.tx0 && f.x <= Z.tx1 && feetY(f) > gy - Z.tide + 1) nbHit(f, X.id, F.riseDmg, Math.sign(f.x - s.x || 1) * 3, -12); }
+    if(t >= F.rise){ X.st = 'hold'; X.t1 = X.t; shake(5); }
+  } else if(X.st === 'hold'){
+    Z.tide = lvl;
+    if(t > 0 && t % F.tickEvery === 0) for(const f of fighters){ if(f.dead || f.invuln > 0) continue; if(f.x >= Z.tx0 && f.x <= Z.tx1 && feetY(f) > gy - Z.tide + 1){ nbHitCap(f, X.id, F.tickDmg, 0, -8); puff(f.x, feetY(f), '#ff7a2e', 4); } }
+    if(t >= F.hold){ X.st = 'ebb'; X.t1 = X.t; for(const q of Z.syms) { q.st = 'down'; q.t = 0; } }
+  } else if(X.st === 'ebb'){
+    Z.tide = lvl * (1 - clamp(t / F.ebb, 0, 1));
+    if(!Z.isl){   // the first tide: it ebbs away from the ends toward the boss and leaves a dry island there
+      const hw = F.isl[ph >= 3 ? 2 : 1]; Z.isl = { cx:clamp(s.x, hw / 2, WW - hw / 2), hw, from:hw, t0:null };
+    }
+    if(t >= F.ebb){
+      Z.tide = 0;
+      if(X.surge < X.n){ X.surge++; X.st = 'wait'; X.t1 = X.t; } else { Z.floodOn = 0; Z.sleep = hazardT + F.sleepAfter; Z.tx0 = 0; Z.tx1 = 0; nbEnd(s); }
+    }
+  } else if(X.st === 'wait'){
+    if(t >= F.second){ X.st = 'rise'; X.t1 = X.t; if(!Z.syms.length) nbSymsRise(s); Z.tx0 = 0; Z.tx1 = WW; }
+  }
+}
+// ---- PAN ACROSS: it leans back and the hand LEAVES THE WRIST (a flat black hand, 120 px wide and 44 tall: what you see is what hits), flying out along your row at head height (12 px a frame; stay on the floor, do not jump) to the far
+// wall, then it turns and skims back along the floor (14 px a frame; hop it). One hit (0.7). The last band sends a second hand 30 frames behind the first, and both are quicker. -----------------------------------------------------------------
+function nbPanStart(s, tgt){
+  const Z = nbHz(s), P = NG.pan, ph = nbPh(s), gy = groundY(), f = tgt || nbNearest(s);
+  const X = nbBegin(s, 'pan', { n:ph >= 3 ? 2 : 1 });
+  const dir = f ? (Math.sign(f.x - s.x) || s.face || 1) : (s.face || 1), y0 = f && f.onground ? feetY(f) : gy, endX = dir > 0 ? Math.min(WW - 40, s.x + P.maxOut) : Math.max(40, s.x - P.maxOut);
+  for(let i = 0; i < X.n; i++) Z.pans.push({ id:X.id, i, x:s.x, y:s.y, dir, y0, endX, st:'wait', t:-i * P.second, out:P.out[ph - 1], back:P.back[ph - 1], sx:s.x, sy:s.y });
+}
+function nbPanStep(s, X){ const Z = nbHz(s); if(!Z.pans.some(p => p.id === X.id && p.st === 'wait' || p.id === X.id && p.st === 'out')) nbEnd(s); }
+function nbPansStep(s){
+  const Z = nbHz(s), P = NG.pan;
+  for(let j = Z.pans.length - 1; j >= 0; j--){
+    const p = Z.pans[j]; p.t++;
+    if(p.st === 'wait' && p.t >= 0){ p.st = 'out'; p.t = 0; p.sx = s.x; p.sy = s.y; p.x = s.x; p.y = s.y; shake(3); for(let i = 0; i < 8; i++) puff(s.x + p.dir * 80, s.y - 30, '#ffb3a0', 4); }
+    if(p.st === 'wait') continue;
+    const head = nbPanHead(p.y0), low = p.y0 - P.band2 / 2 - 4;
+    if(p.st === 'out'){
+      p.x += p.dir * p.out; p.y += (head - p.y) * clamp(p.t / 14, 0, 1) * 0.3;
+      if((p.endX - p.x) * p.dir <= 0){ p.st = 'back'; p.t = 0; }
+    } else if(p.st === 'back'){
+      p.x -= p.dir * p.back; p.y += (low - p.y) * 0.4;
+      if((s.x - p.x) * p.dir >= 0) { Z.pans.splice(j, 1); continue; }
+    }
+    const hh = p.st === 'out' ? P.h : P.band2 / 2 + 2;
+    for(const f of fighters){ if(f.dead || f.invuln > 0) continue; if(nbRectHit(f, p.x - P.w, p.y - hh, p.x + P.w, p.y + hh)) nbHit(f, p.id, P.dmg, -p.dir * 0 + Math.sign(WW / 2 - f.x || 1) * P.kbx, -P.kby); }
+  }
+}
+function nbPanHead(y0){ return y0 - NG.pan.head; }
+// ---- ROOT THEM OUT: it lowers its arms, fingers spread; a bubbling patch of lava (130 x 18) breaks out of the floor 380 px AHEAD of where you are heading (the nearer wall if you stand still) and creeps at you, quickening from 3 to 8 / 9 / 10
+// px a frame (a sprint is 7.2); within 70 px it stops, swells and spits embers for 28 frames, then bursts as a column (140 / 150 / 160 wide, 240 tall) live for 14 frames. The patch you touch while it slides is a nick (0.3) and a hop. 1 / 2 / 3 patches,
+// 50 frames apart. From the first tide it hunts only on the island and stops at its edge. ------------------------------------------------------------------------------------------------------------------------------------
+function nbRootStart(s, tgt){
+  const Z = nbHz(s), R = NG.root, ph = nbPh(s), n = ph, X = nbBegin(s, 'root', { n });
+  for(let i = 0; i < n; i++) Z.roots.push({ id:X.id, i, st:'wait', t:-i * R.second, x:0, v:R.start, top:R.top[ph - 1], hw:R.col[ph - 1] / 2, sw:R.swell[ph - 1], life:0, g:0 });
+}
+function nbRootStep(s, X){ const Z = nbHz(s); if(!Z.roots.some(r => r.id === X.id && r.st === 'wait')) nbEnd(s); }
+function nbRootsStep(s){
+  const Z = nbHz(s), R = NG.root, gy = groundY();
+  const lo = () => Z.isl ? Z.isl.cx - nbIslHalf(Z) + R.w / 2 : 60, hi = () => Z.isl ? Z.isl.cx + nbIslHalf(Z) - R.w / 2 : WW - 60;
+  for(let j = Z.roots.length - 1; j >= 0; j--){
+    const r = Z.roots[j]; r.t++;
+    if(r.st === 'wait'){
+      if(r.t >= 0){
+        const f = nbNearest(s) || s; r.fi = f.idx;
+        const head = Math.abs(f.vx || 0) > 0.8 ? Math.sign(f.vx) : (f.x < WW / 2 ? -1 : 1);   // standing still: toward the nearer wall
+        r.x = clamp(f.x + head * R.ahead, lo(), hi()); if(Math.abs(r.x - f.x) < 200) r.x = clamp(f.x - head * R.ahead, lo(), hi());
+        r.st = 'grow'; r.t = 0; puff(r.x, gy - 4, '#ff7a2e', 8);
+      }
+      continue;
+    }
+    r.life++;
+    const f = fighters[r.fi] && !fighters[r.fi].dead ? fighters[r.fi] : nbNearest(s, r.x, gy);
+    if(r.st === 'grow'){ r.g = Math.min(1, r.t / 12); if(r.t >= 12){ r.st = 'creep'; r.t = 0; } }
+    else if(r.st === 'creep'){
+      r.v = Math.min(r.top, r.v + R.acc); if(f) r.x += clamp(f.x - r.x, -r.v, r.v); r.x = clamp(r.x, lo(), hi());
+      if(f && Math.abs(f.x - r.x) < R.near || r.life > R.life || (r.x <= lo() + 1 || r.x >= hi() - 1)){ r.st = 'swell'; r.t = 0; }
+      for(const g of fighters){ if(g.dead || g.invuln > 0) continue; if(nbRectHit(g, r.x - R.w / 2, gy - R.h, r.x + R.w / 2, gy)) nbHitCap(g, r.id, R.slide, Math.sign(g.x - r.x || 1) * 3, -9); }
+    } else if(r.st === 'swell'){ if(r.t % 4 === 0) puff(r.x + (Math.random() - 0.5) * 60, gy - 20, '#ff9a3c', 2); if(r.t >= r.sw){ r.st = 'burst'; r.t = 0; shake(8); } }
+    else if(r.st === 'burst'){
+      for(const g of fighters){ if(g.dead || g.invuln > 0) continue; if(nbRectHit(g, r.x - r.hw, gy - R.colH, r.x + r.hw, gy)) nbHitCap(g, r.id, R.dmg, Math.sign(g.x - r.x || 1) * 6, -13); }
+      if(r.t >= R.live) { r.st = 'fade'; r.t = 0; }
+    } else if(r.st === 'fade'){ if(r.t >= 10) Z.roots.splice(j, 1); }
+  }
+}
+// ---- HERCULEAN (phase 2 on): it dips its belly and glides at the nearest fighter (up to 10 px a frame), stopping about 260 px away and a little AHEAD of a runner; then three blows, each after a shoulder dip and flicker (16 frames): a LOW jab along the floor (hop it),
+// a HIGH jab at head height (stay down), a WIDE swing from both arms that covers both heights (back out of the 300 px reach). The last band is quicker, reaches 330 px and adds a backhand. One hit in all (0.5, 0.5, 0.8, 0.5 under the cap). ----------
+function nbHercStart(s, tgt){
+  const Z = nbHz(s), H = NG.herc, ph = nbPh(s), f = tgt || nbNearest(s), side = f ? (Math.sign(s.x - f.x) || 1) : 1;
+  const X = nbBegin(s, 'herc', { own:1, st:'glide', dip:8, tx:0, tv:0, blows:ph >= 3 ? 4 : 3, bi:0, g:H.blow[ph - 1], reach:H.reach[ph - 1], dir:0, w:0 });
+  X.tx = f ? f.x + (f.vx || 0) * 14 + side * H.stop[ph - 1] : s.x; X.tx = clamp(X.tx, 80, WW - 80);
+  if(Z.isl){ const hw = nbIslHalf(Z) - 30; X.tx = clamp(X.tx, Z.isl.cx - hw, Z.isl.cx + hw); }
+}
+function nbHercStep(s, X){
+  const Z = nbHz(s), H = NG.herc, gy = groundY();
+  if(X.st === 'glide'){
+    const d = X.tx - s.x; s.x += clamp(d, -H.vmax, H.vmax);
+    if(Math.abs(d) < 12 || X.t > 48){ X.st = 'blow'; X.w = 0; X.bi = 0; X.dip = 0; }
+    return;
+  }
+  // blows: blow bi comes X.g[bi] frames after the last (the third gap before the fourth); its tell (the dip and flicker) is the 16 frames before it lands
+  const gaps = X.blows === 4 ? [X.g[0], X.g[1], X.g[2], H.fourth] : X.g;
+  X.w++;
+  const f = nbNearest(s), need = gaps[X.bi];
+  const kinds = ['low', 'high', 'wide', 'wide'], tellN = kinds[X.bi] === 'wide' ? H.tellWide[nbPh(s) - 1] : H.tell;   // the wide swing is shown longer: both shoulders dip, 24 frames
+  if(X.w === need - tellN){ X.dir = f ? (Math.sign(f.x - s.x) || s.face || 1) : (s.face || 1); s.face = X.dir; X.tellOn = 1; }
+  if(X.w >= need){
+    Z.blows.push({ k:kinds[X.bi], id:X.id, x:s.x, y:s.y, dir:X.dir || s.face || 1, reach:X.reach + (X.bi === 3 ? 0 : 0), t:0, dmg:H.dmg[X.bi], i:X.bi });
+    X.bi++; X.w = 0; X.tellOn = 0;
+    if(X.bi >= X.blows) nbEnd(s);
+  }
+}
+function nbBlowsStep(s){
+  const Z = nbHz(s), H = NG.herc, gy = groundY();
+  for(let j = Z.blows.length - 1; j >= 0; j--){
+    const b = Z.blows[j]; b.t++;
+    const y0 = b.k === 'low' ? gy - H.lowH : (b.k === 'high' ? gy - NG.pan.head - 22 : gy - 170), y1 = b.k === 'low' ? gy : (b.k === 'high' ? gy - NG.pan.head + 22 : gy);
+    const x0 = Math.min(b.x, b.x + b.dir * b.reach), x1 = Math.max(b.x, b.x + b.dir * b.reach);
+    if(b.t <= H.live) for(const f of fighters){ if(f.dead || f.invuln > 0) continue; if(nbRectHit(f, x0, y0, x1, y1)) nbHitCap(f, b.id, b.dmg, b.dir * 7, -10); }
+    if(b.t === 1) shake(b.k === 'wide' ? 7 : 4);
+    if(b.t > H.live + 10) Z.blows.splice(j, 1);
+  }
+}
+// ---- drawing: the body is four tube numerals (strokes, not a font, so it cannot fail to load), ten eyes, six black arms; the arms, the lights, the cages, the lava and the symbols are drawn in `fx` (world space) -------------------------------------------
+const NG_SH = [[-120, -8], [-100, 30], [-36, -54], [104, -30], [112, 6], [96, 40]];   // the six shoulders: two on the 2, one on the 7, three on the 3
+const NG_EYES = [[-106, -36], [-86, -42], [-94, -14], [-44, -42], [-24, -36], [-34, -14], [22, -30], [38, -22], [84, -34], [100, -26]];   // three on the 2 and the 7, two on the 6 and the 3
+function nbNumeralPath(c, d, x, y, w, h){
+  const X = u => x + (u - 0.5) * w, Y = v => y + (v - 0.5) * h; c.beginPath();
+  if(d === 0){ c.moveTo(X(0.05), Y(0.18)); c.quadraticCurveTo(X(0.1), Y(0), X(0.5), Y(0)); c.quadraticCurveTo(X(0.98), Y(0), X(0.95), Y(0.3)); c.quadraticCurveTo(X(0.92), Y(0.5), X(0.5), Y(0.66)); c.lineTo(X(0.05), Y(1)); c.lineTo(X(1), Y(1)); }
+  else if(d === 1){ c.moveTo(X(0), Y(0.03)); c.lineTo(X(1), Y(0.03)); c.lineTo(X(0.34), Y(1)); }
+  else if(d === 2){ c.moveTo(X(0.9), Y(0.06)); c.quadraticCurveTo(X(0.2), Y(0.04), X(0.1), Y(0.55)); c.quadraticCurveTo(X(0.05), Y(1), X(0.5), Y(1)); c.quadraticCurveTo(X(0.98), Y(1), X(0.95), Y(0.72)); c.quadraticCurveTo(X(0.92), Y(0.46), X(0.5), Y(0.46)); c.quadraticCurveTo(X(0.18), Y(0.46), X(0.1), Y(0.68)); }
+  else { c.moveTo(X(0.05), Y(0.05)); c.lineTo(X(0.92), Y(0.05)); c.lineTo(X(0.42), Y(0.46)); c.quadraticCurveTo(X(1), Y(0.44), X(0.98), Y(0.72)); c.quadraticCurveTo(X(0.95), Y(1), X(0.5), Y(1)); c.quadraticCurveTo(X(0.15), Y(1), X(0.04), Y(0.84)); }
+}
+function nbNumeral(c, d, x, y, w, h, col, a, flash){
+  c.save(); c.globalAlpha *= a; c.lineCap = 'round'; c.lineJoin = 'round';
+  nbNumeralPath(c, d, x, y, w, h); c.strokeStyle = '#0b0910'; c.lineWidth = 24; c.stroke();
+  nbNumeralPath(c, d, x, y, w, h); c.strokeStyle = flash ? '#ffffff' : col; c.lineWidth = 15; c.stroke();
+  nbNumeralPath(c, d, x, y, w, h); c.strokeStyle = 'rgba(255,255,255,0.45)'; c.lineWidth = 4; c.translate(-2, -2); c.stroke();
+  c.restore();
+}
+function nbEye(c, x, y, k, lx, ly, blink){
+  if(!(k > 0)) return; const sy = k * (1 - blink * 0.9);
+  c.save(); c.translate(x, y); c.scale(k, sy); c.fillStyle = '#fff'; c.strokeStyle = '#0b0910'; c.lineWidth = 2.5; c.beginPath(); c.ellipse(0, 0, 8, 10, 0, 0, 7); c.fill(); c.stroke();
+  c.fillStyle = '#0b0910'; c.beginPath(); c.arc(lx * 3.5, ly * 4, 3.6, 0, 7); c.fill(); c.restore();
+}
+// the body, a function of its arguments (the clock t, the intro clock u, where it looks): used by the body hook and by the ending
+function nbBodyAt(c, sc, o){
+  const t = o.t, u = o.u == null ? 999 : o.u, rev = u >= 90 ? clamp((u - 90) / 24, 0, 1) : 0;
+  c.save(); c.scale(sc, sc);
+  if(rev > 0) for(let i = 0; i < 4; i++){ if(o.pop && o.pop[i]) continue; nbNumeral(c, i, -93 + i * 62, 0, 50, 112, NG.num[i], rev, o.flash); }
+  for(let i = 0; i < NG_EYES.length; i++){
+    const e = NG_EYES[i], k = growK(u - (24 + 6 * i) + 1), blink = (((t + i * 37) % 190) < 6) ? Math.sin(((t + i * 37) % 190) / 6 * Math.PI) : 0;
+    if(o.pop && o.pop[i < 3 ? 0 : (i < 6 ? 1 : (i < 8 ? 2 : 3))]) continue;
+    nbEye(c, e[0], e[1], k * (o.eyes == null ? 1 : o.eyes), o.lx || 0, o.ly || 0, blink);
+  }
+  c.restore();
+}
+function nbBody(s, R, body, flash){
+  const Z = nbHz(s), ph = nbPh(s), sc = 1 + 0.1 * (ph >= 2 ? clamp((hazardT - (Z.beat || -999)) / 40, 0, 1) : 0);
+  if(s._tel > 0 && s._tl){   // the wind-up lights the body in the attack's colour, a pulse on each beat; its last stretch flickers white
+    const T = (BOSS_TELLS.n2763[s._telKind] || BOSS_TELLS.n2763._), e = clamp(1 - s._tel / s._tl, 0, 1), beat = Math.max(0, Math.sin(e * Math.PI * 2 * (T.beats || 2)));
+    ctx.save(); const g = ctx.createRadialGradient(0, 0, 10, 0, 0, R * 1.5); g.addColorStop(0, T.glow); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.globalAlpha = Math.min(0.6, 0.12 + 0.3 * e + 0.2 * beat); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, R * 1.5, 0, 7); ctx.fill(); ctx.restore();
+    if(s._tel < 8 && s._tel % 4 < 2) flash = true;
+  }
+  nbBodyAt(ctx, sc, { t:hazardT, u:nbU(s), lx:Z.lx, ly:Z.ly, flash });
+  return true;
+}
+// a black arm: a tube from the shoulder to the hand, bulging a little, a lit rim on its lower edge (the lava), a three-fingered hand
+function nbArm(c, sx, sy, hx, hy, th, open, ang, k){
+  if(k == null) k = 1; if(!(k > 0)) return;
+  const ex = sx + (hx - sx) * k, ey = sy + (hy - sy) * k, mx = (sx + ex) / 2, my = (sy + ey) / 2, dx = ex - sx, dy = ey - sy, len = Math.hypot(dx, dy) || 1;
+  const qx = mx - dy / len * len * 0.1, qy = my + dx / len * len * 0.1;
+  c.save(); c.lineCap = 'round'; c.lineJoin = 'round';
+  c.strokeStyle = '#05040a'; c.lineWidth = th + 7; c.beginPath(); c.moveTo(sx, sy); c.quadraticCurveTo(qx, qy, ex, ey); c.stroke();
+  c.strokeStyle = '#2f2b3e'; c.lineWidth = th; c.beginPath(); c.moveTo(sx, sy); c.quadraticCurveTo(qx, qy, ex, ey); c.stroke();
+  c.strokeStyle = 'rgba(255,128,48,0.55)'; c.lineWidth = 3; c.beginPath(); c.moveTo(sx, sy + th * 0.4); c.quadraticCurveTo(qx, qy + th * 0.4, ex, ey + th * 0.4); c.stroke();
+  const a = ang == null ? Math.atan2(dy, dx) : ang; c.translate(ex, ey); c.rotate(a);
+  c.fillStyle = '#2f2b3e'; c.strokeStyle = '#05040a'; c.lineWidth = 4; c.beginPath(); c.ellipse(th * 0.4, 0, th * 0.9, th * 0.75, 0, 0, 7); c.fill(); c.stroke();
+  for(let i = -1; i <= 1; i++){ c.beginPath(); c.moveTo(th * 0.9, i * th * 0.3); c.lineTo(th * (1.9 + (open || 0) * 0.5), i * th * (0.4 + (open || 0) * 0.45)); c.lineWidth = th * 0.34 + 4; c.strokeStyle = '#05040a'; c.stroke(); c.lineWidth = th * 0.34; c.strokeStyle = '#2f2b3e'; c.stroke(); }
+  c.restore();
+}
+function nbHand(c, x, y, r, a){ nbArm(c, x - Math.cos(a) * 1, y - Math.sin(a) * 1, x, y, r, 0.6, a, 0); }
+// the cage: a barred box (w x h) with its top at (x, y)
+function nbCageDraw(c, x, y, w, h, a, glow){
+  c.save(); c.globalAlpha *= a; if(glow){ c.shadowColor = glow; c.shadowBlur = 14; }
+  c.fillStyle = 'rgba(30,24,40,0.55)'; c.fillRect(x - w / 2, y, w, h); c.shadowBlur = 0; c.strokeStyle = '#05040a'; c.lineWidth = 9; c.strokeRect(x - w / 2, y, w, h);
+  c.strokeStyle = '#5a5470'; c.lineWidth = 5; for(let i = 1; i < 6; i++){ c.beginPath(); c.moveTo(x - w / 2 + i * w / 6, y); c.lineTo(x - w / 2 + i * w / 6, y + h); c.stroke(); }
+  c.beginPath(); c.moveTo(x - w / 2, y + h * 0.5); c.lineTo(x + w / 2, y + h * 0.5); c.stroke();
+  c.strokeStyle = '#05040a'; c.lineWidth = 6; c.beginPath(); c.arc(x, y - 6, 14, Math.PI, 0); c.stroke(); c.restore();
+}
+function nbSymDraw(c, q, gy, F){
+  const k = growK(q.t + 1), up = F.sym.up * (q.st === 'down' ? clamp(1 - q.t / F.ebb, 0, 1) : k), y = gy - up, x = q.x, w = F.sym.w;
+  c.save(); c.fillStyle = '#ffd6a0'; c.strokeStyle = '#05040a'; c.lineWidth = 5;
+  c.beginPath(); c.rect(x - w / 2, y, w, 14); c.fill(); c.stroke();
+  c.fillStyle = '#ffd6a0'; c.beginPath(); c.arc(x, y - 24, 13, 0, 7); c.fill(); c.stroke(); c.beginPath(); c.arc(x, y + 40, 13, 0, 7); c.fill(); c.stroke();
+  c.strokeStyle = 'rgba(255,128,48,0.55)'; c.lineWidth = 3; c.beginPath(); c.moveTo(x - w / 2, y + 14); c.lineTo(x + w / 2, y + 14); c.stroke(); c.restore();
+}
+function nbOrbDraw(c, x, y, r, col, a){
+  c.save(); c.globalAlpha *= (a == null ? 1 : a); const g = c.createRadialGradient(x, y, 1, x, y, r * 2.4); g.addColorStop(0, '#ffffff'); g.addColorStop(0.35, col); g.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = g; c.beginPath(); c.arc(x, y, r * 2.4, 0, 7); c.fill(); c.restore();
+}
+function nbLavaDraw(c, Z, gy, x0, x1, h){
+  if(!(x1 > x0) || !(h > 0)) return; const t = hazardT;
+  const g = c.createLinearGradient(0, gy - h, 0, gy + 60); g.addColorStop(0, '#ffb04a'); g.addColorStop(0.25, '#ff6a1c'); g.addColorStop(1, '#8a1408');
+  c.save(); c.fillStyle = g; c.beginPath(); c.moveTo(x0, gy + 60); c.lineTo(x0, gy - h);
+  for(let x = x0; x <= x1; x += 24) c.lineTo(Math.min(x, x1), gy - h + Math.sin(x * 0.05 + t * 0.12) * 3);
+  c.lineTo(x1, gy - h); c.lineTo(x1, gy + 60); c.closePath(); c.fill();
+  c.fillStyle = 'rgba(255,230,160,0.7)'; for(let i = 0; i < Math.min(14, (x1 - x0) / 90); i++){ const bx = x0 + ((i * 97 + t * 0.7) % Math.max(60, x1 - x0)), by = gy - h * 0.4 - Math.abs(Math.sin(t * 0.07 + i)) * 10; c.fillRect(bx, by, 3, 3); }
+  c.restore();
+}
+function nbFx(s){
+  const Z = nbHz(s); if(!Z.hands) return;
+  const t = hazardT, gy = groundY(), ph = nbPh(s), u = nbU(s), X = s._sx, F = NG.flood, R = s._ngR || s.r, c = ctx;
+  const tl = s._tl || 50, e = s._tel > 0 ? tl - s._tel : 0, kind = s._telKind, tellOn = s._tel > 0;
+  const cy = typeof camY === 'number' ? camY : 0, cx0 = typeof camX === 'number' ? camX : 0, z = (typeof viewZoom === 'function' ? viewZoom() : 1) || 1, vw = W / z;
+  // the dark before the reveal (the lights fade down over 12 frames; the veil lifts with the flash)
+  if(Z.in != null && u < 150){
+    const a = (u < 12 ? u / 12 : 1) * (u < 90 ? 0.88 : Math.max(0, 0.88 - (u - 90) / 36));
+    c.save(); c.fillStyle = 'rgba(6,3,14,' + a + ')'; c.fillRect(cx0 - 200, cy - 400, vw + 400, 2000); c.restore();
+    if(u >= 90 && u < 114){ const f = u < 102 ? (u - 90) / 12 : (114 - u) / 12; c.save(); c.fillStyle = 'rgba(255,240,255,' + 0.42 * f + ')'; c.fillRect(cx0 - 200, cy - 400, vw + 400, 2000); c.restore(); }
+  }
+  // the sign (the only text of the fight, and it is not text: the four numerals themselves): grows in over 12 frames at the reveal, holds 50, fades
+  if(Z.in != null && u >= 100 && u < 175){ const k = u < 112 ? (u - 100) / 12 : (u < 162 ? 1 : Math.max(0, (175 - u) / 13)); c.save(); c.globalAlpha = k; const sy = s.y - R - 190 - 14 * (1 - k); for(let i = 0; i < 4; i++) nbNumeral(c, i, s.x + (i - 1.5) * 84, sy, 66, 140, NG.num[i], 1, false); c.restore(); }
+  // the lava: the tide where it is up, the floor outside the island once there is one (a hot line in the floor's cracks before)
+  const I = Z.isl, L = nbIslHalf(Z), base = F.lavaBase;
+  if(I){
+    const tv = Z.tide || 0;
+    nbLavaDraw(c, Z, gy, 0, I.cx - L, Math.max(base, tv)); nbLavaDraw(c, Z, gy, I.cx + L, WW, Math.max(base, tv)); nbLavaDraw(c, Z, gy, I.cx - L, I.cx + L, tv);
+    c.save(); c.strokeStyle = 'rgba(255,200,120,0.5)'; c.lineWidth = 3; c.beginPath(); c.moveTo(I.cx - L, gy + 1); c.lineTo(I.cx + L, gy + 1); c.stroke(); c.restore();
+  } else if(Z.tide > 0) nbLavaDraw(c, Z, gy, Z.tx0, Z.tx1, Z.tide);
+  if(tellOn && kind === 'ngflood'){   // embers and bubbling at both ends of the tide's span, then the floor's cracks glow from both ends toward the middle
+    let a0 = Z.tx1 > Z.tx0 ? Z.tx0 : (I ? I.cx - L - 300 : s.x - 715), a1 = Z.tx1 > Z.tx0 ? Z.tx1 : (I ? I.cx + L + 300 : s.x + 715); if(I){ a0 = 0; a1 = WW; }
+    const q = clamp(e / 36, 0, 1), w = clamp((e - (tl - 36)) / 36, 0, 1), vl = Math.max(a0, cx0), vr = Math.min(a1, cx0 + vw), mid = s.x;
+    c.save(); for(let side = -1; side <= 1; side += 2){ const ex = side < 0 ? vl : vr; for(let i = 0; i < 6 * q; i++){ const px = ex - side * ((i * 53 + t * 1.5) % 140), py = gy - ((t * 1.1 + i * 31) % 90); c.fillStyle = 'rgba(255,150,60,' + (0.8 * q) + ')'; c.fillRect(px, py, 3, 3); } }
+    if(w > 0){ c.strokeStyle = 'rgba(255,120,40,' + (0.35 + 0.5 * w) + ')'; c.lineWidth = 4; c.shadowColor = '#ff7a2e'; c.shadowBlur = 12; for(let side = -1; side <= 1; side += 2){ const from = side < 0 ? vl : vr, to = from + (mid - from) * w; c.beginPath(); c.moveTo(from, gy + 2); c.lineTo(to, gy + 2); c.stroke(); } }
+    c.restore();
+  }
+  // THE HUNGER: a dark violet halo, darkest at the body and falling to nothing at its edge (no ring, no line), motes of light drifting inside it, and a mote lifting off a fighter that is being drained
+  if(Z.glow > 0){
+    const m = nbM(s), gk = Z.glow / 12, rr = Z.rad;
+    c.save(); const g = c.createRadialGradient(s.x, s.y, R * 0.5, s.x, s.y, rr + R * 0.15); g.addColorStop(0, 'rgba(24,8,40,' + (0.40 + 0.12 * m) * gk + ')'); g.addColorStop(0.7, 'rgba(40,12,60,' + (0.22 + 0.08 * m) * gk + ')'); g.addColorStop(1, 'rgba(40,12,60,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(s.x, s.y, rr + R * 0.15, 0, 7); c.fill();
+    const nm = Math.round(8 + 8 * m);
+    for(let i = 0; i < nm; i++){ const a = i * 2.399 + t * 0.006 * (1 + (i % 3)), r = (0.35 + 0.6 * ((i * 0.618 + t * 0.002) % 1)) * rr; nbOrbDraw(c, s.x + Math.cos(a) * r, s.y + Math.sin(a) * r * 0.8, 3, NG.cols[i % 8], 0.55 * gk); }
+    for(const f of fighters){ if(f.dead || !(f._hushT > t)) continue; const q = ((t + f.idx * 11) % 40) / 40; nbOrbDraw(c, f.x + (s.x - f.x) * q, f.y + (s.y - f.y) * q, 4, f.color || '#ffffff', 0.9 * (1 - q * 0.4)); }
+    c.restore();
+  }
+  // the lights it carries, orbiting; they speed up and brighten in LIGHTS' wind-up and lift off one at a time on the beats
+  if(u >= 100 && s.hp > 0 && !s._ngEnd){
+    const n = Math.round(clamp(Z.lit || 3, 3, 8)); let sp = 0.02, br = 0.7, lift = 0;
+    if(tellOn && kind === 'n2763'){ const q = clamp(e / tl, 0, 1); sp = 0.02 + 0.1 * q; br = 0.7 + 0.3 * q; lift = q; }
+    Z.orbA = (Z.orbA || 0) + sp;
+    for(let i = 0; i < n; i++){ const a = Z.orbA + i * Math.PI * 2 / n, rr = 140 + 14 * Math.sin(t * 0.05 + i) + lift * 30 * (i / n); if(X && X.k === 'lights' && i < X.emit) continue; nbOrbDraw(c, s.x + Math.cos(a) * rr, s.y + Math.sin(a) * rr * 0.55, 9, NG.cols[i % 8], br); }
+  }
+  for(const q of Z.syms) nbSymDraw(c, q, gy, F);
+  // arms: at rest they hang folded at the shoulders; a move sets the rest (below)
+  const sc = 1 + 0.1 * (ph >= 2 ? clamp((t - (Z.beat || -999)) / 40, 0, 1) : 0), armK = u < 90 ? 0 : clamp((u - 90) / 12, 0, 1) * 1, used = {};
+  const sh = i => [s.x + NG_SH[i][0] * sc, s.y + NG_SH[i][1] * sc];
+  const rest = i => { const p = sh(i), d = NG_SH[i][0] < 0 ? -1 : 1; return [p[0] + d * 38 + Math.sin(t * 0.04 + i) * 3, p[1] + 36 + Math.sin(t * 0.05 + i * 2) * 4]; };
+  if(s.hp > 0 && !s._ngEnd){
+    // SLAM: the hands over their shadows (and the wind-up: arms sprouting from the top, 8 frames apart, grown in over 12)
+    if(tellOn && kind === 'ngslam'){ const n = NG.slam.n[ph - 1]; for(let i = 0; i < n; i++){ const k = growK(e - i * 8 + 1); if(k <= 0) continue; const p = sh(i); used[i] = 1; nbArm(c, p[0], p[1], s.x + (i - (n - 1) / 2) * 90, s.y - R - 110 - (i % 2) * 24, 22, 1, -Math.PI / 2, k); } }
+    for(const h of Z.hands){
+      if(h.st !== 'out') {   // its shadow, growing over the last 36 frames before the fall
+        const toFall = h.st === 'fall' ? 0 : Math.max(0, (h.tr + h.lk) - h.t), k = clamp(1 - toFall / 36, 0.05, 1); bossFallShadow(h.x, h.ys, NG.slam.hw, k);
+      }
+      const k = h.st === 'out' ? clamp(1 - (h.t - h.t2) / NG.slam.out, 0, 1) : 1, p = sh(h.i % 6); used[h.i % 6] = 1;
+      nbArm(c, p[0], p[1], h.x, h.y - 30 * (1 - 0), 24, h.st === 'sit' ? 0.2 : 1, Math.PI / 2, 1);
+      if(k < 1) nbArm(c, p[0], p[1], h.x, h.y, 24, 0, Math.PI / 2, k);
+    }
+    // WINDMILL: arms round the compass, turning
+    const M = Z.wm;
+    if(M && (M.k > 0 || M.on)){
+      const kk = M.fold != null ? clamp(1 - (t - M.fold) / 12, 0, 1) : M.k;
+      if(kk > 0){ for(let i = 0; i < M.n; i++){ const a = M.a + i * Math.PI * 2 / M.n, ax = Math.cos(a), ay = Math.sin(a); let tipx = s.x + ax * M.len * kk, tipy = s.y + ay * M.len * kk; if(tipy > gy - 4) { const f2 = (gy - 4 - s.y) / (ay * M.len * kk || 1); tipx = s.x + ax * M.len * kk * Math.max(0.1, f2); tipy = gy - 4; } nbArm(c, s.x, s.y, tipx, tipy, 28, 0.5, a, 1); } }
+      if(M.fold != null && t - M.fold > 14) Z.wm = null;
+    }
+    // CAGE: the wind-up lifts one over its head and rattles it; the shadow under the farthest fighter; the cage falling / standing / lifted away
+    if(tellOn && kind === 'ngcage'){ const q = growK(e + 1), rat = Math.sin(t * 1.7) * 4 * (e > tl * 0.4 ? 1 : 0.3); nbCageDraw(c, s.x + rat, s.y - R - 100 * q, NG.cage.w * 0.8, NG.cage.h * 0.8, q, e % 20 < 10 ? '#f1527f' : '#f4d37b'); const p = sh(3); used[3] = 1; nbArm(c, p[0], p[1], s.x + rat, s.y - R - 70 * q, 22, 1, -Math.PI / 2, q); }
+    for(const cg of Z.cages){
+      if(cg.st === 'track' || cg.st === 'lock' || cg.st === 'fall'){ const k = cg.st === 'fall' ? 1 : clamp(1 - ((cg.st === 'track' ? (cg.tr - cg.t) + NG.cage.lock : NG.cage.lock - cg.t)) / 40, 0.05, 1); bossFallShadow(cg.x, gy, NG.cage.w * 0.6, k); }
+      if(cg.st === 'track' || cg.st === 'lock' || cg.st === 'fall') nbCageDraw(c, cg.x, cg.y, NG.cage.w, NG.cage.h, 1, null);
+      else if(cg.st === 'stand') nbCageDraw(c, cg.x, gy - NG.cage.h, NG.cage.w, NG.cage.h, 1, null);
+      else if(cg.st === 'out') nbCageDraw(c, cg.x, cg.y, NG.cage.w, NG.cage.h, 1 - cg.t / NG.cage.out, null);
+    }
+    // FLOOD and ROOT THEM OUT: the arms lowered to the floor
+    if(tellOn && (kind === 'ngflood' || kind === 'ngroot')){ const q = growK(e + 1); for(let i = 0; i < 6; i++){ const p = sh(i), d = NG_SH[i][0] < 0 ? -1 : 1; used[i] = 1; nbArm(c, p[0], p[1], s.x + d * (110 + i * 16), gy - 14, 22, 1, Math.PI / 2, q); if(kind === 'ngroot'){ nbOrbDraw(c, s.x + d * (110 + i * 16), gy - 22, 14, '#f4d37b', 0.6 * q); } } }
+    // PAN ACROSS: it leans back, the three-armed side winds up, the hand glows rose-gold; then the hand leaves the wrist
+    if(tellOn && kind === 'ngpan'){ const q = clamp(e / tl, 0, 1), d = (nbNearest(s) && nbNearest(s).x < s.x) ? -1 : 1; for(let i = 3; i < 6; i++){ const p = sh(i), sd = d > 0 ? 1 : -1; used[i] = 1; nbArm(c, p[0] * 1, p[1], s.x - sd * 40 - sd * 30 * q, s.y - 60 + i * 10, 22, 1, -sd * 2.4, 1); } nbOrbDraw(c, s.x - d * 60, s.y - 50, 20 * q + 6, '#ffb3a0', q); }
+    for(const p of Z.pans){
+      if(p.st === 'wait') continue; const hh = p.st === 'out' ? NG.pan.h : NG.pan.band2 / 2 + 2, w = NG.pan.w;
+      c.save(); c.translate(p.x, p.y); c.scale(p.dir, 1); c.fillStyle = '#2f2b3e'; c.strokeStyle = '#05040a'; c.lineWidth = 5; c.beginPath(); c.rect(-w, -hh, w * 2, hh * 2); c.fill(); c.stroke();
+      for(let i = 0; i < 3; i++){ c.beginPath(); c.rect(w - 6, -hh + 4 + i * (hh * 2 - 8) / 3, 26, (hh * 2 - 8) / 3 - 3); c.fill(); c.stroke(); }
+      c.fillStyle = 'rgba(255,150,100,0.5)'; c.fillRect(-w, hh - 4, w * 2, 3); c.restore();
+    }
+    // ROOT THEM OUT: the creeping lava patch, the swell, the column
+    for(const r of Z.roots){
+      if(r.st === 'wait') continue; const R2 = NG.root, k = growK(r.t + 1);
+      if(r.st === 'grow' || r.st === 'creep'){ c.save(); c.fillStyle = '#ff6a1c'; c.strokeStyle = '#8a1408'; c.lineWidth = 3; c.beginPath(); c.ellipse(r.x, gy - R2.h / 2, R2.w / 2 * (r.st === 'grow' ? r.g : 1), R2.h, 0, Math.PI, 0); c.fill(); c.stroke(); if(t % 3 === 0) puff(r.x + (Math.random() - 0.5) * 80, gy - R2.h, '#ffcf6a', 1); c.restore(); }
+      else if(r.st === 'swell'){ const q = r.t / r.sw; c.save(); c.fillStyle = '#ff8a2a'; c.strokeStyle = '#8a1408'; c.lineWidth = 3; c.beginPath(); c.ellipse(r.x, gy - 10 - 24 * q, r.hw * (0.45 + 0.4 * q), 12 + 36 * q, 0, Math.PI, 0); c.fill(); c.stroke(); c.restore(); }
+      else if(r.st === 'burst' || r.st === 'fade'){ const hk = r.st === 'fade' ? 1 - r.t / 10 : 1; const gg = c.createLinearGradient(0, gy - R2.colH, 0, gy); gg.addColorStop(0, 'rgba(255,230,160,' + hk + ')'); gg.addColorStop(0.4, 'rgba(255,120,40,' + hk + ')'); gg.addColorStop(1, 'rgba(160,20,8,' + hk + ')'); c.save(); c.fillStyle = gg; c.fillRect(r.x - r.hw, gy - R2.colH, r.hw * 2, R2.colH); c.restore(); }
+    }
+    // HERCULEAN: the cocked arm (a shoulder dip and an 8 frame flicker) and the blows themselves
+    if(X && X.k === 'herc' && X.tellOn){ const kb = X.bi, kk = ['low', 'high', 'wide', 'wide'][Math.min(3, kb)], d = X.dir || s.face || 1, yy = kk === 'low' ? gy - 20 : (kk === 'high' ? gy - NG.pan.head : gy - 100), flick = (X.w % 4 < 2); const p = sh(d > 0 ? 3 : 0); used[d > 0 ? 3 : 0] = 1; nbArm(c, p[0], p[1], s.x - d * 30, yy - 10, 24, 1, -d * 2.6, 1); if(kk === 'wide'){ const p2 = sh(d > 0 ? 4 : 1); used[d > 0 ? 4 : 1] = 1; nbArm(c, p2[0], p2[1], s.x - d * 40, yy + 30, 24, 1, -d * 2.6, 1); } if(flick) nbOrbDraw(c, s.x - d * 30, yy - 10, 24, '#ffffff', 0.7); }
+    for(const b of Z.blows){
+      const H = NG.herc, gy2 = gy, yy = b.k === 'low' ? gy2 - H.lowH / 2 : (b.k === 'high' ? gy2 - NG.pan.head : gy2 - 85), hh2 = b.k === 'low' ? H.lowH / 2 : (b.k === 'high' ? 22 : 85), q = Math.min(1, b.t / 3);
+      c.save(); c.globalAlpha = b.t > H.live ? Math.max(0, 1 - (b.t - H.live) / 10) : 1; c.fillStyle = '#2f2b3e'; c.strokeStyle = '#05040a'; c.lineWidth = 5;
+      const x0 = b.x, x1 = b.x + b.dir * b.reach * q; c.beginPath(); c.rect(Math.min(x0, x1), yy - hh2, Math.abs(x1 - x0), hh2 * 2); c.fill(); c.stroke();
+      c.fillStyle = 'rgba(255,150,100,0.35)'; c.fillRect(Math.min(x0, x1), yy + hh2 - 5, Math.abs(x1 - x0), 4); c.restore();
+    }
+    // LIGHTS: the orbs in flight
+    for(const o of Z.orbs) nbOrbDraw(c, o.x, o.y, o.r, o.col, 1);
+    // every arm that nothing used hangs folded; they grow out of the numerals at the reveal
+    for(let i = 0; i < 6; i++){ if(used[i] || armK <= 0) continue; const p = sh(i), r = rest(i); nbArm(c, p[0], p[1], r[0], r[1], 20, 0.2, Math.PI / 2, armK); }
+  }
+}
+// ---- the ending: its arms go limp, a real shadow grows on it from above, the eight lights rise out and hang in a ring, then the giant Zero's foot comes down; the body squashes flat, the four numerals pop out and tumble and fade, the lights fly home
+function nbEndSweep(b){
+  projectiles = projectiles.filter(p => !p.n2763); worldPlats = worldPlats.filter(p => !p._ng);
+  if(b){ const Z = nbHz(b); b._sx = null; b._ngEnd = 1; Z.hands = []; Z.orbs = []; Z.cages = []; Z.syms = []; Z.roots = []; Z.pans = []; Z.blows = []; Z.tide = 0; Z.floodOn = 0; Z.glow = 0; Z.wm = null; }
+}
+function nbEndBegin(b){
+  addProj({ owner:-2, ownerObj:{ team:-1, idx:-2 }, x:b.x, y:-5000, vx:0, vy:0, r:0, dmg:0, kb:0, grav:false, color:b.color, life:1, delay:NG.end.total + 1, noAim:true,
+    n2763:'end', algShot:'n2763', shape:'ngend', et0:hazardT, ex:Math.round(b.x), ey:Math.round(b.y), ef:b.face < 0 ? -1 : 1, ec:(nbHz(b).lit | 0) });
+}
+function nbEndDraw(pr){
+  const E = NG.end, u = hazardT - pr.et0, gy = groundY(), c = ctx; if(!(u >= 0) || u > E.total) return;
+  const x = pr.ex, y0 = pr.ey, hit = 72, sq = u < hit ? 1 : Math.max(0.1, 1 - (u - hit) / 6), y = y0 + (gy - y0) * 0.0, pop = u >= hit + 6;
+  // a lava glow dies away at the floor
+  c.save();
+  if(u < hit){ // the limp arms hang, the shadow grows on it from above (over 40 frames)
+    const k = clamp((u - 12) / 40, 0, 1); if(k > 0) bossFallShadow(x, gy, 150, k);
+  }
+  // the body (or the four numerals once it is flat)
+  c.save(); c.translate(x, y0);
+  if(!pop){ c.scale(1, sq); c.translate(0, (1 - sq) * 52 + (y0 < gy ? (gy - y0 - 102) * (1 - sq) : 0)); nbBodyAt(c, 1.1, { t:hazardT, u:999, lx:0, ly:0.5, eyes:u < 12 ? 1 : 0.8 }); }
+  else {
+    const v = u - hit - 6;
+    for(let i = 0; i < 4; i++){ const vx = (i - 1.5) * 3.2, vy = -9 - (i % 2) * 3, tt = v, px = vx * tt, py = vy * tt + 0.55 * tt * tt * 0.5, al = clamp(1 - (v - 20) / 40, 0, 1); if(al <= 0) continue;
+      c.save(); c.translate(px, Math.min(py, gy - y0 - 40) + 0); c.rotate(tt * 0.12 * (i % 2 ? 1 : -1)); nbNumeral(c, i, -93 * 1.1 * 0 + (i - 1.5) * 20, 0, 50, 112, NG.num[i], al, false); c.restore(); }
+  }
+  c.restore();
+  // the arms go limp and fall away over 12 frames
+  if(u < 12){ const k = 1 - u / 12; for(let i = 0; i < 6; i++){ const sx = x + NG_SH[i][0] * 1.1, sy = y0 + NG_SH[i][1] * 1.1, d = NG_SH[i][0] < 0 ? -1 : 1; nbArm(c, sx, sy, sx + d * 38 * k, sy + 36 + 90 * (1 - k), 20, 0.1, Math.PI / 2, 1); } }
+  // the eight lights rise out of it (20-60) and hang in a ring, then fly home in eight directions (from the foot's landing, 110-170)
+  for(let i = 0; i < 8; i++){
+    const a = i * Math.PI / 4 + 0.4;
+    if(u >= 20 && u < 110){ const q = clamp((u - 20) / 40, 0, 1), rr = 140 * q + 8 * Math.sin(u * 0.1 + i); nbOrbDraw(c, x + Math.cos(a) * rr, y0 - 10 + Math.sin(a) * rr * 0.6 - 60 * q, 10, NG.cols[i], 1); }
+    else if(u >= 110 && u < 190){ const q = (u - 110) / 80, rr = 140 + 1300 * q * q; nbOrbDraw(c, x + Math.cos(a) * rr, y0 - 70 + Math.sin(a) * rr * 0.6 - 200 * q, 10, NG.cols[i], 1 - q * 0.6); }
+  }
+  // the giant Zero's foot, from above: it comes down over frames 36-72 (reusing the Zero boss's drawer), presses, then lifts away
+  if(u >= 36 && u < 170){
+    const k = clamp((u - 36) / 12, 0, 1), down = u < hit ? Math.pow((u - 36) / (hit - 36), 2) : 1, lift = u > 130 ? Math.pow((u - 130) / 40, 2) : 0, yb = gy - 1500 * (1 - down) - 1500 * lift;
+    if(yb > gy - 3200) algDrawFoot(c, x, yb, 1.6, k);
+  }
+  if(u === hit){ impact(x, gy, { shake:16, dust:3, debris:10, scar:true, r:200 }); for(let i = 0; i < 20; i++) puff(x + (Math.random() - 0.5) * 300, gy - 10, i % 2 ? '#8b8f9c' : '#b771e7', 6); }
+  c.restore();
+}
+function nbShotDraw(pr){ if(pr.n2763 === 'end'){ nbEndDraw(pr); return true; } return false; }
+BOSS_ENDINGS.n2763 = { sweep: nbEndSweep, begin: nbEndBegin, holdMs: NG.end.hold };
+// ---- The Void: violet to ember, lit from below by the lava; slow numerals and signs drifting (no text); a floor with glowing cracks. Roofed (no clouds). ----
+BOSS_ARENA_SKY.void2763 = ['#150a28', '#6a2438'];
+BOSS_ARENA_GROUND.void2763 = { fill:'#2a1838', line:'#0e0814', pattern:function(c, gy, x0, x1, bottom){
+  c.strokeStyle = 'rgba(255,120,40,0.55)'; c.lineWidth = 2; for(let x = Math.floor(x0 / 110) * 110; x < x1; x += 110){ c.beginPath(); c.moveTo(x, gy); c.lineTo(x + 24, gy + 18); c.lineTo(x - 10, gy + 40); c.lineTo(x + 18, Math.min(bottom, gy + 66)); c.stroke(); }
+  c.strokeStyle = 'rgba(255,170,80,0.18)'; c.lineWidth = 6; c.beginPath(); c.moveTo(x0, gy + 3); c.lineTo(x1, gy + 3); c.stroke(); } };
+BOSS_ARENA_ROOFED.add('void2763');
+function nbDecor(s, key){
+  if(key !== 'void2763') return;
+  const t = hazardT, ph = nbPh(s), warm = ph >= 2 ? clamp((t - (nbHz(s).beat || t)) / 120, 0, 1) : 0, cx0 = typeof camX === 'number' ? camX : 0;
+  ctx.save();
+  const g = ctx.createLinearGradient(0, H * 0.4, 0, H); g.addColorStop(0, 'rgba(255,90,30,0)'); g.addColorStop(1, 'rgba(255,90,30,' + (0.28 + 0.2 * warm) + ')'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)'; ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+  for(let i = 0; i < 9; i++){
+    const x = (((i * 237 + t * (0.12 + (i % 3) * 0.05) - cx0 * 0.06) % (W + 200)) + W + 200) % (W + 200) - 100, y = 60 + ((i * 131) % (H * 0.55)) + Math.sin(t * 0.01 + i) * 12, k = i % 4, sz = 22 + (i % 3) * 6;
+    ctx.beginPath(); if(k === 0){ ctx.moveTo(x - sz, y); ctx.lineTo(x + sz, y); ctx.moveTo(x, y - sz); ctx.lineTo(x, y + sz); } else if(k === 1){ ctx.moveTo(x - sz, y); ctx.lineTo(x + sz, y); } else if(k === 2){ ctx.moveTo(x - sz, y - sz); ctx.lineTo(x + sz, y + sz); ctx.moveTo(x + sz, y - sz); ctx.lineTo(x - sz, y + sz); } else { ctx.moveTo(x - sz, y - 6); ctx.lineTo(x + sz, y - 6); ctx.moveTo(x - sz, y + 6); ctx.lineTo(x + sz, y + 6); } ctx.stroke();
+  }
+  const dx = W * 0.5 - cx0 * 0.1; ctx.strokeStyle = 'rgba(255,214,160,0.12)'; ctx.lineWidth = 10; ctx.beginPath(); ctx.moveTo(dx - 120, H * 0.46); ctx.lineTo(dx + 120, H * 0.46); ctx.stroke(); ctx.beginPath(); ctx.arc(dx, H * 0.46 - 54, 14, 0, 7); ctx.arc(dx, H * 0.46 + 54, 14, 0, 7); ctx.fill();
+  ctx.restore();
+}
 // @boss:n2763:end algcode
 
 
