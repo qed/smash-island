@@ -116137,7 +116137,7 @@ function sixDecor(s, key){
 // `_hz` holds plain numbers only, and what he draws is a function of it and the clock.
 const ZR = {
   introF:90, firstAtk:100, beatF:20, p2F:90, p3F:110, flustF:90, fizzle:18,
-  gaps:[72, 54, 40], free:50, combo:{ zero:'zrtape', zrtape:'zrdiv', zrdiv:'zero' }, comboGap:12, tl:{ zero:60, zrtape:45, zrdiv:55, zrfridge:68, zrfoot:58, zrget:40 },
+  gaps:[66, 46, 28], free:40, combo:{ zero:'zrtape', zrtape:'zrdiv', zrdiv:'zero', zrfoot:'zrget' }, comboGap:12, tl:{ zero:60, zrtape:45, zrdiv:55, zrfridge:68, zrfoot:58, zrget:40 },
   mid:[0.83, 0.495, 0.165],                        // each phase's midpoint, as a share of max HP: the tier rises there (six tiers, two a phase)
   flee:3.4, stand:300, walk:2.6, giantWalk:1.2, popCool:150, pitch:600,
   march:{ v:7, sp:310, r:18, grow:12, arm:12, dmg:0.8, kb:10, near:140, start:900, offset:155, lines:[[4], [5], [4, 4], [5, 5], [4, 4, 4], [6, 6, 5]] },
@@ -116157,9 +116157,16 @@ function zrLiving(){ return fighters.filter(f => !f.dead); }
 function zrLive(f){ return !!f && !f.dead; }
 function zrNear(s){ let b = null, d = 1e9; for(const f of fighters){ if(f.dead) continue; const q = Math.abs(f.x - s.x); if(q < d){ d = q; b = f; } } return b; }
 function zrGap(s){ return s._zcPartner ? ZR.comboGap : ZR.gaps[zrPh(s) - 1]; }   // the rest between moves (30% less than the first build); a combo's lead rests 12 frames
-// A tail: the call's marchers go on walking while his next wind-up starts (phase 2 on, after ZR.free frames); only TAPE TOSS! may follow it (its pair was checked), and the tail keeps its own attack id and hits.
-function zrFree(s){ const X = s._zx; return !!X && X.k === 'call' && !X.done && zrPh(s) >= 2 && X.t >= ZR.free; }
-function zrPark(s){ const X = s._zx; if(X && X.k === 'call' && !X.done){ (s._zt || (s._zt = [])).push(X); s._zx = null; } }
+// A tail: the call's marchers go on walking while his next wind-up starts (phase 2 on, after ZR.free frames); only TAPE TOSS! or DIVIDE BY ZERO! may follow it (both pairs were modelled), and the tail keeps its own attack id and hits.
+function zrFree(s){   // phase 2 on, his next wind-up may start: the call's marchers still walk (a tail, only TAPE TOSS! or DIVIDE BY ZERO! follow) once the line is out; a tape has landed or a foot has landed (what lies there is harmless)
+  const X = s._zx; if(!X || X.done || zrPh(s) < 2) return false;
+  if(X.k === 'call') return X.t >= ZR.free;
+  if(X.k === 'tape') return X.t >= X.T;
+  if(X.k === 'foot') return X.f.every(f => f.x != null) && X.t >= X.f[X.f.length - 1].at + ZR.foot.fall;
+  return false;
+}
+function zrCallTail(s){ return !!(s._zt && s._zt.some(T => T.k === 'call' && !T.done)); }
+function zrPark(s){ const X = s._zx; if(X && !X.done && (X.k === 'call' || X.k === 'tape' || X.k === 'foot') && zrFree(s)){ (s._zt || (s._zt = [])).push(X); s._zx = null; } }
 function zrIntro(s){ const Z = zrHz(s); return Z.in != null && hazardT - Z.in < ZR.introF; }
 function zrBeat(s){ return (zrHz(s).beat || 0) > hazardT; }
 function zrFlust(s){ return (zrHz(s).fl || 0) > hazardT; }
@@ -116235,7 +116242,7 @@ function zrDoorFor(s, tgt){   // a freezer door 600-900 from you on the side wit
 function zrTel(s, tgt){
   zrPark(s);
   if(s._zcSkip) s._zcSkip = false;
-  else if(zrPh(s) >= 3 && ZR.combo[s._telKind]){ s._zcN = (s._zcN|0) + 1; if(s._zcN % 2 === 0) s._zcPartner = ZR.combo[s._telKind]; }   // a COMBO: this move, then its partner after a 12-frame rest, each with its own wind-up
+  else if(zrPh(s) >= 3 && ZR.combo[s._telKind]) s._zcPartner = s._telKind === 'zero' ? ((s._zcAlt = !s._zcAlt) ? 'zrtape' : 'zrdiv') : ZR.combo[s._telKind];   // a COMBO on every phase-3 turn: this move, then its partner after a 12-frame rest, each with its own wind-up
   const k = s._telKind, Z = zrHz(s), tl = ZR.tl[k] || 60, tn = s._tn = { k, e0:hazardT, dir:tgt ? (Math.sign(tgt.x - s.x) || s.face || 1) : (s.face || 1) };
   s._tl = tl; s._tel = tl; s.face = tn.dir;
   if(k === 'zero'){ Z.hp0 = s.hp; Z.callT = hazardT; }
@@ -116516,9 +116523,9 @@ BOSS_MOVES.zrfoot = (s, tgt) => zrFootStart(s, tgt);
 BOSS_MOVES.zrget = (s, tgt) => zrGetStart(s, tgt);
 BOSS_PICK.zero = {
   tags:{ zero:'ground', zrtape:'bunch', zrdiv:'close', zrfridge:['ground', 'wall'], zrfoot:'any', zrget:'far' },
-  moves:(s, ph) => (s._zx && zrFree(s)) ? ['zrtape'] : ph >= 3 ? ['zero', 'zrtape', 'zrdiv', 'zrfoot', 'zrget'] : ph === 2 ? ['zero', 'zrtape', 'zrdiv', 'zrfridge', 'zrget'] : ['zero', 'zrtape', 'zrdiv'],   // STOP LAUGHING AT ME! is phase 2 only, THE FOOT! phase 3 only
+  moves:(s, ph) => ((s._zx && s._zx.k === 'call' && zrFree(s)) || zrCallTail(s)) ? ['zrtape', 'zrdiv'] : ph >= 3 ? ['zero', 'zrtape', 'zrdiv', 'zrfoot', 'zrget'] : ph === 2 ? ['zero', 'zrtape', 'zrdiv', 'zrfridge', 'zrget'] : ['zero', 'zrtape', 'zrdiv'],   // STOP LAUGHING AT ME! is phase 2 only, THE FOOT! phase 3 only
   force:(s, ph) => { const p = s._zcPartner; if(p){ s._zcPartner = null; s._zcSkip = true; return p; } return null; },
-  busy:(s) => (!!s._zx && !zrFree(s)) || !!(s._zt && s._zt.length) || zrFlust(s) || zrStunned(s) || zrBeat(s) || (zrHz(s).still || 0) > hazardT
+  busy:(s) => (!!s._zx && !zrFree(s)) || zrCallTail(s) || zrFlust(s) || zrStunned(s) || zrBeat(s) || (zrHz(s).still || 0) > hazardT
 };
 BOSS_EXTRA.Zero = ['zrtape', 'zrdiv', 'zrfridge', 'zrfoot', 'zrget'];
 BOSS_TELLS.zero = {
