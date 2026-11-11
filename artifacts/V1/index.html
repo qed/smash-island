@@ -118151,7 +118151,7 @@ const NG = {
   slam:{ n:[2, 4, 6], track:[30, 26, 22], lock:[18, 18, 18], fall:14, sit:40, out:12, hw:56, space:250, dmg:0.9, kbx:7, kby:12, chase:7 },
   wind:{ arms:[3, 6, 6], len:[240, 240, 250], w:14, om:[0.045, 0.04, 0.04], rev:[1, 1.5, 2], slow:10, dmg:0.8, kbx:10, kby:9 },
   cage:{ w:110, h:130, n:[1, 2, 2], gap:[40, 40, 32], stay:[220, 220, 260], lock:22, track:20, fall:14, out:20, dmg:0.9, kbx:9, kby:11, lead:20, minLead:110 },
-  flood:{ lvl1:56, lvl2:84, rise:12, hold:70, ebb:20, second:30, sym:{ w:300, up:100, grow:12 }, tickEvery:36, tickDmg:0.2, riseDmg:0.7, isl:[0, 720, 640], islGrow:12, lavaPct:0.25, lavaEvery:40, lavaGrace:12, lavaBase:14, sleepAfter:20, symAt:40 },
+  flood:{ lvl1:56, lvl2:84, rise:12, hold:70, ebb:20, second:30, sym:{ w:300, up:100, grow:12 }, tickEvery:36, tickDmg:0.2, riseDmg:0.7, isl:[0, 720, 720], islGrow:12, lavaPct:0.25, lavaEvery:40, lavaGrace:12, lavaBase:14, sleepAfter:20, symAt:40 },
   pan:{ head:90, out:[12, 13, 14], back:[14, 15, 15.5], w:60, h:22, band2:16, dmg:0.7, kbx:6, kby:13, second:30, maxOut:1300 },
   root:{ top:[8, 9, 10], start:3, acc:0.045, ahead:380, w:130, h:18, near:70, swell:[28, 28, 28], col:[140, 150, 160], colH:240, live:14, dmg:0.8, slide:0.3, life:240, second:50 },
   herc:{ glide:28, vmax:10, stop:[260, 260, 290], blow:[[24, 22, 32], [24, 22, 32], [20, 18, 28]], reach:[300, 300, 330], dmg:[0.5, 0.5, 0.8, 0.5], fourth:26, live:6, tell:16, tellWide:[24, 24, 24], lowH:40 },
@@ -118159,6 +118159,8 @@ const NG = {
   cols:['#ff9a3c', '#8ae04a', '#a07af0', '#2da7e4', '#d0d0dc', '#fefd33', '#7fd9c3', '#f08a5d'],   // the colours of the bosses it has seen go, in the rush's order (Two, Four, Nine, Six, Zero, X, One, Three)
   num:['#f1527f', '#50e1e4', '#b771e7', '#f4d37b'],
 };
+const NG_NOAFTER = {"2": {"n2763": ["ngpan", "ngslam", "ngherc"], "ngcage": ["ngwind"]}, "3": {"n2763": ["ngherc"], "ngcage": ["ngwind"]}};   // phase -> { move: [followers that may not START while that move's tails are live] }  (dodge search, `search.mjs`: no dodge found at an interior spot)
+const NG_NOCHAIN = {"2": {"ngcage": ["ngroot"], "ngwind": ["ngslam"], "ngherc": ["n2763"]}, "3": {"ngcage": ["ngroot"], "ngherc": ["n2763"], "ngpan": ["ngwind"]}};   // phase -> { move: [combo partners that are not chained to it] }  (the same search, chain mode)
 function nbHz(s){ return s._hz || (s._hz = {}); }
 function nbPh(s){ return Math.max(1, Math.min(3, s._phase || 1)); }
 function nbLive(f){ return !!f && !f.dead; }
@@ -118254,9 +118256,11 @@ function nbRun(s){ const Z = nbHz(s); return Z.run || (Z.run = []); }
 function nbOwn(s){ return nbRun(s).find(x => x.own) || null; }
 function nbBusy(s){ const Z = nbHz(s); return !!Z.floodOn || nbRun(s).some(x => !x.free); }
 function nbQuiet(s){ const Z = nbHz(s); return !nbRun(s).length && !Z.floodOn && !(Z.orbs.length || Z.hands.length || Z.roots.length || Z.pans.length || Z.blows.length || (Z.wm && Z.wm.on)); }
+function nbLiveTails(s){ const Z = nbHz(s); return !!((Z.orbs && Z.orbs.length) || (Z.hands && Z.hands.length) || (Z.roots && Z.roots.length) || (Z.pans && Z.pans.length) || (Z.blows && Z.blows.length) || (Z.wm && Z.wm.on) || (Z.cages && Z.cages.some(c => c.st !== 'out'))); }
 // what may be picked now: one windmill at a time, no windmill under HERCULEAN, at most two cages standing, and the tide only when nothing else is live
 function nbMayPick(s, k){
-  const Z = nbHz(s);
+  const Z = nbHz(s), bad = (NG_NOAFTER[nbPh(s)] || {})[Z.lastA];
+  if(bad && bad.indexOf(k) >= 0 && (Z.chained || nbLiveTails(s))) return false;
   if(k === 'ngwind') return !(Z.wm && (Z.wm.on || Z.wm.fold != null));
   if(k === 'ngherc') return !(Z.wm && Z.wm.on) && !Z.blows.length;
   if(k === 'ngcage') return Z.cages.filter(c => c.st !== 'out').length < 2;
@@ -118266,7 +118270,8 @@ function nbMayPick(s, k){
 function nbBegin(s, k, o){
   const Z = nbHz(s), ph = nbPh(s), id = ++BOSS_ATK_ID;
   const X = Object.assign({ k, id, t:0, ph, free:false }, o || {}); nbRun(s).push(X); s._sx = X; Z.curId = id;
-  const part = NG.chain[nbKindOf(k)];
+  Z.lastA = nbKindOf(k);
+  let part = NG.chain[nbKindOf(k)]; const badp = (NG_NOCHAIN[ph] || {})[nbKindOf(k)]; if(part && badp && badp.indexOf(part) >= 0) part = null;
   const go = ph >= 3 ? (Z.turn % 4 !== 0) : (ph >= 2 ? (Z.turn % 3 === 0) : false);   // combos: one turn in three in the second phase, three in four in the last
   Z.chainNext = (ph >= 2 && part && go) ? part : null;
   return X;
