@@ -24299,6 +24299,7 @@ function setupWorld(){
   MCAVE = null;        // MOON CAVES: set again only by its own builder
   SPLEEF = null;       // SPLEEF: built by spleefBuildWorld below, for the one event match that has it
   DRM = null; DRM_VIS = false; DRM_GH = false; DRM_V = -1;   // DREAM ISLAND TEAMS: built by diBuild below, for Teams on Dream Island only
+  YN = null; YN_VIS = false;   // YOYLE NEEDLE TEAMS: built by ynBuild below, for Teams on Yoyle Needle only
   STG = null;          // STAGES A: built by stgBuild below, for The TLC and Yoyle Needle in a plain FFA match
   DIGC = null;         // THE DIG: built by digcBuildWorld below, for the one event match that has it
   camAng = 0;
@@ -24309,6 +24310,7 @@ function setupWorld(){
   if(ONEFIGHT.active || COBSFIGHT.active){ buildOneArena(); return; }   // One's arena, and Steve Cobs's: the teams map without its walls (see buildOneArena)
   if(BOSSRUSH.alg && ALGRUSH.run){ stage = algStage(); if(algBuildBig()) return; }   // Algebralien Rush: its own stage; the big one (rush M3, algBuildBig) builds the whole world and is done
   if(SETTINGS.mode === 'teams' && (MCAVE_DEV || MCAVE_OPEN) && stage && stage.layout === 'disc'){ buildMoonCaves(); return; }   // MOON CAVES (while it is built: MCAVE_DEV only, MCAVE_OPEN once released; Teams only)
+  if(ynWanted()){ ynBuild(); return; }   // YOYLE NEEDLE TEAMS: the inside of the giant needle (Teams on Yoyle Needle only)
   if(diWanted()){ diBuild(); return; }   // DREAM ISLAND TEAMS: its own islands-and-bridges map (Teams on Dream Island only)
   if(RACE.active){ buildRaceLane(); return; }       // RUNNING!: the Red Line Game's lane (see buildRaceLane)
   if(stgWanted()){ stgBuild(); return; }   // STAGES A: The TLC's box or Yoyle Needle's shaft, in place of the flat layout (a plain FFA match only)
@@ -25963,6 +25965,497 @@ function ffaRespawn(f){
 
 // small-mode platforms (original single-screen behavior)
 // ============================================================
+//  YOYLE NEEDLE, TEAMS (2026-11-10 preview v1; the owner's drawing reports/yoyle-needle-teams-owner.webp, the design in reports/teams-big-maps-design.md)
+//  THE INSIDE OF THE GIANT NEEDLE AS A WORKING MACHINE: a cross-shaped hall (a hall across the middle, the central shaft up to the EYE LOFT and down to the
+//  MACHINE ROOM) with MOVING PLATFORMS on visible rails (the owner's core idea), the needle's EYE (a window out onto a sill), an outside BALCONY on the left, a
+//  dark machine room under the hall (floor gaps drop into it; turning gears; a crawlspace along its roof). One base per arm, NOT mirrored, balanced by role:
+//  NORTH the Eye Loft (high ground, few approaches), EAST the Spool Room (a walled mezzanine, no side KO), SOUTH the Gear Works (low, dark, many exits, hard to
+//  camp), WEST the Thimble Terrace (open to the balcony, the zipline, a blast line close by). Teams mode on Yoyle Needle only (ynWanted), the generic Teams map's
+//  size +10% (diSize, MAP SIZE honoured), FOUR VARIANTS (ynVariant) that carry different mixes of the ten approved ideas (YNV). Fewer than four teams: the
+//  unused bases are neutral. Movers ride the existing STG machinery (stgPlace / stgStep / stgHold); a guest gets the geometry (yn, yd) and the moved plats from
+//  the host. Art only on the guest: everything drawn is read from worldPlats (yn kinds, and the one `yd` record with the zones and the decorations).
+//  PREVIEW STATE: geometry and art; the mechanics of levers, vents, berries, magnets, the tripwire, the zipline and the wind are NOT built yet (they are drawn).
+// ============================================================
+// YOYLE NEEDLE TEAMS MAP: hidden until the owner opens it. YN_DEV (localStorage 'bfsi:yndev' = '1') is the owner's preview; while hidden, Teams on Yoyle Needle plays the ordinary Teams map.
+const YN_TEAMS_OPEN = false;
+const YN_DEV = (function(){ try{ return localStorage.getItem('bfsi:yndev') === '1'; }catch(e){ return false; } })();
+const YNK = { k:0.75, bayW:1400, floorH:780, period:10800, nightOn:0.55, night:0.72, dark:0.84 };
+let YN = null, YN_VIS = false;   // YN: this match's state (ynBuild; null elsewhere); YN_VIS: paint its art (a guest too)
+function ynWanted(){
+  return (YN_TEAMS_OPEN || YN_DEV) && SETTINGS.mode === 'teams' && !!(stage && stage.stg === 'tower') && !CUSTOM_LEVEL && !TESTMODE.active && !(typeof TUT !== 'undefined' && TUT.active)
+    && !RACE.active && !ONEFIGHT.active && !COBSFIGHT.active;
+}
+function ynVariant(){
+  if(SETTINGS.yoyleVar >= 0 && SETTINGS.yoyleVar <= 3 && SETTINGS.yoyleVar != null) return SETTINGS.yoyleVar | 0;
+  let h = 11; const s = [SETTINGS.teamKey || '', SETTINGS.count, SETTINGS.mapSize || '', SETTINGS.stocks, SETTINGS.yoyleSeed | 0].join('|');
+  for(let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
+  return ((h >>> 3) + (SETTINGS.yoyleSeed | 0)) & 3;
+}
+// the four variants: which of the ten ideas are in (lev levers, cage the cage elevator, pipes wall pipes, crawl the crawlspace is open end to end, vents air vents,
+// zip the eye's thread zipline, wind the windy balcony, berry yoyleberry bushes, magnet magnet stripes, thread the stitching tripwire, night LIGHTS OUT), whether the
+// map is mirrored (flip) and which way the gears and rails run (dir)
+const YNV = [
+  { name:'THE WORKS',   lev:1, cage:1, pipes:1, crawl:1, vents:0, zip:0, wind:0, berry:0, magnet:0, thread:0, night:0, flip:0, dir:1 },
+  { name:'THE EYE',     lev:0, cage:0, pipes:0, crawl:0, vents:1, zip:1, wind:1, berry:1, magnet:0, thread:0, night:0, flip:0, dir:-1 },
+  { name:'THE LOOM',    lev:0, cage:1, pipes:1, crawl:0, vents:0, zip:0, wind:0, berry:1, magnet:1, thread:1, night:0, flip:1, dir:1 },
+  { name:'NIGHT SHIFT', lev:1, cage:1, pipes:0, crawl:1, vents:1, zip:1, wind:0, berry:0, magnet:0, thread:0, night:1, flip:1, dir:-1 },
+];
+function ynNight(t){ const u = (t % YNK.period)/YNK.period; return 0.5 - 0.5*Math.cos(2*Math.PI*u); }
+function ynInfo(){ if(!YN_VIS) return null; for(const p of worldPlats) if(p.yd) return p.yd; return null; }   // (always from the plats: a guest's own build may differ from the host's geometry it was sent)
+function ynBuild(){
+  const K = YNK, tc = Math.max(2, Math.min(4, (SETTINGS.teamKey || '').split('v').filter(Boolean).length || 2)), v = ynVariant(), V = YNV[v];
+  // SIZE SCALING (v2): the core layout (design 6500 x 3000) is drawn at ONE fixed scale K.k, never stretched, so every jump, step and gap is the same at every size.
+  // More players and a bigger MAP SIZE ADD content instead: nW annex bays (1200 wide, split west/east, each a hall workshop, a machine-room annex with a gear,
+  // movers and a deck row) and hb extra hall floors (780 tall: a deck row with a mover over its middle gap and a zigzag stair, in both wings, plus the shaft's ledge stair).
+  const k = K.k, MSz = mapSize(), cnt = Math.max(4, Math.min(12, SETTINGS.count | 0 || 4)), pw = (cnt - 4)/2;
+  const nW = Math.max(0, Math.min(4, Math.round(1.0*pw + 3.6*(MSz.w - 0.85) + 0.1))), hb = Math.max(0, Math.min(4, Math.round(0.8*pw + 3*(MSz.h - 0.85) + 0.1)));
+  const BWS = [[1500, 1000, 1900, 1300], [1300, 1900, 1000, 1600], [1000, 1600, 1300, 1900], [1900, 1300, 1600, 1000]], bwOf = (u, east)=>BWS[(v + (east ? 2 : 0)) % 4][u % 4];   // bay widths: small, medium and big, by variant
+  const nWest = Math.ceil(nW/2), nEast = nW - nWest, eH = hb*K.floorH; let eL = 0, eR = 0; for(let u = 0; u < nWest; u++) eL += bwOf(u, false); for(let u = 0; u < nEast; u++) eR += bwOf(u, true);
+  WW = Math.round((6500 + eL + eR)*k); WH = Math.round((3000 + eH)*k);
+  camX = 0; camY = 0; floors = []; worldZones = []; spawnZones = []; bases = []; SIDE_ROOM = 0; FLOOR_SEGS = [];
+  const flip = V.flip, dir = V.dir, P = [], movers = [], deco = [];
+  // the insertion points: x >= 2000 shifts by eL (the west annexes sit in the hall between the floor gap and the shaft), x >= 4800 by eR (the east annexes, between the
+  // east gap and the Spool Room), y >= 1021 by eH (under the hall's roofs). A piece wider than 600 (or taller than 400) is stretched across a pivot, a smaller one moves whole.
+  // RX / RY: 'raw' mode, the coordinates are already final (used for the inserted content).
+  const pL = 2000, pR = 4800, pY = 1021; let RX = false, RY = false;
+  const gx = (d, r)=>RX ? d : d + ((r ? d > pL : d >= pL) ? eL : 0) + ((r ? d > pR : d >= pR) ? eR : 0), gy = (d, r)=>RY ? d : d + ((r ? d > pY : d >= pY) ? eH : 0), S = (d)=>Math.round(d*k);
+  const px1 = (x)=>{ const a = S(gx(x)); return flip ? WW - a : a; };
+  const mr = (x, y, w, h)=>{ const x0 = gx(x), wd = w > 600 ? gx(x + w, true) - x0 : w, y0 = gy(y), hh = h > 400 ? gy(y + h, true) - y0 : h, a = S(x0), ww = Math.max(40, S(wd)); return [flip ? WW - a - ww : a, S(y0), ww, S(hh)]; };
+  const solid = (x, y, w, h, kind, extra)=>{ const r = mr(x, y, w, h), p = Object.assign({ x:r[0], y:r[1], w:r[2], h:Math.max(10, r[3]), solid:true, floor:0, yn:kind }, extra || {}); P.push(p); return p; };
+  const soft = (x, y, w, kind, extra)=>{ const r = mr(x, y, w, 14), p = Object.assign({ x:r[0], y:r[1], w:r[2], h:26, solid:false, floor:0, yn:kind }, extra || {}); P.push(p); return p; };
+  const dec = (kind, x, y, w, h, aux)=>{ const r = mr(x, y, w || 0, h || 0), wu = (w || 0) > 600 ? gx(x + w, true) - gx(x) : (w || 0); deco.push([kind, r[0], r[1], Math.max(0, S(wu)), r[3], aux === undefined ? 0 : aux]); };   // a decoration: (kind, mapped x, y, w, h, aux)
+  const decP = (kind, x, y, aux)=>deco.push([kind, px1(x), S(gy(y)), 0, 0, aux === undefined ? 0 : aux]);                        // a decoration at a point
+  const mover = (x, y, w, mv, kind, rail)=>{
+    const p = soft(x, y, w, kind || 'rail'); p.bx = p.x; p.by = p.y; p.mvx = 0; p.mvy = 0;
+    p.mv = { ax:S(mv.ax || 0), ay:S(mv.ay || 0), per:mv.per, ph:mv.ph || 0, ph2:mv.ph2 || 0 }; movers.push(p);
+    if(rail !== false){ if(mv.ax && !mv.ay) deco.push(['railh', p.bx - p.mv.ax, p.y + 6, p.w + 2*p.mv.ax, 0, 0]); else if(mv.ay && !mv.ax) deco.push(['railv', p.bx + Math.round(p.w/2), p.by - p.mv.ay, 0, 2*p.mv.ay + 14, 0]); }
+    return p;
+  };
+  const wall = (x, y, w, h, kind)=>solid(x, y, w, h, kind || 'wall', { stgWall:true });
+  // ---- the hull: walls, roofs, the hall's floor slabs (with the two gaps), the machine room's floor and masonry
+  const cap = wall(2512, 30, 1475, 120, 'cap');
+  wall(2512, 150, 120, 180); wall(2512, 660, 120, 240); wall(3867, 150, 120, 750);   // the shaft's walls above the roofs; the eye window is the gap 330-660 in the left one
+  wall(300, 900, 2332, 120, 'roof'); wall(3867, 900, 2453, 120, 'roof'); wall(180, 900, 120, 480); wall(6200, 900, 120, 1890);
+  solid(300, 1800, 1400, 60, 'slab'); solid(2000, 1800, 632, 60, 'slab'); solid(3867, 1800, 633, 60, 'slab'); solid(4800, 1800, 1400, 60, 'slab');
+  solid(20, 1800, 280, 60, 'balcony'); solid(180, 1860, 520, 1040, 'mass', { stgWall:true }); solid(5800, 1860, 520, 1040, 'mass', { stgWall:true }); solid(580, 2790, 5340, 110, 'mfloor');
+  // ---- THE WEST: the Thimble Terrace (the hall's floor, tiered shelves up the back, a sewing-table stair of blocks on its inner side), the balcony outside
+  solid(1120, 1720, 380, 80, 'block'); solid(1300, 1640, 200, 80, 'block');
+  soft(520, 1660, 260, 'shelf'); soft(880, 1520, 280, 'shelf'); soft(480, 1380, 260, 'shelf'); soft(900, 1240, 300, 'shelf'); soft(1400, 1160, 260, 'shelf');
+  mover(1700, 1650, 300, { ax:230, per:600*dir, ph:0 }, 'rail');                    // the rail over the left gap
+  soft(2100, 1540, 300, 'shelf'); soft(1250, 1010 + 150, 220, 'shelf');
+  mover(2330, 1480, 240, { ay:hb ? 110 : 200, per:700, ph:1 }, 'lift');                         // the left lift, up the shaft's side
+  soft(60, 1560, 200, 'shelf');
+  // ---- THE SHAFT: the long rail across the pit, the cage elevator, the staircase of wall ledges up to the Eye Loft
+  mover(2990, 1650, 520, { ax:340, per:760*dir, ph:0 }, 'long');
+  if(V.cage) mover(3120, 1700, 260, { ay:1000 + eH, per:Math.round(2400*(1000 + eH)/1000), ph:0 }, 'cage', false);
+  [[2640, 1520], [3647, 1390], [2640, 1260], [3647, 1130], [2640, 1000], [3647, 870], [2640, 740]].forEach((q)=>soft(q[0], q[1], 220, 'ledge'));
+  // ---- THE NORTH: the Eye Loft: soft decks (a jump up through them), a spool for cover, the eye window on its left wall, the sill outside
+  soft(2632, 660, 368, 'loft'); soft(3600, 660, 267, 'loft'); soft(2700, 510, 240, 'shelf'); soft(3640, 520, 220, 'shelf'); soft(2250, 660, 262, 'sill');
+  solid(3720, 560, 110, 100, 'spool');
+  // ---- THE EAST: the Spool Room: a mezzanine deck on two giant spools, stairs up from the floor, a second tier, the right arm's rails
+  soft(5150, 1480, 1050, 'deck'); solid(5300, 1500, 150, 300, 'spool'); solid(5750, 1500, 150, 300, 'spool');
+  soft(5000, 1660, 200, 'shelf'); soft(4880, 1520, 200, 'shelf'); soft(5150, 1340, 200, 'shelf'); soft(5450, 1230, 400, 'shelf');
+  mover(4500, 1650, 300, { ax:230, per:600*-dir, ph:2 }, 'rail');                    // the rail over the right gap
+  mover(3960, 1470, 240, { ay:hb ? 110 : 200, per:700, ph:3 }, 'lift'); soft(4270, 1400, 200, 'shelf'); soft(4150, 1350, 220, 'shelf');
+  // ---- THE SOUTH: the Gear Works (the machine room): a stair of blocks, shelves, the cage's station; the pit chains up to the floor gaps; the crawlspace
+  solid(2150, 2710, 500, 80, 'block'); solid(2150, 2630, 260, 80, 'block'); solid(2800, 2650, 140, 140, 'block');
+  soft(2300, 2540, 260, 'shelf'); soft(2650, 2430, 260, 'shelf'); soft(3000, 2560, 200, 'shelf');
+  const chain = (x0)=>{ [[x0 + 120, 2650], [x0, 2520], [x0 + 120, 2390], [x0, 2200], [x0 + 120, 2070], [x0, 1940]].forEach((q)=>soft(q[0], q[1], 180, 'ledge')); };
+  chain(1700); chain(4500);
+  const tun = (a, b, gapA, gapB)=>{   // a tunnel along the room's roof: a floor and a roof of slabs, a gap for the pit chain, a catwalk across it
+    solid(a, 2330, gapA - a, 60, 'tfloor'); solid(gapB, 2330, b - gapB, 60, 'tfloor'); solid(a, 2130, gapA - a, 60, 'troof'); solid(gapB, 2130, b - gapB, 60, 'troof'); soft(gapA, 2330, gapB - gapA, 'catwalk'); dec('duct', a, 2190, gapA - a, 140, 0); dec('duct', gapB, 2190, b - gapB, 140, 0);
+  };
+  tun(900, 2632, 1700, 2000); tun(3867, 5600, 4500, 4800);
+  if(V.crawl){ soft(2632, 2330, 1235, 'catwalk'); } else { solid(2600, 2190, 32, 140, 'plug'); solid(3867, 2190, 32, 140, 'plug'); }
+  [[720, 2650], [800, 2520], [720, 2400]].forEach((q)=>soft(q[0], q[1], 180, 'ledge')); [[5620, 2650], [5540, 2520], [5620, 2400]].forEach((q)=>soft(q[0], q[1], 180, 'ledge'));
+  // the turning gears: four teeth each, on circles (ph2 turns the line into a circle)
+  [[1500, 2650, dir], [5100, 2650, -dir]].forEach((g)=>{ for(let k = 0; k < 4; k++) mover(g[0] - 55, g[1], 110, { ax:110, ay:110, per:640*g[2], ph:k*Math.PI/2, ph2:Math.PI/2 }, 'tooth', false); decP('gear', g[0], g[1], g[2]); });
+  // ---- DECORATION (never solid): the machine, the thread, the signs, the ideas of this variant
+  decP('gear', 3250, 1300, 1); decP('gear', 2000, 1270, -1); decP('gear', 5400, 1290, 1); decP('gear', 3250, 2300, -1); decP('gear', 800, 1330, 1);
+  dec('spool', 3050, 1900, 180, 220, 0); dec('spool', 3500, 2640, 200, 150, 1); dec('spool', 1100, 2640, 180, 150, 2);
+  dec('pipe', 340, 1030, 0, 350, 1); dec('pipe', 2680, 160, 0, 170, 1);
+  RY = true; dec('sign', 420, 1075, 300, 0, 'THIMBLE TERRACE'); RY = false; dec('sign', 2760, 330, 400, 0, 'THE EYE LOFT'); dec('sign', 5650, 1330, 500, 0, 'SPOOL ROOM'); dec('sign', 2100, 2470, 500, 0, 'GEAR WORKS');
+  RY = true; dec('lamp', 950, 1060, 0, 0, 0); dec('lamp', 1700, 1060, 0, 0, 0); dec('lamp', 4400, 1060, 0, 0, 0); dec('lamp', 5600, 1060, 0, 0, 0); dec('lamp', 3250, 220, 0, 0, 0); RY = false;
+  for(const lx of [1000, 1800, 2300, 3250, 3700, 4300, 5100, 5500]) dec('lamp', lx, 1960, 0, 0, 1);
+  // the machine room: a flywheel half sunk in the floor (the landmark), belts to the second gear, pipes along the roof, a conveyor on the back wall, stacks of crates
+  decP('flywheel', 4150, 2600, 1);
+  dec('belt', 4150, 2640, 950, 0, 0);
+  dec('pipeh', 720, 1905, 5060, 0, 0); dec('pipeh', 720, 1945, 1600, 0, 1); dec('pipeh', 4100, 1950, 1700, 0, 1);
+  for(const pxx of [1000, 2400, 4000, 5300]) dec('pipe', pxx, 1905, 0, 225, 1);
+  for(const q of [[900, 2790], [958, 2790], [930, 2736], [1700, 2790], [4500, 2790], [4558, 2790], [5500, 2790], [3720, 2790]]) dec('crate', q[0], q[1], 0, 0, 0);
+  dec('eye', 2512, 330, 120, 330, 0);
+  dec('balcony', 20, 1800, 280, 0, V.wind ? 1 : 0);
+  if(V.zip){ soft(40, 860, 170, 'perch'); dec('zip', 2300, 640, 0, 0, [px1(125), S(gy(860))]); }   // the thread runs along the outside of the hull to a perch on the left corner; from there you drop onto the balcony
+  if(V.lev){ dec('lever', 2160, 1800, 0, 0, 0); dec('lever', 4040, 1800, 0, 0, 1); dec('lever', 3000, 2790, 0, 0, 2); }
+  if(V.pipes){ dec('pipe', 3870, 1040, 0, 700, 1); dec('pipe', 2640, 1540, 0, 260, 1); dec('pipe', 6180, 1030, 0, 440, 1); dec('pipe', 320, 1400, 0, 180, 1); dec('pipe', 5810, 1880, 0, 800, 1); dec('pipe', 710, 1880, 0, 800, 1); }
+  if(V.vents){ dec('vent', 3040, 2790, 220, 0, 0); dec('vent', 2680, 840, 150, 0, 0); dec('vent', 3600, 1630, 150, 0, 0); }
+  if(V.berry){ dec('bush', 700, 1800, 0, 0, 0); dec('bush', 5500, 1480, 0, 0, 0); dec('bush', 2760, 660, 0, 0, 0); dec('bush', 3200, 2790, 0, 0, 0); }
+  if(V.magnet){ dec('mag', 4060, 1800, 400, 0, 0); dec('mag', 760, 1800, 360, 0, 0); dec('mag', 2300, 2790, 520, 0, 0); }
+  if(V.thread){ dec('trip', 4000, 1730, 1100, 0, 0); dec('trip', 2800, 2700, 520, 0, 1); }
+  for(const q of [[700, 1800], [1600, 1800], [4300, 1800], [5800, 1800]]) dec('crate', q[0], q[1], 0, 0, 0);
+  // ---- SIZE SCALING (A3): THE NEEDLE AS A MAZE OF VARIED ROOMS. Real solid walls: every cell of the hall (the two wings, the annex bays, the little rooms by the shaft) is closed in by walls
+  // with a 330 px door at floor level (the tallest body, 96 px at size 2, walks it); floors are solid slabs with a hatch over each cell's TOWER (a climbing shaft, its own idea in every
+  // storey); the bays are different widths (small, medium, big), a wide room is sometimes split in two by a walled doorway, and some wide rooms have a chasm in the floor that only a
+  // MOVER crosses (round trip 4 s); each room is dressed differently, neighbours never alike; the attic under the roof is a long low crawl. Steps stay under CLIMB_REACH (130).
+  const PI = Math.PI, DOOR = 330, WT = 60, ST = 50, G = 1800 + eH, ex = eL + eR, Lm = (m)=>1160 + 780*m;
+  RX = true; RY = true;
+  const steps = (H, sp)=>Math.max(2, Math.ceil(H/sp));
+  const sg = (x, y, w, text)=>dec('sign', x, y, w, 0, text);
+  const mvc = (xa, xb, y, pw, ax, per, ph, kind, rail)=>{ const a = Math.max(30, Math.min(ax, (xb - xa - pw)/2 - 6)); return mover(Math.round((xa + xb)/2 - pw/2), y, pw, { ax:a, per:per, ph:ph }, kind || 'rail', rail); };
+  const CL = {   // climbs from yLo up to yHi inside the tower zone [xa, xb] (already inset from the walls)
+    zip: (xa, xb, yLo, yHi, sd)=>{ const H = yLo - yHi, w = xb - xa, n = steps(H, 105), span = w - 150, up = sd % 2 === 0;
+      for(let i = 1; i < n; i++){ const t = i/n; soft(Math.round(xa + (up ? t : 1 - t)*span), Math.round(yLo - H*t), 140, 'zip'); }
+      mvc(xa, xb, Math.round((yLo + yHi)/2 - 60), 150, 0, 1, 0, 'lift', false); const p = movers[movers.length - 1]; p.mv.ax = S(Math.min(span*0.42, (w - 150)/2 - 6)); p.mv.ay = S((up ? -1 : 1)*H*0.42); p.mv.per = 2600; p.mv.ph = sd; },
+    gear: (xa, xb, yLo, yHi, sd)=>{ const H = yLo - yHi, w = xb - xa, R = Math.round(Math.min(190, (w - 110)/2.8)), n = Math.max(2, Math.ceil((H - 24 - 2*R)/(2*R) + 1)), sp = (H - 24 - 2*R)/(n - 1), cx0 = (xa + xb)/2;
+      for(let i = 0; i < n; i++){ const cx = cx0 + (i % 2 ? 45 : -45), cy = Math.round(yLo - R - 12 - sp*i), gd = (i % 2 ? -1 : 1)*dir;
+        for(let k = 0; k < 4; k++) mover(Math.round(cx - 55), cy, 110, { ax:R, ay:R, per:900*gd, ph:k*PI/2, ph2:PI/2 }, 'tooth', false); } },
+    tape: (xa, xb, yLo, yHi, sd)=>{ const H = yLo - yHi, n = steps(H, 100), lo = xa + 10, hi = xb - 170; let x = lo, d = 1;
+      for(let i = 1; i < n; i++){ x += d*150; if(x > hi){ x = hi; d = -1; } else if(x < lo){ x = lo; d = 1; } soft(Math.round(x), Math.round(yLo - H*i/n), 160, 'tape'); } },
+    button: (xa, xb, yLo, yHi, sd)=>{ const H = yLo - yHi, n = steps(H, 110), cx = (xa + xb)/2, R = Math.max(60, Math.min(270, (xb - xa)/2 - 70));
+      for(let i = 1; i < n; i++){ const th = i*0.8 + sd; soft(Math.round(cx + R*Math.cos(th) - 55), Math.round(yLo - H*i/n), 110, 'button'); } },
+    cushion: (xa, xb, yLo, yHi, sd)=>{ const H = yLo - yHi, n = steps(H, 115), span = Math.max(40, xb - xa - 300), up = sd % 2 === 1;
+      for(let i = 1; i < n; i++){ const t = i/n; soft(Math.round(xa + (up ? t : 1 - t)*span), Math.round(yLo - H*t), 300, 'cushion'); } },
+    feed: (xa, xb, yLo, yHi, sd)=>{ const H = yLo - yHi, n = steps(H, 120);
+      for(let i = 1; i < n; i++) mvc(xa, xb, Math.round(yLo - H*i/n), 200, 150, 520*(i % 2 ? 1 : -1)*dir, i*PI/2 + sd, 'rail'); },
+    thimble: (xa, xb, yLo, yHi, sd)=>{ const H = yLo - yHi, n = steps(H, 115), cx = (xa + xb)/2;
+      for(let i = 1; i < n; i++) soft(Math.round(cx - 60 + (i % 2 ? -85 : 85)), Math.round(yLo - H*i/n), 120, 'thimble'); },
+    lift: (xa, xb, yLo, yHi, sd)=>{ const H = yLo - yHi, ay = Math.round(H/2 - 30), yc = Math.round((yLo + yHi)/2);
+      mover(Math.round(xa + 10), yc, 150, { ay, per:Math.round(2.6*ay), ph:0 }, 'lift'); mover(Math.round(xb - 160), yc, 150, { ay, per:Math.round(2.6*ay), ph:PI }, 'lift'); },
+    scissor: (xa, xb, yLo, yHi, sd)=>{ const H = yLo - yHi, ax = Math.round((xb - xa)/2 - 90), ay = Math.round(H/2 - 40), cx = Math.round((xa + xb)/2 - 80), cy = Math.round((yLo + yHi)/2);
+      mover(cx, cy, 160, { ax, ay:-ay, per:2500, ph:0 }, 'lift', false); mover(cx, cy, 160, { ax, ay:ay, per:2500, ph:PI }, 'lift', false); },
+    ferris: (xa, xb, yLo, yHi, sd)=>{ const H = yLo - yHi, R = Math.round(Math.min(200, (xb - xa)/2 - 70)), n = Math.max(2, Math.ceil((H - 24 - 2*R)/(2*R) + 1)), sp = (H - 24 - 2*R)/(n - 1), cx = Math.round((xa + xb)/2);
+      for(let i = 0; i < n; i++){ const cy = Math.round(yLo - R - 12 - sp*i); for(let k = 0; k < 5; k++) mover(cx - 65, cy, 130, { ax:R, ay:R, per:1300*(i % 2 ? -1 : 1)*dir, ph:k*2*PI/5, ph2:PI/2 }, 'wheel', false); } },
+    slalom: (xa, xb, yLo, yHi, sd)=>{ const H = yLo - yHi, n = steps(H, 115), cx = (xa + xb)/2 - 70, A = Math.max(40, Math.min(380, (xb - xa)/2 - 80));
+      for(let i = 1; i < n; i++){ const x = Math.round(cx + A*Math.sin(i*1.1 + sd)), y = Math.round(yLo - H*i/n); if(i % 3 === 2) mover(x, y, 140, { ax:Math.min(90, A/2), per:480*dir, ph:i }, 'spring'); else soft(x, y, 140, 'spring'); } },
+    pend: (xa, xb, yLo, yHi, sd)=>{ const H = yLo - yHi, n = steps(H, 120), cx = (xa + xb)/2, ax = Math.round(Math.max(30, Math.min(200, (xb - xa)/2 - 100)));
+      for(let i = 1; i < n; i++) mover(Math.round(cx - 75), Math.round(yLo - H*i/n), 150, { ax:(i % 2 ? ax : Math.round(ax*0.6)), ay:50, per:700*(i % 2 ? 1 : -1)*dir, ph:i*0.8, ph2:PI/2 }, 'pend', false); },
+  };
+  const ALL = ['zip', 'gear', 'tape', 'button', 'cushion', 'feed', 'thimble', 'lift', 'scissor', 'ferris', 'slalom', 'pend']; let tseq = 0, rseq = 0, aseq = 0;
+  const tower = (z, yLo, yHi)=>{ const s = ALL[(tseq*5 + v) % 12]; tseq++; CL[s](z[0] + 40, z[1] - 40, yLo, yHi, tseq); };
+  // room dressings: a wide room (>= 640) gets one of 10, a closet one of 6; the order is cell by cell, so neighbours differ and a dressing comes back 10 rooms later at the soonest
+  const dress = (a, b, yF, yC)=>{
+    const L = b - a, mir = (rseq + aseq) % 2, X = (x, w)=>mir ? a + L - (x - a) - w : x;
+    const mu = yF - yC - 170, cy = (y, ay)=>Math.max(y, yF - mu + (ay || 0));   // nothing stands higher than a tall body's head room under the ceiling
+    const P = (x, y, w, kind)=>soft(X(x, w), cy(y), w, kind), B = (x, y, w, h, kind)=>{ const yy = cy(y); solid(X(x, w), yy, w, Math.max(40, h - (yy - y)), kind); }, Mv = (x, y, w, mv, kind, rail)=>mover(X(x, w), cy(y, mv.ay), w, mv, kind, rail);
+    if(L < 300){ solid(a + L/2 - 60, yF - 70, 120, 70, 'block'); return; }
+    if(L < 640){ const i = (aseq*5 + v) % 6; aseq++;
+      if(i === 0){ Mv(a + 100, yF - 120, 150, { ax:Math.max(30, (L - 340)/2 - 6), per:560, ph:1 }, 'rail'); P(a + L - 240, yF - 250, 160, 'yarn'); }
+      else if(i === 1){ Mv(a + 110, yF - 160, 150, { ay:140, per:520, ph:0 }, 'lift'); P(a + L - 270, yF - 330, 170, 'shelf'); B(a + L - 270, yF - 90, 130, 90, 'spool'); }
+      else if(i === 2){ B(a + 110, yF - 90, 150, 90, 'block'); P(a + 250, yF - 190, 110, 'button'); P(a + L - 220, yF - 290, 110, 'button'); }
+      else if(i === 3){ B(a + 120, yF - 90, 130, 90, 'spool'); B(a + 270, yF - 180, 130, 180, 'spool'); P(a + 150, yF - 440, 200, 'yarn'); }
+      else if(i === 4){ Mv(a + 90, yF - 300, 150, { ax:50, ay:50, per:600, ph:0, ph2:PI/2 }, 'pend', false); P(a + 170, yF - 110, 150, 'cushion'); }
+      else { mover(X(a + 90, 140), yF - 150, 140, { ay:70, per:480, ph:1 }, 'lift'); mover(X(a + L - 250, 140), yF - 220, 140, { ay:70, per:480, ph:4 }, 'lift'); }
+      return; }
+    const i = (rseq*3 + v) % 10; rseq++; const s = Math.min(1, (L - 340)/560);
+    if(i === 0){ B(a + L/2 - 170, yF - 110, 340, 110, 'block'); Mv(a + L/2 - 80, yF - 270, 160, { ay:55, per:480, ph:rseq }, 'lift', false); P(a + L/2 + 100, yF - 400, 200, 'yarn'); sg(a + 200, yC + 30, 330, 'SEWING TABLE'); }
+    else if(i === 1){ [[0, 90], [1, 180], [2, 270]].forEach((q)=>B(a + 190 + q[0]*150*s, yF - q[1], 130, q[1], 'spool')); P(a + 190 + 450*s, yF - 360, 220, 'yarn'); sg(a + 200, yC + 30, 330, 'SPOOL STAIR'); }
+    else if(i === 2){ P(a + 180, yF - 100, 300, 'cushion'); P(a + 180 + 330*s, yF - 200, 300, 'cushion'); Mv(a + L - 360, yF - 330, 170, { ay:120, per:480, ph:0 }, 'lift'); sg(a + 200, yC + 30, 330, 'PIN TERRACE'); }
+    else if(i === 3){ for(let r = 0; r < 3; r++) P(a + 200 + (r % 2 ? 120 : 0) + r*30, yF - 110 - r*115, 120, 'thimble'); Mv(a + L - 380, yF - 330, 150, { ax:100, ay:50, per:700, ph:1, ph2:PI/2 }, 'pend', false); sg(a + 200, yC + 30, 330, 'THIMBLE ROW'); }
+    else if(i === 4){ B(a + L/2 - 150, yF - 240 - 50, 300, 50, 'block'); for(let r = 0; r < 3; r++) P(a + L/2 - 190 + r*130, yF - 380 - r*70, 110, 'button'); P(a + 30, yF - 110, 120, 'button'); sg(a + 200, yC + 30, 330, 'BUTTON TABLE'); }
+    else if(i === 5){ B(a + 210, yF - 230 - 60, L - 420, 60, 'block'); Mv(a + L - 360, yF - 340, 150, { ax:50, per:560, ph:2 }, 'rail'); sg(a + 200, yC + 30, 330, 'TAPE CORRIDOR'); }
+    else if(i === 6){ for(let k = 0; k < 4; k++) mover(X(a + L/2 - 55, 110), yF - 150, 110, { ax:110, ay:110, per:640*dir, ph:k*PI/2, ph2:PI/2 }, 'tooth', false); B(a + 160, yF - 90, 140, 90, 'block'); sg(a + 200, yC + 30, 330, 'GEAR CLOSET'); }
+    else if(i === 7){ for(let k = 0; k < 3; k++) Mv(a + 200 + k*210*s, yF - 130, 130, { ay:85, per:600*dir, ph:k*1.1 }, 'lift'); P(a + L/2 - 120, yF - 400, 240, 'shelf'); sg(a + 200, yC + 30, 330, 'PISTON FLOOR'); }
+    else if(i === 8){ Mv(a + 190, yF - 150, 150, { ay:150, per:560, ph:0 }, 'lift'); Mv(a + L - 340, yF - 150, 150, { ay:150, per:560, ph:PI }, 'lift'); P(a + L/2 - 150, yF - 390, 300, 'yarn'); sg(a + 200, yC + 30, 330, 'COUNTERWEIGHTS'); }
+    else { Mv(a + 200, yF - 140, 200, { ax:110, per:520*dir, ph:0 }, 'rail'); Mv(a + L - 400, yF - 250, 200, { ax:110, per:520*dir, ph:PI }, 'rail'); P(a + L/2 - 100, yF - 360, 200, 'tape'); sg(a + 200, yC + 30, 330, 'THE LOOM'); }
+  };
+  // ---- the cells: [x0, x1], type, tower zone and partitions. Bays come in different widths (small, medium, big).
+  const cells = [{ x0:300, x1:1700, t:'wing', tz:[880, 1700], part:[[820, 880]], rooms:[[300, 820]] }, { x0:1700, x1:2000, t:'gap' }];
+  let xx = 2000; for(let u = 0; u < nWest; u++){ const bw = bwOf(u, false); cells.push({ x0:xx, x1:xx + bw, t:'bay', ci:u }); xx += bw; }
+  cells.push({ x0:2000 + eL, x1:2632 + eL, t:'inner', rooms:[[2000 + eL + WT, 2632 + eL - WT]] });
+  cells.push({ x0:3867 + eL, x1:4500 + eL, t:'inner', rooms:[[3867 + eL + WT, 4500 + eL]] }, { x0:4500 + eL, x1:4800 + eL, t:'gap' });
+  xx = 4800 + eL; for(let u = 0; u < nEast; u++){ const bw = bwOf(u, true); cells.push({ x0:xx, x1:xx + bw, t:'bay', ci:nWest + u }); xx += bw; }
+  cells.push({ x0:4800 + ex, x1:6200 + ex, t:'wing', tz:[5400 + ex, 5900 + ex], part:[[5340 + ex, 5400 + ex], [5900 + ex, 5960 + ex]], rooms:[[4800 + ex + WT, 5340 + ex], [5960 + ex, 6200 + ex]] });
+  for(const c of cells) if(c.t === 'bay'){ const sl = (c.ci + v) % 2 === 0, tw = 480; c.tz = sl ? [c.x0 + WT, c.x0 + WT + tw] : [c.x1 - tw, c.x1]; c.part = sl ? [[c.x0 + WT + tw, c.x0 + 2*WT + tw]] : [[c.x1 - tw - WT, c.x1 - tw]]; c.rooms = [sl ? [c.x0 + 2*WT + tw, c.x1] : [c.x0 + WT, c.x1 - tw - WT]]; }
+  const wallCol = (x, w)=>{   // a wall from the roof to the floor with a door at every floor
+    if(hb === 0){ wall(x, 1020, w, G - DOOR - 1020); return; }
+    for(let m = 0; m < hb; m++) wall(x, Lm(m) + ST, w, Lm(m + 1) - DOOR - (Lm(m) + ST));
+    wall(x, Lm(hb) + ST, w, G - DOOR - (Lm(hb) + ST));
+  };
+  const wallSeg = (x, w, m)=>{ if(m < hb) wall(x, Lm(m) + ST, w, Lm(m + 1) - DOOR - (Lm(m) + ST)); else wall(x, Lm(hb) + ST, w, G - DOOR - (Lm(hb) + ST)); };
+  // the plan of every storey's rooms: which rooms are split by a wall, which have a chasm in the floor
+  cells.forEach((c, ci)=>{ c.plan = []; if(hb === 0 || !c.rooms) return;
+    for(let m = 0; m <= hb; m++){ const rects = [];
+      c.rooms.forEach((r, ri)=>{ const L = r[1] - r[0];
+        if(c.t === 'bay' && L >= 1100 && (ci + m + v) % 3 === 0){ const s = r[0] + Math.round(L*0.4); rects.push({ a:r[0], b:s, split:s, gap:0 }); rects.push({ a:s + WT, b:r[1], gap:0 }); }
+        else rects.push({ a:r[0], b:r[1], gap:0 }); });
+      for(const q of rects) if(m < hb && c.t === 'bay' && q.b - q.a >= 900 && (ci + v) % 2 === 0 && m === (ci + v) % hb) q.gap = 1;
+      c.plan.push(rects); }
+  });
+  const slabRun = (x0, x1, y, cuts)=>{ cuts.sort((p, q)=>p[0] - q[0]); let x = x0; for(const q of cuts){ if(q[0] > x) solid(x, y, q[0] - x, ST, 'slab'); x = Math.max(x, q[1]); } if(x1 > x) solid(x, y, x1 - x, ST, 'slab'); };
+  cells.forEach((c, ci)=>{
+    const prev = cells[ci - 1];
+    if(c.t === 'gap'){ if(hb > 0) wall(c.x0, Lm(0), c.x1 - c.x0, G - DOOR - Lm(0)); else { if(ci > 0) wallCol(c.x0, WT); } return; }
+    if(ci > 0 && !(prev.t === 'gap' && hb > 0)) wallCol(c.x0, WT);
+    if(c.t === 'inner' && c.x1 === 2632 + eL) wallCol(c.x1 - WT, WT);
+    if(hb === 0) return;
+    // the floors (slabs), with a hatch over the tower and a chasm where the plan says
+    for(let m = 0; m <= hb; m++){
+      const cuts = c.tz ? [[c.tz[0], c.tz[1]]] : [];
+      if(m >= 1) for(const q of c.plan[m - 1]) if(q.gap){ const hc = Math.round((q.a + q.b)/2); q.h0 = hc - 210; q.h1 = hc + 210; cuts.push([q.h0, q.h1]); }
+      slabRun(c.x0, c.x1, Lm(m), cuts);
+    }
+    if(c.t === 'bay') solid(c.x0, 1800 + eH, c.x1 - c.x0, 60, 'slab');
+    if(c.tz){
+      for(const p of c.part){ for(let m = 0; m < hb; m++) wall(p[0], Lm(m) + ST, p[1] - p[0], Lm(m + 1) - DOOR - (Lm(m) + ST)); if(c.t === 'bay') wall(p[0], Lm(hb) + ST, p[1] - p[0], G - DOOR - (Lm(hb) + ST)); }
+      for(let m = 0; m < hb; m++) tower(c.tz, Lm(m + 1), Lm(m));
+      for(let m = 1; m <= hb; m++) if(c.t !== 'wing') soft(c.part[0][0] > c.tz[0] ? c.tz[1] - 130 : c.tz[0] + 20, Lm(m), 110, 'ledge');
+      if(c.t === 'bay') tower(c.tz, G, Lm(hb));
+    }
+    // the rooms
+    c.plan.forEach((rects, m)=>{ if(m === hb && c.t !== 'bay') return; const yF = m < hb ? Lm(m + 1) : G, yC = Lm(m) + ST;
+      rects.forEach((q)=>{
+        if(q.split) wallSeg(q.split, WT, m);
+        if(q.b - q.a < 180) return;
+        if(q.gap){   // a chasm in the floor, crossed only by a mover (a round trip in 4 s), a block at each end to stand on
+          const a0 = q.h0 - 60, b0 = q.h1 + 60; mover(Math.round((a0 + b0)/2 - 110), yF, 220, { ax:Math.max(30, (b0 - a0 - 220)/2 - 6), per:240*dir, ph:m }, 'rail');
+          solid(q.h0 - 250, yF - 90, 150, 90, 'block'); solid(q.h1 + 100, yF - 90, 150, 90, 'block'); soft(q.h0 - 280, yF - 330, 200, 'yarn'); soft(q.h1 + 80, yF - 330, 200, 'yarn'); sg(q.a + 200, yC + 30, 330, 'THE CHASM'); rseq++; return; }
+        if(q.b - q.a >= 1300){ const h = Math.round((q.b - q.a)/2); dress(q.a, q.a + h, yF, yC); dress(q.a + h, q.b, yF, yC); } else dress(q.a, q.b, yF, yC);
+      }); });
+  });
+  // the shaft's ledge stair, taller (the shaft is the corridor every cell opens onto)
+  RX = false; RY = true;
+  for(let q = 1; q <= 6*hb; q++) soft(q % 2 ? 3647 : 2640, 1000 + 130*q, 220, 'ledge');
+  RY = true; RX = true;
+  const MACH = [
+    (xo, MF, gd, bw)=>{ solid(xo + 80, MF - 80, 300, 80, 'block'); for(let kk = 0; kk < 4; kk++) mover(xo + bw - 330 - 55, MF - 150, 110, { ax:110, ay:110, per:640*gd, ph:kk*PI/2, ph2:PI/2 }, 'tooth', false); decP('gear', xo + bw - 330, MF - 150, gd); sg(xo + 60, MF - 250, 330, 'GEAR HALL'); wall(xo + bw/2 - 30, 2390 + eH, 60, 80); },
+    (xo, MF, gd, bw)=>{ mover(xo + 100, MF - 100, 220, { ax:150, per:560*gd, ph:0 }, 'rail'); mover(xo + bw - 400, MF - 190, 220, { ax:150, per:560*gd, ph:PI }, 'rail'); sg(xo + 60, MF - 330, 330, 'FEED BELTS'); },
+    (xo, MF, gd, bw)=>{ for(let i = 0; i < Math.max(3, Math.floor((bw - 200)/200)); i++) mover(xo + 100 + i*200, MF - 130, 130, { ay:85, per:600*gd, ph:i*0.9 }, 'lift'); sg(xo + 60, MF - 330, 330, 'PISTON ROW'); wall(xo + bw/2 - 30, 2390 + eH, 60, 80); },
+    (xo, MF, gd, bw)=>{ solid(xo + 100, MF - 90, 200, 90, 'block'); solid(xo + Math.round(bw/2) - 100, MF - 170, 200, 170, 'block'); soft(xo + 330, MF - 230, 160, 'shelf'); dec('pipeh', xo, MF - 300, bw, 0, 1); sg(xo + 60, MF - 330, 330, 'PIPE MAZE'); },
+  ];
+  const bay = (xo, bw, ui, gd)=>{   // the machine-room annex under a bay (the hall above is a cell)
+    const MF = 2790 + eH, s1 = (ui + v + 1) % 4;
+    solid(xo, 2330 + eH, bw, 60, 'tfloor'); solid(xo, 2130 + eH, bw, 60, 'troof'); dec('duct', xo, 2190 + eH, bw, 140, 0);
+    MACH[s1](xo, MF, gd, bw);
+    dec('pipeh', xo, 1945 + eH, bw, 0, 1); dec('lamp', xo + 330, 1960 + eH, 0, 0, 1); dec('lamp', xo + bw - 330, 1960 + eH, 0, 0, 1); dec('crate', xo + 200, MF, 0, 0, 0); dec('crate', xo + bw - 200, MF, 0, 0, 0);
+  };
+  xx = 2000; for(let u = 0; u < nWest; u++){ const bw = bwOf(u, false); bay(xx, bw, u, dir); xx += bw; }
+  xx = 4800 + eL; for(let u = 0; u < nEast; u++){ const bw = bwOf(u, true); bay(xx, bw, u + nWest, -dir); xx += bw; }
+  RX = false; RY = false;
+  const zones = { skin:[mr(2512 - 150, 30 - 150, 1475 + 300, 150 + 150), mr(2632 - 150, 150, 1235 + 300, 2640 + 160), mr(180 - 150, 900 - 150, 6140 + 300, 1020 - 900 + 150 + 780 + 160), mr(700 - 150, 1860, 5100 + 300, 930 + 160)],
+    int:[mr(2632, 150, 1235, 2640), mr(300, 1020, 5900, 780), mr(700, 1860, 5100, 930), mr(180, 1380, 120, 420)], dark:[mr(700, 1860, 5100, 930)], eye:mr(2512, 330, 120, 330) };
+  cap.yd = { v, flip, name:V.name, zones, deco, f:{ lev:V.lev, cage:V.cage, pipes:V.pipes, crawl:V.crawl, vents:V.vents, zip:V.zip, wind:V.wind, berry:V.berry, magnet:V.magnet, thread:V.thread, night:V.night } };
+  worldPlats = P;
+  // ---- the four bases (N 0, E 1, S 2, W 3), by teams: 4: all; 3: N, E and (odd variants W, else S); 2: N and S (variants 0-1) or E and W (2-3)
+  const owner = { N:-1, E:-1, S:-1, W:-1 };
+  if(tc === 4){ owner.N = 0; owner.E = 1; owner.S = 2; owner.W = 3; } else if(tc === 3){ owner.N = 0; owner.E = 1; if(v & 1) owner.W = 2; else owner.S = 2; } else if(v < 2){ owner.N = 0; owner.S = 1; } else { owner.E = 0; owner.W = 1; }
+  const defs = [
+    { k:'N', deck:[2632, 660, 368], rg:[[2632, 3000], [3600, 3867]], zone:[2632, 380, 1235, 320] },
+    { k:'E', deck:[5150, 1480, 1050], rg:[[5150, 6200]], zone:[5150, 1200, 1050, 300] },
+    { k:'S', deck:[2000, 2790, 1050], rg:[[2000, 3050]], zone:[2000, 2480, 1050, 330] },
+    { k:'W', deck:[330, 1800, 900], rg:[[330, 1230]], zone:[330, 1520, 900, 300] },
+  ];
+  const infos = [], blocks = P.filter(p=>p.solid);
+  for(const d of defs){
+    const team = owner[d.k], dr = mr(d.deck[0], d.deck[1], d.deck[2], 18), zr = mr(d.zone[0], d.zone[1], d.zone[2], d.zone[3]);
+    // spawn spots: every 40 px along the deck's ranges, never where a fighter (70 px tall, 34 px either side) would overlap a solid block; six of them, spread out
+    const free = []; for(const r of d.rg) for(let xx = r[0] + 40; xx <= r[1] - 40; xx += 40){ const mx = px1(xx); if(!blocks.some(p=>mx > p.x - 34 && mx < p.x + p.w + 34 && p.y < dr[1] && p.y + p.h > dr[1] - 70)) free.push(mx); }
+    const spawns = []; for(let k = 0; k < 6 && free.length; k++){ const i = Math.min(free.length - 1, Math.floor((k + 0.5)*free.length/6)); if(!spawns.some(s=>s.x === free[i])) spawns.push({ x:free[i], y:dr[1] - 30, used:0 }); }
+    infos.push({ k:d.k, team, x:dr[0], y:dr[1], w:dr[2] });
+    if(team >= 0) bases[team] = { team, x:dr[0], y:dr[1], w:dr[2], h:18, color:TEAM_COLORS[team % TEAM_COLORS.length], spawnX:Math.round(dr[0] + dr[2]/2), spawnY:dr[1] - 46, floor:0, spawns, zone:{ x:zr[0], y:zr[1], w:zr[2], h:zr[3] } };
+  }
+  bases = bases.filter(Boolean);
+  STG = { kind:'needle', top:null, t:0, wall:0, movers, statics:[], soft:[] };
+  stgPlace(0);
+  YN = { v, teams:tc, flip, yd:cap.yd, infos, movers, owner, crates:0, size:{ nW, west:nWest, east:nEast, floors:hb } };
+  YN_VIS = true;
+}
+function ynSpawnItem(){
+  const spots = worldPlats.filter(p=>p.yn && (p.yn === 'shelf' || p.yn === 'ledge' || p.yn === 'deck' || p.yn === 'loft' || p.yn === 'slab' || p.yn === 'block') && p.w >= 120 && !p.mv);
+  if(!spots.length) return;
+  const pl = spots[Math.floor(Math.random()*spots.length)], x = pl.x + pl.w*(0.2 + Math.random()*0.6);
+  if(items.some(q=>!q.taken && Math.abs(q.x - x) < 70 && Math.abs(q.y - (pl.y - 16)) < 60)) return;
+  const pool = eventItemPool() || ["heal","heal","marmalade","marmalade","throw","throw","power","power","assist","assist","yoyle","yoyle"];
+  const kind = pool[Math.floor(Math.random()*pool.length)], r = kind === "boss" ? 0 : 16;
+  items.push({ kind, x, y:pl.y - r, vx:0, vy:0, r, taken:false, life:60*30, _land:true }); YN.crates++;
+}
+// ---- art (host and guest alike: read from worldPlats and the one yd record; nothing here is read by physics)
+const YKC = { button:'#e6dfcf', tape:'#e8c34a', zip:'#aab0c4', cushion:'#b03c4a', thimble:'#cfd3dc', spring:'#8fb3a3', wheel:'#d1a13f', pend:'#b9835a', yarn:'#c9577a' };
+const YPAL = { skin:'#5a6480', skin2:'#434b62', int:'#2b3347', int2:'#222a3b', mach:'#121624', steel:'#98a2ba', steel2:'#69728a', line:'#10131b', brass:'#d1a13f', brass2:'#946d22', thread:'#e0546f', hazard:'#ecc43c', wood:'#9b7446', wood2:'#6f512d' };
+function ynRect(c, r, col){ c.fillStyle = col; c.fillRect(r[0], r[1], r[2], r[3]); }
+// a steel block: a lit top edge, a darker body, rivets, a hard outline (the hull, the slabs, the cover blocks)
+function ynBlock(c, p, tone){
+  const col = tone === 1 ? YPAL.steel2 : YPAL.steel;
+  c.fillStyle = tone === 2 ? '#7b6a4e' : col; c.fillRect(p.x, p.y, p.w, p.h);
+  c.fillStyle = 'rgba(255,255,255,0.22)'; c.fillRect(p.x, p.y, p.w, Math.min(10, p.h));
+  c.fillStyle = 'rgba(0,0,0,0.22)'; c.fillRect(p.x, p.y + p.h - Math.min(10, p.h/3), p.w, Math.min(10, p.h/3));
+  c.fillStyle = 'rgba(16,19,27,0.55)';
+  if(p.h >= 40) for(let x = p.x + 26; x < p.x + p.w - 10; x += 60){ c.beginPath(); c.arc(x, p.y + 20, 4, 0, 7); c.fill(); if(p.h >= 90){ c.beginPath(); c.arc(x, p.y + p.h - 20, 4, 0, 7); c.fill(); } }
+  if(p.h >= 120) for(let y = p.y + 60; y < p.y + p.h - 30; y += 90){ c.fillStyle = 'rgba(0,0,0,0.18)'; c.fillRect(p.x, y, p.w, 3); }
+  c.strokeStyle = YPAL.line; c.lineWidth = 4; c.strokeRect(p.x, p.y, p.w, p.h);
+}
+function ynGear(c, cx, cy, r, ang, col, col2){
+  const n = Math.max(8, Math.round(r/9)), ri = r*0.82;
+  c.fillStyle = col; c.beginPath();
+  for(let i = 0; i < n*2; i++){ const a = ang + i*Math.PI/n, rr = (i % 2) ? ri : r + 2, a2 = a; const x = cx + Math.cos(a2)*rr, y = cy + Math.sin(a2)*rr; if(i === 0) c.moveTo(x, y); else c.lineTo(x, y); }
+  c.closePath(); c.fill(); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.stroke();
+  c.fillStyle = col2; c.beginPath(); c.arc(cx, cy, r*0.55, 0, 7); c.fill(); c.stroke();
+  c.fillStyle = YPAL.line; for(let i = 0; i < 4; i++){ const a = ang + i*Math.PI/2; c.beginPath(); c.arc(cx + Math.cos(a)*r*0.34, cy + Math.sin(a)*r*0.34, r*0.1, 0, 7); c.fill(); }
+  c.beginPath(); c.arc(cx, cy, r*0.12, 0, 7); c.fill();
+}
+function ynFlywheel(c, x, y, t){   // the landmark of the machine room: a big spoked flywheel, a brass hub, half sunk in the floor
+  const R = 230, ang = t*0.004;
+  c.fillStyle = '#3d4560'; c.beginPath(); c.arc(x, y, R, 0, 7); c.fill(); c.strokeStyle = YPAL.line; c.lineWidth = 5; c.stroke();
+  c.fillStyle = '#2b3248'; c.beginPath(); c.arc(x, y, R - 34, 0, 7); c.fill(); c.stroke();
+  c.strokeStyle = '#59627f'; c.lineWidth = 22; for(let i = 0; i < 6; i++){ const a = ang + i*Math.PI/3; c.beginPath(); c.moveTo(x + Math.cos(a)*50, y + Math.sin(a)*50); c.lineTo(x + Math.cos(a)*(R - 30), y + Math.sin(a)*(R - 30)); c.stroke(); }
+  c.fillStyle = YPAL.brass; c.beginPath(); c.arc(x, y, 58, 0, 7); c.fill(); c.strokeStyle = YPAL.line; c.lineWidth = 4; c.stroke();
+  c.fillStyle = YPAL.brass2; c.beginPath(); c.arc(x, y, 22, 0, 7); c.fill(); c.stroke();
+  c.fillStyle = YPAL.hazard; for(let i = 0; i < 12; i++){ const a = -ang*2 + i*Math.PI/6; c.beginPath(); c.arc(x + Math.cos(a)*(R - 12), y + Math.sin(a)*(R - 12), 6, 0, 7); c.fill(); }
+}
+function ynSpool(c, x, y, w, h, k){
+  const cols = ['#e0546f', '#4aa3df', '#e8c13a'], col = cols[k % 3];
+  c.fillStyle = YPAL.wood2; c.fillRect(x - 6, y, w + 12, h*0.16); c.fillRect(x - 6, y + h*0.84, w + 12, h*0.16);
+  c.fillStyle = col; c.fillRect(x, y + h*0.16, w, h*0.68);
+  c.strokeStyle = 'rgba(0,0,0,0.28)'; c.lineWidth = 2; for(let yy = y + h*0.2; yy < y + h*0.84; yy += 9){ c.beginPath(); c.moveTo(x, yy); c.lineTo(x + w, yy + 5); c.stroke(); }
+  c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(x - 6, y, w + 12, h*0.16); c.strokeRect(x - 6, y + h*0.84, w + 12, h*0.16); c.strokeRect(x, y + h*0.16, w, h*0.68);
+}
+function ynPipe(c, x, y, h, side){
+  c.fillStyle = '#7c6a54'; c.fillRect(x - 9, y, 18, h); c.fillStyle = 'rgba(255,255,255,0.25)'; c.fillRect(x - 5, y, 5, h);
+  c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(x - 9, y, 18, h);
+}
+function ynLamp(c, x, y, low, lit){
+  c.strokeStyle = YPAL.line; c.lineWidth = 3; c.beginPath(); c.moveTo(x, y - 60); c.lineTo(x, y); c.stroke();
+  c.fillStyle = lit ? '#ffe9a0' : '#b9a46a'; c.beginPath(); c.arc(x, y + 8, 15, 0, 7); c.fill(); c.stroke();
+  if(lit){ c.fillStyle = 'rgba(255,224,140,0.12)'; c.beginPath(); c.arc(x, y + 8, 78, 0, 7); c.fill(); }
+}
+function ynBush(c, x, y, t){
+  c.fillStyle = '#3d7a47'; c.strokeStyle = YPAL.line; c.lineWidth = 3;
+  for(let i = 0; i < 5; i++){ c.beginPath(); c.arc(x - 44 + i*22, y - 24 - (i % 2)*12, 26, 0, 7); c.fill(); c.stroke(); }
+  for(let i = 0; i < 7; i++){ const bx = x - 52 + i*17, by = y - 34 - (i % 3)*14, s = 0.5 + 0.5*Math.sin(t*0.08 + i); c.fillStyle = s > 0.5 ? '#dfe7f2' : '#aebdd4'; c.beginPath(); c.arc(bx, by, 7, 0, 7); c.fill(); c.stroke(); }
+}
+function ynVent(c, x, y, w, t){
+  c.fillStyle = '#4a5166'; c.fillRect(x, y - 16, w, 16); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(x, y - 16, w, 16);
+  c.strokeStyle = '#1a1e2a'; for(let i = 1; i < 6; i++){ c.beginPath(); c.moveTo(x + w*i/6, y - 14); c.lineTo(x + w*i/6, y - 2); c.stroke(); }
+  const ph = (t % 240)/240; c.fillStyle = 'rgba(220,232,255,0.20)';
+  for(let k = 0; k < 4; k++){ const u = (ph + k/4) % 1, yy = y - 20 - u*210, ww = w*(0.5 + u*0.4); c.fillRect(x + (w - ww)/2, yy, ww, 16); }
+}
+function ynLever(c, x, y, k, t){
+  c.fillStyle = '#5b627a'; c.fillRect(x - 28, y - 22, 56, 22); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(x - 28, y - 22, 56, 22);
+  const a = -0.6 + 0.0*t; c.strokeStyle = YPAL.brass; c.lineWidth = 8; c.beginPath(); c.moveTo(x, y - 22); c.lineTo(x + Math.sin(a)*60, y - 22 - Math.cos(a)*60); c.stroke();
+  c.fillStyle = '#d94f4f'; c.beginPath(); c.arc(x + Math.sin(a)*60, y - 22 - Math.cos(a)*60, 12, 0, 7); c.fill(); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.stroke();
+}
+function ynCrate(c, x, y){ c.fillStyle = '#b58a4a'; c.fillRect(x, y - 54, 54, 54); c.strokeStyle = '#2a1c10'; c.lineWidth = 3; c.strokeRect(x, y - 54, 54, 54); c.beginPath(); c.moveTo(x, y - 54); c.lineTo(x + 54, y); c.moveTo(x + 54, y - 54); c.lineTo(x, y); c.stroke(); }
+function ynDrawBack(c, Y, t){
+  const z = Y.zones, sky = (stage && stage.sky) || ['#c9d6ea', '#6e7fa6'];
+  // outside: the sky behind the needle, clouds, a far thread drifting
+  const g = c.createLinearGradient(0, -400, 0, WH + 500); g.addColorStop(0, sky[0]); g.addColorStop(1, sky[1]);
+  c.fillStyle = g; c.fillRect(-900, -600, WW + 1800, WH + 1500);
+  c.fillStyle = 'rgba(255,255,255,0.55)';
+  for(let i = 0; i < 14; i++){ const cx = ((i*977 + t*(0.3 + (i % 3)*0.15)) % (WW + 1200)) - 500, cy = 80 + (i*337) % (WH - 200); c.beginPath(); c.arc(cx, cy, 90, 0, 7); c.arc(cx + 100, cy + 14, 70, 0, 7); c.arc(cx - 100, cy + 16, 62, 0, 7); c.fill(); }
+  c.strokeStyle = 'rgba(224,84,111,0.55)'; c.lineWidth = 6; c.beginPath(); for(let x = -600; x < WW + 600; x += 80){ const y = 300 + Math.sin(x*0.004 + t*0.01)*60; if(x === -600) c.moveTo(x, y); else c.lineTo(x, y); } c.stroke();
+  // the skin of the needle: riveted plates round the whole shape
+  for(const r of z.skin) ynRect(c, r, YPAL.skin);
+  c.strokeStyle = 'rgba(0,0,0,0.25)'; c.lineWidth = 3;
+  for(const r of z.skin){ for(let x = r[0] + 220; x < r[0] + r[2]; x += 220){ c.beginPath(); c.moveTo(x, r[1]); c.lineTo(x, r[1] + r[3]); c.stroke(); } }
+  c.fillStyle = 'rgba(255,255,255,0.14)'; for(const r of z.skin){ for(let x = r[0] + 20; x < r[0] + r[2]; x += 110){ c.fillRect(x, r[1] + 8, 6, 6); } }
+  // the inside: dark steel panels with ribs
+  for(const r of z.int) ynRect(c, r, YPAL.int);
+  for(const r of z.int){
+    c.strokeStyle = 'rgba(120,140,190,0.12)'; c.lineWidth = 3;
+    for(let x = r[0] + 160; x < r[0] + r[2]; x += 160){ c.beginPath(); c.moveTo(x, r[1]); c.lineTo(x, r[1] + r[3]); c.stroke(); }
+    for(let y = r[1] + 150; y < r[1] + r[3]; y += 150){ c.beginPath(); c.moveTo(r[0], y); c.lineTo(r[0] + r[2], y); c.stroke(); }
+  }
+  for(const r of z.dark) ynRect(c, r, YPAL.mach);
+  for(const r of z.dark){ c.strokeStyle = 'rgba(120,140,190,0.10)'; c.lineWidth = 3; for(let x = r[0] + 130; x < r[0] + r[2]; x += 130){ c.beginPath(); c.moveTo(x, r[1]); c.lineTo(x, r[1] + r[3]); c.stroke(); } }
+  // the eye: the window out, the sky behind it
+  const e = z.eye; c.fillStyle = sky[0]; c.fillRect(e[0] - 2, e[1], e[2] + 4, e[3]);
+}
+function ynDrawDeco(c, Y, t){
+  for(const d of Y.deco){
+    const k = d[0], x = d[1], y = d[2], w = d[3], h = d[4], a = d[5];
+    if(k === 'gear'){ const rr = (Math.abs(x*7 + y*3) % 70) + 105; ynGear(c, x, y, (y < 1400 && x > 3000 && x < 3500) ? 210 : rr, t*0.008*(a || 1), '#4b5470', '#38405a'); }
+    else if(k === 'spool') ynSpool(c, x, y, w, h, a);
+    else if(k === 'pipe') ynPipe(c, x, y, h, a);
+    else if(k === 'lamp') ynLamp(c, x, y, a, true);
+    else if(k === 'railh'){ c.strokeStyle = '#2a3042'; c.lineWidth = 10; c.beginPath(); c.moveTo(x, y + 7); c.lineTo(x + w, y + 7); c.stroke(); c.strokeStyle = YPAL.steel2; c.lineWidth = 4; c.stroke(); c.fillStyle = YPAL.brass; c.fillRect(x - 10, y - 4, 14, 22); c.fillRect(x + w - 4, y - 4, 14, 22); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(x - 10, y - 4, 14, 22); c.strokeRect(x + w - 4, y - 4, 14, 22); }
+    else if(k === 'railv'){ c.strokeStyle = '#2a3042'; c.lineWidth = 10; c.beginPath(); c.moveTo(x, y); c.lineTo(x, y + h); c.stroke(); c.strokeStyle = YPAL.steel2; c.lineWidth = 4; c.stroke(); c.fillStyle = YPAL.brass; c.fillRect(x - 11, y - 8, 22, 14); c.fillRect(x - 11, y + h - 6, 22, 14); }
+    else if(k === 'vent') ynVent(c, x, y, w, t);
+    else if(k === 'flywheel') ynFlywheel(c, x, y, t);
+    else if(k === 'belt'){ c.strokeStyle = '#1c1f2b'; c.lineWidth = 12; c.beginPath(); c.moveTo(x, y - 100); c.lineTo(x + w - 120, y - 70); c.moveTo(x, y + 100); c.lineTo(x + w - 120, y + 70); c.stroke(); c.strokeStyle = '#3a4056'; c.lineWidth = 4; c.stroke(); }
+    else if(k === 'pipeh'){ const th = a ? 14 : 22; c.fillStyle = a ? '#6b5b49' : '#7c6a54'; c.fillRect(x, y, w, th); c.fillStyle = 'rgba(255,255,255,0.2)'; c.fillRect(x, y + 2, w, 4); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(x, y, w, th);
+      c.fillStyle = YPAL.brass; for(let xx = x + 90; xx < x + w - 20; xx += 260){ c.fillRect(xx, y - 5, 12, th + 10); c.strokeRect(xx, y - 5, 12, th + 10); } }
+    else if(k === 'conveyor'){ c.fillStyle = '#2a2f40'; c.fillRect(x, y, w, 18); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(x, y, w, 18); c.fillStyle = '#586078'; for(let xx = x + 12; xx < x + w; xx += 38){ c.beginPath(); c.arc(xx, y + 9, 7, 0, 7); c.fill(); }
+      c.fillStyle = YPAL.hazard; for(let xx = x + ((t*1.2*(a || 1)) % 60 + 60) % 60; xx < x + w - 14; xx += 60) c.fillRect(xx, y + 2, 14, 4);
+      for(let q = 0; q < 3; q++){ const cxx = x + (((t*1.2*(a || 1) + q*w/3) % (w - 60)) + (w - 60)) % (w - 60); c.fillStyle = '#b58a4a'; c.fillRect(cxx, y - 38, 44, 38); c.strokeStyle = '#2a1c10'; c.strokeRect(cxx, y - 38, 44, 38); }
+      c.strokeStyle = '#3a4056'; c.lineWidth = 5; for(const lx of [x + 20, x + w - 20]){ c.beginPath(); c.moveTo(lx, y + 18); c.lineTo(lx, y + 80); c.stroke(); } }
+    else if(k === 'duct'){   // a crawlspace: a ribbed duct, a grate in the floor and a row of small lamps
+      c.fillStyle = '#171b29'; c.fillRect(x, y, w, h);
+      c.strokeStyle = 'rgba(150,165,200,0.30)'; c.lineWidth = 6; for(let xx = x + 30; xx < x + w; xx += 64){ c.beginPath(); c.moveTo(xx, y); c.lineTo(xx, y + h); c.stroke(); }
+      c.strokeStyle = 'rgba(0,0,0,0.5)'; c.lineWidth = 3; for(let xx = x + 30; xx < x + w; xx += 64){ c.beginPath(); c.moveTo(xx + 5, y); c.lineTo(xx + 5, y + h); c.stroke(); }
+      c.fillStyle = 'rgba(205,160,70,0.55)'; for(let xx = x + 70; xx < x + w - 20; xx += 260){ c.beginPath(); c.arc(xx, y + 18, 7, 0, 7); c.fill(); }
+      c.strokeStyle = 'rgba(190,200,225,0.35)'; c.lineWidth = 3; for(let xx = x + 8; xx < x + w - 8; xx += 18){ c.beginPath(); c.moveTo(xx, y + h - 12); c.lineTo(xx + 10, y + h - 2); c.stroke(); }
+      c.strokeStyle = YPAL.hazard; c.lineWidth = 3; c.beginPath(); c.moveTo(x, y + 2); c.lineTo(x + w, y + 2); c.stroke(); }
+    else if(k === 'bush') ynBush(c, x, y, t);
+    else if(k === 'lever') ynLever(c, x, y, a, t);
+    else if(k === 'crate') ynCrate(c, x, y);
+    else if(k === 'mag'){ for(let xx = x; xx < x + w - 20; xx += 40){ c.fillStyle = ((xx - x)/40 | 0) % 2 ? '#d94f4f' : '#4a7fe0'; c.fillRect(xx, y - 8, 40, 8); } c.strokeStyle = YPAL.line; c.lineWidth = 2; c.strokeRect(x, y - 8, w - ((w) % 40), 8);
+      c.strokeStyle = 'rgba(150,190,255,' + (0.25 + 0.15*Math.sin(t*0.1)) + ')'; c.lineWidth = 2; for(let xx = x + 20; xx < x + w - 20; xx += 80){ c.beginPath(); c.arc(xx, y - 26, 20 + (t % 40)*0.5, Math.PI, 0); c.stroke(); } }
+    else if(k === 'trip'){ const sag = Math.sin(t*0.05)*2; c.strokeStyle = YPAL.thread; c.lineWidth = 4; c.beginPath(); c.moveTo(x, y); c.quadraticCurveTo(x + w/2, y + 6 + sag, x + w, y); c.stroke();
+      c.fillStyle = YPAL.brass; c.fillRect(x - 12, y - 28, 14, 56); c.fillRect(x + w - 2, y - 28, 14, 56); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(x - 12, y - 28, 14, 56); c.strokeRect(x + w - 2, y - 28, 14, 56); }
+    else if(k === 'zip'){ const bx = a[0], by = a[1]; c.strokeStyle = YPAL.thread; c.lineWidth = 5; c.beginPath(); c.moveTo(x, y); c.quadraticCurveTo((x + bx)/2, (y + by)/2 + 110, bx, by); c.stroke();
+      const u = 0.5 + 0.5*Math.sin(t*0.02), qx = x + (bx - x)*u, qy = y + (by - y)*u + 4*55*u*(1 - u)*2; c.fillStyle = YPAL.brass; c.fillRect(qx - 14, qy, 28, 14); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(qx - 14, qy, 28, 14); c.beginPath(); c.moveTo(qx, qy); c.lineTo(qx, qy - 20); c.stroke();
+      c.fillStyle = YPAL.brass; c.beginPath(); c.arc(x, y, 12, 0, 7); c.fill(); c.stroke(); c.beginPath(); c.arc(bx, by, 12, 0, 7); c.fill(); c.stroke(); }
+    else if(k === 'sign'){ c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(x - 8, y - 22, w, 38); c.fillStyle = YPAL.hazard; c.font = '22px sans-serif'; c.fillText(a, x + 4, y + 4); c.strokeStyle = YPAL.hazard; c.lineWidth = 2; c.strokeRect(x - 8, y - 22, w, 38); }
+    else if(k === 'eye'){ c.strokeStyle = YPAL.brass; c.lineWidth = 14; c.strokeRect(x - 4, y - 8, w + 8, h + 8); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(x - 12, y - 16, w + 24, h + 24);
+      c.strokeStyle = YPAL.thread; c.lineWidth = 6; c.beginPath(); c.moveTo(x + w/2, y - 8); c.quadraticCurveTo(x + w/2 + 40*(Y.flip ? 1 : -1), y + 90, x + w/2, y + 170); c.stroke(); }
+    else if(k === 'balcony'){ const rl = [x, x + w]; c.strokeStyle = '#3a4056'; c.lineWidth = 6; c.beginPath(); c.moveTo(x, y - 90); c.lineTo(x + w, y - 90); c.stroke();
+      c.lineWidth = 4; for(let xx = x + 10; xx <= x + w; xx += 44){ c.beginPath(); c.moveTo(xx, y - 90); c.lineTo(xx, y); c.stroke(); }
+      if(a){ c.strokeStyle = 'rgba(255,255,255,0.45)'; c.lineWidth = 4; for(let i = 0; i < 8; i++){ const yy = y - 250 - i*70, off = ((t*9 + i*130) % 600); c.beginPath(); c.moveTo(x - 140 + off*0.2, yy); c.lineTo(x + 120 + off*0.2, yy + 8); c.stroke(); } } }
+  }
+}
+function ynDrawPlats(){
+  const c = ctx, Y = ynInfo(), t = hazardT; if(!Y) return;
+  c.save(); c.lineJoin = 'round';
+  ynDrawBack(c, Y, t); ynDrawDeco(c, Y, t);
+  for(const p of worldPlats){
+    const k = p.yn; if(!k) continue;
+    if(k === 'wall' || k === 'cap' || k === 'roof' || k === 'mass' || k === 'mfloor') ynBlock(c, p, 1);
+    else if(k === 'slab' || k === 'balcony') { ynBlock(c, p, 0); }
+    else if(k === 'tfloor' || k === 'troof'){ ynBlock(c, p, 1); c.fillStyle = YPAL.hazard; const ey = k === 'tfloor' ? p.y : p.y + p.h - 5; for(let xx = p.x + 6; xx < p.x + p.w - 20; xx += 40) c.fillRect(xx, ey, 18, 5); }
+    else if(k === 'block' || k === 'plug') ynBlock(c, p, 0);
+    else if(k === 'spool'){ ynSpool(c, p.x, p.y, p.w, p.h, (p.x/97 | 0)); }
+    else {
+      // soft pieces: a plate with a lit top; decks and the cage are heavier
+      const thick = (k === 'deck' || k === 'loft' || k === 'sill') ? 44 : Math.max(26, p.h || 0);
+      c.fillStyle = YKC[k] ? YKC[k] : k === 'cage' ? YPAL.brass : k === 'tooth' ? '#c9ccd8' : (k === 'rail' || k === 'lift' || k === 'long') ? YPAL.hazard : (k === 'deck' || k === 'loft' || k === 'sill') ? YPAL.wood : YPAL.steel;
+      c.fillRect(p.x, p.y, p.w, thick); c.fillStyle = 'rgba(255,255,255,0.28)'; c.fillRect(p.x, p.y, p.w, 5);
+      if(k === 'rail' || k === 'lift' || k === 'long'){ c.fillStyle = '#2a2a2a'; for(let x = p.x + 8; x < p.x + p.w - 20; x += 36){ c.beginPath(); c.moveTo(x, p.y + thick); c.lineTo(x + 16, p.y); c.lineTo(x + 28, p.y); c.lineTo(x + 12, p.y + thick); c.closePath(); c.fill(); } }
+      if(k === 'deck' || k === 'loft' || k === 'sill'){ c.strokeStyle = 'rgba(0,0,0,0.3)'; c.lineWidth = 2; for(let x = p.x + 60; x < p.x + p.w; x += 60){ c.beginPath(); c.moveTo(x, p.y); c.lineTo(x, p.y + thick); c.stroke(); } }
+      c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, thick);
+      if(k === 'shelf' || k === 'ledge' || k === 'catwalk'){ c.fillStyle = YPAL.steel2; for(const bx of [p.x + 10, p.x + p.w - 30]){ c.beginPath(); c.moveTo(bx, p.y + thick); c.lineTo(bx + 20, p.y + thick); c.lineTo(bx + 10, p.y + thick + 22); c.closePath(); c.fill(); c.stroke(); } }
+      if(k === 'cage'){   // the cage: bars up from the floor, a roof, the cable
+        c.strokeStyle = YPAL.brass2; c.lineWidth = 6; for(let x = p.x; x <= p.x + p.w; x += p.w/4){ c.beginPath(); c.moveTo(x, p.y); c.lineTo(x, p.y - 150); c.stroke(); }
+        c.beginPath(); c.moveTo(p.x, p.y - 150); c.lineTo(p.x + p.w, p.y - 150); c.stroke(); c.strokeStyle = '#2a3042'; c.lineWidth = 4; c.beginPath(); c.moveTo(p.x + p.w/2, p.y - 150); c.lineTo(p.x + p.w/2, p.y - 1400); c.stroke(); }
+      if(k === 'tooth'){ c.fillStyle = YPAL.line; c.fillRect(p.x + p.w/2 - 6, p.y + thick, 12, 16); }
+      if(k === 'button'){ c.fillStyle = YPAL.line; for(const bx of [p.x + p.w*0.33, p.x + p.w*0.67]){ c.beginPath(); c.arc(bx, p.y + thick/2 + 2, 4, 0, 7); c.fill(); } }
+      if(k === 'tape'){ c.fillStyle = YPAL.line; for(let x = p.x + 8; x < p.x + p.w - 4; x += 14) c.fillRect(x, p.y + 5, 2, (((x - p.x)/14 | 0) % 5 === 0) ? 14 : 8); }
+      if(k === 'cushion'){ for(let x = p.x + 24; x < p.x + p.w - 10; x += 46){ c.strokeStyle = '#d8dce6'; c.lineWidth = 3; c.beginPath(); c.moveTo(x, p.y); c.lineTo(x - 3, p.y - 20); c.stroke(); c.fillStyle = (((x - p.x)/46 | 0) % 2) ? '#f2d046' : '#4a9be0'; c.beginPath(); c.arc(x - 3, p.y - 22, 5, 0, 7); c.fill(); } }
+      if(k === 'zip'){ c.fillStyle = YPAL.line; for(let x = p.x + 6; x < p.x + p.w - 8; x += 12) c.fillRect(x, p.y + thick - 6, 6, 6); }
+      if(k === 'thimble'){ c.fillStyle = 'rgba(0,0,0,0.35)'; for(let x = p.x + 14; x < p.x + p.w - 8; x += 22){ c.beginPath(); c.arc(x, p.y + thick/2 + 1, 2.5, 0, 7); c.fill(); } }
+      if(k === 'wheel' || k === 'spring' || k === 'pend'){ c.strokeStyle = YPAL.line; c.lineWidth = 2; c.beginPath(); c.moveTo(p.x + 10, p.y + thick); c.lineTo(p.x + p.w/2, p.y + thick + 12); c.lineTo(p.x + p.w - 10, p.y + thick); c.stroke(); }
+    }
+  }
+  c.restore();
+}
+function ynDrawOver(){ /* nothing yet: the lights-out veil is ynVeil */ }
+// LIGHTS OUT: the machine room is always dark (a veil over it), and in the night shift the whole needle goes dark (the Search Party's veil, faded in at dusk)
+function ynIsNight(t){ const Y = ynInfo(); return !!(Y && Y.f.night && ynNight(t) >= YNK.nightOn); }
+function ynVeil(o, hw, hh, m){
+  const Y = ynInfo(); if(!Y) return;
+  if(Y.f.night){ const L = ynNight(hazardT), an = YNK.night*L; if(an > 0.01){ o.fillStyle = 'rgba(5,9,26,' + an.toFixed(3) + ')'; o.fillRect(0, 0, hw, hh); } }
+  o.fillStyle = 'rgba(4,8,24,' + YNK.dark + ')';
+  for(const r of Y.zones.dark){ const x = (m.a*r[0] + m.c*r[1] + m.e)*0.5, y = (m.b*r[0] + m.d*r[1] + m.f)*0.5; o.fillRect(x, y, r[2]*Math.abs(m.a)*0.5, r[3]*Math.abs(m.d)*0.5); }
+}
+function ynLights(o, m){
+  const Y = ynInfo(); if(!Y) return;
+  const cut = (wx, wy, rad, a)=>{
+    const x = (m.a*wx + m.c*wy + m.e)*0.5, y = (m.b*wx + m.d*wy + m.f)*0.5, r = rad*Math.hypot(m.a, m.b)*0.5;
+    if(x < -r || y < -r || x > o.canvas.width + r || y > o.canvas.height + r) return;
+    const g = o.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)'); o.fillStyle = g; o.fillRect(x - r, y - r, r*2, r*2);
+  };
+  for(const d of Y.deco) if(d[0] === 'lamp') cut(d[1], d[2] + 8, d[5] ? 330 : 260, 0.7);   // the lamps are the needle's own light
+}
+
+// ============================================================
 //  STAGES A (2026-11-08): three stages with shapes of their own. DREAM ISLAND: floating islands (solid blocks) over the sea, no ground, blast
 //  lines all round. THE TLC: a steel bowl, solid walls with stepped slopes rising up both sides to a low flat middle with a hatch in it; no
 //  side KO (a launch bounces off the wall, stgWallHit), out of the top (a lower top line, koT) or down the hatch. YOYLE NEEDLE: a shaft one
@@ -26031,7 +26524,7 @@ function stgBuild(){
 // Where each moving ledge is at frame t (pure).
 function stgPlace(t){
   for(const p of STG.movers){ const m = p.mv, a = 2*Math.PI*t/m.per + m.ph;
-    const nx = Math.round(p.bx + m.ax*Math.sin(a)), ny = Math.round(p.by + m.ay*Math.sin(a));
+    const nx = Math.round(p.bx + m.ax*Math.sin(a)), ny = Math.round(p.by + m.ay*Math.sin(a + (m.ph2 || 0)));
     p.mvx = nx - p.x; p.mvy = ny - p.y; p.x = nx; p.y = ny; }
 }
 // Once a frame, before the fighters move: the ledges move, and whoever stood on one last frame (f._stgRide, stgHold) goes with it.
@@ -27897,6 +28390,7 @@ function spawnItem(){
   if(BASKET) return;   // REACH THE BASKET (an event twist): no crate falls from the sky; the basket hands them out (basketStep)
   if(MCAVE && MCAVE.on){ mcSpawnItem(); return; }   // MOON CAVES: on a floor, never from space
   if(DRM){ diSpawnItem(); return; }   // DREAM ISLAND TEAMS: mostly on the drifting islands
+  if(YN){ ynSpawnItem(); return; }   // YOYLE NEEDLE TEAMS: on a shelf, a deck or a block of the needle
   const gy = groundY();
   const x = floorSafeX(120 + Math.random()*(WW-240), 50);   // (REAL EDGES: it comes down over the floor, not a gap)
   // weight the pool: healing/marmalade common, powerups & throwables medium, assist/yoyle rarer, boss rarest
@@ -97549,8 +98043,9 @@ function startEventMatch(){
 function returnEventLoan(){
   EVENT_RUN = null; MATCH_TWIST = null; BASKET = null; JAWB = null; BERRIES = null; STAIRS = null;
   CONTEST = null;   // A CONTEST: over with the match (what each fighter held goes with the fighters)
+  if(YN) SETTINGS.yoyleSeed = ((SETTINGS.yoyleSeed | 0) + 1) & 3;   // YOYLE NEEDLE TEAMS: the next layout
   if(DRM) SETTINGS.dreamSeed = ((SETTINGS.dreamSeed | 0) + 1) & 3;   // DREAM ISLAND TEAMS: the next match with these settings is the next layout
-  STICKY = null; SPLEEF = null; DIGC = null; STG = null; DRM = null;   // STICKY PILLARS: nobody is stuck after the match (the stuck fighters themselves go with the fighters); THE DIG: its field goes with the match
+  STICKY = null; SPLEEF = null; DIGC = null; STG = null; DRM = null; YN = null;   // STICKY PILLARS: nobody is stuck after the match (the stuck fighters themselves go with the fighters); THE DIG: its field goes with the match
   const L = EVENT_LOAN; if(!L) return;
   EVENT_LOAN = null;
   SETTINGS.mode = L.mode; SETTINGS.count = L.count; SETTINGS.stocks = L.stocks; SETTINGS.teamKey = L.teamKey; SETTINGS.itemRate = L.itemRate;
@@ -98783,7 +99278,7 @@ function drawStickyPins(){
 // The twist is the match's MATCH_TWIST, so nothing is kept between matches but the offscreen canvas.
 const DARKK = { r:220, see:320, far:0.12, tint:'rgba(5,9,22,0.7)' };
 const DARKFX = { cv:null, c:null, me:null, q:null };
-function darkOn(){ return DRM_VIS || (!!MATCH_TWIST && (MATCH_TWIST === 'dark' || twistOn('dark'))); }   // (DREAM ISLAND TEAMS: the night and the undergrounds use the same veil, diVeil)
+function darkOn(){ return DRM_VIS || YN_VIS || (!!MATCH_TWIST && (MATCH_TWIST === 'dark' || twistOn('dark'))); }   // (DREAM ISLAND TEAMS: the night and the undergrounds use the same veil, diVeil)
 function darkSeeK(f){
   const me = DARKFX.me;
   if(!me || me.dead || f === me || f.team === me.team) return 1;
@@ -98794,6 +99289,10 @@ function darkSeeK(f){
     const LH = diLightHouse(), nl = Math.max(diNight(hazardT), diInCave(f.x, f.y) ? 1 : 0, diWeather() === 2 ? 0.6 : 0);
     if(LH && diInBeam(f.x, f.y, LH, hazardT)) return 1;
     return 1 - (1 - k)*nl;
+  }
+  if(YN_VIS){   // YOYLE NEEDLE TEAMS: a foe fades in the dark machine room, and everywhere in the night shift's night
+    const Y = ynInfo(); let dk = 0; if(Y){ for(const r of Y.zones.dark) if(f.x >= r[0] && f.x <= r[0] + r[2] && f.y >= r[1] && f.y <= r[1] + r[3]) dk = 1; if(ynIsNight(hazardT)) dk = Math.max(dk, ynNight(hazardT)); }
+    return 1 - (1 - k)*dk;
   }
   return k;
 }
@@ -98814,7 +99313,7 @@ function darkDraw(m){
     if(D.cv.width !== hw || D.cv.height !== hh){ D.cv.width = hw; D.cv.height = hh; }
     const o = D.c, rad = DARKK.r*Math.hypot(m.a, m.b)*0.5;
     o.setTransform(1, 0, 0, 1, 0, 0); o.globalCompositeOperation = 'source-over';
-    o.clearRect(0, 0, hw, hh); if(DRM_VIS) diVeil(o, hw, hh, m); else { o.fillStyle = DARKK.tint; o.fillRect(0, 0, hw, hh); }
+    o.clearRect(0, 0, hw, hh); if(DRM_VIS) diVeil(o, hw, hh, m); else if(YN_VIS) ynVeil(o, hw, hh, m); else { o.fillStyle = DARKK.tint; o.fillRect(0, 0, hw, hh); }
     o.globalCompositeOperation = 'destination-out';
     for(const f of fighters){
       if(f.dead) continue;
@@ -98823,7 +99322,7 @@ function darkDraw(m){
       g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.5, 'rgba(0,0,0,0.85)'); g.addColorStop(1, 'rgba(0,0,0,0)');
       o.fillStyle = g; o.fillRect(x - rad, y - rad, rad*2, rad*2);
     }
-    if(DRM_VIS) diLights(o, m);
+    if(DRM_VIS) diLights(o, m); else if(YN_VIS) ynLights(o, m);
     o.globalCompositeOperation = 'source-over';
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(D.cv, 0, 0, cw, ch); ctx.restore();
   }catch(e){}
@@ -105828,9 +106327,10 @@ function draw(){
                       theme: SA.on ? stage.id : null };   // the ten normal stages' own platform looks (STAGE ART); art only, the geometry is the platform's own
   if(STG) stgDraw();   // STAGES A: the shaft's or the box's inside, behind the ledges
   if(DRM_VIS) diDrawSea();   // DREAM ISLAND TEAMS: the sea under the islands
-  if(SETTINGS.mode==='ctf') ctfDrawWorld(); else for(const p of worldPlats) if(!p.dg && !p.di) paintPlat(ctx, p, platStyle);   // Capture the Flag paints its map from cached tiles (THE DIG paints its dirt itself: drawDigc)
+  if(SETTINGS.mode==='ctf') ctfDrawWorld(); else for(const p of worldPlats) if(!p.dg && !p.di && !p.yn) paintPlat(ctx, p, platStyle);   // Capture the Flag paints its map from cached tiles (THE DIG paints its dirt itself: drawDigc)
   if(STG) stgDrawOver();   // STAGES A: Dream Island's grass caps
   if(DRM_VIS) diDrawPlats();   // DREAM ISLAND TEAMS: islands, planks (cracked, ghost) and the drifting islands
+  if(YN_VIS) ynDrawPlats();   // YOYLE NEEDLE TEAMS: the needle's inside, its machinery and its platforms
   if(DRM_VIS) diDrawWeather();   // DREAM ISLAND TEAMS: leaves in a gust, rain
   drawImpactScars();          // impact's floor scars, on the surfaces they were made on
   drawArenaHazard('under');   // a boss arena's hazard, under the shots and the fighters (BOSS_ARENA_HAZARD)
@@ -121383,7 +121883,7 @@ function worldGeo(){
     floors: floors.map(fl=>({level:fl.level,y:Math.round(fl.y),x:Math.round(fl.x),w:Math.round(fl.w)})),
     // `solid` was missing here once, so on a client every stone landmark rendered as a thin ledge; `field` keeps the
     // client's minimap filtering out the scatter grid the way the host's does; `rot` is paintPlat's tilt.
-    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team,ib:p.ib,sc:p.sc,ar:p.ar,lh:p.lh,bl:p.bl,ss:p.ss,th:p.th,sh:p.sh,wo:p.wo,hg:p.hg,blk:p.blk,ix:p.ix,pool:p.pool,trap:p.trap,oi:p.oi})),
+    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team,ib:p.ib,sc:p.sc,ar:p.ar,lh:p.lh,bl:p.bl,ss:p.ss,th:p.th,sh:p.sh,wo:p.wo,hg:p.hg,blk:p.blk,ix:p.ix,pool:p.pool,trap:p.trap,oi:p.oi,yn:p.yn,yd:p.yd})),
     // `zone` and `wall` ride along so a client DRAWS the team's safe zone where the host plays it: without them it fell back
     // to the old column round the base, which is nowhere near a side-wall band (see wallBand).
     bases: bases.map(b=>({team:b.team,x:Math.round(b.x),y:Math.round(b.y),w:b.w,h:b.h,color:b.color,
@@ -121745,7 +122245,7 @@ function applySnapshot(s){
   const st=STAGES.find(x=>x.id===s.stage); if(st) stage=st;
   SETTINGS.mode=s.mode;
   const geo = s.geo || (s.worldPlats ? s : null);   // (before the geometry was split out, it sat at the top level)
-  if(geo){ floors=geo.floors||[]; worldPlats=geo.worldPlats||[]; DRM_VIS = worldPlats.some(p=>p.di); DRM_V = diVarFromGeo(); DRM_GH = worldPlats.some(p=>p.ghost); bases=(geo.bases||[]).map(b=>({...b})); mcNetGeo(geo.moon); NET_VIEW.geoBase = worldPlats.map(p=>[p.x, p.y]); }   // (MOON CAVES: the host's disc, built here)
+  if(geo){ floors=geo.floors||[]; worldPlats=geo.worldPlats||[]; DRM_VIS = worldPlats.some(p=>p.di); YN_VIS = worldPlats.some(p=>p.yn); DRM_V = diVarFromGeo(); DRM_GH = worldPlats.some(p=>p.ghost); bases=(geo.bases||[]).map(b=>({...b})); mcNetGeo(geo.moon); NET_VIEW.geoBase = worldPlats.map(p=>[p.x, p.y]); }   // (MOON CAVES: the host's disc, built here)
   else if(NET_VIEW.geoBase && NET_VIEW.geoBase.length === worldPlats.length) for(let i = 0; i < worldPlats.length; i++){ worldPlats[i].x = NET_VIEW.geoBase[i][0]; worldPlats[i].y = NET_VIEW.geoBase[i][1]; }   // ONLINE LAG: back where the geometry had them, then...
   if(Array.isArray(s.mv)) for(const r of s.mv){ const p = worldPlats[r[0] | 0]; if(p){ p.x = +r[1]; p.y = +r[2]; } }   // ...the ones the host says have moved (Yoyle Needle's ledges), where it has them
   if(s.dg) digNetIn(s.dg);   // THE DIG FLOOR: the host's holes, so this floor is the host's floor of this very frame
