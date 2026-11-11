@@ -8673,6 +8673,7 @@ const CTF_FREE_GRACE = 480, CTF_FREE_HASTE = 180, CTF_GHOST_STEPS = 420, CTF_REV
 function ctfJailThreshold(n){ return clamp(140 - 10*n, 50, 120); }
 const CTF_FLAG_R = 40, CTF_KEY_R = 42, CTF_BOOST_STEPS = 420, CTF_BOOST_CD = 1500;
 const CTF_REVEAL_OPEN = 420, CTF_REVEAL_COVER = 130, CTF_STALL_REVEAL = 14400;
+const CTF_DRY_START = 14400, CTF_DRY_STEP = 3600;   // a long dry spell (CPU audit 2026-11-10: Mines went ten minutes with the leading side's defenders never leaving their flags, 2 v 2 and 4 v 4): after 4 minutes with no capture the CPUs send more attackers (and the leader stops turtling), a fifth more every further minute
 const CTF_PING_FIRST = 10800, CTF_PING_EVERY = 3600, CTF_PING_LEN = 300;   // the radar: after 3 minutes with no capture, and again every minute, all flags still out show for 5 s
 // ---------------------------------------------------------------------------------------------------------------
 //  6. THE OLD OAK AND THE MEADOW (the owner, 2026-10-15: "SOME maps asymmetric", sides different in style, a bid for the side). 84 columns a side, 28 rows; side A is the FORTRESS, side B the MEADOW.
@@ -12923,6 +12924,14 @@ function ctfCupPlanKey(e){
   if(code === 'KeyC'){ eat(); CTFCUP.strat[p.team] = Object.assign(ctfCupCleanStrat(null, CTFCUP.size), { mode:CTFCUP.strat[p.team].mode }); p.draft = null; ctfCupSave(); ctfCupPlanDraw(); return; }
 }
 if(typeof window !== 'undefined' && window.addEventListener && !window.__ctfCupPlanKeys){ window.__ctfCupPlanKeys = true; window.addEventListener('keydown', ctfCupPlanKey, true); }
+// Escape on the Flag Cup screens (the game's other menus have a Back button and no Escape; the picker, the plan editor and the kit box close on their own keys first): the picker closes, then the team builder goes back to the setup, and the setup back to the tournament menu.
+function ctfCupEscKey(e){
+  if(e.code !== 'Escape' || e.repeat || e.defaultPrevented || running || CTFCUP_PLAN || (typeof CTFKIT_UI !== 'undefined' && CTFKIT_UI)) return;
+  const on = id=>{ const s = document.getElementById(id); return !!(s && s.classList.contains('active')); };
+  if(on('ctfCupTeams')){ e.preventDefault(); if(CTFCUP_PICK) ctfCupPickClose(false); else go('ctfCupSetup'); }
+  else if(on('ctfCupSetup')){ e.preventDefault(); go('tourneySetup'); }
+}
+if(typeof window !== 'undefined' && window.addEventListener && !window.__ctfCupEscKeys){ window.__ctfCupEscKeys = true; window.addEventListener('keydown', ctfCupEscKey); }
 // ---- KITS (the owner, 2026-10-16: "can you give me a save kit button?"): a kit is a whole TEAM saved from the team builder under a name: its fighters in seat order, its strategy setting and plan (preset, ticks, roles by seat) and its CPU skill.
 // The kits are a named list, kept on this computer only (localStorage, every touch wrapped). A kit is made loadable when it is read: a fighter the game does not offer (gone, or not unlocked: nobody the game keeps behind a prize ever comes
 // through a kit) leaves its seat empty for the draw, and plan ids that are not in the planning menu's lists are dropped.
@@ -16676,12 +16685,14 @@ function ctfPlanDeal(L, pl, nav){
   let defShare = [0.4, 0.28, 0.22][sk];
   if(sit.ahead) defShare += 0.12 + (sit.late ? 0.18 : 0);
   if(sit.behind) defShare -= 0.1;
+  const dry = L.playT - (L.lastCapT || 0), dryOn = dry >= CTF_DRY_START;
+  if(dryOn) defShare -= Math.min(0.6, 0.2 + 0.2*Math.floor((dry - CTF_DRY_START)/CTF_DRY_STEP));
   if(sit.upFoe > sit.upMine + 1) defShare += 0.12;
-  if(sit.late && sit.lead >= 1 && ctfPlanOk(pl, 'lateturtle')) defShare = Math.max(defShare, 0.85);   // late turtle: ahead late, everyone defends
+  if(sit.late && sit.lead >= 1 && !dryOn && ctfPlanOk(pl, 'lateturtle')) defShare = Math.max(defShare, 0.85);   // late turtle: ahead late, everyone defends
   if(ctfPlanOn(pl, 'turtle')) defShare = 0.9;
   if(ctfPlanOn(pl, 'allout')) defShare = 0.05;
   if(CTF_PRESETS[pl.preset] && CTF_PRESETS[pl.preset].defShare != null) defShare = CTF_PRESETS[pl.preset].defShare;
-  const nDef = Math.max(live.length >= 2 ? 1 : 0, Math.min(live.length - (live.length >= 3 ? 1 : 0), Math.round(live.length*defShare)));
+  const nDef = Math.max(live.length >= 2 && !dryOn ? 1 : 0, Math.min(live.length - (live.length >= 3 ? 1 : 0), Math.round(live.length*defShare)));
   const cur = live.slice().sort((a, b)=>((a._ai && a._ai.role === 'def') ? 0 : 1) - ((b._ai && b._ai.role === 'def') ? 0 : 1) || a.idx - b.idx);
   const DEFR = ['def', 'guard', 'jailguard'], ATTR = ['att', 'scout', 'raider', 'runner', 'keyrunner', 'rescuer'];
   cur.forEach((f, k)=>{
