@@ -5717,12 +5717,26 @@ function mcSegsHash(segs){
   for(const g of segs){ mix(g.r0); mix(g.r1); mix(g.a0*1e5); mix(g.a1*1e5); mix(g.oneway ? 1 : 0); }
   return h >>> 0;
 }
-function mcGeoOut(){ const M = MCAVE; return { N:M.N, k:M.k, n:M.segs.length, h:mcSegsHash(M.segs) }; }
+// (MOON CAVES v4, V8b: the v4 moon goes as {v:4, t:tag, s:side, m:moon number 0-15, n, h} -- the plan is pure, so the same two numbers and the same code give the same moon; v3 sends exactly {N, k, n, h})
+function mcGeoOut(){ const M = MCAVE; if(M.v === 4 && M.moon) return { v:4, t:M.moon.tag, s:M.moon.s, m:M.moon.m, n:M.segs.length, h:mcSegsHash(M.segs) }; return { N:M.N, k:M.k, n:M.segs.length, h:mcSegsHash(M.segs) }; }
+// A GUEST'S v4 MOON: refused cleanly (never half-built) when its tag or numbers are not ones this build knows; a moon already built is kept when the message names it; otherwise the named moon replaces whatever was built (a guest that built moon 11 and gets moon 6's message ends on moon 6)
+function mcNetGeo4(m){
+  const s = Math.round(+m.s), mi = Math.round(+m.m);
+  if(m.t !== MC4_TAG){ if(!NET_VIEW.moonRefused){ NET_VIEW.moonRefused = true; try{ console.warn('Moon Caves v4: the host moon has tag ' + m.t + ', this build has ' + MC4_TAG); if(window.NET && NET.role === 'client') NET.dropped('Left the room: the host Moon Caves is not the one this version builds. Refresh the page (F5), and ask the host to as well.'); }catch(e){} } return; }
+  if(!(s >= 2 && s <= 15) || !(mi >= 0 && mi <= 15)) return;   // (peer-supplied)
+  const have = MCAVE && MCAVE.on && MCAVE.v === 4 && MCAVE.moon;
+  if(have && MCAVE.moon.s === s && MCAVE.moon.m === mi && MCAVE.moon.tag === m.t) return;   // built already
+  let g; try{ g = mc4Build(s, mi); }catch(e){ console.warn('Moon Caves v4: the guest could not build moon ' + s + '-' + mi + ': ' + e.message); return; }
+  if(g.segs.length !== m.n || mcSegsHash(g.segs) !== m.h) console.warn('Moon Caves: the disc built here is not the host disc');
+  MC4.last[s] = mi; MCAVE = mcState(g); camAng = 0;
+  NET_VIEW.camReady = false;
+}
 function mcNetGeo(m){
   if(!m || typeof m !== 'object'){ if(MCAVE) MCAVE = null; return; }   // the host's world is not the disc (a next match on another map)
+  if(m.v === 4){ mcNetGeo4(m); return; }   // (MOON CAVES v4, V8b)
   const N = Math.round(+m.N), k = +m.k;
   if(!(N >= 2 && N <= 64) || !(k > 0.2 && k < 5)) return;   // (peer-supplied)
-  if(MCAVE && MCAVE.on && MCAVE.N === N && MCAVE.k === k) return;   // built already
+  if(MCAVE && MCAVE.on && (MCAVE.v || 3) === 3 && MCAVE.N === N && MCAVE.k === k) return;   // built already (V8b: a v4 moon is never the v3 disc of the same size)
   const g = mcGen(N, k);
   if(g.segs.length !== m.n || mcSegsHash(g.segs) !== m.h) console.warn('Moon Caves: the disc built here is not the host\'s');
   MCAVE = mcState(g); camAng = 0;
@@ -121321,7 +121335,7 @@ function worldGeoKey(){
   for(const p of worldPlats){ mix(p.w); mix(p.h); mix(p.solid?1:0); mix((p.rot||0)*100); if(p.di){ mix(p.ghost?1:0); mix(p.crk?1:0); if(p.ss){ mix(p.ss[0]); mix(p.ss[1] + 1); mix(p.ss[2]); } } }   // (ONLINE LAG: not x and y -- a platform that moves rides as an mv row, not as a whole new geometry every frame)
   for(const fl of floors){ mix(fl.x); mix(fl.y); mix(fl.w); }
   for(const b of bases){ mix(b.x); mix(b.y); mix(b.w); }
-  return stage.id + ':' + worldPlats.length + ':' + floors.length + ':' + bases.length + ':' + h;
+  return stage.id + ':' + worldPlats.length + ':' + floors.length + ':' + bases.length + ':' + h + (MCAVE && MCAVE.on && MCAVE.v === 4 && MCAVE.moon ? ':' + MCAVE.moon.id : '');   // (MOON CAVES v4, V8b: the moon's number)
 }
 // The flags drawFighter reads. One at its resting value (0, false, null) is left out and arrives as undefined, which
 // every check on these reads the same way (truthiness and `> 0` tests).
@@ -122837,6 +122851,7 @@ window.NET = {
     const humans=picks.map(s=>ROSTER.some(r=>r.play && r.name===s.name) ? s.name : "Firey");
     // Everything the lobby shows travels with the start: host and clients must build the SAME stadium and arena.
     const settings=Object.assign(this.lobbySettings(), { count:Math.max(SETTINGS.count, this.players.length) });
+    if(stage && stage.moonV === 4) settings.moon = MC4.pick(Math.max(2, Math.min(15, Math.ceil(settings.count/2))));   // MOON CAVES v4 (V8b): the host draws the moon, and every device builds that one
     if(SETTINGS.mode==='ctf') settings.ctfMap = ctfPickMap();   // the host picks the map: the start carries its id, and every device builds that one
     const roster=humans;
     const ids=this.players.map(p=>p.id);   // who sits where, so a client's seat comes from the start itself
@@ -122863,6 +122878,8 @@ window.NET = {
     SETTINGS.smashBalls = s.smashBalls == null ? true : +s.smashBalls !== 0;   // (an older host sends none: on)
     if(s.ai!=null) AI_LEVEL = int(s.ai, 0, 3, 1);
     { const st=STAGES.find(x=>x.id===s.stage); if(st) stage=st; }
+    MC4.netMoon = (stage && stage.moonV === 4 && Number.isInteger(s.moon) && s.moon >= 0 && s.moon <= 15) ? s.moon : null;   // MOON CAVES v4 (V8b): the host's moon, validated; read once by MC4.pick
+    if(NET_VIEW) NET_VIEW.moonRefused = false;
     roster = (Array.isArray(roster)?roster:[]).map(n=>ROSTER.some(r=>r.play && r.name===n) ? n : "Firey");
     // Seats for this match: humans first, in roster order. The host maps a leaver to a seat by this (seatsLeft), and a
     // client takes its seat from it rather than from its position in whatever roster arrives mid-match.
