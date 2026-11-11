@@ -825,8 +825,7 @@
   .planteamdot{width:14px; height:14px; border-radius:5px; border:2px solid #1c1c1c; flex:none}
   .unlock-note{max-width:620px;margin:6px auto;width:94%;text-align:center;font-weight:800;font-size:15px;
     background:#ffd23f;color:#1c1c1c;border:3px solid #1c1c1c;border-radius:12px;padding:8px 12px}
-  .keyhint{position:absolute;left:12px;bottom:12px;max-width:340px;z-index:5;pointer-events:none;font:700 13px/1.35 'Baloo 2',system-ui,sans-serif;background:rgba(28,24,38,.88);color:#fff;border:2px solid #ffd23f;border-radius:10px;padding:7px 10px;opacity:0;transition:opacity .25s}
-  .keyhint.show{opacity:1}
+  .keyhintline{max-width:620px;margin:6px auto;width:94%;text-align:center;font-weight:700;font-size:14px;background:#fff7d6;color:#1c1c1c;border:2px solid #1c1c1c;border-radius:10px;padding:6px 10px}
   .plantimer{max-width:620px;margin:0 auto 6px;width:94%;text-align:center;font-weight:800;font-size:16px;background:#1c1c1c;color:#fff;border-radius:10px;padding:6px 10px}
   .plantimer.low{background:#e0503a;animation:pulseT 0.6s ease-in-out infinite}
   @keyframes pulseT{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
@@ -1820,7 +1819,6 @@
     <div class="hudbar" id="hudbar"></div>
     <div class="standings" id="standings"></div>
     <div class="banner" id="banner"></div>
-    <div class="keyhint" id="keyHint" role="status"></div>
   </div>
 
   <!-- RESULT -->
@@ -1855,6 +1853,7 @@
           <button class="btn ghost sm" onclick="quitMatch()">Quit</button>
         </div>
       </div>
+      <div id="pauseKeyHint" class="keyhintline" style="display:none"></div>
       <div id="pauseMoves" class="movecard" style="display:none;text-align:left;margin-top:12px"></div>
     </div>
   </div>
@@ -2060,6 +2059,7 @@
     <div id="resultCard" style="display:none"></div>
     <div id="netResults" class="netres" style="display:none"></div>
     <div id="scorecard" class="scorecard"></div>
+    <div id="resultKeyHint" class="keyhintline" style="display:none"></div>
     <div id="unlockNote" class="unlock-note" style="display:none"></div>
     <div id="eraseNote" class="unlock-note erase-note" style="display:none"></div>
     <div id="questNote" class="unlock-note quest-note" style="display:none" role="status"></div>
@@ -10721,10 +10721,10 @@ function ctfEditPrebuild(L){   // while they are still hiding: once the edits ha
   if(L.pre && L.pre.seq === L.editSeq){ if(!L.pre.nav.ready) ctfNavTick(L.pre.nav, 80, 3); return; }
   if(L.t - L.editT >= 30) L.pre = { seq:L.editSeq, n:st, nav:ctfEditNav(L, st) };
 }
-// THE ROUTE CHECK'S SPEED AND BANNER (playtest focus group: 16-41 s with nothing on screen). Nobody moves during the check, so a real browser spends 12 ms of each step on it
-// instead of 6 (the headless harness counts slices, not milliseconds, and keeps its own number: its matches are unchanged). It is not cut short and does not start the match
+// THE ROUTE CHECK'S SPEED AND BANNER (playtest focus group: 16-41 s with nothing on screen). Nobody moves during the check, so a real browser spends up to 8 ms of each step on it, in all its ticks together
+// (they were 6 ms each, up to 12 with two) (the headless harness counts slices, not milliseconds, and keeps its own number: its matches are unchanged). It is not cut short and does not start the match
 // early: a flag shut in by a piece has to be found before play, and finding it later would take a piece away in the middle of a fight. The banner shows the work instead.
-function ctfFixMs(){ return ctfNavDet() ? 6 : 12; }
+function ctfFixMs(){ return ctfNavDet() ? 6 : Math.max(2, 8 - (performance.now() - (CTF._fixT0 || 0))); }   // (8 ms for the whole step: a second tick in the same step gets only what is left. One probe slice can still overshoot it: measured up to 30 ms in jsdom at any ask)
 function ctfFixProgress(L){   // { pct, secs } of the graph being made right now (the check makes several, one after another), for the banner
   const F = L.fix; let pct = 0;
   if(F){ const navs = Object.values(F.navs || {}); if(F.full) navs.push(F.full);
@@ -10806,6 +10806,7 @@ function ctfFixTry(L, F){
   F.ci++;
 }
 function ctfFixStep(L){
+  CTF._fixT0 = performance.now();
   const F = L.fix; if(!F){ ctfStartPlay(L); return; }
   if(F.bOK == null && !ctfFixBInit(L, F)) return;
   if(F.mode === 'try'){ ctfFixTry(L, F); return; }
@@ -19625,6 +19626,7 @@ function go(id){
   if(id!=='result'){ try{ clearShopNotes(); clearNetResults(); }catch(e){} try{ hideEventNote(); }catch(e){} }   // the result screen's player card, quest line, players' cards and event note are that match's
   if(id==='title'){ try{ refreshDailyCard(); }catch(e){} try{ titleContestants(); }catch(e){} }
   try{ releaseMappedKeys(); }catch(e){}   // a new screen starts with no mapped key held
+  try{ if(id === 'result') keyHintShow('resultKeyHint'); else if(id !== '_none_') keyHintClear(); }catch(e){}   // (the key hint: on the result screen only)
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('hud').classList.remove('active');
   running=false; cancelAnimationFrame(raf);
@@ -20560,16 +20562,19 @@ addEventListener('keydown', e=>{
 // ESC IS BACK (playtest focus group, 2026-11: Esc did nothing on 15 menu screens, 0 of 75 tries). The key presses the screen's own Back button, so it runs the very
 // code a click does (NET.leave on the lobby, the confirm of any Back that has one). Screens and the button each one's Back is:
 //   options ("Done"), controls ("Back to Settings"), stats, learn, tutorial (How to Play: a Back button was added, it had only Skip), test (Training / Test the feel),
-//   changelog, vault, quests, store, wardrobe, rankings, tourneySetup (World Cup setup), lobby (Play with Friends), editor (Level Creator: "Title"), select (fighter select).
+//   changelog, vault, quests, store, wardrobe, rankings, tourneySetup (World Cup setup), lobby (Play with Friends, not while a room is joined or hosted), select (fighter select, not the World Cup solo pick).
+// NOT the Level Creator (an unsaved level could be lost by a stray Esc).
 // Left alone: a match (Esc pauses), the title, the result screen, the event/rush pages, the World Cup and event picks and the Flag Cup screens (they have their own Esc),
 // and a screen with a text box in use (Esc lets go of the box first) or a key waiting to be remapped.
 const ESC_BACK = { options:'btn:Done', controls:'btn:Back to Settings', stats:'btn:Back', learn:'btn:Back', tutorial:'#tutBackBtn', test:'#testBack', changelog:'btn:Back', vault:'btn:Back',
-  quests:'btn:Back', store:'btn:Back', wardrobe:'btn:Back', rankings:'btn:Back', tourneySetup:'btn:Back', lobby:'#lobbyBack', editor:'btn:Title', select:'#selBackBtn' };
+  quests:'btn:Back', store:'btn:Back', wardrobe:'btn:Back', rankings:'btn:Back', tourneySetup:'btn:Back', lobby:'#lobbyBack', select:'#selBackBtn' };
 function escBackButton(){
   const scr = document.querySelector('.screen.active'); if(!scr || running || paused || !ESC_BACK[scr.id]) return null;
   const ae = document.activeElement;
   if(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && typingBox(ae)){ try{ ae.blur(); }catch(x){} return null; }   // a box in use: Esc just leaves the box
   if(typeof CTFKIT_UI !== 'undefined' && CTFKIT_UI) return null;
+  if(scr.id === 'lobby' && window.NET && (inNetSession() || NET.room)) return null;   // in a room (hosting or joined): one stray Esc must not leave it
+  if(scr.id === 'select' && PENDING_TOURNEY && !PENDING_TOURNEY.pickMates) return null;   // the World Cup's solo pick: its Back button goes to the title, not the setup, so Esc leaves it alone
   const sp = ESC_BACK[scr.id];
   let b = null;
   if(sp.charAt(0) === '#') b = document.querySelector(sp);
@@ -20578,12 +20583,20 @@ function escBackButton(){
   for(let n = b; n && n.nodeType === 1; n = n.parentElement) if(n.style && n.style.display === 'none') return null;   // (a Back that is not showing is not pressed)
   return b;
 }
-// KEY HINT (playtest focus group): a player on WASD in a match with the default arrows presses keys that do nothing. Once per profile, a small toast in the HUD's
-// bottom-left corner says which keys do what and where to change them. Never in the first second and a half of a match, in a Capture the Flag match that is not in its
+// KEY HINT (playtest focus group): a player on WASD in a match with the default arrows presses keys that do nothing. Once per profile, a line on the pause card or the result screen
+// (never over the fight) says which keys do what and where to change them. Never in the first second and a half of a match, in a Capture the Flag match that is not in its
 // play phase (its hiding and checking use their own keys), when watching, or in the tutorial/Training. Three presses of keys nothing is bound to (W A S D, I J K L).
-const KEYHINT = { t0:0, n:0, shown:false, _t:0 };
+const KEYHINT = { t0:0, n:0, shown:false, pending:false };
 function keyHintKeys(){ const n = c=>niceKey(KEYS[c]); return 'Keys: ' + n('left') + ' ' + n('right') + ' move, ' + n('jump') + ' jump, ' + n('attack') + ' attack, ' + n('special') + ' special, ' + n('smash') + ' smash. Change them in Settings > Keys.'; }
 function keyHintSeen(){ try{ return localStorage.getItem('bfsi:keyHint') === '1'; }catch(e){ return KEYHINT.shown; } }
+// Shown on the pause card (if they pause first) or the match's result screen, never over the fight (the owner's rule: no words in a match). The flag is set when it is shown.
+function keyHintShow(id){
+  if(!KEYHINT.pending) return false;
+  const el = document.getElementById(id); if(!el) return false;
+  KEYHINT.pending = false; KEYHINT.shown = true; try{ localStorage.setItem('bfsi:keyHint', '1'); }catch(x){}
+  el.textContent = keyHintKeys(); el.style.display = ''; return true;
+}
+function keyHintClear(){ for(const id of ['pauseKeyHint', 'resultKeyHint']){ const el = document.getElementById(id); if(el){ el.style.display = 'none'; el.textContent = ''; } } }
 function keyHintPress(e){
   if(KEYHINT.shown || !running || paused || e.repeat || TUT.active || TESTMODE.active || (typeof CTUT !== 'undefined' && CTUT.active) || PCAM.on || document.getElementById('ctfIntro')) return;
   if(!/^Key[WASDIJKL]$/.test(e.code) || Object.values(KEYS).includes(e.code)) return;
@@ -20592,10 +20605,7 @@ function keyHintPress(e){
   if(performance.now() - KEYHINT.t0 < 1500) return;
   if(++KEYHINT.n < 3) return;
   if(keyHintSeen()){ KEYHINT.shown = true; return; }
-  KEYHINT.shown = true; try{ localStorage.setItem('bfsi:keyHint', '1'); }catch(x){}
-  const el = document.getElementById('keyHint'); if(!el) return;
-  el.textContent = keyHintKeys(); el.classList.add('show');
-  clearTimeout(KEYHINT._t); KEYHINT._t = setTimeout(()=>el.classList.remove('show'), 8000);
+  KEYHINT.pending = true;   // shown on the pause card or the result screen (keyHintShow)
 }
 
 // ---------- control remap UI ----------
@@ -23933,7 +23943,7 @@ function beginMatchNow(){
   netViewReset();
   if(stage.hazard==='evilleafy'){ evil={x:WW*0.9,y:groundY()-40}; }
   banner("GO!", 900);
-  KEYHINT.t0 = performance.now(); KEYHINT.n = 0; { const kh = document.getElementById('keyHint'); if(kh) kh.classList.remove('show'); }
+  KEYHINT.t0 = performance.now(); KEYHINT.n = 0; KEYHINT.pending = false; keyHintClear();
   buildHUD();
   startLoop();
 }
@@ -124130,7 +124140,7 @@ function setPaused(on){
   quitAskNo();   // (a pause starts, and ends, with no quit question open)
   const el = document.getElementById('pauseCard'); if(el) el.style.display = paused ? 'flex' : 'none';
   { const eb = document.getElementById('pauseEditorBtn'); if(eb) eb.style.display = (paused && customFromEditor()) ? '' : 'none'; }   // a level played from the editor: the way back to it (backToEditor)
-  if(paused){ try{ syncPauseMoves(); }catch(e){} } else PAUSE_MOVES_OPEN = false;
+  if(paused){ try{ syncPauseMoves(); }catch(e){} try{ keyHintShow('pauseKeyHint'); }catch(e){} } else PAUSE_MOVES_OPEN = false;
   netInputChanged(true);   // a guest's host stops playing what it held (and gets it back on the way out)
   if(was && !paused) netInResume();   // a host's guests pick up from now, not with what they pressed while it stood still
   if(!paused && (running || PCAM.on)) startLoop();
