@@ -53618,7 +53618,12 @@ const FSB = {
   // and after every landing he stays down `tlcRest` frames before the next hop (a pause between a ring and the next hop's mark: the next landing is aimed when the hop starts)
   tlcWait:[0, 18, 18, 18], tlcRest:[0, 14, 16, 18],
   // BOSS FIXES 3: in phase 3 every ring waits `ringLag` frames on the landing spot (lit, in place) before it runs: a landing is read, then the ring is jumped or left behind, not reacted to after it has run 150 px
-  ringLag:[0, 0, 0, 20],
+  ringLag:[0, 26, 24, 22],
+  // 2026-11-11 (the owner, playing: "the tlc fire balls make fsb track and shoot fireballs with next to no delay"): every landing's ring now waits `ringLag` frames lit on its spot in EVERY phase
+  // (the ring's lanes are drawn on the floor from the landing to where it dies), the next landing's spot and lanes are marked from the moment it is chosen (the landing before: rest + hop, 40+ frames
+  // before ITS ring), the chain keeps the side it began toward (no turning round mid-chain; the hop still closes on you if you stay on that side, never less than `tlcMin` of a step) and a ring
+  // dies `ringReach` of the arena from its landing (so there is a place to get away to). A double ring's second ring comes `ring2Gap` frames behind the first (was 12).
+  tlcMin:0.5, ringReach:0.6, ring2Gap:18,
 };
 function fsbPh(s){ return Math.max(1, Math.min(3, (s && s._phase) || 1)); }
 // The phase a move fires in is the phase its wind-up was drawn in (_telPh, set as the wind-up starts): a hit that crossed a threshold
@@ -53667,7 +53672,7 @@ function fsbSteer(s, x, y, k, cap){
 }
 function fsbFinish(s, gap){
   const fb = fsbLive(s);
-  s._fs = null; fb.k = null; fb.p = 0; fb.h = 0; fb.n = 0; fb.lk = 0; fb.bd = 0; fb.x2 = null; fb.h2 = 0; fb.lk2 = 0; fb.ty = null; fb.my = null; fb.my2 = null; fb.pl = null; fb.lp = 0; s._fsL = null;
+  s._fs = null; fb.k = null; fb.p = 0; fb.h = 0; fb.n = 0; fb.lk = 0; fb.bd = 0; fb.x2 = null; fb.h2 = 0; fb.lk2 = 0; fb.ty = null; fb.my = null; fb.my2 = null; fb.pl = null; fb.lp = 0; fb.lt = 0; s._fsL = null;
   s._atkTimer = gap != null ? gap : bossAtkGap(s); s.vx = 0; s.vy = 0;
 }
 // A patch of flame on the floor: the scorch behind a low pass, the strip a white-hot plate leaves, the spot a pinch burns. `sy`: the surface it lies on -- a ledge's top, for a pinch or a plate up
@@ -53971,7 +53976,10 @@ function fsbTlcStart(s, tgt){
 }
 function fsbHopAim(s, tgt, F){
   const step = FSB.hopStep[F.P], want = tgt && !tgt.dead ? tgt.x : s.x + (s.face || 1)*step;
-  F.x0 = s.x; F.x1 = F.n === 0 ? s.x : clamp(s.x + clamp(want - s.x, -step, step), 80, WW - 80); F.t = 0;   // (the first hop stays where he stands)
+  // (2026-11-11) the chain keeps the side it first set off toward (F.dir, chosen at the second landing): the hop closes on you while you are on that side and runs on at `tlcMin` of a step when you are behind it
+  if(F.n === 1 || !F.dir) F.dir = Math.sign(want - s.x) || s.face || 1;
+  const along = clamp((want - s.x)*F.dir, FSB.tlcMin*step, step);
+  F.x0 = s.x; F.x1 = F.n === 0 ? s.x : clamp(s.x + F.dir*along, 80, WW - 80); F.t = 0;   // (the first hop stays where he stands)
   // THE LEDGE ("TLC hops up", the owner, 2026-10-04): after a fighter standing on a ledge he hops up onto it -- a hop that comes down over that
   // ledge lands on its top (a fighter on the floor, or a hop that comes down beside the ledge, is the floor's, as ever)
   const st = tgt && !tgt.dead ? fsbStand(tgt) : null, up = !!(st && st.p && F.x1 >= st.p.x && F.x1 <= st.p.x + st.p.w);
@@ -54009,7 +54017,7 @@ function fsbLand(s, F){
     if(Math.abs(f.x - x) < R + f.r*0.3 && feetY(f) > sy - 70 && fsbStand(f).y === sy)
       applyHit(f, bossDmg()*0.9, (Math.sign(f.x - x) || s.face || 1)*10, -13, null, { bossAtk:F.id, volley:true });
   }
-  const spd = FSB.ringSp[ph] + (big ? 1.4 : 0), life = Math.ceil(WW*0.72/spd/PROJ_LIFE);
+  const spd = FSB.ringSp[ph] + (big ? 1.4 : 0), life = Math.ceil(WW*FSB.ringReach/spd/PROJ_LIFE);
   // (warnX/Y: the ring's own start -- no `warn`, so no shadow and no drift -- is the landing the hop's mark showed for its whole flight: the glitch hunter reads them as a tell)
   const lag = FSB.ringLag[ph] || 0;
   const ring = (delay, yOff, rr) => { delay += lag; for(const d of [-1, 1]){
@@ -54019,7 +54027,8 @@ function fsbLand(s, F){
       color:'#ff8a3a', shape:'ember', burn:true, delay, bossAtk:F.id, volley:true, fsb:true, warnX:x0, warnY:sy - 16 - yOff })); } };
   ring(0, 0, big ? FSB.bigR : FSB.ringR);
   if(big) ring(0, 58, 18);
-  else if(ph >= FSB.ring2From) ring(12, 0, FSB.ringR);   // double rings from phase 2 (Round 17; it was phase 3)
+  else if(ph >= FSB.ring2From) ring(FSB.ring2Gap, 0, FSB.ringR);
+  { const fb = fsbLive(s), reach = spd*life*PROJ_LIFE; fb.lx = Math.round(x); fb.ly = Math.round(sy); fb.lt = lag; fb.ll = L ? Math.round(Math.min(reach, Math.max(0, x - 22 - L.x))) : Math.round(reach); fb.lr = L ? Math.round(Math.min(reach, Math.max(0, L.x + L.w - x - 22))) : Math.round(reach); }   // the lit lanes (fsbDrawFx)   // double rings from phase 2 (Round 17; it was phase 3)
 }
 // ---- the wind-up, the tick and the phases (tel, tick and phase slots) -----------------------------------------------------------
 function fsbBeginTelegraph(s, tgt){
@@ -54051,6 +54060,7 @@ function fsbTick(s, tgt){
     }
   }
   if(fb.f > 0) fb.f--;
+  if(fb.lt > 0) fb.lt--;
   // the row and the mark follow you until the last FSB.lock frames of the wind-up, then hold
   if(s._tel > 0 && tgt && !tgt.dead && s._tel >= FSB.lock){
     if(s._fsKind === 'rocketboard'){ fb.r = fsbRow(tgt); if(fsbPh(s) >= FSB.cloneFrom) fb.r2 = fsbRow2(fb.r); }
@@ -54460,6 +54470,16 @@ function fsbDrawFx(s){
     const big = fb.n === FSB.hops - 1, R = FSB.landR*(big ? 1.25 : 1), ty = fb.ty != null ? fb.ty : gy;   // ty: the surface it comes down on -- a ledge's top when he hops up after you
     // (BOSS BODY TELLS: no ring) his own shadow on the surface he comes down on, darker the lower he is; the last, big landing's is bigger
     bossFallShadow(fb.x, ty, R*0.9, 1 - clamp((ty - (s.y + s.r))/220, 0, 1));
+    // (2026-11-11) the landing is marked on its surface from the moment it is chosen: the stomp's disc, and the two lanes its ring will run (dashed: not yet lit)
+    const pulse = 0.5 + 0.5*Math.sin(hazardT*0.35);
+    c.globalAlpha = 0.28 + 0.22*pulse; c.strokeStyle = '#ff5a1a'; c.lineWidth = 4; c.beginPath(); c.ellipse(fb.x, ty - 3, R, 9, 0, 0, 7); c.stroke();
+    c.globalAlpha = 0.14 + 0.10*pulse; c.fillStyle = '#ff7a1a'; c.beginPath(); c.ellipse(fb.x, ty - 3, R, 9, 0, 0, 7); c.fill();
+    c.globalAlpha = 0.30; c.setLineDash([10, 10]); c.lineWidth = 3; c.beginPath(); c.moveTo(fb.x - R - 6, ty - 16); c.lineTo(Math.max(4, fb.x - WW*FSB.ringReach), ty - 16); c.moveTo(fb.x + R + 6, ty - 16); c.lineTo(Math.min(WW - 4, fb.x + WW*FSB.ringReach), ty - 16); c.stroke(); c.setLineDash([]);
+  }
+  if(fb.lt > 0 && fb.lx != null){   // the ring waits on its landing: its two lanes are lit, solid, from the spot to where it dies, brighter as it is about to go
+    const q = 1 - fb.lt/Math.max(1, FSB.ringLag[ph] || 1);
+    c.globalAlpha = 0.45 + 0.4*q; c.strokeStyle = '#ffb02a'; c.lineWidth = 6; c.beginPath(); c.moveTo(fb.lx - 22, fb.ly - 16); c.lineTo(fb.lx - 22 - (fb.ll || 0), fb.ly - 16); c.moveTo(fb.lx + 22, fb.ly - 16); c.lineTo(fb.lx + 22 + (fb.lr || 0), fb.ly - 16); c.stroke();
+    c.globalAlpha = 0.5 + 0.4*q; c.fillStyle = '#ff5a1a'; c.beginPath(); c.arc(fb.lx, fb.ly - 12, 14 + 12*q, 0, 7); c.fill();
   }
   if(fb.k === 'hooks' && (tel || fb.p)){
     // "YOU MUST!!!": the side panels open, and the teeth ("Firey Speaker Box with Sharp Teeth talking")
