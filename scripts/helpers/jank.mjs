@@ -164,7 +164,7 @@ export class FrameWatch {
           const busy = f[6] > 0 || f[15] || !f[5];
           if (walking && !busy && f[0] > 40 && wo.E('WW') - f[0] > 40 && Math.abs(dx) < 0.3) {
             this.walkHold++;
-            if (this.walkHold === T.SNAG_FRAMES && !(Z.mode === 'ctf' && Z.ctfPh !== 'play')) this.note('FEEL', 'jank-snag', `the player held a walk key ${T.SNAG_FRAMES} frames on the ground and did not move (${ctx}, stage ${wo.E('stage.id')})`, { rc: `snag|${wo.E('stage.id')}|${Math.round(f[0] / 40)}`, group: 'JANK', detail: `x ${Math.round(f[0])} y ${Math.round(f[1])} fighter ${name}` });
+            if (this.walkHold === T.SNAG_FRAMES && !(Z.mode === 'ctf' && Z.ctfPh !== 'play')) this.note('FEEL', 'jank-snag', `the player held a walk key ${T.SNAG_FRAMES} frames on the ground and did not move (${ctx}, stage ${wo.E('stage.id')})`, { rc: `snag|${wo.E('stage.id')}|${Math.round(f[0] / 40)}`, group: 'JANK', detail: `x ${Math.round(f[0])} y ${Math.round(f[1])} fighter ${name}; solid platforms within 70 px sideways at this height: ${(plats || []).filter((p) => p.solid && f[1] > p.y - 40 && f[1] < p.y + (p.h || 40) + 40 && (Math.abs(p.x - f[0]) < 70 || Math.abs(p.x + p.w - f[0]) < 70)).slice(0, 3).map((p) => `${Math.round(p.x)}..${Math.round(p.x + p.w)}@${Math.round(p.y)}`).join(' ') || 'none'}` });
           } else this.walkHold = 0;
         }
       }

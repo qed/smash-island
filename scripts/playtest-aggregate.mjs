@@ -22,10 +22,13 @@ const pct = (x, n) => n ? Math.round(100 * x / n) + '%' : '-';
 
 // ---- merge findings by root cause
 const F = new Map();
-for (const r of R) for (const f of r.findings || []) {
+const cantRe = /^([^:]+): "([^"]+)" was pressed on a ready fighter and nothing happened for 14 frames$/;
+for (const r of R) for (const f0 of r.findings || []) {
+  let f = f0, who = null;
+  { const m = f0.kind === 'cant' && cantRe.exec(f0.msg); if (m) { who = m[1]; f = { ...f0, rc: 'cant|' + m[2], msg: `${m[2]} was pressed on a ready fighter and nothing happened for 14 frames (fighters listed below)` }; } }
   const key = f.sev + '|' + f.kind + '|' + (f.rc || f.msg);
   let e = F.get(key); if (!e) { e = { sev: f.sev, kind: f.kind, rc: f.rc, msg: f.msg, group: f.group, count: 0, personas: {}, scenes: {}, repros: [] }; F.set(key, e); }
-  e.count += f.count;
+  e.count += f.count; if (who) { e.fighters = e.fighters || {}; e.fighters[who] = (e.fighters[who] || 0) + f.count; }
   for (const [k, v] of Object.entries(f.personas || {})) e.personas[k] = (e.personas[k] || 0) + v;
   for (const [k, v] of Object.entries(f.scenes || {})) e.scenes[k] = (e.scenes[k] || 0) + v;
   for (const rp of f.repros || []) if (e.repros.length < 3 && !e.repros.some((x) => x.cmd === rp.cmd)) e.repros.push(rp);
@@ -82,16 +85,19 @@ const textOver = {}; for (const r of R) for (const [k, v] of Object.entries(r.te
 
 const SEVO = { BUG: 0, STUCK: 1, SLOW: 2, FEEL: 3, UI: 4 };
 const fmtRow = (e) => {
+  const fl = e.fighters ? ' Fighters: ' + Object.entries(e.fighters).sort((a, b) => b[1] - a[1]).map(([n, c]) => n + ' x' + c).join(', ') + '.' : '';
   const who = Object.entries(e.personas).filter(([t]) => PERSONA_BY_TAG[t]).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([t, n]) => `${t} x${n}`).join(', ');
   const rp = e.repros.slice(0, 2).map((r) => '`' + r.cmd + '`' + (r.frame ? ` (frame ${r.frame})` : '')).join('; ');
-  return `- **[${e.sev}] ${e.kind}**${e.group ? ' (JANK)' : ''} x${e.count} - ${e.msg}\n  - hit by ${e.hit} personas (${who || 'run-wide statistic'}); plausibly noticed by about ${e.plausible} of ${N} (${e.cls}); severity ${e.sev}\n  - repro: ${rp || '(run-wide statistic: see the table in this report; the per-fighter repro is `node scripts/playtest.mjs --scene ffa --seed N --arg persona=<tag>` with a persona that plays that fighter)'}`;
+  return `- **[${e.sev}] ${e.kind}**${e.group ? ' (JANK)' : ''} x${e.count} - ${e.msg}${fl}\n  - hit by ${e.hit} personas (${who || 'run-wide statistic'}); plausibly noticed by about ${e.plausible} of ${N} (${e.cls}); severity ${e.sev}\n  - repro: ${rp || '(run-wide statistic: see the table in this report; the per-fighter repro is `node scripts/playtest.mjs --scene ffa --seed N --arg persona=<tag>` with a persona that plays that fighter)'}`;
 };
 
 const md = [];
+const FAMILIES = [];
 md.push(`# PLAYTEST v2 summary${PARTIAL ? ' (PARTIAL: the run is still going)' : ''}`);
 md.push('');
 md.push(`Generated ${new Date().toISOString()} from ${R.length} person-sessions in \`${IN}\`.`);
 md.push('');
+{ const cf = path.join(REP, 'commentary.md'); if (existsSync(cf)) { md.push(readFileSync(cf, 'utf8')); md.push(''); } }   // (the author's reading of the run, written by hand after it; kept next to the generated tables)
 md.push('## Run size');
 md.push(`- Personas that played: ${personasSeen.size} of ${N}. Person-scenes: ${sceneCount} (distinct persona/scene/seed ${personaScenes.size}); matches: ${matchCount} (${(gameSecs / 3600).toFixed(1)} hours of game time).`);
 md.push(`- CPU time: ${(cpuMsTot / 3600000).toFixed(2)} CPU hours (summed over the person-sessions; Windows reports CPU time in coarse ticks).`);
@@ -106,7 +112,11 @@ md.push('');
 md.push('## TOP 15: what a real person would complain about (auto-ranked; formula in the README, commentary below each group)');
 md.push('Score = annoyance weight of the finding class (blocking 1.0, visible glitch 0.6, feel 0.5, menu friction 0.45, design 0.35) x share of the 80 personas who would plausibly meet and notice it x (0.5 + 0.5 x share of those who actually hit it in this run). The weights and the notice model are ESTIMATES made before the run.');
 md.push('');
-rows.slice(0, 15).forEach((e, i) => md.push(`${i + 1}. **${e.kind}** (${e.sev}, ${e.cls}, score ${e.score.toFixed(3)}): ${e.msg}  \n   hit by ${e.hit} personas, plausibly noticed by about ${e.plausible} of ${N}; x${e.count}`));
+{ // one entry per kind of finding (a family): its causes are listed below; reach = union of the personas that hit any of them
+  const fam = new Map(); for (const e of rows) { const k = e.sev + '|' + e.kind; let g = fam.get(k); if (!g) { g = { sev: e.sev, kind: e.kind, cls: e.cls, causes: 0, count: 0, personas: new Set(), plausible: 0, top: e }; fam.set(k, g); } g.causes++; g.count += e.count; for (const t of Object.keys(e.personas)) if (PERSONA_BY_TAG[t]) g.personas.add(t); g.plausible = Math.max(g.plausible, e.plausible); }
+  const fl2 = [...fam.values()].map((g) => ({ ...g, hit: g.personas.size, score: ANNOY[g.cls] * (g.plausible / N) * (0.5 + 0.5 * Math.min(1, g.personas.size / Math.max(1, g.plausible))) })).sort((a, b) => b.score - a.score);
+  FAMILIES.push(...fl2);
+  fl2.slice(0, 15).forEach((g, i) => md.push(`${i + 1}. **${g.kind}** (${g.sev}, ${g.cls}, score ${g.score.toFixed(3)}): ${g.causes} root cause(s), ${g.count} occurrences; example: ${g.top.msg}  \n   hit by ${g.hit} personas, plausibly noticed by about ${g.plausible} of ${N}`)); }
 md.push('');
 md.push('## Findings by root cause (deduped), worst first');
 for (const sev of ['BUG', 'STUCK', 'SLOW', 'FEEL', 'UI']) {
@@ -194,5 +204,6 @@ for (const p of PERSONA_LIST) {
   o.push(quits.length ? quits.map((e) => '- ' + e).join('\n') : 'No quit moment in this run: they would have kept playing (as far as this model goes).');
   writeFileSync(path.join(REP, 'personas', p.tag + '.md'), o.join('\n') + '\n');
 }
+writeFileSync(path.join(REP, 'families.json'), JSON.stringify(FAMILIES.map((g) => ({ sev: g.sev, kind: g.kind, cls: g.cls, causes: g.causes, count: g.count, hit: g.hit, plausible: g.plausible, score: +g.score.toFixed(4), example: g.top.msg, repro: g.top.repros.map((r) => r.cmd)[0] || null })), null, 1));
 writeFileSync(path.join(REP, 'ranked.json'), JSON.stringify(rows.slice(0, 200).map((e) => ({ sev: e.sev, kind: e.kind, rc: e.rc, msg: e.msg, count: e.count, hit: e.hit, plausible: e.plausible, cls: e.cls, score: +e.score.toFixed(4), repros: e.repros.map((r) => r.cmd) })), null, 1));
 console.log(`aggregate: ${R.length} sessions, ${sceneCount} person-scenes, ${rows.length} root causes -> ${REP}`);

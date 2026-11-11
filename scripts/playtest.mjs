@@ -369,6 +369,7 @@ class Player {
       else if (cat !== 'hop') dur = Math.max(1, dur + Math.round(gauss(this.r) * m.jitterFrames * 0.4));
       at += Math.max(0, Math.round(Math.abs(gauss(this.r)) * m.jitterFrames * 0.7));
     }
+    if (OPT.args.minTap && cat !== 'hop') dur = Math.max(dur, +OPT.args.minTap);   // --arg minTap=N: no tap shorter than N frames (to tell a short tap's failure from a real one)
     this.taps.push({ keys, at, dur, cat, probe, on: false });
   }
   perceive(S) {

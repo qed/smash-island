@@ -92,3 +92,83 @@ repeat a Boss Rush scene exactly once a second boss is due.
 - A text box left focused by jsdom (it never unfocuses a hidden control) can swallow keys; the playtester moves the focus on every
   click the way a browser does.
 - Findings are leads. Reproduce one from its seed (`--scene ... --seed ...`) before acting on it.
+
+## PLAYTEST v2 (2026-11-11): 80 personas, jank detectors, the big run
+
+```
+node scripts/playtest.mjs --scene ffa --seed 7 --arg persona=adult-smash-veteran-01     # one person, one scene (every finding's repro line looks like this)
+node scripts/playtest.mjs --plan plan.json --out DIR --priority below                    # one person's session: [{scene, seed, args}] in order, patience carried over
+node scripts/playtest-big.mjs --shards 8 --passes 5 --out playtest-out/big [--dry]       # the big run: one process per (persona, pass), BelowNormal, partial aggregates
+node scripts/playtest-aggregate.mjs --in playtest-out/big --report-dir DIR               # summary.md + personas/<tag>.md + ranked.json
+```
+New scenes: `journey` (title to a running match in every mode with default choices: clicks, keys, a person's seconds), `flow` (pause in the first
+frames, a key released while paused, Esc spam, Resume, quit and come back, the result screen, Rematch keeping the settings), `wasdprobe` (WASD on a fresh game:
+does anything say which keys to use). A persona with a key map (`wasd`, `lefty`) remaps through the real Settings > Keys screen before the match scenes
+(ffa, 1v1, teams, boss, training, worldcup, running); the other scenes use literal keys and are played on the defaults.
+
+### The persona library (`scripts/helpers/personas.mjs`)
+
+20 archetypes, 80 people (tag = archetype + number, e.g. `kid-bfdi-fan-03`). Each person = an archetype (age band, skill, goal, habits, patience, key layout,
+frame rate) plus a seeded draw of motor numbers from the archetype's range. The numbers are USED by the playtester:
+
+| number | what it does in the input generation |
+|---|---|
+| reaction (ms, SD) | the think interval and the perception delay of the player (frames = ms / 16.7) |
+| key timing jitter (frames) | every press starts a little late (half-normal) and its hold length varies (normal); a short hop is not jittered, it just succeeds or not |
+| slipped presses (%) | that share of moves/jumps never happens (a slip), and is counted in the person's log |
+| short-hop success | when a short hop was meant, this share comes out; the rest are full hops |
+| double-tap success | a second jump that is meant lands in time; the rest come 6-14 frames late |
+| aim error | the share of attacks aimed the wrong way (the legacy `aim` field, by skill) |
+| mash rate | random extra presses (kids, skippers) |
+| input fps | a person on a 25-35 fps machine: their keys reach the game only every 2nd frame (a tap shorter than the gap is lost). ASSUMPTION: the game steps at 60 per second and only the person's input is sampled at the lower rate |
+| click seconds, ms per word, share read | a menu click costs that long, a new screen costs (its words x ms per word x share read): the "a person's seconds" of the journey and of the patience checks |
+| patience | menu seconds before the first match (a "would have quit in the menus" event), seconds on one screen before they give up on it (the menu explorer stops clicking there), losses in a row before they would rage-quit |
+
+Sources and honesty. This job ran offline; the figures are the author's recollection of published ranges, rounded, NOT looked up again, and the per-archetype
+ranges are ESTIMATES built on them. Treat each as plausible, not measured.
+- Simple visual reaction time: about 200-250 ms for young adults in lab work (Der and Deary 2006 for the age trend: slower and more variable with age, roughly
+  +20-30% at 60+); online tests report about 250-280 ms because of screen and input lag (Human Benchmark). Kids 8-12: about 300-450 ms, falling with age
+  (developmental RT studies; the exact ages are an estimate). Competitive fighting-game players: about 170-230 ms for a simple cue (estimate).
+- Key timing jitter: tapping studies give SD of roughly 20-60 ms; mapped to 0.6-5 frames by skill (estimate).
+- Reading speed: adults about 240 words per minute silent reading of non-fiction (Brysbaert 2019 meta-analysis) = 250 ms per word; children 8-12 about 100-160 wpm
+  (oral-reading fluency norms, Hasbrouck and Tindal) = 400-600 ms per word; the "share read" of a screen (0-85%) is an estimate of skimming.
+- Slip rate, short-hop and double-tap success, early-press rate, menu seconds per target, patience limits, frame rates of old laptops: ESTIMATES (no source).
+- Age bands and goals follow what the owner described (kids 8-12 who know the show, teens, adults; boss rush, Capture the Flag with friends online, World Cup).
+
+### The jank detectors (`scripts/helpers/jank.mjs`, group JANK in the reports)
+
+Thresholds are in `THRESH` (printed at the top of every report). THEY WERE FIXED AND COMMITTED BEFORE THE BIG RUN AND ARE NOT TO BE CHANGED AFTER SEEING
+RESULTS (commit "PLAYTEST v2" of 2026-11-11). Threshold log: no threshold has been changed. Two tool corrections (not thresholds) were made after the first
+smoke runs and before the big run: Training-mode respawns and the frame of a KO are excluded from the teleport check (the dummies respawn at the top by design),
+and a menu button that is already selected is not counted as a dead button.
+
+| detector | how | root-cause key |
+|---|---|---|
+| jank-input-latency | key press to the first change on the fighter (frames after the step that saw it); outlier at >= 4 | fighter, action |
+| jank-input-eaten | an attack pressed up to 6 frames before the last move's end-lag ended and released before it ended: buffered or lost; flagged at >= 50% lost with >= 8 samples | all, per fighter |
+| jank-teleport | a live fighter moves > 150 px in one frame, no KO/respawn/jail change within 3 frames, not Training, not tutorial | fighter, last move |
+| jank-hitstop-drift / -long | a fighter in hitstop moves > 8 px in a frame (not in a move/grab); hitstop longer than 24 frames | fighter, last move |
+| jank-camera-snap / -jitter | camera centre moves > 160 px or zoom > 0.06 in a frame; >= 10 velocity flips of 2-8 px in 30 frames | stage |
+| jank-snag, -air-hang, -embedded | the player holds a walk key 24 frames and moves < 3 px; a fighter motionless in the air 45 frames; a centre inside a solid platform 30 frames | stage, position |
+| jank-text-overlap / -offscreen | words drawn on the canvas at the identity transform: boxes estimated as 0.55 x font px x characters; overlap > 35% of the smaller; or past the canvas edge. ESTIMATE of text width (jsdom has no font metrics) | text pair |
+| jank-two-clicks, -dead-button, -esc-ignored | a menu button that did nothing on click 1 and something on click 2; nothing on two clicks (not a selected option); Esc does nothing on a screen that has a back button | screen, button |
+| jank-many-clicks, -slow-path, -no-path | the `journey` scene: > 6 clicks+keys or > 60 person-seconds from the title to a running match with default choices; no path | mode |
+| jank-slow-click, -slow-start | one click takes > 250 ms; Start Match > 800 ms (wall time, headless, 8 processes at once: noisy) | screen, button |
+| jank-spike, -stutter | a frame slower than max(33 ms, 6 x the median of the last 90); 3 such within a second. Wall time on a loaded machine: only repeated spikes at the same event mean anything | mode, recent move |
+| jank-audio-burst / -spam | > 8 sound calls (tone/noise) in a frame or > 90 in a second. Counts calls, not what a speaker plays | mode |
+| jank-flow | pause in the opening, a walk key released while paused (stuck key after resume), Esc spam, Resume, pick remembered after quit, result screen offers Rematch and a way back, Rematch keeps settings | check |
+| jank-boss-short-warning | per boss move: hits on the player that came < 18 frames after the telegraph began (>= 25% of >= 8 hits) | boss, move |
+| jank-tlc-ring-slack | Firey Speaker Box THE TLC NEEDS TO BE FIXED!: per landing, the frames a fire ring needs to reach the nearest fighter standing still; < 15 in >= 25% of >= 8 landings. Also logged: how far the landing is from the nearest fighter ("tracks you") | phase |
+| jank-no-key-hint | `wasdprobe`: WASD does nothing on a fresh game and no on-screen text mentions keys | - |
+
+Not measurable here and so not claimed: real overlap or clipping of DOM text (jsdom has no layout; the canvas HUD check uses estimated widths), real frame rate,
+real audio. A headless run says whether a thing happens, not how it looks.
+
+### The report and the "plausibly noticed" estimate
+
+`summary.md` merges the per-process JSON by root cause: count, which personas hit it, how many of the 80 would plausibly notice it, severity, a repro command.
+"Plausibly notice" is a MODEL, an estimate made before the run: a finding has a class (blocking, visible glitch, feel, menu friction, design) with a minimum
+sensitivity (0, 0.3, 0.6, 0.25, 0.2); a person's sensitivity is 0.25 first-time, 0.45 casual, 0.75 veteran, 0.95 competitive; a person counts if their sensitivity
+reaches the class minimum and their plan includes a scene where the finding appeared. The top-15 score = annoyance weight (1.0, 0.6, 0.5, 0.45, 0.35) x
+(noticers / 80) x (0.5 + 0.5 x share of those noticers who actually hit it). The per-persona logs say what that person did, what went wrong, where they got
+stuck or confused, and when they would have quit.
