@@ -825,6 +825,8 @@
   .planteamdot{width:14px; height:14px; border-radius:5px; border:2px solid #1c1c1c; flex:none}
   .unlock-note{max-width:620px;margin:6px auto;width:94%;text-align:center;font-weight:800;font-size:15px;
     background:#ffd23f;color:#1c1c1c;border:3px solid #1c1c1c;border-radius:12px;padding:8px 12px}
+  .keyhint{position:absolute;left:12px;bottom:12px;max-width:340px;z-index:5;pointer-events:none;font:700 13px/1.35 'Baloo 2',system-ui,sans-serif;background:rgba(28,24,38,.88);color:#fff;border:2px solid #ffd23f;border-radius:10px;padding:7px 10px;opacity:0;transition:opacity .25s}
+  .keyhint.show{opacity:1}
   .plantimer{max-width:620px;margin:0 auto 6px;width:94%;text-align:center;font-weight:800;font-size:16px;background:#1c1c1c;color:#fff;border-radius:10px;padding:6px 10px}
   .plantimer.low{background:#e0503a;animation:pulseT 0.6s ease-in-out infinite}
   @keyframes pulseT{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
@@ -1818,6 +1820,7 @@
     <div class="hudbar" id="hudbar"></div>
     <div class="standings" id="standings"></div>
     <div class="banner" id="banner"></div>
+    <div class="keyhint" id="keyHint" role="status"></div>
   </div>
 
   <!-- RESULT -->
@@ -1916,6 +1919,7 @@
     <div class="tut-sub" style="margin-top:10px;font-size:14px">Every fighter's C special is different — that's the fun part.</div>
     <div class="row" style="justify-content:center;margin-top:14px">
       <button class="btn" onclick="startTutorial()">Try it ▶</button>
+      <button class="btn ghost sm" id="tutBackBtn" onclick="go('title')">◀ Back</button>
       <button class="btn ghost sm" onclick="finishTutorial(true)">Skip</button>
     </div>
   </div>
@@ -10686,13 +10690,13 @@ function ctfFixBReady(L, nav, ids){   // the graph without what gives way, made 
   const need = L.flags.some(fl=>{ if(fl.st !== 1 || fl.elev != null || fl.pad != null || (ids && !ids.has(fl.id))) return false; const t = 1 - fl.team, n = ctfNavNodeAt(nav, fl.x, fl.y, 10); return !!(n && nav.reach[t][n.id] && !rA[t][n.id] && !ctfOnBreakable(fl.x, fl.y)); });
   if(!need) return true;
   const nb = ctfNavBroken(nav); if(nb.ready) return true;
-  ctfNavTick(nb, 80, 6); return false;
+  ctfNavTick(nb, 80, ctfFixMs()); return false;
 }
 // The flags the second pass passes with nothing built: only for those is a failure the pieces' doing, so only those can make the check take a piece away. The rest (on a crumbling ledge, past a
 // rotten bridge, on a built piece) are put right when the check is over, by the rule for a flag with no road (ctfFixFinish): to the nearest prepared place that passes both.
 function ctfFixBInit(L, F){
   const base = CTF.navs && CTF.navs[ctfNavId()]; if(!base){ F.bOK = new Set(); return true; }
-  if(!base.ready){ ctfNavTick(base, 80, 6); return false; }
+  if(!base.ready){ ctfNavTick(base, 80, ctfFixMs()); return false; }
   if(!ctfFixBReady(L, base, null)) return false;
   const bad = ctfBreakProblems(L, base, null);
   F.bOK = new Set(L.flags.filter(fl=>{ const n = ctfNavNodeAt(base, fl.x, fl.y, 10); return !!(n && base.reach[1 - fl.team][n.id]) && bad.indexOf('flag' + fl.id) < 0; }).map(fl=>fl.id));
@@ -10717,7 +10721,18 @@ function ctfEditPrebuild(L){   // while they are still hiding: once the edits ha
   if(L.pre && L.pre.seq === L.editSeq){ if(!L.pre.nav.ready) ctfNavTick(L.pre.nav, 80, 3); return; }
   if(L.t - L.editT >= 30) L.pre = { seq:L.editSeq, n:st, nav:ctfEditNav(L, st) };
 }
+// THE ROUTE CHECK'S SPEED AND BANNER (playtest focus group: 16-41 s with nothing on screen). Nobody moves during the check, so a real browser spends 12 ms of each step on it
+// instead of 6 (the headless harness counts slices, not milliseconds, and keeps its own number: its matches are unchanged). It is not cut short and does not start the match
+// early: a flag shut in by a piece has to be found before play, and finding it later would take a piece away in the middle of a fight. The banner shows the work instead.
+function ctfFixMs(){ return ctfNavDet() ? 6 : 12; }
+function ctfFixProgress(L){   // { pct, secs } of the graph being made right now (the check makes several, one after another), for the banner
+  const F = L.fix; let pct = 0;
+  if(F){ const navs = Object.values(F.navs || {}); if(F.full) navs.push(F.full);
+    for(const n of navs) if(n && !n.ready && n.nodes && n.nodes.length) pct = Math.max(pct, Math.floor(100*(n.cursor || 0)/n.nodes.length)); }
+  return { pct:Math.min(99, pct), secs:Math.floor((L.t - (L.fixT0 || L.t))/60) };
+}
 function ctfFixBegin(L){
+  L.fixT0 = L.t;
   const st = L.edits.filter(e=>ctfEditChecked(e) && e.elev == null).sort((a, b)=>a.seq - b.seq);
   L.phase = 'fix'; ctfRebuildDyn(L); L.fixGone = [];
   L.fix = { st, set:st.slice(), lo:0, hi:null, keep:st.length, navs:{}, culprits:0, mode:'', bOK:null };
@@ -10782,7 +10797,7 @@ function ctfFixTry(L, F){
   }
   const e = F.cands[F.ci], rest = F.set.filter(q=>q !== e), key = rest.map(q=>q.id).join(',');
   const nav = F.navs[key] || (F.navs[key] = rest.length ? ctfEditNavLess(L, rest, e, F.full) : CTF.navs[ctfNavId()]);
-  if(!nav.ready){ ctfNavTick(nav, 80, 6); return; }
+  if(!nav.ready){ ctfNavTick(nav, 80, ctfFixMs()); return; }
   if(rest.length && !ctfFixBReady(L, nav, F.bOK)) return;
   const bad = rest.length ? ctfFixProblems(L, F, nav) : [];
   if(!bad.length){ ctfFixDrop(L, F, e, nav); return; }
@@ -10796,7 +10811,7 @@ function ctfFixStep(L){
   if(F.mode === 'try'){ ctfFixTry(L, F); return; }
   const key = ctfFixKey(F, F.keep);
   const nav = F.navs[key] || (F.navs[key] = F.keep === 0 ? CTF.navs[ctfNavId()] : ctfEditNav(L, F.keep, F.set));
-  if(!nav.ready){ ctfNavTick(nav, 80, 6); return; }
+  if(!nav.ready){ ctfNavTick(nav, 80, ctfFixMs()); return; }
   if(F.keep > 0 && !ctfFixBReady(L, nav, F.bOK)) return;
   const bad = F.keep === 0 ? [] : ctfFixProblems(L, F, nav);
   if(bad.length && F.hi === null && F.keep === F.set.length && !CTF.fixOld){   // the whole of what is left, and something cannot be reached: the pieces one at a time, the smallest first
@@ -12382,11 +12397,18 @@ function drawCtfHud(){
   { const me = fighters.find(q=>q.you); if(me && L.phase === 'hide') ctfDrawEditHud(L, me); }
   if(L.phase === 'bid') ctfDrawBid(L); else if(L.bidShow > 0) ctfDrawBidResult(L);
   if(ctfSpecOn()) ctfDrawSpecHud(L);
-  if(L.phase === 'fix'){ ctx.fillStyle = '#f4efe2'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.save(); ctx.translate(W/2, 130); ctx.rotate(hazardT*0.12); ctx.beginPath(); for(let i = 0; i < 12; i++){ const a = i*Math.PI/6, rr = i%2 ? 14 : 22; ctx.lineTo(Math.cos(a)*rr, Math.sin(a)*rr); } ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); }
+  if(L.phase === 'fix'){ ctx.fillStyle = '#f4efe2'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.save(); ctx.translate(W/2, 130); ctx.rotate(hazardT*0.12); ctx.beginPath(); for(let i = 0; i < 12; i++){ const a = i*Math.PI/6, rr = i%2 ? 14 : 22; ctx.lineTo(Math.cos(a)*rr, Math.sin(a)*rr); } ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); ctfDrawFixBanner(L); }
   // a capture flashes the scoring side's colour round the edge of the screen
   if(L.flash){ const a = Math.min(1, L.flash.t/25)*(L.flash.soft ? 0.25 : 0.5); ctx.globalAlpha = a; ctx.strokeStyle = ctfColor(L.flash.team); ctx.lineWidth = 36; ctx.strokeRect(0, 0, W, H); ctx.globalAlpha = 1; }
   ctx.restore();
   ctfDrawMinimap();
+}
+function ctfDrawFixBanner(L){   // "Checking routes..." with the share of the graph made and the seconds so far, under the gear
+  const pr = ctfFixProgress(L), w = 260, x = W/2 - w/2, y = 168;
+  ctx.save(); ctx.fillStyle = 'rgba(28,24,38,0.88)'; ctx.fillRect(x, y, w, 52); ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 3; ctx.strokeRect(x, y, w, 52);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#ffd23f'; ctx.font = "700 20px 'Baloo 2', system-ui"; ctx.fillText('Checking routes...', W/2, y + 24);
+  ctx.fillStyle = '#5a5a6a'; ctx.fillRect(x + 12, y + 33, w - 24, 8); ctx.fillStyle = '#ffd23f'; ctx.fillRect(x + 12, y + 33, (w - 24)*pr.pct/100, 8);
+  ctx.fillStyle = '#fff'; ctx.font = "600 11px 'Baloo 2', system-ui"; ctx.fillText(pr.secs + ' s', W/2, y + 49); ctx.restore();
 }
 const CTF_MINI = { id:null, cv:null };
 function ctfDrawMinimap(){
@@ -20532,8 +20554,49 @@ addEventListener('keydown', e=>{
     if(evs && evs.classList.contains('active')){ e.preventDefault(); go('title'); }
     else if(rus && rus.classList.contains('active')){ e.preventDefault(); go('title'); }   // (Algebralien Rush's page: Back to the title)
     else if(sel && sel.classList.contains('active') && EVENT_PICK){ e.preventDefault(); selectBack(); }
+    else if(!listening && !e.defaultPrevented){ const b = escBackButton(); if(b){ e.preventDefault(); b.click(); } }   // every other menu screen: its own Back button
   }
 });
+// ESC IS BACK (playtest focus group, 2026-11: Esc did nothing on 15 menu screens, 0 of 75 tries). The key presses the screen's own Back button, so it runs the very
+// code a click does (NET.leave on the lobby, the confirm of any Back that has one). Screens and the button each one's Back is:
+//   options ("Done"), controls ("Back to Settings"), stats, learn, tutorial (How to Play: a Back button was added, it had only Skip), test (Training / Test the feel),
+//   changelog, vault, quests, store, wardrobe, rankings, tourneySetup (World Cup setup), lobby (Play with Friends), editor (Level Creator: "Title"), select (fighter select).
+// Left alone: a match (Esc pauses), the title, the result screen, the event/rush pages, the World Cup and event picks and the Flag Cup screens (they have their own Esc),
+// and a screen with a text box in use (Esc lets go of the box first) or a key waiting to be remapped.
+const ESC_BACK = { options:'btn:Done', controls:'btn:Back to Settings', stats:'btn:Back', learn:'btn:Back', tutorial:'#tutBackBtn', test:'#testBack', changelog:'btn:Back', vault:'btn:Back',
+  quests:'btn:Back', store:'btn:Back', wardrobe:'btn:Back', rankings:'btn:Back', tourneySetup:'btn:Back', lobby:'#lobbyBack', editor:'btn:Title', select:'#selBackBtn' };
+function escBackButton(){
+  const scr = document.querySelector('.screen.active'); if(!scr || running || paused || !ESC_BACK[scr.id]) return null;
+  const ae = document.activeElement;
+  if(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && typingBox(ae)){ try{ ae.blur(); }catch(x){} return null; }   // a box in use: Esc just leaves the box
+  if(typeof CTFKIT_UI !== 'undefined' && CTFKIT_UI) return null;
+  const sp = ESC_BACK[scr.id];
+  let b = null;
+  if(sp.charAt(0) === '#') b = document.querySelector(sp);
+  else { const want = sp.slice(4); b = [...scr.querySelectorAll('button')].find(x=>x.textContent.replace(/\u25c0/g, '').trim() === want); }
+  if(!b || b.disabled) return null;
+  for(let n = b; n && n.nodeType === 1; n = n.parentElement) if(n.style && n.style.display === 'none') return null;   // (a Back that is not showing is not pressed)
+  return b;
+}
+// KEY HINT (playtest focus group): a player on WASD in a match with the default arrows presses keys that do nothing. Once per profile, a small toast in the HUD's
+// bottom-left corner says which keys do what and where to change them. Never in the first second and a half of a match, in a Capture the Flag match that is not in its
+// play phase (its hiding and checking use their own keys), when watching, or in the tutorial/Training. Three presses of keys nothing is bound to (W A S D, I J K L).
+const KEYHINT = { t0:0, n:0, shown:false, _t:0 };
+function keyHintKeys(){ const n = c=>niceKey(KEYS[c]); return 'Keys: ' + n('left') + ' ' + n('right') + ' move, ' + n('jump') + ' jump, ' + n('attack') + ' attack, ' + n('special') + ' special, ' + n('smash') + ' smash. Change them in Settings > Keys.'; }
+function keyHintSeen(){ try{ return localStorage.getItem('bfsi:keyHint') === '1'; }catch(e){ return KEYHINT.shown; } }
+function keyHintPress(e){
+  if(KEYHINT.shown || !running || paused || e.repeat || TUT.active || TESTMODE.active || (typeof CTUT !== 'undefined' && CTUT.active) || PCAM.on || document.getElementById('ctfIntro')) return;
+  if(!/^Key[WASDIJKL]$/.test(e.code) || Object.values(KEYS).includes(e.code)) return;
+  if(!fighters.some(f=>f.you && !f.dead)) return;
+  if(SETTINGS.mode === 'ctf' && !(CTF.live && CTF.live.phase === 'play' && !ctfSpecOn())) return;
+  if(performance.now() - KEYHINT.t0 < 1500) return;
+  if(++KEYHINT.n < 3) return;
+  if(keyHintSeen()){ KEYHINT.shown = true; return; }
+  KEYHINT.shown = true; try{ localStorage.setItem('bfsi:keyHint', '1'); }catch(x){}
+  const el = document.getElementById('keyHint'); if(!el) return;
+  el.textContent = keyHintKeys(); el.classList.add('show');
+  clearTimeout(KEYHINT._t); KEYHINT._t = setTimeout(()=>el.classList.remove('show'), 8000);
+}
 
 // ---------- control remap UI ----------
 let listening=null;
@@ -20592,6 +20655,7 @@ addEventListener('keydown',e=>{
     try{ ae.blur(); }catch(e){}   // a hidden box lets go of the focus, and this key goes to the game
   }
   down[e.code]=true;
+  try{ keyHintPress(e); }catch(x){}
   if(TUT.active && e.code==='Escape'){ TUT.active=false; TUT.done=true; running=false; tutorialRestore(); go('title'); return; }
   if(e.code===KEYS.pause && running && TESTMODE.active){ exitTest(); return; }   // "Esc to come back": the test screen, as promised
   if(e.code===KEYS.pause && running){ setPaused(!paused); }
@@ -21395,7 +21459,7 @@ const TUT_STEPS = [
   { text:"Hold ↓ and press X for a DOWN-TILT (↑ with X is a tilt too)", check:(f)=> f._xDir==='d' && !f._xAir && f._xT>0 },
   { text:"Jump, then press X for an AERIAL (try ↑ or ↓ with it)", check:(f)=> !!f._xAir && f._xT>0 },
   { text:"Press X and C together beside the dummy to GRAB, then ← → ↑ or ↓ to THROW", check:(f)=> !!f._thrown },
-  { text:"Press V once to SMASH", check:(f,d)=> TUT.smashPct!=null && d.pct >= TUT.smashPct + 5 },   // one smash that lands
+  { text:"Land a SMASH on the dummy: get close, press V once", check:(f,d)=> TUT.smashPct!=null && d.pct >= TUT.smashPct + 5 },   // one smash that lands (5% or more); a miss gets a nudge (tutorialTick)
   { text:"Now knock the dummy off the stage!", check:(f,d)=> d.dead || d.x<0 || d.x>WW },
 ];
 function tutorialSeen(){ try{ return localStorage.getItem('bfsi:tutorialDone')==='1'; }catch(e){ return false; } }
@@ -21411,7 +21475,7 @@ function tutorialRestore(){
 }
 function startTutorial(){
   if(!TUT.prev) TUT.prev = { mode:SETTINGS.mode, count:SETTINGS.count, stocks:SETTINGS.stocks, chosen, stage };
-  TUT.active=true; TUT.step=0; TUT.done=false; TUT.timer=0; TUT.smashPct=null;
+  TUT.active=true; TUT.step=0; TUT.done=false; TUT.timer=0; TUT.smashPct=null; TUT.smashAt=null;
   TESTMODE.active=false; TOURNEY.active=false; BOSSRUSH.active=false; CUSTOM_LEVEL=null;
   SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.stocks=1;
   stage = STAGES.find(s=>s.id==="goiky") || STAGES.find(s=>!s.big);
@@ -21436,6 +21500,12 @@ function tutorialTick(){
   const you = fighters.find(f=>f.you), dummy = fighters.find(f=>!f.you);
   if(!you || !dummy) return;
   const st = TUT_STEPS[TUT.step];
+  // A smash that went off and did not add 5% to the dummy by the time it ends: say so (the step is still waiting for one that lands).
+  if(TUT.smashAt != null && TUT.timer - TUT.smashAt > 40){
+    const missed = TUT.step === TUT_STEPS.length - 2 && !(TUT.smashPct != null && dummy.pct >= TUT.smashPct + 5);
+    TUT.smashAt = null;
+    if(missed) banner("Missed! Try again closer", 1600);
+  }
   if(st && st.check(you, dummy)){
     TUT.step++;
     if(TUT.step >= TUT_STEPS.length){ tutorialComplete(); return; }
@@ -21554,7 +21624,7 @@ const CTUT_STEPS = [
     more:()=>'P opens it again any time, while hiding or in the match.',
     check:()=>!ctfMenuOpen() },
   { id:'done', label:'Done hiding',
-    text:(L)=>L.phase === 'fix' ? 'One moment: every flag is checked to be reachable.' : 'Press C when you are done hiding.',
+    text:(L)=>L.phase === 'fix' ? 'Checking routes... every flag is checked to be reachable.' : 'Press C when you are done hiding.',
     more:(L)=>L.phase === 'fix' ? 'A piece that shuts a flag in is taken away.' : 'It skips the rest of the hiding time. Play starts when everyone is done.',
     check:(L)=>L.phase === 'play' },
   { id:'find', label:'Find a flag',
@@ -23863,6 +23933,7 @@ function beginMatchNow(){
   netViewReset();
   if(stage.hazard==='evilleafy'){ evil={x:WW*0.9,y:groundY()-40}; }
   banner("GO!", 900);
+  KEYHINT.t0 = performance.now(); KEYHINT.n = 0; { const kh = document.getElementById('keyHint'); if(kh) kh.classList.remove('show'); }
   buildHUD();
   startLoop();
 }
@@ -72918,7 +72989,7 @@ function smashAim(f, inp){
 function fireSmash(f, inp, angle, dirMove){
   if(DIGC && digcLocked(f, 'smash')){ digcFallback(f, angle > 0 ? 'u' : angle < 0 ? 'd' : 's'); f.smCd = Math.max(f.smCd||0, SMASH_ENDLAG); return; }   // THE DIG (Spongy's contest): a smash not dug up yet is the jab or the tilt
   smashAim(f, inp);
-  if(TUT.active && f.you){ const d = fighters.find(function(x){ return !x.you; }); TUT.smashPct = d ? d.pct : null; }
+  if(TUT.active && f.you){ const d = fighters.find(function(x){ return !x.you; }); TUT.smashPct = d ? d.pct : null; TUT.smashAt = TUT.timer; }
   if(dirMove && angle && dirSmash(f, angle)) return;   // UP / DOWN SMASH (below): its own move, not the neutral smash tilted
   f._smAngle = angle != null ? angle : (inp && inp.up ? 1 : (inp && inp.down ? -1 : 0));   // see SMASH_ANGLE_TILT
   f._smAngleT = f._smAngle ? SMASH_ANGLE_FRAMES : 0;
