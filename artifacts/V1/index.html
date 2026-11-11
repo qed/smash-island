@@ -5657,7 +5657,7 @@ function mc4Walk(f, inp, R){
 // (the claim: only the nearest CPU goes for one) or, hurt, for a heal pool; it knows an item only within MC4G.know px of the graph's distance (a minimap's reach, not the whole disc), and a foe it is
 // after is still found by the minimap rule that was already there; (3) the STAND-STILL RULE: four seconds in the router without moving and the CPU gives the goal up (and does not go for it again for
 // a while), or, on a foe's route, takes another target and a detour, as the progress rule does.
-const MC4G = { near:600, drop:440, scavNear:340, scavDrop:230, know:12000, still:240, stillGoal:150, box:60, pace:150, hold:1500, healPct:50, retreatPct:100, retreatNear:320, poolHold:200, cool:420, rest:150 };
+const MC4G = { near:600, drop:440, scavNear:340, scavDrop:230, know:12000, still:240, stillGoal:150, box:100, pace:150, hold:1500, healPct:50, retreatPct:100, retreatNear:320, poolHold:200, cool:420, rest:150 };
 function mc4Spot(it){ return { x:it.x, y:it.y + (it.r || 16) - 24, r:24, vx:0, vy:0 }; }
 function mc4ClimbSteer(f, inp, R){
   const C = R.climb, M = MCAVE, F = MC_FR, feet = f.y + f.r, rise = feet - C.ty, dx = R.x - f.x, sp = f.kit && f.kit.special;
@@ -5688,11 +5688,25 @@ function mc4Near(f, inp, sp, spot){
   mcGapHop(f, inp, null);
 }
 // the CPU's own goal (B.mcg), chosen every 20 frames when it has none; true: it has the keys this frame
+// (S4 part 2) well above the floor of the room it is in (a room of a cave, 70 px or more over it): a pocket's ledge or a stair of planks, from which the way on is down
+function mc4High(f){ const M = MCAVE, V = M.g4, rr = M.cy - f.y, a = mc4NodeAt(V, rr - f.r, MC_FR.phi + (f.x - M.cx)/MC_FR.rho); if(a < 0 || V.nodes[a].kind !== 'R') return false; return (rr - f.r) - M.tops[V.nodes[a].c] > 70; }
+// (S4 part 2) the way down off a ledge, keys by hand for a while: through a one-way plank by Down and Jump, off the end of a solid ledge by walking off it (the brain's edge guard will not), and the other way after 20 frames against a wall
+function mc4Descend(f, inp, B, now){
+  const D = B.mcDesc; if(!D || now >= D.until || f.hitstun > 0 || !mc4High(f)){ B.mcDesc = null; return false; }
+  const M = MCAVE, th = MC_FR.phi + (f.x - M.cx)/MC_FR.rho, rr = M.cy - f.y;   // (the CPU's own chart has it at the same x all the time: the angle it is at is the place)
+  if(D.lt !== undefined && Math.abs(mcWrap(th - D.lt))*rr < 1.5){ if(++D.still >= 20){ D.dir = -D.dir; D.still = 0; } } else D.still = 0;
+  D.lt = th;
+  if(f.onground && mcOnOneWay(f) && mcDropOk(f, f.x)){ inp.down = true; inp.jump = true; }
+  else if(f.onground || f.vy > 0){ inp.left = D.dir < 0; inp.right = D.dir > 0; }
+  return true;
+}
 function mc4Cpu(f, inp, B, t, targets, pickFrom, sp, now){
   const M = MCAVE, F = MC_FR, V = M.g4; if(!V || !F.open || M.v !== 4) return false;
   const th = F.phi + (f.x - M.cx)/F.rho, rr = M.cy - f.y;
   const mv = B.mcLt == null ? 9 : Math.hypot(mcWrap(th - B.mcLt)*rr, rr - B.mcLr); B.mcLt = th; B.mcLr = rr;
   let near = 1e9; for(const o of targets){ const d = Math.hypot(o.x - f.x, o.y - f.y); if(d < near) near = d; }
+  if(B.mcDesc && mc4Descend(f, inp, B, now)) return true;
+  if(B.mcOff && now < B.mcOff.until && !f.hitstun){ inp.left = B.mcOff.dir < 0; inp.right = B.mcOff.dir > 0; return true; }   // (S4 part 2: a deliberate walk off the ledge it paces on -- the brain's edge guard keeps a CPU on a ledge above the floor of its room, and the way down is off the end of it)
   let G = B.mcg; const scav = teamSlotOf(f) % 2 === 1;   // (the odd slots are the scavengers -- the high road's CPUs of the surface -- who go for a goal with a foe a little nearer than the others would let)
   if(G){
     const gone = G.kind === 'item' ? (G.it.taken || !(G.it.life > 0)) : (f.pct <= 12 || (G.tin && now - G.tin > MC4G.poolHold));
@@ -5719,9 +5733,11 @@ function mc4Cpu(f, inp, B, t, targets, pickFrom, sp, now){
     const c = mc4PathCost(f, spot);
     if(c < G.best - 40){ G.best = c; G.tp = now; }
     B.mcStill = (mv < 0.6 && !f.hitstun) ? (B.mcStill || 0) + 1 : 0;
-    // (S4: pacing is not standing still -- a CPU walking out of a room and back in, on the climb's nearest step and then the route's, moved every frame and held a goal it could not reach for the whole 300; the goal is given up when it has stayed inside a MC4G.box px box for MC4G.pace frames)
+    // (S4: pacing is not standing still -- a CPU walking out of a room and back in, on the climb's nearest step and then the route's, moved every frame and held a goal it could not reach for the whole 300; the goal is given up when it has stayed inside a MC4G.box px box (a jump's arc is about 65 px of it) for MC4G.pace frames)
     if(!B.mcBx || Math.hypot(mcWrap(th - B.mcBx.th)*rr, rr - B.mcBx.r) > MC4G.box || f.hitstun > 0) B.mcBx = { th, r:rr, t:now };
-    if(B.mcStill >= MC4G.stillGoal || now - G.tp > 300 || now - B.mcBx.t >= MC4G.pace){   // no progress, or two and a half seconds on the spot (a goal it cannot get to; the foe's route gets the four): it gives this one up for a while and takes another
+    const paced = now - B.mcBx.t >= MC4G.pace;
+    if(B.mcStill >= MC4G.stillGoal || now - G.tp > 300 || paced){
+      if(paced){ B.mcOffD = B.mcOffD ? -B.mcOffD : (spot.x > f.x ? -1 : 1); B.mcOff = { dir:B.mcOffD, until: now + 45 }; B.mcBx = null; if(mc4High(f)) B.mcDesc = { dir:B.mcOffD, until: now + 300, still:0 }; }   // no progress, or two and a half seconds on the spot (a goal it cannot get to; the foe's route gets the four): it gives this one up for a while and takes another
       (B.mcBan || (B.mcBan = [])).push({ it:G.it, z:G.zone, until:now + 1800 }); B.mcg = null; B.mcgAt = now + 45; B.mcStill = 0; B.detour = { dir: Math.random() < 0.5 ? 1 : -1, until: now + 50 };
       return false;
     }
@@ -5732,6 +5748,12 @@ function mc4Cpu(f, inp, B, t, targets, pickFrom, sp, now){
   }
   // no goal: the stand-still rule on a foe's route
   const R = mcRoute(f, t);
+  // (S4 part 2: the same pacing test on a foe's route (routed or not) -- a CPU that came down onto a ledge of a pocket above the room's floor hopped the wall in the way, fell back and hopped it again, moving every frame, so the stand-still test never saw it: after MC4G.pace frames inside a MC4G.box px box (a jump's arc is about 65 px of it) with no foe near, it takes the other way for a while, away from the waypoint it cannot reach, and as the stand-still rule does another target)
+  if(near <= 250 || f.hitstun > 0 || !B.mcBx || Math.hypot(mcWrap(th - B.mcBx.th)*rr, rr - B.mcBx.r) > MC4G.box) B.mcBx = { th, r:rr, t:now };
+  else if(now - B.mcBx.t >= MC4G.pace){
+    B.mcBx = null; B.progD = null; B.progT = now; B.detour = { dir: (R ? R.x : t.x) > f.x ? -1 : 1, until: now + 70 }; B.mcOffD = B.mcOffD ? -B.mcOffD : ((R ? R.x : t.x) > f.x ? -1 : 1); B.mcOff = { dir:B.mcOffD, until: now + 45 }; if(mc4High(f)) B.mcDesc = { dir:B.mcOffD, until: now + 300, still:0 };
+    const other = pickFrom.filter(o => o !== f.aiTarget); if(other.length){ f.aiTarget = mcCrowd(f, other); f.aiTimer = 300; }
+  }
   if((R || Math.hypot(t.x - f.x, t.y - f.y) > 200) && mv < 0.6 && !f.hitstun && f.onground && B.st !== 'wait' && !stanceStill(f)) B.mcStill = (B.mcStill || 0) + 1; else B.mcStill = 0;
   if(B.mcStill >= MC4G.still){
     B.mcStill = 0; B.progD = null; B.progT = now; B.detour = { dir: Math.random() < 0.5 ? 1 : -1, until: now + 70 };
