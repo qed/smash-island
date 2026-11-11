@@ -326,7 +326,7 @@ function fdiag(wo, f) {
 }
 // the answer to "did the key I pressed do anything": signature of everything an input can change on a fighter
 function sig(f) {
-  return [f.atkCd, f.spCd, f.smCd, f.fnCd, f._atkSeq || 0, f._atkAnim, f._spPend, f.jumps, Math.round(f.vx * 4), Math.round(f.vy * 4), f.onground ? 1 : 0, !!f._mv, !!f._hold, !!f._windup, !!f._sm, f._grabbed != null, !!f._gb, f.flying, f.dropping].join(',');
+  return [f.atkCd, f.spCd, f.smCd, f.fnCd, f._atkSeq || 0, f._atkAnim, f._spPend, f.jumps, Math.round(f.vx * 4), Math.round(f.vy * 4), f.onground ? 1 : 0, !!f._mv, !!f._hold, !!f._windup, !!f._sm, f._grabbed != null, !!f._gb, f.flying, f.dropping, !!f._smQ, !!f._smBuf, f.smashHold > 0 ? 1 : 0].join(',');
 }
 
 // ------------------------------------------------------------------------------------------------------------------------------
