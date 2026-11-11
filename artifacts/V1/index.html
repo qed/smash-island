@@ -26489,8 +26489,8 @@ function ynNavBuild(){
         if(Math.max(0, B.x0 - A.x1, A.x0 - B.x1) > 450 || Math.abs(A.y - B.y) > 1000) continue;
         const e = edge(A, B); if(e) A.adj.push({ to:B, e }); } } }
   // the movers' ferry edges
-  const movers = nodes.filter(n=>n.drift), dyn = new Map(), seenE = new Set();
-  const addE = (from, to, e)=>{ const k = from.id + '>' + to.id; if(seenE.has(k)) return; seenE.add(k); e.dr = 1; e.c += 25; if(!dyn.has(from)) dyn.set(from, []); dyn.get(from).push({ to, e }); };
+  const movers = nodes.filter(n=>n.drift), dyn = new Map(), seenE = new Map();
+  const addE = (from, to, e)=>{ const k = from.id + '>' + to.id; const o = seenE.get(k); if(o){ o.cnt++; return; } seenE.set(k, e); e.cnt = 1; e.per = Math.max(from.drift ? Math.abs(from.p.mv.per) : 0, to.drift ? Math.abs(to.p.mv.per) : 0); e.dr = 1; e.c += 25; if(!dyn.has(from)) dyn.set(from, []); dyn.get(from).push({ to, e }); };
   const placeAt = (d, tt)=>{ const m = d.p.mv, a2 = 2*Math.PI*tt/m.per + m.ph; d.x0 = d.p.bx + m.ax*Math.sin(a2); d.x1 = d.x0 + d.p.w; d.y = d.p.by + m.ay*Math.sin(a2 + (m.ph2 || 0)); };
   for(const d of movers){
     const m = d.p.mv, rx0 = d.p.bx - Math.abs(m.ax), rx1 = d.p.bx + d.p.w + Math.abs(m.ax), ry0 = d.p.by - Math.abs(m.ay), ry1 = d.p.by + Math.abs(m.ay);
@@ -26499,6 +26499,7 @@ function ynNavBuild(){
       for(const n of cand){ const e1 = edge(d, n); if(e1) addE(d, n, e1); const e2 = edge(n, d); if(e2) addE(n, d, e2); } }
     for(const n of cand) if(n.drift) placeAt(n, 0);
   }
+  for(const l of dyn.values()) for(const a of l) a.e.c += (a.e.per*(1 - a.e.cnt/8)/2)/1.5;   // (the average wait for the moment, in cost units: about 1.5 frames each)
   for(const n of movers){ n.x0 = n.p.x; n.x1 = n.p.x + n.p.w; n.y = n.p.y; }
   // the zipline: from the sill by the handle to the perch (one way)
   let zipFrom = null, zipTo = null;
@@ -26520,8 +26521,8 @@ function ynNodeFor(N, x, y){   // the surface at or below a point (a foe in the 
   return best;
 }
 // Dijkstra to the nearest goal: goals is a Map node -> anything. Returns { path, edges, goal } or null.
-function ynPlan(N, start, goals){
-  const now = hazardT, dist = new Map(), prev = new Map(), done = new Set(), heap = [];
+function ynPlan(N, start, goals, x0){
+  const now = hazardT, dist = new Map(), prev = new Map(), done = new Set(), heap = [], arr = new Map([[start, x0 != null ? x0 : (start.x0 + start.x1)/2]]);   // arr: where it comes onto each node (the walk along a long floor to the edge's leaving point is a cost: a roof 3600 px long was 'free' to cross)
   const push = (n, d)=>{ heap.push([d, n]); let i = heap.length - 1; while(i > 0){ const j = (i - 1) >> 1; if(heap[j][0] <= heap[i][0]) break; [heap[j], heap[i]] = [heap[i], heap[j]]; i = j; } };
   const pop = ()=>{ const top = heap[0], last = heap.pop(); if(heap.length){ heap[0] = last; let i = 0; for(;;){ const l = 2*i + 1, r = l + 1; let m = i; if(l < heap.length && heap[l][0] < heap[m][0]) m = l; if(r < heap.length && heap[r][0] < heap[m][0]) m = r; if(m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
   dist.set(start, 0); push(start, 0); let goal = null;
@@ -26532,7 +26533,7 @@ function ynPlan(N, start, goals){
     for(const L of lists) for(const a of L){
       const v = a.to; if(done.has(v)) continue;
       const bk = N.blocked[u.id + '>' + v.id]; if(bk && bk > now) continue;
-      const nd = ud + a.e.c; if(!dist.has(v) || nd < dist.get(v)){ dist.set(v, nd); prev.set(v, { u, e:a.e }); push(v, nd); }
+      const nd = ud + a.e.c + (a.e.lx != null ? Math.abs(a.e.lx - arr.get(u))/8 : 0); if(!dist.has(v) || nd < dist.get(v)){ dist.set(v, nd); arr.set(v, a.e.tx != null ? a.e.tx : (v.x0 + v.x1)/2); prev.set(v, { u, e:a.e }); push(v, nd); }
     }
   }
   if(!goal) return null;
@@ -26627,7 +26628,7 @@ function ynFollow(f, inp, N, feet, M, foe){
     else if(sg && sg.n === node){ return ynSideDo(f, inp, sg) || false; }
     if(!goals.size || goals.has(node)){ f._ynPlan = null; return false; }
     N.plans++;
-    P = f._ynPlan = ynPlan(N, node, goals);
+    P = f._ynPlan = ynPlan(N, node, goals, f.x);
     if(!P){ N.planFail++; return false; }
     P.side = side;
   }
