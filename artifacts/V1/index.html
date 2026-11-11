@@ -25921,7 +25921,7 @@ function ffaRespawn(f){
 //  the host. Art only on the guest: everything drawn is read from worldPlats (yn kinds, and the one `yd` record with the zones and the decorations).
 //  PREVIEW STATE: geometry and art; the mechanics of levers, vents, berries, magnets, the tripwire, the zipline and the wind are NOT built yet (they are drawn).
 // ============================================================
-const YNK = { grow:1.1, minW:3300, minH:2400, period:10800, nightOn:0.55, night:0.72, dark:0.84 };
+const YNK = { k:0.75, bayW:1200, floorH:780, period:10800, nightOn:0.55, night:0.72, dark:0.84 };
 let YN = null, YN_VIS = false;   // YN: this match's state (ynBuild; null elsewhere); YN_VIS: paint its art (a guest too)
 function ynWanted(){
   return SETTINGS.mode === 'teams' && !!(stage && stage.stg === 'tower') && !CUSTOM_LEVEL && !TESTMODE.active && !(typeof TUT !== 'undefined' && TUT.active)
@@ -25945,19 +25945,30 @@ const YNV = [
 function ynNight(t){ const u = (t % YNK.period)/YNK.period; return 0.5 - 0.5*Math.cos(2*Math.PI*u); }
 function ynInfo(){ if(!YN_VIS) return null; for(const p of worldPlats) if(p.yd) return p.yd; return null; }   // (always from the plats: a guest's own build may differ from the host's geometry it was sent)
 function ynBuild(){
-  const K = YNK, tc = Math.max(2, Math.min(4, (SETTINGS.teamKey || '').split('v').filter(Boolean).length || 2)), sz = diSize(), v = ynVariant(), V = YNV[v];
-  WW = Math.max(Math.round(sz.WW*K.grow), K.minW); WH = Math.max(Math.round(sz.WH*K.grow), K.minH);
+  const K = YNK, tc = Math.max(2, Math.min(4, (SETTINGS.teamKey || '').split('v').filter(Boolean).length || 2)), v = ynVariant(), V = YNV[v];
+  // SIZE SCALING (v2): the core layout (design 6500 x 3000) is drawn at ONE fixed scale K.k, never stretched, so every jump, step and gap is the same at every size.
+  // More players and a bigger MAP SIZE ADD content instead: nW annex bays (1200 wide, split west/east, each a hall workshop, a machine-room annex with a gear,
+  // movers and a deck row) and hb extra hall floors (780 tall: a deck row with a mover over its middle gap and a zigzag stair, in both wings, plus the shaft's ledge stair).
+  const k = K.k, MSz = mapSize(), cnt = Math.max(4, Math.min(12, SETTINGS.count | 0 || 4)), pw = (cnt - 4)/2;
+  const nW = Math.max(0, Math.min(4, Math.round(1.0*pw + 3.6*(MSz.w - 0.85) + 0.1))), hb = Math.max(0, Math.min(4, Math.round(0.8*pw + 3*(MSz.h - 0.85) + 0.1)));
+  const nWest = Math.ceil(nW/2), nEast = nW - nWest, eL = nWest*K.bayW, eR = nEast*K.bayW, eH = hb*K.floorH;
+  WW = Math.round((6500 + eL + eR)*k); WH = Math.round((3000 + eH)*k);
   camX = 0; camY = 0; floors = []; worldZones = []; spawnZones = []; bases = []; SIDE_ROOM = 0; FLOOR_SEGS = [];
-  const sx = WW/6500, sy = WH/3000, flip = V.flip, dir = V.dir, P = [], movers = [], deco = [];
-  const X = (d)=>Math.round(d*sx), Y = (d)=>Math.round(d*sy), rx = (x, w)=>{ const a = X(x), ww = Math.max(40, X(w)); return flip ? WW - a - ww : a; }, px1 = (x)=>flip ? WW - X(x) : X(x);
-  const mr = (x, y, w, h)=>[rx(x, w), Y(y), Math.max(40, X(w)), Y(h)];
+  const flip = V.flip, dir = V.dir, P = [], movers = [], deco = [];
+  // the insertion points: x >= 2000 shifts by eL (the west annexes sit in the hall between the floor gap and the shaft), x >= 4800 by eR (the east annexes, between the
+  // east gap and the Spool Room), y >= 1021 by eH (under the hall's roofs). A piece wider than 600 (or taller than 400) is stretched across a pivot, a smaller one moves whole.
+  // RX / RY: 'raw' mode, the coordinates are already final (used for the inserted content).
+  const pL = 2000, pR = 4800, pY = 1021; let RX = false, RY = false;
+  const gx = (d, r)=>RX ? d : d + ((r ? d > pL : d >= pL) ? eL : 0) + ((r ? d > pR : d >= pR) ? eR : 0), gy = (d, r)=>RY ? d : d + ((r ? d > pY : d >= pY) ? eH : 0), S = (d)=>Math.round(d*k);
+  const px1 = (x)=>{ const a = S(gx(x)); return flip ? WW - a : a; };
+  const mr = (x, y, w, h)=>{ const x0 = gx(x), wd = w > 600 ? gx(x + w, true) - x0 : w, y0 = gy(y), hh = h > 400 ? gy(y + h, true) - y0 : h, a = S(x0), ww = Math.max(40, S(wd)); return [flip ? WW - a - ww : a, S(y0), ww, S(hh)]; };
   const solid = (x, y, w, h, kind, extra)=>{ const r = mr(x, y, w, h), p = Object.assign({ x:r[0], y:r[1], w:r[2], h:Math.max(10, r[3]), solid:true, floor:0, yn:kind }, extra || {}); P.push(p); return p; };
   const soft = (x, y, w, kind, extra)=>{ const r = mr(x, y, w, 14), p = Object.assign({ x:r[0], y:r[1], w:r[2], h:26, solid:false, floor:0, yn:kind }, extra || {}); P.push(p); return p; };
-  const dec = (kind, x, y, w, h, aux)=>deco.push([kind, rx(x, w || 0), Y(y), Math.max(0, X(w || 0)), Y(h || 0), aux === undefined ? 0 : aux]);   // a decoration: (kind, mapped x, y, w, h, aux)
-  const decP = (kind, x, y, aux)=>deco.push([kind, px1(x), Y(y), 0, 0, aux === undefined ? 0 : aux]);                        // a decoration at a point
+  const dec = (kind, x, y, w, h, aux)=>{ const r = mr(x, y, w || 0, h || 0), wu = (w || 0) > 600 ? gx(x + w, true) - gx(x) : (w || 0); deco.push([kind, r[0], r[1], Math.max(0, S(wu)), r[3], aux === undefined ? 0 : aux]); };   // a decoration: (kind, mapped x, y, w, h, aux)
+  const decP = (kind, x, y, aux)=>deco.push([kind, px1(x), S(gy(y)), 0, 0, aux === undefined ? 0 : aux]);                        // a decoration at a point
   const mover = (x, y, w, mv, kind, rail)=>{
     const p = soft(x, y, w, kind || 'rail'); p.bx = p.x; p.by = p.y; p.mvx = 0; p.mvy = 0;
-    p.mv = { ax:X(mv.ax || 0), ay:Y(mv.ay || 0), per:mv.per, ph:mv.ph || 0, ph2:mv.ph2 || 0 }; movers.push(p);
+    p.mv = { ax:S(mv.ax || 0), ay:S(mv.ay || 0), per:mv.per, ph:mv.ph || 0, ph2:mv.ph2 || 0 }; movers.push(p);
     if(rail !== false){ if(mv.ax && !mv.ay) deco.push(['railh', p.bx - p.mv.ax, p.y + 6, p.w + 2*p.mv.ax, 0, 0]); else if(mv.ay && !mv.ax) deco.push(['railv', p.bx + Math.round(p.w/2), p.by - p.mv.ay, 0, 2*p.mv.ay + 14, 0]); }
     return p;
   };
@@ -25977,7 +25988,7 @@ function ynBuild(){
   soft(60, 1560, 200, 'shelf');
   // ---- THE SHAFT: the long rail across the pit, the cage elevator, the staircase of wall ledges up to the Eye Loft
   mover(2990, 1650, 520, { ax:340, per:760*dir, ph:0 }, 'long');
-  if(V.cage) mover(3120, 1700, 260, { ay:1000, per:2400, ph:0 }, 'cage', false);
+  if(V.cage) mover(3120, 1700, 260, { ay:1000 + eH, per:Math.round(2400*(1000 + eH)/1000), ph:0 }, 'cage', false);
   [[2640, 1520], [3647, 1390], [2640, 1260], [3647, 1130], [2640, 1000], [3647, 870], [2640, 740]].forEach((q)=>soft(q[0], q[1], 220, 'ledge'));
   // ---- THE NORTH: the Eye Loft: soft decks (a jump up through them), a spool for cover, the eye window on its left wall, the sill outside
   soft(2632, 660, 368, 'loft'); soft(3600, 660, 267, 'loft'); soft(2700, 510, 240, 'shelf'); soft(3640, 520, 220, 'shelf'); soft(2250, 660, 262, 'sill');
@@ -26004,8 +26015,8 @@ function ynBuild(){
   decP('gear', 3250, 1300, 1); decP('gear', 2000, 1270, -1); decP('gear', 5400, 1290, 1); decP('gear', 3250, 2300, -1); decP('gear', 800, 1330, 1);
   dec('spool', 3050, 1900, 180, 220, 0); dec('spool', 3500, 2640, 200, 150, 1); dec('spool', 1100, 2640, 180, 150, 2);
   dec('pipe', 340, 1030, 0, 350, 1); dec('pipe', 2680, 160, 0, 170, 1);
-  dec('sign', 420, 1075, 300, 0, 'THIMBLE TERRACE'); dec('sign', 2760, 330, 400, 0, 'THE EYE LOFT'); dec('sign', 5650, 1330, 500, 0, 'SPOOL ROOM'); dec('sign', 2100, 2470, 500, 0, 'GEAR WORKS');
-  dec('lamp', 950, 1060, 0, 0, 0); dec('lamp', 1700, 1060, 0, 0, 0); dec('lamp', 4400, 1060, 0, 0, 0); dec('lamp', 5600, 1060, 0, 0, 0); dec('lamp', 3250, 220, 0, 0, 0);
+  RY = true; dec('sign', 420, 1075, 300, 0, 'THIMBLE TERRACE'); RY = false; dec('sign', 2760, 330, 400, 0, 'THE EYE LOFT'); dec('sign', 5650, 1330, 500, 0, 'SPOOL ROOM'); dec('sign', 2100, 2470, 500, 0, 'GEAR WORKS');
+  RY = true; dec('lamp', 950, 1060, 0, 0, 0); dec('lamp', 1700, 1060, 0, 0, 0); dec('lamp', 4400, 1060, 0, 0, 0); dec('lamp', 5600, 1060, 0, 0, 0); dec('lamp', 3250, 220, 0, 0, 0); RY = false;
   for(const lx of [1000, 1800, 2300, 3250, 3700, 4300, 5100, 5500]) dec('lamp', lx, 1960, 0, 0, 1);
   // the machine room: a flywheel half sunk in the floor (the landmark), belts to the second gear, pipes along the roof, a conveyor on the back wall, stacks of crates
   decP('flywheel', 4150, 2600, 1);
@@ -26016,7 +26027,7 @@ function ynBuild(){
   for(const q of [[900, 2790], [958, 2790], [930, 2736], [1700, 2790], [4500, 2790], [4558, 2790], [5500, 2790], [3720, 2790]]) dec('crate', q[0], q[1], 0, 0, 0);
   dec('eye', 2512, 330, 120, 330, 0);
   dec('balcony', 20, 1800, 280, 0, V.wind ? 1 : 0);
-  if(V.zip){ soft(40, 860, 170, 'perch'); dec('zip', 2300, 640, 0, 0, [px1(125), Y(860)]); }   // the thread runs along the outside of the hull to a perch on the left corner; from there you drop onto the balcony
+  if(V.zip){ soft(40, 860, 170, 'perch'); dec('zip', 2300, 640, 0, 0, [px1(125), S(gy(860))]); }   // the thread runs along the outside of the hull to a perch on the left corner; from there you drop onto the balcony
   if(V.lev){ dec('lever', 2160, 1800, 0, 0, 0); dec('lever', 4040, 1800, 0, 0, 1); dec('lever', 3000, 2790, 0, 0, 2); }
   if(V.pipes){ dec('pipe', 3870, 1040, 0, 700, 1); dec('pipe', 2640, 1540, 0, 260, 1); dec('pipe', 6180, 1030, 0, 440, 1); dec('pipe', 320, 1400, 0, 180, 1); dec('pipe', 5810, 1880, 0, 800, 1); dec('pipe', 710, 1880, 0, 800, 1); }
   if(V.vents){ dec('vent', 3040, 2790, 220, 0, 0); dec('vent', 2680, 840, 150, 0, 0); dec('vent', 3600, 1630, 150, 0, 0); }
@@ -26024,6 +26035,41 @@ function ynBuild(){
   if(V.magnet){ dec('mag', 4060, 1800, 400, 0, 0); dec('mag', 760, 1800, 360, 0, 0); dec('mag', 2300, 2790, 520, 0, 0); }
   if(V.thread){ dec('trip', 4000, 1730, 1100, 0, 0); dec('trip', 2800, 2700, 520, 0, 1); }
   for(const q of [[700, 1800], [1600, 1800], [4300, 1800], [5800, 1800]]) dec('crate', q[0], q[1], 0, 0, 0);
+  // ---- SIZE SCALING: the added content (nothing here exists at 4 players on Compact)
+  const deckRow = (x0, x1, y, ph)=>{   // a soft deck with a gap in the middle that a rail mover bridges
+    const mid = Math.round((x0 + x1)/2), gl = mid - 130, gr = mid + 130;
+    soft(x0, y, gl - x0, 'deck'); soft(gr, y, x1 - gr, 'deck'); mover(gl - 20, y, 300, { ax:150, per:560*dir, ph:ph || 0 }, 'rail');
+  };
+  const stairs = (xa, xb, yHi, yLo)=>{   // zigzag steps of at most ~100 design px from yLo up to yHi
+    const n = Math.max(1, Math.ceil((yLo - yHi)/105) - 1), sp = (yLo - yHi)/(n + 1);
+    for(let i = 1; i <= n; i++) soft(i % 2 ? xa : xb, Math.round(yLo - sp*i), 220, 'shelf');
+  };
+  RY = true;
+  for(let m = 0; m < hb; m++){
+    deckRow(520, 1500, 1160 + 780*m, m);                                              // the west wing's floor m
+    stairs(900, 1140, 1160 + 780*m, m === hb - 1 ? 1240 + eH : 1160 + 780*(m + 1));
+    deckRow(5000, 6150, 1230 + 780*m, m + 1);                                         // the east wing's floor m
+    stairs(5500, 5740, 1230 + 780*m, m === hb - 1 ? 1230 + eH : 1230 + 780*(m + 1));
+  }
+  for(let q = 1; q <= 6*hb; q++) soft(q % 2 ? 3647 : 2640, 1000 + 130*q, 220, 'ledge');   // the shaft's ledge stair, taller
+  RY = false;
+  const bay = (xo, ui, gd)=>{   // one annex bay [xo, xo + 1200] in final design x: the hall workshop, its upper floors, the machine-room annex
+    RX = true;
+    solid(xo, 1800, 1200, 60, 'slab'); solid(xo + 60, 1720, 360, 80, 'block'); solid(xo + 60, 1640, 180, 80, 'block');
+    soft(xo + 300, 1560, 260, 'shelf'); soft(xo + 700, 1440, 260, 'shelf'); soft(xo + 380, 1320, 260, 'shelf'); soft(xo + 780, 1200, 300, 'shelf');
+    mover(xo + 640, 1600, 260, { ax:200, per:640*gd, ph:ui }, 'rail'); mover(xo + 940, 1480, 240, { ay:200, per:700, ph:ui + 2 }, 'lift');
+    RY = true;
+    for(let m = 0; m < hb; m++){ deckRow(xo + 60, xo + 1140, 1160 + 780*m, m + ui); stairs(xo + 660, xo + 900, 1160 + 780*m, m === hb - 1 ? 1200 + eH : 1160 + 780*(m + 1)); }
+    RY = false;
+    solid(xo, 2330, 1200, 60, 'tfloor'); solid(xo, 2130, 1200, 60, 'troof'); dec('duct', xo, 2190, 1200, 140, 0);
+    solid(xo + 80, 2710, 420, 80, 'block'); solid(xo + 80, 2630, 200, 80, 'block'); soft(xo + 380, 2520, 240, 'shelf'); soft(xo + 1000, 2540, 160, 'shelf');
+    for(let kk = 0; kk < 4; kk++) mover(xo + 820 - 55, 2650, 110, { ax:110, ay:110, per:640*gd, ph:kk*Math.PI/2, ph2:Math.PI/2 }, 'tooth', false);
+    decP('gear', xo + 820, 2650, gd); decP('gear', xo + 600, 1300, -gd); dec('pipeh', xo, 1945, 1200, 0, 1); dec('lamp', xo + 300, 1960, 0, 0, 1); dec('lamp', xo + 900, 1960, 0, 0, 1);
+    dec('crate', xo + 200, 2790, 0, 0, 0); dec('crate', xo + 1050, 2790, 0, 0, 0); dec('crate', xo + 500, 1800, 0, 0, 0);
+    RX = false;
+  };
+  for(let u = 0; u < nWest; u++) bay(2000 + K.bayW*u, u, dir);
+  for(let u = 0; u < nEast; u++) bay(4800 + eL + K.bayW*u, u + nWest, -dir);
   const zones = { skin:[mr(2512 - 150, 30 - 150, 1475 + 300, 150 + 150), mr(2632 - 150, 150, 1235 + 300, 2640 + 160), mr(180 - 150, 900 - 150, 6140 + 300, 1020 - 900 + 150 + 780 + 160), mr(700 - 150, 1860, 5100 + 300, 930 + 160)],
     int:[mr(2632, 150, 1235, 2640), mr(300, 1020, 5900, 780), mr(700, 1860, 5100, 930), mr(180, 1380, 120, 420)], dark:[mr(700, 1860, 5100, 930)], eye:mr(2512, 330, 120, 330) };
   cap.yd = { v, flip, name:V.name, zones, deco, f:{ lev:V.lev, cage:V.cage, pipes:V.pipes, crawl:V.crawl, vents:V.vents, zip:V.zip, wind:V.wind, berry:V.berry, magnet:V.magnet, thread:V.thread, night:V.night } };
@@ -26049,7 +26095,7 @@ function ynBuild(){
   bases = bases.filter(Boolean);
   STG = { kind:'needle', top:null, t:0, wall:0, movers, statics:[], soft:[] };
   stgPlace(0);
-  YN = { v, teams:tc, flip, yd:cap.yd, infos, movers, owner, crates:0 };
+  YN = { v, teams:tc, flip, yd:cap.yd, infos, movers, owner, crates:0, size:{ nW, west:nWest, east:nEast, floors:hb } };
   YN_VIS = true;
 }
 function ynSpawnItem(){
