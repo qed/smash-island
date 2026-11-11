@@ -825,6 +825,7 @@
   .planteamdot{width:14px; height:14px; border-radius:5px; border:2px solid #1c1c1c; flex:none}
   .unlock-note{max-width:620px;margin:6px auto;width:94%;text-align:center;font-weight:800;font-size:15px;
     background:#ffd23f;color:#1c1c1c;border:3px solid #1c1c1c;border-radius:12px;padding:8px 12px}
+  .keyhintline{max-width:620px;margin:6px auto;width:94%;text-align:center;font-weight:700;font-size:14px;background:#fff7d6;color:#1c1c1c;border:2px solid #1c1c1c;border-radius:10px;padding:6px 10px}
   .plantimer{max-width:620px;margin:0 auto 6px;width:94%;text-align:center;font-weight:800;font-size:16px;background:#1c1c1c;color:#fff;border-radius:10px;padding:6px 10px}
   .plantimer.low{background:#e0503a;animation:pulseT 0.6s ease-in-out infinite}
   @keyframes pulseT{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
@@ -1852,6 +1853,7 @@
           <button class="btn ghost sm" onclick="quitMatch()">Quit</button>
         </div>
       </div>
+      <div id="pauseKeyHint" class="keyhintline" style="display:none"></div>
       <div id="pauseMoves" class="movecard" style="display:none;text-align:left;margin-top:12px"></div>
     </div>
   </div>
@@ -1916,6 +1918,7 @@
     <div class="tut-sub" style="margin-top:10px;font-size:14px">Every fighter's C special is different — that's the fun part.</div>
     <div class="row" style="justify-content:center;margin-top:14px">
       <button class="btn" onclick="startTutorial()">Try it ▶</button>
+      <button class="btn ghost sm" id="tutBackBtn" onclick="go('title')">◀ Back</button>
       <button class="btn ghost sm" onclick="finishTutorial(true)">Skip</button>
     </div>
   </div>
@@ -2056,6 +2059,7 @@
     <div id="resultCard" style="display:none"></div>
     <div id="netResults" class="netres" style="display:none"></div>
     <div id="scorecard" class="scorecard"></div>
+    <div id="resultKeyHint" class="keyhintline" style="display:none"></div>
     <div id="unlockNote" class="unlock-note" style="display:none"></div>
     <div id="eraseNote" class="unlock-note erase-note" style="display:none"></div>
     <div id="questNote" class="unlock-note quest-note" style="display:none" role="status"></div>
@@ -10686,13 +10690,13 @@ function ctfFixBReady(L, nav, ids){   // the graph without what gives way, made 
   const need = L.flags.some(fl=>{ if(fl.st !== 1 || fl.elev != null || fl.pad != null || (ids && !ids.has(fl.id))) return false; const t = 1 - fl.team, n = ctfNavNodeAt(nav, fl.x, fl.y, 10); return !!(n && nav.reach[t][n.id] && !rA[t][n.id] && !ctfOnBreakable(fl.x, fl.y)); });
   if(!need) return true;
   const nb = ctfNavBroken(nav); if(nb.ready) return true;
-  ctfNavTick(nb, 80, 6); return false;
+  ctfNavTick(nb, 80, ctfFixMs()); return false;
 }
 // The flags the second pass passes with nothing built: only for those is a failure the pieces' doing, so only those can make the check take a piece away. The rest (on a crumbling ledge, past a
 // rotten bridge, on a built piece) are put right when the check is over, by the rule for a flag with no road (ctfFixFinish): to the nearest prepared place that passes both.
 function ctfFixBInit(L, F){
   const base = CTF.navs && CTF.navs[ctfNavId()]; if(!base){ F.bOK = new Set(); return true; }
-  if(!base.ready){ ctfNavTick(base, 80, 6); return false; }
+  if(!base.ready){ ctfNavTick(base, 80, ctfFixMs()); return false; }
   if(!ctfFixBReady(L, base, null)) return false;
   const bad = ctfBreakProblems(L, base, null);
   F.bOK = new Set(L.flags.filter(fl=>{ const n = ctfNavNodeAt(base, fl.x, fl.y, 10); return !!(n && base.reach[1 - fl.team][n.id]) && bad.indexOf('flag' + fl.id) < 0; }).map(fl=>fl.id));
@@ -10717,7 +10721,18 @@ function ctfEditPrebuild(L){   // while they are still hiding: once the edits ha
   if(L.pre && L.pre.seq === L.editSeq){ if(!L.pre.nav.ready) ctfNavTick(L.pre.nav, 80, 3); return; }
   if(L.t - L.editT >= 30) L.pre = { seq:L.editSeq, n:st, nav:ctfEditNav(L, st) };
 }
+// THE ROUTE CHECK'S SPEED AND BANNER (playtest focus group: 16-41 s with nothing on screen). Nobody moves during the check, so a real browser spends up to 8 ms of each step on it, in all its ticks together
+// (they were 6 ms each, up to 12 with two) (the headless harness counts slices, not milliseconds, and keeps its own number: its matches are unchanged). It is not cut short and does not start the match
+// early: a flag shut in by a piece has to be found before play, and finding it later would take a piece away in the middle of a fight. The banner shows the work instead.
+function ctfFixMs(){ return ctfNavDet() ? 6 : Math.max(2, 8 - (performance.now() - (CTF._fixT0 || 0))); }   // (8 ms for the whole step: a second tick in the same step gets only what is left. One probe slice can still overshoot it: measured up to 30 ms in jsdom at any ask)
+function ctfFixProgress(L){   // { pct, secs } of the graph being made right now (the check makes several, one after another), for the banner
+  const F = L.fix; let pct = 0;
+  if(F){ const navs = Object.values(F.navs || {}); if(F.full) navs.push(F.full);
+    for(const n of navs) if(n && !n.ready && n.nodes && n.nodes.length) pct = Math.max(pct, Math.floor(100*(n.cursor || 0)/n.nodes.length)); }
+  return { pct:Math.min(99, pct), secs:Math.floor((L.t - (L.fixT0 || L.t))/60) };
+}
 function ctfFixBegin(L){
+  L.fixT0 = L.t;
   const st = L.edits.filter(e=>ctfEditChecked(e) && e.elev == null).sort((a, b)=>a.seq - b.seq);
   L.phase = 'fix'; ctfRebuildDyn(L); L.fixGone = [];
   L.fix = { st, set:st.slice(), lo:0, hi:null, keep:st.length, navs:{}, culprits:0, mode:'', bOK:null };
@@ -10782,7 +10797,7 @@ function ctfFixTry(L, F){
   }
   const e = F.cands[F.ci], rest = F.set.filter(q=>q !== e), key = rest.map(q=>q.id).join(',');
   const nav = F.navs[key] || (F.navs[key] = rest.length ? ctfEditNavLess(L, rest, e, F.full) : CTF.navs[ctfNavId()]);
-  if(!nav.ready){ ctfNavTick(nav, 80, 6); return; }
+  if(!nav.ready){ ctfNavTick(nav, 80, ctfFixMs()); return; }
   if(rest.length && !ctfFixBReady(L, nav, F.bOK)) return;
   const bad = rest.length ? ctfFixProblems(L, F, nav) : [];
   if(!bad.length){ ctfFixDrop(L, F, e, nav); return; }
@@ -10791,12 +10806,13 @@ function ctfFixTry(L, F){
   F.ci++;
 }
 function ctfFixStep(L){
+  CTF._fixT0 = performance.now();
   const F = L.fix; if(!F){ ctfStartPlay(L); return; }
   if(F.bOK == null && !ctfFixBInit(L, F)) return;
   if(F.mode === 'try'){ ctfFixTry(L, F); return; }
   const key = ctfFixKey(F, F.keep);
   const nav = F.navs[key] || (F.navs[key] = F.keep === 0 ? CTF.navs[ctfNavId()] : ctfEditNav(L, F.keep, F.set));
-  if(!nav.ready){ ctfNavTick(nav, 80, 6); return; }
+  if(!nav.ready){ ctfNavTick(nav, 80, ctfFixMs()); return; }
   if(F.keep > 0 && !ctfFixBReady(L, nav, F.bOK)) return;
   const bad = F.keep === 0 ? [] : ctfFixProblems(L, F, nav);
   if(bad.length && F.hi === null && F.keep === F.set.length && !CTF.fixOld){   // the whole of what is left, and something cannot be reached: the pieces one at a time, the smallest first
@@ -12382,11 +12398,18 @@ function drawCtfHud(){
   { const me = fighters.find(q=>q.you); if(me && L.phase === 'hide') ctfDrawEditHud(L, me); }
   if(L.phase === 'bid') ctfDrawBid(L); else if(L.bidShow > 0) ctfDrawBidResult(L);
   if(ctfSpecOn()) ctfDrawSpecHud(L);
-  if(L.phase === 'fix'){ ctx.fillStyle = '#f4efe2'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.save(); ctx.translate(W/2, 130); ctx.rotate(hazardT*0.12); ctx.beginPath(); for(let i = 0; i < 12; i++){ const a = i*Math.PI/6, rr = i%2 ? 14 : 22; ctx.lineTo(Math.cos(a)*rr, Math.sin(a)*rr); } ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); }
+  if(L.phase === 'fix'){ ctx.fillStyle = '#f4efe2'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.save(); ctx.translate(W/2, 130); ctx.rotate(hazardT*0.12); ctx.beginPath(); for(let i = 0; i < 12; i++){ const a = i*Math.PI/6, rr = i%2 ? 14 : 22; ctx.lineTo(Math.cos(a)*rr, Math.sin(a)*rr); } ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); ctfDrawFixBanner(L); }
   // a capture flashes the scoring side's colour round the edge of the screen
   if(L.flash){ const a = Math.min(1, L.flash.t/25)*(L.flash.soft ? 0.25 : 0.5); ctx.globalAlpha = a; ctx.strokeStyle = ctfColor(L.flash.team); ctx.lineWidth = 36; ctx.strokeRect(0, 0, W, H); ctx.globalAlpha = 1; }
   ctx.restore();
   ctfDrawMinimap();
+}
+function ctfDrawFixBanner(L){   // "Checking routes..." with the share of the graph made and the seconds so far, under the gear
+  const pr = ctfFixProgress(L), w = 260, x = W/2 - w/2, y = 168;
+  ctx.save(); ctx.fillStyle = 'rgba(28,24,38,0.88)'; ctx.fillRect(x, y, w, 52); ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 3; ctx.strokeRect(x, y, w, 52);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#ffd23f'; ctx.font = "700 20px 'Baloo 2', system-ui"; ctx.fillText('Checking routes...', W/2, y + 24);
+  ctx.fillStyle = '#5a5a6a'; ctx.fillRect(x + 12, y + 33, w - 24, 8); ctx.fillStyle = '#ffd23f'; ctx.fillRect(x + 12, y + 33, (w - 24)*pr.pct/100, 8);
+  ctx.fillStyle = '#fff'; ctx.font = "600 11px 'Baloo 2', system-ui"; ctx.fillText(pr.secs + ' s', W/2, y + 49); ctx.restore();
 }
 const CTF_MINI = { id:null, cv:null };
 function ctfDrawMinimap(){
@@ -19603,6 +19626,7 @@ function go(id){
   if(id!=='result'){ try{ clearShopNotes(); clearNetResults(); }catch(e){} try{ hideEventNote(); }catch(e){} }   // the result screen's player card, quest line, players' cards and event note are that match's
   if(id==='title'){ try{ refreshDailyCard(); }catch(e){} try{ titleContestants(); }catch(e){} }
   try{ releaseMappedKeys(); }catch(e){}   // a new screen starts with no mapped key held
+  try{ if(id === 'result') keyHintShow('resultKeyHint'); else if(id !== '_none_') keyHintClear(); }catch(e){}   // (the key hint: on the result screen only)
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('hud').classList.remove('active');
   running=false; cancelAnimationFrame(raf);
@@ -20233,7 +20257,8 @@ const SMASH_PATTERN_TEXT = {
   reel:    'pulls nearby foes in ({r}), then hits',
 };
 // The one-word name of each shape, on the move card and in How to Play.
-const SMASH_KIND = { lunge:'Lunge', through:'Dash', leap:'Hop', burst:'Shockwave', walk:'Roller', beam:'Beam', rain:'Drop', mine:'Trap', plant:'Root & blast', reel:'Pull', volley:'Volley' };
+const SMASH_KIND = { lunge:'Lunge', through:'Dash', leap:'Hop', burst:'Shockwave', walk:'Roller', beam:'Beam', rain:'Drop', mine:'Trap', plant:'Root & blast', reel:'Pull', volley:'Volley', swing:'Swing' };
+SMASH_PATTERN_TEXT.swing = 'winds up, then swings the heavy thing it carries out in front of the body ({r})';   // (SKY-DROP SMASHES removed: Blocky's anvil is swung by his body, nothing comes down from above)
 SMASH_PATTERN_TEXT.volley = 'fires a fan of shots straight out of the front of the body ({r}); the shots leave together, and only one of them can hit the same foe';   // (SKY-DROP SMASHES removed: the shots leave the fighter, none comes down from above)
 // How far a row reaches, in the words a player uses: from the move's own numbers, not a guess.
 function smashReach(f, row){
@@ -20249,6 +20274,7 @@ function smashReach(f, row){
     case 'reel':    return row.pull||190;
     case 'horizon': return row.pull||220;
     case 'rain':    return row.seek||row.at||90;
+    case 'swing':   return SMASH_LUNGE_FRAMES*(SMASH_LUNGE_SPD+(row.step||3)) + (row.fx==null?30:row.fx) + r + (row.reach||30);
     case 'volley':  return (row.spd||9)*(row.life||30)*PROJ_LIFE;   // (addProj stretches a shot's life by PROJ_LIFE)
     default:        return row.at||34;
   }
@@ -20532,8 +20558,57 @@ addEventListener('keydown', e=>{
     if(evs && evs.classList.contains('active')){ e.preventDefault(); go('title'); }
     else if(rus && rus.classList.contains('active')){ e.preventDefault(); go('title'); }   // (Algebralien Rush's page: Back to the title)
     else if(sel && sel.classList.contains('active') && EVENT_PICK){ e.preventDefault(); selectBack(); }
+    else if(!listening && !e.defaultPrevented){ const b = escBackButton(); if(b){ e.preventDefault(); b.click(); } }   // every other menu screen: its own Back button
   }
 });
+// ESC IS BACK (playtest focus group, 2026-11: Esc did nothing on 15 menu screens, 0 of 75 tries). The key presses the screen's own Back button, so it runs the very
+// code a click does (NET.leave on the lobby, the confirm of any Back that has one). Screens and the button each one's Back is:
+//   options ("Done"), controls ("Back to Settings"), stats, learn, tutorial (How to Play: a Back button was added, it had only Skip), test (Training / Test the feel),
+//   changelog, vault, quests, store, wardrobe, rankings, tourneySetup (World Cup setup), lobby (Play with Friends, not while a room is joined or hosted), select (fighter select, not the World Cup solo pick).
+// NOT the Level Creator (an unsaved level could be lost by a stray Esc).
+// Left alone: a match (Esc pauses), the title, the result screen, the event/rush pages, the World Cup and event picks and the Flag Cup screens (they have their own Esc),
+// and a screen with a text box in use (Esc lets go of the box first) or a key waiting to be remapped.
+const ESC_BACK = { options:'btn:Done', controls:'btn:Back to Settings', stats:'btn:Back', learn:'btn:Back', tutorial:'#tutBackBtn', test:'#testBack', changelog:'btn:Back', vault:'btn:Back',
+  quests:'btn:Back', store:'btn:Back', wardrobe:'btn:Back', rankings:'btn:Back', tourneySetup:'btn:Back', lobby:'#lobbyBack', select:'#selBackBtn' };
+function escBackButton(){
+  const scr = document.querySelector('.screen.active'); if(!scr || running || paused || !ESC_BACK[scr.id]) return null;
+  const ae = document.activeElement;
+  if(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && typingBox(ae)){ try{ ae.blur(); }catch(x){} return null; }   // a box in use: Esc just leaves the box
+  if(typeof CTFKIT_UI !== 'undefined' && CTFKIT_UI) return null;
+  if(scr.id === 'lobby' && window.NET && (inNetSession() || NET.room)) return null;   // in a room (hosting or joined): one stray Esc must not leave it
+  if(scr.id === 'select' && PENDING_TOURNEY && !PENDING_TOURNEY.pickMates) return null;   // the World Cup's solo pick: its Back button goes to the title, not the setup, so Esc leaves it alone
+  const sp = ESC_BACK[scr.id];
+  let b = null;
+  if(sp.charAt(0) === '#') b = document.querySelector(sp);
+  else { const want = sp.slice(4); b = [...scr.querySelectorAll('button')].find(x=>x.textContent.replace(/\u25c0/g, '').trim() === want); }
+  if(!b || b.disabled) return null;
+  for(let n = b; n && n.nodeType === 1; n = n.parentElement) if(n.style && n.style.display === 'none') return null;   // (a Back that is not showing is not pressed)
+  return b;
+}
+// KEY HINT (playtest focus group): a player on WASD in a match with the default arrows presses keys that do nothing. Once per profile, a line on the pause card or the result screen
+// (never over the fight) says which keys do what and where to change them. Never in the first second and a half of a match, in a Capture the Flag match that is not in its
+// play phase (its hiding and checking use their own keys), when watching, or in the tutorial/Training. Three presses of keys nothing is bound to (W A S D, I J K L).
+const KEYHINT = { t0:0, n:0, shown:false, pending:false };
+function keyHintKeys(){ const n = c=>niceKey(KEYS[c]); return 'Keys: ' + n('left') + ' ' + n('right') + ' move, ' + n('jump') + ' jump, ' + n('attack') + ' attack, ' + n('special') + ' special, ' + n('smash') + ' smash. Change them in Settings > Keys.'; }
+function keyHintSeen(){ try{ return localStorage.getItem('bfsi:keyHint') === '1'; }catch(e){ return KEYHINT.shown; } }
+// Shown on the pause card (if they pause first) or the match's result screen, never over the fight (the owner's rule: no words in a match). The flag is set when it is shown.
+function keyHintShow(id){
+  if(!KEYHINT.pending) return false;
+  const el = document.getElementById(id); if(!el) return false;
+  KEYHINT.pending = false; KEYHINT.shown = true; try{ localStorage.setItem('bfsi:keyHint', '1'); }catch(x){}
+  el.textContent = keyHintKeys(); el.style.display = ''; return true;
+}
+function keyHintClear(){ for(const id of ['pauseKeyHint', 'resultKeyHint']){ const el = document.getElementById(id); if(el){ el.style.display = 'none'; el.textContent = ''; } } }
+function keyHintPress(e){
+  if(KEYHINT.shown || !running || paused || e.repeat || TUT.active || TESTMODE.active || (typeof CTUT !== 'undefined' && CTUT.active) || PCAM.on || document.getElementById('ctfIntro')) return;
+  if(!/^Key[WASDIJKL]$/.test(e.code) || Object.values(KEYS).includes(e.code)) return;
+  if(!fighters.some(f=>f.you && !f.dead)) return;
+  if(SETTINGS.mode === 'ctf' && !(CTF.live && CTF.live.phase === 'play' && !ctfSpecOn())) return;
+  if(performance.now() - KEYHINT.t0 < 1500) return;
+  if(++KEYHINT.n < 3) return;
+  if(keyHintSeen()){ KEYHINT.shown = true; return; }
+  KEYHINT.pending = true;   // shown on the pause card or the result screen (keyHintShow)
+}
 
 // ---------- control remap UI ----------
 let listening=null;
@@ -20592,6 +20667,7 @@ addEventListener('keydown',e=>{
     try{ ae.blur(); }catch(e){}   // a hidden box lets go of the focus, and this key goes to the game
   }
   down[e.code]=true;
+  try{ keyHintPress(e); }catch(x){}
   if(TUT.active && e.code==='Escape'){ TUT.active=false; TUT.done=true; running=false; tutorialRestore(); go('title'); return; }
   if(e.code===KEYS.pause && running && TESTMODE.active){ exitTest(); return; }   // "Esc to come back": the test screen, as promised
   if(e.code===KEYS.pause && running){ setPaused(!paused); }
@@ -21395,7 +21471,7 @@ const TUT_STEPS = [
   { text:"Hold ↓ and press X for a DOWN-TILT (↑ with X is a tilt too)", check:(f)=> f._xDir==='d' && !f._xAir && f._xT>0 },
   { text:"Jump, then press X for an AERIAL (try ↑ or ↓ with it)", check:(f)=> !!f._xAir && f._xT>0 },
   { text:"Press X and C together beside the dummy to GRAB, then ← → ↑ or ↓ to THROW", check:(f)=> !!f._thrown },
-  { text:"Press V once to SMASH", check:(f,d)=> TUT.smashPct!=null && d.pct >= TUT.smashPct + 5 },   // one smash that lands
+  { text:"Land a SMASH on the dummy: get close, press V once", check:(f,d)=> TUT.smashPct!=null && d.pct >= TUT.smashPct + 5 },   // one smash that lands (5% or more); a miss gets a nudge (tutorialTick)
   { text:"Now knock the dummy off the stage!", check:(f,d)=> d.dead || d.x<0 || d.x>WW },
 ];
 function tutorialSeen(){ try{ return localStorage.getItem('bfsi:tutorialDone')==='1'; }catch(e){ return false; } }
@@ -21411,7 +21487,7 @@ function tutorialRestore(){
 }
 function startTutorial(){
   if(!TUT.prev) TUT.prev = { mode:SETTINGS.mode, count:SETTINGS.count, stocks:SETTINGS.stocks, chosen, stage };
-  TUT.active=true; TUT.step=0; TUT.done=false; TUT.timer=0; TUT.smashPct=null;
+  TUT.active=true; TUT.step=0; TUT.done=false; TUT.timer=0; TUT.smashPct=null; TUT.smashAt=null;
   TESTMODE.active=false; TOURNEY.active=false; BOSSRUSH.active=false; CUSTOM_LEVEL=null;
   SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.stocks=1;
   stage = STAGES.find(s=>s.id==="goiky") || STAGES.find(s=>!s.big);
@@ -21436,6 +21512,12 @@ function tutorialTick(){
   const you = fighters.find(f=>f.you), dummy = fighters.find(f=>!f.you);
   if(!you || !dummy) return;
   const st = TUT_STEPS[TUT.step];
+  // A smash that went off and did not add 5% to the dummy by the time it ends: say so (the step is still waiting for one that lands).
+  if(TUT.smashAt != null && TUT.timer - TUT.smashAt > 40){
+    const missed = TUT.step === TUT_STEPS.length - 2 && !(TUT.smashPct != null && dummy.pct >= TUT.smashPct + 5);
+    TUT.smashAt = null;
+    if(missed) banner("Missed! Try again closer", 1600);
+  }
   if(st && st.check(you, dummy)){
     TUT.step++;
     if(TUT.step >= TUT_STEPS.length){ tutorialComplete(); return; }
@@ -21554,7 +21636,7 @@ const CTUT_STEPS = [
     more:()=>'P opens it again any time, while hiding or in the match.',
     check:()=>!ctfMenuOpen() },
   { id:'done', label:'Done hiding',
-    text:(L)=>L.phase === 'fix' ? 'One moment: every flag is checked to be reachable.' : 'Press C when you are done hiding.',
+    text:(L)=>L.phase === 'fix' ? 'Checking routes... every flag is checked to be reachable.' : 'Press C when you are done hiding.',
     more:(L)=>L.phase === 'fix' ? 'A piece that shuts a flag in is taken away.' : 'It skips the rest of the hiding time. Play starts when everyone is done.',
     check:(L)=>L.phase === 'play' },
   { id:'find', label:'Find a flag',
@@ -23863,6 +23945,7 @@ function beginMatchNow(){
   netViewReset();
   if(stage.hazard==='evilleafy'){ evil={x:WW*0.9,y:groundY()-40}; }
   banner("GO!", 900);
+  KEYHINT.t0 = performance.now(); KEYHINT.n = 0; KEYHINT.pending = false; keyHintClear();
   buildHUD();
   startLoop();
 }
@@ -24693,6 +24776,14 @@ const DIK = { plank:60, stairStep:40, crack:18, rebuild:300, tell:80, breakGap:9
   grow:1.1, minW:3300, minH:2400, step:86,
   healRate:0.15, hold:1200, cool:2400, shieldHold:900, shieldCool:1800, shieldLinger:480, shieldKb:0.6,
   period:10800, nightOn:0.55, lanternLit:1200, balloonGone:2400, chestPlate:90, chestCool:3600, tokenCap:2, tokenCredit:60, crates:3 };
+// THE WHALE SURFACES on a schedule (owner 2026-11-11: "the whale should only offer the boost when it SURFACES, not a permanent feature"). It keeps shuttling the whole time (it never
+// leaves the map); only its back, and the heal or shield area on it, are there while it is up. Phases (ss[0] = area state + 10*phase): 0 UP, 1 WARN DOWN (spout, shake, the area
+// flashing: 2 s), 2 DOWN (its back is a ghost, nobody can stand there), 3 WARN UP (bubbles and a spout where it will break the surface). It rises and dives only at the moment it
+// is flush with a shelf (every 2 s), and it rises at the end it did NOT rise at last time, so the two low bases get it by turns. Up 8 s (10 s with the warning, longer if
+// someone is still aboard: at most 6 s more), down 14 s (the last 2.5 s are the warning): about one surfacing every 25 s. A dive with someone aboard flings them (a hop and a
+// shove, one jump back) onto the shelf it is flush with, so nobody is dropped into the sea or crushed.
+let DI_WCUE = -1;   // the last whale phase the sound cue played for (draw side, host and guest alike)
+const DIW = { up:480, warnDown:120, downMin:840, warnUp:150, overstay:360, flush:0.995, shove:8, hop:11 };
 // DREAM ISLAND TEAMS MAP: hidden until the owner opens it (2026-11-11 owner: keep it hidden). DI_DEV (localStorage 'bfsi:didev' = '1') is the owner's preview;
 // while hidden, Teams on Dream Island plays the ordinary Teams map as before.
 const DI_TEAMS_OPEN = false;
@@ -24961,7 +25052,7 @@ function diBuild(){
   const whale = (()=>{
     const sa = la.x1 + 120 + DBS[la === BL ? 'BL' : 'BR'].shelfW[1], sb = lb.x - 120 - DBS[lb === BL ? 'BL' : 'BR'].shelfW[0], ya = la.y + la.fy, yb = lb.y + lb.fy, ww0 = 300, ax = Math.max(20, Math.round((sb - sa - ww0)/2));
     for(const [I, k] of [[la, 1], [lb, 0]]){ const cr = I.crumbs[k]; if(cr){ const q = P.indexOf(cr); if(q >= 0) P.splice(q, 1); I.crumbs[k] = null; } }   // no loose block in the whale's gap
-    const wl = { x:Math.round(sa), y:Math.round(ya), w:ww0, h:14, solid:false, floor:0, di:'whale', bx:Math.round(sa + ax), by:Math.round((ya + yb)/2), mv:{ ax, ay:Math.round((yb - ya)/2), per:240, ph:0 }, mvx:0, mvy:0, cl:1, ar:[V.fx[3], 20, -150, 260, 170], ss:[0, -1, 0] };
+    const wl = { x:Math.round(sa), y:Math.round(ya), w:ww0, h:14, solid:false, floor:0, di:'whale', ghost:true, bx:Math.round(sa + ax), by:Math.round((ya + yb)/2), mv:{ ax, ay:Math.round((yb - ya)/2), per:240, ph:0 }, mvx:0, mvy:0, cl:1, ar:[V.fx[3], 20, -150, 260, 170], ss:[20, -1, 0] };
     drifts.push(wl); P.push(wl); return wl; })();
   // PURPLE: what is on each outer island (heal, shield, the crates, the chest), by variant
   for(const idx of [0, 1, 2]){
@@ -25003,10 +25094,10 @@ function diBuild(){
   stgPlace(0);
   let lowY = 0; for(const p of P) if(p.di && p.y > lowY) lowY = p.y;
   DRM = { v, wx:V.wx, teams:tc, t:0, isles:infos, bridges, drifts, areas, itemsA, chestA, plA, plB, chestP, balP, stars, all:P.filter(p=>p.di), nav:null, blocked:{}, sea:lowY + 150,
-    traps:infos.filter(i=>i.trap).map(i=>({ p:i.trap, st:0, t:0, stand:0 })), crumbs:infos.flatMap(i=>i.crumbs.filter(Boolean).map(p=>({ p, st:0, t:0, stand:0 }))), crumbBreaks:0, chand, pool, whales:[], brokenTraps:0, drops:0, splashes:0,
+    traps:infos.filter(i=>i.trap).map(i=>({ p:i.trap, st:0, t:0, stand:0 })), crumbs:infos.flatMap(i=>i.crumbs.filter(Boolean).map(p=>({ p, st:0, t:0, stand:0 }))), crumbBreaks:0, chand, pool, whales:[], wh:{ ph:2, t:DIW.downMin - 300, last:0 }, wRises:0, wDives:0, wShoved:0, brokenTraps:0, drops:0, splashes:0,
     broken:0, mended:0, cracked:0, fallHits:0, fallDmg:0, fallMax:0, plans:0, planFail:0, hopFail:0, failLog:[],
     balT:0, claims:0, healTot:0, shieldTot:0, lanterns:0, pops:0, opens:0, tokenLeft:K.tokenCap, tokens:0, chestProg:0, chestT:0, crates:0, lit:0 };
-  DRM_VIS = true; DRM_GH = true;
+  DRM_VIS = true; DRM_GH = true; DI_WCUE = -1;
 }
 
 // ---- v5 set pieces that run every frame (host): the trap blocks of the high bases, the chandelier, the pool's splash, the whale's schedule
@@ -25091,9 +25182,11 @@ function diStep(){
   for(const p of DRM.stars){ if(night){ if(p.ghost) delete p.ghost; } else if(!p.ghost) p.ghost = true; }
   // the lanterns burn down
   for(const I of DRM.isles) for(const p of I.lan){ if(p._lit > 0){ p._lit--; const b = Math.ceil(p._lit/150); if(p.ss[0] !== b) p.ss = [b]; } }
+  diWhale();
   // the areas: the first team in holds a healing or shield area for a while, then it closes for a while
   for(const a of DRM.areas){
     if(a.p.mv){ a.x0 = a.p.x + 20; a.x1 = a.p.x + 280; a.y0 = a.p.y - 150; a.y1 = a.p.y + 20; }   // the whale carries its area
+    if(a.idx === 3 && (DRM.wh.ph === 2 || DRM.wh.ph === 3)){ const q0 = a.p.ss, v0 = 2 + 10*DRM.wh.ph; if(!q0 || q0[0] !== v0 || q0[1] !== -1 || q0[2] !== 0) a.p.ss = [v0, -1, 0]; continue; }   // submerged: no area at all
     if(a.t !== 0 && a.t !== 1) continue;
     const hold = a.t ? K.shieldHold : K.hold, cool = a.t ? K.shieldCool : K.cool;
     if(a.st === 1){ if(--a.tm <= 0){ a.st = 2; a.tm = cool; a.own = -1; } } else if(a.st === 2){ if(--a.tm <= 0){ a.st = 0; a.tm = 0; } }
@@ -25106,7 +25199,8 @@ function diStep(){
       }
     }
     const fr = a.st === 1 ? Math.ceil(a.tm/(hold/8)) : a.st === 2 ? Math.ceil(a.tm/(cool/8)) : 0, q = a.p.ss;
-    if(!q || q[0] !== a.st || q[1] !== a.own || q[2] !== fr) a.p.ss = [a.st, a.own, fr];
+    const sv = a.st + (a.idx === 3 ? 10*DRM.wh.ph : 0);
+    if(!q || q[0] !== sv || q[1] !== a.own || q[2] !== fr) a.p.ss = [sv, a.own, fr];
   }
   // the LIGHTHOUSE: its beam is a shield for whoever stands in it
   const LH = diLightHouse();
@@ -25144,6 +25238,27 @@ function diStep(){
     if(f.hitstun > 0 && !(f._diHS > 0) && f._diPl && (f.pct - (f._diPct || 0)) >= K.hitDmg) diCrack(f._diPl);
     f._diHS = f.hitstun; f._diPct = f.pct;
     f._diPl = f.onground ? diPlankUnder(f) : null;
+  }
+}
+// the whale's schedule (host): see DIW
+function diWhale(){
+  const W = DRM.wh, a = DRM.areas.find(q=>q.idx === 3), wp = a && a.p; if(!W || !wp) return;
+  const sn = Math.sin(2*Math.PI*STG.t/wp.mv.per + wp.mv.ph), flush = Math.abs(sn) > DIW.flush, end = sn > 0 ? 1 : -1;   // the end it is at: 1 the right shelf, -1 the left
+  W.t++;
+  if(W.ph === 2){ if(W.t >= DIW.downMin - DIW.warnUp){ W.ph = 3; } }
+  else if(W.ph === 3){
+    if(W.t >= DIW.downMin && flush && end !== W.last){
+      W.ph = 0; W.t = 0; W.last = end; delete wp.ghost; DRM_GH = worldPlats.some(p=>p.ghost); a.st = 0; a.own = -1; a.tm = 0; DRM.wRises++;
+      for(let k = 0; k < 16; k++) particles.push({ x:wp.x + wp.w*(k + 0.5)/16, y:wp.y + 8, vx:(k - 7.5)*0.45, vy:-2 - (k % 4)*0.7, life:36, color:'#cfe8ff', r:3 + (k % 3) });
+    }
+  } else if(W.ph === 0){ if(W.t >= DIW.up - DIW.warnDown) W.ph = 1; }
+  else if(W.ph === 1){
+    const aboard = fighters.filter(f=>!f.dead && f.onground && f.x >= wp.x && f.x <= wp.x + wp.w && Math.abs(f.y + f.r - wp.y) <= 6);
+    if(W.t >= DIW.up && flush && (!aboard.length || W.t >= DIW.up + DIW.overstay)){
+      for(const f of aboard){ f.vx = end*DIW.shove; f.vy = -DIW.hop; f.onground = false; f.jumps = Math.max(f.jumps, 1); DRM.wShoved++; }   // flung onto the shelf it is flush with, one jump left
+      W.ph = 2; W.t = 0; wp.ghost = true; DRM_GH = true; DRM.wDives++;
+      for(let k = 0; k < 16; k++) particles.push({ x:wp.x + wp.w*(k + 0.5)/16, y:wp.y + 8, vx:(k - 7.5)*0.45, vy:-2 - (k % 4)*0.7, life:36, color:'#cfe8ff', r:3 + (k % 3) });
+    }
   }
 }
 // a swing near a lantern lights it; a swing near the balloon pops it (called from hitShape, host side only)
@@ -25296,6 +25411,7 @@ function diPlan(N, start, goal){
   const placeAt = (d, tt)=>{ const m = d.p.mv, a2 = 2*Math.PI*tt/m.per + m.ph; d.x0 = d.p.bx + m.ax*Math.sin(a2); d.x1 = d.x0 + d.p.w; d.y = d.p.by + m.ay*Math.sin(a2); };
   const addE = (from, to, e)=>{ const k = from.id + '>' + to.id; if(seenE.has(k)) return; seenE.add(k); e.dr = 1; if(!dyn.has(from)) dyn.set(from, []); dyn.get(from).push({ to, e }); };
   for(const d of N.drifts){
+    if(d.p.ghost) continue;   // the whale while it is down: no edges to or from it
     const KS = d.p.mv.ax > 400 ? 40 : 8;   // the blimp sweeps the whole width: sampled finely enough to meet a small ledge
     for(let k = 0; k < KS; k++){
       const tt = tNow + k*d.p.mv.per/KS; for(const q of N.drifts) placeAt(q, tt);
@@ -25329,7 +25445,19 @@ function diPlan(N, start, goal){
 function diBrain(f, inp){
   if(f.hitstun > 0 || f._tp){ f._diPlan = null; return; }
   const feet = f.y + f.r, N = DRM.nav || diNavBuild();
-  { const mv = Math.abs(f.x - (f._diLX === undefined ? f.x : f._diLX)) + Math.abs(f.y - (f._diLY === undefined ? f.y : f._diLY)); f._diLX = f.x; f._diLY = f.y; f._diStillN = (mv < 0.5 && f.onground) ? (f._diStillN || 0) + 1 : 0; }
+  { const mv = Math.abs(f.x - (f._diLX === undefined ? f.x : f._diLX)) + Math.abs(f.y - (f._diLY === undefined ? f.y : f._diLY)); f._diLX = f.x; f._diLY = f.y; f._diStillN = (mv < 0.5 && f.onground) ? (f._diStillN || 0) + 1 : 0; f._diAirN = (mv < 0.5 && !f.onground && !f._cat) ? (f._diAirN || 0) + 1 : 0; }
+  if(f._diAirN > 20){   // hanging in the air without moving (clinging to a block's side): kick off it, away from the wall, and the plan goes on from wherever it lands
+    const away = f._wallSide ? -f._wallSide : (f.face ? -f.face : 1);
+    inp.left = away < 0; inp.right = away > 0; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; inp.jump = (f._diAirN % 10) < 3; DRM.cling = (DRM.cling || 0) + 1;
+    return;
+  }
+  if(DRM.wh.ph === 1 && f.onground){   // aboard the whale as it is about to dive: off, toward the end it is heading for (it dives flush with a shelf)
+    const wa = DRM.areas.find(q=>q.idx === 3), wp = wa && wa.p;
+    if(wp && f.x >= wp.x && f.x <= wp.x + wp.w && Math.abs(feet - wp.y) <= 6){
+      const dir = wp.mvx > 0 ? 1 : wp.mvx < 0 ? -1 : (DRM.wh.last || 1);
+      inp.left = dir < 0; inp.right = dir > 0; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; inp.jump = (dir > 0 ? wp.x + wp.w - f.x : f.x - wp.x) < 50; return;
+    }
+  }
   const H = DRM.areas.find(a=>a.t === 0);
   if(H && H.st === 1 && H.own === f.team && f.pct > 6 && f.onground && f.x >= H.x0 - 40 && f.x <= H.x1 + 40 && feet > H.y0 && feet < H.y1){   // healing on the island: it paces the area, unless a foe is close
     const foe = f.aiTarget;
@@ -25345,6 +25473,15 @@ function diBrain(f, inp){
     }
   }
   if(f._diPlT > 0 && !(f.x >= DRM.plA.x && f.x <= DRM.plA.x + DRM.plA.w) && !(f.x >= DRM.plB.x && f.x <= DRM.plB.x + DRM.plB.w)) f._diPlT = 0;
+  { const T = f._diTrip;   // a trip's stay at its set piece: it paces the piece (unless a foe is close), the heal area's own pacing above takes over there
+    if(T && T.arr && DRM.t - T.arr <= T.dwell && f.onground){
+      const foe = f.aiTarget;
+      if(!(foe && !foe.dead && foe.team !== f.team && Math.hypot(foe.x - f.x, foe.y - f.y) < 300)){
+        const x0 = T.n.p.x, x1 = T.n.p.x + T.n.p.w; let d = (Math.floor(DRM.t/45 + f.idx) % 2) ? 1 : -1; if(f.x < x0 + 24) d = 1; else if(f.x > x1 - 24) d = -1;
+        inp.left = d < 0; inp.right = d > 0; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; inp.jump = false; inp.down = false;
+        return;
+      }
+    } }
   if(diFollow(f, inp, N, feet)){
     // walking but not getting anywhere (a block in the way, 60 px up): a hop over it
     if(f.onground && f._diStillN > 10 && (inp.left || inp.right)){ inp.jump = (f._diStillN % 30) < 3; f._diHopDir = inp.right ? 1 : -1; f._diHopUntil = DRM.t + 45; }
@@ -25452,7 +25589,7 @@ function diGoal(f, N){
   }
   const foeD = foe ? Math.hypot(foe.x - f.x, foe.y - f.y) : 1e9, A = DRM.areas;
   const heal = A.find(a=>a.t === 0), shield = A.find(a=>a.t === 1);
-  const open = (a)=>a && (a.st === 0 || (a.st === 1 && a.own === f.team && a.tm > 300));
+  const open = (a)=>a && !a.p.ghost && (a.idx !== 3 || DRM.wh.ph === 0) && (a.st === 0 || (a.st === 1 && a.own === f.team && a.tm > 300));   // (the whale's area only while it is up)
   const aNode = (a)=>diNodeFor(N, (a.x0 + a.x1)/2, a.p.y - 2);
   const inA = (a)=>a && f.x >= a.x0 && f.x <= a.x1 && f.y + f.r >= a.y0 && f.y + f.r <= a.y1;
   if(open(heal) && (f.pct > 40 || (f.pct > 12 && Math.floor(DRM.t/600 + f.idx) % 3 === 0)) && !inA(heal)) return aNode(heal);
@@ -25460,20 +25597,81 @@ function diGoal(f, N){
   for(const q of items){ if(q.taken || !q._di) continue; const d = Math.abs(q.x - f.x) + Math.abs(q.y - f.y); if(d < bd){ bd = d; it = q; } }
   const hl = it && (it.kind === 'heal' || it.kind === 'marmalade');
   if(it && (foeD > 450 || (f.pct > 55 && hl))) return diNodeFor(N, it.x, it.y + 20);
-  if(open(shield) && foeD > 500 && !inA(shield) && Math.floor(DRM.t/900 + f.idx) % 3 === 0) return aNode(shield);
+  { const tr = diTrip(f, N, foe, foeD); if(tr) return tr; }   // a purposeful trip to a set piece (the whale, a crane's far island, an effect island), see diTrip
   if(DRM.chestT === 0 && foeD > 450 && fighters.some(o=>o !== f && !o.dead && o.team === f.team) && Math.floor(DRM.t/1200 + f.team) % 4 === 0){
     const mates = fighters.filter(o=>!o.dead && o.team === f.team).sort((a, b)=>a.idx - b.idx), pl = mates[0] === f ? DRM.plA : DRM.plB;
     return diNodeFor(N, pl.x + pl.w/2, pl.y - 2);
   }
-  // a sightseeing trip now and then (foe not close, not hurt): the harbor boat, the whale, the lagoon island, the other outer islands, so the sea routes are used
-  { const slot = Math.floor(DRM.t/900 + f.idx*2);
-    if(foeD > 260 && f.pct < 90 && slot % 3 === 0){
-      const rank = (n)=>n.p.di === 'boat' ? 0 : n.p.di === 'whale' ? 1 : (n.p.di === 'outer' && n.p.oi === 3) ? 2 : 3;
-      const tour = N.nodes.filter(n=>!n.p.off && !n.p.ghost && (n.p.di === 'boat' || n.p.di === 'whale' || (n.p.di === 'outer' && n.p.oi !== undefined) || n.p.di === 'crane' || n.p.di === 'chand')).sort((a, b)=>rank(a) - rank(b) || a.id - b.id);
-      if(tour.length){ const k = (slot/3 | 0) + f.idx; DRM.tours = (DRM.tours || 0) + 1; return tour[k % Math.min(tour.length, 8)]; }
-    } }
   if(foe && (foeD > 320 || Math.abs(foe.y - f.y) > 150)) return diNodeFor(N, foe.x, foe.y + (foe.r || 24));
   return null;
+}
+// ---- TRIPS (CPUs and the set pieces): routing and goal choice only, nothing about fighting. A CPU with no foe close, and not badly hurt, now and then picks a REASON to go to a
+// set piece: the whale (its heal or shield area), an effect island (heal when hurt, the shield, the crates), the far side of a crane (the terrace's high ground and the side
+// islands only a crane reaches). Rolled once per 180 frames (less often at lower CPU levels), a trip ends on arrival after a short stay, when a foe comes close, or after
+// 1300 frames, then a cooldown, so they still spend most of the match fighting.
+function diHash(a, b, c){ let h = (Math.imul(a | 0, 374761393) + Math.imul(b | 0, 668265263) + Math.imul(c | 0, 1274126177)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0)/4294967296; }
+function diSpots(N){
+  if(DRM.sp) return DRM.sp;
+  const sp = { whale:null, far:[], outer:[], shelf:{} };
+  for(const n of N.nodes){
+    if(n.p.di === 'whale'){ sp.whale = n; const m = n.p.mv, lx = n.p.bx - m.ax, rx = n.p.bx + m.ax + n.p.w;
+      for(const q of N.nodes){ if(q.drift) continue; if(Math.abs(q.x1 - lx) <= 60 && Math.abs(q.y - (n.p.by - m.ay)) <= 30 && !sp.shelf[-1]) sp.shelf[-1] = q; if(Math.abs(q.x0 - rx) <= 60 && Math.abs(q.y - (n.p.by + m.ay)) <= 30 && !sp.shelf[1]) sp.shelf[1] = q; } }
+    else if(n.p.di === 'outer') sp.outer.push(n);
+    else if(n.p.di === 'crane'){
+      const m = n.p.mv, lx = n.p.bx - m.ax, rx = n.p.bx + m.ax + n.p.w;
+      for(const q of N.nodes){
+        if(q.p.di !== 'islet') continue;
+        if(Math.abs(q.p.x + q.p.w - lx) < 70 || Math.abs(q.p.x - rx) < 70){ if(sp.far.indexOf(q) < 0) sp.far.push(q); }
+      }
+    }
+  }
+  DRM.sp = sp; return sp;
+}
+function diTrip(f, N, foe, foeD){
+  const now = DRM.t; let T = f._diTrip;
+  if(T){
+    const cur = diNodeAt(N, f);
+    if(T.wait){   // on its shelf, waiting for the whale: when it is up and close to flush, onto it (that is the trip then)
+      const sp = diSpots(N), W = DRM.wh;
+      if(W.ph === 0 && W.t < DIW.up - 220 && sp.whale){ T.wait = false; T.n = sp.whale; T.why = 'whale'; T.arr = 0; T.until = now + 500; T.dwell = 260; DRM.trips = DRM.trips || {}; DRM.trips.whaleBoard = (DRM.trips.whaleBoard || 0) + 1; return T.n; }
+      if(now > T.until || W.ph === 1 || (foe && foeD < 200 && Math.abs(foe.y - f.y) < 140)){ f._diTrip = null; f._diTripCool = now + 200; return null; }
+      return T.n;
+    }
+    if(!T.arr && cur === T.n) T.arr = now;
+    if((T.arr && now - T.arr > T.dwell) || now > T.until || (!T.arr && foe && foeD < 200 && Math.abs(foe.y - f.y) < 140)){ const why = T.arr ? 'arrived' : now > T.until ? 'timeout' : 'foe'; DRM.tripEnd = DRM.tripEnd || {}; DRM.tripEnd[T.why + ':' + why] = (DRM.tripEnd[T.why + ':' + why] || 0) + 1; f._diTrip = null; f._diTripCool = now + (why === 'foe' ? 150 : 300); }
+    else return T.n;
+  }
+  if(foeD < 260 || f.pct > 100 || now < (f._diTripCool || 0)) return null;
+  const ep = Math.floor(now/180); if(ep === f._diEp) return null; f._diEp = ep;
+  const lv = brainLevel(f), P = lv >= 3 ? 0.55 : lv === 2 ? 0.47 : lv === 1 ? 0.33 : 0.22;
+  if(diHash(f.idx, DRM.v, ep) > P) return null;
+  const sp = diSpots(N), W = DRM.wh, open = (a)=>a && !a.p.ghost && (a.idx !== 3 || (W.ph === 0 && W.t < DIW.up - 220)) && (a.st === 0 || (a.st === 1 && a.own === f.team && a.tm > 300));
+  const cand = [];   // [node, weight, why]
+  for(const a of DRM.areas){
+    const n = a.idx === 3 ? sp.whale : sp.outer.find(q=>q.p === a.p);
+    if(!n || !open(a) || (f.x >= a.x0 && f.x <= a.x1 && f.y + f.r >= a.y0 && f.y + f.r <= a.y1)) continue;
+    const w = a.t === 0 ? (f.pct > 20 ? 1.2 + f.pct/60 : 0.3) : a.t === 1 ? 1.0 : a.t === 2 ? 0.6 : 0.3;
+    cand.push([n, w*(a.idx === 3 ? 1.3 : 1), a.t === 0 ? 'heal' : a.t === 1 ? 'shield' : 'fx']);
+  }
+  const cur = diNodeAt(N, f);
+  if(sp.whale && (f.pct > 20 || W.ph === 3) && (W.ph === 3 || (W.ph === 2 && W.t > DIW.downMin - 520))){   // hurt (or it is surfacing now): wait on the shelf where it will break the surface, then board
+    const sh = sp.shelf[W.last ? -W.last : (f.x < (sp.whale.p.bx) ? -1 : 1)];
+    if(sh && sh !== cur) cand.push([sh, f.pct > 20 ? 2.2 : 1.0, 'wait']);
+  }
+  for(const q of sp.far) if(q !== cur && f.pct < 80) cand.push([q, 1.6/sp.far.length, 'high']);
+  if(!cand.length || !cur) return null;
+  // only trips it can make: a route exists, at most 12 hops (cost 520), and the nearer the likelier
+  for(let q = cand.length - 1; q >= 0; q--){
+    const Pn = diPlan(N, cur, cand[q][0]); let c = 0; if(Pn) for(const e of Pn.edges) c += e.c;
+    if(!Pn || Pn.edges.length > 12 || c > 520) cand.splice(q, 1); else cand[q][1] *= 1/(1 + c/260);
+  }
+  if(!cand.length) return null;
+  let tot = 0; for(const c of cand) tot += c[1];
+  let r = diHash(f.idx, DRM.v, ep + 7919)*tot, pick = cand[cand.length - 1];
+  for(const c of cand){ r -= c[1]; if(r <= 0){ pick = c; break; } }
+  f._diTrip = { n:pick[0], why:pick[2], until:now + 1000, arr:0, dwell:pick[2] === 'heal' ? 260 : pick[2] === 'high' ? 120 : 200, wait:pick[2] === 'wait' };
+  DRM.trips = DRM.trips || {}; DRM.trips[pick[2]] = (DRM.trips[pick[2]] || 0) + 1;
+  return pick[0];
 }
 // ---- crates: only on the crate island (and out of the chest), riding it if it bobs; a popped balloon drops them to the middle
 function diPutCrate(isle, x){
@@ -25746,17 +25944,29 @@ function diDrawLiving(c, p, t){
     c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillStyle = '#c9a56a'; c.fillRect(p.x, p.y, p.w, 10); c.strokeRect(p.x, p.y, p.w, 10);
     c.strokeStyle = '#6b4a2a'; c.lineWidth = 3; c.beginPath(); c.moveTo(p.x + 2, p.y); c.lineTo(p.x + 2, p.y - 36); c.lineTo(p.x + p.w - 2, p.y - 36); c.lineTo(p.x + p.w - 2, p.y); c.stroke();
     const ph = t*0.5; c.strokeStyle = '#444'; c.lineWidth = 4; c.beginPath(); c.moveTo(cx + p.w/2 + 74, p.y + 14 + Math.sin(ph)*16); c.lineTo(cx + p.w/2 + 74, p.y + 14 - Math.sin(ph)*16); c.stroke();
-  } else if(k === 'whale'){   // always at the surface: its back is the platform, the effect area rides on it
-    const cx = p.x + p.w/2;
+  } else if(k === 'whale'){   // surfaces on a schedule (DIW): up, a warning, down (a faint shape under the water), a warning before it breaks the surface
+    const cx = p.x + p.w/2, ssv = p.ss ? p.ss[0] : 0, ph = Math.floor(ssv/10);
+    if(DI_WCUE !== ph){ if(DI_WCUE !== -1){ if(ph === 3){ tone(200, 0.5, 'sine', 0.05, 0, 320); } else if(ph === 0){ tone(300, 0.35, 'triangle', 0.07, 0, 600); tone(150, 0.4, 'sine', 0.05, 0.05, 90); } else if(ph === 1){ tone(520, 0.18, 'square', 0.035, 0, 420); tone(520, 0.18, 'square', 0.035, 0.25, 420); } else { tone(260, 0.5, 'sine', 0.06, 0, 70); } } DI_WCUE = ph; }
+    if(ph === 2 || ph === 3){   // under the water: the dark shape of it, bubbles; about to rise: a spout and rings where it will break the surface
+      c.save(); c.globalAlpha = ph === 3 ? 0.30 : 0.16; c.fillStyle = '#24476e'; c.beginPath(); c.ellipse(cx, p.y + 70, p.w/2 + 24, 36, 0, 0, 7); c.fill(); c.restore();
+      c.strokeStyle = 'rgba(200,232,255,0.7)'; c.lineWidth = 3;
+      for(let q = 0; q < (ph === 3 ? 6 : 3); q++){ const u = ((t*0.6 + q*17) % 40)/40; c.beginPath(); c.arc(cx + (q - 2.5)*34, p.y + 40 - u*50, 3 + q % 3, 0, 7); c.stroke(); }
+      if(ph === 3){
+        const u = (t % 36)/36; c.lineWidth = 4; c.beginPath(); c.ellipse(cx, p.y + 2, 30 + u*130, 7 + u*14, 0, 0, 7); c.stroke();
+        c.strokeStyle = 'rgba(190,225,255,0.9)'; c.lineWidth = 6; for(let q = 0; q < 3; q++){ c.beginPath(); c.moveTo(cx + (q - 1)*10, p.y + 4); c.quadraticCurveTo(cx + (q - 1)*26, p.y - 70 - ((t + q*11) % 24), cx + (q - 1)*46, p.y - 120 + (q % 2)*20); c.stroke(); }
+      }
+      c.restore(); return;
+    }
+    if(ph === 1){ c.translate(Math.sin(t*1.3)*3, 0); c.fillStyle = '#fff'; c.font = 'bold 26px sans-serif'; c.fillText('!', cx - 6, p.y - 175); }
     c.fillStyle = '#5b86b4'; c.beginPath(); c.ellipse(cx, p.y + 52, p.w/2 + 30, 70, 0, Math.PI, 0); c.lineTo(p.x + p.w + 30, p.y + 52); c.quadraticCurveTo(cx, p.y + 130, p.x - 30, p.y + 52); c.closePath(); c.fill(); c.stroke();
     c.fillStyle = '#dfe9f3'; c.beginPath(); c.ellipse(cx - 20, p.y + 70, p.w/2 - 20, 26, 0, 0, Math.PI); c.fill();
     c.fillStyle = '#5b86b4'; c.beginPath(); c.moveTo(p.x + p.w + 20, p.y + 40); c.quadraticCurveTo(p.x + p.w + 80, p.y - 20, p.x + p.w + 96, p.y - 70); c.lineTo(p.x + p.w + 54, p.y + 10); c.quadraticCurveTo(p.x + p.w + 30, p.y + 44, p.x + p.w + 20, p.y + 56); c.closePath(); c.fill(); c.stroke();
     c.fillStyle = '#fff'; c.beginPath(); c.arc(p.x + 18, p.y + 30, 7, 0, 7); c.fill(); c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(p.x + 16, p.y + 31, 3, 0, 7); c.fill();
     c.strokeStyle = 'rgba(190,225,255,0.85)'; c.lineWidth = 5; for(let q = 0; q < 3; q++){ c.beginPath(); c.moveTo(p.x + p.w - 60, p.y); c.quadraticCurveTo(p.x + p.w - 60 + (q - 1)*24, p.y - 40 - ((t + q*13) % 30), p.x + p.w - 60 + (q - 1)*40, p.y - 60); c.stroke(); }
     if(p.ar){
-      const ty = p.ar[0], rx = p.x + p.ar[1], ry = p.y + p.ar[2], rw = p.ar[3], rh = p.ar[4], ss = p.ss, st = ss ? ss[0] : 0, own = ss ? ss[1] : -1, fr = ss ? ss[2] : 0, u = 0.5 + 0.5*Math.sin(t*0.07);
+      const ty = p.ar[0], rx = p.x + p.ar[1], ry = p.y + p.ar[2], rw = p.ar[3], rh = p.ar[4], ss = p.ss, st = ss ? ss[0] % 10 : 0, own = ss ? ss[1] : -1, fr = ss ? ss[2] : 0, u = 0.5 + 0.5*Math.sin(t*0.07);
       const base = st === 2 ? 'rgba(150,150,170,0.20)' : st === 1 ? (TEAM_COLORS[own % TEAM_COLORS.length] + '44') : 'rgba(170,110,255,' + (0.18 + 0.1*u) + ')';
-      c.save(); c.fillStyle = base; c.fillRect(rx, ry, rw, rh);
+      c.save(); if(ph === 1 && (t % 16) < 8) c.globalAlpha = 0.35; c.fillStyle = base; c.fillRect(rx, ry, rw, rh);
       c.strokeStyle = st === 2 ? '#8a8d96' : st === 1 ? TEAM_COLORS[own % TEAM_COLORS.length] : '#b98cff'; c.setLineDash([10, 7]); c.lineWidth = 3; c.strokeRect(rx, ry, rw, rh); c.setLineDash([]);
       diIcon(c, ty, rx + rw/2, ry + rh*0.38 - 5*u, 54, st === 2 ? '#9a9ca6' : '#f3eaff');
       if(st === 1 && ty < 2){ c.fillStyle = '#1c1c1c'; c.fillRect(rx + rw/2 - 42, ry + rh - 26, 84, 12); c.fillStyle = TEAM_COLORS[own % TEAM_COLORS.length]; c.fillRect(rx + rw/2 - 40, ry + rh - 24, 80*fr/8, 8); }
@@ -26903,7 +27113,7 @@ function stgHold(f){
     if(f.x < lo){ f.x = lo; if(f.vx < 0) f.vx = 0; } else if(f.x > hi){ f.x = hi; if(f.vx > 0) f.vx = 0; } }
   if(!STG.movers.length) return;
   let ride = null;
-  if(f.onground && !(f.dropping > 0)){ const feet = f.y + f.r; for(const p of STG.movers){ if(f.x > p.x - 4 && f.x < p.x + p.w + 4 && Math.abs(feet - p.y) <= STGK.ride){ ride = p; break; } } }
+  if(f.onground && !(f.dropping > 0)){ const feet = f.y + f.r; for(const p of STG.movers){ if(!p.ghost && f.x > p.x - 4 && f.x < p.x + p.w + 4 && Math.abs(feet - p.y) <= STGK.ride){ ride = p; break; } } }
   f._stgRide = ride;
 }
 // A fighter launched into a wall (in hitstun, at speed) bounces off it at half the speed; a walk into it just stops.
@@ -32937,8 +33147,8 @@ FINAL_SMASHES['Snowball'] = {
 };
 
 // BOOK -- OVERDUE. Her canon attack is closing on things, and her own card, Define, marks a foe so every hit on them lands harder (the design doc
-// and her card). Open books circle her (the tell), then snap shut and fall: five a foe, at the two nearest foes, 8 frames apart, each
-// over a mark drawn on the floor first (13%, a hard knock); the line of them walks 60 px to one side of the foe each time. Keep moving.
+// and her card). Open books circle her (the tell), then snap shut and are flung: five a foe, at the two nearest foes, 8 frames apart, each
+// flying from her straight across the stage (SKY-DROP SMASHES removed, 2026-11-11: they fell on a mark before) (13%, a hard knock); the line of them aims 60 px to one side of the foe each time. Keep moving.
 FINAL_SMASHES['Book'] = {
   id:'overdue', wind:FS_WIND, dur:FS_WIND + 82, reach:600,
   catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FS_RAIN_CATCH }; }, lockEnd:FS_WIND + 32, catchMax:2,   // CATCH: a circle round her; the books go for a locked foe first
@@ -32949,7 +33159,7 @@ FINAL_SMASHES['Book'] = {
     if(t >= w && t < w + 40 && (t - w) % 8 === 0){
       const near = (a)=> (fsIsLockedBy(a, f) ? -1e6 : 0) + Math.hypot(a.x - f.x, a.y - f.y);   // (a locked foe first)
       const j = (t - w)/8, foes = fighters.filter(o=>!o.dead && o.team !== f.team).sort((a, b)=>near(a) - near(b)).slice(0, 2);
-      for(const o of foes) dropProj(f, clamp(o.x + (j - 2)*60, 30, WW - 30), o.y + o.r, { dmg:13, kb:22, r:24, color:'#8a4fd2', life:150 }, true);
+      for(const o of foes) fsFlyShot(f, o, (j - 2)*60, { dmg:13, kb:22, r:24, c1:'#8a4fd2', spd:11, reach:650 }, { shape:'fsp_book' });   // (SKY-DROP SMASHES removed: the books are flung from her at the foe, spread across the line; none falls)
     }
   },
   ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && Math.hypot(o.x - f.x, o.y - f.y) < 650) return true; return false; },
@@ -33240,6 +33450,21 @@ function fsFan(o){
 }
 
 // -- rain --
+// FLY SHOT (SKY-DROP SMASHES removed, 2026-11-11): what a "rain" Final Smash throws now. Each shot leaves the holder's body and travels the stage straight at a point `off` px to the side of the foe
+// (across the line from the holder, so the line of shots is spread as the old line of drops was), at `spd` px a frame; `roll` shots go along the floor instead (a piano on its wheels). It is a Final
+// Smash's shot like any other (addProj tags it while the row runs): it stops at the first rock (FS WALLS). Same damage, launch and size as the drop it replaces. Nothing is dropped from above.
+function fsFlyShot(f, foe, off, o, P){
+  const spd = o.spd || 14, r = o.r || 22, reach = (o.reach || 600) + 100;
+  if(o.roll){
+    const dir = Math.sign(foe.x - f.x) || f.face || 1, g = !!f.onground;
+    const p = addProj(Object.assign({ owner:f.idx, ownerObj:f, x:f.x + dir*(f.r + r), y:g ? feetY(f) - r : f.y, vx:g ? dir*spd : 0, vy:0, grav:false, noDrift:true, dmg:o.dmg, kb:o.kb, r:r, color:o.c1, life:Math.ceil(reach/spd/PROJ_LIFE) },
+      P, { drive:'roll', phase:g ? 'drive' : 'drop', driveVx:dir*spd, rideTop:g ? feetY(f) : null }));   // (the walk smash's roller: rides the floor, falls off an edge, stops at a wall)
+    return p;
+  }
+  const dx = foe.x - f.x, dy = foe.y - f.y, d = Math.hypot(dx, dy) || 1, ux = dx/d, uy = dy/d;
+  const tx = foe.x - uy*off, ty = foe.y + ux*off, ex = tx - f.x, ey = ty - f.y, e = Math.hypot(ex, ey) || 1, vx = ex/e*spd, vy = ey/e*spd;
+  return addProj(Object.assign({ owner:f.idx, ownerObj:f, x:f.x + ex/e*(f.r + 12), y:f.y - 4 + ey/e*(f.r + 12), vx:vx, vy:vy, grav:false, noDrift:true, _dropAt:hazardT, dmg:o.dmg, kb:o.kb, r:r, color:o.c1, life:Math.ceil(reach/spd/PROJ_LIFE) }, P));
+}
 function fsRain(o){
   const w = FS_WIND, k = o.k || 2, n = o.n || 6, ev = o.every || 8, P = o.proj || {};
   return {
@@ -33252,7 +33477,7 @@ function fsRain(o){
       if(t >= w && t < w + n*ev && (t - w) % ev === 0){
         const near = (a)=> (fsIsLockedBy(a, f) ? -1e6 : 0) + Math.hypot(a.x - f.x, a.y - f.y);   // (a locked foe first)
         const j = (t - w)/ev, foes = fighters.filter(x=>!x.dead && x.team !== f.team).sort((a, b)=>near(a) - near(b)).slice(0, k);
-        for(const x of foes){ const jit = o.walk ? (j - (n - 1)/2)*o.walk : (fsRand() - 0.5)*(j % 2 ? 40 : 200); dropProj(f, clamp(x.x + jit, 30, WW - 30), x.y + x.r, Object.assign({ dmg:o.dmg, kb:o.kb, r:o.r || 22, color:o.c1, life:150 }, P), true); }
+        for(const x of foes){ const jit = o.walk ? (j - (n - 1)/2)*o.walk : (fsRand() - 0.5)*(j % 2 ? 40 : 200); fsFlyShot(f, x, o.roll ? 0 : jit, o, P); }   // (SKY-DROP SMASHES removed: shots from the holder across the stage, none dropped from above)
       }
     },
     ai(f){ for(const x of fighters) if(!fsHurtMark(f, x) && Math.hypot(x.x - f.x, x.y - f.y) < (o.reach || 600)) return true; return false; },
@@ -34753,8 +34978,8 @@ Object.assign(FS_GLYPH, {
 FINAL_SMASHES['Marker'] = fsFan({ id:'permanentrecord', c1:'#6a3fa0', n:13, cone:0.6, spd:12, vols:[0, 6, 12, 18], dmg:5, kb:10, r:9, life:45, reach:420, kind:'throw', art:FS_GLYPH.ink });
 
 // MONEY -- MAKE IT RAIN. "Oh, my tree! Wins don't grow on trees." (his frame row): rich, and pleased about it, paper with no rigidity; his own card is Make It Rain, a
-// burst of coins. Marks on the three nearest foes, five times, nine frames apart, a bag of coins dropping on each (13%), the line walking 70 px along.
-FINAL_SMASHES['Money'] = fsRain({ id:'makeitrain', c1:'#f2c94c', k:3, n:5, every:9, walk:70, dmg:13, kb:17, r:24, art:FS_GLYPH.coin });
+// burst of coins. Marks on the three nearest foes, five times, nine frames apart, a bag of coins thrown at each, straight across the stage (13%; SKY-DROP SMASHES removed, 2026-11-11: they dropped before), the line aimed 70 px along.
+FINAL_SMASHES['Money'] = fsRain({ id:'makeitrain', c1:'#f2c94c', k:3, n:5, every:9, walk:70, dmg:13, kb:17, r:24, spd:15, art:FS_GLYPH.coin });   // (SKY-DROP SMASHES removed: the bags of coins are thrown from him across the stage)
 
 // NAILY -- NAILED IT. "Nailed it." (their frame row): sharper and angrier than Needle, hardened steel that is driven and does not give; their own card is the Nail
 // Volley, three fast nails that go through foes. Five nails in a tight fan, three volleys eight frames apart, through everyone in line (12%, they fly the whole stage).
@@ -41240,9 +41465,8 @@ Object.assign(FS_GLYPH, {
 FINAL_SMASHES['Nickel (II)'] = fsCircle({ id:'doublezinger', c1:'#8aa0c0', c2:'#ffffff', R:230, R2:330, gap:8, dmg:14, dmg2:14, kb:20, kb2:19, art:FS_GLYPH.burst, kind:'fsburst' });
 FINAL_SMASHES['Nickel (II)'] = fsaB_row(FINAL_SMASHES['Nickel (II)'], fsaB_nickel);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 
-// PAPER -- SOMEBODY CHECK FOR PIANOS. "Somebody check for pianos." (his frame row): wary and jumpy, a sheet. For once there is one: a mark under the nearest foe, a piano falling on it (24%), twice,
-// twenty frames apart, and it is about as hard to miss as a piano.
-FINAL_SMASHES['Paper'] = fsRain({ id:'pianos', c1:'#2a2a30', k:1, n:2, every:20, walk:90, dmg:24, kb:26, r:34, art:FS_GLYPH.piano });
+// PAPER -- SOMEBODY CHECK FOR PIANOS. "Somebody check for pianos." (his frame row): wary and jumpy, a sheet. For once there is one: two pianos rolling along the floor at the nearest foe (24%; SKY-DROP SMASHES removed, 2026-11-11: they fell on a mark before), twenty frames apart.
+FINAL_SMASHES['Paper'] = fsRain({ id:'pianos', c1:'#2a2a30', k:1, n:2, every:20, walk:90, dmg:24, kb:26, r:34, spd:9, roll:true, proj:{ shape:'fsp_piano' }, art:FS_GLYPH.piano });   // (SKY-DROP SMASHES removed: two pianos roll along the floor at the foe; none falls)
 FINAL_SMASHES['Paper'] = fsaB_row(FINAL_SMASHES['Paper'], fsaB_paper);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 
 // MICROPHONE -- DEAFENINGLY LOUD. "her voice getting deafeningly loud" (the design doc: outspoken and honest); her own card is Yell at the Ball, a shout that sends it forward fast. The shout goes out
@@ -53949,7 +54173,7 @@ const FSB = {
   plateSp:[0, 10, 11.5, 13], plates:[0, 1, 2, 2], plateGap:42, plateR:34, plateKb:12,
   // 2026-11-09 (boss fairness): hookT was 26 / 22 / 20 (13 / 16 / 19 px a frame): a standing body needs ~8 frames of a held jump to clear a hook, so a human reaction (18) left 0 / -4 / -6 frames; now 8.5 / 10 / 12 px a frame, 14 / 10 / 6 frames of margin, the same span and hit
   hookT:[0, 40, 36, 32], hookSpan:340, hookR:30, hookKb:9, hookLow:46, hookHigh:100, pinchR:78, pinchKb:14, pinch2:{ from:2, follow:12, T:32 },
-  hops:6, hopT:[0, 30, 28, 26], hopStep:[0, 170, 180, 190], hopApex:64, bigApex:104, bigWait:14, ringSp:[0, 7, 7.6, 8.2], ringR:15, bigR:24, landR:64, ring2From:2,
+  hops:6, hopT:[0, 30, 28, 26], hopStep:[0, 130, 140, 150], hopApex:64, bigApex:104, bigWait:14, ringSp:[0, 7, 7.6, 8.2], ringR:15, bigR:24, landR:64, ring2From:2,
   vents:[0.27, 0.73], colW:30, colH:250, warn:30, erupt:44, beat:[0, 0, 85, 70], entryBeat:70, geyser:0.55,
   edgeW:92, biteRise:34, biteSnap:12, biteRest:70, bite:0.5,
   quake:120, waveStart:270, wavePeriod:540, waveTell:70, waveAdv:55, waveHold:45, waveRec:55, waveW:0.27, wave:0.7,
@@ -53959,9 +54183,15 @@ const FSB = {
   // begins with a crouch of `tlcWait` frames, then a hop IN PLACE (hopT frames, his shadow on the spot the whole time), and the first ring comes with its landing: 18 + 30 / 16 + 26 / 14 + 22 frames after the wind-up.
   // The six landings, the rings and every hit are as they were.
   // and after every landing he stays down `tlcRest` frames before the next hop (a pause between a ring and the next hop's mark: the next landing is aimed when the hop starts)
-  tlcWait:[0, 18, 18, 18], tlcRest:[0, 14, 16, 18],
+  tlcWait:[0, 18, 18, 18], tlcRest:[0, 28, 28, 28],
   // BOSS FIXES 3: in phase 3 every ring waits `ringLag` frames on the landing spot (lit, in place) before it runs: a landing is read, then the ring is jumped or left behind, not reacted to after it has run 150 px
-  ringLag:[0, 0, 0, 20],
+  ringLag:[0, 26, 24, 22],
+  // 2026-11-11 (the owner, playing: "the tlc fire balls make fsb track and shoot fireballs with next to no delay"): every landing's ring now waits `ringLag` frames lit on its spot in EVERY phase
+  // (the ring's lanes are drawn on the floor from the landing to where it dies), the next landing's spot and lanes are marked from the moment it is chosen (the landing before: rest + hop, 40+ frames
+  // before ITS ring), the chain keeps the side it began toward (no turning round mid-chain; the hop still closes on you if you stay on that side, never less than `tlcMin` of a step) and a ring
+  // dies `ringReach` of the arena from its landing (so there is a place to get away to). A double ring's second ring comes `ring2Gap` frames behind the first (was 12).
+  // (and the rings no longer come as a train: a landing was 44-48 frames after the last and the hop closed 170-190 px toward you, the way the rings run, so successive rings reached you 19 frames apart and one jump lasts 34-38: hopStep is now 130 / 140 / 150 and he stays down tlcRest = 28 frames after a landing, so they reach you 36-39 frames apart)
+  tlcMin:0, ringReach:0.5, ring2Gap:8, bigReach:0.45, bigGap:10,
 };
 function fsbPh(s){ return Math.max(1, Math.min(3, (s && s._phase) || 1)); }
 // The phase a move fires in is the phase its wind-up was drawn in (_telPh, set as the wind-up starts): a hit that crossed a threshold
@@ -54010,7 +54240,7 @@ function fsbSteer(s, x, y, k, cap){
 }
 function fsbFinish(s, gap){
   const fb = fsbLive(s);
-  s._fs = null; fb.k = null; fb.p = 0; fb.h = 0; fb.n = 0; fb.lk = 0; fb.bd = 0; fb.x2 = null; fb.h2 = 0; fb.lk2 = 0; fb.ty = null; fb.my = null; fb.my2 = null; fb.pl = null; fb.lp = 0; s._fsL = null;
+  s._fs = null; fb.k = null; fb.p = 0; fb.h = 0; fb.n = 0; fb.lk = 0; fb.bd = 0; fb.x2 = null; fb.h2 = 0; fb.lk2 = 0; fb.ty = null; fb.my = null; fb.my2 = null; fb.pl = null; fb.lp = 0; fb.lt = 0; s._fsL = null;
   s._atkTimer = gap != null ? gap : bossAtkGap(s); s.vx = 0; s.vy = 0;
 }
 // A patch of flame on the floor: the scorch behind a low pass, the strip a white-hot plate leaves, the spot a pinch burns. `sy`: the surface it lies on -- a ledge's top, for a pinch or a plate up
@@ -54314,7 +54544,10 @@ function fsbTlcStart(s, tgt){
 }
 function fsbHopAim(s, tgt, F){
   const step = FSB.hopStep[F.P], want = tgt && !tgt.dead ? tgt.x : s.x + (s.face || 1)*step;
-  F.x0 = s.x; F.x1 = F.n === 0 ? s.x : clamp(s.x + clamp(want - s.x, -step, step), 80, WW - 80); F.t = 0;   // (the first hop stays where he stands)
+  // (2026-11-11) the chain keeps the side it first set off toward (F.dir, chosen at the second landing): the hop closes on you while you are on that side and, when you are behind it, he hops in place (`tlcMin` of a step: 0) -- he never turns round mid-chain and never runs off from you
+  if(F.n === 1 || !F.dir) F.dir = Math.sign(want - s.x) || s.face || 1;
+  const along = clamp((want - s.x)*F.dir, FSB.tlcMin*step, step);
+  F.x0 = s.x; F.x1 = F.n === 0 ? s.x : clamp(s.x + F.dir*along, 80, WW - 80); F.t = 0;   // (the first hop stays where he stands)
   // THE LEDGE ("TLC hops up", the owner, 2026-10-04): after a fighter standing on a ledge he hops up onto it -- a hop that comes down over that
   // ledge lands on its top (a fighter on the floor, or a hop that comes down beside the ledge, is the floor's, as ever)
   const st = tgt && !tgt.dead ? fsbStand(tgt) : null, up = !!(st && st.p && F.x1 >= st.p.x && F.x1 <= st.p.x + st.p.w);
@@ -54332,7 +54565,7 @@ function fsbTlc(s, tgt, F){
     if(u >= 1){
       fsbLand(s, F);
       F.n++;
-      if(F.n >= FSB.hops){ F.ph = 'rest'; F.t = 0; }
+      if(F.n >= FSB.hops){ F.ph = 'rest'; F.t = 0; fsbLive(s).x = null; }   // (the chain is over: no landing mark for a seventh)
       else { fsbHopAim(s, tgt, F); if(!F.big) F.wait = FSB.tlcRest[F.P]; }
     }
   } else {
@@ -54352,7 +54585,7 @@ function fsbLand(s, F){
     if(Math.abs(f.x - x) < R + f.r*0.3 && feetY(f) > sy - 70 && fsbStand(f).y === sy)
       applyHit(f, bossDmg()*0.9, (Math.sign(f.x - x) || s.face || 1)*10, -13, null, { bossAtk:F.id, volley:true });
   }
-  const spd = FSB.ringSp[ph] + (big ? 1.4 : 0), life = Math.ceil(WW*0.72/spd/PROJ_LIFE);
+  const spd = FSB.ringSp[ph] + (big ? 1.4 : 0), life = Math.ceil(WW*(big ? FSB.bigReach : FSB.ringReach)/spd/PROJ_LIFE);
   // (warnX/Y: the ring's own start -- no `warn`, so no shadow and no drift -- is the landing the hop's mark showed for its whole flight: the glitch hunter reads them as a tell)
   const lag = FSB.ringLag[ph] || 0;
   const ring = (delay, yOff, rr) => { delay += lag; for(const d of [-1, 1]){
@@ -54360,9 +54593,10 @@ function fsbLand(s, F){
     if(room <= 0) continue;                                                       // (none where the landing is already at the end)
     addProj(bossShot(s, { x:x0, y:sy - 16 - yOff, vx:d*spd, vy:0, r:rr, kb:8, dmg:bossDmg()*(big ? 0.9 : 0.7), life:Math.min(life, Math.ceil(room/spd/PROJ_LIFE)),
       color:'#ff8a3a', shape:'ember', burn:true, delay, bossAtk:F.id, volley:true, fsb:true, warnX:x0, warnY:sy - 16 - yOff })); } };
-  ring(0, 0, big ? FSB.bigR : FSB.ringR);
-  if(big) ring(0, 58, 18);
-  else if(ph >= FSB.ring2From) ring(12, 0, FSB.ringR);   // double rings from phase 2 (Round 17; it was phase 3)
+  // the big landing's second ring was a HIGH one beside the low one ("a real jump"): no fighter could stand under it (a hurtbox reaches 36 px over its centre) and one jump cannot clear both (Spongy's rise is 96 px). It is now a second, smaller LOW ring `bigGap` frames behind the big one, like the small double rings: one jump clears both.
+  if(big){ ring(0, 0, FSB.bigR); ring(FSB.bigGap, 0, 18); }
+  else { ring(0, 0, FSB.ringR); if(ph >= FSB.ring2From) ring(FSB.ring2Gap, 0, FSB.ringR); }
+  { const fb = fsbLive(s), reach = spd*life*PROJ_LIFE; fb.lx = Math.round(x); fb.ly = Math.round(sy); fb.lt = lag; fb.ll = L ? Math.round(Math.min(reach, Math.max(0, x - 22 - L.x))) : Math.round(reach); fb.lr = L ? Math.round(Math.min(reach, Math.max(0, L.x + L.w - x - 22))) : Math.round(reach); }   // the lit lanes (fsbDrawFx)   // double rings from phase 2 (Round 17; it was phase 3)
 }
 // ---- the wind-up, the tick and the phases (tel, tick and phase slots) -----------------------------------------------------------
 function fsbBeginTelegraph(s, tgt){
@@ -54371,7 +54605,7 @@ function fsbBeginTelegraph(s, tgt){
   let kind = s._telKind;
   if(kind === s.attack){ s._fsSig = (s._fsSig || 0) + 1; kind = (s._fsSig%2) ? 'rocketboard' : 'tlc'; }   // (the picker's moves are the two forms themselves, BOSS_PICK.firewall: this is what a caller that asks for the signature gets)
   s._fsKind = kind;
-  fb.p = 0; fb.h = 0; fb.n = 0; fb.lk = 0; fb.bd = 0; fb.x2 = null; fb.h2 = 0; fb.lk2 = 0; fb.ty = null; fb.my = null; fb.my2 = null; fb.pl = null; fb.lp = 0; s._telSY = null; s._fsL = null;
+  fb.p = 0; fb.h = 0; fb.n = 0; fb.lk = 0; fb.bd = 0; fb.x2 = null; fb.h2 = 0; fb.lk2 = 0; fb.ty = null; fb.my = null; fb.my2 = null; fb.pl = null; fb.lp = 0; fb.lt = 0; fb.lx = null; s._telSY = null; s._fsL = null;
   if(kind === 'rocketboard'){ fb.k = 'board'; fb.d = fsbFarSide(tgt); fb.r = fsbRow(tgt); fb.r2 = ph >= FSB.cloneFrom ? fsbRow2(fb.r) : null; }
   else if(kind === 'furnace'){
     fb.k = 'furn'; fb.d = fsbFarSide(tgt);
@@ -54394,6 +54628,7 @@ function fsbTick(s, tgt){
     }
   }
   if(fb.f > 0) fb.f--;
+  if(fb.lt > 0) fb.lt--;
   // the row and the mark follow you until the last FSB.lock frames of the wind-up, then hold
   if(s._tel > 0 && tgt && !tgt.dead && s._tel >= FSB.lock){
     if(s._fsKind === 'rocketboard'){ fb.r = fsbRow(tgt); if(fsbPh(s) >= FSB.cloneFrom) fb.r2 = fsbRow2(fb.r); }
@@ -54803,6 +55038,16 @@ function fsbDrawFx(s){
     const big = fb.n === FSB.hops - 1, R = FSB.landR*(big ? 1.25 : 1), ty = fb.ty != null ? fb.ty : gy;   // ty: the surface it comes down on -- a ledge's top when he hops up after you
     // (BOSS BODY TELLS: no ring) his own shadow on the surface he comes down on, darker the lower he is; the last, big landing's is bigger
     bossFallShadow(fb.x, ty, R*0.9, 1 - clamp((ty - (s.y + s.r))/220, 0, 1));
+    // (2026-11-11) the landing is marked on its surface from the moment it is chosen: the stomp's disc, and the two lanes its ring will run (dashed: not yet lit)
+    const pulse = 0.5 + 0.5*Math.sin(hazardT*0.35);
+    c.globalAlpha = 0.28 + 0.22*pulse; c.strokeStyle = '#ff5a1a'; c.lineWidth = 4; c.beginPath(); c.ellipse(fb.x, ty - 3, R, 9, 0, 0, 7); c.stroke();
+    c.globalAlpha = 0.14 + 0.10*pulse; c.fillStyle = '#ff7a1a'; c.beginPath(); c.ellipse(fb.x, ty - 3, R, 9, 0, 0, 7); c.fill();
+    c.globalAlpha = 0.30; c.setLineDash([10, 10]); c.lineWidth = 3; c.beginPath(); c.moveTo(fb.x - R - 6, ty - 16); c.lineTo(Math.max(4, fb.x - WW*FSB.ringReach), ty - 16); c.moveTo(fb.x + R + 6, ty - 16); c.lineTo(Math.min(WW - 4, fb.x + WW*FSB.ringReach), ty - 16); c.stroke(); c.setLineDash([]);
+  }
+  if(fb.lt > 0 && fb.lx != null){   // the ring waits on its landing: its two lanes are lit, solid, from the spot to where it dies, brighter as it is about to go
+    const q = 1 - fb.lt/Math.max(1, FSB.ringLag[ph] || 1);
+    c.globalAlpha = 0.45 + 0.4*q; c.strokeStyle = '#ffb02a'; c.lineWidth = 6; c.beginPath(); c.moveTo(fb.lx - 22, fb.ly - 16); c.lineTo(fb.lx - 22 - (fb.ll || 0), fb.ly - 16); c.moveTo(fb.lx + 22, fb.ly - 16); c.lineTo(fb.lx + 22 + (fb.lr || 0), fb.ly - 16); c.stroke();
+    c.globalAlpha = 0.5 + 0.4*q; c.fillStyle = '#ff5a1a'; c.beginPath(); c.arc(fb.lx, fb.ly - 12, 14 + 12*q, 0, 7); c.fill();
   }
   if(fb.k === 'hooks' && (tel || fb.p)){
     // "YOU MUST!!!": the side panels open, and the teeth ("Firey Speaker Box with Sharp Teeth talking")
@@ -71858,7 +72103,7 @@ JAB_ANIM.clockhands = 'punch';   // Clock: his minute hand flicked out (Second H
 // ---- Steve Cobs's prize: begin ----
 JAB_ANIM.voices = 'kick';   // prize B is armless: her X is a kick (her wiki page, Trivia)
 // ---- Steve Cobs's prize: end ----
-const SMASH_PAT_ANIM = { lunge:'punch', through:'dash', leap:'slam', plant:'slam', walk:'throw', rain:'cast', mine:'stomp', reel:'throw', burst:'cast', beam:'spit', volley:'throw' };
+const SMASH_PAT_ANIM = { lunge:'punch', through:'dash', leap:'slam', plant:'slam', walk:'throw', rain:'cast', mine:'stomp', reel:'throw', burst:'cast', beam:'spit', volley:'throw', swing:'punch' };
 const UP_SHAPE_ANIM = { hop:'uppercut', warp:'cast', plunge:'slam', spin:'spin' };
 function animKindOf(f, move){
   const k = f && f.kit && f.kit.special;
@@ -72929,7 +73174,7 @@ function smashAim(f, inp){
 function fireSmash(f, inp, angle, dirMove){
   if(DIGC && digcLocked(f, 'smash')){ digcFallback(f, angle > 0 ? 'u' : angle < 0 ? 'd' : 's'); f.smCd = Math.max(f.smCd||0, SMASH_ENDLAG); return; }   // THE DIG (Spongy's contest): a smash not dug up yet is the jab or the tilt
   smashAim(f, inp);
-  if(TUT.active && f.you){ const d = fighters.find(function(x){ return !x.you; }); TUT.smashPct = d ? d.pct : null; }
+  if(TUT.active && f.you){ const d = fighters.find(function(x){ return !x.you; }); TUT.smashPct = d ? d.pct : null; TUT.smashAt = TUT.timer; }
   if(dirMove && angle && dirSmash(f, angle)) return;   // UP / DOWN SMASH (below): its own move, not the neutral smash tilted
   f._smAngle = angle != null ? angle : (inp && inp.up ? 1 : (inp && inp.down ? -1 : 0));   // see SMASH_ANGLE_TILT
   f._smAngleT = f._smAngle ? SMASH_ANGLE_FRAMES : 0;
@@ -72948,8 +73193,8 @@ function fireSmash(f, inp, angle, dirMove){
 // The name comes from the neutral smash's pattern (lunge, dash, hop, shockwave...). A CPU uses them only when its brain asked (brainSmDir): a foe above it, or close in.
 // Before the shield and reflector update, ↑ or ↓ held tilted the neutral smash's launch (SMASH_ANGLE_TILT): that is now the up and down smash, for a person.
 const DSM_NAMES = {
-  up:   { lunge:'Rising Lunge', through:'Rising Rush', leap:'Sky Hop', burst:'Skyburst', walk:'Rolling Uppercut', beam:'Sky Line', rain:'Updraft', mine:'Spring Trap', plant:'Rooted Uppercut', reel:'Haul Up', horizon:'Event Skyline', volley:'Rising Volley', none:'Rising Smash' },
-  down: { lunge:'Low Lunge', through:'Low Rush', leap:'Ground Pound', burst:'Floor Ring', walk:'Low Roll', beam:'Floor Line', rain:'Low Drop', mine:'Floor Trap', plant:'Rooted Sweep', reel:'Foot Drag', horizon:'Event Floor', volley:'Low Volley', none:'Low Sweep Smash' },
+  up:   { lunge:'Rising Lunge', through:'Rising Rush', leap:'Sky Hop', burst:'Skyburst', walk:'Rolling Uppercut', beam:'Sky Line', rain:'Updraft', mine:'Spring Trap', plant:'Rooted Uppercut', reel:'Haul Up', horizon:'Event Skyline', volley:'Rising Volley', swing:'Rising Swing', none:'Rising Smash' },
+  down: { lunge:'Low Lunge', through:'Low Rush', leap:'Ground Pound', burst:'Floor Ring', walk:'Low Roll', beam:'Floor Line', rain:'Low Drop', mine:'Floor Trap', plant:'Rooted Sweep', reel:'Foot Drag', horizon:'Event Floor', volley:'Low Volley', swing:'Low Swing', none:'Low Sweep Smash' },
 };
 const DSM = { upDmg:0.88, downDmg:0.82, kb:0.9, upSt:5, downSt:4, upAct:4, downAct:5 };
 // Launch strength per kit where the neutral smash's own launch is not what its row says (a lunge, leap or plant row with a low real launch; a hand-written body; Yin-Yang's
@@ -73236,6 +73481,33 @@ SM_PAT.volley = function(f, s){
   }
   for(let i = 0; i < 4; i++) puff(f.x + d*(f.r + 8), f.y - 6, s.color || f.color, 3);
 };
+// SWING (SKY-DROP SMASHES removed, 2026-11-11): Blocky's anvil is swung by his body. A wind-up (startWindup: the body gathers and glows, a hit in it cancels the swing, like a ring),
+// then the lunge swing with the row's reach: the whole hit lands on whoever the wedge touches. The smash runs as f._sm / _windup.smash, so a shield breaker still breaks the bubble.
+SM_PAT.swing = function(f, s){
+  const W = s.wind == null ? 24 : s.wind;
+  f._swingAnvil = { t0:hazardT, wind:W };   // render only: the anvil he holds up in the wind-up and swings (drawSwingAnvil)
+  f._swingWall = hazardT + W + SMASH_LUNGE_FRAMES + 8;   // the swing does not reach through rock (the wall rule of the Final Smashes: fswBlocked in hitCircle / hitShape)
+  startWindup(f, W, function(){ f._smSync = true; try { SM_PAT.lunge(f, s); } finally { f._smSync = false; } }, s.color || f.color, null);   // (_smSync: a swing that lands on the very frame it is thrown is still the smash's hit, so a breaker's still breaks the bubble)
+  if(f._windup) f._windup.smash = true;   // the angle waits for it (SMASH_ANGLE_FRAMES); the breaker's hit is the smash's
+};
+// The anvil of Blocky's swung Anvil Smash (render only; not in the snapshot): held by the hands at his shoulder, lifted overhead through the wind-up (it shakes a little as it goes up), then swung
+// forward and down with the lunge. The picture is the one his anvil special uses (ATTACK_SPRITES 'anvil'); a drawn anvil until it loads. The swing also ends when the body is hit (the wind-up is cancelled).
+function drawSwingAnvil(f){
+  const A = f._swingAnvil; if(!A) return;
+  const p = hazardT - A.t0, tail = SMASH_LUNGE_FRAMES + 8;
+  if(p < 0 || p > A.wind + tail || (p < A.wind && !f._windup) || f.dead){ f._swingAnvil = null; return; }
+  const d = f.face < 0 ? -1 : 1, R = f.r || 24;
+  let ang;
+  if(p < A.wind){ const k = Math.min(1, p/Math.max(1, A.wind)); ang = -0.15 - 1.75*k*k + Math.sin(hazardT*1.7)*0.04*k; }   // up and a little behind the head
+  else { const k = Math.min(1, (p - A.wind)/SMASH_LUNGE_FRAMES); ang = -1.9 + 2.5*k*k; }   // down and forward
+  const L = R*1.55, hx = d*R*0.2, hy = -R*0.15, im = attackImage('anvil');
+  ctx.save(); ctx.translate(hx, hy); ctx.scale(d, 1); ctx.rotate(ang);
+  ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(L*0.7, 0); ctx.stroke();   // the arms
+  ctx.translate(L, 0); ctx.rotate(Math.PI/2*0.35);
+  if(im && im.complete && im.naturalWidth){ const h = R*1.5, w = h*im.naturalWidth/im.naturalHeight; ctx.drawImage(im, -w/2, -h/2, w, h); }
+  else { const u = R*0.75; ctx.fillStyle = '#4a4f58'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-u*1.3, -u*0.5); ctx.lineTo(u*1.3, -u*0.5); ctx.lineTo(u*0.6, -u*0.1); ctx.lineTo(u*0.6, u*0.2); ctx.lineTo(u*1.0, u*0.5); ctx.lineTo(-u*1.0, u*0.5); ctx.lineTo(-u*0.6, u*0.2); ctx.lineTo(-u*0.6, -u*0.1); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+  ctx.restore();
+}
 function runSmashSpec(f, s, pool){
   f.flash = 14;
   const cost = s.cost;
@@ -73452,11 +73724,8 @@ const SMASH_SPEC = {
   // Ruler: a straight edge is thin and exact — narrower than Ruby's, and it rings rather than burns.
   measure:  {pat:'beam', len:860, wide:16, dmg:12, kb:13, effect:'weaken', n:150, cost:{stun:28}, color:'#e8d8a0'},
 
-  // Blocky: the anvil still falls on whoever is nearest.
-  // Blocky's anvil always found you — the legacy body scanned for the nearest fighter and dropped
-  // on their x. That is what `seek` restores; the 90px offset is now only the fallback for when
-  // nobody is within range.
-  anvil:    {pat:'rain', at:90, seek:220, count:1, r:18, dmg:16, kb:10, effect:'knockdown', cost:{cd:68}, color:'#3a3a3a'},
+  // Blocky: the anvil is swung by his body now (it used to fall from the sky on whoever was nearest).
+  anvil:    {pat:'swing', wind:45, step:7, reach:46, dmg:16, kb:10, effect:'knockdown', cost:{cd:68}, color:'#3a3a3a'},   // Blocky -- Anvil Smash (SKY-DROP SMASHES removed (2026-11-11)): he winds up and swings the anvil with his body (was dropped on the nearest foe from the sky); still a shield breaker
 
   // Tree: TIMBER. The heaviest band in the table and the longest wind-up, because you can see it
   // coming and step out of it — which is exactly what the call is for.
@@ -88462,7 +88731,7 @@ const FS_BLURBS = {   // FS MENU LINES: each fighter's Final Smash as the menus 
   "Saw": ["Spin Cycle Overdrive", "A spinning blade round her holds nearby foes while it saws them, then throws them."],
   "Tennis Ball": ["Ball Machine", "Ten bouncing balls roll out along the floor in front of him."],
   "Snowball": ["Avalanche", "Sends one huge snowball ahead through everyone, then two small ones behind it."],
-  "Book": ["Overdue", "Books circle her, then snap shut and fall on the two nearest foes."],
+  "Book": ["Overdue", "Books circle her, then snap shut and fly out across the stage at the two nearest foes."],
   "Ruby": ["Refraction", "Three gem bolts, low, middle and high, pierce foes and bounce around."],
   "Needle": ["Cut in Half", "One long thin cut slices along the floor through everyone it meets."],
   "Pin": ["Popped", "Climbs into a giant mech suit and stomps all over a foe."],
@@ -88480,7 +88749,7 @@ const FS_BLURBS = {   // FS MENU LINES: each fighter's Final Smash as the menus 
   "Liy": ["Lights Out", "Flips her secret switch and drives a foe through two boats."],
   "Lollipop": ["Sticky Trap", "A sticky patch opens ahead, drags nearby foes in, then snaps shut."],
   "Marker": ["Permanent Record", "Four volleys of ink drops spray across a wide cone in front of him."],
-  "Money": ["Make It Rain", "Drops bags of coins on the three nearest foes, again and again."],
+  "Money": ["Make It Rain", "Throws bags of coins across the stage at the three nearest foes, again and again."],
   "Naily": ["Nailed It", "Fires three volleys of piercing nails in a tight fan across the stage."],
   "Pillow": ["Fluff Bounce", "Runs experiments on a foe in her journal, one page after another."],
   "Remote": ["Signal Jam", "Rewinds, fast-forwards and turns up the volume on a held foe, then mutes them."],
@@ -88513,7 +88782,7 @@ const FS_BLURBS = {   // FS MENU LINES: each fighter's Final Smash as the menus 
   "Baseball": ["Ground Pound", "Shockwaves run out along the floor both ways; hop them."],
   "Pickle": ["Loads of Experience", "Marks the nearest foe, then belly-flops a pickle down on that spot."],
   "Nickel (II)": ["Double Zinger", "Two remarks at once: a burst around him, then a wider one."],
-  "Paper": ["Somebody Check for Pianos", "Drops two pianos on the nearest foe, a beat apart."],
+  "Paper": ["Somebody Check for Pianos", "Rolls two pianos along the floor at the nearest foe, a beat apart."],
   "Microphone": ["Deafeningly Loud", "A huge shout runs out along the floor ahead of her."],
   "Salt": ["Shake", "Shakes ten grains in an arc ahead of her, then ten more."],
   "Test Tube": ["Glass Up", "Sends a foe through a portal, sprays acid, and loops them through time three times."],
@@ -89038,10 +89307,12 @@ function ocSmashBand(f, kind, row){
     case 'burst':   return [0, (row.rad || 90)*0.85, 44];       // a ring that grows to its radius
     case 'beam':    return [0, (row.len || 170)*0.8, 24];       // a lane ahead
     case 'lunge':   return [24, R*0.75, 44];                    // a step and a strike
+    case 'swing':   return [24, R*0.75, 44];                    // a wind-up, then a step and a strike
     case 'through': return [36, R*0.75, 44];                    // a dash through
     case 'leap':    return [60, R*0.7, 70];                     // a hop onto the nearest foe
     case 'reel':    return [40, Math.min(R, 170)*0.9, 44];      // pulls the foe in
     case 'rain':    return [40, R*0.95, 70];                    // drops on the nearest foe within its seek
+    case 'volley':  return [40, Math.min(R, 320)*0.7, 70];      // a fan straight out of the front
     case 'mine':    return [50, 150, 50];                       // a mine a step ahead, for a foe coming in
   }
   return null;
@@ -89565,8 +89836,8 @@ ocDef('Z-U4', 'zoner', 'u', 'Utility', 'Double Spring',  'a rise that hands the 
 // NEUTRAL SMASH (SMASH_SPEC-style rows: dmg is the row's, fired at SMASH_DMG_MULT like every smash)
 ocDef('Z-S1', 'zoner', 's', 'Damage',  'Lance Beam',     'a long thin beam straight ahead that floors them',
   { smash:{ pat:'beam', len:160, wide:16, dmg:12, kb:13, effect:'knockdown', n:24, cost:{ stun:28 }, color:OC_TEAL }, ai:{ kind:'beam', len:160, dmg:12 } });   // (OC MOVES V2 trim 4: 13% / 14 -> 12% / 13)   // (OC CPU AND BALANCE: len 170 -> 160, 16% -> 13%, knockdown 30 -> 24, whiff stun 24 -> 28: the CPU now fires it from its band, 5 a match, and the Zoner's best builds rose to 46-51%)
-ocDef('Z-S2', 'zoner', 's', 'Zoning',  'Star Rain',      'four small stars fall ahead, on the nearest foe when one is near; each slows',
-  { smash:{ pat:'rain', count:4, at:44, gap:40, seek:200, r:8, dmg:7, kb:6, effect:'slow', n:60, rider:{ vy:16 }, cost:{ cd:56 }, color:OC_TEAL }, ai:{ kind:'rain', band:[40, 200], dmg:7 } });
+ocDef('Z-S2', 'zoner', 's', 'Zoning',  'Star Spray',     'four small stars fly out of the front of you in a fan; a foe in line is hit by one of them, and slows',
+  { smash:{ pat:'volley', count:4, fan:1.2, spd:10, life:20, r:8, dmg:7, kb:6, effect:'slow', n:60, cost:{ cd:56 }, color:OC_TEAL }, ai:{ kind:'volley', band:[40, 200], dmg:7 } });   // (SKY-DROP SMASHES removed (2026-11-11): was Star Rain, four stars falling from the sky)
 // The frame budget (FRAME BUDGET above): a shot's whole startup is its tell (it fires on the frame it is cast); a melee row's is its st plus a tell
 // where the design asks; the strong fast moves pay 18-28 on a whiff, the weak 8-14, the smashes the slow class; stances and the hops are their own lock.
 Object.assign(TELL_ADD, { 'Z-N1.neutral':8, 'Z-N2.neutral':10, 'Z-D1.down':3, 'Z-D2.down':12 });
@@ -90010,8 +90281,8 @@ ocDef('K-U4', 'trickster', 'u', 'Utility', 'Spring Heel',    'a rise that hands 
 // NEUTRAL SMASH (SMASH_SPEC-style rows: dmg is the row's, fired at SMASH_DMG_MULT like every smash)
 ocDef('K-S1', 'trickster', 's', 'Damage',  'Pirouette Kick', 'a step and a spinning kick that floors them; the lightest-costed big hit',
   { smash:{ pat:'lunge', step:5, reach:34, fx:40, dmg:13, kb:12, effect:'knockdown', n:30, cost:{ stun:24 }, color:OC_MAGENTA }, ai:{ kind:'lunge', dmg:13 } });   // (trim 3: 14.5% / 13 / whiff stun 22 -> 13% / 12 / 24)   // (OC CPU AND BALANCE: 16% -> 14.5%)   // (the design's n:90 knockdown is past the 45 lock; a knockdown asks 30)
-ocDef('K-S2', 'trickster', 's', 'Zoning',  'Card Spray',     'five cards fall in a fan on the nearest foe, or ahead of you when none is near; each scrambles',
-  { smash:{ pat:'rain', count:5, at:26, gap:34, seek:220, r:6, dmg:6, kb:5, effect:'scramble', n:45, rider:{ vy:16 }, cost:{ cd:58 }, color:OC_MAGENTA }, ai:{ kind:'rain', band:[30, 220], dmg:6 } });
+ocDef('K-S2', 'trickster', 's', 'Zoning',  'Card Spray',     'five cards fly out of the front of you in a fan; a foe in line is hit by one of them, and is scrambled',
+  { smash:{ pat:'volley', count:5, fan:1.1, spd:10, life:20, r:6, dmg:6, kb:5, effect:'scramble', n:45, cost:{ cd:58 }, color:OC_MAGENTA }, ai:{ kind:'volley', band:[30, 220], dmg:6 } });   // (SKY-DROP SMASHES removed (2026-11-11): the cards fell from the sky)
 ocDef('K-S3', 'trickster', 's', 'Escape',  'Dash Through',   'the fastest dash through the foe: pure speed and distance',
   { smash:{ pat:'through', dash:9, spd:16, reach:24, dmg:11, kb:9, cost:{ stun:20 }, color:OC_MAGENTA }, ai:{ kind:'through', dmg:11 } });
 ocDef('K-S4', 'trickster', 's', 'Utility', 'Hex Ring',       'a quick ring round the body that weakens whoever it touches; a set-up, never a kill',
@@ -92009,7 +92280,7 @@ function hitCircle(f,cx,cy,rad,dmgLow,dmgHigh,kbx,kby,band,sourKb,once){
     if(t.dead||t.idx===f.idx||(f._combo ? graceBlocks(t,f) : (t.invuln>0 && !chainOpen(t,f)))) continue;
     const d = hurtGap(t, cx, cy);   // to the hurtbox EDGE, so the old t.r is already inside it
     if(d<rad){
-      if(FS.by === f && fswBlocked(f, cx, cy, t)) continue;   // FS WALLS: a Final Smash's blast does not reach through rock
+      if((FS.by === f || f._swingWall > hazardT) && fswBlocked(f, cx, cy, t)) continue;   // FS WALLS: a Final Smash's blast does not reach through rock (nor does Blocky's swung anvil: _swingWall)
       // Golf Ball marks whatever she hits, so her bonus-vs-cursed payoff builds up on its own
       if(f.kit && f.kit.special==="zapshooter" && t.team!==f.team){ t.curseStacks=Math.min(CURSE_MAX_STACKS,(t.curseStacks||0)+2); }
       const outer = d > rad*b;
@@ -92153,7 +92424,7 @@ function hitShape(f, sh, dmgLow, dmgHigh, kbx, kby, band, sourKb, once){
   for(const t of fighters){
     if(t.dead||t.idx===f.idx||(f._combo ? graceBlocks(t,f) : (t.invuln>0 && !chainOpen(t,f)))||(JAB_BY===f && jabLocked(t, f, f._jabPress))) continue;   // (JAB_BY ...: THE JAB LOCK, 2026-10-28, "Yes, stop the jab lock")
     if(!shapeHits(sh, t)) continue;
-    if(FS.by === f && fswBlocked(f, ox, oy, t) && fswBlocked(f, bb.cx, bb.cy, t)) continue;   // FS WALLS: neither the swing's middle nor its centre of area sees the foe
+    if((FS.by === f || f._swingWall > hazardT) && fswBlocked(f, ox, oy, t) && fswBlocked(f, bb.cx, bb.cy, t)) continue;   // FS WALLS: neither the swing's middle nor its centre of area sees the foe
     if(f.kit && f.kit.special==="zapshooter" && t.team!==f.team){ t.curseStacks=Math.min(CURSE_MAX_STACKS,(t.curseStacks||0)+2); }
     const d = Math.max(0, hurtGap(t, ox, oy));   // to the target's EDGE, as hitCircle judges its band
     const outer = d > rad*b;
@@ -115684,6 +115955,7 @@ function drawSpriteBody(f, sp, anim){
   if(sp.face && !im) bfdiFace(f,R,sp.face);
   // ...and on the vector art after the face, so shades sit over the eyes rather than under them
   if(!im && _cos && _cos.hat){ ctx.save(); ctx.translate(0,(sp.anchorY||0)*R); ctx.scale(visualFace(f),1); try{ drawCosHat(ctx, _cos.hat, R/24, -R, -R*0.2); }catch(e){ cosDrawFail(e); } ctx.restore(); }
+  if(f._swingAnvil) drawSwingAnvil(f);   // Blocky's swung Anvil Smash: the anvil in his hands (SKY-DROP SMASHES removed)
 }
 
 // STATUS ICONS ("add buff/debuff icons"). One row per status a fighter can carry, each a small glyph
@@ -122286,6 +122558,7 @@ function worldGeoKey(){
 // The flags drawFighter reads. One at its resting value (0, false, null) is left out and arrives as undefined, which
 // every check on these reads the same way (truthiness and `> 0` tests).
 const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering','flying','smashHold','burn',
+  '_swingAnvil',   // (SKY-DROP SMASHES removed: Blocky's swung Anvil Smash -- { t0, wind }, the frame it began and its wind-up: a guest draws the anvil in his hands from it and the host's clock; cleared below once the swing is over)
   // ...and the rest of what the tints and STATUS_ICONS read. Only cloud, armor, counter and flying of the 34 icons reached a
   // client: a star or Yoyleberry fighter looked normal there, and rooted, cursed, infected, healing, swallowed showed nothing.
   'bleed','hitstun','_stunFx','slowed','rooted','ctrlRev','weakened','curseStacks','defineStacks','_infected','_empowerT','_empower',
@@ -122321,6 +122594,7 @@ function netFighter(f){
   { const sp = f.kit && f.kit.special, ocw = f.oc ? (f._ocWire || (f._ocWire = ocWireOf(f.oc))) : '', key = f.name + '|' + f.color + '|' + sp + '|' + f.koCap + '|' + f.team + '|' + ocw;   // the slow fields (NET_STAT): when they change, early in a match, with the geometry, and once a second
     if(netStatDue(NET_STAT.key, NET_STAT.at, f.idx, key)){ o.name = f.name; o.color = f.color; o.koCap = f.koCap; o.team = f.team; o.kit = { special:sp }; if(ocw) o.oc = ocw; } }
   if(f.size && f.size !== 1) o.size = Math.round(f.size*100)/100;   // PER-FIGHTER SIZE: r rides already; the size is for the outline a guest's hit art is drawn on (haHurtOf)
+  if(f._swingAnvil && hazardT - f._swingAnvil.t0 > f._swingAnvil.wind + SMASH_LUNGE_FRAMES + 8) f._swingAnvil = null;   // the swing is over: nothing more to send (the host's drawSwingAnvil clears it too)
   for(const k of NET_FIGHTER_FLAGS){ const v = f[k]; if(v) o[k] = (typeof v === 'number') ? Math.round(v) : v; }   // whole frames: _fury drifts by 0.05
   // The swing, the hurt pose and the smash charge: the sim's own render-only timers, so on the wire they go by names
   // without the underscore, like heatFx and hookFx -- nothing named _x leaves as it is. applySnapshot maps them back.
@@ -124070,7 +124344,7 @@ function setPaused(on){
   quitAskNo();   // (a pause starts, and ends, with no quit question open)
   const el = document.getElementById('pauseCard'); if(el) el.style.display = paused ? 'flex' : 'none';
   { const eb = document.getElementById('pauseEditorBtn'); if(eb) eb.style.display = (paused && customFromEditor()) ? '' : 'none'; }   // a level played from the editor: the way back to it (backToEditor)
-  if(paused){ try{ syncPauseMoves(); }catch(e){} } else PAUSE_MOVES_OPEN = false;
+  if(paused){ try{ syncPauseMoves(); }catch(e){} try{ keyHintShow('pauseKeyHint'); }catch(e){} } else PAUSE_MOVES_OPEN = false;
   netInputChanged(true);   // a guest's host stops playing what it held (and gets it back on the way out)
   if(was && !paused) netInResume();   // a host's guests pick up from now, not with what they pressed while it stood still
   if(!paused && (running || PCAM.on)) startLoop();
