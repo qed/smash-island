@@ -20233,7 +20233,8 @@ const SMASH_PATTERN_TEXT = {
   reel:    'pulls nearby foes in ({r}), then hits',
 };
 // The one-word name of each shape, on the move card and in How to Play.
-const SMASH_KIND = { lunge:'Lunge', through:'Dash', leap:'Hop', burst:'Shockwave', walk:'Roller', beam:'Beam', rain:'Drop', mine:'Trap', plant:'Root & blast', reel:'Pull', volley:'Volley' };
+const SMASH_KIND = { lunge:'Lunge', through:'Dash', leap:'Hop', burst:'Shockwave', walk:'Roller', beam:'Beam', rain:'Drop', mine:'Trap', plant:'Root & blast', reel:'Pull', volley:'Volley', swing:'Swing' };
+SMASH_PATTERN_TEXT.swing = 'winds up, then swings the heavy thing it carries out in front of the body ({r})';   // (SKY-DROP SMASHES removed: Blocky's anvil is swung by his body, nothing comes down from above)
 SMASH_PATTERN_TEXT.volley = 'fires a fan of shots straight out of the front of the body ({r}); the shots leave together, and only one of them can hit the same foe';   // (SKY-DROP SMASHES removed: the shots leave the fighter, none comes down from above)
 // How far a row reaches, in the words a player uses: from the move's own numbers, not a guess.
 function smashReach(f, row){
@@ -20249,6 +20250,7 @@ function smashReach(f, row){
     case 'reel':    return row.pull||190;
     case 'horizon': return row.pull||220;
     case 'rain':    return row.seek||row.at||90;
+    case 'swing':   return SMASH_LUNGE_FRAMES*(SMASH_LUNGE_SPD+(row.step||3)) + (row.fx==null?30:row.fx) + r + (row.reach||30);
     case 'volley':  return (row.spd||9)*(row.life||30)*PROJ_LIFE;   // (addProj stretches a shot's life by PROJ_LIFE)
     default:        return row.at||34;
   }
@@ -32598,8 +32600,8 @@ FINAL_SMASHES['Snowball'] = {
 };
 
 // BOOK -- OVERDUE. Her canon attack is closing on things, and her own card, Define, marks a foe so every hit on them lands harder (the design doc
-// and her card). Open books circle her (the tell), then snap shut and fall: five a foe, at the two nearest foes, 8 frames apart, each
-// over a mark drawn on the floor first (13%, a hard knock); the line of them walks 60 px to one side of the foe each time. Keep moving.
+// and her card). Open books circle her (the tell), then snap shut and are flung: five a foe, at the two nearest foes, 8 frames apart, each
+// flying from her straight across the stage (SKY-DROP SMASHES removed, 2026-11-11: they fell on a mark before) (13%, a hard knock); the line of them aims 60 px to one side of the foe each time. Keep moving.
 FINAL_SMASHES['Book'] = {
   id:'overdue', wind:FS_WIND, dur:FS_WIND + 82, reach:600,
   catch(f){ return { kind:'circle', x:f.x, y:f.y, r:FS_RAIN_CATCH }; }, lockEnd:FS_WIND + 32, catchMax:2,   // CATCH: a circle round her; the books go for a locked foe first
@@ -32610,7 +32612,7 @@ FINAL_SMASHES['Book'] = {
     if(t >= w && t < w + 40 && (t - w) % 8 === 0){
       const near = (a)=> (fsIsLockedBy(a, f) ? -1e6 : 0) + Math.hypot(a.x - f.x, a.y - f.y);   // (a locked foe first)
       const j = (t - w)/8, foes = fighters.filter(o=>!o.dead && o.team !== f.team).sort((a, b)=>near(a) - near(b)).slice(0, 2);
-      for(const o of foes) dropProj(f, clamp(o.x + (j - 2)*60, 30, WW - 30), o.y + o.r, { dmg:13, kb:22, r:24, color:'#8a4fd2', life:150 }, true);
+      for(const o of foes) fsFlyShot(f, o, (j - 2)*60, { dmg:13, kb:22, r:24, c1:'#8a4fd2', spd:11, reach:650 }, { shape:'fsp_book' });   // (SKY-DROP SMASHES removed: the books are flung from her at the foe, spread across the line; none falls)
     }
   },
   ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && Math.hypot(o.x - f.x, o.y - f.y) < 650) return true; return false; },
@@ -32901,6 +32903,21 @@ function fsFan(o){
 }
 
 // -- rain --
+// FLY SHOT (SKY-DROP SMASHES removed, 2026-11-11): what a "rain" Final Smash throws now. Each shot leaves the holder's body and travels the stage straight at a point `off` px to the side of the foe
+// (across the line from the holder, so the line of shots is spread as the old line of drops was), at `spd` px a frame; `roll` shots go along the floor instead (a piano on its wheels). It is a Final
+// Smash's shot like any other (addProj tags it while the row runs): it stops at the first rock (FS WALLS). Same damage, launch and size as the drop it replaces. Nothing is dropped from above.
+function fsFlyShot(f, foe, off, o, P){
+  const spd = o.spd || 14, r = o.r || 22, reach = (o.reach || 600) + 100;
+  if(o.roll){
+    const dir = Math.sign(foe.x - f.x) || f.face || 1, g = !!f.onground;
+    const p = addProj(Object.assign({ owner:f.idx, ownerObj:f, x:f.x + dir*(f.r + r), y:g ? feetY(f) - r : f.y, vx:g ? dir*spd : 0, vy:0, grav:false, noDrift:true, dmg:o.dmg, kb:o.kb, r:r, color:o.c1, life:Math.ceil(reach/spd/PROJ_LIFE) },
+      P, { drive:'roll', phase:g ? 'drive' : 'drop', driveVx:dir*spd, rideTop:g ? feetY(f) : null }));   // (the walk smash's roller: rides the floor, falls off an edge, stops at a wall)
+    return p;
+  }
+  const dx = foe.x - f.x, dy = foe.y - f.y, d = Math.hypot(dx, dy) || 1, ux = dx/d, uy = dy/d;
+  const tx = foe.x - uy*off, ty = foe.y + ux*off, ex = tx - f.x, ey = ty - f.y, e = Math.hypot(ex, ey) || 1, vx = ex/e*spd, vy = ey/e*spd;
+  return addProj(Object.assign({ owner:f.idx, ownerObj:f, x:f.x + ex/e*(f.r + 12), y:f.y - 4 + ey/e*(f.r + 12), vx:vx, vy:vy, grav:false, noDrift:true, _dropAt:hazardT, dmg:o.dmg, kb:o.kb, r:r, color:o.c1, life:Math.ceil(reach/spd/PROJ_LIFE) }, P));
+}
 function fsRain(o){
   const w = FS_WIND, k = o.k || 2, n = o.n || 6, ev = o.every || 8, P = o.proj || {};
   return {
@@ -32913,7 +32930,7 @@ function fsRain(o){
       if(t >= w && t < w + n*ev && (t - w) % ev === 0){
         const near = (a)=> (fsIsLockedBy(a, f) ? -1e6 : 0) + Math.hypot(a.x - f.x, a.y - f.y);   // (a locked foe first)
         const j = (t - w)/ev, foes = fighters.filter(x=>!x.dead && x.team !== f.team).sort((a, b)=>near(a) - near(b)).slice(0, k);
-        for(const x of foes){ const jit = o.walk ? (j - (n - 1)/2)*o.walk : (fsRand() - 0.5)*(j % 2 ? 40 : 200); dropProj(f, clamp(x.x + jit, 30, WW - 30), x.y + x.r, Object.assign({ dmg:o.dmg, kb:o.kb, r:o.r || 22, color:o.c1, life:150 }, P), true); }
+        for(const x of foes){ const jit = o.walk ? (j - (n - 1)/2)*o.walk : (fsRand() - 0.5)*(j % 2 ? 40 : 200); fsFlyShot(f, x, o.roll ? 0 : jit, o, P); }   // (SKY-DROP SMASHES removed: shots from the holder across the stage, none dropped from above)
       }
     },
     ai(f){ for(const x of fighters) if(!fsHurtMark(f, x) && Math.hypot(x.x - f.x, x.y - f.y) < (o.reach || 600)) return true; return false; },
@@ -34414,8 +34431,8 @@ Object.assign(FS_GLYPH, {
 FINAL_SMASHES['Marker'] = fsFan({ id:'permanentrecord', c1:'#6a3fa0', n:13, cone:0.6, spd:12, vols:[0, 6, 12, 18], dmg:5, kb:10, r:9, life:45, reach:420, kind:'throw', art:FS_GLYPH.ink });
 
 // MONEY -- MAKE IT RAIN. "Oh, my tree! Wins don't grow on trees." (his frame row): rich, and pleased about it, paper with no rigidity; his own card is Make It Rain, a
-// burst of coins. Marks on the three nearest foes, five times, nine frames apart, a bag of coins dropping on each (13%), the line walking 70 px along.
-FINAL_SMASHES['Money'] = fsRain({ id:'makeitrain', c1:'#f2c94c', k:3, n:5, every:9, walk:70, dmg:13, kb:17, r:24, art:FS_GLYPH.coin });
+// burst of coins. Marks on the three nearest foes, five times, nine frames apart, a bag of coins thrown at each, straight across the stage (13%; SKY-DROP SMASHES removed, 2026-11-11: they dropped before), the line aimed 70 px along.
+FINAL_SMASHES['Money'] = fsRain({ id:'makeitrain', c1:'#f2c94c', k:3, n:5, every:9, walk:70, dmg:13, kb:17, r:24, spd:15, art:FS_GLYPH.coin });   // (SKY-DROP SMASHES removed: the bags of coins are thrown from him across the stage)
 
 // NAILY -- NAILED IT. "Nailed it." (their frame row): sharper and angrier than Needle, hardened steel that is driven and does not give; their own card is the Nail
 // Volley, three fast nails that go through foes. Five nails in a tight fan, three volleys eight frames apart, through everyone in line (12%, they fly the whole stage).
@@ -40901,9 +40918,8 @@ Object.assign(FS_GLYPH, {
 FINAL_SMASHES['Nickel (II)'] = fsCircle({ id:'doublezinger', c1:'#8aa0c0', c2:'#ffffff', R:230, R2:330, gap:8, dmg:14, dmg2:14, kb:20, kb2:19, art:FS_GLYPH.burst, kind:'fsburst' });
 FINAL_SMASHES['Nickel (II)'] = fsaB_row(FINAL_SMASHES['Nickel (II)'], fsaB_nickel);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 
-// PAPER -- SOMEBODY CHECK FOR PIANOS. "Somebody check for pianos." (his frame row): wary and jumpy, a sheet. For once there is one: a mark under the nearest foe, a piano falling on it (24%), twice,
-// twenty frames apart, and it is about as hard to miss as a piano.
-FINAL_SMASHES['Paper'] = fsRain({ id:'pianos', c1:'#2a2a30', k:1, n:2, every:20, walk:90, dmg:24, kb:26, r:34, art:FS_GLYPH.piano });
+// PAPER -- SOMEBODY CHECK FOR PIANOS. "Somebody check for pianos." (his frame row): wary and jumpy, a sheet. For once there is one: two pianos rolling along the floor at the nearest foe (24%; SKY-DROP SMASHES removed, 2026-11-11: they fell on a mark before), twenty frames apart.
+FINAL_SMASHES['Paper'] = fsRain({ id:'pianos', c1:'#2a2a30', k:1, n:2, every:20, walk:90, dmg:24, kb:26, r:34, spd:9, roll:true, proj:{ shape:'fsp_piano' }, art:FS_GLYPH.piano });   // (SKY-DROP SMASHES removed: two pianos roll along the floor at the foe; none falls)
 FINAL_SMASHES['Paper'] = fsaB_row(FINAL_SMASHES['Paper'], fsaB_paper);   // FSA lane b: its entrance (the row above is the blast, unchanged)
 
 // MICROPHONE -- DEAFENINGLY LOUD. "her voice getting deafeningly loud" (the design doc: outspoken and honest); her own card is Yell at the Ball, a shout that sends it forward fast. The shout goes out
@@ -71509,7 +71525,7 @@ JAB_ANIM.clockhands = 'punch';   // Clock: his minute hand flicked out (Second H
 // ---- Steve Cobs's prize: begin ----
 JAB_ANIM.voices = 'kick';   // prize B is armless: her X is a kick (her wiki page, Trivia)
 // ---- Steve Cobs's prize: end ----
-const SMASH_PAT_ANIM = { lunge:'punch', through:'dash', leap:'slam', plant:'slam', walk:'throw', rain:'cast', mine:'stomp', reel:'throw', burst:'cast', beam:'spit', volley:'throw' };
+const SMASH_PAT_ANIM = { lunge:'punch', through:'dash', leap:'slam', plant:'slam', walk:'throw', rain:'cast', mine:'stomp', reel:'throw', burst:'cast', beam:'spit', volley:'throw', swing:'punch' };
 const UP_SHAPE_ANIM = { hop:'uppercut', warp:'cast', plunge:'slam', spin:'spin' };
 function animKindOf(f, move){
   const k = f && f.kit && f.kit.special;
@@ -72599,8 +72615,8 @@ function fireSmash(f, inp, angle, dirMove){
 // The name comes from the neutral smash's pattern (lunge, dash, hop, shockwave...). A CPU uses them only when its brain asked (brainSmDir): a foe above it, or close in.
 // Before the shield and reflector update, ↑ or ↓ held tilted the neutral smash's launch (SMASH_ANGLE_TILT): that is now the up and down smash, for a person.
 const DSM_NAMES = {
-  up:   { lunge:'Rising Lunge', through:'Rising Rush', leap:'Sky Hop', burst:'Skyburst', walk:'Rolling Uppercut', beam:'Sky Line', rain:'Updraft', mine:'Spring Trap', plant:'Rooted Uppercut', reel:'Haul Up', horizon:'Event Skyline', volley:'Rising Volley', none:'Rising Smash' },
-  down: { lunge:'Low Lunge', through:'Low Rush', leap:'Ground Pound', burst:'Floor Ring', walk:'Low Roll', beam:'Floor Line', rain:'Low Drop', mine:'Floor Trap', plant:'Rooted Sweep', reel:'Foot Drag', horizon:'Event Floor', volley:'Low Volley', none:'Low Sweep Smash' },
+  up:   { lunge:'Rising Lunge', through:'Rising Rush', leap:'Sky Hop', burst:'Skyburst', walk:'Rolling Uppercut', beam:'Sky Line', rain:'Updraft', mine:'Spring Trap', plant:'Rooted Uppercut', reel:'Haul Up', horizon:'Event Skyline', volley:'Rising Volley', swing:'Rising Swing', none:'Rising Smash' },
+  down: { lunge:'Low Lunge', through:'Low Rush', leap:'Ground Pound', burst:'Floor Ring', walk:'Low Roll', beam:'Floor Line', rain:'Low Drop', mine:'Floor Trap', plant:'Rooted Sweep', reel:'Foot Drag', horizon:'Event Floor', volley:'Low Volley', swing:'Low Swing', none:'Low Sweep Smash' },
 };
 const DSM = { upDmg:0.88, downDmg:0.82, kb:0.9, upSt:5, downSt:4, upAct:4, downAct:5 };
 // Launch strength per kit where the neutral smash's own launch is not what its row says (a lunge, leap or plant row with a low real launch; a hand-written body; Yin-Yang's
@@ -72887,6 +72903,14 @@ SM_PAT.volley = function(f, s){
   }
   for(let i = 0; i < 4; i++) puff(f.x + d*(f.r + 8), f.y - 6, s.color || f.color, 3);
 };
+// SWING (SKY-DROP SMASHES removed, 2026-11-11): Blocky's anvil is swung by his body. A wind-up (startWindup: the body gathers and glows, a hit in it cancels the swing, like a ring),
+// then the lunge swing with the row's reach: the whole hit lands on whoever the wedge touches. The smash runs as f._sm / _windup.smash, so a shield breaker still breaks the bubble.
+SM_PAT.swing = function(f, s){
+  const W = s.wind == null ? 24 : s.wind;
+  f._swingWall = hazardT + W + SMASH_LUNGE_FRAMES + 8;   // the swing does not reach through rock (the wall rule of the Final Smashes: fswBlocked in hitCircle / hitShape)
+  startWindup(f, W, function(){ f._smSync = true; try { SM_PAT.lunge(f, s); } finally { f._smSync = false; } }, s.color || f.color, null);   // (_smSync: a swing that lands on the very frame it is thrown is still the smash's hit, so a breaker's still breaks the bubble)
+  if(f._windup) f._windup.smash = true;   // the angle waits for it (SMASH_ANGLE_FRAMES); the breaker's hit is the smash's
+};
 function runSmashSpec(f, s, pool){
   f.flash = 14;
   const cost = s.cost;
@@ -73103,11 +73127,8 @@ const SMASH_SPEC = {
   // Ruler: a straight edge is thin and exact — narrower than Ruby's, and it rings rather than burns.
   measure:  {pat:'beam', len:860, wide:16, dmg:12, kb:13, effect:'weaken', n:150, cost:{stun:28}, color:'#e8d8a0'},
 
-  // Blocky: the anvil still falls on whoever is nearest.
-  // Blocky's anvil always found you — the legacy body scanned for the nearest fighter and dropped
-  // on their x. That is what `seek` restores; the 90px offset is now only the fallback for when
-  // nobody is within range.
-  anvil:    {pat:'rain', at:90, seek:220, count:1, r:18, dmg:16, kb:10, effect:'knockdown', cost:{cd:68}, color:'#3a3a3a'},
+  // Blocky: the anvil is swung by his body now (it used to fall from the sky on whoever was nearest).
+  anvil:    {pat:'swing', wind:45, step:7, reach:46, dmg:16, kb:10, effect:'knockdown', cost:{cd:68}, color:'#3a3a3a'},   // Blocky -- Anvil Smash (SKY-DROP SMASHES removed (2026-11-11)): he winds up and swings the anvil with his body (was dropped on the nearest foe from the sky); still a shield breaker
 
   // Tree: TIMBER. The heaviest band in the table and the longest wind-up, because you can see it
   // coming and step out of it — which is exactly what the call is for.
@@ -88113,7 +88134,7 @@ const FS_BLURBS = {   // FS MENU LINES: each fighter's Final Smash as the menus 
   "Saw": ["Spin Cycle Overdrive", "A spinning blade round her holds nearby foes while it saws them, then throws them."],
   "Tennis Ball": ["Ball Machine", "Ten bouncing balls roll out along the floor in front of him."],
   "Snowball": ["Avalanche", "Sends one huge snowball ahead through everyone, then two small ones behind it."],
-  "Book": ["Overdue", "Books circle her, then snap shut and fall on the two nearest foes."],
+  "Book": ["Overdue", "Books circle her, then snap shut and fly out across the stage at the two nearest foes."],
   "Ruby": ["Refraction", "Three gem bolts, low, middle and high, pierce foes and bounce around."],
   "Needle": ["Cut in Half", "One long thin cut slices along the floor through everyone it meets."],
   "Pin": ["Popped", "Climbs into a giant mech suit and stomps all over a foe."],
@@ -88131,7 +88152,7 @@ const FS_BLURBS = {   // FS MENU LINES: each fighter's Final Smash as the menus 
   "Liy": ["Lights Out", "Flips her secret switch and drives a foe through two boats."],
   "Lollipop": ["Sticky Trap", "A sticky patch opens ahead, drags nearby foes in, then snaps shut."],
   "Marker": ["Permanent Record", "Four volleys of ink drops spray across a wide cone in front of him."],
-  "Money": ["Make It Rain", "Drops bags of coins on the three nearest foes, again and again."],
+  "Money": ["Make It Rain", "Throws bags of coins across the stage at the three nearest foes, again and again."],
   "Naily": ["Nailed It", "Fires three volleys of piercing nails in a tight fan across the stage."],
   "Pillow": ["Fluff Bounce", "Runs experiments on a foe in her journal, one page after another."],
   "Remote": ["Signal Jam", "Rewinds, fast-forwards and turns up the volume on a held foe, then mutes them."],
@@ -88164,7 +88185,7 @@ const FS_BLURBS = {   // FS MENU LINES: each fighter's Final Smash as the menus 
   "Baseball": ["Ground Pound", "Shockwaves run out along the floor both ways; hop them."],
   "Pickle": ["Loads of Experience", "Marks the nearest foe, then belly-flops a pickle down on that spot."],
   "Nickel (II)": ["Double Zinger", "Two remarks at once: a burst around him, then a wider one."],
-  "Paper": ["Somebody Check for Pianos", "Drops two pianos on the nearest foe, a beat apart."],
+  "Paper": ["Somebody Check for Pianos", "Rolls two pianos along the floor at the nearest foe, a beat apart."],
   "Microphone": ["Deafeningly Loud", "A huge shout runs out along the floor ahead of her."],
   "Salt": ["Shake", "Shakes ten grains in an arc ahead of her, then ten more."],
   "Test Tube": ["Glass Up", "Sends a foe through a portal, sprays acid, and loops them through time three times."],
@@ -88689,10 +88710,12 @@ function ocSmashBand(f, kind, row){
     case 'burst':   return [0, (row.rad || 90)*0.85, 44];       // a ring that grows to its radius
     case 'beam':    return [0, (row.len || 170)*0.8, 24];       // a lane ahead
     case 'lunge':   return [24, R*0.75, 44];                    // a step and a strike
+    case 'swing':   return [24, R*0.75, 44];                    // a wind-up, then a step and a strike
     case 'through': return [36, R*0.75, 44];                    // a dash through
     case 'leap':    return [60, R*0.7, 70];                     // a hop onto the nearest foe
     case 'reel':    return [40, Math.min(R, 170)*0.9, 44];      // pulls the foe in
     case 'rain':    return [40, R*0.95, 70];                    // drops on the nearest foe within its seek
+    case 'volley':  return [40, Math.min(R, 320)*0.7, 70];      // a fan straight out of the front
     case 'mine':    return [50, 150, 50];                       // a mine a step ahead, for a foe coming in
   }
   return null;
@@ -89216,8 +89239,8 @@ ocDef('Z-U4', 'zoner', 'u', 'Utility', 'Double Spring',  'a rise that hands the 
 // NEUTRAL SMASH (SMASH_SPEC-style rows: dmg is the row's, fired at SMASH_DMG_MULT like every smash)
 ocDef('Z-S1', 'zoner', 's', 'Damage',  'Lance Beam',     'a long thin beam straight ahead that floors them',
   { smash:{ pat:'beam', len:160, wide:16, dmg:12, kb:13, effect:'knockdown', n:24, cost:{ stun:28 }, color:OC_TEAL }, ai:{ kind:'beam', len:160, dmg:12 } });   // (OC MOVES V2 trim 4: 13% / 14 -> 12% / 13)   // (OC CPU AND BALANCE: len 170 -> 160, 16% -> 13%, knockdown 30 -> 24, whiff stun 24 -> 28: the CPU now fires it from its band, 5 a match, and the Zoner's best builds rose to 46-51%)
-ocDef('Z-S2', 'zoner', 's', 'Zoning',  'Star Rain',      'four small stars fall ahead, on the nearest foe when one is near; each slows',
-  { smash:{ pat:'rain', count:4, at:44, gap:40, seek:200, r:8, dmg:7, kb:6, effect:'slow', n:60, rider:{ vy:16 }, cost:{ cd:56 }, color:OC_TEAL }, ai:{ kind:'rain', band:[40, 200], dmg:7 } });
+ocDef('Z-S2', 'zoner', 's', 'Zoning',  'Star Spray',     'four small stars fly out of the front of you in a fan; a foe in line is hit by one of them, and slows',
+  { smash:{ pat:'volley', count:4, fan:1.2, spd:10, life:20, r:8, dmg:7, kb:6, effect:'slow', n:60, cost:{ cd:56 }, color:OC_TEAL }, ai:{ kind:'volley', band:[40, 200], dmg:7 } });   // (SKY-DROP SMASHES removed (2026-11-11): was Star Rain, four stars falling from the sky)
 // The frame budget (FRAME BUDGET above): a shot's whole startup is its tell (it fires on the frame it is cast); a melee row's is its st plus a tell
 // where the design asks; the strong fast moves pay 18-28 on a whiff, the weak 8-14, the smashes the slow class; stances and the hops are their own lock.
 Object.assign(TELL_ADD, { 'Z-N1.neutral':8, 'Z-N2.neutral':10, 'Z-D1.down':3, 'Z-D2.down':12 });
@@ -89661,8 +89684,8 @@ ocDef('K-U4', 'trickster', 'u', 'Utility', 'Spring Heel',    'a rise that hands 
 // NEUTRAL SMASH (SMASH_SPEC-style rows: dmg is the row's, fired at SMASH_DMG_MULT like every smash)
 ocDef('K-S1', 'trickster', 's', 'Damage',  'Pirouette Kick', 'a step and a spinning kick that floors them; the lightest-costed big hit',
   { smash:{ pat:'lunge', step:5, reach:34, fx:40, dmg:13, kb:12, effect:'knockdown', n:30, cost:{ stun:24 }, color:OC_MAGENTA }, ai:{ kind:'lunge', dmg:13 } });   // (trim 3: 14.5% / 13 / whiff stun 22 -> 13% / 12 / 24)   // (OC CPU AND BALANCE: 16% -> 14.5%)   // (the design's n:90 knockdown is past the 45 lock; a knockdown asks 30)
-ocDef('K-S2', 'trickster', 's', 'Zoning',  'Card Spray',     'five cards fall in a fan on the nearest foe, or ahead of you when none is near; each scrambles',
-  { smash:{ pat:'rain', count:5, at:26, gap:34, seek:220, r:6, dmg:6, kb:5, effect:'scramble', n:45, rider:{ vy:16 }, cost:{ cd:58 }, color:OC_MAGENTA }, ai:{ kind:'rain', band:[30, 220], dmg:6 } });
+ocDef('K-S2', 'trickster', 's', 'Zoning',  'Card Spray',     'five cards fly out of the front of you in a fan; a foe in line is hit by one of them, and is scrambled',
+  { smash:{ pat:'volley', count:5, fan:1.1, spd:10, life:20, r:6, dmg:6, kb:5, effect:'scramble', n:45, cost:{ cd:58 }, color:OC_MAGENTA }, ai:{ kind:'volley', band:[30, 220], dmg:6 } });   // (SKY-DROP SMASHES removed (2026-11-11): the cards fell from the sky)
 ocDef('K-S3', 'trickster', 's', 'Escape',  'Dash Through',   'the fastest dash through the foe: pure speed and distance',
   { smash:{ pat:'through', dash:9, spd:16, reach:24, dmg:11, kb:9, cost:{ stun:20 }, color:OC_MAGENTA }, ai:{ kind:'through', dmg:11 } });
 ocDef('K-S4', 'trickster', 's', 'Utility', 'Hex Ring',       'a quick ring round the body that weakens whoever it touches; a set-up, never a kill',
@@ -91661,7 +91684,7 @@ function hitCircle(f,cx,cy,rad,dmgLow,dmgHigh,kbx,kby,band,sourKb,once){
     if(t.dead||t.idx===f.idx||(f._combo ? graceBlocks(t,f) : (t.invuln>0 && !chainOpen(t,f)))) continue;
     const d = hurtGap(t, cx, cy);   // to the hurtbox EDGE, so the old t.r is already inside it
     if(d<rad){
-      if(FS.by === f && fswBlocked(f, cx, cy, t)) continue;   // FS WALLS: a Final Smash's blast does not reach through rock
+      if((FS.by === f || f._swingWall > hazardT) && fswBlocked(f, cx, cy, t)) continue;   // FS WALLS: a Final Smash's blast does not reach through rock (nor does Blocky's swung anvil: _swingWall)
       // Golf Ball marks whatever she hits, so her bonus-vs-cursed payoff builds up on its own
       if(f.kit && f.kit.special==="zapshooter" && t.team!==f.team){ t.curseStacks=Math.min(CURSE_MAX_STACKS,(t.curseStacks||0)+2); }
       const outer = d > rad*b;
@@ -91805,7 +91828,7 @@ function hitShape(f, sh, dmgLow, dmgHigh, kbx, kby, band, sourKb, once){
   for(const t of fighters){
     if(t.dead||t.idx===f.idx||(f._combo ? graceBlocks(t,f) : (t.invuln>0 && !chainOpen(t,f)))||(JAB_BY===f && jabLocked(t, f, f._jabPress))) continue;   // (JAB_BY ...: THE JAB LOCK, 2026-10-28, "Yes, stop the jab lock")
     if(!shapeHits(sh, t)) continue;
-    if(FS.by === f && fswBlocked(f, ox, oy, t) && fswBlocked(f, bb.cx, bb.cy, t)) continue;   // FS WALLS: neither the swing's middle nor its centre of area sees the foe
+    if((FS.by === f || f._swingWall > hazardT) && fswBlocked(f, ox, oy, t) && fswBlocked(f, bb.cx, bb.cy, t)) continue;   // FS WALLS: neither the swing's middle nor its centre of area sees the foe
     if(f.kit && f.kit.special==="zapshooter" && t.team!==f.team){ t.curseStacks=Math.min(CURSE_MAX_STACKS,(t.curseStacks||0)+2); }
     const d = Math.max(0, hurtGap(t, ox, oy));   // to the target's EDGE, as hitCircle judges its band
     const outer = d > rad*b;
