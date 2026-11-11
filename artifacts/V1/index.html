@@ -69191,7 +69191,7 @@ function step(){
           if(pr.ownerObj && pr.ownerObj!==f && ownTeam===f.team) continue;
           // OC TRAPPER ANTI-LOOP: a foe a Trapper's mine has just gone off under is spent for OC_MINE_IMM frames to the Trapper's mines (an owner's "spam it and get to orange":
           // root 40 outlasts the 30-frame stun, the next mine arms under the stuck foe, and so on). The mine stays, quiet, until the window is over. Roster mines have no `oc` owner and are untouched.
-          const ocTrap = pr.trap && pr.ownerObj && pr.ownerObj.oc && pr.ownerObj.oc.type === 'trapper';
+          const ocTrap = pr.trap && pr.ownerObj && pr.ownerObj.oc && !pr.slow && !pr.slick;   // (OC MOVES V2: every OC floor piece, whoever lays it; a slowing puddle is no mine)
           if(ocTrap && (f._ocMineImm || 0) > hazardT) continue;
           if(ocTrap) f._ocMineImm = hazardT + OC_MINE_IMM;
           if(pr.slick){ f.vx += Math.sign(f.vx||1)*1.4; continue; }  // ink slick: slippery, no expire
@@ -69208,7 +69208,7 @@ function step(){
           if(pr.freeze && f.pct>freezePct(pr.ownerObj)){ applyFreeze(f, freezeDuration(f.pct,50) + comebackFlavor(pr.ownerObj||{}, "freeze")); }
           // a trap's effect lands when it is stepped on, the way a thrown one's does (it never did here)
           if(pr.fxTag && SM_FX[pr.fxTag]) SM_FX[pr.fxTag](f, pr.ownerObj, pr.fxN);
-          if(pr.root && tpRootTake(f, pr)){ lockRoot(f, 60); }   // (ROOT CHAIN BROKEN: her trap still hits, it may not root)
+          if(pr.root && tpRootTake(f, pr)){ const rb = f.rooted || 0; lockRoot(f, 60); ocRootFix(f, pr.ownerObj, rb); }   // (ROOT CHAIN BROKEN: her trap still hits, it may not root) (OC MOVES V2: an OC's root never outlasts the stun)
           puff(pr.x,pr.y,pr.color,10);
           if(pr.arm!==undefined || pr.dmg>=8){ pr.life=0; }  // mines/heavy traps detonate once; puddles linger
         }
@@ -69376,7 +69376,7 @@ function step(){
           if(pr.burn) f.burn=Math.max(f.burn,110);
           if(pr.poison){ f.burn=Math.max(f.burn,80); f._poisonT=Math.max(f._poisonT||0,80); }
           if(pr.freeze && f.pct>freezePct(pr.ownerObj)){ applyFreeze(f, freezeDuration(f.pct,50) + comebackFlavor(pr.ownerObj||{}, "freeze")); }
-          if(pr.root && tpRootTake(f, pr)){ lockRoot(f, 60); }   // (ROOT CHAIN BROKEN)
+          if(pr.root && tpRootTake(f, pr)){ const rb = f.rooted || 0; lockRoot(f, 60); ocRootFix(f, pr.ownerObj, rb); }   // (ROOT CHAIN BROKEN) (OC MOVES V2)
           if(pr.reverseCtrl){ applyCtrlRev(f,70); }
           // A smash whose PATTERN is a projectile (walk / rain / mine) carries its row's effect as
           // a tag rather than a rider, so the effect vocabulary is the same one the melee patterns
@@ -70385,6 +70385,14 @@ function popUpBurst(f, R, dmg, stun, color){
 // (SM_FX.root: the smash rows ask 70 and 90, the up-special drops and Toothpaste's trap 60), Pin's corkboard pins (fxPin), Candle's swallow (48),
 // Fries' carton cap (48) and the fridge drag (90), each through lockRoot or Math.min with LOCK.max. Clover's chain is not a lock (CLOVER_CHAIN_SCALE).
 const LOCK = { max:45 };
+// OC MOVES V2 (the owner: "roots never outlast stun"): a root an OC's move puts on a foe is at most OC_ROOT_MAX frames, and the foe's stun is lifted to cover it, so a root can never
+// hold a foe after the hit that put it there lets go. Roster roots (and a root the foe already had) are untouched.
+const OC_ROOT_MAX = 30;
+function ocRootFix(t, from, before){
+  if(!from || !from.oc || !((t.rooted || 0) > (before || 0))) return;
+  t.rooted = Math.max(before || 0, Math.min(t.rooted, OC_ROOT_MAX));
+  if(t.hitstun < t.rooted){ t.hitstun = t.rooted; t._stunFx = Math.max(t._stunFx || 0, t.rooted); }
+}
 const OC_MINE_IMM = 120;   // OC TRAPPER ANTI-LOOP: frames a foe is spent to the Trapper's mines after one goes off under them (the root 40 + a 24-frame arm would otherwise chain)
 function lockRoot(t, n){ t.rooted = Math.max(t.rooted || 0, Math.min(n || 0, LOCK.max)); }   // a root a move puts on a FOE: never past LOCK.max (a fighter's own root, its commitment, is not capped)
 const PRICEHIKE_KB = 1.06;   // Profily: how much farther his smash launches a foe wearing his Price Tag
@@ -70393,7 +70401,7 @@ const SM_FX = {
   burn:    (t,f,n)=>{ t.burn=Math.max(t.burn||0, n||110); },
   poison:  (t,f,n)=>{ t.burn=Math.max(t.burn||0, n||80); t._poisonT=Math.max(t._poisonT||0, n||80); },
   freeze:  (t,f,n)=>{ if(t.pct>freezePct(f)) applyFreeze(t, freezeDuration(t.pct,50)); },
-  root:    (t,f,n)=>{ lockRoot(t, n||60); },   // (MAX LOCK TIME: at most LOCK.max; the rows ask 60 to 90)
+  root:    (t,f,n)=>{ const rb = t.rooted || 0; lockRoot(t, n||60); ocRootFix(t, f, rb); },   // (MAX LOCK TIME: at most LOCK.max; the rows ask 60 to 90)
   slow:    (t,f,n)=>{ t.slowed=Math.max(t.slowed||0, n||90); },
   ice:     (t,f,n)=>{ t.iceUntil=Math.max(t.iceUntil||0, n||120); },
   curse:   (t,f,n)=>{ t.curseStacks=Math.min(CURSE_MAX_STACKS,(t.curseStacks||0)+(n||2)); },
@@ -71563,7 +71571,7 @@ function doSmash(f){
   const tag = function(){ for(const p of projectiles) if(p.owner===f.idx && !before.has(p)){ p._slot = 'smash'; if(f._smAngle) p.smAngle = f._smAngle; } };   // shots carry the angle, and the move they came from (no taker takes a smash's: TAKE_NEVER)
   if(SMASH_SPEC[k] && SMASH_SPEC[k].uncopyable) f._noCopyT = hazardT + 150;   // Bot's THE ONE AND ONLY!: nothing may copy it (see applyHit's tape)
   f._smSync = true;   // SHIELD BREAKERS: a hit thrown by the body below is the smash's (brkSwing)
-  if(f.oc){ const o = ocOpt(f, 's'); if(o && o.smash){ ocUsed(f, 's'); ocBoostArm(f, o); runSmashSpec(f, smashRowAsFired(o.smash, f)); tag(); f._smSync = false; return; } }   // OC ENGINE: the smash pick, a SMASH_SPEC-style row
+  if(f.oc){ const o = ocOpt(f, 's'); if(o && o.smash){ ocUsed(f, 's'); ocBoostArm(f, o); runSmashSpec(f, Object.assign(smashRowAsFired(o.smash, f), { color:(OC_TYPES[f.oc.type] || OC_TYPES.zoner).color })); tag(); f._smSync = false; return; } }   // OC ENGINE: the smash pick, a SMASH_SPEC-style row
   if(SMASH_SPEC[k]){ runSmashSpec(f, smashRowAsFired(SMASH_SPEC[k], f)); tag(); f._smSync = false; return; }
   if(SMASHES[k]){ SMASHES[k](f); smashCost(f, LEGACY_SMASH_COST[k]); tag(); f._smSync = false; return; }
   f._smSync = false;
@@ -71727,7 +71735,8 @@ function riseShape(f, s){
   const wasAir = !f.onground;   // a plunge that hits on the way down (`fall`) only does it from a cast in the air
   f._castX=f.x; f._castY=f.y;   // where the cast happened (a warp moves before its leave is applied)
   if(s.shape==='warp'){
-    f.y = Math.max(40, f.y - (s.dist||140)*recK(f)); f.x += dir*(s.dx||0); f.vy = -4; f.onground=false;   // (rec: a warp off the stage goes that much higher)
+    const wd = (dir && s.sdx != null) ? s.sdist : s.dist, wx = (dir && s.sdx != null) ? s.sdx : s.dx;   // (OC MOVES V2: a warp may be shorter and wider when steered sideways)
+    f.y = Math.max(40, f.y - (wd||140)*recK(f)); f.x += dir*(wx||0); f.vy = -4; f.onground=false;   // (rec: a warp off the stage goes that much higher)
     f.invuln = Math.max(f.invuln, s.invuln||8);
     for(let i=0;i<10;i++) puff(f.x,f.y+(Math.random()*40-20),f.color,4);
   } else {
@@ -86883,19 +86892,19 @@ const ENDLAG_ADD = {
 // The design: reports/oc-design.md. The editor, the saved list, the skins and the online code are later jobs: until then an OC is reachable only
 // through ocDevMatch (the console or the headless harness) and nothing in any menu knows it exists.
 const OC_W = 86;   // every OC weighs the roster's average (the owner's decision: weight is never chosen)
-const OC_BOOST = { dmg:1.3, kb:1.15, life:120 };   // OC VIABILITY 1: what an Overcharge adds to the next special or smash that hits (the jab keeps its own empower)
+const OC_BOOST = { dmg:1.2, kb:1.15, life:120 };   // OC VIABILITY 1: what an Overcharge adds to the next special or smash that hits (the jab keeps its own empower)
 const OC_SLOTS = ['n', 'd', 'u', 's'];
 const OC_SLOT_OF = { special:'n', neutral:'n', down:'d', up:'u', smash:'s' };   // the dispatchers' slot words -> the pick slot
 // The four types: fixed stats within 6% of the roster's medians (a flavour, not a tier); `ready` is the type whose options exist (the rest are 'coming').
 const OC_TYPES = {
-  zoner:     { name:'Zoner',     color:'#4ec9e0', arch:'Zoner',     st:{ run:0.97, air:1.00, jump:1.03, fall:0.96, dmg:1.00, rec:1.00 }, ready:true },
-  grappler:  { name:'Grappler',  color:'#e0663a', arch:'Grappler',  st:{ run:1.00, air:0.97, jump:0.96, fall:1.06, dmg:1.00, rec:1.00 }, ready:true },   // (OC CPU AND BALANCE: dmg 1.06 -> 1.00)
-  trapper:   { name:'Trapper',   color:'#9a6ee0', arch:'Trapper',   st:{ run:0.95, air:1.00, jump:1.00, fall:1.00, dmg:1.03, rec:1.05 }, ready:true },
-  trickster: { name:'Trickster', color:'#d14fc9', arch:'Trickster', st:{ run:1.04, air:1.05, jump:1.05, fall:0.97, dmg:0.96, rec:1.00 }, ready:true },
+  zoner:     { name:'Zoner',     color:'#4ec9e0', arch:'Zoner',     st:{ run:0.97, air:1.00, jump:1.03, fall:0.96, dmg:0.94, rec:1.00 }, ready:true },
+  grappler:  { name:'Grappler',  color:'#e0663a', arch:'Grappler',  st:{ run:1.00, air:0.97, jump:0.96, fall:1.06, dmg:0.94, rec:1.00 }, ready:true },   // (OC CPU AND BALANCE: dmg 1.06 -> 1.00)
+  trapper:   { name:'Trapper',   color:'#9a6ee0', arch:'Trapper',   st:{ run:0.95, air:1.00, jump:1.00, fall:1.00, dmg:0.98, rec:1.05 }, ready:true },
+  trickster: { name:'Trickster', color:'#d14fc9', arch:'Trickster', st:{ run:1.04, air:1.05, jump:1.05, fall:0.97, dmg:0.94, rec:1.00 }, ready:true },
 };
 const OC_OPTIONS = {};   // id -> { type, slot, role, name, text, mv | shot | rise | smash | stance | drop, spCd, ai }
 const OC_LISTS = { zoner:{ n:[], d:[], u:[], s:[] }, grappler:{ n:[], d:[], u:[], s:[] }, trapper:{ n:[], d:[], u:[], s:[] }, trickster:{ n:[], d:[], u:[], s:[] } };   // type -> slot -> ids in editor order (the first is the default)
-function ocDef(id, type, slot, role, name, text, row){ OC_OPTIONS[id] = Object.assign({ id, type, slot, role, name, text }, row); OC_LISTS[type][slot].push(id); }
+function ocDef(id, type, slot, role, name, text, row){ OC_OPTIONS[id] = Object.assign({ id, type, slot, role, name, text }, row); }   // (OC MOVES V2: the lists are the shared pool's views, built by ocBuildLists below; `type` is only where the row was authored)
 const OC_PALETTE = ROSTER.filter(r => r.play).slice(0, 16).map(r => r.color);   // the body colours an OC may wear: the roster's own, so nothing clashes with the maps
 // Keys. ocKey: the pick in a slot (n/d/u/s), else the kit key. ocKitKey: what the keyed tables (ENDLAG_ADD, TELL_ADD, SW_EXC, SLAM_ROWS, SMASH_ID) look
 // a move up by -- for an OC the option id in a pick slot, for everyone else exactly the kit key those tables always used.
@@ -86947,8 +86956,7 @@ function ocRun(f, slot){
 // The fighter. ocNorm fills a saved OC's defaults and drops an unknown type or pick to the type's first option (a loader never refuses the file);
 // ocRow builds the ROSTER-shaped row makeFighter takes; ocStats is statsFor for a type (the run follows the weight, as for everyone).
 function ocNorm(oc){
-  const T = (oc && OC_TYPES[oc.type]) ? oc.type : 'zoner', L = OC_LISTS[T], picks = {};
-  for(const s of OC_SLOTS){ const id = oc && oc.picks && oc.picks[s], r = id && OC_OPTIONS[id]; picks[s] = (r && r.type === T && r.slot === s) ? id : (L[s][0] || null); }
+  const T = (oc && OC_TYPES[oc.type]) ? oc.type : 'zoner', picks = ocFixPicks(T, oc && oc.picks);   // (OC MOVES V2: any id on the type's view, old ids mapped, the guardrails kept)
   const k0 = oc && oc.look, k = (k0 && typeof k0 === 'object') ? k0 : {}, lid = (typeof k0 === 'string') ? k0 : k.id, c = (n, hi) => { n = n | 0; return n < 0 ? 0 : n > hi ? hi : n; };   // (OC EDITOR: the look may be a look id, a picture of OC_LOOKS)
   const look = { c:c(k.c, 15), c2:c(k.c2, 15), p:c(k.p, 4), e:c(k.e, 3), m:c(k.m, 3), hat:(typeof k.hat === 'string' && k.hat) || null, id:ocLookOf(lid) ? lid : null };
   return { v:1, name:String((oc && oc.name) || OC_TYPES[T].name).slice(0, 16), type:T, picks, rf:(oc && oc.rf) ? 1 : 0, look };
@@ -87133,8 +87141,7 @@ function ocTypeOk(t){ return typeof t === 'string' && !!OC_TYPES[t] && OC_TYPES[
 function ocDefaultType(){ return OC_PUBLIC_TYPES.find(ocTypeOk) || 'zoner'; }
 function ocClean(raw){   // any saved or typed thing -> a valid OC (an unknown type, pick or look is reset to the default, a bad name becomes "OC"); never refuses
   const o = (raw && typeof raw === 'object') ? raw : {};
-  const type = ocTypeOk(o.type) ? o.type : ocDefaultType(), L = OC_LISTS[type], p = (o.picks && typeof o.picks === 'object') ? o.picks : {}, picks = {};
-  for(const s of OC_SLOTS){ const id = p[s], r = (typeof id === 'string' && Object.prototype.hasOwnProperty.call(OC_OPTIONS, id)) ? OC_OPTIONS[id] : null; picks[s] = (r && r.type === type && r.slot === s) ? id : L[s][0]; }
+  const type = ocTypeOk(o.type) ? o.type : ocDefaultType(), picks = ocFixPicks(type, o.picks);
   const nm = ocNameClean(o.name);
   return { v:1, name:ocNameOk(nm) ? nm : 'OC', type, look:ocLookOf(o.look) ? o.look : OC_LOOKS[0].id, picks, rf:o.rf ? 1 : 0 };
 }
@@ -87333,10 +87340,11 @@ function ocRender(){
     main = '<div class="ocgrid">' + OC_LOOKS.map((L, i) => '<div class="occell' + (i === OCUI.cur ? ' sel' : '') + '">' + ocImg(L) + L.name + '</div>').join('') + '</div>';
   } else if(OC_SLOT_OF_STEP[st]){
     const slot = OC_SLOT_OF_STEP[st];
-    main = '<div class="oclist"><div class="ocsub">' + OC_SLOT_LABEL[slot] + ' (pick one)</div>' + OC_LISTS[d.type][slot].map((id, i) => {
-      const x = OC_OPTIONS[id];
-      return '<div class="ocrow' + (i === OCUI.cur ? ' sel' : '') + '"><b>' + esc(x.name) + '</b><span class="ocdesc">' + esc(x.text) + '</span></div>';
-    }).join('') + '</div>';
+    const L = OC_LISTS[d.type][slot], why = i => ocConflict(d.picks, slot, L[i]), cw = why(OCUI.cur);
+    main = '<div class="oclist"><div class="ocsub">' + OC_SLOT_LABEL[slot] + ' (pick one)</div>' + L.map((id, i) => {
+      const x = OC_OPTIONS[id], off = !!why(i);
+      return '<div class="ocrow' + (i === OCUI.cur ? ' sel' : '') + (off ? ' off' : '') + '"><b>' + esc(x.name) + '</b>' + (id === d.picks[slot] ? '<span class="ocrole">picked</span>' : '') + '<span class="ocdesc">' + esc(x.text) + '</span></div>';
+    }).join('') + '<div class="ocsub">' + esc(cw) + '</div></div>';
   } else if(st === 6){
     main = '<div class="oclist"><div class="ocsub">Z (hold)</div>' + [['Shield', OC_RF_TEXT.sh], ['Reflector', OC_RF_TEXT.rf]].map((x, i) => '<div class="ocrow' + (i === OCUI.cur ? ' sel' : '') + '"><b>' + x[0] + '</b><span class="ocdesc">' + x[1] + '</span></div>').join('') + '</div>';
   } else if(st === 7){
@@ -87346,7 +87354,7 @@ function ocRender(){
     main = '<div class="oclist"><div class="ocrow sel"><b>' + (esc(d.name) || '(no name yet)') + '</b><span class="ocsub">' + OC_TYPES[d.type].name + ' · ' + esc((ocLookOf(d.look) || {}).name) + ' · ' + (d.rf ? 'Reflector' : 'Shield') + '</span></div>' + picks
       + '<div class="ocsub">Press Enter to save.</div></div>';
   }
-  const T = OC_TYPES[d.type], side = '<div class="ocside">' + ocImg(ocLookOf(d.look)) + '<b>' + (esc(d.name) || T.name) + '</b><div class="ocsub">' + T.name + ': ' + OC_TYPE_BLURB[d.type].words + '</div><div class="ocsub" style="font-size:10px">' + ocStatWords(d.type) + '</div></div>';
+  const T = OC_TYPES[d.type], side = '<div class="ocside">' + ocImg(ocLookOf(d.look)) + '<b>' + (esc(d.name) || T.name) + '</b><div class="ocsub">' + T.name + ': ' + OC_TYPE_BLURB[d.type].words + '</div><div class="ocsub" style="font-size:10px">' + ocStatWords(d.type) + '</div>' + ((OC_SLOT_OF_STEP[st] || st === 8) ? '<div class="ocsub" style="font-size:11px;margin-top:6px">' + esc(ocStrip(d.picks)) + '</div>' : '') + '</div>';
   body.innerHTML = main + side;
   help.textContent = st === 7 ? 'Type a name · Backspace · Enter next · Esc back' : (st === 8 ? 'Enter save · Esc back' : (st === 1 ? 'Arrows choose · Enter next · Esc back' : 'Up/Down choose · Enter or Right next · Esc or Left back'));
 }
@@ -87364,13 +87372,14 @@ function ocCycle(n){   // Up/Down (and Left/Right in the look grid): the cursor 
   OCUI.cur = (OCUI.cur + n + len) % len; OCUI.msg = '';
   if(st === 0){ const t = OC_TYPE_ORDER[OCUI.cur]; if(ocTypeOk(t) && t !== d.type){ d.type = t; d.picks = Object.assign({}, ocClean({ type:t }).picks); } else if(!ocTypeOk(t)) OCUI.msg = 'Coming soon'; }
   else if(st === 1) d.look = OC_LOOKS[OCUI.cur].id;
-  else if(OC_SLOT_OF_STEP[st]) d.picks[OC_SLOT_OF_STEP[st]] = OC_LISTS[d.type][OC_SLOT_OF_STEP[st]][OCUI.cur];
+  else if(OC_SLOT_OF_STEP[st]){ const sl = OC_SLOT_OF_STEP[st], id = OC_LISTS[d.type][sl][OCUI.cur], why = ocConflict(d.picks, sl, id); if(why) OCUI.msg = why; else d.picks[sl] = id; }   // (OC MOVES V2: a row the rules forbid is greyed and cannot be picked)
   else if(st === 6) d.rf = OCUI.cur;
   ocRender();
 }
 function ocConfirm(){   // Enter or X
   const d = OCUI.draft, st = OCUI.step;
   if(st === 0 && !ocTypeOk(OC_TYPE_ORDER[OCUI.cur])){ OCUI.msg = 'Coming soon'; ocRender(); return; }
+  if(OC_SLOT_OF_STEP[st]){ const sl = OC_SLOT_OF_STEP[st], id = OC_LISTS[d.type][sl][OCUI.cur], why = ocConflict(d.picks, sl, id); if(why){ OCUI.msg = why; ocRender(); return; } d.picks[sl] = id; }
   if(st === 7){ const why = ocNameWhy(d.name); if(why){ OCUI.msg = why; ocRender(); return; } }
   if(st < OC_STEPS.length - 1){ ocEnter(st + 1); return; }
   const r = OCUI.edit >= 0 ? ocSaveAt(OCUI.edit, d) : ocSaveNew(d);
@@ -87497,49 +87506,41 @@ Object.assign(MOVESETS, {
 ocDef('Z-N1', 'zoner', 'n', 'Damage',  'Skyfall Spark',  'lobs a spark high; it falls almost straight down about two body-lengths ahead',
   { shot:{ vx:2.35, vy:-7.5, grav:true, dmg:12, kb:9, r:8, life:100 }, ai:{ kind:'shot', band:[70, 170], dmg:12 } });   // (OC VIABILITY 1: down at about frame 53, still two body-lengths (125 px) out; was vx 1.6 / vy -11 / 11% / kb 8: down at 74)
 ocDef('Z-N2', 'zoner', 'n', 'Zoning',  'Drift Orb',      'a fat orb floats down the lane for two and a half seconds, passes through foes and slows each one it touches',
-  { shot:{ vx:3.5, grav:false, dmg:6, kb:3, r:12, life:110, pierce:true, fxTag:'slow', fxN:24 }, ai:{ kind:'shot', band:[80, 380], dmg:6 } });   // (OC VIABILITY 1: the wall pays a slow, and is out at about frame 34; same reach)
+  { shot:{ vx:3.5, grav:false, dmg:5, kb:3, r:12, life:110, pierce:true, fxTag:'slow', fxN:20 }, ai:{ kind:'shot', band:[80, 380], dmg:5 } });   // (OC VIABILITY 1: the wall pays a slow, and is out at about frame 34; same reach)
 ocDef('Z-N3', 'zoner', 'n', 'Escape',  'Backstep Flare', 'hops back a body-length with six safe frames and leaves a dart flying forward',
   { mv:{ n:'Backstep Flare', d:'hops back and leaves a dart flying forward', pose:'kickback', st:2, act:6, end:10,
       mv:[{ t0:0, mode:'set', vx:-3.5, vy:-4 }, { t0:1, t1:3, mode:'set', vx:-3.5 }],
-      start:(f) => { f.invuln = Math.max(f.invuln, 6); spawnProj(f, { vx:f.face*9, vy:0, grav:false, dmg:4, kb:3, r:5, color:OC_TEAL, life:30 }); } },
+      start:(f) => { f.invuln = Math.max(f.invuln, 6); spawnProj(f, { vx:f.face*9, vy:0, grav:false, dmg:4, kb:3, r:5, color:OC_TYPES[f.oc.type].color, life:30 }); } },
     ai:{ kind:'dash', back:true, dmg:4 } });
 ocDef('Z-N4', 'zoner', 'n', 'Utility', 'Overcharge',     'stands fourteen frames charging; the next jab, special or smash hits much harder',
   { stance:{ frames:14, end:6, self:{ empower:1 } }, spCd:110, ai:{ kind:'stance' } });
 // DOWN SPECIAL
-ocDef('Z-D1', 'zoner', 'd', 'Damage',  'Floor Arc',      'a low teal arc swept along the ground ahead; launches up and out',
+ocDef('Z-D1', 'zoner', 'd', 'Damage',  'Floor Arc',      'a low arc swept along the ground ahead; launches up and out',
   { mv:{ n:'Floor Arc', d:'a low arc swept along the ground ahead; launches up and out', pose:'sweep', st:6, act:4, end:20,
-      boxes:[{ s:MvF(10, 70, 0.3, -0.3, 10, 0), dmg:11, kb:[6, -6.5], stun:20 }] },
-    ai:{ kind:'melee', band:[20, 80], dmg:11 } });
+      boxes:[{ s:MvF(10, 70, 0.3, -0.3, 10, 0), dmg:10, kb:[6, -6.5], stun:20 }] },   // (OC MOVES V2 trim 1: 11% -> 10%)
+    ai:{ kind:'melee', band:[20, 80], dmg:10 } });
 ocDef('Z-D2', 'zoner', 'd', 'Zoning',  'Glass Shards',   'three sparks fall just ahead; each roots a foe where it lands',
   { drop:{ rider:'root', count:3, spread:3, dmg:3, kb:1, r:5, vy:6, life:40 }, ai:{ kind:'trap' } });
-ocDef('Z-D3', 'zoner', 'd', 'Escape',  'Light Hop',      'a small hop up and back with four safe frames',
-  { mv:{ n:'Light Hop', d:'a small hop up and back', pose:'kickback', st:1, act:8, end:8,
-      mv:[{ t0:0, mode:'set', vx:-2.5, vy:-9 }, { t0:1, t1:7, mode:'set', vx:-2.5 }], start:(f) => { f.invuln = Math.max(f.invuln, 4); } },
-    ai:{ kind:'hop', back:true } });
 ocDef('Z-D4', 'zoner', 'd', 'Utility', 'Recharge',       'stands still thirty frames and heals about 6%; a hit stops it',
   { stance:{ frames:30, end:8, self:{ healing:33 } }, spCd:200, ai:{ kind:'heal' } });
 // UP SPECIAL
 ocDef('Z-U1', 'zoner', 'u', 'Damage',  'Spark Pillar',   'a straight rise with a stunning column above',
-  { rise:{ shape:'hop', power:-12, hit:{ off:-14, fx:4, reach:18, dmg:[6, 10], band:-0.6, kb:[2, -11], eff:'stun', n:30 } }, ai:{ kind:'hop', up:true, dmg:10 } });
+  { rise:{ shape:'hop', power:-12, hit:{ off:-14, fx:4, reach:18, dmg:[4, 6], band:-0.6, kb:[2, -11], eff:'stun', n:16 } }, ai:{ kind:'hop', up:true, dmg:6 } });   // (trim 4: [4, 6] / stun 16)   // (trim 2: [4, 7] / stun 20)   // (OC MOVES V2 trim 1: [6, 10] / stun 30 -> [5, 8] / 24)
 ocDef('Z-U2', 'zoner', 'u', 'Zoning',  'Beacon Drop',    'a rise that fires one shot straight down to cover the landing',
   { rise:{ shape:'hop', power:-11 }, shot:{ vx:0, vy:8, grav:false, dmg:5, kb:4, r:7, life:30 }, ai:{ kind:'hop', up:true, dmg:5 } });
-ocDef('Z-U3', 'zoner', 'u', 'Escape',  'Blink',          'a long warp up and a little the way you steer, twelve safe frames, no hit',
-  { rise:{ shape:'warp', dist:150, dx:40, invuln:12 }, ai:{ kind:'warp', up:true } });
-ocDef('Z-U4', 'zoner', 'u', 'Utility', 'Glide Lamp',     'a modest rise that hands the air jump back and leaves a spark behind',
-  { rise:{ shape:'hop', power:-10, self:{ jumps:1 }, drop:{ rider:'plain', count:1, dmg:3, kb:1, r:5, vy:5, life:30 } }, ai:{ kind:'hop', up:true, dmg:3 } });
+ocDef('Z-U3', 'zoner', 'u', 'Escape',  'Blink',          'a long warp, up or mostly sideways the way you steer, twelve safe frames, no hit',
+  { rise:{ shape:'warp', dist:150, dx:0, sdist:80, sdx:105, invuln:12 }, ai:{ kind:'warp', up:true } });   // (OC MOVES V2: Blink + Cable Warp: the stick picks the angle)
+ocDef('Z-U4', 'zoner', 'u', 'Utility', 'Double Spring',  'a rise that hands the air jump back',
+  { rise:{ shape:'hop', power:-10, self:{ jumps:1 } }, ai:{ kind:'hop', up:true } });   // (OC MOVES V2: Glide Lamp renamed, its spark dropped)
 // NEUTRAL SMASH (SMASH_SPEC-style rows: dmg is the row's, fired at SMASH_DMG_MULT like every smash)
 ocDef('Z-S1', 'zoner', 's', 'Damage',  'Lance Beam',     'a long thin beam straight ahead that floors them',
-  { smash:{ pat:'beam', len:160, wide:16, dmg:13, kb:14, effect:'knockdown', n:24, cost:{ stun:28 }, color:OC_TEAL }, ai:{ kind:'beam', len:160, dmg:13 } });   // (OC CPU AND BALANCE: len 170 -> 160, 16% -> 13%, knockdown 30 -> 24, whiff stun 24 -> 28: the CPU now fires it from its band, 5 a match, and the Zoner's best builds rose to 46-51%)
+  { smash:{ pat:'beam', len:160, wide:16, dmg:12, kb:13, effect:'knockdown', n:24, cost:{ stun:28 }, color:OC_TEAL }, ai:{ kind:'beam', len:160, dmg:12 } });   // (OC MOVES V2 trim 4: 13% / 14 -> 12% / 13)   // (OC CPU AND BALANCE: len 170 -> 160, 16% -> 13%, knockdown 30 -> 24, whiff stun 24 -> 28: the CPU now fires it from its band, 5 a match, and the Zoner's best builds rose to 46-51%)
 ocDef('Z-S2', 'zoner', 's', 'Zoning',  'Star Rain',      'four small stars fall ahead, on the nearest foe when one is near; each slows',
   { smash:{ pat:'rain', count:4, at:44, gap:40, seek:200, r:8, dmg:7, kb:6, effect:'slow', n:60, rider:{ vy:16 }, cost:{ cd:56 }, color:OC_TEAL }, ai:{ kind:'rain', band:[40, 200], dmg:7 } });
-ocDef('Z-S3', 'zoner', 's', 'Escape',  'Light Leap',     'leaps forward and up and hits round the body on landing; the way out of a corner',
-  { smash:{ pat:'leap', rise:10, fwd:5, rad:36, dmg:11, kb:9, cost:{ stun:20 }, color:OC_TEAL }, ai:{ kind:'leap', dmg:11 } });
-ocDef('Z-S4', 'zoner', 's', 'Utility', 'Dimmer',         'a wide weak burst that weakens whoever it touches',
-  { smash:{ pat:'burst', frames:8, wind:4, r0:24, rad:90, grow:22, dmg:8, kb:6, effect:'weaken', n:80, cost:{ cd:54 }, color:OC_TEAL }, ai:{ kind:'burst', dmg:8 } });
 // The frame budget (FRAME BUDGET above): a shot's whole startup is its tell (it fires on the frame it is cast); a melee row's is its st plus a tell
 // where the design asks; the strong fast moves pay 18-28 on a whiff, the weak 8-14, the smashes the slow class; stances and the hops are their own lock.
 Object.assign(TELL_ADD, { 'Z-N1.neutral':8, 'Z-N2.neutral':10, 'Z-D1.down':3, 'Z-D2.down':12 });
-Object.assign(ENDLAG_ADD, { 'Z-N1.neutral':22, 'Z-N2.neutral':12, 'Z-D2.down':14, 'Z-S1.smash':16, 'Z-S2.smash':17, 'Z-S3.smash':16, 'Z-S4.smash':16 });
+Object.assign(ENDLAG_ADD, { 'Z-N1.neutral':22, 'Z-N2.neutral':12, 'Z-D2.down':14, 'Z-S1.smash':16, 'Z-S2.smash':17, });
 
 // THE FINISHER -- LAMP LANCE (OC VIABILITY 2). The smash beam's pattern as a finisher: the wind-up of the no-tell sweep (TELL_ADD, 18 frames: the body gathers
 // and glows), then a thin beam 420 px along the floor line: 16%, floors, launches. The beam is instant, so it is answered by position: jump it, or be off its
@@ -87630,25 +87631,25 @@ function ocCleanse(f){
 // The sixteen options (reports/oc-design.md 2.5): four a slot, one of each role (Damage / close-range control / Escape / Utility), every one a new move
 // in the existing vocabularies. Locks on a foe never pass LOCK.max; a knockdown asks 30. The melee rows' own `end` is their whiff lag (as the Zoner's).
 // NEUTRAL SPECIAL
-ocDef('G-N1', 'grappler', 'n', 'Damage',  'Haymaker',       'a wide hook that launches up and out; the Grappler\'s kill punch',
-  { mv:{ n:'Haymaker', d:'a wide round hook swung into them; launches up and out', pose:'hook', st:3, act:3, end:24,
-      boxes:[{ s:MvC(10, -4, 54, -4, 14), dmg:12, kb:[10.5, -6], stun:26 }] },
-    ai:{ kind:'melee', band:[10, 66], dmg:12 } });   // (TELL_ADD 5: a readable 8-frame wind-up, as the design's st 8 (T6))
+ocDef('G-N1', 'grappler', 'n', 'Damage',  'Haymaker',       'a wide hook that launches up and out',
+  { mv:{ n:'Haymaker', d:'a wide round hook swung into them; launches up and out', pose:'hook', st:3, act:3, end:28,
+      boxes:[{ s:MvC(10, -4, 54, -4, 14), dmg:11, kb:[8, -6], stun:24 }] },   // (OC MOVES V2 trim 1: launch 10.5 -> 9.5, whiff lag 24 -> 26; trim 2: 12% / 9.5 -> 11% / 8.5)
+    ai:{ kind:'melee', band:[10, 66], dmg:11 } });   // (TELL_ADD 5: a readable 8-frame wind-up, as the design's st 8 (T6))
 ocDef('G-N2', 'grappler', 'n', 'Zoning',  'Shove Wave',     'a big push all round the body: little damage, a lot of distance',
   { mv:{ n:'Shove Wave', d:'a shove all round the body that pushes them far', pose:'punch', st:7, act:4, end:14,
       boxes:[{ s:MvO(8, 0, 44), dmg:5, kb:[8, -2], stun:18 }] },
     ai:{ kind:'melee', band:[0, 50], dmg:5 } });
-ocDef('G-N3', 'grappler', 'n', 'Escape',  'Roll-Through',   'rolls forward through the foe with eight safe frames; no hit, you change sides',
+ocDef('G-N3', 'grappler', 'n', 'Escape',  'Roll-Through',   'rolls forward through the foe with eight safe frames and ends facing them; no hit',
   { mv:{ n:'Roll-Through', d:'rolls forward through them; no hit', pose:'dash', st:2, act:10, end:10,
-      mv:[{ t0:0, t1:9, mode:'set', vx:10 }], start:(f) => { f.invuln = Math.max(f.invuln, 8); } },
-    ai:{ kind:'dash', dmg:0 } });
+      mv:[{ t0:0, t1:9, mode:'set', vx:10 }], flipAt:9, start:(f) => { f.invuln = Math.max(f.invuln, 8); } },
+    ai:{ kind:'dash', dmg:0 } });   // (OC MOVES V2: merged with Switch Hop: you end facing them)
 ocDef('G-N4', 'grappler', 'n', 'Utility', 'Brace',          'plants the feet twenty-four frames under armour; beats a dash in and nothing else',
   { stance:{ frames:24, end:10, self:{ armor:24 } }, spCd:120, ai:{ kind:'stance' } });
 // DOWN SPECIAL
 ocDef('G-D1', 'grappler', 'd', 'Damage',  'Ground Pound',   'both fists into the floor: a ring at the feet that launches straight up; from the air it dives first',
   { mv:{ n:'Ground Pound', d:'pounds both fists into the floor; a ring at the feet launches straight up', pose:'slam', st:4, act:3, end:22, land:8,
-      boxes:[{ s:MvO(0, 10, 40), dmg:12, kb:[4, -9], stun:24 }], mv:[{ t0:0, t1:3, mode:'dive', vy:10 }] },
-    ai:{ kind:'melee', band:[0, 70], dmg:12 } });   // (TELL_ADD 6: the design's st 10 (T6)) (the band counts the foe's body: the brain walks in to it)
+      boxes:[{ s:MvO(0, 10, 40), dmg:10, kb:[3.5, -8.5], stun:22 }], mv:[{ t0:0, t1:3, mode:'dive', vy:10 }] },   // (OC MOVES V2 trim 1: 12% -> 11%; trim 2: 10%, launch [3.5, -8.5])
+    ai:{ kind:'melee', band:[0, 70], dmg:10 } });   // (TELL_ADD 6: the design's st 10 (T6)) (the band counts the foe's body: the brain walks in to it)
 ocDef('G-D2', 'grappler', 'd', 'Zoning',  'Low Sweep',      'a long low sweep to both sides that floors them; buys the walk in',
   { mv:{ n:'Low Sweep', d:'a low sweep along the floor to both sides; knocks them down', pose:'sweep', st:8, act:3, end:18,
       boxes:[{ s:MvC(-40, 18, 40, 18, 12), dmg:6, kb:[5, -3], stun:20, fx:(f, t) => smashFx(f, [t], 'knockdown', 24) }] },
@@ -87661,7 +87662,7 @@ ocDef('G-D4', 'grappler', 'd', 'Utility', 'Shrug Off',      'stands thirty frame
   { stance:{ frames:30, end:8, cleanse:true, self:{ healing:11 } }, spCd:180, ai:{ kind:'heal' } });
 // UP SPECIAL
 ocDef('G-U1', 'grappler', 'u', 'Damage',  'Rising Knee',    'a rise whose knee comes out late and knocks them down; rewards the read',
-  { rise:{ shape:'hop', power:-13, hit:{ off:-10, fx:6, reach:22, dmg:[7, 11], band:-0.3, kb:[3, -10], eff:'knockdown', n:24 } }, ai:{ kind:'hop', up:true, dmg:11 } });
+  { rise:{ shape:'hop', power:-13, hit:{ off:-10, fx:6, reach:22, dmg:[4, 8], band:-0.3, kb:[3, -9], eff:'knockdown', n:20 } }, ai:{ kind:'hop', up:true, dmg:8 } });   // (trim 3: [4, 8] / [3, -9] / knockdown 20)   // (OC MOVES V2 trim 1: [7, 11] -> [6, 10]; trim 2: [5, 9])
 ocDef('G-U2', 'grappler', 'u', 'Zoning',  'Shockwave Hop',  'a hop that throws a rock chunk off to either side',
   { rise:{ shape:'hop', power:-11, drop:{ rider:'plain', count:2, spread:4, dmg:5, kb:5, r:8, vy:7, life:40 } }, ai:{ kind:'hop', up:true, dmg:5 } });
 ocDef('G-U3', 'grappler', 'u', 'Escape',  'Wall Spring',    'the highest plain hop there is, eight safe frames, no hit',
@@ -87670,12 +87671,12 @@ ocDef('G-U4', 'grappler', 'u', 'Utility', 'Armoured Climb', 'a rise under eighte
   { rise:{ shape:'hop', power:-12, self:{ armor:18 } }, ai:{ kind:'hop', up:true } });
 // NEUTRAL SMASH (SMASH_SPEC-style rows: dmg is the row's, fired at SMASH_DMG_MULT like every smash)
 ocDef('G-S1', 'grappler', 's', 'Damage',  'Pile Driver',    'both fists into the floor after a rooted wind-up: a big ring that floors them',
-  { smash:{ pat:'plant', wind:10, rad:52, dmg:13, kb:16, effect:'knockdown', n:30, cost:{ stun:30 }, color:OC_EMBER }, ai:{ kind:'plant', dmg:13 } });   // (OC CPU AND BALANCE: wind 8 -> 10, 16% -> 13%, launch 17 -> 16, whiff stun 26 -> 30: the Grappler's best build sat at 54-69% once the CPU used the smash from its band)   // (OC VIABILITY 1: a wider ring, more launch, a little less damage: the opening sat at 48, the yardstick is 36-44)
+  { smash:{ pat:'plant', wind:10, rad:52, dmg:12, kb:14, effect:'knockdown', n:30, cost:{ stun:32 }, color:OC_EMBER }, ai:{ kind:'plant', dmg:12 } });   // (OC CPU AND BALANCE: wind 8 -> 10, 16% -> 13%, launch 17 -> 16, whiff stun 26 -> 30: the Grappler's best build sat at 54-69% once the CPU used the smash from its band)   // (OC VIABILITY 1: a wider ring, more launch, a little less damage: the opening sat at 48, the yardstick is 36-44)
 ocDef('G-S2', 'grappler', 's', 'Zoning',  'Shoulder Rush',  'a shoulder charge through the foe that strips armour and stances',
   { smash:{ pat:'through', dash:10, spd:13, reach:28, dmg:12, kb:10, effect:'strip', n:80, cost:{ stun:22 }, color:OC_EMBER }, ai:{ kind:'through', dmg:12 } });
-ocDef('G-S3', 'grappler', 's', 'Escape',  'Vault Slam',     'a high leap forward that lands on them; the Grappler\'s way over a wall of shots',
-  { smash:{ pat:'leap', rise:10, fwd:6, rad:38, dmg:12, kb:9, cost:{ stun:22 }, color:OC_EMBER }, ai:{ kind:'leap', dmg:12 } });
-ocDef('G-S4', 'grappler', 's', 'Utility', 'Grip Reel',      'reaches out and reels the foe in, weakened; deliberately weak, it sets up the Haymaker',
+ocDef('G-S3', 'grappler', 's', 'Escape',  'Vault Slam',     'a high leap forward that lands on them; the way out of a corner',
+  { smash:{ pat:'leap', rise:10, fwd:6, rad:38, dmg:9, kb:7, cost:{ stun:26 }, color:OC_EMBER }, ai:{ kind:'leap', dmg:9 } });   // (trim 4: 9% / 7)   // (trim 2: 10% / 7.5)   // (OC MOVES V2 trim 1: 12% / kb 9 / whiff stun 22 -> 11% / 8 / 26: the shared leap sat in the best build of three types)
+ocDef('G-S4', 'grappler', 's', 'Utility', 'Grip Reel',      'reaches out and reels the foe in, weakened; deliberately weak, it sets up the next hit',
   { smash:{ pat:'reel', draw:14, pull:170, force:9, reach:40, dmg:9, kb:6, effect:'weaken', n:70, cost:{ cd:50 }, color:OC_EMBER }, ai:{ kind:'reel', dmg:9 } });
 // The frame budget (FRAME BUDGET above): the two launchers show a tell on top of their short st (8 and 10 frames to the first damage); the melee rows'
 // own `end` is their whiff lag (24 for the kill punch, 22 for the pound, 8-14 for the pokes and the hops); the smashes pay the slow class.
@@ -87789,29 +87790,23 @@ ocDef('T-N3', 'trapper', 'n', 'Escape',  'Smoke Pop',      'a back hop in a puff
       mv:[{ t0:0, mode:'set', vx:-7, vy:-4 }, { t0:1, t1:7, mode:'set', vx:-7 }],
       start:(f) => { f.cloud = Math.max(f.cloud || 0, 60); for(let i=0;i<10;i++) puff(f.x+(Math.random()*30-15), f.y-8+(Math.random()*20-10), '#d8d0ea', 5); } },
     ai:{ kind:'dash', back:true } });
-ocDef('T-N4', 'trapper', 'n', 'Utility', 'Caltrop Patch',  'two slowing patches drop at the feet; nothing much on the throw, everything on the floor',
-  { drop:{ rider:'puddle', count:2, spread:3, dmg:1, kb:1, r:5, vy:5, life:40 }, spCd:150, ai:{ kind:'shot', band:[30, 110], dmg:1 } });   // (ocDrop reads dmg 0 as its default 5, so the glob asks 1; the puddle it becomes is the engine's 2)
 // DOWN SPECIAL
 ocDef('T-D1', 'trapper', 'd', 'Damage',  'Bear Trap Snap', 'a snap at the floor just ahead that launches straight up and leaves them bleeding',
   { mv:{ n:'Bear Trap Snap', d:'a trap snaps shut at the floor just ahead; launches straight up and bleeds', pose:'slam', st:8, act:2, end:20,
       boxes:[{ s:MvC(10, 16, 40, 16, 14), dmg:12, kb:[2, -10], stun:28, fx:(f, t) => smashFx(f, [t], 'bleed', 60) }] },
     ai:{ kind:'melee', band:[0, 74], dmg:12 } });   // (TELL_ADD 4: the design's st 12 (T4)) (the band counts the foe's body, as the Grappler's down specials do: the brain fires a down special only past its own reach and inside it)
 ocDef('T-D2', 'trapper', 'd', 'Zoning',  'Mine Seed',      'drops a seed at the feet; it arms in a beat and goes off under the first foe to tread on it',
-  { shot:{ vx:0, vy:0, trap:true, arm:24, dmg:7, kb:6, r:9, life:300 }, ai:{ kind:'octrap', lead:[50, 170] } });   // (dmg 7 x TRAP_DMG_MULT = 10.5 (OC VIABILITY 1; was 5.5 = 8); life 300 x PROJ_LIFE = 420 frames, 7 s)
-ocDef('T-D3', 'trapper', 'd', 'Escape',  'Trapdoor Hop',   'a hop up and back that leaves a spark where the Trapper stood; it punishes the chase',
+  { shot:{ vx:0, vy:0, trap:true, arm:24, dmg:5, kb:6, r:9, life:300 }, ai:{ kind:'octrap', lead:[50, 170] } });   // (OC MOVES V2 trim 1: dmg 7 -> 6)   // (dmg 7 x TRAP_DMG_MULT = 10.5 (OC VIABILITY 1; was 5.5 = 8); life 300 x PROJ_LIFE = 420 frames, 7 s)
+ocDef('T-D3', 'trapper', 'd', 'Escape',  'Trapdoor Hop',   'a hop up and back that leaves a spark where you stood; it punishes the chase',
   { mv:{ n:'Trapdoor Hop', d:'a hop up and back that leaves a spark behind', pose:'kickback', st:2, act:8, end:8,
       mv:[{ t0:0, mode:'set', vx:-6, vy:-8 }, { t0:1, t1:7, mode:'set', vx:-6 }],
-      start:(f) => { ocDrop(f, { rider:'plain', count:1, dmg:3, kb:1, r:5, vy:5, life:30, color:OC_VIOLET }, false); } },
+      start:(f) => { ocDrop(f, { rider:'plain', count:1, dmg:3, kb:1, r:5, vy:5, life:30, color:OC_TYPES[f.oc.type].color }, false); } },
     ai:{ kind:'hop', back:true, dmg:3 } });
-ocDef('T-D4', 'trapper', 'd', 'Utility', 'Lie Low',        'crouches thirty frames in smoke, healing about 2%; the smoke hides the next tell',
-  { stance:{ frames:30, end:8, self:{ cloud:120, healing:11 } }, spCd:200, ai:{ kind:'heal' } });
 // UP SPECIAL
 ocDef('T-U1', 'trapper', 'u', 'Damage',  'Spring Snap',    'a rise whose hit launches them high and roots them where they land; short reach, heavy',
   { rise:{ shape:'hop', power:-12, hit:{ off:-8, fx:4, reach:24, dmg:[8, 12], band:-0.5, kb:[3, -12.5], eff:'root', n:40 } }, ai:{ kind:'hop', up:true, dmg:12 } });   // (OC CPU AND BALANCE: kb [4, -9] -> [3, -12.5]: the Trapper had no pick that ends a stock)
 ocDef('T-U2', 'trapper', 'u', 'Zoning',  'Seed Scatter',   'a hop that scatters three rooting seeds below',
   { rise:{ shape:'hop', power:-11, drop:{ rider:'root', count:3, spread:4, dmg:3, kb:1, r:5, vy:6, life:40 } }, ai:{ kind:'hop', up:true, dmg:3 } });
-ocDef('T-U3', 'trapper', 'u', 'Escape',  'Cable Warp',     'a long warp mostly sideways with ten safe frames, no hit: the way back from under a ledge',
-  { rise:{ shape:'warp', dist:120, dx:60, invuln:10 }, ai:{ kind:'warp', up:true } });
 ocDef('T-U4', 'trapper', 'u', 'Utility', 'Trap Hop',       'a plain rise that leaves an armed trap where it was cast',
   { rise:{ shape:'hop', power:-12 }, shot:{ vx:0, vy:0, trap:true, arm:24, dmg:4, kb:3, r:10, life:200 }, ai:{ kind:'hop', up:true } });   // (the design's leave:'trap' is a plunge's word; a hop leaves its trap as the roster's traps are laid)
 // NEUTRAL SMASH (SMASH_SPEC-style rows: dmg is the row's, fired at SMASH_DMG_MULT like every smash)
@@ -87826,8 +87821,8 @@ ocDef('T-S4', 'trapper', 's', 'Utility', 'Tar Burst',      'a wide weak burst th
 // The frame budget (FRAME BUDGET above): a shot's whole startup is its tell (it fires on the frame it is cast); the snap shows a tell on top of its
 // st; the melee rows' own `end` is their whiff lag (20 for the snap, 8 for the hops); the volley pays the strong class, the lobs the weak, the
 // smashes the slow class.
-Object.assign(TELL_ADD, { 'T-N1.neutral':7, 'T-N2.neutral':10, 'T-N4.neutral':12, 'T-D1.down':4, 'T-D2.down':10 });
-Object.assign(ENDLAG_ADD, { 'T-N1.neutral':18, 'T-N2.neutral':14, 'T-N4.neutral':14, 'T-D2.down':14, 'T-S1.smash':16, 'T-S2.smash':17, 'T-S3.smash':16, 'T-S4.smash':16 });
+Object.assign(TELL_ADD, { 'T-N1.neutral':7, 'T-N2.neutral':10, 'T-D1.down':4, 'T-D2.down':10 });
+Object.assign(ENDLAG_ADD, { 'T-N1.neutral':18, 'T-N2.neutral':14, 'T-D2.down':14, 'T-S1.smash':16, 'T-S2.smash':17, 'T-S3.smash':16, 'T-S4.smash':16 });
 
 // THE FINISHER -- MINE ROW (OC VIABILITY 2). A wind-up of FIN_STARTUP frames (the body gathers and glows; the Trapper is held still), then three mines laid one
 // after another in a line ahead, 36, 100 and 164 px out, 20 frames apart: each is a floor piece like the rest of the kit's (it falls to the surface and ARMS for
@@ -87955,20 +87950,16 @@ Object.assign(MOVESETS, {
 // whiff lag. The design's Flare Back is a roster move's name (a fighter's back aerial), so it is Wake Dart here.
 // NEUTRAL SPECIAL
 ocDef('K-N1', 'trickster', 'n', 'Damage',  'Trick Knife',    'a very fast short dagger with a visible wind-up and real end lag',
-  { shot:{ vx:13, grav:false, r:5, dmg:9, kb:6, life:6 }, ai:{ kind:'shot', band:[30, 110], dmg:9 } });   // (TELL_ADD 6: the design's st 6 (T3); life 6 x PROJ_LIFE is the 'short range', about 120 px; the design's life 28 reaches 500)
+  { shot:{ vx:13, grav:false, r:5, dmg:7, kb:6, life:6 }, ai:{ kind:'shot', band:[30, 110], dmg:7 } });   // (OC MOVES V2 trim 1: 9% -> 8%)   // (TELL_ADD 6: the design's st 6 (T3); life 6 x PROJ_LIFE is the 'short range', about 120 px; the design's life 28 reaches 500)
 ocDef('K-N2', 'trickster', 'n', 'Zoning',  'Bubble Lure',    'a slow orb that drifts toward the foe for two seconds and slows whoever it touches',
   { shot:{ vx:4, grav:false, r:9, dmg:4, kb:2, life:120, homing:0.06, fxTag:'slow', fxN:60 }, ai:{ kind:'shot', band:[60, 300], dmg:4 } });   // (TELL_ADD 9: the design's st 9)
-ocDef('K-N3', 'trickster', 'n', 'Escape',  'Switch Hop',     'dashes through the foe with eight safe frames and ends facing them; no hit, you change sides',
-  { mv:{ n:'Switch Hop', d:'dashes through them and turns round to face them; no hit', pose:'dash', st:1, act:8, end:6,
-      mv:[{ t0:0, t1:7, mode:'set', vx:11 }], flipAt:7, start:(f) => { f.invuln = Math.max(f.invuln, 8); } },
-    ai:{ kind:'dash', dmg:0 } });
 ocDef('K-N4', 'trickster', 'n', 'Utility', 'Confetti',       'throws six harmless scraps that scramble a foe\'s controls for half a second on touch',
   { shot:{ count:6, spread:0.08, vx:7, vy:-3, grav:true, r:4, dmg:1, kb:0, life:45, fxTag:'scramble', fxN:30 }, ai:{ kind:'shot', band:[50, 200], dmg:1 } });   // (TELL_ADD 8: the design's st 8)
 // DOWN SPECIAL
 ocDef('K-D1', 'trickster', 'd', 'Damage',  'Heel Spin',      'a grounded spin that hits once all round and launches diagonally',
   { mv:{ n:'Heel Spin', d:'spins on the heel and kicks once all round; launches up and away', pose:'spin', st:2, act:6, end:22,
-      boxes:[{ s:MvO(0, 0, 40), dmg:10, kb:[8.5, -8], stun:22 }] },   // (OC CPU AND BALANCE: kb [7, -7] / end 20 -> [8.5, -8] / 22: the Trickster had no pick that ends a stock; a longer whiff pays for it)
-    ai:{ kind:'melee', band:[0, 70], dmg:10 } });   // (TELL_ADD 5, OC VIABILITY 1: first damage at 7, over the 6-frame floor; the band counts the foe's body, as the Grappler's and the Trapper's)
+      boxes:[{ s:MvO(0, 0, 40), dmg:8, kb:[7.5, -7.5], stun:22 }] },   // (OC MOVES V2 trim 1: 10% / [8.5, -8] -> 9% / [7.5, -7.5])   // (OC CPU AND BALANCE: kb [7, -7] / end 20 -> [8.5, -8] / 22: the Trickster had no pick that ends a stock; a longer whiff pays for it)
+    ai:{ kind:'melee', band:[0, 70], dmg:8 } });   // (trim 2: 8%) (TELL_ADD 5, OC VIABILITY 1: first damage at 7, over the 6-frame floor; the band counts the foe's body, as the Grappler's and the Trapper's)
 ocDef('K-D2', 'trickster', 'd', 'Zoning',  'Marble Spill',   'spills four marbles that bounce away along the floor: a rolling carpet of small hits',
   { drop:{ rider:'bounce', count:4, spread:5, dmg:3, kb:2, r:4, vy:4, life:60 }, ai:{ kind:'melee', band:[50, 150], dmg:3 } });   // (TELL_ADD 8, ENDLAG_ADD 12: the design's)
 ocDef('K-D3', 'trickster', 'd', 'Escape',  'Fake-Out',       'dashes forward five frames then back five, ending where it started, safe on the way out; it baits a swing',
@@ -87979,7 +87970,7 @@ ocDef('K-D4', 'trickster', 'd', 'Utility', 'Second Wind',    'twenty frames of b
   { stance:{ frames:20, end:6, self:{ jumps:1, haste:120 } }, spCd:150, ai:{ kind:'stance' } });
 // UP SPECIAL
 ocDef('K-U1', 'trickster', 'u', 'Damage',  'Corkscrew',      'a rising hit that scrambles the foe\'s controls',
-  { rise:{ shape:'hop', power:-12, hit:{ off:-12, fx:4, reach:20, dmg:[6, 10], band:-0.6, kb:[5, -8], eff:'scramble', n:45 } }, ai:{ kind:'hop', up:true, dmg:10 } });
+  { rise:{ shape:'hop', power:-12, hit:{ off:-12, fx:4, reach:20, dmg:[4, 8], band:-0.6, kb:[5, -8], eff:'scramble', n:40 } }, ai:{ kind:'hop', up:true, dmg:8 } });   // (trim 3: [4, 8] / scramble 40)   // (OC MOVES V2 trim 2: [6, 10] -> [5, 9])
 ocDef('K-U2', 'trickster', 'u', 'Zoning',  'Wake Dart',   'a rise that fires one shot back and down the way it came; the chaser eats it',
   { rise:{ shape:'hop', power:-11, shot:{ vx:-8, vy:4, grav:false, dmg:5, kb:4, r:6, life:30 } }, ai:{ kind:'hop', up:true, dmg:5 } });
 ocDef('K-U3', 'trickster', 'u', 'Escape',  'Vanish',         'the lowest, longest sideways blink there is, fourteen safe frames: an escape, with little height to recover',
@@ -87988,18 +87979,120 @@ ocDef('K-U4', 'trickster', 'u', 'Utility', 'Spring Heel',    'a rise that hands 
   { rise:{ shape:'hop', power:-13, self:{ jumps:1 }, drop:{ rider:'puddle', count:1, dmg:1, kb:1, r:6, vy:4, life:40 } }, ai:{ kind:'hop', up:true } });   // (the design's leave:'puddle' is a plunge's word; a hop leaves its slick as a drop, as the Trapper's seeds)
 // NEUTRAL SMASH (SMASH_SPEC-style rows: dmg is the row's, fired at SMASH_DMG_MULT like every smash)
 ocDef('K-S1', 'trickster', 's', 'Damage',  'Pirouette Kick', 'a step and a spinning kick that floors them; the lightest-costed big hit',
-  { smash:{ pat:'lunge', step:5, reach:34, fx:40, dmg:14.5, kb:13, effect:'knockdown', n:30, cost:{ stun:22 }, color:OC_MAGENTA }, ai:{ kind:'lunge', dmg:14.5 } });   // (OC CPU AND BALANCE: 16% -> 14.5%)   // (the design's n:90 knockdown is past the 45 lock; a knockdown asks 30)
+  { smash:{ pat:'lunge', step:5, reach:34, fx:40, dmg:13, kb:12, effect:'knockdown', n:30, cost:{ stun:24 }, color:OC_MAGENTA }, ai:{ kind:'lunge', dmg:13 } });   // (trim 3: 14.5% / 13 / whiff stun 22 -> 13% / 12 / 24)   // (OC CPU AND BALANCE: 16% -> 14.5%)   // (the design's n:90 knockdown is past the 45 lock; a knockdown asks 30)
 ocDef('K-S2', 'trickster', 's', 'Zoning',  'Card Spray',     'five cards fall in a fan on the nearest foe, or ahead of you when none is near; each scrambles',
   { smash:{ pat:'rain', count:5, at:26, gap:34, seek:220, r:6, dmg:6, kb:5, effect:'scramble', n:45, rider:{ vy:16 }, cost:{ cd:58 }, color:OC_MAGENTA }, ai:{ kind:'rain', band:[30, 220], dmg:6 } });
 ocDef('K-S3', 'trickster', 's', 'Escape',  'Dash Through',   'the fastest dash through the foe: pure speed and distance',
   { smash:{ pat:'through', dash:9, spd:16, reach:24, dmg:11, kb:9, cost:{ stun:20 }, color:OC_MAGENTA }, ai:{ kind:'through', dmg:11 } });
-ocDef('K-S4', 'trickster', 's', 'Utility', 'Hex Ring',       'a quick small ring that weakens whoever it touches; a set-up, never a kill',
+ocDef('K-S4', 'trickster', 's', 'Utility', 'Hex Ring',       'a quick ring round the body that weakens whoever it touches; a set-up, never a kill',
   { smash:{ pat:'burst', frames:8, wind:4, r0:20, rad:80, grow:18, dmg:6, kb:4, effect:'weaken', n:70, cost:{ cd:52 }, color:OC_MAGENTA }, ai:{ kind:'burst', dmg:6 } });
 // The frame budget (FRAME BUDGET above): a shot's whole startup is its tell (it fires on the frame it is cast); the spin shows a tell on top of its
 // st; the melee rows' own `end` is their whiff lag (20 for the spin, 6-8 for the hops); the dagger pays the strong class, the lures the weak, the
 // smashes the slow class.
 Object.assign(TELL_ADD, { 'K-N1.neutral':6, 'K-N2.neutral':9, 'K-N4.neutral':8, 'K-D1.down':5, 'K-D2.down':8 });
 Object.assign(ENDLAG_ADD, { 'K-N1.neutral':20, 'K-N2.neutral':12, 'K-N4.neutral':14, 'K-D2.down':12, 'K-S1.smash':16, 'K-S2.smash':17, 'K-S3.smash':16, 'K-S4.smash':16 });
+
+// ------------------------------------------------------------
+//  OC MOVES V2 (2026-11-10, OC job 4; reports/oc-moves-v2.md, owner-approved): the shared pool, CORE + TYPE MOVES
+// ------------------------------------------------------------
+// The type fixes the main point (stats, basic kit, finisher, Final Smash); each slot's list is the type's VIEW of one shared pool: the moves given to that type
+// first (in this order), then the core every OC may take. ['id', who]: who is a string of type letters (z g t k) or '*' for the core. The rows above keep their
+// ids (a saved OC names an id); OC_ID_MAP sends the merged, renamed and dropped ids to their replacements so an old save still loads.
+const OC_POOL = {
+  n:[['Z-N1','z'],['Z-N2','zk'],['T-N1','zt'],['K-N4','zk'],['G-N1','gt'],['G-N4','g'],['T-N2','t'],['T-N3','tk'],['K-N2','k'], ['K-N1','*'],['Z-N3','*'],['G-N3','*'],['G-N2','*'],['Z-N4','*']],
+  d:[['Z-D2','zt'],['T-D2','zt'],['K-D2','zk'],['G-D1','g'],['G-D2','g'],['T-D1','t'],['T-D3','tk'],['K-D3','gk'],['G-D4','gk'], ['Z-D1','*'],['K-D1','*'],['G-D3','*'],['Z-D4','*'],['K-D4','*']],
+  u:[['Z-U1','zg'],['K-U1','zk'],['T-U2','zt'],['G-U2','g'],['G-U4','gt'],['T-U1','t'],['T-U4','t'],['K-U2','k'],['K-U3','k'],['K-U4','k'], ['G-U1','*'],['G-U3','*'],['Z-U3','*'],['Z-U4','*'],['Z-U2','*']],
+  s:[['Z-S1','z'],['Z-S2','z'],['T-S4','zt'],['G-S1','g'],['G-S2','g'],['G-S4','gk'],['T-S1','t'],['T-S2','t'],['T-S3','tk'],['K-S2','k'], ['K-S1','*'],['G-S3','*'],['K-S3','*'],['K-S4','*']],
+};
+const OC_ID_MAP = { 'K-N3':'G-N3', 'Z-D3':'G-D3', 'T-U3':'Z-U3', 'Z-S3':'G-S3', 'Z-S4':'K-S4', 'T-N4':'T-N3', 'T-D4':'Z-D4' };   // merged (Switch Hop, Light Hop, Cable Warp, Light Leap, Dimmer) and dropped (Caltrop Patch, Lie Low) -> what replaces them
+const OC_DEFAULT = {   // the build a type starts from, and the one a bad pick falls back to
+  zoner:{ n:'Z-N1', d:'Z-D1', u:'Z-U1', s:'Z-S1' }, grappler:{ n:'G-N1', d:'G-D1', u:'G-U1', s:'G-S1' },
+  trapper:{ n:'T-N1', d:'T-D1', u:'T-U1', s:'T-S1' }, trickster:{ n:'K-N1', d:'K-D1', u:'K-U1', s:'K-S1' } };
+const OC_TYPE_OF_LETTER = { z:'zoner', g:'grappler', t:'trapper', k:'trickster' };
+function ocBuildLists(){
+  for(const T in OC_LISTS) for(const s of OC_SLOTS) OC_LISTS[T][s] = [];
+  for(const s of OC_SLOTS){
+    for(const core of [false, true]) for(const [id, who] of OC_POOL[s]){
+      if((who === '*') !== core) continue;
+      const o = OC_OPTIONS[id]; if(!o || o.slot !== s) throw new Error('OC pool: ' + id);
+      o.core = core; o.types = core ? Object.keys(OC_LISTS) : who.split('').map(c => OC_TYPE_OF_LETTER[c]);
+      for(const T of o.types) OC_LISTS[T][s].push(id);
+    }
+  }
+}
+ocBuildLists();
+// The guardrails (the doc's section 4), as data the editor, the host and the balance pass all read. Nothing here is shown as a label.
+const OC_FLAG = {
+  kill:new Set(['G-N1', 'Z-S1', 'G-S1', 'T-S1', 'K-S1']),     // one a build -- except the Grappler's own pair Haymaker + Pile Driver (the owner: it keeps both)
+  root:new Set(['T-N2', 'Z-D2', 'T-U2', 'T-U1', 'T-S2']),     // one a build
+  scr:new Set(['K-N4', 'K-U1', 'K-S2']),                      // one a build
+  slow:new Set(['Z-N2', 'K-N2', 'Z-S2', 'T-S4', 'K-U4']),     // two at most
+};
+const OC_STAND = { 'Z-N4':14, 'G-N4':24, 'Z-D4':30, 'G-D4':30, 'K-D4':20 };   // frames the move stands still (two or more: a warning)
+const OC_FLOOR = { 'T-N2':1, 'T-D2':1, 'T-U2':3, 'T-U4':1, 'T-S2':1 };       // floor pieces it lays
+function ocPairOk(a, b){ return (a === 'G-N1' && b === 'G-S1') || (a === 'G-S1' && b === 'G-N1'); }
+// '' when `id` may stand in `slot` beside the other slots' picks, else the plain sentence for the greyed row.
+function ocConflict(picks, slot, id){
+  const nm = x => (OC_OPTIONS[x] || {}).name, others = OC_SLOTS.filter(s => s !== slot && picks && picks[s]).map(s => picks[s]);
+  if(OC_FLAG.kill.has(id)) for(const o of others) if(OC_FLAG.kill.has(o) && !ocPairOk(id, o)) return 'Not with ' + nm(o) + ': that would be two kill hits.';
+  if(OC_FLAG.root.has(id)) for(const o of others) if(OC_FLAG.root.has(o)) return 'Not with ' + nm(o) + ': one rooting move a build.';
+  if(OC_FLAG.scr.has(id)) for(const o of others) if(OC_FLAG.scr.has(o)) return 'Not with ' + nm(o) + ': one scrambling move a build.';
+  if(OC_FLAG.slow.has(id)){ const sl = others.filter(o => OC_FLAG.slow.has(o)); if(sl.length >= 2) return 'Not with ' + nm(sl[0]) + ' and ' + nm(sl[1]) + ': two slowing moves a build at most.'; }
+  return '';
+}
+// Strict check of a whole build for a type: '' when every pick is in the type's view and no guardrail is broken, else the reason.
+function ocCheckPicks(T, picks){
+  if(!OC_LISTS[T]) return 'Unknown type.';
+  if(!picks || typeof picks !== 'object') return 'No picks.';
+  for(const s of OC_SLOTS){ const id = picks[s]; if(typeof id !== 'string' || OC_LISTS[T][s].indexOf(id) < 0) return 'A move that is not on this type\'s list.'; }
+  for(const s of OC_SLOTS){ const r = ocConflict(picks, s, picks[s]); if(r) return r; }
+  return '';
+}
+// Lenient repair (a loader never refuses a file): old ids map to their replacements, anything not in the view or breaking a rule falls to the type's default, then to the first legal row.
+function ocFixPicks(T, p){
+  const L = OC_LISTS[T] || OC_LISTS.zoner, D = OC_DEFAULT[T] || OC_DEFAULT.zoner, out = {};
+  for(const s of OC_SLOTS){
+    let id = p && typeof p === 'object' ? p[s] : null;
+    if(typeof id === 'string' && Object.prototype.hasOwnProperty.call(OC_ID_MAP, id)) id = OC_ID_MAP[id];
+    if(!(typeof id === 'string' && L[s].indexOf(id) >= 0 && !ocConflict(out, s, id))){ id = D[s]; if(ocConflict(out, s, id)) id = L[s].find(x => !ocConflict(out, s, x)) || D[s]; }
+    out[s] = id;
+  }
+  return out;
+}
+function ocHitOf(o){ return o ? (o.smash ? o.smash.dmg : ((o.ai || {}).dmg || 0)) : 0; }   // the row's own damage (smashes before their multiplier), as the doc's tables list it
+function ocRiseWord(o){
+  const r = o && o.rise; if(!r) return 'Rises';
+  if(r.shape === 'warp') return r.dist >= 120 ? 'Rises high' : 'Rises low';
+  const p = r.power == null ? -13 : r.power; return p <= -13 ? 'Rises high' : p <= -11 ? 'Rises a fair way' : 'Rises low';
+}
+function ocBuildInfo(picks){
+  let hit = 0, floor = 0, stand = 0, nstand = 0;
+  for(const s of OC_SLOTS){ const id = picks && picks[s], o = OC_OPTIONS[id]; if(!o) continue; hit = Math.max(hit, ocHitOf(o)); floor += OC_FLOOR[id] || 0; if(OC_STAND[id]){ stand += OC_STAND[id]; nstand++; } }
+  const warns = []; if(nstand >= 2) warns.push('This build stands still a lot.'); if(hit < 12) warns.push('This build has no big hit.');
+  return { hit, floor, stand, rise:ocRiseWord(OC_OPTIONS[picks && picks.u]), warns };
+}
+function ocStrip(picks){
+  const i = ocBuildInfo(picks);
+  return 'Hardest hit ' + i.hit + '% · ' + i.rise + ' · Floor pieces ' + i.floor + (i.stand ? ' · Stands still ' + i.stand + ' frames' : '') + (i.warns.length ? ' · ' + i.warns.join(' ') : '');
+}
+// THE HOST'S CHECK (online): a hello carries an OC as a code 'OC~' + base64url of a small JSON; the host decodes it, checks it with the same function as the editor, and a build
+// that fails arrives as the type's default (the name and look may stay). The canonical re-encode is what the host passes on. (No netcode calls these yet: OCs are not online.)
+function ocHostClean(raw){
+  const o = (raw && typeof raw === 'object') ? raw : {}, type = ocTypeOk(o.type) ? o.type : ocDefaultType(), bad = ocCheckPicks(type, o.picks) !== '';
+  const nm = ocNameClean(o.name);
+  return { v:1, name:ocNameOk(nm) ? nm : 'OC', type, look:ocLookOf(o.look) ? o.look : OC_LOOKS[0].id, picks:bad ? Object.assign({}, OC_DEFAULT[type]) : { n:o.picks.n, d:o.picks.d, u:o.picks.u, s:o.picks.s }, rf:o.rf ? 1 : 0, tampered:bad };
+}
+function ocB64(s){ return btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function ocUnB64(s){ s = s.replace(/-/g, '+').replace(/_/g, '/'); while(s.length % 4) s += '='; return decodeURIComponent(escape(atob(s))); }
+function ocWireEncode(oc){ const c = ocHostClean(oc); return 'OC~' + ocB64(JSON.stringify([1, c.type, c.picks.n, c.picks.d, c.picks.u, c.picks.s, c.rf, c.look, c.name])); }
+function ocWireDecode(code){   // -> the cleaned OC, or null when the code is not an OC code at all
+  try{
+    if(typeof code !== 'string' || code.length > 300 || code.slice(0, 3) !== 'OC~') return null;
+    const a = JSON.parse(ocUnB64(code.slice(3)));
+    if(!Array.isArray(a) || a[0] !== 1 || a.length !== 9) return null;
+    return ocHostClean({ type:a[1], picks:{ n:a[2], d:a[3], u:a[4], s:a[5] }, rf:a[6], look:a[7], name:a[8] });
+  }catch(e){ return null; }
+}
 
 // THE FINISHER -- THOUSAND CUTS (OC VIABILITY 2). A wind-up of FIN_STARTUP frames (the body gathers and glows; turn in it and the first dash turns with you), then
 // three dashes through whatever is ahead, 8 frames each at 17 px a frame (136 px), a beat apart; after each the Trickster turns round and goes back through. Every
