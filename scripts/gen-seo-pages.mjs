@@ -85,7 +85,7 @@ const FIGHTER_STATS = readConst('FIGHTER_STATS');
 const HEAVY_SLOW = readConst('HEAVY_SLOW');
 const SMASH_ID = readConst('SMASH_ID');
 const SMASH_BLURB_BESPOKE = readConst('SMASH_BLURB_BESPOKE');
-const SHIELD_BREAKERS = readConst('SHIELD_BREAKERS');
+const SHIELD_BREAKERS = monolith.includes('\nconst SHIELD_BREAKERS = ') ? readConst('SHIELD_BREAKERS') : {};   // (a game build without shield breakers has none to mention)
 const REFLECTOR_FIGHTERS = new Set(readConst('REFLECTOR_FIGHTERS'));
 const DEFAULT_KEYS = readConst('DEFAULT_KEYS');
 const KEY_LABELS = readConst('KEY_LABELS');
