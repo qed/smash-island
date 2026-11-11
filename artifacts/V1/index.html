@@ -27149,7 +27149,7 @@ function stgBegin(){
 function stgRespawn(f){
   const my = camY + H/2; let best = STG.statics[0];
   for(const p of STG.statics) if(Math.abs(p.y - my) < Math.abs(best.y - my)) best = p;
-  return { x: Math.round(best.x + best.w/2 + ((f._koN || 0) % 2 ? 50 : -50)), y: best.y - 120 };
+  return { x: Math.round(best.x + best.w/2 + ((f._koN || 0) % 2 ? 50 : -50)), y: best.y - f.r };   // (feet on the ledge: it was 120 px above it, a drop; every fixed ledge is 280+ px wide, so 50 px off its middle is well inside)
 }
 // Behind the ledges: the bowl's steel inside (The TLC) or the shaft's stone (Yoyle Needle), faint seams across it, and each moving ledge's rail.
 // Dream Island's islands wear a grass top over the stone. Art only.
@@ -27410,6 +27410,10 @@ function buildFighters(){
       // spread across the (possibly widened) small arena so fighters don't start in one blob
       sx = floorSafeX(WW*(0.08+0.84*i/Math.max(1,N-1)));   // (REAL EDGES: over the floor, never past a ledge)
       sy = groundY()-60;
+      // NOT INSIDE A SOLID BLOCK. Frozen Pond's two end towers are solid blocks (x 40-144, 880-984) and the first and last fighter's spot (8% and 92% across) is
+      // inside them: the collision shoved them out sideways, past the floor's end (x 31), and they fell at 0% about half a second in (the playtest's Ice 0% KOs).
+      // A spot inside a solid block is moved to the top of it (60 px over, as over the floor), the way the others start over the floor. Nothing changes where no block is there.
+      for(let g = 0; g < 4; g++){ const blk = (worldPlats || []).find(q=>q.solid && !q.stgWall && sx >= q.x && sx <= q.x + q.w && sy + 30 > q.y && sy - 30 < q.y + q.h); if(!blk) break; sy = blk.y - 60; }
     }
     const f=makeFighter(r, sx, sy, i);
     // A CUSTOM LEVEL'S SPAWN MARKER is where the fighter's FEET go: the editor draws the fighter standing on it, and the match put its middle there, so a
@@ -71381,6 +71385,13 @@ function step(){
       for(const f of fighters){ if(f.dead||f._fsLock)continue; if(hurtGap(f,evil.x,evil.y)<30-HURT_R0 && f.invuln<=0){ f.pct+=18; knock(f,Math.sign(f.x-evil.x)*8,-6); f.invuln=40; } } }   // no "EVIL LEAFY!" line ("Remove them all"): the hit and the shake say it
   }
 
+  // THE DAMAGE CAP, AT EVERY FRAME. A fighter whose percent has reached its koCap (150 + weight) is knocked out -- applyHit, a pummel and the
+  // self-hurts all check it the moment they add damage. But the hazards and the damage over time add to pct directly (Evil Leafy's touch +18, the
+  // flares, the burn, the bleed, the trespass bleed ...) and never asked, so a fighter who was only ever hurt by them went on climbing (1337% in the
+  // Evil Forest playtest) and was knocked out by the NEXT blow of someone else, if one ever came. Same rule, same KO (eliminate), just not waiting for a blow.
+  // Not where damage never KOs (SPLEEF), not inside a Final Smash catch, not One's ghost (its own 70 HP), not once the last KO has decided the match.
+  if(!SPLEEF && !RACE.active && !KOC.over) for(const f of fighters){ if(!f.dead && !f._fsLock && !f._oneGhost && f.koCap > 0 && f.pct >= f.koCap) eliminate(f); }
+
   // projectiles
   const liveTurrets = projectiles.filter(p => p.turret && p.life > 0);
   for(const pr of projectiles){ mcEnter(pr); try {   // (MOON CAVES: in the shot's own chart)
@@ -97838,6 +97849,11 @@ function eliminate(f){
     // ---- Steve Cobs's prize: end ----
   }
   f._carriedBy = null;
+  // EVERY HOLD ENDS WITH THE STOCK, whoever KO'd them and however (the damage cap's per-frame sweep now KOs a fighter inside a hold that ticks damage on them):
+  // the stomach (Purple Face's acid, +10% a second and a pull to the stomach, kept going after the respawn: _swallow was only ever cleared by freeFromStomach),
+  // a grab or hold they were in or had on someone (mvCancel), a root, a cuff, a hurl, a freeze. What is kept to the respawn lines below is the invulnerability.
+  mvCancel(f);
+  f._swallow = 0; f._swallowTick = 0; f.rooted = 0; f._mtCuff = null; f._grabbed = null; f._grabTimer = 0; f.frozen = 0;
   fsKoSlow(f);   // ...and a KO by a Final Smash plays slowed down, if its launch did not already
   // if an infected puppet is KO'd, revert it to its real team immediately
   if(f._infected>0){ f.team=f._origTeam; f._infected=0; f._infectedBy=null; }
@@ -97906,7 +97922,7 @@ function eliminate(f){
   // reform — claimed spawn point or safe island (big FFA), team base (tower), else stage center
   if(DIGC){
     f.x=Math.round((DIGC.floor.x0 + DIGC.floor.x1)/2); f.y=DIGC.floor.y - DGK.floorPad;   // THE DIG (Spongy's contest): back in over the arena's floor, under the dirt field
-  } else if(isBigFFA()){
+  } else if(isBigFFA() && !(STG && STG.statics.length)){   // (not Yoyle Needle on a Tall or Huge map: it is a big FFA too, but has no floor and no safe islands -- ffaRespawn dropped them from the top of the shaft, -40, through every ledge; its own ledge respawn is below)
     const rp=ffaRespawn(f); f.x=rp.x; f.y=rp.y;
   } else if(isBig() && f.homeBase!=null && bases[f.homeBase]){
     const sp = pickSpawnPad(bases[f.homeBase], f);
@@ -97915,7 +97931,7 @@ function eliminate(f){
   } else if(_cs){
     f.x=_cs.x; f.y=_cs.y;   // a custom level: back at a free spawn point the builder placed (customRespawnSpot)
   } else if(STG && STG.statics.length){
-    const q = stgRespawn(f); f.x=q.x; f.y=q.y;   // STAGES A: Yoyle Needle: over the fixed ledge nearest the view (the view's middle is often the pit)
+    const q = stgRespawn(f); f.x=q.x; f.y=q.y; f.onground=true; f._stgRide=null;   // STAGES A: Yoyle Needle: ON the fixed ledge nearest the view (the view's middle is often the pit); standing, not dropped in: a drop could be walked off the ledge's end
   } else {
     // Screen centre, just above the top of the CURRENT VIEW. camX/camY are 0 on every single-screen
     // arena, so this is the old behaviour there exactly — and on a Tall/Huge custom map it drops
