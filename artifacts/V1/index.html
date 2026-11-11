@@ -28085,6 +28085,68 @@ function fsOnKo(f){
   if(had && !SMASHBALL) FS.next = 150 + Math.floor(fsRand()*120);
 }
 // ---- firing -------------------------------------------------------------------------------------------------------------
+// ---- FS WALLS: begin ---------------------------------------------------------------------------------------------------------------
+// FINAL SMASH WALL AUDIT (the owner, 2026-11-10: "on the moon caves bow's final smash's chair goes into a wall but still does damage"). ONE RULE for every
+// Final Smash on a map with solid terrain (Moon Caves' rock, Dream Island's blocks, Capture the Flag's walls and doors, the Needle/TLC shaft, any solid bluff):
+//   - a shot a Final Smash throws (addProj tags it `_fs`) stops, with a puff, at the first solid piece on its way (the projectile step);
+//   - a hit a Final Smash deals (a frame of its own: hitCircle, hitShape, fsBurst, or a bare applyHit) lands only on a foe the hit's origin can SEE: the straight
+//     line from the circle's / shape's middle / the shot / the holder to the foe's middle crosses no solid piece (applyHit's fallback uses the holder, or `FSW.org`
+//     where a row has set the prop's spot);
+//   - its catch takes only a foe the holder can see (fsCatchOk), so nobody in another cave is held for a scene;
+//   - a foe the Final Smash has CAUGHT (fsLock) is its own, seen when it was caught: its scene is not tested again, except Bow's chairs (fsChairAim).
+//   `wide` on a row: a screen-wide cinematic that reaches everyone by design (not tested at all). A map with no solid piece is untouched (fswOn).
+const FSW = { force:false, vt:-1, org:null, pf:null, hx:0, hy:0 };   // pf, hx, hy: the holder whose row is ticking and where he stood when the tick began (a row that carries him is stopped at rock after it: fsRun)   // force: a test's switch; vt: the idx of the foe a funnel has already seen (applyHit does not test it twice); org: a row's prop spot {x, y}
+function fswPieces(f){
+  const out = [];
+  for(const p of platRects()){
+    if(!p.solid || p.rot || p.ramp || p.ghost) continue;
+    if(f && p.dref !== undefined && p.dref.op && p.dref.op[f.team]) continue;   // (a door open for the holder's side is not there)
+    out.push(p);
+  }
+  return out;
+}
+function fswOn(){ return FSW.force || fswPieces(null).length > 0; }
+// Does the straight line (x0, y0) -> (x1, y1) cross a solid piece (each shrunk 2 px, so a body resting on a surface is not "inside" it)? A piece the start
+// point is inside is not counted (a holder or a blast standing flush in a doorway), unless `strict` (Bow's chair: a chair inside the rock is blocked).
+function fswSee(x0, y0, x1, y1, f, strict){
+  const dx = x1 - x0, dy = y1 - y0;
+  for(const p of fswPieces(f)){
+    const h = p.h || 16, L = p.x + 2, R = p.x + p.w - 2, T = p.y + 2, B = p.y + h - 2;
+    if(R <= L || B <= T) continue;
+    const in0 = x0 > L && x0 < R && y0 > T && y0 < B;
+    if(in0){ if(strict) return false; continue; }
+    let a = 0, b = 1;
+    if(dx === 0){ if(x0 <= L || x0 >= R) continue; }
+    else { let u = (L - x0)/dx, v = (R - x0)/dx; if(u > v){ const q = u; u = v; v = q; } if(u > a) a = u; if(v < b) b = v; }
+    if(a >= b) continue;
+    if(dy === 0){ if(y0 <= T || y0 >= B) continue; }
+    else { let u = (T - y0)/dy, v = (B - y0)/dy; if(u > v){ const q = u; u = v; v = q; } if(u > a) a = u; if(v < b) b = v; }
+    if(a < b) return false;
+  }
+  return true;
+}
+// Is the point inside a solid piece (shrunk 2 px)? A shot made inside rock is stopped at once.
+function fswIn(x, y, f){
+  for(const p of fswPieces(f)){ const h = p.h || 16; if(x > p.x + 2 && x < p.x + p.w - 2 && y > p.y + 2 && y < p.y + h - 2) return true; }
+  return false;
+}
+// Where the holder stands for a sight test: where this frame's tick began (he may have been carried on by the row since; fsRun puts him back if rock is in the way).
+function fswHome(f){ return FSW.pf === f ? { x:FSW.hx, y:FSW.hy } : f; }
+function fswWide(st){ return !!(st && st.d && st.d.wide); }
+// Is foe t hidden from the point (ox, oy) for Final Smash f (its running state, or `st`: a shot's)? The prop's own line to the foe must be clear AND the foe
+// must be one the holder could aim at: the holder sees them, or sees the prop's spot (a blast that bends round a corner), or -- for a shot -- the spot it was
+// thrown from (`vis`, fixed in addProj). A row that drops a blast ON a foe behind rock has a clear line from its own spot, but fails the second test.
+function fswBlocked(f, ox, oy, t, st, vis){
+  if(!f || !t || t === f || !fswOn()) return false;
+  const S = st || f._fs;
+  if(fswWide(S)) return false;
+  if(t._fsLock && t._fsLock.by === f.idx) return false;   // a foe it holds
+  const ty = hurtCY(t), H = fswHome(f);
+  if(!fswSee(ox, oy, t.x, ty, f)) return true;
+  if(fswSee(H.x, H.y, t.x, ty, f)) return false;
+  return vis === undefined ? !fswSee(H.x, H.y, ox, oy, f) : !vis;
+}
+// ---- FS WALLS: end -----------------------------------------------------------------------------------------------------------------
 // OC VIABILITY 2: a Final Smash row is found by the fighter's name -- and for an OC, whose name is the player's, by its TYPE ('oc:zoner'). Nothing changes for a roster fighter.
 function fsKeyOf(f){ return f.oc ? 'oc:' + f.oc.type : f.name; }
 function fsOf(f){ return FINAL_SMASHES[fsKeyOf(f)] || FS_DEFAULT; }
@@ -28131,7 +28193,10 @@ function fsRun(f){
   // fixed when it was fired (st.cs); the row's own `catch` and `lockEnd` are as for any row.
   if(d.catchAt != null && t === d.catchAt){ hitArt(f, 'fscatch', st.cs, { color:f.color, world:true, fade:10 }); fsCatch(f, st); }
   FS.by = f;   // every hit this frame deals, and every shot it throws, is the Final Smash's (fsHitBy)
-  try { d.tick(f, st, t); } finally { FS.by = null; }
+  const fwx = f.x, fwy = f.y;
+  FSW.pf = f; FSW.hx = fwx; FSW.hy = fwy;
+  try { d.tick(f, st, t); } finally { FS.by = null; FSW.pf = null; }
+  if((f.x !== fwx || f.y !== fwy) && !d.blinks && !d.wide && fswOn() && !fswSee(fwx, fwy, f.x, f.y, f)){ f.x = fwx; f.y = fwy; }   // FS WALLS: the holder is a prop too -- a row that carries him (a jet's run, a dash) stops at the first rock (a row with `blinks` appears elsewhere on purpose)
   fsLockStep(f, st);   // the locked foes stay where the row left them; any it is done with is let go
   if(++st.t >= d.dur) fsEnd(f);
 }
@@ -28147,7 +28212,7 @@ function fsBurst(f, st, x, y, R, dmg, kbx, kby, S){
   let n = 0;
   for(const t of fighters){
     if(t.dead || t.idx === f.idx || t.team === f.team || st.hit.has(t.idx) || hardInvuln(t)) continue;
-    if(hurtGap(t, x, y) < R){ st.hit.add(t.idx); t.countering = 0; applyHit(t, dmg, (Math.sign(t.x - x) || f.face || 1)*kbx, kby, f); if(S) fsStatus(t, f, S); n++; }
+    if(hurtGap(t, x, y) < R){ if(fswBlocked(f, x, y, t, st)) continue; FSW.vt = t.idx; st.hit.add(t.idx); t.countering = 0; applyHit(t, dmg, (Math.sign(t.x - x) || f.face || 1)*kbx, kby, f); FSW.vt = -1; if(S) fsStatus(t, f, S); n++; }
   }
   if(summons.length) damageSummons(f, x, y, R, dmg);
   return n;
@@ -28327,7 +28392,7 @@ function fsCatchInset(sh, k){
 // A row that aims at one foe (a lock-on's marker, a stream thrown at them) or at its k nearest (a rain) catches only that many
 // (catchMax), the nearest first by its marker's own rule (nearestFoe: across, and twice up or down); the rest are free, as before.
 // A row's `catchOk(f, t)` narrows who its catch may take beyond the area (Bow's chairs: only a foe below her). fsCatchFoes: who it would take now.
-function fsCatchOk(d, f, t){ return !d.catchOk || d.catchOk(f, t); }
+function fsCatchOk(d, f, t){ return (!d.catchOk || d.catchOk(f, t)) && (d.wide || !fswOn() || fswSee(f.x, f.y, t.x, hurtCY(t), f)); }   // (FS WALLS: a foe behind rock is not caught)
 function fsCatchFoes(d, f){ const cs = fsCatchOf(d, f); return fighters.filter((t)=> fsCatchable(f, t) && fsCatchTouch(cs, t) && fsCatchOk(d, f, t)); }
 // A Final Smash spent on nothing (a row's `needFoe`, pressed with nobody in its catch): the glow is gone and there is a small puff. No intro, no pause, no catch.
 // (A CPU's press that finds nobody -- its keys come a few frames after it chose -- is swallowed and the glow kept: a CPU never throws it away. `botOk`: the
@@ -28885,7 +28950,7 @@ const FIREY_ROW = {
         const x = ax + sd*(i*55);
         for(const o of fighters){
           if(fsHurtMark(f, o) || st.hit.has(o.idx)) continue;
-          if(Math.abs(o.x - x) < 40 + o.r*0.5 && o.y > st.fy - 300 - o.r && o.y < st.fy + 40){
+          if(Math.abs(o.x - x) < 40 + o.r*0.5 && o.y > st.fy - 300 - o.r && o.y < st.fy + 40 && !fswBlocked(f, x, st.fy - 20, o)){
             st.hit.add(o.idx); o.countering = 0; o.burn = Math.max(o.burn || 0, 200);
             applyHit(o, 15, (Math.sign(o.x - ax) || f.face)*8, -17, f);
           }
@@ -29507,7 +29572,7 @@ function fsChairPlan(f, tg){
   const cd = (p, q)=> { const d = Math.abs(p - q) % 8; return Math.min(d, 8 - d); };   // how far apart two of them are, round the circle (in eighths)
   const at = (P, j)=> { const a = fsChairAng(j); return { x:P.x + D*Math.sin(a), y:P.y - D*Math.cos(a) }; };   // the place at k = j round a foe at P
   let rl = r0 - 2; while(rl > 2 && !fsChairFree(O.x, O.y, rl, 0, f)) rl -= 2;   // how close to a solid she stands: her ways are no tighter than that (beside a wall, a way along it is as clear as her start)
-  let kA = -1; for(let j = 0; j < 8; j++){ const p = at(F, j); if(fr(p.x, p.y) && (kA < 0 || cd(j, 3) < cd(kA, 3))) kA = j; }   // where she begins: above them, or the free place nearest to it
+  let kA = -1; for(let j = 0; j < 8; j++){ const p = at(F, j); if(fr(p.x, p.y) && fswSee(p.x, p.y, F.x, F.y, f) && (kA < 0 || cd(j, 3) < cd(kA, 3))) kA = j; }   // (FS WALLS: and a place from which she sees the foe: no chair swings through a wall)   // where she begins: above them, or the free place nearest to it
   if(kA < 0) return null;
   let H = 0;
   if(kA === 3){   // (with no room above them there is no lifting them: the shorter circle)
@@ -29518,7 +29583,7 @@ function fsChairPlan(f, tg){
     while(H + 4 <= want && fsChairFree(F.x, F.y - H - 4, R + 2, 0, f) && fr(F.x, F.y - H - 4 - D)) H += 4;
   }
   const F1 = { x:F.x, y:F.y - H }, ok = [];
-  for(let j = 0; j < 8; j++){ const p = at(F1, j); ok.push(fr(p.x, p.y)); }   // the eight places she would stand at
+  for(let j = 0; j < 8; j++){ const p = at(F1, j); ok.push(fr(p.x, p.y) && fswSee(p.x, p.y, F1.x, F1.y, f)); }   // the eight places she would stand at
   let kc = kA; const ks = [];
   for(let i = 0; i < C.n; i++){   // blow i from its own angle, or the nearest she can reach: the way round there the short way, or the long way if that is blocked
     const cand = []; for(let j = 0; j < 8; j++) if(ok[j]) cand.push(j);
@@ -29571,11 +29636,29 @@ function fsChairHome(f, st){
 }
 // Bow's blow number i (0..7) on the foe her catch holds, on the row's frame. A KO that this blow deals (the damage cap) ends the Final Smash there: nothing
 // more is thrown at whoever comes back (ONE FALL, ONE STOCK: koSince; the row's tick checks the same before every frame of it), and she goes home.
+// FS WALLS: the still version's chairs come in from fixed sides round the foe (FS_CHAIR_DIR). A side whose chair would sit in rock (the line from where the
+// chair ends up, 0.95 of the foe's size and the chair's own length out, back to the foe is blocked, or its end is inside a piece) is swapped for the nearest side that is
+// clear (a foe against a wall is struck from the open side). The swaps ride on fsPd (3 bits a blow, +1) for a guest's picture. Nothing changes where no rock is near.
+function fsChairDirOf(pd, i){ return pd > 0 ? (Math.floor((pd - 1)/Math.pow(8, i)) % 8) : i; }
+function fsChairAim(f, st, t){
+  st.dirs = null; if(!fswOn()) return;
+  const C = FS_CHAIR, R = t.r || 24, k = R/24, out = 0.95*R + 44*k, ok = [];
+  for(let j = 0; j < 8; j++){ const u = FS_CHAIR_DIR[j]; ok.push(fswSee(t.x + u[0]*out, t.y + u[1]*out, t.x, t.y, f, true) && fswSee(t.x + u[0]*(out + 16), t.y + u[1]*(out + 16), t.x, t.y, f, true)); }   // (the tip and 16 px past it: a chair's own length)
+  if(ok.every(Boolean)) return;
+  const dirs = [], cd = (p, q)=> { const d = Math.abs(p - q) % 8; return Math.min(d, 8 - d); };
+  let pd = 0;
+  for(let i = 0; i < C.n; i++){
+    let pick = i;
+    if(!ok[i]){ let best = -1; for(let j = 0; j < 8; j++) if(ok[j] && (best < 0 || cd(j, i) < cd(best, i))) best = j; if(best >= 0) pick = best; }
+    dirs.push(pick); pd += pick*Math.pow(8, i);
+  }
+  st.dirs = dirs; f.fsPd = pd + 1;
+}
 function fsChairHit(f, st, i){
   const C = FS_CHAIR, tg = fighters[st.tg], last = i === C.n - 1;
   let ux, uy;   // from the foe toward her (the way the blow came from)
   if(st.mv){ const dx = f.x - tg.x, dy = f.y - tg.y, l = Math.hypot(dx, dy) || 1; ux = dx/l; uy = dy/l; }
-  else { const u = FS_CHAIR_DIR[i]; ux = u[0]; uy = u[1]; armAtk(f, 12, 'cast'); }
+  else { const u = FS_CHAIR_DIR[st.dirs ? st.dirs[i] : i]; ux = u[0]; uy = u[1]; armAtk(f, 12, 'cast'); }
   shake(last ? 13 : 6);
   tg.countering = 0;
   applyHit(tg, C.hit/FS_DMG_MULT/(statDmg(f, 1) || 1), last ? st.side0*C.upx : -ux*C.kb, last ? C.up : -uy*C.kb, f, last ? undefined : { stun:4 });   // (the row's own size: KO-level doubles it to 12.5; the first seven stun briefly, so the eighth is no link of a chain and its let-go stuns in full: the slow-mo sees the launch; side0: away from where she began, as the launch always was)
@@ -29707,7 +29790,7 @@ function fsChairDrawStill(f, c){
   for(let i = 0; i < C.n; i++){
     const hit = C.first + i*C.gap, u = t - (hit - C.swing);   // 0 as it starts to swing in, C.swing on the blow
     if(u < 0 || u > C.swing + C.out) continue;
-    const d = FS_CHAIR_DIR[i], phi = Math.atan2(d[1], d[0]), last = i === C.n - 1;
+    const d = FS_CHAIR_DIR[fsChairDirOf(f.fsPd, i)], phi = Math.atan2(d[1], d[0]), last = i === C.n - 1;
     let tip, s, al, arc, sq = 1;
     if(u <= C.swing){ const p = u/C.swing, e = p*p; tip = 160*k + (0.95*R - 160*k)*e; s = 0.3 + 0.7*ease(p); al = Math.min(1, (u + 1)/4); arc = -1.05*(1 - e); }
     else { const p = (u - C.swing)/C.out; tip = 0.95*R + 46*k*p; s = 1 - 0.25*p; al = 1 - p; arc = 0.6*p; if(u < C.swing + 2) sq = 0.88; }
@@ -29725,7 +29808,7 @@ function fsChairDrawStill(f, c){
   c.restore();
 }
 FINAL_SMASHES['Bow'] = {
-  id:'snowbow', wind:FS_WIND, dur:FS_CHAIR.dur, reach:FS_CHAIR.reach, needFoe:true, exact:true,   // needFoe: pressed with no foe below, it is spent (fsTryFire); exact: a CPU fires it only when the catch will take someone (fsBotInput)
+  id:'snowbow', blinks:true, wind:FS_WIND, dur:FS_CHAIR.dur, reach:FS_CHAIR.reach, needFoe:true, exact:true,   // needFoe: pressed with no foe below, it is spent (fsTryFire); exact: a CPU fires it only when the catch will take someone (fsBotInput)
   catch(f){ const X = FS_CHAIR.reach - HURT_R0; return { kind:'box', x:f.x - X, y:f.y + f.r, w:2*X, h:FS_CHAIR.depth }; },   // CATCH: under her feet: a standard body (24 px each way) touches it from 160 px across
   catchOk(f, t){ return fsChairBelow(f, t); }, lockEnd:FS_CHAIR.last, catchMax:1,   // only a foe whose top is under her feet; the nearest one only (the chairs are for one foe)
   hides(f){ return !(f.fsC > 0) && f.fsCy >= 1; },   // she is drawn by the row itself, turned round the foe (fsChairDrawMove), once her plan is on the wire (the still version leaves her to the loop)
@@ -29735,6 +29818,7 @@ FINAL_SMASHES['Bow'] = {
     st.tg = t.idx; st.n0 = t._koN || 0; st.over = false; st.ay = f.y;
     st.O = { x:f.x, y:f.y }; st.face0 = f.face; st.side0 = Math.sign(t.x - f.x) || f.face || 1;   // where she began, how she faced, and the way the launch goes (away from where she stood)
     st.pl = fsChairPlan(f, t); st.mv = !!st.pl;   // (null: the still version)
+    if(!st.mv) fsChairAim(f, st, t);   // FS WALLS: a chair whose way in is rock comes from the nearest clear side instead
     f.fsBx = Math.round(t.x); f.fsBy = Math.round(t.y); f.fsCx = Math.round(t.r || 24); f.fsCy = st.mv ? st.pl.code : null;   // where the chairs go, how big the foe is, her plan: all a guest needs
     armAtk(f, this.wind, 'fsgather');
   },
@@ -31973,6 +32057,7 @@ FINAL_SMASHES['Ruby'] = {
 // `art(c, x, y, s, k, f)` draws the fighter's own glyph (s: its size in px, k: 0 -> 1 through the moment); S is { burn, freeze, stun, slow, poison, root, weak }.
 function fsStatus(o, f, S){
   if(!S) return;
+  if(f && FS.by === f && o !== f && fswOn() && fswBlocked(f, (FSW.org || fswHome(f)).x, (FSW.org || fswHome(f)).y, o)) return;   // FS WALLS: no status through rock either (the poison of a ring that was stopped)
   if(S.burn) o.burn = Math.max(o.burn || 0, S.burn);
   if(S.poison){ o.burn = Math.max(o.burn || 0, S.poison); o._poisonT = Math.max(o._poisonT || 0, S.poison); }
   if(S.freeze) applyFreeze(o, S.freeze);
@@ -69254,6 +69339,7 @@ function step(){
       continue;   // orbit petals don't use normal velocity/gravity/life-decay
     }
     if(pr.aimBoom){ aimBoomStep(pr); if(pr.life<=0) continue; }   // thrown at a foe and coming back (fileRideThrow): straight out along its aim, then home to the thrower
+    const _fx0 = pr.x, _fy0 = pr.y;
     pr.x+=pr.vx; pr.y+=pr.vy; if(pr.grav||pr.bounce) pr.vy+=0.34; if(pr.grow){ pr.r += pr.grow; if(pr.growTo && pr.r >= pr.growTo){ pr.r = pr.growTo; pr.grow = 0; } } pr.life--;   // bounce implies gravity so it arcs into surfaces
     if(MCAVE && MCAVE.on){ const _r = MCAVE.cy - pr.y; pr._mcLap = (pr._mcLap || 0) + Math.abs(pr.vx)/Math.max(64, _r); if(_r < MCAVE.rKill || _r > MCAVE.Rblast + 400 || pr._mcLap > Math.PI) pr.life = 0; }   // MOON CAVES: gone in the core, far out in space, or half a lap round (on a flat map it would have left)
     // a fist on an arm that retracts (Springy's JUST WANTED A HAND): where its flight out would have ended, it turns and comes back the
@@ -69308,6 +69394,7 @@ function step(){
         if(pr.maxBounces!=null && pr.bounces>=pr.maxBounces){ pr.life=0; }   // expire after its bounce budget
       }
     }
+    if(pr._fs && !pr.trap && !pr.turret && !pr.fswThru && fswOn() && !fswWide(pr._fsSt) && (!fswSee(_fx0, _fy0, pr.x, pr.y, pr.ownerObj) || fswIn(pr.x, pr.y, pr.ownerObj))){ pr.life = 0; for(let i=0;i<5;i++) puff(_fx0, _fy0, i%2 ? '#ffffff' : pr.color, 3); continue; }   // FS WALLS: a Final Smash's shot stops at the first rock it meets (after the landing and bounce rules above: a drop that comes down on a floor lands as it always did)
     // Taco salsa: settle into a lingering slow-puddle on ANY surface it lands on —
     // the ground, a one-way platform top, or a solid block top, in any stage.
     if((pr.landsPuddle || pr.landsAcid) && pr.grav && pr.vy>=0){
@@ -89773,7 +89860,7 @@ function doSpecial(f){
 const PROJ_LIFE = 1.4;
 function addProj(p){
   if(p && p.life) p.life = Math.round(p.life * PROJ_LIFE);
-  if(p && FS.by && p.ownerObj === FS.by){ p._fs = FS.by; p._fsSt = FS.by._fs; }   // a Final Smash's shot: its hits are the Final Smash's (fsHitBy)
+  if(p && FS.by && p.ownerObj === FS.by){ p._fs = FS.by; p._fsSt = FS.by._fs; if(fswOn()){ const H = fswHome(FS.by); if(!fswSee(H.x, H.y, p.x, p.y, FS.by)) p._fsVis = false; } }   // (FS WALLS: _fsVis false: thrown from a spot the holder cannot see)   // a Final Smash's shot: its hits are the Final Smash's (fsHitBy)
   // TRAPS FALL. "traps should FALL, not appear" and "traps cant fall on platforms": a trap a fighter places used
   // to be created at its resting spot and never moved again (the trap branch skips all movement), so it popped
   // into place, hung in midair when laid from the air, and Taco's puddle was pinned to the main floor. Now it
@@ -89982,13 +90069,15 @@ function hitCircle(f,cx,cy,rad,dmgLow,dmgHigh,kbx,kby,band,sourKb,once){
     if(t.dead||t.idx===f.idx||(f._combo ? graceBlocks(t,f) : (t.invuln>0 && !chainOpen(t,f)))) continue;
     const d = hurtGap(t, cx, cy);   // to the hurtbox EDGE, so the old t.r is already inside it
     if(d<rad){
+      if(FS.by === f && fswBlocked(f, cx, cy, t)) continue;   // FS WALLS: a Final Smash's blast does not reach through rock
       // Golf Ball marks whatever she hits, so her bonus-vs-cursed payoff builds up on its own
       if(f.kit && f.kit.special==="zapshooter" && t.team!==f.team){ t.curseStacks=Math.min(CURSE_MAX_STACKS,(t.curseStacks||0)+2); }
       const outer = d > rad*b;
       const sweet = band==null ? true : (tip ? outer : !outer);   // no band, no sour zone: a big target whose centre sat past the reach used to launch sour
       const dmg = (sweet || sourKb!=null) ? dmgHigh : dmgLow;
       const k = sourKb!=null ? (sweet ? 1 : sourKb) : ((dmgHigh>0 && dmg!==dmgHigh) ? dmg/dmgHigh : 1);
-      applyHit(t, dmg, kbx*k, kby*k, f);   // counter handled inside applyHit
+      if(FS.by === f) FSW.vt = t.idx;
+      applyHit(t, dmg, kbx*k, kby*k, f); FSW.vt = -1;   // counter handled inside applyHit
       if(t.team!==f.team){ landed++; f._confirm = 1; }   // a SWING that lands recovers sooner (see JAB_HIT_CD); a shot landing this frame does not count
     }
   }
@@ -90124,13 +90213,15 @@ function hitShape(f, sh, dmgLow, dmgHigh, kbx, kby, band, sourKb, once){
   for(const t of fighters){
     if(t.dead||t.idx===f.idx||(f._combo ? graceBlocks(t,f) : (t.invuln>0 && !chainOpen(t,f)))||(JAB_BY===f && jabLocked(t, f, f._jabPress))) continue;   // (JAB_BY ...: THE JAB LOCK, 2026-10-28, "Yes, stop the jab lock")
     if(!shapeHits(sh, t)) continue;
+    if(FS.by === f && fswBlocked(f, ox, oy, t) && fswBlocked(f, bb.cx, bb.cy, t)) continue;   // FS WALLS: neither the swing's middle nor its centre of area sees the foe
     if(f.kit && f.kit.special==="zapshooter" && t.team!==f.team){ t.curseStacks=Math.min(CURSE_MAX_STACKS,(t.curseStacks||0)+2); }
     const d = Math.max(0, hurtGap(t, ox, oy));   // to the target's EDGE, as hitCircle judges its band
     const outer = d > rad*b;
     const sweet = band==null ? true : (tip ? outer : !outer);   // no band, no sour zone: a big target whose centre sat past the reach used to launch sour
     const dmg = (sweet || sourKb!=null) ? dmgHigh : dmgLow;
     const k = sourKb!=null ? (sweet ? 1 : sourKb) : ((dmgHigh>0 && dmg!==dmgHigh) ? dmg/dmgHigh : 1);
-    applyHit(t, dmg, kbx*k, kby*k, f);
+    if(FS.by === f) FSW.vt = t.idx;
+    applyHit(t, dmg, kbx*k, kby*k, f); FSW.vt = -1;
     if(t.team!==f.team){ landed++; f._confirm = 1; }
   }
   if(summons.length) damageSummons(f, bb.cx, bb.cy, bb.rad, dmgHigh, null, once);   // `once`: hitCircle's, for a boss that must take the move once
@@ -94974,6 +95065,11 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(SETTINGS.mode==='ctf' && ctfNoHit(t, from)) return;   // a prisoner cannot hit or be hit
   if(inOwnTeamZone(t)) return;
   if(t._fsLock && !(from && from.idx === t._fsLock.by)) return;   // CATCH, THEN CINEMATIC: a foe a Final Smash caught is its holder's alone
+  if(from && from !== t && (FS.by === from || (SMASH_PROJ && SMASH_PROJ._fs)) && fswOn()){   // FS WALLS: a Final Smash's hit that no funnel has seen (a bare applyHit in a row, a shot's hit) needs a line from its origin
+    if(FSW.vt === t.idx) FSW.vt = -1;
+    else if(FS.by === from){ const o = FSW.org || fswHome(from); if(fswBlocked(from, o.x, o.y, t)) return; }
+    else if(SMASH_PROJ && SMASH_PROJ._fs === from && SMASH_PROJ.ownerObj === from && !SMASH_PROJ.reflected && fswBlocked(from, SMASH_PROJ.x, SMASH_PROJ.y, t, SMASH_PROJ._fsSt, SMASH_PROJ._fsVis !== false)) return;
+  }
   // …and you cannot swing out of it either: an attack thrown from inside the zone does not land.
   if(from && from !== t && inOwnTeamZone(from)) return;
   // BOT'S GOTCHA! (DOWNSPECIALS.cheer): "Bot takes no damage while holding." Nothing that hits them lands while they hold a foe -- no
