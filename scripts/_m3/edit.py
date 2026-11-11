@@ -8,7 +8,7 @@ def setline(pattern,new,cnt=1):
     assert len(idx)==cnt,(pattern,idx)
     L[idx[0]]=new
 SM={
-'dash':"{pat:'rain', count:3, seek:260, gap:40, at:90, dmg:10, kb:11, r:11, effect:'knockdown', cost:{cd:56}, color:'#8ed24b'},   // Leafy -- Leaf Fall (UNIQUE MOVES 3): three leaves shaken down on the nearest foe (was a dash; Basketball, Knife and Cheesy shared it)",
+'dash':"{pat:'rain', count:3, seek:260, gap:40, at:90, dmg:12, kb:13, r:11, effect:'knockdown', cost:{cd:56}, color:'#8ed24b'},   // Leafy -- Leaf Fall (UNIQUE MOVES 3): three leaves shaken down on the nearest foe (was a dash; Basketball, Knife and Cheesy shared it)",
 'dribble':"{pat:'leap', rise:12, fwd:6, rad:40, dmg:14, kb:12, effect:'knockdown', cost:{stun:28}, color:'#e08a3a'},   // Basketball -- Slam Dunk (UNIQUE MOVES 3): a hop at the nearest foe and a dunk on them (was a dash)",
 'tricks':"{pat:'mine', at:40, dmg:11, kb:8, r:18, life:300, effect:'bleed', n:120, cost:{cd:56}, color:'#dfe6ec'},   // Knife -- Caltrops (UNIQUE MOVES 3): from the Bag of Tricks, left on the floor ahead (was the Blade Rush dash)",
 'pun':"{pat:'beam', len:380, wide:20, dmg:12, kb:11, effect:'weaken', n:150, cost:{stun:26}, color:'#f9d84a'},   // Cheesy -- Punchline (UNIQUE MOVES 3): a line of groans straight ahead that weakens whoever it catches (was a dash)",
