@@ -19564,7 +19564,7 @@ function go(id){
     // loop() broadcasting that solo match into the old room ~22x/sec. leave() resets role, ws,
     // snapshot, players and the roster globals together, and is a no-op when already solo.
     if(window.NET && window.NET.role!=="solo") window.NET.leave();
-    window.__netRoster=null; window.__netHumanCount=0; window.__netSides=null;
+    window.__netRoster=null; window.__netHumanCount=0; window.__netSides=null; window.__netOC=null;
   }   // leaving to title exits test/tournament/boss mode
   if(id==='title'||id==='lobby' || (id==='select' && !PENDING_CUSTOM)) dropCustomLevel();   // navigation clears custom level (and puts back what it changed), unless we're queuing one for character select
   if(id!=='select') PENDING_CUSTOM=false;   // consumed once we leave the select screen into a match
@@ -19584,7 +19584,6 @@ function go(id){
   if(id==='tourneySetup'){ cupSyncUI(); }
   if(id==='ctfCupSetup'){ ctfCupSyncUI(); }
   if(id==='ctfCupTeams'){ ctfCupTeamsRender(); }
-  if(id==='lobby' && OC_OPEN) ocDropPick();   // OC EDITOR: no OC goes online yet
   if(id==='lobby'){ try{ loadLobbyArt(); }catch(e){} }   // the lobby's portraits are fetched now, not when the page loaded
   if(id==='controls'){ buildMaps(); buildCustomMusic(); }
   if(id==='vault'){ try{ buildVault(); }catch(e){} }
@@ -26224,7 +26223,7 @@ function buildFighters(){
   if(netRoster){
     // humans occupy the first slots (slot 0 = host), rest filled with random AI
     const prizePick = (nm)=>{ const r = PRIZE_ROSTER.find(x=>x.name===nm); if(r) installPrizeKit(); return r || null; };   // a guest's pick may be a prize fighter this host has not earned: the guest earned it, so the row (and its kit) is honoured
-    const humans = netRoster.map(nm => ({...(ROSTER.find(r=>r.name===nm)||prizePick(nm)||ROSTER.find(r=>r.play)), you:false}));
+    const humans = netRoster.map((nm, i) => (window.__netOC && window.__netOC[i]) ? ({...ocRow(window.__netOC[i]), you:false}) : ({...(ROSTER.find(r=>r.name===nm)||prizePick(nm)||ROSTER.find(r=>r.play)), you:false}));   // (OC ONLINE SYNC: a seat's OC is rebuilt from the checked wire code)
     const used = new Set(netRoster);
     // Never an event fighter in an online CPU seat, yours or not (approval question 8): the host cannot know what its guests own.
     const pool = ROSTER.filter(r=>!used.has(r.name) && !r.event);
@@ -88304,8 +88303,7 @@ function ocCpuSeat(all){
 function ocDropPick(){ if(chosen && chosen.oc) chosen = ROSTER.find(r => r.play && !r.prize && isUnlocked(r)) || ROSTER.find(r => r.play) || chosen; }   // the online lobby has no OCs yet
 function ocStartBlocked(){   // an OC plays local Free-for-all and Teams only for now; says why in the note over the moves
   let why = '';
-  if(inNetSession()) why = 'OCs are not online yet';
-  else if(PENDING_TOURNEY || EVENT_PICK || oneWanted() || cobsWanted() || (SETTINGS.mode !== 'ffa' && SETTINGS.mode !== 'teams')) why = 'OCs play Free-for-all and Teams';
+  if(PENDING_TOURNEY || EVENT_PICK || oneWanted() || cobsWanted() || (SETTINGS.mode !== 'ffa' && SETTINGS.mode !== 'teams')) why = 'OCs play Free-for-all and Teams';
   if(!why) return false;
   const n = document.getElementById('lockNote'); if(n){ n.textContent = why; n.style.display = 'block'; }
   return true;
@@ -88313,7 +88311,7 @@ function ocStartBlocked(){   // an OC plays local Free-for-all and Teams only fo
 
 // ---- THE FIGHTER BOARD (section 5): the player's saved OCs as tiles after the roster, and a tile that opens the list ----
 function ocBoardCells(b){
-  const net = inNetSession();
+  const net = false;   // (OC ONLINE SYNC: an OC may be picked in a room)
   if(!OC_LOADED){ ocLoad().then(() => { try{ const s = document.getElementById('select'); if(s && s.classList.contains('active')) buildBoard(); }catch(e){} }); return; }
   if(cupPicking() || EVENT_PICK || (PENDING_TOURNEY && PENDING_TOURNEY.pickMates)) return;   // a cup's or an event's pick is roster-only
   ocPreloadLooks(); ocEnsureScreen();   // (the screen and its style exist from here: the side card uses the same role label)
@@ -89200,6 +89198,20 @@ function ocWireDecode(code){   // -> the cleaned OC, or null when the code is no
     if(!Array.isArray(a) || a[0] !== 1 || a.length !== 9) return null;
     return ocHostClean({ type:a[1], picks:{ n:a[2], d:a[3], u:a[4], s:a[5] }, rf:a[6], look:a[7], name:a[8] });
   }catch(e){ return null; }
+}
+// OC ONLINE SYNC: a built OC (ocNorm's shape, look an object) -> its canonical wire code; and a code from the wire -> { oc (ocNorm shape), code (canonical), tampered } or null.
+// The host, the start, a guest's snapshot read and the host's own seat all go through these, so every screen builds the same OC from the same checks.
+function ocWireOf(oc){ const k = oc && oc.look; return ocWireEncode({ type:oc && oc.type, picks:oc && oc.picks, rf:oc && oc.rf, name:oc && oc.name, look:(k && typeof k === 'object') ? k.id : k }); }
+function ocNetBuild(code){
+  const c = ocWireDecode(code); if(!c) return null;
+  return { oc:ocNorm({ name:c.name, type:c.type, picks:c.picks, rf:c.rf, look:c.look }), code:ocWireEncode(c), tampered:c.tampered };
+}
+const OC_SNAP_CACHE = new Map();   // a guest decodes a snapshot's code once
+function ocSnapBuild(code){
+  if(typeof code !== 'string') return null;
+  let b = OC_SNAP_CACHE.get(code);
+  if(b === undefined){ b = ocNetBuild(code) || ocNetBuild(ocWireEncode({})); if(OC_SNAP_CACHE.size > 64) OC_SNAP_CACHE.clear(); OC_SNAP_CACHE.set(code, b); }
+  return b;
 }
 
 // THE FINISHER -- THOUSAND CUTS (OC VIABILITY 2). A wind-up of FIN_STARTUP frames (the body gathers and glows; turn in it and the first dash turns with you), then
@@ -121373,8 +121385,8 @@ function netFighter(f){
     vx:nr1(f.vx), vy:nr1(f.vy) };   // the run cycle, the lean, the jump stretch, the run dust
   if(f.dead) o.dead = true;         // (ONLINE LAG: a false rides as nothing; a guest reads a missing one as false)
   if(f.onground) o.onground = true;
-  { const sp = f.kit && f.kit.special, key = f.name + '|' + f.color + '|' + sp + '|' + f.koCap + '|' + f.team;   // the slow fields (NET_STAT): when they change, early in a match, with the geometry, and once a second
-    if(netStatDue(NET_STAT.key, NET_STAT.at, f.idx, key)){ o.name = f.name; o.color = f.color; o.koCap = f.koCap; o.team = f.team; o.kit = { special:sp }; } }
+  { const sp = f.kit && f.kit.special, ocw = f.oc ? (f._ocWire || (f._ocWire = ocWireOf(f.oc))) : '', key = f.name + '|' + f.color + '|' + sp + '|' + f.koCap + '|' + f.team + '|' + ocw;   // the slow fields (NET_STAT): when they change, early in a match, with the geometry, and once a second
+    if(netStatDue(NET_STAT.key, NET_STAT.at, f.idx, key)){ o.name = f.name; o.color = f.color; o.koCap = f.koCap; o.team = f.team; o.kit = { special:sp }; if(ocw) o.oc = ocw; } }
   if(f.size && f.size !== 1) o.size = Math.round(f.size*100)/100;   // PER-FIGHTER SIZE: r rides already; the size is for the outline a guest's hit art is drawn on (haHurtOf)
   for(const k of NET_FIGHTER_FLAGS){ const v = f[k]; if(v) o[k] = (typeof v === 'number') ? Math.round(v) : v; }   // whole frames: _fury drifts by 0.05
   // The swing, the hurt pose and the smash charge: the sim's own render-only timers, so on the wire they go by names
@@ -121635,7 +121647,7 @@ function netSnapshotArrived(N, s){
       s.pb = prev.pb.map(r=>(pc && typeof r[6] === 'number') ? [r[0], r[1], r[2], r[3], r[4], r[5], pc[r[6]]] : r).concat(Array.isArray(s.pb) ? s.pb : []).slice(-2*NET_PARTICLE_BIRTHS); }
     if(Array.isArray(prev.fighters) && Array.isArray(s.fighters)) for(const sf of s.fighters){   // ONLINE LAG: the slow fields and the prediction numbers the skipped snapshot carried
       if(!sf) continue; const pf = prev.fighters.find(q=>q && q.idx === sf.idx); if(!pf) continue;
-      if(sf.name === undefined && pf.name !== undefined){ sf.name = pf.name; sf.color = pf.color; sf.koCap = pf.koCap; sf.team = pf.team; sf.kit = pf.kit; }
+      if(sf.name === undefined && pf.name !== undefined){ sf.name = pf.name; sf.color = pf.color; sf.koCap = pf.koCap; sf.team = pf.team; sf.kit = pf.kit; if(pf.oc !== undefined) sf.oc = pf.oc; }   // (OC ONLINE SYNC: and the OC's code)
       const k = (pf.pr && pf.pr.k) || pf._k; if(k){ if(sf.pr && !sf.pr.b && !sf.pr.k) sf.pr.k = k; else if(!(sf.pr && sf.pr.k)) sf._k = k; } }
     if(!s.banner && prev.banner) s.banner = prev.banner;
     if(Array.isArray(prev.ko) && prev.ko.length) s.ko = prev.ko.concat(Array.isArray(s.ko) ? s.ko : []).slice(-8);
@@ -121692,7 +121704,7 @@ function applySnapshot(s){
   BOSS_ARENA = (typeof s.arena === 'string' && Object.prototype.hasOwnProperty.call(BOSS_ARENA_SKY, s.arena)) ? s.arena : null;
   if(Array.isArray(s.zones)) spawnZones = s.zones.map(z=>({ kind: z[0] ? 'claim' : 'safe', x:z[1], y:z[2], w:z[3], h:z[4], owner: z[5] >= 0 ? z[5] : null, progress: z[6]||0 }));
   fighters=(s.fighters||[]).map(fd0=>{
-    const was0 = wasF.get(fd0.idx), fd = (fd0.name === undefined && was0) ? Object.assign({ name:was0.name, color:was0.color, koCap:was0.koCap, team:was0.team, kit:was0.kit }, fd0) : fd0;   // ONLINE LAG: the slow fields come now and then (NET_STAT); between, the last seen
+    const was0 = wasF.get(fd0.idx), fd = (fd0.name === undefined && was0) ? Object.assign({ name:was0.name, color:was0.color, koCap:was0.koCap, team:was0.team, kit:was0.kit, oc:was0.oc }, fd0) : fd0;   // ONLINE LAG: the slow fields come now and then (NET_STAT); between, the last seen
     const lastK = (fd.pr && fd.pr.k) || fd._k || (was0 && was0._prK) || null;   // ...and so do a guest's prediction numbers (pr.k): kept through the frames it is not free
     if(fd.pr && !fd.pr.b && !fd.pr.k && lastK) fd.pr = Object.assign({}, fd.pr, { k:lastK });
     const f = {
@@ -121709,6 +121721,8 @@ function applySnapshot(s){
       // HUD's "you" card and the minimap highlight all pointed at the host's fighter on every client.
       you: (myIdx != null) ? fd.idx === myIdx : !!fd.you,
     };
+    if(typeof fd.oc === 'string'){ const b = ocSnapBuild(fd.oc); f.oc = b.oc; f.name = b.oc.name; f.color = ocRow(b.oc).color; f.kit = { special:'oc_' + b.oc.type }; }   // OC ONLINE SYNC: the host's OC, checked here the same way (a bad code is the default OC; the name is the cleaned one, never the raw text)
+    else if(!(fd.oc && typeof fd.oc === 'object')) delete f.oc;
     const was = wasF.get(fd.idx);
     // the swing timer the last snapshot had, when this is the same swing still running: netSwing never shows more than it. A swing held by a
     // hit's freeze on the host (HIT FREEZE) arrives with the same timer twice, and counted back up from it each time it stepped a frame back and forth
@@ -122419,8 +122433,8 @@ window.NET = {
     this.inS={}; this.inTick=0; this._inT0=null;   // (and so does input)
     if(this._inTimer != null){ try{ clearTimeout(this._inTimer); }catch(e){} this._inTimer = null; }
     // Cleared here too, not just in go('title'), so any other exit path is safe as well.
-    window.__netRoster=null; window.__netHumanCount=0; window.__netSides=null;
-    NET_COS=[]; COS_KO_OUT=[];   // ...and so are the room's looks
+    window.__netRoster=null; window.__netHumanCount=0; window.__netSides=null; window.__netOC=null;
+    NET_COS=[]; COS_KO_OUT=[]; this.ocBuilds={};   // ...and so are the room's looks
   },
 
   send(obj){ if(this.ws && this.ws.readyState===1) this.ws.send(JSON.stringify(obj)); },
@@ -122452,12 +122466,13 @@ window.NET = {
       else if(this.role==="client" && n) this.status(this.players.some(p=>p.isHost) ? "Joined room "+(this.room||"")+" — waiting for the host" : "Room "+(this.room||"")+" has no host");
       // assign my fighter index by my position in the roster
       const me=this.players.findIndex(p=>p.id===this.myId);
-      if(me>=0 && this.role==="client") this.myIdx=me;
+      if(me>=0 && this.role==="client"){ this.myIdx=me; this.sendOc(); }
     }
     else if(m.t==="input" && this.role==="host"){
       // idx is peer-supplied: a fighter slot and nothing else ("__proto__" would reach Object.prototype via the latch)
       const idx=m.idx, inp=m.input;
       if(!Number.isInteger(idx) || idx<0 || idx>=64 || !inp || typeof inp!=='object') return;
+      if(m.oc!==undefined){ if(!running) this.ocIn(idx, m.oc); return; }   // (OC ONLINE SYNC: a guest's build, in the lobby)
       if(!(Array.isArray(m.c) && netInputIn(this, idx, m))){   // frame by frame (ONLINE INPUT, FRAME BY FRAME); else a guest from before that:
         const was = this.inputs[idx] || {};
         this.inputs[idx]=inp;
@@ -122491,12 +122506,12 @@ window.NET = {
   lobbyEntries(){
     const firey=ROSTER.find(x=>x.name==="Firey"), vc=this.versionCheck();   // (vc: who has an older game -- their row says so)
     return (this.players||[]).map((p,i)=>{
-      const sd=netSideSplit(p.fighter||p.name), sp=netSplitName(sd.rest), nm=sp.name, r=ROSTER.find(x=>x.play && x.name===nm) || firey, you=p.id===this.myId;
+      const sd=netSideSplit(p.fighter||p.name), sp=netSplitName(sd.rest), nm=sp.name, isOc=(nm==='OC'), r=ROSTER.find(x=>x.play && x.name===nm) || firey, you=p.id===this.myId;
       // look: the skin they wear, or null -- yours from your profile (the host's start reads its own so), everyone else's from their hello (netHelloName).
       // Only a skin of the fighter listed dresses them (cosFitsFighter): a name that fell back to Firey wears his own look or none.
       const sk=r ? cosItem(you ? wornCos('skin', r.name) : (sp.cos && sp.cos.skin)) : null, look=(sk && sk.kind==='skin' && sk.fighter===r.name) ? sk : null;
       // pick: the side they picked (1 = Team 1...), 0 for none -- your own straight from here, everyone else's from their hello (netSideTag)
-      return { slot:i+1, id:p.id, isHost:!!p.isHost, you, fighter:r?r.name:"Firey", color:r?r.color:null, look, pick: you ? (this.mySide|0) : sd.side, old: !!(vc && vc.stale.has(p.id)) };
+      return { slot:i+1, id:p.id, isHost:!!p.isHost, you, fighter:isOc?'OC':(r?r.name:"Firey"), color:isOc?'#4ec9e0':(r?r.color:null), look:isOc?null:look, pick: you ? (this.mySide|0) : sd.side, old: !!(vc && vc.stale.has(p.id)) };
     });
   },
   renderLobby(){
@@ -122613,13 +122628,17 @@ window.NET = {
     blurFormControl();
   },
   // Your hello's name: your fighter, your side if you picked one, your look (netHelloName, netSideTag).
-  helloName(name){ return netSideTag(netHelloName(name), this.mySide|0); },
+  helloName(name){ if(chosen && chosen.oc && name === chosen.name) return netSideTag('OC', this.mySide|0); return netSideTag(netHelloName(name), this.mySide|0); },   // (OC ONLINE SYNC: the relay keeps 24 characters of a hello, so an OC says only 'OC' here and sends its build with sendOc)
   // A fresh hello, after you pick a fighter, a side or a look: the same id (with the build in it: stampId), and the name carrying all three. The relay
   // turns it into a new roster for everyone, so every screen shows the change. Your own card changes at once; the roster the relay sends back (the same
   // for everyone) says it again a moment later -- while the socket is open or opening (the hello goes out at once, or at open; a closed one tells nobody).
+  // OC ONLINE SYNC: a guest's OC build rides an input message (the relay routes that to the host; a hello is cut at 24 characters). The host checks it (ocNetBuild) at the start.
+  sendOc(){ if(this.role!=="client" || running || !(chosen && chosen.oc) || !this.ws || this.ws.readyState!==1) return; const i=this.myIdx; if(!Number.isInteger(i) || i<0) return; this.send({t:"input", idx:i, input:{}, oc:ocWireOf(chosen.oc)}); },
+  ocIn(idx, code){ const p=(this.players||[])[idx]; if(!p || p.id===this.myId || typeof code!=='string' || code.length>300) return; if(!this.ocBuilds) this.ocBuilds={}; if(Object.keys(this.ocBuilds).length>=64 && !(p.id in this.ocBuilds)) return; this.ocBuilds[p.id]=code; },
   sayHello(){
     const hello=chosen ? this.helloName(chosen.name) : netSideTag("?", this.mySide|0);
     this.send({t:"hello", id:this.myId, host:this.role==="host", name:hello});
+    this.sendOc();
     const me=(this.players||[]).find(p=>p.id===this.myId); if(me && this.ws && this.ws.readyState<=1){ me.name=hello; me.fighter=null; }
     this.renderRoster();
     return hello;
@@ -122849,23 +122868,42 @@ window.NET = {
     // `p.fighter`, which nothing ever set, so every human in an online match played Firey.
     // A name may carry its player's look after a "~" (netHelloName); the host's own is read fresh from its profile.
     const picks=this.players.map(p=>{ const s=netSplitName(netSideSplit(p.fighter||p.name).rest); if(p.id===this.myId) s.code=cosNetCode(myCos(s.name)); return s; });
-    const humans=picks.map(s=>ROSTER.some(r=>r.play && r.name===s.name) ? s.name : "Firey");
+    const humans=picks.map(s=>(ROSTER.some(r=>r.play && r.name===s.name) || s.name==='OC') ? s.name : "Firey");   // ('OC': resolved below, once the mode is known)
     // Everything the lobby shows travels with the start: host and clients must build the SAME stadium and arena.
     const settings=Object.assign(this.lobbySettings(), { count:Math.max(SETTINGS.count, this.players.length) });
     if(stage && stage.moonV === 4) settings.moon = MC4.pick(Math.max(2, Math.min(15, Math.ceil(settings.count/2))));   // MOON CAVES v4 (V8b): the host draws the moon, and every device builds that one
     if(SETTINGS.mode==='ctf') settings.ctfMap = ctfPickMap();   // the host picks the map: the start carries its id, and every device builds that one
+    const ocs=this.ocSeats(humans, settings.mode);   // OC ONLINE SYNC: each OC seat's checked build; humans[i] is the OC's name now
     const roster=humans;
     const ids=this.players.map(p=>p.id);   // who sits where, so a client's seat comes from the start itself
     const start={t:"start", settings, roster, ids, build:gameBuild(), look:cpuLookSeed()};   // (build: a client on another build stays out of it; look: the CPUs' skins, CPU_LOOK)
     const cos=picks.map(s=>s.code||"");
+    if(ocs.some(Boolean)) start.oc=ocs;
     if(cos.some(Boolean)) start.cos=cos;   // each human's look, by slot: four characters each, and only when someone wears one
     { const sizes=netSideSizes(settings.mode, settings.count, settings.teamKey);   // Capture the Flag and Teams: each human's side, by slot (0 = Team 1)
       if(sizes && sizes.length>1) start.sides=netResolveSides(this.lobbyEntries().map(e=>(e.pick|0)-1), sizes, settings.mode); }
     this.send(start);
-    this.beginMatch(settings, roster, ids, start.cos, start.sides, start.look);
+    this.beginMatch(settings, roster, ids, start.cos, start.sides, start.look, start.oc);
   },
 
-  beginMatch(settings, roster, ids, cos, sides, look){
+  // OC ONLINE SYNC: the seats whose hello said 'OC'. Free-for-all and Teams only (anything else: Firey). The build is the guest's sent code (the host's own from its pick),
+  // checked by ocNetBuild (over-budget picks, an unknown move or type, a bad name: the type's default, name 'OC'); no build received: the default OC. Names are made unique.
+  ocSeats(humans, mode){
+    const out=humans.map(()=>''), used=new Set(humans.filter(n=>n!=='OC'));
+    humans.forEach((n,i)=>{
+      if(n!=='OC') return;
+      if(mode!=='ffa' && mode!=='teams'){ humans[i]="Firey"; return; }
+      const p=this.players[i], raw=(p && p.id===this.myId) ? (chosen && chosen.oc ? ocWireOf(chosen.oc) : null) : (p && this.ocBuilds ? this.ocBuilds[p.id] : null);
+      let b=ocNetBuild(raw) || ocNetBuild(ocWireEncode({}));
+      let nm=b.oc.name, k=1; const base=nm.slice(0,10);
+      while(used.has(nm) || ROSTER.some(r=>r.name===nm)){ nm=base+(++k); }
+      if(nm!==b.oc.name){ b=ocNetBuild(ocWireEncode({ type:b.oc.type, picks:b.oc.picks, rf:b.oc.rf, look:b.oc.look.id, name:nm })); }
+      used.add(b.oc.name); humans[i]=b.oc.name; out[i]=b.code;
+    });
+    return out;
+  },
+
+  beginMatch(settings, roster, ids, cos, sides, look, ocs){
     // Peer-supplied, every field of it: validate before anything reaches the arena math or the globals.
     const s=settings||{}, int=(v,lo,hi,d)=>{ v=Math.round(+v); return Number.isFinite(v) ? Math.max(lo,Math.min(hi,v)) : d; };
     SETTINGS.mode = ['ffa','teams','boss','ctf'].includes(s.mode) ? s.mode : 'ffa';
@@ -122881,7 +122919,11 @@ window.NET = {
     { const st=STAGES.find(x=>x.id===s.stage); if(st) stage=st; }
     MC4.netMoon = (stage && stage.moonV === 4 && Number.isInteger(s.moon) && s.moon >= 0 && s.moon <= 15) ? s.moon : null;   // MOON CAVES v4 (V8b): the host's moon, validated; read once by MC4.pick
     if(NET_VIEW) NET_VIEW.moonRefused = false;
-    roster = (Array.isArray(roster)?roster:[]).map(n=>ROSTER.some(r=>r.play && r.name===n) ? n : "Firey");
+    { const ocIn=Array.isArray(ocs) ? ocs : [], okMode=(SETTINGS.mode==='ffa' || SETTINGS.mode==='teams'); window.__netOC=[];   // OC ONLINE SYNC: peer-supplied codes, checked here with the host's own function
+      roster = (Array.isArray(roster)?roster:[]).map((n,i)=>{
+        const code=ocIn[i];
+        if(typeof code==='string' && code){ const b=okMode ? ocNetBuild(code) : null; if(b){ window.__netOC[i]=b.oc; return b.oc.name; } return "Firey"; }
+        return ROSTER.some(r=>r.play && r.name===n) ? n : "Firey"; }); }
     // Seats for this match: humans first, in roster order. The host maps a leaver to a seat by this (seatsLeft), and a
     // client takes its seat from it rather than from its position in whatever roster arrives mid-match.
     this._seats = (Array.isArray(ids) ? ids : this.players.map(p=>p.id)).map(id=>(typeof id==='string' ? id : null));
