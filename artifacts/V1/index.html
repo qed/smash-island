@@ -24212,6 +24212,7 @@ function setupWorld(){
   MCAVE = null;        // MOON CAVES: set again only by its own builder
   SPLEEF = null;       // SPLEEF: built by spleefBuildWorld below, for the one event match that has it
   DRM = null; DRM_VIS = false; DRM_GH = false; DRM_V = -1;   // DREAM ISLAND TEAMS: built by diBuild below, for Teams on Dream Island only
+  YN = null; YN_VIS = false;   // YOYLE NEEDLE TEAMS: built by ynBuild below, for Teams on Yoyle Needle only
   STG = null;          // STAGES A: built by stgBuild below, for The TLC and Yoyle Needle in a plain FFA match
   DIGC = null;         // THE DIG: built by digcBuildWorld below, for the one event match that has it
   camAng = 0;
@@ -24221,6 +24222,7 @@ function setupWorld(){
   if(digcWanted()){ digcBuildWorld(); return; }   // THE DIG (Spongy's contest): the dirt field over the arena, in place of the stage's own world
   if(ONEFIGHT.active || COBSFIGHT.active){ buildOneArena(); return; }   // One's arena, and Steve Cobs's: the teams map without its walls (see buildOneArena)
   if(SETTINGS.mode === 'teams' && (MCAVE_DEV || MCAVE_OPEN) && stage && stage.layout === 'disc'){ buildMoonCaves(); return; }   // MOON CAVES (while it is built: MCAVE_DEV only, MCAVE_OPEN once released; Teams only)
+  if(ynWanted()){ ynBuild(); return; }   // YOYLE NEEDLE TEAMS: the inside of the giant needle (Teams on Yoyle Needle only)
   if(diWanted()){ diBuild(); return; }   // DREAM ISLAND TEAMS: its own islands-and-bridges map (Teams on Dream Island only)
   if(RACE.active){ buildRaceLane(); return; }       // RUNNING!: the Red Line Game's lane (see buildRaceLane)
   if(stgWanted()){ stgBuild(); return; }   // STAGES A: The TLC's box or Yoyle Needle's shaft, in place of the flat layout (a plain FFA match only)
@@ -25868,6 +25870,305 @@ function ffaRespawn(f){
 
 // small-mode platforms (original single-screen behavior)
 // ============================================================
+//  YOYLE NEEDLE, TEAMS (2026-11-10 preview v1; the owner's drawing reports/yoyle-needle-teams-owner.webp, the design in reports/teams-big-maps-design.md)
+//  THE INSIDE OF THE GIANT NEEDLE AS A WORKING MACHINE: a cross-shaped hall (a hall across the middle, the central shaft up to the EYE LOFT and down to the
+//  MACHINE ROOM) with MOVING PLATFORMS on visible rails (the owner's core idea), the needle's EYE (a window out onto a sill), an outside BALCONY on the left, a
+//  dark machine room under the hall (floor gaps drop into it; turning gears; a crawlspace along its roof). One base per arm, NOT mirrored, balanced by role:
+//  NORTH the Eye Loft (high ground, few approaches), EAST the Spool Room (a walled mezzanine, no side KO), SOUTH the Gear Works (low, dark, many exits, hard to
+//  camp), WEST the Thimble Terrace (open to the balcony, the zipline, a blast line close by). Teams mode on Yoyle Needle only (ynWanted), the generic Teams map's
+//  size +10% (diSize, MAP SIZE honoured), FOUR VARIANTS (ynVariant) that carry different mixes of the ten approved ideas (YNV). Fewer than four teams: the
+//  unused bases are neutral. Movers ride the existing STG machinery (stgPlace / stgStep / stgHold); a guest gets the geometry (yn, yd) and the moved plats from
+//  the host. Art only on the guest: everything drawn is read from worldPlats (yn kinds, and the one `yd` record with the zones and the decorations).
+//  PREVIEW STATE: geometry and art; the mechanics of levers, vents, berries, magnets, the tripwire, the zipline and the wind are NOT built yet (they are drawn).
+// ============================================================
+const YNK = { grow:1.1, minW:3300, minH:2400, period:10800, nightOn:0.55, night:0.72, dark:0.84 };
+let YN = null, YN_VIS = false;   // YN: this match's state (ynBuild; null elsewhere); YN_VIS: paint its art (a guest too)
+function ynWanted(){
+  return SETTINGS.mode === 'teams' && !!(stage && stage.stg === 'tower') && !CUSTOM_LEVEL && !TESTMODE.active && !(typeof TUT !== 'undefined' && TUT.active)
+    && !RACE.active && !ONEFIGHT.active && !COBSFIGHT.active;
+}
+function ynVariant(){
+  if(SETTINGS.yoyleVar >= 0 && SETTINGS.yoyleVar <= 3 && SETTINGS.yoyleVar != null) return SETTINGS.yoyleVar | 0;
+  let h = 11; const s = [SETTINGS.teamKey || '', SETTINGS.count, SETTINGS.mapSize || '', SETTINGS.stocks, SETTINGS.yoyleSeed | 0].join('|');
+  for(let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
+  return ((h >>> 3) + (SETTINGS.yoyleSeed | 0)) & 3;
+}
+// the four variants: which of the ten ideas are in (lev levers, cage the cage elevator, pipes wall pipes, crawl the crawlspace is open end to end, vents air vents,
+// zip the eye's thread zipline, wind the windy balcony, berry yoyleberry bushes, magnet magnet stripes, thread the stitching tripwire, night LIGHTS OUT), whether the
+// map is mirrored (flip) and which way the gears and rails run (dir)
+const YNV = [
+  { name:'THE WORKS',   lev:1, cage:1, pipes:1, crawl:1, vents:0, zip:0, wind:0, berry:0, magnet:0, thread:0, night:0, flip:0, dir:1 },
+  { name:'THE EYE',     lev:0, cage:0, pipes:0, crawl:0, vents:1, zip:1, wind:1, berry:1, magnet:0, thread:0, night:0, flip:0, dir:-1 },
+  { name:'THE LOOM',    lev:0, cage:1, pipes:1, crawl:0, vents:0, zip:0, wind:0, berry:1, magnet:1, thread:1, night:0, flip:1, dir:1 },
+  { name:'NIGHT SHIFT', lev:1, cage:1, pipes:0, crawl:1, vents:1, zip:1, wind:0, berry:0, magnet:0, thread:0, night:1, flip:1, dir:-1 },
+];
+function ynNight(t){ const u = (t % YNK.period)/YNK.period; return 0.5 - 0.5*Math.cos(2*Math.PI*u); }
+function ynInfo(){ if(!YN_VIS) return null; if(YN && YN.yd) return YN.yd; for(const p of worldPlats) if(p.yd) return p.yd; return null; }
+function ynBuild(){
+  const K = YNK, tc = Math.max(2, Math.min(4, (SETTINGS.teamKey || '').split('v').filter(Boolean).length || 2)), sz = diSize(), v = ynVariant(), V = YNV[v];
+  WW = Math.max(Math.round(sz.WW*K.grow), K.minW); WH = Math.max(Math.round(sz.WH*K.grow), K.minH);
+  camX = 0; camY = 0; floors = []; worldZones = []; spawnZones = []; bases = []; SIDE_ROOM = 0; FLOOR_SEGS = [];
+  const sx = WW/6500, sy = WH/3000, flip = V.flip, dir = V.dir, P = [], movers = [], deco = [];
+  const X = (d)=>Math.round(d*sx), Y = (d)=>Math.round(d*sy), rx = (x, w)=>{ const a = X(x), ww = Math.max(40, X(w)); return flip ? WW - a - ww : a; }, px1 = (x)=>flip ? WW - X(x) : X(x);
+  const mr = (x, y, w, h)=>[rx(x, w), Y(y), Math.max(40, X(w)), Y(h)];
+  const solid = (x, y, w, h, kind, extra)=>{ const r = mr(x, y, w, h), p = Object.assign({ x:r[0], y:r[1], w:r[2], h:Math.max(10, r[3]), solid:true, floor:0, yn:kind }, extra || {}); P.push(p); return p; };
+  const soft = (x, y, w, kind, extra)=>{ const r = mr(x, y, w, 14), p = Object.assign({ x:r[0], y:r[1], w:r[2], h:14, solid:false, floor:0, yn:kind }, extra || {}); P.push(p); return p; };
+  const dec = (kind, x, y, w, h, aux)=>deco.push([kind, rx(x, w || 0), Y(y), Math.max(0, X(w || 0)), Y(h || 0), aux === undefined ? 0 : aux]);   // a decoration: (kind, mapped x, y, w, h, aux)
+  const decP = (kind, x, y, aux)=>deco.push([kind, px1(x), Y(y), 0, 0, aux === undefined ? 0 : aux]);                        // a decoration at a point
+  const mover = (x, y, w, mv, kind, rail)=>{
+    const p = soft(x, y, w, kind || 'rail'); p.bx = p.x; p.by = p.y; p.mvx = 0; p.mvy = 0;
+    p.mv = { ax:X(mv.ax || 0), ay:Y(mv.ay || 0), per:mv.per, ph:mv.ph || 0, ph2:mv.ph2 || 0 }; movers.push(p);
+    if(rail !== false){ if(mv.ax && !mv.ay) deco.push(['railh', p.bx - p.mv.ax, p.y, p.w + 2*p.mv.ax, 0, 0]); else if(mv.ay && !mv.ax) deco.push(['railv', p.bx + Math.round(p.w/2), p.by - p.mv.ay, 0, 2*p.mv.ay + 14, 0]); }
+    return p;
+  };
+  const wall = (x, y, w, h, kind)=>solid(x, y, w, h, kind || 'wall', { stgWall:true });
+  // ---- the hull: walls, roofs, the hall's floor slabs (with the two gaps), the machine room's floor and masonry
+  const cap = wall(2512, 30, 1475, 120, 'cap');
+  wall(2512, 150, 120, 180); wall(2512, 660, 120, 240); wall(3867, 150, 120, 750);   // the shaft's walls above the roofs; the eye window is the gap 330-660 in the left one
+  wall(300, 900, 2332, 120, 'roof'); wall(3867, 900, 2453, 120, 'roof'); wall(180, 900, 120, 480); wall(6200, 900, 120, 1890);
+  solid(300, 1800, 1400, 60, 'slab'); solid(2000, 1800, 632, 60, 'slab'); solid(3867, 1800, 633, 60, 'slab'); solid(4800, 1800, 1400, 60, 'slab');
+  solid(20, 1800, 280, 60, 'balcony'); solid(180, 1860, 520, 1040, 'mass', { stgWall:true }); solid(5800, 1860, 520, 1040, 'mass', { stgWall:true }); solid(580, 2790, 5340, 110, 'mfloor');
+  // ---- THE WEST: the Thimble Terrace (the hall's floor, tiered shelves up the back, a sewing-table stair of blocks on its inner side), the balcony outside
+  solid(1120, 1720, 380, 80, 'block'); solid(1300, 1640, 200, 80, 'block');
+  soft(520, 1660, 260, 'shelf'); soft(880, 1520, 280, 'shelf'); soft(480, 1380, 260, 'shelf'); soft(900, 1240, 300, 'shelf'); soft(1400, 1160, 260, 'shelf');
+  mover(1700, 1650, 300, { ax:230, per:600*dir, ph:0 }, 'rail');                    // the rail over the left gap
+  soft(2100, 1540, 300, 'shelf'); soft(1700, 1400, 260, 'shelf'); soft(1250, 1010 + 150, 220, 'shelf');
+  mover(2330, 1480, 240, { ay:200, per:700, ph:1 }, 'lift');                         // the left lift, up the shaft's side
+  soft(60, 1560, 200, 'shelf');
+  // ---- THE SHAFT: the long rail across the pit, the cage elevator, the staircase of wall ledges up to the Eye Loft
+  mover(2990, 1650, 520, { ax:340, per:760*dir, ph:0 }, 'long');
+  if(V.cage) mover(3120, 1700, 260, { ay:1000, per:2400, ph:0 }, 'cage', false);
+  [[2640, 1520], [3647, 1390], [2640, 1260], [3647, 1130], [2640, 1000], [3647, 870], [2640, 740]].forEach((q)=>soft(q[0], q[1], 220, 'ledge'));
+  // ---- THE NORTH: the Eye Loft: soft decks (a jump up through them), a spool for cover, the eye window on its left wall, the sill outside
+  soft(2632, 660, 368, 'loft'); soft(3600, 660, 267, 'loft'); soft(2700, 510, 240, 'shelf'); soft(3640, 520, 220, 'shelf'); soft(2250, 660, 262, 'sill');
+  solid(3720, 560, 110, 100, 'spool');
+  // ---- THE EAST: the Spool Room: a mezzanine deck on two giant spools, stairs up from the floor, a second tier, the right arm's rails
+  soft(5150, 1480, 1050, 'deck'); solid(5300, 1500, 150, 300, 'spool'); solid(5750, 1500, 150, 300, 'spool');
+  soft(5000, 1660, 200, 'shelf'); soft(4880, 1520, 200, 'shelf'); soft(5150, 1340, 200, 'shelf'); soft(5450, 1230, 400, 'shelf');
+  mover(4500, 1650, 300, { ax:230, per:600*-dir, ph:2 }, 'rail');                    // the rail over the right gap
+  mover(3900, 1470, 240, { ay:200, per:700, ph:3 }, 'lift'); soft(4350, 1400, 260, 'shelf'); soft(4700, 1260, 260, 'shelf'); soft(4150, 1250, 220, 'shelf');
+  // ---- THE SOUTH: the Gear Works (the machine room): a stair of blocks, shelves, the cage's station; the pit chains up to the floor gaps; the crawlspace
+  solid(2150, 2710, 500, 80, 'block'); solid(2150, 2630, 260, 80, 'block'); solid(2800, 2650, 140, 140, 'block');
+  soft(2300, 2540, 260, 'shelf'); soft(2650, 2430, 260, 'shelf'); soft(3000, 2560, 200, 'shelf');
+  const chain = (x0)=>{ [[x0 + 120, 2650], [x0, 2520], [x0 + 120, 2390], [x0, 2200], [x0 + 120, 2070], [x0, 1940]].forEach((q)=>soft(q[0], q[1], 180, 'ledge')); };
+  chain(1700); chain(4500);
+  const tun = (a, b, gapA, gapB)=>{   // a tunnel along the room's roof: a floor and a roof of slabs, a gap for the pit chain, a catwalk across it
+    solid(a, 2330, gapA - a, 40, 'tfloor'); solid(gapB, 2330, b - gapB, 40, 'tfloor'); solid(a, 2150, gapA - a, 40, 'troof'); solid(gapB, 2150, b - gapB, 40, 'troof'); soft(gapA, 2330, gapB - gapA, 'catwalk');
+  };
+  tun(900, 2632, 1700, 2000); tun(3867, 5600, 4500, 4800);
+  if(V.crawl){ soft(2632, 2330, 1235, 'catwalk'); } else { solid(2600, 2190, 32, 140, 'plug'); solid(3867, 2190, 32, 140, 'plug'); }
+  [[720, 2650], [800, 2520], [720, 2400]].forEach((q)=>soft(q[0], q[1], 180, 'ledge')); [[5620, 2650], [5540, 2520], [5620, 2400]].forEach((q)=>soft(q[0], q[1], 180, 'ledge'));
+  // the turning gears: four teeth each, on circles (ph2 turns the line into a circle)
+  [[1500, 2650, dir], [5100, 2650, -dir]].forEach((g)=>{ for(let k = 0; k < 4; k++) mover(g[0] - 55, g[1], 110, { ax:110, ay:110, per:640*g[2], ph:k*Math.PI/2, ph2:Math.PI/2 }, 'tooth', false); decP('gear', g[0], g[1], g[2]); });
+  // ---- DECORATION (never solid): the machine, the thread, the signs, the ideas of this variant
+  decP('gear', 3250, 1300, 1); decP('gear', 2000, 1230, -1); decP('gear', 5400, 1120, 1); decP('gear', 3250, 2300, -1); decP('gear', 800, 1280, 1);
+  dec('spool', 3050, 1900, 180, 220, 0); dec('spool', 4000, 2600, 200, 150, 1); dec('spool', 1100, 2640, 180, 150, 2);
+  dec('pipe', 340, 1030, 0, 350, 1); dec('pipe', 2680, 160, 0, 170, 1);
+  dec('sign', 330, 1620, 300, 0, 'THIMBLE TERRACE'); dec('sign', 2760, 360, 400, 0, 'THE EYE LOFT'); dec('sign', 5320, 1380, 500, 0, 'SPOOL ROOM'); dec('sign', 2230, 2600, 500, 0, 'GEAR WORKS');
+  dec('lamp', 600, 1060, 0, 0, 0); dec('lamp', 1700, 1060, 0, 0, 0); dec('lamp', 4400, 1060, 0, 0, 0); dec('lamp', 5600, 1060, 0, 0, 0); dec('lamp', 3250, 220, 0, 0, 0);
+  for(const lx of [1000, 2300, 3250, 4300, 5100]) dec('lamp', lx, 1900, 0, 0, 1);
+  dec('eye', 2512, 330, 120, 330, 0);
+  dec('balcony', 20, 1800, 280, 0, V.wind ? 1 : 0);
+  if(V.zip){ soft(40, 860, 170, 'perch'); dec('zip', 2300, 640, 0, 0, [px1(125), Y(860)]); }   // the thread runs along the outside of the hull to a perch on the left corner; from there you drop onto the balcony
+  if(V.lev){ dec('lever', 2160, 1800, 0, 0, 0); dec('lever', 4040, 1800, 0, 0, 1); dec('lever', 3000, 2790, 0, 0, 2); }
+  if(V.pipes){ dec('pipe', 3870, 1040, 0, 700, 1); dec('pipe', 2640, 1540, 0, 260, 1); dec('pipe', 6180, 1030, 0, 440, 1); dec('pipe', 320, 1400, 0, 180, 1); dec('pipe', 5810, 1880, 0, 800, 1); dec('pipe', 710, 1880, 0, 800, 1); }
+  if(V.vents){ dec('vent', 3040, 2790, 220, 0, 0); dec('vent', 2680, 840, 150, 0, 0); dec('vent', 3600, 1630, 150, 0, 0); }
+  if(V.berry){ dec('bush', 700, 1800, 0, 0, 0); dec('bush', 5500, 1480, 0, 0, 0); dec('bush', 2760, 660, 0, 0, 0); dec('bush', 3200, 2790, 0, 0, 0); }
+  if(V.magnet){ dec('mag', 4060, 1800, 400, 0, 0); dec('mag', 760, 1800, 360, 0, 0); dec('mag', 2300, 2790, 520, 0, 0); }
+  if(V.thread){ dec('trip', 4000, 1730, 1100, 0, 0); dec('trip', 2800, 2700, 520, 0, 1); }
+  for(const q of [[700, 1800], [1600, 1800], [4300, 1800], [5800, 1800]]) dec('crate', q[0], q[1], 0, 0, 0);
+  const zones = { skin:[mr(2512 - 150, 30 - 150, 1475 + 300, 150 + 150), mr(2632 - 150, 150, 1235 + 300, 2640 + 160), mr(180 - 150, 900 - 150, 6140 + 300, 1020 - 900 + 150 + 780 + 160), mr(700 - 150, 1860, 5100 + 300, 930 + 160)],
+    int:[mr(2632, 150, 1235, 2640), mr(300, 1020, 5900, 780), mr(700, 1860, 5100, 930), mr(180, 1380, 120, 420)], dark:[mr(700, 1860, 5100, 930)], eye:mr(2512, 330, 120, 330) };
+  cap.yd = { v, flip, name:V.name, zones, deco, f:{ lev:V.lev, cage:V.cage, pipes:V.pipes, crawl:V.crawl, vents:V.vents, zip:V.zip, wind:V.wind, berry:V.berry, magnet:V.magnet, thread:V.thread, night:V.night } };
+  worldPlats = P;
+  // ---- the four bases (N 0, E 1, S 2, W 3), by teams: 4: all; 3: N, E and (odd variants W, else S); 2: N and S (variants 0-1) or E and W (2-3)
+  const owner = { N:-1, E:-1, S:-1, W:-1 };
+  if(tc === 4){ owner.N = 0; owner.E = 1; owner.S = 2; owner.W = 3; } else if(tc === 3){ owner.N = 0; owner.E = 1; if(v & 1) owner.W = 2; else owner.S = 2; } else if(v < 2){ owner.N = 0; owner.S = 1; } else { owner.E = 0; owner.W = 1; }
+  const defs = [
+    { k:'N', deck:[2632, 660, 368], zone:[2632, 380, 1235, 320], sp:[2700, 2780, 2860, 2940, 3660, 3760] },
+    { k:'E', deck:[5150, 1480, 1050], zone:[5150, 1200, 1050, 300], sp:[5250, 5380, 5500, 5640, 5780, 5920] },
+    { k:'S', deck:[2000, 2790, 1050], zone:[2000, 2480, 1050, 330], sp:[2050, 2200, 2700, 2850, 2960, 3030] },
+    { k:'W', deck:[330, 1800, 900], zone:[330, 1520, 900, 300], sp:[420, 560, 700, 840, 980, 1080] },
+  ];
+  const infos = [];
+  for(const d of defs){
+    const team = owner[d.k], dr = mr(d.deck[0], d.deck[1], d.deck[2], 18), zr = mr(d.zone[0], d.zone[1], d.zone[2], d.zone[3]);
+    const spawns = d.sp.map((xx)=>({ x:px1(xx), y:dr[1] - 30, used:0 }));
+    infos.push({ k:d.k, team, x:dr[0], y:dr[1], w:dr[2] });
+    if(team >= 0) bases[team] = { team, x:dr[0], y:dr[1], w:dr[2], h:18, color:TEAM_COLORS[team % TEAM_COLORS.length], spawnX:Math.round(dr[0] + dr[2]/2), spawnY:dr[1] - 46, floor:0, spawns, zone:{ x:zr[0], y:zr[1], w:zr[2], h:zr[3] } };
+  }
+  bases = bases.filter(Boolean);
+  STG = { kind:'needle', top:null, t:0, wall:0, movers, statics:[], soft:[] };
+  stgPlace(0);
+  YN = { v, teams:tc, flip, yd:cap.yd, infos, movers, owner, crates:0 };
+  YN_VIS = true;
+}
+function ynSpawnItem(){
+  const spots = worldPlats.filter(p=>p.yn && (p.yn === 'shelf' || p.yn === 'ledge' || p.yn === 'deck' || p.yn === 'loft' || p.yn === 'slab' || p.yn === 'block') && p.w >= 120 && !p.mv);
+  if(!spots.length) return;
+  const pl = spots[Math.floor(Math.random()*spots.length)], x = pl.x + pl.w*(0.2 + Math.random()*0.6);
+  if(items.some(q=>!q.taken && Math.abs(q.x - x) < 70 && Math.abs(q.y - (pl.y - 16)) < 60)) return;
+  const pool = eventItemPool() || ["heal","heal","marmalade","marmalade","throw","throw","power","power","assist","assist","yoyle","yoyle"];
+  const kind = pool[Math.floor(Math.random()*pool.length)], r = kind === "boss" ? 0 : 16;
+  items.push({ kind, x, y:pl.y - r, vx:0, vy:0, r, taken:false, life:60*30, _land:true }); YN.crates++;
+}
+// ---- art (host and guest alike: read from worldPlats and the one yd record; nothing here is read by physics)
+const YPAL = { skin:'#5a6480', skin2:'#434b62', int:'#2b3347', int2:'#222a3b', mach:'#121624', steel:'#98a2ba', steel2:'#69728a', line:'#10131b', brass:'#d1a13f', brass2:'#946d22', thread:'#e0546f', hazard:'#ecc43c', wood:'#9b7446', wood2:'#6f512d' };
+function ynRect(c, r, col){ c.fillStyle = col; c.fillRect(r[0], r[1], r[2], r[3]); }
+// a steel block: a lit top edge, a darker body, rivets, a hard outline (the hull, the slabs, the cover blocks)
+function ynBlock(c, p, tone){
+  const col = tone === 1 ? YPAL.steel2 : YPAL.steel;
+  c.fillStyle = tone === 2 ? '#7b6a4e' : col; c.fillRect(p.x, p.y, p.w, p.h);
+  c.fillStyle = 'rgba(255,255,255,0.22)'; c.fillRect(p.x, p.y, p.w, Math.min(10, p.h));
+  c.fillStyle = 'rgba(0,0,0,0.22)'; c.fillRect(p.x, p.y + p.h - Math.min(10, p.h/3), p.w, Math.min(10, p.h/3));
+  c.fillStyle = 'rgba(16,19,27,0.55)';
+  if(p.h >= 40) for(let x = p.x + 26; x < p.x + p.w - 10; x += 60){ c.beginPath(); c.arc(x, p.y + 20, 4, 0, 7); c.fill(); if(p.h >= 90){ c.beginPath(); c.arc(x, p.y + p.h - 20, 4, 0, 7); c.fill(); } }
+  if(p.h >= 120) for(let y = p.y + 60; y < p.y + p.h - 30; y += 90){ c.fillStyle = 'rgba(0,0,0,0.18)'; c.fillRect(p.x, y, p.w, 3); }
+  c.strokeStyle = YPAL.line; c.lineWidth = 4; c.strokeRect(p.x, p.y, p.w, p.h);
+}
+function ynGear(c, cx, cy, r, ang, col, col2){
+  const n = Math.max(8, Math.round(r/9)), ri = r*0.82;
+  c.fillStyle = col; c.beginPath();
+  for(let i = 0; i < n*2; i++){ const a = ang + i*Math.PI/n, rr = (i % 2) ? ri : r + 2, a2 = a; const x = cx + Math.cos(a2)*rr, y = cy + Math.sin(a2)*rr; if(i === 0) c.moveTo(x, y); else c.lineTo(x, y); }
+  c.closePath(); c.fill(); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.stroke();
+  c.fillStyle = col2; c.beginPath(); c.arc(cx, cy, r*0.55, 0, 7); c.fill(); c.stroke();
+  c.fillStyle = YPAL.line; for(let i = 0; i < 4; i++){ const a = ang + i*Math.PI/2; c.beginPath(); c.arc(cx + Math.cos(a)*r*0.34, cy + Math.sin(a)*r*0.34, r*0.1, 0, 7); c.fill(); }
+  c.beginPath(); c.arc(cx, cy, r*0.12, 0, 7); c.fill();
+}
+function ynSpool(c, x, y, w, h, k){
+  const cols = ['#e0546f', '#4aa3df', '#e8c13a'], col = cols[k % 3];
+  c.fillStyle = YPAL.wood2; c.fillRect(x - 6, y, w + 12, h*0.16); c.fillRect(x - 6, y + h*0.84, w + 12, h*0.16);
+  c.fillStyle = col; c.fillRect(x, y + h*0.16, w, h*0.68);
+  c.strokeStyle = 'rgba(0,0,0,0.28)'; c.lineWidth = 2; for(let yy = y + h*0.2; yy < y + h*0.84; yy += 9){ c.beginPath(); c.moveTo(x, yy); c.lineTo(x + w, yy + 5); c.stroke(); }
+  c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(x - 6, y, w + 12, h*0.16); c.strokeRect(x - 6, y + h*0.84, w + 12, h*0.16); c.strokeRect(x, y + h*0.16, w, h*0.68);
+}
+function ynPipe(c, x, y, h, side){
+  c.fillStyle = '#7c6a54'; c.fillRect(x - 9, y, 18, h); c.fillStyle = 'rgba(255,255,255,0.25)'; c.fillRect(x - 5, y, 5, h);
+  c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(x - 9, y, 18, h);
+  c.fillStyle = YPAL.brass; for(let yy = y + 20; yy < y + h - 10; yy += 70){ c.fillRect(x - 13, yy, 26, 10); c.strokeRect(x - 13, yy, 26, 10); }
+}
+function ynLamp(c, x, y, low, lit){
+  c.strokeStyle = YPAL.line; c.lineWidth = 3; c.beginPath(); c.moveTo(x, y - 60); c.lineTo(x, y); c.stroke();
+  c.fillStyle = lit ? '#ffe9a0' : '#b9a46a'; c.beginPath(); c.arc(x, y + 8, 15, 0, 7); c.fill(); c.stroke();
+  if(lit){ c.fillStyle = 'rgba(255,224,140,0.12)'; c.beginPath(); c.arc(x, y + 8, 78, 0, 7); c.fill(); }
+}
+function ynBush(c, x, y, t){
+  c.fillStyle = '#3d7a47'; c.strokeStyle = YPAL.line; c.lineWidth = 3;
+  for(let i = 0; i < 5; i++){ c.beginPath(); c.arc(x - 44 + i*22, y - 24 - (i % 2)*12, 26, 0, 7); c.fill(); c.stroke(); }
+  for(let i = 0; i < 7; i++){ const bx = x - 52 + i*17, by = y - 34 - (i % 3)*14, s = 0.5 + 0.5*Math.sin(t*0.08 + i); c.fillStyle = s > 0.5 ? '#dfe7f2' : '#aebdd4'; c.beginPath(); c.arc(bx, by, 7, 0, 7); c.fill(); c.stroke(); }
+}
+function ynVent(c, x, y, w, t){
+  c.fillStyle = '#4a5166'; c.fillRect(x, y - 16, w, 16); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(x, y - 16, w, 16);
+  c.strokeStyle = '#1a1e2a'; for(let i = 1; i < 6; i++){ c.beginPath(); c.moveTo(x + w*i/6, y - 14); c.lineTo(x + w*i/6, y - 2); c.stroke(); }
+  const ph = (t % 240)/240; c.fillStyle = 'rgba(220,232,255,0.20)';
+  for(let k = 0; k < 4; k++){ const u = (ph + k/4) % 1, yy = y - 20 - u*210, ww = w*(0.5 + u*0.4); c.fillRect(x + (w - ww)/2, yy, ww, 16); }
+}
+function ynLever(c, x, y, k, t){
+  c.fillStyle = '#5b627a'; c.fillRect(x - 28, y - 22, 56, 22); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(x - 28, y - 22, 56, 22);
+  const a = -0.6 + 0.0*t; c.strokeStyle = YPAL.brass; c.lineWidth = 8; c.beginPath(); c.moveTo(x, y - 22); c.lineTo(x + Math.sin(a)*60, y - 22 - Math.cos(a)*60); c.stroke();
+  c.fillStyle = '#d94f4f'; c.beginPath(); c.arc(x + Math.sin(a)*60, y - 22 - Math.cos(a)*60, 12, 0, 7); c.fill(); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.stroke();
+}
+function ynCrate(c, x, y){ c.fillStyle = '#b58a4a'; c.fillRect(x, y - 54, 54, 54); c.strokeStyle = '#2a1c10'; c.lineWidth = 3; c.strokeRect(x, y - 54, 54, 54); c.beginPath(); c.moveTo(x, y - 54); c.lineTo(x + 54, y); c.moveTo(x + 54, y - 54); c.lineTo(x, y); c.stroke(); }
+function ynDrawBack(c, Y, t){
+  const z = Y.zones, sky = (stage && stage.sky) || ['#c9d6ea', '#6e7fa6'];
+  // outside: the sky behind the needle, clouds, a far thread drifting
+  const g = c.createLinearGradient(0, -400, 0, WH + 500); g.addColorStop(0, sky[0]); g.addColorStop(1, sky[1]);
+  c.fillStyle = g; c.fillRect(-900, -600, WW + 1800, WH + 1500);
+  c.fillStyle = 'rgba(255,255,255,0.55)';
+  for(let i = 0; i < 14; i++){ const cx = ((i*977 + t*(0.3 + (i % 3)*0.15)) % (WW + 1200)) - 500, cy = 80 + (i*337) % (WH - 200); c.beginPath(); c.arc(cx, cy, 90, 0, 7); c.arc(cx + 100, cy + 14, 70, 0, 7); c.arc(cx - 100, cy + 16, 62, 0, 7); c.fill(); }
+  c.strokeStyle = 'rgba(224,84,111,0.55)'; c.lineWidth = 6; c.beginPath(); for(let x = -600; x < WW + 600; x += 80){ const y = 300 + Math.sin(x*0.004 + t*0.01)*60; if(x === -600) c.moveTo(x, y); else c.lineTo(x, y); } c.stroke();
+  // the skin of the needle: riveted plates round the whole shape
+  for(const r of z.skin) ynRect(c, r, YPAL.skin);
+  c.strokeStyle = 'rgba(0,0,0,0.25)'; c.lineWidth = 3;
+  for(const r of z.skin){ for(let x = r[0] + 220; x < r[0] + r[2]; x += 220){ c.beginPath(); c.moveTo(x, r[1]); c.lineTo(x, r[1] + r[3]); c.stroke(); } }
+  c.fillStyle = 'rgba(255,255,255,0.14)'; for(const r of z.skin){ for(let x = r[0] + 20; x < r[0] + r[2]; x += 110){ c.fillRect(x, r[1] + 8, 6, 6); } }
+  // the inside: dark steel panels with ribs
+  for(const r of z.int) ynRect(c, r, YPAL.int);
+  for(const r of z.int){
+    c.strokeStyle = 'rgba(120,140,190,0.12)'; c.lineWidth = 3;
+    for(let x = r[0] + 160; x < r[0] + r[2]; x += 160){ c.beginPath(); c.moveTo(x, r[1]); c.lineTo(x, r[1] + r[3]); c.stroke(); }
+    for(let y = r[1] + 150; y < r[1] + r[3]; y += 150){ c.beginPath(); c.moveTo(r[0], y); c.lineTo(r[0] + r[2], y); c.stroke(); }
+  }
+  for(const r of z.dark) ynRect(c, r, YPAL.mach);
+  for(const r of z.dark){ c.strokeStyle = 'rgba(120,140,190,0.10)'; c.lineWidth = 3; for(let x = r[0] + 130; x < r[0] + r[2]; x += 130){ c.beginPath(); c.moveTo(x, r[1]); c.lineTo(x, r[1] + r[3]); c.stroke(); } }
+  // the eye: the window out, the sky behind it
+  const e = z.eye; c.fillStyle = sky[0]; c.fillRect(e[0] - 2, e[1], e[2] + 4, e[3]);
+}
+function ynDrawDeco(c, Y, t){
+  for(const d of Y.deco){
+    const k = d[0], x = d[1], y = d[2], w = d[3], h = d[4], a = d[5];
+    if(k === 'gear'){ const rr = (Math.abs(x*7 + y*3) % 70) + 105; ynGear(c, x, y, (y < 1400 && x > 3000 && x < 3500) ? 210 : rr, t*0.008*(a || 1), '#4b5470', '#38405a'); }
+    else if(k === 'spool') ynSpool(c, x, y, w, h, a);
+    else if(k === 'pipe') ynPipe(c, x, y, h, a);
+    else if(k === 'lamp') ynLamp(c, x, y, a, true);
+    else if(k === 'railh'){ c.strokeStyle = '#2a3042'; c.lineWidth = 10; c.beginPath(); c.moveTo(x, y + 7); c.lineTo(x + w, y + 7); c.stroke(); c.strokeStyle = YPAL.steel2; c.lineWidth = 4; c.stroke(); c.fillStyle = YPAL.brass; c.fillRect(x - 10, y - 4, 14, 22); c.fillRect(x + w - 4, y - 4, 14, 22); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(x - 10, y - 4, 14, 22); c.strokeRect(x + w - 4, y - 4, 14, 22); }
+    else if(k === 'railv'){ c.strokeStyle = '#2a3042'; c.lineWidth = 10; c.beginPath(); c.moveTo(x, y); c.lineTo(x, y + h); c.stroke(); c.strokeStyle = YPAL.steel2; c.lineWidth = 4; c.stroke(); c.fillStyle = YPAL.brass; c.fillRect(x - 11, y - 8, 22, 14); c.fillRect(x - 11, y + h - 6, 22, 14); }
+    else if(k === 'vent') ynVent(c, x, y, w, t);
+    else if(k === 'bush') ynBush(c, x, y, t);
+    else if(k === 'lever') ynLever(c, x, y, a, t);
+    else if(k === 'crate') ynCrate(c, x, y);
+    else if(k === 'mag'){ for(let xx = x; xx < x + w - 20; xx += 40){ c.fillStyle = ((xx - x)/40 | 0) % 2 ? '#d94f4f' : '#4a7fe0'; c.fillRect(xx, y - 8, 40, 8); } c.strokeStyle = YPAL.line; c.lineWidth = 2; c.strokeRect(x, y - 8, w - ((w) % 40), 8);
+      c.strokeStyle = 'rgba(150,190,255,' + (0.25 + 0.15*Math.sin(t*0.1)) + ')'; c.lineWidth = 2; for(let xx = x + 20; xx < x + w - 20; xx += 80){ c.beginPath(); c.arc(xx, y - 26, 20 + (t % 40)*0.5, Math.PI, 0); c.stroke(); } }
+    else if(k === 'trip'){ const sag = Math.sin(t*0.05)*2; c.strokeStyle = YPAL.thread; c.lineWidth = 4; c.beginPath(); c.moveTo(x, y); c.quadraticCurveTo(x + w/2, y + 6 + sag, x + w, y); c.stroke();
+      c.fillStyle = YPAL.brass; c.fillRect(x - 12, y - 28, 14, 56); c.fillRect(x + w - 2, y - 28, 14, 56); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(x - 12, y - 28, 14, 56); c.strokeRect(x + w - 2, y - 28, 14, 56); }
+    else if(k === 'zip'){ const bx = a[0], by = a[1]; c.strokeStyle = YPAL.thread; c.lineWidth = 5; c.beginPath(); c.moveTo(x, y); c.quadraticCurveTo((x + bx)/2, (y + by)/2 + 110, bx, by); c.stroke();
+      const u = 0.5 + 0.5*Math.sin(t*0.02), qx = x + (bx - x)*u, qy = y + (by - y)*u + 4*55*u*(1 - u)*2; c.fillStyle = YPAL.brass; c.fillRect(qx - 14, qy, 28, 14); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(qx - 14, qy, 28, 14); c.beginPath(); c.moveTo(qx, qy); c.lineTo(qx, qy - 20); c.stroke();
+      c.fillStyle = YPAL.brass; c.beginPath(); c.arc(x, y, 12, 0, 7); c.fill(); c.stroke(); c.beginPath(); c.arc(bx, by, 12, 0, 7); c.fill(); c.stroke(); }
+    else if(k === 'sign'){ c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(x - 8, y - 22, w, 38); c.fillStyle = YPAL.hazard; c.font = '22px sans-serif'; c.fillText(a, x + 4, y + 4); c.strokeStyle = YPAL.hazard; c.lineWidth = 2; c.strokeRect(x - 8, y - 22, w, 38); }
+    else if(k === 'eye'){ c.strokeStyle = YPAL.brass; c.lineWidth = 14; c.strokeRect(x - 4, y - 8, w + 8, h + 8); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(x - 12, y - 16, w + 24, h + 24);
+      c.strokeStyle = YPAL.thread; c.lineWidth = 6; c.beginPath(); c.moveTo(x + w/2, y - 8); c.quadraticCurveTo(x + w/2 + 40*(Y.flip ? 1 : -1), y + 90, x + w/2, y + 170); c.stroke(); }
+    else if(k === 'balcony'){ const rl = [x, x + w]; c.strokeStyle = '#3a4056'; c.lineWidth = 6; c.beginPath(); c.moveTo(x, y - 90); c.lineTo(x + w, y - 90); c.stroke();
+      c.lineWidth = 4; for(let xx = x + 10; xx <= x + w; xx += 44){ c.beginPath(); c.moveTo(xx, y - 90); c.lineTo(xx, y); c.stroke(); }
+      if(a){ c.strokeStyle = 'rgba(255,255,255,0.45)'; c.lineWidth = 4; for(let i = 0; i < 8; i++){ const yy = y - 250 - i*70, off = ((t*9 + i*130) % 600); c.beginPath(); c.moveTo(x - 140 + off*0.2, yy); c.lineTo(x + 120 + off*0.2, yy + 8); c.stroke(); } } }
+  }
+}
+function ynDrawPlats(){
+  const c = ctx, Y = ynInfo(), t = hazardT; if(!Y) return;
+  c.save(); c.lineJoin = 'round';
+  ynDrawBack(c, Y, t); ynDrawDeco(c, Y, t);
+  for(const p of worldPlats){
+    const k = p.yn; if(!k) continue;
+    if(k === 'wall' || k === 'cap' || k === 'roof' || k === 'mass' || k === 'mfloor') ynBlock(c, p, 1);
+    else if(k === 'slab' || k === 'balcony' || k === 'tfloor' || k === 'troof') { ynBlock(c, p, 0); }
+    else if(k === 'block' || k === 'plug') ynBlock(c, p, 0);
+    else if(k === 'spool'){ ynSpool(c, p.x, p.y, p.w, p.h, (p.x/97 | 0)); }
+    else {
+      // soft pieces: a plate with a lit top; decks and the cage are heavier
+      const thick = (k === 'deck' || k === 'loft' || k === 'sill') ? 44 : (k === 'tooth' || k === 'cage') ? 20 : 28;
+      c.fillStyle = k === 'cage' ? YPAL.brass : k === 'tooth' ? '#c9ccd8' : (k === 'rail' || k === 'lift' || k === 'long') ? YPAL.hazard : (k === 'deck' || k === 'loft' || k === 'sill') ? YPAL.wood : YPAL.steel;
+      c.fillRect(p.x, p.y, p.w, thick); c.fillStyle = 'rgba(255,255,255,0.28)'; c.fillRect(p.x, p.y, p.w, 5);
+      if(k === 'rail' || k === 'lift' || k === 'long'){ c.fillStyle = '#2a2a2a'; for(let x = p.x + 8; x < p.x + p.w - 20; x += 36){ c.beginPath(); c.moveTo(x, p.y + thick); c.lineTo(x + 16, p.y); c.lineTo(x + 28, p.y); c.lineTo(x + 12, p.y + thick); c.closePath(); c.fill(); } }
+      if(k === 'deck' || k === 'loft' || k === 'sill'){ c.strokeStyle = 'rgba(0,0,0,0.3)'; c.lineWidth = 2; for(let x = p.x + 60; x < p.x + p.w; x += 60){ c.beginPath(); c.moveTo(x, p.y); c.lineTo(x, p.y + thick); c.stroke(); } }
+      c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, thick);
+      if(k === 'shelf' || k === 'ledge' || k === 'catwalk'){ c.fillStyle = YPAL.steel2; for(const bx of [p.x + 10, p.x + p.w - 30]){ c.beginPath(); c.moveTo(bx, p.y + thick); c.lineTo(bx + 20, p.y + thick); c.lineTo(bx + 10, p.y + thick + 22); c.closePath(); c.fill(); c.stroke(); } }
+      if(k === 'cage'){   // the cage: bars up from the floor, a roof, the cable
+        c.strokeStyle = YPAL.brass2; c.lineWidth = 6; for(let x = p.x; x <= p.x + p.w; x += p.w/4){ c.beginPath(); c.moveTo(x, p.y); c.lineTo(x, p.y - 150); c.stroke(); }
+        c.beginPath(); c.moveTo(p.x, p.y - 150); c.lineTo(p.x + p.w, p.y - 150); c.stroke(); c.strokeStyle = '#2a3042'; c.lineWidth = 4; c.beginPath(); c.moveTo(p.x + p.w/2, p.y - 150); c.lineTo(p.x + p.w/2, p.y - 1400); c.stroke(); }
+      if(k === 'tooth'){ c.fillStyle = YPAL.line; c.fillRect(p.x + p.w/2 - 6, p.y + thick, 12, 16); }
+    }
+  }
+  c.restore();
+}
+function ynDrawOver(){ /* nothing yet: the lights-out veil is ynVeil */ }
+// LIGHTS OUT: the machine room is always dark (a veil over it), and in the night shift the whole needle goes dark (the Search Party's veil, faded in at dusk)
+function ynIsNight(t){ const Y = ynInfo(); return !!(Y && Y.f.night && ynNight(t) >= YNK.nightOn); }
+function ynVeil(o, hw, hh, m){
+  const Y = ynInfo(); if(!Y) return;
+  if(Y.f.night){ const L = ynNight(hazardT), an = YNK.night*L; if(an > 0.01){ o.fillStyle = 'rgba(5,9,26,' + an.toFixed(3) + ')'; o.fillRect(0, 0, hw, hh); } }
+  o.fillStyle = 'rgba(4,8,24,' + YNK.dark + ')';
+  for(const r of Y.zones.dark){ const x = (m.a*r[0] + m.c*r[1] + m.e)*0.5, y = (m.b*r[0] + m.d*r[1] + m.f)*0.5; o.fillRect(x, y, r[2]*Math.abs(m.a)*0.5, r[3]*Math.abs(m.d)*0.5); }
+}
+function ynLights(o, m){
+  const Y = ynInfo(); if(!Y) return;
+  const cut = (wx, wy, rad, a)=>{
+    const x = (m.a*wx + m.c*wy + m.e)*0.5, y = (m.b*wx + m.d*wy + m.f)*0.5, r = rad*Math.hypot(m.a, m.b)*0.5;
+    if(x < -r || y < -r || x > o.canvas.width + r || y > o.canvas.height + r) return;
+    const g = o.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)'); o.fillStyle = g; o.fillRect(x - r, y - r, r*2, r*2);
+  };
+  for(const d of Y.deco) if(d[0] === 'lamp') cut(d[1], d[2] + 8, d[5] ? 330 : 260, 0.7);   // the lamps are the needle's own light
+}
+
+// ============================================================
 //  STAGES A (2026-11-08): three stages with shapes of their own. DREAM ISLAND: floating islands (solid blocks) over the sea, no ground, blast
 //  lines all round. THE TLC: a steel bowl, solid walls with stepped slopes rising up both sides to a low flat middle with a hatch in it; no
 //  side KO (a launch bounces off the wall, stgWallHit), out of the top (a lower top line, koT) or down the hatch. YOYLE NEEDLE: a shaft one
@@ -25936,7 +26237,7 @@ function stgBuild(){
 // Where each moving ledge is at frame t (pure).
 function stgPlace(t){
   for(const p of STG.movers){ const m = p.mv, a = 2*Math.PI*t/m.per + m.ph;
-    const nx = Math.round(p.bx + m.ax*Math.sin(a)), ny = Math.round(p.by + m.ay*Math.sin(a));
+    const nx = Math.round(p.bx + m.ax*Math.sin(a)), ny = Math.round(p.by + m.ay*Math.sin(a + (m.ph2 || 0)));
     p.mvx = nx - p.x; p.mvy = ny - p.y; p.x = nx; p.y = ny; }
 }
 // Once a frame, before the fighters move: the ledges move, and whoever stood on one last frame (f._stgRide, stgHold) goes with it.
@@ -27784,6 +28085,7 @@ function spawnItem(){
   if(BASKET) return;   // REACH THE BASKET (an event twist): no crate falls from the sky; the basket hands them out (basketStep)
   if(MCAVE && MCAVE.on){ mcSpawnItem(); return; }   // MOON CAVES: on a floor, never from space
   if(DRM){ diSpawnItem(); return; }   // DREAM ISLAND TEAMS: mostly on the drifting islands
+  if(YN){ ynSpawnItem(); return; }   // YOYLE NEEDLE TEAMS: on a shelf, a deck or a block of the needle
   const gy = groundY();
   const x = floorSafeX(120 + Math.random()*(WW-240), 50);   // (REAL EDGES: it comes down over the floor, not a gap)
   // weight the pool: healing/marmalade common, powerups & throwables medium, assist/yoyle rarer, boss rarest
@@ -96363,8 +96665,9 @@ function startEventMatch(){
 function returnEventLoan(){
   EVENT_RUN = null; MATCH_TWIST = null; BASKET = null; JAWB = null; BERRIES = null; STAIRS = null;
   CONTEST = null;   // A CONTEST: over with the match (what each fighter held goes with the fighters)
+  if(YN) SETTINGS.yoyleSeed = ((SETTINGS.yoyleSeed | 0) + 1) & 3;   // YOYLE NEEDLE TEAMS: the next layout
   if(DRM) SETTINGS.dreamSeed = ((SETTINGS.dreamSeed | 0) + 1) & 3;   // DREAM ISLAND TEAMS: the next match with these settings is the next layout
-  STICKY = null; SPLEEF = null; DIGC = null; STG = null; DRM = null;   // STICKY PILLARS: nobody is stuck after the match (the stuck fighters themselves go with the fighters); THE DIG: its field goes with the match
+  STICKY = null; SPLEEF = null; DIGC = null; STG = null; DRM = null; YN = null;   // STICKY PILLARS: nobody is stuck after the match (the stuck fighters themselves go with the fighters); THE DIG: its field goes with the match
   const L = EVENT_LOAN; if(!L) return;
   EVENT_LOAN = null;
   SETTINGS.mode = L.mode; SETTINGS.count = L.count; SETTINGS.stocks = L.stocks; SETTINGS.teamKey = L.teamKey; SETTINGS.itemRate = L.itemRate;
@@ -97597,7 +97900,7 @@ function drawStickyPins(){
 // The twist is the match's MATCH_TWIST, so nothing is kept between matches but the offscreen canvas.
 const DARKK = { r:220, see:320, far:0.12, tint:'rgba(5,9,22,0.7)' };
 const DARKFX = { cv:null, c:null, me:null, q:null };
-function darkOn(){ return DRM_VIS || (!!MATCH_TWIST && (MATCH_TWIST === 'dark' || twistOn('dark'))); }   // (DREAM ISLAND TEAMS: the night and the undergrounds use the same veil, diVeil)
+function darkOn(){ return DRM_VIS || YN_VIS || (!!MATCH_TWIST && (MATCH_TWIST === 'dark' || twistOn('dark'))); }   // (DREAM ISLAND TEAMS: the night and the undergrounds use the same veil, diVeil)
 function darkSeeK(f){
   const me = DARKFX.me;
   if(!me || me.dead || f === me || f.team === me.team) return 1;
@@ -97608,6 +97911,10 @@ function darkSeeK(f){
     const LH = diLightHouse(), nl = Math.max(diNight(hazardT), diInCave(f.x, f.y) ? 1 : 0, diWeather() === 2 ? 0.6 : 0);
     if(LH && diInBeam(f.x, f.y, LH, hazardT)) return 1;
     return 1 - (1 - k)*nl;
+  }
+  if(YN_VIS){   // YOYLE NEEDLE TEAMS: a foe fades in the dark machine room, and everywhere in the night shift's night
+    const Y = ynInfo(); let dk = 0; if(Y){ for(const r of Y.zones.dark) if(f.x >= r[0] && f.x <= r[0] + r[2] && f.y >= r[1] && f.y <= r[1] + r[3]) dk = 1; if(ynIsNight(hazardT)) dk = Math.max(dk, ynNight(hazardT)); }
+    return 1 - (1 - k)*dk;
   }
   return k;
 }
@@ -97628,7 +97935,7 @@ function darkDraw(m){
     if(D.cv.width !== hw || D.cv.height !== hh){ D.cv.width = hw; D.cv.height = hh; }
     const o = D.c, rad = DARKK.r*Math.hypot(m.a, m.b)*0.5;
     o.setTransform(1, 0, 0, 1, 0, 0); o.globalCompositeOperation = 'source-over';
-    o.clearRect(0, 0, hw, hh); if(DRM_VIS) diVeil(o, hw, hh, m); else { o.fillStyle = DARKK.tint; o.fillRect(0, 0, hw, hh); }
+    o.clearRect(0, 0, hw, hh); if(DRM_VIS) diVeil(o, hw, hh, m); else if(YN_VIS) ynVeil(o, hw, hh, m); else { o.fillStyle = DARKK.tint; o.fillRect(0, 0, hw, hh); }
     o.globalCompositeOperation = 'destination-out';
     for(const f of fighters){
       if(f.dead) continue;
@@ -97637,7 +97944,7 @@ function darkDraw(m){
       g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.5, 'rgba(0,0,0,0.85)'); g.addColorStop(1, 'rgba(0,0,0,0)');
       o.fillStyle = g; o.fillRect(x - rad, y - rad, rad*2, rad*2);
     }
-    if(DRM_VIS) diLights(o, m);
+    if(DRM_VIS) diLights(o, m); else if(YN_VIS) ynLights(o, m);
     o.globalCompositeOperation = 'source-over';
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(D.cv, 0, 0, cw, ch); ctx.restore();
   }catch(e){}
@@ -103980,9 +104287,10 @@ function draw(){
                       theme: SA.on ? stage.id : null };   // the ten normal stages' own platform looks (STAGE ART); art only, the geometry is the platform's own
   if(STG) stgDraw();   // STAGES A: the shaft's or the box's inside, behind the ledges
   if(DRM_VIS) diDrawSea();   // DREAM ISLAND TEAMS: the sea under the islands
-  if(SETTINGS.mode==='ctf') ctfDrawWorld(); else for(const p of worldPlats) if(!p.dg && !p.di) paintPlat(ctx, p, platStyle);   // Capture the Flag paints its map from cached tiles (THE DIG paints its dirt itself: drawDigc)
+  if(SETTINGS.mode==='ctf') ctfDrawWorld(); else for(const p of worldPlats) if(!p.dg && !p.di && !p.yn) paintPlat(ctx, p, platStyle);   // Capture the Flag paints its map from cached tiles (THE DIG paints its dirt itself: drawDigc)
   if(STG) stgDrawOver();   // STAGES A: Dream Island's grass caps
   if(DRM_VIS) diDrawPlats();   // DREAM ISLAND TEAMS: islands, planks (cracked, ghost) and the drifting islands
+  if(YN_VIS) ynDrawPlats();   // YOYLE NEEDLE TEAMS: the needle's inside, its machinery and its platforms
   if(DRM_VIS) diDrawWeather();   // DREAM ISLAND TEAMS: leaves in a gust, rain
   drawImpactScars();          // impact's floor scars, on the surfaces they were made on
   drawArenaHazard('under');   // a boss arena's hazard, under the shots and the fighters (BOSS_ARENA_HAZARD)
@@ -115645,7 +115953,7 @@ function worldGeo(){
     floors: floors.map(fl=>({level:fl.level,y:Math.round(fl.y),x:Math.round(fl.x),w:Math.round(fl.w)})),
     // `solid` was missing here once, so on a client every stone landmark rendered as a thin ledge; `field` keeps the
     // client's minimap filtering out the scatter grid the way the host's does; `rot` is paintPlat's tilt.
-    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team,ib:p.ib,sc:p.sc,ar:p.ar,lh:p.lh,bl:p.bl,ss:p.ss,th:p.th,sh:p.sh,wo:p.wo,hg:p.hg,blk:p.blk,ix:p.ix,pool:p.pool,trap:p.trap,oi:p.oi})),
+    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team,ib:p.ib,sc:p.sc,ar:p.ar,lh:p.lh,bl:p.bl,ss:p.ss,th:p.th,sh:p.sh,wo:p.wo,hg:p.hg,blk:p.blk,ix:p.ix,pool:p.pool,trap:p.trap,oi:p.oi,yn:p.yn,yd:p.yd})),
     // `zone` and `wall` ride along so a client DRAWS the team's safe zone where the host plays it: without them it fell back
     // to the old column round the base, which is nowhere near a side-wall band (see wallBand).
     bases: bases.map(b=>({team:b.team,x:Math.round(b.x),y:Math.round(b.y),w:b.w,h:b.h,color:b.color,
@@ -116007,7 +116315,7 @@ function applySnapshot(s){
   const st=STAGES.find(x=>x.id===s.stage); if(st) stage=st;
   SETTINGS.mode=s.mode;
   const geo = s.geo || (s.worldPlats ? s : null);   // (before the geometry was split out, it sat at the top level)
-  if(geo){ floors=geo.floors||[]; worldPlats=geo.worldPlats||[]; DRM_VIS = worldPlats.some(p=>p.di); DRM_V = diVarFromGeo(); DRM_GH = worldPlats.some(p=>p.ghost); bases=(geo.bases||[]).map(b=>({...b})); mcNetGeo(geo.moon); NET_VIEW.geoBase = worldPlats.map(p=>[p.x, p.y]); }   // (MOON CAVES: the host's disc, built here)
+  if(geo){ floors=geo.floors||[]; worldPlats=geo.worldPlats||[]; DRM_VIS = worldPlats.some(p=>p.di); YN_VIS = worldPlats.some(p=>p.yn); DRM_V = diVarFromGeo(); DRM_GH = worldPlats.some(p=>p.ghost); bases=(geo.bases||[]).map(b=>({...b})); mcNetGeo(geo.moon); NET_VIEW.geoBase = worldPlats.map(p=>[p.x, p.y]); }   // (MOON CAVES: the host's disc, built here)
   else if(NET_VIEW.geoBase && NET_VIEW.geoBase.length === worldPlats.length) for(let i = 0; i < worldPlats.length; i++){ worldPlats[i].x = NET_VIEW.geoBase[i][0]; worldPlats[i].y = NET_VIEW.geoBase[i][1]; }   // ONLINE LAG: back where the geometry had them, then...
   if(Array.isArray(s.mv)) for(const r of s.mv){ const p = worldPlats[r[0] | 0]; if(p){ p.x = +r[1]; p.y = +r[2]; } }   // ...the ones the host says have moved (Yoyle Needle's ledges), where it has them
   if(s.dg) digNetIn(s.dg);   // THE DIG FLOOR: the host's holes, so this floor is the host's floor of this very frame
