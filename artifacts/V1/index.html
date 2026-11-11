@@ -24689,6 +24689,14 @@ const DIK = { plank:60, stairStep:40, crack:18, rebuild:300, tell:80, breakGap:9
   grow:1.1, minW:3300, minH:2400, step:86,
   healRate:0.15, hold:1200, cool:2400, shieldHold:900, shieldCool:1800, shieldLinger:480, shieldKb:0.6,
   period:10800, nightOn:0.55, lanternLit:1200, balloonGone:2400, chestPlate:90, chestCool:3600, tokenCap:2, tokenCredit:60, crates:3 };
+// THE WHALE SURFACES on a schedule (owner 2026-11-11: "the whale should only offer the boost when it SURFACES, not a permanent feature"). It keeps shuttling the whole time (it never
+// leaves the map); only its back, and the heal or shield area on it, are there while it is up. Phases (ss[0] = area state + 10*phase): 0 UP, 1 WARN DOWN (spout, shake, the area
+// flashing: 2 s), 2 DOWN (its back is a ghost, nobody can stand there), 3 WARN UP (bubbles and a spout where it will break the surface). It rises and dives only at the moment it
+// is flush with a shelf (every 2 s), and it rises at the end it did NOT rise at last time, so the two low bases get it by turns. Up 8 s (10 s with the warning, longer if
+// someone is still aboard: at most 6 s more), down 14 s (the last 2.5 s are the warning): about one surfacing every 25 s. A dive with someone aboard flings them (a hop and a
+// shove, one jump back) onto the shelf it is flush with, so nobody is dropped into the sea or crushed.
+let DI_WCUE = -1;   // the last whale phase the sound cue played for (draw side, host and guest alike)
+const DIW = { up:480, warnDown:120, downMin:840, warnUp:150, overstay:360, flush:0.995, shove:8, hop:11 };
 // DREAM ISLAND TEAMS MAP: hidden until the owner opens it (2026-11-11 owner: keep it hidden). DI_DEV (localStorage 'bfsi:didev' = '1') is the owner's preview;
 // while hidden, Teams on Dream Island plays the ordinary Teams map as before.
 const DI_TEAMS_OPEN = false;
@@ -24957,7 +24965,7 @@ function diBuild(){
   const whale = (()=>{
     const sa = la.x1 + 120 + DBS[la === BL ? 'BL' : 'BR'].shelfW[1], sb = lb.x - 120 - DBS[lb === BL ? 'BL' : 'BR'].shelfW[0], ya = la.y + la.fy, yb = lb.y + lb.fy, ww0 = 300, ax = Math.max(20, Math.round((sb - sa - ww0)/2));
     for(const [I, k] of [[la, 1], [lb, 0]]){ const cr = I.crumbs[k]; if(cr){ const q = P.indexOf(cr); if(q >= 0) P.splice(q, 1); I.crumbs[k] = null; } }   // no loose block in the whale's gap
-    const wl = { x:Math.round(sa), y:Math.round(ya), w:ww0, h:14, solid:false, floor:0, di:'whale', bx:Math.round(sa + ax), by:Math.round((ya + yb)/2), mv:{ ax, ay:Math.round((yb - ya)/2), per:240, ph:0 }, mvx:0, mvy:0, cl:1, ar:[V.fx[3], 20, -150, 260, 170], ss:[0, -1, 0] };
+    const wl = { x:Math.round(sa), y:Math.round(ya), w:ww0, h:14, solid:false, floor:0, di:'whale', ghost:true, bx:Math.round(sa + ax), by:Math.round((ya + yb)/2), mv:{ ax, ay:Math.round((yb - ya)/2), per:240, ph:0 }, mvx:0, mvy:0, cl:1, ar:[V.fx[3], 20, -150, 260, 170], ss:[20, -1, 0] };
     drifts.push(wl); P.push(wl); return wl; })();
   // PURPLE: what is on each outer island (heal, shield, the crates, the chest), by variant
   for(const idx of [0, 1, 2]){
@@ -24999,10 +25007,10 @@ function diBuild(){
   stgPlace(0);
   let lowY = 0; for(const p of P) if(p.di && p.y > lowY) lowY = p.y;
   DRM = { v, wx:V.wx, teams:tc, t:0, isles:infos, bridges, drifts, areas, itemsA, chestA, plA, plB, chestP, balP, stars, all:P.filter(p=>p.di), nav:null, blocked:{}, sea:lowY + 150,
-    traps:infos.filter(i=>i.trap).map(i=>({ p:i.trap, st:0, t:0, stand:0 })), crumbs:infos.flatMap(i=>i.crumbs.filter(Boolean).map(p=>({ p, st:0, t:0, stand:0 }))), crumbBreaks:0, chand, pool, whales:[], brokenTraps:0, drops:0, splashes:0,
+    traps:infos.filter(i=>i.trap).map(i=>({ p:i.trap, st:0, t:0, stand:0 })), crumbs:infos.flatMap(i=>i.crumbs.filter(Boolean).map(p=>({ p, st:0, t:0, stand:0 }))), crumbBreaks:0, chand, pool, whales:[], wh:{ ph:2, t:DIW.downMin - 300, last:0 }, wRises:0, wDives:0, wShoved:0, brokenTraps:0, drops:0, splashes:0,
     broken:0, mended:0, cracked:0, fallHits:0, fallDmg:0, fallMax:0, plans:0, planFail:0, hopFail:0, failLog:[],
     balT:0, claims:0, healTot:0, shieldTot:0, lanterns:0, pops:0, opens:0, tokenLeft:K.tokenCap, tokens:0, chestProg:0, chestT:0, crates:0, lit:0 };
-  DRM_VIS = true; DRM_GH = true;
+  DRM_VIS = true; DRM_GH = true; DI_WCUE = -1;
 }
 
 // ---- v5 set pieces that run every frame (host): the trap blocks of the high bases, the chandelier, the pool's splash, the whale's schedule
@@ -25087,9 +25095,11 @@ function diStep(){
   for(const p of DRM.stars){ if(night){ if(p.ghost) delete p.ghost; } else if(!p.ghost) p.ghost = true; }
   // the lanterns burn down
   for(const I of DRM.isles) for(const p of I.lan){ if(p._lit > 0){ p._lit--; const b = Math.ceil(p._lit/150); if(p.ss[0] !== b) p.ss = [b]; } }
+  diWhale();
   // the areas: the first team in holds a healing or shield area for a while, then it closes for a while
   for(const a of DRM.areas){
     if(a.p.mv){ a.x0 = a.p.x + 20; a.x1 = a.p.x + 280; a.y0 = a.p.y - 150; a.y1 = a.p.y + 20; }   // the whale carries its area
+    if(a.idx === 3 && (DRM.wh.ph === 2 || DRM.wh.ph === 3)){ const q0 = a.p.ss, v0 = 2 + 10*DRM.wh.ph; if(!q0 || q0[0] !== v0 || q0[1] !== -1 || q0[2] !== 0) a.p.ss = [v0, -1, 0]; continue; }   // submerged: no area at all
     if(a.t !== 0 && a.t !== 1) continue;
     const hold = a.t ? K.shieldHold : K.hold, cool = a.t ? K.shieldCool : K.cool;
     if(a.st === 1){ if(--a.tm <= 0){ a.st = 2; a.tm = cool; a.own = -1; } } else if(a.st === 2){ if(--a.tm <= 0){ a.st = 0; a.tm = 0; } }
@@ -25102,7 +25112,8 @@ function diStep(){
       }
     }
     const fr = a.st === 1 ? Math.ceil(a.tm/(hold/8)) : a.st === 2 ? Math.ceil(a.tm/(cool/8)) : 0, q = a.p.ss;
-    if(!q || q[0] !== a.st || q[1] !== a.own || q[2] !== fr) a.p.ss = [a.st, a.own, fr];
+    const sv = a.st + (a.idx === 3 ? 10*DRM.wh.ph : 0);
+    if(!q || q[0] !== sv || q[1] !== a.own || q[2] !== fr) a.p.ss = [sv, a.own, fr];
   }
   // the LIGHTHOUSE: its beam is a shield for whoever stands in it
   const LH = diLightHouse();
@@ -25140,6 +25151,27 @@ function diStep(){
     if(f.hitstun > 0 && !(f._diHS > 0) && f._diPl && (f.pct - (f._diPct || 0)) >= K.hitDmg) diCrack(f._diPl);
     f._diHS = f.hitstun; f._diPct = f.pct;
     f._diPl = f.onground ? diPlankUnder(f) : null;
+  }
+}
+// the whale's schedule (host): see DIW
+function diWhale(){
+  const W = DRM.wh, a = DRM.areas.find(q=>q.idx === 3), wp = a && a.p; if(!W || !wp) return;
+  const sn = Math.sin(2*Math.PI*STG.t/wp.mv.per + wp.mv.ph), flush = Math.abs(sn) > DIW.flush, end = sn > 0 ? 1 : -1;   // the end it is at: 1 the right shelf, -1 the left
+  W.t++;
+  if(W.ph === 2){ if(W.t >= DIW.downMin - DIW.warnUp){ W.ph = 3; } }
+  else if(W.ph === 3){
+    if(W.t >= DIW.downMin && flush && end !== W.last){
+      W.ph = 0; W.t = 0; W.last = end; delete wp.ghost; DRM_GH = worldPlats.some(p=>p.ghost); a.st = 0; a.own = -1; a.tm = 0; DRM.wRises++;
+      for(let k = 0; k < 16; k++) particles.push({ x:wp.x + wp.w*(k + 0.5)/16, y:wp.y + 8, vx:(k - 7.5)*0.45, vy:-2 - (k % 4)*0.7, life:36, color:'#cfe8ff', r:3 + (k % 3) });
+    }
+  } else if(W.ph === 0){ if(W.t >= DIW.up - DIW.warnDown) W.ph = 1; }
+  else if(W.ph === 1){
+    const aboard = fighters.filter(f=>!f.dead && f.onground && f.x >= wp.x && f.x <= wp.x + wp.w && Math.abs(f.y + f.r - wp.y) <= 6);
+    if(W.t >= DIW.up && flush && (!aboard.length || W.t >= DIW.up + DIW.overstay)){
+      for(const f of aboard){ f.vx = end*DIW.shove; f.vy = -DIW.hop; f.onground = false; f.jumps = Math.max(f.jumps, 1); DRM.wShoved++; }   // flung onto the shelf it is flush with, one jump left
+      W.ph = 2; W.t = 0; wp.ghost = true; DRM_GH = true; DRM.wDives++;
+      for(let k = 0; k < 16; k++) particles.push({ x:wp.x + wp.w*(k + 0.5)/16, y:wp.y + 8, vx:(k - 7.5)*0.45, vy:-2 - (k % 4)*0.7, life:36, color:'#cfe8ff', r:3 + (k % 3) });
+    }
   }
 }
 // a swing near a lantern lights it; a swing near the balloon pops it (called from hitShape, host side only)
@@ -25292,6 +25324,7 @@ function diPlan(N, start, goal){
   const placeAt = (d, tt)=>{ const m = d.p.mv, a2 = 2*Math.PI*tt/m.per + m.ph; d.x0 = d.p.bx + m.ax*Math.sin(a2); d.x1 = d.x0 + d.p.w; d.y = d.p.by + m.ay*Math.sin(a2); };
   const addE = (from, to, e)=>{ const k = from.id + '>' + to.id; if(seenE.has(k)) return; seenE.add(k); e.dr = 1; if(!dyn.has(from)) dyn.set(from, []); dyn.get(from).push({ to, e }); };
   for(const d of N.drifts){
+    if(d.p.ghost) continue;   // the whale while it is down: no edges to or from it
     const KS = d.p.mv.ax > 400 ? 40 : 8;   // the blimp sweeps the whole width: sampled finely enough to meet a small ledge
     for(let k = 0; k < KS; k++){
       const tt = tNow + k*d.p.mv.per/KS; for(const q of N.drifts) placeAt(q, tt);
@@ -25325,7 +25358,19 @@ function diPlan(N, start, goal){
 function diBrain(f, inp){
   if(f.hitstun > 0 || f._tp){ f._diPlan = null; return; }
   const feet = f.y + f.r, N = DRM.nav || diNavBuild();
-  { const mv = Math.abs(f.x - (f._diLX === undefined ? f.x : f._diLX)) + Math.abs(f.y - (f._diLY === undefined ? f.y : f._diLY)); f._diLX = f.x; f._diLY = f.y; f._diStillN = (mv < 0.5 && f.onground) ? (f._diStillN || 0) + 1 : 0; }
+  { const mv = Math.abs(f.x - (f._diLX === undefined ? f.x : f._diLX)) + Math.abs(f.y - (f._diLY === undefined ? f.y : f._diLY)); f._diLX = f.x; f._diLY = f.y; f._diStillN = (mv < 0.5 && f.onground) ? (f._diStillN || 0) + 1 : 0; f._diAirN = (mv < 0.5 && !f.onground && !f._cat) ? (f._diAirN || 0) + 1 : 0; }
+  if(f._diAirN > 20){   // hanging in the air without moving (clinging to a block's side): kick off it, away from the wall, and the plan goes on from wherever it lands
+    const away = f._wallSide ? -f._wallSide : (f.face ? -f.face : 1);
+    inp.left = away < 0; inp.right = away > 0; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; inp.jump = (f._diAirN % 10) < 3; DRM.cling = (DRM.cling || 0) + 1;
+    return;
+  }
+  if(DRM.wh.ph === 1 && f.onground){   // aboard the whale as it is about to dive: off, toward the end it is heading for (it dives flush with a shelf)
+    const wa = DRM.areas.find(q=>q.idx === 3), wp = wa && wa.p;
+    if(wp && f.x >= wp.x && f.x <= wp.x + wp.w && Math.abs(feet - wp.y) <= 6){
+      const dir = wp.mvx > 0 ? 1 : wp.mvx < 0 ? -1 : (DRM.wh.last || 1);
+      inp.left = dir < 0; inp.right = dir > 0; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; inp.jump = (dir > 0 ? wp.x + wp.w - f.x : f.x - wp.x) < 50; return;
+    }
+  }
   const H = DRM.areas.find(a=>a.t === 0);
   if(H && H.st === 1 && H.own === f.team && f.pct > 6 && f.onground && f.x >= H.x0 - 40 && f.x <= H.x1 + 40 && feet > H.y0 && feet < H.y1){   // healing on the island: it paces the area, unless a foe is close
     const foe = f.aiTarget;
@@ -25341,6 +25386,15 @@ function diBrain(f, inp){
     }
   }
   if(f._diPlT > 0 && !(f.x >= DRM.plA.x && f.x <= DRM.plA.x + DRM.plA.w) && !(f.x >= DRM.plB.x && f.x <= DRM.plB.x + DRM.plB.w)) f._diPlT = 0;
+  { const T = f._diTrip;   // a trip's stay at its set piece: it paces the piece (unless a foe is close), the heal area's own pacing above takes over there
+    if(T && T.arr && DRM.t - T.arr <= T.dwell && f.onground){
+      const foe = f.aiTarget;
+      if(!(foe && !foe.dead && foe.team !== f.team && Math.hypot(foe.x - f.x, foe.y - f.y) < 300)){
+        const x0 = T.n.p.x, x1 = T.n.p.x + T.n.p.w; let d = (Math.floor(DRM.t/45 + f.idx) % 2) ? 1 : -1; if(f.x < x0 + 24) d = 1; else if(f.x > x1 - 24) d = -1;
+        inp.left = d < 0; inp.right = d > 0; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; inp.jump = false; inp.down = false;
+        return;
+      }
+    } }
   if(diFollow(f, inp, N, feet)){
     // walking but not getting anywhere (a block in the way, 60 px up): a hop over it
     if(f.onground && f._diStillN > 10 && (inp.left || inp.right)){ inp.jump = (f._diStillN % 30) < 3; f._diHopDir = inp.right ? 1 : -1; f._diHopUntil = DRM.t + 45; }
@@ -25448,7 +25502,7 @@ function diGoal(f, N){
   }
   const foeD = foe ? Math.hypot(foe.x - f.x, foe.y - f.y) : 1e9, A = DRM.areas;
   const heal = A.find(a=>a.t === 0), shield = A.find(a=>a.t === 1);
-  const open = (a)=>a && (a.st === 0 || (a.st === 1 && a.own === f.team && a.tm > 300));
+  const open = (a)=>a && !a.p.ghost && (a.idx !== 3 || DRM.wh.ph === 0) && (a.st === 0 || (a.st === 1 && a.own === f.team && a.tm > 300));   // (the whale's area only while it is up)
   const aNode = (a)=>diNodeFor(N, (a.x0 + a.x1)/2, a.p.y - 2);
   const inA = (a)=>a && f.x >= a.x0 && f.x <= a.x1 && f.y + f.r >= a.y0 && f.y + f.r <= a.y1;
   if(open(heal) && (f.pct > 40 || (f.pct > 12 && Math.floor(DRM.t/600 + f.idx) % 3 === 0)) && !inA(heal)) return aNode(heal);
@@ -25456,20 +25510,81 @@ function diGoal(f, N){
   for(const q of items){ if(q.taken || !q._di) continue; const d = Math.abs(q.x - f.x) + Math.abs(q.y - f.y); if(d < bd){ bd = d; it = q; } }
   const hl = it && (it.kind === 'heal' || it.kind === 'marmalade');
   if(it && (foeD > 450 || (f.pct > 55 && hl))) return diNodeFor(N, it.x, it.y + 20);
-  if(open(shield) && foeD > 500 && !inA(shield) && Math.floor(DRM.t/900 + f.idx) % 3 === 0) return aNode(shield);
+  { const tr = diTrip(f, N, foe, foeD); if(tr) return tr; }   // a purposeful trip to a set piece (the whale, a crane's far island, an effect island), see diTrip
   if(DRM.chestT === 0 && foeD > 450 && fighters.some(o=>o !== f && !o.dead && o.team === f.team) && Math.floor(DRM.t/1200 + f.team) % 4 === 0){
     const mates = fighters.filter(o=>!o.dead && o.team === f.team).sort((a, b)=>a.idx - b.idx), pl = mates[0] === f ? DRM.plA : DRM.plB;
     return diNodeFor(N, pl.x + pl.w/2, pl.y - 2);
   }
-  // a sightseeing trip now and then (foe not close, not hurt): the harbor boat, the whale, the lagoon island, the other outer islands, so the sea routes are used
-  { const slot = Math.floor(DRM.t/900 + f.idx*2);
-    if(foeD > 260 && f.pct < 90 && slot % 3 === 0){
-      const rank = (n)=>n.p.di === 'boat' ? 0 : n.p.di === 'whale' ? 1 : (n.p.di === 'outer' && n.p.oi === 3) ? 2 : 3;
-      const tour = N.nodes.filter(n=>!n.p.off && !n.p.ghost && (n.p.di === 'boat' || n.p.di === 'whale' || (n.p.di === 'outer' && n.p.oi !== undefined) || n.p.di === 'crane' || n.p.di === 'chand')).sort((a, b)=>rank(a) - rank(b) || a.id - b.id);
-      if(tour.length){ const k = (slot/3 | 0) + f.idx; DRM.tours = (DRM.tours || 0) + 1; return tour[k % Math.min(tour.length, 8)]; }
-    } }
   if(foe && (foeD > 320 || Math.abs(foe.y - f.y) > 150)) return diNodeFor(N, foe.x, foe.y + (foe.r || 24));
   return null;
+}
+// ---- TRIPS (CPUs and the set pieces): routing and goal choice only, nothing about fighting. A CPU with no foe close, and not badly hurt, now and then picks a REASON to go to a
+// set piece: the whale (its heal or shield area), an effect island (heal when hurt, the shield, the crates), the far side of a crane (the terrace's high ground and the side
+// islands only a crane reaches). Rolled once per 180 frames (less often at lower CPU levels), a trip ends on arrival after a short stay, when a foe comes close, or after
+// 1300 frames, then a cooldown, so they still spend most of the match fighting.
+function diHash(a, b, c){ let h = (Math.imul(a | 0, 374761393) + Math.imul(b | 0, 668265263) + Math.imul(c | 0, 1274126177)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0)/4294967296; }
+function diSpots(N){
+  if(DRM.sp) return DRM.sp;
+  const sp = { whale:null, far:[], outer:[], shelf:{} };
+  for(const n of N.nodes){
+    if(n.p.di === 'whale'){ sp.whale = n; const m = n.p.mv, lx = n.p.bx - m.ax, rx = n.p.bx + m.ax + n.p.w;
+      for(const q of N.nodes){ if(q.drift) continue; if(Math.abs(q.x1 - lx) <= 60 && Math.abs(q.y - (n.p.by - m.ay)) <= 30 && !sp.shelf[-1]) sp.shelf[-1] = q; if(Math.abs(q.x0 - rx) <= 60 && Math.abs(q.y - (n.p.by + m.ay)) <= 30 && !sp.shelf[1]) sp.shelf[1] = q; } }
+    else if(n.p.di === 'outer') sp.outer.push(n);
+    else if(n.p.di === 'crane'){
+      const m = n.p.mv, lx = n.p.bx - m.ax, rx = n.p.bx + m.ax + n.p.w;
+      for(const q of N.nodes){
+        if(q.p.di !== 'islet') continue;
+        if(Math.abs(q.p.x + q.p.w - lx) < 70 || Math.abs(q.p.x - rx) < 70){ if(sp.far.indexOf(q) < 0) sp.far.push(q); }
+      }
+    }
+  }
+  DRM.sp = sp; return sp;
+}
+function diTrip(f, N, foe, foeD){
+  const now = DRM.t; let T = f._diTrip;
+  if(T){
+    const cur = diNodeAt(N, f);
+    if(T.wait){   // on its shelf, waiting for the whale: when it is up and close to flush, onto it (that is the trip then)
+      const sp = diSpots(N), W = DRM.wh;
+      if(W.ph === 0 && W.t < DIW.up - 220 && sp.whale){ T.wait = false; T.n = sp.whale; T.why = 'whale'; T.arr = 0; T.until = now + 500; T.dwell = 260; DRM.trips = DRM.trips || {}; DRM.trips.whaleBoard = (DRM.trips.whaleBoard || 0) + 1; return T.n; }
+      if(now > T.until || W.ph === 1 || (foe && foeD < 200 && Math.abs(foe.y - f.y) < 140)){ f._diTrip = null; f._diTripCool = now + 200; return null; }
+      return T.n;
+    }
+    if(!T.arr && cur === T.n) T.arr = now;
+    if((T.arr && now - T.arr > T.dwell) || now > T.until || (!T.arr && foe && foeD < 200 && Math.abs(foe.y - f.y) < 140)){ const why = T.arr ? 'arrived' : now > T.until ? 'timeout' : 'foe'; DRM.tripEnd = DRM.tripEnd || {}; DRM.tripEnd[T.why + ':' + why] = (DRM.tripEnd[T.why + ':' + why] || 0) + 1; f._diTrip = null; f._diTripCool = now + (why === 'foe' ? 150 : 300); }
+    else return T.n;
+  }
+  if(foeD < 260 || f.pct > 100 || now < (f._diTripCool || 0)) return null;
+  const ep = Math.floor(now/180); if(ep === f._diEp) return null; f._diEp = ep;
+  const lv = brainLevel(f), P = lv >= 3 ? 0.55 : lv === 2 ? 0.47 : lv === 1 ? 0.33 : 0.22;
+  if(diHash(f.idx, DRM.v, ep) > P) return null;
+  const sp = diSpots(N), W = DRM.wh, open = (a)=>a && !a.p.ghost && (a.idx !== 3 || (W.ph === 0 && W.t < DIW.up - 220)) && (a.st === 0 || (a.st === 1 && a.own === f.team && a.tm > 300));
+  const cand = [];   // [node, weight, why]
+  for(const a of DRM.areas){
+    const n = a.idx === 3 ? sp.whale : sp.outer.find(q=>q.p === a.p);
+    if(!n || !open(a) || (f.x >= a.x0 && f.x <= a.x1 && f.y + f.r >= a.y0 && f.y + f.r <= a.y1)) continue;
+    const w = a.t === 0 ? (f.pct > 20 ? 1.2 + f.pct/60 : 0.3) : a.t === 1 ? 1.0 : a.t === 2 ? 0.6 : 0.3;
+    cand.push([n, w*(a.idx === 3 ? 1.3 : 1), a.t === 0 ? 'heal' : a.t === 1 ? 'shield' : 'fx']);
+  }
+  const cur = diNodeAt(N, f);
+  if(sp.whale && (f.pct > 20 || W.ph === 3) && (W.ph === 3 || (W.ph === 2 && W.t > DIW.downMin - 520))){   // hurt (or it is surfacing now): wait on the shelf where it will break the surface, then board
+    const sh = sp.shelf[W.last ? -W.last : (f.x < (sp.whale.p.bx) ? -1 : 1)];
+    if(sh && sh !== cur) cand.push([sh, f.pct > 20 ? 2.2 : 1.0, 'wait']);
+  }
+  for(const q of sp.far) if(q !== cur && f.pct < 80) cand.push([q, 1.6/sp.far.length, 'high']);
+  if(!cand.length || !cur) return null;
+  // only trips it can make: a route exists, at most 12 hops (cost 520), and the nearer the likelier
+  for(let q = cand.length - 1; q >= 0; q--){
+    const Pn = diPlan(N, cur, cand[q][0]); let c = 0; if(Pn) for(const e of Pn.edges) c += e.c;
+    if(!Pn || Pn.edges.length > 12 || c > 520) cand.splice(q, 1); else cand[q][1] *= 1/(1 + c/260);
+  }
+  if(!cand.length) return null;
+  let tot = 0; for(const c of cand) tot += c[1];
+  let r = diHash(f.idx, DRM.v, ep + 7919)*tot, pick = cand[cand.length - 1];
+  for(const c of cand){ r -= c[1]; if(r <= 0){ pick = c; break; } }
+  f._diTrip = { n:pick[0], why:pick[2], until:now + 1000, arr:0, dwell:pick[2] === 'heal' ? 260 : pick[2] === 'high' ? 120 : 200, wait:pick[2] === 'wait' };
+  DRM.trips = DRM.trips || {}; DRM.trips[pick[2]] = (DRM.trips[pick[2]] || 0) + 1;
+  return pick[0];
 }
 // ---- crates: only on the crate island (and out of the chest), riding it if it bobs; a popped balloon drops them to the middle
 function diPutCrate(isle, x){
@@ -25742,17 +25857,29 @@ function diDrawLiving(c, p, t){
     c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillStyle = '#c9a56a'; c.fillRect(p.x, p.y, p.w, 10); c.strokeRect(p.x, p.y, p.w, 10);
     c.strokeStyle = '#6b4a2a'; c.lineWidth = 3; c.beginPath(); c.moveTo(p.x + 2, p.y); c.lineTo(p.x + 2, p.y - 36); c.lineTo(p.x + p.w - 2, p.y - 36); c.lineTo(p.x + p.w - 2, p.y); c.stroke();
     const ph = t*0.5; c.strokeStyle = '#444'; c.lineWidth = 4; c.beginPath(); c.moveTo(cx + p.w/2 + 74, p.y + 14 + Math.sin(ph)*16); c.lineTo(cx + p.w/2 + 74, p.y + 14 - Math.sin(ph)*16); c.stroke();
-  } else if(k === 'whale'){   // always at the surface: its back is the platform, the effect area rides on it
-    const cx = p.x + p.w/2;
+  } else if(k === 'whale'){   // surfaces on a schedule (DIW): up, a warning, down (a faint shape under the water), a warning before it breaks the surface
+    const cx = p.x + p.w/2, ssv = p.ss ? p.ss[0] : 0, ph = Math.floor(ssv/10);
+    if(DI_WCUE !== ph){ if(DI_WCUE !== -1){ if(ph === 3){ tone(200, 0.5, 'sine', 0.05, 0, 320); } else if(ph === 0){ tone(300, 0.35, 'triangle', 0.07, 0, 600); tone(150, 0.4, 'sine', 0.05, 0.05, 90); } else if(ph === 1){ tone(520, 0.18, 'square', 0.035, 0, 420); tone(520, 0.18, 'square', 0.035, 0.25, 420); } else { tone(260, 0.5, 'sine', 0.06, 0, 70); } } DI_WCUE = ph; }
+    if(ph === 2 || ph === 3){   // under the water: the dark shape of it, bubbles; about to rise: a spout and rings where it will break the surface
+      c.save(); c.globalAlpha = ph === 3 ? 0.30 : 0.16; c.fillStyle = '#24476e'; c.beginPath(); c.ellipse(cx, p.y + 70, p.w/2 + 24, 36, 0, 0, 7); c.fill(); c.restore();
+      c.strokeStyle = 'rgba(200,232,255,0.7)'; c.lineWidth = 3;
+      for(let q = 0; q < (ph === 3 ? 6 : 3); q++){ const u = ((t*0.6 + q*17) % 40)/40; c.beginPath(); c.arc(cx + (q - 2.5)*34, p.y + 40 - u*50, 3 + q % 3, 0, 7); c.stroke(); }
+      if(ph === 3){
+        const u = (t % 36)/36; c.lineWidth = 4; c.beginPath(); c.ellipse(cx, p.y + 2, 30 + u*130, 7 + u*14, 0, 0, 7); c.stroke();
+        c.strokeStyle = 'rgba(190,225,255,0.9)'; c.lineWidth = 6; for(let q = 0; q < 3; q++){ c.beginPath(); c.moveTo(cx + (q - 1)*10, p.y + 4); c.quadraticCurveTo(cx + (q - 1)*26, p.y - 70 - ((t + q*11) % 24), cx + (q - 1)*46, p.y - 120 + (q % 2)*20); c.stroke(); }
+      }
+      c.restore(); return;
+    }
+    if(ph === 1){ c.translate(Math.sin(t*1.3)*3, 0); c.fillStyle = '#fff'; c.font = 'bold 26px sans-serif'; c.fillText('!', cx - 6, p.y - 175); }
     c.fillStyle = '#5b86b4'; c.beginPath(); c.ellipse(cx, p.y + 52, p.w/2 + 30, 70, 0, Math.PI, 0); c.lineTo(p.x + p.w + 30, p.y + 52); c.quadraticCurveTo(cx, p.y + 130, p.x - 30, p.y + 52); c.closePath(); c.fill(); c.stroke();
     c.fillStyle = '#dfe9f3'; c.beginPath(); c.ellipse(cx - 20, p.y + 70, p.w/2 - 20, 26, 0, 0, Math.PI); c.fill();
     c.fillStyle = '#5b86b4'; c.beginPath(); c.moveTo(p.x + p.w + 20, p.y + 40); c.quadraticCurveTo(p.x + p.w + 80, p.y - 20, p.x + p.w + 96, p.y - 70); c.lineTo(p.x + p.w + 54, p.y + 10); c.quadraticCurveTo(p.x + p.w + 30, p.y + 44, p.x + p.w + 20, p.y + 56); c.closePath(); c.fill(); c.stroke();
     c.fillStyle = '#fff'; c.beginPath(); c.arc(p.x + 18, p.y + 30, 7, 0, 7); c.fill(); c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(p.x + 16, p.y + 31, 3, 0, 7); c.fill();
     c.strokeStyle = 'rgba(190,225,255,0.85)'; c.lineWidth = 5; for(let q = 0; q < 3; q++){ c.beginPath(); c.moveTo(p.x + p.w - 60, p.y); c.quadraticCurveTo(p.x + p.w - 60 + (q - 1)*24, p.y - 40 - ((t + q*13) % 30), p.x + p.w - 60 + (q - 1)*40, p.y - 60); c.stroke(); }
     if(p.ar){
-      const ty = p.ar[0], rx = p.x + p.ar[1], ry = p.y + p.ar[2], rw = p.ar[3], rh = p.ar[4], ss = p.ss, st = ss ? ss[0] : 0, own = ss ? ss[1] : -1, fr = ss ? ss[2] : 0, u = 0.5 + 0.5*Math.sin(t*0.07);
+      const ty = p.ar[0], rx = p.x + p.ar[1], ry = p.y + p.ar[2], rw = p.ar[3], rh = p.ar[4], ss = p.ss, st = ss ? ss[0] % 10 : 0, own = ss ? ss[1] : -1, fr = ss ? ss[2] : 0, u = 0.5 + 0.5*Math.sin(t*0.07);
       const base = st === 2 ? 'rgba(150,150,170,0.20)' : st === 1 ? (TEAM_COLORS[own % TEAM_COLORS.length] + '44') : 'rgba(170,110,255,' + (0.18 + 0.1*u) + ')';
-      c.save(); c.fillStyle = base; c.fillRect(rx, ry, rw, rh);
+      c.save(); if(ph === 1 && (t % 16) < 8) c.globalAlpha = 0.35; c.fillStyle = base; c.fillRect(rx, ry, rw, rh);
       c.strokeStyle = st === 2 ? '#8a8d96' : st === 1 ? TEAM_COLORS[own % TEAM_COLORS.length] : '#b98cff'; c.setLineDash([10, 7]); c.lineWidth = 3; c.strokeRect(rx, ry, rw, rh); c.setLineDash([]);
       diIcon(c, ty, rx + rw/2, ry + rh*0.38 - 5*u, 54, st === 2 ? '#9a9ca6' : '#f3eaff');
       if(st === 1 && ty < 2){ c.fillStyle = '#1c1c1c'; c.fillRect(rx + rw/2 - 42, ry + rh - 26, 84, 12); c.fillStyle = TEAM_COLORS[own % TEAM_COLORS.length]; c.fillRect(rx + rw/2 - 40, ry + rh - 24, 80*fr/8, 8); }
@@ -26564,7 +26691,7 @@ function stgHold(f){
     if(f.x < lo){ f.x = lo; if(f.vx < 0) f.vx = 0; } else if(f.x > hi){ f.x = hi; if(f.vx > 0) f.vx = 0; } }
   if(!STG.movers.length) return;
   let ride = null;
-  if(f.onground && !(f.dropping > 0)){ const feet = f.y + f.r; for(const p of STG.movers){ if(f.x > p.x - 4 && f.x < p.x + p.w + 4 && Math.abs(feet - p.y) <= STGK.ride){ ride = p; break; } } }
+  if(f.onground && !(f.dropping > 0)){ const feet = f.y + f.r; for(const p of STG.movers){ if(!p.ghost && f.x > p.x - 4 && f.x < p.x + p.w + 4 && Math.abs(feet - p.y) <= STGK.ride){ ride = p; break; } } }
   f._stgRide = ride;
 }
 // A fighter launched into a wall (in hitstun, at speed) bounces off it at half the speed; a walk into it just stops.
