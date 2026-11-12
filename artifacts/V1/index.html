@@ -26816,7 +26816,7 @@ function ynFollow(f, inp, N, feet, M, foe){
   if(!P || now - P.at > 40 || P.path.indexOf(node) < 0 || (P.side && P.side.bush && P.side.bush.t > 0)){
     if(f._ynGoalAt && now - f._ynGoalAt < 20 && !P) return false;
     f._ynGoalAt = now;
-    let goals = ynFoeNodes(N, f), side = null;
+    let goals = f._ynGo ? new Map([[f._ynGo, f]]) : ynFoeNodes(N, f), side = null;   // (_ynGo: a harness sends one CPU to one node)
     const sg = ynSideGoal(f, N, M);
     if(sg && sg.n !== node){ goals = new Map([[sg.n, sg]]); side = sg; }
     else if(sg && sg.n === node){ return ynSideDo(f, inp, sg) || false; }
@@ -27092,10 +27092,10 @@ function whVariant(){
 // the four variants: kites (on the sky line), upG (every third gust is an updraft), thermal (the rising column beside the old bridge), bs (the first broken span comes after this deck),
 // vane (which way the windmill turns), night (storm night: lights out, a beam, lightning), swap (the cloud perch and the eagle's ledge swap effects), balloonKite (the balloon is reached over a kite)
 const WHV = [
-  { name:'FAIR WEATHER',  kites:2, upG:0, thermal:1, bs:3, vane:1,  night:0, swap:0, balloonKite:0 },
-  { name:'KITE FESTIVAL', kites:4, upG:1, thermal:0, bs:3, vane:1,  night:0, swap:0, balloonKite:1 },
-  { name:'THE OLD ROAD',  kites:2, upG:0, thermal:1, bs:2, vane:-1, night:0, swap:1, balloonKite:0 },
-  { name:'STORM NIGHT',   kites:2, upG:0, thermal:1, bs:3, vane:1,  night:1, swap:0, balloonKite:0 },
+  { name:'FAIR WEATHER',  kites:2, upG:0, thermal:1, thermal2:0, loose:0, air:0, bs:3, vane:1,  night:0, swap:0, balloonKite:0 },
+  { name:'KITE FESTIVAL', kites:4, upG:1, thermal:0, thermal2:0, loose:1, air:0, bs:3, vane:1,  night:0, swap:0, balloonKite:1 },
+  { name:'THE OLD ROAD',  kites:2, upG:0, thermal:1, thermal2:1, loose:1, air:0, bs:2, vane:-1, night:0, swap:1, balloonKite:0 },
+  { name:'STORM NIGHT',   kites:2, upG:0, thermal:1, thermal2:1, loose:1, air:1, bs:3, vane:1,  night:1, swap:0, balloonKite:0 },
 ];
 function whInfo(){ if(!WND_VIS) return null; if(whInfo.c && whInfo.wp === worldPlats) return whInfo.c; for(const p of worldPlats) if(p.wd){ whInfo.wp = worldPlats; return whInfo.c = p.wd; } return null; }
 // ---- THE WIND. The gust of gust number n (dir +1 right, -1 left, 0 an updraft in V1) as the stage's clock has it at frame t, felt at world x after the front has reached it.
@@ -27131,7 +27131,16 @@ function whKite(p, t){
   const q = p.kite, g = whGustRaw(t - q.cx/WHK.front, q.up), k = g ? g.k : 0, d = g ? g.dir : 0;
   return [Math.round(p.bx + WHK.kiteLean*(d || 0)*k), Math.round(p.by - WHK.kiteUp*k)];
 }
-// once a frame (host): the thermal, the shield, the cloud perch
+let WHQ = { prog:0, t:0, ls:[] };   // the chest's progress and cooldown and the loose planks' states: the host's, and a guest's from s.wq
+function whPack(){ return [WHQ.prog | 0, WHQ.t | 0, WHQ.ls.join('')]; }
+function whNetIn(q){ if(!q) return; WHQ.prog = q[0] | 0; WHQ.t = q[1] | 0; WHQ.ls = String(q[2] || '').split('').map(Number); }
+function whKitesSync(){ for(const p of worldPlats) if(p.kite){ const q = whKite(p, hazardT); p.x = q[0]; p.y = q[1]; } }
+function whPutCrate(pl, dx){
+  const pool = eventItemPool() || ["heal","heal","marmalade","marmalade","throw","throw","power","power","assist","assist","yoyle","yoyle"];
+  const kind = pool[Math.floor(Math.random()*pool.length)], r = kind === "boss" ? 0 : 16;
+  items.push({ kind, x:pl.x + dx, y:pl.y - r, vx:0, vy:0, r, taken:false, life:60*30, _land:true, _di:true, _diRide:pl, _diDx:dx }); WND.crates++;
+}
+// once a frame (host): the thermals, the shield and heal areas, the loose planks, the Airship's chest
 function whStep(){
   const Y = whInfo(); if(!Y) return;
   for(const f of fighters){
@@ -27139,6 +27148,27 @@ function whStep(){
     for(const T of Y.thermal){ if(f.x >= T[0] && f.x <= T[0] + T[2] && f.y + f.r <= T[1] + 6 && f.y + f.r >= T[1] - T[3]){ const g = whGustAt(hazardT, T[0] + T[2]/2); if(g && g.k > 0) applyZone(f, { type:'updraft', strength:1 }); } }
     for(const S of Y.shield) if(f.x >= S[0] && f.x <= S[0] + S[2] && f.y >= S[1] - 160 && f.y <= S[1] + 20) f._diShield = Math.max(f._diShield || 0, hazardT + 90);
     for(const H of Y.heal) if(f.x >= H[0] && f.x <= H[0] + H[2] && f.y >= H[1] - 160 && f.y <= H[1] + 20){ f.pct = Math.max(0, f.pct - 0.12); if(hazardT % 14 === 0) puff(f.x, f.y - 6, '#7bc043', 3); }
+  }
+  const W = WND; if(!W) return;
+  for(let i = 0; i < W.loose.length; i++){ const L = W.loose[i], p = L.p;   // a loose plank: cracks (a tell), drops out for 5 s, grows back (a hard landing starts it: whLand)
+    if(L.st === 1){ if(--L.t <= 0){ L.st = 2; L.t = 300; p.y = L.y0 + 20000; for(let k = 0; k < 10; k++) particles.push({ x:p.x + p.w*k/10, y:L.y0, vx:(k - 5)*0.3, vy:1 + (k % 3), life:30, color:'#b08a52', r:4 }); } }
+    else if(L.st === 2){ if(--L.t <= 0){ L.st = 0; p.y = L.y0; puff(p.x + p.w/2, L.y0, '#d8caa8', 6); } }
+    WHQ.ls[i] = L.st;
+  }
+  const C = W.chest;
+  if(C){
+    if(WHQ.t > 0) WHQ.t--;
+    else {
+      const on = (o)=>fighters.find(f=>!f.dead && f.onground && Math.abs(f.y + f.r - C.p.y) <= 4 && f.x >= C.p.x + o && f.x <= C.p.x + o + 100);
+      const fa = on(90), fb = on(330);
+      if(fa && fb && fa !== fb && fa.team === fb.team) WHQ.prog++; else WHQ.prog = Math.max(0, WHQ.prog - 3);
+      if(WHQ.prog >= 90){
+        WHQ.prog = 0; WHQ.t = 3600; W.opens++;
+        for(let k = 0; k < 3; k++) whPutCrate(C.p, C.p.w*(0.3 + 0.2*k));
+        const hum = [fa, fb].filter(f=>f.controller === 'local' || f.controller === 'remote' || f.you);   // a token only ever follows a person, and only twice a match
+        if(hum.length && W.tokenLeft > 0){ W.tokenLeft--; for(const f of hum){ f._dmgDealt = (f._dmgDealt || 0) + 60; W.tokens++; } }
+      }
+    }
   }
 }
 // A hard landing hurts as on Dream Island (none under 1.0 screen of drop, then 3% to the 15% cap); the hay cart is soft.
@@ -27154,6 +27184,7 @@ function whLand(f, wasAir, vy){
     particles.push({ x:f.x, y:f.y - f.r - 8, vx:0, vy:-1.6, life:55, color:'t|#ff8a3a|' + (Math.round(dmg*10)/10) + '%', r:12 });
     shake(f.you ? 10 : 5);
   }
+  if(WND && WND.loose.length && (vy >= DIK.landVy || drop >= DIK.hardDrop)){ for(const L of WND.loose){ const p = L.p; if(L.st === 0 && f.x >= p.x - 4 && f.x <= p.x + p.w + 4 && Math.abs(feet - L.y0) <= 4){ L.st = 1; L.t = DIK.tell; shake(f.you ? 6 : 3); break; } } }
 }
 function whSpawnItem(){
   const spots = WND.crateSpots; if(!spots.length) return;
@@ -27180,7 +27211,7 @@ function whBuild(){
   const eM = ax, yM = yy, yN = F(nF), yL = Yd[nS], yOB = yM + 80, yc = yM + 430, yB = yM + 520;
   WW = eM + 2300 + 260; WH = yB + 560;
   camX = 0; camY = 0; floors = []; worldZones = []; spawnZones = []; bases = []; SIDE_ROOM = 0; FLOOR_SEGS = [];
-  const P = [], movers = [], lee = [], exp = [], thermal = [], shield = [], heal = [], deco = [], crateSpots = [];
+  const P = [], movers = [], lee = [], exp = [], thermal = [], shield = [], heal = [], deco = [], crateSpots = [], loose = [];
   const R = Math.round;
   const solid = (x, y, w, h, kind, extra)=>{ const p = Object.assign({ x:R(x), y:R(y), w:R(w), h:Math.max(10, R(h)), solid:true, floor:0, wn:kind }, extra || {}); P.push(p); return p; };
   const soft = (x, y, w, kind, extra)=>{ const p = Object.assign({ x:R(x), y:R(y), w:R(w), h:26, solid:false, floor:0, wn:kind }, extra || {}); P.push(p); return p; };
@@ -27206,10 +27237,13 @@ function whBuild(){
   soft(1020, F(0), 210, 'balcony'); soft(1020, F(kd + 1), 240, 'gallery');
   // ---- THE BRIDGE: soft plank decks stepping down 240 at a time (a soft step ledge 120 up from the lower deck's end makes each drop climbable); the broken spans have pylons and a gondola
   for(let i = 1; i <= nS; i++){
-    soft(aX[i], Yd[i], K.span, 'deck');
+    const lz = V.loose && nS >= 5 && (i === brk[0] || i === brk[0] + 1) ? (i === brk[0] ? 40 : K.span - 190) : -1;   // a loose plank 160 wide in each of the two decks beside the first broken span
+    if(lz < 0) soft(aX[i], Yd[i], K.span, 'deck');
+    else { if(lz > 0) soft(aX[i], Yd[i], lz, 'deck'); const lp = soft(aX[i] + lz, Yd[i], 160, 'loosedeck'); loose.push({ p:lp, y0:lp.y, st:0, t:0 }); if(lz + 160 < K.span) soft(aX[i] + lz + 160, Yd[i], K.span - lz - 160, 'deck'); }
     if(i < nS && !brk.includes(i)) solid(aX[i + 1], Yd[i] + K.drop/2, 150, K.drop/2, 'step');   // a stone landing on the lower deck's end: half the drop each way
   }
   solid(eM, yM - K.drop/2, 150, K.drop/2, 'step');
+  for(let i = 1; i <= nS; i++) X(aX[i], Yd[i] - 260, K.span, 320);   // the open decks are exposed to the gust (x1.3): the bridge is where the wind kills
   const gondolas = [], pylons = [];
   for(const b of brk){
     const xe = aX[b] + K.span, xs = xe + K.br, yb = Yd[b];
@@ -27234,8 +27268,9 @@ function whBuild(){
   const slots = nHut + 1, sn = 2, hx = (s)=>1060 + s*410, nestEnd = hx(slots - 1) + 300;
   for(let s = 0; s < slots; s++){
     const x = hx(s);
-    solid(x, yN, 300, K.slab, 'hutfloor'); soft(x - 20, yN - 260, 340, 'hutroof'); solid(x + (s % 2 ? 20 : 190), yN - 130, 110, 130, 'hutstep');   // floor, a thatch roof, a stone bench to climb up to it
-    deco.push(['hut', x, yN - 260, 300]);
+    if(x + 340 > aX[brk[0]] + K.span - 150){ soft(x, yN, 300, 'plank'); }   // (no hut roof may sit under the first broken span: a roof 100 px below the stubs would let a fighter hop round the gondola)
+    else { solid(x, yN, 300, K.slab, 'hutfloor'); soft(x - 20, yN - 260, 340, 'hutroof'); solid(x + (s % 2 ? 20 : 190), yN - 130, 110, 130, 'hutstep');   // floor, a thatch roof, a stone bench to climb up to it
+      deco.push(['hut', x, yN - 260, 300]); }
     if(s < slots - 1) soft(x + 300, yN, 110, 'plank');
   }
   L(1020, Yd[2] + 60, nestEnd - 1020, yN - Yd[2] - 10);
@@ -27257,18 +27292,21 @@ function whBuild(){
     const balX = gx0 + 200, yB2 = py + 270, basket = mover(balX, yB2, 300, { ay:60, per:1200, ph:0 }, 'basket'); crateSpots.push(basket); deco.push(['balloon', balX + 150, yB2]);
   }
   // thermal: air rises only while a gust blows (not in V1, where every third gust is an updraft); it sits under the first broken span
-  { const b = brk[0], xe = aX[b] + K.span; if(V.thermal) thermal.push([xe + 110, oldBr ? yOB + 260 : Yd[b] + 900, K.thermalW, 1000]); }
+  { const b = brk[0], xe = aX[b] + K.span; if(V.thermal) thermal.push([xe + 110, oldBr ? yOB + 260 : Yd[b] + 900, K.thermalW, 1000]); if(V.thermal2 || (nS === 8 && V.thermal)) thermal.push([eM - 420, yOB + 260, K.thermalW, 1000]); }   // (the second thermal rises along the Meadow's west cliff toward the Mill's loft)
   // ---- THE MILL (H2): vanes on a circle, a stone tower on a rock pillar over the Meadow, a loft and a roof cap; a vane passes the last deck's end at the bottom of its turn, the loft door half-way up and the cap at the top
   for(let k = 0; k < 4; k++) mover(eM + 40, yL - 420, 150, { ax:110, ay:420, per:480*V.vane, ph:k*PI/2, ph2:PI/2 }, 'vane');
   const mx = eM + 330;
-  solid(mx, yL, 80, yM - yL + K.slab, 'mass'); solid(mx + 380, yL, 260, yM - yL + K.slab, 'mass'); solid(mx + 80, yL, 300, yM - yL + K.slab, 'wall');   // (the base room's floor, cut under its flight)
+  solid(mx, yL, 60, yM - yL + K.slab, 'wall'); solid(mx + 380, yL, 260, yM - yL + K.slab, 'mass'); solid(mx + 60, yL, 320, yM - yL + K.slab, 'wall');   // (the base room's floor, cut under its flight)
   solid(mx, yL - 370, 60, 130, 'wall'); solid(mx + 580, yL - 370, 60, 130, 'wall');   // lintels over the two doors of the base room
   soft(mx, yL - 420, 180, 'slab'); soft(mx + 480, yL - 420, 160, 'slab'); solid(mx, yL - 790, 60, 130, 'wall'); solid(mx + 580, yL - 790, 60, 130, 'wall');
   soft(mx - 70, yL - 840, 710, 'roof'); solid(mx + 600, yL - 970, 40, 130, 'lip');
-  for(let i = 0; i < 3; i++){ solid(mx + 60 + 220 - 100*i, yL - 105*(i + 1), 100, 105*(i + 1), 'stairblk'); solid(mx + 60 + 120 + 100*i, yL - 420 - 105*(i + 1), 100, 105*(i + 1), 'stairblk'); }   // base room: rises west; loft: rises east
+  for(let i = 0; i < 3; i++){ solid(mx + 60 + 200 - 100*i, yL - 105*(i + 1), 100, 105*(i + 1), 'stairblk'); solid(mx + 60 + 120 + 100*i, yL - 420 - 105*(i + 1), 100, 105*(i + 1), 'stairblk'); }   // base room: rises west; loft: rises east
   L(mx + 60, yL - 370, 520, 370); L(mx + 60, yL - 790, 520, 370); X(mx - 70, yL - 1040, 710, 200); X(eM - 20, yL - 1040, 350, 1040);
   solid(mx + 640, yM - K.drop/2, 150, K.drop/2, 'step');
   deco.push(['mill', mx, yL - 840, 640], ['hub', eM + 40 + 75, yL - 420], ['sock', mx + 300, yL - 860, 0]);
+  // ---- THE AIRSHIP (V3 and the Tall and Huge maps): a deck that cruises east and back over the Mill's roof (25 s round trip; flush with the roof's east end at its west end; it never stops and never vanishes). Two plates on it: two teammates on both at once for 1.5 s open the chest (3 crates, and a Win Token for a person, two a match).
+  let ship = null;
+  if(V.air || tall || nS === 8){ ship = mover(mx + 1140, yL - 840, 520, { ax:500, per:1500, ph:0 }, 'airship'); crateSpots.push(ship); X(mx + 560, yL - 1180, 1700, 420); }
   // ---- THE MEADOW (L2): the cliff field. Ground, the hay cart (soft landing), the barn (a roof between bales; lee), the cellar with a heal spring and a door onto the cliff path (6 spans and up)
   const hatA = eM + 1900, hatB = eM + 2140;
   if(cellar){
@@ -27312,12 +27350,13 @@ function whBuild(){
   }
   bases = bases.filter(Boolean);
   const midIdx = P.indexOf(P.find(p=>p.wn === 'deck' && p.x === aX[brk[0] + 1]));
-  const wd = { v, name:V.name, edge:WW, lee, exp, thermal, shield, heal, deco, f:{ upG:V.upG, night:V.night, thermal:V.thermal }, light:[420, 70], nS, brk, kd, mid:midIdx, mill:[mx, yL], stH:F(nF) + K.slab - 140, aX:aX.slice(), Yd:Yd.slice(), cellarBox:cellar ? [eM + 60, yM + 60, 2180, 370] : null, size:{ nS, nHut, tall, oldBr, cellar } };
+  const wd = { v, name:V.name, edge:WW, lee, exp, thermal, shield, heal, deco, f:{ upG:V.upG, night:V.night, thermal:V.thermal, ship:ship ? 1 : 0 }, light:[420, 70], nS, brk, kd, mid:midIdx, mill:[mx, yL], stH:F(nF) + K.slab - 140, aX:aX.slice(), Yd:Yd.slice(), cellarBox:cellar ? [eM + 60, yM + 60, 2180, 370] : null, size:{ nS, nHut, tall, oldBr, cellar } };
   P[0].wd = wd;
   worldPlats = P;
   STG = { kind:'wind', top:null, t:0, wall:0, movers, statics:[], soft:[] };
   stgPlace(0);
-  WND = { v, teams:tc, infos, movers, owner, crates:0, crateSpots, fallHits:0, fallDmg:0, wd, size:wd.size };
+  WND = { v, teams:tc, infos, movers, owner, crates:0, crateSpots, fallHits:0, fallDmg:0, wd, size:wd.size, loose, chest:ship ? { p:ship } : null, tokenLeft:2, tokens:0, opens:0 };
+  WHQ = { prog:0, t:0, ls:loose.map(()=>0) };
   WND_VIS = true;
 }
 // ---- THE CPUs: Yoyle Needle's route graph (ynNavBuild/ynPlan/ynFollow over this map's surfaces; a mover's edges at eight moments, a CPU waits for the moment) plus the BRACE
@@ -27325,10 +27364,13 @@ function whBuild(){
 let WNN = null;
 const WH_M0 = { bush:[], lev:[], trip:[], zip:null };
 function whNav(){ const Y = whInfo(); if(!Y) return null; return (WNN && WNN.I === Y) ? WNN : (WNN = Object.assign(ynNavBuild('wn', WH_M0), { I:Y, M:WH_M0 })); }
+function whGustSoon(x){ let g = whGustAt(hazardT, x); if(g && (g.lead > 0 || g.k > 0)) return g; g = whGustAt(hazardT + 40, x); return g && (g.lead > 0 || g.k > 0) ? g : null; }   // a front on it, or reaching x within 40 frames
 function whBrain(f, inp){
   if(f.hitstun > 0 || f._tp){ f._ynPlan = null; return; }
   const Y = whInfo(); if(!Y) return; const N = whNav(); if(!N) return;
-  const feet = f.y + f.r;
+  const feet = f.y + f.r, go = !!f._ynGo;
+  // THERMAL: blown off or fallen below the middle while a gust blows: steer into the column and be lifted
+  if(!f.onground && Y.thermal.length){ for(const T of Y.thermal){ const cx = T[0] + T[2]/2, gt = whGustAt(hazardT, cx); if(gt && gt.k > 0 && !gt.up && feet <= T[1] + 320 && feet >= T[1] - T[3] && Math.abs(f.x - cx) < 900){ inp.left = f.x > cx + 20; inp.right = f.x < cx - 20; inp.jump = false; return; } } }
   const g = whGustAt(hazardT, f.x);
   if(g && !g.up && (g.lead > 0.2 || g.k > 0) && !whLee(Y, f.x, f.y, g.dir)){
     if(!f.onground){ if(g.k > 0 && f.vy > -1){ inp.left = g.dir > 0; inp.right = g.dir < 0; return; } }
@@ -27337,9 +27379,13 @@ function whBrain(f, inp){
   { const mv = Math.abs(f.x - (f._ynLX === undefined ? f.x : f._ynLX)) + Math.abs(f.y - (f._ynLY === undefined ? f.y : f._ynLY)); f._ynLX = f.x; f._ynLY = f.y; f._ynStill = (mv < 0.5 && f.onground) ? (f._ynStill || 0) + 1 : 0; }
   let foe = f.aiTarget && !f.aiTarget.dead && f.aiTarget.team !== f.team ? f.aiTarget : null;
   if(!foe){ let bd = 1e9; for(const o of fighters) if(!o.dead && o.team !== f.team){ const d = Math.hypot(o.x - f.x, o.y - f.y); if(d < bd){ bd = d; foe = o; } } }
-  const closeLevel = foe && Math.abs(foe.x - f.x) < 520 && Math.abs(foe.y - f.y) < 150 && ynLineClear(N, f.x, foe.x, foe.y);
+  const closeLevel = !go && foe && Math.abs(foe.x - f.x) < 520 && Math.abs(foe.y - f.y) < 150 && ynLineClear(N, f.x, foe.x, foe.y);
   if(closeLevel && f._ynStill < 45){ f._ynPlan = null; return; }
   if(ynFollow(f, inp, N, feet, WH_M0, foe)){
+    // HOLD BACK: not onto the gondola, a vane or the Airship while a gust front is coming (unless hurt or a foe is on it)
+    const P = f._ynPlan, nd = ynNodeAt(N, f);
+    if(P && nd && f.onground && !go && !nd.drift){ const i = P.path.indexOf(nd), B = i >= 0 ? P.path[i + 1] : null;
+      if(B && B.drift && (B.p.wn === 'gondola' || B.p.wn === 'vane' || B.p.wn === 'airship') && whGustSoon(f.x) && f.pct < 100 && !(foe && Math.hypot(foe.x - f.x, foe.y - f.y) < 300)){ inp.left = false; inp.right = false; inp.jump = false; inp.down = false; return; } }
     if(f.onground && f._ynStill > 10 && (inp.left || inp.right)){ inp.jump = (f._ynStill % 30) < 3; f._ynHopDir = inp.right ? 1 : -1; f._ynHopUntil = hazardT + 45; }
     return;
   }
@@ -27379,6 +27425,26 @@ function whBlock(c, p, tone){
   if(p.w >= 90) for(let y = p.y, r = 0; y < p.y + p.h - 5; y += 60, r++) for(let x = p.x + 80 + (r % 2)*40; x < p.x + p.w - 10; x += 120){ c.beginPath(); c.moveTo(x, y); c.lineTo(x, Math.min(y + 60, p.y + p.h)); c.stroke(); }
   c.strokeStyle = WPAL.line; c.lineWidth = 4; c.strokeRect(p.x, p.y, p.w, p.h);
 }
+function whRope(c, x0, y0, x1, y1, sag){ c.beginPath(); c.moveTo(x0, y0); c.quadraticCurveTo((x0 + x1)/2, (y0 + y1)/2 + sag, x1, y1); c.stroke(); }
+function whHash(n){ const s = Math.sin(n*12.9898 + 78.233)*43758.5453; return s - Math.floor(s); }
+// a hot-air balloon: a striped envelope (gores), a neck ring, ropes to the basket's corners
+function whBalloon(c, cx, top, A, B, bx0, bx1, by){
+  const cy = top + B, N = 12;
+  c.fillStyle = '#f2e6c8'; c.beginPath(); c.ellipse(cx, cy, A, B, 0, 0, 7); c.fill();
+  for(let k = 0; k < N; k += 2){ const u0 = -1 + 2*k/N, u1 = -1 + 2*(k + 1)/N; c.fillStyle = (k % 4 === 0) ? '#d9523b' : '#2f6fb0'; c.beginPath();
+    for(let i = 0; i <= 12; i++){ const ph = Math.PI*i/12; c.lineTo(cx + A*Math.sin(ph)*u0, cy - B*Math.cos(ph)); }
+    for(let i = 12; i >= 0; i--){ const ph = Math.PI*i/12; c.lineTo(cx + A*Math.sin(ph)*u1, cy - B*Math.cos(ph)); }
+    c.closePath(); c.fill(); }
+  c.strokeStyle = WPAL.line; c.lineWidth = 4; c.beginPath(); c.ellipse(cx, cy, A, B, 0, 0, 7); c.stroke();
+  c.fillStyle = '#6f512d'; c.beginPath(); c.moveTo(cx - 56, cy + B - 14); c.lineTo(cx + 56, cy + B - 14); c.lineTo(cx + 34, cy + B + 36); c.lineTo(cx - 34, cy + B + 36); c.closePath(); c.fill(); c.stroke();
+  c.strokeStyle = 'rgba(60,45,25,0.8)'; c.lineWidth = 3;
+  whRope(c, cx - 34, cy + B + 36, bx0 + 8, by, 0); whRope(c, cx + 34, cy + B + 36, bx1 - 8, by, 0); whRope(c, cx - 12, cy + B + 36, bx0 + (bx1 - bx0)*0.4, by, 0); whRope(c, cx + 12, cy + B + 36, bx0 + (bx1 - bx0)*0.6, by, 0);
+}
+function whFire(c, x, y, t){   // the Beacon's fire: a brazier, flames that flicker, a glow
+  c.fillStyle = 'rgba(255,190,80,0.22)'; c.beginPath(); c.arc(x, y - 30, 130, 0, 7); c.fill(); c.fillStyle = 'rgba(255,220,120,0.25)'; c.beginPath(); c.arc(x, y - 30, 70, 0, 7); c.fill();
+  c.fillStyle = '#4a3a2a'; c.fillRect(x - 28, y - 14, 56, 14); c.strokeStyle = WPAL.line; c.lineWidth = 3; c.strokeRect(x - 28, y - 14, 56, 14);
+  for(let i = 0; i < 3; i++){ const h = 46 + 14*Math.sin(t*0.3 + i*2) + i*(i === 1 ? 14 : 0), w = 18 - (i === 1 ? 0 : 4), ox = (i - 1)*14; c.fillStyle = i === 1 ? '#ffd24a' : '#f08a2a'; c.beginPath(); c.moveTo(x + ox - w, y - 14); c.quadraticCurveTo(x + ox - w*0.4, y - 14 - h*0.6, x + ox + Math.sin(t*0.2 + i)*5, y - 14 - h); c.quadraticCurveTo(x + ox + w*0.4, y - 14 - h*0.6, x + ox + w, y - 14); c.closePath(); c.fill(); }
+}
 function whDrawBack(c, Y, t){
   const sky = (stage && stage.sky) || ['#cfe6f7', '#8fb6d6'];
   const g = c.createLinearGradient(0, -400, 0, WH + 500); g.addColorStop(0, sky[0]); g.addColorStop(1, sky[1]); c.fillStyle = g; c.fillRect(-900, -600, WW + 1800, WH + 1500);
@@ -27386,25 +27452,58 @@ function whDrawBack(c, Y, t){
   for(let i = 0; i < 9; i++){ const bx = (i*0.115)*WW, bw = 900 + (i*337) % 600, by = WH*0.74; c.beginPath(); c.moveTo(bx - bw/2, WH + 300); c.lineTo(bx - bw*0.1, by - 160 - (i*211) % 240); c.lineTo(bx + bw/2, WH + 300); c.closePath(); c.fill(); }
   c.fillStyle = 'rgba(255,255,255,0.7)';
   for(let i = 0; i < 26; i++){ const low = i % 3 !== 0, cx = ((i*977 + t*(0.25 + (i % 4)*0.12)) % (WW + 1400)) - 600, cy = low ? WH*0.84 + (i*131) % 360 : 100 + (i*337) % (WH*0.5), s = low ? 1.5 : 0.8; c.beginPath(); c.arc(cx, cy, 100*s, 0, 7); c.arc(cx + 110*s, cy + 14, 76*s, 0, 7); c.arc(cx - 110*s, cy + 16, 66*s, 0, 7); c.fill(); }
-  // the Beacon's inside and the Mill's, the barn's and the cellar's: dim stone behind the rooms
-  c.fillStyle = 'rgba(70,56,40,0.55)'; c.fillRect(240, 140, 780, Y.stH);
-  const m = Y.mill; c.fillRect(m[0] - 70, m[1] - 840, 710, 840 + 60);
-  for(const d of Y.deco){ if(d[0] === 'barn'){ c.fillStyle = 'rgba(70,56,40,0.5)'; c.fillRect(d[1], d[2], d[3], 260); } }
+  // the Beacon: each storey its own room (a lamp-keeper's, a library, a store of barrels, a bunk room, ...), windows, a lit fire and a glass lamp house on the roof
+  const nF = Math.round((Y.stH + 90 - 560)/420), wall = ['#6b5a46', '#5f6b72', '#70604c', '#5a6a5a', '#6c5a62'];
+  for(let j = 0; j <= nF; j++){
+    const fy = 560 + 420*j, top = fy - 370; c.fillStyle = wall[j % 5]; c.fillRect(300, top, 660, 370);
+    c.strokeStyle = 'rgba(0,0,0,0.18)'; c.lineWidth = 2; for(let y = top + 46; y < fy; y += 46){ c.beginPath(); c.moveTo(300, y); c.lineTo(960, y); c.stroke(); }
+    c.fillStyle = sky[0]; for(const wx of [(j % 2) ? 700 : 760, 880]){ c.fillRect(wx, top + 70, 54, 96); c.beginPath(); c.arc(wx + 27, top + 70, 27, 0, 7); c.fill(); c.strokeStyle = '#3a2c1c'; c.lineWidth = 4; c.strokeRect(wx, top + 70, 54, 96); c.beginPath(); c.moveTo(wx + 27, top + 43); c.lineTo(wx + 27, top + 166); c.stroke(); }
+    const k = (j + nF) % 4, px = 800;
+    if(k === 0){ c.fillStyle = '#7a5a34'; c.fillRect(px - 60, fy - 70, 150, 12); c.fillRect(px - 50, fy - 58, 10, 58); c.fillRect(px + 70, fy - 58, 10, 58); c.fillStyle = '#e8d28a'; c.fillRect(px - 20, fy - 94, 20, 24); c.fillStyle = '#c9403a'; c.fillRect(px + 22, fy - 82, 34, 12); }   // a map table and a lantern
+    else if(k === 1){ c.fillStyle = '#5a3d22'; c.fillRect(px - 70, fy - 250, 160, 250); c.fillStyle = '#3a2812'; for(let r = 0; r < 4; r++) c.fillRect(px - 70, fy - 250 + 60*r, 160, 6); const cols = ['#c0463a', '#3c6fb0', '#d8b04a', '#4a8a4a']; for(let r = 0; r < 4; r++) for(let b = 0; b < 9; b++){ c.fillStyle = cols[(r + b) % 4]; c.fillRect(px - 64 + b*17, fy - 244 + 60*r + 6, 12, 48); } }   // a bookshelf
+    else if(k === 2){ for(let b = 0; b < 3; b++){ const bx = px - 40 + b*62, by = fy - 36; c.fillStyle = '#8a5a2c'; c.beginPath(); c.ellipse(bx, by, 28, 36, 0, 0, 7); c.fill(); c.strokeStyle = '#3a2812'; c.lineWidth = 3; c.stroke(); c.beginPath(); c.moveTo(bx - 27, by - 12); c.lineTo(bx + 27, by - 12); c.moveTo(bx - 27, by + 12); c.lineTo(bx + 27, by + 12); c.stroke(); } }   // barrels
+    else { c.strokeStyle = '#d8c89a'; c.lineWidth = 4; whRope(c, px - 70, fy - 130, px + 80, fy - 130, 50); c.fillStyle = '#b8503a'; c.beginPath(); c.moveTo(px - 70, fy - 130); c.quadraticCurveTo(px + 5, fy - 60, px + 80, fy - 130); c.quadraticCurveTo(px + 5, fy - 90, px - 70, fy - 130); c.fill(); c.fillStyle = '#8a6a3a'; c.fillRect(px - 60, fy - 40, 120, 40); c.strokeStyle = '#3a2812'; c.strokeRect(px - 60, fy - 40, 120, 40); }   // a hammock and a crate
+    c.fillStyle = 'rgba(0,0,0,0.25)'; c.fillRect(300, top, 660, 8);
+  }
+  const L = Y.light; c.fillStyle = 'rgba(190,220,240,0.7)'; c.fillRect(L[0] - 70, 20, 140, 120); c.strokeStyle = WPAL.line; c.lineWidth = 4; c.strokeRect(L[0] - 70, 20, 140, 120); c.beginPath(); c.moveTo(L[0], 20); c.lineTo(L[0], 140); c.moveTo(L[0] - 70, 80); c.lineTo(L[0] + 70, 80); c.stroke();
+  c.fillStyle = '#c9403a'; c.beginPath(); c.moveTo(L[0] - 84, 20); c.lineTo(L[0], -60); c.lineTo(L[0] + 84, 20); c.closePath(); c.fill(); c.stroke();
+  whFire(c, L[0], 140, t);
+  // the Mill's inside: brick courses, round windows, a door frame
+  const m = Y.mill; c.fillStyle = 'rgba(96,78,58,0.92)'; c.fillRect(m[0] - 70, m[1] - 840, 710, 840 + 60);
+  c.strokeStyle = 'rgba(0,0,0,0.2)'; c.lineWidth = 2; for(let y = m[1] - 800; y < m[1]; y += 40){ c.beginPath(); c.moveTo(m[0], y); c.lineTo(m[0] + 640, y); c.stroke(); }
+  for(const wy of [m[1] - 600, m[1] - 180]){ c.fillStyle = sky[0]; c.beginPath(); c.arc(m[0] + 320, wy, 38, 0, 7); c.fill(); c.strokeStyle = '#3a2c1c'; c.lineWidth = 5; c.stroke(); c.beginPath(); c.moveTo(m[0] + 282, wy); c.lineTo(m[0] + 358, wy); c.moveTo(m[0] + 320, wy - 38); c.lineTo(m[0] + 320, wy + 38); c.stroke(); }
+  for(const d of Y.deco){ if(d[0] === 'barn'){ c.fillStyle = 'rgba(96,66,46,0.9)'; c.fillRect(d[1], d[2], d[3], 260); c.strokeStyle = 'rgba(0,0,0,0.22)'; c.lineWidth = 3; for(let x = d[1] + 50; x < d[1] + d[3]; x += 50){ c.beginPath(); c.moveTo(x, d[2]); c.lineTo(x, d[2] + 260); c.stroke(); } } }
   if(Y.cellarBox) { c.fillStyle = 'rgba(40,32,24,0.78)'; c.fillRect(Y.cellarBox[0], Y.cellarBox[1], Y.cellarBox[2], Y.cellarBox[3]); }
 }
+function whHut(c, x, y, w, s, t){   // slot s: a different hut each (roof shape, colour, extras), straw and twig nests on some
+  const k = s % 5, h = whHash(s*7 + 3); c.strokeStyle = 'rgba(60,50,40,0.5)'; c.lineWidth = 3;
+  for(const cx of [x + 20, x + w - 20]){ c.beginPath(); c.moveTo(cx, y); c.lineTo(cx, y - 150); c.stroke(); }
+  c.fillStyle = 'rgba(111,81,45,0.55)'; c.fillRect(x + 6, y, 10, 260); c.fillRect(x + w - 16, y, 10, 260);
+  if(k === 0){ c.fillStyle = '#c9a65a'; c.beginPath(); c.moveTo(x - 24, y); c.lineTo(x + w/2, y - 70 - h*40); c.lineTo(x + w + 24, y); c.closePath(); c.fill(); c.strokeStyle = WPAL.line; c.lineWidth = 3; c.stroke(); }   // a thatched gable
+  else if(k === 1){ c.fillStyle = '#b5523b'; c.beginPath(); c.moveTo(x - 20, y); c.quadraticCurveTo(x + w/2, y - 150, x + w + 20, y); c.closePath(); c.fill(); c.strokeStyle = WPAL.line; c.lineWidth = 3; c.stroke(); c.fillStyle = '#e8d28a'; c.beginPath(); c.arc(x + w/2, y - 50, 10, 0, 7); c.fill(); }   // a rounded shingle roof with a lamp
+  else if(k === 2){ c.fillStyle = '#7a8a5a'; c.beginPath(); c.moveTo(x - 20, y); c.lineTo(x + w*0.7, y - 90); c.lineTo(x + w + 20, y); c.closePath(); c.fill(); c.strokeStyle = WPAL.line; c.lineWidth = 3; c.stroke(); c.fillStyle = '#5a4a3a'; c.fillRect(x + w*0.7 - 30, y - 128, 24, 46); c.strokeRect(x + w*0.7 - 30, y - 128, 24, 46); }   // a mossy lean-to roof with a chimney
+  else if(k === 3){ c.fillStyle = '#d8d0b0'; c.beginPath(); c.moveTo(x - 10, y); c.lineTo(x + 20, y - 80); c.lineTo(x + w - 20, y - 80); c.lineTo(x + w + 10, y); c.closePath(); c.fill(); c.strokeStyle = WPAL.line; c.lineWidth = 3; c.stroke(); for(let i = 0; i < 4; i++){ c.fillStyle = ['#d9523b', '#f4ecd6'][i % 2]; c.fillRect(x + 22 + i*60, y - 78, 30, 76); } }   // a striped awning
+  else { c.fillStyle = '#a8825a'; c.fillRect(x - 10, y - 46, w + 20, 46); c.strokeStyle = WPAL.line; c.lineWidth = 3; c.strokeRect(x - 10, y - 46, w + 20, 46); c.fillStyle = '#4a8a4a'; for(let i = 0; i < 6; i++){ c.beginPath(); c.arc(x + 20 + i*52, y - 50, 18, 0, 7); c.fill(); } }   // a roof garden
+  if(s % 3 !== 1){   // a nest: twigs and straw, eggs
+    const nx = x + w*(0.25 + 0.5*h), ny = y - (k === 4 ? 70 : k === 3 ? 96 : 20); c.fillStyle = '#b89a52'; c.beginPath(); c.ellipse(nx, ny, 38, 15, 0, 0, 7); c.fill(); c.strokeStyle = '#5a4020'; c.lineWidth = 2; c.stroke();
+    for(let i = 0; i < 9; i++){ c.beginPath(); c.moveTo(nx - 36 + i*9, ny + 4); c.lineTo(nx - 30 + i*9 + (i % 2 ? 8 : -6), ny - 14 - (i % 3)*3); c.stroke(); }
+    c.fillStyle = '#f4f0e0'; for(let i = 0; i < 2 + (s % 2); i++){ c.beginPath(); c.ellipse(nx - 10 + i*14, ny - 6, 6, 8, 0, 0, 7); c.fill(); c.strokeStyle = '#5a4020'; c.stroke(); }
+  }
+  if(s % 2 === 0){ c.strokeStyle = '#8a6a3a'; c.lineWidth = 3; c.beginPath(); c.moveTo(x + w - 40, y); c.lineTo(x + w - 40, y + 44); c.stroke(); c.fillStyle = '#c9403a'; c.fillRect(x + w - 58, y + 44, 36, 14); c.strokeRect(x + w - 58, y + 44, 36, 14); }   // a hanging basket
+  if(s % 4 === 2){ c.fillStyle = '#d9523b'; c.fillRect(x + 30, y + 120, 8, 24); c.fillRect(x + 50, y + 130, 8, 24); c.fillStyle = '#f4ecd6'; c.fillRect(x + 36, y + 118, 22, 8); }   // washing
+}
 function whDrawDeco(c, Y, t){
-  const kites = worldPlats.filter(p=>p.kite), G = worldPlats.filter(p=>p.wn === 'gondola'), vanes = worldPlats.filter(p=>p.wn === 'vane');
+  const kites = worldPlats.filter(p=>p.kite), G = worldPlats.filter(p=>p.wn === 'gondola'), vanes = worldPlats.filter(p=>p.wn === 'vane'), bk = worldPlats.find(p=>p.wn === 'basket');
+  if(bk) whBalloon(c, bk.x + bk.w/2, bk.y - 560, 190, 230, bk.x, bk.x + bk.w, bk.y);
   for(const d of Y.deco){
     const k = d[0], x = d[1], y = d[2];
     if(k === 'sock') whSock(c, x, y, t, !!whBox(Y.lee, x, y + 40, 3));
-    else if(k === 'hut'){ c.strokeStyle = 'rgba(60,50,40,0.5)'; c.lineWidth = 3; for(const cx of [x + 20, x + d[3] - 20]){ c.beginPath(); c.moveTo(cx, y); c.lineTo(cx, y - 140); c.stroke(); } c.fillStyle = 'rgba(111,81,45,0.5)'; c.fillRect(x + 6, y, 10, 260); c.fillRect(x + d[3] - 16, y, 10, 260); }
-    else if(k === 'mill'){ c.fillStyle = WPAL.roof; c.beginPath(); c.moveTo(x - 20, y); c.lineTo(x + d[3]/2, y - 150); c.lineTo(x + d[3] + 20, y); c.closePath(); c.fill(); c.strokeStyle = WPAL.line; c.lineWidth = 4; c.stroke(); }
-    else if(k === 'barn'){ c.fillStyle = WPAL.roof; c.beginPath(); c.moveTo(x - 20, y); c.lineTo(x + d[3]/2, y - 110); c.lineTo(x + d[3] + 20, y); c.closePath(); c.fill(); c.strokeStyle = WPAL.line; c.lineWidth = 4; c.stroke(); }
-    else if(k === 'balloon'){ c.fillStyle = '#d9523b'; c.beginPath(); c.ellipse(x, y - 520, 190, 250, 0, 0, 7); c.fill(); c.strokeStyle = WPAL.line; c.lineWidth = 4; c.stroke(); c.fillStyle = '#f4ecd6'; c.fillRect(x - 40, y - 700, 80, 360); c.strokeStyle = 'rgba(40,30,20,0.6)'; c.lineWidth = 3; for(const ox of [-120, -40, 40, 120]){ c.beginPath(); c.moveTo(x + ox, y - 320); c.lineTo(x + ox*0.9, y); c.stroke(); } }
-    else if(k === 'hub'){ c.strokeStyle = 'rgba(90,70,45,0.7)'; c.lineWidth = 5; for(const v of vanes){ c.beginPath(); c.moveTo(x, y); c.lineTo(v.x + v.w/2, v.y + 10); c.stroke(); } c.fillStyle = WPAL.brass; c.beginPath(); c.arc(x, y, 22, 0, 7); c.fill(); c.strokeStyle = WPAL.line; c.stroke(); }
+    else if(k === 'hut') whHut(c, x, y, d[3], Math.round((x - 1060)/410), t);
+    else if(k === 'mill'){ c.fillStyle = WPAL.roof; c.beginPath(); c.moveTo(x - 30, y); c.lineTo(x + d[3]/2, y - 170); c.lineTo(x + d[3] + 30, y); c.closePath(); c.fill(); c.strokeStyle = WPAL.line; c.lineWidth = 4; c.stroke(); c.fillStyle = '#3a2c1c'; c.fillRect(x + d[3]/2 - 14, y - 215, 28, 50); c.fillStyle = '#e8d28a'; c.fillRect(x + d[3]/2 - 22, y - 232, 44, 20); }
+    else if(k === 'barn'){ c.fillStyle = WPAL.roof; c.beginPath(); c.moveTo(x - 20, y); c.lineTo(x + d[3]/2, y - 120); c.lineTo(x + d[3] + 20, y); c.closePath(); c.fill(); c.strokeStyle = WPAL.line; c.lineWidth = 4; c.stroke(); c.fillStyle = '#f4ecd6'; c.fillRect(x + d[3]/2 - 40, y - 60, 80, 8); }
+    else if(k === 'hub'){ c.strokeStyle = 'rgba(90,70,45,0.8)'; c.lineWidth = 6; for(const v of vanes){ c.beginPath(); c.moveTo(x, y); c.lineTo(v.x + v.w/2, v.y + 12); c.stroke(); } c.fillStyle = WPAL.brass; c.beginPath(); c.arc(x, y, 26, 0, 7); c.fill(); c.strokeStyle = WPAL.line; c.lineWidth = 4; c.stroke(); }
   }
-  // the gondola's cable between the two pylons' caps, and what the cage hangs from
-  c.strokeStyle = 'rgba(40,32,24,0.75)'; c.lineWidth = 3;
+  c.strokeStyle = 'rgba(40,32,24,0.75)'; c.lineWidth = 3;   // the gondola's cable between the two pylons' caps, and what the cage hangs from
   for(const b of Y.brk){ const xe = Y.aX[b] + WHK.span, xs = xe + WHK.br, yb = Y.Yd[b]; c.beginPath(); c.moveTo(xe - 345, yb - 262); c.quadraticCurveTo((xe + xs)/2, yb - 220, xs + 345, yb - 262); c.stroke(); }
   for(const g of G){ c.beginPath(); c.moveTo(g.x + 20, g.y); c.lineTo(g.x + g.w/2, g.y - 215); c.lineTo(g.x + g.w - 20, g.y); c.stroke(); }
   c.strokeStyle = 'rgba(90,70,45,0.55)'; c.lineWidth = 2;   // kite strings and tails
@@ -27414,6 +27513,7 @@ function whDrawPlats(){
   const c = ctx, Y = whInfo(), t = hazardT; if(!Y) return;
   c.save(); c.lineJoin = 'round';
   whDrawBack(c, Y, t); whDrawDeco(c, Y, t);
+  let li = 0;
   for(const p of worldPlats){
     const k = p.wn; if(!k) continue;
     if(p.solid){
@@ -27421,13 +27521,24 @@ function whDrawPlats(){
       else if(k === 'roof' || k === 'lip' || k === 'pylon' || k === 'bale'){ whBlock(c, p, k === 'bale' ? 3 : 1); if(k === 'bale'){ c.fillStyle = WPAL.hay; c.fillRect(p.x + 4, p.y + 4, p.w - 8, p.h - 8); c.strokeStyle = WPAL.line; c.strokeRect(p.x + 4, p.y + 4, p.w - 8, p.h - 8); } }
       else if(k === 'mass' || k === 'cellar' || k === 'rock'){ whBlock(c, p, 2); }
       else whBlock(c, p, 0);
+      if(k === 'wall' && p.x === 240 && p.w === 60){ for(let y = p.y + 10; y < p.y + p.h - 40; y += 160){ c.fillStyle = 'rgba(201,64,58,0.88)'; c.fillRect(p.x, y, p.w, 80); c.strokeStyle = WPAL.line; c.lineWidth = 3; c.strokeRect(p.x, y, p.w, 80); } }   // the lighthouse's red bands
       continue;
     }
     let col = WPAL.wood, th = 24;
     if(k === 'kite'){ const cx = p.x + p.w/2; c.fillStyle = '#d9523b'; c.beginPath(); c.moveTo(cx, p.y - 40); c.lineTo(p.x + p.w, p.y + 8); c.lineTo(cx, p.y + 26); c.lineTo(p.x, p.y + 8); c.closePath(); c.fill(); c.strokeStyle = WPAL.line; c.lineWidth = 3; c.stroke(); c.fillStyle = '#f4ecd6'; c.fillRect(p.x + 8, p.y + 2, p.w - 16, 10); continue; }
-    if(k === 'vane'){ c.fillStyle = WPAL.sail; c.fillRect(p.x, p.y, p.w, 22); c.fillStyle = WPAL.wood2; for(let x = p.x + 10; x < p.x + p.w; x += 26) c.fillRect(x, p.y, 4, 22); c.strokeStyle = WPAL.line; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, 22); continue; }
+    if(k === 'vane'){ c.fillStyle = WPAL.wood2; c.fillRect(p.x, p.y, p.w, 22); c.fillStyle = WPAL.sail; for(let i = 0; i < 3; i++){ const sx = p.x + 6 + i*48; c.beginPath(); c.moveTo(sx, p.y + 22); c.lineTo(sx + 44, p.y + 22); c.lineTo(sx + 44, p.y + 84); c.lineTo(sx, p.y + 60); c.closePath(); c.fill(); c.strokeStyle = 'rgba(60,45,25,0.7)'; c.lineWidth = 2; c.stroke(); } c.strokeStyle = WPAL.line; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, 22); continue; }   // sail cloth hangs under the spar
     if(k === 'gondola'){ c.fillStyle = WPAL.wood; c.fillRect(p.x, p.y, p.w, 26); c.strokeStyle = WPAL.wood2; c.lineWidth = 5; for(let x = p.x; x <= p.x + p.w; x += p.w/4){ c.beginPath(); c.moveTo(x, p.y); c.lineTo(x, p.y - 90); c.stroke(); } c.beginPath(); c.moveTo(p.x, p.y - 90); c.lineTo(p.x + p.w, p.y - 90); c.stroke(); c.strokeStyle = WPAL.line; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, 26); continue; }
-    if(k === 'basket'){ c.fillStyle = '#b58a4a'; c.fillRect(p.x, p.y, p.w, 40); c.strokeStyle = WPAL.line; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, 40); c.beginPath(); for(let x = p.x + 20; x < p.x + p.w; x += 24){ c.moveTo(x, p.y); c.lineTo(x - 8, p.y + 40); } c.stroke(); continue; }
+    if(k === 'basket'){ c.fillStyle = '#b58a4a'; c.fillRect(p.x, p.y, p.w, 46); c.strokeStyle = 'rgba(60,40,20,0.55)'; c.lineWidth = 3; c.beginPath(); for(let x = p.x + 14; x < p.x + p.w; x += 22){ c.moveTo(x, p.y); c.lineTo(x - 10, p.y + 46); c.moveTo(x - 10, p.y); c.lineTo(x, p.y + 46); } c.moveTo(p.x, p.y + 23); c.lineTo(p.x + p.w, p.y + 23); c.stroke(); c.strokeStyle = WPAL.line; c.lineWidth = 4; c.strokeRect(p.x, p.y, p.w, 46); c.fillStyle = '#8a6a3a'; c.fillRect(p.x - 6, p.y - 4, p.w + 12, 10); c.strokeRect(p.x - 6, p.y - 4, p.w + 12, 10); continue; }   // a wicker basket you stand in, with a rolled rim
+    if(k === 'airship'){
+      const cx = p.x + p.w/2; c.fillStyle = '#e8dcc0'; c.beginPath(); c.ellipse(cx, p.y - 210, 270, 92, 0, 0, 7); c.fill(); c.fillStyle = '#c9403a'; for(let i = -2; i <= 2; i += 2){ c.beginPath(); c.ellipse(cx + i*70, p.y - 210, 34, 90, 0, 0, 7); c.fill(); } c.strokeStyle = WPAL.line; c.lineWidth = 4; c.beginPath(); c.ellipse(cx, p.y - 210, 270, 92, 0, 0, 7); c.stroke();
+      c.beginPath(); c.moveTo(cx - 270, p.y - 210); c.lineTo(cx - 330, p.y - 270); c.lineTo(cx - 330, p.y - 150); c.closePath(); c.fillStyle = '#2f6fb0'; c.fill(); c.stroke();
+      const pa = t*0.5; c.strokeStyle = '#3a2c1c'; c.lineWidth = 6; c.beginPath(); c.moveTo(cx + 290, p.y - 210 + Math.sin(pa)*50); c.lineTo(cx + 290, p.y - 210 - Math.sin(pa)*50); c.stroke();
+      c.strokeStyle = 'rgba(60,45,25,0.8)'; c.lineWidth = 3; for(const sx of [40, 170, 350, 480]){ c.beginPath(); c.moveTo(p.x + sx, p.y); c.lineTo(p.x + sx, p.y - 130); c.stroke(); }
+      c.fillStyle = WPAL.wood; c.fillRect(p.x, p.y, p.w, 34); c.strokeStyle = WPAL.line; c.lineWidth = 4; c.strokeRect(p.x, p.y, p.w, 34); c.strokeStyle = 'rgba(60,45,25,0.7)'; c.lineWidth = 3; c.beginPath(); c.moveTo(p.x, p.y - 50); c.lineTo(p.x + p.w, p.y - 50); c.stroke();
+      for(const o of [90, 330]){ const fill = Math.min(1, WHQ.prog/90); c.fillStyle = '#3a2c1c'; c.fillRect(p.x + o, p.y - 6, 100, 8); c.fillStyle = WHQ.t > 0 ? '#777' : '#ecc43c'; c.fillRect(p.x + o, p.y - 6, 100*fill, 8); }
+      const open = WHQ.t > 3300; c.fillStyle = '#8a5a2c'; c.fillRect(cx - 34, p.y - 44, 68, 44); c.strokeStyle = WPAL.line; c.lineWidth = 3; c.strokeRect(cx - 34, p.y - 44, 68, 44); c.fillStyle = '#d1a13f'; if(open){ c.fillRect(cx - 34, p.y - 74, 68, 12); } else c.fillRect(cx - 34, p.y - 56, 68, 14); c.fillRect(cx - 5, p.y - 30, 10, 12);
+      continue;
+    }
     if(k === 'hay'){ c.fillStyle = WPAL.hay; c.fillRect(p.x, p.y, p.w, 60); c.strokeStyle = WPAL.line; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, 60); c.fillStyle = WPAL.wood2; c.beginPath(); c.arc(p.x + 30, p.y + 62, 16, 0, 7); c.arc(p.x + p.w - 30, p.y + 62, 16, 0, 7); c.fill(); continue; }
     if(k === 'net' || k === 'cliffpath' || k === 'ramp'){ col = WPAL.rope; th = 14; }
     else if(k === 'stone' || k === 'cap' || k === 'step' || k === 'eagle' || k === 'under' || k === 'slab' || k === 'roof'){ col = '#a39373'; th = 36; }
@@ -27435,12 +27546,17 @@ function whDrawPlats(){
     else if(k === 'barnroof'){ col = WPAL.roof; th = 22; }
     else if(k === 'perch'){ col = '#f4f8fb'; th = 28; }
     else if(k === 'stair' || k === 'hutstep' || k === 'post'){ col = WPAL.wood2; th = 18; }
-    else if(k === 'deck' || k === 'oldplank' || k === 'balcony' || k === 'gallery' || k === 'crate' || k === 'plank') th = 30;
+    else if(k === 'deck' || k === 'oldplank' || k === 'balcony' || k === 'gallery' || k === 'crate' || k === 'plank' || k === 'loosedeck'){ th = 40; if(k === 'loosedeck') col = '#b8905a'; }
     c.fillStyle = col; c.fillRect(p.x, p.y, p.w, th); c.fillStyle = 'rgba(255,255,255,0.28)'; c.fillRect(p.x, p.y, p.w, 5);
-    c.strokeStyle = 'rgba(40,30,20,0.35)'; c.lineWidth = 2; for(let x = p.x + 56; x < p.x + p.w; x += 56){ c.beginPath(); c.moveTo(x, p.y); c.lineTo(x, p.y + th); c.stroke(); }
+    c.strokeStyle = 'rgba(40,30,20,0.4)'; c.lineWidth = 2; if(th >= 30){ for(let x = p.x + 46 + (p.x % 23); x < p.x + p.w; x += 46){ c.beginPath(); c.moveTo(x, p.y); c.lineTo(x, p.y + th); c.stroke(); } c.beginPath(); c.moveTo(p.x, p.y + th*0.55); c.lineTo(p.x + p.w, p.y + th*0.55); c.stroke(); }
+    else for(let x = p.x + 56; x < p.x + p.w; x += 56){ c.beginPath(); c.moveTo(x, p.y); c.lineTo(x, p.y + th); c.stroke(); }
     c.strokeStyle = WPAL.line; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, th);
-    if(k === 'deck' || k === 'balcony' || k === 'gallery'){ c.strokeStyle = 'rgba(60,45,25,0.7)'; c.lineWidth = 3; c.beginPath(); c.moveTo(p.x, p.y - 34); c.lineTo(p.x + p.w, p.y - 34); c.stroke(); for(let x = p.x + 4; x <= p.x + p.w; x += 80){ c.beginPath(); c.moveTo(x, p.y); c.lineTo(x, p.y - 34); c.stroke(); } }
-    if(k === 'deck' || k === 'oldplank' || k === 'crate'){ c.strokeStyle = 'rgba(60,45,25,0.4)'; c.lineWidth = 3; c.beginPath(); c.moveTo(p.x + 8, p.y + th); c.lineTo(p.x + 8, p.y + th + 40); c.moveTo(p.x + p.w - 8, p.y + th); c.lineTo(p.x + p.w - 8, p.y + th + 40); c.stroke(); }
+    if(k === 'loosedeck'){ const st = WHQ.ls[li++] || 0; if(st === 1){ c.strokeStyle = '#3a2812'; c.lineWidth = 4; c.beginPath(); c.moveTo(p.x + 30, p.y); c.lineTo(p.x + 50, p.y + th); c.moveTo(p.x + 90, p.y); c.lineTo(p.x + 76, p.y + th); c.moveTo(p.x + 120, p.y); c.lineTo(p.x + 134, p.y + th); c.stroke(); } }
+    if(k === 'deck' || k === 'balcony' || k === 'gallery' || k === 'oldplank' || k === 'loosedeck' || k === 'plank'){   // rope rails: posts and a sagging rope; a lower rope; hanging ropes under
+      const ry = p.y - 46; c.strokeStyle = '#7a5a34'; c.lineWidth = 6; for(let x = p.x + 6; x <= p.x + p.w - 2; x += 80){ c.beginPath(); c.moveTo(x, p.y); c.lineTo(x, ry); c.stroke(); }
+      c.strokeStyle = '#d8c89a'; c.lineWidth = 4; for(let x = p.x + 6; x + 80 <= p.x + p.w + 4; x += 80){ whRope(c, x, ry, x + 80, ry, 12); whRope(c, x, ry + 20, x + 80, ry + 20, 8); }
+      c.strokeStyle = 'rgba(90,70,40,0.55)'; c.lineWidth = 3; c.beginPath(); c.moveTo(p.x + 10, p.y + th); c.lineTo(p.x + 10, p.y + th + 46); c.moveTo(p.x + p.w - 10, p.y + th); c.lineTo(p.x + p.w - 10, p.y + th + 46); c.stroke();
+    }
   }
   c.restore();
 }
@@ -123257,7 +123373,7 @@ function worldGeo(){
     floors: floors.map(fl=>({level:fl.level,y:Math.round(fl.y),x:Math.round(fl.x),w:Math.round(fl.w)})),
     // `solid` was missing here once, so on a client every stone landmark rendered as a thin ledge; `field` keeps the
     // client's minimap filtering out the scatter grid the way the host's does; `rot` is paintPlat's tilt.
-    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team,ib:p.ib,sc:p.sc,ar:p.ar,lh:p.lh,bl:p.bl,ss:p.ss,th:p.th,sh:p.sh,wo:p.wo,hg:p.hg,blk:p.blk,ix:p.ix,pool:p.pool,trap:p.trap,oi:p.oi,yn:p.yn,yd:p.yd,wn:p.wn,wd:p.wd})),
+    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team,ib:p.ib,sc:p.sc,ar:p.ar,lh:p.lh,bl:p.bl,ss:p.ss,th:p.th,sh:p.sh,wo:p.wo,hg:p.hg,blk:p.blk,ix:p.ix,pool:p.pool,trap:p.trap,oi:p.oi,yn:p.yn,yd:p.yd,wn:p.wn,wd:p.wd,kite:p.kite,bx:p.bx,by:p.by})),
     // `zone` and `wall` ride along so a client DRAWS the team's safe zone where the host plays it: without them it fell back
     // to the old column round the base, which is nowhere near a side-wall band (see wallBand).
     bases: bases.map(b=>({team:b.team,x:Math.round(b.x),y:Math.round(b.y),w:b.w,h:b.h,color:b.color,
@@ -123551,6 +123667,7 @@ function serializeState(withGeo){
   if(isBigFFA() && spawnZones.length) s.zones = spawnZones.map(z=>[z.kind==='safe'?0:1, Math.round(z.x), Math.round(z.y), Math.round(z.w), z.h, z.owner==null?-1:z.owner, Math.round(z.progress||0)]);
   if(DIG) s.dg = digPack();   // THE DIG FLOOR: the holes, in every snapshot (a snapshot that is dropped for a newer one must not take a hole with it)
   if(STAIRS) s.sq = stairsPack();   // A RISING STAIRCASE: where the steps are and when each starts to form (the whole ones ride the geometry)
+  if(WND) s.wq = whPack();   // WINDY HEIGHTS TEAMS: the chest's progress and the loose planks' states (the rest is the clock's)
   if(YN) s.yq = ynPack();   // YOYLE NEEDLE TEAMS: levers pulled and berries eaten (the rest is the clock's)
   if(BERRIES) s.bq = berriesPack();   // BERRIES RAIN: the seed the schedule was dealt from and the berries eaten lately (the rest is the clock's)
   if(BAR) s.br = barPack();   // THE BAR: the span it was cut from, in every snapshot; the strips are the clock's (s.t), so nothing else need be sent
@@ -123627,7 +123744,9 @@ function applySnapshot(s){
   if(Array.isArray(s.mv)) for(const r of s.mv){ const p = worldPlats[r[0] | 0]; if(p){ p.x = +r[1]; p.y = +r[2]; } }   // ...the ones the host says have moved (Yoyle Needle's ledges), where it has them
   if(s.dg) digNetIn(s.dg);   // THE DIG FLOOR: the host's holes, so this floor is the host's floor of this very frame
   if(s.sq) stairsNetIn(s.sq);   // A RISING STAIRCASE: the host's steps, for the picture (the whole ones are in the host's geometry above)
-  if(s.yq) ynNetIn(s.yq);   // YOYLE NEEDLE TEAMS: the host's levers and bushes
+  if(s.yq) ynNetIn(s.yq);
+  if(s.wq) whNetIn(s.wq);   // WINDY HEIGHTS TEAMS
+  if(WND_VIS) whKitesSync();   // WINDY HEIGHTS TEAMS: the kites are the clock's: this side works them out itself   // YOYLE NEEDLE TEAMS: the host's levers and bushes
   if(s.bq) berriesNetIn(s.bq);   // BERRIES RAIN: the host's seed and eaten berries, at the host's own clock (hazardT = s.t, above)
   if(s.br) barNetIn(s.br);
   stbNetIn();   // STAGES B: Shifting Isles' floor and platforms at the host's own clock (nothing on any other stage)   // THE BAR: the strips at the host's own clock (hazardT = s.t, above), so this floor is the host's floor of this very frame
