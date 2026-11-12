@@ -24419,6 +24419,7 @@ function setupWorld(){
   SPLEEF = null;       // SPLEEF: built by spleefBuildWorld below, for the one event match that has it
   DRM = null; DRM_VIS = false; DRM_GH = false; DRM_V = -1;   // DREAM ISLAND TEAMS: built by diBuild below, for Teams on Dream Island only
   YN = null; YN_VIS = false;   // YOYLE NEEDLE TEAMS: built by ynBuild below, for Teams on Yoyle Needle only
+  FP = null; FP_VIS = false; FPM = null; FPN = null;   // FROZEN POND TEAMS: built by fpBuild below, for Teams on Frozen Pond only (hidden: FP_TEAMS_OPEN / FP_DEV)
   STG = null;          // STAGES A: built by stgBuild below, for The TLC and Yoyle Needle in a plain FFA match
   DIGC = null;         // THE DIG: built by digcBuildWorld below, for the one event match that has it
   camAng = 0;
@@ -24429,6 +24430,7 @@ function setupWorld(){
   if(ONEFIGHT.active || COBSFIGHT.active){ buildOneArena(); return; }   // One's arena, and Steve Cobs's: the teams map without its walls (see buildOneArena)
   if(BOSSRUSH.alg && ALGRUSH.run){ stage = algStage(); if(algBuildBig()) return; }   // Algebralien Rush: its own stage; the big one (rush M3, algBuildBig) builds the whole world and is done
   if(SETTINGS.mode === 'teams' && (MCAVE_DEV || MCAVE_OPEN) && stage && stage.layout === 'disc'){ buildMoonCaves(); return; }   // MOON CAVES (while it is built: MCAVE_DEV only, MCAVE_OPEN once released; Teams only)
+  if(fpWanted()){ fpBuild(); return; }   // FROZEN POND TEAMS: Three Ponds (Teams on Frozen Pond only; hidden)
   if(ynWanted()){ ynBuild(); return; }   // YOYLE NEEDLE TEAMS: the inside of the giant needle (Teams on Yoyle Needle only)
   if(diWanted()){ diBuild(); return; }   // DREAM ISLAND TEAMS: its own islands-and-bridges map (Teams on Dream Island only)
   if(RACE.active){ buildRaceLane(); return; }       // RUNNING!: the Red Line Game's lane (see buildRaceLane)
@@ -27037,6 +27039,612 @@ function ynLights(o, m){
 }
 
 // ============================================================
+//  FROZEN POND, TEAMS: "THREE PONDS" (2026-11-12 preview v1; the design in reports/teams-maps-next/tlc-and-frozen-pond.md, section 2 and the build sheet 5.2)
+//  A SNOWY MOUNTAINSIDE WITH THREE FROZEN PONDS AT THREE HEIGHTS, each a slippery bowl between solid rims (the stage's own shape, three times): the small TARN up high, the
+//  GREAT POND in the middle with a fishing hole, thin ice and a rock island, and (six players and more) the long SKATING LANE at the bottom, with the open water of the THAW
+//  between the last two (only the drifting ICE FLOES cross it). One base per camp, NOT mirrored, balanced by role: NW the Lodge Bluff (highest, a cabin, the rope tow, the nearest
+//  blast line), NE the Icicle Shelf (under an overhang, icicles that its defenders can shake loose), SW the Fishing Camp (low, the campfire, huts, a dock) and SE the Snow Fort (low,
+//  a small maze of snow walls, an igloo). Teams mode on Frozen Pond only (fpWanted), hidden until the owner opens it (FP_TEAMS_OPEN / FP_DEV). Movers (floes, rope-tow seats, the
+//  curling stones) ride the existing STG machinery and run on the match clock; ice is the stage's own ICE_FRIC on every pond floor, floe and frozen step (fpOnIce), FRICTION on rock,
+//  snow and wood. Thin ice, the campfire and the icicles are the host's (FPM) and ride every snapshot as `fq`; a guest gets the geometry (fp, fd) and the moved plats from the host.
+//  Nothing here moves a fighter, a floor or a picture unless FP (host) or FP_VIS (the art, a guest too) is set: it is null on every other stage and mode.
+// ============================================================
+const FP_TEAMS_OPEN = false;
+const FP_DEV = (function(){ try{ return localStorage.getItem('bfsi:fpdev') === '1'; }catch(e){ return false; } })();
+const FPK = { period:10800, nightOn:0.55, night:0.72, dark:0.84, caveDark:0.55, eH:600,
+  thinTell:60, thinOpen:480, thinMend:80, thinMin:10, fireNeed:120, fireHeal:10, fireWarm:720, fireRest:1500, fireR:90,
+  icWobble:42, icDmg:8, icRegrow:900, icTrig:150, icFall:520, stoneDmg:5, stoneCd:60, stoneShove:7, gustIce:2.0, rise:130 };
+let FP = null, FP_VIS = false;   // FP: this match's state (fpBuild; null elsewhere); FP_VIS: paint its art (a guest too)
+const FPQ = { warm:{} };       // idx -> the frame a fighter's warm boots end (host and guest alike: the guest reads it from the snapshot)
+function fpWanted(){
+  return (FP_TEAMS_OPEN || FP_DEV) && SETTINGS.mode === 'teams' && !!(stage && stage.id === 'ice') && !CUSTOM_LEVEL && !TESTMODE.active && !(typeof TUT !== 'undefined' && TUT.active)
+    && !RACE.active && !ONEFIGHT.active && !COBSFIGHT.active;
+}
+function fpSeedVal(){
+  let h = 13; const s = [SETTINGS.teamKey || '', SETTINGS.count, SETTINGS.mapSize || '', SETTINGS.stocks, SETTINGS.fpSeed | 0].join('|');
+  for(let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
+  return ((h >>> 3) + (SETTINGS.fpSeed | 0)) & 7;
+}
+// the four variants (the seed picks one, bit 2 of the seed flips the whole map left to right): stone = the curling stones, gust = V3's gusts, night = LIGHTS OUT, floes = how many
+// floes drift on the Thaw, thin = thin-ice panels (the Tarn's, the Great Pond's, V2's third), holes = fishing holes, fire2 = the small fire on the rock island, bank = snow-bank layout
+const FPV = [
+  { name:'CLEAR MORNING', stone:0, gust:0, night:0, floes:3, thin:2, holes:1, fire2:0, bank:0 },
+  { name:'CURLING DAY',   stone:1, gust:0, night:0, floes:2, thin:2, holes:1, fire2:0, bank:1 },
+  { name:'THE THAW',      stone:0, gust:0, night:0, floes:5, thin:3, holes:2, fire2:1, bank:0 },
+  { name:'BLIZZARD NIGHT',stone:1, gust:1, night:1, floes:3, thin:2, holes:1, fire2:0, bank:2 },
+];
+function fpNight(t){ const u = (t % FPK.period)/FPK.period; return 0.5 - 0.5*Math.cos(2*Math.PI*u); }
+function fpInfo(){ if(!FP_VIS) return null; for(const p of worldPlats) if(p.fd) return p.fd; return null; }   // (always from the plats: a guest's own build may differ from the host's geometry it was sent)
+function fpSizeFlags(){
+  const MSz = mapSize(), cnt = Math.max(4, Math.min(12, SETTINGS.count | 0 || 4));
+  let np = Math.max(0, Math.min(3, Math.round((cnt - 4)/2)));   // 4 players 0, 6: 1, 8: 2, 10+: 3 added places
+  if(MSz.w < 0.9) np = Math.max(0, np - 1);                       // Compact: one place fewer
+  const tall = MSz.h >= 1.35, huge = MSz.w >= 1.35;
+  return { np, tall, huge, lane:np >= 1 || huge, arm:np >= 2 || huge, cliff:np >= 2 || huge, summit:np >= 3 || tall || huge, caves:tall || huge, river:huge };
+}
+function fpBuild(){
+  const tc = Math.max(2, Math.min(4, (SETTINGS.teamKey || '').split('v').filter(Boolean).length || 2));
+  const sv = fpSeedVal(), v = (SETTINGS.fpVar >= 0 && SETTINGS.fpVar <= 3) ? (SETTINGS.fpVar | 0) : (sv & 3), V = FPV[v];
+  const flip = (SETTINGS.fpFlip === 0 || SETTINGS.fpFlip === 1) ? SETTINGS.fpFlip : ((sv >> 2) & 1);
+  const F = fpSizeFlags(), eH = F.caves ? FPK.eH : 0, BY = 2690 + eH, LY = 3128 + eH;
+  WW = F.arm ? 8300 : 6300; WH = F.lane ? LY + 360 : BY + 260;
+  camX = 0; camY = 0; floors = []; worldZones = []; spawnZones = []; bases = []; SIDE_ROOM = 0; FLOOR_SEGS = [];
+  const P = [], movers = [], deco = [];
+  const mr = (x, y, w, h)=>[flip ? WW - x - w : x, y, w, h];
+  const solid = (x, y, w, h, kind, extra)=>{ const r = mr(x, y, w, h), p = Object.assign({ x:r[0], y:r[1], w:r[2], h:Math.max(10, r[3]), solid:true, floor:0, fp:kind }, extra || {}); P.push(p); return p; };
+  const ice = (x, y, w, kind, h)=>solid(x, y, w, h || 80, kind, { ice:1 });
+  const soft = (x, y, w, kind, extra)=>{ const r = mr(x, y, w, 14), p = Object.assign({ x:r[0], y:r[1], w:r[2], h:26, solid:false, floor:0, fp:kind }, extra || {}); P.push(p); return p; };
+  const dec = (kind, x, y, w, h, aux)=>{ const r = mr(x, y, w || 0, h || 0); deco.push([kind, r[0], r[1], w || 0, h || 0, aux === undefined ? 0 : aux]); };
+  const decP = (kind, x, y, aux)=>{ deco.push([kind, flip ? WW - x : x, y, 0, 0, aux === undefined ? 0 : aux]); };
+  const mover = (x, y, w, mv, kind, extra)=>{   // a soft plate on a loop (floes, tow seats, stones); the flip mirrors its swing and keeps its up-and-down
+    const p = soft(x, y, w, kind, extra); p.bx = p.x; p.by = p.y; p.mvx = 0; p.mvy = 0;
+    p.mv = { ax:mv.ax || 0, ay:mv.ay || 0, per:mv.per, ph:(mv.ph || 0) + (flip ? Math.PI : 0), ph2:(mv.ph2 || 0) - (flip ? Math.PI : 0) }; movers.push(p); return p;
+  };
+  const mir = (x, w)=>6000 - x - (w || 0);   // the east side of the core is the west side mirrored about the Great Pond's middle (x 3000)
+  const cap = solid(424, 748, 796, 230, 'rock');   // (carries the one `fd` record)
+  // The climbs are TERRAIN, never stacks of thin ledges (lead, 2026-11-12): filled stepped rock and ice, a snow ramp, the lodge's stairs, cable lifts and rope tows.
+  // ---- NW LODGE BLUFF: bare rock, the cabin (a roof to stand on) with the lodge's stairs (three filled steps), tow 1 down to the camp, tow 2 across to the Tarn
+  solid(440, 350, 250, 398, 'cabinw');   // (the cabin is a solid log building: its roof is the high ground; no door is drawn, because none could be used)
+  solid(690, 448, 76, 300, 'lodge'); solid(766, 548, 90, 200, 'lodge'); solid(856, 648, 90, 100, 'lodge');
+  // ---- THE TARN (small, high): rims, the ice with its thin patch, the rock terrace under it with a window under the thin patch
+  solid(2048, 1056, 168, 320, 'rock'); solid(3560, 1056, 168, 320, 'rock');
+  ice(2216, 1156, 448, 'ice'); ice(2888, 1156, 672, 'ice');
+  solid(2216, 1236, 448, 120, 'rock'); solid(2888, 1236, 840, 150, 'rock');
+  let ti = 0; const thin = (x, y, w)=>{ const p = solid(x, y, w, 60, 'thin', { ice:1 }); p.ti = ti++; deco.push(['thinz', p.x, p.y, p.w, p.h, p.ti]); return p; };
+  thin(2664, 1156, 224);
+  // ---- THE SNOW RAMP (Tarn east rim to the Icicle Shelf: two big snow steps over the open space) and THE FROZEN FALL (a stair of ice slabs down the shelf's west face, one way down; the pond runs on under it)
+  solid(3728, 1160, 260, 100, 'drift2'); solid(3988, 1260, 182, 100, 'drift2');
+  for(let i = 0; i < 6; i++){ const top = 1360 + 102*(i + 1); solid(4248 - 90*(i + 1), top, 90, 100, 'icestep', { ice:1 }); }   // (slabs, not a filled wall: the pond is open under it, 104 px of head room at the lowest step)
+  // ---- NE ICICLE SHELF: a floor (half ice at its west end), the cliff overhang over it with the icicles under it (a rock face to the top of the sky: no ledge to stand on), tow 3 down to the fort
+  ice(4248, 1360, 576, 'shelfice', 120); solid(4824, 1360, 752, 120, 'rock'); solid(4900, 1480, 300, 60, 'rock');
+  solid(4456, -400, 1008, 1344, 'cliff');
+  // ---- THE GREAT POND: low steps and tall blocks at both ends, the ice with the fishing hole(s) and the thin panels, the rock island, the snow banks
+  const west = (x, w)=>x, east = (x, w)=>mir(x, w);
+  for(const sd of [west, east]){ solid(sd(1432, 88), 2096, 88, 160, 'rock'); solid(sd(1320, 112), 2040, 112, 220, 'rock'); }
+  const hole2 = V.holes > 1, thinGP = V.thin >= 3;
+  const gpCut = [[1848, 2016]]; if(hole2) gpCut.push([4290, 4450]);
+  if(F.caves) gpCut.push([2280, 2610]);   // the chimney up from the caves
+  const thinGPx = [[3300, 3500]];
+  const cuts = gpCut.concat(thinGPx).sort((a, b)=>a[0] - b[0]); let xx = 1520;
+  const segs = []; for(const c of cuts){ if(c[0] > xx){ ice(xx, 2176, c[0] - xx, 'ice'); segs.push([xx, c[0]]); } xx = Math.max(xx, c[1]); }
+  if(4480 > xx){ ice(xx, 2176, 4480 - xx, 'ice'); segs.push([xx, 4480]); }
+  for(const c of thinGPx) thin(c[0], 2176, c[1] - c[0]);
+  if(thinGP) thin(3200, 1156, 200);   // (V2's third thin patch is on the Tarn)
+  solid(2832, 2056, 392, 120, 'island'); solid(2900, 1972, 250, 84, 'island');
+  const banks = V.bank === 1 ? [[1650, 140], [4300, 140]] : V.bank === 2 ? [[1650, 140], [2090, 150], [2490, 130], [3560, 130], [4330, 150]] : [[1650, 140], [2090, 150], [2490, 130], [4330, 150]];
+  for(const b of banks){ const sg = segs.find(s=>b[0] < s[1] && b[0] + b[1] > s[0]); if(!sg) continue; let bx = b[0]; if(bx < sg[0] + 6) bx = sg[0] + 6; if(bx + b[1] > sg[1] - 6) bx = sg[1] - 6 - b[1]; if(bx < sg[0] + 6) continue; solid(bx, 2126, b[1], 50, 'snow'); }   // (a bank is only ever put on ice: never over a hole, a thin patch or a chimney)
+  soft(1440, 2096, 200, 'dock');
+  // the safe ways over the holes and thin patches: a pier over each fishing hole, a snow-drift ledge over each thin patch (a hop up from the ice; the thin ice itself is the short cut)
+  soft(1790, 2096, 284, 'dock'); if(hole2) soft(4270, 2096, 200, 'dock');
+  soft(3270, 2096, 260, 'drift'); soft(2640, 1076, 272, 'drift'); if(thinGP) soft(3180, 1096, 240, 'drift');
+  if(F.caves) soft(2240, 2096, 410, 'dock');
+  // ---- SW FISHING CAMP: an alcove under the Bluff's cliff (the roof), the fire, the hatch with the shore lift, a crate step up to the rim; tow 1 lands on the open end of the floor
+  solid(424, 2260, 356, 110, 'rock'); solid(1010, 2260, 310, 110, 'rock'); solid(500, 2370, 280, 70, 'rock'); solid(424, 978, 356, 952, 'cliff');
+  solid(1260, 2150, 60, 110, 'crate'); soft(770, 2204, 250, 'dock');
+  // ---- SE SNOW FORT: the floor with its hatch and lift, the gate's crate, a chest-high wall and the igloo, the roof, the drift stair up to the roof at the east end (tow 3 lands on it)
+  solid(4680, 2260, 310, 110, 'snow'); solid(5220, 2260, 1080, 110, 'snow');
+  solid(mir(1260, 60), 2150, 60, 110, 'crate'); soft(mir(770, 250), 2204, 250, 'dock'); solid(4850, 2160, 60, 100, 'snow');
+  solid(4740, 1700, 860, 60, 'snow');
+  solid(5240, 2150, 180, 110, 'igloo'); solid(5280, 2050, 100, 100, 'igloo');
+  for(let i = 0; i < 4; i++){ const top = 2148 - 112*i; solid(5900 - 100*i, top, 100, 2260 - top, 'snow'); }
+  // ---- THE THAW: two rock banks, the drifting floes (the only crossing), the shore lifts, and below them the Skating Lane (six players and more)
+  solid(780, BY, 880, 110, 'rock'); solid(4340, BY, 880, 110, 'rock');
+  const nF = V.floes, fy = [0, -40, -80, -20, -60];
+  for(let k = 0; k < nF; k++) mover(2870, BY + fy[k % 5], 260, { ax:1150, per:nF > 3 ? 2000 : 1800, ph:k*2*Math.PI/nF }, 'floe', { ice:1 });
+  mover(800, (2260 + BY)/2, 190, { ay:(BY - 2260)/2, per:900 }, 'lift'); mover(mir(800, 190), (2260 + BY)/2, 190, { ay:(BY - 2260)/2, per:900, ph:Math.PI }, 'lift');
+  if(F.lane){
+    ice(560, LY, 4880, 'lane', 90); solid(500, LY - 60, 60, 150, 'rock'); solid(5440, LY - 60, 60, 150, 'rock');
+    mover(600, (BY + LY)/2, 190, { ay:(LY - BY)/2, per:900 }, 'lift'); mover(mir(600, 190), (BY + LY)/2, 190, { ay:(LY - BY)/2, per:900, ph:Math.PI }, 'lift');
+    if(V.stone) mover(3000 - 150, LY - 110, 300, { ax:2000, per:2800, ph:0 }, 'stone', { stone:1 });
+  }
+  if(v === 1){ mover(2400, 1156 - 70, 150, { ax:300, per:1400, ph:1 }, 'stone2', { stone:2 }); }
+  // ---- THE EAST ARM (eight players and more): the stream behind the Snow Fort, the little Duck Pond, a hut with a filled crate stair to its roof
+  if(F.arm){
+    ice(6300, 2260, 500, 'stream', 90); solid(6800, 2180, 90, 180, 'rock'); ice(6890, 2260, 360, 'duck', 90); solid(7250, 2180, 100, 180, 'rock');
+    solid(7350, 2260, 900, 110, 'rock'); solid(7800, 1870, 350, 50, 'hut');
+    for(let i = 0; i < 3; i++){ const top = 2150 - 110*i; solid(7500 + 100*i, top, 100, 2260 - top, 'crate'); }
+  }
+  // ---- THE SUMMIT POOL (ten players, Tall, Huge): the smallest, highest pond, with a short rope tow up from the Tarn
+  if(F.summit){
+    solid(2230, 440, 100, 200, 'rock'); ice(2330, 540, 420, 'summit'); solid(2750, 440, 100, 200, 'rock'); solid(2230, 620, 620, 110, 'rock');
+    for(let k = 0; k < 2; k++) mover(2130, 748, 120, { ax:130, ay:308, per:1100, ph:k*Math.PI, ph2:Math.PI/2 }, 'seat');
+  }
+  // ---- THE ROPE TOWS: tow 1 (Bluff <-> camp, a tall loop down the cliff), tow 2 (Bluff <-> Tarn, a tilted loop), tow 3 (Icicle Shelf <-> the Snow Fort's drift stair)
+  for(let k = 0; k < 6; k++) mover(1140, 1504, 120, { ax:130, ay:756, per:1300, ph:k*Math.PI/3, ph2:Math.PI/2 }, 'seat');
+  for(let k = 0; k < 5; k++) mover(1560, 902, 120, { ax:280, ay:260, per:1000, ph:k*2*Math.PI/5, ph2:0.94 }, 'seat');
+  for(let k = 0; k < 3; k++) mover(5560, 1586, 120, { ax:100, ay:226, per:800, ph:k*2*Math.PI/3, ph2:Math.PI/2 }, 'seat');
+  // ---- THE CAVES (Tall, Huge): rooms under the Great Pond's ice, a well under the fishing hole, a chimney with a cable lift up to the pond
+  if(F.caves){
+    const cy = 2850; solid(4480, 2256, 88, 594, 'cave'); solid(2030, cy, 2450, 70, 'cave');   // (no room under the fishing hole's end: the well is open down to the Thaw, a KO as on every size)
+    for(const wx of [2030, 2800, 3800]) solid(wx, 2256, 60, 264, 'cave');
+    solid(2650, cy - 90, 140, 90, 'cave'); solid(3100, cy - 90, 160, 90, 'cave'); solid(3250, cy - 180, 120, 180, 'cave'); solid(3900, cy - 90, 200, 90, 'cave'); solid(4100, cy - 180, 160, 180, 'cave');
+    mover(2345, (2176 + cy)/2, 200, { ay:(cy - 2176)/2, per:900 }, 'lift');
+  }
+  // ---- DECORATION (never solid)
+  for(const q of [[470, 748], [1000, 748], [4400, 1360], [5500, 1360], [560, 2260], [4900, 2260], [2090, 1056], [3640, 1056]]) decP('pine', q[0], q[1], (q[0] + q[1]) % 3);
+  decP('fire', 640, 2260, 0); if(V.fire2) decP('fire', 3028, 1972, 1);
+  const thawW = [mr(1660, BY - 6, 2680, 4000)[0], BY, 2680, 4000];   // (the open water between the banks, drawn from here to the bottom of the world)
+  deco.push(['water', thawW[0], BY + 30, 2680, F.lane ? LY - BY - 60 : 0, 0]);
+  deco.push(['hole', mr(1848, 2176, 168, 1)[0], 2176, 168, 0, 0]); if(hole2) deco.push(['hole', mr(3860, 2176, 160, 1)[0], 2176, 160, 0, 0]);
+  decP('stool', 1832, 2176, 0);
+  [[5000, 884, 4560], [5000, 884, 4760], [5000, 884, 4960], [5000, 884, 5160], [5000, 884, 5320]].forEach((q, i)=>{ const r = mr(q[2], 944, 1, 1); deco.push(['ic', r[0], 944, 110 - (i % 2)*30, 0, i]); });
+  dec('sign', 470, 640, 300, 0, 'LODGE BLUFF'); dec('sign', 4560, 1330, 360, 0, 'ICICLE SHELF'); dec('sign', 470, 2230, 360, 0, 'FISHING CAMP'); dec('sign', 4730, 2230, 360, 0, 'SNOW FORT');
+  dec('sign', 2300, 1120, 300, 0, 'THE TARN'); dec('sign', 2300, 2300, 300, 0, 'THE GREAT POND'); dec('sign', 2900, BY + 50, 300, 0, 'THE THAW'); if(F.lane) dec('sign', 2800, LY - 40, 400, 0, 'SKATING LANE');
+  const nightF = V.night ? 1 : 0;
+  const zoneCave = F.caves ? [mr(2030, 2256, 2450, 600)] : [];
+  cap.fd = { v, flip, name:V.name, deco, zones:{ cave:zoneCave }, f:{ gust:V.gust, night:nightF, caves:F.caves ? 1 : 0, lane:F.lane ? 1 : 0, stone:V.stone, fire2:V.fire2 }, flags:F, BY, LY, eH };
+  worldPlats = P;
+  // ---- the four bases (NW 0, NE 1, SW 2, SE 3), by teams: 4: all; 3: NW, NE and SW; 2: NW and SE
+  const owner = { NW:-1, NE:-1, SW:-1, SE:-1 };
+  if(tc === 4){ owner.NW = 0; owner.NE = 1; owner.SW = 2; owner.SE = 3; } else if(tc === 3){ owner.NW = 0; owner.NE = 1; owner.SW = 2; } else { owner.NW = 0; owner.SE = 1; }
+  const defs = [
+    { k:'NW', deck:[950, 748, 270], rg:[[960, 1200]], zone:[440, 340, 780, 440] },
+    { k:'NE', deck:[4300, 1360, 1200], rg:[[4300, 5500]], zone:[4300, 980, 1200, 420] },
+    { k:'SW', deck:[440, 2260, 860], rg:[[440, 1170]], zone:[440, 1830, 860, 470] },
+    { k:'SE', deck:[4720, 2260, 860], rg:[[4720, 5580]], zone:[4720, 1650, 860, 650] },
+  ];
+  const infos = [], blocks = P.filter(p=>p.solid), hatches = [mr(740, 0, 310, 1), mr(1040, 0, 240, 1), mr(4950, 0, 310, 1)];
+  for(const d of defs){
+    const team = owner[d.k], dr = mr(d.deck[0], d.deck[1], d.deck[2], 18), zr = mr(d.zone[0], d.zone[1], d.zone[2], d.zone[3]);
+    const free = []; for(const r of d.rg){ const rr = mr(r[0], 0, r[1] - r[0], 1); for(let x = rr[0] + 40; x <= rr[0] + rr[2] - 40; x += 40){ if(!blocks.some(p=>x > p.x - 34 && x < p.x + p.w + 34 && p.y < dr[1] && p.y + p.h > dr[1] - 70) && !(dr[1] > 2200 && hatches.some(h=>x > h[0] && x < h[0] + h[2]))) free.push(x); } }
+    const spawns = []; for(let k = 0; k < 6 && free.length; k++){ const i = Math.min(free.length - 1, Math.floor((k + 0.5)*free.length/6)); if(!spawns.some(s=>s.x === free[i])) spawns.push({ x:free[i], y:dr[1] - 30, used:0 }); }
+    infos.push({ k:d.k, team, x:dr[0], y:dr[1], w:dr[2] });
+    if(team >= 0) bases[team] = { team, x:dr[0], y:dr[1], w:dr[2], h:18, color:TEAM_COLORS[team % TEAM_COLORS.length], spawnX:Math.round(dr[0] + dr[2]/2), spawnY:dr[1] - 46, floor:0, spawns, zone:{ x:zr[0], y:zr[1], w:zr[2], h:zr[3] } };
+  }
+  bases = bases.filter(Boolean);
+  STG = { kind:'frozen', top:null, t:0, wall:0, movers, statics:[], soft:[] };
+  stgPlace(0);
+  FP = { v, teams:tc, flip, fd:cap.fd, infos, movers, owner, crates:0, flags:F };
+  FP_VIS = true; FPM = null; FPN = null; FPQ.warm = {};
+}
+function fpSpawnItem(){
+  const spots = worldPlats.filter(p=>p.fp && (p.fp === 'shelf' || p.fp === 'rock' || p.fp === 'island' || p.fp === 'ice' || p.fp === 'dock' || p.fp === 'crate' || p.fp === 'hut' || p.fp === 'snow') && p.w >= 120 && !p.mv && !p.ghost);
+  if(!spots.length) return;
+  const pl = spots[Math.floor(Math.random()*spots.length)], x = pl.x + pl.w*(0.2 + Math.random()*0.6);
+  if(items.some(q=>!q.taken && Math.abs(q.x - x) < 70 && Math.abs(q.y - (pl.y - 16)) < 60)) return;
+  const pool = eventItemPool() || ["heal","heal","marmalade","marmalade","throw","throw","power","power","assist","assist","yoyle","yoyle"];
+  const kind = pool[Math.floor(Math.random()*pool.length)], r = kind === "boss" ? 0 : 16;
+  items.push({ kind, x, y:pl.y - r, vx:0, vy:0, r, taken:false, life:60*30, _land:true }); FP.crates++;
+}
+// ============================================================
+//  FROZEN POND TEAMS, THE SET PIECES (host: FPM; a guest reads the same records from the geometry's `fd` and the snapshot's `fq`)
+//  ICE: a pond floor, a floe, a frozen step or a stream (p.ice) is the stage's ICE_FRIC (and ICE_RUN of the run's push), unless the fighter has WARM BOOTS. THIN ICE (the dark crackled panels): a hard landing
+//  (a fall-damage drop, or a launched fighter landing hard) cracks it (60 frames of white lines and a crack), it gives way and is open for 480 frames, then a faint ghost for 80 and it is ice again
+//  (it waits while anyone is in the hole: nobody is shut in). THE CAMPFIRE: stand by it 2 s: heal 10% and WARM BOOTS for 12 s, then it burns low for 25 s. ICICLES (Icicle Shelf): a fighter
+//  hit (or landing hard) near one sets it wobbling 42 frames (the tell), then it falls (8% and a pop-up) and grows back after 15 s; they never fall on their own. FALL DAMAGE: as Dream Island's
+//  (1 screen, cap 15%); none on a snow bank. THE CURLING STONE (V1, V3): a mover with a grippy top; it shoves whoever stands in its body (5%). GUSTS (V3): the Windy Heights rhythm, x2 on ice.
+// ============================================================
+let FPM = null, FPN = null;
+function fpMech(){
+  const Y = fpInfo(); if(!Y) return null; if(FPM && FPM.Y === Y) return FPM;
+  const M = { Y, fire:[], ic:[], thin:[], stones:[], water:null };
+  for(const d of Y.deco){
+    if(d[0] === 'water') M.water = { x0:d[1], x1:d[1] + d[3], y0:d[2] + 30, y1:Y.f.lane ? Y.LY - 160 : 1e9 };
+    else if(d[0] === 'fire') M.fire.push({ x:d[1], y:d[2], small:d[5], rest:0, prog:{} });
+    else if(d[0] === 'ic'){ let fy = 1e9; for(const p of worldPlats){ if(!p.solid || p.fp === 'wall' || d[1] < p.x || d[1] > p.x + p.w || p.y <= d[2] + 40) continue; if(p.y < fy) fy = p.y; } M.ic.push({ x:d[1], y:d[2], len:d[3], st:0, t:0, fy:fy < 1e9 ? fy : d[2] + 420 }); }
+  }
+  for(const p of worldPlats) if(p.fp === 'thin') M.thin.push({ p, st:0, t:0, ti:p.ti | 0 });
+  M.thin.sort((a, b)=>a.ti - b.ti);
+  for(const p of worldPlats) if(p.stone) M.stones.push(p);
+  return FPM = M;
+}
+function fpCrack(T){
+  if(T.st !== 0) return; T.st = 1; T.t = FPK.thinTell; T.p.crk = true;
+  try{ noise(0.25, 0.22, 3200, 0, 700); tone(520, 0.12, 'square', 0.08, 0, 260); }catch(e){}
+  for(let k = 0; k < 8; k++) particles.push({ x:T.p.x + T.p.w*(k + 0.5)/8, y:T.p.y, vx:(k - 3.5)*0.3, vy:-1.2, life:24, color:'#ffffff', r:2 });
+  if(FPN) fpBlockThin(T, FPK.thinTell + FPK.thinOpen + FPK.thinMend + 30);
+}
+function fpBreak(T){
+  T.st = 2; T.t = FPK.thinOpen; T.p.crk = false; T.p.off = true;
+  const i = worldPlats.indexOf(T.p); if(i >= 0) worldPlats.splice(i, 1);
+  try{ noise(0.5, 0.3, 900, 0, 200); tone(130, 0.35, 'sine', 0.2, 0, 60); }catch(e){}
+  for(let k = 0; k < 14; k++) particles.push({ x:T.p.x + T.p.w*(k + 0.5)/14, y:T.p.y + 6, vx:(k - 6.5)*0.4, vy:-2 - (k % 3)*0.6, life:32, color:'#cfe8f6', r:3 + (k % 2) });
+}
+function fpTell(T){ T.st = 3; T.t = FPK.thinMend; T.p.ghost = true; worldPlats.push(T.p); DRM_GH = true; }
+function fpMend(T){
+  for(const f of fighters) if(!f.dead && f.x > T.p.x - f.r && f.x < T.p.x + T.p.w + f.r && f.y + f.r > T.p.y - 6 && f.y - f.r < T.p.y + T.p.h + 6){ T.t = 1; return; }   // never shut in: it waits while anyone is in the hole
+  T.st = 0; delete T.p.ghost; delete T.p.off; delete T.p.crk; DRM_GH = worldPlats.some(p=>p.ghost);
+  for(let k = 0; k < 6; k++) particles.push({ x:T.p.x + T.p.w*(k + 0.5)/6, y:T.p.y, vx:0, vy:-0.8, life:24, color:'#ffffff', r:3 });
+}
+function fpUnder(f){
+  const feet = f.y + f.r; let best = null;
+  for(const p of worldPlats){ if(!p.fp || p.ghost || f.x < p.x - 2 || f.x > p.x + p.w + 2 || Math.abs(feet - p.y) > 5) continue; if(!best || p.solid) best = p; }
+  return best;
+}
+function fpShake(x, y){
+  const M = fpMech(); if(!M) return;
+  for(const I of M.ic) if(I.st === 0 && Math.abs(x - I.x) < FPK.icTrig && y > I.y - 60 && y < I.fy + 40){ I.st = 1; I.t = FPK.icWobble; try{ tone(1900, 0.18, 'triangle', 0.07, 0, 1500); }catch(e){} }
+}
+// a landing (from the fighter's step, after its collisions): fall damage, and thin ice cracking under a hard one
+function fpLand(f, wasAir, vy){
+  if(f.dead || f._tp || f._tpHang > 0){ f._fpTop = null; return; }
+  if(!f.onground){ f._fpTop = (wasAir && f._fpTop != null) ? Math.min(f._fpTop, f.y) : f.y; return; }
+  const top = f._fpTop; f._fpTop = null;
+  if(!wasAir || top == null) return;
+  const M = fpMech(); if(!M) return;
+  const drop = f.y - top, pl = fpUnder(f), snow = !!(pl && pl.fp === 'snow'), dmg = snow ? 0 : diDamageFor(drop), feet = f.y + f.r;
+  if(dmg > 0){
+    f.pct += dmg;
+    for(let k = 0; k < 12; k++) particles.push({ x:f.x + (k - 5.5)*5, y:feet - 2, vx:(k - 5.5)*0.5, vy:-0.8 - (k % 3)*0.5, life:22, color:'#e8f4ff', r:3 + (k % 3) });
+    particles.push({ x:f.x, y:f.y - f.r - 8, vx:0, vy:-1.6, life:55, color:'t|#ff8a3a|' + (Math.round(dmg*10)/10) + '%', r:12 });
+    shake(f.you ? 10 : 5);
+  }
+  const hard = dmg > 0 || vy >= DIK.landVy || drop >= DIK.hardDrop;
+  if(pl && pl.fp === 'thin' && (hard || (f.hitstun > 0 && vy >= 9))){ const T = M.thin.find(q=>q.p === pl); if(T) fpCrack(T); }
+  if(hard) fpShake(f.x, f.y);
+}
+// once a frame, after the ledges moved (host only)
+function fpStep(){
+  const M = fpMech(); if(!M) return; const t = hazardT;
+  for(const T of M.thin){ if(T.st === 0) continue; if(--T.t <= 0){ if(T.st === 1) fpBreak(T); else if(T.st === 2) fpTell(T); else fpMend(T); } }
+  for(const F of M.fire) if(F.rest > 0) F.rest--;
+  for(const I of M.ic){
+    if(I.st === 1){ if(--I.t <= 0){ I.st = 2; I.t = 0; I.vy = 0; I.cy = I.y + I.len; } }
+    else if(I.st === 2){
+      I.vy += 0.9; I.cy += I.vy;
+      for(const f of fighters){ if(f.dead || f.invuln > 0 || Math.abs(f.x - I.x) > f.r + 8 || I.cy < f.y - f.r - 12 || I.cy > f.y + f.r) continue;
+        f.pct += FPK.icDmg; f.vy = -7; f.vx = (f.x < I.x ? -1 : 1)*2; f.hitstun = Math.max(f.hitstun || 0, 16); f.onground = false; I.cy = I.fy; shake(f.you ? 6 : 3); for(let k = 0; k < 8; k++) particles.push({ x:I.x, y:f.y - f.r, vx:(k - 3.5)*0.6, vy:-2, life:20, color:'#e6f6ff', r:3 }); break; }
+      if(I.cy >= I.fy - 1){ I.cy = I.fy; I.st = 3; I.t = FPK.icRegrow; try{ noise(0.15, 0.15, 3000, 0, 1500); }catch(e){} for(let k = 0; k < 8; k++) particles.push({ x:I.x + (k - 3.5)*6, y:I.fy - 4, vx:(k - 3.5)*0.5, vy:-2, life:18, color:'#e6f6ff', r:3 }); }
+    }
+    else if(I.st === 3){ if(--I.t <= 0){ I.st = 0; I.t = 0; } }
+  }
+  const Y = M.Y;
+  if(Y.f.gust){ try{ gustTwistStep(WGUST); }catch(e){} }
+  for(const f of fighters){
+    if(f.dead || f._tp) continue;
+    const Wt = M.water;   // THE THAW IS OPEN WATER: in it is a knockout (the floes are the only floor over it)
+    if(Wt && f.x > Wt.x0 && f.x < Wt.x1 && f.y > Wt.y0 && f.y < Wt.y1){ for(let k = 0; k < 14; k++) particles.push({ x:f.x + (k - 7)*6, y:Wt.y0 - 20, vx:(k - 7)*0.5, vy:-3 - (k % 3), life:30, color:'#cfe8f6', r:3 + (k % 3) }); try{ noise(0.4, 0.25, 1200, 0, 300); }catch(e){} eliminate(f); continue; }
+    if(Y.f.gust){ const g = gustState(WGUST); if(g && g.k > 0 && pullFree(f)) f.x += g.dir*(f.onground ? WGUST.ground : WGUST.air)*g.k*(fpOnIce(f) ? FPK.gustIce : 1); }
+    for(const p of M.stones){   // the stone shoves whoever stands in its body (a rider on top is above it)
+      const hh = p.stone === 1 ? 110 : 70; if(f.invuln > 0 || (f._fpStoneCd || 0) > t) continue;
+      if(f.x > p.x - f.r*0.5 && f.x < p.x + p.w + f.r*0.5 && f.y > p.y + 2 && f.y - f.r < p.y + hh){ f._fpStoneCd = t + FPK.stoneCd; f.pct += FPK.stoneDmg; f.vx = (p.mvx >= 0 ? 1 : -1)*FPK.stoneShove; f.vy = -4; f.hitstun = Math.max(f.hitstun || 0, 12); f.onground = false; shake(f.you ? 5 : 2); }
+    }
+  }
+}
+// in the fighter's own step, after its collisions: the campfire, and a hit that shakes an icicle
+function fpFighter(f, inp){
+  const M = fpMech(); if(!M || f.dead) return;
+  const hs = f.hitstun > 0; if(hs && !f._fpHs) fpShake(f.x, f.y); f._fpHs = hs;
+  const feet = f.y + f.r;
+  for(const F of M.fire){
+    if(F.rest > 0) continue;
+    if(Math.abs(f.x - F.x) <= FPK.fireR && feet >= F.y - 70 && feet <= F.y + 8 && f.hitstun <= 0){
+      const n = (F.prog[f.idx] || 0) + 1; F.prog[f.idx] = n;
+      if(n >= FPK.fireNeed){ F.prog[f.idx] = 0; F.rest = FPK.fireRest; f.pct = Math.max(0, f.pct - FPK.fireHeal); FPQ.warm[f.idx] = hazardT + FPK.fireWarm; for(let k = 0; k < 14; k++) particles.push({ x:F.x + (k - 7)*5, y:F.y - 20, vx:(k - 7)*0.3, vy:-2.5, life:30, color:'#ffb347', r:3 }); try{ if(f.you) SFX.jump(); }catch(e){} }
+    } else if(F.prog[f.idx]) F.prog[f.idx] = Math.max(0, F.prog[f.idx] - 2);
+  }
+}
+function fpPack(){
+  const M = fpMech(); if(!M) return null; const w = []; for(const k in FPQ.warm) if(FPQ.warm[k] > hazardT) w.push([+k, FPQ.warm[k] - hazardT]);
+  return { f:M.fire.map(F=>F.rest), i:M.ic.map(I=>[I.st, I.t, Math.round(I.cy || 0)]), w };
+}
+function fpNetIn(q){
+  const M = fpMech(); if(!M || !q) return;
+  (q.f || []).forEach((r, i)=>{ if(M.fire[i]) M.fire[i].rest = r; });
+  (q.i || []).forEach((r, i)=>{ const I = M.ic[i]; if(I){ I.st = r[0]; I.t = r[1]; I.cy = r[2]; } });
+  FPQ.warm = {}; (q.w || []).forEach(r=>{ FPQ.warm[r[0]] = hazardT + r[1]; });
+}
+function fpOnIce(f){
+  const gnd = f.onground !== undefined ? f.onground : f.g; if(!gnd) return false;
+  if(f.idx != null && (FPQ.warm[f.idx] || 0) > hazardT) return false;
+  const feet = f.y + f.r;
+  for(const p of worldPlats){ if(!p.ice || p.ghost) continue; if(f.x >= p.x - 2 && f.x <= p.x + p.w + 2 && Math.abs(feet - p.y) <= 5) return true; }
+  return false;
+}
+function fpDark(){ const Y = fpInfo(); return !!(Y && (Y.f.night || Y.f.caves)); }
+function fpIsNight(t){ const Y = fpInfo(); return !!(Y && Y.f.night && fpNight(t) >= FPK.nightOn); }
+
+// ---- THE CPUs' ROUTE GRAPH. Dream Island's edges (diEdge via ynEdge: walk, hop, drop, checked against the solid pieces in the way) over this map's surfaces. A mover's edges are
+// found with the mover at eight moments of its round trip and kept as 'ferry' edges (a CPU takes one only when it can be made right then). Thin ice is a floor node until its crack
+// shows, then blocked until it is ice again (fpBlockThin). A floe or a tow seat that is LEAVING is not boarded (fpFollow). On ice the CPU brakes before a drop with no floor and
+// jumps at a lip with its speed in mind (fpGo).
+function fpNavBuild(){
+  const nodes = [], byP = new Map();
+  for(const p of worldPlats){ if(!p.fp || p.fp === 'wall' || p.fp === 'cabinw' || p.fp === 'cliff' || p.w < 24 || p.ghost || fpBuried(p)) continue; const n = { id:nodes.length, p, x0:p.x, x1:p.x + p.w, y:p.y, drift:!!p.mv, adj:[] }; nodes.push(n); byP.set(p, n); }
+  const solids = worldPlats.filter(p=>p.solid), BK = 400, sb = new Map(), nb = new Map();
+  for(const s of solids) for(let b = Math.floor(s.x/BK); b <= Math.floor((s.x + s.w)/BK); b++){ if(!sb.has(b)) sb.set(b, []); sb.get(b).push(s); }
+  for(const n of nodes) if(!n.drift) for(let b = Math.floor(n.x0/BK); b <= Math.floor(n.x1/BK); b++){ if(!nb.has(b)) nb.set(b, []); nb.get(b).push(n); }
+  const near = (x0, x1)=>{ const out = new Set(); for(let b = Math.floor((x0 - 80)/BK); b <= Math.floor((x1 + 80)/BK); b++){ const a = sb.get(b); if(a) for(const s of a) out.add(s); } return Array.from(out); };
+  const edge = (A, B)=>ynEdge(A, B, near(Math.min(A.x0, B.x0), Math.max(A.x1, B.x1)));
+  for(const A of nodes){ if(A.drift) continue; const seen = new Set();
+    for(let b = Math.floor((A.x0 - 460)/BK); b <= Math.floor((A.x1 + 460)/BK); b++){ const a = nb.get(b); if(!a) continue;
+      for(const B of a){ if(B === A || seen.has(B)) continue; seen.add(B);
+        if(Math.max(0, B.x0 - A.x1, A.x0 - B.x1) > 450 || Math.abs(A.y - B.y) > 1000) continue;
+        const e = edge(A, B); if(e) A.adj.push({ to:B, e }); } } }
+  const movers = nodes.filter(n=>n.drift), dyn = new Map(), seenE = new Set();
+  const addE = (from, to, e)=>{ const k = from.id + '>' + to.id; if(seenE.has(k)) return; seenE.add(k); e.dr = 1; e.c += 25; if(!dyn.has(from)) dyn.set(from, []); dyn.get(from).push({ to, e }); };
+  const placeAt = (d, tt)=>{ const m = d.p.mv, a2 = 2*Math.PI*tt/m.per + m.ph; d.x0 = d.p.bx + m.ax*Math.sin(a2); d.x1 = d.x0 + d.p.w; d.y = d.p.by + m.ay*Math.sin(a2 + (m.ph2 || 0)); };
+  for(const d of movers){
+    const m = d.p.mv, rx0 = d.p.bx - Math.abs(m.ax), rx1 = d.p.bx + d.p.w + Math.abs(m.ax), ry0 = d.p.by - Math.abs(m.ay), ry1 = d.p.by + Math.abs(m.ay);
+    const cand = nodes.filter(n=>n !== d && !(n.drift && n.id < d.id) && Math.max(0, n.x0 - rx1, rx0 - n.x1) <= 450 && n.y >= ry0 - 1000 && n.y <= ry1 + 1000 && (!n.drift || (Math.abs(n.p.bx - d.p.bx) < 1400)));
+    for(let k = 0; k < 8; k++){ const tt = k*Math.abs(m.per)/8; placeAt(d, tt); for(const n of cand) if(n.drift) placeAt(n, tt);
+      for(const n of cand){ const e1 = edge(d, n); if(e1) addE(d, n, e1); const e2 = edge(n, d); if(e2) addE(n, d, e2); } }
+    for(const n of cand) if(n.drift) placeAt(n, 0);
+  }
+  for(const n of movers){ n.x0 = n.p.x; n.x1 = n.p.x + n.p.w; n.y = n.p.y; }
+  return { nodes, byP, solids, movers, dyn, near, blocked:{}, plans:0, planFail:0, hopFail:0, nodeCount:nodes.length, edgeCount:nodes.reduce((a, n)=>a + n.adj.length, 0) + Array.from(dyn.values()).reduce((a, l)=>a + l.length, 0) };
+}
+function fpBuried(p){   // a top that is all inside other solids or hangs from their underside (an underhang lump): nobody can stand there, so it is no node
+  for(let x = p.x + 4; x < p.x + p.w; x += 40){ let c = false; for(const s of worldPlats){ if(s === p || !s.solid || s.fp === 'wall') continue; if(x > s.x && x < s.x + s.w && s.y < p.y + 2 && s.y + s.h >= p.y - 2){ c = true; break; } } if(!c) return false; }
+  return true;
+}
+function fpBlockThin(T, frames){
+  const N = FPN; if(!N) return; const n = N.byP.get(T.p); if(!n) return; const until = hazardT + frames;
+  for(const A of N.nodes){ for(const a of A.adj) if(a.to === n || A === n) N.blocked[A.id + '>' + a.to.id] = until; const d = N.dyn.get(A); if(d) for(const a of d) if(a.to === n || A === n) N.blocked[A.id + '>' + a.to.id] = until; }
+}
+function fpSurfaceAt(N, x, feet){   // is there a floor within 70 px under this spot (a solid top or a ledge, a floe where it is now)?
+  for(const n of N.nodes){ const p = n.p; if(p.ghost || x < p.x - 4 || x > p.x + p.w + 4 || p.y < feet - 10 || p.y > feet + 70) continue; return true; }
+  return false;
+}
+function fpBrain(f, inp){
+  if(f.hitstun > 0 || f._tp){ f._fpPlan = null; return; }
+  const M = fpMech(); if(!M) return; const N = FPN || (FPN = fpNavBuild());
+  const feet = f.y + f.r;
+  { const mv = Math.abs(f.x - (f._fpLX === undefined ? f.x : f._fpLX)) + Math.abs(f.y - (f._fpLY === undefined ? f.y : f._fpLY)); f._fpLX = f.x; f._fpLY = f.y; f._fpStill = (mv < 0.5 && f.onground) ? (f._fpStill || 0) + 1 : 0; }
+  let foe = f.aiTarget && !f.aiTarget.dead && f.aiTarget.team !== f.team ? f.aiTarget : null;
+  if(!foe){ let bd = 1e9; for(const o of fighters) if(!o.dead && o.team !== f.team){ const d = Math.hypot(o.x - f.x, o.y - f.y); if(d < bd){ bd = d; foe = o; } } }
+  const closeLevel = foe && Math.abs(foe.x - f.x) < 520 && Math.abs(foe.y - f.y) < 150 && ynLineClear(N, f.x, foe.x, foe.y);
+  let used = false;
+  if(closeLevel && f._fpStill < 45){ f._fpPlan = null; }
+  else if(fpFollow(f, inp, N, feet, M, foe)){
+    used = true;
+    if(f.onground && f._fpStill > 10 && (inp.left || inp.right)){ inp.jump = (f._fpStill % 30) < 3; f._fpHopDir = inp.right ? 1 : -1; f._fpHopUntil = hazardT + 45; }
+  } else if(!f.onground){ if(f._fpHopUntil > hazardT){ inp.left = f._fpHopDir < 0; inp.right = f._fpHopDir > 0; } }
+  else if(f._fpStill > 90){ const ph = Math.floor((f._fpStill - 90)/45), d = (ph % 2) ? 1 : -1; inp.left = d < 0; inp.right = d > 0; inp.jump = ((f._fpStill - 90) % 45) < 3; inp.down = (ph % 4) === 3; }
+  // ICE: a slider with no floor ahead of its stopping distance presses back (unless it is meaning to hop or to walk off)
+  if(f.onground && !inp.jump && Math.abs(f.vx) > 1.8 && fpOnIce(f)){
+    const P = f._fpPlan, e = P && P.edges ? P.edges[Math.max(0, P.path.indexOf(ynNodeAt(N, f)))] : null;
+    if(!(e && (e.t === 'drop' || e.t === 'hop'))){
+      const dir = Math.sign(f.vx), stop = f.x + f.vx*20;
+      if(!fpSurfaceAt(N, stop, feet) || !fpSurfaceAt(N, f.x + dir*(f.r + 30), feet)){ inp.left = dir > 0; inp.right = dir < 0; }
+    }
+  }
+}
+function fpGo(f, inp, x, tol){   // toward x; on ice let go early and brake so the slide ends at x, not past it
+  const dx = x - f.x, d = dx > 6 ? 1 : dx < -6 ? -1 : 0;
+  if(!d){ inp.left = false; inp.right = false; return; }
+  if(fpOnIce(f)){
+    const stop = f.vx*20, toward = Math.sign(f.vx) === d, rem = Math.abs(dx);
+    if(toward && Math.abs(stop) > rem - (tol || 0)){ inp.left = f.vx > 0 && Math.abs(stop) > rem + 40; inp.right = f.vx < 0 && Math.abs(stop) > rem + 40; return; }
+  }
+  inp.left = d < 0; inp.right = d > 0;
+}
+function fpFollow(f, inp, N, feet, M, foe){
+  const now = hazardT; let P = f._fpPlan;
+  if(!f.onground){
+    const a = P && P.air;
+    if(a && now < a.until){
+      a.seen = true; inp.left = a.tx < f.x - 6; inp.right = a.tx > f.x + 6; inp.smash = false; inp.grab = false;
+      if(a.hop && f.vy < -1.5) inp.jump = true;
+      else if(a.up && f.vy > 0.5 && f.jumps > 0 && feet > a.ty + 6 && !f._jp) inp.jump = true;
+      return true;
+    }
+    return false;
+  }
+  const node = ynNodeAt(N, f);
+  if(!node){ f._fpPlan = null; return false; }
+  if(P && P.air){
+    const A = P.air;
+    if(A.seen || now - A.t0 > 30){
+      P.air = null;
+      if(A.from === node){ f._fpFail = (f._fpFail || 0) + 1; if(f._fpFail >= 2){ N.blocked[A.from.id + '>' + A.to.id] = now + 400; N.hopFail++; f._fpPlan = P = null; f._fpFail = 0; } }
+      else f._fpFail = 0;
+    }
+  }
+  if(!P || now - P.at > 40 || P.path.indexOf(node) < 0 || (P.side && P.side.fire && P.side.fire.rest > 0)){
+    if(f._fpGoalAt && now - f._fpGoalAt < 20 && !P) return false;
+    f._fpGoalAt = now;
+    let goals = ynFoeNodes(N, f), side = null;
+    const sg = fpSideGoal(f, N, M);
+    if(sg && sg.n !== node){ goals = new Map([[sg.n, sg]]); side = sg; }
+    else if(sg && sg.n === node){ return fpSideDo(f, inp, sg) || false; }
+    if(!goals.size || goals.has(node)){ f._fpPlan = null; return false; }
+    N.plans++;
+    P = f._fpPlan = ynPlan(N, node, goals);
+    if(!P){ N.planFail++; return false; }
+    P.side = side;
+  }
+  const i = P.path.indexOf(node);
+  if(i < 0 || i >= P.path.length - 1){ f._fpPlan = null; return false; }
+  for(const n of N.movers){ n.x0 = n.p.x; n.x1 = n.p.x + n.p.w; n.y = n.p.y; }
+  let e = P.edges[i]; const B = P.path[i + 1];
+  if(e.dr){
+    const live = ynEdge(node, B, N.near(Math.min(node.x0, B.x0), Math.max(node.x1, B.x1)));
+    if(!live){ f._fpWait = (f._fpWait || 0) + 1; if(f._fpWait > 600){ f._fpWait = 0; f._fpPlan = null; N.blocked[node.id + '>' + B.id] = now + 500; } if(e.lx != null && Math.abs(f.x - e.lx) > 8) fpGo(f, inp, e.lx, 6); else { inp.left = false; inp.right = false; } return true; }   // (wait AT the launch spot)
+    // a floe or a seat that is LEAVING is not boarded; one that is not coming nearer is left to pass (unless it is within a body of the edge)
+    const gap = Math.max(0, B.x0 - node.x1, node.x0 - B.x1);
+    if(gap > 36){
+      const dirX = (B.x0 + B.x1) > (node.x0 + node.x1) ? 1 : -1, mvB = B.p.mv ? B.p.mvx : 0, mvA = node.p.mv ? node.p.mvx : 0, closing = (mvA - mvB)*dirX;   // (>0: the gap is closing)
+      if(closing < 0.3){ f._fpWait = (f._fpWait || 0) + 1; if(f._fpWait > 600){ f._fpWait = 0; f._fpPlan = null; N.blocked[node.id + '>' + B.id] = now + 500; } if(e.lx != null && Math.abs(f.x - e.lx) > 8) fpGo(f, inp, e.lx, 6); else { inp.left = false; inp.right = false; } return true; }
+    }
+    f._fpWait = 0; live.dr = 1; e = live;
+  }
+  const nearFoe = foe && Math.hypot(foe.x - f.x, foe.y - f.y) < 170;
+  if(!nearFoe){ inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; }
+  if(e.t === 'walk'){ fpGo(f, inp, e.tx, 0); return true; }
+  if(e.t === 'drop' && !e.soft){
+    inp.left = e.wx < f.x - 6; inp.right = e.wx > f.x + 6;
+    if(!P.air && Math.abs(f.x - e.lx) < 60) P.air = { tx:e.tx, ty:B.y, up:false, until:now + 90, from:node, to:B, e, t0:now, seen:false };
+    return true;
+  }
+  const tolJ = fpOnIce(f) ? Math.max(10, Math.abs(f.vx)*3) : 10;   // on ice a lip is met at speed: jump when it is under the feet, not when the body has stopped
+  if(Math.abs(f.x - e.lx) > tolJ){ fpGo(f, inp, e.lx, 10); return true; }
+  if(e.t === 'drop'){ inp.down = true; inp.jump = true; if(!P.air) P.air = { tx:e.tx, ty:B.y, up:false, until:now + 90, from:node, to:B, e, t0:now, seen:false }; return true; }
+  inp.jump = true; inp.left = e.tx < f.x - 6; inp.right = e.tx > f.x + 6;
+  if(!P.air) P.air = { tx:e.tx, ty:B.y, up:e.up > 0, hop:true, until:now + 80, from:node, to:B, e, t0:now, seen:false };
+  return true;
+}
+function fpSideGoal(f, N, M){   // the campfire, when hurt (or now and then) and it is lit
+  if(f._fpSideAt != null && hazardT - f._fpSideAt < 30) return f._fpSide || null;
+  f._fpSideAt = hazardT; f._fpSide = null;
+  if(M.fire.length && (f.pct > 30 || (f.idx + Math.floor(hazardT/1800)) % 4 === 0)){
+    let best = null, bd = 1e9; for(const F of M.fire){ if(F.rest > 0) continue; const d = Math.hypot(F.x - f.x, F.y - f.y); if(d < bd && d < 1600){ bd = d; best = F; } }
+    if(best){ const n = ynNodeFor(N, best.x, best.y - 4); if(n) f._fpSide = { n, fire:best }; }
+  }
+  return f._fpSide;
+}
+function fpSideDo(f, inp, sg){   // arrived at the fire's node: walk to it and stand
+  const F = sg.fire; if(Math.abs(f.x - F.x) > 30){ fpGo(f, inp, F.x, 10); return true; } inp.left = false; inp.right = false; if(fpOnIce(f) && Math.abs(f.vx) > 1){ inp.left = f.vx > 0; inp.right = f.vx < 0; } return true;
+}
+// ---- art (host and guest alike: read from worldPlats, the one `fd` record and FPM; nothing here is read by physics)
+const FPC = { rock:'#8d9bb0', rock2:'#66758c', line:'#27374a', snow:'#f6fbff', snow2:'#d3e6f4', ice:'#d5f1fc', ice2:'#9fd0e8', iceTop:'#f4fdff', thin:'#8fb3c8', water:'#1f5f8f', water2:'#123f66', wood:'#a07a4b', wood2:'#6f512d', cave:'#3d4a66', cave2:'#2b3550' };
+function fpIceBlock(c, p, k){
+  const th = p.solid ? p.h : 26;
+  const g = c.createLinearGradient(0, p.y, 0, p.y + th); g.addColorStop(0, FPC.iceTop); g.addColorStop(0.18, FPC.ice); g.addColorStop(1, FPC.ice2);
+  c.fillStyle = g; c.fillRect(p.x, p.y, p.w, th);
+  c.strokeStyle = 'rgba(70,130,175,0.45)'; c.lineWidth = 1.5; c.beginPath();
+  for(let x = p.x + 40 + (p.x % 53); x < p.x + p.w - 20; x += 120){ c.moveTo(x, p.y + 6); c.lineTo(x + 14, p.y + th*0.45); c.lineTo(x - 6, p.y + th*0.8); }
+  c.stroke();
+  c.fillStyle = 'rgba(255,255,255,0.65)'; for(let x = p.x + 18 + (p.x % 37); x < p.x + p.w - 10; x += 90){ c.fillRect(x, p.y + 3, 22, 3); }
+  c.strokeStyle = 'rgba(40,90,130,0.7)'; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, th);
+  if(k === 'floe'){ c.fillStyle = 'rgba(255,255,255,0.7)'; c.fillRect(p.x + 10, p.y - 4, p.w - 20, 6); c.fillStyle = FPC.ice2; c.beginPath(); c.moveTo(p.x + 20, p.y + th); c.lineTo(p.x + p.w/2, p.y + th + 18); c.lineTo(p.x + p.w - 20, p.y + th); c.closePath(); c.fill(); }
+}
+function fpRockBlock(c, p, tone){
+  c.fillStyle = tone === 'cave' ? FPC.cave : FPC.rock; c.fillRect(p.x, p.y, p.w, p.h);
+  c.fillStyle = tone === 'cave' ? FPC.cave2 : FPC.rock2; c.fillRect(p.x, p.y + p.h - Math.min(14, p.h/3), p.w, Math.min(14, p.h/3));
+  if(p.h >= 70){ c.strokeStyle = 'rgba(30,45,65,0.28)'; c.lineWidth = 2; for(let y = p.y + 50; y < p.y + p.h - 20; y += 60){ c.beginPath(); c.moveTo(p.x, y); c.lineTo(p.x + p.w, y); c.stroke(); } for(let x = p.x + 70 + (p.y % 41); x < p.x + p.w - 20; x += 130){ c.beginPath(); c.moveTo(x, p.y + 10); c.lineTo(x - 12, p.y + p.h - 10); c.stroke(); } }
+  if(tone !== 'cave'){ c.fillStyle = FPC.snow; c.fillRect(p.x - 3, p.y - 7, p.w + 6, 12); c.fillStyle = FPC.snow2; c.fillRect(p.x - 3, p.y + 3, p.w + 6, 3); }
+  c.strokeStyle = FPC.line; c.lineWidth = 4; c.strokeRect(p.x, p.y, p.w, p.h);
+}
+function fpPine(c, x, y, s){
+  const h = 150 + s*30; c.fillStyle = '#4a3a2a'; c.fillRect(x - 6, y - 34, 12, 34);
+  for(let i = 0; i < 4; i++){ const w = 70 - i*14, yy = y - 30 - i*(h/5); c.fillStyle = '#2f6b4f'; c.beginPath(); c.moveTo(x - w, yy); c.lineTo(x, yy - h/3.4); c.lineTo(x + w, yy); c.closePath(); c.fill();
+    c.fillStyle = FPC.snow; c.beginPath(); c.moveTo(x - w*0.72, yy - 12); c.lineTo(x, yy - h/3.4); c.lineTo(x + w*0.72, yy - 12); c.lineTo(x + w*0.35, yy - 20); c.lineTo(x, yy - 12); c.lineTo(x - w*0.35, yy - 22); c.closePath(); c.fill(); }
+}
+function fpFlame(c, x, y, t, rest){
+  c.fillStyle = '#4b3524'; c.fillRect(x - 34, y - 12, 68, 12); c.fillStyle = '#6a4a30'; c.fillRect(x - 28, y - 22, 56, 10);
+  c.fillStyle = '#7d7f86'; for(let k = -3; k <= 3; k++){ c.beginPath(); c.arc(x + k*11, y - 3, 6, 0, 7); c.fill(); }
+  const big = rest > 0 ? 0.3 : 1, fl = Math.sin(t*0.3)*4;
+  c.fillStyle = rest > 0 ? '#e56a2c' : '#ff8a2a'; c.beginPath(); c.moveTo(x - 24*big, y - 20); c.lineTo(x + fl*big, y - 20 - 66*big); c.lineTo(x + 24*big, y - 20); c.closePath(); c.fill();
+  c.fillStyle = '#ffd34a'; c.beginPath(); c.moveTo(x - 13*big, y - 20); c.lineTo(x - fl*0.5*big, y - 20 - 42*big); c.lineTo(x + 13*big, y - 20); c.closePath(); c.fill();
+}
+function fpDrawBack(c, Y, t){
+  const L = fpNight(t), sky = (stage && stage.sky) || ['#eaf7ff', '#b7d9f3'], mix = (a, b, u)=>{ const pa = a.match(/[0-9a-f]{2}/gi).map(h=>parseInt(h, 16)), pb = b.match(/[0-9a-f]{2}/gi).map(h=>parseInt(h, 16)); return 'rgb(' + pa.map((v, i)=>Math.round(v + (pb[i] - v)*u)).join(',') + ')'; };
+  const nu = Y.f.night ? L*0.95 : L*0.45;
+  const g = c.createLinearGradient(0, -400, 0, WH + 500); g.addColorStop(0, mix(sky[0], '#0a1630', nu)); g.addColorStop(1, mix(sky[1], '#25406a', nu));
+  c.fillStyle = g; c.fillRect(-900, -600, WW + 1800, WH + 1500);
+  if(nu > 0.35){ c.fillStyle = 'rgba(255,255,255,' + (nu*0.9).toFixed(2) + ')'; for(let i = 0; i < 70; i++){ c.fillRect((i*1117) % (WW + 600) - 200, (i*389) % Math.max(600, WH*0.6), 3, 3); } }
+  if(nu > 0.4){ c.fillStyle = 'rgba(90,255,170,' + (0.10*nu).toFixed(3) + ')'; for(let b = 0; b < 3; b++){ c.beginPath(); c.moveTo(-200, 200 + b*90); for(let x = -200; x <= WW + 200; x += 160) c.lineTo(x, 200 + b*90 + Math.sin(x*0.003 + t*0.01 + b)*70); for(let x = WW + 200; x >= -200; x -= 160) c.lineTo(x, 330 + b*90 + Math.sin(x*0.003 + t*0.012 + b*2)*60); c.closePath(); c.fill(); } }
+  // far mountains, snow-capped, in two bands
+  for(let band = 0; band < 2; band++){
+    c.fillStyle = band ? mix('#a9c3d8', '#1b2c4a', nu) : mix('#c3d6e6', '#223758', nu); c.beginPath(); c.moveTo(-300, WH*0.72);
+    for(let x = -300, i = 0; x <= WW + 300; x += 260, i++){ const pk = 260 + ((i*53 + band*31) % 7)*60 + band*40; c.lineTo(x, WH*0.72 - pk*0.55); c.lineTo(x + 130, WH*0.72 - pk); }
+    c.lineTo(WW + 400, WH*0.72); c.closePath(); c.fill();
+  }
+  c.fillStyle = 'rgba(255,255,255,0.8)'; for(let i = 0; i < 90; i++){ const x = (i*977 + t*(0.5 + (i % 3)*0.25)) % (WW + 800) - 400, y = (i*613 + t*(1.2 + (i % 4)*0.3)) % (WH + 400) - 100; c.fillRect(x, y, 3, 3); }
+}
+function fpDrawDeco(c, Y, t, M){
+  const rest = (i)=>M && M.fire[i] ? M.fire[i].rest : 0; let fi = 0;
+  if(Y.zones.cave[0]){ const r = Y.zones.cave[0]; c.fillStyle = '#25304a'; c.fillRect(r[0], r[1], r[2], r[3]); c.fillStyle = 'rgba(140,200,255,0.10)'; for(let x = r[0] + 60; x < r[0] + r[2]; x += 170){ c.beginPath(); c.moveTo(x, r[1] + r[3]); c.lineTo(x + 18, r[1] + r[3] - 70 - (x % 5)*12); c.lineTo(x + 36, r[1] + r[3]); c.closePath(); c.fill(); } }
+  for(const d of Y.deco){
+    const k = d[0];
+    if(k === 'water'){
+      const g = c.createLinearGradient(0, d[2], 0, WH + 500); g.addColorStop(0, '#3a86b4'); g.addColorStop(0.15, FPC.water); g.addColorStop(1, FPC.water2); c.fillStyle = g; c.fillRect(d[1], d[2], d[3], d[4] > 0 ? d[4] : WH + 500 - d[2]);
+      c.strokeStyle = 'rgba(255,255,255,0.35)'; c.lineWidth = 3; c.beginPath(); for(let x = d[1]; x <= d[1] + d[3]; x += 30){ const y = d[2] + 6 + Math.sin(x*0.02 + t*0.05)*5; if(x === d[1]) c.moveTo(x, y); else c.lineTo(x, y); } c.stroke();
+    } else if(k === 'hole'){
+      c.fillStyle = FPC.water2; c.fillRect(d[1], d[2], d[3], 96); c.fillStyle = FPC.water; c.fillRect(d[1], d[2] + 4, d[3], 30); c.fillStyle = 'rgba(255,255,255,0.6)'; c.fillRect(d[1] + 20 + ((t*0.4) % (d[3] - 60)), d[2] + 8, 26, 3);
+      c.strokeStyle = 'rgba(60,110,150,0.9)'; c.lineWidth = 4; c.strokeRect(d[1], d[2], d[3], 96);
+    } else if(k === 'thinz'){
+      const live = worldPlats.find(p=>p.fp === 'thin' && Math.abs(p.x - d[1]) < 3 && Math.abs(p.y - d[2]) < 3);
+      if(!live || live.ghost){ c.fillStyle = FPC.water2; c.fillRect(d[1], d[2], d[3], d[4] + 60); c.fillStyle = FPC.water; c.fillRect(d[1], d[2] + 4, d[3], 24); c.strokeStyle = 'rgba(60,110,150,0.9)'; c.lineWidth = 3; c.strokeRect(d[1], d[2], d[3], d[4] + 60); }
+    } else if(k === 'pine') fpPine(c, d[1], d[2], d[5]);
+    else if(k === 'fire'){ fpFlame(c, d[1], d[2], t, rest(fi)); fi++; }
+    else if(k === 'stool'){ c.fillStyle = FPC.wood2; c.fillRect(d[1] - 14, d[2] - 26, 28, 8); c.fillRect(d[1] - 10, d[2] - 18, 5, 18); c.fillRect(d[1] + 6, d[2] - 18, 5, 18); c.strokeStyle = 'rgba(60,45,30,0.9)'; c.lineWidth = 2; c.beginPath(); c.moveTo(d[1] + 12, d[2] - 26); c.lineTo(d[1] + 64, d[2] - 112); c.stroke(); c.strokeStyle = 'rgba(40,40,40,0.55)'; c.lineWidth = 1; c.beginPath(); c.moveTo(d[1] + 64, d[2] - 112); c.lineTo(d[1] + 110, d[2] + 40); c.stroke(); }
+    else if(k === 'ic'){
+      const I = M && M.ic.find(q=>Math.abs(q.x - d[1]) < 2 && Math.abs(q.y - d[2]) < 2); const st = I ? I.st : 0, len = d[3];
+      if(st === 3){ const u = I && I.t ? 1 - I.t/FPK.icRegrow : 1; if(u > 0.6){ c.fillStyle = 'rgba(214,240,252,0.8)'; c.beginPath(); c.moveTo(d[1] - 7, d[2]); c.lineTo(d[1], d[2] + len*(u - 0.5)); c.lineTo(d[1] + 7, d[2]); c.closePath(); c.fill(); } continue; }
+      const sh = st === 1 ? Math.sin(t*1.4)*3 : 0, cy = st === 2 && I ? I.cy - len : d[2];
+      c.fillStyle = 'rgba(214,240,252,0.95)'; c.beginPath(); c.moveTo(d[1] - 9 + sh, cy); c.lineTo(d[1] + sh, cy + len); c.lineTo(d[1] + 9 + sh, cy); c.closePath(); c.fill();
+      c.strokeStyle = st === 1 ? '#ff7a5a' : 'rgba(80,140,180,0.9)'; c.lineWidth = st === 1 ? 3 : 2; c.stroke();
+    }
+    else if(k === 'sign'){ c.fillStyle = FPC.wood2; c.fillRect(d[1], d[2] - 38, Math.max(150, String(d[5]).length*15), 30); c.fillStyle = '#f6fbff'; c.font = '20px sans-serif'; c.fillText(String(d[5]), d[1] + 8, d[2] - 16); }
+  }
+  // the rope tows: a loop round two pulleys, the seats hanging from it
+  const seen = new Set();
+  for(const p of worldPlats){
+    if(p.fp !== 'seat' || !p.mv) continue; const key = Math.round(p.bx) + ',' + Math.round(p.by) + ',' + p.mv.ax + ',' + p.mv.ay; if(seen.has(key)) continue; seen.add(key);
+    const cx = p.bx + p.w/2, m = p.mv; c.strokeStyle = '#3b3128'; c.lineWidth = 4; c.beginPath();
+    for(let i = 0; i <= 64; i++){ const a = i/64*2*Math.PI, x = cx + m.ax*Math.sin(a), y = p.by + m.ay*Math.sin(a + (m.ph2 || 0)) - 140; if(!i) c.moveTo(x, y); else c.lineTo(x, y); }
+    c.closePath(); c.stroke();
+    for(const e of [[cx - m.ax, p.by - m.ay*Math.sin(m.ph2 || 0) - 140], [cx + m.ax, p.by + m.ay*Math.sin(m.ph2 || 0) - 140]]){ c.fillStyle = '#5a5f68'; c.beginPath(); c.arc(e[0], e[1], 16, 0, 7); c.fill(); c.strokeStyle = FPC.line; c.lineWidth = 3; c.stroke(); }
+  }
+}
+function fpDrawPlats(){
+  const c = ctx, Y = fpInfo(), t = hazardT; if(!Y) return;
+  const M = fpMech();
+  c.save(); c.lineJoin = 'round';
+  fpDrawBack(c, Y, t); fpDrawDeco(c, Y, t, M);
+  for(const p of worldPlats){
+    const k = p.fp; if(!k) continue;
+    if(k === 'icestep' || k === 'ice' || k === 'shelfice' || k === 'lane' || k === 'stream' || k === 'duck' || k === 'summit' || k === 'river' || k === 'fall' || k === 'floe') fpIceBlock(c, p, k);
+    else if(k === 'thin'){
+      if(p.ghost){ c.globalAlpha = 0.35; fpIceBlock(c, p, k); c.globalAlpha = 1; continue; }
+      c.fillStyle = FPC.thin; c.fillRect(p.x, p.y, p.w, p.h); c.fillStyle = 'rgba(255,255,255,0.35)'; c.fillRect(p.x, p.y, p.w, 5);
+      c.strokeStyle = p.crk ? '#ffffff' : 'rgba(30,60,90,0.75)'; c.lineWidth = p.crk ? 4 : 2; c.beginPath();
+      for(let x = p.x + 18; x < p.x + p.w - 10; x += 36){ c.moveTo(x, p.y + 2); c.lineTo(x + 9 + (p.crk ? Math.sin(t*2.5)*3 : 0), p.y + p.h*0.5); c.lineTo(x - 7, p.y + p.h - 2); } c.stroke();
+      c.strokeStyle = 'rgba(30,60,90,0.9)'; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, p.h);
+    }
+    else if(k === 'cliff' && p.y < 0){ const q = { x:p.x, y:p.y + p.h - 560, w:p.w, h:560 }; fpRockBlock(c, q, ''); for(let s = 0; s < 4; s++){ c.globalAlpha = 0.6 - s*0.15; c.fillStyle = FPC.rock; c.fillRect(p.x, q.y - 160*(s + 1), p.w, 160); } c.globalAlpha = 1; }
+    else if(k === 'rock' || k === 'island' || k === 'lodge' || k === 'cliff') fpRockBlock(c, p, '');
+    else if(k === 'drift2'){ c.fillStyle = FPC.snow2; c.fillRect(p.x, p.y, p.w, p.h); c.fillStyle = FPC.snow; c.fillRect(p.x - 3, p.y - 6, p.w + 6, 14); c.strokeStyle = 'rgba(90,140,180,0.8)'; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, p.h); }
+    else if(k === 'crate' && p.solid){ c.fillStyle = FPC.wood; c.fillRect(p.x, p.y, p.w, p.h); c.strokeStyle = 'rgba(60,40,20,0.7)'; c.lineWidth = 3; for(let y = p.y; y < p.y + p.h - 2; y += 55){ for(let x = p.x; x < p.x + p.w - 2; x += 55){ c.strokeRect(x, y, Math.min(55, p.x + p.w - x), Math.min(55, p.y + p.h - y)); } } c.fillStyle = FPC.snow; c.fillRect(p.x - 2, p.y - 5, p.w + 4, 9); c.strokeStyle = FPC.line; c.lineWidth = 4; c.strokeRect(p.x, p.y, p.w, p.h); }
+    else if(k === 'lift' && p.mv){ c.strokeStyle = '#3b3128'; c.lineWidth = 3; c.beginPath(); c.moveTo(p.x + 14, p.y); c.lineTo(p.x + 14, p.by - p.mv.ay - 40); c.moveTo(p.x + p.w - 14, p.y); c.lineTo(p.x + p.w - 14, p.by - p.mv.ay - 40); c.stroke(); c.fillStyle = FPC.wood; c.fillRect(p.x, p.y, p.w, 16); c.fillStyle = 'rgba(255,255,255,0.4)'; c.fillRect(p.x, p.y, p.w, 4); c.strokeStyle = '#3b3128'; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, 16); c.fillStyle = '#5a5f68'; c.beginPath(); c.arc(p.x + p.w/2, p.by - p.mv.ay - 40, 14, 0, 7); c.fill(); c.stroke(); }
+    else if(k === 'cave') fpRockBlock(c, p, 'cave');
+    else if(k === 'snow' || k === 'wall'){ c.fillStyle = FPC.snow; c.fillRect(p.x, p.y, p.w, p.h); c.fillStyle = FPC.snow2; c.fillRect(p.x, p.y + p.h*0.55, p.w, p.h*0.45); c.strokeStyle = 'rgba(90,140,180,0.7)'; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, p.h); if(k === 'wall'){ c.strokeStyle = 'rgba(90,140,180,0.45)'; c.lineWidth = 2; for(let y = p.y + 40; y < p.y + p.h; y += 45){ c.beginPath(); c.moveTo(p.x, y); c.lineTo(p.x + p.w, y); c.stroke(); } } }
+    else if(k === 'igloo'){ c.fillStyle = FPC.snow; c.fillRect(p.x, p.y, p.w, p.h); c.strokeStyle = 'rgba(90,140,180,0.7)'; c.lineWidth = 2; for(let y = p.y + 28; y < p.y + p.h; y += 30){ c.beginPath(); c.moveTo(p.x, y); c.lineTo(p.x + p.w, y); c.stroke(); for(let x = p.x + ((y/30 | 0) % 2 ? 20 : 45); x < p.x + p.w; x += 50){ c.beginPath(); c.moveTo(x, y - 30); c.lineTo(x, y); c.stroke(); } } c.strokeStyle = 'rgba(90,140,180,0.9)'; c.lineWidth = 4; c.strokeRect(p.x, p.y, p.w, p.h); }
+    else if(k === 'cabin' || k === 'cabinw' || k === 'hut'){ c.fillStyle = FPC.wood2; c.fillRect(p.x, p.y, p.w, p.h); c.strokeStyle = 'rgba(0,0,0,0.3)'; c.lineWidth = 2; for(let y = p.y + 12; y < p.y + p.h; y += 14){ c.beginPath(); c.moveTo(p.x, y); c.lineTo(p.x + p.w, y); c.stroke(); } c.fillStyle = FPC.snow; c.fillRect(p.x - 4, p.y - 9, p.w + 8, 13); c.strokeStyle = FPC.line; c.lineWidth = 4; c.strokeRect(p.x, p.y, p.w, p.h); if(k === 'hut'){ c.fillStyle = FPC.wood2; c.fillRect(p.x + 10, p.y + p.h, 7, 330); c.fillRect(p.x + p.w - 17, p.y + p.h, 7, 330); c.fillStyle = '#f2c65a'; c.beginPath(); c.arc(p.x + p.w/2, p.y + p.h + 18, 7, 0, 7); c.fill(); } }
+    else if(k === 'stone' || k === 'stone2'){ const hh = k === 'stone' ? 110 : 70; c.fillStyle = '#a7b0bd'; c.fillRect(p.x, p.y, p.w, hh); c.fillStyle = 'rgba(255,255,255,0.45)'; c.fillRect(p.x, p.y, p.w, 10); c.fillStyle = '#c0462f'; c.fillRect(p.x + p.w*0.3, p.y - 18, p.w*0.4, 18); c.strokeStyle = FPC.line; c.lineWidth = 4; c.strokeRect(p.x, p.y, p.w, hh); c.beginPath(); c.arc(p.x + p.w/2, p.y + hh*0.55, hh*0.28, 0, 7); c.stroke(); }
+    else if(k === 'seat'){ c.fillStyle = FPC.wood; c.fillRect(p.x, p.y, p.w, 12); c.fillStyle = 'rgba(255,255,255,0.35)'; c.fillRect(p.x, p.y, p.w, 3); c.strokeStyle = '#3b3128'; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, 12); c.beginPath(); c.moveTo(p.x + p.w/2, p.y); c.lineTo(p.x + p.w/2, p.y - 140); c.stroke(); }
+    else {   // soft ledges: a plank or a rock ledge with snow on top
+      const wood = (k === 'dock' || k === 'crate'), th = 22, drift = (k === 'drift');
+      c.fillStyle = wood ? FPC.wood : drift ? FPC.snow2 : FPC.rock; c.fillRect(p.x, p.y, p.w, th); c.fillStyle = wood ? FPC.wood2 : FPC.rock2; c.fillRect(p.x, p.y + th - 6, p.w, 6);
+      c.fillStyle = FPC.snow; c.fillRect(p.x - 2, p.y - 5, p.w + 4, 9);
+      if(wood){ c.strokeStyle = 'rgba(0,0,0,0.3)'; c.lineWidth = 2; for(let x = p.x + 40; x < p.x + p.w; x += 40){ c.beginPath(); c.moveTo(x, p.y); c.lineTo(x, p.y + th); c.stroke(); } }
+      c.strokeStyle = FPC.line; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, th);
+    }
+  }
+  // V3's ice glow: a pale ring under each fighter standing on ice (the lights cut it through the veil too)
+  if(Y.f.night){ for(const f of fighters){ if(f.dead || !fpOnIce(f)) continue; c.fillStyle = 'rgba(190,235,255,0.35)'; c.beginPath(); c.ellipse(f.x, f.y + f.r + 2, 54, 9, 0, 0, 7); c.fill(); } }
+  c.restore();
+}
+function fpVeil(o, hw, hh, m){
+  const Y = fpInfo(); if(!Y) return;
+  if(Y.f.night){ const L = fpNight(hazardT), an = FPK.night*L; if(an > 0.01){ o.fillStyle = 'rgba(5,9,26,' + an.toFixed(3) + ')'; o.fillRect(0, 0, hw, hh); } }
+  o.fillStyle = 'rgba(4,8,24,' + FPK.caveDark + ')';
+  for(const r of Y.zones.cave){ const x = (m.a*r[0] + m.c*r[1] + m.e)*0.5, y = (m.b*r[0] + m.d*r[1] + m.f)*0.5; o.fillRect(x, y, r[2]*Math.abs(m.a)*0.5, r[3]*Math.abs(m.d)*0.5); }
+}
+function fpLights(o, m){
+  const Y = fpInfo(); if(!Y) return;
+  const cut = (wx, wy, rad, a)=>{
+    const x = (m.a*wx + m.c*wy + m.e)*0.5, y = (m.b*wx + m.d*wy + m.f)*0.5, r = rad*Math.hypot(m.a, m.b)*0.5;
+    if(x < -r || y < -r || x > o.canvas.width + r || y > o.canvas.height + r) return;
+    const g = o.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)'); o.fillStyle = g; o.fillRect(x - r, y - r, r*2, r*2);
+  };
+  for(const d of Y.deco) if(d[0] === 'fire') cut(d[1], d[2] - 30, 320, 0.8);
+  const cab = worldPlats.find(p=>p.fp === 'cabinw'); if(cab) cut(cab.x + cab.w + 40, cab.y + 200, 200, 0.55);   // the cabin's window
+  if(Y.f.night) for(const f of fighters){ if(!f.dead && fpOnIce(f)) cut(f.x, f.y + f.r, 95, 0.4); }   // the ice glows under a slider: its trail shows
+}
+// ============================================================
 //  STAGES A (2026-11-08): three stages with shapes of their own. DREAM ISLAND: floating islands (solid blocks) over the sea, no ground, blast
 //  lines all round. THE TLC: a steel bowl, solid walls with stepped slopes rising up both sides to a low flat middle with a hatch in it; no
 //  side KO (a launch bounces off the wall, stgWallHit), out of the top (a lower top line, koT) or down the hatch. YOYLE NEEDLE: a shaft one
@@ -28979,6 +29587,7 @@ function spawnItem(){
   if(BASKET) return;   // REACH THE BASKET (an event twist): no crate falls from the sky; the basket hands them out (basketStep)
   if(MCAVE && MCAVE.on){ mcSpawnItem(); return; }   // MOON CAVES: on a floor, never from space
   if(DRM){ diSpawnItem(); return; }   // DREAM ISLAND TEAMS: mostly on the drifting islands
+  if(FP){ fpSpawnItem(); return; }   // FROZEN POND TEAMS: on a ledge, a dock, a roof or the rock island
   if(YN){ ynSpawnItem(); return; }   // YOYLE NEEDLE TEAMS: on a shelf, a deck or a block of the needle
   const gy = groundY();
   const x = floorSafeX(120 + Math.random()*(WW-240), 50);   // (REAL EDGES: it comes down over the floor, not a gap)
@@ -70500,6 +71109,7 @@ function step(){
   if(STG) stgStep();   // STAGES A: Yoyle Needle's ledges move, carrying who stands on them (null elsewhere)
   if(DRM) diStep();   // DREAM ISLAND TEAMS: the planks crack, break and mend (null elsewhere)
   if(YN) ynStep();   // YOYLE NEEDLE TEAMS: levers, vents, wind, berries, magnets and the thread (null elsewhere)
+  if(FP) fpStep();   // FROZEN POND TEAMS: thin ice, icicles, the campfire, the stones and the gusts (null elsewhere)
   clockTicks();   // Clock's Natural Time, ticking through hit freezes too (EVENT FIGHTERS: CLOCK)
   if(rainOn()) rainTwistStep();   // THE RAIN (an event twist): a shower's sound as it starts
   if(TOURNEY_WATCHING && !KOC.over) tourneyLiveTick();   // (not once the last KO decided it: the fight's clock is done)
@@ -71343,10 +71953,12 @@ function step(){
     if(DIGC) digcHold(f);   // THE DIG: a fighter out of the dirt keeps to the arena's floor while the rest dig
     mtCling(f, inp);
     if(YN) ynFighter(f, inp);   // YOYLE NEEDLE TEAMS: the lever, the zipline, the wall pipes
+    if(FP) fpFighter(f, inp);   // FROZEN POND TEAMS: the campfire, a hit that shakes an icicle
     if(f.onground){ f._wallUsed = null; f._clingT = 0; f._ff = false; f._airDash = false; f._hyperT = 0; }   // landing refreshes the wall jump and the air dash
     // land-squash: airborne last frame, grounded now, coming down with real speed → brief cartoony squat
     if(_wasAir && f.onground) f._landT = hazardT;
     if(_wasAir && f.onground && _impactVY>5){ f._landSquash=6; }
+    if(FP) fpLand(f, _wasAir, _impactVY);   // FROZEN POND TEAMS: a long drop hurts (not on snow), a hard landing cracks thin ice
     if(DRM) diLand(f, _wasAir, _impactVY);   // DREAM ISLAND TEAMS: a long drop hurts, and a hard landing can break a plank
     if(f._landSquash>0) f._landSquash--;   // land-squash timer decays over the steps after touchdown (it was in drawFighter, so a faster screen squashed for less time)
     // SLAM, THEN HIT: a ground move used in the air drops the fighter fast and goes off on landing (David's
@@ -98747,9 +99359,10 @@ function startEventMatch(){
 function returnEventLoan(){
   EVENT_RUN = null; MATCH_TWIST = null; BASKET = null; JAWB = null; BERRIES = null; STAIRS = null;
   CONTEST = null;   // A CONTEST: over with the match (what each fighter held goes with the fighters)
+  if(FP) SETTINGS.fpSeed = ((SETTINGS.fpSeed | 0) + 1) & 7;   // FROZEN POND TEAMS: the next layout
   if(YN) SETTINGS.yoyleSeed = ((SETTINGS.yoyleSeed | 0) + 1) & 3;   // YOYLE NEEDLE TEAMS: the next layout
   if(DRM) SETTINGS.dreamSeed = ((SETTINGS.dreamSeed | 0) + 1) & 3;   // DREAM ISLAND TEAMS: the next match with these settings is the next layout
-  STICKY = null; SPLEEF = null; DIGC = null; STG = null; DRM = null; YN = null;   // STICKY PILLARS: nobody is stuck after the match (the stuck fighters themselves go with the fighters); THE DIG: its field goes with the match
+  STICKY = null; SPLEEF = null; DIGC = null; STG = null; DRM = null; YN = null; FP = null;   // STICKY PILLARS: nobody is stuck after the match (the stuck fighters themselves go with the fighters); THE DIG: its field goes with the match
   const L = EVENT_LOAN; if(!L) return;
   EVENT_LOAN = null;
   SETTINGS.mode = L.mode; SETTINGS.count = L.count; SETTINGS.stocks = L.stocks; SETTINGS.teamKey = L.teamKey; SETTINGS.itemRate = L.itemRate;
@@ -99819,8 +100432,8 @@ function stbSync(){
   STB.k = (s && STB_IDS[s.id] && !CUSTOM_LEVEL && SETTINGS.mode !== 'ctf' && !SPLEEF && !DIGC && !ONEFIGHT.active && !COBSFIGHT.active && !RACE.active && !(MCAVE && MCAVE.on) && !BOSS_ARENA && !(typeof TUT !== 'undefined' && TUT && TUT.active)) ? s.id : null;
   return STB.k;
 }
-function stbFric(f){ return (STB.k === 'ice' && (!f || f.y + f.r >= groundY() - 2)) ? ICE_FRIC : FRICTION; }   // (f given: ice on the pond's own floor only, not on the rims or the ledges)
-function stbRunK(f){ return (STB.k === 'ice' && f.onground && f.y + f.r >= groundY() - 2) ? ICE_RUN : 1; }
+function stbFric(f){ if(FP_VIS) return (f && fpOnIce(f)) ? ICE_FRIC : FRICTION; return (STB.k === 'ice' && (!f || f.y + f.r >= groundY() - 2)) ? ICE_FRIC : FRICTION; }   // (f given: ice on the pond's own floor only, not on the rims or the ledges)
+function stbRunK(f){ if(FP_VIS) return fpOnIce(f) ? ICE_RUN : 1; return (STB.k === 'ice' && f.onground && f.y + f.r >= groundY() - 2) ? ICE_RUN : 1; }
 function stbLedgeK(){ return STB.k === 'ice' ? ICE_LOOK : 3; }
 // Once a step (from step, after the twists), the host's: the clock-driven parts.
 function stbStep(){
@@ -99982,7 +100595,7 @@ function drawStickyPins(){
 // The twist is the match's MATCH_TWIST, so nothing is kept between matches but the offscreen canvas.
 const DARKK = { r:220, see:320, far:0.12, tint:'rgba(5,9,22,0.7)' };
 const DARKFX = { cv:null, c:null, me:null, q:null };
-function darkOn(){ return DRM_VIS || YN_VIS || (!!MATCH_TWIST && (MATCH_TWIST === 'dark' || twistOn('dark'))); }   // (DREAM ISLAND TEAMS: the night and the undergrounds use the same veil, diVeil)
+function darkOn(){ return DRM_VIS || YN_VIS || (FP_VIS && fpDark()) || (!!MATCH_TWIST && (MATCH_TWIST === 'dark' || twistOn('dark'))); }   // (DREAM ISLAND TEAMS: the night and the undergrounds use the same veil, diVeil)
 function darkSeeK(f){
   const me = DARKFX.me;
   if(!me || me.dead || f === me || f.team === me.team) return 1;
@@ -99996,6 +100609,10 @@ function darkSeeK(f){
   }
   if(YN_VIS){   // YOYLE NEEDLE TEAMS: a foe fades in the dark machine room, and everywhere in the night shift's night
     const Y = ynInfo(); let dk = 0; if(Y){ for(const r of Y.zones.dark) if(f.x >= r[0] && f.x <= r[0] + r[2] && f.y >= r[1] && f.y <= r[1] + r[3]) dk = 1; if(ynIsNight(hazardT)) dk = Math.max(dk, ynNight(hazardT)); }
+    return 1 - (1 - k)*dk;
+  }
+  if(FP_VIS){   // FROZEN POND TEAMS: a foe fades in the caves, and everywhere in the blizzard night
+    const Y = fpInfo(); let dk = 0; if(Y){ for(const r of Y.zones.cave) if(f.x >= r[0] && f.x <= r[0] + r[2] && f.y >= r[1] && f.y <= r[1] + r[3]) dk = 1; if(fpIsNight(hazardT)) dk = Math.max(dk, fpNight(hazardT)); }
     return 1 - (1 - k)*dk;
   }
   return k;
@@ -100017,7 +100634,7 @@ function darkDraw(m){
     if(D.cv.width !== hw || D.cv.height !== hh){ D.cv.width = hw; D.cv.height = hh; }
     const o = D.c, rad = DARKK.r*Math.hypot(m.a, m.b)*0.5;
     o.setTransform(1, 0, 0, 1, 0, 0); o.globalCompositeOperation = 'source-over';
-    o.clearRect(0, 0, hw, hh); if(DRM_VIS) diVeil(o, hw, hh, m); else if(YN_VIS) ynVeil(o, hw, hh, m); else { o.fillStyle = DARKK.tint; o.fillRect(0, 0, hw, hh); }
+    o.clearRect(0, 0, hw, hh); if(DRM_VIS) diVeil(o, hw, hh, m); else if(YN_VIS) ynVeil(o, hw, hh, m); else if(FP_VIS) fpVeil(o, hw, hh, m); else { o.fillStyle = DARKK.tint; o.fillRect(0, 0, hw, hh); }
     o.globalCompositeOperation = 'destination-out';
     for(const f of fighters){
       if(f.dead) continue;
@@ -100026,7 +100643,7 @@ function darkDraw(m){
       g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.5, 'rgba(0,0,0,0.85)'); g.addColorStop(1, 'rgba(0,0,0,0)');
       o.fillStyle = g; o.fillRect(x - rad, y - rad, rad*2, rad*2);
     }
-    if(DRM_VIS) diLights(o, m); else if(YN_VIS) ynLights(o, m);
+    if(DRM_VIS) diLights(o, m); else if(YN_VIS) ynLights(o, m); else if(FP_VIS) fpLights(o, m);
     o.globalCompositeOperation = 'source-over';
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(D.cv, 0, 0, cw, ch); ctx.restore();
   }catch(e){}
@@ -105468,6 +106085,7 @@ function brainOut(f, inp, B, L, t, fight){
   if(STG) stgBrain(f, inp);   // STAGES A: not off the end of an island or a ledge into the drop
   if(DRM) diBrain(f, inp);   // DREAM ISLAND TEAMS: not into a gap or off an island, a hop over a missing plank
   if(YN) ynBrain(f, inp);   // YOYLE NEEDLE TEAMS: the route graph (rooms, doors, hatches, towers, movers), the berries and the levers
+  if(FP) fpBrain(f, inp);   // FROZEN POND TEAMS: the route graph over the ponds, floes and tow seats; brakes on ice
   return inp;
 }
 // CPUS AND THE EFFECT ZONES (the level creator review, 2026-10-26: CPUs stood in damage zones and walked into bounce zones; they could not see zones at all).
@@ -107035,10 +107653,11 @@ function draw(){
                       theme: SA.on ? stage.id : null };   // the ten normal stages' own platform looks (STAGE ART); art only, the geometry is the platform's own
   if(STG) stgDraw();   // STAGES A: the shaft's or the box's inside, behind the ledges
   if(DRM_VIS) diDrawSea();   // DREAM ISLAND TEAMS: the sea under the islands
-  if(SETTINGS.mode==='ctf') ctfDrawWorld(); else for(const p of worldPlats) if(!p.dg && !p.di && !p.yn) paintPlat(ctx, p, platStyle);   // Capture the Flag paints its map from cached tiles (THE DIG paints its dirt itself: drawDigc)
+  if(SETTINGS.mode==='ctf') ctfDrawWorld(); else for(const p of worldPlats) if(!p.dg && !p.di && !p.yn && !p.fp) paintPlat(ctx, p, platStyle);   // Capture the Flag paints its map from cached tiles (THE DIG paints its dirt itself: drawDigc)
   if(STG) stgDrawOver();   // STAGES A: Dream Island's grass caps
   if(DRM_VIS) diDrawPlats();   // DREAM ISLAND TEAMS: islands, planks (cracked, ghost) and the drifting islands
   if(YN_VIS) ynDrawPlats();   // YOYLE NEEDLE TEAMS: the needle's inside, its machinery and its platforms
+  if(FP_VIS) fpDrawPlats();   // FROZEN POND TEAMS: the mountainside, its three ponds, camps and tow
   if(DRM_VIS) diDrawWeather();   // DREAM ISLAND TEAMS: leaves in a gust, rain
   drawImpactScars();          // impact's floor scars, on the surfaces they were made on
   drawArenaHazard('under');   // a boss arena's hazard, under the shots and the fighters (BOSS_ARENA_HAZARD)
@@ -107237,7 +107856,7 @@ function draw(){
     ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fill(); }
   ctx.globalAlpha=1; ctx.lineCap='butt';
   if(rainOn()) drawRainStreaks();   // THE RAIN (an event twist): streaks across the view while it rains
-  if(twistOn('gusts')) drawGustStreaks(); else if(STB.k === 'wind') drawGustStreaks(gustState(WGUST));   // (STAGES B: Windy Heights's gusts, the same art)   // GUSTS (an event twist): leaves and paper blowing in, then across the view while a gust blows
+  if(twistOn('gusts')) drawGustStreaks(); else if(STB.k === 'wind') drawGustStreaks(gustState(WGUST)); else if(FP_VIS && fpInfo() && fpInfo().f.gust) drawGustStreaks(gustState(WGUST));   // (STAGES B: Windy Heights's gusts, the same art)   // GUSTS (an event twist): leaves and paper blowing in, then across the view while a gust blows
   drawImpactFx();            // impact's dust rings and debris
   drawArenaHazard('over');   // and a boss arena's hazard, over the fighters
   drawCosKoFx();   // cosmetic KO bursts (see WIN TOKENS): drawn from their own list, never from `particles`
@@ -122809,7 +123428,7 @@ function worldGeo(){
     floors: floors.map(fl=>({level:fl.level,y:Math.round(fl.y),x:Math.round(fl.x),w:Math.round(fl.w)})),
     // `solid` was missing here once, so on a client every stone landmark rendered as a thin ledge; `field` keeps the
     // client's minimap filtering out the scatter grid the way the host's does; `rot` is paintPlat's tilt.
-    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team,ib:p.ib,sc:p.sc,ar:p.ar,lh:p.lh,bl:p.bl,ss:p.ss,th:p.th,sh:p.sh,wo:p.wo,hg:p.hg,blk:p.blk,ix:p.ix,pool:p.pool,trap:p.trap,oi:p.oi,yn:p.yn,yd:p.yd})),
+    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team,ib:p.ib,sc:p.sc,ar:p.ar,lh:p.lh,bl:p.bl,ss:p.ss,th:p.th,sh:p.sh,wo:p.wo,hg:p.hg,blk:p.blk,ix:p.ix,pool:p.pool,trap:p.trap,oi:p.oi,yn:p.yn,yd:p.yd,fp:p.fp,fd:p.fd,ice:p.ice})),
     // `zone` and `wall` ride along so a client DRAWS the team's safe zone where the host plays it: without them it fell back
     // to the old column round the base, which is nowhere near a side-wall band (see wallBand).
     bases: bases.map(b=>({team:b.team,x:Math.round(b.x),y:Math.round(b.y),w:b.w,h:b.h,color:b.color,
@@ -122824,7 +123443,7 @@ function worldGeo(){
 function worldGeoKey(){
   let h = (WW*31 + WH) | 0;
   const mix = (v)=>{ h = (Math.imul(h, 33) + (v|0)) | 0; };
-  for(const p of worldPlats){ mix(p.w); mix(p.h); mix(p.solid?1:0); mix((p.rot||0)*100); if(p.di){ mix(p.ghost?1:0); mix(p.crk?1:0); if(p.ss){ mix(p.ss[0]); mix(p.ss[1] + 1); mix(p.ss[2]); } } }   // (ONLINE LAG: not x and y -- a platform that moves rides as an mv row, not as a whole new geometry every frame)
+  for(const p of worldPlats){ mix(p.w); mix(p.h); mix(p.solid?1:0); mix((p.rot||0)*100); if(p.di || p.fp){ mix(p.ghost?1:0); mix(p.crk?1:0); if(p.ss){ mix(p.ss[0]); mix(p.ss[1] + 1); mix(p.ss[2]); } } }   // (ONLINE LAG: not x and y -- a platform that moves rides as an mv row, not as a whole new geometry every frame)
   for(const fl of floors){ mix(fl.x); mix(fl.y); mix(fl.w); }
   for(const b of bases){ mix(b.x); mix(b.y); mix(b.w); }
   return stage.id + ':' + worldPlats.length + ':' + floors.length + ':' + bases.length + ':' + h + (MCAVE && MCAVE.on && MCAVE.v === 4 && MCAVE.moon ? ':' + MCAVE.moon.id : '');   // (MOON CAVES v4, V8b: the moon's number)
@@ -123104,6 +123723,7 @@ function serializeState(withGeo){
   if(DIG) s.dg = digPack();   // THE DIG FLOOR: the holes, in every snapshot (a snapshot that is dropped for a newer one must not take a hole with it)
   if(STAIRS) s.sq = stairsPack();   // A RISING STAIRCASE: where the steps are and when each starts to form (the whole ones ride the geometry)
   if(YN) s.yq = ynPack();   // YOYLE NEEDLE TEAMS: levers pulled and berries eaten (the rest is the clock's)
+  if(FP) s.fq = fpPack();   // FROZEN POND TEAMS: the campfire's rest, the icicles, the warm boots (thin ice rides the geometry; floes, tow and stones are the clock's)
   if(BERRIES) s.bq = berriesPack();   // BERRIES RAIN: the seed the schedule was dealt from and the berries eaten lately (the rest is the clock's)
   if(BAR) s.br = barPack();   // THE BAR: the span it was cut from, in every snapshot; the strips are the clock's (s.t), so nothing else need be sent
   if(withGeo !== false) s.geo = worldGeo();   // called bare, it is a whole snapshot; broadcastState decides when to send the geometry
@@ -123174,12 +123794,13 @@ function applySnapshot(s){
   const st=STAGES.find(x=>x.id===s.stage); if(st) stage=st;
   SETTINGS.mode=s.mode;
   const geo = s.geo || (s.worldPlats ? s : null);   // (before the geometry was split out, it sat at the top level)
-  if(geo){ floors=geo.floors||[]; worldPlats=geo.worldPlats||[]; DRM_VIS = worldPlats.some(p=>p.di); YN_VIS = worldPlats.some(p=>p.yn); DRM_V = diVarFromGeo(); DRM_GH = worldPlats.some(p=>p.ghost); bases=(geo.bases||[]).map(b=>({...b})); mcNetGeo(geo.moon); NET_VIEW.geoBase = worldPlats.map(p=>[p.x, p.y]); }   // (MOON CAVES: the host's disc, built here)
+  if(geo){ floors=geo.floors||[]; worldPlats=geo.worldPlats||[]; DRM_VIS = worldPlats.some(p=>p.di); YN_VIS = worldPlats.some(p=>p.yn); FP_VIS = worldPlats.some(p=>p.fp); DRM_V = diVarFromGeo(); DRM_GH = worldPlats.some(p=>p.ghost); bases=(geo.bases||[]).map(b=>({...b})); mcNetGeo(geo.moon); NET_VIEW.geoBase = worldPlats.map(p=>[p.x, p.y]); }   // (MOON CAVES: the host's disc, built here)
   else if(NET_VIEW.geoBase && NET_VIEW.geoBase.length === worldPlats.length) for(let i = 0; i < worldPlats.length; i++){ worldPlats[i].x = NET_VIEW.geoBase[i][0]; worldPlats[i].y = NET_VIEW.geoBase[i][1]; }   // ONLINE LAG: back where the geometry had them, then...
   if(Array.isArray(s.mv)) for(const r of s.mv){ const p = worldPlats[r[0] | 0]; if(p){ p.x = +r[1]; p.y = +r[2]; } }   // ...the ones the host says have moved (Yoyle Needle's ledges), where it has them
   if(s.dg) digNetIn(s.dg);   // THE DIG FLOOR: the host's holes, so this floor is the host's floor of this very frame
   if(s.sq) stairsNetIn(s.sq);   // A RISING STAIRCASE: the host's steps, for the picture (the whole ones are in the host's geometry above)
   if(s.yq) ynNetIn(s.yq);   // YOYLE NEEDLE TEAMS: the host's levers and bushes
+  if(s.fq) fpNetIn(s.fq);   // FROZEN POND TEAMS: the host's campfire, icicles and warm boots
   if(s.bq) berriesNetIn(s.bq);   // BERRIES RAIN: the host's seed and eaten berries, at the host's own clock (hazardT = s.t, above)
   if(s.br) barNetIn(s.br);
   stbNetIn();   // STAGES B: Shifting Isles' floor and platforms at the host's own clock (nothing on any other stage)   // THE BAR: the strips at the host's own clock (hazardT = s.t, above), so this floor is the host's floor of this very frame
@@ -123549,7 +124170,7 @@ function netPredRun(a, pr, to, team, sq){   // sq: the Spongys on the stage (SQU
     const vx0 = Math.abs(P.vx), mv = P.g ? k[0] : k[1];
     if(L){ P.vx -= mv; P.face = -1; }
     if(R){ P.vx += mv; P.face = 1; }
-    if(!L && !R && P.g) P.vx *= (P.ice > 0 ? 0.99 : stbFric());
+    if(!L && !R && P.g) P.vx *= (P.ice > 0 ? 0.99 : stbFric(FP_VIS ? P : undefined));
     if(P.ice > 0) P.ice--;
     let cap = P.g ? k[2] : k[3];
     if(P.sp) cap *= SPRINT.k;   // SPRINT: 1.4 times the run's cap
