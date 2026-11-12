@@ -24419,6 +24419,7 @@ function setupWorld(){
   SPLEEF = null;       // SPLEEF: built by spleefBuildWorld below, for the one event match that has it
   DRM = null; DRM_VIS = false; DRM_GH = false; DRM_V = -1;   // DREAM ISLAND TEAMS: built by diBuild below, for Teams on Dream Island only
   YN = null; YN_VIS = false;   // YOYLE NEEDLE TEAMS: built by ynBuild below, for Teams on Yoyle Needle only
+  SI = null; SI_VIS = false;   // SHIFTING ISLES TEAMS: built by siBuild below, for Teams on Shifting Isles only
   STG = null;          // STAGES A: built by stgBuild below, for The TLC and Yoyle Needle in a plain FFA match
   DIGC = null;         // THE DIG: built by digcBuildWorld below, for the one event match that has it
   camAng = 0;
@@ -24429,6 +24430,7 @@ function setupWorld(){
   if(ONEFIGHT.active || COBSFIGHT.active){ buildOneArena(); return; }   // One's arena, and Steve Cobs's: the teams map without its walls (see buildOneArena)
   if(BOSSRUSH.alg && ALGRUSH.run){ stage = algStage(); if(algBuildBig()) return; }   // Algebralien Rush: its own stage; the big one (rush M3, algBuildBig) builds the whole world and is done
   if(SETTINGS.mode === 'teams' && (MCAVE_DEV || MCAVE_OPEN) && stage && stage.layout === 'disc'){ buildMoonCaves(); return; }   // MOON CAVES (while it is built: MCAVE_DEV only, MCAVE_OPEN once released; Teams only)
+  if(siWanted()){ siBuild(); return; }   // SHIFTING ISLES TEAMS: the Faultline (Teams on Shifting Isles only)
   if(ynWanted()){ ynBuild(); return; }   // YOYLE NEEDLE TEAMS: the inside of the giant needle (Teams on Yoyle Needle only)
   if(diWanted()){ diBuild(); return; }   // DREAM ISLAND TEAMS: its own islands-and-bridges map (Teams on Dream Island only)
   if(RACE.active){ buildRaceLane(); return; }       // RUNNING!: the Red Line Game's lane (see buildRaceLane)
@@ -27037,6 +27039,471 @@ function ynLights(o, m){
 }
 
 // ============================================================
+//  SHIFTING ISLES, TEAMS: THE FAULTLINE (2026-11-12; design reports/teams-maps-next/shifting-and-windy.md)
+//  A broken desert mesa standing on a fault. Rock PLATES slide along the fault once a minute between two docked places: in form A they dock LOW and make one long
+//  causeway across the middle (the Keystone is its centre); in form B the causeway pulls apart into a RIFT (the Undercroft is its floor) and the plates dock HIGH, making
+//  a diamond (the high road) between the two high bases. Four bases, NOT mirrored, balanced by role: N1 the Watch Butte (top-left, tall and thin, a cave), N2 the Arch
+//  (top-right, a hollow under the arch), L1 the Quarry (bottom-left, wide and stepped, a cave with a heal spring), L2 the Sunken Temple (bottom-right, rooms with walls).
+//  The Hourglass stands in the middle (its sand is the shift timer). Everything that moves is a pure function of the match clock (hazardT), so a guest sees what the host
+//  plays (the moved plats ride the snapshot's s.mv like every other mover). Teams on Shifting Isles only (siWanted); hidden until the owner opens it.
+// ============================================================
+// SHIFTING ISLES TEAMS MAP: hidden until the owner opens it. SI_DEV (localStorage 'bfsi:sidev' = '1') is the owner's preview; while hidden, Teams on Shifting Isles plays the ordinary Teams map.
+const SI_TEAMS_OPEN = false;
+const SI_DEV = (function(){ try{ return localStorage.getItem('bfsi:sidev') === '1'; }catch(e){ return false; } })();
+const SIK = { k:0.75, period:3600, tell:180, slide:90, rise:130, fallCap:15, night:0.7, nightPeriod:10800, nightOn:0.6666 };
+let SI = null, SI_VIS = false;   // SI: this match's state (siBuild; null elsewhere); SI_VIS: paint its art (a guest too)
+function siWanted(){
+  return (SI_TEAMS_OPEN || SI_DEV) && SETTINGS.mode === 'teams' && !!(stage && stage.id === 'shift') && !CUSTOM_LEVEL && !TESTMODE.active && !(typeof TUT !== 'undefined' && TUT.active)
+    && !RACE.active && !ONEFIGHT.active && !COBSFIGHT.active;
+}
+function siVariant(){
+  if(SETTINGS.shiftVar >= 0 && SETTINGS.shiftVar <= 3 && SETTINGS.shiftVar != null) return SETTINGS.shiftVar | 0;
+  let h = 13; const s = [SETTINGS.teamKey || '', SETTINGS.count, SETTINGS.mapSize || '', SETTINGS.stocks, SETTINGS.shiftSeed | 0].join('|');
+  for(let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
+  return ((h >>> 3) + (SETTINGS.shiftSeed | 0)) & 3;
+}
+// the four variants: tilt (how far the diamond leans toward the Butte's side, design px), first (frames of the first form), flip (roles swapped left-right), night (LIGHTS OUT in the
+// last third of every 3 minutes), flood (the Undercroft is water, not quicksand), swap (the Oasis and the Shell swap effects), ferry2 (a second ferry replaces the stepping stones)
+const SIV = [
+  { name:'HIGH NOON',    tilt:0,   first:3600, flip:0, night:0, flood:0, swap:0, ferry2:0 },
+  { name:'AFTERSHOCK',   tilt:260, first:3600, flip:0, night:0, flood:0, swap:1, ferry2:1 },
+  { name:'LONG SHADOWS', tilt:0,   first:3600, flip:0, night:1, flood:1, swap:0, ferry2:0 },
+  { name:'MIRAGE',       tilt:0,   first:1800, flip:1, night:0, flood:0, swap:0, ferry2:0 },
+];
+function siSm(u){ u = u < 0 ? 0 : u > 1 ? 1 : u; return u*u*(3 - 2*u); }
+// where the shift is at frame t for a plate group g (0 west, 1 east; the east group runs half a minute ahead on Huge): form 0 A / 1 B, u frames since the last switch, p the dock progress 0 (A) .. 1 (B)
+function siShiftAt(t, g){
+  const Z = SI || siInfo() || { first:SIK.period, groups:0 }, first = Z.first, T = t + (g && Z.groups ? SIK.period/2 : 0), per = SIK.period;
+  let n = 0, u = T, left;
+  if(T >= first){ n = 1 + Math.floor((T - first)/per); u = (T - first) - (n - 1)*per; left = per - u; } else left = first - T;
+  const form = n % 2, s = n === 0 ? 1 : siSm(u/SIK.slide);
+  return { form, u, left, next:t + left, tell:left <= SIK.tell ? 1 - left/SIK.tell : 0, p:n === 0 ? 0 : (form ? s : 1 - s), moving:n > 0 && u < SIK.slide };
+}
+// the plate's anchor at dock progress p (0 = A .. 1 = B): the rise first, the slide after (so a plate never sweeps through the rock it docks beside); the Keystone's halves part last
+function siPlatePos(pl, p){
+  const a = pl.A, b = pl.B;
+  if(pl.kind === 'v') return [a[0] + (b[0] - a[0])*p, a[1] + (b[1] - a[1])*siSm(p)];
+  if(pl.kind === 'x') return [a[0] + (b[0] - a[0])*siSm(p), a[1] + (b[1] - a[1])*siSm(p)];
+  if(pl.kind === 'key') { const q = siSm((p - 0.55)/0.45); return [a[0] + (b[0] - a[0])*q, a[1]]; }
+  return [a[0] + (b[0] - a[0])*siSm((p - 0.4)/0.6), a[1] + (b[1] - a[1])*siSm(p/0.6)];
+}
+function siDesign(){   // the design size of this match (px at scale 1): the layout is drawn at ONE scale, bigger matches add content
+  const cnt = Math.max(4, Math.min(12, SETTINGS.count | 0 || 4)), ms = SETTINGS.mapSize || 'normal';
+  const baseW = cnt <= 4 ? 6000 : cnt <= 6 ? 6750 : cnt <= 8 ? 7500 : cnt <= 10 ? 8100 : 8700, baseH = cnt <= 6 ? 2850 : 3400;
+  const mw = { compact:0.9, normal:1, tall:1, huge:1.16 }[ms] || 1, mh = { compact:0.91, normal:1, tall:1.18, huge:1.35 }[ms] || 1;
+  return { DW:Math.max(5800, Math.round(baseW*mw)), DH:Math.round(baseH*mh), cnt, ms };
+}
+function siBuild(){
+  const K = SIK, tc = Math.max(2, Math.min(4, (SETTINGS.teamKey || '').split('v').filter(Boolean).length || 2)), v = siVariant(), V = SIV[v], D = siDesign(), DW = D.DW, DH = D.DH, cnt = D.cnt, ms = D.ms;
+  const k = K.k, S = (d)=>Math.round(d*k);
+  WW = S(DW); WH = S(DH);
+  camX = 0; camY = 0; floors = []; worldZones = []; spawnZones = []; bases = []; SIDE_ROOM = 0; FLOOR_SEGS = [];
+  const flip = V.flip, C = DW/2, P = [], movers = [], plates = [], deco = [];
+  // size content: tiers (extra shelf rows on every base), p2 (the roof plate), ferry, p5 (the vertical plate), groups (two fault groups), cairn (a high outer island)
+  const big = (ms === 'tall' ? 1 : 0) + (ms === 'huge' ? 2 : 0), tiers = (cnt >= 8 ? 1 : 0) + big, hasP2 = !(cnt <= 4 && ms === 'compact'), hasFerry = cnt >= 6, hasP5 = big >= 1, groups = ms === 'huge' ? 1 : 0, cairn = big >= 1;
+  const yH = Math.round(0.14*DH), yL = Math.round(0.60*DH), yU = Math.min(yL + 700, DH - 400);
+  const X = (dx)=>C + dx;
+  const mx = (x, w)=>{ const a = S(x), ww = Math.max(2, S(w)); return flip ? [WW - a - ww, ww] : [a, ww]; };   // mirrored x for the roles swap (V3)
+  const solid = (dx, y, w, h, kind, extra)=>{ const m = mx(X(dx), w), p = Object.assign({ x:m[0], y:S(y), w:m[1], h:Math.max(8, S(h)), solid:true, floor:0, si:kind }, extra || {}); P.push(p); return p; };
+  const soft = (dx, y, w, kind, extra)=>{ const m = mx(X(dx), w), p = Object.assign({ x:m[0], y:S(y), w:m[1], h:26, solid:false, floor:0, si:kind }, extra || {}); P.push(p); return p; };
+  const px1 = (dx)=>{ const a = S(X(dx)); return flip ? WW - a : a; };
+  const dec = (kind, dx, y, w, h, aux)=>{ const m = mx(X(dx), w || 0); deco.push([kind, m[0], S(y), m[1], S(h || 0), aux === undefined ? 0 : aux]); };
+  const zone = (type, dx, y, w, h, extra)=>{ const m = mx(X(dx), w); const z = Object.assign({ type, strength:1, x:m[0], y:S(y), w:m[1], h:S(h) }, extra || {}); worldZones.push(z); return z; };
+  // a zig-zag stair of soft ledges from yBot up to yTop inside [dx0, dx1] (each ledge overlaps the one below; no step over 105)
+  const chain = (dx0, dx1, yTop, yBot, kind, firstLeft)=>{ const n = Math.max(1, Math.ceil((yBot - yTop)/100)), st = (yBot - yTop)/n, w = Math.max(150, Math.round((dx1 - dx0)*0.62)); let left = firstLeft ? 1 : 0, last = null;
+    for(let i = 1; i <= n; i++){ last = soft(left ? dx0 : dx1 - w, Math.round(yBot - st*i), w, kind || 'ledge'); left = 1 - left; } return last; };
+  // a mover (a soft ledge on a line): flush at both ends by hand-set ax
+  const mover = (dx, y, w, mv, kind)=>{ const p = soft(dx, y, w, kind || 'shuttle'); p.bx = p.x; p.by = p.y; p.mvx = 0; p.mvy = 0; p.mv = { ax:S(mv.ax || 0), ay:S(mv.ay || 0), per:mv.per, ph:mv.ph || 0 }; movers.push(p);
+    if(mv.ax) deco.push(['rail', p.bx - p.mv.ax, p.y + 6, p.w + 2*p.mv.ax, 0, 0]); return p; };
+  // a plate: a rigid group; parts are [dx, dy, w, h, solid] relative to its anchor (the anchor is [dx, y] of the first part's top-left corner)
+  const plate = (id, kind, A, B, parts, grp, label)=>{
+    const pl = { id, kind, A, B, grp:grp || 0, parts:[], label:label || id, w:0 };
+    for(const q of parts){ const p = q[4] ? solid(A[0] + q[0], A[1] + q[1], q[2], q[3], q[5] || 'plate') : soft(A[0] + q[0], A[1] + q[1], q[2], q[5] || 'pshelf'); p.pl = plates.length; p.ox = q[0]; p.oy = q[1]; pl.parts.push(p); pl.w = Math.max(pl.w, q[0] + q[2]); }
+    plates.push(pl); return pl;
+  };
+  // ---- the hourglass (the middle): a cap, the top room, the neck, the bottom room, the Keystone
+  const hw = 140, capY = yL - 800, topF = yL - 400;
+  solid(-hw, capY, 2*hw, 60, 'cap'); solid(-hw, topF, hw - 55, 60, 'midslab'); solid(55, topF, hw - 55, 60, 'midslab');   // the neck is the 110 px hole between the two halves of the middle slab
+  solid(-hw, capY + 60, 50, 80, 'lintel'); solid(hw - 50, capY + 60, 50, 80, 'lintel');
+  // ---- the plates: P1 and P3 (the causeway in A, the diamond's wings in B), the Keystone halves, P2 (the roof, lowered in B), P4 (the ferry), P5 (the vertical plate)
+  const tilt = V.tilt, hi = yL - 700;
+  const P1 = plate('P1', 'r', [-570, yL], [-690 - tilt, hi], [[0, 0, 430, 60, 1, 'plate'], [0, -110, 170, 0, 0, 'pshelf']], 0, 'P1');
+  const KL = plate('KL', 'key', [-hw, yL], [-380, yL], [[0, 0, hw, 60, 1, 'keystone']], 0, 'KL');
+  const KR = plate('KR', 'key', [0, yL], [240, yL], [[0, 0, hw, 60, 1, 'keystone']], groups, 'KR');
+  const P3 = plate('P3', 'r', [hw, yL], [260 + tilt, hi], [[0, 0, 560, 60, 1, 'plate'], [390, -110, 170, 0, 0, 'pshelf']], groups, 'P3');
+  let P2 = null; if(hasP2) P2 = plate('P2', 'v', [-400 + Math.round(tilt/2), yL - 1400], [-400 + Math.round(tilt/2), yL - 920], [[0, 0, 800, 60, 1, 'plate'], [60, -110, 180, 0, 0, 'pshelf']], 0, 'P2');
+  // ---- THE BUTTE (N1, top-left): a tall thin mesa, a cave, a ragged underside; its east face is a stair to the arm (S1) and the diamond
+  const bx0 = -2000, bx1 = -1150;
+  solid(bx0, yH, 320, 70, 'deck'); solid(bx0 + 460, yH - 40, 170, 110, 'deck'); solid(bx0 + 630, yH, bx1 - bx0 - 630, 70, 'deck');   // a lumpy top, a hatch (the drop to the cave) cut below
+  const cv1 = yH + 70;
+  solid(bx0 + 50, cv1, 270, 140, 'mass'); solid(bx0 + 460, cv1, bx1 - 50 - (bx0 + 460), 140, 'mass');   // the roof slab with a 140 px hatch at dx -1680..-1540 (between the two pieces)
+  solid(bx0 + 50, cv1 + 140, 60, 60, 'wall'); solid(bx1 - 110, cv1 + 140, 60, 60, 'wall');
+  const cf = cv1 + 140 + 380;   // the cave's floor
+  solid(bx0 + 50, cf, 520, 70, 'cfloor'); solid(bx0 + 710, cf, bx1 - 50 - (bx0 + 710), 70, 'cfloor');   // a 140 px hole in the cave floor (dx -1430..-1290): the drop to the Quarry
+  solid(bx0 + 130, cf + 70, 560, 130, 'mass'); solid(bx0 + 780, cf + 70, 330, 220, 'mass'); solid(bx0 + 240, cf + 200, 180, 120, 'mass');   // the ragged underside
+  soft(bx0 - 100, cf + 300, 300, 'hang'); soft(bx0 + 520, cf + 360, 260, 'hang');
+  // the Butte's east face: down to the arm (the Hourglass's top-room floor level) and the diamond's wing
+  const armY = topF; chain(bx1 - 10, bx1 + 330, yH + 70, armY - 100, 'ledge', true); soft(-900, armY, 320, 'arm');
+  // the west face: down to the Oasis side
+  chain(bx0 - 400, bx0 + 60, yH + 70, yL - 20, 'ledge', false);
+  // ---- THE ARCH (N2, top-right): a deck on two pier blocks over a hollow with its own floor, open from both sides
+  const ax0 = 1200, ax1 = 2350, hF = hi;
+  solid(ax0, yH, 330, 70, 'deck'); solid(ax0 + 330, yH + 20, 340, 50, 'deck'); solid(ax0 + 810, yH - 40, ax1 - ax0 - 810, 110, 'deck');   // a 140 px hatch (dx 1870..2010) drops from the deck into the hollow
+  solid(ax0, yH + 70, 220, hF - 260 - (yH + 70), 'pier'); solid(ax1 - 220, yH + 70, 220, hF - 260 - (yH + 70), 'pier');
+  solid(ax0, hF, 560, 60, 'hfloor'); solid(ax0 + 700, hF, ax1 - ax0 - 700, 60, 'hfloor');   // a 140 px hole in the hollow's floor (dx 1760..1900): a drop to the Temple's roof
+  solid(ax0 + 220, yH + 70, 170, 70, 'lintel');
+  chain(ax0 - 300, ax0 + 20, yH + 70, armY - 100, 'ledge', false); soft(580, armY, 320, 'arm');
+  // ---- THE QUARRY (L1, bottom-left): wide terraces, a cave with a heal spring, a hatch with a stair up through it
+  const q0 = -2150, q1 = -570;
+  solid(q0, yL - 120, 400, 60, 'deck'); solid(q0 + 400, yL, 340, 60, 'deck'); solid(q0 + 1000, yL - 40, q1 - (q0 + 1000), 100, 'deck');
+  solid(q0, yL - 60, 60, 360, 'mass'); solid(q0 + 60, yL + 60, 380, 240, 'mass'); solid(q0 + 440, yL + 60, 300, 240, 'mass'); solid(q0 + 1000, yL + 60, 500, 240, 'mass');   // a 260 px hatch at dx -1410..-1150 (between the masses)
+  solid(q1 - 60, yL + 60, 60, 120, 'wall');
+  solid(q0, yU, q1 + 40 - q0, 80, 'cfloor');
+  const hatchA = q0 + 740, hatchB = q0 + 1000;
+  chain(hatchA + 10, hatchB - 10, yL + 10, yU, 'ledge', true);   // the stair up the hatch
+  soft(q0 - 200, yL + 150, 230, 'hang'); soft(q0 - 380, yL + 250, 240, 'hang'); soft(q0 - 140, yU - 90, 260, 'hang');
+  // ---- THE TEMPLE (L2, bottom-right): a roof to fight on, two rooms under it with walls, a hatch down, a stair up to the Arch
+  const t0 = 700, t1 = 2150;
+  solid(t0, yL, 800, 60, 'roof'); solid(t0 + 800, yL, 200, 60, 'roof'); solid(t0 + 1160, yL, t1 - (t0 + 1160), 60, 'roof');   // a 160 px hatch in the roof at dx 1500..1660
+  solid(t0, yL + 60, 60, 140, 'wall'); solid(t0 + 700, yL + 60, 60, 140, 'wall'); solid(t1 - 60, yL + 60, 60, 480, 'wall');
+  solid(t0, yL + 340, 480, 60, 'rfloor'); solid(t0 + 640, yL + 340, 360, 60, 'rfloor'); solid(t0 + 1160, yL + 340, t1 - (t0 + 1160), 60, 'rfloor');   // the upper rooms' floor (holes at dx 1180..1340 and 1500..1660)
+  solid(t0 + 760, yL + 400, 60, yU - (yL + 400), 'wall');
+  solid(t0, yU, t1 - t0, 80, 'cfloor'); solid(t0, yL + 400, 60, yU - 260 - (yL + 400), 'wall');
+  chain(t1 + 10, t1 + 330, hF + 60, yL - 10, 'ledge', true);
+  // ---- THE UNDERCROFT: the hall between the Quarry's cave and the Temple's rooms, a pit of quicksand (water in V2), ledges that catch a fall from the rift
+  solid(q1 + 40, yU, 2*0 + (t0 - (q1 + 40)), 80, 'cfloor');
+  soft(-520, yU - 340, 240, 'ledge2'); soft(420, yU - 340, 240, 'ledge2');
+  soft(-300, yU - 130, 220, 'ledge2'); soft(220, yU - 130, 220, 'ledge2');
+  zone(V.flood ? 'water' : 'glue', -200, yU - 60, 400, 60, { strength:V.flood ? 0.5 : 0.7 });
+  zone('heal', q0 + 100, yU - 250, 300, 250, { strength:0.6 });   // the Quarry cave's spring
+  // ---- sandfalls (float zones) off the high bases' inner faces
+  zone('float', bx1 + 20, yH + 70, 160, armY - yH - 70); zone('float', ax0 - 180, yH + 70, 160, armY - yH - 70);
+  // ---- shuttles S1, S2 across the 440 px gaps between the arms and the top room
+  mover(-460, armY, 200, { ax:180, per:240, ph:0 }, 'shuttle');
+  mover(240, armY, 200, { ax:180, per:240, ph:Math.PI }, 'shuttle');
+  // ---- the outer islands and the ferry
+  const outers = [];
+  const outer = (kind, dx, y, w, fx)=>{ const p = solid(dx, y, w, 60, 'outer', { ofx:fx }); outers.push({ p, kind, fx, dx, y, w }); soft(dx + 40, y - 130, Math.max(120, w - 80), 'oshelf'); return p; };
+  const room = C - 700;   // the half width available outside the bases
+  const oasisFx = V.swap ? 1 : 0, shellFx = V.swap ? 0 : 1;
+  if(C >= 2850) outer('oasis', -2800, yL + 260, 420, oasisFx);
+  if(C >= 2850) outer('shell', 2600, hF + 120, 420, shellFx);
+  if(C >= 2850) chain(-2400, -2150, yL + 240, yL + 90, 'ledge', false);   // stones from the Quarry's hanging ledges to the Oasis (hanging ledges are above)
+  if(C >= 2850) chain(ax1 + 20, ax1 + 260, hF, hF + 120, 'ledge', true);   // stones from the Arch down to the Shell
+  const wreck = outer('wreck', -1500, yU + 250, 520, 2);
+  if(cairn) outer('cairn', -300, yH - 20, 600, 3);
+  if(cairn) { chain(-340, -140, yH + 100, capY - 40, 'ledge', true); }
+  void room;
+  // ---- the ferry P4
+  let P4 = null;
+  if(hasFerry){ P4 = plate('P4', 'x', [-2210, yU + 250], [-1760, yU + 250], [[0, 0, 260, 0, 0, 'ferry']], 0, 'P4'); P4.parts[0].h = 26; }
+  let P5 = null;
+  if(hasP5) P5 = plate('P5', 'v', [2380, yL - 5], [2380, hi], [[0, 0, 200, 0, 0, 'lift']], groups, 'P5');
+  // ---- hand over
+  worldPlats = P;
+  STG = { kind:'fault', top:null, t:0, wall:0, movers, statics:[], soft:[] };
+  stgPlace(0);
+  const owner = { N1:-1, N2:-1, L1:-1, L2:-1 };
+  if(tc === 4){ owner.N1 = 0; owner.N2 = 1; owner.L1 = 2; owner.L2 = 3; } else if(tc === 3){ owner.N1 = 0; owner.L2 = 1; owner.L1 = 2; } else { owner.N1 = 0; owner.L2 = 1; }
+  const defs = [
+    { k:'N1', rg:[[bx0 + 40, bx0 + 320], [bx0 + 340, bx0 + 620]], y:yH, zone:[bx0, yH - 330, bx1 - bx0, 330], reg:[bx0 - 60, yH - 60, bx1 - bx0 + 120, cf + 320 - yH + 60] },
+    { k:'N2', rg:[[ax0 + 830, ax1 - 40]], y:yH - 40, zone:[ax0, yH - 330, ax1 - ax0, 330], reg:[ax0 - 20, yH - 100, ax1 - ax0 + 40, hF + 100 - (yH - 100)] },
+    { k:'L1', rg:[[q0 + 410, q0 + 730]], y:yL, zone:[q0 + 200, yL - 300, 900, 330], reg:[q0 - 20, yL - 200, q1 - q0 + 40, yU + 100 - (yL - 200)] },
+    { k:'L2', rg:[[t0 + 40, t0 + 780], [t0 + 840, t0 + 990]], y:yL, zone:[t0, yL - 300, 1000, 330], reg:[t0 - 20, yL - 100, t1 - t0 + 40, yU + 100 - (yL - 100)] },
+  ];
+  const infos = [], blocks = P.filter(p=>p.solid);
+  for(const d of defs){
+    const team = owner[d.k], dm = mx(X(d.rg[0][0]), 1), yy = S(d.y);
+    const free = []; for(const r of d.rg) for(let xx = r[0]; xx <= r[1]; xx += 40){ const mxp = px1(xx); if(!blocks.some(p=>mxp > p.x - 34 && mxp < p.x + p.w + 34 && p.y < yy && p.y + p.h > yy - 70 && Math.abs(p.y - yy) > 4)) free.push(mxp); }
+    const sp = []; for(let q = 0; q < 6 && free.length; q++){ const i = Math.min(free.length - 1, Math.floor((q + 0.5)*free.length/6)); if(!sp.some(s=>s.x === free[i])) sp.push({ x:free[i], y:yy - 30, used:0 }); }
+    const xl = Math.min(...free), xr = Math.max(...free), zr = mx(X(d.zone[0]), d.zone[2]);
+    const rr = mx(X(d.reg[0]), d.reg[2]); infos.push({ k:d.k, team, x:xl, y:yy, w:xr - xl, reg:[rr[0], S(d.reg[1]), rr[1], S(d.reg[3])] });
+    if(team >= 0) bases[team] = { team, x:xl, y:yy, w:Math.max(40, xr - xl), h:18, color:TEAM_COLORS[team % TEAM_COLORS.length], spawnX:Math.round((xl + xr)/2), spawnY:yy - 46, floor:0, spawns:sp, zone:{ x:zr[0], y:S(d.zone[1]), w:zr[1], h:S(d.zone[3]) } };
+    void dm;
+  }
+  bases = bases.filter(Boolean);
+  const hg = { cx:px1(0), top:S(capY), floor:S(yL), neck:S(topF), w:S(2*hw) };
+  for(const o of outers) if(o.fx === 0) zone('heal', o.dx + 20, o.y - 220, o.w - 40, 220, { strength:0.6 });
+  const rm = mx(X(-570), 1270);
+  const first = P[0]; first.sd = { v, flip, name:V.name, deco, hg, rift:[rm[0], S(yL), rm[1], S(yU + 80 - yL)], yL:S(yL), yU:S(yU), hi:S(hi), armY:S(armY), first:V.first, groups, night:V.night, flood:V.flood,
+    outers:outers.map(o=>({ kind:o.kind, x:mx(X(o.dx), o.w)[0], w:mx(X(o.dx), o.w)[1], y:S(o.y), fx:o.fx })),
+    plates:plates.map(pl=>({ id:pl.id, kind:pl.kind, grp:pl.grp, parts:pl.parts.map(q=>[q.x, q.y, q.w, q.solid ? q.h : 14]), dB:[Math.round((pl.B[0] - pl.A[0])*k*(flip ? -1 : 1)), Math.round((pl.B[1] - pl.A[1])*k)] })) };
+  SI = { v, V, teams:tc, flip, first:V.first, groups, plates, movers, owner, infos, crates:0, hg, yL:S(yL), yU:S(yU), sd:first.sd, size:{ DW, DH, tiers, hasP2, hasFerry, hasP5, cairn, groups }, outers: outers, wreck, S, mx, X, shieldTot:0, fallHits:0, fallDmg:0, shifts:0, nav:null };
+  for(const pl of plates){ pl.pieces = pl.parts; }
+  SI_VIS = true;
+  siPlace(0);
+}
+// ---- the clock-driven parts (host and guest alike read the same pure functions; only the host moves fighters)
+function siInfo(){ if(!SI_VIS) return null; for(const p of worldPlats) if(p.sd) return p.sd; return null; }
+// put every plate (and its parts) where the clock says; with `carry` the host also takes along whoever stands on a part and sets anyone inside a rising solid on top of it (nobody is crushed)
+function siPlace(t, carry, prog){
+  if(!SI) return;
+  const k = SIK.k, fl = SI.flip ? -1 : 1;
+  for(const pl of SI.plates){
+    const st = siShiftAt(t, pl.grp), p = prog ? prog[pl.grp] : st.p, pos = siPlatePos(pl, p);
+    const ddx = (pos[0] - pl.A[0])*k*fl, ddy = (pos[1] - pl.A[1])*k;
+    for(const q of pl.parts){
+      if(q.ax == null){ q.ax = q.x; q.ay = q.y; }
+      const nx = Math.round(q.ax + ddx), ny = Math.round(q.ay + ddy), dx = nx - q.x, dy = ny - q.y;
+      if((dx || dy) && carry){
+        for(const f of fighters){ if(f.dead || f._tp || f._siCarried === t) continue; const feet = f.y + f.r;
+          if(f.onground && !(f.dropping > 0) && Math.abs(feet - q.y) <= 4 && f.x > q.x - 4 && f.x < q.x + q.w + 4){ f.x += dx; f.y += dy; f._siCarried = t; } }
+      }
+      q.mvx = dx; q.mvy = dy; q.x = nx; q.y = ny;
+      if((dx || dy) && carry && q.solid){
+        for(const f of fighters){ if(f.dead || f._tp || f._siCarried === t) continue;
+          if(f.x + f.r*0.6 > q.x && f.x - f.r*0.6 < q.x + q.w && f.y + f.r > q.y + 2 && f.y - f.r < q.y + q.h){ f.y = q.y - f.r - 0.5; f.vy = Math.min(f.vy, 0); f.onground = true; f.jumps = 2; f._siCarried = t; } }
+      }
+    }
+  }
+}
+function siStep(){
+  const t = hazardT; SI.t = t;
+  siPlace(t, true);
+  const s0 = siShiftAt(t, 0), s1 = SI.groups ? siShiftAt(t, 1) : null;
+  for(const S of [s0, s1]){ if(!S) continue;
+    if(S.left === SIK.tell){ tone(72, 1.6, 'sawtooth', 0.09, 0, 54); tone(108, 1.4, 'triangle', 0.06, 0.2, 80); }
+    if(S.tell > 0 && t % 12 === 0) shake(1.2 + 2*S.tell);
+    if(S.moving && S.u === 0){ noise(0.6, 0.3, 900, 0, 160); tone(60, 0.5, 'sine', 0.28, 0, 34); shake(6); SI.shifts++; }
+  }
+  // the Shell's armour: whoever stands on the shell island is armoured for a while
+  for(const o of SI.outers){ if(o.fx !== 1) continue; for(const f of fighters){ if(f.dead) continue; if(f.x >= o.p.x && f.x <= o.p.x + o.p.w && f.y + f.r <= o.p.y + 6 && f.y + f.r >= o.p.y - 200){ f._diShield = Math.max(f._diShield || 0, hazardT + 480); SI.shieldTot++; } } }
+}
+function siLand(f, wasAir, vy){
+  if(f.dead || f._tp || f._tpHang > 0){ f._diTop = null; return; }
+  if(!f.onground){ f._diTop = (wasAir && f._diTop != null) ? Math.min(f._diTop, f.y) : f.y; return; }
+  const top = f._diTop; f._diTop = null;
+  if(!wasAir || top == null) return;
+  const drop = f.y - top, dmg = diDamageFor(drop), feet = f.y + f.r;
+  if(dmg > 0){
+    f.pct += dmg; SI.fallHits++; SI.fallDmg += dmg;
+    for(let q = 0; q < 12; q++) particles.push({ x:f.x + (q - 5.5)*5, y:feet - 2, vx:(q - 5.5)*0.5, vy:-0.8 - (q % 3)*0.5, life:22, color:'#d8caa8', r:3 + (q % 3) });
+    particles.push({ x:f.x, y:f.y - f.r - 8, vx:0, vy:-1.6, life:55, color:'t|#ff8a3a|' + (Math.round(dmg*10)/10) + '%', r:12 });
+    shake(f.you ? 10 : 5);
+  }
+}
+function siSpawnItem(){
+  const want = SI.outers.filter(o=>o.fx === 2 || o.fx === 3), pool0 = worldPlats.filter(p=>p.si && !p.mv && !p.pl && (p.si === 'deck' || p.si === 'roof' || p.si === 'outer' || p.si === 'hfloor' || p.si === 'cfloor' || p.si === 'ledge' || p.si === 'oshelf' || p.si === 'arm') && p.w >= 120);
+  let pl = null;
+  if(want.length && Math.random() < 0.6){ const o = want[Math.floor(Math.random()*want.length)]; pl = o.p; }
+  if(!pl) pl = pool0[Math.floor(Math.random()*pool0.length)];
+  if(!pl) return;
+  const x = pl.x + pl.w*(0.2 + Math.random()*0.6);
+  if(items.some(q=>!q.taken && Math.abs(q.x - x) < 70 && Math.abs(q.y - (pl.y - 16)) < 60)) return;
+  const pool = eventItemPool() || ["heal","heal","marmalade","marmalade","throw","throw","power","power","assist","assist","yoyle","yoyle"];
+  const kind = pool[Math.floor(Math.random()*pool.length)], r = kind === "boss" ? 0 : 16;
+  items.push({ kind, x, y:pl.y - r, vx:0, vy:0, r, taken:false, life:60*30, _land:true }); SI.crates++;
+}
+function siIsNight(t){ const Y = siInfo(); if(!Y || !Y.night) return false; return ((t % SIK.nightPeriod)/SIK.nightPeriod) >= SIK.nightOn; }
+function siNight(t){ const u = (t % SIK.nightPeriod)/SIK.nightPeriod; return u < SIK.nightOn ? 0 : Math.min(1, (u - SIK.nightOn)/0.06); }
+
+// ---- THE CPUs' ROUTE GRAPH (Dream Island's diEdge over every platform top; the plates, the shuttles and the ferry are 'drift' nodes whose edges are found at the places they dock and
+// at eight moments of the shuttles' trip, and kept as 'ferry' edges that a CPU takes only when they can be made right then). Plates are settled in the nav as form A, form B (and, with two fault groups, the two mixed states).
+let SIN = null;
+function siEdge(A, B, sol){ const r = DIK.rise; DIK.rise = SIK.rise; try{ return diEdge(A, B, sol); } finally{ DIK.rise = r; } }
+function siNavBuild(){
+  const nodes = [], byP = new Map();
+  for(const p of worldPlats){ if(!p.si || p.w < 24 || p.si === 'wall' || p.si === 'lintel' || p.si === 'pier' || p.si === 'mass') continue; const n = { id:nodes.length, p, x0:p.x, x1:p.x + p.w, y:p.y, drift:!!(p.mv || p.pl != null), adj:[] }; nodes.push(n); byP.set(p, n); }
+  const solids = worldPlats.filter(p=>p.solid), BK = 400, sb = new Map(), nb = new Map();
+  const addB = (m, s, x0, x1)=>{ for(let b = Math.floor(x0/BK); b <= Math.floor(x1/BK); b++){ if(!m.has(b)) m.set(b, []); m.get(b).push(s); } };
+  const moveSpan = (p)=>{ if(p.pl == null) return [p.x, p.x + p.w]; const pl = SI.plates[p.pl], k = SIK.k*(SI.flip ? -1 : 1), dxs = [0, (pl.B[0] - pl.A[0])*k]; const a = p.ax != null ? p.ax : p.x; return [Math.min(a, a + dxs[1]) - 20, Math.max(a, a + dxs[1]) + p.w + 20]; };
+  for(const s of solids){ const r = moveSpan(s); addB(sb, s, r[0], r[1]); }
+  for(const n of nodes) if(!n.drift) addB(nb, n, n.x0, n.x1);
+  const near = (x0, x1)=>{ const out = new Set(); for(let b = Math.floor((x0 - 80)/BK); b <= Math.floor((x1 + 80)/BK); b++){ const a = sb.get(b); if(a) for(const s of a) out.add(s); } return Array.from(out); };
+  const edge = (A, B)=>siEdge(A, B, near(Math.min(A.x0, B.x0), Math.max(A.x1, B.x1)));
+  for(const A of nodes){ if(A.drift) continue; const seen = new Set();
+    for(let b = Math.floor((A.x0 - 460)/BK); b <= Math.floor((A.x1 + 460)/BK); b++){ const a = nb.get(b); if(!a) continue;
+      for(const B of a){ if(B === A || seen.has(B)) continue; seen.add(B);
+        if(Math.max(0, B.x0 - A.x1, A.x0 - B.x1) > 450 || Math.abs(A.y - B.y) > 1000) continue;
+        const e = edge(A, B); if(e) A.adj.push({ to:B, e }); } } }
+  const movers = nodes.filter(n=>n.drift), dyn = new Map(), seenE = new Set();
+  const addE = (from, to, e)=>{ const key = from.id + '>' + to.id; if(seenE.has(key)) return; seenE.add(key); e.dr = 1; e.c += 25; if(!dyn.has(from)) dyn.set(from, []); dyn.get(from).push({ to, e }); };
+  const setNode = (n)=>{ n.x0 = n.p.x; n.x1 = n.p.x + n.p.w; n.y = n.p.y; };
+  const states = SI.groups ? [[0, 0], [1, 1], [0, 1], [1, 0]] : [[0, 0], [1, 1]], hasSin = movers.some(n=>n.p.mv);
+  const reachOf = (d)=>{ const sp = moveSpan(d.p); return { x0:sp[0], x1:sp[1] }; };
+  for(const st of states) for(let kk = 0; kk < (hasSin ? 8 : 1); kk++){
+    // place: plates at this state, sinusoid movers at moment kk
+    siPlace(0, false, st);
+    for(const n of movers) if(n.p.mv){ const m = n.p.mv, a2 = 2*Math.PI*(kk*Math.abs(m.per)/8)/m.per + m.ph; n.p.x = Math.round(n.p.bx + m.ax*Math.sin(a2)); n.p.y = Math.round(n.p.by + m.ay*Math.sin(a2 + (m.ph2 || 0))); }
+    for(const n of movers) setNode(n);
+    for(const d of movers){ const r = reachOf(d);
+      for(const n of nodes){ if(n === d || (n.drift && n.id < d.id)) continue;
+        if(Math.max(0, n.x0 - d.x1, d.x0 - n.x1) > 450 && Math.max(0, n.x0 - r.x1, r.x0 - n.x1) > 450) continue;
+        if(Math.abs(n.y - d.y) > 1100) continue;
+        const e1 = edge(d, n); if(e1) addE(d, n, e1); const e2 = edge(n, d); if(e2) addE(n, d, e2); } }
+  }
+  siPlace(hazardT, false); for(const n of movers){ if(n.p.mv){ stgPlace(STG.t); } setNode(n); }
+  SIN = { nodes, byP, solids, movers, dyn, near, blocked:{}, plans:0, planFail:0, hopFail:0, nodeCount:nodes.length, edgeCount:nodes.reduce((a, n)=>a + n.adj.length, 0) + Array.from(dyn.values()).reduce((a, l)=>a + l.length, 0) };
+  return SIN;
+}
+function siNodeAt(N, f){
+  const feet = f.y + f.r; let best = null, bd = 1e9;
+  for(const n of N.nodes){ const p = n.p, x0 = p.x, x1 = p.x + p.w; if(f.x < x0 - 30 || f.x > x1 + 30 || Math.abs(feet - p.y) > 8) continue; const d = Math.abs(f.x - (x0 + x1)/2) + (f.x < x0 || f.x > x1 ? 400 : 0); if(d < bd){ bd = d; best = n; } }
+  return best;
+}
+function siNodeFor(N, x, y){
+  let best = null, bd = 1e9;
+  for(const n of N.nodes){ const p = n.p; if(x < p.x - 10 || x > p.x + p.w + 10 || p.y < y - 40) continue; const d = p.y - y; if(d < bd){ bd = d; best = n; } }
+  if(best) return best;
+  for(const n of N.nodes){ const d = Math.hypot((n.p.x + n.p.w/2) - x, n.p.y - y); if(d < bd){ bd = d; best = n; } }
+  return best;
+}
+function siFoeNodes(N, f){
+  const goals = new Map();
+  for(const o of fighters){ if(o.dead || o === f || o.team === f.team) continue; const n = siNodeAt(N, o) || siNodeFor(N, o.x, o.y + (o.r || 24)); if(n && !goals.has(n)) goals.set(n, o); }
+  return goals;
+}
+function siPlan(N, start, goals){ return ynPlan(N, start, goals); }
+function siRiding(f){ for(const pl of SI.plates) for(const q of pl.parts){ if(f.onground && Math.abs(f.y + f.r - q.y) <= 5 && f.x > q.x - 4 && f.x < q.x + q.w + 4) return pl; } return null; }
+function siBrain(f, inp){
+  if(f.hitstun > 0 || f._tp){ f._siPlan = null; return; }
+  const N = SIN && SIN.S === SI ? SIN : (SIN = Object.assign(siNavBuild(), { S:SI }));
+  const feet = f.y + f.r;
+  { const mv = Math.abs(f.x - (f._siLX === undefined ? f.x : f._siLX)) + Math.abs(f.y - (f._siLY === undefined ? f.y : f._siLY)); f._siLX = f.x; f._siLY = f.y; f._siStill = (mv < 0.5 && f.onground) ? (f._siStill || 0) + 1 : 0; }
+  // on a plate that is about to move (the tell) or is moving: stay on it and ride (it may still fight)
+  const rp = siRiding(f), st = rp ? siShiftAt(hazardT, rp.grp) : null;
+  if(rp && (st.tell > 0 || st.moving)){ inp.left = false; inp.right = false; inp.jump = false; inp.down = false; f._siPlan = null; return; }
+  // the middle third of the causeway during the tell: off it toward the nearer plate or base
+  let foe = f.aiTarget && !f.aiTarget.dead && f.aiTarget.team !== f.team ? f.aiTarget : null;
+  if(!foe){ let bd = 1e9; for(const o of fighters) if(!o.dead && o.team !== f.team){ const d = Math.hypot(o.x - f.x, o.y - f.y); if(d < bd){ bd = d; foe = o; } } }
+  const closeLevel = foe && Math.abs(foe.x - f.x) < 520 && Math.abs(foe.y - f.y) < 150 && ynLineClear(N, f.x, foe.x, foe.y);
+  if(closeLevel && f._siStill < 45){ f._siPlan = null; return; }
+  if(siFollow(f, inp, N, feet, foe)){
+    if(f.onground && f._siStill > 10 && (inp.left || inp.right)){ inp.jump = (f._siStill % 30) < 3; f._siHopDir = inp.right ? 1 : -1; f._siHopUntil = hazardT + 45; }
+    return;
+  }
+  if(!f.onground){ if(f._siHopUntil > hazardT){ inp.left = f._siHopDir < 0; inp.right = f._siHopDir > 0; } return; }
+  if(f._siStill > 90){ const ph = Math.floor((f._siStill - 90)/45), d = (ph % 2) ? 1 : -1; inp.left = d < 0; inp.right = d > 0; inp.jump = ((f._siStill - 90) % 45) < 3; inp.down = (ph % 4) === 3; }
+}
+function siFollow(f, inp, N, feet, foe){
+  const now = hazardT; let P = f._siPlan;
+  if(!f.onground){
+    const a = P && P.air;
+    if(a && now < a.until){ a.seen = true; inp.left = a.tx < f.x - 6; inp.right = a.tx > f.x + 6; inp.smash = false; inp.grab = false;
+      if(a.hop && f.vy < -1.5) inp.jump = true; else if(a.up && f.vy > 0.5 && f.jumps > 0 && feet > a.ty + 6 && !f._jp) inp.jump = true; return true; }
+    return false;
+  }
+  const node = siNodeAt(N, f);
+  if(!node){ f._siPlan = null; return false; }
+  if(P && P.air){ const A = P.air;
+    if(A.seen || now - A.t0 > 30){ P.air = null;
+      if(A.from === node){ f._siFail = (f._siFail || 0) + 1; if(f._siFail >= 2){ N.blocked[A.from.id + '>' + A.to.id] = now + 400; N.hopFail++; f._siPlan = P = null; f._siFail = 0; } }
+      else f._siFail = 0; } }
+  if(!P || now - P.at > 40 || P.path.indexOf(node) < 0){
+    if(f._siGoalAt && now - f._siGoalAt < 20 && !P) return false;
+    f._siGoalAt = now;
+    const goals = siFoeNodes(N, f);
+    if(!goals.size || goals.has(node)){ f._siPlan = null; return false; }
+    N.plans++; P = f._siPlan = siPlan(N, node, goals);
+    if(!P){ N.planFail++; return false; }
+  }
+  const i = P.path.indexOf(node);
+  if(i < 0 || i >= P.path.length - 1){ f._siPlan = null; return false; }
+  for(const n of N.movers){ n.x0 = n.p.x; n.x1 = n.p.x + n.p.w; n.y = n.p.y; }
+  let e = P.edges[i]; const B = P.path[i + 1], dirTo = (x)=>x > f.x + 6 ? 1 : x < f.x - 6 ? -1 : 0;
+  if(e.dr){
+    // an edge that touches a plate is not started during a tell or a slide (it would not exist after the switch)
+    const pg = node.p.pl != null ? SI.plates[node.p.pl].grp : B.p.pl != null ? SI.plates[B.p.pl].grp : -1;
+    const sg = pg >= 0 ? siShiftAt(now, pg) : null;
+    const live = (sg && (sg.tell > 0 || sg.moving)) ? null : siEdge(node, B, N.near(Math.min(node.x0, B.x0), Math.max(node.x1, B.x1)));
+    if(!live){ f._siWait = (f._siWait || 0) + 1; if(f._siWait > 420){ f._siWait = 0; f._siPlan = null; N.blocked[node.id + '>' + B.id] = now + 500; } inp.left = false; inp.right = false; return true; }
+    f._siWait = 0; live.dr = 1; e = live;
+  }
+  const nearFoe = foe && Math.hypot(foe.x - f.x, foe.y - f.y) < 170;
+  if(!nearFoe){ inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; }
+  const go = (x)=>{ const d = dirTo(x); inp.left = d < 0; inp.right = d > 0; };
+  if(e.t === 'walk'){ go(e.tx); return true; }
+  if(e.t === 'drop' && !e.soft){ go(e.wx); if(!P.air && Math.abs(f.x - e.lx) < 60) P.air = { tx:e.tx, ty:B.y, up:false, until:now + 90, from:node, to:B, e, t0:now, seen:false }; return true; }
+  if(Math.abs(f.x - e.lx) > 10){ go(e.lx); return true; }
+  if(e.t === 'drop'){ inp.down = true; inp.jump = true; if(!P.air) P.air = { tx:e.tx, ty:B.y, up:false, until:now + 90, from:node, to:B, e, t0:now, seen:false }; return true; }
+  inp.jump = true; go(e.tx);
+  if(!P.air) P.air = { tx:e.tx, ty:B.y, up:e.up > 0, hop:true, until:now + 80, from:node, to:B, e, t0:now, seen:false };
+  return true;
+}
+// ---- art (host and guest alike: read from worldPlats and the one `sd` record; nothing here is read by physics)
+const SIC = { sand:'#d9b883', sand2:'#b98f58', rock:'#8d7a5c', rock2:'#6e5c42', rust:'#a4593a', rust2:'#7a3f28', line:'#2a1c10', gold:'#e7c260', deep:'#3a2412', crystal:'#7fe3ff', cloth:'#c8553a' };
+function siRockBlock(c, p, tone){
+  const col = tone === 1 ? SIC.rust : tone === 2 ? SIC.gold : tone === 3 ? '#5e4a34' : SIC.rock;
+  c.fillStyle = col; c.fillRect(p.x, p.y, p.w, p.h);
+  c.fillStyle = 'rgba(255,240,200,0.28)'; c.fillRect(p.x, p.y, p.w, Math.min(9, p.h));
+  c.fillStyle = 'rgba(0,0,0,0.22)'; c.fillRect(p.x, p.y + p.h - Math.min(8, p.h/3), p.w, Math.min(8, p.h/3));
+  c.strokeStyle = 'rgba(30,18,8,0.32)'; c.lineWidth = 2;   // stone courses (pure: from the rect itself)
+  if(p.h > 56){ const rows = Math.max(1, Math.round(p.h/48)); for(let r = 1; r < rows; r++){ const y = p.y + r*p.h/rows; c.beginPath(); c.moveTo(p.x, y); c.lineTo(p.x + p.w, y); c.stroke();
+    for(let x = p.x + ((r*57) % 90) + 40; x < p.x + p.w - 20; x += 90){ c.beginPath(); c.moveTo(x, y); c.lineTo(x, y + p.h/rows); c.stroke(); } } }
+  c.strokeStyle = SIC.line; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, p.h);
+}
+function siSoft(c, p, kind){
+  const col = kind === 'shuttle' ? '#c9a45a' : kind === 'ferry' ? '#8a5a2f' : kind === 'lift' ? '#b8864a' : kind === 'pshelf' ? SIC.rust : '#c8a972';
+  c.fillStyle = col; c.fillRect(p.x, p.y, p.w, 14); c.fillStyle = 'rgba(255,245,210,0.4)'; c.fillRect(p.x, p.y, p.w, 4);
+  c.strokeStyle = SIC.line; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, 14);
+  if(kind === 'shuttle' || kind === 'lift' || kind === 'ferry'){ c.fillStyle = SIC.line; c.fillRect(p.x + 8, p.y + 14, 6, 10); c.fillRect(p.x + p.w - 14, p.y + 14, 6, 10); }
+}
+function siDrawHourglass(c, Y, t){
+  const H = Y.hg, x0 = H.cx - H.w/2, topY = H.top, botY = H.floor, nk = H.neck, midX = H.cx;
+  const sc = SIK.k, span = Y.first, per = SIK.period;
+  const T = t >= span ? ((t - span) % per) : t, tot = t >= span ? per : span, fr = Math.max(0, Math.min(1, 1 - T/tot));   // sand left in the top bulb
+  c.save();
+  // the glass: a dim background shape between the cap and the Keystone (never a floor: the real floors are the cap, the middle slab and the Keystone)
+  c.fillStyle = 'rgba(200,230,240,0.20)'; c.strokeStyle = 'rgba(40,60,70,0.55)'; c.lineWidth = 3;
+  c.beginPath(); c.moveTo(x0 + 8, topY + 30); c.lineTo(x0 + H.w - 8, topY + 30); c.lineTo(midX + 30*sc, nk); c.lineTo(x0 + H.w - 8, botY - 6); c.lineTo(x0 + 8, botY - 6); c.lineTo(midX - 30*sc, nk); c.closePath(); c.fill(); c.stroke();
+  const topH = nk - topY - 40, botH = botY - nk - 10;
+  c.fillStyle = 'rgba(232,190,110,0.85)';
+  const hT = topH*fr; c.fillRect(x0 + 16, nk - 8 - hT, H.w - 32, hT);
+  const hB = botH*0.8*(1 - fr); c.fillRect(x0 + 16, botY - 10 - hB, H.w - 32, hB);
+  if(fr > 0.02 && fr < 0.995){ c.fillRect(midX - 2, nk, 4, botY - 10 - hB - nk); }
+  c.restore();
+}
+function siDrawPlats(){
+  const Y = siInfo(); if(!Y || !SI_VIS) return; const c = ctx, t = hazardT, k = SIK.k;
+  c.save();
+  // the dark under the middle: the Undercroft's back wall (always there; the rift opens onto it)
+  const q1 = Y.rift;
+  if(q1){ c.fillStyle = 'rgba(40,24,10,0.55)'; c.fillRect(q1[0], q1[1], q1[2], q1[3]); }
+  siDrawHourglass(c, Y, t);
+  // the dock stones: where each plate rests in A and B, dim and flat (art only); during the tell the place it leaves glows red and the place it will arrive at glows gold
+  for(const pl of Y.plates){
+    const s = siShiftAt(t, pl.grp);
+    for(const which of [0, 1]){
+      const atNow = (s.form === 0) === (which === 0); let a = 0.10, col = '#ffffff';
+      if(s.tell > 0){ const pulse = 0.4 + 0.6*Math.abs(Math.sin(t*(0.08 + 0.12*s.tell))); if(atNow){ col = '#ff5a3a'; a = 0.18 + 0.5*pulse*s.tell; } else { col = '#ffd45a'; a = 0.2 + 0.6*pulse*s.tell; } }
+      if(s.moving) continue;
+      c.globalAlpha = a; c.strokeStyle = col; c.lineWidth = s.tell > 0 ? 4 : 2; c.setLineDash([10, 8]);
+      for(const q of pl.parts) c.strokeRect(q[0] + (which ? pl.dB[0] : 0), q[1] + (which ? pl.dB[1] : 0), q[2], q[3]);
+      c.setLineDash([]); c.globalAlpha = 1;
+    }
+  }
+  // the sandfalls
+  for(const z of worldZones){ if(z.type !== 'float') continue; c.strokeStyle = 'rgba(232,196,120,0.55)'; c.lineWidth = 3;
+    for(let i = 0; i < 6; i++){ const x = z.x + 12 + i*(z.w - 24)/5, ph = (t*3 + i*37) % 90; c.beginPath(); c.moveTo(x, z.y + (ph/90)*z.h*0.7); c.lineTo(x, z.y + (ph/90)*z.h*0.7 + z.h*0.3); c.stroke(); } }
+  // the quicksand / the flood, the spring
+  for(const z of worldZones){ if(z.type === 'glue'){ c.fillStyle = 'rgba(214,170,96,0.75)'; c.fillRect(z.x, z.y + 8, z.w, z.h - 8); c.fillStyle = 'rgba(120,80,30,0.5)'; for(let i = 0; i < 5; i++) c.fillRect(z.x + 20 + i*(z.w - 40)/5, z.y + 14, 14, 4); }
+    else if(z.type === 'water'){ c.fillStyle = 'rgba(60,140,190,0.5)'; c.fillRect(z.x, z.y, z.w, z.h); }
+    else if(z.type === 'heal'){ c.fillStyle = 'rgba(120,220,150,0.20)'; c.fillRect(z.x, z.y, z.w, z.h); c.fillStyle = 'rgba(80,190,120,0.55)'; c.fillRect(z.x + 30, z.y + z.h - 14, z.w - 60, 14); } }
+  for(const p of worldPlats){
+    if(!p.si) continue;
+    if(p.solid){
+      const tone = p.si === 'plate' ? 1 : p.si === 'keystone' ? 2 : (p.si === 'cfloor' || p.si === 'rfloor') ? 3 : 0;
+      siRockBlock(c, p, tone);
+      if(p.si === 'deck' || p.si === 'roof' || p.si === 'outer' || p.si === 'hfloor'){ c.fillStyle = SIC.sand; c.fillRect(p.x, p.y, p.w, 7); c.fillStyle = SIC.sand2; for(let x = p.x + 20 + ((p.x*7) % 60); x < p.x + p.w - 12; x += 70) c.fillRect(x, p.y - 5, 9, 5); }
+      if(p.si === 'plate' && t % 90 < 45){ c.fillStyle = Y.night ? SIC.crystal : '#f2d38a'; c.fillRect(p.x + p.w*0.5 - 3, p.y + p.h - 12, 6, 6); }
+    } else siSoft(c, p, p.si);
+  }
+  // the cairns of the hourglass are drawn above
+  c.restore();
+}
+function siVeil(o, hw, hh, m){
+  const an = SIK.night*siNight(hazardT); if(an > 0.01){ o.fillStyle = 'rgba(14,10,30,' + an.toFixed(3) + ')'; o.fillRect(0, 0, hw, hh); }
+}
+function siLights(o, m){
+  const Y = siInfo(); if(!Y || !SI) return;
+  const cut = (wx, wy, rad, a)=>{ const x = (m.a*wx + m.c*wy + m.e)*0.5, y = (m.b*wx + m.d*wy + m.f)*0.5, r = rad*Math.hypot(m.a, m.b)*0.5;
+    if(x < -r || y < -r || x > o.canvas.width + r || y > o.canvas.height + r) return;
+    const g = o.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)'); o.fillStyle = g; o.fillRect(x - r, y - r, r*2, r*2); };
+  for(const pl of SI.plates) for(const q of pl.parts) if(q.solid) cut(q.x + q.w/2, q.y + 10, 260, 0.75);   // the glow crystals on every plate and dock; the tell's glow is the brightest thing
+  cut(Y.hg.cx, Y.hg.floor - 200, 340, 0.8);
+  for(const f of [0, 1]){ const s = siShiftAt(hazardT, f); if(s.tell > 0) for(const q of SI.plates) if(q.grp === f) for(const pt of q.parts) cut(pt.x + pt.w/2, pt.y, 400, 0.9*s.tell); }
+}
+// ============================================================
 //  STAGES A (2026-11-08): three stages with shapes of their own. DREAM ISLAND: floating islands (solid blocks) over the sea, no ground, blast
 //  lines all round. THE TLC: a steel bowl, solid walls with stepped slopes rising up both sides to a low flat middle with a hatch in it; no
 //  side KO (a launch bounces off the wall, stgWallHit), out of the top (a lower top line, koT) or down the hatch. YOYLE NEEDLE: a shaft one
@@ -28979,6 +29446,7 @@ function spawnItem(){
   if(BASKET) return;   // REACH THE BASKET (an event twist): no crate falls from the sky; the basket hands them out (basketStep)
   if(MCAVE && MCAVE.on){ mcSpawnItem(); return; }   // MOON CAVES: on a floor, never from space
   if(DRM){ diSpawnItem(); return; }   // DREAM ISLAND TEAMS: mostly on the drifting islands
+  if(SI){ siSpawnItem(); return; }   // SHIFTING ISLES TEAMS: the crates come down on the decks, mostly the wreck's
   if(YN){ ynSpawnItem(); return; }   // YOYLE NEEDLE TEAMS: on a shelf, a deck or a block of the needle
   const gy = groundY();
   const x = floorSafeX(120 + Math.random()*(WW-240), 50);   // (REAL EDGES: it comes down over the floor, not a gap)
@@ -70499,6 +70967,7 @@ function step(){
   stbStep();   // STAGES B: Shifting Isles' floor and platforms, Windy Heights's gust sounds (stbSync inside: nothing on any other stage)
   if(STG) stgStep();   // STAGES A: Yoyle Needle's ledges move, carrying who stands on them (null elsewhere)
   if(DRM) diStep();   // DREAM ISLAND TEAMS: the planks crack, break and mend (null elsewhere)
+  if(SI) siStep();   // SHIFTING ISLES TEAMS: the plates, the tell, the shell's armour (null elsewhere)
   if(YN) ynStep();   // YOYLE NEEDLE TEAMS: levers, vents, wind, berries, magnets and the thread (null elsewhere)
   clockTicks();   // Clock's Natural Time, ticking through hit freezes too (EVENT FIGHTERS: CLOCK)
   if(rainOn()) rainTwistStep();   // THE RAIN (an event twist): a shower's sound as it starts
@@ -71347,6 +71816,7 @@ function step(){
     // land-squash: airborne last frame, grounded now, coming down with real speed → brief cartoony squat
     if(_wasAir && f.onground) f._landT = hazardT;
     if(_wasAir && f.onground && _impactVY>5){ f._landSquash=6; }
+    if(SI) siLand(f, _wasAir, _impactVY);   // SHIFTING ISLES TEAMS: a long drop hurts
     if(DRM) diLand(f, _wasAir, _impactVY);   // DREAM ISLAND TEAMS: a long drop hurts, and a hard landing can break a plank
     if(f._landSquash>0) f._landSquash--;   // land-squash timer decays over the steps after touchdown (it was in drawFighter, so a faster screen squashed for less time)
     // SLAM, THEN HIT: a ground move used in the air drops the fighter fast and goes off on landing (David's
@@ -98748,8 +99218,9 @@ function returnEventLoan(){
   EVENT_RUN = null; MATCH_TWIST = null; BASKET = null; JAWB = null; BERRIES = null; STAIRS = null;
   CONTEST = null;   // A CONTEST: over with the match (what each fighter held goes with the fighters)
   if(YN) SETTINGS.yoyleSeed = ((SETTINGS.yoyleSeed | 0) + 1) & 3;   // YOYLE NEEDLE TEAMS: the next layout
+  if(SI) SETTINGS.shiftSeed = ((SETTINGS.shiftSeed | 0) + 1) & 3;   // SHIFTING ISLES TEAMS: the next layout
   if(DRM) SETTINGS.dreamSeed = ((SETTINGS.dreamSeed | 0) + 1) & 3;   // DREAM ISLAND TEAMS: the next match with these settings is the next layout
-  STICKY = null; SPLEEF = null; DIGC = null; STG = null; DRM = null; YN = null;   // STICKY PILLARS: nobody is stuck after the match (the stuck fighters themselves go with the fighters); THE DIG: its field goes with the match
+  STICKY = null; SPLEEF = null; DIGC = null; STG = null; DRM = null; YN = null; SI = null;   // STICKY PILLARS: nobody is stuck after the match (the stuck fighters themselves go with the fighters); THE DIG: its field goes with the match
   const L = EVENT_LOAN; if(!L) return;
   EVENT_LOAN = null;
   SETTINGS.mode = L.mode; SETTINGS.count = L.count; SETTINGS.stocks = L.stocks; SETTINGS.teamKey = L.teamKey; SETTINGS.itemRate = L.itemRate;
@@ -99982,7 +100453,7 @@ function drawStickyPins(){
 // The twist is the match's MATCH_TWIST, so nothing is kept between matches but the offscreen canvas.
 const DARKK = { r:220, see:320, far:0.12, tint:'rgba(5,9,22,0.7)' };
 const DARKFX = { cv:null, c:null, me:null, q:null };
-function darkOn(){ return DRM_VIS || YN_VIS || (!!MATCH_TWIST && (MATCH_TWIST === 'dark' || twistOn('dark'))); }   // (DREAM ISLAND TEAMS: the night and the undergrounds use the same veil, diVeil)
+function darkOn(){ return DRM_VIS || YN_VIS || (SI_VIS && siIsNight(hazardT)) || (!!MATCH_TWIST && (MATCH_TWIST === 'dark' || twistOn('dark'))); }   // (DREAM ISLAND TEAMS: the night and the undergrounds use the same veil, diVeil)
 function darkSeeK(f){
   const me = DARKFX.me;
   if(!me || me.dead || f === me || f.team === me.team) return 1;
@@ -99998,6 +100469,7 @@ function darkSeeK(f){
     const Y = ynInfo(); let dk = 0; if(Y){ for(const r of Y.zones.dark) if(f.x >= r[0] && f.x <= r[0] + r[2] && f.y >= r[1] && f.y <= r[1] + r[3]) dk = 1; if(ynIsNight(hazardT)) dk = Math.max(dk, ynNight(hazardT)); }
     return 1 - (1 - k)*dk;
   }
+  if(SI_VIS) return 1 - (1 - k)*siNight(hazardT);   // SHIFTING ISLES TEAMS: a foe fades in the long shadows' night
   return k;
 }
 // The world's place on the canvas in device pixels (the canvas's own matrix at the camera; worked out from the view when a canvas cannot say).
@@ -100017,7 +100489,7 @@ function darkDraw(m){
     if(D.cv.width !== hw || D.cv.height !== hh){ D.cv.width = hw; D.cv.height = hh; }
     const o = D.c, rad = DARKK.r*Math.hypot(m.a, m.b)*0.5;
     o.setTransform(1, 0, 0, 1, 0, 0); o.globalCompositeOperation = 'source-over';
-    o.clearRect(0, 0, hw, hh); if(DRM_VIS) diVeil(o, hw, hh, m); else if(YN_VIS) ynVeil(o, hw, hh, m); else { o.fillStyle = DARKK.tint; o.fillRect(0, 0, hw, hh); }
+    o.clearRect(0, 0, hw, hh); if(DRM_VIS) diVeil(o, hw, hh, m); else if(YN_VIS) ynVeil(o, hw, hh, m); else if(SI_VIS) siVeil(o, hw, hh, m); else { o.fillStyle = DARKK.tint; o.fillRect(0, 0, hw, hh); }
     o.globalCompositeOperation = 'destination-out';
     for(const f of fighters){
       if(f.dead) continue;
@@ -100026,7 +100498,7 @@ function darkDraw(m){
       g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.5, 'rgba(0,0,0,0.85)'); g.addColorStop(1, 'rgba(0,0,0,0)');
       o.fillStyle = g; o.fillRect(x - rad, y - rad, rad*2, rad*2);
     }
-    if(DRM_VIS) diLights(o, m); else if(YN_VIS) ynLights(o, m);
+    if(DRM_VIS) diLights(o, m); else if(YN_VIS) ynLights(o, m); else if(SI_VIS) siLights(o, m);
     o.globalCompositeOperation = 'source-over';
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(D.cv, 0, 0, cw, ch); ctx.restore();
   }catch(e){}
@@ -105467,6 +105939,7 @@ function brainOut(f, inp, B, L, t, fight){
   if(SPLEEF) spleefBrain(f, inp);   // SPLEEF: off a cracking tile onto a whole one of the same floor
   if(STG) stgBrain(f, inp);   // STAGES A: not off the end of an island or a ledge into the drop
   if(DRM) diBrain(f, inp);   // DREAM ISLAND TEAMS: not into a gap or off an island, a hop over a missing plank
+  if(SI) siBrain(f, inp);   // SHIFTING ISLES TEAMS: the route graph over the plates, the shuttles and the ferry
   if(YN) ynBrain(f, inp);   // YOYLE NEEDLE TEAMS: the route graph (rooms, doors, hatches, towers, movers), the berries and the levers
   return inp;
 }
@@ -107035,9 +107508,10 @@ function draw(){
                       theme: SA.on ? stage.id : null };   // the ten normal stages' own platform looks (STAGE ART); art only, the geometry is the platform's own
   if(STG) stgDraw();   // STAGES A: the shaft's or the box's inside, behind the ledges
   if(DRM_VIS) diDrawSea();   // DREAM ISLAND TEAMS: the sea under the islands
-  if(SETTINGS.mode==='ctf') ctfDrawWorld(); else for(const p of worldPlats) if(!p.dg && !p.di && !p.yn) paintPlat(ctx, p, platStyle);   // Capture the Flag paints its map from cached tiles (THE DIG paints its dirt itself: drawDigc)
+  if(SETTINGS.mode==='ctf') ctfDrawWorld(); else for(const p of worldPlats) if(!p.dg && !p.di && !p.yn && !p.si) paintPlat(ctx, p, platStyle);   // Capture the Flag paints its map from cached tiles (THE DIG paints its dirt itself: drawDigc)
   if(STG) stgDrawOver();   // STAGES A: Dream Island's grass caps
   if(DRM_VIS) diDrawPlats();   // DREAM ISLAND TEAMS: islands, planks (cracked, ghost) and the drifting islands
+  if(SI_VIS) siDrawPlats();   // SHIFTING ISLES TEAMS: the faultline's rock, plates and hourglass
   if(YN_VIS) ynDrawPlats();   // YOYLE NEEDLE TEAMS: the needle's inside, its machinery and its platforms
   if(DRM_VIS) diDrawWeather();   // DREAM ISLAND TEAMS: leaves in a gust, rain
   drawImpactScars();          // impact's floor scars, on the surfaces they were made on
@@ -122802,7 +123276,7 @@ function worldGeo(){
     floors: floors.map(fl=>({level:fl.level,y:Math.round(fl.y),x:Math.round(fl.x),w:Math.round(fl.w)})),
     // `solid` was missing here once, so on a client every stone landmark rendered as a thin ledge; `field` keeps the
     // client's minimap filtering out the scatter grid the way the host's does; `rot` is paintPlat's tilt.
-    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team,ib:p.ib,sc:p.sc,ar:p.ar,lh:p.lh,bl:p.bl,ss:p.ss,th:p.th,sh:p.sh,wo:p.wo,hg:p.hg,blk:p.blk,ix:p.ix,pool:p.pool,trap:p.trap,oi:p.oi,yn:p.yn,yd:p.yd})),
+    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team,ib:p.ib,sc:p.sc,ar:p.ar,lh:p.lh,bl:p.bl,ss:p.ss,th:p.th,sh:p.sh,wo:p.wo,hg:p.hg,blk:p.blk,ix:p.ix,pool:p.pool,trap:p.trap,oi:p.oi,yn:p.yn,yd:p.yd,si:p.si,sd:p.sd,pl:p.pl})),
     // `zone` and `wall` ride along so a client DRAWS the team's safe zone where the host plays it: without them it fell back
     // to the old column round the base, which is nowhere near a side-wall band (see wallBand).
     bases: bases.map(b=>({team:b.team,x:Math.round(b.x),y:Math.round(b.y),w:b.w,h:b.h,color:b.color,
@@ -123167,7 +123641,7 @@ function applySnapshot(s){
   const st=STAGES.find(x=>x.id===s.stage); if(st) stage=st;
   SETTINGS.mode=s.mode;
   const geo = s.geo || (s.worldPlats ? s : null);   // (before the geometry was split out, it sat at the top level)
-  if(geo){ floors=geo.floors||[]; worldPlats=geo.worldPlats||[]; DRM_VIS = worldPlats.some(p=>p.di); YN_VIS = worldPlats.some(p=>p.yn); DRM_V = diVarFromGeo(); DRM_GH = worldPlats.some(p=>p.ghost); bases=(geo.bases||[]).map(b=>({...b})); mcNetGeo(geo.moon); NET_VIEW.geoBase = worldPlats.map(p=>[p.x, p.y]); }   // (MOON CAVES: the host's disc, built here)
+  if(geo){ floors=geo.floors||[]; worldPlats=geo.worldPlats||[]; DRM_VIS = worldPlats.some(p=>p.di); YN_VIS = worldPlats.some(p=>p.yn); SI_VIS = worldPlats.some(p=>p.si); DRM_V = diVarFromGeo(); DRM_GH = worldPlats.some(p=>p.ghost); bases=(geo.bases||[]).map(b=>({...b})); mcNetGeo(geo.moon); NET_VIEW.geoBase = worldPlats.map(p=>[p.x, p.y]); }   // (MOON CAVES: the host's disc, built here)
   else if(NET_VIEW.geoBase && NET_VIEW.geoBase.length === worldPlats.length) for(let i = 0; i < worldPlats.length; i++){ worldPlats[i].x = NET_VIEW.geoBase[i][0]; worldPlats[i].y = NET_VIEW.geoBase[i][1]; }   // ONLINE LAG: back where the geometry had them, then...
   if(Array.isArray(s.mv)) for(const r of s.mv){ const p = worldPlats[r[0] | 0]; if(p){ p.x = +r[1]; p.y = +r[2]; } }   // ...the ones the host says have moved (Yoyle Needle's ledges), where it has them
   if(s.dg) digNetIn(s.dg);   // THE DIG FLOOR: the host's holes, so this floor is the host's floor of this very frame
