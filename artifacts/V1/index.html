@@ -27130,11 +27130,15 @@ function stgCatchBelow(x, feet){
 // toward an end with nothing to land on past it, it stops there; if its foe is below and something catches under its feet, it drops through instead.
 function stgBrain(f, inp){
   if(!f.onground || f.hitstun > 0 || (!STG.statics.length)) return;
-  const dir = inp.right ? 1 : inp.left ? -1 : 0; if(!dir) return;
+  // (Yoyle Needle, CPU self-falls: the CPU ran at 6-7 px/frame, so letting go of the arrow 44 px from the end was too late -- it slid off the end of the
+  // bottom ledge into the pit at 0%. It now looks ahead by its speed, counts its momentum as a direction too, and PRESSES BACK to brake.)
+  const mom = Math.abs(f.vx) > 2 ? Math.sign(f.vx) : 0;
+  const dir = inp.right ? 1 : inp.left ? -1 : mom; if(!dir) return;
   const p = stgUnder(f); if(!p) return;
-  const end = dir > 0 ? p.x + p.w : p.x; if(Math.abs(end - f.x) > 44) return;
+  const end = dir > 0 ? p.x + p.w : p.x; const toEnd = (end - f.x)*dir; if(toEnd > 44 + Math.abs(f.vx)*12) return;
   if(stgCatchBelow(end + dir*30, f.y + f.r)) return;
   inp.left = false; inp.right = false;
+  if(mom === dir && Math.abs(f.vx) > 1.5){ if(dir > 0) inp.left = true; else inp.right = true; }
   const foe = nearestFoe(f, 600, 900);
   if(foe && foe.y > f.y + 60 && !p.solid && stgCatchBelow(f.x, f.y + f.r + 20)){ inp.down = true; inp.jump = true; }
 }
@@ -70532,6 +70536,7 @@ function step(){
       else {
       try {
       inp = (SETTINGS.mode==='ctf' && ctfAiInput(f)) || aiThink(f);
+      if(STG && inp && f.controller === 'ai') stgBrain(f, inp);   // (Yoyle Needle: aiThink has several early exits that skip brainOut, where the ledge-end sense lives; run it on every path)
       if(COBSFIGHT.active) cobsAiLasers(f, inp);   // Steve Cobs's laser walls: a CPU jumps for the gap as a player does (no other fight has them)
       legacyFin(inp);   // attack + special pressed together is the finisher; the engine reads `fin`
       fsBotInput(f, inp);   // chases the Smash Ball, and holds a Final Smash until it will hit
@@ -97080,8 +97085,11 @@ function teamZoneOf(team){
 // could simply park inside it and wait them out; this makes trespassing bleed.
 function enemyZoneOf(f){
   if(!f || SETTINGS.mode !== 'teams' || !bases || !bases.length) return null;
+  // A team with no base of its own (more teams than bases: the spawn gives it bases[team % bases.length]) shares that base,
+  // and a base your team shares is never a trespass: its owner is not your enemy there, and nor is its zone.
+  const ownB = bases.some(q => q.team === f.team) ? null : bases[f.team % bases.length];
   for(const b of bases){
-    if(b.team === f.team) continue;
+    if(b.team === f.team || b === ownB) continue;
     const z = teamZoneOf(b.team);
     if(!z) continue;
     const p = mcRealPt(f);   // (MOON CAVES: inside a frame, the real place)
