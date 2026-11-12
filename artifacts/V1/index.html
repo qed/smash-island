@@ -26469,8 +26469,9 @@ const YN_RISE = 130;   // the hops a CPU makes: up to 130 px (the weakest double
 function ynEdge(A, B, sol){
   const r = DIK.rise; DIK.rise = YN_RISE; let e; try{ e = diEdge(A, B, sol); } finally{ DIK.rise = r; }
   if(e && e.t === 'drop' && YNN_IDX){   // (a soft ledge under the fall catches it: the edge to anything past it is not an edge)
-    if(YNN_IDX.cage && e.soft){ const lo = Math.max(A.x0, B.x0) + 14, hi = Math.min(A.x1, B.x1) - 14, c0 = YNN_IDX.cage[0] - 25, c1 = YNN_IDX.cage[1] + 25;
-      if(e.lx > c0 && e.lx < c1) for(const nx of [c0 - 15, c1 + 15]) if(nx >= lo && nx <= hi){ e.lx = nx; e.tx = nx; break; } }
+    if(YNN_IDX.avoid.length && e.soft){   // (a CPU drops through the scaffold beside the cage's lane and the vents' columns: the cage and a vent carried it back up what it had dropped)
+      const lo = Math.max(A.x0, B.x0) + 14, hi = Math.min(A.x1, B.x1) - 14, bad = (x)=>YNN_IDX.avoid.some(r=>x > r[0] && x < r[1]);
+      if(bad(e.lx)){ let best = null; for(let nx = lo; nx <= hi; nx += 40) if(!bad(nx) && (best === null || Math.abs(nx - e.lx) < Math.abs(best - e.lx))) best = nx; if(best !== null){ e.lx = best; e.tx = best; } } }
     const x = e.tx != null ? e.tx : e.lx, bk = YNN_IDX.nb.get(Math.floor(x/YNN_IDX.BK));
     if(bk) for(const C of bk){ if(C === A || C === B || C.drift) continue; if(x >= C.x0 - 6 && x <= C.x1 + 6 && C.y > A.y + 12 && C.y < B.y - 12) return null; }
   }
@@ -26486,8 +26487,8 @@ function ynNavBuild(){
   const solids = worldPlats.filter(p=>p.solid), BK = 400, sb = new Map(), nb = new Map();
   for(const s of solids) for(let b = Math.floor(s.x/BK); b <= Math.floor((s.x + s.w)/BK); b++){ if(!sb.has(b)) sb.set(b, []); sb.get(b).push(s); }
   for(const n of nodes) if(!n.drift) for(let b = Math.floor(n.x0/BK); b <= Math.floor(n.x1/BK); b++){ if(!nb.has(b)) nb.set(b, []); nb.get(b).push(n); }
-  const cg = worldPlats.find(p=>p.yn === 'cage');
-  YNN_IDX = { nb, BK, cage:cg ? [cg.bx, cg.bx + cg.w] : null };
+  const cg = worldPlats.find(p=>p.yn === 'cage'), avoid = []; if(cg) avoid.push([cg.bx - 25, cg.bx + cg.w + 25]); if(M) for(const v of M.vent) avoid.push([v.x - 25, v.x + v.w + 25]);
+  YNN_IDX = { nb, BK, avoid };
   const near = (x0, x1)=>{ const out = new Set(); for(let b = Math.floor((x0 - 80)/BK); b <= Math.floor((x1 + 80)/BK); b++){ const a = sb.get(b); if(a) for(const s of a) out.add(s); } return Array.from(out); };
   const edge = (A, B)=>ynEdge(A, B, near(Math.min(A.x0, B.x0), Math.max(A.x1, B.x1)));
   for(const A of nodes){ if(A.drift) continue; const seen = new Set();
@@ -26606,6 +26607,7 @@ function ynBrain(f, inp){
 }
 function ynFollow(f, inp, N, feet, M, foe){
   const now = hazardT; let P = f._ynPlan;
+  f._jBuf = null;   // (a jump pressed in the air is kept for the landing: on the scaffold it hopped the CPU back up the deck it had just dropped through)
   if(!f.onground){
     const a = P && P.air;
     if(a && now < a.until){
@@ -26663,7 +26665,7 @@ function ynFollow(f, inp, N, feet, M, foe){
     return true;
   }
   if(Math.abs(f.x - e.lx) > 10){ go(e.lx); return true; }
-  if(e.t === 'drop'){ inp.down = true; inp.jump = true; if(!P.air) P.air = { tx:e.tx, ty:B.y, up:false, until:now + 90, from:node, to:B, e, t0:now, seen:false }; return true; }
+  if(e.t === 'drop'){ if(f.onground && !f._drop){ f.dropping = 10; f.vy = 5; f.onground = false; f.y += f.r*0.6; f._drop = true; } if(!P.air) P.air = { tx:e.tx, ty:B.y, up:false, until:now + 90, from:node, to:B, e, t0:now, seen:false }; return true; }
   inp.jump = true; go(e.tx);
   if(!P.air) P.air = { tx:e.tx, ty:B.y, up:e.up > 0, hop:true, until:now + 80, from:node, to:B, e, t0:now, seen:false };
   return true;
