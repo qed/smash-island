@@ -25,6 +25,8 @@ import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 import { loadMonolith } from './helpers/load-monolith.js';
 import { mulberry32 } from './helpers/prng.js';
+import { PERSONA_BY_TAG, PERSONA_LIST } from './helpers/personas.mjs';
+import { THRESH, CANVAS_PRE, JANK_HOOKS, FrameWatch } from './helpers/jank.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(ROOT);
@@ -33,7 +35,7 @@ process.chdir(ROOT);
 // arguments
 // ------------------------------------------------------------------------------------------------------------------------------
 const ARGV = process.argv.slice(2);
-const OPT = { minutes: 12, wall: null, seed: null, scene: null, only: null, out: 'playtest-out', verbose: false, matchMin: 3, idle: true, force: false, list: false, args: {} };
+const OPT = { minutes: 12, wall: null, seed: null, scene: null, only: null, out: 'playtest-out', verbose: false, matchMin: 3, idle: true, force: false, list: false, args: {}, plan: null, prio: 'idle' };
 for (let i = 0; i < ARGV.length; i++) {
   const a = ARGV[i], nx = () => ARGV[++i];
   if (a === '--minutes') { OPT.minutes = +nx(); OPT.minutesSet = true; }
@@ -46,6 +48,8 @@ for (let i = 0; i < ARGV.length; i++) {
   else if (a === '--verbose' || a === '-v') OPT.verbose = true;
   else if (a === '--no-idle') OPT.idle = false;
   else if (a === '--force') OPT.force = true;
+  else if (a === '--plan') OPT.plan = nx();
+  else if (a === '--priority') OPT.prio = nx();
   else if (a === '--list') OPT.list = true;
   else if (a === '--arg') { const [k, v] = nx().split('='); OPT.args[k] = isNaN(+v) ? v : +v; }
   else if (a === '--help' || a === '-h') { console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(0, 24).join('\n')); process.exit(0); }
@@ -82,12 +86,18 @@ const sessionOver = () => STOPPING || now() > WALL_DEADLINE || cpuMs() > CPU_DEA
 // severity: BUG (broken) > STUCK (no way out / never ends) > SLOW (frames) > FEEL (balance and design signals) > UI (text and layout)
 const SEV_ORDER = ['BUG', 'STUCK', 'SLOW', 'FEEL', 'UI'];
 const FINDINGS = new Map();
-let CUR = { scene: '-', seed: 0, args: {}, frame: 0 };   // the scene being played, for the repro line of whatever is found
+let CUR = { scene: '-', seed: 0, args: {}, frame: 0 };
+let CURP = null;            // the persona being played (a record from helpers/personas.mjs, or a legacy one)
+let SCENE_FIND = null;      // findings raised in the scene being played (for the per-persona log)
+let SCENE_EVENTS = [];      // things the person did/felt in this scene (would-quit moments, slips, remaps)
+const PSTATE = { tag: null, losses: 0 };
+function pevent(t) { SCENE_EVENTS.push(t); vlog('  [person] ' + t); }   // the scene being played, for the repro line of whatever is found
 function note(sev, kind, msg, data) {
-  const key = sev + '|' + kind + '|' + msg;
+  const key = sev + '|' + kind + '|' + (data && data.rc ? data.rc : msg);
   let e = FINDINGS.get(key);
-  if (!e) { e = { sev, kind, msg, count: 0, repros: [], data: data || null }; FINDINGS.set(key, e); }
+  if (!e) { e = { sev, kind, msg, rc: data && data.rc || null, count: 0, repros: [], data: data || null, group: data && data.group || null, personas: {}, scenes: {} }; FINDINGS.set(key, e); }
   e.count++;
+  { const pt = CURP ? CURP.tag : '-'; e.personas[pt] = (e.personas[pt] || 0) + 1; e.scenes[CUR.scene] = (e.scenes[CUR.scene] || 0) + 1; if (SCENE_FIND) SCENE_FIND.set(key, { sev, kind, msg: String(msg).slice(0, 200), group: e.group }); }
   if (data && !e.data) e.data = data;
   if (e.repros.length < 3 && !e.repros.some((r) => r.scene === CUR.scene && r.seed === CUR.seed)) {
     e.repros.push({ scene: CUR.scene, seed: CUR.seed, args: CUR.args, frame: CUR.frame, cmd: reproCmd(CUR), detail: data && data.detail || undefined });
@@ -108,6 +118,7 @@ const STATS = {
   canvasText: {},        // words drawn on the canvas during matches
   cpuIdle: [], bunched: [],
   screens: {},           // screen id -> { buttons, visited }
+  lat: {}, early: {}, esc: {}, journey: [], bossWarn: [], tlc: [], textOver: {}, textOff: {}, sceneLog: [], flow: [], clickMs: [],
 };
 
 // ------------------------------------------------------------------------------------------------------------------------------
@@ -116,10 +127,7 @@ const STATS = {
 // Injected before the game's own script: words drawn on the canvas are captured (the stub context swallows fillText otherwise).
 function injectTransform(html) {
   if (OPT.args.html) html = readFileSync(String(OPT.args.html), 'utf8');   // --arg html=PATH: play another build of the game (to reproduce a finding on the build it was found on)
-  const pre = `<script>(function(){window.__ptCanvasText=Object.create(null);window.__ptCap=false;var o=HTMLCanvasElement.prototype.getContext;
-HTMLCanvasElement.prototype.getContext=function(){var c=o.apply(this,arguments);return new Proxy(c,{get:function(t,p){
- if(p==='fillText'||p==='strokeText')return function(s){if(window.__ptCap){s=String(s);window.__ptCanvasText[s]=(window.__ptCanvasText[s]||0)+1;}};
- return t[p];},set:function(){return true;}});};})();</script>`;
+  const pre = CANVAS_PRE;
   return html.replace(/<head[^>]*>/i, (m) => m + pre);
 }
 
@@ -207,7 +215,7 @@ const PAGE_HOOKS = `(function(){
 })()`;
 
 class World {
-  constructor(seed, label) { this.seed = seed; this.label = label; this.held = new Set(); this.heldFor = new Map(); this.frame = 0; this.errs = []; this.msStep = []; }
+  constructor(seed, label) { this.seed = seed; this.label = label; this.held = new Set(); this.heldFor = new Map(); this.frame = 0; this.errs = []; this.msStep = []; this.human = { secs: 0, clicks: 0, keys: 0, first: null }; }
   static async boot(seed, label) {
     const wo = new World(seed, label);
     const t0 = now();
@@ -227,6 +235,7 @@ class World {
     try { await Promise.race([w.eval('profileReady'), sleep(3000)]); } catch (e) { /* ignore */ }
     if (OPT.args.prof) w.__ptProf = true;
     w.eval(PAGE_HOOKS);
+    w.eval(JANK_HOOKS);
     wo.bootMs = now() - t0;
     return wo;
   }
@@ -245,7 +254,7 @@ class World {
   }
   down(code) { if (this.held.has(code)) return; this.held.add(code); this.heldFor.set(code, 0); this._fire('keydown', code, false); }
   up(code) { if (!this.held.has(code)) return; this.held.delete(code); this.heldFor.delete(code); this._fire('keyup', code, false); }
-  tap(code) { this.down(code); this.up(code); }
+  tap(code) { this.human.keys++; this.human.secs += 0.4; this.down(code); this.up(code); }
   releaseAll() { for (const c of [...this.held]) this.up(c); }
   // a key held long enough makes the keyboard repeat it (keydown again with repeat:true, about every other frame after half a second)
   repeatHeld() { for (const [c, n] of this.heldFor) { this.heldFor.set(c, n + 1); if (n > 30 && n % 2 === 0) this._fire('keydown', c, true); } }
@@ -268,9 +277,13 @@ class World {
   findBtn(text, scope) { const re = text instanceof RegExp ? text : null; return this.buttons(scope).find((b) => re ? re.test(this.btnText(b)) : this.btnText(b).includes(text)); }
   click(text, scope) { const b = typeof text === 'object' && text.nodeType ? text : this.findBtn(text, scope); if (!b) return false; this.clickEl(b); return true; }
   // a mouse click moves the focus the way a browser does (jsdom's .click() does not): off a text box, onto a button
-  clickEl(b) { try { const ae = this.doc.activeElement; if (ae && ae !== b && ae !== this.doc.body && typeof ae.blur === 'function') ae.blur(); if (b.tagName === 'BUTTON' && typeof b.focus === 'function') b.focus(); } catch (e) { /* ignore */ }
+  clickEl(b) { const _t0 = now(), _s0 = this.screen(); this.human.clicks++; this.human.secs += CURP && CURP.motor ? CURP.motor.clickSecs : 1; try { const ae = this.doc.activeElement; if (ae && ae !== b && ae !== this.doc.body && typeof ae.blur === 'function') ae.blur(); if (b.tagName === 'BUTTON' && typeof b.focus === 'function') b.focus(); } catch (e) { /* ignore */ }
     this.lastClick = (b.id ? '#' + b.id + ' ' : '') + (b.textContent || '').replace(/s+/g, ' ').trim().slice(0, 30);
-    try { b.click(); } catch (e) { note('BUG', 'click-throws', `click on "${this.btnText(b).slice(0, 30)}" threw: ${clipMsg(String(e && e.message || e))}`, { detail: String(e && e.stack) }); } }
+    try { b.click(); } catch (e) { note('BUG', 'click-throws', `click on "${this.btnText(b).slice(0, 30)}" threw: ${clipMsg(String(e && e.message || e))}`, { detail: String(e && e.stack) }); }
+    const _ms = now() - _t0, _s1 = this.screen();
+    if (_s1 !== _s0 && CURP && CURP.motor) { try { const a = this.doc.querySelector('.screen.active'); const words = a ? Math.min(250, (a.textContent || '').split(/\s+/).filter(Boolean).length) : 0; this.human.secs += words * CURP.motor.msPerWord / 1000 * CURP.motor.readFrac; } catch (e) { /* ignore */ } }
+    if (STATS.clickMs.length < 4000) STATS.clickMs.push(_ms);
+    if (_ms > THRESH.SLOW_CLICK_MS && _s1 !== '(match)') note('SLOW', 'jank-slow-click', `a click on "${this.btnText(b).slice(0, 28)}" at screen "${_s0}" took ${Math.round(_ms)} ms before the next screen was ready`, { rc: `slowclick|${_s0}|${this.btnText(b).slice(0, 20)}`, group: 'JANK' }); }
   screen() { const a = [...this.doc.querySelectorAll('.screen.active')].map((s) => s.id); return a.length ? a.join('+') : (this.E('running') ? '(match)' : '(none)'); }
   running() { return !!this.E('running'); }
   stepN(n) { for (let i = 0; i < n; i++) { try { this.w.step(); } catch (e) { note('BUG', 'step-throws', `step() threw: ${clipMsg(e && e.message || e)}`, { detail: String(e && e.stack).split('\n').slice(0, 4).join(' | ') }); return false; } this.frame++; } return true; }
@@ -312,8 +325,11 @@ function fdiag(wo, f) {
   return `pos ${Math.round(f.x)},${Math.round(f.y)} ctf-phase ${ph} menu ${wo.E('typeof ctfMenuOpen === "function" && ctfMenuOpen()')} state {${ks.join(' ')}}`;
 }
 // the answer to "did the key I pressed do anything": signature of everything an input can change on a fighter
-function sig(f) {
+function sigOld(f) {
   return [f.atkCd, f.spCd, f.smCd, f.fnCd, f._atkSeq || 0, f._atkAnim, f._spPend, f.jumps, Math.round(f.vx * 4), Math.round(f.vy * 4), f.onground ? 1 : 0, !!f._mv, !!f._hold, !!f._windup, !!f._sm, f._grabbed != null, !!f._gb, f.flying, f.dropping].join(',');
+}
+function sig(f) {
+  return [f.atkCd, f.spCd, f.smCd, f.fnCd, f._atkSeq || 0, f._atkAnim, f._spPend, f.jumps, Math.round(f.vx * 4), Math.round(f.vy * 4), f.onground ? 1 : 0, !!f._mv, !!f._hold, !!f._windup, !!f._sm, f._grabbed != null, !!f._gb, f.flying, f.dropping, !!f._smQ, !!f._smBuf, f.smashHold > 0 ? 1 : 0].join(',');
 }
 
 // ------------------------------------------------------------------------------------------------------------------------------
@@ -327,18 +343,38 @@ const PERSONAS = {
   // an EXPLORER: walks everywhere, presses every key
   explorer: { react: [9, 20], mash: 0.09, aggro: 0.25, aim: 0.25, recover: 0.6, walkoff: 0.1, smash: 0.12, special: 0.2, grab: 0.1, shortHop: 0.2, fastFall: 0.2, drop: 0.5, retreat: 0.1, space: false, wander: true },
 };
-const MOVE_KEYS = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: 'ArrowDown', atk: 'KeyX', sp: 'KeyC', sm: 'KeyV' };
+const DEFAULT_MOVE_KEYS = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: 'ArrowDown', atk: 'KeyX', sp: 'KeyC', sm: 'KeyV' };
+let MOVE_KEYS = { ...DEFAULT_MOVE_KEYS };
+function syncMoveKeys(wo) { const k = wo.E('KEYS'); MOVE_KEYS = { left: k.left, right: k.right, up: k.jump, down: k.down, atk: k.attack, sp: k.special, sm: k.smash }; }
+function personaOf(name) {
+  if (name && typeof name === 'object') return name;
+  if (PERSONA_BY_TAG[name]) return PERSONA_BY_TAG[name];
+  return { tag: name, legacy: true, brain: PERSONAS[name] || PERSONAS.new, motor: null, keymap: null, patience: { menuSecs: 1e9, confusionSecs: 1e9, rageLosses: 1e9 }, plan: [], profile: 'legacy persona ' + name };
+}
+const gauss = (r) => { let u = 0, v = 0; while (u === 0) u = r(); v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
 
 class Player {
   constructor(wo, rng, personaName, opt) {
-    this.wo = wo; this.r = rng; this.name = personaName; this.p = PERSONAS[personaName]; this.opt = opt || {};
+    this.wo = wo; this.r = rng; this.pers = personaOf(personaName); this.name = this.pers.tag; this.p = this.pers.brain; this.m = this.pers.motor; this.opt = opt || {}; this.earlies = [];
     this.nextThink = 0; this.plan = { move: 0, hold: new Set() }; this.taps = []; this.hist = []; this.probes = [];
     this.stuckT = 0; this.lastPos = null; this.canted = {}; this.exploreKeys = ['Tab', 'Enter', 'KeyQ', 'KeyE', 'KeyP', 'KeyB', 'KeyZ', 'Digit1', 'Space', 'ShiftLeft', 'Backspace', 'KeyR_'];
     this.firstKoSeen = false; this.edgeWalk = 0; this.doneAt = 0;
     this.stats = { actions: {}, cants: 0, stuck: 0 };
   }
   // schedule a tap: keys held for `dur` frames starting `at` frames from now
-  queue(keys, at, dur, cat, probe) { this.taps.push({ keys, at, dur, cat, probe, on: false }); }
+  queue(keys, at, dur, cat, probe) {
+    const m = this.m;
+    if (m && cat !== 'mash' && cat !== 'explore') {
+      // the person's hands: a slipped press never happens; a short hop is a full hop when the timing fails; a double-tap too late; every press is a little early or late
+      if (this.r() < m.dropRate) { this.stats.slips = (this.stats.slips || 0) + 1; return; }
+      if (cat === 'hop' && dur <= 2 && this.r() > m.shortHop) dur = R.int(this.r, 5, 8);
+      else if (cat === 'djump' && this.r() > m.doubleTap) at += R.int(this.r, 6, 14);
+      else if (cat !== 'hop') dur = Math.max(1, dur + Math.round(gauss(this.r) * m.jitterFrames * 0.4));
+      at += Math.max(0, Math.round(Math.abs(gauss(this.r)) * m.jitterFrames * 0.7));
+    }
+    if (OPT.args.minTap && cat !== 'hop') dur = Math.max(dur, +OPT.args.minTap);   // --arg minTap=N: no tap shorter than N frames (to tell a short tap's failure from a real one)
+    this.taps.push({ keys, at, dur, cat, probe, on: false });
+  }
   perceive(S) {
     const cp = (f) => ({ x: f.x, y: f.y, vx: f.vx, vy: f.vy, pct: f.pct, hitstun: f.hitstun, hp: f.hp, r: f.r, face: f.face, onground: f.onground });
     this.hist.push({ me: S.me && cp(S.me), foes: S.foes.map(cp), bosses: S.bosses.map(cp), t: S.t }); if (this.hist.length > 40) this.hist.shift();
@@ -364,9 +400,14 @@ class Player {
     }
     this.taps = this.taps.filter((t) => t.dur > 0 || t.at > 0);
     this.footGuard(S, me, want);
-    for (const k of [...wo.held]) if (!want.has(k)) wo.up(k);
-    for (const k of want) wo.down(k);
+    // a machine at 25-35 fps: the person's keys only reach the game on the frames it draws (a tap shorter than that gap is lost)
+    const gap = this.m && this.m.fps < 55 ? Math.round(60 / this.m.fps) : 1;
+    if (gap <= 1 || wo.frame % gap === 0) {
+      for (const k of [...wo.held]) if (!want.has(k)) wo.up(k);
+      for (const k of want) wo.down(k);
+    }
     wo.repeatHeld();
+    (this.keyRing || (this.keyRing = [])).push(wo.frame + ':' + (wo.held.has(MOVE_KEYS.atk) ? 'X' : '-') + (wo.held.has(MOVE_KEYS.sp) ? 'C' : '-') + (wo.held.has(MOVE_KEYS.sm) ? 'V' : '-') + (wo.held.has(MOVE_KEYS.left) ? 'L' : wo.held.has(MOVE_KEYS.right) ? 'R' : '-') + (wo.held.has(MOVE_KEYS.up) ? 'U' : wo.held.has(MOVE_KEYS.down) ? 'D' : '-')); if (this.keyRing.length > 40) this.keyRing.shift();
     this.watchProbes(S, me);
     this.watchStuck(S, me);
   }
@@ -438,7 +479,7 @@ class Player {
   hop(S, me, tgt, dx, dy) {
     const p = this.p, r = this.r;
     if (me.onground) {
-      if (dy < -90 && Math.abs(dx) < 260) { this.queue([MOVE_KEYS.up], 0, p.shortHop && r() < p.shortHop ? 2 : R.int(r, 6, 11), 'hop'); }
+      if (dy < -90 && Math.abs(dx) < 260) { this.queue([MOVE_KEYS.up], 0, p.shortHop && r() < p.shortHop ? 2 : R.int(r, 6, 11), 'hop', { type: 'jump', latOnly: true }); }
       else if (dy > 110 && this.onThinPlat(me, S) && r() < p.drop) { this.queue([MOVE_KEYS.down], 0, 8, 'drop'); }
       else if (r() < (p.wander ? 0.1 : 0.05)) { this.queue([MOVE_KEYS.up], 0, p.shortHop && r() < p.shortHop ? 2 : R.int(r, 5, 10), 'hop'); }
     } else {
@@ -550,33 +591,64 @@ class Player {
 
   // ---------------------------------------------------------------- "can't" moments: the key was pressed and nothing happened
   armProbe(pr, me) {
-    if (me.hitstun > 0 || me.frozen > 0 || me._lag > 0 || me._heldBy != null || me.rooted > 0 || me._selfStun > 0 || me.dead) return;   // not a fair test
+    if (me.hitstun > 0 || me.frozen > 0 || me._lag > 0 || me._heldBy != null || me.rooted > 0 || me._selfStun > 0 || me._fsLock || me._hitStop > 0 || me._fxLock > this.wo.E('hazardT') || me.dead) return;   // not a fair test (_fsLock: caught by a Final Smash, the game holds the keys; _fxLock: inside a finisher, the game takes the keys until it ends; _hitStop: a hit freeze keeps presses for the frame it ends)
     if (!OPT.args.legacy && (me._jail != null || me._cam || me._ctfJT > 0 || this.wo.E('(typeof ctfMenuOpen === "function" && ctfMenuOpen()) || (SETTINGS.mode === "ctf" && CTF.live && CTF.live.phase !== "play")'))) return;   // a prisoner, the free camera, the planning menu, a hiding phase: the game takes the keys on purpose
     const t = pr.type;
+    if (t === 'atk' && me.atkCd > 0 && me.atkCd <= THRESH.EARLY_WINDOW) { this.earlies.push({ t0: this.wo.frame, seq0: me._atkSeq || 0, until: this.wo.frame + me.atkCd + 8, name: me.name, cd: me.atkCd, fired: false }); return; }
+    if (t === 'jump' && (!me.onground || me.atkCd > 0 || me._mv || me._hold)) return;
     if (t === 'atk' && me.atkCd > 0) return;
     if (t === 'special' && (me.spCd > 0 || me.atkCd > 12)) return;
     if (t === 'smash' && (me.smCd > 0 || me.atkCd > 12)) return;
+    if (t === 'smash' && (me._smQ || me._smBuf)) return;   // one is already charging: a second press while it charges does nothing, by the game's rule (SMASHES: PRESS ONCE)
     if (t === 'grab' && me.atkCd > 12) return;
     if (t === 'fin' && me.fnCd > 0) return;
-    this.probes.push({ type: t, t0: this.wo.frame, sig0: sig(me), seq0: me._atkSeq || 0, np: this.wo.E('projectiles.length + summons.length + beams.length'), ok: false, name: me.name, cat: this.wo.E('window.__pt.cat') });
+    this.probes.push({ type: t, latOnly: !!pr.latOnly, clean: me.atkCd === 0, t0: this.wo.frame, sig0: sig(me), sigOld0: sigOld(me), okOld: false, seq0: me._atkSeq || 0, np: this.wo.E('projectiles.length + summons.length + beams.length'), ok: false, trace: [], before: (this.keyRing || []).slice(-8).join(' '), name: me.name, cat: this.wo.E('window.__pt.cat') });
   }
   watchProbes(S, me) {
     if (!this.probes.length) return;
     const f = this.wo.frame, np = this.wo.E('projectiles.length + summons.length + beams.length');
-    const cur = sig(me);
+    const cur = sig(me), curOld = sigOld(me);
+    const trk = this.probes.some((q) => !q.ok) ? this.wo.E('(function(){var m=fighters.find(function(x){return x.you})||{};return [down[KEYS.attack]?1:0,down[KEYS.special]?1:0,down[KEYS.smash]?1:0].join("")+" cd"+[m.atkCd,m.spCd,m.smCd].join("/")+" mv"+(m._mv?1:0)+" lag"+(m._lag|0)+" hold"+(m._hold?1:0)+(m._gb?"gb":"")+" ws"+(m._windup?1:0)+" sq"+(m._smQ?1:0)+(m._smBuf?"b":"")+" st"+(m.hitstun|0)+" gr"+(m.onground?1:0)+" _sp"+(m._sp?1:0)+" pend"+(m._spPend|0)+" nb"+(m._noBattery|0)+" hush"+(m._hushT>hazardT?1:0)+" jail"+(m._jail!=null?1:0)+" fxl"+(m._fxLock>hazardT?(m._fxLock-hazardT)+(m._fxBy==null?"own":"by"+m._fxBy):0)+" hs"+(m._hitStop|0)+(m._fsLock?" fsl":"")+" ht"+hazardT+(typeof fsTimeGate==="function"&&fsTimeGate.length===0?"":"")})()') : '';
     for (const pr of this.probes) {
-      if (!pr.ok && (cur !== pr.sig0 || np !== pr.np)) pr.ok = true;
+      { const pk = pr.type === 'atk' || pr.type === 'grab' ? MOVE_KEYS.atk : pr.type === 'special' ? MOVE_KEYS.sp : MOVE_KEYS.sm; if (this.wo.held.has(pk)) pr.seen = true; }   // did the key ever reach the game (a 25-35 fps machine drops a tap shorter than its frame)
+      if (!pr.okOld && (curOld !== pr.sigOld0 || np !== pr.np || me.hitstun > 0 || me.frozen > 0 || me._heldBy != null || me.dead)) pr.okOld = true;
+      if (!pr.ok && pr.trace.length < 16) pr.trace.push(f + ':' + trk);
+      if (!pr.ok && (cur !== pr.sig0 || np !== pr.np)) { pr.ok = true; if (pr.clean) this.recordLat(pr, f - pr.t0 - 1); }
       if (!pr.ok && me.hitstun > 0) pr.ok = true;   // got hit meanwhile: not fair
       if (!pr.ok && (me.frozen > 0 || me._heldBy != null || me.dead)) pr.ok = true;
-      if (!pr.ok && f - pr.t0 > 14) { pr.ok = true; pr.bad = true; }
+      if (!pr.ok && f - pr.t0 > 14) { pr.ok = true; pr.bad = !pr.latOnly; if (pr.latOnly) this.recordLat(pr, 99); }
     }
-    for (const pr of this.probes) if (pr.bad) {
+    for (const pr of this.probes) if (pr.ok && !pr.latOnly && !pr.cnt && (pr.okOld || f - pr.t0 > 14)) { pr.cnt = true; if (process.env.PT_COUNT) process.stderr.write(`CANTCOUNT ${pr.type} old=${pr.okOld ? 0 : 1} new=${pr.bad ? 1 : 0}
+`); }
+    for (const pr of this.probes) if (pr.bad && !pr.noted) { pr.noted = true;
+      if (!pr.seen) { STATS.lostTaps = (STATS.lostTaps || 0) + 1; if (process.env.PT_COUNT) process.stderr.write(`LOSTTAP ${pr.type} ${pr.name}
+`); continue; }   // the key never reached the game: a short tap on a slow machine, counted apart, not a 'move did not come out'
       this.stats.cants++;
       note('BUG', 'cant', `${pr.name}: "${pr.type === 'atk' ? 'attack (X)' : pr.type === 'special' ? 'special (C)' : pr.type === 'smash' ? 'smash (V)' : pr.type === 'grab' ? 'grab (X+C)' : 'finisher (V+C)'}" was pressed on a ready fighter and nothing happened for 14 frames`,
-        { detail: `fighter ${pr.name}, move ${pr.type}, the player's action ${pr.cat}, frame ${pr.t0}, mode ${S.mode}; ${fdiag(this.wo, me)}` });
+        { detail: `fighter ${pr.name}, move ${pr.type}, the player's action ${pr.cat}, frame ${pr.t0}, mode ${S.mode}; ${fdiag(this.wo, me)}; keys just before the press (frame:XCV LR UD) ${pr.before}; last calls overall ${this.wo.E('window.__pt.calls.filter(function(c){return c.indexOf("combo") < 0}).slice(-6).join(" ")')}; calls in the window ${this.wo.E('window.__pt.calls.filter(function(c){return +c.split(":")[0] >= ' + (pr.t0 - 1) + '}).join(" ")')}; trace (frame:XCV down, cooldowns atk/sp/sm, ...) ${pr.trace.join(' | ')}` });
     }
-    this.probes = this.probes.filter((pr) => !pr.ok);
+    this.probes = this.probes.filter((pr) => !(pr.ok && (pr.okOld || pr.latOnly || f - pr.t0 > 14)));
+    this.watchEarlies(me);
   }
+  // key press -> the first change on the fighter, in frames AFTER the step that first saw the key (0 = answered at once)
+  recordLat(pr, L) {
+    const k = pr.name + '|' + pr.type, a = STATS.lat[k] || (STATS.lat[k] = { n: 0, sum: 0, max: 0, out: 0 });
+    if (L >= 99) { a.none = (a.none || 0) + 1; return; }
+    a.n++; a.sum += L; if (L > a.max) a.max = L;
+    if (L >= THRESH.LAT_FLAG_FRAMES) { a.out++; note('FEEL', 'jank-input-latency', `${pr.name}: ${pr.type} took ${L} frames (${Math.round(L * 16.7)} ms) from the key to the first change on the fighter`, { rc: `lat|${pr.name}|${pr.type}`, group: 'JANK', detail: `frame ${pr.t0}` }); }
+  }
+  // a press a few frames before the last move's end-lag is over: buffered (comes out when ready), held through, or eaten (lost)
+  watchEarlies(me) {
+    if (!this.earlies.length) return;
+    const f = this.wo.frame, held = this.wo.held.has(MOVE_KEYS.atk);
+    for (const e of this.earlies) {
+      if (e.done) continue;
+      if (!e.fired && (me._atkSeq || 0) !== e.seq0) { e.fired = true; e.done = true; this.tallyEarly(e.name, held ? 'held' : 'buffered'); }
+      else if (f > e.until) { e.done = true; this.tallyEarly(e.name, this.wo.held.has(MOVE_KEYS.atk) ? 'heldNo' : 'eaten'); }
+    }
+    this.earlies = this.earlies.filter((e) => !e.done);
+  }
+  tallyEarly(name, what) { const a = STATS.early[name] || (STATS.early[name] = { buffered: 0, held: 0, eaten: 0, heldNo: 0 }); a[what]++; }
   // a fighter that holds a move key and goes nowhere for 10 s
   watchStuck(S, me) {
     const f = this.wo.frame;
@@ -606,7 +678,7 @@ class Sim {
     this.wo = wo; this.opt = opt || {}; this.player = null; this.f = 0; this.bannerSeen = 0; this.slow = [];
     this.idleCpu = new Map(); this.bunchT = 0; this.perfAcc = { n: 0, sum: 0, worst: 0, over16: 0, worstAt: '' };
     this.drawEvery = this.opt.drawEvery || 4; this.matchStart = wo.E('hazardT'); this.cpu = new Map(); this.textPhases = new Set();
-    this.hudBad = false; this.state0 = null; this.edges = wo.E('typeof FLOOR_SEGS !== "undefined" && !!FLOOR_SEGS');   // (a stage with real edges this match)
+    this.fw = new FrameWatch(wo, note, STATS, CUR); this.hudBad = false; this.state0 = null; if (!wo.human.first) wo.human.first = { secs: +wo.human.secs.toFixed(1), clicks: wo.human.clicks, keys: wo.human.keys }; this.edges = wo.E('typeof FLOOR_SEGS !== "undefined" && !!FLOOR_SEGS');   // (a stage with real edges this match)
   }
   // one frame; false when the match is not running (ended, left, paused)
   frame() {
@@ -622,6 +694,7 @@ class Sim {
     const dt = t1 - t0;
     if (OPT.args.prof && dt > 40 && this.f > 90) { const top = Object.entries(w.__pt.fnT).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => `${k} ${v.toFixed(0)}ms`); (STATS.spikes = STATS.spikes || []).push({ scene: CUR.scene, seed: CUR.seed, frame: this.f, ms: +dt.toFixed(0), phase: S.mode + ':' + (S.mode === 'ctf' ? this.wo.E('CTF.live ? CTF.live.phase : "-"') : 'play'), top }); }
     this.f++; wo.frame++; CUR.frame = wo.frame;
+    this.fw.observe(dt, wo.held, MOVE_KEYS, S.plats);
     this.perf(dt, S);
     if (this.f % 10 === 0) this.watch(S);
     return true;
@@ -715,8 +788,10 @@ function seg(wo, id, v) {
   if (!b) return false; wo.clickEl(b); return true;
 }
 function startFromSelect(wo) {
-  const before = wo.screen();
+  const t0 = now();
   wo.clickEl(wo.doc.getElementById('startBtn'));
+  const ms = now() - t0;
+  if (ms > THRESH.SLOW_START_MS) note('SLOW', 'jank-slow-start', `Start Match took ${Math.round(ms)} ms to get a match on screen (${wo.E('SETTINGS.mode')} on ${wo.E('stage.id')})`, { rc: `slowstart|${wo.E('SETTINGS.mode')}|${wo.E('stage.id')}`, group: 'JANK' });
   return wo.running();
 }
 
@@ -746,6 +821,15 @@ function closeMatch(wo, sim, tag, extra) {
     row.finTypeVsMove = `${byType}/${byMove}`;
     if (byType !== byMove) note('BUG', 'playtest-credit', `the player's finisher move type counts ${byType} hits but the player's finisher move landed ${byMove} (the playtester's own bookkeeping, not the game)`);
   }
+  if (CURP && !CURP.legacy && extra && extra.you) {
+    const won = !!(res && res.winners && res.winners.includes(extra.you));
+    const lost = !won && !!(res || youKos.length >= 2);
+    if (lost) PSTATE.losses++; else if (won) PSTATE.losses = 0;
+    if (youKos.length && youKos[0].t <= 900) pevent(`was knocked out ${Math.round(youKos[0].t / 60)} s into the match (${youKos[0].side} at ${youKos[0].pct}%)`);
+    if (lost && PSTATE.losses >= CURP.patience.rageLosses) { pevent(`would have rage-quit: ${PSTATE.losses} losses in a row (limit ${CURP.patience.rageLosses})`); PSTATE.losses = 0; }
+    if ((CURP.motor && CURP.motor.slips) || 0) { /* (slips are counted per player, not here) */ }
+  }
+  if (sim.player && sim.player.stats && sim.player.stats.slips) pevent(`${sim.player.stats.slips} presses slipped (a person's missed keys)`);
   STATS.matches.push(row);
   for (const [k, v] of Object.entries(P.moves)) { const a = STATS.moves[k] || (STATS.moves[k] = { fired: 0, landed: 0, dmg: 0 }); a.fired += v.fired; a.landed += v.landed; a.dmg += v.dmg; }
   for (const [k, v] of Object.entries(P.cats)) { const a = STATS.cats[k] || (STATS.cats[k] = { used: 0, landed: 0, dmg: 0 }); a.landed += v.landed; a.dmg += v.dmg; }
@@ -766,7 +850,7 @@ async function playOut(wo, sim, capFrames, until, stuckOnCap) {
   }
   if (sim.f >= cap && wo.running()) {
     // a stalemate is a match where nobody has lost a stock for the last minute; a match that is merely long is a design signal (an explorer never fights, so it says nothing)
-    const lastKo = wo.w.__pt.kos.reduce((m, k) => Math.max(m, k.t), 0), now0 = wo.E('hazardT'), stale = now0 - lastKo > 3600, explorer = sim.player && sim.player.name === 'explorer';
+    const lastKo = wo.w.__pt.kos.reduce((m, k) => Math.max(m, k.t), 0), now0 = wo.E('hazardT'), stale = now0 - lastKo > 3600, explorer = sim.player && (sim.player.name === 'explorer' || (sim.player.p && sim.player.p.wander));
     if (explorer && !wo.E('TOURNEY.active')) return 'cap';
     const stuck = stuckOnCap && stale;
     note(stuck ? 'STUCK' : 'FEEL', stuck ? 'match-never-ends' : 'long-match', `${wo.E('SETTINGS.mode')} match on ${wo.E('stage.id')} ${stuck ? 'is a stalemate: no stock lost for a minute and it did not end in' : 'was still going after'} ${Math.round(cap / 3600)} min of game time`, { detail: `${wo.E('fighters.map(function(f){return f.name+":"+f.stocks+"/"+Math.round(f.pct)}).join(" ")')}` });
@@ -822,7 +906,17 @@ async function matchScene(wo, rng, args, kind) {
   if (wo.screen() === 'result' && rng() < 0.5) await resultScreen(wo, rng);
   return { why, row };
 }
-function sampleCanvasText(wo) { const t = wo.w.__ptCanvasText; for (const k of Object.keys(t)) { STATS.canvasText[k] = (STATS.canvasText[k] || 0) + t[k]; } }
+function sampleCanvasText(wo) {
+  const t = wo.w.__ptCanvasText; for (const k of Object.keys(t)) { STATS.canvasText[k] = (STATS.canvasText[k] || 0) + t[k]; }
+  const P = wo.w.__pt;
+  for (const k of Object.keys(P.textOver || {})) { STATS.textOver[k] = (STATS.textOver[k] || 0) + P.textOver[k]; note('UI', 'jank-text-overlap', `HUD text overlaps: "${k}" (estimated boxes, ${wo.E('SETTINGS.mode')} on ${wo.E('stage.id')})`, { rc: `overlap|${k}`, group: 'JANK' }); }
+  for (const k of Object.keys(P.textOff || {})) { STATS.textOff[k] = (STATS.textOff[k] || 0) + P.textOff[k]; note('UI', 'jank-text-offscreen', `HUD text runs off the canvas edge: "${k}" (estimated width, ${wo.E('SETTINGS.mode')} on ${wo.E('stage.id')})`, { rc: `off|${k}`, group: 'JANK' }); }
+  P.textOver = Object.create(null); P.textOff = Object.create(null);
+  const rtF = CURP && CURP.motor ? CURP.motor.rtMs / (1000 / 60) : null, tag = CURP ? CURP.tag : null;
+  for (const w of P.bossWarn || []) if (STATS.bossWarn.length < 20000) STATS.bossWarn.push({ ...w, persona: tag, rtF });
+  for (const w of P.tlc || []) if (STATS.tlc.length < 20000) STATS.tlc.push({ ...w, persona: tag });
+  P.bossWarn = []; P.tlc = [];
+}
 
 SCENES.ffa = { weight: 4, run: (wo, rng, args) => matchScene(wo, rng, args, 'ffa') };
 SCENES['1v1'] = { weight: 3, run: (wo, rng, args) => matchScene(wo, rng, args, '1v1') };
@@ -864,6 +958,10 @@ function scanText(wo, id) {
     if (BAD_TEXT.test(t)) note('BUG', 'bad-text', `screen "${where}" shows "${t.slice(0, 50)}" (undefined/NaN/[object])`, { detail: elDesc(el) });
     if (PHONE_WORDS.test(t)) note('UI', 'phone-wording', `screen "${where}" says "${(t.match(PHONE_WORDS) || [''])[0]}" in: "${t.slice(0, 70)}" (a computer game: no phone or touch wording)`, { detail: elDesc(el) });
   }
+}
+function uiSig(wo) {
+  let h = 2166136261 >>> 0; const html = wo.doc.body.innerHTML; for (let i = 0; i < html.length; i += 7) { h ^= html.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return wo.screen() + '|' + html.length + '|' + h + '|' + wo.E('JSON.stringify(SETTINGS)') + '|' + wo.E('(typeof chosen !== "undefined" && chosen && chosen.name) || ""') + '|' + wo.running();
 }
 function elDesc(el) { return (el.id ? '#' + el.id : el.className ? '.' + String(el.className).split(' ')[0] : el.tagName); }
 
@@ -912,6 +1010,7 @@ async function pauseCheck(wo) {
 
 async function exploreScreen(wo, rng, id, open, opt) {
   opt = opt || {};
+  const hs0 = wo.human.secs;
   const rec = STATS.screens[id] || (STATS.screens[id] = { visits: 0, buttons: 0, leaves: 0, texts: 0 });
   if (!(await open())) { note('BUG', 'menu', `could not open screen "${id}" through its door`); return; }
   rec.visits++;
@@ -921,12 +1020,20 @@ async function exploreScreen(wo, rng, id, open, opt) {
   const order = R.shuffle(rng, [...Array(list.length).keys()]).slice(0, opt.max || 30);
   for (const i of order) {
     if (sessionOver()) return;
+    if (CURP && !CURP.legacy && wo.human.secs - hs0 > CURP.patience.confusionSecs) break;   // they have had enough of this screen
     if (!(await open())) break;
     const b = wo.buttons('#' + id)[i]; if (!b) continue;
     const label = wo.btnText(b).slice(0, 28);
     if (opt.skip && opt.skip.test(label)) continue;
     const before = wo.screen();
+    const sg0 = uiSig(wo);
     wo.clickEl(b);
+    { const sg1 = uiSig(wo);
+      if (sg1 === sg0 && wo.screen() === before && label && !b.disabled && !(b.closest && b.closest('[id^=seg]')) && !/(^|[ _-])(on|sel|selected|active|cur|current)([ _-]|$)/.test(String(b.className))) {
+        const bb = wo.buttons('#' + id)[i];
+        if (bb) { wo.clickEl(bb); const sg2 = uiSig(wo);
+          if (sg2 !== sg1) note('FEEL', 'jank-two-clicks', `on screen "${id}" the button "${label}" did nothing on the first click and something on the second`, { rc: `twoclick|${id}|${label}`, group: 'JANK' });
+          else note('UI', 'jank-dead-button', `on screen "${id}" the button "${label}" changed nothing visible on two clicks`, { rc: `dead|${id}|${label}`, group: 'JANK' }); } } }
     if (opt.afterClick) await opt.afterClick(b, label);
     const s = wo.screen();
     if (s === '(match)') { await quickPlay(wo, rng, 150); await pauseCheck(wo); rec.leaves++; }
@@ -937,7 +1044,13 @@ async function exploreScreen(wo, rng, id, open, opt) {
   }
   if (!(await open())) return;
   // the way out: Esc or a button must lead somewhere
-  if (id !== 'title') { wo.tap('Escape'); const escWorks = wo.screen() !== id; if (!escWorks) { const ok = await toTitle(wo, 'after exploring ' + id); if (!ok) return; } }
+  if (CURP && wo.human.secs - hs0 > CURP.patience.confusionSecs) pevent(`spent ${Math.round(wo.human.secs - hs0)} s on screen "${id}" (limit ${CURP.patience.confusionSecs} s before they would leave confused or bored)`);
+  if (id !== 'title') {
+    const hasBack = wo.buttons('#' + id).some((b) => BACKLIKE.test(wo.btnText(b)));
+    wo.tap('Escape'); const escWorks = wo.screen() !== id;
+    const er = STATS.esc[id] || (STATS.esc[id] = { tried: 0, leaves: 0, hasBack }); er.tried++; if (escWorks) er.leaves++;
+    if (!escWorks && hasBack) note('FEEL', 'jank-esc-ignored', `Esc does nothing on screen "${id}" although it has a back/close button (a person presses Esc to go back)`, { rc: `esc|${id}`, group: 'JANK' });
+    if (!escWorks) { const ok = await toTitle(wo, 'after exploring ' + id); if (!ok) return; } }
 }
 
 // the doors of the title, each a real click (opened from a clean title)
@@ -1184,11 +1297,11 @@ async function runningScene(wo, rng, args) {
   while (frames < cap && wo.running() && !wo.paused() && !sessionOver()) {
     const me = wo.E('fighters.find(function(f){return f.you})');
     if (!me) break;
-    wo.down('ArrowRight');
+    wo.down(MOVE_KEYS.right);
     // the course: jump when something is just ahead, or now and then; a tryhard holds the jump for height
     const ahead = wo.E(`(function(){ var f = fighters.find(function(q){return q.you}); var best = 1e9, a, i; for(i=0;i<RACE.obstacles.length;i++){ a = RACE.obstacles[i]; if(a.x !== undefined && a.x > f.x && a.x - f.x < best) best = a.x - f.x; } return best; })()`);
-    if (frames >= nextJump && me.onground) { const hold = persona === 'tryhard' ? R.int(r, 10, 18) : R.int(r, 3, 12); wo.down('ArrowUp'); sim.frame(); frames++; for (let i = 0; i < hold && wo.running(); i++) { sim.frame(); frames++; } wo.up('ArrowUp'); nextJump = frames + (ahead < 260 ? R.int(r, 6, 20) : R.int(r, 30, persona === 'new' ? 160 : 90)); }
-    else if (me.jumps > 0 && !me.onground && me.vy > 2 && r() < 0.1) { wo.tap('ArrowUp'); }
+    if (frames >= nextJump && me.onground) { const hold = persona === 'tryhard' ? R.int(r, 10, 18) : R.int(r, 3, 12); wo.down(MOVE_KEYS.up); sim.frame(); frames++; for (let i = 0; i < hold && wo.running(); i++) { sim.frame(); frames++; } wo.up(MOVE_KEYS.up); nextJump = frames + (ahead < 260 ? R.int(r, 6, 20) : R.int(r, 30, persona === 'new' ? 160 : 90)); }
+    else if (me.jumps > 0 && !me.onground && me.vy > 2 && r() < 0.1) { wo.tap(MOVE_KEYS.up); }
     if (!sim.frame()) break; frames++;
     if (frames % 120 === 0) await maybeYield();
   }
@@ -1620,23 +1733,196 @@ async function ctfPracticeScene(wo, rng, args) {
 SCENES['ctf-practice'] = { weight: 1, run: ctfPracticeScene };
 
 // ------------------------------------------------------------------------------------------------------------------------------
+// the person's keys: a remap through the real Settings > Keys screen, then the match keys follow KEYS
+// ------------------------------------------------------------------------------------------------------------------------------
+const KEYMAP_SCENES = new Set(['ffa', '1v1', 'teams', 'boss', 'training', 'worldcup', 'running']);   // (the others use literal keys; they are played on the defaults)
+async function applyKeymap(wo, km) {
+  const h0 = wo.human.secs;
+  await toTitle(wo);
+  if (!(await titleDoor(wo, 'Settings'))) return false;
+  const kb = wo.findBtn(/Keys/, '#options'); if (!kb) { note('BUG', 'menu', 'Settings has no Keys button'); return false; }
+  wo.clickEl(kb);
+  if (wo.screen() !== 'controls') { note('BUG', 'menu', 'the Keys button did not open the key screen'); return false; }
+  for (const [act, code] of Object.entries(km)) {
+    const row = wo.buttons('#maps').find((r) => r.dataset.k === act);
+    if (!row) { note('BUG', 'remap', `the key screen has no row for ${act}`); continue; }
+    wo.clickEl(row); wo.tap(code);
+    const got = wo.E(`KEYS.${act}`);
+    if (got !== code) { note('BUG', 'remap', `remapping ${act} to ${code}: the row was clicked and the key pressed, but KEYS.${act} is ${got}`, { rc: `remap|${act}` }); pevent(`tried to remap ${act} to ${code} and it did not take (${got})`); }
+  }
+  syncMoveKeys(wo);
+  wo.human.remapSecs = +(wo.human.secs - h0).toFixed(1);
+  pevent(`remapped keys through Settings > Keys (${Object.keys(km).length} rows, about ${Math.round(wo.human.secs - h0)} s of clicking)`);
+  await toTitle(wo);
+  return true;
+}
+
+// a person who types WASD on a fresh game: does anything tell them what to press? (default keys; nothing is bound to WASD)
+async function wasdProbeScene(wo, rng, args) {
+  CUR.args = { persona: args.persona };
+  if (!await toSelect(wo)) return { fail: 'menu' };
+  const you = chooseFighter(wo, rng, args); pickFighter(wo, you); seg(wo, 'segMode', 'ffa'); seg(wo, 'segCount', 2);
+  if (!startFromSelect(wo)) return { fail: 'start' };
+  wo.w.__ptCap = true;
+  const sim = new Sim(wo); for (let i = 0; i < 90 && wo.running(); i++) sim.frame();
+  const me0 = wo.E('fighters.find(function(f){return f.you})'); const x0 = me0.x; const dmg0 = wo.w.__pt.dmgTaken;
+  let moved = 0;
+  for (let i = 0; i < 240 && wo.running(); i++) {
+    if (i % 20 === 0) { wo.releaseAll(); wo.down(['KeyA', 'KeyD', 'KeyW', 'KeyS', 'KeyJ', 'KeyK'][(i / 20) % 6 | 0]); }
+    sim.frame();
+  }
+  wo.releaseAll();
+  const me1 = wo.E('fighters.find(function(f){return f.you})'); moved = wo.w.__pt.dmgTaken > dmg0 + 0.01 ? 0 : Math.abs(me1.x - x0);   // (a hit from a CPU moves the fighter too: that run says nothing)
+  const hudText = (wo.doc.getElementById('hud') || {}).textContent || '';
+  const words = Object.keys(wo.w.__ptCanvasText).join(' ') + ' ' + hudText;
+  const hint = /arrow|← ?→|\bkeys?\b|settings|controls|press/i.test(words);
+  pevent(`pressed WASD/J/K for 4 s on a fresh game: the fighter moved ${Math.round(moved)} px; an on-screen hint about the keys was ${hint ? 'visible' : 'not visible'}`);
+  STATS.flow.push({ id: 'wasd-unbound', ok: moved < 5 && hint, moved: Math.round(moved), hint });
+  if (!hint && moved < 5) note('FEEL', 'jank-no-key-hint', 'a player who types WASD sees nothing happen and no on-screen hint during a match about which keys to use or where to change them', { rc: 'wasd-hint', group: 'JANK', detail: `canvas words: ${Object.keys(wo.w.__ptCanvasText).slice(0, 15).join(' / ')}` });
+  wo.w.__ptCap = false; sampleCanvasText(wo);
+  await toTitle(wo);
+  return { why: 'wasd probe' };
+}
+SCENES.wasdprobe = { weight: 0, run: wasdProbeScene };
+
+// ------------------------------------------------------------------------------------------------------------------------------
+// the journey: from the title to a running match in each mode, with default choices, counted in clicks and a person's seconds
+// ------------------------------------------------------------------------------------------------------------------------------
+async function journeyScene(wo, rng, args) {
+  CUR.args = { persona: args.persona };
+  const modes = {
+    ffa: async () => { if (!await toSelect(wo)) return false; wo.clickEl(wo.buttons('#board').find((c) => c.classList.contains('play'))); return startFromSelect(wo); },
+    '1v1': async () => { if (!await toSelect(wo)) return false; wo.clickEl(wo.buttons('#board').find((c) => c.classList.contains('play'))); seg(wo, 'segCount', 2); return startFromSelect(wo); },
+    teams: async () => { if (!await toSelect(wo)) return false; wo.clickEl(wo.buttons('#board').find((c) => c.classList.contains('play'))); seg(wo, 'segMode', 'teams'); return startFromSelect(wo); },
+    boss: async () => { if (!await toSelect(wo)) return false; wo.clickEl(wo.buttons('#board').find((c) => c.classList.contains('play'))); seg(wo, 'segMode', 'boss'); return startFromSelect(wo); },
+    ctf: async () => { if (!await toSelect(wo)) return false; wo.clickEl(wo.buttons('#board').find((c) => c.classList.contains('play'))); seg(wo, 'segMode', 'ctf'); return startFromSelect(wo); },
+    training: async () => { if (!(await titleDoor(wo, 'Learn'))) return false; if (!wo.click(/Training/, '#learn')) return false; return wo.click(/Start Testing/, '#test') && wo.running(); },
+    tutorial: async () => { if (!(await titleDoor(wo, 'Learn'))) return false; if (!wo.click(/How to Play/, '#learn')) return false; return wo.click(/Try it/, '#tutorial') && wo.running(); },
+    worldcup: async () => {
+      if (!(await titleDoor(wo, 'World Cup'))) return false; wo.click(/Normal \(you play\)/, '#tourneySetup'); if (!wo.click(/Kick Off/, '#tourneySetup')) return false;
+      let g = 0; while (wo.screen() === 'select' && g++ < 6) { wo.clickEl(wo.buttons('#board').find((c) => c.classList.contains('play'))); startFromSelect(wo); }
+      const pl = wo.buttons('#tourneyHub').find((b) => /Play My Match/.test(wo.btnText(b))); if (!pl) return false; wo.clickEl(pl); return wo.running();
+    },
+    flagcup: async () => {
+      ctfPracticeDone(wo);
+      if (!(await titleDoor(wo, 'World Cup'))) return false; if (!wo.click(/Flag Cup/, '#tourneySetup')) return false; if (!wo.click(/Kick Off/, '#ctfCupSetup')) return false;
+      const wb = wo.buttons('#tourneyHub').find((b) => /Watch/.test(wo.btnText(b))); if (!wb) return false; wo.clickEl(wb); return wo.running();
+    },
+  };
+  const only = args.mode ? [args.mode] : Object.keys(modes);
+  for (const mode of only) {
+    if (sessionOver()) break;
+    await toTitle(wo);
+    const c0 = wo.human.clicks, k0 = wo.human.keys, s0 = wo.human.secs, t0 = now();
+    let ok = false;
+    try { ok = await modes[mode](); } catch (e) { note('BUG', 'scene-crash', `journey ${mode} crashed: ${clipMsg(e && e.message)}`, { rc: 'journeycrash|' + mode }); }
+    const row = { persona: CURP && CURP.tag, mode, clicks: wo.human.clicks - c0, keys: wo.human.keys - k0, secs: +(wo.human.secs - s0).toFixed(1), reached: !!ok };
+    STATS.journey.push(row);
+    if (!ok) { note('BUG', 'jank-no-path', `the default path to ${mode} did not end in a running match (clicks ${row.clicks})`, { rc: 'nopath|' + mode, group: 'JANK' }); continue; }
+    if (CURP && !CURP.legacy && row.secs > CURP.patience.menuSecs) pevent(`${mode}: ${Math.round(row.secs)} s of clicking and reading from the title to a match; their menu patience is ${CURP.patience.menuSecs} s`);
+    if (row.clicks + row.keys > THRESH.CLICKS_TO_MATCH) note('UI', 'jank-many-clicks', `${mode}: ${row.clicks} clicks + ${row.keys} keys from the title to a running match with default choices (limit ${THRESH.CLICKS_TO_MATCH})`, { rc: 'clicks|' + mode, group: 'JANK' });
+    if (row.secs > THRESH.SECS_TO_MATCH) note('UI', 'jank-slow-path', `${mode}: about ${Math.round(row.secs)} s of a person's clicking and reading from the title to a running match (limit ${THRESH.SECS_TO_MATCH} s)`, { rc: 'secs|' + mode, group: 'JANK' });
+  }
+  await toTitle(wo);
+  return { why: 'journey ' + STATS.journey.slice(-only.length).map((r) => `${r.mode}:${r.clicks}c/${r.secs}s`).join(' ') };
+}
+SCENES.journey = { weight: 0, run: journeyScene };
+
+// ------------------------------------------------------------------------------------------------------------------------------
+// flow: pause during the opening, a key released while paused, Esc spam, quit and come back, the result screen and Rematch
+// ------------------------------------------------------------------------------------------------------------------------------
+async function flowScene(wo, rng, args) {
+  CUR.args = { persona: args.persona };
+  const bad = (id, msg, detail) => { STATS.flow.push({ id, ok: false, msg }); note('FEEL', 'jank-flow', msg, { rc: 'flow|' + id, group: 'JANK', detail }); };
+  const good = (id) => STATS.flow.push({ id, ok: true });
+  if (!await toSelect(wo)) return { fail: 'menu' };
+  const you = chooseFighter(wo, rng, args); pickFighter(wo, you);
+  seg(wo, 'segMode', 'ffa'); seg(wo, 'segCount', 3); seg(wo, 'segStocks', 2);
+  CUR.args.fighter = you;
+  const cfg0 = wo.E('JSON.stringify(SETTINGS)') + '|' + wo.E('stage.id') + '|' + wo.E('chosen.name');
+  if (!startFromSelect(wo)) { note('BUG', 'menu', 'Start Match did not start a match'); return { fail: 'start' }; }
+  wo.w.__ptCap = true;
+  const sim = new Sim(wo);
+  const fr = (n) => { for (let i = 0; i < n && wo.running() && !wo.paused(); i++) if (!sim.frame()) break; };
+  const me = () => wo.E('fighters.find(function(f){return f.you})');
+  // A. Esc in the first frames of the match
+  fr(2); wo.tap('Escape');
+  if (wo.paused()) { wo.tap('Escape'); if (wo.paused() || !wo.running()) bad('pause-opening', 'Esc during the first frames of a match paused it, and a second Esc did not resume it'); else good('pause-opening'); }
+  else good('pause-opening-ignored');
+  fr(80);
+  // B. a key released while paused
+  { const m0 = me(); if (m0 && !m0.dead && m0.onground) {
+      wo.down(MOVE_KEYS.right); fr(15); const xa = me().x;
+      wo.tap('Escape'); if (!wo.paused()) bad('pause-works', 'Esc while holding a walk key did not pause');
+      else { wo.up(MOVE_KEYS.right); wo.tap('Escape'); fr(30); const m1 = me(); const dx = m1.x - xa;
+        if (!m1.dead && m1.hitstun <= 0 && Math.abs(m1.vx) > 0.5 && dx > 60) bad('stuck-key-after-pause', `a walk key released while the game was paused: after resuming the fighter kept walking on its own (${Math.round(dx)} px, vx ${m1.vx.toFixed(1)})`, `frame ${sim.f}`); else good('stuck-key-after-pause'); }
+      wo.releaseAll(); } }
+  // C. Esc spam
+  { for (let i = 0; i < 6; i++) wo.tap('Escape'); if (wo.paused()) bad('esc-spam', 'six quick Esc presses left the game paused (an even number should land back in the match)'); else good('esc-spam'); if (wo.paused()) wo.tap('Escape'); }
+  fr(30);
+  // D. pause card: Resume by click, then quit to title and come back: is the pick remembered?
+  if (wo.running() && !wo.paused()) {
+    wo.tap('Escape');
+    if (!wo.click(/Resume|Continue/)) bad('pause-no-resume', 'the pause card has no Resume/Continue button'); else if (wo.paused()) bad('resume-click', 'the Resume button did not resume'); else good('resume-click');
+    fr(10);
+    wo.tap('Escape'); wo.click(/Quit to title/);
+    if (wo.screen() !== 'title') { bad('quit-title', `Quit to title from the pause card landed on "${wo.screen()}"`); await toTitle(wo); }
+    wo.click(/Take the Plunge/);
+    if (wo.screen() === 'tutorial') wo.click(/^Skip$/);
+    const kept = wo.E('(typeof chosen !== "undefined" && chosen && chosen.name) || ""');
+    if (kept !== you) bad('pick-forgotten', `after quitting a match and coming back to the fighter select, the pick is "${kept}" instead of ${you}`); else good('pick-kept');
+  }
+  // E. play (standing still) to the result; the result screen's next steps; Esc; Rematch keeps the settings
+  if (wo.screen() === 'select') { if (!startFromSelect(wo)) return { fail: 'restart' }; }
+  const sim2 = new Sim(wo);
+  let g = 0; while (wo.running() && g++ < 3600 * 2 && !sessionOver()) { if (!sim2.frame()) break; if (g % 240 === 0) await maybeYield(); }
+  await settle(wo);
+  wo.w.__ptCap = false; sampleCanvasText(wo);
+  if (wo.screen() === 'result') {
+    const names = wo.buttons('#result').map((b) => wo.btnText(b));
+    const hasNext = names.some((t) => /Rematch|Retry|Again/i.test(t)), hasExit = names.some((t) => /Title|Menu|fighter|Home|Back/i.test(t));
+    if (!hasNext || !hasExit) bad('result-next', `the result screen offers [${names.join(' | ')}]: ${!hasNext ? 'no Rematch ' : ''}${!hasExit ? 'no way back to the title/select' : ''}`); else good('result-next');
+    wo.tap('Escape'); const escLeft = wo.screen() !== 'result';
+    STATS.flow.push({ id: 'result-esc', ok: true, leaves: escLeft });
+    if (wo.screen() !== 'result') { await toTitle(wo); } else {
+      wo.click(/Rematch/, '#result');
+      if (!wo.running()) bad('rematch-start', 'Rematch on the result screen did not start a match');
+      else { const cfg1 = wo.E('JSON.stringify(SETTINGS)') + '|' + wo.E('stage.id') + '|' + wo.E('chosen.name'); if (cfg1 !== cfg0) bad('rematch-settings', 'Rematch changed the settings/stage/fighter from the first match', `${cfg0.slice(0, 160)} -> ${cfg1.slice(0, 160)}`); else good('rematch-settings'); }
+    }
+  } else STATS.flow.push({ id: 'result-reached', ok: false, msg: 'no result screen within 2 min of an idle player' });
+  await toTitle(wo);
+  return { why: 'flow' };
+}
+SCENES.flow = { weight: 0, run: flowScene };
+
+// ------------------------------------------------------------------------------------------------------------------------------
 // session driver
 // ------------------------------------------------------------------------------------------------------------------------------
 async function runScene(name, seed, args) {
   const sc = SCENES[name];
   CUR = { scene: name, seed, args: { ...args }, frame: 0 };
+  CURP = args.persona ? personaOf(args.persona) : null;
+  if (CURP && CURP.tag !== PSTATE.tag) { PSTATE.tag = CURP.tag; PSTATE.losses = 0; }
+  SCENE_FIND = new Map(); SCENE_EVENTS = [];
+  MOVE_KEYS = { ...DEFAULT_MOVE_KEYS };
   const t0 = now();
   let wo = null, res = null;
   try {
     wo = await World.boot(seed, name);
     const rng = mulberry32(hashSeed(seed, name));
+    if (CURP && CURP.keymap && KEYMAP_SCENES.has(name)) await applyKeymap(wo, CURP.keymap);
     res = await sc.run(wo, rng, args);
+    if (CURP && !CURP.legacy && wo.human.first && wo.human.first.secs - (wo.human.remapSecs || 0) > CURP.patience.menuSecs) pevent(`would have quit in the menus: ${Math.round(wo.human.first.secs - (wo.human.remapSecs || 0))} s of clicking and reading (${wo.human.first.clicks} clicks, key remap not counted) before the first match; their patience is ${CURP.patience.menuSecs} s`);
   } catch (e) {
     note('BUG', 'scene-crash', `scene ${name} crashed: ${clipMsg(e && e.message || e)}`, { detail: String(e && e.stack).split('\n').slice(0, 5).join(' | ') });
     res = { crash: String(e && e.message) };
   } finally { if (wo) wo.close(); }
   const ms = Math.round(now() - t0);
   STATS.scenes.push({ scene: name, seed, args: CUR.args, ms, result: res && (res.why || res.fail || res.crash || 'ok') });
+  { const rw0 = res && res.row;
+    STATS.sceneLog.push({ persona: CURP ? CURP.tag : null, scene: name, seed, args: CUR.args, ms, cpuMs: Math.round(cpuMs()), result: res && (res.why || res.fail || res.crash || 'ok'), human: wo ? { secs: +wo.human.secs.toFixed(1), clicks: wo.human.clicks, keys: wo.human.keys, first: wo.human.first, remapSecs: wo.human.remapSecs || 0 } : null,
+      events: SCENE_EVENTS.slice(), findings: [...SCENE_FIND.values()].slice(0, 60), cmd: reproCmd(CUR),
+      row: rw0 ? { secs: rw0.secs, mode: rw0.mode, stage: rw0.stage, dmgYou: rw0.dmgYou, dmgTaken: rw0.dmgTaken, youKoList: rw0.youKoList, youFalls: rw0.youFalls, result: rw0.result, boss: rw0.boss, cleared: rw0.cleared, map: rw0.map } : null }); }
   out(`  ${name.padEnd(10)} seed ${String(seed).padEnd(10)} ${String(ms).padStart(6)} ms  ${res && (res.why || res.fail || res.crash || 'ok')}  ${JSON.stringify(CUR.args)}`);
   const rw = res && res.row;
   if (rw && rw.stageAsked) out(`             NOTE: asked for stage ${rw.stageAsked}, which this profile cannot pick (locked or unknown); played ${rw.stage} instead`);
@@ -1647,8 +1933,8 @@ async function runScene(name, seed, args) {
 
 async function main() {
   if (OPT.list) { out(Object.keys(SCENES).join('\n')); return; }
-  if (OPT.idle) { try { os.setPriority(0, os.constants.priority.PRIORITY_LOW); } catch (e) { /* ignore */ } }
-  if (!OPT.scene && !OPT.force && process.platform === 'win32') {
+  if (OPT.idle) { try { os.setPriority(0, OPT.prio === 'below' ? os.constants.priority.PRIORITY_BELOW_NORMAL : os.constants.priority.PRIORITY_LOW); } catch (e) { /* ignore */ } }
+  if (!OPT.scene && !OPT.plan && !OPT.force && process.platform === 'win32') {
     try {
       const [st, pct] = execSync('powershell -NoProfile -Command "$b = Get-CimInstance Win32_Battery; Write-Output ($b.BatteryStatus.ToString() + [char]32 + $b.EstimatedChargeRemaining.ToString())"', { encoding: 'utf8', timeout: 8000 }).trim().split(/s+/).map(Number);
       if (st === 1 && pct < 40 && OPT.minutes > 1) { out(`on battery at ${pct}%: capping the session to 1 minute (use --force to override)`); OPT.minutes = 1; }
@@ -1661,7 +1947,16 @@ async function main() {
   mkdirSync(OPT.out, { recursive: true });
   loadCoverage();
   out(`playtest: seed ${OPT.seed}, ${OPT.scene ? 'scene ' + OPT.scene : OPT.minutes + ' min'}`);
-  if (OPT.scene) {
+  if (OPT.plan) {
+    // a plan: [{ scene, seed, args }] played in order in this process (one person's session: their patience carries from scene to scene)
+    const plan = JSON.parse(readFileSync(OPT.plan, 'utf8'));
+    for (const it of plan) {
+      if (STOPPING) break;
+      CPU_DEADLINE = cpuMs() + (it.cpuMinutes || 6) * 60000; WALL_DEADLINE = now() + (it.cpuMinutes || 6) * 4 * 60000;
+      await runScene(it.scene, it.seed, { ...(it.args || {}) });
+      writeReport(stamp, started, true);
+    }
+  } else if (OPT.scene) {
     if (!SCENES[OPT.scene]) { out('unknown scene: ' + OPT.scene + ' (see --list)'); process.exit(2); }
     if (OPT.minutesSet) { CPU_DEADLINE = cpuMs() + OPT.minutes * 60000; WALL_DEADLINE = now() + (OPT.wall || OPT.minutes * 4) * 60000; }   // (one scene runs to its end unless --minutes is given)
     await runScene(OPT.scene, OPT.seed, { ...OPT.args });
@@ -1733,7 +2028,7 @@ function writeReport(stamp, started, partial) {
   const pct = (v, q) => { if (!v.s || !v.s.length) return 0; const a = v.s.slice().sort((x, y) => x - y); return +a[Math.min(a.length - 1, Math.floor(a.length * q))].toFixed(2); };
   const perf = Object.entries(STATS.perf).map(([k, v]) => ({ phase: k, frames: v.n, avgMs: +(v.sum / Math.max(1, v.n)).toFixed(2), p50: pct(v, 0.5), p99: pct(v, 0.99), worstMs: +v.worst.toFixed(1), over16: v.over16, over50: v.over50, worstAt: v.worstScene }));
   const obs = observations();
-  const json = { tool: 'playtest.mjs', seed: OPT.seed, started: started.toISOString(), partial, minutes: OPT.minutes, scenes: STATS.scenes, findings: all, observations: obs, perf, matches: STATS.matches, moves: STATS.moves, cats: STATS.cats, fighters: STATS.fighters, screens: STATS.screens, cpuIdle: STATS.cpuIdle, strayText: STATS.texts, canvasText: STATS.canvasText, coverage: COVERAGE };
+  const json = { tool: 'playtest.mjs', seed: OPT.seed, started: started.toISOString(), partial, minutes: OPT.minutes, scenes: STATS.scenes, findings: all, observations: obs, perf, matches: STATS.matches, moves: STATS.moves, cats: STATS.cats, fighters: STATS.fighters, screens: STATS.screens, cpuIdle: STATS.cpuIdle, strayText: STATS.texts, canvasText: STATS.canvasText, coverage: COVERAGE, thresholds: THRESH, lat: STATS.lat, early: STATS.early, esc: STATS.esc, journey: STATS.journey, bossWarn: STATS.bossWarn, tlc: STATS.tlc, textOver: STATS.textOver, textOff: STATS.textOff, flow: STATS.flow, sceneLog: STATS.sceneLog, clickMs: STATS.clickMs.length ? { n: STATS.clickMs.length, p50: STATS.clickMs.slice().sort((a, b) => a - b)[STATS.clickMs.length >> 1], max: Math.max(...STATS.clickMs) } : null };
   const base = path.join(OPT.out, stamp);
   writeFileSync(base + '.json', JSON.stringify(json, null, 1));
   const md = [];
@@ -1745,11 +2040,12 @@ function writeReport(stamp, started, partial) {
     md.push(`## ${s} (${bySev[s].length})`);
     if (!bySev[s].length) { md.push('none'); md.push(''); continue; }
     for (const f of bySev[s]) {
-      md.push(`- **${f.kind}** x${f.count}: ${f.msg}`);
+      md.push(`- **${f.kind}**${f.group ? ' [' + f.group + ']' : ''} x${f.count}: ${f.msg}`);
       for (const r of f.repros) md.push(`  - \`${r.cmd}\`${r.frame ? ' (frame ' + r.frame + ')' : ''}${r.detail ? ' - ' + r.detail : ''}`);
     }
     md.push('');
   }
+  md.push('## Jank thresholds (fixed before the big run)'); md.push(Object.entries(THRESH).map(([k, v]) => `${k}=${v}`).join(', ')); md.push('');
   md.push('## Performance (step ms, headless; compare phases, not absolutes)');
   for (const p of perf.sort((a, b) => b.worstMs - a.worstMs)) md.push(`- ${p.phase}: ${p.frames} frames, avg ${p.avgMs} ms, p50 ${p.p50}, p99 ${p.p99}, worst ${p.worstMs} ms (${p.worstAt}), over 16 ms: ${p.over16}, over 50 ms: ${p.over50}`);
   md.push('');
