@@ -325,6 +325,9 @@ function fdiag(wo, f) {
   return `pos ${Math.round(f.x)},${Math.round(f.y)} ctf-phase ${ph} menu ${wo.E('typeof ctfMenuOpen === "function" && ctfMenuOpen()')} state {${ks.join(' ')}}`;
 }
 // the answer to "did the key I pressed do anything": signature of everything an input can change on a fighter
+function sigOld(f) {
+  return [f.atkCd, f.spCd, f.smCd, f.fnCd, f._atkSeq || 0, f._atkAnim, f._spPend, f.jumps, Math.round(f.vx * 4), Math.round(f.vy * 4), f.onground ? 1 : 0, !!f._mv, !!f._hold, !!f._windup, !!f._sm, f._grabbed != null, !!f._gb, f.flying, f.dropping].join(',');
+}
 function sig(f) {
   return [f.atkCd, f.spCd, f.smCd, f.fnCd, f._atkSeq || 0, f._atkAnim, f._spPend, f.jumps, Math.round(f.vx * 4), Math.round(f.vy * 4), f.onground ? 1 : 0, !!f._mv, !!f._hold, !!f._windup, !!f._sm, f._grabbed != null, !!f._gb, f.flying, f.dropping, !!f._smQ, !!f._smBuf, f.smashHold > 0 ? 1 : 0].join(',');
 }
@@ -404,6 +407,7 @@ class Player {
       for (const k of want) wo.down(k);
     }
     wo.repeatHeld();
+    (this.keyRing || (this.keyRing = [])).push(wo.frame + ':' + (wo.held.has(MOVE_KEYS.atk) ? 'X' : '-') + (wo.held.has(MOVE_KEYS.sp) ? 'C' : '-') + (wo.held.has(MOVE_KEYS.sm) ? 'V' : '-') + (wo.held.has(MOVE_KEYS.left) ? 'L' : wo.held.has(MOVE_KEYS.right) ? 'R' : '-') + (wo.held.has(MOVE_KEYS.up) ? 'U' : wo.held.has(MOVE_KEYS.down) ? 'D' : '-')); if (this.keyRing.length > 40) this.keyRing.shift();
     this.watchProbes(S, me);
     this.watchStuck(S, me);
   }
@@ -587,7 +591,7 @@ class Player {
 
   // ---------------------------------------------------------------- "can't" moments: the key was pressed and nothing happened
   armProbe(pr, me) {
-    if (me.hitstun > 0 || me.frozen > 0 || me._lag > 0 || me._heldBy != null || me.rooted > 0 || me._selfStun > 0 || me.dead) return;   // not a fair test
+    if (me.hitstun > 0 || me.frozen > 0 || me._lag > 0 || me._heldBy != null || me.rooted > 0 || me._selfStun > 0 || me._fsLock || me._hitStop > 0 || me._fxLock > this.wo.E('hazardT') || me.dead) return;   // not a fair test (_fsLock: caught by a Final Smash, the game holds the keys; _fxLock: inside a finisher, the game takes the keys until it ends; _hitStop: a hit freeze keeps presses for the frame it ends)
     if (!OPT.args.legacy && (me._jail != null || me._cam || me._ctfJT > 0 || this.wo.E('(typeof ctfMenuOpen === "function" && ctfMenuOpen()) || (SETTINGS.mode === "ctf" && CTF.live && CTF.live.phase !== "play")'))) return;   // a prisoner, the free camera, the planning menu, a hiding phase: the game takes the keys on purpose
     const t = pr.type;
     if (t === 'atk' && me.atkCd > 0 && me.atkCd <= THRESH.EARLY_WINDOW) { this.earlies.push({ t0: this.wo.frame, seq0: me._atkSeq || 0, until: this.wo.frame + me.atkCd + 8, name: me.name, cd: me.atkCd, fired: false }); return; }
@@ -595,26 +599,35 @@ class Player {
     if (t === 'atk' && me.atkCd > 0) return;
     if (t === 'special' && (me.spCd > 0 || me.atkCd > 12)) return;
     if (t === 'smash' && (me.smCd > 0 || me.atkCd > 12)) return;
+    if (t === 'smash' && (me._smQ || me._smBuf)) return;   // one is already charging: a second press while it charges does nothing, by the game's rule (SMASHES: PRESS ONCE)
     if (t === 'grab' && me.atkCd > 12) return;
     if (t === 'fin' && me.fnCd > 0) return;
-    this.probes.push({ type: t, latOnly: !!pr.latOnly, clean: me.atkCd === 0, t0: this.wo.frame, sig0: sig(me), seq0: me._atkSeq || 0, np: this.wo.E('projectiles.length + summons.length + beams.length'), ok: false, name: me.name, cat: this.wo.E('window.__pt.cat') });
+    this.probes.push({ type: t, latOnly: !!pr.latOnly, clean: me.atkCd === 0, t0: this.wo.frame, sig0: sig(me), sigOld0: sigOld(me), okOld: false, seq0: me._atkSeq || 0, np: this.wo.E('projectiles.length + summons.length + beams.length'), ok: false, trace: [], before: (this.keyRing || []).slice(-8).join(' '), name: me.name, cat: this.wo.E('window.__pt.cat') });
   }
   watchProbes(S, me) {
     if (!this.probes.length) return;
     const f = this.wo.frame, np = this.wo.E('projectiles.length + summons.length + beams.length');
-    const cur = sig(me);
+    const cur = sig(me), curOld = sigOld(me);
+    const trk = this.probes.some((q) => !q.ok) ? this.wo.E('(function(){var m=fighters.find(function(x){return x.you})||{};return [down[KEYS.attack]?1:0,down[KEYS.special]?1:0,down[KEYS.smash]?1:0].join("")+" cd"+[m.atkCd,m.spCd,m.smCd].join("/")+" mv"+(m._mv?1:0)+" lag"+(m._lag|0)+" hold"+(m._hold?1:0)+(m._gb?"gb":"")+" ws"+(m._windup?1:0)+" sq"+(m._smQ?1:0)+(m._smBuf?"b":"")+" st"+(m.hitstun|0)+" gr"+(m.onground?1:0)+" _sp"+(m._sp?1:0)+" pend"+(m._spPend|0)+" nb"+(m._noBattery|0)+" hush"+(m._hushT>hazardT?1:0)+" jail"+(m._jail!=null?1:0)+" fxl"+(m._fxLock>hazardT?(m._fxLock-hazardT)+(m._fxBy==null?"own":"by"+m._fxBy):0)+" hs"+(m._hitStop|0)+(m._fsLock?" fsl":"")+" ht"+hazardT+(typeof fsTimeGate==="function"&&fsTimeGate.length===0?"":"")})()') : '';
     for (const pr of this.probes) {
+      { const pk = pr.type === 'atk' || pr.type === 'grab' ? MOVE_KEYS.atk : pr.type === 'special' ? MOVE_KEYS.sp : MOVE_KEYS.sm; if (this.wo.held.has(pk)) pr.seen = true; }   // did the key ever reach the game (a 25-35 fps machine drops a tap shorter than its frame)
+      if (!pr.okOld && (curOld !== pr.sigOld0 || np !== pr.np || me.hitstun > 0 || me.frozen > 0 || me._heldBy != null || me.dead)) pr.okOld = true;
+      if (!pr.ok && pr.trace.length < 16) pr.trace.push(f + ':' + trk);
       if (!pr.ok && (cur !== pr.sig0 || np !== pr.np)) { pr.ok = true; if (pr.clean) this.recordLat(pr, f - pr.t0 - 1); }
       if (!pr.ok && me.hitstun > 0) pr.ok = true;   // got hit meanwhile: not fair
       if (!pr.ok && (me.frozen > 0 || me._heldBy != null || me.dead)) pr.ok = true;
       if (!pr.ok && f - pr.t0 > 14) { pr.ok = true; pr.bad = !pr.latOnly; if (pr.latOnly) this.recordLat(pr, 99); }
     }
-    for (const pr of this.probes) if (pr.bad) {
+    for (const pr of this.probes) if (pr.ok && !pr.latOnly && !pr.cnt && (pr.okOld || f - pr.t0 > 14)) { pr.cnt = true; if (process.env.PT_COUNT) process.stderr.write(`CANTCOUNT ${pr.type} old=${pr.okOld ? 0 : 1} new=${pr.bad ? 1 : 0}
+`); }
+    for (const pr of this.probes) if (pr.bad && !pr.noted) { pr.noted = true;
+      if (!pr.seen) { STATS.lostTaps = (STATS.lostTaps || 0) + 1; if (process.env.PT_COUNT) process.stderr.write(`LOSTTAP ${pr.type} ${pr.name}
+`); continue; }   // the key never reached the game: a short tap on a slow machine, counted apart, not a 'move did not come out'
       this.stats.cants++;
       note('BUG', 'cant', `${pr.name}: "${pr.type === 'atk' ? 'attack (X)' : pr.type === 'special' ? 'special (C)' : pr.type === 'smash' ? 'smash (V)' : pr.type === 'grab' ? 'grab (X+C)' : 'finisher (V+C)'}" was pressed on a ready fighter and nothing happened for 14 frames`,
-        { detail: `fighter ${pr.name}, move ${pr.type}, the player's action ${pr.cat}, frame ${pr.t0}, mode ${S.mode}; ${fdiag(this.wo, me)}` });
+        { detail: `fighter ${pr.name}, move ${pr.type}, the player's action ${pr.cat}, frame ${pr.t0}, mode ${S.mode}; ${fdiag(this.wo, me)}; keys just before the press (frame:XCV LR UD) ${pr.before}; last calls overall ${this.wo.E('window.__pt.calls.filter(function(c){return c.indexOf("combo") < 0}).slice(-6).join(" ")')}; calls in the window ${this.wo.E('window.__pt.calls.filter(function(c){return +c.split(":")[0] >= ' + (pr.t0 - 1) + '}).join(" ")')}; trace (frame:XCV down, cooldowns atk/sp/sm, ...) ${pr.trace.join(' | ')}` });
     }
-    this.probes = this.probes.filter((pr) => !pr.ok);
+    this.probes = this.probes.filter((pr) => !(pr.ok && (pr.okOld || pr.latOnly || f - pr.t0 > 14)));
     this.watchEarlies(me);
   }
   // key press -> the first change on the fighter, in frames AFTER the step that first saw the key (0 = answered at once)

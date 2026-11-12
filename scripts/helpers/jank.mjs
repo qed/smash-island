@@ -99,6 +99,20 @@ export const JANK_HOOKS = `(function(){
       if(best && P.tlc.length < 3000) P.tlc.push({ n: F.n, ph: ph, dist: Math.round(bd), spd: +spd.toFixed(2), slack: +(Math.max(0, bd - FSB.ringR) / (spd * (typeof PROJ_LIFE === 'number' ? 1 : 1))).toFixed(1), big: F.n === FSB.hops - 1, you: !!best.you, hopT: F.dur, wait: F.wait, t: hazardT });
     }catch(e){}
     return o.apply(this, arguments); }; });
+  // which special entry points ran (for a "move did not come out" report): the last few calls with the frame and the fighter
+  P.calls = [];
+  ['fireSpecial', 'fireSpecialInner', 'doSpecial', 'mvStart', 'doUpSpecial', 'doDownSpecial', 'tellAdd'].forEach(function(nm){ wrap(nm, function(o){ return function(f){ try{ var c = P.calls; c.push(hazardT + ':' + nm + (f && f.name ? '@' + f.name : '')); if(c.length > 40) c.shift(); }catch(e){} return o.apply(this, arguments); }; }); });
+  wrap('comboInput', function(o){ return function(f, inp){ var r = o.apply(this, arguments); try{ if(f && f.you && (inp.special || (f._ci && f._ci.c > 0))){ var c = P.calls; c.push(hazardT + ':combo sp=' + (inp.special ? 1 : 0) + ' ci=' + JSON.stringify(f._ci)); if(c.length > 40) c.shift(); } }catch(e){} return r; }; });
+  wrap('zsStep', function(o){ return function(f, inp){ var before = inp && inp.special; var r = o.apply(this, arguments); try{ if(f && f.you && before && !(r && r.special)){ var c = P.calls; c.push(hazardT + ':zsStep dropped the special'); if(c.length > 40) c.shift(); } }catch(e){} return r; }; });
+  // moves that carry a fighter somewhere on purpose: stamp the fighter so a one-frame jump they make is not read as a teleport
+  // (riseShape: an up special's rise; fxPopStep: Balloony's Pop; fxSkipStep: Remote's skip; fxDecoyStep: Box's decoy swap; teleportStep: Bow's Teleport)
+  // every finisher's per-frame step (FINX_STEP: a table the game dispatches through, so it is wrapped entry by entry): the owner is stamped
+  try{ if(typeof FINX_STEP === 'object' && FINX_STEP){ Object.keys(FINX_STEP).forEach(function(k){ var fn = FINX_STEP[k]; if(typeof fn !== 'function' || fn.__ptw) return; var w = function(o, f){ try{ if(f) f._ptWarp = hazardT; }catch(e){} return fn.apply(this, arguments); }; w.__ptw = 1; FINX_STEP[k] = w; }); } }catch(e){}
+  wrap('riseShape', function(o){ return function(f){ try{ if(f) f._ptWarp = hazardT; }catch(e){} return o.apply(this, arguments); }; });
+  wrap('fxPopStep', function(o){ return function(a, f){ try{ if(f) f._ptWarp = hazardT; }catch(e){} return o.apply(this, arguments); }; });
+  wrap('fxSkipStep', function(o){ return function(a, f){ try{ if(f) f._ptWarp = hazardT; }catch(e){} return o.apply(this, arguments); }; });
+  wrap('fxDecoyStep', function(o){ return function(a, f){ try{ if(f) f._ptWarp = hazardT; }catch(e){} return o.apply(this, arguments); }; });
+  wrap('teleportStep', function(o){ return function(f){ try{ if(f) f._ptWarp = hazardT; }catch(e){} return o.apply(this, arguments); }; });
   // hitstop lengths per move label
   wrap('armHitStop', function(o){ return o; });
 })()`.replace(/__TWF__/g, String(THRESH.TEXT_WIDTH_FACTOR)).replace(/__TOF__/g, String(THRESH.TEXT_OVERLAP_FRAC));
@@ -106,7 +120,7 @@ export const JANK_HOOKS = `(function(){
 // per-frame snapshot read by the Node-side watcher: one eval, plain numbers
 export const FRAME_PROBE = `(function(){
   var o = [], i, f;
-  for(i = 0; i < fighters.length; i++){ f = fighters[i]; o.push([f.x, f.y, f.dead ? 1 : 0, f.stocks, f._hitStop || 0, f.onground ? 1 : 0, f.hitstun || 0, f.vx, f.vy, f.idx, f._jail != null ? 1 : 0, f.you ? 1 : 0, f.r, (f._ptLbl && hazardT - f._ptLblT < 40) ? f._ptLbl : '', f.name, (f._mv || f._hold || f._windup || f._sm || f._cam || f._grabbed != null || f._heldBy != null || f.frozen > 0 || f.rooted > 0) ? 1 : 0]); }
+  for(i = 0; i < fighters.length; i++){ f = fighters[i]; o.push([f.x, f.y, f.dead ? 1 : 0, f.stocks, f._hitStop || 0, f.onground ? 1 : 0, f.hitstun || 0, f.vx, f.vy, f.idx, f._jail != null ? 1 : 0, f.you ? 1 : 0, f.r, (f._ptLbl && hazardT - f._ptLblT < 40) ? f._ptLbl : '', f.name, (f._mv || f._hold || f._windup || f._sm || f._cam || f._grabbed != null || f._heldBy != null || f.frozen > 0 || f.rooted > 0) ? 1 : 0, f._clS ? 1 : 0, ((f._ptWarp != null && hazardT - f._ptWarp <= 3) || f._nsplit) ? 1 : 0]); }
   var z = 1; try{ z = viewZoom(); }catch(e){}
   return { f: o, cx: camX + W/2, cy: camY + H/2, z: z, tone: window.__pt.tone || 0, t: hazardT, mode: SETTINGS.mode, tut: !!(TUT && TUT.active), test: !!(typeof TESTMODE !== 'undefined' && TESTMODE.active), kos: window.__pt.kos.length, ctfPh: (typeof CTF !== 'undefined' && CTF.live) ? CTF.live.phase : '', spec: !!(typeof CTF !== 'undefined' && CTF.spec && CTF.spec.on), plats: window.__ptPlat ? 1 : 0 };
 })()`;
@@ -124,21 +138,27 @@ export class FrameWatch {
     const wo = this.wo, T = THRESH; let Z;
     try { Z = wo.E(FRAME_PROBE); } catch (e) { return; }
     this.n++;
+    if (process.env.XTRACE && (this.n % 20 === 1)) { try { wo.E(`(function(){ window.__xtLog = window.__xtLog || []; for(var i = 0; i < fighters.length; i++){ var f = fighters[i]; if(f.__xt) continue; f.__xt = 1; (function(f){ var xv = f.x, yv = f.y;
+      Object.defineProperty(f, 'x', { configurable:true, enumerable:true, get:function(){ return xv; }, set:function(v){ if(Math.abs(v - xv) > ${+process.env.XTD || 100} && !f.dead ){ var st = (new Error()).stack.split('\\n').slice(2, 7).map(function(l){ return l.trim().replace(/^at /, '').split(' ')[0]; }).join('<'); if(window.__xtLog.length > 300) window.__xtLog.splice(0, 150); window.__xtLog.push({ i: f.idx, d: f.dead ? 1 : 0, h: hazardT, from: Math.round(xv), to: Math.round(v), st: st }); } xv = v; } });
+      Object.defineProperty(f, 'y', { configurable:true, enumerable:true, get:function(){ return yv; }, set:function(v){ if(Math.abs(v - yv) > ${+process.env.XTD || 100} && !f.dead ){ var st = (new Error()).stack.split('\\n').slice(2, 7).map(function(l){ return l.trim().replace(/^at /, '').split(' ')[0]; }).join('<'); if(window.__xtLog.length > 300) window.__xtLog.splice(0, 150); window.__xtLog.push({ i: f.idx, d: f.dead ? 1 : 0, h: hazardT, fromY: Math.round(yv), toY: Math.round(v), st: st }); } yv = v; } });
+    })(f); } })()`); } catch (e) { if (!this._xtErr) { this._xtErr = 1; process.stderr.write('XTRACE install failed: ' + (e && e.message) + String.fromCharCode(10)); } } }
     const n = this.n, ctx = `${Z.mode}${Z.ctfPh ? '/' + Z.ctfPh : ''}`;
     const skipMode = Z.tut || Z.spec || Z.test;   // (Training dummies respawn instantly at the top: by design)
     // ---- teleports, hitstop drift, snags, hangs, embedding
-    const prev = this.prev; this.prev = Z;
+    const prev = this.prev; this.prev = Z; (this.ring || (this.ring = [])).push(Z.f.map((q) => [q[9], Math.round(q[0]), Math.round(q[1])])); if (this.ring.length > 8) this.ring.shift();
     if (prev && Z.kos !== prev.kos) for (const f of Z.f) this.lastEvent.set(f[9], n);   // a KO this frame: positions around it are respawn, not a jump
     if (prev && !skipMode) {
       for (const f of Z.f) {
-        const idx = f[9], pf = prev.f.find((q) => q[9] === idx); if (!pf) continue;
+        const idx = f[9], pf = prev.f.find((q) => q[9] === idx && q[16] === f[16]); if (!pf) continue;   // (a clone shares its owner's idx: matched by idx and clone-ness)
         const dead = f[2], pdead = pf[2];
         if (dead || pdead || f[3] !== pf[3] || f[10] !== pf[10]) { this.lastEvent.set(idx, n); if (f[11]) this.lastYouEvent = n; continue; }
         const le = this.lastEvent.get(idx) || -99;
         const dx = f[0] - pf[0], dy = f[1] - pf[1], d = Math.hypot(dx, dy);
         const name = f[14], lbl = f[13] || 'no move';
-        if (n - le > 3 && n > 30 && d > T.TELEPORT_PX && !(Z.mode === 'ctf' && Z.ctfPh !== 'play')) {
-          this.note('FEEL', 'jank-teleport', `${name} moved ${Math.round(d)} px in one frame (${ctx}; last move: ${lbl})`, { rc: `teleport|${name}|${lbl}`, group: 'JANK', detail: `from ${Math.round(pf[0])},${Math.round(pf[1])} to ${Math.round(f[0])},${Math.round(f[1])} frame ${n}; dead ${pf[2]}>${f[2]} stocks ${pf[3]}>${f[3]} onground ${pf[5]}>${f[5]} hitstun ${Math.round(pf[6])}>${Math.round(f[6])} v ${pf[7].toFixed(1)},${pf[8].toFixed(1)}>${f[7].toFixed(1)},${f[8].toFixed(1)}` });
+        { const po = prev.f.find((q) => q[9] === idx), okc = !(Z.mode === 'ctf' && Z.ctfPh !== 'play');   // before/after count: the old rule (first fighter with this idx, no warp tags) against the new one
+          if (po && !po[2] && n - le > 3 && n > 30 && Math.hypot(f[0] - po[0], f[1] - po[1]) > T.TELEPORT_PX && okc) if (process.env.PT_COUNT) process.stderr.write('TP old=1 new=' + ((n - le > 3 && d > T.TELEPORT_PX && !f[17] && !pf[17]) ? 1 : 0) + String.fromCharCode(10)); }
+        if (n - le > 3 && n > 30 && d > T.TELEPORT_PX && !f[17] && !pf[17] && !(Z.mode === 'ctf' && Z.ctfPh !== 'play')) {
+          this.note('FEEL', 'jank-teleport', `${name} moved ${Math.round(d)} px in one frame (${ctx}; last move: ${lbl})`, { rc: `teleport|${name}|${lbl}`, group: 'JANK', detail: `accessors ${process.env.XTRACE ? this.wo.E('fighters.map(function(x){var d=Object.getOwnPropertyDescriptor(x,"x");return d&&d.get?1:0}).join("")') : '-'} ids ${process.env.XTRACE ? this.wo.E('fighters.map(function(x){return x.__xt})') : ''}; fighters with this idx now ${Z.f.filter((q) => q[9] === idx).length} (before ${prev.f.filter((q) => q[9] === idx).length}), all: ${Z.f.map((q) => q[14] + '#' + q[9] + '@' + Math.round(q[0])).join(' ')}; last positions ${(this.ring || []).map((r) => { const q = r.find((e) => e[0] === idx); return q ? q[1] + ',' + q[2] : '-'; }).join(' > ')}; writers (log ${process.env.XTRACE ? this.wo.E('(window.__xtLog||[]).length + "/hooked " + fighters.filter(function(x){return x.__xt}).length + "/of " + fighters.length') : ''}) {${process.env.XTRACE ? this.wo.E('JSON.stringify((window.__xtLog||[]).filter(function(e){return e.i===' + idx + ' && e.h >= hazardT - 2 && e.st.indexOf("cpuSee") !== 0 && e.st.indexOf("Object.assign<aiThink") !== 0}).slice(-8))') : ''}} state {${this.wo.E('(function(){var f=fighters.find(function(x){return x.idx===' + idx + '});if(!f)return "";var o=[];for(var k in f){var v=f[k];if(k.charAt(0)==="_"&&v&&typeof v!=="function"&&(typeof v==="number"?Math.abs(v)>0:true)&&o.length<24)o.push(k+"="+(typeof v==="object"?"obj":typeof v==="number"?Math.round(v*10)/10:v))}return o.join(" ")})()')}} stage ${this.wo.E('stage.id')} from ${Math.round(pf[0])},${Math.round(pf[1])} to ${Math.round(f[0])},${Math.round(f[1])} frame ${n}; dead ${pf[2]}>${f[2]} stocks ${pf[3]}>${f[3]} onground ${pf[5]}>${f[5]} hitstun ${Math.round(pf[6])}>${Math.round(f[6])} v ${pf[7].toFixed(1)},${pf[8].toFixed(1)}>${f[7].toFixed(1)},${f[8].toFixed(1)}` });
         }
         if (f[4] > 0 && pf[4] > 0 && d > T.HITSTOP_DRIFT_PX && !f[15] && n > 30) {
           this.note('FEEL', 'jank-hitstop-drift', `${name} moved ${Math.round(d)} px in one frame while in hitstop (${ctx}; last move: ${lbl})`, { rc: `hsdrift|${name}|${lbl}`, group: 'JANK' });
@@ -156,7 +176,12 @@ export class FrameWatch {
           let inside = false;
           for (const p of plats) { if (!p.solid) continue; if (f[0] > p.x + f[12] * 0.5 && f[0] < p.x + p.w - f[12] * 0.5 && f[1] > p.y + 4 && f[1] < p.y + (p.h || 40) - 4 && (p.h || 40) > 12) { inside = true; break; } }
           const c = inside ? (this.embed.get(idx) || 0) + 1 : 0; this.embed.set(idx, c);
-          if (c === T.EMBED_FRAMES) this.note('BUG', 'jank-embedded', `${name} stood inside a solid platform for ${T.EMBED_FRAMES} frames (${ctx})`, { rc: `embed|${name}|${wo.E('stage.id')}`, group: 'JANK', detail: `x ${Math.round(f[0])} y ${Math.round(f[1])}` });
+          if (c === T.EMBED_FRAMES) {
+            // the cached platform list can be 20 frames old and does not know a door opened for the fighter's team (the game skips it, p.dref.op[team]): ask the game, now, with its own rule
+            const live = wo.E('(function(){ var f = fighters.find(function(x){ return x.idx === ' + idx + ' && !x._clS }); if(!f || f.dead) return "gone"; var ps = platRects(), hit = []; for(var i = 0; i < ps.length; i++){ var p = ps[i]; if(!p.solid) continue; if(p.dref !== undefined && p.dref.op && p.dref.op[f.team]) continue; var ph = p.h || 16; if(f.x + f.r > p.x && f.x - f.r < p.x + p.w && f.y + f.r > p.y && f.y - f.r < p.y + ph && f.x > p.x + f.r * 0.5 && f.x < p.x + p.w - f.r * 0.5 && f.y > p.y + 4 && f.y < p.y + ph - 4 && ph > 12) hit.push([Math.round(p.x), Math.round(p.y), Math.round(p.w), ph, p.dref !== undefined ? "door" : "", p.ramp ? "ramp" : "", p.step ? "step" : ""].join(" ")); } return hit.length ? "inside: " + hit.join(" ; ") : "not inside now"; })()');
+            if (String(live).indexOf('inside') === 0) this.note('BUG', 'jank-embedded', `${name} stood inside a solid platform for ${T.EMBED_FRAMES} frames (${ctx})`, { rc: `embed|${name}|${wo.E('stage.id')}`, group: 'JANK', detail: `x ${Math.round(f[0])} y ${Math.round(f[1])} ${live}; ${wo.E('(function(){ var f = fighters.find(function(x){ return x.idx === ' + idx + ' && !x._clS }); if(!f) return ""; var o = []; for(var k in f){ var v = f[k]; if(k.charAt(0) === "_" && v && typeof v !== "function" && o.length < 24) o.push(k + "=" + (typeof v === "object" ? "obj" : typeof v === "number" ? Math.round(v * 10) / 10 : v)); } return "vx " + f.vx.toFixed(1) + " vy " + f.vy.toFixed(1) + " onground " + f.onground + " " + o.join(" "); })()')}` });
+            else { if (process.env.PT_COUNT) process.stderr.write('EMBED-FALSE-POSITIVE ' + live + String.fromCharCode(10)); this.embed.set(idx, 0); }
+          }
         }
         // the player's own walk snag
         if (f[11]) {
