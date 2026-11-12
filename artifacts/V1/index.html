@@ -27290,10 +27290,30 @@ let WHQ = { prog:0, t:0, ls:[] };   // the chest's progress and cooldown and the
 function whPack(){ return [WHQ.prog | 0, WHQ.t | 0, WHQ.ls.join('')]; }
 function whNetIn(q){ if(!q) return; WHQ.prog = q[0] | 0; WHQ.t = q[1] | 0; WHQ.ls = String(q[2] || '').split('').map(Number); }
 function whKitesSync(){ for(const p of worldPlats) if(p.kite){ const q = whKite(p, hazardT); p.x = q[0]; p.y = q[1]; } }
+// ONLINE: a guest works every moving part of the Long Span out for itself, a pure function of the match clock (the same sum stgPlace does: the gondola, the vanes, the Airship, the basket, the kites), every frame it draws,
+// so a rider stands on what it is drawn standing on however the snapshots arrive (a kite rises 260 px in 12 frames: the snapshot's place was 3 frames old)
+function whGuestMovers(){
+  if(!WND_VIS) return;
+  for(const p of worldPlats){ const z = p.mvz; if(!z || !p.wn || p.kite) continue; const a = 2*Math.PI*hazardT/z[4] + z[5]; p.x = Math.round(z[0] + z[2]*Math.sin(a)); p.y = Math.round(z[1] + z[3]*Math.sin(a + z[6])); }
+  whKitesSync();
+}
 function whPutCrate(pl, dx){
   const pool = eventItemPool() || ["heal","heal","marmalade","marmalade","throw","throw","power","power","assist","assist","yoyle","yoyle"];
   const kind = pool[Math.floor(Math.random()*pool.length)], r = kind === "boss" ? 0 : 16;
   items.push({ kind, x:pl.x + dx, y:pl.y - r, vx:0, vy:0, r, taken:false, life:60*30, _land:true, _di:true, _diRide:pl, _diDx:dx }); WND.crates++;
+}
+// THE CHEST PARTY (CPUs): now and then two CPU teammates (the pair nearest the Airship) go to it and stand on both plates for the chest; it ends when the chest opens, a foe is in arm's reach of either one, one is dead or at 100%, or after 60 s
+const WH_PARTY_COST = 1300;   // the route graph's cost to the Airship (about frames of walking) that a CPU may be at and still be sent
+function whPartyCost(f, sh){ const N = whNav(); if(!N) return 1e9; const a = ynNodeAt(N, f), g = N.byP.get(sh); if(!a || !g) return 1e9; if(a === g) return 0; const P = ynPlan(N, a, new Map([[g, 1]]), f.x); return P ? P.cost : 1e9; }
+function whParty(W){
+  const C = W.chest; if(!C || !C.p) return; const sh = C.p, P = W.party;
+  const foeNear = (f, r)=>fighters.some(o=>!o.dead && o.team !== f.team && Math.hypot(o.x - f.x, o.y - f.y) < r);   // (a pair is only sent when no foe is within 500 of either and both are a short way from the Airship by the route graph; it is called off when a foe is in arm's reach of either, or one is dead or badly hurt)
+  if(P){ const gone = (f)=>!f || f.dead || f.pct >= 100 || foeNear(f, 120);
+    if(WHQ.t > 0 || hazardT > P.until || gone(P.a) || gone(P.b)){ W.party = null; W.pcool = hazardT + 600; } return; }
+  if(WHQ.t > 0 || hazardT < 1500 || hazardT < (W.pcool | 0) || hazardT % 60 !== 0 || Math.random() > 0.5) return;
+  const teams = new Map(); for(const f of fighters) if(!f.dead && f.controller === 'ai' && f.onground && f.hitstun <= 0 && f.pct < 80 && !foeNear(f, 500) && whPartyCost(f, sh) <= WH_PARTY_COST){ if(!teams.has(f.team)) teams.set(f.team, []); teams.get(f.team).push(f); }
+  let best = null, bd = 1e9; for(const l of teams.values()){ if(l.length < 2) continue; l.sort((a, b)=>Math.hypot(a.x - sh.x, a.y - sh.y) - Math.hypot(b.x - sh.x, b.y - sh.y)); const d = Math.hypot(l[0].x - sh.x, l[0].y - sh.y) + Math.hypot(l[1].x - sh.x, l[1].y - sh.y); if(d < bd){ bd = d; best = l; } }
+  if(best) W.party = { a:best[0], b:best[1], until:hazardT + 3600 };
 }
 // once a frame (host): the thermals, the shield and heal areas, the loose planks, the Airship's chest
 function whStep(){
@@ -27310,6 +27330,7 @@ function whStep(){
     else if(L.st === 2){ if(--L.t <= 0){ L.st = 0; p.y = L.y0; puff(p.x + p.w/2, L.y0, '#d8caa8', 6); } }
     WHQ.ls[i] = L.st;
   }
+  whParty(W);
   const C = W.chest;
   if(C){
     if(WHQ.t > 0) WHQ.t--;
@@ -27392,7 +27413,7 @@ function whBuild(){
   soft(1020, F(0), 210, 'balcony'); soft(1020, F(kd + 1), 240, 'gallery');
   // ---- THE BRIDGE: soft plank decks stepping down 240 at a time (a soft step ledge 120 up from the lower deck's end makes each drop climbable); the broken spans have pylons and a gondola
   for(let i = 1; i <= nS; i++){
-    const lz = V.loose && nS >= 5 && (i === brk[0] || i === brk[0] + 1) ? (i === brk[0] ? 40 : K.span - 190) : -1;   // a loose plank 160 wide in each of the two decks beside the first broken span
+    const lz = -1;   // (JURY FIX: no loose plank on the main bridge: it is the required way across, and a 160 px hole there was not crossable on foot; the loose planks are in the Old Bridge now, the optional lower route)
     if(lz < 0) soft(aX[i], Yd[i], K.span, 'deck');
     else { if(lz > 0) soft(aX[i], Yd[i], lz, 'deck'); const lp = soft(aX[i] + lz, Yd[i], 160, 'loosedeck'); loose.push({ p:lp, y0:lp.y, st:0, t:0 }); if(lz + 160 < K.span) soft(aX[i] + lz + 160, Yd[i], K.span - lz - 160, 'deck'); }
     if(i < nS && !brk.includes(i)) solid(aX[i + 1], Yd[i] + K.drop/2, 150, K.drop/2, 'step');   // a stone landing on the lower deck's end: half the drop each way
@@ -27440,16 +27461,17 @@ function whBuild(){
   if(oldBr){
     const nr = Math.ceil((yOB - yN)/105), rx = cdX + 300, stp = (yOB - yN)/nr;
     for(let i = 0; i < nr - 1; i++){ const top = yN + stp*(i + 1); solid(rx + i*150, top, 150, yOB + 160 - top, 'rock'); }   // the Anchor Rock: a stepped slope of solid stone down from the crate deck
-    const ob0 = rx + (nr - 1)*150 + 40, ob1 = eM - 30;
+    const ob0 = rx + (nr - 1)*150 + 40, ob1 = eM - 30; deco.push(['anchor', rx + (nr - 2)*150, yN + stp*(nr - 1)]);   // (the rock is where the balloon is moored: an anchor on its face, a rope down to the basket)
     const LL = ob1 - ob0, np = Math.max(2, Math.floor((LL + 120)/230)), pw = (LL - (np - 1)*120)/np;   // planks of one width, gaps of 120, the last one ending 30 px from the Meadow's cliff
-    for(let k = 0; k < np; k++) soft(ob0 + k*(pw + 120), (np - 1 - k) % 2 ? yOB - 60 : yOB, pw, 'oldplank');
+    const lk = V.loose ? [Math.floor(np*0.35), Math.floor(np*0.65)] : [];   // (the two loose planks of the layouts that have them: in the middle of the Old Bridge, never at either end)
+    for(let k = 0; k < np; k++){ if(lk.includes(k)){ const lp = soft(ob0 + k*(pw + 120), (np - 1 - k) % 2 ? yOB - 60 : yOB, pw, 'loosedeck'); loose.push({ p:lp, y0:lp.y, st:0, t:0 }); } else soft(ob0 + k*(pw + 120), (np - 1 - k) % 2 ? yOB - 60 : yOB, pw, 'oldplank'); }
     obEnd = ob1; obLast = [ob1 - pw, pw]; obPrev = ob1 - 2*pw - 120;
     X(rx - 150, yN - 260, ob1 - rx + 150, yOB - yN + 400);   // the Old Bridge and the rock slope to it are open to the gust (x1.3): they hang over the pit
     // the balloon (bottom middle), moored under a gap in the old bridge: a rock to step down onto from a plank, then the basket (bobs 120 px in 20 s). V1: a kite takes the rock's place.
     const m = 0, gx0 = ob0 + m*(pw + 120) + pw, py = (np - 1 - m) % 2 ? yOB - 60 : yOB;
     if(V.balloonKite){ const kp = mover(gx0 - 10, py + 130, 150, { ax:0, ay:0, per:600, ph:0 }, 'kite'); kp.kite = { cx:gx0 + 65, up:V.upG }; kites.push(kp); }
     else solid(gx0 - 40, py + 130, 200, 120, 'rock');
-    const balX = gx0 + 200, yB2 = py + 270, basket = mover(balX, yB2, 300, { ay:60, per:1200, ph:0 }, 'basket'); crateSpots.push(basket); deco.push(['balloon', balX + 150, yB2]);
+    const balX = gx0 + 200, yB2 = py + 240, basket = mover(balX, yB2, 300, { ay:60, per:1200, ph:0 }, 'basket'); crateSpots.push(basket); deco.push(['balloon', balX + 150, yB2]);
   }
   // thermal: air rises only while a gust blows (not in V1, where every third gust is an updraft); it sits under the first broken span
   { const b = brk[0], xe = aX[b] + K.span; if(V.thermal) thermal.push([xe + 110, oldBr ? yOB + 260 : Yd[b] + 900, K.thermalW, 1000]); if(V.thermal2 || (nS === 8 && V.thermal)) thermal.push([eM - 420, yOB + 260, K.thermalW, 1000]); }   // (the second thermal rises along the Meadow's west cliff toward the Mill's loft)
@@ -27460,11 +27482,11 @@ function whBuild(){
   solid(mx, yL, 60, mH, 'wall'); solid(mx + 380, yL, 260, mH, 'mass'); solid(mx + 60, yL, 320, mH, 'wall');   // (the base room's floor, cut under its flight)
   solid(mx, yL - 370, 60, 130, 'wall'); solid(mx + 580, yL - 370, 60, 130, 'wall');   // lintels over the two doors of the base room
   soft(mx - 70, yL - 420, 250, 'slab'); soft(mx + 480, yL - 420, 160, 'slab'); solid(mx, yL - 790, 60, 130, 'wall'); solid(mx + 580, yL - 790, 60, 130, 'wall');
-  soft(mx - 70, yL - 840, 710, 'roof'); solid(mx + 600, yL - 970, 40, 130, 'lip');
-  for(let i = 0; i < 3; i++){ solid(mx + 60 + 200 - 100*i, yL - 105*(i + 1), 100, 105*(i + 1), 'stairblk'); solid(mx + 60 + 120 + 100*i, yL - 420 - 105*(i + 1), 100, 105*(i + 1), 'stairblk'); }   // base room: rises west; loft: rises east
+  soft(mx - 70, yL - 840, 710, 'roof'); const lipH = (V.air || tall || nS === 8) ? 50 : 130; solid(mx + 600, yL - 840 - lipH, 40, lipH, 'lip');   // (the roof's east lip is a 50 px curb where the Airship docks: a 130 px wall was more than a fighter's hop, so nobody could step aboard)
+  for(let i = 0; i < 3; i++){ solid(mx + 60 + 160 - 80*i, yL - 105*(i + 1), 80, 105*(i + 1), 'stairblk'); solid(mx + 60 + 120 + 100*i, yL - 420 - 105*(i + 1), 100, 105*(i + 1), 'stairblk'); }   // base room: rises west; loft: rises east
   L(mx + 60, yL - 370, 520, 370); L(mx + 60, yL - 790, 520, 370); X(mx - 70, yL - 1040, 710, 200); X(eM - 20, yL - 1040, 350, 1040);
   soft(mx + 640, yM - K.drop/2, 150, 'step');   // (a ledge, not a block: the tunnel's mouth is under it)
-  deco.push(['mill', mx, yL - 840, 640], ['hub', eM + 40 + 75, yL - 420], ['sock', mx + 300, yL - 860, 0]);
+  deco.push(['mill', mx, yL - 840, 640], ['hub', eM + 40 + 75, yL - 420], ['sock', mx + 300, yL - 860, 0], ['tunnel', mx, yL + mH, 640, yM - yL - mH]);   // (the stone arches that carry the base room's floor over the tunnel)
   // ---- THE AIRSHIP (V3 and the Tall and Huge maps): a deck that cruises east and back over the Mill's roof (25 s round trip; flush with the roof's east end at its west end; it never stops and never vanishes). Two plates on it: two teammates on both at once for 1.5 s open the chest (3 crates, and a Win Token for a person, two a match).
   let ship = null;
   if(V.air || tall || nS === 8){ ship = mover(mx + 1140, yL - 840, 520, { ax:500, per:1500, ph:0 }, 'airship'); crateSpots.push(ship); X(mx + 560, yL - 1180, 1700, 420); }
@@ -27481,10 +27503,9 @@ function whBuild(){
     solid(X0 + 450, yc, eM - X0 - 450 + 2300, 60, 'cellar');   // (one floor from the cliff foot through the cellar: two flush pieces left a CPU at the seam taking the short one for its node for ever)
   } else {
     solid(eM, yM, 2300, 470, 'ground');
-    soft(eM + 2330, yM + 120, 220, 'eagle');
   }
   soft(eM + 2330, yM + 120, 220, 'eagle');
-  const eagleFx = cellar ? (V.swap ? 'shield' : null) : (V.swap ? 'shield' : 'heal'), ey = yM + 120, ex0 = eM + 2330, ew = 220;
+  const eagleFx = V.swap ? 'shield' : 'heal', ey = yM + 120, ex0 = eM + 2330, ew = 220;
   if(eagleFx === 'shield') shield.push([ex0, ey, ew]); else if(eagleFx === 'heal') heal.push([ex0, ey, ew]);
   solid(eM + 2180, yM - 40, 60, 40, 'lip');
   soft(eM + 1160, yM - 60, 200, 'hay');
@@ -27498,7 +27519,7 @@ function whBuild(){
     { k:'B', y:F(kd), rg:[[660, 940]], zone:[300, F(kd) - 370, 660, 370] },
     { k:'M', y:yM, rg:[[eM + 1600, eM + 1860]], zone:[eM + 1380, yM - 300, 900, 300] },
     { k:'N', y:yN, rg:[[hx(0) + 40, hx(0) + 260], [hx(1) + 40, hx(1) + 260]], zone:[1060, yN - 260, 820, 300] },
-    { k:'L', y:yL, rg:[[mx + 400, mx + 540]], zone:[mx + 60, yL - 370, 520, 370] },
+    { k:'L', y:yL, rg:[[mx + 340, mx + 560]], zone:[mx + 60, yL - 370, 520, 370] },
   ];
   const blocks = P.filter(p=>p.solid), infos = [];
   for(const d of defs){
@@ -27526,9 +27547,15 @@ let WNN = null;
 const WH_M0 = { bush:[], lev:[], trip:[], zip:null };
 function whNav(){ const Y = whInfo(); if(!Y) return null; return (WNN && WNN.I === Y) ? WNN : (WNN = Object.assign(ynNavBuild('wn', WH_M0), { I:Y, M:WH_M0 })); }
 function whGustSoon(x){ let g = whGustAt(hazardT, x); if(g && (g.lead > 0 || g.k > 0)) return g; g = whGustAt(hazardT + 40, x); return g && (g.lead > 0 || g.k > 0) ? g : null; }   // a front on it, or reaching x within 40 frames
+function whInside(Y, x, y){ if(x >= 280 && x <= 1040 && y >= 100 && y <= Y.stH) return 'B'; const m = Y.mill; if(m && x >= m[0] - 70 && x <= m[0] + 650 && y >= m[1] - 840 && y <= m[1] + 10) return 'M'; return 0; }   // (which tower a point is in: the Beacon's rooms or the Mill's)
 function whBrain(f, inp){
   if(f.hitstun > 0 || f._tp){ f._ynPlan = null; return; }
   const Y = whInfo(); if(!Y) return; const N = whNav(); if(!N) return;
+  // THE CHEST PARTY (whParty picks two teammates now and then): each goes to the Airship by the route graph, and on it stands on its own plate
+  let mine = -1, sh = null;
+  { const Pt = WND && WND.party; mine = Pt ? (Pt.a === f ? 0 : Pt.b === f ? 1 : -1) : -1;
+    if(mine >= 0 && WND.chest){ sh = WND.chest.p; const sn = N.byP.get(sh); f._whParty = true; if(sn) f._ynGo = sn; }
+    else if(f._whParty){ f._whParty = false; f._ynGo = null; f._ynPlan = null; } }
   const feet = f.y + f.r, go = !!f._ynGo;
   // THERMAL: blown off or fallen below the middle while a gust blows: steer into the column and be lifted
   if(!f.onground && Y.thermal.length){ for(const T of Y.thermal){ const cx = T[0] + T[2]/2, gt = whGustAt(hazardT, cx); if(gt && gt.k > 0 && !gt.up && feet <= T[1] + 320 && feet >= T[1] - T[3] && Math.abs(f.x - cx) < 900){ inp.left = f.x > cx + 20; inp.right = f.x < cx - 20; inp.jump = false; return; } } }
@@ -27537,6 +27564,12 @@ function whBrain(f, inp){
     if(!f.onground){ if(g.k > 0 && f.vy > -1){ inp.left = g.dir > 0; inp.right = g.dir < 0; return; } }
     else { const nd = ynNodeAt(N, f); if(nd){ const d = g.dir > 0 ? nd.x1 - f.x : f.x - nd.x0; if(d < 200){ inp.left = g.dir > 0; inp.right = g.dir < 0; inp.jump = false; f._ynPlan = null; return; } } }
   }
+  if(mine >= 0 && sh && f.onground && f._stgRide === sh){ const d = (sh.x + (mine ? 380 : 140)) - f.x; inp.left = d < -14; inp.right = d > 14; inp.jump = false; inp.down = false; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; f._ynPlan = null; return; }   // on the Airship: stand on this fighter's plate (the chest opens when both teammates are on theirs for 1.5 s)
+  if(mine >= 0 && sh && f.onground && f._stgRide !== sh && Y.mill){   // ON THE MILL'S ROOF with the Airship to catch: wait at the roof's east end, and run and jump aboard when the Airship is within 150 px of it (and no gust is coming)
+    const re = Y.mill[0] + 640;
+    if(f.x > Y.mill[0] - 60 && f.x <= re + 4 && Math.abs(feet - sh.y) < 12){ const gap = sh.x - re, gs = whGustSoon(f.x); inp.left = false; inp.right = false; inp.jump = false; inp.down = false; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false;
+      if(f.x < re - 80) inp.right = true; else if(gap < 150 && !(gs && !gs.up && gs.dir)){ inp.right = true; { const m = hazardT % 22; inp.jump = m < 2 || (m >= 10 && m < 12); } }   // (the roof's east end has a 130 px lip: it takes a hop and a second hop over it, the second at the top of the first)
+      f._ynPlan = null; return; } }
   { const mv = Math.abs(f.x - (f._ynLX === undefined ? f.x : f._ynLX)) + Math.abs(f.y - (f._ynLY === undefined ? f.y : f._ynLY)); f._ynLX = f.x; f._ynLY = f.y; f._ynStill = (mv < 0.5 && f.onground) ? (f._ynStill || 0) + 1 : 0; }
   let foe = f.aiTarget && !f.aiTarget.dead && f.aiTarget.team !== f.team ? f.aiTarget : null;
   if(!foe){ let bd = 1e9; for(const o of fighters) if(!o.dead && o.team !== f.team){ const d = Math.hypot(o.x - f.x, o.y - f.y); if(d < bd){ bd = d; foe = o; } } }
@@ -27563,6 +27596,10 @@ function whBrain(f, inp){
   }
   inp.jump = jmp0; inp.down = dn0;
   if(!f.onground){ if(f._ynHopUntil > hazardT){ inp.left = f._ynHopDir < 0; inp.right = f._ynHopDir > 0; } return; }
+  if(foe && !go && f._ynStill < 60){   // INSIDE THE BEACON (or the Mill) with the foe in the same building and no route plan (the foe is over the same floor, or on its stair): a defender goes to it and hops up the steps, never dithers at its own door
+    const bf = whInside(Y, f.x, f.y), bo = whInside(Y, foe.x, foe.y);
+    if(bf && bf === bo && Math.abs(foe.y - f.y) < 440){ const dx = foe.x - f.x; inp.left = dx < -70; inp.right = dx > 70; if(foe.y < f.y - 40 && Math.abs(dx) < 340) inp.jump = (hazardT % 22) < 3; return; }
+  }
   if(f._ynStill > 90){ const ph = Math.floor((f._ynStill - 90)/45), d = (ph % 2) ? 1 : -1; inp.left = d < 0; inp.right = d > 0; inp.jump = ((f._ynStill - 90) % 45) < 3; inp.down = (ph % 4) === 3; }
 }
 // ---- LIGHTS OUT (V3, storm night): the Search Party's veil; the Beacon's lamp sweeps a beam round every 12 s (everyone in it is seen); each gust's lead-in ends in a lightning flash (20 frames)
@@ -27668,11 +27705,21 @@ function whHut(c, x, y, w, s, t){   // slot s: a different hut each (roof shape,
 function whDrawDeco(c, Y, t){
   const kites = worldPlats.filter(p=>p.kite), G = worldPlats.filter(p=>p.wn === 'gondola'), vanes = worldPlats.filter(p=>p.wn === 'vane'), bk = worldPlats.find(p=>p.wn === 'basket');
   if(bk) whBalloon(c, bk.x + bk.w/2, bk.y - 560, 190, 230, bk.x, bk.x + bk.w, bk.y);
+  for(const S of Y.shield){ c.fillStyle = 'rgba(120,190,255,0.14)'; c.beginPath(); c.moveTo(S[0], S[1]); c.lineTo(S[0], S[1] - 90); c.ellipse(S[0] + S[2]/2, S[1] - 90, S[2]/2, 90, 0, Math.PI, 0); c.lineTo(S[0] + S[2], S[1]); c.closePath(); c.fill(); c.strokeStyle = 'rgba(90,160,230,0.7)'; c.lineWidth = 3; c.stroke(); }   // (a shield area: a bubble over the ledge that has one)
+  for(const H of Y.heal){ c.fillStyle = 'rgba(120,200,90,0.12)'; c.fillRect(H[0], H[1] - 150, H[2], 150); c.strokeStyle = 'rgba(100,180,70,0.85)'; c.lineWidth = 5; const nh = Math.max(2, Math.round(H[2]/150)); for(let q = 0; q < nh; q++){ const hx = H[0] + (q + 0.5)*H[2]/nh, hy = H[1] - 30 - ((t*0.6 + q*47) % 110); c.beginPath(); c.moveTo(hx - 9, hy); c.lineTo(hx + 9, hy); c.moveTo(hx, hy - 9); c.lineTo(hx, hy + 9); c.stroke(); } }   // (a heal area: a green haze and crosses that rise)
   for(const d of Y.deco){
     const k = d[0], x = d[1], y = d[2];
     if(k === 'sock') whSock(c, x, y, t, !!whBox(Y.lee, x, y + 40, 3));
     else if(k === 'hut') whHut(c, x, y, d[3], Math.round((x - 1060)/410), t);
     else if(k === 'mill'){ c.fillStyle = WPAL.roof; c.beginPath(); c.moveTo(x - 30, y); c.lineTo(x + d[3]/2, y - 170); c.lineTo(x + d[3] + 30, y); c.closePath(); c.fill(); c.strokeStyle = WPAL.line; c.lineWidth = 4; c.stroke(); c.fillStyle = '#3a2c1c'; c.fillRect(x + d[3]/2 - 14, y - 215, 28, 50); c.fillStyle = '#e8d28a'; c.fillRect(x + d[3]/2 - 22, y - 232, 44, 20); }
+    else if(k === 'tunnel'){ const w = d[3], h = d[4], pier = 56, bays = 3, bw = (w - pier*(bays + 1))/bays, r = bw/2, top = y + 26;   // the stone that carries the Mill's floor: piers and three round arches over the dark way through
+      c.fillStyle = '#8d7a5c'; c.fillRect(x, y, w, h);
+      for(let q = 0; q < bays; q++){ const bx = x + pier + q*(bw + pier); c.fillStyle = '#2d241a'; c.beginPath(); c.moveTo(bx, y + h); c.lineTo(bx, top + r); c.arc(bx + r, top + r, r, Math.PI, 0); c.lineTo(bx + bw, y + h); c.closePath(); c.fill(); c.strokeStyle = WPAL.line; c.lineWidth = 4; c.stroke();
+        c.strokeStyle = 'rgba(30,22,14,0.55)'; c.lineWidth = 3; for(let a = 1; a < 6; a++){ const ang = Math.PI + Math.PI*a/6; c.beginPath(); c.moveTo(bx + r + Math.cos(ang)*r, top + r + Math.sin(ang)*r); c.lineTo(bx + r + Math.cos(ang)*(r + 20), top + r + Math.sin(ang)*(r + 20)); c.stroke(); } }
+      c.strokeStyle = 'rgba(30,22,14,0.35)'; c.lineWidth = 2; for(let yy = y + 40; yy < y + h; yy += 40){ for(let q = 0; q <= bays; q++){ const px = x + q*(bw + pier); c.beginPath(); c.moveTo(px, yy); c.lineTo(px + pier, yy); c.stroke(); } }
+      c.strokeStyle = WPAL.line; c.lineWidth = 4; c.strokeRect(x, y, w, h); }
+    else if(k === 'anchor'){ const ax = x + 75, ay = y + 70; c.strokeStyle = '#2f3a44'; c.lineWidth = 9; c.beginPath(); c.arc(ax, ay - 38, 12, 0, 7); c.moveTo(ax, ay - 26); c.lineTo(ax, ay + 44); c.moveTo(ax - 22, ay - 6); c.lineTo(ax + 22, ay - 6); c.moveTo(ax - 38, ay + 22); c.quadraticCurveTo(ax - 30, ay + 52, ax, ay + 52); c.quadraticCurveTo(ax + 30, ay + 52, ax + 38, ay + 22); c.stroke();
+      if(bk){ c.strokeStyle = 'rgba(90,70,45,0.85)'; c.lineWidth = 5; whRope(c, x + 148, y + 8, bk.x + 30, bk.y + 4, 90); } }   // the Anchor Rock: the balloon is moored to it
     else if(k === 'barn'){ c.fillStyle = WPAL.roof; c.beginPath(); c.moveTo(x - 20, y); c.lineTo(x + d[3]/2, y - 120); c.lineTo(x + d[3] + 20, y); c.closePath(); c.fill(); c.strokeStyle = WPAL.line; c.lineWidth = 4; c.stroke(); c.fillStyle = '#f4ecd6'; c.fillRect(x + d[3]/2 - 40, y - 60, 80, 8); }
     else if(k === 'hub'){ c.strokeStyle = 'rgba(90,70,45,0.8)'; c.lineWidth = 6; for(const v of vanes){ c.beginPath(); c.moveTo(x, y); c.lineTo(v.x + v.w/2, v.y + 12); c.stroke(); } c.fillStyle = WPAL.brass; c.beginPath(); c.arc(x, y, 26, 0, 7); c.fill(); c.strokeStyle = WPAL.line; c.lineWidth = 4; c.stroke(); }
   }
@@ -27724,6 +27771,7 @@ function whDrawPlats(){
     c.strokeStyle = 'rgba(40,30,20,0.4)'; c.lineWidth = 2; if(th >= 30){ for(let x = p.x + 46 + (p.x % 23); x < p.x + p.w; x += 46){ c.beginPath(); c.moveTo(x, p.y); c.lineTo(x, p.y + th); c.stroke(); } c.beginPath(); c.moveTo(p.x, p.y + th*0.55); c.lineTo(p.x + p.w, p.y + th*0.55); c.stroke(); }
     else for(let x = p.x + 56; x < p.x + p.w; x += 56){ c.beginPath(); c.moveTo(x, p.y); c.lineTo(x, p.y + th); c.stroke(); }
     c.strokeStyle = WPAL.line; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, th);
+    if(k === 'step'){ c.fillStyle = '#8d7a5c'; c.beginPath(); c.moveTo(p.x, p.y + th); c.lineTo(p.x, p.y + th + 84); c.lineTo(p.x + 84, p.y + th); c.closePath(); c.fill(); c.strokeStyle = WPAL.line; c.lineWidth = 3; c.stroke(); }   // (a stone ledge built out from the wall, carried on a corbel)
     if(k === 'loosedeck'){ const st = WHQ.ls[li++] || 0; if(st === 1){ c.strokeStyle = '#3a2812'; c.lineWidth = 4; c.beginPath(); c.moveTo(p.x + 30, p.y); c.lineTo(p.x + 50, p.y + th); c.moveTo(p.x + 90, p.y); c.lineTo(p.x + 76, p.y + th); c.moveTo(p.x + 120, p.y); c.lineTo(p.x + 134, p.y + th); c.stroke(); } }
     if(k === 'deck' || k === 'balcony' || k === 'gallery' || k === 'oldplank' || k === 'loosedeck' || k === 'plank'){   // rope rails: posts and a sagging rope; a lower rope; hanging ropes under
       const ry = p.y - 46; c.strokeStyle = '#7a5a34'; c.lineWidth = 6; for(let x = p.x + 6; x <= p.x + p.w - 2; x += 80){ c.beginPath(); c.moveTo(x, p.y); c.lineTo(x, ry); c.stroke(); }
@@ -107762,8 +107810,8 @@ function draw(){
   if(SETTINGS.mode==='ctf') ctfDrawWorld(); else for(const p of worldPlats) if(!p.dg && !p.di && !p.yn && !p.wn) paintPlat(ctx, p, platStyle);   // Capture the Flag paints its map from cached tiles (THE DIG paints its dirt itself: drawDigc)
   if(STG) stgDrawOver();   // STAGES A: Dream Island's grass caps
   if(DRM_VIS) diDrawPlats();   // DREAM ISLAND TEAMS: islands, planks (cracked, ghost) and the drifting islands
-  if(YN_VIS) ynDrawPlats();
-  if(WND_VIS) whDrawPlats();   // WINDY HEIGHTS TEAMS: the Long Span   // YOYLE NEEDLE TEAMS: the needle's inside, its machinery and its platforms
+  if(YN_VIS) ynDrawPlats();   // YOYLE NEEDLE TEAMS: the needle's inside, its machinery and its platforms
+  if(WND_VIS) whDrawPlats();   // WINDY HEIGHTS TEAMS: the Long Span
   if(DRM_VIS) diDrawWeather();   // DREAM ISLAND TEAMS: leaves in a gust, rain
   drawImpactScars();          // impact's floor scars, on the surfaces they were made on
   drawArenaHazard('under');   // a boss arena's hazard, under the shots and the fighters (BOSS_ARENA_HAZARD)
@@ -123546,7 +123594,7 @@ function worldGeo(){
     floors: floors.map(fl=>({level:fl.level,y:Math.round(fl.y),x:Math.round(fl.x),w:Math.round(fl.w)})),
     // `solid` was missing here once, so on a client every stone landmark rendered as a thin ledge; `field` keeps the
     // client's minimap filtering out the scatter grid the way the host's does; `rot` is paintPlat's tilt.
-    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team,ib:p.ib,sc:p.sc,ar:p.ar,lh:p.lh,bl:p.bl,ss:p.ss,th:p.th,sh:p.sh,wo:p.wo,hg:p.hg,blk:p.blk,ix:p.ix,pool:p.pool,trap:p.trap,oi:p.oi,yn:p.yn,yd:p.yd,wn:p.wn,wd:p.wd,kite:p.kite,bx:p.bx,by:p.by,mvz:(p.yn && p.mv) ? [p.bx, p.by, p.mv.ax, p.mv.ay, p.mv.per, p.mv.ph, p.mv.ph2 || 0] : undefined})),
+    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot,di:p.di,ghost:p.ghost,crk:p.crk,dh:p.dh,team:p.team,ib:p.ib,sc:p.sc,ar:p.ar,lh:p.lh,bl:p.bl,ss:p.ss,th:p.th,sh:p.sh,wo:p.wo,hg:p.hg,blk:p.blk,ix:p.ix,pool:p.pool,trap:p.trap,oi:p.oi,yn:p.yn,yd:p.yd,wn:p.wn,wd:p.wd,kite:p.kite,bx:p.bx,by:p.by,mvz:((p.yn || p.wn) && p.mv) ? [p.bx, p.by, p.mv.ax, p.mv.ay, p.mv.per, p.mv.ph, p.mv.ph2 || 0] : undefined})),
     // `zone` and `wall` ride along so a client DRAWS the team's safe zone where the host plays it: without them it fell back
     // to the old column round the base, which is nowhere near a side-wall band (see wallBand).
     bases: bases.map(b=>({team:b.team,x:Math.round(b.x),y:Math.round(b.y),w:b.w,h:b.h,color:b.color,
@@ -123918,9 +123966,9 @@ function applySnapshot(s){
   if(YN_VIS) ynGuestMovers();   // (the always-running Yoyle Needle movers: from the clock, not the snapshot)
   if(s.dg) digNetIn(s.dg);   // THE DIG FLOOR: the host's holes, so this floor is the host's floor of this very frame
   if(s.sq) stairsNetIn(s.sq);   // A RISING STAIRCASE: the host's steps, for the picture (the whole ones are in the host's geometry above)
-  if(s.yq) ynNetIn(s.yq);
+  if(s.yq) ynNetIn(s.yq);   // YOYLE NEEDLE TEAMS: the host's levers and bushes
   if(s.wq) whNetIn(s.wq);   // WINDY HEIGHTS TEAMS
-  if(WND_VIS) whKitesSync();   // WINDY HEIGHTS TEAMS: the kites are the clock's: this side works them out itself   // YOYLE NEEDLE TEAMS: the host's levers and bushes
+  if(WND_VIS) whGuestMovers();   // WINDY HEIGHTS TEAMS: the moving parts are the clock's: this side works them out itself
   if(s.bq) berriesNetIn(s.bq);   // BERRIES RAIN: the host's seed and eaten berries, at the host's own clock (hazardT = s.t, above)
   if(s.br) barNetIn(s.br);
   stbNetIn();   // STAGES B: Shifting Isles' floor and platforms at the host's own clock (nothing on any other stage)   // THE BAR: the strips at the host's own clock (hazardT = s.t, above), so this floor is the host's floor of this very frame
@@ -124054,6 +124102,7 @@ function netInterpolate(now){
   const a = NET_VIEW.lerp ? clamp((now - NET_VIEW.at + NET_VIEW.frameDt) / gap, 0, 1) : 1;
   hazardT = Math.round(NET_VIEW.ft + (NET_VIEW.tt - NET_VIEW.ft)*a);
   if(YN_VIS) ynGuestMovers();
+  if(WND_VIS) whGuestMovers();   // WINDY HEIGHTS TEAMS
   const at = (e)=>{ if(e._tx === undefined) return; e.x = e._fx + (e._tx - e._fx)*a; e.y = e._fy + (e._ty - e._fy)*a; };
   for(const f of fighters){ at(f); netSwing(f); }
   for(const m of summons) at(m);
@@ -124235,7 +124284,7 @@ function netPredOut(f){
   const busy = !!(ctfHeld || f._freeAt !== hazardT || f._freeIn !== (S.cur & 7) || FS.freeze > 0 || FS.slow > 0 || f.dead || f.hitstun > 0 || f._hitStop > 0 || f._fsLock || f._mv || f._dashing > 0 || f._hyperT > 0 || f._gotcha || f._nail
     || (f._sm && f._sm.drive) || f.flying > 0 || f._tp || f._tpHang > 0 || stanceStill(f) || f.rooted > 0 || f._gb || f._hold || f._slam
     || f.frozen > 0 || f._fxLock > hazardT || f.ctrlRev > 0 || f.smashHold > 0 || f._windup || f._plunge || f._floatT > 0 || f.iceUntil > 0
-    || f._ynZip || f._heldBy != null || f._grabHold || f._attract || f.dropping > 0 || f._springT > 0 || f._raceSpringT > 0 || f.swallowed || f._rubHang > hazardT || f._fHold > hazardT || f._ffPh || f._bzPh || f._wallKickT > hazardT || f._spFly > hazardT || f._roll || f._bhSingT > hazardT || f._bhWT >= hazardT || f._boltHang > hazardT || f._flutT > hazardT || f._crumbT > hazardT || f._sdPh || RACE.active);   // (Spongy: his finisher's and Final Smash's flight, Squash and Spring's squash)   // (Black Hole: SINGULARITY's drift, the WORMHOLE)   // (Eraser: RUB OUT's hang, STEAKHOUSE FLIP's wall kick; 8-Ball: STOP SHOT's roll; Cloudy: the bolt's air hold; Pie: Arm Flutter's flaps, her crumbs)
+    || f._ynZip || f._heldBy != null || f._grabHold || f._attract || f.dropping > 0 || f._springT > 0 || f._raceSpringT > 0 || f.swallowed || f._rubHang > hazardT || f._fHold > hazardT || f._ffPh || f._bzPh || f._wallKickT > hazardT || f._spFly > hazardT || f._roll || f._bhSingT > hazardT || f._bhWT >= hazardT || f._boltHang > hazardT || f._flutT > hazardT || f._crumbT > hazardT || f._sdPh || RACE.active || (WND && f._stgRide));   // (WINDY HEIGHTS TEAMS: a rider on a kite, the gondola, a vane or the Airship is the host's to place: the guest's own replay ran it against a kite 3 frames old and popped it 60 to 150 px)   // (Spongy: his finisher's and Final Smash's flight, Squash and Spring's squash)   // (Black Hole: SINGULARITY's drift, the WORMHOLE)   // (Eraser: RUB OUT's hang, STEAKHOUSE FLIP's wall kick; 8-Ball: STOP SHOT's roll; Cloudy: the bolt's air hold; Pie: Arm Flutter's flaps, her crumbs)
   const o = { a, b:busy ? 1 : 0 };
   if(busy) return o;
   const fst = f.st || STAT_ONE, sk = ctfSpeedK(f)*rainRunK(), r3 = v=>Math.round(v*1000)/1000;   // (THE RAIN twist's slow rides in the speeds: rainRunK)
@@ -124660,6 +124709,7 @@ window.NET = {
     // Cleared here too, not just in go('title'), so any other exit path is safe as well.
     window.__netRoster=null; window.__netHumanCount=0; window.__netSides=null; window.__netOC=null;
     NET_COS=[]; COS_KO_OUT=[]; this.ocBuilds={};   // ...and so are the room's looks
+    if(!WND) WND_VIS = false;   // WINDY HEIGHTS TEAMS: a guest's picture of the Long Span ends with the room
   },
 
   send(obj){ if(this.ws && this.ws.readyState===1) this.ws.send(JSON.stringify(obj)); },
