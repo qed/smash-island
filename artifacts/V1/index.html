@@ -19013,19 +19013,33 @@ function koB(){ return WH + KO_DROP; }
 function koT(){ return (STG && STG.top != null) ? STG.top : KO_TOP; }   // STAGES A: The TLC's top line is lower (a walled box ends its matches out of the top or down its pits); KO_TOP everywhere else
 function koRect(){ return { x0:koL(), x1:koR(), y0:koT(), y1:koB() }; }
 function pastSideLine(x){ return x < koL() || x > koR(); }   // past a side KO line: 120 px out from the stage's box, and SIDE_ROOM more
-function pastKo(x, y){ return x < koL() || x > koR() || y > koB() || y < koT() || gorgeKo(x, y); }   // past any of the four (and DEADLY GORGES: down inside a gorge, gorgeKo)
+function pastKo(x, y){ return x < koL() || x > koR() || y > koB() || y < koT(); }   // past any of the four (DEADLY GORGES are a fifth, fighter by fighter: gorgeFallKo)
 // DEADLY GORGES (the owner's pick for STALLED MATCHES, 2026-11-12: "make the gorges a real threat, so a foe knocked into one is lost"). On the big
 // maps' FFA matches the gorges between the floor spans (Yoyle Canyon, Sky Towers, Grand Plains) are 430-plus px from the floor to the bottom KO line:
-// a fighter knocked in climbed out by the cliff walls, and the only KOs came over the far top line, 60-80 s into a match. Now a fighter whose centre
-// is GORGE_KO px under the floor line, between two floor spans, is out (the same KO as falling off the bottom). 300 px is a fall of about a third of
-// a second from the lip: a double jump (about 170 px), the up-special and the cliff's wall jump all still reach the lip from the lip's own depth, and
-// a fighter who reacts at once climbs out. Only big FFA matches with a plain floor (no Dig, no Bar twist): every other stage and mode is as before.
+// a fighter knocked in climbed out by the cliff walls, and the only KOs came over the far top line, 60-80 s into a match. Now a fighter who is
+// FREE (not in hitstun, not held) with its centre GORGE_KO px under the floor line, between two floor spans, is out: the same KO as falling off
+// the bottom. koB still applies at all times. JURY (reports/juries/gorges.md): a hit at the lip carries a fighter across any line during the
+// stun, before it can press a key (18 of 111 fighters hit at the lip with 40 frames of stun died where they used to recover), so the line
+// waits for the stun to end. THE NUMBER: a jump rises JUMP^2/(2 GRAV) = 12.5^2/1.24 = about 126 px (less for the low jumpers), not the 170 this
+// said before. A free fighter climbs with the air jump (about 126), the up-special and the cliff's wall jumps; the line's depth is checked
+// against the jury's recovery sim (scripts/gorge-recovery.mjs), and stays under koB (430 on these stages). Only big FFA matches with a plain floor (no Dig, no Bar twist): every other stage and
+// mode is as before.
 const GORGE_KO = 300;
 function gorgesOn(){ return !!FLOOR_SEGS && FLOOR_SEGS.length > 1 && !BAR && !DIG && isBigFFA(); }
-function gorgeKo(x, y){
+function gorgeIn(x, y){   // deep in a gorge: past the line, between two floor spans (the stun is not asked: Marshmallow's save and the flight test read this)
   if(!gorgesOn() || y <= groundY() + GORGE_KO) return false;
   for(let i = 0; i < FLOOR_SEGS.length - 1; i++) if(x > FLOOR_SEGS[i].x1 - 40 && x < FLOOR_SEGS[i + 1].x0 + 40) return true;
   return false;
+}
+// The line is a KO after GORGE_GRACE frames FREE below it (counted per fighter, reset above the line): a fighter whose stun ends past the line
+// (the jury's sim: all of the ones who used to recover had been carried 344-410 px down by the stun) gets to press its jump and turn the fall.
+// Only the fighter's own free frames count: a stun or a hold below the line stops the clock, it does not run it. koB still ends a fall at 430.
+const GORGE_GRACE = 30;
+function gorgeFallKo(f){
+  if(!gorgeIn(f.x, f.y)){ f._gorgeT = 0; return false; }
+  if(f.hitstun > 0 || f._heldBy != null) return false;
+  f._gorgeT = (f._gorgeT || 0) + 1;
+  return f._gorgeT >= GORGE_GRACE;
 }
 function sideRoomTop(){ return SIDE_ROOM ? Math.round(H/2 - H*(WW + 2*SIDE_ROOM)/(2*W)) : 0; }   // the world y of the top of the view there (above 0: the zoomed-out view shows more sky); 0 elsewhere
 // THE TEAMS ARENA FITS ITS PLAYERS (the owner, 2026-10-31: "do 1" -- CPU team matches dragged: "most of the match is running around").
@@ -29747,7 +29761,7 @@ function fsKoFlight(t, strict){
   if(MCAVE && MCAVE.on) return mcKoFlight(t, n, saved);   // MOON CAVES: out past the blast ring or down into the core
   for(let i = 0; i < n; i++){
     vy += vy > 0 ? g*fall : g; x += vx; y += vy;
-    if(saved && vy > 0 && y > WH + 60 && y <= koB()) return false;   // (MARSHMALLOW'S GRAVITY: halted above the bottom line, flung back up)
+    if(saved && vy > 0 && ((y > WH + 60 && y <= koB()) || gorgeIn(x, y))) return false;   // (MARSHMALLOW'S GRAVITY: halted above the bottom line, flung back up)
     if(pastKo(x, y)) return true;
     if(!isBig() && vy > 0 && y >= gy - t.r && groundAt(x)) return false;   // (REAL EDGES: over a gap the flight goes on down)
   }
@@ -71355,7 +71369,7 @@ function step(){
     f._footing = f.onground;   // where its own step left it: on a floor or not (WALKING OFF CANCELS THE TILT reads this, not a push that only marks it airborne)
     // MARSHMALLOW'S GRAVITY, the half that helps: halted right before the saw and flung back upwards (War De
     // Guacamole). Involuntary, once a stock, and only on the way down to a knockout.
-    if(f.kit && f.kit.special==='wallmart' && !f._gravSaved && f.vy > 0 && !f.dead && (MCAVE && MCAVE.on ? (MCAVE.cy - f.y < MCAVE.rKill + 100 && MCAVE.cy - f.y >= MCAVE.rKill) : (f.y > WH + 60 && f.y <= koB()))){   // (MOON CAVES: just short of the core, on the way in)
+    if(f.kit && f.kit.special==='wallmart' && !f._gravSaved && f.vy > 0 && !f.dead && (MCAVE && MCAVE.on ? (MCAVE.cy - f.y < MCAVE.rKill + 100 && MCAVE.cy - f.y >= MCAVE.rKill) : ((f.y > WH + 60 && f.y <= koB()) || gorgeIn(f.x, f.y)))){   // (MOON CAVES: just short of the core, on the way in; DEADLY GORGES: at the gorge line)
       f._gravSaved = true; f.vy = -17; f.vx *= 0.3; f.hitstun = 0;
       for(let i=0;i<16;i++) puff(f.x + (Math.random()*50-25), f.y, '#ffe9f2', 5);   // no "...GRAVITY?!" line ("Remove them all"); the save itself is the joke
     }
@@ -71375,6 +71389,7 @@ function step(){
     else {
       if(f._backAir && f.y < koT()){ f.y = koT(); if(f.vy < 0) f.vy = 0; }
       if(pastKo(f.x, f.y)){ eliminate(f); }
+      else if(gorgeFallKo(f)){ f._gorgeFall = true; eliminate(f); f._gorgeFall = false; }   // DEADLY GORGES
     }
 
     // hazards
@@ -97924,7 +97939,7 @@ function eliminate(f){
   try{ cosKoBurst(f); }catch(e){}   // the KO effect of whoever knocked them out: drawn only, and never a roll of the dice
   shake((f.you || (f.lastHitBy && f.lastHitBy.you)) ? 30 : 15);   // JURY 1: a KO shook less (3.6 px) than a plain 10% hit (4 px); yours, or one you scored, now shakes to the cap, others half
   if(f.you){ const kb = f.lastHitBy, by = hzBy(f) || ((kb && kb !== f && kb.name && hazardT - (f._lastHitT != null ? f._lastHitT : -1e9) <= 600) ? kb.name : '');   // JURY 1: who did it, if someone hit them in the last 10 s
-    banner(f.stocks>0 ? (by ? "KO'd by " + by : "KO'd!") + " − a stock" : (by ? "You're out! KO'd by " + by : "You're out!"), 1100, null, true); }   // local: a client gets its own (applySnapshot)
+    banner(f.stocks>0 ? (by ? "KO'd by " + by : "KO'd!") + (f._gorgeFall ? " (fell into the gorge)" : "") + " − a stock" : (by ? "You're out! KO'd by " + by : "You're out!"), 1100, null, true); }   // local: a client gets its own (applySnapshot)
   if(f.stocks<=0){
     f.dead=true; f.alive=false;
     f._outT = hazardT;   // the frame they went out: how long they lasted (an event match's loss pays for 60 s: eventFinish)
@@ -122988,7 +123003,7 @@ function applySnapshot(s){
   if(lineup !== window.__hudLineup){ window.__hudLineup = lineup; try{ buildHUD(); }catch(e){} }
   // This device's own KO line (the host's is local to the host: see banner)
   { const me = fighters.find(f=>f.idx===myIdx), was = wasF.get(myIdx);
-    if(me && was && me.stocks < was.stocks) banner(me.stocks>0 ? "KO'd! − a stock" : "You're out!", 1100, null, true); }
+    if(me && was && me.stocks < was.stocks) banner(me.stocks>0 ? "KO'd!" + (gorgeIn(was.x, was.y) ? " (fell into the gorge)" : "") + " − a stock" : "You're out!", 1100, null, true); }
   if(s.pj){
     const cols = s.pj.c || [];
     projectiles = (s.pj.a || []).map(r=>{
