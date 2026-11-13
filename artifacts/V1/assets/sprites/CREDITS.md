@@ -1616,3 +1616,6 @@ character, area-averaged to 200 px tall and the invisible halo erased, the same 
   pop-up flash above). Two of the 56 were not kept, because no face shows: Liar Ball Loser (`File:Liarball-0.PNG`, Loser hidden in the ball) and Ice
   Pack Cheesy (`File:Cheesy Icepack.png`). Money, Bonesaw, Magnet and Dough have no clean second picture, so they got none.
 
+### Beach Ball (BFDI wiki; BFDIE, event kit 10)
+
+Their picture is the one already in the game and already credited above: `beach-ball.png` (210x200), File:Elswerebeachball.png (BFDIE render). Nothing new was downloaded for the kit: the squash, stretch, pump, pop, pool noodle, sand, the ball of air and the giant of the Final Smash are drawn from that picture and in code (`FIGHTER_ANIM["Beach Ball"]`, `beachDrawBall`).
