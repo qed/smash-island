@@ -100866,7 +100866,8 @@ const EVENT_MATCHES = {
     // Teams arena (Grand Plains' sky and ground; the design names no stage), the usual items, no Smash Balls (one would nearly always fall to the side with three).
     { n:2, name:'The Strongest Team on Earth', kind:'3v1', stage:'grandplains', sides:[['you'], ['Foldy', 'Bell', 'Snowball']], items:'on', smashBalls:false, twist:null, stocks:2, youStocks:3 },
     // CARRIED OFF: Yoyleland (low gravity, the stage's own), a free-for-all of four: you, Foldy, Fries and Liy (Liy is the one she holds a grudge against). The usual items; Smash Balls.
-    { n:3, name:'Carried Off', kind:'challenge', stage:'yoyle', sides:[['you'], ['Foldy'], ['Fries'], ['Liy']], items:'on', smashBalls:true, twist:null, stocks:2 },
+    // CARRIED OFF (2026-11-13, the owner's CONTEST for her third match): gusts blow pages off a stack, catch 30; see PG. No items (a crate is a sky drop), no Smash Balls.
+    { n:3, name:'Carried Off', kind:'challenge', stage:'yoyle', sides:[['you'], ['Foldy'], ['Fries'], ['Liy']], items:'off', smashBalls:false, twist:'contest', contest:'pages', stocks:3 },   // FOLDY'S CONTEST (CONTEST_RULES.pages)
   ],
 };
 
@@ -101063,6 +101064,7 @@ Object.assign(EVENT_TWIST_WORDS, {
 Object.assign(EVENT_TWIST_WORDS, {
   'contest:dig': { icon:'⛏️', short:"Spongy's contest: the dig", words:"Spongy's contest: dig out to a corner exit. Your moves are buried in the dirt; the first out fight stronger." },
   'contest:clock': { icon:'⏩', short:"Clock's contest: fast forward", words:"Clock's contest: your clock runs while you stand in the light. Alone, it runs double. First to zero wins.", goal:'Stand in the light to run out your clock' },
+  'contest:pages': { icon:'📄', short:"Foldy's contest: carried off", words:"Foldy's contest: gusts blow pages off the stack. Catch 30. A hard hit knocks one out of you.", goal:'Catch 30 pages' },
   'contest:collection': { icon:'🧩', short:"Cloudy's contest: the collection", words:"Cloudy's contest: hold all 9 kinds of item for 10 seconds. Every 3rd hit you take, the hitter steals one. A KO drops your items." },
 });
 // THE GOAL LINE (2026-11-08): one short line shown for the first 5 seconds of the match (drawEventGoal); a twist with none shows its short words.
@@ -103190,6 +103192,121 @@ CONTEST_RULES.clock = {
     const goal = z.next != null ? CK.xs[z.next] : z.x, inL = ckIn(f) && z.next == null;
     if(inL){ if(t && Math.abs(t.x - z.x) > CK.w/2 + CK.leash) return true; return false; }   // (in the light: stand, and fight what comes; never chase far out of it)
     return contestWalk(f, inp, goal, 20);
+  },
+};
+
+// PACE (measured, 4 CPU-only runs per setting: need 12 / burst 4 / calm 120 ended in 29 s; 20/3/240 in 80 s; 25/4/240 in 86 s; 30/4/240 in 99 s; 30/3/240 in 128 s): the
+// design's 12 was far too quick, so the count is 30 with a thinner supply. FOLDY: CARRIED OFF (the design's no. 6; the game's own note for her first match is "the wind carried her off"). Yoyleland (its own low gravity), the GUSTS twist's
+// own wind (twists:['gusts']: gustState gives the direction and the timing, there is no second wind clock). A STACK of paper stands on the floor near the middle.
+// Every gust lifts four pages off it, and any page hovering over it joins them: they flutter downwind (PG.vx a frame, up to PG.maxUp above the floor) and are gone at
+// the edge of the stage. Between gusts one page rises from the stack every PG.calmEvery frames and hovers PG.hover px over it (at most PG.hoverMax at a time).
+// NOTHING COMES FROM THE SKY: every page rises from the stack, or from the fighter it was knocked out of. Touch a page: +1. A hit of PG.loose% or more knocks ONE page out
+// of its victim (it flutters off downwind, not theirs again for PG.np frames; hits inside PG.combo frames of the one that counted are the same attack, and after a knock
+// the victim is safe for PG.safe frames); a KO puts up to PG.koDrop of your pages back up at the stack. A score never goes down otherwise. Win: PG.need pages. Pages are
+// the rule's own list (CONTEST.pages), not items: they never time out, and only the stage's edge takes one. CPUs: the nearest page within reach and one jump, go under it
+// and jump (aiSafeStep keeps them off the edge); with none they drift back to the stack; a rival at PG.gang is everyone's foe.
+const PG = { need:30, burst:3, calmEvery:240, hover:120, hoverMax:3, vx:2.2, maxUp:260, minUp:80, loose:10, combo:36, safe:240, koDrop:3, np:30, reach:560, climb:260, gang:9, rise:60, w:14, h:18 };
+function pgPages(){ return CONTEST && CONTEST.pages ? CONTEST.pages : []; }
+function pgMake(x, by, rise, vx, extra){ const p = Object.assign({ x, by, rise:0, riseT:rise, ph:Math.random()*6.28, vx:vx, y:by }, extra || {}); CONTEST.pages.push(p); return p; }
+function pgStackSpot(){ const S = CONTEST.stack; return { x:S.x + (Math.random() - 0.5)*50, by:S.y - 24 }; }
+function pgRelease(dir){ for(const p of CONTEST.pages) if(!p.vx){ p.vx = dir*PG.vx*(0.8 + Math.random()*0.4); p.riseT = Math.max(p.riseT, PG.minUp + Math.random()*(PG.maxUp - PG.minUp)); } }
+CONTEST_RULES.pages = {
+  twists:['gusts'],
+  winText(f){ return f.name + ' caught ' + PG.need + ' pages!'; },
+  score(f){ return f._pg || 0; },
+  begin(){
+    const x = floorSafeX(WW*0.5, 100);   // (the middle, snapped onto the floor: on Yoyleland the hatch is in the middle, so the inner end of a floor span)
+    CONTEST.stack = { x, y:groundY() };
+    CONTEST.pages = []; CONTEST.gn = -1; CONTEST.dir = 1; CONTEST.calmT = 0;
+    for(const f of fighters){ f._pg = 0; f._pgHitT = -999; f._pgSafe = 0; }
+  },
+  step(){
+    const S = CONTEST, g = gustState(), t = hazardT;
+    if(g && g.k > 0){   // a gust is blowing: on its first frame four pages come up off the stack, and every hovering page is carried off with them
+      const n = Math.floor((t - GUST.first + GUST.lead)/GUST.every);
+      if(n !== S.gn){ S.gn = n; S.dir = g.dir;
+        for(let i = 0; i < PG.burst; i++){ const q = pgStackSpot(); pgMake(q.x, q.by, 0, 0); }
+        pgRelease(g.dir); tone(300, 0.2, 'triangle', 0.06, 0, 520); }
+    } else if(t - S.calmT >= PG.calmEvery && S.pages.filter(p => !p.vx).length < PG.hoverMax){
+      S.calmT = t; const q = pgStackSpot(); pgMake(q.x, q.by, PG.hover, 0);
+    }
+    const left = [];
+    for(const p of S.pages){
+      p.ph += 0.12; if(p.rise < p.riseT) p.rise = Math.min(p.riseT, p.rise + p.riseT/PG.rise);
+      p.x += p.vx || 0; p.y = p.by - p.rise + 18*Math.sin(p.ph);
+      if(p.x < -40 || p.x > WW + 40) continue;   // (carried off the edge of the stage)
+      let got = null;
+      for(const f of fighters){
+        if(f.dead || (p.npBy === f.idx && p.npT > t)) continue;
+        if(Math.abs(f.x - p.x) < f.r + PG.w && Math.abs(f.y - p.y) < f.r + PG.h){ got = f; break; }
+      }
+      if(got){
+        got._pg++; for(let i = 0; i < 5; i++) puff(p.x, p.y, '#ffffff', 3);
+        if(got.you) tone(500 + 40*got._pg, 0.06, 'triangle', 0.14, 0, 700 + 40*got._pg);
+        if(got._pg >= PG.need) contestWin(got);
+        continue;
+      }
+      left.push(p);
+    }
+    S.pages = left;
+  },
+  hit(t, from, dmg){
+    if(dmg < PG.loose || !(t._pg > 0)) return;
+    if(hazardT < (t._pgSafe || 0) || hazardT - t._pgHitT < PG.combo) return;   // (a combo is one attack; just after a knock the victim is safe)
+    t._pgHitT = hazardT; t._pgSafe = hazardT + PG.safe;
+    t._pg--; const dir = CONTEST.dir || 1;
+    pgMake(t.x, t.y + 10, PG.minUp + Math.random()*60, dir*PG.vx, { npBy:t.idx, npT:hazardT + PG.np });
+    for(let i = 0; i < 6; i++) puff(t.x, t.y - t.r, '#ffffff', 3);
+    if(t.you) tone(300, 0.12, 'sawtooth', 0.1, 0, 180);
+  },
+  ko(f){
+    const n = Math.min(PG.koDrop, f._pg || 0);
+    f._pg = (f._pg || 0) - n; f._pgHitT = -999;
+    for(let i = 0; i < n; i++){ const q = pgStackSpot(); pgMake(q.x, q.by, PG.hover, 0); }   // (they rise from the stack and hover there)
+  },
+  world(c, layer){
+    const S = CONTEST;
+    if(layer === 'under'){
+      c.save(); const x = S.stack.x, y = S.stack.y;
+      for(let i = 0; i < 6; i++){ c.fillStyle = i % 2 ? '#f4f7fa' : '#ffffff'; c.strokeStyle = '#9fb7c8'; c.lineWidth = 1.5; c.fillRect(x - 30 + (i % 3)*2, y - 5 - i*4, 60, 4); c.strokeRect(x - 30 + (i % 3)*2, y - 5 - i*4, 60, 4); }
+      c.restore();
+      return;
+    }
+    c.save();
+    for(const p of S.pages){
+      c.save(); c.translate(p.x, p.y); c.rotate(Math.sin(p.ph*0.8)*0.6 + (p.vx ? Math.sign(p.vx)*0.3 : 0));
+      c.fillStyle = '#ffffff'; c.strokeStyle = '#7f98ab'; c.lineWidth = 1.5;
+      c.fillRect(-PG.w/2, -PG.h/2, PG.w, PG.h); c.strokeRect(-PG.w/2, -PG.h/2, PG.w, PG.h);
+      c.beginPath(); c.moveTo(-PG.w/2, 0); c.lineTo(PG.w/2, 0); c.moveTo(-PG.w/2 + 3, -4); c.lineTo(PG.w/2 - 3, -4); c.stroke();
+      c.restore();
+    }
+    c.restore();
+  },
+  hud(c){
+    const rows = fighters.slice().sort((a, b) => (a.you ? -1 : 0) - (b.you ? -1 : 0)).map(f => ({ f, text:(f._pg || 0) + '/' + PG.need, hot:(f._pg || 0) >= PG.gang,
+      draw(cc, x0, y){ cc.fillStyle = 'rgba(255,255,255,0.22)'; cc.fillRect(x0, y - 5, 120, 10); cc.fillStyle = '#ffffff'; cc.fillRect(x0, y - 5, 120*Math.min(1, (f._pg || 0)/PG.need), 10); } }));
+    contestPanel(c, 'CARRIED OFF', 'catch ' + PG.need + ' pages', rows);
+  },
+  badge(f, c){ contestPill(c, f, (f._pg || 0) + '/' + PG.need, (f._pg || 0) >= PG.gang, false); },
+  focus(f, foes){
+    let lead = null;
+    for(const o of foes) if((o._pg || 0) >= PG.gang && (!lead || o._pg > lead._pg)) lead = o;
+    if(lead && f.aiTarget !== lead){ f.aiTarget = lead; f.aiTimer = 45; }
+  },
+  want(f, inp, t, dist){
+    if(!f.onground && !(f.vy < 0)) return false;
+    let best = null, bd = PG.reach;
+    for(const p of pgPages()){
+      if(p.npBy === f.idx && p.npT > hazardT) continue;
+      const dy = f.y - p.y; if(dy > PG.climb) continue;   // (higher than a jump: not this one)
+      const d = Math.hypot(p.x - f.x, dy); if(d < bd){ bd = d; best = p; }
+    }
+    if(t && dist < 150 && (!best || dist < bd)) return false;   // (a foe in its face comes first)
+    if(!best){ return t && dist < 150 ? false : contestWalk(f, inp, CONTEST.stack.x, 40); }
+    const dx = best.x - f.x, adx = Math.abs(dx), dir = dx < 0 ? -1 : 1;
+    if(adx > 10){ if(!aiSafeStep(f, dir)){ if(f.onground && f.y - best.y > 30) inp.jump = true; else return false; } if(dir < 0) inp.left = true; else inp.right = true; }
+    if(f.onground && f.y - best.y > 24 && adx < 100) inp.jump = true;
+    return true;
   },
 };
 
