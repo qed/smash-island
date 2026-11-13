@@ -105819,6 +105819,10 @@ function drawDigc(){
 // on its own step is picked up; the highest rival within two steps is the one it fights. Not online (startEventMatch refuses in a room): nothing rides the snapshot.
 let STEPS = null;   // null in every other match; else { steps:[{x,y,w,h,i}], x0, gy, rings:[], nextItem } -- see stepsBuildWorld
 const STPK = { n:100, rise:92, w:190, dx:230, topW:260, h:14, wall:80, top:330, pctCap:300, items:4, itemEvery:300, itemFirst:180, time:10800, per:5 };
+// THE CRUMBLE (the owner's speed-up, 2026-11-13: "the bottom steps crumble upward, faster over time"): the line starts depth px UNDER the floor, then climbs v0 px a frame and
+// faster every frame (acc), so its height over the floor is -depth + v0*t + acc*t*t/2 (about 17 s before the floor goes, the top step at about 2:50). A step shakes, cracks and reddens for
+// the last tell frames (never under tellMin px) before it falls away; a fighter whose feet are on or under the line falls (stepsCrumble). All numbers are mine: the owner gave none.
+const CRK = { depth:600, v0:0.55, acc:0.00009, tell:50, tellMin:100, chunks:60 };
 function stepsWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.contest === 'steps'; }
 function stepsCol(i){ return [0, 1, 2, 3, 2, 1][i % 6]; }
 // The world (from setupWorld, in place of the stage's own): the shaft, the floor, the hundred steps. All hundred exist from the start.
@@ -105836,14 +105840,14 @@ function stepsBuildWorld(){
     const p = { x:Math.round(x), y:Math.round(gy - (i + 1)*K.rise), w:w, h:K.h, solid:false, stp:true, i:i };
     steps.push(p); worldPlats.push(p);
   }
-  STEPS = { steps:steps, x0:x0, gy:gy, rings:[], nextItem:K.itemFirst };
+  STEPS = { steps:steps, x0:x0, gy:gy, rings:[], nextItem:K.itemFirst, ly:gy + CRK.depth, v:CRK.v0, tellPx:CRK.tellMin, gone:0, floorGone:false, chunks:[], caught:0 };
   FLOOR_SEGS = [{ x0:K.wall, x1:WW - K.wall }];   // (one span, wall to wall: nobody falls out of the bottom)
   SIDE_ROOM = 0;
 }
 // The step a fighter's feet are on (the landing's own tolerance), or -1.
 function stepsUnder(f){
   const feet = f.y + f.r;
-  for(const p of STEPS.steps){ if(Math.abs(p.y - feet) <= 3 && f.x > p.x - 4 && f.x < p.x + p.w + 4) return p.i; }
+  for(const p of STEPS.steps){ if(!p.gone && Math.abs(p.y - feet) <= 3 && f.x > p.x - 4 && f.x < p.x + p.w + 4) return p.i; }
   return -1;
 }
 // After a fighter has moved (the physics): the walls hold and the top of the shaft is a ceiling.
@@ -105863,7 +105867,8 @@ function stepsSpawnItem(){
   const S = STEPS, K = STPK, live = fighters.filter(f => !f.dead); if(!live.length) return;
   const f = live[Math.floor(Math.random()*live.length)], n = f._stN || 0, cand = [];
   for(let i = Math.max(0, n - 3); i <= Math.min(K.n - 1, n + 3); i++){
-    const p = S.steps[i]; if(items.some(it => !it.taken && it.life > 0 && Math.abs(it.y - (p.y - 16)) < 40 && it.x > p.x - 20 && it.x < p.x + p.w + 20)) continue;
+    const p = S.steps[i]; if(p.gone || p.y >= S.ly - S.tellPx) continue;
+    if(items.some(it => !it.taken && it.life > 0 && Math.abs(it.y - (p.y - 16)) < 40 && it.x > p.x - 20 && it.x < p.x + p.w + 20)) continue;
     cand.push(p);
   }
   if(!cand.length) return;
@@ -105871,6 +105876,32 @@ function stepsSpawnItem(){
   items.push({ kind:'throw', x:x, y:p.y - 16, vx:0, vy:0, r:16, taken:false, life:1e9, _land:true, _stair:p.y, _born:hazardT });
   S.rings.push({ x:x, y:p.y - 16, t:hazardT });
   for(let k = 0; k < 6; k++) puff(x, p.y - 16, '#ffd23f', 3);
+}
+// The crumble, once a frame: the line climbs; the floor and every step it passes fall away (their throwables with them); a fighter on or under it falls (eliminate: with the row's one stock
+// that is out; if a stock were left it is put back on the lowest whole step above the line, my default).
+function stepsCrumble(){
+  const S = STEPS, K = STPK, R = CRK, t = hazardT, h = -R.depth + R.v0*t + 0.5*R.acc*t*t;
+  S.ly = S.gy - h; S.v = R.v0 + R.acc*t; S.tellPx = Math.max(R.tellMin, R.tell*S.v);
+  if(h >= 0 && !S.floorGone){ S.floorGone = true; FLOOR_SEGS = []; for(let k = 0; k < 14; k++) puff(K.wall + 60 + (WW - 2*K.wall - 120)*k/13, S.gy, '#8a7a68', 5); }
+  while(S.gone < K.n && S.steps[S.gone].y >= S.ly){
+    const p = S.steps[S.gone++]; p.gone = true;
+    const wi = worldPlats.indexOf(p); if(wi >= 0) worldPlats.splice(wi, 1);
+    S.chunks.push({ x:p.x, y:p.y, w:p.w, vx:(p.i % 2 ? 1 : -1)*0.4, vy:0, rot:0, spin:(p.i % 3 - 1)*0.03, age:0 });
+    if(S.chunks.length > R.chunks) S.chunks.shift();
+    for(let k = 0; k < 4; k++) puff(p.x + p.w*(k + 0.5)/4, p.y + 6, '#a9a2b8', 3);
+    for(const it of items){ if(!it.taken && it._stair === p.y){ it.taken = true; it.life = 0; } }
+  }
+  for(let i = S.chunks.length - 1; i >= 0; i--){ const q = S.chunks[i]; q.vy += 0.5; q.x += q.vx; q.y += q.vy; q.rot += q.spin; if(++q.age > 70) S.chunks.splice(i, 1); }
+  for(const f of fighters){
+    if(f.dead || f.y + f.r < S.ly) continue;
+    S.caught++;
+    for(let k = 0; k < 10; k++) puff(f.x, f.y, '#8a7a68', 5);
+    eliminate(f);
+    if(!f.dead){
+      let best = null; for(const p of S.steps){ if(!p.gone && p.y < S.ly - S.tellPx){ best = p; break; } }
+      if(best){ f.x = Math.round(best.x + best.w/2); f.y = best.y - f.r; f.vx = 0; f.vy = 0; f.onground = true; f._stN = best.i + 1; f._stRef = best.i; f._stT = hazardT; }
+    }
+  }
 }
 function stepsLabel(){ const t = Math.max(0, Math.ceil((STPK.time - hazardT)/60)); return Math.floor(t/60) + ':' + ('0' + (t % 60)).slice(-2); }
 CONTEST_RULES.steps = {
@@ -105883,6 +105914,7 @@ CONTEST_RULES.steps = {
   },
   step(){
     const S = STEPS, K = STPK, C = CONTEST; if(!S || C.winner != null) return;
+    stepsCrumble();
     for(const it of items){ if(!it.taken && it.life < 1e8) it.life = 1e9; }   // (a throwable never times out)
     for(const f of fighters){
       if(f.dead) continue;
@@ -105917,6 +105949,7 @@ CONTEST_RULES.steps = {
     const bw = 12, bh = 190, bx = W - 14 - bw, by = py + ph + 12;
     c.globalAlpha = 0.85; c.fillStyle = '#1c1c1c'; c.fillRect(bx - 3, by - 3, bw + 6, bh + 6); c.fillStyle = '#3a4a2a'; c.fillRect(bx, by, bw, bh);
     c.fillStyle = '#ffd23f'; c.fillRect(bx, by, bw, 4); c.globalAlpha = 1;
+    { const L = clamp((STEPS.gy - STEPS.ly)/K.rise/K.n, 0, 1), yl = by + 4 + (bh - 8)*(1 - L); if(L > 0){ c.fillStyle = '#14101c'; c.fillRect(bx, yl, bw, by + bh - yl); c.fillStyle = '#d6643c'; c.fillRect(bx, yl, bw, 2); } }   // (the crumbled part of the shaft, rising)
     c.strokeStyle = '#ffffff55'; c.lineWidth = 1; c.beginPath(); for(let r = 20; r < K.n; r += 20){ const y = by + bh*(1 - r/K.n); c.moveTo(bx, y); c.lineTo(bx + bw, y); } c.stroke();
     const dot = f => { const y = by + 4 + (bh - 8)*(1 - Math.min(K.n, f._stN || 0)/K.n); c.fillStyle = f.color || '#fff'; c.beginPath(); c.arc(bx + bw/2, y, 4, 0, 7); c.fill(); if(f.you){ c.strokeStyle = '#fff'; c.lineWidth = 2; c.stroke(); } };
     for(const f of fighters) if(!f.dead && !f.you) dot(f);
@@ -105932,9 +105965,11 @@ CONTEST_RULES.steps = {
   world(c, layer){
     const S = STEPS, K = STPK; if(!S || layer !== 'under') return;
     const y0 = camY - 200, y1 = camY + H/CAM_ZOOM + 200;
+    const tellFrom = S.ly - S.tellPx;
     for(const s of S.steps){
-      if(s.y < y0 || s.y > y1) continue;
-      const top = s.i === K.n - 1;
+      if(s.gone || s.y < y0 || s.y > y1) continue;
+      const top = s.i === K.n - 1, u = s.y >= tellFrom ? clamp((s.y - tellFrom)/S.tellPx, 0, 1) : 0;   // (u: how close this step is to going)
+      if(u > 0){ c.save(); c.translate(Math.sin(hazardT*1.7 + s.i*2.1)*u*3.5, Math.cos(hazardT*2.3 + s.i)*u*1.5); }
       c.fillStyle = top ? '#cdb25a' : '#a9a2b8'; c.fillRect(s.x, s.y, s.w, s.h);
       c.fillStyle = top ? '#8e7a32' : '#7d7690'; c.fillRect(s.x + 3, s.y + s.h, s.w - 6, 14);
       c.fillStyle = top ? '#f1dc86' : '#d3cedd'; c.fillRect(s.x, s.y, s.w, 4);
@@ -105945,6 +105980,19 @@ CONTEST_RULES.steps = {
         c.fillStyle = '#e9b872'; c.beginPath(); c.arc(px, py, 14, Math.PI, 0); c.lineTo(px + 14, py + 4); c.lineTo(px - 14, py + 4); c.closePath(); c.fill(); c.stroke();
         c.fillStyle = '#d23a3a'; c.beginPath(); c.arc(px, py - 11, 3, 0, 7); c.fill();
       }
+      if(u > 0){
+        c.fillStyle = 'rgba(214,80,50,' + (0.5*u).toFixed(2) + ')'; c.fillRect(s.x, s.y, s.w, s.h + 14);
+        if(u > 0.2){ c.strokeStyle = '#2a1c1c'; c.lineWidth = 2; c.beginPath(); for(let k = 1; k <= 3; k++){ const cx = s.x + s.w*k/4 + (s.i*7 + k*11) % 13 - 6; c.moveTo(cx, s.y); c.lineTo(cx - 5, s.y + 8); c.lineTo(cx + 4, s.y + 14); c.lineTo(cx - 3, s.y + 22); } c.stroke(); }
+        c.restore();
+      }
+    }
+    for(const q of S.chunks){ c.save(); c.translate(q.x + q.w/2, q.y + 7); c.rotate(q.rot); c.globalAlpha = Math.max(0, 1 - q.age/70); c.fillStyle = '#7d7690'; c.fillRect(-q.w/2, -7, q.w, 14); c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.strokeRect(-q.w/2, -7, q.w, 14); c.restore(); }
+    if(!S.floorGone && S.ly - S.gy < S.tellPx){ const u = clamp(1 - (S.ly - S.gy)/S.tellPx, 0, 1); c.fillStyle = 'rgba(214,80,50,' + (0.5*u).toFixed(2) + ')'; c.fillRect(K.wall, S.gy, WW - 2*K.wall, 8); }
+    if(S.ly <= S.gy + 40){   // the dark below the line, with a jagged lip
+      const lx0 = K.wall, lx1 = WW - K.wall; c.fillStyle = '#14101c'; c.beginPath(); c.moveTo(lx0, S.ly + 3000);
+      for(let x = lx0, k = 0; x <= lx1; x += 40, k++) c.lineTo(x, S.ly + ((k*37) % 5)*5);
+      c.lineTo(lx1, S.ly + 3000); c.closePath(); c.fill();
+      c.strokeStyle = '#d6643c'; c.lineWidth = 3; c.beginPath(); for(let x = lx0, k = 0; x <= lx1; x += 40, k++){ const y = S.ly + ((k*37) % 5)*5; if(k) c.lineTo(x, y); else c.moveTo(x, y); } c.stroke();
     }
     for(let i = S.rings.length - 1; i >= 0; i--){
       const q = S.rings[i], a = hazardT - q.t; if(a > 24){ S.rings.splice(i, 1); continue; }
