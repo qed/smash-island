@@ -24649,6 +24649,7 @@ function setupWorld(){
   if(spleefWanted()){ spleefBuildWorld(); return; }   // SPLEEF (an event contest): the shaft of ten tile floors, in place of the stage's own world
   if(bhcWanted()){ bhcBuildWorld(); return; }   // BACK TO THE TOP (Black Hole's contest): the tower of ledges over the black hole, in place of the stage's own world
   if(stepsWanted()){ stepsBuildWorld(); return; }   // 500 STEPS (Pie's contest): the shaft with fifty steps, in place of the stage's own world
+  if(ckWanted()){ ckBuildWorld(); return; }   // FAST FORWARD (Clock's contest): a wider Goiky Field with more platforms, for this one event match (the real Goiky Field is untouched)
   if(digcWanted()){ digcBuildWorld(); return; }   // THE DIG (Spongy's contest): the dirt field over the arena, in place of the stage's own world
   if(ONEFIGHT.active || COBSFIGHT.active){ buildOneArena(); return; }   // One's arena, and Steve Cobs's: the teams map without its walls (see buildOneArena)
   if(BOSSRUSH.alg && ALGRUSH.run){ stage = algStage(); if(algBuildBig()) return; }   // Algebralien Rush: its own stage; the big one (rush M3, algBuildBig) builds the whole world and is done
@@ -104885,16 +104886,34 @@ function contestWalk(f, inp, x, near){
 // or at CK.time (3:00); the winner has the most points (a tie: the longer timer); a stock-out fighter (3 KOs) is off the stage and cannot win. A KO costs a stock only.
 // CPUs: with a foe in their face they fight; with their timer under CK.hungry, or a clock within CK.near, they fetch the nearest reachable clock (jumping to platforms);
 // otherwise they walk to the zone and stand in it, fighting what comes and not chasing a foe far out of it.
-const CK = { twists:['fast'], start:3600, cap:5400, gain:600, hit:120, combo:36, ptsEvery:6, w:300, h:140, first:240, gap0:150, gapStep:45, retry:60, max:3, r:17, lift:26, climb:170, reach:760,
+const CK = { twists:['fast'], wide:1.25, tierY:0.62, start:3600, cap:5400, gain:600, hit:120, combo:36, ptsEvery:6, w:300, h:140, first:240, gap0:150, gapStep:45, retry:60, max:3, r:17, lift:26, climb:170, reach:760,
              hungry:1500, near:260, low:900, leash:200, time:10800, atZero:'stay' };
 function ckSec(fr){ const t = Math.max(0, fr)/60; return Math.floor(t/60) + ':' + (t % 60 < 10 ? '0' : '') + (t % 60).toFixed(1); }
 function ckIn(f){ const z = CONTEST.zone; return !f.dead && Math.abs(f.x - z.x) <= CK.w/2 && f.y + f.r >= groundY() - CK.h && f.y - f.r <= groundY() + 20; }
+// THE STAGE (the owner, 2026-11-13: "should be on a slightly bigger stage, with clocks spawning on platforms"; and "NOT ONLY ON PLATFORMS": clocks spawn on the floor AND on the platforms, always outside the zone): Goiky Field made CK.wide (1.25) times wider, for this one
+// event match only (ckWanted: setupWorld takes it instead of the stage's own world; the real Goiky Field is not touched). The same floor line, the same edges (buildFloorSegs, the
+// edges at 10% and 90%), the same single platform in the middle, and four more beside it, two a side, all at the middle platform's own height (CK.tierY, so every fighter
+// reaches every one from the floor with a jump, as the middle one is reached today, and from each other along the row). The view is the stage and its air, all on one screen (as
+// Goiky's is).
+function ckWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.contest === 'clock'; }
+function ckBuildWorld(){
+  WW = Math.round(W*CK.wide); WH = H; camX = 0; camY = 0; bases = []; floors = []; worldZones = []; spawnZones = [];
+  const y = Math.round(H*CK.tierY), mk = (a, b) => ({ x:Math.round(WW*a), y, w:Math.round(WW*(b - a)), h:14, solid:false, ckp:true });
+  worldPlats = [mk(0.12, 0.23), mk(0.26, 0.34), mk(0.36, 0.64), mk(0.66, 0.74), mk(0.77, 0.88)];
+  buildFloorSegs();
+  SIDE_ROOM = FLOOR_SEGS ? OFFSTAGE_ROOM : 0;
+  CAM_ZOOM = W/(WW + 2*SIDE_ROOM);   // (the whole stage and its air fit the screen: no scrolling)
+}
+// A step is safe when there is floor where it lands (a CPU on a platform walks off it toward the zone; the scrolling-arena shortcut in aiSafeStep would let it walk off the floor).
+function ckStepOk(f, dir){ const nx = f.x + dir*(f.r + 12); return nx > 100 && nx < WW - 100 && groundAt(nx); }
 function ckLive(){ return fighters.filter(f => !f.dead && !f._ckOut); }
 function ckBest(list){ return list.slice().sort((a, b) => (b._ckP - a._ckP) || (b._ckT - a._ckT))[0]; }
 function ckSpawn(S){
   const L = S.spots.filter(p => fighters.every(f => f.dead || Math.hypot(f.x - p.x, f.y - p.y) > 100) && S.clocks.every(c => Math.hypot(c.x - p.x, c.y - p.y) > 160));
   if(!L.length) return null;
-  const p = L[Math.floor(Math.random()*L.length)], c = { x:p.x, y:p.y, t0:hazardT };
+  const gy = groundY(), fl = L.filter(p => p.y === gy), pl = L.filter(p => p.y !== gy);   // (the floor and the platforms are equal chances: the floor has the more spots, but fighters stand on it)
+  const G = (fl.length && pl.length) ? (Math.random() < 0.5 ? fl : pl) : L;
+  const p = G[Math.floor(Math.random()*G.length)], c = { x:p.x, y:p.y, t0:hazardT };
   S.clocks.push(c); for(let i = 0; i < 5; i++) puff(c.x, c.y - CK.lift, '#ffd23f', 3);
   return c;
 }
@@ -104923,8 +104942,8 @@ CONTEST_RULES.clock = {
     const S = CONTEST, gy = groundY(), zx = floorSafeX(WW*0.5, 140), spots = [];
     S.zone = { x:zx }; S.clocks = []; S.n = 0; S.next = CK.first;
     const out = x => Math.abs(x - zx) < CK.w/2 + 70;   // (clocks stand OUTSIDE the zone)
-    for(let x = 130; x <= WW - 130; x += 40){ if(out(x) || floorSafeX(x, 60) !== x) continue; spots.push({ x, y:gy }); }
-    for(const p of worldPlats){ if(p.solid || p.wall || p.hazard || !(p.w > 60)) continue; for(let x = p.x + 30; x <= p.x + p.w - 30; x += 40) if(!out(x)) spots.push({ x, y:p.y }); }
+    for(let x = 130; x <= WW - 130; x += 40){ if(out(x) || floorSafeX(x, 60) !== x) continue; spots.push({ x, y:gy }); }   // (on the floor, outside the zone)
+    for(const p of worldPlats){ if(p.solid || p.wall || p.hazard || !(p.w > 60)) continue; for(let x = p.x + 30; x <= p.x + p.w - 30; x += 40) if(!out(x)) spots.push({ x, y:p.y }); }   // (and on the platforms, outside the zone)
     S.spots = spots;
     for(const f of fighters){ f._ckT = CK.start; f._ckP = 0; f._ckOut = false; f._ckHitT = -999; }
   },
@@ -104990,13 +105009,13 @@ CONTEST_RULES.clock = {
     for(const c of S.clocks){ const dy = f.y - (c.y - 20); if(dy < -40 || dy > CK.climb) continue; const d = Math.hypot(c.x - f.x, dy); if(d < bd){ bd = d; best = c; } }
     if(best && f._ckT <= CK.cap - CK.gain && (f._ckT <= CK.hungry || bd <= CK.near)){
       const dir = best.x < f.x ? -1 : 1, adx = Math.abs(best.x - f.x);
-      if(adx > 8){ if(!aiSafeStep(f, dir)){ if(f.onground && f.y - best.y > 30) inp.jump = true; else return false; } if(dir < 0) inp.left = true; else inp.right = true; }
+      if(adx > 8){ if(!ckStepOk(f, dir)){ if(f.onground && f.y - best.y > 30) inp.jump = true; else return false; } if(dir < 0) inp.left = true; else inp.right = true; }
       if(f.onground && f.y - (best.y - 20) > 30 && adx < 90) inp.jump = true;
       return true;
     }
     if(ckIn(f)){ return !!(t && Math.abs(t.x - S.zone.x) > CK.w/2 + CK.leash); }   // (in the zone: stand, fight what comes, never chase far out of it)
     const dx = S.zone.x - f.x, dir = dx < 0 ? -1 : 1; if(Math.abs(dx) <= 20) return false;
-    if(!aiSafeStep(f, dir) && f.y + f.r >= groundY() - 4) return false;   // (on the floor, safe steps only; on a platform it walks off toward the zone)
+    if(!ckStepOk(f, dir)) return false;   // (a step with no floor where it lands is not taken)
     if(dir < 0) inp.left = true; else inp.right = true; return true;
   },
 };
