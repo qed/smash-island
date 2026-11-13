@@ -20332,6 +20332,11 @@ function smashReach(f, row){
     case 'reel':    return row.pull||190;
     case 'horizon': return row.pull||220;
     case 'rain':    return row.seek||row.at||90;
+    case 'pad':     return (row.at||56) + (row.w||96)/2;
+    case 'burrow':  return (row.dist||140) + r + (row.rad||50);
+    case 'cone':    return row.len||190;
+    case 'splat':   return row.len||170;
+    case 'halves':  return (row.out||110) + r + (row.rad||14);
     case 'swing':   return SMASH_LUNGE_FRAMES*(SMASH_LUNGE_SPD+(row.step||3)) + (row.fx==null?30:row.fx) + r + (row.reach||30);
     case 'volley':  return (row.spd||9)*(row.life||30)*PROJ_LIFE;   // (addProj stretches a shot's life by PROJ_LIFE)
     default:        return row.at||34;
@@ -73168,6 +73173,7 @@ function step(){
     }
     // SMASH PATTERNS that live across frames (see SM_PAT). Naily's _nail below is the same idea
     // written by hand first; these are the general versions the other thirty-nine use.
+    if(f._nsv) nsvTick(f);   // UNIQUE NEUTRAL SMASHES v2: the render-only prop of the move ends with it
     if(f._sm){
       const m = f._sm;
       if(m.drive && (f.frozen>0 || f._stunFx>0)){ f._sm = null; }   // frozen or stunned by someone: the move is lost
@@ -73181,7 +73187,8 @@ function step(){
         else if(--m.t<=0){ f.vx = f.onground ? 0 : f.vx*0.3; f._sm=null; }   // no slide off a ledge through the self-stun
       } else if(m.pat==='through'){
         // Dash. Whoever you run into takes the whole hit on contact, once; the dash carries on past them.
-        f.vx = f.face*m.spd; f.invuln = Math.max(f.invuln, 1);
+        f.vx = f.face*m.spd; if(!m.trail) f.invuln = Math.max(f.invuln, 1);   // (HOT FOOT: Firey Jr.'s dash is not invulnerable: his old smash was not)
+        if(f._nsv && f._nsv.k === 'foot'){ const ai = Math.floor((hazardT - f._nsv.t0)/3); if(ai >= f._nsv.p.length && ai < 5) f._nsv.p.push(Math.round(f.x)); }   // HOT FOOT: where each flame is left (drawn only)
         const fresh = shapeTargets(f, bodyShape(f, 10)).filter(function(t){ return !m.hit[t.idx]; });   // run INTO them: bodies touching
         const seen = m.seen || (m.seen = new Set()), objs = smashObjects(f, f.x, f.y, m.reach, seen);   // a boss or turret, once
         if(fresh.length || objs.length){
@@ -73255,7 +73262,10 @@ function step(){
         if(summons.length) damageSummons(f, f.x, f.y, R, m.dmg, null, m.hitS || (m.hitS = new Set()));
         for(let i=0;i<3;i++){ const a=Math.random()*Math.PI*2; puff(f.x+Math.cos(a)*R, f.y+Math.sin(a)*R*0.5, m.color, 4); }
         if(--m.t<=0) f._sm=null;
-      } else f._sm=null;
+      } else if(m.pat==='burrow') nsvStepBurrow(f, m);
+      else if(m.pat==='splat') nsvStepSplat(f, m);
+      else if(m.pat==='halves') nsvStepHalves(f, m);
+      else f._sm=null;
     }
     // the rest of a multi-hit jab (see doAttack): same move, same combo token, so it lands through the
     // grace its first hit opened; anything that hits the attacker ends it
@@ -75572,7 +75582,7 @@ function smashAim(f, inp){
   if(sp==='fly') return;
   if(sp==='chair') return;   // Bow: the way she faces (BOW'S CHAIR TAKES SKILL, above)
   const row = SMASH_SPEC[sp] || null, pat = row ? row.pat : null;
-  const mover = sp==='spike' || pat==='lunge' || pat==='through' || pat==='leap';
+  const mover = sp==='spike' || pat==='lunge' || pat==='through' || pat==='leap' || pat==='burrow';
   const flat = sp==='spike' || pat==='lunge' || pat==='through' || pat==='beam';
   const rx = (pat==='beam' || pat==='walk' || pat==='volley') ? Math.max(SMASH_AIM_X, smashReach(f, row)) : SMASH_AIM_X;
   const t = nearestFoe(f, rx, flat ? f.r + 60 : SMASH_AIM_Y, mover ? function(t){ return landable(t.x, t.y); } : null);
@@ -75607,8 +75617,14 @@ const DSM = { upDmg:0.88, downDmg:0.82, kb:0.9, upSt:5, downSt:4, upAct:4, downA
 // Launch strength per kit where the neutral smash's own launch is not what its row says (a lunge, leap or plant row with a low real launch; a hand-written body; Yin-Yang's
 // -20 rise): measured against the neutral smash on a dummy at the same damage, so the up and the down smash never throw further than the smash they come from.
 const DSM_K = { quake:4.2, timber:5.6, packed:5.7, reflect:7.4, cool:6.9, clockhands:7.0, pricetag:3.3, tackle:6.0, spike:4.8, yinyang:11, serve:14, payday:14, fly:15 };
+// UNIQUE NEUTRAL SMASHES v2 (2026-11-13, jury fix): the seven fighters whose neutral smash got a new shape keep the up and down smash they had (name, damage, launch, end lag),
+// so those two are generated from the neutral rows as they were before; nothing but the neutral smash changed for them.
+const DSM_OLD_ROWS = {
+  wallmart:{pat:'plant', dmg:15, kb:13}, coresaw:{pat:'plant', dmg:16, kb:14}, condishawn:{pat:'beam', dmg:13, kb:14}, emberjr:{pat:'lunge', dmg:12, kb:9},
+  engulf:{pat:'burst', dmg:13, kb:14.5}, split:{pat:'lunge', dmg:16, kb:14}, tape:{pat:'beam', dmg:13, kb:11}
+};
 function dirSmashNums(sp, name){
-  const row = (typeof SMASH_SPEC !== 'undefined' && SMASH_SPEC[sp]) || null, noHit = typeof SMASH_NO_HIT !== 'undefined' && SMASH_NO_HIT.has(sp);
+  const row = DSM_OLD_ROWS[sp] || (typeof SMASH_SPEC !== 'undefined' && SMASH_SPEC[sp]) || null, noHit = typeof SMASH_NO_HIT !== 'undefined' && SMASH_NO_HIT.has(sp);
   const dmg = row ? row.dmg : (noHit ? 7 : 12), kb = row ? row.kb : (noHit ? 8 : 10);
   return { D:Math.round(dmg*SMASH_DMG_MULT), K:DSM_K[sp] != null ? DSM_K[sp] : Math.min(15, kb)*DSM.kb, pat:row ? row.pat : 'none' };
 }
@@ -75767,7 +75783,8 @@ const SM_PAT = {
   // contact. The real hit used to be a swing BEHIND you after the dash, with 30% on the way through, so a
   // dash that went straight into someone who kept moving did a third of what it said.
   through(f,s){
-    beginCombo(f); f._sm = {pat:'through', drive:true, t:s.dash, dmg:s.dmg, kb:s.kb, reach:f.r+(s.reach||26),
+    if(s.trail) f._nsv = { k:'foot', t0:hazardT, on:1, done:1, y:Math.round(feetY(f)), p:[Math.round(f.x)] };   // HOT FOOT (Firey Jr.): flames left behind, drawn only
+    beginCombo(f); f._sm = {pat:'through', drive:true, trail:!!s.trail, t:s.dash, dmg:s.dmg, kb:s.kb, reach:f.r+(s.reach||26),
       fx:s.effect, n:s.n, band:s.band, color:s.color||f.color, spd:s.spd||18, hit:{}, up:s.up};
   },
   // HOP: you jump at the nearest foe in front of you, steer toward them in the air, and stomp. Touching them
@@ -75917,6 +75934,275 @@ function drawSwingAnvil(f){
   else { const u = R*0.75; ctx.fillStyle = '#4a4f58'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-u*1.3, -u*0.5); ctx.lineTo(u*1.3, -u*0.5); ctx.lineTo(u*0.6, -u*0.1); ctx.lineTo(u*0.6, u*0.2); ctx.lineTo(u*1.0, u*0.5); ctx.lineTo(-u*1.0, u*0.5); ctx.lineTo(-u*0.6, u*0.2); ctx.lineTo(-u*0.6, -u*0.1); ctx.closePath(); ctx.fill(); ctx.stroke(); }
   ctx.restore();
 }
+// ============================================================
+//  UNIQUE NEUTRAL SMASHES v2 (2026-11-12): seven new shapes. Marshmallow (pad), Bonesaw (burrow), Tissues (cone), Goo (splat), Apple (halves);
+//  Firey Jr. is a dash-through with a burning trail (through + trail), Tapey a trap (mine + tapedeck). The owner: "change what is needed. and make
+//  them better and more different." Nothing comes from above. Each new shape keeps the old per-hit damage and launch at or under what it was.
+//  f._nsv is the render-only prop of the move (a small object of whole numbers, riding the snapshot like _swingAnvil): drawNsvProps draws it
+//  in the world, nsvBodyDeform squashes the body. Nothing reads it back but the drawing and nsvTick (which clears it when the move is over or lost).
+// ============================================================
+const NSV_LIFE = { pad:34, burrow:36, cone:24, splat:38, halves:30, foot:40 };
+Object.assign(SMASH_PAT_ANIM, { pad:'slam', burrow:'slam', cone:'spit', splat:'cast', halves:'punch' });
+Object.assign(SMASH_KIND, { pad:'Pad', burrow:'Burrow', cone:'Cloud', splat:'Floor wave', halves:'Split' });
+Object.assign(SMASH_PATTERN_TEXT, {
+  pad:    'roots you while a parcel slides in along the floor and bursts into a spring pad just ahead ({r}) that fires whoever stands on it up and away',
+  burrow: 'dives teeth-first into the floor; a crack races ahead and you burst up out of it ({r}), throwing up everyone standing there',
+  cone:   'sneezes a short, wide cloud in front of you ({r}) and is thrown back by it',
+  splat:  'swells up, then splats flat: a low wave runs out along the floor both ways ({r}); hop it',
+  halves: 'splits in two halves that shoot out to either side ({r}) and snap back together',
+});
+function nsvStrike(f, list, dmg, kbOf, ky, fx, n, hit){
+  for(const t of list){ if(hit) hit[t.idx] = 1; applyHit(t, dmg, kbOf(t), ky, f); }
+  smashFx(f, list, fx, n);
+}
+function nsvTick(f){
+  const A = f._nsv, age = hazardT - A.t0;
+  if(f.dead || age > (NSV_LIFE[A.k] || 40)) { f._nsv = null; return; }
+  if(!A.on){ if(!f._windup) f._nsv = null; }                                   // lost in the wind-up (a hit)
+  else if((A.k === 'burrow' || A.k === 'splat' || A.k === 'halves') && !A.done && !f._sm) f._nsv = null;   // lost on the way
+}
+// PAD (Marshmallow): she roots; a parcel slides in along the floor from behind her and stops just in front; it bursts into a spring pad that fires whoever is on it.
+SM_PAT.pad = function(f, s){
+  const W = s.wind || 15, d = f.face < 0 ? -1 : 1, at = s.at || 56, w = s.w || 96, h = s.h || 70;
+  f.rooted = Math.max(f.rooted || 0, W + 4);
+  f._nsv = { k:'pad', t0:hazardT, W:W, d:d, x:Math.round(f.x), y:Math.round(feetY(f)), at:at, w:w, h:h };
+  startWindup(f, W, function(){
+    f._smSync = true;
+    try {
+      if(f._nsv && f._nsv.k === 'pad') f._nsv.on = 1;
+      const cx = f.x + f.face*at, hw = Math.max(0, (w - h)/2), cy = feetY(f) - h/2;
+      const cap = { kind:'capsule', x1:cx - hw, y1:cy, x2:cx + hw, y2:cy, r:h/2 };   // a pad on the floor: w wide, h tall, centred `at` ahead
+      hitArt(f, 'pad', cap, { color:s.color || f.color });
+      smashSwing(f, cx, cy, h/2, s.dmg, s.kbx, null, s.effect, s.n, s.up, cap);
+      for(let i = 0; i < 8; i++) puff(cx + (Math.random()*w - w/2), feetY(f) - 6, s.color || f.color, 4);
+    } finally { f._smSync = false; }
+  }, s.color || f.color, null);
+  if(f._windup) f._windup.smash = true;
+};
+// BURROW (Bonesaw): a short dive, then he travels under the floor (his hurtbox stays on) and bursts up `dist` ahead: one hit where he comes up.
+SM_PAT.burrow = function(f, s){
+  const W = s.wind || 10, d = f.face < 0 ? -1 : 1;
+  f.rooted = Math.max(f.rooted || 0, W);
+  f._nsv = { k:'burrow', t0:hazardT, W:W, d:d, x:Math.round(f.x), y:Math.round(feetY(f)), frames:s.frames || 8 };
+  startWindup(f, W, function(){
+    if(f.rooted <= 2) f.rooted = 0;
+    const fr = s.frames || 8;
+    f._sm = { pat:'burrow', drive:true, t:fr, spd:(s.dist || 140)/fr, rad:f.r + (s.rad || 50), dmg:s.dmg, kb:s.kb, fx:s.effect, n:s.n, color:s.color || f.color, up:s.up };
+    if(f._nsv && f._nsv.k === 'burrow') f._nsv.on = 1;
+  }, s.color || f.color, null);
+  if(f._windup) f._windup.smash = true;
+};
+// CONE (Tissues): one big sneeze: a short wide green cloud (a wedge), and the sneeze throws him back.
+SM_PAT.cone = function(f, s){
+  const W = s.wind == null ? 6 : s.wind, d = f.face < 0 ? -1 : 1;
+  f._nsv = { k:'cone', t0:hazardT, W:W, d:d, x:Math.round(f.x), y:Math.round(f.y), len:s.len };
+  startWindup(f, W, function(){
+    f._smSync = true;
+    try {
+      if(f._nsv && f._nsv.k === 'cone') f._nsv.on = 1;
+      const fan = { kind:'fan', cx:f.x, cy:f.y, r0:0, r1:s.len, a0:-s.half, a1:s.half, face:f.face };
+      hitArt(f, 'cone', fan, { color:s.color || f.color });
+      smashSwing(f, f.x, f.y, s.len, s.dmg, s.kb, null, s.effect, s.n, -6, fan);
+      for(let i = 0; i < 8; i++) puff(f.x + f.face*(20 + i*20), f.y + Math.sin(i*2.3)*i*7, s.color || f.color, 4);
+    } finally { f._smSync = false; }
+    if(s.recoil){ f.vx -= f.face*s.recoil; f.onground = false; }
+  }, s.color || f.color, null);
+  if(f._windup) f._windup.smash = true;
+};
+// SPLAT (Goo): he swells to the giant render (the wind-up), then lets go and splats flat: a low wave of goo runs out along the floor both ways.
+SM_PAT.splat = function(f, s){
+  const W = s.wind || 12, fr = s.frames || 8;
+  f._nsv = { k:'splat', t0:hazardT, W:W, d:f.face < 0 ? -1 : 1, x:Math.round(f.x), y:Math.round(feetY(f)), fl:0, fr:0 };
+  startWindup(f, W, function(){
+    f.rooted = Math.max(f.rooted || 0, fr);
+    f._sm = { pat:'splat', k:0, frames:fr, len:s.len || 170, h:s.h || 36, x0:f.x, y0:feetY(f), stop:{}, hit:{}, dmg:s.dmg, kb:s.kb, up:s.up == null ? -6 : s.up, fx:s.effect, n:s.n, color:s.color || f.color };
+    if(f._nsv && f._nsv.k === 'splat'){ f._nsv.on = 1; f._nsv.x = Math.round(f.x); f._nsv.y = Math.round(feetY(f)); }
+  }, s.color || f.color, null);
+  if(f._windup) f._windup.smash = true;
+};
+// HALVES (Apple): she splits in two halves that shoot out to either side and snap back (she stays where she is; the halves are drawn).
+SM_PAT.halves = function(f, s){
+  const W = s.wind || 8;
+  f._nsv = { k:'halves', t0:hazardT, W:W, d:f.face < 0 ? -1 : 1, out:s.out || 110 };
+  startWindup(f, W, function(){
+    f._sm = { pat:'halves', k:0, out:s.out || 110, rad:f.r + (s.rad || 14), hit:{}, dmg:s.dmg, kb:s.kb, fx:s.effect, n:s.n, color:s.color || f.color };
+    if(f._nsv && f._nsv.k === 'halves') f._nsv.on = 1;
+  }, s.color || f.color, null);
+  if(f._windup) f._windup.smash = true;
+};
+// The frame-by-frame bodies, called from the fighter loop (f._sm.pat).
+function nsvStepBurrow(f, m){
+  const A = f._nsv;
+  f.vx = f.face*m.spd;
+  let stop = false;
+  if(f.onground && !landable(f.x + f.vx + f.face*f.r*0.5, feetY(f) - 2)){ f.vx = 0; stop = true; }   // he does not go off an edge or through a wall
+  if(--m.t <= 0 || stop){
+    f.vx = f.onground ? 0 : f.vx*0.3;
+    hitArt(f, 'burrow', { kind:'circle', x:f.x, y:f.y, r:m.rad }, { color:m.color, style:'ring' });
+    smashSwing(f, f.x, f.y, m.rad, m.dmg, m.kb, null, m.fx, m.n, m.up);
+    for(let i = 0; i < 6; i++) puff(f.x + (i - 2.5)*10, feetY(f) - 4, m.color, 4);
+    f._sm = null;
+    if(A && A.k === 'burrow'){ A.done = 1; A.pop = hazardT; A.x1 = Math.round(f.x); }
+  } else if(hazardT % 2 === 0) puff(f.x, feetY(f) - 4, m.color, 2);
+}
+function nsvStepSplat(f, m){
+  const A = f._nsv;
+  m.k++;
+  f.vx = 0;
+  const lens = [0, 0];
+  [1, -1].forEach(function(dir, i){
+    if(!m.stop[dir]){
+      const d = m.len*m.k/m.frames, nx = m.x0 + dir*d, sb = surfaceBelow(nx, m.y0 - 2);
+      if(nx < 30 || nx > WW - 30 || sb === null || Math.abs(sb - m.y0) > 10) m.stop[dir] = d - m.len/m.frames;   // a front stops at a ledge
+      else m.cur = m.cur || {}, m.cur[dir] = d;
+    }
+    const d2 = m.stop[dir] != null ? m.stop[dir] : (m.cur && m.cur[dir]) || 0;
+    lens[i] = d2;
+    {
+      const fx = m.x0 + dir*d2, fy = m.y0 - m.h/2;
+      if(m.stop[dir] == null){
+        hitArt(f, 'splat' + (dir > 0 ? 'R' : 'L'), { kind:'circle', x:fx, y:fy, r:24 }, { color:m.color, style:'ring' });
+        const list = smashTargets(f, fx, fy, 24).filter(function(t){ return !m.hit[t.idx]; });
+        nsvStrike(f, list, m.dmg, function(){ return dir*m.kb; }, m.up, m.fx, m.n, m.hit);
+        if(summons.length) damageSummons(f, fx, fy, 24, m.dmg, null, m.hitS || (m.hitS = new Set()));
+      }
+    }
+  });
+  if(A && A.k === 'splat'){ A.fl = Math.round(lens[1]); A.fr = Math.round(lens[0]); }
+  if(hazardT % 2 === 0) puff(f.x + (Math.random()*2 - 1)*lens[0], m.y0 - 4, m.color, 2);
+  if(m.k >= m.frames){ f._sm = null; if(A && A.k === 'splat') A.done = 1; }
+}
+function nsvStepHalves(f, m){
+  const A = f._nsv;
+  m.k++;
+  if(m.k <= 6){
+    const out = m.out*m.k/6;
+    [f.face, -f.face].forEach(function(side){
+      const cx = f.x + side*out;
+      hitArt(f, 'halves' + (side > 0 ? 'R' : 'L'), { kind:'circle', x:cx, y:f.y, r:m.rad }, { color:m.color, style:'ring' });
+      const list = smashTargets(f, cx, f.y, m.rad).filter(function(t){ return !m.hit[t.idx]; });
+      nsvStrike(f, list, m.dmg, function(){ return side*m.kb; }, -6, m.fx, m.n, m.hit);
+      if(summons.length) damageSummons(f, cx, f.y, m.rad, m.dmg, null, m.hitS || (m.hitS = new Set()));
+    });
+  }
+  if(m.k >= 12){ f._sm = null; if(A && A.k === 'halves') A.done = 1; }
+}
+// ---- drawing: flat fills, thick dark outline, no words ----
+function nsvInk(c, lw){ c.strokeStyle = '#1c1c1c'; c.lineWidth = lw || 3; c.lineJoin = 'round'; c.lineCap = 'round'; }
+function nsvBodyDeform(f){
+  const A = f._nsv; if(!A || typeof A.k !== 'string') return;
+  const t = hazardT - A.t0; let sx = 1, sy = 1;
+  if(A.k === 'burrow'){
+    if(!A.on) sy = 1 - 0.93*Math.min(1, Math.max(0, t)/(A.W || 10));
+    else if(A.done) sy = Math.min(1, 0.07 + (hazardT - (A.pop || hazardT))/4);
+    else sy = 0.07;
+  } else if(A.k === 'splat'){
+    if(!A.on) return;
+    const u = t - (A.W || 12);
+    if(u < 0 || u > 12) return;
+    if(u < 8){ sx = 2; sy = 0.35; } else { const k = (u - 8)/4; sx = 2 - k; sy = 0.35 + 0.65*k; }
+  } else return;
+  const F = f.r;
+  ctx.translate(0, F); ctx.scale(sx, sy); ctx.translate(0, -F);
+}
+const NSV_DRAW = {
+  pad(A, t){
+    const c = ctx, d = A.d, spot = A.x + d*A.at, fy = A.y;
+    nsvInk(c, 3);
+    if(t < A.W){
+      const u = Math.min(1, t/A.W), e = u*u*(3 - 2*u), x0 = A.x - d*40, px = x0 + (spot - x0)*e;
+      c.fillStyle = '#b98a54'; c.fillRect(px - 13, fy - 26, 26, 26); c.strokeRect(px - 13, fy - 26, 26, 26);
+      c.fillStyle = '#e9d9a8'; c.fillRect(px - 3, fy - 26, 6, 26); c.strokeRect(px - 3, fy - 26, 6, 26);
+      return;
+    }
+    if(!A.on) return;
+    const u = t - A.W, pop = u < 3 ? 30*u/3 : (u < 8 ? 30 : Math.max(0, 30*(1 - (u - 8)/6)));
+    c.globalAlpha = u > 12 ? Math.max(0, 1 - (u - 12)/6) : 1;
+    c.fillStyle = '#b98a54'; c.fillRect(spot - 13, fy - 26, 26, 26); c.strokeRect(spot - 13, fy - 26, 26, 26);   // the open box
+    c.save(); c.translate(spot + d*13, fy - 26); c.rotate(-d*Math.min(1, u/4)*2.4);                             // the lid flips open on its far hinge
+    c.fillStyle = '#c99a62'; c.fillRect(d > 0 ? -26 : 0, -5, 26, 7); c.strokeRect(d > 0 ? -26 : 0, -5, 26, 7); c.restore();
+    c.beginPath(); c.moveTo(spot - 14, fy - 26);                                                                // the zigzag spring
+    for(let i = 1; i <= 6; i++) c.lineTo(spot + (i % 2 ? 14 : -14), fy - 26 - pop*i/6);
+    c.lineWidth = 7; c.stroke(); c.strokeStyle = '#8a929c'; c.lineWidth = 3.5; c.stroke(); nsvInk(c, 3);
+    c.fillStyle = '#d9dde2'; c.fillRect(spot - 40, fy - 33 - pop, 80, 8); c.strokeRect(spot - 40, fy - 33 - pop, 80, 8);   // the plate
+  },
+  burrow(A, t, f){
+    const c = ctx, fy = A.y, x1 = A.pop ? A.x1 : f.x, d = A.d;
+    nsvInk(c, 3);
+    c.globalAlpha = t > A.W + (A.frames || 8) + 8 ? Math.max(0, 1 - (t - A.W - (A.frames || 8) - 8)/14) : 1;
+    c.fillStyle = '#924e3c';
+    for(let i = 0; i < 3; i++){ c.beginPath(); c.arc(A.x - 10 + i*10, fy, 4 + (i % 2)*2, Math.PI, 0); c.fill(); c.stroke(); }   // rubble where he went in
+    if(t >= A.W){
+      const lo = Math.min(A.x, x1), hi = Math.max(A.x, x1);
+      c.beginPath(); c.moveTo(lo, fy - 1);
+      for(let x = lo + 12, i = 0; x < hi; x += 12, i++) c.lineTo(x, fy - 1 + (i % 2 ? 5 : -5));
+      c.lineTo(hi, fy - 1); c.strokeStyle = '#3a2418'; c.lineWidth = 5; c.stroke(); nsvInk(c, 3);
+      for(let x = lo + 18; x < hi; x += 30){ c.beginPath(); c.arc(x, fy, 5, Math.PI, 0); c.fill(); c.stroke(); }
+    }
+    if(A.pop){
+      const u = hazardT - A.pop;
+      if(u >= 0 && u < 12) for(let i = 0; i < 6; i++){ const x = x1 + (i - 2.5)*9*(0.4 + u/6), y = fy - 4 - 20*Math.sin(Math.min(1, u/12)*Math.PI) - (i % 3)*5; c.fillRect(x - 3, y - 3, 6, 6); c.strokeRect(x - 3, y - 3, 6, 6); }
+    }
+  },
+  cone(A, t){
+    if(!A.on) return;
+    const c = ctx, u = t - A.W; if(u < 0 || u > 12) return;
+    const k = u/12; nsvInk(c, 2);
+    for(let i = 0; i < 9; i++){
+      const dist = A.len*(0.12 + 0.88*i/8)*Math.min(1, 0.45 + k), r = 12 + dist*0.13;
+      c.globalAlpha = 0.85*(1 - k*0.6); c.fillStyle = i % 2 ? '#a6dc54' : '#8fcb3e'; c.strokeStyle = '#4f8a1f';
+      c.beginPath(); c.arc(A.x + A.d*dist, A.y + Math.sin(i*2.3 + 1)*dist*0.4, r, 0, 7); c.fill(); c.stroke();
+    }
+    c.globalAlpha = 1 - k; c.fillStyle = '#f2e04a';
+    for(let i = 0; i < 7; i++){ const dist = A.len*(0.2 + 0.12*i)*Math.min(1, 0.45 + k); c.fillRect(A.x + A.d*dist - 2, A.y + Math.cos(i*1.9)*dist*0.35 - 2, 4, 4); }
+  },
+  splat(A, t){
+    if(!A.on) return;
+    const c = ctx, u = t - A.W; if(u < 0 || u > 22) return;
+    c.globalAlpha = u > 8 ? Math.max(0, 1 - (u - 8)/14) : 1; nsvInk(c, 3);
+    const l = A.fl || 0, r = A.fr || 0, fy = A.y;
+    c.fillStyle = '#3a86f0';
+    c.beginPath(); c.moveTo(A.x - l, fy);
+    for(let x = A.x - l, i = 0; x <= A.x + r; x += 14, i++) c.lineTo(x, fy - 10 - (i % 2 ? 6 : 2));
+    c.lineTo(A.x + r, fy); c.closePath(); c.fill(); c.stroke();
+    c.strokeStyle = '#bfe0ff'; c.lineWidth = 3;
+    [[A.x + r, 1], [A.x - l, -1]].forEach(function(p){ c.beginPath(); c.arc(p[0], fy - 10, 14, p[1] > 0 ? -1.2 : Math.PI - 0.3, p[1] > 0 ? 0.3 : Math.PI + 1.2); c.stroke(); });
+    c.fillStyle = '#3a86f0'; nsvInk(c, 2);
+    for(let i = 0; i < 4; i++){ const x = A.x + (i % 2 ? r : -l) - (i % 2 ? 1 : -1)*i*4, y = fy - 22 - ((u*3 + i*7) % 14); c.beginPath(); c.arc(x, y, 3, 0, 7); c.fill(); c.stroke(); }
+  },
+  halves(A, t, f){
+    if(!A.on) return;
+    const c = ctx, u = t - A.W; if(u < 0 || u > 12) return;
+    const out = u <= 6 ? A.out*u/6 : A.out*(12 - u)/6, R = f.r;
+    nsvInk(c, 3);
+    c.strokeStyle = '#ffffff'; c.lineWidth = 5; c.beginPath(); c.moveTo(f.x, f.y - R - 10); c.lineTo(f.x, f.y + R + 10); c.stroke(); nsvInk(c, 3);   // the slash
+    [1, -1].forEach(function(s){
+      const cx = f.x + s*(out + 4), cy = f.y;
+      c.fillStyle = '#d9433f'; c.beginPath(); c.arc(cx, cy, R, s > 0 ? -Math.PI/2 : Math.PI/2, s > 0 ? Math.PI/2 : Math.PI*1.5); c.closePath(); c.fill(); c.stroke();
+      c.fillStyle = '#f6f0d0'; c.fillRect(s > 0 ? cx - 1 : cx - 5, cy - R + 2, 6, 2*R - 4); c.strokeRect(s > 0 ? cx - 1 : cx - 5, cy - R + 2, 6, 2*R - 4);   // the pale inside
+      c.fillStyle = '#3a2418'; for(let i = 0; i < 2; i++){ c.beginPath(); c.ellipse(cx + s*7, cy - 5 + i*12, 2.5, 4, 0, 0, 7); c.fill(); }          // two seeds
+      c.fillStyle = '#4caf50'; c.beginPath(); c.ellipse(cx + s*6, cy - R - 3, 7, 3.5, s*0.5, 0, 7); c.fill(); c.stroke();                           // the leaf
+    });
+  },
+  foot(A, t){
+    const c = ctx; nsvInk(c, 2);
+    for(let i = 0; i < (A.p ? A.p.length : 0); i++){
+      const age = t - 3*i; if(age < 0 || age > 20) continue;
+      const k = age/20, s = 10*(1 - k*0.6), x = A.p[i], y = A.y;
+      c.globalAlpha = 1 - k;
+      c.fillStyle = '#f0803a'; c.beginPath(); c.moveTo(x - s*0.6, y); c.quadraticCurveTo(x - s*0.7, y - s*1.2, x, y - s*2); c.quadraticCurveTo(x + s*0.7, y - s*1.2, x + s*0.6, y); c.closePath(); c.fill(); c.stroke();
+      c.fillStyle = '#ffd23f'; c.beginPath(); c.moveTo(x - s*0.3, y); c.quadraticCurveTo(x - s*0.3, y - s*0.7, x, y - s*1.1); c.quadraticCurveTo(x + s*0.3, y - s*0.7, x + s*0.3, y); c.closePath(); c.fill();
+    }
+  },
+};
+function drawNsvProps(){
+  for(const f of fighters){
+    const A = f._nsv; if(!A || f.dead || typeof A.k !== 'string' || !NSV_DRAW[A.k]) continue;
+    const t = hazardT - A.t0; if(!(t >= 0) || t > (NSV_LIFE[A.k] || 40)) continue;
+    ctx.save();
+    try { NSV_DRAW[A.k](A, t, f); } catch(e) {} finally { ctx.restore(); }
+  }
+}
 function runSmashSpec(f, s, pool){
   f.flash = 14;
   const cost = s.cost;
@@ -75962,11 +76248,12 @@ const SMASH_SPEC = {
   lemon:    {pat:'burst', frames:10, r0:26, rad:104, grow:28, dmg:14, kb:12, effect:'slow', n:100, cost:{self:6, cd:58}, color:'#f2b544'},
   // Bow: a chair skidding along the floor, and whoever it catches goes down with it.
   chair:    {pat:'walk', spd:8, dmg:12, kb:10, r:14, life:100, ride:true, effect:'stun', n:28, cost:{cd:56}, color:'#f06fa8'},
-  // Marshmallow: the title card gag. She roots, something arrives from the store, and it comes down on you.
-  // (The aluminium tree was Paintbrush's purchase, not hers -- the second research pass caught that.)
-  wallmart: {pat:'plant', wind:18, rad:62, dmg:15, kb:13, effect:'knockdown', cost:{root:26}, color:'#d9dde2'},
+  // Marshmallow: the title card gag. She roots, a parcel slides in along the floor, and it bursts open as a spring launchpad (her up-special's purchase) that fires whoever is on it.
+  // (The aluminium tree was Paintbrush's purchase, not hers -- the second research pass caught that.) UNIQUE NEUTRAL SMASHES v2: SM_PAT.pad; nothing comes from above.
+  // kb 13 is the size of the launch (the up and down smash are made from it); the pad itself throws 5 across and 12 up (kbx, up): 13.0 long, steep.
+  wallmart: {pat:'pad', wind:15, at:56, w:96, h:70, dmg:15, kb:13, kbx:5, up:-12, effect:'knockdown', cost:{root:26}, color:'#d9dde2'},
   // Apple: the Split -- one slice, straight through (The Tile Divide).
-  split:    {pat:'lunge', step:5, reach:32, dmg:16, kb:14, far:1, effect:'knockdown', cost:{stun:26}, color:'#d9433f'},   // kb 18 -> 14: a medium CPU, recovering, mid-stage, is KO'd from about 38% now (was about 15%): the strong end, not the middle (2026-10-26)
+  split:    {pat:'halves', wind:8, out:110, frames:6, rad:14, dmg:15, kb:14, far:1, effect:'knockdown', cost:{stun:26}, color:'#d9433f'},   // UNIQUE NEUTRAL SMASHES v2 (SM_PAT.halves): she splits in two, the halves shoot 110 px out to each side and snap back; dmg 16 -> 15 because it hits both sides   // kb 18 -> 14: a medium CPU, recovering, mid-stage, is KO'd from about 38% now (was about 15%): the strong end, not the middle (2026-10-26)
   // Baseball: he comes down on you, and you are slow for a while afterwards.
   heavy:    {pat:'leap', rise:10, fwd:8, rad:44, dmg:17, kb:14, far:1, effect:'slow', n:90, cost:{stun:30}, color:'#efe6d8'},   // kb 19 -> 14: a medium CPU, recovering, mid-stage, is KO'd from about 36% now (was about 12%): the strong end, not the middle (2026-10-26)
   // Pickle: the boxing gloves, both of them, and he over-commits (Inanimate Smackdown).
@@ -76106,7 +76393,7 @@ const SMASH_SPEC = {
   // Firey: the flame wash he always had, burn intact. No band — fire does not have a sweet spot.
   ember:    {pat:'lunge', reach:32, fx:40, step:4, dmg:14, kb:9, effect:'burn', n:110, cost:{stun:24}, color:'#f0521f'},
   // Firey Jr.: the same move, smaller and quicker, as he is.
-  emberjr:  {pat:'lunge', reach:28, fx:34, band:0.5, dmg:12, kb:9, effect:'burn', n:90, cost:{stun:20}, color:'#f0803a'},
+  emberjr:  {pat:'through', dash:9, spd:15, reach:22, trail:1, dmg:12, kb:9, effect:'burn', n:90, cost:{stun:20}, color:'#f0803a'},   // UNIQUE NEUTRAL SMASHES v2: HOT FOOT, a fast dash through the foe; the burning footprints behind him are drawn only (f._nsv)
   // Book: a hardcover to the face. The sweet zone is the hilt because that is where the spine is.
   define:   {pat:'lunge', reach:34, fx:38, band:0.45, dmg:15, kb:11, effect:'define', n:3, cost:{stun:26}, color:'#c8a06a'},
   // Loser: effortless, and spaced. The tip is the whole move.
@@ -76149,7 +76436,7 @@ const SMASH_SPEC = {
   blackmail: {pat:'lunge', step:8, reach:38, band:-0.5, dmg:14, kb:14, far:1, effect:'knockdown', cost:{stun:22, cd:20}, color:'#d4a82a'},   // Trophy -- Off the Iceberg (UNIQUE MOVES 3): a longer lunge, sweetest at the toe (band -0.5)
   // Goo: PUFFED UP. He inflated himself to catch a falling Clover and she bounced off (Best Served Cold; GiantGoo.png).
   // Everyone touching him bounces off; the giant render is drawn while it lasts (FIGHTER_ANIM.Goo).
-  engulf:   {pat:'burst', frames:12, r0:28, rad:108, grow:30, dmg:13, kb:14.5, effect:'knockdown', cost:{self:4, cd:58}, color:'#3a86f0'},   // kb 16 -> 14.5: a medium CPU, recovering, mid-stage, is KO'd from about 37% now (was about 29%): the strong end, not the middle (2026-10-27)
+  engulf:   {pat:'splat', wind:12, len:170, frames:8, h:36, dmg:13, kb:14.5, up:-6, effect:'slow', n:90, cost:{self:4, cd:58}, color:'#3a86f0'},   // UNIQUE NEUTRAL SMASHES v2 (SM_PAT.splat): the giant inflate, then a low goo wave along the floor both ways (hop it); slow replaces knockdown. 14.5 across and 6 up is 15.7 long; the old ring threw 16.2   // kb 16 -> 14.5: a medium CPU, recovering, mid-stage, is KO'd from about 37% now (was about 29%): the strong end, not the middle (2026-10-27)
   // Lifering: CALLED IN A FAVOR. He called in a favor from a real shark, which jumped through the projection screen onto
   // Pickle (Seas the Day). After the warning the shark (Shark Shorts.png) comes down nose first on the nearest foe.
   lifeguard:{pat:'walk', spd:9, life:20, r:22, dmg:16, kb:12, effect:'knockdown', cost:{cd:48, root:10}, color:'#f25c78'},   // Lifering -- Called in a Favor: the shark he called in swims straight out at the foe (SKY-DROP SMASHES removed (2026-11-11); it was dropped from the sky)
@@ -76157,7 +76444,7 @@ const SMASH_SPEC = {
   // Bonesaw -- TRULY GROUNDBREAKING. Built on his own pun: in Point of No Return he calls the plan to hide under the
   // ground "truly groundbreaking". He never saws a floor on screen; here he plants, drives his teeth in, and the floor
   // breaks up round him (the cracks are drawn: the owner's Q2, "Small drawn props").
-  coresaw:  {pat:'plant', wind:18, rad:64, dmg:16, kb:14, effect:'knockdown', cost:{root:20, cd:20}, color:'#924e3c'},   // kb 15 -> 14: a medium CPU, recovering, mid-stage, is KO'd from about 36% now (was about 29%): the strong end, not the middle (2026-10-27)
+  coresaw:  {pat:'burrow', wind:10, dist:140, frames:8, rad:50, dmg:16, kb:14, effect:'knockdown', cost:{cd:20}, color:'#924e3c'},   // UNIQUE NEUTRAL SMASHES v2 (SM_PAT.burrow): dives into the floor, comes up 140 px ahead; the 10-frame dive roots him itself (the old cost root:20 would have held him still through the run)   // kb 15 -> 14: a medium CPU, recovering, mid-stage, is KO'd from about 36% now (was about 29%): the strong end, not the middle (2026-10-27)
   // Spikey -- BE THE WHEEL! (Run the Risk!: in the go-kart he shouts it, honks, and drives as fast as he can). He is
   // the wheel: he rolls himself along the floor through everyone in the line, his own render spinning. 'through', not
   // the plan's 'walk': walk sends a separate roller, and drawing Spikey as a shot would be a character flying across
@@ -76187,7 +76474,7 @@ const SMASH_SPEC = {
   // Tissues: POLLEN PATH ("Pollen Path.", his sarcastic answer to Soap in Point of No Return). His biggest sneeze, to the
   // stage edge -- his sneezes are strong enough to launch him (Tissues page; one hurled him into the portal in Marsh on
   // Mars), so it throws him backwards too.
-  condishawn: {pat:'beam', len:480, wide:20, dmg:13, kb:14, effect:'knockdown', cost:{back:8, stun:24}, color:'#7cc242'},
+  condishawn: {pat:'cone', wind:6, len:190, half:0.61, recoil:8, dmg:10.5, kb:14, effect:'poison', n:80, cost:{stun:24}, color:'#7cc242'},   // UNIQUE NEUTRAL SMASHES v2 (SM_PAT.cone): the big sneeze cloud; the recoil (was cost.back) now lands at the sneeze, not at the press
   // Yin-Yang: THE RIGHT GOAL. A step in and one huge kick, almost straight up: Yang kicks Silver Spoon high into the air
   // (The Shame of the Name), and scored on his own team twice, sure it was the right goal. Punished hard on a miss.
   yinyang:    {pat:'lunge', step:5, reach:32, dmg:16, kb:5, up:-20, effect:'knockdown', cost:{stun:28}, color:'#222222'},
@@ -76228,7 +76515,7 @@ const SMASH_SPEC = {
   // his Final Smash (was about 11% there too) (2026-10-27)
   // Tapey: Solo Track (Fan the Flames) -- cued for the "solo track", she played Poppy's confession by accident and everyone
   // gasped. A recording at full volume down one line, and everyone on it is stunned: shorter than TV's Static Burst, a longer stun.
-  tape:     {pat:'beam', len:460, wide:22, dmg:13, kb:11, effect:'stun', n:40, cost:{stun:20, cd:20}, color:'#c91745'},
+  tape:     {pat:'mine', at:38, r:18, life:240, dmg:13, kb:10.2, effect:'stun', n:39, cost:{cd:50}, color:'#c91745', rider:{shape:'tapedeck'}},   // UNIQUE NEUTRAL SMASHES v2: a tape recorder set on the floor; stun 40 as before. kb 10.2 because a trap throws kb across and 0.7 kb up: 12.5 long, the beam's
   // Tea Kettle: Blow Her Lid -- Oversteam, from spout and lid (her Powers and Abilities; the bio: don't make her blow her lid).
   // Scalding steam all round her, and it burns.
   hors:     {pat:'burst', frames:12, r0:28, rad:106, grow:30, dmg:15, kb:14, effect:'burn', n:110, cost:{self:4, cd:58}, color:'#f4f4f8'},
@@ -88334,7 +88621,7 @@ function updateDropCarry(f){
   }
 }
 function slamThen(f, fire){ f._slam = { fire: fire, life: 90 }; f.vy = Math.max(f.vy, 14); f.onground = false; }
-const SLAM_ROWS = new Set(["tackle", "barf"]);   // Snowball's Ground Pound and Rocky's Toxic Wave slam first when cast airborne
+const SLAM_ROWS = new Set(["tackle", "barf", "coresaw"]);   // Snowball's Ground Pound and Rocky's Toxic Wave slam first when cast airborne
 // Pin's Point Pierce pops INFLATABLES, as its text says -- not "anyone under 70 weight".
 const INFLATABLES = new Set(["Balloony", "Bubble", "Puffball", "Basketball"]);
 // Who shatters when Marshmallow screams. Test Tube is the canon one -- Apple told Marshmallow her voice
@@ -109838,6 +110125,7 @@ function draw(){
   drawShieldArt();      // SHIELD / REFLECTOR (Z): the bubble that shrinks as it takes hits, the reflector's pane, the break
   drawHitArt();         // HIT ART: every hit's real area, over the bodies it reaches
   drawDsmProps();       // UNIQUE UP/DOWN SMASHES: the props of the twelve fighters' own up and down smashes
+  drawNsvProps();       // UNIQUE NEUTRAL SMASHES v2: the parcel, the crack, the cloud, the goo wave, the apple halves, the flames
   if(SHOW_HITBOXES) drawHitboxOverlay();
 
   // …and the shots still coming OUT of a fighter, drawn last so the launch is on top of the
@@ -119529,6 +119817,7 @@ function drawFighter(f){
     ctx.restore();
   } else if(f.fsId) fsaB_behind(f);   // FSA lane b: Grassy's Final Smash entrance grows Tree up behind him (the special's own tree, above, is already there)
   ctx.translate(f.x,f.y);
+  if(f._nsv) nsvBodyDeform(f);   // UNIQUE NEUTRAL SMASHES v2: Bonesaw under the floor, Goo splatted flat
   if(FS_TURN) ctx.rotate(FS_TURN);   // (Bow's Final Smash turns her round the foe: fsChairBody)
   if(FINX.length) bhSpagWarp(f);   // a foe Black Hole is swinging round him is drawn long and thin (SPAGHETTIFY)
   if(MCAVE && MCAVE.on) ctx.rotate(mcTh(f.x, f.y));   // MOON CAVES: upright on its own part of the disc
@@ -120634,6 +120923,11 @@ const PROJ_SHAPE = {
   // ---- Steve Cobs's prize: end ----
 };
 // Goo's slick, Tapey's playback and Tea Kettle's tray carry their own shape; the kit key names the same drawing
+PROJ_SHAPE.tapedeck = { draw(c, r){ c.lineJoin = 'round';   // Tapey's Solo Track (UNIQUE NEUTRAL SMASHES v2): a small grey tape recorder on the floor, reels turning, a red button
+    c.fillStyle = '#8a929c'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.fillRect(-r*1.2, -r*0.75, r*2.4, r*1.3); c.strokeRect(-r*1.2, -r*0.75, r*2.4, r*1.3);
+    c.fillStyle = '#e8e0d0'; for(const sd of [-1, 1]){ c.beginPath(); c.arc(sd*r*0.55, -r*0.1, r*0.38, 0, 7); c.fill(); c.stroke();
+      c.save(); c.translate(sd*r*0.55, -r*0.1); c.rotate(hazardT*0.2*sd); c.fillStyle = '#1c1c1c'; for(let i = 0; i < 3; i++){ c.rotate(2.094); c.fillRect(-1.5, 0, 3, r*0.3); } c.restore(); }
+    c.fillStyle = '#c91745'; c.beginPath(); c.arc(0, r*0.32, r*0.16, 0, 7); c.fill(); c.stroke(); } };
 PROJ_SHAPE.engulf = PROJ_SHAPE.goopuddle; PROJ_SHAPE.tape = PROJ_SHAPE.tapewave; PROJ_SHAPE.hors = PROJ_SHAPE.horstray;
 
 // ---------- ALGEBRALIEN RUSH: THE SIX NEW BOSSES' OWN CODE (rush M3 lays the empty pairs) ----------
@@ -125473,6 +125767,7 @@ function worldGeoKey(){
 // The flags drawFighter reads. One at its resting value (0, false, null) is left out and arrives as undefined, which
 // every check on these reads the same way (truthiness and `> 0` tests).
 const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering','flying','smashHold','burn',
+  '_nsv',   // (UNIQUE NEUTRAL SMASHES v2: the render-only prop of a neutral smash -- { k, t0, ...whole numbers }; a guest draws it from the host's clock)
   '_swingAnvil',   // (SKY-DROP SMASHES removed: Blocky's swung Anvil Smash -- { t0, wind }, the frame it began and its wind-up: a guest draws the anvil in his hands from it and the host's clock; cleared below once the swing is over)
   // ...and the rest of what the tints and STATUS_ICONS read. Only cloud, armor, counter and flying of the 34 icons reached a
   // client: a star or Yoyleberry fighter looked normal there, and rooted, cursed, infected, healing, swallowed showed nothing.
