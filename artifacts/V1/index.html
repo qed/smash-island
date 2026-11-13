@@ -101823,7 +101823,16 @@ function drawTwistAir(gy){
 // needs (an event room, build step 14, will carry it in the start that already carries the room's rules). twistOn reads it (spongeOn is its
 // 'sponge'); twistBackdrop names the backdrop. Each twist shows only through art and sound, never words, and none can hurt anyone.
 function eventTwistKey(m){ const a = []; if(m.twist) a.push(m.twist); if(m.backdrop) a.push('bd:' + m.backdrop); return a.length ? a.join('+') : null; }
-function twistOn(k){ return !!MATCH_TWIST && (MATCH_TWIST === k || MATCH_TWIST.split('+').indexOf(k) >= 0); }
+function twistOn(k){ return !!MATCH_TWIST && (MATCH_TWIST === k || MATCH_TWIST.split('+').indexOf(k) >= 0 || contestTwistOn(k)); }
+// A CONTEST'S OWN WORLD EFFECTS: a contest row's twist is 'contest' alone (eventMatchReady checks that whole string against EVENT_TWISTS_BUILT), so a rule that
+// wants another twist's effect lists it as `twists:['fast']` and twistOn(k) answers true for it -- every place that asks (twistStep, lowGravOn, darkOn, the art) follows.
+function contestTwistOn(k){
+  if(MATCH_TWIST.indexOf('contest') < 0) return false;
+  const m = EVENT_RUN && EVENT_RUN.m, R = m && m.contest && CONTEST_RULES[m.contest];
+  return !!(R && R.twists && R.twists.indexOf(k) >= 0);
+}
+// Is this match the contest with this rule ('clock', 'pages', 'search'...)? True from the match's first line (before CONTEST exists), false in every other match.
+function contestIs(rule){ const m = EVENT_RUN && EVENT_RUN.m; return !!MATCH_TWIST && !!m && m.contest === rule && MATCH_TWIST.indexOf('contest') >= 0; }
 function twistBackdrop(){ if(!MATCH_TWIST || MATCH_TWIST.indexOf('bd:') < 0) return null; const p = MATCH_TWIST.split('+').find(x=>x.indexOf('bd:') === 0); return p ? p.slice(3) : null; }
 function twistVoid(){ const b = twistBackdrop(), D = b && EVENT_BACKDROPS[b]; return D ? D.void : (DIG ? DIGK.void : null); }
 // ---------- EVENT FIGHTERS: SPLEEF (Eraser's CONTEST, his third event match: an event twist with its own goal and rules; combat stays the core) ----------
@@ -102876,7 +102885,11 @@ function drawCollectSlots(f, cx){
 // CONTEST_RULES holds each rule's hooks, every one optional: begin() (the state, after the fighters stand), step() (once a frame, from twistStep),
 // take(f, it) (a pickup, from pickUpItem), hit(t, from, dmg) (a landed hit, from applyHit), ko(f) (a stock lost, from eliminate), speedK(f) (a
 // holder's run, through rainRunK), hud() (screen space), badge(f) (over a head, in world space), focus(f, foes) (whom a CPU should fight) and
-// want(f, inp, t, dist) (what a CPU goes for beside fighting: true when it took the keys). THE SECOND RULE is Spongy's 'dig' (CONTEST_RULES.dig, below
+// want(f, inp, t, dist) (what a CPU goes for beside fighting: true when it took the keys). THREE MORE, optional, for rules after Cloudy's (the event-contests
+// build): winText(f) (the win banner; default Cloudy's 'holds all 9'), score(f) (ranks the rest at the win; default contestCount), world(c, layer) (art in world
+// space, layer 'under' or 'over' the fighters, from drawContestWorld), and `twists:[...]` (other twists' effects the contest uses, answered by twistOn: 'fast',
+// 'lowgrav', 'dark', 'gusts'; contestIs(rule) tells a rule's own match from the start). A rule's goal line is EVENT_TWIST_WORDS['contest:<rule>'].goal.
+// THE SECOND RULE is Spongy's 'dig' (CONTEST_RULES.dig, below
 // Cloudy's, with its own world DIGC in place of the stage). CONTEST is the running one: { rule, rain, ...the rule's
 // state }, null in every other match. An event match is offline (startEventMatch), so nothing here rides the relay.
 // THE FIRST, the model for the others: CLOUDY'S COLLECTION (the owner, 2026-11-07). Hold ALL NINE kinds of item at once for 10 seconds: the six the
@@ -102910,6 +102923,7 @@ function contestTake(f, it){ const R = contestRule(); if(R && R.take) R.take(f, 
 function contestHit(t, from, dmg){ const R = contestRule(); if(R && R.hit) R.hit(t, from, dmg); }
 function contestKo(f){ const R = contestRule(); if(R && R.ko) R.ko(f); }
 function contestSpeedK(f){ const R = contestRule(); return (R && R.speedK) ? R.speedK(f) : 1; }
+function drawContestWorld(layer, cx){ const R = contestRule(); if(R && R.world) R.world(cx || ctx, layer); }   // (world space: layer 'under' the fighters or 'over' them)
 function drawContestHud(cx){ const R = contestRule(); if(R && R.hud) R.hud(cx || ctx); }   // (cx: a test hands in a recording context)
 function drawContestBadge(f, cx){ const R = contestRule(); if(R && R.badge && !f.dead) R.badge(f, cx || ctx); }
 function contestCpuFocus(f, foes){ const R = contestRule(); if(R && R.focus) R.focus(f, foes); }
@@ -102942,10 +102956,11 @@ function contestOnStage(kind){ return items.some(it => it.kind === kind && !it.t
 function contestWin(f){
   if(!CONTEST || CONTEST.winner != null) return;
   CONTEST.winner = f.idx;
-  const rest = fighters.filter(o => o !== f && !o.dead).sort((a, b) => contestCount(b) - contestCount(a));
+  const R = contestRule(), sc = (R && R.score) || contestCount;   // (a rule's own score(f) ranks the rest; Cloudy's is the count of kinds held)
+  const rest = fighters.filter(o => o !== f && !o.dead).sort((a, b) => sc(b) - sc(a));
   rest.forEach((o, i) => { o.stocks = 0; o.dead = true; o.alive = false; o._outT = hazardT; if(o.placement == null) o.placement = i + 2; });
   if(f.placement == null) f.placement = 1;
-  banner(f.name + ' holds all ' + CC.need + '!', 1600);
+  banner((R && R.winText) ? R.winText(f) : f.name + ' holds all ' + CC.need + '!', 1600);   // (a rule's own winText(f), else Cloudy's line)
   SFX.ko && SFX.ko();
   for(let k = 0; k < 24; k++) puff(f.x, f.y - f.r, k % 2 ? '#ffd23f' : '#fff', 5);
 }
@@ -109590,12 +109605,14 @@ function draw(){
   }
   fsDrawBehind();   // Pillow's Journal cameo, behind the fighters and the effects
   // fighters
+  if(CONTEST) drawContestWorld('under');   // A CONTEST: its own things in the world (a light on the floor, a stack of pages), under the fighters
   drawKitFx('under');   // the Heat Explosion, behind the fighters it catches
   if(FINX.length) finxDraw('under');   // a corkboard, a puddle, a propped mirror (FINISHERS V2)
   NAMETAG_Q = []; try{ for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(FINX.length && finxHidden(f)) continue; if(f.fsId && fsHides(f)) continue; if(f._oneGhost) drawOneGhostAura(f); try{ drawTellFx(f); }catch(e){} if(f.fsGlow>0 || f.fsId){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); fsDrawAura(f); ctx.restore(); } else fsDrawAura(f); } drawFighter(f); if(f._col) drawCollectSlots(f); if(CONTEST) drawContestBadge(f); if(f._soakT > hazardT){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); drawSoakDrips(f); ctx.restore(); } else drawSoakDrips(f); } if(SETTINGS.mode==='ctf'){ ctfDrawCarry(f); if(CTF.spec) ctfSpecDrawChip(f); } } } finally { nameTagFlush(); }
   if(SETTINGS.mode==='ctf') ctfDrawCoverFront();   // the props a friend stands in, see-through, over the fighters
   if(CTUT.active) ctutDrawWorld();   // the Capture the Flag practice: where a flag may not go
   drawKitFx('over');    // the Fist Thingy's arm, over the fighters it reaches across
+  if(CONTEST) drawContestWorld('over');   // A CONTEST: what flies over the fighters (pages, a pointer)
   if(STICKY || isNetClient()) drawStickyPins();   // STICKY PILLARS (an event twist): the staples that hold a stuck fighter to the pillar
   if(FINX.length || fighters.some(function(t){ return t._dazzle > hazardT || t._patch > hazardT || t._sinkT > hazardT || t._jellyT > hazardT || fx4StatusOn(t) || t._zeroT > hazardT; })) finxDraw('over');   // the jets, the whirl, the thread, the snowball, the bubble, the geyser, the smack, the swap line, the slap fight (FINISHERS V2)
   drawStanceArt();      // HIT ART: a counter's or a reflect's window, lit on the outline it answers with
