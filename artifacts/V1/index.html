@@ -52557,6 +52557,839 @@ FINAL_SMASHES['Teddy Bear'] = {
 // out); whoever is in it is held while six kicks land (2%) and "THERE'S MORE!" the last (20%) throws them.
 FINAL_SMASHES['Bot'] = fsLock({ id:'gotcha', c1:'#7cf0a8', c2:'#ffffff', R:80, bx:420, by:240, effect:'pin', hits:6, every:5, hitDmg:2, dmg:20, kb:23, art:FS_GLYPH.star });
 FINAL_SMASHES['Bot'] = fsaB_row(FINAL_SMASHES['Bot'], fsaB_bot);   // FSA lane b: its entrance (the row above is the blast, unchanged)
+// ============================================================================================================================================
+// FINAL SMASHES v2 (the owner, 2026-11-12: "change what is needed. and make them better and more different."): twelve Final Smashes with a NEW SHAPE each --
+// Toothpaste, Rose, Fan, Tapey, David, Book, Bot, Box, Baseball, Woody, Pickle, Bonesaw. Design: reports/moves/unique-final-and-neutral-smashes-v2.md. Each row below is a
+// new BASE row (wind FS_WIND, the blast at row frame FS_WIND; `tb` is the frame after the blast) re-wrapped in the entrance the fighter already had (fsaA_wrap / fsaB_row
+// of the old row, kept with the few changes noted at each). Everything drawn is a pure function of the wire fields (fsT, fsWind, fsAx/fsAy, face, positions): no dice.
+// The sim spends its own dice nowhere (puff only, as the other rows). No sky drops. The old rows above stay in the file but are replaced at the end of this block.
+// ============================================================================================================================================
+function fsv2_d(f){ return f.face < 0 ? -1 : 1; }
+function fsv2_e(u){ u = u < 0 ? 0 : (u > 1 ? 1 : u); return u*u*(3 - 2*u); }
+function fsv2_tb(f){ return (f.fsT || 0) - (f.fsWind || FS_WIND); }   // frames after the blast (the wrapper hands the base its own clock)
+// A locked foe is let go FS_LOCK_BEAT frames after the row's last blow on it (the launch of its biggest blow, fsLockOff).
+function fsv2_rel(st, x, tb, n){ (st.rel || (st.rel = {}))[x.idx] = tb + (n == null ? FS_LOCK_BEAT : n); }
+function fsv2_relStep(st, tb){
+  if(!st.rel) return;
+  for(const k in st.rel) if(tb >= st.rel[k]){ delete st.rel[k]; const x = fighters[+k]; if(x && x._fsLock && x._fsLock.st === st) fsLockOff(x); }
+}
+function fsv2_hit(f, st, x, tb, dmg, kx, ky, S, rel){
+  x.countering = 0; applyHit(x, dmg, kx, ky, f);
+  if(S) fsStatus(x, f, S);
+  if(rel && x._fsLock) fsv2_rel(st, x, tb);
+}
+// Gap from a foe's body to the segment (ax, ay)-(bx, by).
+function fsv2_segGap(x, ax, ay, bx, by){
+  const px = x.x, py = hurtCY(x), dx = bx - ax, dy = by - ay, L2 = dx*dx + dy*dy || 1, u = clamp(((px - ax)*dx + (py - ay)*dy)/L2, 0, 1);
+  return hurtGap(x, ax + dx*u, ay + dy*u);
+}
+function fsv2_line(c, pts, lw, col, a){   // a flat thick line with the show's dark outline
+  if(pts.length < 2) return;
+  c.globalAlpha = a == null ? 1 : a; c.lineJoin = 'round'; c.lineCap = 'round';
+  c.beginPath(); for(let i = 0; i < pts.length; i++){ if(i) c.lineTo(pts[i].x, pts[i].y); else c.moveTo(pts[i].x, pts[i].y); }
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = lw + 4; c.stroke(); c.strokeStyle = col; c.lineWidth = lw; c.stroke();
+}
+function fsv2_off(pts, k){   // the same line shifted sideways by k (for a stripe)
+  const out = [];
+  for(let i = 0; i < pts.length; i++){
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], tx = b.x - a.x, ty = b.y - a.y, L = Math.hypot(tx, ty) || 1;
+    out.push({ x:pts[i].x - ty/L*k, y:pts[i].y + tx/L*k });
+  }
+  return out;
+}
+function fsv2_pix(c, x, y, s, col, a){ c.globalAlpha = a; c.fillStyle = '#1c1c1c'; c.fillRect(x - s/2 - 1.5, y - s/2 - 1.5, s + 3, s + 3); c.fillStyle = col; c.fillRect(x - s/2, y - s/2, s, s); }
+
+// ---- F1 TOOTHPASTE -- THE BIG SWIRL --------------------------------------------------------------------------------------------------------
+// One ribbon of paste winds out round her in a growing spiral (two turns, 48 frames, the tip 16%, a small pop), sticks to whoever touches it (slow), then the whole
+// swirl flashes (frame 58): 30% to anyone within 44 px of the ribbon, thrown out. (MEASURED, 24 trials a side: the old 14-blob stream landed a mean 61 on a standing foe and 70 on a moving CPU;
+// this one 52 and 67 -- the first numbers, 12 / 20 / 26 px, landed only 27 and 40.) Get 340 px away, or stand in the gap between two coils (about 140 px apart) and let the tip go by.
+function fsv2_toothPt(f, cx, cy, i){ const th = -0.262*i, r = 60 + 5.8*i; return { x:cx + fsv2_d(f)*Math.cos(th)*r, y:cy + Math.sin(th)*r }; }
+function fsv2_toothBase(){
+  const w = FS_WIND;
+  return {
+    id:'enemynow', wind:w, dur:w + 58 + 30, reach:340,
+    catch(f){ return { kind:'circle', x:f.x, y:f.y, r:110 }; }, lockEnd:w + 58 + FS_LOCK_BEAT,   // CATCH: the first coil only; the rest can be dodged
+    start(f, st){ st.turn = {}; armAtk(f, w, 'fsgather'); },
+    tick(f, st, t){
+      const tb = t - w, cx = f.fsAx, cy = f.fsAy;
+      fsv2_relStep(st, tb);
+      if(tb === 0){ shake(5); for(let i = 0; i < 10; i++) puff(cx, cy, i % 2 ? '#4cc3ff' : '#fff', 6); }
+      if(tb >= 0 && tb <= 48){   // the tip: 12%, a small pop, once a turn
+        const tip = fsv2_toothPt(f, cx, cy, tb), turn = Math.floor(tb*0.262/(Math.PI*2));
+        for(const x of fighters){
+          if(fsHurtMark(f, x)) continue;
+          const T = st.turn[x.idx] || (st.turn[x.idx] = {});
+          if(!T[turn] && hurtGap(x, tip.x, tip.y) < 30){ T[turn] = 1; fsv2_hit(f, st, x, tb, 16, (Math.sign(x.x - cx) || fsv2_d(f))*8, -8); }
+        }
+      }
+      if(tb >= 0 && tb <= 58){   // the ribbon is sticky: slow, no damage
+        const n = Math.min(tb, 48);
+        for(const x of fighters){
+          if(fsHurtMark(f, x)) continue;
+          for(let i = 0; i <= n; i++){ const p = fsv2_toothPt(f, cx, cy, i); if(hurtGap(x, p.x, p.y) < 22){ fsStatus(x, f, { slow:90 }); break; } }
+        }
+      }
+      if(tb === 58){   // the flash
+        shake(11); armAtk(f, 24, 'fsburst');
+        for(const x of fighters){
+          if(fsHurtMark(f, x)) continue;
+          for(let i = 0; i <= 48; i++){ const p = fsv2_toothPt(f, cx, cy, i); if(hurtGap(x, p.x, p.y) < 44){ fsv2_hit(f, st, x, tb, 30, (Math.sign(x.x - cx) || fsv2_d(f))*24, -12, null, true); break; } }
+        }
+      }
+    },
+    ai(f){ for(const x of fighters) if(!fsHurtMark(f, x) && hurtGap(x, f.x, f.y) < 300) return true; return false; },
+    draw(f, c){
+      const tb = fsv2_tb(f); if(tb < 0 || tb > 84) return;
+      const cx = f.fsAx, cy = f.fsAy, n = Math.min(tb, 48), pts = [];
+      for(let i = 0; i <= n; i++) pts.push(fsv2_toothPt(f, cx, cy, i));
+      c.save();
+      if(tb < 62){
+        const fl = tb >= 58;
+        fsv2_line(c, pts, fl ? 22 : 16, '#f4f8ff', 1);
+        if(!fl){ fsv2_line(c, fsv2_off(pts, 4), 4, '#4cc3ff', 1); fsv2_line(c, fsv2_off(pts, -4), 4, '#e8453c', 1); }
+        if(tb <= 48){ const tip = pts[pts.length - 1]; fsDisc(c, tip.x, tip.y, 16, '#1c1c1c', 1); fsDisc(c, tip.x, tip.y, 12.5, '#f4f8ff', 1); }
+        if(fl){ const u = (tb - 58)/4; fsDisc(c, cx, cy, 30 + 150*u, '#ffffff', 0.5*(1 - u)); }
+      } else {
+        const u = (tb - 62)/22;   // the swirl breaks into blobs of paste that drift out and fade
+        for(let i = 0; i < pts.length; i += 3){ const p = pts[i]; c.globalAlpha = 1 - u; FS_GLYPH.paste(c, cx + (p.x - cx)*(1 + 0.3*u), cy + (p.y - cy)*(1 + 0.3*u), 8 + 4*u, u, f); }
+      }
+      c.restore();
+    },
+  };
+}
+
+// ---- F2 ROSE -- BRIAR PATH -----------------------------------------------------------------------------------------------------------------
+// A thorn vine grows out of the floor at her feet and snakes forward in waves (640 px at 16 a frame, a rose on each crest): its head 12% and bleed, then the hedge stands
+// for 24 frames, then she whips it back: 16% to everyone on the path, thrown back toward her. Stand under a crest or hop a dip; the head hits once, the whip is the second chance.
+function fsv2_rosePt(fx, fy, d, s){ return { x:fx + d*s, y:fy - 60 - 60*Math.sin(s/41.4) }; }
+function fsv2_roseBase(){
+  const w = FS_WIND;
+  return {
+    id:'thornlash', wind:w, dur:w + 64 + 4 + 26, reach:640,
+    catch(f){ return fsBoxAhead(f, 0, 160, 120, f.r); }, lockEnd:w + 64 + FS_LOCK_BEAT,   // CATCH: only the first wave locks
+    start(f, st){ st.hd = {}; armAtk(f, w, 'fsgather'); },
+    tick(f, st, t){
+      const tb = t - w, d = fsv2_d(f), fx = f.fsAx, fy = f.fsAy + f.r;
+      fsv2_relStep(st, tb);
+      if(tb === 0){ shake(5); for(let i = 0; i < 8; i++) puff(fx + d*10, fy - 4, i % 2 ? '#2f7a34' : '#d6304a', 5); }
+      if(tb >= 0 && tb < 40){   // the head
+        const p = fsv2_rosePt(fx, fy, d, 16*tb);
+        for(const x of fighters){ if(fsHurtMark(f, x) || st.hd[x.idx]) continue; if(hurtGap(x, p.x, p.y) < 26){ st.hd[x.idx] = 1; fsv2_hit(f, st, x, tb, 12, 6*d, -6, { bleed:150 }); } }
+      }
+      if(tb === 64){   // the whip back
+        shake(10); armAtk(f, 24, 'fsburst');
+        for(const x of fighters){
+          if(fsHurtMark(f, x)) continue;
+          for(let s = 0; s <= 640; s += 20){ const p = fsv2_rosePt(fx, fy, d, s); if(hurtGap(x, p.x, p.y) < 30){ fsv2_hit(f, st, x, tb, 16, -22*d, -14, null, true); break; } }
+        }
+      }
+    },
+    ai(f){ for(const x of fighters) if(!fsHurtMark(f, x) && (x.x - f.x)*fsv2_d(f) > 0 && (x.x - f.x)*fsv2_d(f) < 560 && Math.abs(x.y - f.y) < 140) return true; return false; },
+    draw(f, c){
+      const tb = fsv2_tb(f); if(tb < 0 || tb > 72) return;
+      const d = fsv2_d(f), fx = f.fsAx, fy = f.fsAy + f.r;
+      let len = tb < 40 ? 16*tb : 640; if(tb >= 64) len = 640*Math.max(0, 1 - (tb - 64)/4);
+      if(len < 6) return;
+      const pts = []; for(let s = 0; s <= len; s += 10) pts.push(fsv2_rosePt(fx, fy, d, s));
+      c.save();
+      fsv2_line(c, pts, 10, '#2f7a34', 1);
+      for(let s = 12, k = 0; s <= len; s += 24, k++){   // thorns, alternate sides
+        const p = fsv2_rosePt(fx, fy, d, s), sl = -60*Math.cos(s/41.4)/41.4, L = Math.hypot(1, sl), nx = -sl/L*d*(k % 2 ? 1 : -1), ny = d*0 + 1/L*(k % 2 ? 1 : -1);
+        c.globalAlpha = 1; c.fillStyle = '#7a4a2a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.5;
+        c.beginPath(); c.moveTo(p.x - 3, p.y); c.lineTo(p.x + 3, p.y); c.lineTo(p.x + nx*10, p.y + ny*10); c.closePath(); c.fill(); c.stroke();
+      }
+      for(let k = 0; ; k++){   // a rose on each crest, opening as the head passes
+        const s = 65 + 260*k; if(s > len) break;
+        const p = fsv2_rosePt(fx, fy, d, s), g = clamp((len - s)/60, 0, 1);
+        c.globalAlpha = 1; FS_GLYPH.rose(c, p.x, p.y - 6, 15*g + 2, g, f);
+      }
+      if(tb < 40){ const hp = pts[pts.length - 1]; fsDisc(c, hp.x, hp.y, 14, '#1c1c1c', 1); fsDisc(c, hp.x, hp.y, 11, '#3f9a44', 1); }
+      if(tb >= 64){   // loose petals as it snaps back
+        const u = (tb - 64)/8;
+        for(let i = 0; i < 12; i++){ const p = fsv2_rosePt(fx, fy, d, 40 + i*52); c.globalAlpha = 1 - u; c.fillStyle = i % 2 ? '#e8506a' : '#f6a0b0'; c.beginPath(); c.ellipse(p.x + d*u*30*(i % 3), p.y - u*40 + i*0.5, 5, 3, i, 0, 7); c.fill(); }
+      }
+      c.restore();
+    },
+  };
+}
+
+// ---- F3 FAN -- FULL BLAST -------------------------------------------------------------------------------------------------------------------
+// He plants his feet and a CONE of wind blows from his face for a second (560 px, 35 degrees up and down): foes are pushed away (5 px a frame, 300 px at most), pelted
+// by loose pages (2% four times), and the last gust (12%) launches those still in the cone. Be behind him or above the cone.
+function fsv2_fanIn(f, x){
+  const d = fsv2_d(f), dx = (x.x - f.fsAx)*d, dy = hurtCY(x) - f.fsAy, dist = Math.hypot(dx, dy);
+  return dx > 0 && dist < 560 && Math.abs(Math.atan2(dy, dx)) < 0.61 ? dist : -1;
+}
+function fsv2_fanBase(){
+  const w = FS_WIND;
+  return {
+    id:'leaveusalone', wind:w, dur:w + 60 + 30, reach:560,
+    catch(f){ return { kind:'fan', cx:f.x, cy:f.y, r0:0, r1:200, a0:-0.61, a1:0.61, face:fsv2_d(f) }; }, lockEnd:w + 60 + FS_LOCK_BEAT,
+    start(f, st){ st.pushed = {}; armAtk(f, w, 'fsgather'); },
+    tick(f, st, t){
+      const tb = t - w, d = fsv2_d(f);
+      fsv2_relStep(st, tb);
+      if(tb === 0) shake(5);
+      if(tb >= 0 && tb < 60){
+        for(const x of fighters){
+          if(fsHurtMark(f, x)) continue;
+          const dist = fsv2_fanIn(f, x); if(dist < 0) continue;
+          const room = 300 - (st.pushed[x.idx] || 0), amt = Math.min(room, 5*(1 - 0.5*dist/560));
+          if(amt > 0){ x.x = clamp(x.x + d*amt, 60, WW - 60); st.pushed[x.idx] = (st.pushed[x.idx] || 0) + amt; }
+        }
+        if(tb === 8 || tb === 20 || tb === 32 || tb === 44){ for(const x of fighters){ if(fsHurtMark(f, x) || fsv2_fanIn(f, x) < 0) continue; fsv2_hit(f, st, x, tb, 2, 0, -1); } }   // a page
+      }
+      if(tb === 60){   // the last gust
+        shake(10); armAtk(f, 24, 'fsburst');
+        for(const x of fighters){ if(fsHurtMark(f, x) || fsv2_fanIn(f, x) < 0) continue; fsv2_hit(f, st, x, tb, 12, 22*d, -10, null, true); }
+      }
+    },
+    ai(f){ for(const x of fighters) if(!fsHurtMark(f, x) && (x.x - f.x)*fsv2_d(f) > 0 && (x.x - f.x)*fsv2_d(f) < 480 && Math.abs(x.y - f.y) < 150) return true; return false; },
+    draw(f, c){
+      const tb = fsv2_tb(f); if(tb < 0 || tb > 68) return;
+      const d = fsv2_d(f), cx = f.fsAx, cy = f.fsAy;
+      c.save();
+      if(tb < 60){
+        c.lineCap = 'round';
+        for(let i = 0; i < 14; i++) {   // streaks flowing down the cone
+          const a = -0.61 + 1.22*(i + 0.5)/14, r0 = (tb*20 + i*61) % 520, r1 = r0 + 46 + (i % 3)*14;
+          c.globalAlpha = 0.85*(1 - r0/560); c.strokeStyle = '#1c1c1c'; c.lineWidth = 6; c.beginPath(); c.moveTo(cx + d*Math.cos(a)*r0, cy + Math.sin(a)*r0); c.lineTo(cx + d*Math.cos(a)*r1, cy + Math.sin(a)*r1); c.stroke();
+          c.strokeStyle = '#f2fbff'; c.lineWidth = 3; c.stroke();
+        }
+        for(let k = 0; k < 8; k++) {   // loose pages tumbling down-wind
+          const r = (tb*13 + k*83) % 540, a = Math.sin(k*2.3)*0.5, px = cx + d*Math.cos(a)*r, py = cy + Math.sin(a)*r + Math.sin(tb*0.3 + k)*10;
+          c.save(); c.translate(px, py); c.rotate(tb*0.25 + k); c.globalAlpha = 1; c.fillStyle = '#fbf6e8'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.fillRect(-9, -6, 18, 12); c.strokeRect(-9, -6, 18, 12);
+          c.strokeStyle = '#9aa5b5'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(-6, -2); c.lineTo(6, -2); c.moveTo(-6, 2); c.lineTo(3, 2); c.stroke(); c.restore();
+        }
+        c.globalAlpha = 1; FS_GLYPH.fanblade(c, cx + d*f.r*0.6, cy, 20, 0, f);   // the blades, a blur on his face
+        fsDisc(c, cx + d*f.r*0.6, cy, 22, '#ffffff', 0.25);
+      } else { const u = (tb - 60)/8; c.globalAlpha = 1 - u; c.lineWidth = 8*(1 - u) + 2; c.strokeStyle = '#1c1c1c'; c.beginPath(); c.arc(cx, cy, 80 + 480*u, d > 0 ? -0.61 : Math.PI - 0.61, d > 0 ? 0.61 : Math.PI + 0.61); c.stroke(); c.strokeStyle = '#ffffff'; c.lineWidth = 5*(1 - u) + 1; c.stroke(); }
+      c.restore();
+    },
+  };
+}
+
+// ---- F4 TAPEY -- REWIND -----------------------------------------------------------------------------------------------------------------------
+// A ribbon of tape shoots out of her deck (700 px, 28 a frame, chest high, 44 tall), sticks to everyone it touches (4%), goes taut, then she REWINDS: the tape reels
+// them all to 60 px in front of her (28 a frame), and EJECT (frame 58): 16%, thrown the way she faces. Hop the ribbon, or be behind her. Her 50 px recoil comes at the eject.
+function fsv2_tapeBase(){
+  const w = FS_WIND;
+  return {
+    id:'playback', wind:w, dur:w + 58 + 26, reach:700,
+    catch(f){ return fsBoxAhead(f, 0, 160, 22, 22); }, lockEnd:w + 58 + FS_LOCK_BEAT,   // CATCH: chest high, the first 160 px
+    start(f, st){ st.dir = fsv2_d(f); st.caught = []; st.at = {}; armAtk(f, w, 'fsgather'); },
+    tick(f, st, t){
+      const tb = t - w, d = st.dir, cx = f.fsAx, cy = f.fsAy;
+      fsv2_relStep(st, tb);
+      if(tb === 0) shake(4);
+      if(tb >= 0 && tb < 25){   // the ribbon's head sticks to whoever it touches
+        const hx = cx + d*28*tb;
+        for(const x of fighters){
+          if(fsHurtMark(f, x) || st.at[x.idx]) continue;
+          const nx = clamp(x.x, hx - 20, hx + 20), ny = clamp(hurtCY(x), cy - 22, cy + 22);
+          if(hurtGap(x, nx, ny) <= 1){ st.at[x.idx] = { x:x.x, y:x.y }; st.caught.push(x.idx); applyHit(x, 4, 0, -1, f); }
+        }
+      }
+      if(tb >= 0 && tb < 58){   // held where they were, then reeled in
+        for(const i of st.caught){
+          const x = fighters[i]; if(!x || x.dead) continue;
+          if(tb < 31){ fsPin(x, st.at[i].x, st.at[i].y); st.at[i].x = x.x; st.at[i].y = x.y; }
+          else { const tx = cx + d*60, nx = x.x + clamp(tx - x.x, -28, 28); fsPin(x, nx, cy); }
+        }
+      }
+      if(tb === 58){   // EJECT
+        shake(12); armAtk(f, 24, 'fsburst');
+        const sx = cx + d*60;
+        for(const x of fighters){
+          if(fsHurtMark(f, x)) continue;
+          if(st.caught.indexOf(x.idx) >= 0 || hurtGap(x, sx, cy) < 110) fsv2_hit(f, st, x, tb, 16, 22*d, -12, null, true);
+        }
+      }
+    },
+    ai(f){ for(const x of fighters) if(!fsHurtMark(f, x) && (x.x - f.x)*fsv2_d(f) > 0 && (x.x - f.x)*fsv2_d(f) < 600 && Math.abs(hurtCY(x) - f.y) < 50) return true; return false; },
+    draw(f, c){
+      const tb = fsv2_tb(f); if(tb < 0 || tb > 66) return;
+      const d = fsv2_d(f), cx = f.fsAx, cy = f.fsAy, x0 = cx + d*f.r*0.6;
+      c.save();
+      if(tb < 58){
+        let len = tb < 25 ? 28*tb : (tb < 31 ? 700 : Math.max(60, 700 - 28*(tb - 31)));
+        const taut = tb >= 25, pts = [];
+        for(let s = 0; s <= len; s += 14) pts.push({ x:x0 + d*s, y:cy + (taut ? 0 : 6*Math.sin(s*0.05 + tb*0.5)) });
+        fsv2_line(c, pts, 8, '#5a3a22', 1);
+        c.globalAlpha = 0.7; c.strokeStyle = '#d8b48a'; c.lineWidth = 2; c.beginPath(); pts.forEach((p, i)=>{ if(i) c.lineTo(p.x, p.y - 2); else c.moveTo(p.x, p.y - 2); }); c.stroke();
+        for(const x of fighters){   // two loops of tape round a foe on the ribbon
+          if(x.dead || x.idx === f.idx || x.team === f.team) continue;
+          const rx = (x.x - x0)*d; if(rx < 0 || rx > len + 24 || Math.abs(hurtCY(x) - cy) > 40) continue;
+          c.globalAlpha = 1; c.strokeStyle = '#1c1c1c'; c.lineWidth = 9; c.beginPath(); c.ellipse(x.x, x.y, x.r + 4, 9, 0.3, 0, 7); c.stroke(); c.beginPath(); c.ellipse(x.x, x.y - 8, x.r + 2, 8, -0.3, 0, 7); c.stroke();
+          c.strokeStyle = '#5a3a22'; c.lineWidth = 5; c.beginPath(); c.ellipse(x.x, x.y, x.r + 4, 9, 0.3, 0, 7); c.stroke(); c.beginPath(); c.ellipse(x.x, x.y - 8, x.r + 2, 8, -0.3, 0, 7); c.stroke();
+        }
+      } else { const u = (tb - 58)/8; fsDisc(c, x0 + d*20, cy, 24 + 60*u, '#ffffff', 0.8*(1 - u)); fsRing(c, x0 + d*20, cy, 30 + 100*u, '#e8e0d0', 6*(1 - u) + 1, 1 - u); }
+      c.restore();
+    },
+  };
+}
+
+// ---- F5 DAVID -- TANTRUM CLOUD ----------------------------------------------------------------------------------------------------------------
+// He turns into a cartoon FIGHT CLOUD (100 px radius) that rolls forward at 7 px a frame for 56 frames (stops at a ledge or wall), swallows whoever it touches, pummels
+// them (3% four times) and bursts (10%, thrown). Walk away from it, be behind where he started, or go over the top.
+function fsv2_davidBase(){
+  const w = FS_WIND;
+  return {
+    id:'awseriously', wind:w, dur:w + 56 + 30 + 4, reach:100,
+    catch(f){ return { kind:'circle', x:f.x, y:f.y, r:100 }; }, lockEnd:w + 56 + FS_LOCK_BEAT,
+    hides(f){ const t = f.fsT || 0, W = f.fsWind || FS_WIND; return !(f.fsC > 0) && t >= W && t < W + 58; },   // he is inside the cloud (a pure function of the wire fields)
+    start(f, st){ st.caught = []; st.t0 = {}; st.dir = fsv2_d(f); armAtk(f, w, 'fsgather'); },
+    tick(f, st, t){
+      const tb = t - w, d = st.dir;
+      fsv2_relStep(st, tb);
+      if(tb === 0) shake(5);
+      if(tb >= 0 && tb < 56){
+        if(f.onground){ const nx = f.x + d*7; if(nx > 80 && nx < WW - 80 && landable(nx, f.y + f.r + 2)) f.x = nx; }
+        f.vx = 0;
+        for(const x of fighters){ if(fsHurtMark(f, x) || st.t0[x.idx] != null) continue; if(hurtGap(x, f.x, f.y) < 100){ st.t0[x.idx] = tb; st.caught.push(x.idx); } }
+        for(const i of st.caught){
+          const x = fighters[i]; if(!x || x.dead) continue;
+          const a = tb - st.t0[i];
+          fsPin(x, f.x + ((i % 3) - 1)*16, f.y + ((i % 2) ? -10 : 10));
+          if(a === 8 || a === 18 || a === 28 || a === 38) applyHit(x, 3, 0, -1, f);   // a scribble hit
+        }
+      }
+      if(tb === 56){   // the burst
+        shake(11); armAtk(f, 24, 'fsburst');
+        for(const i of st.caught){ const x = fighters[i]; if(x && !x.dead) fsv2_hit(f, st, x, tb, 10, 20*st.dir, -14, null, true); }
+        for(let k = 0; k < 14; k++) puff(f.x, f.y, k % 2 ? '#ffe45e' : '#ffffff', 6);
+      }
+    },
+    ai(f){ for(const x of fighters) if(!fsHurtMark(f, x) && (x.x - f.x)*fsv2_d(f) > -40 && (x.x - f.x)*fsv2_d(f) < 260 && Math.abs(x.y - f.y) < 130) return true; return false; },
+    draw(f, c){
+      const tb = fsv2_tb(f); if(tb < 0 || tb > 66) return;
+      const cx = f.x, cy = f.y;
+      c.save();
+      if(tb < 56){
+        const g = Math.min(1, (tb + 1)/6), R = 100*g;
+        c.globalAlpha = 1; c.fillStyle = '#f3efe6'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4;
+        for(let k = 0; k < 6; k++){ const a = k*1.047 + tb*0.12, wob = Math.sin(tb*0.5 + k*2)*5; c.beginPath(); c.arc(cx + Math.cos(a)*12, cy + Math.sin(a)*12, R*0.86 + wob, 0, 7); if(k === 0) c.fill(); c.stroke(); }
+        c.lineWidth = 2.5; c.strokeStyle = '#1c1c1c';
+        for(let k = 0; k < 5; k++){ c.beginPath(); c.arc(cx + Math.sin(tb*0.31 + k*1.3)*18, cy + Math.cos(tb*0.27 + k*1.9)*18, R*(0.25 + 0.13*k), tb*0.4 + k, tb*0.4 + k + 4.2); c.stroke(); }
+        for(let k = 0; k < 4; k++){   // his stick limbs poking out
+          const a = tb*0.33 + k*1.57, r0 = R*0.9, r1 = R*1.18 + Math.sin(tb*0.7 + k)*8, ex = cx + Math.cos(a)*r1, ey = cy + Math.sin(a)*r1;
+          c.beginPath(); c.moveTo(cx + Math.cos(a)*r0, cy + Math.sin(a)*r0); c.lineTo(ex, ey); c.lineWidth = 4; c.stroke(); fsDisc(c, ex, ey, 5, '#1c1c1c', 1);
+        }
+        for(let k = 0; k < 3; k++){ const a = tb*0.2 + k*2.1; c.globalAlpha = 1; FS_GLYPH.star(c, cx + Math.cos(a)*R*0.55, cy + Math.sin(a)*R*0.55, 11, 0, f); }
+      } else { const u = (tb - 56)/10; c.globalAlpha = 1 - u; FS_GLYPH.burst(c, cx, cy, 60 + 110*u, u, f); fsRing(c, cx, cy, 40 + 160*u, '#ffffff', 6*(1 - u) + 1, 1 - u); }
+      c.restore();
+    },
+  };
+}
+
+// ---- F6 BOOK -- TURN THE PAGE ------------------------------------------------------------------------------------------------------------------
+// A giant page lies flat on the floor in front of her (320 px; that is the tell). She TURNS it: the page swings up and over her head in 26 frames, scooping everyone it
+// touches (7%) and flinging them behind her at frame 18 (15%). (MEASURED, 24 trials a side: the old books landed a mean 44 on a standing foe and 35 on a moving CPU; this 39 and 44 --
+// the first numbers, 10 / 20, landed 53 and 60.) Get off the page, or get behind her.
+function fsv2_bookA(tb){ return Math.PI*fsv2_e(tb/26); }
+function fsv2_bookEnd(f, A){ const d = fsv2_d(f); return { dx:d*Math.cos(A), dy:-Math.sin(A), nx:d*-Math.sin(A), ny:-Math.cos(A) }; }
+function fsv2_bookPage(f, c, A, len){   // the page itself, from her feet, turned by A (0 flat in front), `len` px long
+  const d = fsv2_d(f), px = f.fsAx, py = f.fsAy + f.r, V = fsv2_bookEnd(f, A), bow = Math.sin(A)*-16, N = 12;
+  const lo = [], hi = [];
+  for(let i = 0; i <= N; i++){ const u = i/N, s = len*u, b = bow*Math.sin(Math.PI*u); lo.push({ x:px + V.dx*s + V.nx*b, y:py + V.dy*s + V.ny*b }); hi.push({ x:px + V.dx*s + V.nx*(b + 22), y:py + V.dy*s + V.ny*(b + 22) }); }
+  c.save(); c.globalAlpha = 1; c.lineJoin = 'round';
+  if(A < 0.4){ c.fillStyle = 'rgba(0,0,0,0.18)'; c.beginPath(); c.ellipse(px + d*len/2, py + 2, len/2, 5, 0, 0, 7); c.fill(); }
+  c.beginPath(); lo.forEach((p, i)=>{ if(i) c.lineTo(p.x, p.y); else c.moveTo(p.x, p.y); }); for(let i = N; i >= 0; i--) c.lineTo(hi[i].x, hi[i].y); c.closePath();
+  c.fillStyle = '#f4ecd8'; c.fill(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 3.5; c.stroke();
+  c.strokeStyle = '#a9b4c4'; c.lineWidth = 1.6;   // ruled lines, no words
+  for(const q of [0.3, 0.55, 0.8]){ c.beginPath(); for(let i = 0; i <= N; i++){ const p = lo[i], h = hi[i]; const x = p.x + (h.x - p.x)*q, y = p.y + (h.y - p.y)*q; if(i) c.lineTo(x, y); else c.moveTo(x, y); } c.stroke(); }
+  const e = hi[N]; c.fillStyle = '#e4d6b4'; c.beginPath(); c.moveTo(e.x, e.y); c.lineTo(e.x - V.dx*16, e.y - V.dy*16); c.lineTo(lo[N].x - V.dx*16 + V.nx*8, lo[N].y - V.dy*16 + V.ny*8); c.closePath(); c.fill(); c.stroke();   // the curling corner
+  c.restore();
+}
+function fsv2_bookBase(){
+  const w = FS_WIND;
+  return {
+    id:'overdue', wind:w, dur:w + 26 + 28, reach:320,
+    catch(f){ return fsBoxAhead(f, 0, 320, 60, f.r); }, lockEnd:w + 18 + FS_LOCK_BEAT,   // CATCH: whoever stands on the page
+    start(f, st){ st.sc = {}; st.dir = fsv2_d(f); armAtk(f, w, 'fsgather'); },
+    tick(f, st, t){
+      const tb = t - w, d = st.dir, px = f.fsAx, py = f.fsAy + f.r;
+      fsv2_relStep(st, tb);
+      if(tb === 0) shake(5);
+      if(tb >= 0 && tb < 26){
+        const A = fsv2_bookA(tb), V = fsv2_bookEnd(f, A);
+        if(tb < 13){   // the front quarter scoops
+          const ex = px + V.dx*320, ey = py + V.dy*320;
+          for(const x of fighters){
+            if(fsHurtMark(f, x) || st.sc[x.idx]) continue;
+            if(fsv2_segGap(x, px, py, ex, ey) < 28){
+              const dd = clamp((x.x - px)*V.dx + (hurtCY(x) - py)*V.dy, 0, 320);
+              st.sc[x.idx] = { dd:dd }; applyHit(x, 7, 0, -1, f);
+            }
+          }
+        }
+        if(tb < 18) for(const k in st.sc){   // carried on the page
+          const x = fighters[+k]; if(!x || x.dead) continue;
+          const dd = st.sc[k].dd; fsPin(x, px + V.dx*dd + V.nx*x.r, py + V.dy*dd + V.ny*x.r);
+        }
+      }
+      if(tb === 18){   // released at about 135 degrees: thrown behind her
+        shake(11); armAtk(f, 30, 'cast');
+        for(const k in st.sc){ const x = fighters[+k]; if(x && !x.dead) fsv2_hit(f, st, x, tb, 15, -22*d, -16, null, true); }
+      }
+    },
+    ai(f){ for(const x of fighters) if(!fsHurtMark(f, x) && (x.x - f.x)*fsv2_d(f) > -20 && (x.x - f.x)*fsv2_d(f) < 300 && Math.abs(x.y - f.y) < 90) return true; return false; },
+    draw(f, c){
+      const tb = fsv2_tb(f); if(tb < 0 || tb > 54) return;
+      fsv2_bookPage(f, c, fsv2_bookA(Math.min(26, tb)), 320);
+    },
+  };
+}
+
+// ---- F7 BOT -- THE STILT MARCH ------------------------------------------------------------------------------------------------------------------
+// Both legs stretch into tall black stilts (Bridge the Gap!'s leg) that lift Bot 160 px. Three strides of 14 frames, 160 px each; each stride swings a big oval foot low
+// along the floor (70 wide, 50 tall): kick 6%, kick 6%, "there's more!" 20%. Hop each foot, or be behind Bot. A caught foe is carried on in front of the next foot.
+function fsv2_botRise(t, W, hopEnd){   // how far up the stilts have lifted him (render only), by the FULL clock t
+  const up = 160*fsv2_e((t - hopEnd)/10), down = fsv2_e((t - (W + 42))/14);
+  return Math.max(0, up*(1 - down));
+}
+function fsv2_botBase(){
+  const w = FS_WIND;
+  return {
+    id:'gotcha', wind:w, dur:w + 42 + 30, reach:480,
+    catch(f){ return fsBoxAhead(f, 0, 160, 50, f.r); }, lockEnd:w + 42 + FS_LOCK_BEAT,   // CATCH: the first stride
+    start(f, st){ st.hk = [{}, {}, {}]; st.s = [f.x, f.x, f.x]; st.fy = f.y + f.r; st.dir = fsv2_d(f); armAtk(f, w, 'fsgather'); },
+    tick(f, st, t){
+      const tb = t - w, d = st.dir;
+      fsv2_relStep(st, tb);
+      if(tb >= 0 && tb < 42){
+        const k = Math.floor(tb/14), j = tb % 14;
+        if(j === 0){
+          st.s[k] = f.x;
+          if(k > 0) for(const i in st.hk[k - 1]){ const x = fighters[+i]; if(x && !x.dead && x._fsLock && landable(x.x + d*160, st.fy)) x.x = clamp(x.x + d*160, 60, WW - 60); }   // a caught foe is carried on to the next foot
+          if(k === 2) shake(4);
+        }
+        const tx = st.s[k] + d*160*fsv2_e(j/13);
+        if(f.onground && tx > 80 && tx < WW - 80 && landable(tx, st.fy + 2)) f.x = tx;
+        f.vx = 0;
+        const fx = st.s[k] + d*(160*j/13 + 40);
+        for(const x of fighters){
+          if(fsHurtMark(f, x) || st.hk[k][x.idx]) continue;
+          if(Math.abs(x.x - fx) < 35 + x.r*0.5 && x.y > st.fy - 50 - x.r && x.y < st.fy + 30){
+            st.hk[k][x.idx] = 1;
+            if(k < 2) fsv2_hit(f, st, x, tb, 6, 9*d, -5);
+            else { shake(10); fsv2_hit(f, st, x, tb, 20, 23*d, -12, null, true); }
+          }
+        }
+      }
+    },
+    ai(f){ for(const x of fighters) if(!fsHurtMark(f, x) && (x.x - f.x)*fsv2_d(f) > 0 && (x.x - f.x)*fsv2_d(f) < 420 && Math.abs(x.y - f.y) < 100) return true; return false; },
+    draw(f, c){ const tb = fsv2_tb(f); if(tb < 0 || tb > 50) return; fsv2_botLegs(f, c, tb); },
+  };
+}
+function fsv2_botLegs(f, c, tb){   // the stilts, from the body (lifted 160 px, render only) down to the floor, and the oval feet; tb < 0 is the entrance (the legs growing)
+  const d = fsv2_d(f), fy = f.fsAy + f.r, P = FSAB_BOT, rise = fsv2_botRise(tb + P.W, P.W, P.hop + 4), by = f.y + f.r - rise;
+  if(rise < 2) return;
+  c.save(); c.globalAlpha = 1;
+  const j = tb >= 0 && tb < 42 ? tb % 14 : 0, k = tb >= 0 ? Math.min(2, Math.floor(tb/14)) : 0;
+  const s0 = f.x - d*160*fsv2_e(j/13);   // where this stride began (the body has moved on from it)
+  const planted = f.x, swing = tb >= 0 && tb < 42 ? s0 + d*(160*j/13 + 40) : f.x + d*10;
+  const lift = tb >= 0 && tb < 42 ? 18*Math.sin(Math.PI*j/13) : 0;
+  const g = Math.min(1, rise/160);
+  for(const lg of [{ fx:planted - d*8, lift:0, sx:planted - d*14 }, { fx:swing, lift:lift, sx:planted + d*10 }]){
+    const ey = by + (fy - 10 - lg.lift - by)*1;
+    c.beginPath(); c.moveTo(lg.sx, by - 4); c.lineTo(lg.fx, ey); c.strokeStyle = '#1c1c1c'; c.lineWidth = 13; c.lineCap = 'round'; c.stroke(); c.strokeStyle = '#2a2a2e'; c.lineWidth = 8; c.stroke();
+    c.fillStyle = '#2a2a2e'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.ellipse(lg.fx + d*10, fy - 8 - lg.lift, 36*g, 12*g, 0, 0, 7); c.fill(); c.stroke();
+  }
+  if(tb >= 28 && tb < 38) FS_GLYPH.star(c, f.x + d*150, fy - 36, 24, 0, f);   // a star flash on the big third kick
+  c.restore();
+}
+
+// ---- F8 BOX -- THE CONVEYOR ----------------------------------------------------------------------------------------------------------------------
+// A belt rolls out along the floor 360 px each side of her and carries everyone standing on it (7 px a frame) to her. Each foe that arrives is packed, knocked four times
+// (2%) and SHIPPED out of her far side (20%). The belt runs 50 frames; jump off, stay in the air, stand on a platform, or get past its end.
+function fsv2_onBelt(f, x){ return x.onground && Math.abs((x.y + x.r) - (f.fsAy + f.r)) < 14; }
+function fsv2_boxBase(){
+  const w = FS_WIND;
+  return {
+    id:'everythingpacked', wind:w, dur:w + 80 + 24, reach:360,
+    catch(f){ return { kind:'box', x:f.x - 120, y:f.y - 50, w:240, h:50 + f.r }; }, lockEnd:w + 80 + FS_LOCK_BEAT,   // CATCH: right next to her
+    start(f, st){ st.pk = {}; armAtk(f, w, 'fsgather'); },
+    tick(f, st, t){
+      const tb = t - w, cx = f.fsAx;
+      fsv2_relStep(st, tb);
+      if(tb === 0) shake(5);
+      for(const x of fighters){
+        if(fsHurtMark(f, x) && !st.pk[x.idx]) continue;
+        const p = st.pk[x.idx];
+        if(p){   // packed: held at her middle, knocked, shipped
+          if(x.dead){ continue; }
+          const a = tb - p.t0;
+          if(a < 30){ fsPin(x, cx, f.fsAy); if(a === 6 || a === 12 || a === 18 || a === 24) applyHit(x, 2, 0, -1, f); }
+          else if(a === 30){ shake(9); fsPin(x, cx + p.dir*50, f.fsAy); fsv2_hit(f, st, x, tb, 20, 24*p.dir, -12, null, true); }
+          continue;
+        }
+        if(tb < 0 || tb > 50 || !fsv2_onBelt(f, x) || Math.abs(x.x - cx) > 360) continue;
+        if(Math.abs(x.x - cx) < 40){ st.pk[x.idx] = { t0:tb, dir:(x.x - cx) > 0 ? -1 : (x.x - cx) < 0 ? 1 : -fsv2_d(f) }; fsPin(x, cx, f.fsAy); }
+        else x.x += Math.sign(cx - x.x)*7;
+      }
+    },
+    ai(f){ for(const x of fighters) if(!fsHurtMark(f, x) && fsv2_onBelt(f, x) && Math.abs(x.x - f.x) < 330) return true; return false; },
+    draw(f, c){
+      const tb = fsv2_tb(f); if(tb < 0 || tb > 100) return;
+      const cx = f.fsAx;
+      if(tb <= 56) fsv2_beltDraw(f, c, 360*Math.min(1, (tb + 1)/6), tb > 50 ? 1 - (tb - 50)/6 : 1, tb);
+      c.save();
+      for(const x of fighters){   // a packed foe is a taped parcel
+        if(x.dead || x.idx === f.idx || x.team === f.team) continue;
+        if(Math.abs(x.x - cx) < 44 && Math.abs(x.y - f.fsAy) < 6 && tb >= 0 && tb < 90){
+          const sh = (tb % 6 < 3) ? 2 : -2;
+          c.globalAlpha = 1; c.fillStyle = '#c9a46c'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillRect(x.x - 24 + sh, x.y - 24, 48, 48); c.strokeRect(x.x - 24 + sh, x.y - 24, 48, 48);
+          c.fillStyle = '#e8d4a8'; c.fillRect(x.x - 6 + sh, x.y - 24, 12, 48); c.strokeRect(x.x - 6 + sh, x.y - 24, 12, 48);
+        }
+      }
+      c.restore();
+    },
+  };
+}
+function fsv2_beltDraw(f, c, L, fade, tb){   // the belt on the floor each side of her, rollers turning, chevrons pointing at her
+  const cx = f.fsAx, fy = f.fsAy + f.r;
+  c.save(); c.globalAlpha = fade; c.fillStyle = '#7d8590'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  c.fillRect(cx - L, fy - 14, 2*L, 14); c.strokeRect(cx - L, fy - 14, 2*L, 14);
+  c.fillStyle = '#4a515a'; for(let x = cx - L + 20; x < cx + L; x += 40){ c.beginPath(); c.arc(x, fy - 7, 5, 0, 7); c.fill(); }
+  c.strokeStyle = '#f2c94c'; c.lineWidth = 3; c.lineCap = 'round';
+  for(const sd of [-1, 1]) for(let q = 0; q < 9; q++){
+    const off = (((q*40 - tb*7) % 360) + 360) % 360, x = cx + sd*off; if(off > L - 10 || off < 20) continue;
+    c.beginPath(); c.moveTo(x + sd*5, fy - 12); c.lineTo(x - sd*3, fy - 7); c.lineTo(x + sd*5, fy - 2); c.stroke();   // points at her
+  }
+  c.restore();
+}
+
+// ---- F9 BASEBALL -- HOME RUN ----------------------------------------------------------------------------------------------------------------
+// Four white bases pop up in a diamond with chalk lines between them (the tell: the lines ARE his path). He runs the bases as a blur: first, over the top to second, down to
+// third, home, then SLIDES 240 px along the floor. 18% to whoever he touches, once; thrown away from the middle of the diamond, forward on the slide.
+function fsv2_diamond(f){
+  const d = fsv2_d(f), hx = f.fsAx, hy = f.fsAy, raw = [[0, 0], [d*280, -80], [0, -160], [-d*280, -80], [0, 0]], P = [];
+  for(const r of raw){ const q = fsClampPos(hx + r[0], hy + r[1]); P.push({ x:q.x, y:(r[1] === 0 ? hy : q.y) }); }
+  return P;
+}
+function fsv2_basePos(f, tb){
+  const P = fsv2_diamond(f), d = fsv2_d(f);
+  if(tb < 0) return P[0];
+  if(tb < 40){ const leg = Math.floor(tb/10), u = ((tb % 10) + 1)/10; return { x:P[leg].x + (P[leg + 1].x - P[leg].x)*u, y:P[leg].y + (P[leg + 1].y - P[leg].y)*u }; }
+  const u = clamp((tb - 39)/12, 0, 1);
+  return { x:P[4].x + d*240*(1 - (1 - u)*(1 - u)), y:P[4].y };
+}
+function fsv2_baseDraw(f, c, grow, tb){   // bases and chalk lines, drawn in as `grow` goes 0..1
+  const P = fsv2_diamond(f);
+  c.save(); c.globalAlpha = 1; c.lineCap = 'round';
+  const nseg = grow*4;
+  for(let i = 0; i < 4; i++){
+    const u = clamp(nseg - i, 0, 1); if(u <= 0) break;
+    const a = P[i], b = P[i + 1], ex = a.x + (b.x - a.x)*u, ey = a.y + (b.y - a.y)*u;
+    c.setLineDash([14, 10]); c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(ex, ey); c.strokeStyle = '#1c1c1c'; c.lineWidth = 7; c.stroke(); c.strokeStyle = '#ffffff'; c.lineWidth = 4; c.stroke();
+  }
+  c.setLineDash([]);
+  for(let i = 0; i < 4; i++){   // the four bases: first, second, third, home
+    const pop = clamp(grow*5 - i*0.8, 0, 1); if(pop <= 0) continue;
+    const s = 22*pop, p = P[i === 3 ? 4 : i === 0 ? 1 : i === 1 ? 2 : 3]; const q = i === 3 ? P[0] : p;
+    c.save(); c.translate(q.x, q.y); c.rotate(Math.PI/4); c.fillStyle = '#ffffff'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillRect(-s/2, -s/2, s, s); c.strokeRect(-s/2, -s/2, s, s); c.restore();
+  }
+  c.restore();
+}
+function fsv2_baseBase(){
+  const w = FS_WIND;
+  return {
+    id:'groundpound', wind:w, dur:w + 52 + 26, reach:300,
+    catch(f){ return fsBoxAhead(f, 0, 120, 100, f.r); }, lockEnd:w + 52 + FS_LOCK_BEAT,   // CATCH: the start of the first leg
+    start(f, st){ st.hit = new Set(); st.dir = fsv2_d(f); armAtk(f, w, 'fsgather'); },
+    tick(f, st, t){
+      const tb = t - w, d = st.dir;
+      fsv2_relStep(st, tb);
+      if(tb >= 0 && tb < 52){
+        const p = fsv2_basePos(f, tb);
+        if(tb < 40){ f.x = p.x; f.y = p.y; }
+        else if(landable(p.x, f.fsAy + f.r + 2) && p.x > 70 && p.x < WW - 70){ f.x = p.x; }   // the slide follows the floor and stops at a ledge
+        f.vx = 0; f.vy = 0;
+        if(tb % 10 === 0 && tb < 50) shake(3);
+        const mid = f.fsAx;
+        for(const x of fighters){
+          if(fsHurtMark(f, x) || st.hit.has(x.idx)) continue;
+          if(hurtGap(x, f.x, f.y) < f.r + 26){
+            st.hit.add(x.idx);
+            if(tb < 40) fsv2_hit(f, st, x, tb, 18, (Math.sign(x.x - mid) || d)*22, -12, null, true);
+            else fsv2_hit(f, st, x, tb, 18, d*22, -10, null, true);
+          }
+        }
+      }
+    },
+    ai(f){ for(const x of fighters) if(!fsHurtMark(f, x) && Math.abs(x.x - f.x) < 320 && Math.abs(x.y - f.y) < 200) return true; return false; },
+    draw(f, c){
+      const tb = fsv2_tb(f); if(tb < -1 || tb > 60) return;
+      const fade = tb > 52 ? 1 - (tb - 52)/8 : 1;
+      c.save(); c.globalAlpha = fade; fsv2_baseDraw(f, c, 1, tb); c.restore();
+      if(tb >= 0 && tb < 52){   // a white blur behind him; the dust of the slide
+        const d = fsv2_d(f);
+        for(let q = 1; q <= 4; q++){ const p = fsv2_basePos(f, tb - q*1.5); c.globalAlpha = 0.35 - q*0.06; c.fillStyle = '#ffffff'; c.beginPath(); c.arc(p.x, p.y, f.r*(1 - q*0.1), 0, 7); c.fill(); }
+        if(tb >= 40) for(let k = 0; k < 7; k++){ const u = (tb - 40)/12, px = f.x - d*(k*14 + u*20), py = f.fsAy + f.r - 6 - (k % 3)*7 - u*8; c.globalAlpha = 0.7*(1 - u); c.fillStyle = '#d9c7a0'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.5; c.beginPath(); c.arc(px, py, 7 + (k % 2)*3, 0, 7); c.fill(); c.stroke(); }
+      }
+    },
+  };
+}
+
+// ---- F10 WOODY -- PANIC ------------------------------------------------------------------------------------------------------------------------
+// He sees something scary and bolts forward 360 px (4%, a pop up), meets something scary there too, skids, and bolts all the way back past where he started (720 px, 7%,
+// thrown the way he runs), skids again and runs home (4%), and faints. Hop him each time he passes, or stay 360+ px away. The skids show which way he goes next.
+function fsv2_woodyBase(){
+  const w = FS_WIND, PASS = [{ a:0, b:16, s:1 }, { a:20, b:53, s:-1 }, { a:57, b:73, s:1 }];
+  return {
+    id:'fraidystampede', wind:w, dur:w + 73 + 34, reach:360,
+    catch(f){ return fsBoxAhead(f, 0, 160, 90, f.r); }, lockEnd:w + 73 + FS_LOCK_BEAT,
+    start(f, st){ st.hp = [{}, {}, {}]; st.d0 = fsv2_d(f); st.fy = f.y + f.r; armAtk(f, w, 'fsgather'); },
+    tick(f, st, t){
+      const tb = t - w;
+      fsv2_relStep(st, tb);
+      if(tb === 0) shake(5);
+      for(let p = 0; p < 3; p++){
+        const P = PASS[p]; if(tb < P.a || tb >= P.b) continue;
+        const dir = st.d0*P.s;
+        f.face = dir;
+        const nx = f.x + dir*22;
+        if(f.onground && nx > 70 && nx < WW - 70 && landable(nx, st.fy + 2)) f.x = nx;
+        f.vx = 0;
+        for(const x of fighters){
+          if(fsHurtMark(f, x) || st.hp[p][x.idx]) continue;
+          if(Math.abs(x.x - f.x) < 34 + x.r && x.y > st.fy - 90 - x.r && x.y < st.fy + 30){
+            st.hp[p][x.idx] = 1;
+            if(p === 1) fsv2_hit(f, st, x, tb, 7, 18*dir, -10, null, true);
+            else fsv2_hit(f, st, x, tb, 4, 0, -9, null, p === 2);
+          }
+        }
+      }
+      if(tb === 73) f.face = st.d0;
+    },
+    ai(f){ for(const x of fighters) if(!fsHurtMark(f, x) && Math.abs(x.x - f.x) < 340 && Math.abs(x.y - f.y) < 120) return true; return false; },
+    draw(f, c){
+      const tb = fsv2_tb(f); if(tb < -2 || tb > 107) return;
+      const dir = f.face < 0 ? -1 : 1, fy = f.fsAy + f.r;
+      c.save();
+      const run = (tb >= 0 && tb < 16) || (tb >= 20 && tb < 53) || (tb >= 57 && tb < 73), skid = (tb >= 16 && tb < 20) || (tb >= 53 && tb < 57);
+      if(run) for(let q = 1; q <= 4; q++){ c.globalAlpha = 1 - q*0.2; FS_GLYPH.splinter(c, f.x - dir*(q*22), fy - 14 - (q % 2)*10, 8, 0, f); }   // splinters behind him
+      if(skid || (tb >= 0 && tb < 3)) for(let k = 0; k < 5; k++){ c.globalAlpha = 0.8; c.fillStyle = '#d9c7a0'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.5; c.beginPath(); c.arc(f.x - dir*(10 + k*9), fy - 5 - (k % 2)*5, 6, 0, 7); c.fill(); c.stroke(); }
+      if(tb < 8 || (tb >= 16 && tb < 22) || (tb >= 53 && tb < 59)){   // the "!" mark
+        c.globalAlpha = 1; c.fillStyle = '#1c1c1c'; c.fillRect(f.x - 6, f.y - f.r - 46, 12, 28); c.fillStyle = '#ffe45e'; c.fillRect(f.x - 4, f.y - f.r - 44, 8, 24);
+        c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(f.x, f.y - f.r - 10, 7, 0, 7); c.fill(); c.fillStyle = '#ffe45e'; c.beginPath(); c.arc(f.x, f.y - f.r - 10, 4.5, 0, 7); c.fill();
+      }
+      if(run) for(let k = 0; k < 3; k++){ c.globalAlpha = 0.9; FS_GLYPH.drop(c, f.x - dir*10 + (k - 1)*14, f.y - f.r - 8 - ((tb*5 + k*9) % 20), 5, 0, f); }   // sweat
+      if(tb >= 73) for(let k = 0; k < 3; k++){ const a = tb*0.15 + k*2.1; c.globalAlpha = 1; FS_GLYPH.star(c, f.x + Math.cos(a)*24, f.y - f.r - 8 + Math.sin(a)*6, 7, 0, f); }   // fainted: stars round his head
+      c.restore();
+    },
+  };
+}
+
+// ---- F11 PICKLE -- LOADS OF EXPERIENCE, from his controller ---------------------------------------------------------------------------------------
+// A square pixel CROSSHAIR follows the nearest foe for the whole entrance and turns red when it locks (nothing comes from above). He mashes the button: a jagged pixel zap
+// runs along the line from his controller to the crosshair (6% to anyone else standing on it) and the crosshair bursts into chunky pixels (24%, up, 100 px round the mark).
+function fsv2_cross(c, x, y, col, a, k){
+  c.save(); c.globalAlpha = a; c.lineCap = 'butt';
+  const h = 100*k;
+  for(const sx of [-1, 1]) for(const sy of [-1, 1]){
+    const cx = x + sx*h, cy = y + sy*h; c.beginPath(); c.moveTo(cx - sx*32, cy); c.lineTo(cx, cy); c.lineTo(cx, cy - sy*32);
+    c.strokeStyle = '#1c1c1c'; c.lineWidth = 11; c.stroke(); c.strokeStyle = col; c.lineWidth = 6; c.stroke();
+  }
+  fsv2_pix(c, x, y, 12, col, a); c.restore();
+}
+function fsv2_zapPts(x0, y0, x1, y1, tb){   // right-angle steps from the controller to the mark
+  const n = 10, pts = [{ x:x0, y:y0 }];
+  for(let i = 1; i <= n; i++){ const u = i/n, jx = ((i*37 + tb*11) % 9) - 4, jy = ((i*53 + tb*7) % 9) - 4, x = x0 + (x1 - x0)*u + (i < n ? jx : 0), y = y0 + (y1 - y0)*u + (i < n ? jy : 0); pts.push({ x:Math.round(x/8)*8, y:pts[pts.length - 1].y }); pts.push({ x:Math.round(x/8)*8, y:Math.round(y/8)*8 }); }
+  pts.push({ x:x1, y:y1 }); return pts;
+}
+function fsv2_pickleBase(){
+  const P = fsLock({ id:'loadsofexperience', c1:'#6aa83a', c2:'#ffffff', R:100, bx:440, by:260, effect:'blast', delay:18, dmg:24, kb:21, ky:-16 });   // (no art: nothing falls; delay 18, not the old 8: the scripted-foe dodge check found no way out with the mark 22 frames before the shot)
+  const w = FS_WIND, t0 = P.tick;
+  P.tick = function(f, st, t){
+    t0.call(this, f, st, t);
+    if(t === w + 18){   // the zap: anyone else on the line from his controller to the mark
+      const d = Math.sign(f.fsAx - f.x) || fsv2_d(f), hx = f.x + d*f.r, hy = f.y;
+      for(const x of fighters){ if(fsHurtMark(f, x) || st.hit.has(x.idx)) continue; if(fsv2_segGap(x, hx, hy, f.fsAx, f.fsAy) < 15) applyHit(x, 6, 6*d, -4, f); }
+    }
+  };
+  P.draw = function(f, c){
+    const tb = fsv2_tb(f), mx = f.fsAx, my = f.fsAy; if(tb < 0 || tb > 52) return;
+    const d = Math.sign(mx - f.x) || fsv2_d(f), hx = Math.round(f.x + d*f.r), hy = Math.round(f.y);   // (whole pixels: the zap snaps to an 8 px grid, which would turn the host's and a guest's sub-pixel difference into a jump)
+    c.save();
+    if(tb < 18) fsv2_cross(c, mx, my, '#e8453c', 1, 1);
+    if(tb >= 18 && tb < 22){ const z = fsv2_zapPts(hx, hy, mx, my, tb); fsv2_line(c, z, 5, '#6aa83a', 1); const hot = z.slice(); c.globalAlpha = 1; c.strokeStyle = '#ffffff'; c.lineWidth = 2; c.beginPath(); hot.forEach((p, i)=>{ if(i) c.lineTo(p.x, p.y); else c.moveTo(p.x, p.y); }); c.stroke(); }
+    if(tb >= 18 && tb < 42){   // chunky pixels flying out to exactly 100 px, then a few drifting home
+      const u = (tb - 18)/24;
+      for(let i = 0; i < 16; i++){ const a = i*0.3927 + (i % 2)*0.1, r = 100*Math.min(1, u*3), s = 16 - (i % 3)*3; fsv2_pix(c, mx + Math.cos(a)*r, my + Math.sin(a)*r, s*(1 - u*0.5), i % 2 ? '#ffffff' : '#6aa83a', 1 - u); }
+      if(tb >= 26) for(let i = 0; i < 5; i++){ const v = clamp((tb - 26)/16, 0, 1); fsv2_pix(c, mx + (hx - mx)*v + (i - 2)*6, my + (hy - my)*v + (i % 2)*8, 7, '#b8f07a', 1 - v*0.6); }
+    }
+    c.restore();
+  };
+  return P;
+}
+function fsv2_pickleEntranceDraw(f, c, t, face){   // the controller in his hands, and the crosshair on the nearest foe (red and still once the mark is fixed)
+  const W = FSAB_PICKLE.W, S = W - FS_WIND, dir = fsaB_pickleDir(f, t, face), R = f.r;
+  c.save();
+  if(t < W + 2){
+    const g = fsaB_ramp(t, 0, 10), bob = Math.sin(t*0.9)*2, gx = f.x + dir*R*0.85, gy = f.y + R*0.25 + bob;
+    c.globalAlpha = 1; c.fillStyle = '#3a3f4a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5;
+    c.save(); c.translate(gx, gy); c.scale(g, g); c.beginPath(); c.rect(-15, -8, 30, 16); c.fill(); c.stroke();
+    c.fillStyle = '#e8453c'; c.beginPath(); c.arc(8, -1, (t % 6 < 3 ? 3 : 4.5), 0, 7); c.fill(); c.fillStyle = '#6aa83a'; c.beginPath(); c.arc(13, 2, 3, 0, 7); c.fill();
+    c.fillStyle = '#d8d8d8'; c.fillRect(-11, -2, 8, 3); c.fillRect(-8, -5, 3, 9); c.restore();
+  }
+  if(t >= 6 && t < W + 2){
+    const marked = t >= S, o = marked ? null : fsPick(f, 440, 260), x = marked ? f.fsAx : (o ? o.x : f.fsAx), y = marked ? f.fsAy : (o ? o.y : f.fsAy);
+    if(marked || o) fsv2_cross(c, x, y, marked ? '#e8453c' : '#6aa83a', fsaB_ramp(t, 6, 8), 1);
+  }
+  c.restore();
+}
+
+// ---- F12 BONESAW -- CUT HERE ---------------------------------------------------------------------------------------------------------------------
+// A dotted "cut here" line runs from the floor to the top of the screen at the nearest foe (it follows them through the entrance, then stops). Bonesaw dives into the floor
+// and saws straight UP along it: 80 px wide, as high as the screen. Everyone in the column is held and cut (6% three times), then the split (20%) throws them to each side.
+// Step off the line once it stops: height does not save you.
+function fsv2_cutX(f, t, W){ if(t > (W || FS_WIND) - 18){ return f.fsAx; } const o = fsPick(f, 400, 240); return o ? o.x : f.x + fsv2_d(f)*150; }
+function fsv2_cutLine(f, c, x, fy, upTo, tb){   // the dotted line and the scissors at its foot
+  c.save(); c.setLineDash([10, 9]); c.lineCap = 'round';
+  c.beginPath(); c.moveTo(x, fy); c.lineTo(x, upTo); c.globalAlpha = 1; c.strokeStyle = '#1c1c1c'; c.lineWidth = 7; c.stroke(); c.strokeStyle = '#ffffff'; c.lineWidth = 4; c.stroke();
+  c.setLineDash([]);
+  c.globalAlpha = 1; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3.5;   // scissors: two blades and two rings
+  const sw = 6 + 4*Math.sin(tb*0.5);
+  c.beginPath(); c.moveTo(x - sw, fy + 4); c.lineTo(x + 3, fy - 26); c.moveTo(x + sw, fy + 4); c.lineTo(x - 3, fy - 26); c.stroke();
+  c.beginPath(); c.arc(x - 9, fy + 10, 6, 0, 7); c.arc(x + 9, fy + 10, 6, 0, 7); c.stroke();
+  c.restore();
+}
+function fsv2_boneBase(){
+  const w = FS_WIND;
+  return {
+    id:'cutstothecore', wind:w, dur:w + 30 + 28, reach:400,
+    catch(f){ const o = fsPick(f, 400, 240), x = o ? o.x : f.x + fsv2_d(f)*150, fy = f.y + f.r; return { kind:'box', x:x - 40, y:fy - 400, w:80, h:400 + 20 }; }, lockEnd:w + 30 + FS_LOCK_BEAT,   // CATCH: the column at the foe the line is on
+    hides(f){ const t = f.fsT || 0, W = f.fsWind || FS_WIND; return !(f.fsC > 0) && t >= W && t < W + 31; },   // he is under the floor
+    start(f, st){ st.col = {}; armAtk(f, w, 'fsgather'); },
+    tick(f, st, t){
+      const tb = t - w;
+      fsv2_relStep(st, tb);
+      if(tb === 0) shake(6);
+      if(tb >= 0 && tb < 30){
+        const cutX = f.fsAx;
+        for(const x of fighters){
+          if(fsHurtMark(f, x)) continue;
+          if(Math.abs(x.x - cutX) < 40 + x.r){
+            fsPin(x, x.x, x.y); st.col[x.idx] = 1;
+            if(tb === 4 || tb === 14 || tb === 24){ applyHit(x, 6, 0, -1, f); puff(x.x, x.y, '#dfe6ee', 3); }
+          }
+        }
+      }
+      if(tb === 30){   // the split
+        shake(14); armAtk(f, 24, 'fsburst'); const cutX = f.fsAx;
+        for(const k in st.col){ const x = fighters[+k]; if(x && !x.dead && !fsHurtMark(f, x)) fsv2_hit(f, st, x, tb, 20, (Math.sign(x.x - cutX) || fsv2_d(f))*23, -12, null, true); }
+      }
+    },
+    ai(f){ const o = fsPick(f, 400, 240); return !!o && !hardInvuln(o); },
+    draw(f, c){
+      const tb = fsv2_tb(f); if(tb < 0 || tb > 46) return;
+      const x = f.fsAx, fy = f.y + f.r, top = fy - 760;
+      c.save();
+      if(tb < 30){
+        fsv2_cutLine(f, c, x, fy, top, tb);
+        const by = fy - 30*tb;   // the blade rising, its teeth running up the line, sawdust from the frame
+        c.globalAlpha = 1; c.fillStyle = '#dfe6ee'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+        for(let i = 0; i < 6; i++){ const yy = by + i*14; c.beginPath(); c.moveTo(x - 7, yy); c.lineTo(x, yy - 8); c.lineTo(x + 7, yy); c.closePath(); c.fill(); c.stroke(); }
+        for(let k = 0; k < 8; k++){ c.globalAlpha = 0.9; c.fillStyle = k % 2 ? '#b4764a' : '#8c5a3c'; c.fillRect(x + ((k*29 + tb*13) % 60) - 30, by + 20 + ((k*17 + tb*9) % 50), 4, 3); }
+      } else {   // the picture splits: a tall white slash and the floor slipped apart either side of it
+        const u = (tb - 30)/16, a = 1 - u;
+        c.globalAlpha = a; c.fillStyle = '#ffffff'; c.fillRect(x - 3 - 8*u, top, 6 + 16*u, fy - top);
+        c.strokeStyle = '#1c1c1c'; c.lineWidth = 4; c.beginPath(); c.moveTo(x - 140, fy + 6*Math.min(1, u*3)); c.lineTo(x - 6, fy + 6*Math.min(1, u*3)); c.moveTo(x + 6, fy - 6*Math.min(1, u*3)); c.lineTo(x + 140, fy - 6*Math.min(1, u*3)); c.stroke();
+      }
+      c.restore();
+    },
+  };
+}
+
+// ---- the twelve, installed: each new base re-wrapped in the entrance the fighter already had (the old row's `fsaA` / `fsaB` object), with the changes noted ----
+{
+  const old = {};
+  for(const n of ['Toothpaste', 'Rose', 'Fan', 'Tapey', 'David', 'Book', 'Bot', 'Box', 'Baseball', 'Woody', 'Pickle', 'Bonesaw']) old[n] = FINAL_SMASHES[n];
+  delete FS_KO_FIX.enemynow;   // that cut (0.5) was for the old 14-shot stream, whose later hits landed on a foe already high; the swirl is two blows
+
+  // F1 Toothpaste: her squeeze-and-cap entrance is kept; the 30-frame recoil slide that carried her back from the stream is gone (the swirl is round her)
+  FINAL_SMASHES['Toothpaste'] = fsaA_wrap(fsv2_toothBase(), Object.assign({}, old.Toothpaste.fsaA, { tick:null }));
+  // F2 Rose: her entrance (the vines round her own stem) is kept
+  FINAL_SMASHES['Rose'] = fsaB_row(fsv2_roseBase(), old.Rose.fsaB);
+  // F3 Fan: the fold-and-snap entrance is kept; the armour half-disc no longer rides out after the blast (there is no charge)
+  FINAL_SMASHES['Fan'] = fsaA_wrap(fsv2_fanBase(), Object.assign({}, old.Fan.fsaA, { after:null }));
+  // F4 Tapey: rewind, play, then the tape; her old eject streaming (the tape off her at the START of the blast) and the 50 px recoil move to the eject frame (58)
+  { const O = old.Tapey.fsaB, P = FSAB_TAPE;
+    FINAL_SMASHES['Tapey'] = fsaB_row(fsv2_tapeBase(), Object.assign({}, O, {
+      tick(f, st, t){
+        const e = P.W + 58;
+        if(t === e){ st.kx = f.x; st.ks = -fsv2_d(f); st.kD = Math.min(P.kb, fsaB_room(f.x, f.y + f.r, st.ks, P.kb, f.r, st.air)); }
+        if(t > e && t <= e + P.kbT && st.kD > 0) fsaB_slide(f, st.kx, st.ks, st.kD, P.kbT, t - e);
+      },
+      draw(f, c, t, dir, base){ if(t < P.W) O.draw(f, c, t, dir, base); },
+    })); }
+  // F5 David: the sigh-and-pat entrance is kept
+  FINAL_SMASHES['David'] = fsaA_wrap(fsv2_davidBase(), old.David.fsaA);
+  // F6 Book: she writes on a page (kept); the huge page then unrolls along the floor in front of her and lies there (the tell)
+  { const O = old.Book.fsaB, W = FSAB_BOOK.W;
+    FINAL_SMASHES['Book'] = fsaB_row(fsv2_bookBase(), Object.assign({}, O, {
+      draw(f, c, t, dir, base){ O.draw(f, c, t, dir, base); if(t >= 4 && t < W) fsv2_bookPage(f, c, 0, 320*fsv2_e((t - 4)/16)); },
+    })); }
+  // F7 Bot: the joy hop is kept; then the legs stretch into stilts and lift him 160 px (render only: the sim keeps him on the floor)
+  { const O = old.Bot.fsaB, P = FSAB_BOT;
+    FINAL_SMASHES['Bot'] = fsaB_row(fsv2_botBase(), Object.assign({}, O, {
+      deform(f, ctx, R, t, dir){
+        if(t >= P.W + 42 + 16) return false;
+        if(t < P.hop){ const u = (t + 1)/P.hop; ctx.translate(0, -P.hopH*4*u*(1 - u)); ctx.rotate(dir*Math.PI*2*fsaB_e(u)); }
+        else if(t < P.hop + 4){ const q = 1 - (t - P.hop)/4; deformAboutFeet(ctx, R, 0, 1 + 0.1*q, 1 - 0.14*q); }
+        const bob = t >= P.W && t < P.W + 42 ? 6*Math.abs(Math.sin(((t - P.W) % 14)*Math.PI/14)) : 0;
+        ctx.translate(0, -fsv2_botRise(t, P.W, P.hop + 4) - bob);
+        return true;
+      },
+      draw(f, c, t){ if(t < P.W) fsv2_botLegs(f, c, t - P.W); },
+    })); }
+  // F8 Box: flaps, tape and peanuts are kept; the belt rolls out along the floor both ways as the flaps open (the tell)
+  { const O = old.Box.fsaB, W = FSAB_BOX.W;
+    FINAL_SMASHES['Box'] = fsaB_row(fsv2_boxBase(), Object.assign({}, O, {
+      draw(f, c, t, dir, base){ O.draw(f, c, t, dir, base); if(t >= 4 && t < W) fsv2_beltDraw(f, c, 360*fsv2_e((t - 4)/14), 1, t); },
+    })); }
+  // F9 Baseball: the hops and the crouch are kept as a runner's start (the big leap is gone); the four bases pop up and the chalk lines draw themselves (the tell)
+  { const O = old.Baseball.fsaB, P = FSAB_BASE;
+    FINAL_SMASHES['Baseball'] = fsaB_row(fsv2_baseBase(), Object.assign({}, O, {
+      deform(f, ctx, R, t, dir){
+        if(t >= P.W) return false;
+        let dy = 0, sx = 1, sy = 1, ang = 0;
+        for(const h of P.hops){
+          if(t >= h[0] && t < h[1]){ const u = (t - h[0])/(h[1] - h[0]); dy = -P.hh*4*u*(1 - u); }
+          if(t >= h[1] && t < h[1] + 3){ const q = 1 - (t - h[1])/3; sx = 1 + 0.10*q; sy = 1 - 0.10*q; }
+        }
+        if(t >= P.cr0){ const k = fsaB_e((t - P.cr0)/(P.W - P.cr0)); sx = 1 + 0.20*k; sy = 1 - 0.30*k; ang = -dir*0.06*k; }
+        ctx.translate(0, dy); deformAboutFeet(ctx, R, ang, sx, sy);
+        return true;
+      },
+      draw(f, c, t, dir, base){ O.draw(f, c, t, dir, base); if(t >= 3 && t < P.W) fsv2_baseDraw(f, c, clamp((t - 3)/(P.W - 8), 0, 1), t); },
+    })); }
+  // F10 Woody: the shaking, wide-eyed entrance is kept
+  FINAL_SMASHES['Woody'] = fsaA_wrap(fsv2_woodyBase(), old.Woody.fsaA);
+  // F11 Pickle: no bell, no gloves, no belly-flop crouch: he holds a controller and bobs to the button presses, and the crosshair is on the nearest foe
+  { const O = old.Pickle.fsaB, P = FSAB_PICKLE;
+    FINAL_SMASHES['Pickle'] = fsaB_row(fsv2_pickleBase(), Object.assign({}, O, {
+      deform(f, ctx, R, t, face){
+        if(t >= P.W) return false;
+        const dir = fsaB_pickleDir(f, t, face);
+        let ang = 0, jx = 0, dy = 0;
+        if(t >= 3){ const q = (t - 3)*0.85, k = fsaB_e((t - 3)/3); jx = Math.sin(q)*2.2*k; ang = Math.sin(q)*0.07*k; dy = -2.2*Math.abs(Math.sin(q*0.5 + 0.3))*k; }
+        for(const p of [P.p1, P.p2]){ const a = t - p; if(a >= 0 && a < 5){ const b = fsaB_bump(a/5); ang += dir*0.12*b; jx += dir*2*b; } }
+        ctx.translate(jx, dy); deformAboutFeet(ctx, R, ang, 1, 1);
+        if(dir !== face) ctx.scale(-1, 1);
+        return true;
+      },
+      draw(f, c, t, face){ fsv2_pickleEntranceDraw(f, c, t, face); },
+    })); }
+  // F12 Bonesaw: the teeth bite into the floor and the cracks spread (kept: he dives); the dotted line and the scissors follow the nearest foe until it stops
+  { const O = old.Bonesaw.fsaA;
+    FINAL_SMASHES['Bonesaw'] = fsaA_wrap(fsv2_boneBase(), Object.assign({}, O, {
+      tick(f, st, t){ if(t === O.W - 18) fsLockAt(f, st, fsPick(f, 400, 240), 150); },   // the line stops following the foe 18 frames before the cut: the column is fixed here
+      draw(f, c, t){ O.draw(f, c, t); if(t >= 4){ const fy = f.y + f.r; fsv2_cutLine(f, c, fsv2_cutX(f, t, O.W), fy, fy - 760, t); } },
+    })); }
+}
 // @finalsmash:end
 // EVENT FIGHTERS: an assist who has become an event fighter leaves the bag only once events have launched (eventsLaunched: THE CALENDAR's
 // EVENT_LAUNCH, still unset), so no player loses an assist before they can earn the fighter it became. Each kit job adds its name.
@@ -91138,7 +91971,7 @@ const FS_BLURBS = {   // FS MENU LINES: each fighter's Final Smash as the menus 
   "Saw": ["Spin Cycle Overdrive", "A spinning blade round her holds nearby foes while it saws them, then throws them."],
   "Tennis Ball": ["Ball Machine", "Ten bouncing balls roll out along the floor in front of him."],
   "Snowball": ["Avalanche", "Sends one huge snowball ahead through everyone, then two small ones behind it."],
-  "Book": ["Overdue", "Books circle her, then snap shut and fly out across the stage at the two nearest foes."],
+  "Book": ["Turn the Page", "A giant page turns up and over, scooping foes and flinging them behind her."],
   "Ruby": ["Refraction", "Three gem bolts, low, middle and high, pierce foes and bounce around."],
   "Needle": ["Cut in Half", "One long thin cut slices along the floor through everyone it meets."],
   "Pin": ["Popped", "Climbs into a giant mech suit and stomps all over a foe."],
@@ -91160,12 +91993,12 @@ const FS_BLURBS = {   // FS MENU LINES: each fighter's Final Smash as the menus 
   "Naily": ["Nailed It", "Fires three volleys of piercing nails in a tight fan across the stage."],
   "Pillow": ["Fluff Bounce", "Runs experiments on a foe in her journal, one page after another."],
   "Remote": ["Signal Jam", "Rewinds, fast-forwards and turns up the volume on a held foe, then mutes them."],
-  "Rose": ["Thorn Lash", "Binds the nearest foe in thorns, lashes them six times, then throws them."],
+  "Rose": ["Briar Path", "A thorn vine snakes across the floor, blooming roses, then whips back."],
   "Taco": ["Retractable Arms", "Traps a foe in a giant jawbreaker and rolls it over them."],
   "TV": ["Static Burst", "Calls a robot spider that catches a foe and mauls them."],
-  "Woody": ["Fraidy Stampede", "Bolts in fright, leaving a rush of splinters along the floor."],
-  "Toothpaste": ["You're My Enemy Now!", "Squirts fourteen blobs of paste forward, then one big glob through everyone."],
-  "David": ["Aw, Seriously!", "A ground pound, then a shockwave that carries on out farther."],
+  "Woody": ["Fraidy Panic", "Bolts forward, bolts back past the start, runs home, then faints."],
+  "Toothpaste": ["You're My Enemy Now!", "Paste winds out round her in a sticky spiral, then flashes and bursts."],
+  "David": ["Tantrum Cloud", "Becomes a fight cloud that rolls forward, swallows foes, pummels them, then bursts."],
   "Firey Jr.": ["Spark Jr.", "Ten sparks fly out all round him, twice."],
   "Fern": ["Photosynthesis", "Winds the nearest foe in vines, lashes them, and heals himself."],
   "Ruler": ["By Exactly My Measure", "Grabs a foe and hits them on an exact, even beat."],
@@ -91186,24 +92019,24 @@ const FS_BLURBS = {   // FS MENU LINES: each fighter's Final Smash as the menus 
   "Taco (II)": ["The Arena of Death", "Swallows rocks and spits them back, then fires a giant lemon point-blank."],
   "Marshmallow": ["No Way!", "Her scream flips gravity around a held foe, then halts them."],
   "Apple": ["Pencil Throw", "Throws three pencils straight ahead that pierce everyone in the way."],
-  "Baseball": ["Ground Pound", "Shockwaves run out along the floor both ways; hop them."],
-  "Pickle": ["Loads of Experience", "Marks the nearest foe, then belly-flops a pickle down on that spot."],
+  "Baseball": ["Home Run", "Runs the bases in a blur, then slides home through everyone on the way."],
+  "Pickle": ["Loads of Experience", "A crosshair locks on the nearest foe, then a pixel zap bursts there."],
   "Nickel (II)": ["Double Zinger", "Two remarks at once: a burst around him, then a wider one."],
   "Paper": ["Somebody Check for Pianos", "Rolls two pianos along the floor at the nearest foe, a beat apart."],
   "Microphone": ["Deafeningly Loud", "A huge shout runs out along the floor ahead of her."],
   "Salt": ["Shake", "Shakes ten grains in an arc ahead of her, then ten more."],
   "Test Tube": ["Glass Up", "Sends a foe through a portal, sprays acid, and loops them through time three times."],
-  "Box": ["Everything Packed", "Packs the nearest foe in a box, knocks it four times, then ships them."],
+  "Box": ["Conveyor", "A belt carries foes to her; each is packed, knocked, then shipped out."],
   "Trophy": ["Blackmail", "A flash catches a foe, the photo is the blow, and their hits weaken."],
   "Goo": ["Engulf", "Swells to swallow a foe, hits them ten times, then spits them out."],
   "Lifering": ["We've Got a Sinker!", "Whistles, then sprints flat out along the floor through everyone in front."],
-  "Bonesaw": ["Cuts Right to the Core", "Saws a foe in three slow strokes, then makes one last big cut."],
+  "Bonesaw": ["Cut Here", "Saws straight up a dotted line, splitting everyone standing on it."],
   "Spikey": ["Can't Hold It In", "Lets go of every spike at once, flying out in all directions."],
   "Candle": ["Crystal Chime", "Crystals burst out of the floor on both sides of her, tripping foes."],
   "Cammy": ["Say Cheese!", "A flash goes off ahead of him and stuns whoever is in frame."],
   "Cheesy": ["Kick! Soccer! Pun!", "Kicks five bouncing balls, then a big goal ball through everyone."],
   "Dough": ["Shameless Knockoff", "Puts a mansion up for rent and takes foes into its trap-filled room."],
-  "Fan": ["You Leave Us Alone!", "An armoured charge along the floor through everyone in his way."],
+  "Fan": ["Full Blast", "A cone of wind shoves foes back, pelts them with pages, then one last gust."],
   "Soap": ["Scrub for Hours", "Sprays, wipes and vacuums a foe as if they were dirt."],
   "Tissues": ["Achoo", "Sneezes fourteen blobs in a stream, then one huge blob through everyone."],
   "Yin-Yang": ["Yang Throws Yin", "Yin rolls out both ways along the floor, knocking everyone down."],
@@ -91216,10 +92049,10 @@ const FS_BLURBS = {   // FS MENU LINES: each fighter's Final Smash as the menus 
   "MeTag": ["Barriers", "Finds a foe and bounces them between glass barrier walls."],
   "Poppy": ["Meeple Connection", "Three MeTags bounce a foe between them, then launch them up and away."],
   "Silver Spoon": ["Glowing Gold", "Turns gold, gilds a foe with hits, and powers himself up for a while."],
-  "Tapey": ["Playback", "A wave plays back from her speaker and rolls along the floor."],
+  "Tapey": ["Rewind", "Tape sticks to everyone it touches, reels them in, then ejects them."],
   "Tea Kettle": ["Mama's Gotcha!", "Hugs a foe and sits them down to dinner for one, then boils over."],
   "Teddy Bear": ["Yes!!! Smash!!!", "Smashes a plate, a TV, then the table in a rage room, each bigger."],
-  "Bot": ["Gotcha!", "Holds the nearest foe, kicks six times, then 'there's more!' for a big throw."],
+  "Bot": ["Stilt March", "Stilt legs lift Bot up for three big kicks along the floor."],
   "Eraser": ["Wipe the Slate Clean", "Erases every enemy shot and trap, then a giant eraser sweeps the floor."],
   "8-Ball": ["The Break", "Spins and breaks apart like a rack, bursting out seven bouncing balls."],
   "Spongy": ["Cannonballs Were on Sale", "Flies a jet and drops cannonballs on the two nearest foes, four times."],
