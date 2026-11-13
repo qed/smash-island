@@ -100803,7 +100803,8 @@ const EVENT_MATCHES = {
     { n:2, name:'Death P.A.C.T. Again', kind:'3v1', stage:'canyon', sides:[['you'], ['Black Hole', 'Remote', 'Tree']], items:'on', smashBalls:false, twist:null, stocks:2, youStocks:3 },
     // BACK TO THE TOP: Sky Towers in low gravity (Yoyleland's, anywhere: LOW GRAVITY ANYWHERE), a free-for-all of four: you, Black Hole, Pen and
     // Flower. The design names no items: the usual, with Smash Balls (as The Trebuchet).
-    { n:3, name:'Back to the Top', kind:'challenge', stage:'skytower', sides:[['you'], ['Black Hole'], ['Pen'], ['Flower']], items:'on', smashBalls:true, twist:'lowgrav', stocks:2 },
+    // BACK TO THE TOP (2026-11-13, the owner's CONTEST for his third match, in place of the plain low-gravity twist): carry balls up to a small black hole; see TP. Low gravity stays (the rule's twists:['lowgrav']). Items are off (a crate is a sky drop) and so are Smash Balls.
+    { n:3, name:'Back to the Top', kind:'challenge', stage:'skytower', sides:[['you'], ['Black Hole'], ['Pen'], ['Flower']], items:'off', smashBalls:false, twist:'contest', contest:'top', stocks:3 },   // BLACK HOLE'S CONTEST (CONTEST_RULES.top)
   ],
   // CLOCK (build step 13, kit 5). The canon team, checked against the wiki's All For One page (as fetched for an earlier job): The Losers! were
   // "Cake, Clock, Coiny, Eggy, Firey, Loser, Needle, Pin, and the Fourse" -- so the design's Clock + Loser + Pin are his own side, and Teardrop
@@ -103392,6 +103393,217 @@ function drawDigc(){
   }
   c.restore();
 }
+
+// ---------- EVENT FIGHTERS: BLACK HOLE'S CONTEST, BACK TO THE TOP (the event-contests build, 2026-11-13; design smash-bal/reports/event-contests-v1.md, no. 2) ----------
+// Sky Towers in low gravity (twists:['lowgrav'], the twist's own effect), a free-for-all of four, no items, no Smash Balls, three stocks. THREE BALLS lie on the floor, each on its
+// own spot, grown in where it stands. Touch one to carry it (one at a time; it shows over your head). A small black hole (a prop, not the fighter) hangs over the highest big
+// platform of the staircase: reach it with a ball (within BHT.dunkR) and that is +1, and the ball grows in again on its floor spot BHT.back frames later. ANY hit that lands on a
+// carrier knocks the ball out of its hands (a multi-hit move is one hit: the ball is already out for the rest of it); it hops beside them and is not theirs again for BHT.np frames.
+// A loose ball within BHT.pullR of the hole is drawn in and swallowed for nobody (it grows in again on its floor spot). A KO puts the ball back on the nearest floor (placed and
+// grown in, never dropped). First to BHT.need wins; no timer. Nothing comes from the sky. CPUs: a plan over the stage's platforms (a graph built in begin(): stand-on spans, an edge
+// for a hop up of at most BHT.climb px and a gap of at most BHT.gap px), a carrier climbs it to the hole, a CPU with no ball goes for the nearest loose one unless a foe is within
+// 150 px, and a carrier or a rival at BHT.gang is everyone's foe (focus). No number of the brain's fighting changed.
+const BHT = { need:5, holeR:46, dunkR:60, pullR:260, pull:0.35, swallowR:30, back:90, np:30, gang:4, climb:200, gap:130, hole:130, br:16, spots:[0.22, 0.5, 0.78] };
+function tpNodes(){
+  const gy = groundY(), N = [];
+  (FLOOR_SEGS || [{ x0:0, x1:WW }]).forEach(q => N.push({ x0:q.x0, x1:q.x1, y:gy, floor:true }));
+  worldPlats.forEach(p => { if(p.w > 40) N.push({ x0:p.x, x1:p.x + p.w, y:p.y }); });
+  return N;
+}
+function tpEdge(A, B){
+  const gapx = Math.max(0, Math.max(A.x0, B.x0) - Math.min(A.x1, B.x1)), rise = A.y - B.y;
+  if(rise > 8) return rise <= BHT.climb && gapx <= BHT.gap;
+  if(rise >= -8) return gapx > 0 && gapx <= BHT.gap;
+  return gapx <= BHT.gap + 30;
+}
+function tpDist(g){
+  const S = CONTEST; if(S.dist[g]) return S.dist[g];
+  const D = S.nodes.map(() => Infinity); D[g] = 0; const q = [g];
+  for(let h = 0; h < q.length; h++){ const v = q[h]; for(const u of S.radj[v]) if(D[u] === Infinity){ D[u] = D[v] + 1; q.push(u); } }
+  return (S.dist[g] = D);
+}
+// The node a fighter stands on (-1: none).
+function tpNodeOf(f){
+  const feet = f.y + f.r; let best = -1, bd = 1e9;
+  CONTEST.nodes.forEach((n, i) => { if(f.x >= n.x0 - 4 && f.x <= n.x1 + 4){ const d = Math.abs(feet - n.y); if(d < bd){ bd = d; best = i; } } });
+  return bd <= 10 ? best : -1;
+}
+// The node a ball rests on or falls onto.
+function tpBallNode(b){
+  let best = -1, bd = 1e9;
+  CONTEST.nodes.forEach((n, i) => { if(b.x >= n.x0 && b.x <= n.x1){ const d = n.y - (b.y + BHT.br); if(d >= -12 && d < bd){ bd = d; best = i; } } });
+  return best;
+}
+function tpLoose(b){ return b.by == null && b.gone == null && hazardT - b.born >= GROW_IN; }
+// A CPU takes one step toward node g (standing at x = ax once on it): the next node on the way, a hop up (the jump held for the full height), a drop through a plank, or a walk off an edge.
+function tpGo(f, inp, g, ax){
+  const S = CONTEST, N = S.nodes;
+  if(f.onground){ const c0 = tpNodeOf(f); if(c0 >= 0 && f._bttN !== c0){ f._bttN = c0; f._bttTo = -1; } if(c0 < 0) f._bttN = -1; }
+  else if(f._bttJhold > 0 && f.vy < 0){ f._bttJhold--; inp.jump = true; } else f._bttJhold = 0;
+  const c = f._bttN == null ? -1 : f._bttN;
+  // stuck for two seconds in one spot: a hop the other way (the way out of anything the plan did not foresee)
+  if(f.onground){
+    if(!f._bttPosT || hazardT - f._bttPosT >= 120){ f._bttStuck = f._bttPos != null && Math.abs(f.x - f._bttPos) < 30 && hazardT - (f._bttPosT || 0) < 400; f._bttPos = f.x; f._bttPosT = hazardT; if(f._bttStuck){ f._bttShakeT = hazardT + 40; f._bttShakeD = Math.random() < 0.5 ? -1 : 1; } }
+  }
+  if(hazardT < (f._bttShakeT || 0)){ if(f._bttShakeD < 0) inp.left = true; else inp.right = true; if(f.onground){ inp.jump = true; f._bttJhold = 15; } return; }
+  if(c < 0 || c === g || !f.onground){
+    let tx = ax;
+    if(!f.onground && c !== g && f._bttTo >= 0){ const B = N[f._bttTo]; tx = (B.x1 - B.x0 < 60) ? (B.x0 + B.x1)/2 : Math.max(B.x0 + 24, Math.min(B.x1 - 24, f.x)); }
+    if(!f.onground && f._bttTo >= 0 && c !== g){ const B = N[f._bttTo]; if(f.vy > 0 && f.jumps > 0 && f.y + f.r > B.y - 6 && Math.abs(f.x - tx) < 120 && (hazardT & 1) === 0) inp.jump = true; }
+    if(tx != null && Math.abs(f.x - tx) > (f.onground ? 18 : 10)){ if(tx < f.x) inp.left = true; else inp.right = true; }
+    if(f.onground && c === g && ax != null && Math.abs(f.x - ax) <= 18 && f._bttJump){ inp.jump = true; f._bttJhold = 10; }
+    return;
+  }
+  const D = tpDist(g), A = N[c]; let nx = -1, nd = 1e9;
+  for(const j of S.adj[c]){ if(!(D[j] < D[c])) continue; const B = N[j], d = Math.max(0, B.x0 - f.x, f.x - B.x1); if(d < nd){ nd = d; nx = j; } }
+  if(nx < 0){ const L = S.adj[c]; if(!L.length) return; nx = L[Math.floor(Math.random()*L.length)]; }   // (no way on that the plan knows: any neighbour)
+  f._bttTo = nx;
+  const B = N[nx], rise = A.y - B.y, dB = Math.max(0, B.x0 - f.x, f.x - B.x1), dir = B.x0 > f.x ? 1 : -1;
+  const edgeA = dir > 0 ? A.x1 : A.x0, atEdge = Math.abs(f.x - edgeA) <= 14;
+  const tx = (B.x1 - B.x0 < 60) ? (B.x0 + B.x1)/2 : Math.max(B.x0 + 24, Math.min(B.x1 - 24, f.x));
+  if(rise > 8){
+    if(dB <= 40 || atEdge){ inp.jump = true; f._bttJhold = 15; if(Math.abs(tx - f.x) > 10){ if(tx < f.x) inp.left = true; else inp.right = true; } }
+    else { if(dir < 0) inp.left = true; else inp.right = true; }
+  } else if(dB === 0 && rise < -8){   // (a drop through a plank: a person holds Down and jumps; a CPU's own keys do not drop in this match, so it is let through as other CPU code does)
+    if(f.controller === 'local' || f.controller === 'remote') inp.down = true;   // (a person holds Down a moment: the game's own drop, DROP_HOLD)
+    else if(f.onground && onDropLedge(f)){ inp.down = true; f.dropping = 10; f.vy = 5; f.onground = false; f.y += f.r*0.6; }
+  }
+  else {
+    if(dir < 0) inp.left = true; else inp.right = true;
+    if(Math.abs(rise) <= 8 && atEdge){ inp.jump = true; f._bttJhold = 15; }
+  }
+}
+function tpDrawBall(c, x, y, r){
+  if(r <= 0.5) return;
+  c.fillStyle = '#ff9a3c'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); c.stroke();
+  c.lineWidth = 1.5; c.beginPath(); c.moveTo(x - r, y); c.lineTo(x + r, y); c.moveTo(x, y - r); c.lineTo(x, y + r); c.stroke();
+}
+CONTEST_RULES.top = {
+  twists:['lowgrav'],
+  winText(f){ return f.name + ' fed the hole ' + BHT.need + '!'; },
+  score(f){ return f._bttScore || 0; },
+  begin(){
+    const S = CONTEST, gy = groundY();
+    S.nodes = tpNodes(); S.dist = {};
+    S.adj = S.nodes.map((A, i) => { const L = []; S.nodes.forEach((B, j) => { if(i !== j && tpEdge(A, B)) L.push(j); }); return L; });
+    S.radj = S.nodes.map(() => []); S.adj.forEach((L, i) => L.forEach(j => S.radj[j].push(i)));
+    let top = -1; S.nodes.forEach((n, i) => { if(!n.floor && n.x1 - n.x0 >= 400 && (top < 0 || n.y < S.nodes[top].y)) top = i; });   // (the highest big platform: the top of the staircase)
+    S.top = top; const T = S.nodes[top];
+    S.hole = { x:(T.x0 + T.x1)/2, y:T.y - BHT.hole };
+    S.balls = BHT.spots.map(u => { const x = floorSafeX(WW*u, 90); return { x, y:gy - BHT.br, vx:0, vy:0, by:null, home:x, born:0, gone:null, npBy:-1, npT:0 }; });
+    for(const f of fighters){ f._bttScore = 0; f._bttBall = null; }
+  },
+  step(){
+    const S = CONTEST; if(S.winner != null) return;
+    const gy = groundY(), H = S.hole, t = hazardT;
+    for(const b of S.balls){
+      if(b.gone != null){ if(t >= b.gone){ b.gone = null; b.x = b.home; b.y = gy - BHT.br; b.vx = 0; b.vy = 0; b.by = null; b.born = t; } continue; }
+      if(b.by != null){ const f = fighters[b.by]; if(!f || f.dead){ b.by = null; } else { b.x = f.x; b.y = f.y - f.r - 14; } continue; }
+      if(t - b.born < GROW_IN) continue;
+      const dx = H.x - b.x, dy = H.y - b.y, d = Math.hypot(dx, dy);
+      if(d <= BHT.pullR){
+        const sp = 1.5 + BHT.pull*10*(1 - d/BHT.pullR); b.vx = 0; b.vy = 0;
+        if(d <= BHT.swallowR){ b.gone = t + BHT.back; for(let k = 0; k < 8; k++) puff(H.x, H.y, '#7b6cff', 4); continue; }
+        b.x += dx/d*Math.min(sp, d); b.y += dy/d*Math.min(sp, d); continue;
+      }
+      const py = b.y; b.vy += 0.5; b.y += b.vy; b.x += b.vx; b.vx *= 0.97;
+      if(b.x < 30){ b.x = 30; b.vx = Math.abs(b.vx)*0.5; } else if(b.x > WW - 30){ b.x = WW - 30; b.vx = -Math.abs(b.vx)*0.5; }
+      for(const n of S.nodes){ if(b.vy >= 0 && b.x >= n.x0 && b.x <= n.x1 && py + BHT.br <= n.y + 6 && b.y + BHT.br >= n.y){ b.y = n.y - BHT.br; b.vy = 0; b.vx *= 0.3; break; } }
+      if(b.y > gy + 500){ b.gone = t + BHT.back; }   // (lost down a gap: back on its floor spot)
+    }
+    for(const f of fighters){
+      if(f.dead || f._bttBall || f.hitstun > 0) continue;
+      for(const b of S.balls){
+        if(!tpLoose(b) || (b.npBy === f.idx && b.npT > t)) continue;
+        if(Math.hypot(f.x - b.x, f.y - b.y) <= f.r + BHT.br + 8){ b.by = f.idx; f._bttBall = b; if(f.you) tone(520, 0.06, 'triangle', 0.14, 0, 700); break; }
+      }
+    }
+    for(const f of fighters){
+      const b = f._bttBall; if(!b || f.dead) continue;
+      if(Math.hypot(f.x - H.x, f.y - H.y) <= BHT.dunkR){
+        f._bttScore++; b.by = null; b.gone = t + BHT.back; f._bttBall = null; S.dunks = (S.dunks || 0) + 1;
+        for(let k = 0; k < 10; k++) puff(H.x, H.y, k % 2 ? '#ffd23f' : '#7b6cff', 5);
+        tone(f.you ? 660 : 440, 0.1, 'triangle', 0.16, 0, f.you ? 990 : 660);
+        if(f._bttScore >= BHT.need){ contestWin(f); return; }
+      }
+    }
+  },
+  hit(t, from, dmg){
+    const b = t._bttBall; if(!b) return;
+    b.by = null; t._bttBall = null; b.x = t.x; b.y = t.y - 10; b.vx = (from && from.x < t.x ? 1 : -1)*(2 + Math.random()*2); b.vy = -6; b.npBy = t.idx; b.npT = hazardT + BHT.np;
+    CONTEST.knocks = (CONTEST.knocks || 0) + 1;
+    if(t.you) tone(260, 0.1, 'sawtooth', 0.12, 0, 160);
+  },
+  ko(f){
+    const b = f._bttBall; if(!b) return;
+    f._bttBall = null; b.by = null; b.x = floorSafeX(Math.max(100, Math.min(WW - 100, f.x)), 90); b.y = groundY() - BHT.br; b.vx = 0; b.vy = 0; b.born = hazardT;   // (placed on the floor and grown in, never dropped)
+  },
+  world(c, layer){
+    if(layer !== 'under') return;
+    const S = CONTEST, H = S.hole, t = hazardT;
+    c.save();
+    const g = c.createRadialGradient(H.x, H.y, 20, H.x, H.y, BHT.pullR); g.addColorStop(0, 'rgba(123,108,255,0.20)'); g.addColorStop(1, 'rgba(123,108,255,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(H.x, H.y, BHT.pullR, 0, 7); c.fill();
+    c.fillStyle = '#0b0a14'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.arc(H.x, H.y, 28, 0, 7); c.fill(); c.stroke();
+    c.strokeStyle = '#a99bff'; c.lineWidth = 3; c.beginPath(); c.ellipse(H.x, H.y, BHT.holeR, 16, t*0.02, 0, 7); c.stroke();
+    c.strokeStyle = 'rgba(123,108,255,0.7)'; c.lineWidth = 2; c.beginPath(); c.ellipse(H.x, H.y, BHT.holeR - 8, 22, -t*0.03, 0, 7); c.stroke();
+    for(let k = 0; k < 5; k++){ const a = t*0.05 + k*1.256, r = 36 + 10*Math.sin(t*0.07 + k); c.fillStyle = '#d8d0ff'; c.beginPath(); c.arc(H.x + Math.cos(a)*r, H.y + Math.sin(a)*r*0.6, 2.5, 0, 7); c.fill(); }
+    for(const b of S.balls){
+      if(b.gone != null || b.by != null) continue;
+      const k = growK(t - b.born); if(k <= 0) continue;
+      tpDrawBall(c, b.x, b.y, BHT.br*k);
+    }
+    c.restore();
+  },
+  hud(c){
+    const rows = fighters.slice().sort((a, b) => (a.you ? -1 : 0) - (b.you ? -1 : 0)), N = BHT.need, st = 17, R = 7;
+    const pw = 300, rh = 18, ph = 24 + rh*rows.length + 6, px = W - pw - 12, py = 10;
+    c.save(); c.globalAlpha = 0.9;
+    c.fillStyle = 'rgba(28,24,38,0.78)'; itemRoundRect(c, px, py, pw, ph, 8); c.fill();
+    c.font = "800 12px 'Baloo 2', system-ui"; c.textBaseline = 'middle'; c.textAlign = 'left';
+    c.fillStyle = '#ffd23f'; c.fillText('BACK TO THE TOP', px + 10, py + 12);
+    c.font = "700 10px 'Baloo 2', system-ui"; c.fillStyle = '#fff'; c.textAlign = 'right'; c.fillText('first to ' + N, px + pw - 10, py + 12);
+    rows.forEach((f, i) => {
+      const y = py + 24 + rh*i + rh/2, n = f._bttScore || 0;
+      c.globalAlpha = f.dead ? 0.4 : 0.9;
+      c.fillStyle = f.color || '#fff'; c.beginPath(); c.arc(px + 14, y, 5, 0, 7); c.fill();
+      c.font = (f.you ? "800" : "700") + " 11px 'Baloo 2', system-ui"; c.textAlign = 'left'; c.fillStyle = '#fff';
+      c.fillText((f.you ? 'YOU' : f.name).slice(0, 11), px + 24, y);
+      for(let s = 0; s < N; s++){ const x = px + 112 + s*st; c.fillStyle = s < n ? '#ff9a3c' : 'rgba(255,255,255,0.18)'; c.beginPath(); c.arc(x, y, R, 0, 7); c.fill(); }
+      c.textAlign = 'right'; c.font = "800 11px 'Baloo 2', system-ui"; c.fillStyle = n >= BHT.gang ? '#ffd23f' : '#fff';
+      c.fillText(f.dead ? 'out' : n + '/' + N, px + pw - 10, y);
+    });
+    c.restore();
+  },
+  badge(f, c){
+    if(!f._bttBall) return;
+    const base = nameTagShown(f) ? -(f.r + (f.you ? 28 : 16)) - 9 : -f.r - 6;
+    c.save(); tpDrawBall(c, f.x, f.y + base - 14, BHT.br); c.restore();
+  },
+  focus(f, foes){
+    let pick = null, bd = 1e9;
+    for(const o of foes) if((o._bttScore || 0) >= BHT.gang && (!pick || o._bttScore > pick._bttScore)) pick = o;
+    if(!pick) for(const o of foes) if(o._bttBall){ const d = Math.hypot(o.x - f.x, o.y - f.y); if(d < 400 && d < bd){ bd = d; pick = o; } }
+    if(pick && f.aiTarget !== pick){ f.aiTarget = pick; f.aiTimer = 45; }
+  },
+  want(f, inp, t, dist){
+    const S = CONTEST; if(f.dead || S.winner != null) return false;
+    if(f._bttBall){ f._bttJump = true; tpGo(f, inp, S.top, S.hole.x); f._bttJump = false; return true; }
+    if(t && dist < 150) return false;   // (a foe in its face comes first)
+    const cur = f.onground ? tpNodeOf(f) : (f._bttN == null ? -1 : f._bttN);
+    let best = null, bs = 1e9, bg = -1;
+    for(const b of S.balls){
+      if(!tpLoose(b) || (b.npBy === f.idx && b.npT > hazardT) || Math.hypot(b.x - S.hole.x, b.y - S.hole.y) < BHT.pullR*0.9) continue;
+      const g = tpBallNode(b); if(g < 0) continue;
+      const D = tpDist(g), steps = cur >= 0 ? D[cur] : 0; if(!(steps < Infinity)) continue;
+      const s = steps*1000 + Math.hypot(b.x - f.x, b.y - f.y); if(s < bs){ bs = s; best = b; bg = g; }
+    }
+    if(!best) return false;
+    tpGo(f, inp, bg, best.x);
+    return true;
+  },
+};
+EVENT_TWIST_WORDS['contest:top'] = { icon:'\u{1F573}\u{FE0F}', short:"Black Hole's contest: back to the top", words:"Black Hole's contest: carry a ball up to the hole. Any hit knocks it loose. First to 5 wins.", goal:'Carry 5 balls up to the hole' };
 
 // ---------- EVENT FIGHTERS: THE SCREENS (event-fighters-phase1.md, section 2, "Screens"; build step 9) ----------
 // The title's event card (refreshEventCard, beside the Daily card: the title keeps its six buttons), the event page (buildEventPage), the select
