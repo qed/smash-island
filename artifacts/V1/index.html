@@ -100824,7 +100824,7 @@ const EVENT_MATCHES = {
     { n:2, name:'The Losers!', kind:'3v1', stage:'pillars', sides:[['you'], ['Clock', 'Loser', 'Pin']], items:'on', smashBalls:true, twist:null, stocks:2, youStocks:3 },
     // FAST FORWARD: the A-twos-ment Park drawn behind Goiky Field (the design names the backdrop, not the stage; Goiky is the open, flat field), and
     // everyone fast all match. A free-for-all of four.
-    // FAST FORWARD (2026-11-13, the owner's CONTEST for its third match, in place of the plain fast twist): a clock each, run out in the light; see CK. Items are off (a crate is a sky drop).
+    // FAST FORWARD (2026-11-13, the owner's CONTEST for its third match; REBUILT to the owner's own concept: a zone for points, a timer each, clocks outside the zone for time, a hit costs time, fewer and fewer clocks; see CK). Items are off.
     { n:3, name:'Fast Forward', kind:'challenge', stage:'goiky', sides:[['you'], ['Clock'], ['Ice Cube'], ['Cake']], items:'off', smashBalls:false, twist:'contest', contest:'clock', backdrop:'twopark', stocks:3 },   // CLOCK'S CONTEST (CONTEST_RULES.clock)
   ],
   // CLOUDY (build step 13). The design's three ("The 30 event matches"). The teams are the design's: the BFDI wiki refuses requests from here
@@ -101072,7 +101072,7 @@ Object.assign(EVENT_TWIST_WORDS, {
 });
 Object.assign(EVENT_TWIST_WORDS, {
   'contest:dig': { icon:'⛏️', short:"Spongy's contest: the dig", words:"Spongy's contest: dig out to a corner exit. Your moves are buried in the dirt; the first out fight stronger." },
-  'contest:clock': { icon:'⏩', short:"Clock's contest: fast forward", words:"Clock's contest: your clock runs while you stand in the light. Alone, it runs double. First to zero wins.", goal:'Stand in the light to run out your clock' },
+  'contest:clock': { icon:'⏩', short:"Clock's contest: fast forward", words:"Clock's contest: stand in the zone for points. Your timer counts down all the time: grab the clocks outside the zone for time, and a hit costs you time. The clocks come less and less. Run out of time and you are out.", goal:'Stand in the zone for points. Grab clocks for time!' },
   'contest:pages': { icon:'📄', short:"Foldy's contest: carried off", words:"Foldy's contest: gusts blow pages off the stack. Catch 30. A hard hit knocks one out of you.", goal:'Catch 30 pages' },
   'contest:search': { icon:'🔦', short:"Stapy's contest: the search party", words:"Stapy's contest: Foldy hides in the dark. Find her 7 times, or have the most finds at 3:00. A hard hit puts your light out for 3 seconds.", goal:'Find Foldy 7 times' },
   'contest:collection': { icon:'🧩', short:"Cloudy's contest: the collection", words:"Cloudy's contest: hold all 9 kinds of item for 10 seconds. Every 3rd hit you take, the hitter steals one. A KO drops your items." },
@@ -103160,69 +103160,132 @@ function contestWalk(f, inp, x, near){
   if(dir < 0) inp.left = true; else inp.right = true; return true;
 }
 
-// CLOCK: FAST FORWARD (the owner: "do the contests"; the design's no. 3, the gag is Clock as the timer). Everybody has a clock that starts at 40 s. A clock runs
-// only while its fighter stands in THE LIGHT (a strip of floor 220 px wide, 140 px tall) and is not in hitstun; ALONE in the light it runs double (fast forward).
-// The light moves every 12 s to another of five fixed floor spots (never the same twice) and the next spot blinks for 2 s first. A clock never goes back up, a
-// KO costs a stock only. Win: your clock reaches 0:00. Everyone is fast all match (twists:['fast'], the twist's own effect). CPUs: outside the light with no foe
-// in their face they walk to it (in the last 2 s, to the blinking spot); in it, they do not chase a foe more than CK.leash px out of it; a rival under 10 s is
-// everyone's foe. Nothing about the CPUs' fighting was changed. Items are off here (a crate would be a sky drop).
-const CK = { start:2400, w:220, h:140, move:720, tell:120, alone:2, gang:600, leash:200, fr:[0.14, 0.32, 0.5, 0.68, 0.86] };
+// CLOCK: FAST FORWARD (REBUILT 2026-11-13 to the owner's own words: "there was a zone you had to stand in for points. your timer went down over time, and there were
+// clocks on the outside of the zone which gave you time back. getting hit reduced your time, and the clocks gradually spawned less and less."). Nothing else is added.
+// THE ZONE: a fixed strip of floor in the middle (CK.w wide, CK.h tall); standing in it earns POINTS (1 per CK.ptsEvery frames). THE TIMER: every fighter has one
+// (CK.start), counting down all the time. CLOCKS: a clock grows in on the floor or a platform OUTSIDE the zone (never from the sky, never timing out; at most CK.max at once);
+// touching one gives CK.gain of time back (up to CK.cap). A HIT takes CK.hit off the victim's timer; hits inside CK.combo frames of the one that counted are the same
+// attack (a combo is one hit). THE CLOCKS SPAWN LESS AND LESS: the gap before the next is CK.gap0 + CK.gapStep*n frames after n have grown in.
+// THE OWNER'S FULL SPEC (11-07 notes + 11-13): zone control scores while you stand in it; pickups spawn outside it, so you leave to fetch them and go back in; they come
+// slower and slower; the match is fast (the 'fast' twist: twists:['fast']); MOST POINTS WINS. The one thing not said is what happens at zero, so the default (change it
+// here): CK.atZero 'stay' = at 0:00 you are OUT OF THE CONTEST (no more points, no clocks; your points stay) but stay on the stage as a fighter, so a fighter out of time can
+// still be the winner on points; 'out' takes the fighter off the stage at zero (then only fighters still on stage can win). The match ends when every fighter's timer is out
+// or at CK.time (3:00); the winner has the most points (a tie: the longer timer); a stock-out fighter (3 KOs) is off the stage and cannot win. A KO costs a stock only.
+// CPUs: with a foe in their face they fight; with their timer under CK.hungry, or a clock within CK.near, they fetch the nearest reachable clock (jumping to platforms);
+// otherwise they walk to the zone and stand in it, fighting what comes and not chasing a foe far out of it.
+const CK = { twists:['fast'], start:3600, cap:5400, gain:600, hit:120, combo:36, ptsEvery:6, w:300, h:140, first:240, gap0:150, gapStep:45, retry:60, max:3, r:17, lift:26, climb:170, reach:760,
+             hungry:1500, near:260, low:900, leash:200, time:10800, atZero:'stay' };
 function ckSec(fr){ const t = Math.max(0, fr)/60; return Math.floor(t/60) + ':' + (t % 60 < 10 ? '0' : '') + (t % 60).toFixed(1); }
 function ckIn(f){ const z = CONTEST.zone; return !f.dead && Math.abs(f.x - z.x) <= CK.w/2 && f.y + f.r >= groundY() - CK.h && f.y - f.r <= groundY() + 20; }
-function ckPick(avoid){ const L = []; for(let i = 0; i < CK.xs.length; i++) if(i !== avoid) L.push(i); return L[Math.floor(Math.random()*L.length)]; }
+function ckLive(){ return fighters.filter(f => !f.dead && !f._ckOut); }
+function ckBest(list){ return list.slice().sort((a, b) => (b._ckP - a._ckP) || (b._ckT - a._ckT))[0]; }
+function ckSpawn(S){
+  const L = S.spots.filter(p => fighters.every(f => f.dead || Math.hypot(f.x - p.x, f.y - p.y) > 100) && S.clocks.every(c => Math.hypot(c.x - p.x, c.y - p.y) > 160));
+  if(!L.length) return null;
+  const p = L[Math.floor(Math.random()*L.length)], c = { x:p.x, y:p.y, t0:hazardT };
+  S.clocks.push(c); for(let i = 0; i < 5; i++) puff(c.x, c.y - CK.lift, '#ffd23f', 3);
+  return c;
+}
+function ckOut(f){
+  f._ckOut = true; f._ckT = 0;
+  for(let k = 0; k < 10; k++) puff(f.x, f.y - f.r, '#9aa0a6', 4);
+  if(CK.atZero !== 'out') return;
+  f.stocks = 0; f.dead = true; f.alive = false; f._outT = hazardT;
+  if(f.placement == null) f.placement = fighters.filter(o => !o.dead).length + 1;
+  SFX.ko && SFX.ko();
+}
+function ckDrawClock(c, x, y, k, t){
+  c.save(); c.translate(x, y); c.scale(k, k);
+  c.fillStyle = '#fff'; c.strokeStyle = '#ffb300'; c.lineWidth = 4; c.beginPath(); c.arc(0, 0, CK.r, 0, 7); c.fill(); c.stroke();
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.5; for(let i = 0; i < 12; i += 3){ const a = i*Math.PI/6; c.beginPath(); c.moveTo(Math.sin(a)*12, -Math.cos(a)*12); c.lineTo(Math.sin(a)*15, -Math.cos(a)*15); c.stroke(); }
+  c.lineWidth = 2.2; const a1 = t*0.05, a2 = t*0.004;
+  c.beginPath(); c.moveTo(0, 0); c.lineTo(Math.sin(a1)*13, -Math.cos(a1)*13); c.stroke();
+  c.beginPath(); c.moveTo(0, 0); c.lineTo(Math.sin(a2)*8, -Math.cos(a2)*8); c.stroke();
+  c.restore();
+}
 CONTEST_RULES.clock = {
-  twists:['fast'],
-  winText(f){ return f.name + ' ran out the clock!'; },
-  score(f){ return CK.start - (f._ck == null ? CK.start : f._ck); },   // (the rest rank by how far their own clock got)
+  twists:CK.twists,
+  winText(f){ return f.name + ' won with ' + (f._ckP | 0) + ' points!'; },
+  score(f){ return f._ckP || 0; },   // (the rest rank by points)
   begin(){
-    CK.xs = CK.fr.map(u => floorSafeX(WW*u, 110));
-    const i = 2; CONTEST.zone = { i, x:CK.xs[i], t0:0, until:CK.move, next:null };
-    for(const f of fighters) f._ck = CK.start;
+    const S = CONTEST, gy = groundY(), zx = floorSafeX(WW*0.5, 140), spots = [];
+    S.zone = { x:zx }; S.clocks = []; S.n = 0; S.next = CK.first;
+    const out = x => Math.abs(x - zx) < CK.w/2 + 70;   // (clocks stand OUTSIDE the zone)
+    for(let x = 130; x <= WW - 130; x += 40){ if(out(x) || floorSafeX(x, 60) !== x) continue; spots.push({ x, y:gy }); }
+    for(const p of worldPlats){ if(p.solid || p.wall || p.hazard || !(p.w > 60)) continue; for(let x = p.x + 30; x <= p.x + p.w - 30; x += 40) if(!out(x)) spots.push({ x, y:p.y }); }
+    S.spots = spots;
+    for(const f of fighters){ f._ckT = CK.start; f._ckP = 0; f._ckOut = false; f._ckHitT = -999; }
   },
   step(){
-    const z = CONTEST.zone, t = hazardT;
-    if(z.next == null && t >= z.until - CK.tell) z.next = ckPick(z.i);
-    if(t >= z.until){ z.i = z.next; z.x = CK.xs[z.i]; z.t0 = t; z.until = t + CK.move; z.next = null; tone(520, 0.08, 'triangle', 0.1, 0, 780); }
-    const inn = fighters.filter(f => !f.dead && f._ck > 0 && ckIn(f) && !(f.hitstun > 0));
-    for(const f of fighters){
-      f._ckDbl = false; if(f.dead) continue;
-      if(inn.indexOf(f) < 0) continue;
-      const dbl = inn.length === 1; f._ckDbl = dbl;
-      f._ck = Math.max(0, f._ck - (dbl ? CK.alone : 1));
-      if(f._ck > 0 && f._ck % 60 === 0 && f._ck <= 600 && f.you) tone(660, 0.04, 'triangle', 0.1);
-      if(f._ck <= 0){ contestWin(f); return; }
+    const S = CONTEST, t = hazardT;
+    if(S.winner != null) return;
+    if(t >= S.next){   // a clock grows in on the floor or a platform; each gap is longer than the last
+      if(S.clocks.length < CK.max && ckSpawn(S)){ S.n++; S.next = t + CK.gap0 + CK.gapStep*S.n; } else S.next = t + CK.retry;
     }
+    for(const f of fighters){
+      if(f.dead || f._ckOut) continue;
+      f._ckT--;
+      if(f._ckT <= 0) continue;
+      if(ckIn(f)) f._ckP += 1/CK.ptsEvery;
+      for(let i = 0; i < S.clocks.length; i++){
+        const c = S.clocks[i];
+        if(t - c.t0 < GROW_IN) continue;
+        if(Math.hypot(f.x - c.x, f.y - (c.y - CK.lift)) <= f.r + CK.r + 6){
+          S.clocks.splice(i, 1); f._ckT = Math.min(CK.cap, f._ckT + CK.gain);
+          for(let k = 0; k < 8; k++) puff(c.x, c.y - CK.lift, '#ffd23f', 4);
+          if(f.you) tone(700, 0.08, 'triangle', 0.14, 0, 1000);
+          break;
+        }
+      }
+    }
+    ckLive().filter(f => f._ckT <= 0).forEach(ckOut);
+    const onStage = fighters.filter(f => !f.dead);
+    if(!onStage.length) return;
+    if(onStage.length === 1 || !ckLive().length || t >= CK.time) contestWin(ckBest(onStage));   // (everyone's time out, the cap, or one left on the stage: the most points wins)
+  },
+  hit(t, from, dmg){
+    if(t.dead || t._ckOut || !(t._ckT > 0) || hazardT - t._ckHitT < CK.combo) return;   // (a combo is one hit)
+    t._ckHitT = hazardT; t._ckT = Math.max(0, t._ckT - CK.hit);
+    for(let i = 0; i < 5; i++) puff(t.x, t.y - t.r, '#ffd23f', 3);
+    if(t.you) tone(280, 0.12, 'sawtooth', 0.1, 0, 160);
   },
   world(c, layer){
     if(layer !== 'under') return;
-    const z = CONTEST.zone, gy = groundY(), t = hazardT;
+    const S = CONTEST, z = S.zone, gy = groundY(), t = hazardT;
     c.save();
-    const col = (x, a) => { const g = c.createLinearGradient(0, gy - CK.h, 0, gy); g.addColorStop(0, 'rgba(255,236,150,0)'); g.addColorStop(1, 'rgba(255,236,150,' + a + ')'); c.fillStyle = g; c.fillRect(x - CK.w/2, gy - CK.h, CK.w, CK.h); };
-    if(z.next != null){ const b = 0.12 + 0.12*Math.sin(t*0.3); col(CK.xs[z.next], b); c.strokeStyle = 'rgba(255,220,100,' + (0.35 + 0.3*Math.sin(t*0.3)) + ')'; c.lineWidth = 2; c.setLineDash([8, 6]); c.strokeRect(CK.xs[z.next] - CK.w/2, gy - CK.h, CK.w, CK.h); c.setLineDash([]); }
-    col(z.x, 0.34);
-    c.fillStyle = 'rgba(255,230,120,0.5)'; c.fillRect(z.x - CK.w/2, gy - 4, CK.w, 4);
-    // a clock face on the floor; its hand goes round once between moves, so it shows when the light will move
-    const u = (t - z.t0)/CK.move, ry = 13, rx = 40, cy = gy - 8;
-    c.fillStyle = 'rgba(255,255,255,0.55)'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.ellipse(z.x, cy, rx, ry, 0, 0, 7); c.fill(); c.stroke();
-    c.beginPath(); c.moveTo(z.x, cy); c.lineTo(z.x + Math.sin(u*Math.PI*2)*rx*0.8, cy - Math.cos(u*Math.PI*2)*ry*0.8); c.stroke();
+    const g = c.createLinearGradient(0, gy - CK.h, 0, gy); g.addColorStop(0, 'rgba(255,236,150,0)'); g.addColorStop(1, 'rgba(255,236,150,0.34)');
+    c.fillStyle = g; c.fillRect(z.x - CK.w/2, gy - CK.h, CK.w, CK.h);
+    c.fillStyle = 'rgba(255,230,120,0.6)'; c.fillRect(z.x - CK.w/2, gy - 4, CK.w, 4);
+    c.strokeStyle = 'rgba(255,220,100,' + (0.35 + 0.2*Math.sin(t*0.1)) + ')'; c.lineWidth = 2; c.setLineDash([8, 6]); c.strokeRect(z.x - CK.w/2, gy - CK.h, CK.w, CK.h); c.setLineDash([]);
+    for(const k of S.clocks){ ckDrawClock(c, k.x, k.y - CK.lift + Math.sin(t*0.08 + k.x)*3, growK(t - k.t0), t); }
     c.restore();
   },
   hud(c){
-    const rows = fighters.slice().sort((a, b) => (a.you ? -1 : 0) - (b.you ? -1 : 0)).map(f => ({ f, text:ckSec(f._ck) + (f._ckDbl ? ' >>' : ''), hot:f._ck <= CK.gang }));
-    contestPanel(c, 'FAST FORWARD', 'stand in the light', rows);
+    const tl = Math.max(0, Math.ceil((CK.time - hazardT)/60));
+    const rows = fighters.slice().sort((a, b) => (a.you ? -1 : 0) - (b.you ? -1 : 0)).map(f => ({ f, text:(f._ckP | 0) + ' pts', hot:!f._ckOut && f._ckT <= CK.low,
+      draw(cc, x0, y){
+        cc.fillStyle = 'rgba(255,255,255,0.22)'; cc.fillRect(x0, y - 4, 70, 8);
+        cc.fillStyle = f._ckT <= CK.low ? '#ff8a5c' : '#ffd23f'; cc.fillRect(x0, y - 4, 70*Math.max(0, f._ckT)/CK.cap, 8);
+        cc.font = "700 10px 'Baloo 2', system-ui"; cc.textAlign = 'left'; cc.fillStyle = '#fff'; cc.fillText(ckSec(f._ckT), x0 + 76, y);
+      } }));
+    contestPanel(c, 'FAST FORWARD', 'zone = points   ' + Math.floor(tl/60) + ':' + ('0' + (tl % 60)).slice(-2), rows);
   },
-  badge(f, c){ contestPill(c, f, (f._ck/60 | 0) + 's' + (f._ckDbl ? '>>' : ''), f._ck <= CK.gang, false); },
-  focus(f, foes){
-    let lead = null;
-    for(const o of foes) if(o._ck <= CK.gang && (!lead || o._ck < lead._ck)) lead = o;
-    if(lead && f.aiTarget !== lead){ f.aiTarget = lead; f.aiTimer = 45; }
-  },
+  badge(f, c){ if(!f._ckOut) contestPill(c, f, Math.ceil(f._ckT/60) + 's', f._ckT <= CK.low, false); },
   want(f, inp, t, dist){
-    const z = CONTEST.zone; if(!(f._ck > 0) || !f.onground) return false;
+    const S = CONTEST; if(f._ckOut || (!f.onground && !(f.vy < 0))) return false;
     if(t && dist < 150) return false;   // (a foe in its face comes first)
-    const goal = z.next != null ? CK.xs[z.next] : z.x, inL = ckIn(f) && z.next == null;
-    if(inL){ if(t && Math.abs(t.x - z.x) > CK.w/2 + CK.leash) return true; return false; }   // (in the light: stand, and fight what comes; never chase far out of it)
-    return contestWalk(f, inp, goal, 20);
+    let best = null, bd = CK.reach;
+    for(const c of S.clocks){ const dy = f.y - (c.y - 20); if(dy < -40 || dy > CK.climb) continue; const d = Math.hypot(c.x - f.x, dy); if(d < bd){ bd = d; best = c; } }
+    if(best && f._ckT <= CK.cap - CK.gain && (f._ckT <= CK.hungry || bd <= CK.near)){
+      const dir = best.x < f.x ? -1 : 1, adx = Math.abs(best.x - f.x);
+      if(adx > 8){ if(!aiSafeStep(f, dir)){ if(f.onground && f.y - best.y > 30) inp.jump = true; else return false; } if(dir < 0) inp.left = true; else inp.right = true; }
+      if(f.onground && f.y - (best.y - 20) > 30 && adx < 90) inp.jump = true;
+      return true;
+    }
+    if(ckIn(f)){ return !!(t && Math.abs(t.x - S.zone.x) > CK.w/2 + CK.leash); }   // (in the zone: stand, fight what comes, never chase far out of it)
+    const dx = S.zone.x - f.x, dir = dx < 0 ? -1 : 1; if(Math.abs(dx) <= 20) return false;
+    if(!aiSafeStep(f, dir) && f.y + f.r >= groundY() - 4) return false;   // (on the floor, safe steps only; on a platform it walks off toward the zone)
+    if(dir < 0) inp.left = true; else inp.right = true; return true;
   },
 };
 
