@@ -100787,7 +100787,7 @@ const EVENT_MATCHES = {
     // + Pencil", Blocky and Pencil gone); the name still fits. The design names no stage or items for it: the Teams arena in Grand Plains' sky and
     // ground (no hazard, and neither of his other two stages), the usual items and no Smash Balls, as The Alliance has none. One word each to change.
     { n:2, name:'A Better Name Than That', kind:'3v1', stage:'grandplains', sides:[['you'], ['8-Ball', 'Golf Ball', 'Tennis Ball']], items:'on', smashBalls:false, twist:null, stocks:2, youStocks:3 },
-    { n:3, name:'Lick Your Way to Freedom', kind:'challenge', stage:'pillars', sides:[['you'], ['8-Ball'], ['Golf Ball'], ['Lollipop']], items:'food', smashBalls:false, twist:'inside', stocks:2 },   // Stone Pillars, food only -- and jawbreakers drop, most empty, one in three with somebody inside (SOMEBODY'S INSIDE)
+    { n:3, name:'Lick Your Way to Freedom', kind:'challenge', stage:'pillars', sides:[['you'], ['8-Ball'], ['Golf Ball'], ['Lollipop']], items:'off', smashBalls:false, twist:'contest', contest:'lick', stocks:3 },   // 8-BALL'S CONTEST (CONTEST_RULES.lick): three jawbreakers at all times, free 3 to win
   ],
   // BLACK HOLE (build step 11, kit 4). The design's three (event-fighters-phase1.md, "The 30 event matches"): Gravity, Death P.A.C.T. Again and
   // Back to the Top. THE TEAM, CHECKED (question 15): Remote and Tree are his teammates in TPOT's Death P.A.C.T. Again -- the wiki's episode pages
@@ -102549,7 +102549,7 @@ const JB_ST = ['fall', 'sit', 'open', 'puff', 'melt'];
 const JB_PALS = [['#ff5c8a', '#ffd23f', '#4fd1c5', '#7aa7ff', '#ff9f43'], ['#7aa7ff', '#ff5c8a', '#ffd23f', '#7ae582', '#c084fc'], ['#ffd23f', '#4fd1c5', '#c084fc', '#ff5c8a', '#7ae582']];
 const JB_INK = '#3b2a4a';
 function jawbRand(){ const J = JAWB; J.rng = (Math.imul(J.rng, 1664525) + 1013904223) >>> 0; return J.rng/4294967296; }
-function jawbBegin(){ JAWB = twistOn('inside') ? { next:JB.first, rng:((Math.random()*4294967296) >>> 0) || 1, seq:0, sh:null } : null; }   // (in every match null but the one that has it; the dice are its own, seeded once)
+function jawbBegin(){ JAWB = twistOn('inside') ? { next:JB.first, rng:((Math.random()*4294967296) >>> 0) || 1, seq:0, sh:null } : (contestIs('lick') ? lkJawb() : null); }   // (in every match null but the one that has it; the dice are its own, seeded once)
 // Where the next one comes down: the middle platform (the widest thin ledge over the middle of the field) or the floor, as a coin falls; the stretch it
 // then rests on (lo..hi) is where the contestant runs.
 function jawbSpot(){
@@ -102569,6 +102569,7 @@ function jawbDrop(){
 // Once a frame, from twistStep (the host's).
 function jawbStep(){
   const J = JAWB; if(!J) return;
+  if(J.lk) return;   // (the contest has its own step, CONTEST_RULES.lick: lkStep)
   const s = J.sh, t = hazardT;
   if(!s){ if(t >= J.next) jawbDrop(); return; }
   if(s.flash > 0) s.flash--;
@@ -102594,31 +102595,35 @@ function jawbFall(s){
 function jawbSit(s){
   const t = hazardT;
   if(s.lid >= 0 && !s.inn){ if(t - s.lid >= JB.beat) jawbCrumble(s); }
-  else if(s.lid >= 0 ? t - s.lid >= JB.openMelt : t - s.tl >= JB.melt) jawbMelt(s);
+  else if(!s.lk && (s.lid >= 0 ? t - s.lid >= JB.openMelt : t - s.tl >= JB.melt)) jawbMelt(s);   // (a contest's shell never melts)
 }
 // A swing's hitbox (hitTurrets calls this for every melee hitbox) meets the shell. Returns true if it landed.
-function jawbHit(f, cx, cy, rad, dmg){
-  const s = JAWB && JAWB.sh;
+// The shells there are now: the one of the twist, or the contest's up to three (JAWB.shs).
+function jawbList(){ const J = JAWB; return !J ? [] : (J.shs || (J.sh ? [J.sh] : [])); }
+function jawbHit(f, cx, cy, rad, dmg){ let hit = false; for(const s of jawbList()) if(jawbHitShell(s, f, cx, cy, rad, dmg)) hit = true; return hit; }
+function jawbHitShell(s, f, cx, cy, rad, dmg){
   if(!s || s.st !== 'sit' || !f || f.dead || !(dmg > 0) || (s.lid >= 0 && !s.inn)) return false;   // (an empty one with its top off is crumbling: nothing to chip)
   if(Math.hypot(s.x - cx, s.y - cy) >= rad + JB.r) return false;
   if((s.gr[f.idx] || 0) > hazardT) return false;   // a lingering hitbox does not melt it in a frame
-  s.gr[f.idx] = hazardT + FSBALL.grace;
+  s.gr[f.idx] = hazardT + (s.lk ? LK.combo : FSBALL.grace);   // (the contest: a multi-hit move is ONE hit, so a fighter's next chip on a shell waits LK.combo frames)
   dmg = statDmg(f, dmg);   // FIGHTER STATS: the striker's dmg, before the clamp
   s.hp -= clamp(dmg, FSBALL.minHit, FSBALL.maxHit); s.flash = 8; s.who = f.idx;
   for(let i = 0; i < 5; i++) puff(s.x, s.y, JB_PALS[s.id % JB_PALS.length][i], 4);
   SFX.hit(dmg);
   if(s.lid < 0){ if(s.hp <= JB.half) jawbLid(s, f); }
-  else if(s.hp <= 0) jawbOpen(s, f);
+  else if(s.hp <= 0){ jawbOpen(s, f); if(s.lk) lkFreed(f); }   // (the contest: the last hit frees them, and the point is the hitter's)
   return true;
 }
 // A shot meets the shell (a copy of fsShotHits: a shot from a fighter, at 0.8 of its damage).
 function jawbShots(){
   for(const pr of projectiles){
-    const s = JAWB && JAWB.sh; if(!s || s.st !== 'sit') return;
     if(!(pr.life > 0) || pr.turret || pr.trap || !(pr.dmg > 0)) continue;
     const o = pr.ownerObj;
     if(!o || !(o.idx >= 0) || fighters[o.idx] !== o) continue;
-    if(Math.hypot(pr.x - s.x, pr.y - s.y) < pr.r + JB.r) jawbHit(o, pr.x, pr.y, pr.r, pr.dmg*0.8);
+    for(const s of jawbList()){
+      if(s.st !== 'sit') continue;
+      if(Math.hypot(pr.x - s.x, pr.y - s.y) < pr.r + JB.r) jawbHitShell(s, o, pr.x, pr.y, pr.r, pr.dmg*0.8);
+    }
   }
 }
 // The top pops off (the hit that does it cannot also finish the shell: JB.left is the least it keeps); whoever did it has a lick of the candy.
@@ -102665,9 +102670,14 @@ function jawbSfx(k){
 // The CPU's item hunt: a shell it can hit is an item it can see, a closed one worth JB.want and one with somebody inside, JB.wantOpen (the hunt scores
 // an item as its worth less 0.3 a px, and goes for it above 25). Within a swing of it, it faces it and hits it (the hunt's own branch of aiThink).
 function jawbItem(f){
-  const s = JAWB && JAWB.sh;
-  if(!s || s.st !== 'sit' || f.dead || (s.lid >= 0 && !s.inn)) return null;
-  return { kind:'jaw', x:s.x, y:s.y, r:JB.r, taken:false, _jb:true, _want:s.lid >= 0 ? JB.wantOpen : JB.want };
+  let best = null, bs = -1e9;   // (the contest has up to three shells: the one worth most to it, less 0.3 a px as the hunt scores)
+  for(const s of jawbList()){
+    if(s.st !== 'sit' || f.dead || (s.lid >= 0 && !s.inn)) continue;
+    const w = s.lid >= 0 ? JB.wantOpen : JB.want, sc = w - 0.3*Math.hypot(s.x - f.x, s.y - f.y);
+    if(sc > bs){ bs = sc; best = s; }
+  }
+  if(!best) return null;
+  return { kind:'jaw', x:best.x, y:best.y, r:JB.r, taken:false, _jb:true, _want:best.lid >= 0 ? JB.wantOpen : JB.want };
 }
 function jawbInReach(f, it){ return Math.abs(f.x - it.x) < f.r + JB.r + 14 && Math.abs(f.y - it.y) < f.r + JB.r + 10; }
 // The snapshot's record of the shell (s.jw): [] when there is none now, else its numbers; what is inside is not told before the top is off.
@@ -102737,9 +102747,8 @@ function jawbRunner(c, s, a){
   jawbFigure(c, x, y, 1, s.face, s.dir, a*0.5);
   c.restore();
 }
-function drawJawbreakers(c){
-  c = c || ctx;
-  const J = JAWB, s = J && J.sh; if(!s) return;
+function drawJawbreakers(c){ c = c || ctx; for(const s of jawbList()) drawJawbShell(c, s); }
+function drawJawbShell(c, s){
   const t = hazardT, R = JB.r, pal = JB_PALS[s.id % JB_PALS.length], k = growK(t - s.t0 + 1), ended = s.st === 'open' || s.st === 'puff' || s.st === 'melt';
   const a = ended ? t - s.end : 0, la = s.lid >= 0 ? t - s.lid : -1, cutY = -R*0.38, fl = s.flash > 0 ? s.flash/8 : 0;
   const crack = Math.min(4, Math.floor((1 - Math.max(0, s.hp)/JB.hp)*5)), ang = s.dir*0.35;
@@ -102749,6 +102758,7 @@ function drawJawbreakers(c){
     jawbBall(c, R, pal, (t - s.t0)*0.1*s.dir, 0, null, 0);
   } else if(s.st === 'sit' || (ended && a < JB.gone)){
     c.translate(s.x, s.y);
+    if(s.lk && k < 1){ c.translate(0, R); c.scale(k, k); c.translate(0, -R); }   // (the contest's shell grows in where it stands)
     if(s.st === 'sit' && fl > 0) c.translate(Math.sin(t*2.2)*2.2*fl, 0);
     if(s.st === 'sit' && s.tl >= 0 && t - s.tl < 8){ const q = 0.18*(1 - (t - s.tl)/8); c.translate(0, R); c.scale(1 + q, 1 - q); c.translate(0, -R); }   // it lands with a squash
     if(s.st === 'melt'){ const u = a/JB.gone; c.translate(0, R); c.scale(1 + 0.4*u, 1 - 0.85*u); c.translate(0, -R); c.globalAlpha = 1 - 0.9*u; }
@@ -103430,6 +103440,103 @@ CONTEST_RULES.search = {
     return true;
   },
 };
+// ---------- EVENT FIGHTERS: LICK YOUR WAY TO FREEDOM (8-Ball's CONTEST, his third event match: a rule in CONTEST_RULES, on the jawbreaker machinery above) ----------
+// BFB 2: the contestants are sealed in jawbreakers and a team is safe once it frees one. THREE jawbreakers stand on the stage at all times, on fixed spots (the
+// left floor, the middle platform, the right floor): each grows in where it stands (GROW_IN, no sky drop) and never melts. A shell is the twist's shell (JB.hp 40,
+// chipped by any hit or shot, the top pops off at half and heals the popper JB.lick %). Half are EMPTY (the puff of air that shoves, as ever) and half hold somebody,
+// from a shuffled bag of [full, empty] so there are never more than two empties in a row. The LAST hit on a full one frees them: +1 for that fighter (a rival's stolen last
+// hit is the rival's), and the 5 s of safety of the twist. A multi-hit move is ONE hit: a fighter's next chip on a shell waits LK.combo frames. LK.regrow frames after a
+// shell goes (its figure has scurried off) a new one grows in on the same spot. A score never goes down; a KO costs a stock only (3 each). First to free LK.need wins
+// (contestWin: the rest are marked out, checkWin ends it, eventFinish pays). No timer, no items, no Smash Balls. THE OLD ASSUMPTION of one shell is gone: JAWB.sh is the
+// twist's one shell, JAWB.shs this contest's list, and jawbList() is what every walker of shells (hit, shot, CPU hunt, art) asks. CPUs: the item hunt sees the
+// shell worth most (jawbItem) and swings at it; a rival at LK.gang freed is everyone's foe. Offline only, as every contest.
+const LK = { need:3, shells:3, regrow:120, gang:2, combo:30 };
+function lkJawb(){ return { lk:true, next:0, rng:((Math.random()*4294967296) >>> 0) || 1, seq:0, sh:null, shs:[], bag:[], due:[], spots:[] }; }
+// The three spots: the left floor and the right floor (a fifth in from each edge, on safe floor) and the middle platform (the widest thin ledge over the middle).
+function lkSpots(){
+  const gy = groundY(), R = JB.r; let mid = null;
+  for(const p of worldPlats){ if(p.solid || !(p.w > 0) || p.x > WW*0.5 || p.x + p.w < WW*0.5 || p.y > gy - 60) continue; if(!mid || p.w > mid.w) mid = p; }
+  const floor = function(fx){
+    const x = Math.round(floorSafeX(WW*fx, R + 20)); let lo = 40, hi = WW - 40;
+    if(FLOOR_SEGS) for(const q of FLOOR_SEGS) if(x >= q.x0 && x <= q.x1){ lo = q.x0; hi = q.x1; }
+    return { x:x, y0:gy - R, lo:lo, hi:hi };
+  };
+  const m = mid ? { x:Math.round(mid.x + mid.w/2), y0:mid.y - R, lo:mid.x, hi:mid.x + mid.w } : floor(0.5);
+  return [floor(0.18), m, floor(0.82)];
+}
+// One shell grows in on a spot. What is inside is the bag's: [full, empty] shuffled, a fresh bag when it runs out.
+function lkMake(i){
+  const J = JAWB, p = J.spots[i];
+  if(!J.bag.length) J.bag = jawbRand() < 0.5 ? [1, 0] : [0, 1];
+  const inn = J.bag.shift();
+  J.shs.push({ id:++J.seq, slot:i, lk:1, x:p.x, y:p.y0, y0:p.y0, vy:0, st:'sit', t0:hazardT, tl:-1, hp:JB.hp, flash:0, lid:-1, end:-1, inn:inn,
+    face:Math.floor(jawbRand()*4), dir:jawbRand() < 0.5 ? -1 : 1, lo:p.lo, hi:p.hi, who:-1, gr:{}, bk:{} });
+}
+// The last hit on a full shell: a point for whoever landed it (jawbHitShell calls this after jawbOpen).
+function lkFreed(f){
+  f._lk = (f._lk || 0) + 1;
+  for(let k = 0; k < 8; k++) puff(f.x, f.y - f.r, k % 2 ? '#ffd23f' : '#ff8fb8', 4);
+  if(f._lk >= LK.need) contestWin(f);
+}
+function lkStep(){
+  const J = JAWB, t = hazardT; if(!J || !J.lk || CONTEST.winner != null) return;
+  for(const s of J.shs) if(s.flash > 0) s.flash--;
+  for(const s of J.shs) if(s.st === 'sit') jawbSit(s);   // (an empty one's top came off: it crumbles)
+  jawbShots();
+  for(const s of J.shs.slice()) if(s.st !== 'sit' && t - s.end >= JB.out){ J.shs.splice(J.shs.indexOf(s), 1); J.due[s.slot] = s.end + LK.regrow; }   // (it has scurried off or blown apart: its spot grows a new one LK.regrow after)
+  for(let i = 0; i < LK.shells; i++) if(!J.shs.some(s => s.slot === i) && t >= (J.due[i] || 0)) lkMake(i);
+}
+CONTEST_RULES.lick = {
+  begin(){
+    const J = JAWB; J.spots = lkSpots(); J.due = [0, 0, 0];
+    for(const f of fighters) f._lk = 0;
+    for(let i = 0; i < LK.shells; i++) lkMake(i);
+  },
+  step(){ lkStep(); },
+  winText(f){ return f.name + ' freed ' + LK.need + '!'; },
+  score(f){ return f._lk || 0; },
+  // The panel: FREED, then a row per fighter (you first): colour, name, three slots, the count.
+  hud(c){
+    const rows = fighters.slice().sort((a, b) => (a.you ? -1 : 0) - (b.you ? -1 : 0)), N = LK.need;
+    const pw = 220, rh = 18, ph = 24 + rh*rows.length + 6, px = W - pw - 12, py = 10;
+    c.save(); c.globalAlpha = 0.9;
+    c.fillStyle = 'rgba(28,24,38,0.78)'; itemRoundRect(c, px, py, pw, ph, 8); c.fill();
+    c.font = "800 12px 'Baloo 2', system-ui"; c.textBaseline = 'middle'; c.textAlign = 'left';
+    c.fillStyle = '#ffd23f'; c.fillText('FREED', px + 10, py + 12);
+    c.font = "700 10px 'Baloo 2', system-ui"; c.fillStyle = '#fff'; c.textAlign = 'right'; c.fillText('first to ' + N, px + pw - 10, py + 12);
+    rows.forEach((f, i) => {
+      const y = py + 24 + rh*i + rh/2, n = f._lk || 0;
+      c.globalAlpha = f.dead && n < N ? 0.4 : 0.9;
+      c.fillStyle = f.color || '#fff'; c.beginPath(); c.arc(px + 14, y, 5, 0, 7); c.fill();
+      c.font = (f.you ? "800" : "700") + " 11px 'Baloo 2', system-ui"; c.textAlign = 'left'; c.fillStyle = '#fff';
+      c.fillText((f.you ? 'YOU' : f.name).slice(0, 11), px + 24, y);
+      for(let k = 0; k < N; k++){
+        const x = px + 112 + k*20;
+        c.fillStyle = k < n ? '#ffd23f' : 'rgba(255,255,255,0.18)'; c.beginPath(); c.arc(x, y, 7, 0, 7); c.fill();
+        if(k < n){ c.strokeStyle = '#ff5c8a'; c.lineWidth = 2; c.beginPath(); c.arc(x, y, 4, 0, 7); c.stroke(); }
+      }
+      c.textAlign = 'right'; c.font = "800 11px 'Baloo 2', system-ui"; c.fillStyle = n >= LK.gang ? '#ffe27a' : '#fff';
+      c.fillText(f.dead && n < N ? 'out' : n + '/' + N, px + pw - 10, y);
+    });
+    c.restore();
+  },
+  // Over the head: a small pill "n/3", gold at the gang count.
+  badge(f, c){
+    const n = f._lk || 0, hot = n >= LK.gang;
+    const base = nameTagShown(f) ? -(f.r + (f.you ? 28 : 16)) - 9 : -f.r - 6;
+    c.save(); c.translate(f.x, f.y + base - 10);
+    c.globalAlpha = 0.85; c.fillStyle = hot ? '#ffd23f' : 'rgba(28,28,28,0.75)'; itemRoundRect(c, -16, -8, 32, 16, 8); c.fill();
+    c.font = "800 10px 'Baloo 2', system-ui"; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = hot ? '#1c1c1c' : '#fff';
+    c.fillText(n + '/' + LK.need, 0, 0.5);
+    c.restore();
+  },
+  focus(f, foes){
+    let lead = null;
+    for(const o of foes) if((o._lk || 0) >= LK.gang && (!lead || (o._lk || 0) > (lead._lk || 0))) lead = o;
+    if(lead && f.aiTarget !== lead){ f.aiTarget = lead; f.aiTimer = 45; }
+  },
+};
+EVENT_TWIST_WORDS['contest:lick'] = { icon:'🍬', short:"8-Ball's contest: lick your way to freedom", words:"8-Ball's contest: break the jawbreakers. Half hold somebody. The last hit frees them. First to free 3 wins.", goal:'Free 3 from the jawbreakers' };
 
 // ---------- EVENT FIGHTERS: THE DIG (Spongy's CONTEST, his third event match: the second rule in CONTEST_RULES) ----------
 // The owner's design (2026-11-07). TWO PARTS. PART ONE, THE DIG, no fighting: everyone starts in the middle of a wide field of dirt blocks
