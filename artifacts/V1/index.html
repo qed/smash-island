@@ -20749,6 +20749,10 @@ keysLoad();
 
 // ---------- input ----------
 const down={};
+// PRESS LATCH (input-drop fix, owner approved 2026-11-14): a key tapped and let go between two game steps (a slow frame, the Final Smash slow-mo) was never seen, because step() reads the level of down[] once.
+// keydown also notes the key here; the next step that RUNS reads it as pressed once (KEY_LATCH_NOW) and it is cleared. A step the slow-mo skips leaves it for the next one that runs.
+// Only the four buttons the hit-freeze already keeps are read from it (attack, special, smash, jump). Local keys only: an online guest's presses reach the host through netInputChanged's own edges.
+let KEY_LATCH = {}, KEY_LATCH_NOW = {};
 // A form control that still has focus swallows every key of a match. The keydown handler below lets a text box type (a room code, a
 // Vault code), so a fighter dropdown, the invite-link box or the room-code box left focused tells it "the player is typing" and it takes
 // no key at all: a client sits in a running match whose fighter never answers, because the match starts WITHOUT a gesture on a client
@@ -20787,6 +20791,7 @@ addEventListener('keydown',e=>{
     try{ ae.blur(); }catch(e){}   // a hidden box lets go of the focus, and this key goes to the game
   }
   down[e.code]=true;
+  if(!e.repeat) KEY_LATCH[e.code]=true;
   try{ keyHintPress(e); }catch(x){}
   if(TUT.active && e.code==='Escape'){ TUT.active=false; TUT.done=true; running=false; tutorialRestore(); go('title'); return; }
   if(e.code===KEYS.pause && running && TESTMODE.active){ exitTest(); return; }   // "Esc to come back": the test screen, as promised
@@ -20799,13 +20804,13 @@ addEventListener('keyup',e=>{down[e.code]=false; netInputChanged();});
 // A key held as the window loses focus never sends its keyup -- it is let go in another window -- so it stayed down until the
 // player pressed it again. A match now goes on while the host's tab is hidden (HIDDEN HOST), and a host who tabbed away holding
 // Right walked their fighter off the stage with nobody playing. Everything is let go instead.
-function releaseKeys(){ for(const c in down) down[c] = false; netInputChanged(true); }   // (online, a guest's host lets go too, now)
+function releaseKeys(){ for(const c in down) down[c] = false; KEY_LATCH = {}; KEY_LATCH_NOW = {}; netInputChanged(true); }   // (online, a guest's host lets go too, now)
 addEventListener('blur', releaseKeys);
 addEventListener('visibilitychange', ()=>{ if(document.hidden) releaseKeys(); });
 // A new screen, and a new match, start with none of the mapped keys held: one still down from the last (a smash held as the player pressed R,
 // say) would act on the first frame of the next. The keyboard's own keyup, and the key repeat while a key really is held, put back whatever
 // is. Only the mapped keys are let go, as it always was: this was the touch pad's other job, for every player, and the pad is gone.
-function releaseMappedKeys(){ for(const k in KEYS) if(down[KEYS[k]]) down[KEYS[k]] = false; netInputChanged(true); }
+function releaseMappedKeys(){ for(const k in KEYS) if(down[KEYS[k]]) down[KEYS[k]] = false; KEY_LATCH = {}; KEY_LATCH_NOW = {}; netInputChanged(true); }
 
 // A computer game: the keyboard, and the mouse in the menus and the Level Creator (the owner, 2026-10-06: "remove mobile compatibility....
 // I SAID I WANTED THIS TO BE A COMPUTER GAME!!!"). The on-screen touch pad is gone, and the setting an earlier build saved for it is let go
@@ -72903,6 +72908,7 @@ function step(){
   kocTick();   // THE LAST KO: a new match starts it clean; the frames since the match was decided
   if(fsTimeGate()) return;   // CATCH, THEN CINEMATIC: the Final Smash intro stops the match; its slow-mo KO skips steps (fsTimeGate)
   hazardT++;
+  KEY_LATCH_NOW = KEY_LATCH; KEY_LATCH = {};   // (PRESS LATCH: the taps since the last step that ran)
   STEP_F = null;   // (HIT FREEZE: set while each fighter's own frame runs, below)
   // Clutch-time music. Deliberately NOT per frame: twice a second is far more often than the
   // condition can meaningfully change, and it keeps audio work out of the hot loop.
@@ -72970,12 +72976,12 @@ function step(){
       const gp = pad;
       inp.left = down[K.left]||gp?.left;
       inp.right= down[K.right]||gp?.right;
-      inp.jump = down[K.jump]||gp?.jump;
-      inp.up   = down[K.jump]||gp?.jump;      // "up" direction = jump key/stick up
+      inp.jump = down[K.jump]||KEY_LATCH_NOW[K.jump]||gp?.jump;
+      inp.up   = down[K.jump]||KEY_LATCH_NOW[K.jump]||gp?.jump;      // "up" direction = jump key/stick up
       inp.down = down[K.down]||gp?.down;
-      inp.attack=down[K.attack]||gp?.attack;
-      inp.special=down[K.special]||gp?.special;
-      inp.smash =down[K.smash]||gp?.smash;
+      inp.attack=down[K.attack]||KEY_LATCH_NOW[K.attack]||gp?.attack;
+      inp.special=down[K.special]||KEY_LATCH_NOW[K.special]||gp?.special;
+      inp.smash =down[K.smash]||KEY_LATCH_NOW[K.smash]||gp?.smash;
       inp.shield=!!(down[K.shield] || gp?.shield);
       inp.flag  =down[K.flag];
       inp.edit  =down[K.edit];
@@ -75595,7 +75601,7 @@ function hitStopHit(t, from, dmg){
 function hitStopHold(f, ctrl, pad){
   f._hitStop--; f._hsHeld = hazardT;
   let r = null;
-  if(ctrl === 'local'){ const K = KEYS; r = { attack:down[K.attack]||pad?.attack, special:down[K.special]||pad?.special, smash:down[K.smash]||pad?.smash, jump:down[K.jump]||pad?.jump, left:down[K.left]||pad?.left, right:down[K.right]||pad?.right, down:down[K.down]||pad?.down }; }
+  if(ctrl === 'local'){ const K = KEYS; r = { attack:down[K.attack]||KEY_LATCH_NOW[K.attack]||pad?.attack, special:down[K.special]||KEY_LATCH_NOW[K.special]||pad?.special, smash:down[K.smash]||KEY_LATCH_NOW[K.smash]||pad?.smash, jump:down[K.jump]||KEY_LATCH_NOW[K.jump]||pad?.jump, left:down[K.left]||pad?.left, right:down[K.right]||pad?.right, down:down[K.down]||pad?.down }; }
   else if(ctrl === 'remote') r = netRemoteInput(f.idx);
   else if(ctrl === 'ai') r = brainSdiKeys(f);   // MDI: a CPU's SDI taps
   mdiSDI(f, r);   // MDI: a fresh press of a way in the freeze shifts them a little (SDI)
@@ -91463,8 +91469,15 @@ function fireSpecial(f, inp){
   fireSpecialInner(f, inp);
   if(f.spCd > before) f.spCd = Math.max(1, Math.round(f.spCd * SPECIAL_CD_SCALE));
 }
+// A special that is refused (Remote's battery is out, Rose has hushed the fighter) says so without words: a short low double tick and a grey puff, at most twice a second, for a person's fighter only.
+function refusedSpecialCue(f){
+  if((f.controller || (f.you ? 'local' : 'ai')) === 'ai' || (f._refuseCueT || 0) > hazardT) return;
+  f._refuseCueT = hazardT + 30;
+  try{ tone(150, 0.07, 'square', 0.05, 0, 110); tone(120, 0.09, 'square', 0.05, 0.08, 90); }catch(e){}
+  for(let i = 0; i < 3; i++) puff(f.x, f.y - f.r - 6, '#9aa0a6', 3);
+}
 function fireSpecialInner(f, inp){
-  if(f._noBattery>0 || f._hushT > hazardT) return;   // Remote on reserve power (see BATTERY_OUT); hushed by Rose (FINISHERS V2, batch 4)
+  if(f._noBattery>0 || f._hushT > hazardT){ refusedSpecialCue(f); return; }   // Remote on reserve power (see BATTERY_OUT); hushed by Rose (FINISHERS V2, batch 4)
   if(DIGC && digcLocked(f, inp.up ? 'upspec' : inp.down ? 'dspec' : 'spec')){ digcFallback(f, inp.up ? 'u' : inp.down ? 'd' : 's'); f.spCd = Math.max(f.spCd, 30); return; }   // THE DIG (Spongy's contest): a special not dug up yet is the jab or the tilt
   // remember held directions so dash-type specials can go diagonally (up-dash / down-dash)
   f._inLeft=!!inp.left; f._inRight=!!inp.right; f._inUp=!!inp.up; f._inDown=!!inp.down;
@@ -127146,6 +127159,7 @@ function exitTest(){
 function setPaused(on){
   const was = paused;
   paused = !!on;
+  KEY_LATCH = {}; KEY_LATCH_NOW = {};   // (PRESS LATCH: a key tapped while paused is not played on resume)
   quitAskNo();   // (a pause starts, and ends, with no quit question open)
   const el = document.getElementById('pauseCard'); if(el) el.style.display = paused ? 'flex' : 'none';
   if(paused){ try{ pauseNoteSync(); }catch(e){} } else { try{ padMenuClear(); }catch(e){} }   // NEW-PLAYER POLISH: the resume key as mapped; a gamepad's menu highlight gone
