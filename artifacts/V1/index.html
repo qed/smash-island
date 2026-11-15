@@ -103872,6 +103872,7 @@ function drawParkBackdrop(){
 // The sky layer the event fighters add (draw(), screen space, after the stage's own sky): a match's backdrop and Wind Back's clock, and the
 // face of a Clock playing his Final Smash.
 function drawEventSky(){
+  if(BHC) bhcSkyScreen();   // BACK TO THE TOP: the apocalypse sky covers the whole screen at every camera and zoom, so the stage's own sky never shows
   if(MATCH_TWIST){
     const b = twistBackdrop(), D = b && EVENT_BACKDROPS[b];
     if(D){
@@ -106780,7 +106781,7 @@ EVENT_TWIST_WORDS['contest:steps'] = { icon:'🪜', short:"Pie's contest: 500 st
 // A fighter's height above the hole is what the panel shows. Offline only (startEventMatch refuses in a room). No items, no Smash Balls, nothing from the sky.
 let BHC = null;   // null in every other match; else { ledges, slab, gy, hx, hy, line, debris, tells, ... } -- see bhcBuildWorld
 const BHK = { n:200, rise:100, w:170, dx:230, h:14, wall:80, top:330, holeDepth:590, holeRise:0.2, holeAcc:0.0003, pullNear:0.7, pullFar:0.3, reachH:6000, pullGrow:1.5, growT:10800,
-  ahead:8, fade:40, hitDown:7, lowAbove:300, flyMax:90, dangerPx:300, scalePx:1500, cols:[0, 1, 2, 1, 2, 3, 2, 1],
+  ahead:8, fade:40, hitDown:7, lowAbove:300, flyMax:90, hitRef:12, dangerPx:300, scalePx:1500, cols:[0, 1, 2, 1, 2, 3, 2, 1],
   deb:{ first:200, every0:75, every1:32, rampT:10800, max0:4, max1:9, tell:50, rMin:30, rMax:48, speed:5.5, ay:0.04, bump:8, slow:75, slowK:0.5, clear:170 } };
 function bhcWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.contest === 'top'; }
 function bhcBuildWorld(){
@@ -106858,6 +106859,14 @@ function bhcSpawnDebris(q){
   tone(420, 0.3, 'sawtooth', 0.06, 0, 90);   // a whoosh
 }
 // A pseudo-random number from two integers (the same every frame: the art holds still between frames).
+// The colour of the apocalypse sky at a world height: dark red, redder nearer the hole.
+function bhcTint(y){ const u = clamp((BHC.hy - y)/5000, 0, 1); return 'rgb(' + Math.round(96 - 70*u) + ',' + Math.round(16 - 6*u) + ',' + Math.round(22 - 6*u) + ')'; }
+// Screen space (drawEventSky, before the world is drawn): an OPAQUE sky over the whole canvas, shaded by the world heights the view covers. The world art draws over it.
+function bhcSkyScreen(){
+  const z = viewZoom() || 1, wy0 = camY + H/2 - H/(2*z), wy1 = camY + H/2 + H/(2*z);
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, bhcTint(wy0)); g.addColorStop(1, bhcTint(wy1));
+  ctx.save(); ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.fillRect(-40, -40, W + 80, H + 80); ctx.restore();
+}
 function bhcR(i, k){ const v = Math.sin(i*12.9898 + k*78.233)*43758.5453; return v - Math.floor(v); }
 function bhcChunk(c, x, y, s, kind, id, alpha){
   c.save(); c.globalAlpha = alpha; c.translate(x, y); c.strokeStyle = '#140a10'; c.lineWidth = 3;
@@ -106895,7 +106904,7 @@ CONTEST_RULES.top = {
     let near = 1e9;
     for(const f of fighters){
       if(f.dead) continue;
-      if(f._bhHit != null && hazardT > f._bhHit){ f._bhHit = null; f.vy = Math.abs(f.vy)*0.4 + K.hitDown; f.vx *= 0.6; f.onground = false; }   // a hit knocks you back toward the hole
+      if(f._bhHit != null && hazardT > f._bhHit){ f._bhHit = null; const sp = Math.hypot(f.vx, f.vy), q = clamp(sp/K.hitRef, 0, 1); f.vy = Math.abs(f.vy)*0.6 + K.hitDown*q; f.vx *= 1 - 0.4*q; if(q > 0.15) f.onground = false; }   // a hit knocks you back toward the hole: the launch is turned down and keeps its strength (a light hit is a light push, a hard one the full knock; no fixed slam)
       if(f.pct > 300) f.pct = 300;   // (damage never KOs)
       if(f.onground){
         const onSlab = f.y + f.r >= S.gy - 3, i = onSlab ? -1 : bhcUnder(f);
@@ -106927,9 +106936,11 @@ CONTEST_RULES.top = {
       d.vx += D.ay*0.5*dx/m; d.vy += D.ay*(0.6 + bhcPull(d.y))*dy/m; d.x += d.vx; d.y += d.vy; d.rot += d.spin;
       if(d.y > S.line + 40 || d.x < -50 || d.x > WW + 50){ S.debris.splice(i, 1); continue; }
       for(const f of fighters){
-        if(f.dead || d.hit[f.idx] || f.invuln > 0 || Math.hypot(f.x - d.x, f.y - d.y) > f.r + d.r + 4) continue;
+        const reach = f.r + d.r + 4, gap = Math.hypot(f.x - d.x, f.y - d.y);
+        if(f.dead || d.hit[f.idx] || f.invuln > 0 || gap > reach) continue;
         d.hit[f.idx] = 1; S.bumps++;
-        f.vx += Math.sign(f.x - d.x || 1)*D.bump; f.vy = Math.max(f.vy, 0) + 2; f._bhSlow = hazardT + D.slow;
+        const dw = clamp(1.25 - gap/reach, 0.3, 1);   // a graze is a small shove and a short slow, a square hit the full one (smooth in where you stand)
+        f.vx += (f.x === d.x ? 1 : Math.sign(f.x - d.x))*D.bump*dw; f.vy = f.vy*(1 - 0.6*dw) + 2*dw; f._bhSlow = hazardT + Math.round(D.slow*dw);
         for(let k = 0; k < 8; k++) puff(d.x, d.y, k % 2 ? '#ffd23f' : '#ffffff', 4);
         tone(110, 0.14, 'square', f.you ? 0.14 : 0.07, 0, 50); if(f.you) shake(1.5);
       }
@@ -106973,14 +106984,16 @@ CONTEST_RULES.top = {
   // drawn toward the hole, cracks in the walls, the slab and the ledges, and the debris with its tells. Flat shapes; nothing is a word.
   world(c, layer){
     const S = BHC, K = BHK; if(!S || layer !== 'under') return;
-    const t = hazardT, vh = H/CAM_ZOOM, y0 = camY - 60, y1 = camY + vh + 60, hx = S.hx, hy = S.hy, tint = y => { const u = clamp((hy - y)/5000, 0, 1); return 'rgb(' + Math.round(96 - 70*u) + ',' + Math.round(16 - 6*u) + ',' + Math.round(22 - 6*u) + ')'; };
+    const zv = viewZoom() || 1, t = hazardT, y0 = camY + H/2 - H/(2*zv) - 120, y1 = camY + H/2 + H/(2*zv) + 120, vx0 = camX + W/2 - W/(2*zv) - 120, vx1 = camX + W/2 + W/(2*zv) + 120, hx = S.hx, hy = S.hy, tint = bhcTint;   // (the view's own bounds at this zoom: past the walls and the top the sky goes on)
     // the sky: dark red, redder nearer the hole
-    c.save(); c.globalAlpha = 0.86; const sk = c.createLinearGradient(0, y0, 0, y1); sk.addColorStop(0, tint(y0)); sk.addColorStop(1, tint(y1)); c.fillStyle = sk; c.fillRect(0, y0, WW, y1 - y0); c.restore();
+    c.save(); c.globalAlpha = 1; const sk = c.createLinearGradient(0, y0, 0, y1); sk.addColorStop(0, tint(y0)); sk.addColorStop(1, tint(y1)); c.fillStyle = sk; c.fillRect(vx0, y0, vx1 - vx0, y1 - y0); c.restore();
+    // the two walls: dark torn rock (the sky above is opaque now, so they are drawn here)
+    c.save(); c.fillStyle = '#1d0c14'; c.fillRect(0, y0, K.wall, y1 - y0); c.fillRect(WW - K.wall, y0, K.wall, y1 - y0); c.strokeStyle = '#4a2030'; c.lineWidth = 4; c.beginPath(); c.moveTo(K.wall, y0); c.lineTo(K.wall, y1); c.moveTo(WW - K.wall, y0); c.lineTo(WW - K.wall, y1); c.stroke(); c.restore();
     // the glow round the hole and the hole itself, with its lensing rings
     if(y1 > hy - 1500){
       c.save(); const gl = c.createRadialGradient(hx, hy, 40, hx, hy, 1500); gl.addColorStop(0, 'rgba(255,90,40,0.55)'); gl.addColorStop(0.4, 'rgba(200,40,40,0.22)'); gl.addColorStop(1, 'rgba(120,10,30,0)');
-      c.fillStyle = gl; c.fillRect(0, hy - 1500, WW, 3000);
-      c.fillStyle = '#04010a'; c.fillRect(0, hy + 20, WW, Math.max(0, WH + 400 - hy - 20));
+      c.fillStyle = gl; c.fillRect(vx0, hy - 1500, vx1 - vx0, 3000);
+      c.fillStyle = '#04010a'; c.fillRect(vx0, hy + 20, vx1 - vx0, Math.max(0, Math.max(WH + 400, y1) - hy - 20));
       c.fillStyle = '#000'; c.beginPath(); c.ellipse(hx, hy, 520, 120, 0, 0, 7); c.fill();
       c.strokeStyle = '#ffb347'; c.lineWidth = 5; c.beginPath(); c.ellipse(hx, hy, 545, 132, t*0.003, 0, 7); c.stroke();
       c.strokeStyle = '#ff5a3a'; c.lineWidth = 4; c.beginPath(); c.ellipse(hx, hy, 640, 165, -t*0.005, 0, 7); c.stroke();
