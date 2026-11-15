@@ -101121,10 +101121,10 @@ Object.assign(EVENT_TWIST_WORDS, {
 });
 Object.assign(EVENT_TWIST_WORDS, {
   'contest:dig': { icon:'⛏️', short:"Spongy's contest: the dig", words:"Spongy's contest: dig out to a corner exit. Your moves are buried in the dirt; the first out fight stronger." },
-  'contest:collection': { icon:'🧩', short:"Cloudy's contest: the collection", words:"Cloudy's contest: hold all 9 kinds of item for 10 seconds. Every 3rd hit you take, the hitter steals one. A KO drops your items." },
+  'contest:collection': { icon:'🧩', short:"Cloudy's contest: the collection", words:"Cloudy's contest: hold all 9 kinds of item for 5 seconds. Every 3rd hit you take, the hitter steals one. A KO drops your items." },
 });
 // THE GOAL LINE (2026-11-08): one short line shown for the first 5 seconds of the match (drawEventGoal); a twist with none shows its short words.
-EVENT_TWIST_WORDS['contest:dig'].goal = 'Dig out to a corner exit'; EVENT_TWIST_WORDS['contest:collection'].goal = 'Hold all 9 items for 10 seconds'; EVENT_TWIST_WORDS.spleef.goal = 'Last one standing wins';
+EVENT_TWIST_WORDS['contest:dig'].goal = 'Dig out to a corner exit'; EVENT_TWIST_WORDS['contest:collection'].goal = 'Hold all 9 items for 5 seconds'; EVENT_TWIST_WORDS.spleef.goal = 'Last one standing wins';
 Object.assign(EVENT_TWIST_WORDS, {
   dark: { icon:'🔦', short:'lights out', words:'Lights out: the forest is dark. Everyone carries a lit patch around them, and the rest of the stage is dim but still easy to read. Other fighters fade away when they are far from you and show up as they come close. It is only how the match looks: nobody is hurt or hidden from the computer fighters.' },
 });
@@ -102939,10 +102939,10 @@ function drawCollectSlots(f, cx){
 // want(f, inp, t, dist) (what a CPU goes for beside fighting: true when it took the keys). THE SECOND RULE is Spongy's 'dig' (CONTEST_RULES.dig, below
 // Cloudy's, with its own world DIGC in place of the stage). CONTEST is the running one: { rule, rain, ...the rule's
 // state }, null in every other match. An event match is offline (startEventMatch), so nothing here rides the relay.
-// THE FIRST, the model for the others: CLOUDY'S COLLECTION (the owner, 2026-11-07). Hold ALL NINE kinds of item at once for 10 seconds: the six the
+// THE FIRST, the model for the others: CLOUDY'S COLLECTION (the owner, 2026-11-07). Hold ALL NINE kinds of item at once for 5 seconds (the owner, 2026-11-15: shorter; was 10): the six the
 // pool drops (COLLECT_KINDS) and three of this contest's own, each one of a kind on the stage -- the WINDOW ("Hey, My Window!": a hit of CC.loose%
 // or more knocks it out of your hands), the RAINDROP JAR (it fills while it rains, CC.fill a frame of rain, and weighs its holder down CC.slowEmpty
-// to CC.slowFull of their run) and the GOLDEN SEED (ONE in the match, dropped at CC.seedAt; ANY hit knocks it loose; lost down a gap, it comes back
+// to CC.slowFull of their run) and the GOLDEN SEED (ONE in the match, dropped at CC.seedAt; a STRONG hit (CC.seedHit damage or more) knocks it loose; lost down a gap, it comes back
 // CC.back frames later somewhere new -- so do the window and the jar). THE STEAL: every CC.steal hits a fighter takes, the hitter takes one of their
 // items at random (one the hitter does not hold; if they hold every kind the victim has, the item falls loose beside the victim instead), and the
 // count starts over. A STOCK LOST drops everything the fighter held onto the stage (from the sky, over the floor nearest where they went out, as
@@ -102952,7 +102952,7 @@ function drawCollectSlots(f, cx){
 // CPUs: one goes for an item it lacks when no foe is in its face (contestCpuWant: the nearest loose kind it lacks, on its own level), and all of
 // them turn on a rival at CC.gang kinds or more (contestCpuFocus): the leader is everyone's foe. No number of the brain's fighting changed.
 const CONTEST_KINDS = COLLECT_KINDS.concat(['window', 'jar', 'seed']);
-const CC = { need:9, hold:600, steal:3, combo:36, safe:240, loose:10, slowEmpty:0.04, slowFull:0.12, fill:1/900, dropAt:150, seedAt:1200, back:150, life:60*60, spread:56, hop:7, gang:6, reach:560, climb:170 };
+const CC = { need:9, hold:300, seedHit:14, steal:3, combo:36, safe:240, loose:10, slowEmpty:0.04, slowFull:0.12, fill:1/900, dropAt:150, seedAt:1200, back:150, life:60*60, spread:56, hop:7, gang:6, reach:560, climb:170 };
 function contestHeld(f){ return f._cst || (f._cst = []); }
 function contestHas(f, k){ return contestHeld(f).indexOf(k) >= 0; }
 function contestCount(f){ return contestHeld(f).length; }
@@ -103040,7 +103040,7 @@ CONTEST_RULES.collection = {
     if(f.you) tone(440 + 60*n, 0.07, 'triangle', 0.15, 0, 620 + 60*n);
   },
   hit(t, from, dmg){
-    if(contestHas(t, 'seed')) contestDrop(t, 'seed');
+    if(dmg >= CC.seedHit && contestHas(t, 'seed')) contestDrop(t, 'seed');   // (the owner, 2026-11-15: the seed drops only on a STRONG hit (a smash-sized one), not on any hit)
     if(dmg >= CC.loose && contestHas(t, 'window')) contestDrop(t, 'window');
     // THE STEAL counts ATTACKS, not ticks (the owner, 2026-11-08: 'everything gets stolen after 1 hit'): a string of hits inside CC.combo frames of the one that
     // counted is the same attack, and just after a steal the victim is safe for CC.safe frames, so one combo costs at most one item.
@@ -103114,15 +103114,27 @@ CONTEST_RULES.collection = {
   },
   want(f, inp, t, dist){
     if(contestCount(f) >= CC.need || !f.onground && !(f.vy < 0)) return false;
-    let best = null, bd = CC.reach;
+    let best = null, bd = CC.reach*2;
     for(const it of items){
-      if(it.taken || !(it.life > 0) || CONTEST_KINDS.indexOf(it.kind) < 0 || contestHas(f, it.kind) || (it._npBy === f.idx && it._npT > hazardT)) continue;
-      const dy = f.y - it.y; if(dy < -40 || dy > CC.climb) continue;   // (below them, or higher than a jump: not this one)
-      const d = Math.hypot(it.x - f.x, dy); if(d < bd){ bd = d; best = it; }
+      if(it.taken || !(it.life > 0) || CONTEST_KINDS.indexOf(it.kind) < 0 || contestHas(f, it.kind) || (it._npBy === f.idx && it._npT > hazardT) || (it._skipBy === f.idx && it._skipT > hazardT)) continue;
+      const dy = f.y - it.y; if(dy > CC.climb) continue;   // (higher than a jump: not this one)
+      // (2026-11-15, found by the events jury: an item lying on the floor far BELOW a CPU on the high platforms was skipped for ever, so after the first KO drop nobody fetched
+      // the pile and the match never ended. Below now counts, nearer in x first; the CPU walks off and drops to it.)
+      const below = dy < -40, d = below ? Math.abs(it.x - f.x) + 0.4*(-dy) : Math.hypot(it.x - f.x, dy);
+      if(!below && d > CC.reach) continue;
+      if(d < bd){ bd = d; best = it; }
     }
     if(!best) return false;
     if(dist < 150 && dist < bd) return false;   // (a foe in its face comes first)
-    const dir = best.x < f.x ? -1 : 1, adx = Math.abs(best.x - f.x);
+    const dir = best.x < f.x ? -1 : 1, adx = Math.abs(best.x - f.x), under = f.y - best.y < -40;
+    if(under){   // (an item below: to above it, then down through the platform (down + jump, as the brain's own drops); a floor it cannot drop through for 1.5 s, and the item is left alone for 5 s)
+      if(adx > 8){ if(dir < 0) inp.left = true; else inp.right = true; }
+      if(adx < 110 && f.onground){
+        inp.down = true; inp.jump = true;
+        if(f._cuY !== f.y){ f._cuY = f.y; f._cuT = hazardT; } else if(hazardT - f._cuT > 90){ best._skipBy = f.idx; best._skipT = hazardT + 300; f._cuT = hazardT; }
+      }
+      return true;
+    }   // (an item below: to above it, and down through the platform)
     if(adx > 8){ if(!aiSafeStep(f, dir)){ if(f.onground && f.y - best.y > 30) inp.jump = true; else return false; } if(dir < 0) inp.left = true; else inp.right = true; }
     if(f.onground && f.y - best.y > 30 && adx < 90) inp.jump = true;
     return true;
