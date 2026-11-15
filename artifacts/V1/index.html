@@ -102176,6 +102176,7 @@ function checkWin(){
   const alive=fighters.filter(f=>!f.dead);
   const teamsAlive=[...new Set(alive.map(f=> f._infected>0 ? f._origTeam : f.team))];
   if(teamsAlive.length<=1){
+    if(contestHold()) return;   // (a contest that ends on its own terms: Clock's points)
     if(kocHold()) return;   // THE LAST KO: the match stops once its slow-mo and its beat have played (kocHold)
     running=false;
     const winTeam = teamsAlive[0];
@@ -104825,6 +104826,7 @@ function contestBegin(){
   if(R.begin) R.begin();
 }
 function contestRule(){ return (CONTEST && CONTEST_RULES[CONTEST.rule]) || null; }
+function contestHold(){ const R = contestRule(); return !!(R && R.hold && CONTEST.winner == null && R.hold()); }
 function contestStep(){ const R = contestRule(); if(R && R.step && running) R.step(); }
 function contestTake(f, it){ const R = contestRule(); if(R && R.take) R.take(f, it); }
 function contestHit(t, from, dmg){ const R = contestRule(); if(R && R.hit) R.hit(t, from, dmg); }
@@ -105046,7 +105048,10 @@ function contestWalk(f, inp, x, near){
 // CPUs: with a foe in their face they fight; with their timer under CK.hungry, or a clock within CK.near, they fetch the nearest reachable clock (jumping to platforms);
 // otherwise they walk to the zone and stand in it, fighting what comes and not chasing a foe far out of it.
 const CK = { twists:['fast'], wide:1.25, tierY:0.62, start:3600, cap:5400, gain:600, hit:120, combo:36, ptsEvery:6, w:300, h:140, first:240, gap0:150, gapStep:45, retry:60, max:3, r:17, lift:26, climb:170, reach:760,
-             hungry:1500, near:260, low:900, leash:200, time:10800, atZero:'stay' };
+             hungry:2400, near:420, low:900, leash:200, time:10800, atZero:'stay', foeNear:70, tripMax:420 };
+// 2026-11-15 (owner: CPUs do not grab clocks; a stock-out keeps its points): a CPU now GOES FOR a clock as a player would: with its timer at or under CK.hungry (40 s), or a clock within CK.near, it picks the clock, leaves the
+// zone, grabs it and walks back (it keeps the trip while a foe is near: it only breaks off for a foe within CK.foeNear, and gives a trip up after CK.tripMax frames). A fighter who loses every stock is off the stage but KEEPS its points
+// and can still WIN on them (ckEnd): the engine's last-one-standing end is held while the contest runs (contestHold).
 function ckSec(fr){ const t = Math.max(0, fr)/60; return Math.floor(t/60) + ':' + (t % 60 < 10 ? '0' : '') + (t % 60).toFixed(1); }
 function ckIn(f){ const z = CONTEST.zone; return !f.dead && Math.abs(f.x - z.x) <= CK.w/2 && f.y + f.r >= groundY() - CK.h && f.y - f.r <= groundY() + 20; }
 // THE STAGE (the owner, 2026-11-13: "should be on a slightly bigger stage, with clocks spawning on platforms"; and "NOT ONLY ON PLATFORMS": clocks spawn on the floor AND on the platforms, always outside the zone): Goiky Field made CK.wide (1.25) times wider, for this one
@@ -105095,6 +105100,7 @@ function ckDrawClock(c, x, y, k, t){
 }
 CONTEST_RULES.clock = {
   twists:CK.twists,
+  hold(){ return true; },   // (the last fighter with stocks does not end it: a stock-out keeps its points and may still win on them; ckEnd in step())
   winText(f){ return f.name + ' won with ' + (f._ckP | 0) + ' points!'; },
   score(f){ return f._ckP || 0; },   // (the rest rank by points)
   begin(){
@@ -105129,9 +105135,13 @@ CONTEST_RULES.clock = {
       }
     }
     ckLive().filter(f => f._ckT <= 0).forEach(ckOut);
-    const onStage = fighters.filter(f => !f.dead);
-    if(!onStage.length) return;
-    if(onStage.length === 1 || !ckLive().length || t >= CK.time) contestWin(ckBest(onStage));   // (everyone's time out, the cap, or one left on the stage: the most points wins)
+    if(!ckLive().length || t >= CK.time){   // (every timer out or off the stage, or the cap: the most points wins, a fighter who lost all its stocks included)
+      const b = ckBest(fighters);
+      if(b.dead){   // a stock-out winner: put back for the result, on the zone (the engine's last-one-standing end was held, contestHold)
+        b.dead = false; b.alive = true; b.stocks = 1; b.placement = null; b.hitstun = 0; b.x = S.zone.x; b.y = groundY() - b.r; b.vx = 0; b.vy = 0; b.onground = true;
+      }
+      contestWin(b);
+    }
   },
   hit(t, from, dmg){
     if(t.dead || t._ckOut || !(t._ckT > 0) || hazardT - t._ckHitT < CK.combo) return;   // (a combo is one hit)
@@ -105162,13 +105172,20 @@ CONTEST_RULES.clock = {
   },
   badge(f, c){ if(!f._ckOut) contestPill(c, f, Math.ceil(f._ckT/60) + 's', f._ckT <= CK.low, false); },
   want(f, inp, t, dist){
-    const S = CONTEST; if(f._ckOut || (!f.onground && !(f.vy < 0))) return false;
-    if(t && dist < 150) return false;   // (a foe in its face comes first)
-    let best = null, bd = CK.reach;
-    for(const c of S.clocks){ const dy = f.y - (c.y - 20); if(dy < -40 || dy > CK.climb) continue; const d = Math.hypot(c.x - f.x, dy); if(d < bd){ bd = d; best = c; } }
-    if(best && f._ckT <= CK.cap - CK.gain && (f._ckT <= CK.hungry || bd <= CK.near)){
+    const S = CONTEST; if(f._ckOut){ f._ckGo = null; return false; }
+    let best = null;
+    if(f._ckGo && S.clocks.indexOf(f._ckGo) >= 0 && hazardT - f._ckGoT < CK.tripMax) best = f._ckGo; else f._ckGo = null;   // (a trip under way: it keeps going, in the air too)
+    if(!best){
+      if(!f.onground && !(f.vy < 0)) return false;
+      if(t && dist < CK.foeNear) return false;   // (a foe right in its face comes first)
+      let bd = CK.reach;
+      for(const c of S.clocks){ const dy = f.y - (c.y - 20); if(dy < -40 || dy > CK.climb) continue; const d = Math.hypot(c.x - f.x, dy); if(d < bd){ bd = d; best = c; } }
+      if(!(best && f._ckT <= CK.cap - CK.gain && (f._ckT <= CK.hungry || bd <= CK.near))) best = null;
+      else { f._ckGo = best; f._ckGoT = hazardT; f._ckTrips = (f._ckTrips || 0) + 1; }
+    }
+    if(best){
       const dir = best.x < f.x ? -1 : 1, adx = Math.abs(best.x - f.x);
-      if(adx > 8){ if(!ckStepOk(f, dir)){ if(f.onground && f.y - best.y > 30) inp.jump = true; else return false; } if(dir < 0) inp.left = true; else inp.right = true; }
+      if(adx > 8){ if(!ckStepOk(f, dir)){ if(f.onground && f.y - best.y > 30) inp.jump = true; else { f._ckGo = null; return false; } } if(dir < 0) inp.left = true; else inp.right = true; }
       if(f.onground && f.y - (best.y - 20) > 30 && adx < 90) inp.jump = true;
       return true;
     }
