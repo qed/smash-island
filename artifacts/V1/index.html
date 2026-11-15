@@ -20445,6 +20445,7 @@ function smashHowText(f){
 }
 // The up and the down smash for the move lists: the name, how to press it, what it does, and the damage (the fighter's own damage setting, as the smash line does).
 function dirSmashText(r, dir){
+  const own = dsmOwnText(r, dir); if(own) return own;   // (a fighter with its own up / down smash: DSM_OWN)
   const N = dirSmashNums(r && r.kit && r.kit.special, r && r.name), up = dir > 0, dm = (typeof statsFor === 'function' ? statsFor(r.name).dmg : 1);
   const nm = (up ? DSM_NAMES.up : DSM_NAMES.down)[N.pat] || (up ? DSM_NAMES.up.none : DSM_NAMES.down.none);
   const dmg = Math.round(N.D*(up ? DSM.upDmg : DSM.downDmg)*dm);
@@ -75673,6 +75674,8 @@ function dirSmashNums(sp, name){
 function dirSmashSpec(f, dir){
   const sp = f.kit && f.kit.special, up = dir > 0, key = f.name + '|' + dir + '|' + Math.round(f.r);
   let S = DSM_CACHE.get(key); if(S) return S;
+  const own = DSM_OWN[f.name];   // UNIQUE UP/DOWN SMASHES, batch 1: twelve fighters have their own rows (DSM_OWN)
+  if(own){ S = own[up ? 'up' : 'down']; DSM_CACHE.set(key, S); return S; }
   const N = dirSmashNums(sp, f.name), r = f.r, name = (up ? DSM_NAMES.up : DSM_NAMES.down)[N.pat] || (up ? DSM_NAMES.up.none : DSM_NAMES.down.none);
   const end = 20 + Math.round(N.D*0.45);
   if(up){
@@ -89237,7 +89240,7 @@ function mvTick(f, inp){
 // Projectiles, the jab (one frame), the smashes and the specials are untouched. Every row's class is listed in reports/sweep-classification.csv.
 const SW_WORDS = /swing|sweep|swipe|swat|chop|whip|\bround\b|wheel|hook|backhand|\barcs?\b|slash|smack|flail|lash|flick/i;
 const SW_STRAIGHT = /straight|stab|poke|thrust|\bjab|punch|shove|pound|spike|column|\bdrops?\b|\bslaps?\b/i;
-const SW_EXC = { 'chair.fa':'swing', 'shutter.na':'thrust' };   // Bow's Chair Swing (the owner's example): its words already say swing; pinned so a rewording cannot lose it. Cammy's Shutter Click (UNIQUE MOVES BATCH 1): a burst to both sides at once, not a swing (its 'flashes' holds 'lash')
+const SW_EXC = { 'chair.fa':'swing', 'shutter.na':'thrust', 'float.dsmash':'thrust', 'slap.usmash':'thrust' };   // Bow's Chair Swing (the owner's example): its words already say swing; pinned so a rewording cannot lose it. Cammy's Shutter Click (UNIQUE MOVES BATCH 1): a burst to both sides at once, not a swing (its 'flashes' holds 'lash')
 function swClassOf(kit, key, S, b){
   const e = SW_EXC[kit + '.' + key]; if(e) return e;
   if(!b || !b.s || b.rehit) return 'thrust';
@@ -89295,13 +89298,21 @@ function mvStrike(f, mv, b, gi){
   hitTurrets(f, bb.cx, bb.cy, bb.rad, b.dmg);
   if(FINX.length && f.kit) fx8DoughRec(f, sh, b.dmg, f.face*(b.kb || [4, -3])[0], (b.kb || [4, -3])[1], key, b.rehit, mv.t);   // Dough's copy throws it again a beat later (FINISHERS V2, batch 8)
   const hs = mv.hit[key] || (mv.hit[key] = new Map());
+  if(b.chain) f._combo = true;   // `chain`: a later step of ONE move lands through the hit-grace its own earlier step opened (graceBlocks: the same attacker, the same move)
   const fresh = shapeTargets(f, sh).filter(t => !hs.has(t.idx));
+  if(b.chain) f._combo = false;
   let again = [];
   if(b.rehit){ f._combo = true; again = shapeTargets(f, sh).filter(t => hs.has(t.idx) && mv.t - hs.get(t.idx) >= b.rehit); f._combo = false; }
   for(const t of fresh.concat(again)){
     hs.set(t.idx, mv.t);
     const kb = b.kb || [4, -3];
-    applyHit(t, b.dmg, f.face * kb[0], kb[1], f, { stun: b.stun || 0, mvKey: mv.key });
+    let kx = f.face * kb[0], ky = kb[1];
+    if(b.rad != null){   // `rad`: thrown straight away from the fighter's centre with strength rad, with a small upward floor so a grounded foe lifts (the length of the launch is exactly rad)
+      let ux = t.x - f.x, uy = t.y - f.y; const L = Math.hypot(ux, uy); if(L < 1){ ux = f.face; uy = 0; } else { ux /= L; uy /= L; }
+      if(uy > -0.4){ uy = -0.4; ux = (ux < 0 ? -1 : 1) * Math.sqrt(1 - 0.16); }
+      kx = ux * b.rad; ky = uy * b.rad;
+    }
+    applyHit(t, b.dmg, kx, ky, f, { stun: b.stun || 0, mvKey: mv.key });
     mv.landed = true; f._confirm = 1;
     if(b.fx) b.fx(f, t, mv);
   }
@@ -89566,6 +89577,229 @@ msWords();
 Object.assign(CLINGERS, { tackle:50, pierce:66, bomb:40, anvil:44 });   // Pin's point sticks in the wall; Snowball packs onto it; the other two hold on for less
 const msBurn = (n) => (f, t) => { t.burn = Math.max(t.burn || 0, n); };
 const msFx = (name, n) => (f, t) => { if(SM_FX[name]) SM_FX[name](t, f, n); };
+// ============================================================
+//  UNIQUE UP / DOWN SMASHES, BATCH 1 (12 fighters, v2)
+// ============================================================
+// The owner approved giving each fighter's up and down smash its own ("change what is needed. and make them better and more different"). Twelve fighters
+// (Firey, Leafy, Needle, Pin, Snowball, Bomby, Bubble, Teardrop, Flower, Tennis Ball, Blocky, Coiny) have their own ROW here, in the tilt row format;
+// every other fighter keeps the generated wedge and the two low lines (dirSmashSpec, above). The table is keyed by the fighter's NAME. Numbers are
+// at or under the generated move they replace: per hit, in damage and in launch strength (the length of kb); a foe cannot take more in all than
+// the generated move gave (Tennis Ball's two landings share one hit group). `tot` is the most one foe can take from the move (before the fighter's
+// own damage setting) and `x` its extra effect, for the move list (dirSmashText). `rad` on a box: the launch goes straight away from the
+// fighter's centre with that strength (a small upward floor so a grounded foe lifts), not along a fixed kb (mvStrike).
+const DSM_OWN = {
+  'Firey': {
+    up:   { n:'Hang Glider Heave', d:'snaps his hang glider open over his head: the nose hits hardest and the wings catch anyone off to the sides, high up', tot:17.5, x:'', pose:'uppercut', st:5, act:4, end:29, land:12, ac:999, smash:true,
+      boxes:[{ s:MvO(0,-92,14), g:'a', dmg:17.5, kb:[0.8,-8.1] }, { s:MvC(0,-90, 62,-62, 10), g:'a', dmg:14.5, kb:[2.6,-7.4] }, { s:MvC(0,-90, -62,-62, 10), g:'a', dmg:14.5, kb:[-2.6,-7.4] }] },
+    down: { n:'Twin Torches', d:'two tongues of flame shoot up and out from his feet in a V, low close in and head high at the ends', tot:14.5, x:', burns them', pose:'kick', st:4, act:5, end:29, smash:true,
+      boxes:[{ s:MvC(10,20, 66,-30, 12), g:'df', dmg:14.5, kb:[4.6,-4.8], fx:msBurn(60) }, { s:MvC(-10,20, -66,-30, 12), g:'db', dmg:14.5, kb:[-4.6,-4.8], fx:msBurn(60) }] },
+  },
+  'Leafy': {
+    up:   { n:'Leaf Blades', d:'flings two sharp leaf blades, one up and left and one up and right: nothing hits straight above her', tot:13.7, x:'', pose:'throw', st:5, act:4, end:28, smash:true,
+      boxes:[{ s:MvC(14,-22, 64,-82, 6), g:'a', dmg:13.7, kb:[3.2,-10.0] }, { s:MvC(-14,-22, -64,-82, 6), g:'a', dmg:13.7, kb:[-3.2,-10.0] }] },
+    down: { n:'Falling Leaf', d:'sways down like a falling leaf, a U that starts behind her and comes up in front: the back half carries a foe under her, the front half launches them the way she faces', tot:14.2, x:'', pose:'spin', st:4, act:7, end:26, smash:true,
+      boxes:[{ s:MvC(-70,-6, -22,22, 13), t0:4, t1:6, g:'a', dmg:5, kb:[8.0,-1.6], stun:14 }, { s:MvC(22,22, 70,-6, 13), t0:7, t1:10, g:'b', chain:true, dmg:9.2, kb:[9.0,-5.0] }] },
+  },
+  'Needle': {
+    up:   { n:"Don't Call Me Needy!", d:'the slap, swung from straight ahead up to straight overhead at arm\'s length: stuns for a moment', tot:8.2, x:', stuns them', pose:'uppercut', st:5, act:4, end:25, smash:true,
+      boxes:[{ s:MvF(46, 72, -1.65, -0.15, -4, 0), dmg:8.2, kb:[3.6,-5.2], fx:msFx('stun',20) }] },
+    down: { n:'Double Stitch', d:'stabs the floor and two needles come up through it, one each side, like a stitch through cloth: they pop foes upward (nothing right against her)', tot:7.6, x:', bleeds them', pose:'stompdn', st:4, act:5, end:25, smash:true,
+      boxes:[{ s:MvC(52,26, 52,-44, 7), g:'df', dmg:7.6, kb:[1.2,-6.2], fx:msFx('bleed',40) }, { s:MvC(-52,26, -52,-44, 7), g:'db', dmg:7.6, kb:[-1.2,-6.2], fx:msFx('bleed',40) }] },
+  },
+  'Pin': {
+    up:   { n:'Flat Top', d:'bucks her wide flat head upward with a small hop: a low flat plate just over her that rises with her', tot:19.5, x:'', pose:'uppercut', st:5, act:4, end:30, land:12, ac:999, smash:true,
+      boxes:[{ s:MvC(-40,-34, 40,-34, 9), dmg:19.5, kb:[0,-9.0] }], mv:[{ t0:5, t1:5, mode:'set', vy:-4.5 }] },
+    down: { n:'Wobbling Top', d:'spins on her point like a top and wanders, forward, back, forward: a light hit each way and a launch on the last leg', tot:18, x:'', pose:'spin', st:4, act:20, end:20, smash:true,
+      boxes:[{ s:MvO(0,10,34), t0:4, t1:8, g:'a', dmg:5, kb:[2.2,-2.4], stun:16 }, { s:MvO(0,10,34), t0:9, t1:18, g:'b', chain:true, dmg:5, kb:[-2.2,-2.4], stun:16 }, { s:MvO(0,10,34), t0:19, t1:23, g:'c', chain:true, dmg:8, kb:[7.2,-3.6] }],
+      mv:[{ t0:4, t1:8, mode:'set', vx:6 }, { t0:9, t1:18, mode:'set', vx:-6 }, { t0:19, t1:23, mode:'set', vx:6 }, { t0:24, t1:24, mode:'set', vx:0 }] },
+  },
+  'Snowball': {
+    up:   { n:'Snowman', d:'slams two more snowballs onto his own head, a snowman: the small top ball hits hardest, straight up only', tot:15, x:'', pose:'uppercut', st:5, act:4, end:28, smash:true,
+      boxes:[{ s:MvO(0,-92,15), g:'a', dmg:15, kb:[0.4,-6.0] }, { s:MvO(0,-52,24), g:'a', dmg:13, kb:[0.4,-5.6] }] },
+    down: { n:'Roll Out', d:'stamps in a rage and a snowball rolls away from him on each side, growing as it goes: weak and small beside him, big and strong at the end of its run', tot:13.5, x:', the far ball leaves them slippery', pose:'stompdn', st:4, act:9, end:24, smash:true,
+      boxes:[{ s:MvO(30,14,12), t0:4, t1:6, g:'df', dmg:9, kb:[4.5,-2.1] }, { s:MvO(58,10,17), t0:7, t1:9, g:'df', dmg:11.5, kb:[4.5,-2.1] }, { s:MvO(86,4,22), t0:10, t1:12, g:'df', dmg:13.5, kb:[4.5,-2.1], fx:msFx('ice',70) },
+        { s:MvO(-30,14,12), t0:4, t1:6, g:'db', dmg:9, kb:[-4.5,-2.1] }, { s:MvO(-58,10,17), t0:7, t1:9, g:'db', dmg:11.5, kb:[-4.5,-2.1] }, { s:MvO(-86,4,22), t0:10, t1:12, g:'db', dmg:13.5, kb:[-4.5,-2.1], fx:msFx('ice',70) }] },
+  },
+  'Bomby': {
+    up:   { n:'Fuse Sparkler', d:'his fuse spits a thin jet with a ball of sparks at the top, like a lit sparkler: narrow all the way, straight up', tot:24, x:', burns them', pose:'uppercut', st:5, act:4, end:34, smash:true,
+      boxes:[{ s:MvO(0,-96,22), g:'a', dmg:24, kb:[0.5,-10.5], fx:msBurn(70) }, { s:MvC(0,-30, 0,-72, 11), g:'a', dmg:24, kb:[0.5,-10.5], fx:msBurn(70) }] },
+    down: { n:'Backfire', d:'a blast under him: one low dome hugging the floor that sets foes alight and throws them straight away from him (it costs him 3%)', tot:22, x:', burns them', pose:'slam', st:4, act:5, end:34, smash:true,
+      start:(f) => { f.pct += 3; },
+      boxes:[{ s:MvC(-36,18, 36,18, 30), dmg:22, rad:10.6, fx:msBurn(60) }] },
+  },
+  'Bubble': {
+    up:   { n:'Blow-Up', d:'blows one bubble over her head that swells in three steps, small, medium, big, then pops: each step is a light hit and the pop launches', tot:10.2, x:'', pose:'uppercut', st:5, act:9, end:20, smash:true,
+      boxes:[{ s:MvO(0,-42,14), t0:5, t1:7, g:'a', dmg:3, kb:[0,-1.5], stun:14 }, { s:MvO(0,-54,24), t0:8, t1:10, g:'b', chain:true, dmg:3, kb:[0,-1.5], stun:14 }, { s:MvO(0,-68,36), t0:11, t1:13, g:'c', chain:true, dmg:4.2, kb:[0.6,-6.3] }] },
+    down: { n:'Oh Noio!', d:'she pops: a thin ring spreads out from her in three steps, weaker the further it gets, and throws foes straight away from her', tot:9.2, x:'', pose:'spin', st:4, act:6, end:24, smash:true,
+      boxes:[{ s:MvF(14,34, -3.14,3.14, 0,0), t0:4, t1:5, g:'a', dmg:9.2, rad:5.9 }, { s:MvF(32,54, -3.14,3.14, 0,0), t0:6, t1:7, g:'a', dmg:8, rad:5.9 }, { s:MvF(50,74, -3.14,3.14, 0,0), t0:8, t1:9, g:'a', dmg:6.5, rad:5.9 }] },
+  },
+  'Teardrop': {
+    up:   { n:'Dot Dot Dot', d:'an empty speech bubble pops up over her head and its three dots appear one at a time, back, middle, front: the last dot launches', tot:9.2, x:'', pose:'uppercut', st:5, act:7, end:22, smash:true,
+      boxes:[{ s:MvO(-30,-64,13), t0:5, t1:6, g:'a', dmg:3, kb:[0.8,-1.2], stun:14 }, { s:MvO(0,-64,13), t0:7, t1:8, g:'b', chain:true, dmg:3, kb:[0.8,-1.2], stun:14 }, { s:MvO(30,-64,13), t0:9, t1:11, g:'c', chain:true, dmg:3.2, kb:[0.8,-7.0] }] },
+    down: { n:'Down the Drain', d:'melts into a whirlpool: the hit starts far out on both sides and closes in on her, dragging foes toward her, then a splash in the middle pops them up', tot:8.8, x:'', pose:'slam', st:4, act:9, end:21, smash:true,
+      boxes:[{ s:MvO(72,16,16), t0:4, t1:6, g:'a', dmg:2.6, kb:[-3.2,-1.0], stun:14 }, { s:MvO(-72,16,16), t0:4, t1:6, g:'a', dmg:2.6, kb:[3.2,-1.0], stun:14 },
+        { s:MvO(44,16,16), t0:7, t1:9, g:'b', chain:true, dmg:2.6, kb:[-2.6,-1.0], stun:14 }, { s:MvO(-44,16,16), t0:7, t1:9, g:'b', chain:true, dmg:2.6, kb:[2.6,-1.0], stun:14 },
+        { s:MvO(0,8,34), t0:10, t1:12, g:'c', chain:true, dmg:3.6, kb:[1.5,-5.2] }] },
+  },
+  'Flower': {
+    up:   { n:'So Beautiful!', d:'strikes a pose and her petals flare: five separate petals in a half-ring over her head, like a crown', tot:17.5, x:', dazzles them', pose:'uppercut', st:5, act:4, end:30, smash:true,
+      boxes:[{ s:MvO(0,-74,13), g:'a', dmg:17.5, kb:[0.3,-4.2], fx:msFx('stun',15) }, { s:MvO(30,-64,13), g:'a', dmg:17.5, kb:[0.3,-4.2], fx:msFx('stun',15) }, { s:MvO(-30,-64,13), g:'a', dmg:17.5, kb:[0.3,-4.2], fx:msFx('stun',15) },
+        { s:MvO(52,-40,13), g:'a', dmg:17.5, kb:[0.3,-4.2], fx:msFx('stun',15) }, { s:MvO(-52,-40,13), g:'a', dmg:17.5, kb:[0.3,-4.2], fx:msFx('stun',15) }] },
+    down: { n:'So Ha!', d:'plants her non-slip shoes and shoves with both arms straight out, one to each side at chest height: short reach, flat along the floor, and they slide', tot:16.5, x:', leaves them slippery', pose:'punch', st:4, act:5, end:30, smash:true,
+      boxes:[{ s:MvC(12,-4, 50,-4, 14), g:'df', dmg:16.5, kb:[3.9,-0.4], fx:msFx('ice',50) }, { s:MvC(-12,-4, -50,-4, 14), g:'db', dmg:16.5, kb:[-3.9,-0.4], fx:msFx('ice',50) }] },
+  },
+  'Tennis Ball': {
+    up:   { n:'Topspin Bounce', d:'squashes flat, then bounces himself straight up: his whole body is the hit, only on the way up', tot:14.5, x:'', pose:'uppercut', st:5, act:6, end:26, land:14, ac:999, smash:true,
+      boxes:[{ s:MvO(0,-6,30), t0:5, t1:10, dmg:14.5, kb:[0.4,-12.5] }], mv:[{ t0:5, t1:5, mode:'set', vy:-8 }] },
+    down: { n:'Double Fault', d:'two bounces: a short one that lands in front, then a long one back over where he stood to land behind: each landing thumps the floor under him and leaves the foe slowed, and one foe is hit by only one of them', tot:11.4, x:', slows them', pose:'slam', st:4, act:24, end:14, smash:true,
+      boxes:[{ s:MvO(0,16,34), t0:13, t1:15, g:'a', dmg:8, kb:[7.6,-4.8], fx:msFx('slow',50) }, { s:MvO(0,16,34), t0:25, t1:27, g:'a', dmg:11.4, kb:[-10.8,-5.7], fx:msFx('slow',50) }],
+      mv:[{ t0:4, t1:4, mode:'set', vy:-3.1 }, { t0:4, t1:13, mode:'set', vx:3.6 }, { t0:16, t1:16, mode:'set', vy:-3.1 }, { t0:16, t1:25, mode:'set', vx:-7.2 }, { t0:26, t1:26, mode:'set', vx:0 }] },
+  },
+  'Blocky': {
+    up:   { n:'Funny Doings Pop-Up', d:'a boxing glove on a spring pops out of the floor ahead of him, slanting up and forward: the glove is the real hit and pranks, the spring is a weak hit (nothing straight above him)', tot:18.5, x:', the glove reverses their controls', pose:'uppercut', st:5, act:4, end:31, smash:true,
+      boxes:[{ s:MvO(58,-62,18), g:'a', dmg:18.5, kb:[2.6,-8.1], fx:msFx('scramble',40) }, { s:MvC(34,24, 52,-40, 8), g:'a', dmg:14, kb:[1.5,-7.0] }] },
+    down: { n:'Snakes in a Can', d:'cracks open a prank can at his feet and a spring snake leaps out to each side in an arch, up to head height then down to the floor', tot:17.5, x:'', pose:'slam', st:4, act:6, end:30, smash:true,
+      boxes:[{ s:MvC(12,-6, 44,-46, 9), t0:4, t1:6, g:'df', dmg:17.5, kb:[6.6,-4.6] }, { s:MvC(44,-46, 84,14, 9), t0:7, t1:9, g:'df', dmg:17.5, kb:[6.6,-4.6] },
+        { s:MvC(-12,-6, -44,-46, 9), t0:4, t1:6, g:'db', dmg:17.5, kb:[-6.6,-4.6] }, { s:MvC(-44,-46, -84,14, 9), t0:7, t1:9, g:'db', dmg:17.5, kb:[-6.6,-4.6] }] },
+  },
+  'Coiny': {
+    up:   { n:'Heads or Tails', d:'flips on the spot like a tossed coin: edge-on first, a very thin very tall line, then face-on, a wide round disc', tot:19, x:'', pose:'spin', st:5, act:6, end:28, smash:true,
+      boxes:[{ s:MvC(0,-20, 0,-100, 8), t0:5, t1:7, g:'a', dmg:19, kb:[0.3,-7.2] }, { s:MvO(0,-50,36), t0:8, t1:10, g:'a', dmg:16, kb:[0.3,-6.6] }] },
+    down: { n:'Penny Spin', d:'drops and spins flat like a coin settling on a table: a round patch at his feet that shrinks with each wobble, three quick hits, the last throws them away', tot:16.2, x:'', pose:'spin', st:4, act:11, end:24, smash:true,
+      boxes:[{ s:MvO(0,14,50), t0:4, t1:6, g:'a', dmg:5.3, kb:[0.6,-1.2], stun:14 }, { s:MvO(0,16,44), t0:8, t1:10, g:'b', chain:true, dmg:5.3, kb:[0.6,-1.2], stun:14 }, { s:MvO(0,18,38), t0:12, t1:14, g:'c', chain:true, dmg:5.6, rad:6.7 }] },
+  },
+};
+// The move lists: the same wording as the generated pair, from the row.
+function dsmOwnText(r, dir){
+  const row = DSM_OWN[r && r.name] && DSM_OWN[r.name][dir > 0 ? 'up' : 'down']; if(!row) return null;
+  const dm = (typeof statsFor === 'function' ? statsFor(r.name).dmg : 1), dmg = Math.round(row.tot*dm*10)/10;
+  return row.n + (dir > 0 ? ' — press ↑ and V together (the jump is cancelled; the same charge): ' : ' — press ↓ and V together (on a platform the smash wins over dropping through; the same charge): ')
+    + row.d + '. On hit: ' + dmg + '%' + (row.x || '') + '.';
+}
+// The frame a move is on, for drawing: the real one on the host, worked out from the attack animation on a guest (the animation counts down from the move's length + 2).
+function dsmFrame(f){ return f._mv && f._mv.s && f._mv.s.smash ? f._mv.t : (f._atkLen || 0) - (f._atkAnim || 0) - 0; }
+// Props: flat shapes in the show's style (a fill and a dark outline), drawn for the live frames of each of the 24 moves, forward-relative.
+const DSM_INK = '#1c1c1c';
+function dpFill(c, fill){ c.fillStyle = fill; c.fill(); c.lineWidth = 2.5; c.strokeStyle = DSM_INK; c.lineJoin = 'round'; c.lineCap = 'round'; c.stroke(); }
+function dpPoly(c, P, fill){ c.beginPath(); for(let i = 0; i < P.length; i += 2){ if(i) c.lineTo(P[i], P[i+1]); else c.moveTo(P[i], P[i+1]); } c.closePath(); dpFill(c, fill); }
+function dpDisc(c, x, y, r, fill){ c.beginPath(); c.arc(x, y, Math.max(0.5, r), 0, 7); dpFill(c, fill); }
+function dpEll(c, x, y, rx, ry, rot, fill){ c.beginPath(); c.ellipse(x, y, Math.max(0.5, rx), Math.max(0.5, ry), rot || 0, 0, 7); dpFill(c, fill); }
+function dpLine(c, x1, y1, x2, y2, w, col){ c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.lineCap = 'round'; c.strokeStyle = DSM_INK; c.lineWidth = w + 3; c.stroke(); c.strokeStyle = col; c.lineWidth = w; c.stroke(); }
+function dpStar(c, x, y, R, r, n, fill){ c.beginPath(); for(let i = 0; i < n*2; i++){ const a = i*Math.PI/n - Math.PI/2, q = i % 2 ? r : R; c.lineTo(x + Math.cos(a)*q, y + Math.sin(a)*q); } c.closePath(); dpFill(c, fill); }
+// X(x): forward-relative x to world, Y(y): to world; z the size scale. t the move's frame.
+const DSM_PROPS = {
+  'Firey.up': function(c, X, Y, z, t){ if(t < 5 || t > 14) return;
+    const k = t < 9 ? 1 : Math.max(0.05, 1 - (t - 9)/6), w = 62*k;
+    dpPoly(c, [X(0), Y(-92), X(w), Y(-92 + 30*(1 - 0.2*(1 - k))), X(0), Y(-72), X(-w), Y(-92 + 30*(1 - 0.2*(1 - k)))], '#e8402a');
+    dpLine(c, X(0), Y(-90), X(0), Y(-74), 3, '#ffd23a'); },
+  'Firey.down': function(c, X, Y, z, t){ if(t < 4 || t > 11) return;
+    for(const s of [1, -1]){ const fl = Math.sin(t*1.7) * 3;
+      dpPoly(c, [X(s*8), Y(22), X(s*30), Y(-6 + fl), X(s*68), Y(-34), X(s*60), Y(-16 + fl), X(s*34), Y(14)], '#ff8a2a');
+      dpPoly(c, [X(s*14), Y(18), X(s*40), Y(-8), X(s*58), Y(-24), X(s*36), Y(10)], '#ffd23a'); } },
+  'Leafy.up': function(c, X, Y, z, t){ if(t < 5 || t > 11) return;
+    const u = Math.min(1, (t - 5)/3);
+    for(const s of [1, -1]){ const x = 14 + 50*u, y = -22 - 60*u;
+      c.save(); c.translate(X(s*x), Y(y)); c.rotate(s*0.6 + t*0.5*s); dpEll(c, 0, 0, 14*z, 6*z, 0, '#5fbf3f'); dpLine(c, -12*z, 0, 12*z, 0, 1.5, '#2f7d2b'); c.restore(); } },
+  'Leafy.down': function(c, X, Y, z, t){ if(t < 4 || t > 14) return;
+    const u = Math.min(1, (t - 4)/6);
+    c.beginPath(); for(let i = 0; i <= 16; i++){ const p = i/16; if(p > u) break; const a = Math.PI*p, x = -70*Math.cos(a), y = -6 + 34*Math.sin(a) - 12*Math.sin(a*2)*0; c.lineTo(X(x), Y(y)); }
+    c.strokeStyle = DSM_INK; c.lineWidth = 12; c.lineCap = 'round'; c.stroke(); c.strokeStyle = '#6fd04a'; c.lineWidth = 8; c.stroke(); },
+  'Needle.up': function(c, X, Y, z, t){ if(t < 5 || t > 11) return;
+    const u = Math.min(1, (t - 5)/4), m = X(1) < X(0) ? -1 : 1;
+    c.save(); c.translate(X(0), Y(-4)); c.scale(m, 1); c.beginPath(); c.arc(0, 0, 60*z, -0.15 - 1.5*u, -0.15 - 1.5*u + 0.35);
+    c.strokeStyle = '#ffffff'; c.lineWidth = 4; c.lineCap = 'round'; c.stroke(); c.restore(); },
+  'Needle.down': function(c, X, Y, z, t){ if(t < 4 || t > 13) return;
+    const u = Math.min(1, (t - 4)/3), e = t > 9 ? Math.max(0, 1 - (t - 9)/4) : 1;
+    for(const s of [1, -1]){ const h = 70*u*e; dpPoly(c, [X(s*47), Y(26), X(s*52), Y(26 - h), X(s*57), Y(26)], '#b9c0c8'); }
+    c.beginPath(); c.moveTo(X(-52), Y(26 - 70*u*e)); c.quadraticCurveTo(X(0), Y(26 + 18*u), X(52), Y(26 - 70*u*e)); c.strokeStyle = DSM_INK; c.lineWidth = 2; c.stroke(); },
+  'Pin.up': function(c, X, Y, z, t){ if(t < 5 || t > 10) return; dpLine(c, X(-44), Y(-40), X(44), Y(-40), 4, '#ffffff'); },
+  'Pin.down': function(c, X, Y, z, t){ if(t < 4 || t > 26) return;
+    for(let i = 0; i < 3; i++){ const a = t*0.7 + i*2.1; c.beginPath(); c.arc(X(0), Y(10), 40*z, a, a + 1.0); c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.stroke(); }
+    dpLine(c, X(-8), Y(26), X(8), Y(26), 2, '#6b4a3a'); },
+  'Snowball.up': function(c, X, Y, z, t){ if(t < 5 || t > 15) return;
+    const k = t < 9 ? 1 : Math.max(0.1, 1 - (t - 9)/6);
+    dpDisc(c, X(0), Y(-52), 24*z*k, '#ffffff'); dpDisc(c, X(0), Y(-92), 15*z*k, '#ffffff');
+    dpPoly(c, [X(2), Y(-93), X(16*k), Y(-91), X(2), Y(-89)], '#ff8a2a'); },
+  'Snowball.down': function(c, X, Y, z, t){ if(t < 4 || t > 15) return;
+    const u = Math.min(1, (t - 4)/8);
+    for(const s of [1, -1]){ for(let i = 0; i < 4; i++){ const p = u*i/4; dpDisc(c, X(s*(30 + 56*p)), Y(24 - 6*p), 3*z, '#dfeaf5'); }
+      dpDisc(c, X(s*(30 + 56*u)), Y(14 - 10*u), (12 + 10*u)*z, '#ffffff'); } },
+  'Bomby.up': function(c, X, Y, z, t){ if(t < 5 || t > 12) return;
+    const fl = Math.sin(t*2)*2;
+    dpPoly(c, [X(-6), Y(-30), X(-3 + fl), Y(-84), X(3 + fl), Y(-84), X(6), Y(-30)], '#ffd23a');
+    dpStar(c, X(0), Y(-96), 22*z, 11*z, 8, '#ffb02a'); dpStar(c, X(0), Y(-96), 11*z, 5*z, 6, '#fff3a0'); },
+  'Bomby.down': function(c, X, Y, z, t){ if(t < 4 || t > 11) return;
+    const k = Math.min(1, (t - 3)/2), e = t > 8 ? Math.max(0.1, 1 - (t - 8)/3) : 1;
+    c.beginPath(); c.ellipse(X(0), Y(20), 66*z*k, 30*z*k*e, 0, Math.PI, 0); c.closePath(); dpFill(c, '#ff8a2a');
+    c.beginPath(); c.ellipse(X(0), Y(20), 40*z*k, 18*z*k*e, 0, Math.PI, 0); c.closePath(); dpFill(c, '#ffd23a');
+    dpDisc(c, X(-14), Y(22), 4*z, '#3a3a3a'); dpDisc(c, X(12), Y(23), 3*z, '#3a3a3a'); dpDisc(c, X(2), Y(21), 2.5*z, '#3a3a3a'); },
+  'Bubble.up': function(c, X, Y, z, t){ if(t < 5 || t > 16) return;
+    if(t >= 14){ const u = (t - 14)/3; for(let i = 0; i < 8; i++){ const a = i*Math.PI/4; dpLine(c, X(Math.cos(a)*(40 + 22*u)), Y(-68 + Math.sin(a)*(40 + 22*u)), X(Math.cos(a)*(50 + 26*u)), Y(-68 + Math.sin(a)*(50 + 26*u)), 2, '#bfe8ff'); } return; }
+    const r = t < 8 ? 14 : t < 11 ? 24 : 36, y = t < 8 ? -42 : t < 11 ? -54 : -68;
+    dpDisc(c, X(0), Y(y), r*z, 'rgba(160,225,255,0.55)'); dpDisc(c, X(-r*0.35), Y(y - r*0.35), r*0.2*z, '#ffffff'); },
+  'Bubble.down': function(c, X, Y, z, t){ if(t < 4 || t > 12) return;
+    const u = Math.min(1, (t - 4)/5), R = (24 + 50*u)*z, e = t > 9 ? Math.max(0, 1 - (t - 9)/3) : 1;
+    c.beginPath(); c.arc(X(0), Y(0), R, 0, 7); c.strokeStyle = DSM_INK; c.lineWidth = 9*e + 1; c.stroke(); c.strokeStyle = 'rgba(160,225,255,0.9)'; c.lineWidth = 6*e + 0.5; c.stroke();
+    for(let i = 0; i < 8; i++){ const a = i*Math.PI/4 + 0.3; dpDisc(c, X(Math.cos(a)*(R + 8)), Y(Math.sin(a)*(R + 8)), 3*z*e, '#dff6ff'); } },
+  'Teardrop.up': function(c, X, Y, z, t){ if(t < 5 || t > 18) return;
+    c.beginPath(); c.roundRect ? c.roundRect(X(-38), Y(-112), 76, 40, 12) : c.rect(X(-38), Y(-112), 76, 40); dpFill(c, '#ffffff');
+    dpPoly(c, [X(-12), Y(-72), X(-4), Y(-72), X(-6), Y(-60)], '#ffffff');
+    [-30, 0, 30].forEach(function(x, i){ if(t >= 5 + i*2) dpDisc(c, X(x), Y(-92), 6*z, '#2f5f8a'); }); },
+  'Teardrop.down': function(c, X, Y, z, t){ if(t < 4 || t > 15) return;
+    const u = Math.min(1, (t - 4)/6), R = 74 - 56*u;
+    c.beginPath(); for(let i = 0; i <= 40; i++){ const a = i*0.35, q = R*(1 - i/48); c.lineTo(X(Math.cos(a)*q), Y(18 + Math.sin(a)*q*0.22)); }
+    c.strokeStyle = DSM_INK; c.lineWidth = 8; c.lineCap = 'round'; c.stroke(); c.strokeStyle = '#59a8e8'; c.lineWidth = 5; c.stroke();
+    if(t >= 10) for(let i = -2; i <= 2; i++) dpPoly(c, [X(i*8 - 3), Y(18), X(i*8), Y(18 - 26 + Math.abs(i)*6), X(i*8 + 3), Y(18)], '#8cc8f5'); },
+  'Flower.up': function(c, X, Y, z, t){ if(t < 5 || t > 14) return;
+    [[0,-74],[30,-64],[-30,-64],[52,-40],[-52,-40]].forEach(function(p){ const ang = Math.atan2(Y(p[1]) - Y(-40), X(p[0]) - X(0));
+      c.save(); c.translate(X(p[0]), Y(p[1])); c.rotate(ang); dpEll(c, 0, 0, 15*z, 9*z, 0, '#ff8fc0'); c.restore(); });
+    dpStar(c, X(0), Y(-98), 8*z, 3*z, 4, '#fff6a0'); },
+  'Flower.down': function(c, X, Y, z, t){ if(t < 4 || t > 11) return;
+    for(const s of [1, -1]){ const x = 40 + 8*Math.min(1, (t - 4)/2); dpLine(c, X(s*10), Y(-4), X(s*(x - 6)), Y(-4), 7, '#ffe2c4'); dpEll(c, X(s*x), Y(-4), 12*z, 10*z, 0, '#ffe2c4');
+      for(let i = 0; i < 3; i++) dpDisc(c, X(s*(x + 11)), Y(-12 + i*8), 4*z, '#ffe2c4'); }
+    dpLine(c, X(-22), Y(26), X(-10), Y(26), 2, '#ffd23a'); dpLine(c, X(10), Y(26), X(22), Y(26), 2, '#ffd23a'); },
+  'Tennis Ball.up': function(c, X, Y, z, t){ if(t < 5 || t > 12) return;
+    for(let i = 0; i < 3; i++){ const a = t*0.9 + i*2.1; c.beginPath(); c.arc(X(0), Y(-6), 34*z, a, a + 0.9); c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.stroke(); } },
+  'Tennis Ball.down': function(c, X, Y, z, t){ for(const d0 of [13, 25]){ if(t < d0 || t > d0 + 5) continue; const u = (t - d0)/4;
+      c.beginPath(); c.ellipse(X(0), Y(24), (24 + 40*u)*z, (5 + 6*u)*z, 0, 0, 7); c.strokeStyle = DSM_INK; c.lineWidth = 6*(1 - u*0.6); c.stroke(); c.strokeStyle = '#e8dcc0'; c.lineWidth = 3*(1 - u*0.6); c.stroke(); } },
+  'Blocky.up': function(c, X, Y, z, t){ if(t < 5 || t > 14) return;
+    const k = t < 10 ? Math.min(1, (t - 5)/2) : Math.max(0, 1 - (t - 10)/4), gx = 34 + 24*k, gy = 24 - 86*k;
+    dpPoly(c, [X(26), Y(26), X(44), Y(26), X(44), Y(20), X(26), Y(20)], '#555a63');
+    c.beginPath(); for(let i = 0; i <= 8; i++){ const p = i/8; c.lineTo(X(34 + (gx - 34)*p + (i % 2 ? 6 : -6)*(1 - p*0.2)), Y(24 + (gy - 24)*p)); }
+    c.strokeStyle = DSM_INK; c.lineWidth = 3; c.stroke();
+    dpDisc(c, X(gx), Y(gy), 18*z*(0.4 + 0.6*k), '#e03a3a'); dpDisc(c, X(gx - 14), Y(gy + 4), 6*z, '#e03a3a'); },
+  'Blocky.down': function(c, X, Y, z, t){ if(t < 4 || t > 12) return;
+    dpPoly(c, [X(-12), Y(30), X(12), Y(30), X(12), Y(8), X(-12), Y(8)], '#e8e0c8'); dpLine(c, X(-12), Y(16), X(12), Y(16), 4, '#d94a4a'); dpLine(c, X(-12), Y(24), X(12), Y(24), 4, '#d94a4a');
+    const u = Math.min(1, (t - 4)/5);
+    for(const s of [1, -1]){ c.beginPath(); for(let i = 0; i <= 14; i++){ const p = i/14; if(p > u) break; const x = 12 + 72*p, y = p < 0.5 ? -6 - 80*p : -46 + 120*(p - 0.5)*0.9; c.lineTo(X(s*x), Y(y) + Math.sin(i*1.6)*3); }
+      c.strokeStyle = DSM_INK; c.lineWidth = 9; c.lineCap = 'round'; c.stroke(); c.strokeStyle = '#5fcf4a'; c.lineWidth = 5; c.stroke(); } },
+  'Coiny.up': function(c, X, Y, z, t){ if(t < 5 || t > 13) return;
+    if(t <= 7) dpEll(c, X(0), Y(-60), 8*z, 50*z, 0, '#f5c030');
+    else { dpDisc(c, X(0), Y(-50), 36*z, '#f5c030'); c.beginPath(); c.arc(X(0), Y(-50), 27*z, 0, 7); c.strokeStyle = '#b8860b'; c.lineWidth = 3; c.stroke(); dpLine(c, X(-8), Y(-50), X(8), Y(-50), 3, '#b8860b'); } },
+  'Coiny.down': function(c, X, Y, z, t){ if(t < 4 || t > 17) return;
+    const R = t < 7 ? 50 : t < 11 ? 44 : 38, w = Math.sin(t*1.3)*3;
+    dpEll(c, X(0), Y(18 + w*0.3), R*z, (9 + Math.abs(w))*z, 0, '#f5c030'); dpEll(c, X(0), Y(18 + w*0.3), R*0.7*z, 5*z, 0, '#d9a520'); },
+};
+// Called after the hit art: draws the props of every fighter in one of the 24 moves (render only; nothing here reads or writes the simulation).
+function drawDsmProps(){
+  if(!fighters.length) return;
+  for(const f of fighters){
+    if(f.dead || !(f._atkAnim > 0) || !f._atkMove || !f._atkMove.endsWith('smash')) continue;
+    const row = DSM_OWN[f.name]; if(!row) continue;
+    const dir = f._atkMove.endsWith('.usmash') ? 'up' : f._atkMove.endsWith('.dsmash') ? 'down' : null; if(!dir) continue;
+    const fn = DSM_PROPS[f.name + '.' + dir]; if(!fn || haHidden(f)) continue;
+    const d = f.face < 0 ? -1 : 1, z = sizeOf(f), t = dsmFrame(f);
+    ctx.save(); ctx.globalAlpha = 1;
+    try { fn(ctx, function(x){ return f.x + x*d*z; }, function(y){ return f.y + y*z; }, z, t); } catch(e){}
+    ctx.restore();
+  }
+}
+// Bubble's pop (Oh Noio!): her body is drawn faint while the ring spreads, and comes back over the end frames (drawing only; her hurtbox stays).
+function dsmBodyK(f){
+  if(f.name !== 'Bubble' || !(f._atkAnim > 0) || f._atkMove !== 'float.dsmash') return 1;
+  const t = dsmFrame(f); if(t < 4 || t > 20) return 1;
+  return t <= 10 ? 0.12 : 0.12 + 0.88*(t - 10)/10;
+}
 Object.assign(MOVESETS, {
   // ---- FIREY ("ember") -- the aggressive zoner: light, quick, and everything he touches starts to burn. A plain share of movetech.
   ember: {
@@ -93027,13 +93261,15 @@ function endLagHit(from){   // the move connected: what is left of its end lag i
   if(E.on && from._lag > n) from._lag = n;
 }
 const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHit], frames, measured headless (reports/frame-budget-audit.csv)
+  // UNIQUE UP/DOWN SMASHES batch 1 (v2): the twelve fighters' own up and down smashes: startup, live frames, the row's own end lag (no ENDLAG_ADD on top)
+  'ember.usmash':[5,4,29,29], 'ember.dsmash':[4,5,29,29], 'dash.usmash':[5,4,28,28], 'dash.dsmash':[4,7,26,26], 'counter.usmash':[5,4,25,25], 'counter.dsmash':[4,5,25,25], 'pierce.usmash':[5,4,30,30], 'pierce.dsmash':[4,20,20,20], 'tackle.usmash':[5,4,28,28], 'tackle.dsmash':[4,9,24,24], 'bomb.usmash':[5,4,34,34], 'bomb.dsmash':[4,5,34,34], 'float.usmash':[5,9,20,20], 'float.dsmash':[4,6,24,24], 'kick.usmash':[5,7,22,22], 'kick.dsmash':[4,9,21,21], 'quake.usmash':[5,4,30,30], 'quake.dsmash':[4,5,30,30], 'serve.usmash':[5,6,26,26], 'serve.dsmash':[4,24,14,14], 'anvil.usmash':[5,4,31,31], 'anvil.dsmash':[4,6,30,30], 'slap.usmash':[5,6,28,28], 'slap.dsmash':[4,11,24,24],
   // (a -1: not measured -- a move that lands only on a foe elsewhere has no whiff / hit trial; throws have no whiff)
   'accrete.bthrow':[0,1,-1,22], 'accrete.dsmash':[29,9,30,30], 'accrete.dthrow':[0,1,-1,14], 'accrete.fthrow':[0,1,-1,20], 'accrete.neutral':[44,1,12,0], 'accrete.smash':[40,1,18,12],
   'accrete.uthrow':[0,1,-1,16], 'airleak.bthrow':[0,1,-1,20], 'airleak.dsmash':[28,8,28,28], 'airleak.dthrow':[0,1,-1,14], 'airleak.finisher':[12,70,0,0], 'airleak.fthrow':[0,1,-1,18],
   'airleak.neutral':[16,1,15,9], 'airleak.smash':[45,1,16,11], 'airleak.up':[1,20,0,0], 'airleak.uthrow':[0,1,-1,14], 'airrel.bthrow':[0,1,-1,20], 'airrel.dsmash':[29,9,30,30],
   'airrel.dthrow':[0,1,-1,14], 'airrel.finisher':[73,12,0,0], 'airrel.fthrow':[0,1,-1,18], 'airrel.neutral':[17,12,14,5], 'airrel.smash':[35,12,18,6], 'airrel.uthrow':[0,1,-1,14],
   'antenna.bthrow':[0,1,-1,24], 'antenna.dsmash':[35,9,29,29], 'antenna.dthrow':[0,1,-1,15], 'antenna.finisher':[40,60,0,0], 'antenna.fthrow':[0,1,-1,22], 'antenna.neutral':[6,1,23,11],
-  'antenna.smash':[76,1,16,0], 'antenna.up':[3,1,1,0], 'antenna.uthrow':[0,1,-1,15], 'anvil.bthrow':[0,1,-1,24], 'anvil.down':[37,1,15,0], 'anvil.dsmash':[31,10,32,32],
+  'antenna.smash':[76,1,16,0], 'antenna.up':[3,1,1,0], 'antenna.uthrow':[0,1,-1,15], 'anvil.bthrow':[0,1,-1,24], 'anvil.down':[37,1,15,0], 
   'anvil.dthrow':[0,1,-1,14], 'anvil.finisher':[12,2,1,0], 'anvil.fthrow':[0,1,-1,22], 'anvil.neutral':[45,1,15,0], 'anvil.smash':[72,1,19,0], 'anvil.uthrow':[0,1,-1,14],
   'atstake.bthrow':[0,1,-1,21], 'atstake.dsmash':[29,8,29,29], 'atstake.dthrow':[0,1,-1,14], 'atstake.finisher':[78,1,0,0], 'atstake.fthrow':[0,1,-1,19], 'atstake.neutral':[5,1,19,7],
   'atstake.smash':[38,1,16,12], 'atstake.up':[0,1,1,1], 'atstake.uthrow':[0,1,-1,14], 'barf.bthrow':[0,1,-1,24], 'barf.dsmash':[29,9,34,34], 'barf.dthrow':[0,1,-1,14],
@@ -93046,7 +93282,7 @@ const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHi
   'bestie.up':[0,1,1,1], 'bestie.uthrow':[0,1,-1,14], 'blackmail.bthrow':[0,1,-1,24], 'blackmail.down':[22,1,16,0], 'blackmail.dsmash':[29,9,31,31], 'blackmail.dthrow':[0,1,-1,14],
   'blackmail.finisher':[12,17,0,0], 'blackmail.fthrow':[0,1,-1,22], 'blackmail.neutral':[6,1,20,11], 'blackmail.smash':[24,1,20,13], 'blackmail.up':[0,1,1,1], 'blackmail.uthrow':[0,1,-1,14],
   'blueberry.bthrow':[0,1,-1,24], 'blueberry.dsmash':[29,9,31,31], 'blueberry.dthrow':[0,1,-1,14], 'blueberry.finisher':[24,1,0,0], 'blueberry.fthrow':[0,1,-1,22], 'blueberry.neutral':[6,1,20,19],
-  'blueberry.smash':[54,1,19,0], 'blueberry.up':[0,1,1,1], 'blueberry.uthrow':[0,1,-1,14], 'bomb.bthrow':[0,1,-1,24], 'bomb.dsmash':[34,9,35,35], 'bomb.dthrow':[0,1,-1,14],
+  'blueberry.smash':[54,1,19,0], 'blueberry.up':[0,1,1,1], 'blueberry.uthrow':[0,1,-1,14], 'bomb.bthrow':[0,1,-1,24], 'bomb.dthrow':[0,1,-1,14],
   'bomb.finisher':[6,1,27,15], 'bomb.fthrow':[0,1,-1,22], 'bomb.neutral':[6,1,27,15], 'bomb.smash':[44,1,20,19], 'bomb.uthrow':[0,1,-1,14], 'buynow.bthrow':[0,1,-1,22],
   'buynow.dsmash':[28,10,32,32], 'buynow.dthrow':[0,1,-1,14], 'buynow.finisher':[8,60,0,0], 'buynow.fthrow':[0,1,-1,20], 'buynow.neutral':[0,1,11,4], 'buynow.smash':[69,1,19,0],
   'buynow.uthrow':[0,1,-1,14], 'cap.bthrow':[0,1,-1,22], 'cap.dsmash':[31,7,26,26], 'cap.dthrow':[0,1,-1,14], 'cap.finisher':[54,1,0,0], 'cap.fthrow':[0,1,-1,20],
@@ -93065,24 +93301,24 @@ const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHi
   'cool.smash':[24,1,18,18], 'cool.up':[0,1,1,1], 'cool.uthrow':[0,1,-1,14], 'copycat.bthrow':[0,1,-1,22], 'copycat.down':[0,1,19,7], 'copycat.dsmash':[29,8,29,29],
   'copycat.dthrow':[0,1,-1,14], 'copycat.finisher':[12,2,0,0], 'copycat.fthrow':[0,1,-1,20], 'copycat.smash':[54,1,15,0], 'copycat.uthrow':[0,1,-1,14], 'coresaw.bthrow':[0,1,-1,24],
   'coresaw.dsmash':[30,9,32,32], 'coresaw.dthrow':[0,1,-1,14], 'coresaw.finisher':[97,14,0,0], 'coresaw.fthrow':[0,1,-1,22], 'coresaw.neutral':[8,14,14,14], 'coresaw.smash':[40,1,20,13],
-  'coresaw.up':[41,1,0,0], 'coresaw.uthrow':[0,1,-1,14], 'counter.bthrow':[0,1,-1,20], 'counter.dsmash':[29,7,26,26], 'counter.dthrow':[0,1,-1,14], 'counter.finisher':[15,10,0,0],
+  'coresaw.up':[41,1,0,0], 'coresaw.uthrow':[0,1,-1,14], 'counter.bthrow':[0,1,-1,20], 'counter.dthrow':[0,1,-1,14], 'counter.finisher':[15,10,0,0],
   'counter.fthrow':[0,1,-1,18], 'counter.up':[0,1,1,1], 'counter.uthrow':[0,1,-1,14], 'cumulus.bthrow':[0,1,-1,22], 'cumulus.dsmash':[29,9,30,30], 'cumulus.dthrow':[0,1,-1,14],
   'cumulus.finisher':[12,26,0,0], 'cumulus.fthrow':[0,1,-1,20], 'cumulus.neutral':[14,1,11,7], 'cumulus.smash':[40,1,17,1], 'cumulus.uthrow':[0,1,-1,14], 'dash.bthrow':[0,1,-1,20],
-  'dash.dsmash':[29,8,29,29], 'dash.dthrow':[0,1,-1,14], 'dash.finisher':[13,1,0,0], 'dash.fthrow':[0,1,-1,18], 'dash.neutral':[18,17,14,5], 'dash.smash':[27,11,18,6],
+  'dash.dthrow':[0,1,-1,14], 'dash.finisher':[13,1,0,0], 'dash.fthrow':[0,1,-1,18], 'dash.neutral':[18,17,14,5], 'dash.smash':[27,11,18,6],
   'dash.uthrow':[0,1,-1,14], 'define.bthrow':[0,1,-1,22], 'define.dsmash':[29,9,31,31], 'define.dthrow':[0,1,-1,14], 'define.finisher':[12,1,0,0], 'define.fthrow':[0,1,-1,20],
   'define.smash':[24,1,19,16], 'define.up':[0,1,1,1], 'define.uthrow':[0,1,-1,14], 'disinfect.bthrow':[0,1,-1,22], 'disinfect.dsmash':[29,9,31,31], 'disinfect.dthrow':[0,1,-1,14],
   'disinfect.finisher':[14,21,0,0], 'disinfect.fthrow':[0,1,-1,20], 'disinfect.neutral':[0,1,11,4], 'disinfect.smash':[40,1,20,13], 'disinfect.up':[0,1,1,1], 'disinfect.uthrow':[0,1,-1,14],
   'dribble.bthrow':[0,1,-1,22], 'dribble.dsmash':[31,9,30,30], 'dribble.dthrow':[0,1,-1,14], 'dribble.finisher':[24,1,1,0], 'dribble.fthrow':[0,1,-1,22], 'dribble.neutral':[4,1,12,4],
   'dribble.smash':[28,12,18,8], 'dribble.up':[0,1,1,1], 'dribble.uthrow':[0,1,-1,14], 'eball.bthrow':[0,1,-1,20], 'eball.dsmash':[29,9,30,30], 'eball.dthrow':[0,1,-1,14],
   'eball.finisher':[44,1,0,0], 'eball.fthrow':[0,1,-1,18], 'eball.neutral':[3,1,18,6], 'eball.smash':[24,1,18,16], 'eball.up':[19,1,1,0], 'eball.uthrow':[0,1,-1,14],
-  'ember.bthrow':[0,1,-1,22], 'ember.dsmash':[29,9,30,30], 'ember.dthrow':[0,1,-1,14], 'ember.finisher':[24,1,0,0], 'ember.fthrow':[0,1,-1,20], 'ember.neutral':[5,1,18,6],
+  'ember.bthrow':[0,1,-1,22], 'ember.dthrow':[0,1,-1,14], 'ember.finisher':[24,1,0,0], 'ember.fthrow':[0,1,-1,20], 'ember.neutral':[5,1,18,6],
   'ember.smash':[24,1,17,14], 'ember.up':[1,20,0,0], 'ember.uthrow':[0,1,-1,14], 'emberjr.bthrow':[0,1,-1,20], 'emberjr.dsmash':[29,8,29,29], 'emberjr.dthrow':[0,1,-1,13],
   'emberjr.finisher':[45,1,0,0], 'emberjr.fthrow':[0,1,-1,18], 'emberjr.neutral':[2,1,12,4], 'emberjr.smash':[24,1,16,12], 'emberjr.up':[3,1,1,0], 'emberjr.uthrow':[0,1,-1,13],
   'engulf.bthrow':[0,1,-1,22], 'engulf.dsmash':[29,9,30,30], 'engulf.dthrow':[0,1,-1,14], 'engulf.fthrow':[0,1,-1,20], 'engulf.neutral':[0,45,1,6], 'engulf.smash':[35,14,19,7],
   'engulf.up':[0,1,1,1], 'engulf.uthrow':[0,1,-1,14], 'evilpaper.bthrow':[0,1,-1,20], 'evilpaper.dsmash':[28,10,32,32], 'evilpaper.dthrow':[0,1,-1,14], 'evilpaper.finisher':[39,1,0,0],
   'evilpaper.fthrow':[0,1,-1,18], 'evilpaper.neutral':[3,1,11,4], 'evilpaper.smash':[69,1,19,0], 'evilpaper.up':[0,1,1,1], 'evilpaper.uthrow':[0,1,-1,14], 'flip.bthrow':[0,1,-1,21],
   'flip.dsmash':[28,9,29,29], 'flip.dthrow':[0,1,-1,14], 'flip.finisher':[22,50,1,0], 'flip.fthrow':[0,1,-1,19], 'flip.neutral':[5,1,22,8], 'flip.smash':[42,1,18,12],
-  'flip.up':[15,1,1,0], 'flip.uthrow':[0,1,-1,14], 'float.bthrow':[0,1,-1,20], 'float.dsmash':[28,8,26,26], 'float.dthrow':[0,1,-1,14], 'float.finisher':[13,1,0,0],
+  'flip.up':[15,1,1,0], 'flip.uthrow':[0,1,-1,14], 'float.bthrow':[0,1,-1,20], 'float.dthrow':[0,1,-1,14], 'float.finisher':[13,1,0,0],
   'float.fthrow':[0,1,-1,18], 'float.smash':[62,1,14,10], 'float.uthrow':[0,1,-1,14], 'fluff.bthrow':[0,1,-1,20], 'fluff.dsmash':[29,8,29,29], 'fluff.dthrow':[0,1,-1,14],
   'fluff.finisher':[12,17,0,0], 'fluff.fthrow':[0,1,-1,18], 'fluff.neutral':[8,1,25,14], 'fluff.smash':[35,12,17,6], 'fluff.up':[0,1,1,1], 'fluff.uthrow':[0,1,-1,14],
   'fly.bthrow':[0,1,-1,22], 'fly.dsmash':[29,8,29,29], 'fly.dthrow':[0,1,-1,14], 'fly.finisher':[23,1,0,0], 'fly.fthrow':[0,1,-1,20], 'fly.smash':[24,30,20,7],
@@ -93106,7 +93342,7 @@ const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHi
   'innerflame.smash':[38,1,19,13], 'innerflame.uthrow':[0,1,-1,14], 'jack.bthrow':[0,1,-1,22], 'jack.dsmash':[28,10,33,33], 'jack.dthrow':[0,1,-1,14], 'jack.finisher':[12,20,0,0],
   'jack.fthrow':[0,1,-1,20], 'jack.neutral':[2,1,11,4], 'jack.smash':[45,1,20,13], 'jack.up':[0,1,1,1], 'jack.uthrow':[0,1,-1,14], 'jawbreaker.bthrow':[0,1,-1,23],
   'jawbreaker.down':[0,1,10,4], 'jawbreaker.dsmash':[29,8,29,29], 'jawbreaker.dthrow':[0,1,-1,15], 'jawbreaker.finisher':[24,1,0,0], 'jawbreaker.fthrow':[0,1,-1,21], 'jawbreaker.neutral':[5,1,21,7],
-  'jawbreaker.smash':[27,1,15,5], 'jawbreaker.up':[0,1,1,1], 'jawbreaker.uthrow':[0,1,-1,15], 'kick.bthrow':[0,1,-1,20], 'kick.dsmash':[29,7,26,26], 'kick.dthrow':[0,1,-1,14],
+  'jawbreaker.smash':[27,1,15,5], 'jawbreaker.up':[0,1,1,1], 'jawbreaker.uthrow':[0,1,-1,15], 'kick.bthrow':[0,1,-1,20], 'kick.dthrow':[0,1,-1,14],
   'kick.finisher':[29,1,0,0], 'kick.fthrow':[0,1,-1,18], 'kick.neutral':[6,1,26,14], 'kick.uthrow':[0,1,-1,14], 'leavealone.bthrow':[0,1,-1,22], 'leavealone.dsmash':[29,9,30,30],
   'leavealone.dthrow':[0,1,-1,14], 'leavealone.fthrow':[0,1,-1,20], 'leavealone.neutral':[18,13,14,5], 'leavealone.smash':[35,12,18,6], 'leavealone.uthrow':[0,1,-1,14], 'lemon.bthrow':[0,1,-1,22],
   'lemon.down':[0,1,10,4], 'lemon.dsmash':[29,9,30,30], 'lemon.dthrow':[0,1,-1,14], 'lemon.finisher':[46,14,0,0], 'lemon.fthrow':[0,1,-1,20], 'lemon.neutral':[3,1,18,6],
@@ -93126,11 +93362,11 @@ const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHi
   'pickle.dsmash':[29,9,31,31], 'pickle.dthrow':[0,1,-1,14], 'pickle.finisher':[12,34,0,0], 'pickle.fthrow':[0,1,-1,20], 'pickle.neutral':[18,19,26,0], 'pickle.smash':[24,1,20,17],
   'pickle.up':[0,1,1,1], 'pickle.uthrow':[0,1,-1,14], 'pieberry.bthrow':[0,1,-1,22], 'pieberry.dsmash':[29,9,30,30], 'pieberry.dthrow':[0,1,-1,14], 'pieberry.finisher':[52,20,0,0],
   'pieberry.fthrow':[0,1,-1,20], 'pieberry.neutral':[8,1,19,7], 'pieberry.smash':[24,1,18,14], 'pieberry.up':[4,1,1,0], 'pieberry.uthrow':[0,1,-1,14], 'pierce.bthrow':[0,1,-1,24],
-  'pierce.dsmash':[33,9,31,31], 'pierce.dthrow':[0,1,-1,14], 'pierce.finisher':[12,2,0,0], 'pierce.fthrow':[0,1,-1,22], 'pierce.neutral':[6,1,22,12], 'pierce.smash':[31,12,18,9],
+  'pierce.dthrow':[0,1,-1,14], 'pierce.finisher':[12,2,0,0], 'pierce.fthrow':[0,1,-1,22], 'pierce.neutral':[6,1,22,12], 'pierce.smash':[31,12,18,9],
   'pierce.up':[0,1,1,1], 'pierce.uthrow':[0,1,-1,14], 'pricetag.bthrow':[0,1,-1,20], 'pricetag.dsmash':[29,9,27,27], 'pricetag.dthrow':[0,1,-1,14], 'pricetag.finisher':[13,33,0,0],
   'pricetag.fthrow':[0,1,-1,18], 'pricetag.neutral':[0,1,18,6], 'pricetag.smash':[24,1,13,5], 'pricetag.up':[0,1,1,1], 'pricetag.uthrow':[0,1,-1,14], 'pun.bthrow':[0,1,-1,22],
   'pun.dsmash':[29,9,32,32], 'pun.dthrow':[0,1,-1,14], 'pun.finisher':[12,16,0,0], 'pun.fthrow':[0,1,-1,20], 'pun.neutral':[3,1,10,4], 'pun.smash':[26,13,20,8],
-  'pun.up':[0,1,1,1], 'pun.uthrow':[0,1,-1,14], 'quake.bthrow':[0,1,-1,24], 'quake.down':[6,1,18,9], 'quake.dsmash':[29,10,31,31], 'quake.dthrow':[0,1,-1,14],
+  'pun.up':[0,1,1,1], 'pun.uthrow':[0,1,-1,14], 'quake.bthrow':[0,1,-1,24], 'quake.down':[6,1,18,9], 'quake.dthrow':[0,1,-1,14],
   'quake.finisher':[12,6,0,0], 'quake.fthrow':[0,1,-1,22], 'quake.neutral':[6,1,28,15], 'quake.smash':[44,1,18,12], 'quake.up':[1,20,0,0], 'quake.uthrow':[0,1,-1,14],
   'rant.bthrow':[0,1,-1,19], 'rant.down':[1,1,8,7], 'rant.dsmash':[29,9,33,33], 'rant.dthrow':[0,1,-1,13], 'rant.finisher':[38,1,0,0], 'rant.fthrow':[0,1,-1,17],
   'rant.neutral':[1,1,8,7], 'rant.smash':[24,1,19,19], 'rant.up':[0,1,1,1], 'rant.uthrow':[0,1,-1,13], 'reflect.bthrow':[0,1,-1,22], 'reflect.dsmash':[31,9,30,30],
@@ -93142,14 +93378,14 @@ const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHi
   'saltpepper.neutral':[3,1,1,0], 'saltpepper.smash':[27,12,18,7], 'saltpepper.uthrow':[0,1,-1,14], 'saw.bthrow':[0,1,-1,24], 'saw.dsmash':[32,8,29,29], 'saw.dthrow':[0,1,-1,15],
   'saw.finisher':[24,1,0,0], 'saw.fthrow':[0,1,-1,22], 'saw.neutral':[26,32,12,4], 'saw.smash':[29,1,16,6], 'saw.up':[0,1,1,1], 'saw.uthrow':[0,1,-1,15],
   'seriously.bthrow':[0,1,-1,24], 'seriously.dsmash':[32,9,33,33], 'seriously.dthrow':[0,1,-1,15], 'seriously.finisher':[24,14,0,0], 'seriously.fthrow':[0,1,-1,22], 'seriously.neutral':[6,1,22,12],
-  'seriously.smash':[39,1,20,20], 'seriously.up':[0,1,1,1], 'seriously.uthrow':[0,1,-1,15], 'serve.bthrow':[0,1,-1,22], 'serve.dsmash':[31,8,29,29], 'serve.dthrow':[0,1,-1,14],
+  'seriously.smash':[39,1,20,20], 'seriously.up':[0,1,1,1], 'seriously.uthrow':[0,1,-1,15], 'serve.bthrow':[0,1,-1,22], 'serve.dthrow':[0,1,-1,14],
   'serve.finisher':[5,1,24,8], 'serve.fthrow':[0,1,-1,20], 'serve.neutral':[5,1,18,6], 'serve.smash':[52,1,19,0], 'serve.uthrow':[0,1,-1,14], 'shatter.bthrow':[0,1,-1,20],
   'shatter.dsmash':[28,8,28,28], 'shatter.dthrow':[0,1,-1,14], 'shatter.finisher':[43,1,0,0], 'shatter.fthrow':[0,1,-1,18], 'shatter.neutral':[10,1,10,4], 'shatter.smash':[69,1,16,0],
   'shatter.up':[0,1,1,1], 'shatter.uthrow':[0,1,-1,14], 'shutter.bthrow':[0,1,-1,20], 'shutter.down':[0,1,20,1], 'shutter.dsmash':[29,9,30,30], 'shutter.dthrow':[0,1,-1,14],
   'shutter.finisher':[72,10,0,0], 'shutter.fthrow':[0,1,-1,18], 'shutter.neutral':[12,1,0,0], 'shutter.smash':[24,1,20,16], 'shutter.up':[0,1,1,1], 'shutter.uthrow':[0,1,-1,14],
   'sign.bthrow':[0,1,-1,21], 'sign.dsmash':[29,8,29,29], 'sign.dthrow':[0,1,-1,14], 'sign.finisher':[20,48,0,0], 'sign.fthrow':[0,1,-1,19], 'sign.neutral':[5,1,20,7],
   'sign.smash':[24,1,17,12], 'sign.uthrow':[0,1,-1,14], 'slam.bthrow':[0,1,-1,24], 'slam.dsmash':[31,10,30,30], 'slam.dthrow':[0,1,-1,15], 'slam.finisher':[24,1,0,0],
-  'slam.fthrow':[0,1,-1,22], 'slam.smash':[45,1,18,12], 'slam.up':[37,1,0,0], 'slam.uthrow':[0,1,-1,15], 'slap.bthrow':[0,1,-1,21], 'slap.dsmash':[29,9,31,31],
+  'slam.fthrow':[0,1,-1,22], 'slam.smash':[45,1,18,12], 'slam.up':[37,1,0,0], 'slam.uthrow':[0,1,-1,15], 'slap.bthrow':[0,1,-1,21], 
   'slap.dthrow':[0,1,-1,14], 'slap.finisher':[6,62,0,0], 'slap.fthrow':[0,1,-1,19], 'slap.smash':[24,1,17,8], 'slap.up':[0,1,1,1], 'slap.uthrow':[0,1,-1,14],
   'snark.bthrow':[0,1,-1,22], 'snark.dsmash':[29,9,30,30], 'snark.dthrow':[0,1,-1,14], 'snark.finisher':[12,2,0,0], 'snark.fthrow':[0,1,-1,20], 'snark.neutral':[6,1,22,11],
   'snark.smash':[24,1,19,17], 'snark.up':[0,1,1,1], 'snark.uthrow':[0,1,-1,14], 'spark.bthrow':[0,1,-1,22], 'spark.dsmash':[28,8,27,27], 'spark.dthrow':[0,1,-1,14],
@@ -93165,7 +93401,7 @@ const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHi
   'stopshot.neutral':[12,1,16,0], 'stopshot.smash':[38,12,19,7], 'stopshot.uthrow':[0,1,-1,14], 'sucker.bthrow':[0,1,-1,22], 'sucker.dsmash':[29,9,30,30], 'sucker.dthrow':[0,1,-1,14],
   'sucker.finisher':[12,49,0,0], 'sucker.fthrow':[0,1,-1,20], 'sucker.neutral':[3,1,8,4], 'sucker.smash':[54,1,17,0], 'sucker.up':[0,19,0,0], 'sucker.uthrow':[0,1,-1,14],
   'switch.bthrow':[0,1,-1,22], 'switch.dsmash':[29,9,32,32], 'switch.dthrow':[0,1,-1,14], 'switch.finisher':[12,41,0,0], 'switch.fthrow':[0,1,-1,20], 'switch.neutral':[16,12,12,4],
-  'switch.smash':[26,12,17,6], 'switch.up':[0,1,1,1], 'switch.uthrow':[0,1,-1,14], 'tackle.bthrow':[0,1,-1,24], 'tackle.dsmash':[30,8,29,29], 'tackle.dthrow':[0,1,-1,14],
+  'switch.smash':[26,12,17,6], 'switch.up':[0,1,1,1], 'switch.uthrow':[0,1,-1,14], 'tackle.bthrow':[0,1,-1,24], 'tackle.dthrow':[0,1,-1,14],
   'tackle.finisher':[8,12,0,0], 'tackle.fthrow':[0,1,-1,22], 'tackle.neutral':[17,14,14,5], 'tackle.smash':[35,13,16,6], 'tackle.up':[0,1,1,1], 'tackle.uthrow':[0,1,-1,14],
   'tape.bthrow':[0,1,-1,24], 'tape.dsmash':[29,9,30,30], 'tape.dthrow':[0,1,-1,14], 'tape.finisher':[42,10,1,0], 'tape.fthrow':[0,1,-1,22], 'tape.neutral':[2,1,1,0],
   'tape.smash':[24,1,18,12], 'tape.up':[0,1,1,1], 'tape.uthrow':[0,1,-1,14], 'testtube.bthrow':[0,1,-1,20], 'testtube.dsmash':[29,9,30,30], 'testtube.dthrow':[0,1,-1,14],
@@ -109661,6 +109897,7 @@ function draw(){
   drawStanceArt();      // HIT ART: a counter's or a reflect's window, lit on the outline it answers with
   drawShieldArt();      // SHIELD / REFLECTOR (Z): the bubble that shrinks as it takes hits, the reflector's pane, the break
   drawHitArt();         // HIT ART: every hit's real area, over the bodies it reaches
+  drawDsmProps();       // UNIQUE UP/DOWN SMASHES: the props of the twelve fighters' own up and down smashes
   if(SHOW_HITBOXES) drawHitboxOverlay();
 
   // …and the shots still coming OUT of a fighter, drawn last so the launch is on top of the
@@ -119359,7 +119596,7 @@ function drawFighter(f){
   const fading = f._tpT > 0;   // Bow fading into her Teleport: the body fades out (no blink, no bubble: the fade says she cannot be hit)
   const blink=f.invuln>0 && !fading && (f.invuln%8<4);
   const dkK = darkOn() ? darkSeeK(f) : 1;   // LIGHTS OUT (an event twist): a fighter far from you is faint (darkSeeK); its name tag is not (below)
-  const ghostA = (f._oneGhost ? 0.55 : 1) * (fading ? Math.max(0.1, f._tpT/TP.vanish) : 1) * (FINX.length ? ootpFade(f) : 1) * dkK;   // One's ghost fighter is a ghost: you can see through it (and a foe Eraser is rubbing out fades: ootpFade)
+  const ghostA = (f._oneGhost ? 0.55 : 1) * (fading ? Math.max(0.1, f._tpT/TP.vanish) : 1) * (FINX.length ? ootpFade(f) : 1) * dkK * dsmBodyK(f);   // One's ghost fighter is a ghost: you can see through it (and a foe Eraser is rubbing out fades: ootpFade)
   ctx.globalAlpha=(blink?0.4:1)*ghostA;
   drawAlpha=(blink?0.4:1)*ghostA;   // sprites composite against this instead of reading back ctx.globalAlpha
   if(f.onground && !FS_TURN && !(MCAVE && MCAVE.on)){ ctx.save(); ctx.globalAlpha *= 0.2; ctx.fillStyle = '#10200c'; ctx.beginPath(); ctx.ellipse(0, f.r - 1, f.r*0.85, 4, 0, 0, 7); ctx.fill(); ctx.restore(); }   // JURY 2: a soft contact shadow, so a small fighter on grass is anchored to it
