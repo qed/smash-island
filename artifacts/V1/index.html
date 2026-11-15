@@ -73805,6 +73805,7 @@ function step(){
   // flares, the burn, the bleed, the trespass bleed ...) and never asked, so a fighter who was only ever hurt by them went on climbing (1337% in the
   // Evil Forest playtest) and was knocked out by the NEXT blow of someone else, if one ever came. Same rule, same KO (eliminate), just not waiting for a blow.
   // Not where damage never KOs (SPLEEF), not inside a Final Smash catch, not One's ghost (its own 70 HP), not once the last KO has decided the match.
+  if(LHC) for(const f of fighters) lhcKeep(f);   // STAPY'S CONTEST: after everyone has moved this frame, anyone a warp or a long dash put through a room's wall (or the arena's) is back inside (lhcKeep)
   if(!SPLEEF && !STEPS && !BHC && !RACE.active && !KOC.over) for(const f of fighters){ if(!f.dead && !f._fsLock && !f._oneGhost && f.koCap > 0 && f.pct >= f.koCap) eliminate(f); }
 
   // projectiles
@@ -100410,6 +100411,7 @@ function checkWin(){
   const alive=fighters.filter(f=>!f.dead);
   const teamsAlive=[...new Set(alive.map(f=> f._infected>0 ? f._origTeam : f.team))];
   if(teamsAlive.length<=1){
+    if(LHC && CONTEST && CONTEST.winner != null){ if(LHC.winT == null) LHC.winT = hazardT; if(hazardT - LHC.winT < LHK.winHold) return; }   // STAPY'S CONTEST: the finished emblem fills the sky for a few seconds before the results (lhcBackdrop)
     if(kocHold()) return;   // THE LAST KO: the match stops once its slow-mo and its beat have played (kocHold)
     running=false;
     const winTeam = teamsAlive[0];
@@ -102461,10 +102463,33 @@ function lhcLights(o, m, hw, hh){
   }
 }
 
+// STAPY'S CONTEST, THE EMBLEMS ARE THE BACKDROP (owner 2026-11-15: "make the emblems part of the backdrop, so we can see that, when your emblem is complete, it drowns out the others", "and you get to see it before the winscreen comes"):
+// all four emblems are drawn huge in the sky behind the play, fixed to the screen (so they are seen from the plaza, from a stepping stone and from inside a room), a piece lit makes its emblem a little bigger and brighter;
+// when one is complete it GROWS to fill the sky, the others shrink and fade under a dark veil, and the match holds LHK.winHold frames before the results (checkWin) so it is seen.
+function lhcBackdrop(c, m, room){
+  const S = LHC, K = LHK; if(!S || !fighters.length) return;
+  const sc = m.a/CAM_ZOOM, n = fighters.length, sp = Math.min(W/(n + 0.2), 300), R0 = sp*0.46;
+  const win = S.winT != null && CONTEST && CONTEST.winner != null ? fighters[CONTEST.winner] : null;
+  const e = win ? clamp((hazardT - S.winT)/K.swamp, 0, 1) : 0, ee = e*e*(3 - 2*e);
+  c.save(); c.setTransform(sc, 0, 0, sc, 0, 0);
+  const draw = (f, i) => {
+    const k = lhcPieces(f.idx), lit = S.towers.map(t => t.levers[f.idx].lit), isW = f === win;
+    let cx = W/2 + (i - (n - 1)/2)*sp, cy = H*0.40, R = R0*(0.86 + 0.09*k), al = (room ? 0.22 : 0.30) + 0.1*k;
+    if(win){ if(isW){ cx += (W/2 - cx)*ee; cy += (H*0.5 - cy)*ee; R += (Math.min(W, H)*0.47 - R)*ee; al += (1 - al)*ee; } else { R *= 1 - 0.4*ee; al *= 1 - 0.9*ee; } }
+    if(isW && ee > 0){ const g = c.createRadialGradient(cx, cy, R*0.6, cx, cy, R*1.9), col = lhcColor(f); g.addColorStop(0, col + 'cc'); g.addColorStop(1, col + '00'); c.globalAlpha = ee; c.fillStyle = g; c.fillRect(0, 0, W, H); }
+    else if(k >= 3){ const g = c.createRadialGradient(cx, cy, R*0.8, cx, cy, R*1.5), col = lhcColor(f); g.addColorStop(0, col + '55'); g.addColorStop(1, col + '00'); c.globalAlpha = al; c.fillStyle = g; c.beginPath(); c.arc(cx, cy, R*1.5, 0, 7); c.fill(); }
+    c.globalAlpha = f.dead && !isW ? al*0.6 : al; lhcDrawEmblem(c, cx, cy, R, f, lit); c.globalAlpha = 1;
+  };
+  fighters.forEach((f, i) => { if(f !== win) draw(f, i); });
+  if(ee > 0){ c.fillStyle = 'rgba(4,6,16,' + (0.62*ee).toFixed(3) + ')'; c.fillRect(0, 0, W, H); }
+  if(win) draw(win, fighters.indexOf(win));
+  c.restore();
+}
 // STAPY'S CONTEST, SEEING IN THE DARK (the owner: "you cant see the platforms well in the dark, or opponents"): over the dark, faint edges on every ledge and a ring and small glow on every rival, however far from your light. Dark and moody, readable.
 function lhcGlow(m){
   const S = LHC; if(!S) return;
   const me = fighters.find(f => f.you && !f.dead);
+  lhcBackdrop(ctx, m, !!(me && lhcTowerOf(me)));   // THE EMBLEMS ARE THE BACKDROP
   if(me && lhcTowerOf(me)) return;   // (inside a lighthouse it is lit)
   const c = ctx, x0 = camX - 60, x1 = camX + W/CAM_ZOOM + 60, y0 = camY - 60, y1 = camY + H/CAM_ZOOM + 60;
   c.save(); c.setTransform(m.a, m.b, m.c, m.d, m.e, m.f); c.lineCap = 'round';
@@ -102475,15 +102500,8 @@ function lhcGlow(m){
     c.strokeStyle = 'rgba(' + col + ',0.75)'; c.lineWidth = 3; c.beginPath(); c.moveTo(p.x, p.y + 1); c.lineTo(p.x + p.w, p.y + 1); c.stroke();
     if(solid && p.h > 80){ c.strokeStyle = 'rgba(' + col + ',0.35)'; c.lineWidth = 3; c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(p.x, p.y + p.h); c.moveTo(p.x + p.w, p.y); c.lineTo(p.x + p.w, p.y + p.h); c.stroke(); }
   }
-  { const gy = S.gy; if(gy > y0 && gy < y1){ c.strokeStyle = 'rgba(150,170,215,0.30)'; c.lineWidth = 9; c.beginPath(); c.moveTo(K_WALL, gy); c.lineTo(WW - K_WALL, gy); c.stroke(); c.strokeStyle = 'rgba(150,170,215,0.7)'; c.lineWidth = 3; c.stroke(); } }
-  { const n = fighters.length;   // THE EMBLEMS IN THE SKY: all of them, big, over the plaza, lit pieces glowing (they are seen from anywhere near the middle, in the dark)
-    fighters.forEach((f, i) => {
-      const ex = WW/2 + (i - (n - 1)/2)*330, ey = S.pY - 430;
-      if(ex < x0 - 140 || ex > x1 + 140 || ey < y0 - 140 || ey > y1 + 140) return;
-      const lit = S.towers.map(t => t.levers[f.idx].lit), nl = lit.filter(x => x).length, col = lhcColor(f);
-      if(nl){ const g = c.createRadialGradient(ex, ey, 40, ex, ey, 190); g.addColorStop(0, col + (nl > 2 ? 'aa' : '66')); g.addColorStop(1, col + '00'); c.fillStyle = g; c.beginPath(); c.arc(ex, ey, 190, 0, 7); c.fill(); }
-      c.globalAlpha = f.dead ? 0.7 : 1; lhcDrawEmblem(c, ex, ey, 105, f, lit); c.globalAlpha = 1;
-    }); }
+  { const gy = S.gy; if(gy > y0 && gy < y1){ for(const q of FLOOR_SEGS){ c.strokeStyle = 'rgba(150,170,215,0.30)'; c.lineWidth = 9; c.beginPath(); c.moveTo(q.x0, gy); c.lineTo(q.x1, gy); c.stroke(); c.strokeStyle = 'rgba(150,170,215,0.7)'; c.lineWidth = 3; c.stroke(); }
+    for(const q of LHK.pits){ for(const pq of [q, [LHK.aw - q[1], LHK.aw - q[0]]]){ if(pq[1] < x0 || pq[0] > x1) continue; c.fillStyle = 'rgba(255,60,40,0.18)'; c.fillRect(pq[0], gy, pq[1] - pq[0], 160); c.strokeStyle = 'rgba(255,90,60,0.85)'; c.lineWidth = 3; c.beginPath(); c.moveTo(pq[0], gy); c.lineTo(pq[0], gy + 160); c.moveTo(pq[1], gy); c.lineTo(pq[1], gy + 160); c.stroke(); } } } }   // (the floor in its pieces, and each pit with red walls: you see where the floor ends)
   for(const f of fighters){
     if(f.dead || f === me || f.x < x0 || f.x > x1 || f.y < y0 || f.y > y1) continue;
     const col = lhcColor(f), g = c.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r*3.2);
@@ -103389,10 +103407,10 @@ CONTEST_RULES.clock = {
 // levers (one per fighter, in a row). Outside: a dark floor (no pits: the brain's own recovery would not let a CPU cross one), a ladder of ledges up to the plaza, and chains of stepping stones from the plaza up to the two high lighthouses.
 // CPUs: a route graph over the ledges (built from the world, not from where anyone is); each goes for the lever it values most (its own unlit lever; a rival's lit lever, more when that rival is close to winning) and a foe in its face comes first.
 let LHC = null;   // null in every other match; else { towers, nodes, plaza, ... } -- see lhcBuildWorld
-const LHK = { gy0:2952, roomX:650, roomDx:1300, roomY:1900, doorOff:130, ledgeW:180, stoneW:100, gapH:80, ww:5200, wh:7000, wall:80, half:450, rise:100, door:190, roofGap:190, shell:30, platW:300, plazaY:1800, plazaX0:2300, plazaX1:2900, plateY:1440, plateEdge:1100,
-  lever:[-400, -320, 60, 140], leverR:34, light:30, lv:14, off0:300, offGrow:0.3, offMax:3000, pits:[], liftPer:420, timedOn:200, timedOff:100,
+const LHK = { gy0:2952, aw:5200, roomX:1000, roomDx:2400, roomY:3100, doorOff:130, topH:2400, unit:50, ww:9200, wh:7000, wall:80, half:700, door:190, roofGap:190, shell:30, platW:300, plazaY:1800, plazaX0:2300, plazaX1:2900, plateY:1440, plateEdge:1100,
+  lever:[-360, -200, 200, 360], leverR:34, light:30, lv:14, off0:300, offGrow:0.3, offMax:3000, pits:[[900, 1010], [1400, 1510], [1900, 2010]], pitDepth:160, winHold:300, swamp:150, liftPer:420, timedOn:200, timedOff:100,
   ladder:12, ladRise:96, stones:[[2185, 1710, 140], [2000, 1620, 130], [1850, 1530, 140], [1700, 1440, 120], [1560, 1440, 140], [1420, 1440, 110], [1290, 1440, 140]],
-  light0:270, reJump:105, reUp:110, reGap:120, portalCool:40, retarget:90, gang:3 };
+  light0:270, roomZoom:1, reJump:105, reUp:110, reGap:120, portalCool:40, retarget:90, gang:3 };
 function lhcWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.contest === 'lights'; }
 function lhcBuildWorld(){
   const K = LHK;
@@ -103400,47 +103418,49 @@ function lhcBuildWorld(){
   const gy = groundY(), D = gy - K.gy0;   // the arena sits low in a tall world; the four ROOMS (the lighthouses' insides, areas apart like the oak's mill) are up above it, out of sight of it
   worldPlats = [
     { x:0, y:-400, w:K.wall, h:WH + 800, solid:true, spWall:true },
+    { x:K.aw - K.wall, y:-400, w:K.wall, h:WH + 800, solid:true, spWall:true },   // (the arena's right wall: the rooms are out past it, each far from the next)
     { x:WW - K.wall, y:-400, w:K.wall, h:WH + 800, solid:true, spWall:true },
   ];
   const P = (x, y, w, o) => { const p = Object.assign({ x:Math.round(x), y:Math.round(y), w:Math.round(w), h:14, solid:false, lhn:true }, o || {}); worldPlats.push(p); return p; };
   const B = (x, y, w, h) => { const p = { x:Math.round(x), y:Math.round(y), w:Math.round(w), h:Math.round(h), solid:true }; worldPlats.push(p); return p; };
-  FLOOR_SEGS = [{ x0:K.wall, x1:WW - K.wall }];
+  { const cuts = []; for(const q of K.pits){ cuts.push([q[0], q[1]]); cuts.push([K.aw - q[1], K.aw - q[0]]); } cuts.sort((a, b) => a[0] - b[0]); let x = K.wall; FLOOR_SEGS = []; for(const q of cuts){ FLOOR_SEGS.push({ x0:x, x1:q[0] }); x = q[1]; } FLOOR_SEGS.push({ x0:x, x1:K.aw - K.wall }); }   // THE PITS (owner 2026-11-14/15): three on each side of the floor between the plaza and the lighthouses, a jump wide; fall in and it is a stock and the plaza
   SIDE_ROOM = 0;
-  const towers = [], mirror = x => WW - x, pY = K.plazaY + D, plY = K.plateY + D;
+  const towers = [], mirror = x => K.aw - x, pY = K.plazaY + D, plY = K.plateY + D;
   // the plaza (the start) and the ladder of ledges up to it from the floor
   const plaza = P(K.plazaX0, pY, K.plazaX1 - K.plazaX0);
   for(let i = 0; i < K.ladder - 1; i++){ const y = pY + K.ladRise*(K.ladder - 1 - i); P(i % 2 ? 2720 : 2450, y, 240); }
   // the plateaus and the stepping stones to them (the top two lighthouses stand on them)
-  B(K.wall, plY, K.plateEdge - K.wall, 60).lhn = true; B(WW - K.plateEdge, plY, K.plateEdge - K.wall, 60).lhn = true;
+  B(K.wall, plY, K.plateEdge - K.wall, 60).lhn = true; B(K.aw - K.plateEdge, plY, K.plateEdge - K.wall, 60).lhn = true;
   for(const st of K.stones){ P(st[0] - st[2]/2, st[1] + D, st[2]); P(mirror(st[0]) - st[2]/2, st[1] + D, st[2]); }
   // the four lighthouses: 0 top left, 1 top right, 2 bottom left, 3 bottom right. OUTSIDE each is a facade with a door (a zone); INSIDE is its room, up in the sky of the world.
   for(let k = 0; k < 4; k++){
-    const right = k % 2 === 1, top = k < 2, ox = right ? WW - 380 : 380, oBase = top ? plY : gy, dir = right ? -1 : 1;   // dir: the side of the door (toward the middle)
+    const right = k % 2 === 1, top = k < 2, ox = right ? K.aw - 380 : 380, oBase = top ? plY : gy, dir = right ? -1 : 1;   // dir: the side of the door (toward the middle)
     const cx = K.roomX + k*K.roomDx, base = K.roomY, h = K.half;
-    const topH = (K.lv + 1)*K.rise, topY = base - topH, roofY = topY - K.roofGap;
-    const tw = { k, cx, base, topY, roofY, dir, x0:cx - h - K.shell, x1:cx + h + K.shell, levers:[], timed:[], pieces:[], movers:[], ox, oBase, topH, doorX:ox + dir*K.doorOff, exitX:cx + dir*(h - 45), inX:cx + dir*(h - 150), chuteL:cx - 230, chuteR:cx - 50, sx:cx - h, stX:cx - h + K.ledgeW + K.gapH, rX:cx - h + K.ledgeW + K.gapH + K.stoneW + K.gapH, rc:cx + 332 };   // the SAFE way is the left part of the room (to cx + 170); the RISKY parkour has the right part (from cx + 215) to itself, so neither gets in the other's way
+    const topH = K.topH, topY = base - topH, roofY = topY - K.roofGap;
+    const tw = { k, cx, base, topY, roofY, dir, x0:cx - h - K.shell, x1:cx + h + K.shell, levers:[], timed:[], pieces:[], movers:[], ox, oBase, topH, doorX:ox + dir*K.doorOff, exitX:cx + dir*(h - 45), inX:cx + dir*(h - 150), chuteL:cx - 110, chuteR:cx + 110 };
     B(cx - h - K.shell, roofY, 2*h + 2*K.shell, K.shell);   // the roof
     B(cx - h - K.shell, roofY, K.shell, base - roofY); B(cx + h, roofY, K.shell, base - roofY);   // the walls: closed (the way in and out is the door, a zone)
     const fl = B(cx - h - K.shell, base, 2*h + 2*K.shell, 60); fl.lhn = true; fl.lh = k; tw.floor = fl;
-    // THE SAFE WAY UP, the slow one: a ledge a floor on alternate sides, and between each two a small stone in the middle (a hop of about 90 each way); three of the stones blink (a different three in each lighthouse)
-    const blink = [3 + k, 7 + k, 11 + k];
-    for(let i = 1; i <= K.lv; i++){
-      const left = i % 2 === 1, p = P(left ? tw.sx : tw.rX, base - i*K.rise, K.ledgeW, left ? { lh:k, wl:true } : { lh:k });
-      const st = P(tw.stX, base - i*K.rise + K.rise/2, K.stoneW, { lh:k, stone:true });
-      if(blink.indexOf(i) >= 0){ st.timed = true; tw.timed.push({ p:st, ph:k*37 + i*11, on:true }); }
-      tw.pieces.push(p, st);
+    // THE ROOM (1400 wide, 2400 tall, 48 units of 50): a LEFT LANE (the safe way), a clear column in the middle (you fall down it to the floor), a RIGHT LANE (the risky way). NO STAIRS and no resting ledge:
+    // every piece of both lanes is a hop that is hard on its own (a gap of 90 or more, or a rise of 90, onto a narrow piece, or a moving one); the first piece is the only step from the floor, and the only easy hop in a room is the last one onto the lever ledge.
+    const U = K.unit, nU = topH/U, pw = [84, 78, 80, 74][k], gp = [90, 94, 92, 96][k], step = pw + gp, x0 = cx - h + 10, cols = [0, 1, 2, 1];
+    const blink = [9 + 2*k, 25 + k, 38 + 2*k];   // a different three blink in each lighthouse
+    for(let n = 1; n < nU; n++){   // THE SAFE WAY: a piece every 50 up, a column across and back (0 1 2 1 0 1 2 1 ...): a gap of 90 to the next, so every hop is a real jump; the pieces two apart in a column are 100 apart, the top of a jump
+      const col = cols[(n - 1) % 4], p = P(x0 + col*step, base - n*U, pw, { lh:k, stone:true, wl:col === 0 });
+      if(blink.indexOf(n) >= 0){ p.timed = true; tw.timed.push({ p, ph:k*37 + n*11, on:true }); }
+      tw.pieces.push(p);
     }
-    const tstone = P(tw.stX, topY + K.rise/2, K.stoneW, { lh:k, stone:true });
-    const lp = P(tw.sx, topY, K.ledgeW, { lh:k, top:true, wl:true }), rp = P(tw.rX, topY, K.ledgeW, { lh:k, top:true });
+    const tstone = P(cx - 40, topY + 75, 80, { lh:k, stone:true });
+    const lp = P(cx - 430, topY, 300, { lh:k, top:true }), rp = P(cx + 130, topY, 300, { lh:k, top:true });
     tw.pieces.push(tstone, lp, rp);
     K.lever.forEach((o, j) => tw.levers.push({ j, x:cx + o, lit:false, litAt:0, node:o < 0 ? lp : rp }));
-    // THE FAST, RISKY WAY: parkour of its own in each lighthouse (one-way parts, not in the CPUs' route): no lift that skips it, every part is a hop and a landing
+    // THE RISKY WAY, the fast one: parkour of its own on the right, different in each lighthouse (pieces out of the CPUs' route): 0 twenty-six sliding blocks, 1 twenty-six narrow ledges, 2 a relay of eight lifts, 3 ten swinging blocks
     const MV = (x, y, w, o) => { const p = P(x, y, w, { lh:k, lhn:false, mover:true, h:18 }); tw.movers.push(Object.assign({ p, bx:x, by:y, ax:0, ay:0, per:300, ph:0, ph2:0 }, o)); return p; };
     const SL = (x, y, w) => { const p = P(x, y, w, { lh:k, lhn:false, small:true }); tw.pieces.push(p); return p; };
-    if(k === 0){ for(let j = 1; j <= 9; j++) MV(tw.rc - 45, base - 150*j, 90, { ax:60, per:260 + (j % 3)*30, ph:j*1.1 }); }   // 0: nine sliding blocks, a double jump apart, on different beats
-    if(k === 1){ for(let j = 1; j <= 11; j++) SL(cx + (j % 2 ? 250 : 340), base - 130*j, 70); }   // 1: eleven narrow ledges, a double jump apart, zigzag
-    if(k === 2){ for(let j = 0; j < 4; j++) MV(tw.rc - 40, base - 250 - 330*j, 80, { ay:150, per:300 + j*40, ph:j }); }   // 2: a relay of four short lifts, ride one and hop to the next
-    if(k === 3){ for(let j = 0; j < 5; j++) MV(tw.rc - 45 + (j % 2 ? 15 : -15), base - 250 - 300*j, 90, { ax:50, ay:90, per:420 + j*30, orb:true, ph:j }); }   // 3: five blocks that swing round in loops
+    if(k === 0){ for(let j = 0; j < 26; j++) MV(cx + 372, base - 90*(j + 1), 96, { ax:80, per:240 + (j % 4)*30, ph:j*1.3 }); }   // 0: sliding blocks, 90 apart, on different beats
+    if(k === 1){ for(let j = 0; j < 26; j++) SL(cx + 190 + (j % 2 ? 100 : 0), base - 90*(j + 1), 64); }   // 1: narrow ledges, 90 apart, zigzag with a gap of 36
+    if(k === 2){ for(let j = 0; j < 8; j++) MV(cx + (j % 2 ? 600 : 450), base - 150 - 300*j - 0, 80, { ay:150, per:300 + (j % 3)*30, ph:j*Math.PI, by:base - 150 - 300*j }); }   // 2: a relay of lifts, ride one to the top and hop to the next (they run in step so the next is at your height)
+    if(k === 3){ for(let j = 0; j < 10; j++) MV(cx + 480 + (j % 2 ? 40 : -40), base - 90 - 240*j, 90, { ax:50, ay:90, per:420 + j*30, orb:true, ph:j }); }   // 3: ten blocks that swing round in loops
     for(const m of tw.movers){ const a = m.ph, p = m.p; p.x = Math.round(m.bx + m.ax*Math.sin(a + m.ph2)); p.y = Math.round(m.by + m.ay*Math.sin(m.orb ? 2*a : a)); }
     towers.push(tw);
   }
@@ -103466,7 +103486,7 @@ function lhcGraph(){
   for(const tw of S.towers){
     const out = N.find(n => !n.p || n.p.lh == null ? (n.x0 <= tw.doorX && n.x1 >= tw.doorX && Math.abs(n.y - tw.oBase) < 2) : false), inn = N.find(n => n.p === tw.floor);
     if(out && inn){ out.out.push({ to:inn, c:60, portal:{ x:tw.doorX } }); inn.out.push({ to:out, c:60, portal:{ x:tw.exitX } }); }
-    if(inn) for(const A of N){ if(A.p && A.p.lh === tw.k && A !== inn && A.y < tw.base - 60){ A.out.push({ to:inn, c:30 + 0.04*(tw.base - A.y), chute:{ x:(A.x0 + A.x1)/2 < tw.cx - 300 ? tw.chuteL : tw.chuteR } }); } }
+    if(inn) for(const A of N){ if(A.p && A.p.lh === tw.k && A !== inn && A.y < tw.base - 60){ A.out.push({ to:inn, c:30 + 0.04*(tw.base - A.y), chute:{ x:(A.x0 + A.x1)/2 < tw.cx ? tw.chuteL : tw.chuteR } }); } }
   }
   S.nodes = N;
   for(const tw of S.towers) for(const L of tw.levers) L.nd = N.find(n => n.p === L.node);
@@ -103496,14 +103516,30 @@ function lhcSameRoom(a, b){ const A = lhcTowerOf(a); return !!A && A === lhcTowe
 function lhcPieces(j){ let n = 0; for(const tw of LHC.towers) if(tw.levers[j] && tw.levers[j].lit) n++; return n; }
 function lhcNeed(L){ const K = LHK; return K.off0 + Math.min(K.offMax, Math.max(0, hazardT - L.litAt)*K.offGrow); }
 function lhcRespawn(f){
-  const K = LHK; f.x = Math.round(K.plazaX0 + 80 + Math.random()*(K.plazaX1 - K.plazaX0 - 160)); f.y = LHC.pY - f.r; f.vx = 0; f.vy = 0; f.onground = true;
+  const K = LHK; f.x = Math.round(K.plazaX0 + 80 + Math.random()*(K.plazaX1 - K.plazaX0 - 160)); f.y = LHC.pY - f.r; f.vx = 0; f.vy = 0; f.onground = true; f._lhRoom = null;
+}
+// KEEP EVERYONE WHERE THEY ARE (the way Beach Ball keeps its halves; owner 2026-11-15: Bow teleported out of one tower straight into the next): every frame, after everyone has moved, a fighter inside a room is brought
+// back inside that room's walls, floor and roof, and a fighter in the arena back inside the arena. A warp, a teleport or a long dash can end past a wall; the only way between the arena and a room is a door.
+// It touches nothing of any move: the move runs as it always does and the contest puts the fighter back at the wall it went through.
+function lhcKeep(f){
+  const S = LHC; if(!S || f.dead) return;
+  const K = LHK, r = f.r, tw = f._lhRoom;
+  let lo, hi, top, bot;
+  if(tw){ lo = tw.cx - K.half + r; hi = tw.cx + K.half - r; top = tw.roofY + K.shell + r; bot = tw.base - r; }
+  else { lo = K.wall + r; hi = K.aw - K.wall - r; top = S.pY - 1400; bot = 1e9; }
+  const ox = f.x < lo ? lo - f.x : (f.x > hi ? f.x - hi : 0), oy = f.y < top ? top - f.y : 0;
+  if(ox || oy){ S.keeps = (S.keeps || 0) + 1; S.over = Math.max(S.over || 0, ox, oy); }   // (counted, so a test can see the clamp was really needed)
+  if(f.x < lo){ f.x = lo; if(f.vx < 0) f.vx = 0; } else if(f.x > hi){ f.x = hi; if(f.vx > 0) f.vx = 0; }
+  if(f.y < top){ f.y = top; if(f.vy < 0) f.vy = 0; }
+  if(tw && f.y > bot){ f.y = bot; if(f.vy > 0) f.vy = 0; f.onground = true; }
+  if(!tw && f.y > S.gy + K.pitDepth && CONTEST && CONTEST.winner == null){ f.y = koB() + 30; S.pits = (S.pits || 0) + 1; }   // A PIT IS DEADLY, NOT A TRAP: past the floor line it is out through the bottom at once (a stock; the plaza), nobody climbs back out of one
 }
 // THE DOORS (the way the oak's mill is entered): walk into a lighthouse's door and you are in its room; walk into the room's exit and you are out at the door. Both are zones; a fighter who has just come through is not taken back for LHK.portalCool frames.
 function lhcPortal(f){
   const S = LHC, K = LHK, feet = f.y + f.r;
   const into = (tw, x, y, face, who) => {
     for(let i = 0; i < 8; i++) puff(f.x, f.y, lhcColor(f), 4);
-    f.x = x; f.y = y - f.r; f.vx = 0; f.vy = 0; f.onground = true; f.face = face; f.hitstun = 0; f._lhPortT = hazardT + K.portalCool; f._lhN = null; f._lhP = 0; f._lhSpent = null;
+    f.x = x; f.y = y - f.r; f.vx = 0; f.vy = 0; f.onground = true; f.face = face; f.hitstun = 0; f._lhPortT = hazardT + K.portalCool; f._lhRoom = who === 'in' ? tw : null; f._lhN = null; f._lhP = 0; f._lhSpent = null;
     for(let i = 0; i < 8; i++) puff(f.x, f.y, lhcColor(f), 4);
     if(f.you){ const t = camTarget(f.x, f.y, CAM_ZOOM); camX = t.x; camY = t.y; }   // (the view cuts to the new place, as the mill's does)
   };
@@ -103557,7 +103593,7 @@ CONTEST_RULES.lights = {
     lhcGraph();
     const live = fighters.filter(f => !f.dead), K = LHK, w = K.plazaX1 - K.plazaX0 - 200;
     const slot = live.map((f, i) => i); for(let i = slot.length - 1; i > 0; i--){ const j = Math.floor(Math.random()*(i + 1)); const t = slot[i]; slot[i] = slot[j]; slot[j] = t; }   // (the start spots are dealt at random)
-    live.forEach((f, i) => { f.x = Math.round(K.plazaX0 + 100 + w*(slot[i] + 0.5)/live.length); f.y = S.pY - f.r; f.vx = 0; f.vy = 0; f.onground = true; f.face = f.x < WW/2 ? 1 : -1; });
+    live.forEach((f, i) => { f.x = Math.round(K.plazaX0 + 100 + w*(slot[i] + 0.5)/live.length); f.y = S.pY - f.r; f.vx = 0; f.vy = 0; f.onground = true; f.face = f.x < K.aw/2 ? 1 : -1; f._lhRoom = null; });
     { const used = []; for(const f of fighters){ let i = lhcHash(f.name || '') % LH_PAL.length; while(used.indexOf(i) >= 0) i = (i + 1) % LH_PAL.length; used.push(i); f._lhCol = LH_PAL[i]; } }   // (each fighter's own colour; the four in a match always differ)
     for(const f of fighters){ f._lhP = 0; f._lhSpent = null; f._lhAt = null; f._lhOffs = 0; f._lhGoal = null; f._lhRe = 0; f._lhN = null; f._lhStay = 0; }
   },
@@ -109476,6 +109512,7 @@ function camTarget(x, y, z){
   if(MCAVE && MCAVE.on) return { x: x - W/2, y: y - H/2 };   // MOON CAVES: no world box to keep inside (the view turns)
   const halfW=(W/2)/z, halfH=(H/2)/z;
   let x0 = 0, x1 = WW, y0 = 0, y1 = WH;
+  if(LHC){ const vr = LHC.view; if(vr){ x0 = vr.x0; x1 = vr.x1; y0 = vr.y0; y1 = vr.y1; } else { x1 = LHK.aw; y0 = LHC.pY - 1400; } }   // STAPY'S CONTEST: the view stays in the room you are in (the room's own walls), or in the arena
   if(algBigOn()){ x0 -= ALG_BIG.wallVis; x1 += ALG_BIG.wallVis; }   // the Algebralien Rush's big stage: its walls show a little (rush M3)
   if(SETTINGS.mode === 'ctf' && CTF.map && CTF.map.pocketY != null){ const vr = ctfViewRoom(), iv = vr && !CTF.map.ivBand && CTF.map.ivOf ? CTF.map.ivOf[vr] : null; if(iv){ x0 = iv.x; x1 = iv.x + iv.w; y0 = iv.y; y1 = iv.y + iv.h; } else if(vr) y0 = CTF.map.pocketY; else y1 = CTF.map.pocketY; }   // (a map with a room apart under it: the view stays in the map, or in the room; in an interior, in its box both ways)
   const cx = (x1 - x0 <= 2*halfW) ? (x0 + x1)/2 : clamp(x, x0 + halfW, x1 - halfW);
@@ -109495,6 +109532,7 @@ function updateCamera(){
   let you=live || fighters.find(f=>!f.dead);
   if(SETTINGS.mode==='ctf' && you) you = ctfCamFighter(you);   // a prisoner watches a teammate
   if(!you) return;
+  if(LHC){ const rm = you && you._lhRoom, zt = rm ? LHK.roomZoom : 0.72; LHC.view = rm ? { x0:rm.x0, x1:rm.x1, y0:rm.roofY - 60, y1:rm.base + 70 } : null; CAM_ZOOM += (zt - CAM_ZOOM)*0.12; if(Math.abs(CAM_ZOOM - zt) < 0.004) CAM_ZOOM = zt; }   // STAPY'S CONTEST: inside a room the camera follows you at the normal zoom, in the arena it is zoomed out as before
   const t = algBigOn() ? algCamTarget(you) : camTarget(you.x + (RACE.active ? raceCamLead() : 0), you.y, CAM_ZOOM);   // (the Algebralien Rush: the boss and you, algCamTarget)   RUNNING!: the camera looks ahead of the runner, and further at the edge (raceCamLead)
   if(MCAVE && MCAVE.on){ mcCamera(t); return; }   // MOON CAVES: the same follow, and the view turns with it
   camX += (t.x-camX)*0.12;   // smooth follow
