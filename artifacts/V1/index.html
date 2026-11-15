@@ -103149,8 +103149,7 @@ CONTEST_RULES.collection = {
 // BURIED: you start with the jab and the tilts only, and the five others (DGK.moves: the smash, the special, the up special, the down special
 // and the finisher) each lie in one cell of your own (digcBury: at growing distances from the start, DGK.ring, in random directions -- nobody
 // else's cell is yours). A move you have not found is its jab or tilt instead (digcLocked, digcFallback), in the dig and in the fight alike.
-// TWO of your five are hinted from the start: a ring of DGK.area cells round a point near (not on) the buried cell, the same plain mark on each
-// (digcBury: f._dgHint). A move of yours within DGK.hint cells shows a glint (you, drawn; a CPU, felt the same way), but not which move it is: the judgement is how
+// NOTHING shows where a move lies (the owner, 2026-11-15: you do NOT know where your key moves are): the judgement is how
 // long to keep digging. Nobody hits anybody in the dig (applyHit, and no grab), and bodies never block a tunnel (they pass through each other).
 // PART TWO, THE ARENA: a corner exit drops you onto the floor below the field, where you wait (held on the floor) until everyone is out; then
 // DGK.ready frames and the fight is the ordinary one (two stocks, checkWin). The FIRST out hits DGK.buff[0] times as hard, the second
@@ -103219,14 +103218,8 @@ function digcBury(f){
     const p = cand.length ? cand[Math.floor(Math.random()*cand.length)] : [D.mc + 2, D.mr];
     used[p[0] + ':' + p[1]] = true; f._dgBur[k] = p;
   });
-  // THE TWO AREAS (the owner, 2026-11-07: 'you should be given the general area of where any 2 of your moves are. no names of moves'): two of the
-  // five at random, each shown as a ring of DGK.area cells round a point up to DGK.areaOff cells off the buried cell (so the ring never says the cell),
-  // with the same plain mark on each. Yours only (drawn for the player, felt by a CPU that wants more: digcBrain).
-  const two = DGK.moves.slice().sort(() => Math.random() - 0.5).slice(0, 2);
-  f._dgHint = two.map(k => { const p = f._dgBur[k], a = Math.random()*Math.PI*2, d = Math.random()*DGK.areaOff; return { k, c:p[0] + Math.cos(a)*d, r:p[1] + Math.sin(a)*d }; });
+  // (2026-11-15, the owner: no hints, no rings, no glints -- 'you do NOT know where your key moves are'; the old two-areas hint is gone.)
 }
-// Where a hinted area's middle is, as a cell of the dirt (for a CPU's goal), or null once that move is found.
-function digcHintCell(f, h){ if(!f._dgBur || !f._dgBur[h.k]) return null; const D = DIGC; return [Math.max(1, Math.min(D.cols - 2, Math.round(h.c))), Math.max(1, Math.min(D.rows - 2, Math.round(h.r)))]; }
 // A move not dug up yet (false outside the contest, and for a fighter with no burial).
 function digcLocked(f, key){ return !!DIGC && !f.dead && !!f._dgMoves && !f._dgMoves[key]; }
 // The jab or the tilt in a locked move's place (and, in the dirt, the dig that goes with it).
@@ -103272,7 +103265,7 @@ function digcOut(f, ex){
   for(let i = 0; i < 8; i++) puff(f.x, f.y, '#c9a36b', 4);
   digcToFloor(f);
   for(let i = 0; i < 8; i++) puff(f.x, f.y, '#fff', 4);
-  if(f.you){ tone(660, 0.1, 'triangle', 0.16, 0, 990); banner(ex < 0 ? 'Caved in!' : 'Out! #' + (f._dgPlace + 1), 1100); }
+  if(f.you){ tone(660, 0.1, 'triangle', 0.16, 0, 990); banner('Out! #' + (f._dgPlace + 1), 1100); }
   else if(ex < 0) tone(180, 0.2, 'sawtooth', 0.08, 0, 90);
 }
 // Onto the arena's floor, still, with nothing of the dirt's movement left on them (the crawl's hold, a swing's drive, a teleport in flight).
@@ -103315,14 +103308,23 @@ function digcHold(f){
 // The CPU in the dig: toward a glint while it wants more moves and has time, else toward the nearest exit; a block in the way is dug; out, it stands.
 function digcBrain(f, inp, lvl){
   const D = DIGC, K = DGK;
-  if(!digcDigging(f)) return;
+  if(!digcDigging(f)){
+    // (out and waiting for the rest, a CPU paces the arena floor instead of standing still: found 2026-11-15, three of four CPUs 'froze' 5 s+ at the spot they landed, for as long as the last digger took)
+    if(!f.dead && f._dgOut != null && D.phase !== 'fight'){ const W = f._dgWait || (f._dgWait = { dir:Math.random() < 0.5 ? -1 : 1, t:hazardT + 60 }); if(hazardT >= W.t){ W.dir = -W.dir; W.t = hazardT + 50 + Math.floor(Math.random()*80); } if((hazardT >> 5) % 2 === 0){ inp.left = W.dir < 0; inp.right = W.dir > 0; } }
+    return;
+  }
   const S = f._dgAi || (f._dgAi = { want:(K.cpu.want[lvl] != null ? K.cpu.want[lvl] : 1) + (Math.random() < 0.4 ? 1 : 0), budget:((K.cpu.budget[lvl] != null ? K.cpu.budget[lvl] : 35) + Math.round(Math.random()*20 - 10))*60,
     at:null, atT:hazardT, skip:null, exit:Math.floor(Math.random()*D.exits.length) });   // (want: one more now and then; budget: give or take ten seconds; exit: its own pick, the nearest once that one fails it)
   const q = digcCellAt(f.x, f.y), c = q[0], r = q[1], t = hazardT - D.start;
   if(!S.at || S.at[0] !== c || S.at[1] !== r){ S.at = [c, r]; S.atT = hazardT; }
   let goal = null, bd = 1e9;
-  if((f._dgN || 0) < S.want && t < S.budget) for(const k in f._dgBur){ const p = f._dgBur[k], d = Math.max(Math.abs(p[0] - c), Math.abs(p[1] - r)); if(d <= K.hint && d < bd){ bd = d; goal = p; } }
-  if(!goal && (f._dgN || 0) < S.want && t < S.budget && f._dgHint){ bd = 1e9; for(const h of f._dgHint){ const p = digcHintCell(f, h); if(!p) continue; const d = Math.abs(p[0] - c) + Math.abs(p[1] - r); if(d < bd){ bd = d; goal = p; } } if(goal && bd === 0) goal = null; }   // (an area of its own: to its middle, where the glint takes over)
+  if((f._dgN || 0) < S.want && t < S.budget){   // (it has no map of its own moves (nothing shows them): it wanders, to a random cell of the dirt near the start, and digs what is on the way)
+    if(!S.wp || (S.wp[0] === c && S.wp[1] === r) || hazardT - S.wpT > 420){
+      const d = 1 + Math.floor(Math.random()*9), a = Math.random()*Math.PI*2;
+      S.wp = [Math.max(1, Math.min(D.cols - 2, D.mc + Math.round(Math.cos(a)*d))), Math.max(1, Math.min(D.rows - 2, D.mr + Math.round(Math.sin(a)*d)))]; S.wpT = hazardT;
+    }
+    goal = S.wp; if(goal[0] === c && goal[1] === r) goal = null;
+  }
   if(!goal && S.skip == null) goal = D.exits[S.exit];
   if(!goal){ bd = 1e9; D.exits.forEach((e, i) => { if(i === S.skip) return; const d = Math.abs(e[0] - c) + Math.abs(e[1] - r); if(d < bd){ bd = d; goal = e; } }); }
   if(hazardT - S.atT > 420){ const sk = digcIsExit(goal[0], goal[1]); if(sk >= 0) S.skip = sk; S.atT = hazardT; }   // (seven seconds in one cell: another exit)
@@ -103351,13 +103353,13 @@ CONTEST_RULES.dig = {
       if(digcHp(q[0], q[1]) === 0) digcTakeAt(f, q[0], q[1]);
       const ex = digcIsExit(q[0], q[1]); if(ex >= 0) digcOut(f, ex);
     }
-    if(t >= DGK.stall && !D.cave){ D.cave = true; banner('The dirt is caving in!', 1500); noise(0.4, 0.12, 900, 0, 200); }
+    if(t >= DGK.stall && !D.cave){ D.cave = true; noise(0.4, 0.12, 900, 0, 200); }
     if(t >= DGK.stall + DGK.cave) for(const f of fighters) if(!f.dead && f._dgOut == null) digcOut(f, -1);
     if(D.fightAt == null && fighters.every(f => f.dead || f._dgOut != null)) D.fightAt = hazardT + DGK.ready;
     if(D.fightAt != null && hazardT >= D.fightAt){
       D.phase = 'fight';
       for(const f of fighters){ if(!f.dead && f._dgPct > 0) f.pct = Math.max(f.pct, f._dgPct); }
-      banner('FIGHT!', 900); SFX.ko && SFX.ko();
+      SFX.ko && SFX.ko();   // (no word on the screen: the owner, 2026-11-13, 'no phase names, they should just happen')
     }
   },
   // The panel (top right): the part and its clock, then a row per fighter -- colour, name, the five moves (lit when found), and where they stand.
@@ -103371,7 +103373,7 @@ CONTEST_RULES.dig = {
     c.font = "800 12px 'Baloo 2', system-ui"; c.textBaseline = 'middle'; c.textAlign = 'left';
     c.fillStyle = '#ffd23f'; c.fillText('THE DIG', px + 10, py + 12);
     c.font = "700 10px 'Baloo 2', system-ui"; c.fillStyle = '#fff'; c.textAlign = 'right';
-    const head = D.phase === 'fight' ? 'FIGHT' : D.fightAt != null ? 'fight in ' + Math.ceil((D.fightAt - hazardT)/60) : (D.cave ? 'caving in!' : 'dig to a corner') + '  ·  ' + mmss(t/60);
+    const head = D.phase === 'fight' ? '' : D.fightAt != null ? String(Math.ceil((D.fightAt - hazardT)/60)) : mmss(t/60);
     c.fillText(head, px + pw - 10, py + 12);
     rows.forEach((f, i) => {
       const y = py + 24 + rh*i + rh/2;
@@ -103389,7 +103391,7 @@ CONTEST_RULES.dig = {
       let txt, col = '#fff';
       if(f.dead){ txt = 'out'; }
       else if(f._dgOut == null){ txt = 'digging'; }
-      else if(D.phase !== 'fight'){ txt = f._dgExit < 0 ? 'caved in' : '#' + (f._dgPlace + 1); col = '#ffd23f'; }
+      else if(D.phase !== 'fight'){ txt = '#' + (f._dgPlace + 1); col = '#ffd23f'; }
       else { txt = (f._dgBuff > 1 ? 'x' + f._dgBuff.toFixed(2) : '') + (f._dgPct > 0 ? ' +' + f._dgPct + '%' : ''); col = f._dgBuff > 1 ? '#ffd23f' : '#fff'; if(!txt) txt = '-'; }
       c.fillStyle = col; c.fillText(txt.trim(), px + pw - 10, y);
     });
@@ -103408,7 +103410,7 @@ CONTEST_RULES.dig = {
   },
 };
 // ART (over the platforms, under the fighters): the tunnels dark, the dirt in its blocks (cracked as it goes), the rock rim, a sign at each
-// exit, a glint on a cell of yours within DGK.hint cells (the move itself not named), and a nugget where one of yours lies open.
+// exit (nothing shows where a move lies buried).
 function drawDigc(){
   const D = DIGC, c = ctx, C = D.cell, t = hazardT; if(!D) return;
   c.save();
@@ -103428,25 +103430,7 @@ function drawDigc(){
     c.fillStyle = '#1c1c1c'; c.font = "800 11px 'Baloo 2', system-ui"; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('EXIT', m[0], m[1] - 17);
     c.globalAlpha = k; c.strokeStyle = '#ffd23f'; c.lineWidth = 3; c.beginPath(); c.arc(m[0], m[1] + 8, 14, 0, 7); c.stroke();
   });
-  const you = fighters.find(f => f.you && !f.dead && f._dgOut == null && f._dgBur);
-  if(you && D.phase === 'dig' && you._dgHint) for(const h of you._dgHint){   // THE TWO AREAS: a soft ring, a plain mark; no move is named
-    if(!you._dgBur[h.k]) continue;
-    const hx = D.x0 + (h.c + 0.5)*C, hy = D.y0 + (h.r + 0.5)*C, R = DGK.area*C;
-    c.globalAlpha = 0.14 + 0.05*Math.sin(t*0.08); c.fillStyle = '#ffd23f'; c.beginPath(); c.arc(hx, hy, R, 0, 7); c.fill();
-    c.globalAlpha = 0.5; c.strokeStyle = '#ffd23f'; c.lineWidth = 3; c.beginPath(); c.arc(hx, hy, R, 0, 7); c.stroke();
-    c.globalAlpha = 0.8; c.fillStyle = '#ffd23f'; itemRoundRect(c, hx - 11, hy - 13, 22, 26, 5); c.fill();
-    c.fillStyle = '#1c1c1c'; c.font = "800 16px 'Baloo 2', system-ui"; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('?', hx, hy + 1);
-  }
-  if(you && D.phase === 'dig'){
-    const q = digcCellAt(you.x, you.y);
-    for(const k in you._dgBur){
-      const p = you._dgBur[k], d = Math.max(Math.abs(p[0] - q[0]), Math.abs(p[1] - q[1])); if(d > DGK.hint) continue;
-      const m = digcMid(p[0], p[1]), open = digcHp(p[0], p[1]) === 0, a = 0.5 + 0.5*Math.sin(t*0.2 + p[0]);
-      c.globalAlpha = open ? 0.95 : 0.35 + 0.45*a; c.fillStyle = open ? '#ffd23f' : '#fff6c8';
-      c.beginPath(); for(let i = 0; i < 8; i++){ const rr = i % 2 ? 4 : (open ? 11 : 8), an = i*Math.PI/4 + t*0.03; c.lineTo(m[0] + Math.cos(an)*rr, m[1] + Math.sin(an)*rr); } c.closePath(); c.fill();
-      if(open){ c.fillStyle = '#1c1c1c'; c.font = "800 10px 'Baloo 2', system-ui"; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('?', m[0], m[1] + 0.5); }
-    }
-  }
+  // (no ring and no glint: the owner, 2026-11-15, 'you do NOT know where your key moves are'; a move is found only by digging into its cell)
   c.restore();
 }
 
