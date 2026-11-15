@@ -104112,23 +104112,19 @@ EVENT_TWIST_WORDS['contest:steps'] = { icon:'🪜', short:"Pie's contest: 500 st
 // wall where it will come from, BHK.deb.tell frames, a tick), never over a fighter; more at once and sooner the longer the match runs; a touch is a shove and a slower run (0 damage), once per piece per fighter.
 // A fighter's height above the hole is what the panel shows. Offline only (startEventMatch refuses in a room). No items, no Smash Balls, nothing from the sky.
 let BHC = null;   // null in every other match; else { ledges, slab, gy, hx, hy, line, debris, tells, ... } -- see bhcBuildWorld
-const BHK = { n:200, rise:100, w:170, dx:230, h:14, wall:80, top:330, holeDepth:590, holeRise:0.2, holeAcc:0.0003, pullNear:0.7, pullFar:0.3, reachH:6000, pullGrow:1.5, growT:10800,
-  ahead:8, fade:40, hitDown:7, lowAbove:300, flyMax:90, hitRef:12, dangerPx:300, scalePx:1500, cols:[0, 1, 2, 1, 2, 3, 2, 1],
-  deb:{ first:200, every0:75, every1:32, rampT:10800, max0:4, max1:9, tell:50, rMin:30, rMax:48, speed:5.5, ay:0.04, bump:8, slow:75, slowK:0.5, clear:170 } };
+const BHK = { worldH:400000, rise:100, w:170, dx:230, h:14, wall:80, top:330, holeDepth:590, holeRise:0.2, holeAcc:0.0003, pullNear:0.7, pullFar:0.3, reachH:6000, pullGrow:1.5, growT:10800,
+  ahead:8, fade:40, hitDown:7, lowAbove:300, flyMax:90, hitRef:12, aboveFull:60, ghostFirst:300, ghostCd:480, dangerPx:300, scalePx:1500, cols:[0, 1, 2, 1, 2, 3, 2, 1],
+  deb:{ first:200, every0:75, every1:32, rampT:10800, max0:4, max1:9, tell:50, rMin:30, rMax:48, speed:5.5, ay:0.04, bump:8, dmg0:4, dmg1:8, kbx:4, kby:6, drop0:9, drop1:5, slow:75, slowK:0.5, clear:170 } };
 function bhcWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.contest === 'top'; }
 function bhcBuildWorld(){
   const K = BHK;
   WW = Math.round(W*1.4); camX = 0; camY = 0; bases = []; floors = []; worldZones = []; spawnZones = [];
-  WH = Math.round((K.top + K.n*K.rise)/0.82);   // (groundY = WH*0.82 is the slab)
+  WH = K.worldH;   // (a tall world, the start slab at groundY = WH*0.82: the ledges are made as the climbers rise, there is no top to the tower; the hole outruns anyone long before it ends)
   const gy = groundY(), span = 3*K.dx + K.w, x0 = Math.round((WW - span)/2), ledges = [];
   worldPlats = [
     { x:0, y:-400, w:K.wall, h:WH + 800, solid:true, spWall:true },
     { x:WW - K.wall, y:-400, w:K.wall, h:WH + 800, solid:true, spWall:true },
   ];
-  for(let i = 0; i < K.n; i++){
-    const p = { x:Math.round(x0 + K.cols[i % K.cols.length]*K.dx), y:Math.round(gy - (i + 1)*K.rise), w:K.w, h:K.h, solid:false, bhl:true, i:i, live:false, gone:false, born:0 };
-    ledges.push(p);
-  }
   const slab = { x0:Math.max(K.wall + 40, x0 - 120), x1:Math.min(WW - K.wall - 40, x0 + span + 120) };
   BHC = { ledges:ledges, slab:slab, x0:x0, gy:gy, hx:WW/2, hy:gy + K.holeDepth, hy0:gy + K.holeDepth, line:gy + K.holeDepth - 70, debris:[], tells:[], nextDeb:K.deb.first, swallowed:0, bumps:0, spawned:0, made:0, next:0, low:0 };
   bhcSpawnLedges(K.ahead);   // (the first ledges stand from the start; the rest GROW IN above the climbers as they rise)
@@ -104137,10 +104133,16 @@ function bhcBuildWorld(){
 }
 // Ledges SPAWN to keep you going upward: every ledge up to `upto` stands (the rest do not exist yet); a ledge fades in where it appears (above the highest climber, out of reach until they climb) and is solid at
 // once. The ones the hole has passed are taken away.
+// THE TOWER IS ENDLESS: ledge i is made the first time anything asks for it (bhcLedge), one jump above the one before; the ones the hole has passed are taken out of the world and forgotten (their slot is emptied), so a long match holds only the ledges between the hole and the leader.
+function bhcLedge(i){
+  const S = BHC, K = BHK;
+  while(S.ledges.length <= i){ const j = S.ledges.length; S.ledges.push({ x:Math.round(S.x0 + K.cols[j % K.cols.length]*K.dx), y:Math.round(S.gy - (j + 1)*K.rise), w:K.w, h:K.h, solid:false, bhl:true, i:j, live:false, gone:false, born:0 }); }
+  return S.ledges[i] || { x:S.x0, y:S.gy + 1e6, w:K.w, h:K.h, solid:false, bhl:true, i:i, live:false, gone:true, born:0 };   // (a ledge long forgotten: the hole is far above it)
+}
 function bhcSpawnLedges(upto){
   const S = BHC, K = BHK;
-  while(S.next < K.n && S.next <= upto){ const p = S.ledges[S.next++]; p.live = true; p.born = hazardT; worldPlats.push(p); S.made++; }
-  while(S.low < S.next && S.ledges[S.low].y > S.line + 40){ const p = S.ledges[S.low++]; p.live = false; p.gone = true; const i = worldPlats.indexOf(p); if(i >= 0) worldPlats.splice(i, 1); }
+  while(S.next <= upto){ const p = bhcLedge(S.next++); p.live = true; p.born = hazardT; worldPlats.push(p); S.made++; }
+  while(S.low < S.next && bhcLedge(S.low).y > S.line + 40){ const p = bhcLedge(S.low); p.live = false; p.gone = true; const i = worldPlats.indexOf(p); if(i >= 0) worldPlats.splice(i, 1); if(S.low > 40) S.ledges[S.low - 40] = null; S.low++; }
 }
 // After a fighter has moved: the walls hold and the top is a ceiling.
 function bhcHold(f){
@@ -104150,7 +104152,7 @@ function bhcHold(f){
 }
 function bhcUnder(f){
   const feet = f.y + f.r;
-  for(const p of BHC.ledges){ if(p.live && Math.abs(p.y - feet) <= 3 && f.x > p.x - 4 && f.x < p.x + p.w + 4) return p.i; }
+  for(let k = BHC.low; k < BHC.next; k++){ const p = BHC.ledges[k]; if(p && p.live && Math.abs(p.y - feet) <= 3 && f.x > p.x - 4 && f.x < p.x + p.w + 4) return p.i; }
   return -1;
 }
 // How far above the hole's edge a fighter's feet are, in px (what the panel shows, /10 as metres).
@@ -104163,9 +104165,9 @@ function bhcPull(y){
 // A respawn after the hole: on the lowest standing ledge (or the slab, while it is there) at least BHK.lowAbove px over the hole's edge.
 function bhcRespawn(f){
   const S = BHC, K = BHK; let best = null;
-  const spots = [{ x:S.slab.x0 + 120, w:S.slab.x1 - S.slab.x0 - 240, y:S.gy }].concat(S.ledges);
+  const spots = [{ x:S.slab.x0 + 120, w:S.slab.x1 - S.slab.x0 - 240, y:S.gy }].concat(S.ledges.slice(S.low, S.next));
   for(const p of spots){ if(p.i != null && !p.live) continue; if(p.y <= S.line - K.lowAbove && (!best || p.y > best.y)) best = p; }
-  if(!best) best = S.ledges[Math.max(S.low, S.next - 1)];
+  if(!best) best = bhcLedge(Math.max(S.low, S.next - 1));   // (once the hole has passed every ledge there is none to stand on: the last one, under the hole, and it takes the fighter again)
   f.x = Math.round(best.x + best.w*(0.25 + Math.random()*0.5)); f.y = best.y - f.r; f.onground = true;
 }
 // AIR RECOVERY, this contest only: the air jumps and the up special come back ONLY on landing or by a hit (the engine's own other refills, a bounce, a heal, a jolt, are held off in the air).
@@ -104177,12 +104179,12 @@ function bhcAirRule(f){
 }
 // DEBRIS: a tell first, then the piece. How many at once and how often depends on how long the match has run.
 function bhcDebrisK(){ return Math.min(1, hazardT/BHK.deb.rampT); }
-function bhcPlanDebris(){
+function bhcPlanDebris(pick, ghost){
   const S = BHC, D = BHK.deb, live = fighters.filter(f => !f.dead); if(!live.length) return;
-  const f = live[Math.floor(Math.random()*live.length)], side = f.x < WW/2 ? 1 : -1;   // (side 1: it comes in from the right wall, the far one)
+  const f = pick || live[Math.floor(Math.random()*live.length)], side = f.x < WW/2 ? 1 : -1;   // (side 1: it comes in from the right wall, the far one)
   const r = D.rMin + Math.random()*(D.rMax - D.rMin), wx = side > 0 ? WW - BHK.wall - 10 : BHK.wall + 10, T = Math.abs(f.x - wx)/D.speed;
   const y = clamp(f.y + f.vy*30 - 0.5*D.ay*T*T + (Math.random() - 0.5)*120, 90, S.line - 120);   // (aimed to cross the fighter's way, allowing for the curve it will fall)
-  S.tells.push({ at:hazardT + D.tell, side:side, y:y, r:r, wx:wx });
+  S.tells.push({ at:hazardT + D.tell, side:side, y:y, r:r, wx:wx, ghost:ghost ? ghost.idx : null }); if(ghost) S.ghostN = (S.ghostN || 0) + 1;
   tone(700, 0.07, 'square', 0.05, 0, 520);
 }
 function bhcSpawnDebris(q){
@@ -104220,12 +104222,23 @@ CONTEST_RULES.top = {
     const live = fighters.filter(f => !f.dead), x0 = S.slab.x0 + 120, x1 = S.slab.x1 - 120;
     const slot = live.map((f, i) => i); for(let i = slot.length - 1; i > 0; i--){ const j = Math.floor(Math.random()*(i + 1)); const t = slot[i]; slot[i] = slot[j]; slot[j] = t; }   // (the start spots are dealt at random)
     live.forEach((f, i) => { f.x = Math.round(x0 + (x1 - x0)*(slot[i] + 1)/(live.length + 1)); f.y = S.gy - f.r; f.vx = 0; f.vy = 0; f.onground = true; f.face = f.x < WW/2 ? 1 : -1; });
-    for(const f of fighters){ f._bhN = 0; f._bhRef = -1; f._bhSlow = 0; f._bhSw = 0; f._bhJ = f.jumps; f._bhU = false; f._bhRefill = false; f._bhHit = null; f._bhMax = 0; }
+    for(const f of fighters){ f._bhN = 0; f._bhRef = -1; f._bhSlow = 0; f._bhSw = 0; f._bhJ = f.jumps; f._bhU = false; f._bhRefill = false; f._bhHit = null; f._bhK = null; f._bhGhostAt = null; f._bhMax = 0; }
   },
   step(){
     const S = BHC, K = BHK, D = K.deb; if(!S) return;
     S.hy = S.hy0 - (K.holeRise*hazardT + 0.5*K.holeAcc*hazardT*hazardT); S.line = S.hy - 70;   // the hole RISES, faster and faster, and its pull grows (bhcPull)
     { let hi = 0; for(const f of fighters) if(!f.dead && (f._bhN || 0) > hi) hi = f._bhN; bhcSpawnLedges(hi + K.ahead); }   // ledges keep spawning above the highest climber (and the ones under the hole go)
+    // THE GHOSTS: a fighter the hole has taken for good hovers at the wall and, every BHK.ghostCd frames, throws a piece of debris at the climbers (a person with the attack key; the CPUs by themselves): the same tell, the same shove, no damage
+    for(const g of fighters){
+      if(!g.dead) continue;
+      if(g._bhGhostAt == null) g._bhGhostAt = hazardT + K.ghostFirst;
+      if(hazardT < g._bhGhostAt) continue;
+      const live = fighters.filter(o => !o.dead); if(!live.length) continue;
+      const person = g.controller === 'local';
+      if(person && !down[KEYS.attack]) continue;
+      let pick = null; if(person){ for(const o of live) if(!pick || (o._bhN || 0) > (pick._bhN || 0)) pick = o; }   // (a person throws at the leader; the CPU ghosts at anyone)
+      bhcPlanDebris(pick, g); g._bhGhostAt = hazardT + K.ghostCd;
+    }
     for(const f of fighters){
       if(f.dead) continue;
       bhcAirRule(f);
@@ -104236,7 +104249,7 @@ CONTEST_RULES.top = {
     let near = 1e9;
     for(const f of fighters){
       if(f.dead) continue;
-      if(f._bhHit != null && hazardT > f._bhHit){ f._bhHit = null; const sp = Math.hypot(f.vx, f.vy), q = clamp(sp/K.hitRef, 0, 1); f.vy = Math.abs(f.vy)*0.6 + K.hitDown*q; f.vx *= 1 - 0.4*q; if(q > 0.15) f.onground = false; }   // a hit knocks you back toward the hole: the launch is turned down and keeps its strength (a light hit is a light push, a hard one the full knock; no fixed slam)
+      if(f._bhHit != null && hazardT > f._bhHit){ f._bhHit = null; const sp = Math.hypot(f.vx, f.vy), q = clamp(sp/K.hitRef, 0, 1); const kk = f._bhK == null ? 1 : f._bhK; f.vy += (Math.abs(f.vy)*0.6 + K.hitDown*q - f.vy)*kk; f.vx *= 1 - 0.4*q*kk; if(q*kk > 0.15) f.onground = false; }   // a hit knocks you back toward the hole: the launch is turned down and keeps its strength (a light hit is a light push, a hard one the full knock; no fixed slam)
       if(f.pct > 300) f.pct = 300;   // (damage never KOs)
       if(f.onground){
         const onSlab = f.y + f.r >= S.gy - 3, i = onSlab ? -1 : bhcUnder(f);
@@ -104272,14 +104285,17 @@ CONTEST_RULES.top = {
         if(f.dead || d.hit[f.idx] || f.invuln > 0 || gap > reach) continue;
         d.hit[f.idx] = 1; S.bumps++;
         const dw = clamp(1.25 - gap/reach, 0.3, 1);   // a graze is a small shove and a short slow, a square hit the full one (smooth in where you stand)
-        f.vx += (f.x === d.x ? 1 : Math.sign(f.x - d.x))*D.bump*dw; f.vy = f.vy*(1 - 0.6*dw) + 2*dw; f._bhSlow = hazardT + Math.round(D.slow*dw);
+        const sd = f.x === d.x ? 1 : Math.sign(f.x - d.x), dmg = D.dmg0 + (D.dmg1 - D.dmg0)*(dw - 0.3)/0.7;   // (a graze 4%, a square hit 8%)
+        applyHit(f, dmg, sd*D.kbx*dw, D.kby*dw, null, {});   // the engine's own hit with nobody behind it: damage, hitstun, a launch that grows with the %, pushed away from the piece and DOWN toward the hole
+        if(f.onground || f.vy >= 0) f.dropping = Math.round(D.drop0 + D.drop1*dw);   // down through the ledge it stands on: about one ledge of knock
+        f._bhSlow = hazardT + Math.round(D.slow*dw);
         for(let k = 0; k < 8; k++) puff(d.x, d.y, k % 2 ? '#ffd23f' : '#ffffff', 4);
         tone(110, 0.14, 'square', f.you ? 0.14 : 0.07, 0, 50); if(f.you) shake(1.5);
       }
     }
   },
   speedK(f){ return (f._bhSlow || 0) > hazardT ? BHK.deb.slowK : 1; },
-  hit(t, from, dmg){ t._bhRefill = true; if(from && !bhNoDown(from)) t._bhHit = hazardT; },   // (a hit gives the air moves back, as usual; it knocks toward the hole -- Black Hole's own hits keep his rule of never sending a foe down)
+  hit(t, from, dmg){ t._bhRefill = true; const ab = from ? clamp((t.y - from.y)/BHK.aboveFull, 0, 1) : 0; if(ab > 0 && !bhNoDown(from)){ t._bhHit = hazardT; t._bhK = ab; } },   // (the knock toward the hole only from an attacker ABOVE the victim, growing smoothly with how far above; a hit from level or below is the normal knockback)   // (a hit gives the air moves back, as usual; it knocks toward the hole -- Black Hole's own hits keep his rule of never sending a foe down)
   // The panel (the shared one): a row per fighter with how far it is above the hole, in metres, and a bar; then a bar down the right edge, the hole at the bottom. No goal to count to.
   hud(c){
     const K = BHK, rows = fighters.slice().sort((a, b) => (a.you ? -1 : 0) - (b.you ? -1 : 0)).map(f => ({
@@ -104304,7 +104320,7 @@ CONTEST_RULES.top = {
   // The climb: to the next ledge (walk to its near edge, jump, a second jump if it falls short); a foe within 150 px on its own level comes first.
   want(f, inp, t, dist){
     const S = BHC, K = BHK; if(!S || f.dead || f.hitstun > 0) return false;
-    const tg = S.ledges[Math.min(K.n - 1, (f._bhRef == null ? -1 : f._bhRef) + 1)]; if(!tg.live) return false;
+    const tg = bhcLedge((f._bhRef == null ? -1 : f._bhRef) + 1); if(!tg.live) return false;
     if(f.onground){ const foe = f.aiTarget; if(dist < 300 && foe && !foe.dead && Math.abs(foe.y - f.y) < 190 && t) return false; }
     const cx = tg.x + tg.w/2, gap = Math.max(0, tg.x - f.x, f.x - (tg.x + tg.w));
     if(cx < f.x - 6) inp.left = true; else if(cx > f.x + 6) inp.right = true;
@@ -104368,8 +104384,8 @@ CONTEST_RULES.top = {
     // the slab (gone once the hole has risen over it)
     if(S.gy + 26 < S.line){ c.fillStyle = '#8d8a9c'; c.fillRect(S.slab.x0, S.gy, S.slab.x1 - S.slab.x0, 26); c.fillStyle = '#c9c4d6'; c.fillRect(S.slab.x0, S.gy, S.slab.x1 - S.slab.x0, 5);
       c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.strokeRect(S.slab.x0, S.gy, S.slab.x1 - S.slab.x0, 26); }
-    for(const s of S.ledges){
-      if(!s.live || s.y < y0 || s.y > y1 || s.y > S.line) continue;
+    for(let k = S.low; k < S.next; k++){
+      const s = S.ledges[k]; if(!s || !s.live || s.y < y0 || s.y > y1 || s.y > S.line) continue;
       c.save(); c.globalAlpha = Math.min(1, (t - s.born)/K.fade);
       c.fillStyle = '#9a96ac'; c.fillRect(s.x, s.y, s.w, s.h);
       c.fillStyle = '#6d6880'; c.fillRect(s.x + 3, s.y + s.h, s.w - 6, 12);
@@ -104377,8 +104393,18 @@ CONTEST_RULES.top = {
       c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.strokeRect(s.x, s.y, s.w, s.h); c.strokeRect(s.x + 3, s.y + s.h, s.w - 6, 12);
       c.restore();
     }
+    // the ghosts: the fighters the hole has taken, hovering at the wall (brighter when ready to throw)
+    const bhcGhost = (g, x, y, a) => { c.save(); c.globalAlpha = a; c.translate(x, y); c.fillStyle = '#e8e4f4'; c.strokeStyle = g.color || '#9a90b8'; c.lineWidth = 3;
+      c.beginPath(); c.arc(0, -4, 24, Math.PI, 0); c.lineTo(24, 22); for(let k = 0; k < 4; k++){ c.lineTo(24 - 12*(k + 0.5), 14); c.lineTo(24 - 12*(k + 1), 22); } c.closePath(); c.fill(); c.stroke();
+      c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(-8, -4, 4, 0, 7); c.arc(8, -4, 4, 0, 7); c.fill(); c.restore(); };
+    for(const g of fighters){
+      if(!g.dead || g._bhGhostAt == null || S.tells.some(q => q.ghost === g.idx)) continue;
+      const home = g.idx % 2 ? WW - K.wall - 34 : K.wall + 34, ready = t >= g._bhGhostAt;
+      bhcGhost(g, home, y0 + (y1 - y0)*(0.3 + 0.12*(g.idx % 3)) + Math.sin(t*0.05 + g.idx)*8, ready ? 0.8 : 0.35);
+    }
     // the tells: red chevrons at the wall where a piece will come from, pulsing faster as it nears
     for(const q of S.tells){
+      if(q.ghost != null){ const gg = fighters.find(o => o.idx === q.ghost); if(gg) bhcGhost(gg, q.wx, q.y, 0.85); }
       if(q.y < y0 || q.y > y1) continue;
       const left = q.at - t, a = 0.45 + 0.55*Math.abs(Math.sin(t*(0.25 + 0.4*(1 - left/K.deb.tell)))), dir = -q.side;
       c.save(); c.globalAlpha = a; c.fillStyle = '#ff3a2a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
