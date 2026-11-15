@@ -10723,7 +10723,8 @@ function ctfFixBInit(L, F){
   F.bOK = new Set(L.flags.filter(fl=>{ const n = ctfNavNodeAt(base, fl.x, fl.y, 10); return !!(n && base.reach[1 - fl.team][n.id]) && bad.indexOf('flag' + fl.id) < 0; }).map(fl=>fl.id));
   return true;
 }
-function ctfFixProblems(L, F, nav){ const bad = ctfEditProblems(L, nav); for(const b of ctfBreakProblems(L, nav, F.bOK)) if(bad.indexOf(b) < 0) bad.push(b); return bad; }
+// (a problem the map has with NO piece built is not a piece's fault: F.base, from ctfFixStep)
+function ctfFixProblems(L, F, nav){ const bad = ctfEditProblems(L, nav).filter(b=>!F.base || F.base.indexOf(b) < 0); for(const b of ctfBreakProblems(L, nav, F.bOK)) if(bad.indexOf(b) < 0) bad.push(b); return bad; }
 // With nothing built, does any flag lie on something that gives way, or (read off the map's graph) need a way over such things? Then the check runs all the same.
 function ctfBreakSuspect(L){
   const nav = CTF.nav, rd = !!(nav && nav.ready && ctfMapBreaks(nav.M));
@@ -10830,6 +10831,9 @@ function ctfFixStep(L){
   CTF._fixT0 = performance.now();
   const F = L.fix; if(!F){ ctfStartPlay(L); return; }
   if(F.bOK == null && !ctfFixBInit(L, F)) return;
+  // THE MAP'S OWN PROBLEMS (Forest, 4 players: the jail's door is out of reach with no piece built at all, so every one of the CPUs' 9 pieces was taken away one by one, 13,000 steps of nobody moving, for a problem they
+  // never made). The graph with no pieces is made first (a few ticks) and what it fails is not held against the pieces: F.base, filtered out in ctfFixProblems.
+  if(F.base === undefined){ if(!F.zn) F.zn = ctfEditNav(L, 0, []); if(!F.zn.ready){ ctfNavTick(F.zn, 80, ctfFixMs()); return; } F.base = ctfEditProblems(L, F.zn); F.zn = null; }
   if(F.mode === 'try'){ ctfFixTry(L, F); return; }
   const key = ctfFixKey(F, F.keep);
   const nav = F.navs[key] || (F.navs[key] = F.keep === 0 ? CTF.navs[ctfNavId()] : ctfEditNav(L, F.keep, F.set));
@@ -20763,6 +20767,10 @@ keysLoad();
 
 // ---------- input ----------
 const down={};
+// PRESS LATCH (input-drop fix, owner approved 2026-11-14): a key tapped and let go between two game steps (a slow frame, the Final Smash slow-mo) was never seen, because step() reads the level of down[] once.
+// keydown also notes the key here; the next step that RUNS reads it as pressed once (KEY_LATCH_NOW) and it is cleared. A step the slow-mo skips leaves it for the next one that runs.
+// Only the four buttons the hit-freeze already keeps are read from it (attack, special, smash, jump). Local keys only: an online guest's presses reach the host through netInputChanged's own edges.
+let KEY_LATCH = {}, KEY_LATCH_NOW = {};
 // A form control that still has focus swallows every key of a match. The keydown handler below lets a text box type (a room code, a
 // Vault code), so a fighter dropdown, the invite-link box or the room-code box left focused tells it "the player is typing" and it takes
 // no key at all: a client sits in a running match whose fighter never answers, because the match starts WITHOUT a gesture on a client
@@ -20801,6 +20809,7 @@ addEventListener('keydown',e=>{
     try{ ae.blur(); }catch(e){}   // a hidden box lets go of the focus, and this key goes to the game
   }
   down[e.code]=true;
+  if(!e.repeat) KEY_LATCH[e.code]=true;
   try{ keyHintPress(e); }catch(x){}
   if(TUT.active && e.code==='Escape'){ TUT.active=false; TUT.done=true; running=false; tutorialRestore(); go('title'); return; }
   if(e.code===KEYS.pause && running && TESTMODE.active){ exitTest(); return; }   // "Esc to come back": the test screen, as promised
@@ -20813,13 +20822,13 @@ addEventListener('keyup',e=>{down[e.code]=false; netInputChanged();});
 // A key held as the window loses focus never sends its keyup -- it is let go in another window -- so it stayed down until the
 // player pressed it again. A match now goes on while the host's tab is hidden (HIDDEN HOST), and a host who tabbed away holding
 // Right walked their fighter off the stage with nobody playing. Everything is let go instead.
-function releaseKeys(){ for(const c in down) down[c] = false; netInputChanged(true); }   // (online, a guest's host lets go too, now)
+function releaseKeys(){ for(const c in down) down[c] = false; KEY_LATCH = {}; KEY_LATCH_NOW = {}; netInputChanged(true); }   // (online, a guest's host lets go too, now)
 addEventListener('blur', releaseKeys);
 addEventListener('visibilitychange', ()=>{ if(document.hidden) releaseKeys(); });
 // A new screen, and a new match, start with none of the mapped keys held: one still down from the last (a smash held as the player pressed R,
 // say) would act on the first frame of the next. The keyboard's own keyup, and the key repeat while a key really is held, put back whatever
 // is. Only the mapped keys are let go, as it always was: this was the touch pad's other job, for every player, and the pad is gone.
-function releaseMappedKeys(){ for(const k in KEYS) if(down[KEYS[k]]) down[KEYS[k]] = false; netInputChanged(true); }
+function releaseMappedKeys(){ for(const k in KEYS) if(down[KEYS[k]]) down[KEYS[k]] = false; KEY_LATCH = {}; KEY_LATCH_NOW = {}; netInputChanged(true); }
 
 // A computer game: the keyboard, and the mouse in the menus and the Level Creator (the owner, 2026-10-06: "remove mobile compatibility....
 // I SAID I WANTED THIS TO BE A COMPUTER GAME!!!"). The on-screen touch pad is gone, and the setting an earlier build saved for it is let go
@@ -26521,6 +26530,8 @@ function ffaRespawn(f){
 // YOYLE NEEDLE TEAMS MAP: hidden until the owner opens it. YN_DEV (localStorage 'bfsi:yndev' = '1') is the owner's preview; while hidden, Teams on Yoyle Needle plays the ordinary Teams map.
 const YN_TEAMS_OPEN = true;
 const YN_DEV = (function(){ try{ return localStorage.getItem('bfsi:yndev') === '1'; }catch(e){ return false; } })();
+// TWO TEAMS (the owner, 2026-11-15: "most even pair"): of the four bases, the pair whose route to the middle is nearest in length, by map layout (nW annex bays, hb extra floors: key nW*10 + hb) and variant 0-3. Measured with the route graph's own time-to-middle estimate (reports/easy2/navfair.mjs, navgrid.mjs, mktable.py). Before: N and S in variants 0-1, E and W in 2-3, up to 4.7x apart; now at most 1.4x. First letter = team 0.
+const YN_PAIR = {0:['EW','NW','EW','EW'],11:['ES','NS','SW','ES'],12:['NS','NS','NW','NW'],21:['SW','EW','SW','SW'],22:['SW','NW','SW','SW'],23:['SW','NW','SW','SW'],32:['NW','SW','SW','SW'],33:['NW','NW','SW','NW'],43:['SW','SW','SW','SW'],44:['SW','SW','SW','SW']};
 const YNK = { k:0.75, bayW:1400, floorH:780, period:10800, nightOn:0.55, night:0.72, dark:0.84 };
 let YN = null, YN_VIS = false;   // YN: this match's state (ynBuild; null elsewhere); YN_VIS: paint its art (a guest too)
 function ynWanted(){
@@ -26890,9 +26901,9 @@ function ynBuild(){
     int:[mr(2632, 150, 1235, 2640), mr(300, 1020, 5900, 780), mr(700, 1860, 5100, 930), mr(180, 1380, 120, 420)], dark:[mr(700, 1860, 5100, 930)], eye:mr(2512, 330, 120, 330) };
   cap.yd = { v, flip, name:V.name, zones, deco, f:{ lev:have.lev ? 1 : 0, cage:V.cage, pipes:have.pipes ? 1 : 0, crawl:V.crawl, vents:have.vents ? 1 : 0, zip:have.zip, wind:V.wind, berry:have.berry ? 1 : 0, magnet:have.magnet ? 1 : 0, thread:have.thread ? 1 : 0, night:V.night }, n:have, mid:ynMidI };
   worldPlats = P;
-  // ---- the four bases (N 0, E 1, S 2, W 3), by teams: 4: all; 3: N, E and (odd variants W, else S); 2: N and S (variants 0-1) or E and W (2-3)
+  // ---- the four bases (N 0, E 1, S 2, W 3), by teams: 4: all; 3: N, E and (odd variants W, else S); 2: the MOST EVEN PAIR of bases for this layout (YN_PAIR)
   const owner = { N:-1, E:-1, S:-1, W:-1 };
-  if(tc === 4){ owner.N = 0; owner.E = 1; owner.S = 2; owner.W = 3; } else if(tc === 3){ owner.N = 0; owner.E = 1; if(v & 1) owner.W = 2; else owner.S = 2; } else if(v < 2){ owner.N = 0; owner.S = 1; } else { owner.E = 0; owner.W = 1; }
+  if(tc === 4){ owner.N = 0; owner.E = 1; owner.S = 2; owner.W = 3; } else if(tc === 3){ owner.N = 0; owner.E = 1; if(v & 1) owner.W = 2; else owner.S = 2; } else { const pr = YN_PAIR[nW*10 + hb], pp = pr ? pr[v] : (v < 2 ? 'NS' : 'EW'); owner[pp[0]] = 0; owner[pp[1]] = 1; }
   const defs = [
     { k:'N', deck:[2632, 660, 368], rg:[[2632, 3000], [3600, 3867]], zone:[2632, 380, 1235, 320] },
     { k:'E', deck:[5150, 1480, 1050], rg:[[5150, 6200]], zone:[5150, 1200, 1050, 300] },
@@ -27240,6 +27251,7 @@ function ynBrain(f, inp){
   if(closeLevel && f._ynStill < 45 && !f._ynPlan){ f._ynPlan = null; return; }   // the foe is in plain sight and level: the usual brain fights
   if(closeLevel && f._ynStill < 45) { f._ynPlan = null; return; }
   if(ynFollow(f, inp, N, feet, M, foe)) {
+    f._ynDrive = hazardT;
     if(f.onground && f._ynStill > 10 && (inp.left || inp.right)){ inp.jump = (f._ynStill % 30) < 3; f._ynHopDir = inp.right ? 1 : -1; f._ynHopUntil = hazardT + 45; }
     return;
   }
@@ -29576,7 +29588,8 @@ function stgCatchBelow(x, feet){
 // A CPU on a stage with no ground under its ledges (brainOut, after the ledge sense): not off the end of what it stands on into the drop. Walking
 // toward an end with nothing to land on past it, it stops there; if its foe is below and something catches under its feet, it drops through instead.
 function stgBrain(f, inp){
-  if(!f.onground || f.hitstun > 0 || (!STG.statics.length)) return;
+  if(!f.onground || f.hitstun > 0 || (!STG.statics.length && !YN)) return;   // (Yoyle Needle TEAMS has no static blocks, only movers and the maze's own plats: its CPUs ran off ledge ends at 0% because this returned here)
+  if(YN && f._ynDrive != null && hazardT - f._ynDrive <= 12) return;   // (the route graph is steering this CPU on purpose: its walks, drops and hops leave ends deliberately)
   // (Yoyle Needle, CPU self-falls: the CPU ran at 6-7 px/frame, so letting go of the arrow 44 px from the end was too late -- it slid off the end of the
   // bottom ledge into the pit at 0%. It now looks ahead by its speed, counts its momentum as a direction too, and PRESSES BACK to brake.)
   const mom = Math.abs(f.vx) > 2 ? Math.sign(f.vx) : 0;
@@ -73828,6 +73841,7 @@ function step(){
   kocTick();   // THE LAST KO: a new match starts it clean; the frames since the match was decided
   if(fsTimeGate()) return;   // CATCH, THEN CINEMATIC: the Final Smash intro stops the match; its slow-mo KO skips steps (fsTimeGate)
   hazardT++;
+  KEY_LATCH_NOW = KEY_LATCH; KEY_LATCH = {};   // (PRESS LATCH: the taps since the last step that ran)
   STEP_F = null;   // (HIT FREEZE: set while each fighter's own frame runs, below)
   // Clutch-time music. Deliberately NOT per frame: twice a second is far more often than the
   // condition can meaningfully change, and it keeps audio work out of the hot loop.
@@ -73895,12 +73909,12 @@ function step(){
       const gp = pad;
       inp.left = down[K.left]||gp?.left;
       inp.right= down[K.right]||gp?.right;
-      inp.jump = down[K.jump]||gp?.jump;
-      inp.up   = down[K.jump]||gp?.jump;      // "up" direction = jump key/stick up
+      inp.jump = down[K.jump]||KEY_LATCH_NOW[K.jump]||gp?.jump;
+      inp.up   = down[K.jump]||KEY_LATCH_NOW[K.jump]||gp?.jump;      // "up" direction = jump key/stick up
       inp.down = down[K.down]||gp?.down;
-      inp.attack=down[K.attack]||gp?.attack;
-      inp.special=down[K.special]||gp?.special;
-      inp.smash =down[K.smash]||gp?.smash;
+      inp.attack=down[K.attack]||KEY_LATCH_NOW[K.attack]||gp?.attack;
+      inp.special=down[K.special]||KEY_LATCH_NOW[K.special]||gp?.special;
+      inp.smash =down[K.smash]||KEY_LATCH_NOW[K.smash]||gp?.smash;
       inp.shield=!!(down[K.shield] || gp?.shield);
       inp.flag  =down[K.flag];
       inp.edit  =down[K.edit];
@@ -76534,7 +76548,7 @@ function hitStopHit(t, from, dmg){
 function hitStopHold(f, ctrl, pad){
   f._hitStop--; f._hsHeld = hazardT;
   let r = null;
-  if(ctrl === 'local'){ const K = KEYS; r = { attack:down[K.attack]||pad?.attack, special:down[K.special]||pad?.special, smash:down[K.smash]||pad?.smash, jump:down[K.jump]||pad?.jump, left:down[K.left]||pad?.left, right:down[K.right]||pad?.right, down:down[K.down]||pad?.down }; }
+  if(ctrl === 'local'){ const K = KEYS; r = { attack:down[K.attack]||KEY_LATCH_NOW[K.attack]||pad?.attack, special:down[K.special]||KEY_LATCH_NOW[K.special]||pad?.special, smash:down[K.smash]||KEY_LATCH_NOW[K.smash]||pad?.smash, jump:down[K.jump]||KEY_LATCH_NOW[K.jump]||pad?.jump, left:down[K.left]||pad?.left, right:down[K.right]||pad?.right, down:down[K.down]||pad?.down }; }
   else if(ctrl === 'remote') r = netRemoteInput(f.idx);
   else if(ctrl === 'ai') r = brainSdiKeys(f);   // MDI: a CPU's SDI taps
   mdiSDI(f, r);   // MDI: a fresh press of a way in the freeze shifts them a little (SDI)
@@ -93103,8 +93117,15 @@ function fireSpecial(f, inp){
   fireSpecialInner(f, inp);
   if(f.spCd > before) f.spCd = Math.max(1, Math.round(f.spCd * SPECIAL_CD_SCALE));
 }
+// A special that is refused (Remote's battery is out, Rose has hushed the fighter) says so without words: a short low double tick and a grey puff, at most twice a second, for a person's fighter only.
+function refusedSpecialCue(f){
+  if((f.controller || (f.you ? 'local' : 'ai')) === 'ai' || (f._refuseCueT || 0) > hazardT) return;
+  f._refuseCueT = hazardT + 30;
+  try{ tone(150, 0.07, 'square', 0.05, 0, 110); tone(120, 0.09, 'square', 0.05, 0.08, 90); }catch(e){}
+  for(let i = 0; i < 3; i++) puff(f.x, f.y - f.r - 6, '#9aa0a6', 3);
+}
 function fireSpecialInner(f, inp){
-  if(f._noBattery>0 || f._hushT > hazardT) return;   // Remote on reserve power (see BATTERY_OUT); hushed by Rose (FINISHERS V2, batch 4)
+  if(f._noBattery>0 || f._hushT > hazardT){ refusedSpecialCue(f); return; }   // Remote on reserve power (see BATTERY_OUT); hushed by Rose (FINISHERS V2, batch 4)
   if(DIGC && digcLocked(f, inp.up ? 'upspec' : inp.down ? 'dspec' : 'spec')){ digcFallback(f, inp.up ? 'u' : inp.down ? 'd' : 's'); f.spCd = Math.max(f.spCd, 30); return; }   // THE DIG (Spongy's contest): a special not dug up yet is the jab or the tilt
   // remember held directions so dash-type specials can go diagonally (up-dash / down-dash)
   f._inLeft=!!inp.left; f._inRight=!!inp.right; f._inUp=!!inp.up; f._inDown=!!inp.down;
@@ -111318,7 +111339,11 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   // whenever the smash is a stance, a buff or cooling, a launcher special that lands from here (THE KICK, One-Hit Wonder, Fluff Bounce: a
   // BRAIN_SPEC hit of 10% or more) or an up-special that hits hard (Bow's Chair Slam, 13% and a stun)
   const open = !t._isBoss && ((t.hitstun > 10) || (t.frozen > 0) || (t.atkCd > 12 && t._atkAnim > 0) || (t.smashHold > 0));
-  if(open && f.onground && Math.random() < L.smash){
+  // FINISHING (STALLED MATCHES): a foe in reach whose damage is high -- 100%, or 70% once the match has gone 12 s without a KO (the same clock as the retreat above) --
+  // is smashed at 0.6 of the rate of an opening it saw. The percent is on every foe's HUD, so this is nothing the computer could not see; the smash was only ever
+  // thrown at a stunned or swinging foe, and at 150%+ CPUs traded jabs for a minute (CPU-only Canyon and Teams, measured).
+  const finishing = !open && !t._isBoss && inReach && (t.pct||0) >= (hazardT - lastKoFrame > 720 ? 70 : 100);
+  if((open || finishing) && f.onground && Math.random() < (open ? L.smash : L.smash*0.6)){
     const smOk = (K.smBand ? ocSmashLands(K, adx, ady) : brainInReach(f, t, 20)) && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && !K.smStance && !K.smBuff;
     const alt = f.spCd <= 0 && !(f._aiSpGap > 0) && (!smOk || Math.random() < 0.4) && Math.random() < L.kit;
     if(alt && K.near && K.spDmg >= 10 && !K.nStance && !brainSpent(f) && brainLands(K, adx) && ady < 44){ brainTap(B, brainFace({ special:true }, toward), 3); B.specAt = now + brainSpecGap(f, L); return; }
@@ -131160,6 +131185,7 @@ function exitTest(){
 function setPaused(on){
   const was = paused;
   paused = !!on;
+  KEY_LATCH = {}; KEY_LATCH_NOW = {};   // (PRESS LATCH: a key tapped while paused is not played on resume)
   quitAskNo();   // (a pause starts, and ends, with no quit question open)
   const el = document.getElementById('pauseCard'); if(el) el.style.display = paused ? 'flex' : 'none';
   if(paused){ try{ pauseNoteSync(); }catch(e){} } else { try{ padMenuClear(); }catch(e){} }   // NEW-PLAYER POLISH: the resume key as mapped; a gamepad's menu highlight gone
