@@ -183,6 +183,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-13 (next, answering who "pb" is)**: puffball, duh
 - **2026-11-13 (next, Black Hole climb)**: id say that leafy, lifering, and bow would be pretty strong
 - **2026-11-13 (next, Black Hole climb)**: and all of the ones that have a "pop up" up-special like liferings
+- **2026-11-16 (screenshot of Bow inside a new Stapy lighthouse: 0/4 tag, two small circles (one purple, one grey) beside a barred hatch in the ceiling)**: what?
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
