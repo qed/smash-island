@@ -804,6 +804,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-08 12:27 UTC** *(part)*: ui?
 - **2026-11-09 20:04 UTC** *(part)*: they will not be viable competitively.
 - **2026-11-13 18:53 UTC** *(part)*: your job is to offload context, because I believe the reason we lost this is because of compacting, so keep a document of my messages.
+- **2026-11-16**: how many different people played my game? and how many ppl played it multiple times? and on what characters, if possible?
+- **2026-11-16 (next)**: add the anonymous character counting. (then, asked where the counts should go: "nvm for now")
 
 ## Bugs & fixes
 
