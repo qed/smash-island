@@ -372,6 +372,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16 (answers to my 4 TLC Teams questions: lid height, side rooms, size, where to build)**: Lid: "1, but add an area above the lid, and it should be a one-way platform, so that there is an arena for ppl at high percent. what do you think?" (1 = middle, about 1050). Side rooms: Bigger rooms too. Size: Bigger, about +50%. Where: "put it into git".
 - **2026-11-16**: why isnt dream island live? (answer to my question: "Check it, then open")
 - **2026-11-16 (answers on the Dream Island Teams review)**: Size (very few KOs, map big): "Shrink it a bit" (about 20%, DI_BIG 2.0 to 1.6). Bases (high bases 2.4-4.6x nearer): "Most even pairing". Whale never level with its shelf in 2 of 4 layouts: "Yes, make them meet".
+- **2026-11-16**: the new teams maps, apart from yoyle needle, are tiny (answers: "Too little room to play" = the playable area of Faultline and Windy Heights is small, make it bigger like Yoyle Needle; TLC bigger + Dream Island 20% smaller: "Keep both plans")
 
 ## Moves, smashes & Final Smashes
 
