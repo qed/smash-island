@@ -36,8 +36,9 @@ export default async function middleware(request) {
     let entered = '';
     let back = '/';
     try {
-      // The raw body parsed by hand, not request.formData(): on Vercel (2026-11-16) formData() lost the "next" field when it
-      // came last in the body with no "?" in it, which is exactly what a browser sends, so everyone landed on / after unlocking.
+      // The form posts as application/x-www-form-urlencoded (a browser's default), so the body parses as URLSearchParams.
+      // Testing this from Git Bash on Windows? Set MSYS_NO_PATHCONV=1 first: Git Bash rewrites a curl argument such as
+      // next=/about.html into next=C:/Program Files/Git/about.html, which (rightly) redirects to / and looks like a bug here.
       const form = new URLSearchParams(await request.text());
       entered = form.get('password') || '';
       back = safePath(form.get('next') || '/', url);
