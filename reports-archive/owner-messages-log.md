@@ -541,6 +541,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16 (answers to my Moves 4 look-alike questions)**: Fifty Spins: "Yes, dizzy". Double Fault: "Keep the ripple". Calculated Bounce marks (drawn at 100/200/300 px, he lands at about 65/140/210): "Make him reach the marks".
 - **2026-11-16 (reply to the Moves 4 result + event-skin colours)**: its an okay
 - **2026-11-16**: are up-smashes done? (answer to my question, after I said only batch 1 = 12 fighters is done: "Start batch 2 now")
+- **2026-11-16 (answers on up/down smashes batch 2)**: Redo which: "None, merge them all" + "Puffball's up smash" + "Ice Cube's up smash" (read as: merge the batch, redo those two up smashes). CPU never uses up smash: "Yes, fix it".
 
 ## Bosses, Boss Rush & secrets
 
