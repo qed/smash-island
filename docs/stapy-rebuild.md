@@ -35,11 +35,23 @@ The owner's words (2026-11-15/16):
 - "it should have an intended path that is **impossible to skip**."
 - **Hard but fair**: a few tries in places; a mistake drops you back ONE SECTION (to that floor's checkpoint), never to the bottom. A hazard touch does 3% damage. Nothing inside a lighthouse can KO you.
 - **4 floors per lighthouse** (the design below says 5; the owner chose 4 so the match stays near 3 minutes). Keep all four kinds of parkour in every lighthouse.
-- **Lamp bulbs: yes.** Each floor has 3-4 bulbs on its parkour pieces; the hole up to the next floor opens for you only when you have lit all of them. This makes skipping impossible by rule, not just by walls.
+- ~~**Lamp bulbs: yes.**~~ REMOVED 2026-11-16 (see 3a below). Each floor has 3-4 bulbs on its parkour pieces; the hole up to the next floor opens for you only when you have lit all of them. This makes skipping impossible by rule, not just by walls.
 - **Turning off a rival costs a full climb** of that lighthouse: OK.
 - **CPU stuck-help: OK.** A CPU that fails the same floor 3 times gets no hazard damage for one try; after 6 fails a rope pulls it to the next checkpoint. The build must count how often this happens.
 - **A quick way down** from the lever deck (a one-way chute or slide to the exit door), so leaving a lighthouse is fast. It must be one-way, so it cannot be used to skip the climb.
 - **The win cut:** when a fighter completes their emblem, the game CUTS for about 4 seconds to the drowning-out scene from BFDIA 18, then shows the win screen: a dark starry sky, the winner's emblem big and glowing in the middle, a wobbly blob of the winner's colour spreading out with sparks and embers and covering the other emblems (they peek out at its edges), and broad beams of the winner's colour across the sky. It replaces the current "emblem grows" win effect.
+
+## 3a. After the owner played it (2026-11-16): easier, no gates
+
+The owner, verbatim: "this is a bit too hard. it should be easier. remove the stupid gates with stupid conditions." Then: "they should reset you to the floor" and "the walljump sections are ridiculously hard". What the build does now (this replaces the bulb, lid and R-AIR rules in section 4 of the design below):
+
+- **No gates.** No lamp bulbs, no lids, no "go dark when you fall or when you enter" rule. Each floor's way up is simply the open hole at the end of its parkour (the cap on top of it is a one-way ledge: jump up through it and stand on it). The parkour is still the route; a strong recovery can now shortcut a piece here and there, which is accepted.
+- **A fall into the net** puts you back on THAT floor's checkpoint (as before, the owner's call).
+- **A hazard touch** hurts (3%) and knocks you back away from it, with 60 frames in which the room's hazards leave you alone. No reset. It never launches you far and never KOs.
+- **The air in a room:** jumps, double jumps and specials work as everywhere. Only flight, float and Foldy's glide still last at most 30 frames an airtime (so nobody flies straight up a shaft or along a whole floor). R-WARP stays.
+- **Kinder pieces (one table, `LH_EASE`):** every ledge, blinking, crumbling and belt ledge 24 px wider (12 each end) and every moving piece (lifts, sliders, prisms, rope seats, wheel seats) 24 px wider; blinking ledges stay on for half of what was their off time; crumbling ledges hold 1.75 times as long and come back sooner (120 frames); belts run at 0.8 of their speed; saws are 0.8 of their size (not the carousel's drum); flame jets, the lamp beam and the bolt burn for 0.7 of the time, about the same middle (the timings between pieces stay); stompers are 16 px narrower; the flue's fire rises at 0.5 a frame and stops under its rest ledge.
+- **The wall-jump shafts, much easier:** all four (L0 lens well, L1 weight shaft, L2 chimney, L3 flue) are 110 px wide inside (was 170), 50 to 60 px lower, with no spikes on the walls, a 50 px rest ledge part way up, no saw in the weight shaft, and a generous kick window (in a room a wall within 12 px counts as touched, so a press toward it is the game's own wall jump). Checked: all 112 playable fighters climb all four from the shaft's floor with plain jumps and wall jumps.
+- Kept: the lighthouses as rooms apart (like the mill), the 4 floors, the levers and the turn-off, the emblems in the sky, the win cut, the quick way down from the deck, the CPU stuck-help (now counted only for falls and 5 s with no progress), the lever spots dealt per match.
 
 ## 4. How the rebuild must be checked
 
