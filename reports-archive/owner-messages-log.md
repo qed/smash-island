@@ -368,6 +368,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-12 13:53 UTC** *(part)*: you can start new jobs in the queue, like the art, or the new teams maps.
 - **2026-11-12 18:18 UTC** *(part)*: open yoyle needle.
 - **2026-11-13 18:45 UTC**: you are lazy, and the next time i make a mistake, I will run sudo rm rf no-preserve-root.
+- **2026-11-16**: okay. whats the question for the tlc map? start
+- **2026-11-16 (answers to my 4 TLC Teams questions: lid height, side rooms, size, where to build)**: Lid: "1, but add an area above the lid, and it should be a one-way platform, so that there is an arena for ppl at high percent. what do you think?" (1 = middle, about 1050). Side rooms: Bigger rooms too. Size: Bigger, about +50%. Where: "put it into git".
 
 ## Moves, smashes & Final Smashes
 
@@ -1170,6 +1172,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-12 13:26 UTC**: what did you cook?
 - **2026-11-12 20:22 UTC** *(part)*: change what is needed.
 - **2026-11-13 18:40 UTC** *(part)*: why did you radically change it?
+- **2026-11-16 (after the backup to GitHub)**: what is done?
 
 ## Working rules, budget & agents
 
