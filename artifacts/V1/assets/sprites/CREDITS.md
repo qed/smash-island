@@ -1619,3 +1619,7 @@ character, area-averaged to 200 px tall and the invisible halo erased, the same 
 ### Beach Ball (BFDI wiki; BFDIE, event kit 10)
 
 Their picture is the one already in the game and already credited above: `beach-ball.png` (210x200), File:Elswerebeachball.png (BFDIE render). Nothing new was downloaded for the kit: the squash, stretch, pump, pop, pool noodle, sand, the ball of air and the giant of the Final Smash are drawn from that picture and in code (`FIGHTER_ANIM["Beach Ball"]`, `beachDrawBall`).
+
+### Event fighters' skins (recolours)
+
+One skin for each event fighter (`skins/chalk-eraser.png`, `soaked-spongy.png`, `cobalt-8-ball.png`, `ember-black-hole.png`, `scarlet-clock.png`, `storm-cloudy.png`, `cherry-pie.png`, `gold-stapy.png`, `orange-foldy.png`, `twilight-beach-ball.png`, with thumbnails in `thumbs/`). Each is the fighter's own render already credited above with its hue and lightness changed by a one-off script (2026-11-16), so nothing new was downloaded and the shape and size are the base render's. They are given by unlocking the fighter, not sold.
