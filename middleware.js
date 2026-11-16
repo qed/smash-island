@@ -36,9 +36,11 @@ export default async function middleware(request) {
     let entered = '';
     let back = '/';
     try {
-      const form = await request.formData();
-      entered = String(form.get('password') || '');
-      back = safePath(String(form.get('next') || '/'), url);
+      // The raw body parsed by hand, not request.formData(): on Vercel (2026-11-16) formData() lost the "next" field when it
+      // came last in the body with no "?" in it, which is exactly what a browser sends, so everyone landed on / after unlocking.
+      const form = new URLSearchParams(await request.text());
+      entered = form.get('password') || '';
+      back = safePath(form.get('next') || '/', url);
     } catch { /* not a form post: treat it as a wrong password */ }
 
     if (entered && (await sha256hex('smash-island-gate:' + entered)) === token) {
@@ -114,9 +116,9 @@ function page({ status, message = '', next = '/', form = true }) {
   <h1>Battle for Smash Island</h1>
   ${form ? `<p>This site is private. Enter the password to continue.</p>
   <form method="post" action="${UNLOCK_PATH}">
+    <input type="hidden" name="next" value="${escapeHtml(next)}">
     <label for="pw">Password</label>
     <input id="pw" name="password" type="password" autocomplete="current-password" required autofocus>
-    <input type="hidden" name="next" value="${escapeHtml(next)}">
     <button type="submit">Enter</button>
   </form>` : ''}
   ${message ? `<p class="msg" role="alert">${escapeHtml(message)}</p>` : ''}
