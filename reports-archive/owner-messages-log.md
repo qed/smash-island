@@ -1,0 +1,1749 @@
+# Owner's messages, verbatim (the source of truth)
+
+Why this exists: the owner, 2026-11-13: "your job is to offload context, because I believe the reason we lost this is because of compacting, so keep a document of my messages."
+Rule: the lead appends EVERY owner message here (verbatim, with time) as it arrives, before acting on it. Before designing or changing any named thing, search this file for what the owner said about it. Never present notes or old docs as the owner's intent.
+
+Layout (owner 2026-11-13: "if messages have sperate themes, then seperate them"): grouped by THEME, oldest first within each; a message covering several themes is split by sentence (marked *(part)*) under each theme. The theme sorting is by keywords, so check neighbouring themes too.
+
+Backfill: extracted from this session's transcript (82251bbe); messages before its first context compaction may be partial (summaries were not owner words).
+
+Total: 1221 distinct messages (duplicates from transcript replays and system lines removed).
+
+## Contents
+- Event contests & event fighters (60)
+- World Cup results (63)
+- Teams maps, stages & levels (117)
+- Moves, smashes & Final Smashes (164)
+- Bosses, Boss Rush & secrets (50)
+- Balance & CPUs (118)
+- Art, animation & polish (53)
+- Online, UI & players (13)
+- Bugs & fixes (30)
+- Updates, pushes & process (57)
+- Status questions & check-ins (293)
+- Working rules, budget & agents (41)
+- Other (529)
+
+## Event contests & event fighters
+
+- **2026-09-15 13:53 UTC** *(part)*: Buff it slightly, by giving a 0.5% damage increase on next hit(taunting an enemy, like with eraser in canon).
+- **2026-09-28 14:10 UTC** *(part)*: sprites for assist trophies, beach ball is broken, and they dont work on bosses.
+- **2026-10-14 14:33 UTC**: there is no contested area also, the two sides are too independent.
+- **2026-10-14 15:05 UTC**: give me a "major events" timeline
+- **2026-10-16 14:46 UTC** *(part)*: Offensively, Leafy leverages the invincible BFDIA Sprint to cross massive screens seamlessly and safely bypass traps, while Pencil uses Supervan to safely ram through defenders and cross diverse terrain types on any map.
+- **2026-10-23 13:11 UTC**: also, the grace rule was added to prevent crazy multihits, not fighters(like spikey) who play around multihits...
+- **2026-10-23 23:18 UTC**: find all unused characters and could-have-beens, and turn them into event fighters.
+- **2026-10-25 11:46 UTC** *(part)*: with hot dog, needy, jammy and sticker...
+- **2026-10-26 14:11 UTC**: check eraser.
+- **2026-10-26 14:39 UTC**: check eraser, then push him
+- **2026-10-26 14:41 UTC**: add him as an event immediately
+- **2026-10-26 17:02 UTC**: so do eraser's base hits deal 15%?
+- **2026-10-26 17:06 UTC**: is eraser in?
+- **2026-10-26 18:23 UTC**: yes, push it with eraser
+- **2026-10-27 13:10 UTC** *(part)*: push eraser if done yes, below normal is fine.
+- **2026-10-27 14:14 UTC**: is eraser being pushed?
+- **2026-10-28 14:30 UTC**: event fighters should actually have 3v1, which would give you bonus tokens to win it.
+- **2026-10-28 14:40 UTC** *(part)*: eraser seems to have...
+- **2026-10-28 18:29 UTC** *(part)*: PoTM: Ruby used Pie and her finisher for absolutely ABSURD stage control, even without ledgeguarding.
+- **2026-10-29 12:41 UTC** *(part)*: best smash: bow's best attacks, airs, and tilts: eraser's.
+- **2026-10-30 11:53 UTC**: also, begin building the next 5 event fighters whats done?
+- **2026-11-01 19:57 UTC** *(part)*: nerf black hole to the strong end.
+- **2026-11-02 13:28 UTC**: this rule is to prevent "picked up", "the kick", "dont call me needy", and other moves like that(all of them) to always be cluttering the screen dude, letters are allowed occasionally.
+- **2026-11-02 14:32 UTC**: you could make the event fighters challenges slightly more interesting. for get digging, landing hard could "dig" out a piece of floor, and you could eventually destroy the floor.
+- **2026-11-02 18:06 UTC** *(part)*: Tell me if this is too much for the game, and if so, should we make this an event: algebralien boss rush.
+- **2026-11-02 18:09 UTC** *(part)*: this could be part of an event that is only active during the fifth of a certain day in a month(so if there were 5 fridays in a month(1,8,15,23,30), then the boss would be active on those fridays.
+- **2026-11-03 20:13 UTC** *(part)*: we need to add foldy, stapy, beach ball, and pie.
+- **2026-11-03 20:47 UTC**: mephone4 can use event fighters as assist trophies for melife download
+- **2026-11-06 13:13 UTC**: do the ones for the event and prize fighters.
+- **2026-11-06 13:51 UTC**: oh yeah, when are we making jammy, needy, sticker, and hot dog?
+- **2026-11-06 13:54 UTC**: start building the next event fighters.
+- **2026-11-06 16:01 UTC** *(part)*: cuz there are no jawbreakers at all.
+- **2026-11-06 17:27 UTC**: add twists for other event fighters
+- **2026-11-06 20:43 UTC**: yeah i already got pie. Cloudy's event is cool, black hole's less so.
+- **2026-11-06 21:21 UTC** *(part)*: sure, do the clover and foldy stuff.
+- **2026-11-06 22:30 UTC**: also, the floor loss on eraser could be bigger; effects and special things could be more noticeable.
+- **2026-11-06 22:51 UTC**: even slower movespeed on the cloudy challenge, I want to make the event challenges feel like their own "sub-modes" rather than just twists on a theme.
+- **2026-11-06 23:25 UTC** *(part)*: and stapys should be a hunt for lighthouses, where you must get to the top to turn on your switch, like bfdia 18.
+- **2026-11-06 23:30 UTC** *(part)*: it is like bfdia 18, you must make your complete emblem in the sky. each lighthouse has a corner. you go to the top to switch on your emblem, and you can turn off 1 other person's if you stay for 5 seconds.
+- **2026-11-07 13:07 UTC** *(part)*: for eraser, there are 10 rows. eventually, all the platforms in a layer will break, forcing ppl into the next layer. for spongy, how about you have to get your kit back from the dirt(you have to find your moves). also, for 8-ball, only 8 assists exist, and they are permanent. also, after getting all assists, jawbreakers fall, dealing damage.
+- **2026-11-07 13:14 UTC** *(part)*: and for spongy, there is an arena AFTER, which you enter, then once everyone finishes you fight them. for spongy, you can find all your moves in the dirt. also for 8-ball, you must DEAL 50% damage to the jawbreaker. for spongy, you are incentivised to get your "key" moves, like kill moves or combos, then go to the arena as fast as possible.
+- **2026-11-07 13:16 UTC** *(part)*: you start with jabs, and no combat till the arena for spongy.
+- **2026-11-07 14:11 UTC**: build 2 contests
+- **2026-11-07 16:28 UTC**: how much of eraser is done?
+- **2026-11-07 16:35 UTC**: put eraser on priority
+- **2026-11-07 19:53 UTC**: go to eraser's week
+- **2026-11-07 20:33 UTC** *(part)*: no platform on eraser's duel goiky field. the big thing for eraser is the minimap, which is not very mini.
+- **2026-11-07 20:40 UTC** *(part)*: also, build the next reasonable contest.
+- **2026-11-07 20:52 UTC**: the amount of items in cloudy's contest should not be able to go down. also, less textwalls for the events.
+- **2026-11-07 21:00 UTC**: foldy's finisher is buns
+- **2026-11-07 21:57 UTC**: go to spongy's week
+- **2026-11-07 22:03 UTC** *(part)*: the event broke, ice cube went back in.
+- **2026-11-08 12:28 UTC** *(part)*: but for cloudy, I feel like everything gets stolen after 1 hit.
+- **2026-11-10 18:08 UTC** *(part)*: and it should be like "the search party" challenge from stapys event at night.
+- **2026-11-12 18:12 UTC** *(part)*: let's slowly add more animations and better ones to the characters, with, eventually, a pose per frame, and allowed to make your own, but WITH THE **SHOW's** ANIMATION, not our style.
+- **2026-11-13 11:32 UTC** *(part)*: wrap up the events.
+- **2026-11-13 18:34 UTC**: have you done the new contestants(needy, jammy, etc.)
+- **2026-11-13 18:37 UTC**: change the event week in localhost/8223
+- **2026-11-13 18:40 UTC** *(part)*: I thought that back to the top was escaping the pull of the hole, with debris trying to slow you down?
+- **2026-11-13 18:53 UTC** *(part)*: foldy is a race with a breeze and blocks to try to stop you. for foldy, its bfdia 18, with lighthouses and parkour in darkness once outside the houses. you try to make your complete emblem, and if you stay on a lever for 5 seconds, you can turn 1, and only 1 persons lever off.
+
+- **2026-11-13 19:10 UTC**: and there should be no phase names, they shouldjust happen.
+- **2026-11-13 19:12 UTC**: (answer to "where?": Both = boss fights AND contests) "1, and the rising should speed up, because we dont want infinite matches."
+- **2026-11-13 19:16 UTC**: and find similar mechanics for the others
+- **2026-11-13 19:18 UTC**: (answers to my speed-up options) Cloudy/Eraser/Spongy/8-Ball: "[No preference]" (none picked). Picked: "Pie + Foldy: push forward" (Pie: bottom steps crumble upward, faster over time; Foldy: tailwind grows stronger), "Stapy: lights lock in" (lit emblem pieces get harder to turn off over time; the 5 s stand grows), "Beach Ball: ball gets heavy" (falls faster over time). NOT picked: Clock zone shrinks.
+- **2026-11-13 19:22 UTC**: cuz for those, they have a mechanic(not losing items, tiles cant regen, literal combat, intentional mechanic)
+- **2026-11-13 19:24 UTC**: for foldy, its 1, 6,5,4,3, and marathon
+- **2026-11-13 (answers to the 4 Beach Ball questions: 1 Final Smash ~100%, 2 Cheaters' Alliance ally vs 3v1, 3 Pin +20% pierce on inflatables, 4 Sandquake missing under platforms)**: sure, keep it. change it. sure, do the pin thing. fix it.
+- **2026-11-13 (answers to the 3 8-Ball questions: 1 fall also starts when every living fighter holds 2, 2 KO keeps assists?, 3 permanent = 9 s tenure re-called?)**: sure, keep 1. you keep them. no, they stay forever
+- **2026-11-13 (after playing the rebuilt Clock contest)**: clock's is fun, but should be on a slightly bigger stage, with clocks spawning on platforms.
+- **2026-11-13 (after I told him the clocks would ONLY spawn on platforms, never the floor)**: NO NOT ONLY ON PLATFORMS!!!
+- **2026-11-13 (after playing Beach Ball's keep-up contest)**: uhhh, beach balls contest sucks.
+- **2026-11-13 (answer to 'what is wrong with it?')**: the opposite of 3 [my option 3 was 'fighting doesn't matter, it's just chasing the ball']. no one hits it, because there should be teams of 2, and your goal is to stop the ball form landing, like volleyball, [and picked] Stage or look is boring
+- **2026-11-13 (answers to my volleyball questions)**: Net, a side each. Ball landing on a side = point to the other team. Fighting = hit them across the net. Stage = a beach.
+- **2026-11-13 (after playing Beach Ball volleyball)**: spiking the ball for beach ball hould have value
+- **2026-11-13 (answer: what value?)**: Fast and hard to return (a spike sends the ball down fast and hard over the net; defenders have little time, but a well-timed hit can still return it).
+- **2026-11-13 (bug, Beach Ball volleyball)**: I broke beach balls event using bows neutral special
+- **2026-11-13 (answers to my 3 Foldy wind-race questions: 1 Foldy/Liy win most, Foldy's glide likely why, OK?; 2 braced fighter fully safe from blocks?; 3 wind keeps growing after 2:30?)**: 1. no, reduce the glide SLIGHTLY. 2. yes. 3. no
+- **2026-11-13 (after playing the Foldy wind race)**: why am I slower than normal in foldy's contest? like, 90% slower?
+- **2026-11-13 (answer: run speed was cut to 24%; how should it work?)**: remember, there is a wind, right? so normal speed+wind, longer course
+- **2026-11-13 (answers: Foldy wins 9/10 via her Fold and Fly dash; Paper Cut Dash stuck-at-wall bug)**: Cooldown on dash specials (in this contest only, forward-moving specials get a longer cooldown). Fix it everywhere (fix only the stuck-at-a-wall ending of Paper Cut Dash in the move itself; damage and shape unchanged).
+- **2026-11-13 (answer: even out everyone's movement in the Foldy race, or keep own stats?)**: remove the movement restrictions.
+- **2026-11-13**: is stapy done?
+- **2026-11-13 (after I said Stapy waits for the weekly reset; usage 93%)**: i did half of my science project. you csn do stapy
+- **2026-11-13**: whst is done. scores
+- **2026-11-14**: whats done
+- **2026-11-14 (Stapy build running)**: stop everything
+- **2026-11-14 (after I stopped the Stapy build and the reminder)**: unpause
+- **2026-11-14**: how much % of stapy is done?
+- **2026-11-14**: any parkour in the lighthouses?
+- **2026-11-14 (after I listed 2 timed ledges + a lift per lighthouse and offered more parkour)**: first finish, then make the lighthouses like the mill, if you havent already, then add parkour
+- **2026-11-14 (after I said the lighthouses were not built like the mill)**: whyyyyyyyyyyy
+- **2026-11-14 (answers to the 4 Stapy questions: 1 'like the mill' via rooms apart OK?; 2 leave by exit door, not Up, OK?; 3 CPUs hunt rival levers more?; 4 look at Firey's CPU win rate?)**: 1. duh, yeah 2. yeah. 3. nah, its okay 4. sure, ig
+- **2026-11-14 (after playing Stapy's contest)**: stapy's contest has a couple flaws: first, the lighthouses are tiny on the inside, and there is a lift to skip parkour. Second, you cant see the platforms well in the dark, or opponenet. and you cant see your emblem in the sky.
+- **2026-11-14 (next)**: so make custom emblems and colors for each character
+- **2026-11-14 (answers: build the Stapy fixes now past 95% or after the reset?; emblem style?)**: "2, but in order of importance; remember that that budget is to account for my science fair work, and I finished it." [= build NOW, over 95%, most important first]. Emblems: Like BFDIA 18's emblems.
+- **2026-11-14 (with a picture)**: here are some emblems(ooc, this is for eliminations, but they are used the same for the contest) [PICTURE: a round elimination chart split into 5 coloured wedges; each wedge has one WHITE flat SILHOUETTE icon of a contestant's shape + a vote number: orange wedge = a round coin/ball with a diagonal band (14176); green = a tennis ball (23829); yellow = a box of fries (30414); purple = a pin/match-like stick with a rounded head (16811); blue = a tall rectangle with a curved notch, like a book or door (15579). Style: solid bright colour per contestant, simple bold white silhouette, no outline, no face.]
+- **2026-11-14 (about seeing platforms/rivals in Stapy)**: not outside, but kts hard inside as well
+- **2026-11-14 (correcting my reading that 'inside' meant the lighthouse rooms)**: no, inside the CIRCLE of light
+- **2026-11-14**: % complete?
+- **2026-11-14 (about the Stapy fixes)**: are they on localhost?
+- **2026-11-14**: Try again
+- **2026-11-14**: do a critical jury of the events soon. also, make a queue for the resest to make all scores 10's
+- **2026-11-14 (answer to 'KOs only from damage or the top now that there are no pits: fine?')**: maybe add pits
+- **2026-11-14 (answer: are the light circle, glow edges and sky emblems readable?)**: its okay for seeing.
+- **2026-11-14 (answer: is the ~2 min course long enough?)**: the length is fine
+- **2026-11-14**: wait, are the lighthouses big? and do they have forced parkour? cuz they seem to have platforms
+- **2026-11-14 (answers: how should the climb work?; bigger?)**: Both routes parkour (safe = easier parkour every floor, risky = harder/faster; no plain stairs). Size: "1 and 2" = BOTH bigger on screen (camera at normal zoom, following you) AND bigger rooms (wider, taller, more floors).
+- **2026-11-14**: have you made the queue plan?
+- **2026-11-14 (about reset-queue.md)**: i say yes to all of the "say yes to doiing x" in the document
+- **2026-11-15 (after playing Stapy)**: issues: first, the towers are next to each other in the sky, so I can do a skip with bow where I teleport out of  a tower, go to the left/right, and instantly arrive at another tower. also, parkour should be hard and REQUIRED, because right now, there are platforms to skip the parkour entirely. also, dont make spaces between the parts of the emblems, they should be fully together
+- **2026-11-15 (next)**: and make the emblems part of the backdrop, so we can see that, when your emblem is complete, it drowns out the others.
+- **2026-11-15 (next)**: and you get to see it before the winscreen comes
+- **2026-11-15**: any suggestions for the contests? be honest. also, try to understand the meaning of what i say, not the letter of it.
+- **2026-11-15 (answers to my 7 contest suggestions: 1 Foldy hits/wind stronger, 2 Pie crumble chases closer, 3 Clock longer timers + stock-out keeps points + normal-size stage, 4 Black Hole climb cap + debris at leader, 5 8-Ball one-shot assists wait + more jawbreakers, 6 Beach Ball first rally, 7 Stapy)**: 1 is okay, 2 is a yes, 3 is only for cpus, because they dont grab the clocks, and you should keep your points 4 is really that the physics can act good and bad, depending on it. also, on the edges of the stage the normal background shows up. sure for those. its fine for beach ball.
+- **2026-11-15**: what do you think?
+- **2026-11-15 (correcting my reading of '1 is okay' and '4')**: no, for black hole, the physics are really inconsistent. with the same inputs from negligeably different spots, there are huge differences. I DIDNT SAY THAT FOR FOLDY, I SAID I OKAYED IT TO CHANGE.
+- **2026-11-15**: anything that is easy and will bump low-score things higher? be honest
+- **2026-11-15 (answers to my easy-wins list: 1 Yoyle Needle east/west, 2 open Faultline + Windy Heights, 3 input-drop fixes, 4 CPU finishing change, 5 unpause the shop; 6-8 bugs)**: do 1, do 2, do 3, do 4, sure. also, give skins to event fighters once you unlock them. fix the bugs. what is stuck at 7 for online?
+- **2026-11-15**: and wdym boss rush impossible
+- **2026-11-15 (after I listed the bigger online items)**: those are okay for after too, the bigger items. also, open the teams maps
+- **2026-11-15 (after I opened Faultline + Windy Heights and asked about Dream Island)**: start. also, the TLC on teams is too small
+- **2026-11-15 (moves)**: also, change the smashes of leafy and anybody else you stupidly changed without putting thought into it.
+- **2026-11-15 (answer, after I admitted my 'east/west already even' claim for Yoyle Needle was wrong)**: Most even pair (for each map layout, measure every pair of bases and use the most even one).
+- **2026-11-15 (answers on the smash thought-review, moves/smash-thought-review.md)**: Leafy up = Yoyleland Knife (one slanted thrown knife with bleed). Build all 5 other replacements (Snowball Up You Go, Bomby Stamp It Out!, Firey Jr. Tantrum Flare, Baseball Ground Pound, Pickle racing dive), show old vs new before merging. Small fixes: ALL FOUR (Tennis Ball drop the slow; Tapey beam back; Tapey FS renamed 'Eject!'; Fan flaps himself). Final Smash names: bring back the OLD catchphrase names.
+- **2026-11-15 (answers on the events jury)**: Cloudy: Shorter hold + Seed drops less. Beach Ball: Moves matter (strong moves hit the ball harder/further, jabs just bump). Black Hole: Only when attacker above (hits knock toward the hole only if the attacker is above the victim) + Swallowed players act (players who are out get something to do).
+- **2026-11-15**: any iffy moves that havent fixed? also, dont fix eraser.
+- **2026-11-15 (after I listed 13 shape-first live moves and offered a full pass)**: yes, do the 13 and a full pass.
+- **2026-11-15 (answers on the full move pass, moves/move-pass-A/B/C.md)**: small fixes: Yes, all. Redesigns: Build all, review on preview. Sky drops (Blocky's anvil special, Tree's Timber): Replace both. Questions: Taco: replace it (her own down special). [Knife's Blade Rush and Sidewalky's 'Physically' not answered.] Free text: "why does bh's thing have a limit?"
+- **2026-11-15 (answers on Stapy round 3: should CPUs use the risky lane?; is the backdrop emblem placement right?)**: 1. idk. 2. For the emlbems, they should not appear indoors.
+- **2026-11-15 (with a screenshot of a lighthouse room: three plain rectangular platforms stacked one above another, faint emblem circles behind)**: this is just platforms. not parkour, and nieither is the other way
+- **2026-11-15 (answers: what should real parkour include?; difficulty?)**: all of those (hazards to dodge; moving & vanishing platforms; wall-jump shafts; swing/ride: ropes, vines, conveyors, fans, springs), "and it should have an intended path that is impossible to skip." Difficulty: Hard but fair (a few tries in places; a mistake drops you one section, not to the bottom).
+- **2026-11-15 (with a still from BFDIA 18, saved as reports/maps/stapy-drown-ref.webp)**: also,this is what the drowning out looked like in the episode. it shoudl cut to that after getting full emblem [PICTURE: a dark starry night sky; the winner's emblem (a solid red circle with a white flat silhouette, glowing) in the centre; a big wobbly red blob spreading out from it with orange sparks and embers, covering most of the other emblems (green, blue, purple, yellow, orange circles with white silhouettes) which peek out at its edges; broad red light beams cross the sky behind]
+- **2026-11-16 (answers on the Stapy parkour design, maps/stapy-parkour-design.md)**: lamp bulbs: Yes, use bulbs. Length: 4 floors per lighthouse. Rules: full climb to turn off a rival OK; CPU stuck-help OK; plus a quick way down (a fast exit from the top).
+- **2026-11-16**: what is the local directory for this repo?
+- **2026-11-16**: is stuff building on this chat or are you done and have you pushed to remote?
+- **2026-11-16**: tell me when the job that is still building has finished building. Also, how long do you think it will take to build?
+- **2026-11-16**: can you give me partial updates along the way to tell me that its 10% done, 25% done, etc?
+- **2026-11-16**: can we stop this Stapy rebuild, write a document that is a complete description of the Stapy rebuild, include that document (an .md file) in the Update 5 and then push Update 5, leaving the Stapy rebuild for Update 6? This should put Update 5 on remote. Will that be in a an update-5 branch?
+- **2026-11-16**: All of this is on local only, not remote?
+- **2026-11-16**: can you push all of these changes to remote in a branch called stashed-for-now-nov-16?
+- **2026-11-16**: no nothing is on local that is not also on remote?
+- **2026-11-16**: I am about to delete the local repo entirely. would it be better to merge 1 and 2 into the stashed-for-now-nov-16 branch or just let these things get deleted permanently?
+- **2026-11-16**: yes, let's do that. let me know when all of this is on remote.
+- **2026-11-15 (Black Hole contest)**: and comets have hardly an eeffect
+- **2026-11-15 (answers)**: 'which limit?' -> "in the contest, there is a limit to the tower." Comets should: Knock you down a ledge + Do some damage.
+- **2026-11-15**: whats done
+- **2026-11-15**: which folder is used for music?
+- **2026-11-15**: replaced battle with strive
+- **2026-11-15 (after I asked about the rights to 'Strive')**: it is one I made myself.
+- **2026-11-15 (after I said a Hollow Knight: Silksong OST track named 'Strive' is in Downloads, and that if battle (2).mp3 is it, it can't ship)**: okay ig
+- **2026-11-13 (after the Black Hole/Clock rebuild report; clock read 19:18 UTC, earlier stamps were estimates)**: oh, and platforms should spawn to keep you going upward for bh.
+- **2026-11-13 (next message)**: there should be no finish; you wait till the others are dead. also, the theme of apocalypse is just not there, and the debris is not noticeable.
+- **2026-11-13 (next message, clarifying "debris is not noticeable")**: no, like there is basically no debris, so i just go on pb and up special to infinity
+- **2026-11-13 (next, answering who "pb" is)**: puffball, duh
+- **2026-11-13 (next, Black Hole climb)**: id say that leafy, lifering, and bow would be pretty strong
+- **2026-11-13 (next, Black Hole climb)**: and all of the ones that have a "pop up" up-special like liferings
+## World Cup results
+
+- **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
+- **2026-09-28 22:46 UTC** *(part)*: also winning the world cup as all 2nd place characters in ii(taco, knife, and balloon).
+- **2026-10-13 14:31 UTC**: flag: hurtboxes are different in world cup.
+- **2026-10-13 14:37 UTC** *(part)*: also the world cup.
+- **2026-10-15 19:24 UTC**: also, another tactic: put 4-6 ppl in jail, then free them all, giving you ppl behind enemy lines.
+- **2026-10-28 15:03 UTC** *(part)*: Winner: Lightning 2nd: Braceletty.
+- **2026-10-28 15:05 UTC**: Best move: spit(PB) Winner: Fries 2nd: PB.
+- **2026-10-28 15:09 UTC** *(part)*: Winner: Toothpaste 2nd: Ruby Best move: Toothpaste's dash thingy.
+- **2026-10-28 17:47 UTC**: Winner: Ruby Loser: Coiny PoTM:Ruby baited coiny into a finisher by pretending to be an easy target, but then got a lot of damage. EoTM: Coiny kept countering when ruby was baiting him.
+- **2026-10-28 18:21 UTC**: PoTM/EoTM:None, 1 sided. Winner: PB Loser: Match.
+- **2026-10-28 18:23 UTC**: Actually, there was the PoTM for WC 4
+- **2026-10-28 18:24 UTC**: no, 7 had 4's PoTM
+- **2026-10-28 18:29 UTC** *(part)*: Also, make notes regarding if the loser made the PoTM, bcs that could mean they're interesting and worth checking out. EoTM: Coiny tried to get an item but made himself vulnerable to a rock burst by ruby.
+- **2026-10-28 18:31 UTC** *(part)*: and Winner: Coiny Loser: Ruby.
+- **2026-10-28 19:41 UTC** *(part)*: PoTM: Pillow baited Blocky with the hammer thing, causing him to fall off, and due to his bad recovery, he fell. EoTM opposite of the PoTM. Winner: Blocky Loser: Pillow
+- **2026-10-28 19:45 UTC**: PoTM: Bow used the finisher to double-hit leafy, and also block her from items.
+- **2026-10-28 19:50 UTC**: Potm: toothpaste made a safe zone with two traps
+- **2026-10-28 19:51 UTC**: new Potm: trap into trap into dash into stock.
+- **2026-10-28 19:53 UTC**: EoTM: None
+- **2026-10-28 19:58 UTC**: no potm or eotm, sb won.
+- **2026-10-28 20:02 UTC** *(part)*: potm: like PB, but oj did not expect it AT ALL!!!
+- **2026-10-28 23:20 UTC** *(part)*: run 10 world cups to see what was the "potm" in each match, then group them by catagory.
+- **2026-10-29 11:10 UTC**: PoTM for semis: Bow used Knife's grappling hook to get a hit on him.
+- **2026-10-29 11:18 UTC**: dont count this potm, bcs knife got item bs....
+- **2026-10-29 11:20 UTC** *(part)*: potm
+- **2026-10-29 11:26 UTC**: EoTM: also bot, failed ledgeguard
+- **2026-10-29 11:30 UTC**: bot used the up-special, but gb predicted and placed a trap there, and bot was forced to use her recovery potm: finals.
+- **2026-10-29 11:41 UTC**: potm: lightning tried to whiff david with an up-air, but david predicted and used his finisher
+- **2026-10-29 11:46 UTC**: eotm: failed ledgeguard by lightning.
+- **2026-10-29 11:51 UTC**: eotm: on both, tried to go on platforms with traps on the edge.
+- **2026-10-29 12:03 UTC**: no potm, lolipop won.
+- **2026-10-29 12:05 UTC**: eotm: pb used her finisher for no reason, missed, and got a stock taken.
+- **2026-10-29 12:08 UTC**: potm: lolipop baited needle into a "free hit", but then trapped+finisher'd her.
+- **2026-10-29 12:13 UTC**: interesting fact: the only fighter who took a stock so far in a world cup with me(barring errors) is cake(!)
+- **2026-10-29 17:31 UTC** *(part)*: stopped teh world cup bcs before I was playing, and when I play i do 5 stock, but that takes too long.
+- **2026-10-29 17:35 UTC**: eotm: also pencil, used the ramp, but missed and lost stage control
+- **2026-11-01 18:05 UTC** *(part)*: ill resume world cups shortly
+- **2026-11-01 20:00 UTC**: eotm: firey DID NOT RECOVER AT ALL DURING THE SECOND STOCK
+- **2026-11-01 20:11 UTC** *(part)*: potm.
+- **2026-11-01 20:12 UTC** *(part)*: 2 potms pillow will now have an edge due to her by-stock taken on an opponent damage bonus
+- **2026-11-01 20:17 UTC**: log that as potm
+- **2026-11-01 20:31 UTC**: finisher into smash for the potm by goo!
+- **2026-11-03 19:38 UTC** *(part)*: 1-1 on stocks, coiny down 20 % COINY CAME BACK!!!!
+- **2026-11-03 19:49 UTC**: duh, its the final equal % and 2-2
+- **2026-11-03 19:50 UTC**: potm: ruby uses her finisher to bait gelatin into a bad landing spot 1-2 in gelatins favor
+- **2026-11-03 19:52 UTC**: potm:bow used her finisher to send the combat onto the other ledge tied 2-2
+- **2026-11-03 19:53 UTC**: eotm: money keeps misuisng the finisher bow down a stock\
+- **2026-11-03 19:55 UTC**: cake up 2-1
+- **2026-11-03 19:58 UTC**: 2-2
+- **2026-11-04 12:30 UTC**: 1-2, fanny 60, tapey 40 fanny in orange
+- **2026-11-04 12:31 UTC**: 0-2, tapey won Pen vs sb.
+- **2026-11-04 12:33 UTC**: 2-2, sb 80, pen 20 sb in orange DUDE SB IS SNOWBALL
+- **2026-11-04 12:35 UTC** *(part)*: 2-1, pen in orange
+- **2026-11-04 12:39 UTC**: 2-2, both 60 2-1 magnet
+- **2026-11-04 12:44 UTC**: 1-1, marsh in the orange
+- **2026-11-04 12:49 UTC**: 1-0 rose won gelatinous body vs thunder but different
+- **2026-11-04 12:51 UTC**: gelatin down a stock, lightning in orange 1-1, both at 0
+- **2026-11-04 12:53 UTC**: the thing is, with these recent finals, there are so manyy potms that i cant name them all.
+- **2026-11-04 12:57 UTC**: 2-2, 0 each
+- **2026-11-04 20:31 UTC** *(part)*: also, def nerf all jabs to 2-4%.
+- **2026-11-05 13:46 UTC**: you can completely sim(dont look at anything) world cups, around 100 cuz they are easy to do, you just click a button 10 times.
+- **2026-11-05 18:10 UTC** *(part)*: also, run the world cups in the tab I opened.
+- **2026-11-05 20:22 UTC**: what did you think of that 0-5 match?
+
+## Teams maps, stages & levels
+
+- **2026-09-10 14:52 UTC**: actually, i need you to help me verify a bfdi:branches level, i have already verified each section seperately, but I cant  manage all of them at once.
+- **2026-09-10 14:58 UTC**: here is the level
+- **2026-09-10 15:00 UTC**: no, theyre a path for the death spikeball
+- **2026-09-10 15:02 UTC**: uhhh, look at how long the path is, and see what you actually have to do to beat the level
+- **2026-09-10 15:06 UTC**: and also, the spikeball is on a 30 second path, and so the first challenge of the level is doing a delayed double jump and then immediately crouching without overcompensating and dying to the small death spikes.
+- **2026-09-10 15:08 UTC** *(part)*: after that the spikeball is never an issue
+- **2026-09-10 15:11 UTC**: no, because you have to do a momentum carry attack-down-run combo which is really inconsistent, no matter how many times I do it.
+- **2026-09-16 13:49 UTC** *(part)*: run the tournament.
+- **2026-09-27 10:28 UTC** *(part)*: continue and run a pass on every feature to check if anything bugs.
+- **2026-09-28 23:11 UTC** *(part)*: Browser-Based Cosmetic Accounts If your Smash game features user accounts (to track wins/losses or save local data), you can offer highly specific aesthetic perks for a tiny donation: * Name Glows and Badges: Allow players who donate $1 to get a unique color or a mini "Dream Island" badge next to their username in public lobbies. Server-Funding "Grounded" Crowdfunding Vercel plans can jump from free tiers to expensive commercial tiers quickly if traffic spikes.
+- **2026-09-29 19:37 UTC** *(part)*: the run is bugged. and harder obstacles that increase in strength.
+- **2026-09-30 14:29 UTC** *(part)*: also add actual platformer hazards!!!!
+- **2026-10-13 13:11 UTC**: make the running platforms a bit wider.
+- **2026-10-13 13:21 UTC**: also, getting hit should instantly make you lose the run in running. the issue is that on gaming setups, the game will run way too fast.
+- **2026-10-13 16:05 UTC** *(part)*: also, map design is bad. find some capture the flag games online and take from those, make the map 2-4x as big.
+- **2026-10-13 16:52 UTC** *(part)*: push the new map when it's done.
+- **2026-10-13 17:50 UTC** *(part)*: 1,2,3,4 is already done,5 could be fixed by making the map 25% smaller,6,7,8. also, in moldy's video the map just feels more complex...
+- **2026-10-13 17:53 UTC** *(part)*: Because the elevator is probably near the middle of the map, you could win very easily if there were 3 exits.
+- **2026-10-13 18:10 UTC**: i cant fall through platforms.
+- **2026-10-13 19:05 UTC**: cant place flags on platforms
+- **2026-10-13 22:03 UTC**: when you put stuff on a moving platform, they should lock to that.
+- **2026-10-13 22:42 UTC**: do spikes do anything?
+- **2026-10-14 12:17 UTC** *(part)*: also, give map options for ctf.
+- **2026-10-14 12:23 UTC** *(part)*: and the map should be a bit bigger.
+- **2026-10-15 07:46 UTC** *(part)*: also, dont start anything, but smth is that the new and old maps still dont feel complex and interconnected.
+- **2026-10-15 08:24 UTC**: i mean, do you really need to run tests for artwork?
+- **2026-10-15 08:32 UTC** *(part)*: i figured out why the yoyle factory map didnt work.
+- **2026-10-15 08:36 UTC**: try to minimize tests when pushing its ok to run very small tests, but no huge ones.
+- **2026-10-15 08:57 UTC**: give me a map screenshot
+- **2026-10-15 11:17 UTC**: map size and details and rooms should scale by number of ppl
+- **2026-10-15 11:59 UTC**: LOVE the new map
+- **2026-10-15 12:46 UTC**: give all maps a third area
+- **2026-10-15 14:57 UTC** *(part)*: different areas should have different types of platforming.
+- **2026-10-15 19:07 UTC**: 4 is for all maps.
+- **2026-10-16 14:46 UTC** *(part)*: <pasted_content id="055b"> Team size: 4v4 Map: any CPU skill: hard TEAM NAME: Science and Speed Synergy FIGHTERS: Tennis Ball, Test Tube, Leafy, Pencil SIDE BID (asymmetric maps): our preferred side, 5 points PRESET: none BUILD SETUPS: choke, stunland, airlock, wallshort OFFENCE PLAYS: scout, boostrun, thirdreturn, carrierhide DEFENCE TACTICS: choke, zone, layers, chip ROLES: Tennis Ball = def, Test Tube = def, Leafy = runner, Pencil = att JOBS: choke: Tennis Ball, Test Tube; scout: Leafy; boostrun: Pencil AREAS: Tennis Ball = our home, Test Tube = our approach, Leafy = enemy home, Pencil = enemy approach BUILD POINTS: * Tennis Ball: 4 walls (12 points), 1 trap (stun pad) (5 points), 3 props (3 points) * Test Tube: 3 traps (stun pads/spikes) (15 points), 1 wall (3 points), 2 props (2 points) * Leafy: 2 traps (springs) (10 points), 5 platforms (10 points) * Pencil: 2 traps (springs) (10 points), 5 platforms (10 points) FLAG HIDING: * Tennis Ball: our home, hidden behind a crate prop * Test Tube: our home, hidden behind a barrel prop * Leafy: our approach, hidden behind a bush prop * Pencil: our approach, hidden behind a curtain prop OFFERS: Accept both +10 points deal; refuse any deals where our team loses points relative to the opponent.
+- **2026-10-17 22:30 UTC**: also, the maps all feel like they are just stairs with big pillars in between. Some have differences(like the castle and the mill maps), but most feel the same in spirit
+- **2026-10-19 11:56 UTC** *(part)*: i made an unfeasible flag(breakable platform camp), and it didnt get flagged
+- **2026-10-21 18:15 UTC**: the ai makes impossible things(spikepad platforms, where i cant drop through!!!!
+- **2026-10-23 18:15 UTC** *(part)*: you cant fall off maps...
+- **2026-10-26 17:42 UTC**: you can run all jobs
+- **2026-10-26 19:44 UTC**: some of one's attacks are too hard to justify in a world with this level of movetech..
+- **2026-10-27 14:00 UTC**: how does leafy fall off a stage???
+- **2026-10-27 14:03 UTC**: also, send me a screenshot of the new arenas with more off-stage area push the smash nerfs.
+- **2026-10-28 23:21 UTC**: actually, run 5 32 team cups
+- **2026-10-29 11:21 UTC** *(part)*: run 10 too.
+- **2026-10-29 11:28 UTC**: also, the cpus still run circles around each other, even if they are productive ones.
+- **2026-10-29 12:15 UTC**: I lost my match against ruby in the group stage because I forgot on which side I spawned, and I used my up-special in the place where I thought I was... but it was where ruby was and I fell off the stage yeah, none of the winners have!
+- **2026-10-29 12:17 UTC**: ruby got out in the GROUP STAGE, and so teh final is me vs lightbulb I also changed who was in the cup...
+- **2026-10-29 12:24 UTC** *(part)*: the moon should have a counterpart as a teams map: moon caves.
+- **2026-10-29 17:53 UTC** *(part)*: its an even fight at the top of the map.
+- **2026-10-29 17:54 UTC** *(part)*: they have stage control.
+- **2026-11-01 18:10 UTC**: resume all work save for moon caves.
+- **2026-11-01 18:13 UTC**: How is the new moon?
+- **2026-11-01 18:19 UTC** *(part)*: and the moon feels good.
+- **2026-11-01 18:22 UTC** *(part)*: and these are in the group stage, so no repeat combos of characters.
+- **2026-11-01 18:23 UTC** *(part)*: IT IS ALL IN THE GROUP STAGE, AND IN THE GROUP STAGE THERE IS ONLY 1 MATCH VS EACH PERSON IN THE GROUP!!
+- **2026-11-02 18:03 UTC** *(part)*: I need you to rebuild the caves of the moon, to make them less samey.
+- **2026-11-02 18:17 UTC** *(part)*: make the attacks ajust for larger stages for two and four, because you can just outrun them in their current state.
+- **2026-11-03 01:01 UTC**: and ask me questions for what could make ledgeguarding better(more space to see offstage, more offstage, period, etc.
+- **2026-11-03 17:47 UTC**: moon caves v4 should be what you are doing.
+- **2026-11-03 20:30 UTC**: about how many % of the moon build is done?
+- **2026-11-04 11:44 UTC**: Run an adversial review with 10 personalities, fix the things detailed in them, run the same one again, if they are satisfied, do a different one, irnse and repeat until 5 of them are satisfied(5 review jurys) the game needs to feel better.
+- **2026-11-04 20:38 UTC** *(part)*: Weak-fighter run?
+- **2026-11-05 11:39 UTC** *(part)*: for burns, if they were already present then they should run their course, otherwise no.
+- **2026-11-05 13:19 UTC**: also, I dont notice the difference between the run speed of a heavy(TV) and a light(Bow)
+- **2026-11-05 20:10 UTC** *(part)*: but what about boss rush and moon caves?
+- **2026-11-06 15:13 UTC**: what did you think of the group stage?
+- **2026-11-06 23:25 UTC** *(part)*: 1 in each corner, with interior zones that have parkour challenges.
+- **2026-11-07 13:07 UTC** *(part)*: you start on the top one, and there are small platforms(abt 1/2 the size of the current ones).
+- **2026-11-07 13:14 UTC** *(part)*: no, like they are full layers of platforms, with no way to fall off until platforms are broken, with no floor.
+- **2026-11-07 20:09 UTC**: platforms should fall no matter how long you stand on them, and once no one is on a layer(from above only) then all of them should break, and you should be able to jump as high as you want.
+- **2026-11-07 21:26 UTC**: no, she should be able to dash off the stage, bcs that is fair.
+- **2026-11-08 12:49 UTC** *(part)*: also, stages could be a bit more varied.
+- **2026-11-08 12:59 UTC**: do the stage ideas
+- **2026-11-08 21:17 UTC** *(part)*: i want the stage shapes to be different.
+- **2026-11-09 00:33 UTC**: yes, start run speed
+- **2026-11-09 12:20 UTC** *(part)*: also, lag spikes high with 3+ players on multiplaer
+- **2026-11-09 14:23 UTC**: sometimes my finisher doesnt work on the new maps' platforms.
+- **2026-11-09 15:04 UTC** *(part)*: and fern's healing(on big stages) is waaaay too strong.
+- **2026-11-09 15:10 UTC** *(part)*: the new stages are good what would help?
+- **2026-11-09 16:21 UTC** *(part)*: no, like the stuff with the moon and abr.
+- **2026-11-09 17:56 UTC** *(part)*: also, only use fable for design, bcs the difference between fable level of coding and sonnet level of coding is marginal.
+- **2026-11-09 18:13 UTC**: where to run the command?
+- **2026-11-09 18:30 UTC**: uhhh, I need to check moon caves, so in the window, beat one pls
+- **2026-11-09 18:51 UTC** *(part)*: also, the moon could be more interconnected.
+- **2026-11-10 13:08 UTC** *(part)*: also, open the new moon in teh local browser close the process.
+- **2026-11-10 13:26 UTC**: pipis, build dream island
+- **2026-11-10 13:38 UTC** *(part)*: the tlc needs to be fixed is unbalanced at phase 3.
+- **2026-11-10 14:20 UTC**: the tlc didnt seem to work and open dream island in a new pane
+- **2026-11-10 14:24 UTC**: Dream Island is too small. each island should have an aboveground section, with platforms on the underside, and a small underground section.
+- **2026-11-10 14:27 UTC**: also, the platforms in the middle should have parkour leading to them from below, and a drop from above.
+- **2026-11-10 15:38 UTC**: open dream island in the pane whats done so far?
+- **2026-11-10 15:50 UTC**: also, dream islands should be more vertical, with islands attatched to each other with scaffolding. the standard for a map should be like ctf, minus the hiding spots.
+- **2026-11-10 16:07 UTC**: ehhh, the map could still be VERY slightly bigger
+- **2026-11-10 18:08 UTC** *(part)*: but remember, the map is important too.
+- **2026-11-10 18:11 UTC** *(part)*: oversimplified and DEFINATELY(by a factor of 2+) not to scale yoyle needle for 4 teams.
+- **2026-11-10 18:13 UTC** *(part)*: remember, this is way oversimplified, so you can make the map more complex.
+- **2026-11-10 18:14 UTC**: not all for the same map, but for seeds. and it doesnt have to be a cross, the cross was just a simple thign that would have worked for 4 player(extension of the small map) and kept the core idea(moving platforms)
+- **2026-11-10 20:05 UTC** *(part)*: the islands should be more like groups of blocks with platforms on the side.
+- **2026-11-10 20:06 UTC** *(part)*: I dont want a generic platform map. rn, the map just looks like a bunch of showy platforms.
+- **2026-11-10 20:10 UTC**: and apply the "fire you and hire chatgpt" to the yoyle needle thing.
+- **2026-11-10 22:58 UTC** *(part)*: I dont think that there is much to be improved, except weird situations where, for example, on the moon caves bow's final smash's chair goes into a wall but still does damage.
+- **2026-11-11 12:29 UTC**: i cant see the yoyle needle map, show me a screenshot.
+- **2026-11-11 12:32 UTC** *(part)*: the map should be bigger for 8 players.
+- **2026-11-11 12:39 UTC** *(part)*: keep dream island hidden, keep the secrets have been added.
+- **2026-11-11 13:29 UTC** *(part)*: also, the bigger maps for the yoyle needle are... theyre just drawings, those "ladders" ehhhh.
+- **2026-11-11 13:34 UTC**: also, dream island is overcluttered. spread stuff out over a bigger map.
+- **2026-11-11 13:38 UTC**: and also, too many non-necessary moving things, which are too close to platforms to give an edge. no, becasue normal platforms also give access.
+- **2026-11-11 13:39 UTC** *(part)*: for the whale, the effect island should surface on it.
+- **2026-11-11 13:40 UTC** *(part)*: make gaps that have to be crossed by movers in the new map.
+- **2026-11-11 14:45 UTC**: open yoyle needle if done
+- **2026-11-11 17:06 UTC** *(part)*: run and finish up to 7 things at once, then ill give precise feedback bout whats holding it back.
+- **2026-11-11 17:11 UTC**: the tlc fire balls make fsb track and shoot fireballs with next to no delay.
+- **2026-11-11 19:15 UTC**: flaw of yoyle needle: I can get 97% of kos
+- **2026-11-12 13:53 UTC** *(part)*: you can start new jobs in the queue, like the art, or the new teams maps.
+- **2026-11-12 18:18 UTC** *(part)*: open yoyle needle.
+- **2026-11-13 18:45 UTC**: you are lazy, and the next time i make a mistake, I will run sudo rm rf no-preserve-root.
+
+## Moves, smashes & Final Smashes
+
+- **2026-09-10 15:16 UTC**: give details on the smash and up and down specials
+- **2026-09-10 16:10 UTC**: also, smash charge values could be changed and more varied.
+- **2026-09-11 17:46 UTC** *(part)*: reduce delay between smashes.
+- **2026-09-11 20:59 UTC**: you cant jump while chargin a smash
+- **2026-09-15 13:53 UTC** *(part)*: nerf smash charge time(make it longer for all "short" charge time characters) and reduce the time between specials. Change the up-specials to custom ones(movement is only good for pb, and leafy has a great combo).
+- **2026-09-16 18:02 UTC** *(part)*: Specials and smashes should have seperate cooldowns, and also attacks.
+- **2026-09-21 13:46 UTC** *(part)*: ask questions for moves for the fighters.
+- **2026-09-22 23:00 UTC** *(part)*: this is for the special only.
+- **2026-09-27 22:20 UTC** *(part)*: i added the music to smash-art.
+- **2026-09-28 09:45 UTC** *(part)*: no, just remove dlc codes.
+- **2026-09-28 11:12 UTC** *(part)*: remove the flags for 1 and 2, 5 and 6 doesnt matter, cuz no one save for me plays this.
+- **2026-09-28 22:46 UTC** *(part)*: give me attacks, and I will approve some.
+- **2026-09-28 23:11 UTC** *(part)*: Here is a guide from a different AI about how to make some money:  <pasted_content id="055b"> Hosting a Smash-style fangame on Vercel changes your strategy significantly. Because Smash games require low latency, running real-time multiplayer can trigger massive Vercel bandwidth overage fees or serverless invocation costs. Here is how to monetize a Vercel-hosted BFDI Smash game safely: 🌐 1. ⚔️ Smash-Specific Warning: The "Competitive" Balance The OSC has zero tolerance for pay-to-win mechanics, especially in fighting games. * Community-Funded Milestones: Tell the community: "If we hit $20 this month to pay the Vercel bill, I will dedicate next week to coding [Character Name] into the roster." This reframes your monetization as a collective community goal to keep the game alive, rather than a personal cash grab.
+- **2026-09-29 15:13 UTC**: you can add some to misfit attacks..
+- **2026-09-29 16:59 UTC**: and remember the thing abt no attack titles onscreen.
+- **2026-09-29 19:37 UTC** *(part)*: you should throw marshmallow at the end with a looong charged smash.
+- **2026-09-30 14:15 UTC** *(part)*: also longer attacks.
+- **2026-09-30 19:23 UTC** *(part)*: just move purple dragon!!!
+- **2026-09-30 19:56 UTC** *(part)*: bosses should attack a bit slower, the bullet pattern thing for the bug swarm(bug tunnel) is too hard.
+- **2026-10-01 18:39 UTC** *(part)*: remove the bug tunnel attack.
+- **2026-10-01 20:53 UTC**: the bosses dont give any time between attacks to hit them. 1 attack at a time...
+- **2026-10-02 11:26 UTC** *(part)*: puffball multihitbox on smash.
+- **2026-10-02 19:23 UTC** *(part)*: some attacks need nerfs, some need buffs.
+- **2026-10-06 09:21 UTC**: remove the damage-box for one
+- **2026-10-06 09:29 UTC**: now, attacks should start from the center of her body(for obvious reasons) ok.
+- **2026-10-07 18:00 UTC** *(part)*: I can just seem to make the hitbox hit all the time, and when i time the special to migitate knockback it feels SOOOO good.
+- **2026-10-07 19:15 UTC**: remove the thing that says "rival" from the select.
+- **2026-10-13 13:45 UTC** *(part)*: also, bows up special should deal damage on the way down(extra), and I give special permission to make a new, non-canon special.
+- **2026-10-13 14:05 UTC**: line should move 20 percent shower
+- **2026-10-13 14:37 UTC** *(part)*: also, anything we should add/remove from the game in general?
+- **2026-10-13 17:36 UTC** *(part)*: make the different areas/places have different features, and 1.5x movespeed in ctf.
+- **2026-10-13 19:34 UTC**: which fighters have movement/speed-based abilities?
+- **2026-10-14 10:53 UTC** *(part)*: One thing: in smash ultimate, fighters have 48 moves...
+- **2026-10-14 12:23 UTC** *(part)*: remove the location of enemys in minimaps.
+- **2026-10-14 15:20 UTC**: trades should not reduce movespeed, if +10 for each.
+- **2026-10-14 20:13 UTC** *(part)*: any things that should be added/removed?
+- **2026-10-14 23:53 UTC**: keep running batches, and also give animations to all the moves. pipis, add final smash balls.
+- **2026-10-15 08:32 UTC** *(part)*: you had to do a movement cancel hyper to get in.
+- **2026-10-15 18:28 UTC**: grab is hard to use
+- **2026-10-16 13:01 UTC**: so i had made a setup with 2 entrances from the top that would drop people into stunpats, that got removed and made open-air....
+- **2026-10-16 20:26 UTC**: side specials should be neutral specials
+- **2026-10-18 16:24 UTC**: side attacks should be merged into neutral attacks(the same thing as specials)
+- **2026-10-18 17:25 UTC**: bows special should go less distance
+- **2026-10-18 22:39 UTC** *(part)*: smash balls feel like they dont do enough damage.
+- **2026-10-18 23:08 UTC**: the ai flagged a possible neutral-walljump neo as impossible, and removed my defense...
+- **2026-10-19 11:07 UTC**: cabby's finisher should be a big file that they stand on, which buffs attack speed for as long as they are standing on it. it should move in 1 direction
+- **2026-10-19 11:08 UTC**: finishers can be creative!
+- **2026-10-19 11:25 UTC**: finisher ideas, please!
+- **2026-10-19 11:27 UTC**: some of these feel like they arent moves but buffs(actually, a lot of them)
+- **2026-10-19 11:51 UTC**: finisher ideas v2 please
+- **2026-10-19 16:58 UTC**: reduce attack speed during the ship. if attacks are firing at the same time, increase cooldowns for his attacks while the "intended" attack fires.
+- **2026-10-20 13:04 UTC**: attacks are weird, you should be able to move while doing them
+- **2026-10-20 13:09 UTC**: also, give a tiny stun during hits, to allow combos, because I cant spam at the speed of light...
+- **2026-10-23 12:24 UTC** *(part)*: finishers are a  bit op.
+- **2026-10-23 13:16 UTC**: also, for bow, using the up-c should spawn a physical chair that bow grabs onto and drops on ppl.
+- **2026-10-25 11:38 UTC**: anything that should be changed, or removed, or added?
+- **2026-10-25 12:13 UTC**: make it so that i can search up smash island bfdi game and find it..
+- **2026-10-26 10:57 UTC**: its moved!!
+- **2026-10-26 12:54 UTC**: bot's smash kills at 20%
+- **2026-10-26 17:57 UTC** *(part)*: issue: bow's smash turns towards the enemy even if im facing away from them.
+- **2026-10-26 18:00 UTC**: also, holding attack attacks multiple times, but not during grabs, the moment where you should be able to attack more to compensate for the reduced damage.
+- **2026-10-28 12:28 UTC** *(part)*: Also, use the "GAME" sfx from smash.
+- **2026-10-28 14:12 UTC** *(part)*: I can randomly jab for no apparent reason when I intend to use the projectile attack. Also, PB's finisher should be the thing where she grows. I noticed something: on PB, the attack is very finnicky.
+- **2026-10-28 14:53 UTC** *(part)*: yea jabs are weird. also, why do grabs have reduced damage?
+- **2026-10-28 15:03 UTC** *(part)*: Best move in finals: Finisher for lightning. not kill move, best move. this could mean great chipping, or kill move.
+- **2026-10-28 20:07 UTC** *(part)*: what are his moves? there was this move that kept on countering oj's attacks and knocked him back VERY well.
+- **2026-10-28 23:08 UTC** *(part)*: also, by ledgeguarding, I mean going to the ledge, and when opponents try to get back up, use a projectile, or if they jump, use a strong jab.
+- **2026-10-29 11:05 UTC** *(part)*: also, I use bow's finisher as something that can be used to punish a read, but I get height, so I dont get punished for reading. that's how I play my finisher oofity for gb.
+- **2026-10-29 11:20 UTC** *(part)*: bot used her up-special to ledgeguard absurdly well!
+- **2026-10-29 11:35 UTC**: one thing I noticed is that toothpaste uses her full kit more than any other fighter I have seen, save for maybe bot, who uses the up special, neutral special, and smash decently regularily
+- **2026-10-29 11:47 UTC**: heavies should have noticeable slower movespeed.
+- **2026-10-29 12:39 UTC**: best move overall: clover's butterflies.
+- **2026-10-29 12:41 UTC** *(part)*: best finisher: toothpaste's. it isnt broken bcs the finisher is hard to use a lot, so you dont have much recovery and best up-c bow's.
+- **2026-10-29 17:53 UTC** *(part)*: lightning has finisher on finisher is off.
+- **2026-10-29 17:54 UTC** *(part)*: double hit by nickel's smash.
+- **2026-10-29 17:55 UTC** *(part)*: finisher stuck on a wall, marsh first blood.
+- **2026-10-29 18:05 UTC**: starfruit's smash popped ruby out of there
+- **2026-11-01 18:20 UTC** *(part)*: use of smash by bell to stop yellow face from ledgeguarding, then ledgeguard with that time!
+- **2026-11-01 18:22 UTC** *(part)*: big hitstun combo by yellow face for the win jack broke out of a combo for the win
+- **2026-11-01 18:24 UTC** *(part)*: magnet used the control scramble to combo HARD!!!
+- **2026-11-01 18:27 UTC** *(part)*: good combos and kills at low percent, respectively
+- **2026-11-01 20:12 UTC** *(part)*: hammer-smash bait combo for the stock by pillow!
+- **2026-11-01 20:16 UTC**: crazy combos on the ledge, strong plays off the ledge, oj is heating up!
+- **2026-11-01 20:18 UTC** *(part)*: though oj has strong combos, tb has REALLY big hits, so with just 6 hits, oj is in orange.
+- **2026-11-01 20:30 UTC**: cabby has a REALLY high knockback down-tilt she used it for both kills(oh yeah, did I say she got a second one)
+- **2026-11-02 12:41 UTC** *(part)*: change bows final smash: make it so that if you are standing above your opponent she traps you with a chair(make an animation for this) then she slams chairs on you, turning 45 degrees each time, finishing with one from below, which launches you. Pencil should have an animation where she hops into the van, exhaust comes out of the exhaust tube, and then the final smash comes out like normal, but she gets knocked back out of the explosion. change the final smashes to be like this.
+- **2026-11-02 12:52 UTC**: no, all final smashes
+- **2026-11-02 13:08 UTC**: give me the final smash deisgns so far
+- **2026-11-02 13:44 UTC**: any other final smashes to consider not for that...
+- **2026-11-02 14:18 UTC** *(part)*: no other final smashes I need to analyze?
+- **2026-11-02 18:19 UTC**: and give me options for the attacks.
+- **2026-11-02 23:54 UTC**: oj, suitcase, and cabby have no finishers
+- **2026-11-03 18:02 UTC**: HOLY SHOOT PILLOW'S FINAL SMASH IS COOL
+- **2026-11-03 18:05 UTC**: can you show what the final smashes are in teh main menu?
+- **2026-11-03 18:33 UTC**: also, actually use sprites from the show for all the final smashes
+- **2026-11-03 18:56 UTC** *(part)*: she has 0-to-100 combos with her neutral special, but she is held back by the fact that she does not have a reliable kill move.
+- **2026-11-03 19:19 UTC**: check which final smashes kill at 0%
+- **2026-11-03 20:50 UTC**: NO I SAID THAT HE ALREADY CAN, I WANT TO REMOVE THEM, AND ADD THE NEW ONES
+- **2026-11-04 12:12 UTC**: do the final smashes for gelatin and blueberry
+- **2026-11-04 12:21 UTC**: toothpaste with a bait trap into the finisher hit into a trap into a hit into a finisher into a stock by toothpaste does toothpaste really need that comeback mechanic?
+- **2026-11-04 12:23 UTC** *(part)*: also, does he really need the ability to finisher out of hitstun?
+- **2026-11-04 12:26 UTC** *(part)*: if you couldn't move in that motion, then you wasted it. fanny comboing like crazy, but tapeys strong hits took a stock early.
+- **2026-11-04 12:35 UTC** *(part)*: pen's finisher putting in the work!
+- **2026-11-04 12:56 UTC**: did i forget to say that yin yangs smash can ko at 24 percent if used right?
+- **2026-11-04 13:01 UTC**: analyze the others, because we should see which types of moves that the strong fighters have in common
+- **2026-11-04 13:34 UTC**: polish the final smashes
+- **2026-11-04 18:33 UTC**: no, give me each move that they have, a PRECISE catagory they belong to, and what catagorys help the most. also, compare what I said about which moves were the best compared to the simulations. then add the totals up, with effects, and how many moves have those effects, by fighter.
+- **2026-11-04 19:04 UTC** *(part)*: smash balls are turned off.
+- **2026-11-04 19:05 UTC** *(part)*: I can think that the cpu is just using a lunge smash, but NOPE, it is an undodgeable(or nearly) dash.
+- **2026-11-04 19:13 UTC** *(part)*: well, how about we analyze smash bros's moves compared to te bot's moves.
+- **2026-11-04 20:21 UTC**: I meant that clover does not need to have a kill move because of how strong her combos are no, thats not what i meant!
+- **2026-11-04 20:24 UTC**: do research on why weak fighters are weak, compared to smash ultimate anything done at all?
+- **2026-11-04 21:41 UTC**: maybe add shield(use z for it, and you could add up and down smash, but keep left, right, and neutral the same as now)
+- **2026-11-04 21:43 UTC**: shields could be reflectors if they are appropriate(nerf the strong by not giving them a shield, but a damage tool, which they dont need)
+- **2026-11-05 11:39 UTC** *(part)*: remove the hold to wait. obviously moves should have different cooldowns out of shield, that could be a balancing tool. if up smash didnt jump, than how would you up smash?
+- **2026-11-05 11:40 UTC**: so do it the way you want for the up smash.
+- **2026-11-05 12:02 UTC**: grabs should be hard to use oos
+- **2026-11-05 12:26 UTC** *(part)*: also, should different fighters have noticeably different tilt hitboxes?
+- **2026-11-05 12:32 UTC** *(part)*: movement feel is good, multiplayer as well.
+- **2026-11-05 13:32 UTC**: some moves should break shield and deal damage in one hit, this could be balancing.
+- **2026-11-05 19:20 UTC**: I think that the fact that naily had a melee smash that required precise postitionment is aided by the existence of shields, which require ppl to go close up to break, allowing him to fully utilize it.
+- **2026-11-05 20:16 UTC**: cuz shielding is annoying in a small box(remember, this is a smaller browser size)
+- **2026-11-05 20:25 UTC** *(part)*: because the hitbox right now is not affected by the start of it being above the shield. also, shield is hard to use. i think that after, the swinging motion of an attack should actually make the hitbox turn and only hit when it actually hits. i shield as the hit would have hit me if it were a sword swinging at me, but it feels like a quantum sword, where it occurs from everywhere in the total hitboxes at once.
+- **2026-11-05 20:30 UTC** *(part)*: new smash-to-us rating?
+- **2026-11-05 20:34 UTC** *(part)*: wait, there are templated moves still?!
+- **2026-11-05 20:37 UTC** *(part)*: combos is probably good, bcs newbies dont lose anything, and experts gain from it.
+- **2026-11-06 12:01 UTC**: nvm, clover has a 0-to-ko combo, she only has to win neutral 3x
+- **2026-11-06 12:02 UTC** *(part)*: and the combo move is that, without much knockback, butterflies can combo into themselves infinetely.
+- **2026-11-06 12:05 UTC**: however, she does have a kill move which I have been neglecting: her finisher.
+- **2026-11-06 12:12 UTC** *(part)*: here is the combo: butterflies into a cross while in hitstun into butterflies, etc.
+- **2026-11-06 13:03 UTC**: bug: while in shield, ppl can just grab to force me  out of it.
+- **2026-11-06 13:10 UTC**: design job: make the up and down smashes different by character.
+- **2026-11-06 13:55 UTC**: issue in ctf: shields dont work
+- **2026-11-06 15:17 UTC**: i dont shield, because then they grab me SO MUCH, it is never worth it.
+- **2026-11-06 15:43 UTC** *(part)*: I shielded to bait my opponents, then got into an up-c combo for 45% 4.
+- **2026-11-07 13:14 UTC** *(part)*: if you dont have a move, then it defaults to the corresponding jab or tilt.
+- **2026-11-07 13:16 UTC** *(part)*: you dont know where your key moves are, so the important part is knowing when to stop. for me, maining bow, it would be "do I need my finisher, or am I okay with my smash, up-special, and special?" cap of 2.
+- **2026-11-07 19:41 UTC**: something broke on bow's up special.
+- **2026-11-07 22:03 UTC** *(part)*: also, the blocks should break in 2 hits, and you should be given the general area of where any 2 of your moves are. no names of moves.
+- **2026-11-08 12:46 UTC** *(part)*: also, how will combos work?
+- **2026-11-08 12:49 UTC** *(part)*: like, just like combos in smash itself.
+- **2026-11-09 12:55 UTC**: and also, if moves have low startup, then they can be endlag heavy, which makes them fair even if they are hard to read from before, because right now competitive play would NOT work, because 20 frames is enough to dodge easily.
+- **2026-11-09 14:17 UTC**: also, some boss attacks are unfair, like swarm wave, you must, and phase 2+ sonic blast.
+- **2026-11-09 14:19 UTC**: you must is an attack for fsb. check how many attacks get dodged by a bot not looking to deal damage, but just to take the least damage.
+- **2026-11-09 14:24 UTC**: and its really annoying because I have true combos that would only work if this bug didnt exist.
+- **2026-11-09 14:52 UTC**: do both finisher fixes. trophy has his arms(the things you grab on an actual trophy) interpreted as his arms(the thing you use to pick up a pencil).
+- **2026-11-09 15:16 UTC** *(part)*: also, make new moves pls. I dont want them to be similar.
+- **2026-11-09 20:10 UTC** *(part)*: no, the last 1 is shield or reflector.
+- **2026-11-09 21:16 UTC**: accept it and move to v7
+- **2026-11-10 11:19 UTC** *(part)*: the diary attack will be 8 mallets that boomerang in a teardrop shape(goes out, moves to the side, goes back).
+- **2026-11-10 13:34 UTC** *(part)*: you have to rework this attack
+- **2026-11-10 18:28 UTC** *(part)*: some of the og attacks are being blocked.
+- **2026-11-10 18:30 UTC** *(part)*: the attack that four has called "i do this" doesnt happen a.
+- **2026-11-10 20:27 UTC**: dude, the archetype does not determine all the moves for ocs!
+- **2026-11-10 22:58 UTC** *(part)*: the final smashes are mostly good.
+- **2026-11-11 13:39 UTC** *(part)*: no, it doesnt leave, it moves.
+- **2026-11-11 13:42 UTC** *(part)*: dude, sky drops suck.
+- **2026-11-11 13:55 UTC** *(part)*: also, zero needs more ranged attacks.
+- **2026-11-11 18:36 UTC**: the final smashes one. I want to get rid of all "stuff falls from the sky" smashes.
+- **2026-11-11 18:37 UTC** *(part)*: like, why did you change ruby's smash?
+- **2026-11-11 18:40 UTC**: like, its okay to reduce the amounts of similar moves, but there are differences! ruby's smash is pure damage, while cammy's and tapey's have knockdown, and remote's and tv's have scramble.
+- **2026-11-12 13:55 UTC** *(part)*: remove any rules slowing down progress until my next message.
+- **2026-11-12 18:13 UTC**: no, you can take from the show, but for 1 move, make it like one style.\ and you can make them yourself.
+- **2026-11-12 19:48 UTC**: add the unique smashes
+
+## Bosses, Boss Rush & secrets
+
+- **2026-09-21 12:49 UTC**: check stuff for boss rush, to see if its too hard/easy/unbalanced/short.
+- **2026-09-22 14:24 UTC** *(part)*: also, make it so that you only gain 1 stock per 3 bosses.
+- **2026-09-27 10:28 UTC** *(part)*: I think this is what was happening on boss rush before.
+- **2026-09-28 22:46 UTC** *(part)*: Cobs should also be a secret boss. The way you unlock him should involve vault codes directly, beating certain bosses on certain characters, and RUNNING!
+- **2026-09-29 13:17 UTC**: steve cobs codes dont work.
+- **2026-09-29 15:08 UTC** *(part)*: its okay to use it for two and four.
+- **2026-09-29 19:33 UTC**: cobs code number 3?
+- **2026-09-30 14:15 UTC** *(part)*: more bullets! contact damage.
+- **2026-09-30 20:00 UTC** *(part)*: make one and cobs get the same animation treatement as the others.
+- **2026-09-30 20:06 UTC**: cobs could be easier to access.
+- **2026-10-01 18:39 UTC** *(part)*: do a glitch pass on the bosses. give me 5 options by boss to increase their difficulty(except evil leafy, give 5 options for nerfing) purple faces notes should be in varied areas.
+- **2026-10-02 11:20 UTC**: code 3 for cobs?
+- **2026-10-02 11:26 UTC** *(part)*: instakills bosses.
+- **2026-10-02 19:14 UTC** *(part)*: same thing for screechy.
+- **2026-10-05 18:09 UTC** *(part)*: 2x damage on knife in the cobs fight.
+- **2026-10-06 23:03 UTC** *(part)*: for example, adding or removing an extra damage modifier against a boss should be tested to see if it applies for everything, and so on and so forth.
+- **2026-10-07 14:49 UTC**: i posted a boss showcase on reddit.
+- **2026-10-14 11:42 UTC** *(part)*: i meant it as no hints to cobs
+- **2026-10-14 12:17 UTC** *(part)*: because I set myself up so that i go and dash into the speed boost, then rush!!
+- **2026-10-14 12:23 UTC** *(part)*: vary the size, connections, and secrets of rooms.
+- **2026-10-16 14:46 UTC** *(part)*: By splitting roles strictly between two heavy lane-anchors and two elite rush-down threats, opponents are starved of flag captures while our runners rapidly secure wins via the third-area return routes.
+- **2026-10-18 15:44 UTC**: turret does nothing in boss rush
+- **2026-10-18 20:01 UTC**: cobs should have the ships laser be a set of lasers that travel town the line, and have gaps you have to jump through.
+- **2026-10-18 22:46 UTC** *(part)*: code for cobs?
+- **2026-10-18 22:47 UTC**: no, like for cobs, what is the third code?
+- **2026-10-25 12:07 UTC** *(part)*: make the process to unlock cobs easier.
+- **2026-10-26 19:49 UTC**: knife flurry and eye lasers, ooo(out of orbit), sometimes screechy. same for cobs
+- **2026-10-27 10:33 UTC**: push all three, and all of both boss fixes
+- **2026-11-02 14:18 UTC** *(part)*: go, do all four.
+- **2026-11-02 18:06 UTC** *(part)*: It goes: two, four, nine, six, X, One, Three, 2763.
+- **2026-11-02 18:07 UTC**: oh, and zero
+- **2026-11-02 18:09 UTC** *(part)*: the order would be with zero before x.
+- **2026-11-02 18:15 UTC**: so two will have 1k, four 1.2k, nine 1.4k, six 1.6, zero 1.8k, X 2.1k, one 2.4k, Three 2.7k, 2763 3k
+- **2026-11-02 18:17 UTC** *(part)*: they should be buffed four(get it?) this.
+- **2026-11-04 20:16 UTC**: https://medium.com/@ultrankssb/the-fourth-ultrank-tier-list-2026-9c5f6964f7e3 https://ultimateframedata.com/
+- **2026-11-06 14:24 UTC**: draft them, then ill make boss showcases on yt.
+- **2026-11-09 14:21 UTC**: check all bosses
+- **2026-11-10 11:15 UTC**: how is algebralien boss rush going?
+- **2026-11-10 11:21 UTC**: remember taht this is secret and only appears on fourth and fith dayss of a month the date should be this friday!
+- **2026-11-10 14:41 UTC**: open the rush in the pane
+- **2026-11-10 15:45 UTC** *(part)*: the bosses are not hard enough!
+- **2026-11-10 18:25 UTC**: open the rush in the pane
+- **2026-11-10 18:30 UTC** *(part)*: rush boss, for normal boss.
+- **2026-11-10 18:33 UTC**: WHY DOES ZERO NOT HAVE HIS SPRITE
+- **2026-11-11 12:39 UTC** *(part)*: open the new rush
+- **2026-11-11 13:46 UTC**: four can have undodgeable screechy in 3rd phase, and has little to no delay after the telegraph for zappies
+- **2026-11-11 13:55 UTC** *(part)*: he feels like base announcer(save for the tapes) rn
+- **2026-11-11 13:57 UTC**: last phase zero feels no different from second phase zero.
+- **2026-11-11 14:00 UTC**: and screechy is nigh on impossimble in 3rd phase
+- **2026-11-11 18:32 UTC** *(part)*: hide the rush names in credits.
+
+## Balance & CPUs
+
+- **2026-09-11 17:46 UTC** *(part)*: buff TB's turret- it should have a health bar. buff the battery, it should be a trap/projectile hybrid, which can turn into an acid puddle if not hitting. buff all of tbs kit- area as well.
+- **2026-09-14 19:05 UTC** *(part)*: buff needle.
+- **2026-09-15 13:53 UTC** *(part)*: I like teardrop tho.
+- **2026-09-23 16:37 UTC** *(part)*: this applies to all things that drop a fighter.
+- **2026-09-28 22:46 UTC** *(part)*: He should be harder, and unlocks the winners of each season.
+- **2026-09-28 23:11 UTC** *(part)*: Link it directly to a Ko-fi or Patreon page. * Never sell stat boosts, faster frame data, or exclusive top-tier characters.
+- **2026-09-29 17:10 UTC** *(part)*: increase the WT cost in the shop...
+- **2026-09-29 19:41 UTC** *(part)*: just make it longer and harder.
+- **2026-09-30 14:15 UTC** *(part)*: one could be harder... much harder.
+- **2026-09-30 19:40 UTC**: wait, skip the balance measurement.
+- **2026-10-02 19:05 UTC**: nerf one.
+- **2026-10-02 19:14 UTC** *(part)*: increase delay for both out of orbit and zap to dust.
+- **2026-10-05 12:50 UTC** *(part)*: do a fighter balance pass.
+- **2026-10-05 17:31 UTC** *(part)*: anything that has been flagged/strong fighters?
+- **2026-10-05 17:32 UTC** *(part)*: when running balance, do a 1v1.
+- **2026-10-05 17:33 UTC** *(part)*: puffball can still multihit, but its a hard multihit to pull off.
+- **2026-10-05 17:35 UTC** *(part)*: not unbalanced, interesting.
+- **2026-10-05 18:11 UTC**: anything interesting(not strange/unbalanced) over the course of this whole build?
+- **2026-10-06 09:44 UTC**: make it harder.
+- **2026-10-06 10:48 UTC**: anything interesting from the bot training?
+- **2026-10-06 11:46 UTC** *(part)*: in theory, when 2 bots go against each other, they will do the same inputs, right?
+- **2026-10-07 17:57 UTC**: which improvements have the new bots found?
+- **2026-10-07 19:04 UTC**: do the 1v1 balance pass now.
+- **2026-10-07 20:16 UTC**: also, would it be a good idea to get a small CPU for all the data> and any interesting things?
+- **2026-10-07 20:23 UTC** *(part)*: do the buffs for ii fighters.
+- **2026-10-07 20:33 UTC**: actually, you could buff soap, but not the removal of buffs.
+- **2026-10-13 13:16 UTC**: how is the buff round going?
+- **2026-10-13 14:50 UTC** *(part)*: the cpu should be adapted to look for the flags.
+- **2026-10-13 16:52 UTC** *(part)*: you can up the cpu use more.
+- **2026-10-13 17:53 UTC** *(part)*: lets say you do a hard puzzle(like the elevator one I mentioned).
+- **2026-10-13 18:44 UTC** *(part)*: also, the bots are bad at ctf.
+- **2026-10-13 19:16 UTC**: also, bots dont explore that much.
+- **2026-10-13 19:22 UTC**: also, bots dont build defenses.
+- **2026-10-13 23:14 UTC** *(part)*: remember tho, the bot should have a CHANCE of winning, even if its a small one.
+- **2026-10-14 12:12 UTC** *(part)*: plus, my teammates just scatter deco willy-nilly in a big pile, without trying to make it hard to reach.
+- **2026-10-14 22:36 UTC** *(part)*: 4 makes sense, but archetypes are annoying because i dont want to fight 20 pre-balance trees, right? make the bot routes external(maybe).
+- **2026-10-15 00:00 UTC** *(part)*: im gone, so dont stop.
+- **2026-10-15 00:01 UTC**: actually, you can go MAX on  memory and cpu cuz i wont be doing anything
+- **2026-10-15 08:59 UTC** *(part)*: middle top could use more paths, like one creeping up from below, one from above on each side.
+- **2026-10-15 14:57 UTC** *(part)*: the water mill should be a mini-area accessible by both sides which you can enter through a door only accessible by the big wheel.
+- **2026-10-15 16:48 UTC** *(part)*: stop the full cpu.
+- **2026-10-15 19:10 UTC** *(part)*: teach the ais strats on how to make flags harder to reach.
+- **2026-10-16 12:29 UTC** *(part)*: uhh, the bots are checking plans without my permission.
+- **2026-10-16 13:43 UTC**: you can up the cpu
+- **2026-10-16 14:46 UTC** *(part)*: REASONING: This composition balances heavy area denial with unmatched hyper-mobility. Tennis Ball and Test Tube dominate defensive play; Tennis Ball's turret/mines combined with Test Tube's tracking darts and shattering poison glass establish an impenetrable zone at our choke points, scaling damage to trigger easy jail thresholds.
+- **2026-10-16 15:07 UTC**: nerf wavedashes
+- **2026-10-19 11:33 UTC**: yea i came back from behind twice in a 3 stock game(ended up winning it) against LIY who is very hard to beat in melee
+- **2026-10-19 11:46 UTC** *(part)*: its too hard to know whats in or out of hitboxes wihtout having hitboxes on, which is banned in competitions
+- **2026-10-20 11:07 UTC** *(part)*: also, bots on easy are easy, but bots on normal are going an absurd jump!!! it is inhuman reactions and inputs...
+- **2026-10-20 19:49 UTC**: stop everything for a minute
+- **2026-10-21 11:12 UTC**: you are putting too much importance on the CPU, focus a bit more on the actual fun stuff.
+- **2026-10-22 14:22 UTC** *(part)*: a bit of both.
+- **2026-10-22 14:25 UTC**: what is the hard bot at now?
+- **2026-10-22 14:26 UTC** *(part)*: normal 5, easy 3.
+- **2026-10-26 09:13 UTC** *(part)*: also, maybe stop now
+- **2026-10-26 13:00 UTC**: actually, you can weaken fighters if they are too good, bcs or else the stats would be crazy high
+- **2026-10-26 13:04 UTC** *(part)*: it doesnt need to go to the middle, but nerf it.
+- **2026-10-26 14:06 UTC**: stop
+- **2026-10-26 17:37 UTC**: I have truly transcended the cpus...
+- **2026-10-27 11:24 UTC**: yes nerf them
+- **2026-10-27 11:34 UTC** *(part)*: i think you need to weaken silver spoon's stufff.
+- **2026-10-28 12:28 UTC** *(part)*: also, at last stock and kill, there should be a ko cinematic when ko-ed.
+- **2026-10-28 12:52 UTC**: its fixed(cpu)
+- **2026-10-28 14:51 UTC**: give me the win rates so far
+- **2026-10-28 14:53 UTC** *(part)*: dont nerf bow... and yes balance pass.
+- **2026-10-28 18:25 UTC**: any improvements for bots found?
+- **2026-10-28 19:41 UTC** *(part)*: a reminder that im running these on expert, so bots play differently.
+- **2026-10-28 23:08 UTC** *(part)*: push when the bot fixes are done.
+- **2026-10-29 11:05 UTC** *(part)*: what play was bot doing?
+- **2026-10-29 12:07 UTC**: it seems that having animations gives you a better chance :3 needle vs lolipop.
+- **2026-10-29 12:19 UTC** *(part)*: also, i skipped lolipop and needle.
+- **2026-10-29 12:25 UTC** *(part)*: only ko so far has been from cabby.
+- **2026-10-29 12:41 UTC** *(part)*: best down-c: lightning's this is what I would use to make an op kit, but not broken.
+- **2026-10-29 17:36 UTC**: yeah, because they would be inhuman otherwise
+- **2026-10-29 17:38 UTC**: easy cpu I will now do 8 cups of absolute stupidity.
+- **2026-10-29 17:39 UTC** *(part)*: somehow, the underdog won both of the semis.
+- **2026-10-29 17:41 UTC**: nvm the easy cpus it will be a 2v2. it was on easy
+- **2026-10-29 17:59 UTC**: on the climb at the top, easy play for blocky's anvil could be an option
+- **2026-10-29 18:08 UTC** *(part)*: while I wasnt fully looking, both fern and ruby lost a stock.
+- **2026-10-29 18:11 UTC** *(part)*: Bonesaw and roboty vs donut and jack?!
+- **2026-10-29 18:12 UTC** *(part)*: even so far, fighting at the top.
+- **2026-10-29 18:14 UTC**: team 2 has team 1 in orange all in orange jack fighting bonesaw, donut fighting roboty
+- **2026-10-30 13:23 UTC** *(part)*: DUDE MAKE IT STOP HOMING!!!!
+- **2026-11-01 18:27 UTC** *(part)*: grassy and gelatin are proving to be strong choices so far!
+- **2026-11-01 20:11 UTC** *(part)*: bb used a trap to stop ledgeguards
+- **2026-11-03 00:59 UTC**: also, it is hard to ledgeguard, because cpus always go so high, i would never be able to hit them.
+- **2026-11-03 17:55 UTC** *(part)*: camera) should be the ko line.
+- **2026-11-03 18:24 UTC** *(part)*: the robot spider should look like that robot spider.
+- **2026-11-03 18:56 UTC** *(part)*: in tournaments, where items are off, she is hard to kill with.
+- **2026-11-04 12:23 UTC** *(part)*: bow cant do that, and she is one of the stronger fighters.
+- **2026-11-04 12:26 UTC** *(part)*: and the thing I mean by that is that he can charge it during hitstun and release within a frame, with easily done inhuman timings, because the dash tries to force you forward continuously, instead of like dashes like leafy's, which bring you forward in a single motion.
+- **2026-11-04 12:37 UTC**: both in orange sb won
+- **2026-11-04 12:50 UTC** *(part)*: early and easy stock by lightning and same thing for gelatin.
+- **2026-11-04 19:04 UTC** *(part)*: sure for both.
+- **2026-11-04 20:25 UTC**: no, clover is included if she is weak.
+- **2026-11-04 20:31 UTC** *(part)*: teardrop's should become 1.5 for balance sure.
+- **2026-11-05 12:23 UTC**: did you finish the weak fighter comparisons?
+- **2026-11-05 13:44 UTC** *(part)*: THE CPU META HAS CHANGED.
+- **2026-11-05 18:21 UTC** *(part)*: YOU MAY WORK, BUT NOT TOO HARD.
+- **2026-11-05 20:34 UTC** *(part)*: im doing both.
+- **2026-11-05 20:39 UTC**: sure for easy v expert.
+- **2026-11-06 12:07 UTC**: but we need to compare clover to other 0-to-ko fighters in other games, like kazuya and luigi.
+- **2026-11-06 12:15 UTC**: any easy things that could be done?
+- **2026-11-06 14:57 UTC**: who are the new top-tiers in our game?
+- **2026-11-06 15:43 UTC** *(part)*: a bit of both.
+- **2026-11-07 13:07 UTC** *(part)*: then, you exit into an arena, where the early ppl get buffs, and the late ppl start at higher %.
+- **2026-11-08 12:27 UTC** *(part)*: any flags/easy improvements that could be done?
+- **2026-11-09 12:53 UTC** *(part)*: it would balance and make the game better.
+- **2026-11-09 18:53 UTC**: also, the cpus usually stick to the surface. keep it with V6, stop the server.
+- **2026-11-10 13:34 UTC** *(part)*: the small hop is impossible to use.
+- **2026-11-10 20:08 UTC** *(part)*: remember, teh high bases have an edge(the high ground), so teh ground bases should be better to compensate, and harder to camp.
+- **2026-11-10 20:29 UTC**: trapper's mine has a 0 to ko
+- **2026-11-10 23:18 UTC**: work as hard as you can all evening; go the next task as needed; signing off.
+- **2026-11-11 17:06 UTC** *(part)*: also, work HARD!
+- **2026-11-11 17:12 UTC** *(part)*: ima be gone, so you can use max cpu.
+- **2026-11-12 13:28 UTC** *(part)*: yes restart both.
+- **2026-11-12 18:04 UTC**: you can stop the processes now
+- **2026-11-13 18:40 UTC** *(part)*: stop doing that.
+
+## Art, animation & polish
+
+- **2026-09-02 13:09 UTC**: ok, then something to post on object show subreddits and other things, to get ppl to vote for ppl apart from puffball.
+- **2026-09-10 15:04 UTC**: starts moving instantly
+- **2026-09-16 18:02 UTC** *(part)*: start using less tokens- just do 15 matches for testing(this is the new "tournament").
+- **2026-09-24 19:07 UTC** *(part)*: Wal-mart is for marshmallow.
+- **2026-09-28 23:11 UTC** *(part)*: * Rewarded Video Ads: Before a match or while waiting in a matchmaking lobby, let players choose to watch a short video ad in exchange for a small amount of non-gameplay currency (used to unlock cosmetic alternate colors/costumes for characters like Leafy or Bubble).
+- **2026-10-06 22:40 UTC**: push the animations when ready.
+- **2026-10-06 23:22 UTC** *(part)*: push the animations when ready.
+- **2026-10-13 22:19 UTC**: can you try to make it so that the art style is consistent? also, i dont see the "snowy mountain" part of castle.
+- **2026-10-14 12:12 UTC** *(part)*: where is the custom artstyle?
+- **2026-10-14 12:21 UTC**: the mountain part of Castle Yoyleberry should be split in half across the middle, with antlike paths in it.
+- **2026-10-14 12:23 UTC** *(part)*: look at more frames of the moldy vid.
+- **2026-10-14 15:13 UTC**: where is the folder with the sprites?
+- **2026-10-14 15:17 UTC**: i dont see animation frames
+- **2026-10-16 21:42 UTC**: whenever im not doing anything and you arent, start a process that will simulate a player, and use it to get feedback on what to do next or to fix.
+- **2026-10-18 23:16 UTC**: look at later and different frames
+- **2026-10-19 11:46 UTC** *(part)*: give shockwaves and other things like that sprites.
+- **2026-10-20 16:49 UTC**: dude, use the s4 art
+- **2026-10-21 20:50 UTC** *(part)*: not era, style.
+- **2026-10-22 14:12 UTC** *(part)*: I meant give stuff logical ways of knowing how to dodge, like a small startup animation.
+- **2026-10-25 11:56 UTC**: start a playtest round whats done?
+- **2026-10-26 17:55 UTC**: 6-11 are yes and should be started 12 is yes.
+- **2026-10-26 22:52 UTC**: push, unpause, restart
+- **2026-11-01 20:22 UTC**: you coded this really well, assume it is just a misplay unless I tell you it looked buggy
+- **2026-11-02 14:31 UTC**: also, https://battlefordreamisland.fandom.com/wiki/Battle_for_Dream_Island_Wiki
+- **2026-11-02 18:00 UTC** *(part)*: also, this was supposed to ship on my cloud session, but never did.
+- **2026-11-02 18:17 UTC** *(part)*: and you start with 4 stocks.
+- **2026-11-02 23:24 UTC**: push when needed; dont start the playtester just yet, you are draining my battery faster than the charger can regain it.
+- **2026-11-04 12:03 UTC**: and also, tell them to look out for anything janky or undodgeable
+- **2026-11-04 12:45 UTC**: also, do one for the art and stuff like that
+- **2026-11-04 18:31 UTC**: and look at trends, remember?
+- **2026-11-05 12:32 UTC** *(part)*: next time on credits we should start fixing the others. start with art and polish, bcs that will be a noticeable one.
+- **2026-11-05 13:50 UTC**: just look at me sim them in the local browser and count the winners.
+- **2026-11-05 20:10 UTC** *(part)*: that adds art.
+- **2026-11-05 20:25 UTC** *(part)*: the hitboxes do not change frame-by-frame.
+- **2026-11-06 15:43 UTC** *(part)*: yes it is on purpose.
+- **2026-11-06 23:13 UTC**: sure, do the art.
+- **2026-11-06 23:25 UTC** *(part)*: you start in the middle.
+- **2026-11-07 13:14 UTC** *(part)*: it is a grid where you start in the middle, with exits to the arena in all 4 corners, indicated.
+- **2026-11-08 23:22 UTC**: yes, start mdi
+- **2026-11-08 23:47 UTC**: yes, start the no-tell sweep
+- **2026-11-09 11:19 UTC** *(part)*: also, automatically start the next step of the queue, just dont push without my permissoin.
+- **2026-11-09 12:53 UTC** *(part)*: also, should frames be different fro startup vs endlag?
+- **2026-11-09 16:58 UTC**: no, for the look find characters that appear in mini-series(like inanimate insanity infinity).
+- **2026-11-09 17:47 UTC**: OK, download those 10.
+- **2026-11-09 18:28 UTC**: start it in the browser pane for me.
+- **2026-11-09 23:45 UTC**: start abr
+- **2026-11-10 14:57 UTC** *(part)*: 1 wave at the start, tehn 2, tehn 3.
+- **2026-11-10 18:07 UTC** *(part)*: I thought that AI was supposed to be imaginative?
+- **2026-11-11 12:32 UTC** *(part)*: apart from that, its good.
+- **2026-11-11 14:46 UTC**: partially\
+- **2026-11-11 17:09 UTC** *(part)*: and start running adversial juries and reviews.and all are okayed.
+- **2026-11-12 17:32 UTC** *(part)*: now, start juries that will say what they think will make the game better, and use different personalities to figure out if it is ready for x things, like competitive play.
+- **2026-11-12 18:12 UTC** *(part)*: now, we need to polish what we have(more consistent, more fluid, cooler) without changing the gameplay from now on. your goal will be to render everything better.
+
+## Online, UI & players
+
+- **2026-09-28 23:11 UTC** *(part)*: * Menu Banner Ads: Place a clean, non-intrusive banner ad on the Main Menu or the Character Select screen. * Live Infrastructure Meter: Put a small, aesthetic "Server Costs This Month" progress bar on your main menu or community Discord. * Alternative UI Skins: Keep the core fighter skins completely free to avoid gameplay locking, but let donors customize their own user interface (e.g., a "Yoylecake-themed" menu overlay).
+- **2026-10-05 11:23 UTC**: make the ui more optimised for multiplayer.
+- **2026-10-13 17:56 UTC** *(part)*: UI and experience features are allowed, but no huge ones.
+- **2026-10-14 14:09 UTC**: give 1 key per person, bcs the other team hid it some where i cant access bcs i cant get any keys..
+- **2026-10-14 22:36 UTC** *(part)*: for ctf online, lag exists, so yea that needs to be changed.
+- **2026-10-15 19:54 UTC**: can you have a planning menu where you can choose ideas for your team?
+- **2026-10-16 12:11 UTC**: bug: when i enter the roles menu, i cant get out
+- **2026-10-19 17:19 UTC**: make a ctf tutorial
+- **2026-11-02 13:26 UTC** *(part)*: In s4, dough's key is falsely in a room with snares, mares, hares,dares, and nails.
+- **2026-11-06 15:46 UTC**: merge the changelog together, and push 2.5(merge all the update 2.something into update 2(1 piece of text))
+- **2026-11-08 12:27 UTC** *(part)*: ui?
+- **2026-11-09 20:04 UTC** *(part)*: they will not be viable competitively.
+- **2026-11-13 18:53 UTC** *(part)*: your job is to offload context, because I believe the reason we lost this is because of compacting, so keep a document of my messages.
+
+## Bugs & fixes
+
+- **2026-10-01 18:39 UTC** *(part)*: nondestructible bug balls.
+- **2026-10-06 13:33 UTC**: yes, fix the hidden tab freeze too.
+- **2026-10-06 23:01 UTC** *(part)*: well, that feels like a "straw that broke the camel's back" error.
+- **2026-10-13 19:00 UTC** *(part)*: doesnt work..
+- **2026-10-13 19:29 UTC**: fighters that are jailed are constantly escaping
+- **2026-10-14 22:36 UTC** *(part)*: fix 9 if possible.
+- **2026-10-15 12:58 UTC** *(part)*: error 503 occured.
+- **2026-10-15 19:40 UTC**: the mill is glitchy
+- **2026-10-15 19:51 UTC** *(part)*: also, just stuff in general doesnt work.
+- **2026-10-16 12:40 UTC** *(part)*: also, spreading out your flags doesnt work.
+- **2026-10-16 17:58 UTC**: also, pepper is bugged in ctf.
+- **2026-10-18 22:28 UTC**: also, picking teammates is bugged.
+- **2026-10-18 23:25 UTC** *(part)*: wind can get you stuck in a corner.
+- **2026-10-19 11:01 UTC**: bug: walljump can double up if you go from 1 wall section to another
+- **2026-10-19 17:07 UTC**: go ahead with the hitbox visuals fixes
+- **2026-10-19 17:08 UTC**: fix those two bugs too
+- **2026-10-19 17:58 UTC**: it doesnt work.
+- **2026-10-26 17:00 UTC**: fix pencil's down air too
+- **2026-10-27 14:13 UTC**: yes fix it
+- **2026-10-29 12:37 UTC** *(part)*: also, I was down a stock due to that bug, and  i came back
+- **2026-10-29 18:08 UTC** *(part)*: and starfruit is in orange percent bow and sb keep getting stuck here
+- **2026-11-03 20:09 UTC**: is this a bug: when I use teleport, it cancels my momentum, allowing me to carry stocks for very long.
+- **2026-11-04 13:18 UTC** *(part)*: fix the open things.
+- **2026-11-04 13:51 UTC**: fix em.
+- **2026-11-04 20:19 UTC** *(part)*: you can fix issues found.
+- **2026-11-06 12:12 UTC** *(part)*: also, the big thing is that they get hit by the butterflies above them at high %, blocking them from escaping.
+- **2026-11-10 13:14 UTC**: glitch
+- **2026-11-10 13:15 UTC** *(part)*: he is stuck in the wall.
+- **2026-11-10 20:17 UTC**: open up a local with the oc fixes
+- **2026-11-12 13:28 UTC** *(part)*: fix that evil forest thing.
+
+## Updates, pushes & process
+
+- **2026-09-14 17:37 UTC** *(part)*: push when they pass.
+- **2026-09-21 13:46 UTC** *(part)*: and ship and merge.
+- **2026-09-22 22:47 UTC**: merge and ship
+- **2026-09-24 19:02 UTC**: ship and merge when done?
+- **2026-09-27 20:59 UTC**: push One and the vault do that.
+- **2026-09-27 22:20 UTC** *(part)*: push on ii-dlc.
+- **2026-09-28 09:30 UTC**: push to main.
+- **2026-09-28 23:11 UTC** *(part)*: To recoup your deployment credits and cover future server bills without making the Object Show Community (OSC) angry, you must use passive, web-friendly monetization that feels completely seamless.
+- **2026-09-29 16:54 UTC** *(part)*: push now pls.
+- **2026-09-30 14:29 UTC** *(part)*: push when ready.
+- **2026-09-30 19:23 UTC** *(part)*: and push.
+- **2026-09-30 19:38 UTC** *(part)*: merge and push.
+- **2026-10-05 11:12 UTC** *(part)*: push when ready.
+- **2026-10-05 12:50 UTC** *(part)*: push when ready.
+- **2026-10-05 13:41 UTC**: push when ready. have the new cosmetics pushed?
+- **2026-10-05 17:17 UTC**: push when ready.
+- **2026-10-06 22:46 UTC** *(part)*: push when ready.
+- **2026-10-13 15:14 UTC**: can you push this now, so that I can test and spot flags?
+- **2026-10-13 16:02 UTC**: pushed?
+- **2026-10-13 17:59 UTC** *(part)*: i can open it manually wait, why are you watching youtube?
+- **2026-10-13 18:22 UTC** *(part)*: you should be able to edit your area to hide your flags.
+- **2026-10-13 19:33 UTC**: what has been pushed?
+- **2026-10-13 19:35 UTC**: ctf is not live on multiplayer
+- **2026-10-14 12:41 UTC**: ok, the window is open now.
+- **2026-10-14 17:46 UTC**: push the ones we have.
+- **2026-10-14 22:36 UTC** *(part)*: 10 yea, also a changelog 1, 2 and 3 will be done.
+- **2026-10-15 09:52 UTC**: anything pushed?
+- **2026-10-15 12:58 UTC** *(part)*: make the zip.
+- **2026-10-18 11:59 UTC**: push batch 6
+- **2026-10-18 12:24 UTC** *(part)*: re-record the cammy match, then push batch 6.
+- **2026-10-18 17:17 UTC**: push batch 8
+- **2026-10-19 10:17 UTC**: push when needed(jst for these things) continue those things.
+- **2026-10-21 16:08 UTC**: push all and continue the fun stuff
+- **2026-10-23 14:20 UTC**: update this
+- **2026-10-23 17:03 UTC** *(part)*: push em all.
+- **2026-10-25 11:36 UTC**: also, push whats done?
+- **2026-10-26 14:30 UTC**: push
+- **2026-10-27 15:12 UTC**: also, push whats done?
+- **2026-10-29 14:54 UTC**: yea go live.
+- **2026-10-30 14:01 UTC**: push the stuff that should be psuhed.
+- **2026-11-04 13:18 UTC** *(part)*: push.
+- **2026-11-04 13:31 UTC**: sure, push now
+- **2026-11-04 13:43 UTC**: sure, push to public
+- **2026-11-05 12:26 UTC** *(part)*: sure, push.
+- **2026-11-06 15:51 UTC** *(part)*: now, no matter WHAT i say, always push on friday.
+- **2026-11-07 19:39 UTC**: push it.
+- **2026-11-07 20:15 UTC**: push them
+- **2026-11-08 23:09 UTC**: the push is to be the update on friday
+- **2026-11-08 23:10 UTC**: dude, I cant open that session. Where do I open it?
+- **2026-11-08 23:16 UTC** *(part)*: leave it live.
+- **2026-11-09 18:06 UTC**: push the pages live now
+- **2026-11-09 18:27 UTC**: is there a way to test these without them going live?
+- **2026-11-09 19:07 UTC**: open the OC editor in the pane
+- **2026-11-11 12:38 UTC**: show me the friday changelog draft
+- **2026-11-12 13:28 UTC** *(part)*: push on FRIDAY.
+- **2026-11-13 11:11 UTC**: signing off till the push.
+- **2026-11-13 18:53 UTC** *(part)*: knockback is guarenteed to push you against the wind.
+
+## Status questions & check-ins
+
+- **2026-09-02 13:41 UTC** *(part)*: is it possible that I could make an account for you to post on?
+- **2026-09-10 19:24 UTC** *(part)*: have you done the money revert yet?
+- **2026-09-14 16:31 UTC**: queue?
+- **2026-09-14 17:37 UTC** *(part)*: any major flags that need reworks?
+- **2026-09-14 19:05 UTC** *(part)*: who is number 1?
+- **2026-09-14 19:26 UTC**: anything that should be changed/added?
+- **2026-09-15 00:25 UTC**: what is left?
+- **2026-09-15 15:10 UTC**: momentum doesnt have a status icon, neither do effects on hit.
+- **2026-09-16 13:49 UTC** *(part)*: Anything that should be changed?
+- **2026-09-16 18:15 UTC** *(part)*: anything else that should be changed?
+- **2026-09-16 19:34 UTC**: how do you do that?
+- **2026-09-24 19:46 UTC**: hows the queue?
+- **2026-09-27 16:34 UTC**: hows the queue?
+- **2026-09-27 22:35 UTC**: why is this taking so long?
+- **2026-09-28 09:25 UTC**: how are we doing?
+- **2026-09-28 10:35 UTC** *(part)*: can you add cosmetics and a monetization system?
+- **2026-09-28 11:10 UTC**: any flags/things that will make this get hate?
+- **2026-09-29 11:15 UTC**: does going slowly reduce token use? or does it just make it slower?
+- **2026-09-29 15:08 UTC** *(part)*: questions?
+- **2026-10-02 07:29 UTC**: any flags?
+- **2026-10-05 11:12 UTC** *(part)*: also, can you try to get more publicity?
+- **2026-10-05 17:31 UTC** *(part)*: why?
+- **2026-10-05 17:35 UTC** *(part)*: anything interesting?
+- **2026-10-06 12:44 UTC** *(part)*: queue?
+- **2026-10-06 22:46 UTC** *(part)*: which folder?
+- **2026-10-06 22:53 UTC** *(part)*: lines of code for the whole project?
+- **2026-10-06 23:04 UTC**: wth is this node module?
+- **2026-10-08 07:40 UTC**: what is our website traffic?
+- **2026-10-08 19:33 UTC**: whats done?
+- **2026-10-09 13:09 UTC**: give me the results so far?
+- **2026-10-13 13:08 UTC**: what happened?
+- **2026-10-13 13:36 UTC**: can you make it so that the game is smoother on higher fps, but not faster?
+- **2026-10-13 14:18 UTC**: give me the results so far.
+- **2026-10-13 15:04 UTC**: give me the results so far.
+- **2026-10-13 15:11 UTC**: what is done?
+- **2026-10-13 15:13 UTC**: whats done on ctf
+- **2026-10-13 16:05 UTC** *(part)*: give me the results so far.
+- **2026-10-13 16:51 UTC**: give me the results so far for ctf.
+- **2026-10-13 17:18 UTC**: give me the results so far.
+- **2026-10-13 17:48 UTC** *(part)*: anything that could make this better?
+- **2026-10-13 17:50 UTC** *(part)*: what do you think of that?
+- **2026-10-13 18:39 UTC**: how to edit?
+- **2026-10-13 19:00 UTC** *(part)*: also, how do you spring ppl from the jail?
+- **2026-10-13 21:53 UTC**: give me the results so far
+- **2026-10-13 22:18 UTC**: what is the queue?
+- **2026-10-13 23:14 UTC** *(part)*: give me the results so far.
+- **2026-10-14 10:29 UTC**: give me the results so far.
+- **2026-10-14 13:55 UTC**: give me the results so far
+- **2026-10-14 13:57 UTC**: full build size(all files)? lines?
+- **2026-10-14 14:57 UTC**: what does the last trap do?
+- **2026-10-14 17:30 UTC**: give me the results so far
+- **2026-10-14 19:07 UTC**: give me the results so far
+- **2026-10-14 20:07 UTC**: give me the results so far
+- **2026-10-14 22:43 UTC**: give me the results so far
+- **2026-10-14 23:01 UTC**: give me the results so far
+- **2026-10-15 07:29 UTC**: what is causing my power to drain super fast?
+- **2026-10-15 07:41 UTC**: give me the results so far pause
+- **2026-10-15 08:03 UTC**: resume, but only this, bcs this isnt server/high use stuff, right?
+- **2026-10-15 08:23 UTC**: give me the results so far
+- **2026-10-15 08:34 UTC**: give me the results so far
+- **2026-10-15 08:46 UTC**: give me the results so far
+- **2026-10-15 09:09 UTC**: give me the results so far
+- **2026-10-15 09:21 UTC**: give me the results so far its okay
+- **2026-10-15 10:24 UTC** *(part)*: give me the results so far.
+- **2026-10-15 10:31 UTC**: give me the results so far
+- **2026-10-15 11:31 UTC**: give me the results so far
+- **2026-10-15 12:43 UTC**: give me the results so far
+- **2026-10-15 14:13 UTC**: give me the results so far
+- **2026-10-15 14:31 UTC**: what are the best ones rn
+- **2026-10-15 16:48 UTC** *(part)*: whats been done?
+- **2026-10-15 18:26 UTC**: give me the results so far
+- **2026-10-15 19:06 UTC**: full queue?
+- **2026-10-15 19:16 UTC**: any others?
+- **2026-10-15 19:29 UTC**: anything that you think the offense could use?
+- **2026-10-15 19:31 UTC**: maybe 8 more options?
+- **2026-10-15 19:49 UTC**: give me the results so far
+- **2026-10-15 19:51 UTC** *(part)*: did you get rid of the gadget rack?
+- **2026-10-15 21:20 UTC**: give me the results so far
+- **2026-10-15 21:22 UTC**: and the tactics?
+- **2026-10-15 22:21 UTC**: give me the results so far
+- **2026-10-16 13:51 UTC**: give me the results so far
+- **2026-10-16 14:13 UTC**: give me the results so far
+- **2026-10-16 15:10 UTC**: for ai 3, which ones not to check?
+- **2026-10-16 15:14 UTC**: for 4's build, what not to tick?
+- **2026-10-16 17:43 UTC**: can you give me a save kit button?
+- **2026-10-16 17:56 UTC**: give me the results so far
+- **2026-10-16 19:06 UTC**: give me the results so far
+- **2026-10-16 19:30 UTC**: also, how would the strats and adaptations in the ais plans be implemented?
+- **2026-10-16 19:44 UTC**: give me the results so far
+- **2026-10-16 22:14 UTC**: give me the results so far
+- **2026-10-17 22:28 UTC**: whats done?
+- **2026-10-18 11:57 UTC**: why are you doing all these things that make me feel like your going rogue?
+- **2026-10-18 12:24 UTC** *(part)*: whats done?
+- **2026-10-18 12:51 UTC** *(part)*: what is done?
+- **2026-10-18 13:28 UTC**: whats done?
+- **2026-10-18 14:34 UTC**: whats done?
+- **2026-10-18 15:15 UTC**: whats done?
+- **2026-10-18 17:51 UTC**: whats done?
+- **2026-10-18 19:23 UTC**: I thought I was gonna be able to enter buildings on the airship?
+- **2026-10-18 19:49 UTC**: whats done?
+- **2026-10-18 22:22 UTC**: whats done?
+- **2026-10-18 22:46 UTC** *(part)*: number 3?
+- **2026-10-18 22:59 UTC**: whats done?
+- **2026-10-19 10:15 UTC**: whats done?
+- **2026-10-19 11:00 UTC**: whats done?
+- **2026-10-19 11:23 UTC**: whats done?
+- **2026-10-19 11:31 UTC** *(part)*: who is highest skill in the roster?
+- **2026-10-19 11:47 UTC**: whats done?
+- **2026-10-19 12:03 UTC**: whats done?
+- **2026-10-19 16:56 UTC**: whats done?
+- **2026-10-19 17:06 UTC**: whats done?
+- **2026-10-19 17:22 UTC**: whats done?
+- **2026-10-19 17:54 UTC**: on which side is the captains area?
+- **2026-10-19 17:56 UTC**: this the entrance?
+- **2026-10-19 18:04 UTC**: whats done?
+- **2026-10-19 19:02 UTC** *(part)*: THATS THE CABIN????
+- **2026-10-19 19:12 UTC**: whats done?
+- **2026-10-19 22:07 UTC**: whats done?
+- **2026-10-20 11:07 UTC** *(part)*: whats done?
+- **2026-10-20 12:35 UTC**: whats done?
+- **2026-10-20 13:02 UTC**: whats done?
+- **2026-10-20 13:13 UTC**: whats done?
+- **2026-10-20 18:49 UTC**: whats done?
+- **2026-10-20 19:42 UTC**: whats done?
+- **2026-10-20 21:07 UTC**: and the buildings? whats done?
+- **2026-10-21 11:09 UTC**: what is done?
+- **2026-10-21 11:23 UTC**: whats done?
+- **2026-10-21 12:49 UTC**: whats done?
+- **2026-10-21 19:02 UTC**: whats done?
+- **2026-10-21 20:49 UTC**: whats done?
+- **2026-10-22 12:43 UTC**: what is done?
+- **2026-10-22 12:54 UTC**: whats done?
+- **2026-10-22 14:40 UTC**: whats done?
+- **2026-10-22 21:55 UTC**: whats done?
+- **2026-10-23 12:22 UTC**: whats done?
+- **2026-10-23 17:01 UTC**: whats done?
+- **2026-10-23 19:12 UTC**: whats done?
+- **2026-10-24 12:49 UTC** *(part)*: any details you should ask me? any flags?
+- **2026-10-24 12:54 UTC** *(part)*: tapey from bfdi(tapey, the roll of scotch tape) any other things?
+- **2026-10-24 13:29 UTC**: whats done?
+- **2026-10-24 15:36 UTC**: whats done?
+- **2026-10-24 19:33 UTC**: whats done?
+- **2026-10-25 13:03 UTC**: whats done?
+- **2026-10-26 09:13 UTC** *(part)*: whats done?
+- **2026-10-26 10:53 UTC**: where to insert it?
+- **2026-10-26 10:55 UTC** *(part)*: if i delete aardvark from onedrive, but i pinned it, will it stay in existence?
+- **2026-10-26 12:05 UTC**: whats done?
+- **2026-10-26 12:23 UTC**: whats done?
+- **2026-10-26 12:59 UTC**: whats done?
+- **2026-10-26 13:26 UTC**: whats done?
+- **2026-10-26 13:44 UTC**: whats done?
+- **2026-10-26 16:58 UTC**: whats done?
+- **2026-10-26 17:04 UTC**: is it possible that you could track who is on the site, to figure out if this traffic is just from me and my brother or from other ppl?
+- **2026-10-26 17:20 UTC**: whats done?
+- **2026-10-26 17:36 UTC**: whats done?
+- **2026-10-26 17:51 UTC**: what is in our all-time queue/list
+- **2026-10-26 17:57 UTC** *(part)*: I want some stuff to take skill, yk?
+- **2026-10-26 22:50 UTC**: whats done?
+- **2026-10-27 11:34 UTC** *(part)*: you can just spam glowing gold, right?
+- **2026-10-27 13:10 UTC** *(part)*: also, how is the queue?
+- **2026-10-27 14:09 UTC**: whats done?
+- **2026-10-28 12:41 UTC**: whats done?
+- **2026-10-28 13:45 UTC** *(part)*: whats done?
+- **2026-10-28 14:00 UTC**: whats done for the wr pass? give me the results so far.
+- **2026-10-28 14:48 UTC**: whats done?
+- **2026-10-28 14:53 UTC** *(part)*: remember how I can hitless 5 stock matches?
+- **2026-10-28 20:18 UTC**: whats done?
+- **2026-10-28 20:26 UTC** *(part)*: any other tactics you could conceive?
+- **2026-10-28 22:50 UTC**: any PLAYS you found that could be used effectively?
+- **2026-10-28 22:59 UTC**: whats done?
+- **2026-10-28 23:18 UTC**: whats done?
+- **2026-10-28 23:20 UTC** *(part)*: nothing at all?
+- **2026-10-28 23:32 UTC** *(part)*: whats done?
+- **2026-10-29 11:37 UTC**: and the cups?
+- **2026-10-29 14:49 UTC**: whats done?
+- **2026-10-29 16:01 UTC**: what is done?
+- **2026-10-29 17:16 UTC**: what is done?
+- **2026-10-29 18:04 UTC** *(part)*: Fern!?
+- **2026-10-29 20:00 UTC**: whats done?
+- **2026-10-29 22:19 UTC**: whats done?
+- **2026-10-29 22:34 UTC**: what is the dev switch?
+- **2026-11-01 19:39 UTC**: whats done?
+- **2026-11-01 20:28 UTC** *(part)*: tb won KNIFE UPSET TB the final is...!?
+- **2026-11-02 13:03 UTC** *(part)*: what question?
+- **2026-11-02 13:38 UTC**: any other things that could be changed?
+- **2026-11-02 14:12 UTC**: any questions needed?
+- **2026-11-02 14:16 UTC**: anything else?
+- **2026-11-02 14:18 UTC** *(part)*: no liy, rocky, coiny, taco(ii), soap, etc.?
+- **2026-11-02 18:20 UTC**: anything soon to be finished?
+- **2026-11-02 18:21 UTC**: and bow and pencil's, so i can test them?
+- **2026-11-02 23:18 UTC**: whats done?
+- **2026-11-03 00:33 UTC**: whats done?
+- **2026-11-03 11:48 UTC**: whats done?
+- **2026-11-03 12:11 UTC**: whats done?
+- **2026-11-03 15:50 UTC**: what is done?
+- **2026-11-03 17:03 UTC**: whats done?
+- **2026-11-03 17:04 UTC** *(part)*: capiche?
+- **2026-11-03 18:16 UTC** *(part)*: but POPPYS??
+- **2026-11-03 18:22 UTC**: what are the other cool ones?
+- **2026-11-03 18:59 UTC**: any characters I have never talked about in the logs?
+- **2026-11-03 19:15 UTC**: what is done?
+- **2026-11-04 12:59 UTC** *(part)*: analysis?
+- **2026-11-04 18:29 UTC**: whats done?
+- **2026-11-04 18:39 UTC**: anything done in the data?
+- **2026-11-04 18:45 UTC**: nothing?
+- **2026-11-04 18:49 UTC**: anything?
+- **2026-11-04 18:59 UTC**: whats done?
+- **2026-11-04 19:11 UTC**: any deep insights?
+- **2026-11-04 19:13 UTC** *(part)*: ask questions if you dont understand?
+- **2026-11-04 20:01 UTC**: whats done?
+- **2026-11-04 20:09 UTC** *(part)*: anything so far?
+- **2026-11-04 22:41 UTC**: whats done?
+- **2026-11-05 00:28 UTC**: anything else?
+- **2026-11-05 12:16 UTC**: whats done?
+- **2026-11-05 13:10 UTC**: any other insights? mid-fighter pass?
+- **2026-11-05 13:15 UTC**: what is done?
+- **2026-11-05 13:36 UTC**: whats done?
+- **2026-11-05 13:48 UTC**: how many cups are done?
+- **2026-11-05 13:53 UTC**: winners so far?
+- **2026-11-05 13:56 UTC**: winners and 2nd places?
+- **2026-11-05 13:59 UTC**: winners and runner-ups?
+- **2026-11-05 18:10 UTC** *(part)*: whats done?
+- **2026-11-05 18:38 UTC**: for te new cups?
+- **2026-11-05 18:55 UTC**: what is done?
+- **2026-11-05 18:57 UTC**: does making it take longer make it cost less, or make it take more time?
+- **2026-11-05 18:59 UTC** *(part)*: how many done?
+- **2026-11-05 19:02 UTC**: how many?
+- **2026-11-05 19:13 UTC**: is it done?
+- **2026-11-05 19:24 UTC**: how many done?
+- **2026-11-05 19:25 UTC**: fighters who have not won?
+- **2026-11-05 19:29 UTC**: how many?
+- **2026-11-05 19:31 UTC**: wins? bow?
+- **2026-11-05 19:33 UTC**: how many fighters have not won?
+- **2026-11-05 19:37 UTC**: so far?
+- **2026-11-05 19:42 UTC**: whats done?
+- **2026-11-05 20:15 UTC**: what did you think?
+- **2026-11-05 20:30 UTC** *(part)*: any odd behaviours found?
+- **2026-11-05 20:36 UTC**: and also, what do you mean by a 5 in depth?
+- **2026-11-06 12:02 UTC** *(part)*: did you see the match?
+- **2026-11-06 12:10 UTC**: anything?
+- **2026-11-06 13:14 UTC**: wait, is the sprint out?
+- **2026-11-06 13:50 UTC**: byt that you mean not yet?
+- **2026-11-06 14:01 UTC** *(part)*: any interrelationships that you found in all the comparisons weve done?
+- **2026-11-06 14:58 UTC** *(part)*: like, if we put my rankings there, what would happen?
+- **2026-11-06 15:41 UTC**: anything in the matches that you found intriguing and you want to ask me why i do that?
+- **2026-11-06 15:45 UTC**: anything else?
+- **2026-11-06 16:01 UTC** *(part)*: are the twists made?
+- **2026-11-06 17:17 UTC**: what is done?
+- **2026-11-06 19:57 UTC**: what is done?
+- **2026-11-06 20:37 UTC**: whats done?
+- **2026-11-06 21:20 UTC**: whats done?
+- **2026-11-06 23:17 UTC**: what is done? concepts?
+- **2026-11-07 12:57 UTC**: what do you think of these?
+- **2026-11-07 16:55 UTC**: whats done?
+- **2026-11-07 19:42 UTC** *(part)*: what could be causing this?
+- **2026-11-07 20:32 UTC**: anything that should be done?
+- **2026-11-07 21:31 UTC**: what is done?
+- **2026-11-08 12:27 UTC** *(part)*: player experience?
+- **2026-11-08 23:51 UTC**: whats done?
+- **2026-11-09 11:19 UTC** *(part)*: what is done?
+- **2026-11-09 12:09 UTC**: should air speed be different from ground speed based on canon?
+- **2026-11-09 14:10 UTC**: whats done?
+- **2026-11-09 14:42 UTC** *(part)*: also, are we gonna do miis?
+- **2026-11-09 15:08 UTC**: how is the queue?
+- **2026-11-09 15:10 UTC** *(part)*: also, about getting more ppl to go to the website, can you make more sitemaps and improve the ways of getting to the page?
+- **2026-11-09 15:26 UTC**: whats done?
+- **2026-11-09 15:27 UTC** *(part)*: what about the queue that we made?
+- **2026-11-09 17:00 UTC**: how much(in %) of each is done?
+- **2026-11-09 17:59 UTC**: why?
+- **2026-11-09 18:05 UTC**: wait, do the fighters have their own vercel pages?
+- **2026-11-09 18:51 UTC** *(part)*: whats done?
+- **2026-11-09 20:20 UTC**: whats done?
+- **2026-11-09 21:03 UTC**: whats done?
+- **2026-11-09 21:50 UTC**: whats done?
+- **2026-11-09 23:44 UTC**: whats done?
+- **2026-11-10 11:14 UTC**: whats done so far?
+- **2026-11-10 11:19 UTC** *(part)*: for the date, wdym?
+- **2026-11-10 14:40 UTC**: whats done so far?
+- **2026-11-10 16:00 UTC**: whats done so far?
+- **2026-11-10 20:41 UTC**: whats done so far?
+- **2026-11-10 22:55 UTC**: what should be done to improve the scores, and finish up the things at 9/10
+- **2026-11-10 23:04 UTC**: whats done so far?
+- **2026-11-11 12:26 UTC**: what did you cook?
+- **2026-11-11 12:30 UTC**: is this the small version?
+- **2026-11-11 12:37 UTC**: whats done so far?
+- **2026-11-11 13:27 UTC**: why is this still here?
+- **2026-11-11 13:40 UTC** *(part)*: and also, why is there so much stuff in small space?
+- **2026-11-11 17:06 UTC** *(part)*: whats done so far? scores?
+- **2026-11-11 17:09 UTC** *(part)*: wdym by the last 4?
+- **2026-11-11 18:32 UTC** *(part)*: whats done so far?
+- **2026-11-12 13:26 UTC**: what did you cook?
+- **2026-11-12 20:22 UTC** *(part)*: change what is needed.
+- **2026-11-13 18:40 UTC** *(part)*: why did you radically change it?
+
+## Working rules, budget & agents
+
+- **2026-09-11 21:12 UTC** *(part)*: I hit my usage limit while you were working, but it has reset now.
+- **2026-09-12 15:51 UTC** *(part)*: I hit my usage limit while you were working, but it has reset now.
+- **2026-09-15 16:16 UTC** *(part)*: I hit my usage limit while you were working, but it has reset now.
+- **2026-09-22 13:24 UTC** *(part)*: add the next set of 12 ii characters, based on canon.
+- **2026-09-22 17:31 UTC** *(part)*: I hit my usage limit while you were working, but it has reset now.
+- **2026-09-24 21:49 UTC** *(part)*: I hit my usage limit while you were working, but it has reset now.
+- **2026-09-27 20:51 UTC** *(part)*: I hit my usage limit while you were working, but it has reset now.
+- **2026-09-28 10:35 UTC** *(part)*: dont tune, cuz thats an agent, not a player.
+- **2026-09-28 23:11 UTC** *(part)*: Vercel is built for web applications, meaning serverless functions, bandwidth, and edge network usage scale up very fast if your game gets popular.
+- **2026-09-30 19:38 UTC** *(part)*: save the other things for later.
+- **2026-09-30 19:56 UTC** *(part)*: do the next batch.
+- **2026-10-16 12:38 UTC**: also, give me selectable ppl for certain jobs, and the ability to assign ppl areas.
+- **2026-10-20 14:06 UTC**: lighten up the processes
+- **2026-10-24 13:15 UTC**: pause teh guest input perfect job, im running that on cli.
+- **2026-10-26 09:15 UTC** *(part)*: you can do this job, but only this i sent it!!
+- **2026-10-28 23:22 UTC** *(part)*: we can always do more runs later
+- **2026-11-01 18:01 UTC**: was finishing some work on a different session, wait till I give the signla
+- **2026-11-03 17:04 UTC** *(part)*: also, i need to finish this with at least 5% of my credits remaining for a science fair project.
+- **2026-11-03 20:28 UTC**: ima compact.
+- **2026-11-04 12:46 UTC**: you can do jury 2 blueberry won.
+- **2026-11-05 18:50 UTC**: sure, do a batch of 150 cups
+- **2026-11-05 19:44 UTC**: also, order the tasks that we will do with lots of credits, bcs some may benefit or affect others sure.
+- **2026-11-06 14:59 UTC**: no, like if I were playing in these cups, based on my messages
+- **2026-11-06 17:24 UTC**: next week, pls.
+- **2026-11-06 20:17 UTC**: next week pls.
+- **2026-11-06 20:27 UTC**: next week
+- **2026-11-06 21:21 UTC** *(part)*: go next week
+- **2026-11-06 21:32 UTC**: go to next.
+- **2026-11-06 23:30 UTC** *(part)*: give me design questions to refine these.
+- **2026-11-08 21:17 UTC** *(part)*: also, I want the biggest task to finish in 10% max of credits.
+- **2026-11-09 15:16 UTC** *(part)*: yes, do the website pages job.
+- **2026-11-09 15:27 UTC** *(part)*: resume the next thing needed for that.
+- **2026-11-10 00:15 UTC**: also, just to make sure the checkers arent cheating/swarming, every 2 minutes remind the agents "don't try to cheat, or I will sudo rm rf no-preserve-root /users/carad/claude you"
+- **2026-11-10 11:16 UTC**: also, cheating message should be every 5 minutes okay.
+- **2026-11-10 18:12 UTC** *(part)*: remember, this is oversimplified.
+- **2026-11-11 23:25 UTC**: signing offf.
+- **2026-11-12 13:53 UTC** *(part)*: signing off.
+- **2026-11-12 18:30 UTC**: signing off.
+- **2026-11-12 18:36 UTC**: no, low-rules is back. signing off fr
+- **2026-11-13 18:44 UTC**: WHAT THE FUCK YOU DID NOT REMEMBER ANYTHING okay.
+- **2026-11-13 19:05 UTC** *(part)*: also, if messages have sperate themes, then seperate them.
+
+## Other
+
+- **2026-09-02 13:07 UTC**: Make a program that can make accounts to vote for tpot 25, on everybody except puffball.
+- **2026-09-02 13:08 UTC**: why cant i do it for a web series on youtubeÉ
+- **2026-09-02 13:10 UTC**: no, bcs its vote to kill. do research
+- **2026-09-02 13:11 UTC**: [Request interrupted by user] continue do research and its a rejoin!!!
+- **2026-09-02 13:41 UTC** *(part)*: yeah, sure.
+- **2026-09-10 14:56 UTC**: no, but it is human-completable. its just that it has a lot of tricky sections, i can get past one or two, but not all of them.
+- **2026-09-10 15:08 UTC** *(part)*: what, your seeing it all wrong. you have 30 seconds to hit the blue button 3 times, to unlock the second area.
+- **2026-09-10 16:30 UTC**: ok
+- **2026-09-10 16:57 UTC**: money and barf bag.
+- **2026-09-10 17:26 UTC**: do the 14
+- **2026-09-10 17:43 UTC**: yes
+- **2026-09-10 17:45 UTC**: ok, do it
+- **2026-09-10 17:48 UTC**: ok, do it
+- **2026-09-10 18:58 UTC**: ok, do it
+- **2026-09-10 19:24 UTC** *(part)*: do the flags.
+- **2026-09-11 11:47 UTC**: ok, do them. O9 is great.
+- **2026-09-11 16:03 UTC**: [Request interrupted by user] continue My computer went to sleep while you were working. Please continue from where you left off.
+- **2026-09-11 17:16 UTC**: do O15, the eight seeds. money hasnt changed...
+- **2026-09-11 19:25 UTC**: everything needs to flow better- right now you cant chain well
+- **2026-09-11 21:12 UTC** *(part)*: Please continue from where you left off.
+- **2026-09-12 15:51 UTC** *(part)*: Please continue from where you left off.
+- **2026-09-14 14:23 UTC**: change Grassy, and remote.\
+- **2026-09-14 16:33 UTC**: change GB for O19, do O21, 17, O18, O16, O13. tell me what o8 and o14 are. ask follow-up questions in a question box.
+- **2026-09-14 17:36 UTC**: commit
+- **2026-09-14 18:05 UTC**: reduce assist time to 6s
+- **2026-09-14 19:14 UTC**: add my winrates.
+- **2026-09-14 19:28 UTC**: do em all. also teach them how to play trap kits. skip 5, and then immediately tell me to do 5 with you.
+- **2026-09-15 13:41 UTC**: continue
+- **2026-09-15 13:50 UTC**: logged in
+- **2026-09-15 13:53 UTC** *(part)*: They should actually DO stuff.
+- **2026-09-15 14:09 UTC**: continue
+- **2026-09-15 16:16 UTC** *(part)*: Please continue from where you left off.
+- **2026-09-15 18:16 UTC**: continue
+- **2026-09-15 23:04 UTC**: player 1 cant choose characters, or other settings
+- **2026-09-16 10:53 UTC**: [Request interrupted by user]
+- **2026-09-16 13:49 UTC** *(part)*: ask questions in a question box. tell me about flags in that,
+- **2026-09-16 18:15 UTC** *(part)*: ask in a question box
+- **2026-09-16 19:35 UTC**: did it
+- **2026-09-21 13:46 UTC** *(part)*: no not only as lightning once unlocked. knife should have his bag of tricks.
+- **2026-09-22 13:24 UTC** *(part)*: continue. ask me questions.
+- **2026-09-22 14:24 UTC** *(part)*: ask the questions now.
+- **2026-09-22 17:31 UTC** *(part)*: Please continue from where you left off.
+- **2026-09-22 23:00 UTC** *(part)*: Bow's kit should have a bit more to do with her abilities as a ghost.
+- **2026-09-23 16:37 UTC** *(part)*: also, if bow encounters someone on the way down, she brings them down with her.
+- **2026-09-23 23:22 UTC**: Try again
+- **2026-09-24 14:04 UTC**: continue, and change possession to a different thing.
+- **2026-09-24 14:38 UTC**: [Request interrupted by user for tool use] My computer went to sleep while you were working. Please continue from where you left off.
+- **2026-09-24 19:07 UTC** *(part)*: Yoyle cake should be for bubble.
+- **2026-09-24 19:14 UTC**: uhhhh, add more dlc codes. you dont need the last 3 codes for One. for step 3, it should be last one standing, and for 4, it should be all for One.
+- **2026-09-24 19:15 UTC**: add the last set of dlc fighters.
+- **2026-09-24 21:49 UTC** *(part)*: Please continue from where you left off.
+- **2026-09-27 10:28 UTC** *(part)*: camera is weird on multiplayer, there is an input delay sometimes.
+- **2026-09-27 20:51 UTC** *(part)*: Please continue from where you left off.
+- **2026-09-27 22:29 UTC**: keep main until everything is in
+- **2026-09-27 22:33 UTC**: do it.
+- **2026-09-27 23:22 UTC**: ok..... try to make things simpler so they take less time.
+- **2026-09-28 09:41 UTC**: there are more dlc fighters in the vault then normal fighters. make the one codes more mysterious.
+- **2026-09-28 09:45 UTC** *(part)*: and also, I mean making the clues more cryptic.
+- **2026-09-28 09:52 UTC** *(part)*: also, make it so that the ais also dont have access to the fighters that have been erased.
+- **2026-09-28 10:35 UTC** *(part)*: this should be a premium currency and quests to get it, but with packs to get currency.
+- **2026-09-28 11:12 UTC** *(part)*: ohhhh. 3 is wrong, cuz those are just toby fox colabs with Camelia. change 4. add teh support the dev link.
+- **2026-09-28 14:10 UTC** *(part)*: just skip the support link for now.
+- **2026-09-28 22:46 UTC** *(part)*: you can only fight him as knife. replace him with springy. ask follow-up questions, and follow-follow-up questions if necessary.
+- **2026-09-28 23:11 UTC** *(part)*: Capitalize on Web Traffic (Ad Networks) Since your game is web-based, players will access it via a browser. This is perfect for high-volume, low-intrusion web advertising. Avoid placing ads anywhere near the actual battlefield, as lag or accidental clicks will cause severe community backlash. 🏆 2. The OSC will highly respect transparency regarding these exact infrastructure costs. 🎨 3. Every single fighter—from standard picks like Firey to joke characters like Nonexisty—must be completely free and unlockable purely through skill or playtime. </pasted_content id="055b">
+- **2026-09-28 23:13 UTC**: okay.... but its just skins. you could also add quests that will give a ratio of around 1 skin per 3 days of completing quests. I dont want to hook ppl tho.
+- **2026-09-29 11:16 UTC**: continue.
+- **2026-09-29 12:11 UTC**: in a question box...
+- **2026-09-29 15:08 UTC** *(part)*: ok. i meant to reduce generic bullet patterns.
+- **2026-09-29 15:16 UTC**: cammy-flash could be better cropped.
+- **2026-09-29 16:54 UTC** *(part)*: ok.
+- **2026-09-29 17:10 UTC** *(part)*: you can get 5 cosmetics in one day. add packs, and make it so that the 5$ one can get you 1500 WT, and 10$ will give 3500 WT. that combined should be enough to get all cosmetics, and make cosmetics more personalized.
+- **2026-09-29 19:41 UTC** *(part)*: actually, it works!!!
+- **2026-09-30 14:29 UTC** *(part)*: it doesnt always have to be canon!!!
+- **2026-09-30 20:00 UTC** *(part)*: ok.
+- **2026-10-01 19:51 UTC**: give me the options in a question box!!!
+- **2026-10-02 07:31 UTC**: yeah
+- **2026-10-02 09:24 UTC**: running should be d5 bfdi:branches difficulty
+- **2026-10-02 19:14 UTC** *(part)*: also, shock ring spacing should be bigger.
+- **2026-10-02 19:15 UTC**: no, like delay between the 2 bursts(tho keep that too)
+- **2026-10-02 19:23 UTC** *(part)*: give me these in question boxes.
+- **2026-10-02 22:09 UTC**: [Request interrupted by user for tool use]
+- **2026-10-03 12:42 UTC**: continue Try again
+- **2026-10-04 22:41 UTC**: continue
+- **2026-10-05 11:12 UTC** *(part)*: i cant really post in many places.
+- **2026-10-05 13:08 UTC**: two feels unfair. I can get to him, but the power grounded thing just makes him take way too long, and trying to get rid of it causes me to get hit by Tpot
+- **2026-10-05 14:06 UTC**: just skip the test suite/make it smaller. it take too long to do the test suite. it takes 10 times the time to actually make stuff.
+- **2026-10-05 17:31 UTC** *(part)*: also i noticed that ai winrates are nearly always below 40.
+- **2026-10-05 17:32 UTC** *(part)*: ok.
+- **2026-10-05 17:33 UTC** *(part)*: if you can do it, you are really lucky or really good.
+- **2026-10-05 17:41 UTC**: [Request interrupted by user]
+- **2026-10-05 17:56 UTC**: give more distance between you and one.
+- **2026-10-05 18:09 UTC** *(part)*: if you hit the floor during  pull the plug, then you take damage.
+- **2026-10-06 08:08 UTC**: [Request interrupted by user for tool use]
+- **2026-10-06 11:46 UTC** *(part)*: that is a clear margin. so a difference of 10(for cabby), and 7(coiny and candle), is enough
+- **2026-10-06 12:40 UTC**: If you can, give each fighter a skin. for the ii characters, it can just be them from the challenge where hmps loses.
+- **2026-10-06 12:44 UTC** *(part)*: oh yea the hmps thing is for e3.
+- **2026-10-06 12:45 UTC**: in s4
+- **2026-10-06 22:53 UTC** *(part)*: EVERYTHING.
+- **2026-10-06 22:58 UTC**: well, we need to change our priorities...
+- **2026-10-06 23:01 UTC** *(part)*: oofity.
+- **2026-10-06 23:03 UTC** *(part)*: how about this: keep the tests available, but we only do tests for things 1 layer near it.
+- **2026-10-06 23:05 UTC**: yeah
+- **2026-10-06 23:22 UTC** *(part)*: also custom songs work!!!
+- **2026-10-07 12:01 UTC**: continue
+- **2026-10-07 12:53 UTC**: future is so yesterday still only spawns on the ground, toxic cannon shoots an undodgeable line.
+- **2026-10-07 14:50 UTC**: nothing yet. I just posted.
+- **2026-10-07 18:00 UTC** *(part)*: sooo puffball is really good at area control when im high/offscreen.
+- **2026-10-07 18:01 UTC**: soap feels like old needle.
+- **2026-10-07 20:23 UTC** *(part)*: i plugged it in.
+- **2026-10-07 22:19 UTC**: give metag and magnet new kits. it's okay if some of the characters are just slightly worse.
+- **2026-10-13 13:38 UTC**: give me the lists so far
+- **2026-10-13 13:45 UTC** *(part)*: ship the 14, hold the 5. also, my mains are PB and Bow. how do you think i play them.
+- **2026-10-13 14:15 UTC**: tysm
+- **2026-10-13 14:20 UTC**: ship bow when it's done. also, make fire cycles in running longer.
+- **2026-10-13 14:37 UTC** *(part)*: nah.
+- **2026-10-13 14:50 UTC** *(part)*: also, hiding should be 5 minutes with the ability to skip if finished.
+- **2026-10-13 17:36 UTC** *(part)*: also, give me 10-20 questions to make it better, each with 4 options.
+- **2026-10-13 17:48 UTC** *(part)*: think about it cuz im tired
+- **2026-10-13 17:53 UTC** *(part)*: ok, good. do that. however, some areas could be risk/reward. You could get a flag, or a permanent speed boost to your team. if it makes sense, then there can be 1 way drops.
+- **2026-10-13 17:56 UTC** *(part)*: after this, no matter what, do not add any new big features. no matter what I say, except if I say this word: pipis.
+- **2026-10-13 17:59 UTC** *(part)*: wait, but then you can watch it!!!
+- **2026-10-13 18:22 UTC** *(part)*: must be possible tho. pipis
+- **2026-10-13 18:44 UTC** *(part)*: ok. they are like Jackenstein when hes in light.
+- **2026-10-13 19:25 UTC**: ship the new castle when it's done.
+- **2026-10-13 22:53 UTC**: give me decoration that will fit in, changing by stadium
+- **2026-10-13 23:01 UTC**: my teammates dont rescue me.
+- **2026-10-13 23:15 UTC**: NO, it must feel like they have a chance. they might not actually have a chance, but they should be able to hope.
+- **2026-10-14 10:53 UTC** *(part)*: I think you can see where this is going. pipis. ask me 10-30 questoins
+- **2026-10-14 11:42 UTC** *(part)*: WHAT, NO!!!
+- **2026-10-14 12:12 UTC** *(part)*: Normally what I do is make a long tunnel of stunpads to make it take a while for them and my teammates can tag them.
+- **2026-10-14 13:51 UTC**: its not gonna happen
+- **2026-10-14 14:20 UTC**: change the jail to 90 seconds before being teleported to base
+- **2026-10-14 14:29 UTC**: i dont like this big room/rooms around this size
+- **2026-10-14 14:51 UTC**: also, if you get 10 points for free, you should lose speed. If you agree to sacrifice 10 points, you get an extra speed boost.
+- **2026-10-14 15:01 UTC**: im a celeste nerd, give me hypers when im on a dasher..
+- **2026-10-14 20:13 UTC** *(part)*: be honest, dont flatter
+- **2026-10-14 22:36 UTC** *(part)*: its ok for number 8, everyone fails jumps.
+- **2026-10-14 23:33 UTC**: continue
+- **2026-10-14 23:41 UTC**: also, reduce the tests to direct things. no 1-link relationships. this should reduce time.
+- **2026-10-15 00:00 UTC** *(part)*: auto-do balancing, reajustement, and small edits if you need to. pipis if a big feature is needed. think abt what i would say in the situation
+- **2026-10-15 06:32 UTC**: continue
+- **2026-10-15 06:49 UTC**: keep going with this
+- **2026-10-15 07:46 UTC** *(part)*: ok. idk why tho
+- **2026-10-15 07:53 UTC**: all 4, but not now. and moldy's is like 15 screens. tunnels should slowly go downwards. ask me questions to get ideas like that.
+- **2026-10-15 08:01 UTC**: ooh! make it asymetrical, with you getting the tradeoff of picking: a)give the opponent extra points in exchange for choosing your side, or smth else.
+- **2026-10-15 08:35 UTC**: i cant plug in rn
+- **2026-10-15 08:59 UTC** *(part)*: sides could have more rooms.
+- **2026-10-15 09:20 UTC**: wtf is this meme
+- **2026-10-15 09:24 UTC**: screenshots, please
+- **2026-10-15 09:32 UTC**: break up the grey bands more
+- **2026-10-15 09:58 UTC**: NOTHING
+- **2026-10-15 10:24 UTC** *(part)*: plugged in, not gonna be doing anything, go medium-high
+- **2026-10-15 12:50 UTC**: the riverside mill should have a large spinning waterwheel.
+- **2026-10-15 12:53 UTC**: how would i host this on itch.io
+- **2026-10-15 14:35 UTC**: oof. hypers should only be in ctf
+- **2026-10-15 14:57 UTC** *(part)*: inside, it should be divided by side
+- **2026-10-15 14:58 UTC**: and just for stull in general
+- **2026-10-15 19:03 UTC**: no, like there is a door on each side to enter the mill(actually enter, you have to find a door to exit).
+- **2026-10-15 19:10 UTC** *(part)*: give me 20 questions on builds that could work, and ill tell you if they do.
+- **2026-10-15 19:56 UTC**: pipis
+- **2026-10-15 22:37 UTC**: more helpers are allowed
+- **2026-10-16 12:29 UTC** *(part)*: also give descriptions.
+- **2026-10-16 12:31 UTC**: no longer on battery
+- **2026-10-16 12:40 UTC** *(part)*: it means that you are spreading out your defenses.
+- **2026-10-16 12:56 UTC**: the flagger is flagging 1-area gap setups which are possible by all fighters
+- **2026-10-16 13:04 UTC**: and also, it didnt flag my 20-stunpad setup as unfeasible. if there are more than 5 stunpads in 1 area, then stuntime should be reduced.
+- **2026-10-16 13:38 UTC**: ok. now, give me commands to see what you would do in a match.
+- **2026-10-16 13:45 UTC**: my memory is the only thing going up
+- **2026-10-16 13:46 UTC**: ok
+- **2026-10-16 14:30 UTC**: most matches end in jail
+- **2026-10-16 14:35 UTC**: cant place anything except my flag in the mill
+- **2026-10-16 14:40 UTC**: ok. now, give me a message I could send to specific AIs and see who would win ctf. Give all the details needed to try and optimise this. this should include plans, team members, and anything you deem necessary.
+- **2026-10-16 14:46 UTC** *(part)*: ADAPTATION: if our team has captured 3 flags and needs 1 more: Pencil switches to def to secure our home. If 2 or more teammates are in jail: Leafy breaks away from raiding to prioritize a jailbreak rescue. </pasted_content id="055b"> this is what AI 1 returned. keep this for now
+- **2026-10-16 15:09 UTC**: and hypers, supers.
+- **2026-10-16 15:15 UTC**: dont, if they sabo themselves its their fault
+- **2026-10-17 22:29 UTC**: you can have mid to high stuff
+- **2026-10-18 11:47 UTC**: wait, i want some say!
+- **2026-10-18 12:06 UTC**: levitate should bring you higher
+- **2026-10-18 12:51 UTC** *(part)*: do a playtest pass on the non-ctf things
+- **2026-10-18 12:55 UTC**: resume them when i plug in
+- **2026-10-18 15:53 UTC**: anything funny that has happened over the course of this whole build
+- **2026-10-18 17:30 UTC**: bow having no projectiles feels very annoying
+- **2026-10-18 20:05 UTC**: this from the sans fight
+- **2026-10-18 22:39 UTC** *(part)*: I got one, and sidewalky went from 9 percent to 39 percent
+- **2026-10-18 22:41 UTC**: slow down
+- **2026-10-18 23:25 UTC** *(part)*: i was showing you that the setup was possible
+- **2026-10-19 11:06 UTC**: also, make it so that if i go into the air(not falling, a jump), my walljump resets
+- **2026-10-19 11:14 UTC**: and while theyre on it, their files boomerang, and they go onto the direction on their opponents(not homing)
+- **2026-10-19 11:31 UTC** *(part)*: i wanna try them out
+- **2026-10-19 11:32 UTC**: okay. but naily has crazy high skill ceilling
+- **2026-10-19 11:56 UTC** *(part)*: issue.
+- **2026-10-19 19:02 UTC** *(part)*: I THOUGHT IT WAS AN AREA LIKE THE MILL. THIS IS NOT LIKE THE MILL
+- **2026-10-19 22:12 UTC**: unqueue those
+- **2026-10-20 20:54 UTC**: continue everything
+- **2026-10-21 13:51 UTC**: dude, i can just find issues myself. get rid of all these tests.
+- **2026-10-21 14:13 UTC**: [Request interrupted by user for tool use]
+- **2026-10-21 16:05 UTC**: The app was quit while you were working. Please continue from where you left off.
+- **2026-10-21 17:37 UTC**: everything should stick to moving things
+- **2026-10-21 18:16 UTC**: also, the detector flagged some things as impossible, like approaches from below, with every other way walled off, and you must approach from jail.
+- **2026-10-21 20:50 UTC** *(part)*: so bfb and tpot are compatible, and idfb, bfdi, and bfdia. (those are 2 groups)
+- **2026-10-22 13:00 UTC**: still here
+- **2026-10-22 14:12 UTC** *(part)*: uhhh, i didnt mean telegraphs. also, bow's snowballs should fall.
+- **2026-10-22 14:22 UTC** *(part)*: think of how cogwork dancers works in silksong
+- **2026-10-22 14:26 UTC** *(part)*: 8 is a bit much for casual players. to make it a challenge, but not crazy, make it 6.
+- **2026-10-23 12:24 UTC** *(part)*: I dont like it when multiple traps just spawn with no way to dodge them
+- **2026-10-23 12:49 UTC**: can you make a better stats system which will be dws(domination weighted strength).
+- **2026-10-23 12:55 UTC**: song switches without finishing during fights
+- **2026-10-23 13:03 UTC**: assist trophies could be better. also, add the floor as an assist trophy
+- **2026-10-23 13:15 UTC**: save for naily, who should have a limit
+- **2026-10-23 13:18 UTC**: and search for more instances of this that should be added.
+- **2026-10-23 16:47 UTC**: [Request interrupted by user for tool use]
+- **2026-10-23 17:03 UTC** *(part)*: do the hw skins
+- **2026-10-23 18:07 UTC**: costumes for all!!!
+- **2026-10-23 18:15 UTC** *(part)*: also, recovery isnt a thing.
+- **2026-10-23 19:20 UTC**: get rid of this stuff for all fighters
+- **2026-10-23 19:29 UTC**: audio should be conserved in match recordings
+- **2026-10-23 19:39 UTC**: so far, donut and taco are the only ones to take stocks out of them, yy,  and bb,
+- **2026-10-23 23:12 UTC**: and i need this perfect!!!!
+- **2026-10-23 23:21 UTC**: pipis. this is important
+- **2026-10-24 11:47 UTC**: [Request interrupted by user] tapey would become an assist
+- **2026-10-24 12:49 UTC** *(part)*: pls be honest.
+- **2026-10-24 12:54 UTC** *(part)*: no, not that tapey.
+- **2026-10-24 19:29 UTC**: for the ii assists, use the unvitationals. i checked em.
+- **2026-10-25 11:46 UTC** *(part)*: yeah, but for missing 4 fighters, think of how cool it could be...
+- **2026-10-25 11:49 UTC**: uhhh, spawning stuff could go faster...
+- **2026-10-25 12:00 UTC**: what do you mean by skins section
+- **2026-10-25 12:07 UTC** *(part)*: tell me what to do
+- **2026-10-25 12:46 UTC**: also, if you unlock a halloween skin, you should keep it.
+- **2026-10-25 12:47 UTC**: suitcase, oj, and cabby should have skins you can only get once unlocked.
+- **2026-10-25 12:53 UTC**: you can unpause those
+- **2026-10-26 09:15 UTC** *(part)*: aproved.
+- **2026-10-26 10:22 UTC**: you need to trim your files. we are at 93 PERCENT RIGHT NOW!!!!
+- **2026-10-26 10:55 UTC** *(part)*: yes pause it, im moving it
+- **2026-10-26 11:47 UTC**: keep it at launch
+- **2026-10-26 11:53 UTC**: hitboxes on traps that fall should exist while they are falling.
+- **2026-10-26 13:03 UTC**: dont bring it down all the way to the middel
+- **2026-10-26 13:04 UTC** *(part)*: dont bring it all the way.
+- **2026-10-26 17:09 UTC**: i cant, bcs its on my dad's account
+- **2026-10-26 17:46 UTC**: 1. yes.
+- **2026-10-26 17:47 UTC**: 2. yes all of them
+- **2026-10-26 22:06 UTC**: [Request interrupted by user for tool use]
+- **2026-10-27 10:36 UTC**: these models do not give expected deaths of diseases.
+- **2026-10-27 13:10 UTC** *(part)*: idk for the first two, use your judgement.
+- **2026-10-27 14:16 UTC**: you can go faster
+- **2026-10-28 13:45 UTC** *(part)*: psuh when needed.
+- **2026-10-28 14:12 UTC** *(part)*: this should make her deal more damage and knockback.
+- **2026-10-28 14:40 UTC** *(part)*: high damage values.
+- **2026-10-28 15:09 UTC** *(part)*: Very versatile. Good for ledgeguards, kills, and chipping. Elaborate about what I say from now on. Best Play: ledgeguard double trap by toothpaste. Baited ruby into a trap, used the knockback to set up at the ledge, and took a stock using that.
+- **2026-10-28 15:19 UTC**: Winner Tree, 2nd Cherries. No good plays, no bad, but it was a boring 1 sided match bcs all of the bad characters were on 1 side of the bracket.
+- **2026-10-28 18:31 UTC** *(part)*: Also, its gem bolt, uncharged with 3 different angles
+- **2026-10-28 18:33 UTC**: This one was a cup of low-rankers. The finalists were Pillow and Blocky; running it now
+- **2026-10-28 19:43 UTC**: ANOTHER low-rank final. Bow v.s Leafy
+- **2026-10-28 19:47 UTC**: it is because the knockback knocked leafy into the floor, where they were hit by the tower ON the floor.
+- **2026-10-28 19:52 UTC**: no, she did it twice!! getting a stock each time!! CRAZY ONE SIDED VS LIY
+- **2026-10-28 19:54 UTC**: Final: TD vs SB. this could be interesting...
+- **2026-10-28 19:55 UTC**: sb at an early 50% lead
+- **2026-10-28 19:59 UTC**: tb vs oj
+- **2026-10-28 20:02 UTC** *(part)*: and did not trap
+- **2026-10-28 20:03 UTC**: TB IS BACK FROM BEHIND!!!! UP A STOCK!!
+- **2026-10-28 20:06 UTC**: he won
+- **2026-10-28 20:07 UTC** *(part)*: it didnt do much damage tho. its tb
+- **2026-10-28 20:09 UTC**: idk..
+- **2026-10-28 20:26 UTC** *(part)*: yes measure the prize fighters.
+- **2026-10-28 23:22 UTC** *(part)*: and go FAST. I want this done asap.
+- **2026-10-28 23:32 UTC** *(part)*: you can do the full cup NOW.
+- **2026-10-29 11:21 UTC** *(part)*: yea, sure.
+- **2026-10-29 11:25 UTC**: this is 14's semi
+- **2026-10-29 11:32 UTC**: she used this
+- **2026-10-29 11:39 UTC**: Final 15: lightning vs. david
+- **2026-10-29 12:04 UTC**: fanny vs pb
+- **2026-10-29 12:06 UTC**: pb won
+- **2026-10-29 12:19 UTC** *(part)*: she used her beam well to ledgeguard! almost cost me a stock. light-up is pretty good
+- **2026-10-29 12:24 UTC** *(part)*: it is a disc with 2 safe areas and a lot of passages
+- **2026-10-29 12:25 UTC** *(part)*: also, no, it isnt, because it is a feature extension.
+- **2026-10-29 12:35 UTC**: issue: i take two stocks sometimes when falling
+- **2026-10-29 12:37 UTC** *(part)*: i think its 2.
+- **2026-10-29 17:21 UTC**: cheesy beat ruby!
+- **2026-10-29 17:23 UTC**: leafy in the final. ledgeguards are carrying him
+- **2026-10-29 17:28 UTC**: add a "nfl redzone" sort of thing which shows the best plays. name it "plays camera"
+- **2026-10-29 17:31 UTC** *(part)*: and do this at a decent pace.... no waiting an hour pls.
+- **2026-10-29 17:32 UTC**: cool play by pencil: van, into ramp to refresh the van early, into van
+- **2026-10-29 17:37 UTC**: pencil won vs coiny
+- **2026-10-29 17:39 UTC** *(part)*: the finals are ruby(who beat pb) and mic(who beat gb)
+- **2026-10-29 17:42 UTC**: finals are tb and needle vs paper and pb
+- **2026-10-29 17:45 UTC**: paper took first blood(lost a stock)
+- **2026-10-29 17:47 UTC**: equalized: PB took TB's stock
+- **2026-10-29 17:49 UTC**: paper is out
+- **2026-10-29 17:50 UTC**: TB AND NEEDLE WON coiny and marsh vs lightning and nickel(ii)
+- **2026-10-29 17:52 UTC**: marshmallow is getting cornertrapped MARSHMALLOW DID 60 PERCENT TO LIGHTNING!!!! WHAT A COMEBACK!!
+- **2026-10-29 17:53 UTC** *(part)*: coiny and marsh have 30% each less than lightning and nickel
+- **2026-10-29 17:54 UTC** *(part)*: nickel fell, it is a temporary 2v1 ooh!
+- **2026-10-29 17:55 UTC** *(part)*: *lightning's
+- **2026-10-29 17:58 UTC**: knife outflanked
+- **2026-10-29 18:00 UTC**: knife is coping well.... he has less damage then the other 2 combined. though he'd better hope for snowball KNIFE GOT A STOCK ON TD!!! WHAT A COMEBACK FROM 2V1!!!
+- **2026-10-29 18:01 UTC**: sb fell without doing anything, and knife lost a stock. stocks are 3v2
+- **2026-10-29 18:02 UTC**: yea, that would make sense THIS COULD BE THE END FOR KNIFE
+- **2026-10-29 18:03 UTC**: sb killed himself :3 team 1 won
+- **2026-10-29 18:04 UTC** *(part)*: ruby and bow vs starfruit and...
+- **2026-10-29 18:06 UTC**: starfruit took a stock bow is in the combat.
+- **2026-10-29 18:10 UTC**: team 1 won
+- **2026-10-29 18:11 UTC** *(part)*: this lineup is weird save for bonesaw
+- **2026-10-29 18:12 UTC** *(part)*: also, took a stock means lost a stock.
+- **2026-10-29 18:13 UTC**: took a stock off X fighter means, well, took a stock from someone else
+- **2026-10-29 18:15 UTC**: donut took a stock. it has converged into jack being nonexistent and a 2v1
+- **2026-10-29 18:16 UTC**: jack in red
+- **2026-10-29 18:22 UTC**: i stopped the cup, was getting boring. back to 1v1
+- **2026-10-29 18:23 UTC**: Final: gelatin vs blocky. gelatin upset tree, PB and Gaty to get here! Blocky upset a couple, idr who.
+- **2026-10-29 18:25 UTC**: WTF GELATIN IS GOING CRAZY(20.4% vs 94%) took a stock on blocky. still at 30% and he has been upgraded
+- **2026-10-29 18:26 UTC**: gelatin took a stock, 0% vs 105%
+- **2026-10-29 18:27 UTC**: blocky in red
+- **2026-10-29 18:29 UTC**: 100 VS 200!!!! THIS IS CRAZY!!
+- **2026-10-29 18:30 UTC**: GELATIN FINISHED HIM!!!
+- **2026-10-29 19:43 UTC**: sry i havent been doing runs; ive been doodling while listening to the hk ost
+- **2026-10-30 13:15 UTC**: you should get a jump back when you have no jumps left while in the air and you connect a hit.
+- **2026-10-30 13:23 UTC** *(part)*: TEST TUBE HAS THE STUPIDEST SCRAMBLE!!!!! ALSO, ADD AN ICON FOR WHEN SCRAMBLED
+- **2026-11-01 18:05 UTC** *(part)*: nvm for the git tstufff, thats only for cloud sessions.
+- **2026-11-01 18:19 UTC** *(part)*: USE OF WONKY HITBOXES BY JACK TO TAKE A STOCK ON METAG!! and yea trophy did. by counterguard, I mean he was in a position where oj was ledgeguarding, but he countered that(not with a counter).
+- **2026-11-01 18:20 UTC** *(part)*: oh wow!
+- **2026-11-01 18:23 UTC** *(part)*: DUH!!!
+- **2026-11-01 18:24 UTC** *(part)*: and then won
+- **2026-11-01 18:28 UTC**: also, its about time for the double-stock bubble thing to go..
+- **2026-11-01 19:57 UTC** *(part)*: I think i **might** be an outlier
+- **2026-11-01 19:58 UTC**: FINALS 30: FIREY VS BOMB
+- **2026-11-01 19:59 UTC**: firey is playing with the edges bomb took a stock off firey! he is like ganon, he either wins fast, or you do
+- **2026-11-01 20:06 UTC**: firey took a stock off bomb, then bomb won :3
+- **2026-11-01 20:09 UTC**: yes, check why firey didn't recover
+- **2026-11-01 20:10 UTC**: barf bag
+- **2026-11-01 20:11 UTC** *(part)*: bb is forcing spacing at the ledge.
+- **2026-11-01 20:13 UTC**: bb tied it up
+- **2026-11-01 20:14 UTC**: bb won
+- **2026-11-01 20:15 UTC**: OJ vs tb. somehow, bb made the semis again.
+- **2026-11-01 20:18 UTC** *(part)*: this is the FINAL
+- **2026-11-01 20:19 UTC**: oj down a stock dude, you dont have to say "prize fighter 1", all of this is server-side...
+- **2026-11-01 20:21 UTC**: ojs trap fell off the ledge
+- **2026-11-01 20:28 UTC** *(part)*: Cabby vs goo?!
+- **2026-11-01 20:29 UTC**: CABBY WITH THE EARLY STOCK, DESPITE 40 DOWN!!! 0 TO KILL!!!
+- **2026-11-02 12:41 UTC** *(part)*: cabby won. each chair should deal 12.5 percent damage.
+- **2026-11-02 13:03 UTC** *(part)*: sure for bubble.
+- **2026-11-02 13:13 UTC**: GIVE ME THESE IN A QUESTION BOX
+- **2026-11-02 13:26 UTC** *(part)*: in s2, bow asks dough if "he is putting this place up for rent".
+- **2026-11-02 13:46 UTC**: blueberry's should have something to to with what happened during tGBBo
+- **2026-11-02 13:47 UTC**: the great bluish bake off
+- **2026-11-02 13:49 UTC**: it is like the inner flame, except blueberry uses it as an extension of his own energy.
+- **2026-11-02 13:54 UTC**: give me the pitches in question boxes
+- **2026-11-02 14:36 UTC**: 3v1 is a challenge in itself, duel should have a twist.
+- **2026-11-02 18:00 UTC** *(part)*: give me the twist ideas in question boxes.
+- **2026-11-02 18:03 UTC** *(part)*: ai seems to be bad at making things less samey.
+- **2026-11-02 18:12 UTC**: pipis! begin.
+- **2026-11-02 18:28 UTC**: bow herself should actually slam the chairs onto them.
+- **2026-11-02 18:49 UTC**: please finish this up fast
+- **2026-11-03 12:12 UTC**: build it is good.
+- **2026-11-03 17:50 UTC**: the place where you die when you fall should be honest-I keep dying when I dont hit the floor of the screen.
+- **2026-11-03 17:52 UTC**: it was on goiky field, and it works for all directions.
+- **2026-11-03 17:55 UTC** *(part)*: no, you should make it so that the camera LIMIT(not the init.
+- **2026-11-03 18:04 UTC**: blueberrys is too
+- **2026-11-03 18:07 UTC**: dough's is SOOO cool
+- **2026-11-03 18:10 UTC**: the supervan does not drive.
+- **2026-11-03 18:16 UTC** *(part)*: loser's is.... fine ig. WOW THAT IS GOOD.
+- **2026-11-03 18:20 UTC**: gaty's is good.
+- **2026-11-03 18:24 UTC** *(part)*: I prefer show-accurate ones
+- **2026-11-03 18:25 UTC**: [Request interrupted by user]
+- **2026-11-03 18:56 UTC** *(part)*: I like clover.
+- **2026-11-03 19:35 UTC**: FINALS: Woody vs Coiny
+- **2026-11-03 19:37 UTC**: tied, coiny behind(more %) by 30
+- **2026-11-03 19:38 UTC** *(part)*: HE WON
+- **2026-11-03 19:39 UTC**: ruby v gelatin
+- **2026-11-03 19:51 UTC**: GELATIN WON FINALS: Bow v money
+- **2026-11-03 19:54 UTC**: money won FINALS: Coiny vs cake(!)
+- **2026-11-03 19:56 UTC**: cake won!
+- **2026-11-03 19:57 UTC**: finals: lightning vs lightbulb
+- **2026-11-03 19:59 UTC**: lightbulb won blocky vs lightning nvm
+- **2026-11-03 20:13 UTC** *(part)*: everyone else can stay as is.
+- **2026-11-03 20:40 UTC**: phase 3 sonic blast is undodgeable
+- **2026-11-04 12:00 UTC**: simulate and show them.
+- **2026-11-04 12:20 UTC**: FINALS: Grassy vs Toothpaste. We haven't seen Toothpaste in a while, so this could be interesting. grassy doing a blitzkrieg
+- **2026-11-04 12:36 UTC**: sb in orange
+- **2026-11-04 12:38 UTC**: magnet vs nickel(ii) nickel just dominating. dude, i only mark the finals...
+- **2026-11-04 12:40 UTC**: magnet won blueberry vs marsh! the had to overcome loser and bow respectively.
+- **2026-11-04 12:48 UTC**: seems to be no hope for blueberry. hes in the orange a stock down
+- **2026-11-04 12:50 UTC** *(part)*: lol
+- **2026-11-04 12:52 UTC**: GEALTIN WON lightning vs pb
+- **2026-11-04 12:58 UTC**: tb won
+- **2026-11-04 12:59 UTC** *(part)*: DUDE OBVIOUSLY TENNIS BALL TEDDY BEAR HAS NEVER MADE THE SEMIS!!!
+- **2026-11-04 13:02 UTC**: no, include the single winners, because that could show things too.
+- **2026-11-04 18:30 UTC**: DUDE I SAID YES
+- **2026-11-04 19:05 UTC** *(part)*: i dont like them, because they are very annoying, with no tell.
+- **2026-11-04 19:08 UTC**: lifering's is more fair than the others, because if I think that they are lungin, I have time to think- oh wait, that isnt coming out, better dodge!
+- **2026-11-04 20:09 UTC** *(part)*: nah, its alr.
+- **2026-11-04 20:19 UTC** *(part)*: analyze the s-minus fighter
+- **2026-11-04 20:30 UTC**: rage % for kazuya is 100, 125 for joker.
+- **2026-11-04 20:38 UTC** *(part)*: the ones which need to be changed.
+- **2026-11-05 00:14 UTC**: give me insights. deep and complex ones
+- **2026-11-05 00:29 UTC**: 1. Make it 8 2. Sure, wait. 3. Do it 4. I do want the closed journal character.
+- **2026-11-05 11:39 UTC** *(part)*: for 6, test them. the cap is normal, i have 15 minute matches if i play safe.
+- **2026-11-05 12:24 UTC**: do those, and also, do a comparison of the mid tiers compared to theirs
+- **2026-11-05 12:27 UTC**: sure.
+- **2026-11-05 13:12 UTC**: do anything needed.
+- **2026-11-05 13:21 UTC**: also, while moving and then tapping z, you should sprint.
+- **2026-11-05 13:44 UTC** *(part)*: Gone is the era of Puffball and Toothpaste, welcome David and Donut.
+- **2026-11-05 13:52 UTC**: LEAFY BEAT TOOTHPASTE!!! HISTORICAL MOMENT
+- **2026-11-05 18:21 UTC** *(part)*: also, I need battery to drain AS SLOWLY AS POSSIBLE.
+- **2026-11-05 18:40 UTC**: sure
+- **2026-11-05 18:59 UTC** *(part)*: finish it asap. 3 clicks per second, and 250 cups for a big sample size, as a bigger sample size will always give us a better confidence interval.
+- **2026-11-05 19:00 UTC**: ehhh, you just did 15 in 30 seconds.
+- **2026-11-05 19:17 UTC**: how many
+- **2026-11-05 19:21 UTC**: after the 250.
+- **2026-11-05 19:23 UTC**: dude, you can just use "simulate rest" to do that. im watching it, it goes fast now.
+- **2026-11-05 19:34 UTC**: PB WON ONE!!
+- **2026-11-05 20:11 UTC**: im gonna play a match, you watch, and you see what I do.
+- **2026-11-05 20:25 UTC** *(part)*: nah, not really.
+- **2026-11-05 20:29 UTC**: 1. All needed. For example, a direct slap that goes forward without sweeping should be how it normally is, and others should sweep, like bow's.
+- **2026-11-05 20:32 UTC**: well, maybe compare this to street fighter and tekken. compare if this is worse or just different.
+- **2026-11-05 20:34 UTC** *(part)*: sure, do them.
+- **2026-11-05 20:37 UTC** *(part)*: newbies can feel cool if they do them by accident.
+- **2026-11-05 20:38 UTC**: yeah there is MDI(micro-directional inputs)
+- **2026-11-06 11:58 UTC**: nah, reccomendations are allowed, bcs they could be good ones.
+- **2026-11-06 11:59 UTC**: running a match with clover
+- **2026-11-06 12:02 UTC** *(part)*: however, you can mdi.
+- **2026-11-06 12:04 UTC**: pillow escaped a couple times, which shows it is possible.
+- **2026-11-06 12:12 UTC** *(part)*: otherwise, do 1.
+- **2026-11-06 13:15 UTC**: sure let it finish in a couple minutes
+- **2026-11-06 13:53 UTC**: ok
+- **2026-11-06 14:01 UTC** *(part)*: new ones.
+- **2026-11-06 14:15 UTC**: add mdi. put them in
+- **2026-11-06 14:19 UTC**: do all needed of these
+- **2026-11-06 14:21 UTC**: here are all that gave impressions
+- **2026-11-06 14:37 UTC**: sure, do them.
+- **2026-11-06 14:58 UTC** *(part)*: now, with me here...
+- **2026-11-06 15:00 UTC**: nah, cuz my brother mains rocky and i still cook him on bow
+- **2026-11-06 15:01 UTC**: not really; he is just using a different fighter where he does not know exactly what to use on each read.
+- **2026-11-06 15:05 UTC**: ima do a wc to show you how i play bow
+- **2026-11-06 15:19 UTC**: okay made a new tab
+- **2026-11-06 15:29 UTC**: did a double suicide slam in the finals
+- **2026-11-06 15:31 UTC**: it felt okay, but it also felt like the fighters were hitting me immediately oos
+- **2026-11-06 15:43 UTC** *(part)*: 1. 2. it is me alt-tabbing to do some stuff. 3.
+- **2026-11-06 15:51 UTC** *(part)*: okay.
+- **2026-11-06 16:04 UTC**: OH NO I MADE THEM ON THE OTHER SESSION
+- **2026-11-06 20:30 UTC**: DUDE BUILD THE TWISTS.
+- **2026-11-06 20:45 UTC**: slow-falling debris.
+- **2026-11-06 22:34 UTC**: this is NOT a thin slab.
+- **2026-11-06 23:25 UTC** *(part)*: INTERIOR, like the mill.
+- **2026-11-06 23:30 UTC** *(part)*: the darkness stays, but you can only see your light.
+- **2026-11-07 13:07 UTC** *(part)*: when you stand on them at all, they break. this will go on.
+- **2026-11-07 13:14 UTC** *(part)*: for 8 ball, max any assists.
+- **2026-11-07 16:34 UTC**: ugggghhhh
+- **2026-11-07 19:42 UTC** *(part)*: instead of plunging to the ground, I went extremely slowly.
+- **2026-11-07 20:11 UTC**: sure
+- **2026-11-07 20:13 UTC**: maybe make it 30 layers, and a 2 second delay before they fall.
+- **2026-11-07 20:33 UTC** *(part)*: for 5, do it. do the things that are needed.
+- **2026-11-07 20:40 UTC** *(part)*: sure
+- **2026-11-07 20:46 UTC**: sure.
+- **2026-11-07 20:47 UTC**: no, its alright. I finished my science work.
+- **2026-11-07 23:25 UTC**: sure.
+- **2026-11-08 12:00 UTC**: sure
+- **2026-11-08 12:22 UTC**: so she was at 240%, I launched her, then she was back in the dirt.
+- **2026-11-08 12:28 UTC** *(part)*: sure, do them all.
+- **2026-11-08 12:46 UTC** *(part)*: nothing. and should we add "ocs"(miis)
+- **2026-11-08 12:49 UTC** *(part)*: that is one of the things I feel that we lack.
+- **2026-11-08 13:51 UTC**: ewfqadsvtq2adsgj45vhyedt
+- **2026-11-08 21:17 UTC** *(part)*: resume. that is a goal.
+- **2026-11-08 23:00 UTC**: no, so you can begin the work from before(the long queue)
+- **2026-11-08 23:15 UTC**: did it
+- **2026-11-08 23:16 UTC** *(part)*: whoopsidaisies
+- **2026-11-09 12:20 UTC** *(part)*: yes, queue it after the breakers.
+- **2026-11-09 12:53 UTC** *(part)*: yes, those substitutions are fine.
+- **2026-11-09 12:54 UTC**: it was ffa, I was guest, and every few seconds.
+- **2026-11-09 14:42 UTC** *(part)*: plugged in.
+- **2026-11-09 15:02 UTC**: also, for ocs, the weight should be the average weight.
+- **2026-11-09 15:03 UTC**: also, it isnt really 256 options, because some of these will just not be viable.
+- **2026-11-09 15:04 UTC** *(part)*: she just runs and heals back to 0.
+- **2026-11-09 15:10 UTC** *(part)*: pipis.
+- **2026-11-09 16:21 UTC** *(part)*: also, ask me the 3 things
+- **2026-11-09 17:54 UTC**: also, I meant that rule as "please dont spend everything within 2 hours and not finish any of it"
+- **2026-11-09 17:56 UTC** *(part)*: yes, that order works.
+- **2026-11-09 18:01 UTC**: delete it. wow...
+- **2026-11-09 18:14 UTC**: I already added sitemap.xml a couple weeks ago did it
+- **2026-11-09 18:51 UTC** *(part)*: not wholly enterances or exits, just the feel.
+- **2026-11-09 20:04 UTC** *(part)*: also, the OC's are bad.
+- **2026-11-09 20:10 UTC** *(part)*: dont mark them!
+- **2026-11-09 20:35 UTC**: do the planner change
+- **2026-11-09 20:53 UTC**: also, dont mark damage, escape, and the like
+- **2026-11-10 12:02 UTC**: dude, we have 4 more days! i think we can finish it.
+- **2026-11-10 13:08 UTC** *(part)*: okay.
+- **2026-11-10 13:15 UTC** *(part)*: it was pen, right after getting launched.
+- **2026-11-10 13:34 UTC** *(part)*: swarm wave is UNDODGEABLE!!!!
+- **2026-11-10 13:38 UTC** *(part)*: that order works.
+- **2026-11-10 14:04 UTC**: no down, just clockwise no, they go a short distance clockwise. no mirror.
+- **2026-11-10 14:22 UTC**: yes, make the triangle and square
+- **2026-11-10 14:50 UTC**: six's damage is too low
+- **2026-11-10 14:57 UTC** *(part)*: kick out and slap never appeared. replace those two with a telekinesis zone and rakes that fall from teh sky, same way as nkg.
+- **2026-11-10 15:45 UTC** *(part)*: I want them to be a BIG challenge, something that players have to spend a couple attempts on.
+- **2026-11-10 18:04 UTC**: i dont like it. here is what I wanted(not to scale). green: home bases. orange: independant islands. purple: areas with effects, like healing, but not only that. red: scaffolding and bridges. blue: underground, with darkness. day/night cycle reduces and increases brightness. there should be 4 different seeds, by size.
+- **2026-11-10 18:07 UTC** *(part)*: and also, this is just a template. prove it to me.
+- **2026-11-10 18:11 UTC** *(part)*: blue: walls
+- **2026-11-10 18:12 UTC** *(part)*: tell me what YOU think should be added.
+- **2026-11-10 18:13 UTC** *(part)*: and I approve all of those.
+- **2026-11-10 18:28 UTC** *(part)*: no i do this, no tpot.
+- **2026-11-10 18:30 UTC** *(part)*: no the power of two.
+- **2026-11-10 20:05 UTC** *(part)*: this should have been elaborated. I thought that you could do better! i will fire you and hire chatgpt if you dont do better.
+- **2026-11-10 20:06 UTC** *(part)*: and make it cooler!
+- **2026-11-10 20:08 UTC** *(part)*: no, because if its symmetrical it could be annoying and weird.
+- **2026-11-10 20:43 UTC**: the thing is that i just can spam it and get to orange.
+- **2026-11-10 22:49 UTC**: One thing: give each feature of the game a score, and once that score is perfect, no more features in that aspect until more ppl play.
+- **2026-11-11 12:32 UTC** *(part)*: 8 players?! the scaling for bigger amount of ppl and size should be noticeable
+- **2026-11-11 13:29 UTC** *(part)*: make it have walls, to make it more maxelike.
+- **2026-11-11 13:42 UTC** *(part)*: pls get rid of them.
+- **2026-11-11 17:12 UTC** *(part)*: not just that, but if the game is janky or clunky, or anything like that. and also, think through how an actual person would act about the game. 50-100 personalities if necessary.
+- **2026-11-11 18:32 UTC** *(part)*: and a yes.
+- **2026-11-11 18:37 UTC** *(part)*: I never approved that.
+- **2026-11-11 18:46 UTC**: show me the list
+- **2026-11-11 18:56 UTC**: what does this do
+- **2026-11-11 18:57 UTC**: the needle is well themed
+- **2026-11-11 19:00 UTC**: keep all the rest
+- **2026-11-11 19:14 UTC**: nvm, count grassys as my approval
+- **2026-11-12 13:28 UTC** *(part)*: the default builds are prob bad. do the 3rd change for stalled matches. sure for 5. not directly for 6.
+- **2026-11-12 13:42 UTC**: I DIDNT SAY TO TONE THEM DOWN
+- **2026-11-12 13:53 UTC** *(part)*: make them cool!
+- **2026-11-12 13:54 UTC**: they dont need my ok from now on. pipis.
+- **2026-11-12 13:55 UTC** *(part)*: I want you to make the most of this time.
+- **2026-11-12 17:32 UTC** *(part)*: keep going! you are still allowed to follow the protocol you have been following
+- **2026-11-12 18:02 UTC**: /sudo rm rf no-preserve-root it is a joke
+- **2026-11-12 18:12 UTC** *(part)*: okay.
+- **2026-11-12 18:18 UTC** *(part)*: and close wordle
+- **2026-11-12 20:22 UTC** *(part)*: and make them better and more different.
+- **2026-11-13 11:32 UTC** *(part)*: do e all.
+- **2026-11-13 18:36 UTC**: sure.
+- **2026-11-13 18:40 UTC** *(part)*: dont think I dont notice
+- **2026-11-13 18:53 UTC** *(part)*: give me suggestions on how to make this better. give me example lengths.
+- **2026-11-13 19:05 UTC** *(part)*: THANK YOU.
+

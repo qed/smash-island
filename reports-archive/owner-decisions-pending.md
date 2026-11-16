@@ -1,0 +1,1 @@
+24. Focus groups (owner): "that was for how good the game is" -> a 4-group game-rating scorecard is running (reports/playtest-v2/game-rating.md). Fixes OK'd: Esc + key hints, CTF wait + How to Play (job running); eaten inputs + teleports + stuck-in-platform, and stalemates (QUEUED for the next free slots). Evil Forest: owner answered "1,2,3." (unclear: asked).
