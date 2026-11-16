@@ -192,6 +192,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16 (playing the easier Stapy)**: getting hit by lasers, etc should still restart you
 - **2026-11-16 (next)**: for the floor
 - **2026-11-16 (playing the easier Stapy)**: remove the random platform in walljump secitons
+- **2026-11-16 (about the Stapy win cut / the episode picture they sent on 11-15)**: also, that image was just part of the drowning out. the whole sky eventually turned into the emblem color.
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
