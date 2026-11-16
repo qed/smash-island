@@ -537,6 +537,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-12 13:55 UTC** *(part)*: remove any rules slowing down progress until my next message.
 - **2026-11-12 18:13 UTC**: no, you can take from the show, but for 1 move, make it like one style.\ and you can make them yourself.
 - **2026-11-12 19:48 UTC**: add the unique smashes
+- **2026-11-16 (answers to my Moves 4 look-alike questions)**: Fifty Spins: "Yes, dizzy". Double Fault: "Keep the ripple". Calculated Bounce marks (drawn at 100/200/300 px, he lands at about 65/140/210): "Make him reach the marks".
+- **2026-11-16 (reply to the Moves 4 result + event-skin colours)**: its an okay
 
 ## Bosses, Boss Rush & secrets
 
@@ -1217,6 +1219,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-12 18:36 UTC**: no, low-rules is back. signing off fr
 - **2026-11-13 18:44 UTC**: WHAT THE FUCK YOU DID NOT REMEMBER ANYTHING okay.
 - **2026-11-13 19:05 UTC** *(part)*: also, if messages have sperate themes, then seperate them.
+- **2026-11-16 (TLC map job running)**: should we start other tasks? (answer to my pick list: Stapy rebuild, Event-fighter skins, Quick move fixes; not Moon Caves)
+- **2026-11-16 (after my % report: move fixes done incl. Calculated Bounce side effects, event skins waiting on an OK, new CPU stand-still job)**: % complete? start a new thing to replace the event-skins
 
 ## Other
 
