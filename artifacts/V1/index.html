@@ -27263,7 +27263,9 @@ function ynLineClear(N, x0, x1, y){   // no solid piece across a row of the body
 }
 function ynFoeNodes(N, f, fx){
   const goals = new Map();
-  for(const o of fighters){ if(o.dead || o === f || o.team === f.team) continue; const n = ynNodeAt(N, o, fx) || ynNodeFor(N, o.x, o.y + (o.r || 24), fx); if(n && !goals.has(n)) goals.set(n, o); }
+  let foes = fighters.filter(o=>!o.dead && o !== f && o.team !== f.team);
+  if(fx){ const open = foes.filter(o=>!inOwnTeamZone(o)); if(open.length) foes = open; }   // (CPU fix 2026-11-16: the usual brain leaves a foe in its own safe zone alone while another is in the open (aiThink); the plan walked to that foe's floor, 'arrived', and stood there with the usual brain wanting the other foe)
+  for(const o of foes){ const n = ynNodeAt(N, o, fx) || ynNodeFor(N, o.x, o.y + (o.r || 24), fx); if(n && !goals.has(n)) goals.set(n, o); }
   return goals;
 }
 // where else a CPU wants to go: a ripe berry bush when a fight is ahead (and it is not metal), a lever now and then
@@ -27895,6 +27897,7 @@ function siStep(){
   { const Y = SI.sd; for(let lip = 0; lip < 2; lip++) for(let kk = 0; kk < 3; kk++){ const r = siRubbleAt(Y, t, lip, kk); if(!r) continue;
     for(const f of fighters){ if(f.dead || f.invuln > 0 || f._siRub === t - (t % 1000) + lip*10 + kk) continue; if(Math.abs(f.x - r.x) < 30 && Math.abs(f.y - r.y) < 40){ f._siRub = t - (t % 1000) + lip*10 + kk; f.pct += 5; f.vy = -6; f.onground = false; SI.rubbleHits++; for(let q = 0; q < 6; q++) puff(f.x, f.y, '#7a6448', 4); shake(f.you ? 5 : 2); } } } }
   // the Cairn's chest: two teammates on its two plates at once opens it (crates, and a token for a person, twice a match at most)
+  siParty();
   if(SI.chest){ const C2 = SI.chest, ch = C2.ch;
     if(SI.chestT > 0){ if(--SI.chestT === 0) ch.ss = [0, 0]; }
     else { const on = (pl)=>fighters.find(f=>!f.dead && f.onground && f.x >= pl.x && f.x <= pl.x + pl.w && Math.abs(f.y + f.r - pl.y) <= 4); const fa = on(C2.pa), fb = on(C2.pb);
@@ -27997,7 +28000,9 @@ function siNodeFor(N, x, y){
 }
 function siFoeNodes(N, f){
   const goals = new Map();
-  for(const o of fighters){ if(o.dead || o === f || o.team === f.team) continue; const n = siNodeAt(N, o) || siNodeFor(N, o.x, o.y + (o.r || 24)); if(n && !goals.has(n)) goals.set(n, o); }
+  let foes = fighters.filter(o=>!o.dead && o !== f && o.team !== f.team);
+  { const open = foes.filter(o=>!inOwnTeamZone(o)); if(open.length) foes = open; }   // (CPU fix 2026-11-16: as ynFoeNodes)
+  for(const o of foes){ const n = siNodeAt(N, o) || siNodeFor(N, o.x, o.y + (o.r || 24)); if(n && !goals.has(n)) goals.set(n, o); }
   return goals;
 }
 function siCurBit(N){ const f0 = siShiftAt(hazardT, 0).form, f1 = SI.groups ? siShiftAt(hazardT, 1).form : f0; const i = N.states.findIndex(s=>s[0] === f0 && s[1] === f1); return 1 << (i < 0 ? 0 : i); }
@@ -28024,6 +28029,20 @@ function siPlan(N, start, goals){
   return { path, edges, goal, at:now, air:null, cost:dist.get(goal) };
 }
 function siRiding(f){ for(const pl of SI.plates) for(const q of pl.parts){ if(f.onground && Math.abs(f.y + f.r - q.y) <= 5 && f.x > q.x - 4 && f.x < q.x + q.w + 4) return pl; } return null; }
+// THE CAIRN'S CHEST PARTY (CPUs; CPU fix 2026-11-16, as Windy Heights' whParty): the Faultline's chest opens when two teammates stand on its two plates for 1.5 s, and no CPU ever went. Now and then (at most every 10 s, half the tries) the nearest pair of one team with no foe within 500 px and a route to the plates is sent, one to each plate, and stands there; it is called off when the chest opens, a foe is within 120 px of either, one is dead or at 100%, or after 60 s.
+const SI_PARTY_COST = 2400;
+function siPartyCost(f, g){ const N = SIN && SIN.S === SI ? SIN : null; if(!N || !g) return 1e9; const a = siNodeAt(N, f); if(!a) return 1e9; if(a === g) return 0; const P = siPlan(N, a, new Map([[g, 1]])); return P ? P.cost : 1e9; }
+function siPartyEnd(Pt){ for(const q of [Pt.a, Pt.b]){ if(q){ q._siPad = null; q._siGoal = null; q._siPlan = null; } } SI.party = null; SI.pcool = hazardT + 600; }
+function siParty(){
+  const C = SI.chest; if(!C) return; const N = SIN && SIN.S === SI ? SIN : null; if(!N) return;
+  const ga = N.byP.get(C.pa), gb = N.byP.get(C.pb); if(!ga || !gb) return;
+  const foeNear = (f, r)=>fighters.some(o=>!o.dead && o.team !== f.team && Math.hypot(o.x - f.x, o.y - f.y) < r), Pt = SI.party;
+  if(Pt){ const gone = (f)=>!f || f.dead || f.pct >= 100 || foeNear(f, 120); if(SI.chestT > 0 || hazardT > Pt.until || gone(Pt.a) || gone(Pt.b)) siPartyEnd(Pt); return; }
+  if(SI.chestT > 0 || hazardT < 1500 || hazardT < (SI.pcool | 0) || hazardT % 60 !== 0 || Math.random() > 0.5) return;
+  const teams = new Map(); for(const f of fighters) if(!f.dead && f.controller === 'ai' && f.onground && f.hitstun <= 0 && f.pct < 80 && !f._hold && !foeNear(f, 500) && Math.min(siPartyCost(f, ga), siPartyCost(f, gb)) <= SI_PARTY_COST){ if(!teams.has(f.team)) teams.set(f.team, []); teams.get(f.team).push(f); }
+  let best = null, bd = 1e9; for(const l of teams.values()){ if(l.length < 2) continue; l.sort((a, b)=>Math.hypot(a.x - C.pa.x, a.y - C.pa.y) - Math.hypot(b.x - C.pa.x, b.y - C.pa.y)); const d = Math.hypot(l[0].x - C.pa.x, l[0].y - C.pa.y) + Math.hypot(l[1].x - C.pb.x, l[1].y - C.pb.y); if(d < bd){ bd = d; best = l; } }
+  if(best){ SI.party = { a:best[0], b:best[1], until:hazardT + 3600 }; best[0]._siPad = C.pa; best[0]._siGoal = ga; best[1]._siPad = C.pb; best[1]._siGoal = gb; }
+}
 function siBrain(f, inp){
   if(f.hitstun > 0 || f._tp){ f._siPlan = null; return; }
   // in the quicksand: struggle toward the nearer edge and hop (the sand throws a struggler out after 0.75 s)
@@ -28031,6 +28050,10 @@ function siBrain(f, inp){
   const N = SIN && SIN.S === SI ? SIN : (SIN = Object.assign(siNavBuild(), { S:SI }));
   const feet = f.y + f.r;
   { const mv = Math.abs(f.x - (f._siLX === undefined ? f.x : f._siLX)) + Math.abs(f.y - (f._siLY === undefined ? f.y : f._siLY)); f._siLX = f.x; f._siLY = f.y; f._siStill = (mv < 0.5 && f.onground && !(f._siWait > 0)) ? (f._siStill || 0) + 1 : 0; }   // (waiting for a lift or a shuttle on purpose is not being stuck)
+  if(f._siPad){   // the chest party: on the plate (its node) walk to the middle and stand still, nothing pressed, until the chest opens or the party is called off
+    const pl = f._siPad, nd0 = siNodeAt(N, f);
+    if(f.onground && nd0 && nd0.p === pl){ const c = pl.x + pl.w/2; inp.left = f.x > c + 10; inp.right = f.x < c - 10; inp.jump = false; inp.down = false; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; f._siPlan = null; return; }
+  }
   // on a plate that is about to move (the tell) or is moving: stay on it and ride (it may still fight)
   const rp = siRiding(f), st = rp ? siShiftAt(hazardT, rp.grp) : null;
   if(rp && (st.tell > 0 || st.moving)){ inp.left = false; inp.right = false; inp.jump = false; inp.down = false; f._siPlan = null; return; }
@@ -28398,7 +28421,7 @@ function whPutCrate(pl, dx){
   items.push({ kind, x:pl.x + dx, y:pl.y - r, vx:0, vy:0, r, taken:false, life:60*30, _land:true, _di:true, _diRide:pl, _diDx:dx }); WND.crates++;
 }
 // THE CHEST PARTY (CPUs): now and then two CPU teammates (the pair nearest the Airship) go to it and stand on both plates for the chest; it ends when the chest opens, a foe is in arm's reach of either one, one is dead or at 100%, or after 60 s
-const WH_PARTY_COST = 1300;   // the route graph's cost to the Airship (about frames of walking) that a CPU may be at and still be sent
+const WH_PARTY_COST = 1800;   // the route graph's cost to the Airship (about frames of walking) that a CPU may be at and still be sent (CPU fix 2026-11-16: was 1300; measured costs on the Airship variant are 1000 to 2500, so a pair was never sent: 0 chest openings in 16 matches. 2400 sent pairs on trips of 2000+ frames that a foe always cut short: 0 openings in 3 tries; 1800 opened it once in 3)
 function whPartyCost(f, sh){ const N = whNav(); if(!N) return 1e9; const a = ynNodeAt(N, f, true), g = N.byP.get(sh); if(!a || !g) return 1e9; if(a === g) return 0; const P = ynPlan(N, a, new Map([[g, 1]]), f.x); return P ? P.cost : 1e9; }
 function whParty(W){
   const C = W.chest; if(!C || !C.p) return; const sh = C.p, P = W.party;
