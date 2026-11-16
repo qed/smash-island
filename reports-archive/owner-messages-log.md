@@ -186,6 +186,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16 (screenshot of Bow inside a new Stapy lighthouse: 0/4 tag, two small circles (one purple, one grey) beside a barred hatch in the ceiling)**: what?
 - **2026-11-16 (after playing the new Stapy lighthouses)**: this is a bit too hard. it should be easier. remove the stupid gates with stupid conditions.
 - **2026-11-16 (next, after I said a net fall would put you back at the start of that piece)**: they should reset you to the floor
+- **2026-11-16 (next, playing Stapy)**: the walljump sections are ridiculously hard
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
