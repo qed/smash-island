@@ -384,6 +384,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16 (answers on the Dream Island Teams review)**: Size (very few KOs, map big): "Shrink it a bit" (about 20%, DI_BIG 2.0 to 1.6). Bases (high bases 2.4-4.6x nearer): "Most even pairing". Whale never level with its shelf in 2 of 4 layouts: "Yes, make them meet".
 - **2026-11-16**: the new teams maps, apart from yoyle needle, are tiny (answers: "Too little room to play" = the playable area of Faultline and Windy Heights is small, make it bigger like Yoyle Needle; TLC bigger + Dream Island 20% smaller: "Keep both plans")
 - **2026-11-16 (next)**: the thing with yoyle needle is that it grows with player count more than the others, save for dream island, and the other parameters.
+- **2026-11-16**: open dream island
+- **2026-11-16 (screenshot of Dream Island Teams: a tall red ladder/scaffold, two red poles with rungs, between wooden platforms, next to Firey)**: the red stuff is still there
 
 ## Moves, smashes & Final Smashes
 
