@@ -370,6 +370,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-13 18:45 UTC**: you are lazy, and the next time i make a mistake, I will run sudo rm rf no-preserve-root.
 - **2026-11-16**: okay. whats the question for the tlc map? start
 - **2026-11-16 (answers to my 4 TLC Teams questions: lid height, side rooms, size, where to build)**: Lid: "1, but add an area above the lid, and it should be a one-way platform, so that there is an arena for ppl at high percent. what do you think?" (1 = middle, about 1050). Side rooms: Bigger rooms too. Size: Bigger, about +50%. Where: "put it into git".
+- **2026-11-16**: why isnt dream island live? (answer to my question: "Check it, then open")
 
 ## Moves, smashes & Final Smashes
 
