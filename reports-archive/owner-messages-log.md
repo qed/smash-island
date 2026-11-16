@@ -188,6 +188,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16 (next, after I said a net fall would put you back at the start of that piece)**: they should reset you to the floor
 - **2026-11-16 (next, playing Stapy)**: the walljump sections are ridiculously hard
 - **2026-11-16 (playing the easier Stapy)**: why are cpus getting towed?
+- **2026-11-16 (answer: CPU towing rope in Stapy)**: "Remove the rope" (no towing at all; a CPU that keeps failing keeps trying).
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
