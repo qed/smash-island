@@ -27141,13 +27141,14 @@ function ynNavBuild(key, M0){   // (key 'wn' and the empty M0: Windy Heights Tea
       let cv = 0, e = p.x; for(const r of iv){ if(r[1] > e){ cv += r[1] - Math.max(r[0], e); e = r[1]; } } if(cv >= p.w - 2) continue; }   // (a solid piece buried flush under others, the hull's feet under the slab and the balcony: no surface, no node)
     if(key === 'yn' && p.yn === 'wall' && solids0.some(s=>s !== p && s.x < p.x + p.w && s.x + s.w > p.x && s.y + s.h > p.y - 60 && s.y + s.h <= p.y + 1)) continue;   // (a wall's top is a place to stand where nothing hangs over it: the eye window's sill runs over one)
     const n = { id:nodes.length, p, x0:p.x, x1:p.x + p.w, y:p.y, drift:!!p.mv, adj:[] }; nodes.push(n); byP.set(p, n); }
+  { const cn = navCutNodes(nodes, worldPlats.filter(p=>p.solid)); nodes.splice(0, nodes.length, ...cn); byP.clear(); for(const n of nodes) if(!byP.has(n.p)) byP.set(n.p, n); }   // (a tall solid standing on a floor cuts it)
   const solids = worldPlats.filter(p=>p.solid), BK = 400, sb = new Map(), nb = new Map();
   for(const s of solids) for(let b = Math.floor(s.x/BK); b <= Math.floor((s.x + s.w)/BK); b++){ if(!sb.has(b)) sb.set(b, []); sb.get(b).push(s); }
   for(const n of nodes) if(!n.drift) for(let b = Math.floor(n.x0/BK); b <= Math.floor(n.x1/BK); b++){ if(!nb.has(b)) nb.set(b, []); nb.get(b).push(n); }
   const cg = worldPlats.find(p=>p.yn === 'cage'), avoid = []; if(cg) avoid.push([cg.bx - 25, cg.bx + cg.w + 25]); if(M && M.vent) for(const v of M.vent) avoid.push([v.x - 25, v.x + v.w + 25]);
   YNN_IDX = { nb, BK, avoid };
   const near = (x0, x1)=>{ const out = new Set(); for(let b = Math.floor((x0 - 80)/BK); b <= Math.floor((x1 + 80)/BK); b++){ const a = sb.get(b); if(a) for(const s of a) out.add(s); } return Array.from(out); };
-  const edge = (A, B)=>ynEdge(A, B, near(Math.min(A.x0, B.x0), Math.max(A.x1, B.x1)));
+  const edge = (A, B)=>ynEdgeFx(A, B, near(Math.min(A.x0, B.x0), Math.max(A.x1, B.x1)));
   for(const A of nodes){ if(A.drift) continue; const seen = new Set();
     for(let b = Math.floor((A.x0 - 460)/BK); b <= Math.floor((A.x1 + 460)/BK); b++){ const a = nb.get(b); if(!a) continue;
       for(const B of a){ if(B === A || seen.has(B)) continue; seen.add(B);
@@ -27177,12 +27178,57 @@ function ynNavBuild(key, M0){   // (key 'wn' and the empty M0: Windy Heights Tea
   YNN = { nodes, byP, solids, movers, dyn, near, blocked:{}, plans:0, planFail:0, hopFail:0, zip:!!(zipFrom && zipTo), zipFrom, nodeCount:nodes.length, edgeCount:nodes.reduce((a, n)=>a + n.adj.length, 0) + Array.from(dyn.values()).reduce((a, l)=>a + l.length, 0) };
   return YNN;
 }
-function ynNodeAt(N, f){
+// CPU FIXES 2026-11-16 (Yoyle Needle, Faultline, Windy Heights Teams): the route graph's own helpers. Not used by the TLC Teams map (ynEdge/ynNodeAt keep their old behaviour there).
+// A floor with a tall solid standing on it is two floors: a CPU planned a walk straight through a pillar and pressed against it for ever (a 45 px nook beside a 585 px pillar on the Faultline).
+function navCutNodes(nodes, solids){
+  const out = [];
+  for(const n of nodes){
+    if(n.drift){ out.push(n); continue; }
+    const cuts = [];
+    for(const s of solids){ if(s === n.p || s.mv || s.pl != null) continue; if(s.x < n.x1 - 2 && s.x + s.w > n.x0 + 2 && s.y < n.y - 30 && s.y + s.h > n.y - 60) cuts.push([Math.max(n.x0, s.x), Math.min(n.x1, s.x + s.w)]); }
+    if(!cuts.length){ out.push(n); continue; }
+    cuts.sort((a, b)=>a[0] - b[0]);
+    let cur = n.x0; const pieces = [];
+    for(const c of cuts){ if(c[0] > cur) pieces.push([cur, c[0]]); cur = Math.max(cur, c[1]); }
+    if(cur < n.x1) pieces.push([cur, n.x1]);
+    for(const pc of pieces) if(pc[1] - pc[0] >= 24) out.push(Object.assign({}, n, { x0:pc[0], x1:pc[1], adj:[], cut:1 }));
+  }
+  out.forEach((n, i)=>{ n.id = i; });
+  return out;
+}
+// the surface a fighter stands on: one whose span holds the fighter first (a flat 400 px penalty for standing past an end let a short wall-top 14 px away win over the long roof the CPU stood on), then the nearest in height
+function ynNodeAtFx(N, f){
+  const feet = f.y + f.r; let best = null, bd = 1e9;
+  for(const n of N.nodes){ const x0 = n.drift ? n.p.x : n.x0, x1 = n.drift ? n.p.x + n.p.w : n.x1, py = n.drift ? n.p.y : n.y; if(f.x < x0 - 30 || f.x > x1 + 30 || Math.abs(feet - py) > 8) continue; const d = (f.x < x0 || f.x > x1 ? 1e5 : 0) + Math.abs(feet - py)*50 + Math.abs(f.x - (x0 + x1)/2)*0.01; if(d < bd){ bd = d; best = n; } }
+  return best;
+}
+function ynNodeForFx(N, x, y){
+  let best = null, bd = 1e9;
+  for(const n of N.nodes){ const x0 = n.drift ? n.p.x : n.x0, x1 = n.drift ? n.p.x + n.p.w : n.x1, py = n.drift ? n.p.y : n.y; if(x < x0 - 10 || x > x1 + 10 || py < y - 40) continue; const d = py - y; if(d < bd){ bd = d; best = n; } }
+  if(best) return best;
+  for(const n of N.nodes){ const d = Math.hypot((n.p.x + n.p.w/2) - x, n.p.y - y); if(d < bd){ bd = d; best = n; } }
+  return best;
+}
+// ynEdge with two corrections: (1) a walk costs the walk between its two ends (it was priced by how far apart the two floors START, so 150 for a long slab, and a bogus hop-and-drop through a ledge looked cheaper); (2) a walk-off 'drop' is no edge when another surface lies level with the lip or under it and above the target between the lip and the landing (the fall lands THERE: the CPU dropped on the balcony it came from, replanned, and looped)
+function ynEdgeFx(A, B, sol){
+  const e = ynEdge(A, B, sol); if(!e) return e;
+  if(e.t === 'walk' && e.lx != null && e.tx != null){
+    if(!A.drift && !B.drift && Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0) > 2){   // two level surfaces that overlap (a block on a grate 5 px lower): walking from one to the other is walking off the end of A that B reaches past; if B lies within A there is no step to take (the old edge sent the CPU to B's far end, and the plan on B sent it back: it shuffled across the seam for ever)
+      const rb = B.x1 - A.x1, lb = A.x0 - B.x0; if(rb <= 20 && lb <= 20) return null;
+      const dir = rb >= lb ? 1 : -1; e.lx = dir > 0 ? A.x1 - 8 : A.x0 + 8; e.tx = dir > 0 ? Math.min(B.x1 - 14, A.x1 + 30) : Math.max(B.x0 + 14, A.x0 - 30); }
+    e.c = 20 + Math.abs(e.tx - e.lx)/8; }
+  else if(e.t === 'drop' && !e.soft && e.wx != null && e.tx != null && YNN_IDX && !A.drift && !B.drift){
+    const ex = e.wx < e.lx ? A.x0 : A.x1, lo = Math.min(ex, e.tx), hi = Math.max(ex, e.tx);
+    for(let b = Math.floor(lo/YNN_IDX.BK); b <= Math.floor(hi/YNN_IDX.BK); b++){ const bk = YNN_IDX.nb.get(b); if(bk) for(const C of bk){ if(C === A || C === B || C.drift) continue; if(C.x1 > lo && C.x0 < hi && C.y >= A.y - 4 && C.y <= B.y + 6) return null; } }
+  }
+  return e;
+}
+function ynNodeAt(N, f, fx){ if(fx) return ynNodeAtFx(N, f);
   const feet = f.y + f.r; let best = null, bd = 1e9;
   for(const n of N.nodes){ const p = n.p, x0 = p.x, x1 = p.x + p.w; if(f.x < x0 - 30 || f.x > x1 + 30 || Math.abs(feet - p.y) > 8) continue; const d = Math.abs(f.x - (x0 + x1)/2) + (f.x < x0 || f.x > x1 ? 400 : 0); if(d < bd){ bd = d; best = n; } }
   return best;
 }
-function ynNodeFor(N, x, y){   // the surface at or below a point (a foe in the air: what it will land on)
+function ynNodeFor(N, x, y, fx){ if(fx) return ynNodeForFx(N, x, y);   // the surface at or below a point (a foe in the air: what it will land on)
   let best = null, bd = 1e9;
   for(const n of N.nodes){ const p = n.p; if(x < p.x - 10 || x > p.x + p.w + 10 || p.y < y - 40) continue; const d = p.y - y; if(d < bd){ bd = d; best = n; } }
   if(best) return best;
@@ -27215,9 +27261,9 @@ function ynLineClear(N, x0, x1, y){   // no solid piece across a row of the body
   for(const s of N.near(lo, hi)) if(s.x < hi && s.x + s.w > lo && s.y < y + 18 && s.y + s.h > y - 18) return false;
   return true;
 }
-function ynFoeNodes(N, f){
+function ynFoeNodes(N, f, fx){
   const goals = new Map();
-  for(const o of fighters){ if(o.dead || o === f || o.team === f.team) continue; const n = ynNodeAt(N, o) || ynNodeFor(N, o.x, o.y + (o.r || 24)); if(n && !goals.has(n)) goals.set(n, o); }
+  for(const o of fighters){ if(o.dead || o === f || o.team === f.team) continue; const n = ynNodeAt(N, o, fx) || ynNodeFor(N, o.x, o.y + (o.r || 24), fx); if(n && !goals.has(n)) goals.set(n, o); }
   return goals;
 }
 // where else a CPU wants to go: a ripe berry bush when a fight is ahead (and it is not metal), a lever now and then
@@ -27237,12 +27283,12 @@ function ynSideGoal(f, N, M){
       if(!L.mvc) L.mvc = ynLevMovers(L);
       const sab = fighters.some(o=>!o.dead && o.team !== f.team && o._stgRide && L.mvc.includes(o._stgRide)), wait = (f._ynWait || 0) > 60 && f._ynWaitP && f._ynWaitP.some(p=>L.mvc.includes(p)), idle = nd > 900 && dl < 500 && (f.idx*7 + Math.floor(hazardT/1200)) % 3 === 0;
       if(sab || wait || idle){ bd = dl; best = L; } }
-    if(best){ const n = ynNodeFor(N, best.x, best.y - 4); if(n){ f._ynSide = { n, lever:best, until:hazardT + 420 }; return f._ynSide; } }
+    if(best){ const n = ynNodeFor(N, best.x, best.y - 4, true); if(n){ f._ynSide = { n, lever:best, until:hazardT + 420 }; return f._ynSide; } }
   }
   // a ripe berry bush when a fight is ahead (and it is not metal)
   if(!(f._yoyleT > 0) && M.bush.length && (f.pct > 25 || (f.idx + Math.floor(hazardT/900)) % 3 === 0)){
     let best = null, bd = 1e9; for(const b of M.bush){ if(b.t > 0) continue; const d = Math.hypot(b.x - f.x, b.y - f.y); if(d < bd && d < 1400){ bd = d; best = b; } }
-    if(best){ const n = ynNodeFor(N, best.x, best.y - 4); if(n) f._ynSide = { n, bush:best, until:hazardT + 300 }; }
+    if(best){ const n = ynNodeFor(N, best.x, best.y - 4, true); if(n) f._ynSide = { n, bush:best, until:hazardT + 300 }; }
   }
   return f._ynSide;
 }
@@ -27283,7 +27329,7 @@ function ynFollow(f, inp, N, feet, M, foe){
     }
     return false;
   }
-  const node = ynNodeAt(N, f);
+  const node = ynNodeAt(N, f, true);
   if(!node){ f._ynPlan = null; return false; }
   if(P && P.air){
     const A = P.air;
@@ -27296,7 +27342,7 @@ function ynFollow(f, inp, N, feet, M, foe){
   if(!P || now - P.at > (node.drift ? 400 : 40) || P.path.indexOf(node) < 0 || (P.side && P.side.bush && P.side.bush.t > 0)){
     if(f._ynGoalAt && now - f._ynGoalAt < 20 && !P) return false;
     f._ynGoalAt = now;
-    let goals = f._ynGo ? new Map([[f._ynGo, f]]) : ynFoeNodes(N, f), side = null;   // (_ynGo: a harness sends one CPU to one node)
+    let goals = f._ynGo ? new Map([[f._ynGo, f]]) : ynFoeNodes(N, f, true), side = null;   // (_ynGo: a harness sends one CPU to one node)
     const sg = f._ynGo ? null : ynSideGoal(f, N, M);
     if(sg && sg.n !== node){ goals = new Map([[sg.n, sg]]); side = sg; }
     else if(sg && sg.n === node){ return ynSideDo(f, inp, sg) || false; }
@@ -27338,7 +27384,7 @@ function ynFollow(f, inp, N, feet, M, foe){
   if(e.dr){
     let kB = null;   // (the mover it hops onto is where it will be in 18 frames, about a hop's length: aimed at where it is now, the hop lands behind it)
     if(B.drift){ const m = B.p.mv, a = 2*Math.PI*((STG ? STG.t : hazardT) + 18)/m.per + m.ph + (B.p.mo || 0); kB = [B.x0, B.x1, B.y]; B.x0 = B.p.bx + m.ax*Math.sin(a); B.x1 = B.x0 + B.p.w; B.y = B.p.by + m.ay*Math.sin(a + (m.ph2 || 0)); }
-    const live = ynEdge(node, B, N.near(Math.min(node.x0, B.x0), Math.max(node.x1, B.x1)));
+    const live = ynEdgeFx(node, B, N.near(Math.min(node.x0, B.x0), Math.max(node.x1, B.x1)));
     if(kB){ B.x0 = kB[0]; B.x1 = kB[1]; B.y = kB[2]; }
     if(!live){ f._ynWait = (f._ynWait || 0) + 1; f._ynWaitP = [node.p, B.p]; if(f._ynWait > Math.min(1100, Math.max(240, (P.edges[i].per || 0)*0.95))){ f._ynWait = 0; f._ynPlan = null; N.blocked[node.id + '>' + B.id] = now + 200; } inp.left = false; inp.right = false; return true; }
     f._ynWait = 0; live.dr = 1; e = live;
@@ -27896,6 +27942,7 @@ function siEdge(A, B, sol){ const r = DIK.rise; DIK.rise = SIK.rise; try{ return
 function siNavBuild(){
   const nodes = [], byP = new Map();
   for(const p of worldPlats){ if(!p.si || p.w < 24 || p.si === 'wall' || p.si === 'mass' || p.si === 'rubble' || p.si === 'chest' || p.si === 'ledge' || p.nonav) continue; const n = { id:nodes.length, p, x0:p.x, x1:p.x + p.w, y:p.y, drift:!!(p.mv || p.pl != null), adj:[] }; nodes.push(n); byP.set(p, n); }
+  { const cn = navCutNodes(nodes, worldPlats.filter(p=>p.solid && !p.mv && p.pl == null)); nodes.splice(0, nodes.length, ...cn); byP.clear(); for(const n of nodes) if(!byP.has(n.p)) byP.set(n.p, n); }   // (CPU fix 2026-11-16: a tall solid standing on a floor cuts it: the nook beside the pillar had no way out in the graph)
   const solids = worldPlats.filter(p=>p.solid), BK = 400, sb = new Map(), nb = new Map();
   const addB = (m, s, x0, x1)=>{ for(let b = Math.floor(x0/BK); b <= Math.floor(x1/BK); b++){ if(!m.has(b)) m.set(b, []); m.get(b).push(s); } };
   const moveSpan = (p)=>{ if(p.pl == null) return [p.x, p.x + p.w]; const pl = SI.plates[p.pl], k = SIK.k*(SI.flip ? -1 : 1), dxs = [0, (pl.B[0] - pl.A[0])*k]; const a = p.ax != null ? p.ax : p.x; return [Math.min(a, a + dxs[1]) - 20, Math.max(a, a + dxs[1]) + p.w + 20]; };
@@ -27933,7 +27980,7 @@ function siNavBuild(){
 }
 function siNodeAt(N, f){
   const feet = f.y + f.r; let best = null, bd = 1e9;
-  for(const n of N.nodes){ const p = n.p, x0 = p.x, x1 = p.x + p.w; if(f.x < x0 - 30 || f.x > x1 + 30 || Math.abs(feet - p.y) > (p.mv ? 18 : 8)) continue; const d = Math.abs(f.x - (x0 + x1)/2) + (f.x < x0 || f.x > x1 ? 400 : 0); if(d < bd){ bd = d; best = n; } }
+  for(const n of N.nodes){ const p = n.p, x0 = n.drift ? p.x : n.x0, x1 = n.drift ? p.x + p.w : n.x1; if(f.x < x0 - 30 || f.x > x1 + 30 || Math.abs(feet - p.y) > (p.mv ? 18 : 8)) continue; const d = (f.x < x0 || f.x > x1 ? 1e5 : 0) + Math.abs(feet - p.y)*50 + Math.abs(f.x - (x0 + x1)/2)*0.01; if(d < bd){ bd = d; best = n; } }   // (the span that holds the fighter first, then the nearest in height: the old 400 px penalty let a short piece win beside a long one)
   if(!best){   // standing on a catch ledge (no node of its own): the level place it touches, nearest to the fighter
     for(const l of worldPlats){ if(l.si !== 'ledge' || f.x < l.x - 4 || f.x > l.x + l.w + 4 || Math.abs(feet - l.y) > 8) continue;
       let bd2 = 1e9; for(const n of N.nodes){ const p = n.p; if(p.mv || Math.abs(p.y - l.y) > 8 || Math.max(0, p.x - (l.x + l.w), l.x - (p.x + p.w)) > 6) continue; const d2 = Math.abs(f.x - (p.x + p.w/2)); if(d2 < bd2){ bd2 = d2; best = n; } }
@@ -27943,7 +27990,7 @@ function siNodeAt(N, f){
 }
 function siNodeFor(N, x, y){
   let best = null, bd = 1e9;
-  for(const n of N.nodes){ const p = n.p; if(x < p.x - 10 || x > p.x + p.w + 10 || p.y < y - 40) continue; const d = p.y - y; if(d < bd){ bd = d; best = n; } }
+  for(const n of N.nodes){ const p = n.p, x0 = n.drift ? p.x : n.x0, x1 = n.drift ? p.x + p.w : n.x1; if(x < x0 - 10 || x > x1 + 10 || p.y < y - 40) continue; const d = p.y - y; if(d < bd){ bd = d; best = n; } }
   if(best) return best;
   for(const n of N.nodes){ const d = Math.hypot((n.p.x + n.p.w/2) - x, n.p.y - y); if(d < bd){ bd = d; best = n; } }
   return best;
@@ -28352,7 +28399,7 @@ function whPutCrate(pl, dx){
 }
 // THE CHEST PARTY (CPUs): now and then two CPU teammates (the pair nearest the Airship) go to it and stand on both plates for the chest; it ends when the chest opens, a foe is in arm's reach of either one, one is dead or at 100%, or after 60 s
 const WH_PARTY_COST = 1300;   // the route graph's cost to the Airship (about frames of walking) that a CPU may be at and still be sent
-function whPartyCost(f, sh){ const N = whNav(); if(!N) return 1e9; const a = ynNodeAt(N, f), g = N.byP.get(sh); if(!a || !g) return 1e9; if(a === g) return 0; const P = ynPlan(N, a, new Map([[g, 1]]), f.x); return P ? P.cost : 1e9; }
+function whPartyCost(f, sh){ const N = whNav(); if(!N) return 1e9; const a = ynNodeAt(N, f, true), g = N.byP.get(sh); if(!a || !g) return 1e9; if(a === g) return 0; const P = ynPlan(N, a, new Map([[g, 1]]), f.x); return P ? P.cost : 1e9; }
 function whParty(W){
   const C = W.chest; if(!C || !C.p) return; const sh = C.p, P = W.party;
   const foeNear = (f, r)=>fighters.some(o=>!o.dead && o.team !== f.team && Math.hypot(o.x - f.x, o.y - f.y) < r);   // (a pair is only sent when no foe is within 500 of either and both are a short way from the Airship by the route graph; it is called off when a foe is in arm's reach of either, or one is dead or badly hurt)
@@ -28610,7 +28657,7 @@ function whBrain(f, inp){
   const g = whGustAt(hazardT, f.x);
   if(g && !g.up && (g.lead > 0.2 || g.k > 0) && !whLee(Y, f.x, f.y, g.dir)){
     if(!f.onground){ if(g.k > 0 && f.vy > -1){ inp.left = g.dir > 0; inp.right = g.dir < 0; return; } }
-    else { const nd = ynNodeAt(N, f); if(nd){ const d = g.dir > 0 ? nd.x1 - f.x : f.x - nd.x0; if(d < 200){ inp.left = g.dir > 0; inp.right = g.dir < 0; inp.jump = false; f._ynPlan = null; return; } } }
+    else { const nd = ynNodeAt(N, f, true); if(nd){ const d = g.dir > 0 ? nd.x1 - f.x : f.x - nd.x0; if(d < 200){ inp.left = g.dir > 0; inp.right = g.dir < 0; inp.jump = false; f._ynPlan = null; return; } } }
   }
   if(mine >= 0 && sh && f.onground && f._stgRide === sh){ const d = (sh.x + (mine ? 380 : 140)) - f.x; inp.left = d < -14; inp.right = d > 14; inp.jump = false; inp.down = false; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; f._ynPlan = null; return; }   // on the Airship: stand on this fighter's plate (the chest opens when both teammates are on theirs for 1.5 s)
   if(mine >= 0 && sh && f.onground && f._stgRide !== sh && Y.mill){   // ON THE MILL'S ROOF with the Airship to catch: wait at the roof's east end, and run and jump aboard when the Airship is within 150 px of it (and no gust is coming)
@@ -28626,7 +28673,7 @@ function whBrain(f, inp){
   { const Pa = f._ynPlan, a = Pa && Pa.air; if(a && !a.wide && a.to){ a.wide = 1; const Bn = a.to; if(!Bn.drift && Bn.x1 - Bn.x0 > 140) a.tx = Math.min(Bn.x1 - 50, Math.max(Bn.x0 + 50, a.tx)); }
     if(a && a.to && a.to.drift && !f.onground) a.tx = a.to.p.x + a.to.p.w/2; }   // (a ferry: steer at where it is now, middle of it)   // (aim 50 px inside the landing, not 14: a CPU that overshot the lip turned back and missed it)
   if(f.onground && f._ynPlan){   // WAIT AT THE LAUNCH POINT: for a ferry (gondola, vane, airship) that is not in reach yet it stands at the edge's own takeoff spot, not wherever it was (a vane is level with the loft for 10 frames; a CPU 80 px away never made it)
-    const P0 = f._ynPlan, n0 = ynNodeAt(N, f), i0 = n0 ? P0.path.indexOf(n0) : -1, E0 = i0 >= 0 ? P0.edges[i0] : null, B0 = i0 >= 0 ? P0.path[i0 + 1] : null;
+    const P0 = f._ynPlan, n0 = ynNodeAt(N, f, true), i0 = n0 ? P0.path.indexOf(n0) : -1, E0 = i0 >= 0 ? P0.edges[i0] : null, B0 = i0 >= 0 ? P0.path[i0 + 1] : null;
     if(E0 && E0.dr && B0 && n0 && !n0.drift && E0.lx !== undefined && Math.abs(f.x - E0.lx) > 12){
       for(const m of N.movers){ m.x0 = m.p.x; m.x1 = m.p.x + m.p.w; m.y = m.p.y; }
       if(!ynEdge(n0, B0, N.near(Math.min(n0.x0, B0.x0), Math.max(n0.x1, B0.x1)))){ inp.left = f.x > E0.lx; inp.right = f.x < E0.lx; inp.jump = false; inp.down = false; return; }
@@ -28635,7 +28682,7 @@ function whBrain(f, inp){
   const jmp0 = inp.jump, dn0 = inp.down; inp.jump = false; inp.down = false;   // (the fight brain's own jump and down must not ride along on the plan's walk: it dropped CPUs through the first deck when a foe was below)
   if(ynFollow(f, inp, N, feet, WH_M0, foe)){
     // HOLD BACK: not onto the gondola, a vane or the Airship while a gust front is coming (unless hurt or a foe is on it)
-    const P = f._ynPlan, nd = ynNodeAt(N, f);
+    const P = f._ynPlan, nd = ynNodeAt(N, f, true);
     if(P && nd && f.onground && !nd.drift){ const i = P.path.indexOf(nd), B = i >= 0 ? P.path[i + 1] : null, E = i >= 0 ? P.edges[i] : null, gs = whGustSoon(f.x);   // (the travel test's _ynGo CPU holds back too: it must walk as a real CPU walks)
       const boards = B && B.drift && (B.p.wn === 'gondola' || B.p.wn === 'vane' || B.p.wn === 'airship'), leaps = E && (E.t === 'hop' || E.t === 'drop') && Math.abs(f.x - (E.lx === undefined ? f.x : E.lx)) < 160 && gs && !gs.up && gs.dir && !whLee(Y, f.x, f.y, gs.dir) && !!whBox(Y.exp, f.x, f.y);   // a leap on an open deck in a gust is blown off course
       if((boards || leaps) && gs && f.pct < 100 && !(foe && Math.hypot(foe.x - f.x, foe.y - f.y) < 300)){ inp.left = false; inp.right = false; inp.jump = false; inp.down = false; return; } }
