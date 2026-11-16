@@ -183,6 +183,10 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-13 (next, answering who "pb" is)**: puffball, duh
 - **2026-11-13 (next, Black Hole climb)**: id say that leafy, lifering, and bow would be pretty strong
 - **2026-11-13 (next, Black Hole climb)**: and all of the ones that have a "pop up" up-special like liferings
+- **2026-11-16 (screenshot of Bow inside a new Stapy lighthouse: 0/4 tag, two small circles (one purple, one grey) beside a barred hatch in the ceiling)**: what?
+- **2026-11-16 (after playing the new Stapy lighthouses)**: this is a bit too hard. it should be easier. remove the stupid gates with stupid conditions.
+- **2026-11-16 (next, after I said a net fall would put you back at the start of that piece)**: they should reset you to the floor
+- **2026-11-16 (next, playing Stapy)**: the walljump sections are ridiculously hard
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
@@ -373,6 +377,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16**: why isnt dream island live? (answer to my question: "Check it, then open")
 - **2026-11-16 (answers on the Dream Island Teams review)**: Size (very few KOs, map big): "Shrink it a bit" (about 20%, DI_BIG 2.0 to 1.6). Bases (high bases 2.4-4.6x nearer): "Most even pairing". Whale never level with its shelf in 2 of 4 layouts: "Yes, make them meet".
 - **2026-11-16**: the new teams maps, apart from yoyle needle, are tiny (answers: "Too little room to play" = the playable area of Faultline and Windy Heights is small, make it bigger like Yoyle Needle; TLC bigger + Dream Island 20% smaller: "Keep both plans")
+- **2026-11-16 (next)**: the thing with yoyle needle is that it grows with player count more than the others, save for dream island, and the other parameters.
 
 ## Moves, smashes & Final Smashes
 
