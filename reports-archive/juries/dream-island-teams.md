@@ -33,3 +33,39 @@ Owner: "why isnt dream island live?" -> "Check it, then open". Verdict: OPENED, 
 
 ## Honest limits
 CPU level Hard only, 8 matches before and 8 after (one seed per configuration), so the KO numbers are noisy (one match swings by 3). jsdom only: nothing about how the map looks or feels was judged by eye; the Dream Island night, rain and fog were not exercised separately. No human input.
+
+## Round 2 (owner answers: "Shrink it a bit", "Most even pairing", "make them meet")
+
+Built on g-di-open. Same seeds and configurations as round 1.
+
+1. SIZE: DI_BIG 2.0 -> 1.6. Normal 4v4 5872x3058 -> 4697x2446 (2v2 4214x2400, 3v3 4491x2400). Islands keep their spread (layout fractions unchanged). One layout bug showed up at Compact in the mirrored variants (2, 3): the end tower of a base now stood over the drop hole and shut the plank, so the top-right base was unreachable (route check 348/408). The tower now keeps 40 px clear of every drop hole; route check is back to 408/408 and 432/432 in all 12 size/variant combinations.
+2. BASES: DI_OWN picks the most even set of bases per team count and variant (every pair and triple measured at Compact, Normal, Huge; mean route cost from each owned base to the 4 cluster and 3 outer islands; ratio = slowest / fastest). Two teams (2v2, 3v3, 4v4...): variant 0 top-left + top-right, variants 1-3 bottom-left + bottom-right. Three teams (2v2v2): variants 0-1 top-left, top-right, bottom-left; variants 2-3 top-right, bottom-left, bottom-right. Four teams use all four bases (no choice).
+
+| Setup (Normal) | Ratio before | Ratio after |
+|---|---|---|
+| 2 teams v0 | 3.15 | 1.02 |
+| 2 teams v1 | 3.19 | 1.08 |
+| 2 teams v2 | 2.46 | 1.01 |
+| 2 teams v3 | 2.46 | 1.01 |
+| 3 teams v0 / v1 | 3.66 / 3.99 | 3.66 / 3.66 |
+| 3 teams v2 / v3 | 3.89 / 3.94 | 2.37 / 2.35 |
+| 4 teams | 3.4 to 4.6 (measured at size 2.0) | 3.6 to 4.4 (no choice) |
+
+   (Before = the old fixed pairs measured by the same script at the new size.) Honest limits: the two bases of a pair are now even with each other, but a top pair is about 3 times nearer to the islands than a bottom pair in absolute terms. Three teams stay uneven (2.4 to 3.7): no triple of this layout is even. The best set differs a little by map size (variant 2 at Huge: top pair 1.37 against bottom pair 1.39; variant 0 at Huge bottom pair 1.04 against top pair 1.09), so I took the best at Normal and checked it stays within 1.4 at Compact and Huge. Four-team ratio is 3.6 to 4.4 (it was 3.4 to 4.6 at the old size).
+3. WHALE: it already meets the shelves level at both ends in all four variants (checked: shelf and whale deck at the same height, 1 px gap). The real failure was the CPU route finder: it looked for a way onto the whale at 8 moments of its cycle, and the level boarding window is only about 15 frames, so in variants 0 and 1 the whale boarding edge was usually missed. The whale is now sampled at 24 moments. Single-CPU test, a CPU on the shelf with the whale surfacing, both ends, all four variants: it boards every time (49 to 157 frames aboard; before: variants 0 and 1 never).
+
+### Measured after (8 matches, 3 minutes, same seeds; KOs = stocks lost)
+| Mode | Ordinary map | Dream Island 2.0 (round 1) | Dream Island now |
+|---|---|---|---|
+| 2v2 | 5 (1.7 a minute) | 1, 3 | 4, 3 |
+| 3v3 | 8 (2.7 a minute) | 2, 5 | 4, 5 |
+| 4v4 | 10, 12 (3.7 a minute) | 2, 0, 3 | 4, 5, 5 |
+| 2v2v2v2 | not measured | 2 | 10 |
+
+Total stocks lost over the 8 matches: 18 (2.0) -> 40 (1.6). Per minute now: 2v2 1.2, 3v3 1.5, 4v4 1.6; the 4v4 is 43% of the ordinary map's rate (round 1: 15%). Nearest foe in a 2-minute 4v4 probe: 1013 px (round 1: 1156, ordinary map 439), CPUs on a set-piece trip 39% of the time (43%). Stalls: worst stand-still 225 frames, none reached 300 (5 s), 0 errors, 0 bad positions. Whale stands (10+ frames) in real matches: 7 over 8 matches (round 1: 0 before the fix, 8 after round-1 fixes); cranes 133 (round 1: 77, first review: 55), lifts 22 (30). The whale is boarded rarely in real matches because CPUs choose it seldom and most trips end when a foe comes close.
+Repeat of 4 of the same configurations after the tower fix (the layout can change there): 4v4 s14 5 KOs (4 before), 2v2 s15 3 (3), 3v3 s15 7 (5), 2v2v2v2 s14 13 (10); stalls worst 207, errors none. KO counts move by 1 to 3 between runs of the same seed, so single matches say little; 12 matches in all this round.
+Route check: 408/408 (whale down) and 432/432 (whale up) in compact, normal and huge x 4 variants. Fake host/guest sync (2v2, 4v4, 2v2v2v2 at Normal): whale state equal 273/276, 273/276 and 449/456 samples, longest mismatch 10 frames, 0 errors. No-op: Dream Island FFA and Teams on other stages build no Dream Island state. syncheck 0 failed; bootcheck clean.
+
+### Still open for the owner
+- A 4v4 here is still about 43% of the ordinary map's KO rate (it is bigger on purpose); say if it should shrink further.
+- Three teams: no set of three bases is even (best 2.4 in variants 2-3, 3.7 in variants 0-1).
