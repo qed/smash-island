@@ -216,6 +216,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (answers on the new Sticker contest)**: gold: "Carry it to a gold machine"; the Announcer that copies your movement: "it is a cheat detector, there are still cheats."; cheating: "Keep shortcuts".
 - **2026-11-17 (next)**: and its 1 drone per person.
 - **2026-11-17 (Sticker's new contest)**: and the doors should have different loops by color, and make them creative. the doors should be like subway stations, visible on minimap.
+- **2026-11-17 (next, on the minimap)**: not actually visible, but near one you should see the subway map
+- **2026-11-17 (Sticker's new contest, after it was built; "tramps" = the trampolines, "di" read as DI, steering in the air)**: and for the tramps, you can di. any ideas for cheats for sticker?
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
