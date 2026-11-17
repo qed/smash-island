@@ -1177,8 +1177,9 @@
         <div class="optlabel">Screen</div>
         <div class="row">
           <button class="btn ghost sm" id="shakeToggle" onclick="toggleShake()">📳 Screen shake: On</button>
+          <button class="btn ghost sm" id="fxToggle" onclick="toggleJuiceFx()">✨ Effects: Full</button>
         </div>
-        <div class="opthint">Heavy hits shake the screen. Turn it off to keep the picture still.</div>
+        <div class="opthint">Heavy hits shake the screen. Reduced effects: no KO flash, zoom or afterimages, fewer sparks.</div>
       </div>
       <div class="optgrp">
         <div class="optlabel">Controls</div>
@@ -31359,7 +31360,7 @@ addEventListener('visibilitychange', ()=>{ stepClockReset(); });
 // hitbox overlay's red boxes fade. They used to age inside draw(), once per animation frame -- twice as fast on a 120 Hz screen.
 function ageView(k){
   for(let i = 0; i < k; i++){
-    if(shakeAmt > 0.2){ shakeAmt *= 0.85; SHK_X = Math.random()*2 - 1; SHK_Y = Math.random()*2 - 1; }   // (JURY 1: one offset a step; a new one every drawn frame read as static at 144 Hz)
+    if(shakeAmt > 0.2){ shakeAmt *= 0.85; SHK_X = shkRand()*2 - 1; SHK_Y = shkRand()*2 - 1; }   // (JURY 1: one offset a step; a new one every drawn frame read as static at 144 Hz)
     for(let j = DEBUG_HITS.length - 1; j >= 0; j--){ if(--DEBUG_HITS[j].t <= 0) DEBUG_HITS.splice(j, 1); }
   }
 }
@@ -76642,7 +76643,7 @@ function mdiHit(t, isTick, onGround){   // applyHit: this hit may be DI'd and SD
 }
 function mdiDI(f, inp){   // step, in stun: the hit marked is bent by the way held now
   if(f._diAt == null) return;
-  if(!(f.hitstun > 0) || hazardT - f._diAt > HITSTOP_MAX + 4 || mdiExempt(f)){ f._diAt = null; return; }
+  if(!(f.hitstun > 0) || hazardT - f._diAt > HITSTOP_MAX + 4 + (f._hsB || 0) || mdiExempt(f)){ f._diAt = null; return; }   // (_hsB: a strong hit's extra freeze frames keep the window as long past the freeze as ever)
   const b = inp ? diBend(f.vx, f.vy, inp.left, inp.right, inp.up || inp.jump, inp.down) : null;
   if(!b) return;
   f._diAt = null; f.vx = b.vx; f.vy = b.vy;
@@ -76687,7 +76688,7 @@ function brainSdiKeys(f){   // hitStopHold, a CPU: a tap toward the middle of th
   return f.x > WW/2 ? { left:true } : { right:true };
 }
 let STEP_F = null;   // the fighter whose own frame is running in step(), or null
-function hitStopFrames(dmg){ return Math.max(HITSTOP_MIN, Math.min(HITSTOP_MAX, Math.round(2 + (dmg - 3)*4/15))); }   // 3% -> 2, 10% -> 4, 18% -> 6
+function hitStopFrames(dmg){ return Math.max(HITSTOP_MIN, Math.min(HITSTOP_MAX, Math.round(2 + (dmg - 3)*4/15))) + HS_BONUS; }   // 3% -> 2, 10% -> 4, 18% -> 6; + 0-3 on a strong hit (HS_STRONG, MOVE JUICE: applyHit sets HS_BONUS)
 function hitStopOff(){
   if(RACE.active) return true;
   if(KOC.on && (FS.slow > 0 || KOC.over)) return true;   // THE LAST KO (its deciding hit too: kocLaunch runs first): a freeze would eat the slow-mo, and they would leave the close-up unseen
@@ -76807,6 +76808,7 @@ function hitStopHit(t, from, dmg){
     const n = (t._hsBy === from.idx && t._hsMv === mv) ? 1 : hitStopFrames(dmg);   // a later hit of a move that held them already: 1 frame at most
     if(!(t._hitStop > 0)) t._hsAt = hazardT;   // (held from the next frame; one already held stays held)
     t._hitStop = Math.max(t._hitStop||0, n); t._hsBy = from.idx; t._hsKey = key; t._hsMv = mv;
+    t._hsB = n > 1 ? HS_BONUS : 0;   // (MOVE JUICE: the strong-hit frames this hold has, for the DI window: mdiDI)
   }
   hitStopSelf(from, dmg, t);
 }
@@ -97106,7 +97108,7 @@ function hitCircle(f,cx,cy,rad,dmgLow,dmgHigh,kbx,kby,band,sourKb,once){
       const dmg = (sweet || sourKb!=null) ? dmgHigh : dmgLow;
       const k = sourKb!=null ? (sweet ? 1 : sourKb) : ((dmgHigh>0 && dmg!==dmgHigh) ? dmg/dmgHigh : 1);
       if(FS.by === f) FSW.vt = t.idx;
-      applyHit(t, dmg, kbx*k, kby*k, f); FSW.vt = -1;   // counter handled inside applyHit
+      JUICE_SW = band != null && sweet; applyHit(t, dmg, kbx*k, kby*k, f); JUICE_SW = false; FSW.vt = -1;   // counter handled inside applyHit
       if(t.team!==f.team){ landed++; f._confirm = 1; }   // a SWING that lands recovers sooner (see JAB_HIT_CD); a shot landing this frame does not count
     }
   }
@@ -97251,7 +97253,7 @@ function hitShape(f, sh, dmgLow, dmgHigh, kbx, kby, band, sourKb, once){
     const dmg = (sweet || sourKb!=null) ? dmgHigh : dmgLow;
     const k = sourKb!=null ? (sweet ? 1 : sourKb) : ((dmgHigh>0 && dmg!==dmgHigh) ? dmg/dmgHigh : 1);
     if(FS.by === f) FSW.vt = t.idx;
-    applyHit(t, dmg, kbx*k, kby*k, f); FSW.vt = -1;
+    JUICE_SW = band != null && sweet; applyHit(t, dmg, kbx*k, kby*k, f); JUICE_SW = false; FSW.vt = -1;
     if(t.team!==f.team){ landed++; f._confirm = 1; }
   }
   if(summons.length) damageSummons(f, bb.cx, bb.cy, bb.rad, dmgHigh, null, once);   // `once`: hitCircle's, for a boss that must take the move once
@@ -102694,7 +102696,8 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   else if(dmg > 0) t._fsHitT = null;   // (a hit that is not a Final Smash's: a KO from here on is not one: fsKoSlow)
   if(!t._fsLock && !t.dead) kocLaunch(t);   // THE LAST KO: a launch that will carry a match-ending foe out plays slowed down, from any move
   mdiHit(t, isTick, hitGround);   // MDI: this hit may be DI'd / SDI'd (mdiDI, mdiSDI)
-  if(!isTick) hitStopHit(t, from, dmg*fsRow);   // HIT FREEZE: the two of them are held still a moment (none while a Final Smash plays: hitStopOff)
+  const jCls = (!isTick && dmg > 0) ? juiceHitClass(t, dmg) : 0;   // MOVE JUICE: how hard this hit is (power, strong, a KO flight), read once
+  if(!isTick){ HS_BONUS = juiceHsBonus(jCls); t._hsB = 0; hitStopHit(t, from, dmg*fsRow); HS_BONUS = 0; }   // HIT FREEZE: the two of them are held still a moment (none while a Final Smash plays: hitStopOff); a strong hit a little longer (HS_STRONG)
   if(!isTick && !(opts && opts.shot)) hitJumpBack(from, t);   // A JUMP BACK FOR A HIT: the attacker's own swing, in the air with no jumps left (hitJumpBack)
   // A circle still winding up is lost to any hit that connects first -- the counterplay that turns
   // a ring from an answer to everything into a read (see CIRCLE_WINDUP).
@@ -102706,7 +102709,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   t.flash=8;
   puff(t.x,t.y-6,'#fff',5); puff(t.x,t.y-6,(from&&from.color)||'#fff',4);   // a boss's shot (its owner is {team:-1, idx:-2}) and a hazard (null) have no colour: the sparks had none either, and drew in whatever fill the last thing left
   hitFx(t, from, dmg, hitGround);   // the layered sparks, the flash ring on a heavy hit, the launch dust (HIT EFFECTS)
-  if(t.you||from?.you) shake(dmg);
+  if(!isTick && dmg > 0) juiceMarkHit(t, from, jCls, hitGround);   // MOVE JUICE: the stamp the drawing plays (the flash star, lines, chips, a clean spark; the shake, now on strong hits only: juiceHit)
   // per-character damage KO: pile on enough % and they burst regardless of position
   if(t.pct>=t.koCap && !t.dead && !FDR) eliminate(t);   // (THE WIND RACE: damage never KOs) no "maxed out!" line ("Remove them all"): eliminate puts up the KO line, the one line a KO keeps
 }
@@ -102779,6 +102782,9 @@ const SHAKE_PREF_KEY = 'bfsi:shake';
 function shakePrefLoad(){ try{ return localStorage.getItem(SHAKE_PREF_KEY) !== '0'; }catch(e){ return true; } }   // default ON
 function shakePrefSave(v){ try{ localStorage.setItem(SHAKE_PREF_KEY, v ? '1' : '0'); }catch(e){} }
 let SHAKE_ON = shakePrefLoad();
+// (MOVE JUICE: the shake's offsets come from shkRand, a counter of its own, not Math.random: a shake on the screen used to spend the dice the
+// CPUs think with, so turning shake on or off changed how a seeded match played)
+function shkRand(){ let s = shkRand.n = ((shkRand.n | 0) + 1) | 0; s = Math.imul(s ^ 0x9e3779b9, 0x85ebca6b); s = Math.imul(s ^ (s >>> 13), 0xc2b2ae35); s ^= s >>> 16; return (s >>> 0)/4294967296; }
 let shakeAmt=0, SHK_X=0.7, SHK_Y=-0.5; function shake(n){ if(!SHAKE_ON || PCAM.bg) return; shakeAmt=Math.min(12,shakeAmt+n*0.4); }
 function toggleShake(){
   SHAKE_ON = !SHAKE_ON; shakePrefSave(SHAKE_ON);
@@ -103079,6 +103085,7 @@ function eliminate(f){
   }
   { const vt = sideRoomTop(); puff(f.x, Math.max(20 + vt,Math.min(WH-20-vt,f.y)), '#fff', 22); puff(f.x, Math.max(20 + vt,Math.min(WH-20-vt,f.y)), f.color, 14); }
   koStarburst(f.x, f.y, f.color);   // the star at the blast zone (HIT EFFECTS)
+  juiceMarkKo(f);   // MOVE JUICE: the blast beam, the flash and the push-in (juiceKo)
   try{ cosKoBurst(f); }catch(e){}   // the KO effect of whoever knocked them out: drawn only, and never a roll of the dice
   shake((f.you || (f.lastHitBy && f.lastHitBy.you)) ? 30 : 15);   // JURY 1: a KO shook less (3.6 px) than a plain 10% hit (4 px); yours, or one you scored, now shakes to the cap, others half
   if(f.you){ const kb = f.lastHitBy, by = hzBy(f) || ((kb && kb !== f && kb.name && hazardT - (f._lastHitT != null ? f._lastHitT : -1e9) <= 600) ? kb.name : '');   // JURY 1: who did it, if someone hit them in the last 10 s
@@ -111543,6 +111550,336 @@ function stepLandFx(){
 // A splash: droplets thrown up and out to both sides, the way a belly-flop lands (Pickle's missed dive). Particles
 // only -- drawn, falling and gone; nothing here touches a fighter.
 function splashDrops(x,y,color,n){ for(let i=0;i<n;i++){ const side = i%2 ? 1 : -1; particles.push({x, y, vx:side*(0.8+Math.random()*3.2), vy:-(2.2+Math.random()*3.4), life:16+Math.random()*10, color, r:1.6+Math.random()*2}); } }
+// ---------- MOVE JUICE (2026-11-17) ----------
+// The owner: "the moves dont have anything cool. look at any ssbu move, and you'll see that they all have something cool in them", then
+// "especially the animations"; "Both: effects first" (one pass every move of every fighter gets at once, then the redraws, fighter by
+// fighter); the hit freeze: "Yes, small and only on strong hits". Built on what was already there -- the frame layer's six held poses a
+// swing (FR_ATK), HIT ART, HIT EFFECTS (hitFx, koStarburst), impact, the hit freeze, the last KO's close-up -- and read from each move's own
+// numbers (its damage, its launch, its hit area, its startup), so nothing is written per fighter:
+//   WIND-UP   a glint on the body (its front, at head height) as a startup comes to its end and as a smash charge fills, popping as
+//             it goes; the frame layer's lean and squash are deeper through a startup and for a longer, heavier swing (juiceAmp). All of
+//             it on the body: nothing round it and nothing where the hit will land (NO TELLS, the owner, 2026-10-22).
+//   ACTION    a swoosh INSIDE each swing's hit area as it lands, sweeping the way the move goes (juiceSwooshes, from HIT_ART, so it is
+//             never bigger than what hits); afterimages behind a fighter moving fast in a move (juiceGhosts).
+//   IMPACT    a flash star where the blow landed, sized by its power; lines along the launch on a mid or strong hit; hot chips thrown
+//             on a strong one; a CLEAN spark (a pale-blue cross glint) when a move's sweet spot lands; a flat shock ring on the floor
+//             under a strong hit on someone standing. The screen shakes on strong hits only (yours, or a KO flight), scaled and capped.
+//   HIT-STOP  a strong hit holds the two fighters HS_STRONG more frames (see hitStopFrames): the only part the sim sees.
+//   LAUNCH    smoke puffs behind a fighter sent flying hard; a KO shoots a blast beam back at the stage from where they went out,
+//             with a short white flash (at most one every JFX.flashGap frames: under 3 a second) and a 4% push-in toward it.
+// RENDER-ONLY, except the hit freeze. A hit stamps `_jHit` on whoever took it (applyHit: its frame, power, clean / strong / KO-flight
+// bits and who landed it, packed in one number) and a KO `_jKo` (eliminate: its frame and spot); both ride the snapshot
+// (NET_FIGHTER_FLAGS) and nothing but the drawing reads them. The drawing notices a new one (juiceWatch, once a frame of the clock) and
+// puts what it throws into ONE fixed pool (JFX.n slots, the oldest overwritten): its dice come from the spot and the frame (never
+// Math.random) and every piece's motion is worked out from its age, so there is nothing to step, the host, a guest and a replay draw
+// the same, and an 8-fighter match allocates nothing for it frame to frame. "Reduce effects" (Settings) turns off the flash, the
+// push-in, the afterimages and the impact lines, and thins the rest; it never changes the hit freeze (that is the same for everyone).
+const JFX = { n:192, flashGap:21, hs:true };   // hs: the strong-hit freeze (a test switch: false = the freeze exactly as before)
+// THE STRONG-HIT FREEZE. A hit's power is hitFxPower(damage, launch speed): 0 for nothing, 1 for a heavy hit (an 18% smash at mid
+// percent, a 10% hit that launches at 13 px a frame), 1.6 at most. A strong hit (s1+) holds 1 frame more, a very strong one (s2+) 2, and
+// a hit that will carry them out (fsKoFlight, the last KO's own test) 1 more; never past cap in all (the plain freeze is 2-6).
+const HS_STRONG = { s1:1.0, s2:1.35, kill:1, cap:9 };
+let HS_BONUS = 0;   // the frames hitStopFrames adds for the hit being applied right now (applyHit sets it around hitStopHit)
+let JUICE_SW = false;   // hitCircle / hitShape: the hit being applied landed in its move's sweet spot (a move with no band has none)
+// The hit's class, worked out once in applyHit after the launch: round(power*10)*8 + 2 strong + 4 KO flight.
+// The stamp: (((frame*64 + power*10)*16 + bits)*16 + attacker slot + 1), bits 1 stood on the floor, 2 strong, 4 KO flight, 8 clean.
+function juiceHitClass(t, dmg){
+  const sp = Math.hypot(t.vx || 0, t.vy || 0), S = hitFxPower(dmg, sp);
+  const kill = !t.dead && t.hitstun > 0 && sp > 6 && !(MCAVE && MCAVE.on) && fsKoFlight(t, true);   // (pure: the last KO's own flight test; not on the moon's disc)
+  return Math.round(S*10)*8 + (S >= HS_STRONG.s1 ? 2 : 0) + (kill ? 4 : 0);
+}
+function juiceHsBonus(cls){
+  if(!JFX.hs) return 0;
+  const q = Math.floor(cls/8)/10, strong = (cls & 2) !== 0, kill = (cls & 4) !== 0;
+  return Math.min(HS_STRONG.cap - HITSTOP_MAX, (strong ? (q >= HS_STRONG.s2 ? 2 : 1) : 0) + (kill ? HS_STRONG.kill : 0));
+}
+function juiceMarkHit(t, from, cls, grounded){
+  const by = (from && from !== t && from.idx != null && fighters[from.idx] === from && by16(from.idx)) ? from.idx : -1;
+  const bits = (cls & 6) | (grounded ? 1 : 0) | (JUICE_SW && by >= 0 ? 8 : 0);
+  t._jHit = ((hazardT*64 + Math.min(63, Math.floor(cls/8)))*16 + bits)*16 + (by + 1);
+}
+function by16(i){ return i >= 0 && i < 15; }
+function juiceMarkKo(f){
+  const xq = Math.max(0, Math.min(16383, Math.round(f.x/2) + 4096)), yq = Math.max(0, Math.min(16383, Math.round(f.y/2) + 4096));
+  f._jKo = (hazardT*16384 + xq)*16384 + yq;
+}
+// "Reduce effects": saved like the shake switch; default off (full effects).
+const JFX_PREF_KEY = 'bfsi:fxlow';
+function juiceLowLoad(){ try{ return localStorage.getItem(JFX_PREF_KEY) === '1'; }catch(e){ return false; } }
+let JUICE_LOW = juiceLowLoad();
+function toggleJuiceFx(){
+  JUICE_LOW = !JUICE_LOW;
+  try{ if(JUICE_LOW) localStorage.setItem(JFX_PREF_KEY, '1'); else localStorage.removeItem(JFX_PREF_KEY); }catch(e){}
+  try{ if(SND.on) SFX.ui(); }catch(e){}
+  syncJuiceToggle();
+}
+function syncJuiceToggle(){
+  const el = document.getElementById('fxToggle');
+  if(el) el.textContent = JUICE_LOW ? "✨ Effects: Reduced" : "✨ Effects: Full";
+}
+// THE POOL: one slot a piece, struct-of-arrays. Kinds: 1 flash star, 2 impact line, 3 clean glint, 4 floor ring, 5 smoke, 6 KO beam, 7 chip.
+const JP_K = new Uint8Array(JFX.n), JP_L = new Uint8Array(JFX.n), JP_T = new Float64Array(JFX.n);
+const JP_X = new Float32Array(JFX.n), JP_Y = new Float32Array(JFX.n), JP_VX = new Float32Array(JFX.n), JP_VY = new Float32Array(JFX.n);
+const JP_S = new Float32Array(JFX.n), JP_A = new Float32Array(JFX.n), JP_C = new Array(JFX.n).fill('#ffffff');
+let JP_HEAD = 0;
+function jpAdd(k, x, y, vx, vy, life, s, a, col){
+  const i = JP_HEAD; JP_HEAD = (i + 1) % JFX.n;
+  JP_K[i] = k; JP_L[i] = life; JP_T[i] = hazardT; JP_X[i] = x; JP_Y[i] = y; JP_VX[i] = vx; JP_VY[i] = vy; JP_S[i] = s; JP_A[i] = a; JP_C[i] = col;
+}
+function juiceClear(){ JP_K.fill(0); JW.length = 0; JZ.t = -1e9; JFLASH.t = -1e9; JSW.clear(); }
+// What the drawing saw last of each fighter (by slot): the last hit and KO it played, and where the body was the last 8 frames.
+const JW = [];
+const JZ = { t:-1e9, x:0, y:0 }, JFLASH = { t:-1e9 };
+let JW_T = -1;
+const JW_LEN = 8;
+function juiceTint(c){ return (typeof c === 'string' && c.charAt(0) === '#' && c.length === 7) ? c : '#ffd34d'; }
+// Once a frame of the clock (the first draw of a new hazardT): new hits and KOs become pieces, the hard-launched smoke, the trail history.
+function juiceWatch(){
+  if(hazardT === JW_T) return;
+  if(JW_T < 0 || hazardT < JW_T - 3) juiceClear();   // the first frame, or a new match (the clock starts again): start clean (a guest's clock may step back a frame or two: not a reset)
+  else if(hazardT < JW_T) return;
+  JW_T = hazardT;
+  for(let i = 0; i < fighters.length; i++){
+    const f = fighters[i]; if(!f) continue;
+    let w = JW[i];
+    if(!w || w.name !== f.name){   // (by slot and name, not the object: a guest's fighters are new objects every snapshot)
+      w = JW[i] = { name:f.name, jh:f._jHit || 0, jk:f._jKo || 0, hx:new Float32Array(JW_LEN), hy:new Float32Array(JW_LEN), hn:0, sm:-1e9 };
+      for(let k = 0; k < JW_LEN; k++){ w.hx[k] = f.x; w.hy[k] = f.y; }
+      continue;
+    }
+    w.hx[w.hn % JW_LEN] = f.x; w.hy[w.hn % JW_LEN] = f.y; w.hn++;
+    const h = f._jHit || 0;
+    if(h !== w.jh){ w.jh = h; if(h > 0 && !f.dead && hazardT - Math.floor(h/16384) <= 6) juiceHit(f, h); }
+    const ko = f._jKo || 0;
+    if(ko !== w.jk){ w.jk = ko; if(ko > 0 && hazardT - Math.floor(ko/268435456) <= 6) juiceKo(f, ko); }
+    if(!f.dead && f.hitstun > 0 && !(f._fsLock)){
+      const vx = f.vx || 0, vy = f.vy || 0, sp = Math.hypot(vx, vy);
+      if(sp >= 13 && hazardT - w.sm >= (JUICE_LOW ? 4 : 2)){
+        w.sm = hazardT;
+        const r = hitFxDice(f.x, f.y, 61), k = Math.min(1, (sp - 13)/14);
+        jpAdd(5, f.x - vx*0.6 + (r() - 0.5)*8, f.y - vy*0.6 + (r() - 0.5)*8, -vx*0.04, -vy*0.04 - 0.25, 22 + Math.round(k*10), f.r*(0.42 + 0.3*k), r()*6.28, k > 0.6 ? '#f4efe6' : '#e3ddd2');
+      }
+    }
+  }
+}
+function juiceHit(t, h){
+  const by = (h % 16) - 1, bits = Math.floor(h/16) % 16, q = (Math.floor(h/256) % 64)/10, clean = (bits & 8) !== 0;
+  const strong = (bits & 2) !== 0, kill = (bits & 4) !== 0, low = JUICE_LOW;
+  const from = by >= 0 ? fighters[by] : null, P = Math.min(1.6, q);
+  if(P < 0.05 && !clean) return;
+  const vx = t.vx || 0, vy = t.vy || 0, sp = Math.hypot(vx, vy);
+  const ang = sp > 0.5 ? Math.atan2(vy, vx) : (from ? (t.x >= from.x ? 0 : Math.PI) : -Math.PI/2), ca = Math.cos(ang), sa = Math.sin(ang);
+  const R = t.r || 24, cx = t.x - ca*R*0.5, cy = t.y - 6 - sa*R*0.5;   // where the blow landed: the side of the body it came from
+  const rnd = hitFxDice(cx, cy, 53), tint = juiceTint(from && from.color);
+  jpAdd(1, cx, cy, 0, 0, strong ? 7 : 5, (10 + 15*P + (kill ? 8 : 0))*(low ? 0.8 : 1), rnd()*6.28, strong ? '#ffffff' : '#fff6c8');
+  if(clean) jpAdd(3, cx, cy, 0, 0, 13, 20 + 14*P, ang, '#bdf2ff');
+  if(P >= 0.55 && !low){
+    const n = strong ? (kill ? 6 : 5) : 3;
+    for(let i = 0; i < n; i++){
+      const a = ang + (rnd() - 0.5)*(strong ? 0.55 : 0.4), off = R*(0.2 + rnd()*0.5), v = 9 + P*7 + rnd()*4;
+      jpAdd(2, t.x + Math.cos(a + 1.57)*(rnd() - 0.5)*R*0.9 + Math.cos(a)*off, t.y - 6 + Math.sin(a + 1.57)*(rnd() - 0.5)*R*0.9 + Math.sin(a)*off,
+        Math.cos(a)*v, Math.sin(a)*v, 10 + Math.round(P*3), 24 + 34*P*(0.7 + 0.6*rnd()), a, i % 2 ? '#ffffff' : tint);
+    }
+  }
+  if(strong){
+    const n = low ? 3 : (kill ? 8 : 6);
+    for(let i = 0; i < n; i++){
+      const a = ang + Math.PI + (rnd() - 0.5)*2.4, v = 3 + rnd()*4 + P*2;   // chips spray back off the blow (the launch's own sparks go the other way: hitFx)
+      jpAdd(7, cx, cy, Math.cos(a)*v, Math.sin(a)*v - 2, 16 + Math.round(rnd()*8), 2.5 + rnd()*2.5, rnd()*6.28, i % 3 === 0 ? tint : (i % 3 === 1 ? '#ffc94a' : '#ffffff'));
+    }
+    if((bits & 1) && !(MCAVE && MCAVE.on)) jpAdd(4, t.x, t.y + R - 1, 0, 0, 16, 34 + 30*P, 0, '#f2ead8');
+  }
+  if(strong || kill){
+    const mine = t.you || (from && from.you);
+    if(mine || kill) shake(Math.min(26, 10 + 12*(P - 1) + (kill ? 8 : 0)));   // (shake(): 0.4 px a point, 12 px at most; it has its own switch)
+  }
+}
+function juiceKo(f, ko){
+  const vt = sideRoomTop();
+  const x = Math.max(64 - SIDE_ROOM, Math.min(WW - 64 + SIDE_ROOM, (Math.floor(ko/16384) % 16384 - 4096)*2));
+  const y = Math.max(64 + vt, Math.min(WH - 64 - vt, (ko % 16384 - 4096)*2));
+  const ang = Math.atan2((groundY() - 160) - y, WW/2 - x);   // back at the stage
+  jpAdd(6, x, y, 0, 0, 30, JUICE_LOW ? 0.7 : 1, ang, juiceTint(f.color));
+  if(JUICE_LOW || KOC.on || FS.slow > 0 || FS.freeze > 0) return;   // (the last KO and a Final Smash's KO have their own close-up)
+  for(const g of fighters) if(g._fs) return;
+  JZ.t = hazardT; JZ.x = x; JZ.y = y;
+  if(hazardT - JFLASH.t >= JFX.flashGap) JFLASH.t = hazardT;
+}
+// The KO push-in: after fsCamApply, scaled about the spot on the screen (so it stays put and the screen stays covered). None in a turned view.
+function juiceCamApply(c, zoom){
+  const a = hazardT - JZ.t; if(!(a >= 0 && a < 18) || FS_VIEW.on || (MCAVE && MCAVE.on) || JUICE_LOW) return;
+  const k = a < 4 ? (a + 1)/5 : 1 - (a - 4)/14, e = k*k*(3 - 2*k), Z = 1 + 0.04*e;
+  const px = (JZ.x - camX - W/2)*zoom + W/2, py = (JZ.y - camY - H/2)*zoom + H/2;
+  c.translate(px, py); c.scale(Z, Z); c.translate(-px, -py);
+}
+function juiceDrawScreen(){
+  const a = hazardT - JFLASH.t; if(!(a >= 0 && a < 8) || JUICE_LOW) return;
+  ctx.save(); ctx.globalAlpha = 0.3*(1 - a/8); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H); ctx.restore();
+}
+// A 4-point star: two thin diamonds and a bright middle.
+function juiceStar(c, x, y, s, rot, col, a){
+  c.save(); c.translate(x, y); c.rotate(rot); c.globalAlpha = a;
+  c.fillStyle = col; c.beginPath();
+  c.moveTo(0, -s); c.lineTo(s*0.16, -s*0.16); c.lineTo(s, 0); c.lineTo(s*0.16, s*0.16); c.lineTo(0, s); c.lineTo(-s*0.16, s*0.16); c.lineTo(-s, 0); c.lineTo(-s*0.16, -s*0.16); c.closePath(); c.fill();
+  c.fillStyle = '#ffffff'; c.beginPath(); c.arc(0, 0, s*0.2, 0, 7); c.fill();
+  c.restore();
+}
+// The pieces, in world space over the fighters (pass 1) or under them (pass 0: the smoke and the floor rings).
+function juiceDrawPool(pass){
+  const c = ctx;
+  for(let i = 0; i < JFX.n; i++){
+    const k = JP_K[i]; if(!k) continue;
+    const L = JP_L[i], age = hazardT - JP_T[i];
+    if(age >= L || age < -2){ if(age >= L) JP_K[i] = 0; continue; }
+    const under = k === 5 || k === 4;
+    if(under !== (pass === 0)) continue;
+    const a = age < 0 ? 0 : age, u = a/L;
+    const x0 = JP_X[i], y0 = JP_Y[i], s = JP_S[i], ang = JP_A[i], col = JP_C[i];
+    if(k === 1){   // the flash star: a jagged burst, white then the colour shrinking away
+      const r = s*(a < 1 ? 1 : 1.15 - 0.55*u), n = 10;
+      c.save(); c.translate(x0, y0); c.rotate(ang);
+      c.globalAlpha = a < 2 ? 1 : 1 - u; c.beginPath();
+      for(let j = 0; j < n*2; j++){ const rr = j % 2 ? r*0.42 : r*(j % 4 ? 0.86 : 1), t = j/(n*2)*6.2832; if(j) c.lineTo(Math.cos(t)*rr, Math.sin(t)*rr); else c.moveTo(Math.cos(t)*rr, Math.sin(t)*rr); }
+      c.closePath(); c.fillStyle = col; c.fill(); c.lineWidth = 2; c.strokeStyle = a < 2 ? '#ffd34d' : '#ff8a3a'; c.stroke();
+      c.restore();
+    } else if(k === 2){   // an impact line: shoots out along the launch, its tail catching up
+      const d = 0.86, far = (1 - Math.pow(d, a + 1))/(1 - d), near = (1 - Math.pow(d, Math.max(0, a - 2)))/(1 - d);
+      const ca = Math.cos(ang), sa = Math.sin(ang), hx = x0 + JP_VX[i]*far*0.35, hy = y0 + JP_VY[i]*far*0.35, len = Math.min(s, (far - near)*Math.hypot(JP_VX[i], JP_VY[i])*0.35 + s*0.3);
+      c.save(); c.globalAlpha = 1 - u*u; c.lineCap = 'round';
+      c.strokeStyle = '#1c1c1c'; c.lineWidth = 4.2*(1 - 0.6*u); c.beginPath(); c.moveTo(hx, hy); c.lineTo(hx - ca*len, hy - sa*len); c.stroke();
+      c.strokeStyle = col; c.lineWidth = 2.4*(1 - 0.6*u); c.stroke(); c.restore();
+    } else if(k === 3){   // the clean glint: a long cross that flares and turns a little, a ring behind it
+      const g = a < 3 ? (a + 1)/4 : 1 - (a - 3)/(L - 3);
+      c.save(); c.globalAlpha = 0.85*g; c.strokeStyle = col; c.lineWidth = 2.5; c.beginPath(); c.arc(x0, y0, s*(0.45 + 0.5*u), 0, 7); c.stroke(); c.restore();
+      juiceStar(c, x0, y0, s*(0.7 + 0.5*g), 0.35 + u*0.5, col, Math.max(0, g));
+      juiceStar(c, x0, y0, s*0.55*g, 0.35 + 0.785 + u*0.5, '#ffffff', Math.max(0, g));
+    } else if(k === 4){   // a flat shock ring on the floor
+      c.save(); c.globalAlpha = 0.75*(1 - u); c.strokeStyle = col; c.lineWidth = 3*(1 - 0.5*u);
+      c.beginPath(); c.ellipse(x0, y0, s*(0.4 + 0.8*u), s*(0.08 + 0.12*u), 0, 0, 7); c.stroke(); c.restore();
+    } else if(k === 5){   // smoke: drifts, swells, fades
+      const d = 0.9, m = (1 - Math.pow(d, a))/(1 - d);
+      c.save(); c.globalAlpha = 0.55*(1 - u); c.fillStyle = col;
+      c.beginPath(); c.arc(x0 + JP_VX[i]*m, y0 + JP_VY[i]*m - a*0.15, s*(0.6 + 0.9*u), 0, 7); c.fill(); c.restore();
+    } else if(k === 6){   // the KO blast beam: a wedge shot back at the stage, its colour round a white core, thinning out
+      const grow = a < 4 ? (a + 1)/5 : 1, thin = a < 8 ? 1 : 1 - (a - 8)/(L - 8), Lb = (210 + 120*grow)*s, Wb = 46*s*thin;
+      c.save(); c.translate(x0, y0); c.rotate(ang); c.globalAlpha = Math.min(1, 0.25 + thin);
+      c.fillStyle = col; c.beginPath(); c.moveTo(-10, -Wb*0.7); c.lineTo(Lb*grow, -2); c.lineTo(Lb*grow, 2); c.lineTo(-10, Wb*0.7); c.arc(-10, 0, Wb*0.7, Math.PI/2, Math.PI*1.5); c.closePath(); c.fill();
+      c.fillStyle = '#ffffff'; c.beginPath(); c.moveTo(-6, -Wb*0.32); c.lineTo(Lb*grow*0.85, -1); c.lineTo(Lb*grow*0.85, 1); c.lineTo(-6, Wb*0.32); c.closePath(); c.fill();
+      c.restore();
+    } else if(k === 7){   // a hot chip: flung, falling, turning
+      const d = 0.93, m = (1 - Math.pow(d, a))/(1 - d), x = x0 + JP_VX[i]*m, y = y0 + JP_VY[i]*m + 0.18*a*a;
+      c.save(); c.translate(x, y); c.rotate(ang + a*0.4); c.globalAlpha = 1 - u*u; c.fillStyle = col; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.2;
+      c.beginPath(); c.moveTo(s, 0); c.lineTo(-s*0.6, s*0.7); c.lineTo(-s*0.5, -s*0.6); c.closePath(); c.fill(); c.stroke(); c.restore();
+    }
+  }
+}
+// THE SWOOSH: inside each swing's hit area (HIT_ART, live, its plain style), a tapered white band sweeping the way the move goes, edged in
+// the move's colour, over the first 3 frames it is live, fading with the shape. Shots, rings, auras, pulls, grabs and tethers have their own art.
+const JSW = new Map();   // hit-art key -> { t0: the frame it was first seen live (so the sweep starts when the hit does), last: the last frame it was }
+let JSW_T = -1;
+const JSW_DN = { slam:1, chop:1, dive:1, stomp:1, stompdn:1 };   // kinds that swing downward (the rest sweep up and over)
+function juiceSwooshes(){
+  if(!HIT_ART.length) return;
+  const c = ctx;
+  if(JSW_T !== hazardT){ JSW_T = hazardT; if(JSW.size > 64) JSW.forEach(function(v, key){ if(hazardT - v.last > 30) JSW.delete(key); }); }
+  for(let i = 0; i < HIT_ART.length; i++){
+    const e = HIT_ART[i];
+    if(e.m !== 'l' || e.s || !(e.o >= 0) || !e.sh) continue;
+    const age = hazardT - e.t; if(age < 0 || age > 3) continue;
+    const f = fighters[e.o]; if(!f || f.dead) continue;
+    const key = e.k ? e.k : (e.o + ':' + e.sh.kind);
+    let v = JSW.get(key); if(!v){ v = { t0:e.t, last:e.t }; JSW.set(key, v); } else if(e.t - v.last > 2 || v.t0 > e.t){ v.t0 = e.t; }   // (not live last frame: a new swing)
+    v.last = e.t; const t0 = v.t0;
+    const p = Math.min(1, (hazardT - t0 + 1)/3), fade = age > 0 ? 1 - age/4 : 1;
+    const dir = JSW_DN[f._atkKind || ''] ? 1 : -1;
+    c.save(); c.globalAlpha = 0.85*fade;
+    try { juiceSwoosh(c, e.sh, e, p, dir, hazardT - t0, juiceTint(e.c)); } finally { c.restore(); }
+  }
+}
+function juiceSwoosh(c, sh, e, p, dir, t, col){
+  c.fillStyle = '#ffffff'; c.strokeStyle = col; c.lineWidth = 2; c.lineJoin = 'round';
+  if(sh.kind === 'fan'){
+    const r0 = sh.r0, r1 = sh.r1, rIn = r0 + (r1 - r0)*0.5;
+    c.translate(sh.cx, sh.cy); c.scale(sh.face < 0 ? -1 : 1, 1);
+    let a0 = sh.a0, a1 = sh.a1;
+    if(a1 - a0 >= 6.28){ a0 = t*0.5; a1 = a0 + 2.2; }   // all round: a spinning arc
+    const from = dir > 0 ? a0 : a1, span = (a1 - a0)*p*(dir > 0 ? 1 : -1), n = 10;
+    c.beginPath();
+    for(let j = 0; j <= n; j++){ const q = j/n, an = from + span*q; c[j ? 'lineTo' : 'moveTo'](Math.cos(an)*r1, Math.sin(an)*r1); }
+    for(let j = n; j >= 0; j--){ const q = j/n, an = from + span*q, rr = r1 - (r1 - rIn)*q*q; c.lineTo(Math.cos(an)*rr, Math.sin(an)*rr); }
+    c.closePath(); c.fill(); c.stroke();
+    return;
+  }
+  if(sh.kind === 'capsule'){
+    const x2 = sh.x1 + (sh.x2 - sh.x1)*p, y2 = sh.y1 + (sh.y2 - sh.y1)*p, L = Math.hypot(x2 - sh.x1, y2 - sh.y1); if(L < 2) return;
+    const nx = -(y2 - sh.y1)/L, ny = (x2 - sh.x1)/L, w = sh.r*0.7;
+    c.beginPath(); c.moveTo(sh.x1, sh.y1); c.lineTo(x2 + nx*w, y2 + ny*w); c.arc(x2, y2, w, Math.atan2(ny, nx), Math.atan2(ny, nx) + Math.PI, true); c.closePath(); c.fill(); c.stroke();
+    return;
+  }
+  if(sh.kind === 'circle'){
+    const dx = sh.x - (e.ox || 0), dy = sh.y - (e.oy || 0), d = Math.hypot(dx, dy), r = sh.r;
+    if(!(r > 4)) return;
+    if(d > r*0.35){   // a disc ahead of them: a crescent on its leading side
+      const th = Math.atan2(dy, dx), half = 1.2*p, ro = r*0.92, ri = r*0.62;
+      c.beginPath(); c.arc(sh.x, sh.y, ro, th - half, th + half); c.arc(sh.x - Math.cos(th)*r*0.12, sh.y - Math.sin(th)*r*0.12, ri, th + half*0.8, th - half*0.8, true); c.closePath(); c.fill(); c.stroke();
+    } else {   // round the body: two arcs wheeling
+      const a0 = t*0.45; c.lineWidth = Math.max(3, r*0.14); c.strokeStyle = '#ffffff'; c.lineCap = 'round';
+      c.beginPath(); c.arc(sh.x, sh.y, r*0.82, a0, a0 + 1.6*p); c.stroke(); c.beginPath(); c.arc(sh.x, sh.y, r*0.82, a0 + Math.PI, a0 + Math.PI + 1.6*p); c.stroke();
+    }
+    return;
+  }
+  if(sh.kind === 'box'){
+    const cx = sh.x + sh.w/2, cy = sh.y + sh.h/2, horiz = sh.w >= sh.h, s = (horiz ? (cx >= (e.ox || 0) ? 1 : -1) : (cy >= (e.oy || 0) ? 1 : -1));
+    c.beginPath();
+    if(horiz){ const xa = s > 0 ? sh.x : sh.x + sh.w, xb = xa + s*sh.w*p, w = sh.h*0.35; c.moveTo(xa, cy); c.lineTo(xb, cy - w); c.lineTo(xb, cy + w); }
+    else { const ya = s > 0 ? sh.y : sh.y + sh.h, yb = ya + s*sh.h*p, w = sh.w*0.35; c.moveTo(cx, ya); c.lineTo(cx - w, yb); c.lineTo(cx + w, yb); }
+    c.closePath(); c.fill(); c.stroke();
+  }
+}
+// THE GLINT of a move coming: through the end of a startup (stupK past 0.55) it grows on the body's front at head height and pops as the
+// move goes; a smash charge grows one from 40% and, full, pulses it every 24 frames. A Final Smash's coil has its own.
+function juiceGlints(){
+  const c = ctx;
+  for(let i = 0; i < fighters.length; i++){
+    const f = fighters[i]; if(!f || f.dead || f.fsId) continue;
+    let g = 0;
+    const su = stupK(f);
+    if(su >= 0.55) g = (su - 0.55)/0.45;
+    if(f.smashHold > 0){ const ch = Math.min(1, f.smashHold/SMASH_FULL); if(ch >= 1){ const ph = (hazardT % 24)/24; g = Math.max(g, 0.75 + 0.55*(1 - ph)*(1 - ph)); } else if(ch >= 0.4) g = Math.max(g, (ch - 0.4)/0.6*0.7); }
+    if(!(g > 0.02)) continue;
+    const face = f.face < 0 ? -1 : 1, R = f.r || 24, s = R*(0.22 + 0.36*Math.min(1.3, g));
+    const tw = (hazardT*0.09 + i) % 6.2832;
+    juiceStar(c, f.x + face*R*0.62, f.y - R*0.52, s, tw*0.15, juiceTint(f.color), Math.min(1, 0.35 + 0.65*g));
+  }
+}
+// AFTERIMAGES: a fighter moving fast in a move (7 px a frame or more, not launched: a launch has its tumble's smear) leaves two fading copies
+// of its picture where it was 2 and 4 frames ago. Called by drawFighter, in the body's own space, just before the body.
+function juiceGhosts(f, sprite, anim, sx, sy){
+  if(JUICE_LOW || FS_TURN || (MCAVE && MCAVE.on) || f.dead || f.hitstun > 0 || !(f._atkAnim > 0 || f._dashing > 0)) return;
+  const vx = f.vx || 0, vy = f.vy || 0; if(vx*vx + vy*vy < 49) return;
+  const w = JW[f.idx]; if(!w || w.name !== f.name || w.hn < 5 || JW_T !== hazardT) return;
+  const da = drawAlpha;
+  for(let g = 2; g >= 1; g--){
+    const j = (w.hn - 1 - g*2 + JW_LEN*4) % JW_LEN, dx = w.hx[j] - f.x, dy = w.hy[j] - f.y;
+    if(dx*dx + dy*dy < 64 || dx*dx + dy*dy > 40000) continue;
+    ctx.save(); ctx.translate(dx/(sx || 1), dy/(sy || 1));
+    drawAlpha = da*(g === 1 ? 0.3 : 0.15); ctx.globalAlpha = drawAlpha;
+    try { drawSpriteBody(f, sprite, anim); } finally { drawAlpha = da; ctx.restore(); }
+  }
+  ctx.globalAlpha = da;
+}
+// How much deeper the frame layer's lean and squash go: through a startup (the anticipation) and for a long swing (a smash, a heavy
+// special: its length past a jab's). Numbers only (it runs inside the frame layer's hot pass).
+function juiceAmp(f){
+  if(f.fsId) return 1;
+  const len = f._atkLen || ATK_ANIM, w = len > ATK_ANIM ? Math.min(1, (len - ATK_ANIM)/24) : 0;
+  return (1 + 0.45*w)*(stupK(f) >= 0 ? 1.3 : 1);
+}
+// The two hooks draw() calls: under the fighters (0) and over them (1).
+function juiceDraw(pass){
+  if(pass === 0){ juiceWatch(); juiceDrawPool(0); return; }
+  juiceSwooshes(); juiceDrawPool(1); juiceGlints();
+}
 
 // ============================================================
 //  AI
@@ -114835,7 +115172,7 @@ function draw(){
   // On scrolling arenas, zoom OUT so you can see more of the (now bigger) map at once.
   // (a client uses the zoom its own view chose -- see viewZoom and clientCamera; the host's is unchanged)
   const zoom = viewZoom();
-  fsCamApply(ctx, zoom);   // CATCH, THEN CINEMATIC: the Final Smash intro's and slow-mo KO's close-up, over the camera (fsCamApply)
+  fsCamApply(ctx, zoom); juiceCamApply(ctx, zoom);   // (MOVE JUICE: a KO's short push-in) CATCH, THEN CINEMATIC: the Final Smash intro's and slow-mo KO's close-up, over the camera (fsCamApply)
   if(MCAVE && MCAVE.on){ ctx.translate(W/2, H/2); ctx.rotate(camAng); ctx.scale(zoom, zoom); ctx.translate(-W/2, -H/2); }   // MOON CAVES: the view turns about the screen's middle
   else if(zoom!==1){
     // zoom about the screen center, keeping the followed fighter roughly centered
@@ -115082,6 +115419,7 @@ function draw(){
   if(CONTEST) drawContestWorld('under');   // A CONTEST: its own things in the world (a light on the floor, a stack of pages), under the fighters
   drawKitFx('under');   // the Heat Explosion, behind the fighters it catches
   if(FINX.length) finxDraw('under');   // a corkboard, a puddle, a propped mirror (FINISHERS V2)
+  juiceDraw(0);   // MOVE JUICE: new hits and KOs noticed (juiceWatch), the smoke and floor rings under the fighters
   NAMETAG_Q = []; try{ for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(FINX.length && finxHidden(f)) continue; if(f.fsId && fsHides(f)) continue; if(f._oneGhost) drawOneGhostAura(f); try{ drawTellFx(f); }catch(e){} if(f.fsGlow>0 || f.fsId){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); fsDrawAura(f); ctx.restore(); } else fsDrawAura(f); } drawFighter(f); if(f._col) drawCollectSlots(f); if(CONTEST) drawContestBadge(f); if(f._soakT > hazardT){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); drawSoakDrips(f); ctx.restore(); } else drawSoakDrips(f); } if(SETTINGS.mode==='ctf'){ ctfDrawCarry(f); if(CTF.spec) ctfSpecDrawChip(f); } } } finally { nameTagFlush(); }
   if(SETTINGS.mode==='ctf') ctfDrawCoverFront();   // the props a friend stands in, see-through, over the fighters
   if(CTUT.active) ctutDrawWorld();   // the Capture the Flag practice: where a flag may not go
@@ -115122,6 +115460,7 @@ function draw(){
   if(rainOn()) drawRainStreaks();   // THE RAIN (an event twist): streaks across the view while it rains
   if(twistOn('gusts')) drawGustStreaks(); else if(STB.k === 'wind'){ if(WND_VIS) whDrawStreaks(); else drawGustStreaks(gustState(WGUST)); }   // (STAGES B: Windy Heights's gusts, the same art)   // GUSTS (an event twist): leaves and paper blowing in, then across the view while a gust blows
   drawImpactFx();            // impact's dust rings and debris
+  juiceDraw(1);   // MOVE JUICE: the swooshes, the flash stars, lines, chips, clean sparks and KO beams, the glints
   drawArenaHazard('over');   // and a boss arena's hazard, over the fighters
   drawCosKoFx();   // cosmetic KO bursts (see WIN TOKENS): drawn from their own list, never from `particles`
 
@@ -115133,6 +115472,7 @@ function draw(){
   if(viewScrolls() && !RACE.active && SETTINGS.mode!=='ctf' && !(MCAVE && MCAVE.on) && !SPLEEF && !STEPS && !BHC && !FDR && !LHC) drawMinimap();   // the race has its progress bar instead (drawRaceBar); MOON CAVES gets its disc minimap and arrows with the full view; SPLEEF its depth bar
   if(!(MCAVE && MCAVE.on)){ lgDrawMarkers(); drawOffscreenArrows(); }   // (LEDGEGUARD CAMERA: a recovering fighter outside the view has its chevron, not the ring)
   fsDrawScreen();   // a Final Smash's flash and silhouette sweep
+  juiceDrawScreen();   // MOVE JUICE: a KO's white flash (at most one every JFX.flashGap frames)
   if(SETTINGS.mode==='ctf') drawCtfHud();
   if(SPLEEF){ drawSpleefHud(); drawSpleefDepth(); }   // SPLEEF (an event contest): who is left and which floor, and the depth bar where the minimap sat
   if(CONTEST) drawContestHud();   // A CONTEST: its progress panel (the goal is hidden otherwise)
@@ -121298,6 +121638,7 @@ function frPose(f, fd, sp){
     P.mom = FM_ATK; P.fi = fj;
     P.rot = face*amp*FR_ATK[o]; P.sx = 1 + (FR_ATK[o + 1] - 1)*qa; P.sy = 1 + (FR_ATK[o + 2] - 1)*qa; P.dx = face*amp*FR_ATK[o + 3];
     P.smear = FR_ATK[o + 4]; P.bulge = FR_ATK[o + 5]*fd.puff; P.spin = face*FR_ATK[o + 6];
+    { const ja = juiceAmp(f); if(ja !== 1){ P.rot *= ja; P.dx *= ja; P.sx = Math.max(0.7, Math.min(1.4, 1 + (P.sx - 1)*ja)); P.sy = Math.max(0.7, Math.min(1.4, 1 + (P.sy - 1)*ja)); } }   // MOVE JUICE: a deeper anticipation and a heavier swing
     P.eye = fd.atk[slot*2]; P.mouth = fd.atk[slot*2 + 1];
     if(MVA_FACE[ki*6 + slot*2] >= 0){ P.eye = MVA_FACE[ki*6 + slot*2]; P.mouth = MVA_FACE[ki*6 + slot*2 + 1]; }   // the move's own face (MOVE ANIMATIONS)
     P.sdx = -face*R*0.30;
@@ -124914,7 +125255,7 @@ function drawFighter(f){
         if(drawAlpha >= 0.99){ for(const pass of [[26, 'rgba(255,255,255,1)'], [14, 'rgba(255,255,255,1)']]){ ctx.save(); ctx.shadowColor = pass[1]; ctx.shadowBlur = pass[0]; try { drawSpriteBody(f, sprite, anim); } finally { ctx.restore(); } } }
         ctx.save(); ctx.shadowColor = 'rgba(255,255,255,1)'; ctx.shadowBlur = 5; try { drawSpriteBody(f, sprite, anim); } finally { ctx.restore(); }
       }
-      else drawSpriteBody(f, sprite, anim);
+      else { juiceGhosts(f, sprite, anim, sx, sy); drawSpriteBody(f, sprite, anim); }   // (MOVE JUICE: a fast move's afterimages first)
     }
     else{
       // limbs (stubby)
@@ -130752,6 +131093,7 @@ function worldGeoKey(){
 // The flags drawFighter reads. One at its resting value (0, false, null) is left out and arrives as undefined, which
 // every check on these reads the same way (truthiness and `> 0` tests).
 const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering','flying','smashHold','burn',
+  '_jHit', '_jKo',   // (MOVE JUICE: the last hit taken and the last KO, each one packed number -- the drawing plays them: juiceWatch)
   '_nsv',   // (UNIQUE NEUTRAL SMASHES v2: the render-only prop of a neutral smash -- { k, t0, ...whole numbers }; a guest draws it from the host's clock)
   '_swingAnvil',   // (SKY-DROP SMASHES removed: Blocky's swung Anvil Smash -- { t0, wind }, the frame it began and its wind-up: a guest draws the anvil in his hands from it and the host's clock; cleared below once the swing is over)
   // ...and the rest of what the tints and STATUS_ICONS read. Only cloud, armor, counter and flying of the 34 icons reached a
@@ -141552,6 +141894,7 @@ buildBoard();
 try{ syncMusicToggle(); }catch(e){}
 try{ syncKeyStripToggle(); }catch(e){}
 try{ fillKeyLabels(); }catch(e){}
+try{ syncJuiceToggle(); }catch(e){}   // (MOVE JUICE: the Effects button: "Reduced" for a player who chose it)
 try{ syncShakeToggle(); }catch(e){}   // and the shake button, likewise: "Off" for a player who switched it off last session
 try{ syncDontCountToggle(); }catch(e){}   // and "Don't count my visits": "On" on a computer that switched it on
 try{ initVault(); }catch(e){}
