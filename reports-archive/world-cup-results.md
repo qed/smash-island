@@ -443,4 +443,5 @@ Several of these are CPU gaps that the queued bot fixes close (edge-guarding, ha
 ## Series 2 (from 2026-11-17, owner numbering restarts at 1; played on the Update 6 preview build: new up/down smashes batches 1-3, move effects + strong-hit freeze, CPU recovery fix)
 
 - **S2 #1 (2026-11-17):** Owner: "WC winner 1:needle"
-   - Winner: **Needle**. Opponent, team size, stocks and CPU level not given (log as given; Expert and items/smash balls off assumed, per the owner's earlier cups). Notes (lead): Needle has no own up/down smash pair yet (batches 1-3 were other fighters), so her kit is as in Update 5 apart from the game-wide move effects; CPUs now recover far better after the 2026-11-17 recovery fix, which may change who wins cups.
+   - Winner: **Needle**. Opponent, team size, stocks and CPU level not given (log as given; Expert and items/smash balls off assumed, per the owner's earlier cups). Notes (lead): Needle is one of the batch-1 fighters with her own up/down smash pair (in this build, with the range fix still pending), plus the game-wide move effects; CPUs now recover far better after the 2026-11-17 recovery fix, which may change who wins cups.
+   - Owner's follow-up: "match" -- read as the other finalist: **Match** (the loser of this final). If "match" meant something else (e.g. just "the match"), correct me.
