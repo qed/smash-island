@@ -1224,6 +1224,7 @@ keyed by the assist's name; MePhone4's hostile adds wear the same art.
 | Blender | `blender.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/5/5a/BlenderTPOT14.png/revision/latest?cb=20251018182459 |
 | Shopping Cart | `shopping-cart.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0f/ShoppingcartTPOT14.png/revision/latest?cb=20251018183502 |
 | Beach Ball | `beach-ball.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3b/Elswerebeachball.png/revision/latest?cb=20260102211016 |
+| Hot Dog | `hot-dog.png` (388x158) | https://battlefordreamisland.fandom.com/wiki/File:Bfdi_Season_6_Hot_Dog.png (his BFDIE infobox image, 2245x1158) |
 
 ### Notes on individual renders
 
@@ -1623,3 +1624,7 @@ Their picture is the one already in the game and already credited above: `beach-
 ### Event fighters' skins (recolours)
 
 One skin for each event fighter (`skins/chalk-eraser.png`, `soaked-spongy.png`, `cobalt-8-ball.png`, `ember-black-hole.png`, `scarlet-clock.png`, `storm-cloudy.png`, `cherry-pie.png`, `gold-stapy.png`, `orange-foldy.png`, `twilight-beach-ball.png`, with thumbnails in `thumbs/`). Each is the fighter's own render already credited above with its hue and lightness changed by a one-off script (2026-11-16), so nothing new was downloaded and the shape and size are the base render's. They are given by unlocking the fighter, not sold.
+
+### Hot Dog (BFDI wiki; BFDIE, an event fighter)
+
+His picture is his BFDIE infobox image, File:Bfdi Season 6 Hot Dog.png (2245x1158, transparent), downloaded for this build. `hot-dog.png` is made from it by `scripts/make-event-hotdog-art.py`: the two little stick legs the picture has are cut off (the approved design gives him no arms and no legs: he rocks and hops on the bottom of his bun), then it is trimmed and scaled to 388x158 (the size the other event renders are drawn at). Every pose, the scowl, the steam, the mustard, the onions, the poles and the chamber of his Final Smash are drawn in code (`FIGHTER_ANIM["Hot Dog"]`). His event skin, `skins/toasted-hot-dog.png` (thumbnail in `thumbs/`), is the same picture with its hue and lightness changed by that script: nothing else was downloaded.
