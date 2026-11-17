@@ -237,6 +237,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (after Needy was built; her render's stick legs had been left out because the lead read "doesnt have arms" as "no limbs")**: why does needy not have legs?
 - **2026-11-17 (next, playing Needy's contest Evil Serum)**: also, there is only 1 syringe in needys event
 - **2026-11-17 (answers: Black Hole big ideas, balance, sweet spots)**: BH big: World layers (not moods, debris ladder, mini planets); BH more: Gravity flips, Rocket parts, Earlier picks 5-13 (not white hole revenge); balance: Sticker heavier, Jammy kit play, Hot Dog: bigger sample (not leave them); sweet spots batch 1: Merge it
+- **2026-11-17 (next, Jammy's contest The Ruler's Crown)**: jammys event would work better if you had more space and twists. give me them now.
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
