@@ -26371,19 +26371,38 @@ function diIcon(c, t, cx, cy, s, col){   // 0 heal cross, 1 shield, 2 crate, 3 c
   else { c.fillRect(cx - s*0.45, cy - s*0.1, s*0.9, s*0.5); c.beginPath(); c.arc(cx, cy - s*0.1, s*0.45, Math.PI, 0); c.fill(); c.stroke(); c.strokeRect(cx - s*0.45, cy - s*0.1, s*0.9, s*0.5); }
   c.restore();
 }
+// PERF (2026-11-16): VIEW CULLING for the big Teams maps' painters. Those maps are 5,000 to 13,000 px wide with 100 to 400 pieces, and every
+// piece was painted every frame wherever the camera was: 4,000 to 6,500 of the 5,000 to 7,500 paint calls a frame put no pixel on the screen.
+// cullRect: the world rectangle the canvas shows through c's transform as it is now (the camera, its zoom, a Final Smash close-up, a
+// ledgeguard view, a shake: whatever the picture uses), padded by m world px on every side. null when the transform cannot be read --
+// then nothing is skipped. cullOut: a box wholly outside it. A painter skips a piece only when all it paints lies within its box padded
+// by m, so a skipped piece would have put no pixel on the screen: the picture is exactly what it was.
+function cullRect(c, m){
+  if(!c || typeof c.getTransform !== 'function' || !c.canvas) return null;
+  let T; try{ T = c.getTransform(); }catch(e){ return null; }
+  const det = T.a*T.d - T.b*T.c, cw = c.canvas.width, ch = c.canvas.height;
+  if(!det || !Number.isFinite(det) || !(cw > 0) || !(ch > 0)) return null;
+  const ia = T.d/det, ib = -T.b/det, ic = -T.c/det, id = T.a/det, ie = (T.c*T.f - T.d*T.e)/det, ig = (T.b*T.e - T.a*T.f)/det;
+  const xs = [ie, ia*cw + ie, ic*ch + ie, ia*cw + ic*ch + ie], ys = [ig, ib*cw + ig, id*ch + ig, ib*cw + id*ch + ig];
+  const V = { x0:Math.min(xs[0], xs[1], xs[2], xs[3]) - m, y0:Math.min(ys[0], ys[1], ys[2], ys[3]) - m, x1:Math.max(xs[0], xs[1], xs[2], xs[3]) + m, y1:Math.max(ys[0], ys[1], ys[2], ys[3]) + m };
+  return (Number.isFinite(V.x0) && Number.isFinite(V.y0) && Number.isFinite(V.x1) && Number.isFinite(V.y1)) ? V : null;
+}
+function cullOut(V, x, y, w, h){ return !!V && (x > V.x1 || x + w < V.x0 || y > V.y1 || y + h < V.y0); }
 function diDrawPlats(){
   const c = ctx, grass = (stage && stage.ground) || '#86c75a', t = hazardT, night = diIsNight(t);
   c.save(); c.lineJoin = 'round';
   const info = diSolidInfo();
   for(const p of worldPlats) if(p.ib) diDrawCave(c, p.ib);
-  for(const p of info.sol) diDrawSolid(c, p, info);
+  { const V = cullRect(c, 300); for(const p of info.sol) if(!cullOut(V, p.x, p.y, p.w, p.h)) diDrawSolid(c, p, info); }   // (PERF: VIEW CULLING)
   for(const p of worldPlats) if(p.ib){ diDrawBaseExtras(c, p.ib, t); diDecor(c, { x:p.ib[0], top:p.ib[1], ix:p.ix, th:p.ib[5] }, info, t); }
   for(const p of info.sol) if(p.di === 'outer'){ diDecor(c, { x:p.x, top:p.y, ix:p.ix, th:p.th }, info, t); diDrawOuterTheme(c, p, t); }
   diDrawResort(c, info, t);
   const LH = diLightHouse();
+  const V = cullRect(c, 300);   // (PERF: VIEW CULLING; every piece paints within 300 px of its box but those named here)
   for(const p of worldPlats){
     const k = p.di; if(!k || k === 'isle') continue;
     c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+    if(!(k === 'outer' || k === 'boat' || k === 'blimp' || k === 'whale' || k === 'chand' || k === 'crumb' || k === 'plate' || p.lh || p.bl || p.ar) && cullOut(V, p.x, p.y, p.w, p.h || 0)) continue;
     if(k === 'ledge' || k === 'gplat'){
       diDrawShelf(c, p, grass);
     } else if(k === 'step'){   // a resort block step (the cluster's stairs: blocks only, no frame)
@@ -27522,26 +27541,28 @@ function ynDrawBack(c, Y, t){
   for(let i = 0; i < 14; i++){ const cx = ((i*977 + t*(0.3 + (i % 3)*0.15)) % (WW + 1200)) - 500, cy = 80 + (i*337) % (WH - 200); c.beginPath(); c.arc(cx, cy, 90, 0, 7); c.arc(cx + 100, cy + 14, 70, 0, 7); c.arc(cx - 100, cy + 16, 62, 0, 7); c.fill(); }
   c.strokeStyle = 'rgba(224,84,111,0.55)'; c.lineWidth = 6; c.beginPath(); for(let x = -600; x < WW + 600; x += 80){ const y = 300 + Math.sin(x*0.004 + t*0.01)*60; if(x === -600) c.moveTo(x, y); else c.lineTo(x, y); } c.stroke();
   // the skin of the needle: riveted plates round the whole shape
-  for(const r of z.skin) ynRect(c, r, YPAL.skin);
+  const V = cullRect(c, 40), vis = (r) => !cullOut(V, r[0], r[1], r[2], r[3]);   // (PERF: VIEW CULLING; each rect paints within itself)
+  for(const r of z.skin) if(vis(r)) ynRect(c, r, YPAL.skin);
   c.strokeStyle = 'rgba(0,0,0,0.25)'; c.lineWidth = 3;
-  for(const r of z.skin){ for(let x = r[0] + 220; x < r[0] + r[2]; x += 220){ c.beginPath(); c.moveTo(x, r[1]); c.lineTo(x, r[1] + r[3]); c.stroke(); } }
-  c.fillStyle = 'rgba(255,255,255,0.14)'; for(const r of z.skin){ for(let x = r[0] + 20; x < r[0] + r[2]; x += 110){ c.fillRect(x, r[1] + 8, 6, 6); } }
+  for(const r of z.skin){ if(!vis(r)) continue; for(let x = r[0] + 220; x < r[0] + r[2]; x += 220){ c.beginPath(); c.moveTo(x, r[1]); c.lineTo(x, r[1] + r[3]); c.stroke(); } }
+  c.fillStyle = 'rgba(255,255,255,0.14)'; for(const r of z.skin){ if(!vis(r)) continue; for(let x = r[0] + 20; x < r[0] + r[2]; x += 110){ c.fillRect(x, r[1] + 8, 6, 6); } }
   // the inside: dark steel panels with ribs
-  for(const r of z.int) ynRect(c, r, YPAL.int);
+  for(const r of z.int) if(vis(r)) ynRect(c, r, YPAL.int);
   for(const r of z.int){
-    c.strokeStyle = 'rgba(120,140,190,0.12)'; c.lineWidth = 3;
+    c.strokeStyle = 'rgba(120,140,190,0.12)'; c.lineWidth = 3; if(!vis(r)) continue;
     for(let x = r[0] + 160; x < r[0] + r[2]; x += 160){ c.beginPath(); c.moveTo(x, r[1]); c.lineTo(x, r[1] + r[3]); c.stroke(); }
     for(let y = r[1] + 150; y < r[1] + r[3]; y += 150){ c.beginPath(); c.moveTo(r[0], y); c.lineTo(r[0] + r[2], y); c.stroke(); }
   }
-  for(const r of z.dark) ynRect(c, r, YPAL.mach);
-  for(const r of z.dark){ c.strokeStyle = 'rgba(120,140,190,0.10)'; c.lineWidth = 3; for(let x = r[0] + 130; x < r[0] + r[2]; x += 130){ c.beginPath(); c.moveTo(x, r[1]); c.lineTo(x, r[1] + r[3]); c.stroke(); } }
+  for(const r of z.dark) if(vis(r)) ynRect(c, r, YPAL.mach);
+  for(const r of z.dark){ c.strokeStyle = 'rgba(120,140,190,0.10)'; c.lineWidth = 3; if(!vis(r)) continue; for(let x = r[0] + 130; x < r[0] + r[2]; x += 130){ c.beginPath(); c.moveTo(x, r[1]); c.lineTo(x, r[1] + r[3]); c.stroke(); } }
   // the eye: the window out, the sky behind it
   const e = z.eye; c.fillStyle = sky[0]; c.fillRect(e[0] - 2, e[1], e[2] + 4, e[3]);
 }
 function ynDrawDeco(c, Y, t){
-  const Mc = ynMech();
+  const Mc = ynMech(), V = cullRect(c, 450);   // (PERF: VIEW CULLING; every piece here paints within 450 px of its box but those it names; the big EXPRESS boards leave their mitred joins and left-aligned text to what follows, so they are never skipped)
   for(const d of Y.deco){
     const k = d[0], x = d[1], y = d[2], w = d[3], h = d[4], a = d[5];
+    if(k !== 'zip' && k !== 'trip' && k !== 'sign' && k !== 'xsign' && k !== 'belt' && k !== 'balcony' && typeof x === 'number' && typeof y === 'number' && cullOut(V, x, y, typeof w === 'number' ? w : 0, typeof h === 'number' ? h : 0)) continue;
     if(k === 'gear'){ const rr = (Math.abs(x*7 + y*3) % 70) + 105; ynGear(c, x, y, (y < 1400 && x > 3000 && x < 3500) ? 210 : rr, t*0.008*(a || 1), '#4b5470', '#38405a'); }
     else if(k === 'spool') ynSpool(c, x, y, w, h, a);
     else if(k === 'pipe') ynPipe(c, x, y, h, a);
@@ -27615,8 +27636,10 @@ function ynDrawPlats(){
   const Mc = ynMech(), act = Mc ? Mc.lev.filter(L=>L.on > 0) : [];
   c.save(); c.lineJoin = 'round';
   ynDrawBack(c, Y, t); ynDrawDeco(c, Y, t);
+  const V = cullRect(c, 300);   // (PERF: VIEW CULLING; every piece paints within 300 px of its box but the cage)
   for(const p of worldPlats){
     const k = p.yn; if(!k) continue;
+    if(k !== 'cage' && cullOut(V, p.x, p.y, p.w, p.h || 0)) continue;
     if(k === 'wall' || k === 'cap' || k === 'roof' || k === 'mass' || k === 'mfloor') ynBlock(c, p, 1);
     else if(k === 'slab' || k === 'balcony') { ynBlock(c, p, 0); }
     else if(k === 'tfloor' || k === 'troof') ynBlock(c, p, 1);   // (PHASE E: the hazard dashes along the tunnel floors and roofs are gone)
@@ -28363,8 +28386,10 @@ function siDrawPlats(){
     else if(z.type === 'heal'){ c.fillStyle = 'rgba(120,220,150,0.20)'; c.fillRect(z.x, z.y, z.w, z.h); c.fillStyle = 'rgba(80,190,120,0.55)'; c.fillRect(z.x + 30, z.y + z.h - 14, z.w - 60, 14); } }
   // the Fossil Shell's ribs (the island's back wall: art only, dim), and the Cairn's lift shaft
   for(const o of Y.outers){ if(o.kind === 'shell'){ c.strokeStyle = 'rgba(232,222,196,0.55)'; c.lineWidth = 6; for(let i = 0; i < 5; i++){ const rx = o.x + 40 + i*(o.w - 80)/4; c.beginPath(); c.moveTo(rx, o.y); c.quadraticCurveTo(rx + 26, o.y - 150, rx + (i - 2)*14, o.y - 210); c.stroke(); } c.strokeStyle = 'rgba(232,222,196,0.4)'; c.beginPath(); c.moveTo(o.x + 30, o.y - 4); c.lineTo(o.x + o.w - 30, o.y - 4); c.stroke(); } }
+  const V = cullRect(c, 300);   // (PERF: VIEW CULLING; every piece here paints within 300 px of its box but a lift's or a shuttle's run)
   for(const p of worldPlats){
     if(!p.si) continue;
+    if(!(p.mv && (p.si === 'lift' || p.si === 'shuttle')) && cullOut(V, p.x, p.y, p.w, p.h)) continue;
     if(p.solid){
       const tone = p.si === 'plate' ? 1 : p.si === 'keystone' ? 2 : (p.si === 'cfloor') ? 3 : (p.si === 'step' || p.si === 'mound') ? 4 : 0;
       if(p.si === 'arm' || p.si === 'plate' || p.si === 'outer' || p.si === 'dock' || p.si === 'keystone' || p.si === 'cfloor' || p.si === 'lip' || p.si === 'midslab') siTail(c, p, p.si === 'cfloor');
@@ -29048,8 +29073,10 @@ function whDrawPlats(){
   c.save(); c.lineJoin = 'round';
   whDrawBack(c, Y, t); whDrawDeco(c, Y, t);
   let li = 0;
+  const V = cullRect(c, 450);   // (PERF: VIEW CULLING; every piece paints within 450 px of its box)
   for(const p of worldPlats){
     const k = p.wn; if(!k) continue;
+    if(cullOut(V, p.x, p.y, p.w, p.h || 0)){ if(!p.solid && k === 'loosedeck') li++; continue; }
     if(p.solid){
       if(k === 'crag'){ whBlock(c, p, 1); c.fillStyle = WPAL.grass; c.fillRect(p.x, p.y, p.w, 12); c.strokeStyle = WPAL.line; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, 12); continue; }
       if(k === 'ground'){ whBlock(c, p, 2); c.fillStyle = WPAL.grass; c.fillRect(p.x, p.y, p.w, 18); c.strokeStyle = WPAL.line; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, 18); }
@@ -29703,7 +29730,8 @@ function tcDrawBack(c, Y, t){
   c.strokeStyle = 'rgba(255,255,255,0.05)'; c.lineWidth = 2;
   for(let y = 300; y < WH; y += 180){ c.beginPath(); c.moveTo(0, y); c.lineTo(WW, y); c.stroke(); }
   for(let x = 120; x < WW; x += 360){ c.beginPath(); c.moveTo(x, K_TOP_DRAW); c.lineTo(x, WH); c.stroke(); }
-  c.fillStyle = 'rgba(255,255,255,0.08)'; for(let y = 330; y < WH; y += 180) for(let x = 120; x < WW; x += 360){ c.fillRect(x + 8, y, 6, 6); c.fillRect(x - 14, y, 6, 6); }
+  { const V = cullRect(c, 40), ya = V ? 330 + 180*Math.max(0, Math.floor((V.y0 - 330)/180)) : 330, yb = V ? Math.min(WH, V.y1 + 1) : WH, xa = V ? 120 + 360*Math.max(0, Math.floor((V.x0 - 120)/360)) : 120, xb = V ? Math.min(WW, V.x1 + 360) : WW;   // (PERF: VIEW CULLING: the rows and columns in view)
+    c.fillStyle = 'rgba(255,255,255,0.08)'; for(let y = ya; y < yb; y += 180) for(let x = xa; x < xb; x += 360){ c.fillRect(x + 8, y, 6, 6); c.fillRect(x - 14, y, 6, 6); } }
   // the shaft of daylight under the lid's gap (the tell of where the exit is right now)
   const L = tcLidPos(Y);
   c.save(); const gr = c.createLinearGradient(0, Y.lid.y, 0, Y.FL); gr.addColorStop(0, 'rgba(255,244,190,0.40)'); gr.addColorStop(1, 'rgba(255,244,190,0.02)'); c.fillStyle = gr; c.beginPath(); c.moveTo(L[0], Y.lid.y + TCK.lidH); c.lineTo(L[1], Y.lid.y + TCK.lidH); c.lineTo(L[1] + 80, Y.FL); c.lineTo(L[0] - 80, Y.FL); c.closePath(); c.fill(); c.restore();
@@ -29712,9 +29740,11 @@ function tcDrawBack(c, Y, t){
 const K_TOP_DRAW = -200;
 const TC_LIFT = { cage:1, cage2:1, lift2:1, freight:1, lift3:1 };
 function tcDrawDeco(c, Y, t, M){
-  for(const d of Y.deco) if(d[0] === 'room'){ c.fillStyle = d[5] ? '#3a4256' : '#343c50'; c.fillRect(d[1], d[2], d[3], d[4]); c.strokeStyle = 'rgba(255,255,255,0.07)'; c.lineWidth = 3; c.strokeRect(d[1], d[2], d[3], d[4]); }
+  const V = cullRect(c, 450);   // (PERF: VIEW CULLING)
+  for(const d of Y.deco) if(d[0] === 'room' && !cullOut(V, d[1], d[2], d[3], d[4])){ c.fillStyle = d[5] ? '#3a4256' : '#343c50'; c.fillRect(d[1], d[2], d[3], d[4]); c.strokeStyle = 'rgba(255,255,255,0.07)'; c.lineWidth = 3; c.strokeRect(d[1], d[2], d[3], d[4]); }
   for(const d of Y.deco){
     const k = d[0], x = d[1], y = d[2], w = d[3];
+    if(k !== 'hatch' && k !== 'trapd' && k !== 'sign' && k !== 'room' && typeof x === 'number' && typeof y === 'number' && cullOut(V, x, y, typeof w === 'number' ? w : 0, typeof d[4] === 'number' ? d[4] : 0)) continue;
     if(k === 'airhole'){ c.fillStyle = '#fff6c0'; c.beginPath(); c.arc(x, y, 26, 0, 7); c.fill(); c.strokeStyle = TPAL.line; c.lineWidth = 4; c.stroke(); for(let i = -1; i <= 1; i++){ c.beginPath(); c.moveTo(x + i*12, y - 24); c.lineTo(x + i*12, y + 24); c.stroke(); } }
     else if(k === 'sign'){ c.fillStyle = 'rgba(255,255,255,0.14)'; c.font = '44px sans-serif'; c.fillText(String(d[5]), x, y); }
     else if(k === 'hatch' || k === 'trapd'){ tcPitGlow(c, Y, x, y, w, t); if(k === 'hatch') tcDrawHatch(c, x, y, w, d[5]); else tcDrawHatch(c, x, y, w, 2); }
@@ -29762,8 +29792,10 @@ function tcDrawPlats(){
   for(const p of worldPlats){ if(p.tl === 'scoop'){ const piv = Y.pivot; c.strokeStyle = TPAL.steel2; c.lineWidth = 8; c.beginPath(); c.moveTo(piv, Y.lid.y + TCK.lidH); c.lineTo(p.x + p.w/2, p.y); c.stroke(); c.fillStyle = TPAL.steel; c.beginPath(); c.arc(piv, Y.lid.y + TCK.lidH, 16, 0, 7); c.fill(); }
     if(p.tl === 'crane'){ c.strokeStyle = TPAL.steel2; c.lineWidth = 5; c.beginPath(); c.moveTo(p.x + p.w/2, Y.lid.y + TCK.lidH); c.lineTo(p.x + p.w/2, p.y); c.stroke(); }
     if(TC_LIFT[p.tl]){ c.strokeStyle = '#2a3042'; c.lineWidth = 4; c.beginPath(); c.moveTo(p.x + p.w/2, Y.lid.y + TCK.lidH); c.lineTo(p.x + p.w/2, p.y - 150); c.stroke(); } }
+  const V = cullRect(c, 300);   // (PERF: VIEW CULLING; every piece paints within 300 px of its box but the lid)
   for(const p of worldPlats){
     const k = p.tl; if(!k) continue;
+    if(k !== 'lid' && cullOut(V, p.x, p.y, p.w, p.h || 0)) continue;
     if(k === 'lid'){ c.fillStyle = '#7a8296'; c.fillRect(p.x, p.y, p.w, TCK.lidH); c.fillStyle = TPAL.hazard; for(let x = Math.max(p.x, -100); x < Math.min(p.x + p.w, WW + 100); x += 80) { c.save(); c.beginPath(); c.rect(x, p.y + TCK.lidH - 14, 40, 14); c.fill(); c.restore(); } c.strokeStyle = TPAL.line; c.lineWidth = 4; c.strokeRect(Math.max(p.x, -100), p.y, Math.min(p.x + p.w, WW + 100) - Math.max(p.x, -100), TCK.lidH); continue; }
     if(k === 'trap'){ ynBlock(c, p, 1); for(let q = 0; q < p.w; q += 24){ c.fillStyle = (q/24 | 0) % 2 ? '#16181f' : TPAL.hazard; c.fillRect(p.x + q, p.y, Math.min(24, p.w - q), 10); } continue; }
     if(p.solid && p.h > 250 && p.w > 200 && (k === 'slab' || k === 'found' || k === 'mass')){ tcHeavy(c, p); continue; }
@@ -29787,6 +29819,7 @@ function tcDrawPlats(){
   { const pits = Y.deco.filter(d=>d[0] === 'hatch' || d[0] === 'trapd').map(d=>d[1] + d[3]/2);
     c.lineCap = 'butt';
     for(const p of worldPlats){ const k = p.tl; if(!k || p.y < -400 || k === 'wall' || k === 'ceil' || k === 'found' || k === 'mass' || k === 'bump' || k === 'padw') continue;
+      if(cullOut(V, p.x, p.y, p.w, p.h || 0)) continue;   // (PERF: VIEW CULLING)
       if(k === 'tube'){ let best = null, bd = 1e9; for(const mx of pits){ const d = Math.abs(mx - (p.x + p.w/2)); if(d < bd){ bd = d; best = mx; } } if(best === null || bd > 400) continue; const ex = best > p.x + p.w/2 ? p.x + p.w : p.x; c.strokeStyle = 'rgba(255,170,60,0.75)'; c.lineWidth = 5; c.beginPath(); c.moveTo(ex, p.y); c.lineTo(ex, Math.min(p.y + p.h, WH)); c.stroke(); continue; }
       if(p.solid || k === 'grate' || k === 'gantry' || k === 'sill' || p.mv){ c.strokeStyle = (k === 'trap') ? 'rgba(255,214,90,0.85)' : 'rgba(235,242,255,0.55)'; c.lineWidth = 3; c.beginPath(); c.moveTo(p.x + 1, p.y + 1.5); c.lineTo(p.x + p.w - 1, p.y + 1.5); c.stroke(); } } }
   // the trapdoors' warning: a flashing outline, a lamp, and a klaxon, from 90 frames before each one opens (the panels are drawn above; this is the overlay)
@@ -31239,9 +31272,9 @@ function buildHUD(){
 // Teams has one small line, each side's dot and stocks left, the leader bold, instead of a titled ladder over the arena's corner.
 function updateStandings(){
   const box=document.getElementById('standings'); if(!box) return;
-  if(RACE.active || SETTINGS.mode==='ctf'){ box.innerHTML=''; box.style.display='none'; return; }   // (Capture the Flag has its own scoreboard, drawn on the canvas)   // RUNNING!: no ladder; the progress bar is the standing
-  if(SETTINGS.mode!=='teams'){ box.innerHTML=''; box.style.display='none'; return; }
-  box.style.display=''; box.classList.add('compact');
+  if(RACE.active || SETTINGS.mode==='ctf'){ standingsHide(box); return; }   // (Capture the Flag has its own scoreboard, drawn on the canvas)   // RUNNING!: no ladder; the progress bar is the standing
+  if(SETTINGS.mode!=='teams'){ standingsHide(box); return; }
+  if(box.style.display !== '') box.style.display=''; if(!box.classList.contains('compact')) box.classList.add('compact');   // (PERF: written only when it changes)
   const you=fighters.find(f=>f.you);
   let html='';
   {
@@ -31255,22 +31288,40 @@ function updateStandings(){
       html+=`<span class="stteam${r===lead && rows.some(o=>o.stocks!==r.stocks)?' leader':''}${mine?' self':''}"><span class="stdot" style="background:${r.color}"></span>`
         +`<span class="ststk">${r.stocks}♥</span></span>`; });
   }
-  if(MCAVE && MCAVE.on && box._html === html) return;   // (MOON CAVES, M7: rebuilt only when it changed)
-  box.innerHTML=html; box._html=html;
+  // PERF (2026-11-16): rebuilt only when it changed (it was rebuilt every frame in Teams: an HTML parse and a layout a frame) and the box still holds what it wrote
+  if(box._html === html && box.firstChild === box._htmlF && box.lastChild === box._htmlL && box.childNodes.length === box._htmlN) return;
+  box.innerHTML=html; box._html=html; box._htmlF=box.firstChild; box._htmlL=box.lastChild; box._htmlN=box.childNodes.length;
 }
+// The standings box off (Free-for-all, Capture the Flag, RUNNING!): emptied and hidden, written only when it is not already.
+function standingsHide(box){ if(box.firstChild) box.innerHTML=''; if(box.style.display !== 'none') box.style.display='none'; }
 function updateHUD(){
   if(PCAM.bg) return;   // PLAYS CAMERA: the HUD is the match on screen's
   updateStandings();
   if(MCAVE && MCAVE.on){ mcUpdateCards(); return; }   // MOON CAVES (M7): the same cards, written only where they changed
-  fighters.forEach(f=>{
-    const c=document.querySelector(`.pcard[data-i="${f.idx}"]`); if(!c)return;
-    c.classList.toggle('dead',f.dead);
-    c.querySelector('.pct').textContent=(Math.round(f.pct*10)/10).toFixed(1)+'%';   // damage is tracked to 0.1 now, and shown to it
-    c.querySelector('.pct').style.color=pctColor(f.pct, f.koCap);
-    if(f._hudPct != null && f.pct > f._hudPct + 0.05){ const pe = c.querySelector('.pct'); pe.classList.remove('bump'); void pe.offsetWidth; pe.classList.add('bump'); }   // JURY 1: a hit makes the number jump
+  // PERF (2026-11-16): the cards are found once per HUD (hudCards) and each part is written only when it differs from what the card shows
+  // (c._v, shared with mcUpdateCards): 4 querySelector calls and 4 DOM writes a fighter a frame were most of a step's time, and every write
+  // dirtied the page's layout. What the cards show is exactly what it was.
+  const cards = hudCards();
+  for(const f of fighters){
+    const c = cards.get(f.idx); if(!c) continue;
+    const v = c._v || (c._v = {}), pe = c._pe || (c._pe = c.querySelector('.pct'));
+    if(typeof f.dead !== 'boolean' || v.dead !== f.dead){ c.classList.toggle('dead',f.dead); v.dead = f.dead; }
+    const pct = (Math.round(f.pct*10)/10).toFixed(1)+'%', col = pctColor(f.pct, f.koCap);   // damage is tracked to 0.1 now, and shown to it
+    if(v.pct !== pct){ pe.textContent = pct; v.pct = pct; }
+    if(v.col !== col){ pe.style.color = col; v.col = col; }
+    if(f._hudPct != null && f.pct > f._hudPct + 0.05){ pe.classList.remove('bump'); void pe.offsetWidth; pe.classList.add('bump'); }   // JURY 1: a hit makes the number jump
     f._hudPct = f.pct;
-    c.querySelector('.stk').textContent = (SETTINGS.mode==='ctf') ? ((f._cf>=0?'\u2691':'')+(f._ck>=0?'\u26BF':'')+(f._jail!=null?'\u26D3':'')) : (f.stocks===Infinity) ? '∞' : '●'.repeat(Math.max(0, Math.min(20, f.stocks|0)));
-  });
+    const stk = (SETTINGS.mode==='ctf') ? ((f._cf>=0?'\u2691':'')+(f._ck>=0?'\u26BF':'')+(f._jail!=null?'\u26D3':'')) : (f.stocks===Infinity) ? '∞' : '●'.repeat(Math.max(0, Math.min(20, f.stocks|0)));
+    if(v.stk !== stk){ (c._se || (c._se = c.querySelector('.stk'))).textContent = stk; v.stk = stk; }
+  }
+}
+// The HUD's cards by fighter index, read again whenever buildHUD has made new ones (the first card is then another element); the first card
+// of an index wins, as document.querySelector found it.
+let _hudCards = new Map(), _hudCardsFor;
+function hudCards(){
+  const bar = document.getElementById('hudbar'), first = bar ? bar.firstChild : null;
+  if(_hudCardsFor !== first || !bar){ _hudCards = new Map(); if(bar) for(const c of bar.querySelectorAll('.pcard')){ const k = +c.dataset.i; if(!_hudCards.has(k)) _hudCards.set(k, c); } _hudCardsFor = first; }
+  return _hudCards;
 }
 // MOON CAVES (M7): the cards as updateHUD writes them, each part written only when it differs from what the card shows (_v: its last values),
 // the cards found once (_mcCards, by index, rebuilt with the HUD) -- 30 querySelector calls and 90 writes a frame were most of the HUD's cost.
