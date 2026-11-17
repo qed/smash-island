@@ -453,4 +453,6 @@ Several of these are CPU gaps that the queued bot fixes close (edge-guarding, ha
 - **S2 #9:** Owner: "bracelety" -- Winner: **Bracelety**.
 - **S2 #10:** Owner: "oj" -- Winner: **OJ** (the secret prize fighter).
 - **S2 #11:** Owner: "tb" -- Winner: **Tennis Ball** (read by the owner's own rule from #50: "tb" = Tennis Ball; Teddy Bear, who won #3, is written out in full).
-   - Notes (lead): the owner sent these one word at a time after "WC winner 1:needle"; read as the winners of cups 1, 2, 3... in order (each a new cup). Opponents, team size, stocks and CPU level not given (Expert, items and smash balls off assumed, as before). Build: the Update 6 preview (batch 1-3 own up/down smashes: Needle and Firey have theirs, range fix still pending; move effects + strong-hit freeze; CPU recovery fix, so far fewer self-KOs). Eleven cups so far; Needle and Blueberry have two each.
+- **S2 #12:** Owner: "clover" -- Winner: **Clover**.
+- **S2 #13:** Owner: "money" -- Winner: **Money** (his second cup in the log; first was #38).
+   - Notes (lead): the owner sent these one word at a time after "WC winner 1:needle"; read as the winners of cups 1, 2, 3... in order (each a new cup). Opponents, team size, stocks and CPU level not given (Expert, items and smash balls off assumed, as before). Build: the Update 6 preview (batch 1-3 own up/down smashes: Needle and Firey have theirs, range fix still pending; move effects + strong-hit freeze; CPU recovery fix, so far fewer self-KOs). Thirteen cups so far; Needle and Blueberry have two each, everyone else one.

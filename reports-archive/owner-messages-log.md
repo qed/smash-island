@@ -285,6 +285,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (next)**: bracelety
 - **2026-11-17 (next)**: oj
 - **2026-11-17 (next)**: tb
+- **2026-11-17 (next)**: clover
+- **2026-11-17 (next)**: money
 
 ## Teams maps, stages & levels
 
