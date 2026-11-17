@@ -238,6 +238,16 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (next, playing Needy's contest Evil Serum)**: also, there is only 1 syringe in needys event
 - **2026-11-17 (answers: Black Hole big ideas, balance, sweet spots)**: BH big: World layers (not moods, debris ladder, mini planets); BH more: Gravity flips, Rocket parts, Earlier picks 5-13 (not white hole revenge); balance: Sticker heavier, Jammy kit play, Hot Dog: bigger sample (not leave them); sweet spots batch 1: Merge it
 - **2026-11-17 (next, Jammy's contest The Ruler's Crown)**: jammys event would work better if you had more space and twists. give me them now.
+- **2026-11-17 (JAMMY answers)**: map: Whole castle, Kingdom outside, Secret passages, Throne room (all four); twists: Revolt coins, Jester, Heavy crown, Coup alliance, Trapdoors + banners, Crown toss (not: royal guards, decree, fake crowns, balcony + crowd, jam jars, dungeon escape)
+- **2026-11-17 (next, playing Hot Dog's contest Rules Are Rules)**: fighter screens block rules on hot dog
+- **2026-11-17 (Needy: offered keep 2 doses / 1 dose / 3 doses / fewer syringes)**: 1 syringe at a time, but before, only 1 syringe showed up EVER.
+- **2026-11-17 (CLOCK ideas)**: "rework time!!", 1 Rewind; ideas 5-13 and "anything bigger": [No preference]
+- **2026-11-17 (CLOCK REWORK; offered Time Thief / Time-travel heist / Clock tower repair / Midnight countdown)**: 2, and 4
+- **2026-11-17 (CLOCK rework details)**: score: Gears; KOs drop gears; hour rules: Fast / slow, Era storm, Rewind storm, Frozen time (all four)
+- **2026-11-17 (PIE ideas)**: all 13 (1-2, 3-4, 5-7, 8, 9, 10, 11-12, 13)
+- **2026-11-17 (FOLDY ideas)**: 1 Areas on the course, 2-3 Kite + cranes, 4-5 Updrafts + mail tube, 6 Tornado, 9-10 Balloon + folding walls (not 7-8 rain + shredder, 11-12 photo finish + crowd, 13 weather vanes)
+- **2026-11-17 (BEACH BALL ideas)**: "skip this one" (8-12: [No preference])
+- **2026-11-17 (BOTTLE ideas)**: "only the mirror room." (of option 7-8 Dog + mirror room), 1-2 Flicker + moving furniture, 3-4 Doorbell + creaky boards, 5-6 Disguise + secret passages, 9 Fuse box, 10 Vent swaps (not dog, laundry pile, attic ladder)
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
