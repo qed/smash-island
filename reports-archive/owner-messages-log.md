@@ -229,6 +229,11 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (CLOUDY, how the Collection changes)**: Item powers, Sets with bonuses, More, rarer items (not: Combine items)
 - **2026-11-17 (ERASER ideas)**: 1 Tile kinds, 2 Stomp-through, 3 Ink spill, 4 Rubber stamps, 6 Conveyor layer, 8 Knocked-out erasers, 11 Sharpener vortex, 12 Trapdoor tiles (not 5, 7, 9, 10)
 - **2026-11-17 (SPONGY ideas)**: 1 Rock layers, 3 Gas pockets, 4 Worm tunnels, 6 Fossils, 10 Arena entry order; free text: "rework spongeys event so that you have a shovel and must dig through a larger map to get your moves, like the hunger games. SPONGEYS EVENT SHOULD BE LIKE THE HUNGER GAMES!!! THATS PERFECT!!"; ideas 13-14: [No preference]
+- **2026-11-17 (next, about the Hunger Games idea)**: POV me when i get an epiphany
+- **2026-11-17 (SPONGY HUNGER GAMES answers, round 1)**: combat: Anytime; start/end: Cornucopia start, Sponsor drops; map: Surface + underground, Districts; players/moves: "and you should have a hunger and thirst meter.", 8 fighters, Steal on KO, Shovel upgrades, Still unknown spots
+- **2026-11-17 (SPONGY HUNGER GAMES answers, round 2; offered endings: last alive 1 stock / 2 stocks / most KOs / 4 = Feast at the end)**: ending: "4 should also have permanent buffs, and also, 4 stocks. if you lose a stock, you get sent to the edge of the map and lose 1 random move."; hunger: "also, stuff to hunt. like those aliens from bfdi.", Low = slower + weaker, Food in the world, Poison berries (not: Sponge water)
+- **2026-11-17 (8-BALL ideas)**: 1 Candy factory, 2 Flavour colours, 3 Giant jawbreaker, 4 Bowling, 5 Candy press, 6 Licking, 8 Shattering hail, 10 Flavour combo, 12-13 Gumballs + wrappers (not 7, 9, 11); free text: "also, bigger map! like the contests. for cloudy, 5 sets, and it takes 3 hits to drop ANY item."
+- **2026-11-17 (BLACK HOLE ideas 1-4)**: "I think this is a one we can make cooler. impress me."
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
