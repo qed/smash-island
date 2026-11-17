@@ -210,6 +210,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (playing Stapy)**: and the colors for the emblems are not all appropriate
 - **2026-11-17 (on Sticker's 5 open points; 5 = the drone in Cheaters Prosper rarely catches CPUs because they cheat carefully)**: 5 could be changed.
 - **2026-11-17 (after Bottle was merged: won 1 of 8 CPU duels; Ooh Shiny items rarely picked up)**: yes, make bottle stronger and fix shiny.
+- **2026-11-17 (Bottle's Hide and Seek contest)**: hide and seek could be bigger, with powerups for both seekers and hiders, and mini-rooms.
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
