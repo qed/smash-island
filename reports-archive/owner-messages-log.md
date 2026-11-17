@@ -577,6 +577,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (next)**: especially the animations
 - **2026-11-17**: should we have sweetspots and sourspots? (lead recommended: yes, on 1-2 moves per fighter, show old-vs-new first; asked whether to queue the pass)
 - **2026-11-17 (answers on up/down smashes batch 3)**: redo "The 4 'just the object' ones" (down smashes of Donut, Bell, Gaty, Barf Bag) and "Fewer sweet spots" (8 of 24 used a sweet spot as the hook). Not picked: merge as is, Yellow Face up vs Dora up.
+- **2026-11-17**: the new up smashes have so little range.
 
 ## Bosses, Boss Rush & secrets
 
