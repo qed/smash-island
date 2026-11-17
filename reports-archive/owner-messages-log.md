@@ -195,6 +195,9 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16 (about the Stapy win cut / the episode picture they sent on 11-15)**: also, that image was just part of the drowning out. the whole sky eventually turned into the emblem color.
 - **2026-11-17 (answers: 1 Stapy CPU shimmer help, 2 CPUs fighting while climbing, 3 Long Span ledges)**: 1. your call. 2. if they are in a good position. 3 whats that? (lead's call on 1: remove the shimmer help)
 - **2026-11-17**: oh! we forgot bottle as an event fighter.
+- **2026-11-17 (Bottle question)**: Pitch me 3 ideas (and sweet-spot pass: "Yes, queue it")
+- **2026-11-17**: and give me ideas for the contests. impress me.
+- **2026-11-17 (after the lead pitched 3 contests each for Bottle, Sticker, Needy, Jammy, Hot Dog)**: all of them are good. do the starred ones. (starred: Bottle = Hide and Seek; Sticker = Cheaters Prosper; Needy = Evil Serum; Jammy = The Ruler's Crown; Hot Dog = Rules Are Rules)
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
