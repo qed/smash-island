@@ -344,6 +344,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (human World Cup, the Box challenge)**: i won as box by cheesing with smash
 - **2026-11-17 (next)**: any other hard characters?
 - **2026-11-17 (answers: Box rework, hop smash fix, legs hit areas)**: Box: Merge it; hop smash: Landing lag (Recommended); legs: Match the pictures
+- **2026-11-17 (playing the Candle challenge)**: candle has a cheese. neutral special is unavoidable in a BIG radius
+- **2026-11-17 (Candle Inner-Flame fix; offered wind-up tell / smaller reach / shield-dodge beats it / longer cooldown)**: Wind-up tell (Recommended), Smaller reach
 
 ## Teams maps, stages & levels
 
