@@ -102226,7 +102226,7 @@ const HD = {
   pole:{ rise:[-6.6, -5.0, -3.6], frames:[18, 12, 10], drift:1.4, trapR:58, trapDmg:5, trapKb:[1.6, -6.8], selfDmg:3, kick:-7, stand:120, w:38, below:420 },
   stay:{ min:20, max:90, lunge:14, spd:9, dmg:6, per:3, perMax:2, kb:[6.2, -4.6], r:20, ai:240 },
   slide:{ bonk:44 },
-  fin:{ thump:8, grow:20, ahead:72, h:170, r:28, low:8, lowKb:[2.2, -3.0], lowStun:34, mid:3, midT:[6, 12, 18], midKb:[0.8, -1.6], midStun:12, top:13, topKb:[5.2, -9.6], lowT:2, topT:24, end:40,
+  fin:{ thump:8, grow:20, ahead:72, h:170, r:20, zones:[[0, 60], [64, 116], [120, 170]], low:8, lowKb:[2.2, -3.0], lowStun:34, mid:3, midT:[6, 12, 18], midKb:[0.8, -1.6], midStun:12, top:13, topKb:[5.2, -9.6], lowT:2, topT:24, end:40,
         ai:300, aiNear:40, aiFar:110 },
   door:{ hops:3, hopT:10, vx:3.2, vy:-3.4, dmg:7, kb:[8.6, -4.2] },
   fs:{ reach:340, dy:110, side:90, slam:16, rattle:30, n:3, dmg:[7, 7, 7, 29], skb:[0.2, -0.6], kb:[7, -13], blow:30 },
@@ -102246,10 +102246,11 @@ function hdTrack(f){
     const id = f._atkMove || ('k:' + (f._atkKind || '?'));
     if(!(T && !T.done && T.id === id)){   // a new move (a special that arms twice, its wind-up and its hit, is one move)
       if(T && !T.done) hdTrEnd(f, T, false);
-      T = f._hdTr = { id:id, t0:hazardT, d0:f._dmgDealt || 0, landed:false, done:false, rt:0 };
+      T = f._hdTr = { id:id, t0:hazardT, d0:f._hdDd == null ? (f._dmgDealt || 0) : f._hdDd, landed:false, done:false, rt:0 };   // (d0: what he had dealt before last frame's moves: a jab lands on the frame it is pressed, before this watch sees it)
       if(hdIs(f)) hdRetryStart(f, T);
     }
   }
+  f._hdDd = f._dmgDealt || 0;
   if(!T || T.done) return;
   if((f._dmgDealt || 0) > T.d0 + 0.01 || f._hold) T.landed = true;
   if(f.dead || (f.hitstun > 0 && !T.landed && hazardT > T.t0 && !(f._selfStun > 0))) hdTrEnd(f, T, true);   // hit out of it: a fail
@@ -102278,10 +102279,18 @@ function hdRetryStart(f, T){
     if(chain && f.onground && landable(f.x + f.face*(f.r + 14), feetY(f) - 2)){ f.vx = f.face*HD.jab.push; f._hdHopT = hazardT; }
   }
 }
+// The retry this move of his is: the watch's, or -- on the very frame a move starts, before the watch has seen it (a jab lands on its press) -- the
+// one a failed move of the same label is waiting to give.
+function hdRetryLv(f){
+  if(f._hdRt > 0) return f._hdRt;
+  const F = f._hdFail;
+  return (F && (f._atkSeq | 0) !== (f._hdSeq | 0) && f._atkMove === F.id && hazardT - F.t <= HD.retry.win) ? Math.min(HD.retry.max, F.lv + 1) : 0;
+}
 // What a Hot Dog's hit (or anyone's, in the EVEN ANGRIER twist) is worth: applyHit multiplies its damage by this, after FIGHTER STATS.
 function hdDmgK(from){
   let k = 1;
-  if(from._hdRt > 0) k *= 1 + HD.retry.k*from._hdRt;
+  const rt = hdIs(from) ? hdRetryLv(from) : 0;
+  if(rt > 0) k *= 1 + HD.retry.k*rt;
   if(JAB_BY === from && hdIs(from) && from._hdJabT != null && hazardT - from._hdJabT <= HD.jab.chain) k *= HD.jab.d2/HD.jab.d1;
   if(MATCH_TWIST && from._falls > 0 && twistOn('angrier')) k *= 1 + HD_TW.angry*from._falls;
   return k;
@@ -102294,7 +102303,7 @@ function hdNoFlinch(t, dmg, from, opts){
   let keep = false;
   if(hdIs(t)){
     if(t._hdNL){ keep = true; t._hdNL.hits++; }
-    else if(dmg < HD.weak && (t._hdRt > 0 || (t._sm && t._sm.pat === 'lunge'))) keep = true;
+    else if(dmg < HD.weak && (hdRetryLv(t) > 0 || (t._sm && t._sm.pat === 'lunge'))) keep = true;
   }
   if(!keep && dmg < HD_TW.weak && MATCH_TWIST && twistOn('stubborn')) keep = true;
   if(!keep) return null;
@@ -102404,7 +102413,7 @@ function fxHdPoleStep(o, f){
   }
   if(o.n < P.rise.length && f._hdHoldC){ o.n++; o.st = hazardT; tone(260 + 70*o.n, 0.12, 'triangle', 0.1, 0, 520 + 70*o.n); puff(o.x, o.hdh, HD_INK.poleDark, 3); return; }   // C held: it pushes up again, slower
   // THE TOP: the trap goes off -- everyone there, him too
-  const sh = { kind:'circle', x:o.x, y:o.hdh - 6, r:P.trapR };
+  const sh = { kind:'capsule', x1:o.x, y1:o.hdh - 6, x2:o.x, y2:o.hdh - 6, r:P.trapR };
   fxArt(f, 'hdpole', sh, { color:HD_INK.flame });
   for(const t of fxTargets(f, o, sh, [])){ const d = Math.sign(t.x - o.x) || f.face; fxHit(f, t, o, P.trapDmg, d*P.trapKb[0], P.trapKb[1]); }
   fxBossCircle(f, o, 'trap', o.x, o.hdh - 6, P.trapR, P.trapDmg);
@@ -102473,9 +102482,9 @@ function hdLungeStep(f){
   const n = cloudyStrike(f, sh, function(){ return dmg; }, function(t){ const d = Math.sign(t.x - f.x) || f.face; return [d*(C.kb[0] + L.hits), C.kb[1] - 0.6*L.hits]; }, null, dmg);
   if(n > 0){ L.hit = true; shake(3 + 2*L.hits); f.vx *= 0.3; }
 }
-// ---- THROUGH YOU (the smash, V): he tucks down and slides a short way along the floor, bun first. Weak hits do not stop the slide (hdNoFlinch); a wall
+// ---- THROUGH YOU (the smash, V): he tucks down and slides a short way along the floor, bun first: 20% at full charge (the row's 13.4 is the half-charge base, as every SMASH_SPEC row's). Weak hits do not stop the slide (hdNoFlinch); a wall
 // does: he bonks and is dazed (hotdogStep). The charge ring is its tell. ----
-SMASH_SPEC.hotdog = { pat:'lunge', step:4, reach:44, dmg:20, kb:13.2, effect:'knockdown', n:28, cost:{stun:26}, color:'#f2c41a' };
+SMASH_SPEC.hotdog = { pat:'lunge', step:4, reach:44, dmg:13.4, kb:13.2, effect:'knockdown', n:28, cost:{stun:26}, color:'#f2c41a' };
 SMASH_ID.hotdog = { name:"Through You", color:'#f2c41a', tones:[{f:180,d:0.14,w:'sawtooth',g:0.16,t:0,to:90},{f:90,d:0.18,w:'square',g:0.12,t:0.08,to:60}], noise:{d:0.2,g:0.14,hz:700,t:0,to:200} };   // Hot Dog -- a scrape and a thud
 // ---- DEADLY POLE (finisher, V + C) ----
 // He thumps the floor, and his pole grows up just ahead (harmless while it grows, 20 frames). Then he rams it with his bun and its traps go off from the
@@ -102505,11 +102514,13 @@ function fxDPoleStep(o, f){
     return;
   }
   // 'ram': the traps, bottom up
-  const hitZone = function(y0, y1, key, dmg, kb, stun, launch){
-    const sh = { kind:'capsule', x1:o.x, y1:o.y - y0 - C.r*0.5, x2:o.x, y2:o.y - y1 + C.r*0.5, r:C.r };
+  const hl = o._hl || (o._hl = []), hm = o._hm || (o._hm = []);   // (who the low trap and the middle ones caught: each foe gets the trap of the height it is at, not a stack of them)
+  const hitZone = function(y0, y1, key, dmg, kb, stun, launch, skip, mark){
+    const sh = { kind:'capsule', x1:o.x, y1:o.y - y0 - C.r, x2:o.x, y2:o.y - y1 + C.r, r:C.r };   // (the capsule's own radius is inside the zone: a zone hits only what reaches into its height)
     fxArt(f, key, sh, { color:launch ? HD_INK.flame : HD_INK.steel });
-    for(const t of fxTargets(f, o, sh, [])){
+    for(const t of fxTargets(f, o, sh, skip)){
       const d = Math.sign(t.x - o.x) || o.face;
+      if(mark.indexOf(t.idx) < 0) mark.push(t.idx);
       if(launch) JUICE_SW = true;
       const live = fxHit(f, t, o, dmg, d*kb[0], kb[1]);
       JUICE_SW = false;
@@ -102517,9 +102528,9 @@ function fxDPoleStep(o, f){
     }
     fxBossShape(f, o, key, sh, dmg);
   };
-  if(age === C.lowT){ hitZone(0, 56, 'dplow', C.low, C.lowKb, C.lowStun, false); shake(2); noise(0.1, 0.12, 2400, 0, 900); }
-  for(let i = 0; i < C.midT.length; i++) if(age === C.midT[i]){ hitZone(56, 112, 'dpmid' + i, C.mid, C.midKb, C.midStun, false); tone(900, 0.05, 'square', 0.06, 0, 1300); }
-  if(age === C.topT){ hitZone(112, C.h, 'dptop', C.top, C.topKb, 0, true); shake(5); noise(0.24, 0.16, 1100, 0, 400); tone(240, 0.2, 'sawtooth', 0.14, 0, 90); }
+  if(age === C.lowT){ hitZone(C.zones[0][0], C.zones[0][1], 'dplow', C.low, C.lowKb, C.lowStun, false, [], hl); shake(2); noise(0.1, 0.12, 2400, 0, 900); }
+  for(let i = 0; i < C.midT.length; i++) if(age === C.midT[i]){ hitZone(C.zones[1][0], C.zones[1][1], 'dpmid' + i, C.mid, C.midKb, C.midStun, false, hl, hm); tone(900, 0.05, 'square', 0.06, 0, 1300); }
+  if(age === C.topT){ hitZone(C.zones[2][0], C.zones[2][1], 'dptop', C.top, C.topKb, 0, true, hl.concat(hm), []); shake(5); noise(0.24, 0.16, 1100, 0, 400); tone(240, 0.2, 'sawtooth', 0.14, 0, 90); }
   if(age >= C.end) o.dead = true;
 }
 function fxDrawDPole(o, f){
@@ -103126,7 +103137,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   }
   if(DIGC && from && from !== t && from._dgBuff > 1) dmg *= from._dgBuff;   // THE DIG: an early arrival hits harder (DGK.buff)
   if(from && from !== t) dmg = statDmg(from, dmg);   // FIGHTER STATS: the attacker's dmg, first: an infected rebound takes it (its nested call has from === t, so nothing scales twice), and a counter answers the hit as it landed
-  if(from && from !== t && (from._hdRt > 0 || from._hdJabT != null || MATCH_TWIST)) dmg *= hdDmgK(from);   // HOT DOG: a retry +15% a stack, his held Bun Bump 3.5%, and EVEN ANGRIER (a twist: +10% a stock lost, anyone)
+  if(from && from !== t && (from._hdRt > 0 || from._hdFail || from._hdJabT != null || MATCH_TWIST)) dmg *= hdDmgK(from);   // HOT DOG: a retry +15% a stack, his held Bun Bump 3.5%, and EVEN ANGRIER (a twist: +10% a stock lost, anyone)
   // OUTBREAK (FFA): an infected puppet is disoriented — its own attacks rebound onto itself
   // instead of hurting others. (In teams the puppet just fights for Barf Bag's team normally.)
   if(from && from!==t && from._infected>0 && SETTINGS.mode!=='teams' && !(opts && opts.selfRebound)){
