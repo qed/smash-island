@@ -212,6 +212,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (after Bottle was merged: won 1 of 8 CPU duels; Ooh Shiny items rarely picked up)**: yes, make bottle stronger and fix shiny.
 - **2026-11-17 (Bottle's Hide and Seek contest)**: hide and seek could be bigger, with powerups for both seekers and hiders, and mini-rooms.
 - **2026-11-17**: yes, merge the sticker fix. for seekers, because this is a big map, you can get an extra "ghost" seeker.
+- **2026-11-17 (Sticker's contest, Cheaters Prosper)**: change stickers thing. you must get balls, then turn them gold. most points win, and you get an announcer that copies your movement with delay, and the map will be MUCH less linear. all that length will be turned into mountains with interior and a forest and lake.
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
