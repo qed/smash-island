@@ -234,6 +234,9 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (SPONGY HUNGER GAMES answers, round 2; offered endings: last alive 1 stock / 2 stocks / most KOs / 4 = Feast at the end)**: ending: "4 should also have permanent buffs, and also, 4 stocks. if you lose a stock, you get sent to the edge of the map and lose 1 random move."; hunger: "also, stuff to hunt. like those aliens from bfdi.", Low = slower + weaker, Food in the world, Poison berries (not: Sponge water)
 - **2026-11-17 (8-BALL ideas)**: 1 Candy factory, 2 Flavour colours, 3 Giant jawbreaker, 4 Bowling, 5 Candy press, 6 Licking, 8 Shattering hail, 10 Flavour combo, 12-13 Gumballs + wrappers (not 7, 9, 11); free text: "also, bigger map! like the contests. for cloudy, 5 sets, and it takes 3 hits to drop ANY item."
 - **2026-11-17 (BLACK HOLE ideas 1-4)**: "I think this is a one we can make cooler. impress me."
+- **2026-11-17 (after Needy was built; her render's stick legs had been left out because the lead read "doesnt have arms" as "no limbs")**: why does needy not have legs?
+- **2026-11-17 (next, playing Needy's contest Evil Serum)**: also, there is only 1 syringe in needys event
+- **2026-11-17 (answers: Black Hole big ideas, balance, sweet spots)**: BH big: World layers (not moods, debris ladder, mini planets); BH more: Gravity flips, Rocket parts, Earlier picks 5-13 (not white hole revenge); balance: Sticker heavier, Jammy kit play, Hot Dog: bigger sample (not leave them); sweet spots batch 1: Merge it
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
