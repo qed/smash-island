@@ -467,3 +467,4 @@ Several of these are CPU gaps that the queued bot fixes close (edge-guarding, ha
 ## Human results (the owner playing, not CPU cups)
 
 - **2026-11-17, World Cup won as YELLOW FACE** (the lead's random "make it hard" pick): "i won as yellow face, carried by up-c for chipping and smash for kills." Notes (lead): up-c = his up-special, used to chip damage; his smash finished the stocks.
+- **2026-11-17, World Cup won as BOX** (the lead's random hard pick): "i won as box by cheesing with smash". Notes (lead): played on the build before her rework (her specials did nothing then); the smash is the hop smash the owner found too strong (study: V then hop fires it in the air with the full smash and only ~8 frames of landing lag).

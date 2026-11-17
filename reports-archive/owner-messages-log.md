@@ -341,6 +341,9 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (next)**: and try to make it hard for me (lead picked at random among the fighters who never won a cup in the 250-cup batch and not in series 2: Yellow Face)
 - **2026-11-17 (human World Cup, the lead's Yellow Face challenge)**: i won as yellow face, carried by up-c for chipping and smash for kills.
 - **2026-11-17 (next)**: any new hard ones?
+- **2026-11-17 (human World Cup, the Box challenge)**: i won as box by cheesing with smash
+- **2026-11-17 (next)**: any other hard characters?
+- **2026-11-17 (answers: Box rework, hop smash fix, legs hit areas)**: Box: Merge it; hop smash: Landing lag (Recommended); legs: Match the pictures
 
 ## Teams maps, stages & levels
 
