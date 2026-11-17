@@ -1,21 +1,24 @@
 # Needy's render and her event skin (BFDIE event kit art), made from the one owner-approved picture (read as data only).
-#   needy.png               File:NeedyPoseIntro.png -- her BFDIE intro pose (2438 x 1166): a syringe lying on its side, plunger left, needle right.
-#                           The picture has two thin stick legs under the barrel; the approved design (2026-11-17, "CHANGED: limbless") has her with NO
-#                           arms and NO legs, so the legs are left out: the picture is cut under the barrel's lowest edge (row 850 of the original), and from
-#                           row 826 down every narrow run of opaque pixels (under 60 px: the two legs) is cleared, while the barrel's own slanted edge stays.
-#                           Trimmed and scaled to 160 px tall.
+#   needy.png               File:NeedyPoseIntro.png -- her BFDIE intro pose (2438 x 1166): a syringe lying on its side, plunger left, needle right,
+#                           on her two thin black stick legs. She has NO arms and she HAS legs (the owner, 2026-11-17: "why does needy not have legs?";
+#                           an earlier build cut the legs off by mistake). The whole picture, trimmed, at the scale the old legless one had (her barrel
+#                           160 px tall, 462 px across), so the picture is 462 px across and taller by the legs.
 #   skins/red-eye-needy.png the same render with its hue turned from pink to red and a little darker: the event skin (a recolour, nothing new downloaded)
 #   thumbs/red-eye-needy.png 56 px wide, for the skin card
+# It also prints her LIMB_RIG leg rows (scripts/helpers/trace_legs.py) and where her body ends (BODY_FRAC: the barrel's share of the picture's height),
+# which the game's rows for her copy (LIMB_RIG['Needy'], NDY_LEGS in index.html).
 # Run: <a Python with PIL> -I scripts/make-event-needy-art.py <downloads dir> artifacts/V1/assets/sprites
 import sys, os, colorsys
 from PIL import Image
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'helpers'))
+from trace_legs import leg_mask, leg_rows, js_row
 
 DL, SPR = sys.argv[1], sys.argv[2]
-CUT = 850   # the first row under the barrel's bottom edge: the legs start here
+CUT = 850   # the first row under the barrel's bottom edge: only the legs are under it
+            # (from row 826 down to it the tops of the legs sit beside the barrel's slanted bottom edge: there, narrow runs, under 60 px, are leg)
 
-def trim(im):
-    bb = im.getchannel('A').point(lambda v: 255 if v >= 8 else 0).getbbox()
-    return im.crop(bb) if bb else im
+def bbox(im):
+    return im.getchannel('A').point(lambda v: 255 if v >= 8 else 0).getbbox()
 
 def clean(out):
     px = out.load()
@@ -26,24 +29,20 @@ def clean(out):
     return out
 
 src = Image.open(os.path.join(DL, 'NeedyPoseIntro.png')).convert('RGBA')
-sp = src.load()
-for y in range(826, CUT):   # the tops of the legs, between the barrel's slanted bottom edge and the cut
-    x = 0
-    while x < src.size[0]:
-        if sp[x, y][3] < 8: x += 1; continue
-        e = x
-        while e < src.size[0] and sp[e, y][3] >= 8: e += 1
-        if e - x < 60:
-            for k in range(x, e): sp[k, y] = (0, 0, 0, 0)
-        x = e
-body = trim(src.crop((0, 0, src.size[0], CUT)))
-h = 160
-w = round(body.size[0] * h / body.size[1])
-out = clean(body.convert('RGBa').resize((w, h), Image.LANCZOS).convert('RGBA'))
+# her barrel alone (the legs taken away, as the legless build did) sets the scale: 160 px tall, as before
+legs = leg_mask(src, CUT, 60)
+body = src.copy(); body.paste((0, 0, 0, 0), (0, 0) + src.size, legs)
+bb_body = bbox(body)
+k = 160 / (bb_body[3] - bb_body[1])
+box = bbox(src)
+w, h = round((box[2] - box[0])*k), round((box[3] - box[1])*k)
+out = clean(src.crop(box).convert('RGBa').resize((w, h), Image.LANCZOS).convert('RGBA'))
 out.save(os.path.join(SPR, 'needy.png'), optimize=True)
 print('needy.png', out.size, os.path.getsize(os.path.join(SPR, 'needy.png')), 'bytes')
+print('BODY_FRAC', round((bb_body[3] - box[1])/(box[3] - box[1]), 4), '(the barrel ends this far down the picture; the legs are under it)')
+print("LIMB_RIG['Needy'] = { W:%d, H:%d, arms:[], legs:%s };" % (w, h, js_row(leg_rows(legs, box, (w, h)))))
 
-# THE SKIN: pink (hue ~0.85-0.95) turned to red, every colour a little darker; greys stay grey (their saturation is low).
+# THE SKIN: pink (hue ~0.85-0.95) turned to red, every colour a little darker; greys stay grey (their saturation is low), and so do her black legs.
 sk = out.copy(); px = sk.load()
 for y in range(sk.size[1]):
     for x in range(sk.size[0]):

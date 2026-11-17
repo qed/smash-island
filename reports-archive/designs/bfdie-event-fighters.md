@@ -267,7 +267,7 @@ A star marks the two I would pick. They are only my guess.
 
 - Weight: light-middle (about 72).
 - Ground speed: slow when Lazy, quick when Trying. Air: average. Jump: average. Fall: a little slow.
-- How she moves: she has no legs. She slides along the floor, pushed by small pumps of her plunger. Lazy: a slow drift. Trying: quick pumps. Her jump is a bounce.
+- How she moves: she walks, runs and jumps on her two thin stick legs (the legs in her BFDIE picture). Lazy: slow. Trying: quick. No arms.
 
 **Trait: Regenerate.**
 
@@ -277,7 +277,7 @@ A star marks the two I would pick. They are only my guess.
 
 **Doses.** She carries 3 doses of serum. One comes back every 8 s.
 
-**No limbs at all (owner, 2026-11-17; checked on her BFDIE picture).** Needy is a syringe lying on its side: plunger at the back, needle at the front, face on the barrel. No arms, no legs. Every move below uses her needle, her plunger (it moves by itself), the serum, or her whole body sliding, rolling and bouncing. Rows marked CHANGED were rewritten for no arms. Rows marked CHANGED: limbless were rewritten again for no legs.
+**No arms; legs yes (owner, 2026-11-17).** Needy is a syringe lying on its side, on two thin black stick legs: plunger at the back, needle at the front, face on the barrel. No arms. She HAS legs: the owner said "hot dog doesnt have arms, neither does needy", it was passed on wrongly as "no limbs", and the owner then asked "why does needy not have legs?". Every move below uses her needle, her plunger (it moves by itself), the serum, or her whole body sliding, rolling and bouncing; she walks, runs and jumps on her legs. Rows marked CHANGED were rewritten for no arms. Rows marked CHANGED: limbless were rewritten again when she was wrongly thought to have no legs; they need no arms, so they stay as they are (the legs came back as drawing only, the moves did not change).
 
 | Slot | Name | What you see and what it does | Hook | Source |
 |---|---|---|---|---|
@@ -400,14 +400,14 @@ A star marks the two I would pick. They are only my guess.
 
 - Weight: middle-heavy (about 100).
 - Ground speed: a little slow. Air: a little slow. Jump: average. Fall: a little fast.
-- How he moves: he has no legs. He rocks and hops along on the bottom of his bun, and slides when he charges. His jump is a bounce.
+- How he moves: he walks, runs and jumps on his two little stick legs (the legs in his BFDIE picture), and slides when he charges. No arms.
 - A long, low body: easy to hit from the side. No shots at all.
 
 **Trait:** the retry rule above. Fair, I think: it only rewards a move that just failed.
 
 - Source: he kept climbing the same deadly pole and dying, and would not switch (brief).
 
-**No limbs at all (owner, 2026-11-17; checked on his BFDIE picture).** Hot Dog is a bun with a sausage, mustard and onions, and his face is on the bun. No arms, no legs. Every move below uses his bun (bumping, scooping, clamping shut), his sausage ends, mustard, onions, the pole, or his whole body hopping, sliding and spinning. Rows marked CHANGED were rewritten for no arms. Rows marked CHANGED: limbless were rewritten again for no legs.
+**No arms; legs yes (owner, 2026-11-17).** Hot Dog is a bun with a sausage, mustard and onions, his face on the bun, on two little black stick legs. No arms (the owner: "hot dog doesnt have arms"). He HAS legs: that was passed on wrongly as "no limbs" and the legs were cut off, then put back. Every move below uses his bun (bumping, scooping, clamping shut), his sausage ends, mustard, onions, the pole, or his whole body hopping, sliding and spinning; he walks, runs and jumps on his legs. Rows marked CHANGED were rewritten for no arms. Rows marked CHANGED: limbless were rewritten again when he was wrongly thought to have no legs; they need no arms, so they stay as they are (the legs came back as drawing only, the moves did not change).
 
 | Slot | Name | What you see and what it does | Hook | Source |
 |---|---|---|---|---|
@@ -456,8 +456,8 @@ A star marks the two I would pick. They are only my guess.
 I did not look these up. I would rather say so than guess.
 
 - **Arms.**
-  - Settled on 2026-11-17: Hot Dog and Needy have no arms and no legs. I looked at their two BFDIE pictures myself. Their kits were redone twice, and the changed rows are marked.
-  - How the game moves limbless fighters: 8-Ball, Cloudy, Stapy, Foldy and Beach Ball are listed with no arms and no legs, and their bodies do every move. I read that list and the comments beside it. I did not read each one's walk code, so "hops" and "slides" here are my description for the builder, not a copy of an existing walk.
+  - Settled on 2026-11-17: Hot Dog and Needy have NO ARMS and they HAVE LEGS (two thin black stick legs each, as in their BFDIE pictures). An earlier note here said "no arms and no legs"; that was wrong (the owner said only "no arms", then asked "why does needy not have legs?"). Their kits were redone twice, and the changed rows are marked; the moves need no arms and stay as they are.
+  - How they move: on their legs, the way the game walks every legged fighter (their painted legs swing as they walk, run and jump).
   - Sticker and Jammy: I still have not checked. Each has an "if no arms" list under their table.
   - Bottle: I believe she has arms and legs, but I did not check. Her pats, wave, point, hug and shove need them.
 - **Hot Dog's pole traps.** The brief says "deadly pole". The old doc names the traps: buzzsaws, spikes, a syringe, a flamethrower. I left the exact traps out of the tables until that is checked.
