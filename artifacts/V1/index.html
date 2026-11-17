@@ -76963,10 +76963,23 @@ function brainSmDir(f, t){
   const dx = Math.abs(t.x - f.x), dy = t.y - f.y;
   let d = 0;
   if(dy < -60 && dx < 90 && Math.random() < 0.7) d = 1;
+  else if(DSM_OWN[f.name]){ if(Math.abs(dy) < 60 && brainDsmLands(f, t) && Math.random() < 0.5) d = -1; }   // (batch 3: an own down smash is asked for where it REACHES, not on the sweep's distance; see brainDsmLands)
   else if(dx < f.r + (t.r || 24) + 40 && Math.abs(dy) < 40 && Math.random() < 0.18) d = -1;
   f._aiSmDir = d; f._aiSmDirT = hazardT;
 }
-function brainSmash(f, t, toward, want){ brainSmDir(f, t); if(want){ f._aiSmDir = want; f._aiSmDirT = hazardT; } return brainFace({ smash:true }, toward); }   // (want: the direction is already decided -- the up smash as an anti-air, brainFight)
+// Would the fighter's OWN down smash reach foe t from here? Any box of the row, as it stands at the start (a move that travels is not followed), facing the way the
+// CPU will press it: at the foe, or with its back to the foe for a row that hits only behind it (back:true). Why: the old rule asked for the down smash on the
+// generated sweep's distance alone (and 18% of the time), which is wrong for an own row -- some are short, some one-sided, one hits only behind -- so CPUs pressed
+// seven of batch 3's moves 0 times in 8 matches. This reads only where the foe is now.
+function brainDsmLands(f, t){
+  const S = DSM_OWN[f.name] && DSM_OWN[f.name].down; if(!S || !S.boxes) return false;
+  const fc = (t.x >= f.x ? 1 : -1)*(S.back ? -1 : 1), g = Object.create(f); g.face = fc;
+  for(const bx of S.boxes){ if(shapeHits(mvShape(g, bx.s), t)) return true; }
+  return false;
+}
+function brainSmash(f, t, toward, want){ brainSmDir(f, t); if(want){ f._aiSmDir = want; f._aiSmDirT = hazardT; }
+  if(f._aiSmDir === -1 && DSM_OWN[f.name] && DSM_OWN[f.name].down.back) toward = -toward;   // (batch 3: a down smash that hits only behind the fighter is pressed with its back to the foe)
+  return brainFace({ smash:true }, toward); }   // (want: the direction is already decided -- the up smash as an anti-air, brainFight)
 // THREE COOLDOWNS ("Specials and smashes should have seperate cooldowns, and also attacks"): X and ↓+X wait on atkCd,
 // C, ↑+C and ↓+C on spCd, V on smCd, and nothing one of them does touches the others. A smash's declared cd used to
 // land on atkCd and spCd both, and its endlag on atkCd, so throwing one locked your jab and your special for up to
@@ -90768,7 +90781,7 @@ function mvTick(f, inp){
 // Projectiles, the jab (one frame), the smashes and the specials are untouched. Every row's class is listed in reports/sweep-classification.csv.
 const SW_WORDS = /swing|sweep|swipe|swat|chop|whip|\bround\b|wheel|hook|backhand|\barcs?\b|slash|smack|flail|lash|flick/i;
 const SW_STRAIGHT = /straight|stab|poke|thrust|\bjab|punch|shove|pound|spike|column|\bdrops?\b|\bslaps?\b/i;
-const SW_EXC = { 'chair.fa':'swing', 'shutter.na':'thrust', 'float.dsmash':'thrust', 'slap.usmash':'thrust', 'barf.usmash':'thrust', 'beam.usmash':'thrust', 'fry.dsmash':'thrust', 'rant.dsmash':'thrust', 'seriously.dsmash':'thrust' };   // Bow's Chair Swing (the owner's example): its words already say swing; pinned so a rewording cannot lose it. Cammy's Shutter Click (UNIQUE MOVES BATCH 1): a burst to both sides at once, not a swing (its 'flashes' holds 'lash')
+const SW_EXC = { 'chair.fa':'swing', 'shutter.na':'thrust', 'float.dsmash':'thrust', 'slap.usmash':'thrust', 'barf.usmash':'thrust', 'beam.usmash':'thrust', 'fry.dsmash':'thrust', 'rant.dsmash':'thrust', 'seriously.dsmash':'thrust', 'reflect.dsmash':'thrust' };   // Bow's Chair Swing (the owner's example): its words already say swing; pinned so a rewording cannot lose it. Cammy's Shutter Click (UNIQUE MOVES BATCH 1): a burst to both sides at once, not a swing (its 'flashes' holds 'lash')
 function swClassOf(kit, key, S, b){
   const e = SW_EXC[kit + '.' + key]; if(e) return e;
   if(!b || !b.s || b.rehit) return 'thrust';
@@ -91113,6 +91126,7 @@ const msFx = (name, n) => (f, t) => { if(SM_FX[name]) SM_FX[name](t, f, n); };
 const dsmStareSees = (f, t) => (f.x - t.x)*(t.face < 0 ? -1 : 1) > 0;
 const dsmStareDmg = (f, t) => dsmStareSees(f, t) ? 17 : 8;
 const dsmStare = (f, t) => { if(!dsmStareSees(f, t)){ t.vx *= 0.5; t.vy *= 0.5; } };
+const dsmCounter = (f, t) => (t._mv || t._atkAnim > 0 || t.smashHold > 0) ? 14.5 : 10;   // Barf Bag's Actually...: a foe with a move out, mid-swing or charging a smash
 const dsmInward = (f, t) => { const c = WW*0.5; if(Math.abs(t.x - c) > 40) t.vx = Math.abs(t.vx)*(t.x < c ? 1 : -1); };
 const dsmSendNote = (f, t) => { t._dsmVx = t.vx || 0; t._dsmVy = t.vy || 0; return 17; };
 const dsmSendBack = (f, t) => { const sp = Math.hypot(t._dsmVx || 0, t._dsmVy || 0), L = Math.hypot(t.vx, t.vy); if(sp < 1.5 || !(L > 0)) return;
@@ -91313,20 +91327,20 @@ const DSM_OWN = {
       boxes:[{ s:MvO(54,-4,22), g:'df', dmg:16, kb:[8.0,-4.1], fx:msFx('scramble',45) }, { s:MvO(-54,-4,22), g:'db', dmg:16, kb:[-8.0,-4.1], fx:msFx('slow',90) }] },
   },
   'Donut': {
-    // HOOK: a sweet spot at the tip of the bolt (14.5% / 10.5, a launch); the rest of the bolt is weak (9% / 3.0) and STUNS for 30 frames instead
+    // HOOK (one of the batch's three sweet spots): the tip of the bolt launches (14.5% / 10.5); the rest of the bolt is weak (9% / 3.0) and STUNS for 30 frames instead
     up:   { n:'Borrowed Powers', d:'raises a hand and zaps like Four: a jagged bolt zigzags up from his hand; its tip, far over his head, launches, and the rest of the bolt only stings and freezes them where they are for half a second', tot:14.5, x:' at the tip, 9% and half a second of stun on the rest of the bolt', pose:'uppercut', st:5, act:5, end:27, smash:true,
       boxes:[{ s:MvO(-6,-108,11), g:'a', dmg:14.5, kb:[0.5,-10.5] }, { s:MvC(10,-30, -14,-56, 6), g:'a', dmg:9, kb:[0.2,-3.0], fx:msFx('stun',30) }, { s:MvC(-14,-56, 14,-82, 6), g:'a', dmg:9, kb:[0.2,-3.0], fx:msFx('stun',30) }, { s:MvC(14,-82, -6,-108, 6), g:'a', dmg:9, kb:[0.2,-3.0], fx:msFx('stun',30) }] },
-    // HOOK: a BURY: a foe right against him falls into the hole and is stuck there (rooted, no launch); the dough ring further out throws them
-    down: { n:'Stuck in the Middle', d:'flops flat on the floor, a ring: whoever is right up against him ends up in the hole and is stuck there for a moment, not thrown; whoever stands on the dough further out is thrown away', tot:13.5, x:' on the ring, 8% and stuck in the hole close in', pose:'slam', st:4, act:6, end:27, smash:true,
-      boxes:[{ s:MvO(0,14,16), g:'a', dmg:8, kb:[0,-0.5], fx:msFx('root',50) }, { s:MvC(34,18, 84,18, 11), g:'a', dmg:13.5, kb:[8.6,-5.0] }, { s:MvC(-34,18, -84,18, 11), g:'a', dmg:13.5, kb:[-8.6,-5.0] }] },
+    // HOOK (review round): a TRAP that lingers 8 frames and catches, not throws: whoever steps on the open diary is shut in it (rooted 30 frames, no launch)
+    down: { n:'Keep Out!', d:'lays his diary open on the floor in front of him for a moment: whoever is standing on it, or steps on it to read, is snapped shut in it and stuck there for half a second, not thrown (nothing behind him)', tot:11, x:', and stuck for half a second', pose:'slam', st:4, act:8, end:25, smash:true,
+      boxes:[{ s:MvC(24,16, 78,16, 10), g:'a', dmg:11, kb:[0,-0.5], fx:msFx('root',30) }] },
   },
   'Dora': {
-    // HOOK: a sweet spot right over her head (22% / 12.4) and the tallest reach of any up smash but Bell's, weaker the higher (18%, then 14%)
-    up:   { n:'Two-Second Climb', d:'is up and back before you see it, the way she took the 500 steps: three after-images stand straight over her head, each above the last, far higher than most up smashes; the lowest hits hardest and the highest least', tot:22, x:' right over her, 18% and 14% higher up', pose:'uppercut', st:5, act:4, end:32, smash:true,
-      boxes:[{ s:MvO(0,-46,18), g:'a', dmg:22, kb:[0.6,-12.4] }, { s:MvO(0,-88,15), g:'a', dmg:18, kb:[0.5,-10.5] }, { s:MvO(0,-126,12), g:'a', dmg:14, kb:[0.4,-9.0] }] },
-    // HOOK: it hits only BEHIND her, and the dirt close to her is the sweet spot (20% / 11.5); far out it is a sour 12% / 7.9
-    down: { n:'Dirt Flinger', d:'digs on the spot, and everything she digs out flies out BEHIND her in a low spray: thick and hard close to her, thin far out; nothing in front of her at all', tot:20, x:' close behind her, 12% far out', pose:'slam', st:4, act:5, end:32, smash:true,
-      boxes:[{ s:MvF(18, 62, -3.14, -2.5, 12, 0), g:'a', dmg:20, kb:[-9.6,-6.3] }, { s:MvF(62, 116, -3.14, -2.5, 12, 0), g:'a', dmg:12, kb:[-6.6,-4.4] }] },
+    // HOOK (review round; was a sweet spot): she MOVES: she really runs up about 96 px and comes straight back down by herself; her head is the hit, on the way up only
+    up:   { n:'Two-Second Climb', d:'runs straight up the air the way she took the 500 steps, about 96 px in six frames, and is back on the floor before the move ends: her head is the hit, only on the way up, the same all the way', tot:20, x:'', pose:'uppercut', st:5, act:12, end:24, land:14, ac:999, smash:true,
+      boxes:[{ s:MvO(0,-20,26), t0:5, t1:10, g:'a', dmg:20, kb:[0.5,-12.3] }], mv:[{ t0:5, t1:10, mode:'set', vy:-16 }, { t0:11, t1:16, mode:'dive', vy:16 }] },
+    // HOOK (review round; the sweet spot is gone): it hits only BEHIND her, the same all along the spray, and throws them back and up
+    down: { n:'Dirt Flinger', d:'digs on the spot, and everything she digs out flies out BEHIND her in a low spray, as far as 116 px: nothing in front of her at all, so she has to turn her back on them', tot:18, x:'', pose:'slam', st:4, act:5, end:32, smash:true, back:true,
+      boxes:[{ s:MvF(18, 116, -3.14, -2.5, 12, 0), g:'a', dmg:18, kb:[-9.2,-6.0] }] },
   },
   'David': {
     // HOOK: ARMOUR for the 10 frames he says it, and it throws straight away from him
@@ -91338,20 +91352,20 @@ const DSM_OWN = {
       boxes:[{ s:MvF(20, 104, -0.42, 0.3, -10, 0), g:'a', dmg:17, dmgFn:dsmStareDmg, kb:[5.6,-2.0], fx:dsmStare }] },
   },
   'Loser': {
-    // HOOK: a sweet spot: the hand (17.5% / 6.9); the arm under it is a sour 9% / 4.0
-    up:   { n:'High Five', d:'everybody wants one: holds a hand up high, a little ahead of him; the hand is the real hit, the arm under it a weak one', tot:17.5, x:' on the hand, 9% on the arm', pose:'uppercut', st:5, act:4, end:29, smash:true,
-      boxes:[{ s:MvO(24,-88,13), g:'a', dmg:17.5, kb:[0.5,-6.9] }, { s:MvC(12,-30, 21,-72, 6), g:'a', dmg:9, kb:[0.3,-4.0] }] },
+    // HOOK (review round; was a sweet spot): a status that fits: nobody keeps their guard up against Loser: it switches off the foe's armour or reflect stance (measured; a counter stance still counters him first)
+    up:   { n:'High Five', d:'everybody wants one: holds a hand up high, a little ahead of him, and whoever meets it drops their guard: any armour or reflect stance they had up is gone (a counter still counters him)', tot:16.5, x:', and ends their armour or reflect stance', pose:'uppercut', st:5, act:4, end:29, smash:true,
+      boxes:[{ s:MvO(24,-88,13), g:'a', dmg:16.5, kb:[0.5,-6.9], fx:msFx('strip',1) }, { s:MvC(12,-30, 21,-72, 6), g:'a', dmg:16.5, kb:[0.5,-6.9], fx:msFx('strip',1) }] },
     // HOOK: a two-part feint: a light hit OVERHEAD first, then the real one low in front, thrown out flat
     down: { n:'Made You Look', d:'one small lie: he points up, a light hit over his head that catches anyone jumping in, and while they look he takes their feet out from under them with a low hit in front that sends them out flat along the floor (nothing behind him)', tot:16, x:' with both (3% from the point, 13% from the low hit)', pose:'kick', st:4, act:9, end:25, smash:true,
       boxes:[{ s:MvO(10,-82,14), t0:4, t1:6, g:'a', dmg:3, kb:[0.2,-0.6], stun:14 }, { s:MvC(14,18, 96,18, 11), t0:9, t1:12, g:'b', chain:true, dmg:13, kb:[6.3,-1.4] }] },
   },
   'Lollipop': {
-    // HOOK: a sweet spot: the candy end (18% / 7.9, and it leaves them sticky = slowed); the stick is a sour 10% / 5.0
-    up:   { n:'Stuck-Up', d:'turns her nose up: her candy end snaps up and back over her shoulder; the candy is the real hit and leaves them sticky and slow, the stick under it is a weak one', tot:18, x:' on the candy, and it slows them; 10% on the stick', pose:'uppercut', st:5, act:4, end:29, smash:true,
-      boxes:[{ s:MvO(-8,-98,17), g:'a', dmg:18, kb:[-0.8,-7.9], fx:msFx('slow',80) }, { s:MvC(14,-44, 2,-74, 6), g:'a', dmg:10, kb:[0.3,-5.0] }] },
-    // HOOK: a sweet spot in the middle of the candy (17% / 7.5), a sour rim (11% / 5.0), and she is stuck to the floor 8 frames longer than the old move
-    down: { n:'Sugar Crash', d:'the crash after the sugar rush: she drops candy-first onto the floor in front of her; the middle of the candy hits hard, its rim only a little, and the candy sticks to the floor, so she is open longer than after any other down smash (nothing behind her)', tot:17, x:' in the middle, 11% on the rim', pose:'slam', st:4, act:4, end:38, smash:true,
-      boxes:[{ s:MvO(48,6,14), g:'a', dmg:17, kb:[6.6,-3.6] }, { s:MvO(48,6,30), g:'a', dmg:11, kb:[4.4,-2.4] }] },
+    // HOOK (one of the batch's three sweet spots; her kit is already "hardest at the sweet end"): the candy end (18% / 7.9); the stick is a sour 10% / 5.0
+    up:   { n:'Stuck-Up', d:'turns her nose up: her candy end snaps up and back over her shoulder; the candy is the real hit, the stick under it is a weak one', tot:18, x:' on the candy, 10% on the stick', pose:'uppercut', st:5, act:4, end:29, smash:true,
+      boxes:[{ s:MvO(-8,-98,17), g:'a', dmg:18, kb:[-0.8,-7.9] }, { s:MvC(14,-44, 2,-74, 6), g:'a', dmg:10, kb:[0.3,-5.0] }] },
+    // HOOK (review round; was a sweet spot): a status that fits: the crash after the sugar: it leaves them slowed for 100 frames
+    down: { n:'Sugar Crash', d:'the crash after the sugar rush: she drops candy-first onto the floor in front of her, and whoever it lands on crashes too, slow and heavy for a second and a half (nothing behind her)', tot:15, x:', and slows them', pose:'slam', st:4, act:4, end:30, smash:true,
+      boxes:[{ s:MvO(48,6,28), g:'a', dmg:15, kb:[6.6,-3.6], fx:msFx('slow',100) }] },
   },
   'Taco': {
     // HOOK: it HEALS her 3% when it lands, and the fish is out for 8 frames
@@ -91366,18 +91380,17 @@ const DSM_OWN = {
     // HOOK: a cloud that LINGERS and climbs (10 frames), and a status: weakened
     up:   { n:'Barf Molecules', d:'the barf molecules Lollipop said were in her brain: a cloud of them drifts up from her head and hangs there, climbing, for a moment; whoever touches it is hit once and left weakened, their own hits doing less for two seconds', tot:12.5, x:', weakens them', pose:'uppercut', st:5, act:10, end:22, smash:true,
       boxes:[{ s:MvO(0,-52,22), t0:5, t1:7, g:'a', dmg:12.5, kb:[0.3,-7.0], fx:msFx('weaken',120) }, { s:MvO(0,-72,22), t0:8, t1:10, g:'a', dmg:12.5, kb:[0.3,-7.0], fx:msFx('weaken',120) }, { s:MvO(0,-92,22), t0:11, t1:14, g:'a', dmg:12.5, kb:[0.3,-7.0], fx:msFx('weaken',120) }] },
-    // HOOK: a two-part move whose second part throws DOWN: the bump lifts them, the drop puts them back on the floor beside her (down and a little toward her, strength 4.3: a weak throw, so it is not a strong spike off a ledge)
-    down: { n:'Turbulence', d:'what a sick bag is for: a bump and a drop; first whoever stands beside her, on either side, is bounced up a little, then they are slammed straight back down to the floor next to her and not thrown away at all', tot:14, x:' with both', pose:'slam', st:4, act:10, end:23, smash:true,
-      boxes:[{ s:MvO(46,14,20), t0:4, t1:6, g:'a', dmg:5, kb:[0,-5.5], stun:14 }, { s:MvO(-46,14,20), t0:4, t1:6, g:'a', dmg:5, kb:[0,-5.5], stun:14 },
-        { s:MvO(46,-30,26), t0:10, t1:13, g:'b', chain:true, dmg:9, kb:[-1.5,4.0] }, { s:MvO(-46,-30,26), t0:10, t1:13, g:'b', chain:true, dmg:9, kb:[1.5,4.0] }] },
+    // HOOK (review round): a COUNTER HIT: 14.5% on a foe who is in the middle of an attack of their own (a move out, a swing, or charging a smash), 10% on anyone else
+    down: { n:'Actually...', d:'smarter than they said: she raises a finger and corrects whoever is in front of her, a short hit from her waist up to their chin; a foe caught in the middle of an attack of their own is put right properly, anyone else gets less (nothing behind her)', tot:14.5, x:' on a foe who is attacking, 10% on anyone else', pose:'punch', st:4, act:5, end:28, smash:true,
+      boxes:[{ s:MvC(16,8, 58,-42, 10), g:'a', dmg:14.5, dmgFn:dsmCounter, kb:[5.0,-7.2] }] },
   },
   'Bell': {
     // HOOK: the tallest up smash there is (about 158 px), it travels up the rope over 9 frames, and it throws SIDEWAYS, flat, not up
     up:   { n:'Stop Climbing My String!', d:'shakes his rope: a shake runs up it from his crown to far over his head, and whoever is on it or beside it is thrown off SIDEWAYS, flat, the way he faces, not up', tot:20, x:'', pose:'uppercut', st:5, act:9, end:27, smash:true,
       boxes:[{ s:MvC(0,-30, 0,-70, 8), t0:5, t1:7, g:'a', dmg:20, kb:[5.7,-1.5] }, { s:MvC(0,-70, 0,-110, 8), t0:8, t1:10, g:'a', dmg:20, kb:[5.7,-1.5] }, { s:MvC(0,-110, 0,-150, 8), t0:11, t1:13, g:'a', dmg:20, kb:[5.7,-1.5] }] },
-    // HOOK: a two-part move: the DING in front stuns, so the DONG, on both sides, is sure to land on that foe
-    down: { n:'Ding, Dong', d:'two notes: DING, his clapper taps the floor in front of him, a light hit that stuns; DONG, the whole bell rings low on both sides and throws them straight away from him; a foe behind him gets only the dong', tot:21, x:' with both, 16% from the dong alone', pose:'slam', st:4, act:10, end:27, smash:true,
-      boxes:[{ s:MvO(44,12,15), t0:4, t1:6, g:'a', dmg:5, kb:[0.4,-0.8], stun:16 }, { s:MvO(40,6,26), t0:10, t1:13, g:'b', chain:true, dmg:16, rad:5.9 }, { s:MvO(-40,6,26), t0:10, t1:13, g:'b', chain:true, dmg:16, rad:5.9 }] },
+    // HOOK (review round): a TRIP: it knocks down whoever is standing near him and throws them half as hard as the old move; a foe in the air is missed
+    down: { n:'String Cut', d:'his string is cut and he drops like a dead weight: the floor under him and a step to each side jumps, and whoever is standing there is knocked off their feet and thrown only half as hard as by his old down smash; a foe in the air is missed', tot:18, x:', knocks them down', pose:'slam', st:4, act:5, end:32, smash:true,
+      boxes:[{ s:MvC(-58,20, 58,20, 9), g:'a', dmg:18, kb:[2.6,-1.4], fx:msFx('knockdown',28) }] },
   },
   'Tree': {
     // HOOK: a TRAP: no launch at all, the foe is stunned for half a second and drops at his roots (Tree himself is busy for longer than that)
@@ -91391,9 +91404,9 @@ const DSM_OWN = {
     // HOOK: a REFLECT, for fighters: the foe is thrown back the way they came (never flatter than about 45 degrees up); a foe who was not moving goes straight up
     up:   { n:'Return to Sender', d:'shuts over her head, her top rail flat above her: whoever comes down or in on it is sent back the way they came, at the same strength whatever the direction (always upward, at 45 degrees or steeper); a foe who was not moving goes straight up', tot:17, x:', back the way they came', pose:'uppercut', st:5, act:4, end:29, smash:true,
       boxes:[{ s:MvC(-34,-58, 34,-58, 12), g:'a', dmg:17, dmgFn:dsmSendNote, kb:[0.4,-7.4], fx:dsmSendBack }] },
-    // HOOK: a tipper: the latch end, far out in front, is the sweet spot (16% / 6.9); the bars are a sour 10% / 4.5 and the hinge behind her 8% / 3.5
-    down: { n:'Hinge and Latch', d:'turns low on her hinge: the latch end, far out in front of her, is the real hit; the bars between are a weak one, and the hinge end just behind her a weaker one still', tot:16, x:' at the latch end, 10% on the bars, 8% behind her', pose:'kick', st:4, act:5, end:29, smash:true,
-      boxes:[{ s:MvO(100,14,12), g:'df', dmg:16, kb:[6.3,-2.8] }, { s:MvC(24,16, 84,16, 9), g:'df', dmg:10, kb:[4.1,-1.8] }, { s:MvO(-30,14,16), g:'db', dmg:8, kb:[-3.2,-1.4] }] },
+    // HOOK (review round): a two-part THROUGH-PASS: she opens and the foe in front is pulled through her to her other side, then she shuts on them there and throws them on, behind her
+    down: { n:'Come On In', d:'the welcoming one: she swings open and whoever is in front of her is waved through to her other side, a light hit; then she shuts on them there and sends them on their way, behind her; a foe who was already behind her gets only the shutting', tot:16, x:' with both, 11% from the shutting alone', pose:'spin', st:4, act:10, end:24, smash:true,
+      boxes:[{ s:MvC(20,-10, 70,-10, 14), t0:4, t1:6, g:'a', dmg:5, kb:[-6.5,-1.0], stun:14 }, { s:MvC(-60,-4, 0,-4, 28), t0:10, t1:13, g:'b', chain:true, dmg:11, kb:[-5.6,-3.4] }] },
   },
 };
 // The move lists: the same wording as the generated pair, from the row.
@@ -91696,12 +91709,12 @@ const DSM_PROPS = {
     c.beginPath(); for(let i = 0; i < 8; i += 2){ if(i) c.lineTo(X(P[i]), Y(P[i+1])); else c.moveTo(X(P[i]), Y(P[i+1])); }
     c.lineJoin = 'miter'; c.lineCap = 'round'; c.strokeStyle = DSM_INK; c.lineWidth = 9; c.stroke(); c.strokeStyle = '#3f6fe0'; c.lineWidth = 5; c.stroke();
     dpStar(c, X(-6), Y(-108), 12*z, 5*z, 4, '#bcd0ff'); },
-  'Donut.down': function(c, X, Y, z, t){ if(t < 4 || t > 12) return;
-    dpEll(c, X(0), Y(20), 86*z, 11*z, 0, '#e8b070'); dpEll(c, X(0), Y(19), 26*z, 5*z, 0, '#3a2a20'); },
-  'Dora.up': function(c, X, Y, z, t){ if(t < 5 || t > 12) return;
-    const A = [[-46, 18, 0.75], [-88, 15, 0.5], [-126, 12, 0.3]];
-    for(const a of A){ c.globalAlpha = a[2]; dpDisc(c, X(0), Y(a[0]), a[1]*z, '#f2c84b'); } c.globalAlpha = 1;
-    for(let i = 0; i < 3; i++) dpLine(c, X(-14 + i*14), Y(-20), X(-14 + i*14), Y(-136), 1.5, '#ffffff'); },
+  'Donut.down': function(c, X, Y, z, t){ if(t < 4 || t > 14) return;
+    const shut = t > 11;
+    if(!shut){ dpPoly(c, [X(24), Y(24), X(50), Y(20), X(50), Y(26)], '#f4efe6'); dpPoly(c, [X(50), Y(20), X(78), Y(24), X(50), Y(26)], '#f4efe6'); dpLine(c, X(50), Y(19), X(50), Y(26), 2, '#b0402a'); }
+    else dpPoly(c, [X(38), Y(26), X(38), Y(12), X(64), Y(12), X(64), Y(26)], '#b0402a'); },
+  'Dora.up': function(c, X, Y, z, t){ if(t < 5 || t > 17) return;
+    for(let i = 0; i < 3; i++) dpLine(c, X(-12 + i*12), Y(30), X(-12 + i*12), Y(30 + (t <= 10 ? 46 : 20)), 2, '#ffffff'); },
   'Dora.down': function(c, X, Y, z, t){ if(t < 4 || t > 12) return;
     const u = Math.min(1, (t - 3)/4);
     for(let i = 0; i < 7; i++){ const a = 0.08 + 0.085*i, r = (26 + 13*i)*u + (i % 2)*6; dpDisc(c, X(-Math.cos(a)*r), Y(12 - Math.sin(a)*r), (9 - i*0.8)*z, '#7a5230'); }
@@ -91735,17 +91748,17 @@ const DSM_PROPS = {
     c.globalAlpha = 0.85;
     for(let i = 0; i < 7; i++){ const a = i*0.9 + t*0.25, r = 6 + (i % 3)*6; dpDisc(c, X(Math.cos(a)*r*1.4), Y(y + Math.sin(a)*r), (5 + (i % 2)*3)*z, '#c9d24b'); }
     c.globalAlpha = 1; },
-  'Barf Bag.down': function(c, X, Y, z, t){ if(t < 4 || t > 15) return;
-    for(const s of [1, -1]){
-      if(t <= 8){ dpPoly(c, [X(s*36), Y(24), X(s*46), Y(4), X(s*56), Y(24)], '#ffffff'); }
-      else if(t >= 10){ dpPoly(c, [X(s*34), Y(-48), X(s*46), Y(-14), X(s*58), Y(-48)], '#ffffff'); } } },
+  'Barf Bag.down': function(c, X, Y, z, t){ if(t < 4 || t > 11) return;
+    dpLine(c, X(16), Y(8), X(54), Y(-36), 5, '#e9dcb8'); dpDisc(c, X(58), Y(-42), 6*z, '#e9dcb8');
+    if(t < 8){ c.fillStyle = DSM_INK; c.font = 'bold ' + Math.round(13*z) + 'px sans-serif'; c.textAlign = 'center'; c.fillText('!', X(58), Y(-56)); } },
   'Bell.up': function(c, X, Y, z, t){ if(t < 5 || t > 15) return;
     const top = t < 8 ? -70 : (t < 11 ? -110 : -150);
     c.beginPath(); for(let y = -30; y >= -150; y -= 6){ const k = y >= top && y <= top + 40 ? 9 : 1.5; const x = Math.sin(y*0.3 + t)*k; if(y === -30) c.moveTo(X(x), Y(y)); else c.lineTo(X(x), Y(y)); }
     c.lineCap = 'round'; c.strokeStyle = DSM_INK; c.lineWidth = 6; c.stroke(); c.strokeStyle = '#c9a36a'; c.lineWidth = 3; c.stroke(); },
-  'Bell.down': function(c, X, Y, z, t){ if(t < 4 || t > 15) return;
-    if(t <= 8){ dpLine(c, X(10), Y(8), X(40), Y(12), 3, '#8a6a3a'); dpDisc(c, X(44), Y(12), 9*z, '#6b6b6b'); }
-    if(t >= 10){ const u = (t - 9)/5; for(const s of [1, -1]) for(let i = 0; i < 2; i++){ c.beginPath(); c.arc(X(s*20), Y(6), (22 + i*14 + u*16)*z, s > 0 ? -0.9 : Math.PI - 0.9, s > 0 ? 0.9 : Math.PI + 0.9); c.strokeStyle = '#ffe08a'; c.lineWidth = 4; c.stroke(); } } },
+  'Bell.down': function(c, X, Y, z, t){ if(t < 4 || t > 12) return;
+    const u = Math.min(1, (t - 3)/4);
+    dpLine(c, X(-6), Y(-70), X(-10), Y(-52), 3, '#c9a36a'); dpLine(c, X(6), Y(-70), X(12), Y(-56), 3, '#c9a36a');
+    for(const s of [1, -1]){ c.beginPath(); c.moveTo(X(s*20), Y(26)); c.quadraticCurveTo(X(s*(20 + 24*u)), Y(26 - 14*(1 - u) - 4), X(s*(20 + 46*u)), Y(26)); c.strokeStyle = DSM_INK; c.lineWidth = 3; c.lineCap = 'round'; c.stroke(); } },
   'Tree.up': function(c, X, Y, z, t){ if(t < 5 || t > 30) return;
     c.globalAlpha = t > 24 ? 0.4 : 0.75;
     dpPoly(c, [X(-8), Y(-128), X(8), Y(-128), X(8), Y(-112), X(24), Y(-100), X(24), Y(-62), X(-24), Y(-62), X(-24), Y(-100), X(-8), Y(-112)], '#bfe6ff');
@@ -91756,8 +91769,9 @@ const DSM_PROPS = {
   'Gaty.up': function(c, X, Y, z, t){ if(t < 5 || t > 12) return;
     dpLine(c, X(-34), Y(-58), X(34), Y(-58), 8, '#9aa3ad');
     for(let i = -2; i <= 2; i++) dpLine(c, X(i*14), Y(-58), X(i*14), Y(-44), 3, '#9aa3ad'); },
-  'Gaty.down': function(c, X, Y, z, t){ if(t < 4 || t > 11) return;
-    dpLine(c, X(-30), Y(14), X(100), Y(14), 6, '#9aa3ad'); dpDisc(c, X(-30), Y(14), 6*z, '#5b636d'); dpStar(c, X(100), Y(14), 13*z, 6*z, 5, '#fff3a0'); },
+  'Gaty.down': function(c, X, Y, z, t){ if(t < 4 || t > 15) return;
+    if(t <= 8){ dpLine(c, X(20), Y(-10), X(70), Y(-10), 6, '#9aa3ad'); for(let i = 0; i < 4; i++) dpLine(c, X(26 + i*14), Y(-24), X(26 + i*14), Y(4), 3, '#9aa3ad'); }
+    else if(t >= 10){ for(let i = 0; i < 4; i++) dpLine(c, X(-26 - i*12), Y(-30), X(-26 - i*12), Y(22), 3, '#9aa3ad'); dpLine(c, X(-22), Y(-4), X(-66), Y(-4), 6, '#9aa3ad'); } },
 };
 // ============================================================
 //  UNIQUE MOVES 3 (2026-11-15): NEUTRAL SMASHES IN THE MOVE-ROW FORMAT
@@ -95350,7 +95364,7 @@ function endLagHit(from){   // the move connected: what is left of its end lag i
 const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHit], frames, measured headless (reports/frame-budget-audit.csv)
   // UNIQUE UP/DOWN SMASHES batch 1 (v2), batch 2 and batch 3: the thirty-six fighters' own up and down smashes: startup, live frames, the row's own end lag (no ENDLAG_ADD on top)
   'cap.usmash':[5,7,22,22], 'cap.dsmash':[4,8,22,22], 'van.usmash':[5,4,28,28], 'van.dsmash':[4,8,25,25], 'spark.usmash':[5,6,24,24], 'spark.dsmash':[4,9,22,22], 'shatter.usmash':[5,4,27,27], 'shatter.dsmash':[4,5,27,27], 'zapshooter.usmash':[5,7,22,22], 'zapshooter.dsmash':[4,5,25,25], 'barf.usmash':[5,9,28,28], 'barf.dsmash':[4,8,30,30], 'fraidy.usmash':[5,6,24,24], 'fraidy.dsmash':[4,13,18,18], 'define.usmash':[5,8,26,26], 'define.dsmash':[4,5,30,30], 'beam.usmash':[5,4,30,30], 'beam.dsmash':[4,5,30,30], 'fly.usmash':[5,7,25,25], 'fly.dsmash':[4,6,27,27], 'freeze.usmash':[5,6,26,26], 'freeze.dsmash':[4,5,28,28], 'fry.usmash':[5,4,28,28], 'fry.dsmash':[4,9,24,24],
-  'flip.usmash':[5,9,23,23], 'buynow.usmash':[5,4,31,31], 'glaze.usmash':[5,5,27,27], 'rant.usmash':[5,4,32,32], 'seriously.usmash':[5,4,32,32], 'cool.usmash':[5,4,29,29], 'sucker.usmash':[5,4,29,29], 'jawbreaker.usmash':[5,8,24,24], 'splash.usmash':[5,10,22,22], 'ring.usmash':[5,9,27,27], 'timber.usmash':[5,4,32,32], 'reflect.usmash':[5,4,29,29],   // batch 3 (their dsmash rows are replaced in place, below)
+  'flip.usmash':[5,9,23,23], 'buynow.usmash':[5,4,31,31], 'glaze.usmash':[5,5,27,27], 'rant.usmash':[5,12,24,24], 'seriously.usmash':[5,4,32,32], 'cool.usmash':[5,4,29,29], 'sucker.usmash':[5,4,29,29], 'jawbreaker.usmash':[5,8,24,24], 'splash.usmash':[5,10,22,22], 'ring.usmash':[5,9,27,27], 'timber.usmash':[5,4,32,32], 'reflect.usmash':[5,4,29,29],   // batch 3 (their dsmash rows are replaced in place, below)
   'ember.usmash':[5,4,29,29], 'ember.dsmash':[4,5,29,29], 'dash.usmash':[5,4,28,28], 'dash.dsmash':[4,7,26,26], 'counter.usmash':[5,4,25,25], 'counter.dsmash':[4,5,25,25], 'pierce.usmash':[5,4,30,30], 'pierce.dsmash':[4,20,20,20], 'tackle.usmash':[5,4,28,28], 'tackle.dsmash':[4,9,24,24], 'bomb.usmash':[5,4,34,34], 'bomb.dsmash':[4,5,34,34], 'float.usmash':[5,9,20,20], 'float.dsmash':[4,6,24,24], 'kick.usmash':[5,7,22,22], 'kick.dsmash':[4,9,21,21], 'quake.usmash':[5,4,30,30], 'quake.dsmash':[4,5,30,30], 'serve.usmash':[5,6,26,26], 'serve.dsmash':[4,24,14,14], 'anvil.usmash':[5,4,31,31], 'anvil.dsmash':[4,6,30,30], 'slap.usmash':[5,6,28,28], 'slap.dsmash':[4,11,24,24],
   // (a -1: not measured -- a move that lands only on a foe elsewhere has no whiff / hit trial; throws have no whiff)
   'accrete.bthrow':[0,1,-1,22], 'accrete.dsmash':[29,9,30,30], 'accrete.dthrow':[0,1,-1,14], 'accrete.fthrow':[0,1,-1,20], 'accrete.neutral':[44,1,12,0], 'accrete.smash':[40,1,18,12],
@@ -95417,7 +95431,7 @@ const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHi
   'fry.bthrow':[0,1,-1,21], 'fry.dthrow':[0,1,-1,14], 'fry.finisher':[64,1,0,0], 'fry.fthrow':[0,1,-1,19], 'fry.neutral':[4,1,1,0],
   'fry.smash':[35,13,16,6], 'fry.up':[3,1,1,0], 'fry.uthrow':[0,1,-1,14], 'fury.bthrow':[0,1,-1,22], 'fury.down':[3,1,9,4], 'fury.dsmash':[29,9,31,31],
   'fury.dthrow':[0,1,-1,14], 'fury.finisher':[12,18,0,0], 'fury.fthrow':[0,1,-1,20], 'fury.neutral':[3,1,12,4], 'fury.smash':[39,1,20,15], 'fury.up':[0,1,1,1],
-  'fury.uthrow':[0,1,-1,14], 'glaze.bthrow':[0,1,-1,24], 'glaze.dsmash':[4,6,27,27], 'glaze.dthrow':[0,1,-1,15], 'glaze.finisher':[36,12,0,0], 'glaze.fthrow':[0,1,-1,22],
+  'fury.uthrow':[0,1,-1,14], 'glaze.bthrow':[0,1,-1,24], 'glaze.dsmash':[4,8,25,25], 'glaze.dthrow':[0,1,-1,15], 'glaze.finisher':[36,12,0,0], 'glaze.fthrow':[0,1,-1,22],
   'glaze.neutral':[20,32,12,4], 'glaze.smash':[27,1,17,6], 'glaze.up':[1,20,0,0], 'glaze.uthrow':[0,1,-1,15], 'glowgold.bthrow':[0,1,-1,24], 'glowgold.down':[6,1,18,9],
   'glowgold.dsmash':[30,9,32,32], 'glowgold.dthrow':[0,1,-1,14], 'glowgold.finisher':[26,1,0,0], 'glowgold.fthrow':[0,1,-1,22], 'glowgold.neutral':[6,1,18,18], 'glowgold.smash':[25,1,19,14],
   'glowgold.uthrow':[0,1,-1,14], 'grasstree.bthrow':[0,1,-1,20], 'grasstree.dsmash':[29,9,30,30], 'grasstree.dthrow':[0,1,-1,14], 'grasstree.fthrow':[0,1,-1,18], 'grasstree.smash':[26,1,18,6],
@@ -95458,9 +95472,9 @@ const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHi
   'pun.up':[0,1,1,1], 'pun.uthrow':[0,1,-1,14], 'quake.bthrow':[0,1,-1,24], 'quake.down':[6,1,18,9], 'quake.dthrow':[0,1,-1,14],
   'quake.finisher':[12,6,0,0], 'quake.fthrow':[0,1,-1,22], 'quake.neutral':[6,1,28,15], 'quake.smash':[44,1,18,12], 'quake.up':[1,20,0,0], 'quake.uthrow':[0,1,-1,14],
   'rant.bthrow':[0,1,-1,19], 'rant.down':[1,1,8,7], 'rant.dsmash':[4,5,32,32], 'rant.dthrow':[0,1,-1,13], 'rant.finisher':[38,1,0,0], 'rant.fthrow':[0,1,-1,17],
-  'rant.neutral':[1,1,8,7], 'rant.smash':[24,1,19,19], 'rant.up':[0,1,1,1], 'rant.uthrow':[0,1,-1,13], 'reflect.bthrow':[0,1,-1,22], 'reflect.dsmash':[4,5,29,29],
+  'rant.neutral':[1,1,8,7], 'rant.smash':[24,1,19,19], 'rant.up':[0,1,1,1], 'rant.uthrow':[0,1,-1,13], 'reflect.bthrow':[0,1,-1,22], 'reflect.dsmash':[4,10,24,24],
   'reflect.dthrow':[0,1,-1,14], 'reflect.finisher':[13,14,0,0], 'reflect.fthrow':[0,1,-1,20], 'reflect.smash':[26,1,16,16], 'reflect.up':[33,1,0,0], 'reflect.uthrow':[0,1,-1,14],
-  'ring.bthrow':[0,1,-1,24], 'ring.dsmash':[4,10,27,27], 'ring.dthrow':[0,1,-1,15], 'ring.finisher':[30,24,0,0], 'ring.fthrow':[0,1,-1,22], 'ring.neutral':[8,1,12,7],
+  'ring.bthrow':[0,1,-1,24], 'ring.dsmash':[4,5,32,32], 'ring.dthrow':[0,1,-1,15], 'ring.finisher':[30,24,0,0], 'ring.fthrow':[0,1,-1,22], 'ring.neutral':[8,1,12,7],
   'ring.smash':[28,1,17,13], 'ring.up':[0,25,0,0], 'ring.uthrow':[0,1,-1,15], 'rubout.bthrow':[0,1,-1,22], 'rubout.dsmash':[31,9,30,30], 'rubout.dthrow':[0,1,-1,14],
   'rubout.finisher':[70,16,0,0], 'rubout.fthrow':[0,1,-1,20], 'rubout.neutral':[10,1,12,8], 'rubout.smash':[26,1,19,14], 'rubout.up':[3,1,0,0], 'rubout.uthrow':[0,1,-1,14],
   'saltpepper.bthrow':[0,1,-1,20], 'saltpepper.down':[0,1,19,7], 'saltpepper.dsmash':[29,9,30,30], 'saltpepper.dthrow':[0,1,-1,14], 'saltpepper.finisher':[14,16,0,0], 'saltpepper.fthrow':[0,1,-1,18],
@@ -95482,12 +95496,12 @@ const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHi
   'spike.dsmash':[29,8,29,29], 'spike.dthrow':[0,1,-1,14], 'spike.finisher':[11,1,0,0], 'spike.fthrow':[0,1,-1,19], 'spike.neutral':[2,1,18,6], 'spike.smash':[26,16,30,30],
   'spike.up':[33,1,0,0], 'spike.uthrow':[0,1,-1,14], 'spikeburst.bthrow':[0,1,-1,24], 'spikeburst.down':[36,1,21,0], 'spikeburst.dsmash':[29,9,30,30], 'spikeburst.dthrow':[0,1,-1,14],
   'spikeburst.fthrow':[0,1,-1,22], 'spikeburst.neutral':[9,1,1,0], 'spikeburst.smash':[26,18,18,6], 'spikeburst.up':[1,32,0,0], 'spikeburst.uthrow':[0,1,-1,14], 'splash.bthrow':[0,1,-1,22],
-  'splash.dsmash':[4,10,23,23], 'splash.dthrow':[0,1,-1,14], 'splash.fthrow':[0,1,-1,20], 'splash.smash':[35,12,17,6], 'splash.up':[4,1,1,0], 'splash.uthrow':[0,1,-1,14],
+  'splash.dsmash':[4,5,28,28], 'splash.dthrow':[0,1,-1,14], 'splash.fthrow':[0,1,-1,20], 'splash.smash':[35,12,17,6], 'splash.up':[4,1,1,0], 'splash.uthrow':[0,1,-1,14],
   'split.bthrow':[0,1,-1,22], 'split.down':[0,1,13,5], 'split.dsmash':[29,9,32,32], 'split.dthrow':[0,1,-1,14], 'split.finisher':[14,99,0,0], 'split.fthrow':[0,1,-1,20],
   'split.neutral':[2,1,18,6], 'split.smash':[24,1,20,16], 'split.up':[0,1,1,1], 'split.uthrow':[0,1,-1,14], 'static.bthrow':[0,1,-1,24], 'static.dsmash':[33,8,29,29],
   'static.dthrow':[0,1,-1,15], 'static.finisher':[12,18,0,0], 'static.fthrow':[0,1,-1,22], 'static.neutral':[8,1,12,7], 'static.smash':[28,1,18,18], 'static.uthrow':[0,1,-1,15],
   'stopshot.bthrow':[0,1,-1,22], 'stopshot.down':[8,1,18,10], 'stopshot.dsmash':[32,9,30,30], 'stopshot.dthrow':[0,1,-1,16], 'stopshot.finisher':[85,1,0,0], 'stopshot.fthrow':[0,1,-1,20],
-  'stopshot.neutral':[12,1,16,0], 'stopshot.smash':[38,12,19,7], 'stopshot.uthrow':[0,1,-1,14], 'sucker.bthrow':[0,1,-1,22], 'sucker.dsmash':[4,4,38,38], 'sucker.dthrow':[0,1,-1,14],
+  'stopshot.neutral':[12,1,16,0], 'stopshot.smash':[38,12,19,7], 'stopshot.uthrow':[0,1,-1,14], 'sucker.bthrow':[0,1,-1,22], 'sucker.dsmash':[4,4,30,30], 'sucker.dthrow':[0,1,-1,14],
   'sucker.finisher':[12,49,0,0], 'sucker.fthrow':[0,1,-1,20], 'sucker.neutral':[3,1,8,4], 'sucker.smash':[54,1,17,0], 'sucker.up':[0,19,0,0], 'sucker.uthrow':[0,1,-1,14],
   'switch.bthrow':[0,1,-1,22], 'switch.dsmash':[29,9,32,32], 'switch.dthrow':[0,1,-1,14], 'switch.finisher':[12,41,0,0], 'switch.fthrow':[0,1,-1,20], 'switch.neutral':[16,12,12,4],
   'switch.smash':[26,12,17,6], 'switch.up':[0,1,1,1], 'switch.uthrow':[0,1,-1,14], 'tackle.bthrow':[0,1,-1,24], 'tackle.dthrow':[0,1,-1,14],
@@ -130768,7 +130782,7 @@ const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering
   'fsC','fsLk','fsPd'];   // (fsPd: Pencil's van's road in px, 0 when it stays) ...the catch's frames left, and whose catch holds this fighter (+1) (CATCH, THEN CINEMATIC)
 function netFighter(f){
   const o = { idx:f.idx, x:Math.round(f.x), y:Math.round(f.y), r:f.r, face:f.face,
-    pct:Math.round(f.pct*10)/10, stocks:(f.stocks===Infinity?-1:f.stocks),
+    pct:f.pct, stocks:(f.stocks===Infinity?-1:f.stocks),   // (unrounded since batch 3 of the up/down smashes: a guest's % is the host's exactly)
     vx:nr1(f.vx), vy:nr1(f.vy) };   // the run cycle, the lean, the jump stretch, the run dust
   if(f.dead) o.dead = true;         // (ONLINE LAG: a false rides as nothing; a guest reads a missing one as false)
   if(f.onground) o.onground = true;
