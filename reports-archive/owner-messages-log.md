@@ -283,6 +283,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (next)**: needle
 - **2026-11-17 (next)**: blueberry
 - **2026-11-17 (next)**: bracelety
+- **2026-11-17 (next)**: oj
+- **2026-11-17 (next)**: tb
 
 ## Teams maps, stages & levels
 
