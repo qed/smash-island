@@ -194,6 +194,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16 (playing the easier Stapy)**: remove the random platform in walljump secitons
 - **2026-11-16 (about the Stapy win cut / the episode picture they sent on 11-15)**: also, that image was just part of the drowning out. the whole sky eventually turned into the emblem color.
 - **2026-11-17 (answers: 1 Stapy CPU shimmer help, 2 CPUs fighting while climbing, 3 Long Span ledges)**: 1. your call. 2. if they are in a good position. 3 whats that? (lead's call on 1: remove the shimmer help)
+- **2026-11-17**: oh! we forgot bottle as an event fighter.
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
@@ -561,6 +562,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16 (answers on up/down smashes batch 2)**: Redo which: "None, merge them all" + "Puffball's up smash" + "Ice Cube's up smash" (read as: merge the batch, redo those two up smashes). CPU never uses up smash: "Yes, fix it".
 - **2026-11-17**: and the moves dont have anything cool. look at any ssbu move, and you'll see that they all have something cool in them.
 - **2026-11-17 (next)**: especially the animations
+- **2026-11-17**: should we have sweetspots and sourspots? (lead recommended: yes, on 1-2 moves per fighter, show old-vs-new first; asked whether to queue the pass)
 
 ## Bosses, Boss Rush & secrets
 
