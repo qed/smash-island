@@ -221,6 +221,13 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (answers: new cheats for Sticker's contest; offered fake gold paint, pickpocket, poster holes, cardboard decoy, kick the machine, vine swings, ball magnet, hide underwater)**: part 1: "all of the gold paint is fake. in the episode this is refering to, sticker gets 27630 points due to the announcer only detecting cheating, not the product of it.", Pickpocket, Poster holes, Cardboard decoy; part 2: Vine swings, Hide underwater
 - **2026-11-17 (next, Sticker's contest)**: any ideas for the map? any cheats to use AGAINST people?
 - **2026-11-17 (answers: Sticker map ideas and sabotage cheats)**: map: Waterfall cave, Rope bridge canyon, Ski slope + geysers, Sunken ship + campsite (all four); sabotage: "also, for the subway station, there should be a loop of 3-6 stations, and multiple loops.", Out of Order sign, Glue trap, Swap the door signs, Frame them (all four)
+- **2026-11-17 (answers: more Sticker contest ideas; offered events Inspection!/Drone nap/Golden hour/Bribe your drone, and Rainbow ball/Suspicion meter/Trophy steal ending/CHEATER! stamp)**: events: [No preference] (none picked); balls/end: Rainbow ball, Suspicion meter, Trophy steal ending, CHEATER! stamp
+- **2026-11-17 (next; ideas wanted for the other event contests too)**: and also, for other events, because I want them to be at this level of cool.
+- **2026-11-17 (instead of picking from 12 one-per-contest ideas)**: no, like 10-20 ideas for each. make them more complex, and more fun.
+- **2026-11-17 (after the 13-contest ideas file was sent)**: give me teh ideas for each contest in question boxes
+- **2026-11-17 (CLOUDY ideas, question boxes; numbers = designs/contest-ideas-2026-11-17.md)**: picked 1 Storm front, 2 Rainbow bridge, 3 Sky islands, 5 Thief crow, 6 Glazier's bench, 7 Overflowing jar, 8 Swap pedestal, 9 Lost and found, 10 Wind gusts, 13 Item backpack, 14 Hiding bushes (not 4, 11, 12); free text: "change the collection a bit." and "the collection is a bit too simple."
+- **2026-11-17 (CLOUDY, how the Collection changes)**: Item powers, Sets with bonuses, More, rarer items (not: Combine items)
+- **2026-11-17 (ERASER ideas)**: 1 Tile kinds, 2 Stomp-through, 3 Ink spill, 4 Rubber stamps, 6 Conveyor layer, 8 Knocked-out erasers, 11 Sharpener vortex, 12 Trapdoor tiles (not 5, 7, 9, 10)
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
@@ -309,6 +316,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17**: run 150 cups
 - **2026-11-17 (next)**: choose a random character for me to try to win a world cup as
 - **2026-11-17 (next)**: and try to make it hard for me (lead picked at random among the fighters who never won a cup in the 250-cup batch and not in series 2: Yellow Face)
+- **2026-11-17 (human World Cup, the lead's Yellow Face challenge)**: i won as yellow face, carried by up-c for chipping and smash for kills.
+- **2026-11-17 (next)**: any new hard ones?
 
 ## Teams maps, stages & levels
 
@@ -616,6 +625,9 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17**: the new up smashes have so little range.
 - **2026-11-17 (next)**: some of the down smashes too.
 - **2026-11-17 (next)**: I cant use gb's up and down smashes
+- **2026-11-17 (playing the Box challenge)**: I found the root cause: box's only playable move is smash. The reason she has flown under the radar is because hop smashes are REALLY strong.
+- **2026-11-17 (answers: hop smashes + Box)**: hop smashes: "Measure first"; Box: "the finisher sucks.", Real jab + ranged, Specials that hurt (not picked: lower her smash)
+- **2026-11-17 (next, on Box; her ROSTER arch is "Keeper")**: and also because her archetype gives her the best sweeping tilts and airs.
 
 ## Bosses, Boss Rush & secrets
 
@@ -1262,6 +1274,9 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-12 20:22 UTC** *(part)*: change what is needed.
 - **2026-11-13 18:40 UTC** *(part)*: why did you radically change it?
 - **2026-11-16 (after the backup to GitHub)**: what is done?
+
+- **2026-11-17 (after the Sticker/Golf Ball report)**: any ideas for anything else?
+- **2026-11-17 (answers to "ideas for anything else": fix/finish + UI)**: fix/finish: "I meant for sticker.", Event fighter balance, Start the sweet-spot pass, Start the animation redraws; UI: Your Stats page, Contest picture cards, World Cup bracket screen, Update 6 What's new
 
 ## Working rules, budget & agents
 

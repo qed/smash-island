@@ -463,3 +463,7 @@ Several of these are CPU gaps that the queued bot fixes close (edge-guarding, ha
 - **S2 #19:** Owner: "match" -- Winner: **Match** (her second cup of this series, after #2).
 - **S2 #20:** Owner: "pb" -- Winner: **Puffball** ("pb" = Puffball, as the owner confirmed in #49).
    - Notes (lead): the owner sent these one word at a time after "WC winner 1:needle"; read as the winners of cups 1, 2, 3... in order (each a new cup). Opponents, team size, stocks and CPU level not given (Expert, items and smash balls off assumed, as before). Build: the Update 6 preview (batch 1-3 own up/down smashes: Needle and Firey have theirs, range fix still pending; move effects + strong-hit freeze; CPU recovery fix, so far fewer self-KOs). Twenty cups so far; Needle, Blueberry, Clover and Match have two each, everyone else one.
+
+## Human results (the owner playing, not CPU cups)
+
+- **2026-11-17, World Cup won as YELLOW FACE** (the lead's random "make it hard" pick): "i won as yellow face, carried by up-c for chipping and smash for kills." Notes (lead): up-c = his up-special, used to chip damage; his smash finished the stocks.
