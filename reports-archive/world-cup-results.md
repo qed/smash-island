@@ -439,3 +439,27 @@ Several of these are CPU gaps that the queued bot fixes close (edge-guarding, ha
    - Owner's note (2026-11-04): "smash balls are turned off" -- the owner's cup finals are played with smash balls OFF, so no Final Smash occurred in any logged final; Lightning's 0-17% Final Smash KO could not have helped her in #16, #17, #40, #48 or #49. Owner also said "sure" to (1) fixing Snowball's finisher hold (67 frames, only a hit on Snowball frees the foe) and (2) giving Lightning a second kill option.
    - Owner's note (2026-11-05, after Update 2.3: shield, reflectors, jab nerf 2-4%, dash/comeback tells): "THE CPU META HAS CHANGED. Gone is the era of Puffball and Toothpaste, welcome David and Donut." -- logged as the owner's read of the post-Update-2.3 cups: David and Donut now win where Puffball and Toothpaste used to. Notes (lead): David is one of the nine reflector fighters (no bubble); not yet measured whether this is the jab nerf (Puffball and Toothpaste leaned on jab/boost kits), the shield, or noise; a fresh win-rate run on the current build is queued for after the 2026-11-08 reset.
    - **Owner's browser sim batch (2026-11-05, current local build with sprint; 48-team spectate cups, counted by a page logger):** cup 1 Bomby, 2 Naily, 3 MeTag, 4 Paper, 5 Jack, 6 Lollipop, 7 Leafy. Owner on cup 7: "LEAFY BEAT TOOTHPASTE!!! HISTORICAL MOMENT" (Leafy beat Toothpaste in the final). Notes (lead): 7 different champions in 7 cups; no David, Donut, Puffball or Toothpaste yet; the tally continues in the pane (window.__cups).
+
+## Series 2 (from 2026-11-17, owner numbering restarts at 1; played on the Update 6 preview build: new up/down smashes batches 1-3, move effects + strong-hit freeze, CPU recovery fix)
+
+- **S2 #1 (2026-11-17):** Owner: "WC winner 1:needle" -- Winner: **Needle**.
+- **S2 #2:** Owner: "match" -- Winner: **Match**.
+- **S2 #3:** Owner: "teddy bear" -- Winner: **Teddy Bear**. Notes (lead): notable: on 2026-11-04 the owner said Teddy Bear "has never made the semis"; now he wins a cup.
+- **S2 #4:** Owner: "blueberry" -- Winner: **Blueberry** (her second cup in the log; first was #46).
+- **S2 #5:** Owner: "firey" -- Winner: **Firey**.
+- **S2 #6:** Owner: "bow" -- Winner: **Bow** (a CPU-cup low tier before: 6 wins in 250).
+- **S2 #7:** Owner: "needle" -- Winner: **Needle** (her second cup of this series, after #1).
+- **S2 #8:** Owner: "blueberry" -- Winner: **Blueberry** (her second cup of this series, after #4).
+- **S2 #9:** Owner: "bracelety" -- Winner: **Bracelety**.
+- **S2 #10:** Owner: "oj" -- Winner: **OJ** (the secret prize fighter).
+- **S2 #11:** Owner: "tb" -- Winner: **Tennis Ball** (read by the owner's own rule from #50: "tb" = Tennis Ball; Teddy Bear, who won #3, is written out in full).
+- **S2 #12:** Owner: "clover" -- Winner: **Clover**.
+- **S2 #13:** Owner: "money" -- Winner: **Money** (his second cup in the log; first was #38).
+- **S2 #14:** Owner: "coiny" -- Winner: **Coiny** (his second cup in the log; first was #36).
+- **S2 #15:** Owner: "lifer" -- Winner: **Lifering** (read "lifer" as Lifering, the only roster fighter it fits).
+- **S2 #16:** Owner: "magnet" -- Winner: **Magnet** (his second cup in the log; first was #45).
+- **S2 #17:** Owner: "clover" -- Winner: **Clover** (her second cup of this series, after #12).
+- **S2 #18:** Owner: "cabby" -- Winner: **Cabby** (a secret prize fighter, like OJ in #10).
+- **S2 #19:** Owner: "match" -- Winner: **Match** (her second cup of this series, after #2).
+- **S2 #20:** Owner: "pb" -- Winner: **Puffball** ("pb" = Puffball, as the owner confirmed in #49).
+   - Notes (lead): the owner sent these one word at a time after "WC winner 1:needle"; read as the winners of cups 1, 2, 3... in order (each a new cup). Opponents, team size, stocks and CPU level not given (Expert, items and smash balls off assumed, as before). Build: the Update 6 preview (batch 1-3 own up/down smashes: Needle and Firey have theirs, range fix still pending; move effects + strong-hit freeze; CPU recovery fix, so far fewer self-KOs). Twenty cups so far; Needle, Blueberry, Clover and Match have two each, everyone else one.

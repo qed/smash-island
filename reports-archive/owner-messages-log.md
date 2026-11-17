@@ -208,6 +208,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (next)**: also, it takes way more than 5 seconds to remove a light
 - **2026-11-17 (playing Stapy)**: the cpus are parkour perfect.
 - **2026-11-17 (playing Stapy)**: and the colors for the emblems are not all appropriate
+- **2026-11-17 (on Sticker's 5 open points; 5 = the drone in Cheaters Prosper rarely catches CPUs because they cheat carefully)**: 5 could be changed.
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
@@ -273,6 +274,29 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-05 13:46 UTC**: you can completely sim(dont look at anything) world cups, around 100 cuz they are easy to do, you just click a button 10 times.
 - **2026-11-05 18:10 UTC** *(part)*: also, run the world cups in the tab I opened.
 - **2026-11-05 20:22 UTC**: what did you think of that 0-5 match?
+- **2026-11-17**: WC winner 1:needle
+- **2026-11-17 (next)**: match
+- **2026-11-17 (next)**: teddy bear
+- **2026-11-17 (next)**: blueberry
+- **2026-11-17 (next)**: firey
+- **2026-11-17 (next)**: bow
+- **2026-11-17 (next)**: needle
+- **2026-11-17 (next)**: blueberry
+- **2026-11-17 (next)**: bracelety
+- **2026-11-17 (next)**: oj
+- **2026-11-17 (next)**: tb
+- **2026-11-17 (next)**: clover
+- **2026-11-17 (next)**: money
+- **2026-11-17 (next)**: coiny
+- **2026-11-17 (next)**: lifer
+- **2026-11-17 (next)**: magnet
+- **2026-11-17 (next)**: clover
+- **2026-11-17 (next)**: cabby
+- **2026-11-17 (next)**: match
+- **2026-11-17 (next)**: pb
+- **2026-11-17**: run 150 cups
+- **2026-11-17 (next)**: choose a random character for me to try to win a world cup as
+- **2026-11-17 (next)**: and try to make it hard for me (lead picked at random among the fighters who never won a cup in the 250-cup batch and not in series 2: Yellow Face)
 
 ## Teams maps, stages & levels
 
@@ -834,6 +858,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16 (next)**: add the anonymous character counting. (then, asked where the counts should go: "nvm for now")
 - **2026-11-16 (next)**: cuz there is someone who went on the bomby page 8 times, and so I want to figure out if they are maining him.
 - **2026-11-16 (next)**: sure, add it. I cant do much for now, bcs its on my dads account tho.
+- **2026-11-17**: change the skin names to what it is, except when it would make sense. pewter yellow face is not real
+- **2026-11-17 (on the skin-name list)**: for cake, its her bfdia look. for that, its yoyle metal buble. for twinkle, its what happens in bfb when four is multiplied by donut. (applied: Caked Cake -> BFDIA Cake; Yoyleball Bubble -> Yoyle Metal Bubble; the Twinkle names are a real BFB thing: kept)
 
 ## Bugs & fixes
 
