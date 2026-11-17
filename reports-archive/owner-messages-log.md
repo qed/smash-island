@@ -200,6 +200,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (after the lead pitched 3 contests each for Bottle, Sticker, Needy, Jammy, Hot Dog)**: all of them are good. do the starred ones. (starred: Bottle = Hide and Seek; Sticker = Cheaters Prosper; Needy = Evil Serum; Jammy = The Ruler's Crown; Hot Dog = Rules Are Rules)
 - **2026-11-17 (answers: twists for the 5 BFDIE fighters, their movesets)**: Twists: "Pitch other twists" (not the unstarred contest ideas). Movesets: "Show me first" (a designer writes each full moveset; the owner approves before building).
 - **2026-11-17 (reading the BFDIE fighter designs)**: hot dog doesnt have arms, neither does needy
+- **2026-11-17**: use the starred twists for what?
+- **2026-11-17 (after the lead explained the starred twists = each new event fighter's event matches 1 and 2)**: yeah, those are good.
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
