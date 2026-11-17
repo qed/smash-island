@@ -75984,6 +75984,7 @@ function animPoses(kind, fwd){
 const wrapA = (a)=>{ while(a > Math.PI) a -= 2*Math.PI; while(a < -Math.PI) a += 2*Math.PI; return a; };
 // The limbs that move this frame and by how much, or null when nothing but the body moves.
 function limbMoves(f, rig, sp){
+  if(arBody(f)) return arLimbMoves(rig, sp);   // ANIMATION REDRAWS: the pilot five's timelines swing their own limbs
   if(!(f._atkAnim > 0 || stupK(f) >= 0) || !f._atkKind) return null;   // (a startup: the limbs held in the wind-up -- STARTUP, atkU)
   const fwd = sp && sp.flip ? -1 : 1, mva = f._atkMove ? MVA[f._atkMove] : null;
   if(mva) return mvaLimbMoves(f, rig, mva, fwd);   // a move of a converted fighter has limb work of its own (MOVE ANIMATIONS)
@@ -126463,7 +126464,7 @@ function spriteRig(f, R, sp, anim){
   }
 
   // ---- ATTACK / CHARGE — layered ON TOP of whatever the fighter's feet are doing ----
-  const su = stupK(f);
+  const su = stupK(f), arb = arBody(f);   // (arb: ANIMATION REDRAWS -- the pilot's own timeline draws the swing's body, 1, or a held smash's, 2)
   if(f._atkAnim > 0 || su >= 0){           // GATHER back, snap forward, then settle to neutral (a STARTUP holds the gather: atkU)
     // THREE BEATS, one signed drive (atkDrive): -1 fully wound back -> +1 fully extended -> 0
     // settled. The release beat is the lunge this rig has always played, unchanged in size and
@@ -126474,6 +126475,7 @@ function spriteRig(f, R, sp, anim){
     // on the gather, the lunge on the strike, a settle with a little overshoot after. Bespoke
     // choreography layers on top of it through FIGHTER_ANIM, it never replaces it.
     // A fighter whose swing is a set of pictures (Puffball's spit) brings its own drive: a spit is not one lunge. Every other swing is the shared one.
+    if(arb !== 1){
     const d = (anim && anim.atkDrive && f._atkKind === 'spit') ? anim.atkDrive(f) : atkDrive(f), m = d < 0 ? -d : d;
     // Was 0.34 — about 8px of travel on a 67px-tall sprite, which measured as "working" and read
     // as nothing at all in play. The swipe arc does most of the work now; this carries the body.
@@ -126482,6 +126484,7 @@ function spriteRig(f, R, sp, anim){
     // The body compresses at BOTH ends of the drive — a crouch on the gather, a stretch on the
     // strike — so anticipation reads as weight being loaded rather than as the lunge starting late.
     sx += m*0.17; sy -= m*0.13;
+    }
     if(su >= 0){                           // STARTUP: loaded and shaking a little as it comes, so the moment it goes can be read
       const q = su > 0.45 ? (su - 0.45)/0.55 : 0;
       lunge += Math.sin(hazardT*2.9 + ph)*R*0.035*q; bob -= q*R*0.04; sy -= q*0.04; sx += q*0.03;
@@ -126489,10 +126492,12 @@ function spriteRig(f, R, sp, anim){
     } else
     state = "attack";                      // ONE rig state; the beat within it is f._atkPhase
   } else if(f.smashHold > 0){              // wind BACK while the smash charges — anticipation
+    if(arb !== 2){
     const c = f.smashHold/smashFullOf(f); const cc = c>1?1:c;
     lunge = -f.face * cc * R * 0.26;
     rock -= f.face * cc * 0.17;
     sy -= cc*0.16; sx += cc*0.13;
+    }
     state = "charge";
   }
   // ---- HITSTUN — a shake that decays as the reaction wears off. This wins over `attack`: being
@@ -126693,6 +126698,8 @@ function frPose(f, fd, sp){
     P.mom = FM_TUMBLE; P.eye = fd.tumble[0]; P.mouth = fd.tumble[1];
     P.spin = (vx < 0 ? -1 : 1)*(hazardT*0.34 + f.idx*1.3);
     P.smear = 1; P.sdx = -vx; P.sdy = -vy; P.arm = FA_FLAIL; P.amt = 1.2; P.leg = FL_PEDAL; P.lamt = 0.7; P.ph = hazardT*0.55 + f.idx; P.fx = FX_STARS | FX_LINES;
+  } else if(hk > 0 && arHurtPose(f, fd, P, hk)){
+    // (ANIMATION REDRAWS: the pilot five's flinch, in-betweened)
   } else if(hk > 0){
     // ---- HIT: the flinch. Three frames over the reaction: the impact (thrown back, squashed, eyes screwed shut, arms up), the rebound, the recovery.
     const fi = hk > 0.7 ? 0 : (hk > 0.35 ? 1 : 2), H = FR_HURT[fi];
@@ -126701,6 +126708,8 @@ function frPose(f, fd, sp){
     P.rot = -away*amp*H[0]; P.sx = 1 + (H[1] - 1)*qa; P.sy = 1 + (H[2] - 1)*qa; P.dx = away*amp*H[3];
     P.arm = FA_RAISE; P.amt = H[4]*1.6; P.leg = FL_TUCK; P.lamt = fi === 0 ? 0.5 : 0.2;
     if(fi < 2){ P.eye = fd.hurt[0]; P.mouth = fd.hurt[1]; P.fx = FX_SWEAT; }
+  } else if(u >= 0 && arAtkPose(f, fd, P, FM_ATK)){
+    // (ANIMATION REDRAWS: the pilot five's swing is its own timeline)
   } else if(u >= 0){
     // ---- ATTACK: wind-up, hit and recover, six held frames, by the kind of move it is
     const kb = FR_KIND[f._atkKind] | 0, mk = f._atkMove ? FR_KIND[f._atkMove] : undefined, ki = mk === undefined ? kb : mk, fi = (u*6 + 0.000001) | 0, fj = fi > 5 ? 5 : fi, o = (ki*6 + fj)*7, slot = fj < 2 ? 0 : (fj < 4 ? 1 : 2);
@@ -126718,11 +126727,15 @@ function frPose(f, fd, sp){
     if(f.fsId === 'petals') fsb2_flowerFace(f, P);   // (Flower's egg sac: her face follows its story, FSB lane 2)
     if(f.fsId === 'swingopen') fsb2_gatyPose(f, P);   // (Gaty's two connection: her picture squeezes edge-on, leans and claps, FSB lane 2)
     if(f.fsId === 'jellyquake') fsb2_gelPose(f, P);   // (Gelatin's jelly mould: his picture squashes, stretches and tumbles with the scene, FSB lane 2)
+  } else if(f.smashHold > 0 && arAtkPose(f, fd, P, FM_CHARGE)){
+    // (ANIMATION REDRAWS: wound into the pilot's smash)
   } else if(f.smashHold > 0){
     // ---- CHARGING a smash: set jaw, a tremble, the anger mark coming up
     const c = f.smashHold >= SMASH_FULL ? 1 : f.smashHold/SMASH_FULL;   // (the baseline charge, so a client without the weight draws the same frame)
     P.mom = FM_CHARGE; P.eye = fd.charge[0]; P.mouth = fd.charge[1]; P.rot = Math.sin(hazardT*1.7 + f.idx)*0.03*c; P.k = c;
     if(fd.vein && c > 0.35) P.fx = FX_VEIN;
+  } else if(arMovePose(f, fd, P)){
+    P.mom = FM_MOVE;   // (ANIMATION REDRAWS: the pilot five's continuous stride and jump arc)
   } else {
     // ---- MOVING
     P.mom = FM_MOVE;
@@ -129214,6 +129227,473 @@ function mvaLimbMoves(f, rig, mva, fwd){
   return out.length ? out : null;
 }
 
+// ============================================================
+//  ANIMATION REDRAWS (the pilot, 2026-11-17): Bow, Needle, Match, Clover and Blueberry
+// ============================================================
+// The owner, 2026-11-12: "polish what we have (more consistent, more fluid, cooler) without changing the gameplay... slowly add more animations and
+// better ones to the characters, with, eventually, a pose per frame ... WITH THE SHOW's ANIMATION". Approved as a five-fighter pilot on 2026-11-17.
+// For these five every swing is a TIMELINE of key poses -- a key every two or three ticks of an 18-tick jab: the anticipation, the stretched smear
+// frame of the strike, the follow-through past it, the settle with its little overshoot -- eased from key to key, so every frame drawn is a pose of
+// its own (where the shared strips hold six). Their walk and run cycles and the jump arc are continuous instead of four held steps, a held smash
+// winds into the smash's own first pose, and a hit's flinch is in-betweened.
+// ONE STYLE A MOVE (the owner: "you can take from the show, but for 1 move, make it like one style"): a move worn as a show picture (Needle's prick,
+// stance and mad: POSE_SETS) keeps that picture all through, and its timeline only moves the body that carries it -- no drawn limbs, no drawn face
+// are put on it (the frame layer and the limb rig leave a pose picture alone). Every other move is drawn on the fighter's own render all through:
+// its painted limbs (LIMB_RIG) and the frame layer's faces (FR_FACE), in the show's way -- flat shapes held and snapped, squash and stretch,
+// a flat cut-out turning round about its upright (the turnaround).
+// A KEY is a string of name=value pairs; whatever it leaves out is the rest pose:
+//   u      where it sits: 0 the tick the move fires .. 1 as its swing ends (atkU; a startup holds it in the first quarter)
+//   r      lean the way they face, about the feet (rad)          sx sy  squash and stretch about the feet          dx dy  shove, in radii (dx the way they face, dy down)
+//   t      the turnaround: 0..1 a full turn about the upright (drawn as a horizontal scale through cos; keep it at 1 once a turn is done)
+//   sm     the smear: the picture ghosted behind its own motion (0..1); at 0.9 and over, speed lines too
+//   aF aB  the front and the back painted arm, swung forward from where it is painted (rad: about 1.57 points it ahead, 3.1 straight up; negative swings it back)
+//   lF lB  the same for the legs
+//   f      the face from this key on, eyes.mouth (FR_E, FR_M), or W H F R: the fighter's own wind-up, hit, follow-through and recover faces; '-' the frame layer's own
+//   e      the ease to the next key: s smooth (the default), o out (a strike: fast, then settling), i in (a gather: slow, then fast), h held (a drawn hold), l linear
+// RENDER-ONLY. Nothing here writes a field of a fighter, rolls a die or is read by the sim: the same seeded match plays the same with it drawn or not. A
+// netcode client is shipped everything it reads (swing, swingLen, swingMove, swingKind, smashHold, vx, vy, onground, hurtT, face). The rows are built once,
+// at boot; the per-frame functions below fill module scratch (_AR, _ARV) and make nothing to collect, beyond the move-label lookup the pose sets already do.
+const AR_CH = ['u', 'r', 'sx', 'sy', 'dx', 'dy', 't', 'sm', 'aF', 'aB', 'lF', 'lB'], AR_N = 12;
+const AR_REST = [0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0];
+const AR_EASE = { s:0, o:1, i:2, h:3, l:4 };
+// One timeline from its key strings. faces: { W, H, F, R } for the placeholders; A scales the body (lean, shove, squash), LA the limbs (a template's reach).
+function arBuild(keys, faces, A, LA){
+  A = A == null ? 1 : A; LA = LA == null ? 1 : LA;
+  const n = keys.length, v = new Float64Array(n*AR_N), eye = new Int8Array(n), mouth = new Int8Array(n), ease = new Uint8Array(n);
+  let ce = -1, cm = -1;
+  for(let i = 0; i < n; i++){
+    for(let j = 0; j < AR_N; j++) v[i*AR_N + j] = AR_REST[j];
+    const toks = keys[i].trim().split(' ');   // (an empty piece has no '=' and is passed over)
+    for(let q = 0; q < toks.length; q++){
+      const tk = toks[q], at = tk.indexOf('=');
+      if(at < 0) continue;
+      const k = tk.slice(0, at); let val = tk.slice(at + 1);
+      if(k === 'f'){
+        if(faces && faces[val]) val = faces[val];
+        if(val === '-'){ ce = -1; cm = -1; } else { const p = val.split('.'); ce = FR_E[p[0]] | 0; cm = FR_M[p[1]] | 0; }
+      } else if(k === 'e') ease[i] = AR_EASE[val] | 0;
+      else { const j = AR_CH.indexOf(k); if(j >= 0) v[i*AR_N + j] = parseFloat(val); }
+    }
+    const o = i*AR_N;
+    v[o + 1] *= A; v[o + 2] = 1 + (v[o + 2] - 1)*A; v[o + 3] = 1 + (v[o + 3] - 1)*A; v[o + 4] *= A; v[o + 5] *= A;
+    for(let j = 8; j < 12; j++) v[o + j] *= LA;
+    eye[i] = ce; mouth[i] = cm;
+  }
+  return { n, v, eye, mouth, ease };
+}
+
+// ---- THE SHARED SHAPES: one per kind of swing (animKindOf's), built for each fighter in their own faces and size; a fighter's own keys (below) win.
+const AR_TPL = {
+  // a straight blow: drawn back and loaded, snapped through long and thin, held on the hit, carried past it, back with a small rebound
+  punch: ['u=0 r=-.05 sx=1.03 sy=.97 dx=-.04 aF=-.4 aB=.25 f=W e=i', 'u=.13 r=-.13 sx=1.08 sy=.93 dx=-.12 aF=-1 aB=.5 lF=.2 lB=-.15',
+    'u=.24 r=-.15 sx=1.1 sy=.9 dx=-.15 aF=-1.15 aB=.55 lF=.25 lB=-.2 e=o', 'u=.30 r=.18 sx=1.2 sy=.86 dx=.28 aF=1.55 aB=-.6 lF=-.25 lB=.35 sm=1 f=H e=o',
+    'u=.40 r=.15 sx=1.1 sy=.92 dx=.25 aF=1.5 aB=-.65 lF=-.2 lB=.3 sm=.35', 'u=.52 r=.09 sx=.95 sy=1.05 dx=.17 aF=1.3 aB=-.45 lF=-.1 lB=.15 f=F',
+    'u=.66 r=-.03 sx=1.02 sy=.98 dx=.03 aF=.45 aB=-.1', 'u=.82 r=.015 sx=.99 sy=1.01 dx=-.01 aF=-.08 f=R', 'u=1'],
+  // up and through: a deep crouch, then up on the toes, stretched tall, the arm thrown up past the head
+  uppercut: ['u=0 r=-.03 sx=1.05 sy=.94 dy=.02 aF=-.3 f=W e=i', 'u=.14 r=-.06 sx=1.12 sy=.86 dy=.05 aF=-.7 aB=-.3 lF=.3 lB=.3',
+    'u=.24 r=-.07 sx=1.15 sy=.83 dy=.06 aF=-.8 aB=-.35 lF=.35 lB=.35 e=o', 'u=.30 r=.06 sx=.84 sy=1.24 dy=-.12 aF=2.6 aB=.6 lF=-.2 lB=-.3 sm=1 f=H e=o',
+    'u=.40 r=.05 sx=.88 sy=1.18 dy=-.14 aF=2.75 aB=.5 sm=.4', 'u=.52 r=.03 sx=.95 sy=1.07 dy=-.08 aF=2.4 aB=.3 f=F',
+    'u=.66 sx=1.06 sy=.94 aF=1', 'u=.82 sx=.99 sy=1.01 aF=.1 f=R', 'u=1'],
+  // a low kick: the leg drawn back, the arms out for balance, the leg swept through
+  kick: ['u=0 r=-.04 sx=1.02 sy=.98 lF=-.3 aF=.2 aB=-.2 f=W e=i', 'u=.14 r=-.12 sx=1.05 sy=.95 dx=-.08 lF=-.7 aF=.5 aB=-.4',
+    'u=.24 r=-.14 sx=1.06 sy=.94 dx=-.1 lF=-.8 aF=.55 aB=-.45 e=o', 'u=.30 r=.14 sx=1.12 sy=.94 dx=.2 lF=1.35 lB=-.25 aF=-.6 aB=.7 sm=1 f=H e=o',
+    'u=.40 r=.12 sx=1.06 sy=.97 dx=.18 lF=1.3 lB=-.2 aF=-.55 aB=.65 sm=.35', 'u=.52 r=.07 dx=.12 lF=1.05 aF=-.35 aB=.45 f=F',
+    'u=.66 r=-.02 sx=1.03 sy=.97 dx=.02 lF=.3', 'u=.82 r=.01 lF=-.05 f=R', 'u=1'],
+  // round the body: twisted back, then the turnaround -- edge-on, the back, edge-on, round again -- on a little hop, landing in a squash
+  spin: ['u=0 r=-.04 sx=1.03 sy=.97 aF=-.4 aB=-.4 f=W e=i', 'u=.14 r=-.1 t=-.05 sx=1.06 sy=.94 aF=-.8 aB=-.7 lF=.15',
+    'u=.24 r=-.12 t=-.07 sx=1.08 sy=.92 aF=-.9 aB=-.8 lF=.2 e=l', 'u=.32 t=.15 sy=1.06 dy=-.06 aF=1.5 aB=1.5 lF=.4 lB=-.3 sm=1 f=H e=l',
+    'u=.42 t=.45 sy=1.08 dy=-.09 aF=1.6 aB=1.6 lF=.45 lB=-.35 sm=1 e=l', 'u=.52 t=.75 sy=1.05 dy=-.06 aF=1.5 aB=1.5 lF=.4 lB=-.3 sm=.7 e=o',
+    'u=.62 t=1 sx=1.1 sy=.9 aF=.9 aB=.9 lF=.1 sm=.2 f=F', 'u=.78 t=1 sx=.97 sy=1.03 aF=.2 aB=.2 f=R', 'u=1 t=1'],
+  // both arms up, stretched tall, then down hard, squashed flat on it
+  slam: ['u=0 sx=.97 sy=1.04 aF=.8 aB=.8 f=W e=i', 'u=.14 r=-.05 sx=.9 sy=1.14 dy=-.05 aF=2.9 aB=2.9 lF=.1',
+    'u=.24 r=-.07 sx=.87 sy=1.18 dy=-.07 aF=3.3 aB=3.3 lF=.15 e=o', 'u=.30 r=.1 sx=1.22 sy=.8 dy=.03 dx=.08 aF=.9 aB=.9 lF=-.1 sm=1 f=H e=o',
+    'u=.40 r=.08 sx=1.17 sy=.84 dy=.03 dx=.08 aF=.7 aB=.7 sm=.3', 'u=.52 r=.04 sx=.94 sy=1.07 dx=.05 aF=.6 aB=.6 f=F',
+    'u=.66 sx=1.04 sy=.96 aF=.3 aB=.3', 'u=.82 sx=.99 sy=1.01 f=R', 'u=1'],
+  // a trap or a stamp: the knee comes up, the body rises on the other foot, the foot comes down and the body squashes on it
+  stomp: ['u=0 sx=1.02 sy=.98 lF=.3 aF=.3 aB=-.3 f=W e=i', 'u=.14 r=-.05 sx=.94 sy=1.08 dy=-.04 lF=1.2 aF=.7 aB=-.7',
+    'u=.24 r=-.06 sx=.92 sy=1.1 dy=-.06 lF=1.4 aF=.8 aB=-.8 e=i', 'u=.30 r=.04 sx=1.18 sy=.84 dy=.02 lF=0 aF=-.3 aB=.3 sm=.6 f=H e=o',
+    'u=.40 r=.03 sx=1.12 sy=.89 dy=.02 lF=-.1 aF=-.2 aB=.2', 'u=.52 sx=.96 sy=1.04 lF=.05 f=F', 'u=.66 sx=1.03 sy=.97', 'u=.82 f=R', 'u=1'],
+  // a summons, a warp, a stance: the arms gather in, then up and out, the body rising and stretched as it goes
+  cast: ['u=0 sx=1.03 sy=.97 aF=-.3 aB=-.3 f=W e=i', 'u=.14 sx=1.07 sy=.93 dy=.03 aF=-.6 aB=-.6 lF=.1',
+    'u=.24 sx=1.08 sy=.92 dy=.04 aF=-.7 aB=-.7 lF=.12 e=o', 'u=.30 sx=.9 sy=1.16 dy=-.09 aF=2.6 aB=2.6 lF=-.15 lB=.15 sm=.6 f=H e=o',
+    'u=.42 sx=.93 sy=1.12 dy=-.1 aF=2.9 aB=2.9 sm=.2', 'u=.56 sx=.97 sy=1.05 dy=-.05 aF=2.4 aB=2.4 f=F', 'u=.70 sx=1.03 sy=.97 aF=.9 aB=.9',
+    'u=.84 sx=.99 sy=1.01 aF=.1 aB=.1 f=R', 'u=1'],
+  // an overhand throw: wound up behind the head, the body coiled back, then over the top and through
+  throw: ['u=0 r=-.05 sx=1.02 sy=.98 aF=1.5 f=W e=i', 'u=.14 r=-.14 sx=.95 sy=1.06 dx=-.08 aF=3.6 aB=1 lF=.3',
+    'u=.24 r=-.17 sx=.93 sy=1.08 dx=-.1 aF=4 aB=1.1 lF=.35 e=o', 'u=.30 r=.16 sx=1.15 sy=.9 dx=.18 aF=1.1 aB=-.5 lF=-.2 lB=.3 sm=1 f=H e=o',
+    'u=.40 r=.14 sx=1.08 sy=.94 dx=.16 aF=.8 aB=-.6 lB=.3 sm=.3', 'u=.52 r=.08 sx=.97 sy=1.03 dx=.1 aF=.6 aB=-.4 f=F',
+    'u=.66 r=-.02 sx=1.02 sy=.98 aF=.25', 'u=.82 r=.01 f=R', 'u=1'],
+  // a backhand: the arm across the body, then flung out behind, the body turning a quarter after it
+  hook: ['u=0 r=.04 aF=.8 f=W e=i', 'u=.14 r=.1 t=.04 sx=1.04 sy=.96 aF=1.9 aB=.6', 'u=.24 r=.12 t=.05 sx=1.05 sy=.95 aF=2.1 aB=.7 e=o',
+    'u=.30 r=-.14 t=-.04 sx=1.12 sy=.92 dx=-.12 aF=-1.6 aB=-.4 sm=1 f=H e=o', 'u=.40 r=-.12 t=-.03 sx=1.06 sy=.96 dx=-.12 aF=-1.7 aB=-.5 sm=.3',
+    'u=.52 r=-.06 dx=-.07 aF=-1.3 f=F', 'u=.66 r=.02 sx=1.02 sy=.98 aF=-.3', 'u=.82 f=R', 'u=1'],
+  // a back kick (a back-air): the body tips forward as the leg drives out behind
+  kickback: ['u=0 r=-.03 lF=.3 f=W e=i', 'u=.14 r=-.08 sx=.96 sy=1.04 lF=.9 lB=.6 aF=-.4', 'u=.24 r=-.1 sx=.95 sy=1.05 lF=1 lB=.7 aF=-.45 e=o',
+    'u=.30 r=.2 sx=1.1 sy=.93 dx=.06 lF=-1.5 lB=-1.2 aF=1 aB=1 sm=1 f=H e=o', 'u=.40 r=.17 sx=1.05 sy=.96 dx=.06 lF=-1.45 lB=-1.1 aF=.9 aB=.9 sm=.3',
+    'u=.52 r=.1 dx=.03 lF=-1 lB=-.7 aF=.5 f=F', 'u=.66 r=-.02 sx=1.02 sy=.98 lF=-.2', 'u=.82 f=R', 'u=1'],
+  // a kick straight up (an up-air): the body tips back, the leg comes over the top
+  kickup: ['u=0 r=.03 sx=1.03 sy=.97 lF=-.3 f=W e=i', 'u=.14 r=.08 sx=1.08 sy=.92 dy=.03 lF=-.7 aF=-.6 aB=-.6',
+    'u=.24 r=.09 sx=1.09 sy=.91 dy=.04 lF=-.8 aF=-.7 aB=-.7 e=o', 'u=.30 r=-.18 sx=.88 sy=1.16 dy=-.06 lF=2.6 lB=.4 aF=.8 aB=.8 sm=1 f=H e=o',
+    'u=.40 r=-.16 sx=.9 sy=1.12 dy=-.07 lF=2.7 lB=.4 aF=.7 aB=.7 sm=.3', 'u=.52 r=-.1 sx=.95 sy=1.06 dy=-.04 lF=2.1 f=F',
+    'u=.66 r=.02 sx=1.03 sy=.97 lF=.5', 'u=.82 f=R', 'u=1'],
+  // a stamp straight down (a down-air): balled up, then both feet driven down, stretched long, the arms flung up
+  stompdn: ['u=0 sx=1.04 sy=.96 lF=.5 lB=.5 f=W e=i', 'u=.14 sx=1.1 sy=.88 dy=-.05 lF=1.3 lB=1.3 aF=.6 aB=.6',
+    'u=.24 sx=1.12 sy=.86 dy=-.07 lF=1.4 lB=1.4 aF=.7 aB=.7 e=o', 'u=.30 sx=.86 sy=1.2 dy=.06 lF=-.1 lB=.1 aF=2.7 aB=2.7 sm=1 f=H e=o',
+    'u=.40 sx=.89 sy=1.15 dy=.06 lF=-.1 lB=.1 aF=2.8 aB=2.8 sm=.3', 'u=.52 sx=.95 sy=1.06 dy=.03 aF=2 aB=2 f=F', 'u=.66 sx=1.04 sy=.96 aF=.6 aB=.6',
+    'u=.82 f=R', 'u=1'],
+  // an axe blow: one arm up over the head, the body rising to it, then brought down in front
+  chop: ['u=0 r=-.03 sx=.98 sy=1.02 aF=1.2 f=W e=i', 'u=.14 r=-.1 sx=.92 sy=1.1 dy=-.04 aF=3.2 aB=.4', 'u=.24 r=-.12 sx=.9 sy=1.12 dy=-.05 aF=3.4 aB=.45 e=o',
+    'u=.30 r=.17 sx=1.16 sy=.86 dx=.12 dy=.02 aF=.8 aB=-.4 sm=1 f=H e=o', 'u=.40 r=.15 sx=1.1 sy=.9 dx=.12 aF=.6 aB=-.4 sm=.3',
+    'u=.52 r=.08 sx=.97 sy=1.03 dx=.07 aF=.5 f=F', 'u=.66 r=-.02 sx=1.02 sy=.98 aF=.2', 'u=.82 f=R', 'u=1'],
+  // a grab: both arms out and reaching, the body leaning in, then pulled back in with what it caught
+  grab: ['u=0 r=-.03 aF=-.3 aB=-.3 f=W e=i', 'u=.14 r=-.06 sx=1.04 sy=.96 dx=-.05 aF=-.5 aB=-.5', 'u=.24 r=-.07 sx=1.05 sy=.95 dx=-.06 aF=-.55 aB=-.55 e=o',
+    'u=.30 r=.16 sx=1.14 sy=.9 dx=.2 aF=1.55 aB=1.45 lB=.3 sm=.7 f=H e=o', 'u=.44 r=.14 sx=1.1 sy=.92 dx=.2 aF=1.6 aB=1.5 lB=.3',
+    'u=.58 r=-.04 sx=.97 sy=1.03 dx=-.02 aF=.9 aB=.8 f=F', 'u=.72 r=.02 sx=1.02 sy=.98 aF=.4 aB=.35', 'u=.86 f=R', 'u=1'],
+  // a throw behind: the arm swung up and back over the shoulder, the body turning half round after it and back
+  throwb: ['u=0 aF=1.2 f=W e=i', 'u=.14 r=.08 sx=1.04 sy=.96 aF=1.6 aB=.4', 'u=.24 r=.1 sx=1.05 sy=.95 aF=1.7 aB=.45 e=o',
+    'u=.32 r=-.16 t=.3 sx=1.04 sy=.98 dx=-.1 aF=-2.4 aB=-.6 sm=1 f=H e=l', 'u=.44 r=-.12 t=.5 dx=-.12 aF=-2.6 aB=-.6 sm=.4', 'u=.58 r=-.05 t=.75 aF=-1.6 f=F',
+    'u=.72 t=1 sx=1.03 sy=.97 aF=-.4', 'u=.86 t=1 f=R', 'u=1 t=1'],
+  // a dash: thrown forward, flattened along the way it goes, the arms swept back
+  dash: ['u=0 r=-.05 sx=1.03 sy=.97 dx=-.04 aF=-.4 aB=-.4 f=W e=i', 'u=.14 r=-.12 sx=1.07 sy=.93 dx=-.12 aF=-.8 aB=-.8', 'u=.24 r=-.14 sx=1.08 sy=.92 dx=-.15 aF=-.9 aB=-.9 e=o',
+    'u=.30 r=.22 sx=1.25 sy=.84 dx=.32 aF=-2 aB=-2 lF=-.3 lB=.4 sm=1 f=H e=l', 'u=.46 r=.2 sx=1.2 sy=.86 dx=.3 aF=-2.1 aB=-2.1 sm=1 e=o',
+    'u=.60 r=.08 sx=.96 sy=1.04 dx=.12 aF=-1 aB=-1 f=F', 'u=.74 r=-.02 sx=1.02 sy=.98 aF=-.2 aB=-.2', 'u=.88 f=R', 'u=1'],
+};
+AR_TPL.kickup2 = AR_TPL.kickup; AR_TPL.dive = AR_TPL.slam; AR_TPL.sweep = AR_TPL.spin; AR_TPL.stompup = AR_TPL.stomp;
+AR_TPL.spit = AR_TPL.throw; AR_TPL.fsgather = AR_TPL.cast; AR_TPL.fsburst = AR_TPL.cast;
+
+// ---- THE FIVE. Each row: kit; the four faces its shapes are drawn in (W wind-up, H hit, F follow-through, R recover); A and LA, how big the shared
+// shapes go on them; its own keys for its signature moves (by the slot the move label ends in: 'chair.jab' -> jab); the charge (a held smash: the
+// pose it winds into, 0 -> full); and how it runs, walks and jumps (run/walk [arms, legs, extra lean], air [arms rising, at the top, falling]).
+const AR_SRC = {
+  // BOW -- a bright, pushy saleswoman with a chair for everything, and telekinesis (II, "Snow Bow"). Big, bouncy and pleased with herself.
+  Bow: { kit:'chair', faces:{ W:'squint.grit', H:'joy.shout', F:'wide.o', R:'joy.grin' }, A:1.1, LA:1,
+    slots: {
+      // the chair swung all the way round her: twisted back on one foot, then the turnaround on a skip, the chair out at arm's length, and a happy landing
+      jab: ['u=0 r=-.05 sx=1.03 sy=.97 aF=-.5 lF=.1 f=squint.grit e=i', 'u=.12 r=-.13 t=-.06 sx=1.07 sy=.93 dx=-.05 aF=-1 lF=.3',
+        'u=.22 r=-.16 t=-.08 sx=1.1 sy=.9 dx=-.06 aF=-1.1 lF=.35 e=l', 'u=.28 r=.04 t=.12 sy=1.08 dy=-.08 aF=1.5 lF=.6 sm=1 f=joy.shout e=l',
+        'u=.36 r=.06 t=.38 sx=.97 sy=1.1 dy=-.13 aF=1.65 lF=.7 sm=1 e=l', 'u=.45 r=.04 t=.66 sy=1.08 dy=-.11 aF=1.6 lF=.6 sm=.9 e=l',
+        'u=.54 t=.92 sx=1.02 sy=1.02 dy=-.04 aF=1.3 lF=.3 sm=.4 e=o', 'u=.62 t=1 sx=1.16 sy=.86 aF=.8 f=wide.o', 'u=.74 t=1 sx=.96 sy=1.05 dy=-.02 aF=.2 f=joy.grin',
+        'u=.88 t=1 sx=1.02 sy=.98', 'u=1 t=1'],
+      // SNOWBALLS (down special): lifted with her mind -- hands to her temples, eyes screwed shut, rising on her toes, then flung out both ways
+      down: ['u=0 sx=1.02 sy=.98 aF=.6 f=squint.o e=i', 'u=.12 sx=1.06 sy=.94 dy=.03 aF=2.2 lF=.1', 'u=.22 sx=1.08 sy=.92 dy=.04 aF=2.5 lF=.12 e=h',
+        'u=.26 sx=1.04 sy=.98 dy=.02 aF=2.6 e=o', 'u=.31 sx=.88 sy=1.17 dy=-.1 aF=1.4 lF=-.2 sm=.6 f=glare.shout e=o', 'u=.42 sx=.9 sy=1.14 dy=-.12 aF=1.2 sm=.2',
+        'u=.56 sx=.97 sy=1.05 dy=-.06 aF=1 f=joy.grin', 'u=.70 sx=1.04 sy=.96 aF=.4', 'u=.85 sx=.99 sy=1.01', 'u=1'],
+      // TELEPORT (neutral special): two fast turns, stretched taller and thinner each one, as she fades out
+      special: ['u=0 sx=1.04 sy=.96 aF=.3 f=squint.grit e=i', 'u=.12 sx=1.1 sy=.88 dy=.03 aF=-.5 lF=.3 e=l', 'u=.22 t=.25 sx=.95 sy=1.12 dy=-.04 aF=2.2 lF=-.2 sm=.8 f=wide.o e=l',
+        'u=.32 t=.5 sx=.9 sy=1.2 dy=-.08 aF=2.6 sm=1 e=l', 'u=.42 t=.75 sx=.86 sy=1.26 dy=-.1 aF=2.8 sm=1 e=l', 'u=.52 t=1 sx=.84 sy=1.3 dy=-.12 aF=2.9 sm=1 e=l',
+        'u=.62 t=1.25 sx=.86 sy=1.24 dy=-.1 aF=2.6 sm=.8 e=l', 'u=.72 t=1.5 sx=.92 sy=1.12 dy=-.06 aF=1.8 sm=.4 f=joy.grin e=o', 'u=.84 t=2 sx=1.06 sy=.95 aF=.4', 'u=1 t=2'],
+      // CHAIR SLAM (up special): three spins with the chair out, then the chair hauled up over her head and brought down, squashed flat
+      up: ['u=0 sx=1.04 sy=.96 aF=.8 f=squint.grit e=i', 'u=.06 r=-.05 t=-.04 sx=1.07 sy=.93 aF=-.4 lF=.2 e=l', 'u=.14 t=.33 sy=1.05 dy=-.05 aF=1.6 lF=.4 sm=1 f=joy.shout e=l',
+        'u=.24 t=1 sy=1.07 dy=-.07 aF=1.65 lF=.45 sm=1 e=l', 'u=.34 t=1.67 sy=1.07 dy=-.07 aF=1.65 lF=.45 sm=1 e=l', 'u=.44 t=2.33 sy=1.06 dy=-.06 aF=1.6 lF=.4 sm=1 e=l',
+        'u=.52 t=3 sx=.88 sy=1.16 dy=-.08 aF=3.3 lF=.2 sm=.3 e=i', 'u=.60 t=3 r=.12 sx=1.28 sy=.76 dy=.04 dx=.06 aF=.8 lF=-.2 sm=1 f=joy.shout e=o',
+        'u=.70 t=3 r=.08 sx=1.16 sy=.85 dy=.03 dx=.05 aF=.7 sm=.2', 'u=.80 t=3 sx=.95 sy=1.06 aF=.5 f=wide.o', 'u=.90 t=3 sx=1.03 sy=.97 aF=.2 f=joy.grin', 'u=1 t=3'],
+      // the up smash: from the crouch the charge left her in, the chair swung up over her in one big arc, up on her toes and held up there
+      usmash: ['u=0 r=-.08 sx=1.14 sy=.86 dy=.04 dx=-.06 aF=-1 lF=.3 f=glare.grit e=o', 'u=.08 r=-.04 sx=1.17 sy=.82 dy=.06 aF=-.8 lF=.4 e=o',
+        'u=.14 r=.05 sx=.82 sy=1.26 dy=-.12 aF=2.4 lF=-.2 sm=1 f=joy.shout e=o', 'u=.22 r=.04 sx=.85 sy=1.22 dy=-.15 aF=3 sm=.6', 'u=.34 r=.02 sx=.9 sy=1.15 dy=-.13 aF=3.1 sm=.1',
+        'u=.48 sx=.95 sy=1.08 dy=-.08 aF=2.8 f=joy.grin', 'u=.62 sx=1.07 sy=.93 aF=1.4', 'u=.78 sx=.98 sy=1.02 aF=.3', 'u=1'],
+    },
+    charge: ['u=0', 'u=1 r=-.08 sx=1.14 sy=.86 dy=.04 dx=-.06 aF=-1 lF=.3 f=glare.grit'],
+    run: [1.05, 1, 0.04], walk: [0.5, 0.55, 0], air: [1.6, 0.9, 1.3], runFace:'keep.grin' },
+
+  // NEEDLE -- prickly, proud, steel: she does not wobble, she arrives. Her squash is small (a tall thin picture), her limbs do the work, and her
+  // show pictures (the prick, the stance, mad) carry their own moves: their keys move the body only.
+  Needle: { kit:'counter', faces:{ W:'glare.grit', H:'glare.shout', F:'wide.o', R:'smug.smirk' }, A:0.55, LA:1.1,
+    slots: {
+      // THE PRICK (a show picture: body only) -- three quick pricks: three stabs forward, each one sharper, the third one carried through
+      jab: ['u=0 r=-.03 sx=.98 sy=1.02 dx=-.04 e=i', 'u=.10 r=-.06 sx=.97 sy=1.03 dx=-.09 e=o', 'u=.16 r=.05 sx=1.08 sy=.96 dx=.12 e=o', 'u=.24 r=-.03 dx=-.05 e=o',
+        'u=.31 r=.06 sx=1.1 sy=.95 dx=.15 e=o', 'u=.39 r=-.04 dx=-.07 e=i', 'u=.46 r=.1 sx=1.14 sy=.93 dx=.22 sm=.8 e=o', 'u=.58 r=.07 sx=1.05 sy=.97 dx=.17',
+        'u=.72 r=-.01 dx=.02', 'u=.86 r=.01', 'u=1'],
+      // RIPOSTE STANCE, mad (a show picture: body only) -- reared back to the full height of the pin, then the thrust
+      smash: ['u=0 r=-.07 sx=.95 sy=1.05 dx=-.1 e=o', 'u=.10 r=-.04 sx=.97 sy=1.04 dx=-.06 e=o', 'u=.16 r=.12 sx=1.16 sy=.92 dx=.28 sm=1 e=o', 'u=.28 r=.1 sx=1.1 sy=.95 dx=.26 sm=.4',
+        'u=.42 r=.05 sx=.98 sy=1.02 dx=.14', 'u=.58 r=-.02 sx=1.02 sy=.98 dx=.02', 'u=.78 r=.01', 'u=1'],
+      // THE REFLEX and the stance (a show picture: body only) -- dropped into the guard and sprung up straight
+      special: ['u=0 sx=1.02 sy=.98 e=i', 'u=.12 sx=1.06 sy=.93 dy=.03', 'u=.22 sx=1.07 sy=.92 dy=.03 e=o', 'u=.28 sx=.94 sy=1.07 dy=-.04', 'u=.40 sx=.97 sy=1.04 dy=-.02',
+        'u=.56 sx=1.01 sy=.99', 'u=1'],
+      down: ['u=0 sx=1.02 sy=.98 e=i', 'u=.12 r=-.03 sx=1.06 sy=.93 dy=.03', 'u=.22 r=-.04 sx=1.07 sy=.92 dy=.03 e=o', 'u=.28 r=.03 sx=.94 sy=1.07 dy=-.04', 'u=.40 sx=.97 sy=1.04',
+        'u=.56 sx=1.01 sy=.99', 'u=1'],
+      // her up special: a straight-up thrust, point first, the arms snapped to her sides
+      up: ['u=0 sx=1.03 sy=.97 aF=.3 aB=.3 f=glare.grit e=i', 'u=.12 sx=1.08 sy=.92 dy=.03 aF=.6 aB=.6 lF=.3', 'u=.22 sx=1.1 sy=.9 dy=.04 aF=.7 aB=.7 lF=.35 e=o',
+        'u=.28 sx=.86 sy=1.22 dy=-.12 aF=2.9 aB=2.9 lF=-.1 sm=1 f=glare.shout e=o', 'u=.40 sx=.88 sy=1.18 dy=-.12 aF=3 aB=3 sm=.4', 'u=.54 sx=.95 sy=1.06 dy=-.06 aF=2.2 aB=2.2 f=smug.smirk',
+        'u=.70 sx=1.03 sy=.97 aF=.6 aB=.6', 'u=.86 aF=.1 aB=.1', 'u=1'],
+    },
+    charge: ['u=0', 'u=1 r=-.06 sx=.95 sy=1.05 dx=-.08'],   // mad, a show picture: the body draws back only
+    run: [0.8, 0.85, 0.02], walk: [0.35, 0.45, 0], air: [1.2, 0.6, 1], runFace:'glare.grit' },
+
+  // MATCH -- unbothered, smug, a stick with a head she strikes like a match on a box. No painted arms: her head and her one painted leg do it all,
+  // and she leans no further than a tall stick stands.
+  Match: { kit:'spark', faces:{ W:'smug.smirk', H:'squint.grin', F:'smug.smirk', R:'smug.smirk' }, A:0.8, LA:1,
+    slots: {
+      // the head struck forward: she rocks back off it, then whips it through like striking a match, and lets it ring back
+      jab: ['u=0 r=-.06 sx=.98 sy=1.02 lF=.1 f=smug.smirk e=i', 'u=.12 r=-.15 sx=.96 sy=1.05 dx=-.06 lF=.35', 'u=.23 r=-.18 sx=.95 sy=1.06 dx=-.08 lF=.4 e=o',
+        'u=.29 r=.24 sx=1.1 sy=.95 dx=.14 lF=-.3 sm=1 f=squint.grin e=o', 'u=.38 r=.2 sx=1.06 sy=.97 dx=.13 lF=-.25 sm=.4', 'u=.50 r=.1 dx=.07 lF=-.1',
+        'u=.63 r=-.05 sx=1.02 sy=.98 f=smug.smirk', 'u=.78 r=.02', 'u=1'],
+      // Triple Spark: a nod back, the head flicked forward, the sparks flying off it
+      special: ['u=0 r=-.05 sy=1.02 f=smug.smirk e=i', 'u=.12 r=-.13 sx=.96 sy=1.05 lF=.2', 'u=.22 r=-.15 sx=.95 sy=1.06 lF=.25 e=o',
+        'u=.28 r=.16 sx=1.06 sy=.95 dx=.06 lF=-.15 sm=.7 f=squint.grin e=o', 'u=.38 r=.13 dx=.05', 'u=.52 r=.03 f=smug.smirk', 'u=.68 r=-.03', 'u=.84 r=.01', 'u=1'],
+      // her up special: a twirl up on her toe, all the way round
+      up: ['u=0 sx=1.03 sy=.97 lF=.2 f=smug.smirk e=i', 'u=.12 r=-.05 t=-.06 sx=1.06 sy=.94 lF=.4 e=l', 'u=.24 t=.2 sx=.94 sy=1.12 dy=-.06 lF=.9 sm=.8 f=squint.grin e=l',
+        'u=.36 t=.5 sx=.92 sy=1.15 dy=-.08 lF=1 sm=1 e=l', 'u=.48 t=.8 sx=.94 sy=1.12 dy=-.06 lF=.8 sm=.7 e=o', 'u=.60 t=1 sx=1.06 sy=.94 lF=.2 f=smug.smirk',
+        'u=.76 t=1 sx=.98 sy=1.02', 'u=1 t=1'],
+      // the down smash: low, and round twice, the leg swept out
+      dsmash: ['u=0 r=-.04 sx=1.1 sy=.88 dy=.04 lF=.3 f=glare.grit e=o', 'u=.08 sx=1.14 sy=.84 dy=.05 lF=.6 e=l', 'u=.16 t=.25 sx=1.1 sy=.86 dy=.05 lF=1.3 sm=1 f=squint.grin e=l',
+        'u=.26 t=.5 sx=1.1 sy=.86 dy=.05 lF=1.4 sm=1 e=l', 'u=.36 t=.75 sx=1.1 sy=.86 dy=.05 lF=1.4 sm=1 e=l', 'u=.46 t=1 sx=1.1 sy=.86 dy=.05 lF=1.3 sm=1 e=l',
+        'u=.56 t=1.25 sx=1.08 sy=.88 dy=.04 lF=1.1 sm=.8 e=l', 'u=.66 t=1.5 sx=1.05 sy=.92 dy=.03 lF=.8 sm=.5 e=o', 'u=.76 t=2 sx=1.04 sy=.96 lF=.2 f=smug.smirk', 'u=.9 t=2 sx=.99 sy=1.01', 'u=1 t=2'],
+      // the neutral smash: the head swung back as far as she bends, then brought down and forward on whoever is there, flattened on it
+      nsmash: ['u=0 r=-.12 sx=.95 sy=1.05 dx=-.06 lF=.3 f=glare.grit e=o', 'u=.08 r=-.16 sx=.93 sy=1.08 dx=-.08 lF=.4 e=o', 'u=.15 r=.3 sx=1.14 sy=.86 dx=.14 dy=.02 lF=-.3 sm=1 f=squint.grin e=o',
+        'u=.24 r=.27 sx=1.12 sy=.87 dx=.14 dy=.02 lF=-.25 sm=.5', 'u=.36 r=.16 sx=1.02 sy=.98 dx=.08', 'u=.50 r=.02 sx=.97 sy=1.03 f=smug.smirk', 'u=.66 r=-.04 sx=1.02 sy=.98', 'u=.82 r=.01', 'u=1'],
+    },
+    charge: ['u=0', 'u=1 r=-.12 sx=.95 sy=1.05 dx=-.06 lF=.3 f=glare.grit'],
+    run: [0, 1, 0.02], walk: [0, 0.6, 0], air: [0, 0, 0], runFace:'smug.smirk' },
+
+  // CLOVER -- lucky, bubbly, never quite paying attention: everything she does has a skip or a twirl in it.
+  Clover: { kit:'clover', faces:{ W:'squint.grit', H:'joy.shout', F:'wide.o', R:'joy.grin' }, A:1.1, LA:1,
+    slots: {
+      // the leafy punch: a skip back, up on her toes for it, a quarter twirl carried through it, and a hop on the landing
+      jab: ['u=0 r=-.05 sx=1.03 sy=.97 aF=-.4 lF=.15 f=squint.grit e=i', 'u=.12 r=-.13 sx=1.08 sy=.92 dx=-.1 dy=.02 aF=-1 aB=.5 lF=.35',
+        'u=.23 r=-.15 sx=1.1 sy=.9 dx=-.12 dy=.03 aF=-1.15 aB=.55 lF=.4 e=o', 'u=.29 r=.17 t=.06 sx=1.12 sy=.98 dx=.26 dy=-.08 aF=1.6 aB=-.5 lF=-.3 sm=1 f=joy.shout e=o',
+        'u=.38 r=.14 t=.08 sx=1.06 sy=1.02 dx=.24 dy=-.09 aF=1.55 aB=-.6 lF=-.25 sm=.35', 'u=.50 r=.08 t=.04 sx=.95 sy=1.06 dx=.16 dy=-.04 aF=1.2 f=wide.o',
+        'u=.60 r=-.02 sx=1.1 sy=.9 dx=.06 aF=.5', 'u=.72 r=.02 sx=.96 sy=1.05 dy=-.03 aF=.1 f=joy.grin', 'u=.86 sx=1.02 sy=.98', 'u=1'],
+      // LUCKY WIND (up special): the wind takes her -- tipped back with her arms out like a leaf, stretched up, a lazy half turn, delighted
+      up: ['u=0 sx=1.04 sy=.96 aF=.4 aB=.3 f=wide.o e=i', 'u=.12 r=-.06 sx=1.08 sy=.92 dy=.03 aF=1 aB=.8 lF=.3', 'u=.24 r=-.1 sx=.88 sy=1.18 dy=-.08 aF=2.2 aB=1.6 lF=.6 lB=-.3 sm=.6 f=joy.shout e=o',
+        'u=.38 r=-.12 t=.2 sx=.9 sy=1.15 dy=-.1 aF=2.4 aB=1.8 lF=.7 lB=-.4 sm=.3 e=l', 'u=.54 r=-.08 t=.5 sx=.94 sy=1.1 dy=-.08 aF=2.1 aB=1.5 lF=.5 f=joy.grin e=l',
+        'u=.70 r=-.03 t=.8 sx=.98 sy=1.04 dy=-.04 aF=1.2 aB=.9 lF=.2 e=o', 'u=.84 t=1 sx=1.02 sy=.98 aF=.3 aB=.2', 'u=1 t=1'],
+      // MEANT FOR ME (down special): her luck on -- a pleased little shrug, up on her toes, a wink of a squint, and down again
+      down: ['u=0 sx=1.03 sy=.97 f=squint.grit e=i', 'u=.12 sx=1.07 sy=.93 dy=.02 aF=.4 aB=.4', 'u=.24 sx=.92 sy=1.12 dy=-.05 aF=1.1 aB=1.1 lF=-.2 f=joy.grin e=o',
+        'u=.40 sx=.94 sy=1.09 dy=-.05 aF=1.2 aB=1.2 lF=-.2 e=h', 'u=.62 sx=.95 sy=1.08 dy=-.04 aF=1.1 aB=1.1 e=s', 'u=.76 sx=1.05 sy=.95 aF=.3 aB=.3', 'u=.9 sx=.99 sy=1.01', 'u=1'],
+      // LUCKY LEAF PINWHEEL (finisher): she spins up like her own four leaves, arms out, turning faster
+      finisher: ['u=0 sx=1.04 sy=.96 aF=.3 aB=.3 f=squint.grit e=i', 'u=.14 r=-.05 t=-.05 sx=1.08 sy=.92 dy=.02 aF=-.5 aB=-.5 e=l', 'u=.26 t=.15 sx=.92 sy=1.12 dy=-.06 aF=1.6 aB=1.6 lF=.4 sm=.6 f=joy.shout e=l',
+        'u=.40 t=.6 sx=.9 sy=1.14 dy=-.09 aF=1.7 aB=1.7 lF=.5 sm=1 e=l', 'u=.54 t=1.2 sx=.9 sy=1.14 dy=-.1 aF=1.7 aB=1.7 lF=.5 sm=1 e=l', 'u=.68 t=1.8 sx=.92 sy=1.1 dy=-.08 aF=1.6 aB=1.6 lF=.4 sm=1 e=l',
+        'u=.82 t=2 sx=1.04 sy=.96 dy=-.02 aF=1 aB=1 sm=.3 f=joy.grin e=o', 'u=.92 t=2 sx=1 sy=1 aF=.3 aB=.3', 'u=1 t=2'],
+      // Butterflies: arms up and round in a full twirl, beaming
+      special: ['u=0 sx=1.03 sy=.97 aF=-.3 aB=.3 f=squint.o e=i', 'u=.12 r=-.05 t=-.05 sx=1.07 sy=.93 dy=.03 aF=-.6 aB=.5', 'u=.22 t=-.06 sx=1.08 sy=.92 dy=.03 aF=-.7 aB=.55 e=l',
+        'u=.30 t=.18 sx=.92 sy=1.14 dy=-.08 aF=2.7 aB=-.6 lF=-.3 sm=.7 f=joy.shout e=l', 'u=.42 t=.5 sx=.9 sy=1.16 dy=-.1 aF=2.9 aB=-.7 lF=-.35 sm=.8 e=l',
+        'u=.54 t=.82 sx=.94 sy=1.1 dy=-.07 aF=2.6 aB=-.5 sm=.5 e=o', 'u=.64 t=1 sx=1.08 sy=.92 aF=1.2 f=joy.grin', 'u=.78 t=1 sx=.98 sy=1.02 aF=.3', 'u=1 t=1'],
+      // LUCKY BREAK (her neutral smash): bent right down to pick a four-leaf clover off the floor, then straight up into whoever is in front, stretched tall
+      nsmash: ['u=0 r=.08 sx=1.04 sy=.96 aF=.5 f=wide.o e=i', 'u=.12 r=.3 sx=1.08 sy=.84 dx=.06 dy=.04 aF=1.1 aB=.4', 'u=.24 r=.34 sx=1.1 sy=.8 dx=.07 dy=.05 aF=1.2 aB=.5 f=joy.grin e=h',
+        'u=.28 r=.32 sx=1.08 sy=.82 dx=.07 dy=.05 aF=1.1 e=o', 'u=.33 r=-.04 sx=.82 sy=1.28 dy=-.14 aF=2.9 aB=.4 lF=-.3 sm=1 f=joy.shout e=o', 'u=.44 r=-.03 sx=.86 sy=1.22 dy=-.15 aF=3 sm=.4',
+        'u=.58 sx=.95 sy=1.07 dy=-.07 aF=2.3 f=joy.grin', 'u=.72 sx=1.05 sy=.95 aF=.7', 'u=.86 sx=.99 sy=1.01', 'u=1'],
+      // the up smash: down on her heels, then up through it with both arms, a skip off the floor at the top
+      usmash: ['u=0 r=-.06 sx=1.14 sy=.86 dy=.04 aF=-1 aB=.4 lF=.3 f=glare.grit e=o', 'u=.08 sx=1.17 sy=.82 dy=.06 aF=-.8 aB=.3 lF=.4 e=o',
+        'u=.14 r=.04 sx=.82 sy=1.26 dy=-.14 aF=2.6 aB=-.9 lF=-.3 sm=1 f=joy.shout e=o', 'u=.22 sx=.84 sy=1.24 dy=-.18 aF=3 aB=-1 sm=.6', 'u=.34 sx=.9 sy=1.15 dy=-.15 aF=3 aB=-.9',
+        'u=.48 sx=.95 sy=1.08 dy=-.08 aF=2.6 f=joy.grin', 'u=.62 sx=1.1 sy=.9 aF=1.2', 'u=.76 sx=.97 sy=1.03 aF=.3', 'u=1'],
+      // the down smash: a low sweep of the leg, then back round the other way
+      dsmash: ['u=0 r=-.06 sx=1.14 sy=.86 dy=.04 aF=-1 lF=.3 f=glare.grit e=o', 'u=.08 r=-.1 sx=1.18 sy=.82 dy=.06 lF=-.6 aF=.4 aB=-.5 e=o',
+        'u=.14 r=.12 sx=1.2 sy=.84 dy=.05 dx=.1 lF=1.4 aF=-.7 aB=.8 sm=1 f=joy.shout e=o', 'u=.24 r=.1 sx=1.16 sy=.86 dy=.05 dx=.08 lF=1.3 sm=.4', 'u=.34 r=-.08 sx=1.16 sy=.86 dy=.05 dx=-.06 lF=-1.2 aF=.7 aB=-.7 sm=.9 e=o',
+        'u=.46 r=-.06 sx=1.1 sy=.9 dx=-.05 lF=-1 sm=.3', 'u=.60 sx=.96 sy=1.05 lF=-.2 f=joy.grin', 'u=.76 sx=1.03 sy=.97', 'u=1'],
+    },
+    charge: ['u=0', 'u=1 r=-.07 sx=1.14 sy=.86 dy=.04 aF=-1 aB=.4 lF=.3 f=glare.grit'],
+    run: [1.1, 1, 0.03], walk: [0.55, 0.6, 0], air: [1.7, 1, 1.4], runFace:'joy.grin' },
+
+  // BLUEBERRY -- the strongman who cannot be bothered: everything starts late and lazy and then lands like a dropped piano. Deadpan: half-lidded,
+  // the mouth never opens.
+  Blueberry: { kit:'blueberry', faces:{ W:'smug.flat', H:'squint.flat', F:'smug.flat', R:'keep.keep' }, A:0.9, LA:0.95,
+    slots: {
+      // the lazy punch: a slow lean back, a long held beat, one heavy shove, and he leaves it out there before he can be bothered to bring it back
+      jab: ['u=0 r=-.03 sx=1.02 sy=.98 aF=-.2 f=smug.flat e=i', 'u=.12 r=-.1 sx=1.06 sy=.94 dx=-.08 aF=-.8 aB=.3', 'u=.22 r=-.12 sx=1.08 sy=.92 dx=-.1 aF=-.9 aB=.35 e=h',
+        'u=.26 r=-.12 sx=1.08 sy=.92 dx=-.1 aF=-.95 aB=.35 e=o', 'u=.31 r=.14 sx=1.18 sy=.86 dx=.22 aF=1.55 aB=-.4 sm=.9 f=squint.flat e=o', 'u=.42 r=.12 sx=1.14 sy=.88 dx=.21 aF=1.55 aB=-.4',
+        'u=.60 r=.1 sx=1.08 sy=.93 dx=.18 aF=1.45 f=smug.flat e=i', 'u=.76 r=0 sx=1.02 sy=.98 dx=.03 aF=.4', 'u=.9 r=-.01 sx=1.01 sy=.99', 'u=1'],
+      // PALANQUIN CATCH: both arms up to lift whoever is there, a straining beat, then dropped on them -- the floor shakes and he does not blink
+      special: ['u=0 sx=1.02 sy=.98 aF=.5 aB=.5 f=smug.flat e=i', 'u=.12 r=.04 sx=1.1 sy=.9 dy=.03 dx=.04 aF=1.4 aB=1.4', 'u=.22 r=-.04 sx=.9 sy=1.14 dy=-.05 aF=3 aB=3 f=squint.flat e=h',
+        'u=.27 r=-.05 sx=.89 sy=1.15 dy=-.05 aF=3.1 aB=3.1 e=o', 'u=.32 r=.1 sx=1.26 sy=.78 dy=.04 dx=.06 aF=.9 aB=.9 sm=1 e=o', 'u=.44 r=.08 sx=1.2 sy=.82 dy=.04 dx=.06 aF=.8 aB=.8',
+        'u=.60 r=.03 sx=1.02 sy=.98 aF=.6 aB=.6 f=smug.flat', 'u=.78 sx=1.01 sy=.99 aF=.2 aB=.2', 'u=1'],
+      // PLAY DEAD (down special): he just drops, flat, eyes shut, holding his breath, and gets up when he can be bothered
+      down: ['u=0 sx=1.02 sy=.98 f=smug.flat e=i', 'u=.12 sx=1.12 sy=.88 dy=.04 aF=.5 aB=.5 f=blink.flat e=i', 'u=.22 sx=1.4 sy=.62 dy=.1 aF=1.4 aB=1.4 lF=.5 lB=.5 e=o',
+        'u=.30 sx=1.34 sy=.66 dy=.09 aF=1.35 aB=1.35 lF=.45 lB=.45 e=h', 'u=.74 sx=1.34 sy=.66 dy=.09 aF=1.35 aB=1.35 lF=.45 lB=.45 e=i', 'u=.86 sx=.95 sy=1.06 aF=.3 aB=.3 f=smug.flat',
+        'u=.94 sx=1.02 sy=.98', 'u=1'],
+      // the smash: the foot lifted, slow and high, and brought down like a weight
+      smash: ['u=0 r=-.04 sx=1.1 sy=.9 dy=.03 lF=.4 aF=.5 aB=-.5 f=smug.flat e=o', 'u=.08 r=-.06 sx=.93 sy=1.1 dy=-.04 lF=1.4 aF=.9 aB=-.9 e=h', 'u=.14 r=-.06 sx=.92 sy=1.11 dy=-.05 lF=1.45 aF=.9 aB=-.9 e=i',
+        'u=.20 r=.04 sx=1.26 sy=.78 dy=.03 lF=0 aF=-.3 aB=.3 sm=.8 f=squint.flat e=o', 'u=.32 r=.03 sx=1.18 sy=.84 dy=.03', 'u=.48 sx=.97 sy=1.04 f=smug.flat', 'u=.64 sx=1.03 sy=.97', 'u=.82 sx=.99 sy=1.01', 'u=1'],
+      // the up smash: down on his haunches, then a heave straight up with both arms, stretched as tall as a blueberry goes
+      usmash: ['u=0 r=-.04 sx=1.1 sy=.9 dy=.03 aF=-.5 aB=-.5 f=smug.flat e=o', 'u=.08 sx=1.16 sy=.84 dy=.05 aF=-.7 aB=-.7 lF=.3 lB=.3 e=o',
+        'u=.15 sx=.84 sy=1.22 dy=-.1 aF=2.9 aB=2.9 lF=-.1 lB=-.1 sm=1 f=squint.flat e=o', 'u=.24 sx=.86 sy=1.2 dy=-.12 aF=3.1 aB=3.1 sm=.4', 'u=.38 sx=.9 sy=1.14 dy=-.1 aF=3 aB=3',
+        'u=.52 sx=.96 sy=1.05 dy=-.04 aF=2.4 aB=2.4 f=smug.flat', 'u=.68 sx=1.06 sy=.94 aF=.8 aB=.8', 'u=.84 sx=.99 sy=1.01 aF=.1 aB=.1', 'u=1'],
+    },
+    charge: ['u=0', 'u=1 r=-.04 sx=1.1 sy=.9 dy=.03 lF=.4 aF=.5 aB=-.5 f=smug.flat'],
+    run: [0.75, 0.8, 0.01], walk: [0.3, 0.4, 0], air: [1.1, 0.6, 0.9], runFace:'smug.flat' },
+};
+// Built once: every shared shape in the fighter's own faces and size, then its own keys over them.
+const AR = {};
+for(const _n in AR_SRC){
+  const s = AR_SRC[_n], o = { kit:s.kit, slots:{}, kinds:{}, run:s.run, walk:s.walk, air:s.air, runFace:null, chargeT:null, _m:null, _t:null };
+  for(const k in AR_TPL) o.kinds[k] = arBuild(AR_TPL[k], s.faces, s.A, s.LA);
+  for(const k in s.slots) o.slots[k] = arBuild(s.slots[k], s.faces, 1, 1);
+  if(o.slots.nsmash && !o.slots.smash) o.slots.smash = o.slots.nsmash;   // (a neutral smash may be labelled plain 'smash')
+  if(s.charge) o.chargeT = arBuild(s.charge, s.faces, 1, 1);
+  if(s.runFace){ const p = s.runFace.split('.'); o.runFace = [FR_E[p[0]] | 0, FR_M[p[1]] | 0]; }
+  AR[_n] = o;
+}
+
+// ---- per frame --------------------------------------------------------------------------------------------------------------------------------
+const _AR = { r:0, sx:1, sy:1, dx:0, dy:0, t:0, sm:0, aF:0, aB:0, lF:0, lB:0, eye:-1, mouth:-1, pdx:0, pdy:0 };
+function arEase(k, e){
+  switch(e){
+    case 1: { const q = 1 - k; return 1 - q*q*q; }
+    case 2: return k*k*k;
+    case 3: return 0;
+    case 4: return k;
+    default: return k*k*(3 - 2*k);
+  }
+}
+// The timeline at u into _AR (and, into pdx/pdy, where the shove was a moment before: the smear goes behind the motion).
+function arSample(T, u){
+  const v = T.v, n = T.n, P = _AR;
+  if(u < 0) u = 0; else if(u > 1) u = 1;
+  let i = 0;
+  while(i < n - 2 && u >= v[(i + 1)*AR_N]) i++;
+  const a = i*AR_N, b = (n > 1 ? i + 1 : i)*AR_N, ua = v[a], ub = v[b];
+  let k = ub > ua ? (u - ua)/(ub - ua) : 1; k = k < 0 ? 0 : (k > 1 ? 1 : k);
+  const e = arEase(k, T.ease[i]);
+  P.r = v[a + 1] + (v[b + 1] - v[a + 1])*e; P.sx = v[a + 2] + (v[b + 2] - v[a + 2])*e; P.sy = v[a + 3] + (v[b + 3] - v[a + 3])*e;
+  P.dx = v[a + 4] + (v[b + 4] - v[a + 4])*e; P.dy = v[a + 5] + (v[b + 5] - v[a + 5])*e; P.t = v[a + 6] + (v[b + 6] - v[a + 6])*e;
+  P.sm = v[a + 7] + (v[b + 7] - v[a + 7])*e; P.aF = v[a + 8] + (v[b + 8] - v[a + 8])*e; P.aB = v[a + 9] + (v[b + 9] - v[a + 9])*e;
+  P.lF = v[a + 10] + (v[b + 10] - v[a + 10])*e; P.lB = v[a + 11] + (v[b + 11] - v[a + 11])*e;
+  const fi = k >= 1 ? (n > 1 ? i + 1 : i) : i;   // the face is held from the key it is on: a drawn swap, never a blend
+  P.eye = T.eye[fi]; P.mouth = T.mouth[fi];
+  // a moment before (for the smear's direction)
+  const u0 = u - 0.05 < 0 ? 0 : u - 0.05;
+  let j = 0; while(j < n - 2 && u0 >= v[(j + 1)*AR_N]) j++;
+  const a2 = j*AR_N, b2 = (n > 1 ? j + 1 : j)*AR_N, va = v[a2], vb = v[b2];
+  let k2 = vb > va ? (u0 - va)/(vb - va) : 1; k2 = k2 < 0 ? 0 : (k2 > 1 ? 1 : k2);
+  const e2 = arEase(k2, T.ease[j]);
+  P.pdx = v[a2 + 4] + (v[b2 + 4] - v[a2 + 4])*e2; P.pdy = v[a2 + 5] + (v[b2 + 5] - v[a2 + 5])*e2;
+}
+// The row for this fighter, or null: one of the five, on their own kit, not in a Final Smash (whose scenes draw themselves), not an OC. A picture of a
+// pose set is drawn under another name (poseBody), so the row is the name it was made from.
+function arRowOf(f){
+  if(!f || f.fsId || f.oc || f.dead) return null;
+  const nm = f._pose != null ? Object.getPrototypeOf(f).name : f.name, A = AR[nm];
+  return (A && f.kit && f.kit.special === A.kit) ? A : null;
+}
+// The timeline of the swing under way: the fighter's own keys for the move's slot, else the shape of its kind, else a punch.
+function arSwingT(A, f){
+  const m = f._atkMove;
+  if(m && A._m === m) return A._t;
+  let T = null;
+  if(m){ const i = m.lastIndexOf('.'), sl = i < 0 ? m : m.slice(i + 1); T = A.slots[sl] || null; }
+  if(!T) T = A.kinds[f._atkKind] || A.kinds.punch;
+  if(m){ A._m = m; A._t = T; }
+  return T;
+}
+// THE BODY THIS FRAME: 1 a swing (or its startup), 2 a held smash, 0 neither (or not one of the five). Fills _AR. Pure: the same fighter on the same tick
+// gives the same pose however many times it is asked (the rig, the deform, the frame layer and the limbs each ask).
+function arBody(f){
+  const A = arRowOf(f);
+  if(!A) return 0;
+  if(f._atkAnim > 0 || stupK(f) >= 0){
+    const u = atkU(f); if(u < 0) return 0;
+    arSample(arSwingT(A, f), u);
+    return 1;
+  }
+  if(f.smashHold > 0 && A.chargeT){
+    const c = chargeK(f);
+    arSample(A.chargeT, c);
+    if(c > 0.6){ const q = (c - 0.6)/0.4; _AR.r += Math.sin(hazardT*1.9 + f.idx)*0.025*q; _AR.dx += Math.sin(hazardT*2.7 + f.idx*2)*0.02*q; _AR.pdx = _AR.dx; _AR.pdy = _AR.dy; }   // loaded: a tremble
+    return 2;
+  }
+  return 0;
+}
+// The body, laid on after the shared rig (drawSpriteBody), about the feet; the turnaround as a horizontal scale through the turn.
+function arDeform(c, R, f){
+  const P = _AR, face = f.face < 0 ? -1 : 1;
+  let sx = P.sx;
+  if(P.t){ const ct = Math.cos(P.t*6.283185307); sx *= ct < 0 ? (ct > -0.08 ? -0.08 : ct) : (ct < 0.08 ? 0.08 : ct); }
+  let sy = P.sy;
+  sx = sx > 1.5 ? 1.5 : (sx < -1.5 ? -1.5 : sx); sy = sy < 0.6 ? 0.6 : (sy > 1.5 ? 1.5 : sy);
+  deformAboutFeet(c, R, face*P.r, sx, sy);
+  if(P.dx || P.dy) c.translate(face*P.dx*R, P.dy*R);
+}
+// The painted limbs the timeline swings (the front ones are on the side the picture faces): into the four preallocated moves, or null.
+const _ARV = [{limb:null, a:0}, {limb:null, a:0}, {limb:null, a:0}, {limb:null, a:0}];
+const _ARS = [null, [_ARV[0]], [_ARV[0], _ARV[1]], [_ARV[0], _ARV[1], _ARV[2]], [_ARV[0], _ARV[1], _ARV[2], _ARV[3]]];
+function arPut(pool, fs, aF, aB, fwd, n){
+  if(!pool || !pool.length) return n;
+  let front = null, back = null;
+  for(let i = 0; i < pool.length; i++) if(pool[i].side === fs){ front = pool[i]; break; }
+  if(!front) front = pool[0];
+  for(let i = 0; i < pool.length; i++) if(pool[i] !== front){ back = pool[i]; break; }
+  if(aF && n < 4){ _ARV[n].limb = front; _ARV[n].a = -fwd*aF; n++; }
+  if(back && aB && n < 4){ _ARV[n].limb = back; _ARV[n].a = -fwd*aB; n++; }
+  return n;
+}
+function arLimbMoves(rig, sp){
+  const P = _AR, fwd = sp && sp.flip ? -1 : 1, fs = fwd > 0 ? 'R' : 'L';
+  let n = arPut(rig.arms, fs, P.aF, P.aB, fwd, 0);
+  n = arPut(rig.legs, fs, P.lF, P.lB, fwd, n);
+  return n ? _ARS[n] : null;
+}
+// THE FRAME LAYER'S SHARE of a swing or a held smash (frPose): the body is drawn by arDeform, so the strip's is left at rest; the face, the smear and its
+// lines are the timeline's.
+function arAtkPose(f, fd, P, mom){
+  const b = arBody(f);
+  if(!b || (mom === FM_ATK) !== (b === 1)) return false;
+  const A = _AR, face = f.face < 0 ? -1 : 1, R = f.r, u = atkU(f);
+  P.mom = mom; P.fi = b === 1 ? ((u*6 + 0.000001) | 0) : 0; if(P.fi > 5) P.fi = 5;
+  P.rot = 0; P.sx = 1; P.sy = 1; P.dx = 0; P.dy = 0; P.spin = 0; P.bulge = 0;
+  if(b === 1){
+    const slot = P.fi < 2 ? 0 : (P.fi < 4 ? 1 : 2);
+    P.eye = A.eye >= 0 ? A.eye : fd.atk[slot*2]; P.mouth = A.mouth >= 0 ? A.mouth : fd.atk[slot*2 + 1];
+    P.smear = A.sm > 1 ? 1 : (A.sm < 0 ? 0 : A.sm);
+    let mx = (A.dx - A.pdx)*face, my = A.dy - A.pdy; const ml = Math.sqrt(mx*mx + my*my);
+    if(ml > 0.004){ P.sdx = -mx/ml*R*0.32; P.sdy = -my/ml*R*0.32; } else { P.sdx = -face*R*0.25; P.sdy = 0; }
+    if(A.sm >= 0.9) P.fx |= FX_LINES;
+    if(fd.vein && u < 0.25) P.fx |= FX_VEIN;
+  } else {
+    P.eye = A.eye >= 0 ? A.eye : fd.charge[0]; P.mouth = A.mouth >= 0 ? A.mouth : fd.charge[1]; P.k = chargeK(f);
+    if(fd.vein && P.k > 0.35) P.fx = FX_VEIN;
+  }
+  return true;
+}
+// MOVING (frPose): the run and walk as one continuous stride (the limbs on the shared rig's own phase, so the feet and the bob agree; a squash as the
+// legs pass under), and the jump as one arc blended on the climb, the top and the drop. False when standing still: the frame layer's blink stands.
+function arSm(a, b, x){ let k = (x - a)/(b - a); k = k < 0 ? 0 : (k > 1 ? 1 : k); return k*k*(3 - 2*k); }
+function arMovePose(f, fd, P){
+  const A = arRowOf(f);
+  if(!A) return false;
+  const vx = f.vx || 0, vy = f.vy || 0, avx = vx < 0 ? -vx : vx, fq = fd.fq;
+  if(f.onground === false){
+    const rise = arSm(-1, -9, vy), fall = arSm(1, 10, vy), apex = 1 - (rise > fall ? rise : fall), Q = A.air;
+    P.fi = rise > 0.5 ? 0 : (fall > 0.5 ? 2 : 1);
+    P.sx = 1 - (0.06*rise + 0.04*fall - 0.02*apex)*fq; P.sy = 1 + (0.09*rise + 0.06*fall - 0.03*apex)*fq;
+    if(Q[0] + Q[1] + Q[2] > 0){ P.arm = FA_RAISE; P.amt = Q[0]*rise + Q[1]*apex + Q[2]*fall; }
+    P.leg = FL_TUCK; P.lamt = 0.9*rise + 0.4*apex + 0.15*fall;
+    if(vy > 8){ P.arm = Q[2] > 0 ? FA_FLAIL : 0; P.leg = FL_PEDAL; P.lamt = 0.6; P.ph = hazardT*0.7 + f.idx; P.sdy = -f.r; P.fx = FX_SWEAT | FX_LINES; }
+    if(rise > 0.5){ P.eye = fd.jump[0]; P.mouth = fd.jump[1]; } else if(vy > 8){ P.eye = fd.fall[0]; P.mouth = fd.fall[1]; }
+    return true;
+  }
+  if(avx > 4){
+    const ph = hazardT*0.42*(1 + (f.idx % 4)*0.05) + f.idx*1.7, s = Math.sin(ph), dir = vx < 0 ? -1 : 1, pass = 1 - (s < 0 ? -s : s), Q = A.run;
+    P.fi = ((ph*0.6366) | 0) & 3; P.ph = ph;
+    if(Q[0] > 0){ P.arm = FA_SWING; P.amt = Q[0]; }
+    P.leg = FL_SWING; P.lamt = Q[1];
+    P.rot = dir*Q[2]; P.sx = 1 + 0.06*pass*pass*fq; P.sy = 1 - 0.07*pass*pass*fq + 0.03*(1 - pass)*fq;
+    const rf = A.runFace || fd.run; P.eye = rf[0]; P.mouth = rf[1];
+    return true;
+  }
+  if(avx > 0.5){
+    const ph = hazardT*0.3 + f.idx, s = Math.sin(ph), pass = 1 - (s < 0 ? -s : s), Q = A.walk;
+    P.fi = ((ph*0.6366) | 0) & 3; P.ph = ph;
+    if(Q[0] > 0){ P.arm = FA_SWING; P.amt = Q[0]; }
+    P.leg = FL_SWING; P.lamt = Q[1];
+    P.sx = 1 + 0.03*pass*pass*fq; P.sy = 1 - 0.035*pass*pass*fq + 0.015*(1 - pass)*fq;
+    return true;
+  }
+  return false;
+}
+// THE FLINCH, in-betweened: the three frames of FR_HURT blended on the reaction's own clock instead of held. False for anyone else.
+function arHurtPose(f, fd, P, hk){
+  if(!arRowOf(f)) return false;
+  let x = (1 - hk)*3 - 0.5; x = x < 0 ? 0 : (x > 2 ? 2 : x);
+  const i = x >= 2 ? 1 : (x | 0), k = x - i, H0 = FR_HURT[i], H1 = FR_HURT[i + 1], e = k*k*(3 - 2*k);
+  const vx = f.vx || 0, avx = vx < 0 ? -vx : vx, face = f.face < 0 ? -1 : 1, away = avx > 1 ? (vx < 0 ? -1 : 1) : -face, amp = fd.amp, qa = amp*fd.fq;
+  const fi = hk > 0.7 ? 0 : (hk > 0.35 ? 1 : 2);
+  P.mom = FM_HURT; P.fi = fi;
+  P.rot = -away*amp*(H0[0] + (H1[0] - H0[0])*e); P.sx = 1 + ((H0[1] + (H1[1] - H0[1])*e) - 1)*qa; P.sy = 1 + ((H0[2] + (H1[2] - H0[2])*e) - 1)*qa;
+  P.dx = away*amp*(H0[3] + (H1[3] - H0[3])*e);
+  P.arm = FA_RAISE; P.amt = (H0[4] + (H1[4] - H0[4])*e)*1.6; P.leg = FL_TUCK; P.lamt = 0.5 - 0.3*(x > 1 ? 1 : x);
+  if(fi < 2){ P.eye = fd.hurt[0]; P.mouth = fd.hurt[1]; P.fx = FX_SWEAT; }
+  return true;
+}
+
 // Renders one sprite fighter in place of the roundBlob body. Called from inside drawFighter's
 // squash/stretch transform, so the art deforms with every jump, landing and run exactly like the
 // blob did. State tints (flash / yoyle metal / star strobe / burn) are laid over the silhouette in
@@ -129240,7 +129720,9 @@ function drawSpriteBody(f, sp, anim){
   // pivoted on the feet. This is where a character's silhouette CHANGES — Pencil sharpening into a
   // spear, Blocky toppling like felled timber, Ice Cube tipping onto an edge — without giving up
   // the render the way a full `body` replacement does.
-  if(anim && anim.deform) anim.deform(f, ctx, R);
+  const arb = arBody(f);   // ANIMATION REDRAWS: one of the pilot five in a swing or a held smash -- its timeline's body, in place of its own deform
+  if(anim && anim.deform && !arb) anim.deform(f, ctx, R);
+  if(arb) arDeform(ctx, R, f);
   if(f.fsLk > 0) fsaR_profCaught(f, ctx, R);   // (a foe Profily's cactus holds: flat and edge-on, from the wire flag fsLk: FSA lane r)
   if(f.fsLk > 0) fsaR_loseCaught(f, ctx, R);   // (a foe Loser's chamber holds: shoved a little away from him with each blow, from the wire flag fsLk: FSA lane r)
   if(f.fsLk > 0) fsaR_dgCaught(f, ctx, R);   // (a foe Dough's room holds: jolted with each of its five kinds, from the wire flag fsLk: FSA lane r)
