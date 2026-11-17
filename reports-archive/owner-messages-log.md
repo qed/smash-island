@@ -206,6 +206,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17**: open the new stapy map
 - **2026-11-17 (playing Stapy)**: why was the lava removed from some tunnels? put it back
 - **2026-11-17 (next)**: also, it takes way more than 5 seconds to remove a light
+- **2026-11-17 (playing Stapy)**: the cpus are parkour perfect.
+- **2026-11-17 (playing Stapy)**: and the colors for the emblems are not all appropriate
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
