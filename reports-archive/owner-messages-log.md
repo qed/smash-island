@@ -277,6 +277,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17**: WC winner 1:needle
 - **2026-11-17 (next)**: match
 - **2026-11-17 (next)**: teddy bear
+- **2026-11-17 (next)**: blueberry
+- **2026-11-17 (next)**: firey
 
 ## Teams maps, stages & levels
 

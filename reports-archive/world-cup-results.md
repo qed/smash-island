@@ -442,6 +442,9 @@ Several of these are CPU gaps that the queued bot fixes close (edge-guarding, ha
 
 ## Series 2 (from 2026-11-17, owner numbering restarts at 1; played on the Update 6 preview build: new up/down smashes batches 1-3, move effects + strong-hit freeze, CPU recovery fix)
 
-- **S2 #1 (2026-11-17):** Owner: "WC winner 1:needle"
-   - Winner: **Needle**. Opponent, team size, stocks and CPU level not given (log as given; Expert and items/smash balls off assumed, per the owner's earlier cups). Notes (lead): Needle is one of the batch-1 fighters with her own up/down smash pair (in this build, with the range fix still pending), plus the game-wide move effects; CPUs now recover far better after the 2026-11-17 recovery fix, which may change who wins cups.
-   - Owner's follow-ups: "match", then "teddy bear". Notes (lead): read together as the cup's placings in order after the winner: **1 Needle, 2 Match, 3 Teddy Bear** (so Match lost the final). If Teddy Bear placed 3rd, that is notable: on 2026-11-04 the owner said "TEDDY BEAR HAS NEVER MADE THE SEMIS"; this would be his first semifinal in the log.
+- **S2 #1 (2026-11-17):** Owner: "WC winner 1:needle" -- Winner: **Needle**.
+- **S2 #2:** Owner: "match" -- Winner: **Match**.
+- **S2 #3:** Owner: "teddy bear" -- Winner: **Teddy Bear**. Notes (lead): notable: on 2026-11-04 the owner said Teddy Bear "has never made the semis"; now he wins a cup.
+- **S2 #4:** Owner: "blueberry" -- Winner: **Blueberry** (her second cup in the log; first was #46).
+- **S2 #5:** Owner: "firey" -- Winner: **Firey**.
+   - Notes (lead): the owner sent these one word at a time after "WC winner 1:needle"; read as the winners of cups 1, 2, 3... in order (each a new cup). Opponents, team size, stocks and CPU level not given (Expert, items and smash balls off assumed, as before). Build: the Update 6 preview (batch 1-3 own up/down smashes: Needle and Firey have theirs, range fix still pending; move effects + strong-hit freeze; CPU recovery fix, so far fewer self-KOs). Five different winners in five cups.
