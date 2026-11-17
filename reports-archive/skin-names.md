@@ -104,3 +104,4 @@
 | Night Sticker | Purple Sticker | art: blue/purple Sticker |
 
 Renamed: 100. Kept unchanged: 231 (of 331 skin rows). Halloween costume skins, event skins with costume names, and prize-fighter skins kept as they already name what they are.
+Owner corrections (2026-11-17): "Caked Cake" is her BFDIA look -> **BFDIA Cake**; "Yoyleball Bubble" -> **Yoyle Metal Bubble**; "Twinkle" is what happens in BFB when Four multiplies Donut (a real show form): the Twinkle names stay.

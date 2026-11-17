@@ -859,6 +859,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16 (next)**: cuz there is someone who went on the bomby page 8 times, and so I want to figure out if they are maining him.
 - **2026-11-16 (next)**: sure, add it. I cant do much for now, bcs its on my dads account tho.
 - **2026-11-17**: change the skin names to what it is, except when it would make sense. pewter yellow face is not real
+- **2026-11-17 (on the skin-name list)**: for cake, its her bfdia look. for that, its yoyle metal buble. for twinkle, its what happens in bfb when four is multiplied by donut. (applied: Caked Cake -> BFDIA Cake; Yoyleball Bubble -> Yoyle Metal Bubble; the Twinkle names are a real BFB thing: kept)
 
 ## Bugs & fixes
 
