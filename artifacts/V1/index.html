@@ -108475,7 +108475,7 @@ const CKR = { seed:9157, x0:500, len:76000, tail:600, WH:1300, every:2900, span:
   lightW:170, droneSpd:11, droneY:360, sweepAmp:240, sweepCyc:280, pick:420, lead:140, grace:300,
   trampT:62, trampH:360, doorT:30, zipSpd:15, zipY0:270, zipY1:220, entryR:44,
   kb0:260, kbPct:3, kbCap:200, kbMax:14, kbMin:3, braceK:0.4, combo:36, stun:24, stunBr:10, blkCd:75, blkK:0.4,
-  aiSafe:300, aiWait:90, aiRisk:0.12, aiRiskGap:60, fightR:150, fightFor:150, fightCool:300 };
+  fightR:150, fightFor:150, fightCool:300 };
 function stkrWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.contest === 'cheat'; }
 function stkrBuildWorld(){
   const K = CKR, rnd = fdRng(K.seed);
@@ -108561,6 +108561,29 @@ function stkrShove(f, pct, brace, scale){
   f.vx = -Math.min(K.kbMax, D/6); f.vy = Math.min(f.vy, -2.5); f.onground = false;
   f.hitstun = Math.max(f.hitstun || 0, brace ? K.stunBr : (scale && scale < 1 ? 12 : K.stun));
 }
+// CPUs CHEAT LIKE PEOPLE (the owner, 2026-11-17, on "the drone almost never catches CPUs": "5 could be changed"). Before, a CPU cheated only with the light
+// 300 px clear (12% of the time 60 px), so it was almost never caught. Now each CPU judges the light as a person might, by its level (0 Easy .. 3 Expert):
+// it wants the light CKR_AI.margin px clear of the stretch; it reads where the light will be over the cheat's frames (the drone keeps its heading, the sweep its
+// clock -- both on screen and on the race bar) only CKR_AI.readSweep of the time, else it judges from where the light is now (a drone turning toward it is
+// missed); it misjudges that gap by up to CKR_AI.misjudge px; behind the leader it is desperate and wants less margin (CKR_AI.despK at CKR_AI.despFull px
+// behind); now and then (CKR_AI.greed) it is greedy and goes with the light close, so long as the light is not on the stretch right now; and it waits at
+// the spot at most CKR_AI.patience frames. One roll of the misjudging, the read and the greed per shortcut. The drone is untouched: the same light and the
+// same rule for everyone; nothing here catches anyone.
+const CKR_AI = { margin:[110, 170, 230, 290], readSweep:[0.15, 0.4, 0.75, 0.95], misjudge:[240, 160, 90, 40], greed:[0.22, 0.13, 0.07, 0.03],
+  despK:[110, 90, 70, 50], despFull:6000, patience:[20, 40, 70, 90] };
+function stkrPredGap(s, T, read){   // the light's least distance from the cheat's path (s.ent..s.ex): now, or over the cheat's T frames as read from the screen
+  const K = CKR, D = FDR.ck.drone; let g = 1e9;
+  for(let k = 0; k <= (read ? T : 0); k += 6){ const x = D.x + (D.vx || 0)*k, lx = x + Math.sin(((hazardT + k)/K.sweepCyc)*6.2832)*K.sweepAmp; g = Math.min(g, Math.max(0, (lx - K.lightW) - s.ex, s.ent - (lx + K.lightW))); }
+  return g;
+}
+function stkrCpuCheat(f, s){   // 1: cheat now; 0: go the legal way; -1: wait at the spot this frame
+  const A = CKR_AI, lv = brainLevel(f), T = s.k === 'tramp' ? CKR.trampT : (s.k === 'door' ? CKR.doorT : Math.ceil((s.ex - s.ent)/CKR.zipSpd));
+  if(f._ckJs !== s.id){ f._ckJs = s.id; f._ckJ = (Math.random()*2 - 1)*A.misjudge[lv]; f._ckRd = Math.random() < A.readSweep[lv]; f._ckG = Math.random() < A.greed[lv]; }
+  const lead = fdrFront(), behind = lead ? Math.max(0, lead.x - f.x) : 0, want = A.margin[lv] - A.despK[lv]*Math.min(1, behind/A.despFull);
+  if(stkrPredGap(s, T, f._ckRd) + f._ckJ > want) return 1;
+  if(f._ckG && stkrPredGap(s, 0, false) > 0) return 1;
+  return (f._ckWait || 0) < A.patience[lv] ? -1 : 0;
+}
 CONTEST_RULES.cheat = {
   winText(f){ return ''; },
   score(f){ return f.x; },
@@ -108578,7 +108601,7 @@ CONTEST_RULES.cheat = {
     const t = hazardT, D = S.ck.drone;
     // THE DRONE: one racer at a time, in the dealt order; flies to just ahead of them, its light sweeping under it
     const live = D.order.map(i => fighters[i]).filter(o => o && !o.dead);
-    if(live.length){ const tg = live[Math.floor(t/K.pick) % live.length]; D.tgt = tg.idx; const want = tg.x + K.lead, dx = want - D.x; D.x += clamp(dx, -K.droneSpd, K.droneSpd); }
+    if(live.length){ const tg = live[Math.floor(t/K.pick) % live.length]; D.tgt = tg.idx; const want = tg.x + K.lead, dx = want - D.x; const mv = clamp(dx, -K.droneSpd, K.droneSpd); D.x += mv; D.vx = mv; }
     D.lx = D.x + Math.sin((t/K.sweepCyc)*6.2832)*K.sweepAmp;
     for(const f of fighters){
       if(f.dead) continue;
@@ -108623,7 +108646,7 @@ CONTEST_RULES.cheat = {
     if(near && f.aiTarget !== near){ f.aiTarget = near; f.aiTimer = 45; }
   },
   // CPUs race; a rival in reach is fought for a while, then the race goes on. At a shortcut they cheat only when the drone's light (shown to everyone on the race
-  // bar) is at least CKR.aiSafe px clear of the stretch (now and then, CKR.aiRisk, they chance it closer), or wait up to CKR.aiWait frames for it to move off, then go the legal way.
+  // bar) is clear enough for them, as a person of their level would judge it (stkrCpuCheat, CKR_AI), or wait a little for it to move off, then go the legal way.
   want(f, inp, t, dist){
     const S = FDR, K = CKR; if(!S || !S.ck || f.dead || f.hitstun > 0 || f._ckSh || f._ckCh) return !!f._ckCh;
     const foe = f.aiTarget;
@@ -108634,9 +108657,10 @@ CONTEST_RULES.cheat = {
     } else if(!(foe && !foe.dead && Math.abs(foe.x - f.x) < K.fightR)) f._fdFightT = null;
     const s = f.onground ? stkrEntryAt(f) : null;
     if(s && f._ckDec[s.id] == null){
-      const L = stkrLight(), gap = Math.max(0, L.x0 - s.x1, s.ent - L.x1), safe = hazardT >= K.grace && (gap > K.aiSafe || (gap > K.aiRiskGap && (f._ckWait || 0) === 0 && Math.random() < K.aiRisk));   // (now and then a CPU chances it with the light closer: it can be caught, as a person can)
-      if(safe || hazardT < K.grace){ if(hazardT >= K.grace){ f._ckDec[s.id] = 1; inp.down = true; return true; } }
-      else if((f._ckWait || 0) < K.aiWait){ f._ckWait = (f._ckWait || 0) + 1; return true; }   // wait at the spot: no keys
+      const c = hazardT < K.grace ? 0 : stkrCpuCheat(f, s);   // (in the first seconds nobody is filmed and nobody needs to cheat: run on)
+      if(hazardT < K.grace){ }
+      else if(c > 0){ f._ckDec[s.id] = 1; f._ckWait = 0; inp.down = true; return true; }
+      else if(c < 0){ f._ckWait = (f._ckWait || 0) + 1; return true; }   // wait at the spot: no keys
       else { f._ckDec[s.id] = 0; f._ckWait = 0; }
     } else if(!s) f._ckWait = 0;
     const n = fdrNav(f, 'low');
