@@ -202,6 +202,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (reading the BFDIE fighter designs)**: hot dog doesnt have arms, neither does needy
 - **2026-11-17**: use the starred twists for what?
 - **2026-11-17 (after the lead explained the starred twists = each new event fighter's event matches 1 and 2)**: yeah, those are good.
+- **2026-11-17 (answers before building the 5 BFDIE fighters)**: Sticker and Jammy arms: "Both have arms". Order: "2 now, rest as slots free" (Bottle and Sticker first, then Needy, Jammy, Hot Dog). Movesets taken as approved (owner only corrected arms).
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
