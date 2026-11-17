@@ -228,6 +228,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (CLOUDY ideas, question boxes; numbers = designs/contest-ideas-2026-11-17.md)**: picked 1 Storm front, 2 Rainbow bridge, 3 Sky islands, 5 Thief crow, 6 Glazier's bench, 7 Overflowing jar, 8 Swap pedestal, 9 Lost and found, 10 Wind gusts, 13 Item backpack, 14 Hiding bushes (not 4, 11, 12); free text: "change the collection a bit." and "the collection is a bit too simple."
 - **2026-11-17 (CLOUDY, how the Collection changes)**: Item powers, Sets with bonuses, More, rarer items (not: Combine items)
 - **2026-11-17 (ERASER ideas)**: 1 Tile kinds, 2 Stomp-through, 3 Ink spill, 4 Rubber stamps, 6 Conveyor layer, 8 Knocked-out erasers, 11 Sharpener vortex, 12 Trapdoor tiles (not 5, 7, 9, 10)
+- **2026-11-17 (SPONGY ideas)**: 1 Rock layers, 3 Gas pockets, 4 Worm tunnels, 6 Fossils, 10 Arena entry order; free text: "rework spongeys event so that you have a shovel and must dig through a larger map to get your moves, like the hunger games. SPONGEYS EVENT SHOULD BE LIKE THE HUNGER GAMES!!! THATS PERFECT!!"; ideas 13-14: [No preference]
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
