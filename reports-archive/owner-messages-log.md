@@ -805,6 +805,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-12 18:12 UTC** *(part)*: now, we need to polish what we have(more consistent, more fluid, cooler) without changing the gameplay from now on. your goal will be to render everything better.
 - **2026-11-16**: take steps to optimise files, lag, and just stuff in general
 - **2026-11-17 (answers on making moves look cool)**: "Both: effects first" (global move effects for every move first: wind-up poses, swing trails, squash/stretch, impact sparks/flash sized by power, shake + tiny freeze on strong hits; then per-fighter animation redraws in batches, most-played first). Hit freeze: "Yes, small and only on strong hits".
+- **2026-11-17 (answers on the move effects)**: weak-hit freeze: "Keep the tiny one". The 4-point star glint growing on the body during wind-ups / pulsing on charged smashes: "THAT IS STUPID" (remove it).
 
 ## Online, UI & players
 
