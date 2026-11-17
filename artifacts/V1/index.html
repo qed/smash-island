@@ -106810,7 +106810,7 @@ const LHK = { gy0:2952, aw:5200, roomX:1000, roomDx:2400, roomY:3100, doorOff:13
   lever:[-360, -200, 200, 360], leverR:34, light:30, off0:300, offGrow:0.3, offMax:3000, pits:[[900, 1010], [1400, 1510], [1900, 2010]], pitDepth:160, plunge:['stapler'], winHold:330,
   ladder:12, ladRise:96, stones:[[2185, 1710, 140], [2000, 1620, 130], [1850, 1530, 140], [1700, 1440, 120], [1560, 1440, 140], [1420, 1440, 110], [1290, 1440, 140]],
   light0:270, roomZoom:1, reJump:105, reUp:110, reGap:120, portalCool:40, retarget:90, gang:3,
-  hzDmg:3, tumble:20, kickReach:12, flyMax:30, warp:40, stall:300, immAt:3, sprCd:24, hatchU:1340, fightR:90, fightT:120, fightCd:300, climbFight:false, climbCost:4000 };
+  hzDmg:3, tumble:20, kickReach:12, flyMax:30, warp:40, stall:300, sprCd:24, hatchU:1340, fightR:90, fightReach:80, fightEdge:60, fightT:120, fightCd:300, retryWait:120, climbCost:4000 };
 const LH_TAU = Math.PI*2;
 function lhcMod(a, n){ return ((a % n) + n) % n; }
 function lhcWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.contest === 'lights'; }
@@ -106845,7 +106845,7 @@ function lhcBuildWorld(){
     K.lever.forEach((o0, j) => { const o = K.lever[(j + k) % 4]; tw.levers.push({ j, x:cx + o, lit:false, litAt:0, node:null }); });   // (FAIRNESS, 2026-11-15: each fighter's lever is a different one of the four spots in each lighthouse)
     towers.push(tw);
   }
-  LHC = { towers, plaza, gy, D, pY, nodes:null, offs:0, lit:0, ko:0, outs:0, falls:0, hzHits:0, imm:0, stalls:0, kicks:0, warps:0, keeps:0 };
+  LHC = { towers, plaza, gy, D, pY, nodes:null, offs:0, lit:0, ko:0, outs:0, falls:0, hzHits:0, stalls:0, kicks:0, warps:0, keeps:0 };
 }
 // THE ROOM: 1400 wide, four BANDS of LHK.band (440 clear under a 40 slab), the lever deck on the fifth slab. Band b counts u from its START wall (bands 0 and 2: the door side; 1 and 3: the far wall)
 // and h up from its own slab. Every band: CP u 0-200 (safe), the NET over the rest of its slab (u 200-1400, h 0-30), EX u 1240-1400 at h 340, and over EX the HOLE in the next slab (u 1240-1380),
@@ -107086,8 +107086,8 @@ function lhcFail(f, tw, bd, why){
   if(why === 'stall') S.stalls++;
   const R = f._lhR;
   if(R && !isHumanCtrl(f) && R.k === tw.k){
-    R.imm = false; const n = R.fails[bd.b] = (R.fails[bd.b] || 0) + 1;
-    if(n === K.immAt){ R.imm = true; S.imm++; }   // CPU STUCK-HELP: the next try with no hazard damage (a faint shimmer shows it)
+    const nf = R.fails[bd.b] = (R.fails[bd.b] || 0) + 1;   /* (no help of any kind since 2026-11-17: a CPU that fails tries again like a human) */
+    if(nf >= 2) R.waitT = hazardT + K.tumble + Math.floor(Math.random()*K.retryWait);   /* (and like a human it does not retry on the very same beat: from the second fail on it waits a moment at the start, 0 to 2 s -- the floors' pieces are functions of the clock and a retry that takes exactly one cycle meets the same bad beat every time, which held a CPU on one pendulum for 10 tries) */
     R.plan = null; R.i = 0; R.prog = hazardT;
   }
 }
@@ -107188,7 +107188,7 @@ function lhcRoomAfter(f, tw){
   if(f._lhArc && !f.onground){ const A = f._lhArc, xe = A.x0 + A.vxw*(t - A.t0 + 1); if(Math.abs(f.x - xe) > 14) f._lhArc = null; else f.x = xe; }
   if(bd.b >= K.nBand) return;   // the lever deck: no net, no hazards
   if(lhcInNet(bd, f.x, feet)){ lhcFail(f, tw, bd, 'net'); return; }
-  const imm = t < (f._lhImmT || 0) || (f._lhR && f._lhR.imm);
+  const imm = t < (f._lhImmT || 0);
   if(!imm){ for(const q of bd.hz){ if(lhcHzTouch(q, t, f.x, f.y, f.r*0.8)){ lhcFail(f, tw, bd, 'hz'); return; } } }
   // (the kicks counted, for the checks)
   { const ks = f._wallUsed ? Object.keys(f._wallUsed).length : 0; if(ks > (f._lhWK || 0)){ const side = f._wallSide || -f.face, px = f.x - f.vx, py = f.y - f.vy; for(const q of bd.pads){ if(q.wsd === side && Math.abs(q.fx - (px + side*f.r)) < 14 && py > q.yTop - 10 && py < q.yBot + 10){ S.kicks++; } } } f._lhWK = ks; }
@@ -107210,7 +107210,7 @@ function lhcSim(f, bd, pol, N, ok, look, use, start){
   const s = start ? { x:start.x, y:start.y, vx:0, vy:0, og:true, jumps:2, jp:false, arc:null, hop:false, st:{}, kicks:{}, supK:null, supQ:null, used:{} }
     : { x:f.x, y:f.y, vx:f.vx, vy:f.vy, og:f.onground, jumps:f.jumps, jp:!!f._jp, arc:f._lhArc ? Object.assign({}, f._lhArc) : null, hop:false, st:{}, kicks:{}, supK:null, supQ:null, used:{} };
   const crum = start ? Object.assign({}, start.crum) : {};
-  const H = K.half, wl = tw.cx - H, wr = tw.cx + H, imm = T < (f._lhImmT || 0) || (f._lhR && f._lhR.imm);
+  const H = K.half, wl = tw.cx - H, wr = tw.cx + H, imm = T < (f._lhImmT || 0);
   const slabs = [];   // the slabs of this band and the next one
   for(const p of worldPlats){ if(p.lh === tw.k && p.solid && (p.lhSlab === bd.b || p.lhSlab === bd.b + 1 || p === tw.floor)) slabs.push(p); }
   const geo = (q, t) => {
@@ -107362,17 +107362,24 @@ function lhcRoomAi(f, inp){
     return CONTEST_RULES.lights.want(f, inp, t, dist);
   }
   const bd = tw.bands[b];
-  let R = f._lhR; if(!R || R.k !== tw.k){ R = f._lhR = { k:tw.k, b, i:0, prog:hazardT, plan:null, fails:[0, 0, 0, 0], imm:false, fightT:0, fightCd:0 }; }
-  if(R.b !== b){ R.b = b; R.i = 0; R.plan = null; R.prog = hazardT; R.imm = false; R.maxU = null; }
+  let R = f._lhR; if(!R || R.k !== tw.k){ R = f._lhR = { k:tw.k, b, i:0, prog:hazardT, plan:null, fails:[0, 0, 0, 0], fightT:0, fightCd:0 }; }
+  if(R.b !== b){ R.b = b; R.i = 0; R.plan = null; R.prog = hazardT; R.maxU = null; R.waitT = 0; }
   // a rival in its face, both on their feet in this band: a short fight (combat matters on the climb), then back to the climb for a while
   const mySup = f.onground ? lhcSupAt(bd, f.x, f.y + f.r, f.r) : null;   /* A FOE IN ITS FACE on the climb: a rival on its feet on the SAME piece (not one mid-hop or on the next piece), and never on the checkpoint, where everyone lands after a fall: swinging at those knocked CPUs into the net one after another */
-  if(LHK.climbFight && f.onground && mySup && mySup !== 'CP' && mySup !== 'NET' && !R.plan && hazardT >= R.fightCd){   /* (off since 2026-11-16 round 4: on the climb a CPU does not start fights -- two CPUs in a shaft swung at each other until neither got up; on the deck and outside it fights as ever) */ const o = fighters.find(o => o !== f && !o.dead && o._lhRoom === tw && o.onground && Math.abs(o.x - f.x) < K.fightR && Math.abs(o.y - f.y) < 50 && lhcSupAt(bd, o.x, o.y + o.r, o.r) === mySup);
-    if(o){ if(!R.fightT) R.fightT = hazardT + K.fightT; if(hazardT < R.fightT){ lhcRoomFight(f, inp, o, bd); return true; } R.fightT = 0; R.fightCd = hazardT + K.fightCd; R.prog = hazardT; }
-    else if(R.fightT){ R.fightT = 0; R.fightCd = hazardT + K.fightCd; R.prog = hazardT; } }
+  /* A FIGHT ON THE CLIMB (2026-11-17, the owner: CPUs fight on the climb "if they are in a good position"): only when both stand on the same plain ledge (not a crumbling, blinking, moving or belt piece, not the checkpoint, not in a shaft, not mid-jump, not on a plan), the rival is in reach AND near the end of the ledge on the side away from the CPU (so the hit can knock it off or back), and the spot the CPU stands on is clear of the hazards for the next 40 frames. It swings for LHK.fightT frames, then climbs on and does not start another for LHK.fightCd frames (so two CPUs never lock each other in a fight). */
+  { const stp = bd.steps[Math.min(R.i, bd.steps.length - 1)], pq = f.onground && mySup && !R.plan && !(stp && (stp.shaft || stp.hole)) ? bd.ids[mySup] : null;
+    const plain = pq && pq.kind === 'ledge' && pq.p, pp = plain ? pq.p : null;
+    const foe = pp && hazardT >= R.fightCd ? fighters.find(o => { if(o === f || o.dead || o._lhRoom !== tw || !o.onground || o.hitstun > 0 || o.frozen > 0 || o._heldBy != null) return false; if(Math.abs(o.x - f.x) > K.fightReach || Math.abs(o.y - f.y) > 30 || lhcSupAt(bd, o.x, o.y + o.r, o.r) !== mySup) return false; const dir = o.x < f.x ? -1 : 1, toEdge = dir > 0 ? pp.x + pp.w - o.x : o.x - pp.x; return R.fightT ? true : toEdge < K.fightEdge; }) : null;
+    if(foe){
+      if(!R.fightT){ const safe = lhcSim(f, bd, lhcPolHold({ x:f.x }), 40, [], 0); if(safe.why === 'time'){ R.fightT = hazardT + K.fightT; LHC.fights = (LHC.fights || 0) + 1; } }
+      if(R.fightT && hazardT < R.fightT){ lhcRoomFight(f, inp, foe, bd); return true; }
+    }
+    if(R.fightT){ R.fightT = 0; R.fightCd = hazardT + K.fightCd; R.prog = hazardT; } }
   { const u = bd.U(f.x); if(R.maxU == null || R.i === 0 && u < R.maxU - 300) R.maxU = u; if(u > R.maxU + 40){ R.maxU = u; R.prog = hazardT; } }   /* PROGRESS: a step done, or 40 px further along the floor (a long ride counts) */
   if(hazardT - R.prog > K.stall && f.onground && !R.plan){ lhcFail(f, tw, bd, 'stall'); return true; }
   const steps = bd.steps;
   const sup = f.onground ? lhcSupAt(bd, f.x, f.y + f.r, f.r) : null;
+  if(R.waitT && f.onground && sup === 'CP' && !R.plan){ if(hazardT < R.waitT){ R.prog = hazardT; lhcKeysOut(f, inp, { d:0, j:false }); return true; } R.waitT = 0; }
   if(f.onground){
     if(sup === 'CP' && R.i > 0 && !R.plan) R.i = 0;
     if(sup && sup !== 'CP' && sup !== 'NET'){ for(let j = steps.length - 1; j >= 0; j--){ const ok = lhcStepOn(steps[j]); if(ok && ok.indexOf(sup) >= 0){ if(j + 1 !== R.i){ if(j + 1 > R.i) R.prog = hazardT; R.i = j + 1; R.plan = null; } break; } } }
@@ -107643,7 +107650,6 @@ CONTEST_RULES.lights = {
     }
     for(const f of fighters){   // the stuck-help: a faint shimmer on an immune CPU
       if(f.dead || !f._lhRoom) continue;
-      if(f._lhR && f._lhR.imm){ c.save(); c.globalAlpha = 0.25 + 0.15*Math.sin(hazardT*0.3); c.strokeStyle = '#bff4ff'; c.lineWidth = 3; c.beginPath(); c.arc(f.x, f.y, f.r + 7, 0, 7); c.stroke(); c.restore(); }
     }
   },
   hud(c){
