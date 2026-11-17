@@ -203,6 +203,11 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17**: use the starred twists for what?
 - **2026-11-17 (after the lead explained the starred twists = each new event fighter's event matches 1 and 2)**: yeah, those are good.
 - **2026-11-17 (answers before building the 5 BFDIE fighters)**: Sticker and Jammy arms: "Both have arms". Order: "2 now, rest as slots free" (Bottle and Sticker first, then Needy, Jammy, Hot Dog). Movesets taken as approved (owner only corrected arms).
+- **2026-11-17**: open the new stapy map
+- **2026-11-17 (playing Stapy)**: why was the lava removed from some tunnels? put it back
+- **2026-11-17 (next)**: also, it takes way more than 5 seconds to remove a light
+- **2026-11-17 (playing Stapy)**: the cpus are parkour perfect.
+- **2026-11-17 (playing Stapy)**: and the colors for the emblems are not all appropriate
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
@@ -572,6 +577,9 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (next)**: especially the animations
 - **2026-11-17**: should we have sweetspots and sourspots? (lead recommended: yes, on 1-2 moves per fighter, show old-vs-new first; asked whether to queue the pass)
 - **2026-11-17 (answers on up/down smashes batch 3)**: redo "The 4 'just the object' ones" (down smashes of Donut, Bell, Gaty, Barf Bag) and "Fewer sweet spots" (8 of 24 used a sweet spot as the hook). Not picked: merge as is, Yellow Face up vs Dora up.
+- **2026-11-17**: the new up smashes have so little range.
+- **2026-11-17 (next)**: some of the down smashes too.
+- **2026-11-17 (next)**: I cant use gb's up and down smashes
 
 ## Bosses, Boss Rush & secrets
 
