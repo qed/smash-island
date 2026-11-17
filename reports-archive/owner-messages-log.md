@@ -568,6 +568,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17**: and the moves dont have anything cool. look at any ssbu move, and you'll see that they all have something cool in them.
 - **2026-11-17 (next)**: especially the animations
 - **2026-11-17**: should we have sweetspots and sourspots? (lead recommended: yes, on 1-2 moves per fighter, show old-vs-new first; asked whether to queue the pass)
+- **2026-11-17 (answers on up/down smashes batch 3)**: redo "The 4 'just the object' ones" (down smashes of Donut, Bell, Gaty, Barf Bag) and "Fewer sweet spots" (8 of 24 used a sweet spot as the hook). Not picked: merge as is, Yellow Face up vs Dora up.
 
 ## Bosses, Boss Rush & secrets
 
