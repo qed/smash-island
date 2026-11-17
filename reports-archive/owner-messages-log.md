@@ -1244,6 +1244,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-13 19:05 UTC** *(part)*: also, if messages have sperate themes, then seperate them.
 - **2026-11-16 (TLC map job running)**: should we start other tasks? (answer to my pick list: Stapy rebuild, Event-fighter skins, Quick move fixes; not Moon Caves)
 - **2026-11-16 (after my % report: move fixes done incl. Calculated Bounce side effects, event skins waiting on an OK, new CPU stand-still job)**: % complete? start a new thing to replace the event-skins
+- **2026-11-17**: you can start more tasks
 
 ## Other
 
