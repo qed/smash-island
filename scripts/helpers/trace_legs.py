@@ -95,7 +95,9 @@ def leg_rows(mask, box, size):
         sx = [i % w for i in c if i // w == top + (bot - top)//2]   # the stick halfway down: where the tip sits over
         pivot = [round(sum(xs)/len(xs), 1), round(top + 1.5, 1)]
         tip = [round(sum(sx)/len(sx)), bot]
-        poly = [v for p in _trace(c, w, h) for v in p]
+        # the outline runs through pixel indices, grown one px; a clip path runs along pixel edges, so a row or column on the picture's own edge (the
+        # feet's bottom row) is taken to the edge (h, w), or that last row of pixels would be left behind on the body when the leg swings
+        poly = [v for x, y in _trace(c, w, h) for v in (w if x == w - 1 else x, h if y == h - 1 else y)]
         rows.append({'side': 'L' if n == 0 else 'R', 'pivot': pivot, 'tip': tip, 'poly': poly})
     return rows
 
