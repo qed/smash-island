@@ -387,6 +387,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16 (next)**: the thing with yoyle needle is that it grows with player count more than the others, save for dream island, and the other parameters.
 - **2026-11-16**: open dream island
 - **2026-11-16 (screenshot of Dream Island Teams: a tall red ladder/scaffold, two red poles with rungs, between wooden platforms, next to Firey)**: the red stuff is still there
+- **2026-11-17 (answer: Long Span new ledges catch fighters knocked off the broken middle of the bridge)**: "Gap under the middle" (remove only the ledges under the broken part, so falling there is still a KO; the other ledges stay, each with a way back up)
 
 ## Moves, smashes & Final Smashes
 
