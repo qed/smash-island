@@ -294,6 +294,9 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (next)**: cabby
 - **2026-11-17 (next)**: match
 - **2026-11-17 (next)**: pb
+- **2026-11-17**: run 150 cups
+- **2026-11-17 (next)**: choose a random character for me to try to win a world cup as
+- **2026-11-17 (next)**: and try to make it hard for me (lead picked at random among the fighters who never won a cup in the 250-cup batch and not in series 2: Yellow Face)
 
 ## Teams maps, stages & levels
 
