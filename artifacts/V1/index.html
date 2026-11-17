@@ -32661,9 +32661,9 @@ function fsTimeGate(){
   return true;   // (the camera too waits for the next step that runs: the picture blends to it, fsSlowBlend)
 }
 // Will the next step() be one the slow-mo skips? (loop(): a skipped step records no positions to blend from)
-function fsSlowSkips(){ return !(FS.freeze > 0) && FS.slow > 0 && FS.slowAcc + FS_SLOW.k < 1; }
+function fsSlowSkips(){ return (!(FS.freeze > 0) && FS.slow > 0 && FS.slowAcc + FS_SLOW.k < 1) || (!!TTW && ttSlowSkips()); }   // (and FAST FORWARD's slow hour: ttSlowSkips)
 // Through the slow-mo, how far the picture is from the last step that ran to the next one (drawView blends by it); null otherwise.
-function fsSlowBlend(){ return !(FS.freeze > 0) && FS.slow > 0 ? clamp(FS.slowAcc, 0, 1) : null; }
+function fsSlowBlend(){ return !(FS.freeze > 0) && FS.slow > 0 ? clamp(FS.slowAcc, 0, 1) : (TTW ? ttSlowBlend() : null); }   // (and FAST FORWARD's slow hour: ttSlowBlend)
 // Will this launch carry t past a blast line before they can steer (while their stun lasts)? The slow-mo's cue. A launch that only
 // carries them out if they then fail to steer back gets the shorter slow-mo at the KO itself (fsKoSlow). strict (THE LAST KO): the stun
 // itself and not a frame more -- the frame it ends their air speed is cut and they steer back in, so the 4 frames' grace after it called
@@ -74314,6 +74314,7 @@ function step(){
   netPlayStep();   // ONLINE: each guest's input for this step (netPlayStep), before the gate: a step not run is one no one plays
   kocTick();   // THE LAST KO: a new match starts it clean; the frames since the match was decided
   if(fsTimeGate()) return;   // CATCH, THEN CINEMATIC: the Final Smash intro stops the match; its slow-mo KO skips steps (fsTimeGate)
+  if(TTW && ttTimeGate()) return;   // FAST FORWARD (Clock's contest): its slow hour skips every other step (ttTimeGate); its midnight clock counts every step
   hazardT++;
   KEY_LATCH_NOW = KEY_LATCH; KEY_LATCH = {};   // (PRESS LATCH: the taps since the last step that ran)
   STEP_F = null;   // (HIT FREEZE: set while each fighter's own frame runs, below)
@@ -74445,6 +74446,7 @@ function step(){
     if(CBW) cbInput(f, inp);   // THE COLLECTION: Down at a bush, the pedestal or with a full jar does that
     if(SRMW) srmInput(f, inp);   // EVIL SERUM: no keys while the robot arm holds you; Space while evil throws goo
     if(FDR && FDR.ck) stkrInput(f, inp);   // CHEATERS PROSPER: Down at a shortcut's spot starts a cheat (never a drop there); nothing is pressed while one runs or while its drone stuns
+    if(TTW) inp = ttInput(f, inp);   // FAST FORWARD (Clock's contest): Down in a door, at the seed, on the bridge or at the capsule; Space uses the rewind; a statue presses nothing
     if(FDR) inp = fdrFilter(f, inp);   // THE WIND RACE: the shield key braces (stop dead, take less knockback) and no shield goes up
     if(SETTINGS.mode==='ctf') inp = ctfFilterInput(f, inp);   // the hiding phase's two keys; a prisoner stands still
     if(f._tp) inp = teleportHold(f, inp);   // Bow's Teleport: while she fades, the arrows are her aim and nothing else (see TP)
@@ -103826,6 +103828,7 @@ function bottleSeenK(f){ if(!(f._btHide > hazardT)) return 1; return f.you ? BT.
 function kitUnseen(f){ return !f.you && ((f._btHide > hazardT) || (typeof HS !== 'undefined' && HS && hsHiddenFromMe(f))); }
 // What a CPU sees (aiThink's targets): a fighter hidden in a prop (Capture the Flag) or Bottle hiding, only close; in Hide and Seek, only what is lit (hsCpuSees).
 function aiCanSee(f, t){
+  if(TTW && ttOn() && !ttSees(f, t)) return false;   // FAST FORWARD (Clock's contest): a foe in another era, or a statue, is not there to fight
   if(!t._hid && !(t._btHide > hazardT) && !HS) return true;
   const d = Math.hypot(t.x - f.x, t.y - f.y);
   if(t._hid && d > 130) return false;
@@ -106045,6 +106048,8 @@ function eliminate(f){
     srmRespawn(f);   // EVIL SERUM: back in at a free spot in the lab, away from the evil
   } else if(HS){
     hsRespawn(f);   // BOTTLE'S HIDE AND SEEK: back in at the front door
+  } else if(TTW && ttOn()){
+    ttRespawn(f);   // FAST FORWARD (Clock's contest): back in the era it was knocked out of
   } else if(JAR){
     const q = jarSpot(f, Math.random(), 2); f.x = q.x; f.y = q.y - 160;   // IN THE JAR (Jammy's 3 vs 1): back in inside the jar, over its floor
   } else if(BEACH){
@@ -106464,7 +106469,7 @@ function eventsLaunched(now){ const first = eventLaunchWeek(); return first != n
 //   twist  null, or the twist the match needs (build step 8, two a job): 'backdrop', 'lowgrav', 'sponge', 'pull', 'rain', 'gusts', 'windback',
 //          'fast', 'dig', 'bar'. A match whose twist is not built yet is not played without it.          stocks  2 for every CPU in every event match
 //   youStocks  the player's own stocks where they differ (the 3 vs 1: 3); otherwise the player has `stocks` too
-//   backdrop  a place drawn behind the stage as well as the twist (EVENT_BACKDROPS: 'twopark'); a match may have both (Clock's Fast Forward)
+//   backdrop  a place drawn behind the stage as well as the twist (EVENT_BACKDROPS: 'twopark'); a match may have both
 // THE TEAM SLOT IS A 3 VS 1 for every event fighter (the owner, 2026-10-28: "event fighters should actually have 3v1, which would give you bonus
 // tokens to win it"; asked: "You alone vs 3", "Replace the team match", bonus "Both"): match 2 is YOU ALONE against the event fighter and two
 // of their team, kind '3v1', sides [['you'], [name, a, b]], 3 stocks for you and 2 for each of them, on the Teams arena (a side of more than
@@ -106540,10 +106545,8 @@ const EVENT_MATCHES = {
     // THE 3 VS 1 (O29): you alone against Clock, Loser and Pin -- the design's team match (Clock + Loser + Pin vs you + Teardrop + Bracelety) with
     // your side gone. The name still fits: the three of them are The Losers!. The Teams arena in Stone Pillars' sky, as The Alliance.
     { n:2, name:'The Losers!', kind:'3v1', stage:'pillars', sides:[['you'], ['Clock', 'Loser', 'Pin']], items:'on', smashBalls:true, twist:null, stocks:2, youStocks:3 },
-    // FAST FORWARD: the A-twos-ment Park drawn behind Goiky Field (the design names the backdrop, not the stage; Goiky is the open, flat field), and
-    // everyone fast all match. A free-for-all of four.
-    // FAST FORWARD (2026-11-13, the owner's CONTEST for its third match; REBUILT to the owner's own concept: a zone for points, a timer each, clocks outside the zone for time, a hit costs time, fewer and fewer clocks; see CK). Items are off.
-    { n:3, name:'Fast Forward', kind:'challenge', stage:'goiky', sides:[['you'], ['Clock'], ['Ice Cube'], ['Cake']], items:'off', smashBalls:false, twist:'contest', contest:'clock', backdrop:'twopark', stocks:3 },   // CLOCK'S CONTEST (CONTEST_RULES.clock)
+    // FAST FORWARD (REWORKED 2026-11-17, the owner's 'rework time!!'): the time-travel heist with the midnight countdown (see TTW). Items are off; stocks decide nothing (99): midnight ends it.
+    { n:3, name:'Fast Forward', kind:'challenge', stage:'goiky', sides:[['you'], ['Clock'], ['Ice Cube'], ['Cake']], items:'off', smashBalls:false, twist:'contest', contest:'clock', stocks:99 },   // CLOCK'S CONTEST (CONTEST_RULES.clock)
   ],
   // CLOUDY (build step 13). The design's three ("The 30 event matches"). The teams are the design's: the BFDI wiki refuses requests from here
   // (HTTP 402), as it did for the design and its reviewer, so they could not be checked against it (question 15's check, left to the owner).
@@ -106840,7 +106843,7 @@ Object.assign(EVENT_TWIST_WORDS, {
 });
 Object.assign(EVENT_TWIST_WORDS, {
   'contest:dig': { icon:'⛏️', short:"Spongy's contest: the dig games", words:"Spongy's contest: eight fighters, four stocks. Dig up your buried moves, eat (hold down at a bush) and drink, grab what the sponsors drop. Last one standing wins." },
-  'contest:clock': { icon:'⏩', short:"Clock's contest: fast forward", words:"Clock's contest: stand in the zone for points. Your timer counts down all the time: grab the clocks outside the zone for time, and a hit costs you time. The clocks come less and less. Run out of time and you are out.", goal:'Stand in the zone for points. Grab clocks for time!' },
+  'contest:clock': { icon:'⚙', short:"Clock's contest: a time-travel heist", words:"Clock's contest: a time-travel heist. The map is there three times, in the past, today and the future, joined by clock doors (Down in a door). Golden gears are hidden in every time: grab them. A KO makes you drop half of yours. What you do in the past changes the future: plant the seed, break the bridge, bury gears in the time capsule. Each hour the clock brings its own rule. The rewind pickup (Space) takes you back 3 seconds. Most gears at midnight wins.", goal:'Most gears at midnight wins!' },
   'contest:keepup': { icon:'🏐', short:"Beach Ball's contest: beach volleyball", words:"Beach Ball's contest: beach volleyball, 2 against 2, with a net across the middle. Hit the giant beach ball over the net and keep it off your sand: when it lands on a side, the other team scores. First to 7 points, or the most at 2:30. You can hit the other team across the net. Knock-outs only send you back to your own half.", goal:'Keep the ball off your sand' },
   'contest:collection': { icon:'🧩', short:"Cloudy's contest: the collection", words:"Cloudy's contest: on drifting sky islands, collect 15 items in 5 sets of 3 and hold them all for 3 seconds. Each item has a power and a full set gives a bonus. Every 3rd hit you take, the hitter steals one, and a KO drops them all. Watch the storm, the crow, the rainbow and the wind." },
 });
@@ -107856,6 +107859,7 @@ function drawParkBackdrop(){
 // The sky layer the event fighters add (draw(), screen space, after the stage's own sky): a match's backdrop and Wind Back's clock, and the
 // face of a Clock playing his Final Smash.
 function drawEventSky(){
+  if(TTW) ttSky();   // FAST FORWARD (Clock's contest): the sky of the era on screen
   if(BHC) bhcSkyScreen();   // BACK TO THE TOP: the apocalypse sky covers the whole screen at every camera and zoom, so the stage's own sky never shows
   if(MATCH_TWIST){
     const b = twistBackdrop(), D = b && EVENT_BACKDROPS[b];
@@ -109689,166 +109693,633 @@ function contestWalk(f, inp, x, near){
   if(dir < 0) inp.left = true; else inp.right = true; return true;
 }
 
-// CLOCK: FAST FORWARD (REBUILT 2026-11-13 to the owner's own words: "there was a zone you had to stand in for points. your timer went down over time, and there were
-// clocks on the outside of the zone which gave you time back. getting hit reduced your time, and the clocks gradually spawned less and less."). Nothing else is added.
-// THE ZONE: a fixed strip of floor in the middle (CK.w wide, CK.h tall); standing in it earns POINTS (1 per CK.ptsEvery frames). THE TIMER: every fighter has one
-// (CK.start), counting down all the time. CLOCKS: a clock grows in on the floor or a platform OUTSIDE the zone (never from the sky, never timing out; at most CK.max at once);
-// touching one gives CK.gain of time back (up to CK.cap). A HIT takes CK.hit off the victim's timer; hits inside CK.combo frames of the one that counted are the same
-// attack (a combo is one hit). THE CLOCKS SPAWN LESS AND LESS: the gap before the next is CK.gap0 + CK.gapStep*n frames after n have grown in.
-// THE OWNER'S FULL SPEC (11-07 notes + 11-13): zone control scores while you stand in it; pickups spawn outside it, so you leave to fetch them and go back in; they come
-// slower and slower; the match is fast (the 'fast' twist: twists:['fast']); MOST POINTS WINS. The one thing not said is what happens at zero, so the default (change it
-// here): CK.atZero 'stay' = at 0:00 you are OUT OF THE CONTEST (no more points, no clocks; your points stay) but stay on the stage as a fighter, so a fighter out of time can
-// still be the winner on points; 'out' takes the fighter off the stage at zero (then only fighters still on stage can win). The match ends when every fighter's timer is out
-// or at CK.time (3:00); the winner has the most points (a tie: the longer timer); a stock-out fighter (3 KOs) is off the stage and cannot win. A KO costs a stock only.
-// CPUs: with a foe in their face they fight; with their timer under CK.hungry, or a clock within CK.near, they fetch the nearest reachable clock (jumping to platforms);
-// otherwise they walk to the zone and stand in it, fighting what comes and not chasing a foe far out of it.
-const CK = { twists:['fast'], wide:1.25, tierY:0.62, start:3600, cap:5400, gain:600, hit:120, combo:36, ptsEvery:6, w:300, h:140, first:240, gap0:150, gapStep:45, retry:60, max:3, r:17, lift:26, climb:170, reach:760,
-             hungry:2400, near:420, low:900, leash:200, time:10800, atZero:'stay', foeNear:70, tripMax:420 };
-// 2026-11-15 (owner: CPUs do not grab clocks; a stock-out keeps its points): a CPU now GOES FOR a clock as a player would: with its timer at or under CK.hungry (40 s), or a clock within CK.near, it picks the clock, leaves the
-// zone, grabs it and walks back (it keeps the trip while a foe is near: it only breaks off for a foe within CK.foeNear, and gives a trip up after CK.tripMax frames). A fighter who loses every stock is off the stage but KEEPS its points
-// and can still WIN on them (ckEnd): the engine's last-one-standing end is held while the contest runs (contestHold).
-function ckSec(fr){ const t = Math.max(0, fr)/60; return Math.floor(t/60) + ':' + (t % 60 < 10 ? '0' : '') + (t % 60).toFixed(1); }
-function ckIn(f){ const z = CONTEST.zone; return !f.dead && Math.abs(f.x - z.x) <= CK.w/2 && f.y + f.r >= groundY() - CK.h && f.y - f.r <= groundY() + 20; }
-// THE STAGE (the owner, 2026-11-13: "should be on a slightly bigger stage, with clocks spawning on platforms"; and "NOT ONLY ON PLATFORMS": clocks spawn on the floor AND on the platforms, always outside the zone): Goiky Field made CK.wide (1.25) times wider, for this one
-// event match only (ckWanted: setupWorld takes it instead of the stage's own world; the real Goiky Field is not touched). The same floor line, the same edges (buildFloorSegs, the
-// edges at 10% and 90%), the same single platform in the middle, and four more beside it, two a side, all at the middle platform's own height (CK.tierY, so every fighter
-// reaches every one from the floor with a jump, as the middle one is reached today, and from each other along the row). The view is the stage and its air, all on one screen (as
-// Goiky's is).
-function ckWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.contest === 'clock'; }
+// CLOCK: FAST FORWARD -- THE TIME-TRAVEL HEIST AND THE MIDNIGHT COUNTDOWN (REWORKED 2026-11-17, the owner: "rework time!!"; his picks from the offered four: the
+// time-travel heist and the midnight countdown; gears are the score, a KO drops gears, all four hour rules, and the rewind pickup kept). It replaces the zone contest of 2026-11-13.
+// THE ERAS: the map is there three times over, side by side in one world and out of sight of each other: the PAST, TODAY and the FUTURE (TTW.eras, each a wider Goiky Field
+// with its own floor and platforms; the camera shows the era you are in, the whole of it, as Goiky's single screen). CLOCK DOORS join them: two in each era, one to each other
+// era; Down in a door takes you through, out of the door in the other era that leads back. THE PAST CHANGES THE FUTURE (each link useful to know):
+//   THE SEED: Down on the mound in the past plants it. Today a sapling stands there (a low step) and in the future a TREE whose branches climb to a NEST high over the left
+//     side, where gears keep turning up (TT.nestEvery) and nothing else reaches.
+//   THE BRIDGE: the past's plank bridge over the river. Hold Down on it (TT.brk frames) to break it: the river is open in the past, and today and in the future the road over
+//     the same spot is a PIT (a KO trap for gear carriers). The villagers mend it after TT.bridgeBack frames.
+//   THE TIME CAPSULE: Down at the chest in the past buries every gear you hold (safe from a KO); Down at the capsule in the future digs them up with interest (TT.capRate more,
+//     rounded down). Buried gears do not count until they are dug up.
+// GOLDEN GEARS are the points, hidden in every era (many tucked behind a bush, a crate or a vent: the gear peeks out and glints); one turns up every TT.gearEvery frames in the
+// era with the fewest (at most TT.cap loose in an era). A KO makes the victim DROP HALF their gears (rounded up) where they last stood, for anyone. Stocks decide nothing (99).
+// THE MIDNIGHT CLOCK: a giant clock counts from 8 to MIDNIGHT over TT.time steps (3 minutes, counted in real steps, so a slow hour is no longer than another); MOST GEARS AT MIDNIGHT
+// WINS (a tie: more KOs scored, then fewer falls). EACH HOUR (45 s) ONE TIME RULE, every rule once, in a random order: FAST (everyone hasted) or SLOW (the whole match in slow
+// motion: every other step skipped, as the Final Smash slow-mo does), ERA STORM (a door throws you into a random other era, and every TT.stormEvery the doors pull in everyone
+// within TT.stormR and fling them to random eras), REWIND STORM (every TT.rwEvery the whole map rewinds TT.rwBack frames: everyone snaps back), FROZEN TIME (after a TT.frzWarn
+// warning one era freezes: anyone in it is a STATUE until the hour ends -- unhittable, gears safe; its loose gears cannot be taken). The rule is shown as a picture by the
+// clock, never named. THE REWIND PICKUP: one on the map at a time; hold it, press Space (the flag key) to snap back to where you were TT.rewBack frames (3 s) ago, out of a combo
+// or a fall. CPUs: they hunt gears across eras and use the doors, learn the links at a level-scaled rate (TT.learn0, TT.learn), fight what is in their face and chase carriers,
+// flee an era about to freeze, and use the rewind when falling. Offline only (startEventMatch refuses in a room).
+let TTW = null;   // null in every other match; else { EW, gap, eras:[...], river, tree, sapling, bridge, spots } -- see ckBuildWorld
+const TT = { wide:1.25, side:160, gap:800, time:10800, hours:4, tier1:130, tier2:240, gr:11, gearEvery:150, cap:4, first:30, nestEvery:420, nestCap:2,
+  doorCd:45, doorInv:20, stormEvery:420, stormWarn:75, stormR:200, rwEvery:600, rwBack:120, rwWarn:60, frzWarn:240, haste:30, slowK:0.5,
+  rewFirst:900, rewEvery:1200, rewBack:180, rewCap:200, brk:40, bridgeBack:2400, riverW:120, capRate:0.5, reach:175,
+  learn0:[0, 0.25, 0.5, 0.8], learn:[0.06, 0.12, 0.2, 0.32], learnEvery:600, fightR:[90, 110, 130, 150], chase:[0, 350, 500, 650], carrier:3, buryAt:4, engage:[300, 240, 200, 160], chaseMax:240, cool:180, close:60,
+  stuck:240, ban:600, replan:45 };
+const TT_COL = ['#f3a64a', '#62c3ff', '#b07cff'], TT_ICON = ['🦖', '🏡', '🚀'];
+const TT_RULE_ICON = { fast:'⏩', slow:'🐌', storm:'🌀', rewind:'⏪', frozen:'❄️' };
+function ttOn(){ return !!TTW && !!CONTEST && CONTEST.rule === 'clock'; }
+function ckWanted(){ const w = !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.contest === 'clock'; if(!w) TTW = null; return w; }
+function ttEra(x){ return clamp(Math.floor(x/(TTW.EW + TTW.gap)), 0, 2); }
+function ttView(x){ const e = TTW.eras[ttEra(x)]; return { x0:e.x0 - TT.side, x1:e.x1 + TT.side }; }
+function ttX(k, a){ const e = TTW.eras[k]; return Math.round(e.x0 + a*TTW.EW); }
+// THE WORLD: three era boxes TT.wide times the window wide, TT.gap of empty air between them (more than twice the side KO room, so an era's KO lines never reach the next one).
 function ckBuildWorld(){
-  WW = Math.round(W*CK.wide); WH = H; camX = 0; camY = 0; bases = []; floors = []; worldZones = []; spawnZones = [];
-  const y = Math.round(H*CK.tierY), mk = (a, b) => ({ x:Math.round(WW*a), y, w:Math.round(WW*(b - a)), h:14, solid:false, ckp:true });
-  worldPlats = [mk(0.12, 0.23), mk(0.26, 0.34), mk(0.36, 0.64), mk(0.66, 0.74), mk(0.77, 0.88)];
-  buildFloorSegs();
-  SIDE_ROOM = FLOOR_SEGS ? OFFSTAGE_ROOM : 0;
-  CAM_ZOOM = W/(WW + 2*SIDE_ROOM);   // (the whole stage and its air fit the screen: no scrolling)
+  const EW = Math.round(W*TT.wide), G = TT.gap;
+  WW = 3*EW + 3*G; WH = H; camX = 0; camY = 0; bases = []; floors = []; worldZones = []; spawnZones = [];
+  const gy = groundY(), eras = [];
+  worldPlats = [];
+  TTW = { EW, gap:G, eras };
+  for(let k = 0; k < 3; k++){
+    const x0 = Math.round(G/2 + k*(EW + G)), X = a => Math.round(x0 + a*EW);
+    const mk = (a, b, h) => { const p = { x:X(a), y:gy - h, w:X(b) - X(a), h:14, solid:false, ttp:k }; worldPlats.push(p); return p; };
+    const plats = [mk(0.24, 0.36, TT.tier1), mk(0.42, 0.56, TT.tier2), mk(0.58, 0.70, TT.tier1), mk(0.77, 0.88, TT.tier2)];
+    const rc = X(0.63);
+    eras.push({ k, x0, x1:x0 + EW, fx0:X(0.1), fx1:X(0.9), plats, r0:rc - TT.riverW/2, r1:rc + TT.riverW/2, seedX:X(0.15), capX:X(0.85),
+      doors:[{ x:X(0.30), to:k === 0 ? 1 : 0, era:k }, { x:X(0.74), to:k === 2 ? 1 : 2, era:k }] });
+  }
+  const P = eras[0], F = eras[2], T1 = eras[1], XF = a => Math.round(F.x0 + a*EW), XT = a => Math.round(T1.x0 + a*EW);
+  // (dg: drawn by this contest itself, not as a stage ledge -- the flag Spongy's dig uses for the same reason; nothing else reads it)
+  TTW.bridge = { x:P.r0, y:gy, w:P.r1 - P.r0, h:22, solid:true, dg:true, ttBridge:true };
+  TTW.tree = [[0.10, 0.19, 130], [0.15, 0.25, 245], [0.09, 0.18, 360], [0.13, 0.24, 470]].map(q => ({ x:XF(q[0]), y:gy - q[2], w:XF(q[1]) - XF(q[0]), h:14, solid:false, dg:true, ttTree:true }));
+  TTW.nest = TTW.tree[3];
+  TTW.sapling = { x:XT(0.12), y:gy - 70, w:XT(0.18) - XT(0.12), h:14, solid:false, dg:true, ttSap:true };
+  worldPlats.push(TTW.bridge);
+  // THE GEAR SPOTS: on the floor (every other one behind a prop) and on the platforms; the nest's two only once the tree stands
+  for(const E of eras){
+    E.spots = [];
+    [0.21, 0.40, 0.47, 0.53, 0.80, 0.89].forEach((a, i) => E.spots.push({ x:Math.round(E.x0 + a*EW), y:gy, prop:i % 2 === 0, era:E.k }));
+    for(const p of E.plats){ const n = p.w > 160 ? 2 : 1; for(let j = 0; j < n; j++) E.spots.push({ x:Math.round(p.x + p.w*(n === 1 ? 0.5 : 0.25 + 0.5*j)), y:p.y, prop:false, era:E.k }); }
+  }
+  TTW.nestSpots = [{ x:Math.round(TTW.nest.x + TTW.nest.w*0.3), y:TTW.nest.y, nest:true, era:2 }, { x:Math.round(TTW.nest.x + TTW.nest.w*0.75), y:TTW.nest.y, nest:true, era:2 }];
+  TTW.bridgeUp = true;
+  ttFloor();
+  SIDE_ROOM = 0;
+  CAM_ZOOM = W/(EW + 2*TT.side + 2);   // (one era and its air fill the screen: the view does not scroll inside an era)
 }
-// A step is safe when there is floor where it lands (a CPU on a platform walks off it toward the zone; the scrolling-arena shortcut in aiSafeStep would let it walk off the floor).
-function ckStepOk(f, dir){ const nx = f.x + dir*(f.r + 12); return nx > 100 && nx < WW - 100 && groundAt(nx); }
-function ckLive(){ return fighters.filter(f => !f.dead && !f._ckOut); }
-function ckBest(list){ return list.slice().sort((a, b) => (b._ckP - a._ckP) || (b._ckT - a._ckT))[0]; }
-function ckSpawn(S){
-  const L = S.spots.filter(p => fighters.every(f => f.dead || Math.hypot(f.x - p.x, f.y - p.y) > 100) && S.clocks.every(c => Math.hypot(c.x - p.x, c.y - p.y) > 160));
-  if(!L.length) return null;
-  const gy = groundY(), fl = L.filter(p => p.y === gy), pl = L.filter(p => p.y !== gy);   // (the floor and the platforms are equal chances: the floor has the more spots, but fighters stand on it)
-  const G = (fl.length && pl.length) ? (Math.random() < 0.5 ? fl : pl) : L;
-  const p = G[Math.floor(Math.random()*G.length)], c = { x:p.x, y:p.y, t0:hazardT };
-  S.clocks.push(c); for(let i = 0; i < 5; i++) puff(c.x, c.y - CK.lift, '#ffd23f', 3);
-  return c;
+// The floor of the three eras: the past always has its river (the bridge covers it while it stands); today and the future are whole, but for the pit while the bridge is down.
+function ttFloor(){
+  FLOOR_SEGS = [];
+  for(const E of TTW.eras){
+    if(E.k === 0 || !TTW.bridgeUp){ FLOOR_SEGS.push({ x0:E.fx0, x1:E.r0 }, { x0:E.r1, x1:E.fx1 }); }
+    else FLOOR_SEGS.push({ x0:E.fx0, x1:E.fx1 });
+  }
 }
-function ckOut(f){
-  f._ckOut = true; f._ckT = 0;
-  for(let k = 0; k < 10; k++) puff(f.x, f.y - f.r, '#9aa0a6', 4);
-  if(CK.atZero !== 'out') return;
-  f.stocks = 0; f.dead = true; f.alive = false; f._outT = hazardT;
-  if(f.placement == null) f.placement = fighters.filter(o => !o.dead).length + 1;
-  SFX.ko && SFX.ko();
+function ttPlats(k){ return worldPlats.filter(p => !p.wall && p.x + p.w > TTW.eras[k].x0 - 10 && p.x < TTW.eras[k].x1 + 10); }
+// Something under x at or below these feet (the floor, a platform, the bridge)?
+function ttSupport(x, feet){
+  const gy = groundY();
+  if(groundAt(x) && feet <= gy + 6) return true;
+  for(const p of worldPlats){ if(x >= p.x - 2 && x <= p.x + p.w + 2 && p.y >= feet - 6 && p.y < WH) return true; }
+  return false;
 }
-function ckDrawClock(c, x, y, k, t){
-  c.save(); c.translate(x, y); c.scale(k, k);
-  c.fillStyle = '#fff'; c.strokeStyle = '#ffb300'; c.lineWidth = 4; c.beginPath(); c.arc(0, 0, CK.r, 0, 7); c.fill(); c.stroke();
-  c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.5; for(let i = 0; i < 12; i += 3){ const a = i*Math.PI/6; c.beginPath(); c.moveTo(Math.sin(a)*12, -Math.cos(a)*12); c.lineTo(Math.sin(a)*15, -Math.cos(a)*15); c.stroke(); }
-  c.lineWidth = 2.2; const a1 = t*0.05, a2 = t*0.004;
-  c.beginPath(); c.moveTo(0, 0); c.lineTo(Math.sin(a1)*13, -Math.cos(a1)*13); c.stroke();
-  c.beginPath(); c.moveTo(0, 0); c.lineTo(Math.sin(a2)*8, -Math.cos(a2)*8); c.stroke();
+// Ground at the feet's own height there (a gap ahead is where this is false: the river, a pit, a ledge's end)?
+function ttLevel(x, feet){
+  if(groundAt(x) && Math.abs(feet - groundY()) < 8) return true;
+  for(const p of worldPlats){ if(x >= p.x - 2 && x <= p.x + p.w + 2 && Math.abs(p.y - feet) < 8) return true; }
+  return false;
+}
+function ttLoose(k, nest){ return CONTEST.gears.filter(g => g.era === k && !!g.nest === !!nest).length; }
+function ttFrozenEra(){ const z = CONTEST && CONTEST.frz; return z && z.on ? z.era : -1; }
+function ttSpotFree(s){ return CONTEST.gears.every(g => Math.hypot(g.x - s.x, g.y - s.y) > 40) && fighters.every(f => f.dead || Math.hypot(f.x - s.x, f.y + f.r - s.y) > 90); }
+function ttAddGear(s, fresh){
+  const g = { x:s.x, y:s.y, vx:0, vy:0, land:true, era:s.era, nest:!!s.nest, prop:!!s.prop, t0:hazardT, fresh:!!fresh, plat:null, npBy:-1, npT:0, rot:Math.random()*6 };
+  CONTEST.gears.push(g); for(let i = 0; i < 4; i++) puff(g.x, g.y - TT.gr, '#ffd23f', 3);
+  return g;
+}
+function ttSpawnGear(){
+  const S = CONTEST, fz = ttFrozenEra(), ks = [0, 1, 2].filter(k => k !== fz && ttLoose(k, false) < TT.cap);
+  if(!ks.length) return false;
+  const lo = Math.min.apply(null, ks.map(k => ttLoose(k, false))), pick = ks.filter(k => ttLoose(k, false) === lo), k = pick[Math.floor(Math.random()*pick.length)];
+  const L = TTW.eras[k].spots.filter(ttSpotFree); if(!L.length) return false;
+  ttAddGear(L[Math.floor(Math.random()*L.length)], true); S.spawned++;
+  return true;
+}
+// A KO's spill: half the gears (rounded up) pop out where the victim last stood on something, for anyone (the victim not for TT a second).
+function ttSpill(f){
+  const S = CONTEST, n = Math.ceil((f._ttG || 0)/2); if(!(n > 0)) return;
+  f._ttG -= n; S.dropped += n;
+  const q = f._ttSafe || { x:TTW.eras[ttEra(f.x)].x0 + TTW.EW/2, y:groundY() }, k = ttEra(q.x);
+  for(let i = 0; i < n; i++) S.gears.push({ x:q.x, y:q.y - 20, vx:(i - (n - 1)/2)*1.8 + (Math.random() - 0.5), vy:-5 - Math.random()*2.5, land:false, era:k, nest:false, prop:false, t0:hazardT - 20, fresh:false, plat:null, npBy:f.idx, npT:hazardT + 60, rot:Math.random()*6 });
+}
+function ttGearPhys(g){
+  const E = TTW.eras[g.era], gy = groundY();
+  if(g.land){
+    if(g.plat && worldPlats.indexOf(g.plat) < 0) g.land = false;   // (its plank is gone)
+    else if(!g.plat && !groundAt(g.x)) g.land = false;   // (the road under it fell away)
+    if(g.land) return;
+  }
+  const py = g.y;
+  g.vy = Math.min(g.vy + 0.45, 12); g.vx *= 0.99; g.x += g.vx; g.y += g.vy;
+  if(g.x < E.fx0 - 40){ g.x = E.fx0 - 40; g.vx = Math.abs(g.vx)*0.5; } else if(g.x > E.fx1 + 40){ g.x = E.fx1 + 40; g.vx = -Math.abs(g.vx)*0.5; }
+  if(g.vy > 0){
+    if(groundAt(g.x) && py <= gy && g.y >= gy){ g.y = gy; g.land = true; g.plat = null; g.vx = 0; g.vy = 0; return; }
+    for(const p of worldPlats){ if(g.x >= p.x && g.x <= p.x + p.w && py <= p.y && g.y >= p.y){ g.y = p.y; g.land = true; g.plat = p; g.vx = 0; g.vy = 0; return; } }
+  }
+  if(g.y > WH + 100){   // down the river or a pit: it turns up again on a free spot of its era (no gear is ever lost)
+    const L = E.spots.filter(ttSpotFree), s = L.length ? L[Math.floor(Math.random()*L.length)] : E.spots[0];
+    g.x = s.x; g.y = s.y; g.land = true; g.plat = null; g.vx = 0; g.vy = 0; g.prop = !!s.prop; g.t0 = hazardT;
+  }
+}
+// THE HISTORY: where each fighter was, each step, for the rewinds (TT.rewCap steps).
+function ttRec(f){
+  let H = f._ttH; if(!H) H = f._ttH = { n:0, cap:TT.rewCap, x:new Float32Array(TT.rewCap), y:new Float32Array(TT.rewCap), vx:new Float32Array(TT.rewCap), vy:new Float32Array(TT.rewCap) };
+  const j = H.n % H.cap; H.x[j] = f.x; H.y[j] = f.y; H.vx[j] = f.vx; H.vy[j] = f.vy; H.n++;
+}
+function ttSnap(f, back){
+  const H = f._ttH; if(!H || H.n < 2) return false;
+  const k = Math.min(back, H.n - 1, H.cap - 1), j = (H.n - 1 - k) % H.cap;
+  for(let i = 0; i < 6; i++) puff(f.x, f.y, '#c9a0ff', 3);
+  try{ mvCancel(f); }catch(e){}
+  f.x = H.x[j]; f.y = H.y[j]; f.vx = H.vx[j]; f.vy = H.vy[j]; f.onground = false;
+  H.n = Math.max(1, H.n - k);   // (the frames rewound are undone)
+  for(let i = 0; i < 8; i++) puff(f.x, f.y, '#c9a0ff', 4);
+  return true;
+}
+function ttRewindSelf(f){
+  if(!f._ttRw || f.dead || f._ttStat) return false;
+  if(!ttSnap(f, TT.rewBack)) return false;
+  f._ttRw = false; f.hitstun = 0; f.invuln = Math.max(f.invuln || 0, 20); CONTEST.rwUsed++;
+  if(f.you) tone(900, 0.25, 'triangle', 0.12, 0, 300);
+  return true;
+}
+// Through a door (or flung by the storm) into era k, out of door d there.
+function ttWarp(f, k, d){
+  const gy = groundY();
+  for(let i = 0; i < 8; i++) puff(f.x, f.y, TT_COL[k], 4);
+  try{ mvCancel(f); }catch(e){}
+  f.x = d.x + (Math.random() - 0.5)*10; f.y = gy - f.r - 1; f.vx = 0; f.vy = -3; f.onground = false;
+  f.invuln = Math.max(f.invuln || 0, TT.doorInv); f._ttDoorCd = hazardT + TT.doorCd; f._ttPlan = null;
+  for(let i = 0; i < 10; i++) puff(f.x, f.y - f.r, TT_COL[k], 4);
+  if(f.you) tone(520, 0.18, 'sine', 0.12, 0, 1040);
+}
+function ttArrival(from, k){ const E = TTW.eras[k]; return E.doors.find(d => d.to === from) || E.doors[Math.floor(Math.random()*2)]; }
+function ttOthers(k){ return [0, 1, 2].filter(q => q !== k); }
+function ttDoor(f, d){
+  const S = CONTEST, from = d.era;
+  let to = d.to; if(S.hr === 'storm'){ const o = ttOthers(from); to = o[Math.floor(Math.random()*2)]; }   // ERA STORM: the door goes haywire
+  ttWarp(f, to, S.hr === 'storm' ? TTW.eras[to].doors[Math.floor(Math.random()*2)] : ttArrival(from, to));
+  S.doorUses++; f._ttDoors = (f._ttDoors || 0) + 1;
+}
+// What Down does here (on the ground): a door, the seed, the bridge (held), the capsule.
+function ttActAt(f){
+  const S = CONTEST, T = TTW; if(!f.onground || f._ttStat) return null;
+  const k = ttEra(f.x), E = T.eras[k], gy = groundY(), feet = f.y + f.r;
+  if(Math.abs(feet - gy) > 8) return null;
+  for(const d of E.doors) if(Math.abs(f.x - d.x) < 26) return hazardT >= (f._ttDoorCd || 0) ? { k:'door', d } : null;
+  if(k === 0 && T.bridgeUp && f.x > E.r0 && f.x < E.r1) return { k:'bridge' };
+  if(k === 0 && S.tree == null && Math.abs(f.x - E.seedX) < 34) return { k:'seed' };
+  if(k === 0 && Math.abs(f.x - E.capX) < 34 && (f._ttG || 0) > 0) return { k:'bury' };
+  if(k === 2 && Math.abs(f.x - E.capX) < 34 && (f._ttBur || 0) > 0) return { k:'dig' };
+  return null;
+}
+function ttAct(f, c){
+  const S = CONTEST, T = TTW;
+  if(c.k === 'door'){ ttDoor(f, c.d); return; }
+  if(c.k === 'seed'){
+    S.tree = hazardT; S.seedBy = f.idx; S.links.seed++; S.nextNest = hazardT + 60;
+    worldPlats.push(T.sapling); for(const p of T.tree) worldPlats.push(p);
+    for(let i = 0; i < 10; i++) puff(f.x, f.y + f.r, '#7bc043', 4);
+    if(f.you) tone(660, 0.3, 'triangle', 0.12, 0, 990);
+    return;
+  }
+  if(c.k === 'bridge'){
+    f._ttBrk = (f._ttBrkT != null && f._ttBrkT >= hazardT - 3 && f._ttBrkT < hazardT ? (f._ttBrk || 0) : (f._ttBrkT === hazardT ? (f._ttBrk || 0) - 1 : 0)) + 1; f._ttBrkT = hazardT;   // (held: a gap of up to 3 frames keeps the count)
+    if(hazardT % 8 === 0) puff(f.x, f.y + f.r, '#a0703a', 3);
+    if(f._ttBrk >= TT.brk){
+      const i = worldPlats.indexOf(T.bridge); if(i >= 0) worldPlats.splice(i, 1);
+      T.bridgeUp = false; S.bridgeBack = hazardT + TT.bridgeBack; S.links.bridge++; ttFloor(); f._ttBrk = 0;
+      for(let q = 0; q < 16; q++) puff(T.bridge.x + Math.random()*T.bridge.w, T.bridge.y, '#a0703a', 5);
+      SFX.ko && SFX.ko();
+    }
+    return;
+  }
+  if(c.k === 'bury'){ const n = f._ttG || 0; f._ttBur = (f._ttBur || 0) + n; f._ttG = 0; S.links.bury += n; for(let i = 0; i < 8; i++) puff(f.x, f.y + f.r, '#c8901e', 4); if(f.you) tone(330, 0.2, 'square', 0.08, 0, 220); return; }
+  if(c.k === 'dig'){ const b = f._ttBur || 0, add = Math.floor(b*TT.capRate); f._ttG = (f._ttG || 0) + b + add; f._ttBur = 0; S.links.dig += b; S.links.interest += add; for(let i = 0; i < 12; i++) puff(f.x, f.y, '#ffd23f', 4); if(f.you) tone(880, 0.3, 'triangle', 0.14, 0, 1320); return; }
+}
+// The human's keys (from the step's input, after the pairing): Down here acts (and is swallowed: no crouch, no fast fall), Space uses the rewind; a statue presses nothing.
+function ttInput(f, inp){
+  if(!ttOn() || f.dead) return inp;
+  if(f._ttStat){ for(const k of ['left', 'right', 'jump', 'attack', 'special', 'smash', 'shield', 'down', 'up', 'grab', 'fin', 'flag']) inp[k] = false; return inp; }
+  if(!isHumanCtrl(f)) return inp;
+  const dn = !!inp.down && !inp.attack && !inp.special && !inp.smash && !inp.jump;
+  const c = (dn && !(f.hitstun > 0)) ? ttActAt(f) : null;
+  if(c){ inp.down = false; if(c.k === 'bridge') ttAct(f, c); else if(!f._ttDnP) ttAct(f, c); }
+  f._ttDnP = dn;
+  const fl = !!inp.flag; if(fl && !f._ttFlP) ttRewindSelf(f); f._ttFlP = fl;
+  return inp;
+}
+// The slow hour: every other step is not run (the midnight clock counts every step, run or not). Called first in step(), after the Final Smash's gate.
+function ttTimeGate(){
+  if(!ttOn() || !running) return false;
+  const S = CONTEST; S.clk++;
+  if(S.hr !== 'slow' || S.winner != null) return false;
+  S.slowAcc += TT.slowK;
+  if(S.slowAcc >= 1){ S.slowAcc -= 1; return false; }
+  return true;
+}
+function ttSlowSkips(){ return ttOn() && CONTEST.hr === 'slow' && CONTEST.winner == null && CONTEST.slowAcc + TT.slowK < 1; }
+function ttSlowBlend(){ return (ttOn() && CONTEST.hr === 'slow' && CONTEST.winner == null) ? clamp(CONTEST.slowAcc, 0, 1) : null; }
+function ttSees(f, t){ return !t._ttStat && t.x != null && ttEra(t.x) === ttEra(f.x); }
+function ttRespawn(f){
+  const S = CONTEST; let k = f._ttKoEra != null ? f._ttKoEra : ttEra(f.x);
+  if(ttFrozenEra() === k) k = (k + 1) % 3;
+  const E = TTW.eras[k]; f.x = Math.round(E.x0 + TTW.EW*(0.38 + Math.random()*0.18)); f.y = groundY() - 300;
+}
+function ttStatue(f, on){
+  if(on){ f._ttStat = { x:f.x, y:f.y }; try{ mvCancel(f); }catch(e){} f.vx = 0; f.vy = 0; CONTEST.statues++; for(let i = 0; i < 8; i++) puff(f.x, f.y, '#cfefff', 4); }
+  else { f._ttStat = null; f.frozen = 0; f.invuln = Math.max(f.invuln || 0, 60); for(let i = 0; i < 8; i++) puff(f.x, f.y, '#cfefff', 4); }
+}
+function ttHourEnd(S){
+  if(S.frz){ for(const f of fighters) if(f._ttStat) ttStatue(f, false); S.frz = null; }
+  S.hr = null;
+}
+function ttHourBegin(S, h){
+  ttHourEnd(S);
+  S.hour = h; const r = S.bag[h]; S.hr = r; S.hrT0 = hazardT; S.rules.push(r); S.slowAcc = 0;
+  if(r === 'storm') S.stormAt = hazardT + TT.stormEvery;
+  if(r === 'rewind') S.rwAt = hazardT + TT.rwEvery;
+  if(r === 'frozen') S.frz = { era:Math.floor(Math.random()*3), at:hazardT + TT.frzWarn, on:false };
+  S.fx = { k:'hour', t0:hazardT };
+  tone(392, 0.5, 'sine', 0.12, 0, 392); tone(523, 0.5, 'sine', 0.1, 0.25, 523);
+}
+// The end: midnight. The most gears wins (a tie: more KOs, then fewer falls); a statue is let go first.
+function ttEnd(){
+  const S = CONTEST;
+  ttHourEnd(S);
+  const rank = fighters.slice().sort((a, b) => ((b._ttG || 0) - (a._ttG || 0)) || ((b._kos || 0) - (a._kos || 0)) || ((a._falls || 0) - (b._falls || 0)) || (a.idx - b.idx));
+  const b = rank[0];
+  if(b.dead){ b.dead = false; b.alive = true; b.stocks = 1; b.placement = null; b.hitstun = 0; const E = TTW.eras[1]; b.x = E.x0 + TTW.EW/2; b.y = groundY() - b.r; b.vx = 0; b.vy = 0; b.onground = true; }
+  tone(262, 0.9, 'sine', 0.16, 0, 262); tone(196, 1.2, 'sine', 0.12, 0.5, 196);
+  contestWin(b);
+}
+// A CPU's knowledge of the links, learned over the match at its level's rate (seeing the tree in the future teaches the climb twice as fast).
+function ttLearn(f, lvl){
+  const K = f._ttK; if(!K) return;
+  if((hazardT + f.idx*37) % TT.learnEvery === 0){ for(const k of ['seed', 'tree', 'bridge', 'cap']) if(!K[k] && Math.random() < TT.learn[lvl]) K[k] = true; }
+  if(!K.tree && CONTEST.tree != null && ttEra(f.x) === 2 && (hazardT + f.idx*11) % 300 === 0 && Math.random() < TT.learn[lvl]*2) K.tree = true;
+}
+// A CPU's walk toward (tx, ty): ty is the feet's height there (the floor or a platform's top). True when it stands there.
+function ttGo(f, inp, tx, ty){
+  const gy = groundY(), feet = f.y + f.r, dx = tx - f.x, adx = Math.abs(dx), dir = dx < 0 ? -1 : 1, k = ttEra(f.x);
+  const jumpAir = () => { if(f.jumps > 0 && f.vy > -1) inp.jump = (hazardT % 4) < 2; };
+  const walk = (x) => { if(Math.abs(x - f.x) > 6){ if(x < f.x) inp.left = true; else inp.right = true; } };
+  if(Math.abs(feet - ty) <= 10 && f.onground){
+    if(adx <= 14) return true;
+    walk(tx);
+    if(!ttLevel(f.x + dir*(f.r + 14), feet)){ if(adx < 260) inp.jump = true; }   // a gap on the way (the river, a pit, the space between two ledges): jump it
+    return false;
+  }
+  if(ty < feet - 10){   // up: the target's ledge, or the best step toward it
+    let aim = worldPlats.find(p => Math.abs(p.y - ty) < 4 && tx >= p.x - 2 && tx <= p.x + p.w + 2) || null;
+    if(feet - ty > TT.reach || !aim){
+      let best = null, bs = 1e9;
+      for(const p of ttPlats(k)){
+        if(p.solid || !(p.y >= ty - 4 && p.y <= feet - 30 && p.y >= feet - TT.reach)) continue;
+        const hd = Math.max(0, p.x - tx, tx - (p.x + p.w)), s = hd + 0.5*(p.y - ty) + 0.3*Math.max(0, p.x - f.x, f.x - (p.x + p.w));
+        if(s < bs){ bs = s; best = p; }
+      }
+      if(best) aim = best;
+    }
+    if(!aim){ walk(tx); return false; }
+    const ax = clamp(tx, aim.x + 16, aim.x + aim.w - 16), under = f.x >= aim.x + 6 && f.x <= aim.x + aim.w - 6;
+    if(f.onground){
+      if(under) inp.jump = true;
+      else { walk(ax); if(!ttLevel(f.x + (ax < f.x ? -1 : 1)*(f.r + 10), feet) && Math.abs(ax - f.x) < 220) inp.jump = true; }
+    } else {
+      walk(ax);
+      if(f.vy < 0 && feet > aim.y) inp.jump = true;   // (held while rising: the full jump)
+      else if(feet > aim.y - 4) jumpAir();
+    }
+    return false;
+  }
+  // down
+  if(f.onground){
+    const on = worldPlats.find(p => Math.abs(p.y - feet) < 4 && f.x >= p.x - 2 && f.x <= p.x + p.w + 2);
+    if(on && !on.solid && tx >= on.x - 10 && tx <= on.x + on.w + 10 && adx < 60){ inp.down = true; inp.jump = true; return false; }   // through the ledge
+  }
+  walk(tx);
+  return false;
+}
+// The CPU's plan: what is worth going for now (a gear in this era or another, the rewind pickup, a link it knows), by value over the way there.
+function ttPlan(f, lvl){
+  const S = CONTEST, T = TTW, k = ttEra(f.x), gy = groundY(), K = f._ttK || {}, fz = ttFrozenEra(), left = TT.time - S.clk, mine = f._ttG || 0, B = f._ttBan || (f._ttBan = {});
+  const z = S.frz;
+  if(z && !z.on && z.era === k){ const d = T.eras[k].doors.slice().sort((a, b) => Math.abs(a.x - f.x) - Math.abs(b.x - f.x))[0]; return { k:'leave', era:k, x:d.x, y:gy, d, key:'leave' }; }   // an era about to freeze: out
+  const avoid = q => q === fz || (z && !z.on && q === z.era);
+  const C = [];
+  for(const g of S.gears){ if(avoid(g.era) || (g.nest && !K.tree) || hazardT - g.t0 < 6) continue; const key = 'g' + Math.round(g.x) + ',' + Math.round(g.y); if(B[key] > hazardT) continue; C.push({ k:'gear', era:g.era, x:g.x, y:g.land ? g.y : gy, val:1, ref:g, key }); }
+  if(S.rwItem && !f._ttRw && !avoid(S.rwItem.era)) C.push({ k:'rw', era:S.rwItem.era, x:S.rwItem.x, y:S.rwItem.y, val:1.2, ref:S.rwItem, key:'rw' });
+  if(K.seed && S.tree == null && !avoid(0) && !(B.seed > hazardT)) C.push({ k:'seed', era:0, x:T.eras[0].seedX, y:gy, val:2.5, key:'seed' });
+  const lead = fighters.reduce((m, o) => (o !== f && !o.dead) ? Math.max(m, o._ttG || 0) : m, 0);
+  if(K.bridge && T.bridgeUp && lead >= mine + 2 && !avoid(0) && !(B.bridge > hazardT)) C.push({ k:'bridge', era:0, x:(T.eras[0].r0 + T.eras[0].r1)/2, y:gy, val:1.2, key:'bridge' });
+  if(K.cap && mine >= TT.buryAt && left > 4500 && !avoid(0) && !(B.bury > hazardT)) C.push({ k:'bury', era:0, x:T.eras[0].capX, y:gy, val:0.5*mine, key:'bury' });
+  if((f._ttBur || 0) > 0 && !avoid(2) && !(B.dig > hazardT)) C.push({ k:'dig', era:2, x:T.eras[2].capX, y:gy, val:(left < 5400 ? 3 : 1.2)*f._ttBur*0.8, key:'dig' });   // (buried gears count only once dug up: it goes back for them in good time)
+  let best = null, bs = -1;
+  for(const c of C){
+    let cost;
+    if(c.era === k) cost = Math.abs(c.x - f.x) + 1.5*Math.abs(c.y - (f.y + f.r));
+    else { const d = T.eras[k].doors.find(q => q.to === c.era); cost = Math.abs(d.x - f.x) + 700 + Math.abs(c.y - gy); }
+    const s = c.val*1000/(cost + 350);
+    if(s > bs){ bs = s; best = c; }
+  }
+  if(best) return best;
+  // nothing to go for: keep moving (a free spot of this era, or another era through a door)
+  const sp = T.eras[k].spots[Math.floor(Math.random()*T.eras[k].spots.length)];
+  return { k:'wander', era:k, x:sp.x, y:sp.y, val:0, key:'w' + Math.round(sp.x) };
+}
+function ttBrain(f, inp){
+  if(!ttOn()) return false;
+  const S = CONTEST, T = TTW; if(S.winner != null) return false;
+  if(f._ttStat) return true;   // a statue: nothing
+  const lvl = brainLevel(f);
+  if(f.hitstun > 0 || f.frozen > 0 || f._heldBy != null){ if(f._ttRw && f.hitstun > 18 && f.pct > 70 && Math.random() < 0.02*(lvl + 1)) ttRewindSelf(f); return false; }
+  const k = ttEra(f.x), gy = groundY(), feet = f.y + f.r;
+  if(!f.onground && !ttSupport(f.x, feet)){ if(f._ttRw && feet > gy + 30){ ttRewindSelf(f); return true; } return false; }   // off the stage: the rewind if it holds one, else the brain's own way back
+  ttLearn(f, lvl);
+  // THE FIGHT: a foe in its face, or a carrier with more gears than it worth the chase (a KO spills half); a foe with nothing is not worth a long fight
+  f._ttFoe = null;
+  const plan0 = f._ttPlan;
+  if(!(plan0 && plan0.k === 'leave')){
+    let near = null, nd = 1e9, car = null, cv = 0;
+    for(const o of fighters){
+      if(o === f || o.dead || o._ttStat || ttEra(o.x) !== k) continue;
+      const d = Math.hypot(o.x - f.x, o.y - f.y); if(d < nd){ nd = d; near = o; }
+      const g = o._ttG || 0; if(g >= TT.carrier && g > (f._ttG || 0) && d < TT.chase[lvl] && g > cv){ cv = g; car = o; }
+    }
+    // (a fight or a chase it cannot win soon is broken off: after TT.engage[lvl] frames in a fight with a foe who carries little, or TT.chaseMax frames of a chase,
+    // it goes back to the gears for TT.cool frames -- a foe right in its face, TT.close, is still fought)
+    const cool = hazardT < (f._ttCool || 0), rich = near && (near._ttG || 0) >= TT.carrier;
+    let eng = null;
+    if(near && nd < TT.fightR[lvl] && (!cool || nd < TT.close)) eng = 'fight';
+    else if(car && !cool) eng = 'chase';
+    if(eng){
+      if(f._ttEngT == null || hazardT - (f._ttEngL || 0) > 30) f._ttEngT = hazardT;
+      f._ttEngL = hazardT;
+      const lim = eng === 'chase' ? TT.chaseMax : (rich ? TT.engage[lvl]*2 : TT.engage[lvl]);
+      if(hazardT - f._ttEngT > lim && !(cool && nd < TT.close)){ f._ttCool = hazardT + TT.cool; f._ttEngT = null; }
+      else { if(eng === 'chase') f._ttFoe = car; return false; }
+    }
+  }
+  // THE PLAN
+  let P = f._ttPlan;
+  const gone = P && ((P.k === 'gear' && S.gears.indexOf(P.ref) < 0) || (P.k === 'rw' && S.rwItem !== P.ref) || (P.k === 'seed' && S.tree != null) || (P.k === 'bridge' && !T.bridgeUp) || (P.k === 'leave' && !(S.frz && !S.frz.on)));
+  if(!P || gone || f._ttLastEra !== k || (hazardT - P.t0 > TT.replan && P.k !== 'bridge')){
+    const keep = P && !gone && f._ttLastEra === k ? P : null;
+    P = ttPlan(f, lvl); P.t0 = hazardT;
+    if(keep && keep.key === P.key){ P.best = keep.best; P.bestT = keep.bestT; }
+    f._ttPlan = P;
+  }
+  f._ttLastEra = k;
+  if(P.ref && P.k === 'gear'){ P.x = P.ref.x; P.y = P.ref.land ? P.ref.y : gy; }
+  // stuck: no nearer for a while -> that target is left alone for a time
+  const dist = P.era === k ? Math.abs(P.x - f.x) + Math.abs(P.y - feet) : Math.abs(T.eras[k].doors.find(q => q.to === P.era).x - f.x);
+  if(P.best == null || dist < P.best - 30){ P.best = dist; P.bestT = hazardT; }
+  else if(hazardT - P.bestT > TT.stuck){ (f._ttBan || (f._ttBan = {}))[P.key] = hazardT + TT.ban; f._ttPlan = null; S.stuck++; inp.jump = f.onground; return true; }
+  if(P.era !== k){   // to the door into that era
+    const d = T.eras[k].doors.find(q => q.to === P.era);
+    if(ttGo(f, inp, d.x, gy)){ const c = ttActAt(f); if(c && c.k === 'door') ttAct(f, c); }
+    return true;
+  }
+  if(P.k === 'leave'){ if(ttGo(f, inp, P.d.x, gy)){ const c = ttActAt(f); if(c && c.k === 'door') ttAct(f, c); } return true; }
+  const there = ttGo(f, inp, P.x, P.y);
+  if(there){
+    if(P.k === 'seed' || P.k === 'bury' || P.k === 'dig' || P.k === 'bridge'){ const c = ttActAt(f); if(c && c.k === P.k) ttAct(f, c); else { (f._ttBan || (f._ttBan = {}))[P.key] = hazardT + TT.ban; f._ttPlan = null; } }
+    else if(P.k === 'wander') f._ttPlan = null;
+  }
+  return true;
+}
+// ---- drawing ----
+function ttDrawGear(c, x, y, r, rot, a){
+  c.save(); c.translate(x, y); c.rotate(rot || 0); if(a != null) c.globalAlpha *= a;
+  c.fillStyle = '#ffc93c'; c.strokeStyle = '#8a5a00'; c.lineWidth = Math.max(1.5, r*0.16); c.beginPath();
+  for(let i = 0; i < 32; i++){ const an = i*Math.PI/16, rr = (Math.floor((i + 1)/2) % 2) ? r*1.32 : r; c.lineTo(Math.cos(an)*rr, Math.sin(an)*rr); }
+  c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#fff1a8'; c.beginPath(); c.arc(-r*0.25, -r*0.3, r*0.28, 0, 7); c.fill();
+  c.fillStyle = '#8a5a00'; c.beginPath(); c.arc(0, 0, r*0.34, 0, 7); c.fill();
+  c.restore();
+}
+function ttDrawIcon(c, x, y, s, txt){ c.save(); c.font = Math.round(s) + "px system-ui, 'Segoe UI Emoji', sans-serif"; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(txt, x, y); c.restore(); }
+function ttDrawDoor(c, d, gy, t, wild){
+  const w = 56, h = 104, x = d.x, col = TT_COL[d.to], jig = wild ? Math.sin(t*0.6 + d.x)*3 : 0;
+  c.save(); c.translate(x + jig, gy);
+  c.fillStyle = '#7a4a24'; c.strokeStyle = '#2a1608'; c.lineWidth = 3;
+  c.beginPath(); c.moveTo(-w/2, 0); c.lineTo(-w/2, -h + 18); c.quadraticCurveTo(0, -h - 14, w/2, -h + 18); c.lineTo(w/2, 0); c.closePath(); c.fill(); c.stroke();
+  const g = c.createRadialGradient(0, -h*0.38, 2, 0, -h*0.38, 30); g.addColorStop(0, '#ffffff'); g.addColorStop(1, wild ? '#8a3cff' : col);
+  c.fillStyle = g; c.fillRect(-w/2 + 9, -h + 34, w - 18, h - 38); c.strokeRect(-w/2 + 9, -h + 34, w - 18, h - 38);
+  c.strokeStyle = 'rgba(255,255,255,0.7)'; c.lineWidth = 2; c.beginPath(); for(let i = 0; i < 18; i++){ const a = i*0.6 + t*(wild ? 0.3 : 0.08), rr = 2 + i*0.9; c.lineTo(Math.cos(a)*rr, -h*0.38 + Math.sin(a)*rr); } c.stroke();
+  c.fillStyle = '#fffaf0'; c.strokeStyle = '#2a1608'; c.lineWidth = 2; c.beginPath(); c.arc(0, -h + 14, 12, 0, 7); c.fill(); c.stroke();
+  c.beginPath(); c.moveTo(0, -h + 14); c.lineTo(Math.sin(t*0.05)*9, -h + 14 - Math.cos(t*0.05)*9); c.moveTo(0, -h + 14); c.lineTo(Math.sin(t*0.004)*6, -h + 14 - Math.cos(t*0.004)*6); c.stroke();
+  ttDrawIcon(c, 0, -h*0.38, 22, TT_ICON[d.to]);
+  c.restore();
+}
+function ttDrawProp(c, k, x, y){
+  c.save(); c.translate(x, y);
+  if(k === 0){ c.fillStyle = '#3f8f3a'; c.strokeStyle = '#1e4a1c'; c.lineWidth = 2; for(let i = -2; i <= 2; i++){ c.beginPath(); c.ellipse(i*9, -10 - (2 - Math.abs(i))*4, 9, 16, i*0.35, 0, 7); c.fill(); c.stroke(); } }
+  else if(k === 1){ c.fillStyle = '#c08a4a'; c.strokeStyle = '#5a3a18'; c.lineWidth = 2; c.fillRect(-20, -26, 40, 26); c.strokeRect(-20, -26, 40, 26); c.beginPath(); c.moveTo(-20, -26); c.lineTo(20, 0); c.moveTo(20, -26); c.lineTo(-20, 0); c.stroke(); }
+  else { c.fillStyle = '#5c6478'; c.strokeStyle = '#22d3ff'; c.lineWidth = 2; c.fillRect(-22, -22, 44, 22); c.strokeRect(-22, -22, 44, 22); c.strokeStyle = '#2b3040'; for(let i = 0; i < 4; i++){ c.beginPath(); c.moveTo(-16, -18 + i*5); c.lineTo(16, -18 + i*5); c.stroke(); } }
+  c.restore();
+}
+function ttDrawTree(c, gy, t){
+  const T = TTW, S = CONTEST, n = T.nest, k = growK((t - S.tree)/2), tx = n.x + n.w*0.35;
+  c.save(); c.globalAlpha *= Math.max(0.15, k);
+  c.fillStyle = '#6b4220'; c.strokeStyle = '#2a1608'; c.lineWidth = 3;
+  c.beginPath(); c.moveTo(tx - 16, gy); c.lineTo(tx - 9, n.y + 8); c.lineTo(tx + 9, n.y + 8); c.lineTo(tx + 16, gy); c.closePath(); c.fill(); c.stroke();
+  for(const p of T.tree){
+    c.fillStyle = '#3f8f3a'; c.strokeStyle = '#1e4a1c'; c.lineWidth = 2;
+    for(let i = 0; i < 4; i++){ c.beginPath(); c.arc(p.x + p.w*(0.15 + 0.23*i), p.y - 10 - (i % 2)*6, 16, 0, 7); c.fill(); c.stroke(); }
+    c.fillStyle = '#8a5a2c'; c.strokeStyle = '#2a1608'; c.lineWidth = 2.5; c.fillRect(p.x, p.y, p.w, 12); c.strokeRect(p.x, p.y, p.w, 12);
+  }
+  c.restore();
+}
+function ttTint(c, E, k, gy){
+  if(k === 1) return;
+  c.save();
+  c.fillStyle = k === 0 ? 'rgba(150,100,40,0.20)' : 'rgba(50,60,130,0.42)';
+  for(const s of FLOOR_SEGS) if(s.x1 > E.x0 && s.x0 < E.x1) c.fillRect(s.x0, gy, s.x1 - s.x0, 260);
+  for(const p of E.plats) c.fillRect(p.x, p.y, p.w, p.h);
+  if(k === 2){ c.strokeStyle = 'rgba(34,211,255,' + (0.6 + 0.3*Math.sin(hazardT*0.08)) + ')'; c.lineWidth = 2; for(const s of FLOOR_SEGS) if(s.x1 > E.x0 && s.x0 < E.x1){ c.beginPath(); c.moveTo(s.x0, gy + 1); c.lineTo(s.x1, gy + 1); c.stroke(); } for(const p of E.plats){ c.beginPath(); c.moveTo(p.x, p.y + 1); c.lineTo(p.x + p.w, p.y + 1); c.stroke(); } }
+  c.restore();
+}
+// The sky of the era on screen (screen space, from drawEventSky): amber with a volcano for the past, a blue day with the clock tower today, a violet night with a neon city for the future.
+function ttSky(){
+  if(!ttOn()) return;
+  const k = ttEra(camX + W/2), c = ctx, t = hazardT;
+  const sk = [['#f7c873', '#e8875a'], ['#8fd3ff', '#e8f6ff'], ['#140c36', '#5a2a8a']][k];
+  c.save(); const g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, sk[0]); g.addColorStop(1, sk[1]); c.fillStyle = g; c.fillRect(-20, -20, W + 40, H + 40);
+  const by = H*0.7;
+  if(k === 0){
+    c.fillStyle = '#fff0b0'; c.beginPath(); c.arc(W*0.78, H*0.2, 46, 0, 7); c.fill();
+    c.fillStyle = '#8a4a3a'; c.beginPath(); c.moveTo(W*0.12, by); c.lineTo(W*0.26, H*0.32); c.lineTo(W*0.32, H*0.32); c.lineTo(W*0.48, by); c.closePath(); c.fill();
+    c.fillStyle = 'rgba(90,80,80,0.5)'; for(let i = 0; i < 4; i++){ c.beginPath(); c.arc(W*0.29 + Math.sin(t*0.01 + i)*12, H*0.28 - i*22 - (t*0.3 % 22), 14 + i*5, 0, 7); c.fill(); }
+    c.fillStyle = '#6a8a3a'; c.beginPath(); c.moveTo(0, by); for(let x = 0; x <= W; x += 40) c.lineTo(x, by - 20 - 14*Math.sin(x*0.013)); c.lineTo(W, H); c.lineTo(0, H); c.fill();
+  } else if(k === 1){
+    c.fillStyle = 'rgba(255,255,255,0.8)'; for(let i = 0; i < 4; i++){ const x = ((i*310 + t*0.2) % (W + 200)) - 100, y = H*(0.12 + 0.07*i); c.beginPath(); c.ellipse(x, y, 60, 18, 0, 0, 7); c.ellipse(x + 30, y - 10, 36, 16, 0, 0, 7); c.fill(); }
+    c.fillStyle = '#9aa8b8'; c.fillRect(W*0.62, H*0.28, 70, by - H*0.28); c.beginPath(); c.moveTo(W*0.62 - 8, H*0.28); c.lineTo(W*0.62 + 35, H*0.18); c.lineTo(W*0.62 + 78, H*0.28); c.fill();
+    c.fillStyle = '#fffaf0'; c.beginPath(); c.arc(W*0.62 + 35, H*0.35, 24, 0, 7); c.fill(); c.strokeStyle = '#2a2a2a'; c.lineWidth = 3; c.beginPath(); c.arc(W*0.62 + 35, H*0.35, 24, 0, 7); c.stroke();
+    const m = CONTEST.clk/TT.time*4; c.beginPath(); c.moveTo(W*0.62 + 35, H*0.35); c.lineTo(W*0.62 + 35 + Math.sin((8 + m)/12*6.283)*13, H*0.35 - Math.cos((8 + m)/12*6.283)*13); c.moveTo(W*0.62 + 35, H*0.35); c.lineTo(W*0.62 + 35 + Math.sin((m % 1)*6.283)*19, H*0.35 - Math.cos((m % 1)*6.283)*19); c.stroke();
+    c.fillStyle = '#9cc98a'; c.beginPath(); c.moveTo(0, by); for(let x = 0; x <= W; x += 40) c.lineTo(x, by - 16 - 10*Math.sin(x*0.009 + 1)); c.lineTo(W, H); c.lineTo(0, H); c.fill();
+  } else {
+    c.fillStyle = '#ffffff'; for(let i = 0; i < 40; i++){ const x = (i*137.5) % W, y = (i*71.3) % (H*0.55); c.globalAlpha = 0.4 + 0.4*Math.sin(t*0.05 + i); c.fillRect(x, y, 2, 2); } c.globalAlpha = 1;
+    for(let i = 0; i < 12; i++){ const bw = W/12, bh = H*(0.18 + 0.22*((i*7) % 5)/5), x = i*bw; c.fillStyle = '#241848'; c.fillRect(x + 4, by - bh, bw - 8, bh + H); c.fillStyle = i % 2 ? '#22d3ff' : '#ff4fd8'; for(let j = 0; j < 5; j++) c.fillRect(x + 10 + (j % 2)*14, by - bh + 12 + j*18, 6, 6); }
+  }
   c.restore();
 }
 CONTEST_RULES.clock = {
-  twists:CK.twists,
-  hold(){ return true; },   // (the last fighter with stocks does not end it: a stock-out keeps its points and may still win on them; ckEnd in step())
-  winText(f){ return f.name + ' won with ' + (f._ckP | 0) + ' points!'; },
-  score(f){ return f._ckP || 0; },   // (the rest rank by points)
+  hold(){ return true; },   // (stocks decide nothing: midnight ends it, ttEnd)
+  winText(f){ return f.name + ' wins with ' + (f._ttG | 0) + ' gears!'; },
+  score(f){ return f._ttG || 0; },
   begin(){
-    const S = CONTEST, gy = groundY(), zx = floorSafeX(WW*0.5, 140), spots = [];
-    S.zone = { x:zx }; S.clocks = []; S.n = 0; S.next = CK.first;
-    const out = x => Math.abs(x - zx) < CK.w/2 + 70;   // (clocks stand OUTSIDE the zone)
-    for(let x = 130; x <= WW - 130; x += 40){ if(out(x) || floorSafeX(x, 60) !== x) continue; spots.push({ x, y:gy }); }   // (on the floor, outside the zone)
-    for(const p of worldPlats){ if(p.solid || p.wall || p.hazard || !(p.w > 60)) continue; for(let x = p.x + 30; x <= p.x + p.w - 30; x += 40) if(!out(x)) spots.push({ x, y:p.y }); }   // (and on the platforms, outside the zone)
-    S.spots = spots;
-    for(const f of fighters){ f._ckT = CK.start; f._ckP = 0; f._ckOut = false; f._ckHitT = -999; }
+    const S = CONTEST, T = TTW; if(!T) return;
+    const bag = ['speed', 'storm', 'rewind', 'frozen']; for(let i = bag.length - 1; i > 0; i--){ const j = Math.floor(Math.random()*(i + 1)); const q = bag[i]; bag[i] = bag[j]; bag[j] = q; }
+    const sp = bag.indexOf('speed'); bag[sp] = Math.random() < 0.5 ? 'fast' : 'slow';
+    Object.assign(S, { clk:0, hour:-1, bag, hr:null, rules:[], slowAcc:0, frz:null, gears:[], nextGear:TT.first, nextNest:0, tree:null, seedBy:-1, bridgeBack:0,
+      rwItem:null, rwItemAt:TT.rewFirst, fx:null, spawned:0, found:0, picked:0, dropped:0, doorUses:0, flings:0, rewinds:0, rwPicked:0, rwUsed:0, statues:0, stuck:0,
+      links:{ seed:0, bridge:0, bury:0, dig:0, interest:0, nest:0 } });
+    T.bridgeUp = true; ttFloor();
+    const gy = groundY(), E = T.eras[1], at = [0.18, 0.40, 0.52, 0.86, 0.24, 0.80];
+    fighters.forEach((f, i) => {
+      f.x = Math.round(E.x0 + T.EW*at[i % at.length]); f.y = gy - f.r; f.vx = 0; f.vy = 0; f.onground = true;
+      f._ttG = 0; f._ttBur = 0; f._ttRw = false; f._ttStat = null; f._ttH = null; f._ttSafe = null; f._ttPlan = null; f._ttBan = {}; f._ttDoors = 0; f._ttBrk = 0; f._ttDoorCd = 0; f._ttKoEra = null;
+      const lv = brainLevel(f); f._ttK = {}; for(const q of ['seed', 'tree', 'bridge', 'cap']) f._ttK[q] = !isHumanCtrl(f) && Math.random() < TT.learn0[lv];
+    });
+    for(let i = 0; i < 6; i++) ttSpawnGear();   // (two to an era to start)
   },
   step(){
-    const S = CONTEST, t = hazardT;
-    if(S.winner != null) return;
-    if(t >= S.next){   // a clock grows in on the floor or a platform; each gap is longer than the last
-      if(S.clocks.length < CK.max && ckSpawn(S)){ S.n++; S.next = t + CK.gap0 + CK.gapStep*S.n; } else S.next = t + CK.retry;
+    const S = CONTEST, T = TTW, t = hazardT; if(!T || S.winner != null) return;
+    const hl = TT.time/TT.hours, h = Math.min(TT.hours - 1, Math.floor(S.clk/hl));
+    if(h !== S.hour) ttHourBegin(S, h);
+    if(S.clk >= TT.time){ ttEnd(); return; }
+    const gy = groundY();
+    // THE HOUR'S RULE
+    if(S.hr === 'storm' && t >= S.stormAt){
+      S.stormAt = t + TT.stormEvery; S.fx = { k:'storm', t0:t };
+      for(const f of fighters){ if(f.dead || f._ttStat || f._heldBy != null) continue; const k = ttEra(f.x), d = T.eras[k].doors.find(q => Math.hypot(q.x - f.x, gy - 50 - f.y) < TT.stormR); if(!d) continue; const o = ttOthers(k), to = o[Math.floor(Math.random()*2)]; ttWarp(f, to, T.eras[to].doors[Math.floor(Math.random()*2)]); S.flings++; }
     }
+    if(S.hr === 'rewind' && t >= S.rwAt){
+      S.rwAt = t + TT.rwEvery; S.rewinds++; S.fx = { k:'rewind', t0:t };
+      for(const f of fighters){ if(!f.dead && !f._ttStat) ttSnap(f, TT.rwBack); }
+      tone(700, 0.35, 'sawtooth', 0.08, 0, 250);
+    }
+    if(S.hr === 'frozen' && S.frz){
+      const z = S.frz;
+      if(!z.on && t >= z.at){ z.on = true; S.fx = { k:'freeze', t0:t }; tone(1200, 0.4, 'triangle', 0.1, 0, 1600); }
+      if(z.on) for(const f of fighters){ if(!f.dead && !f._ttStat && ttEra(f.x) === z.era) ttStatue(f, true); }
+    }
+    // THE FIGHTERS
+    const fz = ttFrozenEra();
     for(const f of fighters){
-      if(f.dead || f._ckOut) continue;
-      f._ckT--;
-      if(f._ckT <= 0) continue;
-      if(ckIn(f)) f._ckP += 1/CK.ptsEvery;
-      for(let i = 0; i < S.clocks.length; i++){
-        const c = S.clocks[i];
-        if(t - c.t0 < GROW_IN) continue;
-        if(Math.hypot(f.x - c.x, f.y - (c.y - CK.lift)) <= f.r + CK.r + 6){
-          S.clocks.splice(i, 1); f._ckT = Math.min(CK.cap, f._ckT + CK.gain);
-          for(let k = 0; k < 8; k++) puff(c.x, c.y - CK.lift, '#ffd23f', 4);
-          if(f.you) tone(700, 0.08, 'triangle', 0.14, 0, 1000);
-          break;
+      if(f.dead) continue;
+      if(f._ttStat){ const q = f._ttStat; f.x = q.x; f.y = q.y; f.vx = 0; f.vy = 0; f.hitstun = 0; f.invuln = Math.max(f.invuln || 0, 2); f.frozen = Math.max(f.frozen || 0, 2); continue; }
+      const k = ttEra(f.x), E = T.eras[k];
+      if(f.x < E.x0 - TT.side - KO_SIDE || f.x > E.x1 + TT.side + KO_SIDE){ f._ttKoEra = k; eliminate(f); continue; }   // (each era's own side KO lines)
+      ttRec(f);
+      if(f.onground && ttSupport(f.x, f.y + f.r)) f._ttSafe = { x:f.x, y:f.y + f.r };
+      if(S.hr === 'fast') f._hasteT = Math.max(f._hasteT || 0, TT.haste);
+      if(k === fz) continue;
+      for(let i = S.gears.length - 1; i >= 0; i--){
+        const g = S.gears[i]; if(g.era !== k || t - g.t0 < 10 || (g.npBy === f.idx && t < g.npT)) continue;
+        if(Math.hypot(f.x - g.x, f.y - (g.y - TT.gr - 3)) <= f.r + TT.gr + 6){
+          S.gears.splice(i, 1); f._ttG = (f._ttG || 0) + 1; S.picked++; if(g.fresh) S.found++; if(g.nest) S.links.nest++;
+          for(let q = 0; q < 6; q++) puff(g.x, g.y - TT.gr, '#ffd23f', 4);
+          if(f.you) tone(880 + 40*Math.min(10, f._ttG), 0.07, 'triangle', 0.12, 0, 1200);
         }
       }
+      const R = S.rwItem;
+      if(R && !f._ttRw && R.era === k && t - R.t0 > 10 && Math.hypot(f.x - R.x, f.y - (R.y - 18)) <= f.r + 20){ f._ttRw = true; S.rwItem = null; S.rwItemAt = t + TT.rewEvery; S.rwPicked++; if(f.you) tone(600, 0.15, 'sine', 0.12, 0, 900); }
     }
-    ckLive().filter(f => f._ckT <= 0).forEach(ckOut);
-    if(!ckLive().length || t >= CK.time){   // (every timer out or off the stage, or the cap: the most points wins, a fighter who lost all its stocks included)
-      const b = ckBest(fighters);
-      if(b.dead){   // a stock-out winner: put back for the result, on the zone (the engine's last-one-standing end was held, contestHold)
-        b.dead = false; b.alive = true; b.stocks = 1; b.placement = null; b.hitstun = 0; b.x = S.zone.x; b.y = groundY() - b.r; b.vx = 0; b.vy = 0; b.onground = true;
-      }
-      contestWin(b);
+    // THE GEARS
+    for(const g of S.gears) ttGearPhys(g);
+    if(t >= S.nextGear){ S.nextGear = t + TT.gearEvery; ttSpawnGear(); }
+    if(S.tree != null && t >= S.nextNest){ S.nextNest = t + TT.nestEvery; if(fz !== 2 && ttLoose(2, true) < TT.nestCap){ const L = T.nestSpots.filter(ttSpotFree); if(L.length){ ttAddGear(L[Math.floor(Math.random()*L.length)], true); S.spawned++; } } }
+    if(!S.rwItem && t >= S.rwItemAt){ const ks = [0, 1, 2].filter(k => k !== fz), k = ks[Math.floor(Math.random()*ks.length)], L = T.eras[k].spots.filter(s => !s.prop && ttSpotFree(s)); if(L.length){ const s = L[Math.floor(Math.random()*L.length)]; S.rwItem = { x:s.x, y:s.y, era:k, t0:t }; } else S.rwItemAt = t + 60; }
+    // THE BRIDGE is mended (when nobody is down in the gap)
+    if(!T.bridgeUp && t >= S.bridgeBack){
+      const inGap = fighters.some(f => !f.dead && f.y + f.r > gy - 4 && T.eras.some(E => f.x > E.r0 - 10 && f.x < E.r1 + 10));
+      if(!inGap){ T.bridgeUp = true; worldPlats.push(T.bridge); ttFloor(); for(let q = 0; q < 10; q++) puff(T.bridge.x + Math.random()*T.bridge.w, gy, '#a0703a', 4); } else S.bridgeBack = t + 30;
     }
   },
-  hit(t, from, dmg){
-    if(t.dead || t._ckOut || !(t._ckT > 0) || hazardT - t._ckHitT < CK.combo) return;   // (a combo is one hit)
-    t._ckHitT = hazardT; t._ckT = Math.max(0, t._ckT - CK.hit);
-    for(let i = 0; i < 5; i++) puff(t.x, t.y - t.r, '#ffd23f', 3);
-    if(t.you) tone(280, 0.12, 'sawtooth', 0.1, 0, 160);
+  ko(f){
+    const S = CONTEST; if(!S || !TTW || S.winner != null) return;
+    f._ttKoEra = ttEra(f._ttSafe ? f._ttSafe.x : f.x);   // (back in the era it was knocked out of: where it last stood)
+    ttSpill(f);
+    if(f._ttH) f._ttH.n = 0;
+    f._ttStat = null; f._ttBrk = 0; f._ttPlan = null;
   },
+  focus(f, foes){ const o = f._ttFoe; if(o && foes.indexOf(o) >= 0 && f.aiTarget !== o){ f.aiTarget = o; f.aiTimer = 45; } },
   world(c, layer){
-    if(layer !== 'under') return;
-    const S = CONTEST, z = S.zone, gy = groundY(), t = hazardT;
+    const S = CONTEST, T = TTW; if(!T) return;
+    const gy = groundY(), t = hazardT, me = fighters.find(o => o.you && !o.dead), vk = ttEra(camX + W/2);
     c.save();
-    const g = c.createLinearGradient(0, gy - CK.h, 0, gy); g.addColorStop(0, 'rgba(255,236,150,0)'); g.addColorStop(1, 'rgba(255,236,150,0.34)');
-    c.fillStyle = g; c.fillRect(z.x - CK.w/2, gy - CK.h, CK.w, CK.h);
-    c.fillStyle = 'rgba(255,230,120,0.6)'; c.fillRect(z.x - CK.w/2, gy - 4, CK.w, 4);
-    c.strokeStyle = 'rgba(255,220,100,' + (0.35 + 0.2*Math.sin(t*0.1)) + ')'; c.lineWidth = 2; c.setLineDash([8, 6]); c.strokeRect(z.x - CK.w/2, gy - CK.h, CK.w, CK.h); c.setLineDash([]);
-    for(const k of S.clocks){ ckDrawClock(c, k.x, k.y - CK.lift + Math.sin(t*0.08 + k.x)*3, growK(t - k.t0), t); }
+    if(layer === 'under'){
+      for(const E of T.eras){
+        const k = E.k;
+        ttTint(c, E, k, gy);
+        // the river (the past) or the pit (today and the future, the bridge broken)
+        if(k === 0){ c.fillStyle = '#3a8ad8'; c.fillRect(E.r0, gy + 24, E.r1 - E.r0, 200); c.strokeStyle = 'rgba(255,255,255,0.6)'; c.lineWidth = 2; c.beginPath(); for(let x = E.r0; x <= E.r1; x += 8) c.lineTo(x, gy + 26 + Math.sin(x*0.2 + t*0.15)*2); c.stroke(); }
+        else if(!T.bridgeUp){ c.fillStyle = '#2a1a10'; c.fillRect(E.r0 - 6, gy - 3, 8, 8); c.fillRect(E.r1 - 2, gy - 3, 8, 8); }
+        // the seed mound / the sapling / the tree
+        if(k === 0){ c.fillStyle = '#7a4a24'; c.beginPath(); c.ellipse(E.seedX, gy, 26, 10, 0, Math.PI, 0); c.fill(); if(S.tree != null){ c.strokeStyle = '#3f8f3a'; c.lineWidth = 3; c.beginPath(); c.moveTo(E.seedX, gy - 8); c.lineTo(E.seedX, gy - 22); c.stroke(); c.fillStyle = '#5fbf4a'; c.beginPath(); c.ellipse(E.seedX - 6, gy - 22, 7, 4, -0.5, 0, 7); c.ellipse(E.seedX + 6, gy - 24, 7, 4, 0.5, 0, 7); c.fill(); } else { ttDrawIcon(c, E.seedX, gy - 14, 16, '🌰'); } }
+        if(k === 1 && S.tree != null){ const p = T.sapling; c.strokeStyle = '#6b4220'; c.lineWidth = 6; c.beginPath(); c.moveTo(p.x + p.w/2, gy); c.lineTo(p.x + p.w/2, p.y + 6); c.stroke(); c.fillStyle = '#5fbf4a'; c.beginPath(); c.arc(p.x + p.w/2, p.y - 6, 18, 0, 7); c.fill(); c.fillStyle = '#8a5a2c'; c.fillRect(p.x, p.y, p.w, 10); }
+        if(k === 2 && S.tree != null) ttDrawTree(c, gy, t);
+        // the time capsule: a chest in the past, the capsule in the future
+        if(k === 0){ c.fillStyle = '#8a5a2c'; c.strokeStyle = '#2a1608'; c.lineWidth = 2; c.fillRect(E.capX - 22, gy - 22, 44, 22); c.strokeRect(E.capX - 22, gy - 22, 44, 22); c.fillStyle = '#c8901e'; c.fillRect(E.capX - 4, gy - 16, 8, 8); }
+        if(k === 2){ c.fillStyle = '#c8d0e0'; c.strokeStyle = '#22d3ff'; c.lineWidth = 2; c.beginPath(); c.ellipse(E.capX, gy - 16, 16, 22, 0, Math.PI, 0); c.lineTo(E.capX + 16, gy); c.lineTo(E.capX - 16, gy); c.closePath(); c.fill(); c.stroke(); if(me && (me._ttBur || 0) > 0){ ttDrawGear(c, E.capX, gy - 52, 8, t*0.03); c.font = "800 12px 'Baloo 2', system-ui"; c.textAlign = 'left'; c.fillStyle = '#fff'; c.fillText('x' + me._ttBur, E.capX + 12, gy - 50); } }
+        // the bridge
+        if(k === 0){
+          if(T.bridgeUp){ const b = T.bridge; c.fillStyle = '#a0703a'; c.strokeStyle = '#4a2a10'; c.lineWidth = 2; for(let x = b.x; x < b.x + b.w; x += 15){ c.fillRect(x, b.y, 13, 10); c.strokeRect(x, b.y, 13, 10); } c.strokeStyle = '#6b4220'; c.lineWidth = 3; c.beginPath(); c.moveTo(b.x, b.y - 18); c.quadraticCurveTo(b.x + b.w/2, b.y - 6, b.x + b.w, b.y - 18); c.stroke(); }
+          else { c.fillStyle = '#a0703a'; c.fillRect(E.r0, gy, 14, 8); c.fillRect(E.r1 - 14, gy, 14, 8); }
+        }
+        const wild = S.hr === 'storm' && S.stormAt - t < TT.stormWarn;
+        for(const d of E.doors) ttDrawDoor(c, d, gy, t, S.hr === 'storm');
+        if(wild){ c.strokeStyle = 'rgba(160,80,255,' + (0.4 + 0.4*Math.sin(t*0.5)) + ')'; c.lineWidth = 3; for(const d of E.doors){ c.beginPath(); c.arc(d.x, gy - 50, TT.stormR*(1 - (S.stormAt - t)/TT.stormWarn) + 10, 0, 7); c.stroke(); } }
+      }
+      for(const g of S.gears){ if(g.prop && g.land) continue; ttDrawGear(c, g.x, g.y - TT.gr - 3 + (g.land ? Math.sin(t*0.08 + g.x)*2 : 0), TT.gr*growK(t - g.t0), g.rot + t*0.02); }
+      if(S.rwItem){ const R = S.rwItem, y = R.y - 20 + Math.sin(t*0.1)*3, k = growK(t - R.t0); c.fillStyle = '#6fb7ff'; c.strokeStyle = '#fff'; c.lineWidth = 3; c.beginPath(); c.arc(R.x, y, 15*k, 0, 7); c.fill(); c.stroke(); ttDrawIcon(c, R.x, y, 18*k, '⏪'); }
+    } else {
+      for(const g of S.gears){ if(!(g.prop && g.land)) continue; ttDrawGear(c, g.x, g.y - 24, TT.gr*growK(t - g.t0), g.rot + t*0.02); ttDrawProp(c, g.era, g.x, g.y); if((t + Math.round(g.x)) % 90 < 12){ c.fillStyle = 'rgba(255,255,220,0.95)'; c.beginPath(); const sx = g.x + 10, sy = g.y - 24; c.moveTo(sx, sy - 7); c.lineTo(sx + 2, sy - 2); c.lineTo(sx + 7, sy); c.lineTo(sx + 2, sy + 2); c.lineTo(sx, sy + 7); c.lineTo(sx - 2, sy + 2); c.lineTo(sx - 7, sy); c.lineTo(sx - 2, sy - 2); c.closePath(); c.fill(); } }
+      for(const E of T.eras) for(const s of E.spots) if(s.prop && !S.gears.some(g => g.prop && g.land && Math.abs(g.x - s.x) < 2 && Math.abs(g.y - s.y) < 2)) ttDrawProp(c, E.k, s.x, s.y);
+      for(const f of fighters){ if(f.dead || !f._ttStat) continue; c.fillStyle = 'rgba(190,235,255,0.45)'; c.strokeStyle = 'rgba(255,255,255,0.9)'; c.lineWidth = 2; c.fillRect(f.x - f.r - 8, f.y - f.r - 10, 2*f.r + 16, 2*f.r + 16); c.strokeRect(f.x - f.r - 8, f.y - f.r - 10, 2*f.r + 16, 2*f.r + 16); }
+      if(me){ const a = ttActAt(me); if(a){ const y = me.y - me.r - 46 + Math.sin(t*0.2)*3; c.fillStyle = 'rgba(28,24,38,0.8)'; c.beginPath(); c.arc(me.x, y, 13, 0, 7); c.fill(); ttDrawIcon(c, me.x, y + 1, 16, '⬇'); if(a.k === 'bridge' && me._ttBrkT === t){ c.strokeStyle = '#ffd23f'; c.lineWidth = 4; c.beginPath(); c.arc(me.x, y, 17, -Math.PI/2, -Math.PI/2 + 6.283*(me._ttBrk || 0)/TT.brk); c.stroke(); } } }
+      // the era freezing / frozen: frost over it
+      const z = S.frz;
+      if(z && z.era === vk){ const E = T.eras[vk], a = z.on ? 0.22 : 0.22*clamp(1 - (z.at - t)/TT.frzWarn, 0, 1); c.fillStyle = 'rgba(180,230,255,' + a.toFixed(3) + ')'; c.fillRect(E.x0 - TT.side, -400, T.EW + 2*TT.side, WH + 800); }
+    }
     c.restore();
   },
   hud(c){
-    const tl = Math.max(0, Math.ceil((CK.time - hazardT)/60));
-    const rows = fighters.slice().sort((a, b) => (a.you ? -1 : 0) - (b.you ? -1 : 0)).map(f => ({ f, text:(f._ckP | 0) + ' pts', hot:!f._ckOut && f._ckT <= CK.low,
-      draw(cc, x0, y){
-        cc.fillStyle = 'rgba(255,255,255,0.22)'; cc.fillRect(x0, y - 4, 70, 8);
-        cc.fillStyle = f._ckT <= CK.low ? '#ff8a5c' : '#ffd23f'; cc.fillRect(x0, y - 4, 70*Math.max(0, f._ckT)/CK.cap, 8);
-        cc.font = "700 10px 'Baloo 2', system-ui"; cc.textAlign = 'left'; cc.fillStyle = '#fff'; cc.fillText(ckSec(f._ckT), x0 + 76, y);
-      } }));
-    contestPanel(c, 'FAST FORWARD', 'zone = points   ' + Math.floor(tl/60) + ':' + ('0' + (tl % 60)).slice(-2), rows);
+    const S = CONTEST, T = TTW; if(!T) return;
+    const t = hazardT, cx = W/2, cy = 48, R = 34, me = fighters.find(o => o.you), vk = ttEra(camX + W/2);
+    c.save();
+    // THE MIDNIGHT CLOCK: 8 o'clock to 12 over the match
+    const hrs = 8 + 4*Math.min(1, S.clk/TT.time), late = TT.time - S.clk < 900;
+    c.fillStyle = '#fffaf0'; c.strokeStyle = late && (t % 30 < 15) ? '#ff4a3a' : '#c8901e'; c.lineWidth = 5; c.beginPath(); c.arc(cx, cy, R, 0, 7); c.fill(); c.stroke();
+    c.strokeStyle = '#2a2a2a'; c.lineWidth = 2; for(let i = 0; i < 12; i++){ const a = i*Math.PI/6, r0 = i % 3 ? R - 7 : R - 11; c.beginPath(); c.moveTo(cx + Math.sin(a)*r0, cy - Math.cos(a)*r0); c.lineTo(cx + Math.sin(a)*(R - 3), cy - Math.cos(a)*(R - 3)); c.stroke(); }
+    c.fillStyle = '#1c1c1c'; c.font = "900 11px 'Baloo 2', system-ui"; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('12', cx, cy - R + 17);
+    const ha = (hrs % 12)/12*6.283, ma = (hrs % 1)*6.283;
+    c.lineCap = 'round'; c.lineWidth = 4; c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + Math.sin(ha)*R*0.5, cy - Math.cos(ha)*R*0.5); c.stroke();
+    c.lineWidth = 2.5; c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + Math.sin(ma)*R*0.78, cy - Math.cos(ma)*R*0.78); c.stroke();
+    c.fillStyle = '#c8901e'; c.beginPath(); c.arc(cx, cy, 4, 0, 7); c.fill();
+    // the hour's rule (a picture) and the era you are in
+    const warn = (S.hr === 'storm' && S.stormAt - t < TT.stormWarn) || (S.hr === 'rewind' && S.rwAt - t < TT.rwWarn) || (S.frz && !S.frz.on), pr = 22*(warn ? 1 + 0.12*Math.sin(t*0.5) : 1);
+    if(S.hr){ c.fillStyle = 'rgba(28,24,38,0.85)'; c.strokeStyle = warn ? '#ffd23f' : '#ffffff'; c.lineWidth = 3; c.beginPath(); c.arc(cx + 66, cy, pr, 0, 7); c.fill(); c.stroke(); ttDrawIcon(c, cx + 66, cy + 1, pr*1.05, TT_RULE_ICON[S.hr]); if(S.hr === 'frozen' && S.frz){ c.fillStyle = TT_COL[S.frz.era]; c.beginPath(); c.arc(cx + 92, cy + 16, 13, 0, 7); c.fill(); ttDrawIcon(c, cx + 92, cy + 17, 15, TT_ICON[S.frz.era]); } }
+    c.fillStyle = TT_COL[vk]; c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.beginPath(); c.arc(cx - 66, cy, 22, 0, 7); c.fill(); c.stroke(); ttDrawIcon(c, cx - 66, cy + 1, 24, TT_ICON[vk]);
+    // your rewind, held
+    if(me && me._ttRw){ c.fillStyle = '#6fb7ff'; c.strokeStyle = '#fff'; c.lineWidth = 3; c.beginPath(); c.arc(cx - 112, cy, 18, 0, 7); c.fill(); c.stroke(); ttDrawIcon(c, cx - 112, cy + 1, 18, '⏪'); c.fillStyle = 'rgba(28,24,38,0.85)'; itemRoundRect(c, cx - 132, cy + 20, 40, 14, 4); c.fill(); c.fillStyle = '#fff'; c.font = "800 9px 'Baloo 2', system-ui"; c.textAlign = 'center'; c.fillText('SPACE', cx - 112, cy + 27); }
+    // the flashes: a new hour, a rewind, a storm pulse, the freeze
+    const fx = S.fx, age = fx ? t - fx.t0 : 99;
+    if(fx && age < 40){ const a = (1 - age/40); const col = fx.k === 'rewind' ? '200,150,90' : fx.k === 'storm' ? '160,80,255' : fx.k === 'freeze' ? '190,235,255' : '255,230,150'; c.fillStyle = 'rgba(' + col + ',' + (0.35*a).toFixed(3) + ')'; c.fillRect(0, 0, W, H); if(fx.k !== 'hour'){ c.globalAlpha = a; ttDrawIcon(c, W/2, H*0.42, 90, fx.k === 'rewind' ? '⏪' : fx.k === 'storm' ? '🌀' : '❄️'); c.globalAlpha = 1; } }
+    // the gears: everyone's count, and where they are
+    const rows = fighters.slice().sort((a, b) => (a.you ? -1 : 0) - (b.you ? -1 : 0)).map(f => ({ f, text:(f._ttG | 0) + ((f._ttBur | 0) ? ' +' + (f._ttBur | 0) : ''), hot:(f._ttG | 0) > 0 && fighters.every(o => o === f || (o._ttG | 0) < (f._ttG | 0)),
+      draw(cc, x0, y){ cc.fillStyle = TT_COL[ttEra(f.x)]; cc.beginPath(); cc.arc(x0 + 8, y, 8, 0, 7); cc.fill(); ttDrawIcon(cc, x0 + 8, y + 1, 11, f._ttStat ? '❄️' : TT_ICON[ttEra(f.x)]); if(f._ttRw) ttDrawIcon(cc, x0 + 28, y + 1, 11, '⏪'); ttDrawGear(cc, x0 + 128, y, 5, 0); } }));
+    contestPanel(c, '⚙', '', rows);
+    c.restore();
   },
-  badge(f, c){ if(!f._ckOut) contestPill(c, f, Math.ceil(f._ckT/60) + 's', f._ckT <= CK.low, false); },
-  want(f, inp, t, dist){
-    const S = CONTEST; if(f._ckOut){ f._ckGo = null; return false; }
-    let best = null;
-    if(f._ckGo && S.clocks.indexOf(f._ckGo) >= 0 && hazardT - f._ckGoT < CK.tripMax) best = f._ckGo; else f._ckGo = null;   // (a trip under way: it keeps going, in the air too)
-    if(!best){
-      if(!f.onground && !(f.vy < 0)) return false;
-      if(t && dist < CK.foeNear) return false;   // (a foe right in its face comes first)
-      let bd = CK.reach;
-      for(const c of S.clocks){ const dy = f.y - (c.y - 20); if(dy < -40 || dy > CK.climb) continue; const d = Math.hypot(c.x - f.x, dy); if(d < bd){ bd = d; best = c; } }
-      if(!(best && f._ckT <= CK.cap - CK.gain && (f._ckT <= CK.hungry || bd <= CK.near))) best = null;
-      else { f._ckGo = best; f._ckGoT = hazardT; f._ckTrips = (f._ckTrips || 0) + 1; }
-    }
-    if(best){
-      const dir = best.x < f.x ? -1 : 1, adx = Math.abs(best.x - f.x);
-      if(adx > 8){ if(!ckStepOk(f, dir)){ if(f.onground && f.y - best.y > 30) inp.jump = true; else { f._ckGo = null; return false; } } if(dir < 0) inp.left = true; else inp.right = true; }
-      if(f.onground && f.y - (best.y - 20) > 30 && adx < 90) inp.jump = true;
-      return true;
-    }
-    if(ckIn(f)){ return !!(t && Math.abs(t.x - S.zone.x) > CK.w/2 + CK.leash); }   // (in the zone: stand, fight what comes, never chase far out of it)
-    const dx = S.zone.x - f.x, dir = dx < 0 ? -1 : 1; if(Math.abs(dx) <= 20) return false;
-    if(!ckStepOk(f, dir)) return false;   // (a step with no floor where it lands is not taken)
-    if(dir < 0) inp.left = true; else inp.right = true; return true;
-  },
+  badge(f, c){ if((f._ttG | 0) > 0) contestPill(c, f, '⚙' + (f._ttG | 0), (f._ttG | 0) >= TT.carrier, false); },
 };
 
 // ---------- EVENT FIGHTERS: FOLDY'S CONTEST, THE WIND RACE (rebuilt 2026-11-13 to the owner's own words and picks) ----------
@@ -119833,6 +120304,7 @@ function aiThink(f){
   if(f.onground && !(B.press && B.press.keys.jump)) f._aiHop = 0;   // a short hop is asked for one jump at a time (the hop-in below)
   if(LHC && f._lhRoom && lhcRoomAi(f, inp)) return inp;   // STAPY'S CONTEST: in a lighthouse's floors the climb is the room brain's (lhcRoomAi); on the deck, or in a short fight, the brain as ever
   if(HS && hsBrain(f, inp)) return inp;
+  if(TTW && ttBrain(f, inp)) return inp;   // FAST FORWARD (Clock's contest): gears, doors and the links are its own (ttBrain); a fight when it lets go
   if(SHINY_S && twistOn('shiny') && shinyCpuWant(f, inp)) return inp;   // OOH, SHINY! (Bottle's twist): an item within reach before it vanishes, with no foe in its face (shinyCpuWant)   // BOTTLE'S CONTEST (Hide and Seek): hiding, seeking and the way round the house are its own (hsBrain); a fight when it lets go
   f.aiTimer = (f.aiTimer || 0) - 1;
   let targets = fighters.filter(t=>!t.dead&&t.idx!==f.idx&&t.team!==f.team&&!(t._ghostT>0)&&aiCanSee(f,t));   // (a ghost, or a fighter hidden in a prop, in Capture the Flag, is not seen)
@@ -121386,6 +121858,7 @@ function camTarget(x, y, z){
   const halfW=(W/2)/z, halfH=(H/2)/z;
   let x0 = 0, x1 = WW, y0 = 0, y1 = WH;
   if(LHC){ const vr = LHC.view; if(vr){ x0 = vr.x0; x1 = vr.x1; y0 = vr.y0; y1 = vr.y1; } else { x1 = LHK.aw; y0 = LHC.pY - 1400; } }   // STAPY'S CONTEST: the view stays in the room you are in (the room's own walls), or in the arena
+  if(TTW && ttOn()){ const vr = ttView(x); x0 = vr.x0; x1 = vr.x1; }   // FAST FORWARD (Clock's contest): the view is the era you are in
   if(algBigOn()){ x0 -= ALG_BIG.wallVis; x1 += ALG_BIG.wallVis; }   // the Algebralien Rush's big stage: its walls show a little (rush M3)
   if(SETTINGS.mode === 'ctf' && CTF.map && CTF.map.pocketY != null){ const vr = ctfViewRoom(), iv = vr && !CTF.map.ivBand && CTF.map.ivOf ? CTF.map.ivOf[vr] : null; if(iv){ x0 = iv.x; x1 = iv.x + iv.w; y0 = iv.y; y1 = iv.y + iv.h; } else if(vr) y0 = CTF.map.pocketY; else y1 = CTF.map.pocketY; }   // (a map with a room apart under it: the view stays in the map, or in the room; in an interior, in its box both ways)
   const cx = (x1 - x0 <= 2*halfW) ? (x0 + x1)/2 : clamp(x, x0 + halfW, x1 - halfW);
@@ -121407,6 +121880,7 @@ function updateCamera(){
   if(!you) return;
   if(LHC){ const rm = you && you._lhRoom, zt = rm ? LHK.roomZoom : 0.72; LHC.view = rm ? { x0:rm.x0, x1:rm.x1, y0:rm.roofY - 60, y1:rm.base + 70 } : null; CAM_ZOOM += (zt - CAM_ZOOM)*0.12; if(Math.abs(CAM_ZOOM - zt) < 0.004) CAM_ZOOM = zt; }   // STAPY'S CONTEST: inside a room the camera follows you at the normal zoom, in the arena it is zoomed out as before
   const t = algBigOn() ? algCamTarget(you) : camTarget(you.x + (RACE.active ? raceCamLead() : (FDR && !FDR.ball ? 260 : 0)), you.y, CAM_ZOOM);   // (the Algebralien Rush: the boss and you, algCamTarget)   RUNNING!: the camera looks ahead of the runner, and further at the edge (raceCamLead)
+  if(TTW && ttOn() && Math.abs(t.x - camX) > W*0.5){ camX = t.x; camY = t.y; return; }   // FAST FORWARD: through a clock door the view cuts to the other era
   if(MCAVE && MCAVE.on){ mcCamera(t); return; }   // MOON CAVES: the same follow, and the view turns with it
   camX += (t.x-camX)*0.12;   // smooth follow
   camY += (t.y-camY)*0.12;
@@ -143907,12 +144381,18 @@ const CCARD_ART = {
      function(c, x, y, s){ c.save(); c.fillStyle = '#140a1a'; c.strokeStyle = '#a070ff'; c.lineWidth = 4; c.beginPath(); c.ellipse(x, y + s*0.25, s*0.4, s*0.14, 0, 0, 7); c.fill(); c.stroke(); c.restore(); ccMe(c, x, y - s*0.05, s*0.4); ccArrow(c, x + s*0.3, y - s*0.05, s*0.35, '#ff6a5a', Math.PI/2); },
      '=', '-1']
   ]; },
-  // CLOCK: stand in the zone for points; your clock runs down, the clocks outside give time, a hit takes it
+  // CLOCK: the time-travel heist: gears are the points and a KO drops half; the seed in the past is a tree in the future; doors between the eras; the hour rules; most gears at midnight wins
   clock:function(){ return [
-    [function(c, x, y, s){ c.save(); c.fillStyle = 'rgba(255,210,63,0.35)'; c.strokeStyle = '#ffb300'; c.lineWidth = 4; c.fillRect(x - s*0.42, y - s*0.35, s*0.84, s*0.62); c.strokeRect(x - s*0.42, y - s*0.35, s*0.84, s*0.62); c.restore(); ccGround(c, x, y + s*0.27, s*0.95); ccMe(c, x, y, s*0.5); },
-     '>', '+1', function(c, x, y, s){ ckDrawClock(c, x, y, s*0.016, 90); }, '>', function(c, x, y, s){ ccTimer(c, x, y, s, 0.9); ccNum(c, x + s*0.3, y + s*0.3, s*0.5, '+'); }],
-    [function(c, x, y, s){ ccMe(c, x - s*0.2, y, s*0.55); ccFoe(c, x + s*0.3, y, s*0.55, 0); ccSpark(c, x + s*0.05, y - s*0.05, s*0.28); },
-     '>', function(c, x, y, s){ ccTimer(c, x, y, s, 0.3); ccNum(c, x + s*0.3, y + s*0.3, s*0.5, '-'); }, function(c, x, y, s){ ccTimer(c, x - s*0.1, y, s*0.8, 0); }, '=', 'x']
+    [function(c, x, y, s){ ttDrawGear(c, x, y, s*0.2, 0.3); }, '>', function(c, x, y, s){ ccMe(c, x, y + s*0.05, s*0.55); ttDrawGear(c, x + s*0.28, y - s*0.28, s*0.1, 0); },
+     function(c, x, y, s){ ccMe(c, x - s*0.22, y, s*0.5); ccFoe(c, x + s*0.25, y, s*0.5, 0); ccSpark(c, x + s*0.02, y - s*0.05, s*0.26); }, '>',
+     function(c, x, y, s){ for(let i = 0; i < 3; i++) ttDrawGear(c, x - s*0.25 + i*s*0.25, y - s*0.12 + (i % 2)*s*0.14, s*0.1, i); ccNum(c, x, y + s*0.3, s*0.5, '½'); }],
+    [function(c, x, y, s){ ttDrawIcon(c, x - s*0.24, y - s*0.26, s*0.3, TT_ICON[0]); c.save(); c.fillStyle = '#7a4a24'; c.beginPath(); c.ellipse(x, y + s*0.22, s*0.3, s*0.1, 0, Math.PI, 0); c.fill(); c.restore(); ttDrawIcon(c, x, y + s*0.08, s*0.24, '🌰'); },
+     '>', function(c, x, y, s){ ttDrawIcon(c, x - s*0.26, y - s*0.26, s*0.3, TT_ICON[2]); ttDrawIcon(c, x + s*0.06, y + s*0.02, s*0.6, '🌳'); },
+     function(c, x, y, s){ c.save(); c.translate(x, y + s*0.36); c.scale(s/150, s/150); ttDrawDoor(c, { x:0, to:2, era:1 }, 0, 40, false); c.restore(); },
+     '>', function(c, x, y, s){ for(let i = 0; i < 3; i++){ c.save(); c.fillStyle = TT_COL[i]; c.beginPath(); c.arc(x + (i - 1)*s*0.3, y, s*0.14, 0, 7); c.fill(); c.restore(); ttDrawIcon(c, x + (i - 1)*s*0.3, y + 1, s*0.18, TT_ICON[i]); } }],
+    [function(c, x, y, s){ const L = ['fast', 'slow', 'storm', 'rewind', 'frozen']; L.forEach(function(k, i){ ttDrawIcon(c, x + (i - 2)*s*0.2, y, s*0.2, TT_RULE_ICON[k]); }); },
+     function(c, x, y, s){ c.save(); const R = s*0.34; c.fillStyle = '#fffaf0'; c.strokeStyle = '#c8901e'; c.lineWidth = 5; c.beginPath(); c.arc(x, y, R, 0, 7); c.fill(); c.stroke(); c.strokeStyle = CC_INK; c.lineCap = 'round'; c.lineWidth = 5; c.beginPath(); c.moveTo(x, y); c.lineTo(x, y - R*0.55); c.stroke(); c.lineWidth = 3; c.beginPath(); c.moveTo(x, y); c.lineTo(x, y - R*0.82); c.stroke(); c.restore(); },
+     '=', function(c, x, y, s){ ccMe(c, x, y + s*0.1, s*0.5); for(let i = 0; i < 4; i++) ttDrawGear(c, x - s*0.3 + i*s*0.2, y - s*0.3, s*0.07, i); }, '>', 'win']
   ]; },
   // PIE: race up 500 steps; a hit knocks you back down; first to the top wins
   steps:function(){ return [
