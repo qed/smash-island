@@ -218,6 +218,9 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (Sticker's new contest)**: and the doors should have different loops by color, and make them creative. the doors should be like subway stations, visible on minimap.
 - **2026-11-17 (next, on the minimap)**: not actually visible, but near one you should see the subway map
 - **2026-11-17 (Sticker's new contest, after it was built; "tramps" = the trampolines, "di" read as DI, steering in the air)**: and for the tramps, you can di. any ideas for cheats for sticker?
+- **2026-11-17 (answers: new cheats for Sticker's contest; offered fake gold paint, pickpocket, poster holes, cardboard decoy, kick the machine, vine swings, ball magnet, hide underwater)**: part 1: "all of the gold paint is fake. in the episode this is refering to, sticker gets 27630 points due to the announcer only detecting cheating, not the product of it.", Pickpocket, Poster holes, Cardboard decoy; part 2: Vine swings, Hide underwater
+- **2026-11-17 (next, Sticker's contest)**: any ideas for the map? any cheats to use AGAINST people?
+- **2026-11-17 (answers: Sticker map ideas and sabotage cheats)**: map: Waterfall cave, Rope bridge canyon, Ski slope + geysers, Sunken ship + campsite (all four); sabotage: "also, for the subway station, there should be a loop of 3-6 stations, and multiple loops.", Out of Order sign, Glue trap, Swap the door signs, Frame them (all four)
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
