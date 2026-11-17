@@ -1,40 +1,28 @@
 # Hot Dog's render (BFDIE event fighter art), made from the official BFDIE render (read as data only).
-#   hot-dog.png   the BFDIE render (2245 x 1158, transparent): its two little stick legs cut off (the approved design is limbless:
-#                 no arms, no legs, he rocks and hops on the bottom of his bun), trimmed, and scaled at the other event renders' size
-#                 (the render with legs would be 200 px tall; the bun alone comes out about 388 x 158)
+#   hot-dog.png   the BFDIE render (2245 x 1158, transparent), on his two little black stick legs: trimmed and scaled to 200 px tall, the other renders'
+#                 size (388 x 200). He has NO arms and he HAS legs (the owner, 2026-11-17: "hot dog doesnt have arms"; an earlier build cut his legs off
+#                 by mistake). It also prints his LIMB_RIG leg rows (scripts/helpers/trace_legs.py) and where his bun ends (BODY_FRAC: the bun's share
+#                 of the picture's height), which the game's rows for him copy (LIMB_RIG["Hot Dog"], HD_LEGS in index.html).
 # Run: <a Python with PIL> -I scripts/make-event-hotdog-art.py <path to the render> artifacts/V1/assets/sprites
 import sys, os
 from PIL import Image
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'helpers'))
+from trace_legs import leg_mask, leg_rows, js_row
 
 SRC, SPR = sys.argv[1], sys.argv[2]
+CUT = 916   # the first row under the bun's lowest edge: only the legs are under it (above it, down from row 900, narrow runs, under 40 px, are leg)
 
-def trim(im):
-    bb = im.getchannel('A').point(lambda v: 255 if v >= 8 else 0).getbbox()
-    return im.crop(bb) if bb else im
+def bbox(im):
+    return im.getchannel('A').point(lambda v: 255 if v >= 8 else 0).getbbox()
 
-im = trim(Image.open(SRC).convert('RGBA'))
-k = 200 / im.size[1]   # the scale the whole render (with legs) would have at 200 px tall
-# THE LEGS: below the bun every row holds only thin runs (two legs, two feet). Scan up from the bottom while every opaque run in the
-# row is narrower than 8% of the width, and clear those rows.
-W, H = im.size
-A = im.getchannel('A').load()
-def leg_row(y):
-    run = 0
-    for x in range(W):
-        if A[x, y] >= 60:
-            run += 1
-            if run > W * 0.08: return False
-        else: run = 0
-    return True
-y = H - 1
-while y > H // 2 and leg_row(y): y -= 1
-cut = y + 1
-im.paste((0, 0, 0, 0), (0, cut, W, H))
-print('legs cleared from row', cut, 'of', H)
-im = trim(im)
-w = round(im.size[0] * k)
-h = round(im.size[1] * k)
-out = im.convert('RGBa').resize((w, h), Image.LANCZOS).convert('RGBA')
+src = Image.open(SRC).convert('RGBA')
+box = bbox(src)
+legs = leg_mask(src, CUT, 40)
+body = src.copy(); body.paste((0, 0, 0, 0), (0, 0) + src.size, legs)
+bb_body = bbox(body)
+k = 200 / (box[3] - box[1])
+w, h = round((box[2] - box[0])*k), round((box[3] - box[1])*k)
+out = src.crop(box).convert('RGBa').resize((w, h), Image.LANCZOS).convert('RGBA')
 px = out.load()
 for y in range(out.size[1]):
     for x in range(out.size[0]):
@@ -42,6 +30,8 @@ for y in range(out.size[1]):
         if 0 < a < 8: px[x, y] = (0, 0, 0, 0)   # the faint halo a resize leaves
 out.save(os.path.join(SPR, 'hot-dog.png'), optimize=True)
 print('hot-dog.png', out.size, os.path.getsize(os.path.join(SPR, 'hot-dog.png')), 'bytes')
+print('BODY_FRAC', round((bb_body[3] - box[1])/(box[3] - box[1]), 4), '(the bun ends this far down the picture; the legs are under it)')
+print('LIMB_RIG["Hot Dog"] = { W:%d, H:%d, arms:[], legs:%s };' % (w, h, js_row(leg_rows(legs, box, (w, h)))))
 
 # His event skin, TOASTED HOT DOG: the render above, darker and a little warmer (hue and lightness only, as the other event fighters' skins), and its
 # thumbnail (56 px wide) for the Wardrobe.
