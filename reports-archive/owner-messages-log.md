@@ -291,6 +291,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (next)**: lifer
 - **2026-11-17 (next)**: magnet
 - **2026-11-17 (next)**: clover
+- **2026-11-17 (next)**: cabby
 
 ## Teams maps, stages & levels
 
