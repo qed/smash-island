@@ -198,6 +198,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (Bottle question)**: Pitch me 3 ideas (and sweet-spot pass: "Yes, queue it")
 - **2026-11-17**: and give me ideas for the contests. impress me.
 - **2026-11-17 (after the lead pitched 3 contests each for Bottle, Sticker, Needy, Jammy, Hot Dog)**: all of them are good. do the starred ones. (starred: Bottle = Hide and Seek; Sticker = Cheaters Prosper; Needy = Evil Serum; Jammy = The Ruler's Crown; Hot Dog = Rules Are Rules)
+- **2026-11-17 (answers: twists for the 5 BFDIE fighters, their movesets)**: Twists: "Pitch other twists" (not the unstarred contest ideas). Movesets: "Show me first" (a designer writes each full moveset; the owner approves before building).
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
