@@ -858,6 +858,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16 (next)**: add the anonymous character counting. (then, asked where the counts should go: "nvm for now")
 - **2026-11-16 (next)**: cuz there is someone who went on the bomby page 8 times, and so I want to figure out if they are maining him.
 - **2026-11-16 (next)**: sure, add it. I cant do much for now, bcs its on my dads account tho.
+- **2026-11-17**: change the skin names to what it is, except when it would make sense. pewter yellow face is not real
 
 ## Bugs & fixes
 
