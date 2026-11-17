@@ -5,7 +5,8 @@
 // JavaScript, /* */ in <style>, and <!-- --> in the page itself. The source, artifacts/V1/index.html, keeps every note: the
 // desktop build (electron/) and the jsdom tools read that file and never this copy.
 //
-// Nothing but comments goes. Every string, template literal (with its ${...}), regular expression, the JSON-LD block and the
+// Nothing but comments goes, and (since 2026-11-16) the inline JavaScript's indentation: the spaces and tabs a line of code starts with.
+// Every string, template literal (with its ${...}), regular expression, the JSON-LD block and the
 // other files are left exactly as they are, and every line break stays (a line keeps its number, so a line named in an error
 // banner on the site is the same line in the source, and no comment removal can join two lines -- ASI). A /*! or @license or
 // @preserve comment is kept. Line endings become LF, which is what the browser turns CRLF into anyway.
@@ -61,7 +62,7 @@ function keepLine(text) { return /^\/\/[#@] source(MappingURL|URL)=/.test(text);
 // division? -- follows the previous token, with ( ) and { } tracked so `if (x) /re/` and `{...} / 2` read right; a wrong guess
 // cannot slip through, because the stripped script must match the original token for token and compile.
 export function scanJS(src) {
-  const n = src.length, spans = [];
+  const n = src.length, spans = [], ind = [];   // ind: the runs of spaces and tabs that start a line between tokens (a line's indentation)
   let kept = 0, ntok = 0, h1 = 0x811c9dc5 | 0, h2 = 0x01000193 | 0;
   const tok = (type, s, e) => {
     ntok++;
@@ -101,7 +102,13 @@ export function scanJS(src) {
   let i = 0;
   while (i < n) {
     const c = src.charCodeAt(i);
-    if (isWs(c)) { i++; continue; }
+    if (isWs(c)) {
+      if ((c === 32 || c === 9) && (i === 0 || src.charCodeAt(i - 1) === 10)) {   // a line's indentation (never inside a string, template or regex: those are read whole)
+        let j = i + 1; while (j < n && (src.charCodeAt(j) === 32 || src.charCodeAt(j) === 9)) j++;
+        ind.push([i, j]); i = j; continue;
+      }
+      i++; continue;
+    }
     if (c === 47) {                                                     // /
       const d = src.charCodeAt(i + 1);
       if (d === 47) {                                                   // // comment, up to the line's end
@@ -197,7 +204,7 @@ export function scanJS(src) {
   }
   if (braces.length) fail('unclosed { or ${', n);
   if (parens.length) fail('unclosed (', n);
-  return { spans, kept, ntok, sig: (h1 >>> 0).toString(16) + (h2 >>> 0).toString(16) };
+  return { spans, ind, kept, ntok, sig: (h1 >>> 0).toString(16) + (h2 >>> 0).toString(16) };
 }
 
 // ---- CSS -------------------------------------------------------------------------------------------------------------------
@@ -287,7 +294,15 @@ export function stripJS(src, label = 'script') {
   if (b.ntok !== a.ntok || b.sig !== a.sig) throw new Error(`${label}: the stripped script's tokens differ from the original's`);
   if (b.spans.length || b.kept !== a.kept) throw new Error(`${label}: comments are left after stripping`);
   if (countNL(text) !== countNL(src)) throw new Error(`${label}: the line count changed`);
-  return { text, removed: a.spans.length, kept: a.kept, tokens: a.ntok };
+  // PERF (2026-11-16): the indentation goes too (the line breaks stay, so no two tokens join and every line keeps its number). Checked
+  // the same way: the same tokens, no indentation left, the same lines (and the caller compiles it).
+  const out = []; let pos = 0, dedent = 0;
+  for (const [s, e] of b.ind) { out.push(text.slice(pos, s)); pos = e; dedent += e - s; }
+  out.push(text.slice(pos));
+  const flat = out.join(''), c = scanJS(flat);
+  if (c.ntok !== a.ntok || c.sig !== a.sig || c.spans.length || c.kept !== a.kept || c.ind.length) throw new Error(`${label}: the script without its indentation differs from the original`);
+  if (countNL(flat) !== countNL(src)) throw new Error(`${label}: the line count changed when the indentation went`);
+  return { text: flat, removed: a.spans.length, kept: a.kept, tokens: a.ntok, dedent };
 }
 export function stripCSS(src, label = 'style') {
   const a = scanCSS(src);
@@ -326,7 +341,7 @@ function buildStamp(js) {
 export function stripHtml(input, label = 'page', { stamp = true } = {}) {
   const src = input.replace(/\r\n?/g, '\n');
   const n = src.length, edits = [], notes = [];
-  const st = { htmlComments: 0, jsComments: 0, cssComments: 0, kept: 0, scripts: 0, styles: 0, linesLost: 0, build: null };
+  const st = { htmlComments: 0, jsComments: 0, cssComments: 0, dedent: 0, kept: 0, scripts: 0, styles: 0, linesLost: 0, build: null };
   let stamped = false, i = 0;
   const comment = (s, e) => {
     st.htmlComments++;
@@ -383,7 +398,7 @@ export function stripHtml(input, label = 'page', { stamp = true } = {}) {
           notes.push(`${where}: no build stamp (no buildHash, or gameBuild does not read data-build); the site hashes the stripped text`);
         }
         edits.push({ s: tagEnd, e: cEnd, rep: r.text });
-        st.scripts++; st.jsComments += r.removed; st.kept += r.kept;
+        st.scripts++; st.jsComments += r.removed; st.kept += r.kept; st.dedent += r.dedent;
       }
     } else if (name === 'style' && body.trim()) {
       const r = stripCSS(body, `${label} style at line ${lineOf(src, tagEnd)}`);
@@ -423,7 +438,7 @@ export function buildSite(out, { log = console.log } = {}) {
     files.push({ rel, data });
     const s = res.stats;
     log(`${rel}: ${kb(raw.length)} -> ${kb(data.length)} raw, ${kb(gz(raw))} -> ${kb(gz(data))} gzip `
-      + `(removed ${s.jsComments} JS, ${s.cssComments} CSS, ${s.htmlComments} HTML comments; kept ${s.kept}`
+      + `(removed ${s.jsComments} JS, ${s.cssComments} CSS, ${s.htmlComments} HTML comments, ${kb(s.dedent)} of JS indentation; kept ${s.kept}`
       + `${s.linesLost ? `; ${s.linesLost} line breaks went with mid-text comments` : '; every line kept'}`
       + `${s.build ? `; build ${s.build.slice(0, 4)}-${s.build.slice(4)}` : ''})`);
     for (const note of res.notes) log(`  note: ${note}`);
