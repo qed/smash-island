@@ -560,6 +560,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16**: are up-smashes done? (answer to my question, after I said only batch 1 = 12 fighters is done: "Start batch 2 now")
 - **2026-11-16 (answers on up/down smashes batch 2)**: Redo which: "None, merge them all" + "Puffball's up smash" + "Ice Cube's up smash" (read as: merge the batch, redo those two up smashes). CPU never uses up smash: "Yes, fix it".
 - **2026-11-17**: and the moves dont have anything cool. look at any ssbu move, and you'll see that they all have something cool in them.
+- **2026-11-17 (next)**: especially the animations
 
 ## Bosses, Boss Rush & secrets
 
