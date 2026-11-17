@@ -110351,9 +110351,12 @@ const LHK = { gy0:2952, aw:5200, roomX:1000, roomDx:2400, roomY:3100, doorOff:13
   lever:[-360, -200, 200, 360], leverR:34, light:30, off0:300, offGrow:0, offMax:0, pits:[[900, 1010], [1400, 1510], [1900, 2010]], pitDepth:160, plunge:['stapler'], winHold:330,
   ladder:12, ladRise:96, stones:[[2185, 1710, 140], [2000, 1620, 130], [1850, 1530, 140], [1700, 1440, 120], [1560, 1440, 140], [1420, 1440, 110], [1290, 1440, 140]],
   light0:270, roomZoom:1, reJump:105, reUp:110, reGap:120, portalCool:40, retarget:90, gang:3,
-  hzDmg:3, tumble:20, kickReach:12, flyMax:30, warp:40, stall:300, sprCd:24, hatchU:1340, fightR:90, fightReach:80, fightEdge:60, fightT:120, fightCd:300, retryWait:120, climbCost:4000 };
+  hzDmg:3, tumble:20, kickReach:12, flyMax:30, warp:40, stall:300, sprCd:24, hatchU:1340, fightR:90, fightReach:80, fightEdge:60, fightT:120, fightCd:300, retryWait:120, climbCost:4000, offT0:9000, offT1:16200, offMin:0.2 };
 const LH_TAU = Math.PI*2;
 function lhcMod(a, n){ return ((a % n) + n) % n; }
+// THE MATCH ENDS (owner: "we dont want infinite matches"; no time limit): a CPU's taste for turning off a rival's light, full for LHK.offT0 frames of the match, then down in a line to
+// LHK.offMin of it at LHK.offT1, so late in a match a CPU mostly goes for its own levers and someone completes an emblem. (The turn-off itself stays a flat 5 s, for everyone.)
+function lhcOffTaste(){ const K = LHK, T = hazardT - ((LHC && LHC.t0) || 0); return T <= K.offT0 ? 1 : T >= K.offT1 ? K.offMin : 1 - (1 - K.offMin)*(T - K.offT0)/(K.offT1 - K.offT0); }
 function lhcWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.contest === 'lights'; }
 function lhcBuildWorld(){
   const K = LHK;
@@ -110584,7 +110587,8 @@ const LH_SECT = [
     a => {   // L3-3 THE FLUE: ledges and a blinking step, then up a flue by wall kicks while fire rises up it behind you, then crumbling ledges
       a.ST(); a.EX();
       a.L('L1', 320, 420, 100); a.BL('B1', 500, 580, 110, 200, 120, 0);
-      a.BK('WL', 620, 660, 190, 440); a.BK('SF', 660, 770, 0, 60); a.BK('WR', 770, 840, 60, 300);   // EASIER: 110 inside (was 170), 240 to climb (was 300), no spikes on the walls, no rest ledge (owner 2026-11-16: "remove the random platform in walljump secitons"), and no fire in it (nothing in a shaft but its kick walls)
+      a.BK('WL', 620, 660, 190, 440); a.BK('SF', 660, 770, 0, 60); a.BK('WR', 770, 840, 60, 300);   // EASIER: 110 inside (was 170), 240 to climb (was 300), no spikes on the walls, no rest ledge (owner 2026-11-16: "remove the random platform in walljump secitons"); the fire rising up it is BACK (owner 2026-11-17: "why was the lava removed from some tunnels? put it back"), slow as in round 3
+      a.FIRE(660, 770, 60, 360, 0.5);
       a.PAD('KR', 770, 1, 90, 300); a.PAD('KL', 660, -1, 190, 360);
       a.CR('C1', 880, 950, 345, 24); a.CR('C2', 1040, 1110, 345, 24); a.CR('C3', 1150, 1220, 345, 24);
       a.route(['ST', 'L1', 'B1', 'SF', { shaft:['KR', 'KL'], to:['WR', 'C1'] }, 'C1', 'C2', 'C3', 'EX', 'HOLE']);
@@ -110600,6 +110604,25 @@ const LH_SECT = [
   ],
 ];
 const LHK_GRATE = { ph:0, j0:0, on:40 };   // L3-2's grate phase and jet wave (set by the build's ride check; see the LEDGER)
+// HUMAN CLIMBING (owner 2026-11-17: "the cpus are parkour perfect."): the sim still finds a way that works, but a CPU plays it like a person, by its level (brainLevel: Easy, Normal, Hard, Expert).
+// react: its reaction time, frames: it only takes a way that still works when its first key comes that late (a person sees the moment coming), so it often waits for a later or longer opening.
+// jit: how far off that time its keys really start, +/- frames (early or late on a blink, a saw, the fire, a moving piece). aim: its aim error in the air, px (about one sd, per jump).
+// slipP/slip: the chance a jump carries a real under- or overshoot, and its size, px. lateP/late: the chance each press in the air (a double jump, a wall kick) comes late, up to that many frames.
+// hesP/hes: at a hard piece (a shaft, a spring or fan, a moving, blinking, crumbling or belt piece, or a floor with hazards), standing on something firm, the chance it lets a good moment go and waits, and how long, frames.
+// The jitter, slips and late presses grow rarer as it fails on a floor (a person gets careful: 0.85 a fail, never under 0.35 of the level's own). Nothing else: no tow, no immunity, no help.
+const LHK_HUM = { react:[[16, 28], [11, 20], [7, 13], [4, 8]], jit:[8, 5, 3, 2], aim:[6, 4, 3, 2], slipP:[0.12, 0.07, 0.04, 0.02], slip:[[16, 30], [14, 26], [12, 22], [10, 18]],
+  lateP:[0.15, 0.1, 0.06, 0.03], late:[5, 4, 3, 2], hesP:[0.35, 0.25, 0.15, 0.08], hes:[[20, 60], [12, 40], [8, 26], [4, 16]], care:0.85, careMin:0.35 };
+function lhcHuman(f, bd, step, R){
+  const H = LHK_HUM, l = brainLevel(f), P = R.plan, nf = R.fails[bd.b] || 0, care = Math.max(H.careMin, Math.pow(H.care, nf));
+  const tq = step && step.p ? (bd.ids[step.p] || bd.parts.find(p => p.gid === step.p)) : null;
+  const hard = !!(step && (step.shaft || step.via)) || !!(tq && tq.kind !== 'ledge' && tq.kind !== 'block') || bd.hz.length > 0;
+  const key = bd.b + ':' + R.i + ':' + nf;   /* (it lets a moment go at most once a step a try: then it takes the next one it finds) */
+  const on = f.onground ? lhcSupAt(bd, f.x, f.y + f.r, f.r) : null, oq = on && bd.ids[on], firm = on === 'CP' || on === 'SF' || !!(oq && (oq.kind === 'ledge' || oq.kind === 'block' || oq.kind === 'mover'));   /* (never on a crumbling, blinking or belt piece: a person does not stand and wait on those) */
+  if(hard && firm && R.hesKey !== key){ R.hesKey = key; if(Math.random() < H.hesP[l]){ R.hesT = hazardT + Math.round(brainR(H.hes[l])); R.plan = null; return; } }
+  const e = Math.max(-(P.D || 0), Math.round((Math.random()*2 - 1)*H.jit[l]*care)); P.t0 = hazardT + e;   /* (its keys start e frames off the time it planned for) */
+  let bias = (Math.random() + Math.random() + Math.random() - 1.5)*2*H.aim[l]; if(Math.random() < H.slipP[l]*care) bias += (Math.random() < 0.5 ? -1 : 1)*brainR(H.slip[l]);
+  P.bias = bias; P.lateP = H.lateP[l]*care; P.late = H.late[l]; P.lastJ = false;
+}
 // ---- the room's rules ----
 function lhcBandOf(f, tw){ return clamp(Math.floor((tw.base - (f.y + f.r) + 1)/LHK.band), 0, LHK.nBand); }
 // What a fighter stands on in a band: a piece (its id, a wheel's seats share one), or the band's own slab: 'CP' (the checkpoint, the cap on the hole below), 'SF' (a safe floor), 'NET'.
@@ -110629,7 +110652,7 @@ function lhcFail(f, tw, bd, why){
   if(R && !isHumanCtrl(f) && R.k === tw.k){
     const nf = R.fails[bd.b] = (R.fails[bd.b] || 0) + 1;   /* (no help of any kind since 2026-11-17: a CPU that fails tries again like a human) */
     if(nf >= 2) R.waitT = hazardT + K.tumble + Math.floor(Math.random()*K.retryWait);   /* (and like a human it does not retry on the very same beat: from the second fail on it waits a moment at the start, 0 to 2 s -- the floors' pieces are functions of the clock and a retry that takes exactly one cycle meets the same bad beat every time, which held a CPU on one pendulum for 10 tries) */
-    R.plan = null; R.i = 0; R.prog = hazardT;
+    R.plan = null; R.i = 0; R.prog = hazardT; R.hesT = 0;
   }
 }
 function lhcPlaceCP(f, bd){
@@ -110931,7 +110954,7 @@ function lhcRoomAi(f, inp){
   if(!R.plan && f.onground){
     const q = sup && (bd.ids[sup] || bd.parts.find(p => p.gid === sup));
     const busy = !!(f._mv || f._windup || f._smQ || (f._lag || 0) > 0 || (f.rooted || 0) > 0 || f.atkCd > 8);   /* (still in a swing's lag: the plan's first jump would be swallowed) */
-    if(!busy && (hazardT + f.idx) % 3 === 0) R.plan = lhcChoose(f, bd, step, R);
+    if(!busy && (hazardT + f.idx) % 3 === 0 && hazardT >= (R.hesT || 0)){ R.hD = Math.round(brainR(LHK_HUM.react[brainLevel(f)])); R.plan = lhcChoose(f, bd, step, R); if(R.plan) lhcHuman(f, bd, step, R); }   /* (HUMAN CLIMBING: its reaction time planned for, a moment it lets go, a timing, an aim) */
     if(!R.plan){ if(!R.hold || hazardT >= R.holdT) { R.hold = lhcHoldSpot(f, bd, sup, step, R); R.holdT = hazardT + 6; } const k = lhcPolHold(R.hold)({ x:f.x, vx:f.vx, og:true, supQ:q || null }, hazardT, 0); lhcKeysOut(f, inp, k); return true; }
   }
   if(R.plan){
@@ -110939,7 +110962,17 @@ function lhcRoomAi(f, inp){
     if(P.jumped && !P.air && hazardT - P.jumped === 2 && f.onground){ R.plan = null; return true; }   /* (its jump did not happen: do not walk on blind) */
     const view = { x:f.x, y:f.y, vx:f.vx, vy:f.vy, og:f.onground, jumps:f.jumps, jp:!!f._jp, st:P.st, arc:f._lhArc, supQ:null };
     if(f.onground){ const S = sup && (bd.ids[sup] || bd.parts.find(p => p.gid === sup)); view.supQ = S || null; }
-    const k = P.pol(view, hazardT, hazardT - P.t0);
+    if(!f.onground && P.bias) view.x += P.bias;   // (HUMAN CLIMBING: where it thinks it is, by its aim error: an under- or overshoot)
+    let k = P.pend && hazardT >= P.pend.at ? P.pend.k : null;
+    if(P.pend && !k){ lhcKeysOut(f, inp, { d:P.pend.d, j:false }); return true; }   // (a press that comes late: the arrow held, the button not yet)
+    if(k) P.pend = null;
+    else {
+      k = P.pol(view, hazardT, hazardT - P.t0);
+      if(!f.onground && (k.k || (k.j && !P.lastJ)) && Math.random() < (P.lateP || 0)){ P.pend = { k, d:k.k ? k.pad.wsd : k.d, at:hazardT + 1 + Math.floor(Math.random()*P.late) }; P.lastJ = false; lhcKeysOut(f, inp, { d:P.pend.d, j:false }); return true; }
+    }
+    P.lastJ = !!k.j;
+    if(k.k && k.pad && !f.onground){ const side = k.pad.wsd, gap = side > 0 ? k.pad.fx - (f.x + f.r) : (f.x - f.r) - k.pad.fx;   /* (HUMAN CLIMBING: the kick only with the wall really in reach; else it is a press toward the wall, the game's own wall jump if it touches) */
+      if(!(gap <= 6 + K.kickReach && gap >= -6 && f.y <= k.pad.yBot + 8 && f.y >= k.pad.yTop - 8)){ lhcKeysOut(f, inp, { d:side, j:true }); return true; } }
     if(k.k && k.pad && !f.onground){ const fs = f.st || STAT_ONE, side = k.pad.wsd; f.vy = JUMP*WJ_VY*fs.jump*wallJumpK(f); f.vx = -side*WJ_VX; f.face = -side; f._wallSide = side; (f._wallUsed || (f._wallUsed = {}))['lhc' + k.pad.id + hazardT] = 1; f._jp = true; for(let i = 0; i < 4; i++) puff(f.x + side*f.r, f.y, '#fff', 2); return true; }
     if(k.hop) f._aiHop = 1;
     if(k.j && !P.jumped && f.onground) P.jumped = hazardT;
@@ -110978,15 +111011,16 @@ function lhcChoose(f, bd, step, R){
       if(gap > 120) tries.push([key, { mode:'hops' }]);
     }
   }
+  const D = (R && R.hD) || 0, late = (pol, st) => (s, t, i) => { s.st = st; return i < D ? { d:0, j:false } : pol(s, t, i - D); };   // (HUMAN CLIMBING: its reaction time, no keys, then the way)
   for(const tr of tries){
     let pol, walk = false, okL = ok;
     if(tr[0] === 'SHAFT'){ const pads = step.shaft.map(id => bd.ids[id]); pol = lhcPolShaft(f, bd, pads, step.to[tr[1] || 0]); }
     else { pol = lhcPolHop(f, bd, tr[0], tr[1]); walk = tr[1].mode === 'walk' || tr[1].mode === 'hops'; if(tr[0] === 'HOLE') okL = ['N:CP']; }
     const st = {};
     const use = step.via && step.via.spring ? { id:step.via.spring, n:1 } : null;   /* (a 'via spring' plan is one that is thrown by it; a fan is used or not, as the sim finds) */
-    const res = lhcSim(f, bd, (s, t, i) => { s.st = st; return pol(s, t, i); }, tr[0] === 'SHAFT' ? 200 : 150, okL, step.look || 0, use);
+    const res = lhcSim(f, bd, late(pol, st), (tr[0] === 'SHAFT' ? 200 : 150) + D, okL, step.look || 0, use);
     if(res.ok && !lhcOnward(f, bd, step, res)) continue;   // (onto a crumbling or blinking piece only when the hop off it will be clear in time)
-    if(res.ok){ const st2 = {}; return { pol:(s, t, i) => { s.st = st2; return pol(s, t, i); }, st:st2, t0:hazardT, walk, ok:okL, why:tr }; }
+    if(res.ok){ const st2 = {}; return { pol:late(pol, st2), st:st2, t0:hazardT, walk, ok:okL, why:tr, D }; }
   }
   return null;
 }
@@ -111132,6 +111166,7 @@ CONTEST_RULES.lights = {
         let col = own;   // only when two in one match are too alike does the later one take the nearest free palette colour, so the four always differ
         if(used.some(u => dist(rgb(u), rgb(col)) < 80)){ const free = LH_PAL.filter(q => !used.some(u => dist(rgb(u), rgb(q)) < 80)); if(free.length){ free.sort((a, c) => dist(rgb(a), rgb(own)) - dist(rgb(c), rgb(own))); col = free[0]; } }
         used.push(col); f._lhCol = col; } }
+    LHC.t0 = hazardT;   // (when the match began: a CPU's taste for turning off rivals' lights fades with it, see want)
     for(const f of fighters){ f._lhP = 0; f._lhSpent = null; f._lhAt = null; f._lhOffs = 0; f._lhGoal = null; f._lhRe = 0; f._lhN = null; f._lhStay = 0; f._lhJit = [0, 1, 2, 3].map(() => 0.85 + 0.3*Math.random()); f._lhR = null; f._lhRet = null; f._lhArc = null; f._lhPX = null; f._lhImmT = 0; f._lhWK = 0; }
     try{ const h = document.getElementById('hud'); if(h) h.style.visibility = ''; }catch(e){}
   },
@@ -111228,7 +111263,7 @@ CONTEST_RULES.lights = {
       for(const tw of S.towers) for(const L of tw.levers){
         let v = 0;
         if(L.j === f.idx) v = L.lit ? 0 : 100;
-        else if(L.lit){ const n = lhcPieces(L.j); v = n >= K.gang ? (40 + 30*n)*300/lhcNeed(L) : 0; }
+        else if(L.lit){ const n = lhcPieces(L.j); v = n >= K.gang && lhcPieces(f.idx) < n ? (40 + 30*n)*300/lhcNeed(L)*lhcOffTaste() : 0; }   /* (never while its own emblem is as near done as the rival's: then it goes for its own levers; and less as the match goes on) */
         if(!v || !L.nd) continue;
         const d = lhcDist(L.nd), dd = d.get(A); if(dd >= 1e8) continue;
         const sc = v/(1 + dd/900)*((f._lhJit && f._lhJit[tw.k]) || 1);
