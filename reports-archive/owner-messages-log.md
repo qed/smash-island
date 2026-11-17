@@ -248,6 +248,9 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (FOLDY ideas)**: 1 Areas on the course, 2-3 Kite + cranes, 4-5 Updrafts + mail tube, 6 Tornado, 9-10 Balloon + folding walls (not 7-8 rain + shredder, 11-12 photo finish + crowd, 13 weather vanes)
 - **2026-11-17 (BEACH BALL ideas)**: "skip this one" (8-12: [No preference])
 - **2026-11-17 (BOTTLE ideas)**: "only the mirror room." (of option 7-8 Dog + mirror room), 1-2 Flicker + moving furniture, 3-4 Doorbell + creaky boards, 5-6 Disguise + secret passages, 9 Fuse box, 10 Vent swaps (not dog, laundry pile, attic ladder)
+- **2026-11-17 (NEEDY pace + ideas)**: pace: Shorter gap, Drop evil-KO injects; ideas: all 12 (1-2 Lab + antidote, 3-4 Vaccine + alarm, 5-6 Doors + quarantine, 7 Evil move, 8-9 Conveyor + robot arm, 10 Goo puddle, 11 Evil jar, 12 Decon shower)
+- **2026-11-17 (HOT DOG ideas)**: "you could try harder.", 1-2 Courtroom + rule cards, 3-4 More + double rules
+- **2026-11-17 (HOT DOG bigger ideas + STAPY ideas)**: Hot Dog: Rule zones, Lawmaker, Rule-break heists, Rule chain, Traffic rules (not trial, contract deals, bribe the ref); Stapy: 1-3 Storm, searchlights, foghorn (not 4-10)
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
