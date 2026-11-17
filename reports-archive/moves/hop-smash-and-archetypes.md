@@ -104,3 +104,18 @@ Per move (middle of the roster in brackets):
 The six shared labels, for comparison (averages over their members): Controller has the most area (32894), Zoner the fastest startup (4.8). Keeper (Box alone) has the most damage (53.4% against 32.8-40.1%) and the slowest startup (8.7 against 4.8-7.4).
 
 **Answer:** her tilts and airs are not the best overall. They are among the hardest-hitting (4th of 117) and they cover a lot (22nd, and 5th for hitting both sides), but they are among the slowest to come out (109th of 117). The biggest areas belong to Black Hole, Snowball, Tree, TV and Donut. So they are big and heavy but slow: strong when they land, easy to beat to the punch. The label "Keeper" has nothing to do with it; it is her own hand-made moveset.
+
+## Built: landing lag (branch g-hoplag, 2026-11-17)
+
+Your pick: "Landing lag (Recommended)". A smash that goes off in the air now costs 18 more frames of landing lag when the fighter lands while it is still going or within 24 frames of its end (its own end lag counts as part of it). Same rule for a person and a CPU. The smash itself and every ground smash are unchanged.
+
+Measured again with the same scripted player (frames after landing until she can act; V, then a short hop):
+
+| Fighter | Before | After |
+|---|---|---|
+| Money, Puffball, Cherries, Yin-Yang, Eraser, Baseball, Jack, Silver Spoon, Cammy, MeTag, Box | 8 to 10 | **19** (all 11) |
+| The same 11, full jump then V | 8 to 16 | 19 (all 11) |
+
+All 117 fighters: before, 86 landed with 8 to 11 frames; after, 3 do (Woody, Tissues and Beach Ball fly so far that they land 71-86 frames after the smash, long after it ended: a normal landing, as the rule says). 29 fighters now have 25-33 frames: their smash hits as they touch down, and its hit freeze (about 9 frames) pauses the landing lag, as it pauses every lag in the game. Ground smashes: no change in any of the 117 (damage, launch, frames). A short hop + neutral air: no change.
+
+How it looks: the game's own landing squash (the dust ring) and standing still; there is no separate landing-lag pose in the game.
