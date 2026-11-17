@@ -193,6 +193,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16 (next)**: for the floor
 - **2026-11-16 (playing the easier Stapy)**: remove the random platform in walljump secitons
 - **2026-11-16 (about the Stapy win cut / the episode picture they sent on 11-15)**: also, that image was just part of the drowning out. the whole sky eventually turned into the emblem color.
+- **2026-11-17 (answers: 1 Stapy CPU shimmer help, 2 CPUs fighting while climbing, 3 Long Span ledges)**: 1. your call. 2. if they are in a good position. 3 whats that? (lead's call on 1: remove the shimmer help)
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
