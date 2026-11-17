@@ -193,6 +193,16 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16 (next)**: for the floor
 - **2026-11-16 (playing the easier Stapy)**: remove the random platform in walljump secitons
 - **2026-11-16 (about the Stapy win cut / the episode picture they sent on 11-15)**: also, that image was just part of the drowning out. the whole sky eventually turned into the emblem color.
+- **2026-11-17 (answers: 1 Stapy CPU shimmer help, 2 CPUs fighting while climbing, 3 Long Span ledges)**: 1. your call. 2. if they are in a good position. 3 whats that? (lead's call on 1: remove the shimmer help)
+- **2026-11-17**: oh! we forgot bottle as an event fighter.
+- **2026-11-17 (Bottle question)**: Pitch me 3 ideas (and sweet-spot pass: "Yes, queue it")
+- **2026-11-17**: and give me ideas for the contests. impress me.
+- **2026-11-17 (after the lead pitched 3 contests each for Bottle, Sticker, Needy, Jammy, Hot Dog)**: all of them are good. do the starred ones. (starred: Bottle = Hide and Seek; Sticker = Cheaters Prosper; Needy = Evil Serum; Jammy = The Ruler's Crown; Hot Dog = Rules Are Rules)
+- **2026-11-17 (answers: twists for the 5 BFDIE fighters, their movesets)**: Twists: "Pitch other twists" (not the unstarred contest ideas). Movesets: "Show me first" (a designer writes each full moveset; the owner approves before building).
+- **2026-11-17 (reading the BFDIE fighter designs)**: hot dog doesnt have arms, neither does needy
+- **2026-11-17**: use the starred twists for what?
+- **2026-11-17 (after the lead explained the starred twists = each new event fighter's event matches 1 and 2)**: yeah, those are good.
+- **2026-11-17 (answers before building the 5 BFDIE fighters)**: Sticker and Jammy arms: "Both have arms". Order: "2 now, rest as slots free" (Bottle and Sticker first, then Needy, Jammy, Hot Dog). Movesets taken as approved (owner only corrected arms).
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
@@ -386,6 +396,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16 (next)**: the thing with yoyle needle is that it grows with player count more than the others, save for dream island, and the other parameters.
 - **2026-11-16**: open dream island
 - **2026-11-16 (screenshot of Dream Island Teams: a tall red ladder/scaffold, two red poles with rungs, between wooden platforms, next to Firey)**: the red stuff is still there
+- **2026-11-17 (answer: Long Span new ledges catch fighters knocked off the broken middle of the bridge)**: "Gap under the middle" (remove only the ledges under the broken part, so falling there is still a KO; the other ledges stay, each with a way back up)
 
 ## Moves, smashes & Final Smashes
 
@@ -557,6 +568,10 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16 (reply to the Moves 4 result + event-skin colours)**: its an okay
 - **2026-11-16**: are up-smashes done? (answer to my question, after I said only batch 1 = 12 fighters is done: "Start batch 2 now")
 - **2026-11-16 (answers on up/down smashes batch 2)**: Redo which: "None, merge them all" + "Puffball's up smash" + "Ice Cube's up smash" (read as: merge the batch, redo those two up smashes). CPU never uses up smash: "Yes, fix it".
+- **2026-11-17**: and the moves dont have anything cool. look at any ssbu move, and you'll see that they all have something cool in them.
+- **2026-11-17 (next)**: especially the animations
+- **2026-11-17**: should we have sweetspots and sourspots? (lead recommended: yes, on 1-2 moves per fighter, show old-vs-new first; asked whether to queue the pass)
+- **2026-11-17 (answers on up/down smashes batch 3)**: redo "The 4 'just the object' ones" (down smashes of Donut, Bell, Gaty, Barf Bag) and "Fewer sweet spots" (8 of 24 used a sweet spot as the hook). Not picked: merge as is, Yellow Face up vs Dora up.
 
 ## Bosses, Boss Rush & secrets
 
@@ -731,6 +746,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-12 13:28 UTC** *(part)*: yes restart both.
 - **2026-11-12 18:04 UTC**: you can stop the processes now
 - **2026-11-13 18:40 UTC** *(part)*: stop doing that.
+- **2026-11-17**: the cpus delay recovery tools too much and fall sooo much.
 
 ## Art, animation & polish
 
@@ -788,6 +804,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-12 17:32 UTC** *(part)*: now, start juries that will say what they think will make the game better, and use different personalities to figure out if it is ready for x things, like competitive play.
 - **2026-11-12 18:12 UTC** *(part)*: now, we need to polish what we have(more consistent, more fluid, cooler) without changing the gameplay from now on. your goal will be to render everything better.
 - **2026-11-16**: take steps to optimise files, lag, and just stuff in general
+- **2026-11-17 (answers on making moves look cool)**: "Both: effects first" (global move effects for every move first: wind-up poses, swing trails, squash/stretch, impact sparks/flash sized by power, shake + tiny freeze on strong hits; then per-fighter animation redraws in batches, most-played first). Hit freeze: "Yes, small and only on strong hits".
 
 ## Online, UI & players
 
@@ -804,6 +821,10 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-08 12:27 UTC** *(part)*: ui?
 - **2026-11-09 20:04 UTC** *(part)*: they will not be viable competitively.
 - **2026-11-13 18:53 UTC** *(part)*: your job is to offload context, because I believe the reason we lost this is because of compacting, so keep a document of my messages.
+- **2026-11-16**: how many different people played my game? and how many ppl played it multiple times? and on what characters, if possible?
+- **2026-11-16 (next)**: add the anonymous character counting. (then, asked where the counts should go: "nvm for now")
+- **2026-11-16 (next)**: cuz there is someone who went on the bomby page 8 times, and so I want to figure out if they are maining him.
+- **2026-11-16 (next)**: sure, add it. I cant do much for now, bcs its on my dads account tho.
 
 ## Bugs & fixes
 
@@ -1240,6 +1261,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-13 19:05 UTC** *(part)*: also, if messages have sperate themes, then seperate them.
 - **2026-11-16 (TLC map job running)**: should we start other tasks? (answer to my pick list: Stapy rebuild, Event-fighter skins, Quick move fixes; not Moon Caves)
 - **2026-11-16 (after my % report: move fixes done incl. Calculated Bounce side effects, event skins waiting on an OK, new CPU stand-still job)**: % complete? start a new thing to replace the event-skins
+- **2026-11-17**: you can start more tasks
 
 ## Other
 

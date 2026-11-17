@@ -1177,8 +1177,9 @@
         <div class="optlabel">Screen</div>
         <div class="row">
           <button class="btn ghost sm" id="shakeToggle" onclick="toggleShake()">📳 Screen shake: On</button>
+          <button class="btn ghost sm" id="fxToggle" onclick="toggleJuiceFx()">✨ Effects: Full</button>
         </div>
-        <div class="opthint">Heavy hits shake the screen. Turn it off to keep the picture still.</div>
+        <div class="opthint">Heavy hits shake the screen. Reduced effects: no KO flash, zoom or afterimages, fewer sparks.</div>
       </div>
       <div class="optgrp">
         <div class="optlabel">Controls</div>
@@ -24196,6 +24197,23 @@ function bossRushCheck(){
     setTimeout(()=>{ if(BOSSRUSH.active && running) spawnBossRushBoss(); }, 1500 + ending.hold);
   }
 }
+// ANONYMOUS PICK COUNT (owner 2026-11-16: "add the anonymous character counting", to see which fighters people main).
+// At the start of each match, every fighter played on this computer (controller 'local'; not CPUs, not the tutorial,
+// not test mode) sends ONE page view of "/pick/<fighter>" to the site's own Vercel Web Analytics (window.va, set up by the
+// analytics block at the end of the page). Nothing personal: only the fighter's name as a path. The "Don't count my visits"
+// switch (DONT_COUNT_KEY) stops it here and again in that block's beforeSend. With no analytics on the page it does nothing.
+function pickCount(){
+  if(typeof window.va !== 'function' || dontCountLoad()) return;
+  if(TESTMODE.active || (typeof TUT !== 'undefined' && TUT.active)) return;
+  const sent = new Set();
+  for(const f of fighters){
+    if(!f || f.controller !== 'local' || !f.name) continue;
+    const slug = String(f.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if(!slug || sent.has(slug)) continue; sent.add(slug);
+    const path = '/pick/' + slug;
+    try{ window.va('pageview', { route:path, path }); }catch(e){}
+  }
+}
 function beginMatchNow(){
   nanGuard.said = false;   // (NOT A NUMBER: said once a match)
   CPU_LOOK.seed = cpuLookSeed();   // (CPUS WEAR SKINS: a new look for each CPU each match; online the start's seed is used: CPU_LOOK.net)
@@ -24251,6 +24269,7 @@ function beginMatchNow(){
   if(MCAVE && MCAVE.on) mcCamReset();   // MOON CAVES: already turned to the start
   netViewReset();
   if(stage.hazard==='evilleafy' && !contestIs('lights')){ evil=evilStart(); }   // (Stapy's Search Party has no Evil Leafy: CONTEST_RULES.lights)
+  try{ pickCount(); }catch(e){}   // ANONYMOUS PICK COUNT (owner 2026-11-16): one "/pick/<fighter>" view per human player per match (pickCount)
   banner("GO!", 900);
   KEYHINT.t0 = performance.now(); KEYHINT.n = 0; KEYHINT.pending = false; keyHintClear();
   try{ keyStripBegin(); }catch(e){}   // NEW-PLAYER POLISH: the key strip for a player's first 3 matches (drawing only)
@@ -31392,7 +31411,7 @@ addEventListener('visibilitychange', ()=>{ stepClockReset(); });
 // hitbox overlay's red boxes fade. They used to age inside draw(), once per animation frame -- twice as fast on a 120 Hz screen.
 function ageView(k){
   for(let i = 0; i < k; i++){
-    if(shakeAmt > 0.2){ shakeAmt *= 0.85; SHK_X = Math.random()*2 - 1; SHK_Y = Math.random()*2 - 1; }   // (JURY 1: one offset a step; a new one every drawn frame read as static at 144 Hz)
+    if(shakeAmt > 0.2){ shakeAmt *= 0.85; SHK_X = shkRand()*2 - 1; SHK_Y = shkRand()*2 - 1; }   // (JURY 1: one offset a step; a new one every drawn frame read as static at 144 Hz)
     for(let j = DEBUG_HITS.length - 1; j >= 0; j--){ if(--DEBUG_HITS[j].t <= 0) DEBUG_HITS.splice(j, 1); }
   }
 }
@@ -76675,7 +76694,7 @@ function mdiHit(t, isTick, onGround){   // applyHit: this hit may be DI'd and SD
 }
 function mdiDI(f, inp){   // step, in stun: the hit marked is bent by the way held now
   if(f._diAt == null) return;
-  if(!(f.hitstun > 0) || hazardT - f._diAt > HITSTOP_MAX + 4 || mdiExempt(f)){ f._diAt = null; return; }
+  if(!(f.hitstun > 0) || hazardT - f._diAt > HITSTOP_MAX + 4 + (f._hsB || 0) || mdiExempt(f)){ f._diAt = null; return; }   // (_hsB: a strong hit's extra freeze frames keep the window as long past the freeze as ever)
   const b = inp ? diBend(f.vx, f.vy, inp.left, inp.right, inp.up || inp.jump, inp.down) : null;
   if(!b) return;
   f._diAt = null; f.vx = b.vx; f.vy = b.vy;
@@ -76720,7 +76739,7 @@ function brainSdiKeys(f){   // hitStopHold, a CPU: a tap toward the middle of th
   return f.x > WW/2 ? { left:true } : { right:true };
 }
 let STEP_F = null;   // the fighter whose own frame is running in step(), or null
-function hitStopFrames(dmg){ return Math.max(HITSTOP_MIN, Math.min(HITSTOP_MAX, Math.round(2 + (dmg - 3)*4/15))); }   // 3% -> 2, 10% -> 4, 18% -> 6
+function hitStopFrames(dmg){ return Math.max(HITSTOP_MIN, Math.min(HITSTOP_MAX, Math.round(2 + (dmg - 3)*4/15))) + HS_BONUS; }   // 3% -> 2, 10% -> 4, 18% -> 6; + 0-3 on a strong hit (HS_STRONG, MOVE JUICE: applyHit sets HS_BONUS)
 function hitStopOff(){
   if(RACE.active) return true;
   if(KOC.on && (FS.slow > 0 || KOC.over)) return true;   // THE LAST KO (its deciding hit too: kocLaunch runs first): a freeze would eat the slow-mo, and they would leave the close-up unseen
@@ -76840,6 +76859,7 @@ function hitStopHit(t, from, dmg){
     const n = (t._hsBy === from.idx && t._hsMv === mv) ? 1 : hitStopFrames(dmg);   // a later hit of a move that held them already: 1 frame at most
     if(!(t._hitStop > 0)) t._hsAt = hazardT;   // (held from the next frame; one already held stays held)
     t._hitStop = Math.max(t._hitStop||0, n); t._hsBy = from.idx; t._hsKey = key; t._hsMv = mv;
+    t._hsB = n > 1 ? HS_BONUS : 0;   // (MOVE JUICE: the strong-hit frames this hold has, for the DI window: mdiDI)
   }
   hitStopSelf(from, dmg, t);
 }
@@ -76937,7 +76957,7 @@ function dirSmashNums(sp, name){
 function dirSmashSpec(f, dir){
   const sp = f.kit && f.kit.special, up = dir > 0, key = f.name + '|' + dir + '|' + Math.round(f.r);
   let S = DSM_CACHE.get(key); if(S) return S;
-  const own = DSM_OWN[f.name];   // UNIQUE UP/DOWN SMASHES, batches 1 and 2: twenty-four fighters have their own rows (DSM_OWN)
+  const own = DSM_OWN[f.name];   // UNIQUE UP/DOWN SMASHES, batches 1 to 3: thirty-six fighters have their own rows (DSM_OWN)
   if(own){ S = own[up ? 'up' : 'down']; DSM_CACHE.set(key, S); return S; }
   const N = dirSmashNums(sp, f.name), r = f.r, name = (up ? DSM_NAMES.up : DSM_NAMES.down)[N.pat] || (up ? DSM_NAMES.up.none : DSM_NAMES.down.none);
   const end = 20 + Math.round(N.D*0.45);
@@ -76996,10 +77016,23 @@ function brainSmDir(f, t){
   const dx = Math.abs(t.x - f.x), dy = t.y - f.y;
   let d = 0;
   if(dy < -60 && dx < 90 && Math.random() < 0.7) d = 1;
+  else if(DSM_OWN[f.name]){ if(Math.abs(dy) < 60 && brainDsmLands(f, t) && Math.random() < 0.5) d = -1; }   // (batch 3: an own down smash is asked for where it REACHES, not on the sweep's distance; see brainDsmLands)
   else if(dx < f.r + (t.r || 24) + 40 && Math.abs(dy) < 40 && Math.random() < 0.18) d = -1;
   f._aiSmDir = d; f._aiSmDirT = hazardT;
 }
-function brainSmash(f, t, toward, want){ brainSmDir(f, t); if(want){ f._aiSmDir = want; f._aiSmDirT = hazardT; } return brainFace({ smash:true }, toward); }   // (want: the direction is already decided -- the up smash as an anti-air, brainFight)
+// Would the fighter's OWN down smash reach foe t from here? Any box of the row, as it stands at the start (a move that travels is not followed), facing the way the
+// CPU will press it: at the foe, or with its back to the foe for a row that hits only behind it (back:true). Why: the old rule asked for the down smash on the
+// generated sweep's distance alone (and 18% of the time), which is wrong for an own row -- some are short, some one-sided, one hits only behind -- so CPUs pressed
+// seven of batch 3's moves 0 times in 8 matches. This reads only where the foe is now.
+function brainDsmLands(f, t){
+  const S = DSM_OWN[f.name] && DSM_OWN[f.name].down; if(!S || !S.boxes) return false;
+  const fc = (t.x >= f.x ? 1 : -1)*(S.back ? -1 : 1), g = Object.create(f); g.face = fc;
+  for(const bx of S.boxes){ if(shapeHits(mvShape(g, bx.s), t)) return true; }
+  return false;
+}
+function brainSmash(f, t, toward, want){ brainSmDir(f, t); if(want){ f._aiSmDir = want; f._aiSmDirT = hazardT; }
+  if(f._aiSmDir === -1 && DSM_OWN[f.name] && DSM_OWN[f.name].down.back) toward = -toward;   // (batch 3: a down smash that hits only behind the fighter is pressed with its back to the foe)
+  return brainFace({ smash:true }, toward); }   // (want: the direction is already decided -- the up smash as an anti-air, brainFight)
 // THREE COOLDOWNS ("Specials and smashes should have seperate cooldowns, and also attacks"): X and ↓+X wait on atkCd,
 // C, ↑+C and ↓+C on spCd, V on smCd, and nothing one of them does touches the others. A smash's declared cd used to
 // land on atkCd and spCd both, and its endlag on atkCd, so throwing one locked your jab and your special for up to
@@ -90801,7 +90834,7 @@ function mvTick(f, inp){
 // Projectiles, the jab (one frame), the smashes and the specials are untouched. Every row's class is listed in reports/sweep-classification.csv.
 const SW_WORDS = /swing|sweep|swipe|swat|chop|whip|\bround\b|wheel|hook|backhand|\barcs?\b|slash|smack|flail|lash|flick/i;
 const SW_STRAIGHT = /straight|stab|poke|thrust|\bjab|punch|shove|pound|spike|column|\bdrops?\b|\bslaps?\b/i;
-const SW_EXC = { 'chair.fa':'swing', 'shutter.na':'thrust', 'float.dsmash':'thrust', 'slap.usmash':'thrust', 'barf.usmash':'thrust', 'beam.usmash':'thrust', 'fry.dsmash':'thrust' };   // Bow's Chair Swing (the owner's example): its words already say swing; pinned so a rewording cannot lose it. Cammy's Shutter Click (UNIQUE MOVES BATCH 1): a burst to both sides at once, not a swing (its 'flashes' holds 'lash')
+const SW_EXC = { 'chair.fa':'swing', 'shutter.na':'thrust', 'float.dsmash':'thrust', 'slap.usmash':'thrust', 'barf.usmash':'thrust', 'beam.usmash':'thrust', 'fry.dsmash':'thrust', 'rant.dsmash':'thrust', 'seriously.dsmash':'thrust', 'reflect.dsmash':'thrust' };   // Bow's Chair Swing (the owner's example): its words already say swing; pinned so a rewording cannot lose it. Cammy's Shutter Click (UNIQUE MOVES BATCH 1): a burst to both sides at once, not a swing (its 'flashes' holds 'lash')
 function swClassOf(kit, key, S, b){
   const e = SW_EXC[kit + '.' + key]; if(e) return e;
   if(!b || !b.s || b.rehit) return 'thrust';
@@ -91139,6 +91172,19 @@ msWords();
 Object.assign(CLINGERS, { tackle:50, pierce:66, bomb:40, anvil:44 });   // Pin's point sticks in the wall; Snowball packs onto it; the other two hold on for less
 const msBurn = (n) => (f, t) => { t.burn = Math.max(t.burn || 0, n); };
 const msFx = (name, n) => (f, t) => { if(SM_FX[name]) SM_FX[name](t, f, n); };
+// UNIQUE UP / DOWN SMASHES, BATCH 3: three effects that are code (the others are msFx / msBurn).
+// David's Blank Stare: a foe who is not facing him takes 8% (not 17%) and half the launch. Tree's Preventing Death: the launch is turned toward the middle of the stage (WW / 2),
+// its strength unchanged. Gaty's Return to Sender: the launch is turned back along the way the foe was moving when hit (noted by dsmSendNote, which is the
+// box's dmgFn and runs before the hit), its strength unchanged, never flatter than about 45 degrees upward; a foe moving slower than 1.5 keeps the row's launch (straight up).
+const dsmStareSees = (f, t) => (f.x - t.x)*(t.face < 0 ? -1 : 1) > 0;
+const dsmStareDmg = (f, t) => dsmStareSees(f, t) ? 17 : 8;
+const dsmStare = (f, t) => { if(!dsmStareSees(f, t)){ t.vx *= 0.5; t.vy *= 0.5; } };
+const dsmCounter = (f, t) => (t._mv || t._atkAnim > 0 || t.smashHold > 0) ? 14.5 : 10;   // Barf Bag's Actually...: a foe with a move out, mid-swing or charging a smash
+const dsmInward = (f, t) => { const c = WW*0.5; if(Math.abs(t.x - c) > 40) t.vx = Math.abs(t.vx)*(t.x < c ? 1 : -1); };
+const dsmSendNote = (f, t) => { t._dsmVx = t.vx || 0; t._dsmVy = t.vy || 0; return 17; };
+const dsmSendBack = (f, t) => { const sp = Math.hypot(t._dsmVx || 0, t._dsmVy || 0), L = Math.hypot(t.vx, t.vy); if(sp < 1.5 || !(L > 0)) return;
+  let ux = -t._dsmVx/sp, uy = -t._dsmVy/sp; if(uy > -0.7){ uy = -0.7; ux = (ux < 0 ? -1 : 1)*Math.sqrt(1 - 0.49); }
+  t.vx = ux*L; t.vy = uy*L; };
 // ============================================================
 //  UNIQUE UP / DOWN SMASHES, BATCH 1 (12 fighters, v2)
 // ============================================================
@@ -91311,6 +91357,109 @@ const DSM_OWN = {
       boxes:[{ s:MvC(0,-30, 0,-98, 6), g:'a', dmg:15, kb:[-1.6,-7.8] }, { s:MvC(-6,-30, -36,-92, 6), g:'a', dmg:15, kb:[-1.6,-7.8] }, { s:MvC(-12,-28, -64,-74, 6), g:'a', dmg:15, kb:[-1.6,-7.8] }] },
     down: { n:'Hands Off My Fries!', d:'guards his carton: a hard smack straight down on whoever is reaching in from the front, close in, from his shoulder to the floor, then, a beat later, the same behind him (short reach)', tot:14, x:'', pose:'slam', st:4, act:9, end:24, smash:true,
       boxes:[{ s:MvC(14,-40, 40,12, 14), t0:4, t1:6, g:'df', dmg:14, kb:[7.0,-2.4] }, { s:MvC(-14,-40, -40,12, 14), t0:9, t1:12, g:'db', dmg:14, kb:[-7.0,-2.4] }] },
+  },
+  // ---- UNIQUE UP / DOWN SMASHES, BATCH 3 (2026-11-17): Nickel, Yellow Face, Donut, Dora, David, Loser, Lollipop, Taco, Barf Bag, Bell, Tree, Gaty ----
+  // The same rules as batches 1 and 2 (per hit, damage and launch at or under the generated move; the most a foe can take at or under it; no move shorter in
+  // frames), and each move has a HOOK (the owner, 2026-11-17: "look at any ssbu move, and you'll see that they all have something cool in them"): a sweet spot,
+  // a status, a hit that lingers, a second part, a movement, or a launch that goes somewhere unusual. The hook is named in each row's comment.
+  'Nickel': {
+    // HOOK: two light kicks hold the foe for the third; the soles are a sweet spot (9% / 13.0), the legs a sour one (6% / 8.0)
+    up:   { n:'No Arms Needed', d:'has no arms, so he tips back on his rim and kicks: left foot, right foot, two light kicks straight up that hold the foe there, then both feet together; the soles at the very top launch hard, the legs under them only a little', tot:15, x:' with all three kicks and the soles', pose:'uppercut', st:5, act:9, end:23, smash:true,
+      boxes:[{ s:MvC(-10,-34, -10,-84, 7), t0:5, t1:6, g:'a', dmg:3, kb:[0,-1.4], stun:14 }, { s:MvC(10,-34, 10,-84, 7), t0:8, t1:9, g:'b', chain:true, dmg:3, kb:[0,-1.4], stun:14 },
+        { s:MvO(0,-94,13), t0:11, t1:13, g:'c', chain:true, dmg:9, kb:[0.6,-13.0] }, { s:MvC(0,-34, 0,-76, 9), t0:11, t1:13, g:'c', chain:true, dmg:6, kb:[0.4,-8.0] }] },
+    // HOOK: a hit that LINGERS (14 frames, the longest of any down smash) and throws straight away from him
+    down: { n:"Can't Touch", d:'he and Coiny can never touch, and for a quarter of a second neither can anyone else: a field stands a step away on each side of him, from head height to the floor, and whoever walks or falls into it while it is up is thrown straight away from him (nothing right against him and nothing overhead)', tot:11, x:'', pose:'spin', st:4, act:14, end:19, smash:true,
+      boxes:[{ s:MvC(40,-40, 58,-6, 8), g:'a', dmg:11, rad:11.5 }, { s:MvC(58,-6, 46,22, 8), g:'a', dmg:11, rad:11.5 }, { s:MvC(-40,-40, -58,-6, 8), g:'a', dmg:11, rad:11.5 }, { s:MvC(-58,-6, -46,22, 8), g:'a', dmg:11, rad:11.5 }] },
+  },
+  'Yellow Face': {
+    // HOOK: the damage depends on the foe: 14% under 50%, the full 21% at 50% or more
+    up:   { n:'Now 50% More!', d:'holds a "50% MORE!" sticker up and forward for the camera: one round hit, high and a little ahead of him; a foe who is already at 50% or more gets the full offer, anyone else a smaller one', tot:21, x:' on a foe at 50% or more, 14% on anyone else', pose:'uppercut', st:5, act:4, end:31, smash:true,
+      boxes:[{ s:MvO(20,-78,24), g:'a', dmg:21, dmgFn:(f, t) => t.pct >= 50 ? 21 : 14, kb:[1.0,-9.75] }] },
+    // HOOK: a different status on each side
+    down: { n:'Side Effects May Include', d:'reads the small print very fast: a round hit at chest height on each side of him, and the side effect depends on the side; in front it leaves them dizzy (their arrows swapped), behind him drowsy (slowed)', tot:16, x:', dizzy in front, slowed behind', pose:'spin', st:4, act:5, end:31, smash:true,
+      boxes:[{ s:MvO(54,-4,22), g:'df', dmg:16, kb:[8.0,-4.1], fx:msFx('scramble',45) }, { s:MvO(-54,-4,22), g:'db', dmg:16, kb:[-8.0,-4.1], fx:msFx('slow',90) }] },
+  },
+  'Donut': {
+    // HOOK (one of the batch's three sweet spots): the tip of the bolt launches (14.5% / 10.5); the rest of the bolt is weak (9% / 3.0) and STUNS for 30 frames instead
+    up:   { n:'Borrowed Powers', d:'raises a hand and zaps like Four: a jagged bolt zigzags up from his hand; its tip, far over his head, launches, and the rest of the bolt only stings and freezes them where they are for half a second', tot:14.5, x:' at the tip, 9% and half a second of stun on the rest of the bolt', pose:'uppercut', st:5, act:5, end:27, smash:true,
+      boxes:[{ s:MvO(-6,-108,11), g:'a', dmg:14.5, kb:[0.5,-10.5] }, { s:MvC(10,-30, -14,-56, 6), g:'a', dmg:9, kb:[0.2,-3.0], fx:msFx('stun',30) }, { s:MvC(-14,-56, 14,-82, 6), g:'a', dmg:9, kb:[0.2,-3.0], fx:msFx('stun',30) }, { s:MvC(14,-82, -6,-108, 6), g:'a', dmg:9, kb:[0.2,-3.0], fx:msFx('stun',30) }] },
+    // HOOK (review round): a TRAP that lingers 8 frames and catches, not throws: whoever steps on the open diary is shut in it (rooted 30 frames, no launch)
+    down: { n:'Keep Out!', d:'lays his diary open on the floor in front of him for a moment: whoever is standing on it, or steps on it to read, is snapped shut in it and stuck there for half a second, not thrown (nothing behind him)', tot:11, x:', and stuck for half a second', pose:'slam', st:4, act:8, end:25, smash:true,
+      boxes:[{ s:MvC(24,16, 78,16, 10), g:'a', dmg:11, kb:[0,-0.5], fx:msFx('root',30) }] },
+  },
+  'Dora': {
+    // HOOK (review round; was a sweet spot): she MOVES: she really runs up about 96 px and comes straight back down by herself; her head is the hit, on the way up only
+    up:   { n:'Two-Second Climb', d:'runs straight up the air the way she took the 500 steps, about 96 px in six frames, and is back on the floor before the move ends: her head is the hit, only on the way up, the same all the way', tot:20, x:'', pose:'uppercut', st:5, act:12, end:24, land:14, ac:999, smash:true,
+      boxes:[{ s:MvO(0,-20,26), t0:5, t1:10, g:'a', dmg:20, kb:[0.5,-12.3] }], mv:[{ t0:5, t1:10, mode:'set', vy:-16 }, { t0:11, t1:16, mode:'dive', vy:16 }] },
+    // HOOK (review round; the sweet spot is gone): it hits only BEHIND her, the same all along the spray, and throws them back and up
+    down: { n:'Dirt Flinger', d:'digs on the spot, and everything she digs out flies out BEHIND her in a low spray, as far as 116 px: nothing in front of her at all, so she has to turn her back on them', tot:18, x:'', pose:'slam', st:4, act:5, end:32, smash:true, back:true,
+      boxes:[{ s:MvF(18, 116, -3.14, -2.5, 12, 0), g:'a', dmg:18, kb:[-9.2,-6.0] }] },
+  },
+  'David': {
+    // HOOK: ARMOUR for the 10 frames he says it, and it throws straight away from him
+    up:   { n:'No!', d:'his other line: a big "NO!" over his head that shoves whoever touches it straight away from him; he will not be moved while he says it (armour for the first 10 frames)', tot:20, x:'', pose:'uppercut', st:5, act:4, end:32, smash:true,
+      start:(f) => { f.armor = Math.max(f.armor || 0, 10); },
+      boxes:[{ s:MvC(-30,-76, 30,-76, 22), g:'a', dmg:20, rad:11.4 }] },
+    // HOOK: it only works fully on a foe who is LOOKING at him (17% / 5.9); a foe looking away takes 8% and half the launch
+    down: { n:'Blank Stare', d:'just stands there and smiles at whoever is in front of him, at eye level, a long way out; a foe who is looking back at him takes all of it, a foe who is looking away does not see it and is only bumped (nothing behind him)', tot:17, x:' on a foe who is facing him, 8% on a foe who is looking away', pose:'punch', st:4, act:6, end:31, smash:true,
+      boxes:[{ s:MvF(20, 104, -0.42, 0.3, -10, 0), g:'a', dmg:17, dmgFn:dsmStareDmg, kb:[5.6,-2.0], fx:dsmStare }] },
+  },
+  'Loser': {
+    // HOOK (review round; was a sweet spot): a status that fits: nobody keeps their guard up against Loser: it switches off the foe's armour or reflect stance (measured; a counter stance still counters him first)
+    up:   { n:'High Five', d:'everybody wants one: holds a hand up high, a little ahead of him, and whoever meets it drops their guard: any armour or reflect stance they had up is gone (a counter still counters him)', tot:16.5, x:', and ends their armour or reflect stance', pose:'uppercut', st:5, act:4, end:29, smash:true,
+      boxes:[{ s:MvO(24,-88,13), g:'a', dmg:16.5, kb:[0.5,-6.9], fx:msFx('strip',1) }, { s:MvC(12,-30, 21,-72, 6), g:'a', dmg:16.5, kb:[0.5,-6.9], fx:msFx('strip',1) }] },
+    // HOOK: a two-part feint: a light hit OVERHEAD first, then the real one low in front, thrown out flat
+    down: { n:'Made You Look', d:'one small lie: he points up, a light hit over his head that catches anyone jumping in, and while they look he takes their feet out from under them with a low hit in front that sends them out flat along the floor (nothing behind him)', tot:16, x:' with both (3% from the point, 13% from the low hit)', pose:'kick', st:4, act:9, end:25, smash:true,
+      boxes:[{ s:MvO(10,-82,14), t0:4, t1:6, g:'a', dmg:3, kb:[0.2,-0.6], stun:14 }, { s:MvC(14,18, 96,18, 11), t0:9, t1:12, g:'b', chain:true, dmg:13, kb:[6.3,-1.4] }] },
+  },
+  'Lollipop': {
+    // HOOK (one of the batch's three sweet spots; her kit is already "hardest at the sweet end"): the candy end (18% / 7.9); the stick is a sour 10% / 5.0
+    up:   { n:'Stuck-Up', d:'turns her nose up: her candy end snaps up and back over her shoulder; the candy is the real hit, the stick under it is a weak one', tot:18, x:' on the candy, 10% on the stick', pose:'uppercut', st:5, act:4, end:29, smash:true,
+      boxes:[{ s:MvO(-8,-98,17), g:'a', dmg:18, kb:[-0.8,-7.9] }, { s:MvC(14,-44, 2,-74, 6), g:'a', dmg:10, kb:[0.3,-5.0] }] },
+    // HOOK (review round; was a sweet spot): a status that fits: the crash after the sugar: it leaves them slowed for 100 frames
+    down: { n:'Sugar Crash', d:'the crash after the sugar rush: she drops candy-first onto the floor in front of her, and whoever it lands on crashes too, slow and heavy for a second and a half (nothing behind her)', tot:15, x:', and slows them', pose:'slam', st:4, act:4, end:30, smash:true,
+      boxes:[{ s:MvO(48,6,28), g:'a', dmg:15, kb:[6.6,-3.6], fx:msFx('slow',100) }] },
+  },
+  'Taco': {
+    // HOOK: it HEALS her 3% when it lands, and the fish is out for 8 frames
+    up:   { n:'Catch of the Day', d:'the fish she kept in her shell leaps out, straight up past her face, over the top and back into the shell on the other side; whoever it meets on the way is hit once, and she gets a bite of it back (heals 3%)', tot:12.5, x:', and heals her 3%', pose:'uppercut', st:5, act:8, end:24, smash:true,
+      boxes:[{ s:MvO(12,-48,14), t0:5, t1:6, g:'a', dmg:12.5, kb:[0.4,-6.2], fx:msFx('drain',3) }, { s:MvO(8,-92,14), t0:7, t1:8, g:'a', dmg:12.5, kb:[0.4,-6.2], fx:msFx('drain',3) },
+        { s:MvO(-8,-92,14), t0:9, t1:10, g:'a', dmg:12.5, kb:[0.4,-6.2], fx:msFx('drain',3) }, { s:MvO(-12,-48,14), t0:11, t1:12, g:'a', dmg:12.5, kb:[0.4,-6.2], fx:msFx('drain',3) }] },
+    // HOOK: she MOVES: she backs away about 36 px while the hit stays between her and the foe
+    down: { n:"I Didn't Abandon You!", d:'backs away a step, kicking low at whoever is in front of her as she goes: she ends up about 36 px further back, and the hit goes with her (nothing behind her)', tot:13, x:'', pose:'kick', st:4, act:6, end:27, smash:true,
+      boxes:[{ s:MvC(10,18, 70,18, 12), g:'a', dmg:13, kb:[5.4,-2.2] }], mv:[{ t0:4, t1:9, mode:'set', vx:-6 }, { t0:10, t1:10, mode:'set', vx:0 }] },
+  },
+  'Barf Bag': {
+    // HOOK: a cloud that LINGERS and climbs (10 frames), and a status: weakened
+    up:   { n:'Barf Molecules', d:'the barf molecules Lollipop said were in her brain: a cloud of them drifts up from her head and hangs there, climbing, for a moment; whoever touches it is hit once and left weakened, their own hits doing less for two seconds', tot:12.5, x:', weakens them', pose:'uppercut', st:5, act:10, end:22, smash:true,
+      boxes:[{ s:MvO(0,-52,22), t0:5, t1:7, g:'a', dmg:12.5, kb:[0.3,-7.0], fx:msFx('weaken',120) }, { s:MvO(0,-72,22), t0:8, t1:10, g:'a', dmg:12.5, kb:[0.3,-7.0], fx:msFx('weaken',120) }, { s:MvO(0,-92,22), t0:11, t1:14, g:'a', dmg:12.5, kb:[0.3,-7.0], fx:msFx('weaken',120) }] },
+    // HOOK (review round): a COUNTER HIT: 14.5% on a foe who is in the middle of an attack of their own (a move out, a swing, or charging a smash), 10% on anyone else
+    down: { n:'Actually...', d:'smarter than they said: she raises a finger and corrects whoever is in front of her, a short hit from her waist up to their chin; a foe caught in the middle of an attack of their own is put right properly, anyone else gets less (nothing behind her)', tot:14.5, x:' on a foe who is attacking, 10% on anyone else', pose:'punch', st:4, act:5, end:28, smash:true,
+      boxes:[{ s:MvC(16,8, 58,-42, 10), g:'a', dmg:14.5, dmgFn:dsmCounter, kb:[5.0,-7.2] }] },
+  },
+  'Bell': {
+    // HOOK: the tallest up smash there is (about 158 px), it travels up the rope over 9 frames, and it throws SIDEWAYS, flat, not up
+    up:   { n:'Stop Climbing My String!', d:'shakes his rope: a shake runs up it from his crown to far over his head, and whoever is on it or beside it is thrown off SIDEWAYS, flat, the way he faces, not up', tot:20, x:'', pose:'uppercut', st:5, act:9, end:27, smash:true,
+      boxes:[{ s:MvC(0,-30, 0,-70, 8), t0:5, t1:7, g:'a', dmg:20, kb:[5.7,-1.5] }, { s:MvC(0,-70, 0,-110, 8), t0:8, t1:10, g:'a', dmg:20, kb:[5.7,-1.5] }, { s:MvC(0,-110, 0,-150, 8), t0:11, t1:13, g:'a', dmg:20, kb:[5.7,-1.5] }] },
+    // HOOK (review round): a TRIP: it knocks down whoever is standing near him and throws them half as hard as the old move; a foe in the air is missed
+    down: { n:'String Cut', d:'his string is cut and he drops like a dead weight: the floor under him and a step to each side jumps, and whoever is standing there is knocked off their feet and thrown only half as hard as by his old down smash; a foe in the air is missed', tot:18, x:', knocks them down', pose:'slam', st:4, act:5, end:32, smash:true,
+      boxes:[{ s:MvC(-58,20, 58,20, 9), g:'a', dmg:18, kb:[2.6,-1.4], fx:msFx('knockdown',28) }] },
+  },
+  'Tree': {
+    // HOOK: a TRAP: no launch at all, the foe is stunned for half a second and drops at his roots (Tree himself is busy for longer than that)
+    up:   { n:'Bottled', d:'he knows what it is like to be stuck in a bottle: whoever is over his head is shut in one: stunned for half a second and dropped at his roots, not thrown; he cannot follow it up himself in time, but a team-mate can', tot:15, x:', and stuns them for half a second', pose:'uppercut', st:5, act:4, end:32, smash:true,
+      boxes:[{ s:MvO(0,-86,24), g:'a', dmg:15, kb:[0,-1.5], fx:msFx('stun',30) }] },
+    // HOOK: the launch always goes toward the MIDDLE of the stage, never off the side
+    down: { n:'Preventing Death', d:'scoops low on both sides with his branches, from far out in to his trunk; whichever side they stood on, they are sent toward the MIDDLE of the stage, never off the side', tot:21, x:', always toward the middle of the stage', pose:'kick', st:4, act:5, end:32, smash:true,
+      boxes:[{ s:MvC(96,18, 30,6, 13), g:'df', dmg:21, kb:[4.6,-2.4], fx:dsmInward }, { s:MvC(-96,18, -30,6, 13), g:'db', dmg:21, kb:[-4.6,-2.4], fx:dsmInward }] },
+  },
+  'Gaty': {
+    // HOOK: a REFLECT, for fighters: the foe is thrown back the way they came (never flatter than about 45 degrees up); a foe who was not moving goes straight up
+    up:   { n:'Return to Sender', d:'shuts over her head, her top rail flat above her: whoever comes down or in on it is sent back the way they came, at the same strength whatever the direction (always upward, at 45 degrees or steeper); a foe who was not moving goes straight up', tot:17, x:', back the way they came', pose:'uppercut', st:5, act:4, end:29, smash:true,
+      boxes:[{ s:MvC(-34,-58, 34,-58, 12), g:'a', dmg:17, dmgFn:dsmSendNote, kb:[0.4,-7.4], fx:dsmSendBack }] },
+    // HOOK (review round): a two-part THROUGH-PASS: she opens and the foe in front is pulled through her to her other side, then she shuts on them there and throws them on, behind her
+    down: { n:'Come On In', d:'the welcoming one: she swings open and whoever is in front of her is waved through to her other side, a light hit; then she shuts on them there and sends them on their way, behind her; a foe who was already behind her gets only the shutting', tot:16, x:' with both, 11% from the shutting alone', pose:'spin', st:4, act:10, end:24, smash:true,
+      boxes:[{ s:MvC(20,-10, 70,-10, 14), t0:4, t1:6, g:'a', dmg:5, kb:[-6.5,-1.0], stun:14 }, { s:MvC(-60,-4, 0,-4, 28), t0:10, t1:13, g:'b', chain:true, dmg:11, kb:[-5.6,-3.4] }] },
   },
 };
 // The move lists: the same wording as the generated pair, from the row.
@@ -91588,6 +91737,94 @@ const DSM_PROPS = {
     const s = t < 8 ? 1 : -1, u = Math.min(1, (t - (s > 0 ? 3 : 8))/3);
     dpLine(c, X(s*14), Y(-40), X(s*(14 + 26*u)), Y(-40 + 52*u), 6, '#f4d9a0');
     dpDisc(c, X(s*(14 + 26*u)), Y(-40 + 52*u), 10*z, '#f4d9a0'); },
+  // ---- batch 3 (2026-11-17; unseen: no browser) ----
+  'Nickel.up': function(c, X, Y, z, t){ if(t < 5 || t > 15) return;
+    const L = t < 8 || t > 10, R = t >= 8, hi = t >= 11 ? -94 : -84;
+    if(L) dpLine(c, X(-10), Y(-30), X(t >= 11 ? -4 : -10), Y(hi + 8), 4, '#3a3a3a');
+    if(R) dpLine(c, X(10), Y(-30), X(t >= 11 ? 4 : 10), Y(hi + 8), 4, '#3a3a3a');
+    if(L) dpEll(c, X(t >= 11 ? -6 : -10), Y(hi), 8*z, 5*z, 0, '#2a2a2a');
+    if(R) dpEll(c, X(t >= 11 ? 6 : 10), Y(hi), 8*z, 5*z, 0, '#2a2a2a'); },
+  'Nickel.down': function(c, X, Y, z, t){ if(t < 4 || t > 19) return;
+    const k = t > 17 ? 0.4 : 1, w = Math.sin(t*1.3)*2;
+    c.globalAlpha = k;
+    for(const s of [1, -1]){ c.beginPath(); c.moveTo(X(s*(40 + w)), Y(-42)); c.quadraticCurveTo(X(s*(66 + w)), Y(-8), X(s*(46 + w)), Y(24));
+      c.lineCap = 'round'; c.strokeStyle = DSM_INK; c.lineWidth = 8; c.stroke(); c.strokeStyle = '#bfe6ff'; c.lineWidth = 4; c.stroke(); }
+    c.globalAlpha = 1; },
+  'Yellow Face.up': function(c, X, Y, z, t){ if(t < 5 || t > 13) return;
+    const k = t < 7 ? 0.7 + 0.15*(t - 5) : 1;
+    dpStar(c, X(20), Y(-78), 27*z*k, 19*z*k, 10, '#ff4a3a');
+    c.fillStyle = '#ffffff'; c.font = 'bold ' + Math.round(11*z*k) + 'px sans-serif'; c.textAlign = 'center'; c.fillText('50%', X(20), Y(-80)); c.fillText('MORE!', X(20), Y(-68)); },
+  'Yellow Face.down': function(c, X, Y, z, t){ if(t < 4 || t > 12) return;
+    for(const s of [1, -1]){ dpDisc(c, X(s*54), Y(-4), 20*z, s > 0 ? '#c9a0ff' : '#9fd0ff');
+      for(let i = 0; i < 3; i++) dpLine(c, X(s*54 - 11), Y(-10 + i*6), X(s*54 + 11), Y(-10 + i*6), 1.5, '#ffffff'); } },
+  'Donut.up': function(c, X, Y, z, t){ if(t < 5 || t > 12) return;
+    const P = [10, -30, -14, -56, 14, -82, -6, -108];
+    c.beginPath(); for(let i = 0; i < 8; i += 2){ if(i) c.lineTo(X(P[i]), Y(P[i+1])); else c.moveTo(X(P[i]), Y(P[i+1])); }
+    c.lineJoin = 'miter'; c.lineCap = 'round'; c.strokeStyle = DSM_INK; c.lineWidth = 9; c.stroke(); c.strokeStyle = '#3f6fe0'; c.lineWidth = 5; c.stroke();
+    dpStar(c, X(-6), Y(-108), 12*z, 5*z, 4, '#bcd0ff'); },
+  'Donut.down': function(c, X, Y, z, t){ if(t < 4 || t > 14) return;
+    const shut = t > 11;
+    if(!shut){ dpPoly(c, [X(24), Y(24), X(50), Y(20), X(50), Y(26)], '#f4efe6'); dpPoly(c, [X(50), Y(20), X(78), Y(24), X(50), Y(26)], '#f4efe6'); dpLine(c, X(50), Y(19), X(50), Y(26), 2, '#b0402a'); }
+    else dpPoly(c, [X(38), Y(26), X(38), Y(12), X(64), Y(12), X(64), Y(26)], '#b0402a'); },
+  'Dora.up': function(c, X, Y, z, t){ if(t < 5 || t > 17) return;
+    for(let i = 0; i < 3; i++) dpLine(c, X(-12 + i*12), Y(30), X(-12 + i*12), Y(30 + (t <= 10 ? 46 : 20)), 2, '#ffffff'); },
+  'Dora.down': function(c, X, Y, z, t){ if(t < 4 || t > 12) return;
+    const u = Math.min(1, (t - 3)/4);
+    for(let i = 0; i < 7; i++){ const a = 0.08 + 0.085*i, r = (26 + 13*i)*u + (i % 2)*6; dpDisc(c, X(-Math.cos(a)*r), Y(12 - Math.sin(a)*r), (9 - i*0.8)*z, '#7a5230'); }
+    dpEll(c, X(0), Y(24), 16*z, 4*z, 0, '#3a2a20'); },
+  'David.up': function(c, X, Y, z, t){ if(t < 5 || t > 13) return;
+    c.beginPath(); c.ellipse(X(0), Y(-76), 52*z, 22*z, 0, 0, 7); dpFill(c, '#ffffff');
+    c.fillStyle = DSM_INK; c.font = 'bold ' + Math.round(26*z) + 'px sans-serif'; c.textAlign = 'center'; c.fillText('NO!', X(0), Y(-67)); },
+  'David.down': function(c, X, Y, z, t){ if(t < 4 || t > 13) return;
+    for(let i = 0; i < 3; i++){ const y = -22 + i*12; c.beginPath(); c.setLineDash([6, 6]); c.moveTo(X(20), Y(-10 + (y + 10)*0.2)); c.lineTo(X(104), Y(y));
+      c.strokeStyle = DSM_INK; c.lineWidth = 2; c.stroke(); c.setLineDash([]); } },
+  'Loser.up': function(c, X, Y, z, t){ if(t < 5 || t > 12) return;
+    dpLine(c, X(12), Y(-30), X(21), Y(-74), 5, '#d0d0d0'); dpDisc(c, X(24), Y(-88), 12*z, '#d0d0d0');
+    if(t < 8) dpStar(c, X(24), Y(-88), 20*z, 8*z, 6, '#fff3a0'); },
+  'Loser.down': function(c, X, Y, z, t){ if(t < 4 || t > 15) return;
+    if(t <= 8){ dpLine(c, X(8), Y(-34), X(10), Y(-74), 4, '#d0d0d0'); dpPoly(c, [X(2), Y(-76), X(10), Y(-96), X(18), Y(-76)], '#d0d0d0'); }
+    if(t >= 9){ const u = Math.min(1, (t - 8)/3); dpLine(c, X(14), Y(18), X(14 + 82*u), Y(18), 7, '#d0d0d0'); } },
+  'Lollipop.up': function(c, X, Y, z, t){ if(t < 5 || t > 12) return;
+    dpLine(c, X(14), Y(-44), X(-4), Y(-84), 4, '#f4efe6'); dpDisc(c, X(-8), Y(-98), 17*z, '#b05ad8');
+    c.beginPath(); c.arc(X(-8), Y(-98), 9*z, t*0.5, t*0.5 + 4.2); c.strokeStyle = '#e2b6f5'; c.lineWidth = 3; c.stroke(); },
+  'Lollipop.down': function(c, X, Y, z, t){ if(t < 4 || t > 18) return;
+    dpLine(c, X(14), Y(-10), X(40), Y(2), 4, '#f4efe6'); dpDisc(c, X(48), Y(6), 28*z, '#b05ad8'); dpDisc(c, X(48), Y(6), 13*z, '#e2b6f5');
+    if(t > 8) dpEll(c, X(48), Y(26), 30*z, 4*z, 0, '#d69af0'); },
+  'Taco.up': function(c, X, Y, z, t){ if(t < 5 || t > 13) return;
+    const P = t < 7 ? [12, -48, -1.4] : (t < 9 ? [8, -92, -0.9] : (t < 11 ? [-8, -92, 0.9] : [-12, -48, 1.4]));
+    c.save(); c.translate(X(P[0]), Y(P[1])); c.rotate(P[2]*(X(1) < X(0) ? -1 : 1));
+    dpEll(c, 0, 0, 13*z, 6*z, 0, '#7fb6d8'); dpPoly(c, [-12*z, 0, -20*z, -6*z, -20*z, 6*z], '#7fb6d8'); c.restore(); },
+  'Taco.down': function(c, X, Y, z, t){ if(t < 4 || t > 11) return;
+    for(let i = 0; i < 4; i++) dpDisc(c, X(18 + i*16), Y(20 - Math.abs(Math.sin(t*0.9 + i))*8), 5*z, '#d8402a'); },
+  'Barf Bag.up': function(c, X, Y, z, t){ if(t < 5 || t > 16) return;
+    const y = t < 8 ? -52 : (t < 11 ? -72 : -92);
+    c.globalAlpha = 0.85;
+    for(let i = 0; i < 7; i++){ const a = i*0.9 + t*0.25, r = 6 + (i % 3)*6; dpDisc(c, X(Math.cos(a)*r*1.4), Y(y + Math.sin(a)*r), (5 + (i % 2)*3)*z, '#c9d24b'); }
+    c.globalAlpha = 1; },
+  'Barf Bag.down': function(c, X, Y, z, t){ if(t < 4 || t > 11) return;
+    dpLine(c, X(16), Y(8), X(54), Y(-36), 5, '#e9dcb8'); dpDisc(c, X(58), Y(-42), 6*z, '#e9dcb8');
+    if(t < 8){ c.fillStyle = DSM_INK; c.font = 'bold ' + Math.round(13*z) + 'px sans-serif'; c.textAlign = 'center'; c.fillText('!', X(58), Y(-56)); } },
+  'Bell.up': function(c, X, Y, z, t){ if(t < 5 || t > 15) return;
+    const top = t < 8 ? -70 : (t < 11 ? -110 : -150);
+    c.beginPath(); for(let y = -30; y >= -150; y -= 6){ const k = y >= top && y <= top + 40 ? 9 : 1.5; const x = Math.sin(y*0.3 + t)*k; if(y === -30) c.moveTo(X(x), Y(y)); else c.lineTo(X(x), Y(y)); }
+    c.lineCap = 'round'; c.strokeStyle = DSM_INK; c.lineWidth = 6; c.stroke(); c.strokeStyle = '#c9a36a'; c.lineWidth = 3; c.stroke(); },
+  'Bell.down': function(c, X, Y, z, t){ if(t < 4 || t > 12) return;
+    const u = Math.min(1, (t - 3)/4);
+    dpLine(c, X(-6), Y(-70), X(-10), Y(-52), 3, '#c9a36a'); dpLine(c, X(6), Y(-70), X(12), Y(-56), 3, '#c9a36a');
+    for(const s of [1, -1]){ c.beginPath(); c.moveTo(X(s*20), Y(26)); c.quadraticCurveTo(X(s*(20 + 24*u)), Y(26 - 14*(1 - u) - 4), X(s*(20 + 46*u)), Y(26)); c.strokeStyle = DSM_INK; c.lineWidth = 3; c.lineCap = 'round'; c.stroke(); } },
+  'Tree.up': function(c, X, Y, z, t){ if(t < 5 || t > 30) return;
+    c.globalAlpha = t > 24 ? 0.4 : 0.75;
+    dpPoly(c, [X(-8), Y(-128), X(8), Y(-128), X(8), Y(-112), X(24), Y(-100), X(24), Y(-62), X(-24), Y(-62), X(-24), Y(-100), X(-8), Y(-112)], '#bfe6ff');
+    c.globalAlpha = 1; },
+  'Tree.down': function(c, X, Y, z, t){ if(t < 4 || t > 11) return;
+    const u = Math.min(1, (t - 3)/4);
+    for(const s of [1, -1]){ dpLine(c, X(s*30), Y(6), X(s*(30 + 66*u)), Y(6 + 12*u), 8, '#7a5230'); dpEll(c, X(s*(30 + 66*u)), Y(4 + 12*u), 12*z, 7*z, 0, '#4fae4a'); } },
+  'Gaty.up': function(c, X, Y, z, t){ if(t < 5 || t > 12) return;
+    dpLine(c, X(-34), Y(-58), X(34), Y(-58), 8, '#9aa3ad');
+    for(let i = -2; i <= 2; i++) dpLine(c, X(i*14), Y(-58), X(i*14), Y(-44), 3, '#9aa3ad'); },
+  'Gaty.down': function(c, X, Y, z, t){ if(t < 4 || t > 15) return;
+    if(t <= 8){ dpLine(c, X(20), Y(-10), X(70), Y(-10), 6, '#9aa3ad'); for(let i = 0; i < 4; i++) dpLine(c, X(26 + i*14), Y(-24), X(26 + i*14), Y(4), 3, '#9aa3ad'); }
+    else if(t >= 10){ for(let i = 0; i < 4; i++) dpLine(c, X(-26 - i*12), Y(-30), X(-26 - i*12), Y(22), 3, '#9aa3ad'); dpLine(c, X(-22), Y(-4), X(-66), Y(-4), 6, '#9aa3ad'); } },
 };
 // ============================================================
 //  UNIQUE MOVES 3 (2026-11-15): NEUTRAL SMASHES IN THE MOVE-ROW FORMAT
@@ -95178,8 +95415,9 @@ function endLagHit(from){   // the move connected: what is left of its end lag i
   if(E.on && from._lag > n) from._lag = n;
 }
 const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHit], frames, measured headless (reports/frame-budget-audit.csv)
-  // UNIQUE UP/DOWN SMASHES batch 1 (v2) and batch 2: the twenty-four fighters' own up and down smashes: startup, live frames, the row's own end lag (no ENDLAG_ADD on top)
+  // UNIQUE UP/DOWN SMASHES batch 1 (v2), batch 2 and batch 3: the thirty-six fighters' own up and down smashes: startup, live frames, the row's own end lag (no ENDLAG_ADD on top)
   'cap.usmash':[5,7,22,22], 'cap.dsmash':[4,8,22,22], 'van.usmash':[5,4,28,28], 'van.dsmash':[4,8,25,25], 'spark.usmash':[5,6,24,24], 'spark.dsmash':[4,9,22,22], 'shatter.usmash':[5,4,27,27], 'shatter.dsmash':[4,5,27,27], 'zapshooter.usmash':[5,7,22,22], 'zapshooter.dsmash':[4,5,25,25], 'barf.usmash':[5,9,28,28], 'barf.dsmash':[4,8,30,30], 'fraidy.usmash':[5,6,24,24], 'fraidy.dsmash':[4,13,18,18], 'define.usmash':[5,8,26,26], 'define.dsmash':[4,5,30,30], 'beam.usmash':[5,4,30,30], 'beam.dsmash':[4,5,30,30], 'fly.usmash':[5,7,25,25], 'fly.dsmash':[4,6,27,27], 'freeze.usmash':[5,6,26,26], 'freeze.dsmash':[4,5,28,28], 'fry.usmash':[5,4,28,28], 'fry.dsmash':[4,9,24,24],
+  'flip.usmash':[5,9,23,23], 'buynow.usmash':[5,4,31,31], 'glaze.usmash':[5,5,27,27], 'rant.usmash':[5,12,24,24], 'seriously.usmash':[5,4,32,32], 'cool.usmash':[5,4,29,29], 'sucker.usmash':[5,4,29,29], 'jawbreaker.usmash':[5,8,24,24], 'splash.usmash':[5,10,22,22], 'ring.usmash':[5,9,27,27], 'timber.usmash':[5,4,32,32], 'reflect.usmash':[5,4,29,29],   // batch 3 (their dsmash rows are replaced in place, below)
   'ember.usmash':[5,4,29,29], 'ember.dsmash':[4,5,29,29], 'dash.usmash':[5,4,28,28], 'dash.dsmash':[4,7,26,26], 'counter.usmash':[5,4,25,25], 'counter.dsmash':[4,5,25,25], 'pierce.usmash':[5,4,30,30], 'pierce.dsmash':[4,20,20,20], 'tackle.usmash':[5,4,28,28], 'tackle.dsmash':[4,9,24,24], 'bomb.usmash':[5,4,34,34], 'bomb.dsmash':[4,5,34,34], 'float.usmash':[5,9,20,20], 'float.dsmash':[4,6,24,24], 'kick.usmash':[5,7,22,22], 'kick.dsmash':[4,9,21,21], 'quake.usmash':[5,4,30,30], 'quake.dsmash':[4,5,30,30], 'serve.usmash':[5,6,26,26], 'serve.dsmash':[4,24,14,14], 'anvil.usmash':[5,4,31,31], 'anvil.dsmash':[4,6,30,30], 'slap.usmash':[5,6,28,28], 'slap.dsmash':[4,11,24,24],
   // (a -1: not measured -- a move that lands only on a foe elsewhere has no whiff / hit trial; throws have no whiff)
   'accrete.bthrow':[0,1,-1,22], 'accrete.dsmash':[29,9,30,30], 'accrete.dthrow':[0,1,-1,14], 'accrete.fthrow':[0,1,-1,20], 'accrete.neutral':[44,1,12,0], 'accrete.smash':[40,1,18,12],
@@ -95202,7 +95440,7 @@ const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHi
   'blueberry.bthrow':[0,1,-1,24], 'blueberry.dsmash':[29,9,31,31], 'blueberry.dthrow':[0,1,-1,14], 'blueberry.finisher':[24,1,0,0], 'blueberry.fthrow':[0,1,-1,22], 'blueberry.neutral':[6,1,20,19],
   'blueberry.smash':[54,1,19,0], 'blueberry.up':[0,1,1,1], 'blueberry.uthrow':[0,1,-1,14], 'bomb.bthrow':[0,1,-1,24], 'bomb.dthrow':[0,1,-1,14],
   'bomb.finisher':[6,1,27,15], 'bomb.fthrow':[0,1,-1,22], 'bomb.neutral':[6,1,27,15], 'bomb.smash':[44,1,20,19], 'bomb.uthrow':[0,1,-1,14], 'buynow.bthrow':[0,1,-1,22],
-  'buynow.dsmash':[28,10,32,32], 'buynow.dthrow':[0,1,-1,14], 'buynow.finisher':[8,60,0,0], 'buynow.fthrow':[0,1,-1,20], 'buynow.neutral':[0,1,11,4], 'buynow.smash':[69,1,19,0],
+  'buynow.dsmash':[4,5,31,31], 'buynow.dthrow':[0,1,-1,14], 'buynow.finisher':[8,60,0,0], 'buynow.fthrow':[0,1,-1,20], 'buynow.neutral':[0,1,11,4], 'buynow.smash':[69,1,19,0],
   'buynow.uthrow':[0,1,-1,14], 'cap.bthrow':[0,1,-1,22], 'cap.dthrow':[0,1,-1,14], 'cap.finisher':[54,1,0,0], 'cap.fthrow':[0,1,-1,20],
   'cap.neutral':[3,1,12,4], 'cap.smash':[56,1,13,0], 'cap.uthrow':[0,1,-1,14], 'chair.bthrow':[0,1,-1,24], 'chair.down':[3,1,12,4], 'chair.dsmash':[29,8,29,29],
   'chair.dthrow':[0,1,-1,14], 'chair.finisher':[44,16,0,0], 'chair.fthrow':[0,1,-1,22], 'chair.smash':[26,1,17,6], 'chair.up':[5,1,0,0], 'chair.uthrow':[0,1,-1,14],
@@ -95215,7 +95453,7 @@ const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHi
   'collide.dsmash':[29,9,34,34], 'collide.dthrow':[0,1,-1,14], 'collide.fthrow':[0,1,-1,22], 'collide.neutral':[17,3,12,4], 'collide.smash':[34,13,20,7], 'collide.up':[1,26,0,0],
   'collide.uthrow':[0,1,-1,14], 'condishawn.bthrow':[0,1,-1,22], 'condishawn.down':[50,1,13,8], 'condishawn.dsmash':[29,9,30,30], 'condishawn.dthrow':[0,1,-1,14], 'condishawn.finisher':[30,9,0,0],
   'condishawn.fthrow':[0,1,-1,20], 'condishawn.neutral':[0,1,12,4], 'condishawn.smash':[24,1,18,14], 'condishawn.up':[0,1,1,1], 'condishawn.usmash':[44,1,30,18], 'condishawn.uthrow':[0,1,-1,14],
-  'cool.bthrow':[0,1,-1,22], 'cool.down':[8,1,1,0], 'cool.dsmash':[29,9,32,32], 'cool.dthrow':[0,1,-1,14], 'cool.fthrow':[0,1,-1,20], 'cool.neutral':[22,1,14,0],
+  'cool.bthrow':[0,1,-1,22], 'cool.down':[8,1,1,0], 'cool.dsmash':[4,9,25,25], 'cool.dthrow':[0,1,-1,14], 'cool.fthrow':[0,1,-1,20], 'cool.neutral':[22,1,14,0],
   'cool.smash':[24,1,18,18], 'cool.up':[0,1,1,1], 'cool.uthrow':[0,1,-1,14], 'copycat.bthrow':[0,1,-1,22], 'copycat.down':[0,1,19,7], 'copycat.dsmash':[29,8,29,29],
   'copycat.dthrow':[0,1,-1,14], 'copycat.finisher':[12,2,0,0], 'copycat.fthrow':[0,1,-1,20], 'copycat.smash':[54,1,15,0], 'copycat.uthrow':[0,1,-1,14], 'coresaw.bthrow':[0,1,-1,24],
   'coresaw.dsmash':[30,9,32,32], 'coresaw.dthrow':[0,1,-1,14], 'coresaw.finisher':[97,14,0,0], 'coresaw.fthrow':[0,1,-1,22], 'coresaw.neutral':[8,14,14,14], 'coresaw.smash':[40,1,20,13],
@@ -95235,7 +95473,7 @@ const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHi
   'engulf.bthrow':[0,1,-1,22], 'engulf.dsmash':[29,9,30,30], 'engulf.dthrow':[0,1,-1,14], 'engulf.fthrow':[0,1,-1,20], 'engulf.neutral':[0,45,1,6], 'engulf.smash':[35,14,19,7],
   'engulf.up':[0,1,1,1], 'engulf.uthrow':[0,1,-1,14], 'evilpaper.bthrow':[0,1,-1,20], 'evilpaper.dsmash':[28,10,32,32], 'evilpaper.dthrow':[0,1,-1,14], 'evilpaper.finisher':[39,1,0,0],
   'evilpaper.fthrow':[0,1,-1,18], 'evilpaper.neutral':[3,1,11,4], 'evilpaper.smash':[69,1,19,0], 'evilpaper.up':[0,1,1,1], 'evilpaper.uthrow':[0,1,-1,14], 'flip.bthrow':[0,1,-1,21],
-  'flip.dsmash':[28,9,29,29], 'flip.dthrow':[0,1,-1,14], 'flip.finisher':[22,50,1,0], 'flip.fthrow':[0,1,-1,19], 'flip.neutral':[5,1,22,8], 'flip.smash':[42,1,18,12],
+  'flip.dsmash':[4,14,19,19], 'flip.dthrow':[0,1,-1,14], 'flip.finisher':[22,50,1,0], 'flip.fthrow':[0,1,-1,19], 'flip.neutral':[5,1,22,8], 'flip.smash':[42,1,18,12],
   'flip.up':[15,1,1,0], 'flip.uthrow':[0,1,-1,14], 'float.bthrow':[0,1,-1,20], 'float.dthrow':[0,1,-1,14], 'float.finisher':[13,1,0,0],
   'float.fthrow':[0,1,-1,18], 'float.smash':[62,1,14,10], 'float.uthrow':[0,1,-1,14], 'fluff.bthrow':[0,1,-1,20], 'fluff.dsmash':[29,8,29,29], 'fluff.dthrow':[0,1,-1,14],
   'fluff.finisher':[12,17,0,0], 'fluff.fthrow':[0,1,-1,18], 'fluff.neutral':[8,1,25,14], 'fluff.smash':[35,12,17,6], 'fluff.up':[0,1,1,1], 'fluff.uthrow':[0,1,-1,14],
@@ -95246,7 +95484,7 @@ const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHi
   'fry.bthrow':[0,1,-1,21], 'fry.dthrow':[0,1,-1,14], 'fry.finisher':[64,1,0,0], 'fry.fthrow':[0,1,-1,19], 'fry.neutral':[4,1,1,0],
   'fry.smash':[35,13,16,6], 'fry.up':[3,1,1,0], 'fry.uthrow':[0,1,-1,14], 'fury.bthrow':[0,1,-1,22], 'fury.down':[3,1,9,4], 'fury.dsmash':[29,9,31,31],
   'fury.dthrow':[0,1,-1,14], 'fury.finisher':[12,18,0,0], 'fury.fthrow':[0,1,-1,20], 'fury.neutral':[3,1,12,4], 'fury.smash':[39,1,20,15], 'fury.up':[0,1,1,1],
-  'fury.uthrow':[0,1,-1,14], 'glaze.bthrow':[0,1,-1,24], 'glaze.dsmash':[30,8,29,29], 'glaze.dthrow':[0,1,-1,15], 'glaze.finisher':[36,12,0,0], 'glaze.fthrow':[0,1,-1,22],
+  'fury.uthrow':[0,1,-1,14], 'glaze.bthrow':[0,1,-1,24], 'glaze.dsmash':[4,8,25,25], 'glaze.dthrow':[0,1,-1,15], 'glaze.finisher':[36,12,0,0], 'glaze.fthrow':[0,1,-1,22],
   'glaze.neutral':[20,32,12,4], 'glaze.smash':[27,1,17,6], 'glaze.up':[1,20,0,0], 'glaze.uthrow':[0,1,-1,15], 'glowgold.bthrow':[0,1,-1,24], 'glowgold.down':[6,1,18,9],
   'glowgold.dsmash':[30,9,32,32], 'glowgold.dthrow':[0,1,-1,14], 'glowgold.finisher':[26,1,0,0], 'glowgold.fthrow':[0,1,-1,22], 'glowgold.neutral':[6,1,18,18], 'glowgold.smash':[25,1,19,14],
   'glowgold.uthrow':[0,1,-1,14], 'grasstree.bthrow':[0,1,-1,20], 'grasstree.dsmash':[29,9,30,30], 'grasstree.dthrow':[0,1,-1,14], 'grasstree.fthrow':[0,1,-1,18], 'grasstree.smash':[26,1,18,6],
@@ -95259,7 +95497,7 @@ const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHi
   'innerflame.bthrow':[0,1,-1,22], 'innerflame.dsmash':[29,9,31,31], 'innerflame.dthrow':[0,1,-1,14], 'innerflame.finisher':[12,2,0,0], 'innerflame.fthrow':[0,1,-1,20], 'innerflame.neutral':[30,1,15,9],
   'innerflame.smash':[38,1,19,13], 'innerflame.uthrow':[0,1,-1,14], 'jack.bthrow':[0,1,-1,22], 'jack.dsmash':[28,10,33,33], 'jack.dthrow':[0,1,-1,14], 'jack.finisher':[12,20,0,0],
   'jack.fthrow':[0,1,-1,20], 'jack.neutral':[2,1,11,4], 'jack.smash':[45,1,20,13], 'jack.up':[0,1,1,1], 'jack.uthrow':[0,1,-1,14], 'jawbreaker.bthrow':[0,1,-1,23],
-  'jawbreaker.down':[0,1,10,4], 'jawbreaker.dsmash':[29,8,29,29], 'jawbreaker.dthrow':[0,1,-1,15], 'jawbreaker.finisher':[24,1,0,0], 'jawbreaker.fthrow':[0,1,-1,21], 'jawbreaker.neutral':[5,1,21,7],
+  'jawbreaker.down':[0,1,10,4], 'jawbreaker.dsmash':[4,6,27,27], 'jawbreaker.dthrow':[0,1,-1,15], 'jawbreaker.finisher':[24,1,0,0], 'jawbreaker.fthrow':[0,1,-1,21], 'jawbreaker.neutral':[5,1,21,7],
   'jawbreaker.smash':[27,1,15,5], 'jawbreaker.up':[0,1,1,1], 'jawbreaker.uthrow':[0,1,-1,15], 'kick.bthrow':[0,1,-1,20], 'kick.dthrow':[0,1,-1,14],
   'kick.finisher':[29,1,0,0], 'kick.fthrow':[0,1,-1,18], 'kick.neutral':[6,1,26,14], 'kick.uthrow':[0,1,-1,14], 'leavealone.bthrow':[0,1,-1,22], 'leavealone.dsmash':[29,9,30,30],
   'leavealone.dthrow':[0,1,-1,14], 'leavealone.fthrow':[0,1,-1,20], 'leavealone.neutral':[18,13,14,5], 'leavealone.smash':[35,12,18,6], 'leavealone.uthrow':[0,1,-1,14], 'lemon.bthrow':[0,1,-1,22],
@@ -95286,16 +95524,16 @@ const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHi
   'pun.dsmash':[29,9,32,32], 'pun.dthrow':[0,1,-1,14], 'pun.finisher':[12,16,0,0], 'pun.fthrow':[0,1,-1,20], 'pun.neutral':[3,1,10,4], 'pun.smash':[26,13,20,8],
   'pun.up':[0,1,1,1], 'pun.uthrow':[0,1,-1,14], 'quake.bthrow':[0,1,-1,24], 'quake.down':[6,1,18,9], 'quake.dthrow':[0,1,-1,14],
   'quake.finisher':[12,6,0,0], 'quake.fthrow':[0,1,-1,22], 'quake.neutral':[6,1,28,15], 'quake.smash':[44,1,18,12], 'quake.up':[1,20,0,0], 'quake.uthrow':[0,1,-1,14],
-  'rant.bthrow':[0,1,-1,19], 'rant.down':[1,1,8,7], 'rant.dsmash':[29,9,33,33], 'rant.dthrow':[0,1,-1,13], 'rant.finisher':[38,1,0,0], 'rant.fthrow':[0,1,-1,17],
-  'rant.neutral':[1,1,8,7], 'rant.smash':[24,1,19,19], 'rant.up':[0,1,1,1], 'rant.uthrow':[0,1,-1,13], 'reflect.bthrow':[0,1,-1,22], 'reflect.dsmash':[31,9,30,30],
+  'rant.bthrow':[0,1,-1,19], 'rant.down':[1,1,8,7], 'rant.dsmash':[4,5,32,32], 'rant.dthrow':[0,1,-1,13], 'rant.finisher':[38,1,0,0], 'rant.fthrow':[0,1,-1,17],
+  'rant.neutral':[1,1,8,7], 'rant.smash':[24,1,19,19], 'rant.up':[0,1,1,1], 'rant.uthrow':[0,1,-1,13], 'reflect.bthrow':[0,1,-1,22], 'reflect.dsmash':[4,10,24,24],
   'reflect.dthrow':[0,1,-1,14], 'reflect.finisher':[13,14,0,0], 'reflect.fthrow':[0,1,-1,20], 'reflect.smash':[26,1,16,16], 'reflect.up':[33,1,0,0], 'reflect.uthrow':[0,1,-1,14],
-  'ring.bthrow':[0,1,-1,24], 'ring.dsmash':[33,9,33,33], 'ring.dthrow':[0,1,-1,15], 'ring.finisher':[30,24,0,0], 'ring.fthrow':[0,1,-1,22], 'ring.neutral':[8,1,12,7],
+  'ring.bthrow':[0,1,-1,24], 'ring.dsmash':[4,5,32,32], 'ring.dthrow':[0,1,-1,15], 'ring.finisher':[30,24,0,0], 'ring.fthrow':[0,1,-1,22], 'ring.neutral':[8,1,12,7],
   'ring.smash':[28,1,17,13], 'ring.up':[0,25,0,0], 'ring.uthrow':[0,1,-1,15], 'rubout.bthrow':[0,1,-1,22], 'rubout.dsmash':[31,9,30,30], 'rubout.dthrow':[0,1,-1,14],
   'rubout.finisher':[70,16,0,0], 'rubout.fthrow':[0,1,-1,20], 'rubout.neutral':[10,1,12,8], 'rubout.smash':[26,1,19,14], 'rubout.up':[3,1,0,0], 'rubout.uthrow':[0,1,-1,14],
   'saltpepper.bthrow':[0,1,-1,20], 'saltpepper.down':[0,1,19,7], 'saltpepper.dsmash':[29,9,30,30], 'saltpepper.dthrow':[0,1,-1,14], 'saltpepper.finisher':[14,16,0,0], 'saltpepper.fthrow':[0,1,-1,18],
   'saltpepper.neutral':[3,1,1,0], 'saltpepper.smash':[27,12,18,7], 'saltpepper.uthrow':[0,1,-1,14], 'saw.bthrow':[0,1,-1,24], 'saw.dsmash':[32,8,29,29], 'saw.dthrow':[0,1,-1,15],
   'saw.finisher':[24,1,0,0], 'saw.fthrow':[0,1,-1,22], 'saw.neutral':[26,32,12,4], 'saw.smash':[29,1,16,6], 'saw.up':[0,1,1,1], 'saw.uthrow':[0,1,-1,15],
-  'seriously.bthrow':[0,1,-1,24], 'seriously.dsmash':[32,9,33,33], 'seriously.dthrow':[0,1,-1,15], 'seriously.finisher':[24,14,0,0], 'seriously.fthrow':[0,1,-1,22], 'seriously.neutral':[6,1,22,12],
+  'seriously.bthrow':[0,1,-1,24], 'seriously.dsmash':[4,6,31,31], 'seriously.dthrow':[0,1,-1,15], 'seriously.finisher':[24,14,0,0], 'seriously.fthrow':[0,1,-1,22], 'seriously.neutral':[6,1,22,12],
   'seriously.smash':[39,1,20,20], 'seriously.up':[0,1,1,1], 'seriously.uthrow':[0,1,-1,15], 'serve.bthrow':[0,1,-1,22], 'serve.dthrow':[0,1,-1,14],
   'serve.finisher':[5,1,24,8], 'serve.fthrow':[0,1,-1,20], 'serve.neutral':[5,1,18,6], 'serve.smash':[52,1,19,0], 'serve.uthrow':[0,1,-1,14], 'shatter.bthrow':[0,1,-1,20],
   'shatter.dthrow':[0,1,-1,14], 'shatter.finisher':[43,1,0,0], 'shatter.fthrow':[0,1,-1,18], 'shatter.neutral':[10,1,10,4], 'shatter.smash':[69,1,16,0],
@@ -95311,12 +95549,12 @@ const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHi
   'spike.dsmash':[29,8,29,29], 'spike.dthrow':[0,1,-1,14], 'spike.finisher':[11,1,0,0], 'spike.fthrow':[0,1,-1,19], 'spike.neutral':[2,1,18,6], 'spike.smash':[26,16,30,30],
   'spike.up':[33,1,0,0], 'spike.uthrow':[0,1,-1,14], 'spikeburst.bthrow':[0,1,-1,24], 'spikeburst.down':[36,1,21,0], 'spikeburst.dsmash':[29,9,30,30], 'spikeburst.dthrow':[0,1,-1,14],
   'spikeburst.fthrow':[0,1,-1,22], 'spikeburst.neutral':[9,1,1,0], 'spikeburst.smash':[26,18,18,6], 'spikeburst.up':[1,32,0,0], 'spikeburst.uthrow':[0,1,-1,14], 'splash.bthrow':[0,1,-1,22],
-  'splash.dsmash':[29,8,29,29], 'splash.dthrow':[0,1,-1,14], 'splash.fthrow':[0,1,-1,20], 'splash.smash':[35,12,17,6], 'splash.up':[4,1,1,0], 'splash.uthrow':[0,1,-1,14],
+  'splash.dsmash':[4,5,28,28], 'splash.dthrow':[0,1,-1,14], 'splash.fthrow':[0,1,-1,20], 'splash.smash':[35,12,17,6], 'splash.up':[4,1,1,0], 'splash.uthrow':[0,1,-1,14],
   'split.bthrow':[0,1,-1,22], 'split.down':[0,1,13,5], 'split.dsmash':[29,9,32,32], 'split.dthrow':[0,1,-1,14], 'split.finisher':[14,99,0,0], 'split.fthrow':[0,1,-1,20],
   'split.neutral':[2,1,18,6], 'split.smash':[24,1,20,16], 'split.up':[0,1,1,1], 'split.uthrow':[0,1,-1,14], 'static.bthrow':[0,1,-1,24], 'static.dsmash':[33,8,29,29],
   'static.dthrow':[0,1,-1,15], 'static.finisher':[12,18,0,0], 'static.fthrow':[0,1,-1,22], 'static.neutral':[8,1,12,7], 'static.smash':[28,1,18,18], 'static.uthrow':[0,1,-1,15],
   'stopshot.bthrow':[0,1,-1,22], 'stopshot.down':[8,1,18,10], 'stopshot.dsmash':[32,9,30,30], 'stopshot.dthrow':[0,1,-1,16], 'stopshot.finisher':[85,1,0,0], 'stopshot.fthrow':[0,1,-1,20],
-  'stopshot.neutral':[12,1,16,0], 'stopshot.smash':[38,12,19,7], 'stopshot.uthrow':[0,1,-1,14], 'sucker.bthrow':[0,1,-1,22], 'sucker.dsmash':[29,9,30,30], 'sucker.dthrow':[0,1,-1,14],
+  'stopshot.neutral':[12,1,16,0], 'stopshot.smash':[38,12,19,7], 'stopshot.uthrow':[0,1,-1,14], 'sucker.bthrow':[0,1,-1,22], 'sucker.dsmash':[4,4,30,30], 'sucker.dthrow':[0,1,-1,14],
   'sucker.finisher':[12,49,0,0], 'sucker.fthrow':[0,1,-1,20], 'sucker.neutral':[3,1,8,4], 'sucker.smash':[54,1,17,0], 'sucker.up':[0,19,0,0], 'sucker.uthrow':[0,1,-1,14],
   'switch.bthrow':[0,1,-1,22], 'switch.dsmash':[29,9,32,32], 'switch.dthrow':[0,1,-1,14], 'switch.finisher':[12,41,0,0], 'switch.fthrow':[0,1,-1,20], 'switch.neutral':[16,12,12,4],
   'switch.smash':[26,12,17,6], 'switch.up':[0,1,1,1], 'switch.uthrow':[0,1,-1,14], 'tackle.bthrow':[0,1,-1,24], 'tackle.dthrow':[0,1,-1,14],
@@ -95325,7 +95563,7 @@ const FB_FRAME_DATA = {   // kit.slot -> [startup, active, endLagWhiff, endLagHi
   'tape.smash':[24,1,18,12], 'tape.up':[0,1,1,1], 'tape.uthrow':[0,1,-1,14], 'testtube.bthrow':[0,1,-1,20], 'testtube.dsmash':[29,9,30,30], 'testtube.dthrow':[0,1,-1,14],
   'testtube.finisher':[27,1,0,0], 'testtube.fthrow':[0,1,-1,18], 'testtube.neutral':[3,1,8,4], 'testtube.smash':[54,1,18,0], 'testtube.uthrow':[0,1,-1,14], 'thorn.bthrow':[0,1,-1,21],
   'thorn.dsmash':[29,9,31,31], 'thorn.dthrow':[0,1,-1,14], 'thorn.finisher':[12,19,0,0], 'thorn.fthrow':[0,1,-1,19], 'thorn.neutral':[0,1,11,4], 'thorn.smash':[38,1,17,12],
-  'thorn.up':[0,1,1,1], 'thorn.uthrow':[0,1,-1,14], 'timber.bthrow':[0,1,-1,26], 'timber.dsmash':[37,9,33,33], 'timber.dthrow':[0,1,-1,15], 'timber.finisher':[22,14,0,0],
+  'thorn.up':[0,1,1,1], 'thorn.uthrow':[0,1,-1,14], 'timber.bthrow':[0,1,-1,26], 'timber.dsmash':[4,5,32,32], 'timber.dthrow':[0,1,-1,15], 'timber.finisher':[22,14,0,0],
   'timber.fthrow':[0,1,-1,24], 'timber.neutral':[40,1,14,0], 'timber.smash':[47,1,20,19], 'timber.up':[38,1,0,0], 'timber.uthrow':[0,1,-1,15], 'tricks.bthrow':[0,1,-1,22],
   'tricks.dsmash':[29,9,30,30], 'tricks.dthrow':[0,1,-1,14], 'tricks.finisher':[24,14,0,0], 'tricks.fthrow':[0,1,-1,20], 'tricks.neutral':[6,1,1,0], 'tricks.smash':[27,11,18,6],
   'tricks.up':[0,1,1,1], 'tricks.uthrow':[0,1,-1,14], 'vacuum.bthrow':[0,1,-1,24], 'vacuum.dsmash':[29,9,30,30], 'vacuum.dthrow':[0,1,-1,14], 'vacuum.finisher':[20,1,0,0],
@@ -96921,7 +97159,7 @@ function hitCircle(f,cx,cy,rad,dmgLow,dmgHigh,kbx,kby,band,sourKb,once){
       const dmg = (sweet || sourKb!=null) ? dmgHigh : dmgLow;
       const k = sourKb!=null ? (sweet ? 1 : sourKb) : ((dmgHigh>0 && dmg!==dmgHigh) ? dmg/dmgHigh : 1);
       if(FS.by === f) FSW.vt = t.idx;
-      applyHit(t, dmg, kbx*k, kby*k, f); FSW.vt = -1;   // counter handled inside applyHit
+      JUICE_SW = band != null && sweet; applyHit(t, dmg, kbx*k, kby*k, f); JUICE_SW = false; FSW.vt = -1;   // counter handled inside applyHit
       if(t.team!==f.team){ landed++; f._confirm = 1; }   // a SWING that lands recovers sooner (see JAB_HIT_CD); a shot landing this frame does not count
     }
   }
@@ -97066,7 +97304,7 @@ function hitShape(f, sh, dmgLow, dmgHigh, kbx, kby, band, sourKb, once){
     const dmg = (sweet || sourKb!=null) ? dmgHigh : dmgLow;
     const k = sourKb!=null ? (sweet ? 1 : sourKb) : ((dmgHigh>0 && dmg!==dmgHigh) ? dmg/dmgHigh : 1);
     if(FS.by === f) FSW.vt = t.idx;
-    applyHit(t, dmg, kbx*k, kby*k, f); FSW.vt = -1;
+    JUICE_SW = band != null && sweet; applyHit(t, dmg, kbx*k, kby*k, f); JUICE_SW = false; FSW.vt = -1;
     if(t.team!==f.team){ landed++; f._confirm = 1; }
   }
   if(summons.length) damageSummons(f, bb.cx, bb.cy, bb.rad, dmgHigh, null, once);   // `once`: hitCircle's, for a boss that must take the move once
@@ -102509,7 +102747,8 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   else if(dmg > 0) t._fsHitT = null;   // (a hit that is not a Final Smash's: a KO from here on is not one: fsKoSlow)
   if(!t._fsLock && !t.dead) kocLaunch(t);   // THE LAST KO: a launch that will carry a match-ending foe out plays slowed down, from any move
   mdiHit(t, isTick, hitGround);   // MDI: this hit may be DI'd / SDI'd (mdiDI, mdiSDI)
-  if(!isTick) hitStopHit(t, from, dmg*fsRow);   // HIT FREEZE: the two of them are held still a moment (none while a Final Smash plays: hitStopOff)
+  const jCls = (!isTick && dmg > 0) ? juiceHitClass(t, dmg) : 0;   // MOVE JUICE: how hard this hit is (power, strong, a KO flight), read once
+  if(!isTick){ HS_BONUS = juiceHsBonus(jCls); t._hsB = 0; hitStopHit(t, from, dmg*fsRow); HS_BONUS = 0; }   // HIT FREEZE: the two of them are held still a moment (none while a Final Smash plays: hitStopOff); a strong hit a little longer (HS_STRONG)
   if(!isTick && !(opts && opts.shot)) hitJumpBack(from, t);   // A JUMP BACK FOR A HIT: the attacker's own swing, in the air with no jumps left (hitJumpBack)
   // A circle still winding up is lost to any hit that connects first -- the counterplay that turns
   // a ring from an answer to everything into a read (see CIRCLE_WINDUP).
@@ -102521,7 +102760,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   t.flash=8;
   puff(t.x,t.y-6,'#fff',5); puff(t.x,t.y-6,(from&&from.color)||'#fff',4);   // a boss's shot (its owner is {team:-1, idx:-2}) and a hazard (null) have no colour: the sparks had none either, and drew in whatever fill the last thing left
   hitFx(t, from, dmg, hitGround);   // the layered sparks, the flash ring on a heavy hit, the launch dust (HIT EFFECTS)
-  if(t.you||from?.you) shake(dmg);
+  if(!isTick && dmg > 0) juiceMarkHit(t, from, jCls, hitGround);   // MOVE JUICE: the stamp the drawing plays (the flash star, lines, chips, a clean spark; the shake, now on strong hits only: juiceHit)
   // per-character damage KO: pile on enough % and they burst regardless of position
   if(t.pct>=t.koCap && !t.dead && !FDR) eliminate(t);   // (THE WIND RACE: damage never KOs) no "maxed out!" line ("Remove them all"): eliminate puts up the KO line, the one line a KO keeps
 }
@@ -102594,6 +102833,9 @@ const SHAKE_PREF_KEY = 'bfsi:shake';
 function shakePrefLoad(){ try{ return localStorage.getItem(SHAKE_PREF_KEY) !== '0'; }catch(e){ return true; } }   // default ON
 function shakePrefSave(v){ try{ localStorage.setItem(SHAKE_PREF_KEY, v ? '1' : '0'); }catch(e){} }
 let SHAKE_ON = shakePrefLoad();
+// (MOVE JUICE: the shake's offsets come from shkRand, a counter of its own, not Math.random: a shake on the screen used to spend the dice the
+// CPUs think with, so turning shake on or off changed how a seeded match played)
+function shkRand(){ let s = shkRand.n = ((shkRand.n | 0) + 1) | 0; s = Math.imul(s ^ 0x9e3779b9, 0x85ebca6b); s = Math.imul(s ^ (s >>> 13), 0xc2b2ae35); s ^= s >>> 16; return (s >>> 0)/4294967296; }
 let shakeAmt=0, SHK_X=0.7, SHK_Y=-0.5; function shake(n){ if(!SHAKE_ON || PCAM.bg) return; shakeAmt=Math.min(12,shakeAmt+n*0.4); }
 function toggleShake(){
   SHAKE_ON = !SHAKE_ON; shakePrefSave(SHAKE_ON);
@@ -102894,6 +103136,7 @@ function eliminate(f){
   }
   { const vt = sideRoomTop(); puff(f.x, Math.max(20 + vt,Math.min(WH-20-vt,f.y)), '#fff', 22); puff(f.x, Math.max(20 + vt,Math.min(WH-20-vt,f.y)), f.color, 14); }
   koStarburst(f.x, f.y, f.color);   // the star at the blast zone (HIT EFFECTS)
+  juiceMarkKo(f);   // MOVE JUICE: the blast beam, the flash and the push-in (juiceKo)
   try{ cosKoBurst(f); }catch(e){}   // the KO effect of whoever knocked them out: drawn only, and never a roll of the dice
   shake((f.you || (f.lastHitBy && f.lastHitBy.you)) ? 30 : 15);   // JURY 1: a KO shook less (3.6 px) than a plain 10% hit (4 px); yours, or one you scored, now shakes to the cap, others half
   if(f.you){ const kb = f.lastHitBy, by = hzBy(f) || ((kb && kb !== f && kb.name && hazardT - (f._lastHitT != null ? f._lastHitT : -1e9) <= 600) ? kb.name : '');   // JURY 1: who did it, if someone hit them in the last 10 s
@@ -111358,6 +111601,336 @@ function stepLandFx(){
 // A splash: droplets thrown up and out to both sides, the way a belly-flop lands (Pickle's missed dive). Particles
 // only -- drawn, falling and gone; nothing here touches a fighter.
 function splashDrops(x,y,color,n){ for(let i=0;i<n;i++){ const side = i%2 ? 1 : -1; particles.push({x, y, vx:side*(0.8+Math.random()*3.2), vy:-(2.2+Math.random()*3.4), life:16+Math.random()*10, color, r:1.6+Math.random()*2}); } }
+// ---------- MOVE JUICE (2026-11-17) ----------
+// The owner: "the moves dont have anything cool. look at any ssbu move, and you'll see that they all have something cool in them", then
+// "especially the animations"; "Both: effects first" (one pass every move of every fighter gets at once, then the redraws, fighter by
+// fighter); the hit freeze: "Yes, small and only on strong hits". Built on what was already there -- the frame layer's six held poses a
+// swing (FR_ATK), HIT ART, HIT EFFECTS (hitFx, koStarburst), impact, the hit freeze, the last KO's close-up -- and read from each move's own
+// numbers (its damage, its launch, its hit area, its startup), so nothing is written per fighter:
+//   WIND-UP   a glint on the body (its front, at head height) as a startup comes to its end and as a smash charge fills, popping as
+//             it goes; the frame layer's lean and squash are deeper through a startup and for a longer, heavier swing (juiceAmp). All of
+//             it on the body: nothing round it and nothing where the hit will land (NO TELLS, the owner, 2026-10-22).
+//   ACTION    a swoosh INSIDE each swing's hit area as it lands, sweeping the way the move goes (juiceSwooshes, from HIT_ART, so it is
+//             never bigger than what hits); afterimages behind a fighter moving fast in a move (juiceGhosts).
+//   IMPACT    a flash star where the blow landed, sized by its power; lines along the launch on a mid or strong hit; hot chips thrown
+//             on a strong one; a CLEAN spark (a pale-blue cross glint) when a move's sweet spot lands; a flat shock ring on the floor
+//             under a strong hit on someone standing. The screen shakes on strong hits only (yours, or a KO flight), scaled and capped.
+//   HIT-STOP  a strong hit holds the two fighters HS_STRONG more frames (see hitStopFrames): the only part the sim sees.
+//   LAUNCH    smoke puffs behind a fighter sent flying hard; a KO shoots a blast beam back at the stage from where they went out,
+//             with a short white flash (at most one every JFX.flashGap frames: under 3 a second) and a 4% push-in toward it.
+// RENDER-ONLY, except the hit freeze. A hit stamps `_jHit` on whoever took it (applyHit: its frame, power, clean / strong / KO-flight
+// bits and who landed it, packed in one number) and a KO `_jKo` (eliminate: its frame and spot); both ride the snapshot
+// (NET_FIGHTER_FLAGS) and nothing but the drawing reads them. The drawing notices a new one (juiceWatch, once a frame of the clock) and
+// puts what it throws into ONE fixed pool (JFX.n slots, the oldest overwritten): its dice come from the spot and the frame (never
+// Math.random) and every piece's motion is worked out from its age, so there is nothing to step, the host, a guest and a replay draw
+// the same, and an 8-fighter match allocates nothing for it frame to frame. "Reduce effects" (Settings) turns off the flash, the
+// push-in, the afterimages and the impact lines, and thins the rest; it never changes the hit freeze (that is the same for everyone).
+const JFX = { n:192, flashGap:21, hs:true };   // hs: the strong-hit freeze (a test switch: false = the freeze exactly as before)
+// THE STRONG-HIT FREEZE. A hit's power is hitFxPower(damage, launch speed): 0 for nothing, 1 for a heavy hit (an 18% smash at mid
+// percent, a 10% hit that launches at 13 px a frame), 1.6 at most. A strong hit (s1+) holds 1 frame more, a very strong one (s2+) 2, and
+// a hit that will carry them out (fsKoFlight, the last KO's own test) 1 more; never past cap in all (the plain freeze is 2-6).
+const HS_STRONG = { s1:1.0, s2:1.35, kill:1, cap:9 };
+let HS_BONUS = 0;   // the frames hitStopFrames adds for the hit being applied right now (applyHit sets it around hitStopHit)
+let JUICE_SW = false;   // hitCircle / hitShape: the hit being applied landed in its move's sweet spot (a move with no band has none)
+// The hit's class, worked out once in applyHit after the launch: round(power*10)*8 + 2 strong + 4 KO flight.
+// The stamp: (((frame*64 + power*10)*16 + bits)*16 + attacker slot + 1), bits 1 stood on the floor, 2 strong, 4 KO flight, 8 clean.
+function juiceHitClass(t, dmg){
+  const sp = Math.hypot(t.vx || 0, t.vy || 0), S = hitFxPower(dmg, sp);
+  const kill = !t.dead && t.hitstun > 0 && sp > 6 && !(MCAVE && MCAVE.on) && fsKoFlight(t, true);   // (pure: the last KO's own flight test; not on the moon's disc)
+  return Math.round(S*10)*8 + (S >= HS_STRONG.s1 ? 2 : 0) + (kill ? 4 : 0);
+}
+function juiceHsBonus(cls){
+  if(!JFX.hs) return 0;
+  const q = Math.floor(cls/8)/10, strong = (cls & 2) !== 0, kill = (cls & 4) !== 0;
+  return Math.min(HS_STRONG.cap - HITSTOP_MAX, (strong ? (q >= HS_STRONG.s2 ? 2 : 1) : 0) + (kill ? HS_STRONG.kill : 0));
+}
+function juiceMarkHit(t, from, cls, grounded){
+  const by = (from && from !== t && from.idx != null && fighters[from.idx] === from && by16(from.idx)) ? from.idx : -1;
+  const bits = (cls & 6) | (grounded ? 1 : 0) | (JUICE_SW && by >= 0 ? 8 : 0);
+  t._jHit = ((hazardT*64 + Math.min(63, Math.floor(cls/8)))*16 + bits)*16 + (by + 1);
+}
+function by16(i){ return i >= 0 && i < 15; }
+function juiceMarkKo(f){
+  const xq = Math.max(0, Math.min(16383, Math.round(f.x/2) + 4096)), yq = Math.max(0, Math.min(16383, Math.round(f.y/2) + 4096));
+  f._jKo = (hazardT*16384 + xq)*16384 + yq;
+}
+// "Reduce effects": saved like the shake switch; default off (full effects).
+const JFX_PREF_KEY = 'bfsi:fxlow';
+function juiceLowLoad(){ try{ return localStorage.getItem(JFX_PREF_KEY) === '1'; }catch(e){ return false; } }
+let JUICE_LOW = juiceLowLoad();
+function toggleJuiceFx(){
+  JUICE_LOW = !JUICE_LOW;
+  try{ if(JUICE_LOW) localStorage.setItem(JFX_PREF_KEY, '1'); else localStorage.removeItem(JFX_PREF_KEY); }catch(e){}
+  try{ if(SND.on) SFX.ui(); }catch(e){}
+  syncJuiceToggle();
+}
+function syncJuiceToggle(){
+  const el = document.getElementById('fxToggle');
+  if(el) el.textContent = JUICE_LOW ? "✨ Effects: Reduced" : "✨ Effects: Full";
+}
+// THE POOL: one slot a piece, struct-of-arrays. Kinds: 1 flash star, 2 impact line, 3 clean glint, 4 floor ring, 5 smoke, 6 KO beam, 7 chip.
+const JP_K = new Uint8Array(JFX.n), JP_L = new Uint8Array(JFX.n), JP_T = new Float64Array(JFX.n);
+const JP_X = new Float32Array(JFX.n), JP_Y = new Float32Array(JFX.n), JP_VX = new Float32Array(JFX.n), JP_VY = new Float32Array(JFX.n);
+const JP_S = new Float32Array(JFX.n), JP_A = new Float32Array(JFX.n), JP_C = new Array(JFX.n).fill('#ffffff');
+let JP_HEAD = 0;
+function jpAdd(k, x, y, vx, vy, life, s, a, col){
+  const i = JP_HEAD; JP_HEAD = (i + 1) % JFX.n;
+  JP_K[i] = k; JP_L[i] = life; JP_T[i] = hazardT; JP_X[i] = x; JP_Y[i] = y; JP_VX[i] = vx; JP_VY[i] = vy; JP_S[i] = s; JP_A[i] = a; JP_C[i] = col;
+}
+function juiceClear(){ JP_K.fill(0); JW.length = 0; JZ.t = -1e9; JFLASH.t = -1e9; JSW.clear(); }
+// What the drawing saw last of each fighter (by slot): the last hit and KO it played, and where the body was the last 8 frames.
+const JW = [];
+const JZ = { t:-1e9, x:0, y:0 }, JFLASH = { t:-1e9 };
+let JW_T = -1;
+const JW_LEN = 8;
+function juiceTint(c){ return (typeof c === 'string' && c.charAt(0) === '#' && c.length === 7) ? c : '#ffd34d'; }
+// Once a frame of the clock (the first draw of a new hazardT): new hits and KOs become pieces, the hard-launched smoke, the trail history.
+function juiceWatch(){
+  if(hazardT === JW_T) return;
+  if(JW_T < 0 || hazardT < JW_T - 3) juiceClear();   // the first frame, or a new match (the clock starts again): start clean (a guest's clock may step back a frame or two: not a reset)
+  else if(hazardT < JW_T) return;
+  JW_T = hazardT;
+  for(let i = 0; i < fighters.length; i++){
+    const f = fighters[i]; if(!f) continue;
+    let w = JW[i];
+    if(!w || w.name !== f.name){   // (by slot and name, not the object: a guest's fighters are new objects every snapshot)
+      w = JW[i] = { name:f.name, jh:f._jHit || 0, jk:f._jKo || 0, hx:new Float32Array(JW_LEN), hy:new Float32Array(JW_LEN), hn:0, sm:-1e9 };
+      for(let k = 0; k < JW_LEN; k++){ w.hx[k] = f.x; w.hy[k] = f.y; }
+      continue;
+    }
+    w.hx[w.hn % JW_LEN] = f.x; w.hy[w.hn % JW_LEN] = f.y; w.hn++;
+    const h = f._jHit || 0;
+    if(h !== w.jh){ w.jh = h; if(h > 0 && !f.dead && hazardT - Math.floor(h/16384) <= 6) juiceHit(f, h); }
+    const ko = f._jKo || 0;
+    if(ko !== w.jk){ w.jk = ko; if(ko > 0 && hazardT - Math.floor(ko/268435456) <= 6) juiceKo(f, ko); }
+    if(!f.dead && f.hitstun > 0 && !(f._fsLock)){
+      const vx = f.vx || 0, vy = f.vy || 0, sp = Math.hypot(vx, vy);
+      if(sp >= 13 && hazardT - w.sm >= (JUICE_LOW ? 4 : 2)){
+        w.sm = hazardT;
+        const r = hitFxDice(f.x, f.y, 61), k = Math.min(1, (sp - 13)/14);
+        jpAdd(5, f.x - vx*0.6 + (r() - 0.5)*8, f.y - vy*0.6 + (r() - 0.5)*8, -vx*0.04, -vy*0.04 - 0.25, 22 + Math.round(k*10), f.r*(0.42 + 0.3*k), r()*6.28, k > 0.6 ? '#f4efe6' : '#e3ddd2');
+      }
+    }
+  }
+}
+function juiceHit(t, h){
+  const by = (h % 16) - 1, bits = Math.floor(h/16) % 16, q = (Math.floor(h/256) % 64)/10, clean = (bits & 8) !== 0;
+  const strong = (bits & 2) !== 0, kill = (bits & 4) !== 0, low = JUICE_LOW;
+  const from = by >= 0 ? fighters[by] : null, P = Math.min(1.6, q);
+  if(P < 0.05 && !clean) return;
+  const vx = t.vx || 0, vy = t.vy || 0, sp = Math.hypot(vx, vy);
+  const ang = sp > 0.5 ? Math.atan2(vy, vx) : (from ? (t.x >= from.x ? 0 : Math.PI) : -Math.PI/2), ca = Math.cos(ang), sa = Math.sin(ang);
+  const R = t.r || 24, cx = t.x - ca*R*0.5, cy = t.y - 6 - sa*R*0.5;   // where the blow landed: the side of the body it came from
+  const rnd = hitFxDice(cx, cy, 53), tint = juiceTint(from && from.color);
+  jpAdd(1, cx, cy, 0, 0, strong ? 7 : 5, (10 + 15*P + (kill ? 8 : 0))*(low ? 0.8 : 1), rnd()*6.28, strong ? '#ffffff' : '#fff6c8');
+  if(clean) jpAdd(3, cx, cy, 0, 0, 13, 20 + 14*P, ang, '#bdf2ff');
+  if(P >= 0.55 && !low){
+    const n = strong ? (kill ? 6 : 5) : 3;
+    for(let i = 0; i < n; i++){
+      const a = ang + (rnd() - 0.5)*(strong ? 0.55 : 0.4), off = R*(0.2 + rnd()*0.5), v = 9 + P*7 + rnd()*4;
+      jpAdd(2, t.x + Math.cos(a + 1.57)*(rnd() - 0.5)*R*0.9 + Math.cos(a)*off, t.y - 6 + Math.sin(a + 1.57)*(rnd() - 0.5)*R*0.9 + Math.sin(a)*off,
+        Math.cos(a)*v, Math.sin(a)*v, 10 + Math.round(P*3), 24 + 34*P*(0.7 + 0.6*rnd()), a, i % 2 ? '#ffffff' : tint);
+    }
+  }
+  if(strong){
+    const n = low ? 3 : (kill ? 8 : 6);
+    for(let i = 0; i < n; i++){
+      const a = ang + Math.PI + (rnd() - 0.5)*2.4, v = 3 + rnd()*4 + P*2;   // chips spray back off the blow (the launch's own sparks go the other way: hitFx)
+      jpAdd(7, cx, cy, Math.cos(a)*v, Math.sin(a)*v - 2, 16 + Math.round(rnd()*8), 2.5 + rnd()*2.5, rnd()*6.28, i % 3 === 0 ? tint : (i % 3 === 1 ? '#ffc94a' : '#ffffff'));
+    }
+    if((bits & 1) && !(MCAVE && MCAVE.on)) jpAdd(4, t.x, t.y + R - 1, 0, 0, 16, 34 + 30*P, 0, '#f2ead8');
+  }
+  if(strong || kill){
+    const mine = t.you || (from && from.you);
+    if(mine || kill) shake(Math.min(26, 10 + 12*(P - 1) + (kill ? 8 : 0)));   // (shake(): 0.4 px a point, 12 px at most; it has its own switch)
+  }
+}
+function juiceKo(f, ko){
+  const vt = sideRoomTop();
+  const x = Math.max(64 - SIDE_ROOM, Math.min(WW - 64 + SIDE_ROOM, (Math.floor(ko/16384) % 16384 - 4096)*2));
+  const y = Math.max(64 + vt, Math.min(WH - 64 - vt, (ko % 16384 - 4096)*2));
+  const ang = Math.atan2((groundY() - 160) - y, WW/2 - x);   // back at the stage
+  jpAdd(6, x, y, 0, 0, 30, JUICE_LOW ? 0.7 : 1, ang, juiceTint(f.color));
+  if(JUICE_LOW || KOC.on || FS.slow > 0 || FS.freeze > 0) return;   // (the last KO and a Final Smash's KO have their own close-up)
+  for(const g of fighters) if(g._fs) return;
+  JZ.t = hazardT; JZ.x = x; JZ.y = y;
+  if(hazardT - JFLASH.t >= JFX.flashGap) JFLASH.t = hazardT;
+}
+// The KO push-in: after fsCamApply, scaled about the spot on the screen (so it stays put and the screen stays covered). None in a turned view.
+function juiceCamApply(c, zoom){
+  const a = hazardT - JZ.t; if(!(a >= 0 && a < 18) || FS_VIEW.on || (MCAVE && MCAVE.on) || JUICE_LOW) return;
+  const k = a < 4 ? (a + 1)/5 : 1 - (a - 4)/14, e = k*k*(3 - 2*k), Z = 1 + 0.04*e;
+  const px = (JZ.x - camX - W/2)*zoom + W/2, py = (JZ.y - camY - H/2)*zoom + H/2;
+  c.translate(px, py); c.scale(Z, Z); c.translate(-px, -py);
+}
+function juiceDrawScreen(){
+  const a = hazardT - JFLASH.t; if(!(a >= 0 && a < 8) || JUICE_LOW) return;
+  ctx.save(); ctx.globalAlpha = 0.3*(1 - a/8); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H); ctx.restore();
+}
+// A 4-point star: two thin diamonds and a bright middle.
+function juiceStar(c, x, y, s, rot, col, a){
+  c.save(); c.translate(x, y); c.rotate(rot); c.globalAlpha = a;
+  c.fillStyle = col; c.beginPath();
+  c.moveTo(0, -s); c.lineTo(s*0.16, -s*0.16); c.lineTo(s, 0); c.lineTo(s*0.16, s*0.16); c.lineTo(0, s); c.lineTo(-s*0.16, s*0.16); c.lineTo(-s, 0); c.lineTo(-s*0.16, -s*0.16); c.closePath(); c.fill();
+  c.fillStyle = '#ffffff'; c.beginPath(); c.arc(0, 0, s*0.2, 0, 7); c.fill();
+  c.restore();
+}
+// The pieces, in world space over the fighters (pass 1) or under them (pass 0: the smoke and the floor rings).
+function juiceDrawPool(pass){
+  const c = ctx;
+  for(let i = 0; i < JFX.n; i++){
+    const k = JP_K[i]; if(!k) continue;
+    const L = JP_L[i], age = hazardT - JP_T[i];
+    if(age >= L || age < -2){ if(age >= L) JP_K[i] = 0; continue; }
+    const under = k === 5 || k === 4;
+    if(under !== (pass === 0)) continue;
+    const a = age < 0 ? 0 : age, u = a/L;
+    const x0 = JP_X[i], y0 = JP_Y[i], s = JP_S[i], ang = JP_A[i], col = JP_C[i];
+    if(k === 1){   // the flash star: a jagged burst, white then the colour shrinking away
+      const r = s*(a < 1 ? 1 : 1.15 - 0.55*u), n = 10;
+      c.save(); c.translate(x0, y0); c.rotate(ang);
+      c.globalAlpha = a < 2 ? 1 : 1 - u; c.beginPath();
+      for(let j = 0; j < n*2; j++){ const rr = j % 2 ? r*0.42 : r*(j % 4 ? 0.86 : 1), t = j/(n*2)*6.2832; if(j) c.lineTo(Math.cos(t)*rr, Math.sin(t)*rr); else c.moveTo(Math.cos(t)*rr, Math.sin(t)*rr); }
+      c.closePath(); c.fillStyle = col; c.fill(); c.lineWidth = 2; c.strokeStyle = a < 2 ? '#ffd34d' : '#ff8a3a'; c.stroke();
+      c.restore();
+    } else if(k === 2){   // an impact line: shoots out along the launch, its tail catching up
+      const d = 0.86, far = (1 - Math.pow(d, a + 1))/(1 - d), near = (1 - Math.pow(d, Math.max(0, a - 2)))/(1 - d);
+      const ca = Math.cos(ang), sa = Math.sin(ang), hx = x0 + JP_VX[i]*far*0.35, hy = y0 + JP_VY[i]*far*0.35, len = Math.min(s, (far - near)*Math.hypot(JP_VX[i], JP_VY[i])*0.35 + s*0.3);
+      c.save(); c.globalAlpha = 1 - u*u; c.lineCap = 'round';
+      c.strokeStyle = '#1c1c1c'; c.lineWidth = 4.2*(1 - 0.6*u); c.beginPath(); c.moveTo(hx, hy); c.lineTo(hx - ca*len, hy - sa*len); c.stroke();
+      c.strokeStyle = col; c.lineWidth = 2.4*(1 - 0.6*u); c.stroke(); c.restore();
+    } else if(k === 3){   // the clean glint: a long cross that flares and turns a little, a ring behind it
+      const g = a < 3 ? (a + 1)/4 : 1 - (a - 3)/(L - 3);
+      c.save(); c.globalAlpha = 0.85*g; c.strokeStyle = col; c.lineWidth = 2.5; c.beginPath(); c.arc(x0, y0, s*(0.45 + 0.5*u), 0, 7); c.stroke(); c.restore();
+      juiceStar(c, x0, y0, s*(0.7 + 0.5*g), 0.35 + u*0.5, col, Math.max(0, g));
+      juiceStar(c, x0, y0, s*0.55*g, 0.35 + 0.785 + u*0.5, '#ffffff', Math.max(0, g));
+    } else if(k === 4){   // a flat shock ring on the floor
+      c.save(); c.globalAlpha = 0.75*(1 - u); c.strokeStyle = col; c.lineWidth = 3*(1 - 0.5*u);
+      c.beginPath(); c.ellipse(x0, y0, s*(0.4 + 0.8*u), s*(0.08 + 0.12*u), 0, 0, 7); c.stroke(); c.restore();
+    } else if(k === 5){   // smoke: drifts, swells, fades
+      const d = 0.9, m = (1 - Math.pow(d, a))/(1 - d);
+      c.save(); c.globalAlpha = 0.55*(1 - u); c.fillStyle = col;
+      c.beginPath(); c.arc(x0 + JP_VX[i]*m, y0 + JP_VY[i]*m - a*0.15, s*(0.6 + 0.9*u), 0, 7); c.fill(); c.restore();
+    } else if(k === 6){   // the KO blast beam: a wedge shot back at the stage, its colour round a white core, thinning out
+      const grow = a < 4 ? (a + 1)/5 : 1, thin = a < 8 ? 1 : 1 - (a - 8)/(L - 8), Lb = (210 + 120*grow)*s, Wb = 46*s*thin;
+      c.save(); c.translate(x0, y0); c.rotate(ang); c.globalAlpha = Math.min(1, 0.25 + thin);
+      c.fillStyle = col; c.beginPath(); c.moveTo(-10, -Wb*0.7); c.lineTo(Lb*grow, -2); c.lineTo(Lb*grow, 2); c.lineTo(-10, Wb*0.7); c.arc(-10, 0, Wb*0.7, Math.PI/2, Math.PI*1.5); c.closePath(); c.fill();
+      c.fillStyle = '#ffffff'; c.beginPath(); c.moveTo(-6, -Wb*0.32); c.lineTo(Lb*grow*0.85, -1); c.lineTo(Lb*grow*0.85, 1); c.lineTo(-6, Wb*0.32); c.closePath(); c.fill();
+      c.restore();
+    } else if(k === 7){   // a hot chip: flung, falling, turning
+      const d = 0.93, m = (1 - Math.pow(d, a))/(1 - d), x = x0 + JP_VX[i]*m, y = y0 + JP_VY[i]*m + 0.18*a*a;
+      c.save(); c.translate(x, y); c.rotate(ang + a*0.4); c.globalAlpha = 1 - u*u; c.fillStyle = col; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.2;
+      c.beginPath(); c.moveTo(s, 0); c.lineTo(-s*0.6, s*0.7); c.lineTo(-s*0.5, -s*0.6); c.closePath(); c.fill(); c.stroke(); c.restore();
+    }
+  }
+}
+// THE SWOOSH: inside each swing's hit area (HIT_ART, live, its plain style), a tapered white band sweeping the way the move goes, edged in
+// the move's colour, over the first 3 frames it is live, fading with the shape. Shots, rings, auras, pulls, grabs and tethers have their own art.
+const JSW = new Map();   // hit-art key -> { t0: the frame it was first seen live (so the sweep starts when the hit does), last: the last frame it was }
+let JSW_T = -1;
+const JSW_DN = { slam:1, chop:1, dive:1, stomp:1, stompdn:1 };   // kinds that swing downward (the rest sweep up and over)
+function juiceSwooshes(){
+  if(!HIT_ART.length) return;
+  const c = ctx;
+  if(JSW_T !== hazardT){ JSW_T = hazardT; if(JSW.size > 64) JSW.forEach(function(v, key){ if(hazardT - v.last > 30) JSW.delete(key); }); }
+  for(let i = 0; i < HIT_ART.length; i++){
+    const e = HIT_ART[i];
+    if(e.m !== 'l' || e.s || !(e.o >= 0) || !e.sh) continue;
+    const age = hazardT - e.t; if(age < 0 || age > 3) continue;
+    const f = fighters[e.o]; if(!f || f.dead) continue;
+    const key = e.k ? e.k : (e.o + ':' + e.sh.kind);
+    let v = JSW.get(key); if(!v){ v = { t0:e.t, last:e.t }; JSW.set(key, v); } else if(e.t - v.last > 2 || v.t0 > e.t){ v.t0 = e.t; }   // (not live last frame: a new swing)
+    v.last = e.t; const t0 = v.t0;
+    const p = Math.min(1, (hazardT - t0 + 1)/3), fade = age > 0 ? 1 - age/4 : 1;
+    const dir = JSW_DN[f._atkKind || ''] ? 1 : -1;
+    c.save(); c.globalAlpha = 0.85*fade;
+    try { juiceSwoosh(c, e.sh, e, p, dir, hazardT - t0, juiceTint(e.c)); } finally { c.restore(); }
+  }
+}
+function juiceSwoosh(c, sh, e, p, dir, t, col){
+  c.fillStyle = '#ffffff'; c.strokeStyle = col; c.lineWidth = 2; c.lineJoin = 'round';
+  if(sh.kind === 'fan'){
+    const r0 = sh.r0, r1 = sh.r1, rIn = r0 + (r1 - r0)*0.5;
+    c.translate(sh.cx, sh.cy); c.scale(sh.face < 0 ? -1 : 1, 1);
+    let a0 = sh.a0, a1 = sh.a1;
+    if(a1 - a0 >= 6.28){ a0 = t*0.5; a1 = a0 + 2.2; }   // all round: a spinning arc
+    const from = dir > 0 ? a0 : a1, span = (a1 - a0)*p*(dir > 0 ? 1 : -1), n = 10;
+    c.beginPath();
+    for(let j = 0; j <= n; j++){ const q = j/n, an = from + span*q; c[j ? 'lineTo' : 'moveTo'](Math.cos(an)*r1, Math.sin(an)*r1); }
+    for(let j = n; j >= 0; j--){ const q = j/n, an = from + span*q, rr = r1 - (r1 - rIn)*q*q; c.lineTo(Math.cos(an)*rr, Math.sin(an)*rr); }
+    c.closePath(); c.fill(); c.stroke();
+    return;
+  }
+  if(sh.kind === 'capsule'){
+    const x2 = sh.x1 + (sh.x2 - sh.x1)*p, y2 = sh.y1 + (sh.y2 - sh.y1)*p, L = Math.hypot(x2 - sh.x1, y2 - sh.y1); if(L < 2) return;
+    const nx = -(y2 - sh.y1)/L, ny = (x2 - sh.x1)/L, w = sh.r*0.7;
+    c.beginPath(); c.moveTo(sh.x1, sh.y1); c.lineTo(x2 + nx*w, y2 + ny*w); c.arc(x2, y2, w, Math.atan2(ny, nx), Math.atan2(ny, nx) + Math.PI, true); c.closePath(); c.fill(); c.stroke();
+    return;
+  }
+  if(sh.kind === 'circle'){
+    const dx = sh.x - (e.ox || 0), dy = sh.y - (e.oy || 0), d = Math.hypot(dx, dy), r = sh.r;
+    if(!(r > 4)) return;
+    if(d > r*0.35){   // a disc ahead of them: a crescent on its leading side
+      const th = Math.atan2(dy, dx), half = 1.2*p, ro = r*0.92, ri = r*0.62;
+      c.beginPath(); c.arc(sh.x, sh.y, ro, th - half, th + half); c.arc(sh.x - Math.cos(th)*r*0.12, sh.y - Math.sin(th)*r*0.12, ri, th + half*0.8, th - half*0.8, true); c.closePath(); c.fill(); c.stroke();
+    } else {   // round the body: two arcs wheeling
+      const a0 = t*0.45; c.lineWidth = Math.max(3, r*0.14); c.strokeStyle = '#ffffff'; c.lineCap = 'round';
+      c.beginPath(); c.arc(sh.x, sh.y, r*0.82, a0, a0 + 1.6*p); c.stroke(); c.beginPath(); c.arc(sh.x, sh.y, r*0.82, a0 + Math.PI, a0 + Math.PI + 1.6*p); c.stroke();
+    }
+    return;
+  }
+  if(sh.kind === 'box'){
+    const cx = sh.x + sh.w/2, cy = sh.y + sh.h/2, horiz = sh.w >= sh.h, s = (horiz ? (cx >= (e.ox || 0) ? 1 : -1) : (cy >= (e.oy || 0) ? 1 : -1));
+    c.beginPath();
+    if(horiz){ const xa = s > 0 ? sh.x : sh.x + sh.w, xb = xa + s*sh.w*p, w = sh.h*0.35; c.moveTo(xa, cy); c.lineTo(xb, cy - w); c.lineTo(xb, cy + w); }
+    else { const ya = s > 0 ? sh.y : sh.y + sh.h, yb = ya + s*sh.h*p, w = sh.w*0.35; c.moveTo(cx, ya); c.lineTo(cx - w, yb); c.lineTo(cx + w, yb); }
+    c.closePath(); c.fill(); c.stroke();
+  }
+}
+// THE GLINT of a move coming: through the end of a startup (stupK past 0.55) it grows on the body's front at head height and pops as the
+// move goes; a smash charge grows one from 40% and, full, pulses it every 24 frames. A Final Smash's coil has its own.
+function juiceGlints(){
+  const c = ctx;
+  for(let i = 0; i < fighters.length; i++){
+    const f = fighters[i]; if(!f || f.dead || f.fsId) continue;
+    let g = 0;
+    const su = stupK(f);
+    if(su >= 0.55) g = (su - 0.55)/0.45;
+    if(f.smashHold > 0){ const ch = Math.min(1, f.smashHold/SMASH_FULL); if(ch >= 1){ const ph = (hazardT % 24)/24; g = Math.max(g, 0.75 + 0.55*(1 - ph)*(1 - ph)); } else if(ch >= 0.4) g = Math.max(g, (ch - 0.4)/0.6*0.7); }
+    if(!(g > 0.02)) continue;
+    const face = f.face < 0 ? -1 : 1, R = f.r || 24, s = R*(0.22 + 0.36*Math.min(1.3, g));
+    const tw = (hazardT*0.09 + i) % 6.2832;
+    juiceStar(c, f.x + face*R*0.62, f.y - R*0.52, s, tw*0.15, juiceTint(f.color), Math.min(1, 0.35 + 0.65*g));
+  }
+}
+// AFTERIMAGES: a fighter moving fast in a move (7 px a frame or more, not launched: a launch has its tumble's smear) leaves two fading copies
+// of its picture where it was 2 and 4 frames ago. Called by drawFighter, in the body's own space, just before the body.
+function juiceGhosts(f, sprite, anim, sx, sy){
+  if(JUICE_LOW || FS_TURN || (MCAVE && MCAVE.on) || f.dead || f.hitstun > 0 || !(f._atkAnim > 0 || f._dashing > 0)) return;
+  const vx = f.vx || 0, vy = f.vy || 0; if(vx*vx + vy*vy < 49) return;
+  const w = JW[f.idx]; if(!w || w.name !== f.name || w.hn < 5 || JW_T !== hazardT) return;
+  const da = drawAlpha;
+  for(let g = 2; g >= 1; g--){
+    const j = (w.hn - 1 - g*2 + JW_LEN*4) % JW_LEN, dx = w.hx[j] - f.x, dy = w.hy[j] - f.y;
+    if(dx*dx + dy*dy < 64 || dx*dx + dy*dy > 40000) continue;
+    ctx.save(); ctx.translate(dx/(sx || 1), dy/(sy || 1));
+    drawAlpha = da*(g === 1 ? 0.3 : 0.15); ctx.globalAlpha = drawAlpha;
+    try { drawSpriteBody(f, sprite, anim); } finally { drawAlpha = da; ctx.restore(); }
+  }
+  ctx.globalAlpha = da;
+}
+// How much deeper the frame layer's lean and squash go: through a startup (the anticipation) and for a long swing (a smash, a heavy
+// special: its length past a jab's). Numbers only (it runs inside the frame layer's hot pass).
+function juiceAmp(f){
+  if(f.fsId) return 1;
+  const len = f._atkLen || ATK_ANIM, w = len > ATK_ANIM ? Math.min(1, (len - ATK_ANIM)/24) : 0;
+  return (1 + 0.45*w)*(stupK(f) >= 0 ? 1.3 : 1);
+}
+// The two hooks draw() calls: under the fighters (0) and over them (1).
+function juiceDraw(pass){
+  if(pass === 0){ juiceWatch(); juiceDrawPool(0); return; }
+  juiceSwooshes(); juiceDrawPool(1); juiceGlints();
+}
 
 // ============================================================
 //  AI
@@ -111871,13 +112444,13 @@ let AI_LEVEL = 1;
 //   towerRead  BOW (round 2 of the bot fixes, 2026-10-29): the chance a decision is her tower as a read, on a foe she sees walking or jumping in
 //           from where the falling tower meets them (brainTowerRead)
 const BRAIN_LV = [
-  { think:[16, 28], wake:[26, 40], gap:[16, 24], strMax:3, miss:0.25, hesit:0.18, smash:0.10, spec:[420, 720], fin:0.06, ctr:0,    ctrCd:[0, 0],     ctrHit:1e9, grab:0.03, hop:0.08, back:0.45, wrong:0.06, lead:0.3, target:[70, 130], recMiss:0.35,
+  { think:[16, 28], wake:[26, 40], gap:[16, 24], strMax:3, miss:0.25, hesit:0.18, smash:0.10, spec:[420, 720], fin:0.06, ctr:0,    ctrCd:[0, 0],     ctrHit:1e9, grab:0.03, hop:0.08, back:0.45, wrong:0.06, lead:0.3, target:[70, 130], recMiss:0.12,
     eg:0.05, egJudge:0.6, egHit:0.25, egTrap:0, hz:0.15, edge:0.2, upAtk:0, kit:0.1, towerRead:0.04 },
-  { think:[9, 15],  wake:[14, 24], gap:[11, 16], strMax:4, miss:0.12, hesit:0.07, smash:0.25, spec:[180, 360], fin:0.12, ctr:0.2,  ctrCd:[360, 600], ctrHit:60,  grab:0.06, hop:0.15, back:0.25, wrong:0.02, lead:0.6, target:[50, 100], recMiss:0.2,
+  { think:[9, 15],  wake:[14, 24], gap:[11, 16], strMax:4, miss:0.12, hesit:0.07, smash:0.25, spec:[180, 360], fin:0.12, ctr:0.2,  ctrCd:[360, 600], ctrHit:60,  grab:0.06, hop:0.15, back:0.25, wrong:0.02, lead:0.6, target:[50, 100], recMiss:0.08,
     eg:0.35, egJudge:0.4, egHit:0.45, egTrap:0.3, hz:0.5, edge:0.6, upAtk:0.08, kit:0.5, towerRead:0.15 },
-  { think:[6, 10],  wake:[9, 15],   gap:[9, 13],  strMax:5, miss:0.05, hesit:0.03, smash:0.40, spec:[120, 240], fin:0.18, ctr:0.3,  ctrCd:[240, 420], ctrHit:45,  grab:0.10, hop:0.22, back:0.15, wrong:0,    lead:0.8, target:[40, 80], recMiss:0.1,
+  { think:[6, 10],  wake:[9, 15],   gap:[9, 13],  strMax:5, miss:0.05, hesit:0.03, smash:0.40, spec:[120, 240], fin:0.18, ctr:0.3,  ctrCd:[240, 420], ctrHit:45,  grab:0.10, hop:0.22, back:0.15, wrong:0,    lead:0.8, target:[40, 80], recMiss:0.05,
     eg:0.6, egJudge:0.25, egHit:0.65, egTrap:0.5, hz:0.8, edge:0.85, upAtk:0.15, kit:0.85, towerRead:0.25 },
-  { think:[4, 7],   wake:[6, 10],   gap:[8, 11],  strMax:6, miss:0.02, hesit:0.01, smash:0.50, spec:[100, 200], fin:0.22, ctr:0.3,  ctrCd:[240, 420], ctrHit:45,  grab:0.12, hop:0.25, back:0.12, wrong:0,    lead:0.9, target:[30, 60], recMiss:0.04, recSmart:1, space:0.6,
+  { think:[4, 7],   wake:[6, 10],   gap:[8, 11],  strMax:6, miss:0.02, hesit:0.01, smash:0.50, spec:[100, 200], fin:0.22, ctr:0.3,  ctrCd:[240, 420], ctrHit:45,  grab:0.12, hop:0.25, back:0.12, wrong:0,    lead:0.9, target:[30, 60], recMiss:0.03, recSmart:1, space:0.6,
     eg:0.75, egJudge:0.15, egHit:0.8, egTrap:0.6, hz:0.9, edge:0.95, upAtk:0.2, kit:1, towerRead:0.3 },
 ];
 // The kits whose neutral special is a shot (a projectile or a beam): those fire it from range. (The old AI's list, kept as a fact about the kits;
@@ -112288,6 +112861,7 @@ function brainRecover(f, inp, B, sp){
   const goal = mc ? mcCrackGoal(f) : edgeGoal(f, B);   // REAL EDGES: off the stage over nothing -- where it heads back to (null: not off, or a stage without edges)
   if(!(offLeft||offRight||fallingOut||goal||(sp==='chair' && aiBowAdrift(f)))){ B.recEp = null; return false; }
   B.press = null; B.str = null; if(B.st === 'string' || B.st === 'smash') B.st = 'approach';
+  B.recT = hazardT;   // (a trip back is on: brainOut lets its specials through before the CPU has 'woken' -- the up-special and Bow's Teleport are its way back)
   const held = !!f._jp;
   // A PERSON OFF THE STAGE (REAL EDGES): once a trip, by level (BRAIN_LV recMiss), it may get one thing wrong -- a late start (nothing pressed
   // for a moment while it falls), a moment's drift without steering, or its jump and its up-special thrown away at once. So a CPU makes it
@@ -112301,7 +112875,7 @@ function brainRecover(f, inp, B, sp){
   if(sp==='chair'){ aiBowRecover(f, inp, 0); return true; }
   // A 'LATE' START is one human reaction (at every level since the owner's "do all four", 2026-11-02; Expert first), not a freeze (the owner, World Cup #31, Firey's final: "firey DID NOT RECOVER AT ALL DURING THE SECOND STOCK";
   // asked, "Shorten it to one reaction"): the flat 26 frames of nothing was 2.6x Expert's own reaction and a certain fall from ledge height. The other levels keep 26.
-  if(E && E.err === 'late' && age < CPU_HUMAN.react[brainLevel(f)]) return true;   // (Expert 2026-11-02; every level 2026-11-02, the owner: "do all four": the blank is that level's own reaction, Easy 30, Normal 20, Hard 10, Expert 10; it was a flat 26)
+  if(E && E.err === 'late' && age < Math.min(14, CPU_HUMAN.react[brainLevel(f)])) return true;   // (2026-11-17: no longer than 14 frames at any level; Easy's whole 30 was a certain fall)   // (Expert 2026-11-02; every level 2026-11-02, the owner: "do all four": the blank is that level's own reaction, Easy 30, Normal 20, Hard 10, Expert 10; it was a flat 26)
   if(E && E.err === 'early' && age < 24){
     if(f.jumps > 0) inp.jump = !held;
     else if(f.spCd<=0 && !brainKit(f).uStance && !(LHC && LHK.plunge.indexOf(sp) >= 0)){ inp.special=true; inp.up=true; }
@@ -112309,8 +112883,8 @@ function brainRecover(f, inp, B, sp){
   }
   if(f._wallSide && f._wallT >= hazardT - 2 && f.vy > 0.5 && !(f._wallUsed && f._wallUsed[f._wallId]) && !(f.flying > 0) && !f._tp && mtOn(f)){
     f._aiWJ = hazardT; inp.jump = !held; inp.left = f._wallSide < 0; inp.right = f._wallSide > 0;
-  } else if(goal && BRAIN_LV[brainLevel(f)].recSmart){
-    // EXPERT (recSmart): over the drop it drifts back first, and spends its jump, then its up-special, only once it is sinking to the
+  } else if(goal){
+    // EVERY LEVEL (was Expert's alone, recSmart; the owner, 2026-11-17: "the cpus delay recovery tools too much and fall sooo much"): over the drop it drifts back first, and spends its jump, then its up-special, only once it is sinking to the
     // ledge's height (a moment before, for its hands): each rise then starts where it is needed. A jump spent high up, or while a launch
     // still carries it up, is a rise it does not have when it is under the ledge.
     if(f.vy > 0.5 && f.y + f.r + f.vy*6 > groundY() - 20){
@@ -113140,7 +113714,7 @@ function brainOut(f, inp, B, L, t, fight){
   // STANCES only by the guess (brainGuess): any other press that would raise one is let go of
   if(now - B.ctrOk > 4 && brainStancePress(f, inp)){ inp.special = false; inp.smash = false; inp.down = false; }
   // nothing pressed before it has noticed its stun is over (it may move)
-  if(!awake){ inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; inp.fin = false; }
+  if(!awake && B.recT !== now){ inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; inp.fin = false; }   // (not on a trip back: its up-special was held for the whole wake -- Easy 26-40 frames after the stun -- and it fell with it unused)
   // HOLD THEM STILL (stanceStill): a stance up on the ground and nothing else asked for, it lets go of the arrows (they could not walk it anywhere)
   if(f.onground && stanceStill(f) && !(inp.attack || inp.special || inp.smash || inp.grab || inp.fin || inp.jump)){ inp.left = false; inp.right = false; }
   if(f._fileRide) fileRideAiHold(f, inp);   // on its own big file (THE BIG FILE): it stays on
@@ -113282,8 +113856,8 @@ function aiBowRecover(f, inp, upY){
   if(FLOOR_SEGS){ const gy = groundY(); for(const q of FLOOR_SEGS){ const cx = clamp(f.x, q.x0 + 24, q.x1 - 24), d = Math.abs(cx - f.x) + Math.max(0, feetY(f) - gy)*0.5; if(d < best){ best = d; tx = cx; } } }   // (REAL EDGES: the floor's spans are places to come back to)
   if(hole){ inp.left = tx - f.x < -8; inp.right = tx - f.x > 8; }
   if(!isBig() && f.hitstun <= 0 && (f.x < 0 || f.x > WW) && f.spCd <= 0 && !f._tpUsed){   // past the side of a single-screen stage: back in, now
-    f._aiTpAim = aiBowTpRecoverAim(f) || { ax: f.x < 0 ? 1 : -1, ay:0, why:'back' };
-    inp.special = true; inp.up = false; inp.down = false; inp.jump = false; inp._kitRead = true; return;
+    const bk = aiBowTpRecoverAim(f);   // (2026-11-17: a Teleport that goes nowhere -- she is out past the world's edge, where its end is put back -- was pressed anyway and spent: her jumps come first then)
+    if(bk){ f._aiTpAim = bk; inp.special = true; inp.up = false; inp.down = false; inp.jump = false; inp._kitRead = true; return; }
   }
   if(f.jumps > 0){ if((f.vy > 0.5 || f.y > WH-140-upY) && !f._jp) inp.jump = true; }                       // the jump first...
   else if(hole && !f.onground && f.vy > -1 && f.spCd <= 0 && !f._tpUsed){                                   // ...then the teleport, at the top of it
@@ -114649,7 +115223,7 @@ function draw(){
   // On scrolling arenas, zoom OUT so you can see more of the (now bigger) map at once.
   // (a client uses the zoom its own view chose -- see viewZoom and clientCamera; the host's is unchanged)
   const zoom = viewZoom();
-  fsCamApply(ctx, zoom);   // CATCH, THEN CINEMATIC: the Final Smash intro's and slow-mo KO's close-up, over the camera (fsCamApply)
+  fsCamApply(ctx, zoom); juiceCamApply(ctx, zoom);   // (MOVE JUICE: a KO's short push-in) CATCH, THEN CINEMATIC: the Final Smash intro's and slow-mo KO's close-up, over the camera (fsCamApply)
   if(MCAVE && MCAVE.on){ ctx.translate(W/2, H/2); ctx.rotate(camAng); ctx.scale(zoom, zoom); ctx.translate(-W/2, -H/2); }   // MOON CAVES: the view turns about the screen's middle
   else if(zoom!==1){
     // zoom about the screen center, keeping the followed fighter roughly centered
@@ -114896,6 +115470,7 @@ function draw(){
   if(CONTEST) drawContestWorld('under');   // A CONTEST: its own things in the world (a light on the floor, a stack of pages), under the fighters
   drawKitFx('under');   // the Heat Explosion, behind the fighters it catches
   if(FINX.length) finxDraw('under');   // a corkboard, a puddle, a propped mirror (FINISHERS V2)
+  juiceDraw(0);   // MOVE JUICE: new hits and KOs noticed (juiceWatch), the smoke and floor rings under the fighters
   NAMETAG_Q = []; try{ for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(FINX.length && finxHidden(f)) continue; if(f.fsId && fsHides(f)) continue; if(f._oneGhost) drawOneGhostAura(f); try{ drawTellFx(f); }catch(e){} if(f.fsGlow>0 || f.fsId){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); fsDrawAura(f); ctx.restore(); } else fsDrawAura(f); } drawFighter(f); if(f._col) drawCollectSlots(f); if(CONTEST) drawContestBadge(f); if(f._soakT > hazardT){ if(MCAVE && MCAVE.on){ ctx.save(); mcUpright(f.x, f.y); drawSoakDrips(f); ctx.restore(); } else drawSoakDrips(f); } if(SETTINGS.mode==='ctf'){ ctfDrawCarry(f); if(CTF.spec) ctfSpecDrawChip(f); } } } finally { nameTagFlush(); }
   if(SETTINGS.mode==='ctf') ctfDrawCoverFront();   // the props a friend stands in, see-through, over the fighters
   if(CTUT.active) ctutDrawWorld();   // the Capture the Flag practice: where a flag may not go
@@ -114936,6 +115511,7 @@ function draw(){
   if(rainOn()) drawRainStreaks();   // THE RAIN (an event twist): streaks across the view while it rains
   if(twistOn('gusts')) drawGustStreaks(); else if(STB.k === 'wind'){ if(WND_VIS) whDrawStreaks(); else drawGustStreaks(gustState(WGUST)); }   // (STAGES B: Windy Heights's gusts, the same art)   // GUSTS (an event twist): leaves and paper blowing in, then across the view while a gust blows
   drawImpactFx();            // impact's dust rings and debris
+  juiceDraw(1);   // MOVE JUICE: the swooshes, the flash stars, lines, chips, clean sparks and KO beams, the glints
   drawArenaHazard('over');   // and a boss arena's hazard, over the fighters
   drawCosKoFx();   // cosmetic KO bursts (see WIN TOKENS): drawn from their own list, never from `particles`
 
@@ -114947,6 +115523,7 @@ function draw(){
   if(viewScrolls() && !RACE.active && SETTINGS.mode!=='ctf' && !(MCAVE && MCAVE.on) && !SPLEEF && !STEPS && !BHC && !FDR && !LHC) drawMinimap();   // the race has its progress bar instead (drawRaceBar); MOON CAVES gets its disc minimap and arrows with the full view; SPLEEF its depth bar
   if(!(MCAVE && MCAVE.on)){ lgDrawMarkers(); drawOffscreenArrows(); }   // (LEDGEGUARD CAMERA: a recovering fighter outside the view has its chevron, not the ring)
   fsDrawScreen();   // a Final Smash's flash and silhouette sweep
+  juiceDrawScreen();   // MOVE JUICE: a KO's white flash (at most one every JFX.flashGap frames)
   if(SETTINGS.mode==='ctf') drawCtfHud();
   if(SPLEEF){ drawSpleefHud(); drawSpleefDepth(); }   // SPLEEF (an event contest): who is left and which floor, and the depth bar where the minimap sat
   if(CONTEST) drawContestHud();   // A CONTEST: its progress panel (the goal is hidden otherwise)
@@ -121112,6 +121689,7 @@ function frPose(f, fd, sp){
     P.mom = FM_ATK; P.fi = fj;
     P.rot = face*amp*FR_ATK[o]; P.sx = 1 + (FR_ATK[o + 1] - 1)*qa; P.sy = 1 + (FR_ATK[o + 2] - 1)*qa; P.dx = face*amp*FR_ATK[o + 3];
     P.smear = FR_ATK[o + 4]; P.bulge = FR_ATK[o + 5]*fd.puff; P.spin = face*FR_ATK[o + 6];
+    { const ja = juiceAmp(f); if(ja !== 1){ P.rot *= ja; P.dx *= ja; P.sx = Math.max(0.7, Math.min(1.4, 1 + (P.sx - 1)*ja)); P.sy = Math.max(0.7, Math.min(1.4, 1 + (P.sy - 1)*ja)); } }   // MOVE JUICE: a deeper anticipation and a heavier swing
     P.eye = fd.atk[slot*2]; P.mouth = fd.atk[slot*2 + 1];
     if(MVA_FACE[ki*6 + slot*2] >= 0){ P.eye = MVA_FACE[ki*6 + slot*2]; P.mouth = MVA_FACE[ki*6 + slot*2 + 1]; }   // the move's own face (MOVE ANIMATIONS)
     P.sdx = -face*R*0.30;
@@ -124728,7 +125306,7 @@ function drawFighter(f){
         if(drawAlpha >= 0.99){ for(const pass of [[26, 'rgba(255,255,255,1)'], [14, 'rgba(255,255,255,1)']]){ ctx.save(); ctx.shadowColor = pass[1]; ctx.shadowBlur = pass[0]; try { drawSpriteBody(f, sprite, anim); } finally { ctx.restore(); } } }
         ctx.save(); ctx.shadowColor = 'rgba(255,255,255,1)'; ctx.shadowBlur = 5; try { drawSpriteBody(f, sprite, anim); } finally { ctx.restore(); }
       }
-      else drawSpriteBody(f, sprite, anim);
+      else { juiceGhosts(f, sprite, anim, sx, sy); drawSpriteBody(f, sprite, anim); }   // (MOVE JUICE: a fast move's afterimages first)
     }
     else{
       // limbs (stubby)
@@ -130566,6 +131144,7 @@ function worldGeoKey(){
 // The flags drawFighter reads. One at its resting value (0, false, null) is left out and arrives as undefined, which
 // every check on these reads the same way (truthiness and `> 0` tests).
 const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering','flying','smashHold','burn',
+  '_jHit', '_jKo',   // (MOVE JUICE: the last hit taken and the last KO, each one packed number -- the drawing plays them: juiceWatch)
   '_nsv',   // (UNIQUE NEUTRAL SMASHES v2: the render-only prop of a neutral smash -- { k, t0, ...whole numbers }; a guest draws it from the host's clock)
   '_swingAnvil',   // (SKY-DROP SMASHES removed: Blocky's swung Anvil Smash -- { t0, wind }, the frame it began and its wind-up: a guest draws the anvil in his hands from it and the host's clock; cleared below once the swing is over)
   // ...and the rest of what the tints and STATUS_ICONS read. Only cloud, armor, counter and flying of the 34 icons reached a
@@ -130597,7 +131176,7 @@ const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering
   'fsC','fsLk','fsPd'];   // (fsPd: Pencil's van's road in px, 0 when it stays) ...the catch's frames left, and whose catch holds this fighter (+1) (CATCH, THEN CINEMATIC)
 function netFighter(f){
   const o = { idx:f.idx, x:Math.round(f.x), y:Math.round(f.y), r:f.r, face:f.face,
-    pct:Math.round(f.pct*10)/10, stocks:(f.stocks===Infinity?-1:f.stocks),
+    pct:f.pct, stocks:(f.stocks===Infinity?-1:f.stocks),   // (unrounded since batch 3 of the up/down smashes: a guest's % is the host's exactly)
     vx:nr1(f.vx), vy:nr1(f.vy) };   // the run cycle, the lean, the jump stretch, the run dust
   if(f.dead) o.dead = true;         // (ONLINE LAG: a false rides as nothing; a guest reads a missing one as false)
   if(f.onground) o.onground = true;
@@ -141366,6 +141945,7 @@ buildBoard();
 try{ syncMusicToggle(); }catch(e){}
 try{ syncKeyStripToggle(); }catch(e){}
 try{ fillKeyLabels(); }catch(e){}
+try{ syncJuiceToggle(); }catch(e){}   // (MOVE JUICE: the Effects button: "Reduced" for a player who chose it)
 try{ syncShakeToggle(); }catch(e){}   // and the shake button, likewise: "Off" for a player who switched it off last session
 try{ syncDontCountToggle(); }catch(e){}   // and "Don't count my visits": "On" on a computer that switched it on
 try{ initVault(); }catch(e){}
