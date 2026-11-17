@@ -444,4 +444,4 @@ Several of these are CPU gaps that the queued bot fixes close (edge-guarding, ha
 
 - **S2 #1 (2026-11-17):** Owner: "WC winner 1:needle"
    - Winner: **Needle**. Opponent, team size, stocks and CPU level not given (log as given; Expert and items/smash balls off assumed, per the owner's earlier cups). Notes (lead): Needle is one of the batch-1 fighters with her own up/down smash pair (in this build, with the range fix still pending), plus the game-wide move effects; CPUs now recover far better after the 2026-11-17 recovery fix, which may change who wins cups.
-   - Owner's follow-up: "match" -- read as the other finalist: **Match** (the loser of this final). If "match" meant something else (e.g. just "the match"), correct me.
+   - Owner's follow-ups: "match", then "teddy bear". Notes (lead): read together as the cup's placings in order after the winner: **1 Needle, 2 Match, 3 Teddy Bear** (so Match lost the final). If Teddy Bear placed 3rd, that is notable: on 2026-11-04 the owner said "TEDDY BEAR HAS NEVER MADE THE SEMIS"; this would be his first semifinal in the log.
