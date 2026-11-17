@@ -1620,6 +1620,14 @@ character, area-averaged to 200 px tall and the invisible halo erased, the same 
 
 Their picture is the one already in the game and already credited above: `beach-ball.png` (210x200), File:Elswerebeachball.png (BFDIE render). Nothing new was downloaded for the kit: the squash, stretch, pump, pop, pool noodle, sand, the ball of air and the giant of the Final Smash are drawn from that picture and in code (`FIGHTER_ANIM["Beach Ball"]`, `beachDrawBall`).
 
+### Bottle (BFDI wiki; BFDIE, event fighter)
+
+| File | Shown | Made from | Source |
+|---|---|---|---|
+| `bottle.png` (138x200) | her match picture, the select screen, the HUD and the result screen | the BFDI wiki's render of Bottle (TPOT, 600x871, transparent), trimmed and scaled to 200 tall; `scripts/make-event-bottle-art.py` | Battle for Dream Island wiki (battlefordreamisland.fandom.com), jacknjellify's character artwork; downloaded 2026-11-17 with the owner's approval (the exact file URL was not recorded: to be filled in) |
+
+Every pose of her kit (the flip, lying on her side, the shatter and its shards, the pats, the point, the wave, the hug, the shove, the salute and the crash-test fling, the floor spin, the jump for joy, the dizzy bubble, the flashlight and the dark of her Final Smash) and the house of her contest are drawn in code (`FIGHTER_ANIM.Bottle`, `bottleDrawBubble`, `hsDrawHouse`). Her skin, `skins/green-glass-bottle.png` (thumbnail in `thumbs/`), is a recolour of this render (hue and lightness only, the same script).
+
 ### Event fighters' skins (recolours)
 
 One skin for each event fighter (`skins/chalk-eraser.png`, `soaked-spongy.png`, `cobalt-8-ball.png`, `ember-black-hole.png`, `scarlet-clock.png`, `storm-cloudy.png`, `cherry-pie.png`, `gold-stapy.png`, `orange-foldy.png`, `twilight-beach-ball.png`, with thumbnails in `thumbs/`). Each is the fighter's own render already credited above with its hue and lightness changed by a one-off script (2026-11-16), so nothing new was downloaded and the shape and size are the base render's. They are given by unlocking the fighter, not sold.
