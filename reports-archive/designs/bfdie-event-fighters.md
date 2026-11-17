@@ -245,6 +245,14 @@ A star marks the two I would pick. They are only my guess.
 - **Paper Slide** and **Doormat** go flat on the floor. Profily's Edge-On Slice goes thin sideways and glides. Different shape.
 - Profily's Price Tag "slaps a sticker" on a foe. No Sticker move puts a sticker on anyone, on purpose.
 
+**If Sticker has no arms** (I have not checked their picture). Most of the kit is corners, edges and the sticky back, and needs none. These rows would change:
+
+- Grab (Sticky Hand): a top corner peels out and sticks to the foe instead. Same reach.
+- Back throw (Nothing Personal): a smile, then a flat body bump in the back.
+- Down throw (Tape Down): they press their own sticky side over the foe to pin them. No tape is pulled.
+- Down special (Backstab): the tell is the sunny smile and a friendly lean in, with no hand held out. The hit is a corner slap.
+- Up special (Trampoline Cheat): the trampoline slides out from under the sticker, which fits the stash anyway.
+
 ---
 
 ## 3. NEEDY (she/her): lazy, until she isn't
@@ -268,31 +276,33 @@ A star marks the two I would pick. They are only my guess.
 
 **Doses.** She carries 3 doses of serum. One comes back every 8 s.
 
+**No arms (owner, 2026-11-17).** Needy has no arms. Every move below uses her needle, her plunger (it moves by itself), her legs or her whole body. Rows marked CHANGED were rewritten for this. Most were already needle moves and only needed clearer words.
+
 | Slot | Name | What you see and what it does | Hook | Source |
 |---|---|---|---|---|
-| Jab | Lazy Poke | She barely moves. One long poke with the needle. 3%. | The longest jab reach of the five. Trying: three fast pokes instead. | brief (lazy) |
-| Up-tilt | Eye Roll | She rolls her eyes and swings the needle up over her head. 4%. | Only the tip pricks: longer stun there. | brief (apathetic) |
-| Down-tilt | Trip Wire | She sticks the needle out low and lets them walk into it. 3.5%. | Hold it out for up to 1 second. It trips whoever touches it. | character (lazy) |
+| Jab (CHANGED: wording) | Lazy Poke | She barely moves. Her whole body tips forward and the needle pokes once. 3%. | The longest jab reach of the five. Trying: three fast pokes instead. | brief (lazy) |
+| Up-tilt (CHANGED) | Eye Roll | She rolls her eyes, rocks back onto her plunger end, and her needle tips up over her head. 4%. | Only the tip pricks: longer stun there. | brief (apathetic) |
+| Down-tilt (CHANGED: wording) | Trip Wire | She flops down flat so her needle lies low along the floor, and lets them walk into it. 3.5%. | Hold it for up to 1 second. It trips whoever touches it. | character (lazy) |
 | Forward tilt (stored) | Long Poke | The needle goes out long and thin. 5%. | Range. | old doc |
 | Neutral air | Barrel Roll | She rolls over and over like a dropped syringe. Lazy: 2 hits of 3%. | Trying: 4 faster hits of 2%. | old doc (kept) |
 | Forward air | Point First | The needle straight ahead. 6%. | SWEET SPOT: the very tip, 8% and a real pop. The barrel is a weak bump. | character |
 | Back air | Plunger Bash | The flat plunger end knocks into whoever is behind. 8%. | Wide and flat: easy to land, slow to start. | character |
 | Up air | Squirt | A small pink squirt upward. 3%. | It reaches past her body. A foe it tints is slowed for half a second. | brief (pink liquid) |
 | Down air | Point Down | She drops needle-first. 7%. | Clean hit (first frames) knocks them down and forward. Miss and the needle sticks in the floor for 16 frames. Trying: she can jump out of a hit. | old doc (kept) |
-| Grab / pummel | Nozzle Grip / Sip | Suction at the needle holds them. 1.3%. | Short reach. | old doc |
-| Forward throw | Not My Problem | She flicks them off like a drip. 6%. | Fast: little time to react. | brief (apathetic) |
+| Grab / pummel (CHANGED) | Needle Pin / Sip | A short lunge: the needle pins the foe and they hang on the tip. Each sip draws a little out of them, 1.3%. | Short reach, but it starts fast. No hands needed. | old doc (reworked) |
+| Forward throw (CHANGED) | Not My Problem | With the foe stuck on her needle, she gives one bored toss of her head and they slide off. 6%. | Fast: little time to react. | brief (apathetic) |
 | Back throw | Roll Over | She rolls over them and they go out behind. 7%. | Moves her forward as she does it. | character |
-| Up throw | Pump | One pump of the plunger pops them up. 5%. | Sets up Squirt or Point First. | character |
-| Down throw | Booster Shot | A jab while they are held down. 4%. | Uses a dose: a short Evil Serum (3 s, with a 6% crash). No dose: just the 4%. | brief (serum) |
-| Neutral special | Evil Serum | She draws the plunger back and the pink glows (20-frame tell). Then one needle thrust. Uses a dose. | SWEET SPOT: the needle tip injects. The foe goes evil for 6 s: red eyes, and THEY hit 20% harder. Then they wobble and crash: 12% and a knockdown. The barrel: 4%, no serum, dose kept. | brief (evil serum, then they die) |
+| Up throw (CHANGED: wording) | Pump | She tips her needle up and her plunger pumps once by itself: a puff pops them off the tip. 5%. | Sets up Squirt or Point First. | character |
+| Down throw (CHANGED: wording) | Booster Shot | She drops the foe, hops, and comes down needle-first on them. 4%. | Uses a dose: a short Evil Serum (3 s, with a 6% crash). No dose: just the 4%. | brief (serum) |
+| Neutral special (CHANGED: wording) | Evil Serum | Her plunger slides back by itself and the pink glows (20-frame tell). Then she lunges, needle first. Uses a dose. | SWEET SPOT: the needle tip injects. The foe goes evil for 6 s: red eyes, and THEY hit 20% harder. Then they wobble and crash: 12% and a knockdown. The barrel: 4%, no serum, dose kept. | brief (evil serum, then they die) |
 | Up special | Leave the Rest | Her lower half pops off like a rocket stage and she shoots up. The dropped half hits right below her for 5%, at the split only. | She is "half" for 2 s while it grows back: smaller, lighter, and she cannot do it again until she is whole. | brief (regrew her burnt-off lower body) |
-| Down special | Why Bother | She lies down for a nap. Heals 6% over 1.5 s. | It puts her back to Lazy. Any hit wakes her. She chooses: stay strong, or rest. | brief (lazy) |
+| Down special (CHANGED: wording) | Why Bother | She tips over onto her side and naps. Heals 6% over 1.5 s. | It puts her back to Lazy. Any hit wakes her. She chooses: stay strong, or rest. | brief (lazy) |
 | Side special (stored) | Walk on Water | She skates ahead on the tips of her legs. 5%. | Movement. | old doc (not re-checked) |
-| Smash | Full Plunge | She draws the plunger all the way back, then rams it home: a hard pink jet. 18%. | The jet reaches farther the longer you charge. Close in, it launches. The far end only splashes and slows. | old doc (kept) |
-| Up smash | Piston | She plants her needle in the floor and the plunger shoots up, flat end first. 15%. | Lazy: one pump. Trying: two, and the second catches a foe who jumped the first. | character |
+| Smash (CHANGED: wording) | Full Plunge | Her plunger slides all the way back while it charges, then slams home by itself: a hard pink jet. 18%. | The jet reaches farther the longer you charge. Close in, it launches. The far end only splashes and slows. | old doc (kept) |
+| Up smash (CHANGED: wording) | Piston | She hops and sticks her needle in the floor, standing on her tip. Her plunger shoots up, flat end first. 15%. | Lazy: one pump. Trying: two, and the second catches a foe who jumped the first. | character |
 | Down smash | Knocked Over | She tips over and rolls along the floor one way, then back. 14%. | Hits both sides. Hold a direction to choose which side she ends on. | character |
-| Finisher | I Actually Care Now | She jolts awake, eyes wide (20-frame tell). A rush of needle pokes forward, then one big plunge that launches. 12%. | From Lazy it flips her straight to Trying. Already Trying: 8 pokes, not 5 (14%). | brief (becomes competitive) |
-| Final Smash | Maximum Dose | A giant injection for the nearest foe ahead. They swell pink, go red-eyed, and pop. About 30%. Foes beside them are splashed: they wobble and fall over. | The picture: the swell and the pop. No puppets, no control changes. | brief (evil serum) |
+| Finisher (CHANGED: wording) | I Actually Care Now | She jolts awake, eyes wide (20-frame tell). She runs forward on her legs, stabbing with her whole body, then one big plunge that launches. 12%. | From Lazy it flips her straight to Trying. Already Trying: 8 pokes, not 5 (14%). | brief (becomes competitive) |
+| Final Smash (CHANGED: wording) | Maximum Dose | She leaps and lands needle-first on the nearest foe ahead. Her plunger drives all the way down by itself. They swell pink, go red-eyed, and pop. About 30%. Foes beside them are splashed: they wobble and fall over. | The picture: the swell and the pop. No puppets, no control changes. | brief (evil serum) |
 
 **Looks like something we have, and why it differs**
 
@@ -302,6 +312,7 @@ A star marks the two I would pick. They are only my guess.
 - **Point Down** vs Pencil's Pencil Plant (dive point-first, jump out on hit). Same shape. Needy's differs by sticking in the floor on a miss, and the jump-out only when Trying. If that is still too close, tell me and I will swap it.
 - **Why Bother** vs Spongy's Soak Up and Eraser's Rub It Off (stand still, get something). Hers heals and changes her mode.
 - **Lazy/Trying** vs Beach Ball's pump sizes and Liy's lights. It changes with the fight, not with a button, and the nap is the cost.
+- **Needle Pin** (the grab) is new. Grabs are not listed in MOVE_TEXT, so I could not check it against the other fighters' grabs.
 
 ---
 
@@ -359,6 +370,17 @@ A star marks the two I would pick. They are only my guess.
 - **Drowned in Jam** is close to the unstarred "Jam Flood" pitch in name only. That was a match rule. This is her Final Smash.
 - **Glass Bottom** and Bottle's **Didn't See You There** are both a glass-base back air with a centre sweet spot. That is a look-alike INSIDE this set. If you want only one, I would keep Jammy's and give Bottle a clean/late hit.
 
+**If Jammy has no arms** (I have not checked her picture). These rows would change:
+
+- Up-tilt (Um, Excuse Me): she tips her lid up like a raised hand. Holding it keeps the lid up.
+- Forward air (Lid Bonk): she nods her whole jar forward so the lid edge hits.
+- Grab (Henchman's Grip): she tips forward and catches the foe under her lid.
+- Forward throw (Excuse Me): a small jar nudge.
+- Back throw (Henchman Carry): she carries them balanced on her lid, three steps back, then tips them off.
+- Down throw (In the Jam): she tips over and pours a little jam on them.
+- Neutral special (Lid Off): she spins on the spot and the lid unscrews and flies off.
+- Down special (Duck and Cover): she ducks down into her jar and the lid drops shut over her.
+
 ---
 
 ## 5. HOT DOG (he/him): the stubborn one
@@ -381,6 +403,8 @@ A star marks the two I would pick. They are only my guess.
 
 - Source: he kept climbing the same deadly pole and dying, and would not switch (brief).
 
+**No arms (owner, 2026-11-17).** Hot Dog has no arms. Every move below uses his bun, his sausage end, his feet, mustard, onions or the pole. Rows marked CHANGED were rewritten for this.
+
 | Slot | Name | What you see and what it does | Hook | Source |
 |---|---|---|---|---|
 | Jab | Bun Bump | He rocks back and bumps with his bun. 3%, 3.5%. | Hold X and he keeps bumping, one step forward each time. | character |
@@ -392,29 +416,32 @@ A star marks the two I would pick. They are only my guess.
 | Back air | Mule Kick | Both legs kick out behind. 9%. | SWEET SPOT: his feet. The legs are weak. | old doc (kept) |
 | Up air | Mustard Pop | A short squirt of mustard straight up. 4%. | Reaches above him. Weak, but it juggles. | brief (mustard) |
 | Down air | All the Way Back Down | He goes stiff and drops end-first, the way he fell off his pole. 9%. | No cancel, ever. He bounces if he lands on a foe. Miss and he is stuck for a moment. | brief (kept falling off his pole) |
-| Grab / pummel | In the Bun / Bun Press | He clamps them in his bun. 1.8%. | | old doc |
-| Forward throw | Shown the Door | He marches them forward three steps, then shoves. 7%. | Carries them toward the edge. | character (blunt) |
-| Back throw | Wrong Way | He turns them round and boots them. 8%. | | character (blunt) |
-| Up throw | Up the Pole | A pole pops up under the foe. 5%. | Sets up Mustard Pop. | brief (his pole) |
-| Down throw | Sit Down | He sits on them and wags, telling them off: 3 small hits. 5%. | Knockdown. | brief (blunt and rude) |
-| Neutral special | That's Wrong. | He points, hard (20-frame tell). Reach about 120 px. 6%. | SWEET SPOT, by timing: hit a foe who has just MISSED a move and it is 12% and a dizzy stun. He is pointing out their mistake. | brief (bluntly points out mistakes) |
-| Up special | Same Pole | A pole shoots up under him and he climbs it. He rises with little drift: up, not out. | Hold C to keep climbing, up to 3 pulls. At the very top the trap goes off: it hits everyone there, HIM too (3%), and throws him even higher. The pole stands 2 s and anyone can stand on it. | brief (kept climbing his deadly pole) |
-| Down special | Not Leaving | He sits down, arms crossed, for up to 1.5 s. He cannot be launched. He still takes the damage. A grab beats it. | Let go and he headbutts forward: 6%, plus 3% for each hit he sat through (up to 2). | brief (stayed in the Tinier Loser Chamber after it was destroyed) |
+| Grab / pummel (CHANGED: wording) | In the Bun / Bun Press | He lunges and his bun snaps shut on the foe like a mouth. Each squeeze 1.8%. | The bun is the grab: no hands needed. Short reach, strong hold. | old doc |
+| Forward throw (CHANGED) | Shown the Door | With the foe clamped in his bun, he marches forward three steps, then opens up and bumps them out with his sausage end. 7%. | Carries them toward the edge. | character (blunt) |
+| Back throw (CHANGED) | Wrong Way | He spins round with the foe in his bun, lets go, and kicks them away with both feet. 8%. | He ends up facing the other way. | character (blunt) |
+| Up throw (CHANGED: wording) | Up the Pole | He opens his bun and a pole pops up under the foe. 5%. | Sets up Mustard Pop. | brief (his pole) |
+| Down throw (CHANGED) | Told You | He drops the foe and thumps his bun shut on them three times, scowling. 5%. | Knockdown. | brief (blunt and rude) |
+| Neutral special (CHANGED) | That's Wrong. | He rears back, scowling (20-frame tell), then jabs his whole front end at the foe, nose to nose. Reach about 120 px. 6%. | SWEET SPOT, by timing: hit a foe who has just MISSED a move and it is 12% and a dizzy stun. He is telling them their mistake to their face. | brief (bluntly points out mistakes) |
+| Up special (CHANGED) | Same Pole | A pole shoots up under him and he rides it up, feet planted on the top. He rises with little drift: up, not out. | Hold C and the pole pushes up again, up to 3 pushes, each slower. At the very top the trap goes off: it hits everyone there, HIM too (3%), and throws him even higher. The pole stands 2 s and anyone can stand on it. | brief (kept going up his deadly pole) |
+| Down special (CHANGED) | Not Leaving | He sits down hard, bun clamped shut, glaring, for up to 1.5 s. He cannot be launched. He still takes the damage. A grab beats it. | Let go and he headbutts forward: 6%, plus 3% for each hit he sat through (up to 2). | brief (stayed in the Tinier Loser Chamber after it was destroyed) |
 | Side special (stored) | Go Through Me | Head down, a short run that shoves. 7%. | Dash tell. | old doc (not re-checked) |
 | Smash | Through You | He lowers his head and runs a short way, bun first. 20%. | Weak hits do not stop the run. If he reaches a wall he bonks and is dazed. | character (stubborn) |
-| Up smash | Mustard Squeeze | He squeezes himself and a zigzag of mustard shoots straight up. 15%. | Tall and thin. Strong low down, weak at the top. | brief (mustard) |
+| Up smash (CHANGED: wording) | Mustard Squeeze | His bun clamps tight on him and a zigzag of mustard shoots straight up. 15%. | Tall and thin. Strong low down, weak at the top. | brief (mustard) |
 | Down smash | Onion Scatter | He stomps and chopped onions burst out at foot height, both sides. 14% up close. | Like a shotgun: the closer the foe, the more pieces hit. | brief (onions) |
-| Finisher | Deadly Pole | He plants his pole just ahead. It grows in and is harmless while it grows (over 20 frames). Then he kicks it and its traps go off from the bottom up. 13% in all. | Where you stand decides what you get: low is a knockdown, the middle is small hits, the top is the launch. | brief (deadly pole) |
-| Final Smash | Tinier Loser Chamber | The chamber slams shut round him, the nearest foe ahead and anyone beside them. He will not leave. It blows apart and the foes go flying. He is still sitting in the rubble, arms crossed. About 28%. | The picture: the last shot of him sitting there. | brief (stayed after it was destroyed) |
+| Finisher (CHANGED: wording) | Deadly Pole | He stamps, and his pole grows up just ahead. It is harmless while it grows (over 20 frames). Then he kicks it and its traps go off from the bottom up. 13% in all. | Where you stand decides what you get: low is a knockdown, the middle is small hits, the top is the launch. | brief (deadly pole) |
+| Final Smash (CHANGED) | Tinier Loser Chamber | The chamber slams shut round him, the nearest foe ahead and anyone beside them. He will not leave. It blows apart and the foes go flying. He is still sitting in the rubble, bun shut, scowling. About 28%. | The picture: the last shot of him sitting there. | brief (stayed after it was destroyed) |
 
 **Looks like something we have, and why it differs**
 
-- **Same Pole** vs Fern's Pole Jump (a spring up that roots). Hot Dog's leaves a real pole, is held to climb, and hurts him at the top.
+- **Same Pole** vs Fern's Pole Jump (a spring up that roots). Hot Dog's leaves a real pole, is held to rise higher, and hurts him at the top.
 - **Not Leaving** vs the armour stances (Sidewalky's Heavy Brace, David's Big Armor, Liy's lights). His is seated, a grab beats it, and it pays out as a headbutt.
 - **That's Wrong.** vs Jammy's **I SAW That!** Both reward a read, inside this set. His punishes a move that already missed. Hers catches a move in progress. Different timing, but tell me if two is one too many.
 - **Through You** vs Life Ring's sprint and the other dash specials. His is the smash, with the charge ring as its tell, and the wall bonk as its cost.
 - **Deadly Pole** vs Book's Pop-Up Page and Taco's Griddle Flip (a thing on the floor that flings). His hits differently at three heights.
 - **Tinier Loser Chamber** is the name of an unstarred contest pitch. Here it is only his Final Smash.
+- **Told You** (down throw) vs a finisher we have, "Sits Right On Them" (rolls onto a foe, sits and bounces on them). My first draft had Hot Dog sit on the foe too. I changed it to three bun thumps so it is not the same picture.
+- **Same Pole**, now ridden instead of climbed, vs an up special we have, "No Prob-" (climbs straight up, slips, comes down on whoever is below). His does not come down on anyone, and the pole stays as a platform.
+- **Not Leaving** also sits. It is a guard, not an attack on a pinned foe, so it is not "Sits Right On Them" either.
 
 ---
 
@@ -423,9 +450,9 @@ A star marks the two I would pick. They are only my guess.
 I did not look these up. I would rather say so than guess.
 
 - **Arms.**
-  - The old doc says Needy is armless in BFDIE and that Hot Dog's picture may have no arms.
-  - Hot Dog's point and crossed arms, and Jammy's raised hand, need arms. Without them he points with his front end, and she tips her lid.
-  - I am not certain Sticker and Jammy have arms in BFDIE.
+  - Settled by the owner on 2026-11-17: Hot Dog and Needy have no arms. Their kits were redone, and the changed rows are marked CHANGED.
+  - Sticker and Jammy: I still have not checked. Each has an "if no arms" list under their table.
+  - Bottle: I believe she has arms and legs, but I did not check. Her pats, wave, point, hug and shove need them.
 - **Hot Dog's pole traps.** The brief says "deadly pole". The old doc names the traps: buzzsaws, spikes, a syringe, a flamethrower. I left the exact traps out of the tables until that is checked.
 - **Old-doc facts I reused without re-checking:** Sticker's slip switch; Needy walking on water; "go through me".
 - **The scraps in Sticker's stash.** The brief says they hid the Announcer's broken parts. Exactly which parts is my guess (springs, a speaker box).
