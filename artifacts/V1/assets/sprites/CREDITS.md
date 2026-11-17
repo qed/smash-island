@@ -1622,7 +1622,7 @@ Their picture is the one already in the game and already credited above: `beach-
 
 ### Sticker (BFDI wiki; BFDIE, event fighter)
 
-Their BFDIE idle render (2763x2535, a transparent PNG of the upside-down square sunset sticker with its stick arms and legs; the one picture the owner approved for them, supplied by the lead; its wiki file name was not recorded), made into `sticker.png` (218x200) by `scripts/make-event-sticker-art.py` (trimmed, scaled to 200 px tall). Same provenance as the other renders: jacknjellify's character artwork via the BFDI wiki, used under fan-work norms. Every pose (the sway, the lifted corner, the stash, the held-out hand, the slip, the lid), the trampoline, the junk, the drone and the giant sticker of the Final Smash are that picture bent or drawn in code (`FIGHTER_ANIM.Sticker`).
+Their BFDIE idle render (a large transparent PNG of the upside-down square sunset sticker with its stick arms and legs; the one picture the owner approved for them, supplied by the lead; its wiki file name was not recorded), made into `sticker.png` (218x200) by `scripts/make-event-sticker-art.py` (trimmed, scaled to 200 px tall). Same provenance as the other renders: jacknjellify's character artwork via the BFDI wiki, used under fan-work norms. Every pose (the sway, the lifted corner, the stash, the held-out hand, the slip, the lid), the trampoline, the junk, the drone and the giant sticker of the Final Smash are that picture bent or drawn in code (`FIGHTER_ANIM.Sticker`).
 
 ### Event fighters' skins (recolours)
 

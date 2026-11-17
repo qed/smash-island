@@ -1,5 +1,5 @@
-# Sticker's render (event fighter art), made from the one owner-approved picture (read as data only): their BFDIE idle render,
-# 2763 x 2535, supplied by the lead (the BFDI wiki's render of the upside-down square sunset sticker: blue top, red bottom, a yellow sun,
+# Sticker's render (event fighter art), made from the one owner-approved picture (read as data only): their BFDIE idle render
+# (full size), supplied by the lead (the BFDI wiki's render of the upside-down square sunset sticker: blue top, red bottom, a yellow sun,
 # a white liner with a grey edge, black stick arms and legs).
 #   sticker.png                     trimmed and scaled to 200 px tall (the size of the other event renders)
 #   skins/night-sticker.png         the event skin: a recolour of that render (hue and lightness only), the sunset turned to night
