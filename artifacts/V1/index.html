@@ -75204,6 +75204,7 @@ function step(){
     if(f.onground){ f._wallUsed = null; f._clingT = 0; f._ff = false; f._airDash = false; f._hyperT = 0; }   // landing refreshes the wall jump and the air dash
     // land-squash: airborne last frame, grounded now, coming down with real speed → brief cartoony squat
     if(_wasAir && f.onground) f._landT = hazardT;
+    if(f._airSm || f._airLand) airSmashStep(f, _wasAir);   // AIR SMASH LANDING LAG: a smash that went off in the air pays on the landing
     if(_wasAir && f.onground && _impactVY>5){ f._landSquash=6; }
     if(_wasAir && f.onground) bottleLand(f, _impactVY);   // Bottle: the down air's hard landing, the flip's two ends and HANDLE WITH CARE (EVENT FIGHTERS: BOTTLE)
     if(WND) whLand(f, _wasAir, _impactVY);   // WINDY HEIGHTS TEAMS: a long drop hurts (the hay cart is soft)
@@ -77088,9 +77089,32 @@ function smashAim(f, inp){
   const t = nearestFoe(f, rx, flat ? f.r + 60 : SMASH_AIM_Y, mover ? function(t){ return landable(t.x, t.y); } : null);
   if(t && Math.abs(t.x - f.x) > 4) f.face = t.x > f.x ? 1 : -1;
 }
+// AIR SMASH LANDING LAG (the owner, 2026-11-17: "Landing lag (Recommended)", after hop-smash-and-archetypes.md): a smash that goes off in the air
+// had the ground smash's damage and launch but only an aerial's 8-9 frames of landing lag. Now, if the fighter lands while it is still going or
+// within AIR_SMASH_LAG.grace frames of its end, the landing costs AIR_SMASH_LAG.lag frames (about 19 in all, as measured). The smash itself is
+// unchanged, a ground smash is unchanged, and it is the same rule for a person and a CPU. A KO, a hit or a grab on the way down drops it; a
+// fighter still in the air well after the smash ended lands as usual. The lag is the shared f._lag (an aerial's landing lag), so it looks like
+// one: the landing squash, standing still. A guest's prediction already stands down while the host holds the keys (_freeIn: netPredOut).
+const AIR_SMASH_LAG = { lag:18, grace:24 };   // grace: a ground smash leaves you unable to act for 23 frames (the middle fighter), so a landing within 24 of the smash's end counts
+function airSmashStep(f, wasAir){
+  const P = f._airLand;   // paying it: the lag is held for its full length, so the frame budget's cut for a move that connects (endLagHit, which caps
+  if(P){                  // the shared f._lag) does not shorten it when the smash's hit lands just after touchdown (Cherries' mine, Money's coins); a hit taken ends it
+    if(f.dead || P.falls !== (f._falls || 0) || (f._lastHitT != null && f._lastHitT > P.t0) || hazardT >= P.until) f._airLand = null;
+    else f._lag = Math.max(f._lag || 0, P.until - hazardT);
+  }
+  const A = f._airSm; if(!A) return;
+  if(f.dead || A.falls !== (f._falls || 0) || (f._lastHitT != null && f._lastHitT > A.t) || f._heldBy != null){ f._airSm = null; return; }   // (a hit taken from someone else: _lastHitT. Not hitstun, which a fighter's own landed smash gives it -- the hit freeze -- nor damage, which some smashes cost their user)
+  if(f._sm || endLagBusy(f) || f._lag > 0 || f._eLag) A.end = hazardT;   // the smash is still going: its lunge, leap or wind-up, or its own end lag
+  const late = hazardT - A.end > AIR_SMASH_LAG.grace;
+  const landed = f.onground && (wasAir || A.air);   // (A.air: a leap or a plunge puts the fighter on the floor itself, before the landing check sees it)
+  A.air = !f.onground;
+  if(landed){ f._airSm = null; if(!late){ f._lag = Math.max(f._lag || 0, AIR_SMASH_LAG.lag); f._airLand = { t0:hazardT, until:hazardT + AIR_SMASH_LAG.lag, falls:f._falls || 0 }; f._landSquash = Math.max(f._landSquash | 0, 6); } return; }
+  if(late) f._airSm = null;   // long over (still in the air, or it ended on the ground): nothing to pay
+}
 function fireSmash(f, inp, angle, dirMove){
   if(HG && hgLocked(f, 'smash')){ hgFallback(f, angle > 0 ? 'u' : angle < 0 ? 'd' : 's'); f.smCd = Math.max(f.smCd||0, SMASH_ENDLAG); return; }   // THE DIG GAMES (Spongy's contest): a smash not dug up yet is the jab or the tilt
   smashAim(f, inp);
+  f._airSm = f.onground ? null : { t:hazardT, end:hazardT, falls:f._falls || 0, air:true };   // AIR SMASH LANDING LAG (above)
   if(TUT.active && f.you){ const d = fighters.find(function(x){ return !x.you; }); TUT.smashPct = d ? d.pct : null; TUT.smashAt = TUT.timer; }
   if(dirMove && angle && dirSmash(f, angle)) return;   // UP / DOWN SMASH (below): its own move, not the neutral smash tilted
   if(nsmMvStart(f)) return;   // UNIQUE MOVES 3: a neutral smash that runs as a move row (NSM_MV)
