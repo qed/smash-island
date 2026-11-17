@@ -105152,6 +105152,10 @@ const EVENT_LAPS = [
   { from:3, order:['Eraser', 'Spongy', '8-Ball', 'Black Hole', 'Clock', 'Cloudy', 'Pie', 'Stapy', 'Foldy', 'Beach Ball',
                    'Bottle', 'Hot Dog', 'Needy', 'Sticker', 'Jammy'] },
 ];
+// THE JOINS (2026-11-17, the coordinator: a kit built now must not change a week that has begun): a kit whose name the earlier rows already list, built
+// after their laps began, counts in a row only from the lap given here (eventLapOrder), so it joins at a lap's start as a new row does and every week before
+// its first one keeps its fighter. Rows are still never edited. HOT DOG: from lap 3 (the from:3 row's place after Bottle: his first week 2027-02-08).
+const EVENT_JOINS = { 'Hot Dog':3 };
 // THE LAUNCH: the first event's Monday, 'YYYY-MM-DD' (UTC). The plan waited for all 14 kits (questions 3 and J2); the owner, 2026-10-26: "add him
 // as an event immediately", so events start the week Eraser landed, Monday 2026-10-26 00:00 UTC, with the lap running through the built kits only
 // (THE LAPS). Null would mean no week is an event week and nothing shows; a date that is not a real Monday starts nothing either.
@@ -105191,7 +105195,7 @@ function eventThisWeek(now){   // PREVIEW BUILD ONLY (g-smash-preview, never shi
 window.addEventListener('keydown', function(e){ if(e.key !== 'F9') return; e.preventDefault(); try{ const names = ROSTER.filter(r=>r.event).map(r=>r.name); const cur = localStorage.getItem('bfsi:evpick'); const i = names.indexOf(cur); const nx = names[(i + 1) % names.length]; localStorage.setItem('bfsi:evpick', nx); alert('Preview: event week is now ' + nx + ' (F9 for the next one)'); location.reload(); }catch(err){} });
 // A kit is built when its event row is in ROSTER; a lap row's order with the unbuilt left out (THE LAPS).
 function eventBuilt(name){ return ROSTER.some(r=>r.event && r.name === name); }
-function eventLapOrder(row){ return row.order.filter(eventBuilt); }
+function eventLapOrder(row){ return row.order.filter(function(n){ return eventBuilt(n) && !(EVENT_JOINS[n] > row.from); }); }   // (EVENT_JOINS: a late kit only from its lap)
 function eventsComingUp(count, now){
   const first = eventLaunchWeek(), out = [];
   if(first == null) return out;
@@ -109996,16 +110000,17 @@ EVENT_TWIST_WORDS['contest:lights'] = { icon:'🔦', short:"Stapy's contest: the
 // breaking it zaps you and costs points; most points wins." Goiky Field as it is (its one platform is what 'Stay off the platform!' is about), four
 // fighters, stocks that decide nothing (99), no items, no Smash Balls. THE SIGN: a board at the top of the screen with the rule in big letters. A new rule
 // is posted every RR.round frames (20 s), the first at RR.first; for its first RR.grace frames (2 s) the sign flashes NEW RULE and nothing is broken yet,
-// so everyone reads it before it counts. Nine rules (RR_RULES), each once, in a new order every match: 3 min 2 s in all. POINTS: a landed hit +1 (hits
-// inside RR.combo frames of the one that counted are the same attack), a KO +3 to whoever last hit them (and -1 to whoever lost the stock), a whole rule
-// kept with no break +2, a break -2 and a ZAP (3%, a short stun, a hop; at most one a second). Scores may go below zero. At the end the most points wins
-// (a tie: fewer breaks, then less damage). How a break is seen: by what the fighter DID (a jump, an attack, a grab, a smash charge or a special press),
+// so everyone reads it before it counts. Nine rules (RR_RULES), each once, in a new order every match: 3 min 2 s in all. POINTS (the coordinator, 2026-11-17:
+// following the rules is the main way to score): +1 for every second (RR.obey frames) you are on the stage obeying the rule in force (not in the 2 s after a
+// zap, RR.quiet), +3 for a whole rule kept with no break; a break is -5 and a ZAP (3%, a short stun, a hop; at most one a second); losing a stock is -5 (and
+// no points while you are out), a KO is +2 to whoever last hit them; a hit is worth nothing by itself (RR.hit 0), so a fight pays by knocking someone into a
+// break, onto the wrong half or off the stage. Scores may go below zero. At the end the most points wins (a tie: fewer breaks, then less damage). How a break is seen: by what the fighter DID (a jump, an attack, a grab, a smash charge or a special press),
 // never by a key that did nothing; and for the place rules, by where it stood: on the wrong half (RR.side frames in a row: 1.5 s to get back), on the
 // platform (RR.plat frames) or still on the ground (RR.still frames; a stun does not count). THE START: the four spots are dealt at random each match.
 // CPUs read the sign as a person does: each starts minding a new rule RR.aiReact frames after it is posted (a random delay each), and now and then
 // forgets for a moment (RR.aiSlip of every RR.aiSlipT-frame stretch); off the stage it jumps and recovers whatever the rule says, as a person would.
 // Nothing about the rules is hidden from anyone and nothing helps a CPU that a person does not see. Offline only, as every contest.
-const RR = { first:120, round:1200, grace:120, n:9, zapDmg:3, zapStun:18, zapGap:60, lose:2, hit:1, ko:3, koLoss:1, kept:2, combo:36,
+const RR = { first:120, round:1200, grace:120, n:9, zapDmg:3, zapStun:18, zapGap:60, lose:5, hit:0, ko:2, koLoss:5, kept:3, combo:36, obey:60, quiet:120,
   side:90, still:120, plat:60, aiReact:[30, 100], aiSlip:0.12, aiSlipT:45 };
 RR.end = RR.first + RR.n*RR.round;   // 10920 frames: 3:02
 const RR_RULES = [
@@ -110044,12 +110049,16 @@ function rrFighter(f, inp){
   }
   f._rrX = f.x;
   if(broke) rrZap(f);
+  if(R && !broke){   // OBEYING: a point a second while the rule in force is kept (none in the quiet after a zap)
+    if(hazardT - (f._rrZapT == null ? -1e9 : f._rrZapT) >= RR.quiet){ f._rrOb = (f._rrOb || 0) + 1; if(f._rrOb >= RR.obey){ f._rrOb = 0; f._rrP += 1; f._rrPr += 1; } }
+    else f._rrOb = 0;
+  }
   if(!isHumanCtrl(f)) rrCpu(f, inp);
 }
 function rrZap(f){
   const S = CONTEST;
   if(hazardT - (f._rrZapT == null ? -1e9 : f._rrZapT) < RR.zapGap) return;
-  f._rrZapT = hazardT; f._rrP -= RR.lose; f._rrB = (f._rrB || 0) + 1; f._rrBr = (f._rrBr || 0) + 1;
+  f._rrZapT = hazardT; f._rrP -= RR.lose; f._rrPr -= RR.lose; f._rrOb = 0; f._rrB = (f._rrB || 0) + 1; f._rrBr = (f._rrBr || 0) + 1;
   if(!(TESTMODE.active && !TESTMODE.damage)){ f.pct += RR.zapDmg; f._dmgTaken = (f._dmgTaken || 0) + RR.zapDmg; }
   stunFx(f, RR.zapStun); f.vy = Math.min(f.vy, -4); f.onground = false; f.flash = 10; f._hurtAnim = HURT_ANIM; hzMark(f, 'the referee');
   S.zaps.push({ x:f.x, y:f.y, t:hazardT, idx:f.idx });
@@ -110105,7 +110114,7 @@ CONTEST_RULES.rules = {
     for(let i = spots.length - 1; i > 0; i--){ const j = Math.floor(Math.random()*(i + 1)); const q = spots[i]; spots[i] = spots[j]; spots[j] = q; }
     fighters.forEach(function(f, i){ f.x = spots[i].x; f.y = spots[i].y; f.face = f.x < S.mid ? 1 : -1; f.vx = 0; f.vy = 0; });
     for(const f of fighters){
-      f._rrP = 0; f._rrB = 0; f._rrBr = 0; f._rrHit = {}; f._rrZapT = null; f._rrSide = 0; f._rrStill = 0; f._rrPlat = 0; f._rrX = f.x;
+      f._rrP = 0; f._rrPr = 0; f._rrPf = 0; f._rrOb = 0; f._rrB = 0; f._rrBr = 0; f._rrHit = {}; f._rrZapT = null; f._rrSide = 0; f._rrStill = 0; f._rrPlat = 0; f._rrX = f.x;
       f._rrJ0 = f._jmp0 ? f._jmp0.t : null; f._rrXT = f._xT; f._rrG = (f._used && f._used.grab) || 0; f._rrSp = !!f._sp; f._rrSm = !!(f._smQ || f.smashHold > 0);
       f._rrAw = 0; f._rrSlipT = 0; f._rrSlip = false; f._rrKeptT = null;
     }
@@ -110114,7 +110123,7 @@ CONTEST_RULES.rules = {
     const S = CONTEST, t = hazardT;
     if(S.winner != null) return;
     const k = t < RR.first ? -1 : Math.min(RR.n - 1, Math.floor((t - RR.first)/RR.round));
-    const close = function(){ if(S.round < 0) return; for(const f of fighters){ if(!(f._rrB > 0)){ f._rrP += RR.kept; f._rrKeptT = t; } f._rrB = 0; } };
+    const close = function(){ if(S.round < 0) return; for(const f of fighters){ if(!(f._rrB > 0)){ f._rrP += RR.kept; f._rrPr += RR.kept; f._rrKeptT = t; } f._rrB = 0; } };
     if(k !== S.round){
       close();
       S.round = k; S.roundT = t;
@@ -110130,15 +110139,15 @@ CONTEST_RULES.rules = {
     }
   },
   hit(t, from, dmg){
-    if(!from || from === t || from.dead || !from._rrHit) return;
+    if(!RR.hit || !from || from === t || from.dead || !from._rrHit) return;   // (RR.hit 0: a hit alone scores nothing)
     const last = from._rrHit[t.idx];
     if(last != null && hazardT - last < RR.combo) return;   // (a combo is one hit)
-    from._rrHit[t.idx] = hazardT; from._rrP += RR.hit;
+    from._rrHit[t.idx] = hazardT; from._rrP += RR.hit; from._rrPf += RR.hit;
   },
   ko(f){
     const by = f.lastHitBy;
-    f._rrP -= RR.koLoss;
-    if(by && by !== f && by._rrP != null && f._lastHitT != null && hazardT - f._lastHitT <= 600) by._rrP += RR.ko;
+    f._rrP -= RR.koLoss; f._rrPf -= RR.koLoss; f._rrOb = 0;
+    if(by && by !== f && by._rrP != null && f._lastHitT != null && hazardT - f._lastHitT <= 600){ by._rrP += RR.ko; by._rrPf += RR.ko; }
   },
   world(c, layer){
     const S = CONTEST, R = rrPosted(), gy = groundY();
@@ -110176,7 +110185,7 @@ CONTEST_RULES.rules = {
   hud(c){
     const S = CONTEST, R = rrPosted(), t = hazardT;
     const rows = fighters.slice().sort(function(a, b){ return (a.you ? -1 : 0) - (b.you ? -1 : 0); }).map(function(f){ return { f:f, text:f._rrP + ' pts', hot:f._rrZapT != null && t - f._rrZapT < 60 }; });
-    contestPanel(c, 'RULES ARE RULES', rrSec(RR.end - t) + ' left', rows);
+    contestPanel(c, 'RULES ARE RULES', 'obey = points   ' + rrSec(RR.end - t), rows);
     // THE REFEREE'S SIGN: top middle, the rule in big letters, a bar for the time it has left
     const sw = 380, sh = 64, sx = W/2 - sw/2, sy = 12;
     c.save();
@@ -110204,7 +110213,7 @@ CONTEST_RULES.rules = {
   badge(f, c){ contestPill(c, f, String(f._rrP), f._rrZapT != null && hazardT - f._rrZapT < 60, false); },
 };
 Object.assign(EVENT_TWIST_WORDS, {
-  'contest:rules': { icon:'📋', short:"Hot Dog's contest: rules are rules", words:"Hot Dog's contest: a referee sign posts a new rule every 20 seconds (No jumping!, Specials only!, Stay on the left!, Don't stand still! and more). You get 2 seconds to read each one. Break it and you are zapped and lose 2 points. Land hits (+1), KO someone (+3) and keep a whole rule (+2). Most points after 3 minutes wins.", goal:'Follow the posted rule. Most points wins' },
+  'contest:rules': { icon:'📋', short:"Hot Dog's contest: rules are rules", words:"Hot Dog's contest: a referee sign posts a new rule every 20 seconds (No jumping!, Specials only!, Stay on the left!, Don't stand still! and more). You get 2 seconds to read each one. Every second you obey the rule is a point, and a whole rule kept is 3 more. Break it and you are zapped and lose 5 points; lose a stock and you lose 5. Hits score nothing by themselves, but knocking someone into breaking a rule does. Most points after 3 minutes wins.", goal:'Obey the posted rule: a point a second' },
 });
 // THE TWO TWISTS OF HIS WEEK (the owner's picks from the design's three): their rules are in applyHit (hdDmgK, hdNoFlinch), their pictures in hdDrawTwists.
 EVENT_TWISTS_BUILT.push('angrier', 'stubborn');   // (angrier: Hot Dog's Back for More, EVEN ANGRIER; stubborn: his Not Budging, TOO STUBBORN TO FLINCH)
