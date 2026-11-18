@@ -117723,7 +117723,9 @@ function needyDrawWorld(layer){
 // height between each room and the next, its CONTAINMENT DOOR in it at the floor (walk into it; shut, it holds); the upper floor is solid but for an open HATCH over each
 // staircase (up the stairs and through it, or drop down it), shut while the doors are. From a room you see only that room; the panel's map shows the six rooms (yours outlined),
 // where a syringe, a vial or the bubble is, and the doors red while shut. CPUs see only the foes in their room: with none, they go for what the map shows, else on to another room.
-const SRM = { team:90, evilK:1.25, evilT:900, first:1800, gap:1800, late:9600, lateGap:600, max:1, lateMax:2, ready:GROW_IN, life:1620, loadT:600, cap:12600, r:18, reach:640, climb:170 };
+// REVEAL LATE (the owner's pick, 2026-11-18, for the matches that ran to the cap): from SRM.reveal (2:30, the last minute) the panel's lab map shows every fighter, a dot in
+// their own colour in their room, and the CPUs know it too (srmAlone: to the room the map shows), so the hunt ends.
+const SRM = { reveal:9000, team:90, evilK:1.25, evilT:900, first:1800, gap:1800, late:9600, lateGap:600, max:1, lateMax:2, ready:GROW_IN, life:1620, loadT:600, cap:12600, r:18, reach:640, climb:170 };
 const SLAB = { wall:60, storey:240, roof:500, step:80, stepW:150, stepDx:60, base:2200, per:450,
   doorFirst:2700, doorGap:1800, warnT:120, slideT:24, shutT:360, bubFirst:3000, bubGap:2400, bubGrow:30, bubT:300, bubR:120,
   rareFirst:2700, rareGap:2700, rareLife:1500, stCost:420 };
@@ -118027,7 +118029,7 @@ CONTEST_RULES.serum = {
     }
     // A SYRINGE: a clean one fetches one when no evil one is near (or the syringe is much the nearer); a foe in its face comes first
     if(clean && !(f._srmL > now)){
-      let best = null, bd = SRM.reach*2;
+      let best = null, bd = now >= SRM.reveal ? 1e9 : SRM.reach*2;   // (REVEAL LATE: in the last minute a syringe anywhere in the lab, so the hunt ends)
       for(const s of S.syr){ if(now - s.t0 < SRM.ready - 20 || !srmLockHas(f, s.x, s.st)) continue; const d = srmCost(f, s.x, s.st); if(d < bd){ bd = d; best = s; } }
       if(best && !(dist < 120 && dist < bd) && (nearEvil > A.safe[lvl] || bd < nearEvil*0.5) && notice('syr' + best.t0, best.t0 + SRM.ready)){ srmNav(f, inp, best.x, best.st); return true; }
     }
@@ -118055,6 +118057,14 @@ function srmAlone(f, inp){
   const t = hazardT, seen = f._srmRoomT || {}, mem = f._rmMem || {};
   let G = f._srmGo;
   if(G && (t > G.until || (G.a === here && Math.abs(f.x - G.x) < 40))){ if(G.who != null && mem[G.who] && mem[G.who].a === here) delete mem[G.who]; G = f._srmGo = null; }
+  const rev = t >= SRM.reveal;   // REVEAL LATE: the map shows everyone now, and so does a CPU's memory
+  if(rev) for(const o of fighters) if(o !== f && !o.dead) rmaSaw(f, o, rmaArea(o));
+  if(G && rev && G.who != null && mem[G.who] && mem[G.who].a !== G.a) G = f._srmGo = null;   // (the one it was after has moved on: after them)
+  if(!G && rev){   // to the room of the nearest clean one (a hunter to inject it; a clean one to meet it)
+    let best = null, bc = 1e9;
+    for(const o of fighters){ if(o === f || !srmClean(o) || o.team === f.team) continue; const q = mem[o.idx]; if(!q || q.a === here) continue; const c2 = srmCost(f, (q.a.x0 + q.a.x1)/2, q.a.st); if(c2 < bc){ bc = c2; best = { a:q.a, who:o.idx }; } }
+    if(best) G = f._srmGo = { a:best.a, x:Math.round((best.a.x0 + best.a.x1)/2), st:best.a.st, until:t + 300, who:best.who };
+  }
   if(!G && (srmEvil(f) || f._srmL > t)){   // A HUNTER (evil, or a syringe loaded): to where it last saw a clean one (lately), the latest first
     let m = null, who = null;
     for(const o of fighters){ const q = mem[o.idx]; if(o === f || !srmClean(o) || !q || q.a === here || t - q.t > 1200) continue; if(!m || q.t > m.t){ m = q; who = o.idx; } }
@@ -118163,6 +118173,7 @@ function srmHudMap(c, n){
   c.globalAlpha = 1;
   if(A){ c.strokeStyle = '#ffffff'; c.lineWidth = 2; c.strokeRect(rx(A.x0) + 1, ry(A.st) + 1, (A.x1 - A.x0)*sx - 2, rh - 2); }
   const dot = function(px, st, col){ c.fillStyle = col; c.strokeStyle = SRM_INK.ink; c.lineWidth = 1.5; c.beginPath(); c.arc(rx(px), ry(st) + rh - 8, 4.5, 0, 7); c.fill(); c.stroke(); };
+  if(hazardT >= SRM.reveal) for(const o of fighters){ if(o.dead || !o._rmA) continue; const a = o._rmA; c.fillStyle = safeColor(o.color || '#ffffff'); c.strokeStyle = '#ffffff'; c.lineWidth = 1.5; c.beginPath(); c.arc(clamp(rx(o.x), rx(a.x0) + 5, rx(a.x1) - 5), ry(a.st) + 8, 4, 0, 7); c.fill(); c.stroke(); }   // REVEAL LATE: everyone, in their room
   for(const q of S.syr) if(hazardT - q.t0 >= SRM.ready) dot(q.x, q.st || 0, SRM_INK.goo);
   if(S.rare && hazardT - S.rare.t0 >= SRM.ready) dot(S.rare.x, S.rare.st || 0, S.rare.k === 'vax' ? SRM_INK.vax : SRM_INK.anti);
   if(S.bub){ c.strokeStyle = '#4fc8e8'; c.lineWidth = 2; c.beginPath(); c.arc(rx(S.bub.x), ry(S.bub.st || 0) + rh/2, 7, 0, 7); c.stroke(); }
