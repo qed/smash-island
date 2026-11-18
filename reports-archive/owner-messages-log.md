@@ -1027,6 +1027,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-18**: falling into the gorge is stupid.
 - **2026-11-18** *(question box: what should falling into a gorge do?)*: "for stickers event"
 - **2026-11-18**: set the week to clocks
+- **2026-11-18** *(question boxes, Black Hole)*: extras (ring ledges, slow motion near the hole, spaghetti stretch) -> Cut all three (Recommended); early end -> CPUs climb first
 
 ## Status questions & check-ins
 
