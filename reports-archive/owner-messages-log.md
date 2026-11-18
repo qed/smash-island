@@ -1038,6 +1038,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-18**: and the rooms in the castle should be like the mill. so should all other "rooms"
 - **2026-11-18**: and spongys week
 - **2026-11-18**: the events for spongy should be stronger
+- **2026-11-18**: also, making a map bigger is NOT an excuse to genericiffy it(reffering to shifting isles)
 
 ## Status questions & check-ins
 
