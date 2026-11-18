@@ -1053,6 +1053,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-18**: ohh
 - **2026-11-18**: go to jammy
 - **2026-11-18** *(question box: push the new castle + Bottle/Needy rooms?)*: Push now (Recommended)
+- **2026-11-18** *(question box: push Hot Dog/Sticker/8-Ball rooms, Sticker tall, Spongy tall?)*: Push now (Recommended)
+- **2026-11-18**: and go to 8-ball
 
 ## Status questions & check-ins
 
