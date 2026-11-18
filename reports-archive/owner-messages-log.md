@@ -1059,6 +1059,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-18**: assists for 8balll..... do i really need to say it. add more catagories, and give me some consistency. hold teh maps to a high standard. teh deco is good for 8ball, but the rest...
 - **2026-11-18 ~18:00 EST**: also, feature freeze is permanent, no pipis. after finishing up events, do all wins, and get every score to 8-10 by 8:00
 - **2026-11-18** *(question box: what does 'do all wins' mean?)*: Do the 'needs for 10' items
+- **2026-11-18**: and dont inflate! also, run a juey to verify that this is a good level of complicated, and not too many menus.
 
 ## Status questions & check-ins
 
