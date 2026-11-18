@@ -106920,7 +106920,7 @@ const EVENT_TWIST_WORDS = {
   edges:  { icon:'⛰', short:'real edges', words:'Real edges: the field ends in cliffs, so a fall off either side costs a stock.' },
   food:   { icon:'🍎', short:'food only', words:'Food only: the only items that drop are snacks that heal.' },
   throw:  { icon:'🏀', short:'throwables only', words:'Throwables only: the only items that drop are things to pick up and throw.' },
-  spleef: { icon:'🧱', short:'spleef', words:"Spleef: 30 floors of tiles. A tile falls 2 seconds after you touch it. One stock, damage never KOs: last one standing wins. Rubber tiles bounce you, glass goes fast, steel holds two, some are trapdoors; one floor slides; look out for ink, stamps and the erasers of those who are out." },
+  spleef: { icon:'🧱', short:'spleef', words:"Spleef: 30 floors of tiles. A tile falls 2 seconds after you touch it. One stock, damage never KOs: last one standing wins. Fall past the last floor and you are out." },
   sponge: { icon:'🧽', short:'sponge floor', words:'Sponge floor: land hard on the ground and it bounces you back up. Standing and walking are normal.' },
   dig:    { icon:'⛏', short:'dig floor', words:"Dig floor: land hard and you dig a hole. Holes stay, and the whole floor can be dug away." },
   stairs: { icon:'🪜', short:'rising staircase', words:"Rising staircase: a new step appears every 2 seconds, climbing higher. The top step is the safest." },
@@ -107731,79 +107731,35 @@ function twistVoid(){ const b = twistBackdrop(), D = b && EVENT_BACKDROPS[b]; re
 // stops at SPLK.pctCap): a hit only moves you, and the only way out is falling past the lowest floor. Last one standing wins (checkWin as ever). If nobody
 // has cracked a tile by standing for SPLK.stall frames, the tile nearest each fighter cracks on its own every SPLK.stallEvery frames, so a match always ends.
 // Not online (startEventMatch refuses in a room), so nothing of it rides the snapshot. Items and Smash Balls as the row says; what falls past the lowest floor is gone.
-let SPLEEF = null;   // null in every other match; else { tiles, x0, x1, top, gap, start, last, gone, n, ...the owner's picks below } -- see spleefBuildWorld. A fighter's floor is f._spL (0 the top)
+let SPLEEF = null;   // null in every other match; else { tiles, x0, x1, top, gap, start, last, gone, n, tw, spin, n0, dirty } -- see spleefBuildWorld. A fighter's floor is f._spL (0 the top)
 const SPLK = { rows:30, cols:12, wall:80, top:170, gap:200, h:14, crack:120, settle:1, stall:600, stallEvery:90, pctCap:300, voidPad:60 };   // settle: frames stood on one tile before it cracks (1 = at once, the owner 2026-11-07: 'platforms should fall no matter how long you stand on them'; it was 60)
-// THE OWNER'S PICKS (2026-11-17, contest ideas 1, 2, 3, 4, 6, 8, 11 and 12 -- "dont fix eraser": the rules above stay exactly as they were, these only ADD):
-// TILE KINDS -- a RUBBER tile bounces you up once (a save; until you land again you are held under the floor above, so it never takes you up a floor) and then cracks as
-// any tile; a GLASS tile cracks loudly and goes SPLX.glass frames later; a STEEL tile survives two people (each new fighter on it is one, and each
-// SPLX.steelHold frames one fighter stands on it is one more) and cracks on the third; a TRAPDOOR looks like any tile, drops the moment it is touched,
-// and once one has gone every other trapdoor shows a slight tint. STOMP-THROUGH -- landing on a rival from above breaks THEIR tile at once, so you
-// both drop. INK SPILL -- a bottle on the wall of the busiest floor wobbles (the warning), tips, and its ink runs along that floor: an inked tile
-// breaks twice as fast. RUBBER STAMPS -- a shadow grows on two tiles (the warning), the stamp slams down, the two tiles go and anyone near is shoved.
-// CONVEYOR -- floor SPLX.convRow + 1 slides sideways like a belt (its tiles go round behind the walls, carrying whoever stands on them). KNOCKED-OUT
-// ERASERS -- a fighter that is out floats above as an eraser and drops a crumb every SPLX.crumbEvery frames that rubs out the first tile under it
-// (you: Left/Right to aim, Attack or Down to drop; a CPU aims by its level). SHARPENER -- at the very bottom a pencil sharpener, the picture you
-// fall into, spins faster as fewer are left. Every hazard warns first (the wobble, the shadow, the ghost's dotted aim line and the falling crumb).
-const SPLX = { rub:0.08, gls:0.10, stl:0.07, traps:20, glass:30, bounceVy:-9, capT:120, steelPeople:2, steelHold:240, stompCd:30,
-  inkFirst:1500, inkEvery:1800, inkWobble:120, inkSpeed:9, inkLinger:30,
-  stampFirst:900, stampGap:[480, 660], stampWarn:75, stampHold:24, stampLift:30, stampShove:170,
-  convRow:14, convV:1.1, crumbFirst:60, crumbEvery:480, crumbG:0.45, crumbMax:15, ghostV:6, ghostHover:165 };
+// SIMPLIFIED (the owner, 2026-11-18: "the contests should have 5ish features"): the core above only, plus the SHARPENER at the very bottom (the picture you
+// fall into, spinning faster as fewer are left: "thats just aesthetic"). Every tile is plain. Cut: rubber, glass and steel tiles, trapdoors, the head-stomp break, the ink
+// spill, the rubber stamps, the conveyor floor and the knocked-out erasers.
 function spleefWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.twist === 'spleef'; }
 function spleefRowY(i){ return SPLEEF.top + i*SPLEEF.gap; }
 // The world (from setupWorld, in place of the stage's own): a shaft a screen and a bit wide, the walls as solid blocks, the ten floors as one-way tiles, no floor at all under them.
 function spleefBuildWorld(){
-  const K = SPLK, X = SPLX;
+  const K = SPLK;
   WW = Math.round(W*1.4); camX = 0; camY = 0; bases = []; floors = []; worldZones = []; spawnZones = [];
   const bottom = K.top + (K.rows - 1)*K.gap;
   WH = Math.round((bottom + K.voidPad + 40)/0.82);   // (groundY = WH*0.82 sits a little under the lowest floor: the drop is drawn from there)
   const x0 = K.wall, x1 = WW - K.wall, tw = (x1 - x0)/K.cols;
-  SPLEEF = { tiles:[], x0, x1, top:K.top, gap:K.gap, start:0, last:0, gone:[], n:0,
-    tw, twins:[], trapSeen:false, ink:null, inkNext:X.inkFirst, stamps:[], stampNext:X.stampFirst, ghosts:[], crumbs:[], spin:0, n0:0, dirty:false,
-    stats:{ broke:{ n:0, rub:0, gls:0, stl:0, trap:0 }, stomp:0, ink:0, stamp:0, crumb:0, trap:0 } };
+  SPLEEF = { tiles:[], x0, x1, top:K.top, gap:K.gap, start:0, last:0, gone:[], n:0, tw, spin:0, n0:0, dirty:false };
   worldPlats = [
     { x:0, y:-400, w:K.wall, h:WH + 800, solid:true, spWall:true },
     { x:WW - K.wall, y:-400, w:K.wall, h:WH + 800, solid:true, spWall:true },
   ];
   for(let r = 0; r < K.rows; r++) for(let c = 0; c < K.cols; c++){
     const ax = Math.round(x0 + c*tw), bx = Math.round(x0 + (c + 1)*tw);
-    const p = { x:ax, y:K.top + r*K.gap, w:bx - ax, h:K.h, solid:false, spl:true, r, c, t0:null, gone:false, kind:'n' };
-    if(r === X.convRow){ p.cv = true; p.u = c*tw; }   // THE CONVEYOR: its place along the belt's loop
+    const p = { x:ax, y:K.top + r*K.gap, w:bx - ax, h:K.h, solid:false, spl:true, r, c, t0:null, gone:false };
     SPLEEF.tiles.push(p); worldPlats.push(p);
   }
-  spleefKinds(SPLEEF);
-  for(const p of SPLEEF.tiles){   // the conveyor's tiles: the piece of one that has gone round behind the right wall comes out of the left (its twin)
-    if(!p.cv) continue;
-    const q = { x:x0, y:p.y, w:0, h:K.h, solid:false, spl:true, twinOf:p, gone:false };
-    p.tw = q; SPLEEF.twins.push(q); worldPlats.push(q);
-  }
-  spleefConvey(SPLEEF, 0);
   FLOOR_SEGS = [];   // (an empty list is a floor that is gone: nothing catches anyone under the lowest row)
   SIDE_ROOM = 0;
 }
-// TILE KINDS: SPLX.traps trapdoors anywhere but the top floor (everyone starts there), then rubber, glass and steel at their shares; the rest plain.
-function spleefKinds(S){
-  const X = SPLX, pool = S.tiles.filter(p=>p.r > 0);
-  for(let i = 0; i < X.traps && pool.length; i++){ const j = Math.floor(Math.random()*pool.length); pool[j].kind = 'trap'; pool.splice(j, 1); }
-  for(const p of S.tiles){
-    if(p.kind !== 'n') continue;
-    const u = Math.random();
-    p.kind = u < X.rub ? 'rub' : u < X.rub + X.gls ? 'gls' : u < X.rub + X.gls + X.stl ? 'stl' : 'n';
-  }
-}
-// THE CONVEYOR: every tile of its floor moves v px along the loop; the part past the right wall is its twin at the left.
-function spleefConvey(S, v){
-  const span = S.x1 - S.x0, tw = S.tw;
-  for(const p of S.tiles){
-    if(!p.cv) continue;
-    p.u = ((p.u + v) % span + span) % span;
-    if(p.gone) continue;
-    const a = S.x0 + p.u, over = a + tw - S.x1;
-    p.x = a; p.w = over > 0 ? tw - over : tw;
-    if(p.tw){ p.tw.x = S.x0; p.tw.w = over > 0 ? over : 0; }
-  }
-}
-// Does tile p (or its conveyor twin) cover x?
-function spleefCovers(p, x){ return (p.w > 0 && x >= p.x && x <= p.x + p.w) || (!!p.tw && p.tw.w > 0 && x >= p.tw.x && x <= p.tw.x + p.tw.w); }
+// Does tile p cover x?
+function spleefCovers(p, x){ return p.w > 0 && x >= p.x && x <= p.x + p.w; }
 // The match starts (beginMatchNow, after buildFighters): everyone side by side on the top floor, on their feet, with the top floor as theirs.
 function spleefBegin(){
   const S = SPLEEF; if(!S) return;
@@ -107811,242 +107767,66 @@ function spleefBegin(){
   live.forEach((f, i)=>{ f.x = Math.round(S.x0 + span*(i + 1)/(live.length + 1)); f.y = S.top - f.r; f.vx = 0; f.vy = 0; f.onground = true; f._spL = 0; f.face = f.x < WW/2 ? 1 : -1; });
   S.start = hazardT; S.last = hazardT; S.n0 = live.length;
 }
-// The tile under a fighter's feet (the landing's own tolerance), whole or cracking, or null. (A conveyor twin answers for its tile.)
+// The tile under a fighter's feet (the landing's own tolerance), whole or cracking, or null.
 function spleefUnder(f){
   const feet = f.y + f.r;
   for(const p of SPLEEF.tiles){ if(p.gone || Math.abs(p.y - feet) > 3 || f.x <= p.x - 4 || f.x >= p.x + p.w + 4) continue; return p; }
-  for(const q of SPLEEF.twins){ if(q.gone || q.w <= 0 || Math.abs(q.y - feet) > 3 || f.x <= q.x - 4 || f.x >= q.x + q.w + 4) continue; return q.twinOf; }
   return null;
 }
 // After a fighter has moved (the physics): the floors it has passed are a ceiling for it (the underside of the row above: a jump bonks it), and the walls hold.
 function spleefHold(f){
   const S = SPLEEF, K = SPLK;
   if(f._spL == null) f._spL = 0;
-  if(f._spCapT != null && hazardT <= f._spCapT && f.y - f.r < f._spCapY){ f.y = f._spCapY + f.r; if(f.vy < 0) f.vy = 0; }   // A RUBBER TILE'S BOUNCE: never up through the floor above (before its floor is read)
   f._spL = 0; while(f._spL < K.rows - 1 && f.y - f.r > spleefRowY(f._spL) + K.h + 1) f._spL++;   // the floors whose plane is wholly above the body: its floor (it can go back UP: the tiles are one-way, and jumping is free)
   if(f.y - f.r < 8){ f.y = 8 + f.r; if(f.vy < 0) f.vy = 0; }
   if(f.x < S.x0 + f.r){ f.x = S.x0 + f.r; if(f.vx < 0) f.vx = 0; } else if(f.x > S.x1 - f.r){ f.x = S.x1 - f.r; if(f.vx > 0) f.vx = 0; }   // the walls (solid blocks too)
 }
 // Is there a whole tile of floor L at x?
 function spleefTileAt(L, x){ for(const p of SPLEEF.tiles){ if(!p.gone && p.r === L && spleefCovers(p, x)) return p; } return null; }
-// A CPU (brainOut, after the ledge sense). By its level (0-3): out from under a stamp's shadow; now and then a hop onto a rival of its floor (STOMP-THROUGH),
-// steered down onto it; on a cracking tile, the walk to the best whole tile of its floor in reach (the nearest, weighed by what it reads: glass, ink,
-// a tinted trapdoor and a shadow cost; steel and rubber are worth a little), hopping any gap; else it lets the drop come.
+// A CPU (brainOut, after the ledge sense): on a cracking tile, the walk to the nearest whole tile of its floor in reach, hopping any gap; else it lets the drop come.
 function spleefBrain(f, inp){
-  const S = SPLEEF, X = SPLX, t = hazardT, lv = brainLevel(f);
-  if(f.hitstun > 0) return;
-  if(f._spSt && (t > f._spSt.until || f._spSt.tgt.dead)) f._spSt = null;
-  if(f._spSt && !f.onground){ const dx = f._spSt.tgt.x - f.x; inp.left = dx < -6; inp.right = dx > 6; inp.jump = false; inp.down = false; return; }
-  if(!f.onground) return;
-  const L = f._spL || 0, p = spleefUnder(f), see = [0.45, 0.7, 0.9, 1][lv];
-  for(const s of S.stamps){   // a stamp's shadow on this floor: out from under it (the wall side: back past it)
-    if(s.L !== L || t - s.t0 >= X.stampWarn) continue;
-    if(s.see[f.idx] == null) s.see[f.idx] = Math.random() < see;
-    if(!s.see[f.idx] || Math.abs(f.x - s.x) > s.w/2 + 60) continue;
-    let d = f.x >= s.x ? 1 : -1;
-    if((d > 0 && s.x + s.w/2 + 70 > S.x1) || (d < 0 && s.x - s.w/2 - 70 < S.x0)) d = -d;
-    inp.left = d < 0; inp.right = d > 0; inp.down = false;
-    if(!spleefTileAt(L, f.x + d*(f.r + 18))) inp.jump = (t % 10) < 5;
-    return;
-  }
-  if(p && (t + f.idx*7) % 30 === 0 && Math.random() < [0.04, 0.12, 0.25, 0.4][lv]){   // STOMP-THROUGH: a rival a hop away on this floor
-    let tg = null, bd = 1e9;
-    for(const g of fighters){ if(g === f || g.dead || !g.onground || (SETTINGS.mode !== 'ffa' && g.team === f.team) || (g._spL || 0) !== L) continue; const d = Math.abs(g.x - f.x); if(d > 40 && d < 220 && d < bd){ bd = d; tg = g; } }
-    if(tg){ f._spSt = { tgt:tg, until:t + 60 }; inp.jump = true; inp.left = tg.x < f.x; inp.right = tg.x > f.x; inp.down = false; return; }
-  }
+  const S = SPLEEF;
+  if(f.hitstun > 0 || !f.onground) return;
+  const p = spleefUnder(f);
   if(!p || p.t0 == null) return;
-  const kw = [0, 0.5, 1, 1][lv], iw = [0.3, 0.6, 1, 1][lv];
-  let best = null, bs = 1e9, bd = 1e9;
+  let best = null, bd = 1e9;
   for(const q of S.tiles){
     if(q.gone || q.t0 != null || q.r !== p.r || q.w <= 0) continue;
-    const d = Math.abs(q.x + q.w/2 - f.x); let sc = d;
-    if(q.kind === 'gls') sc += 160*kw; else if(q.kind === 'stl') sc -= 120*kw; else if(q.kind === 'rub') sc -= 40*kw;
-    if(q.ink) sc += 140*iw;
-    if(q.kind === 'trap' && S.trapSeen) sc += 600*kw;
-    for(const s of S.stamps) if(s.L === q.r && t - s.t0 < X.stampWarn && Math.abs(q.x + q.w/2 - s.x) < s.w/2 + 30) sc += 900*see;
-    if(sc < bs){ bs = sc; best = q; bd = d; }
+    const d = Math.abs(q.x + q.w/2 - f.x);
+    if(d < bd){ bd = d; best = q; }
   }
   if(!best || bd > 420) return;
   const dir = best.x + best.w/2 > f.x ? 1 : -1;
   inp.left = dir < 0; inp.right = dir > 0; inp.down = false;
   if(bd > p.w*1.2) inp.jump = (hazardT % 10) < 5;   // a gap of gone tiles between: hop it
 }
-// How long a cracking tile lasts: glass SPLX.glass, the rest SPLK.crack; ink halves it.
-function spleefDur(p){ return (p.kind === 'gls' ? SPLX.glass : SPLK.crack)*(p.ink ? 0.5 : 1); }
-// A tile starts to crack (stood on, or the stall rule): a creak and a patter of grit (glass: a loud crack).
+// A tile starts to crack (stood on, or the stall rule): a creak and a patter of grit; it goes SPLK.crack frames later.
 function spleefCrack(p, t, forced){
   if(p.t0 != null || p.gone) return;
   p.t0 = t; SPLEEF.n++; if(!forced) SPLEEF.last = t;
-  if(p.kind === 'gls'){ noise(0.2, 0.22, 5200, 0, 3000); tone(1900, 0.14, 'square', 0.06, 0, 900); noise(0.1, 0.16, 4200, 0.12, 2400); }
-  else { tone(150, 0.3, 'sawtooth', 0.06, 0, 95); noise(0.12, 0.08, 2600, 0, 900); noise(0.08, 0.06, 2200, 0.14, 700); }
+  tone(150, 0.3, 'sawtooth', 0.06, 0, 95); noise(0.12, 0.08, 2600, 0, 900); noise(0.08, 0.06, 2200, 0.14, 700);
 }
-// A tile goes (its crack ran out, a trapdoor, a stomp, a stamp or a crumb): a plat of no width (nothing lands on it, nothing draws it), out of worldPlats at the end of the step.
+// A tile goes (its crack ran out): a plat of no width (nothing lands on it, nothing draws it), out of worldPlats at the end of the step.
 function spleefGo(S, p, t){
   if(p.gone) return;
-  p.gone = true; p.w0 = p.w || S.tw; p.w = 0; if(p.tw){ p.tw.gone = true; p.tw.w = 0; } S.dirty = true;
-  S.gone.push({ x:p.x, y:p.y, w:p.w0, t, r:p.r, kind:p.kind, ink:!!p.ink });
-  S.stats.broke[p.kind] = (S.stats.broke[p.kind] || 0) + 1;
+  p.gone = true; p.w0 = p.w || S.tw; p.w = 0; S.dirty = true;
+  S.gone.push({ x:p.x, y:p.y, w:p.w0, t, r:p.r });
   impact(p.x + p.w0/2, p.y, { shake:3, dust:1, debris:5, r:36 });
-  if(p.kind === 'gls'){ noise(0.35, 0.22, 6000, 0, 2500); tone(2400, 0.2, 'triangle', 0.06, 0, 1200); }
-  else if(p.kind === 'trap'){ tone(120, 0.12, 'square', 0.1, 0, 60); noise(0.1, 0.12, 900, 0, 300); }
-  else { noise(0.3, 0.16, 1200, 0, 200); tone(80, 0.25, 'sine', 0.14, 0, 44); }
+  noise(0.3, 0.16, 1200, 0, 200); tone(80, 0.25, 'sine', 0.14, 0, 44);
 }
-// A fighter stands on a whole tile (spleefStep, f._spStand frames on it): what its kind does.
-function spleefTouch(f, p, t){
-  const K = SPLK, X = SPLX, S = SPLEEF;
-  if(f._spStand < K.settle) return;
-  const first = f._spStand === K.settle;
-  if(p.kind === 'trap'){ if(first){ S.stats.trap++; S.trapSeen = true; spleefGo(S, p, t); } return; }
-  if(p.kind === 'stl'){
-    if(!p.who) p.who = {};
-    let add = false;
-    if(first){ if(!p.who[f.idx]){ p.who[f.idx] = 1; add = true; } }
-    else if((f._spStand - K.settle) % X.steelHold === 0) add = true;
-    if(add){ p.wt = (p.wt || 0) + 1; p.dentT = t; tone(620, 0.35, 'triangle', 0.1, 0, 560); tone(930, 0.25, 'sine', 0.05, 0, 900); if(p.wt > X.steelPeople) spleefCrack(p, t, false); }
-    return;
-  }
-  if(p.kind === 'rub' && first && !p.used){
-    p.used = true; p.boing = t;
-    f.vy = X.bounceVy; f.onground = false; f.y -= 1; f.jumps = Math.min(f.jumps == null ? 2 : f.jumps, 1);
-    f._spCapY = p.r > 0 ? spleefRowY(p.r - 1) + K.h + 2 : 8; f._spCapT = t + X.capT; f._spCap0 = t; f._spCapL = p.r;   // (held until it lands again, at most SPLX.capT frames)
-    tone(180, 0.25, 'sine', 0.14, 0, 420);
-  }
-  spleefCrack(p, t, false);
-}
-// STOMP-THROUGH: a fighter coming down onto a rival's head breaks the rival's tile at once (a little pop for the stomper; then both drop).
-function spleefStomps(S, t){
-  for(const a of fighters){
-    if(a.dead || a.onground || !(a.vy > 1.5) || (a._spStompAt != null && t - a._spStompAt < SPLX.stompCd)) continue;
-    const feet = a.y + a.r;
-    for(const b of fighters){
-      if(b === a || b.dead || !b.onground || (SETTINGS.mode !== 'ffa' && b.team === a.team)) continue;
-      if(Math.abs(a.x - b.x) > (a.r + b.r)*0.75) continue;
-      const head = b.y - b.r;
-      if(feet < head - 4 || feet > head + a.vy + 10) continue;
-      const p = spleefUnder(b); if(!p || p.gone) continue;
-      a._spStompAt = t; a.vy = -3; b.vy = 2; b.onground = false; a._spSt = null;
-      S.stats.stomp++; spleefGo(S, p, t);
-      impact(b.x, head, { shake:4, dust:1, debris:3, r:30 }); tone(90, 0.18, 'sine', 0.16, 0, 50); noise(0.12, 0.12, 1500, 0, 400);
-      break;
-    }
-  }
-}
-// INK SPILL: every SPLX.inkEvery frames (the first at SPLX.inkFirst), the floor with the most fighters on it (3 or more whole tiles left): the bottle
-// on its wall wobbles for SPLX.inkWobble frames (a glassy tink), tips, and the ink runs along the floor from that wall at SPLX.inkSpeed px a frame.
-function spleefInkStep(S, t){
-  const X = SPLX, run = t - S.start;
-  if(!S.ink && run >= S.inkNext){
-    const cnt = {}; for(const f of fighters) if(!f.dead){ const l = f._spL || 0; cnt[l] = (cnt[l] || 0) + 1; }
-    let L = -1, bc = 0; for(const k in cnt){ const n = cnt[k], l = +k; if(n > bc || (n === bc && l < L)){ bc = n; L = l; } }
-    const whole = L >= 0 ? S.tiles.filter(p=>p.r === L && !p.gone && !p.ink).length : 0;
-    if(whole >= 3){ S.ink = { L, side:Math.random() < 0.5 ? -1 : 1, t0:t, front:0 }; S.stats.ink++; S.inkNext = run + X.inkEvery; }
-    else S.inkNext = run + 120;
-  }
-  const I = S.ink; if(!I) return;
-  const a = t - I.t0;
-  if(a < X.inkWobble){ if(a % 20 === 0) tone(a % 40 ? 1100 : 1350, 0.06, 'sine', 0.05); return; }
-  if(a === X.inkWobble){ tone(220, 0.4, 'sine', 0.1, 0, 90); noise(0.4, 0.1, 700, 0, 200); }
-  I.front = (a - X.inkWobble)*X.inkSpeed;
-  for(const p of S.tiles){ if(p.r !== I.L || p.gone || p.ink) continue; const cx = p.x + p.w/2, d = I.side < 0 ? cx - S.x0 : S.x1 - cx; if(d <= I.front) p.ink = true; }
-  if(I.front > (S.x1 - S.x0) + X.inkLinger*X.inkSpeed) S.ink = null;
-}
-// RUBBER STAMPS: every SPLX.stampGap frames (the first at SPLX.stampFirst), over a fighter's floor near it (a tile either way, at random): the shadow grows
-// on two tiles for SPLX.stampWarn frames (a rising whistle), the stamp slams down, those two tiles go, and anyone within SPLX.stampShove px is shoved away.
-function spleefStampStep(S, t){
-  const X = SPLX, run = t - S.start;
-  if(run >= S.stampNext){
-    S.stampNext = run + Math.round(X.stampGap[0] + Math.random()*(X.stampGap[1] - X.stampGap[0]));
-    const live = fighters.filter(f=>!f.dead);
-    if(live.length >= 2){
-      const g = live[Math.floor(Math.random()*live.length)], L = g._spL || 0;
-      const k = clamp(Math.round((g.x - S.x0)/S.tw) + Math.floor(Math.random()*3) - 1, 1, SPLK.cols - 1);
-      S.stamps.push({ x:S.x0 + k*S.tw, L, w:S.tw*2, t0:t, hit:false, see:{} });
-      tone(500, 1.2, 'sine', 0.05, 0, 1100);
-    }
-  }
-  for(const s of S.stamps){
-    if(s.hit || t - s.t0 < X.stampWarn) continue;
-    s.hit = true; S.stats.stamp++;
-    const y = spleefRowY(s.L), a0 = s.x - s.w/2, a1 = s.x + s.w/2;
-    for(const p of S.tiles){
-      if(p.gone || p.r !== s.L) continue;
-      let ov = p.w > 0 ? Math.max(0, Math.min(p.x + p.w, a1) - Math.max(p.x, a0)) : 0;
-      if(p.tw && p.tw.w > 0) ov += Math.max(0, Math.min(p.tw.x + p.tw.w, a1) - Math.max(p.tw.x, a0));
-      if(ov >= (p.w + (p.tw ? p.tw.w : 0))*0.5) spleefGo(S, p, t);
-    }
-    for(const f of fighters){
-      if(f.dead) continue;
-      const dx = f.x - s.x; if(Math.abs(dx) > X.stampShove || Math.abs(f.y + f.r - y) > 150) continue;
-      const d = dx === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(dx);
-      f.vx = d*10; f.vy = Math.min(f.vy, -5); f.onground = false; f.hitstun = Math.max(f.hitstun || 0, 10);
-    }
-    impact(s.x, y, { shake:7, dust:1, debris:6, r:60 }); tone(60, 0.35, 'sine', 0.2, 0, 35); noise(0.3, 0.2, 800, 0, 150);
-  }
-  S.stamps = S.stamps.filter(s=>t - s.t0 < X.stampWarn + X.stampHold + X.stampLift);
-}
-// KNOCKED-OUT ERASERS: an eraser for each fighter that is out, floating above; a crumb every SPLX.crumbEvery frames (the first SPLX.crumbFirst after the KO)
-// that rubs out the first tile it falls onto. Yours: Left/Right to aim, Attack or Down to drop, at the top of your view. A CPU's: over a rival's floor,
-// aimed at it with an error and a lead by its level (and at levels 2-3 only once the rival is on its feet).
-function spleefGhostStep(S, t){
-  const X = SPLX;
-  for(const f of fighters){
-    if(!f.dead || f._spGh) continue;
-    f._spGh = true;
-    S.ghosts.push({ f, x:clamp(f.x, S.x0 + 30, S.x1 - 30), y:null, cd:X.crumbFirst, tgt:null, err:0, wait:0, born:t });
-    noise(0.6, 0.12, 1800, 0, 600); tone(70, 0.5, 'sawtooth', 0.05, 0, 110);   // the sharpener grinds
-  }
-  const live = fighters.filter(f=>!f.dead);
-  if(live.length) for(const g of S.ghosts){
-    if(g.cd > 0) g.cd--;
-    let dir = 0, drop = false, ty = 0;
-    if(g.f.you && (g.f.controller || 'local') === 'local'){
-      const K = KEYS; let gp = null; try{ gp = pollPad(); }catch(e){}
-      dir = ((down[K.right] || (gp && gp.right)) ? 1 : 0) - ((down[K.left] || (gp && gp.left)) ? 1 : 0);
-      drop = !!(down[K.attack] || KEY_LATCH_NOW[K.attack] || down[K.down] || (gp && (gp.attack || gp.down)));
-      const z = viewZoom() || 1; ty = camY + H/2 - (H/2)/z + 80;
-      g.x = clamp(g.x + dir*X.ghostV, S.x0 + 20, S.x1 - 20);
-    } else {
-      const lv = brainLevel(g.f);
-      if(!g.tgt || g.tgt.dead){ g.tgt = live[Math.floor(Math.random()*live.length)]; g.err = [200, 110, 55, 20][lv]*(Math.random()*2 - 1); g.wait = Math.round([90, 50, 25, 8][lv]*Math.random()); }
-      const ax = clamp(g.tgt.x + (g.tgt.vx || 0)*[0, 0, 15, 25][lv] + g.err, S.x0 + 20, S.x1 - 20);
-      g.x = Math.abs(ax - g.x) <= X.ghostV ? ax : g.x + Math.sign(ax - g.x)*X.ghostV;
-      ty = spleefRowY(g.tgt._spL || 0) - X.ghostHover;
-      if(g.cd <= 0 && Math.abs(ax - g.x) < 14){ if(g.wait > 0) g.wait--; else if(lv < 2 || g.tgt.onground) drop = true; }
-    }
-    g.y = g.y == null ? ty : g.y + (ty - g.y)*0.1;
-    if(drop && g.cd <= 0){
-      g.cd = X.crumbEvery; S.crumbs.push({ x:g.x, y:g.y + 16, vy:1, own:g.f.idx, rot:0 }); S.stats.crumb++;
-      tone(700, 0.08, 'sine', 0.06, 0, 400);
-      if(!g.f.you) g.tgt = null;
-    }
-  }
-  for(const c of S.crumbs){
-    const y0 = c.y; c.vy = Math.min(X.crumbMax, c.vy + X.crumbG); c.y += c.vy; c.rot += 0.2;
-    let hit = null;
-    for(const p of S.tiles){ if(p.gone || p.y < y0 - 2 || p.y > c.y + 2 || !spleefCovers(p, c.x)) continue; if(!hit || p.y < hit.y) hit = p; }
-    if(hit){ spleefGo(S, hit, t); c.dead = true; noise(0.15, 0.1, 2400, 0, 800); }
-    else if(c.y > spleefRowY(SPLK.rows - 1) + 400) c.dead = true;
-  }
-  S.crumbs = S.crumbs.filter(c=>!c.dead);
-}
-// Once a frame, from twistStep (before the fighters move): the conveyor moves (and carries), the percent stops short of a KO, a tile stood on does what its
-// kind does (most crack), the stomps, a floor nobody is on or above breaks, the stall rule, the ink, the stamps, the erasers, the sharpener's spin,
-// and a cracked tile goes when its time is up (spleefDur).
+// Once a frame, from twistStep (before the fighters move): the percent stops short of a KO, a tile stood on cracks, a floor nobody is on or above breaks,
+// the stall rule, the sharpener's spin, and a cracked tile goes when its time is up (SPLK.crack).
 function spleefStep(){
-  const S = SPLEEF, K = SPLK, X = SPLX, t = hazardT;
+  const S = SPLEEF, K = SPLK, t = hazardT;
   if(!S.n0) S.n0 = fighters.length;
-  spleefConvey(S, X.convV);
   for(const f of fighters){
     if(f.dead) continue;
     if(f._spL == null) f._spL = 0;
     if(f.pct > K.pctCap) f.pct = K.pctCap;
     const p = f.onground ? spleefUnder(f) : null;   // the settle: K.settle frames on one tile and it cracks (a sprint straight across does not; any stop or landing does)
-    if(f._spCapT != null && f.onground && t > f._spCap0 + 2) f._spCapT = null;   // a rubber bounce's ceiling lasts until the landing
-    if(p && p.cv) f.x += X.convV;   // the belt carries whoever stands on it
-    if(p && p.t0 == null){ f._spStand = (f._spTile === p) ? (f._spStand || 0) + 1 : 1; f._spTile = p; spleefTouch(f, p, t); }
+    if(p && p.t0 == null){ f._spStand = (f._spTile === p) ? (f._spStand || 0) + 1 : 1; f._spTile = p; if(f._spStand >= K.settle) spleefCrack(p, t, false); }
     else { f._spStand = 0; f._spTile = null; }
   }
-  spleefStomps(S, t);
   let minL = 99;   // a floor with nobody ON it or ABOVE it (every living fighter is below) breaks all at once
   for(const f of fighters){ if(!f.dead && f._spL != null && f._spL < minL) minL = f._spL; }
   if(minL < 99) for(const p of S.tiles){ if(!p.gone && p.t0 == null && p.r < minL) spleefCrack(p, t, true); }
@@ -108058,63 +107838,21 @@ function spleefStep(){
       if(best) spleefCrack(best, t, true);
     }
   }
-  spleefInkStep(S, t); spleefStampStep(S, t); spleefGhostStep(S, t);
   let live = 0; for(const f of fighters) if(!f.dead) live++;
   S.spin += 0.025*(1 + 4*(1 - live/Math.max(1, S.n0)));   // THE SHARPENER: faster as fewer are left
   for(const p of S.tiles){
-    if(p.gone || p.t0 == null || t < p.t0 + spleefDur(p)) continue;
+    if(p.gone || p.t0 == null || t < p.t0 + K.crack) continue;
     spleefGo(S, p, t);
   }
   if(S.dirty){ worldPlats = worldPlats.filter(p=>!(p.spl && p.gone)); S.dirty = false; }
   if(S.gone.length > 48) S.gone.splice(0, S.gone.length - 48);
 }
 // ---- the pictures (the game's and the picture card's) ----
-// A tile of a kind at (x, y, w, h). o: { base (the plain tile under it, for the card), ink, used, wt, seen (the trapdoors' tint), cv (the belt's offset) }.
-function spleefTileArt(c, x, y, w, h, kind, o){
-  o = o || {};
+// A plain tile at (x, y, w, h), for the picture card (in the game the whole tiles are painted by paintPlat, as any ledge is).
+function spleefTileArt(c, x, y, w, h){
   if(w <= 0) return;
-  c.save(); c.lineWidth = 2; c.strokeStyle = '#1c1c1c';
-  if(o.base){ c.fillStyle = '#8fa8c8'; c.fillRect(x, y, w, h); c.strokeRect(x, y, w, h); }
-  if(kind === 'rub'){ c.fillStyle = o.used ? '#c45a80' : '#ff7aa8'; c.fillRect(x, y, w, h); c.fillStyle = '#ffd0e0'; c.fillRect(x + 4, y + 2, w - 8, Math.max(2, h*0.22)); c.strokeRect(x, y, w, h); }
-  else if(kind === 'gls'){ c.fillStyle = 'rgba(200,240,255,0.85)'; c.fillRect(x, y, w, h); c.strokeStyle = '#ffffff'; c.lineWidth = 2; c.beginPath(); for(let i = 0.2; i < 1; i += 0.35){ c.moveTo(x + w*i, y + h); c.lineTo(x + w*i + h, y); } c.stroke(); c.strokeStyle = '#3a6a8a'; c.strokeRect(x, y, w, h); }
-  else if(kind === 'stl'){
-    c.fillStyle = '#8d96a3'; c.fillRect(x, y, w, h); c.fillStyle = '#c7ced8'; c.fillRect(x + 2, y + 2, w - 4, Math.max(2, h*0.2)); c.strokeRect(x, y, w, h);
-    c.fillStyle = '#3c424a'; for(const u of [0.1, 0.9]){ c.beginPath(); c.arc(x + w*u, y + h/2, Math.max(1.5, h*0.16), 0, 7); c.fill(); }
-    for(let i = 0; i < (o.wt || 0); i++){ c.strokeStyle = '#3c424a'; c.beginPath(); c.arc(x + w*(0.35 + i*0.3), y, h*0.5, 0.2, Math.PI - 0.2); c.stroke(); }
-  }
-  else if(kind === 'trap' && o.seen){ c.fillStyle = 'rgba(120,72,30,0.24)'; c.fillRect(x, y, w, h); c.strokeStyle = 'rgba(70,40,15,0.45)'; c.beginPath(); c.moveTo(x + w/2, y + 2); c.lineTo(x + w/2, y + h - 2); c.stroke(); }
-  if(o.cv != null){ c.strokeStyle = 'rgba(40,40,40,0.55)'; c.lineWidth = 2; c.beginPath(); const st = 22; for(let a = x - st + ((o.cv % st) + st) % st; a < x + w - 6; a += st){ if(a < x + 2) continue; c.moveTo(a, y + 3); c.lineTo(a + 6, y + h/2); c.lineTo(a, y + h - 3); } c.stroke(); }
-  if(o.ink){ c.fillStyle = 'rgba(28,22,70,0.8)'; c.fillRect(x, y, w, h*0.6); for(let i = 0; i < 3; i++){ const dx = x + w*(0.2 + i*0.3); c.beginPath(); c.ellipse(dx, y + h*0.6, 4, 3 + (i % 2)*3, 0, 0, 7); c.fill(); } }
-  c.restore();
+  c.save(); c.lineWidth = 2; c.strokeStyle = '#1c1c1c'; c.fillStyle = '#8fa8c8'; c.fillRect(x, y, w, h); c.strokeRect(x, y, w, h); c.restore();
 }
-// The ink bottle at (x, y: its foot), tipped by ang.
-function spleefBottlePic(c, x, y, s, ang){
-  c.save(); c.translate(x, y); c.rotate(ang || 0); c.scale(s, s); c.lineWidth = 3; c.strokeStyle = '#1c1c1c';
-  c.fillStyle = '#2b3a8c'; c.fillRect(-15, -44, 30, 44); c.strokeRect(-15, -44, 30, 44);
-  c.fillStyle = '#f4efe2'; c.fillRect(-11, -32, 22, 14); c.fillStyle = '#1c1c1c'; c.fillRect(-6, -27, 12, 4);
-  c.fillStyle = '#2b3a8c'; c.fillRect(-7, -56, 14, 12); c.strokeRect(-7, -56, 14, 12);
-  c.fillStyle = '#b07a4a'; c.fillRect(-6, -63, 12, 8); c.strokeRect(-6, -63, 12, 8);
-  c.restore();
-}
-// A rubber stamp with its face at (x, y), w wide.
-function spleefStampPic(c, x, y, w){
-  c.save(); c.lineWidth = 3; c.strokeStyle = '#1c1c1c';
-  c.fillStyle = '#c0392b'; c.fillRect(x - w/2, y - w*0.16, w, w*0.16); c.strokeRect(x - w/2, y - w*0.16, w, w*0.16);
-  c.fillStyle = '#8a5a32'; c.fillRect(x - w*0.42, y - w*0.3, w*0.84, w*0.14); c.strokeRect(x - w*0.42, y - w*0.3, w*0.84, w*0.14);
-  c.fillStyle = '#b07a4a'; c.fillRect(x - w*0.12, y - w*0.62, w*0.24, w*0.32); c.strokeRect(x - w*0.12, y - w*0.62, w*0.24, w*0.32);
-  c.beginPath(); c.arc(x, y - w*0.68, w*0.15, 0, 7); c.fill(); c.stroke();
-  c.restore();
-}
-// A knocked-out fighter's eraser (pink, a blue sleeve, their colour as the outline, two eyes) at (x, y), s its scale.
-function spleefGhostPic(c, x, y, s, col){
-  c.save(); c.translate(x, y); c.scale(s, s); c.lineWidth = 3;
-  c.fillStyle = '#ff9cbc'; c.strokeStyle = col || '#1c1c1c'; itemRoundRect(c, -24, -15, 48, 30, 7); c.fill(); c.stroke();
-  c.fillStyle = '#4f7fd8'; c.fillRect(-6, -15, 18, 30); c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.strokeRect(-6, -15, 18, 30);
-  c.fillStyle = '#ffffff'; c.beginPath(); c.arc(-16, -3, 4.5, 0, 7); c.arc(20, -3, 4.5, 0, 7); c.fill();
-  c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(-15, -2, 2.2, 0, 7); c.arc(21, -2, 2.2, 0, 7); c.fill();
-  c.restore();
-}
-function spleefCrumbPic(c, x, y, s, rot){ c.save(); c.translate(x, y); c.rotate(rot || 0); c.scale(s, s); c.fillStyle = '#ff9cbc'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.moveTo(-6, -4); c.lineTo(5, -6); c.lineTo(7, 4); c.lineTo(-4, 6); c.closePath(); c.fill(); c.stroke(); c.restore(); }
 // The pencil sharpener at the bottom (its top middle at (x, y), s its scale, spin its angle): a metal block, the cone you fall into, the blade turning, shavings.
 function spleefSharpPic(c, x, y, s, spin){
   c.save(); c.translate(x, y); c.scale(s, s); c.lineWidth = 4; c.strokeStyle = '#1c1c1c';
@@ -108129,74 +107867,28 @@ function spleefSharpPic(c, x, y, s, spin){
   for(let i = 0; i < 8; i++){ const a = spin*1.6 + i*0.785, r = 70 + (i % 3)*45; c.save(); c.translate(Math.cos(a)*r, 40 + Math.sin(a)*r*0.3); c.rotate(a*2); c.beginPath(); c.arc(0, 0, 9, 0, Math.PI*1.4); c.lineTo(0, 0); c.closePath(); c.fill(); c.stroke(); c.restore(); }
   c.restore();
 }
-// ART (over the platforms, under the fighters): the kinds over their tiles (the conveyor's chevrons, the ink, the steel's dents, a tinted trapdoor),
-// a cracking tile shakes and darkens as its cracks spread, a tile that has gone falls away in three pieces for a moment; then the stamps and their
-// shadows, the ink bottle, the erasers with their aim lines and crumbs, and the sharpener at the very bottom. The walls and the whole tiles are
-// painted by paintPlat as any solid block and ledge are. Only what is near the view is drawn.
+// ART (over the platforms, under the fighters): a cracking tile shakes and darkens as its cracks spread, a tile that has gone falls away in three pieces for a
+// moment, and the sharpener at the very bottom. The walls and the whole tiles are painted by paintPlat as any solid block and ledge are. Only what is near the view is drawn.
 function drawSpleef(){
-  const S = SPLEEF, K = SPLK, X = SPLX, c = ctx, t = hazardT; if(!S) return;
+  const S = SPLEEF, K = SPLK, c = ctx, t = hazardT; if(!S) return;
   const z = viewZoom() || 1, vy0 = camY + H/2 - (H/2)/z - 120, vy1 = camY + H/2 + (H/2)/z + 120;
   if(WH - 330 < vy1) spleefSharpPic(c, WW/2, WH - 330, 1, S.spin);
   for(const p of S.tiles){
-    if(p.gone || p.y < vy0 || p.y > vy1) continue;
-    const o = { ink:p.ink, used:p.used, wt:p.wt, seen:S.trapSeen, cv:p.cv ? t*X.convV : null };
-    spleefTileArt(c, p.x, p.y, p.w, p.h, p.kind, o);
-    if(p.tw && p.tw.w > 0) spleefTileArt(c, p.tw.x, p.y, p.tw.w, p.h, p.kind, o);
-    if(p.kind === 'rub' && p.boing != null && t - p.boing < 14){ c.save(); c.globalAlpha = 1 - (t - p.boing)/14; c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.beginPath(); c.ellipse(p.x + p.w/2, p.y, p.w*0.4, 10 + (t - p.boing), 0, Math.PI, 0); c.stroke(); c.restore(); }
-  }
-  for(const p of S.tiles){
     if(p.gone || p.t0 == null || p.y < vy0 || p.y > vy1) continue;
-    const k = clamp((t - p.t0)/spleefDur(p), 0, 1), sh = 1.5 + 2*k, dx = Math.sin(t*1.9 + p.c)*sh, dy = Math.sin(t*2.3 + p.r)*sh*0.5;
+    const k = clamp((t - p.t0)/K.crack, 0, 1), sh = 1.5 + 2*k, dx = Math.sin(t*1.9 + p.c)*sh, dy = Math.sin(t*2.3 + p.r)*sh*0.5;
     const n = 2 + Math.floor(k*4);
-    const crack = (x, w)=>{
-      c.save(); c.translate(dx, dy);
-      c.globalAlpha = 0.25 + 0.4*k; c.fillStyle = p.kind === 'gls' ? '#ffffff' : '#2a1e16'; c.fillRect(x, p.y, w, p.h);
-      c.globalAlpha = 1; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath();
-      for(let i = 0; i < n; i++){ const a = x + w*((i + 0.5)/n), sg = (i % 2 ? 1 : -1); c.moveTo(a, p.y); c.lineTo(a + 6*sg, p.y + p.h*0.5); c.lineTo(a - 4*sg, p.y + p.h); }
-      c.stroke(); c.restore();
-    };
-    crack(p.x, p.w); if(p.tw && p.tw.w > 0) crack(p.tw.x, p.tw.w);
+    c.save(); c.translate(dx, dy);
+    c.globalAlpha = 0.25 + 0.4*k; c.fillStyle = '#2a1e16'; c.fillRect(p.x, p.y, p.w, p.h);
+    c.globalAlpha = 1; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath();
+    for(let i = 0; i < n; i++){ const a = p.x + p.w*((i + 0.5)/n), sg = (i % 2 ? 1 : -1); c.moveTo(a, p.y); c.lineTo(a + 6*sg, p.y + p.h*0.5); c.lineTo(a - 4*sg, p.y + p.h); }
+    c.stroke(); c.restore();
   }
-  const pieceCol = { n:'#8fa8c8', trap:'#8fa8c8', rub:'#ff7aa8', gls:'#c8f0ff', stl:'#8d96a3' };
   for(const g of S.gone){
     const age = t - g.t; if(age > 28) continue;
-    c.save(); c.globalAlpha = (1 - age/28)*0.9; c.fillStyle = g.ink ? '#2b2a55' : (pieceCol[g.kind] || '#8fa8c8'); c.strokeStyle = '#1c1c1c'; c.lineWidth = 2;
+    c.save(); c.globalAlpha = (1 - age/28)*0.9; c.fillStyle = '#8fa8c8'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2;
     for(let i = 0; i < 3; i++){ const w = g.w/3, x = g.x + i*w + (i - 1)*age*0.8, y = g.y + age*age*0.35 + i*age*0.4; c.fillRect(x + 2, y, w - 4, K.h); c.strokeRect(x + 2, y, w - 4, K.h); }
     c.restore();
   }
-  for(const s of S.stamps){   // the shadow grows, the stamp comes down from above, slams, waits, lifts away
-    const a = t - s.t0, y = spleefRowY(s.L);
-    if(a < X.stampWarn){
-      const k = a/X.stampWarn;
-      c.save(); c.globalAlpha = 0.15 + 0.45*k; c.fillStyle = '#1c1c1c'; c.beginPath(); c.ellipse(s.x, y + 4, s.w*(0.3 + 0.2*k), 6 + 4*k, 0, 0, 7); c.fill(); c.restore();
-      spleefStampPic(c, s.x, y - (1 - k*k)*420, s.w);
-    } else {
-      const b = a - X.stampWarn, lift = b < X.stampHold ? 0 : (b - X.stampHold)/X.stampLift;
-      c.save(); c.globalAlpha = 1 - lift; spleefStampPic(c, s.x, y + 6 - lift*260, s.w); c.restore();
-    }
-  }
-  const I = S.ink;
-  if(I){
-    const a = t - I.t0, bx = I.side < 0 ? S.x0 + 22 : S.x1 - 22, by = spleefRowY(I.L);
-    const ang = a < X.inkWobble ? Math.sin(a*0.45)*0.3*(a/X.inkWobble) : -I.side*Math.min(1.45, (a - X.inkWobble)*0.12);
-    c.save(); c.fillStyle = '#5a4a3a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.fillRect(I.side < 0 ? S.x0 : S.x1 - 40, by - 2, 40, 6); c.strokeRect(I.side < 0 ? S.x0 : S.x1 - 40, by - 2, 40, 6); c.restore();
-    spleefBottlePic(c, bx, by - 2, 0.9, ang);
-    if(a >= X.inkWobble){ const fx = I.side < 0 ? S.x0 + Math.min(I.front, S.x1 - S.x0) : S.x1 - Math.min(I.front, S.x1 - S.x0); c.save(); c.fillStyle = 'rgba(28,22,70,0.85)'; c.beginPath(); c.ellipse(fx, by + 1, 16, 5, 0, 0, 7); c.fill(); c.restore(); }
-  }
-  for(const g of S.ghosts){   // the erasers: a dotted line from a ready one down to the tile its crumb would hit, the eraser bobbing, the crumb's recharge ring
-    if(g.y == null) continue;
-    const gy = g.y + Math.sin((t + g.f.idx*40)*0.06)*5;
-    if(g.cd <= 0){
-      let ty = null; for(const p of S.tiles){ if(p.gone || p.y < gy || !spleefCovers(p, g.x)) continue; if(ty == null || p.y < ty) ty = p.y; }
-      c.save(); c.globalAlpha = 0.5; c.strokeStyle = '#ff9cbc'; c.lineWidth = 3; c.setLineDash([6, 8]); c.beginPath(); c.moveTo(g.x, gy + 16); c.lineTo(g.x, ty == null ? gy + 400 : ty); c.stroke(); c.setLineDash([]);
-      if(ty != null){ c.globalAlpha = 0.7; c.beginPath(); c.ellipse(g.x, ty, 14, 4, 0, 0, 7); c.stroke(); }
-      c.restore();
-    }
-    c.save(); c.globalAlpha = 0.8; spleefGhostPic(c, g.x, gy, 0.9, g.f.color); c.restore();
-    if(g.cd > 0){ c.save(); c.globalAlpha = 0.7; c.strokeStyle = '#ff9cbc'; c.lineWidth = 3; c.beginPath(); c.arc(g.x, gy, 30, -Math.PI/2, -Math.PI/2 + 6.283*(1 - g.cd/X.crumbEvery)); c.stroke(); c.restore(); }
-    else spleefCrumbPic(c, g.x, gy + 20, 0.9, 0);
-  }
-  for(const cr of S.crumbs) spleefCrumbPic(c, cr.x, cr.y, 1.2, cr.rot);
 }
 // HUD (screen space, top middle): who is left and which of the ten floors the player is on (out: the deepest floor anyone has reached). Nothing else is said in the match.
 function drawSpleefHud(){
@@ -108626,7 +108318,6 @@ function darkSeeK(f){
   if(HS) return hsSeeK(f);   // BOTTLE'S HIDE AND SEEK: only what is lit, close, or carries a light
   const d = Math.hypot(f.x - me.x, f.y - me.y);
   if(LHC && lhcSameRoom(me, f)) return 1;   // STAPY'S CONTEST: inside the same lighthouse everyone is lit
-  if(LHC && lhcBeamLit(f)) return 1;   // ...and anyone in a boat's searchlight
   const r0 = LHC ? LHK.light0 : DARKK.r, s0 = r0 + (DARKK.see - DARKK.r);
   let k;
   if(d <= r0) k = 1; else if(d >= s0) k = DARKK.far; else { const u = (d - r0)/(s0 - r0); k = 1 - (1 - DARKK.far)*u*u*(3 - 2*u); }
@@ -108696,7 +108387,6 @@ function lhcLights(o, m, hw, hh){
     const p = tr(tw.ox, tw.oBase - tw.topH - K.roofGap - 100), rr = (120 + 70*n)*Math.hypot(m.a, m.b)*0.5, g = o.createRadialGradient(p[0], p[1], 0, p[0], p[1], rr);
     g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)'); o.fillStyle = g; o.fillRect(p[0] - rr, p[1] - rr, rr*2, rr*2); o.fillStyle = 'rgba(0,0,0,1)';
   }
-  lhcSeaCut(o, tr, m);   // the boats' beams, and anyone caught in one
 }
 
 // STAPY'S CONTEST, THE EMBLEMS ARE THE BACKDROP (owner 2026-11-15: "make the emblems part of the backdrop, so we can see that, when your emblem is complete, it drowns out the others", "and you get to see it before the winscreen comes"):
@@ -108746,7 +108436,7 @@ function lhcGlow(m){
     g.addColorStop(0, col + 'aa'); g.addColorStop(1, col + '00'); c.fillStyle = g; c.beginPath(); c.arc(f.x, f.y, f.r*3.2, 0, 7); c.fill();
     c.strokeStyle = col; c.lineWidth = 3.5; c.globalAlpha = 0.9; c.beginPath(); c.arc(f.x, f.y, f.r + 5, 0, 7); c.stroke(); c.globalAlpha = 1;
   }
-  lhcSeaGlow(c, x0, x1, y0, y1);   // the beams, the lit, the spray and foam, the horns
+  lhcSeaGlow(c, x0, x1, y0, y1);   // the wave's warning spray and its foam
   c.restore();
 }
 // THE EMBLEMS (BFDIA 18's, the owner's picture): a SOLID BRIGHT colour field, one colour per fighter, and one bold flat WHITE silhouette of the fighter's own body shape (drawn from its picture, flattened: no face, no detail), split into FOUR pieces (quarters, one per lighthouse: top left, top right, bottom left, bottom right).
@@ -110805,24 +110495,15 @@ const FDK = { seed:7331, x0:500, len:100000, tail:500, wall:60, WH:1300, finalAt
   deck:220, stair:110, stairW:170, pit:130, pitW:170, back:350, fall:480,
   wallW:36, wallHmin:95, wallHmax:130, blkS:62, fallS:96, fallCyc:420, fallWarn:80, fallDrop:24, fallLive:34, swingArm:240, swingAmp:0.95, swingCyc:210, slideCyc:260, slideAmp:240, slideH:70,
   planeEvery:1700, fwdCd:0, fwdRe:/dashes forward|a short dash|dash(es)? straight|darts about|charges? forward|armoured charge|you charge|rockets forward|zips you forward|flat-out sprint|diving belly-flop|rolls (a short way )?forward|rolls straight ahead|slide forward|lunge a step|teleport|warp|blink|reappear/i, fwdNot:/charges your next/i, planeR:42, fightR:150, fightFor:150, fightCool:300, cpuHigh:0.5 };
-// THE WIND RACE UPGRADE (the owner's picks, 2026-11-17): the course runs through four areas told apart by pictures only (FDX.area: where each ends, as a share of the course):
-// a PAPER CITY (folding walls on a beat, the pneumatic mail tubes), a WINDMILL STRETCH (the mills' blades are moving blocks; kites), a STORM STRETCH (lightning with a
-// warning, the tornadoes, the big gap the hot-air balloons cross) and the FOLDING BRIDGES (planks that fold up on a beat; kites; the final stretch's strongest gusts).
-// All over: UPDRAFTS under the decks (jump in or hold Up: up to the high route) and the CRANE FLOCK (it flies up the course from behind the last racer; catch it and it carries you).
-// Not picked: rain, a shredder, a photo finish, a crowd, weather vanes. A braced fighter (Z) is immune to every block (the old blocks, the blades, a rising folding wall) and is
-// never grabbed by a tornado; lightning is not a block (bracing halves it). FDX.off is where a piece that is not there now is put (far above the ceiling).
-const FDX = { seed:7907, area:[0.25, 0.5, 0.75], off:-9000, zoneM:500,
-  fwH:300, fwW:44, fwCyc:200, fwFold:14, fwFlat:70, fwRise:12, fwWarn:40,
-  wmArm:270, wmHub:310, wmBlade:13, wmSpd:0.011, wmHot:70, wmCd:130, wmEvery:[1800, 2400],
-  udW:76, udLift:2.4, udVmax:-17, udTop:230,
+// THE WIND RACE'S AREAS AND MAIL TUBES (the owner's picks 2026-11-17, SIMPLIFIED 2026-11-18: "the contests should have 5ish features"): the course runs through four areas
+// told apart by pictures only (FDX.area: where each ends, as a share of the course): a PAPER CITY (with the pneumatic MAIL TUBES, the one piece of them that does something),
+// a WINDMILL STRETCH, a STORM STRETCH (a dark sky) and the FOLDING BRIDGES. The windmills and the bridges are scenery: their blades touch nobody and a bridge is floor.
+// Cut 2026-11-18: folding walls, updrafts, kites, the crane flock, lightning, tornadoes, and the hot-air balloons with the big gap they crossed (that stretch is plain floor now).
+const FDX = { seed:7907, area:[0.25, 0.5, 0.75], zoneM:500,
+  wmArm:270, wmHub:310, wmBlade:13, wmSpd:0.011, wmHot:70, wmEvery:[1800, 2400],
   tbLen:[2000, 2600], tbY:400, tbSpd:26, tbUp:16, tbMouth:40, tbMouthH:6, tbWait:120, tbBlock:46,
-  tnW:120, tnAmp:520, tnCyc:1100, tnHold:54, tnFwd:1100, tnBack:700, tnCd:200, tnAt:[0.22, 0.8], tnBrMax:150,
-  ltEvery:95, ltWarn:75, ltLive:10, ltW:96, ltDmg:6, ltK:0.6, ltAhead:[120, 500],
-  blGap:1800, gapSink:0.12, blW:160, blSpd:8, blDesc:40, blDock:110, blArc:130, blRest:30, blRise:60, blEvery:150, blDrop:320,
-  brAt:[0.785, 0.86, 0.935], brLen:2400, plank:200, brCyc:210, brFold:66, brWarn:44,
-  kiteT:480, kiteWind:1.45, kiteRide:440, kiteUp:-2.6, kiteSink:0.9, kiteEvery:2600, kiteR:40,
-  crFirst:900, crEvery:1500, crSpd:1.7, crCarry:150, crR:62, crLo:170, crHi:380, crWave:0.035, crBehind:900, crAhead:1600,
-  braceP:[0.25, 0.5, 0.8, 0.95], highP:[0.35, 0.45, 0.6, 0.7], fightCool:[420, 320, 240, 170], fightR:[150, 160, 180, 200], noFight:400, crane:[0.3, 0.6, 0.85, 1], block:[0, 0, 0.6, 0.9], tubeP:[0.4, 0.6, 0.85, 0.95], kickEvery:[60, 40, 30, 24] };
+  brAt:[0.785, 0.86, 0.935], brLen:2400, plank:200,
+  highP:[0.35, 0.45, 0.6, 0.7], fightCool:[420, 320, 240, 170], fightR:[150, 160, 180, 200], noFight:400, block:[0, 0, 0.6, 0.9], tubeP:[0.4, 0.6, 0.85, 0.95] };
 function fdRng(seed){ let a = seed >>> 0; return function(){ a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 function fdrWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.contest === 'race'; }
 function fdrBuildWorld(){
@@ -110831,9 +110512,8 @@ function fdrBuildWorld(){
   const gy = groundY(), xf = K.x0 + K.len, dy = gy - K.deck;
   const A = [K.x0, K.x0 + K.len*X.area[0], K.x0 + K.len*X.area[1], K.x0 + K.len*X.area[2], xf].map(Math.round);
   const decks = [], stairs = [], walls = [], obs = [], planes = [], pits = [], stretches = [];
-  // THE CHASMS, reserved first (no deck, stair, pit or block in or near one): the storm's big gap (the hot-air balloons cross it) and the folding bridges
+  // THE BRIDGES' STRETCHES, reserved first (no deck, stair, pit or block on one; they are scenery over the floor itself)
   const zones = [];
-  { const gx = Math.round((A[2] + A[3])/2 - X.blGap/2); zones.push({ k:'gap', x0:gx, x1:gx + X.blGap }); }
   for(const u of X.brAt){ const bx = Math.round(K.x0 + K.len*u); zones.push({ k:'bridge', x0:bx, x1:bx + X.brLen }); }
   const zoneAt = function(a, b, m){ return zones.find(z => b > z.x0 - m && a < z.x1 + m) || null; };
   worldPlats = [
@@ -110862,42 +110542,25 @@ function fdrBuildWorld(){
     x = lastEnd + sl + 400;
   }
   const underDeck = function(px, m){ return decks.some(d => px > d.x - (m || 0) && px < d.x + d.w + (m || 0)); };
-  // the pits (low floor only, in the stretches without a deck over them, never at a chasm)
+  // the pits (low floor only, in the stretches without a deck over them, never at a bridge)
   for(const s of stretches){ if(s.x1 < xf - 1500 && s.x1 - s.x0 > 900 && rnd() < 0.75){ const px = Math.round((s.x0 + s.x1)/2 + (rnd() - 0.5)*200); if(!zoneAt(px, px + K.pitW, 300)) pits.push({ x0:px, x1:px + K.pitW }); } }
-  FLOOR_SEGS = []; { let c = 0; const holes = pits.concat(zones).sort((a, b) => a.x0 - b.x0); for(const p of holes){ FLOOR_SEGS.push({ x0:c, x1:p.x0 }); c = p.x1; } FLOOR_SEGS.push({ x0:c, x1:WW }); }
+  FLOOR_SEGS = []; { let c = 0; for(const p of pits.slice().sort((a, b) => a.x0 - b.x0)){ FLOOR_SEGS.push({ x0:c, x1:p.x0 }); c = p.x1; } FLOOR_SEGS.push({ x0:c, x1:WW }); }
   SIDE_ROOM = 0;
   const nearPit = function(px, m){ return pits.some(p => px > p.x0 - m && px < p.x1 + m) || !!zoneAt(px, px, m); };
   const nearStair = function(px){ return stairs.some(s => px > s.s1.x - 140 && px < s.deck.x + 60); };
-  const inArea = function(px, k){ return px >= A[k] && px < A[k + 1]; };
-  // THE UPGRADE'S PIECES (their own seeded dice: the same course every match)
-  const fx = { A:A, zones:zones, fwalls:[], mills:[], vents:[], tubes:[], torns:[], kites:[], planks:[], pool:[] };
-  // folding walls: in the low-only stretches of the paper city and the bridges' stretch
-  for(const s of stretches){ const px = Math.round(s.x0 + 260); if(px < 2400 || px > xf - 1500 || s.x1 - s.x0 < 800 || !(inArea(px, 0) || inArea(px, 3)) || nearPit(px, 300)) continue; const p = { x:px, y:gy - X.fwH, w:X.fwW, h:X.fwH, solid:true, fdk:'wall', fold:true, _h:X.fwH }; walls.push(p); worldPlats.push(p); fx.fwalls.push(p); }
-  const nearFw = function(px, m){ return fx.fwalls.some(p => Math.abs(p.x - px) < m); };
-  // updrafts: a vent under the start of each first deck
-  for(const e of stairs){ const vx = e.deck.x + 150; if(!nearPit(vx, 200)) fx.vents.push({ x:vx }); }
-  const nearVent = function(px, m){ return fx.vents.some(v => Math.abs(v.x - px) < m); };
-  // the windmills (their own stretch)
-  for(let px = A[1] + 1400; px < A[2] - 800; ){ if(nearPit(px, 400) || nearStair(px) || underDeck(px, 150)){ px += 300; continue; } fx.mills.push({ x:px, hy:gy - X.wmHub, by:gy, ph:Math.round(rn2()*628)/100 }); px += Math.round(X.wmEvery[0] + rn2()*(X.wmEvery[1] - X.wmEvery[0])); }   // (never with a deck through its hub's height: a blade lying flat along a deck never lets you by)
-  // and mills standing ON the decks there (the high route's blades; the low floor under the deck is sheltered from them)
-  for(const d of decks){ if(!inArea(d.x + d.w/2, 1)) continue; for(let px = d.x + 420; px < d.x + d.w - 320; px += 900){ if(fx.mills.some(m => Math.abs(m.x - px) < 700)) continue; fx.mills.push({ x:px, hy:d.y - X.wmHub, by:d.y, ph:Math.round(rn2()*628)/100, deck:true }); } }
+  // THE AREAS' PIECES (their own seeded dice: the same course every match)
+  const fx = { A:A, zones:zones, mills:[], tubes:[] };
+  // the windmills (scenery, in their own stretch; never with a deck through a hub's height)
+  for(let px = A[1] + 1400; px < A[2] - 800; ){ if(nearPit(px, 400) || nearStair(px) || underDeck(px, 150)){ px += 300; continue; } fx.mills.push({ x:px, hy:gy - X.wmHub, by:gy, ph:Math.round(rn2()*628)/100 }); px += Math.round(X.wmEvery[0] + rn2()*(X.wmEvery[1] - X.wmEvery[0])); }
   // the pneumatic mail tubes (the paper city): a mouth on the floor, an exit on the floor further on
-  { const bad = function(q){ return nearPit(q, 300) || nearStair(q) || nearFw(q, 260) || nearVent(q, 160); };
+  { const bad = function(q){ return nearPit(q, 300) || nearStair(q); };
     for(let px = A[0] + 2600; px < A[1] - 3000; ){
       const L = Math.round(X.tbLen[0] + rn2()*(X.tbLen[1] - X.tbLen[0])), ex = px + L;
       if(bad(px) || bad(ex)){ px += 200; continue; }
       fx.tubes.push({ x0:px, x1:ex, ty:gy - X.tbY }); px = ex + Math.round(2600 + rn2()*1400);
     } }
   const nearTube = function(px, m){ return fx.tubes.some(tb => Math.abs(tb.x0 - px) < m || Math.abs(tb.x1 - px) < m); };
-  // the tornadoes (the storm)
-  for(const u of X.tnAt) fx.torns.push({ x:Math.round(A[2] + (A[3] - A[2])*u), ph:Math.round(rn2()*628)/100 });
-  // kites (the windmills and the bridges), low and high in turn
-  { let hi = false; for(const k of [1, 3]) for(let px = A[k] + 1200; px < Math.min(A[k + 1], xf - 1500) - 600; px += X.kiteEvery){ if(zoneAt(px, px, 200)) continue; const d = decks.find(q => px > q.x + 150 && px < q.x + q.w - 150); const onDeck = hi && !!d; fx.kites.push({ x:px, y:(onDeck ? dy : gy) - 95, got:{} }); hi = !hi; } }
-  // the folding bridges' planks: odd and even ones fold in turn
-  for(const z of zones){ if(z.k !== 'bridge') continue; const n = Math.round(X.brLen/X.plank); for(let i = 0; i < n; i++){ const p = { x:z.x0 + i*X.plank + 3, y:gy, w:X.plank - 6, h:14, solid:false, fdk:'plank', ph:(i % 2 ? 0 : Math.round(X.brCyc/2)) + Math.round(rn2()*24) }; worldPlats.push(p); fx.planks.push(p); } }
-  // the hot-air balloons (a pool: a basket to stand on and a front rail each)
-  for(let i = 0; i < 5; i++){ const p = { x:0, y:X.off, w:X.blW, h:14, solid:false, fdk:'basket' }, rail = { x:0, y:X.off, w:12, h:50, solid:true, fdk:'rail' }; worldPlats.push(p, rail); fx.pool.push({ p:p, rail:rail, st:'idle', t0:0, x:0, y:gy, on:false, rode:{} }); }
-  const nearFeat = function(px){ return nearPit(px, 260) || nearFw(px, 260) || nearVent(px, 160) || nearTube(px, 200) || fx.mills.some(m => Math.abs(m.x - px) < 300); };
+  const nearFeat = function(px){ return nearPit(px, 260) || nearTube(px, 200) || fx.mills.some(m => Math.abs(m.x - px) < 300); };
   let ob = 0;
   const addObs = function(o){ o.id = ob++; obs.push(o); return o; };
   // low lane: a wall, a slider, or (with no deck over it) a falling block, every 700-1000 px
@@ -110908,13 +110571,12 @@ function fdrBuildWorld(){
     else addObs({ k:kind, x:Math.round(px), ly:gy, lane:'low', ph:Math.floor(rnd()*400) });
   }
   // high lane: a swinging block, a slider or a falling block every 550-750 px along each deck
-  for(const d of decks){ for(let px = d.x + 380; px < d.x + d.w - 280; px += Math.round(550 + rnd()*200)){ const r = rnd(); if(fx.mills.some(m => m.deck && Math.abs(m.x - px) < 330)) continue; addObs({ k:r < 0.4 ? 'swing' : (r < 0.7 ? 'slide' : 'fall'), x:Math.round(px), ly:d.y, lane:'high', ph:Math.floor(rnd()*400) }); } }
+  for(const d of decks){ for(let px = d.x + 380; px < d.x + d.w - 280; px += Math.round(550 + rnd()*200)){ const r = rnd(); addObs({ k:r < 0.4 ? 'swing' : (r < 0.7 ? 'slide' : 'fall'), x:Math.round(px), ly:d.y, lane:'high', ph:Math.floor(rnd()*400) }); } }
   obs.sort((a, b) => a.x - b.x);
-  // paper planes: one every FDK.planeEvery px, low and high in turn (a high one only over a deck; none over a chasm)
+  // paper planes: one every FDK.planeEvery px, low and high in turn (a high one only over a deck; none over a bridge)
   { let hi = false; for(let px = 2800; px < xf - 1500; px += K.planeEvery){ if(zoneAt(px, px, 150)) continue; const d = decks.find(q => px > q.x + 150 && px < q.x + q.w - 150); const onDeck = hi && !!d; planes.push({ x:Math.round(px), y:(onDeck ? dy : gy) - 80, got:{} }); hi = !hi; } }
   FDR = { gy:gy, xf:xf, dy:dy, decks:decks, stairs:stairs, walls:walls, obs:obs, planes:planes, pits:pits, falls:0, hits:0, blocks:0, glides:0,
-    fx:fx, flock:null, flockAt:X.crFirst, bolts:[], boltAt:0, blAt:0,
-    use:{ kite:0, crane:0, flocks:0, updraft:0, tube:0, tubeBlock:0, tornado:0, tornFwd:0, tornBack:0, tornBrace:0, balloon:0, kickOff:0, bolt:0, boltHit:0, blade:0, fwallPush:0, fwallWait:0, plankFall:0, gapFall:0 } };
+    fx:fx, use:{ tube:0, tubeBlock:0 } };
 }
 // After a fighter has moved: the walls hold and the top is a ceiling.
 function fdrHold(f){
@@ -110929,8 +110591,7 @@ function fdrFwdSpecial(f){
   return f._fdFwd;
 }
 function fdrFilter(f, inp){
-  if(f._fdTb || f._fdTn || f._fdCr){ f._fdUp = false; return { left:false, right:false, jump:false, attack:false, special:false, smash:false, shield:false }; }   // (carried by a mail tube, a tornado or the cranes: no keys)
-  f._fdUp = !!(inp.up || inp.jump);   // (an updraft lifts you, a kite takes you up)
+  if(f._fdTb) return { left:false, right:false, jump:false, attack:false, special:false, smash:false, shield:false };   // (carried by a mail tube: no keys)
   const raw = !!inp.special, rising = raw && !f._fdSpRaw; f._fdSpRaw = raw; if(!raw) f._fdSpBlk = false;
   if(raw && !f.dead && fdrFwdSpecial(f) && !inp.down && !inp.attack && !inp.fin && !(inp.up && !f.onground)){
     if(rising && !(f.hitstun > 0) && f.spCd <= 0 && !f._sp){ if(hazardT < (f._fdFwdAt || 0)){ f._fdSpBlk = true; if(FDR) FDR.fwdBlk = (FDR.fwdBlk || 0) + 1; } else { f._fdFwdAt = hazardT + FDK.fwdCd; if(FDR) FDR.fwdUse = (FDR.fwdUse || 0) + 1; } }
@@ -110946,7 +110607,7 @@ function fdrShove(f, pct, brace, scale){
   f._fdSh = { left:D, lx:f.x, still:0, D:D };
   f.vx = -Math.min(K.kbMax, D/6); f.vy = Math.min(f.vy, -2.5); f.onground = false;
   f.hitstun = Math.max(f.hitstun || 0, brace ? K.stunBr : (scale && scale < 1 ? 12 : K.stun));   // (a block's stagger stays short)
-  f._fdGl = 0; f._fdKite = 0;   // (a kite is let go)
+  f._fdGl = 0;
 }
 // A block's box now (a fixed course: the clock decides everything). null when it is not there to touch.
 function fdrBox(o, t){
@@ -110969,28 +110630,24 @@ function fdrWind(f){
   let w = K.w0 + (K.w1 - K.w0)*Math.min(1, t/K.wFull);
   w *= (f.y + f.r < S.gy - 120) ? K.laneHigh : K.laneLow;
   if(f.x > K.x0 + K.len*K.finalAt) w *= K.finalK;
-  if(f._fdKite > t) w *= FDX.kiteWind;   // (a kite held: it rides the wind faster)
   let lead = f.x; for(const o of fighters) if(!o.dead && o.x > lead) lead = o.x;
   const gap = lead - f.x; if(gap > K.catchGap) w *= 1 + K.catchK*Math.min(1, (gap - K.catchGap)/K.catchFull);
   return w;
 }
 function fdrWallAhead(f){ for(const w of FDR.walls){ if(w.x > f.x - 6 && w.x - f.x < f.r + 8 && f.y + f.r > w.y + 2 && f.y - f.r < w.y + w.h) return true; } return false; }
-function fdrBack(f){   // a fall: back on the course K.back px behind (never inside a pit or a chasm: on a folding bridge, a plank that stays up a while; at the balloons' gap, its near edge), not hurt
-  const K = FDK, S = FDR, F = S.fx;
+function fdrBack(f){   // a fall: back on the course K.back px behind (never inside a pit), not hurt
+  const K = FDK, S = FDR;
   let x = Math.max(K.x0 - 200, f.x - K.back);
-  const z = F ? F.zones.find(q => x > q.x0 - 60 && x < q.x1 + 60) : null;
-  if(z && z.k === 'bridge'){ let best = null; for(const p of F.planks){ const c = p.x + p.w/2; if(c > z.x0 && c < z.x1 && c <= Math.max(x, z.x0 + 100) + 1 && fdxPlank(p, hazardT) !== 'down' && fdxPlankUpFor(p, hazardT) >= 50 && (best == null || c > best)) best = c; } x = best != null ? best : z.x0 - 80; }
-  else if(z) x = z.x0 - 80;
   for(const p of S.pits){ if(x > p.x0 - 60 && x < p.x1 + 60) x = p.x0 - 80; }
   f.x = Math.round(x); f.y = S.gy - f.r; f.vx = 0; f.vy = 0; f.onground = true; f.hitstun = 0; f._fdSh = null; f._fdGl = 0; f.invuln = Math.max(f.invuln || 0, 45);
-  f._fdTb = null; f._fdTn = null; f._fdCr = null; f._fdKite = 0;
+  f._fdTb = null;
   for(let k = 0; k < 8; k++) puff(f.x, f.y, '#ffffff', 4);
 }
 function fdrFront(){ let b = null; for(const f of fighters) if(!f.dead && (!b || f.x > b.x)) b = f; return b; }
 // The floor (or a ledge) under x at about this height: does it hold a fighter's feet there?
 function fdrSupport(x, feet){
   if(Math.abs(feet - FDR.gy) < 10 && groundAt(x)) return true;
-  for(const p of worldPlats){ if(p.fdk !== 'deck' && p.fdk !== 'stair' && p.fdk !== 'plank' && p.fdk !== 'basket') continue; if(x > p.x - 4 && x < p.x + p.w + 4 && Math.abs(p.y - feet) < 12) return true; }
+  for(const p of worldPlats){ if(p.fdk !== 'deck' && p.fdk !== 'stair') continue; if(x > p.x - 4 && x < p.x + p.w + 4 && Math.abs(p.y - feet) < 12) return true; }
   return false;
 }
 // What a racer presses (the one brain for CPUs and for the scripted person in the checks): { l, j, sh } -- it always runs right, jumps what is in the way, and (the high lane) climbs.
@@ -111016,7 +110673,7 @@ function fdrNav(f, lane){
     }
   }
   // a wall ahead
-  for(const w of S.walls){ if(w.fold) continue; if(w.x > f.x - 10 && w.x - f.x < 135 && feet > w.y + 4 && f.y - f.r < w.y + w.h){ if(f.onground) out.j = true; else if(f.vy > 0 && f.jumps > 0 && feet > w.y - 6 && w.x - f.x < 70) out.j = (hazardT % 4) < 2; break; } }
+  for(const w of S.walls){ if(w.x > f.x - 10 && w.x - f.x < 135 && feet > w.y + 4 && f.y - f.r < w.y + w.h){ if(f.onground) out.j = true; else if(f.vy > 0 && f.jumps > 0 && feet > w.y - 6 && w.x - f.x < 70) out.j = (hazardT % 4) < 2; break; } }
   // a moving block close ahead: hop it; a falling one about to land on the way: brace
   for(const o of S.obs){
     if(o.k === 'wall' || o.x < f.x - 140 || o.x > f.x + 260) continue;
@@ -111037,31 +110694,29 @@ CONTEST_RULES.race = {
     const live = fighters.filter(f => !f.dead);
     live.forEach((f, i) => { f.x = Math.round(K.x0 - 70 - i*46); f.y = S.gy - f.r; f.vx = 0; f.vy = 0; f.onground = true; f.face = 1; });
     for(const f of fighters){ f._fdSh = null; f._fdHitT = -99; f._fdPend = null; f._fdBlk = 0; f._fdBr = -99; f._fdGl = 0; f._fdLane = Math.random() < FDX.highP[brainLevel(f)] ? 'high' : 'low'; f._fdFightT = null; f._fdCool = 0;
-      f._fdTb = null; f._fdTn = null; f._fdCr = null; f._fdKite = 0; f._fdTnCd = 0; f._fdTbCd = 0; f._fdCrCd = 0; f._fdBk = -99; f._fdBkB = null; f._fdKick = -999; f._fdUp = false; f._fdDecM = {}; f._fdTnB = null; f._fdUdT = null; f._fdTnBrT = null; }
+      f._fdTb = null; f._fdTbCd = 0; f._fdDecM = {}; }
   },
   step(){
     const S = FDR, K = FDK, C = CONTEST; if(!S || C.winner != null) return;
     const t = hazardT;
     // SAFETY VALVE: Foldy's Paper Cut Dash at the end walls never ended (the wall holds her where the dash still finds room, so it keeps moving her and the foes on her nose): one that runs well past its lane's frames is ended here, the carried let go
     for(const o of FINX){ if(o.k === 'pcut' && o.ph === 'dash' && o.st != null && t - o.st > Math.ceil(o.len/FOLDY.cut.spd) + 12){ o.c = []; o.ph = 'open'; o.et = t; const ff = fighters[o.o]; if(ff) ff.vx = 0; S.valves = (S.valves || 0) + 1; } }
-    fdxWorld(S, t);   // the upgrade's moving pieces: folding walls, planks, balloons, the crane flock, lightning
     for(const f of fighters){
       if(f.dead) continue;
       if(f.pct > K.pctCap) f.pct = K.pctCap;
-      if(fdxCarried(S, f, t)){ if(f.x >= S.xf){ contestWin(f); return; } continue; }   // (in a mail tube, a tornado or the cranes' hold)
+      if(fdxCarried(S, f, t)){ if(f.x >= S.xf){ contestWin(f); return; } continue; }   // (in a mail tube)
       // a hit just landed: the engine's launch is dropped, and the fighter is carried back against the wind instead
       if(f._fdPend && t > f._fdPend.t){ const pend = f._fdPend; f._fdPend = null; fdrShove(f, pend.pct, pend.brace); }
       const sh = f._fdSh;
       if(sh){
-        const dir = sh.dir || -1, moved = Math.max(0, dir*(f.x - sh.lx)); sh.left -= moved; sh.lx = f.x; sh.still = moved < 0.5 ? sh.still + 1 : 0;   // (dir 1: a tornado's throw forward)
-        if(sh.left <= 2 || sh.still >= 6 || (dir < 0 ? f.x < K.wall + 70 : f.x > WW - K.wall - 70)){ f._fdSh = null; f.vx = dir < 0 ? Math.min(f.vx, 0)*0.3 : Math.max(f.vx, 0)*0.3; }
-        else f.vx = dir*clamp(sh.left/5, K.kbMin, K.kbMax);
+        const moved = Math.max(0, sh.lx - f.x); sh.left -= moved; sh.lx = f.x; sh.still = moved < 0.5 ? sh.still + 1 : 0;
+        if(sh.left <= 2 || sh.still >= 6 || f.x < K.wall + 70){ f._fdSh = null; f.vx = Math.min(f.vx, 0)*0.3; }
+        else f.vx = -clamp(sh.left/5, K.kbMin, K.kbMax);
       }
       // the tailwind (not while braced, shoved, or stunned), and the glide
       const wv = fdrWind(f); f._fdW = wv;
-      const gapAir = !!S.fx && fdxOverGap(f);   // (over the balloons' gap the storm's air falls: no tailwind there but the balloon's own)
-      if(!fdrBraced(f) && !f._fdSh && !(f.hitstun > 0) && f.vx < wv && !gapAir) f.vx += K.acc;
-      if(!fdrBraced(f) && !f._fdSh && !(f.hitstun > 0) && f.vx > -0.5 && f._fdBk !== t && !gapAir && !fdrWallAhead(f)) f.x += K.carry*wv;   // (the wind's own push, over and above how fast you run)
+      if(!fdrBraced(f) && !f._fdSh && !(f.hitstun > 0) && f.vx < wv) f.vx += K.acc;
+      if(!fdrBraced(f) && !f._fdSh && !(f.hitstun > 0) && f.vx > -0.5 && !fdrWallAhead(f)) f.x += K.carry*wv;   // (the wind's own push, over and above how fast you run)
       if(f._fdGl > t && !f._fdSh){ f.vy += (-0.9 - f.vy)*0.2; if(f.vx < K.glideV) f.vx += 0.9; f.onground = false; if(t % 3 === 0) puff(f.x - 14, f.y, '#ffffff', 2); }
       // blocks: a touch of a hot one carries you back, once every FDK.blkCd frames
       if(t >= f._fdBlk && !(f.invuln > 0) && !fdrBraced(f)){   // (a braced fighter is immune to blocks; hits still land at FDK.braceK)
@@ -111084,10 +110739,10 @@ CONTEST_RULES.race = {
         for(let k = 0; k < 6; k++) puff(p.x, p.y, '#ffffff', 3);
         if(f.you) tone(520, 0.12, 'triangle', 0.14, 0, 900);
       }
-      fdxFighter(S, f, t);   // the tornadoes, the mail tubes' mouths, the updrafts, the kites, the windmills' blades
-      if(f._fdTb || f._fdTn) continue;
+      fdxFighter(S, f, t);   // a mail tube's mouth
+      if(f._fdTb) continue;
       // a fall
-      if(f.y > S.gy + K.fall*0.27 || f.y > WH - 40){ S.falls++; const z = S.fx ? fdxZoneAt(f.x) : null; if(z && z.k === 'gap'){ S.use.gapFall++; if(t - (f._fdKick == null ? -999 : f._fdKick) < 150) S.use.kickOff++; } else if(z) S.use.plankFall++; fdrBack(f); }
+      if(f.y > S.gy + K.fall*0.27 || f.y > WH - 40){ S.falls++; fdrBack(f); }
       if(f.x >= S.xf){ contestWin(f); return; }
     }
     if(t >= K.cap){ const b = fdrFront(); if(b) contestWin(b); }
@@ -111097,8 +110752,6 @@ CONTEST_RULES.race = {
     if(hazardT - (t._fdHitT == null ? -99 : t._fdHitT) < FDK.combo) return;   // (one attack is one shove)
     t._fdHitT = hazardT; t._fdPend = { t:hazardT, pct:t.pct - dmg, brace:fdrBraced(t) };
     if(FDR) FDR.hits++;
-    if(t._fdCr){ t._fdCr = null; t._fdCrCd = hazardT + 60; }   // (knocked off the cranes; the shove lets a kite go)
-    if(from && hazardT - (t._fdBk == null ? -99 : t._fdBk) < 3 && hazardT - (from._fdBk == null ? -99 : from._fdBk) < 3) t._fdKick = hazardT;   // (a kick in a balloon's basket: counted if it ends in the gap)
   },
   focus(f, foes){
     let near = null;
@@ -111106,37 +110759,19 @@ CONTEST_RULES.race = {
     if(near && f.aiTarget !== near){ f.aiTarget = near; f.aiTimer = 45; }
   },
   // CPUs race; a rival in reach is fought for a while (its moves' own wind-ups are the tell), then the race goes on for a few seconds (FDX.fightCool: shorter at a higher level).
-  // The upgrade (2026-11-17): they wait braced at the balloons' gap and board, kick a rival out of a basket, jam a mail tube's exit (Hard, Expert), wait out a folding wall
-  // (Expert jumps it when the fold is far off), brace for lightning, a windmill's blade and (the leader, Hard and Expert) a tornado, jump into the crane flock, an updraft
-  // (the high route) and at a kite, and ride a kite up. How often they brace, take the flock and pick the high route goes with the level (FDX.braceP, crane, highP).
+  // They take a mail tube's mouth ahead as often as the level brings (FDX.tubeP), Hard and Expert jam a tube's exit, braced, while a rival rides it (FDX.block),
+  // and they pick the high route by level (FDX.highP).
   want(f, inp, t, dist){
     const S = FDR, K = FDK, X = FDX; if(!S || f.dead || f.hitstun > 0 || f._fdSh) return false;
-    if(f._fdTb || f._fdTn || f._fdCr) return true;   // (carried: nothing to press)
+    if(f._fdTb) return true;   // (in a mail tube: nothing to press)
     const T = hazardT, lv = brainLevel(f), F = S.fx, gy = S.gy, feet = f.y + f.r;
-    // IN A BALLOON'S BASKET: stay in it; a rival in the same basket is kicked out of its open back
-    if(F && T - (f._fdBk == null ? -99 : f._fdBk) < 3){
-      const b = f._fdBkB, mate = fighters.find(o => o !== f && !o.dead && T - (o._fdBk == null ? -99 : o._fdBk) < 3 && o._fdBkB === b);
-      f._fdLt = T;
-      if(mate && lv >= 1 && Math.abs(mate.x - f.x) < 120){ const side = mate.x < f.x ? -1 : 1; if(f.face !== side){ if(side < 0) inp.left = true; else inp.right = true; } else if((T % X.kickEvery[lv]) < 2) inp.attack = true; }
-      else inp.right = true;
-      return true;
-    }
     const foe = f.aiTarget, fr = X.fightR[lv];   // (no fight just off the line: a rival pinned on the start wall stood there for seconds)
-    if(foe && !foe.dead && foe !== f && !foe._fdTb && !foe._fdTn && f.x > K.x0 + X.noFight && foe.x > K.x0 + X.noFight && Math.abs(foe.x - f.x) < fr && Math.abs(foe.y - f.y) < 100 && T >= (f._fdCool || 0)){
+    if(foe && !foe.dead && foe !== f && !foe._fdTb && f.x > K.x0 + X.noFight && foe.x > K.x0 + X.noFight && Math.abs(foe.x - f.x) < fr && Math.abs(foe.y - f.y) < 100 && T >= (f._fdCool || 0)){
       if(f._fdFightT == null) f._fdFightT = T;
       if(T - f._fdFightT < K.fightFor) return false;
       f._fdCool = T + X.fightCool[lv]; f._fdFightT = null;
     } else if(!(foe && !foe.dead && Math.abs(foe.x - f.x) < fr)) f._fdFightT = null;
     if(F){
-      // THE BALLOONS' GAP: wait braced at its edge (the wind would carry you in) until a basket is there, then step in
-      const z = F.zones[0];
-      if(z && f.x > z.x0 - 260 && f.x < z.x0 + 4 && feet > gy - 30){
-        const b = F.pool.find(q => (q.st === 'dock' && T - q.t0 < X.blDock - 12) || (q.st === 'desc' && T - q.t0 > X.blDesc - 8));
-        f._fdLt = T;
-        if(b){ inp.right = true; return true; }
-        if(f.x > z.x0 - 90){ inp.shield = true; return true; }
-        inp.right = true; return true;
-      }
       // A RIVAL IN A MAIL TUBE whose exit is near: Hard and Expert stand on the exit, braced, to jam it
       if(X.block[lv] > 0 && feet > gy - 10){
         for(const tb of F.tubes){
@@ -111150,20 +110785,6 @@ CONTEST_RULES.race = {
       }
       // A MAIL TUBE'S MOUTH ahead on the floor: take it (as often as the level brings): run straight in, no hop
       for(const tb of F.tubes){ const d = tb.x0 - f.x; if(d > 0 && d < 2500 && fdxDecide(f, 'tm' + tb.x0, X.tubeP[lv])){ f._fdLane = 'low'; if(d < 160 && feet > gy - 10){ inp.right = true; f._fdLt = T; return true; } break; } }   // (chosen well before: the low lane leads to the mouth)
-      // A FOLDING WALL standing ahead: wait at it for the fold (Expert jumps it when the fold is far off)
-      const foldIn = (X.fwCyc - T % X.fwCyc) % X.fwCyc;
-      for(const p of F.fwalls){
-        if(p.x - f.x <= 0 || p.x - f.x > 200 || (p._h || 0) < 6 || feet < gy - 40) continue;
-        if(lv >= 3 && foldIn > 70){ inp.right = true; if(f.onground && p.x - f.x < 110) inp.jump = true; else if(!f.onground && f.vy > 0 && f.jumps > 0 && feet > p.y - 6) inp.jump = (T % 4) < 2; return true; }
-        inp.right = true; f._fdLt = T; S.use.fwallWait++; return true;
-      }
-      // LIGHTNING about to strike here: brace
-      for(const b of S.bolts){ const age = T - b.t0; if(age > X.ltWarn - 22 && age < X.ltWarn + X.ltLive && Math.abs(b.x - f.x) < X.ltW/2 + 30 && fdxDecide(f, 'lt' + b.t0 + ':' + b.x, X.braceP[lv])){ inp.shield = true; f._fdLt = T; return true; } }
-      // A TORNADO close: the leader (Hard and Expert) braces to keep the lead, never for long; the others take their chance
-      if(lv >= 2 && fdrFront() === f){ for(const o of F.torns){ const d = fdxTornX(o, T) - f.x; if(d > -X.tnW/2 - 40 && d < 140){ if(f._fdTnB == null) f._fdTnB = T; if(T - f._fdTnB < X.tnBrMax){ inp.shield = true; f._fdLt = T; return true; } } } }
-      if(!F.torns.some(o => Math.abs(fdxTornX(o, T) - f.x) < 300)) f._fdTnB = null;
-      // A WINDMILL'S BLADE about to sweep through you: brace
-      for(const mm of F.mills){ if(Math.abs(mm.x - f.x) < X.wmArm + 30 && fdxBladeSoon(mm, T, f) && fdxDecide(f, 'wm' + mm.x + ':' + Math.floor(T/50), X.braceP[lv])){ inp.shield = true; f._fdLt = T; return true; } }
     }
     const n = fdrNav(f, f._fdLane);
     if(n.sh){ f._fdLt = T; inp.shield = true; return true; }
@@ -111171,14 +110792,6 @@ CONTEST_RULES.race = {
     const still = T - f._fdLt;   // not moving while racing (stacked on a wall or on each other): hop, and later step back, until free
     if(n.l) inp.left = true; else inp.right = true;
     if(n.j) inp.jump = true;
-    if(F){
-      // grabs: a kite just ahead and above; the crane flock passing (as often as the level brings); an updraft on the high route; a kite held: ride it up
-      for(const k of F.kites){ if(!k.got[f.idx] && k.x - f.x > -20 && k.x - f.x < 80 && k.y < feet - 40 && k.y > feet - 200 && f.onground){ inp.jump = true; break; } }
-      const Fl = S.flock;
-      if(Fl && !Fl.out && Math.abs(Fl.x - f.x) < 120 && Fl.y < f.y - 30 && Fl.y > f.y - 340 && fdxDecide(f, 'cr' + Fl.t0, X.crane[lv])){ if(f.onground) inp.jump = true; else if(f.vy > -1 && f.jumps > 0) inp.jump = (T % 4) < 2; }
-      if(f._fdLane === 'high') for(const v of F.vents){ const d = v.x - f.x; if(d > -X.udW/2 && d < 70 && feet > gy - 40){ if(f.onground && d < 36) inp.jump = true; inp.up = true; break; } if(Math.abs(d) < X.udW/2 && !f.onground){ inp.up = true; break; } }
-      if(f._fdKite > T && !f.onground) inp.up = (T % 150) < 100;
-    }
     if(still > 45){ inp.jump = (T % 6) < 3; if(still > 150 && (T % 90) < 25){ inp.right = false; inp.left = true; } }
     if((f.onground && f.vx > -0.1 && Math.abs(f.vx) < 0.3 && T % 90 === 0) || T % 1200 === (f.idx*311) % 1200) f._fdLane = Math.random() < X.highP[lv] ? 'high' : 'low';
     return true;
@@ -111202,7 +110815,7 @@ CONTEST_RULES.race = {
     const z = viewZoom(), cxm = camX + W/2, xa = cxm - W/(2*z) - 160, xb = cxm + W/(2*z) + 160, ya = camY + H/2 - H/(2*z) - 100, yb = camY + H/2 + H/(2*z) + 100, t = hazardT, gy = S.gy;
     const ink = '#1c1c1c';
     if(layer === 'under'){
-      if(S.fx) fdxDrawBack(c, S, xa, xb, ya, yb, t);   // the city, the windmills' towers, the storm's sky
+      if(S.fx) fdxDrawBack(c, S, xa, xb, ya, yb, t);   // the city, the windmills, the storm's sky
       // the wind: streaks racing along, more and longer as the tailwind grows
       const wk = clamp((K.w0 + (K.w1 - K.w0)*Math.min(1, t/K.wFull))/K.w1, 0.2, 1);
       c.save(); c.lineCap = 'round';
@@ -111229,10 +110842,10 @@ CONTEST_RULES.race = {
       }
       // the pits' rims
       for(const p of S.pits){ if(p.x1 < xa || p.x0 > xb) continue; c.fillStyle = 'rgba(20,24,36,0.55)'; c.fillRect(p.x0, gy, p.x1 - p.x0, WH - gy + 200); }
-      if(S.fx) fdxDrawUnder(c, S, xa, xb, ya, yb, t);   // the chasms, bridges, balloons, tubes, vents, folding walls, kites, lightning's rings
+      if(S.fx) fdxDrawUnder(c, S, xa, xb, ya, yb, t);   // the bridges and the mail tubes
       // the walls (stacked paper)
       for(const p of S.walls){
-        if(p.x > xb || p.x + p.w < xa || p.fold) continue;   // (a folding wall: fdxDrawUnder)
+        if(p.x > xb || p.x + p.w < xa) continue;
         c.fillStyle = '#efe6cf'; c.fillRect(p.x, p.y, p.w, p.h); c.strokeStyle = ink; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, p.h);
         c.strokeStyle = '#b9ac8a'; c.lineWidth = 2; for(let y = p.y + 22; y < p.y + p.h - 4; y += 22){ c.beginPath(); c.moveTo(p.x + 4, y); c.lineTo(p.x + p.w - 4, y); c.stroke(); }
       }
@@ -111276,157 +110889,20 @@ CONTEST_RULES.race = {
       if(fdrBraced(f)){ c.save(); c.strokeStyle = 'rgba(255,255,255,0.85)'; c.lineWidth = 4; c.beginPath(); c.arc(f.x, f.y, f.r + 10 + Math.sin(t*0.3)*2, Math.PI*0.6, Math.PI*1.4); c.stroke(); c.restore(); }
       if(f._fdGl > t){ c.save(); c.fillStyle = 'rgba(255,255,255,0.8)'; c.strokeStyle = ink; c.lineWidth = 2; c.translate(f.x - f.r - 6, f.y - f.r*0.3); c.beginPath(); c.moveTo(-18, 6); c.lineTo(10, 0); c.lineTo(-18, -10); c.closePath(); c.fill(); c.stroke(); c.restore(); }
     }
-    if(S.fx) fdxDrawOver(c, S, xa, xb, ya, yb, t);   // blades, tornadoes, bolts, the flock, kites held, the tube's glass
+    if(S.fx) fdxDrawOver(c, S, xa, xb, ya, yb, t);   // the glass round a mail tube's rider
   },
 };
 function you0Got(p){ const y = fighters.find(f => f.you); return !!(y && p.got[y.idx]); }
-// ---- THE WIND RACE UPGRADE: the moving pieces (FDX; built by fdrBuildWorld into FDR.fx) ----
+// ---- THE WIND RACE'S AREAS: the mail tubes (FDX; built by fdrBuildWorld into FDR.fx) ----
 function fdxSeen(x){ const z = viewZoom(), c = camX + W/2; return Math.abs(x - c) < W/(2*z) + 160; }
-function fdxZoneAt(x){ const F = FDR && FDR.fx; if(!F) return null; return F.zones.find(z => x > z.x0 - 60 && x < z.x1 + 60) || null; }
-function fdxOverGap(f){ const z = FDR.fx.zones[0]; return !!z && f.x > z.x0 && f.x < z.x1; }
-function fdxPlank(p, t){ const X = FDX, m = (t + p.ph) % X.brCyc; return m < X.brWarn ? 'warn' : (m < X.brWarn + X.brFold ? 'down' : 'up'); }
-function fdxPlankUpFor(p, t){ const X = FDX, m = (t + p.ph) % X.brCyc; if(m < X.brWarn) return X.brWarn - m; if(m < X.brWarn + X.brFold) return 0; return X.brCyc - m + X.brWarn; }
-function fdxTornX(o, t){ return o.x + FDX.tnAmp*Math.sin(6.2832*t/FDX.tnCyc + o.ph); }
 function fdxBladeAng(m, t, k){ return m.ph + t*FDX.wmSpd + k*Math.PI/2; }
-function fdxBladeHitAt(m, t, x, y, r){
-  const X = FDX;
-  for(let k = 0; k < 4; k++){
-    const a = fdxBladeAng(m, t, k), cx = Math.cos(a), cy = Math.sin(a);
-    const ax = m.x + cx*X.wmHot, ay = m.hy + cy*X.wmHot, bx = m.x + cx*X.wmArm, by = m.hy + cy*X.wmArm;
-    const vx = bx - ax, vy = by - ay, u = clamp(((x - ax)*vx + (y - ay)*vy)/(vx*vx + vy*vy), 0, 1), px = ax + vx*u, py = ay + vy*u;
-    if(Math.hypot(x - px, y - py) < X.wmBlade + r*0.8) return true;
-  }
-  return false;
-}
-function fdxBladeSoon(m, t, f){ for(const k of [2, 7, 12]) if(fdxBladeHitAt(m, t + k, f.x, f.y, f.r)) return true; return false; }
-function fdxDecide(f, key, p){   // a CPU's choice about one thing (one bolt, one flock, one blade's pass), made once at its level's odds and kept
+function fdxDecide(f, key, p){   // a CPU's choice about one thing (one tube, one rider), made once at its level's odds and kept
   let D = f._fdDecM; if(!D) D = f._fdDecM = {};
   if(key in D) return D[key];
   if(Object.keys(D).length > 40){ D = f._fdDecM = {}; }
   return (D[key] = Math.random() < p);
 }
-// A fling FORWARD (a tornado's throw) or back: the shove's own carrier, either way (dir 1 or -1)
-function fdxFling(f, D, dir){
-  const K = FDK;
-  f._fdSh = { left:D, lx:f.x, still:0, D:D, dir:dir };
-  f.vx = dir*Math.min(K.kbMax, D/6); f.vy = Math.min(f.vy, -4); f.onground = false;
-  f.hitstun = Math.max(f.hitstun || 0, 14); f._fdGl = 0;
-}
-// The world's moving pieces, once a frame before the fighters (so a basket's riders and the flock's are moved with it).
-function fdxWorld(S, t){
-  const X = FDX, F = S.fx, gy = S.gy; if(!F) return;
-  // FOLDING WALLS: one beat for all: fold flat, lie flat (the lamp flashes before it rises), rise, stand
-  const m = t % X.fwCyc, riseAt = X.fwFold + X.fwFlat;
-  for(const p of F.fwalls){
-    let h;
-    if(m < X.fwFold) h = X.fwH*(1 - m/X.fwFold);
-    else if(m < riseAt) h = 0;
-    else if(m < riseAt + X.fwRise) h = X.fwH*(m - riseAt + 1)/X.fwRise;
-    else h = X.fwH;
-    const was = p._h || 0; p._h = h;
-    if(h < 6){ p.y = X.off; p.h = 1; continue; }
-    p.y = gy - h; p.h = h;
-    if(h > was){   // rising: anyone it comes up under is put back behind it, and (not braced) knocked back
-      for(const f of fighters){
-        if(f.dead || f._fdTb || f._fdTn || f._fdCr) continue;
-        if(f.x + f.r > p.x && f.x - f.r < p.x + p.w && f.y + f.r > p.y){ f.x = p.x - f.r - 1; if(!fdrBraced(f)){ fdrShove(f, f.pct, false, FDK.blkK); S.use.fwallPush++; } }
-      }
-    }
-  }
-  if(F.fwalls.length && (m === 0 || m === riseAt - X.fwWarn)){ let seen = false; for(const p of F.fwalls) if(fdxSeen(p.x)){ seen = true; break; } if(seen){ if(m === 0) tone(520, 0.06, 'square', 0.07); else tone(330, 0.14, 'triangle', 0.09, 0, 620); } }
-  // THE FOLDING BRIDGES: a folded plank is not there to stand on
-  for(const p of F.planks){ const s = fdxPlank(p, t); p.y = s === 'down' ? X.off : gy; if(s === 'warn' && (t + p.ph) % X.brCyc === 0 && fdxSeen(p.x)) tone(240, 0.1, 'sawtooth', 0.05, 0, 160); }
-  fdxBalloons(S, t);
-  fdxFlock(S, t);
-  fdxBolts(S, t);
-  // the tornadoes' roar, near the camera
-  if(t % 45 === 0) for(const o of F.torns){ if(fdxSeen(fdxTornX(o, t))){ noise(0.7, 0.05, 320, 0, 160); break; } }
-}
-// THE HOT-AIR BALLOONS over the storm's gap: one comes down to the near edge every FDX.blEvery frames, waits, floats across (an arc), sets down on the far side and rises away.
-// Who stands in its basket goes with it; the front rail holds them in; the back is open (a hit knocks you out of it, into the gap).
-function fdxBalloons(S, t){
-  const X = FDX, F = S.fx, gy = S.gy, z = F.zones[0]; if(!z) return;
-  const flyT = Math.round((z.x1 - z.x0)/X.blSpd);
-  if(t >= S.blAt){ const b = F.pool.find(q => q.st === 'idle'); if(b){ b.st = 'desc'; b.t0 = t; b.rode = {}; b.x = z.x0; b.y = gy - X.blDrop; b.on = false; S.blAt = t + X.blEvery; } else S.blAt = t + 10; }
-  for(const b of F.pool){
-    if(b.st === 'idle') continue;
-    const age = t - b.t0;
-    let nx = z.x0, ny = gy, rail = true, stand = true;
-    if(b.st === 'desc'){ const u = Math.min(1, age/X.blDesc); ny = gy - X.blDrop*(1 - u)*(1 - u); if(age >= X.blDesc){ b.st = 'dock'; b.t0 = t; } }
-    else if(b.st === 'dock'){ if(age >= X.blDock){ b.st = 'fly'; b.t0 = t; } }
-    else if(b.st === 'fly'){ const u = Math.min(1, age/flyT); nx = z.x0 + (z.x1 - z.x0)*u; ny = gy - X.blArc*Math.sin(Math.PI*u); if(u >= 1){ b.st = 'land'; b.t0 = t; } }
-    else if(b.st === 'land'){ nx = z.x1; rail = false; if(age >= X.blRest){ b.st = 'rise'; b.t0 = t; } }
-    else { nx = z.x1 + age*2; ny = gy - age*4; rail = false; stand = false; if(age >= X.blRise) b.st = 'idle'; }
-    if(b.on){
-      const dx = nx - b.x, dyy = ny - b.y;
-      for(const f of fighters){
-        if(f.dead || f._fdSh || f._fdTb || f._fdTn || f._fdCr) continue;
-        if(f.x > b.p.x - 4 && f.x < b.p.x + b.p.w + 4 && Math.abs(f.y + f.r - b.p.y) < 4 && f.vy >= -0.5){
-          f.x += dx; f.y += dyy; f._fdBk = t; f._fdBkB = b;
-          if(b.st === 'fly' && !b.rode[f.idx]){ b.rode[f.idx] = 1; S.use.balloon++; }
-        }
-      }
-    }
-    b.x = nx; b.y = ny; b.on = stand && b.st !== 'idle';
-    b.p.x = nx; b.p.y = b.on ? ny : X.off; b.rail.x = nx + X.blW - 12; b.rail.y = (b.on && rail) ? ny - 50 : X.off;
-  }
-}
-// THE CRANE FLOCK: it starts behind the last racer and flies up the course faster than anyone runs, rising and dipping; touch it and it carries you (FDX.crCarry frames).
-function fdxFlock(S, t){
-  const X = FDX, K = FDK;
-  let Fl = S.flock;
-  if(!Fl){
-    if(t < S.flockAt) return;
-    let rear = null; for(const f of fighters) if(!f.dead && (!rear || f.x < rear.x)) rear = f;
-    if(!rear) return;
-    S.flock = Fl = { x:Math.max(K.x0 - 300, rear.x - X.crBehind), y:S.gy - X.crLo, t0:t, riders:[], ph:Math.random()*6.283, out:false };
-    S.use.flocks++;
-  }
-  const v = (K.vRun + K.carry*(K.w0 + (K.w1 - K.w0)*Math.min(1, t/K.wFull)))*X.crSpd;
-  Fl.x += v;
-  const hold = Fl.riders.length > 0, want = hold ? S.gy - X.crHi : S.gy - (X.crLo + (X.crHi - X.crLo)*(0.5 + 0.5*Math.sin((t - Fl.t0)*X.crWave + Fl.ph)));
-  if(Fl.out) Fl.y -= 6; else Fl.y += (want - Fl.y)*(hold ? 0.12 : 0.25);
-  if(!Fl.out) for(const f of fighters){
-    if(f.dead || f._fdCr || f._fdSh || f._fdTb || f._fdTn || fdrBraced(f) || t < (f._fdCrCd || 0) || f.x > S.xf - 900) continue;
-    if(Math.hypot(f.x - Fl.x, f.y - Fl.y) < X.crR + f.r){ f._fdCr = { t0:t, fl:Fl }; Fl.riders.push(f); S.use.crane++; f._fdKite = 0; if(f.you) tone(700, 0.15, 'triangle', 0.12, 0, 1100); }
-  }
-  Fl.riders = Fl.riders.filter(f => f._fdCr && f._fdCr.fl === Fl && !f.dead);
-  Fl.riders.forEach((f, i) => {
-    if(t - f._fdCr.t0 >= X.crCarry || f.x > S.xf - 600){ f._fdCr = null; f._fdCrCd = t + 120; f.vx = 9; f.vy = -2; return; }
-    f.x = Fl.x - i*26; f.y = Fl.y + 44; f.vx = 0; f.vy = 0; f.onground = false; f.hitstun = 0;
-  });
-  Fl.riders = Fl.riders.filter(f => !!f._fdCr);
-  const lead = fdrFront();
-  if(!Fl.out && !Fl.riders.length && ((lead && Fl.x > lead.x + X.crAhead) || Fl.x > S.xf)) Fl.out = true;
-  if(Fl.out && Fl.y < -300){ S.flock = null; S.flockAt = t + X.crEvery; }
-}
-// LIGHTNING over the storm: a cloud gathers and a ring flickers on the ground (FDX.ltWarn frames) where it will strike, just ahead of someone in the storm.
-function fdxBolts(S, t){
-  const X = FDX, A = S.fx.A;
-  if(t >= S.boltAt){
-    S.boltAt = t + X.ltEvery;
-    const inS = fighters.filter(f => !f.dead && f.x > A[2] && f.x < A[3]);
-    if(inS.length){
-      const f = inS[Math.floor(Math.random()*inS.length)], x = Math.round(f.x + X.ltAhead[0] + Math.random()*(X.ltAhead[1] - X.ltAhead[0]));
-      if(x < A[3] && !S.fx.zones.some(z => x > z.x0 - 60 && x < z.x1 + 60)){ S.bolts.push({ x:x, t0:t, hit:{} }); if(fdxSeen(x)) noise(0.3, 0.05, 2500, 0, 4000); }
-    }
-  }
-  for(const b of S.bolts){
-    const age = t - b.t0;
-    if(age === X.ltWarn){ S.use.bolt++; if(fdxSeen(b.x)){ noise(0.6, 0.22, 1400, 0, 180); shake(5); } }
-    if(age < X.ltWarn || age >= X.ltWarn + X.ltLive) continue;
-    for(const f of fighters){
-      if(f.dead || b.hit[f.idx] || f._fdTb || f._fdTn || f.invuln > 0) continue;
-      if(Math.abs(f.x - b.x) < X.ltW/2 + f.r*0.6){
-        b.hit[f.idx] = 1; const br = fdrBraced(f);
-        f.pct = Math.min(FDK.pctCap, f.pct + X.ltDmg*(br ? 0.5 : 1)); fdrShove(f, f.pct, br, X.ltK); S.use.boltHit++;
-        for(let k = 0; k < 8; k++) puff(f.x, f.y, k % 2 ? '#fff27a' : '#ffffff', 4);
-      }
-    }
-  }
-  S.bolts = S.bolts.filter(b => t - b.t0 < X.ltWarn + X.ltLive + 20);
-}
-// A fighter being carried (in a mail tube, held by a tornado, or by the cranes): moved here, and nothing else of the race touches it this frame.
+// A fighter in a mail tube: moved here, and nothing else of the race touches it this frame.
 function fdxCarried(S, f, t){
   const X = FDX, gy = S.gy;
   const T = f._fdTb;
@@ -111448,60 +110924,22 @@ function fdxCarried(S, f, t){
     }
     return true;
   }
-  const N = f._fdTn;
-  if(N){
-    const age = t - N.t0, tx = fdxTornX(N.o, t);
-    f.invuln = Math.max(f.invuln || 0, 2); f.vx = 0; f.vy = 0; f.onground = false; f.hitstun = 0; f._fdSh = null; f._fdPend = null;
-    f.x = tx + Math.sin(age*0.45)*36; f.y = gy - f.r - 30 - age*4;
-    if(age >= FDX.tnHold){ f._fdTn = null; f._fdTnCd = t + FDX.tnCd; fdxFling(f, N.dir > 0 ? FDX.tnFwd : FDX.tnBack, N.dir); if(N.dir > 0) S.use.tornFwd++; else S.use.tornBack++; if(f.you) tone(N.dir > 0 ? 760 : 260, 0.2, 'triangle', 0.13, 0, N.dir > 0 ? 1200 : 140); }
-    return true;
-  }
-  return !!f._fdCr;   // (fdxFlock holds the cranes' riders)
+  return false;
 }
-// What else the course does to a fighter this frame: the tornado's grab, a tube's mouth, an updraft, a kite, the windmills' blades.
+// A mail tube's mouth takes a fighter in (on its feet at the mouth, not shoved or stunned).
 function fdxFighter(S, f, t){
   const X = FDX, F = S.fx, gy = S.gy; if(!F) return;
-  for(const o of F.torns){
-    const tx = fdxTornX(o, t);
-    if(Math.abs(f.x - tx) < X.tnW/2 && f.y > gy - 640 && t >= (f._fdTnCd || 0) && !(f.invuln > 0)){
-      if(fdrBraced(f)){ if(t - (f._fdTnBrT || -99) > 60) S.use.tornBrace++; f._fdTnBrT = t; continue; }   // braced: it cannot lift you
-      f._fdTn = { t0:t, o:o, dir:Math.random() < 0.5 ? 1 : -1 }; f._fdSh = null; f._fdKite = 0; S.use.tornado++;
-      if(fdxSeen(tx)) noise(0.4, 0.12, 500, 0, 1500);
-      return;
-    }
-  }
   for(const tb of F.tubes){
     if(Math.abs(f.x - tb.x0) < X.tbMouth && f.y + f.r > gy - 30 && f.y + f.r < gy + 6 && !f._fdSh && !(f.hitstun > 0) && t >= (f._fdTbCd || 0)){
-      f._fdTb = { tb:tb, ph:'up', t0:t, e:t, blocked:false }; f._fdKite = 0; S.use.tube++;
+      f._fdTb = { tb:tb, ph:'up', t0:t, e:t, blocked:false }; S.use.tube++;
       if(fdxSeen(tb.x0)) noise(0.3, 0.1, 1800, 0, 600);
       return;
     }
   }
-  if(fdxOverGap(f) && !f.onground && hazardT - (f._fdBk == null ? -99 : f._fdBk) > 2) f.vy += X.gapSink;   // the falling air over the gap (its streaks show it)
-  for(const v of F.vents){
-    if(Math.abs(f.x - v.x) < X.udW/2 && f.y + f.r > S.dy - X.udTop && f.y + f.r < gy + 4 && (!f.onground || f._fdUp) && !f._fdSh){
-      f.vy = Math.max(X.udVmax, f.vy - X.udLift); f.onground = false;
-      if(t - (f._fdUdT == null ? -99 : f._fdUdT) > 60) S.use.updraft++;
-      f._fdUdT = t; if(t % 3 === 0) puff(f.x, f.y + f.r, '#dff4ff', 2);
-    }
-  }
-  if(f._fdKite > t && !f.onground && !(f.hitstun > 0)){ const tg = f._fdUp ? X.kiteUp : X.kiteSink; if(f.vy > tg) f.vy += (tg - f.vy)*0.15; if(f.y < gy - X.kiteRide && f.vy < 0.5) f.vy = 0.5; }   // (a kite lifts you and slows a fall; it never cuts a jump short)
-  for(const k of F.kites){
-    if(k.got[f.idx] || Math.abs(k.x - f.x) > X.kiteR + f.r || Math.abs(k.y - f.y) > X.kiteR + f.r) continue;
-    k.got[f.idx] = 1; f._fdKite = t + X.kiteT; S.use.kite++;
-    for(let q = 0; q < 6; q++) puff(k.x, k.y, '#ff8ab0', 3);
-    if(f.you) tone(600, 0.14, 'triangle', 0.13, 0, 1000);
-  }
-  if(t >= (f._fdBlk || 0) && !(f.invuln > 0) && !fdrBraced(f)){
-    for(const m of F.mills){
-      if(Math.abs(m.x - f.x) > X.wmArm + 40) continue;
-      if(fdxBladeHitAt(m, t, f.x, f.y, f.r)){ f._fdBlk = t + X.wmCd; S.use.blade++; S.blocks++; fdrShove(f, f.pct, false, FDK.blkK); for(let k = 0; k < 6; k++) puff(f.x, f.y, '#ffd23f', 4); shake(3); if(f.you) tone(180, 0.1, 'square', 0.12, 0, 90); break; }
-    }
-  }
 }
-// ---- THE WIND RACE UPGRADE: the pictures (no words) ----
+// ---- THE WIND RACE'S AREAS: the pictures (no words) ----
 function fdxHash(i){ return (Math.imul(i | 0, 2654435761) >>> 0) % 1000; }
-// Behind everything: the paper city's buildings, the windmills' towers, the storm's dark sky.
+// Behind everything: the paper city's buildings, the windmills (scenery), the storm's dark sky.
 function fdxDrawBack(c, S, xa, xb, ya, yb, t){
   const X = FDX, F = S.fx, A = F.A, gy = S.gy, ink = '#1c1c1c';
   // the paper city: folded paper buildings
@@ -111516,7 +110954,7 @@ function fdxDrawBack(c, S, xa, xb, ya, yb, t){
     }
     c.restore();
   }
-  // the windmills' towers (their blades are drawn over the fighters)
+  // the windmills, their blades turning (scenery: they touch nobody)
   for(const m of F.mills){
     if(m.x < xa - 300 || m.x > xb + 300) continue;
     c.save(); c.fillStyle = '#e9dcc0'; c.strokeStyle = ink; c.lineWidth = 3;
@@ -111524,7 +110962,14 @@ function fdxDrawBack(c, S, xa, xb, ya, yb, t){
     c.beginPath(); c.moveTo(m.x - 60, by); c.lineTo(m.x - 26, m.hy + 10); c.lineTo(m.x + 26, m.hy + 10); c.lineTo(m.x + 60, by); c.closePath(); c.fill(); c.stroke();
     c.fillStyle = '#c9573f'; c.beginPath(); c.moveTo(m.x - 34, m.hy + 12); c.lineTo(m.x, m.hy - 30); c.lineTo(m.x + 34, m.hy + 12); c.closePath(); c.fill(); c.stroke();
     c.fillStyle = '#8a6a48'; c.fillRect(m.x - 12, by - 50, 24, 50);
-    c.setLineDash([10, 12]); c.strokeStyle = 'rgba(255,255,255,0.35)'; c.lineWidth = 2; c.beginPath(); c.arc(m.x, m.hy, X.wmArm, 0, 6.2832); c.stroke(); c.setLineDash([]);   // where the blades sweep
+    for(let k = 0; k < 4; k++){
+      c.save(); c.translate(m.x, m.hy); c.rotate(fdxBladeAng(m, t, k));
+      c.fillStyle = '#f7f1df'; c.strokeStyle = ink; c.lineWidth = 3; c.fillRect(X.wmHot - 20, -X.wmBlade, X.wmArm - X.wmHot + 20, 2*X.wmBlade); c.strokeRect(X.wmHot - 20, -X.wmBlade, X.wmArm - X.wmHot + 20, 2*X.wmBlade);
+      c.strokeStyle = '#b9ac8a'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(X.wmHot, 0); c.lineTo(X.wmArm - 6, 0); c.stroke();
+      c.fillStyle = '#8a6a48'; c.fillRect(0, -4, X.wmHot, 8);
+      c.restore();
+    }
+    c.fillStyle = '#8a6a48'; c.strokeStyle = ink; c.lineWidth = 3; c.beginPath(); c.arc(m.x, m.hy, 16, 0, 6.2832); c.fill(); c.stroke();
     c.restore();
   }
   // the storm: a dark sky over its stretch, fading in and out at its ends
@@ -111539,39 +110984,21 @@ function fdxDrawBack(c, S, xa, xb, ya, yb, t){
     c.restore();
   }
 }
-// On the course, under the fighters: the chasms, the bridges, the balloons, the tubes, the vents, the folding walls, the kites, lightning's warnings.
+// On the course, under the fighters: the bridges (scenery: a chasm drawn under planks that are the floor itself) and the mail tubes.
 function fdxDrawUnder(c, S, xa, xb, ya, yb, t){
   const X = FDX, F = S.fx, gy = S.gy, ink = '#1c1c1c';
   for(const z of F.zones){
     if(z.x1 < xa || z.x0 > xb) continue;
     c.fillStyle = 'rgba(16,18,30,0.7)'; c.fillRect(z.x0, gy, z.x1 - z.x0, WH - gy + 200);
     c.fillStyle = '#8a6a48'; c.fillRect(z.x0 - 10, gy - 80, 10, 80); c.fillRect(z.x1, gy - 80, 10, 80);
-    if(z.k === 'gap'){ c.save(); c.strokeStyle = 'rgba(200,205,235,0.4)'; c.lineWidth = 2; c.lineCap = 'round'; for(let i = 0; i < 14; i++){ const lx = z.x0 + 60 + i*((z.x1 - z.x0 - 120)/13), h = (t*6 + i*137) % 700; c.beginPath(); c.moveTo(lx, gy - 700 + h); c.lineTo(lx, gy - 650 + h); c.stroke(); } c.restore(); }   // the falling air
-    if(z.k === 'bridge'){ c.strokeStyle = '#8a6a48'; c.lineWidth = 3; c.beginPath(); c.moveTo(z.x0, gy - 74); c.quadraticCurveTo((z.x0 + z.x1)/2, gy - 30, z.x1, gy - 74); c.stroke(); }
-  }
-  // the planks: a folded one stands up on its hinge; one about to fold shakes, its edge red
-  for(const p of F.planks){
-    if(p.x > xb || p.x + p.w < xa) continue;
-    const s = fdxPlank(p, t);
-    if(s === 'down'){ c.fillStyle = '#f7f1df'; c.strokeStyle = ink; c.lineWidth = 2; c.fillRect(p.x, gy - 64, 12, 64); c.strokeRect(p.x, gy - 64, 12, 64); continue; }
-    const sh = s === 'warn' ? Math.sin(t*1.3)*2.5 : 0;
-    c.fillStyle = '#f7f1df'; c.fillRect(p.x, gy + sh, p.w, 14); c.fillStyle = '#d7cdb2'; c.fillRect(p.x + 3, gy + 14 + sh, p.w - 6, 6);
-    c.strokeStyle = (s === 'warn' && (t % 8) < 4) ? '#ff5a3c' : ink; c.lineWidth = 3; c.strokeRect(p.x, gy + sh, p.w, 14);
-    c.strokeStyle = '#b9ac8a'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(p.x + p.w/2, gy + sh + 2); c.lineTo(p.x + p.w/2, gy + sh + 12); c.stroke();
-  }
-  // the balloons
-  for(const b of F.pool){
-    if(b.st === 'idle' || b.x > xb + 200 || b.x + X.blW < xa - 200) continue;
-    c.save(); if(b.st === 'rise') c.globalAlpha = Math.max(0, 1 - (t - b.t0)/X.blRise);
-    const cx = b.x + X.blW/2, ey = b.y - 170;
-    c.strokeStyle = '#6b5a44'; c.lineWidth = 2; c.beginPath(); c.moveTo(b.x + 8, b.y); c.lineTo(cx - 52, ey + 40); c.moveTo(b.x + X.blW - 8, b.y); c.lineTo(cx + 52, ey + 40); c.stroke();
-    const cols = ['#e8322c', '#ffd23f', '#6fb7ff', '#7ae582'];
-    for(let i = 0; i < 4; i++){ c.fillStyle = cols[i]; c.beginPath(); c.ellipse(cx, ey, 78 - i*19, 86, 0, 0, 6.2832); c.fill(); }
-    c.strokeStyle = ink; c.lineWidth = 3; c.beginPath(); c.ellipse(cx, ey, 78, 86, 0, 0, 6.2832); c.stroke();
-    c.fillStyle = '#b07a44'; c.fillRect(b.x, b.y, X.blW, 34); c.strokeRect(b.x, b.y, X.blW, 34);
-    c.strokeStyle = '#7a5230'; c.lineWidth = 2; for(let q = b.x + 16; q < b.x + X.blW; q += 16){ c.beginPath(); c.moveTo(q, b.y + 3); c.lineTo(q, b.y + 31); c.stroke(); }
-    if(b.rail.y > X.off + 1){ c.fillStyle = '#b07a44'; c.strokeStyle = ink; c.lineWidth = 2; c.fillRect(b.rail.x, b.rail.y, b.rail.w, b.rail.h); c.strokeRect(b.rail.x, b.rail.y, b.rail.w, b.rail.h); }
-    c.restore();
+    c.strokeStyle = '#8a6a48'; c.lineWidth = 3; c.beginPath(); c.moveTo(z.x0, gy - 74); c.quadraticCurveTo((z.x0 + z.x1)/2, gy - 30, z.x1, gy - 74); c.stroke();
+    const n = Math.round(X.brLen/X.plank);
+    for(let i = 0; i < n; i++){
+      const px = z.x0 + i*X.plank + 3, pw = X.plank - 6; if(px > xb || px + pw < xa) continue;
+      c.fillStyle = '#f7f1df'; c.fillRect(px, gy, pw, 14); c.fillStyle = '#d7cdb2'; c.fillRect(px + 3, gy + 14, pw - 6, 6);
+      c.strokeStyle = ink; c.lineWidth = 3; c.strokeRect(px, gy, pw, 14);
+      c.strokeStyle = '#b9ac8a'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(px + pw/2, gy + 2); c.lineTo(px + pw/2, gy + 12); c.stroke();
+    }
   }
   // the mail tubes: glass pipes; the exit's lamp turns red while it is stood on with someone inside
   for(const tb of F.tubes){
@@ -111585,109 +111012,15 @@ function fdxDrawUnder(c, S, xa, xb, ya, yb, t){
     c.fillStyle = jam ? ((t % 10) < 5 ? '#ff3a2a' : '#7a1a10') : (busy ? '#ffd23f' : '#3fd35a'); c.beginPath(); c.arc(tb.x1 + 40, tb.ty - 40, 10, 0, 6.2832); c.fill(); c.stroke();
     c.restore();
   }
-  // the updrafts' vents and the air rising from them
-  for(const v of F.vents){
-    if(v.x < xa - 100 || v.x > xb + 100) continue;
-    c.save(); c.fillStyle = '#5a5f6e'; c.strokeStyle = ink; c.lineWidth = 2; c.fillRect(v.x - X.udW/2, gy - 8, X.udW, 8); c.strokeRect(v.x - X.udW/2, gy - 8, X.udW, 8);
-    c.strokeStyle = 'rgba(225,245,255,0.55)'; c.lineWidth = 3; c.lineCap = 'round';
-    for(let i = 0; i < 5; i++){ const h = (t*7 + i*61) % (X.udTop + 220), lx = v.x - X.udW/2 + 8 + i*((X.udW - 16)/4); c.beginPath(); c.moveTo(lx, gy - 10 - h); c.lineTo(lx, gy - 40 - h); c.stroke(); }
-    c.restore();
-  }
-  // the folding walls (stacked paper with a crease) and their lamp: green flat, flashing red before it rises, yellow standing
-  const m = t % X.fwCyc, riseAt = X.fwFold + X.fwFlat;
-  for(const p of F.fwalls){
-    if(p.x > xb + 100 || p.x + p.w < xa - 100) continue;
-    c.save();
-    const h = p._h || 0;
-    if(h >= 6){ c.fillStyle = '#efe6cf'; c.fillRect(p.x, gy - h, p.w, h); c.strokeStyle = ink; c.lineWidth = 3; c.strokeRect(p.x, gy - h, p.w, h); c.strokeStyle = '#b9ac8a'; c.lineWidth = 2; for(let y = gy - h + 30; y < gy - 4; y += 30){ c.beginPath(); c.moveTo(p.x + 4, y); c.lineTo(p.x + p.w - 4, y); c.stroke(); } }
-    else { const wob = (m >= riseAt - X.fwWarn) ? Math.sin(t*1.2)*3 : 0; c.fillStyle = '#efe6cf'; c.strokeStyle = ink; c.lineWidth = 2; c.fillRect(p.x, gy - 8 + wob*0.3, 120, 8); c.strokeRect(p.x, gy - 8 + wob*0.3, 120, 8); }
-    const warn = h < 6 && m >= riseAt - X.fwWarn;
-    c.fillStyle = '#5a5f6e'; c.fillRect(p.x - 26, gy - 70, 6, 70);
-    c.fillStyle = warn ? ((t % 8) < 4 ? '#ff3a2a' : '#7a1a10') : (h < 6 ? '#3fd35a' : '#ffd23f'); c.strokeStyle = ink; c.lineWidth = 2; c.beginPath(); c.arc(p.x - 23, gy - 78, 11, 0, 6.2832); c.fill(); c.stroke();
-    c.restore();
-  }
-  // kites to grab
-  for(const k of F.kites){
-    if(k.x < xa - 60 || k.x > xb + 60) continue;
-    const bob = Math.sin(t*0.06 + k.x*0.01)*6, taken = you0Got(k);
-    c.save(); c.globalAlpha = taken ? 0.25 : 1; fdxKitePic(c, k.x, k.y + bob, 1, t); c.restore();
-  }
-  // lightning's warning: a ring flickering where it will strike
-  for(const b of S.bolts){
-    const age = t - b.t0; if(age >= X.ltWarn || b.x < xa - 80 || b.x > xb + 80) continue;
-    const u = age/X.ltWarn, d = S.decks.find(q => b.x > q.x && b.x < q.x + q.w);
-    c.save(); c.strokeStyle = (t % 6) < 3 ? '#fff27a' : '#ff8a3a'; c.lineWidth = 2 + 3*u;
-    for(const yy of d ? [gy, d.y] : [gy]){ c.beginPath(); c.ellipse(b.x, yy - 2, X.ltW/2, 8 + 4*u, 0, 0, 6.2832); c.stroke(); }
-    c.restore();
-  }
 }
-function fdxKitePic(c, x, y, k, t){
-  const ink = '#1c1c1c';
-  c.save(); c.translate(x, y); c.scale(k, k); c.rotate(Math.sin((t || 0)*0.08)*0.12);
-  c.fillStyle = '#ff8ab0'; c.strokeStyle = ink; c.lineWidth = 2.5; c.beginPath(); c.moveTo(0, -26); c.lineTo(18, -4); c.lineTo(0, 26); c.lineTo(-18, -4); c.closePath(); c.fill(); c.stroke();
-  c.fillStyle = '#ffd23f'; c.beginPath(); c.moveTo(0, -26); c.lineTo(18, -4); c.lineTo(0, -4); c.closePath(); c.fill(); c.stroke();
-  c.strokeStyle = ink; c.lineWidth = 1.5; c.beginPath(); c.moveTo(0, 26); c.quadraticCurveTo(8, 38, -4, 48); c.quadraticCurveTo(-12, 56, 2, 64); c.stroke();
-  c.restore();
-}
-function fdxCranePic(c, x, y, s, flap){
-  const ink = '#1c1c1c';
-  c.save(); c.translate(x, y); c.scale(s, s); c.fillStyle = '#ffffff'; c.strokeStyle = ink; c.lineWidth = 2; c.lineJoin = 'round';
-  c.beginPath(); c.moveTo(-16, 2); c.lineTo(16, 2); c.lineTo(22, -10); c.lineTo(12, -2); c.lineTo(-6, -2); c.lineTo(-20, -10); c.closePath(); c.fill(); c.stroke();
-  const wy = -14 - 10*flap; c.fillStyle = '#e8f3ff'; c.beginPath(); c.moveTo(-6, 0); c.lineTo(4, wy); c.lineTo(8, 0); c.closePath(); c.fill(); c.stroke();
-  c.restore();
-}
-// Over the fighters: the windmills' blades, the tornadoes, the bolts, the crane flock, kites held, the glass round a tube's rider.
+// Over the fighters: the glass round a mail tube's rider.
 function fdxDrawOver(c, S, xa, xb, ya, yb, t){
-  const X = FDX, F = S.fx, gy = S.gy, ink = '#1c1c1c';
-  for(const m of F.mills){
-    if(m.x < xa - X.wmArm - 40 || m.x > xb + X.wmArm + 40) continue;
-    c.save();
-    for(let k = 0; k < 4; k++){
-      const a = fdxBladeAng(m, t, k);
-      c.save(); c.translate(m.x, m.hy); c.rotate(a);
-      c.fillStyle = '#f7f1df'; c.strokeStyle = ink; c.lineWidth = 3; c.fillRect(X.wmHot - 20, -X.wmBlade, X.wmArm - X.wmHot + 20, 2*X.wmBlade); c.strokeRect(X.wmHot - 20, -X.wmBlade, X.wmArm - X.wmHot + 20, 2*X.wmBlade);
-      c.strokeStyle = '#b9ac8a'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(X.wmHot, 0); c.lineTo(X.wmArm - 6, 0); c.stroke();
-      c.fillStyle = '#8a6a48'; c.fillRect(0, -4, X.wmHot, 8);
-      c.restore();
-    }
-    c.fillStyle = '#8a6a48'; c.strokeStyle = ink; c.lineWidth = 3; c.beginPath(); c.arc(m.x, m.hy, 16, 0, 6.2832); c.fill(); c.stroke();
-    c.restore();
-  }
-  for(const o of F.torns){
-    const tx = fdxTornX(o, t); if(tx < xa - 300 || tx > xb + 300) continue;
-    c.save();
-    for(let j = 0; j < 16; j++){
-      const y = gy - 20 - j*40, w = 30 + j*7, off = Math.sin(t*0.2 + j*0.7)*10;
-      c.globalAlpha = 0.3; c.fillStyle = '#9a9aa8'; c.beginPath(); c.ellipse(tx + off, y, w, 12, 0, 0, 6.2832); c.fill();
-      c.globalAlpha = 0.6; c.strokeStyle = '#e8e8f0'; c.lineWidth = 2; c.beginPath(); c.ellipse(tx + off, y, w, 12, 0, (t*0.25 + j) % 6.28, ((t*0.25 + j) % 6.28) + 2.2); c.stroke();
-    }
-    c.globalAlpha = 0.8; c.fillStyle = '#ffffff'; c.strokeStyle = ink; c.lineWidth = 1;
-    for(let q = 0; q < 6; q++){ const a = t*0.15 + q*1.05, px = tx + Math.cos(a)*(40 + q*8), py = gy - 60 - ((t*3 + q*90) % 560); c.save(); c.translate(px, py); c.rotate(a); c.fillRect(-6, -4, 12, 8); c.strokeRect(-6, -4, 12, 8); c.restore(); }
-    c.globalAlpha = 0.45; c.fillStyle = '#c9b48a'; c.beginPath(); c.ellipse(tx, gy - 4, 90, 12, 0, 0, 6.2832); c.fill();
-    c.restore();
-  }
-  for(const b of S.bolts){
-    const age = t - b.t0; if(b.x < xa - 120 || b.x > xb + 120) continue;
-    const cy = Math.max(ya + 50, gy - 720);
-    c.save(); c.globalAlpha = Math.min(1, 0.3 + age/X.ltWarn); c.fillStyle = '#3a3850'; c.beginPath(); c.arc(b.x - 40, cy, 46, 0, 6.2832); c.arc(b.x + 20, cy - 12, 56, 0, 6.2832); c.arc(b.x + 70, cy, 40, 0, 6.2832); c.fill(); c.restore();
-    if(age >= X.ltWarn && age < X.ltWarn + X.ltLive){
-      c.save(); c.strokeStyle = '#fff27a'; c.lineWidth = 9; c.lineJoin = 'miter'; c.beginPath(); c.moveTo(b.x, cy + 20);
-      const n = 7; for(let i = 1; i <= n; i++) c.lineTo(b.x + (i < n ? (fdxHash(b.t0 + i) % 60) - 30 : 0), cy + 20 + (gy - cy - 20)*i/n);
-      c.stroke(); c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.stroke(); c.restore();
-      if(age < X.ltWarn + 3){ c.save(); c.fillStyle = 'rgba(255,255,230,0.18)'; c.fillRect(xa, ya, xb - xa, yb - ya); c.restore(); }
-    }
-  }
-  const Fl = S.flock;
-  if(Fl && Fl.x > xa - 200 && Fl.x < xb + 200){
-    for(let i = 0; i < 7; i++){ const row = Math.ceil(i/2), side = i % 2 ? -1 : 1; fdxCranePic(c, Fl.x - row*30, Fl.y + (i ? side*row*16 : 0), 1, 0.5 + 0.5*Math.sin(t*0.4 + i)); }
-  }
   for(const f of fighters){
-    if(f.dead) continue;
-    if(f._fdKite > t){ const kx = f.x - 50, ky = f.y - 100 + Math.sin(t*0.1)*5; c.save(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(f.x, f.y - f.r*0.3); c.quadraticCurveTo(kx + 20, ky + 50, kx, ky + 20); c.stroke(); c.restore(); fdxKitePic(c, kx, ky, 0.8, t); }
-    if(f._fdTb){ c.save(); c.fillStyle = 'rgba(200,232,255,0.5)'; c.strokeStyle = '#ffffff'; c.lineWidth = 2; c.beginPath(); c.ellipse(f.x, f.y, f.r + 8, f.r + 4, 0, 0, 6.2832); c.fill(); c.stroke(); c.restore(); }
+    if(f.dead || !f._fdTb) continue;
+    c.save(); c.fillStyle = 'rgba(200,232,255,0.5)'; c.strokeStyle = '#ffffff'; c.lineWidth = 2; c.beginPath(); c.ellipse(f.x, f.y, f.r + 8, f.r + 4, 0, 0, 6.2832); c.fill(); c.stroke(); c.restore();
   }
 }
-EVENT_TWIST_WORDS['contest:race'] = { icon:'\u{1F4A8}', short:"Foldy's contest: the wind race", words:"Foldy's contest: the wind carries you along a long course to the finish line. Walls, swinging, sliding and falling blocks, windmill blades, lightning and folding walls try to stop you, and every hit knocks you back against the wind. Take the high route for more wind and more blocks, or the low one for shelter. Grab a paper plane to glide or a kite to ride the wind, catch the paper cranes, jump into an updraft, take a mail tube, ride a balloon over the gap, cross the folding bridges. A tornado throws you forward or back. Hold Z to brace. The wind grows stronger. First across the line wins.", goal:'Race to the finish line!' };
+EVENT_TWIST_WORDS['contest:race'] = { icon:'\u{1F4A8}', short:"Foldy's contest: the wind race", words:"Foldy's contest: the wind carries you along a long course to the finish line, and it grows stronger. Walls and swinging, sliding and falling blocks try to stop you, and every hit knocks you back against the wind. Take the high route for more wind and more blocks, or the low one for shelter. Grab a paper plane to glide, take a mail tube, and hold Z to brace. First across the line wins.", goal:'Race to the finish line!' };
 
 // BEACH BALL: ELSEWHERE ON EARTH (the owner, 2026-11-13: "no one hits it, because there should be teams of 2, and your goal is to stop the ball from landing, like volleyball"; a NET with
 // one side per team; the ball landing on a side is a POINT to the other team; you CAN hit the other team across the net; the stage is a BEACH; and, earlier, the ball gets heavy):
@@ -113951,24 +113284,20 @@ function lhcSteer(f, inp, A, B, e){
   if(gap > 110 && (d2 < 0 ? f.x - A.x0 : A.x1 - f.x) <= 45) inp.jump = true;
   return true;
 }
-// STAPY'S CONTEST, OUT ON THE DARK PLAZA (the owner's three picks, 2026-11-17). OUTSIDE ONLY: nothing here reaches anyone in a lighthouse's rooms (lhcOutside). Nothing is written on screen.
+// STAPY'S CONTEST, OUT ON THE DARK PLAZA (the owner's pick, 2026-11-17). OUTSIDE ONLY: nothing here reaches anyone in a lighthouse's rooms (lhcOutside). Nothing is written on screen.
 // THE SEA STORM: now and then a wave rolls in from the sea at one end of the arena and sweeps across it, pushing everyone outside the way it goes. First, LHK_SEA.warn frames of
 //   warning: a rising roar and white spray at that end (at the screen's edge on that side when the end is off screen). On the ground with the shield held you are BRACED (LHK_SEA.brace of the push).
-// THE BOATS' SEARCHLIGHTS: two boats out at sea (on the horizon behind the arena) sweep beams over the plaza; anyone outside in a beam is lit up (the dark is cut round them; seen by everyone).
-// THE FOGHORN: a low rumble, then a blast from each lighthouse's horn (over its door) that pushes everyone outside away from the towers, toward the middle (the nearer, the harder; braced as for a wave).
-// A wave and the blast never overlap (LHK_SEA.apart). CPUs brace (or steer against it in the air) as a wave or the blast comes, and keep out of a beam while going for a rival's light;
-// both by level (brainLevel: react, lead, hornReact, spotP, spotAhead), and never for long (a wait or a step back for a beam is at most spotWait frames, then spotRest frames without).
-const LHK_SEA = { wave0:[1800, 2400], waveGap:[1680, 2520], warn:90, v:22, body:520, pushG:4.6, pushA:5.2, fade:0.45, brace:0.2,
-  horn0:[3000, 3600], hornGap:[2100, 3000], hornWarn:80, hornLen:60, hornPush:4.2, hornR0:220, hornR1:1700, apart:420,
-  boats:[{ x:1500, amp:520, per:2700, sw:540, ph:0.3 }, { x:3700, amp:520, per:3100, sw:660, ph:2.1 }], beamA:1.75, beamHalf:0.09, beamLen:3400, horizon:260, lamp:96,
-  react:[0.5, 0.75, 0.9, 0.97], lead:[10, 18, 26, 32], hornReact:[50, 36, 22, 12], spotP:[0.3, 0.55, 0.8, 0.95], spotAhead:[20, 32, 45, 60], spotRun:5, spotRise:9, spotWait:100, spotRest:240 };
+// CPUs brace (or steer against it in the air) as a wave comes, by level (brainLevel: react, lead). SIMPLIFIED 2026-11-18 (the owner, "the contests should have 5ish
+// features"): the boats' searchlights and the foghorn are cut.
+const LHK_SEA = { wave0:[1800, 2400], waveGap:[1680, 2520], warn:90, v:22, body:520, pushG:4.6, pushA:5.2, fade:0.45, brace:0.2, horizon:260,
+  react:[0.5, 0.75, 0.9, 0.97], lead:[10, 18, 26, 32] };
 function lhcRnd(a){ return a[0] + Math.random()*(a[1] - a[0]); }
 function lhcOutside(f){ return !!LHC && !f.dead && !f._lhRoom && !lhcTowerOf(f); }
 function lhcBraced(f){ return !!f.onground && (f._zsOn > 0 || !!f._zKey); }
 function lhcSeaInit(){
   const K = LHK_SEA, t = hazardT;
-  LHC.sea = { nextW:t + Math.round(lhcRnd(K.wave0)), nextH:t + Math.round(lhcRnd(K.horn0)), wave:null, horn:null, n:0, waves:0, horns:0, caught:0, wet:0, blown:0, braces:0, dodges:0 };
-  for(const f of fighters){ f._lhBeamT = null; f._lhWetId = null; f._lhBlowId = null; f._lhSeaW = null; f._lhSeaH = null; f._lhSpot = null; f._lhSpotRest = 0; f._lhHeP = null; }
+  LHC.sea = { nextW:t + Math.round(lhcRnd(K.wave0)), wave:null, n:0, waves:0, wet:0, braces:0 };
+  for(const f of fighters){ f._lhWetId = null; f._lhSeaW = null; }
 }
 function lhcWaveEdge(dir){ return dir > 0 ? LHK.wall : LHK.aw - LHK.wall; }
 function lhcWaveFront(w, t){ return lhcWaveEdge(w.dir) + w.dir*LHK_SEA.v*(t - w.tc); }
@@ -113977,31 +113306,12 @@ function lhcWaveK(w, t, x){   // the push at x: strongest at the front, less tow
   const K = LHK_SEA, rel = (lhcWaveFront(w, t) - x)*w.dir; if(t < w.tc || rel < 0 || rel > K.body) return 0;
   const prog = clamp((x - lhcWaveEdge(w.dir))*w.dir/(LHK.aw - 2*LHK.wall), 0, 1); return (1 - 0.6*rel/K.body)*(1 - K.fade*prog);
 }
-function lhcHornAt(tw){ return { x:tw.doorX, y:tw.oBase - 170 }; }
-function lhcHornK(f){
-  const K = LHK_SEA; let best = null;
-  for(const tw of LHC.towers){ const h = lhcHornAt(tw), d = Math.hypot(f.x - h.x, f.y - h.y); if(!best || d < best.d) best = { d, tw }; }
-  if(!best) return { k:0, dir:0, tw:null };
-  return { k:clamp(1 - (best.d - K.hornR0)/(K.hornR1 - K.hornR0), 0, 1), dir:best.tw.dir, tw:best.tw };   // (away from the tower = toward the middle: the side its door faces)
-}
-function lhcBoatAt(i, t){
-  const K = LHK_SEA, b = K.boats[i], hy = LHC.pY + K.horizon, bob = 5*Math.sin(t*0.05 + i*2), x = b.x + b.amp*Math.sin(LH_TAU*t/b.per + b.ph);
-  return { x, y:hy + bob, lx:x + 8, ly:hy - K.lamp + bob, a:-Math.PI/2 + K.beamA*Math.sin(LH_TAU*t/b.sw + b.ph*1.7) };
-}
-function lhcInBeam(x, y, r, t){
-  const K = LHK_SEA;
-  for(let i = 0; i < K.boats.length; i++){ const B = lhcBoatAt(i, t), dx = x - B.lx, dy = y - B.ly, d = Math.hypot(dx, dy); if(d > K.beamLen || d < 1) continue;
-    let e = Math.atan2(dy, dx) - B.a; e = Math.atan2(Math.sin(e), Math.cos(e)); if(Math.abs(e) < K.beamHalf + r/d) return true; }
-  return false;
-}
-function lhcBeamLit(f){ return !!LHC && f._lhBeamT != null && hazardT - f._lhBeamT <= 1; }
 function lhcSeaStep(){
   const S = LHC, Q = S && S.sea, K = LHK_SEA, t = hazardT; if(!Q) return;
   const you = fighters.find(f => f.you && !f.dead), hear = !!(you && lhcOutside(you));   // (the sounds only for a player out on the plaza)
   if(!Q.wave && t >= Q.nextW){   // A WAVE: the warning first
-    if(Q.horn) Q.nextW = Q.horn.te + K.apart;
-    else { Q.n++; Q.waves++; Q.wave = { id:Q.n, dir:Math.random() < 0.5 ? -1 : 1, t0:t, tc:t + K.warn, crash:false }; Q.nextH = Math.max(Q.nextH, lhcWaveEnd(Q.wave) + K.apart);
-      if(hear){ noiseSwell(K.warn/60 + 0.5, K.warn/60, 0.2, 420); tone(70, K.warn/60, 'sine', 0.05, 0, 140); } }
+    Q.n++; Q.waves++; Q.wave = { id:Q.n, dir:Math.random() < 0.5 ? -1 : 1, t0:t, tc:t + K.warn, crash:false };
+    if(hear){ noiseSwell(K.warn/60 + 0.5, K.warn/60, 0.2, 420); tone(70, K.warn/60, 'sine', 0.05, 0, 140); }
   }
   const w = Q.wave;
   if(w){
@@ -114014,37 +113324,14 @@ function lhcSeaStep(){
         if(t % 3 === 0) puff(f.x - w.dir*f.r, f.y + f.r*0.5, '#e6f6ff', 1); }
     }
   }
-  if(!Q.horn && t >= Q.nextH){   // THE FOGHORN: the rumble first
-    if(Q.wave) Q.nextH = lhcWaveEnd(Q.wave) + K.apart;
-    else { Q.n++; Q.horns++; Q.horn = { id:Q.n, t0:t, tb:t + K.hornWarn, te:t + K.hornWarn + K.hornLen, blew:false }; Q.nextW = Math.max(Q.nextW, Q.horn.te + K.apart);
-      if(hear){ noiseSwell(K.hornWarn/60 + 0.3, K.hornWarn/60, 0.16, 90); tone(42, K.hornWarn/60, 'sine', 0.08, 0, 55); } }
-  }
-  const h = Q.horn;
-  if(h){
-    if(!h.blew && t >= h.tb){ h.blew = true; if(hear){ tone(98, K.hornLen/60 + 0.3, 'sawtooth', 0.12, 0, 92); tone(73, K.hornLen/60 + 0.3, 'sawtooth', 0.09, 0, 69); } }
-    if(t >= h.te){ Q.horn = null; Q.nextH = t + Math.round(lhcRnd(K.hornGap)); }
-    else if(t >= h.tb){
-      const e = Math.min(1, (t - h.tb + 1)/8, (h.te - t)/15);
-      for(const f of fighters){ if(!lhcOutside(f) || !pullFree(f)) continue; const H = lhcHornK(f); if(!(H.k > 0)) continue;
-        const br = lhcBraced(f); f.x += H.dir*K.hornPush*H.k*e*(br ? K.brace : 1)*(f.onground ? 1 : 1.15);
-        if(f._lhBlowId !== h.id){ f._lhBlowId = h.id; Q.blown++; if(br) Q.braces++; }
-        if(f.onground && t % 4 === 0) puff(f.x - H.dir*f.r, f.y + f.r, '#8a8f9c', 1); }
-    }
-  }
-  for(const f of fighters){ if(!lhcOutside(f)) continue; if(lhcInBeam(f.x, f.y, f.r, t)){ if(f._lhBeamT == null || t - f._lhBeamT > 20) Q.caught++; f._lhBeamT = t; } }   // THE SEARCHLIGHTS
 }
-// A CPU out on the plaza: braced as a wave or the blast comes (by level: whether it reacts at all, and how early). True when it took the keys.
+// A CPU out on the plaza: braced as a wave comes (by level: whether it reacts at all, and how early). True when it took the keys.
 function lhcSeaAi(f, inp){
   const Q = LHC && LHC.sea, K = LHK_SEA, t = hazardT; if(!Q || !lhcOutside(f) || f.hitstun > 0) return false;
-  const l = brainLevel(f), w = Q.wave, h = Q.horn;
+  const l = brainLevel(f), w = Q.wave;
   if(w){
     if(f._lhSeaW !== w.id){ f._lhSeaW = w.id; f._lhSeaOkW = Math.random() < K.react[l]; }
     if(f._lhSeaOkW){ const rel = (lhcWaveFront(w, t) - f.x)*w.dir; if(-rel/K.v <= K.lead[l] && rel <= K.body) return lhcSeaHold(f, inp, w.dir, lhcWaveK(w, t, f.x) > 0); }
-  }
-  if(h){
-    if(f._lhSeaH !== h.id){ f._lhSeaH = h.id; f._lhSeaOkH = Math.random() < K.react[l]; }
-    if(f._lhSeaOkH && t >= h.t0 + K.hornReact[l] && t < h.te){ const H = lhcHornK(f);
-      if(H.k > 0.3 && !(f._lhHeP && Math.abs(f._lhHeP.x - f.x) < 140)) return lhcSeaHold(f, inp, H.dir, t >= h.tb); }   // (one walking into a door just goes in: inside, nothing reaches it)
   }
   return false;
 }
@@ -114053,26 +113340,7 @@ function lhcSeaHold(f, inp, dir, live){   // on the ground: braced, the shield h
   if(!live) return false;
   inp.left = dir > 0; inp.right = dir < 0; return true;
 }
-// A CPU going for a RIVAL's light, on the ground outside: it looks spotAhead frames ahead (by level) at three choices -- keep going (along, up or down to the next ledge), stop, step back (on the ground it stands on) --
-// and counts the frames each leaves it in a beam (the beams are a pure function of the clock). When stopping or stepping back is lit clearly less, it does that (at most spotWait frames, then spotRest without).
-function lhcSpotAi(f, inp, A, hop){
-  const K = LHK_SEA, t = hazardT, Q = LHC && LHC.sea; if(!Q || !A || !hop || !f.onground || !lhcOutside(f) || t < (f._lhSpotRest || 0)) return false;
-  const l = brainLevel(f), H = K.spotAhead[l], tx = clamp(f.x, hop.x0 + 14, Math.max(hop.x0 + 14, hop.x1 - 14)), dir = Math.abs(tx - f.x) > 4 ? Math.sign(tx - f.x) : 0;
-  const lo = A.x0 + 20, hi = A.x1 - 20, ty = hop.y - f.r, dy = Math.abs(ty - f.y) > 30 ? ty - f.y : 0;   // (dy: the way is up or down to the next ledge)
-  if(!dir && !dy){ f._lhSpot = null; return false; }
-  const lit = (sx, sy) => { let n = 0; for(let s = 0; s <= H; s += 3){ let x = f.x + sx*s*K.spotRun; if(sx && sx === -dir) x = clamp(x, lo, Math.max(lo, hi)); const y = sy ? f.y + Math.sign(dy)*Math.min(Math.abs(dy), s*K.spotRise) : f.y; if(lhcInBeam(x, y, f.r, t + s)) n++; } return n; };
-  const go = lit(dir, 1); if(go === 0){ f._lhSpot = null; return false; }
-  const stay = lit(0, 0), back = dir && (dir > 0 ? f.x - lo : hi - f.x) > 40 ? lit(-dir, 0) : 1e9, best = Math.min(stay, back);
-  if(!(best + 2 <= go)){ f._lhSpot = null; return false; }   // (it comes over it whatever it does: on)
-  if(!f._lhSpot){ f._lhSpot = { ok:Math.random() < K.spotP[l], w:0 }; if(f._lhSpot.ok) Q.dodges++; }
-  if(!f._lhSpot.ok) return false;
-  if(++f._lhSpot.w > K.spotWait){ f._lhSpot = null; f._lhSpotRest = t + K.spotRest; return false; }
-  inp.left = false; inp.right = false; inp.jump = false;
-  if(back < stay){ if(dir > 0) inp.left = true; else inp.right = true; }   // (back out of its way, along the ground it stands on)
-  else if(Math.abs(f.vx) > 1.2){ if(f.vx > 0) inp.left = true; else inp.right = true; }   // (stops short of it)
-  return true;
-}
-// THE ART. Under the fighters and the dark (world space): the sea on the horizon, the boats, the horns over the doors, the wave's water.
+// THE ART. Under the fighters and the dark (world space): the sea on the horizon and the wave's water.
 function lhcSeaUnder(c, x0, x1, y0, y1){
   const S = LHC, Q = S && S.sea, K = LHK_SEA; if(!Q) return;
   const t = hazardT, hy = S.pY + K.horizon, gy = S.gy, a0 = Math.max(x0, LHK.wall), a1 = Math.min(x1, LHK.aw - LHK.wall);
@@ -114080,20 +113348,6 @@ function lhcSeaUnder(c, x0, x1, y0, y1){
     const g = c.createLinearGradient(0, hy, 0, gy); g.addColorStop(0, '#1d3b5c'); g.addColorStop(1, '#0b1a2c'); c.fillStyle = g; c.fillRect(a0, hy, a1 - a0, gy - hy);
     c.strokeStyle = 'rgba(160,200,235,0.35)'; c.lineWidth = 3;
     for(let j = 0; j < 6; j++){ const yy = hy + 24 + j*(gy - hy - 48)/6; c.beginPath(); let first = true; for(let x = a0; x <= a1 + 59; x += 60){ const v = yy + 6*Math.sin(x*0.013 + t*0.04 + j*1.7); if(first){ c.moveTo(x, v); first = false; } else c.lineTo(x, v); } c.stroke(); }
-  }
-  for(let i = 0; i < K.boats.length; i++){
-    const B = lhcBoatAt(i, t); if(B.x + 100 < x0 || B.x - 100 > x1 || B.y + 20 < y0 || B.ly - 20 > y1) continue;
-    c.fillStyle = '#2a2f3a'; c.strokeStyle = '#11141a'; c.lineWidth = 3;
-    c.beginPath(); c.moveTo(B.x - 80, B.y - 18); c.lineTo(B.x + 80, B.y - 18); c.lineTo(B.x + 60, B.y + 12); c.lineTo(B.x - 60, B.y + 12); c.closePath(); c.fill(); c.stroke();
-    c.fillStyle = '#3c4454'; c.fillRect(B.x - 34, B.y - 44, 52, 26); c.strokeRect(B.x - 34, B.y - 44, 52, 26);
-    c.beginPath(); c.moveTo(B.lx, B.y - 44); c.lineTo(B.lx, B.ly); c.stroke();
-    c.fillStyle = '#fff3b0'; c.fillRect(B.lx - 9, B.ly - 7, 18, 14); c.strokeRect(B.lx - 9, B.ly - 7, 18, 14);
-  }
-  for(const tw of S.towers){   // the foghorn over each door (a brass horn facing the middle)
-    const H = lhcHornAt(tw), d = tw.dir; if(H.x + 60 < x0 || H.x - 60 > x1 || H.y + 40 < y0 || H.y - 40 > y1) continue;
-    c.fillStyle = '#c9a640'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
-    c.beginPath(); c.moveTo(H.x - d*30, H.y - 8); c.lineTo(H.x + d*30, H.y - 24); c.lineTo(H.x + d*30, H.y + 24); c.lineTo(H.x - d*30, H.y + 8); c.closePath(); c.fill(); c.stroke();
-    c.fillStyle = '#3a2c14'; c.beginPath(); c.ellipse(H.x + d*30, H.y, 6, 22, 0, 0, 7); c.fill();
   }
   const w = Q.wave;
   if(w && t >= w.tc){
@@ -114106,32 +113360,10 @@ function lhcSeaUnder(c, x0, x1, y0, y1){
     }
   }
 }
-// Cut out of the dark (lhcLights): the beams, the boats' lamps, and anyone caught in a beam.
-function lhcSeaCut(o, tr, m){
-  const S = LHC, Q = S && S.sea, K = LHK_SEA; if(!Q) return;
-  const t = hazardT, sc = Math.hypot(m.a, m.b)*0.5;
-  for(let i = 0; i < K.boats.length; i++){
-    const B = lhcBoatAt(i, t), L = K.beamLen, p0 = tr(B.lx, B.ly), p1 = tr(B.lx + Math.cos(B.a - K.beamHalf)*L, B.ly + Math.sin(B.a - K.beamHalf)*L), p2 = tr(B.lx + Math.cos(B.a + K.beamHalf)*L, B.ly + Math.sin(B.a + K.beamHalf)*L);
-    o.fillStyle = 'rgba(0,0,0,0.72)'; o.beginPath(); o.moveTo(p0[0], p0[1]); o.lineTo(p1[0], p1[1]); o.lineTo(p2[0], p2[1]); o.closePath(); o.fill();
-    const r = 120*sc, g = o.createRadialGradient(p0[0], p0[1], 0, p0[0], p0[1], r); g.addColorStop(0, 'rgba(0,0,0,0.9)'); g.addColorStop(1, 'rgba(0,0,0,0)'); o.fillStyle = g; o.fillRect(p0[0] - r, p0[1] - r, r*2, r*2);
-  }
-  for(const f of fighters){
-    if(f.dead || !lhcBeamLit(f)) continue;
-    const p = tr(f.x, f.y), r = f.r*2.8*sc, g = o.createRadialGradient(p[0], p[1], 0, p[0], p[1], r); g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.7, 'rgba(0,0,0,0.95)'); g.addColorStop(1, 'rgba(0,0,0,0)'); o.fillStyle = g; o.fillRect(p[0] - r, p[1] - r, r*2, r*2);
-  }
-  o.fillStyle = 'rgba(0,0,0,1)';
-}
-// Over the dark (lhcGlow, world space; not drawn while you are in a lighthouse): the beams' haze and lamps, a white ring on anyone lit, the wave's spray and foam, the horns' rumble and rings.
+// Over the dark (lhcGlow, world space; not drawn while you are in a lighthouse): the wave's warning spray and its foam.
 function lhcSeaGlow(c, x0, x1, y0, y1){
   const S = LHC, Q = S && S.sea, K = LHK_SEA; if(!Q) return;
   const t = hazardT, gy = S.gy;
-  for(let i = 0; i < K.boats.length; i++){
-    const B = lhcBoatAt(i, t), L = K.beamLen, a0 = B.a - K.beamHalf, a1 = B.a + K.beamHalf;
-    const g = c.createRadialGradient(B.lx, B.ly, 0, B.lx, B.ly, L); g.addColorStop(0, 'rgba(255,248,215,0.22)'); g.addColorStop(1, 'rgba(255,248,215,0)');
-    c.fillStyle = g; c.beginPath(); c.moveTo(B.lx, B.ly); c.lineTo(B.lx + Math.cos(a0)*L, B.ly + Math.sin(a0)*L); c.lineTo(B.lx + Math.cos(a1)*L, B.ly + Math.sin(a1)*L); c.closePath(); c.fill();
-    c.fillStyle = 'rgba(255,246,200,0.95)'; c.beginPath(); c.arc(B.lx, B.ly, 9, 0, 7); c.fill();
-  }
-  for(const f of fighters){ if(f.dead || !lhcBeamLit(f) || f.x < x0 || f.x > x1 || f.y < y0 || f.y > y1) continue; c.strokeStyle = 'rgba(255,250,225,0.95)'; c.lineWidth = 4; c.beginPath(); c.arc(f.x, f.y, f.r + 9, 0, 7); c.stroke(); }
   const w = Q.wave;
   if(w){
     if(t < w.tc){   // the warning: white spray rising at the sea's edge (at the screen's edge on that side when the end is off screen)
@@ -114148,15 +113380,6 @@ function lhcSeaGlow(c, x0, x1, y0, y1){
         for(let y = yT + 60; y <= gy; y += 50) c.lineTo(xf + d*12*Math.sin(y*0.02 + t*0.3), y); c.stroke();
         c.fillStyle = 'rgba(240,250,255,0.7)'; for(let i = 0; i < 10; i++){ const hs = lhcMod(Math.sin(i*78.233 + w.id)*43758.5453, 1); c.beginPath(); c.arc(xf + d*(10 + 40*hs), yT + 20 + (gy - yT)*lhcMod(hs*7.1 + t*0.013, 1), 5 + 6*hs, 0, 7); c.fill(); }
       }
-    }
-  }
-  const h = Q.horn;
-  if(h){
-    for(const tw of S.towers){
-      const H = lhcHornAt(tw);
-      if(t < h.tb){ const u = (t - h.t0)/K.hornWarn, r = 40 + 14*Math.sin(t*0.6); if(H.x + 80 < x0 || H.x - 80 > x1) continue; c.fillStyle = 'rgba(255,160,80,' + (0.15 + 0.35*u).toFixed(3) + ')'; c.beginPath(); c.arc(H.x + tw.dir*30, H.y, r, 0, 7); c.fill(); }   // the rumble: the horn glows
-      else { const v = (t - h.tb)/K.hornLen; c.lineWidth = 12;
-        for(let j = 0; j < 3; j++){ const q = clamp(v - j*0.15, 0, 1); if(!(q > 0)) continue; const rr = K.hornR0*0.3 + K.hornR1*q; c.strokeStyle = 'rgba(215,230,255,' + (0.55*(1 - q)).toFixed(3) + ')'; c.beginPath(); c.arc(H.x, H.y, rr, 0, 7); c.stroke(); } }
     }
   }
 }
@@ -114177,7 +113400,7 @@ CONTEST_RULES.lights = {
         let col = own;   // only when two in one match are too alike does the later one take the nearest free palette colour, so the four always differ
         if(used.some(u => dist(rgb(u), rgb(col)) < 80)){ const free = LH_PAL.filter(q => !used.some(u => dist(rgb(u), rgb(q)) < 80)); if(free.length){ free.sort((a, c) => dist(rgb(a), rgb(own)) - dist(rgb(c), rgb(own))); col = free[0]; } }
         used.push(col); f._lhCol = col; } }
-    lhcSeaInit();   // OUT ON THE PLAZA: the sea storm, the boats' searchlights, the foghorn (LHK_SEA)
+    lhcSeaInit();   // OUT ON THE PLAZA: the sea storm (LHK_SEA)
     LHC.t0 = hazardT;   // (when the match began: a CPU's taste for turning off rivals' lights fades with it, see want)
     for(const f of fighters){ f._lhP = 0; f._lhSpent = null; f._lhAt = null; f._lhOffs = 0; f._lhGoal = null; f._lhRe = 0; f._lhN = null; f._lhStay = 0; f._lhJit = [0, 1, 2, 3].map(() => 0.85 + 0.3*Math.random()); f._lhR = null; f._lhRet = null; f._lhArc = null; f._lhPX = null; f._lhImmT = 0; f._lhWK = 0; }
     try{ const h = document.getElementById('hud'); if(h) h.style.visibility = ''; }catch(e){}
@@ -114185,7 +113408,7 @@ CONTEST_RULES.lights = {
   step(){
     const S = LHC, K = LHK, C = CONTEST; if(!S || C.winner != null) return;
     lhcRoomsStep();
-    lhcSeaStep();   // (outside only: the waves, the foghorn, the searchlights)
+    lhcSeaStep();   // (outside only: the waves)
     for(const f of fighters){
       if(!f.dead && f.onground){   // the lamp house roofs are slippery: nobody stands on one; it slides off toward the nearer side
         for(const tw of S.towers){ if(f.x > tw.x0 - 20 && f.x < tw.x1 + 20 && Math.abs(f.y + f.r - tw.roofY) <= 6){ const d = f.x < tw.cx ? -1 : 1; f.vx = d*6; f.x += d*4; } }
@@ -114221,7 +113444,7 @@ CONTEST_RULES.lights = {
     const S = LHC, K = LHK; if(!S) return;
     if(layer === 'under'){
       const x0 = camX - 100, x1 = camX + W/CAM_ZOOM + 100, y0 = camY - 100, y1 = camY + H/CAM_ZOOM + 100;
-      lhcSeaUnder(c, x0, x1, y0, y1);   // the sea, the boats, the horns, the wave's water
+      lhcSeaUnder(c, x0, x1, y0, y1);   // the sea and the wave's water
       for(const tw of S.towers){   // OUTSIDE: the lighthouse's facade, its door, its lamp (lit by the pieces that are on)
         const fh = K.faceH + K.roofGap + 70, fw = 270;
         if(tw.ox + fw + 60 < x0 || tw.ox - fw - 60 > x1 || tw.oBase < y0 || tw.oBase - fh - 80 > y1) continue;
@@ -114267,7 +113490,7 @@ CONTEST_RULES.lights = {
   },
   want(f, inp, t, dist){
     const S = LHC, K = LHK; if(!S || !S.nodes || f.dead || f.hitstun > 0) return false;
-    if(lhcSeaAi(f, inp)) return true;   // out on the plaza: braced for a wave or the foghorn (by level)
+    if(lhcSeaAi(f, inp)) return true;   // out on the plaza: braced for a wave (by level)
     if(f.onground && t && dist < 150 && Math.abs(t.y - f.y) < 140) return false;   // a foe in its face comes first
     const here = f.onground ? lhcNodeOf(f) : null; if(here) f._lhN = here;
     const A = f._lhN; if(!A) return false;
@@ -114301,8 +113524,6 @@ CONTEST_RULES.lights = {
     let hop = null, hd = 1e9, he = null;
     for(const e of A.out){ const d = e.c + G.d.get(e.to); if(d < hd){ hd = d; hop = e.to; he = e; } }
     if(!hop || hd >= 1e8){ f._lhGoal = null; return false; }
-    f._lhHeP = he && he.portal ? he.portal : null;
-    if(L.j !== f.idx && lhcSpotAi(f, inp, A, hop)) return true;   // going for a rival's light: out of the boats' beams (by level)
     return lhcSteer(f, inp, A, hop, he);
   },
 };
@@ -114424,7 +113645,7 @@ function lhcWinCut(){
   lhcDrawEmblem(c, cx, cy, R*pop, f, [true, true, true, true]);
   c.restore();
 }
-EVENT_TWIST_WORDS['contest:lights'] = { icon:'🔦', short:"Stapy's contest: the search party", words:"Stapy's contest: four lighthouses, one in each corner, and it is dark outside them. Climb each one and switch your piece of the emblem on. Stand on a rival's switch for 5 seconds to turn one piece off. First to light all four wins.", goal:'Light all 4 pieces of your emblem' };
+EVENT_TWIST_WORDS['contest:lights'] = { icon:'🔦', short:"Stapy's contest: the search party", words:"Stapy's contest: four lighthouses in the dark; outside, only your own light shows the way. Climb the parkour floors inside each one and switch your piece of the emblem on. Stand on a rival's switch for 5 seconds to turn one piece off. Waves sweep the plaza: hold the shield to brace. First to light all four wins.", goal:'Light all 4 pieces of your emblem' };
 
 // ---------- EVENT FIGHTERS: RULES ARE RULES (Hot Dog's CONTEST, his third event match: CONTEST_RULES.rules; UPGRADED 2026-11-17 to the owner's picks) ----------
 // THE CONCEPT (kept from the owner's approved pitch): a referee posts rules; OBEYING is the main way to score: +1 for every second (RR.obey frames) you obey every
@@ -149370,7 +148591,7 @@ const CCARD_ART = {
        c.save(); c.fillStyle = '#0c0a10'; c.strokeStyle = '#f2c033'; c.lineWidth = 3; c.setLineDash([6, 4]); c.fillRect(x + s*0.12, y + s*0.12, s*0.3, s*0.08); c.strokeRect(x + s*0.12, y + s*0.12, s*0.3, s*0.08); c.restore(); },
      '>', '-100']
   ]; },
-  // STAPY: climb the four lighthouses and light each piece of your emblem; first to light all four wins; outside, the sea storm's waves, the boats' searchlights and the foghorn
+  // STAPY: climb the four lighthouses and light each piece of your emblem; first to light all four wins; outside, the sea storm's waves
   lights:function(){ const me = { name:(chosen && chosen.name) || '', color:(chosen && chosen.color) || '#ffd23f' }; return [
     [function(c, x, y, s){ for(let i = 0; i < 4; i++){ const lx = x - s*0.39 + i*s*0.26; c.save(); c.fillStyle = i % 2 ? '#e8322c' : '#ffffff'; c.strokeStyle = CC_INK; c.lineWidth = 2.5; c.beginPath(); c.moveTo(lx - s*0.07, y + s*0.35); c.lineTo(lx - s*0.04, y - s*0.15); c.lineTo(lx + s*0.04, y - s*0.15); c.lineTo(lx + s*0.07, y + s*0.35); c.closePath(); c.fill(); c.stroke();
        c.fillStyle = '#ffd23f'; c.fillRect(lx - s*0.05, y - s*0.27, s*0.1, s*0.12); c.strokeRect(lx - s*0.05, y - s*0.27, s*0.1, s*0.12); c.restore(); } },
@@ -149381,40 +148602,15 @@ const CCARD_ART = {
     [function(c, x, y, s){ c.save(); c.fillStyle = '#4f9fd8'; c.strokeStyle = CC_INK; c.lineWidth = 3;   // the sea storm: a wave pushes you
        c.beginPath(); c.moveTo(x - s*0.85, y + s*0.4); c.lineTo(x - s*0.85, y - s*0.1); c.quadraticCurveTo(x - s*0.65, y - s*0.5, x - s*0.3, y - s*0.36); c.quadraticCurveTo(x - s*0.45, y - s*0.26, x - s*0.36, y - s*0.05); c.lineTo(x - s*0.26, y + s*0.4); c.closePath(); c.fill(); c.stroke();
        c.fillStyle = '#ffffff'; for(let i = 0; i < 4; i++){ c.beginPath(); c.arc(x - s*(0.36 + 0.1*i), y - s*(0.42 + 0.05*(i % 2)), s*0.05, 0, 7); c.fill(); } c.restore();
-       ccGround(c, x, y + s*0.4, s*1.8); ccArrow(c, x + s*0.02, y + s*0.02, s*0.8, '#9fd8ff', 0); ccMe(c, x + s*0.55, y + s*0.08, s*0.55); },
-     function(c, x, y, s){ c.save(); c.fillStyle = '#10142a'; c.fillRect(x - s*0.9, y - s*0.48, s*1.8, s*0.96); c.fillStyle = '#1d3b5c'; c.fillRect(x - s*0.9, y + s*0.22, s*1.8, s*0.26);   // a boat's searchlight lights a rival up
-       c.fillStyle = 'rgba(255,246,200,0.45)'; c.beginPath(); c.moveTo(x - s*0.55, y + s*0.08); c.lineTo(x + s*0.62, y - s*0.42); c.lineTo(x + s*0.72, y + s*0.08); c.closePath(); c.fill();
-       c.fillStyle = '#2a2f3a'; c.strokeStyle = CC_INK; c.lineWidth = 2.5; c.beginPath(); c.moveTo(x - s*0.78, y + s*0.2); c.lineTo(x - s*0.38, y + s*0.2); c.lineTo(x - s*0.44, y + s*0.32); c.lineTo(x - s*0.72, y + s*0.32); c.closePath(); c.fill(); c.stroke();
-       c.beginPath(); c.moveTo(x - s*0.56, y + s*0.2); c.lineTo(x - s*0.56, y + s*0.06); c.stroke(); c.fillStyle = '#fff3b0'; c.beginPath(); c.arc(x - s*0.55, y + s*0.07, s*0.05, 0, 7); c.fill(); c.restore();
-       ccFoe(c, x + s*0.5, y - s*0.12, s*0.42, 0); c.save(); c.strokeStyle = '#fffbe6'; c.lineWidth = 4; c.beginPath(); c.arc(x + s*0.5, y - s*0.12, s*0.27, 0, 7); c.stroke(); c.restore(); },
-     function(c, x, y, s){ c.save(); const lx = x - s*0.62;   // the foghorn: a blast from the lighthouse pushes you away from it
-       c.fillStyle = '#ffffff'; c.strokeStyle = CC_INK; c.lineWidth = 2.5; c.beginPath(); c.moveTo(lx - s*0.16, y + s*0.4); c.lineTo(lx - s*0.09, y - s*0.3); c.lineTo(lx + s*0.09, y - s*0.3); c.lineTo(lx + s*0.16, y + s*0.4); c.closePath(); c.fill(); c.stroke();
-       c.fillStyle = '#e8322c'; c.fillRect(lx - s*0.12, y - s*0.08, s*0.24, s*0.14); c.fillStyle = '#c9a640'; c.beginPath(); c.moveTo(lx + s*0.1, y - s*0.02); c.lineTo(lx + s*0.26, y - s*0.1); c.lineTo(lx + s*0.26, y + s*0.12); c.lineTo(lx + s*0.1, y + s*0.04); c.closePath(); c.fill(); c.stroke();
-       c.strokeStyle = '#9fc4ff'; c.lineWidth = 4; for(let i = 0; i < 3; i++){ c.beginPath(); c.arc(lx + s*0.2, y + s*0.01, s*(0.2 + 0.13*i), -0.7, 0.7); c.stroke(); } c.restore();
-       ccGround(c, x, y + s*0.4, s*1.8); ccArrow(c, x + s*0.18, y - s*0.3, s*0.6, '#9fc4ff', 0); ccMe(c, x + s*0.55, y + s*0.08, s*0.55); }]
+       ccGround(c, x, y + s*0.4, s*1.8); ccArrow(c, x + s*0.02, y + s*0.02, s*0.8, '#9fd8ff', 0); ccMe(c, x + s*0.55, y + s*0.08, s*0.55); }]
   ]; },
   // FOLDY: the wind carries you along the course; first across the finish line wins
-  // the 2026-11-17 upgrade's rows: the kite, the cranes, an updraft, a mail tube and a balloon carry you on; a windmill's blade, lightning, a tornado and a folding wall knock you back, and Z braces
+  // the rows: a paper plane glides you on, a block knocks you back, a mail tube carries you on, and Z braces
   race:function(){
     const meFwd = function(c, x, y, s){ ccMe(c, x - s*0.1, y, s*0.5); ccArrow(c, x + s*0.3, y, s*0.45, '#7ae582', 0); };
-    const meBack = function(c, x, y, s){ ccMe(c, x + s*0.1, y, s*0.5); ccArrow(c, x - s*0.3, y, s*0.45, '#ff6a5a', Math.PI); };
-    const kite = function(c, x, y, s){ fdxKitePic(c, x, y - s*0.12, s/90, 0); };
-    const cranes = function(c, x, y, s){ fdxCranePic(c, x - s*0.22, y - s*0.15, s/60, 0.2); fdxCranePic(c, x + s*0.18, y - s*0.25, s/70, 0.9); fdxCranePic(c, x + s*0.05, y + s*0.05, s/66, 0.5); };
-    const vent = function(c, x, y, s){ c.save(); c.fillStyle = '#5a5f6e'; c.strokeStyle = CC_INK; c.lineWidth = 3; c.fillRect(x - s*0.3, y + s*0.3, s*0.6, s*0.1); c.strokeRect(x - s*0.3, y + s*0.3, s*0.6, s*0.1); c.restore(); ccArrow(c, x, y - s*0.02, s*0.75, '#dff4ff', -Math.PI/2); };
     const tube = function(c, x, y, s){ c.save(); c.fillStyle = 'rgba(190,225,255,0.85)'; c.strokeStyle = CC_INK; c.lineWidth = 3;
        c.fillRect(x - s*0.45, y - s*0.3, s*0.9, s*0.22); c.strokeRect(x - s*0.45, y - s*0.3, s*0.9, s*0.22); c.fillRect(x - s*0.45, y - s*0.08, s*0.2, s*0.45); c.strokeRect(x - s*0.45, y - s*0.08, s*0.2, s*0.45); c.fillRect(x + s*0.25, y - s*0.08, s*0.2, s*0.45); c.strokeRect(x + s*0.25, y - s*0.08, s*0.2, s*0.45);
        c.restore(); ccMe(c, x + s*0.05, y - s*0.19, s*0.2); ccArrow(c, x + s*0.05, y + s*0.2, s*0.4, '#7ae582', 0); };
-    const balloon = function(c, x, y, s){ c.save(); const cols = ['#e8322c', '#ffd23f', '#6fb7ff']; for(let i = 0; i < 3; i++){ c.fillStyle = cols[i]; c.beginPath(); c.ellipse(x, y - s*0.18, s*(0.28 - i*0.08), s*0.26, 0, 0, 6.2832); c.fill(); }
-       c.strokeStyle = CC_INK; c.lineWidth = 3; c.beginPath(); c.ellipse(x, y - s*0.18, s*0.28, s*0.26, 0, 0, 6.2832); c.stroke();
-       c.lineWidth = 2; c.beginPath(); c.moveTo(x - s*0.2, y + s*0.0); c.lineTo(x - s*0.14, y + s*0.22); c.moveTo(x + s*0.2, y + s*0.0); c.lineTo(x + s*0.14, y + s*0.22); c.stroke();
-       c.fillStyle = '#b07a44'; c.lineWidth = 3; c.fillRect(x - s*0.16, y + s*0.22, s*0.32, s*0.16); c.strokeRect(x - s*0.16, y + s*0.22, s*0.32, s*0.16); c.restore(); };
-    const blade = function(c, x, y, s){ c.save(); c.translate(x, y); c.rotate(0.4); c.fillStyle = '#f7f1df'; c.strokeStyle = CC_INK; c.lineWidth = 3; for(let k = 0; k < 4; k++){ c.rotate(Math.PI/2); c.fillRect(s*0.06, -s*0.05, s*0.36, s*0.1); c.strokeRect(s*0.06, -s*0.05, s*0.36, s*0.1); } c.fillStyle = '#8a6a48'; c.beginPath(); c.arc(0, 0, s*0.07, 0, 6.2832); c.fill(); c.stroke(); c.restore(); };
-    const bolt = function(c, x, y, s){ c.save(); c.fillStyle = '#3a3850'; c.beginPath(); c.arc(x - s*0.12, y - s*0.3, s*0.14, 0, 6.2832); c.arc(x + s*0.08, y - s*0.34, s*0.16, 0, 6.2832); c.arc(x + s*0.24, y - s*0.28, s*0.11, 0, 6.2832); c.fill();
-       c.strokeStyle = '#fff27a'; c.lineWidth = 7; c.lineJoin = 'miter'; c.beginPath(); c.moveTo(x + s*0.04, y - s*0.18); c.lineTo(x - s*0.08, y + s*0.02); c.lineTo(x + s*0.08, y + s*0.04); c.lineTo(x - s*0.04, y + s*0.36); c.stroke(); c.strokeStyle = CC_INK; c.lineWidth = 1.5; c.stroke(); c.restore(); };
-    const torn = function(c, x, y, s){ c.save(); c.fillStyle = 'rgba(154,154,168,0.9)'; c.strokeStyle = CC_INK; c.lineWidth = 2; for(let j = 0; j < 6; j++){ const yy = y + s*0.36 - j*s*0.13, w = s*(0.06 + j*0.05); c.beginPath(); c.ellipse(x + Math.sin(j)*s*0.03, yy, w, s*0.05, 0, 0, 6.2832); c.fill(); c.stroke(); } c.restore(); };
-    const fwall = function(c, x, y, s){ c.save(); c.fillStyle = '#efe6cf'; c.strokeStyle = CC_INK; c.lineWidth = 3; c.fillRect(x - s*0.06, y - s*0.38, s*0.12, s*0.76); c.strokeRect(x - s*0.06, y - s*0.38, s*0.12, s*0.76);
-       c.fillStyle = '#efe6cf'; c.fillRect(x + s*0.1, y + s*0.32, s*0.3, s*0.06); c.strokeRect(x + s*0.1, y + s*0.32, s*0.3, s*0.06);
-       c.fillStyle = '#ff3a2a'; c.beginPath(); c.arc(x - s*0.22, y - s*0.1, s*0.07, 0, 6.2832); c.fill(); c.stroke(); c.fillStyle = '#3fd35a'; c.beginPath(); c.arc(x - s*0.22, y + s*0.12, s*0.07, 0, 6.2832); c.fill(); c.stroke(); c.restore(); };
     const brace = function(c, x, y, s){ c.save(); c.fillStyle = '#ffffff'; c.strokeStyle = CC_INK; c.lineWidth = 3; itemRoundRect(c, x - s*0.42, y - s*0.16, s*0.3, s*0.3, 6); c.fill(); c.stroke(); c.restore(); ccNum(c, x - s*0.27, y - s*0.01, s*0.55, 'Z');
        ccMe(c, x + s*0.18, y, s*0.42); c.save(); c.strokeStyle = '#ffffff'; c.lineWidth = 4; c.beginPath(); c.arc(x + s*0.18, y, s*0.28, Math.PI*0.6, Math.PI*1.4); c.stroke(); c.restore(); };
     return [
@@ -149424,8 +148620,8 @@ const CCARD_ART = {
     [function(c, x, y, s){ c.save(); c.translate(x, y); c.fillStyle = '#ffffff'; c.strokeStyle = CC_INK; c.lineWidth = 3; c.lineJoin = 'round'; c.beginPath(); c.moveTo(s*0.35, -s*0.05); c.lineTo(-s*0.35, -s*0.2); c.lineTo(-s*0.1, 0); c.lineTo(-s*0.3, s*0.15); c.closePath(); c.fill(); c.stroke(); c.restore(); },
      '>', function(c, x, y, s){ ccMe(c, x, y, s*0.5); ccArrow(c, x + s*0.3, y + s*0.15, s*0.4, '#bfe8ff', 0.3); },
      function(c, x, y, s){ c.save(); c.fillStyle = '#8a7f72'; c.strokeStyle = CC_INK; c.lineWidth = 3; c.fillRect(x + s*0.1, y - s*0.35, s*0.25, s*0.7); c.strokeRect(x + s*0.1, y - s*0.35, s*0.25, s*0.7); c.restore(); ccMe(c, x - s*0.2, y, s*0.45); ccArrow(c, x - s*0.15, y - s*0.3, s*0.35, '#ff6a5a', Math.PI); }],
-    [kite, cranes, vent, tube, balloon, '>', meFwd],
-    [blade, bolt, torn, fwall, '>', meBack, brace]
+    [tube, '>', meFwd],
+    [brace]
   ]; },
   // BEACH BALL: volleyball over the net; the ball on their sand is your point; first to 7
   keepup:function(){ return [
@@ -149506,28 +148702,15 @@ const CCARD_ART = {
      function(c, x, y, s){ c.save(); c.globalAlpha = 0.3; c.fillStyle = '#9ff0ff'; c.beginPath(); c.arc(x, y, s*0.42, 0, 7); c.fill(); c.globalAlpha = 1; c.strokeStyle = '#4fc8e8'; c.lineWidth = 4; c.stroke(); c.restore(); ccMe(c, x, y + s*0.05, s*0.42); }]
   ]; },
   // JAMMY: the crown waits on the throne; wear it and the time runs for you; hit the Ruler (or spend five coins) to take it; the jester's hat turns them round; the secret doors
-  // ERASER: SPLEEF -- the tiles go as you stand on them, down floor by floor, the last one standing wins; the kinds (rubber bounces you, glass goes fast,
-  // steel holds two, a trapdoor drops, the belt slides); the ink, the stamp, the stomp, the eraser of someone who is out, and the sharpener below
+  // ERASER: SPLEEF -- the tiles go as you stand on them, down floor by floor, the last one standing wins; the sharpener below
   spleef:function(){
     const row = function(c, x, y, w, n, gap, kinds){ const tw = w/n; for(let i = 0; i < n; i++){ if(gap && gap.indexOf(i) >= 0) continue; spleefTileArt(c, x - w/2 + i*tw, y, tw - 2, 10, (kinds && kinds[i]) || 'n', { base:true }); } };
-    const meCol = (chosen && chosen.color) || '#7bc043';
     return [
     [function(c, x, y, s){ row(c, x, y - s*0.05, s*0.9, 5); ccMe(c, x, y - s*0.05 - s*0.2, s*0.4); row(c, x, y + s*0.38, s*0.9, 5); },
      '>', function(c, x, y, s){ row(c, x, y - s*0.05, s*0.9, 5, [2]); row(c, x, y + s*0.38, s*0.9, 5); ccMe(c, x, y + s*0.38 - s*0.2, s*0.4); ccArrow(c, x, y - s*0.25, s*0.3, '#ffffff', Math.PI/2); },
      '>', function(c, x, y, s){ for(let i = 0; i < 3; i++){ ccFoe(c, x + (i - 1)*s*0.3, y, s*0.4, i); ccCross(c, x + (i - 1)*s*0.3, y, s*0.4); } },
      '>', 'win'],
-    [function(c, x, y, s){ spleefTileArt(c, x - s*0.2, y + s*0.32, s*0.4, 10, 'rub', {}); ccMe(c, x - s*0.05, y - s*0.08, s*0.36); ccArrow(c, x + s*0.3, y - s*0.05, s*0.35, '#ffffff', -Math.PI/2); },
-     function(c, x, y, s){ spleefTileArt(c, x - s*0.3, y + s*0.32, s*0.4, 10, 'gls', {}); ccTimer(c, x + s*0.22, y - s*0.08, s*0.6, 0.15); },
-     function(c, x, y, s){ spleefTileArt(c, x - s*0.3, y + s*0.32, s*0.6, 10, 'stl', { wt:2 }); ccMe(c, x - s*0.14, y + s*0.32 - s*0.16, s*0.32); ccFoe(c, x + s*0.14, y + s*0.32 - s*0.16, s*0.32, 0); ccTick(c, x + s*0.4, y - s*0.25, s*0.4); },
-     function(c, x, y, s){ spleefTileArt(c, x - s*0.42, y + s*0.32, s*0.26, 10, 'n', { base:true }); spleefTileArt(c, x + s*0.16, y + s*0.32, s*0.26, 10, 'n', { base:true });
-       c.save(); c.fillStyle = '#8fa8c8'; c.strokeStyle = CC_INK; c.lineWidth = 2; for(const d of [-1, 1]){ c.save(); c.translate(x + d*s*0.15, y + s*0.32); c.rotate(d*1.2); c.fillRect(d < 0 ? 0 : -s*0.15, 0, s*0.15, 10); c.strokeRect(d < 0 ? 0 : -s*0.15, 0, s*0.15, 10); c.restore(); } c.restore();
-       ccMe(c, x, y - s*0.15, s*0.32); ccArrow(c, x + s*0.3, y - s*0.1, s*0.3, '#ffffff', Math.PI/2); },
-     function(c, x, y, s){ for(let i = 0; i < 3; i++) spleefTileArt(c, x - s*0.42 + i*s*0.28, y + s*0.1, s*0.26, 10, 'n', { base:true, cv:0 }); ccArrow(c, x, y + s*0.35, s*0.5, '#ffd23f'); ccMe(c, x - s*0.1, y + s*0.1 - s*0.16, s*0.32); }],
-    [function(c, x, y, s){ spleefTileArt(c, x - s*0.4, y + s*0.32, s*0.8, 10, 'n', { base:true, ink:true }); spleefBottlePic(c, x - s*0.3, y + s*0.3, s/110, 1.2); },
-     function(c, x, y, s){ row(c, x, y + s*0.35, s*0.8, 4); c.save(); c.globalAlpha = 0.5; c.fillStyle = CC_INK; c.beginPath(); c.ellipse(x, y + s*0.37, s*0.22, 5, 0, 0, 7); c.fill(); c.restore(); spleefStampPic(c, x, y + s*0.1, s*0.42); },
-     function(c, x, y, s){ row(c, x, y + s*0.35, s*0.8, 4, [1, 2]); ccFoe(c, x, y + s*0.35 - s*0.1, s*0.3, 0); ccMe(c, x, y - s*0.25, s*0.3); ccSpark(c, x + s*0.15, y - s*0.02, s*0.2); },
-     function(c, x, y, s){ row(c, x, y + s*0.35, s*0.8, 4, [2]); spleefGhostPic(c, x + s*0.1, y - s*0.3, s/110, meCol); c.save(); c.strokeStyle = '#ff9cbc'; c.lineWidth = 3; c.setLineDash([5, 6]); c.beginPath(); c.moveTo(x + s*0.1, y - s*0.15); c.lineTo(x + s*0.1, y + s*0.3); c.stroke(); c.restore(); spleefCrumbPic(c, x + s*0.1, y + s*0.1, 1.2, 0.4); },
-     function(c, x, y, s){ spleefSharpPic(c, x, y - s*0.25, s/700, 0.5); ccArrow(c, x, y - s*0.38, s*0.25, '#ffffff', Math.PI/2); }]
+    [function(c, x, y, s){ spleefSharpPic(c, x, y - s*0.25, s/700, 0.5); ccArrow(c, x, y - s*0.38, s*0.25, '#ffffff', Math.PI/2); }]
   ]; },
   crown:function(){ return [
     [function(c, x, y, s){ crnDrawThrone(c, x, y + s*0.42, s/250); crownDraw(c, x, y - s*0.1, s/60, 1); }, '>', function(c, x, y, s){ ccMe(c, x, y + s*0.08, s*0.7); crownDraw(c, x, y - s*0.33, s/90, 1); },
