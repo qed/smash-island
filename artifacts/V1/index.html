@@ -74501,7 +74501,6 @@ function step(){
     if(JAWB && JAWB.lk) lkInput(f, inp);   // LICK YOUR WAY TO FREEDOM: Down held beside a jawbreaker licks it
     if(FDR && FDR.ck) stkrInput(f, inp);   // CHEATERS PROSPER: Down at a shortcut's spot starts a cheat (never a drop there); nothing is pressed while one runs or while its drone stuns
     if(TTW) inp = ttInput(f, inp);   // FAST FORWARD (Clock's contest): Down in a door, at the seed, on the bridge or at the capsule; Space uses the rewind; a statue presses nothing
-    if(HS) hsInput(f, inp);   // BOTTLE'S HIDE AND SEEK: Down at a vent, a bookshelf, the fuse box or a doorbell; still in the open, a hider becomes a lamp or a vase; no keys in a duct or a passage
     if(FDR) inp = fdrFilter(f, inp);   // THE WIND RACE: the shield key braces (stop dead, take less knockback) and no shield goes up
     if(SETTINGS.mode==='ctf') inp = ctfFilterInput(f, inp);   // the hiding phase's two keys; a prisoner stands still
     if(f._tp) inp = teleportHold(f, inp);   // Bow's Teleport: while she fades, the arrows are her aim and nothing else (see TP)
@@ -112020,129 +112019,97 @@ Object.assign(EVENT_TWIST_WORDS, {
 });
 
 // ---------- EVENT FIGHTERS: HIDE AND SEEK (Bottle's CONTEST, her third event match: CONTEST_RULES.hide, with its own world HS) ----------
-// The OWNER'S spec (contest-specs memory, "BFDIE EVENT CONTESTS APPROVED", 2026-11-17): a big dark house with cupboards, curtains and vents; one seeker with a
-// flashlight cone, rotating each round; hiders score per second unfound; caught (lit) hiders become seekers. The owner, later the same day: "hide and seek could be
-// bigger, with powerups for both seekers and hiders, and mini-rooms", and "for seekers, because this is a big map, you can get an extra 'ghost' seeker".
-// THE HOUSE (hsBuildWorld, in place of the stage's own world; nothing else's stage is touched): HSK.base + HSK.perFighter px a fighter wide (3800 for the four of the
-// match), THREE storeys HSK.storey px apart (the two upper floors are one-way: jump up through, hold down to drop), solid outer walls and roof. Each storey is a row of
-// CELLS: open HALLS (the stairwells: every hall but the last has a staircase of two one-way steps up to the next storey) and between them blocks of MINI-ROOMS (a pantry,
-// a laundry room, a bathroom, a crawlspace, a coat closet, a nursery, a study, an attic nook...), each with one or two hiding spots (a cupboard, a curtain, a vent).
-// A doorway (an open door or a curtain) joins each cell to the next; nothing solid but the outer shell, so nobody is shut in. LIGHT DOES NOT PASS A ROOM'S WALLS: a
-// seeker's flashlight lights only the cell the seeker is in -- and the next one, standing in the doorway between them -- so a seeker has to look into each room.
+// The OWNER'S spec (contest-specs memory, "BFDIE EVENT CONTESTS APPROVED", 2026-11-17): a big dark house with hiding places; one seeker with a flashlight cone,
+// rotating each round; hiders score per second unfound; caught (lit) hiders become seekers. SIMPLIFIED by the owner 2026-11-18 ("the contests should have 5ish
+// features"; for this one "1, and make the map have REGIONS and LAYERS, because those are easy to understand"): the core only. Every extra was taken out (the
+// secret passages, vents and their ducts, the disguise, the mirror room, the flickering bulbs, the moving furniture, the doorbells, the creaky boards, the fuse box,
+// the powerups and the ghost seeker).
+// THE HOUSE (hsBuildWorld, in place of the stage's own world; nothing else's stage is touched): HSK.base + HSK.perFighter px a fighter wide, FOUR LAYERS stacked
+// HSK.storey px apart (HS_LAYERS, bottom to top: the Basement, the Ground Floor, Upstairs, the Attic; every floor above the basement is one-way: jump up through it,
+// hold down to drop), solid outer walls and roof. Every layer is the same row of seven cells: a STAIRWELL, two ROOMS, a stairwell, two rooms, a stairwell. Each
+// stairwell has a staircase of two one-way steps up to the next layer (not the attic's: it is the top), and the stairwells line up layer to layer. The four rooms
+// of a layer are its REGIONS: each has its own colour, its own big thing that says what it is (a boiler, a stove, a bath...) and two hiding spots of furniture
+// that fits it (a cupboard, a curtain, a wardrobe, a bed, crates, a barrel, a toy chest, a table with a long cloth, a sofa). Each layer has its own walls (stone,
+// striped wallpaper, dotted wallpaper, bare planks). The HUD names the layer and the region you are in and shows the house's cross-section with your room lit.
+// A doorway joins each cell to the next; nothing solid but the outer shell, so nobody is shut in. LIGHT DOES NOT PASS A ROOM'S WALLS: a seeker's flashlight lights
+// only the cell the seeker is in -- and the next one, standing in the doorway between them -- so a seeker has to look into each room.
 // A hider standing in a spot (on its floor, inside its middle) is HIDDEN: the spot's front is drawn over them and only a light within HSK.close px finds them.
-// THE DARK: the 'dark' veil (darkOn: twists:['dark']) with only YOUR small light, every seeker's (and ghost's) cone, and the powerups' glow cut out of it.
+// THE DARK: the 'dark' veil (darkOn: twists:['dark']) with only YOUR small light and every seeker's cone cut out of it.
 // THE ROUNDS: HSK.rounds (4, one per fighter: everyone seeks once; the order dealt at random). Each: the seeker counts at the front door (HSK.count frames, frozen and
 // unhittable) while the hiders run; then HSK.seek frames. A hider lit for HSK.catchT frames in a row is FOUND and seeks too. A round ends at its time or when nobody is
 // left hiding. Fighting goes on as ever; a KO costs nothing but a respawn, and a hider who is KO'd is found. A hider earns a point for every second unfound in the
 // seeking time. THE WIN: the most seconds after the last round (a tie: the most finds, then whoever was found later).
-// POWERUPS (HSP; the owner can change the list): small glowing pickups that GROW IN on a floor round the house (never from the sky), HSK.pupMax at a time, one every
-// HSK.pupEvery frames, the sides in turn: GOLD ones only a seeker can take, BLUE ones only a hider. Each works the moment it is taken.
-//   SEEKERS: BIG BEAM (the cone half again as long and wider, 6 s), LISTEN (the footsteps of every hider within HSP.listen.r px show for 3 s), SPRINT (35% faster, 5 s),
-//            GHOST SEEKER (a see-through ghost with its own flashlight roams the house for 12 s, room by room, the ones nobody has looked in lately first; a hider it
-//            lights for HSK.catchT frames is found, a find for the seeker who called it).
-//   HIDERS:  DECOY (a noise that pulses in a room far from you for 4 s; seekers -- you or the computer -- may go and look), LIGHTS OUT (your own light off and you
-//            unseen past HSK.close px even in a cone, 4 s), SHADOW STEP (a quick dash the way you face, unseen while it lasts), CLOSET LOCK (the room you are in locks
-//            for 5 s: seekers, ghosts too, cannot come in; out in a hall it is spent on the next room you enter within 3 s).
-// CPUs (hsBrain, before the fight brain): hiders pick a free spot far from the seekers and go to it by the stairs, take a blue powerup on the way, keep still in the
-// spot, and run for another when a light is on them; seekers walk the house spot by spot (the nearest they have not looked at this round, not one another seeker is
-// heading for), take a gold powerup near them, look at a decoy now and then, and chase what they can SEE (lit, close in the open, or heard with LISTEN). They know
-// nothing a person in their place could not see.
+// CPUs (hsBrain, before the fight brain): hiders pick a free spot far from the seekers and go to it by the stairs, keep still in it, and run for another when a light
+// is on them (after a moment in the light, quicker by level: HSK.flee); seekers walk the house spot by spot (the nearest they have not looked at this round, not one
+// another seeker is heading for) and chase what they can SEE (lit, or close in the open in their own room). They know nothing a person in their place could not see.
 // Not online (startEventMatch refuses in a room): nothing rides the snapshot.
-const HSK = { base:2600, perFighter:300, storey:240, roof:760, wall:60, step:80, stepW:150, stepDx:60, rounds:4, count:300, seek:2400, brk:120,
-  cone:380, ha:0.42, close:150, catchT:24, me:120, near:100, reveal:60, look:50, door:40, hallW:400, roomW:[240, 300],
-  pupEvery:330, pupMax:4, pupLife:1500, pupR:15, fastK:1.35 };
-const HSP = {
-  seek:[
-    { k:'beam', icon:'☀', name:'Big Beam', t:360, coneK:1.5, haK:1.4 },
-    { k:'listen', icon:'👂', name:'Listen', t:180, r:900 },
-    { k:'sprint', icon:'⚡', name:'Sprint', t:300 },
-    { k:'ghost', icon:'👻', name:'Ghost Seeker', t:720, spd:4.2 },
-  ],
-  hide:[
-    { k:'decoy', icon:'🔔', name:'Decoy', t:240 },
-    { k:'dark', icon:'🌑', name:'Lights Out', t:240 },
-    { k:'step', icon:'💨', name:'Shadow Step', t:22, vx:15 },
-    { k:'lock', icon:'🔒', name:'Closet Lock', t:300, wait:180 },
-  ],
-};
-// THE OWNER'S PICKS, 2026-11-17 (contest-specs memory, the BOTTLE lines): flickering lights, furniture that moves between rounds, a doorbell, creaky boards, a disguise,
-// secret passages behind bookshelves, the mirror room, a fuse box and vent swaps. NOT the seeker's dog, the laundry pile or the attic ladder. HSX holds their numbers.
-//   FLICKERING LIGHTS: now and then (HSX.flk frames apart, in the seeking time) one room's ceiling bulb buzzes on for HSX.flkT frames: the room is lit and a hider in it
-//     out in the open is seen (by you, and by a CPU seeker within HSX.see px); one in a spot or disguised is not. No bulb flickers while the power is cut.
-//   MOVING FURNITURE: in the break between rounds every cupboard, curtain, lamp and vase slides to a new place in a room near it (hsFurnPlan / hsFurnSlide);
-//     the vents, bookshelves, the mirror, the fuse box and the doorbells stay put.
-//   DOORBELL: one by each outer door, at the two ends of the ground floor. A hider taps Down at it: a ding-dong and a ring everyone sees; seekers may come to look.
-//     That bell rings again after HSX.bellCd frames.
-//   CREAKY BOARDS: HSX.creaks loose boards a storey (the lighter planks). Anyone running over one makes it creak: a noise ring there.
-//   DISGUISE: a hider who stands still in the open for HSX.disgT frames turns into a lamp or a vase like the house's own; any move ends it. Only a light within
-//     HSX.disgR px finds them (one in a spot: HSK.close). It wobbles a little every HSX.wob frames (a tell for sharp eyes).
-//   SECRET PASSAGES: HSX.shelves pairs of bookshelves, each pair on two storeys far apart. Anyone taps Down at one: HSX.passT frames in the passage, out at the other.
-//   MIRROR ROOM: one wide room of the middle storey has a big mirror. While any light is in that room (a seeker's, a ghost's, a flicker) the mirror shows everyone in
-//     the room from the other side -- hiders in spots and disguises too -- and a CPU seeker sees what it shows.
-//   FUSE BOX: one, on the ground floor. A hider taps Down at it: for HSX.powerT frames every seeker's (and ghost's) flashlight dies to a weak glow that finds only within
-//     HSK.close px, and no bulb flickers. Once a round. Its little screen shows the face of who touched it for the rest of the round; its clunk is a noise.
-//   VENT SWAPS: each vent is joined by a duct to another about half the house away. A hider in a vent taps Down: HSX.ductT frames in the duct (unseen, unhittable),
-//     then out in the other vent -- with a rattle there (a noise ring: ducts are loud), so a seeker may follow.
-// CPUs (by level 0..3, HSX.lv): hiders turn into props, slip through vents and passages and cut the power when a seeker comes, ring a bell on the way to a spot far
-// from it, and hop over creaky boards with a seeker on their storey; seekers follow creaks and bells, look in the mirror once a round, and notice a lamp that was not there.
-const HSX = { flk:[360, 600], flkT:84, see:800, creaks:3, creakW:90, creakCd:45, ringT:54, bellR:36, bellCd:900, bellT:150, disgT:45, disgR:210, wob:240,
-  shelves:3, shelfR:30, passT:30, ductT:42, powerT:300, fuseR:28, mirW:96, mirH:104, furnNear:2, escCd:600,
-  lv:{ flee:[14, 12, 10, 8], trick:[0.35, 0.55, 0.75, 0.9], disg:[0.1, 0.18, 0.25, 0.3], ring:[0.1, 0.18, 0.26, 0.34], notice:[0.15, 0.3, 0.5, 0.7],
-       creak:[0.35, 0.55, 0.75, 0.9], bell:[0.6, 0.75, 0.85, 0.95], mirror:[0.4, 0.6, 0.8, 0.95], hop:[0, 0.3, 0.6, 0.85] } };
-const HS_ROOMS = [   // the mini-rooms' kinds, storey by storey (ground, middle, attic), dealt along the storey in turn
-  ['pantry', 'laundry', 'crawlspace', 'coat closet', 'mudroom', 'boiler room', 'bathroom', 'wine cellar'],
-  ['bathroom', 'linen closet', 'nursery', 'study', 'walk-in closet', 'playroom', 'sewing room', 'music room'],
-  ['attic nook', 'box room', 'trunk room', 'dusty loft', 'chimney nook', 'toy store', 'old wardrobe', 'storage'],
+const HSK = { base:2600, perFighter:300, storey:240, roof:1000, wall:60, step:80, stepW:150, stepDx:60, rounds:4, count:300, seek:2400, brk:120,
+  cone:380, ha:0.42, close:150, catchT:24, me:120, near:100, reveal:60, look:50, door:40, hallW:320, flee:[14, 12, 10, 8] };
+// THE LAYERS AND THEIR REGIONS, bottom to top: the layer's name, its stairwells' name, its walls' colour and look, its floor boards' colour, and its four rooms
+// left to right (each: its name, its colour, its big thing (hsDrawThing) and its two hiding spots, left and right (hsDrawSpot)).
+const HS_LAYERS = [
+  { name:'Basement', hall:'Cellar Stairs', wall:'#6a7480', floor:'#3c4048', look:'stone', rooms:[
+    { name:'Boiler Room', col:'#b0704e', thing:'boiler', spots:['barrel', 'crates'] },
+    { name:'Laundry', col:'#6aa8c8', thing:'washer', spots:['cupboard', 'curtain'] },
+    { name:'Wine Cellar', col:'#8a3e52', thing:'rack', spots:['barrel', 'barrel'] },
+    { name:'Storage', col:'#9a9a6a', thing:'shelves', spots:['crates', 'cupboard'] } ] },
+  { name:'Ground Floor', hall:'Hall', wall:'#c9b48a', floor:'#7a4e2e', look:'stripes', rooms:[
+    { name:'Kitchen', col:'#e8d460', thing:'stove', spots:['cupboard', 'cupboard'] },
+    { name:'Living Room', col:'#6ab86a', thing:'fireplace', spots:['curtain', 'sofa'] },
+    { name:'Dining Room', col:'#c8504a', thing:'clock', spots:['table', 'curtain'] },
+    { name:'Music Room', col:'#8a78d0', thing:'piano', spots:['curtain', 'cupboard'] } ] },
+  { name:'Upstairs', hall:'Landing', wall:'#d8c8b0', floor:'#8a5a3a', look:'dots', rooms:[
+    { name:'Bedroom', col:'#5a7ad8', thing:'picture', spots:['bed', 'wardrobe'] },
+    { name:'Bathroom', col:'#7ad8d0', thing:'bath', spots:['curtain', 'cupboard'] },
+    { name:'Nursery', col:'#f0a0c8', thing:'toys', spots:['bed', 'chest'] },
+    { name:'Study', col:'#b8905a', thing:'desk', spots:['wardrobe', 'curtain'] } ] },
+  { name:'Attic', hall:'Attic Steps', wall:'#9a7a5a', floor:'#5a3e26', look:'planks', rooms:[
+    { name:'Box Room', col:'#c8a070', thing:'boxes', spots:['crates', 'crates'] },
+    { name:'Old Clothes', col:'#a080a8', thing:'dummy', spots:['wardrobe', 'curtain'] },
+    { name:'Old Toys', col:'#d8b048', thing:'horse', spots:['chest', 'crates'] },
+    { name:'Junk Corner', col:'#7a8a6a', thing:'chair', spots:['wardrobe', 'barrel'] } ] },
 ];
+const HS_SPOT = { cupboard:{ w:92, h:112 }, curtain:{ w:92, h:124 }, wardrobe:{ w:100, h:140 }, bed:{ w:128, h:96 }, crates:{ w:96, h:104 }, barrel:{ w:88, h:100 },
+  chest:{ w:104, h:92 }, table:{ w:120, h:92 }, sofa:{ w:124, h:92 } };
 let HS = null;   // null in every other match; else { W, gy, ys[], roofY, cells[st][], spots, stairs } -- see hsBuildWorld
 function hsWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.contest === 'hide'; }
 function hsBuildWorld(){
   const K = HSK, n = Math.max(2, (EVENT_RUN && EVENT_RUN.m) ? EVENT_RUN.m.sides.reduce((a, sd) => a + sd.length, 0) : (fighters && fighters.length) || 4);
   WW = K.base + K.perFighter*n; WH = Math.round(1100/0.82); camX = 0; camY = 0; bases = []; floors = []; worldZones = []; spawnZones = []; worldPlats = [];
-  const gy = groundY(), ys = [gy, gy - K.storey, gy - 2*K.storey], roofY = gy - K.roof;
+  const gy = groundY(), NL = HS_LAYERS.length, ys = [], roofY = gy - K.roof;
+  for(let st = 0; st < NL; st++) ys.push(gy - st*K.storey);
   FLOOR_SEGS = [{ x0:K.wall, x1:WW - K.wall }];
   worldPlats.push(
     { x:-80, y:roofY - 600, w:80 + K.wall, h:gy - roofY + 1200, solid:true, hsWall:true },
     { x:WW - K.wall, y:roofY - 600, w:80 + K.wall, h:gy - roofY + 1200, solid:true, hsWall:true },
     { x:-80, y:roofY - 600, w:WW + 160, h:600, solid:true, hsWall:true });   // the roof
-  for(let st = 1; st < ys.length; st++) worldPlats.push({ x:K.wall, y:ys[st], w:WW - 2*K.wall, h:14, solid:false, hsFloor:true });   // the upper floors (one way)
-  // THE CELLS, the same x-ranges on every storey (so the stairwells line up): a hall, then a block of 2 or 3 mini-rooms, then a hall... ending with a hall.
-  const xs = []; let x = K.wall, blk = 0;
-  while(x < WW - K.wall - 1){
-    const left = WW - K.wall - x;
-    if(left <= K.hallW*1.6){ xs.push({ x0:x, x1:WW - K.wall, hall:true }); break; }
-    xs.push({ x0:x, x1:x + K.hallW, hall:true }); x += K.hallW;
-    const nr = 2 + (blk++ % 2), room = [];
-    for(let i = 0; i < nr; i++){ const w = K.roomW[(i + blk) % 2]; room.push(w); }
-    let tot = room.reduce((a, b) => a + b, 0);
-    if(x + tot > WW - K.wall - K.hallW){ room.length = 0; const span = WW - K.wall - K.hallW - x; if(span >= K.roomW[0]){ const m = Math.max(1, Math.floor(span/K.roomW[0])); for(let i = 0; i < m; i++) room.push(Math.floor(span/m)); } tot = room.reduce((a, b) => a + b, 0); }
-    for(const w of room){ xs.push({ x0:x, x1:x + w, hall:false }); x += w; }
-  }
-  const cells = [], spots = [], stairs = [], kinds = ['cupboard', 'curtain', 'vent'];
-  for(let st = 0; st < ys.length; st++){
-    const row = []; let ri = 0;
-    xs.forEach((c, ci) => {
-      const cell = { x0:c.x0, x1:c.x1, hall:c.hall, st:st, ci:ci, y:ys[st], name:c.hall ? 'hall' : HS_ROOMS[st][ri++ % HS_ROOMS[st].length] };
-      row.push(cell);
-      const mk = (sx, k) => spots.push({ x:Math.round(sx), st:st, ci:ci, kind:k, y:ys[st], w:k === 'vent' ? 84 : 92, h:k === 'vent' ? 96 : k === 'curtain' ? 124 : 112 });
-      if(!c.hall){ const w = c.x1 - c.x0; if(w >= 280){ mk(c.x0 + 66, kinds[(ci + st) % 3]); mk(c.x1 - 66, kinds[(ci + st + 1) % 3]); } else mk((c.x0 + c.x1)/2, kinds[(ci + st) % 3]); }
-      else if(ci > 0 && (ci + st) % 2 === 0) mk(c.x1 - 70, 'curtain');   // a curtain at a hall's far window, now and then
+  for(let st = 1; st < NL; st++) worldPlats.push({ x:K.wall, y:ys[st], w:WW - 2*K.wall, h:14, solid:false, hsFloor:true });   // the floors above the basement (one way)
+  // THE CELLS, the same x-ranges on every layer (so the stairwells line up): a stairwell, two rooms, a stairwell, two rooms, a stairwell (-1 = a stairwell)
+  const pat = [-1, 0, 1, -1, 2, 3, -1], rw = Math.floor((WW - 2*K.wall - 3*K.hallW)/4), xs = [];
+  let x = K.wall;
+  pat.forEach(function(ri, i){ const w = i === pat.length - 1 ? WW - K.wall - x : ri < 0 ? K.hallW : rw; xs.push({ x0:x, x1:x + w, ri:ri }); x += w; });
+  const cells = [], spots = [], stairs = [], midHall = 3;
+  for(let st = 0; st < NL; st++){
+    const Ly = HS_LAYERS[st], row = [];
+    xs.forEach(function(q, ci){
+      const R = q.ri >= 0 ? Ly.rooms[q.ri] : null;
+      row.push({ x0:q.x0, x1:q.x1, hall:!R, st:st, ci:ci, y:ys[st], name:R ? R.name : (st === 1 && ci === midHall ? 'Front Hall' : Ly.hall), col:R ? R.col : Ly.wall, thing:R ? R.thing : null });
+      if(R) R.spots.forEach(function(k, j){ const D = HS_SPOT[k], sx = j ? q.x1 - (q.x1 - q.x0)*0.2 : q.x0 + (q.x1 - q.x0)*0.2; spots.push({ x:Math.round(sx), st:st, ci:ci, kind:k, y:ys[st], w:D.w, h:D.h }); });
     });
     cells.push(row);
   }
-  for(let st = 0; st < ys.length - 1; st++) for(const c of cells[st]){   // a staircase in every hall but the last, up to the next storey
-    if(!c.hall || c.x1 >= WW - K.wall - 1) continue;
+  for(let st = 0; st < NL - 1; st++) for(const c of cells[st]){   // a staircase in every stairwell, up to the next layer (the attic is the top)
+    if(!c.hall) continue;
     const sx = c.x0 + 40, a = { x:sx, y:ys[st] - K.step, w:K.stepW, h:12, solid:false, hsStep:true }, b = { x:sx + K.stepDx, y:ys[st] - 2*K.step, w:K.stepW, h:12, solid:false, hsStep:true };
     worldPlats.push(a, b); stairs.push({ x:sx, st:st, a:a, b:b });
   }
   SIDE_ROOM = 0;
   HS = { W:WW, gy:gy, ys:ys, upY:ys[1], roofY:roofY, cells:cells, spots:spots, stairs:stairs };
-  hsBuildExtras();   // THE OWNER'S PICKS: doorbells, the mirror room, the fuse box, the passages, the ducts, the creaky boards, the lamps and vases
 }
 function hsStorey(f){ const fy = f.y + f.r; let st = 0; for(let i = 1; i < HS.ys.length; i++) if(fy < HS.ys[i] + 30) st = i; return st; }
 function hsCellAt(st, x){ const row = HS.cells[st] || HS.cells[0]; for(const c of row) if(x < c.x1) return c; return row[row.length - 1]; }
 function hsCell(f){ return hsCellAt(hsStorey(f), f.x); }
-function hsDoor(){ const c = HS.cells[0].filter(q => q.hall); const m = c[Math.floor(c.length/2)] || HS.cells[0][0]; return { x:Math.round((m.x0 + m.x1)/2 + 80), y:HS.gy }; }
+function hsDoor(){ const c = HS.cells[1].filter(q => q.hall); const m = c[Math.floor(c.length/2)] || HS.cells[1][0]; return { x:Math.round((m.x0 + m.x1)/2 + 80), y:HS.ys[1] }; }   // the front door: the ground floor's middle stairwell
 function hsSpotOf(f){   // the spot a fighter stands in, or -1
   if(!f.onground || f.dead) return -1;
   const fy = f.y + f.r;
@@ -112150,7 +112117,7 @@ function hsSpotOf(f){   // the spot a fighter stands in, or -1
   return -1;
 }
 function hsHidden(f){ return !!HS && !f.dead && (f._hsIn >= 0 && f._hsIn != null) && !(f._hsRev > hazardT) && f._hsRole === 'hide'; }
-function hsHiddenish(f){ return hsHidden(f) || hsDisg(f) || (f._btHide > hazardT) || (f._hsDarkT > hazardT); }   // (Bottle's Best Hiding Spot and LIGHTS OUT: only a close light finds them)
+function hsHiddenish(f){ return hsHidden(f) || (f._btHide > hazardT); }   // (Bottle's Best Hiding Spot: only a close light finds her)
 // Can a light at (x, st) reach into cell `c`? Its own cell, and the next one through the doorway it stands in.
 function hsLightReach(st, x, c){
   if(c.st !== st) return false;
@@ -112158,536 +112125,78 @@ function hsLightReach(st, x, c){
   if(own === c) return true;
   return (Math.abs(c.ci - own.ci) === 1) && (Math.abs(x - own.x0) < HSK.door || Math.abs(x - own.x1) < HSK.door);
 }
-// Is h in the light of a seeker or a ghost at (x, y), facing d (the cone, the walls of the rooms, a hidden hider only up close)?
-function hsLit(x, y, d, st, beam, h){
-  if(h.dead || h._hsTrav || hsStorey(h) !== st) return false;   // (in a duct or a passage: no light finds them)
+// Is h in the light of a seeker at (x, y), facing d (the cone, the walls of the rooms, a hidden hider only up close)?
+function hsLit(x, y, d, st, h){
+  if(h.dead || hsStorey(h) !== st) return false;
   if(!hsLightReach(st, x, hsCell(h))) return false;
-  const dx = h.x - x, dy = h.y - y, dist = Math.hypot(dx, dy), B = beam ? HSP.seek[0] : null;
-  let R = hsDisg(h) ? HSX.disgR : hsHiddenish(h) ? HSK.close : HSK.cone*(B ? B.coneK : 1);   // (DISGUISE: a little further than a spot)
-  if(CONTEST && CONTEST.powerT > hazardT) R = Math.min(R, HSK.close);   // (THE FUSE BOX: the power is cut, every flashlight a weak glow)
+  const dx = h.x - x, dy = h.y - y, dist = Math.hypot(dx, dy), R = hsHiddenish(h) ? HSK.close : HSK.cone;
   if(dist > R) return false;
   if(dist < 24) return true;
   if(dx*d <= 0) return false;
-  return Math.abs(Math.atan2(dy, Math.abs(dx))) <= HSK.ha*(B ? B.haK : 1) + Math.min(0.5, h.r/dist);
+  return Math.abs(Math.atan2(dy, Math.abs(dx))) <= HSK.ha + Math.min(0.5, h.r/dist);
 }
-function hsInCone(s, h){ return !s.dead && hsLit(s.x, s.y, s.face < 0 ? -1 : 1, hsStorey(s), s._hsBeamT > hazardT, h); }
+function hsInCone(s, h){ return !s.dead && hsLit(s.x, s.y, s.face < 0 ? -1 : 1, hsStorey(s), h); }
 function hsSeekers(){ return fighters.filter(function(o){ return !o.dead && o._hsRole === 'seek'; }); }
 function hsHiders(){ return fighters.filter(function(o){ return !o.dead && o._hsRole === 'hide'; }); }
-// What a CPU sees (aiCanSee): seekers carry lights (always seen); a seeker sees a hider in a light, close in the open in its own room, or heard (LISTEN); a hider sees
+// What a CPU sees (aiCanSee): seekers carry lights (always seen); a seeker sees a hider in a light, or close in the open in its own room; a hider sees
 // another hider close in its own room.
 function hsCpuSees(f, t, d){
-  if(t._hsTrav) return false;   // (in a duct or a passage)
   const S = CONTEST; if(!S || S.ph === 'count' || S.ph === 'break') return t._hsRole === 'seek';
   if(t._hsRole === 'seek') return true;
   if(t._hsLitNow) return f._hsRole === 'seek';
-  if(f._hsRole === 'seek' && (t._hsFlkNow || t._hsMirNow) && d < HSX.see) return true;   // (a flickering bulb, the mirror)
-  if(f._hsRole === 'seek' && f._hsListenT > hazardT && d < HSP.seek[1].r) return true;
   return d < HSK.near && !hsHiddenish(t) && hsCell(t) === hsCell(f);
 }
 // What YOU cannot see (name tags, the minimap, the arrows, the body: kitUnseen, darkSeeK).
 function hsHiddenFromMe(f){
   const me = fighters.find(function(o){ return o.you && !o.dead; });
   if(!me || f === me || f.dead || !CONTEST) return false;
-  if(f._hsTrav) return true;   // (in a duct or a passage)
   if(f._hsRole === 'seek') return false;
-  if(hsHidden(f) || hsDisg(f)) return true;   // (in a spot, or a lamp or a vase now)
-  if(f._hsLitNow || f._hsFlkNow) return false;   // (in a light, or under a flickering bulb)
-  return !(Math.hypot(f.x - me.x, f.y - me.y) <= HSK.near + 20 && hsCell(f) === hsCell(me) && !(f._hsDarkT > hazardT));
+  if(hsHidden(f)) return true;   // (in a spot)
+  if(f._hsLitNow) return false;   // (in a light)
+  return !(Math.hypot(f.x - me.x, f.y - me.y) <= HSK.near + 20 && hsCell(f) === hsCell(me));
 }
 function hsSeeK(f){ return hsHiddenFromMe(f) ? 0.04 : 1; }
-// Where everyone stands at a round's start (and a respawn): the seeker at the front door, the hiders spread round the middle of the ground floor.
+// Where everyone stands at a round's start (and a respawn): the seeker at the front door, the hiders spread round it on the ground floor.
 function hsPlace(S){
   const door = hsDoor(), hs = fighters.filter(function(o){ return o._hsRole === 'hide'; });
   const offs = [-160, 160, -320, 320, -480, 480];
-  for(const f of fighters){ f.vx = 0; f.vy = 0; f.hitstun = 0; f._lag = 0; f.onground = false; f._hsIn = -1; f._hsLit = 0; f._hsLitNow = false; f._hsGoal = null; f._hsWp = null; f._hsSeen = {};
-    f._hsBeamT = 0; f._hsListenT = 0; f._hsFastT = 0; f._hsDarkT = 0; f._hsLockWait = 0; f._hsDecoyGo = null;
-    f._hsDisg = null; f._hsTrav = null; f._hsStill = 0; f._hsGo = null; f._hsDisgGoal = null; f._hsNoiseGo = null; f._hsND = {}; f._hsNot = {}; f._hsChk = null; f._hsAvoid = null; f._hsHop = null; f._hsPlanT = 0; f._hsRingT = 0;
-    f._hsMirAt = null; f._hsMirT0 = null; f._hsMirLook = 0; f._hsMirWant = Math.random() < HSX.lv.mirror[hsLvl(f)]; f._hsFlkNow = false; f._hsMirNow = false; }
+  for(const f of fighters){ f.vx = 0; f.vy = 0; f.hitstun = 0; f._lag = 0; f.onground = false; f._hsIn = -1; f._hsLit = 0; f._hsLitNow = false; f._hsGoal = null; f._hsWp = null; f._hsSeen = {}; f._hsWpT0 = null; }
   hs.forEach(function(f, i){ f.x = door.x + offs[(i + S.round) % offs.length]; f.y = door.y - f.r - 2; f.face = f.x < door.x ? -1 : 1; });
   const sk = fighters[S.order[S.round]]; if(sk){ sk.x = door.x; sk.y = door.y - sk.r - 2; sk.face = 1; }
 }
 function hsRound(S, r){
-  S.round = r; S.ph = 'count'; S.pt = hazardT; S.found = 0; S.ghosts = []; S.decoys = []; S.locks = {}; S.lookT = {};
+  S.round = r; S.ph = 'count'; S.pt = hazardT; S.found = 0;
   for(const f of fighters){ f._hsRole = f.dead ? 'out' : 'hide'; }
   const sk = fighters[S.order[r]]; if(sk) sk._hsRole = 'seek';
-  hsFurnSet(S); S.noises = []; S.flk = null; S.flkAt = 0; S.powerT = 0; S.powerWas = false; S.fuseUsed = false; S.fuseBy = -1; S.mirLit = false;   // (the owner's picks: a fresh round)
-  for(const b of (HS.bells || [])){ b.cd = 0; b.ring = -1e9; }
   hsPlace(S);
   S.cue = { t:hazardT, who:sk ? sk.idx : -1 };   // (no banner, the owner's rule: a flashlight sign over the new seeker, and a chime)
   tone(392, 0.12, 'triangle', 0.08, 0, 392); tone(523, 0.16, 'triangle', 0.08, 0.12, 523);
 }
-function hsFind(S, h, by, ghost){
+function hsFind(S, h, by){
   if(h._hsRole !== 'hide') return;
-  if(S.uses){ if(h._hsDisg) S.uses.disgFound++; if(h._hsMirNow) S.uses.mirrorFind++; }
-  h._hsDisg = null; h._hsTrav = null; h._hsGo = null; h._hsDisgGoal = null;
-  h._hsRole = 'seek'; h._hsFoundT = hazardT; h._hsLit = 0; h._hsIn = -1; h._hsDarkT = 0; S.found++;
-  (S.foundBy = S.foundBy || []).push({ round:S.round, ghost:!!ghost });
-  if(by){ by._hsFinds = (by._hsFinds || 0) + 1; if(ghost) by._hsGhostFinds = (by._hsGhostFinds || 0) + 1; }
+  h._hsRole = 'seek'; h._hsFoundT = hazardT; h._hsLit = 0; h._hsIn = -1; S.found++;
+  (S.foundBy = S.foundBy || []).push({ round:S.round });
+  if(by) by._hsFinds = (by._hsFinds || 0) + 1;
   for(let i = 0; i < 10; i++) puff(h.x, h.y - h.r, i % 2 ? '#fff4b8' : '#ffffff', 4);
   tone(880, 0.1, 'square', 0.1, 0, 660); tone(440, 0.2, 'triangle', 0.1, 0.08, 330);
 }
-function hsKeep(f){   // after everyone has moved: inside the house (a warp or a long dash can end past a wall), and out of a locked room if you seek
+function hsKeep(f){   // after everyone has moved: inside the house (a warp or a long dash can end past a wall)
   if(f.dead || !HS) return;
   const lo = HSK.wall + f.r, hi = WW - HSK.wall - f.r;
   if(f.x < lo){ f.x = lo; if(f.vx < 0) f.vx = 0; } else if(f.x > hi){ f.x = hi; if(f.vx > 0) f.vx = 0; }
   if(f.y - f.r < HS.roofY + 2){ f.y = HS.roofY + 2 + f.r; if(f.vy < 0) f.vy = 0; }
   if(f.y + f.r > HS.gy + 2){ f.y = HS.gy - f.r; if(f.vy > 0) f.vy = 0; f.onground = true; }
-  const S = CONTEST;
-  if(S && S.locks && f._hsRole === 'seek'){
-    const c = hsCell(f), u = S.locks[c.st + ':' + c.ci];
-    if(u > hazardT){ const toL = f.x - c.x0 < c.x1 - f.x; f.x = toL ? c.x0 - f.r - 2 : c.x1 + f.r + 2; f.vx = 0; }
-  }
 }
-function hsRespawn(f){ const d = hsDoor(); f.x = d.x + (Math.random() - 0.5)*200; f.y = d.y - f.r - 60; f._hsDisg = null; f._hsTrav = null; f._hsGo = null; f._hsDisgGoal = null; }
-// ---- POWERUPS ----
-function hsPupSpawn(S){
-  const side = (S.pupN = (S.pupN || 0) + 1) % 2 ? 'seek' : 'hide', list = HSP[side];
-  for(let tries = 0; tries < 12; tries++){
-    const st = Math.floor(Math.random()*HS.ys.length), row = HS.cells[st], c = row[Math.floor(Math.random()*row.length)];
-    const x = c.x0 + 40 + Math.random()*(c.x1 - c.x0 - 80);
-    if(HS.spots.some(s => s.st === st && Math.abs(s.x - x) < 60) || HS.stairs.some(q => q.st === st && x > q.x - 20 && x < q.x + HSK.stepDx + 200)) continue;   // (not in a spot, not under a staircase)
-    if(S.pups.some(p => p.st === st && Math.abs(p.x - x) < 300)) continue;
-    S.pups.push({ x:Math.round(x), y:HS.ys[st], st:st, side:side, p:list[Math.floor(Math.random()*list.length)], t0:hazardT });
-    return;
-  }
-}
-function hsPupTake(S, f, p){
-  const P = p.p, t = hazardT;
-  S.pupsTaken = S.pupsTaken || { seek:0, hide:0, byKind:{} }; S.pupsTaken[p.side]++; S.pupsTaken.byKind[P.k] = (S.pupsTaken.byKind[P.k] || 0) + 1;
-  f._hsPupT = t; f._hsPupK = P.k;
-  for(let i = 0; i < 8; i++) puff(p.x, p.y - 14, p.side === 'seek' ? '#ffd23f' : '#8fd0ff', 4);
-  tone(p.side === 'seek' ? 988 : 660, 0.1, 'triangle', 0.1, 0, p.side === 'seek' ? 1318 : 880);
-  if(P.k === 'beam') f._hsBeamT = t + P.t;
-  else if(P.k === 'listen') f._hsListenT = t + P.t;
-  else if(P.k === 'sprint') f._hsFastT = t + P.t;
-  else if(P.k === 'ghost'){ const st = hsStorey(f); S.ghosts.push({ x:f.x, y:HS.ys[st] - 36, st:st, face:f.face < 0 ? -1 : 1, by:f.idx, t0:t, until:t + P.t, wp:null, look:0 }); }
-  else if(P.k === 'dark') f._hsDarkT = t + P.t;
-  else if(P.k === 'step'){ f._hsDarkT = Math.max(f._hsDarkT || 0, t + P.t); f.vx = (f.face < 0 ? -1 : 1)*P.vx; for(let i = 0; i < 6; i++) puff(f.x, f.y, '#3a3a5a', 4); }
-  else if(P.k === 'decoy'){   // a noise in a room far from you
-    const st = Math.floor(Math.random()*HS.ys.length), far = HS.cells[st].filter(c => !c.hall && Math.abs((c.x0 + c.x1)/2 - f.x) > 700);
-    const c = far.length ? far[Math.floor(Math.random()*far.length)] : HS.cells[st][0];
-    S.decoys.push({ x:Math.round((c.x0 + c.x1)/2), y:HS.ys[st] - 40, st:st, t0:t, until:t + P.t, by:f.idx });
-  }
-  else if(P.k === 'lock') f._hsLockWait = t + P.wait;
-}
-// Each frame (seeking): the pickups, the lock waiting for a room, the ghosts' walk and light.
-function hsPupStep(S){
-  const t = hazardT;
-  if(S.ph === 'seek' || S.ph === 'count'){ if(t - (S.pupAt || 0) >= HSK.pupEvery && S.pups.length < HSK.pupMax){ S.pupAt = t; hsPupSpawn(S); } }
-  S.pups = S.pups.filter(p => t - p.t0 < HSK.pupLife);
-  for(const p of S.pups.slice()){
-    if(t - p.t0 < GROW_IN) continue;   // (it grows in first)
-    const f = fighters.find(o => !o.dead && o._hsRole === p.side && hsStorey(o) === p.st && Math.abs(o.x - p.x) < o.r + HSK.pupR && Math.abs(o.y + o.r - p.y) < 50);
-    if(f){ S.pups.splice(S.pups.indexOf(p), 1); hsPupTake(S, f, p); }
-  }
-  for(const f of fighters){
-    if(f.dead || !(f._hsLockWait > t)) continue;
-    const c = hsCell(f);
-    if(!c.hall){ S.locks[c.st + ':' + c.ci] = t + HSP.hide[3].t; f._hsLockWait = 0; tone(300, 0.12, 'square', 0.1, 0, 200); for(let i = 0; i < 5; i++) puff((c.x0 + c.x1)/2, c.y - 60, '#c9a56a', 3); }
-  }
-  S.decoys = S.decoys.filter(d => d.until > t);
-  S.ghosts = S.ghosts.filter(g => g.until > t);
-  for(const g of S.ghosts) hsGhostStep(S, g);
-}
-// THE GHOST SEEKER: it floats along the floor of its storey (through nothing solid: the outer walls and the roof hold it, and it takes the house's stairwells up and
-// down as a seeker does, gliding), room by room -- the ones nobody has looked in lately first -- and turns round in each; a hider it lights is found for its seeker.
-function hsGhostStep(S, g){
-  const P = HSP.seek[3], t = hazardT;
-  if(g.st == null) g.st = 0;
-  if(g.wp == null || g.wp.st == null){
-    let best = null, bc = 1e9;
-    for(const row of HS.cells) for(const c of row){
-      const k = c.st + ':' + c.ci, last = S.lookT[k] || -1e9, cx = (c.x0 + c.x1)/2;
-      if(S.locks[k] > t) continue;
-      const cost = Math.abs(cx - g.x) + Math.abs(c.st - g.st)*500 - Math.min(1500, t - last)*0.8 + Math.random()*120;
-      if(cost < bc){ bc = cost; best = c; }
-    }
-    g.wp = best ? { st:best.st, x:(best.x0 + best.x1)/2, k:best.st + ':' + best.ci } : null; g.look = 0;
-  }
-  if(!g.wp) return;
-  if(g.wp.st !== g.st){   // a stairwell: glide to the nearest hall of this storey and up or down through its floor
-    const halls = HS.cells[g.st].filter(c => c.hall); let h = halls[0], hd = 1e9; for(const c of halls){ const d = Math.abs((c.x0 + c.x1)/2 - g.x); if(d < hd){ hd = d; h = c; } }
-    const hx = (h.x0 + h.x1)/2;
-    if(Math.abs(hx - g.x) > P.spd){ g.face = hx > g.x ? 1 : -1; g.x += g.face*P.spd; }
-    else { const ty = HS.ys[g.wp.st > g.st ? g.st + 1 : g.st - 1] - 36; g.y += Math.sign(ty - g.y)*P.spd; if(Math.abs(ty - g.y) <= P.spd){ g.y = ty; g.st += g.wp.st > g.st ? 1 : -1; } }
-  } else {
-    g.y = HS.ys[g.st] - 36;
-    const lk = S.locks[g.wp.k] > t, c = hsCellAt(g.st, g.wp.x);
-    if(lk){ g.wp = null; return; }
-    if(Math.abs(g.wp.x - g.x) > P.spd && !(c && g.x > c.x0 + 30 && g.x < c.x1 - 30 && g.look > 0)){ g.face = g.wp.x > g.x ? 1 : -1; g.x += g.face*P.spd; }
-    else { g.look++; if(g.look === 20 || g.look === 50) g.face = -g.face; if(g.look > 70){ S.lookT[g.wp.k] = t; g.wp = null; } }
-  }
-  const by = fighters[g.by];
-  for(const h of hsHiders()){   // its light finds hiders, for the seeker who called it
-    if(!hsLit(g.x, g.y, g.face, g.st, false, h)) continue;
-    h._hsLitNow = true; h._hsGhostNow = true; h._hsGhostBy = g.by;   // (counted in the step's hider loop, as a seeker's light is)
-  }
-}
-// ---- THE OWNER'S PICKS (see HSX): the house's new things, built once with the house ----
-function hsUsesNew(){ return { flicker:0, flickerSeen:0, furniture:0, bell:0, bellFollow:0, creak:0, creakFollow:0, fuseFollow:0, ductFollow:0, disguise:0, disgSpot:0, disgFound:0,
-  passage:0, mirror:0, mirrorCheck:0, mirrorFind:0, fuse:0, vent:0 }; }
-function hsLvl(f){ try{ return brainLevel(f); }catch(e){ return 1; } }
-function hsBuildExtras(){
-  const K = HSK, X = HSX, ys = HS.ys, rnd = Math.random;
-  const rooms = function(st){ return (HS.cells[st] || []).filter(function(c){ return !c.hall; }); };
-  const wide = function(c){ return c.x1 - c.x0 >= 280; };
-  // THE DOORBELLS, by the outer doors at the two ends of the ground floor (a hall's window curtain right there goes)
-  HS.bells = [{ x:K.wall + 50, st:0, cd:0, ring:-1e9 }, { x:WW - K.wall - 50, st:0, cd:0, ring:-1e9 }];
-  HS.spots = HS.spots.filter(function(s){ return !(s.st === 0 && HS.bells.some(function(b){ return Math.abs(b.x - s.x) < 110; })); });
-  // THE MIRROR ROOM: the wide room of the middle storey nearest the middle of the house
-  const mids = rooms(Math.min(1, ys.length - 1)).filter(wide).sort(function(a, b){ return Math.abs((a.x0 + a.x1)/2 - WW/2) - Math.abs((b.x0 + b.x1)/2 - WW/2); });
-  const mc = mids[0] || null;
-  HS.mirror = mc ? { c:mc, x:Math.round((mc.x0 + mc.x1)/2), st:mc.st, w:X.mirW, h:X.mirH } : null;
-  // THE FUSE BOX: in the boiler room (or the ground floor's first room), on its wall
-  const g0 = rooms(0), fc = g0.find(function(c){ return c.name === 'boiler room'; }) || g0[0] || null;
-  HS.fuse = fc ? { x:Math.round(wide(fc) ? (fc.x0 + fc.x1)/2 : fc.x0 + 40), st:0, c:fc } : null;
-  // THE SECRET PASSAGES: bookshelves in the middle of wide rooms, in pairs on two storeys far apart
-  const cand = [];
-  for(let st = 0; st < ys.length; st++) for(const c of rooms(st)) if(wide(c) && c !== mc && c !== fc) cand.push(c);
-  for(let i = cand.length - 1; i > 0; i--){ const j = Math.floor(rnd()*(i + 1)); const q = cand[i]; cand[i] = cand[j]; cand[j] = q; }
-  HS.shelves = []; const used = [];
-  for(const a of cand){
-    if(HS.shelves.length >= X.shelves*2) break;
-    if(used.indexOf(a) >= 0) continue;
-    const b = cand.find(function(q){ return q !== a && used.indexOf(q) < 0 && q.st !== a.st && Math.abs((q.x0 + q.x1)/2 - (a.x0 + a.x1)/2) > 600; });
-    if(!b) continue;
-    used.push(a, b);
-    const i = HS.shelves.length;
-    HS.shelves.push({ x:Math.round((a.x0 + a.x1)/2), st:a.st, link:i + 1, swing:-1e9 }, { x:Math.round((b.x0 + b.x1)/2), st:b.st, link:i, swing:-1e9 });
-  }
-  // THE VENT DUCTS: each vent joined to one about half the house away (in storey-and-x order, the first half to the second)
-  const vents = []; HS.spots.forEach(function(s, i){ if(s.kind === 'vent') vents.push(i); });
-  vents.sort(function(a, b){ return (HS.spots[a].st - HS.spots[b].st) || (HS.spots[a].x - HS.spots[b].x); });
-  const hv = Math.floor(vents.length/2);
-  for(let i = 0; i < hv; i++){ HS.spots[vents[i]].link = vents[i + hv]; HS.spots[vents[i + hv]].link = vents[i]; }
-  if(vents.length % 2 && vents.length > 1) HS.spots[vents[vents.length - 1]].link = vents[0];
-  // THE CREAKY BOARDS: HSX.creaks a storey, apart, not at the front door, not in a spot
-  HS.creaks = []; const door = hsDoor();
-  for(let st = 0; st < ys.length; st++){
-    for(let n = 0, tries = 0; n < X.creaks && tries < 60; tries++){
-      const x = K.wall + 120 + rnd()*(WW - 2*K.wall - 240);
-      if((st === 0 && Math.abs(x - door.x) < 220) || HS.creaks.some(function(b){ return b.st === st && Math.abs(b.x - x) < 300; }) || HS.spots.some(function(s){ return s.st === st && Math.abs(s.x - x) < 70; })) continue;
-      HS.creaks.push({ x:Math.round(x), st:st, w:X.creakW, cd:0 }); n++;
-    }
-  }
-  // THE HOUSE'S OWN LAMPS AND VASES (so a disguise has company)
-  HS.props = [];
-  for(let st = 0; st < ys.length; st++) for(const c of rooms(st)){
-    if(rnd() < 0.55){ const x = hsFreeX(c, 'prop', null, null); if(x != null) HS.props.push({ x:x, st:st, k:rnd() < 0.5 ? 'lamp' : 'vase' }); }
-  }
-}
-// Is x on storey st clear of everything that stands there (the pieces at their places in `at` when given), for a piece needing `need` px?
-function hsClear(st, x, need, self, at){
-  for(const s of HS.spots){ if(s === self || s.st !== st) continue; const sx = at && at.has(s) ? at.get(s) : s.x; if(Math.abs(sx - x) < need) return false; }
-  for(const p of (HS.props || [])){ if(p === self || p.st !== st) continue; const px = at && at.has(p) ? at.get(p) : p.x; if(Math.abs(px - x) < 70) return false; }
-  for(const q of (HS.shelves || [])) if(q.st === st && Math.abs(q.x - x) < 80) return false;
-  if(HS.mirror && HS.mirror.st === st && Math.abs(HS.mirror.x - x) < HSX.mirW/2 + 40) return false;
-  if(HS.fuse && HS.fuse.st === st && Math.abs(HS.fuse.x - x) < 70) return false;
-  for(const b of (HS.bells || [])) if(b.st === st && Math.abs(b.x - x) < 90) return false;
-  return true;
-}
-// A free place in room c for a 'spot' piece (a cupboard or a curtain) or a 'prop' (a lamp or a vase), or null.
-function hsFreeX(c, type, self, at){
-  const need = type === 'spot' ? 100 : 70, m = type === 'spot' ? 52 : 34;
-  if(c.x1 - c.x0 < 2*m + 4) return null;
-  for(let tries = 0; tries < 12; tries++){
-    const x = Math.round(c.x0 + m + Math.random()*(c.x1 - c.x0 - 2*m));
-    if(hsClear(c.st, x, need, self, at)) return x;
-  }
-  return null;
-}
-// MOVING FURNITURE: at the start of a break with another round to come, where each piece goes; it slides there in the break (lights on), and is there for the round.
-function hsFurnPlan(S){
-  const at = new Map(), pcs = [];
-  for(const s of HS.spots){ const c = HS.cells[s.st][s.ci]; if(s.kind !== 'vent' && c && !c.hall) pcs.push(s); }
-  for(const p of HS.props) pcs.push(p);
-  for(const q of pcs) at.set(q, q.x);
-  for(let i = pcs.length - 1; i > 0; i--){ const j = Math.floor(Math.random()*(i + 1)); const q = pcs[i]; pcs[i] = pcs[j]; pcs[j] = q; }
-  let moved = 0;
-  for(const q of pcs){
-    const cur = hsCellAt(q.st, q.x), near = HS.cells[q.st].filter(function(c){ return !c.hall && Math.abs(c.ci - cur.ci) <= HSX.furnNear + 1; });
-    for(let tries = 0; tries < 6 && near.length; tries++){
-      const c = near[Math.floor(Math.random()*near.length)], x = hsFreeX(c, q.kind ? 'spot' : 'prop', q, at);
-      if(x != null && Math.abs(x - q.x) > 40){ at.set(q, x); moved++; break; }
-    }
-  }
-  S.furn = { t0:hazardT, from:pcs.map(function(q){ return [q, q.x, at.get(q)]; }) };
-  if(S.uses) S.uses.furniture += moved;
-  if(moved){ noise(0.6, 0.05, 500, 0, 300); noise(0.4, 0.04, 400, 0.5, 250); }   // the scrape of it
-}
-function hsFurnSlide(S){
-  const F = S.furn; if(!F) return;
-  const k = Math.min(1, (hazardT - F.t0)/(HSK.brk*0.75)), e = k*k*(3 - 2*k);
-  for(const r of F.from){ if(r[1] === r[2]) continue; const q = r[0]; q.x = Math.round(r[1] + (r[2] - r[1])*e); if(k < 1 && (hazardT % 8) === 0) puff(q.x, HS.ys[q.st] - 6, '#c8b8a0', 1); }
-  if(k >= 1) hsFurnSet(S);
-}
-function hsFurnSet(S){
-  const F = S.furn; if(!F) return;
-  for(const r of F.from){ const q = r[0]; q.x = r[2]; if(q.kind) q.ci = hsCellAt(q.st, q.x).ci; }
-  S.furn = null;
-}
-// ---- THE DISGUISE ----
-function hsDisg(f){ return !!f._hsDisg && !f.dead && f._hsRole === 'hide' && !(f._hsRev > hazardT); }
-function hsOnStep(f){ const fy = f.y + f.r; return HS.stairs.some(function(q){ return [q.a, q.b].some(function(p){ return Math.abs(fy - p.y) < 6 && f.x > p.x - 4 && f.x < p.x + p.w + 4; }); }); }
-function hsDisgOk(f){
-  if(!HS || !f.onground || f.dead || f._hsRole !== 'hide' || f._hsTrav) return false;
-  const st = hsStorey(f); if(Math.abs(f.y + f.r - HS.ys[st]) > 6 || hsOnStep(f)) return false;
-  const c = hsCell(f); return f.x - c.x0 >= 34 && c.x1 - f.x >= 34;   // (not in a doorway)
-}
-function hsDisguise(f, S){
-  f._hsDisg = { k:Math.random() < 0.5 ? 'lamp' : 'vase', t0:hazardT };
-  if(S.uses) S.uses.disguise++;
-  for(let i = 0; i < 6; i++) puff(f.x, f.y, '#d8d0c0', 3);
-  tone(520, 0.06, 'triangle', 0.05, 0, 780);
-}
-function hsUndisg(f){ if(!f._hsDisg) return; f._hsDisg = null; f._hsStill = 0; puff(f.x, f.y, '#d8d0c0', 4); }
-// ---- THE KEYS (step, every fighter's input): no keys in a duct or a passage; still in the open, a hider becomes a prop; a person's tap of Down at a thing uses it ----
-function hsDownCtx(f){
-  if(!f.onground) return null;
-  const st = hsStorey(f); if(Math.abs(f.y + f.r - HS.ys[st]) > 8) return null;
-  if(f._hsRole === 'hide'){
-    if(HS.fuse && st === HS.fuse.st && Math.abs(f.x - HS.fuse.x) < HSX.fuseR) return { k:'fuse' };
-    for(const b of HS.bells) if(st === b.st && Math.abs(f.x - b.x) < HSX.bellR) return { k:'bell', o:b };
-    const sp = hsSpotOf(f); if(sp >= 0 && HS.spots[sp].kind === 'vent' && HS.spots[sp].link != null) return { k:'vent', i:sp };
-  }
-  for(const q of HS.shelves) if(st === q.st && Math.abs(f.x - q.x) < HSX.shelfR) return { k:'shelf', o:q };
-  return null;
-}
-function hsInput(f, inp){
-  const S = CONTEST; if(!HS || !S || !S.order || S.over || f.dead || !inp) return;
-  if(f._hsTrav){ for(const k in inp) inp[k] = false; return; }
-  if(f._hsRole === 'hide' && S.ph !== 'break'){
-    const mv = inp.left || inp.right || inp.jump || inp.attack || inp.special || inp.smash || inp.up || inp.grab || inp.fin;
-    const still = !mv && f.onground && Math.abs(f.vx) < 0.6 && !(f.hitstun > 0) && !(f._hsIn >= 0);
-    if(f._hsDisg){ if(!still) hsUndisg(f); }
-    else { f._hsStill = still ? (f._hsStill || 0) + 1 : 0; if(f._hsStill >= HSX.disgT && hsDisgOk(f)) hsDisguise(f, S); }
-  } else if(f._hsDisg) hsUndisg(f);
-  if(!isHumanCtrl(f) || S.ph === 'break') return;
-  const dn = !!inp.down && !inp.attack && !inp.special && !inp.smash && !inp.jump;
-  if(!dn){ f._hsDnP = false; return; }
-  const c = hsDownCtx(f);
-  if(c){ inp.down = false; if(!f._hsDnP) hsDo(f, c); }
-  f._hsDnP = true;
-}
-function hsNoise(S, k, x, st, by){
-  S.noiseN = (S.noiseN || 0) + 1;
-  (S.noises = S.noises || []).push({ id:S.noiseN, k:k, x:x, st:st, y:HS.ys[st], t0:hazardT, until:hazardT + (k === 'bell' ? HSX.bellT : HSX.ringT), by:by ? by.idx : -1, role:by ? by._hsRole : '' });
-}
-// Use a thing: { k:'vent', i } (a hider in that vent), { k:'shelf', o } (anyone), { k:'fuse' } or { k:'bell', o } (a hider). True when it was used.
-function hsDo(f, c){
-  const S = CONTEST, t = hazardT; if(!S || !HS || f._hsTrav || f.dead || !c) return false;
-  const U = S.uses || (S.uses = hsUsesNew());
-  if(c.k === 'vent'){
-    const s = HS.spots[c.i], d = s && s.link != null ? HS.spots[s.link] : null; if(!d || f._hsRole !== 'hide') return false;
-    hsUndisg(f); f._hsTrav = { k:'vent', until:t + HSX.ductT, x:d.x, st:d.st }; U.vent++;
-    for(let i = 0; i < 6; i++) puff(s.x, s.y - 30, '#8c949c', 3);
-    tone(160, 0.05, 'square', 0.05, 0, 140); tone(150, 0.05, 'square', 0.05, 0.12, 130); tone(170, 0.05, 'square', 0.05, 0.24, 150);   // the rattle of the duct
-    return true;
-  }
-  if(c.k === 'shelf'){
-    const a = c.o, b = a && HS.shelves[a.link]; if(!b) return false;
-    hsUndisg(f); a.swing = t; b.swing = t + HSX.passT - 12; f._hsTrav = { k:'shelf', until:t + HSX.passT, x:b.x, st:b.st }; U.passage++;
-    tone(220, 0.12, 'triangle', 0.06, 0, 160); noise(0.2, 0.03, 700, 0, 300);
-    return true;
-  }
-  if(f._hsRole !== 'hide') return false;
-  if(c.k === 'fuse'){
-    if(S.fuseUsed || !HS.fuse){ tone(140, 0.08, 'square', 0.05, 0, 120); return false; }
-    S.fuseUsed = true; S.powerT = t + HSX.powerT; S.fuseBy = f.idx; S.flk = null; U.fuse++;
-    hsNoise(S, 'fuse', HS.fuse.x, HS.fuse.st, f);
-    tone(300, 0.3, 'sawtooth', 0.08, 0, 60); noise(0.15, 0.08, 1200, 0, 200);   // the clunk, and the power going down
-    return true;
-  }
-  if(c.k === 'bell'){
-    const b = c.o; if(!b || b.cd > t) return false;
-    b.cd = t + HSX.bellCd; b.ring = t; U.bell++;
-    hsNoise(S, 'bell', b.x, b.st, f);
-    tone(784, 0.35, 'sine', 0.1, 0, 784); tone(622, 0.5, 'sine', 0.1, 0.32, 622);   // ding-dong
-    return true;
-  }
-  return false;
-}
-function hsFlkOn(S){
-  const F = S && S.flk; if(!F) return false;
-  const a = hazardT - F.t0; if(a < 0 || hazardT >= F.until) return false;
-  if(a < 24) return (a % 8) < 5;
-  if(F.until - hazardT < 18) return (a % 6) < 3;
-  return true;
-}
-// Each frame (step): the travellers, the creaky boards, the noises; in the seeking time the power, the flickering bulbs and the mirror; in a break the furniture.
-function hsExtrasStep(S){
-  const t = hazardT, X = HSX, U = S.uses || (S.uses = hsUsesNew());
-  if(S.ph === 'break'){ hsFurnSlide(S); return; }
-  for(const f of fighters){   // in a duct or a passage: held, unhittable, then out at the other end
-    if(!f._hsTrav) continue;
-    if(f.dead){ f._hsTrav = null; continue; }
-    fxLock(f, 2); f.vx = 0; f.invuln = Math.max(f.invuln || 0, 2);
-    if(t >= f._hsTrav.until){ const T = f._hsTrav; f._hsTrav = null; f.x = T.x; f.y = HS.ys[T.st] - f.r - 1; f.vy = 0; f.onground = true; for(let i = 0; i < 6; i++) puff(f.x, f.y, T.k === 'vent' ? '#8c949c' : '#8a5a3a', 3);
-      if(T.k === 'vent'){ hsNoise(S, 'duct', T.x, T.st, f); tone(170, 0.06, 'square', 0.05, 0, 150); tone(160, 0.06, 'square', 0.05, 0.1, 140); } }   // (the duct rattles where they come out)
-  }
-  for(const f of fighters){   // CREAKY BOARDS: running over one
-    if(f.dead || f._hsTrav || !f.onground || Math.abs(f.vx) < 1.4) continue;
-    const st = hsStorey(f); if(Math.abs(f.y + f.r - HS.ys[st]) > 6) continue;
-    for(const b of HS.creaks){ if(b.st !== st || Math.abs(f.x - b.x) > b.w/2 || b.cd > t) continue; b.cd = t + X.creakCd; hsNoise(S, 'creak', b.x, st, f); U.creak++; tone(190 + Math.random()*40, 0.18, 'sawtooth', 0.05, 0, 110); }
-  }
-  S.noises = (S.noises || []).filter(function(n){ return n.until > t; });
-  if(S.ph !== 'seek') return;
-  const pw = S.powerT > t;
-  if(S.powerWas && !pw) tone(200, 0.25, 'sawtooth', 0.06, 0, 420);   // the power back on
-  S.powerWas = pw;
-  if(S.flk && t >= S.flk.until) S.flk = null;   // FLICKERING LIGHTS
-  if(!pw && !S.flk && t >= (S.flkAt || 0)){
-    if(S.flkAt){ const rs = []; for(const row of HS.cells) for(const c of row) if(!c.hall) rs.push(c); const c = rs[Math.floor(Math.random()*rs.length)]; if(c){ S.flk = { c:c, t0:t, until:t + X.flkT }; U.flicker++; tone(110, 0.3, 'sawtooth', 0.04, 0, 120); tone(118, 0.2, 'sawtooth', 0.03, 0.3, 110); } }
-    S.flkAt = t + X.flk[0] + Math.random()*(X.flk[1] - X.flk[0]);
-  }
-  const fon = hsFlkOn(S), M = HS.mirror; let ml = false;
-  if(M){   // THE MIRROR: lit while any light is in its room
-    for(const s of hsSeekers()) if(!s._hsTrav && hsLightReach(hsStorey(s), s.x, M.c)) ml = true;
-    for(const g of (S.ghosts || [])) if(hsLightReach(g.st, g.x, M.c)) ml = true;
-    if(fon && S.flk.c === M.c) ml = true;
-  }
-  S.mirLit = ml;
-  for(const h of fighters){
-    const wasM = h._hsMirNow, wasF = h._hsFlkNow; h._hsFlkNow = false; h._hsMirNow = false;
-    if(h.dead || h._hsRole !== 'hide' || h._hsTrav) continue;
-    const c = hsCell(h);
-    if(fon && c === S.flk.c && !hsHiddenish(h)){ h._hsFlkNow = true; if(!wasF) U.flickerSeen++; }
-    if(ml && M && c === M.c){ h._hsMirNow = true; if(!wasM) U.mirror++; }
-  }
-}
-// ---- THE CPU'S NEW PARTS ----
-function hsThreat(f){   // a seeker close on its storey: in its room, or coming its way
-  for(const s of hsSeekers()){
-    if(s._hsTrav || hsStorey(s) !== hsStorey(f)) continue;
-    const dx = f.x - s.x, ad = Math.abs(dx);
-    if(ad < 120 || (hsCell(s) === hsCell(f) && ad < 320) || (ad < 360 && Math.abs(s.vx) > 0.5 && (s.vx > 0) === (dx > 0))) return s;
-  }
-  return null;
-}
-function hsShelfNear(f, r){ const st = hsStorey(f); let best = null, bd = r; for(const q of HS.shelves){ if(q.st !== st) continue; const d = Math.abs(q.x - f.x); if(d < bd){ bd = d; best = q; } } return best; }
-function hsBellFor(f, S, reach){   // a bell that can ring, near it and far from every seeker
-  const t = hazardT, sks = hsSeekers(); let best = null, bc = reach;
-  for(const b of HS.bells){
-    if(b.cd > t) continue; const c = hsCost(f, b.x, b.st); if(c >= bc) continue;
-    if(sks.some(function(s){ return Math.abs(s.x - b.x) + Math.abs(hsStorey(s) - b.st)*300 < 600; })) continue;
-    bc = c; best = b;
-  }
-  return best;
-}
-function hsDisgPoint(f, sks){   // a place in a room, clear of the furniture, far from the seekers, to stand still in as a prop
-  let best = null, bs = -1e9;
-  for(let i = 0; i < 10; i++){
-    const st = Math.floor(Math.random()*HS.ys.length), rs = HS.cells[st].filter(function(c){ return !c.hall; }), c = rs[Math.floor(Math.random()*rs.length)];
-    if(!c) continue; const x = hsFreeX(c, 'prop', null, null); if(x == null) continue;
-    const away = sks.length ? Math.min.apply(null, sks.map(function(k){ return Math.abs(k.x - x) + Math.abs(hsStorey(k) - st)*300; })) : 900;
-    const sc = Math.min(away, 1200) - hsCost(f, x, st)*0.45 + Math.random()*160;
-    if(sc > bs){ bs = sc; best = { x:x, st:st, t0:hazardT }; }
-  }
-  return best;
-}
-// On the way to the bell, the fuse box or a bookshelf (f._hsGo): true while it has the keys.
-function hsGoStep(f, inp, S){
-  const g = f._hsGo, t = hazardT; if(!g) return false;
-  if(t - g.t0 > 480 || S.ph !== 'seek' || (g.k === 'fuse' && S.fuseUsed) || (g.k === 'bell' && g.o.cd > t)){ f._hsGo = null; return false; }
-  const zone = g.k === 'shelf' ? HSX.shelfR - 6 : g.k === 'bell' ? HSX.bellR - 6 : HSX.fuseR - 6;
-  if(hsStorey(f) === g.st && Math.abs(f.x - g.x) < zone && f.onground && Math.abs(f.y + f.r - HS.ys[g.st]) < 8){
-    f._hsGo = null;
-    hsDo(f, g.k === 'fuse' ? { k:'fuse' } : { k:g.k, o:g.o });
-    if(g.k === 'bell'){ f._hsAvoid = { x:g.x, st:g.st, until:t + 600 }; f._hsGoal = null; f._hsPlanT = t + 240; }
-    else if(g.k === 'shelf') f._hsGoal = null;
-    return true;
-  }
-  hsNav(f, inp, g.x, g.st);
-  return true;
-}
-// A hider's walk: a secret passage as a short cut when it saves a long way round; a hop over a creaky board with a seeker on this storey.
-function hsHideNav(f, inp, x, st, S, L){
-  const t = hazardT;
-  if(S.ph === 'seek' && t >= (f._hsShortT || 0)){
-    f._hsShortT = t + 45;
-    const sh = hsShelfNear(f, 220), o = sh && HS.shelves[sh.link];
-    if(o && Math.abs(o.x - x) + Math.abs(o.st - st)*420 + 150 < hsCost(f, x, st) - 500 && Math.random() < HSX.lv.trick[L]){ f._hsGo = { k:'shelf', x:sh.x, st:sh.st, o:sh, t0:t }; hsGoStep(f, inp, S); return false; }
-  }
-  const r = hsNav(f, inp, x, st);
-  if(S.ph === 'seek' && f.onground && (inp.left || inp.right) && hsStorey(f) === st && hsSeekers().some(function(s){ return hsStorey(s) === st && Math.abs(s.x - f.x) < 1000; })){
-    const d = inp.left ? -1 : 1, ax = f.x + d*(f.r + 30);
-    const b = HS.creaks.find(function(q){ return q.st === st && Math.abs(q.x - ax) < q.w/2 + 10 && (q.x - f.x)*d > 0; });
-    if(b && (!f._hsHop || f._hsHop.b !== b)) f._hsHop = { b:b, ok:Math.random() < HSX.lv.hop[L] };
-    if(b && f._hsHop.ok) inp.jump = true;
-  }
-  return r;
-}
-// Is h inside s's flashlight cone at its full length (its room, and the next through a doorway), whatever h is dressed as?
-function hsConeSees(s, h){
-  if(s.dead || h.dead || hsStorey(h) !== hsStorey(s) || !hsLightReach(hsStorey(s), s.x, hsCell(h))) return false;
-  const d = s.face < 0 ? -1 : 1, dx = h.x - s.x, dy = h.y - s.y, dist = Math.hypot(dx, dy);
-  const R = (CONTEST && CONTEST.powerT > hazardT) ? HSK.close : HSK.cone*(s._hsBeamT > hazardT ? HSP.seek[0].coneK : 1);
-  if(dist > R || dx*d <= 0) return false;
-  return Math.abs(Math.atan2(dy, Math.abs(dx))) <= HSK.ha + 0.2;
-}
-// A seeker's new parts (after the chase of what it sees): a lamp that was not there, a creak or a bell, the mirror. True when it took the keys.
-function hsSeekExtra(f, inp, S){
-  const t = hazardT, L = hsLvl(f), V = HSX.lv, U = S.uses || (S.uses = hsUsesNew());
-  f._hsNot = f._hsNot || {}; f._hsND = f._hsND || {};
-  for(const h of hsHiders()){   // A LAMP THAT WAS NOT THERE: a disguise in its light, noticed (by level) or not, once each
-    if(!hsDisg(h) || h._hsTrav) continue;
-    const k = h.idx + ':' + h._hsDisg.t0;
-    if(f._hsNot[k] != null || !hsConeSees(f, h)) continue;
-    f._hsNot[k] = Math.random() < V.notice[L] ? 1 : 0;
-    if(f._hsNot[k]){ f._hsChk = { h:h, k:k, until:t + 360, stand:0 }; U.disgSpot++; }
-  }
-  const C = f._hsChk;
-  if(C){
-    const h = C.h;
-    if(C.until < t || h.dead || h._hsRole !== 'hide' || !h._hsDisg || (h.idx + ':' + h._hsDisg.t0) !== C.k || C.stand > 60) f._hsChk = null;
-    else {
-      const st = hsStorey(h), dx = h.x - f.x, hc = hsCell(h);
-      if(st === hsStorey(f) && hsCell(f) === hc && Math.abs(dx) < 70){ C.stand++; if(Math.abs(dx) > 4 && (dx < 0) !== (f.face < 0)){ inp.left = dx < 0; inp.right = dx > 0; } }
-      else { const lo = hc.x0 + f.r + 4, hi = hc.x1 - f.r - 4, tx = lo > hi ? (hc.x0 + hc.x1)/2 : clamp(h.x - (dx >= 0 ? 1 : -1)*40, lo, hi); hsNav(f, inp, tx, st); }
-      return true;
-    }
-  }
-  for(const n of (S.noises || [])){   // A NOISE: a creak or a duct's rattle it can hear, a bell or the fuse box's clunk (anywhere in the house); by level it goes to look
-    if(f._hsND[n.id] != null) continue;
-    let p = 0; const fs = hsStorey(f);
-    if(n.k === 'duct') p = V.creak[L];   // (a duct's rattle carries through the house)
-    else if(n.k === 'creak'){ if(n.role !== 'seek' && (n.st === fs ? Math.abs(n.x - f.x) < 1300 : (Math.abs(n.st - fs) === 1 && Math.abs(n.x - f.x) < 700))) p = V.creak[L]; }
-    else if(n.k === 'bell') p = V.bell[L];
-    else if(n.k === 'fuse') p = V.bell[L]*0.7;
-    f._hsND[n.id] = (p > 0 && Math.random() < p) ? 1 : 0;
-    if(f._hsND[n.id]){ const G0 = f._hsNoiseGo; if(!G0 || n.k === 'bell' || hsCost(f, n.x, n.st) < hsCost(f, G0.x, G0.st)){ f._hsNoiseGo = { x:n.x, st:n.st, k:n.k, t0:t, look:0 }; U[n.k + 'Follow']++; } }
-  }
-  const G = f._hsNoiseGo;
-  if(G){
-    const c = hsCellAt(G.st, G.x);
-    if(t - G.t0 > 540 || S.locks[c.st + ':' + c.ci] > t) f._hsNoiseGo = null;
-    else {
-      const lo = Math.max(c.x0, HSK.wall) + f.r + 6, hi = Math.min(c.x1, WW - HSK.wall) - f.r - 6, tx = lo > hi ? (c.x0 + c.x1)/2 : clamp(G.x, lo, hi);
-      if(G.look > 0 || hsNav(f, inp, tx, G.st)){ G.look++; if(G.look === 2 || G.look === 26){ inp.left = f.face > 0; inp.right = f.face < 0; } if(G.look > 46){ S.lookT[c.st + ':' + c.ci] = t; f._hsNoiseGo = null; } }
-      return true;
-    }
-  }
-  const M = HS.mirror;   // THE MIRROR: once a round (by level), when it is not far or the round is a quarter gone, it goes and looks in it
-  if(M && f._hsMirWant && f._hsMirAt == null){
-    const k = M.st + ':' + M.c.ci;
-    if(!(S.locks[k] > t) && (hsCost(f, M.x, M.st) < 1400 || t - S.pt > 600)){
-      if(f._hsMirT0 == null) f._hsMirT0 = t;
-      if(t - f._hsMirT0 > 600){ f._hsMirAt = t; return false; }
-      if(hsNav(f, inp, M.x + (f.x < M.x ? -50 : 50), M.st)){ f._hsMirLook = (f._hsMirLook || 0) + 1; if(f._hsMirLook > 20){ f._hsMirAt = t; U.mirrorCheck++; S.lookT[k] = t; } }
-      return true;
-    }
-  }
-  return false;
-}
+function hsRespawn(f){ const d = hsDoor(); f.x = d.x + (Math.random() - 0.5)*200; f.y = d.y - f.r - 60; }
+function hsLvl(f){ let L = 1; try{ L = brainLevel(f); }catch(e){ L = 1; } return Math.max(0, Math.min(HSK.flee.length - 1, L | 0)); }
 CONTEST_RULES.hide = {
   twists:['dark'],
   begin(){
     const S = CONTEST, idx = fighters.map(function(f){ return f.idx; });
     for(let i = idx.length - 1; i > 0; i--){ const j = Math.floor(Math.random()*(i + 1)); const q = idx[i]; idx[i] = idx[j]; idx[j] = q; }   // the order of seekers, dealt
     while(idx.length < HSK.rounds) idx.push(idx[idx.length % fighters.length]);
-    S.order = idx.slice(0, HSK.rounds); S.over = false; S.winner = null; S.t0 = hazardT; S.pups = []; S.pupAt = hazardT; S.pupN = 0; S.ghosts = []; S.decoys = []; S.locks = {}; S.lookT = {};
-    S.pupsTaken = { seek:0, hide:0, byKind:{} }; S.foundBy = []; S.uses = hsUsesNew(); S.noises = []; S.noiseN = 0;
-    for(const f of fighters){ f._hsPts = 0; f._hsFinds = 0; f._hsGhostFinds = 0; f._hsFoundT = 0; f._hsRev = 0; }
+    S.order = idx.slice(0, HSK.rounds); S.over = false; S.winner = null; S.t0 = hazardT; S.foundBy = [];
+    for(const f of fighters){ f._hsPts = 0; f._hsFinds = 0; f._hsFoundT = 0; f._hsRev = 0; }
     hsRound(S, 0);
   },
   hold(){ return true; },
@@ -112699,36 +112208,30 @@ CONTEST_RULES.hide = {
       if(f.hitstun > 0 || (f._atkAnim > 0 && f._hsRole === 'hide')) f._hsRev = Math.max(f._hsRev || 0, t + HSK.reveal);   // a swing or a hit shows you
       const sp = f._hsRole === 'hide' ? hsSpotOf(f) : -1;
       f._hsIn = (sp >= 0 && !fighters.some(function(o){ return o !== f && !o.dead && o._hsIn === sp; })) ? sp : -1;   // (one hider a spot)
-      f._hsLitNow = false; f._hsGhostNow = false;
+      f._hsLitNow = false;
     }
-    hsExtrasStep(S);   // THE OWNER'S PICKS: the travellers, the creaky boards, the power, the bulbs, the mirror; in a break the furniture
     if(S.ph === 'count' || S.ph === 'break'){
       const frozen = S.ph === 'break' ? fighters : fighters.filter(function(o){ return o._hsRole === 'seek'; });
       for(const f of frozen){ if(f.dead) continue; fxLock(f, 2); f.vx = 0; f.invuln = Math.max(f.invuln || 0, 2); if(f._windup) f._windup = null; }
-      if(S.ph === 'count'){ hsPupStep(S); if(age >= HSK.count){ S.ph = 'seek'; S.pt = t; tone(523, 0.1, 'square', 0.1, 0, 523); tone(784, 0.18, 'square', 0.1, 0.12, 784); } }
+      if(S.ph === 'count' && age >= HSK.count){ S.ph = 'seek'; S.pt = t; tone(523, 0.1, 'square', 0.1, 0, 523); tone(784, 0.18, 'square', 0.1, 0.12, 784); }
       if(S.ph === 'break' && age >= HSK.brk){ if(S.round + 1 >= HSK.rounds) hsEnd(S); else hsRound(S, S.round + 1); }
       return;
     }
-    hsPupStep(S);   // SEEKING: the powerups and the ghosts, then the lights, the finds, the points
-    const sks = hsSeekers();
+    const sks = hsSeekers();   // SEEKING: the lights, the finds, the points
     for(const h of hsHiders()){
       let by = null; for(const s of sks){ if(hsInCone(s, h)){ by = s; break; } }
       if(by) h._hsLitNow = true;
       h._hsLit = by ? (h._hsLit || 0) + 1 : Math.max(0, (h._hsLit || 0) - 2);
-      h._hsGhostLit = h._hsGhostNow ? (h._hsGhostLit || 0) + 1 : Math.max(0, (h._hsGhostLit || 0) - 2);
-      if(by && h._hsLit >= HSK.catchT){ hsFind(S, h, by, false); continue; }
-      if(h._hsGhostLit >= HSK.catchT){ hsFind(S, h, fighters[h._hsGhostBy] || null, true); continue; }   // the ghost's find, for the seeker who called it
+      if(by && h._hsLit >= HSK.catchT){ hsFind(S, h, by); continue; }
       if(h._hsRole === 'hide') h._hsPts = (h._hsPts || 0) + 1;
     }
     if(!hsHiders().length || age >= HSK.seek){   // the round is over (no banner, the owner's rule: a chime up when hiders are left, down when everyone was found)
-      const left = hsHiders().length; S.ph = 'break'; S.pt = t; S.ghosts = []; S.decoys = []; S.noises = []; S.flk = null; S.powerT = 0; S.mirLit = false;
-      for(const f of fighters){ f._hsTrav = null; hsUndisg(f); }
+      const left = hsHiders().length; S.ph = 'break'; S.pt = t;
       if(left){ tone(523, 0.12, 'triangle', 0.08, 0, 523); tone(659, 0.12, 'triangle', 0.08, 0.12, 659); tone(784, 0.2, 'triangle', 0.08, 0.24, 784); }
       else { tone(784, 0.12, 'triangle', 0.08, 0, 784); tone(659, 0.12, 'triangle', 0.08, 0.12, 659); tone(523, 0.2, 'triangle', 0.08, 0.24, 523); }
-      if(S.round + 1 < HSK.rounds) hsFurnPlan(S);   // MOVING FURNITURE: it slides to new places in the break
     }
   },
-  ko(f){ if(f._hsRole === 'hide' && CONTEST && CONTEST.ph === 'seek') hsFind(CONTEST, f, null, false); },
+  ko(f){ if(f._hsRole === 'hide' && CONTEST && CONTEST.ph === 'seek') hsFind(CONTEST, f, null); },
   score(f){ return (f._hsPts || 0)*1000 + (f._hsFinds || 0)*10 + ((f._hsFoundT || 0) > 0 ? 0 : 1); },
   winText(f){ return (f.you ? 'You' : f.name) + ' stayed hidden longest! ' + Math.floor((f._hsPts || 0)/60) + ' s unfound'; },
   focus(f, foes){},
@@ -112744,10 +112247,10 @@ function hsEnd(S){
 
 // ---- THE CPU (aiThink, before targets: true when it took the keys) ----
 function hsJump(f, inp){ const go = f.onground && !f._hsJp; inp.jump = go; f._hsJp = go; }
-function hsNav(f, inp, tx, ts){   // walk (and climb, and drop) toward x tx on storey ts; true when there
+function hsNav(f, inp, tx, ts){   // walk (and climb, and drop) toward x tx on layer ts; true when there
   const st = hsStorey(f);
   if(st === ts){ f._hsJp = false; const dx = tx - f.x; if(Math.abs(dx) > 10){ inp.left = dx < 0; inp.right = dx > 0; return false; } return true; }
-  if(ts > st){   // up: the nearest staircase of this storey; under the next step, jump (the floor above is over the top step everywhere)
+  if(ts > st){   // up: the nearest staircase of this layer; under the next step, jump (the floor above is over the top step everywhere)
     let best = null, bc = 1e9; for(const s of HS.stairs){ if(s.st !== st) continue; const c2 = Math.abs(f.x - s.x - 105) + Math.abs(s.x + 105 - tx); if(c2 < bc){ bc = c2; best = s; } }
     if(!best) return false;
     const fy = f.y + f.r, lvl = (f.onground && Math.abs(fy - best.b.y) < 8) ? 2 : (f.onground && Math.abs(fy - best.a.y) < 8) ? 1 : 0;
@@ -112769,58 +112272,18 @@ function hsBrain(f, inp){
   if(S.ph === 'break' || (S.ph === 'count' && f._hsRole === 'seek')) return true;
   return f._hsRole === 'hide' ? hsHideAi(f, inp, S) : hsSeekAi(f, inp, S);
 }
-// A powerup of its side within reach on its own storey (and not past a locked room), or null.
-function hsPupNear(f, S, reach){
-  let best = null, bd = reach;
-  for(const p of S.pups){ if(p.side !== f._hsRole || p.st !== hsStorey(f) || hazardT - p.t0 < GROW_IN) continue; const d = Math.abs(p.x - f.x); if(d < bd){ bd = d; best = p; } }
-  return best;
-}
 function hsHideAi(f, inp, S){
-  const sks = hsSeekers(), t = hazardT, L = hsLvl(f), V = HSX.lv, near = sks.reduce(function(m, s){ return Math.min(m, Math.hypot(s.x - f.x, s.y - f.y)); }, 1e9);
-  if(f._hsTrav) return true;   // in a duct or a passage
+  const sks = hsSeekers(), t = hazardT, near = sks.reduce(function(m, s){ return Math.min(m, Math.hypot(s.x - f.x, s.y - f.y)); }, 1e9);
   const spot = f._hsGoal != null ? HS.spots[f._hsGoal] : null;
   const taken = function(i){ return fighters.some(function(o){ return o !== f && !o.dead && (o._hsGoal === i || o._hsIn === i) && o._hsRole === 'hide'; }); };
-  const flee = (f._hsLit || 0) > V.flee[L] || (f._hsGhostLit || 0) > V.flee[L] || (S.ph === 'seek' && near < 50);   // (a person's reaction: a moment in the light before it runs; quicker by level)
-  const threat = S.ph === 'seek' ? hsThreat(f) : null;
-  if(t >= (f._hsTrickT || 0)){ f._hsTrickT = t + 30; f._hsTrickOk = Math.random() < V.trick[L]; }   // (whether it thinks of a trick, rolled twice a second)
-  if(f._hsGo && hsGoStep(f, inp, S)) return true;   // on its way to the bell, the fuse box or a bookshelf
-  if((flee || threat) && f._hsTrickOk && S.ph === 'seek'){   // DANGER: with the light on it, out through the vent or a passage (then not again for HSX.escCd frames); a seeker coming: the power cut
-    const sp = f._hsIn >= 0 ? HS.spots[f._hsIn] : null, esc = flee && !(f._hsEscT > t);
-    if(esc && sp && sp.kind === 'vent' && sp.link != null && !taken(sp.link)){ hsDo(f, { k:'vent', i:f._hsIn }); f._hsGoal = sp.link; f._hsDisgGoal = null; f._hsEscT = t + HSX.escCd; return true; }
-    const sh = esc ? hsShelfNear(f, 170) : null;
-    if(sh){ f._hsGo = { k:'shelf', x:sh.x, st:sh.st, o:sh, t0:t }; f._hsEscT = t + HSX.escCd; if(hsGoStep(f, inp, S)) return true; }
-    const F = HS.fuse;
-    if(F && !S.fuseUsed && hsStorey(f) === F.st && Math.abs(F.x - f.x) < 340){ f._hsGo = { k:'fuse', x:F.x, st:F.st, t0:t }; if(hsGoStep(f, inp, S)) return true; }
-  }
-  if(f._hsDisg && !flee) return true;   // DISGUISED: still as a lamp till a light is on it
-  if(flee) f._hsDisgGoal = null;
-  if(f._hsDisgGoal){   // on its way to a place to stand still in as a prop (or there: still)
-    const D = f._hsDisgGoal;
-    if(t - D.t0 > 900) f._hsDisgGoal = null;
-    else { if(hsHideNav(f, inp, D.x, D.st, S, L) && !hsDisgOk(f)) f._hsDisgGoal = null; return true; }
-  }
-  if(S.ph === 'seek' && L >= 1 && !flee && f._hsIn < 0 && f._hsTrickOk && near < 600 && spot && hsCost(f, spot.x, spot.st) > 400 && hsDisgOk(f)
-     && sks.some(function(s){ return hsStorey(s) === hsStorey(f); })){ f._hsDisgGoal = { x:f.x, st:hsStorey(f), t0:t }; return true; }   // caught out far from its spot: freeze as a prop
-  if(S.ph === 'seek' && f._hsIn >= 0 && f._hsIn === f._hsGoal && !flee && !threat && t >= (f._hsRingT || 0)){   // hidden, with a bell within reach and no seeker near it: now and then a ring, then a new spot
-    f._hsRingT = t + 600;
-    const b = Math.random() < V.ring[L]*0.5 ? hsBellFor(f, S, 1200) : null;
-    if(b){ f._hsGo = { k:'bell', x:b.x, st:b.st, o:b, t0:t }; if(hsGoStep(f, inp, S)) return true; }
-  }
+  const flee = (f._hsLit || 0) > HSK.flee[hsLvl(f)] || (S.ph === 'seek' && near < 50);   // (a person's reaction: a moment in the light before it runs; quicker by level)
   if(!spot || taken(f._hsGoal) || (flee && f._hsIn === f._hsGoal)){
     if(flee && f._hsGoal != null) (f._hsBad = f._hsBad || {})[f._hsGoal] = t + 600;
-    if(!flee && t >= (f._hsPlanT || 0)){   // a new plan now and then: a bell on the way to a spot far from it, or a disguise somewhere
-      f._hsPlanT = t + 240;
-      const b = S.ph === 'seek' && Math.random() < V.ring[L] ? hsBellFor(f, S, 1200) : null;
-      if(b){ f._hsGo = { k:'bell', x:b.x, st:b.st, o:b, t0:t }; f._hsGoal = null; if(hsGoStep(f, inp, S)) return true; }
-      if(Math.random() < V.disg[L]*(S.ph === 'seek' ? 1 : 0.5)){ const D = hsDisgPoint(f, sks); if(D){ f._hsDisgGoal = D; f._hsGoal = null; return true; } }
-    }
-    const A = f._hsAvoid && f._hsAvoid.until > t ? f._hsAvoid : null;
     let best = -1, bs = -1e9;
     HS.spots.forEach(function(s, i){
       if(taken(i) || ((f._hsBad || {})[i] > t)) return;
       const away = sks.length ? Math.min.apply(null, sks.map(function(k){ return Math.abs(k.x - s.x) + Math.abs(hsStorey(k) - s.st)*300; })) : 900;
-      const sc = Math.min(away, 1200) - hsCost(f, s.x, s.st)*0.45 + Math.random()*160 + (s.ci != null && !HS.cells[s.st][s.ci].hall ? 120 : 0)   // (a room's spot over a hall's)
-        + (A ? Math.min(900, Math.abs(s.x - A.x) + Math.abs(s.st - A.st)*300)*0.4 : 0);   // (after a ring: away from that bell)
+      const sc = Math.min(away, 1200) - hsCost(f, s.x, s.st)*0.45 + Math.random()*160;
       if(sc > bs){ bs = sc; best = i; }
     });
     f._hsGoal = best >= 0 ? best : null;
@@ -112828,31 +112291,23 @@ function hsHideAi(f, inp, S){
   const g = f._hsGoal != null ? HS.spots[f._hsGoal] : null;
   if(!g) return false;
   if(f._hsIn === f._hsGoal && !flee) return true;   // in it: keep still
-  const p = hsPupNear(f, S, flee ? 120 : 260);   // a blue powerup on the way (a short detour only)
-  if(p && !(f._hsIn === f._hsGoal)){ hsHideNav(f, inp, p.x, p.st, S, L); return true; }
-  hsHideNav(f, inp, g.x, g.st, S, L);
+  hsNav(f, inp, g.x, g.st);
   return true;
 }
 function hsSeekAi(f, inp, S){
-  const t = hazardT, lis = f._hsListenT > t;
-  const seen = hsHiders().filter(function(h){ return !h._hsTrav && (h._hsLitNow || (lis && Math.hypot(h.x - f.x, h.y - f.y) < HSP.seek[1].r) || (Math.hypot(h.x - f.x, h.y - f.y) < HSK.near && !hsHiddenish(h) && hsCell(h) === hsCell(f))
-    || ((h._hsFlkNow || h._hsMirNow) && hsStorey(h) === hsStorey(f) && Math.abs(h.x - f.x) < HSX.see)); });   // (and what a flickering bulb or the mirror shows)
-  if(seen.length){   // chase what it can see (or hear), and keep its light on it
+  const t = hazardT;
+  const seen = hsHiders().filter(function(h){ return h._hsLitNow || (Math.hypot(h.x - f.x, h.y - f.y) < HSK.near && !hsHiddenish(h) && hsCell(h) === hsCell(f)); });
+  if(seen.length){   // chase what it can see, and keep its light on it
     seen.sort(function(a, b){ return hsCost(f, a.x, hsStorey(a)) - hsCost(f, b.x, hsStorey(b)); });
     const h = seen[0], st = hsStorey(h), dx = h.x - f.x;
     if(st === hsStorey(f) && Math.abs(dx) < 40){ if(Math.abs(dx) > 4 && (dx < 0) !== (f.face < 0)){ inp.left = dx < 0; inp.right = dx > 0; } return true; }
     hsNav(f, inp, h.x, st); return true;
   }
-  if(hsSeekExtra(f, inp, S)) return true;   // THE OWNER'S PICKS: a lamp that was not there, a creak or a bell, the mirror
-  const p = hsPupNear(f, S, 340);   // a gold powerup near
-  if(p){ hsNav(f, inp, p.x, p.st); return true; }
-  if(f._hsDecoyGo == null){ const d = S.decoys.find(q => q.by != null && !(f._hsDecoyDone || {})[q.t0]); if(d){ (f._hsDecoyDone = f._hsDecoyDone || {})[d.t0] = 1; if(Math.random() < 0.5) f._hsDecoyGo = d; } }   // a noise: half the time it goes to look
-  if(f._hsDecoyGo){ const d = f._hsDecoyGo; if(d.until < t - 60 || hsNav(f, inp, d.x, d.st)) f._hsDecoyGo = null; return true; }
-  const W = f._hsWp != null ? HS.spots[f._hsWp] : null;
-  if(!W || (f._hsSeen || {})[f._hsWp]){
+  const wp = f._hsWp != null ? HS.spots[f._hsWp] : null;
+  if(!wp || (f._hsSeen || {})[f._hsWp]){
     let best = -1, bc = 1e9;
     HS.spots.forEach(function(s, i){
-      if((f._hsSeen || {})[i] || S.locks[s.st + ':' + s.ci] > t) return;
+      if((f._hsSeen || {})[i]) return;
       const other = fighters.some(function(o){ return o !== f && !o.dead && o._hsRole === 'seek' && o._hsWp === i; });
       const c2 = hsCost(f, s.x, s.st) + (other ? 900 : 0) + Math.random()*60;
       if(c2 < bc){ bc = c2; best = i; }
@@ -112861,7 +112316,6 @@ function hsSeekAi(f, inp, S){
     f._hsWp = best; f._hsLook = 0;
   }
   const s = HS.spots[f._hsWp];
-  if(S.locks[s.st + ':' + s.ci] > t){ (f._hsSeen = f._hsSeen || {})[f._hsWp] = 1; f._hsWp = null; return true; }   // locked: somewhere else for now
   let sx = s.x - (s.x > f.x ? 1 : -1)*60;   // stand a little short of it, facing it, so the light falls on it (on the room side of a spot by a wall)
   if(sx < HSK.wall + f.r + 6 || sx > WW - HSK.wall - f.r - 6) sx = s.x + (s.x > f.x ? 1 : -1)*60;
   const cs = HS.cells[s.st][s.ci]; if(cs){ sx = clamp(sx, cs.x0 + f.r + 4, cs.x1 - f.r - 4); }   // (inside the spot's own room: the light stops at its walls)
@@ -112872,71 +112326,113 @@ function hsSeekAi(f, inp, S){
     const want = s.x > f.x ? 1 : -1;
     if(f._hsLook < HSK.look*0.7){ if((f.face < 0 ? -1 : 1) !== want){ inp.left = want < 0; inp.right = want > 0; } }   // (35 frames on the spot: longer than a find takes, HSK.catchT)
     else if(f._hsLook < HSK.look){ if((f.face < 0 ? -1 : 1) === want){ inp.left = want > 0; inp.right = want < 0; } }   // and a look behind
-    else { (f._hsSeen = f._hsSeen || {})[f._hsWp] = 1; S.lookT[s.st + ':' + s.ci] = t; f._hsWp = null; }
+    else { (f._hsSeen = f._hsSeen || {})[f._hsWp] = 1; f._hsWp = null; }
   }
   return true;
 }
 
 // ---- THE HOUSE, DRAWN (world space; the dark veil goes over all of it) ----
-const HS_INK = { hall:'#c9c2b0', pantry:'#d9c79a', laundry:'#bfd8e6', crawlspace:'#8a7a66', 'coat closet':'#b8a0c8', mudroom:'#a8b090', 'boiler room':'#b08a7a', bathroom:'#bfe2e6', 'wine cellar':'#8a5a6a',
-  'linen closet':'#e6dcc8', nursery:'#f2d0e0', study:'#c8b48a', 'walk-in closet':'#d0c0e0', playroom:'#e8e0a0', 'sewing room':'#e6c0b0', 'music room':'#b0c8e8',
-  'attic nook':'#c8b49a', 'box room':'#b8a88a', 'trunk room':'#a89878', 'dusty loft':'#bcae98', 'chimney nook':'#a88070', 'toy store':'#d8c8a8', 'old wardrobe':'#9a8a7a', storage:'#b0a490',
-  board:'#9a6a3e', boardDk:'#6e4a2a', ink:'#1c1c1c', glass:'#203a6a', moon:'#f4f0c8' };
-function hsDrawProp(c, cell){   // one simple thing in the room that says what it is (no words)
-  const cx = (cell.x0 + cell.x1)/2, y = cell.y, n = cell.name;
-  c.lineWidth = 3; c.strokeStyle = HS_INK.ink;
-  if(n === 'laundry'){ c.fillStyle = '#f2f2f2'; c.fillRect(cx - 30, y - 60, 60, 60); c.strokeRect(cx - 30, y - 60, 60, 60); c.fillStyle = '#7ab0d0'; c.beginPath(); c.arc(cx, y - 30, 18, 0, 7); c.fill(); c.stroke(); }
-  else if(n === 'bathroom'){ c.fillStyle = '#ffffff'; c.beginPath(); c.moveTo(cx - 50, y - 40); c.lineTo(cx + 50, y - 40); c.lineTo(cx + 40, y); c.lineTo(cx - 40, y); c.closePath(); c.fill(); c.stroke(); }
-  else if(n === 'pantry' || n === 'linen closet' || n === 'storage'){ c.fillStyle = '#b08a5a'; for(let k = 0; k < 3; k++){ c.fillRect(cx - 40, y - 40 - k*40, 80, 6); c.strokeRect(cx - 40, y - 40 - k*40, 80, 6); } }
-  else if(n === 'box room' || n === 'trunk room' || n === 'attic nook' || n === 'dusty loft'){ c.fillStyle = '#c8a070'; c.fillRect(cx - 34, y - 44, 44, 44); c.strokeRect(cx - 34, y - 44, 44, 44); c.fillRect(cx + 6, y - 30, 30, 30); c.strokeRect(cx + 6, y - 30, 30, 30); }
-  else if(n === 'nursery' || n === 'playroom' || n === 'toy store'){ c.fillStyle = '#e85a8a'; c.beginPath(); c.arc(cx - 20, y - 14, 14, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#4aa8e8'; c.fillRect(cx + 4, y - 26, 26, 26); c.strokeRect(cx + 4, y - 26, 26, 26); }
-  else if(n === 'study' || n === 'music room' || n === 'sewing room'){ c.fillStyle = '#8a5a3a'; c.fillRect(cx - 40, y - 44, 80, 8); c.strokeRect(cx - 40, y - 44, 80, 8); c.fillRect(cx - 34, y - 36, 6, 36); c.fillRect(cx + 28, y - 36, 6, 36); }
-  else if(n === 'boiler room' || n === 'chimney nook'){ c.fillStyle = '#7a7a82'; c.fillRect(cx - 22, y - 90, 44, 90); c.strokeRect(cx - 22, y - 90, 44, 90); }
+const HS_INK = { ink:'#1c1c1c', glass:'#203a6a', moon:'#f4f0c8', door:'#4a3a34', sky:'#1e2438', earth:'#3a2a1e' };
+// A layer's own walls over a cell's colour: the basement's stone blocks, the ground floor's stripes, upstairs' dots, the attic's bare planks and rafters.
+function hsDrawWall(c, cell, look, y0, y1){
+  const x0 = cell.x0, x1 = cell.x1;
+  c.save(); c.beginPath(); c.rect(x0, y0, x1 - x0, y1 - y0); c.clip();
+  if(look === 'stone'){
+    c.globalAlpha = 0.28; c.strokeStyle = '#2a2e34'; c.lineWidth = 2; c.beginPath();
+    for(let y = y1, r = 0; y > y0; y -= 32, r++){ c.moveTo(x0, y); c.lineTo(x1, y); for(let x = x0 + (r % 2 ? 30 : 0); x < x1; x += 60){ c.moveTo(x, y); c.lineTo(x, y - 32); } }
+    c.stroke();
+  } else if(look === 'stripes'){
+    c.globalAlpha = 0.18; c.fillStyle = '#ffffff'; for(let x = x0 + 14; x < x1; x += 44) c.fillRect(x, y0, 14, y1 - y0);
+  } else if(look === 'dots'){
+    c.globalAlpha = 0.22; c.fillStyle = '#ffffff'; c.beginPath();
+    for(let y = y0 + 24, r = 0; y < y1 - 10; y += 40, r++) for(let x = x0 + (r % 2 ? 40 : 20); x < x1; x += 40){ c.moveTo(x + 5, y); c.arc(x, y, 5, 0, 7); }
+    c.fill();
+  } else {
+    c.globalAlpha = 0.25; c.strokeStyle = '#3a2614'; c.lineWidth = 2; c.beginPath(); for(let x = x0 + 50; x < x1; x += 50){ c.moveTo(x, y0); c.lineTo(x, y1); } c.stroke();
+    c.globalAlpha = 0.6; c.strokeStyle = '#5a3e26'; c.lineWidth = 12; c.beginPath(); c.moveTo(x0, y0 + 90); c.lineTo(x0 + 90, y0); c.moveTo(x1, y0 + 90); c.lineTo(x1 - 90, y0); c.stroke();   // the rafters
+  }
+  c.restore();
+}
+// A stairwell's back wall: a window (the moon in it above the ground, a grate in the basement, a round one in the attic); the front door in the Front Hall.
+function hsDrawHall(c, cell, y0, y1){
+  const cx = (cell.x0 + cell.x1)/2, ink = HS_INK.ink;
+  c.lineWidth = 4; c.strokeStyle = ink;
+  if(cell.st === 0){ c.fillStyle = '#1a1e26'; c.fillRect(cx - 40, y0 + 16, 80, 34); c.strokeRect(cx - 40, y0 + 16, 80, 34); c.lineWidth = 3; c.beginPath(); for(let x = cx - 24; x < cx + 40; x += 16){ c.moveTo(x, y0 + 16); c.lineTo(x, y0 + 50); } c.stroke(); }
+  else if(cell.st === HS.ys.length - 1){ c.fillStyle = HS_INK.glass; c.beginPath(); c.arc(cx, y0 + 70, 34, 0, 7); c.fill(); c.stroke(); c.fillStyle = HS_INK.moon; c.beginPath(); c.arc(cx + 12, y0 + 60, 8, 0, 7); c.fill(); c.beginPath(); c.moveTo(cx - 34, y0 + 70); c.lineTo(cx + 34, y0 + 70); c.moveTo(cx, y0 + 36); c.lineTo(cx, y0 + 104); c.stroke(); }
+  else { const wx = cx - 50, wy = y0 + 34; c.fillStyle = HS_INK.glass; c.fillRect(wx, wy, 100, 80); c.fillStyle = HS_INK.moon; c.beginPath(); c.arc(wx + 74, wy + 22, 10, 0, 7); c.fill(); c.strokeRect(wx, wy, 100, 80); c.lineWidth = 3; c.beginPath(); c.moveTo(wx + 50, wy); c.lineTo(wx + 50, wy + 80); c.stroke(); }
+  if(cell.name === 'Front Hall'){   // the front door, by the stairs: where the seeker counts
+    const dx = cell.x1 - 92; c.fillStyle = '#7a3a2a'; c.fillRect(dx, y1 - 150, 70, 150); c.lineWidth = 4; c.strokeRect(dx, y1 - 150, 70, 150);
+    c.lineWidth = 2; c.strokeRect(dx + 10, y1 - 138, 50, 56); c.strokeRect(dx + 10, y1 - 72, 50, 60); c.fillStyle = '#e8c060'; c.beginPath(); c.arc(dx + 58, y1 - 76, 5, 0, 7); c.fill(); c.stroke();
+  }
+}
+// A room's big thing, in its middle on the floor, that says what the room is (no words).
+function hsDrawThing(c, cell){
+  const x = (cell.x0 + cell.x1)/2, y = cell.y, k = cell.thing;
+  c.save(); c.lineWidth = 3; c.strokeStyle = HS_INK.ink; c.lineJoin = 'round';
+  const box = function(col, bx, by, bw, bh){ c.fillStyle = col; c.fillRect(bx, by, bw, bh); c.strokeRect(bx, by, bw, bh); };
+  const dot = function(col, dx, dy, r){ c.fillStyle = col; c.beginPath(); c.arc(dx, dy, r, 0, 7); c.fill(); c.stroke(); };
+  if(k === 'boiler'){ box('#8a8e96', x - 34, y - 120, 68, 120); dot('#f4f4f4', x, y - 84, 12); c.beginPath(); c.moveTo(x, y - 84); c.lineTo(x + 6, y - 92); c.stroke(); box('#e85a2a', x - 18, y - 36, 36, 18); box('#6a6e76', x - 8, y - 170, 16, 50); }
+  else if(k === 'washer'){ box('#f2f2f2', x - 36, y - 76, 72, 76); dot('#7ab0d0', x, y - 36, 22); box('#c8c8c8', x - 30, y - 70, 40, 8); }
+  else if(k === 'rack'){ box('#6a4428', x - 50, y - 110, 100, 110); for(let r = 0; r < 3; r++) for(let i = 0; i < 3; i++) dot(i === r ? '#3a6a3a' : '#5a1a2a', x - 30 + i*30, y - 88 + r*32, 10); }
+  else if(k === 'shelves'){ box('#7a5a3a', x - 54, y - 130, 8, 130); box('#7a5a3a', x + 46, y - 130, 8, 130); for(let r = 0; r < 3; r++){ box('#9a7a50', x - 54, y - 44 - r*42, 108, 7); box(r % 2 ? '#c8a070' : '#a8b0b8', x - 40 + r*14, y - 72 - r*42, 30, 28); } }
+  else if(k === 'stove'){ box('#e8e8e8', x - 40, y - 80, 80, 80); box('#3a3a3a', x - 30, y - 56, 60, 40); for(let i = 0; i < 2; i++) dot('#1c1c1c', x - 18 + i*36, y - 86, 8); box('#f2f2f2', x + 56, y - 130, 56, 130); c.beginPath(); c.moveTo(x + 56, y - 84); c.lineTo(x + 112, y - 84); c.stroke(); }
+  else if(k === 'fireplace'){ box('#a8483a', x - 60, y - 110, 120, 110); box('#1c1416', x - 36, y - 70, 72, 70); c.fillStyle = '#ff9a2a'; c.beginPath(); c.moveTo(x - 22, y); c.quadraticCurveTo(x - 10, y - 50, x, y - 30); c.quadraticCurveTo(x + 10, y - 56, x + 22, y); c.closePath(); c.fill(); box('#7a3a2a', x - 70, y - 118, 140, 10); }
+  else if(k === 'clock'){ box('#7a4a2a', x - 22, y - 150, 44, 150); dot('#f4ecd0', x, y - 124, 16); c.beginPath(); c.moveTo(x, y - 124); c.lineTo(x, y - 136); c.moveTo(x, y - 124); c.lineTo(x + 8, y - 120); c.stroke(); dot('#e8c060', x, y - 54, 9); }
+  else if(k === 'piano'){ box('#1e1a22', x - 60, y - 100, 120, 100); box('#f4f4f4', x - 56, y - 56, 112, 16); c.lineWidth = 2; c.beginPath(); for(let i = 1; i < 8; i++){ c.moveTo(x - 56 + i*14, y - 56); c.lineTo(x - 56 + i*14, y - 40); } c.stroke(); }
+  else if(k === 'picture'){ box('#c8a040', x - 44, y - 190, 88, 66); box('#8ac8f0', x - 36, y - 182, 72, 50); c.fillStyle = '#5aa85a'; c.beginPath(); c.moveTo(x - 36, y - 132); c.quadraticCurveTo(x, y - 168, x + 36, y - 132); c.closePath(); c.fill(); box('#8a5a3a', x - 24, y - 50, 48, 50); dot('#fff4a0', x, y - 64, 12); }
+  else if(k === 'bath'){ c.fillStyle = '#ffffff'; c.beginPath(); c.moveTo(x - 64, y - 56); c.lineTo(x + 64, y - 56); c.lineTo(x + 54, y - 12); c.lineTo(x - 54, y - 12); c.closePath(); c.fill(); c.stroke(); box('#6ac0e8', x - 58, y - 56, 116, 8); box('#c8c8c8', x - 50, y - 12, 10, 12); box('#c8c8c8', x + 40, y - 12, 10, 12); dot('#ffd23f', x + 30, y - 66, 8); }
+  else if(k === 'toys'){ dot('#e85a8a', x - 30, y - 18, 18); box('#4aa8e8', x + 2, y - 34, 34, 34); box('#ffd23f', x + 10, y - 60, 22, 26); }
+  else if(k === 'desk'){ box('#8a5a3a', x - 50, y - 64, 100, 10); box('#8a5a3a', x - 44, y - 54, 8, 54); box('#8a5a3a', x + 36, y - 54, 8, 54); box('#e8e0c8', x - 30, y - 80, 36, 16); c.beginPath(); c.moveTo(x + 26, y - 64); c.lineTo(x + 26, y - 96); c.stroke(); dot('#fff4a0', x + 26, y - 102, 9); }
+  else if(k === 'boxes'){ box('#c8a070', x - 50, y - 60, 60, 60); box('#b89060', x + 10, y - 44, 44, 44); box('#d8b080', x - 34, y - 104, 44, 44); }
+  else if(k === 'dummy'){ c.beginPath(); c.moveTo(x, y); c.lineTo(x, y - 60); c.moveTo(x - 20, y); c.lineTo(x + 20, y); c.stroke(); c.fillStyle = '#e8d8c0'; c.beginPath(); c.moveTo(x - 24, y - 60); c.quadraticCurveTo(x - 30, y - 100, x - 18, y - 130); c.lineTo(x + 18, y - 130); c.quadraticCurveTo(x + 30, y - 100, x + 24, y - 60); c.closePath(); c.fill(); c.stroke(); }
+  else if(k === 'horse'){ c.fillStyle = '#e8a040'; c.beginPath(); c.moveTo(x - 50, y - 10); c.quadraticCurveTo(x, y + 6, x + 50, y - 10); c.stroke(); box('#e8a040', x - 30, y - 56, 56, 22); box('#e8a040', x + 18, y - 86, 18, 34); box('#e8a040', x - 26, y - 34, 8, 26); box('#e8a040', x + 14, y - 34, 8, 26); dot('#1c1c1c', x + 28, y - 76, 2); }
+  else if(k === 'chair'){ box('#6a5a4a', x - 26, y - 50, 52, 8); box('#6a5a4a', x - 26, y - 110, 8, 110); box('#6a5a4a', x + 18, y - 42, 8, 42); c.save(); c.translate(x - 4, y - 4); c.rotate(0.5); box('#6a5a4a', -4, -36, 8, 36); c.restore(); }
+  c.restore();
 }
 function hsDrawHouse(c){
   if(!HS) return;
-  const K = HSK, ys = HS.ys, rf = HS.roofY, vx0 = camX - 100, vx1 = camX + W/CAM_ZOOM + 100;
+  const K = HSK, ys = HS.ys, rf = HS.roofY, vx0 = camX - 100, vx1 = camX + W/CAM_ZOOM + 100, ink = HS_INK.ink;
   c.save();
-  c.fillStyle = '#2a2230'; c.fillRect(camX - 200, camY - 200, W/CAM_ZOOM + 400, H/CAM_ZOOM + 400);   // outside the walls
+  const ox = camX - 200, ow = W/CAM_ZOOM + 400, gl = ys[1] + 14, vy0 = camY - 200, vy1 = camY + H/CAM_ZOOM + 200;   // outside the walls: the night above the ground, the earth by the basement
+  c.fillStyle = HS_INK.sky; c.fillRect(ox, vy0, ow, Math.max(0, gl - vy0)); c.fillStyle = HS_INK.earth; c.fillRect(ox, gl, ow, Math.max(0, vy1 - gl));
   for(let st = 0; st < ys.length; st++){
-    const y1 = ys[st], y0 = st + 1 < ys.length ? ys[st + 1] + 14 : rf;
+    const Ly = HS_LAYERS[st], y1 = ys[st], y0 = st + 1 < ys.length ? ys[st + 1] + 14 : rf;
     for(const cell of HS.cells[st]){
       if(cell.x1 < vx0 || cell.x0 > vx1) continue;
-      c.fillStyle = HS_INK[cell.name] || HS_INK.hall; c.fillRect(cell.x0, y0, cell.x1 - cell.x0, y1 - y0);
-      c.globalAlpha = 0.16; c.fillStyle = '#ffffff'; for(let x = cell.x0 + 20; x < cell.x1; x += (cell.hall ? 60 : 44)) c.fillRect(x, y0, cell.hall ? 18 : 10, y1 - y0); c.globalAlpha = 1;
-      if(cell.hall){ const wx = (cell.x0 + cell.x1)/2 - 50, wy = y0 + 34; c.fillStyle = HS_INK.glass; c.fillRect(wx, wy, 100, 80); c.fillStyle = HS_INK.moon; c.beginPath(); c.arc(wx + 74, wy + 22, 10, 0, 7); c.fill(); c.strokeStyle = HS_INK.ink; c.lineWidth = 4; c.strokeRect(wx, wy, 100, 80); }
-      else hsDrawProp(c, cell);
-      c.fillStyle = '#4a3a34'; c.fillRect(cell.x0 - 5, y0, 10, y1 - y0 - 120);   // the wall between cells, with its doorway (an open door frame) at the bottom
-      c.strokeStyle = HS_INK.ink; c.lineWidth = 3; c.strokeRect(cell.x0 - 5, y1 - 120, 10, 120);
-      const lk = CONTEST && CONTEST.locks && CONTEST.locks[st + ':' + cell.ci] > hazardT;
-      if(lk){ c.fillStyle = '#7a5a3a'; c.fillRect(cell.x0 - 4, y1 - 118, 8, 118); c.fillRect(cell.x1 - 4, y1 - 118, 8, 118); c.fillStyle = '#ffd23f'; c.beginPath(); c.arc(cell.x0, y1 - 60, 6, 0, 7); c.arc(cell.x1, y1 - 60, 6, 0, 7); c.fill(); }   // CLOSET LOCK: both doors shut
+      c.fillStyle = cell.col; c.fillRect(cell.x0, y0, cell.x1 - cell.x0, y1 - y0);
+      hsDrawWall(c, cell, Ly.look, y0, y1);
+      if(cell.hall) hsDrawHall(c, cell, y0, y1); else hsDrawThing(c, cell);
+      c.fillStyle = HS_INK.door; c.fillRect(cell.x0 - 5, y0, 10, y1 - y0 - 120);   // the wall between cells, with its doorway (an open door frame) at the bottom
+      c.strokeStyle = ink; c.lineWidth = 3; c.strokeRect(cell.x0 - 5, y1 - 120, 10, 120);
     }
-    if(st > 0){ c.fillStyle = HS_INK.board; c.fillRect(K.wall, ys[st], WW - 2*K.wall, 12); c.strokeStyle = HS_INK.ink; c.lineWidth = 3; c.strokeRect(K.wall, ys[st], WW - 2*K.wall, 14); }
+    if(st > 0){ c.fillStyle = Ly.floor; c.fillRect(K.wall, ys[st], WW - 2*K.wall, 14); c.strokeStyle = ink; c.lineWidth = 3; c.strokeRect(K.wall, ys[st], WW - 2*K.wall, 14); }   // the layer's floor
   }
-  c.fillStyle = HS_INK.boardDk; c.fillRect(K.wall, HS.gy, WW - 2*K.wall, 40); c.strokeStyle = HS_INK.ink; c.beginPath(); c.moveTo(K.wall, HS.gy); c.lineTo(WW - K.wall, HS.gy); c.stroke();
-  for(const s of HS.stairs){ for(const p of [s.a, s.b]){ if(p.x + p.w < vx0 || p.x > vx1) continue; c.fillStyle = HS_INK.board; c.fillRect(p.x, p.y, p.w, 12); c.strokeStyle = HS_INK.ink; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, 12); c.beginPath(); c.moveTo(p.x + 10, p.y + 12); c.lineTo(p.x + 10, HS.ys[s.st]); c.moveTo(p.x + p.w - 10, p.y + 12); c.lineTo(p.x + p.w - 10, HS.ys[s.st]); c.stroke(); } }
-  c.fillStyle = '#4a3a34'; c.fillRect(0, rf - 30, WW, 30); c.fillRect(0, rf, K.wall, HS.gy - rf + 40); c.fillRect(WW - K.wall, rf, K.wall, HS.gy - rf + 40);   // roof beam and walls
-  hsDrawExtrasBack(c, vx0, vx1);   // THE OWNER'S PICKS: bulbs, the mirror, bookshelves, lamps and vases, creaky boards, doors and bells, the fuse box
+  c.fillStyle = HS_LAYERS[0].floor; c.fillRect(K.wall, HS.gy, WW - 2*K.wall, 40); c.strokeStyle = ink; c.lineWidth = 3; c.beginPath(); c.moveTo(K.wall, HS.gy); c.lineTo(WW - K.wall, HS.gy); c.stroke();
+  for(const s of HS.stairs){ const col = HS_LAYERS[s.st + 1].floor; for(const p of [s.a, s.b]){ if(p.x + p.w < vx0 || p.x > vx1) continue; c.fillStyle = col; c.fillRect(p.x, p.y, p.w, 12); c.strokeStyle = ink; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, 12); c.beginPath(); c.moveTo(p.x + 10, p.y + 12); c.lineTo(p.x + 10, HS.ys[s.st]); c.moveTo(p.x + p.w - 10, p.y + 12); c.lineTo(p.x + p.w - 10, HS.ys[s.st]); c.stroke(); } }
+  c.fillStyle = HS_INK.door; c.fillRect(0, rf - 30, WW, 30); c.fillRect(0, rf, K.wall, HS.gy - rf + 40); c.fillRect(WW - K.wall, rf, K.wall, HS.gy - rf + 40);   // roof beam and walls
   for(const s of HS.spots) if(s.x > vx0 - 60 && s.x < vx1 + 60) hsDrawSpot(c, s, 'back');
   c.restore();
 }
-function hsDrawSpot(c, s, part){   // a cupboard, a curtain or a vent: 'back' (behind the fighters) or 'front' (over them)
-  const x = s.x - s.w/2, y = s.y - s.h;
-  if(part === 'back'){ c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(x + 4, y + 4, s.w - 8, s.h - 4); return; }
-  c.lineWidth = 3; c.strokeStyle = HS_INK.ink;
-  if(s.kind === 'cupboard'){ c.fillStyle = '#b07a48'; c.fillRect(x, y, s.w, s.h); c.strokeRect(x, y, s.w, s.h); c.beginPath(); c.moveTo(s.x, y); c.lineTo(s.x, y + s.h); c.stroke(); c.fillStyle = '#e8c060'; c.beginPath(); c.arc(s.x - 8, y + s.h*0.5, 4, 0, 7); c.arc(s.x + 8, y + s.h*0.5, 4, 0, 7); c.fill(); }
-  else if(s.kind === 'curtain'){ c.fillStyle = '#b8455a'; c.fillRect(x - 6, y - 8, s.w + 12, 8); c.strokeRect(x - 6, y - 8, s.w + 12, 8); for(let i = 0; i < 4; i++){ const xx = x + i*s.w/4; c.fillStyle = i % 2 ? '#c95468' : '#d8657a'; c.beginPath(); c.moveTo(xx, y); c.lineTo(xx + s.w/4, y); c.lineTo(xx + s.w/4 + 3, y + s.h); c.lineTo(xx - 3, y + s.h); c.closePath(); c.fill(); c.stroke(); } }
-  else { c.fillStyle = '#8c949c'; c.fillRect(x, y, s.w, s.h); c.strokeRect(x, y, s.w, s.h); c.beginPath(); for(let yy = y + 12; yy < y + s.h - 4; yy += 12){ c.moveTo(x + 8, yy); c.lineTo(x + s.w - 8, yy); } c.stroke(); }
-}
-function hsDrawPup(c, p){   // a small glowing pickup: gold (seekers) or blue (hiders), its own sign on it, growing in
-  const k = growK(hazardT - p.t0 + 1), r = HSK.pupR*k, y = p.y - 18 + Math.sin(hazardT*0.1 + p.x)*3, col = p.side === 'seek' ? '#ffd23f' : '#8fd0ff';
-  c.save(); c.globalAlpha = 0.35; c.fillStyle = col; c.beginPath(); c.arc(p.x, y, r*1.8, 0, 7); c.fill(); c.globalAlpha = 1;
-  c.fillStyle = col; c.strokeStyle = HS_INK.ink; c.lineWidth = 2.5; c.beginPath(); c.arc(p.x, y, r, 0, 7); c.fill(); c.stroke();
-  c.font = Math.round(14*k) + "px system-ui"; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(p.p.icon, p.x, y + 1); c.restore();
+function hsDrawSpot(c, s, part){   // a piece of furniture to hide in: 'back' (behind the fighters) or 'front' (over them)
+  const x = s.x - s.w/2, y = s.y - s.h, w = s.w, h = s.h;
+  if(part === 'back'){ c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(x + 4, y + 4, w - 8, h - 4); return; }
+  c.lineWidth = 3; c.strokeStyle = HS_INK.ink; c.lineJoin = 'round';
+  const box = function(col, bx, by, bw, bh){ c.fillStyle = col; c.fillRect(bx, by, bw, bh); c.strokeRect(bx, by, bw, bh); };
+  const knob = function(kx, ky){ c.fillStyle = '#e8c060'; c.beginPath(); c.arc(kx, ky, 4, 0, 7); c.fill(); };
+  const k = s.kind;
+  if(k === 'cupboard'){ box('#b07a48', x, y, w, h); c.beginPath(); c.moveTo(s.x, y); c.lineTo(s.x, y + h); c.stroke(); knob(s.x - 8, y + h*0.5); knob(s.x + 8, y + h*0.5); }
+  else if(k === 'curtain'){ box('#b8455a', x - 6, y - 8, w + 12, 8); for(let i = 0; i < 4; i++){ const xx = x + i*w/4; c.fillStyle = i % 2 ? '#c95468' : '#d8657a'; c.beginPath(); c.moveTo(xx, y); c.lineTo(xx + w/4, y); c.lineTo(xx + w/4 + 3, y + h); c.lineTo(xx - 3, y + h); c.closePath(); c.fill(); c.stroke(); } }
+  else if(k === 'wardrobe'){ box('#6a4428', x - 4, y - 8, w + 8, 10); box('#7a5030', x, y, w, h); c.beginPath(); c.moveTo(s.x, y); c.lineTo(s.x, y + h); c.stroke(); c.lineWidth = 2; c.strokeRect(x + 8, y + 10, w/2 - 16, h - 24); c.strokeRect(s.x + 8, y + 10, w/2 - 16, h - 24); knob(s.x - 6, y + h*0.5); knob(s.x + 6, y + h*0.5); }
+  else if(k === 'bed'){ box('#8a5a3a', x, y, 14, h); box('#f4f4f4', x + 14, y + h*0.3, 30, 16); box('#4a6ac8', x + 14, y + h*0.42, w - 14, h*0.58); c.lineWidth = 2; c.beginPath(); c.moveTo(x + 50, y + h*0.42); c.lineTo(x + 50, y + h); c.moveTo(x + 86, y + h*0.42); c.lineTo(x + 86, y + h); c.stroke(); }
+  else if(k === 'crates'){ const cr = function(bx, by, bw, bh){ box('#c08a50', bx, by, bw, bh); c.beginPath(); c.moveTo(bx, by); c.lineTo(bx + bw, by + bh); c.moveTo(bx + bw, by); c.lineTo(bx, by + bh); c.stroke(); }; cr(x, y + h*0.45, w, h*0.55); cr(x + w*0.18, y, w*0.6, h*0.45); }
+  else if(k === 'barrel'){ c.fillStyle = '#9a6034'; c.beginPath(); c.moveTo(x + 8, y); c.quadraticCurveTo(x - 6, y + h/2, x + 8, y + h); c.lineTo(x + w - 8, y + h); c.quadraticCurveTo(x + w + 6, y + h/2, x + w - 8, y); c.closePath(); c.fill(); c.stroke(); c.strokeStyle = '#4a4a50'; c.lineWidth = 5; c.beginPath(); c.moveTo(x + 2, y + h*0.25); c.lineTo(x + w - 2, y + h*0.25); c.moveTo(x + 2, y + h*0.75); c.lineTo(x + w - 2, y + h*0.75); c.stroke(); }
+  else if(k === 'chest'){ box('#c0603a', x, y + h*0.3, w, h*0.7); c.fillStyle = '#d0704a'; c.beginPath(); c.moveTo(x, y + h*0.3); c.quadraticCurveTo(s.x, y - h*0.1, x + w, y + h*0.3); c.closePath(); c.fill(); c.stroke(); box('#ffd23f', s.x - 8, y + h*0.3, 16, 18); }
+  else if(k === 'table'){ box('#7a4a2a', x - 6, y, w + 12, 8); c.fillStyle = '#f2eee0'; c.beginPath(); c.moveTo(x - 4, y + 8); c.lineTo(x + w + 4, y + 8); c.lineTo(x + w + 8, y + h); for(let i = 0; i < 6; i++) c.lineTo(x + w + 8 - (i + 0.5)*(w + 16)/6, y + h - (i % 2 ? 0 : 6)); c.lineTo(x - 8, y + h); c.closePath(); c.fill(); c.stroke(); c.fillStyle = '#d84a4a'; c.fillRect(x - 4, y + 22, w + 8, 8); }
+  else if(k === 'sofa'){ box('#a05a8a', x + 8, y, w - 16, h*0.6); box('#b86aa0', x, y + h*0.45, w, h*0.55); box('#a05a8a', x - 4, y + h*0.3, 18, h*0.7); box('#a05a8a', x + w - 14, y + h*0.3, 18, h*0.7); }
 }
 function hsDrawFronts(c){
   if(!HS) return;
-  const me = fighters.find(function(o){ return o.you && !o.dead; }), S = CONTEST;
+  const me = fighters.find(function(o){ return o.you && !o.dead; }), S = CONTEST, t = hazardT;
   c.save();
   for(let i = 0; i < HS.spots.length; i++){
     const s = HS.spots[i], occ = fighters.find(function(o){ return !o.dead && o._hsIn === i; });
@@ -112945,145 +112441,20 @@ function hsDrawFronts(c){
     hsDrawSpot(c, s, 'front');
   }
   c.globalAlpha = 1;
-  hsDrawExtrasFront(c, me);   // THE OWNER'S PICKS: the mirror's picture, the disguises, the noise rings, the new seeker's sign
-  if(S && S.pups) for(const p of S.pups) hsDrawPup(c, p);
   for(const f of hsSeekers()){   // the flashlight in each seeker's hand
     const d = f.face < 0 ? -1 : 1, x = f.x + d*(f.r*0.6), y = f.y - 4;
-    c.fillStyle = '#3a3a44'; c.strokeStyle = HS_INK.ink; c.lineWidth = 2; c.save(); c.translate(x, y); c.scale(d, 1); c.fillRect(-4, -5, 18, 10); c.strokeRect(-4, -5, 18, 10); c.fillStyle = f._hsBeamT > hazardT ? '#ffffff' : '#fff4b8'; c.fillRect(14, -6, 5, 12); c.restore();
+    c.fillStyle = '#3a3a44'; c.strokeStyle = HS_INK.ink; c.lineWidth = 2; c.save(); c.translate(x, y); c.scale(d, 1); c.fillRect(-4, -5, 18, 10); c.strokeRect(-4, -5, 18, 10); c.fillStyle = '#fff4b8'; c.fillRect(14, -6, 5, 12); c.restore();
   }
-  if(S && S.ghosts) for(const g of S.ghosts){   // THE GHOST SEEKER: a see-through sheet with eyes and a lamp
-    const a = 0.55*Math.min(1, (hazardT - g.t0)/12, (g.until - hazardT)/20), w = Math.sin(hazardT*0.2)*3;
-    c.save(); c.globalAlpha = Math.max(0, a); c.fillStyle = '#eef2ff'; c.strokeStyle = '#8a92b8'; c.lineWidth = 2;
-    c.beginPath(); c.moveTo(g.x - 18, g.y + 22); c.lineTo(g.x - 18, g.y - 6); c.arc(g.x, g.y - 6, 18, Math.PI, 0); c.lineTo(g.x + 18, g.y + 22);
-    for(let i = 0; i < 4; i++) c.lineTo(g.x + 18 - (i + 0.5)*9, g.y + 16 + ((i % 2) ? 6 : 0) + w*0.3); c.closePath(); c.fill(); c.stroke();
-    c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(g.x + g.face*4 - 5, g.y - 8, 3, 0, 7); c.arc(g.x + g.face*4 + 5, g.y - 8, 3, 0, 7); c.fill(); c.restore();
-  }
-  c.restore();
-}
-// ---- THE OWNER'S PICKS, DRAWN (pictures, no words; the card reuses these) ----
-function hsPicLamp(c, x, y, k, kind){   // a standing lamp or a vase, standing on (x, y)
-  c.save(); c.translate(x, y); c.scale(k, k); c.lineWidth = 3; c.strokeStyle = HS_INK.ink; c.lineJoin = 'round';
-  if(kind === 'vase'){
-    c.fillStyle = '#4a7ab8'; c.beginPath(); c.moveTo(-10, 0); c.quadraticCurveTo(-22, -18, -10, -32); c.lineTo(-7, -42); c.lineTo(7, -42); c.lineTo(10, -32); c.quadraticCurveTo(22, -18, 10, 0); c.closePath(); c.fill(); c.stroke();
-    c.strokeStyle = '#e8e0c8'; c.lineWidth = 2; c.beginPath(); c.moveTo(-14, -20); c.lineTo(14, -20); c.moveTo(-12, -12); c.lineTo(12, -12); c.stroke();
-  } else {
-    c.fillStyle = '#5a4a3a'; c.beginPath(); c.ellipse(0, -3, 14, 4, 0, 0, 7); c.fill(); c.stroke();
-    c.fillRect(-2, -58, 4, 55); c.strokeRect(-2, -58, 4, 55);
-    c.fillStyle = '#e8d49a'; c.beginPath(); c.moveTo(-18, -58); c.lineTo(18, -58); c.lineTo(11, -80); c.lineTo(-11, -80); c.closePath(); c.fill(); c.stroke();
-  }
-  c.restore();
-}
-function hsPicShelf(c, x, y, k, open){   // a bookshelf standing on (x, y); open 0..1 swings it aside (a dark way behind)
-  c.save(); c.translate(x, y); c.scale(k, k); c.lineWidth = 3; c.strokeStyle = HS_INK.ink;
-  if(open > 0){ c.fillStyle = '#120c10'; c.fillRect(-35, -130, 70, 130); }
-  c.translate(-35, 0); c.scale(1 - 0.75*open, 1); c.translate(35, 0);
-  c.fillStyle = '#6e4a2a'; c.fillRect(-35, -130, 70, 130); c.strokeRect(-35, -130, 70, 130);
-  const cols = ['#c0392b', '#2e86c1', '#27ae60', '#f1c40f', '#8e44ad', '#e67e22'];
-  for(let r = 0; r < 3; r++){ const sy = -122 + r*40; c.fillStyle = '#4a3020'; c.fillRect(-30, sy + 32, 60, 4);
-    for(let i = 0; i < 6; i++){ c.fillStyle = cols[(i + r*2) % cols.length]; const h = 22 + ((i*7 + r*3) % 8); c.fillRect(-28 + i*9.5, sy + 32 - h, 8, h); } }
-  c.restore();
-}
-function hsMini(c, f, x, y, s, flip){   // a fighter's picture (its render, or a body in its colour), s tall, centred on (x, y)
-  let im = null; try{ const sp = f && f.name && SPRITES[f.name]; im = sp ? spriteImage(sp) : null; }catch(e){ im = null; }
-  c.save(); c.translate(x, y); if(flip) c.scale(-1, 1);
-  if(im && im.naturalHeight){ const k = s/im.naturalHeight; c.drawImage(im, -im.naturalWidth*k/2, -s/2, im.naturalWidth*k, s); }
-  else { c.fillStyle = safeColor((f && f.color) || '#9aa3ad'); c.strokeStyle = HS_INK.ink; c.lineWidth = 2; c.beginPath(); c.arc(0, 0, s*0.4, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#ffffff'; c.beginPath(); c.arc(-s*0.12, -s*0.06, s*0.09, 0, 7); c.arc(s*0.12, -s*0.06, s*0.09, 0, 7); c.fill(); }
-  c.restore();
-}
-function hsPicFuse(c, x, y, k, off, who){   // the fuse box centred on (x, y): its lever up (on) or down (off), its lamp, and the face of who touched it
-  c.save(); c.translate(x, y); c.scale(k, k); c.lineWidth = 3; c.strokeStyle = HS_INK.ink;
-  c.fillStyle = '#8a9098'; c.fillRect(-20, -26, 40, 52); c.strokeRect(-20, -26, 40, 52);
-  c.fillStyle = '#20242a'; c.fillRect(-13, -20, 26, 18); c.strokeRect(-13, -20, 26, 18);
-  if(who){ c.save(); c.beginPath(); c.rect(-13, -20, 26, 18); c.clip(); hsMini(c, who, 0, -11, 18, false); c.restore(); }
-  c.strokeStyle = HS_INK.ink; c.lineWidth = 4; c.beginPath(); c.moveTo(0, 10); c.lineTo(10, off ? 20 : 2); c.stroke();
-  c.fillStyle = '#d0d0d0'; c.beginPath(); c.arc(10, off ? 20 : 2, 4, 0, 7); c.fill(); c.lineWidth = 2; c.stroke();
-  c.fillStyle = off ? '#ff3a2a' : '#3ad06a'; c.beginPath(); c.arc(-11, 12, 4, 0, 7); c.fill(); c.stroke();
-  c.restore();
-}
-function hsPicBell(c, x, y, k, age){   // a doorbell centred on (x, y); age >= 0: ringing that long
-  c.save(); c.translate(x, y); c.scale(k, k);
-  const ring = age >= 0 && age < 90; if(ring) c.rotate(Math.sin(age*0.8)*0.25);
-  c.lineWidth = 2.5; c.strokeStyle = HS_INK.ink; c.fillStyle = '#d8a83a';
-  c.beginPath(); c.moveTo(-12, 8); c.quadraticCurveTo(-12, -14, 0, -14); c.quadraticCurveTo(12, -14, 12, 8); c.closePath(); c.fill(); c.stroke();
-  c.beginPath(); c.arc(0, 11, 3.5, 0, 7); c.fill(); c.stroke();
-  c.fillStyle = '#f2f2f2'; c.beginPath(); c.arc(0, 28, 5, 0, 7); c.fill(); c.stroke();   // its button below
-  if(ring){ c.strokeStyle = '#ffd23f'; c.lineWidth = 3; c.beginPath(); c.moveTo(-18, -12); c.lineTo(-24, -18); c.moveTo(18, -12); c.lineTo(24, -18); c.moveTo(-20, 0); c.lineTo(-28, 0); c.moveTo(20, 0); c.lineTo(28, 0); c.stroke(); }
-  c.restore();
-}
-function hsPicBulb(c, x, y, on, k){   // a ceiling bulb hanging from (x, y)
-  c.save(); c.translate(x, y); c.scale(k || 1, k || 1); c.strokeStyle = HS_INK.ink; c.lineWidth = 2;
-  c.beginPath(); c.moveTo(0, 0); c.lineTo(0, 14); c.stroke();
-  if(on){ c.globalAlpha = 0.35; c.fillStyle = '#fff4a0'; c.beginPath(); c.arc(0, 22, 20, 0, 7); c.fill(); c.globalAlpha = 1; }
-  c.fillStyle = on ? '#fff4a0' : '#9a9a8a'; c.beginPath(); c.arc(0, 22, 7, 0, 7); c.fill(); c.stroke();
-  c.restore();
-}
-function hsDrawExtrasBack(c, vx0, vx1){   // behind the fighters: the bulbs, the mirror, the bookshelves, the lamps and vases, the creaky boards, the doors and bells, the fuse box
-  const S = CONTEST, t = hazardT, ys = HS.ys, fon = hsFlkOn(S);
-  for(let st = 0; st < ys.length; st++){
-    const y0 = st + 1 < ys.length ? ys[st + 1] + 14 : HS.roofY;
-    for(const cell of HS.cells[st]){ if(cell.hall || cell.x1 < vx0 || cell.x0 > vx1) continue; hsPicBulb(c, (cell.x0 + cell.x1)/2, y0, fon && S.flk.c === cell, 1); }
-  }
-  const M = HS.mirror;
-  if(M && M.x > vx0 - 80 && M.x < vx1 + 80){
-    const y = ys[M.st] - 24, x0 = M.x - M.w/2;
-    c.fillStyle = '#6a4a2a'; c.fillRect(x0 - 6, y - M.h - 6, M.w + 12, M.h + 12); c.strokeStyle = HS_INK.ink; c.lineWidth = 3; c.strokeRect(x0 - 6, y - M.h - 6, M.w + 12, M.h + 12);
-    c.fillStyle = S && S.mirLit ? '#d6ecf6' : '#8aa4b4'; c.fillRect(x0, y - M.h, M.w, M.h); c.strokeRect(x0, y - M.h, M.w, M.h);
-    c.strokeStyle = 'rgba(255,255,255,0.7)'; c.lineWidth = 4; c.beginPath(); c.moveTo(x0 + 12, y - 18); c.lineTo(x0 + 38, y - M.h + 10); c.moveTo(x0 + 28, y - 12); c.lineTo(x0 + 50, y - M.h + 30); c.stroke();
-  }
-  for(const q of HS.shelves){ if(q.x < vx0 - 60 || q.x > vx1 + 60) continue; const a = (t - q.swing)/HSX.passT; hsPicShelf(c, q.x, ys[q.st], 1, a >= 0 && a < 1 ? Math.sin(a*Math.PI) : 0); }
-  for(const p of HS.props){ if(p.x < vx0 - 40 || p.x > vx1 + 40) continue; hsPicLamp(c, p.x, ys[p.st], 1, p.k); }
-  for(const b of HS.creaks){
-    if(b.x < vx0 - 60 || b.x > vx1 + 60) continue; const y = ys[b.st];
-    c.fillStyle = '#c08a58'; c.fillRect(b.x - b.w/2, y, b.w, 8); c.strokeStyle = HS_INK.ink; c.lineWidth = 2; c.strokeRect(b.x - b.w/2, y, b.w, 8);
-    c.beginPath(); c.moveTo(b.x - 20, y + 1); c.lineTo(b.x - 8, y + 6); c.lineTo(b.x + 4, y + 2); c.moveTo(b.x + 18, y + 2); c.lineTo(b.x + 28, y + 6); c.stroke();
-    c.fillStyle = HS_INK.ink; c.beginPath(); c.arc(b.x - b.w/2 + 5, y + 4, 1.5, 0, 7); c.arc(b.x + b.w/2 - 5, y + 4, 1.5, 0, 7); c.fill();
-  }
-  for(const b of HS.bells){
-    const left = b.x < WW/2, dx = left ? HSK.wall : WW - HSK.wall - 22, y = ys[b.st];
-    c.fillStyle = '#7a4a2a'; c.fillRect(dx, y - 132, 22, 132); c.strokeStyle = HS_INK.ink; c.lineWidth = 3; c.strokeRect(dx, y - 132, 22, 132);   // the outer door
-    c.fillStyle = '#e8c060'; c.beginPath(); c.arc(left ? dx + 16 : dx + 6, y - 64, 4, 0, 7); c.fill();
-    hsPicBell(c, b.x, y - 96, 1, t - b.ring);
-  }
-  if(HS.fuse){ const F = HS.fuse; hsPicFuse(c, F.x, ys[F.st] - 150, 1, !!(S && S.powerT > t), S && S.fuseBy >= 0 ? fighters[S.fuseBy] : null); }
-}
-function hsDrawExtrasFront(c, me){   // over the fighters: the mirror's picture, the disguises, the noise rings, the new seeker's flashlight sign
-  const S = CONTEST, t = hazardT; if(!S || !HS) return;
-  const M = HS.mirror;
-  if(M && (S.mirLit || S.ph === 'break')){   // THE MIRROR: everyone in its room, from the other side (a disguise shows who is in it)
-    const y = HS.ys[M.st] - 24;
-    c.save(); c.beginPath(); c.rect(M.x - M.w/2, y - M.h, M.w, M.h); c.clip(); c.globalAlpha = 0.75;
-    for(const f of fighters){ if(f.dead || f._hsTrav || hsCell(f) !== M.c) continue; hsMini(c, f, M.x - (f.x - M.x)*0.45, y - M.h*0.45 + (f.y + f.r - HS.ys[M.st])*0.4, f.r*1.5, true); }
-    c.restore();
-  }
-  for(const f of fighters){   // THE DISGUISES: a lamp or a vase where the hider stands (yours faint); it shakes while a light is finding it
-    if(!f._hsDisg || f.dead || f._hsRole !== 'hide') continue;
-    const D = f._hsDisg, wob = ((t - D.t0) % HSX.wob) < 10 ? 1.06 : 1, sh = f._hsLitNow ? Math.sin(t*1.7)*3 : 0;
-    c.save(); if(f === me) c.globalAlpha = 0.6; hsPicLamp(c, f.x + sh, f.y + f.r, wob, D.k); c.restore();
-  }
-  for(const n of (S.noises || [])){   // THE NOISES: rings over a creaky board, a bell, the fuse box
-    const a = t - n.t0, L = Math.max(1, n.until - n.t0), k = Math.max(0, 1 - a/L);
-    c.save(); c.globalAlpha = 0.85*k; c.strokeStyle = n.k === 'bell' ? '#ffd23f' : n.k === 'fuse' ? '#ff7a5a' : n.k === 'duct' ? '#c0c8d0' : '#f0e0b8'; c.lineWidth = 4;
-    for(let i = 0; i < (n.k === 'creak' ? 1 : 2); i++){ const r = 16 + ((a + i*20) % L)*1.3; c.beginPath(); c.arc(n.x, n.y - 20, r, Math.PI*1.05, Math.PI*1.95); c.stroke(); }
-    c.restore();
-  }
-  if(S.cue && S.ph === 'count' && t - S.cue.t < 120){   // a round's new seeker: a flashlight pointing down at them
+  if(S && S.cue && S.ph === 'count' && t - S.cue.t < 120){   // a round's new seeker: a flashlight pointing down at them
     const f = fighters[S.cue.who];
     if(f && !f.dead){ const y = f.y - f.r - 34 + Math.sin(t*0.2)*4; c.save(); c.translate(f.x, y); c.rotate(Math.PI/2); c.fillStyle = '#3a3a44'; c.strokeStyle = HS_INK.ink; c.lineWidth = 2; c.fillRect(-14, -6, 22, 12); c.strokeRect(-14, -6, 22, 12); c.fillStyle = '#fff4b8'; c.fillRect(8, -8, 6, 16); c.strokeRect(8, -8, 6, 16); c.restore(); }
   }
+  c.restore();
 }
-function hsLightsExtra(o, m, S){   // cut out of the dark: a flickering room, a lit mirror, the noises, the fuse box's little lamp, the new seeker's sign
-  const X = function(x, y){ return (m.a*x + m.c*y + m.e)*0.5; }, Y = function(x, y){ return (m.b*x + m.d*y + m.f)*0.5; };
-  const rect = function(x0, y0, x1, y1, k){ const a = X(x0, y0), b = Y(x0, y0), c = X(x1, y1), d = Y(x1, y1); o.fillStyle = 'rgba(0,0,0,' + k + ')'; o.fillRect(Math.min(a, c), Math.min(b, d), Math.abs(c - a), Math.abs(d - b)); };
-  if(hsFlkOn(S)){ const c = S.flk.c, y0 = c.st + 1 < HS.ys.length ? HS.ys[c.st + 1] + 14 : HS.roofY; rect(c.x0, y0, c.x1, c.y, 0.85); }
-  const M = HS.mirror; if(M && S.mirLit){ const y = HS.ys[M.st] - 24; rect(M.x - M.w/2 - 6, y - M.h - 6, M.x + M.w/2 + 6, y + 6, 0.9); }
-  for(const n of (S.noises || [])){ const a = hazardT - n.t0; hsGlow(o, m, n.x, n.y - 30, 40 + a*1.2, 0.6*Math.max(0, 1 - a/Math.max(1, n.until - n.t0))); }
-  if(HS.fuse) hsGlow(o, m, HS.fuse.x, HS.ys[HS.fuse.st] - 150, 30, 0.55);
-  if(S.cue && S.ph === 'count' && hazardT - S.cue.t < 120){ const f = fighters[S.cue.who]; if(f && !f.dead) hsGlow(o, m, f.x, f.y - f.r - 34, 40, 0.85); }
-}
-// The lights cut out of the dark (darkDraw): every seeker's and ghost's cone (only as far as the walls of the room it is in, and the next one through a doorway it
-// stands in), the powerups' glow, and LISTEN's footsteps for you. Between rounds the lights are on.
-function hsConeCut(o, m, ax, ay, d, st, beam){
-  const B = beam ? HSP.seek[0] : null, L = (CONTEST && CONTEST.powerT > hazardT) ? HSK.close : HSK.cone*(B ? B.coneK : 1), ha = HSK.ha*(B ? B.haK : 1), sc = Math.hypot(m.a, m.b)*0.5;   // (THE FUSE BOX: a weak glow while the power is cut)
+// The lights cut out of the dark (darkDraw): every seeker's cone (only as far as the walls of the room it is in, and the next one through a doorway it stands in).
+// Between rounds the lights are on.
+function hsConeCut(o, m, ax, ay, d, st){
+  const L = HSK.cone, ha = HSK.ha, sc = Math.hypot(m.a, m.b)*0.5;
   const X = function(x, y){ return (m.a*x + m.c*y + m.e)*0.5; }, Y = function(x, y){ return (m.b*x + m.d*y + m.f)*0.5; };
   const own = hsCellAt(st, ax), row = HS.cells[st]; let x0 = own.x0, x1 = own.x1;
   if(Math.abs(ax - own.x0) < HSK.door && own.ci > 0) x0 = row[own.ci - 1].x0;
@@ -113102,37 +112473,37 @@ function hsGlow(o, m, x, y, r, k){
 function hsLights(o, m){
   const S = CONTEST; if(!S || !HS) return;
   if(S.ph === 'break' || S.over){ o.fillStyle = 'rgba(0,0,0,0.75)'; o.fillRect(0, 0, o.canvas.width, o.canvas.height); return; }
-  if(S.ph !== 'count'){   // the seeker counts in the dark, eyes shut
-    for(const f of hsSeekers()){ hsConeCut(o, m, f.x + (f.face < 0 ? -1 : 1)*f.r*0.7, f.y - 4, f.face < 0 ? -1 : 1, hsStorey(f), f._hsBeamT > hazardT); hsGlow(o, m, f.x, f.y, 46, 0.9); }
-    for(const g of S.ghosts) hsConeCut(o, m, g.x + g.face*14, g.y - 4, g.face, g.st, false);
-  }
-  for(const p of S.pups) hsGlow(o, m, p.x, p.y - 18, 44, 0.85);
-  hsLightsExtra(o, m, S);   // THE OWNER'S PICKS
-  for(const d of S.decoys) hsGlow(o, m, d.x, d.y, 50 + 20*Math.sin(hazardT*0.3), 0.7);   // the noise, pulsing (everyone sees it; it is a noise)
-  const me = fighters.find(function(o2){ return o2.you && !o2.dead; });
-  if(me && me._hsRole === 'seek' && me._hsListenT > hazardT) for(const h of hsHiders()) if(Math.hypot(h.x - me.x, h.y - me.y) < HSP.seek[1].r) hsGlow(o, m, h.x, h.y + h.r, 34, 0.8);   // LISTEN: where their steps are
-  if(me && me._hsDarkT > hazardT) return;
+  if(S.ph !== 'count') for(const f of hsSeekers()){ hsConeCut(o, m, f.x + (f.face < 0 ? -1 : 1)*f.r*0.7, f.y - 4, f.face < 0 ? -1 : 1, hsStorey(f)); hsGlow(o, m, f.x, f.y, 46, 0.9); }   // (the seeker counts in the dark, eyes shut)
+  if(S.cue && S.ph === 'count' && hazardT - S.cue.t < 120){ const f = fighters[S.cue.who]; if(f && !f.dead) hsGlow(o, m, f.x, f.y - f.r - 34, 40, 0.85); }   // the new seeker's sign
 }
+// THE PANEL (top right, under the strip of fighter cards (HUD_STRIP_MAX) and under the minimap): the round and its time, what you do now, WHERE YOU ARE (the layer and the region, and
+// the house's cross-section, the attic on top, your room lit), and everyone's seconds unfound.
 function hsHud(c){
-  const S = CONTEST; if(!S || !S.order) return;
+  const S = CONTEST; if(!S || !S.order || !HS) return;
   const t = hazardT, age = t - S.pt, me = fighters.find(function(o){ return o.you; });
   const left = S.ph === 'count' ? Math.ceil((HSK.count - age)/60) : S.ph === 'seek' ? Math.ceil((HSK.seek - age)/60) : 0;
-  const w = 270, x = W/2 - w/2, y = 8;
-  c.save(); c.globalAlpha = 0.9; c.fillStyle = 'rgba(20,18,30,0.8)'; itemRoundRect(c, x, y, w, 50, 10); c.fill();
-  c.textBaseline = 'middle'; c.textAlign = 'center'; c.fillStyle = '#fff';
-  c.font = "700 12px 'Baloo 2', system-ui"; c.fillText('Round ' + (S.round + 1) + ' of ' + HSK.rounds + (S.ph === 'seek' ? ' · ' + Math.floor(left/60) + ':' + ('0' + (left % 60)).slice(-2) : ''), x + w/2, y + 15);
-  const role = !me ? '' : S.ph === 'count' ? (me._hsRole === 'seek' ? 'Count... ' + left : 'Hide! ' + left) : S.ph === 'seek' ? (me._hsRole === 'seek' ? (me._hsFoundT > S.pt ? 'Found! Now you seek' : 'Seek! Light them up') : ((hsHidden(me) || hsDisg(me)) ? 'Hidden' : 'Find a hiding spot')) : '';
-  c.font = "800 16px 'Baloo 2', system-ui"; c.fillStyle = me && me._hsRole === 'seek' ? '#fff4b8' : '#bfe8ff'; c.fillText(role, x + w/2, y + 35);
-  if(me && me._hsPupT && t - me._hsPupT < 120){ const P = HSP.seek.concat(HSP.hide).find(q => q.k === me._hsPupK); if(P){ c.font = "800 14px 'Baloo 2', system-ui"; c.fillStyle = '#ffffff'; c.fillText(P.icon + ' ' + P.name, x + w/2, y + 64); } }   // what you just picked up
   const list = fighters.slice().sort(function(a, b){ return (b._hsPts || 0) - (a._hsPts || 0); });
-  const rx = W - 186, ry = 8;
-  c.globalAlpha = 0.85; c.fillStyle = 'rgba(20,18,30,0.8)'; itemRoundRect(c, rx, ry, 176, 12 + 18*list.length, 8); c.fill(); c.globalAlpha = 1;
+  const NL = HS.ys.length, rowH = 12, w = 200, x = W - w - 10, y = Math.max(HUD_STRIP_MAX + 8, mmTop() + minimapDims().mh + 12), mapY = y + 60, listY = mapY + NL*rowH + 8, h = listY - y + 18*list.length + 4;
+  c.save(); c.globalAlpha = 0.9; c.fillStyle = 'rgba(20,18,30,0.8)'; itemRoundRect(c, x, y, w, h, 10); c.fill(); c.globalAlpha = 1;
+  c.textBaseline = 'middle'; c.textAlign = 'center'; c.fillStyle = '#fff';
+  c.font = "700 12px 'Baloo 2', system-ui"; c.fillText('Round ' + (S.round + 1) + ' of ' + HSK.rounds + (S.ph === 'seek' ? ' · ' + Math.floor(left/60) + ':' + ('0' + (left % 60)).slice(-2) : ''), x + w/2, y + 13);
+  const role = !me ? '' : S.ph === 'count' ? (me._hsRole === 'seek' ? 'Count... ' + left : 'Hide! ' + left) : S.ph === 'seek' ? (me._hsRole === 'seek' ? (me._hsFoundT > S.pt ? 'Found! Now you seek' : 'Seek! Light them up') : (hsHidden(me) ? 'Hidden' : 'Find a hiding spot')) : '';
+  c.font = "800 16px 'Baloo 2', system-ui"; c.fillStyle = me && me._hsRole === 'seek' ? '#fff4b8' : '#bfe8ff'; c.fillText(role, x + w/2, y + 31);
+  const st = me && !me.dead ? hsStorey(me) : -1, here = st >= 0 ? hsCellAt(st, me.x) : null;
+  c.font = "700 12px 'Baloo 2', system-ui"; c.fillStyle = '#ffffff'; if(here) c.fillText(HS_LAYERS[st].name + ' · ' + here.name, x + w/2, y + 50);
+  const mx = x + 10, mw = w - 20, span = WW - 2*HSK.wall;
+  for(let s = 0; s < NL; s++){
+    const ry = mapY + (NL - 1 - s)*rowH;
+    for(const q of HS.cells[s]){ const qx = mx + (q.x0 - HSK.wall)/span*mw, qw = (q.x1 - q.x0)/span*mw; c.globalAlpha = q === here ? 1 : 0.5; c.fillStyle = q.col; c.fillRect(qx + 0.5, ry, qw - 1, rowH - 2); }
+  }
+  c.globalAlpha = 1;
+  if(here){ const qx = mx + (here.x0 - HSK.wall)/span*mw, qw = (here.x1 - here.x0)/span*mw; c.strokeStyle = '#ffffff'; c.lineWidth = 2; c.strokeRect(qx + 0.5, mapY + (NL - 1 - st)*rowH - 1, qw - 1, rowH); }
   c.textAlign = 'left'; c.font = "700 12px 'Baloo 2', system-ui";
-  list.forEach(function(f, i){ const yy = ry + 15 + i*18; c.fillStyle = f._hsRole === 'seek' ? '#fff4b8' : '#ffffff'; c.fillText((f._hsRole === 'seek' ? '🔦 ' : '') + (f.you ? 'You' : f.name), rx + 10, yy); c.textAlign = 'right'; c.fillText(Math.floor((f._hsPts || 0)/60) + ' s', rx + 166, yy); c.textAlign = 'left'; });
+  list.forEach(function(f, i){ const yy = listY + 9 + i*18; c.fillStyle = f._hsRole === 'seek' ? '#fff4b8' : '#ffffff'; c.fillText((f._hsRole === 'seek' ? '🔦 ' : '') + (f.you ? 'You' : f.name), x + 10, yy); c.textAlign = 'right'; c.fillText(Math.floor((f._hsPts || 0)/60) + ' s', x + w - 10, yy); c.textAlign = 'left'; });
   c.restore();
 }
 Object.assign(EVENT_TWIST_WORDS, {
-  'contest:hide': { icon:'🔦', short:"Bottle's contest: hide and seek", words:"Bottle's contest: hide and seek in a big dark house of three floors and many small rooms. Each round one fighter seeks with a flashlight while the rest hide in cupboards, behind curtains and in vents; a light does not go through a room's walls. Hiders score for every second they stay unfound. A hider caught in the light for a moment is found and seeks too. Glowing powerups appear round the house: gold for seekers (a bigger beam, listening, a sprint, a ghost seeker), blue for hiders (a decoy noise, lights out, a shadow step, a closet lock). Round the house: bulbs that flicker on, creaky boards, doorbells to lure a seeker away, secret passages behind bookshelves, vents joined by ducts, a mirror room, and a fuse box that cuts the flashlights for 5 seconds (it shows who touched it). Stand still in the open and you turn into a lamp or a vase. The furniture moves between rounds. Four rounds, everyone seeks once; the most time unfound wins.", goal:'Stay hidden! Most time unfound wins' },
+  'contest:hide': { icon:'🔦', short:"Bottle's contest: hide and seek", words:"Bottle's contest: hide and seek in a big dark house of four layers (basement, ground floor, upstairs, attic), each with four rooms of its own colour. Each round one fighter seeks with a flashlight while the rest hide in the furniture (cupboards, curtains, beds, wardrobes, crates...); a light does not go through a room's walls. Hiders score for every second they stay unfound. A hider caught in the light for a moment is found and seeks too. Four rounds, everyone seeks once; the most time unfound wins.", goal:'Stay hidden! Most time unfound wins' },
 });
 
 // STAPY: THE SEARCH PARTY, the BFDIA 18 lighthouse hunt (the OWNER'S design: contest-specs memory, every STAPY line; docs/stapy-rebuild.md is the build spec of the Update 6 rebuild). Four LIGHTHOUSES,
@@ -149455,28 +148826,15 @@ const CCARD_ART = {
      function(c, x, y, s){ c.save(); c.fillStyle = 'rgba(255,240,150,0.55)'; c.beginPath(); c.moveTo(x - s*0.04, y - s*0.32); c.lineTo(x + s*0.04, y - s*0.32); c.lineTo(x + s*0.25, y + s*0.4); c.lineTo(x - s*0.25, y + s*0.4); c.closePath(); c.fill(); c.restore(); ccMe(c, x, y + s*0.18, s*0.36); c.save(); c.fillStyle = '#e8322c'; c.strokeStyle = CC_INK; c.lineWidth = 2; c.fillRect(x + s*0.22, y - s*0.2, s*0.12, s*0.18); c.strokeRect(x + s*0.22, y - s*0.2, s*0.12, s*0.18); c.restore(); },
      '-5', '>', 'win']
   ]; },
-  // BOTTLE: hide in cupboards, behind curtains and in vents; every second unfound scores; caught in the light, you seek too. The owner's 2026-11-17 picks:
-  // a flickering bulb lights a room; a creaky board rings; a lamp or vase that is you; a bookshelf passage; a vent to a vent; the fuse box puts the flashlight out;
-  // the doorbell calls a seeker away; the mirror shows who is behind the curtain; the furniture moves between rounds
+  // BOTTLE: hide in the furniture (a cupboard, a curtain, a bed); every second unfound scores; caught in the light, you seek too (the core only: the owner, 2026-11-18)
   hide:function(){
     const lit = function(c, x, y, s){ c.save(); c.globalAlpha = 0.45; c.fillStyle = '#fff6a0'; c.beginPath(); c.moveTo(x, y); c.lineTo(x + s*0.55, y - s*0.3); c.lineTo(x + s*0.55, y + s*0.25); c.closePath(); c.fill(); c.restore(); };
     return [
     [function(c, x, y, s){ hsDrawSpot(c, { x:x, y:y + s*0.35, w:s*0.5, h:s*0.7, kind:'cupboard' }, 'front'); c.save(); c.globalAlpha = 0.9; ccMe(c, x + s*0.05, y - s*0.05, s*0.3); c.restore(); },
-     function(c, x, y, s){ hsDrawSpot(c, { x:x, y:y + s*0.35, w:s*0.45, h:s*0.7, kind:'curtain' }, 'front'); }, function(c, x, y, s){ hsDrawSpot(c, { x:x, y:y + s*0.2, w:s*0.5, h:s*0.35, kind:'vent' }, 'front'); },
+     function(c, x, y, s){ hsDrawSpot(c, { x:x, y:y + s*0.35, w:s*0.45, h:s*0.7, kind:'curtain' }, 'front'); }, function(c, x, y, s){ hsDrawSpot(c, { x:x, y:y + s*0.2, w:s*0.6, h:s*0.45, kind:'bed' }, 'front'); },
      '>', function(c, x, y, s){ ccTimer(c, x - s*0.15, y, s*0.8, 0.8); ccNum(c, x + s*0.25, y + s*0.2, s*0.55, '+'); }],
     [function(c, x, y, s){ ccFoe(c, x - s*0.3, y, s*0.45, 0); lit(c, x - s*0.1, y - s*0.05, s); ccMe(c, x + s*0.35, y, s*0.4); },
-     '>', function(c, x, y, s){ ccMe(c, x - s*0.15, y, s*0.5); lit(c, x + s*0.05, y - s*0.05, s); },
-     function(c, x, y, s){ hsPicBulb(c, x, y - s*0.5, true, s/60); c.save(); c.globalAlpha = 0.3; c.fillStyle = '#fff6a0'; c.fillRect(x - s*0.4, y - s*0.2, s*0.8, s*0.6); c.restore(); ccMe(c, x, y + s*0.15, s*0.42); },
-     function(c, x, y, s){ c.save(); c.fillStyle = '#c08a58'; c.strokeStyle = CC_INK; c.lineWidth = 2; c.fillRect(x - s*0.35, y + s*0.3, s*0.7, s*0.08); c.strokeRect(x - s*0.35, y + s*0.3, s*0.7, s*0.08);
-       c.strokeStyle = '#f0e0b8'; c.lineWidth = 4; for(let i = 0; i < 2; i++){ c.beginPath(); c.arc(x, y + s*0.2, s*(0.2 + i*0.14), Math.PI*1.1, Math.PI*1.9); c.stroke(); } c.restore(); ccMe(c, x - s*0.05, y + s*0.12, s*0.3); }],
-    [function(c, x, y, s){ hsPicLamp(c, x - s*0.24, y + s*0.4, s/110, 'lamp'); c.save(); c.globalAlpha = 0.35; ccMe(c, x + s*0.2, y + s*0.12, s*0.42); c.restore(); hsPicLamp(c, x + s*0.2, y + s*0.4, s/110, 'vase'); },
-     function(c, x, y, s){ hsPicShelf(c, x - s*0.2, y + s*0.42, s/170, 0.6); hsPicShelf(c, x + s*0.26, y + s*0.16, s/260, 0); ccArrow(c, x + s*0.04, y - s*0.08, s*0.4, '#ffffff', -0.5); },
-     function(c, x, y, s){ hsDrawSpot(c, { x:x - s*0.25, y:y + s*0.38, w:s*0.3, h:s*0.25, kind:'vent' }, 'front'); hsDrawSpot(c, { x:x + s*0.25, y:y - s*0.02, w:s*0.3, h:s*0.25, kind:'vent' }, 'front'); ccArrow(c, x, y + s*0.08, s*0.35, '#ffffff', -0.6); },
-     function(c, x, y, s){ hsPicFuse(c, x - s*0.18, y, s/70, true, null); c.save(); c.translate(x + s*0.24, y + s*0.1); c.fillStyle = '#3a3a44'; c.strokeStyle = CC_INK; c.lineWidth = 2; c.fillRect(-s*0.1, -s*0.05, s*0.2, s*0.1); c.strokeRect(-s*0.1, -s*0.05, s*0.2, s*0.1); c.restore(); ccCross(c, x + s*0.26, y + s*0.1, s*0.35); },
-     function(c, x, y, s){ hsPicBell(c, x - s*0.28, y - s*0.1, s/55, 30); ccArrow(c, x + s*0.02, y, s*0.4, '#ffffff', Math.PI); ccFoe(c, x + s*0.3, y + s*0.05, s*0.4, 0); },
-     function(c, x, y, s){ hsDrawSpot(c, { x:x - s*0.24, y:y + s*0.4, w:s*0.3, h:s*0.6, kind:'curtain' }, 'front'); c.save(); c.fillStyle = '#6a4a2a'; c.strokeStyle = CC_INK; c.lineWidth = 3; c.fillRect(x + s*0.02, y - s*0.32, s*0.38, s*0.62); c.strokeRect(x + s*0.02, y - s*0.32, s*0.38, s*0.62);
-       c.fillStyle = '#d6ecf6'; c.fillRect(x + s*0.06, y - s*0.28, s*0.3, s*0.54); c.beginPath(); c.rect(x + s*0.06, y - s*0.28, s*0.3, s*0.54); c.clip(); c.globalAlpha = 0.75; ccMe(c, x + s*0.21, y, s*0.32); c.restore(); },
-     function(c, x, y, s){ hsDrawSpot(c, { x:x + s*0.14, y:y + s*0.4, w:s*0.32, h:s*0.5, kind:'cupboard' }, 'front'); ccArrow(c, x - s*0.26, y + s*0.12, s*0.4, '#ffffff'); c.save(); c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.beginPath(); c.moveTo(x - s*0.1, y - s*0.15); c.lineTo(x - s*0.04, y - s*0.15); c.moveTo(x - s*0.12, y + s*0.25); c.lineTo(x - s*0.05, y + s*0.25); c.stroke(); c.restore(); }]
+     '>', function(c, x, y, s){ ccMe(c, x - s*0.15, y, s*0.5); lit(c, x + s*0.05, y - s*0.05, s); }]
   ]; },
   // STICKER (the general idea only: see the comment above ccardMaybe): pick up balls, turn them gold at a gold machine, each gold ball is a
   // point; your own drone follows you, and a cheat it sees costs you your balls
