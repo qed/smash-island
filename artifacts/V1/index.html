@@ -2328,7 +2328,7 @@ const ROSTER = [
   {name:"Microphone",w:68,color:"#6a7a8a", play:true, dlc:"Inanimate Insanity", arch:"Zoner",
    kit:{special:"mic", desc:"Yell at the Ball → shout a thrown ball forward; her button toggles Loud and Quiet"}},
   {name:"Salt",w:68,color:"#e9e9ef", play:true, dlc:"Inanimate Insanity", arch:"Duo",
-   kit:{special:"saltpepper", desc:"Best Friends Forever → Pepper follows and echoes every move; alone until her next stock if Pepper goes down"}},
+   kit:{special:"saltpepper", desc:"Best Friends Forever → Pepper copies every step and move a beat late; hit her away and she runs back; alone until her next stock if Pepper goes down"}},
   {name:"Test Tube",w:66,color:"#9fe6d8", play:true, dlc:"Inanimate Insanity", arch:"Inventor",
    kit:{special:"testtube", desc:"Tranquilizing Tracking Dart Blaster → a straight dart that knocks them out for a moment; flasks on the smash and up, and glass that shatters into poison when struck"}},
   // ---- Inanimate Insanity DLC, batch 3 (g1): "add the last set of dlc fighters." Kits from inanimateinsanity.fandom.com
@@ -74265,12 +74265,13 @@ function updateSummons(){
     // gravity + ground — an assist gets the fighter-grade body (platforms, jumps, world edges);
     // a boss keeps the floor-snap it was tuned against.
     if(s.type==="assist"){ stepAssistBody(s, assistBodyFloor(s, sgy)); }   // (a big map: the surface under it, assistBodyFloor)
+    else if(s.type==="pepper"){ if(s._split && !(s._fxPin >= hazardT)){ stepAssistBody(s, assistBodyFloor(s, sgy)); if(s.life <= 0) s._fell = true; } }   // PEPPER: a body of her own only while she is split from Salt (pepperTick); beside her she walks Salt's own steps
     else if(s.hover){ }   // One flies (canon): no gravity and no floor snap, oneMove steers her
     else {
       s.vy += 0.6; s.y += s.vy; s.x += s.vx; s.vx*=0.9;
       if(s.y > sgy - s.r){ s.y = sgy - s.r; s.vy=0; }
     }
-    if(MCAVE && MCAVE.on && !s.hover && MCAVE.cy - s.y < MCAVE.rKill){ s.life = 0; continue; }   // MOON CAVES: fallen into the core
+    if(MCAVE && MCAVE.on && !s.hover && MCAVE.cy - s.y < MCAVE.rKill){ if(s.type==="pepper" && fighters[s.owner]) fighters[s.owner]._pepperDown = true; s.life = 0; continue; }   // MOON CAVES: fallen into the core (Pepper too: she is down, not back next frame)
     // target: nearest valid enemy
     let tgt=null, best=1e9;
     for(const f of fighters){ if(f.dead) continue;
@@ -74293,19 +74294,7 @@ function updateSummons(){
     if(s.type==="pepper"){
       const own = fighters[s.owner];
       if(!own || own.dead || !own.kit || own.kit.special!=='saltpepper'){ s.life=0; continue; }
-      if(s._fxPin >= hazardT){ s.vx = 0; s.vy = 0; } else {   // (Salt's finisher has her: it sets where she is, FINISHERS V2, batch 7)
-      const want = own.x - own.face*32;                       // a step behind her, on her side
-      if(Math.abs(want - s.x) > 400 || Math.abs(own.y - s.y) > 300){ s.x = want; s.y = own.y; }   // Salt went far at once (a jail, a respawn, a mill door): Pepper is with her, not sliding through the walls after her
-      s.vx = (want - s.x) * 0.22; s.x += s.vx; s.vy = 0;
-      s.y += (own.y - s.y) * 0.25;
-      s.face = own.face; }
-      if(s.flash>0) s.flash--;
-      for(const e of s.q){ if(e.done) continue; if(--e.t <= 0){ e.done = true; const go = PEPPER_DO[e.kind]; if(go) go(own, s); } }
-      s.q = s.q.filter(e=>!e.done);
-      if(s.hp <= 0){
-        own._pepperDown = true; s.life = 0;
-        for(let i=0;i<18;i++) puff(s.x, s.y, '#3b3b46', 6);
-      }
+      pepperTick(own, s);   // (the PEPPER block: Salt's steps and moves a beat late, split and back)
       continue;
     }
     if(s._squash>0) s._squash--;   // render-only: the Beach Ball's squash on a ricochet (drawSummon reads it)
@@ -76297,7 +76286,7 @@ function doAttack(f){
   if(inOwnTeamZone(f)) return;
 
   f.flash=6;
-  if(f.kit && f.kit.special==='saltpepper') pepperEcho(f,'jab');   // "and Pepper does the same a beat later"
+  if(f.kit && f.kit.special==='saltpepper') pepperEcho(f, f.onground ? 'jab' : 'air');   // "and Pepper does the same a beat later" (in the air: her aerial)
   armAtk(f, ATK_ANIM, animKindOf(f, 'jab'), mvId(f, 'jab'));   // render-only: spriteRig plays the windup/release/recover beats off this
   // THROWABLE: if holding a picked-up item, this attack hurls it instead of a normal swing
   if(f._holding){
@@ -78401,6 +78390,7 @@ function doUpSpecial(f){
   const k=f.kit && f.kit.special;
   if(tellAdd(f, 'up', function(){ doUpSpecial(f); })) return;   // NO-TELL SWEEP (no row today: a recovery's hit on the rise is the owner's call)
   endLagArm(f, 'up');   // FRAME BUDGET (no row today either: a recovery is not made to fall)
+  if(k==='saltpepper') pepperEcho(f,'up');   // Pepper springs too
   if(f.oc){ ocRun(f, 'u'); f.flash=8; return; }   // OC ENGINE: the up-special pick
   if(UPSPEC[k]){ riseShape(f, UPSPEC[k]); }
   else if(UPSPECIALS[k]){ UPSPECIALS[k](f); }
@@ -78432,6 +78422,7 @@ function utiltStats(f){
 function doGroundMove(f){
   { const ms = msOf(f); if(ms && ms.dt && f.onground && !f._legacyMv){ mvStart(f, ms.dt, 'dt'); return; } }   // a converted fighter's own down-tilt
   f.flash=5;
+  if(f.kit && f.kit.special==='saltpepper') pepperEcho(f,'dtilt');   // Pepper sweeps too, a beat later
   armAtk(f, ATK_ANIM, 'kick');   // a low kick along the floor, forward only
   const S = dtiltStats(f), fy = feetY(f) - 10;
   if(f.kit && f.kit.special === 'cheer'){ spaggers(f, S, fy); return; }   // Bot's flick of spaghetti (below)
@@ -78472,6 +78463,7 @@ function doUpTilt(f){
   if(inOwnTeamZone(f)) return;
   { const ms = msOf(f); if(ms && ms.ut && !f._legacyMv){ mvStart(f, ms.ut, 'ut'); return; } }   // a converted fighter's own up-tilt
   f.flash=5;
+  if(f.kit && f.kit.special==='saltpepper') pepperEcho(f,'utilt');   // ...and swings up
   armAtk(f, ATK_ANIM, 'uppercut');
   const S = utiltStats(f);
   hitShape(f, { kind:'fan', cx:f.x, cy:f.y, r0:f.r*0.3, r1:S.reach + f.r*0.6, a0:-1.75, a1:-0.2, face:f.face }, S.dmg, S.dmg, f.face*1.5, -10);
@@ -78656,7 +78648,7 @@ const DOWNSPECIALS = {
     if(summons.length){ const once=new Set(); damageSummons(f, f.x, f.y, f.r+56, 7, null, once); if(p) damageSummons(f, p.x, p.y, 56, 5, null, once); }   // both stamps reach a boss too, one or the other (they looped over fighters only: 0 in Boss Rush)
     hitArt(f, 'stamp', { kind:'circle', x:f.x, y:f.y, r:f.r + 56 }, { color:'#e9e9ef', style:'ring', fade:8 });   // HIT ART: Salt's stamp, and Pepper's
     if(p) hitArt(f, 'stampP', { kind:'circle', x:p.x, y:p.y, r:56 }, { color:'#3b3b46', style:'ring', fade:8 });
-    f.flash=8; if(p) p.flash=8; },
+    f.flash=8; if(p){ p.flash=8; p._lock = Math.max(p._lock|0, 16); } },   // (her stamp holds her where she is, split or not: PEPPER_LOCK)
   testtube(f){ // Test Tube -- she is glass, and glass that is struck goes everywhere
     f._shatter=40; f.flash=10;
     for(let i=0;i<6;i++) puff(f.x,f.y-8,'#9fe6d8',4); },
@@ -90869,6 +90861,7 @@ function mvGrabStart(f){
   { const U = f._used || (f._used = {}); U.grab = (U.grab || 0) + 1; }
   f.atkCd = G.whiff; f.flash = 4;
   armAtk(f, G.whiff, 'grab', mvId(f, 'grab'));
+  if(f.kit && f.kit.special==='saltpepper') pepperEcho(f,'grab');   // Pepper reaches too
   return true;
 }
 // the grab's box comes out on frame G.st; the fighter cannot walk while it is out
@@ -90968,6 +90961,7 @@ function doThrow(f, t, kind){
   applyHit(t, T.dmg, dir * T.kx, T.ky, f, { stun: T.stun || 0, throwKind: kind });
   if(T.fx) T.fx(f, t, dir);
   f._thrown = { t: hazardT, kind: kind, idx: t.idx };
+  if(f.kit && f.kit.special==='saltpepper') pepperEcho(f,'throw');   // ...and shoves
   { const U = f._used || (f._used = {}); U[kind + 'throw'] = (U[kind + 'throw'] || 0) + 1; }
 }
 // a held fighter's own frame: struggle, and nothing else (called where the inputs are masked). THE KEYS, NOT THE MOVES, as a cuff's mash (cuffKeys): `R` is
@@ -97356,20 +97350,84 @@ function dropProj(f, lx, landY, o, burst){
     warnX:lx, warnY: onTop!==null ? onTop : landY, warn:26, ...o });
 }
 
-// ---- PEPPER ("salt and pepper should be like ice climbers from the main game"). She is not a roster row and never a
-// fighter: she is a summon who walks a step behind Salt, repeats what Salt does a few frames late, and can be knocked
-// out on her own. Salt then fights alone -- no echo, no third jump -- until her next stock brings Pepper back.
-const PEPPER_HP = 60, PEPPER_LAG = 7;
+// ---- PEPPER ("salt and pepper should be like ice climbers from the main game"; then "salt does not work how ice climbers works in
+// smash", 2026-11-18). She is not a roster row and never a fighter: she is a summon driven by Salt's own history, PEPPER_LAG frames
+// late. Beside Salt she walks Salt's steps (every walk, run, jump, dash and hop), a step behind, and copies every move Salt makes
+// -- jab, aerial, both tilts, smash, special, up special, grab, throw, shield; the stamp is both of theirs already, and the
+// finisher moves her itself -- each copy weaker than Salt's. A hit on Pepper knocks her away from Salt: SPLIT, she has a body of
+// her own (stepAssistBody) and runs back. But she is not a CPU of her own: what Salt does still comes round to her, wherever she
+// is, and she does it there -- a jump, a shield, a move that holds her still (PEPPER_LOCK), and while Salt herself is held still
+// (rooted, in a grab, in end lag) so is she (the owner: "pepper will not try to avoid doing that rooting move"). She runs back only
+// on the frames Salt's own moves leave her free. Knocked out (her 60 HP, or a fall), Salt fights alone -- no copies, no third jump
+// -- until her next stock brings Pepper back. It is all on the host and all from Salt's state: an online guest sees where she is.
+const PEPPER_HP = 60, PEPPER_LAG = 7, PEPPER_STEP = 26, PEPPER_RUN = 6, PEPPER_JUMP = -12.2;
+// How long each copy holds her where she is (only felt while she is split: beside Salt she is walking Salt's steps, which held still too).
+const PEPPER_LOCK = { jab:10, air:8, dtilt:12, utilt:12, smash:22, special:16, grab:16, throw:12, up:0 };
 function pepperOf(f){ for(const s of summons) if(s.type==='pepper' && s.owner===f.idx) return s; return null; }
 function spawnPepper(f){
   const s = { type:'pepper', name:'Pepper', color:'#3b3b46', team:f.team, owner:f.idx,
     x:f.x - f.face*30, y:f.y, vx:0, vy:0, r:20, hp:PEPPER_HP, maxHp:PEPPER_HP, life:1e9, face:f.face, q:[], _cd:0, flash:0 };
   summons.push(s); return s;
 }
-function pepperEcho(f, kind){ const p = pepperOf(f); if(p) p.q.push({t:PEPPER_LAG, kind:kind}); }
+function pepperEcho(f, kind){ const p = pepperOf(f); if(p) p.q.push({t:PEPPER_LAG, kind:kind, face:f.face < 0 ? -1 : 1}); }
+// Salt held still by something of her own or done to her -- Pepper is held there too.
+function pepperStill(f){ return f.rooted > 0 || f._lag > 0 || !!f._windup || !!f._gb || !!f._hold || f._fxLock > 0; }
+// Once a frame (updateSummons). `s.h`: Salt's last PEPPER_LAG frames, oldest first -- where she was, which way she faced, and whether she
+// was in hitstun, jumped, had her shield up or was held still. Pepper lives that oldest frame now.
+function pepperTick(f, s){
+  const H = s.h || (s.h = []), j0 = f._jmp0 ? f._jmp0.t : null;
+  if(s._jt === undefined) s._jt = j0;
+  H.push({ x:f.x, y:f.y, face:f.face < 0 ? -1 : 1, hs:f.hitstun > 0, jmp:j0 !== s._jt, zs:f._zsOn > 0, still:pepperStill(f) }); s._jt = j0;
+  const r = H.length > PEPPER_LAG ? H.shift() : H[0], tx = r.x - r.face*PEPPER_STEP, ty = r.y;
+  if(s.flash>0) s.flash--;
+  if(s._hs>0) s._hs--;
+  if(s._lock>0) s._lock--;
+  s._zs = false;
+  if(s._fxPin >= hazardT){ s.vx = 0; s.vy = 0; s._split = true; s._hs = 0; }   // Salt's finisher has her (it sets where she is, FINISHERS V2, batch 7); after it she runs back
+  else if(!s._split){
+    if(r.hs){ s._split = true; s.vx = 0; s.vy = 0; s.onground = false; }   // Salt was knocked flying: Pepper was not (she stays where she was, and runs after her)
+    else {
+      if(Math.abs(tx - s.x) > 400 || Math.abs(ty - s.y) > 300){ s.x = tx; s.y = ty; }   // Salt went far at once (a jail, a respawn, a mill door): Pepper is with her, not sliding through the walls after her
+      s.vx = (tx - s.x)*0.35; s.x += s.vx; s.y = ty; s.vy = 0; s.face = r.face; s._zs = r.zs;
+    }
+  }
+  if(s._split && !(s._fxPin >= hazardT)){
+    if(Math.abs(tx - s.x) > 900 || Math.abs(ty - s.y) > 600){ s.x = tx; s.y = ty; s.vx = 0; s.vy = 0; s._split = false; }   // a whole map apart: she is with her again
+    else {
+      if(s.onground){ s.pj = 2; s._upUsed = false; }
+      if(!(s._hs > 0)){
+        if(r.jmp && (s.pj|0) > 0){ s.vy = PEPPER_JUMP; s.pj--; s.onground = false; }   // Salt jumped: so does she, wherever she is
+        if(r.zs){ s._zs = true; s.face = r.face; if(s.onground) s.vx *= 0.5; }   // Salt's shield: hers too, where she stands
+        else if(s._lock > 0 || r.still){ if(s.onground) s.vx *= 0.6; }   // a copy (or Salt held still) has her: no running back
+        else {   // free: back to Salt
+          const dx = tx - s.x;
+          if(Math.abs(dx) > 4){ s.vx = Math.sign(dx)*Math.min(PEPPER_RUN, Math.abs(dx)*0.5 + 1); s.face = dx > 0 ? 1 : -1; }
+          if(ty < s.y - 70 && (s.pj|0) > 0 && (s.onground || s.vy > 1) && Math.abs(dx) < 240){ s.vy = PEPPER_JUMP; s.pj--; s.onground = false; }
+        }
+        if(!r.hs && !(s._lock > 0) && Math.abs(tx - s.x) < 28 && Math.abs(ty - s.y) < 34){ s._split = false; s._zs = r.zs; }   // back beside her: in step again
+      }
+    }
+  }
+  for(const e of s.q){ if(e.done) continue; if(--e.t <= 0){ e.done = true; if(s._hs > 0) continue;   // (a copy that comes round while she tumbles is lost)
+    if(e.face) s.face = e.face; const go = PEPPER_DO[e.kind]; if(go) go(f, s); s._lock = Math.max(s._lock|0, PEPPER_LOCK[e.kind]||0); } }
+  s.q = s.q.filter(e=>!e.done);
+  if(s.hp <= 0 || s._fell){   // out of HP, or fallen into a gap (stepAssistBody; not the life a new stock's reset takes away)
+    f._pepperDown = true; s.life = 0;
+    for(let i=0;i<18;i++) puff(s.x, s.y, '#3b3b46', 6);
+  }
+}
 // What Pepper does when Salt's move comes round to her. Weaker every time -- she is following, not leading.
+function pepperJab(f, p, ox, rad, kx, ky){ JAB_BY = f; JAB_FEEL_K = 2; try { for(const t of fighters){ if(t.dead||t.team===p.team||jabLocked(t, f, f._jabPress)) continue; if(hurtGap(t, p.x+p.face*ox, p.y) < rad) applyHit(t, 2, p.face*kx, ky, f); } } finally { JAB_BY = null; JAB_FEEL_K = 1; } }
+// (each one to the first of them it reaches only where a grab would: a grab holds one)
+function pepperHits(f, p, x, y, rad, dmg, kx, ky, one){ for(const t of fighters){ if(t.dead||t.team===p.team) continue; if(hurtGap(t, x, y) < rad){ applyHit(t, dmg, kx, ky, f); if(one) return; } } }
 const PEPPER_DO = {
-  jab(f, p){ JAB_BY = f; JAB_FEEL_K = 2; try { for(const t of fighters){ if(t.dead||t.team===p.team||jabLocked(t, f, f._jabPress)) continue; if(hurtGap(t, p.x+p.face*18, p.y) < 22) applyHit(t, 2, p.face*6, -5, f); } } finally { JAB_BY = null; JAB_FEEL_K = 1; } },   // (JAB NERF 2-4: the echo 4 -> 2, still under Salt's own 2.6; the stun reads the old 4)   // (JAB_BY, jabLocked: the echo is part of Salt's jab press, and is stopped where that press was -- THE JAB LOCK, 2026-10-28)
+  jab(f, p){ pepperJab(f, p, 18, 22, 6, -5); },   // (JAB NERF 2-4: the echo 4 -> 2, still under Salt's own 2.6; the stun reads the old 4)   // (JAB_BY, jabLocked: the echo is part of Salt's jab press, and is stopped where that press was -- THE JAB LOCK, 2026-10-28)
+  air(f, p){ pepperJab(f, p, 10, 24, 5, -5); },   // Salt's X in the air: Pepper's, round her, wherever she is
+  dtilt(f, p){ pepperHits(f, p, p.x + p.face*(p.r + 12), p.y + p.r - 10, 18, 3, p.face*3, -5); },   // the low sweep (Salt's 6)
+  utilt(f, p){ pepperHits(f, p, p.x + p.face*8, p.y - p.r - 6, 26, 3, p.face*1, -8); },   // the uppercut (Salt's 5)
+  up(f, p){ p._iv = hazardT + 10; if(p._split && !p._upUsed){ p.vy = -13; p._upUsed = true; p.onground = false; } },   // the Hand-Hold's spring: beside Salt she is already on Salt's way up
+  grab(f, p){ pepperHits(f, p, p.x + p.face*(p.r + 6), p.y, 16, 2, p.face*3, -3, true); },   // she reaches too: a tug, not a hold
+  throw(f, p){ pepperHits(f, p, p.x + p.face*20, p.y, 30, 2, p.face*5, -4); },   // and shoves when Salt throws   // (JAB NERF 2-4: the echo 4 -> 2, still under Salt's own 2.6; the stun reads the old 4)   // (JAB_BY, jabLocked: the echo is part of Salt's jab press, and is stopped where that press was -- THE JAB LOCK, 2026-10-28)
   special(f, p){ for(let i=0;i<2;i++){ const q = spawnProj(f,{vx:p.face*(9+i), vy:-2+i, grav:true, dmg:3, kb:3, r:6, color:'#3b3b46', life:45, fxTag:'weaken', fxN:70, shape:'pepper'}); if(q){ q.x=p.x; q.y=p.y; } } },
   smash(f, p){ for(const t of fighters){ if(t.dead||t.team===p.team) continue; if(hurtGap(t, p.x, p.y) < 46) applyHit(t, 6, p.face*9, -7, f); } },
   down(f, p){ for(const t of fighters){ if(t.dead||t.team===p.team) continue; if(hurtGap(t, p.x, p.y) < 52) applyHit(t, 5, Math.sign(t.x-p.x||1)*6, -5, f); } },
@@ -97431,7 +97489,11 @@ function damageSummon(f, s, cx, cy, dmg){
   // It used to lose 30 life a connect out of 480, so any fighter who wandered into one deleted
   // it in half a second and the trophy you spent an item slot on was never seen again.
   else if(s.hostile){ hurtHostileAdd(s, dmg0, Math.sign(s.x-cx||1)*4, f); hitJumpBack(f, s); }   // ...except MePhone4's adds, which fight for the boss (a hit on one gives the jump back as a foe's would)
-  else if(s.type==="pepper"){ s.hp -= dmg; s.flash=6; s.vx += Math.sign(s.x-cx||1)*3; for(let i=0;i<4;i++) puff(s.x,s.y,'#3b3b46',4); }
+  else if(s.type==="pepper"){ const d = Math.sign(s.x-cx||1);   // PEPPER: knocked away from Salt (split: pepperTick), unless her shield (Salt's, copied) or her spring is up
+    if(s._iv > hazardT){ }
+    else if(s._zs){ s.flash=3; if(s._split) s.vx += d*1.5; }
+    else { s.hp -= dmg; s.flash=6; s._split = true; s._hs = Math.round(6 + dmg*0.8); s.vx = d*Math.min(11, 2 + dmg*0.55); s.vy = -Math.min(11, 2 + dmg*0.5); s.onground = false; }
+    for(let i=0;i<4;i++) puff(s.x,s.y,'#3b3b46',4); }
   else { s.vx += Math.sign(s.x-cx||1)*4; if(s.mortal) popAssist(s, f); }
 }
 // The nearest enemy summon a single-target move can take instead of a fighter -- a boss or a hostile add, never an assist
@@ -128777,6 +128839,7 @@ function drawSummon(s){
   const adrawn = (s.type==="assist") ? ASSIST_DRAWN[s.name] : null;   // a trophy with no render, drawn in code (Selfie Stick, Foldy, Toilet, MePad)
   const apose = (s.type==="assist") ? asPoseBegin(s) : false;          // its pose: growing in out of the trophy, then its wind-up
   if(s.type==="pepper"){
+    if(s._zs){ ctx.save(); ctx.globalAlpha = 0.35; ctx.fillStyle = '#9fe4ff'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, s.r + 12, 0, 7); ctx.fill(); ctx.globalAlpha = 0.7; ctx.stroke(); ctx.restore(); }   // Salt's shield, copied
     const R=s.r, sp = SPRITES.Pepper, im = (typeof spriteImage==='function') ? spriteImage(sp) : null;
     if(im && im.naturalHeight){
       const ar = im.naturalWidth/im.naturalHeight, dh = Math.min(2.8*R, (2.3*R)/ar), dw = dh*ar;
@@ -144856,7 +144919,7 @@ function serializeState(withGeo){
     // and no Boss Rush boss. These are the fields drawItem, drawSummon, drawBossSprite and drawBossBar read.
     items: items.filter(it=>!it.taken).map(it=>({x:Math.round(it.x),y:Math.round(it.y),r:it.r,kind:it.kind})),
     summons: summons.map(m=>({type:m.type,name:m.name,color:m.color,r:m.r,sprite:m.sprite,x:Math.round(m.x),y:Math.round(m.y),
-      hp:m.hp,maxHp:m.maxHp,face:m.face,flash:m.flash,homeX:m.homeX,_rage:m._rage,_tel:m._tel,_bossRush:m._bossRush,
+      hp:m.hp,maxHp:m.maxHp,face:m.face,flash:m.flash,_zs:m._zs,homeX:m.homeX,_rage:m._rage,_tel:m._tel,_bossRush:m._bossRush,
       // MePhone4: his adds' side and download, his green MeLife tell, and his portal
       hostile:m.hostile,_dl:m._dl,_telKind:m._telKind,_squash:m._squash,   // ...and the Beach Ball's squash on a ricochet (drawAssistRender)
       _ap:m._ap,   // an assist trophy's pose (asPose): its phase, clock and few numbers -- drawSummon draws its wind-up, The Floor, the waves from it
