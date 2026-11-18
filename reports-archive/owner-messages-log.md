@@ -1052,6 +1052,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-18**: it isnt mill-style rooms, you dont enter rooms by hitting up
 - **2026-11-18**: ohh
 - **2026-11-18**: go to jammy
+- **2026-11-18** *(question box: push the new castle + Bottle/Needy rooms?)*: Push now (Recommended)
 
 ## Status questions & check-ins
 
