@@ -25915,7 +25915,9 @@ function diEdge(A, B, solids){
 }
 
 function diNavBuild(){
-  const nodes = DRM.all.map((p, id)=>({ id, p, x0:p.x, x1:p.x + p.w, y:p.y, drift:!!p.mv, adj:[] })), solids = DRM.all.filter(p=>p.solid);
+  const solids = DRM.all.filter(p=>p.solid), nodes = navCutNodes(DRM.all.map((p, id)=>({ id, p, x0:p.x, x1:p.x + p.w, y:p.y, drift:!!p.mv, adj:[] })), solids);
+  // (CPU fix 2026-11-18: a floor with a block standing on it, or a plank under a hanging block too low to pass, was one node, so the plan walked a CPU into the block: a CPU hopped in place
+  // under a block on a plank bridge for 874 frames, another bounced for 1100 frames between a 14 px strip beside a block and the ledge over it. navCutNodes (as on Yoyle Needle and the Faultline) cuts the node there)
   for(const A of nodes) for(const B of nodes){
     if(A === B || A.drift || B.drift || A.p.di === 'lan' || B.p.di === 'lan') continue;
     if(Math.max(0, B.x0 - A.x1, A.x0 - B.x1) > 450 || Math.abs(A.y - B.y) > 1000) continue;
@@ -25927,12 +25929,12 @@ function diNavBuild(){
 
 function diNodeAt(N, f){
   const feet = f.y + f.r; let best = null, bd = 1e9;
-  for(const n of N.nodes){ if((n.p.off || n.p.ghost)) continue; const x0 = n.p.x, x1 = n.p.x + n.p.w; if(f.x < x0 - 30 || f.x > x1 + 30 || Math.abs(feet - n.p.y) > 8) continue; const d = Math.abs(f.x - (x0 + x1)/2) + (f.x < x0 || f.x > x1 ? 400 : 0); if(d < bd){ bd = d; best = n; } }   // standing on the very lip (the body's edge past the top's) still counts
+  for(const n of N.nodes){ if((n.p.off || n.p.ghost)) continue; const x0 = n.drift ? n.p.x : n.x0, x1 = n.drift ? n.p.x + n.p.w : n.x1; if(f.x < x0 - 30 || f.x > x1 + 30 || Math.abs(feet - n.p.y) > 8) continue; const d = Math.abs(f.x - (x0 + x1)/2) + (f.x < x0 || f.x > x1 ? 400 : 0); if(d < bd){ bd = d; best = n; } }   // standing on the very lip (the body's edge past the top's) still counts
   return best;
 }
 function diNodeFor(N, x, y){   // the surface at or below a point (a foe in the air: what it will land on)
   let best = null, bd = 1e9;
-  for(const n of N.nodes){ if((n.p.off || n.p.ghost)) continue; const x0 = n.p.x, x1 = n.p.x + n.p.w; if(x < x0 - 10 || x > x1 + 10 || n.p.y < y - 40) continue; const d = n.p.y - y; if(d < bd){ bd = d; best = n; } }
+  for(const n of N.nodes){ if((n.p.off || n.p.ghost)) continue; const x0 = n.drift ? n.p.x : n.x0, x1 = n.drift ? n.p.x + n.p.w : n.x1; if(x < x0 - 10 || x > x1 + 10 || n.p.y < y - 40) continue; const d = n.p.y - y; if(d < bd){ bd = d; best = n; } }
   if(best) return best;
   for(const n of N.nodes){ if((n.p.off || n.p.ghost)) continue; const d = Math.hypot((n.p.x + n.p.w/2) - x, n.p.y - y); if(d < bd){ bd = d; best = n; } }
   return best;
@@ -27563,6 +27565,7 @@ function ynFollow(f, inp, N, feet, M, foe){
     }
   }
   if(!P || now - P.at > (node.drift ? 400 : 40) || P.path.indexOf(node) < 0 || (P.side && P.side.bush && P.side.bush.t > 0)){
+    { const sg0 = f._ynSide; if(!P && !f._ynGo && sg0 && sg0.n === node && sg0.until > now && ((sg0.lever && sg0.lever.cd <= 0 && sg0.lever.on <= 0) || (sg0.bush && sg0.bush.t <= 0) || sg0.zip) && ynSideDo(f, inp, sg0)) return true; }   // (CPU fix 2026-11-18: as THE TLC's: at its lever, bush or zipline handle it works it every frame, not one frame in 20)
     if(f._ynGoalAt && now - f._ynGoalAt < 20 && !P) return false;
     f._ynGoalAt = now;
     let goals = f._ynGo ? new Map([[f._ynGo, f]]) : ynFoeNodes(N, f, true), side = null;   // (_ynGo: a harness sends one CPU to one node)
@@ -28397,6 +28400,42 @@ function siParty(){
   let best = null, bd = 1e9; for(const l of teams.values()){ if(l.length < 2) continue; l.sort((a, b)=>Math.hypot(a.x - C.pa.x, a.y - C.pa.y) - Math.hypot(b.x - C.pa.x, b.y - C.pa.y)); const d = Math.hypot(l[0].x - C.pa.x, l[0].y - C.pa.y) + Math.hypot(l[1].x - C.pb.x, l[1].y - C.pb.y); if(d < bd){ bd = d; best = l; } }
   if(best){ SI.party = { a:best[0], b:best[1], until:hazardT + 3600 }; best[0]._siPad = C.pa; best[0]._siGoal = ga; best[1]._siPad = C.pb; best[1]._siGoal = gb; }
 }
+// CPU TRIPS TO THE FAULTLINE'S SPOTS (CPU fix 2026-11-18): the heal springs (the Oasis, the Quarry cave's spring) and the Shell's armour had no CPU logic at all, so a CPU only ever
+// stood in one by chance. Now a hurt CPU (45%+) with no foe within 450 px goes to the heal spring it can reach (route cost <= 2400) and walks about in it until healed; now and then a
+// CPU that is not hurt and has no foe within 700 px takes the Shell's armour when it is near (cost <= 1000). Called off by a foe within 300 px, a chest party, healed, or its time runs out.
+let SI_SP = null;
+function siSpots(N){
+  if(SI_SP && SI_SP.N === N && SI_SP.S === SI) return SI_SP.sp; const sp = [];
+  for(const z of worldZones){ if(z.type !== 'heal') continue; const n = siNodeFor(N, z.x + z.w/2, z.y + z.h - 30); if(n && !n.drift && !n.p.mv && n.p.pl == null) sp.push({ n, k:'heal', x0:Math.max(z.x, n.x0) + 24, x1:Math.min(z.x + z.w, n.x1) - 24 }); }
+  for(const o of SI.outers){ if(o.fx !== 1) continue; const n = siNodeFor(N, o.p.x + o.p.w/2, o.p.y - 2); if(n && !n.drift) sp.push({ n, k:'shield', x0:Math.max(o.p.x, n.x0) + 24, x1:Math.min(o.p.x + o.p.w, n.x1) - 24 }); }
+  SI_SP = { N, S:SI, sp:sp.filter(q=>q.x1 > q.x0) }; return SI_SP.sp;
+}
+function siTrip(f, inp, N){
+  const now = hazardT; let T = f._siTrip, fd = 1e9; for(const o of fighters) if(!o.dead && o.team !== f.team){ const d = Math.hypot(o.x - f.x, o.y - f.y); if(d < fd) fd = d; }
+  if(f._siPad || (SI.party && (SI.party.a === f || SI.party.b === f))){ f._siTrip = null; return false; }   // (a chest party owns this CPU's goal)
+  if(T){
+    const end = (cd)=>{ f._siTrip = null; if(f._siGoal === T.n) f._siGoal = null; f._siPlan = null; f._siTripCd = now + cd; return false; };
+    if(fd < 300 || now > T.until || (T.k === 'heal' && f.pct < 8)) return end(fd < 300 ? 300 : 900);
+    const nd = siNodeAt(N, f);
+    if(f.onground && nd === T.n && f.x >= T.s.x0 - 30 && f.x <= T.s.x1 + 30){
+      if(!T.arr){ T.arr = now; SI.tripArr = (SI.tripArr || 0) + 1; }
+      if(T.k === 'shield' && now - T.arr > 40) return end(1500);
+      let d = (Math.floor(now/40 + f.idx) % 2) ? 1 : -1; if(f.x < T.s.x0) d = 1; else if(f.x > T.s.x1) d = -1;   // (walks about in the spring, as Dream Island's CPUs do on the heal island)
+      inp.left = d < 0; inp.right = d > 0; inp.jump = false; inp.down = false; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; f._siPlan = null; return true;
+    }
+    if(f._siGoal !== T.n){ f._siGoal = T.n; f._siPlan = null; }
+    return false;
+  }
+  if(now < 600 || now < (f._siTripCd || 0) || fd < 450 || !f.onground || f.hitstun > 0 || (now + f.idx*7) % 30 !== 0 || f._siGoal) return false;
+  const hurt = f.pct >= 45, wantSh = !hurt && f.pct >= 15 && fd > 700 && !((f._diShield || 0) > now) && (f.idx*5 + Math.floor(now/900)) % 3 === 0;
+  if(!hurt && !wantSh) return false;
+  const sp = siSpots(N), a = siNodeAt(N, f); if(!sp.length || !a) return false;
+  let best = null, bc = 1e9;
+  for(const q of sp){ if(q.k !== (hurt ? 'heal' : 'shield')) continue; const c = a === q.n ? 0 : ((siPlan(N, a, new Map([[q.n, 1]])) || { cost:1e9 }).cost); if(c < bc){ bc = c; best = q; } }
+  if(!best || bc > (hurt ? 2400 : 1000)){ f._siTripCd = now + 240; return false; }
+  f._siTrip = { s:best, n:best.n, k:best.k, until:now + Math.min(2400, 600 + bc*1.5), arr:0 }; f._siGoal = best.n; f._siPlan = null; SI.trips = (SI.trips || 0) + 1;
+  return false;
+}
 function siBrain(f, inp){
   if(f.hitstun > 0 || f._tp){ f._siPlan = null; return; }
   // in the quicksand: struggle toward the nearer edge and hop (the sand throws a struggler out after 0.75 s)
@@ -28408,6 +28447,7 @@ function siBrain(f, inp){
     const pl = f._siPad, nd0 = siNodeAt(N, f);
     if(f.onground && nd0 && nd0.p === pl){ const c = pl.x + pl.w/2; inp.left = f.x > c + 10; inp.right = f.x < c - 10; inp.jump = false; inp.down = false; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; f._siPlan = null; return; }
   }
+  if(siTrip(f, inp, N)) return;   // (CPU fix 2026-11-18: the heal springs and the Shell's armour, see siTrip)
   // on a plate that is about to move (the tell) or is moving: stay on it and ride (it may still fight)
   const rp = siRiding(f), st = rp ? siShiftAt(hazardT, rp.grp) : null;
   if(rp && (st.tell > 0 || st.moving)){ inp.left = false; inp.right = false; inp.jump = false; inp.down = false; f._siPlan = null; return; }
@@ -28462,7 +28502,8 @@ function siFollow(f, inp, N, feet, foe){
     const lf = !!((node.p.mv && node.p.mv.ay) || (B.p.mv && B.p.mv.ay));   // a LIFT is boarded and left only when it is flush with the place (it moves 4 px a frame), and the CPU waits at the edge for it
     const live = (live0 && lf && Math.abs(node.p.y - B.p.y) > 16) ? null : live0;
     if(!live){ f._siWait = (f._siWait || 0) + 1;
-      if(lf && !node.p.mv && !(sg && (sg.tell > 0 || sg.moving))){ inp.jump = false; inp.down = false; const east = (B.x0 + B.x1) > (node.x0 + node.x1), wx = east ? node.x1 - 44 : node.x0 + 44, d = wx - f.x; if(Math.abs(d) > 12 && !(Math.abs(d) < 50 && Math.sign(f.vx) === Math.sign(d) && Math.abs(f.vx) > 2.5)){ inp.left = d < 0; inp.right = d > 0; } return true; }   // wait a body-length back from the edge and coast in (never run off it) if(f._siWait > 420){ f._siWait = 0; f._siPlan = null; N.blocked[node.id + '>' + B.id] = now + 500; }
+      if(f._siWait > 420){ f._siWait = 0; f._siPlan = null; N.blocked[node.id + '>' + B.id] = now + 500; return false; }   // (CPU fix 2026-11-18: this give-up sat INSIDE the comment below and never ran, so a CPU waited at a lift's edge for ever when the edge never came live; it applies to every wait now)
+      if(lf && !node.p.mv && !(sg && (sg.tell > 0 || sg.moving))){ inp.jump = false; inp.down = false; const east = (B.x0 + B.x1) > (node.x0 + node.x1), wx = east ? node.x1 - 44 : node.x0 + 44, d = wx - f.x; if(Math.abs(d) > 12 && !(Math.abs(d) < 50 && Math.sign(f.vx) === Math.sign(d) && Math.abs(f.vx) > 2.5)){ inp.left = d < 0; inp.right = d > 0; } return true; }   // wait a body-length back from the edge and coast in (never run off it)
       if(sg && (sg.tell > 0 || sg.moving) && !f._siGoal){ f._siPlan = null; return false; }   // the plate will move: not standing there, the usual brain fights or walks on and a new route is planned afterwards
       inp.left = false; inp.right = false; if(lf){ inp.jump = false; inp.down = false; } return true; }
     f._siWait = 0; live.dr = 1; e = live;
@@ -29214,6 +29255,38 @@ const WH_M0 = { bush:[], lev:[], trip:[], zip:null };
 function whNav(){ const Y = whInfo(); if(!Y) return null; return (WNN && WNN.I === Y) ? WNN : (WNN = Object.assign(ynNavBuild('wn', WH_M0), { I:Y, M:WH_M0 })); }
 function whGustSoon(x){ let g = whGustAt(hazardT, x); if(g && (g.lead > 0 || g.k > 0)) return g; g = whGustAt(hazardT + 40, x); return g && (g.lead > 0 || g.k > 0) ? g : null; }   // a front on it, or reaching x within 40 frames
 function whInside(Y, x, y){ if(x >= 280 && x <= 1040 && y >= 100 && y <= Y.stH) return 'B'; const m = Y.mill; if(m && x >= m[0] - 70 && x <= m[0] + 650 && y >= m[1] - 840 && y <= m[1] + 10) return 'M'; return 0; }   // (which tower a point is in: the Beacon's rooms or the Mill's)
+// CPU TRIPS TO THE LONG SPAN'S HEAL SPOTS (CPU fix 2026-11-18): the heal spots (the cellar's spring, the eagle's ledge or the cloud perch, by variant) had no CPU logic, so a CPU only
+// healed there by chance. A hurt CPU (45%+) with no foe within 450 px now goes to a heal spot near it (route cost <= 1200) and walks about in it until healed. Called off by a
+// foe within 300 px, a chest party, healed, or its time runs out. (The perch's armour lasts only 1.5 s after leaving it, so no trip is made for it.)
+let WH_SP = null;
+function whSpots(N, Y){
+  if(WH_SP && WH_SP.N === N && WH_SP.Y === Y) return WH_SP.sp; const sp = [];
+  for(const S of (Y.heal || [])){ const n = ynNodeFor(N, S[0] + S[2]/2, S[1] - 4, true); if(n && !n.drift){ const x0 = Math.max(S[0], n.x0) + 20, x1 = Math.min(S[0] + S[2], n.x1) - 20; if(x1 > x0) sp.push({ n, k:'heal', x0, x1 }); } }
+  WH_SP = { N, Y, sp }; return sp;
+}
+function whTrip(f, inp, N, Y){
+  const now = hazardT; let T = f._whTrip, fd = 1e9; for(const o of fighters) if(!o.dead && o.team !== f.team){ const d = Math.hypot(o.x - f.x, o.y - f.y); if(d < fd) fd = d; }
+  if(f._whParty){ f._whTrip = null; return false; }   // (a chest party owns this CPU's goal)
+  if(T){
+    const end = (cd)=>{ f._whTrip = null; if(f._ynGo === T.n) f._ynGo = null; f._ynPlan = null; f._whTripCd = now + cd; return false; };
+    if(fd < 300 || now > T.until || f.pct < 8) return end(fd < 300 ? 300 : 900);
+    const nd = ynNodeAt(N, f, true);
+    if(f.onground && nd === T.n && f.x >= T.s.x0 - 30 && f.x <= T.s.x1 + 30){
+      if(!T.arr){ T.arr = now; WND.tripArr = (WND.tripArr || 0) + 1; }
+      let d = (Math.floor(now/40 + f.idx) % 2) ? 1 : -1; if(f.x < T.s.x0) d = 1; else if(f.x > T.s.x1) d = -1;
+      inp.left = d < 0; inp.right = d > 0; inp.jump = false; inp.down = false; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; f._ynPlan = null; return true;
+    }
+    if(f._ynGo !== T.n){ f._ynGo = T.n; f._ynPlan = null; }
+    return false;
+  }
+  if(now < 600 || now < (f._whTripCd || 0) || fd < 450 || !f.onground || f.hitstun > 0 || (now + f.idx*7) % 30 !== 0 || f._ynGo || f.pct < 45) return false;
+  const sp = whSpots(N, Y), a = ynNodeAt(N, f, true); if(!sp.length || !a) return false;
+  let best = null, bc = 1e9;
+  for(const q of sp){ const c = a === q.n ? 0 : ((ynPlan(N, a, new Map([[q.n, 1]]), f.x) || { cost:1e9 }).cost); if(c < bc){ bc = c; best = q; } }
+  if(!best || bc > 1200){ f._whTripCd = now + 240; return false; }   // (only a near one: the spots are at the far east end, and 37 trips of up to 2400 in 5 matches were all cut short by a foe on the way)
+  f._whTrip = { s:best, n:best.n, k:best.k, until:now + Math.min(1500, 400 + bc*1.5), arr:0 }; f._ynGo = best.n; f._ynPlan = null; WND.trips = (WND.trips || 0) + 1;
+  return false;
+}
 function whBrain(f, inp){
   if(f.hitstun > 0 || f._tp){ f._ynPlan = null; return; }
   const Y = whInfo(); if(!Y) return; const N = whNav(); if(!N) return;
@@ -29239,6 +29312,7 @@ function whBrain(f, inp){
   { const mv = Math.abs(f.x - (f._ynLX === undefined ? f.x : f._ynLX)) + Math.abs(f.y - (f._ynLY === undefined ? f.y : f._ynLY)); f._ynLX = f.x; f._ynLY = f.y; f._ynStill = (mv < 0.5 && f.onground) ? (f._ynStill || 0) + 1 : 0; }
   let foe = f.aiTarget && !f.aiTarget.dead && f.aiTarget.team !== f.team ? f.aiTarget : null;
   if(!foe){ let bd = 1e9; for(const o of fighters) if(!o.dead && o.team !== f.team){ const d = Math.hypot(o.x - f.x, o.y - f.y); if(d < bd){ bd = d; foe = o; } } }
+  if(mine < 0 && whTrip(f, inp, N, Y)) return;   // (CPU fix 2026-11-18: the heal spots, see whTrip)
   const closeLevel = !go && foe && Math.abs(foe.x - f.x) < 520 && Math.abs(foe.y - f.y) < 150 && ynLineClear(N, f.x, foe.x, foe.y);
   if(closeLevel && f._ynStill < 45){ f._ynPlan = null; return; }
   { const Pa = f._ynPlan, a = Pa && Pa.air; if(a && !a.wide && a.to){ a.wide = 1; const Bn = a.to; if(!Bn.drift && Bn.x1 - Bn.x0 > 140) a.tx = Math.min(Bn.x1 - 50, Math.max(Bn.x0 + 50, a.tx)); }
@@ -29917,7 +29991,7 @@ function tcBrain0(f, inp){
   }
   // the lid: above ~90% a CPU keeps out from under the gap when it is near the top (the gap's x is a pure function of the clock)
   const closeLevel = foe && Math.abs(foe.x - f.x) < 520 && Math.abs(foe.y - f.y) < 150 && ynLineClear(N, f.x, foe.x, foe.y);
-  if(closeLevel && f._tcStill < 45){ f._tcPlan = null; return; }
+  if(closeLevel && f._tcStill < 45 && !(hazardT - (f._tcGuard || -999) < 90)){ f._tcPlan = null; return; }   // (CPU fix 2026-11-18: a foe level and in sight ACROSS the Big Hatch: the usual brain walked at it, the hatch guard stopped it at the rim, and it stood there 11 s; while the guard has stopped it lately the route graph goes round)
   if(tcFollow(f, inp, N, feet, M, foe)){
     if(f.onground && f._tcStill > 10 && (inp.left || inp.right)){ inp.jump = (f._tcStill % 30) < 3; f._tcHopDir = inp.right ? 1 : -1; f._tcHopUntil = hazardT + 45; }
     return;
@@ -29954,7 +30028,10 @@ function tcFollow(f, inp, N, feet, M, foe){
     }
     return false;
   }
-  const node = tcNodeAt(N, f);
+  let node = tcNodeAt(N, f);
+  // (CPU fix 2026-11-18, THE SEAM FLIP: a lift resting flush in a floor overlaps the floor's slab at one height; once the CPU walked into the lift's span it counted as on the lift, whose plan said
+  // 'off it, back onto the slab', and on the slab the plan said 'walk on': it paced 60 px to and fro for 4-5 s. Standing on a span of its own route, it now counts as on that one, the later first, as on the Faultline)
+  if(node && P && P.path){ for(let j = P.path.length - 1; j >= 0; j--){ const q = P.path[j]; if(q === node) break; const qx0 = q.drift ? q.p.x : q.x0, qx1 = q.drift ? q.p.x + q.p.w : q.x1; if(f.x >= qx0 && f.x <= qx1 && Math.abs(feet - q.p.y) <= 8){ node = q; break; } } }
   if(!node){ f._tcPlan = null; return false; }
   if(P && P.air){
     const A = P.air;
@@ -29965,6 +30042,7 @@ function tcFollow(f, inp, N, feet, M, foe){
     }
   }
   if(!P || now - P.at > 40 || P.path.indexOf(node) < 0 || (P.side && P.side.cake && P.side.cake.t > 0)){
+    { const sg0 = f._tcSide; if(!P && sg0 && sg0.n === node && ((sg0.lever && sg0.lever.cd <= 0 && sg0.lever.on <= 0) || (sg0.cake && sg0.cake.t <= 0)) && tcSideDo(f, inp, sg0)) return true; }   // (CPU fix 2026-11-18: arrived at a lever or a cake, it works it EVERY frame; the throttle below ran it one frame in 20 and a lever needs Down held 20 frames in a row, so no CPU ever pulled one)
     if(f._tcGoalAt && now - f._tcGoalAt < 20 && !P) return false;
     f._tcGoalAt = now;
     let goals = ynFoeNodes(N, f), side = null;
