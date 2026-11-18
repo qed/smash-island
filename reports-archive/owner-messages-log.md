@@ -1310,6 +1310,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (night, again after Pie was merged)**: how much longer before all the jobs are done?
 - **2026-11-17 (night, after the time estimate)**: keep going
 - **2026-11-17 (answers: sweet spots batch 2, Jammy)**: batch 2: Merge it; Jammy: Lid back on sooner
+- **2026-11-17 (night)**: how much longer
 
 ## Working rules, budget & agents
 
