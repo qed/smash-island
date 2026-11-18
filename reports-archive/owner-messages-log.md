@@ -1014,6 +1014,10 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-18**: push, then give me the contest question boxes. also, move forward the event week to bottles temporarily
 - **2026-11-18**: oh yeah, salt does not work how ice climbers works in smash
 - **2026-11-18**: and remove the text walls for the contests
+- **2026-11-18** *(question boxes, simplify contests to ~5)*: Bottle -> "1, and make the map have REGIONS and LAYERS, because those are easy to understand."; Black Hole -> Keep these 5 (core, world layers, comets+ghosts, rocket parts, gravity flips); Clock -> Keep these 5 (core, three eras+doors, seed tree, time capsule, rewind pickup); Cloudy -> Keep these 5 (core, sky islands, item powers, set bonuses, 3rd-hit drops)
+- **2026-11-18** *(question boxes)*: 8-Ball -> "1, but keep the family rules, so that if you get 2 of them, theyre stronger."; Pie -> "1, but you race to 1000 steps. keep the name tho."; Stapy -> Keep these 5 (core, parkour floors, turn rival's piece off, darkness+own light, sea-storm waves); Foldy -> Keep these 5 (core, high/low route, brace Z, paper planes, mail tubes)
+- **2026-11-18** *(question boxes)*: Spongy -> "1, but keep the steal. also, it is a HUGE map, slightly bigger than ctf, but without a minimap. you can make a map yourself from materials that you can get from the cornucopia, but do the thing where you have to (1) stand on a material for 1 second, (2) supplies get better the closer you are to the cornucopia, (3) arena events. also, valleys, forests, and deserts that arent that blocky and stuff, and have a cool theme."; Eraser -> "1, but keep the sharpener, thats just aesthetic."; Jammy -> "1, but no 5 or 4."; Sticker -> "1, but keep aesthetic, and the vine swings. make the poster holes just passages behind rocks that cover you, where you just have to know that they exist. and keep teh sabotage. and hiding underwater."
+- **2026-11-18**: and set the week to spongys
 
 ## Status questions & check-ins
 
