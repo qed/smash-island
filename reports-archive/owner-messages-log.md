@@ -1043,6 +1043,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-18**: also, spongy doesnt have much off-ground, and the cornucopia should have stuff like that too. it should be more vertical, with hanging caves on the top, which have buffs and stuff
 - **2026-11-18**: and move the week to sticker
 - **2026-11-18** *(question box: Needy's rooms run out the timer)*: Reveal late (Recommended)
+- **2026-11-18**: sticker isnt vertical enough
 
 ## Status questions & check-ins
 
