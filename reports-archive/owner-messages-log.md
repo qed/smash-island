@@ -1051,6 +1051,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-18**: remove the "build v70" line
 - **2026-11-18**: it isnt mill-style rooms, you dont enter rooms by hitting up
 - **2026-11-18**: ohh
+- **2026-11-18**: go to jammy
 
 ## Status questions & check-ins
 
