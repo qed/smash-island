@@ -1019,6 +1019,9 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-18** *(question boxes)*: Spongy -> "1, but keep the steal. also, it is a HUGE map, slightly bigger than ctf, but without a minimap. you can make a map yourself from materials that you can get from the cornucopia, but do the thing where you have to (1) stand on a material for 1 second, (2) supplies get better the closer you are to the cornucopia, (3) arena events. also, valleys, forests, and deserts that arent that blocky and stuff, and have a cool theme."; Eraser -> "1, but keep the sharpener, thats just aesthetic."; Jammy -> "1, but no 5 or 4."; Sticker -> "1, but keep aesthetic, and the vine swings. make the poster holes just passages behind rocks that cover you, where you just have to know that they exist. and keep teh sabotage. and hiding underwater."
 - **2026-11-18**: and set the week to spongys
 - **2026-11-18** *(question boxes)*: Hot Dog -> Keep these 5 (core, town, rule zones, Lawmaker rule cards, traffic lights); Needy -> Keep these 5 (core, 2-storey lab, vaccine+antidote vials, containment doors, quarantine bubble); Salt -> "3 can be stalled by making it so that, say if you do a rooting move, pepper will not try to avoid doing that rooting move, which can be interesting." + Copies everything + Can be split up; Black Hole early end -> Slower start
+- **2026-11-18**: issues with the dig games: I go into float mode instantly, instead of falling and having to climb, which would make sense.
+- **2026-11-18**: and also, how big is the forest? cuz i want to pull a rue and divebomb ppl
+- **2026-11-18** *(question box, Dig Games forest)*: "also, the arena gets dug out WAY too much. it should take longer to dig, and you should die automatically at 100%, and all your moves should be in a smaller diggable area. also, set the week to stickers" + Much bigger forest (Recommended) + Tall trees (Recommended)
 
 ## Status questions & check-ins
 
