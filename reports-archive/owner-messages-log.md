@@ -1033,6 +1033,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-18**: also, any hard character for world cuos?
 - **2026-11-18** *(question boxes)*: Pie length -> Leave it (Recommended); push the simplified contests -> Push now (Recommended)
 - **2026-11-18** *(question boxes)*: Clock pits -> Keep the pits (Recommended); seed regrow -> 60 s (Recommended); push Spongy + Clock -> Push now (Recommended)
+- **2026-11-18**: map could be more nuanced for jammy
+- **2026-11-18** *(question box: what does more nuanced mean?)*: "bigga" + Varied shapes + Distinct areas + More routes
 
 ## Status questions & check-ins
 
