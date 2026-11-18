@@ -74659,6 +74659,7 @@ function step(){
     if(f._mtCuff) metagCuffStep(f);   // MeTag's cuff: a new press takes frames off the root (after the first few, which always hold)
 
     if(CROOM) crmInput(f, inp);   // ROOMS APART (contests): Up held in a doorway goes through it (as the mill's)
+    if(LHC) lhcInput(f, inp);   // STAPY'S LIGHTHOUSES: the same, at their doors and the deck's hatch
     if(CRN) crnInput(f, inp);   // THE RULER'S CROWN (Jammy's contest): Down at a secret door goes through it (never while stunned)
     if(JAWB && JAWB.lk) lkInput(f, inp);   // LICK YOUR WAY TO FREEDOM: Down held beside a jawbreaker licks it
     if(FDR && FDR.ck) stkrInput(f, inp);   // CHEATERS PROSPER: Down at a shortcut's spot starts a cheat (never a drop there); nothing is pressed while one runs or while its drone stuns
@@ -112303,7 +112304,7 @@ let LHC = null;   // null in every other match; else { towers, nodes, plaza, ...
 const LHK = { gy0:2952, aw:5200, roomX:1000, roomDx:2400, roomY:3100, doorOff:130, topH:1920, faceH:2400, band:480, slab:40, nBand:4, ww:9200, wh:7000, wall:80, half:700, door:190, roofGap:190, shell:30, plazaY:1800, plazaX0:2300, plazaX1:2900, plateY:1440, plateEdge:1100,
   lever:[-360, -200, 200, 360], leverR:34, light:30, off0:300, offGrow:0, offMax:0, pits:[[900, 1010], [1400, 1510], [1900, 2010]], pitDepth:160, plunge:['stapler'], winHold:330,
   ladder:12, ladRise:96, stones:[[2185, 1710, 140], [2000, 1620, 130], [1850, 1530, 140], [1700, 1440, 120], [1560, 1440, 140], [1420, 1440, 110], [1290, 1440, 140]],
-  light0:270, roomZoom:1, reJump:105, reUp:110, reGap:120, portalCool:40, retarget:90, gang:3,
+  light0:270, roomZoom:1, reJump:105, reUp:110, reGap:120, portalCool:40, upT:4, retarget:90, gang:3,
   hzDmg:3, tumble:20, kickReach:12, flyMax:30, warp:40, stall:300, sprCd:24, hatchU:1340, fightR:90, fightReach:80, fightEdge:60, fightT:120, fightCd:300, retryWait:120, climbCost:4000, offT0:9000, offT1:16200, offMin:0.2 };
 const LH_TAU = Math.PI*2;
 function lhcMod(a, n){ return ((a % n) + n) % n; }
@@ -113008,7 +113009,7 @@ function lhcHoldSpot(f, bd, sup, step, R){
   return best;
 }
 // The route graph outside (and each room as two nodes: its floor by the door, its lever deck; the climb between them is the room brain's): a node is a ledge or a floor span; an edge is a jump
-// (or a drop) from one to another, a door (a portal: walk into it), the climb, or the deck's way-out hatch.
+// (or a drop) from one to another, a door (a portal: Up held in its doorway), the climb, or the deck's way-out hatch.
 function lhcGraph(){
   const S = LHC, K = LHK, N = [];
   for(const p of worldPlats){ if(p.lhn) N.push({ x0:p.x, x1:p.x + p.w, y:p.y, solid:!!p.solid, wl:!!p.wl, wr:!!p.wr, p, out:[] }); }
@@ -113060,10 +113061,40 @@ function lhcNeed(L){ const K = LHK; return K.off0 + Math.min(K.offMax, Math.max(
 function lhcRespawn(f){
   const K = LHK; f.x = Math.round(K.plazaX0 + 80 + Math.random()*(K.plazaX1 - K.plazaX0 - 160)); f.y = LHC.pY - f.r; f.vx = 0; f.vy = 0; f.onground = true; f._lhRoom = null; f._lhPX = null; f._lhRet = null; f._lhArc = null;
 }
-// THE DOORS (the way the oak's mill is entered): walk into a lighthouse's door and you are in its room (a full climb every time); walk into the room's exit, or the lever deck's
-// WAY OUT hatch (the quick way down, one way: nothing leads from it back into the floors), and you are out at the door. A fighter who has just come through is not taken back for LHK.portalCool frames.
-function lhcPortal(f){
-  const S = LHC, K = LHK, feet = f.y + f.r;
+// THE DOORS, THE MILL'S RULE (the owner, 2026-11-18, "Hold Up too": every room the same as the other contests' rooms, CROOM's crmInput): a lighthouse's door outside, the room's exit
+// door and the lever deck's WAY OUT hatch (the quick way down, one way: nothing leads from it back into the floors) are DOORWAYS: stand in one (lhcDoorAt; a jump in it counts: feet up to
+// 90 px over its floor) and hold Up LHK.upT frames and you are through (into the room's floor, or out at the door). Walking into one, or a knock into it, is nothing. Standing in a doorway
+// Up does not jump (it is the door). Just through, Up must be let go before the next door (no swing door), and a door does not take you for LHK.portalCool frames. A CPU's only when its plan
+// holds Up there (lhcPress, from lhcSteer and want), never its fighting or climbing brain's jump.
+function lhcDoorAt(f){
+  const S = LHC; if(!S || !f || f.dead) return null;
+  const feet = f.y + f.r, near = (x, y) => Math.abs(x - f.x) < 30 && y - feet > -14 && y - feet < 90, room = lhcTowerOf(f);
+  if(room){
+    if(near(room.exitX, room.base)) return { tw:room, k:'exit', x:room.exitX, y:room.base };
+    if(near(room.hatchX, room.topY)) return { tw:room, k:'hatch', x:room.hatchX, y:room.topY };
+    return null;
+  }
+  for(const tw of S.towers) if(near(tw.doorX, tw.oBase)) return { tw, k:'in', x:tw.doorX, y:tw.oBase };
+  return null;
+}
+function lhcPress(f, inp){ f._lhGo = hazardT; inp.up = true; inp.jump = true; inp.down = false; inp.attack = false; inp.special = false; inp.smash = false; }
+// Every fighter's keys (people's and CPUs'), with the other contests' door hooks (crmInput's place): Up held in a doorway goes through it
+function lhcInput(f, inp){
+  if(!LHC || !inp || f.dead) return;
+  const up = !!(inp.up || inp.jump);
+  if(f._lhHold && !up) f._lhHold = false;
+  if(!up || f._lhHold || inp.attack || inp.special || inp.smash || f.hitstun > 0 || f.frozen > 0 || f._heldBy != null || f._lhRet || (CONTEST && CONTEST.winner != null)){ f._lhUpN = 0; return; }
+  const d = lhcDoorAt(f); if(!d){ f._lhUpN = 0; return; }
+  if(!isHumanCtrl(f) && f._lhGo !== hazardT){ f._lhUpN = 0; return; }
+  if(f.onground){ inp.jump = false; inp.up = false; }   // (standing in the doorway: Up is the door, not a jump)
+  if(hazardT < (f._lhPortT || 0)) return;
+  if(++f._lhUpN < LHK.upT) return;
+  f._lhUpN = 0; f._lhHold = true;
+  lhcPortal(f, d);
+}
+// Through door d (lhcDoorAt's): into its room's floor, or out at the lighthouse's door
+function lhcPortal(f, d){
+  const K = LHK, tw = d.tw;
   const into = (tw, x, y, face, who) => {
     for(let i = 0; i < 8; i++) puff(f.x, f.y, lhcColor(f), 4);
     f.x = x; f.y = y - f.r; f.vx = 0; f.vy = 0; f.onground = true; f.face = face; f.hitstun = 0; f._lhPortT = hazardT + K.portalCool; f._lhRoom = who === 'in' ? tw : null; f._lhN = null; f._lhP = 0; f._lhSpent = null; f._lhPX = f.x; f._lhPY = f.y; f._lhArc = null; f._lhRet = null;
@@ -113071,17 +113102,25 @@ function lhcPortal(f){
     for(let i = 0; i < 8; i++) puff(f.x, f.y, lhcColor(f), 4);
     if(f.you){ const t = camTarget(f.x, f.y, CAM_ZOOM); camX = t.x; camY = t.y; }   // (the view cuts to the new place, as the mill's does)
   };
-  const room = lhcTowerOf(f);
-  if(room){
-    if(Math.abs(f.x - room.exitX) <= 40 && Math.abs(feet - room.base) <= 8) into(room, room.doorX + room.dir*90, room.oBase, room.dir, 'out');
-    else if(Math.abs(f.x - room.hatchX) <= 36 && Math.abs(feet - room.topY) <= 8){ if(f.you) tone(300, 0.25, 'triangle', 0.08, 0, 120); into(room, room.doorX + room.dir*90, room.oBase, room.dir, 'out'); }
-    return;
-  }
-  for(const tw of S.towers){ if(Math.abs(f.x - tw.doorX) <= 36 && Math.abs(feet - tw.oBase) <= 8){ into(tw, tw.inX, tw.base, -tw.dir, 'in'); return; } }
+  if(d.k === 'in'){ if(f.you) tone(330, 0.08, 'triangle', 0.06, 0, 220); into(tw, tw.inX, tw.base, -tw.dir, 'in'); return; }
+  if(f.you){ if(d.k === 'hatch') tone(300, 0.25, 'triangle', 0.08, 0, 120); else tone(330, 0.08, 'triangle', 0.06, 0, 220); }
+  into(tw, tw.doorX + tw.dir*90, tw.oBase, tw.dir, 'out');
+}
+// A doorway, drawn (world space, under the fighters; crmDrawDoors' kind): a frame round a dark way through, a lit step, and while you stand in it an Up arrow over it (no words)
+function lhcDrawDoor(c, x, y, col){
+  const me = fighters.find(f => f.you && !f.dead), at = me ? lhcDoorAt(me) : null, on = !!at && at.x === x && at.y === y, w = 62, h = 104;
+  c.save(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  c.fillStyle = col || '#6b4a2a'; c.beginPath(); c.moveTo(x - w/2 - 9, y); c.lineTo(x - w/2 - 9, y - h + w/2); c.arc(x, y - h + w/2, w/2 + 9, Math.PI, 0); c.lineTo(x + w/2 + 9, y); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#1a120c'; c.beginPath(); c.moveTo(x - w/2, y); c.lineTo(x - w/2, y - h + w/2); c.arc(x, y - h + w/2, w/2, Math.PI, 0); c.lineTo(x + w/2, y); c.closePath(); c.fill();
+  c.strokeStyle = on ? '#fff3b0' : 'rgba(255,255,255,0.35)'; c.lineWidth = on ? 4 : 2; c.beginPath(); c.moveTo(x - w/2 + 3, y); c.lineTo(x - w/2 + 3, y - h + w/2); c.arc(x, y - h + w/2, w/2 - 3, Math.PI, 0); c.lineTo(x + w/2 - 3, y); c.stroke();
+  c.fillStyle = on ? '#ffe36b' : '#c9b48a'; c.fillRect(x - w/2 - 9, y - 5, w + 18, 5);   // (the step)
+  if(on){ const ay = y - h - 16 + Math.sin(hazardT*0.15)*3;   // THE UP ARROW, while you stand in the doorway
+    c.fillStyle = '#ffffff'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.moveTo(x, ay - 16); c.lineTo(x + 12, ay); c.lineTo(x + 5, ay); c.lineTo(x + 5, ay + 10); c.lineTo(x - 5, ay + 10); c.lineTo(x - 5, ay); c.lineTo(x - 12, ay); c.closePath(); c.fill(); c.stroke(); }
+  c.restore();
 }
 // The steering of one hop outside from node A to node B; true when it took the keys.
 function lhcSteer(f, inp, A, B, e){
-  if(e && e.portal){ const dx = e.portal.x - f.x; if(Math.abs(dx) > 8){ if(dx < 0) inp.left = true; else inp.right = true; } return true; }   // a door or the hatch: walk into it
+  if(e && e.portal){ const dx = e.portal.x - f.x; if(Math.abs(dx) > 8){ if(dx < 0) inp.left = true; else inp.right = true; } const d = lhcDoorAt(f); if(d && d.x === e.portal.x) lhcPress(f, inp); return true; }   // a door or the hatch: walk to it, then hold Up in the doorway
   if(e && e.climb) return true;   // (the climb is the room brain's: lhcRoomAi)
   const feet = f.y + f.r, rise = A.y - B.y, lo = B.x0 + 14, hi = Math.max(lo, B.x1 - 14), tx = clamp(f.x, lo, hi), dx = tx - f.x, adx = Math.abs(dx), dir = dx < 0 ? -1 : 1;
   const gap = Math.max(0, B.x0 - A.x1, A.x0 - B.x1);
@@ -113232,7 +113271,6 @@ CONTEST_RULES.lights = {
         for(const tw of S.towers){ if(f.x > tw.x0 - 20 && f.x < tw.x1 + 20 && Math.abs(f.y + f.r - tw.roofY) <= 6){ const d = f.x < tw.cx ? -1 : 1; f.vx = d*6; f.x += d*4; } }
       }
       f._lhAt = null;
-      if(!f.dead && f.onground && hazardT >= (f._lhPortT || 0)) lhcPortal(f);
       if(f.dead || KOC.over){ f._lhP = 0; continue; }
       const tw = lhcTowerOf(f); let lv = null;
       if(tw && f.onground && f.hitstun <= 0 && Math.abs(f.y + f.r - tw.topY) <= 8){ for(const L of tw.levers){ if(Math.abs(f.x - L.x) <= K.leverR){ lv = L; break; } } }
@@ -113269,7 +113307,7 @@ CONTEST_RULES.lights = {
         c.fillStyle = '#e8e2d6'; c.beginPath(); c.moveTo(tw.ox - fw, tw.oBase); c.lineTo(tw.ox - fw*0.6, tw.oBase - fh); c.lineTo(tw.ox + fw*0.6, tw.oBase - fh); c.lineTo(tw.ox + fw, tw.oBase); c.closePath(); c.fill();
         c.fillStyle = '#d23a3a'; for(let t = 0; t < 4; t++){ const y0s = tw.oBase - fh*(t*2 + 1)/8, y1s = tw.oBase - fh*(t*2 + 2)/8, a0 = fw - (fw*0.4)*((tw.oBase - y0s)/fh), a1 = fw - (fw*0.4)*((tw.oBase - y1s)/fh); c.beginPath(); c.moveTo(tw.ox - a0, y0s); c.lineTo(tw.ox - a1, y1s); c.lineTo(tw.ox + a1, y1s); c.lineTo(tw.ox + a0, y0s); c.closePath(); c.fill(); }
         const nlit = tw.levers.filter(L => L.lit).length; c.fillStyle = nlit ? '#fff7b0' : '#8d8a7a'; c.beginPath(); c.arc(tw.ox, tw.oBase - fh - 30, 26 + 5*nlit, 0, 7); c.fill(); c.fillStyle = '#3a3a3a'; c.fillRect(tw.ox - fw*0.6 - 8, tw.oBase - fh - 6, fw*1.2 + 16, 10);
-        c.fillStyle = '#6b4a2a'; c.fillRect(tw.doorX - 34, tw.oBase - 100, 68, 100); c.fillStyle = '#c9a56a'; c.fillRect(tw.doorX - 28, tw.oBase - 94, 56, 94);
+        lhcDrawDoor(c, tw.doorX, tw.oBase, '#6b4a2a');   // the door (a doorway: hold Up in it)
         c.strokeStyle = '#1c1c1c'; c.lineWidth = 4; c.beginPath(); c.moveTo(tw.ox - fw, tw.oBase); c.lineTo(tw.ox - fw*0.6, tw.oBase - fh); c.lineTo(tw.ox + fw*0.6, tw.oBase - fh); c.lineTo(tw.ox + fw, tw.oBase); c.stroke();
       }
       for(const tw of S.towers){ if(tw.x1 < x0 || tw.x0 > x1 || tw.base + 60 < y0 || tw.roofY - 80 > y1) continue; lhcDrawRoom(c, tw, x0, x1, y0, y1); }
@@ -113327,7 +113365,7 @@ CONTEST_RULES.lights = {
       }
       f._lhGoal = best;
     }
-    const G = f._lhGoal; if(!G){ f._lhStay = 0; if(A.deck){ const dx = A.deck.hatchX - f.x; if(Math.abs(dx) > 8){ if(dx < 0) inp.left = true; else inp.right = true; } return true; } return false; }   // (nothing to do here: out by the hatch)
+    const G = f._lhGoal; if(!G){ f._lhStay = 0; if(A.deck){ const dx = A.deck.hatchX - f.x; if(Math.abs(dx) > 8){ if(dx < 0) inp.left = true; else inp.right = true; } const d = lhcDoorAt(f); if(d && d.k === 'hatch') lhcPress(f, inp); return true; } return false; }   // (nothing to do here: out by the hatch, Up held in it)
     const L = G.L;
     if(L.j === f.idx ? L.lit : !L.lit){ f._lhGoal = null; return false; }
     if(A === L.nd){
@@ -113358,8 +113396,8 @@ function lhcDrawRoom(c, tw, vx0, vx1, vy0, vy1){
   c.fillStyle = th.wall; c.fillRect(cx - h, tw.roofY + K.shell, 2*h, tw.base - tw.roofY - K.shell);
   for(const bd of tw.bands){ c.fillStyle = th.band; c.fillRect(cx - h, bd.yb - 440, 2*h, 6); }
   c.strokeStyle = '#1c1c1c'; c.lineWidth = 4; c.strokeRect(tw.x0, tw.roofY, tw.x1 - tw.x0, tw.base - tw.roofY);
-  c.fillStyle = '#6b4a2a'; c.fillRect(tw.exitX - 28, tw.base - 96, 56, 96); c.fillStyle = '#c9a56a'; c.fillRect(tw.exitX - 22, tw.base - 90, 44, 90);   // the exit door
-  { const hx = tw.hatchX, y = tw.topY; c.fillStyle = '#3a2a1a'; c.fillRect(hx - 30, y - 92, 60, 92); c.fillStyle = '#7fd06a'; c.fillRect(hx - 24, y - 86, 48, 86); c.fillStyle = '#1c1c1c'; c.beginPath(); c.moveTo(hx - 12, y - 56); c.lineTo(hx + 12, y - 56); c.lineTo(hx, y - 30); c.closePath(); c.fill(); }   // the way-out hatch (an arrow down)
+  lhcDrawDoor(c, tw.exitX, tw.base, '#6b4a2a');   // the exit door (a doorway: hold Up in it)
+  lhcDrawDoor(c, tw.hatchX, tw.topY, '#4f8a3e');   // the way-out hatch (a green doorway: hold Up in it)
   for(const p of worldPlats){   // the slabs and the deck (stone)
     if(p.lh !== tw.k || !(p.lhSlab || p === tw.floor)) continue;
     c.fillStyle = '#8a7a64'; c.fillRect(p.x, p.y, p.w, p.h); c.fillStyle = '#b9a888'; c.fillRect(p.x, p.y, p.w, 6);
