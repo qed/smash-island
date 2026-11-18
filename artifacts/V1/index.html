@@ -114630,120 +114630,517 @@ function hgHud(c){
 }
 
 // ---------- EVENT FIGHTERS: 500 STEPS (Pie's CONTEST, her third event match: a rule in CONTEST_RULES, 'steps', with its own world STEPS) ----------
-// The design (smash-bal/reports/event-contests-v1.md, section 4): a race up a tall staircase in a walled shaft. STPK.n 100 one-way steps climb in a zigzag over four
-// columns (0 1 2 3 2 1 0 ...), each STPK.rise 92 px above the last, so each is one jump from the one below; every step counts STPK.per 5, so the top is 500 (100 steps: the lead's change, 2026-11-13, so CPU-only runs last 2-3 minutes). A solid
-// floor runs wall to wall at the bottom and two solid walls hold everyone in (Spleef's way: the shaft is clamped, the percent stops at STPK.pctCap, and damage never KOs):
-// a hit only throws you, usually back down the stairs. ONE STOCK. Nothing falls from the sky: throwables GROW IN where they stand, on a step within three of a random
-// fighter, STPK.items at most at once, and never time out. WIN: land on the top step (wide, gold, a pie on it); at STPK.time 3:00 the highest fighter wins (a tie goes to
-// whoever got to that height first). A fighter's count f._stN is the highest step it STANDS on now (0 the floor; it keeps the last one while it is in the air).
-// CPUs (want, focus): climb to the next step (walk to its near edge, jump, a double jump if it falls short); a foe within 150 px on its own level comes first; a throwable
-// on its own step is picked up; the highest rival within two steps is the one it fights. Not online (startEventMatch refuses in a room): nothing rides the snapshot.
-let STEPS = null;   // null in every other match; else { steps:[{x,y,w,h,i}], x0, gy, rings:[], nextItem } -- see stepsBuildWorld
-const STPK = { n:100, rise:92, w:190, dx:230, topW:260, h:14, wall:80, top:330, pctCap:300, items:4, itemEvery:300, itemFirst:180, time:10800, per:5 };
+// THE CONCEPT (kept, the owner's): a race up a tall staircase inside a walled tower. STPK.n 100 one-way steps climb in a zigzag over four columns (0 1 2 3 2 1 0 ...),
+// each STPK.rise 92 px above the last, so each is one jump from the one below; every step counts STPK.per 5, so the top is 500. A hit only throws you, usually back
+// down the stairs: the percent stops at STPK.pctCap and damage never KOs. ONE STOCK. Throwables (pies, in this match) grow in on the steps near the fighters, STPK.items
+// at most at once, and never time out. WIN: land on the top step (wide, gold, a pie on it); at STPK.time 3:00 the highest fighter wins (a tie goes to whoever got
+// that high first). THE CRUMBLE (the owner, 2026-11-13 and 2026-11-15): the bottom steps crumble upward, faster over time, chasing closer (CRK, unchanged).
+// THE UPGRADE (the owner's picks, 2026-11-17: ALL 13 of the list; the numbers are mine, the owner gave none):
+//  1 ELEVATORS on landings (the left lane): 9 -> 29 and 49 -> 69, three fit; one ride in STPU.brk (35%) breaks down halfway: sparks and a buzz first, then it jams for
+//    STPU.stall frames and slides back to its landing (jump out onto the stairs beside the shaft, or ride it back down).
+//  2 ROLLING PIES: one wobbles on a step a few above a fighter (a red ring and a rumble first), then rolls down the stairs, knocking back whoever it meets (jump it).
+//  3 THE CHEF stands on the landing above the leader and throws a pie at whoever is leading (he lifts it and a ring marks the leader first).
+//  4 THEMED FLOORS: the BAKERY (steps 0-32), the KITCHEN (33-65: hot oven VENTS glow and hiss, then blast you up the column, to the step of the same column above)
+//    and the PANTRY (66-99: SHELVES in the right lane, a straight climb from landing 69 to landing 89).
+//  5 WRONG-WAY ESCALATORS: three runs of the stairs are escalators (12 -> 15, 42 -> 45, 54 -> 57) whose belt runs down: run against it.
+//  6 CREAM SPILLS: a dollop falls on a step (its shadow grows first) and the puddle is slippery for STPU.cream.life frames.
+//  7 PIE IN THE FACE: a hit from a THROWN pie (a throwable or the chef's) splats your view for STPU.splat.life frames (under a second, mostly round the edges, fading).
+//  8 THE LAUNDRY CHUTE: a hatch on landings 39, 59, 79 and 89; it rattles, then opens for a while; standing on it open, or being KNOCKED onto it at any time,
+//    drops you down the chute 20 steps (never below the crumble: then onto the lowest safe step).
+//  9 THE OUTSIDE LEDGES: a window on landing 19 leads out of the tower to window ledges, a quicker climb to the window on landing 39; gusts blow you off (streaks first).
+// 10 THE PIE CART on landing 9's right end rides a ramp up to landing 29; one rider; any hit knocks you out of it.
+// 11 STEP SIGNS: a big number sign on the wall over every landing (50, 100, ... 500).
+// 12 CRUMB SPRAY: once the crumble is near the floor, the lip throws crumbs up the stairs (a glowing spot and a rumble first), aimed at the lowest fighter within
+//    STPU.crumb.reach px of the line: small hits.
+// 13 THE DUMBWAITER: a tiny lift on landing 79 that only one fighter fits in, up to a ledge beside step 95; whoever gets in first takes it.
+// A fighter's count f._stN is how high it STANDS now in steps (its feet over the floor, by STPK.rise; the top step alone counts 100); it keeps the last while in the air.
+// CPUs (want, focus): climb the next step; at a landing with a shortcut they take it by level (STPU.cpu.short); they wait at a docked lift, jump out of a broken one,
+// stand on a glowing vent, jump rolling pies and step out from under the chef's, hop off a rattling hatch, and walk round a rival standing near a hatch to hit them
+// into it; a foe within 300 px on its own level is fought; a rival in the cart is knocked out of it; a throwable on its own step is picked up. Nothing in the match is
+// a word: pictures, colours and sounds. Not online (startEventMatch refuses in a room): nothing rides the snapshot.
+let STEPS = null;   // null in every other match; else the tower (stepsBuildWorld): steps, extra pieces, cars, hatches, vents, the hazards and the tallies (S.st)
+const STPK = { n:100, rise:92, w:190, dx:230, topW:260, h:14, wall:80, top:330, pctCap:300, items:4, itemEvery:300, itemFirst:180, time:10800, per:5,
+  L:2000, sx:300, span:880, twr:1400, twW:40, outX:1440, outR:1920, win:240 };
 // THE CRUMBLE (the owner's speed-up, 2026-11-13: "the bottom steps crumble upward, faster over time"): the line starts depth px UNDER the floor, then climbs v0 px a frame and
-// faster every frame (acc), so its height over the floor is -depth + v0*t + acc*t*t/2 (about 17 s before the floor goes, the top step at about 2:50). A step shakes, cracks and reddens for
-// the last tell frames (never under tellMin px) before it falls away; a fighter whose feet are on or under the line falls (stepsCrumble). All numbers are mine: the owner gave none.
-// CHASES CLOSER (owner 2026-11-15, yes to my suggestion): acc was 0.00009 (it only caught stragglers, 3 runs in 10); now 0.00025, so the line is at about 7,500 px at 100 s and a fast climb matters.
+// faster every frame (acc), so its height over the floor is -depth + v0*t + acc*t*t/2. A piece shakes, cracks and reddens for the last tell frames (never under tellMin px)
+// before it falls away; a fighter whose feet are on or under the line falls (stepsCrumble). CHASES CLOSER (owner 2026-11-15): acc 0.00025.
 const CRK = { depth:600, v0:0.55, acc:0.00025, tell:50, tellMin:100, chunks:60 };
+// THE UPGRADE'S NUMBERS (all mine). x in px from the tower's left edge (the layout is STPK.L wide, centred in the world), heights as step indices.
+const STPU = {
+  bands:[33, 66], landL:[9, 29, 49, 69, 79], landR:[9, 29, 69, 89], landOut:[19, 39], junction:[9, 19, 49, 69, 79],
+  esc:[[12, 15], [42, 45], [54, 57]], escPush:2.4,
+  vents:[34, 37, 40, 47, 51, 61, 63], vent:{ idle:240, warn:60, blast:45, w:50, up:620, vy:-11 },
+  hatch:[{ j:39, x0:1000, x1:1120 }, { j:59, x0:560, x1:680 }, { j:79, x0:560, x1:680 }, { j:89, x0:560, x1:680 }], hatchT:{ shut:420, warn:60, open:150 }, chuteDrop:20,
+  out:{ gap:115, xa:1480, xb:1700, w:160, calm:260, warn:70, blow:130, push:2.4 },
+  shelf:{ n:18, xa:1195, xb:1265, w:130 }, lane:{ y:95, x:80, w:220 },
+  cars:[
+    { id:'e1', kind:'lift', pts:[[190, 9], [190, 29]], cap:3, up:5, down:7, half:70, brk:0.35, go:45 },
+    { id:'cart', kind:'cart', pts:[[1290, 9], [400, 19], [1290, 29]], cap:1, up:4.5, down:7, half:40, brk:0, go:20 },
+    { id:'e2', kind:'lift', pts:[[190, 49], [190, 69]], cap:3, up:5, down:7, half:70, brk:0.35, go:45 },
+    { id:'dw', kind:'dw', pts:[[190, 79], [190, 95]], cap:1, up:7, down:9, half:32, brk:0, go:20 },
+  ], stall:150, top:50,
+  roll:{ first:480, every:330, warn:70, per:20, steps:12, hop:26, dmg:5, kb:[7.5, -6] },
+  chef:{ first:900, every:300, wind:55, g:0.32, dmg:7, kb:[8, -4] },
+  cream:{ first:300, every:420, warn:50, life:900, max:6, w:80 },
+  crumb:{ warn:45, n:4, dmg:3, kb:[3, 3], reach:650, vmax:26 },
+  splat:{ life:54, full:12, cpu:24 },
+  fight:{ reach:240, on:150, off:120, danger:3 },
+  cpu:{ short:[0.35, 0.6, 0.85, 0.95], vent:[0.15, 0.45, 0.75, 0.9], dodge:[0.3, 0.55, 0.8, 0.95], knock:[0.1, 0.35, 0.65, 0.9], hatch:[0.5, 0.75, 0.9, 1], cart:[0.2, 0.5, 0.8, 0.95], react:[80, 40, 15, 6] },
+};
 function stepsWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.contest === 'steps'; }
 function stepsCol(i){ return [0, 1, 2, 3, 2, 1][i % 6]; }
-// The world (from setupWorld, in place of the stage's own): the shaft, the floor, the hundred steps. All hundred exist from the start.
+function stepsYOf(i){ return Math.round(STEPS.gy - (i + 1)*STPK.rise); }
+// The world (from setupWorld, in place of the stage's own): the tower, its walls and windows, the floor, the hundred steps and the upgrade's pieces.
 function stepsBuildWorld(){
-  const K = STPK;
-  WW = Math.round(W*1.4); camX = 0; camY = 0; bases = []; floors = []; worldZones = []; spawnZones = [];
+  const K = STPK, U = STPU;
+  WW = Math.max(K.L, Math.round(W*1.4)); camX = 0; camY = 0; bases = []; floors = []; worldZones = []; spawnZones = [];
   WH = Math.round((K.top + K.n*K.rise)/0.82);   // (groundY = WH*0.82 is the floor: the top step's y is K.top)
-  const gy = groundY(), span = 3*K.dx + K.w, x0 = Math.round((WW - span)/2), steps = [];
+  const gy = groundY(), ox = Math.round((WW - K.L)/2), X = v => ox + v, yOf = i => Math.round(gy - (i + 1)*K.rise), steps = [], extra = [];
+  const xl = X(K.wall), xr = X(K.outR);
   worldPlats = [
-    { x:0, y:-400, w:K.wall, h:WH + 800, solid:true, spWall:true },
-    { x:WW - K.wall, y:-400, w:K.wall, h:WH + 800, solid:true, spWall:true },
+    { x:-400, y:-400, w:xl + 400, h:WH + 800, solid:true, spWall:true },
+    { x:xr, y:-400, w:WW - xr + 400, h:WH + 800, solid:true, spWall:true },
   ];
+  const w19 = yOf(19), w39 = yOf(39), tws = [];
+  for(const ab of [[-400, w39 - K.win], [w39 + K.h, w19 - K.win], [w19 + K.h, WH + 400]]){ const p = { x:X(K.twr), y:ab[0], w:K.twW, h:ab[1] - ab[0], solid:true, spWall:true, stTw:true }; worldPlats.push(p); tws.push(p); }
+  const escSkip = {}; for(const e of U.esc) for(let i = e[0] + 1; i < e[1]; i++) escSkip[i] = true;
   for(let i = 0; i < K.n; i++){
-    const top = i === K.n - 1, bx = x0 + stepsCol(i)*K.dx, w = top ? K.topW : K.w, x = top ? bx + K.w/2 - K.topW/2 : bx;
-    const p = { x:Math.round(x), y:Math.round(gy - (i + 1)*K.rise), w:w, h:K.h, solid:false, stp:true, i:i };
-    steps.push(p); worldPlats.push(p);
+    const top = i === K.n - 1, land = (i + 1) % 10 === 0 && !top;
+    let x, w;
+    if(land){
+      const eL = U.landL.indexOf(i) >= 0 ? K.sx - K.wall : 0, eR = U.landOut.indexOf(i) >= 0 ? K.outR - (K.sx + K.span) : (U.landR.indexOf(i) >= 0 ? K.twr - (K.sx + K.span) : 0);
+      x = X(K.sx - eL); w = K.span + eL + eR;
+    } else { const bx = X(K.sx + stepsCol(i)*K.dx); w = top ? K.topW : K.w; x = top ? bx + K.w/2 - K.topW/2 : bx; }
+    const p = { x:Math.round(x), y:yOf(i), w:w, h:K.h, solid:false, stp:true, i:i, land:land, band:i < U.bands[0] ? 0 : (i < U.bands[1] ? 1 : 2) };
+    if(escSkip[i]) p.esc = true; else worldPlats.push(p);
+    steps.push(p);
   }
-  STEPS = { steps:steps, x0:x0, gy:gy, rings:[], nextItem:K.itemFirst, ly:gy + CRK.depth, v:CRK.v0, tellPx:CRK.tellMin, gone:0, floorGone:false, chunks:[], caught:0 };
-  FLOOR_SEGS = [{ x0:K.wall, x1:WW - K.wall }];   // (one span, wall to wall: nobody falls out of the bottom)
+  // the wrong-way escalators: a ramp from the right end of the lower step to the left end of the upper one, its top face through both (a rotated one-way piece)
+  for(const e of U.esc){
+    const A = steps[e[0]], B = steps[e[1]], x0 = A.x + A.w, y0 = A.y, x1 = B.x, y1 = B.y, len = Math.hypot(x1 - x0, y1 - y0), ang = Math.atan2(y1 - y0, x1 - x0);
+    const cx = (x0 + x1)/2 - Math.sin(ang)*K.h/2, cy = (y0 + y1)/2 + Math.cos(ang)*K.h/2;
+    const p = { x:cx - len/2, y:cy - K.h/2, w:len, h:K.h, rot:ang*180/Math.PI, solid:false, stEsc:true };
+    worldPlats.push(p);
+    extra.push({ kind:'ramp', ramp:true, plat:p, x0:x0, y0:y0, x1:x1, y1:y1, a:e[0], b:e[1], ycut:Math.min(y0, y1), x:Math.min(x0, x1), w:Math.abs(x1 - x0), y:Math.min(y0, y1), band:A.band });
+  }
+  const piece = (kind, n, x, y, w, band) => { const p = { x:Math.round(x), y:Math.round(y), w:w, h:K.h, solid:false, stX:kind }; worldPlats.push(p); const q = { kind:kind, n:n, plat:p, x:p.x, y:p.y, w:w, ycut:p.y, band:band }; extra.push(q); return q; };
+  // the outside ledges, 19 -> 39 (ledge 0 is landing 19's sill, the last landing 39's)
+  const outL = [null], O = U.out, nOut = Math.round((w19 - w39)/O.gap);
+  for(let k = 1; k < nOut; k++) outL.push(piece('out', k, X(k % 2 ? O.xa : O.xb), w19 - (w19 - w39)*k/nOut, O.w, 0));
+  // the pantry's shelves, 69 -> 89
+  const shelves = [null], SH = U.shelf, y69 = yOf(69), y89 = yOf(89);
+  for(let j = 1; j < SH.n; j++) shelves.push(piece('shelf', j, X(j % 2 ? SH.xa : SH.xb), y69 - (y69 - y89)*j/SH.n, SH.w, 2));
+  const lane = piece('lane', 0, X(U.lane.x), yOf(U.lane.y), U.lane.w, 2);
+  // the cars (lifts, the cart, the dumbwaiter)
+  const veh = U.cars.map(d => {
+    const pts = d.pts.map(q => ({ x:X(q[0]), y:yOf(q[1]) })); let L = 0; for(let k = 1; k < pts.length; k++) L += Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y);
+    return { id:d.id, kind:d.kind, cap:d.cap, up:d.up, down:d.down, half:d.half, brkP:d.brk, go:d.go, from:d.pts[0][1], pts:pts, L:L, s:0, st:'dock', t:0, t0:null, riders:[], brk:false, doom:false, gone:false, cx:pts[0].x, cy:pts[0].y, uses:0, breaks:0 };
+  });
+  const vehById = {}; for(const V of veh) vehById[V.id] = V;
+  const hatch = U.hatch.map((h, n) => ({ id:n, j:h.j, x0:X(h.x0), x1:X(h.x1), y:yOf(h.j), st:'shut', t:-n*137, cyc:0 }));
+  const hatchAt = {}; for(const h of hatch) hatchAt[h.j] = h;
+  const vents = U.vents.map((i, n) => {
+    let to = -1; for(let j = i + 1; j < K.n; j++){ if(!steps[j].esc && !steps[j].land && stepsCol(j) === stepsCol(i)){ to = j; break; } }
+    return { i:i, x:steps[i].x + steps[i].w/2, y:steps[i].y, off:n*97, to:to, ph:'idle' };
+  });
+  const ventAt = {}; for(const v of vents) ventAt[v.i] = v;
+  STEPS = { steps:steps, extra:extra, outL:outL, shelves:shelves, lane:lane, tws:tws, veh:veh, vehById:vehById, hatch:hatch, hatchAt:hatchAt, vents:vents, ventAt:ventAt,
+    ox:ox, X:X, xl:xl, xr:xr, gy:gy, rings:[], nextItem:K.itemFirst, ly:gy + CRK.depth, v:CRK.v0, tellPx:CRK.tellMin, gone:0, floorGone:false, chunks:[], caught:0,
+    rolls:[], nextRoll:U.roll.first, chef:{ j:-1, x:X(700), y:yOf(9), st:'idle', t:0, tg:null, hop:-99 }, cpies:[], nextChef:U.chef.first,
+    cream:[], nextCream:U.cream.first, crumbs:[], crumbWarn:[], nextCrumb:0, wind:{ st:'calm', t:0 }, splat:null,
+    st:{ rides:{ e1:0, e2:0, dw:0, cart:0 }, breaks:0, jumpOuts:0, cartKnock:0, chute:0, chuteKnock:0, out:0, shelf:0, vent:0, throwHits:0, chefHits:0, rollHits:0, crumbHits:0, slips:0, splats:0, esc:0 } };
+  FLOOR_SEGS = [{ x0:xl, x1:X(K.twr) }];   // (the tower's floor, wall to wall: nobody falls out of the bottom)
   SIDE_ROOM = 0;
 }
 // The step a fighter's feet are on (the landing's own tolerance), or -1.
 function stepsUnder(f){
   const feet = f.y + f.r;
-  for(const p of STEPS.steps){ if(!p.gone && Math.abs(p.y - feet) <= 3 && f.x > p.x - 4 && f.x < p.x + p.w + 4) return p.i; }
+  for(const p of STEPS.steps){ if(!p.gone && !p.esc && Math.abs(p.y - feet) <= 3 && f.x > p.x - 4 && f.x < p.x + p.w + 4) return p.i; }
   return -1;
 }
-// After a fighter has moved (the physics): the walls hold and the top of the shaft is a ceiling.
+function stepsRampY(q, x){ const u = clamp((x - q.x0)/((q.x1 - q.x0) || 1), 0, 1); return q.y0 + (q.y1 - q.y0)*u; }
+// The world's centre line on the screen (for the sounds: only what is near the view is heard).
+function stepsNear(y){ const z = CAM_ZOOM || 1; return Math.abs(y - (camY + H/2)) < H/z; }
+function stepsSnd(y, fn){ if(!stepsNear(y)) return; try{ fn(); }catch(e){} }
+// After a fighter has moved (the physics): the walls hold, the top is a ceiling; a seated rider is held in its car; the escalator belts, the gusts and the vents push.
 function stepsHold(f){
-  const K = STPK;
+  const S = STEPS, K = STPK, U = STPU;
   if(f.y - f.r < 8){ f.y = 8 + f.r; if(f.vy < 0) f.vy = 0; }
-  const lo = K.wall + f.r, hi = WW - K.wall - f.r;
+  const lo = S.xl + f.r, hi = S.xr - f.r;
   if(f.x < lo){ f.x = lo; if(f.vx < 0) f.vx = 0; } else if(f.x > hi){ f.x = hi; if(f.vx > 0) f.vx = 0; }
+  if(f._ride){
+    const V = S.vehById[f._ride];
+    if(!V || V.gone || V.riders.indexOf(f) < 0 || f.dead) f._ride = null;
+    else if(f.hitstun > 0){ stepsUnseat(f); if(V.kind === 'cart') S.st.cartKnock++; }
+    else if(f.vy < -3 && (isHumanCtrl(f) || f._stOut)){ stepsUnseat(f); if(V.st === 'stall' || V.st === 'fall') S.st.jumpOuts++; f._stOut = false; }
+    else { const k = V.riders.indexOf(f), n = V.riders.length, off = V.cap > 1 ? (k - (n - 1)/2)*40 : 0; f.x = V.cx + off; f.y = V.cy - f.r; f.vx = 0; f.vy = 0; f.onground = true; f.jumps = 2; return; }
+  }
+  const feet = f.y + f.r;
+  if(f.onground){
+    for(const q of S.extra){
+      if(!q.ramp || q.gone || f.x < Math.min(q.x0, q.x1) || f.x > Math.max(q.x0, q.x1) || Math.abs(stepsRampY(q, f.x) - feet) > 6) continue;
+      f.x -= Math.sign(q.x1 - q.x0)*U.escPush; if(!f._stEscT || hazardT - f._stEscT > 120) S.st.esc++; f._stEscT = hazardT; break;   // (the belt runs down: toward the low end)
+    }
+  }
+  if(S.wind.st === 'blow' && f.x > S.X(K.outX)) f.x += U.out.push;   // (the gust blows away from the tower)
+  for(const v of S.vents){
+    if(v.ph !== 'blast' || S.steps[v.i].gone || Math.abs(f.x - v.x) > U.vent.w || feet > v.y + 4 || feet < v.y - U.vent.up) continue;
+    f.vy = Math.min(f.vy, U.vent.vy); f.onground = false;
+    if(!f._stVentT || hazardT - f._stVentT > 60) S.st.vent++;
+    f._stVentT = hazardT; if(v.to >= 0) f._stTg = S.steps[v.to];
+  }
 }
 function stepsHighest(){
   let best = null;
   for(const f of fighters){ if(f.dead) continue; if(!best || (f._stN || 0) > (best._stN || 0) || ((f._stN || 0) === (best._stN || 0) && (f._stT || 0) < (best._stT || 0))) best = f; }
   return best;
 }
-// A throwable grows in on a step near a random fighter (within three steps of its count), not on a step that already holds one.
+// The lowest whole step clear of the crumble's tell, or null.
+function stepsSafe(){ const S = STEPS; for(const p of S.steps){ if(!p.gone && !p.esc && p.y < S.ly - S.tellPx - 20) return p; } return null; }
+// A throwable (a pie) grows in on a step near a random fighter (within three steps of its count), not on a step that already holds one.
 function stepsSpawnItem(){
   const S = STEPS, K = STPK, live = fighters.filter(f => !f.dead); if(!live.length) return;
   const f = live[Math.floor(Math.random()*live.length)], n = f._stN || 0, cand = [];
-  for(let i = Math.max(0, n - 3); i <= Math.min(K.n - 1, n + 3); i++){
-    const p = S.steps[i]; if(p.gone || p.y >= S.ly - S.tellPx) continue;
+  for(let i = Math.max(0, n - 3); i <= Math.min(K.n - 2, n + 3); i++){
+    const p = S.steps[i]; if(p.gone || p.esc || p.y >= S.ly - S.tellPx) continue;
     if(items.some(it => !it.taken && it.life > 0 && Math.abs(it.y - (p.y - 16)) < 40 && it.x > p.x - 20 && it.x < p.x + p.w + 20)) continue;
     cand.push(p);
   }
   if(!cand.length) return;
-  const p = cand[Math.floor(Math.random()*cand.length)], x = Math.round(p.x + p.w*(0.2 + Math.random()*0.6));
-  items.push({ kind:'throw', x:x, y:p.y - 16, vx:0, vy:0, r:16, taken:false, life:1e9, _land:true, _stair:p.y, _born:hazardT });
+  const p = cand[Math.floor(Math.random()*cand.length)], lx = p.land ? S.X(STPK.sx) : p.x, lw = p.land ? STPK.span : p.w, x = Math.round(lx + lw*(0.2 + Math.random()*0.6));
+  items.push({ kind:'throw', x:x, y:p.y - 16, vx:0, vy:0, r:16, taken:false, life:1e9, _land:true, _stair:p.y, _born:hazardT, _pie:true });
   S.rings.push({ x:x, y:p.y - 16, t:hazardT });
   for(let k = 0; k < 6; k++) puff(x, p.y - 16, '#ffd23f', 3);
 }
-// The crumble, once a frame: the line climbs; the floor and every step it passes fall away (their throwables with them); a fighter on or under it falls (eliminate: with the row's one stock
-// that is out; if a stock were left it is put back on the lowest whole step above the line, my default).
+// A drop through the floor's crumble or a chute: put a fighter on the lowest safe step.
+function stepsPutSafe(f){ const b = stepsSafe(); if(!b) return false; const lx = b.land ? STEPS.X(STPK.sx) : b.x, lw = b.land ? STPK.span : b.w; f.x = Math.round(lx + lw/2); f.y = b.y - f.r; f.vx = 0; f.vy = 0; f.onground = true; return true; }
+// The crumble, once a frame: the line climbs; the floor and every piece it passes fall away (their throwables with them); a fighter on or under it falls (eliminate: with
+// the row's one stock that is out; if a stock were left it is put back on the lowest whole step above the line, my default).
 function stepsCrumble(){
   const S = STEPS, K = STPK, R = CRK, t = hazardT, h = -R.depth + R.v0*t + 0.5*R.acc*t*t;
   S.ly = S.gy - h; S.v = R.v0 + R.acc*t; S.tellPx = Math.max(R.tellMin, R.tell*S.v);
-  if(h >= 0 && !S.floorGone){ S.floorGone = true; FLOOR_SEGS = []; for(let k = 0; k < 14; k++) puff(K.wall + 60 + (WW - 2*K.wall - 120)*k/13, S.gy, '#8a7a68', 5); }
+  if(h >= 0 && !S.floorGone){ S.floorGone = true; FLOOR_SEGS = []; for(let k = 0; k < 14; k++) puff(S.xl + 60 + (S.X(K.twr) - S.xl - 120)*k/13, S.gy, '#8a7a68', 5); }
+  const drop = (p, w, x) => {
+    const wi = worldPlats.indexOf(p); if(wi >= 0) worldPlats.splice(wi, 1);
+    S.chunks.push({ x:x, y:p.y, w:w, vx:(Math.random() < 0.5 ? 1 : -1)*0.4, vy:0, rot:0, spin:(Math.random() - 0.5)*0.06, age:0 });
+    if(S.chunks.length > R.chunks) S.chunks.shift();
+    for(let k = 0; k < 4; k++) puff(x + w*(k + 0.5)/4, p.y + 6, '#a9a2b8', 3);
+  };
   while(S.gone < K.n && S.steps[S.gone].y >= S.ly){
     const p = S.steps[S.gone++]; p.gone = true;
-    const wi = worldPlats.indexOf(p); if(wi >= 0) worldPlats.splice(wi, 1);
-    S.chunks.push({ x:p.x, y:p.y, w:p.w, vx:(p.i % 2 ? 1 : -1)*0.4, vy:0, rot:0, spin:(p.i % 3 - 1)*0.03, age:0 });
-    if(S.chunks.length > R.chunks) S.chunks.shift();
-    for(let k = 0; k < 4; k++) puff(p.x + p.w*(k + 0.5)/4, p.y + 6, '#a9a2b8', 3);
+    if(!p.esc) drop(p, Math.min(p.w, 400), p.land ? S.X(K.sx) + 240 : p.x);
     for(const it of items){ if(!it.taken && it._stair === p.y){ it.taken = true; it.life = 0; } }
   }
+  for(const q of S.extra){ if(!q.gone && q.ycut >= S.ly){ q.gone = true; drop(q.plat, q.ramp ? 200 : q.w, q.ramp ? q.x1 - 200 : q.x); } }
   for(let i = S.chunks.length - 1; i >= 0; i--){ const q = S.chunks[i]; q.vy += 0.5; q.x += q.vx; q.y += q.vy; q.rot += q.spin; if(++q.age > 70) S.chunks.splice(i, 1); }
   for(const f of fighters){
     if(f.dead || f.y + f.r < S.ly) continue;
+    if(f._ride) stepsUnseat(f);
     S.caught++;
     for(let k = 0; k < 10; k++) puff(f.x, f.y, '#8a7a68', 5);
     eliminate(f);
-    if(!f.dead){
-      let best = null; for(const p of S.steps){ if(!p.gone && p.y < S.ly - S.tellPx){ best = p; break; } }
-      if(best){ f.x = Math.round(best.x + best.w/2); f.y = best.y - f.r; f.vx = 0; f.vy = 0; f.onground = true; f._stN = best.i + 1; f._stRef = best.i; f._stT = hazardT; }
+    if(!f.dead && stepsPutSafe(f)){ f._stN = Math.max(0, Math.round((S.gy - f.y - f.r)/K.rise)); f._stT = hazardT; }
+  }
+}
+// ---- THE CARS: the two lifts, the cart and the dumbwaiter. A car runs along its points (pts[0] its landing); a fighter standing in it while it waits there sits in it;
+// a seat is let go by a jump (a person's, or a CPU's that meant it: f._stOut) or by any hit (that is how a rider is knocked out of the cart).
+function stepsCarAt(V, s){
+  let left = s;
+  for(let k = 1; k < V.pts.length; k++){ const a = V.pts[k - 1], b = V.pts[k], d = Math.hypot(b.x - a.x, b.y - a.y); if(left <= d || k === V.pts.length - 1){ const u = clamp(left/(d || 1), 0, 1); return { x:a.x + (b.x - a.x)*u, y:a.y + (b.y - a.y)*u }; } left -= d; }
+  return V.pts[0];
+}
+function stepsUnseat(f){
+  const V = STEPS && STEPS.vehById[f._ride];
+  if(V){ const k = V.riders.indexOf(f); if(k >= 0) V.riders.splice(k, 1); }
+  f._ride = null; f._rideCd = hazardT + 45; f._stOutAt = null;
+}
+function stepsCarEmpty(V){ for(const f of V.riders.slice()) stepsUnseat(f); }
+function stepsCarGone(V){
+  stepsCarEmpty(V); V.gone = true;
+  STEPS.chunks.push({ x:V.cx - V.half, y:V.cy - 20, w:2*V.half, vx:0, vy:0, rot:0, spin:0.03, age:0 });
+  for(let k = 0; k < 8; k++) puff(V.cx, V.cy - 30, '#8a7a68', 4);
+}
+function stepsCarFree(V, soon){ return !V.gone && !V.doom && ((V.st === 'dock' && V.riders.length < V.cap) || (V.st === 'back' && V.s/V.down < (soon || 150))); }
+function stepsCars(){
+  const S = STEPS, U = STPU;
+  for(const V of S.veh){
+    if(V.gone) continue;
+    V.riders = V.riders.filter(f => !f.dead && f._ride === V.id);
+    if(!V.doom && S.ly <= V.pts[0].y + 2) V.doom = true;
+    if(V.doom && V.st !== 'up'){ stepsCarGone(V); continue; }
+    V.t++;
+    if(V.st === 'dock'){
+      if(V.riders.length < V.cap){
+        for(const f of fighters){
+          if(f.dead || f._ride || !f.onground || f.hitstun > 0 || (f._rideCd || 0) > hazardT || V.riders.length >= V.cap) continue;
+          if(Math.abs(f.x - V.cx) > V.half || Math.abs(f.y + f.r - V.cy) > 6) continue;
+          f._ride = V.id; V.riders.push(f); f.vx = 0; f.vy = 0; f._stRt = null; f._stOutAt = null; f._stOut = false;
+          stepsSnd(V.cy, () => tone(V.kind === 'cart' ? 330 : 660, 0.08, 'triangle', 0.12));
+        }
+      }
+      if(V.riders.length){
+        if(V.t0 == null) V.t0 = V.t;
+        if(V.t - V.t0 >= V.go){ V.st = 'up'; V.t = 0; V.t0 = null; V.brk = Math.random() < V.brkP; V.warned = false; V.uses++; S.st.rides[V.id]++; stepsSnd(V.cy, () => { tone(880, 0.12, 'triangle', 0.14); tone(1175, 0.16, 'triangle', 0.12, 0.1); }); }
+      } else V.t0 = null;
+    } else if(V.st === 'up'){
+      V.s = Math.min(V.L, V.s + V.up);
+      if(V.brk && !V.warned && V.s >= 0.3*V.L){ V.warned = true; V.warnT = hazardT; stepsSnd(V.cy, () => { noise(0.5, 0.18, 2600, 0, 900); tone(110, 0.5, 'sawtooth', 0.08); }); }
+      if(V.brk && V.s >= 0.5*V.L){ V.st = 'stall'; V.t = 0; V.brk = false; V.breaks++; S.st.breaks++; stepsSnd(V.cy, () => { noise(0.25, 0.4, 700, 0, 150); tone(90, 0.3, 'square', 0.18, 0, 50); }); }
+      else if(V.s >= V.L){ V.st = 'top'; V.t = 0; stepsCarEmpty(V); stepsSnd(V.cy, () => tone(988, 0.2, 'triangle', 0.14)); }
+    } else if(V.st === 'stall'){ if(V.t >= U.stall){ V.st = 'fall'; V.t = 0; } }
+    else if(V.st === 'fall'){ V.s = Math.max(0, V.s - V.down); if(V.s <= 0){ V.st = 'dock'; V.t = 0; stepsCarEmpty(V); } }
+    else if(V.st === 'top'){ if(V.t >= U.top){ V.st = 'back'; V.t = 0; } }
+    else if(V.st === 'back'){ V.s = Math.max(0, V.s - V.down); if(V.s <= 0){ V.st = 'dock'; V.t = 0; } }
+    const p = stepsCarAt(V, V.s); V.cx = p.x; V.cy = p.y;
+  }
+}
+// ---- THE LAUNDRY CHUTE: each hatch rattles (the warning), opens, shuts; open, whoever stands on it drops; at ANY time, a fighter knocked onto it (in hitstun, feet
+// at the landing) bursts it open and drops. Down the chute STPU.chuteDrop steps, onto the landing below, never under the crumble's tell.
+function stepsChute(f, h, knocked){
+  const S = STEPS, K = STPK; let e = S.steps[h.j - STPU.chuteDrop];
+  if(f._ride) stepsUnseat(f);
+  for(let k = 0; k < 8; k++) puff(f.x, h.y - 10, '#f4f0e6', 4);
+  S.st.chute++; if(knocked) S.st.chuteKnock++;
+  if(!e || e.gone || e.y >= S.ly - S.tellPx - 20) e = stepsSafe();
+  if(!e){ return; }
+  const lx = e.land ? S.X(K.sx) : e.x, lw = e.land ? K.span : e.w;
+  f.x = clamp((h.x0 + h.x1)/2, lx + 30, lx + lw - 30); f.y = e.y - f.r - 40; f.vx = (Math.random() < 0.5 ? -1 : 1)*2.5; f.vy = -4; f.onground = false;
+  f._stRt = null; f._stChT = hazardT; f._stTg = null;
+  for(let k = 0; k < 10; k++) puff(f.x, f.y, '#f4f0e6', 4);
+  S.chuteOut = S.chuteOut || []; S.chuteOut.push({ x:f.x, y:e.y, t:hazardT });
+  stepsSnd(h.y, () => tone(700, 0.45, 'sine', 0.14, 0, 140)); stepsSnd(e.y, () => noise(0.2, 0.2, 900, 0.3, 300));
+}
+function stepsHatches(){
+  const S = STEPS, T = STPU.hatchT;
+  for(const h of S.hatch){
+    if(S.steps[h.j].gone){ h.st = 'gone'; continue; }
+    h.t++;
+    if(h.st === 'shut' && h.t >= T.shut){ h.st = 'warn'; h.t = 0; h.cyc++; stepsSnd(h.y, () => { tone(180, 0.08, 'square', 0.08); tone(180, 0.08, 'square', 0.08, 0.16); tone(180, 0.08, 'square', 0.08, 0.32); }); }
+    else if(h.st === 'warn' && h.t >= T.warn){ h.st = 'open'; h.t = 0; stepsSnd(h.y, () => noise(0.15, 0.2, 500, 0, 200)); }
+    else if(h.st === 'open' && h.t >= T.open){ h.st = 'shut'; h.t = 0; }
+    for(const f of fighters){
+      if(f.dead || f._ride || f.x < h.x0 + 6 || f.x > h.x1 - 6) continue;
+      const feet = f.y + f.r, on = f.onground && Math.abs(feet - h.y) <= 4, near = feet <= h.y + 4 && feet > h.y - 30;
+      const knocked = f.hitstun > 0 && near;
+      if((h.st === 'open' && (on || (near && f.vy >= 0))) || knocked){ if(h.st !== 'open'){ h.st = 'open'; h.t = 0; } stepsChute(f, h, knocked); }
+    }
+  }
+}
+// ---- THE KITCHEN'S VENTS: idle, then glow and hiss (the warning), then blast (stepsHold pushes whoever is in the column up).
+function stepsVents(){
+  const S = STEPS, U = STPU.vent, P = U.idle + U.warn + U.blast;
+  for(const v of S.vents){
+    const ph = (hazardT + v.off) % P, was = v.ph;
+    v.ph = S.steps[v.i].gone ? 'gone' : ph < U.idle ? 'idle' : (ph < U.idle + U.warn ? 'warn' : 'blast');
+    if(v.ph !== was){ if(v.ph === 'warn') stepsSnd(v.y, () => noise(0.6, 0.06, 5000, 0, 3000)); else if(v.ph === 'blast') stepsSnd(v.y, () => { noise(0.6, 0.2, 1800, 0, 600); tone(140, 0.5, 'sawtooth', 0.06, 0, 260); }); }
+    if(v.ph === 'warn' && hazardT % 6 === 0) puff(v.x + (Math.random() - 0.5)*60, v.y - 6, '#f0f0f0', 1);
+  }
+}
+function stepsWind(){
+  const S = STEPS, O = STPU.out, Wd = S.wind; Wd.t++;
+  if(Wd.st === 'calm' && Wd.t >= O.calm){ Wd.st = 'warn'; Wd.t = 0; const you = fighters.find(f => f.you && !f.dead); if(you && you.x > S.X(STPK.twr - 200) && stepsNear(you.y)) noiseSwell(1.1, 0.25, 0.1, 900, 0); }
+  else if(Wd.st === 'warn' && Wd.t >= O.warn){ Wd.st = 'blow'; Wd.t = 0; }
+  else if(Wd.st === 'blow' && Wd.t >= O.blow){ Wd.st = 'calm'; Wd.t = 0; }
+}
+// ---- CREAM SPILLS: a dollop falls on a step a little above a fighter (its shadow grows first); the puddle is slippery (the engine's own slip, iceUntil).
+function stepsCream(){
+  const S = STEPS, U = STPU.cream, K = STPK;
+  if(hazardT >= S.nextCream){
+    S.nextCream = hazardT + U.every;
+    const live = fighters.filter(f => !f.dead);
+    if(live.length && S.cream.length < U.max){
+      const f = live[Math.floor(Math.random()*live.length)], n = f._stN || 0, cand = [];
+      for(let i = n; i <= Math.min(K.n - 2, n + 4); i++){ const p = S.steps[i]; if(!p.gone && !p.esc && p.y < S.ly - S.tellPx - 100 && !S.cream.some(c => c.i === i)) cand.push(p); }
+      if(cand.length){ const p = cand[Math.floor(Math.random()*cand.length)], lx = p.land ? S.X(K.sx) : p.x, lw = p.land ? K.span : p.w, x0 = Math.round(lx + 10 + Math.random()*Math.max(1, lw - U.w - 20)); S.cream.push({ i:p.i, x0:x0, x1:x0 + U.w, warn:U.warn, life:U.life }); }
+    }
+  }
+  for(let q = S.cream.length - 1; q >= 0; q--){
+    const c = S.cream[q], P = S.steps[c.i];
+    if(P.gone){ S.cream.splice(q, 1); continue; }
+    if(c.warn > 0){ if(--c.warn === 0){ for(let k = 0; k < 6; k++) puff((c.x0 + c.x1)/2, P.y - 4, '#fffaf0', 3); stepsSnd(P.y, () => tone(900, 0.12, 'sine', 0.08, 0, 400)); } continue; }
+    if(--c.life <= 0){ S.cream.splice(q, 1); continue; }
+    for(const f of fighters){
+      if(f.dead || !f.onground || Math.abs(f.y + f.r - P.y) > 3 || f.x < c.x0 - 6 || f.x > c.x1 + 6) continue;
+      f.iceUntil = Math.max(f.iceUntil || 0, 30);
+      if(f._stCr !== c){ f._stCr = c; S.st.slips++; }
+    }
+  }
+}
+// ---- PIE IN THE FACE: a THROWN pie (a throwable, or the chef's) splats the view of the one it hits (a person's screen: S.splat, drawn in the hud), and a CPU is dazed a moment.
+function stepsSplat(f){
+  const S = STEPS, U = STPU.splat; if(!S || !f) return;
+  S.st.splats++;
+  if(f.you){ S.splat = { t0:hazardT, k:Math.floor(Math.random()*1000) }; try{ noise(0.18, 0.3, 1200, 0, 300); }catch(e){} }
+  else f._stSplat = hazardT + U.cpu;
+}
+// The drawn picture of a pie: crust, cream, a cherry (r its radius).
+function stepsPiePic(c, x, y, r, rot){
+  c.save(); c.translate(x, y); if(rot) c.rotate(rot);
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = Math.max(1.5, r*0.16); c.lineJoin = 'round';
+  c.fillStyle = '#d99a4e'; c.beginPath(); c.moveTo(-r, 0); c.lineTo(-r*0.8, r*0.62); c.lineTo(r*0.8, r*0.62); c.lineTo(r, 0); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#fff6e4'; c.beginPath(); c.ellipse(0, 0, r, r*0.42, 0, Math.PI, 0); c.lineTo(r, 0); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#fff6e4'; c.beginPath(); c.arc(-r*0.45, -r*0.05, r*0.28, 0, 7); c.arc(r*0.45, -r*0.05, r*0.28, 0, 7); c.fill();
+  c.fillStyle = '#d23a3a'; c.beginPath(); c.arc(0, -r*0.5, r*0.24, 0, 7); c.fill(); c.stroke();
+  c.restore();
+}
+// ---- ROLLING PIES: one wobbles on a step a few above a fighter (the warning: a red ring, a rumble), then rolls down step by step, knocking back whoever it meets.
+function stepsBelow(k){ const st = STEPS.steps; let j = k - 1; while(j >= 0 && st[j].esc) j--; return j; }
+function stepsRollX(k, from){ const S = STEPS, st = S.steps, P = st[k]; if(!P.land) return P.x + P.w/2; const q = st[from] || st[k + 1] || P; return q.x + q.w/2; }
+function stepsRolls(){
+  const S = STEPS, U = STPU.roll, K = STPK;
+  if(hazardT >= S.nextRoll){
+    S.nextRoll = hazardT + U.every;
+    const live = fighters.filter(f => !f.dead), L = stepsHighest();
+    if(live.length){
+      const f = (L && Math.random() < 0.5) ? L : live[Math.floor(Math.random()*live.length)];
+      let k = Math.min(K.n - 3, (f._stN || 0) - 1 + 5 + Math.floor(Math.random()*4));
+      while(k > 0 && S.steps[k].esc) k++;
+      const P = S.steps[k];
+      if(k > 1 && P && !P.gone && P.y < S.ly - S.tellPx - 200){ const nk = stepsBelow(k); S.rolls.push({ k:k, nk:nk, u:0, warn:U.warn, left:U.steps, sx:stepsRollX(k, k + 1), dd:{}, px:0, py:0, vx:0 }); stepsSnd(P.y, () => tone(70, 0.9, 'sawtooth', 0.1, 0, 55)); }
+    }
+  }
+  for(let q = S.rolls.length - 1; q >= 0; q--){
+    const p = S.rolls[q], A = S.steps[p.k];
+    if(A.gone){ S.rolls.splice(q, 1); continue; }
+    if(p.warn > 0){ p.warn--; p.px = p.sx; p.py = A.y - 14; p.vx = 0; continue; }
+    const B = S.steps[p.nk], ex = B ? stepsRollX(p.nk, p.k) : p.sx;
+    p.u += 1/U.per;
+    if(p.u >= 1){
+      p.left--; const nk = stepsBelow(p.nk);
+      if(nk < 0 || p.left <= 0 || S.steps[nk].gone || S.steps[nk].y >= S.ly - 10){ for(let k = 0; k < 8; k++) puff(p.px, p.py, k % 2 ? '#fff6e4' : '#d99a4e', 4); S.rolls.splice(q, 1); continue; }
+      p.k = p.nk; p.nk = nk; p.u = 0; p.sx = ex; continue;
+    }
+    const ys = A.y - 14, ye = (B ? B.y : A.y) - 14, ox = p.px;
+    p.px = p.sx + (ex - p.sx)*p.u; p.py = ys + (ye - ys)*p.u - U.hop*Math.sin(Math.PI*p.u); p.vx = p.px - ox;
+    for(const f of fighters){
+      if(f.dead || f.invuln > 0 || Math.abs(f.x - p.px) > f.r + 14 || Math.abs(f.y - p.py) > f.r + 14) continue;
+      const d = Math.sign(ex - p.sx) || (f.x < p.px ? -1 : 1);
+      applyHit(f, U.dmg, d*U.kb[0], U.kb[1], null); S.st.rollHits++;
+      for(let k = 0; k < 8; k++) puff(p.px, p.py, k % 2 ? '#fff6e4' : '#d99a4e', 4);
+      stepsSnd(p.py, () => noise(0.15, 0.25, 1000, 0, 300));
+      S.rolls.splice(q, 1); break;
+    }
+  }
+}
+// ---- THE CHEF: on the landing (or the top step) at least two steps above the leader, at its far end from them; he lifts a pie (the warning: a ring on the leader),
+// then throws it on an arc at where the leader is going. It hits whoever it meets; a missed one splats where it lands.
+function stepsChef(){
+  const S = STEPS, U = STPU.chef, C = S.chef, K = STPK, L = stepsHighest(); if(!L) return;
+  const li = (L._stN || 0) - 1;
+  let j = K.n - 1; for(let q = 9; q < K.n - 1; q += 10){ if(q >= li + 2){ j = q; break; } }
+  if(C.st !== 'wind' && j !== C.j){ if(C.j >= 0) for(let k = 0; k < 6; k++) puff(C.x, C.y - 30, '#ffffff', 3); C.j = j; C.hop = hazardT; }
+  const P = S.steps[C.j];
+  if(C.st !== 'wind'){
+    if(P.land){ const mid = S.X(K.sx + K.span/2); C.x = L.x < mid ? S.X(K.sx + K.span - 50) : S.X(K.sx + 50); }
+    else C.x = P.x + (L.x < P.x + P.w/2 ? P.w - 30 : 30);
+    C.y = P.y;
+  }
+  if(C.st === 'idle' && hazardT >= S.nextChef && L.y > C.y - 40){ C.st = 'wind'; C.t = 0; C.tg = L; stepsSnd(C.y, () => tone(520, 0.12, 'triangle', 0.12, 0, 760)); }
+  if(C.st === 'wind'){
+    C.t++;
+    if(C.t >= U.wind){
+      const T = C.tg; C.st = 'idle'; S.nextChef = hazardT + U.every;
+      if(T && !T.dead){
+        const sx = C.x, sy = C.y - 56, tx = T.x + (T.vx || 0)*12, ty = T.y, d = Math.hypot(tx - sx, ty - sy), N = clamp(Math.round(d/10), 28, 50);
+        S.cpies.push({ x:sx, y:sy, vx:(tx - sx)/N, vy:(ty - sy)/N - 0.5*U.g*N, t:0, T:N, dd:{} });
+        stepsSnd(C.y, () => tone(400, 0.15, 'sine', 0.1, 0, 200));
+      }
+    }
+  }
+  for(let q = S.cpies.length - 1; q >= 0; q--){
+    const p = S.cpies[q]; p.vy += U.g; p.x += p.vx; p.y += p.vy; p.t++;
+    let hit = false;
+    for(const f of fighters){
+      if(f.dead || f.invuln > 0 || Math.hypot(f.x - p.x, f.y - p.y) > f.r + 14) continue;
+      applyHit(f, U.dmg, (Math.sign(p.vx) || 1)*U.kb[0], U.kb[1], null); S.st.chefHits++; stepsSplat(f); hit = true; break;
+    }
+    if(hit || p.t > p.T + 30){ for(let k = 0; k < 8; k++) puff(p.x, p.y, '#fff6e4', 4); S.cpies.splice(q, 1); }
+  }
+}
+// ---- CRUMB SPRAY: once the crumble is near the floor, a spot on its lip glows and rumbles (the warning), then throws crumbs up the stairs (small hits, down).
+function stepsCrumbs(){
+  const S = STEPS, U = STPU.crumb, K = STPK;
+  if(S.ly <= S.gy + 60 && hazardT >= S.nextCrumb){
+    S.nextCrumb = hazardT + clamp(Math.round(300 - S.v*60), 100, 300);
+    let low = null; for(const f of fighters){ if(!f.dead && S.ly - f.y - f.r < U.reach && (!low || f.y > low.y)) low = f; }   // (aimed at the lowest fighter near the line, if any)
+    S.crumbWarn.push({ x:low ? clamp(low.x, S.X(K.sx + 20), S.X(K.sx + K.span - 20)) : S.X(K.sx + 40 + Math.random()*(K.span - 80)), dh:low ? Math.max(120, S.ly - low.y) : 200, t:0 });
+    stepsSnd(S.ly, () => tone(60, 0.7, 'sawtooth', 0.08, 0, 45));
+  }
+  for(let q = S.crumbWarn.length - 1; q >= 0; q--){
+    const w = S.crumbWarn[q];
+    if(++w.t >= U.warn){ const v0 = Math.min(U.vmax, Math.sqrt(2*0.62*w.dh)); for(let k = 0; k < U.n; k++) S.crumbs.push({ x:w.x, y:S.ly - 4, vx:(Math.random() - 0.5)*6, vy:-v0*(0.85 + Math.random()*0.3), r:5 + Math.random()*4, rot:0 }); S.crumbWarn.splice(q, 1); }
+  }
+  for(let q = S.crumbs.length - 1; q >= 0; q--){
+    const c = S.crumbs[q]; c.vy += 0.62; c.x += c.vx; c.y += c.vy; c.rot += 0.2;
+    if(c.y > S.ly + 60){ S.crumbs.splice(q, 1); continue; }
+    for(const f of fighters){
+      if(f.dead || f.invuln > 0 || Math.hypot(f.x - c.x, f.y - c.y) > f.r + c.r) continue;
+      applyHit(f, U.dmg, (Math.sign(f.x - c.x) || 1)*U.kb[0], U.kb[1], null); S.st.crumbHits++; S.crumbs.splice(q, 1); break;
     }
   }
 }
 function stepsLabel(){ const t = Math.max(0, Math.ceil((STPK.time - hazardT)/60)); return Math.floor(t/60) + ':' + ('0' + (t % 60)).slice(-2); }
+// ---- THE CPU's WAY UP: what it stands on, and the next piece to go for.
+function stepsOn(f){
+  const S = STEPS, feet = f.y + f.r;
+  if(f._ride) return { k:'ride' };
+  if(!S.floorGone && feet >= S.gy - 3) return { k:'floor' };
+  const i = stepsUnder(f); if(i >= 0) return { k:'step', i:i };
+  for(const q of S.extra){ if(q.gone || q.ramp) continue; if(Math.abs(q.y - feet) <= 3 && f.x > q.x - 4 && f.x < q.x + q.w + 4) return { k:q.kind, n:q.n, q:q }; }
+  for(const q of S.extra){ if(q.gone || !q.ramp) continue; if(f.x >= q.x0 - 6 && f.x <= q.x1 + 6 && Math.abs(stepsRampY(q, f.x) - feet) < 10) return { k:'ramp', q:q }; }
+  return null;
+}
+function stepsNext(i){ const st = STEPS.steps, n = STPK.n; let j = i + 1; while(j < n - 1 && st[j].esc) j++; return st[Math.min(n - 1, j)]; }
+function stepsGoal(f, at){
+  const S = STEPS, K = STPK, st = S.steps;
+  if(!at){ const c = Math.max(0, Math.round((S.gy - f.y - f.r)/K.rise)); return stepsNext(c - 1); }
+  if(at.k === 'floor') return stepsNext(-1);
+  if(at.k === 'ramp') return st[at.q.b];
+  if(at.k === 'lane') return stepsNext(STPU.lane.y);
+  if(at.k === 'out'){ return S.outL[at.n + 1] && !S.outL[at.n + 1].gone ? S.outL[at.n + 1] : st[39]; }
+  if(at.k === 'shelf'){ return S.shelves[at.n + 1] && !S.shelves[at.n + 1].gone ? S.shelves[at.n + 1] : st[89]; }
+  if(at.k === 'step'){
+    const i = at.i, P = st[i], ox = S.X(K.outX);
+    if(i === 19 && (f._stRt === 'out' || f.x > ox - 10)){ if(f.x > ox - 10){ if(f._stRt === 'out'){ S.st.out++; f._stRt = 'out2'; } return S.outL[1]; } return { x:ox + 30, w:40, y:P.y, walk:true }; }
+    if(i === 69 && (f._stRt === 'shelf' || f._stRt === 'shelf2')){ const sx = S.X(STPU.shelf.xa); if(f.x > sx + 20){ if(f._stRt === 'shelf'){ S.st.shelf++; f._stRt = 'shelf2'; } return S.shelves[1]; } return { x:sx + 40, w:40, y:P.y, walk:true }; }
+    const V = f._stRt && S.vehById[f._stRt];
+    if(V && V.from === i) return { x:V.pts[0].x - 10, w:20, y:P.y, walk:true, board:V };
+    return stepsNext(i);
+  }
+  return stepsNext(Math.max(0, Math.round((S.gy - f.y - f.r)/K.rise)) - 1);
+}
+// A shortcut at a landing, chosen once per visit by level.
+function stepsDecide(f, i, lv){
+  const S = STEPS, U = STPU;
+  if(f._stDecJ === i) return; f._stDecJ = i;
+  f._stRt = null;
+  if(U.junction.indexOf(i) < 0 || Math.random() >= U.cpu.short[lv]) return;
+  if(i === 19){ f._stRt = 'out'; return; }
+  if(i === 69){ f._stRt = 'shelf'; return; }
+  const opts = S.veh.filter(V => V.from === i && stepsCarFree(V) && !(V.kind !== 'lift' && V.riders.length));
+  if(opts.length) f._stRt = opts[Math.floor(Math.random()*opts.length)].id;
+}
 CONTEST_RULES.steps = {
   begin(){
     const S = STEPS; if(!S) return;
-    const live = fighters.filter(f => !f.dead), x0 = STPK.wall + 200, x1 = WW - STPK.wall - 200;
+    const live = fighters.filter(f => !f.dead), x0 = S.X(STPK.sx + 60), x1 = S.X(STPK.sx + STPK.span - 60);
     const slot = live.map((f, i) => i); for(let i = slot.length - 1; i > 0; i--){ const j = Math.floor(Math.random()*(i + 1)); const t = slot[i]; slot[i] = slot[j]; slot[j] = t; }   // (the start spots are dealt at random: no slot, the player's included, has a head start)
     live.forEach((f, i) => { f.x = Math.round(x0 + (x1 - x0)*(slot[i] + 1)/(live.length + 1)); f.y = S.gy - f.r; f.vx = 0; f.vy = 0; f.onground = true; f.face = f.x < WW/2 ? 1 : -1; });
-    for(const f of fighters){ f._stN = 0; f._stRef = -1; f._stT = 0; }
+    for(const f of fighters){ f._stN = 0; f._stRef = -1; f._stT = 0; f._ride = null; f._stRt = null; f._stDecJ = null; f._stTg = null; f._stSplat = 0; f._rideCd = 0; }
   },
   step(){
     const S = STEPS, K = STPK, C = CONTEST; if(!S || C.winner != null) return;
     stepsCrumble();
     for(const it of items){ if(!it.taken && it.life < 1e8) it.life = 1e9; }   // (a throwable never times out)
+    stepsCars(); stepsHatches(); stepsVents(); stepsWind(); stepsCream(); stepsRolls(); stepsChef(); stepsCrumbs();
     for(const f of fighters){
       if(f.dead) continue;
       if(f.pct > K.pctCap) f.pct = K.pctCap;
-      if(f.onground){
-        const onFloor = f.y + f.r >= S.gy - 3, i = onFloor ? -1 : stepsUnder(f);
-        if(onFloor || i >= 0){ if(i + 1 !== f._stN){ f._stN = i + 1; f._stT = hazardT; } f._stRef = i; }
+      if(f.onground || f._ride){
+        let c = clamp(Math.round((S.gy - f.y - f.r)/K.rise), 0, K.n - 1);
+        if(f.onground && !f._ride && stepsUnder(f) === K.n - 1) c = K.n;
+        if(c !== f._stN){ f._stN = c; f._stT = hazardT; }
+        f._stRef = c - 1;
       }
       if((f._stN || 0) >= K.n){ contestWin(f); return; }
     }
@@ -114753,11 +115150,14 @@ CONTEST_RULES.steps = {
     }
     if(hazardT >= K.time){ const b = stepsHighest(); if(b) contestWin(b); }
   },
+  // a thrown pie (a throwable: the 'heldCrate' shot) that lands splats the view
+  hit(t, from, dmg){ const S = STEPS; if(S && SMASH_PROJ && SMASH_PROJ.shape === 'heldCrate'){ S.st.throwHits++; stepsSplat(t); } },
   score(f){ return (f._stN || 0)*1000 - (f._stT || 0)/100; },
   winText(f){ return (f._stN || 0) >= STPK.n ? f.name + ' climbed 500 steps!' : f.name + ' climbed highest: ' + (f._stN || 0)*STPK.per + ' steps!'; },
-  // The panel (top right): the clock, then a row per fighter with its count (you first); and the depth bar down the right edge in place of the minimap, a dot per fighter, up is up.
+  // The splat (a thrown pie in your face), then the panel (top right): the clock, a row per fighter with its count (you first); and the depth bar down the right edge.
   hud(c){
-    const rows = fighters.slice().sort((a, b) => (a.you ? -1 : 0) - (b.you ? -1 : 0)), K = STPK;
+    const S = STEPS, rows = fighters.slice().sort((a, b) => (a.you ? -1 : 0) - (b.you ? -1 : 0)), K = STPK;
+    if(S && S.splat){ const a = hazardT - S.splat.t0, U = STPU.splat; if(a >= U.life || a < 0) S.splat = null; else stepsDrawSplat(c, a < U.full ? 1 : 1 - (a - U.full)/(U.life - U.full), S.splat.k); }
     const pw = 150, rh = 17, ph = 22 + rh*rows.length + 4, px = W - pw - 12, py = 10;
     c.save(); c.globalAlpha = 0.9; c.fillStyle = 'rgba(28,24,38,0.78)'; itemRoundRect(c, px, py, pw, ph, 8); c.fill();
     c.font = "800 12px 'Baloo 2', system-ui"; c.textBaseline = 'middle'; c.textAlign = 'left'; c.fillStyle = '#ffd23f'; c.fillText('500 STEPS', px + 10, py + 11);
@@ -114769,10 +115169,12 @@ CONTEST_RULES.steps = {
       c.textAlign = 'right'; c.fillText((f._stN || 0)*K.per + ' / ' + K.n*K.per, px + pw - 10, y);
     });
     const bw = 12, bh = 190, bx = W - 14 - bw, by = py + ph + 12;
-    c.globalAlpha = 0.85; c.fillStyle = '#1c1c1c'; c.fillRect(bx - 3, by - 3, bw + 6, bh + 6); c.fillStyle = '#3a4a2a'; c.fillRect(bx, by, bw, bh);
+    c.globalAlpha = 0.85; c.fillStyle = '#1c1c1c'; c.fillRect(bx - 3, by - 3, bw + 6, bh + 6);
+    const bc = ['#c98d5a', '#9cc4dc', '#8a5e34']; c.fillStyle = bc[0]; c.fillRect(bx, by + bh*(1 - STPU.bands[0]/K.n), bw, bh*STPU.bands[0]/K.n);
+    c.fillStyle = bc[1]; c.fillRect(bx, by + bh*(1 - STPU.bands[1]/K.n), bw, bh*(STPU.bands[1] - STPU.bands[0])/K.n); c.fillStyle = bc[2]; c.fillRect(bx, by, bw, bh*(1 - STPU.bands[1]/K.n));
     c.fillStyle = '#ffd23f'; c.fillRect(bx, by, bw, 4); c.globalAlpha = 1;
-    { const L = clamp((STEPS.gy - STEPS.ly)/K.rise/K.n, 0, 1), yl = by + 4 + (bh - 8)*(1 - L); if(L > 0){ c.fillStyle = '#14101c'; c.fillRect(bx, yl, bw, by + bh - yl); c.fillStyle = '#d6643c'; c.fillRect(bx, yl, bw, 2); } }   // (the crumbled part of the shaft, rising)
-    c.strokeStyle = '#ffffff55'; c.lineWidth = 1; c.beginPath(); for(let r = 20; r < K.n; r += 20){ const y = by + bh*(1 - r/K.n); c.moveTo(bx, y); c.lineTo(bx + bw, y); } c.stroke();
+    { const L = clamp((STEPS.gy - STEPS.ly)/K.rise/K.n, 0, 1), yl = by + 4 + (bh - 8)*(1 - L); if(L > 0){ c.fillStyle = '#14101c'; c.fillRect(bx, yl, bw, by + bh - yl); c.fillStyle = '#d6643c'; c.fillRect(bx, yl, bw, 2); } }   // (the crumbled part of the tower, rising)
+    c.strokeStyle = '#ffffff55'; c.lineWidth = 1; c.beginPath(); for(let r = 10; r < K.n; r += 10){ const y = by + bh*(1 - r/K.n); c.moveTo(bx, y); c.lineTo(bx + bw, y); } c.stroke();
     const dot = f => { const y = by + 4 + (bh - 8)*(1 - Math.min(K.n, f._stN || 0)/K.n); c.fillStyle = f.color || '#fff'; c.beginPath(); c.arc(bx + bw/2, y, 4, 0, 7); c.fill(); if(f.you){ c.strokeStyle = '#fff'; c.lineWidth = 2; c.stroke(); } };
     for(const f of fighters) if(!f.dead && !f.you) dot(f);
     for(const f of fighters) if(!f.dead && f.you) dot(f);
@@ -114783,68 +115185,352 @@ CONTEST_RULES.steps = {
     c.save(); c.translate(f.x, f.y + base - 10); c.globalAlpha = 0.85; c.fillStyle = 'rgba(28,28,28,0.75)'; itemRoundRect(c, -16, -8, 32, 16, 8); c.fill();
     c.font = "800 10px 'Baloo 2', system-ui"; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = '#fff'; c.fillText(String(n), 0, 0.5); c.restore();
   },
-  // The steps drawn as stone slabs (over the platforms' own paint, under the fighters), the top one gold with a pie on it, a sign every ten steps, and a ring where a throwable grew in.
-  world(c, layer){
-    const S = STEPS, K = STPK; if(!S || layer !== 'under') return;
-    const y0 = camY - 200, y1 = camY + H/CAM_ZOOM + 200;
-    const tellFrom = S.ly - S.tellPx;
-    for(const s of S.steps){
-      if(s.gone || s.y < y0 || s.y > y1) continue;
-      const top = s.i === K.n - 1, u = s.y >= tellFrom ? clamp((s.y - tellFrom)/S.tellPx, 0, 1) : 0;   // (u: how close this step is to going)
-      if(u > 0){ c.save(); c.translate(Math.sin(hazardT*1.7 + s.i*2.1)*u*3.5, Math.cos(hazardT*2.3 + s.i)*u*1.5); }
-      c.fillStyle = top ? '#cdb25a' : '#a9a2b8'; c.fillRect(s.x, s.y, s.w, s.h);
-      c.fillStyle = top ? '#8e7a32' : '#7d7690'; c.fillRect(s.x + 3, s.y + s.h, s.w - 6, 14);
-      c.fillStyle = top ? '#f1dc86' : '#d3cedd'; c.fillRect(s.x, s.y, s.w, 4);
-      c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.strokeRect(s.x, s.y, s.w, s.h); c.strokeRect(s.x + 3, s.y + s.h, s.w - 6, 14);
-      if((s.i + 1) % 20 === 0){ c.fillStyle = top ? '#5a4a12' : '#4a4458'; c.font = "800 11px 'Baloo 2', system-ui"; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(String((s.i + 1)*K.per), s.x + s.w/2, s.y + s.h + 7); }
-      if(top){
-        const px = s.x + s.w/2, py = s.y - 12;
-        c.fillStyle = '#e9b872'; c.beginPath(); c.arc(px, py, 14, Math.PI, 0); c.lineTo(px + 14, py + 4); c.lineTo(px - 14, py + 4); c.closePath(); c.fill(); c.stroke();
-        c.fillStyle = '#d23a3a'; c.beginPath(); c.arc(px, py - 11, 3, 0, 7); c.fill();
-      }
-      if(u > 0){
-        c.fillStyle = 'rgba(214,80,50,' + (0.5*u).toFixed(2) + ')'; c.fillRect(s.x, s.y, s.w, s.h + 14);
-        if(u > 0.2){ c.strokeStyle = '#2a1c1c'; c.lineWidth = 2; c.beginPath(); for(let k = 1; k <= 3; k++){ const cx = s.x + s.w*k/4 + (s.i*7 + k*11) % 13 - 6; c.moveTo(cx, s.y); c.lineTo(cx - 5, s.y + 8); c.lineTo(cx + 4, s.y + 14); c.lineTo(cx - 3, s.y + 22); } c.stroke(); }
-        c.restore();
-      }
-    }
-    for(const q of S.chunks){ c.save(); c.translate(q.x + q.w/2, q.y + 7); c.rotate(q.rot); c.globalAlpha = Math.max(0, 1 - q.age/70); c.fillStyle = '#7d7690'; c.fillRect(-q.w/2, -7, q.w, 14); c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.strokeRect(-q.w/2, -7, q.w, 14); c.restore(); }
-    if(!S.floorGone && S.ly - S.gy < S.tellPx){ const u = clamp(1 - (S.ly - S.gy)/S.tellPx, 0, 1); c.fillStyle = 'rgba(214,80,50,' + (0.5*u).toFixed(2) + ')'; c.fillRect(K.wall, S.gy, WW - 2*K.wall, 8); }
-    if(S.ly <= S.gy + 40){   // the dark below the line, with a jagged lip
-      const lx0 = K.wall, lx1 = WW - K.wall; c.fillStyle = '#14101c'; c.beginPath(); c.moveTo(lx0, S.ly + 3000);
-      for(let x = lx0, k = 0; x <= lx1; x += 40, k++) c.lineTo(x, S.ly + ((k*37) % 5)*5);
-      c.lineTo(lx1, S.ly + 3000); c.closePath(); c.fill();
-      c.strokeStyle = '#d6643c'; c.lineWidth = 3; c.beginPath(); for(let x = lx0, k = 0; x <= lx1; x += 40, k++){ const y = S.ly + ((k*37) % 5)*5; if(k) c.lineTo(x, y); else c.moveTo(x, y); } c.stroke();
-    }
-    for(let i = S.rings.length - 1; i >= 0; i--){
-      const q = S.rings[i], a = hazardT - q.t; if(a > 24){ S.rings.splice(i, 1); continue; }
-      c.save(); c.globalAlpha = 1 - a/24; c.strokeStyle = '#ffd23f'; c.lineWidth = 3; c.beginPath(); c.arc(q.x, q.y, 8 + a*1.2, 0, 7); c.stroke(); c.restore();
-    }
-  },
-  // The highest fighter within two steps of this one is the one it fights.
+  world(c, layer){ if(!STEPS) return; if(layer === 'under') stepsDrawUnder(c); else if(layer === 'over') stepsDrawOver(c); },
+  // The highest fighter within two steps of this one is the one it fights; a rival riding the cart near it comes first (knock them out of it).
   focus(f, foes){
-    let lead = null; const n = f._stN || 0;
+    const S = STEPS; let lead = null; const n = f._stN || 0, lv = brainLevel(f);
+    const cart = S && S.vehById.cart;
+    if(cart && !cart.gone && cart.riders.length && cart.riders[0] !== f && foes.indexOf(cart.riders[0]) >= 0){
+      const r = cart.riders[0];
+      if(Math.hypot(r.x - f.x, r.y - f.y) < 260){ if(f._stCartK !== r || hazardT > (f._stCartT || 0)){ f._stCartK = r; f._stCartT = hazardT + 240; f._stCartGo = Math.random() < STPU.cpu.cart[lv]; } if(f._stCartGo){ if(f.aiTarget !== r){ f.aiTarget = r; f.aiTimer = 45; } return; } }
+    }
     for(const o of foes){ if(Math.abs((o._stN || 0) - n) <= 2 && (!lead || (o._stN || 0) > (lead._stN || 0))) lead = o; }
     if(lead && f.aiTarget !== lead){ f.aiTarget = lead; f.aiTimer = 45; }
   },
-  // The climb: true when it took the keys. A foe within 150 px on its own level comes first (the brain's fight); a throwable on its own step is picked up.
+  // The climb: true when it took the keys.
   want(f, inp, t, dist){
-    const S = STEPS, K = STPK; if(!S || f.dead || f.hitstun > 0 || (f._stN || 0) >= K.n) return false;
-    const tg = S.steps[Math.min(K.n - 1, (f._stRef == null ? -1 : f._stRef) + 1)];
-    if(f.onground){
-      const foe = f.aiTarget; if(dist < 300 && foe && !foe.dead && Math.abs(foe.y - f.y) < 190) return false;
+    const S = STEPS, K = STPK, U = STPU; if(!S || f.dead || f.hitstun > 0 || (f._stN || 0) >= K.n) return false;
+    const lv = brainLevel(f), feet = f.y + f.r;
+    // a pie in the face: dazed a moment
+    if((f._stSplat || 0) > hazardT && !f._ride) return true;
+    // seated: ride; out of a broken lift onto the stairs beside the shaft
+    if(f._ride){
+      const V = S.vehById[f._ride];
+      if(V && (V.st === 'stall' || V.st === 'fall')){
+        if(f._stOutAt == null) f._stOutAt = hazardT + U.cpu.react[lv];
+        if(hazardT >= f._stOutAt){
+          let best = null, bd = 1e9; for(const p of S.steps){ if(p.gone || p.esc || p.y < feet - 30 || p.y > feet + 300) continue; const d = Math.abs(p.y - feet) + Math.abs(p.x - f.x)*0.5; if(d < bd){ bd = d; best = p; } }
+          if(best){ f._stOut = true; inp.jump = true; f._stTg = best; if(best.x + best.w/2 > f.x) inp.right = true; else inp.left = true; }
+        }
+      }
+      return true;
+    }
+    // the watchdog: no long stand-stills (a CPU that has not moved 12 px in 2.5 s drops its plan and hops toward the next step)
+    if(f._stWt == null || Math.hypot(f.x - f._stWx, f.y - f._stWy) > 12){ f._stWx = f.x; f._stWy = f.y; f._stWt = hazardT; }
+    else if(hazardT - f._stWt > 150 && !(f._stWait > hazardT - 2)){ f._stRt = null; f._stUnst = hazardT + 40; f._stWt = hazardT; }
+    const at = f.onground ? stepsOn(f) : null;
+    if(at && at.k === 'step') stepsDecide(f, at.i, lv);
+    if(f._stRt && S.vehById[f._stRt] && !stepsCarFree(S.vehById[f._stRt], 180)) f._stRt = null;
+    let G = f.onground ? stepsGoal(f, at) : (f._stTg || stepsGoal(f, null));
+    if(f.onground) f._stTg = G;
+    if((f._stUnst || 0) > hazardT){ G = stepsGoal(f, null); if(f.onground) inp.jump = true; }
+    let wait = false;
+    // the kitchen's vents: stand on a glowing one and ride the blast
+    if(f.onground && at && at.k === 'step' && S.ventAt[at.i]){
+      const v = S.ventAt[at.i];
+      if(v.ph === 'warn' && v.to >= 0){ if(f._stVD !== v.i + ':' + Math.floor(hazardT/345)){ f._stVD = v.i + ':' + Math.floor(hazardT/345); f._stVG = Math.random() < U.cpu.vent[lv]; } if(f._stVG){ G = { x:v.x - 6, w:12, y:v.y, walk:true }; wait = Math.abs(f.x - v.x) < 10; } }
+    }
+    // waiting at a car's landing for it (it is there, or on its way back down)
+    if(G && G.board && Math.abs(f.x - G.board.pts[0].x) < 16) wait = true;
+    if(wait) f._stWait = hazardT;
+    const busy = wait || (G && G.board);
+    // a rival standing near a hatch: get round to the far side of them and hit them in
+    if(f.onground && at && at.k === 'step' && S.hatchAt[at.i] && S.hatchAt[at.i].st !== 'gone' && !busy){
+      const h = S.hatchAt[at.i], hc = (h.x0 + h.x1)/2;
+      let r = null; for(const o of fighters){ if(o === f || o.dead || o._ride || !o.onground || Math.abs(o.y + o.r - h.y) > 4 || Math.abs(o.x - hc) > 170 || Math.abs(o.x - f.x) > 300) continue; r = o; break; }
+      if(r){
+        if(f._stKnR !== r || hazardT > (f._stKnT || 0)){ f._stKnR = r; f._stKnT = hazardT + 240; f._stKnGo = Math.random() < U.cpu.knock[lv]; }
+        if(f._stKnGo){
+          const side = Math.sign(hc - r.x) || 1, want = r.x - side*48;
+          if(Math.abs(f.x - want) < 30 && Math.sign(f.x - r.x) === -side){ f.aiTarget = r; f.aiTimer = 30; f.face = side; return false; }
+          if(want < f.x) inp.left = true; else inp.right = true;
+          if(Math.sign(f.x - r.x) === side && Math.abs(f.x - r.x) < 90) inp.jump = true;   // (on the hatch side of them: over their head)
+          return true;
+        }
+      }
+    }
+    // the fight: a foe close by on its own level and not behind it, in bursts (STPU.fight: fight, then climb a while), never with the crumble close below, nor while
+    // waiting on a car or a vent (it was every foe within 300 px for as long as they stood there: all four brawled on the floor until the crumble took three)
+    if(f.onground && !busy){
+      const foe = f.aiTarget, FT = STPU.fight, danger = S.ly - feet < FT.danger*K.rise;
+      if(!danger && dist < FT.reach && foe && !foe.dead && Math.abs(foe.y - f.y) < 150 && (foe._stN || 0) >= (f._stN || 0) - 1){
+        if(f._stFt == null || hazardT - (f._stFl || 0) > 30) f._stFt = hazardT;
+        f._stFl = hazardT;
+        if(hazardT - f._stFt >= FT.on + FT.off) f._stFt = hazardT;
+        if(hazardT - f._stFt < FT.on) return false;
+      }
+    }
+    // a throwable on its own level
+    if(f.onground && !busy){
       let it0 = null, bd = 160;
       for(const it of items){ if(it.taken || !(it.life > 0) || Math.abs(it.y - f.y) > 40) continue; const d = Math.abs(it.x - f.x); if(d < bd){ bd = d; it0 = it; } }
       if(it0){ if(it0.x < f.x) inp.left = true; else inp.right = true; return true; }
     }
-    const cx = tg.x + tg.w/2, gap = Math.max(0, tg.x - f.x, f.x - (tg.x + tg.w));
-    if(cx < f.x - 6) inp.left = true; else if(cx > f.x + 6) inp.right = true;
-    if(f.onground){ if(gap < 100) inp.jump = true; }
-    else if(f.vy > 0 && f.jumps > 0 && f.y + f.r > tg.y - 6 && gap < 160) inp.jump = (hazardT % 4) < 2;   // (it fell short of the step: the second jump)
+    if(!G) return false;
+    // the way there
+    const cx = G.x + G.w/2;
+    if(!wait){ if(cx < f.x - 6) inp.left = true; else if(cx > f.x + 6) inp.right = true; }
+    if(!G.walk){
+      const gap = Math.max(0, G.x - f.x, f.x - (G.x + G.w));
+      if(G.y < feet - 10){
+        if(f.onground){ if(gap < 100) inp.jump = true; }
+        else if(f.vy > 0 && f.jumps > 0 && feet > G.y - 6 && gap < 160) inp.jump = (hazardT % 4) < 2;   // (it fell short: the second jump)
+      }
+    }
+    // a hatch that rattles or is open under it or just ahead: off it, or over it
+    if(f.onground && at && at.k === 'step' && S.hatchAt[at.i]){
+      const h = S.hatchAt[at.i];
+      if(h.st === 'warn' || h.st === 'open'){
+        const key = h.id + ':' + h.cyc; if(f._stHD !== key){ f._stHD = key; f._stHG = Math.random() < U.cpu.hatch[lv]; }
+        const dir = inp.right ? 1 : (inp.left ? -1 : 0), on = f.x > h.x0 - 10 && f.x < h.x1 + 10, ahead = dir !== 0 && ((dir > 0 && f.x < h.x0 && h.x0 - f.x < 70) || (dir < 0 && f.x > h.x1 && f.x - h.x1 < 70));
+        if(f._stHG && (on || ahead)){ inp.jump = true; if(!dir){ if(f.x < (h.x0 + h.x1)/2) inp.left = true; else inp.right = true; } }
+      }
+    }
+    // rolling pies and the chef's: jump them, step out from under
+    if(f.onground){
+      for(const p of S.rolls){
+        if(p.warn > 0) continue; const dx = p.px - f.x;
+        if(Math.abs(p.py - (f.y + 4)) > 60 || Math.abs(dx) > 150 || (Math.sign(p.vx) === Math.sign(dx) && Math.abs(dx) > 30)) continue;
+        if(p.dd[f.idx] == null) p.dd[f.idx] = Math.random() < U.cpu.dodge[lv];
+        if(p.dd[f.idx]) inp.jump = true;
+      }
+      for(const p of S.cpies){
+        const left = p.T - p.t; if(left > 26 || left < -10) continue;
+        const lx = p.x + p.vx*Math.max(0, left); if(Math.abs(lx - f.x) > 70 || Math.abs(p.y + p.vy*Math.max(0, left) - f.y) > 120) continue;
+        if(p.dd[f.idx] == null) p.dd[f.idx] = Math.random() < U.cpu.dodge[lv];
+        if(p.dd[f.idx]){ inp.left = lx > f.x; inp.right = !inp.left; if(lv >= 2) inp.jump = true; }
+      }
+    }
     return true;
   },
 };
-EVENT_TWIST_WORDS['contest:steps'] = { icon:'🪜', short:"Pie's contest: 500 steps", words:"Pie's contest: race up 500 steps. Damage never KOs, but a hit knocks you back down. First to the top wins.", goal:'First to the top step wins' };
+// ---------- THE DRAWING (the tower: a picture per piece, no words but the step signs' numbers) ----------
+function stepsView(){ const z = CAM_ZOOM || 1, cx = camX + W/2, cy = camY + H/2; return { x0:cx - W/(2*z) - 120, x1:cx + W/(2*z) + 120, y0:cy - H/(2*z) - 160, y1:cy + H/(2*z) + 160 }; }
+const STPA = { wall:['#e2b27a', '#dfe9f0', '#b4844f'], line:['#c48c56', '#b7cad6', '#8f6234'], top:['#f1d19a', '#ffffff', '#cf9b5c'], face:['#c9a26b', '#e3ebf0', '#a8743f'], side:['#9f7a48', '#aebfcb', '#7c522a'] };
+function stepsBandY(b){ const S = STEPS, U = STPU; if(b === 0) return [stepsYOf(U.bands[0] - 1) - 46, S.gy + 400]; if(b === 1) return [stepsYOf(U.bands[1] - 1) - 46, stepsYOf(U.bands[0] - 1) - 46]; return [-400, stepsYOf(U.bands[1] - 1) - 46]; }
+// Behind the platforms (from draw(), before the platforms' own paint): the three floors' walls and their things, the sky outside, the shafts and rails, the step signs.
+function stepsDrawBack(){
+  const S = STEPS; if(!S) return;
+  const c = ctx, K = STPK, U = STPU, V = stepsView(), X = S.X, xa = S.xl, xb = X(K.twr);
+  c.save();
+  if(WW > K.L){ c.fillStyle = '#4a4458'; c.fillRect(-400, V.y0, S.xl + 400, V.y1 - V.y0); c.fillRect(S.xr, V.y0, WW - S.xr + 400, V.y1 - V.y0); }
+  // outside: the sky, a few clouds, the town far below
+  { const g = c.createLinearGradient(0, 0, 0, S.gy); g.addColorStop(0, '#7ec8f0'); g.addColorStop(1, '#d8f0ff'); c.fillStyle = g; c.fillRect(X(K.outX), V.y0, S.xr - X(K.outX), V.y1 - V.y0);
+    c.fillStyle = 'rgba(255,255,255,0.85)'; for(let k = 0; k < 40; k++){ const cy = S.gy - k*260 - 80, cx = X(K.outX) + ((k*157 + Math.floor(hazardT*0.2)) % 520) - 20; if(cy < V.y0 || cy > V.y1) continue; c.beginPath(); c.arc(cx, cy, 26, 0, 7); c.arc(cx + 30, cy + 6, 20, 0, 7); c.arc(cx - 28, cy + 8, 18, 0, 7); c.fill(); } }
+  for(let b = 0; b < 3; b++){
+    const yr = stepsBandY(b), y0 = Math.max(yr[0], V.y0), y1 = Math.min(yr[1], V.y1); if(y1 <= y0) continue;
+    c.fillStyle = STPA.wall[b]; c.fillRect(xa, y0, xb - xa, y1 - y0);
+    c.strokeStyle = STPA.line[b]; c.lineWidth = 2; c.beginPath();
+    if(b === 0){ for(let y = Math.floor(y0/26)*26; y < y1; y += 26){ c.moveTo(xa, y); c.lineTo(xb, y); const off = (Math.floor(y/26) % 2)*30; for(let x = xa + off; x < xb; x += 60){ c.moveTo(x, y); c.lineTo(x, y + 26); } } }
+    else if(b === 1){ for(let y = Math.floor(y0/48)*48; y < y1; y += 48){ c.moveTo(xa, y); c.lineTo(xb, y); } for(let x = xa; x < xb; x += 48){ c.moveTo(x, y0); c.lineTo(x, y1); } }
+    else { for(let x = xa; x < xb; x += 64){ c.moveTo(x, y0); c.lineTo(x, y1); } }
+    c.stroke();
+  }
+  // the floors' own things on the back wall, one set per ten steps
+  for(let j = 4; j < K.n; j += 10){
+    const y = stepsYOf(j), b = S.steps[j].band; if(y < V.y0 - 200 || y > V.y1 + 200) continue;
+    const px = X(K.sx + ((j*37) % 3)*300 + 120);
+    c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+    if(b === 0){   // an oven of bricks with its fire, and a rack of loaves
+      c.fillStyle = '#a0522d'; c.beginPath(); c.moveTo(px - 60, y + 40); c.lineTo(px - 60, y - 20); c.arc(px, y - 20, 60, Math.PI, 0); c.lineTo(px + 60, y + 40); c.closePath(); c.fill(); c.stroke();
+      c.fillStyle = '#2a1408'; c.beginPath(); c.arc(px, y + 10, 30, Math.PI, 0); c.lineTo(px + 30, y + 40); c.lineTo(px - 30, y + 40); c.closePath(); c.fill();
+      c.fillStyle = (hazardT >> 3) % 2 ? '#ff9a3a' : '#ffcf4a'; c.beginPath(); c.moveTo(px - 18, y + 40); c.quadraticCurveTo(px - 8, y + 6, px, y + 22); c.quadraticCurveTo(px + 8, y + 4, px + 18, y + 40); c.closePath(); c.fill();
+      const rx = px + 160; c.fillStyle = '#7a5230'; c.fillRect(rx, y - 60, 6, 100); c.fillRect(rx + 110, y - 60, 6, 100); c.fillRect(rx, y - 20, 116, 5); c.fillRect(rx, y + 20, 116, 5);
+      c.fillStyle = '#e0a25a'; for(let k = 0; k < 3; k++){ c.beginPath(); c.ellipse(rx + 22 + k*36, y - 30, 15, 9, 0, 0, 7); c.fill(); c.stroke(); c.beginPath(); c.ellipse(rx + 22 + k*36, y + 10, 15, 9, 0, 0, 7); c.fill(); c.stroke(); }
+    } else if(b === 1){   // an oven door, and pots on hooks
+      c.fillStyle = '#c0c8cf'; c.fillRect(px - 60, y - 70, 120, 110); c.strokeRect(px - 60, y - 70, 120, 110);
+      c.fillStyle = '#2c3038'; c.fillRect(px - 44, y - 40, 88, 60); c.strokeRect(px - 44, y - 40, 88, 60); c.fillStyle = 'rgba(255,140,40,0.55)'; c.fillRect(px - 40, y - 4, 80, 20);
+      c.fillStyle = '#1c1c1c'; c.fillRect(px - 40, y - 58, 80, 6);
+      for(let k = 0; k < 3; k++){ const hx = px + 150 + k*60; c.beginPath(); c.moveTo(hx, y - 90); c.lineTo(hx, y - 60); c.stroke(); c.fillStyle = ['#b87333', '#8a8f96', '#d04a3a'][k]; c.beginPath(); c.arc(hx, y - 40, 22, 0, Math.PI); c.lineTo(hx - 22, y - 50); c.lineTo(hx + 22, y - 50); c.closePath(); c.fill(); c.stroke(); }
+    } else {   // pantry shelves of jars and cans
+      for(let r = 0; r < 2; r++){ const sy = y - 30 + r*50; c.fillStyle = '#6e4724'; c.fillRect(px - 80, sy, 260, 8); c.strokeRect(px - 80, sy, 260, 8);
+        for(let k = 0; k < 6; k++){ const jx = px - 66 + k*42; c.fillStyle = ['#d04a3a', '#f2c033', '#7bc043', '#e0e6ea', '#9b59b6', '#e67e22'][(k + r + j) % 6]; c.fillRect(jx, sy - 30, 26, 30); c.strokeRect(jx, sy - 30, 26, 30); c.fillStyle = '#5a3a1c'; c.fillRect(jx - 2, sy - 36, 30, 7); } }
+    }
+  }
+  // the lifts' shafts and the cart's rail
+  for(const Vh of S.veh){
+    const a = Vh.pts[0], b = Vh.pts[Vh.pts.length - 1];
+    if(Vh.kind === 'cart'){ c.strokeStyle = '#5a4030'; c.lineWidth = 10; c.lineJoin = 'round'; c.beginPath(); Vh.pts.forEach((p, k) => k ? c.lineTo(p.x, p.y + 6) : c.moveTo(p.x, p.y + 6)); c.stroke(); c.strokeStyle = '#a08060'; c.lineWidth = 4; c.stroke(); continue; }
+    if(b.y > V.y1 || a.y < V.y0) { if(!(a.y > V.y0 && b.y < V.y1)) {} }
+    c.fillStyle = 'rgba(40,36,52,0.35)'; c.fillRect(a.x - Vh.half - 8, b.y - 150, 2*Vh.half + 16, a.y - b.y + 150);
+    c.strokeStyle = '#3a3448'; c.lineWidth = 5; c.beginPath(); c.moveTo(a.x - Vh.half - 4, b.y - 150); c.lineTo(a.x - Vh.half - 4, a.y + 10); c.moveTo(a.x + Vh.half + 4, b.y - 150); c.lineTo(a.x + Vh.half + 4, a.y + 10); c.stroke();
+    c.fillStyle = '#3a3448'; c.fillRect(a.x - 30, b.y - 160, 60, 14);
+  }
+  // the step signs: a big number over every landing, and 500 over the top
+  for(let i = 9; i < K.n; i += 10){
+    const P = S.steps[i], y = P.y - 170; if(y < V.y0 - 100 || y > V.y1 + 100) continue;
+    const x = i === K.n - 1 ? P.x + P.w/2 : X(K.sx + K.span/2), top = i === K.n - 1;
+    c.fillStyle = '#5a4030'; c.fillRect(x - 4, y + 30, 8, 40);
+    c.fillStyle = top ? '#ffd23f' : '#fff6e0'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4; itemRoundRect(c, x - 70, y - 34, 140, 68, 12); c.fill(); c.stroke();
+    c.font = "900 44px 'Baloo 2', system-ui"; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = '#1c1c1c'; c.fillText(String((i + 1)*K.per), x, y + 3);
+  }
+  // the chutes' doors where they spit you out (on each hatch's landing twenty steps below)
+  for(const h of S.hatch){ const e = S.steps[h.j - U.chuteDrop]; if(!e || e.y < V.y0 || e.y > V.y1) continue; const x = (h.x0 + h.x1)/2; c.fillStyle = '#d8d0c0'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillRect(x - 34, e.y - 130, 68, 56); c.strokeRect(x - 34, e.y - 130, 68, 56); c.fillStyle = '#3a3448'; c.fillRect(x - 26, e.y - 122, 52, 40); }
+  c.restore();
+}
+function stepsSlab(c, x, y, w, b, u, top){
+  const K = STPK;
+  if(u > 0){ c.save(); c.translate(Math.sin(hazardT*1.7 + x*0.01)*u*3.5, Math.cos(hazardT*2.3 + x*0.02)*u*1.5); }
+  c.fillStyle = top ? '#cdb25a' : STPA.face[b]; c.fillRect(x, y, w, K.h);
+  c.fillStyle = top ? '#8e7a32' : STPA.side[b]; c.fillRect(x + 3, y + K.h, w - 6, 14);
+  c.fillStyle = top ? '#f1dc86' : STPA.top[b]; c.fillRect(x, y, w, 4);
+  if(b === 1 && !top){ c.strokeStyle = '#9fb3c2'; c.lineWidth = 1; c.beginPath(); for(let k = x + 24; k < x + w; k += 24){ c.moveTo(k, y); c.lineTo(k, y + K.h); } c.stroke(); }
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.strokeRect(x, y, w, K.h); c.strokeRect(x + 3, y + K.h, w - 6, 14);
+  if(u > 0){
+    c.fillStyle = 'rgba(214,80,50,' + (0.5*u).toFixed(2) + ')'; c.fillRect(x, y, w, K.h + 14);
+    if(u > 0.2){ c.strokeStyle = '#2a1c1c'; c.lineWidth = 2; c.beginPath(); for(let k = 1; k <= 3; k++){ const cx = x + w*k/4 + ((x*7 + k*11) % 13) - 6; c.moveTo(cx, y); c.lineTo(cx - 5, y + 8); c.lineTo(cx + 4, y + 14); c.lineTo(cx - 3, y + 22); } c.stroke(); }
+    c.restore();
+  }
+}
+function stepsDrawUnder(c){
+  const S = STEPS, K = STPK, U = STPU, V = stepsView(), tellFrom = S.ly - S.tellPx;
+  const uOf = y => y >= tellFrom ? clamp((y - tellFrom)/S.tellPx, 0, 1) : 0;
+  // the walls: stone, the tower's outer wall with its two windows' frames
+  c.save();
+  c.fillStyle = '#6c6478'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+  c.fillRect(S.xl - K.wall, V.y0, K.wall, V.y1 - V.y0); c.fillRect(S.xr, V.y0, K.wall, V.y1 - V.y0);
+  for(const p of S.tws){ const y0 = Math.max(p.y, V.y0), y1 = Math.min(p.y + p.h, V.y1); if(y1 <= y0) continue; c.fillStyle = '#7d7690'; c.fillRect(p.x, y0, p.w, y1 - y0); c.strokeRect(p.x, y0, p.w, y1 - y0); }
+  for(const j of U.landOut){ const y = stepsYOf(j); if(y < V.y0 || y - K.win > V.y1) continue; const x = S.X(K.twr); c.strokeStyle = '#5a4030'; c.lineWidth = 6; c.strokeRect(x - 4, y - K.win, K.twW + 8, K.win);
+    const blow = S.wind.st !== 'calm'; c.fillStyle = '#d04a3a'; c.fillRect(x + K.twW + 6, y - K.win - 40, 4, 40); c.beginPath(); c.moveTo(x + K.twW + 10, y - K.win - 40); const fl = blow ? 34 + Math.sin(hazardT*0.6)*6 : 12; c.lineTo(x + K.twW + 10 + fl, y - K.win - 34 + (blow ? 0 : 8)); c.lineTo(x + K.twW + 10, y - K.win - 26); c.closePath(); c.fill(); }
+  c.restore();
+  // the steps (landings and the top among them)
+  for(const s of S.steps){
+    if(s.gone || s.esc || s.y < V.y0 || s.y > V.y1) continue;
+    stepsSlab(c, s.x, s.y, s.w, s.band, uOf(s.y), s.i === K.n - 1);
+    if(s.i === K.n - 1){ stepsPiePic(c, s.x + s.w/2, s.y - 12, 16, 0); }
+  }
+  // the extra pieces: the ledges outside (stone sills), the pantry's shelves (wood), the dumbwaiter's ledge, the escalators (a belt that runs down)
+  for(const q of S.extra){
+    if(q.gone || q.y > V.y1 + 300 || q.y < V.y0 - 300) continue;
+    const u = uOf(q.ramp ? q.y0 : q.y);
+    if(q.ramp){
+      c.save(); c.lineCap = 'round';
+      c.strokeStyle = '#1c1c1c'; c.lineWidth = 20; c.beginPath(); c.moveTo(q.x0, q.y0 + 8); c.lineTo(q.x1, q.y1 + 8); c.stroke();
+      c.strokeStyle = u > 0 ? '#a0604a' : '#5d6670'; c.lineWidth = 14; c.stroke();
+      const len = Math.hypot(q.x1 - q.x0, q.y1 - q.y0), ux = (q.x1 - q.x0)/len, uy = (q.y1 - q.y0)/len, sh = (hazardT*U.escPush) % 30;
+      c.strokeStyle = '#c8d0d8'; c.lineWidth = 2; c.beginPath(); for(let d = 30 - sh; d < len; d += 30){ const x = q.x0 + ux*d, y = q.y0 + uy*d; c.moveTo(x, y + 1); c.lineTo(x, y + 14); } c.stroke();
+      c.strokeStyle = '#1c1c1c'; c.lineWidth = 4; c.beginPath(); c.moveTo(q.x0, q.y0 - 46); c.lineTo(q.x1, q.y1 - 46); c.stroke();   // the handrail
+      for(let d = len*0.25; d < len; d += len*0.25){ const x = q.x0 + ux*d, y = q.y0 + uy*d - 24; c.save(); c.translate(x, y); c.rotate(Math.atan2(-uy, -ux)); c.fillStyle = '#ff6a5a'; c.beginPath(); c.moveTo(10, 0); c.lineTo(-4, -7); c.lineTo(-4, 7); c.closePath(); c.fill(); c.restore(); }   // (arrows: the way it runs)
+      c.restore(); continue;
+    }
+    if(q.kind === 'shelf'){ c.save(); c.fillStyle = '#8a5a2c'; c.fillRect(q.x, q.y, q.w, K.h); c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.strokeRect(q.x, q.y, q.w, K.h); c.fillStyle = '#6e4724'; c.fillRect(q.x + 6, q.y + K.h, 8, 22); c.fillRect(q.x + q.w - 14, q.y + K.h, 8, 22);
+      for(let k = 0; k < 2; k++){ const jx = q.x + 20 + k*(q.w - 56); c.fillStyle = ['#f2c033', '#d04a3a', '#7bc043'][(q.n + k) % 3]; c.fillRect(jx, q.y - 22, 16, 22); c.strokeRect(jx, q.y - 22, 16, 22); }
+      if(u > 0){ c.fillStyle = 'rgba(214,80,50,' + (0.5*u).toFixed(2) + ')'; c.fillRect(q.x, q.y, q.w, K.h); } c.restore(); continue; }
+    stepsSlab(c, q.x, q.y, q.w, q.kind === 'out' ? 1 : 2, u, false);
+  }
+  // the vents: a grate; glowing and steaming (the warning); a column of heat (the blast)
+  for(const v of S.vents){
+    if(v.ph === 'gone' || v.y < V.y0 || v.y > V.y1 + 600) continue;
+    c.save(); c.fillStyle = v.ph === 'idle' ? '#3a3e46' : '#ff8a2a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.fillRect(v.x - 30, v.y - 3, 60, 7); c.strokeRect(v.x - 30, v.y - 3, 60, 7);
+    c.strokeStyle = '#1c1c1c'; c.beginPath(); for(let k = -20; k <= 20; k += 10){ c.moveTo(v.x + k, v.y - 3); c.lineTo(v.x + k, v.y + 4); } c.stroke();
+    if(v.ph === 'warn'){ c.globalAlpha = 0.3 + 0.3*Math.sin(hazardT*0.5); c.fillStyle = '#ff9a3a'; c.beginPath(); c.ellipse(v.x, v.y - 6, 40, 12, 0, 0, 7); c.fill(); }
+    if(v.ph === 'blast'){ const g = c.createLinearGradient(0, v.y, 0, v.y - U.vent.up); g.addColorStop(0, 'rgba(255,150,60,0.55)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(v.x - U.vent.w, v.y - U.vent.up, 2*U.vent.w, U.vent.up);
+      c.fillStyle = 'rgba(255,255,255,0.6)'; for(let k = 0; k < 6; k++){ const yy = v.y - ((hazardT*9 + k*103) % U.vent.up); c.beginPath(); c.arc(v.x + Math.sin(k*2 + hazardT*0.2)*20, yy, 10 + k*2, 0, 7); c.fill(); } }
+    c.restore();
+  }
+  // the hatches: a trapdoor (shut), rattling with dust (the warning), a dark hole with its flap hung down (open)
+  for(const h of S.hatch){
+    if(h.st === 'gone' || h.y < V.y0 || h.y > V.y1) continue;
+    const w = h.x1 - h.x0; c.save();
+    if(h.st === 'open'){ c.fillStyle = '#0c0a10'; c.fillRect(h.x0, h.y - 1, w, K.h + 2); c.fillStyle = '#7a5230'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillRect(h.x0 - 4, h.y + K.h, 12, 40); c.strokeRect(h.x0 - 4, h.y + K.h, 12, 40); }
+    else {
+      const j = h.st === 'warn' ? Math.sin(hazardT*2.1)*2 : 0;
+      c.translate(0, j); c.fillStyle = '#8a5a2c'; c.fillRect(h.x0, h.y, w, K.h - 2); c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.strokeRect(h.x0, h.y, w, K.h - 2);
+      c.beginPath(); for(let k = h.x0 + 20; k < h.x1; k += 20){ c.moveTo(k, h.y); c.lineTo(k, h.y + K.h - 2); } c.stroke();
+      c.strokeStyle = '#f2c033'; c.lineWidth = 3; c.setLineDash([8, 6]); c.strokeRect(h.x0 - 2, h.y - 2, w + 4, K.h + 2); c.setLineDash([]);
+      c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.arc(h.x0 + w/2, h.y + 6, 4, 0, 7); c.stroke();
+      if(h.st === 'warn' && hazardT % 5 === 0) puff(h.x0 + Math.random()*w, h.y, '#c8b89a', 1);
+    }
+    c.restore();
+  }
+  // cream: the dollop falling with its shadow growing (the warning), then the puddle
+  for(const cr of S.cream){
+    const P = S.steps[cr.i]; if(P.gone || P.y < V.y0 || P.y > V.y1) continue;
+    const mx = (cr.x0 + cr.x1)/2; c.save();
+    if(cr.warn > 0){ const u = 1 - cr.warn/U.cream.warn; c.globalAlpha = 0.25 + 0.4*u; c.fillStyle = '#000'; c.beginPath(); c.ellipse(mx, P.y + 1, 10 + 30*u, 4 + 2*u, 0, 0, 7); c.fill(); c.globalAlpha = 1;
+      c.fillStyle = '#fffaf0'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.arc(mx, P.y - 320*(1 - u) - 10, 10, 0, 7); c.fill(); c.stroke(); }
+    else { c.globalAlpha = Math.min(1, cr.life/60); c.fillStyle = '#fffaf0'; c.strokeStyle = '#c9bfa8'; c.lineWidth = 2; c.beginPath(); c.ellipse(mx, P.y + 1, U.cream.w/2, 5, 0, 0, 7); c.arc(mx - 22, P.y - 1, 9, 0, 7); c.arc(mx + 14, P.y - 2, 11, 0, 7); c.fill(); c.stroke(); }
+    c.restore();
+  }
+  // the cars: a lift's cage (its lamp flickers red when it is about to break), the dumbwaiter's box, the pie cart
+  for(const Vh of S.veh){
+    if(Vh.gone || Vh.cy < V.y0 - 200 || Vh.cy > V.y1 + 200) continue;
+    const x = Vh.cx, y = Vh.cy, hw = Vh.half; c.save(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+    if(Vh.kind === 'cart'){ c.fillStyle = '#d04a3a'; c.fillRect(x - hw, y - 26, 2*hw, 22); c.strokeRect(x - hw, y - 26, 2*hw, 22); c.fillStyle = '#ffd23f'; c.fillRect(x - hw, y - 30, 2*hw, 5); c.strokeRect(x - hw, y - 30, 2*hw, 5);
+      c.fillStyle = '#3a3448'; c.beginPath(); c.arc(x - hw + 10, y, 8, 0, 7); c.arc(x + hw - 10, y, 8, 0, 7); c.fill(); c.stroke(); stepsPiePic(c, x + hw - 2, y - 36, 9, 0); c.restore(); continue; }
+    const h = Vh.kind === 'dw' ? 84 : 130, top = Vh.pts[Vh.pts.length - 1].y - 150;
+    c.beginPath(); c.moveTo(x, top); c.lineTo(x, y - h); c.stroke();
+    c.fillStyle = Vh.kind === 'dw' ? 'rgba(122,82,48,0.35)' : 'rgba(80,90,110,0.35)'; c.fillRect(x - hw, y - h, 2*hw, h);
+    c.fillStyle = Vh.kind === 'dw' ? '#7a5230' : '#5d6670'; c.fillRect(x - hw - 4, y - h - 10, 2*hw + 8, 10); c.strokeRect(x - hw - 4, y - h - 10, 2*hw + 8, 10); c.fillRect(x - hw - 4, y, 2*hw + 8, 8); c.strokeRect(x - hw - 4, y, 2*hw + 8, 8);
+    const bad = (Vh.st === 'up' && Vh.warned) || Vh.st === 'stall' || Vh.st === 'fall';
+    c.fillStyle = bad ? ((hazardT >> 2) % 2 ? '#ff2a2a' : '#5a0a0a') : (Vh.st === 'dock' ? '#7ae582' : '#ffd23f'); c.beginPath(); c.arc(x, y - h - 16, 7, 0, 7); c.fill(); c.stroke();
+    if(bad && hazardT % 3 === 0) puff(x + (Math.random() - 0.5)*2*hw, y - h, Math.random() < 0.5 ? '#ffd23f' : '#ffffff', 2);
+    c.restore();
+  }
+  // the chef: on his landing, a pie lifted when he is about to throw
+  { const C = S.chef; if(C.j >= 0 && C.y > V.y0 && C.y < V.y1 + 100){
+    const x = C.x, y = C.y, wind = C.st === 'wind', k = wind ? C.t/U.chef.wind : 0; c.save(); c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+    c.fillStyle = '#ffffff'; c.beginPath(); c.ellipse(x, y - 26, 20, 26, 0, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = '#f3c9a0'; c.beginPath(); c.arc(x, y - 62, 15, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = '#ffffff'; c.beginPath(); c.arc(x - 9, y - 82, 9, 0, 7); c.arc(x, y - 88, 11, 0, 7); c.arc(x + 9, y - 82, 9, 0, 7); c.fill(); c.stroke(); c.fillRect(x - 12, y - 80, 24, 6); c.strokeRect(x - 12, y - 80, 24, 6);
+    c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(x - 5, y - 64, 2, 0, 7); c.arc(x + 5, y - 64, 2, 0, 7); c.fill(); c.beginPath(); c.ellipse(x - 6, y - 56, 6, 2.5, 0.3, 0, 7); c.ellipse(x + 6, y - 56, 6, 2.5, -0.3, 0, 7); c.fill();
+    if(wind) stepsPiePic(c, x + 10, y - 60 - 40*k, 12, -0.3*k);
+    c.restore(); } }
+  // the crumbling bottom: chunks falling, the floor's tell, the dark below the line with its jagged lip, the crumb spray's glowing spots
+  for(const q of S.chunks){ c.save(); c.translate(q.x + q.w/2, q.y + 7); c.rotate(q.rot); c.globalAlpha = Math.max(0, 1 - q.age/70); c.fillStyle = '#7d7690'; c.fillRect(-q.w/2, -7, q.w, 14); c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.strokeRect(-q.w/2, -7, q.w, 14); c.restore(); }
+  if(!S.floorGone && S.ly - S.gy < S.tellPx){ const u = clamp(1 - (S.ly - S.gy)/S.tellPx, 0, 1); c.fillStyle = 'rgba(214,80,50,' + (0.5*u).toFixed(2) + ')'; c.fillRect(S.xl, S.gy, S.X(K.twr) - S.xl, 8); }
+  if(S.ly <= S.gy + 40){
+    const lx0 = S.xl, lx1 = S.xr; c.fillStyle = '#14101c'; c.beginPath(); c.moveTo(lx0, S.ly + 3000);
+    for(let x = lx0, k = 0; x <= lx1; x += 40, k++) c.lineTo(x, S.ly + ((k*37) % 5)*5);
+    c.lineTo(lx1, S.ly + 3000); c.closePath(); c.fill();
+    c.strokeStyle = '#d6643c'; c.lineWidth = 3; c.beginPath(); for(let x = lx0, k = 0; x <= lx1; x += 40, k++){ const y = S.ly + ((k*37) % 5)*5; if(k) c.lineTo(x, y); else c.moveTo(x, y); } c.stroke();
+  }
+  for(const w of S.crumbWarn){ c.save(); c.globalAlpha = 0.4 + 0.4*Math.sin(hazardT*0.7); c.fillStyle = '#ffb347'; c.beginPath(); c.ellipse(w.x, S.ly + 4, 26 + w.t*0.4, 10, 0, 0, 7); c.fill(); c.restore(); }
+  for(let i = S.rings.length - 1; i >= 0; i--){
+    const q = S.rings[i], a = hazardT - q.t; if(a > 24){ S.rings.splice(i, 1); continue; }
+    c.save(); c.globalAlpha = 1 - a/24; c.strokeStyle = '#ffd23f'; c.lineWidth = 3; c.beginPath(); c.arc(q.x, q.y, 8 + a*1.2, 0, 7); c.stroke(); c.restore();
+  }
+  if(S.chuteOut){ for(let i = S.chuteOut.length - 1; i >= 0; i--){ const q = S.chuteOut[i], a = hazardT - q.t; if(a > 30){ S.chuteOut.splice(i, 1); continue; } c.save(); c.globalAlpha = 1 - a/30; c.fillStyle = '#f4f0e6'; c.beginPath(); c.arc(q.x, q.y - 100 + a, 20 + a, 0, 7); c.fill(); c.restore(); } }
+}
+function stepsDrawOver(c){
+  const S = STEPS, U = STPU, V = stepsView();
+  // the lifts' front bars, over their riders
+  for(const Vh of S.veh){
+    if(Vh.gone || Vh.kind === 'cart' || Vh.cy < V.y0 - 200 || Vh.cy > V.y1 + 200) continue;
+    const h = Vh.kind === 'dw' ? 84 : 130; c.save(); c.strokeStyle = 'rgba(28,28,28,0.7)'; c.lineWidth = 3; c.beginPath(); for(let x = Vh.cx - Vh.half + 10; x < Vh.cx + Vh.half; x += 22){ c.moveTo(x, Vh.cy - h); c.lineTo(x, Vh.cy - (Vh.st === 'dock' ? h - 10 : 0)); } c.stroke(); c.restore();
+  }
+  // rolling pies: wobbling over a red ring (the warning), then rolling
+  for(const p of S.rolls){
+    if(p.py < V.y0 || p.py > V.y1) continue;
+    if(p.warn > 0){ c.save(); c.globalAlpha = 0.5 + 0.4*Math.sin(hazardT*0.6); c.strokeStyle = '#ff3a2a'; c.lineWidth = 4; c.beginPath(); c.ellipse(p.px, p.py + 14, 28, 9, 0, 0, 7); c.stroke(); c.restore(); stepsPiePic(c, p.px, p.py, 14, Math.sin(hazardT*0.8)*0.25); }
+    else stepsPiePic(c, p.px, p.py, 14, hazardT*0.35*(p.vx < 0 ? -1 : 1));
+  }
+  // the chef's target ring on the leader while he winds up, and his pies in the air
+  { const C = S.chef; if(C.st === 'wind' && C.tg && !C.tg.dead){ const k = C.t/U.chef.wind, T = C.tg; c.save(); c.strokeStyle = '#ff3a2a'; c.lineWidth = 3; c.setLineDash([8, 6]); c.beginPath(); c.arc(T.x, T.y, 70 - 40*k, 0, 7); c.stroke(); c.setLineDash([]); c.restore(); } }
+  for(const p of S.cpies) stepsPiePic(c, p.x, p.y, 13, p.t*0.3);
+  for(const q of S.crumbs){ c.save(); c.translate(q.x, q.y); c.rotate(q.rot); c.fillStyle = '#b8955a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.moveTo(-q.r, -q.r*0.4); c.lineTo(-q.r*0.2, -q.r); c.lineTo(q.r, -q.r*0.2); c.lineTo(q.r*0.4, q.r); c.lineTo(-q.r*0.7, q.r*0.6); c.closePath(); c.fill(); c.stroke(); c.restore(); }
+  // the wind outside: streaks while it is about to blow, more while it blows
+  if(S.wind.st !== 'calm'){
+    const n = S.wind.st === 'blow' ? 14 : 5, x0 = S.X(STPK.outX); c.save(); c.strokeStyle = 'rgba(255,255,255,0.8)'; c.lineWidth = 3; c.lineCap = 'round'; c.beginPath();
+    for(let k = 0; k < n; k++){ const y = V.y0 + ((k*211 + 50) % Math.max(1, V.y1 - V.y0)), x = x0 + ((hazardT*(S.wind.st === 'blow' ? 14 : 6) + k*97) % 480); c.moveTo(x, y); c.lineTo(x + 50, y); }
+    c.stroke(); c.restore();
+  }
+}
+// The pie in your face: cream blobs mostly round the screen's edges (the middle stays mostly clear), a drip or two; a = how strong (1 to 0).
+function stepsDrawSplat(c, a, k){
+  c.save(); c.globalAlpha = 0.88*clamp(a, 0, 1);
+  const spots = [[0.08, 0.15, 0.2], [0.92, 0.2, 0.22], [0.12, 0.85, 0.22], [0.88, 0.82, 0.2], [0.5, 0.06, 0.16], [0.5, 0.95, 0.14], [0.3 + (k % 7)*0.06, 0.4 + (k % 5)*0.05, 0.1]];
+  for(const s of spots){
+    const x = s[0]*W, y = s[1]*H, r = s[2]*Math.min(W, H);
+    c.fillStyle = '#fff8ec'; c.beginPath(); c.arc(x, y, r, 0, 7);
+    for(let q = 0; q < 6; q++){ const an = q*1.05 + k*0.01, rr = r*(0.35 + ((q*31 + k) % 5)*0.06); c.moveTo(x + Math.cos(an)*r*1.05 + rr, y + Math.sin(an)*r*1.05); c.arc(x + Math.cos(an)*r*1.05, y + Math.sin(an)*r*1.05, rr, 0, 7); }
+    c.fill();
+    c.fillStyle = '#f1e2c4'; c.beginPath(); c.arc(x - r*0.25, y - r*0.2, r*0.35, 0, 7); c.fill();
+    c.fillStyle = '#d23a3a'; c.beginPath(); c.arc(x + r*0.2, y - r*0.1, r*0.12, 0, 7); c.fill();
+  }
+  c.restore();
+}
+EVENT_TWIST_WORDS['contest:steps'] = { icon:'🪜', short:"Pie's contest: 500 steps", words:"Pie's contest: race up 500 steps through the bakery, the kitchen and the pantry. Lifts (that sometimes break), a pie cart, a dumbwaiter, ledges outside and shelves get you up faster; rolling pies, the chef, chutes and the crumbling bottom send you down. Damage never KOs. First to the top wins.", goal:'First to the top step wins' };
 // ---------- EVENT FIGHTERS: BLACK HOLE'S CONTEST, BACK TO THE TOP (rebuilt 2026-11-13 to the owner's own words; THE BIG UPGRADE 2026-11-17, the owner's picks after "impress me") ----------
 // THE CONCEPT (kept, the owner's): a BLACK HOLE at the bottom of an ENDLESS climb pulls everyone down; it RISES, faster and faster, and swallows what it passes. Ledges keep spawning above the climbers: there is
 // NO FINISH, the LAST FIGHTER WITH STOCKS WINS (the engine's own last-standing end). COMETS (the debris) matter: a hit knocks you down a ledge and does damage. A HIT knocks you toward the hole ONLY when the attacker is
@@ -122863,6 +123549,7 @@ function drawProjectileBody(pr){
     // THE THROWN CRATE (the `throw` item): the crate art the pickup showed, tumbling. It took the thrower's own special's art, or a plain brown disc
     // for a fighter with none (the owner, 2026-10-13: "fighters with no ranged attacks use a placeholder sprite for the pickup").
     if(pr.shape === 'heldCrate'){
+      if(STEPS){ stepsPiePic(ctx, pr.x, pr.y, (pr.r||12)*1.1, hazardT*0.25*((pr.vx||0) < 0 ? -1 : 1)); return; }   // 500 STEPS (Pie's contest): a thrown pie
       const im = itemImage('throw'), h = (pr.r||12)*2.4;
       ctx.save(); ctx.translate(pr.x, pr.y); ctx.rotate(hazardT*0.25*((pr.vx||0) < 0 ? -1 : 1));
       if(im){ const w = h*(im.naturalWidth/im.naturalHeight); ctx.drawImage(im, -w/2, -h/2, w, h); }
@@ -123781,6 +124468,7 @@ function draw(){
   const platStyle = { yoyle: stage.hazard==='yoyle',
                       leafy: (stage.id==='goiky'||stage.id==='custom'), shadow: isBig(),
                       theme: SA.on ? stage.id : null };   // the ten normal stages' own platform looks (STAGE ART); art only, the geometry is the platform's own
+  if(STEPS) stepsDrawBack();   // 500 STEPS (Pie's contest): its floors' walls, the sky outside, the shafts, rails and step signs, behind the platforms
   if(STG) stgDraw();   // STAGES A: the shaft's or the box's inside, behind the ledges
   if(DRM_VIS) diDrawSea();   // DREAM ISLAND TEAMS: the sea under the islands
   if(HG) hgDrawWorld();   // THE DIG GAMES (Spongy's contest): the map's dirt, surface and set pieces, under everything else (its own platforms are dg: painted there)
@@ -124364,6 +125052,7 @@ function drawItem(it, c){
   c.globalAlpha = 0.18*pulse; c.beginPath(); c.arc(0, 0, r*1.28, 0, 7); c.fill();
   c.globalAlpha = 0.26*pulse; c.beginPath(); c.arc(0, 0, r*0.98, 0, 7); c.fill();
   c.globalAlpha = 1;
+  if(it._pie && STEPS){ stepsPiePic(c, 0, 0, r*0.95, 0); c.restore(); return; }   // 500 STEPS (Pie's contest): its throwables are pies
   const im = itemImage(it.kind);
   if(im){
     const h = r*ITEM_ART[it.kind].h, w = h*(im.naturalWidth/im.naturalHeight);
@@ -145183,15 +145872,29 @@ const CCARD_ART = {
      function(c, x, y, s){ c.save(); const R = s*0.34; c.fillStyle = '#fffaf0'; c.strokeStyle = '#c8901e'; c.lineWidth = 5; c.beginPath(); c.arc(x, y, R, 0, 7); c.fill(); c.stroke(); c.strokeStyle = CC_INK; c.lineCap = 'round'; c.lineWidth = 5; c.beginPath(); c.moveTo(x, y); c.lineTo(x, y - R*0.55); c.stroke(); c.lineWidth = 3; c.beginPath(); c.moveTo(x, y); c.lineTo(x, y - R*0.82); c.stroke(); c.restore(); },
      '=', function(c, x, y, s){ ccMe(c, x, y + s*0.1, s*0.5); for(let i = 0; i < 4; i++) ttDrawGear(c, x - s*0.3 + i*s*0.2, y - s*0.3, s*0.07, i); }, '>', 'win']
   ]; },
-  // PIE: race up 500 steps; a hit knocks you back down; first to the top wins
-  steps:function(){ return [
-    [function(c, x, y, s){ c.save(); c.fillStyle = '#c9b98a'; c.strokeStyle = CC_INK; c.lineWidth = 3; const n = 6, sw = s*0.15, sh = s*0.12;
-       for(let i = 0; i < n; i++){ c.fillRect(x - s*0.45 + i*sw, y + s*0.4 - (i + 1)*sh, sw, (i + 1)*sh); c.strokeRect(x - s*0.45 + i*sw, y + s*0.4 - (i + 1)*sh, sw, (i + 1)*sh); }
-       c.fillStyle = '#e8322c'; c.fillRect(x + s*0.4, y - s*0.5, s*0.03, s*0.2); c.beginPath(); c.moveTo(x + s*0.43, y - s*0.5); c.lineTo(x + s*0.55, y - s*0.44); c.lineTo(x + s*0.43, y - s*0.38); c.fill(); c.restore();
-       ccMe(c, x - s*0.3, y + s*0.12, s*0.3); ccArrow(c, x - s*0.02, y - s*0.1, s*0.5, '#7ae582', -0.7); },
+  // PIE (the 2026-11-17 upgrade): race up 500 steps to win; lifts, the cart and the ledges outside get you up faster (a lift can break); rolling pies, the chef's pies
+  // and the laundry chute knock you back down (hit a rival onto a hatch)
+  steps:function(){
+    const stair = function(c, x, y, s){ c.save(); c.fillStyle = '#c9a26b'; c.strokeStyle = CC_INK; c.lineWidth = 3; const n = 6, sw = s*0.15, sh = s*0.12;
+      for(let i = 0; i < n; i++){ c.fillRect(x - s*0.45 + i*sw, y + s*0.4 - (i + 1)*sh, sw, (i + 1)*sh); c.strokeRect(x - s*0.45 + i*sw, y + s*0.4 - (i + 1)*sh, sw, (i + 1)*sh); } c.restore(); };
+    const cage = function(c, x, y, s, bad){ c.save(); c.strokeStyle = CC_INK; c.lineWidth = 3; c.fillStyle = 'rgba(80,90,110,0.35)'; c.fillRect(x - s*0.22, y - s*0.3, s*0.44, s*0.6); c.strokeRect(x - s*0.22, y - s*0.3, s*0.44, s*0.6);
+      c.beginPath(); c.moveTo(x, y - s*0.3); c.lineTo(x, y - s*0.5); c.stroke(); c.fillStyle = bad ? '#ff2a2a' : '#7ae582'; c.beginPath(); c.arc(x, y - s*0.36, s*0.04, 0, 7); c.fill(); c.stroke(); c.restore(); };
+    return [
+    [function(c, x, y, s){ stair(c, x, y, s); stepsPiePic(c, x + s*0.4, y - s*0.42, s*0.08, 0); ccMe(c, x - s*0.3, y + s*0.12, s*0.3); ccArrow(c, x - s*0.02, y - s*0.1, s*0.5, '#7ae582', -0.7); },
      '>', function(c, x, y, s){ ccNum(c, x, y - s*0.1, s*0.9, '500'); }, '>', 'win'],
-    [function(c, x, y, s){ ccMe(c, x - s*0.2, y, s*0.55); ccFoe(c, x + s*0.3, y, s*0.55, 0); ccSpark(c, x + s*0.05, y - s*0.05, s*0.28); },
-     '>', function(c, x, y, s){ ccMe(c, x, y - s*0.1, s*0.45); ccArrow(c, x + s*0.35, y + s*0.1, s*0.45, '#ff6a5a', 2.3); }]
+    [function(c, x, y, s){ cage(c, x - s*0.05, y, s, false); ccMe(c, x - s*0.05, y + s*0.05, s*0.3); ccArrow(c, x + s*0.32, y - s*0.05, s*0.42, '#7ae582', -Math.PI/2); },
+     function(c, x, y, s){ c.save(); c.strokeStyle = '#5a4030'; c.lineWidth = 6; c.beginPath(); c.moveTo(x - s*0.42, y + s*0.35); c.lineTo(x + s*0.42, y - s*0.3); c.stroke(); c.translate(x, y + s*0.02); c.rotate(-0.66);
+       c.fillStyle = '#d04a3a'; c.strokeStyle = CC_INK; c.lineWidth = 3; c.fillRect(-s*0.18, -s*0.12, s*0.36, s*0.12); c.strokeRect(-s*0.18, -s*0.12, s*0.36, s*0.12); c.restore(); ccMe(c, x, y - s*0.16, s*0.28); },
+     function(c, x, y, s){ c.save(); c.fillStyle = '#7ec8f0'; c.fillRect(x - s*0.45, y - s*0.45, s*0.9, s*0.9); c.fillStyle = '#7d7690'; c.strokeStyle = CC_INK; c.lineWidth = 3; c.fillRect(x - s*0.45, y - s*0.45, s*0.12, s*0.9); c.strokeRect(x - s*0.45, y - s*0.45, s*0.12, s*0.9);
+       for(let i = 0; i < 3; i++){ c.fillStyle = '#d3cedd'; c.fillRect(x - s*0.25 + (i % 2)*s*0.25, y + s*0.35 - i*s*0.3, s*0.25, s*0.06); c.strokeRect(x - s*0.25 + (i % 2)*s*0.25, y + s*0.35 - i*s*0.3, s*0.25, s*0.06); }
+       c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.beginPath(); c.moveTo(x - s*0.1, y - s*0.3); c.lineTo(x + s*0.3, y - s*0.3); c.moveTo(x, y - s*0.18); c.lineTo(x + s*0.4, y - s*0.18); c.stroke(); c.restore(); ccMe(c, x + s*0.12, y - s*0.02, s*0.26); },
+     '>', function(c, x, y, s){ cage(c, x, y, s, true); ccSpark(c, x + s*0.2, y - s*0.3, s*0.22); ccArrow(c, x + s*0.34, y + s*0.05, s*0.42, '#ff6a5a', Math.PI/2); }],
+    [function(c, x, y, s){ stair(c, x, y, s); stepsPiePic(c, x + s*0.05, y - s*0.15, s*0.1, 0.5); ccFoe(c, x - s*0.3, y + s*0.18, s*0.3, 0); ccArrow(c, x - s*0.05, y - s*0.3, s*0.4, '#ff6a5a', 2.5); },
+     function(c, x, y, s){ c.save(); c.strokeStyle = CC_INK; c.lineWidth = 3; c.fillStyle = '#ffffff'; c.beginPath(); c.ellipse(x - s*0.22, y + s*0.1, s*0.12, s*0.16, 0, 0, 7); c.fill(); c.stroke();
+       c.beginPath(); c.arc(x - s*0.22, y - s*0.22, s*0.08, 0, 7); c.fill(); c.stroke(); c.restore(); stepsPiePic(c, x + s*0.05, y - s*0.25, s*0.08, 0); ccFoe(c, x + s*0.3, y + s*0.1, s*0.3, 1); ccSpark(c, x + s*0.3, y - s*0.05, s*0.18); },
+     function(c, x, y, s){ ccMe(c, x - s*0.3, y - s*0.05, s*0.3); ccFoe(c, x + s*0.02, y - s*0.05, s*0.3, 0); ccArrow(c, x - s*0.14, y - s*0.3, s*0.3, '#ffd23f', 0);
+       c.save(); c.fillStyle = '#0c0a10'; c.strokeStyle = '#f2c033'; c.lineWidth = 3; c.setLineDash([6, 4]); c.fillRect(x + s*0.12, y + s*0.12, s*0.3, s*0.08); c.strokeRect(x + s*0.12, y + s*0.12, s*0.3, s*0.08); c.restore(); },
+     '>', '-100']
   ]; },
   // STAPY: climb the four lighthouses and light each piece of your emblem; first to light all four wins
   lights:function(){ const me = { name:(chosen && chosen.name) || '', color:(chosen && chosen.color) || '#ffd23f' }; return [
