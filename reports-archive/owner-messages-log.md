@@ -1044,6 +1044,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-18**: and move the week to sticker
 - **2026-11-18** *(question box: Needy's rooms run out the timer)*: Reveal late (Recommended)
 - **2026-11-18**: sticker isnt vertical enough
+- **2026-11-18**: move the week to clocks
 
 ## Status questions & check-ins
 
