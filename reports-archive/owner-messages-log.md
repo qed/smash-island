@@ -1040,6 +1040,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-18**: the events for spongy should be stronger
 - **2026-11-18**: also, making a map bigger is NOT an excuse to genericiffy it(reffering to shifting isles)
 - **2026-11-18**: push
+- **2026-11-18**: also, spongy doesnt have much off-ground, and the cornucopia should have stuff like that too. it should be more vertical, with hanging caves on the top, which have buffs and stuff
 
 ## Status questions & check-ins
 
