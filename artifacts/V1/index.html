@@ -108568,6 +108568,7 @@ function darkSeeK(f){
   if(HS) return hsSeeK(f);   // BOTTLE'S HIDE AND SEEK: only what is lit, close, or carries a light
   const d = Math.hypot(f.x - me.x, f.y - me.y);
   if(LHC && lhcSameRoom(me, f)) return 1;   // STAPY'S CONTEST: inside the same lighthouse everyone is lit
+  if(LHC && lhcBeamLit(f)) return 1;   // ...and anyone in a boat's searchlight
   const r0 = LHC ? LHK.light0 : DARKK.r, s0 = r0 + (DARKK.see - DARKK.r);
   let k;
   if(d <= r0) k = 1; else if(d >= s0) k = DARKK.far; else { const u = (d - r0)/(s0 - r0); k = 1 - (1 - DARKK.far)*u*u*(3 - 2*u); }
@@ -108637,6 +108638,7 @@ function lhcLights(o, m, hw, hh){
     const p = tr(tw.ox, tw.oBase - tw.topH - K.roofGap - 100), rr = (120 + 70*n)*Math.hypot(m.a, m.b)*0.5, g = o.createRadialGradient(p[0], p[1], 0, p[0], p[1], rr);
     g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)'); o.fillStyle = g; o.fillRect(p[0] - rr, p[1] - rr, rr*2, rr*2); o.fillStyle = 'rgba(0,0,0,1)';
   }
+  lhcSeaCut(o, tr, m);   // the boats' beams, and anyone caught in one
 }
 
 // STAPY'S CONTEST, THE EMBLEMS ARE THE BACKDROP (owner 2026-11-15: "make the emblems part of the backdrop, so we can see that, when your emblem is complete, it drowns out the others", "and you get to see it before the winscreen comes"):
@@ -108686,6 +108688,7 @@ function lhcGlow(m){
     g.addColorStop(0, col + 'aa'); g.addColorStop(1, col + '00'); c.fillStyle = g; c.beginPath(); c.arc(f.x, f.y, f.r*3.2, 0, 7); c.fill();
     c.strokeStyle = col; c.lineWidth = 3.5; c.globalAlpha = 0.9; c.beginPath(); c.arc(f.x, f.y, f.r + 5, 0, 7); c.stroke(); c.globalAlpha = 1;
   }
+  lhcSeaGlow(c, x0, x1, y0, y1);   // the beams, the lit, the spray and foam, the horns
   c.restore();
 }
 // THE EMBLEMS (BFDIA 18's, the owner's picture): a SOLID BRIGHT colour field, one colour per fighter, and one bold flat WHITE silhouette of the fighter's own body shape (drawn from its picture, flattened: no face, no detail), split into FOUR pieces (quarters, one per lighthouse: top left, top right, bottom left, bottom right).
@@ -113345,6 +113348,215 @@ function lhcSteer(f, inp, A, B, e){
   if(gap > 110 && (d2 < 0 ? f.x - A.x0 : A.x1 - f.x) <= 45) inp.jump = true;
   return true;
 }
+// STAPY'S CONTEST, OUT ON THE DARK PLAZA (the owner's three picks, 2026-11-17). OUTSIDE ONLY: nothing here reaches anyone in a lighthouse's rooms (lhcOutside). Nothing is written on screen.
+// THE SEA STORM: now and then a wave rolls in from the sea at one end of the arena and sweeps across it, pushing everyone outside the way it goes. First, LHK_SEA.warn frames of
+//   warning: a rising roar and white spray at that end (at the screen's edge on that side when the end is off screen). On the ground with the shield held you are BRACED (LHK_SEA.brace of the push).
+// THE BOATS' SEARCHLIGHTS: two boats out at sea (on the horizon behind the arena) sweep beams over the plaza; anyone outside in a beam is lit up (the dark is cut round them; seen by everyone).
+// THE FOGHORN: a low rumble, then a blast from each lighthouse's horn (over its door) that pushes everyone outside away from the towers, toward the middle (the nearer, the harder; braced as for a wave).
+// A wave and the blast never overlap (LHK_SEA.apart). CPUs brace (or steer against it in the air) as a wave or the blast comes, and keep out of a beam while going for a rival's light;
+// both by level (brainLevel: react, lead, hornReact, spotP, spotAhead), and never for long (a wait or a step back for a beam is at most spotWait frames, then spotRest frames without).
+const LHK_SEA = { wave0:[1800, 2400], waveGap:[1680, 2520], warn:90, v:22, body:520, pushG:4.6, pushA:5.2, fade:0.45, brace:0.2,
+  horn0:[3000, 3600], hornGap:[2100, 3000], hornWarn:80, hornLen:60, hornPush:4.2, hornR0:220, hornR1:1700, apart:420,
+  boats:[{ x:1500, amp:520, per:2700, sw:540, ph:0.3 }, { x:3700, amp:520, per:3100, sw:660, ph:2.1 }], beamA:1.75, beamHalf:0.09, beamLen:3400, horizon:260, lamp:96,
+  react:[0.5, 0.75, 0.9, 0.97], lead:[10, 18, 26, 32], hornReact:[50, 36, 22, 12], spotP:[0.3, 0.55, 0.8, 0.95], spotAhead:[20, 32, 45, 60], spotRun:5, spotRise:9, spotWait:100, spotRest:240 };
+function lhcRnd(a){ return a[0] + Math.random()*(a[1] - a[0]); }
+function lhcOutside(f){ return !!LHC && !f.dead && !f._lhRoom && !lhcTowerOf(f); }
+function lhcBraced(f){ return !!f.onground && (f._zsOn > 0 || !!f._zKey); }
+function lhcSeaInit(){
+  const K = LHK_SEA, t = hazardT;
+  LHC.sea = { nextW:t + Math.round(lhcRnd(K.wave0)), nextH:t + Math.round(lhcRnd(K.horn0)), wave:null, horn:null, n:0, waves:0, horns:0, caught:0, wet:0, blown:0, braces:0, dodges:0 };
+  for(const f of fighters){ f._lhBeamT = null; f._lhWetId = null; f._lhBlowId = null; f._lhSeaW = null; f._lhSeaH = null; f._lhSpot = null; f._lhSpotRest = 0; f._lhHeP = null; }
+}
+function lhcWaveEdge(dir){ return dir > 0 ? LHK.wall : LHK.aw - LHK.wall; }
+function lhcWaveFront(w, t){ return lhcWaveEdge(w.dir) + w.dir*LHK_SEA.v*(t - w.tc); }
+function lhcWaveEnd(w){ return w.tc + Math.ceil((LHK.aw - 2*LHK.wall + LHK_SEA.body)/LHK_SEA.v); }
+function lhcWaveK(w, t, x){   // the push at x: strongest at the front, less toward the back of the water, and less the farther the wave has come
+  const K = LHK_SEA, rel = (lhcWaveFront(w, t) - x)*w.dir; if(t < w.tc || rel < 0 || rel > K.body) return 0;
+  const prog = clamp((x - lhcWaveEdge(w.dir))*w.dir/(LHK.aw - 2*LHK.wall), 0, 1); return (1 - 0.6*rel/K.body)*(1 - K.fade*prog);
+}
+function lhcHornAt(tw){ return { x:tw.doorX, y:tw.oBase - 170 }; }
+function lhcHornK(f){
+  const K = LHK_SEA; let best = null;
+  for(const tw of LHC.towers){ const h = lhcHornAt(tw), d = Math.hypot(f.x - h.x, f.y - h.y); if(!best || d < best.d) best = { d, tw }; }
+  if(!best) return { k:0, dir:0, tw:null };
+  return { k:clamp(1 - (best.d - K.hornR0)/(K.hornR1 - K.hornR0), 0, 1), dir:best.tw.dir, tw:best.tw };   // (away from the tower = toward the middle: the side its door faces)
+}
+function lhcBoatAt(i, t){
+  const K = LHK_SEA, b = K.boats[i], hy = LHC.pY + K.horizon, bob = 5*Math.sin(t*0.05 + i*2), x = b.x + b.amp*Math.sin(LH_TAU*t/b.per + b.ph);
+  return { x, y:hy + bob, lx:x + 8, ly:hy - K.lamp + bob, a:-Math.PI/2 + K.beamA*Math.sin(LH_TAU*t/b.sw + b.ph*1.7) };
+}
+function lhcInBeam(x, y, r, t){
+  const K = LHK_SEA;
+  for(let i = 0; i < K.boats.length; i++){ const B = lhcBoatAt(i, t), dx = x - B.lx, dy = y - B.ly, d = Math.hypot(dx, dy); if(d > K.beamLen || d < 1) continue;
+    let e = Math.atan2(dy, dx) - B.a; e = Math.atan2(Math.sin(e), Math.cos(e)); if(Math.abs(e) < K.beamHalf + r/d) return true; }
+  return false;
+}
+function lhcBeamLit(f){ return !!LHC && f._lhBeamT != null && hazardT - f._lhBeamT <= 1; }
+function lhcSeaStep(){
+  const S = LHC, Q = S && S.sea, K = LHK_SEA, t = hazardT; if(!Q) return;
+  const you = fighters.find(f => f.you && !f.dead), hear = !!(you && lhcOutside(you));   // (the sounds only for a player out on the plaza)
+  if(!Q.wave && t >= Q.nextW){   // A WAVE: the warning first
+    if(Q.horn) Q.nextW = Q.horn.te + K.apart;
+    else { Q.n++; Q.waves++; Q.wave = { id:Q.n, dir:Math.random() < 0.5 ? -1 : 1, t0:t, tc:t + K.warn, crash:false }; Q.nextH = Math.max(Q.nextH, lhcWaveEnd(Q.wave) + K.apart);
+      if(hear){ noiseSwell(K.warn/60 + 0.5, K.warn/60, 0.2, 420); tone(70, K.warn/60, 'sine', 0.05, 0, 140); } }
+  }
+  const w = Q.wave;
+  if(w){
+    if(!w.crash && t >= w.tc){ w.crash = true; if(hear) noise(1.4, 0.24, 1600, 0, 260); }
+    if(t > lhcWaveEnd(w)){ Q.wave = null; Q.nextW = t + Math.round(lhcRnd(K.waveGap)); }
+    else if(t >= w.tc){
+      for(const f of fighters){ if(!lhcOutside(f) || !pullFree(f)) continue; const k = lhcWaveK(w, t, f.x); if(!(k > 0)) continue;
+        const br = lhcBraced(f); f.x += w.dir*(f.onground ? K.pushG : K.pushA)*k*(br ? K.brace : 1);
+        if(f._lhWetId !== w.id){ f._lhWetId = w.id; Q.wet++; if(br) Q.braces++; }
+        if(t % 3 === 0) puff(f.x - w.dir*f.r, f.y + f.r*0.5, '#e6f6ff', 1); }
+    }
+  }
+  if(!Q.horn && t >= Q.nextH){   // THE FOGHORN: the rumble first
+    if(Q.wave) Q.nextH = lhcWaveEnd(Q.wave) + K.apart;
+    else { Q.n++; Q.horns++; Q.horn = { id:Q.n, t0:t, tb:t + K.hornWarn, te:t + K.hornWarn + K.hornLen, blew:false }; Q.nextW = Math.max(Q.nextW, Q.horn.te + K.apart);
+      if(hear){ noiseSwell(K.hornWarn/60 + 0.3, K.hornWarn/60, 0.16, 90); tone(42, K.hornWarn/60, 'sine', 0.08, 0, 55); } }
+  }
+  const h = Q.horn;
+  if(h){
+    if(!h.blew && t >= h.tb){ h.blew = true; if(hear){ tone(98, K.hornLen/60 + 0.3, 'sawtooth', 0.12, 0, 92); tone(73, K.hornLen/60 + 0.3, 'sawtooth', 0.09, 0, 69); } }
+    if(t >= h.te){ Q.horn = null; Q.nextH = t + Math.round(lhcRnd(K.hornGap)); }
+    else if(t >= h.tb){
+      const e = Math.min(1, (t - h.tb + 1)/8, (h.te - t)/15);
+      for(const f of fighters){ if(!lhcOutside(f) || !pullFree(f)) continue; const H = lhcHornK(f); if(!(H.k > 0)) continue;
+        const br = lhcBraced(f); f.x += H.dir*K.hornPush*H.k*e*(br ? K.brace : 1)*(f.onground ? 1 : 1.15);
+        if(f._lhBlowId !== h.id){ f._lhBlowId = h.id; Q.blown++; if(br) Q.braces++; }
+        if(f.onground && t % 4 === 0) puff(f.x - H.dir*f.r, f.y + f.r, '#8a8f9c', 1); }
+    }
+  }
+  for(const f of fighters){ if(!lhcOutside(f)) continue; if(lhcInBeam(f.x, f.y, f.r, t)){ if(f._lhBeamT == null || t - f._lhBeamT > 20) Q.caught++; f._lhBeamT = t; } }   // THE SEARCHLIGHTS
+}
+// A CPU out on the plaza: braced as a wave or the blast comes (by level: whether it reacts at all, and how early). True when it took the keys.
+function lhcSeaAi(f, inp){
+  const Q = LHC && LHC.sea, K = LHK_SEA, t = hazardT; if(!Q || !lhcOutside(f) || f.hitstun > 0) return false;
+  const l = brainLevel(f), w = Q.wave, h = Q.horn;
+  if(w){
+    if(f._lhSeaW !== w.id){ f._lhSeaW = w.id; f._lhSeaOkW = Math.random() < K.react[l]; }
+    if(f._lhSeaOkW){ const rel = (lhcWaveFront(w, t) - f.x)*w.dir; if(-rel/K.v <= K.lead[l] && rel <= K.body) return lhcSeaHold(f, inp, w.dir, lhcWaveK(w, t, f.x) > 0); }
+  }
+  if(h){
+    if(f._lhSeaH !== h.id){ f._lhSeaH = h.id; f._lhSeaOkH = Math.random() < K.react[l]; }
+    if(f._lhSeaOkH && t >= h.t0 + K.hornReact[l] && t < h.te){ const H = lhcHornK(f);
+      if(H.k > 0.3 && !(f._lhHeP && Math.abs(f._lhHeP.x - f.x) < 140)) return lhcSeaHold(f, inp, H.dir, t >= h.tb); }   // (one walking into a door just goes in: inside, nothing reaches it)
+  }
+  return false;
+}
+function lhcSeaHold(f, inp, dir, live){   // on the ground: braced, the shield held and nothing else; in the air: steering against the push, only while it pushes
+  if(f.onground){ inp.left = false; inp.right = false; inp.jump = false; inp.up = false; inp.down = false; inp.attack = false; inp.special = false; inp.smash = false; inp.shield = true; return true; }
+  if(!live) return false;
+  inp.left = dir > 0; inp.right = dir < 0; return true;
+}
+// A CPU going for a RIVAL's light, on the ground outside: it looks spotAhead frames ahead (by level) at three choices -- keep going (along, up or down to the next ledge), stop, step back (on the ground it stands on) --
+// and counts the frames each leaves it in a beam (the beams are a pure function of the clock). When stopping or stepping back is lit clearly less, it does that (at most spotWait frames, then spotRest without).
+function lhcSpotAi(f, inp, A, hop){
+  const K = LHK_SEA, t = hazardT, Q = LHC && LHC.sea; if(!Q || !A || !hop || !f.onground || !lhcOutside(f) || t < (f._lhSpotRest || 0)) return false;
+  const l = brainLevel(f), H = K.spotAhead[l], tx = clamp(f.x, hop.x0 + 14, Math.max(hop.x0 + 14, hop.x1 - 14)), dir = Math.abs(tx - f.x) > 4 ? Math.sign(tx - f.x) : 0;
+  const lo = A.x0 + 20, hi = A.x1 - 20, ty = hop.y - f.r, dy = Math.abs(ty - f.y) > 30 ? ty - f.y : 0;   // (dy: the way is up or down to the next ledge)
+  if(!dir && !dy){ f._lhSpot = null; return false; }
+  const lit = (sx, sy) => { let n = 0; for(let s = 0; s <= H; s += 3){ let x = f.x + sx*s*K.spotRun; if(sx && sx === -dir) x = clamp(x, lo, Math.max(lo, hi)); const y = sy ? f.y + Math.sign(dy)*Math.min(Math.abs(dy), s*K.spotRise) : f.y; if(lhcInBeam(x, y, f.r, t + s)) n++; } return n; };
+  const go = lit(dir, 1); if(go === 0){ f._lhSpot = null; return false; }
+  const stay = lit(0, 0), back = dir && (dir > 0 ? f.x - lo : hi - f.x) > 40 ? lit(-dir, 0) : 1e9, best = Math.min(stay, back);
+  if(!(best + 2 <= go)){ f._lhSpot = null; return false; }   // (it comes over it whatever it does: on)
+  if(!f._lhSpot){ f._lhSpot = { ok:Math.random() < K.spotP[l], w:0 }; if(f._lhSpot.ok) Q.dodges++; }
+  if(!f._lhSpot.ok) return false;
+  if(++f._lhSpot.w > K.spotWait){ f._lhSpot = null; f._lhSpotRest = t + K.spotRest; return false; }
+  inp.left = false; inp.right = false; inp.jump = false;
+  if(back < stay){ if(dir > 0) inp.left = true; else inp.right = true; }   // (back out of its way, along the ground it stands on)
+  else if(Math.abs(f.vx) > 1.2){ if(f.vx > 0) inp.left = true; else inp.right = true; }   // (stops short of it)
+  return true;
+}
+// THE ART. Under the fighters and the dark (world space): the sea on the horizon, the boats, the horns over the doors, the wave's water.
+function lhcSeaUnder(c, x0, x1, y0, y1){
+  const S = LHC, Q = S && S.sea, K = LHK_SEA; if(!Q) return;
+  const t = hazardT, hy = S.pY + K.horizon, gy = S.gy, a0 = Math.max(x0, LHK.wall), a1 = Math.min(x1, LHK.aw - LHK.wall);
+  if(hy < y1 && gy > y0 && a1 > a0){
+    const g = c.createLinearGradient(0, hy, 0, gy); g.addColorStop(0, '#1d3b5c'); g.addColorStop(1, '#0b1a2c'); c.fillStyle = g; c.fillRect(a0, hy, a1 - a0, gy - hy);
+    c.strokeStyle = 'rgba(160,200,235,0.35)'; c.lineWidth = 3;
+    for(let j = 0; j < 6; j++){ const yy = hy + 24 + j*(gy - hy - 48)/6; c.beginPath(); let first = true; for(let x = a0; x <= a1 + 59; x += 60){ const v = yy + 6*Math.sin(x*0.013 + t*0.04 + j*1.7); if(first){ c.moveTo(x, v); first = false; } else c.lineTo(x, v); } c.stroke(); }
+  }
+  for(let i = 0; i < K.boats.length; i++){
+    const B = lhcBoatAt(i, t); if(B.x + 100 < x0 || B.x - 100 > x1 || B.y + 20 < y0 || B.ly - 20 > y1) continue;
+    c.fillStyle = '#2a2f3a'; c.strokeStyle = '#11141a'; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(B.x - 80, B.y - 18); c.lineTo(B.x + 80, B.y - 18); c.lineTo(B.x + 60, B.y + 12); c.lineTo(B.x - 60, B.y + 12); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = '#3c4454'; c.fillRect(B.x - 34, B.y - 44, 52, 26); c.strokeRect(B.x - 34, B.y - 44, 52, 26);
+    c.beginPath(); c.moveTo(B.lx, B.y - 44); c.lineTo(B.lx, B.ly); c.stroke();
+    c.fillStyle = '#fff3b0'; c.fillRect(B.lx - 9, B.ly - 7, 18, 14); c.strokeRect(B.lx - 9, B.ly - 7, 18, 14);
+  }
+  for(const tw of S.towers){   // the foghorn over each door (a brass horn facing the middle)
+    const H = lhcHornAt(tw), d = tw.dir; if(H.x + 60 < x0 || H.x - 60 > x1 || H.y + 40 < y0 || H.y - 40 > y1) continue;
+    c.fillStyle = '#c9a640'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(H.x - d*30, H.y - 8); c.lineTo(H.x + d*30, H.y - 24); c.lineTo(H.x + d*30, H.y + 24); c.lineTo(H.x - d*30, H.y + 8); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = '#3a2c14'; c.beginPath(); c.ellipse(H.x + d*30, H.y, 6, 22, 0, 0, 7); c.fill();
+  }
+  const w = Q.wave;
+  if(w && t >= w.tc){
+    const xf = lhcWaveFront(w, t), xb = xf - w.dir*K.body, yT = S.pY - 420, d = w.dir;
+    if(Math.max(xf, xb) + 80 > x0 && Math.min(xf, xb) - 80 < x1){
+      const g = c.createLinearGradient(xb, 0, xf, 0); g.addColorStop(0, 'rgba(60,130,190,0)'); g.addColorStop(1, 'rgba(80,160,220,0.6)');
+      c.fillStyle = g; c.beginPath(); c.moveTo(xb, gy); c.lineTo(xb, yT + 80); c.quadraticCurveTo(xf - d*120, yT - 30, xf + d*30, yT + 40);
+      for(let y = yT + 60; y <= gy; y += 50) c.lineTo(xf + d*12*Math.sin(y*0.02 + t*0.3), y);
+      c.lineTo(xf, gy); c.closePath(); c.fill();
+    }
+  }
+}
+// Cut out of the dark (lhcLights): the beams, the boats' lamps, and anyone caught in a beam.
+function lhcSeaCut(o, tr, m){
+  const S = LHC, Q = S && S.sea, K = LHK_SEA; if(!Q) return;
+  const t = hazardT, sc = Math.hypot(m.a, m.b)*0.5;
+  for(let i = 0; i < K.boats.length; i++){
+    const B = lhcBoatAt(i, t), L = K.beamLen, p0 = tr(B.lx, B.ly), p1 = tr(B.lx + Math.cos(B.a - K.beamHalf)*L, B.ly + Math.sin(B.a - K.beamHalf)*L), p2 = tr(B.lx + Math.cos(B.a + K.beamHalf)*L, B.ly + Math.sin(B.a + K.beamHalf)*L);
+    o.fillStyle = 'rgba(0,0,0,0.72)'; o.beginPath(); o.moveTo(p0[0], p0[1]); o.lineTo(p1[0], p1[1]); o.lineTo(p2[0], p2[1]); o.closePath(); o.fill();
+    const r = 120*sc, g = o.createRadialGradient(p0[0], p0[1], 0, p0[0], p0[1], r); g.addColorStop(0, 'rgba(0,0,0,0.9)'); g.addColorStop(1, 'rgba(0,0,0,0)'); o.fillStyle = g; o.fillRect(p0[0] - r, p0[1] - r, r*2, r*2);
+  }
+  for(const f of fighters){
+    if(f.dead || !lhcBeamLit(f)) continue;
+    const p = tr(f.x, f.y), r = f.r*2.8*sc, g = o.createRadialGradient(p[0], p[1], 0, p[0], p[1], r); g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.7, 'rgba(0,0,0,0.95)'); g.addColorStop(1, 'rgba(0,0,0,0)'); o.fillStyle = g; o.fillRect(p[0] - r, p[1] - r, r*2, r*2);
+  }
+  o.fillStyle = 'rgba(0,0,0,1)';
+}
+// Over the dark (lhcGlow, world space; not drawn while you are in a lighthouse): the beams' haze and lamps, a white ring on anyone lit, the wave's spray and foam, the horns' rumble and rings.
+function lhcSeaGlow(c, x0, x1, y0, y1){
+  const S = LHC, Q = S && S.sea, K = LHK_SEA; if(!Q) return;
+  const t = hazardT, gy = S.gy;
+  for(let i = 0; i < K.boats.length; i++){
+    const B = lhcBoatAt(i, t), L = K.beamLen, a0 = B.a - K.beamHalf, a1 = B.a + K.beamHalf;
+    const g = c.createRadialGradient(B.lx, B.ly, 0, B.lx, B.ly, L); g.addColorStop(0, 'rgba(255,248,215,0.22)'); g.addColorStop(1, 'rgba(255,248,215,0)');
+    c.fillStyle = g; c.beginPath(); c.moveTo(B.lx, B.ly); c.lineTo(B.lx + Math.cos(a0)*L, B.ly + Math.sin(a0)*L); c.lineTo(B.lx + Math.cos(a1)*L, B.ly + Math.sin(a1)*L); c.closePath(); c.fill();
+    c.fillStyle = 'rgba(255,246,200,0.95)'; c.beginPath(); c.arc(B.lx, B.ly, 9, 0, 7); c.fill();
+  }
+  for(const f of fighters){ if(f.dead || !lhcBeamLit(f) || f.x < x0 || f.x > x1 || f.y < y0 || f.y > y1) continue; c.strokeStyle = 'rgba(255,250,225,0.95)'; c.lineWidth = 4; c.beginPath(); c.arc(f.x, f.y, f.r + 9, 0, 7); c.stroke(); }
+  const w = Q.wave;
+  if(w){
+    if(t < w.tc){   // the warning: white spray rising at the sea's edge (at the screen's edge on that side when the end is off screen)
+      const u = clamp((t - w.t0)/K.warn, 0, 1), ex = clamp(lhcWaveEdge(w.dir), x0 + 30, x1 - 30);
+      c.fillStyle = 'rgba(240,248,255,' + (0.25 + 0.45*u).toFixed(3) + ')';
+      for(let i = 0; i < 16; i++){
+        const hs = lhcMod(Math.sin(i*12.9898)*43758.5453, 1), x = ex + w.dir*(i*14 + 8*Math.sin(t*0.3 + i)), top = gy - u*(300 + 900*hs) - 40*Math.sin(t*0.25 + i*2);
+        for(let yy = gy; yy > top; yy -= 46){ if(yy < y0 - 40 || yy > y1 + 40) continue; const r = 8 + 14*hs*(1 - (gy - yy)/(gy - top + 1)); c.beginPath(); c.arc(x + 6*Math.sin(yy*0.05 + t*0.4 + i), yy, r, 0, 7); c.fill(); }
+      }
+    } else {   // the wave: its foam front, from the floor to over the plaza
+      const xf = lhcWaveFront(w, t), d = w.dir, yT = S.pY - 420;
+      if(xf + 200 > x0 && xf - 200 < x1){
+        c.strokeStyle = 'rgba(240,250,255,0.8)'; c.lineWidth = 8; c.lineCap = 'round'; c.beginPath(); c.moveTo(xf + d*30, yT + 40);
+        for(let y = yT + 60; y <= gy; y += 50) c.lineTo(xf + d*12*Math.sin(y*0.02 + t*0.3), y); c.stroke();
+        c.fillStyle = 'rgba(240,250,255,0.7)'; for(let i = 0; i < 10; i++){ const hs = lhcMod(Math.sin(i*78.233 + w.id)*43758.5453, 1); c.beginPath(); c.arc(xf + d*(10 + 40*hs), yT + 20 + (gy - yT)*lhcMod(hs*7.1 + t*0.013, 1), 5 + 6*hs, 0, 7); c.fill(); }
+      }
+    }
+  }
+  const h = Q.horn;
+  if(h){
+    for(const tw of S.towers){
+      const H = lhcHornAt(tw);
+      if(t < h.tb){ const u = (t - h.t0)/K.hornWarn, r = 40 + 14*Math.sin(t*0.6); if(H.x + 80 < x0 || H.x - 80 > x1) continue; c.fillStyle = 'rgba(255,160,80,' + (0.15 + 0.35*u).toFixed(3) + ')'; c.beginPath(); c.arc(H.x + tw.dir*30, H.y, r, 0, 7); c.fill(); }   // the rumble: the horn glows
+      else { const v = (t - h.tb)/K.hornLen; c.lineWidth = 12;
+        for(let j = 0; j < 3; j++){ const q = clamp(v - j*0.15, 0, 1); if(!(q > 0)) continue; const rr = K.hornR0*0.3 + K.hornR1*q; c.strokeStyle = 'rgba(215,230,255,' + (0.55*(1 - q)).toFixed(3) + ')'; c.beginPath(); c.arc(H.x, H.y, rr, 0, 7); c.stroke(); } }
+    }
+  }
+}
 CONTEST_RULES.lights = {
   twists:['dark'],
   winText(f){ return f.name + ' lit the whole emblem!'; },
@@ -113362,6 +113574,7 @@ CONTEST_RULES.lights = {
         let col = own;   // only when two in one match are too alike does the later one take the nearest free palette colour, so the four always differ
         if(used.some(u => dist(rgb(u), rgb(col)) < 80)){ const free = LH_PAL.filter(q => !used.some(u => dist(rgb(u), rgb(q)) < 80)); if(free.length){ free.sort((a, c) => dist(rgb(a), rgb(own)) - dist(rgb(c), rgb(own))); col = free[0]; } }
         used.push(col); f._lhCol = col; } }
+    lhcSeaInit();   // OUT ON THE PLAZA: the sea storm, the boats' searchlights, the foghorn (LHK_SEA)
     LHC.t0 = hazardT;   // (when the match began: a CPU's taste for turning off rivals' lights fades with it, see want)
     for(const f of fighters){ f._lhP = 0; f._lhSpent = null; f._lhAt = null; f._lhOffs = 0; f._lhGoal = null; f._lhRe = 0; f._lhN = null; f._lhStay = 0; f._lhJit = [0, 1, 2, 3].map(() => 0.85 + 0.3*Math.random()); f._lhR = null; f._lhRet = null; f._lhArc = null; f._lhPX = null; f._lhImmT = 0; f._lhWK = 0; }
     try{ const h = document.getElementById('hud'); if(h) h.style.visibility = ''; }catch(e){}
@@ -113369,6 +113582,7 @@ CONTEST_RULES.lights = {
   step(){
     const S = LHC, K = LHK, C = CONTEST; if(!S || C.winner != null) return;
     lhcRoomsStep();
+    lhcSeaStep();   // (outside only: the waves, the foghorn, the searchlights)
     for(const f of fighters){
       if(!f.dead && f.onground){   // the lamp house roofs are slippery: nobody stands on one; it slides off toward the nearer side
         for(const tw of S.towers){ if(f.x > tw.x0 - 20 && f.x < tw.x1 + 20 && Math.abs(f.y + f.r - tw.roofY) <= 6){ const d = f.x < tw.cx ? -1 : 1; f.vx = d*6; f.x += d*4; } }
@@ -113404,6 +113618,7 @@ CONTEST_RULES.lights = {
     const S = LHC, K = LHK; if(!S) return;
     if(layer === 'under'){
       const x0 = camX - 100, x1 = camX + W/CAM_ZOOM + 100, y0 = camY - 100, y1 = camY + H/CAM_ZOOM + 100;
+      lhcSeaUnder(c, x0, x1, y0, y1);   // the sea, the boats, the horns, the wave's water
       for(const tw of S.towers){   // OUTSIDE: the lighthouse's facade, its door, its lamp (lit by the pieces that are on)
         const fh = K.faceH + K.roofGap + 70, fw = 270;
         if(tw.ox + fw + 60 < x0 || tw.ox - fw - 60 > x1 || tw.oBase < y0 || tw.oBase - fh - 80 > y1) continue;
@@ -113449,6 +113664,7 @@ CONTEST_RULES.lights = {
   },
   want(f, inp, t, dist){
     const S = LHC, K = LHK; if(!S || !S.nodes || f.dead || f.hitstun > 0) return false;
+    if(lhcSeaAi(f, inp)) return true;   // out on the plaza: braced for a wave or the foghorn (by level)
     if(f.onground && t && dist < 150 && Math.abs(t.y - f.y) < 140) return false;   // a foe in its face comes first
     const here = f.onground ? lhcNodeOf(f) : null; if(here) f._lhN = here;
     const A = f._lhN; if(!A) return false;
@@ -113482,6 +113698,8 @@ CONTEST_RULES.lights = {
     let hop = null, hd = 1e9, he = null;
     for(const e of A.out){ const d = e.c + G.d.get(e.to); if(d < hd){ hd = d; hop = e.to; he = e; } }
     if(!hop || hd >= 1e8){ f._lhGoal = null; return false; }
+    f._lhHeP = he && he.portal ? he.portal : null;
+    if(L.j !== f.idx && lhcSpotAi(f, inp, A, hop)) return true;   // going for a rival's light: out of the boats' beams (by level)
     return lhcSteer(f, inp, A, hop, he);
   },
 };
@@ -147467,14 +147685,28 @@ const CCARD_ART = {
        c.save(); c.fillStyle = '#0c0a10'; c.strokeStyle = '#f2c033'; c.lineWidth = 3; c.setLineDash([6, 4]); c.fillRect(x + s*0.12, y + s*0.12, s*0.3, s*0.08); c.strokeRect(x + s*0.12, y + s*0.12, s*0.3, s*0.08); c.restore(); },
      '>', '-100']
   ]; },
-  // STAPY: climb the four lighthouses and light each piece of your emblem; first to light all four wins
+  // STAPY: climb the four lighthouses and light each piece of your emblem; first to light all four wins; outside, the sea storm's waves, the boats' searchlights and the foghorn
   lights:function(){ const me = { name:(chosen && chosen.name) || '', color:(chosen && chosen.color) || '#ffd23f' }; return [
     [function(c, x, y, s){ for(let i = 0; i < 4; i++){ const lx = x - s*0.39 + i*s*0.26; c.save(); c.fillStyle = i % 2 ? '#e8322c' : '#ffffff'; c.strokeStyle = CC_INK; c.lineWidth = 2.5; c.beginPath(); c.moveTo(lx - s*0.07, y + s*0.35); c.lineTo(lx - s*0.04, y - s*0.15); c.lineTo(lx + s*0.04, y - s*0.15); c.lineTo(lx + s*0.07, y + s*0.35); c.closePath(); c.fill(); c.stroke();
        c.fillStyle = '#ffd23f'; c.fillRect(lx - s*0.05, y - s*0.27, s*0.1, s*0.12); c.strokeRect(lx - s*0.05, y - s*0.27, s*0.1, s*0.12); c.restore(); } },
      '>', function(c, x, y, s){ lhcDrawEmblem(c, x, y, s*0.36, me, [true, true, false, false]); },
      '>', function(c, x, y, s){ lhcDrawEmblem(c, x, y, s*0.36, me, [true, true, true, true]); }, '>', 'win'],
     [function(c, x, y, s){ ccFoe(c, x, y, s*0.5, 0); ccTimer(c, x + s*0.35, y - s*0.2, s*0.6, 1); ccNum(c, x + s*0.35, y + s*0.22, s*0.5, '5'); },
-     '>', function(c, x, y, s){ lhcDrawEmblem(c, x, y, s*0.36, { name:'', color:'#9aa3ad' }, [true, false, true, true]); }]
+     '>', function(c, x, y, s){ lhcDrawEmblem(c, x, y, s*0.36, { name:'', color:'#9aa3ad' }, [true, false, true, true]); }],
+    [function(c, x, y, s){ c.save(); c.fillStyle = '#4f9fd8'; c.strokeStyle = CC_INK; c.lineWidth = 3;   // the sea storm: a wave pushes you
+       c.beginPath(); c.moveTo(x - s*0.85, y + s*0.4); c.lineTo(x - s*0.85, y - s*0.1); c.quadraticCurveTo(x - s*0.65, y - s*0.5, x - s*0.3, y - s*0.36); c.quadraticCurveTo(x - s*0.45, y - s*0.26, x - s*0.36, y - s*0.05); c.lineTo(x - s*0.26, y + s*0.4); c.closePath(); c.fill(); c.stroke();
+       c.fillStyle = '#ffffff'; for(let i = 0; i < 4; i++){ c.beginPath(); c.arc(x - s*(0.36 + 0.1*i), y - s*(0.42 + 0.05*(i % 2)), s*0.05, 0, 7); c.fill(); } c.restore();
+       ccGround(c, x, y + s*0.4, s*1.8); ccArrow(c, x + s*0.02, y + s*0.02, s*0.8, '#9fd8ff', 0); ccMe(c, x + s*0.55, y + s*0.08, s*0.55); },
+     function(c, x, y, s){ c.save(); c.fillStyle = '#10142a'; c.fillRect(x - s*0.9, y - s*0.48, s*1.8, s*0.96); c.fillStyle = '#1d3b5c'; c.fillRect(x - s*0.9, y + s*0.22, s*1.8, s*0.26);   // a boat's searchlight lights a rival up
+       c.fillStyle = 'rgba(255,246,200,0.45)'; c.beginPath(); c.moveTo(x - s*0.55, y + s*0.08); c.lineTo(x + s*0.62, y - s*0.42); c.lineTo(x + s*0.72, y + s*0.08); c.closePath(); c.fill();
+       c.fillStyle = '#2a2f3a'; c.strokeStyle = CC_INK; c.lineWidth = 2.5; c.beginPath(); c.moveTo(x - s*0.78, y + s*0.2); c.lineTo(x - s*0.38, y + s*0.2); c.lineTo(x - s*0.44, y + s*0.32); c.lineTo(x - s*0.72, y + s*0.32); c.closePath(); c.fill(); c.stroke();
+       c.beginPath(); c.moveTo(x - s*0.56, y + s*0.2); c.lineTo(x - s*0.56, y + s*0.06); c.stroke(); c.fillStyle = '#fff3b0'; c.beginPath(); c.arc(x - s*0.55, y + s*0.07, s*0.05, 0, 7); c.fill(); c.restore();
+       ccFoe(c, x + s*0.5, y - s*0.12, s*0.42, 0); c.save(); c.strokeStyle = '#fffbe6'; c.lineWidth = 4; c.beginPath(); c.arc(x + s*0.5, y - s*0.12, s*0.27, 0, 7); c.stroke(); c.restore(); },
+     function(c, x, y, s){ c.save(); const lx = x - s*0.62;   // the foghorn: a blast from the lighthouse pushes you away from it
+       c.fillStyle = '#ffffff'; c.strokeStyle = CC_INK; c.lineWidth = 2.5; c.beginPath(); c.moveTo(lx - s*0.16, y + s*0.4); c.lineTo(lx - s*0.09, y - s*0.3); c.lineTo(lx + s*0.09, y - s*0.3); c.lineTo(lx + s*0.16, y + s*0.4); c.closePath(); c.fill(); c.stroke();
+       c.fillStyle = '#e8322c'; c.fillRect(lx - s*0.12, y - s*0.08, s*0.24, s*0.14); c.fillStyle = '#c9a640'; c.beginPath(); c.moveTo(lx + s*0.1, y - s*0.02); c.lineTo(lx + s*0.26, y - s*0.1); c.lineTo(lx + s*0.26, y + s*0.12); c.lineTo(lx + s*0.1, y + s*0.04); c.closePath(); c.fill(); c.stroke();
+       c.strokeStyle = '#9fc4ff'; c.lineWidth = 4; for(let i = 0; i < 3; i++){ c.beginPath(); c.arc(lx + s*0.2, y + s*0.01, s*(0.2 + 0.13*i), -0.7, 0.7); c.stroke(); } c.restore();
+       ccGround(c, x, y + s*0.4, s*1.8); ccArrow(c, x + s*0.18, y - s*0.3, s*0.6, '#9fc4ff', 0); ccMe(c, x + s*0.55, y + s*0.08, s*0.55); }]
   ]; },
   // FOLDY: the wind carries you along the course; first across the finish line wins
   race:function(){ return [
