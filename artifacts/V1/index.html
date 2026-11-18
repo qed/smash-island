@@ -116180,7 +116180,9 @@ EVENT_TWIST_WORDS['contest:cheat'] = { icon:'🏁', short:"Sticker's contest: ch
 // 8-ball, 11 candy tunnels). KEPT from the owner's design (contest-specs, 8-Ball lines of 11-06/07, 11-13 and 11-15): 6 STOCKS, last with stocks wins (checkWin);
 // you must DEAL LK.need (50) damage to a jawbreaker yourself to break it (a shell keeps a count per fighter); ONLY 8 ASSISTS exist and they are PERMANENT (they stay
 // forever, a KO keeps them: lkKeep); at most LK.cap (2) each; a one-shot assist WAITS 3-5 s before it acts again; after all 8 are taken, or when every living fighter
-// holds 2, JAWBREAKERS FALL from above and deal damage (the end mechanic: no speed-up). No words in the match: pictures and sounds only.
+// holds 2, JAWBREAKERS FALL from above and deal damage (the end mechanic). THE OWNER, 2026-11-18 ('start sooner', and ramp: the CPU matches ran 6 to 10 minutes): the fall also starts at
+// LK.fallAt (1:30) whatever is taken (a fuse under the pips burns down to it; the assists not yet broken melt with their jawbreakers), and over its first LK.fallRampT frames the jawbreakers
+// come more often, more at once and knock harder. No words in the match: pictures and sounds only.
 // THE MAP (lkBuildWorld): a candy factory LK.WW x LK.WH (about four screens wide), three rooms on the floor line with a chute between each (a real gap: a KO),
 // open at both ends: the MIXING HALL (left: ledges, a gumball machine), the PRESS ROOM (middle: the candy press over a sticky tray, two conveyor belts that carry
 // jawbreakers into the tray, two high ledges) and the WRAPPING ROOM (right: a loop of two belts and a lift that carries jawbreakers round and round, a gumball machine).
@@ -116207,7 +116209,7 @@ EVENT_TWIST_WORDS['contest:cheat'] = { icon:'🏁', short:"Sticker's contest: ch
 // DEFAULTS (the owner did not say): see LK, LK_FLAVS, LK_FLAV_OF, LK_RARE, LK_AI and the notes above. Offline only (an event match is).
 const LK_DRAW = 1.35;   // how much bigger than its hit radius the contest's shell is drawn: a fighter-sized sphere
 const LK = { total:8, cap:2, need:50, shells:6, regrow:120, combo:30, recall:0, waitMin:180, waitMax:300,
-             fallGap:45, fallMax:6, fallWarn:60, fallR:40, fallDmg:0.6, fallAim:0.75, fallGrav:0.5, fallKeep:26, fallJit:70,
+             fallAt:5400, fallGap:45, fallGap1:18, fallMax1:12, fallRampT:5400, fallKb:5, fallKb1:10, fallMax:6, fallWarn:60, fallR:40, fallDmg:0.6, fallAim:0.75, fallGrav:0.5, fallKeep:26, fallJit:70,
              WW:4800, WH:960, wrapP:0.25, wrapMax:2, wrapNeed:12, giantK:1.8, giantNeed:120, giantT:1500, giantAt:3, giantMass:2,
              bowlMin:10, bowlV0:5, bowlK:0.28, nudgeK:0.12, fric:0.965, trayFric:0.8, bowlHitV:3, bowlDmg:8, bowlKb:7, giantBowlDmg:13,
              beltV:1.3, liftV:2.2, offBelt:2.2,
@@ -116534,14 +116536,14 @@ function lkStep(){
   J.shs = J.shs.filter(s => s.st === 'sit' || (s.st !== 'gone' && t - s.end < JB.out));
   for(const g of LKF.gum) if(g.wob > 0) g.wob--;
   lkBelts(); lkPressStep(); lkGrow(); lkKeep(); lkComboStep(); lkRushFx();
-  if(!J.fall && lkAllTaken()) lkFallBegin();
+  if(!J.fall && (lkAllTaken() || t >= LK.fallAt)) lkFallBegin();   // (and at LK.fallAt at the latest: the owner, 2026-11-18, 'start sooner'; the CPU runs took 6 to 10 minutes)
   if(J.fall){ lkFallStep(); lkHailStep(); }
 }
-// ---- THE FALL: after the last assist is taken. A deep sound, the shells left crumble, then one ball at a time (up to LK.fallMax) comes down, aimed at where a fighter stands LK.fallAim of the time.
+// ---- THE FALL: after the last assist is taken (or every living fighter holds 2, or at LK.fallAt). A deep sound, the shells left crumble, then one ball at a time (up to LK.fallMax) comes down, aimed at where a fighter stands LK.fallAim of the time.
 // SHATTERING HAIL: LK.hailP of them are big (LK.hailK the size, a bigger shadow); a big one cracks into LK.hailN small pieces that bounce away along what they land on.
 function lkFallBegin(){
   const J = JAWB, t = hazardT;
-  J.fall = { t0:t, next:t + 45, why:J.taken >= J.total ? 'all' : 'capped', alive:fighters.filter(f => !f.dead).length };   // (why: all taken, or every living fighter at the cap)
+  J.fall = { t0:t, next:t + 45, why:J.taken >= J.total ? 'all' : lkAllTaken() ? 'capped' : 'time', alive:fighters.filter(f => !f.dead).length };   // (why: all taken, or every living fighter at the cap)
   for(const s of J.shs) if(s.st === 'sit'){ jawbMelt(s); s.lift = 0; }
   tone(90, 0.7, 'sawtooth', 0.06, 0, 45); noise(0.5, 0.04, 400, 0, 120);
 }
@@ -116556,7 +116558,8 @@ function lkFallSpawn(){
 }
 function lkFallStep(){
   const J = JAWB, t = hazardT, F = J.fall;
-  if(t >= F.next && J.fl.length < LK.fallMax){ lkFallSpawn(); F.next = t + LK.fallGap; }
+  const rk = Math.min(1, (t - F.t0)/LK.fallRampT);   // THE RAMP (the owner, 2026-11-18): over LK.fallRampT frames of the fall they come more often (LK.fallGap to LK.fallGap1 frames apart) more at once (LK.fallMax to LK.fallMax1) and knock harder (LK.fallKb to LK.fallKb1)
+  if(t >= F.next && J.fl.length < Math.round(LK.fallMax + (LK.fallMax1 - LK.fallMax)*rk)){ lkFallSpawn(); F.next = t + Math.round(LK.fallGap + (LK.fallGap1 - LK.fallGap)*rk); }
   for(const b of J.fl.slice()){
     if(b.st === 'warn'){ if(t - b.t0 >= LK.fallWarn) b.st = 'fall'; continue; }
     if(b.st === 'land'){ if(t - b.tl >= LK.fallKeep) J.fl.splice(J.fl.indexOf(b), 1); continue; }
@@ -116564,7 +116567,7 @@ function lkFallStep(){
     for(const f of fighters){   // FALLING THINGS HIT WHILE FALLING (the house rule): once each
       if(f.dead || b.bk[f.idx] || Math.abs(f.x - b.x) >= f.r + R*0.85 || f.y + f.r < y1 - R || f.y - f.r > b.y + R) continue;
       b.bk[f.idx] = 1;
-      arenaHazardHit(f, LK.fallDmg, (Math.sign(f.x - b.x) || f.face || 1)*5, -5);
+      const kb = LK.fallKb + (LK.fallKb1 - LK.fallKb)*rk; arenaHazardHit(f, LK.fallDmg, (Math.sign(f.x - b.x) || f.face || 1)*kb, -kb);
     }
     if(b.y >= b.y0){
       b.st = 'land'; b.tl = t; b.vy = 0;
@@ -116826,6 +116829,11 @@ CONTEST_RULES.lick = {
       c.globalAlpha = col ? 1 : 0.75; c.lineWidth = 2.2; c.strokeStyle = big ? '#ffd23f' : (F ? F.col : 'rgba(255,255,255,0.8)'); c.stroke();
     }
     c.restore();
+    if(J && !J.fall && LK.fallAt > 0){   // THE FUSE under the pips: it burns down to the moment the jawbreakers fall anyway (a picture, no words); it blinks red near the end
+      const u = clamp(1 - hazardT/LK.fallAt, 0, 1), bw = gap*n - 4, bx = x0 + 2, by = y + 11;
+      c.save(); c.globalAlpha = 0.85; c.fillStyle = 'rgba(0,0,0,0.45)'; c.fillRect(bx - 1, by - 1, bw + 2, 5);
+      c.fillStyle = u < 0.15 && (hazardT >> 3) % 2 === 0 ? '#ff5a3a' : '#ff9ad0'; c.fillRect(bx, by, bw*u, 3); c.restore();
+    }
     if(J && LKF && scrolls()){
       const D = minimapDims(), mx = W - D.mw - 14, my = mmTop(), sx = D.mw/WW, sy = D.mh/WH;
       c.save();
@@ -116972,7 +116980,7 @@ function lkBrain(f, inp, tgt, dist){
   }
   return false;
 }
-EVENT_TWIST_WORDS['contest:lick'] = { icon:'🍬', short:"8-Ball's contest: lick your way to freedom", words:"8-Ball's contest: a big candy factory. Break jawbreakers for the only 8 assists (2 each, and you keep them): a jawbreaker's colour shows the kind of assist inside. Hit one hard to bowl it at rivals, hold Down to lick it, roll it under the candy press to crack it. Some are only wrappers. After the last assist, jawbreakers fall. Last one standing wins.", goal:'Break jawbreakers for assists. Last one standing wins.' };
+EVENT_TWIST_WORDS['contest:lick'] = { icon:'🍬', short:"8-Ball's contest: lick your way to freedom", words:"8-Ball's contest: a big candy factory. Break jawbreakers for the only 8 assists (2 each, and you keep them): a jawbreaker's colour shows the kind of assist inside. Hit one hard to bowl it at rivals, hold Down to lick it, roll it under the candy press to crack it. Some are only wrappers. After the last assist, or when the fuse under the assist dots burns down, jawbreakers fall, faster and harder as it goes on. Last one standing wins.", goal:'Break jawbreakers for assists. Last one standing wins.' };
 
 // ---------- EVENT FIGHTERS: THE DIG GAMES (Spongy's CONTEST, his third event match: CONTEST_RULES.dig, world HG) ----------
 // THE OWNER'S DESIGN (2026-11-17: "SPONGEYS EVENT SHOULD BE LIKE THE HUNGER GAMES!!! THATS PERFECT!!"; contest-specs memory, the SPONGY = HUNGER GAMES
