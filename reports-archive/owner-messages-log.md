@@ -1045,6 +1045,10 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-18** *(question box: Needy's rooms run out the timer)*: Reveal late (Recommended)
 - **2026-11-18**: sticker isnt vertical enough
 - **2026-11-18**: move the week to clocks
+- **2026-11-18**: Issue: on clock, I stashed all my gears, but then ice cube won, even though i got 100
+- **2026-11-18**: total, not on me
+- **2026-11-18**: go to bottle
+- **2026-11-18**: remove the "build v70" line
 
 ## Status questions & check-ins
 
