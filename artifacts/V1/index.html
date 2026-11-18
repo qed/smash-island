@@ -106920,7 +106920,7 @@ const EVENT_TWIST_WORDS = {
   edges:  { icon:'⛰', short:'real edges', words:'Real edges: the field ends in cliffs, so a fall off either side costs a stock.' },
   food:   { icon:'🍎', short:'food only', words:'Food only: the only items that drop are snacks that heal.' },
   throw:  { icon:'🏀', short:'throwables only', words:'Throwables only: the only items that drop are things to pick up and throw.' },
-  spleef: { icon:'🧱', short:'spleef', words:"Spleef: 30 floors of tiles. A tile falls 2 seconds after you touch it. One stock, damage never KOs: last one standing wins. Fall past the last floor and you are out." },
+  spleef: { icon:'🧱', short:'spleef', words:"Spleef: 30 floors of tiles. A tile falls 2 seconds after you touch it. One stock, damage never KOs: last one standing wins. Rubber tiles bounce you, glass goes fast, steel holds two. Stomp a rival to drop them, look out for ink, and if you are out, drop crumbs as an eraser." },
   sponge: { icon:'🧽', short:'sponge floor', words:'Sponge floor: land hard on the ground and it bounces you back up. Standing and walking are normal.' },
   dig:    { icon:'⛏', short:'dig floor', words:"Dig floor: land hard and you dig a hole. Holes stay, and the whole floor can be dug away." },
   stairs: { icon:'🪜', short:'rising staircase', words:"Rising staircase: a new step appears every 2 seconds, climbing higher. The top step is the safest." },
@@ -107731,32 +107731,53 @@ function twistVoid(){ const b = twistBackdrop(), D = b && EVENT_BACKDROPS[b]; re
 // stops at SPLK.pctCap): a hit only moves you, and the only way out is falling past the lowest floor. Last one standing wins (checkWin as ever). If nobody
 // has cracked a tile by standing for SPLK.stall frames, the tile nearest each fighter cracks on its own every SPLK.stallEvery frames, so a match always ends.
 // Not online (startEventMatch refuses in a room), so nothing of it rides the snapshot. Items and Smash Balls as the row says; what falls past the lowest floor is gone.
-let SPLEEF = null;   // null in every other match; else { tiles, x0, x1, top, gap, start, last, gone, n, tw, spin, n0, dirty } -- see spleefBuildWorld. A fighter's floor is f._spL (0 the top)
+let SPLEEF = null;   // null in every other match; else { tiles, x0, x1, top, gap, start, last, gone, n, ...the owner's picks below } -- see spleefBuildWorld. A fighter's floor is f._spL (0 the top)
 const SPLK = { rows:30, cols:12, wall:80, top:170, gap:200, h:14, crack:120, settle:1, stall:600, stallEvery:90, pctCap:300, voidPad:60 };   // settle: frames stood on one tile before it cracks (1 = at once, the owner 2026-11-07: 'platforms should fall no matter how long you stand on them'; it was 60)
-// SIMPLIFIED (the owner, 2026-11-18: "the contests should have 5ish features"): the core above only, plus the SHARPENER at the very bottom (the picture you
-// fall into, spinning faster as fewer are left: "thats just aesthetic"). Every tile is plain. Cut: rubber, glass and steel tiles, trapdoors, the head-stomp break, the ink
-// spill, the rubber stamps, the conveyor floor and the knocked-out erasers.
+// THE OWNER'S PICKS (2026-11-17; SIMPLIFIED 2026-11-18 to "1, but keep the sharpener": the core and these five. "dont fix eraser": the rules above stay exactly as they were, these only ADD):
+// TILE KINDS -- a RUBBER tile bounces you up once (a save; until you land again you are held under the floor above, so it never takes you up a floor) and then cracks as
+// any tile; a GLASS tile cracks loudly and goes SPLX.glass frames later; a STEEL tile survives two people (each new fighter on it is one, and each
+// SPLX.steelHold frames one fighter stands on it is one more) and cracks on the third. STOMP-THROUGH -- landing on a rival from above breaks THEIR tile at once, so you
+// both drop. INK SPILL -- a bottle on the wall of the busiest floor wobbles (the warning), tips, and its ink runs along that floor: an inked tile
+// breaks twice as fast. KNOCKED-OUT ERASERS -- a fighter that is out floats above as an eraser and drops a crumb every SPLX.crumbEvery frames that rubs out the first tile under it
+// (you: Left/Right to aim, Attack or Down to drop; a CPU aims by its level). SHARPENER -- at the very bottom a pencil sharpener, the picture you
+// fall into, spins faster as fewer are left. Every hazard warns first (the wobble, the ghost's dotted aim line and the falling crumb).
+// Cut 2026-11-18: the hidden trapdoors, the rubber stamps and the conveyor floor.
+const SPLX = { rub:0.08, gls:0.10, stl:0.07, glass:30, bounceVy:-9, capT:120, steelPeople:2, steelHold:240, stompCd:30,
+  inkFirst:1500, inkEvery:1800, inkWobble:120, inkSpeed:9, inkLinger:30,
+  crumbFirst:60, crumbEvery:480, crumbG:0.45, crumbMax:15, ghostV:6, ghostHover:165 };
 function spleefWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.twist === 'spleef'; }
 function spleefRowY(i){ return SPLEEF.top + i*SPLEEF.gap; }
 // The world (from setupWorld, in place of the stage's own): a shaft a screen and a bit wide, the walls as solid blocks, the ten floors as one-way tiles, no floor at all under them.
 function spleefBuildWorld(){
-  const K = SPLK;
+  const K = SPLK, X = SPLX;
   WW = Math.round(W*1.4); camX = 0; camY = 0; bases = []; floors = []; worldZones = []; spawnZones = [];
   const bottom = K.top + (K.rows - 1)*K.gap;
   WH = Math.round((bottom + K.voidPad + 40)/0.82);   // (groundY = WH*0.82 sits a little under the lowest floor: the drop is drawn from there)
   const x0 = K.wall, x1 = WW - K.wall, tw = (x1 - x0)/K.cols;
-  SPLEEF = { tiles:[], x0, x1, top:K.top, gap:K.gap, start:0, last:0, gone:[], n:0, tw, spin:0, n0:0, dirty:false };
+  SPLEEF = { tiles:[], x0, x1, top:K.top, gap:K.gap, start:0, last:0, gone:[], n:0,
+    tw, ink:null, inkNext:X.inkFirst, ghosts:[], crumbs:[], spin:0, n0:0, dirty:false,
+    stats:{ broke:{ n:0, rub:0, gls:0, stl:0 }, stomp:0, ink:0, crumb:0 } };
   worldPlats = [
     { x:0, y:-400, w:K.wall, h:WH + 800, solid:true, spWall:true },
     { x:WW - K.wall, y:-400, w:K.wall, h:WH + 800, solid:true, spWall:true },
   ];
   for(let r = 0; r < K.rows; r++) for(let c = 0; c < K.cols; c++){
     const ax = Math.round(x0 + c*tw), bx = Math.round(x0 + (c + 1)*tw);
-    const p = { x:ax, y:K.top + r*K.gap, w:bx - ax, h:K.h, solid:false, spl:true, r, c, t0:null, gone:false };
+    const p = { x:ax, y:K.top + r*K.gap, w:bx - ax, h:K.h, solid:false, spl:true, r, c, t0:null, gone:false, kind:'n' };
     SPLEEF.tiles.push(p); worldPlats.push(p);
   }
+  spleefKinds(SPLEEF);
   FLOOR_SEGS = [];   // (an empty list is a floor that is gone: nothing catches anyone under the lowest row)
   SIDE_ROOM = 0;
+}
+// TILE KINDS: rubber, glass and steel at their shares; the rest plain.
+function spleefKinds(S){
+  const X = SPLX;
+  for(const p of S.tiles){
+    if(p.kind !== 'n') continue;
+    const u = Math.random();
+    p.kind = u < X.rub ? 'rub' : u < X.rub + X.gls ? 'gls' : u < X.rub + X.gls + X.stl ? 'stl' : 'n';
+  }
 }
 // Does tile p cover x?
 function spleefCovers(p, x){ return p.w > 0 && x >= p.x && x <= p.x + p.w; }
@@ -107777,56 +107798,180 @@ function spleefUnder(f){
 function spleefHold(f){
   const S = SPLEEF, K = SPLK;
   if(f._spL == null) f._spL = 0;
+  if(f._spCapT != null && hazardT <= f._spCapT && f.y - f.r < f._spCapY){ f.y = f._spCapY + f.r; if(f.vy < 0) f.vy = 0; }   // A RUBBER TILE'S BOUNCE: never up through the floor above (before its floor is read)
   f._spL = 0; while(f._spL < K.rows - 1 && f.y - f.r > spleefRowY(f._spL) + K.h + 1) f._spL++;   // the floors whose plane is wholly above the body: its floor (it can go back UP: the tiles are one-way, and jumping is free)
   if(f.y - f.r < 8){ f.y = 8 + f.r; if(f.vy < 0) f.vy = 0; }
   if(f.x < S.x0 + f.r){ f.x = S.x0 + f.r; if(f.vx < 0) f.vx = 0; } else if(f.x > S.x1 - f.r){ f.x = S.x1 - f.r; if(f.vx > 0) f.vx = 0; }   // the walls (solid blocks too)
 }
 // Is there a whole tile of floor L at x?
 function spleefTileAt(L, x){ for(const p of SPLEEF.tiles){ if(!p.gone && p.r === L && spleefCovers(p, x)) return p; } return null; }
-// A CPU (brainOut, after the ledge sense): on a cracking tile, the walk to the nearest whole tile of its floor in reach, hopping any gap; else it lets the drop come.
+// A CPU (brainOut, after the ledge sense). By its level (0-3): now and then a hop onto a rival of its floor (STOMP-THROUGH), steered down onto it; on a
+// cracking tile, the walk to the best whole tile of its floor in reach (the nearest, weighed by what it reads: glass and ink cost; steel and rubber are worth
+// a little), hopping any gap; else it lets the drop come.
 function spleefBrain(f, inp){
-  const S = SPLEEF;
-  if(f.hitstun > 0 || !f.onground) return;
-  const p = spleefUnder(f);
+  const S = SPLEEF, X = SPLX, t = hazardT, lv = brainLevel(f);
+  if(f.hitstun > 0) return;
+  if(f._spSt && (t > f._spSt.until || f._spSt.tgt.dead)) f._spSt = null;
+  if(f._spSt && !f.onground){ const dx = f._spSt.tgt.x - f.x; inp.left = dx < -6; inp.right = dx > 6; inp.jump = false; inp.down = false; return; }
+  if(!f.onground) return;
+  const L = f._spL || 0, p = spleefUnder(f);
+  if(p && (t + f.idx*7) % 30 === 0 && Math.random() < [0.04, 0.12, 0.25, 0.4][lv]){   // STOMP-THROUGH: a rival a hop away on this floor
+    let tg = null, bd = 1e9;
+    for(const g of fighters){ if(g === f || g.dead || !g.onground || (SETTINGS.mode !== 'ffa' && g.team === f.team) || (g._spL || 0) !== L) continue; const d = Math.abs(g.x - f.x); if(d > 40 && d < 220 && d < bd){ bd = d; tg = g; } }
+    if(tg){ f._spSt = { tgt:tg, until:t + 60 }; inp.jump = true; inp.left = tg.x < f.x; inp.right = tg.x > f.x; inp.down = false; return; }
+  }
   if(!p || p.t0 == null) return;
-  let best = null, bd = 1e9;
+  const kw = [0, 0.5, 1, 1][lv], iw = [0.3, 0.6, 1, 1][lv];
+  let best = null, bs = 1e9, bd = 1e9;
   for(const q of S.tiles){
     if(q.gone || q.t0 != null || q.r !== p.r || q.w <= 0) continue;
-    const d = Math.abs(q.x + q.w/2 - f.x);
-    if(d < bd){ bd = d; best = q; }
+    const d = Math.abs(q.x + q.w/2 - f.x); let sc = d;
+    if(q.kind === 'gls') sc += 160*kw; else if(q.kind === 'stl') sc -= 120*kw; else if(q.kind === 'rub') sc -= 40*kw;
+    if(q.ink) sc += 140*iw;
+    if(sc < bs){ bs = sc; best = q; bd = d; }
   }
   if(!best || bd > 420) return;
   const dir = best.x + best.w/2 > f.x ? 1 : -1;
   inp.left = dir < 0; inp.right = dir > 0; inp.down = false;
   if(bd > p.w*1.2) inp.jump = (hazardT % 10) < 5;   // a gap of gone tiles between: hop it
 }
-// A tile starts to crack (stood on, or the stall rule): a creak and a patter of grit; it goes SPLK.crack frames later.
+// How long a cracking tile lasts: glass SPLX.glass, the rest SPLK.crack; ink halves it.
+function spleefDur(p){ return (p.kind === 'gls' ? SPLX.glass : SPLK.crack)*(p.ink ? 0.5 : 1); }
+// A tile starts to crack (stood on, or the stall rule): a creak and a patter of grit (glass: a loud crack).
 function spleefCrack(p, t, forced){
   if(p.t0 != null || p.gone) return;
   p.t0 = t; SPLEEF.n++; if(!forced) SPLEEF.last = t;
-  tone(150, 0.3, 'sawtooth', 0.06, 0, 95); noise(0.12, 0.08, 2600, 0, 900); noise(0.08, 0.06, 2200, 0.14, 700);
+  if(p.kind === 'gls'){ noise(0.2, 0.22, 5200, 0, 3000); tone(1900, 0.14, 'square', 0.06, 0, 900); noise(0.1, 0.16, 4200, 0.12, 2400); }
+  else { tone(150, 0.3, 'sawtooth', 0.06, 0, 95); noise(0.12, 0.08, 2600, 0, 900); noise(0.08, 0.06, 2200, 0.14, 700); }
 }
-// A tile goes (its crack ran out): a plat of no width (nothing lands on it, nothing draws it), out of worldPlats at the end of the step.
+// A tile goes (its crack ran out, a stomp or a crumb): a plat of no width (nothing lands on it, nothing draws it), out of worldPlats at the end of the step.
 function spleefGo(S, p, t){
   if(p.gone) return;
   p.gone = true; p.w0 = p.w || S.tw; p.w = 0; S.dirty = true;
-  S.gone.push({ x:p.x, y:p.y, w:p.w0, t, r:p.r });
+  S.gone.push({ x:p.x, y:p.y, w:p.w0, t, r:p.r, kind:p.kind, ink:!!p.ink });
+  S.stats.broke[p.kind] = (S.stats.broke[p.kind] || 0) + 1;
   impact(p.x + p.w0/2, p.y, { shake:3, dust:1, debris:5, r:36 });
-  noise(0.3, 0.16, 1200, 0, 200); tone(80, 0.25, 'sine', 0.14, 0, 44);
+  if(p.kind === 'gls'){ noise(0.35, 0.22, 6000, 0, 2500); tone(2400, 0.2, 'triangle', 0.06, 0, 1200); }
+  else { noise(0.3, 0.16, 1200, 0, 200); tone(80, 0.25, 'sine', 0.14, 0, 44); }
 }
-// Once a frame, from twistStep (before the fighters move): the percent stops short of a KO, a tile stood on cracks, a floor nobody is on or above breaks,
-// the stall rule, the sharpener's spin, and a cracked tile goes when its time is up (SPLK.crack).
+// A fighter stands on a whole tile (spleefStep, f._spStand frames on it): what its kind does.
+function spleefTouch(f, p, t){
+  const K = SPLK, X = SPLX, S = SPLEEF;
+  if(f._spStand < K.settle) return;
+  const first = f._spStand === K.settle;
+  if(p.kind === 'stl'){
+    if(!p.who) p.who = {};
+    let add = false;
+    if(first){ if(!p.who[f.idx]){ p.who[f.idx] = 1; add = true; } }
+    else if((f._spStand - K.settle) % X.steelHold === 0) add = true;
+    if(add){ p.wt = (p.wt || 0) + 1; p.dentT = t; tone(620, 0.35, 'triangle', 0.1, 0, 560); tone(930, 0.25, 'sine', 0.05, 0, 900); if(p.wt > X.steelPeople) spleefCrack(p, t, false); }
+    return;
+  }
+  if(p.kind === 'rub' && first && !p.used){
+    p.used = true; p.boing = t;
+    f.vy = X.bounceVy; f.onground = false; f.y -= 1; f.jumps = Math.min(f.jumps == null ? 2 : f.jumps, 1);
+    f._spCapY = p.r > 0 ? spleefRowY(p.r - 1) + K.h + 2 : 8; f._spCapT = t + X.capT; f._spCap0 = t; f._spCapL = p.r;   // (held until it lands again, at most SPLX.capT frames)
+    tone(180, 0.25, 'sine', 0.14, 0, 420);
+  }
+  spleefCrack(p, t, false);
+}
+// STOMP-THROUGH: a fighter coming down onto a rival's head breaks the rival's tile at once (a little pop for the stomper; then both drop).
+function spleefStomps(S, t){
+  for(const a of fighters){
+    if(a.dead || a.onground || !(a.vy > 1.5) || (a._spStompAt != null && t - a._spStompAt < SPLX.stompCd)) continue;
+    const feet = a.y + a.r;
+    for(const b of fighters){
+      if(b === a || b.dead || !b.onground || (SETTINGS.mode !== 'ffa' && b.team === a.team)) continue;
+      if(Math.abs(a.x - b.x) > (a.r + b.r)*0.75) continue;
+      const head = b.y - b.r;
+      if(feet < head - 4 || feet > head + a.vy + 10) continue;
+      const p = spleefUnder(b); if(!p || p.gone) continue;
+      a._spStompAt = t; a.vy = -3; b.vy = 2; b.onground = false; a._spSt = null;
+      S.stats.stomp++; spleefGo(S, p, t);
+      impact(b.x, head, { shake:4, dust:1, debris:3, r:30 }); tone(90, 0.18, 'sine', 0.16, 0, 50); noise(0.12, 0.12, 1500, 0, 400);
+      break;
+    }
+  }
+}
+// INK SPILL: every SPLX.inkEvery frames (the first at SPLX.inkFirst), the floor with the most fighters on it (3 or more whole tiles left): the bottle
+// on its wall wobbles for SPLX.inkWobble frames (a glassy tink), tips, and the ink runs along the floor from that wall at SPLX.inkSpeed px a frame.
+function spleefInkStep(S, t){
+  const X = SPLX, run = t - S.start;
+  if(!S.ink && run >= S.inkNext){
+    const cnt = {}; for(const f of fighters) if(!f.dead){ const l = f._spL || 0; cnt[l] = (cnt[l] || 0) + 1; }
+    let L = -1, bc = 0; for(const k in cnt){ const n = cnt[k], l = +k; if(n > bc || (n === bc && l < L)){ bc = n; L = l; } }
+    const whole = L >= 0 ? S.tiles.filter(p=>p.r === L && !p.gone && !p.ink).length : 0;
+    if(whole >= 3){ S.ink = { L, side:Math.random() < 0.5 ? -1 : 1, t0:t, front:0 }; S.stats.ink++; S.inkNext = run + X.inkEvery; }
+    else S.inkNext = run + 120;
+  }
+  const I = S.ink; if(!I) return;
+  const a = t - I.t0;
+  if(a < X.inkWobble){ if(a % 20 === 0) tone(a % 40 ? 1100 : 1350, 0.06, 'sine', 0.05); return; }
+  if(a === X.inkWobble){ tone(220, 0.4, 'sine', 0.1, 0, 90); noise(0.4, 0.1, 700, 0, 200); }
+  I.front = (a - X.inkWobble)*X.inkSpeed;
+  for(const p of S.tiles){ if(p.r !== I.L || p.gone || p.ink) continue; const cx = p.x + p.w/2, d = I.side < 0 ? cx - S.x0 : S.x1 - cx; if(d <= I.front) p.ink = true; }
+  if(I.front > (S.x1 - S.x0) + X.inkLinger*X.inkSpeed) S.ink = null;
+}
+// KNOCKED-OUT ERASERS: an eraser for each fighter that is out, floating above; a crumb every SPLX.crumbEvery frames (the first SPLX.crumbFirst after the KO)
+// that rubs out the first tile it falls onto. Yours: Left/Right to aim, Attack or Down to drop, at the top of your view. A CPU's: over a rival's floor,
+// aimed at it with an error and a lead by its level (and at levels 2-3 only once the rival is on its feet).
+function spleefGhostStep(S, t){
+  const X = SPLX;
+  for(const f of fighters){
+    if(!f.dead || f._spGh) continue;
+    f._spGh = true;
+    S.ghosts.push({ f, x:clamp(f.x, S.x0 + 30, S.x1 - 30), y:null, cd:X.crumbFirst, tgt:null, err:0, wait:0, born:t });
+    noise(0.6, 0.12, 1800, 0, 600); tone(70, 0.5, 'sawtooth', 0.05, 0, 110);   // the sharpener grinds
+  }
+  const live = fighters.filter(f=>!f.dead);
+  if(live.length) for(const g of S.ghosts){
+    if(g.cd > 0) g.cd--;
+    let dir = 0, drop = false, ty = 0;
+    if(g.f.you && (g.f.controller || 'local') === 'local'){
+      const K = KEYS; let gp = null; try{ gp = pollPad(); }catch(e){}
+      dir = ((down[K.right] || (gp && gp.right)) ? 1 : 0) - ((down[K.left] || (gp && gp.left)) ? 1 : 0);
+      drop = !!(down[K.attack] || KEY_LATCH_NOW[K.attack] || down[K.down] || (gp && (gp.attack || gp.down)));
+      const z = viewZoom() || 1; ty = camY + H/2 - (H/2)/z + 80;
+      g.x = clamp(g.x + dir*X.ghostV, S.x0 + 20, S.x1 - 20);
+    } else {
+      const lv = brainLevel(g.f);
+      if(!g.tgt || g.tgt.dead){ g.tgt = live[Math.floor(Math.random()*live.length)]; g.err = [200, 110, 55, 20][lv]*(Math.random()*2 - 1); g.wait = Math.round([90, 50, 25, 8][lv]*Math.random()); }
+      const ax = clamp(g.tgt.x + (g.tgt.vx || 0)*[0, 0, 15, 25][lv] + g.err, S.x0 + 20, S.x1 - 20);
+      g.x = Math.abs(ax - g.x) <= X.ghostV ? ax : g.x + Math.sign(ax - g.x)*X.ghostV;
+      ty = spleefRowY(g.tgt._spL || 0) - X.ghostHover;
+      if(g.cd <= 0 && Math.abs(ax - g.x) < 14){ if(g.wait > 0) g.wait--; else if(lv < 2 || g.tgt.onground) drop = true; }
+    }
+    g.y = g.y == null ? ty : g.y + (ty - g.y)*0.1;
+    if(drop && g.cd <= 0){
+      g.cd = X.crumbEvery; S.crumbs.push({ x:g.x, y:g.y + 16, vy:1, own:g.f.idx, rot:0 }); S.stats.crumb++;
+      tone(700, 0.08, 'sine', 0.06, 0, 400);
+      if(!g.f.you) g.tgt = null;
+    }
+  }
+  for(const c of S.crumbs){
+    const y0 = c.y; c.vy = Math.min(X.crumbMax, c.vy + X.crumbG); c.y += c.vy; c.rot += 0.2;
+    let hit = null;
+    for(const p of S.tiles){ if(p.gone || p.y < y0 - 2 || p.y > c.y + 2 || !spleefCovers(p, c.x)) continue; if(!hit || p.y < hit.y) hit = p; }
+    if(hit){ spleefGo(S, hit, t); c.dead = true; noise(0.15, 0.1, 2400, 0, 800); }
+    else if(c.y > spleefRowY(SPLK.rows - 1) + 400) c.dead = true;
+  }
+  S.crumbs = S.crumbs.filter(c=>!c.dead);
+}
+// Once a frame, from twistStep (before the fighters move): the percent stops short of a KO, a tile stood on does what its kind does (most crack), the
+// stomps, a floor nobody is on or above breaks, the stall rule, the ink, the erasers, the sharpener's spin, and a cracked tile goes when its time is up (spleefDur).
 function spleefStep(){
-  const S = SPLEEF, K = SPLK, t = hazardT;
+  const S = SPLEEF, K = SPLK, X = SPLX, t = hazardT;
   if(!S.n0) S.n0 = fighters.length;
   for(const f of fighters){
     if(f.dead) continue;
     if(f._spL == null) f._spL = 0;
     if(f.pct > K.pctCap) f.pct = K.pctCap;
     const p = f.onground ? spleefUnder(f) : null;   // the settle: K.settle frames on one tile and it cracks (a sprint straight across does not; any stop or landing does)
-    if(p && p.t0 == null){ f._spStand = (f._spTile === p) ? (f._spStand || 0) + 1 : 1; f._spTile = p; if(f._spStand >= K.settle) spleefCrack(p, t, false); }
+    if(f._spCapT != null && f.onground && t > f._spCap0 + 2) f._spCapT = null;   // a rubber bounce's ceiling lasts until the landing
+    if(p && p.t0 == null){ f._spStand = (f._spTile === p) ? (f._spStand || 0) + 1 : 1; f._spTile = p; spleefTouch(f, p, t); }
     else { f._spStand = 0; f._spTile = null; }
   }
+  spleefStomps(S, t);
   let minL = 99;   // a floor with nobody ON it or ABOVE it (every living fighter is below) breaks all at once
   for(const f of fighters){ if(!f.dead && f._spL != null && f._spL < minL) minL = f._spL; }
   if(minL < 99) for(const p of S.tiles){ if(!p.gone && p.t0 == null && p.r < minL) spleefCrack(p, t, true); }
@@ -107838,21 +107983,52 @@ function spleefStep(){
       if(best) spleefCrack(best, t, true);
     }
   }
+  spleefInkStep(S, t); spleefGhostStep(S, t);
   let live = 0; for(const f of fighters) if(!f.dead) live++;
   S.spin += 0.025*(1 + 4*(1 - live/Math.max(1, S.n0)));   // THE SHARPENER: faster as fewer are left
   for(const p of S.tiles){
-    if(p.gone || p.t0 == null || t < p.t0 + K.crack) continue;
+    if(p.gone || p.t0 == null || t < p.t0 + spleefDur(p)) continue;
     spleefGo(S, p, t);
   }
   if(S.dirty){ worldPlats = worldPlats.filter(p=>!(p.spl && p.gone)); S.dirty = false; }
   if(S.gone.length > 48) S.gone.splice(0, S.gone.length - 48);
 }
 // ---- the pictures (the game's and the picture card's) ----
-// A plain tile at (x, y, w, h), for the picture card (in the game the whole tiles are painted by paintPlat, as any ledge is).
-function spleefTileArt(c, x, y, w, h){
+// A tile of a kind at (x, y, w, h). o: { base (the plain tile under it, for the card), ink, used, wt }.
+function spleefTileArt(c, x, y, w, h, kind, o){
+  o = o || {};
   if(w <= 0) return;
-  c.save(); c.lineWidth = 2; c.strokeStyle = '#1c1c1c'; c.fillStyle = '#8fa8c8'; c.fillRect(x, y, w, h); c.strokeRect(x, y, w, h); c.restore();
+  c.save(); c.lineWidth = 2; c.strokeStyle = '#1c1c1c';
+  if(o.base){ c.fillStyle = '#8fa8c8'; c.fillRect(x, y, w, h); c.strokeRect(x, y, w, h); }
+  if(kind === 'rub'){ c.fillStyle = o.used ? '#c45a80' : '#ff7aa8'; c.fillRect(x, y, w, h); c.fillStyle = '#ffd0e0'; c.fillRect(x + 4, y + 2, w - 8, Math.max(2, h*0.22)); c.strokeRect(x, y, w, h); }
+  else if(kind === 'gls'){ c.fillStyle = 'rgba(200,240,255,0.85)'; c.fillRect(x, y, w, h); c.strokeStyle = '#ffffff'; c.lineWidth = 2; c.beginPath(); for(let i = 0.2; i < 1; i += 0.35){ c.moveTo(x + w*i, y + h); c.lineTo(x + w*i + h, y); } c.stroke(); c.strokeStyle = '#3a6a8a'; c.strokeRect(x, y, w, h); }
+  else if(kind === 'stl'){
+    c.fillStyle = '#8d96a3'; c.fillRect(x, y, w, h); c.fillStyle = '#c7ced8'; c.fillRect(x + 2, y + 2, w - 4, Math.max(2, h*0.2)); c.strokeRect(x, y, w, h);
+    c.fillStyle = '#3c424a'; for(const u of [0.1, 0.9]){ c.beginPath(); c.arc(x + w*u, y + h/2, Math.max(1.5, h*0.16), 0, 7); c.fill(); }
+    for(let i = 0; i < (o.wt || 0); i++){ c.strokeStyle = '#3c424a'; c.beginPath(); c.arc(x + w*(0.35 + i*0.3), y, h*0.5, 0.2, Math.PI - 0.2); c.stroke(); }
+  }
+  if(o.ink){ c.fillStyle = 'rgba(28,22,70,0.8)'; c.fillRect(x, y, w, h*0.6); for(let i = 0; i < 3; i++){ const dx = x + w*(0.2 + i*0.3); c.beginPath(); c.ellipse(dx, y + h*0.6, 4, 3 + (i % 2)*3, 0, 0, 7); c.fill(); } }
+  c.restore();
 }
+// The ink bottle at (x, y: its foot), tipped by ang.
+function spleefBottlePic(c, x, y, s, ang){
+  c.save(); c.translate(x, y); c.rotate(ang || 0); c.scale(s, s); c.lineWidth = 3; c.strokeStyle = '#1c1c1c';
+  c.fillStyle = '#2b3a8c'; c.fillRect(-15, -44, 30, 44); c.strokeRect(-15, -44, 30, 44);
+  c.fillStyle = '#f4efe2'; c.fillRect(-11, -32, 22, 14); c.fillStyle = '#1c1c1c'; c.fillRect(-6, -27, 12, 4);
+  c.fillStyle = '#2b3a8c'; c.fillRect(-7, -56, 14, 12); c.strokeRect(-7, -56, 14, 12);
+  c.fillStyle = '#b07a4a'; c.fillRect(-6, -63, 12, 8); c.strokeRect(-6, -63, 12, 8);
+  c.restore();
+}
+// A knocked-out fighter's eraser (pink, a blue sleeve, their colour as the outline, two eyes) at (x, y), s its scale.
+function spleefGhostPic(c, x, y, s, col){
+  c.save(); c.translate(x, y); c.scale(s, s); c.lineWidth = 3;
+  c.fillStyle = '#ff9cbc'; c.strokeStyle = col || '#1c1c1c'; itemRoundRect(c, -24, -15, 48, 30, 7); c.fill(); c.stroke();
+  c.fillStyle = '#4f7fd8'; c.fillRect(-6, -15, 18, 30); c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.strokeRect(-6, -15, 18, 30);
+  c.fillStyle = '#ffffff'; c.beginPath(); c.arc(-16, -3, 4.5, 0, 7); c.arc(20, -3, 4.5, 0, 7); c.fill();
+  c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(-15, -2, 2.2, 0, 7); c.arc(21, -2, 2.2, 0, 7); c.fill();
+  c.restore();
+}
+function spleefCrumbPic(c, x, y, s, rot){ c.save(); c.translate(x, y); c.rotate(rot || 0); c.scale(s, s); c.fillStyle = '#ff9cbc'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.moveTo(-6, -4); c.lineTo(5, -6); c.lineTo(7, 4); c.lineTo(-4, 6); c.closePath(); c.fill(); c.stroke(); c.restore(); }
 // The pencil sharpener at the bottom (its top middle at (x, y), s its scale, spin its angle): a metal block, the cone you fall into, the blade turning, shavings.
 function spleefSharpPic(c, x, y, s, spin){
   c.save(); c.translate(x, y); c.scale(s, s); c.lineWidth = 4; c.strokeStyle = '#1c1c1c';
@@ -107867,28 +108043,61 @@ function spleefSharpPic(c, x, y, s, spin){
   for(let i = 0; i < 8; i++){ const a = spin*1.6 + i*0.785, r = 70 + (i % 3)*45; c.save(); c.translate(Math.cos(a)*r, 40 + Math.sin(a)*r*0.3); c.rotate(a*2); c.beginPath(); c.arc(0, 0, 9, 0, Math.PI*1.4); c.lineTo(0, 0); c.closePath(); c.fill(); c.stroke(); c.restore(); }
   c.restore();
 }
-// ART (over the platforms, under the fighters): a cracking tile shakes and darkens as its cracks spread, a tile that has gone falls away in three pieces for a
-// moment, and the sharpener at the very bottom. The walls and the whole tiles are painted by paintPlat as any solid block and ledge are. Only what is near the view is drawn.
+// ART (over the platforms, under the fighters): the kinds over their tiles (the ink, the steel's dents), a cracking tile shakes and darkens as its cracks
+// spread, a tile that has gone falls away in three pieces for a moment; then the ink bottle, the erasers with their aim lines and crumbs, and the sharpener
+// at the very bottom. The walls and the whole tiles are painted by paintPlat as any solid block and ledge are. Only what is near the view is drawn.
 function drawSpleef(){
-  const S = SPLEEF, K = SPLK, c = ctx, t = hazardT; if(!S) return;
+  const S = SPLEEF, K = SPLK, X = SPLX, c = ctx, t = hazardT; if(!S) return;
   const z = viewZoom() || 1, vy0 = camY + H/2 - (H/2)/z - 120, vy1 = camY + H/2 + (H/2)/z + 120;
   if(WH - 330 < vy1) spleefSharpPic(c, WW/2, WH - 330, 1, S.spin);
   for(const p of S.tiles){
-    if(p.gone || p.t0 == null || p.y < vy0 || p.y > vy1) continue;
-    const k = clamp((t - p.t0)/K.crack, 0, 1), sh = 1.5 + 2*k, dx = Math.sin(t*1.9 + p.c)*sh, dy = Math.sin(t*2.3 + p.r)*sh*0.5;
-    const n = 2 + Math.floor(k*4);
-    c.save(); c.translate(dx, dy);
-    c.globalAlpha = 0.25 + 0.4*k; c.fillStyle = '#2a1e16'; c.fillRect(p.x, p.y, p.w, p.h);
-    c.globalAlpha = 1; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath();
-    for(let i = 0; i < n; i++){ const a = p.x + p.w*((i + 0.5)/n), sg = (i % 2 ? 1 : -1); c.moveTo(a, p.y); c.lineTo(a + 6*sg, p.y + p.h*0.5); c.lineTo(a - 4*sg, p.y + p.h); }
-    c.stroke(); c.restore();
+    if(p.gone || p.y < vy0 || p.y > vy1) continue;
+    const o = { ink:p.ink, used:p.used, wt:p.wt };
+    spleefTileArt(c, p.x, p.y, p.w, p.h, p.kind, o);
+    if(p.kind === 'rub' && p.boing != null && t - p.boing < 14){ c.save(); c.globalAlpha = 1 - (t - p.boing)/14; c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.beginPath(); c.ellipse(p.x + p.w/2, p.y, p.w*0.4, 10 + (t - p.boing), 0, Math.PI, 0); c.stroke(); c.restore(); }
   }
+  for(const p of S.tiles){
+    if(p.gone || p.t0 == null || p.y < vy0 || p.y > vy1) continue;
+    const k = clamp((t - p.t0)/spleefDur(p), 0, 1), sh = 1.5 + 2*k, dx = Math.sin(t*1.9 + p.c)*sh, dy = Math.sin(t*2.3 + p.r)*sh*0.5;
+    const n = 2 + Math.floor(k*4);
+    const crack = (x, w)=>{
+      c.save(); c.translate(dx, dy);
+      c.globalAlpha = 0.25 + 0.4*k; c.fillStyle = p.kind === 'gls' ? '#ffffff' : '#2a1e16'; c.fillRect(x, p.y, w, p.h);
+      c.globalAlpha = 1; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath();
+      for(let i = 0; i < n; i++){ const a = x + w*((i + 0.5)/n), sg = (i % 2 ? 1 : -1); c.moveTo(a, p.y); c.lineTo(a + 6*sg, p.y + p.h*0.5); c.lineTo(a - 4*sg, p.y + p.h); }
+      c.stroke(); c.restore();
+    };
+    crack(p.x, p.w);
+  }
+  const pieceCol = { n:'#8fa8c8', rub:'#ff7aa8', gls:'#c8f0ff', stl:'#8d96a3' };
   for(const g of S.gone){
     const age = t - g.t; if(age > 28) continue;
-    c.save(); c.globalAlpha = (1 - age/28)*0.9; c.fillStyle = '#8fa8c8'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2;
+    c.save(); c.globalAlpha = (1 - age/28)*0.9; c.fillStyle = g.ink ? '#2b2a55' : (pieceCol[g.kind] || '#8fa8c8'); c.strokeStyle = '#1c1c1c'; c.lineWidth = 2;
     for(let i = 0; i < 3; i++){ const w = g.w/3, x = g.x + i*w + (i - 1)*age*0.8, y = g.y + age*age*0.35 + i*age*0.4; c.fillRect(x + 2, y, w - 4, K.h); c.strokeRect(x + 2, y, w - 4, K.h); }
     c.restore();
   }
+  const I = S.ink;
+  if(I){
+    const a = t - I.t0, bx = I.side < 0 ? S.x0 + 22 : S.x1 - 22, by = spleefRowY(I.L);
+    const ang = a < X.inkWobble ? Math.sin(a*0.45)*0.3*(a/X.inkWobble) : -I.side*Math.min(1.45, (a - X.inkWobble)*0.12);
+    c.save(); c.fillStyle = '#5a4a3a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.fillRect(I.side < 0 ? S.x0 : S.x1 - 40, by - 2, 40, 6); c.strokeRect(I.side < 0 ? S.x0 : S.x1 - 40, by - 2, 40, 6); c.restore();
+    spleefBottlePic(c, bx, by - 2, 0.9, ang);
+    if(a >= X.inkWobble){ const fx = I.side < 0 ? S.x0 + Math.min(I.front, S.x1 - S.x0) : S.x1 - Math.min(I.front, S.x1 - S.x0); c.save(); c.fillStyle = 'rgba(28,22,70,0.85)'; c.beginPath(); c.ellipse(fx, by + 1, 16, 5, 0, 0, 7); c.fill(); c.restore(); }
+  }
+  for(const g of S.ghosts){   // the erasers: a dotted line from a ready one down to the tile its crumb would hit, the eraser bobbing, the crumb's recharge ring
+    if(g.y == null) continue;
+    const gy = g.y + Math.sin((t + g.f.idx*40)*0.06)*5;
+    if(g.cd <= 0){
+      let ty = null; for(const p of S.tiles){ if(p.gone || p.y < gy || !spleefCovers(p, g.x)) continue; if(ty == null || p.y < ty) ty = p.y; }
+      c.save(); c.globalAlpha = 0.5; c.strokeStyle = '#ff9cbc'; c.lineWidth = 3; c.setLineDash([6, 8]); c.beginPath(); c.moveTo(g.x, gy + 16); c.lineTo(g.x, ty == null ? gy + 400 : ty); c.stroke(); c.setLineDash([]);
+      if(ty != null){ c.globalAlpha = 0.7; c.beginPath(); c.ellipse(g.x, ty, 14, 4, 0, 0, 7); c.stroke(); }
+      c.restore();
+    }
+    c.save(); c.globalAlpha = 0.8; spleefGhostPic(c, g.x, gy, 0.9, g.f.color); c.restore();
+    if(g.cd > 0){ c.save(); c.globalAlpha = 0.7; c.strokeStyle = '#ff9cbc'; c.lineWidth = 3; c.beginPath(); c.arc(g.x, gy, 30, -Math.PI/2, -Math.PI/2 + 6.283*(1 - g.cd/X.crumbEvery)); c.stroke(); c.restore(); }
+    else spleefCrumbPic(c, g.x, gy + 20, 0.9, 0);
+  }
+  for(const cr of S.crumbs) spleefCrumbPic(c, cr.x, cr.y, 1.2, cr.rot);
 }
 // HUD (screen space, top middle): who is left and which of the ten floors the player is on (out: the deepest floor anyone has reached). Nothing else is said in the match.
 function drawSpleefHud(){
@@ -148702,15 +148911,23 @@ const CCARD_ART = {
      function(c, x, y, s){ c.save(); c.globalAlpha = 0.3; c.fillStyle = '#9ff0ff'; c.beginPath(); c.arc(x, y, s*0.42, 0, 7); c.fill(); c.globalAlpha = 1; c.strokeStyle = '#4fc8e8'; c.lineWidth = 4; c.stroke(); c.restore(); ccMe(c, x, y + s*0.05, s*0.42); }]
   ]; },
   // JAMMY: the crown waits on the throne; wear it and the time runs for you; hit the Ruler (or spend five coins) to take it; the jester's hat turns them round; the secret doors
-  // ERASER: SPLEEF -- the tiles go as you stand on them, down floor by floor, the last one standing wins; the sharpener below
+  // ERASER: SPLEEF -- the tiles go as you stand on them, down floor by floor, the last one standing wins; the kinds (rubber bounces you, glass goes fast,
+  // steel holds two); the ink, the stomp, the eraser of someone who is out, and the sharpener below
   spleef:function(){
     const row = function(c, x, y, w, n, gap, kinds){ const tw = w/n; for(let i = 0; i < n; i++){ if(gap && gap.indexOf(i) >= 0) continue; spleefTileArt(c, x - w/2 + i*tw, y, tw - 2, 10, (kinds && kinds[i]) || 'n', { base:true }); } };
+    const meCol = (chosen && chosen.color) || '#7bc043';
     return [
     [function(c, x, y, s){ row(c, x, y - s*0.05, s*0.9, 5); ccMe(c, x, y - s*0.05 - s*0.2, s*0.4); row(c, x, y + s*0.38, s*0.9, 5); },
      '>', function(c, x, y, s){ row(c, x, y - s*0.05, s*0.9, 5, [2]); row(c, x, y + s*0.38, s*0.9, 5); ccMe(c, x, y + s*0.38 - s*0.2, s*0.4); ccArrow(c, x, y - s*0.25, s*0.3, '#ffffff', Math.PI/2); },
      '>', function(c, x, y, s){ for(let i = 0; i < 3; i++){ ccFoe(c, x + (i - 1)*s*0.3, y, s*0.4, i); ccCross(c, x + (i - 1)*s*0.3, y, s*0.4); } },
      '>', 'win'],
-    [function(c, x, y, s){ spleefSharpPic(c, x, y - s*0.25, s/700, 0.5); ccArrow(c, x, y - s*0.38, s*0.25, '#ffffff', Math.PI/2); }]
+    [function(c, x, y, s){ spleefTileArt(c, x - s*0.2, y + s*0.32, s*0.4, 10, 'rub', {}); ccMe(c, x - s*0.05, y - s*0.08, s*0.36); ccArrow(c, x + s*0.3, y - s*0.05, s*0.35, '#ffffff', -Math.PI/2); },
+     function(c, x, y, s){ spleefTileArt(c, x - s*0.3, y + s*0.32, s*0.4, 10, 'gls', {}); ccTimer(c, x + s*0.22, y - s*0.08, s*0.6, 0.15); },
+     function(c, x, y, s){ spleefTileArt(c, x - s*0.3, y + s*0.32, s*0.6, 10, 'stl', { wt:2 }); ccMe(c, x - s*0.14, y + s*0.32 - s*0.16, s*0.32); ccFoe(c, x + s*0.14, y + s*0.32 - s*0.16, s*0.32, 0); ccTick(c, x + s*0.4, y - s*0.25, s*0.4); }],
+    [function(c, x, y, s){ spleefTileArt(c, x - s*0.4, y + s*0.32, s*0.8, 10, 'n', { base:true, ink:true }); spleefBottlePic(c, x - s*0.3, y + s*0.3, s/110, 1.2); },
+     function(c, x, y, s){ row(c, x, y + s*0.35, s*0.8, 4, [1, 2]); ccFoe(c, x, y + s*0.35 - s*0.1, s*0.3, 0); ccMe(c, x, y - s*0.25, s*0.3); ccSpark(c, x + s*0.15, y - s*0.02, s*0.2); },
+     function(c, x, y, s){ row(c, x, y + s*0.35, s*0.8, 4, [2]); spleefGhostPic(c, x + s*0.1, y - s*0.3, s/110, meCol); c.save(); c.strokeStyle = '#ff9cbc'; c.lineWidth = 3; c.setLineDash([5, 6]); c.beginPath(); c.moveTo(x + s*0.1, y - s*0.15); c.lineTo(x + s*0.1, y + s*0.3); c.stroke(); c.restore(); spleefCrumbPic(c, x + s*0.1, y + s*0.1, 1.2, 0.4); },
+     function(c, x, y, s){ spleefSharpPic(c, x, y - s*0.25, s/700, 0.5); ccArrow(c, x, y - s*0.38, s*0.25, '#ffffff', Math.PI/2); }]
   ]; },
   crown:function(){ return [
     [function(c, x, y, s){ crnDrawThrone(c, x, y + s*0.42, s/250); crownDraw(c, x, y - s*0.1, s/60, 1); }, '>', function(c, x, y, s){ ccMe(c, x, y + s*0.08, s*0.7); crownDraw(c, x, y - s*0.33, s/90, 1); },
