@@ -1006,6 +1006,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-12 13:28 UTC** *(part)*: push on FRIDAY.
 - **2026-11-13 11:11 UTC**: signing off till the push.
 - **2026-11-13 18:53 UTC** *(part)*: knockback is guarenteed to push you against the wind.
+- **2026-11-18**: let's do all of the above and push live
+- **2026-11-18** *(question box)*: Spongy length -> Closing arena (Recommended); Pie length -> Leave it (Recommended)
 
 ## Status questions & check-ins
 
