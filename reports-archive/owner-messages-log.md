@@ -1306,6 +1306,9 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 
 - **2026-11-17 (after the Sticker/Golf Ball report)**: any ideas for anything else?
 - **2026-11-17 (answers to "ideas for anything else": fix/finish + UI)**: fix/finish: "I meant for sticker.", Event fighter balance, Start the sweet-spot pass, Start the animation redraws; UI: Your Stats page, Contest picture cards, World Cup bracket screen, Update 6 What's new
+- **2026-11-17 (night)**: how much longer before all the jobs are done?
+- **2026-11-17 (night, again after Pie was merged)**: how much longer before all the jobs are done?
+- **2026-11-17 (night, after the time estimate)**: keep going
 
 ## Working rules, budget & agents
 
@@ -1355,6 +1358,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17**: you can start more tasks
 
 ## Other
+- **2026-11-17 (evening)**: can you please take all the work I have done on this across all commits and create a presentation showing all the coding skills I have learned while building this project and how they can be transferred to future coding projects?
 
 - **2026-09-02 13:07 UTC**: Make a program that can make accounts to vote for tpot 25, on everybody except puffball.
 - **2026-09-02 13:08 UTC**: why cant i do it for a web series on youtubeÉ
