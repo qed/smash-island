@@ -1008,6 +1008,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-13 18:53 UTC** *(part)*: knockback is guarenteed to push you against the wind.
 - **2026-11-18**: let's do all of the above and push live
 - **2026-11-18** *(question box)*: Spongy length -> Closing arena (Recommended); Pie length -> Leave it (Recommended)
+- **2026-11-18**: we need to simplify stuff. that is teh first feedback.
+- **2026-11-18** *(question box)*: Simplify what -> the contests should have 5ish features. and simplify how fighters moves are read. not the moves themselves, bcs the wiki that we have will have those details. and add frame data for the moves.; The contests; What's new list; Menus / UI. Push -> Push now, simplify later
 
 ## Status questions & check-ins
 
