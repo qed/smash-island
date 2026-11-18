@@ -111219,7 +111219,7 @@ Object.assign(EVENT_TWIST_WORDS, {
 // that fits it (a cupboard, a curtain, a wardrobe, a bed, crates, a barrel, a toy chest, a table with a long cloth, a sofa). Each layer has its own walls (stone,
 // striped wallpaper, dotted wallpaper, bare planks). The HUD names the layer and the region you are in and shows the house's cross-section with your room lit.
 // ROOMS APART (2026-11-18, the owner: 'like the mill'; RMA): every room is an interior like the mill: a wall between each cell and the next, a door in it at every layer's
-// floor (walk into it), the rooms' floors solid; each stairwell, all four layers of it with its open floors and stairs, is one more area, the way between the rooms. From a
+// floor (stand in its doorway and hold Up), the rooms' floors solid; each stairwell, all four layers of it with its open floors and stairs, is one more area, the way between the rooms. From a
 // room you see only that room. LIGHT DOES NOT PASS A ROOM'S WALLS: a seeker's flashlight lights only the area the seeker is in, so a seeker has to go into each room.
 // A hider standing in a spot (on its floor, inside its middle) is HIDDEN: the spot's front is drawn over them and only a light within HSK.close px finds them.
 // THE DARK: the 'dark' veil (darkOn: twists:['dark']) with only YOUR small light and every seeker's cone cut out of it.
@@ -111268,10 +111268,10 @@ const HS_SPOT = { cupboard:{ w:92, h:112 }, curtain:{ w:92, h:124 }, wardrobe:{ 
 // the oak's mill on the Capture the Flag maps: an area apart, entered by its door. From inside you see only it (the camera keeps to its box, the rest is black: rmaDrawMask),
 // nobody outside sees in (rmaHiddenFrom: the body, the name tag, the arrows), a blow or a grab stops at its edge (applyHit, grabbable), and a CPU sees only the foes in its
 // own area (aiCanSee). The rooms stay where they stood (the house's cross-section, the lab's two storeys), each shut by solid walls, a solid ceiling and floor; a DOOR in each
-// wall at the floor: walk into it and you are through (the view cuts, as the mill's does). A fighter's area is f._rmA (one of HS.areas or SRMW.areas: { key, st, x0, x1, y0,
+// wall at the floor: stand in its doorway and hold Up (a jump in it counts), as at the mill's doors, and you are through (the view cuts, as the mill's does). A fighter's area is f._rmA (one of HS.areas or SRMW.areas: { key, st, x0, x1, y0,
 // y1 }, the box inside its walls); after everyone has moved (rmaKeep) a fighter is kept in its area: a warp or a long dash out through a wall is undone. The other ways from
 // one area to another are each contest's own (Bottle's vents and secret passages; her stairwells are one area each, all four layers; Needy's hatches over the stairs).
-const RMA = { wallT:28, doorH:150, cool:18, pushT:10, zoom:1 };   // (pushT: frames of walking into a door before you are through, so a turn by a wall is not a way out)
+const RMA = { wallT:28, doorH:150, cool:18, upT:4, doorW:44, zoom:1 };   // (upT: frames of Up held in a doorway before you are through, as the mill's; doorW: how far out from the wall a doorway reaches)
 function rmaOn(){ try{ return !!(HS || SRMW); }catch(e){ return false; } }
 function rmaW(){ return HS || SRMW; }
 function rmaAreaAt(x, y, r){ return (HS && HS.areas) ? hsAreaAt(x, y, r) : (SRMW && SRMW.areas) ? srmAreaAt(x, y, r) : null; }
@@ -111280,7 +111280,18 @@ function rmaApart(a, b){ if(!a || !b || a === b || !rmaOn()) return false; const
 function rmaMe(){ return fighters.find(function(o){ return o.you && !o.dead; }) || null; }
 function rmaHiddenFrom(f){ const me = rmaMe(); return !!me && f !== me && rmaApart(me, f); }
 function rmaView(){ const me = rmaMe(), A = me && rmaArea(me); if(!A) return null; const T = RMA.wallT/2; return { x0:A.x0 - T - 10, x1:A.x1 + T + 10, y0:A.y0 - 24, y1:A.y1 + 30 }; }
-function rmaInput(f, inp){ f._rmPush = (!inp || f.dead) ? 0 : (inp.left && !inp.right) ? -1 : (inp.right && !inp.left) ? 1 : 0; }   // (every fighter's keys, people's and CPUs': which way it walks)
+// Is f standing in door d's doorway (on its own side, at the floor, a jump in it counts; gap: how far from the wall at most)? Its side: 1 (the wall to its right), -1, or 0.
+function rmaInDoor(f, d, A, gap){ A = A || rmaArea(f); const dir = d.a === A ? 1 : d.b === A ? -1 : 0; if(!dir) return 0; const feet = f.y + f.r, g = dir*((d.x - dir*RMA.wallT/2) - (f.x + dir*f.r)); return (g >= -8 && g <= (gap == null ? RMA.doorW : gap) && feet <= d.bot + 4 && feet >= d.bot - 110) ? dir : 0; }
+// Every fighter's keys (people's and CPUs'): Up held, or a jump, for the doors. A CPU walking into a door's wall holds Up there, as a person does.
+function rmaInput(f, inp){
+  if(!inp || f.dead){ f._rmUp = false; return; }
+  const Wd = rmaW();
+  if(Wd && Wd.rdoors && !isHumanCtrl(f) && (inp.left !== inp.right) && !inp.attack && !inp.special && !inp.smash){
+    const want = inp.left ? -1 : 1, A = rmaArea(f);
+    for(const d of Wd.rdoors){ if(rmaInDoor(f, d, A, 12) === want && !(d.shut && d.shut())){ inp.up = true; break; } }
+  }
+  f._rmUp = !!(inp.up || inp.jump);
+}
 function rmaSaw(g, o, A){ (g._rmMem || (g._rmMem = {}))[o.idx] = { a:A, t:hazardT }; }   // (a CPU's memory of where it last saw a fighter: its area)
 function rmaSnap(f){ if(!f.you) return; const c = camTarget(f.x, f.y, CAM_ZOOM); camX = c.x; camY = c.y; }
 // After everyone has moved (with hsKeep's and srmKeep's place in the frame): the doors, then kept in its area.
@@ -111291,22 +111302,20 @@ function rmaKeep(f){
   if(!A || f._rmT !== t - 1){ A = f._rmA = rmaAreaAt(f.x, f.y, r); f._rmPX = f.x; f._rmPY = f.y; }   // (new in, back from a KO, out of a duct: the area it stands in)
   f._rmT = t;
   if(!A) return;
+  if(f._rmHold && !f._rmUp) f._rmHold = false;   // (just through a door: Up let go before the next, so a door is no swing door)
   let at = null;
-  if(f._rmPush && !(f.hitstun > 0) && f._heldBy == null && t >= (f._rmDoorT || 0)){   // A DOOR: walking into it at its floor (RMA.pushT frames) puts you through, into the area on its other side
-    const feet = f.y + r;
+  if(f._rmUp && !f._rmHold && !(f.hitstun > 0) && f._heldBy == null && t >= (f._rmDoorT || 0)){   // A DOOR (the mill's kind): Up held in its doorway (a jump in it counts) for RMA.upT frames puts you through, into the area on its other side
     for(const d of Wd.rdoors){
-      const dir = d.a === A ? 1 : d.b === A ? -1 : 0; if(!dir || f._rmPush !== dir) continue;
-      if(feet > d.bot + 4 || feet < d.bot - RMA.doorH + 2*r) continue;
-      if(Math.abs(f.x + dir*r - (d.x - dir*RMA.wallT/2)) > 8) continue;
-      if(d.shut && d.shut()) continue;
-      at = d; f._rmPushN = (f._rmPushN || 0) + 1; if(f._rmPushN < RMA.pushT) break;
-      const A0 = A; A = f._rmA = dir > 0 ? d.b : d.a; f.x = d.x + dir*(RMA.wallT/2 + r + 3);
-      for(const g of fighters) if(g !== f && !g.dead && g._rmA === A0) rmaSaw(g, f, A);   // (seen going out by the door: where they went) f._rmDoorT = t + RMA.cool; Wd.rmaDoors = (Wd.rmaDoors || 0) + 1;
+      const dir = rmaInDoor(f, d, A); if(!dir) continue;
+      if(d.shut && d.shut()) break;   // (shut: Up does nothing)
+      at = d; f._rmUpN = (f._rmUpN || 0) + 1; if(f._rmUpN < RMA.upT) break;
+      const A0 = A; A = f._rmA = dir > 0 ? d.b : d.a; f.x = d.x + dir*(RMA.wallT/2 + r + 3); f._rmDoorT = t + RMA.cool; f._rmHold = true; f._rmUpN = 0; Wd.rmaDoors = (Wd.rmaDoors || 0) + 1;
+      for(const g of fighters) if(g !== f && !g.dead && g._rmA === A0) rmaSaw(g, f, A);   // (seen going out by the door: where they went)
       if(f.you){ rmaSnap(f); tone(260, 0.05, 'triangle', 0.04, 0, 200); }
       break;
     }
   }
-  if(!at) f._rmPushN = 0;
+  if(!at) f._rmUpN = 0;
   const here = rmaAreaAt(f.x, f.y, r);
   if(here !== A){
     if(here && Wd.areaPass && Wd.areaPass(f, A, here)){ A = f._rmA = here; rmaSnap(f); }   // (the contest's own way between areas: Needy's hatches)
@@ -111314,6 +111323,14 @@ function rmaKeep(f){
   }
   if(f.x < A.x0 + r){ f.x = A.x0 + r; if(f.vx < 0) f.vx = 0; } else if(f.x > A.x1 - r){ f.x = A.x1 - r; if(f.vx > 0) f.vx = 0; }
   f._rmPX = f.x; f._rmPY = f.y;
+}
+// A doorway, drawn (world space, both contests): a light mat on the floor each side of the wall, and while you stand in it (and it is open) an Up arrow over the door.
+function rmaDrawDoorway(c, d){
+  const T = RMA.wallT/2, me = rmaMe(), open = !(d.shut && d.shut());
+  c.save(); c.globalAlpha = open ? 0.35 : 0.15; c.fillStyle = '#fff2c0'; c.fillRect(d.x - T - RMA.doorW, d.bot - 5, RMA.doorW, 5); c.fillRect(d.x + T, d.bot - 5, RMA.doorW, 5); c.restore();
+  if(!open || !me || !rmaInDoor(me, d)) return;
+  const y = d.bot - RMA.doorH - 22 + Math.sin(hazardT*0.15)*3;
+  c.save(); c.fillStyle = '#fff4b8'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.moveTo(d.x, y - 12); c.lineTo(d.x + 11, y + 2); c.lineTo(d.x + 4, y + 2); c.lineTo(d.x + 4, y + 10); c.lineTo(d.x - 4, y + 10); c.lineTo(d.x - 4, y + 2); c.lineTo(d.x - 11, y + 2); c.closePath(); c.fill(); c.stroke(); c.restore();
 }
 // FROM INSIDE YOU SEE ONLY IT (screen space, over the world and the dark, under the HUD): everything outside your area's box is black, as in the mill.
 function rmaDrawMask(){
@@ -111932,14 +111949,14 @@ function hsDrawHouse(c){
   c.fillStyle = HS_INK.door; c.fillRect(0, rf - 30, WW, 30); c.fillRect(0, rf, K.wall, HS.gy - rf + 40); c.fillRect(WW - K.wall, rf, K.wall, HS.gy - rf + 40);   // roof beam and walls
   hsDrawExtrasBack(c, vx0, vx1);   // the mirror, the bookshelves, the lamps and vases
   for(const s of HS.spots) if(s.x > vx0 - 60 && s.x < vx1 + 60) hsDrawSpot(c, s, 'back');
+  for(const d of (HS.rdoors || [])) if(d.x > vx0 - 80 && d.x < vx1 + 80) rmaDrawDoorway(c, d);   // ROOMS APART: the doorways' mats, the Up arrow
   c.restore();
 }
-function hsDrawDoorWall(c, x, y0, y1){   // ROOMS APART: the wall between two cells (RMA.wallT thick) and its door at the floor (walk into it to go through)
+function hsDrawDoorWall(c, x, y0, y1){   // ROOMS APART: the wall between two cells (RMA.wallT thick) and its doorway at the floor (stand in it and hold Up to go through)
   const T = RMA.wallT/2, dh = RMA.doorH, ink = HS_INK.ink;
   c.fillStyle = HS_INK.door; c.fillRect(x - T, y0, 2*T, y1 - y0); c.strokeStyle = ink; c.lineWidth = 3; c.strokeRect(x - T, y0, 2*T, y1 - y0);
-  c.fillStyle = '#8a5a34'; c.fillRect(x - T - 6, y1 - dh, 2*T + 12, dh); c.strokeRect(x - T - 6, y1 - dh, 2*T + 12, dh);
-  c.lineWidth = 2; c.strokeRect(x - T, y1 - dh + 10, 2*T, dh*0.4); c.strokeRect(x - T, y1 - dh*0.5, 2*T, dh*0.5 - 10);
-  c.fillStyle = '#e8c060'; c.beginPath(); c.arc(x - T - 1, y1 - dh*0.5, 4, 0, 7); c.fill(); c.beginPath(); c.arc(x + T + 1, y1 - dh*0.5, 4, 0, 7); c.fill();
+  c.fillStyle = '#e0c890'; c.fillRect(x - T - 10, y1 - dh - 10, 2*T + 20, dh + 10); c.strokeRect(x - T - 10, y1 - dh - 10, 2*T + 20, dh + 10);   // (the frame)
+  c.fillStyle = '#140e0c'; c.fillRect(x - T - 2, y1 - dh, 2*T + 4, dh); c.strokeRect(x - T - 2, y1 - dh, 2*T + 4, dh);   // (the open doorway)
 }
 function hsDrawSpot(c, s, part){   // a piece of furniture to hide in: 'back' (behind the fighters) or 'front' (over them)
   const x = s.x - s.w/2, y = s.y - s.h, w = s.w, h = s.h;
@@ -112100,7 +112117,7 @@ function hsHud(c){
   c.restore();
 }
 Object.assign(EVENT_TWIST_WORDS, {
-  'contest:hide': { icon:'🔦', short:"Bottle's contest: hide and seek", words:"Bottle's contest: hide and seek in a big dark house of four layers (basement, ground floor, upstairs, attic), each with four rooms of its own colour. Each round one fighter seeks with a flashlight while the rest hide in the furniture (cupboards, curtains, beds, wardrobes, vents...); every room is a room apart: walk into its door to go in, and from inside you see only that room (a light stops at its walls). Tap Down at a bookshelf to take a secret passage to another layer, or in a vent to crawl through its duct to a vent far away (it rattles where you come out). Stand still in the open and you turn into a lamp or a vase. In the Mirror Room a light shows everyone in the room in the mirror. Hiders score for every second they stay unfound; a hider caught in the light for a moment is found and seeks too. Four rounds, everyone seeks once; the most time unfound wins.", goal:'Stay hidden! Most time unfound wins' },
+  'contest:hide': { icon:'🔦', short:"Bottle's contest: hide and seek", words:"Bottle's contest: hide and seek in a big dark house of four layers (basement, ground floor, upstairs, attic), each with four rooms of its own colour. Each round one fighter seeks with a flashlight while the rest hide in the furniture (cupboards, curtains, beds, wardrobes, vents...); every room is a room apart: hold Up in its doorway to go in or out, and from inside you see only that room (a light stops at its walls). Tap Down at a bookshelf to take a secret passage to another layer, or in a vent to crawl through its duct to a vent far away (it rattles where you come out). Stand still in the open and you turn into a lamp or a vase. In the Mirror Room a light shows everyone in the room in the mirror. Hiders score for every second they stay unfound; a hider caught in the light for a moment is found and seeks too. Four rounds, everyone seeks once; the most time unfound wins.", goal:'Stay hidden! Most time unfound wins' },
 });
 
 // STAPY: THE SEARCH PARTY, the BFDIA 18 lighthouse hunt (the OWNER'S design: contest-specs memory, every STAPY line; docs/stapy-rebuild.md is the build spec of the Update 6 rebuild). Four LIGHTHOUSES,
@@ -117638,7 +117655,7 @@ EVENT_TWISTS_BUILT.push('nowicare', 'onpoint');   // (nowicare: Needy's Now I Ca
 Object.assign(EVENT_TWIST_WORDS, {
   nowicare: { icon:'💗', short:'now I care', words:"Now I care: whoever is losing glows pink and hits 15% harder. Fewer stocks is losing; with the same stocks, more damage is. The glow moves to the new last place as the match changes, and nobody glows while it is even." },
   onpoint:  { icon:'📍', short:'on point', words:"On point: every melee attack has a sweet spot at its tip. A hit with the far end of a swing launches 25% farther; a hit right up close launches 20% less. Shots are not changed." },
-  'contest:serum': { icon:'💉', short:"Needy's contest: evil serum", words:"Needy's contest, in her lab: a syringe of evil serum grows in on a floor about every 30 s. Touch it to load it, then land a hit within 10 s to inject that fighter. The injected turn evil for 15 s (red eyes, 25% stronger, all on one evil team) and then pop: they are out. Only a syringe injects. A rare blue vaccine blocks one injection; a rare white antidote cures an evil fighter, who still does not count as never injected. Every room is a room apart: walk into its door (or go up the stairs through the hatch) and you see only that room; the map on the panel shows where a syringe or a vial is. Its doors shut you in now and then, and the quarantine bubble keeps the clean safe. The last fighter never injected wins.", goal:'Never get injected. Last clean one wins.' },
+  'contest:serum': { icon:'💉', short:"Needy's contest: evil serum", words:"Needy's contest, in her lab: a syringe of evil serum grows in on a floor about every 30 s. Touch it to load it, then land a hit within 10 s to inject that fighter. The injected turn evil for 15 s (red eyes, 25% stronger, all on one evil team) and then pop: they are out. Only a syringe injects. A rare blue vaccine blocks one injection; a rare white antidote cures an evil fighter, who still does not count as never injected. Every room is a room apart: hold Up in its doorway (or go up the stairs through the hatch) and you see only that room; the map on the panel shows where a syringe or a vial is. Its doors shut you in now and then, and the quarantine bubble keeps the clean safe. The last fighter never injected wins.", goal:'Never get injected. Last clean one wins.' },
 });
 // ---- NOW I CARE (Needy's duel) ----
 // Every frame (needyFrame) the fighters still in are ranked: fewest stocks first, then most damage. The last of them glows pink and hits NIC.k harder
@@ -117724,7 +117741,7 @@ function needyDrawWorld(layer){
 // evil is about, leave a room an evil fighter is in when the doors warn; loaded and evil ones hunt the clean (evil ones take an antidote). How often they
 // notice a thing, and how soon, goes by their level (SRM_AI). Offline only, like every contest.
 // ROOMS APART (2026-11-18, the owner: 'like the mill'; RMA): every lab room is an interior like the mill. The upper rooms stand right over the lower ones; a wall the lab's whole
-// height between each room and the next, its CONTAINMENT DOOR in it at the floor (walk into it; shut, it holds); the upper floor is solid but for an open HATCH over each
+// height between each room and the next, its CONTAINMENT DOOR in it at the floor (hold Up in its doorway; shut, Up does nothing); the upper floor is solid but for an open HATCH over each
 // staircase (up the stairs and through it, or drop down it), shut while the doors are. From a room you see only that room; the panel's map shows the six rooms (yours outlined),
 // where a syringe, a vial or the bubble is, and the doors red while shut. CPUs see only the foes in their room: with none, they go for what the map shows, else on to another room.
 // REVEAL LATE (the owner's pick, 2026-11-18, for the matches that ran to the cap): from SRM.reveal (2:30, the last minute) the panel's lab map shows every fighter, a dot in
@@ -118146,7 +118163,7 @@ function srmDrawLab(c, S){
   for(const d of Wd.doors){
     if(d.x < vx0 - 40 || d.x > vx1 + 40) continue;
     const T = RMA.wallT/2, dt = d.bot - RMA.doorH; c.fillStyle = I.steelDk; c.fillRect(d.x - T, d.top, 2*T, dt - d.top); c.strokeStyle = I.ink; c.lineWidth = 2; c.strokeRect(d.x - T, d.top, 2*T, dt - d.top);   // ROOMS APART: the wall, the lab's whole height, the door in it at the floor
-    if(k < 1){ c.fillStyle = 'rgba(20,26,32,0.5)'; c.fillRect(d.x - 14, dt, 28, RMA.doorH); }   // (the open doorway: walk into it)
+    if(k < 1){ c.fillStyle = 'rgba(20,26,32,0.5)'; c.fillRect(d.x - 14, dt, 28, RMA.doorH); }   // (the open doorway: stand in it and hold Up)
     const H = d.bot - dt;
     c.fillStyle = I.steelDk; c.fillRect(d.x - 22, dt, 8, H); c.fillRect(d.x + 14, dt, 8, H);
     if(k > 0){ const h = H*k; c.fillStyle = '#8e9aa6'; c.fillRect(d.x - 14, dt, 28, h); c.strokeStyle = I.ink; c.lineWidth = 2.5; c.strokeRect(d.x - 14, dt, 28, h);
@@ -118155,6 +118172,7 @@ function srmDrawLab(c, S){
     const lamp = D.ph === 'warn' ? (Math.floor(t/8) % 2 ? '#ffb020' : '#6a4a10') : (D.ph === 'shut' || D.ph === 'close') ? '#ff3030' : '#3fd36a';
     c.fillStyle = lamp; c.strokeStyle = I.ink; c.lineWidth = 2; c.beginPath(); c.arc(d.x, dt - 14, 7, 0, 7); c.fill(); c.stroke();
   }
+  for(const d of (Wd.rdoors || [])) if(d.x > vx0 - 80 && d.x < vx1 + 80) rmaDrawDoorway(c, d);   // ROOMS APART: the doorways' mats, the Up arrow (none while shut)
   c.restore();
 }
 function srmDrawOver(c, S){
