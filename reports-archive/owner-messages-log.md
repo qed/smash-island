@@ -1055,6 +1055,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-18** *(question box: push the new castle + Bottle/Needy rooms?)*: Push now (Recommended)
 - **2026-11-18** *(question box: push Hot Dog/Sticker/8-Ball rooms, Sticker tall, Spongy tall?)*: Push now (Recommended)
 - **2026-11-18**: and go to 8-ball
+- **2026-11-18** *(question boxes)*: push the Faultline fix -> Push now (Recommended); Stapy's lighthouse doors -> Hold Up too (Recommended)
 
 ## Status questions & check-ins
 
