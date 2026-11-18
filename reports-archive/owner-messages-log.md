@@ -1022,6 +1022,11 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-18**: issues with the dig games: I go into float mode instantly, instead of falling and having to climb, which would make sense.
 - **2026-11-18**: and also, how big is the forest? cuz i want to pull a rue and divebomb ppl
 - **2026-11-18** *(question box, Dig Games forest)*: "also, the arena gets dug out WAY too much. it should take longer to dig, and you should die automatically at 100%, and all your moves should be in a smaller diggable area. also, set the week to stickers" + Much bigger forest (Recommended) + Tall trees (Recommended)
+- **2026-11-18**: there isnt enough distance between subway stations, and the map is small.
+- **2026-11-18** *(question box: keep the subway? / how much bigger?)*: "I DIDNT SAY TO DO THAT. also, 1, but xyz means option 1(in the question box options) and another thing"; map -> CTF size
+- **2026-11-18**: falling into the gorge is stupid.
+- **2026-11-18** *(question box: what should falling into a gorge do?)*: "for stickers event"
+- **2026-11-18**: set the week to clocks
 
 ## Status questions & check-ins
 
