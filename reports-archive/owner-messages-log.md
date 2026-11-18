@@ -1060,6 +1060,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-18 ~18:00 EST**: also, feature freeze is permanent, no pipis. after finishing up events, do all wins, and get every score to 8-10 by 8:00
 - **2026-11-18** *(question box: what does 'do all wins' mean?)*: Do the 'needs for 10' items
 - **2026-11-18**: and dont inflate! also, run a juey to verify that this is a good level of complicated, and not too many menus.
+- **2026-11-18** *(question boxes)*: OCs -> Release after a check; Online -> Not tonight; Art downloads -> Yes, from the wiki; Shop -> Unpause it
 
 ## Status questions & check-ins
 
