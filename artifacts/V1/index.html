@@ -104593,7 +104593,7 @@ function stkJunkRowOf(f){ for(const o of FINX) if(o.k === 'stjunk' && o.o === f.
 // ONLINE: everything a guest draws rides the snapshot (NET_FIGHTER_FLAGS: _jyOff, _jyLp, _jyLx, _jyLy, _jyCov, _jyJam, _jyPop); the lid is moved by the host.
 const JMY = {
   knock:15, offKb:1.08,
-  lid:{ wind:20, vx:7.2, vy:-5.4, grav:0.45, r:14, dmg:6, kb:[4.6, -4.4], stun:16, home:360, lost:360, roll:6.5, touch:30, cd:36, tripDmg:3, tripKb:[1.4, -5.6], tripStun:24, ai:[90, 230], aiPct:90, aiGap:240, aiK:0.12, aiCall:0.25 },
+  lid:{ wind:20, vx:7.2, vy:-5.4, grav:0.45, r:14, dmg:6, kb:[4.6, -4.4], stun:16, home:360, lost:360, roll:6.5, touch:30, cd:36, tripDmg:3, tripKb:[1.4, -5.6], tripStun:24, ai:[90, 230], aiPct:50, aiGap:720, aiK:0.04, aiCall:0.25, aiHome:0.2, aiFetch:90, aiNear:60 },
   flick:{ wind:8, dmg:3, x:46, r:20, kb:[2.6, -3.2], stun:14, cd:30 },
   jam:{ n:90, jump:0.71 },
   seal:{ wind:12, rise:-14.6, riseOff:-9.6, dmg:5, r:44, kb:[3.2, -4.6], stun:14 },
@@ -104992,9 +104992,10 @@ function jmyDrawFs(f, c){
 // ---- THE CPU (brainOut) ----
 // Lid on: DUCK AND COVER against what she can see coming (jmyAiThreat: a foe near her charging a smash, a wind-up about to go off, a lunge or dash on its way to her,
 // a shot flying at her), even over a move the brain was about to start; she throws the lid at a foe 90-230 px ahead on her level (under JMY.lid.aiPct% damage, at
-// most once in JMY.lid.aiGap frames), and otherwise fights with her moves. Lid off: the flick only on a foe right in front; she calls a lying lid home when a foe stands
-// between her and it (the design's "throw it past them, then call it back through them"), or from 40% damage; she walks back over to the lid whenever no foe is
-// within 160 px. Nothing she does reads what a person could not see.
+// most once in JMY.lid.aiGap frames, the brain's own presses included), and otherwise fights with her moves. LID BACK ON SOONER (the owner, 2026-11-17: she spent
+// most of a match lid-off, launched farther and with the small Seal Pop): with the lid off, before anything else, she calls a lying lid home (always when a foe
+// stands between her and it: the design's "throw it past them, then call it back through them"; else whenever it lies more than JMY.lid.aiNear px away), and she
+// walks over to it whenever no foe is within JMY.lid.aiFetch px. Nothing she does reads what a person could not see.
 function jmyAiThreat(f){
   const C = JMY.cover;
   for(const o of fighters){
@@ -105021,17 +105022,29 @@ function aiJammyOut(f, inp, B, L, t, fight){
   const dx = foe ? foe.x - f.x : 0, adx = Math.abs(dx), ady = foe ? Math.abs(foe.y - f.y) : 999, fwd = foe ? dx*(f.face < 0 ? -1 : 1) > 0 : false;
   const coverOk = !off && !!f.onground && f.spCd <= 0 && now >= (f._jyCovCd || 0) && !(f._jyCov > now) && !f._windup && !f._mv && !(f.hitstun > 0) && jmyAiThreat(f);
   if(inp.special && !inp.up && !inp.down && !inp.attack){   // the neutral special the brain asked for: only where it does something
-    const ok = off ? !!(foe && adx < 90 && ady < 50) : !!(foe && f.onground && adx > JMY.lid.ai[0] && adx < JMY.lid.ai[1] && ady < 60);
-    if(!ok){ inp.special = false; inp.left = false; inp.right = false; }
+    const ok = off ? !!(foe && adx < 90 && ady < 50) : !!(foe && f.onground && adx > JMY.lid.ai[0] && adx < JMY.lid.ai[1] && ady < 60 && f.pct < JMY.lid.aiPct && now - (f._aiLidAt == null ? -1e9 : f._aiLidAt) >= JMY.lid.aiGap);
+    if(!ok){ inp.special = false; inp.left = false; inp.right = false; } else if(!off && f.spCd <= 0 && !f._windup) f._aiLidAt = now;
   }
   if(inp.special && inp.down && !inp.attack){
-    const ok = off ? (f._jyLp === 2 || f._jyLp === 3) && (f.pct > 40 || jmyLidPast(f, foe)) : coverOk;
+    const ok = off ? (f._jyLp === 2 || (f._jyLp === 3 && !f._jyLc)) : coverOk;
     if(!ok){ inp.special = false; inp.down = false; }
   }
   // DUCK AND COVER first: it beats the move the brain was about to start (a press already under way is left alone)
   if(coverOk && !B.press && Math.random() < JMY.cover.aiK*L.kit){
     inp.attack = false; inp.smash = false; inp.grab = false; inp.fin = false; inp.jump = false; inp.up = false;
     brainTap(B, { special:true, down:true }, 3); Object.assign(inp, B.press.keys); return;
+  }
+  // LID FIRST: with the lid off and her feet on a floor, getting it back comes before the brain's moves (a press already under way is left alone)
+  if(off && f.onground && !B.press && !f._windup && !f._mv && !(f.hitstun > 0) && (f._jyLp === 2 || f._jyLp === 3)){
+    const Ld = JMY.lid, ldx = f._jyLx - f.x, onFloor = Math.abs(f._jyLy - feetY(f)) < 30, near = !!(foe && adx < Ld.aiFetch && ady < 60);
+    if(f._jyLp === 2 && f.spCd <= 0 && (jmyLidPast(f, foe) ? Math.random() < Ld.aiCall*L.kit : (Math.abs(ldx) > Ld.aiNear && Math.random() < Ld.aiHome*L.kit))){
+      inp.attack = false; inp.smash = false; inp.grab = false; inp.fin = false; inp.jump = false; inp.up = false;
+      brainTap(B, { special:true, down:true }, 3); Object.assign(inp, B.press.keys); return;
+    }
+    if(!near && onFloor && Math.abs(ldx) < 420 && Math.abs(ldx) > 4){   // no foe close: go and put it back on (an attack from here would only whiff)
+      const dir = ldx < 0 ? -1 : 1;
+      if(jmyStepOk(f, dir)){ inp.attack = false; inp.smash = false; inp.grab = false; inp.special = false; inp.left = dir < 0; inp.right = dir > 0; return; }
+    }
   }
   if(!f.onground && surfaceBelow(f.x, feetY(f)) === null) return;
   if(B.press || f._windup || f._mv || inp.special || inp.attack || inp.smash || inp.grab || inp.fin) return;
@@ -105040,12 +105053,11 @@ function aiJammyOut(f, inp, B, L, t, fight){
     if(!off && ready && f.onground && f.pct < JMY.lid.aiPct && adx > JMY.lid.ai[0] && adx < JMY.lid.ai[1] && ady < 50 && now - (f._aiLidAt == null ? -1e9 : f._aiLidAt) >= JMY.lid.aiGap && Math.random() < JMY.lid.aiK*L.kit){
       f._aiLidAt = now; brainTap(B, brainFace({ special:true }, dx < 0 ? -1 : 1), 3); Object.assign(inp, B.press.keys); return;
     }
-    if(off && ready && f._jyLp === 2 && ((jmyLidPast(f, foe) && Math.random() < JMY.lid.aiCall*L.kit) || (f.pct > 40 && adx > 140 && Math.random() < 0.06*L.kit))){ brainTap(B, { special:true, down:true }, 3); Object.assign(inp, B.press.keys); return; }
     if(f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && f.onground && fwd && adx > 40 && adx < (off ? 150 : 110) && ady < 50 && Math.random() < 0.05*L.kit){
       brainTap(B, brainFace({ smash:true }, dx < 0 ? -1 : 1), 3); B.st = 'smash'; B.until = now + 60; Object.assign(inp, B.press.keys); return;
     }
   }
-  if(off && (f._jyLp === 2 || f._jyLp === 3) && f.onground && (!foe || adx > 160) && Math.abs(f._jyLx - f.x) < 420 && Math.abs(f._jyLy - feetY(f)) < 30){   // no foe close: go and put the lid back on
+  if(off && (f._jyLp === 2 || f._jyLp === 3) && f.onground && (!foe || adx > JMY.lid.aiFetch) && Math.abs(f._jyLx - f.x) < 420 && Math.abs(f._jyLy - feetY(f)) < 30){   // no foe close: go and put the lid back on
     const dir = f._jyLx < f.x ? -1 : 1; if(jmyStepOk(f, dir)){ inp.left = dir < 0; inp.right = dir > 0; }
   }
 }
