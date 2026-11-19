@@ -1062,6 +1062,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-18**: and dont inflate! also, run a juey to verify that this is a good level of complicated, and not too many menus.
 - **2026-11-18** *(question boxes)*: OCs -> Release after a check; Online -> Not tonight; Art downloads -> Yes, from the wiki; Shop -> Unpause it
 - **2026-11-18** *(question boxes after the complexity jury)*: jury cuts -> One Moves list + frame data, One Stats screen, Simpler cup setup; trim Spongy/Sticker? -> "ehhh, the features integrate(the systems that are so-called independant are very similar, like the food/water \"distinction\")"; Clock doors -> Hold Up (Recommended)
+- **2026-11-18 ~19:50 EST**: you can start more jobs as spots open up, and work till the end
 
 ## Status questions & check-ins
 
