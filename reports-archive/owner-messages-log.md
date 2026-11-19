@@ -1116,6 +1116,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19 ~17:40**: "why isnt it the update version?"
 - **2026-11-19 ~17:50**: "the assists and map could be stronger(for 8ball only) and bigger(also 8ball), respectivelu" (= 8-Ball contest only: assists stronger, map bigger)
 - **2026-11-19 ~18:00**: "issue: 9ball can stop ppl from entering doorways"
+- **2026-11-19 ~18:10**: "also, why are all the assists the same?" -> (question box) They act the same + Types feel the same (8-Ball contest)
 - **2026-11-19**: go to foldy
 - **2026-11-19**: dude, the skins are just recolors for the event fighters
 - **2026-11-19** *(question box: what should a real skin be?)*: Show looks from the wiki (Recommended)
