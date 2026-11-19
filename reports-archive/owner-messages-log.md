@@ -1079,6 +1079,9 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19**: check the data for who played which character.
 - **2026-11-19**: stickers thing is good, but i cant wing
 - **2026-11-19** *(question box)*: meant -> Can't win; why -> CPUs too fast
+- **2026-11-19**: go to foldy
+- **2026-11-19**: dude, the skins are just recolors for the event fighters
+- **2026-11-19** *(question box: what should a real skin be?)*: Show looks from the wiki (Recommended)
 
 ## Status questions & check-ins
 
