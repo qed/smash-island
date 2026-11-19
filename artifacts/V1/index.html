@@ -661,6 +661,7 @@
   .lobbysettings .lobbyselect{width:auto; min-width:150px; margin-bottom:0; font-size:13px; padding:3px 6px}
   .lobbysummary{font-weight:700; margin-top:5px}
   .lobbysettings .lobbysummary{font-size:12px; color:#2a3b4d}
+  .lobbyevoff{font-size:12px; font-weight:700; color:#7a5200; margin-top:3px}
   #lobbyControls{flex:0 0 240px; display:flex; flex-direction:column; justify-content:center; gap:8px}
   #lobbyControls .btn{width:100%; font-size:15px; padding:9px 8px}
   #lobbyControls .btn.sm{font-size:13px; padding:6px 12px}
@@ -146999,6 +147000,10 @@ function serializeState(withGeo){
 
 // Client rebuilds the render-globals from a received snapshot (no simulation).
 // One line for the lobby: what the host has set.
+// THE EVENT IN A ROOM: an event match is offline for now (startEventMatch and eventPlay refuse in a room), so the room says so in one plain line
+// while an event is on, under the match settings, for the host and the guests alike (nothing before the events launch).
+function lobbyEventOffWords(){ let ev = null; try{ ev = eventThisWeek(); }catch(e){} return ev && ev.name ? "This week's event (" + ev.name + ") is offline for now." : ''; }
+function lobbyEventOffLine(el){ const t = lobbyEventOffWords(); if(!t) return; const d = document.createElement('div'); d.className = 'foot lobbyevoff'; d.id = 'lobbyEventOff'; d.textContent = t; d.title = 'Leave the room to play it.'; el.appendChild(d); }
 function lobbySummaryText(s){
   const st=STAGES.find(x=>x.id===s.stage), size=(MAP_SIZES[s.mapSize]||MAP_SIZES.normal).label;
   const mode = s.mode==='teams' ? (s.teamKey||'')+' Teams' : s.mode==='boss' ? 'Boss Rush' : s.mode==='ctf' ? 'Capture the Flag ' + Math.floor(s.count/2) + 'v' + Math.floor(s.count/2) : 'Free-for-all';
@@ -147425,8 +147430,12 @@ function netPredRun(a, pr, to, team, sq){   // sq: the Spongys on the stage (SQU
   // YOYLE NEEDLE: a rider's shuttles are replayed at the host's clock (frame g is the host's clock rd.t + g - pr.a) and carry whoever stands on them; they go back where the guest draws them after
   let xs = null, xs0 = null; if(a.rd && YN_VIS){ xs = worldPlats.filter(p=>p.yn === 'express' && p.mvz); xs0 = xs.map(p=>[p.x, p.y]); xs.forEach(p=>{ const q = ynMvzAt(p, a.rd.t); p.x = q[0]; p.y = q[1]; }); }
   const onXs = ()=>{ if(!xs || !P.g) return null; for(const p of xs) if(P.x >= p.x - 4 && P.x <= p.x + p.w + 4 && Math.abs(P.y + P.r - p.y) <= 4) return p; return null; };
+  // YOYLE NEEDLE, THE NEEDLE SHIFTS: the short floor belts carry whoever stands on them, as the host's ynShStep does (only while the needle is split: ynShW 1, the host's state from ynNetIn);
+  // without them the guest's own fighter stood still on a belt here while the host carried it, and the host's snapshots dragged it along (about 20 px behind on every ride)
+  let yb = null; if(YN_VIS){ const S = ynSh(); if(S && S.T.B && S.T.B.length && ynShW(S) >= 1) yb = S.T.B; }
   for(let g = from; g <= to; g++){ mcEnter(P); try {   // (MOON CAVES: in the predicted body's own chart)
     if(xs){ const on = onXs(), cl2 = a.rd.t + (g - pr.a); for(const p of xs){ const q = ynMvzAt(p, cl2); if(p === on){ P.x += q[0] - p.x; P.y += q[1] - p.y; } p.x = q[0]; p.y = q[1]; } }
+    if(yb && P.g) for(const bt of yb){ const p = worldPlats[bt[0]]; if(!p) continue; const x0 = p.x + bt[1]; if(P.x < x0 || P.x > x0 + bt[2] || Math.abs(P.y + P.r - p.y) > 4) continue; P.x += (bt[3] || 1)*2.2*YNH.beltV; }   // (applyZone's belt: before the move, as ynStep runs before the fighters)
     if(MCAVE && MCAVE.on) plats = platRects();
     const m = N.inMaskAt(g), mp = N.inMaskAt(g - 1);
     if((m & NET_IN_ACT & ~zm) && !(mp & NET_IN_ACT & ~zm)) break;   // (JURY 1: only a PRESS starts a move; a key already down when the host said "free" did not, and used to stop the fighter dead)
@@ -148216,14 +148225,14 @@ window.NET = {
     // Redrawn only when something it shows has changed. A roster message (a friend picking their fighter, or joining) used to
     // rebuild it too, which closed the picker, or the stadium list, the player had open -- and with the room's picks arriving
     // live that would happen all the time.
-    const sig=[this.role, (this.players||[]).length, JSON.stringify(this.role==="client" ? (this.lobby||null) : this.lobbySettings())].join('|');
+    const sig=[this.role, (this.players||[]).length, JSON.stringify(this.role==="client" ? (this.lobby||null) : this.lobbySettings()), lobbyEventOffWords()].join('|');
     if(el.dataset.sig===sig && el.firstChild){ el.style.display='block'; return; }
     el.dataset.sig=sig; el.innerHTML='';
     el.style.display='block'; el.classList.toggle('readonly', this.role==="client");
     if(this.role==="client"){
       const d=document.createElement('div'); d.className='foot lobbysummary'; d.id='lobbySummary';
       d.textContent = this.lobby ? lobbySummaryText(this.lobby) : "Waiting for the host's match settings…";
-      el.appendChild(d); return;
+      el.appendChild(d); lobbyEventOffLine(el); return;
     }
     const wrap=document.createElement('div'); wrap.className='settings'; el.appendChild(wrap);
     const group=(label)=>{ const g=document.createElement('div'); g.className='setgrp'; const l=document.createElement('label'); l.textContent=label; g.appendChild(l); wrap.appendChild(g); return g; };
@@ -148265,6 +148274,7 @@ window.NET = {
     seg('Smash Balls', 'lobbySmashBalls', [[1,'On'],[0,'Off']], SETTINGS.smashBalls===false ? 0 : 1, v=>{ SETTINGS.smashBalls = +v !== 0; });
     seg('Map Size', 'lobbyMapSize', [['compact','Compact'],['normal','Normal'],['tall','Tall'],['huge','Huge']], SETTINGS.mapSize, v=>{ SETTINGS.mapSize = MAP_SIZES[v] ? v : 'normal'; });
     const sum=document.createElement('div'); sum.className='foot lobbysummary'; sum.id='lobbySummary'; sum.textContent=lobbySummaryText(this.lobbySettings()); el.appendChild(sum);
+    lobbyEventOffLine(el);
   },
 
   showAddress(){
