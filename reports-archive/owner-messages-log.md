@@ -1081,6 +1081,12 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19** *(question box)*: meant -> Can't win; why -> CPUs too fast
 - **2026-11-19**: wait, use actual assists. like, say, avocado or shampoo tube. or price tag or winner.
 - **2026-11-19** *(question boxes)*: new assists everywhere? -> "1, and use toilets actual sprite! and mepads acutal sprite. and mepad does nothing." (option 1 = Yes, everywhere); 8-Ball length -> That's fine
+- **2026-11-19**: he does barely anything, not nothing
+- **2026-11-19**: anything notable in balance?
+- **2026-11-19**: like interesting
+- **2026-11-19**: what does the lever on yoyle needle do?
+- **2026-11-19**: i dont notice that
+- **2026-11-19** *(question box: how should the lever change?)*: "it should shift the map around. the rooms should move and the conveyers should seperate into many short ones spread around. this will make groups of fighters, so ppl can build around that." + Different job
 - **2026-11-19**: go to foldy
 - **2026-11-19**: dude, the skins are just recolors for the event fighters
 - **2026-11-19** *(question box: what should a real skin be?)*: Show looks from the wiki (Recommended)
