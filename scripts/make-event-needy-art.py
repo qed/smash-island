@@ -42,6 +42,11 @@ print('needy.png', out.size, os.path.getsize(os.path.join(SPR, 'needy.png')), 'b
 print('BODY_FRAC', round((bb_body[3] - box[1])/(box[3] - box[1]), 4), '(the barrel ends this far down the picture; the legs are under it)')
 print("LIMB_RIG['Needy'] = { W:%d, H:%d, arms:[], legs:%s };" % (w, h, js_row(leg_rows(legs, box, (w, h)))))
 
+# STOP BEFORE THE SKIN (2026-11-19): the event skins are now the show's own looks from the BFDI wiki (LEDGER 'EVENT FIGHTER SKINS ARE WIKI
+# LOOKS, NOT RECOLOURS'; files listed in scripts/sprite-manifest-skins.json). The recolour below is the OLD skin: running it would bring the
+# recolour back beside the wiki skin. The render above is still made; the skin part is kept only as a record and never runs.
+sys.stderr.write("STOPPED before the event skin: the event skins are now the show's own looks from the BFDI wiki (see docs/LEDGER.md, 2026-11-19)." + chr(10) + "This script's old recolour skin would bring the recolour back beside them, so it does not run. The render above was written." + chr(10))
+sys.exit(3)
 # THE SKIN: pink (hue ~0.85-0.95) turned to red, every colour a little darker; greys stay grey (their saturation is low), and so do her black legs.
 sk = out.copy(); px = sk.load()
 for y in range(sk.size[1]):

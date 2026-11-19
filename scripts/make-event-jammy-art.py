@@ -55,6 +55,11 @@ def grape(im):
 base = scale(full)
 base.save(os.path.join(SPR, 'jammy.png'), optimize=True)
 scale(nolid).save(os.path.join(SPR, 'jammy-nolid.png'), optimize=True)
+# STOP BEFORE THE SKIN (2026-11-19): the event skins are now the show's own looks from the BFDI wiki (LEDGER 'EVENT FIGHTER SKINS ARE WIKI
+# LOOKS, NOT RECOLOURS'; files listed in scripts/sprite-manifest-skins.json). The recolour below is the OLD skin: running it would bring the
+# recolour back beside the wiki skin. The render above is still made; the skin part is kept only as a record and never runs.
+sys.stderr.write("STOPPED before the event skin: the event skins are now the show's own looks from the BFDI wiki (see docs/LEDGER.md, 2026-11-19)." + chr(10) + "This script's old recolour skin would bring the recolour back beside them, so it does not run. The render above was written." + chr(10))
+sys.exit(3)
 gr = grape(base)
 gr.save(os.path.join(SPR, 'skins', 'grape-jammy.png'), optimize=True)
 tw = 56; th = round(gr.size[1] * tw / gr.size[0])

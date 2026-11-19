@@ -23,6 +23,11 @@ for y in range(H):
 out.save(os.path.join(SPR, 'bottle.png'), optimize=True)
 print('bottle.png', out.size, os.path.getsize(os.path.join(SPR, 'bottle.png')), 'bytes')
 
+# STOP BEFORE THE SKIN (2026-11-19): the event skins are now the show's own looks from the BFDI wiki (LEDGER 'EVENT FIGHTER SKINS ARE WIKI
+# LOOKS, NOT RECOLOURS'; files listed in scripts/sprite-manifest-skins.json). The recolour below is the OLD skin: running it would bring the
+# recolour back beside the wiki skin. The render above is still made; the skin part is kept only as a record and never runs.
+sys.stderr.write("STOPPED before the event skin: the event skins are now the show's own looks from the BFDI wiki (see docs/LEDGER.md, 2026-11-19)." + chr(10) + "This script's old recolour skin would bring the recolour back beside them, so it does not run. The render above was written." + chr(10))
+sys.exit(3)
 # THE SKIN: the pale glass goes bottle green, the grey-teal rim a darker green; the black face, arms and legs stay.
 sk = out.copy()
 q = sk.load()

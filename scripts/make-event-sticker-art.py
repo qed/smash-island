@@ -28,6 +28,11 @@ im = fit(trim(Image.open(SRC).convert('RGBA')), 200)
 im.save(os.path.join(SPR, 'sticker.png'), optimize=True)
 print('sticker.png', im.size, os.path.getsize(os.path.join(SPR, 'sticker.png')), 'bytes')
 
+# STOP BEFORE THE SKIN (2026-11-19): the event skins are now the show's own looks from the BFDI wiki (LEDGER 'EVENT FIGHTER SKINS ARE WIKI
+# LOOKS, NOT RECOLOURS'; files listed in scripts/sprite-manifest-skins.json). The recolour below is the OLD skin: running it would bring the
+# recolour back beside the wiki skin. The render above is still made; the skin part is kept only as a record and never runs.
+sys.stderr.write("STOPPED before the event skin: the event skins are now the show's own looks from the BFDI wiki (see docs/LEDGER.md, 2026-11-19)." + chr(10) + "This script's old recolour skin would bring the recolour back beside them, so it does not run. The render above was written." + chr(10))
+sys.exit(3)
 # THE SKIN: night. The blue top goes to a deep night blue, the red bottom to violet, the yellow sun to a pale moon; the white liner,
 # the grey edge and the black ink are left as they are (low saturation is untouched).
 sk = im.copy(); px = sk.load()
