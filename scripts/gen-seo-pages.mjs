@@ -30,6 +30,13 @@
 // moveRowsFor(r) words, its MV_SLOT -> FB_FRAME_DATA frames (what frameData returns), ZS / RF for the shield, statsFor for speeds.
 // The file names the game build it came from; when index.html has changed since, this run re-reads it first (and fails if it cannot).
 // A move with no frame row says "not measured"; no number on these pages is made up here.
+//
+// HITBOX PICTURES (the owner, 2026-11-19: "frame data is pictures of hitboxes, frame by frame"). Under each move's frame table is a strip,
+// one panel per frame, of the fighter's hurtbox and every hit area live on that frame. The strips are SVG files in fighters/hitbox/,
+// recorded from the RUNNING game by scripts/dump-hitboxes.mjs (jsdom, dev only; drawn by scripts/hitbox-svg.mjs), indexed in
+// scripts/wiki-hitboxes.json with the game build they came from. When index.html has changed since, this run re-records them first
+// (about half a minute); --skip-hitboxes keeps the old pictures instead and says so. Each picture this page uses must exist and pass
+// the same secrecy check as the pages.
 
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
@@ -115,6 +122,22 @@ if (!WIKI || WIKI.gameSha256 !== gameSha) {
   if (!WIKI || WIKI.gameSha256 !== gameSha) fail('scripts/wiki-moves.json still does not match the game');
 }
 const MOVES = WIKI.fighters;
+
+const HB_FILE = join(ROOT, 'scripts', 'wiki-hitboxes.json');
+const HB_RENDER = (await import('./hitbox-svg.mjs')).RENDER_VERSION;
+const readHb = () => { try { return JSON.parse(readFileSync(HB_FILE, 'utf8')); } catch (e) { return null; } };
+let HB = readHb();
+if (!HB || HB.gameSha256 !== gameSha || HB.render !== HB_RENDER) {
+  if (argv.includes('--skip-hitboxes')) console.log('hitbox pictures are ' + (HB ? 'older than the game: KEPT AS THEY ARE (--skip-hitboxes)' : 'missing (--skip-hitboxes): pages get none'));
+  else {
+    console.log('the hitbox pictures are missing or older than the game: re-recording them (scripts/dump-hitboxes.mjs)');
+    try { execFileSync(process.execPath, [join(ROOT, 'scripts', 'dump-hitboxes.mjs')], { stdio: 'inherit' }); }
+    catch (e) { fail('could not record the hitbox pictures (scripts/dump-hitboxes.mjs needs jsdom; --skip-hitboxes keeps the old ones): ' + e.message); }
+    HB = readHb();
+    if (!HB || HB.gameSha256 !== gameSha) fail('scripts/wiki-hitboxes.json still does not match the game');
+  }
+}
+const HB_MOVES = (HB && HB.moves) || {};
 
 // ---- the names that must never appear (held in memory only) ------------------------------------------------------------------
 
@@ -282,6 +305,10 @@ const CSS = `
   table.fd{ width:auto; margin:2px 0 12px; font-size:14px }
   table.fd th{ color:var(--muted); font-weight:700 }
   table.fd td,table.fd th{ padding:3px 12px 3px 0 }
+  .hb{ margin:0 0 14px }
+  .hb img{ display:block; max-width:100%; height:auto; border-radius:8px; background:#0e131c }
+  .hb p{ margin:4px 0 0 }
+  .key{ display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-1px; margin:0 4px 0 10px }
 `;
 const NAV_LINKS = [['/', 'Play'], ['/fighters/', 'Fighters'], ['/stages/', 'Stages'], ['/modes.html', 'Modes'], ['/about.html', 'About']];
 const SITE_PAGES = [['/fighters/', 'Fighters'], ['/stages/', 'Stages'], ['/modes.html', 'Game modes'], ['/boss-rush.html', 'Boss Rush'],
@@ -391,6 +418,29 @@ function frameHtml(row, m) {
     ? fdTable(FD_HEAD, ['from the hold', '–', 'a throw cannot miss', cell(f[3])])
     : fdTable(FD_HEAD, [cell(f[0]), cell(f[1]), cell(f[2]), cell(f[3])]);
 }
+// The hitbox strip under a move (scripts/dump-hitboxes.mjs). Numbers in its caption come from the same recording as the picture.
+const SMASH_SLOTS = new Set(['smash', 'usmash', 'dsmash']);
+function hitboxHtml(r, row) {
+  const h = HB_MOVES[r.name + '|' + row.key];
+  if (!h || !h.file || !existsSync(join(SRC, 'fighters', 'hitbox', h.file))) return '';
+  const nm = MOVE_NAMES[row.key] || row.key;
+  const parts = [];
+  if (h.firstBox == null) parts.push('No hit area shows on a miss: this move only puts one out near a foe, or tests its hit in a way the picture cannot show.');
+  else {
+    parts.push(h.firstBox === 0 ? 'Hit area out from frame 0.' : `Startup frames 0–${h.firstBox - 1}, hit area out on frame ${h.firstBox}${h.lastBox > h.firstBox ? `–${h.lastBox}` : ''}.`);
+    if (h.freeAt != null && h.freeAt > h.lastBox) parts.push(`End lag to frame ${h.freeAt - 1}; free on frame ${h.freeAt}.`);
+    else if (h.freeAt != null && h.firstBox < h.freeAt) parts.push(`Free to act on frame ${h.freeAt} while its hit area is still out; the strip stops there.`);
+    else if (h.freeAt != null) parts.push(`Free to act on frame ${h.freeAt}, before its hit comes out (dimmed panels).`);
+  }
+  if (h.inset > 0) parts.push(`Its body hit lands only ${h.inset} px inside the red outline.`);
+  if (h.every > 1) parts.push(`End lag shown every ${h.every} frames.`);
+  if (SMASH_SLOTS.has(row.slot)) parts.push('Frame 0 here is the release: the charge before it is not shown (the table’s startup counts the full charge).');
+  return `<div class="hb"><img src="/fighters/hitbox/${esc(h.file)}" width="${h.w}" height="${h.h}" loading="lazy" decoding="async" alt="${esc(`${r.name}'s ${nm}: hurtbox and hit areas frame by frame`)}">
+    <p class="small">${esc(parts.join(' '))}</p></div>`;
+}
+const HB_LEGEND = [['#3f7d5a', 'startup'], ['#b8332b', 'hit area out'], ['#46557a', 'end lag'], ['#ffd23f', 'hurtbox'], ['#ff4d3d', 'hit'], ['#3b9cff', 'grab'],
+  ['#ffa630', 'shot or trap (dashed: trap)'], ['#c49bff', 'pull (dashed)'], ['#4ade80', 'invincible'], ['#e879f9', 'armour'], ['#22d3ee', 'counter or reflect']]
+  .map(([c, t]) => `<span class="key" style="background:${c}"></span>${esc(t)}`).join(' ');
 function fighterPage(r, i) {
   const m = MOVES[r.name];
   const show = showOf(r), wc = weightClass(r.w), run = runWords(r), air = airWords(r), st = statuses(r);
@@ -404,7 +454,7 @@ function fighterPage(r, i) {
     const nm = nameOf(row);
     return `    <div class="move"><h3>${esc(nm)}${NO_KEY.has(row.key) ? '' : `<kbd>${esc(row.key)}</kbd>`}</h3>
     <p>${esc(safeLine(row.text, nm))}</p>
-    ${frameHtml(row, m)}</div>`;
+    ${frameHtml(row, m)}${hitboxHtml(r, row)}</div>`;
   };
   const tips = [
     SHIELD_BREAKERS[r.kit.special] ? 'The smash breaks a raised shield in one hit.' : 'The smash does not break shields: wear the bubble down or grab.',
@@ -424,6 +474,8 @@ function fighterPage(r, i) {
   </table></div>
   <h2>${esc(r.name)}'s moves</h2>
   <p class="small">Every move in full, in the game's own words. Damage is the first hit on a standing foe. Frames are 1/60 of a second: startup is the wait before the hit comes out, active is how long it can hit, end lag is how long you cannot act after. "Not measured" means the game has no frame numbers for that move yet. In the game, the fighter card and the pause menu have a short Moves list.</p>
+  ${Object.keys(HB_MOVES).some((k) => k.startsWith(r.name + '|')) ? `<p class="small"><strong>Hitboxes frame by frame.</strong> Under each move: one panel per frame, from frame 0 (the frame you press the button) to the end of its end lag, recorded from the game itself on a miss (a still foe far away), with the camera on the fighter and the ground as a grey line. The number on each panel is its frame; … means frames were skipped. Throws, the pummel, the shield and the Final Smash have no strip. Colours:</p>
+  <p class="small">${HB_LEGEND}</p>` : ''}
 ${groups.filter(([, rows]) => rows.length).map(([g, rows]) => `  <h2>${esc(g)}</h2>
   <div class="card">
 ${rows.map(moveHtml).join('\n')}
@@ -700,6 +752,14 @@ for (const [p, html] of out) {
     const rel = h.replace(/^\//, '').replace(/\/$/, '/index.html') || 'index.html';
     if (!out.has(rel) && !existsSync(join(SRC, rel))) fail(`${p}: link ${m[1]} resolves to nothing`);
   }
+}
+
+// every hitbox picture a page uses exists, and says nothing the pages may not
+for (const [p, html] of out) for (const m of html.matchAll(/<img src="\/(fighters\/hitbox\/[^"]+)"/g)) {
+  const f = join(SRC, m[1]);
+  if (!existsSync(f)) fail(`${p}: picture ${m[1]} is missing`);
+  const secret = textNamesSecrets(readFileSync(f, 'utf8'));
+  if (secret) fail(`${m[1]} names ${secret}`);
 }
 
 // ---- sitemap and robots ----------------------------------------------------------------------------------------------------------
