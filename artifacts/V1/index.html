@@ -6281,11 +6281,12 @@ const DEFAULT_KEYS = {left:"ArrowLeft",right:"ArrowRight",jump:"ArrowUp",down:"A
   shield:"KeyZ",  // SHIELD / REFLECTOR (2026-11-04): hold it to raise a bubble; the nine strong fighters get a reflector instead
   flag:"Space",   // Capture the Flag's hiding phase: puts your flag down (or picks it up again)
   plan:"KeyP",    // Capture the Flag: the team planning menu
+  swap:"KeyA",    // 8-Ball's contest: the next 3 of your assists come out
   edit:"KeyB"};   // ...and in the free camera, picks the next piece of the tool (attack picks the tool)
 // Multiplayer is ONLINE only (the owner, many times): one human at this keyboard, so one keymap.
 let KEYS = JSON.parse(JSON.stringify(DEFAULT_KEYS));
 const KEY_LABELS = {left:"Move Left",right:"Move Right",jump:"Jump",down:"Down / Crouch",
-  attack:"Attack (+ ↑/↓: tilts; + an arrow in the air: aerials)",special:"Special (+ arrows; with Attack: grab)",smash:"Smash (with Special: finisher; + ↑ / ↓: up and down smash)",shield:"Sprint (tap while moving) / Shield (hold; the strong fighters get a Reflector instead)",pause:"Pause",flag:"Put flag down (Capture the Flag)",edit:"Next piece (Capture the Flag editing)", plan:"Team plan menu (Capture the Flag)"};
+  attack:"Attack (+ ↑/↓: tilts; + an arrow in the air: aerials)",special:"Special (+ arrows; with Attack: grab)",smash:"Smash (with Special: finisher; + ↑ / ↓: up and down smash)",shield:"Sprint (tap while moving) / Shield (hold; the strong fighters get a Reflector instead)",pause:"Pause",flag:"Put flag down (Capture the Flag)",edit:"Next piece (Capture the Flag editing)", plan:"Team plan menu (Capture the Flag)", swap:"Swap assists (8-Ball's contest)"};
 // JURY 1 DECISIONS (2026-11-04): the key remaps are kept on this device (they vanished on every reload). 'bfsi:keymap' holds {action: code}
 // for the actions in KEY_LABELS. Storage can be blocked or full: every read and write is guarded, and the game plays on the defaults.
 // Escape and R are the game's own (Escape pauses and goes back, R restarts a match): no action may be bound to either, except that Pause
@@ -6320,6 +6321,10 @@ function keysLoad(){
     if(typeof saved.shield !== 'string'){   // a map saved before the shield existed: if another action already sits on Z, the shield takes the first free key
       const used = {}; for(const k of Object.keys(m)) if(k !== 'shield') used[m[k]] = 1;
       if(used[m.shield]){ const free = ['KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyW', 'KeyF', 'KeyG'].find(c => !used[c]); if(free) m.shield = free; }
+    }
+    if(typeof saved.swap !== 'string'){   // a map saved before the assist swap existed: if another action already sits on its key, it takes the first free one
+      const used = {}; for(const k of Object.keys(m)) if(k !== 'swap') used[m[k]] = 1;
+      if(used[m.swap]){ const free = ['KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyW', 'KeyF', 'KeyG', 'KeyA'].find(c => !used[c]); if(free) m.swap = free; }
     }
     for(const k of Object.keys(m)){ if(seen[m[k]]) return; seen[m[k]] = 1; }   // a stored map that binds one key twice is not trusted: the defaults stay
     KEYS = m;
@@ -61989,7 +61994,7 @@ const HOSTILE_ADD_DMG = 0.75;
 function isTrophy(s){ return !!s && s.type==="assist" && !s.hostile; }
 function addDmg(s, d){
   if(s.hostile) return d*HOSTILE_ADD_DMG*((typeof BOSSRUSH!=='undefined' && BOSSRUSH.dmgMult) || 1);
-  return isTrophy(s) ? d*ASSIST_TROPHY_DMG*(s._lkPow ? LK.pairDmg : 1) : d;   // (s._lkPow: one of a same-family PAIR in 8-Ball's contest, lkKeep: stronger)
+  return isTrophy(s) ? d*ASSIST_TROPHY_DMG*(s._lk ? LK.astK*(s._lkPow || 1) : 1) : d;   // (8-Ball's contest, s._lk: every assist LK.astK; s._lkPow: 2 or 3 of a type out, lkKeep)
 }
 function hostileCount(){ let n = 0; for(const m of summons) if(m.hostile && m.life>0) n++; return n; }
 // HOW AN ASSIST FIGHTS ON HIS SIDE. An assist takes its summoner's team, and a boss has no fighter index, so the add is
@@ -74767,6 +74772,7 @@ function step(){
       inp.shield=!!(down[K.shield] || gp?.shield);
       inp.flag  =down[K.flag];
       inp.edit  =down[K.edit];
+      inp.swap  =down[K.swap];
     } else if(ctrl==="remote"){
       const r = netRemoteInput(f.idx);   // input relayed from that player's device, a press since the last frame latched in
       if(r){ inp.left=!!r.left; inp.right=!!r.right; inp.jump=!!r.jump; inp.up=!!r.jump;
@@ -106193,6 +106199,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   t._hurtAnim=HURT_ANIM;   // render-only: the one unambiguous "was HIT" signal (see wasHit)
   t._hurt=90;   // any hit suppresses heal-over-time (Fern) for ~1.5s so aggression can break through
   if(LKF && from && from._lkFam) lkTouch(from, t);   // 8-BALL'S CONTEST: a contest assist's landed hit gives its family's touch (lkTouch)
+  else if(LKF && from && from._lkTri && from._lkTP && from.idx >= 0 && fighters[from.idx] === from) lkTouch(from._lkTP, t);   // ...and TYPE POWER: 3 of a type out, your own hit gives it too
   t.flash=8;
   puff(t.x,t.y-6,'#fff',5); puff(t.x,t.y-6,(from&&from.color)||'#fff',4);   // a boss's shot (its owner is {team:-1, idx:-2}) and a hazard (null) have no colour: the sparks had none either, and drew in whatever fill the last thing left
   hitFx(t, from, dmg, hitGround);   // the layered sparks, the flash ring on a heavy hit, the launch dust (HIT EFFECTS)
@@ -109674,7 +109681,7 @@ function jawbSit(s){
 // A swing's hitbox (hitTurrets calls this for every melee hitbox) meets the shell. Returns true if it landed.
 // The shells there are now: the one of the twist, or the contest's up to three (JAWB.shs).
 function jawbList(){ const J = JAWB; return !J ? [] : (J.shs || (J.sh ? [J.sh] : [])); }
-function jawbHit(f, cx, cy, rad, dmg){ let hit = false; for(const s of jawbList()) if(jawbHitShell(s, f, cx, cy, rad, dmg)) hit = true; return hit; }
+function jawbHit(f, cx, cy, rad, dmg){ let hit = false; for(const s of jawbList()) if(jawbHitShell(s, f, cx, cy, rad, dmg)) hit = true; if(JAWB && JAWB.lk && LKF && lkWildHit(f, cx, cy, rad, dmg)) hit = true; return hit; }   // (8-Ball's contest: and its wild assists)
 function jawbHitShell(s, f, cx, cy, rad, dmg){
   if(s && s.lk) return lkChip(s, f, cx, cy, rad, dmg);   // (the contest's own rule: only damage the fighter deals counts, lkChip)
   if(!s || s.st !== 'sit' || !f || f.dead || !(dmg > 0) || (s.lid >= 0 && !s.inn)) return false;   // (an empty one with its top off is crumbling: nothing to chip)
@@ -116970,6 +116977,18 @@ const LK = { total:8, cap:2, need:50, shells:6, regrow:120, combo:30, waitMin:18
              lickEvery:15, lickDmg:3, lickR:18, rushT:120, rushK:1.3,
              comboR:900, comboW:10, ropeDmg:5, ropeKb:5, ropeEvery:45, fams:4,
              touchGap:20, burnT:100, freezeT:24, heavyK:1.45, blinkT:20, blinkGap:180, stunT:24, arcR:240, arcDmg:2, gustR:170, gustV:8, fxT:30 };
+// THE POKEMON WAY (the owner, 2026-11-19: "kinda like pokemon, where you have to get assists ... you can get 6 assists, but only 3 can fight with you"; "if you have
+// 3 of the same type (the assists of each type should be consistent) you have a stronger buff"; "because of the 6 stocks, assists should be more powerful").
+// WILD ASSISTS roam the factory (JAWB.wild, lkWild*): hit one down to the last bit of its health (the bar over it: LK.wildHp, weak at LK.weakAt) and, while it is
+// weak (stars over it, LK.weakT frames, then it gets up again), WALK INTO IT to catch it. Only a fighter's own hits count. JAWBREAKERS still hold a few (LK.jaws
+// a match), only on the far, high spots (LKF.far), at most LK.jawMax at once, one every LK.jawRegrow frames. You CARRY up to LK.cap (6); LK.out (3) are out
+// fighting beside you and the rest wait; the SWAP key (KEYS.swap) turns the team one place, so the next 3 come out (a caught assist goes in beside its own
+// type, so 3 of one type are a turn or two away). TWO of a type among the 3 out: the candy rope between them, and they hit LK.pairDmg times; THREE of a type:
+// TYPE POWER, your own hits give that type's touch too (lkTouch through f._lkTP) and the three hit LK.triDmg times. Every contest assist hits LK.astK times and
+// launches LK.astKb times as far (6 stocks). Out of stocks: your team goes back to the wild. The pool (CONTEST_RULES.lick.begin): LK.types of the 8 types, all
+// LK.per of each. Eight types: the six and WATER (soaks: slowed, LK.soakT) and POISON (weakens: the foe's own hits are weaker, LK.weakenT).
+Object.assign(LK, { cap:6, out:3, types:5, per:4, jaws:4, jawMax:2, jawRegrow:900, wildMax:4, wild0:3, wildGap:240, wildHp:40, weakAt:12, weakT:360, wildV:1.1, wildHop:13.5, wildR:22, catchR:8,
+  swapCd:45, astK:1.5, astKb:1.25, triDmg:2, soakT:100, weakenT:150, koT:240 });
 // The six families: colour, the jawbreaker's five candy colours, the picture's ink, and the touch's sound (tone: from, to, wave).
 const LK_FLAVS = {
   fire:   { col:'#ff5a2a', pal:['#ff5a2a', '#ffb03a', '#e8322c', '#ffd23f', '#ff8a4a'], ink:'rgba(255,255,255,0.92)', snd:[300, 120, 'sawtooth'] },
@@ -116977,27 +116996,88 @@ const LK_FLAVS = {
   heavy:  { col:'#8a4fd8', pal:['#8a4fd8', '#d6b4ff', '#5a2aa8', '#c084fc', '#3a1a78'], ink:'rgba(255,255,255,0.92)', snd:[150, 70, 'square'] },
   sneaky: { col:'#5fd23a', pal:['#5fd23a', '#d8ffb0', '#2a8a1a', '#a6ea70', '#3fae2a'], ink:'rgba(255,255,255,0.92)', snd:[500, 900, 'sine'] },
   shock:  { col:'#ffd21f', pal:['#ffd21f', '#fff3a0', '#e0a800', '#ffe866', '#f0b800'], ink:'#4a3400', snd:[900, 300, 'square'] },
-  wind:   { col:'#dfe8f2', pal:['#dfe8f2', '#ffffff', '#9fb4c8', '#eef4fa', '#bccbda'], ink:'#3a5a7a', snd:[700, 200, 'triangle'] } };
-const LK_FLAV_KEYS = ['fire', 'ice', 'heavy', 'sneaky', 'shock', 'wind'];
+  wind:   { col:'#dfe8f2', pal:['#dfe8f2', '#ffffff', '#9fb4c8', '#eef4fa', '#bccbda'], ink:'#3a5a7a', snd:[700, 200, 'triangle'] },
+  water:  { col:'#2f6fe8', pal:['#2f6fe8', '#9cc8ff', '#1a4ab0', '#5a9af5', '#d6e8ff'], ink:'rgba(255,255,255,0.92)', snd:[420, 260, 'sine'] },
+  poison: { col:'#c23ad0', pal:['#c23ad0', '#f0a8f5', '#7a1a88', '#e070ea', '#4a0a58'], ink:'rgba(255,255,255,0.92)', snd:[260, 170, 'sawtooth'] } };
+const LK_FLAV_KEYS = ['fire', 'ice', 'heavy', 'sneaky', 'shock', 'wind', 'water', 'poison'];
 const LK_FLAV_OF = { mines:'fire', swat:'fire', bolt:'fire',
                      cut:'ice', flush:'ice', staple:'ice',
                      bounce:'heavy', stay:'heavy', rush:'heavy', crush:'heavy', cart:'heavy', pull:'heavy',
                      warp:'sneaky', snip:'sneaky', erase:'sneaky', rewind:'sneaky', chomp:'sneaky',
                      wire:'shock', flash:'shock', steal:'shock',
                      horn:'wind', drum:'wind', plane:'wind', vortex:'wind' };   // (an act not listed is SNEAKY)
-const LK_RARE = ['Blender', 'Shopping Cart', 'The Floor', 'Black Hole', 'Spongy'];   // (the strongest: they were the giant jawbreaker's alone; with the giant cut, no jawbreaker holds one)
+const LK_RARE = ['Blender', 'Shopping Cart', 'The Floor', 'Black Hole', 'Spongy'];
+// THE CONTEST'S 32 ASSISTS, 4 of each type (ty). Each does its own act (one of the assist acts in AS_ACT), and every one of a type gives that type's ONE touch.
+// The twelve from the bag keep their acts; the twenty new ones are BFDI/II characters and objects whose pictures are already in the game (pic: assets/sprites).
+const LK_ROSTER = [
+  { name:'Grotato', ty:'fire', color:'#4a9c6a', act:'mines', oneShot:true }, { name:'Rubber Spatula', ty:'fire', color:'#f2e070', act:'swat' },
+  { name:'Firey', ty:'fire', color:'#ff7a2a', act:'swat', pic:'firey' }, { name:'Match', ty:'fire', color:'#e8463a', act:'mines', oneShot:true, pic:'match' },
+  { name:'Clapboard', ty:'ice', color:'#2a2a2e', act:'cut' }, { name:'Toilet', ty:'ice', color:'#eef2f6', act:'flush' },
+  { name:'Ice Cube', ty:'ice', color:'#bfeaff', act:'staple', pic:'ice-cube' }, { name:'Snowball', ty:'ice', color:'#f4f8fc', act:'cut', pic:'snowball' },
+  { name:'Beach Ball', ty:'heavy', color:'#e85a8a', act:'bounce', mortal:true, r:34 }, { name:'9-Ball', ty:'heavy', color:'#f2c94c', act:'stay', r:28 },
+  { name:'Rocky', ty:'heavy', color:'#8a8a8a', act:'rush', pic:'rocky' }, { name:'Blocky', ty:'heavy', color:'#d84a4a', act:'crush', r:32, pic:'blocky' },
+  { name:'MePad', ty:'sneaky', color:'#c4308a', act:'warp' }, { name:'Scissors', ty:'sneaky', color:'#8ccf4a', act:'snip' },
+  { name:'Knife', ty:'sneaky', color:'#c8ccd4', act:'snip', pic:'knife' }, { name:'Yin-Yang', ty:'sneaky', color:'#3a3a3a', act:'warp', pic:'yin-yang' },
+  { name:'Battery', ty:'shock', color:'#1f9e7a', act:'wire' }, { name:'Selfie Stick', ty:'shock', color:'#c0c0c8', act:'flash', oneShot:true },
+  { name:'Lightning', ty:'shock', color:'#ffe23a', act:'wire', pic:'lightning' }, { name:'Lightbulb', ty:'shock', color:'#fff3a0', act:'flash', oneShot:true, pic:'lightbulb' },
+  { name:'Conch Shell', ty:'wind', color:'#f4b48a', act:'horn' }, { name:'Snare Drum', ty:'wind', color:'#2a3aa0', act:'drum' },
+  { name:'Fan', ty:'wind', color:'#9fd0e8', act:'horn', pic:'fan' }, { name:'Microphone', ty:'wind', color:'#5a5a66', act:'drum', pic:'microphone' },
+  { name:'Bubble', ty:'water', color:'#bfe4ff', act:'bounce', r:30, pic:'bubble' }, { name:'Teardrop', ty:'water', color:'#7fc8f0', act:'swat', pic:'teardrop' },
+  { name:'Soap', ty:'water', color:'#f6c8e0', act:'flush', pic:'soap' }, { name:'Tea Kettle', ty:'water', color:'#c8ccd4', act:'horn', pic:'tea-kettle' },
+  { name:'Barf Bag', ty:'poison', color:'#c8e08a', act:'mines', oneShot:true, pic:'barf-bag' }, { name:'Test Tube', ty:'poison', color:'#9ae0c8', act:'bolt', pic:'test-tube' },
+  { name:'Gelatin', ty:'poison', color:'#7ad84a', act:'stay', r:28, pic:'gelatin' }, { name:'Spikey', ty:'poison', color:'#8a5ad8', act:'snip', pic:'spikey' } ];
+// Their pictures: the new ones' rows join ASSIST_SPRITE_SRC at the match's start (it is defined further down), so they draw the way every assist does.
+function lkPics(){ if(typeof ASSIST_SPRITE_SRC === 'undefined') return; for(const r of LK_ROSTER) if(r.pic && !ASSIST_SPRITE_SRC[r.name]) ASSIST_SPRITE_SRC[r.name] = { src:'assets/sprites/' + r.pic + '.png', h:2.6, w:3.0 }; }   // (the strongest: they were the giant jawbreaker's alone; with the giant cut, no jawbreaker holds one)
 // CPUs by level (0 Easy .. 3 Expert): the fight range; how far from a foe it feels safe to lick, how often it licks and how long; how much it wants the family that
 // makes a pair; the chance to dodge a falling jawbreaker; how far it walks for one.
 const LK_AI = { roam:[300, 220, 160, 120], fight:[140, 170, 210, 240], safe:[260, 320, 400, 480], lick:[0.15, 0.35, 0.55, 0.7], lickMax:[50, 80, 110, 130], flav:[0, 80, 150, 220], dodge:[0.35, 0.6, 0.85, 1], reach:[1500, 2300, 3200, 5000], work:420 };
 let LKF = null;   // THE CANDY FACTORY's layout: null in every other match; else { gy, plats, belts, lift, spots }
 function lkJawb(){ return { lk:true, rng:((Math.random()*4294967296) >>> 0) || 1, seq:0, sh:null, shs:[], spots:[], pool:[], order:[], made:0, taken:0, takenBy:{}, redo:[],
-  nextMake:0, seen:{}, rc:{}, resp:0, fall:null, fl:[], fx:[], total:LK.total, st:{ broke:lkZero(), touch:lkZero(), pairs:0, licks:0, combos:0, comboHits:0, lost:0 } }; }
+  nextMake:0, seen:{}, rc:{}, resp:0, fall:null, fl:[], fx:[], total:LK.total, wild:[], wq:[], jq:[], nextWild:0,
+  st:{ broke:lkZero(), touch:lkZero(), pairs:0, licks:0, combos:0, comboHits:0, lost:0, caught:0, jawTaken:0, swaps:0, tris:0, triF:0, maxTeam:0, ko:{ ast:0, own:0, other:0 } } }; }
 function lkZero(){ const o = {}; for(const k of LK_FLAV_KEYS) o[k] = 0; return o; }
 function lkHeld(f){ return f._lkA || (f._lkA = []); }
 function lkCapped(f){ return lkHeld(f).length >= LK.cap; }
-function lkRow(name){ return ASSIST_ROSTER.find(a => a.name === name) || null; }
-function lkFlav(name){ const r = lkRow(name); return (r && LK_FLAV_OF[r.act]) || 'sneaky'; }
-function lkPair(f){ const h = lkHeld(f); return (h.length >= 2 && lkFlav(h[0]) === lkFlav(h[1])) ? lkFlav(h[0]) : null; }   // the family of a same-family pair, or null
+function lkRow(name){ return LK_ROSTER.find(a => a.name === name) || ASSIST_ROSTER.find(a => a.name === name) || null; }
+function lkFlav(name){ const r = lkRow(name); return (r && (r.ty || LK_FLAV_OF[r.act])) || 'sneaky'; }
+// The 3 OUT: the team read round from f._lkK (the swap turns it one place); all of them when there are 3 or fewer.
+function lkActive(f){ const h = lkHeld(f), n = h.length; if(n <= LK.out) return h.slice(); const k = (((f._lkK || 0) % n) + n) % n, o = []; for(let i = 0; i < LK.out; i++) o.push(h[(k + i) % n]); return o; }
+function lkTeam(f, names){ const c = {}; let ty = null, n = 0; for(const a of (names || lkActive(f))){ const k = lkFlav(a); c[k] = (c[k] || 0) + 1; if(c[k] > n){ n = c[k]; ty = k; } } return { ty:ty, n:n }; }   // the most of one type among them
+function lkPair(f){ const T = lkTeam(f); return T.n >= 2 ? T.ty : null; }   // the type that 2 or 3 of the ones out share, or null
+// Caught or broken out: in beside the others of its type; the ones out stay out (the new one waits its turn) when it is a fourth or more.
+function lkTake(f, name){
+  const J = JAWB, h = lkHeld(f), before = lkActive(f), nb = lkTeam(f, before).n, ty = lkFlav(name);
+  let at = -1; for(let i = 0; i < h.length; i++) if(lkFlav(h[i]) === ty) at = i;
+  if(at < 0) h.push(name); else h.splice(at + 1, 0, name);
+  if(h.length > LK.out) for(let k = 0; k < h.length; k++){ f._lkK = k; const a = lkActive(f); if(before.every(q => a.indexOf(q) >= 0)) break; }
+  J.taken++; J.takenBy[name] = f.color || '#ffffff'; J.st.maxTeam = Math.max(J.st.maxTeam, h.length);
+  for(let i = 0; i < 6; i++) puff(f.x, f.y - f.r, LK_FLAVS[ty].col, 4);
+  lkFormFx(f, nb);
+}
+function lkFormFx(f, nb){   // a pair (or three) of a type just came together: a chime and a burst in its colour
+  const T = lkTeam(f); if(T.n < 2 || T.n <= nb) return;
+  JAWB.st.pairs++; if(T.n >= 3) JAWB.st.tris++;
+  for(let i = 0; i < 12; i++) puff(f.x, f.y - f.r, LK_FLAVS[T.ty].col, 6);
+  tone(660, 0.12, 'triangle', 0.05, 0, 990); tone(990, 0.16, 'triangle', 0.05, 0.1, T.n >= 3 ? 1760 : 1320);
+}
+// THE SWAP: the team turns one place, the one at the front goes back and the next comes out (a short wait for anyone who has to come out).
+function lkSwap(f){
+  const J = JAWB, h = lkHeld(f), t = hazardT;
+  if(h.length <= LK.out || (f._lkSwT || 0) > t) return false;
+  const nb = lkTeam(f).n; f._lkK = ((f._lkK || 0) + 1) % h.length; f._lkSwT = t + LK.swapCd; J.st.swaps++;
+  for(const name of lkActive(f)){ const key = f.idx + ':' + name; if(!summons.some(s => s._lk === key && s.life > 0)) J.rc[key] = Math.max(J.rc[key] || 0, t + 12); }
+  tone(520, 0.07, 'triangle', 0.04, 0, 780);
+  lkFormFx(f, nb);
+  return true;
+}
+// A CPU turns its team toward 3 of a type (else 2) when the team has one.
+function lkCpuSwap(f){
+  if(f.you || f.dead || hazardT % 20 !== f.idx % 20) return;
+  const h = lkHeld(f), n = h.length; if(n <= LK.out) return;
+  const sc = k => { const o = []; for(let i = 0; i < LK.out; i++) o.push(h[(k + i) % n]); const T = lkTeam(f, o); return T.n >= 3 ? 100 : T.n === 2 ? 30 : 0; };
+  const now = sc((((f._lkK || 0) % n) + n) % n); let best = now; for(let k = 0; k < n; k++) best = Math.max(best, sc(k));
+  if(best > now) lkSwap(f);
+}
 function lkR(s){ return JB.r; }
 function lkWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.contest === 'lick'; }
 // THE FACTORY: in place of the stage's own world (setupWorld), for this one event match.
@@ -117016,7 +117096,7 @@ function lkBuildWorld(){
   const low = one(3380, gy - 150, 760, K.beltV), high = one(3700, gy - 310, 560, -K.beltV); one(4320, gy - 170, 200);
   const sp = (x, top) => ({ x:x, top:top });
   LKF = { gy:gy, plats:plats, belts:plats.filter(p => p.lkBelt), lift:{ x:4210, low:low, high:high },
-    walls:[1610, 3190], spots:[sp(420, gy), sp(1300, gy), sp(530, gy - 150), sp(840, gy - 300), sp(1900, gy - 150), sp(2950, gy - 150), sp(2800, gy), sp(3450, gy - 150), sp(3480, gy), sp(3900, gy), sp(3950, gy - 310)] };
+    walls:[1610, 3190], far:[sp(840, gy - 300), sp(1980, gy - 310), sp(2820, gy - 310), sp(4420, gy - 170)], spots:[sp(420, gy), sp(1300, gy), sp(530, gy - 150), sp(840, gy - 300), sp(1900, gy - 150), sp(2950, gy - 150), sp(2800, gy), sp(3450, gy - 150), sp(3480, gy), sp(3900, gy), sp(3950, gy - 310)] };
   lkRooms();   // ROOMS APART: the walls in the chutes, the three rooms and their doors
 }
 // What a thing can stand on at x: the factory's ledges and belts, and the floor.
@@ -117035,7 +117115,7 @@ function lkSupport(s, R){
 }
 // One jawbreaker grows in at a spot: one that went down a chute grows in again first, else the next of the eight.
 function lkMakeAt(p){
-  const J = JAWB, ast = J.redo.length ? J.redo.shift() : J.pool[J.made++], fl = lkFlav(ast);
+  const J = JAWB, ast = J.redo.length ? J.redo.shift() : (J.made++, J.jq.shift()), fl = lkFlav(ast);
   const s = { id:++J.seq, lk:1, ast:ast, fl:fl, need:LK.need, dealt:{}, x:p.x, y:p.top - JB.r, vx:0, vy:0, st:'sit', t0:hazardT, tl:-1, hp:1, flash:0, lid:-1, end:-1, inn:0, face:0,
     dir:jawbRand() < 0.5 ? -1 : 1, who:-1, gr:{}, bk:{}, ang:jawbRand()*6, on:null, lift:0 };
   J.shs.push(s);
@@ -117044,12 +117124,12 @@ function lkMakeAt(p){
 }
 function lkGrow(){
   const J = JAWB, t = hazardT;
-  if(J.fall || t < J.nextMake || (J.made >= J.pool.length && !J.redo.length)) return;
-  if(J.shs.filter(s => s.st === 'sit').length >= LK.shells) return;
-  const free = LKF.spots.filter(p => !J.shs.some(s => s.st === 'sit' && Math.hypot(s.x - p.x, s.y + JB.r - p.top) < 140) && !fighters.some(f => !f.dead && Math.hypot(f.x - p.x, f.y + f.r - p.top) < 60));
+  if(J.fall || t < J.nextMake || (!J.jq.length && !J.redo.length)) return;
+  if(J.shs.filter(s => s.st === 'sit').length >= LK.jawMax) return;   // RARER (the owner, 2026-11-19): at most LK.jawMax, one each LK.jawRegrow frames, only on the far spots
+  const free = LKF.far.filter(p => !J.shs.some(s => s.st === 'sit' && Math.hypot(s.x - p.x, s.y + JB.r - p.top) < 140) && !fighters.some(f => !f.dead && Math.hypot(f.x - p.x, f.y + f.r - p.top) < 60));
   if(!free.length){ J.nextMake = t + 30; return; }
   lkMakeAt(free[Math.floor(jawbRand()*free.length)]);
-  J.nextMake = t + LK.regrow;
+  J.nextMake = t + LK.jawRegrow;
 }
 // A jawbreaker's own motion: carried by a belt or the lift, sliding (and slowing) off a belt's end, falling off an edge onto what is below, or lost down a chute.
 function lkShellMove(s){
@@ -117100,12 +117180,11 @@ function lkBreak(s, f){
   s.st = 'open'; s.end = hazardT; s.vx = 0;
   if(!f) return;
   s.who = f.idx;
-  const row = lkRow(s.ast), col = LK_FLAVS[s.fl].col;
-  lkHeld(f).push(s.ast); J.taken++; J.takenBy[s.ast] = f.color || '#ffffff'; J.st.broke[s.fl]++;
+  const col = LK_FLAVS[s.fl].col;
+  J.st.broke[s.fl]++; J.st.jawTaken++;
   for(let i = 0; i < 14; i++) puff(s.x, s.y, i % 2 ? col : '#ffffff', 6);
-  for(let i = 0; i < 6; i++) puff(f.x, f.y - f.r, row ? row.color : col, 4);
   jawbSfx('found');
-  if(lkPair(f)){ J.st.pairs++; for(let i = 0; i < 12; i++) puff(f.x, f.y - f.r, col, 6); tone(660, 0.12, 'triangle', 0.05, 0, 990); tone(990, 0.16, 'triangle', 0.05, 0.1, 1320); }
+  lkTake(f, s.ast);
 }
 function lkAllTaken(){ const J = JAWB; return J.taken >= J.total || !fighters.some(f => !f.dead && !lkCapped(f)); }
 // PERMANENT, FOREVER (the owner 2026-11-13: "they stay forever"): an assist you hold is on the stage for the rest of the match. It has no tenure (life 1e9), a pointed fighter cannot
@@ -117116,13 +117195,20 @@ function lkKeep(){
   const J = JAWB, t = hazardT;
   for(const s of summons) if(s._lk && fighters[s.owner] && fighters[s.owner].dead) s.life = 0;
   for(const f of fighters){
-    if(f.dead) continue;
-    const pair = lkPair(f);
-    for(const name of lkHeld(f)){
+    if(f.dead){   // OUT OF STOCKS: the team goes back to the wild
+      if(!f._lkRel && lkHeld(f).length){ f._lkRel = 1; for(const n of lkHeld(f)){ J.wq.push(n); delete J.takenBy[n]; J.taken--; } f._lkA = []; }
+      f._lkTri = null; continue;
+    }
+    const act = lkActive(f), T = lkTeam(f, act), tri = T.n >= 3 ? T.ty : null;
+    f._lkTri = tri;
+    if(tri){ const P = f._lkTP || (f._lkTP = {}); P._lkFam = tri; P._lkOwn = f.idx; P._lkS = f; J.st.triF++; }   // TYPE POWER: the stand-in your own hits give the touch through
+    for(const s of summons) if(s._lk && s.owner === f.idx && s.life > 0 && act.indexOf(s.name) < 0){ s.life = 0; for(let i = 0; i < 8; i++) puff(s.x, s.y, LK_FLAVS[lkFlav(s.name)].col, 4); }   // swapped back in
+    for(const name of act){
+      const pow = (T.n >= 2 && lkFlav(name) === T.ty) ? (T.n >= 3 ? LK.triDmg : LK.pairDmg) : 0;
       const key = f.idx + ':' + name, live = summons.find(s => s._lk === key && s.life > 0);
-      if(live){ live._lkPow = pair; J.rc[key] = 0; lkTag(live, f, name); continue; }
+      if(live){ live._lkPow = pow; J.rc[key] = 0; lkTag(live, f, name); continue; }
       if(J.seen[key] && !J.rc[key]) J.rc[key] = t + LK.waitMin + Math.floor(jawbRand()*(LK.waitMax - LK.waitMin + 1));
-      if(t >= (J.rc[key] || 0)){ if(J.seen[key]) J.resp++; const row = lkRow(name), s = row && summonAssistNamed(f, row); if(s){ s._lk = key; s.life = 1e9; s._lkPow = pair; J.seen[key] = 1; J.rc[key] = 0; lkTag(s, f, name); } }
+      if(t >= (J.rc[key] || 0)){ if(J.seen[key]) J.resp++; const row = lkRow(name), s = row && summonAssistNamed(f, row); if(s){ s._lk = key; s.life = 1e9; s._lkPow = pow; J.seen[key] = 1; J.rc[key] = 0; lkTag(s, f, name); } }
     }
   }
 }
@@ -117154,6 +117240,8 @@ function lkTouch(P, t, o){
     for(const q of fighters){ if(q === t || q.dead || q.invuln > 0 || (own && q.team === own.team) || !crmSame(q, t)) continue; const d = Math.hypot(q.x - t.x, q.y - t.y); if(d < bd){ bd = d; best = q; } }
     if(best){ best.pct += LK.arcDmg; best.flash = 6; stunFx(best, LK.stunT); fx.x2 = best.x; fx.y2 = best.y; for(let i = 0; i < 5; i++) puff(best.x, best.y, F.pal[i], 3); }
   }
+  else if(fl === 'water'){ t._soakT = Math.max(t._soakT || 0, now + LK.soakT); t.slowed = Math.max(t.slowed || 0, 1); }   // SOAKED: slowed till it dries
+  else if(fl === 'poison') t.weakened = Math.max(t.weakened || 0, LK.weakenT);   // WEAKENED: its own hits are weaker a while
   else if(fl === 'wind'){
     for(const q of fighters){ if(q.dead || q.invuln > 0 || (own && q.team === own.team) || !crmSame(q, t) || Math.hypot(q.x - t.x, q.y - t.y) > LK.gustR) continue;
       const sx = Math.sign(q.x - ax) || Math.sign(q.x - t.x) || 1; q.vx = sx*Math.max(Math.abs(q.vx || 0), LK.gustV); q.vy = Math.min(q.vy || 0, -3); q.onground = false; }
@@ -117167,6 +117255,12 @@ function lkDrawFx(c){
   const J = JAWB, t = hazardT;
   J.fx = J.fx.filter(e => t - e.t < LK.fxT);
   for(const e of J.fx){
+    if(e.k === 'catch'){   // a catch: a ring in its type's colour shrinking into its new owner
+      const q = fighters[e.id], u2 = (t - e.t)/LK.fxT; if(!q || q.dead) continue;
+      const x2 = e.x + (q.x - e.x)*u2, y2 = e.y + (q.y - e.y)*u2;
+      c.save(); c.globalAlpha = 1 - u2*0.6; c.strokeStyle = LK_FLAVS[e.ty].col; c.lineWidth = 4; c.beginPath(); c.arc(x2, y2, 28*(1 - u2) + 4, 0, 7); c.stroke();
+      c.fillStyle = '#ffffff'; c.beginPath(); c.arc(x2, y2, 6*(1 - u2) + 2, 0, 7); c.fill(); c.restore(); continue;
+    }
     const F = LK_FLAVS[e.k], u = (t - e.t)/LK.fxT, f = fighters[e.id]; if(!F) continue;
     const x = f && !f.dead ? f.x : e.x, y = (f && !f.dead ? f.y - f.r : e.y) - 18 - u*22;
     c.save(); c.globalAlpha = 1 - u;
@@ -117209,6 +117303,7 @@ function lkLickable(f){
 }
 function lkInput(f, inp){
   const J = JAWB; if(!J || !J.lk || !LKF || f.dead) return;
+  const sw = !!inp.swap; if(sw && !f._lkSwP) lkSwap(f); f._lkSwP = sw;   // THE SWAP KEY: the next 3 come out
   const dn = !!inp.down && !inp.attack && !inp.special && !inp.smash && !inp.jump;
   if(!dn || !f.onground || f.hitstun > 0 || J.fall){ f._lkLk = null; return; }
   const s = lkLickable(f); if(!s){ f._lkLk = null; return; }
@@ -117239,19 +117334,20 @@ function lkComboStep(){
   for(const f of fighters){
     f._lkCombo = null;
     if(f.dead) continue;
-    const h = lkHeld(f); if(h.length < 2 || lkFlav(h[0]) !== lkFlav(h[1])) continue;
-    const a = summons.find(s => s._lk === f.idx + ':' + h[0] && s.life > 0), b = summons.find(s => s._lk === f.idx + ':' + h[1] && s.life > 0);
-    if(!a || !b) continue;
+    const act = lkActive(f), T = lkTeam(f, act); if(T.n < 2) continue;
+    const mem = []; for(const name of act) if(lkFlav(name) === T.ty){ const s = summons.find(q => q._lk === f.idx + ':' + name && q.life > 0); if(s) mem.push([s, name]); }
+    if(mem.length < 2) continue;
     if(!f._lkComboSeen){ f._lkComboSeen = 1; J.st.combos++; }
-    if(Math.hypot(a.x - b.x, a.y - b.y) > LK.comboR) continue;
-    const fl = lkFlav(h[0]), F = LK_FLAVS[fl];
-    f._lkCombo = { a:a, b:b, fl:fl };
+    const segs = []; for(let i = 0; i + 1 < mem.length; i++){ const a = mem[i][0], b = mem[i + 1][0]; if(Math.hypot(a.x - b.x, a.y - b.y) <= LK.comboR) segs.push([a, b, mem[i][1]]); }
+    if(!segs.length) continue;
+    const F = LK_FLAVS[T.ty];
+    f._lkCombo = { segs:segs, fl:T.ty };
     for(const o of fighters){
       if(o === f || o.dead || o.team === f.team || o.invuln > 0 || (o._lkBeamT || 0) > t) continue;
-      if(lkSegDist(o.x, o.y, a.x, a.y, b.x, b.y) > o.r + LK.comboW) continue;
+      const sg = segs.find(q => lkSegDist(o.x, o.y, q[0].x, q[0].y, q[1].x, q[1].y) <= o.r + LK.comboW); if(!sg) continue;
       o._lkBeamT = t + LK.ropeEvery; J.st.comboHits++;
-      const dir = Math.sign(o.x - (a.x + b.x)/2) || 1;
-      lkTag(a, f, h[0]); applyHit(o, LK.ropeDmg, dir*LK.ropeKb, -LK.ropeKb*0.8, assistFighter(a), { shot:1 });   // (the pair's hit: the family's touch rides on it, lkTouch)
+      const a = sg[0], b = sg[1], dir = Math.sign(o.x - (a.x + b.x)/2) || 1;
+      lkTag(a, f, sg[2]); applyHit(o, LK.ropeDmg, dir*LK.ropeKb, -LK.ropeKb*0.8, assistFighter(a), { shot:1 });   // (the rope's hit: the type's touch rides on it, lkTouch)
       for(let i = 0; i < 6; i++) puff(o.x, o.y, F.col, 4);
     }
   }
@@ -117268,15 +117364,161 @@ function lkStep(){
   for(const s of J.shs){ if(s.flash > 0) s.flash--; if(s.st === 'sit') lkShellMove(s); }
   jawbShots();
   J.shs = J.shs.filter(s => s.st === 'sit' || (s.st !== 'gone' && t - s.end < JB.out));
-  lkBelts(); lkGrow(); lkKeep(); lkComboStep(); lkRushFx();
+  lkBelts(); lkGrow(); lkKeep(); lkComboStep(); lkRushFx(); lkWildStep(); lkKoStep();
+  for(const f of fighters) lkCpuSwap(f);
   if(!J.fall && (lkAllTaken() || t >= LK.fallAt)) lkFallBegin();   // (and at LK.fallAt at the latest: the owner, 2026-11-18, 'start sooner'; the CPU runs took 6 to 10 minutes)
   if(J.fall) lkFallStep();
+}
+// ---- THE WILD ONES ----
+// One comes out at a spot nobody stands near (LKF.spots), with a puff in its type's colour; at most LK.wildMax at once, one each LK.wildGap frames.
+function lkWildSpawn(){
+  const J = JAWB, t = hazardT;
+  if(!J.wq.length || J.wild.length >= LK.wildMax || t < J.nextWild) return;
+  const free = LKF.spots.filter(p => !fighters.some(f => !f.dead && Math.hypot(f.x - p.x, f.y + f.r - p.top) < 240) && !J.wild.some(w => Math.hypot(w.x - p.x, w.y - p.top) < 160));
+  if(!free.length){ J.nextWild = t + 30; return; }
+  const p = free[Math.floor(jawbRand()*free.length)], name = J.wq.splice(Math.floor(jawbRand()*J.wq.length), 1)[0], ty = lkFlav(name), row = lkRow(name);
+  const w = { id:++J.seq, name:name, ty:ty, color:row ? row.color : '#ffffff', x:p.x, y:p.top - LK.wildR, vx:0, vy:0, r:LK.wildR, hp:LK.wildHp, weak:0,
+    dir:jawbRand() < 0.5 ? -1 : 1, t0:t, gr:{}, flash:0, hop:t + 120 + Math.floor(jawbRand()*240), face:1, gone:0 };
+  J.wild.push(w); for(let i = 0; i < 8; i++) puff(w.x, w.y, LK_FLAVS[ty].pal[i % 5], 4);
+  J.nextWild = t + LK.wildGap;
+}
+// It walks its ledge and turns at the end (never off it on its own), hops now and then (up onto what is above), rides the belts; weak, it stops.
+function lkWildMove(w){
+  const R = w.r, t = hazardT, weak = w.weak > t, on = lkSupport(w, R);
+  if(on){
+    w.vy = 0;
+    const bv = (on !== 'floor' && on.lkBelt) || 0; if(bv) w.x += bv;
+    if(!weak){
+      w.vx += (w.dir*LK.wildV - w.vx)*0.2;
+      const ax = w.x + w.dir*(R + 8);
+      if(!lkTopsAt(ax).some(top => Math.abs(top - (w.y + R)) < 4) || ax < 40 || ax > WW - 40){ w.dir = -w.dir; w.vx = 0; }
+      if(t >= w.hop){ w.hop = t + 150 + Math.floor(jawbRand()*300); w.vy = -LK.wildHop; w.vx = w.dir*2.2; w.y -= 2; }
+    } else w.vx *= 0.8;
+    w.x += w.vx; w.face = w.dir;
+  } else {
+    const b0 = w.y + R; w.vy += JB.grav; w.y += w.vy; w.x += w.vx;
+    for(const wx of LKF.walls) if(Math.abs(w.x - wx) < R + 10){ w.x = wx + (w.x < wx ? -1 : 1)*(R + 10); w.vx = -w.vx*0.5; w.dir = -w.dir; }
+    let land = null; for(const top of lkTopsAt(w.x)) if(b0 <= top + 2 && w.y + R >= top && (land === null || top < land)) land = top;
+    if(land !== null){ w.y = land - R; w.vy = 0; }
+  }
+  w.x = clamp(w.x, 20, WW - 20);
+  if(w.y > WH + 120){ w.gone = 1; JAWB.wq.push(w.name); }   // (knocked down a chute: not lost, it comes out again somewhere)
+}
+// A fighter's own hit on a wild one (a swing: jawbHit; a shot: lkWildStep). A multi-hit move counts once a 20 frames. Down to LK.weakAt: WEAK.
+function lkWildHit(f, cx, cy, rad, dmg){
+  const J = JAWB; if(!J || !J.lk || !J.wild || !f || f.dead || !(dmg > 0)) return false;
+  let hit = false;
+  for(const w of J.wild){
+    if(w.gone || w.weak > hazardT || Math.hypot(w.x - cx, w.y - cy) >= rad + w.r) continue;
+    if((w.gr[f.idx] || 0) > hazardT) continue;
+    w.gr[f.idx] = hazardT + 20; hit = true;
+    const d = clamp(statDmg(f, dmg), FSBALL.minHit, FSBALL.maxHit);
+    w.hp -= d; w.flash = 8; w.vx = (Math.sign(w.x - f.x) || 1)*3; w.vy = -4; w.y -= 2;
+    for(let i = 0; i < 4; i++) puff(w.x, w.y, LK_FLAVS[w.ty].pal[i], 3);
+    SFX.hit(dmg);
+    if(w.hp <= LK.weakAt){ w.hp = LK.weakAt; w.weak = hazardT + LK.weakT; w.vx *= 0.5; tone(880, 0.1, 'triangle', 0.05, 0, 440); }
+  }
+  return hit;
+}
+function lkCatch(w, f){
+  const J = JAWB, col = LK_FLAVS[w.ty].col; w.gone = 1; J.st.caught++;
+  for(let i = 0; i < 14; i++) puff(w.x, w.y, i % 2 ? col : '#ffffff', 6);
+  J.fx.push({ k:'catch', ty:w.ty, x:w.x, y:w.y, t:hazardT, id:f.idx });
+  jawbSfx('found');
+  lkTake(f, w.name);
+}
+function lkWildStep(){
+  const J = JAWB, t = hazardT;
+  lkWildSpawn();
+  for(const pr of projectiles){   // shots: a fighter's own, at 0.8 (as on a jawbreaker)
+    if(!(pr.life > 0) || pr.turret || pr.trap || !(pr.dmg > 0)) continue;
+    const o = pr.ownerObj; if(!o || !(o.idx >= 0) || fighters[o.idx] !== o) continue;
+    lkWildHit(o, pr.x, pr.y, pr.r || 8, pr.dmg*0.8);
+  }
+  for(const w of J.wild){
+    if(w.gone) continue;
+    if(w.flash > 0) w.flash--;
+    lkWildMove(w); if(w.gone) continue;
+    if(w.weak && w.weak <= t){ w.weak = 0; w.hp = LK.wildHp; for(let i = 0; i < 6; i++) puff(w.x, w.y, LK_FLAVS[w.ty].col, 3); }   // it got up again
+    if(w.weak > t) for(const f of fighters){   // THE CATCH: walk into it while it is weak
+      if(f.dead || lkCapped(f) || !crmSame(f, w) || Math.hypot(f.x - w.x, f.y - w.y) > f.r + w.r + LK.catchR) continue;
+      lkCatch(w, f); break;
+    }
+  }
+  J.wild = J.wild.filter(w => !w.gone);
+}
+// Who a KO is down to (the measure: assists' share of the KOs): the last hit in LK.koT frames, an assist's (its stand-in) or a fighter's own.
+function lkKoStep(){
+  const J = JAWB, t = hazardT;
+  for(const f of fighters){
+    const st = f.stocks; if(f._lkSt == null){ f._lkSt = st; continue; }
+    if(st < f._lkSt){ const by = f.lastHitBy, fresh = by && t - (f._lastHitT == null ? -1e9 : f._lastHitT) < LK.koT; if(fresh && by._lkFam) J.st.ko.ast++; else if(fresh && by.idx >= 0) J.st.ko.own++; else J.st.ko.other++; }
+    f._lkSt = st;
+  }
+}
+// The assist's own picture (its render, or its drawing in code), at the origin, feet at +r.
+function lkAstBody(c, w){
+  const nm = w.name, sp = ASSIST_SPRITE_SRC[nm], im = sp ? assistImage(nm) : null, dr = ASSIST_DRAWN[nm], R = w.r;
+  const s = { type:'assist', name:nm, r:R, face:w.face || 1, color:w.color };
+  if(c === ctx && dr){ dr(s); return; }
+  if(c === ctx && im){ drawAssistRender(s, im, sp); return; }
+  c.fillStyle = w.color; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.arc(0, 0, R, 0, 7); c.fill(); c.stroke();
+  c.fillStyle = '#fff'; c.beginPath(); c.arc(-R*0.3, -R*0.15, R*0.16, 0, 7); c.arc(R*0.3, -R*0.15, R*0.16, 0, 7); c.fill();
+  c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(-R*0.3, -R*0.15, R*0.08, 0, 7); c.arc(R*0.3, -R*0.15, R*0.08, 0, 7); c.fill();
+}
+// A wild one: its shadow and a ring of its type's colour, its picture (bobbing as it walks; dizzy, tipping, when weak), its health as a small bar, its type's
+// picture over it; weak: stars going round and a white ring pulsing (walk into it).
+function lkDrawWild(c){
+  const J = JAWB, t = hazardT, vr = viewRect();
+  for(const w of J.wild){
+    if(w.x < vr.x - 80 || w.x > vr.x + vr.w + 80) continue;
+    const F = LK_FLAVS[w.ty], R = w.r, weak = w.weak > t;
+    c.save();
+    c.globalAlpha = 0.3; c.fillStyle = '#1c1426'; c.beginPath(); c.ellipse(w.x, w.y + R, R*0.9, 5, 0, 0, 7); c.fill();
+    c.globalAlpha = 0.75; c.strokeStyle = F.col; c.lineWidth = 3; c.beginPath(); c.ellipse(w.x, w.y + R, R + 6, 6, 0, 0, 7); c.stroke();
+    if(weak){ c.globalAlpha = 0.45 + 0.4*Math.sin(t*0.25); c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.beginPath(); c.arc(w.x, w.y, R + 12, 0, 7); c.stroke(); }
+    c.globalAlpha = 1;
+    c.save(); c.translate(w.x, w.y - (weak ? 0 : Math.abs(Math.sin(t*0.15 + w.id))*3));
+    if(weak){ c.translate(0, R); c.rotate(Math.sin(t*0.12)*0.25); c.translate(0, -R); }
+    if(w.flash > 0) c.globalAlpha = 0.55 + 0.45*((w.flash >> 1) % 2);
+    lkAstBody(c, w);
+    c.restore();
+    const bw = 34, bx = w.x - bw/2, by = w.y - R*2.2 - 6, u = clamp(w.hp/LK.wildHp, 0, 1);
+    c.fillStyle = 'rgba(20,14,28,0.8)'; c.fillRect(bx - 2, by - 2, bw + 4, 8);
+    c.fillStyle = u > 0.55 ? '#5fd23a' : u > 0.32 ? '#ffd21f' : '#ff4a3a'; c.fillRect(bx, by, bw*u, 4);
+    if(weak) for(let i = 0; i < 3; i++){ const a = t*0.15 + i*2.09, sx = w.x + Math.cos(a)*16, sy = by - 6 + Math.sin(a)*4; c.fillStyle = '#ffe23a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.5; c.beginPath(); for(let k = 0; k < 10; k++){ const rr = k % 2 ? 2.4 : 5.5, aa = k*Math.PI/5 + t*0.1; c.lineTo(sx + Math.cos(aa)*rr, sy + Math.sin(aa)*rr); } c.closePath(); c.fill(); c.stroke(); }
+    else { c.translate(w.x, by - 12); c.fillStyle = F.col; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.arc(0, 0, 8, 0, 7); c.fill(); c.stroke(); lkFlavIcon(c, w.ty, 5); }
+    c.restore();
+  }
+}
+// YOUR TEAM (screen space, under the strip of fighter cards: HUD_STRIP_MAX): six round slots, each your assist's picture ringed in its type's colour; the 3 out bright,
+// raised and ringed thick, the ones waiting dim; a glow round 2 or 3 of a type out; the swap key's cap beside them when there are more than 3.
+function lkDrawTeam(c, me){
+  const h = lkHeld(me), act = lkActive(me), T = lkTeam(me, act), r = 13, gap = 32, x0 = 16, y0 = HUD_STRIP_MAX + 10;
+  for(let i = 0; i < LK.cap; i++){
+    const nm = h[i], on = !!nm && act.indexOf(nm) >= 0, x = x0 + r + i*gap, y = y0 + r + (on ? 0 : 3);
+    c.save(); c.globalAlpha = nm ? (on ? 1 : 0.55) : 0.35;
+    c.fillStyle = 'rgba(28,24,38,0.82)'; c.beginPath(); c.arc(x, y, r + 3, 0, 7); c.fill();
+    if(nm){
+      const ty = lkFlav(nm), F = LK_FLAVS[ty], row = lkRow(nm);
+      c.save(); c.beginPath(); c.arc(x, y, r, 0, 7); c.clip(); c.translate(x, y + 2); c.scale(0.36, 0.36); lkAstBody(c, { name:nm, r:26, face:1, color:row ? row.color : '#ffffff' }); c.restore();
+      c.strokeStyle = F.col; c.lineWidth = on ? 3.5 : 2; c.beginPath(); c.arc(x, y, r + 1.5, 0, 7); c.stroke();
+      if(on && T.n >= 2 && ty === T.ty){ c.globalAlpha = 0.5 + 0.3*Math.sin(hazardT*0.2); c.lineWidth = 2; c.beginPath(); c.arc(x, y, r + 6, 0, 7); c.stroke(); }
+    } else { c.strokeStyle = 'rgba(255,255,255,0.6)'; c.lineWidth = 1.5; c.setLineDash([3, 3]); c.beginPath(); c.arc(x, y, r, 0, 7); c.stroke(); c.setLineDash([]); }
+    c.restore();
+  }
+  if(h.length > LK.out){
+    const kx = x0 + LK.cap*gap + 4, ky = y0 + 3, kw = 22;
+    c.save(); c.globalAlpha = 0.9; c.fillStyle = '#f4eef8'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; itemRoundRect(c, kx, ky, kw, 20, 5); c.fill(); c.stroke();
+    c.fillStyle = '#1c1c1c'; c.font = "800 12px 'Baloo 2', system-ui"; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(niceKey(KEYS.swap || 'KeyA').slice(0, 3), kx + kw/2, ky + 11); c.restore();
+  }
 }
 // ---- THE FALL: after the last assist is taken (or every living fighter holds 2, or at LK.fallAt). A deep sound, the shells left crumble, then one ball at a time (up to LK.fallMax) comes down, aimed at where a fighter stands LK.fallAim of the time.
 function lkFallBegin(){
   const J = JAWB, t = hazardT;
   J.fall = { t0:t, next:t + 45, why:J.taken >= J.total ? 'all' : lkAllTaken() ? 'capped' : 'time', alive:fighters.filter(f => !f.dead).length };   // (why: all taken, or every living fighter at the cap)
-  for(const s of J.shs) if(s.st === 'sit'){ jawbMelt(s); s.lift = 0; }
+  for(const s of J.shs) if(s.st === 'sit'){ jawbMelt(s); s.lift = 0; if(s.ast) J.wq.push(s.ast); }
+  J.wq.push(...J.jq.splice(0), ...J.redo.splice(0));   // (what the jawbreakers still held comes out wild: the wild ones go on through the fall)
   tone(90, 0.7, 'sawtooth', 0.06, 0, 45); noise(0.5, 0.04, 400, 0, 120);
 }
 function lkSurfaceAt(x, y){ let best = null; for(const top of lkTopsAt(x)) if(top >= y - 4 && (best === null || top < best)) best = top; return best; }
@@ -117343,6 +117585,8 @@ function lkFlavIcon(c, fl, r){
   else if(fl === 'heavy'){ c.beginPath(); c.moveTo(-r*0.7, r*0.8); c.lineTo(r*0.7, r*0.8); c.lineTo(r*0.5, -r*0.25); c.lineTo(-r*0.5, -r*0.25); c.closePath(); c.fill(); c.lineWidth = Math.max(1.5, r*0.22); c.beginPath(); c.arc(0, -r*0.45, r*0.35, Math.PI, 0); c.stroke(); }
   else if(fl === 'shock'){ c.beginPath(); c.moveTo(r*0.25, -r); c.lineTo(-r*0.55, r*0.1); c.lineTo(-r*0.02, r*0.1); c.lineTo(-r*0.25, r); c.lineTo(r*0.55, -r*0.15); c.lineTo(r*0.02, -r*0.15); c.closePath(); c.fill(); }
   else if(fl === 'wind'){ c.lineWidth = Math.max(1.5, r*0.2); for(let i = 0; i < 3; i++){ const y = (i - 1)*r*0.55, w = r*(i === 1 ? 1 : 0.75); c.beginPath(); c.moveTo(-w, y); c.lineTo(w*0.45, y); c.arc(w*0.45, y - r*0.22, r*0.22, Math.PI/2, -Math.PI*0.9, true); c.stroke(); } }
+  else if(fl === 'water'){ c.beginPath(); c.moveTo(0, -r); c.bezierCurveTo(r*0.95, 0, r*0.8, r, 0, r); c.bezierCurveTo(-r*0.8, r, -r*0.95, 0, 0, -r); c.fill(); c.fillStyle = LK_FLAVS.water.col; c.beginPath(); c.arc(-r*0.25, r*0.35, r*0.18, 0, 7); c.fill(); }
+  else if(fl === 'poison'){ c.beginPath(); c.arc(-r*0.2, r*0.3, r*0.6, 0, 7); c.fill(); c.beginPath(); c.arc(r*0.55, -r*0.35, r*0.32, 0, 7); c.fill(); c.beginPath(); c.arc(-r*0.15, -r*0.75, r*0.22, 0, 7); c.fill(); c.fillStyle = LK_FLAVS.poison.col; c.beginPath(); c.arc(-r*0.38, r*0.12, r*0.16, 0, 7); c.fill(); }
   else { c.beginPath(); c.ellipse(0, 0, r, r*0.5, 0, 0, 7); c.fill(); c.fillStyle = LK_FLAVS.sneaky.pal[2]; c.beginPath(); c.arc(0, 0, r*0.32, 0, 7); c.fill(); c.fillStyle = 'rgba(255,255,255,0.92)'; c.fillRect(-r*1.05, -r*0.6, r*2.1, r*0.35); }
   c.restore();
 }
@@ -117433,41 +117677,52 @@ function lkDrawOver(c){
     const ex = s.x - f.face*lkR(s)*1.1, wob = Math.sin(t*0.6)*3;
     c.save(); c.strokeStyle = '#ff6a9a'; c.lineCap = 'round'; c.lineWidth = 7; c.beginPath(); c.moveTo(f.x + f.face*f.r*0.6, f.y + 2); c.quadraticCurveTo((f.x + ex)/2, f.y + 8 + wob, ex, s.y + 4); c.stroke(); c.restore();
   }
-  for(const f of fighters){   // a combo's candy rope between its two assists
+  for(const f of fighters){   // the candy rope between the same-type ones out
     const C = f._lkCombo; if(!C) continue;
-    const F = LK_FLAVS[C.fl], ax = C.a.x, ay = C.a.y, bx = C.b.x, by = C.b.y, len = Math.hypot(bx - ax, by - ay), n = Math.max(2, Math.floor(len/18));
-    c.save(); c.globalAlpha = 0.35; c.strokeStyle = F.col; c.lineWidth = 16; c.lineCap = 'round'; c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
-    c.globalAlpha = 1; c.lineWidth = 7; c.strokeStyle = F.col; c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
-    c.strokeStyle = '#ffffff'; c.lineWidth = 7; c.setLineDash([9, 9]); c.lineDashOffset = -t*1.5; c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke(); c.setLineDash([]);
-    for(const s of [C.a, C.b]){ c.strokeStyle = F.col; c.lineWidth = 3; c.beginPath(); c.arc(s.x, s.y, (s.r || 26) + 6 + Math.sin(t*0.2)*2, 0, 7); c.stroke(); }
-    c.restore(); void n;
+    const F = LK_FLAVS[C.fl];
+    c.save(); c.lineCap = 'round';
+    for(const sg of C.segs){
+      const ax = sg[0].x, ay = sg[0].y, bx = sg[1].x, by = sg[1].y;
+      c.globalAlpha = 0.35; c.strokeStyle = F.col; c.lineWidth = 16; c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
+      c.globalAlpha = 1; c.lineWidth = 7; c.strokeStyle = F.col; c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
+      c.strokeStyle = '#ffffff'; c.lineWidth = 7; c.setLineDash([9, 9]); c.lineDashOffset = -t*1.5; c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke(); c.setLineDash([]);
+      for(const s of [sg[0], sg[1]]){ c.strokeStyle = F.col; c.lineWidth = 3; c.beginPath(); c.arc(s.x, s.y, (s.r || 26) + 6 + Math.sin(t*0.2)*2, 0, 7); c.stroke(); }
+    }
+    c.restore();
+  }
+  for(const f of fighters){   // TYPE POWER: a ring of the type's colour round your feet, its picture by you
+    if(f.dead || !f._lkTri) continue;
+    const F = LK_FLAVS[f._lkTri]; if(!F) continue;
+    c.save(); c.globalAlpha = 0.55 + 0.25*Math.sin(t*0.2); c.strokeStyle = F.col; c.lineWidth = 4; c.beginPath(); c.ellipse(f.x, f.y + f.r, f.r + 10, 7, 0, 0, 7); c.stroke();
+    if(t % 6 === 0) puff(f.x + (Math.sin(t*1.7))*f.r, f.y + f.r*0.5, F.pal[(t >> 3) % 5], 2);
+    c.restore();
   }
 }
 CONTEST_RULES.lick = {
   begin(){
     const J = JAWB; if(!J || !J.lk || !LKF) return;
-    const rows = assistBagRows().filter(r => LK_RARE.indexOf(r.name) < 0); for(let i = rows.length - 1; i > 0; i--){ const k = Math.floor(jawbRand()*(i + 1)), q = rows[i]; rows[i] = rows[k]; rows[k] = q; }
-    // EIGHT = FOUR FAMILIES OF TWO: LK.fams families drawn from those with two in the bag, two of each, so every family in the match can make a pair (any slot
-    // left over, if the bag ever holds fewer, is filled from the rest). The pips (J.order) sit by family; the jawbreakers come out in the shuffled order (J.pool).
-    const by = {}; for(const r of rows){ const k = lkFlav(r.name); (by[k] || (by[k] = [])).push(r); }
-    const fams = LK_FLAV_KEYS.filter(k => (by[k] || []).length >= 2); for(let i = fams.length - 1; i > 0; i--){ const k = Math.floor(jawbRand()*(i + 1)), q = fams[i]; fams[i] = fams[k]; fams[k] = q; }
-    const pick = []; for(const k of fams.slice(0, LK.fams)){ if(pick.length + 2 > LK.total) break; pick.push(by[k][0], by[k][1]); }
-    for(const r of rows) if(pick.length < LK.total && pick.indexOf(r) < 0) pick.push(r);
-    for(let i = pick.length - 1; i > 0; i--){ const k = Math.floor(jawbRand()*(i + 1)), q = pick[i]; pick[i] = pick[k]; pick[k] = q; }
-    J.pool = pick.map(r => r.name); J.order = J.pool.slice().sort((a, b) => LK_FLAV_KEYS.indexOf(lkFlav(a)) - LK_FLAV_KEYS.indexOf(lkFlav(b))); J.total = J.order.length;
-    for(const f of fighters){ f._lkA = []; f._lkDec = {}; f._lkBan = {}; f._lkW = null; f._lkWk = null; f._lkLk = null; f._lkLkT = null; f._lkRush = 0; f._lkTgt = -1; f._lkBeamT = 0; f._lkComboSeen = 0; f._lkCombo = null; f._lkTT = 0; f._lkBlink = 0; }
+    lkPics();
+    const sh = a => { for(let i = a.length - 1; i > 0; i--){ const k = Math.floor(jawbRand()*(i + 1)), q = a[i]; a[i] = a[k]; a[k] = q; } return a; };
+    // THE POOL: LK.types of the eight types, all LK.per of each (so 3 of a type can be had); the first LK.jaws go in the far jawbreakers, the rest come out wild.
+    const tys = sh(LK_FLAV_KEYS.slice()).slice(0, LK.types), pool = sh(LK_ROSTER.filter(r => tys.indexOf(r.ty) >= 0).map(r => r.name));
+    J.pool = pool; J.order = pool.slice().sort((a, b) => LK_FLAV_KEYS.indexOf(lkFlav(a)) - LK_FLAV_KEYS.indexOf(lkFlav(b))); J.total = J.order.length;
+    J.jq = pool.slice(0, LK.jaws); J.wq = pool.slice(LK.jaws); J.wild = [];
+    for(const f of fighters){ f._lkA = []; f._lkDec = {}; f._lkBan = {}; f._lkW = null; f._lkWk = null; f._lkLk = null; f._lkLkT = null; f._lkRush = 0; f._lkTgt = -1; f._lkBeamT = 0; f._lkComboSeen = 0; f._lkCombo = null; f._lkTT = 0; f._lkBlink = 0;
+      f._lkK = 0; f._lkSwT = 0; f._lkSwP = false; f._lkRel = 0; f._lkTri = null; f._lkTP = null; f._lkSt = null; f._lkWT = -1; }
     const xs = [700, 2000, 2800, 4100], n = fighters.length;
     fighters.forEach((f, i) => { f.x = n <= 4 ? xs[i] : Math.round(floorSafeX(WW*(i + 0.5)/n, 60)); f.y = LKF.gy - f.r - 2; f.vx = 0; f.vy = 0; });
     J.spots = LKF.spots;
-    for(let i = 0; i < LK.shells - 1; i++){ J.nextMake = 0; lkGrow(); }
-    J.nextMake = hazardT + LK.regrow;
+    for(let i = 0; i < LK.jawMax; i++){ J.nextMake = 0; lkGrow(); }
+    J.nextMake = hazardT + LK.jawRegrow;
+    for(let i = 0; i < LK.wild0; i++){ J.nextWild = 0; lkWildSpawn(); }
+    J.nextWild = hazardT + LK.wildGap;
   },
   step(){ lkStep(); },
   speedK(f){ return (f && f._lkRush > hazardT) ? LK.rushK : 1; },   // the SUGAR RUSH
-  kbK(t, from){ return (from && from._lkFam === 'heavy') ? LK.heavyK : 1; },   // HEAVY: every hit of a heavy assist (and a heavy pair's rope) launches LK.heavyK times as far
+  kbK(t, from){ if(!from) return 1; if(from._lkFam) return LK.astKb*(from._lkFam === 'heavy' ? LK.heavyK : 1); return from._lkTri === 'heavy' ? LK.heavyK : 1; },   // every contest assist launches LK.astKb times as far; HEAVY ones (and a heavy rope, and heavy TYPE POWER) LK.heavyK times more
   world(c, layer){
     const J = JAWB; if(!J || !J.lk || !LKF) return;
-    if(layer === 'under') lkDrawFactory(c);
+    if(layer === 'under'){ lkDrawFactory(c); lkDrawWild(c); }
     lkDrawFall(c, layer);
     if(layer === 'over'){
       lkDrawOver(c); lkDrawTags(c); lkDrawFx(c);
@@ -117482,11 +117737,11 @@ CONTEST_RULES.lick = {
   },
   // The only things on the screen: one pip per assist in the match (ringed in its family's colour; filled in the colour of whoever took it), the fuse, and the jawbreakers on the minimap.
   hud(c){
-    const J = JAWB, n = (J && J.total) || LK.total, gap = 16, x0 = W - 12 - gap*n, y = 22;
+    const J = JAWB, n = (J && J.total) || LK.total, gap = n > 10 ? 11 : 16, x0 = W - 12 - gap*n, y = 22;
     c.save();
     for(let i = 0; i < n; i++){
       const name = J && J.order[i], col = name && J.takenBy[name], F = name ? LK_FLAVS[lkFlav(name)] : null;
-      c.beginPath(); c.arc(x0 + gap*i + gap/2, y, 5.5, 0, 7);
+      c.beginPath(); c.arc(x0 + gap*i + gap/2, y, gap > 11 ? 5.5 : 4, 0, 7);
       if(col){ c.globalAlpha = 0.95; c.fillStyle = col; c.fill(); }
       c.globalAlpha = col ? 1 : 0.75; c.lineWidth = 2.2; c.strokeStyle = F ? F.col : 'rgba(255,255,255,0.8)'; c.stroke();
     }
@@ -117500,19 +117755,24 @@ CONTEST_RULES.lick = {
       const D = minimapDims(), mx = W - D.mw - 14, my = mmTop(), sx = D.mw/WW, sy = D.mh/WH;
       c.save();
       for(const s of J.shs){ if(s.st !== 'sit') continue; c.fillStyle = (LK_FLAVS[s.fl] || LK_FLAVS.fire).col; c.beginPath(); c.arc(mx + s.x*sx, my + s.y*sy, 2.5, 0, 7); c.fill(); }
+      for(const w of J.wild){ c.fillStyle = LK_FLAVS[w.ty].col; c.fillRect(mx + w.x*sx - 1.5, my + w.y*sy - 1.5, 3, 3); }
       c.restore();
     }
+    const me = fighters.find(f => f.you); if(J && me) lkDrawTeam(c, me);
   },
-  // Over the head: two slots, each ringed in its assist's family colour around the assist's colour; joined by a bar in the family's colour when the two make a PAIR.
+  // Over the head: the 3 out, each its assist's colour ringed in its type's; a bar in the type's colour under 2 of a type, a ring round all when 3; a dot for each one waiting.
   badge(f, c){
-    const h = lkHeld(f), pair = lkPair(f), base = nameTagShown(f) ? -(f.r + (f.you ? 28 : 16)) - 9 : -f.r - 6;
+    const h = lkHeld(f), act = lkActive(f), T = lkTeam(f, act), base = nameTagShown(f) ? -(f.r + (f.you ? 28 : 16)) - 9 : -f.r - 6;
     c.save(); c.translate(f.x, f.y + base - 10);
-    c.globalAlpha = 0.85; c.fillStyle = 'rgba(28,28,28,0.75)'; itemRoundRect(c, -16, -8, 32, 16, 8); c.fill();
-    if(pair){ c.globalAlpha = 1; c.fillStyle = LK_FLAVS[pair].col; c.fillRect(-7, -2, 14, 4); }
-    for(let i = 0; i < LK.cap; i++){
-      const row = h[i] && lkRow(h[i]); c.beginPath(); c.arc(-7 + i*14, 0, 4.5, 0, 7);
-      if(row){ c.globalAlpha = 1; c.fillStyle = row.color; c.fill(); c.lineWidth = 2; c.strokeStyle = LK_FLAVS[lkFlav(h[i])].col; c.stroke(); } else { c.lineWidth = 1.5; c.strokeStyle = 'rgba(255,255,255,0.35)'; c.stroke(); }
+    c.globalAlpha = 0.85; c.fillStyle = 'rgba(28,28,28,0.75)'; itemRoundRect(c, -23, -8, 46, 16, 8); c.fill();
+    if(T.n >= 2){ c.globalAlpha = 1; c.fillStyle = LK_FLAVS[T.ty].col; c.fillRect(-14, -2, 28, 4); }
+    if(T.n >= 3){ c.strokeStyle = LK_FLAVS[T.ty].col; c.lineWidth = 2; itemRoundRect(c, -25, -10, 50, 20, 10); c.stroke(); }
+    for(let i = 0; i < LK.out; i++){
+      const row = act[i] && lkRow(act[i]); c.beginPath(); c.arc(-14 + i*14, 0, 4.5, 0, 7);
+      if(row){ c.globalAlpha = 1; c.fillStyle = row.color; c.fill(); c.lineWidth = 2; c.strokeStyle = LK_FLAVS[lkFlav(act[i])].col; c.stroke(); } else { c.lineWidth = 1.5; c.strokeStyle = 'rgba(255,255,255,0.35)'; c.stroke(); }
     }
+    const wait = h.filter(q => act.indexOf(q) < 0);
+    for(let i = 0; i < wait.length; i++){ c.globalAlpha = 0.9; c.fillStyle = LK_FLAVS[lkFlav(wait[i])].col; c.beginPath(); c.arc(-(wait.length - 1)*3.5 + i*7, 11, 2.2, 0, 7); c.fill(); }
     c.restore();
   },
   want(f, inp, t, dist){ return lkBrain(f, inp, t, dist); },
@@ -117572,8 +117832,32 @@ function lkPickIn(f, lv, reach){
     if(f._lkTgt === s.id) w += 60;
     if(w > bs){ bs = w; best = s; }
   }
-  f._lkTgt = best ? best.id : -1;
+  f._lkTgt = best ? best.id : -1; f._lkPS = bs;
   return best;
+}
+// A wild one to go for: near, weak already, of a type it holds (by level: LK_AI.flav), the one it was after.
+function lkPickWild(f, lv){
+  const A = LK_AI, cnt = {}; for(const a of lkHeld(f)){ const k = lkFlav(a); cnt[k] = (cnt[k] || 0) + 1; }
+  let best = null, bs = -1e9;
+  for(const w of JAWB.wild){
+    if(w.gone || lkBanned(f, 'w' + w.id)) continue;
+    const d = crmSame(f, w) ? Math.hypot(w.x - f.x, w.y - f.y) : crmCost(f, w.x, w.y);
+    let sc = 260 - d*0.12 + (w.weak > hazardT ? 150 : 0) + (cnt[w.ty] || 0)*A.flav[lv]*0.6 + (1 - w.hp/LK.wildHp)*60;
+    if(f._lkWT === w.id) sc += 60;
+    if(sc > bs){ bs = sc; best = w; }
+  }
+  f._lkWT = best ? best.id : -1; f._lkWS = bs;
+  return best;
+}
+// After a wild one: up beside it and hit it till it is weak; weak, walk into it.
+function lkHunt(f, inp, w, lv){
+  const R = w.r, top = w.y + R, t = hazardT, key = 'w' + w.id;
+  if(w.weak > t) return lkGoal(f, inp, key, w.x, top);
+  if(!(Math.abs(f.x - w.x) < R + f.r + 34 && Math.abs(f.y - w.y) < 50)) return lkGoal(f, inp, key, w.x + (f.x < w.x ? -1 : 1)*(R + f.r), top);
+  const Wk = f._lkWk; if(!Wk || Wk.id !== key) f._lkWk = { id:key, t0:t }; else if(t - Wk.t0 > LK_AI.work){ lkBan(f, key, 240); f._lkWk = null; return false; }
+  if(w.x < f.x - 6) inp.left = true; else if(w.x > f.x + 6) inp.right = true;
+  inp.attack = true;
+  return true;
 }
 function lkWork(f, inp, s, lv){
   const A = LK_AI, R = JB.r, top = s.y + R, feet = f.y + f.r, t = hazardT;
@@ -117604,7 +117888,11 @@ function lkBrain(f, inp, tgt, dist){
   }
   if(tgt){ f._lkAlone = 0; f._lkRoam = null; }
   if(tgt && dist < A.fight[lv]) return false;   // a foe in its face comes first
-  if(!J.fall && !lkCapped(f)){ const s = lkPick(f, lv); if(s && lkWork(f, inp, s, lv)) return true; }   // (the fall: the fight is all there is)
+  if(!lkCapped(f)){   // a far jawbreaker (none in the fall) or a wild one, whichever it wants more
+    const s = J.fall ? null : lkPick(f, lv), w = lkPickWild(f, lv);
+    if(w && (!s || f._lkWS >= f._lkPS)){ if(lkHunt(f, inp, w, lv)) return true; }
+    else if(s && lkWork(f, inp, s, lv)) return true;
+  }
   if(!tgt && lkRoam(f, inp, lv)) return true;   // ROOMS APART: nobody in its room and nothing to break: it goes to look for a fight
   return false;
 }
@@ -117622,7 +117910,7 @@ function lkRoam(f, inp, lv){
   if(crmReg(R.x, LKF.gy - 10) === crmRegOf(f) && Math.abs(R.x - f.x) < 220){ f._lkRoam = null; f._lkAlone = 0; return false; }
   return lkGoal(f, inp, 'roam', R.x, LKF.gy);
 }
-EVENT_TWIST_WORDS['contest:lick'] = { icon:'🍬', short:"8-Ball's contest: lick your way to freedom", words:"8-Ball's contest: a big candy factory of three rooms joined by doors (hold Up in a doorway), with conveyor belts and chutes. Break jawbreakers for the only 8 assists (2 each, and you keep them): deal 50 damage yourself, or hold Down to lick one for a sugar rush. Its colour and picture show its family, and every assist of a family does the same thing: fire burns, ice freezes, heavy knocks far, sneaky pulls foes to you, shock stuns, wind blows away. 2 of one family are joined by a candy rope and hit harder. Then jawbreakers fall. 6 stocks, last one standing wins.", goal:'Break jawbreakers for assists. Last one standing wins.' };
+EVENT_TWIST_WORDS['contest:lick'] = { icon:'🍬', short:"8-Ball's contest: catch assists, last one standing", words:"8-Ball's contest: a candy factory of three rooms (hold Up in a doorway). Wild assists roam: hit one till it is weak, then walk into it to catch it; far-off jawbreakers hold a few more. Carry 6, 3 fight with you: the Swap key brings out the next. 2 of a type join with a candy rope and hit harder; 3 of a type give your own hits their power. Jawbreakers fall at 1:30. 6 stocks, last one standing.", goal:'Catch assists. Last one standing wins.' };
 
 // ---------- EVENT FIGHTERS: THE DIG GAMES (Spongy's CONTEST, his third event match: CONTEST_RULES.dig, world HG) ----------
 // THE OWNER'S DESIGN (2026-11-18, the simplify answer: "1, but keep the steal. also, it is a HUGE map, slightly bigger than ctf, but without a minimap.
