@@ -34,3 +34,44 @@ Tried and dropped: Bomb's blast launch 12 -> 10.5 (10/12 -> 1/12: a cliff, too m
 - The bottom three may be weak partly because of how the CPU plays them. CPU difficulty was not touched (owner's rule).
 - 615 matches in all (255 screen, 84 before, 84 + 72 + 24 tuning, 96 fresh), 0 errors, 0 time-outs. That is far over the 15-match budget; a 102-fighter panel can't separate anyone with less.
 - Not checked: human play, Teams, items on, other stages.
+
+## Pass 2 (branch g-bal11, same day)
+
+Same harness and gauntlet (mvrun.mjs; Blocky, Apple, Pickle, Fan, Test Tube, Spikey, both sides = 12 games). Tuning on new seeds 840000+, then a before and an after run on fresh seeds 850000+.
+
+**Finding about the harness: a seed does not replay a game.** The same game (same seed, same file) run twice gave two different games (frames 7816 vs 6094). So "the same seeds" never gave a paired before/after, in this pass or the last one. Every 12-game run is its own random sample, and the +-14 points are real. Below, runs are added together where the numbers were the same.
+
+### Wins out of 12, every run
+
+| Fighter | Before (current numbers): 830000 / 840000 / 850000 | Before total | Pass-2 numbers: 840000 / 850000 | After total | Verdict |
+|---|---|---|---|---|---|
+| Bomb | 10 / 6 / 6 | 22/36 (61%) | (not changed) | - | in the band (4-8 of 12 = 33-67%); no change made |
+| Lifering | 0 / 1 / 0 | 1/36 (3%) | 3 / 2 | 5/24 (21%) | up, still under the band |
+| MeTag | 0 / 1 / 1 | 2/36 (6%) | 4 / 3 | 7/24 (29%) | up, just under the band |
+| Candle | 0 / 1 / 3 | 4/36 (11%) | 6 / 2 | 8/24 (33%) | up, at the band's edge |
+| Dough | 2 / 1 / 3 | 6/36 (17%) | 5 / 6 | 11/24 (46%) | up, in the band |
+| Starfruit | - / 2 / 3 | 5/24 (21%) | - / 2 | 2/12 | NOT fixed; no effect shown |
+
+### Changes (numbers only; every move keeps its concept)
+
+- **Lifering:** jab launch 8.5 -> 10.5; his smash row's launch 12 -> 15 (this sets his up and down smash, which got his KOs); Called in a Favor's dive-in launch 8.3/8.7 -> 10/10.4; Ring Toss (up tilt) up 8.8 -> 10.5; Buoy Swing (back air) 9.4/5.6 -> 10.4/6.2; Proper Flying Formation's hit up 10 -> 12.
+- **MeTag:** jab reach 3 -> 8 (it was the shortest jab but one row; 8 is the most common) and launch 10.5 -> 11.5; Under Arrest launch 13.5 -> 16; Badge Up (up tilt) up 10.8 -> 13; Barrier Up (up air) up 9 -> 10.5.
+- **Candle:** jab launch 7 -> 9.5; Inner-Flame smash (the reel) launch 12 -> 15.5; Wick Up (up tilt) up 10.6 -> 13; Mind Push (forward air) 3/3 -> 4/3.6; Drip Back (back air) 8.2/4.2 -> 9.4/4.8.
+- **Dough:** jab launch 9 -> 11; Knockoff Back (back air) 8.6/4.4 -> 9.6/5; Through the Ceiling (up air) up 9 -> 10.5.
+- **Starfruit:** One-Hit Wonder's first-hit launch 15/10 -> 16.25/10.75; the Has-Been shove 9/3 -> 10/4; jab launch 7 -> 8.5; Point Up (up tilt) 8.5/9.5 -> 9.5/11.
+- **Bomb:** none. Collision's blast launch 12 -> 11.5 gave 4/12 and 9/12 (13/24, 54%); 12 -> 11 gave 6/12. Bomb at the current 12 was 6/12 on both new seed sets (22/36 with last pass's 10). No difference between 11 and 12 shows through the noise, and he is in the band, so the nerf was not kept. Last pass's Collision cooldown 72 stays: it was not re-tested on its own.
+
+Damage stat was not used (the brief). CPU difficulty was not touched.
+
+### Tried on the tuning seeds and dropped
+
+- First try, smaller launches (Lifering smash row 14 + dive-in 9.3/9.7 + jab 9.5; MeTag Under Arrest 15, Badge Up 12, jab 11.5; Candle reel 14, Wick Up 12, jab 8.5): Lifering 1, MeTag 2, Candle 3 of 12. That is no better than before for Lifering. The bigger numbers above (and MeTag's jab reach) are what moved them.
+- Starfruit's first hit at 16/10.5: 3/12. At 16.5/11: 9/12. The value in between, 16.25/10.75, was what got measured on fresh seeds: 2/12. Because a seed doesn't replay, the 9 may be luck. His One-Hit Wonder lands only once a stock, so his results swing a lot.
+
+### Honest notes
+
+- Not what the brief assumed: in these runs Lifering and Candle **die earlier** than the rest (about 102-115% against 123-142% for Bomb, MeTag and Dough). MeTag dies late but loses the damage race (dealt about 250 a game, taken about 380-410). Lifering's KOs came late before the change (foes KO'd at about 134-147%; about 103% after). So kill power was part of the problem for Lifering and Candle but not all of it. MeTag's jab reach probably did more than his launches (not separated).
+- Lifering and MeTag are still under the band; Starfruit is not fixed. Only Dough is clearly in the band, and Candle is at its edge.
+- The changes of last pass that were "kept, no measured effect" (Lifering's Sinker 10% and jab, MeTag's jab and Under Arrest, Candle's dmg 1.1, Bomb's cooldown) were all kept. None of them showed harm, and the buffs were built on top of them. They were not re-tested one at a time.
+- 411 games this pass (264 for tuning: 24 + 72 + 72 + 48 + 48; 72 fresh before; 72 fresh after; 3 replay checks), 0 errors, 0 time-outs. Far over the 15-match budget.
+- Not checked: human play, Teams, items on, other stages, each change on its own.
