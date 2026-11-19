@@ -613,6 +613,8 @@ infoPage('faq.html', titleFor('FAQ: free BFDI fighting game questions'),
   <p>Press Play with Friends, create a room and share the four-letter code. See ${link('/online-play.html', 'online play')}.</p>
   <h2>How many fighters and stages are there?</h2>
   <p>${fighters.length} fighters and ${stages.length} stages, plus the Capture the Flag maps, your own OCs and the Level Creator. You unlock more fighters as you play. See the ${link('/fighters/', 'fighters')} and ${link('/stages/', 'stages')}.</p>
+  <h2>Can I support the game?</h2>
+  <p>The game is free and sells nothing. The maker's tip jar is a small Support the dev link at the foot of the title screen; it shows once the maker has set it up. A tip is optional and changes nothing in the game. Supporters who agree can be thanked by name in the Thanks list in Settings.</p>
   <h2>How do I report a bug?</h2>
   <p>Tell the maker where you found the game. Say the fighter, the stage, the mode and what happened.</p>
   <p>${link('/controls.html', 'Controls')} · ${link('/modes.html', 'Game modes')} · ${link('/about.html', 'About the game')}</p>`);
