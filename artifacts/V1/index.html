@@ -27265,8 +27265,8 @@ function ynFighter(f, inp){
     const fx = f.x + f._wallSide*f.r;
     for(const P of M.pipe){
       if(Math.abs(P.x - fx) <= 16 && f.y >= P.y && f.y <= P.y + P.h){
-        if(!isHumanCtrl(f)){ if(!(hazardT - (f._ynPipe | 0) <= 14)) f._ynPipeS = hazardT; if(hazardT - f._ynPipeS > 150){ f._ynPipeCd = hazardT + 240; f._ynPipe = 0; break; } }   // (PHASE E: a CPU hung at the top of a pipe under a ceiling for 5 s, taking hold and losing it every few frames; after 2.5 s on one pipe it lets go and does not take hold again for 4 s. A person holds as long as they like.)
-        f._wallUsed = null; f._ynPipe = hazardT;
+        if(!isHumanCtrl(f)){ if(!(hazardT - (f._ynPipe | 0) <= 45) || f._ynPipeY == null || f.y < f._ynPipeY - 30){ f._ynPipeS = hazardT; f._ynPipeY = f.y; } if(hazardT - f._ynPipeS > 150){ f._ynPipeCd = hazardT + 240; f._ynPipe = 0; break; } }   // (PHASE E: a CPU hung at the top of a pipe under a ceiling for 5 s, taking hold and losing it every few frames; after 2.5 s on one pipe it lets go and does not take hold again for 4 s. A person holds as long as they like.)
+        f._wallUsed = null; f._ynPipe = hazardT;   // (CPU fix 2026-11-19: the clock restarted after any 15-frame slip, and a CPU under a grate takes hold every 15-25 frames: Firey hung on one pipe 286 frames (2v2 seed 11). Now a slip of up to 45 frames keeps the clock, and only 30 px of headway up the pipe restarts it)
         if(inp.jump){} else if(inp.down) f.vy = Math.min(f.vy, 3); else f.vy = -YNM.pipeClimb;
         break;
       }
@@ -28536,11 +28536,18 @@ function siParty(){
 // stood in one by chance. Now a hurt CPU (45%+) with no foe within 450 px goes to the heal spring it can reach (route cost <= 2400) and walks about in it until healed; now and then a
 // CPU that is not hurt and has no foe within 700 px takes the Shell's armour when it is near (cost <= 1000). Called off by a foe within 300 px, a chest party, healed, or its time runs out.
 let SI_SP = null;
+// (CPU fix 2026-11-19: below 60% a heal trip is called off by a foe within 300 px, so a heal trip toward a spring with a foe standing on the way there ended at that foe; such a trip is not
+// started. A foe on the way: the detour through it is less than 400 px longer than the straight line from the CPU to the spot. An armour trip fights its way on instead, see siTrip.)
+function tripFoeOnWay(f, x, y){ const d = Math.hypot(x - f.x, y - f.y); for(const o of fighters){ if(o.dead || o.team === f.team) continue; if(Math.hypot(o.x - f.x, o.y - f.y) + Math.hypot(x - o.x, y - o.y) < d + 400) return true; } return false; }
 function siSpots(N){
   if(SI_SP && SI_SP.N === N && SI_SP.S === SI) return SI_SP.sp; const sp = [];
-  for(const z of worldZones){ if(z.type !== 'heal') continue; const n = siNodeFor(N, z.x + z.w/2, z.y + z.h - 30); if(n && !n.drift && !n.p.mv && n.p.pl == null) sp.push({ n, k:'heal', x0:Math.max(z.x, n.x0) + 24, x1:Math.min(z.x + z.w, n.x1) - 24 }); }
-  for(const o of SI.outers){ if(o.fx !== 1) continue; const n = siNodeFor(N, o.p.x + o.p.w/2, o.p.y - 2); if(n && !n.drift) sp.push({ n, k:'shield', x0:Math.max(o.p.x, n.x0) + 24, x1:Math.min(o.p.x + o.p.w, n.x1) - 24 }); }
-  SI_SP = { N, S:SI, sp:sp.filter(q=>q.x1 > q.x0) }; return SI_SP.sp;
+  // (CPU fix 2026-11-19: one place was looked up under the middle of each spot; on the bigger maps the island's mound cuts its floor in three and the middle is in the mound, so the armour's
+  // target was a 20 px strip at one end (and the Huge map's oasis spring had none at all). Now every fixed place the spot really covers is a target: for a spring, a surface in its zone's height
+  // (the zone heals whoever's body is in it); for the armour, the island's floor and its mound (feet up to 200 px over the island))
+  const band = (x0, x1, y0, y1, k)=>{ for(const n of N.nodes){ if(n.drift || n.p.mv || n.p.pl != null || n.p.y < y0 || n.p.y > y1) continue; const a = Math.max(x0, n.x0) + 24, b = Math.min(x1, n.x1) - 24; if(b > a) sp.push({ n, k, x0:a, x1:b }); } };
+  for(const z of worldZones) if(z.type === 'heal') band(z.x, z.x + z.w, z.y + 4, z.y + z.h + 20, 'heal');
+  for(const o of SI.outers) if(o.fx === 1) band(o.p.x, o.p.x + o.p.w, o.p.y - 200, o.p.y + 6, 'shield');
+  SI_SP = { N, S:SI, sp }; return SI_SP.sp;
 }
 function siTrip(f, inp, N){
   const now = hazardT; let T = f._siTrip, fd = 1e9; for(const o of fighters) if(!o.dead && o.team !== f.team){ const d = Math.hypot(o.x - f.x, o.y - f.y); if(d < fd) fd = d; }
@@ -28548,7 +28555,7 @@ function siTrip(f, inp, N){
   if(T){
     const end = (cd)=>{ f._siTrip = null; if(f._siGoal === T.n) f._siGoal = null; f._siPlan = null; f._siTripCd = now + cd; return false; };
     if(now > T.until || (T.k === 'heal' && f.pct < 8)) return end(900);
-    const hold = T.k === 'heal' && f.pct >= 60;   // (CPU fix 2026-11-19: 34 of 40 heal trips were called off by a foe within 300 px, most of them by a foe passing; a CPU at 60% or more now turns and fights a foe within 150 px and goes on to the spring once it is 220 px clear)
+    const hold = (T.k === 'heal' && f.pct >= 60) || T.k === 'shield';   // (CPU fix 2026-11-19 (2): an armour trip is made by a CPU that is not hurt: it fights a foe within 150 px on the way and goes on once 220 px clear, as below; before, the first foe it met called it off) (CPU fix 2026-11-19: 34 of 40 heal trips were called off by a foe within 300 px, most of them by a foe passing; a CPU at 60% or more now turns and fights a foe within 150 px and goes on to the spring once it is 220 px clear)
     if(fd < 300 && !hold) return end(300);
     if(hold && (fd < 150 || (T.pz && fd < 220))){ T.pz = 1; if(f._siGoal === T.n) f._siGoal = null; f._siPlan = null; return false; }
     T.pz = 0;
@@ -28568,7 +28575,7 @@ function siTrip(f, inp, N){
   if(!hurt && !wantSh) return false;
   const sp = siSpots(N), a = siNodeAt(N, f); if(!sp.length || !a) return false;
   let best = null, bc = 1e9;
-  for(const q of sp){ if(q.k !== (hurt ? 'heal' : 'shield')) continue; const c = a === q.n ? 0 : ((siPlan(N, a, new Map([[q.n, 1]])) || { cost:1e9 }).cost); if(c < bc){ bc = c; best = q; } }
+  for(const q of sp){ if(q.k !== (hurt ? 'heal' : 'shield')) continue; if(hurt && f.pct < 60 && tripFoeOnWay(f, (q.x0 + q.x1)/2, q.n.y)) continue; const c = a === q.n ? 0 : ((siPlan(N, a, new Map([[q.n, 1]])) || { cost:1e9 }).cost); if(c < bc){ bc = c; best = q; } }
   if(!best || bc > (hurt ? 2400 : 1000)){ f._siTripCd = now + 240; return false; }
   f._siTrip = { s:best, n:best.n, k:best.k, until:now + Math.min(2400, 600 + bc*1.5), arr:0 }; f._siGoal = best.n; f._siPlan = null; SI.trips = (SI.trips || 0) + 1;
   return false;
@@ -28618,7 +28625,8 @@ function siFollow(f, inp, N, feet, foe){
   if(P && P.air){ const A = P.air;
     if(A.seen || now - A.t0 > 30){ P.air = null;
       if(A.from === node){ f._siFail = (f._siFail || 0) + 1; if(f._siFail >= 2){ N.blocked[A.from.id + '>' + A.to.id] = now + 400; N.hopFail++; f._siPlan = P = null; f._siFail = 0; } }
-      else f._siFail = 0; } }
+      else f._siFail = 0;
+      if(P && A.from !== node && A.to !== node && P.path.indexOf(node) <= P.path.indexOf(A.from)){ const k = A.from.id + '>' + A.to.id, L = f._siOff || (f._siOff = {}), c = (L[k] && now - L[k][1] < 900) ? L[k][0] + 1 : 1; L[k] = [c, now]; if(c >= 2){ N.blocked[k] = now + 900; N.hopFail++; L[k] = null; } } } }   // (CPU fix 2026-11-19: a hop or drop that lands on a THIRD place, off the route, failed too: the drop off the Quarry plate into the lift shaft landed on the lift or the shuttle every time, and the CPU planned the same drop again for the whole trip (25 of 28 trips to the cave spring in the bigger matches never got there); twice in 15 s and the edge is shut for 15 s, so the plan takes the stair)
   if(!P || now - P.at > 40 || P.path.indexOf(node) < 0){
     if(f._siGoalAt && now - f._siGoalAt < 20 && !P) return false;
     f._siGoalAt = now;
@@ -29525,7 +29533,7 @@ function whTrip(f, inp, N, Y){
   if(now < 600 || now < (f._whTripCd || 0) || fd < 450 || !f.onground || f.hitstun > 0 || (now + f.idx*7) % 30 !== 0 || f._ynGo || f.pct < 45) return false;
   const sp = whSpots(N, Y), a = ynNodeAt(N, f, true); if(!sp.length || !a) return false;
   let best = null, bc = 1e9;
-  for(const q of sp){ const c = a === q.n ? 0 : ((ynPlan(N, a, new Map([[q.n, 1]]), f.x) || { cost:1e9 }).cost); if(c < bc){ bc = c; best = q; } }
+  for(const q of sp){ if(f.pct < 60 && tripFoeOnWay(f, (q.x0 + q.x1)/2, q.n.y)) continue; const c = a === q.n ? 0 : ((ynPlan(N, a, new Map([[q.n, 1]]), f.x) || { cost:1e9 }).cost); if(c < bc){ bc = c; best = q; } }
   if(!best || bc > 1200){ f._whTripCd = now + 240; return false; }   // (only a near one: the spots are at the far east end, and 37 trips of up to 2400 in 5 matches were all cut short by a foe on the way)
   f._whTrip = { s:best, n:best.n, k:best.k, until:now + Math.min(1500, 400 + bc*1.5), arr:0 }; f._ynGo = best.n; f._ynPlan = null; WND.trips = (WND.trips || 0) + 1;
   return false;
