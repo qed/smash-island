@@ -1668,3 +1668,37 @@ Her picture is `needy.png` (462x220), made by `scripts/make-event-needy-art.py` 
 ### Jammy (BFDI wiki; BFDIE, event fighter)
 
 Her picture is her official BFDIE render from the BFDI wiki (Jammy's page; a glass jar of peach jam with an orange label, a red and pink gingham lid and thin black arms and legs), 1192x1072, downloaded and checked by the lead before the kit job; the job was handed the file, not its page address, so the address is not recorded here. `jammy.png` is it trimmed and scaled to 222x200 (the size of the other event renders) and `jammy-nolid.png` the same picture with the lid taken off and the open rim drawn in its own outline colour (her Lid Off look), both by `scripts/make-event-jammy-art.py`. Her event skin is a look from the wiki (Event fighters' skins). Every lid throw, jam slosh, jam wave, raised hand and the crack of her Final Smash is drawn in code (`FIGHTER_ANIM.Jammy`, `jamDraw*`).
+
+### Real assists and the show's Toilet and MePad (2026-11-19)
+
+The owner: "use actual assists. like, say, avocado or shampoo tube. or price tag or winner" and "use toilets actual sprite! and mepads acutal sprite".
+Twenty non-fighter show characters for 8-Ball's contest and the regular Assist item, and the show's pictures for Toilet and MePad (drawn in code
+until then). Each was downloaded from `static.wikia.nocookie.net/battlefordreamisland` (the BFDI wiki; the owner allows that wiki only), checked
+(image bytes, size), trimmed to the drawing, scaled to 200 px tall, the invisible halo erased and reduced to a 256-colour palette by
+`scripts/make-real-assists-art.py`, and each was looked at before it was kept. Same provenance as the table at the top: jacknjellify's character
+artwork via the BFDI wiki, used under fan-work norms in a disclaimed, non-commercial fan game. Drawn by `drawAssistRender` from `ASSIST_SPRITE_SRC`.
+
+| Assist | File | Source |
+|---|---|---|
+| Toilet | `toilet.png` | https://battlefordreamisland.fandom.com/wiki/File:Toilet_2021.png (Inanimate Insanity, as on the BFDI wiki; 486x603 at the source, 161x200 here) |
+| MePad | `mepad.png` | https://battlefordreamisland.fandom.com/wiki/File:MePad_21.png (Inanimate Insanity, as on the BFDI wiki; 556x895 at the source, 119x200 here) |
+| Salt Lamp | `salt-lamp.png` | https://battlefordreamisland.fandom.com/wiki/File:SaltlampTPOT14.png (TPOT recommended character; 1043x1766 at the source, 118x200 here) |
+| Fire-ette | `fire-ette.png` | https://battlefordreamisland.fandom.com/wiki/File:BFDI_Mini_Firette.png (BFDI Mini; 1272x1476 at the source, 172x200 here) |
+| Ice Creamy | `ice-creamy.png` | https://battlefordreamisland.fandom.com/wiki/File:Ice_Creamy_Bfdi_Mini_Resort_Cropped.png (recommended character (BFDI Mini Resort); 422x476 at the source, 178x200 here) |
+| Milkshake | `milkshake.png` | https://battlefordreamisland.fandom.com/wiki/File:Milkshake_intro.png (BFDI Mini; 260x416 at the source, 125x200 here) |
+| Anchor | `anchor.png` | https://battlefordreamisland.fandom.com/wiki/File:AnchorTPOT14.png (TPOT recommended character; 1173x1521 at the source, 154x200 here) |
+| Winner | `winner.png` | https://battlefordreamisland.fandom.com/wiki/File:Tpot_renders0023.png (BFB/TPOT contestant; 574x949 at the source, 121x200 here) |
+| Price Tag | `price-tag.png` | https://battlefordreamisland.fandom.com/wiki/File:Tpot_renders0016.png (TPOT contestant; 657x479 at the source, 274x200 here) |
+| Credit Card | `credit-card.png` | https://battlefordreamisland.fandom.com/wiki/File:Tpot_18_credit_card.png (BFDI Mini; TPOT 18 cameo; 1218x720 at the source, 338x200 here) |
+| Lightning Cherry | `lightning-cherry.png` | https://battlefordreamisland.fandom.com/wiki/File:Vlcsnap-2023-06-08-13h17m02s817.png (recommended character; 748x776 at the source, 194x200 here) |
+| Robot Flower | `robot-flower.png` | https://battlefordreamisland.fandom.com/wiki/File:Tpot_renders0030.png (BFB/TPOT contestant; 543x835 at the source, 130x200 here) |
+| Propeller Hat | `propeller-hat.png` | https://battlefordreamisland.fandom.com/wiki/File:Propeller_hat_BFDIA17.png (BFDIA recommended character; 1000x935 at the source, 214x200 here) |
+| Boombox | `boombox.png` | https://battlefordreamisland.fandom.com/wiki/File:Boombox_TPOT-Photoroom.png (TPOT recommended character; 1669x1911 at the source, 174x200 here) |
+| Shampoo | `shampoo.png` | https://battlefordreamisland.fandom.com/wiki/File:ShampooTPOT14.png (TPOT recommended character; 838x2033 at the source, 82x200 here) |
+| Kitchen Sink | `kitchen-sink.png` | https://battlefordreamisland.fandom.com/wiki/File:KitchensinkTPOT14.png (TPOT recommended character; 1573x1926 at the source, 163x200 here) |
+| Water Bottle | `water-bottle.png` | https://battlefordreamisland.fandom.com/wiki/File:Vlcsnap-2023-06-08-13h19m20s266.png (recommended character; 407x673 at the source, 108x200 here) |
+| Coconut Water | `coconut-water.png` | https://battlefordreamisland.fandom.com/wiki/File:Coconut_Water_intro_pose.png (BFDI Mini; 593x695 at the source, 181x200 here) |
+| Avocado | `avocado.png` | https://battlefordreamisland.fandom.com/wiki/File:AvocadoTPOT14.png (TPOT recommended character; 794x1212 at the source, 131x200 here) |
+| Leek | `leek.png` | https://battlefordreamisland.fandom.com/wiki/File:LeekTPOT14.png (TPOT recommended character; 800x1796 at the source, 89x200 here) |
+| Eggy | `eggy.png` | https://battlefordreamisland.fandom.com/wiki/File:Tpot_renders0033.png (BFB/TPOT contestant; 500x612 at the source, 163x200 here) |
+| Glue | `glue.png` | https://battlefordreamisland.fandom.com/wiki/File:Glue_tpot_pose_2.png (BFDI Mini; 545x913 at the source, 119x200 here) |

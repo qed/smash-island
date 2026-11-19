@@ -54441,6 +54441,7 @@ function summonAssistNamed(owner, a){
     life:(a.dur || (a.oneShot ? ASSIST_ONESHOT_WINDOW : ASSIST_DUR)), face:owner.face, _cd:0,
     oneShot:!!a.oneShot, mortal:!!a.mortal, fixed:a.fixed||null, jumps:1, onground:false, _fly:a.fly ? 1 : 0 };
   summons.push(s);
+  if(a.ty && !LKF){ const P = assistFighter(s); P._asTy = a.ty; P._lkOwn = owner.idx; P._lkS = s; }   // EVERYWHERE: a real assist's type (asTyped; the contest tags its own: lkTag)
   return s;
 }
 // The one way an assist leaves early. Only Beach Ball is `mortal`, and only to a pointed fighter,
@@ -54504,6 +54505,7 @@ function haAssistZone(s){   // (only while live: an opening hole or a blender sp
   else if(act === 'vortex' && s._ph === 'go') hitArt(haAssistOwner(s), haAssistKey(s, 'vortex'), { kind:'circle', x:s.x, y:s.y, r:haEdgeR(AS.vortex.blade) }, { color:'#9ac0d8', style:'zone', tick:s._pt % AS.vortex.every === 0 });
 }
 function assistFighter(s){ return s._as || (s._as = { team:s.team, idx:-2, _asKey:'a'+(++ASSIST_KEY_SEQ) }); }
+function asTyped(s){ return !LKF && !!(s && s._as && s._as._asTy); }   // a regular match's real assist (a typed row of LK_ROSTER in the Assist item): its acts' catches give its type's touch
 
 // ---- ASSIST BODY & AI -------------------------------------------------------------------------
 // An assist used to be a floor-bound puck: gravity, a snap to groundY(), and one steering line
@@ -54982,7 +54984,7 @@ const AS_ACT = {
     for(const f of fighters){ if(!asFoe(s, f)) continue;
       if(Math.hypot(f.x-s.x, f.y-s.y) < T.R && Math.sign(s.x-f.x) === Math.sign(f.face||1)){
         hitArt(haAssistOwner(s), haAssistKey(s, 'ray' + f.idx), { kind:'capsule', x1:s.x, y1:s.y, x2:f.x, y2:f.y, r:3 }, { color:'#ffffff', style:'ray', world:true, fade:10 });
-        f.hitstun = Math.max(f.hitstun, FLASH_STUN); f.frozen = Math.max(f.frozen, FLASH_FREEZE); if(LKF && s._lk) lkTouch(assistFighter(s), f); } }   // (8-Ball's contest: the family's touch)
+        f.hitstun = Math.max(f.hitstun, FLASH_STUN); f.frozen = Math.max(f.frozen, FLASH_FREEZE); if((LKF && s._lk) || asTyped(s)) lkTouch(assistFighter(s), f); } }   // (8-Ball's contest: the family's touch)
     // A boss cannot be stunned (nothing on a boss reads hitstun or frozen); an add facing the camera holds its act FLASH_STUN frames.
     for(const b of assistFoes(s)){ if(b.type==="boss") continue;
       if(Math.hypot(b.x-s.x, b.y-s.y) < T.R && Math.sign(s.x-b.x) === Math.sign(b.face||1)) b._cd = Math.max(b._cd||0, FLASH_STUN); }
@@ -55022,7 +55024,7 @@ const AS_ACT = {
   bounce(s, tgt, T){
     for(const f of fighters){ if(f.dead) continue;
       if(hurtGap(f, s.x, s.y) < -HURT_R0 + s.r + 20){
-        if(POINTED.has(f.name) && !s._lk){ for(let i=0;i<18;i++) puff(s.x, s.y, '#e85a8a', 5); s.life = 0; return; }   // (a contest's assist, s._lk, is not popped)
+        if(POINTED.has(f.name) && s.mortal && !s._lk){ for(let i=0;i<18;i++) puff(s.x, s.y, '#e85a8a', 5); s.life = 0; return; }   // (a contest's assist, s._lk, is not popped)
         if(f.team===s.team || f.invuln>0) continue;
         applyHit(f, addDmg(s, T.dmg), Math.sign(f.x-s.x||1)*T.kb*0.7, -T.kb, assistFighter(s)); s.vx = -s.vx; s.vy = -8; s._squash = 8;
       } }
@@ -55131,17 +55133,23 @@ const AS_ACT = {
 // to his side out of a launch. Never into a solid block: a spot inside one falls back to the summoner's own.
 function mepadSpotFree(x, y){ for(const p of platRects()){ if(p.solid && !p.rot && x > p.x - 20 && x < p.x + p.w + 20 && y > p.y - 20 && y < p.y + (p.h||16) + 20) return false; } return true; }
 function mepadWarp(s, f, owner, T){
-  for(let i=0;i<12;i++) puff(f.x, f.y, '#e040b0', 4);
+  const x0 = f.x, y0 = f.y;
+  for(let i=0;i<18;i++) puff(f.x, f.y, '#e040b0', 5);
   const side = Math.sign(f.x - owner.x) || owner.face || 1;
   let x = clamp(owner.x + side*64, 30, WW - 30);
   if(!mepadSpotFree(x, owner.y)) x = owner.x;
   f.x = x; f.y = owner.y; f.vx = 0; f.vy = 0; f.onground = false;
   if(f.type === "assist") f._cd = Math.max(f._cd||0, T.stun);   // an add: its act held, as the Selfie Stick's flash holds it
-  else stunFx(f, T.stun);
-  if(LKF && s._lk && f.type !== "assist") lkTouch(assistFighter(s), f, { noBlink:1 });   // (8-Ball's contest: the warp IS the sneaky touch; its picture and sound)
-  for(let i=0;i<12;i++) puff(f.x, f.y, '#e040b0', 4);
+  else { applyHit(f, addDmg(s, T.dmg), 0, -T.kb, assistFighter(s)); stunFx(f, T.stun); }   // he lands them with a jolt (a small pop up) and they stand dazed
+  if(((LKF && s._lk) || asTyped(s)) && f.type !== "assist") lkTouch(assistFighter(s), f, { noBlink:1 });   // (8-Ball's contest: the warp IS the sneaky touch; its picture and sound)
+  hitArt(haAssistOwner(s), haAssistKey(s, 'warpA'), { kind:'circle', x:x0, y:y0, r:36 }, { color:'#e040b0', style:'ring', world:true, fade:14 });   // the two ends of the warp: where they were...
+  hitArt(haAssistOwner(s), haAssistKey(s, 'warpB'), { kind:'circle', x:f.x, y:f.y, r:36 }, { color:'#e040b0', style:'ring', world:true, fade:14 });   // ...and where he put them
+  tone(1400, 0.14, 'square', 0.035, 0, 300);
+  for(let i=0;i<18;i++) puff(f.x, f.y, '#e040b0', 5);
 }
-AS.warp = { walk:3.4, reach:400, wind:40, gap:110, stun:24, save:13, saves:2, saveGap:120 };   // MePad
+// MEPAD, STRONGER (the owner, 2026-11-19: "he does barely anything"): a warp used to be a 24-frame daze and no hit, every 150 frames; now it lands a jolt
+// (dmg, x the trophy's number) with a small pop, a 40-frame daze, a ring at both ends, every 112 frames (wind 40 -> 32, gap 110 -> 80).
+AS.warp = { walk:3.4, reach:400, wind:32, gap:80, stun:40, dmg:6, kb:4, save:13, saves:2, saveGap:120 };   // MePad
 // MEPAD ("The Assistant": MePhone4's assistant in Inanimate Insanity II): "Using advanced Meeple technology, MePad had the ability to
 // travel instantaneously from one location to another ... He could also teleport others" (the II wiki). He keeps by his summoner.
 // When a foe comes within his reach his screen glows brighter and faster (the wind-up); if that foe is still in reach as it peaks,
@@ -55292,7 +55300,7 @@ function a2Clap(s, T){
   for(const f of fighters){ if(!a2Open(s, f) || !f.onground || Math.hypot(f.x - s.x, f.y - s.y) >= T.R) continue;
     f.frozen = Math.max(f.frozen||0, T.freeze); f._cutT = hazardT + T.freeze; f.vx = 0;
     for(let i=0;i<5;i++) puff(f.x, f.y - 6, '#e8e8f0', 3);
-    if(LKF && s._lk) lkTouch(assistFighter(s), f); }   // (8-Ball's contest: the family's touch)
+    if((LKF && s._lk) || asTyped(s)) lkTouch(assistFighter(s), f); }   // (8-Ball's contest: the family's touch)
   for(const b of assistFoes(s)){ if(b.type === "boss" || !b.onground || Math.hypot(b.x - s.x, b.y - s.y) >= T.R) continue; b._cd = Math.max(b._cd||0, T.freeze); }
 }
 // CONCH SHELL (he/him, TPOT) -- HORN BLAST. He gets the nearest foe in range at about his height, puffs up (AS.horn.puff frames, harmless) and
@@ -106181,6 +106189,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   const hdKeep = hdNoFlinch(t, dmg, from, opts);   // HOT DOG: a hit that interrupts no one (Not Leaving, a retry, Through You's slide, the TOO STUBBORN TO FLINCH twist): put back below
   if(MATCH_TWIST && from && from !== t && Number.isFinite(from.x)){ const tk = stkTwistKbK(t, from); if(tk !== 1){ kbx *= tk; kby *= tk; } }
   if(CONTEST && from && from !== t){ const ck = contestKbK(t, from); if(ck !== 1){ kbx *= ck; kby *= ck; } }   // A CONTEST: a holder's knockback (Cloudy's: the jam jar, the house set's shield, the crate)   // STICKER'S TWISTS: BACKSTAB (a hit to the back, 30% farther) and SUNSET (up to 25% with the light)
+  if(!LKF && from && from !== t && from._asTy === 'heavy'){ kbx *= AS_TY_HEAVY; kby *= AS_TY_HEAVY; }   // EVERYWHERE: a regular match's HEAVY real assist launches farther (AS_TY_HEAVY)
   const _btArm = t._btArmor > hazardT && dmg < BT.dummy.armor && from !== t;   // Bottle's Test Dummy: weak hits do not stop her (EVENT FIGHTERS: BOTTLE)
   knock(t, _btArm ? 0 : kbx*scale, _btArm ? 0 : kby*scale - kp*0.025);
   if(SETTINGS.mode==='ctf') ctfBigHit(t, from);   // a big enough launch makes a flag carrier drop the flag
@@ -106212,6 +106221,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   t._hurt=90;   // any hit suppresses heal-over-time (Fern) for ~1.5s so aggression can break through
   if(LKF && from && from._lkFam) lkTouch(from, t);   // 8-BALL'S CONTEST: a contest assist's landed hit gives its family's touch (lkTouch)
   else if(LKF && from && from._lkTri && from._lkTP && from.idx >= 0 && fighters[from.idx] === from) lkTouch(from._lkTP, t);   // ...and TYPE POWER: 3 of a type out, your own hit gives it too
+  else if(!LKF && from && from._asTy) lkTouch(from, t);   // EVERYWHERE: a regular Assist item's real assist gives its type's touch (asTyped)
   t.flash=8;
   puff(t.x,t.y-6,'#fff',5); puff(t.x,t.y-6,(from&&from.color)||'#fff',4);   // a boss's shot (its owner is {team:-1, idx:-2}) and a hazard (null) have no colour: the sparks had none either, and drew in whatever fill the last thing left
   hitFx(t, from, dmg, hitGround);   // the layered sparks, the flash ring on a heavy hit, the launch dust (HIT EFFECTS)
@@ -117055,24 +117065,30 @@ const LK_FLAV_OF = { mines:'fire', swat:'fire', bolt:'fire',
                      horn:'wind', drum:'wind', plane:'wind', vortex:'wind' };   // (an act not listed is SNEAKY)
 const LK_RARE = ['Blender', 'Shopping Cart', 'The Floor', 'Black Hole', 'Spongy'];
 // THE CONTEST'S 32 ASSISTS, 4 of each type (ty). Each does its own act (one of the assist acts in AS_ACT), and every one of a type gives that type's ONE touch.
-// The twelve from the bag keep their acts; the twenty new ones are BFDI/II characters and objects whose pictures are already in the game (pic: assets/sprites).
+// The twelve from the bag keep their acts. The twenty others are REAL ASSISTS (the owner, 2026-11-19: "use actual assists. like, say, avocado or shampoo tube.
+// or price tag or winner"): recommended characters, minor characters and cameos from the shows, none of them a playable fighter (ROSTER), each on an act
+// that fits it; their pictures are the wiki's (pic: assets/sprites, CREDITS.md). They are in the regular Assist item too (ASSIST_ROSTER, just below).
 const LK_ROSTER = [
   { name:'Grotato', ty:'fire', color:'#4a9c6a', act:'mines', oneShot:true }, { name:'Rubber Spatula', ty:'fire', color:'#f2e070', act:'swat' },
-  { name:'Firey', ty:'fire', color:'#ff7a2a', act:'swat', pic:'firey' }, { name:'Match', ty:'fire', color:'#e8463a', act:'mines', oneShot:true, pic:'match' },
+  { name:'Salt Lamp', ty:'fire', color:'#e88a8a', act:'flash', oneShot:true, pic:'salt-lamp' }, { name:'Fire-ette', ty:'fire', color:'#c24ad8', act:'plane', pic:'fire-ette' },
   { name:'Clapboard', ty:'ice', color:'#2a2a2e', act:'cut' }, { name:'Toilet', ty:'ice', color:'#eef2f6', act:'flush' },
-  { name:'Ice Cube', ty:'ice', color:'#bfeaff', act:'staple', pic:'ice-cube' }, { name:'Snowball', ty:'ice', color:'#f4f8fc', act:'cut', pic:'snowball' },
+  { name:'Ice Creamy', ty:'ice', color:'#f4e6d0', act:'cut', pic:'ice-creamy' }, { name:'Milkshake', ty:'ice', color:'#f0ece0', act:'swat', pic:'milkshake' },
   { name:'Beach Ball', ty:'heavy', color:'#e85a8a', act:'bounce', mortal:true, r:34 }, { name:'9-Ball', ty:'heavy', color:'#f2c94c', act:'stay', r:28 },
-  { name:'Rocky', ty:'heavy', color:'#8a8a8a', act:'rush', pic:'rocky' }, { name:'Blocky', ty:'heavy', color:'#d84a4a', act:'crush', r:32, pic:'blocky' },
+  { name:'Anchor', ty:'heavy', color:'#3a3a40', act:'crush', r:32, pic:'anchor' }, { name:'Winner', ty:'heavy', color:'#9aa2f0', act:'rush', pic:'winner' },
   { name:'MePad', ty:'sneaky', color:'#c4308a', act:'warp' }, { name:'Scissors', ty:'sneaky', color:'#8ccf4a', act:'snip' },
-  { name:'Knife', ty:'sneaky', color:'#c8ccd4', act:'snip', pic:'knife' }, { name:'Yin-Yang', ty:'sneaky', color:'#3a3a3a', act:'warp', pic:'yin-yang' },
+  { name:'Price Tag', ty:'sneaky', color:'#e83a3a', act:'snip', pic:'price-tag' }, { name:'Credit Card', ty:'sneaky', color:'#3a6ae8', act:'warp', pic:'credit-card' },
   { name:'Battery', ty:'shock', color:'#1f9e7a', act:'wire' }, { name:'Selfie Stick', ty:'shock', color:'#c0c0c8', act:'flash', oneShot:true },
-  { name:'Lightning', ty:'shock', color:'#ffe23a', act:'wire', pic:'lightning' }, { name:'Lightbulb', ty:'shock', color:'#fff3a0', act:'flash', oneShot:true, pic:'lightbulb' },
+  { name:'Lightning Cherry', ty:'shock', color:'#8a1a2a', act:'wire', pic:'lightning-cherry' }, { name:'Robot Flower', ty:'shock', color:'#d070d8', act:'stay', r:28, pic:'robot-flower' },
   { name:'Conch Shell', ty:'wind', color:'#f4b48a', act:'horn' }, { name:'Snare Drum', ty:'wind', color:'#2a3aa0', act:'drum' },
-  { name:'Fan', ty:'wind', color:'#9fd0e8', act:'horn', pic:'fan' }, { name:'Microphone', ty:'wind', color:'#5a5a66', act:'drum', pic:'microphone' },
-  { name:'Bubble', ty:'water', color:'#bfe4ff', act:'bounce', r:30, pic:'bubble' }, { name:'Teardrop', ty:'water', color:'#7fc8f0', act:'swat', pic:'teardrop' },
-  { name:'Soap', ty:'water', color:'#f6c8e0', act:'flush', pic:'soap' }, { name:'Tea Kettle', ty:'water', color:'#c8ccd4', act:'horn', pic:'tea-kettle' },
-  { name:'Barf Bag', ty:'poison', color:'#c8e08a', act:'mines', oneShot:true, pic:'barf-bag' }, { name:'Test Tube', ty:'poison', color:'#9ae0c8', act:'bolt', pic:'test-tube' },
-  { name:'Gelatin', ty:'poison', color:'#7ad84a', act:'stay', r:28, pic:'gelatin' }, { name:'Spikey', ty:'poison', color:'#8a5ad8', act:'snip', pic:'spikey' } ];
+  { name:'Propeller Hat', ty:'wind', color:'#2a2a8a', act:'horn', pic:'propeller-hat' }, { name:'Boombox', ty:'wind', color:'#6a4a2a', act:'drum', pic:'boombox' },
+  { name:'Shampoo', ty:'water', color:'#f6a8c8', act:'swat', pic:'shampoo' }, { name:'Kitchen Sink', ty:'water', color:'#e8eef4', act:'flush', pic:'kitchen-sink' },
+  { name:'Water Bottle', ty:'water', color:'#f4f0ff', act:'stay', r:28, pic:'water-bottle' }, { name:'Coconut Water', ty:'water', color:'#7ab84a', act:'bounce', r:30, pic:'coconut-water' },
+  { name:'Avocado', ty:'poison', color:'#2a3a2a', act:'rush', pic:'avocado' }, { name:'Leek', ty:'poison', color:'#9ad06a', act:'snip', pic:'leek' },
+  { name:'Eggy', ty:'poison', color:'#f4ecd8', act:'crush', r:30, pic:'eggy' }, { name:'Glue', ty:'poison', color:'#f0f0f0', act:'cut', pic:'glue' } ];
+// EVERYWHERE (the owner: "1" = yes, everywhere): the twenty real ones join the regular Assist item's bag too, each with its act and its type's ONE touch
+// (asTyped: lkTouch, outside the contest, from any hit it lands); HEAVY ones launch AS_TY_HEAVY times as far there. The twelve keep their own plain rows.
+for(const r of LK_ROSTER) if(r.pic && !ASSIST_ROSTER.some(a => a.name === r.name)) ASSIST_ROSTER.push(Object.assign({}, r));
+const AS_TY_HEAVY = 1.25;   // (a regular match: under the contest's LK.heavyK, 1.45, with its 6 stocks)
 // Their pictures: the new ones' rows join ASSIST_SPRITE_SRC at the match's start (it is defined further down), so they draw the way every assist does.
 function lkPics(){ if(typeof ASSIST_SPRITE_SRC === 'undefined') return; for(const r of LK_ROSTER) if(r.pic && !ASSIST_SPRITE_SRC[r.name]) ASSIST_SPRITE_SRC[r.name] = { src:'assets/sprites/' + r.pic + '.png', h:2.6, w:3.0 }; }   // (the strongest: they were the giant jawbreaker's alone; with the giant cut, no jawbreaker holds one)
 // CPUs by level (0 Easy .. 3 Expert): the fight range; how far from a foe it feels safe to lick, how often it licks and how long; how much it wants the family that
@@ -117263,11 +117279,12 @@ function lkKeep(){
 // family rides on that: lkTag marks it, applyHit calls lkTouch for a landed hit, and the clap, the flash and the warp call it for the foes they catch.
 function lkTag(s, f, name){ const P = assistFighter(s); P._lkFam = lkFlav(name); P._lkOwn = f.idx; P._lkS = s; }
 function lkTouch(P, t, o){
-  const J = JAWB, now = hazardT;
-  if(!J || !J.lk || !LKF || !P || !P._lkFam || !t || t.dead || t.idx == null || fighters[t.idx] !== t) return;
-  const fl = P._lkFam, F = LK_FLAVS[fl]; if(!F) return;
+  const J = JAWB, now = hazardT, reg = !LKF && !!(P && P._asTy);   // reg: a REGULAR match's real assist (asTyped): its type's touch, no contest stats or drawn touch
+  if(!reg && (!J || !J.lk || !LKF || !P || !P._lkFam)) return;
+  if(!t || t.dead || t.idx == null || fighters[t.idx] !== t) return;
+  const fl = reg ? P._asTy : P._lkFam, F = LK_FLAVS[fl]; if(!F) return;
   if((t._lkTT || 0) > now) return;
-  t._lkTT = now + LK.touchGap; J.st.touch[fl]++;
+  t._lkTT = now + LK.touchGap; if(!reg) J.st.touch[fl]++;
   const s = P._lkS, ax = (s && typeof s.x === 'number') ? s.x : t.x, own = fighters[P._lkOwn], fx = { k:fl, x:t.x, y:t.y, t:now, id:t.idx };
   if(fl === 'fire') t.burn = Math.max(t.burn || 0, LK.burnT);
   else if(fl === 'ice'){ t.frozen = Math.max(t.frozen || 0, LK.freezeT); t.vx *= 0.3; }
@@ -117295,7 +117312,7 @@ function lkTouch(P, t, o){
   }
   for(let i = 0; i < 6; i++) puff(t.x, t.y, F.pal[i % 5], 4);
   tone(F.snd[0], 0.12, F.snd[2], 0.04, 0, F.snd[1]);
-  J.fx.push(fx);
+  if(!reg) J.fx.push(fx);
 }
 // What the touches leave on the screen for a moment: the family's picture popping over the foe (all six); the spark's jump (shock), the gust's ring (wind).
 function lkDrawFx(c){
@@ -117507,8 +117524,8 @@ function lkKoStep(){
 function lkAstBody(c, w){
   const nm = w.name, sp = ASSIST_SPRITE_SRC[nm], im = sp ? assistImage(nm) : null, dr = ASSIST_DRAWN[nm], R = w.r;
   const s = { type:'assist', name:nm, r:R, face:w.face || 1, color:w.color };
-  if(c === ctx && dr){ dr(s); return; }
   if(c === ctx && im){ drawAssistRender(s, im, sp); return; }
+  if(c === ctx && dr){ dr(s); return; }
   c.fillStyle = w.color; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.arc(0, 0, R, 0, 7); c.fill(); c.stroke();
   c.fillStyle = '#fff'; c.beginPath(); c.arc(-R*0.3, -R*0.15, R*0.16, 0, 7); c.arc(R*0.3, -R*0.15, R*0.16, 0, 7); c.fill();
   c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(-R*0.3, -R*0.15, R*0.08, 0, 7); c.arc(R*0.3, -R*0.15, R*0.08, 0, 7); c.fill();
@@ -130102,7 +130119,7 @@ function drawSummon(s){
   // frames before it loads and for anyone without a row (Selfie Stick: see the registry). A hostile add wears the same
   // art, under its red tag and bar, and its download silhouette above is untouched.
   const asp = (s.type==="assist") ? ASSIST_SPRITE_SRC[s.name] : null, aim = asp ? assistImage(s.name) : null;
-  const adrawn = (s.type==="assist") ? ASSIST_DRAWN[s.name] : null;   // a trophy with no render, drawn in code (Selfie Stick, Foldy, Toilet, MePad)
+  const adrawn = (s.type==="assist") ? ASSIST_DRAWN[s.name] : null;   // a trophy with no render, drawn in code (Selfie Stick, Foldy; Toilet and MePad until their renders load)
   const apose = (s.type==="assist") ? asPoseBegin(s) : false;          // its pose: growing in out of the trophy, then its wind-up
   if(s.type==="pepper"){
     if(s._zs){ ctx.save(); ctx.globalAlpha = 0.35; ctx.fillStyle = '#9fe4ff'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, s.r + 12, 0, 7); ctx.fill(); ctx.globalAlpha = 0.7; ctx.stroke(); ctx.restore(); }   // Salt's shield, copied
@@ -130123,8 +130140,8 @@ function drawSummon(s){
     // how much of her is left, so a player knows when she is about to go
     ctx.fillStyle="rgba(0,0,0,0.35)"; ctx.fillRect(-R*0.6, -R*1.5, R*1.2, 4);
     ctx.fillStyle="#7fd67f"; ctx.fillRect(-R*0.6, -R*1.5, R*1.2*Math.max(0,s.hp)/s.maxHp, 4);
-  } else if(adrawn){ adrawn(s); }
-  else if(aim){ drawAssistRender(s, aim, asp); }
+  } else if(aim){ drawAssistRender(s, aim, asp); }
+  else if(adrawn){ adrawn(s); }   // (Toilet and MePad: drawn only until their renders load)
   else {
   ctx.beginPath(); ctx.arc(0,0,s.r,0,7); ctx.fill(); ctx.stroke(); }
   // simple face (a render brings its own)
@@ -130397,8 +130414,8 @@ function asPoseBegin(s){
     const k = Math.min(1, t/ASSIST_ARRIVE), e = Math.max(0.15, (1 - Math.pow(1 - k, 3))*(1 + 0.18*Math.sin(k*Math.PI)));
     atFeet(e, e); return true;
   }
-  const a2p = A2_POSE[s.name]; if(a2p){ a2p(s, P, R, t, ph, face, atFeet); return true; }   // ASSIST BATCH A2's wind-ups
-  switch(s.name){
+  const pn = asPoseName(s), a2p = A2_POSE[pn]; if(a2p){ a2p(s, P, R, t, ph, face, atFeet); return true; }   // ASSIST BATCH A2's wind-ups (a real assist: its act's, asPoseName)
+  switch(pn){
     case 'Eraser': if(ph === 'wind'){ const w = Math.sin(t*0.9); ctx.translate(w*6, 0); ctx.rotate(w*0.12); } break;   // rubbing side to side
     case 'Spongy':   // the squat, the stretch of the leap, the squash of the landing
       if(ph === 'wind'){ const k = Math.min(1, t/AS.crush.wind); atFeet(1 + 0.28*k, 1 - 0.32*k); }
@@ -130423,14 +130440,18 @@ function asPoseBegin(s){
       else if(ph === 'rest' && t < 8){ ctx.translate(0, R); ctx.rotate(face*0.15*(1 - t/8)); ctx.translate(0, -R); } break;   // ...and the snap
     case 'Blender': if(ph === 'spin'){ const k = Math.min(1, t/AS.vortex.spin); ctx.translate(Math.sin(t*2.7)*3*k, 0); }   // spinning up, shaking
       else if(ph === 'go') ctx.translate(Math.sin(t*3.1)*1.5, 0); break;
+    case 'Toilet': if(ph === 'wind' && assistImage(s.name)){ const k = Math.min(1, t/AS.flush.wind), r = Math.abs(Math.sin(t*0.9))*0.06*k; ctx.translate(Math.sin(t*2.1)*2.5*k, 0); atFeet(1 + r, 1 - r); } break;   // the render rattling as the flush comes (the drawn one rattles its own lid)
+    case 'MePad': if(ph === 'wind' && assistImage(s.name)){ const k = Math.min(1, t/AS.warp.wind), g = 1 + 0.07*k*Math.sin(t*(0.25 + 0.6*k)); ctx.translate(Math.sin(t*1.7)*1.5*k, 0); atFeet(g, g); ctx.filter = 'brightness(' + Math.round(100 + 45*k) + '%)'; } break;   // the screen charging: a pulse, brighter and faster
+    case '#flash': if(ph === 'pose'){ const k = Math.min(1, t/AS.flash.pose); atFeet(1 + 0.06*k, 1 + 0.12*k); ctx.filter = 'brightness(' + Math.round(100 + 60*k) + '%)'; } break;   // a real assist on the flash act: it glows up to the flash
+    case '#plane': if(ph === 'wind'){ ctx.rotate(-face*0.3*Math.min(1, t/AS.plane.wind)); } else if(ph === 'go') ctx.rotate(face*0.25); break;   // a real assist on the plane act: rears back, then leans into its line
   }
   return true;
 }
 // What an act puts in the world round the trophy (local space, under its body): Cloudy's rain and bolt, Toilet's waves.
 function drawAssistFx(s){
   const P = s._ap; if(!P || P.p === 'arrive') return;
-  const a2f = A2_FX[s.name]; if(a2f){ a2f(s, P); return; }   // ASSIST BATCH A2: the wire, the rings, the ripples
-  if(s.name === 'Cloudy'){
+  const pn = asPoseName(s), a2f = A2_FX[pn]; if(a2f){ a2f(s, P); return; }   // ASSIST BATCH A2: the wire, the rings, the ripples (a real assist: its act's)
+  if(pn === 'Cloudy'){
     const T = AS.steal, bottom = asSolidBelow(s.x, s.y + s.r) - s.y, top = s.r*0.5, span = Math.max(20, bottom - top);
     ctx.save(); ctx.lineCap = 'round';
     ctx.strokeStyle = 'rgba(120,170,230,0.75)'; ctx.lineWidth = 2;
@@ -130443,7 +130464,7 @@ function drawAssistFx(s){
     }
     ctx.restore();
   }
-  if(s.name === 'Toilet' && P.w){
+  if(pn === 'Toilet' && P.w){
     const H = AS.flush.h;
     for(const w of P.w){
       ctx.save(); ctx.translate(w[0] - s.x, w[1] - s.y); ctx.scale(w[2] || 1, 1); ctx.lineJoin = 'round';
@@ -130586,6 +130607,13 @@ function drawMePad(s){
   ctx.restore();
 }
 ASSIST_DRAWN['MePad'] = drawMePad;
+// A real assist (LK_ROSTER's twenty) runs an act another assist made: it takes that one's wind-up pose and what it draws in the world (the wire, the
+// rings, the ripples, the waves) by its ACT. The act's home names keep their own; '#flash' and '#plane' are poses for a render on the drawn ones' acts.
+const AS_ACT_HOME = { erase:'Eraser', crush:'Spongy', rush:'8-Ball', pull:'Black Hole', rewind:'Clock', steal:'Cloudy', mines:'Grotato', bolt:'Pie', staple:'Stapy',
+  vortex:'Blender', flash:'#flash', cart:'Shopping Cart', bounce:'Beach Ball', chomp:'The Floor', plane:'#plane', flush:'Toilet', warp:'MePad', stay:'9-Ball',
+  wire:'Battery', cut:'Clapboard', horn:'Conch Shell', swat:'Rubber Spatula', snip:'Scissors', drum:'Snare Drum' };
+const AS_HOME_NAMES = new Set(Object.values(AS_ACT_HOME).concat(['Selfie Stick', 'Foldy']));
+function asPoseName(s){ if(AS_HOME_NAMES.has(s.name)) return s.name; const a = s.act || ((lkRow(s.name) || {}).act); return AS_ACT_HOME[a] || s.name; }   // (a guest's snapshot has the name, not the act: the row gives it)
 // ---- ASSIST BATCH A2: their art, their wind-ups and what they put in the world ------------------------------------------------------------
 // The renders are the characters' TPOT 14 vote pictures (Rubber Spatula's is his TPOT 7 render) from the BFDI wiki, cut out and scaled to
 // 200 px tall here (assets/sprites/CREDITS.md, scripts/sprite-manifest.json). Every wind-up is the body's own (A2_POSE, from asPoseBegin);
@@ -130598,6 +130626,32 @@ Object.assign(ASSIST_SPRITE_SRC, {
   "Rubber Spatula": { src:"assets/sprites/rubber-spatula.png", h:3.2, w:1.6 },             // File:Rubber Spatula TPOT 7.png, 79x200, facing 0.007
   "Scissors":       { src:"assets/sprites/scissors.png",       h:2.0, w:4.8 },             // File:ScissorsTPOT14steakhouse.png, 478x200, facing 0.24: the blades lead
   "Snare Drum":     { src:"assets/sprites/snare-drum.png",     h:2.6, w:3.4 },             // File:SnaredrumTPOT14.png, 243x200, facing 0
+});
+// THE SHOW'S PICTURES FOR TOILET AND MEPAD (the owner, 2026-11-19: "use toilets actual sprite! and mepads acutal sprite"), and the twenty REAL ASSISTS
+// (LK_ROSTER): from the BFDI wiki, cut out and scaled to 200 px tall (CREDITS.md). Toilet's bowl leads on the left, so he is mirrored to face right.
+Object.assign(ASSIST_SPRITE_SRC, {
+  "Toilet":           { src:"assets/sprites/toilet.png",           h:2.6, w:2.4, flip:true },   // File:Toilet 2021.png, 161x200
+  "MePad":            { src:"assets/sprites/mepad.png",            h:2.8, w:2.2 },              // File:MePad 21.png, 119x200
+  "Salt Lamp":        { src:"assets/sprites/salt-lamp.png",        h:2.8, w:2.2 },              // File:SaltlampTPOT14.png
+  "Fire-ette":        { src:"assets/sprites/fire-ette.png",        h:2.6, w:2.6 },              // File:BFDI Mini Firette.png
+  "Ice Creamy":       { src:"assets/sprites/ice-creamy.png",       h:2.6, w:2.6 },              // File:Ice Creamy Bfdi Mini Resort Cropped.png
+  "Milkshake":        { src:"assets/sprites/milkshake.png",        h:2.6, w:2.2 },              // File:Milkshake intro.png
+  "Anchor":           { src:"assets/sprites/anchor.png",           h:2.8, w:2.6 },              // File:AnchorTPOT14.png
+  "Winner":           { src:"assets/sprites/winner.png",           h:2.8, w:2.2 },              // File:Tpot renders0023.png
+  "Price Tag":        { src:"assets/sprites/price-tag.png",        h:2.2, w:3.4 },              // File:Tpot renders0016.png
+  "Credit Card":      { src:"assets/sprites/credit-card.png",      h:2.0, w:3.6 },              // File:Tpot 18 credit card.png
+  "Lightning Cherry": { src:"assets/sprites/lightning-cherry.png", h:2.6, w:2.8 },              // File:Vlcsnap-2023-06-08-13h17m02s817.png (cut out on the wiki)
+  "Robot Flower":     { src:"assets/sprites/robot-flower.png",     h:3.0, w:2.2 },              // File:Tpot renders0030.png
+  "Propeller Hat":    { src:"assets/sprites/propeller-hat.png",    h:2.4, w:3.0 },              // File:Propeller hat BFDIA17.png
+  "Boombox":          { src:"assets/sprites/boombox.png",          h:2.6, w:2.6 },              // File:Boombox TPOT-Photoroom.png
+  "Shampoo":          { src:"assets/sprites/shampoo.png",          h:3.0, w:1.6 },              // File:ShampooTPOT14.png
+  "Kitchen Sink":     { src:"assets/sprites/kitchen-sink.png",     h:2.8, w:2.6 },              // File:KitchensinkTPOT14.png
+  "Water Bottle":     { src:"assets/sprites/water-bottle.png",     h:2.8, w:2.0 },              // File:Vlcsnap-2023-06-08-13h19m20s266.png (cut out on the wiki)
+  "Coconut Water":    { src:"assets/sprites/coconut-water.png",    h:2.6, w:2.6 },              // File:Coconut Water intro pose.png
+  "Avocado":          { src:"assets/sprites/avocado.png",          h:2.8, w:2.2 },              // File:AvocadoTPOT14.png
+  "Leek":             { src:"assets/sprites/leek.png",             h:3.0, w:1.6 },              // File:LeekTPOT14.png
+  "Eggy":             { src:"assets/sprites/eggy.png",             h:2.6, w:2.6 },              // File:Tpot renders0033.png
+  "Glue":             { src:"assets/sprites/glue.png",             h:2.8, w:2.2 },              // File:Glue tpot pose 2.png
 });
 // Each wind-up, in the transform asPoseBegin opened (feet at y = R; `atFeet` scales about the feet). Nothing is drawn ahead of a hit.
 const A2_POSE = {
