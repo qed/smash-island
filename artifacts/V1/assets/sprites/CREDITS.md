@@ -1198,6 +1198,8 @@ Show sprites, batch 3 (Final Smash props, 2026-11-10; art A3). Five more props a
 
 Show sprites, batch 4 (drawn props, 2026-11-12; art A4). Five more drawn props now use the show's own pictures from the Battle for Dream Island wiki (battlefordreamisland.fandom.com; Fandom community assets, jacknjellify's designs); the drawn shape shows until the picture loads, and the credits rows are in the attacks table above: `attacks/staple.png` (File:Staple.png, Stapy's staple), `attacks/pie.png` (File:Pie.png, legs cut off, Pie's pie), `attacks/cannonball.png` (File:Cannonball Attack.png, ball cut out, Spongy's Final Smash cannonballs), `attacks/dodgeball.png` (File:Dodgeball.png, Microphone's dodgeball), `attacks/needle.png` (File:Needle - huh.png, legs cut off, Pickle's needle). Firey Jr.'s big fireball reuses `fireball.png`. Drawing-only; no sim values touched.
 
+Show sprites, art 8 (drawn props, 2026-11-18). A further prop is drawn from the show's own picture on the Battle for Dream Island wiki (battlefordreamisland.fandom.com; Fandom community asset, jacknjellify's design), trimmed, mirrored and scaled to 128 px on the long side: `attacks/megaphone.png` (127x128, File:Megaphone (BFB 17).png, Yellow Face's megaphone in Buy Now!). The Evil Leafy ending's thrown monitor now reuses `attacks/monitor.png` (batch 3). The drawn shapes show until a file loads.
+
 ## Assist trophies
 
 "sprites for assist trophies." The thirteen assists of ASSIST_ROSTER are BFDI characters; twelve have a render on
