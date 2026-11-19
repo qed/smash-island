@@ -1124,6 +1124,9 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19 ~18:55**: "is spongy finished?"
 - **2026-11-19 ~19:05**: "do the trade-off if you think that you could fix the issue that would result from it more easily than fixing the current issues." (host waiting for each guest key's own frame) -> lead: not done, see answer
 - **2026-11-19 ~19:15**: "we need to make multiplayer perfectly smooth, because im eventually envisioning playing without rooms, but with public lobbies, and who knows? those ppl might be from halfway accross the planet"
+- **2026-11-19 ~19:25**: (screenshot of a broken wiki hitbox picture) "this is what the wiki frame data looks like"
+- **2026-11-19 ~19:28**: "so how is smash so smooth online?"
+- **2026-11-19 ~19:30**: "ohhhh"
 - **2026-11-19**: go to foldy
 - **2026-11-19**: dude, the skins are just recolors for the event fighters
 - **2026-11-19** *(question box: what should a real skin be?)*: Show looks from the wiki (Recommended)
