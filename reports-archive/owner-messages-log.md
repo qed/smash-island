@@ -1089,6 +1089,10 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19** *(question box: how should the lever change?)*: "it should shift the map around. the rooms should move and the conveyers should seperate into many short ones spread around. this will make groups of fighters, so ppl can build around that." + Different job
 - **2026-11-19**: go to spongy
 - **2026-11-19**: anyting for the mid-packs?
+- **2026-11-19**: the hunger games are now just "race to the cornucopia", because everything else doesnt matter. digging doesnt matter
+- **2026-11-19** *(question box: Dig Games fixes)*: "there is no chance to build an archetype; no being a district 4 person and being good with a trident, and you cant really get supplies that help that much." + Cornucopia = risky, not best + Spread the supply tiers
+- **2026-11-19** *(question box: Dig Games archetypes)*: "1, 2, and you must "build" your moves. bow's chair has full power if you get materials from the forest, and stuff like that." + Supplies: Game-changing
+- **2026-11-19**: "update the "wiki""
 - **2026-11-19**: go to foldy
 - **2026-11-19**: dude, the skins are just recolors for the event fighters
 - **2026-11-19** *(question box: what should a real skin be?)*: Show looks from the wiki (Recommended)
