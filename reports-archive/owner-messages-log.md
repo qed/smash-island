@@ -1082,6 +1082,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19**: go to foldy
 - **2026-11-19**: dude, the skins are just recolors for the event fighters
 - **2026-11-19** *(question box: what should a real skin be?)*: Show looks from the wiki (Recommended)
+- **2026-11-19**: also, there is too much endlag on foldys finisher
 
 ## Status questions & check-ins
 
