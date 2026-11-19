@@ -1096,6 +1096,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19**: "push the frame data"
 - **2026-11-19**: "signing off, start new jobs as slots open up, use all of my cpu and memory if needed, bye. see you in 4ish hours. try to get every score to 9 or 10"
 - **2026-11-19**: "and run jurys as you see fit."
+- **2026-11-19**: "and you can use 5 slots"
 - **2026-11-19**: go to foldy
 - **2026-11-19**: dude, the skins are just recolors for the event fighters
 - **2026-11-19** *(question box: what should a real skin be?)*: Show looks from the wiki (Recommended)
