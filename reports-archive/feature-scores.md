@@ -27,3 +27,27 @@ Scale: 10 = complete and polished, nothing important missing; 7-9 = solid, gaps 
 | Website and search pages | 8 | 128 static pages, sitemap | refresh after the next update |
 
 No area is at 10 yet. The feature freeze on new big features is PERMANENT since 2026-11-18 (no "pipis" exception). Balance: re-score pending the 11-18 panel.
+
+## Jury re-score 2026-11-19 ~10:30 (independent, read-only; supersedes the numbers above until re-measured)
+
+| Area | Jury | Top tasks to 9 |
+|---|---|---|
+| Fighters and movesets | 7 | ~80 fighters still share archetype up/down smashes (Rising Lunge x15, Skyburst x10, Rolling Uppercut x9...); plain attack generic on 94; input audit (shield-grab, hold+special, ledge) |
+| Final Smashes | 8 | Book/Money rain in roofed caves; Bow 2 CTF spots, Money 1 CTF case; owner: screen-wide exemptions |
+| Balance | 6 | top five still win 8-11/12 vs mid; Starfruit 1/12, Dough 3/12; Toothpaste damage bypasses statDmg; [P] humans |
+| CPU players | 7 | Needle: 3/40 heal/lever trips arrive; Needle 4v4 seeds unmeasured; TLC lever at other sizes |
+| Normal stages | 8 | lead looks in the pane; [P] |
+| Big Teams maps | 7 | Needle 4-team Eye Loft base 2-3x quicker (owner call); lever guest belt prediction; lever setup time |
+| Moon Caves | 8 (hidden) | V10 entry; owner opens |
+| Capture the Flag | 8 | 8p mines time-out; Forest hide freeze |
+| Teams mode | 7 | follows big maps |
+| Live Boss Rush | 6 | TLC p3 floor ends; no-dodge: SEEKERS!, MAYBE YOU'D LIKE THIS! p3, SCREECHY!!! p3, WIND LOTTERY! p2-3, TENDRILS! p3, ONE OF EACH! p3, LOVE HEARTS! p3 |
+| Algebralien Rush | 7 (hidden) | Four/Zero work; [P] owner playtest |
+| Event contests | 7 | 8-Ball: assists 61-83% of KOs, triples 3/16, swaps 0-2; Spongy/Sticker feature count vs ~5 |
+| OCs | 7 | Grappler default 41%; utility-only 4-21%; [P] |
+| Online play | 6 | events refuse in rooms (say so in lobby); no reconnect; Needle guest belts; [P] |
+| World Cup | 8 | click-through to trophy |
+| Economy | 8 | [P] |
+| Menus/UI | 7 | frame data only 37% of rows (jab/tilts/aerials/most up-down specials/FS blank); What's new 6-12 muddled + missing today's items; FS "..." cut; select screen 592 words |
+| Art | 7 | lead reviews decorated maps in the pane; 5 stale make-event-*-art.py would overwrite wiki skins; more show pictures |
+| Website | 8 | owner: event fighter pages?; refresh after What's new |
