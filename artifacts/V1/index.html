@@ -27112,6 +27112,16 @@ function ynBuild(){
   YN = { v, teams:tc, flip, yd:cap.yd, infos, movers, owner, crates:0, size:{ nW, west:nWest, east:nEast, floors:hb } };
   YN_VIS = true;
   YN.tidy = ynTidy(S(1160), S(1020));
+  {   // THE NEEDLE SHIFTS: the rooms that slide (each run of bays and rooms between a floor gap and the shaft), a short shuttle over each floor gap (out of play at home), then the arrangements (ynShSetup)
+    RX = true; RY = true; const runs = [], ferries = [], gaps = []; let run = null, pc = null;
+    for(const c of cells){ const ok = c.t === 'bay' || c.t === 'inner';
+      if(ok){ const r = mr(c.x0, 1020, c.x1 - c.x0, G + 60 - 1020), q = { x:r[0], y:r[1], w:r[2], h:r[3] }; if(run && pc && pc.x1 === c.x0 && (pc.t === 'bay' || pc.t === 'inner')) run.push(q); else { run = [q]; runs.push(run); } }
+      else run = null;
+      if(c.t === 'gap'){ const gr = mr(c.x0, 1020, c.x1 - c.x0, 100); gaps.push([gr[0], gr[2]]); const fp = mover(Math.round((c.x0 + c.x1)/2 - 110), G, 220, { ax:Math.max(30, (c.x1 - c.x0 + 120 - 220)/2 - 6), per:300*dir, ph:0 }, 'rail', false); fp.ghost = true; ferries.push(P.indexOf(fp)); }
+      pc = c; }
+    RX = false; RY = false; stgPlace(0);
+    const R = ynShSetup(runs, ferries, gaps, S(1160)); cap.yd.sh = R.tab; YN.shChk = R.chk; DRM_GH = true;
+  }
 }
 // PHASE E (jury): NO SURFACE A FIGHTER CAN LAND ON WITHOUT A WAY ON AND A WAY BACK. After the build the CPUs' route graph is made and every piece is asked two things: can a base's fighter get onto it, and can a fighter
 // standing on it get back to the middle. A piece of furniture or dressing (a shelf, a perch, a step, a block, a spool, a rail, a lift) that fails is TAKEN OUT (its rail with it); an attic floor slab that fails is filled up to the
@@ -27158,8 +27168,8 @@ function ynSpawnItem(){
 //  Everything below runs only when YN (host) is set, or reads only what ynInfo() holds (a guest: the geometry and the one `yd` record). The geometry of every
 //  set piece is the `yd.deco` list (final px, never a second copy), the state that is not a pure function of the match clock (hazardT) is YNS (levers pulled,
 //  berries eaten) and rides every snapshot as `yq`. Vents, wind and the tripwire are pure functions of hazardT, so the guest paints them exactly where the host plays them.
-//  LEVERS (hold Down 1/3 s beside one, on a solid floor): the rail movers round it run backwards and 1.6x fast for 10 s (p.mo, the phase it adds to stgPlace), then back at
-//  their own pace; a lever rests 25 s. VENTS: an updraft column on a rhythm (150 on, 150 off, a 30-frame shudder before it opens). WIND: the balcony's gusts push out
+//  LEVERS (hold Down 1/3 s beside one, on a solid floor): the needle SHIFTS (its rooms slide, the express breaks into short belts: THE NEEDLE SHIFTS, below); then every
+//  lever rests 25 s. VENTS: an updraft column on a rhythm (150 on, 150 off, a 30-frame shudder before it opens). WIND: the balcony's gusts push out
 //  toward the blast line. BERRIES: a bush gives the Yoyleberry (metal) for 8 s, the berries grow back after 25 s; on this map metal also falls faster and walks slower.
 //  MAGNETS: a stripe pulls a metal fighter to its middle and glues it. TRIPWIRE: the thread snaps taut every 7 s after a one-second tell: a hit (7%, thrown up) for whoever is at its height; jump it.
 //  ZIPLINE: jump at the handle on the eye's sill to ride the thread out to the perch (a hit, or Jump, lets go). WALL PIPES: hold toward a pipe on a wall to climb it (Down held: slide; Jump: wall jump off);
@@ -27194,25 +27204,12 @@ function ynTripTell(T, t){ return ynTripPhase(T, t) >= YNM.tripPer - YNM.tripTel
 function ynTripLive(T, t){ return ynTripPhase(T, t) < YNM.tripSnap; }
 function ynZipAt(Z, u){ const mx = (Z.x + Z.bx)/2, my = (Z.y + Z.by)/2 + 110, v = 1 - u; return [v*v*Z.x + 2*u*v*mx + u*u*Z.bx, v*v*Z.y + 2*u*v*my + u*u*Z.by]; }
 function ynIsMetal(f){ return f._yoyleT > 0; }
-// the movers a lever works: the rails and lifts round it (nearest first)
-function ynLevMovers(L){
-  const out = [];
-  for(const p of worldPlats){ if(!p.mv || !(p.yn === 'rail' || p.yn === 'long' || p.yn === 'lift')) continue; const dx = Math.abs(p.bx + p.w/2 - L.x), dy = Math.abs(p.by - L.y); if(dx <= YNM.levReach && dy <= 700) out.push([dx + dy, p]); }
-  out.sort((a, b)=>a[0] - b[0]); return out.slice(0, YNM.levMax).map(q=>q[1]);
-}
 // once a frame, after the ledges moved (host only): levers, berries, and what the zones do to whoever stands in them
 function ynStep(){
   const M = ynMech(); if(!M) return; const t = hazardT;
   for(const L of M.lev){ if(L.on > 0) L.on--; if(L.cd > 0) L.cd--; }
   for(const b of M.bush) if(b.t > 0) b.t--;
-  // the movers a lever has hold of ease to its pace (and back); the phase they gain or lose is kept, so they never jump
-  const hold = new Set(); for(const L of M.lev) if(L.on > 0 && L.mv) for(const p of L.mv) hold.add(p);
-  if(hold.size || M.held){
-    const was = M.held || new Set();
-    for(const p of new Set([...hold, ...was])){ const tgt = hold.has(p) ? YNM.levRate : 1, r = (p._yrt == null ? 1 : p._yrt) + (tgt - (p._yrt == null ? 1 : p._yrt))*0.08; p._yrt = Math.abs(r - tgt) < 0.003 ? tgt : r; p.mo = (p.mo || 0) + (p._yrt - 1)*2*Math.PI/p.mv.per; }
-    M.held = new Set([...hold, ...was].filter(p=>hold.has(p) || Math.abs((p._yrt == null ? 1 : p._yrt) - 1) > 0.0001));
-    if(!M.held.size) M.held = null;
-  }
+  ynShStep();   // THE NEEDLE SHIFTS: the warning, the slide, the short belts
   for(const f of fighters){
     if(f.dead || f._tp) continue;
     const feet = f.y + f.r;
@@ -27246,11 +27243,12 @@ function ynFighter(f, inp){
   if(Z && jp && f.hitstun <= 0 && !f._tp && !(f._ynZipCd > hazardT) && Math.abs(f.x - Z.x) < 52 && Math.abs(f.y + f.r - Z.y) < 40){
     M.stat.rides++; f._ynZip = { u:0, t:0, dx:Math.sign(Z.bx - Z.x) || 1 }; f._ynZipCd = hazardT + 40; f.onground = false; f.vx = 0; f.vy = 0; try{ if(f.you) SFX.jump(); }catch(e){} return;
   }
+  const SH = ynSh();
   for(const L of M.lev){
-    if(L.cd > 0 || L.on > 0) continue;
+    if(L.cd > 0 || L.on > 0 || !SH || SH.t >= 0) continue;
     if(f.onground && inp.down && !inp.jump && !inp.attack && !inp.special && !inp.smash && Math.abs(f.x - L.x) < 46 && Math.abs(f.y + f.r - L.y) < 8){
       if(L.lastHold < hazardT - 2) L.prog = 0; L.lastHold = hazardT;
-      if(++L.prog >= YNM.levHold){ L.prog = 0; M.stat.pulls++; L.on = YNM.levOn; L.cd = YNM.levCd; L.who = f.team; L.mv = ynLevMovers(L); shake(f.you ? 8 : 4); for(let i = 0; i < 14; i++) puff(L.x, L.y - 30, '#ecc43c', 5); try{ if(f.you) SFX.jump(); }catch(e){} }
+      if(++L.prog >= YNM.levHold){ L.prog = 0; M.stat.pulls++; ynShPull(SH, L, f); try{ if(f.you) SFX.jump(); }catch(e){} }
     }
   }
   if(M.pipe.length && !f.onground && f.hitstun <= 0 && f._wallSide && hazardT - f._wallT <= 1 && (f._wallSide > 0 ? inp.right : inp.left) && !(f._ynPipeCd > hazardT)){
@@ -27265,14 +27263,142 @@ function ynFighter(f, inp){
     }
   }
 }
-function ynPack(){ const M = ynMech(); if(!M) return null; return { l:M.lev.map(L=>[L.on, L.cd]), b:M.bush.map(b=>b.t) }; }
+// ---- THE NEEDLE SHIFTS (the owner, 2026-11-19, about the old lever that ran the rails backwards: "i dont notice that"; "it should shift the map around. the rooms should move and the conveyers should
+// seperate into many short ones spread around. this will make groups of fighters, so ppl can build around that.")
+// A pulled lever SHIFTS THE NEEDLE. The hall's rooms between each floor gap and the shaft (the annex bays and the little rooms by the shaft; each one a whole column of rooms: its walls, floors, hatches,
+// towers and fittings) slide to another ARRANGEMENT (a run of rooms turns round by one, and/or every room turns back to front), the long EXPRESS shuttles drop into their track and the SHORT BELTS come
+// up instead: floor conveyors spread round the rooms, in pairs that run into a pocket or out to the doors, and a short shuttle over each floor gap. The next pull (after the levers' rest) moves on to the
+// next arrangement, and from the last one back home (the express again). Every arrangement is checked when the map is built (ynShSetup): from each of the four bases the route graph reaches the middle and
+// the other three bases, and no more surfaces are left without a way on and back than at home; one that fails is not used. THE WARNING: a rumble and a growing shake for 2.5 s, the rooms that will move
+// outlined red where they are and gold where they go with an arrow (the Faultline's plate tell), the belts that will come in gold and the ones that will go in red; then a 1.5 s slide: whoever stands on
+// a floor rides it, the walls and blocks are passed through while they slide, and at the end nobody and nothing is left inside a solid (ynShFree). ONLINE: the state is three numbers in ynPack (from, to,
+// the frame of the shift); the guest has the arrangements (yd.sh) and works the movers, decorations and belts out from them; the host's moved pieces also ride s.mv.
+const YNH = { tell:150, slide:90, beltV:1, beltMax:26 };
+let YNSH = null;
+function ynSh(){ const Y = ynInfo(); if(!Y || !Y.sh) return null; if(!YNSH || YNSH.Y !== Y) YNSH = { Y, T:Y.sh, from:0, a:0, t:-1, n:0, fix:0 }; return YNSH; }
+function ynShS(S){ if(S.t < 0) return 1; const u = (S.t - YNH.tell)/YNH.slide; return u <= 0 ? 0 : u >= 1 ? 1 : u*u*(3 - 2*u); }   // the slide's progress, 0 .. 1
+function ynShPh(S){ return S.t < 0 ? 0 : S.t < YNH.tell ? 1 : 2; }   // 0 settled, 1 the warning, 2 the slide
+function ynShDx(T, k, j){ return k ? T.A[k - 1].p[j] : 0; }
+function ynShDd(T, k, j){ return k ? T.A[k - 1].d[j] : 0; }
+function ynShW(S){ if(S.t < 0) return S.a ? 1 : 0; const s = ynShS(S); return (S.from ? 1 : 0)*(1 - s) + (S.a ? 1 : 0)*s; }   // 0 home (the express), 1 split (the short belts)
+function ynShFo(S){ if(!S.fo){ S.fo = new Set(); for(const A of S.T.A) for(const i of (A.f || [])) if(worldPlats[i]) S.fo.add(worldPlats[i]); } return S.fo; }
+function ynShSet(S){ if(!S.fs) S.fs = new Set(S.T.F.map(i=>worldPlats[i]).filter(Boolean)); return S.fs; }
+// put every piece where the state says. carry (host): whoever stands on a sliding floor goes with it. guest: the still pieces come in s.mv, the movers get their offset (_ydx) for ynGuestMovers
+function ynShPose(S, carry, guest){
+  const T = S.T, P = worldPlats, s = ynShS(S), ph = ynShPh(S), sl = ph === 2, from = S.t < 0 ? S.a : S.from, moved = [], want = new Set();
+  for(let j = 0; j < T.P.length; j++){ const p = P[T.P[j]]; if(!p) continue; const d0 = ynShDx(T, from, j), d1 = ynShDx(T, S.a, j), nx = Math.round(T.P0[j] + d0*(1 - s) + d1*s);
+    if(p.mv || p.mvz){ if(guest) p._ydx = nx - T.P0[j]; else p.bx = nx; }
+    else if(!guest){ const d = nx - p.x; if(d){ if(carry) for(const f of fighters){ if(f.dead || f._tp || f._ynShC === hazardT) continue; if(f.onground && !(f.dropping > 0) && Math.abs(f.y + f.r - p.y) <= 4 && f.x > p.x - 4 && f.x < p.x + p.w + 4){ f.x += d; f._ynShC = hazardT; } }
+      p.x = nx; if(p.solid) moved.push(p); } }
+    if(T.G[j] && sl && d0 !== d1) want.add(T.P[j]); }
+  const w = ynShW(S);
+  for(const i of T.X){ const p = P[i]; if(!p) continue; if(w > 0) p.ghost = true; else if(p.ghost) delete p.ghost; }
+  for(const i of T.F){ const p = P[i]; if(!p) continue; if(w < 1) p.ghost = true; else if(p.ghost) delete p.ghost; }
+  const fa = from ? (T.A[from - 1].f || []) : [], fb = S.a ? (T.A[S.a - 1].f || []) : [];   // the pieces an arrangement folds away (in it they would have no way on or no way back: faint, not stood on)
+  for(const i of (ph === 1 ? fa : ph === 2 ? fa.concat(fb) : fb)) want.add(i);
+  for(const i of (T.GA || [])){ const p = P[i]; if(!p) continue; if(want.has(i)) p.ghost = true; else if(p.ghost) delete p.ghost; }
+  const dd = S.Y.deco, M = (YNS && YNS.Y === S.Y) ? YNS : null;
+  for(let j = 0; j < T.D.length; j++){ const d = dd[T.D[j]]; if(!d) continue; const nx = Math.round(T.D0[j] + ynShDd(T, from, j)*(1 - s) + ynShDd(T, S.a, j)*s), dx = nx - d[1]; if(!dx) continue;
+    d[1] = nx; const o = M && M.of.get(d); if(o){ o.x += dx; if(o._reach != null) o._reach = null; } }
+  return moved;
+}
+function ynShHit(x, y, r){ const rr = r*0.6; for(const o of worldPlats){ if(!o.solid || o.ghost) continue; if(x + rr > o.x && x - rr < o.x + o.w && y + r > o.y + 2 && y - r < o.y + o.h) return o; } return null; }
+function ynShFree(q, r){   // a fighter or an item inside a solid: to the nearest spot with room (on top of that solid first, then aside, then higher); never left inside
+  const o = ynShHit(q.x, q.y, r); if(!o) return false;
+  const cand = [[q.x, o.y - r - 1]]; for(let d = 24; d <= 720; d += 24) cand.push([q.x - d, q.y], [q.x + d, q.y], [q.x, q.y - d], [q.x - d, q.y - d], [q.x + d, q.y - d]);
+  for(const c of cand){ if(c[0] < r || c[0] > WW - r || c[1] < r) continue; if(!ynShHit(c[0], c[1], r)){ q.x = c[0]; q.y = c[1]; if(q.vy > 0) q.vy = 0; return true; } }
+  return false;
+}
+// a lever pulled (host): the next arrangement, every lever rests
+function ynShPull(S, L, f){
+  const M = ynMech(), n = S.T.A.length + 1; S.from = S.a; S.a = (S.a + 1) % n; S.t = 0; S.n++;
+  for(const o of M.lev){ o.cd = YNM.levCd; o.on = 0; } L.on = YNH.tell + YNH.slide; L.who = f.team;
+  shake(f.you ? 8 : 4); for(let i = 0; i < 14; i++) puff(L.x, L.y - 30, '#ecc43c', 5);
+  try{ tone(72, 1.6, 'sawtooth', 0.09, 0, 54); tone(108, 1.4, 'triangle', 0.06, 0.2, 80); }catch(e){}
+}
+// once a frame (host): the warning, the slide, nobody inside a solid, the belts push
+function ynShStep(){
+  const S = ynSh(); if(!S) return; const T = S.T;
+  if(S.t >= 0){ S.t++; const ph = ynShPh(S);
+    if(ph === 1 && S.t % 12 === 0) shake(1.2 + 2*S.t/YNH.tell);
+    if(S.t === YNH.tell){ try{ noise(0.6, 0.3, 900, 0, 160); tone(60, 0.5, 'sine', 0.28, 0, 34); }catch(e){} shake(6); for(const f of fighters) f._ynPlan = null; }
+    const end = S.t >= YNH.tell + YNH.slide; if(end){ S.t = -1; S.from = S.a; }
+    const mv = ynShPose(S, true, false);
+    if(ph === 2 || end) for(const f of fighters){ if(f.dead || f._tp) continue; if(end || mv.some(p=>f.x + f.r > p.x && f.x - f.r < p.x + p.w && f.y + f.r > p.y && f.y - f.r < p.y + p.h)){ if(ynShFree(f, f.r)) S.fix++; } }
+    if(end){ for(const it of items) if(!it.taken) ynShFree(it, Math.max(8, it.r || 16)); { const NV = YN.navs && YN.navs[S.a]; if(NV){ NV.M = ynMech(); YNN = NV; YNN_IDX = NV._idx; } else YNN = null; } for(const f of fighters){ f._ynPlan = null; f._ynSide = null; } YN.shifts = (YN.shifts || 0) + 1; }
+  }
+  if(ynShW(S) >= 1) for(const b of T.B){ const p = worldPlats[b[0]]; if(!p) continue; const x0 = p.x + b[1], x1 = x0 + b[2];
+    for(const f of fighters){ if(f.dead || f._tp || !f.onground || f.x < x0 || f.x > x1 || Math.abs(f.y + f.r - p.y) > 4) continue; applyZone(f, { type:'belt', dir:b[3], strength:YNH.beltV }); } }
+}
+// the route check of the arrangement on the plats now: from each of the four bases, the middle and the other bases; and the surfaces with no way on from a base or no way back to the middle
+function ynShCheck(){
+  YNS = null; YNN = null; const N = ynNavBuild(); N.M = ynMech(); const Y = ynInfo(), mid = N.byP.get(worldPlats[Y.mid]);
+  const bn = (YN.infos || []).map(b=>ynNodeFor(N, Math.round(b.x + b.w/2), b.y - 6));
+  const reach = (s)=>{ const seen = new Set([s]), q = [s]; while(q.length){ const u = q.pop(), L = [u.adj]; if(N.dyn.has(u)) L.push(N.dyn.get(u)); for(const l of L) for(const a of l) if(!seen.has(a.to)){ seen.add(a.to); q.push(a.to); } } return seen; };
+  const fails = [], all = new Set(); let ok = !!mid && bn.every(Boolean); if(!ok) fails.push('nonode');
+  if(ok) bn.forEach((s, i)=>{ const R = reach(s); R.forEach(n=>all.add(n)); if(!R.has(mid)) fails.push(YN.infos[i].k + '>mid'); bn.forEach((t, j)=>{ if(j !== i && !R.has(t)) fails.push(YN.infos[i].k + '>' + YN.infos[j].k); }); });
+  const rev = new Map(); for(const n of N.nodes){ const L = [n.adj]; if(N.dyn.has(n)) L.push(N.dyn.get(n)); for(const l of L) for(const a of l){ if(!rev.has(a.to)) rev.set(a.to, []); rev.get(a.to).push(n); } }
+  const back = new Set(mid ? [mid] : []), bq = mid ? [mid] : []; while(bq.length){ const u = bq.pop(); for(const x of (rev.get(u) || [])) if(!back.has(x)){ back.add(x); bq.push(x); } }
+  bn.forEach((s, i)=>{ if(s && !back.has(s)) fails.push(YN.infos[i].k + '<mid'); });
+  const bad = N.nodes.filter(n=>!(all.has(n) && back.has(n)));
+  N._idx = YNN_IDX; return { ok:!fails.length, fails, bad:bad.length, badP:Array.from(new Set(bad.map(n=>n.p))), nodes:N.nodes.length, N };
+}
+// at the end of the build (host): which pieces and decorations are in which room, the arrangements (each one checked), the short belts' places
+function ynShSetup(runs, ferries, gaps, atticY){
+  const P = worldPlats, Y = ynInfo(), deco = Y.deco, EX = new Set(['express', 'long', 'cage', 'grate', 'escape', 'cap', 'roof', 'mass', 'balcony', 'perch', 'sill', 'loft', 'deck']);
+  const cells = []; runs.forEach((r, ri)=>{ r.sort((a, b)=>a.x - b.x); r.forEach((q, k)=>{ q.run = ri; q.k = k; q.ci = cells.length; cells.push(q); }); });
+  const ext = (p)=>p.mv ? [p.bx - Math.abs(p.mv.ax), p.bx + p.w + Math.abs(p.mv.ax), p.by - Math.abs(p.mv.ay), p.by + Math.abs(p.mv.ay) + 26] : [p.x, p.x + p.w, p.y, p.y + (p.h || 26)];
+  const cellOf = (x0, x1, y0, y1)=>cells.findIndex(C=>x0 >= C.x - 2 && x1 <= C.x + C.w + 2 && y0 >= C.y - 2 && y1 <= C.y + C.h + 2);
+  const T = { P:[], P0:[], G:[], D:[], D0:[], X:[], F:ferries.slice(), B:[], A:[], C:[] }, pc = [], pw = [], dc = [], dw = [];
+  P.forEach((p, i)=>{ if(p.yn === 'express') T.X.push(i); if(!p.yn || EX.has(p.yn) || ferries.includes(i)) return; const e = ext(p), ci = cellOf(e[0], e[1], e[2], e[3]); if(ci < 0) return;
+    T.P.push(i); T.P0.push(p.mv ? p.bx : p.x); T.G.push(p.solid && !(p.yn === 'slab' && p.h <= 60) ? 1 : 0); pc.push(ci); pw.push(p.w); });
+  deco.forEach((d, i)=>{ if(d[0] === 'xtrack' || d[0] === 'xsign') return; const ci = cellOf(d[1], d[1] + (d[3] || 0), d[2], d[2] + (d[4] || 0)); if(ci < 0) return; T.D.push(i); T.D0.push(d[1]); dc.push(ci); dw.push(d[3] || 0); });
+  // the candidates: the runs turned round by r rooms, every room turned back to front (m); r 0 m 0 is the belts alone (the fallback)
+  // an arrangement is kept when every base still reaches the middle and every other base, and every surface that has lost its way on or back there is furniture (not a floor, wall or ledge): those
+  // pieces FOLD AWAY in that arrangement (ynTidy's rule at home), and the check is run again; at most two room arrangements; if none passes, the belts alone
+  // (pin: the room by a floor gap stays put: the wing's upper storeys are reached over the gap through it, so moving it left them with no way on or back in most layouts; tried first)
+  const cand = [[1, 1, 1], [1, 0, 1], [0, 1, 1], [1, 0, 0], [0, 1, 0], [1, 1, 0], [2, 0, 1]], seen = new Set(), chk = [], S0 = { Y, T, from:0, a:0, t:-1 }, FIX = new Set(['wall', 'cap', 'roof', 'mass', 'mfloor', 'tfloor', 'troof', 'slab', 'balcony', 'escape', 'grate', 'ledge', 'express', 'long', 'cage', 'plug', 'sill', 'loft', 'deck']);
+  T.GA = T.P.filter((i, j)=>T.G[j]);
+  const home = ynShCheck(), hb = new Set(home.badP); chk.push({ r:-1, m:-1, ok:home.ok, fails:home.fails, bad:home.bad });
+  const tryA = (A, cm)=>{ const St = { Y, T:Object.assign({}, T, { A:[A] }), from:1, a:1, t:-1 }, Sh = Object.assign({}, St, { a:0, from:0 });
+    ynShPose(St, false, false); stgPlace(STG.t); let c = ynShCheck(); const nb = c.badP.filter(p=>!hb.has(p)), stuck = nb.filter(p=>!(p.yn === 'slab' && Math.abs(p.y - atticY) <= 3) && (FIX.has(p.yn) || (p.solid && !(p.yn === 'block' || p.yn === 'spool'))));   // (an attic crawl floor may fold too: a hatch into the room under it)
+    const rec = { r:cm[0], m:cm[1], pin:cm[2] || 0, ok:c.ok, fails:c.fails, bad:c.bad, fold:0, stuck:stuck.map(p=>p.yn + '@' + Math.round(p.x) + ',' + Math.round(p.y)) };
+    if(c.ok && !stuck.length && nb.length){ A.f = nb.map(p=>P.indexOf(p)); for(const i of A.f) if(!T.GA.includes(i)) T.GA.push(i); ynShPose(St, false, false); c = ynShCheck(); rec.fold = A.f.length; rec.ok = c.ok; rec.fails = c.fails; rec.bad = c.bad; }
+    ynShPose(Sh, false, false); stgPlace(STG.t); chk.push(rec); A.N = c.N; return c.ok && !stuck.length && c.bad <= home.bad; };
+  let tries = 0; const pinned = (C)=>gaps.some(g=>Math.abs(C.x - (g[0] + g[1])) <= 3 || Math.abs(C.x + C.w - g[0]) <= 3);
+  for(const cm of cand){ if(T.A.length >= 2 || tries >= 5) break;
+    const mov = (C)=>!(cm[2] && pinned(C));
+    const cdx = cells.map(C=>{ if(!mov(C)) return 0; const R = runs[C.run].filter(mov), L = R.length, r = cm[0] % L; if(!r) return 0; const ord = R.slice(r).concat(R.slice(0, r)); let x = R[0].x; for(const q of ord){ if(q === C) return x - C.x; x += q.w; } return 0; });
+    const mirror = (ci, left, w)=>(cm[1] && mov(cells[ci])) ? Math.round(2*(cells[ci].x + cells[ci].w/2) - 2*left - w) : 0;
+    const A = { p:T.P.map((i, j)=>Math.round(cdx[pc[j]] + mirror(pc[j], T.P0[j], pw[j]))), d:T.D.map((i, j)=>Math.round(cdx[dc[j]] + mirror(dc[j], T.D0[j], dw[j]))), r:cm[0], m:cm[1], pin:cm[2] || 0, f:[], cdx };
+    const sig = A.p.join(','); if(seen.has(sig) || !A.p.some(Boolean)) continue; seen.add(sig);
+    tries++; if(tryA(A, cm)) T.A.push(A);
+  }
+  if(!T.A.length){ const A = { p:T.P.map(()=>0), d:T.D.map(()=>0), r:0, m:0, f:[], cdx:cells.map(()=>0) }; if(tryA(A, [0, 0])) T.A.push(A); }
+  ynShPose(S0, false, false); stgPlace(STG.t); YNS = null; YNN = null;
+  YN.navs = [home.N].concat(T.A.map(A=>A.N)); T.A.forEach(A=>{ delete A.N; }); YNN = home.N; YNN.M = ynMech(); YNN_IDX = home.N._idx;   // (the CPUs' first frame finds home's graph built)
+  T.C = cells.map((C, ci)=>({ x:C.x, y:C.y, w:C.w, h:C.h, d:[0].concat(T.A.map(A=>A.cdx[ci])), m:[0].concat(T.A.map(A=>A.m)) }));
+  T.A.forEach(A=>{ delete A.cdx; });
+  // THE SHORT BELTS: pairs of floor conveyors on the long floors (hall storeys, the ground corridor, the machine room), not on a base's own floor, nor by a lever, a bush, a vent, a magnet or the thread
+  const M = ynMech(), spots = []; for(const o of M.lev) spots.push(o.x); for(const o of M.bush) spots.push(o.x); for(const o of M.vent) spots.push(o.x + o.w/2); for(const o of M.mag) spots.push(o.x, o.x + o.w); for(const o of M.trip) spots.push(o.x, o.x + o.w);
+  const clear = (x0, x1, y0, y1)=>!P.some(o=>o.solid && !o.ghost && o.x < x1 && o.x + o.w > x0 && o.y < y1 && o.y + o.h > y0);
+  const okSpan = (p, x0, x1)=>clear(x0, x1, p.y - 110, p.y - 2) && !spots.some(x=>x > x0 - 140 && x < x1 + 140) && !(YN.infos || []).some(b=>Math.abs(b.y - p.y) < 12 && b.x < x1 + 120 && b.x + b.w > x0 - 120);
+  const fl = []; P.forEach((p, i)=>{ if(!p.solid || p.mv || p.ghost || !(p.yn === 'slab' || p.yn === 'mfloor' || p.yn === 'tfloor') || p.w < 360) return; fl.push(i); });
+  fl.sort((a, b)=>(P[a].y - P[b].y) || (P[a].x - P[b].x));
+  const pick = []; fl.forEach((i, n)=>{ const p = P[i], bw = Math.min(330, Math.round(p.w*0.3)), o1 = Math.round(p.w*0.1), o2 = p.w - o1 - bw, inward = (n + (Y.v | 0)) % 2 === 0;
+    if(okSpan(p, p.x + o1, p.x + o1 + bw)) pick.push([i, o1, bw, inward ? 1 : -1]);
+    if(okSpan(p, p.x + o2, p.x + o2 + bw)) pick.push([i, o2, bw, inward ? -1 : 1]); });
+  const step = Math.max(1, pick.length/YNH.beltMax); for(let q = 0; q < pick.length && T.B.length < YNH.beltMax; q += step) T.B.push(pick[Math.floor(q)]);
+  return { tab:T, chk };
+}
+function ynPack(){ const M = ynMech(); if(!M) return null; const S = ynSh(); return { l:M.lev.map(L=>[L.on, L.cd]), b:M.bush.map(b=>b.t), h:S ? [S.from, S.a, S.t] : 0 }; }
 // ONLINE: a guest works the always-running movers out for itself, a pure function of the match clock (hazardT), the same sum the host does (stgPlace): the fast express shuttles then sit where the host's sit at that clock, however the snapshots arrive.
-// (the rails, long rail and lifts a lever can hold keep the host's snapshot place when the match has levers)
+// (THE NEEDLE SHIFTS: a mover in a room that slides is worked out at its room's place, _ydx, which the guest has from the shift's state; no lever changes a mover's pace any more, so every mover is a pure function of the clock)
 function ynGuestMovers(){
-  if(!YN_VIS) return; const M = ynMech(), held = !!M && M.lev.length > 0;
-  for(const p of worldPlats){ const z = p.mvz; if(!z || !p.yn || (held && (p.yn === 'rail' || p.yn === 'long' || p.yn === 'lift'))) continue;   // (mvz: base x, base y, reach x, reach y, period, phase, second phase: sent with the geometry)
+  if(!YN_VIS) return;
+  for(const p of worldPlats){ const z = p.mvz; if(!z || !p.yn) continue;   // (mvz: base x, base y, reach x, reach y, period, phase, second phase: sent with the geometry)
     const a = 2*Math.PI*hazardT/z[4] + z[5];
-    p.x = Math.round(z[0] + z[2]*Math.sin(a)); p.y = Math.round(z[1] + z[3]*Math.sin(a + z[6])); }
+    p.x = Math.round(z[0] + (p._ydx || 0) + z[2]*Math.sin(a)); p.y = Math.round(z[1] + z[3]*Math.sin(a + z[6])); }
 }
 // ONLINE, THE GUEST'S OWN FIGHTER ON AN EXPRESS SHUTTLE (phase E): the guest's prediction runs ahead of the host's snapshot by the round trip, but the shuttles are drawn at the guest's
 // clock, so a rider's prediction stood a lag's worth of shuttle travel (up to 150 px at 16.7 px a frame) away from the shuttle it stood on, and every new snapshot jerked it back (38 px in one frame).
@@ -27282,10 +27408,13 @@ function ynGuestMovers(){
 function ynMvzAt(p, t){ const z = p.mvz, a = 2*Math.PI*t/z[4] + z[5]; return [Math.round(z[0] + z[2]*Math.sin(a)), Math.round(z[1] + z[3]*Math.sin(a + z[6]))]; }
 function ynRideOf(A, t){   // the express shuttle the snapshot's fighter stands on at the snapshot's clock t, or null
   if(!YN_VIS || !A.g) return null;
-  for(const p of worldPlats){ if(p.yn !== 'express' || !p.mvz) continue; const q = ynMvzAt(p, t); if(A.x >= q[0] - 4 && A.x <= q[0] + p.w + 4 && Math.abs(A.y + A.r - q[1]) <= 10) return { t:t }; }
+  for(const p of worldPlats){ if(p.yn !== 'express' || !p.mvz || p.ghost) continue; const q = ynMvzAt(p, t); if(A.x >= q[0] - 4 && A.x <= q[0] + p.w + 4 && Math.abs(A.y + A.r - q[1]) <= 10) return { t:t }; }
   return null;
 }
-function ynNetIn(q){ const M = ynMech(); if(!M || !q) return; (q.l || []).forEach((r, i)=>{ if(M.lev[i]){ M.lev[i].on = r[0]; M.lev[i].cd = r[1]; } }); (q.b || []).forEach((t, i)=>{ if(M.bush[i]) M.bush[i].t = t; }); }
+function ynNetIn(q){ const M = ynMech(); if(!M || !q) return; (q.l || []).forEach((r, i)=>{ if(M.lev[i]){ M.lev[i].on = r[0]; M.lev[i].cd = r[1]; } }); (q.b || []).forEach((t, i)=>{ if(M.bush[i]) M.bush[i].t = t; });
+  if(Array.isArray(q.h)){ const S = ynSh(); if(S){ const was = S.t; S.from = q.h[0] | 0; S.a = q.h[1] | 0; S.t = q.h[2] | 0;   // THE NEEDLE SHIFTS: the host's state; the movers, decorations, ghosts and belts from it
+    if(S.t >= 0 && S.t < YNH.tell){ shake(was < 0 ? 4 : 1); if(was < 0) try{ tone(72, 1.6, 'sawtooth', 0.09, 0, 54); }catch(e){} }
+    ynShPose(S, false, true); DRM_GH = true; ynGuestMovers(); } } }
 
 // ---- THE CPUs' ROUTE GRAPH (phase B). Dream Island's edges (diEdge: walk, hop, drop, checked against the solid pieces in the way) over this map's surfaces: every platform
 // top is a node; the maze's walls, hatches and doors need nothing special because an edge is only made where the rectangles it flies through are clear. A mover's edges are
@@ -27309,7 +27438,7 @@ let YNN_IDX = null;
 function ynNavBuild(key, M0){   // (key 'wn' and the empty M0: Windy Heights Teams' surfaces)
   key = key || 'yn'; const M = M0 === undefined ? ynMech() : M0; const nodes = [], byP = new Map();
   const solids0 = worldPlats.filter(p=>p.solid);
-  for(const p of worldPlats){ if(!p[key] || (key === 'yn' && (p.yn === 'cap' || p.yn === 'plug')) || p.w < 24) continue;
+  for(const p of worldPlats){ if(!p[key] || p.ghost || (key === 'yn' && (p.yn === 'cap' || p.yn === 'plug')) || p.w < 24) continue;
     if(key === 'wn' && p.wn === 'wall') continue;
     if(key === 'yn' && p.solid && !p.mv){ const iv = solids0.filter(s=>s !== p && (Math.abs(s.y + s.h - p.y) <= 2 || (s.y < p.y - 1 && s.y + s.h > p.y + 2)) && s.x < p.x + p.w && s.x + s.w > p.x).map(s=>[Math.max(s.x, p.x), Math.min(s.x + s.w, p.x + p.w)]).sort((a, b)=>a[0] - b[0]);
       let cv = 0, e = p.x; for(const r of iv){ if(r[1] > e){ cv += r[1] - Math.max(r[0], e); e = r[1]; } } if(cv >= p.w - 2) continue; }   // (a solid piece buried flush under others, the hull's feet under the slab and the balcony: no surface, no node)
@@ -27462,14 +27591,15 @@ function ynSideGoal(f, N, M){
   let nf = null, nd = 1e9; for(const o of fighters){ if(o.dead || o.team === f.team) continue; const d = Math.hypot(o.x - f.x, o.y - f.y); if(d < nd){ nd = d; nf = o; } }
   // THE ZIPLINE as an escape: hurt, a foe close, the handle not far: out along the thread
   if(M.zip && N.zipFrom && f.pct >= 70 && nd < 380 && Math.hypot(M.zip.x - f.x, M.zip.y - f.y) < 700 && !(f._ynZipCd > hazardT)){ f._ynSide = { n:N.zipFrom, zip:true, until:hazardT + 300 }; return f._ynSide; }
-  // A LEVER when it helps: (a) a foe stands on a mover it has hold of (the rail runs away under them); (b) this CPU has been waiting for a mover that one of them works
-  if(M.lev.length){
-    let best = null, bd = 1e9;
-    for(const L of M.lev){ if(!ready(L) || !cpuLeverReach(L)) continue; const dl = Math.hypot(L.x - f.x, L.y - f.y); if(dl > 1100 || dl >= bd) continue;
-      if(!L.mvc) L.mvc = ynLevMovers(L);
-      const sab = fighters.some(o=>!o.dead && o.team !== f.team && o._stgRide && L.mvc.includes(o._stgRide)), wait = (f._ynWait || 0) > 60 && f._ynWaitP && f._ynWaitP.some(p=>L.mvc.includes(p)), idle = nd > 900 && dl < 500 && (f.idx*7 + Math.floor(hazardT/1200)) % 3 === 0;
-      if(sab || wait || idle){ bd = dl; best = L; } }
-    if(best){ const n = ynNodeFor(N, best.x, best.y - 4, true); if(n){ f._ynSide = { n, lever:best, until:hazardT + 420 }; return f._ynSide; } }
+  // A LEVER when it helps (THE NEEDLE SHIFTS): (a) outnumbered (at least two foes within 900 px and more than one more foe than friends there): a shift splits the crowd into pockets;
+  // (b) now and then when no foe is near and the lever is close. Not while a shift is under way.
+  if(M.lev.length){ const SH = ynSh();
+    if(SH && SH.t < 0){ let al = 0, fo = 0; for(const o of fighters){ if(o.dead || o === f) continue; if(Math.hypot(o.x - f.x, o.y - f.y) < 900){ if(o.team === f.team) al++; else fo++; } }
+      let best = null, bd = 1e9;
+      for(const L of M.lev){ if(!ready(L) || !cpuLeverReach(L)) continue; const dl = Math.hypot(L.x - f.x, L.y - f.y); if(dl > 1100 || dl >= bd) continue;
+        const out = fo >= 2 && fo > al + 1, idle = nd > 900 && dl < 500 && (f.idx*7 + Math.floor(hazardT/1200)) % 3 === 0;
+        if(out || idle){ bd = dl; best = L; } }
+      if(best){ const n = ynNodeFor(N, best.x, best.y - 4, true); if(n){ f._ynSide = { n, lever:best, until:hazardT + 420 }; return f._ynSide; } } }
   }
   // a ripe berry bush when a fight is ahead (and it is not metal)
   if(!(f._yoyleT > 0) && M.bush.length && (f.pct > 25 || (f.idx + Math.floor(hazardT/900)) % 3 === 0)){
@@ -27677,8 +27807,7 @@ function ynLever(c, x, y, k, t, o){
   c.strokeStyle = cd ? '#7d6a3a' : YPAL.brass; c.lineWidth = 8; c.beginPath(); c.moveTo(x, y - 22); c.lineTo(x + Math.sin(a)*60, y - 22 - Math.cos(a)*60); c.stroke();
   c.fillStyle = on ? '#ecc43c' : cd ? '#7a4040' : '#d94f4f'; c.beginPath(); c.arc(x + Math.sin(a)*60, y - 22 - Math.cos(a)*60, 12, 0, 7); c.fill(); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.stroke();
   if(o && o.prog > 0){ c.strokeStyle = '#ecc43c'; c.lineWidth = 5; c.beginPath(); c.arc(x, y - 90, 20, -Math.PI/2, -Math.PI/2 + 2*Math.PI*o.prog/YNM.levHold); c.stroke(); }
-  if(on){ c.fillStyle = '#ecc43c'; c.font = '20px sans-serif'; c.fillText('<<', x - 16, y - 100); }
-  else if(!cd){ c.fillStyle = 'rgba(255,255,255,0.8)'; c.font = '16px sans-serif'; c.fillText('HOLD DOWN', x - 50, y - 100); }
+  if(!on && !cd){ c.fillStyle = 'rgba(255,255,255,0.8)'; c.font = '16px sans-serif'; c.fillText('HOLD DOWN', x - 50, y - 100); }
 }
 function ynCrate(c, x, y){ c.fillStyle = '#b58a4a'; c.fillRect(x, y - 54, 54, 54); c.strokeStyle = '#2a1c10'; c.lineWidth = 3; c.strokeRect(x, y - 54, 54, 54); c.beginPath(); c.moveTo(x, y - 54); c.lineTo(x + 54, y); c.moveTo(x + 54, y - 54); c.lineTo(x, y); c.stroke(); }
 function ynDrawBack(c, Y, t){
@@ -27782,13 +27911,15 @@ function ynXNear(p){   // a person near this shuttle, level with it, not yet on 
   return false; }
 function ynDrawPlats(){
   const c = ctx, Y = ynInfo(), t = hazardT; if(!Y) return;
-  const Mc = ynMech(), act = Mc ? Mc.lev.filter(L=>L.on > 0) : [];
+  const SHd = ynSh(), SHw = SHd ? ynShW(SHd) : 0, SHf = SHd ? ynShSet(SHd) : null;   // (THE NEEDLE SHIFTS: the express fades into its track, the gap shuttles fade in)
   c.save(); c.lineJoin = 'round';
   ynDrawBack(c, Y, t); ynDrawDeco(c, Y, t);
   const V = cullRect(c, 300);   // (PERF: VIEW CULLING; every piece paints within 300 px of its box but the cage)
   for(const p of worldPlats){
     const k = p.yn; if(!k) continue;
     if(k !== 'cage' && cullOut(V, p.x, p.y, p.w, p.h || 0)) continue;
+    let gs = false; if(p.ghost && (k === 'express' || (SHf && SHf.has(p)))){ const al = k === 'express' ? 1 - SHw : SHw; if(al <= 0.02) continue; c.save(); c.globalAlpha = al; if(k === 'express') c.translate(0, SHw*30); gs = true; }
+    else if(p.ghost && SHd && ynShFo(SHd).has(p)){ c.save(); c.globalAlpha = 0.22; gs = true; }   // (folded away in this arrangement)
     if(k === 'wall' || k === 'cap' || k === 'roof' || k === 'mass' || k === 'mfloor') ynBlock(c, p, 1);
     else if(k === 'slab' || k === 'balcony') { ynBlock(c, p, 0); }
     else if(k === 'tfloor' || k === 'troof') ynBlock(c, p, 1);   // (PHASE E: the hazard dashes along the tunnel floors and roofs are gone)
@@ -27812,7 +27943,6 @@ function ynDrawPlats(){
       if(k === 'long'){ c.fillStyle = '#2a2a2a'; for(let x = p.x + 8; x < p.x + p.w - 20; x += 36){ c.beginPath(); c.moveTo(x, p.y + thick); c.lineTo(x + 16, p.y); c.lineTo(x + 28, p.y); c.lineTo(x + 12, p.y + thick); c.closePath(); c.fill(); } }
       if(k === 'deck' || k === 'loft' || k === 'sill'){ c.strokeStyle = 'rgba(0,0,0,0.3)'; c.lineWidth = 2; for(let x = p.x + 60; x < p.x + p.w; x += 60){ c.beginPath(); c.moveTo(x, p.y); c.lineTo(x, p.y + thick); c.stroke(); } }
       c.strokeStyle = YPAL.line; c.lineWidth = 3; c.strokeRect(p.x, p.y, p.w, thick);
-      if(p.mv && act.length && (k === 'rail' || k === 'long' || k === 'lift') && act.some(L=>L.mv ? L.mv.includes(p) : (Math.abs(p.bx + p.w/2 - L.x) <= YNM.levReach && Math.abs(p.by - L.y) <= 700))){ c.strokeStyle = '#ecc43c'; c.lineWidth = 4; c.strokeRect(p.x - 2, p.y - 2, p.w + 4, thick + 4); c.fillStyle = '#ecc43c'; c.fillRect(p.x + p.w/2 - 6, p.y - 12, 12, 6); }
       if(k === 'escape' || k === 'grate'){ const hl = (p.x + p.w/2 < WW/2), bx = hl ? p.x + p.w - 6 : p.x + 6; c.fillStyle = YPAL.steel2; c.beginPath(); c.moveTo(bx, p.y + thick); c.lineTo(bx + (hl ? -40 : 40), p.y + thick); c.lineTo(bx, p.y + thick + 34); c.closePath(); c.fill(); c.strokeStyle = YPAL.line; c.lineWidth = 3; c.stroke(); }   // (PHASE E: a plate on a brace, not a barred rung)
       if(k === 'shelf' || k === 'ledge' || k === 'catwalk'){ c.fillStyle = YPAL.steel2; for(const bx of [p.x + 10, p.x + p.w - 30]){ c.beginPath(); c.moveTo(bx, p.y + thick); c.lineTo(bx + 20, p.y + thick); c.lineTo(bx + 10, p.y + thick + 22); c.closePath(); c.fill(); c.stroke(); } }
       if(k === 'cage'){   // the cage: bars up from the floor, a roof, the cable
@@ -27826,7 +27956,34 @@ function ynDrawPlats(){
       if(k === 'thimble'){ c.fillStyle = 'rgba(0,0,0,0.35)'; for(let x = p.x + 14; x < p.x + p.w - 8; x += 22){ c.beginPath(); c.arc(x, p.y + thick/2 + 1, 2.5, 0, 7); c.fill(); } }
       if(k === 'wheel' || k === 'spring' || k === 'pend'){ c.strokeStyle = YPAL.line; c.lineWidth = 2; c.beginPath(); c.moveTo(p.x + 10, p.y + thick); c.lineTo(p.x + p.w/2, p.y + thick + 12); c.lineTo(p.x + p.w - 10, p.y + thick); c.stroke(); }
     }
+    if(gs) c.restore();
   }
+  ynShDraw(c, Y, t);
+  c.restore();
+}
+// THE NEEDLE SHIFTS, the art: the short belts (faded in with the split) and the warning (the rooms that move red where they are, gold where they go, an arrow; a room turned back to front a
+// two-headed arrow; the express red when it will drop, gold when it comes back; the short belts and gap shuttles gold when they come, red when they go)
+function ynShDraw(c, Y, t){
+  const S = ynSh(); if(!S) return; const T = S.T, w = ynShW(S), ph = ynShPh(S), P = worldPlats;
+  if(w > 0){ c.save(); c.globalAlpha = w;
+    for(const b of T.B){ const p = P[b[0]]; if(!p) continue; const x = p.x + b[1], y = p.y - 6, W = b[2], d = b[3], off = ((t*2.2*d) % 30 + 30) % 30;
+      c.fillStyle = '#0b2227'; c.fillRect(x, y, W, 12); c.save(); c.beginPath(); c.rect(x + 8, y, W - 16, 12); c.clip(); c.strokeStyle = YXP.go; c.lineWidth = 3;
+      for(let xx = x - 30 + off; xx < x + W + 30; xx += 30){ c.beginPath(); c.moveTo(xx - 5*d, y + 2); c.lineTo(xx + 3*d, y + 6); c.lineTo(xx - 5*d, y + 10); c.stroke(); }
+      c.restore(); c.fillStyle = '#7b8499'; for(const rx of [x + 6, x + W - 6]){ c.beginPath(); c.arc(rx, y + 6, 6, 0, 7); c.fill(); } c.strokeStyle = YPAL.line; c.lineWidth = 2; c.strokeRect(x, y, W, 12); }
+    c.restore(); }
+  if(ph !== 1) return;
+  const u = S.t/YNH.tell, pulse = 0.4 + 0.6*Math.abs(Math.sin(t*(0.08 + 0.12*u))), fr = S.from, to = S.a, RED = '#ff5a3a', GOLD = '#ffd45a';
+  const arrow = (x0, x1, y, two)=>{ c.setLineDash([]); c.lineWidth = 8; c.beginPath(); c.moveTo(x0, y); c.lineTo(x1, y); for(const e of (two ? [[x1, 1], [x0, -1]] : [[x1, 1]])){ const s = (x1 > x0 ? 1 : -1)*e[1]; c.moveTo(e[0], y); c.lineTo(e[0] - s*30, y - 18); c.moveTo(e[0], y); c.lineTo(e[0] - s*30, y + 18); } c.stroke(); c.setLineDash([10, 8]); c.lineWidth = 4; };
+  c.save(); c.setLineDash([10, 8]); c.lineWidth = 4;
+  for(const C of T.C){ const d0 = C.d[fr], d1 = C.d[to], m0 = C.m[fr], m1 = C.m[to]; if(d0 === d1 && m0 === m1) continue;
+    c.globalAlpha = 0.18 + 0.5*pulse*u; c.strokeStyle = RED; c.strokeRect(C.x + d0, C.y, C.w, C.h);
+    c.globalAlpha = 0.2 + 0.6*pulse*u; c.strokeStyle = GOLD; c.strokeRect(C.x + d1 + 10, C.y + 10, C.w - 20, C.h - 20);
+    const ym = C.y + C.h*0.5; if(d0 !== d1) arrow(C.x + d0 + C.w/2, C.x + d1 + C.w/2, ym, false); else arrow(C.x + C.w*0.25, C.x + C.w*0.75, ym, true); }
+  const wTo = to ? 1 : 0, wFr = fr ? 1 : 0;
+  if(wTo !== wFr){ const gone = wTo ? RED : GOLD, come = wTo ? GOLD : RED;
+    c.globalAlpha = 0.25 + 0.6*pulse*u; c.strokeStyle = gone; for(const i of T.X){ const p = P[i]; if(p) c.strokeRect(p.x - 4, p.y - 4, p.w + 8, 34); }
+    c.strokeStyle = come; for(const i of T.F){ const p = P[i]; if(p) c.strokeRect(p.x - 4, p.y - 4, p.w + 8, 34); }
+    for(const b of T.B){ const p = P[b[0]]; if(p) c.strokeRect(p.x + b[1], p.y - 10, b[2], 20); } }
   c.restore();
 }
 function ynDrawOver(){ /* nothing yet: the lights-out veil is ynVeil */ }
