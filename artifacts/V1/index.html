@@ -10577,6 +10577,7 @@ function ctfEditProblems(L, nav){
   for(const k of L.keys){ const n = at(k.hx, k.hy); if(!n || !nav.reach[0][n.id] || !nav.reach[1][n.id]) bad.push('key' + k.i); }
   for(const j of L.jails){ const d = j.door, n = at(d.x + (j.face === 1 ? d.w + 50 : -50), d.y + d.h); if(!n || !nav.reach[1 - j.owner][n.id]) bad.push('jail' + j.owner); }
   for(const t of [0, 1]) if(ctfHomeStuck(L, nav, t).length) bad.push('home' + t);
+  for(const t of [0, 1]) if(ctfPocketMade(L, nav, t).length) bad.push('trap' + t);   // (a one-way pocket a piece made: ctfPocketMade)
   return bad;
 }
 // A FLAG IS GONE TO EMPTY-HANDED (the owner, 2026-10-21: "the detector flagged some things as impossible, like approaches from below, with every other way walled off"). The route graphs plan every move on a
@@ -10675,6 +10676,28 @@ function ctfHomeReach(nav, id, plain, t){   // every place a fighter of side t a
   const seen = new Uint8Array(nav.nodes.length), q = [id]; seen[id] = 1;
   while(q.length){ const k = q.pop(); for(const e of nav.nodes[k].edges){ if(seen[e.to] || (plain && e.kind === 'wall') || e.doors.some(d=>d[0] === 'J') || (t != null && ctfNavNoT(e, t))) continue; seen[e.to] = 1; q.push(e.to); } }
   return seen;
+}
+// ONE-WAY POCKETS (2026-11-19, the 8-player Mines time-out): a piece built during the hiding can cut a floor so that a place a side reaches has no way back out of it (Mines: a wall and a block
+// on the floor beside the far flags left a ledge whose only way off was the jump it came in by; every searcher who looked there was stuck with no plan out, the flags past it were never found,
+// and the match ran out its clock). Built walls do not break, so the check treats such a pocket as it treats a flag nobody can reach: a problem, and the smallest piece that makes it goes
+// (ctfFixCands). Only a place the map's own graph reaches AND lets that side leave is judged: a one-way drop the map has itself is the map's, never a piece's.
+function ctfNavBack(nav, t){   // the places from which a fighter of side t can get back to one of its spawns (any move but a jail's door, and no super jump: nobody in a pocket has a pad's boost)
+  const N = nav.nodes, inn = N.map(()=>[]), back = new Uint8Array(N.length), q = [];
+  for(const n of N) for(const e of n.edges) if(!e.need && !e.doors.some(d=>d[0] === 'J')) inn[e.to].push(n.id);
+  for(const sp of nav.M.homes[t].spawns){ const n = ctfHomeNode(nav, sp); if(n && !back[n.id]){ back[n.id] = 1; q.push(n.id); } }
+  while(q.length){ const id = q.pop(); for(const k of inn[id]) if(!back[k]){ back[k] = 1; q.push(k); } }
+  return back;
+}
+function ctfPocketMade(L, nav, t){   // the places side t reaches and cannot get back from, that the map's own graph lets it leave: [{ x, y, back }]
+  const base = CTF.navs && CTF.navs[ctfNavId()]; if(!base || !base.ready || base === nav || !nav || !nav.ready || !nav.reach[t] || !base.reach[t]) return [];
+  const bb = base._back || (base._back = [null, null]), bback = bb[t] || (bb[t] = ctfNavBack(base, t)), back = ctfNavBack(nav, t), out = [];
+  for(const n of nav.nodes){
+    if(!nav.reach[t][n.id] || back[n.id]) continue;
+    const cx = (n.x0 + n.x1)/2, m = ctfNavNodeAt(base, cx, n.y, 10);
+    if(!m || !base.reach[t][m.id] || !bback[m.id]) continue;   // (not a place the map itself lets this side reach and leave)
+    out.push({ x:cx, y:n.y, back });
+  }
+  return out;
 }
 function ctfHomeStuck(L, nav, t){   // the spawns of side t that what was built shuts in: [{ x, y, seen (where it can still get to) }]
   const base = CTF.navs && CTF.navs[ctfNavId()]; if(!base || !base.ready || base === nav || !nav || !nav.ready) return [];
@@ -10811,6 +10834,7 @@ function ctfFixCands(L, F, nav, bad){
     else if(b.indexOf('key') === 0){ const k = L.keys.find(q=>'key' + q.i === b); if(k) pts.push({ x:k.hx, y:k.hy, sides:[0, 1] }); }
     else if(b.indexOf('jail') === 0){ const j = L.jails.find(q=>'jail' + q.owner === b); if(j) pts.push({ x:j.door.x + j.door.w/2, y:j.door.y + j.door.h, sides:[1 - j.owner] }); }
     else if(b.indexOf('home') === 0){ for(const s of ctfHomeStuck(L, nav, +b.slice(4))) pts.push({ x:s.x, y:s.y - 60, sides:[], rc:s.seen }); }   // (a spawn shut in: the piece between where it can still get to and where it cannot)
+    else if(b.indexOf('trap') === 0){ for(const s of ctfPocketMade(L, nav, +b.slice(4)).slice(0, 8)) pts.push({ x:s.x, y:s.y - 20, sides:[], rc:s.back }); }   // (a pocket: the piece between where it is and a place that still has a way back)
   }
   if(!pts.length) return [];
   const sides = [0, 1].filter(t=>pts.some(p=>p.sides.indexOf(t) >= 0));
