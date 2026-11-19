@@ -1068,6 +1068,11 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19**: what does the balance picture look like?
 - **2026-11-19**: yeah bot was ludicrously strong with the hop smash and the movespeed buff
 - **2026-11-19** *(question box: how to nerf Bot)*: Target speed + hop (Recommended)
+- **2026-11-19**: i cant pummel while grabbing, it just throws
+- **2026-11-19**: oh yeah, for 8ball because of the 6 stocks, assists should be more powerful
+- **2026-11-19**: and go to sticker
+- **2026-11-19**: oh yeah, and make it so that 8ball is kinda like pokemon, where you have to get assists, and add a lot of assists to the game, so that you can get more. you can get 6 assists, but only 3 can fight with you.
+- **2026-11-19**: and if you have 3 of the same type(the assists of each type should be consistent) you have a stronger buff.
 
 ## Status questions & check-ins
 
