@@ -58418,7 +58418,7 @@ const FSB = {
   // before ITS ring), the chain keeps the side it began toward (no turning round mid-chain; the hop still closes on you if you stay on that side, never less than `tlcMin` of a step) and a ring
   // dies `ringReach` of the arena from its landing (so there is a place to get away to). A double ring's second ring comes `ring2Gap` frames behind the first (was 12).
   // (and the rings no longer come as a train: a landing was 44-48 frames after the last and the hop closed 170-190 px toward you, the way the rings run, so successive rings reached you 19 frames apart and one jump lasts 34-38: hopStep is now 130 / 140 / 150 and he stays down tlcRest = 28 frames after a landing, so they reach you 36-39 frames apart)
-  tlcMin:0, ringReach:0.5, ring2Gap:8, bigReach:0.45, bigGap:10, tlcEndRest:18, tlcEndRoom:48,
+  tlcMin:0, ringReach:0.5, ring2Gap:8, bigReach:0.45, bigGap:10, tlcEndRest:18, tlcEndRoom:48, tlcEndGap:30,
 };
 function fsbPh(s){ return Math.max(1, Math.min(3, (s && s._phase) || 1)); }
 // The phase a move fires in is the phase its wind-up was drawn in (_telPh, set as the wind-up starts): a hit that crossed a threshold
@@ -58467,7 +58467,7 @@ function fsbSteer(s, x, y, k, cap){
 }
 function fsbFinish(s, gap){
   const fb = fsbLive(s);
-  s._fs = null; fb.k = null; fb.p = 0; fb.h = 0; fb.n = 0; fb.lk = 0; fb.bd = 0; fb.x2 = null; fb.h2 = 0; fb.lk2 = 0; fb.ty = null; fb.my = null; fb.my2 = null; fb.pl = null; fb.lp = 0; fb.lt = 0; s._fsL = null;
+  s._fs = null; fb.k = null; fb.p = 0; fb.h = 0; fb.n = 0; fb.lk = 0; fb.bd = 0; fb.x2 = null; fb.h2 = 0; fb.lk2 = 0; fb.ty = null; fb.my = null; fb.my2 = null; fb.pl = null; fb.lp = 0; fb.lt = 0; fb.ge = 0; s._fsL = null;
   s._atkTimer = gap != null ? gap : bossAtkGap(s); s.vx = 0; s.vy = 0;
 }
 // A patch of flame on the floor: the scorch behind a low pass, the strip a white-hot plate leaves, the spot a pinch burns. `sy`: the surface it lies on -- a ledge's top, for a pinch or a plate up
@@ -58777,6 +58777,16 @@ function fsbEndPin(x){
   const reach = FSB.landR*1.25 + FSB.tlcEndRoom;
   return x - S[0].x0 < reach || S[S.length - 1].x1 - x < reach;
 }
+// 2026-11-19 (Boss Rush pass 8, the TLC by the floor's ends): the extra rest above did not help (bots 106/144 before and after). Why: a fighter by the end, with the next landing marked
+// on him, can only get out of it INWARD, past the landing he has just seen -- and that landing's two rings leave toward him from its spot, 22 frames after it (8 apart), so the way in
+// is through two moving rings with the magma at his back (a ring hit there is a KO), and a full jump over the rings of the landing before often has him still in the air.
+// So when the next landing pins an end, the rings of this landing that run toward that end wait `tlcEndGap` frames longer, lit on their spot (a waiting ring hurts nobody; he does
+// not either), their lane lit as long: the gap is the way in -- walk past the boss and the waiting rings before they go. The rings on the other side, the hits and the chain are unchanged.
+function fsbEndGap(s, F){
+  const d = Math.sign(F.x1 - s.x); if(!d) return;   // (a hop in place: the fighter is already behind him)
+  let n = 0; for(const p of projectiles) if(p.fsb && p.bossAtk === F.id && p.delay > 0 && Math.sign(p.vx) === d){ p.delay += FSB.tlcEndGap; n++; }
+  if(n){ const fb = fsbLive(s); fb.ge = Math.round(fb.lt + FSB.tlcEndGap); fb.gs = d; }
+}
 function fsbHopAim(s, tgt, F){
   const step = FSB.hopStep[F.P], want = tgt && !tgt.dead ? tgt.x : s.x + (s.face || 1)*step;
   // (2026-11-11) the chain keeps the side it first set off toward (F.dir, chosen at the second landing): the hop closes on you while you are on that side and, when you are behind it, he hops in place (`tlcMin` of a step: 0) -- he never turns round mid-chain and never runs off from you
@@ -58801,7 +58811,7 @@ function fsbTlc(s, tgt, F){
       fsbLand(s, F);
       F.n++;
       if(F.n >= FSB.hops){ F.ph = 'rest'; F.t = 0; fsbLive(s).x = null; }   // (the chain is over: no landing mark for a seventh)
-      else { fsbHopAim(s, tgt, F); if(!F.big) F.wait = FSB.tlcRest[F.P]; if(fsbEndPin(F.x1)) F.wait += FSB.tlcEndRest; }   // (a landing that pins the floor's end: a longer rest, see fsbEndPin)
+      else { fsbHopAim(s, tgt, F); if(!F.big) F.wait = FSB.tlcRest[F.P]; if(fsbEndPin(F.x1)){ F.wait += FSB.tlcEndRest; fsbEndGap(s, F); } }   // (a landing that pins the floor's end: a longer rest, see fsbEndPin)
     }
   } else {
     F.t++; fsbSteer(s, s.x, fsbHoverY(s), 0.1, 14);
@@ -58831,7 +58841,7 @@ function fsbLand(s, F){
   // the big landing's second ring was a HIGH one beside the low one ("a real jump"): no fighter could stand under it (a hurtbox reaches 36 px over its centre) and one jump cannot clear both (Spongy's rise is 96 px). It is now a second, smaller LOW ring `bigGap` frames behind the big one, like the small double rings: one jump clears both.
   if(big){ ring(0, 0, FSB.bigR); ring(FSB.bigGap, 0, 18); }
   else { ring(0, 0, FSB.ringR); if(ph >= FSB.ring2From) ring(FSB.ring2Gap, 0, FSB.ringR); }
-  { const fb = fsbLive(s), reach = spd*life*PROJ_LIFE; fb.lx = Math.round(x); fb.ly = Math.round(sy); fb.lt = lag; fb.ll = L ? Math.round(Math.min(reach, Math.max(0, x - 22 - L.x))) : Math.round(reach); fb.lr = L ? Math.round(Math.min(reach, Math.max(0, L.x + L.w - x - 22))) : Math.round(reach); }   // the lit lanes (fsbDrawFx)   // double rings from phase 2 (Round 17; it was phase 3)
+  { const fb = fsbLive(s), reach = spd*life*PROJ_LIFE; fb.lx = Math.round(x); fb.ly = Math.round(sy); fb.lt = lag; fb.ge = 0; fb.ll = L ? Math.round(Math.min(reach, Math.max(0, x - 22 - L.x))) : Math.round(reach); fb.lr = L ? Math.round(Math.min(reach, Math.max(0, L.x + L.w - x - 22))) : Math.round(reach); }   // the lit lanes (fsbDrawFx)   // double rings from phase 2 (Round 17; it was phase 3)
 }
 // ---- the wind-up, the tick and the phases (tel, tick and phase slots) -----------------------------------------------------------
 function fsbBeginTelegraph(s, tgt){
@@ -58840,7 +58850,7 @@ function fsbBeginTelegraph(s, tgt){
   let kind = s._telKind;
   if(kind === s.attack){ s._fsSig = (s._fsSig || 0) + 1; kind = (s._fsSig%2) ? 'rocketboard' : 'tlc'; }   // (the picker's moves are the two forms themselves, BOSS_PICK.firewall: this is what a caller that asks for the signature gets)
   s._fsKind = kind;
-  fb.p = 0; fb.h = 0; fb.n = 0; fb.lk = 0; fb.bd = 0; fb.x2 = null; fb.h2 = 0; fb.lk2 = 0; fb.ty = null; fb.my = null; fb.my2 = null; fb.pl = null; fb.lp = 0; fb.lt = 0; fb.lx = null; s._telSY = null; s._fsL = null;
+  fb.p = 0; fb.h = 0; fb.n = 0; fb.lk = 0; fb.bd = 0; fb.x2 = null; fb.h2 = 0; fb.lk2 = 0; fb.ty = null; fb.my = null; fb.my2 = null; fb.pl = null; fb.lp = 0; fb.lt = 0; fb.ge = 0; fb.lx = null; s._telSY = null; s._fsL = null;
   if(kind === 'rocketboard'){ fb.k = 'board'; fb.d = fsbFarSide(tgt); fb.r = fsbRow(tgt); fb.r2 = ph >= FSB.cloneFrom ? fsbRow2(fb.r) : null; }
   else if(kind === 'furnace'){
     fb.k = 'furn'; fb.d = fsbFarSide(tgt);
@@ -58864,6 +58874,7 @@ function fsbTick(s, tgt){
   }
   if(fb.f > 0) fb.f--;
   if(fb.lt > 0) fb.lt--;
+  if(fb.ge > 0) fb.ge--;
   // the row and the mark follow you until the last FSB.lock frames of the wind-up, then hold
   if(s._tel > 0 && tgt && !tgt.dead && s._tel >= FSB.lock){
     if(s._fsKind === 'rocketboard'){ fb.r = fsbRow(tgt); if(fsbPh(s) >= FSB.cloneFrom) fb.r2 = fsbRow2(fb.r); }
@@ -59284,6 +59295,11 @@ function fsbDrawFx(s){
     c.globalAlpha = 0.45 + 0.4*q; c.strokeStyle = '#ffb02a'; c.lineWidth = 6; c.beginPath(); c.moveTo(fb.lx - 22, fb.ly - 16); c.lineTo(fb.lx - 22 - (fb.ll || 0), fb.ly - 16); c.moveTo(fb.lx + 22, fb.ly - 16); c.lineTo(fb.lx + 22 + (fb.lr || 0), fb.ly - 16); c.stroke();
     c.globalAlpha = 0.5 + 0.4*q; c.fillStyle = '#ff5a1a'; c.beginPath(); c.arc(fb.lx, fb.ly - 12, 14 + 12*q, 0, 7); c.fill();
   }
+  if(fb.ge > 0 && !(fb.lt > 0) && fb.lx != null){   // the end gap (fsbEndGap): the rings toward the pinned end still wait on their spot; that lane alone stays lit, brighter as they are about to go
+    const q = 1 - fb.ge/Math.max(1, FSB.tlcEndGap), d = fb.gs || 1, x0 = fb.lx + d*22, len = d > 0 ? (fb.lr || 0) : (fb.ll || 0);
+    c.globalAlpha = 0.45 + 0.4*q; c.strokeStyle = '#ffb02a'; c.lineWidth = 6; c.beginPath(); c.moveTo(x0, fb.ly - 16); c.lineTo(x0 + d*len, fb.ly - 16); c.stroke();
+    c.globalAlpha = 0.5 + 0.4*q; c.fillStyle = '#ff5a1a'; c.beginPath(); c.arc(x0, fb.ly - 14, 10 + 8*q, 0, 7); c.fill();
+  }
   if(fb.k === 'hooks' && (tel || fb.p)){
     // "YOU MUST!!!": the side panels open, and the teeth ("Firey Speaker Box with Sharp Teeth talking")
     const open = tel ? k : 1;
@@ -59353,7 +59369,7 @@ const SWARM = {
     { v:12.5, r:36, bounces:4, shed:4, spd:3.4, aim:'follow', n:2 }],
   ballLock:14, ballApart:300,
   // SEEKERS!  the old seekers: n homing stinger bugs, v fast, turning at most `turn` radians a frame
-  seek:[null, { n:3, v:5.0, turn:0.05 }, { n:4, v:5.6, turn:0.035 }, { n:5, v:6.2, turn:0.035 }],   // 2026-11-09 (boss fairness): turn 0.06 / 0.075 -> 0.035 in phases 2-3 (4 / 5 stingers that out-turned every jump)
+  seek:[null, { n:3, v:5.0, turn:0.035 }, { n:4, v:5.6, turn:0.035 }, { n:5, v:6.2, turn:0.035 }],   // 2026-11-09 (boss fairness): turn 0.06 / 0.075 -> 0.035 in phases 2-3 (4 / 5 stingers that out-turned every jump); 2026-11-19 (Boss Rush pass 8): phase 1's 0.05 -> 0.035 too (it turned the hardest of the three: a 100 px circle against 143 / 160 / 177, and no scripted line dodged it from 3 of 4 start spots)
   // EGG SAC!  a lobbed sac: it cracks `crack` frames after it lands and n hatchlings crawl out at spd, swelling `grow` px a
   // frame (from hatchR to hatchMax) the longer you wait; `sacs` are lobbed a turn -- 2 / 2 / 3 ("EGG SAC! 2/2/3", the owner,
   // Round 17; it was 1 / 1 / 2), the first at where you stood and each next one `sacApart` px on toward the middle of the
@@ -61206,7 +61222,7 @@ const DRAGON = { tel:60, gaps:[0, 100, 74, 54],   // 2026-11-09 (boss fairness):
   roarRange:520, roarShove:[0, 300, 320, 340], roarT:14, roarLock:[0, 46, 42, 38], roarFreeze:24, diveSpd:[0, 27, 30, 33],
   bodyHit:0.72, dives:2, liftT:16, landT:20, tailL:1.55, tailR:44, tailT:14,
   charStand:380, charAlt:190, charFreeze:10, jetT:[0, 40, 46, 52], jetCreep:[0, 2, 3, 3.5], jetSpd:20, jetR:10, jetPatch:10, coughT:40,
-  windGap:[0, 40, 34, 28], windDoor:0.09, paperN:[0, 0, 5, 7],
+  windGap:[0, 40, 34, 28], windDoor:0.09, windHold:20, paperN:[0, 0, 5, 7],
   anchors:[0.16, 0.5, 0.84], ropeGap:[0, 28, 24, 20], crackT:30, boltW:46, sparkSpd:9, sparkLen:200,
   gustEvery:420, gustWarn:50, gustPush:45, gustAcc:0.10,
   patchLife:150, sootMax:14, endT:96, endHold:300 };
@@ -61650,7 +61666,7 @@ function dragonWind(s, tgt){
   const id = ++BOSS_ATK_ID, ph = s._telPh || dragonPh(s), H = dragonHz(s), g = DRAGON.windGap[ph];
   const items = dragonWindList(ph).map((k, i) => ({ k:k, at:6 + i*g }));
   s._dr = { k:'wind', id:id, ph:ph, st:'go', t:0, items:items, last:items[items.length - 1].at };
-  H.door = [hazardT - 2, hazardT + s._dr.last + 40];
+  H.door = [hazardT - 2, hazardT + s._dr.last + 40 + DRAGON.windHold];
   shake(5);
 }
 function dragonWindStep(s, tgt, D, H){
@@ -61660,6 +61676,9 @@ function dragonWindStep(s, tgt, D, H){
   for(const it of D.items) if(it.at === D.t) dragonWindLaunch(s, D, it.k);
   if(D.t >= D.last + 30) dragonToHome(D);
 }
+// 2026-11-19 (Boss Rush pass 8): each thing the storm throws first shows in the doorway for `windHold` frames (a shot that waits does not move or hurt), then flies. Before, it flew
+// the frame it appeared, at 7.5-17 px a frame, so a fighter by the door (60 px from it) had 0-3 frames to see whether to jump it or walk under it, and no scripted line dodged the
+// lot from there. The order, the heights, the speeds, the gaps between them and the one attack id are unchanged; the whole flight starts `windHold` frames later.
 function dragonWindLaunch(s, D, k){
   const gy = groundY(), dx = Math.round(WW*DRAGON.windDoor);
   shake(2);
@@ -61667,11 +61686,11 @@ function dragonWindLaunch(s, D, k){
   if(k === 'paper'){
     const n = DRAGON.paperN[D.ph];
     for(let i=0;i<n;i++) addProj(dragonShot(s, D.id, { x:dx, y:gy - 100 - (i%3)*18, vx:9 + (i%3)*0.9, vy:0, r:9, dmg:bossDmg()*0.5, kb:5, burn:false, shape:'dragonpaper', color:'#f6f2e4',
-      dragonPaper:true, dragonObj:true, _vy0:(i - (n - 1)/2)*0.8, _ph:i*1.3, life:Math.ceil((WW + 160)/9/PROJ_LIFE) + 6 }));
+      dragonPaper:true, dragonObj:true, _vy0:(i - (n - 1)/2)*0.8, _ph:i*1.3, life:Math.ceil((WW + 160)/9/PROJ_LIFE) + 6, delay:DRAGON.windHold }));
     return;
   }
   const o = DRAGON_OBJ[k];
-  addProj(dragonShot(s, D.id, Object.assign({ x:dx, y:gy - o.h, vx:o.vx, vy:0, r:o.r, kb:o.kb, burn:false, shape:o.shape, dragonObj:true, life:Math.ceil((WW + 160)/o.vx/PROJ_LIFE) + 6 },
+  addProj(dragonShot(s, D.id, Object.assign({ x:dx, y:gy - o.h, vx:o.vx, vy:0, r:o.r, kb:o.kb, burn:false, shape:o.shape, dragonObj:true, life:Math.ceil((WW + 160)/o.vx/PROJ_LIFE) + 6, delay:DRAGON.windHold },
     o.bounce ? { bounce:true, maxBounces:8, vy:-3 } : {}, { color:o.color })));
 }
 // The paper flutters (its own vertical wobble, from the clock: a client sees the vy in the row).
