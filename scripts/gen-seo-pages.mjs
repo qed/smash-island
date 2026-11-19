@@ -21,11 +21,22 @@
 //
 // The game's constants are read by slicing their source text and evaluating the literal in node:vm (no jsdom: the deploy and the
 // owner's machine need nothing installed). Only literal tables are read (ROSTER, STAGES, CHANGELOG, MOVE_TEXT, FIGHTER_STATS...).
+//
+// THE FIGHTER PAGES ARE THE WIKI (the owner, 2026-11-19: "update the 'wiki'"; the in-game Moves list is short "bcs the wiki that we
+// have will have those details"). Each shows every move in full and a frame-data table per move. Those are NOT literal tables in
+// the game: at boot it rescales MOVE_TEXT by each fighter's damage stat, rewrites the tilts and the movesets' lines, writes the
+// smash, up/down smash, shield and Final Smash lines from code, and adds frame-data rows after the FB_FRAME_DATA literal. So they
+// come from scripts/wiki-moves.json, which scripts/dump-wiki-moves.mjs reads from the RUNNING game (jsdom, dev only): the game's own
+// moveRowsFor(r) words, its MV_SLOT -> FB_FRAME_DATA frames (what frameData returns), ZS / RF for the shield, statsFor for speeds.
+// The file names the game build it came from; when index.html has changed since, this run re-reads it first (and fails if it cannot).
+// A move with no frame row says "not measured"; no number on these pages is made up here.
 
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = join(ROOT, 'artifacts', 'V1');
@@ -82,9 +93,6 @@ const STAGES = readConst('STAGES');
 const CHANGELOG = readConst('CHANGELOG');
 const MOVE_TEXT = readConst('MOVE_TEXT');
 const FIGHTER_STATS = readConst('FIGHTER_STATS');
-const HEAVY_SLOW = readConst('HEAVY_SLOW');
-const SMASH_ID = readConst('SMASH_ID');
-const SMASH_BLURB_BESPOKE = readConst('SMASH_BLURB_BESPOKE');
 const SHIELD_BREAKERS = monolith.includes('\nconst SHIELD_BREAKERS = ') ? readConst('SHIELD_BREAKERS') : {};   // (a game build without shield breakers has none to mention)
 const REFLECTOR_FIGHTERS = new Set(readConst('REFLECTOR_FIGHTERS'));
 const DEFAULT_KEYS = readConst('DEFAULT_KEYS');
@@ -92,6 +100,21 @@ const KEY_LABELS = readConst('KEY_LABELS');
 const EVENT_LAPS = readConst('EVENT_LAPS');
 // SHOW_ORDER names three prize fighters by variable: they evaluate to null here and are dropped.
 const SHOW_ORDER = readConst('SHOW_ORDER', { PZ_A: null, PZ_B: null, PZ_C: null }).filter((x) => typeof x === 'string');
+
+// ---- the moves, frame data and speeds, from the running game (see the header) -------------------------------------------------
+
+const WIKI_FILE = join(ROOT, 'scripts', 'wiki-moves.json');
+const gameSha = createHash('sha256').update(monolith).digest('hex');   // (the game's text with LF line endings, as dump-wiki-moves hashes it)
+const readWiki = () => { try { return JSON.parse(readFileSync(WIKI_FILE, 'utf8')); } catch (e) { return null; } };
+let WIKI = readWiki();
+if (!WIKI || WIKI.gameSha256 !== gameSha) {
+  console.log('scripts/wiki-moves.json is missing or older than the game: re-reading the moves (scripts/dump-wiki-moves.mjs)');
+  try { execFileSync(process.execPath, [join(ROOT, 'scripts', 'dump-wiki-moves.mjs')], { stdio: 'inherit' }); }
+  catch (e) { fail('could not re-read the moves from the game (scripts/dump-wiki-moves.mjs needs jsdom): ' + e.message); }
+  WIKI = readWiki();
+  if (!WIKI || WIKI.gameSha256 !== gameSha) fail('scripts/wiki-moves.json still does not match the game');
+}
+const MOVES = WIKI.fighters;
 
 // ---- the names that must never appear (held in memory only) ------------------------------------------------------------------
 
@@ -131,6 +154,7 @@ const aboutNames = new Set([...aboutHtml.matchAll(/<li>(?:<a [^>]*>)?([^<]+)(?:<
 const excluded = ROSTER.filter((r) => !(r.play && !r.event && !r.prize));
 const fighters = ROSTER.filter((r) => r.play && !r.event && !r.prize && MOVE_TEXT[r.name]);
 for (const r of fighters) if (!aboutNames.has(r.name)) fail('a fighter the about page does not list would be published (conservative rule): stopping');
+for (const r of fighters) if (!MOVES[r.name]) fail('scripts/wiki-moves.json has no moves for a public fighter: re-run scripts/dump-wiki-moves.mjs');
 const rank = (r) => { const i = SHOW_ORDER.indexOf(r.name); return i < 0 ? 999 : i; };
 fighters.sort((a, b) => rank(a) - rank(b));
 console.log(`fighters: ${fighters.length} included, ${ROSTER.length - fighters.length} excluded`);
@@ -155,15 +179,14 @@ uniqueSlugs(fighters); uniqueSlugs(stages);
 const showOf = (r) => (r.dlc ? 'Inanimate Insanity' : 'Battle for Dream Island');
 const showShort = (r) => (r.dlc ? 'Inanimate Insanity' : 'BFDI');
 const weightClass = (w) => (w <= 74 ? 'light' : w <= 99 ? 'medium' : 'heavy');
-function heavySlowK(w) { const x = (+w || 0) - HEAVY_SLOW.from; return x > 0 ? 1 - HEAVY_SLOW.max * Math.sqrt(x / (HEAVY_SLOW.ref - HEAVY_SLOW.from)) : 1; }
-function runWords(r) {
-  const base = (FIGHTER_STATS[r.name] && FIGHTER_STATS[r.name].run) || 1;
-  const k = base * heavySlowK(r.w);
+// the game's statsFor(name, weight): the fighter's own stat with the weight's effect, as a match uses it
+function speedWords(k, what) {
   const cls = k >= 1.05 ? 'quick' : k <= 0.95 ? 'slow' : 'average';
-  return { cls, text: `${cls} (${k.toFixed(2)}× the standard ground run)` };
+  return { cls, text: `${cls} (${(+k).toFixed(2)}× the base ${what})` };
 }
+const runWords = (r) => speedWords(MOVES[r.name].stats.run, 'ground run');
+const airWords = (r) => speedWords(MOVES[r.name].stats.air, 'air speed');
 const specialName = (r) => (r.kit && r.kit.desc ? r.kit.desc.split(' → ')[0].trim() : 'Special');
-const moveName = (line) => (line ? line.split(' — ')[0].trim() : '');
 // Two event fighters' names are ordinary words that sit inside a few public fighters' own move titles ("Cold ...", "Shot ...",
 // "... Shock"). Conservative rule: such a title is replaced by the slot's plain name and the description after the dash is kept.
 function safeLine(line, fallback) {
@@ -181,23 +204,10 @@ const STATUS_WORDS = [
   [/\barmou?r(ed)?\b/i, 'armour'], [/\bcounters?\b/i, 'counter'], [/\breflects?\b/i, 'reflect'],
 ];
 function statuses(r) {
-  const text = Object.values(MOVE_TEXT[r.name]).join(' ');
+  const text = MOVES[r.name].rows.filter((x) => x.key !== 'Z' && x.key !== 'Movetech').map((x) => x.text).join(' ');
   const out = [];
   for (const [re, word] of STATUS_WORDS) if (re.test(text) && !out.includes(word)) out.push(word);
   return out;
-}
-function smashLine(r) {
-  const sp = r.kit && r.kit.special;
-  const id = SMASH_ID[sp];
-  const nm = safeName(id && id.name ? id.name : 'Smash', 'Smash');
-  const bespoke = SMASH_BLURB_BESPOKE[sp] ? SMASH_BLURB_BESPOKE[sp] + '.' : 'press V once: it charges for about half a second, then goes off by itself toward the nearest foe.';
-  const brk = SHIELD_BREAKERS[sp] ? ' Breaks shields.' : '';
-  return `${nm} — ${bespoke} Hold ↑ or ↓ with V for an up or down smash.${brk}`;
-}
-function shieldLine(r) {
-  return REFLECTOR_FIGHTERS.has(r.name)
-    ? 'Reflector — no shield bubble: Z raises a pane that turns shots back faster (1.8 times the speed, 1.3 times the damage, at most 12% a shot). Melee and grabs go through it.'
-    : 'Shield — hold Z for a bubble that shrinks as it blocks and breaks into a long stun at zero; it blocks hits, not grabs. Tap Z while running to sprint.';
 }
 function similar(r) {
   const same = fighters.filter((o) => o !== r && o.arch === r.arch);
@@ -266,6 +276,12 @@ const CSS = `
   footer{ margin-top:36px; border-top:2px solid var(--line); padding-top:14px }
   footer nav{ display:flex; flex-wrap:wrap; gap:4px 14px; margin-bottom:10px; font-size:14px }
   .cl li{ margin-bottom:6px }
+  .move{ margin:0 0 6px; padding-top:4px }
+  .move h3{ margin:14px 0 4px }
+  .move h3 kbd{ margin-left:6px; font-size:13px }
+  table.fd{ width:auto; margin:2px 0 12px; font-size:14px }
+  table.fd th{ color:var(--muted); font-weight:700 }
+  table.fd td,table.fd th{ padding:3px 12px 3px 0 }
 `;
 const NAV_LINKS = [['/', 'Play'], ['/fighters/', 'Fighters'], ['/stages/', 'Stages'], ['/modes.html', 'Modes'], ['/about.html', 'About']];
 const SITE_PAGES = [['/fighters/', 'Fighters'], ['/stages/', 'Stages'], ['/modes.html', 'Game modes'], ['/boss-rush.html', 'Boss Rush'],
@@ -341,34 +357,77 @@ const titleFor = (main) => { const a = `${main} | ${GAME}`; return a.length <= 7
 
 const out = new Map();   // path -> html
 const aAn = (w) => (/^[aeiou]/i.test(w) ? 'an ' : 'a ') + w;
+// the game's move inputs (moveRowsFor's keys) -> plain names
+const MOVE_NAMES = { 'X': 'Jab', '←/→ + X': 'Side tilt', '↑ + X': 'Up tilt', '↓ + X': 'Down tilt', 'X in the air': 'Neutral air',
+  '→ + X in the air': 'Forward air', 'turn round + X in the air': 'Back air', '↑ + X in the air': 'Up air', '↓ + X in the air': 'Down air',
+  'X + C': 'Grab', 'X, holding': 'Pummel', '→, holding': 'Forward throw', '←, holding': 'Back throw', '↑, holding': 'Up throw', '↓, holding': 'Down throw',
+  'C': 'Neutral special', '←/→ + C': 'Side special', '↑ + C': 'Up special', '↓ + C': 'Down special',
+  'V': 'Smash', '↑ + V': 'Up smash', '↓ + V': 'Down smash', 'V + C': 'Finisher', 'Final Smash': 'Final Smash', 'Movetech': 'Movement tech' };
+const NO_KEY = new Set(['Final Smash', 'Movetech']);
+const MOVE_GROUPS = [
+  ['Ground attacks', (k) => k === 'X' || / \+ X$/.test(k)],
+  ['Air attacks', (k) => / in the air$/.test(k)],
+  ['Grab and throws', (k) => k === 'X + C' || /, holding$/.test(k)],
+  ['Specials', (k) => k === 'C' || (/ \+ C$/.test(k) && k !== 'V + C')],
+  ['Smashes and finisher', (k) => /V/.test(k)],
+  ['Shield, Final Smash and movement', () => true],
+];
+const fdTable = (head, cells) => `<table class="fd"><thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody><tr>${cells.map((c) => `<td>${esc(c)}</td>`).join('')}</tr></tbody></table>`;
+const FD_HEAD = ['Startup', 'Active', 'End lag (miss)', 'End lag (hit)'];
+// a row's frames, exactly as the game's table has them ([startup, active, endLagWhiff, endLagHit]; -1 = not measured). The game's own
+// rule (moveShort): a row with 0 startup that is not a throw was not measured, so it shows no frames.
+function frameHtml(row, m) {
+  if (row.key === 'Z') {
+    const z = m.z;
+    return z.kind === 'reflector'
+      ? fdTable(['Comes up', 'Lasts', 'End lag', 'Again after'], [z.start, `up to ${z.active}, while Z is held`, z.endLag, `${z.cd} more`])
+      : fdTable(['Comes up', 'Lasts', 'End lag (dropping it)'], [z.start, 'while Z is held', z.endLag]);
+  }
+  if (/^The neutral (attack|special), aimed that way/.test(row.text)) return `<p class="small">The same move as ${row.key.includes('X') ? 'X' : 'C'}.</p>`;
+  const f = row.frames;
+  if (!f || !(f[0] > 0 || f[2] < 0)) return '<p class="small">Frame data: not measured.</p>';
+  const cell = (v) => (v < 0 ? 'not measured' : String(v));
+  return /throw$/.test(row.slot || '')
+    ? fdTable(FD_HEAD, ['from the hold', '–', 'a throw cannot miss', cell(f[3])])
+    : fdTable(FD_HEAD, [cell(f[0]), cell(f[1]), cell(f[2]), cell(f[3])]);
+}
 function fighterPage(r, i) {
-  const raw = MOVE_TEXT[r.name];
-  const mt = { jab: safeLine(raw.jab, 'Attack'), ranged: safeLine(raw.ranged, 'Ranged'), utilt: safeLine(raw.utilt, 'Up tilt'), special: safeLine(raw.special, 'Special'),
-    up: safeLine(raw.up, 'Up special'), down: safeLine(raw.down, 'Down special'), finisher: safeLine(raw.finisher, 'Finisher') };
-  const show = showOf(r), wc = weightClass(r.w), run = runWords(r), st = statuses(r);
+  const m = MOVES[r.name];
+  const show = showOf(r), wc = weightClass(r.w), run = runWords(r), air = airWords(r), st = statuses(r);
   const prev = fighters[(i - 1 + fighters.length) % fighters.length], next = fighters[(i + 1) % fighters.length];
   const title = titleFor(`${r.name} – ${showShort(r)} fighter guide`);
-  const desc = clip(`${r.name} in ${GAME}: ${aAn(r.arch.toLowerCase())} from ${show}. Every move (${specialName(r)}, finisher, smash), weight, speed and tips for the free browser fighter.`, 160);
-  const moves = [
-    ['Attack (X)', mt.jab], ['Ranged (X at a distance)', mt.ranged], ['Up tilt (↑ + X)', mt.utilt],
-    [`Special (C)`, mt.special], ['Up special (↑ + C)', mt.up], ['Down special (↓ + C)', mt.down],
-    ['Smash (V)', smashLine(r)], ['Finisher (V + C)', mt.finisher], ['Shield / Reflector (Z)', shieldLine(r)],
-  ].filter(([, t]) => t);
+  const desc = clip(`${r.name} in ${GAME}: ${aAn(r.arch.toLowerCase())} from ${show}. Every move in full with frame data (${specialName(r)}, smashes, finisher), weight and speed.`, 160);
+  const nameOf = (row) => (row.key === 'Z' ? (m.z.kind === 'reflector' ? 'Reflector' : 'Shield') : MOVE_NAMES[row.key] || row.key);
+  const groups = MOVE_GROUPS.map(([g]) => [g, []]);
+  for (const row of m.rows) { const gi = MOVE_GROUPS.findIndex(([, t]) => t(row.key)); groups[gi][1].push(row); }
+  const moveHtml = (row) => {
+    const nm = nameOf(row);
+    return `    <div class="move"><h3>${esc(nm)}${NO_KEY.has(row.key) ? '' : `<kbd>${esc(row.key)}</kbd>`}</h3>
+    <p>${esc(safeLine(row.text, nm))}</p>
+    ${frameHtml(row, m)}</div>`;
+  };
   const tips = [
     SHIELD_BREAKERS[r.kit.special] ? 'The smash breaks a raised shield in one hit.' : 'The smash does not break shields: wear the bubble down or grab.',
-    mt.ranged ? `Has a ranged attack (${moveName(mt.ranged) || 'Ranged'}).` : 'No ranged attack: fight up close.',
     st.length ? `Effects: ${st.join(', ')}.` : 'Effects: plain damage and knockback.',
-    `Weight ${r.w} (${wc}); lighter fighters fly further. Ground speed: ${run.text}.`,
   ];
   const sim = similar(r);
   const body = `
   <p>${esc(r.name)} is ${esc(aAn(r.arch))} from ${esc(show)}. In one line: <em>${esc(r.kit.desc)}</em></p>
   ${PLAY_BTN}
+  <h2>Stats</h2>
+  <div class="card"><table>
+    <tbody>
+    <tr><th>Weight</th><td>${esc(r.w)} (${esc(wc)}; lighter fighters fly further from the same hit)</td></tr>
+    <tr><th>Ground speed</th><td>${esc(run.text)}</td></tr>
+    <tr><th>Air speed</th><td>${esc(air.text)}</td></tr>
+    </tbody>
+  </table></div>
   <h2>${esc(r.name)}'s moves</h2>
-  <p class="small">The game's own move text. Damage is the first hit on a standing foe. In the game, the fighter card's Moves list adds frame data.</p>
-  <div class="card"><dl class="moves">
-${moves.map(([k, t]) => `    <dt>${esc(k)}</dt><dd>${esc(t)}</dd>`).join('\n')}
-  </dl></div>
+  <p class="small">Every move in full, in the game's own words. Damage is the first hit on a standing foe. Frames are 1/60 of a second: startup is the wait before the hit comes out, active is how long it can hit, end lag is how long you cannot act after. "Not measured" means the game has no frame numbers for that move yet. In the game, the fighter card and the pause menu have a short Moves list.</p>
+${groups.filter(([, rows]) => rows.length).map(([g, rows]) => `  <h2>${esc(g)}</h2>
+  <div class="card">
+${rows.map(moveHtml).join('\n')}
+  </div>`).join('\n')}
   <h2>Tips</h2>
   <ul class="facts">
 ${tips.map((t) => `    <li>${esc(t)}</li>`).join('\n')}
@@ -391,7 +450,7 @@ fighters.forEach((r, i) => out.set('fighters/' + r.slug + '.html', fighterPage(r
 function fightersIndex() {
   const groups = [['Battle for Dream Island', fighters.filter((r) => !r.dlc)], ['Inanimate Insanity', fighters.filter((r) => r.dlc)]];
   const body = `
-  <p>${fighters.length} fighters, by show. Click a name for moves, weight, speed and tips. You start with a few and unlock more as you play, and you can make your own characters (OCs) in the game.</p>
+  <p>${fighters.length} fighters, by show. Click a name for every move in full, frame data, weight and speed. You start with a few and unlock more as you play, and you can make your own characters (OCs) in the game.</p>
   ${PLAY_BTN}
 ${groups.map(([show, list]) => `  <h2>${esc(show)} (${list.length})</h2>
   <div class="card"><ul class="grid">
@@ -569,7 +628,7 @@ ${rows}
     <li>Hold <kbd>Z</kbd>: shield (blocks hits, not grabs). Tap <kbd>Z</kbd> while running: sprint. ${nReflect} strong fighters get a reflector instead.</li>
     <li><kbd>↓</kbd> in the air after the top of a jump: fall faster. Hold <kbd>↓</kbd> on a platform: drop through it.</li>
   </ul>
-  <p>Each fighter's moves are on the fighter card's Moves list and the pause menu's Move list.</p>
+  <p>Each fighter's moves are on the fighter card's Moves list and the pause menu's Move list, and in full, with frame data, on its ${link('/fighters/', 'fighter page')}.</p>
   <p>${link('/fighters/', 'Fighters')} · ${link('/modes.html', 'Game modes')} · ${link('/faq.html', 'FAQ')}</p>`;
   infoPage('controls.html', titleFor('Controls and keyboard keys'),
     `Keyboard controls for ${GAME}: arrows move and jump, X attack, C special, V smash, Z shield and sprint, X + C grab, V + C finisher.`,
