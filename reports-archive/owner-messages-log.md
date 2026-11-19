@@ -1073,6 +1073,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19**: and go to sticker
 - **2026-11-19**: oh yeah, and make it so that 8ball is kinda like pokemon, where you have to get assists, and add a lot of assists to the game, so that you can get more. you can get 6 assists, but only 3 can fight with you.
 - **2026-11-19**: and if you have 3 of the same type(the assists of each type should be consistent) you have a stronger buff.
+- **2026-11-19** *(question boxes, 8-Ball Pokemon style)*: getting assists -> "3, but jawbreakers are also rarer and far off." (option 3 = Both: wild assists to weaken and catch + jawbreakers holding rarer assists); team of 3 -> Swap key (Recommended); roster -> 8 types, ~32 assists (Recommended); 3-of-a-type -> Type power (Recommended)
 
 ## Status questions & check-ins
 
