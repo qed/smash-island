@@ -1120,6 +1120,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19 ~18:30**: "what is bows up and down smash?"
 - **2026-11-19 ~18:35**: "its a yes." -> (question box) both: Bow's own up/down smash (next batch, Bow first) + merge batch 7
 - **2026-11-19 ~18:45**: "ehhh, if you can, maybe deviate from the "all chairs everyday" theme. use the lasso from s1 for her usmash, it will be like a command grab."
+- **2026-11-19 ~18:50**: "no, it throws them downwards. it grabs them(the grab hitbox that only grabs from above and slightly to the side, and then the lasso will slam towards the ground."
 - **2026-11-19**: go to foldy
 - **2026-11-19**: dude, the skins are just recolors for the event fighters
 - **2026-11-19** *(question box: what should a real skin be?)*: Show looks from the wiki (Recommended)
