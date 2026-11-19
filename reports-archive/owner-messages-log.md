@@ -1075,6 +1075,10 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19**: and if you have 3 of the same type(the assists of each type should be consistent) you have a stronger buff.
 - **2026-11-19** *(question boxes, 8-Ball Pokemon style)*: getting assists -> "3, but jawbreakers are also rarer and far off." (option 3 = Both: wild assists to weaken and catch + jawbreakers holding rarer assists); team of 3 -> Swap key (Recommended); roster -> 8 types, ~32 assists (Recommended); 3-of-a-type -> Type power (Recommended)
 - **2026-11-19**: reduce number of tasks and memory use
+- **2026-11-19**: its not on sticker
+- **2026-11-19**: check the data for who played which character.
+- **2026-11-19**: stickers thing is good, but i cant wing
+- **2026-11-19** *(question box)*: meant -> Can't win; why -> CPUs too fast
 
 ## Status questions & check-ins
 
