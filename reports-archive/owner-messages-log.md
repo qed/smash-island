@@ -1101,6 +1101,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19 ~12:35**: "like frame data is pictures of hitboxes, frame by frame. and yeah, full rundown"
 - **2026-11-19 ~13:05**: "wait, so bows grab is only active 1 frame?"
 - **2026-11-19 ~13:08**: "make it 3 frames" (grabs live 3 frames instead of 1)
+- **2026-11-19 ~13:20**: "anything buggy with any moves?"
 - **2026-11-19**: go to foldy
 - **2026-11-19**: dude, the skins are just recolors for the event fighters
 - **2026-11-19** *(question box: what should a real skin be?)*: Show looks from the wiki (Recommended)
