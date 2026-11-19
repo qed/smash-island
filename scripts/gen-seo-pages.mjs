@@ -340,6 +340,7 @@ const titleFor = (main) => { const a = `${main} | ${GAME}`; return a.length <= 7
 // ---- fighter pages ------------------------------------------------------------------------------------------------------------------
 
 const out = new Map();   // path -> html
+const aAn = (w) => (/^[aeiou]/i.test(w) ? 'an ' : 'a ') + w;
 function fighterPage(r, i) {
   const raw = MOVE_TEXT[r.name];
   const mt = { jab: safeLine(raw.jab, 'Attack'), ranged: safeLine(raw.ranged, 'Ranged'), utilt: safeLine(raw.utilt, 'Up tilt'), special: safeLine(raw.special, 'Special'),
@@ -347,31 +348,28 @@ function fighterPage(r, i) {
   const show = showOf(r), wc = weightClass(r.w), run = runWords(r), st = statuses(r);
   const prev = fighters[(i - 1 + fighters.length) % fighters.length], next = fighters[(i + 1) % fighters.length];
   const title = titleFor(`${r.name} – ${showShort(r)} fighter guide`);
-  const desc = clip(`${r.name} in ${GAME}: a ${r.arch.toLowerCase()} from ${show}. Every move (${specialName(r)}, finisher, smash), weight, speed and tips for the free browser fighter.`, 160);
+  const desc = clip(`${r.name} in ${GAME}: ${aAn(r.arch.toLowerCase())} from ${show}. Every move (${specialName(r)}, finisher, smash), weight, speed and tips for the free browser fighter.`, 160);
   const moves = [
     ['Attack (X)', mt.jab], ['Ranged (X at a distance)', mt.ranged], ['Up tilt (↑ + X)', mt.utilt],
     [`Special (C)`, mt.special], ['Up special (↑ + C)', mt.up], ['Down special (↓ + C)', mt.down],
     ['Smash (V)', smashLine(r)], ['Finisher (V + C)', mt.finisher], ['Shield / Reflector (Z)', shieldLine(r)],
   ].filter(([, t]) => t);
   const tips = [
-    `Shield breaker: ${SHIELD_BREAKERS[r.kit.special] ? 'yes. The smash breaks a raised shield bubble in one hit.' : 'no. The smash does not break a shield outright; wear the bubble down or grab instead.'}`,
-    `Defence: ${REFLECTOR_FIGHTERS.has(r.name) ? 'a reflector pane, so shots can be turned back but melee is not blocked.' : 'a shield bubble; hold Z to block hits (not grabs).'}`,
-    mt.ranged ? `Ranged attack: yes (${moveName(mt.ranged) || 'Ranged'}), so there is an answer at range.` : 'Ranged attack: none listed, so the fight is up close.',
-    st.length ? `Effects in the kit: ${st.join(', ')}.` : 'Effects in the kit: plain damage and knockback.',
-    `Weight ${r.w}: ${wc} for this roster (lighter fighters fly further from the same hit).`,
-    `Ground speed: ${run.text}.`,
+    SHIELD_BREAKERS[r.kit.special] ? 'The smash breaks a raised shield in one hit.' : 'The smash does not break shields: wear the bubble down or grab.',
+    mt.ranged ? `Has a ranged attack (${moveName(mt.ranged) || 'Ranged'}).` : 'No ranged attack: fight up close.',
+    st.length ? `Effects: ${st.join(', ')}.` : 'Effects: plain damage and knockback.',
+    `Weight ${r.w} (${wc}); lighter fighters fly further. Ground speed: ${run.text}.`,
   ];
   const sim = similar(r);
   const body = `
-  <p class="small">${esc(show)} · ${esc(r.arch)} · weight ${r.w} (${wc}) · ${run.cls} runner</p>
-  <p>${esc(r.name)} is a playable fighter in ${GAME}, a free fan-made platform fighter you play in your browser. The game lists ${esc(r.name)} as a <strong>${esc(r.arch)}</strong> from ${esc(show)}. Kit in one line, as the select screen says it: <em>${esc(r.kit.desc)}</em>.</p>
+  <p>${esc(r.name)} is ${esc(aAn(r.arch))} from ${esc(show)}. In one line: <em>${esc(r.kit.desc)}</em></p>
   ${PLAY_BTN}
   <h2>${esc(r.name)}'s moves</h2>
-  <p class="small">The move lines below are the game's own, from the character card. Damage is the first hit on a standing foe.</p>
+  <p class="small">The game's own move text. Damage is the first hit on a standing foe. In the game, the fighter card's Moves list adds frame data.</p>
   <div class="card"><dl class="moves">
 ${moves.map(([k, t]) => `    <dt>${esc(k)}</dt><dd>${esc(t)}</dd>`).join('\n')}
   </dl></div>
-  <h2>Tips for ${esc(r.name)}</h2>
+  <h2>Tips</h2>
   <ul class="facts">
 ${tips.map((t) => `    <li>${esc(t)}</li>`).join('\n')}
   </ul>
@@ -383,9 +381,8 @@ ${sim.map((o) => `    <li>${link(fighterPath(o), o.name)} <span class="small">($
     <span>← Previous: ${link(fighterPath(prev), prev.name)}</span>
     <span>Next: ${link(fighterPath(next), next.name)} →</span>
   </div>
-  <p>${link('/fighters/', 'All fighters')} · ${link('/stages/', 'Stages')} · ${link('/controls.html', 'Controls')}</p>
-  ${PLAY_BTN}`;
-  return page({ path: 'fighters/' + r.slug + '.html', title, desc, h1: r.name, lead: `${esc(r.arch)} · ${esc(show)} · how ${esc(r.name)} plays in ${GAME}`, body,
+  <p>${link('/fighters/', 'All fighters')} · ${link('/stages/', 'Stages')} · ${link('/controls.html', 'Controls')}</p>`;
+  return page({ path: 'fighters/' + r.slug + '.html', title, desc, h1: r.name, lead: `${esc(r.arch)} · ${esc(show)}`, body,
     crumbs: [['Fighters', '/fighters/']],
     jsonldExtra: { mainEntity: { '@type': 'Thing', name: r.name, description: `${r.arch}: ${r.kit.desc}` } } });
 }
@@ -394,14 +391,13 @@ fighters.forEach((r, i) => out.set('fighters/' + r.slug + '.html', fighterPage(r
 function fightersIndex() {
   const groups = [['Battle for Dream Island', fighters.filter((r) => !r.dlc)], ['Inanimate Insanity', fighters.filter((r) => r.dlc)]];
   const body = `
-  <p>${fighters.length} fighters you can pick in ${GAME}, each with their own attack, special, up and down specials, smash, finisher and Final Smash, grouped by show and listed in the order the shows introduced them. Click a name for the full move list, weight, speed class and tips. You start with a few and unlock more as you play.</p>
+  <p>${fighters.length} fighters, by show. Click a name for moves, weight, speed and tips. You start with a few and unlock more as you play, and you can make your own characters (OCs) in the game.</p>
   ${PLAY_BTN}
 ${groups.map(([show, list]) => `  <h2>${esc(show)} (${list.length})</h2>
   <div class="card"><ul class="grid">
 ${list.map((r) => `    <li>${link(fighterPath(r), r.name)}</li>`).join('\n')}
   </ul></div>`).join('\n')}
-  <h2>Archetypes</h2>
-  <p>The game gives every fighter a role label. Zoners fight at range, grapplers and brawlers up close, trappers set things down, and a few are their own thing. Weight runs from ${Math.min(...fighters.map((r) => r.w))} to ${Math.max(...fighters.map((r) => r.w))}; the lighter the fighter, the further they fly from the same hit.</p>
+  <p>Every fighter has a role (zoner, brawler, grappler, trapper and more). Weight runs from ${Math.min(...fighters.map((r) => r.w))} to ${Math.max(...fighters.map((r) => r.w))}: lighter fighters fly further from the same hit.</p>
   <p>${link('/stages/', 'Stages')} · ${link('/controls.html', 'Controls')} · ${link('/faq.html', 'FAQ')}</p>`;
   return page({ path: 'fighters/index.html', title: titleFor('All fighters: BFDI and Inanimate Insanity roster'),
     desc: clip(`The ${fighters.length} playable fighters in ${GAME}, a free browser platform fighter: every Battle for Dream Island and Inanimate Insanity character, with moves, weight and tips.`, 160),
@@ -415,13 +411,12 @@ function stagePage(s, i) {
   const prev = stages[(i - 1 + stages.length) % stages.length], next = stages[(i + 1) % stages.length];
   const facts = stageFacts(s);
   const body = `
-  <p>${esc(s.name)} is a stage in ${GAME}. The game describes it in one line: <em>${esc(s.blurb)}</em></p>
   ${PLAY_BTN}
-  <h2>What the stage is like</h2>
+  <h2>What it is like</h2>
   <ul class="facts">
 ${facts.map((f) => `    <li>${esc(f)}</li>`).join('\n')}
   </ul>
-  <p class="small">Stage features are read from the game's stage table. In Teams and Capture the Flag the arena differs; this describes a plain match.</p>
+  <p class="small">This is a plain match; in Teams and Capture the Flag the arena can differ.</p>
   <div class="pager">
     <span>← Previous: ${link(stagePath(prev), prev.name)}</span>
     <span>Next: ${link(stagePath(next), next.name)} →</span>
@@ -433,11 +428,13 @@ ${facts.map((f) => `    <li>${esc(f)}</li>`).join('\n')}
 }
 stages.forEach((s, i) => out.set('stages/' + s.slug + '.html', stagePage(s, i)));
 
+const HAZARD_SHORT = { lowgrav: 'low gravity', evilleafy: 'a roaming Evil Leafy', lava: 'lava', ice: 'ice', shift: 'shifting ground', wind: 'wind' };
 function stagesIndex() {
   const small = stages.filter((s) => !s.big), big = stages.filter((s) => s.big);
+  const hz = [...new Set(stages.map((s) => HAZARD_SHORT[s.hazard]).filter(Boolean))];
   const row = (s) => `    <li>${link(stagePath(s), s.name)} <span class="small">— ${esc(s.blurb)}</span></li>`;
   const body = `
-  <p>${stages.length} stages to fight on in ${GAME}. Some have real edges to fall from, some have hazards (low gravity, lava, ice, wind, a roaming Evil Leafy), and the big maps scroll across several screens for team modes and the World Cup.</p>
+  <p>${stages.length} stages. Some have edges to fall from${hz.length ? ` or hazards (${hz.join(', ')})` : ''}; the big maps scroll across several screens.</p>
   ${PLAY_BTN}
   <h2>Single-screen stages (${small.length})</h2>
   <div class="card"><ul class="facts" style="list-style:none;padding:0">
@@ -447,7 +444,7 @@ ${small.map(row).join('\n')}
   <div class="card"><ul class="facts" style="list-style:none;padding:0">
 ${big.map(row).join('\n')}
   </ul></div>
-  <p>Capture the Flag plays on its own huge maps, and the Level Creator in the game lets you build and test a stage of your own.</p>
+  <p>Capture the Flag has its own huge maps, and the Level Creator lets you build a stage of your own.</p>
   <p>${link('/fighters/', 'Fighters')} · ${link('/capture-the-flag.html', 'Capture the Flag')} · ${link('/world-cup.html', 'World Cup')}</p>`;
   return page({ path: 'stages/index.html', title: titleFor('All stages'),
     desc: clip(`The ${stages.length} stages of ${GAME}, a free browser BFDI fighting game: single-screen stages with edges and hazards, and big scrolling maps.`, 160),
@@ -455,120 +452,107 @@ ${big.map(row).join('\n')}
 }
 out.set('stages/index.html', stagesIndex());
 
-// ---- mode and info pages (text written from the game's How to Play, menus and changelog) -------------------------------------
+// ---- mode and info pages (short, plain; checked against the game's menus, How to Play and changelog, 2026-11-18) ---------------
 
 function infoPage(path, title, desc, h1, lead, body) { out.set(path, page({ path, title, desc: clip(desc, 160), h1, lead, body })); }
+const BOSS_NAMES = readConst('BOSS_ROSTER').map((b) => b.name);
+const CTF_MAP_NAMES = [...monolith.matchAll(/\nCTF_MAPS\.\w+ = \{\n\s*name:'([^']+)'([^\n]*)/g)].filter((m) => !/wip:\s*true/.test(m[2])).map((m) => m[1]);
+const listWords = (a) => (a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]);
+const nReflect = REFLECTOR_FIGHTERS.size;
 
 infoPage('modes.html', titleFor('Game modes'),
-  `Every mode in ${GAME}: free-for-all, teams, Capture the Flag, Boss Rush, World Cup, the Daily match, online rooms, training and a level creator.`,
-  'Game modes', `Everything you can do in ${GAME}, a free browser platform fighter.`, `
-  <p>${GAME} is a platform fighter: knock your opponents off the stage, and the higher their percentage, the further they fly. These are the modes on the select screen and the title menu.</p>
+  `Every mode in ${GAME}: free-for-all, teams, Capture the Flag, Boss Rush, World Cup, weekly events, the Daily match, online rooms, your own OCs and training.`,
+  'Game modes', `Everything you can do in ${GAME}.`, `
+  <p>Knock your opponents off the stage: the higher their %, the further they fly.</p>
   ${PLAY_BTN}
   <h2>Free-for-all and Teams</h2>
-  <p>The standard matches. Pick a fighter, a stage and the number of contestants, and fight CPUs of four skill levels or your friends online. Teams puts a team ring and a shape under every fighter so sides never depend on colour alone. Items can be turned off, low, normal or high.</p>
+  <p>Pick a fighter and a stage, and fight CPUs (Easy to Expert) or friends online. Some stages have big Teams maps of their own.</p>
   <h2>${link('/capture-the-flag.html', 'Capture the Flag')}</h2>
-  <p>Two teams, each hiding five flags on a huge map, then raiding the other side's. Jail and rescue, keys and doors, boosts, a planning menu, and a Flag Cup tournament of CPU teams.</p>
+  <p>Two teams hide five flags each on a huge map, then raid the other side.</p>
   <h2>${link('/boss-rush.html', 'Boss Rush')}</h2>
-  <p>A co-op gauntlet: you and CPU allies against the shows' villains, each in an arena of their own.</p>
+  <p>You and CPU allies against ${BOSS_NAMES.length} bosses from the shows, one after another.</p>
   <h2>${link('/world-cup.html', 'World Cup')}</h2>
-  <p>A tournament of 16, 32 or 48 teams with a group stage and knockouts. Play it or watch it; solo, 2v2 or 3v3.</p>
+  <p>A tournament of teams: groups, then knockouts. Play your team's matches or watch.</p>
+  <h2>Weekly events</h2>
+  <p>Each week has an event fighter. Its event matches end in a contest with its own map and goal, and earn event tokens toward unlocking that fighter.</p>
   <h2>Daily match</h2>
-  <p>A new challenge match every day, the same for everyone, with a Share button for the result.</p>
-  <h2>${link('/online-play.html', 'Play with friends online')}</h2>
-  <p>Create a room, share the four-letter code or the link, and your friends drop straight in. Multiplayer is online only: one keyboard per computer.</p>
-  <h2>Learn: How to Play and Training</h2>
-  <p>How to Play walks through the keys with a short practice; Training is a room with a dummy, a hitbox view and any damage you like. Every fighter card has an All moves tab, and the pause menu has a Move list.</p>
+  <p>One new challenge match a day, the same for everyone.</p>
+  <h2>${link('/online-play.html', 'Online')}</h2>
+  <p>Make a room and share the four-letter code. Each player uses their own computer.</p>
+  <h2>Your own characters (OCs)</h2>
+  <p>Make up to eight in the editor and play them in Free-for-all and Teams, against CPUs or online.</p>
+  <h2>How to Play and Training</h2>
+  <p>Learn on the title screen opens How to Play: your keys and a short Try it, with Training (a dummy, hitboxes, any damage) and a Capture the Flag practice. Each fighter card, and the pause menu, has one short Moves list with frame data.</p>
   <h2>Level Creator</h2>
-  <p>Build your own stage and test how it feels.</p>
-  <h2>Quests, Win Tokens and looks</h2>
-  <p>Three quests a day and three a week pay Win Tokens, which buy looks in the Store. Looks never change how a fight plays. You unlock more fighters as you play.</p>
+  <p>Build a stage and test it.</p>
+  <h2>Quests, looks and stats</h2>
+  <p>Daily and weekly quests pay Win Tokens, spent on looks in the Store. Looks never change a fight. The Stats screen shows your most-played fighters, wins and best World Cup run.</p>
   <p>${link('/controls.html', 'Controls')} · ${link('/fighters/', 'Fighters')} · ${link('/stages/', 'Stages')}</p>`);
 
 infoPage('boss-rush.html', titleFor('Boss Rush: fight the BFDI villains'),
-  `Boss Rush in ${GAME}: team up with CPU allies against the object shows' villains, from the Announcer to Four, each in its own arena.`,
-  'Boss Rush', 'Team up against the shows’ villains in a co-op gauntlet.', `
-  <p>Boss Rush is the co-op mode of ${GAME}. Pick it on the select screen, choose your fighter, and you go into a gauntlet of boss fights with CPU teammates at your side. Each boss has a lot of health, a big body, and an arena of its own, so it plays nothing like an ordinary match.</p>
+  `Boss Rush in ${GAME}: team up with CPU allies against ${BOSS_NAMES.length} bosses from the object shows, from the ${BOSS_NAMES[0]} to ${BOSS_NAMES[BOSS_NAMES.length - 1]}, each in its own arena.`,
+  'Boss Rush', 'A co-op gauntlet against the shows’ villains.', `
+  <p>Pick Boss Rush on the select screen. You and CPU allies fight the bosses one after another; each has lots of health and an arena of its own.</p>
   ${PLAY_BTN}
-  <h2>Who you fight</h2>
-  <p>The bosses are the villains and hosts of Battle for Dream Island and Inanimate Insanity. The game's own notes name the Announcer, Four, Evil Leafy, MePhone4, Purple Face and the Purple Dragon, and a Speaker Box boss with a phase-three sonic blast. Every boss was rebuilt with clearer attacks and warnings, so each big move telegraphs before it lands.</p>
-  <h2>How it plays</h2>
-  <ul class="facts">
-    <li>It is the one mode where you can play with a single human contestant: your allies are CPUs.</li>
-    <li>Bosses keep their health across phases; read the warning, step aside, then punish.</li>
-    <li>Your fighter's whole kit works: tilts, aerials, grabs, the smash, the finisher (V + C) and the Final Smash.</li>
-    <li>After a clear, the result screen's Share button carries a brag line you can paste anywhere.</li>
-    <li>Quitting to the title mid-gauntlet asks you to confirm, so a stray Escape does not throw the run away.</li>
-  </ul>
+  <h2>The bosses</h2>
+  <p>${BOSS_NAMES.length}, in order: ${esc(listWords(BOSS_NAMES))}.</p>
   <h2>Tips</h2>
   <ul class="facts">
-    <li>Heavier fighters survive longer against a boss's big hits; lighter ones get to the warning zones faster.</li>
-    <li>Fighters with ranged attacks can keep chipping while a boss winds up (see each ${link('/fighters/', 'fighter guide')} for who has one).</li>
-    <li>Hold Z to shield a telegraphed hit; the nine reflector fighters turn a boss's shots back instead.</li>
+    <li>Big attacks warn you first: step aside, then hit back. The biggest ones leave you room or time to dodge.</li>
+    <li>Your whole kit works, Final Smash included.</li>
+    <li>Hold Z to shield; the ${nReflect} reflector fighters send a boss's shots back instead.</li>
   </ul>
-  <p>${link('/modes.html', 'All game modes')} · ${link('/world-cup.html', 'World Cup')} · ${link('/controls.html', 'Controls')}</p>`);
+  <p>${link('/modes.html', 'All game modes')} · ${link('/fighters/', 'Fighter guides')} · ${link('/controls.html', 'Controls')}</p>`);
 
 infoPage('world-cup.html', titleFor('World Cup tournaments'),
-  `The World Cup in ${GAME}: 16, 32 or 48 teams, groups then knockouts, solo, 2v2 or 3v3, play it or watch it, with the stocks and CPU skill you set.`,
-  'World Cup', 'A full tournament of CPU teams, with you in it or watching.', `
-  <p>The World Cup is the tournament mode of ${GAME}. From the title screen you set up a cup, build or draw the teams, and kick it off. Every match of the cup is played out: you can play your own team's matches or watch any fixture with the camera following the action.</p>
+  `The World Cup in ${GAME}: 16, 32 or 48 teams, groups then knockouts, solo, 2v2 or 3v3. Play your team's matches or watch the whole cup.`,
+  'World Cup', 'A tournament of teams, with you in it or watching.', `
+  <p>Press World Cup on the title screen, set up the cup and kick it off. Play your own team's matches, or watch.</p>
   ${PLAY_BTN}
-  <h2>The settings (from the Tournament Setup screen)</h2>
-  <ul class="facts">
-    <li><strong>Mode:</strong> Spectator (watch the whole cup) or Normal (you play).</li>
-    <li><strong>Cup size:</strong> 16, 32 or 48 teams. The 48-team cup is 12 groups of 4, then knockouts.</li>
-    <li><strong>Team size:</strong> Solo, 2v2 or 3v3; pick your teammates yourself or take a random draw.</li>
-    <li><strong>CPU skill:</strong> Easy, Normal, Hard or Expert.</li>
-    <li><strong>Stages:</strong> all, small only, big only, or pick the ones the cup may use.</li>
-    <li><strong>Stocks:</strong> 1 to 3 in the groups, 1 to 5 in the knockouts; separate time limits for each, or none.</li>
-    <li><strong>Items:</strong> off, low, normal or high.</li>
-    <li><strong>Plays Camera:</strong> watching a match also plays the round's other matches, and the camera cuts to the best plays (K switches it).</li>
-  </ul>
+  <h2>Setup</h2>
+  <p>Three choices: <strong>Mode</strong> (Spectator, or Normal where you play), <strong>Team size</strong> (Solo, 2v2 or 3v3) and <strong>CPU skill</strong> (Easy to Expert). <strong>More options</strong> has the rest: 16, 32 or 48 teams, your teammates, stages, stocks, time limits, items and the Plays Camera.</p>
+  <p>Groups come first, then knockouts, shown on a bracket.</p>
   <h2>The Flag Cup</h2>
-  <p>From the same hub you can run a Flag Cup: a tournament of Capture the Flag matches between CPU teams you build. Each team has a strategist that settles on the plan most likely to beat its opponent on that map and learns as the cup goes on. Watch a fixture live or skip it and the cup simulates it.</p>
+  <p>From the same screen: a cup of Capture the Flag matches between CPU teams you build. Watch a match or skip it and it is played out for you.</p>
   <p>${link('/capture-the-flag.html', 'Capture the Flag')} · ${link('/stages/', 'Stages')} · ${link('/modes.html', 'All game modes')}</p>`);
 
 infoPage('capture-the-flag.html', titleFor('Capture the Flag'),
   `Capture the Flag in ${GAME}: two teams hide five flags each on a huge map, then raid, jail and rescue. Play with CPUs or online with friends.`,
-  'Capture the Flag', 'Hide your flags, build your base, then raid the other team’s.', `
-  <p>Capture the Flag is a team mode of ${GAME} on huge maps of its own. Each side hides five flags, then the match proper begins: cross the map, find the other team's flags and carry them home while keeping yours safe. There are no stocks; a knockout is a trip home, or to the enemy's jail.</p>
+  'Capture the Flag', 'Hide your flags, then raid the other team’s.', `
+  <p>Each side hides five flags, then tries to carry the other side's flags home. There are no stocks: a knockout sends you home, or to the enemy jail.</p>
   ${PLAY_BTN}
-  <h2>How a match goes</h2>
+  <h2>How it plays</h2>
   <ul class="facts">
-    <li><strong>The hiding phase:</strong> every door stands open while you place your flags. <kbd>Space</kbd> puts your flag down or picks it up again, <kbd>P</kbd> opens the team planning menu, and <kbd>B</kbd> picks the next piece when you are building your side. Doors lock when the phase ends.</li>
-    <li><strong>Jail and rescue:</strong> a knocked-out raider can end up in the enemy jail. A teammate who holds the jail door for two seconds frees them; after a jailbreak the door cannot be opened again for a while, and a prisoner is let out on their own after 90 seconds.</li>
-    <li><strong>Keys, doors and boosts:</strong> coloured keys open matching doors, and boost pads give a super jump.</li>
-    <li><strong>Carrying:</strong> everyone moves faster in this mode, but a flag carrier is slower and jumps less.</li>
-    <li><strong>Radar:</strong> after three minutes with no capture, and every minute after, every flag still out is shown for five seconds.</li>
-    <li><strong>Dashers:</strong> in this mode only, dash fighters such as Leafy, Liy and Woody can jump out of a dash for a hyper or a super, Celeste-style.</li>
+    <li>Hiding: <kbd>Space</kbd> puts your flag down or picks it up; <kbd>P</kbd> opens the team plan. Doors lock when hiding ends.</li>
+    <li>Jail: a teammate who holds the jail door for two seconds frees you; otherwise you walk out after 90 seconds.</li>
+    <li>Keys open locked doors; boost pads give a super jump. Flag carriers are slower and jump less.</li>
+    <li>Radar: after three minutes with no capture, and every minute after, every flag still out shows for five seconds.</li>
   </ul>
-  <h2>Maps and players</h2>
-  <p>The game shipped two maps first, Castle Yoyleberry and Crystal Mines and Coral Deep, and matches run from 2 to 8 a side. Before your first match the game offers a short practice. You can play it online with friends from the same room code as any other match, and run a Flag Cup tournament of CPU teams from the World Cup hub.</p>
+  <h2>Maps</h2>
+  <ul class="facts">
+${CTF_MAP_NAMES.map((m) => `    <li>${esc(m)}</li>`).join('\n')}
+  </ul>
+  <p>Play with CPUs or online, and practise first from How to Play.</p>
   <p>${link('/online-play.html', 'Online play')} · ${link('/world-cup.html', 'World Cup and Flag Cup')} · ${link('/controls.html', 'Controls')}</p>`);
 
 infoPage('online-play.html', titleFor('Play online with friends'),
   `Online play in ${GAME}: create a room, share the 4-letter code or link, pick fighters in the lobby and fight. No account, no setup.`,
   'Play online with friends', 'A four-letter room code is all your friends need.', `
-  <p>${GAME} has online multiplayer built in. Press <strong>Play with Friends</strong> on the title screen, create a room, and you get a four-letter room code. Share the code or the link and your friends drop straight in: no setup, no IP addresses, no account.</p>
+  <p>Press <strong>Play with Friends</strong> on the title screen and create a room. Share the four-letter code or the link; friends type the code or open the link to join. No account, no setup.</p>
   ${PLAY_BTN}
-  <h2>In the lobby</h2>
+  <h2>In the room</h2>
   <ul class="facts">
-    <li>Every player and their fighter show in the lobby; the host sets the mode, stage and rules and presses Start.</li>
-    <li>Free-for-all, Teams and Capture the Flag can all be played online. Pick your sides before the match.</li>
-    <li>The results screen shows each player, and the host can call a rematch.</li>
-    <li>If someone is on an older build of the game, the lobby says who needs to refresh.</li>
-    <li>Guests predict their own moves through held keys, so the game stays responsive on an ordinary connection.</li>
+    <li>Everyone picks a fighter in the lobby; the host sets the mode, stage and rules and starts.</li>
+    <li>Free-for-all, Teams and Capture the Flag all work online, and so do your OCs in Free-for-all and Teams.</li>
+    <li>Each player uses their own computer and keyboard; there is no same-computer mode.</li>
   </ul>
-  <h2>One keyboard per computer</h2>
-  <p>Multiplayer is online only: each player uses their own computer and keyboard, and joins the same room. There is no same-computer two-player mode.</p>
-  <h2>Joining</h2>
-  <p>Got a code? Open Play with Friends, type it into the box and press Enter, or open the link your friend shared. Pick your fighter from the portrait grid and wait for the host to start.</p>
-  <p>${link('/capture-the-flag.html', 'Capture the Flag online')} · ${link('/faq.html', 'FAQ')} · ${link('/controls.html', 'Controls')}</p>`);
+  <p>${link('/capture-the-flag.html', 'Capture the Flag')} · ${link('/faq.html', 'FAQ')} · ${link('/controls.html', 'Controls')}</p>`);
 
 function controlsPage() {
   const order = ['left', 'right', 'jump', 'down', 'attack', 'special', 'smash', 'shield', 'pause', 'flag', 'plan', 'edit'];
   const rows = order.filter((k) => DEFAULT_KEYS[k]).map((k) => `    <tr><td><kbd>${esc(keyName(DEFAULT_KEYS[k]))}</kbd></td><td>${esc(KEY_LABELS[k] || k)}</td></tr>`).join('\n');
   const body = `
-  <p>${GAME} is played on a computer with a keyboard. These are the default keys, read from the game's own key table; every one can be remapped on the Controls screen, and the remaps are saved on your computer. Multiplayer is online, so there is one set of keys.</p>
+  <p>The default keys, from the game's own key table. Every key can be changed on the Controls screen; changes are saved on your computer.</p>
   ${PLAY_BTN}
   <h2>Default keys</h2>
   <div class="card"><table>
@@ -577,20 +561,15 @@ function controlsPage() {
 ${rows}
     </tbody>
   </table></div>
-  <h2>Combinations (from How to Play)</h2>
+  <h2>Combinations</h2>
   <ul class="facts">
-    <li><kbd>↑</kbd> jumps; press it twice for a double jump. A quick tap is a short hop, a held press a full jump.</li>
-    <li><kbd>↑</kbd> or <kbd>↓</kbd> with <kbd>X</kbd> on the ground: tilts. In the air, any arrow with <kbd>X</kbd>: aerials.</li>
-    <li><kbd>↑</kbd> + <kbd>C</kbd>: up special. <kbd>↓</kbd> + <kbd>C</kbd>: down special.</li>
-    <li><kbd>X</kbd> + <kbd>C</kbd> close to a foe: grab. Then <kbd>X</kbd> pummels and an arrow throws.</li>
-    <li><kbd>V</kbd>: smash. A ring fills for about half a second, then it goes off by itself toward the nearest foe. <kbd>↑</kbd> + <kbd>V</kbd>: up smash; <kbd>↓</kbd> + <kbd>V</kbd>: down smash. Some smashes break shields: watch for the glow.</li>
-    <li><kbd>V</kbd> + <kbd>C</kbd>: finisher.</li>
-    <li>Hold <kbd>Z</kbd>: shield (it blocks hits, not grabs). Tap <kbd>Z</kbd> while running: sprint. Nine strong fighters get a shot-turning reflector instead of a bubble.</li>
-    <li><kbd>↓</kbd> in the air after the top of a jump: fast fall. Hold <kbd>↓</kbd> to drop through a platform.</li>
-    <li>Against a wall in the air, hold toward it and press <kbd>↑</kbd>: wall jump (once per wall).</li>
-    <li>When hit, hold a direction to bend your launch a little; tap directions during the hit freeze to slip out of a multi-hit move.</li>
+    <li><kbd>↑</kbd> jumps; press it again in the air to double jump. A quick tap is a short hop.</li>
+    <li><kbd>↑</kbd> or <kbd>↓</kbd> with <kbd>X</kbd>: tilts. In the air, an arrow with <kbd>X</kbd>: aerials. <kbd>↑</kbd> or <kbd>↓</kbd> with <kbd>C</kbd>: up or down special.</li>
+    <li><kbd>X</kbd> + <kbd>C</kbd> near a foe: grab. <kbd>V</kbd>: smash (with <kbd>↑</kbd> or <kbd>↓</kbd>: up or down smash). <kbd>V</kbd> + <kbd>C</kbd>: finisher.</li>
+    <li>Hold <kbd>Z</kbd>: shield (blocks hits, not grabs). Tap <kbd>Z</kbd> while running: sprint. ${nReflect} strong fighters get a reflector instead.</li>
+    <li><kbd>↓</kbd> in the air after the top of a jump: fall faster. Hold <kbd>↓</kbd> on a platform: drop through it.</li>
   </ul>
-  <p>The in-game How to Play page, the Move list on the pause menu and the All moves tab on every character card show each fighter's moves with their keys.</p>
+  <p>Each fighter's moves are on the fighter card's Moves list and the pause menu's Move list.</p>
   <p>${link('/fighters/', 'Fighters')} · ${link('/modes.html', 'Game modes')} · ${link('/faq.html', 'FAQ')}</p>`;
   infoPage('controls.html', titleFor('Controls and keyboard keys'),
     `Keyboard controls for ${GAME}: arrows move and jump, X attack, C special, V smash, Z shield and sprint, X + C grab, V + C finisher.`,
@@ -601,41 +580,43 @@ controlsPage();
 function whatsNewPage() {
   const M = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const dateWords = (d) => { const m = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(String(d)); return m ? (m[3] ? String(+m[3]) + ' ' : '') + M[+m[2] - 1] + ' ' + m[1] : String(d); };
-  const entries = CHANGELOG.map((e) => `  <h2>${esc(dateWords(e.date))}${e.version ? ` <span class="small">${esc(e.version)}</span>` : ''}</h2>
+  // the numbered Updates only (Update 1, 3 November 2026, onward), word for word as the game's What's new screen prints them; the older notes stay in the game
+  const ups = CHANGELOG.filter((e) => /^Update \d+$/.test(e.version || ''));
+  const entries = ups.map((e) => `  <h2>${esc(e.version)} <span class="small">${esc(dateWords(e.date))}</span></h2>
   <ul class="cl">
 ${e.items.map((t) => `    <li>${esc(t)}</li>`).join('\n')}
   </ul>`).join('\n');
   const latest = CHANGELOG[0];
   infoPage('whats-new.html', titleFor("What's new: updates and patch notes"),
     clip(`Every update to ${GAME}, newest first. Latest: ${latest.version}, ${dateWords(latest.date)}. New stages, fighters, modes and balance notes for the free browser BFDI fighter.`, 160),
-    "What's new", 'The game’s own change list, newest first.', `
-  <p>This is the same list the game shows under What's new, newest first. Balance notes name the fighters whose moves changed; the ${link('/fighters/', 'fighter guides')} carry the current move text.</p>
+    "What's new", 'The game’s own update notes, newest first.', `
   ${PLAY_BTN}
 ${entries}
-  <p>${link('/modes.html', 'Game modes')} · ${link('/stages/', 'Stages')} · ${link('/faq.html', 'FAQ')}</p>`);
+  <p class="small">Older notes, from before Update 1, are on the game's Changelog screen.</p>
+  <p>${link('/modes.html', 'Game modes')} · ${link('/fighters/', 'Fighter guides')} · ${link('/faq.html', 'FAQ')}</p>`);
 }
 whatsNewPage();
 
 infoPage('faq.html', titleFor('FAQ: free BFDI fighting game questions'),
   `Answers about ${GAME}: is it free, download or account needed, phones, is it official, how to play online, how to report a bug.`,
-  'Frequently asked questions', `Short, honest answers about ${GAME}.`, `
+  'Frequently asked questions', `Short answers about ${GAME}.`, `
   ${PLAY_BTN}
-  <h2>Is Battle for Smash Island free?</h2>
-  <p>Yes. It is free to play in your browser, with no download, no account and no ads.</p>
-  <h2>Do I need to download or install anything?</h2>
-  <p>No. Open ${link(SITE + '/', 'smashisland.vercel.app')} in a browser on a computer and press Play. Your progress (unlocks, looks, key remaps) is saved on that computer by the browser.</p>
-  <h2>Do I need an account?</h2>
-  <p>No. There are no accounts and no sign-in, including for online play: a room code is all you share.</p>
+  <h2>Is it free?</h2>
+  <p>Yes: free in your browser, with no download, no account and no ads.</p>
+  <h2>Do I need to install anything or make an account?</h2>
+  <p>No. Open ${link(SITE + '/', 'smashisland.vercel.app')} on a computer and press Play. Your progress is saved on that computer by the browser. Online play needs only a room code.</p>
   <h2>Does it work on a phone or tablet?</h2>
-  <p>No. It is made for a computer with a keyboard, and it is not set up for touch screens.</p>
-  <h2>Is this an official Battle for Dream Island or Inanimate Insanity game?</h2>
-  <p>No. It is an unofficial fan game made by a fan of the object shows. Battle for Dream Island belongs to jacknjellify and Inanimate Insanity belongs to its creators; this game is not made or endorsed by them.</p>
-  <h2>How do I play online with friends?</h2>
-  <p>Press Play with Friends on the title screen and create a room. You get a four-letter room code; share it or the link, and your friends join from their own computers. The host picks the mode and stage and starts the match. See ${link('/online-play.html', 'online play')}.</p>
+  <p>No. It is made for a computer with a keyboard.</p>
+  <h2>Is it an official BFDI or Inanimate Insanity game?</h2>
+  <p>No. It is an unofficial fan game, not made or endorsed by the shows' creators.</p>
+  <h2>How do I play online?</h2>
+  <p>Press Play with Friends, create a room and share the four-letter code. See ${link('/online-play.html', 'online play')}.</p>
   <h2>How many fighters and stages are there?</h2>
-  <p>${fighters.length} playable fighters from Battle for Dream Island and Inanimate Insanity, and ${stages.length} stages, plus the Capture the Flag maps and the Level Creator. You start with a few fighters and unlock more as you play. See the ${link('/fighters/', 'fighter list')} and the ${link('/stages/', 'stage list')}.</p>
-  <h2>How do I report a bug or send feedback?</h2>
-  <p>The game's Options screen has a Thanks roll and a tip jar, and the title screen has a Share button. For a bug, note the fighter, the stage, the mode and what happened, and send it to the owner through the channel where you found the game (the game is posted by its maker on BFDI fan communities). Keeping the description short and exact helps it get fixed.</p>
+  <p>${fighters.length} fighters and ${stages.length} stages, plus the Capture the Flag maps, your own OCs and the Level Creator. You unlock more fighters as you play. See the ${link('/fighters/', 'fighters')} and ${link('/stages/', 'stages')}.</p>
+  <h2>Can I support the game?</h2>
+  <p>The game is free and sells nothing. The maker's tip jar is a small Support the dev link at the foot of the title screen; it shows once the maker has set it up. A tip is optional and changes nothing in the game. Supporters who agree can be thanked by name in the Thanks list in Settings.</p>
+  <h2>How do I report a bug?</h2>
+  <p>Tell the maker where you found the game. Say the fighter, the stage, the mode and what happened.</p>
   <p>${link('/controls.html', 'Controls')} · ${link('/modes.html', 'Game modes')} · ${link('/about.html', 'About the game')}</p>`);
 
 // ---- checks before anything is written -----------------------------------------------------------------------------------------
@@ -681,9 +662,14 @@ ${urls.map(([u, pr]) => `  <url>
 
 // ---- writing ----------------------------------------------------------------------------------------------------------------------
 
-for (const dir of ['fighters', 'stages']) {   // fully generated folders: stale pages (a renamed fighter) must not linger
+// fully generated folders: a stale page (a renamed fighter) must not linger. Only pages this run does NOT write are removed, and
+// only with --prune; without it they are listed and kept (pages this run writes are simply overwritten).
+const PRUNE = argv.includes('--prune');
+for (const dir of ['fighters', 'stages']) {
   const d = join(SRC, dir);
-  if (existsSync(d)) for (const f of readdirSync(d)) if (f.endsWith('.html')) rmSync(join(d, f));
+  if (existsSync(d)) for (const f of readdirSync(d)) if (f.endsWith('.html') && !out.has(dir + '/' + f)) {
+    if (PRUNE) rmSync(join(d, f)); else console.log('stale page kept (run with --prune to remove): ' + dir + '/' + f);
+  }
   mkdirSync(d, { recursive: true });
 }
 for (const [p, html] of out) writeFileSync(join(SRC, p), html, 'utf8');
