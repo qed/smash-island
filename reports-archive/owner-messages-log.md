@@ -1093,6 +1093,9 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19** *(question box: Dig Games fixes)*: "there is no chance to build an archetype; no being a district 4 person and being good with a trident, and you cant really get supplies that help that much." + Cornucopia = risky, not best + Spread the supply tiers
 - **2026-11-19** *(question box: Dig Games archetypes)*: "1, 2, and you must "build" your moves. bow's chair has full power if you get materials from the forest, and stuff like that." + Supplies: Game-changing
 - **2026-11-19**: "update the "wiki""
+- **2026-11-19**: "push the frame data"
+- **2026-11-19**: "signing off, start new jobs as slots open up, use all of my cpu and memory if needed, bye. see you in 4ish hours. try to get every score to 9 or 10"
+- **2026-11-19**: "and run jurys as you see fit."
 - **2026-11-19**: go to foldy
 - **2026-11-19**: dude, the skins are just recolors for the event fighters
 - **2026-11-19** *(question box: what should a real skin be?)*: Show looks from the wiki (Recommended)
