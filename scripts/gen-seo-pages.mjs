@@ -432,6 +432,7 @@ function hitboxHtml(r, row) {
     else if (h.freeAt != null && h.firstBox < h.freeAt) parts.push(`Free to act on frame ${h.freeAt} while its hit area is still out; the strip stops there.`);
     else if (h.freeAt != null) parts.push(`Free to act on frame ${h.freeAt}, before its hit comes out (dimmed panels).`);
   }
+  if (h.roll) parts.push('A chance move: this is a roll where it hits (its miss roll puts out no hit area).');
   if (h.inset > 0) parts.push(`Its body hit lands only ${h.inset} px inside the red outline.`);
   if (h.every > 1) parts.push(`End lag shown every ${h.every} frames.`);
   if (SMASH_SLOTS.has(row.slot)) parts.push('Frame 0 here is the release: the charge before it is not shown (the table’s startup counts the full charge).');

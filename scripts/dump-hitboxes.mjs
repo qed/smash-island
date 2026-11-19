@@ -14,6 +14,9 @@
 //     shapeHits(bodyShape) test of theirs, drawn as the outline grown by the test's margin (see __BODY below for the dummy this needs).
 //   - every shot and trap of theirs that can hit this frame (haShotState 1 or 2: the same rule as the hitbox view), a disc of pr.r.
 //   - a beam put out this frame (the line to the edge of the stage, its band either side).
+//   - a finisher's floor trap that HIT_ART does not draw while it waits (Sidewalky's crack, Saw's groove, Grassy's patch: each tested
+//     by its own feet-on-the-floor loop) and Poppy's walker's claws (fxTargets inside its step): the shape the game's own boss test
+//     uses for that trap (fxCrackBand, the groove's capsule, fxPatchBox) on each frame its trap is open, and the claws' disc as tested.
 //   - the fighter's hurtbox (the traced outline the game hits, mirrored as it faces), and whether they are invincible (invuln), armoured
 //     (armor) or countering / reflecting on that frame.
 // The game file is not changed: it is booted in jsdom and read. Phases come from the boxes recorded: startup = frames before the first
@@ -70,6 +73,17 @@ window.__reset = function(air, vuln){
 window.__BODY = [];
 (function(){ const _sh = shapeHits; shapeHits = function(sh, t){ if(sh && sh.kind === 'body' && sh.f === fighters[0]) __BODY.push(['h', 'p', bodyPts(sh.f).map(Math.round), sh.margin || 0]); return _sh.apply(this, arguments); };
   const _ah = applyHit; applyHit = function(t, dmg, kbx, kby, from){ if(t === fighters[1] && from && from.idx === 0) window.__dumHit = true; return _ah.apply(this, arguments); }; })();
+// FINISHER FLOOR TRAPS (move audit 2026-11-19): read after each trap's own step, on the frame it tested, from the game's own shape functions.
+window.__FXB = [];
+(function(){
+  const wrap = function(k, fn){ const g = FINX_STEP[k]; if(typeof g !== 'function') return;
+    FINX_STEP[k] = function(o, f){ const r = g.apply(this, arguments); if(f === fighters[0] && o && !o.dead){ const sh = fn(o, f); if(sh) __FXB.push(sh); } return r; }; };
+  wrap('crack', function(o){ const C = FX5.crack, a = hazardT - o.zt; if(o.ph !== 'crack' || a < C.grow || a >= C.grow + C.life) return null; const n = fx5CrackOpen(o); return n > 0 ? ['t', fxCrackBand(o, n)] : null; });
+  wrap('groove', function(o){ const H = FXC1.hole, a = hazardT - o.zt; if(o.ph !== 'zip' || a < H.gZip) return null; return ['t', { kind:'capsule', x1:o.x, y1:o.y - 8, x2:o.x + o.face*o.c1c, y2:o.y - 8, r:10 }]; });
+  wrap('patch', function(o){ if(o.ph !== 'flat') return null; const B = fxPatchBox(o); return ['t', { kind:'box', x:B.x0, y:B.y0, w:B.x1 - B.x0, h:B.y1 - B.y0 }]; });
+  const gw = FINX_STEP.walker; if(typeof gw === 'function') FINX_STEP.walker = function(o, f){ window.__inW = f === fighters[0]; try { return gw.apply(this, arguments); } finally { window.__inW = false; } };
+  const ft = fxTargets; fxTargets = function(f, o, sh){ if(window.__inW && sh) __FXB.push(['g', sh]); return ft.apply(this, arguments); };   // (the walker's claws: what they close on)
+})();
 window.__reached = function(){ const d = fighters[1]; return __dumHit || d.rooted > 0 || d.frozen > 0 || d.ctrlRev > 0 || d._infected > 0 || d._heldBy === 0 || d.pct > 0 || d.hitstun > 0; };
 window.__AER = { nair:'na', fair:'fa', bair:'ba', uair:'ua', dair:'da' };
 window.__fire = function(slot){ const f = fighters[0], ms = msOf(f);
@@ -118,7 +132,7 @@ window.__hurt = function(f){   // the hurtbox: ['p', pts] the traced outline in 
   return ['e', R(f.x), R(hurtCY(f)), R(hurtRX(f)), R(hurtRY(f))];
 };
 window.__record = function(slot, air, vuln){
-  __reset(air, vuln); const f = fighters[0]; __BODY.length = 0;
+  __reset(air, vuln); const f = fighters[0]; __BODY.length = 0; __FXB.length = 0;
   SHOW_HITBOXES = true; DEBUG_HITS.length = 0;
   let seenT = new Map(), seenB = new Set(beams);
   const frames = [];
@@ -129,6 +143,8 @@ window.__record = function(slot, air, vuln){
     const bk = new Set();
     for(const b of __BODY){ const key = JSON.stringify(b); if(bk.has(key)) continue; bk.add(key); boxes.push(b); }
     __BODY.length = 0;
+    for(const q of __FXB){ const pr = __prim(q[1]); if(!pr) continue; pr.unshift(q[0]); boxes.push(pr); }
+    __FXB.length = 0;
     /* (the Cherries' oil carries its pourer in _cherryOil, not owner) */
     for(const pr of projectiles){ if(pr.owner !== 0 && pr._cherryOil !== 0) continue; const st = haShotState(pr); if(st === 1 || st === 2) boxes.push([st === 2 ? 't' : 's', 'c', R(pr.x), R(pr.y), R(pr.r)]); }
     for(const b of beams){ if(seenB.has(b) || b.owner !== 0) continue; boxes.push(['h', 'l', R(b.x0), R(b.y), R(b.x1), R(b.y), R(b.w || 18), 0]); }
@@ -182,12 +198,18 @@ for (const r of roster) {
       if (rec.reached) { w.eval(`__start(${JSON.stringify(r.name)})`); rec = J(`return __record(${JSON.stringify(slot)}, ${AIRS.has(slot)}, false)`); rec.untouchable = true; }
     } catch (e) { index.moves[id] = { err: String(e.message).slice(0, 120) }; continue; }
     if (rec.na) { index.moves[id] = { na: true }; continue; }
+    // A CHANCE MOVE (Nickel's coin flip: 70% the coin, 30% a stumble) can roll its miss: when the frame table says the move hits
+    // (FB_FRAME_DATA startup >= 0) and this run saw no hit area, it is run again (a fresh match each; the game's own dice) up to 3 times.
+    if (rec.firstBox === null && !rec.untouchable && J(`const d = FB_FRAME_DATA[${JSON.stringify(r.kit + '.' + slot)}]; return !!(d && d[0] >= 0);`)) {
+      for (let k = 1; k <= 3; k++) { w.eval(`__start(${JSON.stringify(r.name)})`); const r2 = J(`return __record(${JSON.stringify(slot)}, ${AIRS.has(slot)}, true)`);
+        if (!r2.na && !r2.reached && r2.firstBox !== null) { rec = r2; rec.roll = k; break; } }
+    }
     const svg = renderStrip(rec, { title: `${r.name}: ${key}` });
     if (RAW) raw[id] = Object.assign(rec, { shownFrames: svg.frameList, phases: svg.phases, half: svg.half, file });
     writeFileSync(join(OUTDIR, file), svg.svg, 'utf8');
     bytes += Buffer.byteLength(svg.svg);
     index.moves[id] = { file, slot, n: rec.frames.length, freeAt: rec.freeAt, firstBox: rec.firstBox, lastBox: rec.lastBox, every: svg.every, shown: svg.shown,
-      kinds: svg.kinds, inset: svg.inset || undefined, fell: rec.fell || undefined, untouchable: rec.untouchable || undefined, w: svg.w, h: svg.h };
+      kinds: svg.kinds, inset: svg.inset || undefined, fell: rec.fell || undefined, untouchable: rec.untouchable || undefined, roll: rec.roll || undefined, w: svg.w, h: svg.h };
     nMoves++;
   }
 }
