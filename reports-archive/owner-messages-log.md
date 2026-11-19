@@ -1110,6 +1110,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19 ~16:45**: "i havent tested ctf"
 - **2026-11-19 ~17:05**: "how is the queue?"
 - **2026-11-19 ~17:10**: "and push, and move to 8balls week"
+- **2026-11-19 ~17:20** (answers to the open list): "1. yes 2. only when its close 3. nah 4. in a ring, and the floating caves should be connected, and the different areas should have diferent features, and also, natural belowground caves. 5. yes 6. yeah 7. on friday. 8. and yeah, do those things" (= Cherries rule yes; CPU armour trips only when close; 8-Ball assist timing unchanged; Dig Games: keep ring start + connect the hanging caves + distinct features per area + natural underground caves; up/down batch 6 yes; one event online + rejoin yes; full push on Friday; do the next-up list)
 - **2026-11-19**: go to foldy
 - **2026-11-19**: dude, the skins are just recolors for the event fighters
 - **2026-11-19** *(question box: what should a real skin be?)*: Show looks from the wiki (Recommended)
