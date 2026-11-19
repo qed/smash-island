@@ -1065,6 +1065,9 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-18 ~19:50 EST**: you can start more jobs as spots open up, and work till the end
 - **2026-11-18/19** *(question boxes)*: CPU heal/armour trips -> Finish when hurt (Recommended); Needle's magnet -> Show's picture
 - **2026-11-19**: you can continuously start more tasks in empty slots, you know?
+- **2026-11-19**: what does the balance picture look like?
+- **2026-11-19**: yeah bot was ludicrously strong with the hop smash and the movespeed buff
+- **2026-11-19** *(question box: how to nerf Bot)*: Target speed + hop (Recommended)
 
 ## Status questions & check-ins
 
