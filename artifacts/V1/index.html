@@ -115970,6 +115970,31 @@ const STKB = { WW:20000, WH:5600, time:10800, carry:3, conv:30, convR:70, ballR:
 // than STKB.see + margin; it reads walls, water and tents between them only readLos of the time; it misjudges the distance by up to misjudge px; behind the
 // leader in gold it wants less (despK at despFull gold behind); greedy now and then (greed): it goes if it thinks its drone is past 0.75 of the sight range.
 const CKR_AI = { margin:[40, 70, 120, 180], readLos:[0.2, 0.45, 0.75, 0.95], misjudge:[160, 120, 80, 40], greed:[0.15, 0.1, 0.06, 0.03], despK:[90, 70, 50, 40], despFull:4, ban:300 };
+// CPUs PLAY LIKE PEOPLE, NOT MAP READERS (the owner, 2026-11-19, playing it: "stickers thing is good, but i cant win"; why: "CPUs too fast"). A CPU used to know every
+// ball on the whole map at once and ran the shortest route to the best one, with every shortcut. Now, per level (Easy, Normal, Hard, Expert):
+// it KNOWS ONLY BALLS IT HAS SEEN (on a screen's worth round it, viewX x viewY, in its own room) and remembers them mem frames (it walks to a remembered ball even if
+// it is gone, and forgets it when it sees the spot empty); with nothing known it GOES LOOKING (a ball spot it has not looked at lately; Easy picks loosely, Expert
+// well); it TAKES A MOMENT TO DECIDE (think frames standing still whenever its goal changes: a new ball, a pickup, a bank); its sense of distance is OFF by up to
+// noise (fixed per ball, so it does not dither); it KNOWS ONLY SOME SHORTCUTS (each cheat known with knowC, the hidden passages behind rocks with knowH, dealt at the
+// start; an unknown one is never taken); it GIVES UP on a ball (or a place to look) it has chased for giveUp frames without getting it, for skipFor frames.
+// Machines are always known (they are on the subway map). The player's side is untouched.
+const CKR_PP = { viewX:900, viewY:520, mem:[900, 1800, 3600, 6000], think:[[40, 75], [24, 45], [14, 28], [8, 16]], noise:[0.6, 0.4, 0.22, 0.1],
+  knowC:[0.3, 0.5, 0.75, 0.9], knowH:[0.1, 0.25, 0.55, 0.8], look:900, giveUp:720, skipFor:2400 };
+function stkrAiP(f){ const l = brainLevel(f), K = CKR_PP; return { mem:K.mem[l], think:K.think[l], noise:K.noise[l], knowC:K.knowC[l], knowH:K.knowH[l], sab:true }; }
+function stkrAi(f){   // this CPU's own knowledge, dealt on its first think of the match
+  if(f._ckAi) return f._ckAi;
+  const Wd = STKB_W, A = f._ckAi = { p:stkrAiP(f), seen:{}, spotT:[], sn:Wd.spots.map(s => stkrNodeAt(Wd.N, Wd.S, s.x, s.y)), ex:null, exT:0, key:'', waitT:0, skip:{}, tryK:null, tryT:0 };
+  for(const c of Wd.cheats) if(Math.random() >= (c.k === 'hole' ? A.p.knowH : A.p.knowC)) f._ckBan['cheat:' + c.id] = 1e15;   // (a shortcut it does not know: never in its routes)
+  return A;
+}
+function stkrInView(f, x, y){ return Math.abs(x - f.x) < CKR_PP.viewX && Math.abs(y - f.y) < CKR_PP.viewY && (!CROOM || crmReg(x, y) === crmRegOf(f)); }
+function stkrLook(f, A){   // what it can see now (every 6 frames): the balls at rest on its screen, the spots it has looked at; what it remembers fades
+  if((hazardT + f.idx) % 6) return;
+  const t = hazardT, ck = FDR.ck;
+  for(const id in A.seen){ const m = A.seen[id]; if(t - m.t > A.p.mem || stkrInView(f, m.x, m.y)) delete A.seen[id]; }   // (in view again: seen afresh below, or gone)
+  for(const b of ck.balls) if(b.st === 'loose' && b.rest && stkrInView(f, b.x, b.y)){ const o = A.seen[b.id]; A.seen[b.id] = { x:b.x, y:b.y, t:t, rb:b.rb, nz:o ? o.nz : (Math.random()*2 - 1)*A.p.noise }; }
+  const sp = STKB_W.spots; for(let i = 0; i < sp.length; i++) if(stkrInView(f, sp[i].x, sp[i].y - 20)) A.spotT[i] = t;
+}
 let STKB_W = null;   // the built world's layout (the spots, the stations, the graph): rebuilt with the world
 function stkrWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.contest === 'cheat'; }
 function stkrBuildWorld(){
@@ -116322,7 +116347,7 @@ CONTEST_RULES.cheat = {
     for(let i = live.length - 1; i > 0; i--){ const j = Math.floor(Math.random()*(i + 1)); const q = live[i]; live[i] = live[j]; live[j] = q; }   // the start order, dealt
     live.forEach((f, i) => { f.x = 11250 + i*70; f.y = gy - f.r; f.vx = 0; f.vy = 0; f.onground = true; f.face = i % 2 ? -1 : 1; });
     for(const f of fighters){ f._ckGold = 0; f._ckConv = 0; f._ckCh = null; f._ckFly = null; f._ckDn = null; f._ckDnP = false; f._ckCaught = 0; f._ckUsed = 0; f._ckLine = {}; f._ckStunT = 0; f._ckGlueT = 0;
-      f._ckBan = {}; f._ckPlan = null; f._fdFightT = null; f._fdCool = 0; f._ckPicked = 0; f._ckItem = null; f._ckSabCd = 0; f._ckFrameCd = 0; f._ckSprT = 0;
+      f._ckBan = {}; f._ckAi = null; f._ckPlan = null; f._fdFightT = null; f._fdCool = 0; f._ckPicked = 0; f._ckItem = null; f._ckSabCd = 0; f._ckFrameCd = 0; f._ckSprT = 0;
       f._ckPath = { cap:STKB.delay + 2, n:0, x:new Float32Array(STKB.delay + 2), y:new Float32Array(STKB.delay + 2) }; }
     for(let i = 0; i < STKB.start; i++) stkrSpawnBall();
     S.ck.next = hazardT + STKB.every;
@@ -116418,25 +116443,32 @@ function stkrCanCheat(f, key){
   return f._ckG && seen > STKB.see*0.75;
 }
 function stkrGoal(f){
-  const Wd = STKB_W, ck = FDR.ck, me = stkrNodeOf(f);
+  const Wd = STKB_W, ck = FDR.ck, me = stkrNodeOf(f), A = stkrAi(f);
   if(me < 0) return null;
   const R = stkrDijkstra(me, f._ckBan), n = stkrCarried(f), left = STKB.time - hazardT;
-  let goal = -1, gv = 1e12, kind = 'ball';
+  let goal = -1, gv = 1e12, kind = 'ball', gid = null;
   const ok = m => !(m.oo && m.oo.until > hazardT && m.oo.by !== f.idx);
   let bestM = -1, dm = 1e12, bestMx = null, gx = null; for(const m of Wd.machines){ if(!ok(m)) continue; const i = stkrNodeAt(Wd.N, Wd.S, m.x, m.y); if(i >= 0 && R.D[i] < dm){ dm = R.D[i]; bestM = i; bestMx = m.x; } }
   if(n > 0 && (n >= STKB.carry || left < 1800 + dm*0.2 || dm < 700)){ goal = bestM; gv = dm; kind = 'bank'; gx = bestMx; }
   else {
-    for(const b of ck.balls){ if(b.st !== 'loose' || !b.rest) continue; const i = stkrNodeAt(Wd.N, Wd.S, b.x, b.y + STKB.ballR); if(i < 0) continue;
-      let v = R.D[i] + (fighters.some(o => o !== f && !o.dead && Math.hypot(o.x - b.x, o.y - b.y) < 150) ? 250 : 0) - (b.rb ? 500 : 0); if(v < gv){ gv = v; goal = i; kind = 'ball'; gx = b.x; } }
+    for(const id in A.seen){ const b = A.seen[id], i = stkrNodeAt(Wd.N, Wd.S, b.x, b.y + STKB.ballR); if(i < 0 || R.D[i] >= 1e12 || A.skip['b' + id] > hazardT) continue;   // (only the balls it has seen, where it saw them; not one it gave up on)
+      let v = R.D[i]*(1 + b.nz) + (fighters.some(o => o !== f && !o.dead && Math.hypot(o.x - b.x, o.y - b.y) < 150 && stkrInView(f, o.x, o.y)) ? 250 : 0) - (b.rb ? 500 : 0); if(v < gv){ gv = v; goal = i; kind = 'ball'; gx = b.x; gid = 'b' + id; } }
     if(!f._ckItem) for(const p of Wd.pickSpots){ if(hazardT < p.back) continue; const i = stkrNodeAt(Wd.N, Wd.S, p.x, p.y); if(i >= 0 && R.D[i] < 500 && R.D[i] < gv){ gv = R.D[i]; goal = i; kind = 'item'; gx = p.x; } }
     if(goal < 0 && n > 0){ goal = bestM; gv = dm; kind = 'bank'; gx = bestMx; }
+    if(goal < 0){   // it knows of no ball: go and look (keep the spot it chose until it has looked there)
+      let si = A.ex;
+      if(si == null || (A.spotT[si] || -1e9) >= A.exT || A.sn[si] < 0 || R.D[A.sn[si]] >= 1e12){ si = null; let bv = 1e12;
+        for(let i = 0; i < Wd.spots.length; i++){ const j = A.sn[i]; if(j < 0 || R.D[j] >= 1e12 || hazardT - (A.spotT[i] || -1e9) < CKR_PP.look || A.skip['s' + i] > hazardT) continue; const v = R.D[j]*(1 + A.p.noise*2*Math.random()); if(v < bv){ bv = v; si = i; } }
+        A.ex = si; A.exT = hazardT; }
+      if(si != null){ goal = A.sn[si]; gv = R.D[goal]; kind = 'look'; gx = Wd.spots[si].x; gid = 's' + si; }
+    }
   }
   if(goal < 0 || gv >= 1e12) return null;
   const path = []; for(let v = goal; v !== me && v >= 0; v = R.prev[v]) path.unshift({ n:v, e:R.via[v] });
-  return { goal:goal, path:path, t:hazardT, kind:kind, gx:gx };
+  return { goal:goal, path:path, t:hazardT, kind:kind, gx:gx, id:gid };
 }
 function stkrCpuSab(f, inp){   // the opportunist: sabotage when it is there to be done (and it thinks its drone is not looking)
-  if(hazardT % 15 !== f.idx % 15) return false;
+  if(hazardT % 15 !== f.idx % 15 || !stkrAi(f).p.sab) return false;
   const lv = brainLevel(f), Wd = STKB_W;
   const rich = o => o !== f && !o.dead && !o._ckCh && stkrCarried(o) >= 2;
   // frame a rival close by who carries two or more
@@ -116451,6 +116483,7 @@ function stkrCpuSab(f, inp){   // the opportunist: sabotage when it is there to 
 }
 function stkrCpu(f, inp){
   const Wd = STKB_W; if(!Wd || !FDR || !FDR.ck || f.dead) return false;
+  const A = stkrAi(f); stkrLook(f, A);
   if(f._ckCh || f._ckStunT > hazardT || f._ckGlueT > hazardT) return true;
   if(f._ckFly) return true;   // (a CPU does not steer a flight: it lands where it was meant to)
   if(f.hitstun > 0) return false;
@@ -116462,7 +116495,9 @@ function stkrCpu(f, inp){
   } else f._fdFightT = null;
   if(stkrCpuSab(f, inp)) return true;
   let P = f._ckPlan;
-  if(!P || hazardT - P.t > 40 || !P.path.length){ P = f._ckPlan = stkrGoal(f); }
+  if(!P || hazardT - P.t > 40 || !P.path.length){ P = f._ckPlan = stkrGoal(f); const key = P ? P.kind + ':' + Math.round(P.gx/60) : ''; if(key !== A.key){ A.key = key; A.waitT = hazardT + brainR(A.p.think); } }
+  if(P && P.id){ if(A.tryK !== P.id){ A.tryK = P.id; A.tryT = hazardT; } else if(hazardT - A.tryT > CKR_PP.giveUp){ A.skip[P.id] = hazardT + CKR_PP.skipFor; A.tryK = null; if(P.id[0] === 's') A.ex = null; f._ckPlan = null; return true; } }   // (chased too long: give it up for a while)
+  if(A.waitT > hazardT && f.onground && !f._ckSwim) return true;   // a moment to decide (standing still)
   if(!P) return false;
   if(!P.path.length){ if(P.gx != null && (f.onground || f._ckSwim) && Math.abs(P.gx - f.x) > (P.kind === 'bank' ? 30 : 8)){ if(P.gx < f.x) inp.left = true; else inp.right = true; return true; } return false; }   // there: the last steps to the ball, the pickup or the machine itself (a CPU alone in a room has no fight to move it), then wait for the machine
   const step = P.path[0], N = Wd.N[step.n], e = step.e, feet = f.y + f.r, dx = N.x - f.x, adx = Math.abs(dx);
@@ -116478,7 +116513,7 @@ function stkrCpu(f, inp){
     const c = Wd.cheats[+k.slice(6)];
     if(Math.abs(c.x - f.x) > 14 || !(f.onground || f._ckSwim)){ go(c.x - f.x); if(!f.onground && f.vy > 0 && f.jumps > 0 && c.y < feet - 20) inp.jump = (hazardT % 4) < 2; return true; }
     // swap the signs first if a rival is behind on the way
-    if(c.k === 'door' && !(f._ckSabCd > hazardT) && fighters.some(o => o !== f && !o.dead && Math.abs(o.x - f.x) < 600 && Math.abs(o.y - f.y) < 300) && Math.random() < [0.1, 0.2, 0.3, 0.4][brainLevel(f)] && stkrCanCheat(f, 'swap')){ inp.down = true; inp.special = true; f._ckActT = hazardT; return true; }
+    if(c.k === 'door' && A.p.sab && !(f._ckSabCd > hazardT) && fighters.some(o => o !== f && !o.dead && Math.abs(o.x - f.x) < 600 && Math.abs(o.y - f.y) < 300) && Math.random() < [0.1, 0.2, 0.3, 0.4][brainLevel(f)] && stkrCanCheat(f, 'swap')){ inp.down = true; inp.special = true; f._ckActT = hazardT; return true; }
     if(c.k === 'hole' || stkrCanCheat(f, 'c' + c.id)){ inp.down = true; f._ckActT = hazardT; P.path.shift(); return true; }
     f._ckBan[k] = hazardT + CKR_AI.ban; f._ckPlan = null; return true;   // its drone is too close: another way
   }
