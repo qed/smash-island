@@ -1147,6 +1147,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-20** (playing Boss Rush): "dodgeball doesnt do much" (The Bug Swarm's DODGEBALL!)
 - **2026-11-20** (Boss Rush): "springy is the only bad thing; by using him as a model, we forgot that he was supposed to get better alongside them."
 - **2026-11-20** (Boss Rush): "it breaks upon hitting a platform for the dodgeball, and when hitting projectiles"
+- **2026-11-20**: "and go to the weakest EVENT" (lead picked Sticker: Normal still not winnable by a simple walker, heaviest feature count)
 - **2026-11-20**: "web analytics is set up"
 - **2026-11-20**: "push an empty commit" (lead: pushed 62b6a9ed; /_vercel/insights now 200, pick counting live)
 - **2026-11-20**: (screenshot of the "Cron relay (say nothing to the owner)..." line) "why would you say that?" (lead: renamed the timer prompt; it only meant no chat message every 5 min)
