@@ -402,7 +402,7 @@ const MOVE_GROUPS = [
 const fdTable = (head, cells) => `<table class="fd"><thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody><tr>${cells.map((c) => `<td>${esc(c)}</td>`).join('')}</tr></tbody></table>`;
 const FD_HEAD = ['Startup', 'Active', 'End lag (miss)', 'End lag (hit)'];
 // a row's frames, exactly as the game's table has them ([startup, active, endLagWhiff, endLagHit]; -1 = not measured). The game's own
-// rule (moveShort): a row with 0 startup that is not a throw was not measured, so it shows no frames.
+// rule (moveShort): every row is measured; a 0 startup hits on the frame it is pressed ('instant').
 function frameHtml(row, m) {
   if (row.key === 'Z') {
     const z = m.z;
@@ -412,7 +412,7 @@ function frameHtml(row, m) {
   }
   if (/^The neutral (attack|special), aimed that way/.test(row.text)) return `<p class="small">The same move as ${row.key.includes('X') ? 'X' : 'C'}.</p>`;
   const f = row.frames;
-  if (!f || !(f[0] > 0 || f[2] < 0)) return '<p class="small">Frame data: not measured.</p>';
+  if (!f || !(f[0] >= 0)) return '<p class="small">Frame data: not measured.</p>';   // (every row in the table is measured; a 0 startup is a real frame-0 hit)
   const cell = (v) => (v < 0 ? 'not measured' : String(v));
   return /throw$/.test(row.slot || '')
     ? fdTable(FD_HEAD, ['from the hold', '–', 'a throw cannot miss', cell(f[3])])
