@@ -54873,6 +54873,7 @@ function stepAssistBody(s, gy){
   // frames it crossed the stage once, stopped dead at x=20 and bobbed in the corner for the rest of its tenure; with
   // no enemy in `fighters` (Boss Rush) it never launched at all. Now the ricochet is here, every frame, and the act
   // is only the hits. BEACH_BALL_SPEED is the speed it keeps (no friction below, no steering in navAssist).
+  const wasG = s.onground, px0 = s.x, feet0 = s.y + s.r;   // (ON ITS SURFACE, below)
   const ball = s.act==="bounce";
   // ...but not while a hostile add is still downloading (MePhone4's MeLife: inert for MELIFE_DL frames, the arrival tell): it
   // launched at once and bounced off before the download had drawn it in (found by MePhone4's builder, 2026-10-01)
@@ -54905,10 +54906,16 @@ function stepAssistBody(s, gy){
       if(s.y+s.r>=top && s.y+s.r<=top+18+s.vy){ s.y=top-s.r; s.vy=0; s.onground=true; }
     }
   }
+  // NEVER INTO A GAP (2026-11-20, the owner: "the assists fall off the stage"): where there are real gaps (8-Ball's factory, a map with FLOOR_SEGS) a trophy that
+  // walked or was pushed over nothing stops at the edge, and the ball turns back before one (lkGroundTop: nothing at all under it). Off a ledge onto a floor is not a gap.
+  if(lkGuardOn() && !s._fly && !s.fixed){
+    if(ball){ const ax = s.x + Math.sign(s.vx || 1)*(s.r + 6); if(lkGroundTop(ax, s.y + s.r) == null && lkGroundTop(s.x, s.y + s.r) != null){ s.vx = -s.vx; s._squash = 6; } }
+    else if(wasG && s.vy >= 0 && !s.onground && lkGroundTop(s.x, feet0) == null){ s.x = px0; s.y = feet0 - s.r; s.vy = 0; s.vx = 0; s.onground = true; }
+  }
   if(s.onground) s.jumps=1;
   // The ball never settles: the floor and every platform top throw it back up (it was `if(s.onground && s.vy===0)` in
   // the act, so it could sit for the cooldown's six frames first). `_squash` is render-only: drawSummon squashes it.
-  if(ball && s.onground){ s.vy = -((s._lkT && s._lkT.ballHop) || BEACH_BALL_HOP); s.onground = false; s._squash = 8; }
+  if(ball && s.onground){ s.vy = -((s._lkT && s._lkT.ballHop) || BEACH_BALL_HOP); s.onground = false; s._squash = 8; if(s._lkT && s._lkT.splash) lkSplash(s); }
   // An assist that removes itself is worse than one that does nothing: keep it inside the world. The ball is kept in
   // by reflecting it -- zeroing its speed here is what stuck it in the corner.
   const AW = (typeof WW==='number' ? WW : W);
@@ -54917,6 +54924,7 @@ function stepAssistBody(s, gy){
 }
 // Steering: the horizontal half is the old line, tuned up; the vertical half is new.
 function navAssist(s, tgt, dx, vmax){
+  const g0 = s.onground;
   if(s.fixed || s.act==="bounce") return;   // a placed trap does not chase; a ricochet does not aim
   // NEVER FASTER THAN A RUN ("they just ram you faster than you can move!", the owner, 2026-10-23): it was 7.5 a frame, past every
   // fighter's 6.4. Now an act's own walk, never past ASSIST_WALK.
@@ -54932,6 +54940,9 @@ function navAssist(s, tgt, dx, vmax){
   else if(s.onground && Math.abs(s.vx) < 0.4 && Math.abs(dx) > 60){
     if((s._stuck = (s._stuck||0)+1) > 24){ s.vy = -11; s.onground=false; s._stuck = 0; }
   } else if(s.onground) s._stuck = 0;
+  if(s._lk && LKF && g0){   // (8-Ball's contest: ON ITS SURFACE, lkStepOk; a hop goes straight up where it would come down over a gap)
+    if(s.onground){ if(Math.abs(s.vx) > 0.01 && !lkStepOk(s, s.x + s.vx + Math.sign(s.vx)*s.r*0.4, tgt)) s.vx = 0; }
+    else if(lkGroundTop(s.x + s.vx*30, s.y + s.r) == null || lkGroundTop(s.x + s.vx*15, s.y + s.r) == null) s.vx = 0; }
 }
 // ==== THE ASSIST TROPHIES, REWORKED (the owner, 2026-10-23) =============================================================
 // "assist trophies could be better": "they are annoying, undodgeable, and unfun. they just ram you faster than you can move!",
@@ -55003,8 +55014,10 @@ function assistBrain(s, tgt){
     if(s._pt >= ASSIST_ARRIVE) asGo(s, 'idle');
     asPose(s); return;
   }
-  const act = AS_ACT[s.act];
-  if(act) act(s, tgt, s._lkT || AS[s.act] || {}, fighters[s.owner]);   // (8-Ball's contest: an assist's own numbers on its act, LK_VARY)
+  if(s._lk && LKF && lkKitBrain(s, tgt, fighters[s.owner])){ asPose(s); return; }   // 8-BALL'S CONTEST: its moves and its own act (the kit)
+  const act = AS_ACT[s.act], ph0 = s._ph;
+  if(act) act(s, tgt, s._lkT || AS[s.act] || {}, fighters[s.owner]);
+  if(s._lk && LKF && ph0 === 'idle' && s._ph !== 'idle') lkMvCount(s, 'a');   // (the tally: its act began)   // (8-Ball's contest: an assist's own numbers on its act, LK_VARY)
   asPose(s);
 }
 // Spongy's slam. `landed`: the landing, on everyone on the floor beside him; otherwise his fall, on whoever he comes down on.
@@ -55129,7 +55142,7 @@ const AS_ACT = {
     if(s._ph === 'idle'){
       if(!tgt) return;
       const dx = tgt.x - s.x; s.face = Math.sign(dx) || s.face;
-      if(s.onground && Math.abs(dx) < T.reach + asBig(tgt) && asFeet(tgt) - (s.y + s.r) > -160){ asGo(s, 'wind'); s._lx = tgt.x; return; }
+      if(s.onground && Math.abs(dx) < T.reach + asBig(tgt) && asFeet(tgt) - (s.y + s.r) > -160){ asGo(s, 'wind'); s._lx = lkSafeX(s, tgt.x); return; }
       navAssist(s, tgt, dx, T.walk); return;
     }
     if(s._ph === 'wind'){
@@ -55139,8 +55152,8 @@ const AS_ACT = {
     }
     if(s._ph === 'go'){
       if(s.vy > 3) spongyCrush(s, T, false);
-      if(s.onground && s._pt > 3){ s._commit = 0; spongyCrush(s, T, true); s.vx = 0;
-        if((s._hp = (s._hp || 0) + 1) < (T.hops || 1) && tgt){ s._lx = tgt.x; s.face = Math.sign(tgt.x - s.x) || s.face; asGo(s, 'wind'); } else { s._hp = 0; asGo(s, 'rest'); } }   // (T.hops: slams in a row, LK_VARY)
+      if(s.onground && s._pt > 3){ s._commit = 0; spongyCrush(s, T, true); s.vx = 0; if(s._lk && LKF) lkCrushLand(s, T);
+        if((s._hp = (s._hp || 0) + 1) < (T.hops || 1) && tgt){ s._lx = lkSafeX(s, tgt.x); s.face = Math.sign(tgt.x - s.x) || s.face; asGo(s, 'wind'); } else { s._hp = 0; asGo(s, 'rest'); } }   // (T.hops: slams in a row, LK_VARY)
       else if(s._pt > 120){ s._commit = 0; asGo(s, 'rest'); }   // (never landed: a platform's lip held him; he gives up the slam)
     }
   },
@@ -55163,11 +55176,13 @@ const AS_ACT = {
     s.face = s._dir; s.vx = s._dir*T.spd;
     hitArt(haAssistOwner(s), haAssistKey(s, 'rush'), { kind:'circle', x:s.x, y:s.y, r:s.r }, { color:'#c8b48a', style:'zone' });   // HIT ART: his body, while it can hit
     for(const f of fighters){ if(!asFoe(s, f) || s._hitR.has(f) || (s.hostile && f.invuln>0)) continue;
-      if(hurtGap(f, s.x, s.y) < s.r){ s._hitR.add(f); applyHit(f, addDmg(s, T.dmg), s._dir*T.kb, -T.kb*0.6, assistFighter(s)); } }
+      if(hurtGap(f, s.x, s.y) < s.r){ s._hitR.add(f); applyHit(f, addDmg(s, T.dmg), s._dir*T.kb, T.pop ? -15 : -T.kb*0.6, assistFighter(s)); } }
     for(const b of assistFoes(s)){ if(s._hitR.has(b)) continue;
       if(Math.abs(b.x - s.x) < b.r + s.r && Math.abs(b.y - s.y) < b.r + s.r){ s._hitR.add(b); assistHitSummon(s, b, addDmg(s, T.dmg), false); } }
     const stopped = s._pt > 6 && Math.abs(s._px - s.x) < 1;   // a wall or a block took the roll
-    if(Math.abs(s.x - s._x0) >= T.dist || s.x <= 21 || s.x >= WW - 21 || stopped){ s._commit = 0; s.vx = s._dir*2;
+    const edge = s._lk && LKF && !lkOnTop(s.x + s._dir*(s.r*0.6 + T.spd), s.y + s.r);   // (8-Ball's contest: the roll stops at its ledge's end)
+    if(s._lk && LKF) lkRushTrail(s, T);
+    if(Math.abs(s.x - s._x0) >= T.dist || s.x <= 21 || s.x >= WW - 21 || stopped || edge){ s._commit = 0; s.vx = edge ? 0 : s._dir*2;
       if((s._rp = (s._rp || 0) + 1) < (T.n || 1)){ s._dir = -s._dir; s.face = s._dir; asGo(s, 'wind'); } else { s._rp = 0; asGo(s, 'rest'); } }   // (T.n: rolls there and back, LK_VARY)
     s._px = s.x;
   },
@@ -55246,7 +55261,7 @@ const AS_ACT = {
   // between his summoner and the foe -- only on something to stand on, each one a trap you can see, arming before it bites.
   mines(s, tgt, T){
     s.vx *= 0.5;
-    if(s._ph === 'idle'){ asGo(s, 'wind'); s._dir = tgt ? (Math.sign(tgt.x - s.x) || s.face) : s.face; return; }
+    if(s._ph === 'idle'){ if(s._lk && LKF && s._pt < 80) return; asGo(s, 'wind'); s._dir = tgt ? (Math.sign(tgt.x - s.x) || s.face) : s.face; return; }   // (8-Ball's contest: a moment first, for its other two moves)
     if(s._pt % 5 === 0) puff(s.x + s._dir*s.r*0.6, s.y + s.r - 2, '#8a6a4a', 2);
     if(s._pt < T.wind) return;
     const NM = T.nm || GROTATO_MINES, GP = T.mgap || GROTATO_GAP, half = (NM-1)*GP*0.5, cx = (T.atFoe && tgt && tgt.type !== "boss" && Math.abs(tgt.x - s.x) < 700 && Math.abs(asFeet(tgt) - (s.y + s.r)) < 60) ? tgt.x : s.x + s._dir*T.lead, mx = clamp(cx, 30 + half, WW - 30 - half);   // (T.atFoe, T.nm, T.mgap: 8-Ball's contest, LK_VARY)
@@ -55310,13 +55325,13 @@ const AS_ACT = {
   flash(s, tgt, T){
     s.vx *= 0.5;
     if(tgt) s.face = Math.sign(tgt.x - s.x) || s.face;
-    if(s._ph === 'idle'){ asGo(s, 'pose'); return; }
+    if(s._ph === 'idle'){ if(s._lk && LKF && s._pt < 80) return; asGo(s, 'pose'); return; }   // (8-Ball's contest: a moment first, for its other two moves)
     if(s._pt < T.pose) return;
     hitArt(haAssistOwner(s), haAssistKey(s, 'flash'), { kind:'circle', x:s.x, y:s.y, r:haEdgeR(T.R) }, { color:'#ffffff', world:true, fade:10 });   // HIT ART: the flash's reach and a ray to each face it caught
     for(const f of fighters){ if(!asFoe(s, f)) continue;
       if(Math.hypot(f.x-s.x, f.y-s.y) < T.R && (T.all || Math.sign(s.x-f.x) === Math.sign(f.face||1))){   // (T.all: a glow all round, LK_VARY)
         hitArt(haAssistOwner(s), haAssistKey(s, 'ray' + f.idx), { kind:'capsule', x1:s.x, y1:s.y, x2:f.x, y2:f.y, r:3 }, { color:'#ffffff', style:'ray', world:true, fade:10 });
-        f.hitstun = Math.max(f.hitstun, FLASH_STUN); f.frozen = Math.max(f.frozen, FLASH_FREEZE); if((LKF && s._lk) || asTyped(s)) lkTouch(assistFighter(s), f); } }   // (8-Ball's contest: the family's touch)
+        f.hitstun = Math.max(f.hitstun, FLASH_STUN); f.frozen = Math.max(f.frozen, FLASH_FREEZE); if((LKF && s._lk) || asTyped(s)) lkTouch(assistFighter(s), f); if(T.photo && LKF && s._lk) lkPhotoFx(s, f); } }   // (8-Ball's contest: the family's touch)
     // A boss cannot be stunned (nothing on a boss reads hitstun or frozen); an add facing the camera holds its act FLASH_STUN frames.
     for(const b of assistFoes(s)){ if(b.type==="boss") continue;
       if(Math.hypot(b.x-s.x, b.y-s.y) < T.R && Math.sign(s.x-b.x) === Math.sign(b.face||1)) b._cd = Math.max(b._cd||0, FLASH_STUN); }
@@ -55440,7 +55455,7 @@ const AS_ACT = {
       if(hurtGap(f, s.x, s.y) < 18){ s._hitP.add(f); applyHit(f, addDmg(s, T.dmg), s._dir*T.kb, -T.kb*0.45, assistFighter(s)); } }
     for(const b of assistFoes(s)){ if(s._hitP.has(b)) continue;
       if(Math.abs(b.x - s.x) < asBig(b) + 18 && Math.abs(b.y - s.y) < asBig(b) + 18){ s._hitP.add(b); assistHitSummon(s, b, addDmg(s, T.dmg), false); } }
-    let crash = s.x <= 21 || s.x >= WW - 21 || Math.abs(s.x - s._x0) >= T.dist;
+    let crash = s.x <= 21 || s.x >= WW - 21 || Math.abs(s.x - s._x0) >= T.dist || (s._lk && LKF && lkGroundTop(s.x + s._dir*40, s._ly) == null);   // (8-Ball's contest: it pulls up before a gap, never coming down in one)
     if(!crash) for(const p of platRects()){ if(p.solid && !p.rot && s.x > p.x && s.x < p.x + p.w && s.y > p.y && s.y < p.y + (p.h||16)){ crash = true; break; } }
     if(crash){ s._fly = 0; s._commit = 0; s.vx = s._dir*1.5; s.vy = -2; asGo(s, 'rest'); }
   },
@@ -55565,6 +55580,7 @@ AS_ACT.stay = function(s, tgt, T, owner){
   }
   if(CROOM && s._ph === 'stay' && Math.abs(crmClearX(s.x, s.y, s.r) - s.x) > 10){ s.fixed = null; s._commit = 0; asGo(s, 'idle'); return; }   // (in a doorway, however it got there: it hops to a clear spot, and bumps nobody there)
   if(T.follow && s._ph === 'stay' && s._pt >= T.follow && tgt && tgt.type !== "boss" && owner && !owner.dead && crmSame(owner, s) && crmSame(tgt, s) && Math.abs((owner.x + (tgt.x - owner.x)*(T.pos != null ? T.pos : 0.5)) - s.x) > 70){ s.fixed = null; s._commit = 0; asGo(s, 'idle'); return; }   // (T.follow: it hops to the new spot, LK_VARY)   // (in a doorway, however it got there: it hops to a clear spot, and bumps nobody there)
+  if(s._lk && LKF && s._ph === 'stay') lkStayExtra(s, T);   // (8-Ball's contest: lkStayExtra)
   const L = s._bumpT || (s._bumpT = new Map());
   for(const f of fighters){ if(!a2Open(s, f) || hazardT - (L.get(f) ?? -1e9) < T.gap || hurtGap(f, s.x, s.y) >= s.r || (CROOM && crmDoorAt(f))) continue;   // (one standing in a doorway is never bumped: Up takes them through)
     L.set(f, hazardT);
@@ -55632,6 +55648,7 @@ AS_ACT.cut = function(s, tgt, T){
 function a2OverGround(f){ const sb = surfaceBelow(f.x, feetY(f)); return sb != null && !(sb === groundY() && floorOpenAt(f.x)) && sb - feetY(f) < 260; }   // something to land on just below (a foe frozen in the air drops onto it)
 function a2Clap(s, T){
   s._claps = (s._claps||0) + 1;
+  if(T.line && LKF && s._lk){ for(let i=0;i<10;i++) puff(s.x + s.face*s.r*0.4, s.y - s.r, i % 2 ? '#ffffff' : '#2a2a2e', 4); lkClapLine(s, T); return; }   // (8-Ball's contest: CUT! in a line, lkClapLine)
   hitArt(haAssistOwner(s), haAssistKey(s, 'cut'), { kind:'circle', x:s.x, y:s.y, r:haEdgeR(T.R) }, { color:'#ffffff', style:'ring', world:true, fade:10 });   // HIT ART: the clap's reach (centre-judged)
   for(let i=0;i<10;i++) puff(s.x + s.face*s.r*0.4, s.y - s.r, i % 2 ? '#ffffff' : '#2a2a2e', 4);
   for(const f of fighters){ if(!a2Open(s, f) || !(f.onground || (T.midair && a2OverGround(f))) || Math.hypot(f.x - s.x, f.y - s.y) >= T.R) continue;   // (T.midair: 8-Ball's contest, LK_VARY)
@@ -55688,7 +55705,7 @@ AS_ACT.swat = function(s, tgt, T){
     return; }
   if(!tgt) return;
   const dx = tgt.x - s.x; s.face = Math.sign(dx) || s.face;
-  if(s.onground && Math.abs(dx) < T.reach + asBig(tgt) && Math.abs(asFeet(tgt) - (s.y + s.r)) < 140){ s._dir = s.face; s._lx = tgt.x; asGo(s, 'flinch'); return; }
+  if(s.onground && Math.abs(dx) < T.reach + asBig(tgt) && Math.abs(asFeet(tgt) - (s.y + s.r)) < 140){ s._dir = s.face; s._lx = lkSafeX(s, tgt.x); asGo(s, 'flinch'); return; }
   navAssist(s, tgt, dx, T.walk);
 };
 function a2Swat(s, T){
@@ -55723,7 +55740,7 @@ AS_ACT.snip = function(s, tgt, T, owner){
     const there = s._free && own && Math.abs(own.x - s.x) < s.r + 16, stopped = s._pt > 2 && Math.abs(s._px - s.x) < 1;   // at the summoner; a wall took the lunge
     s._px = s.x;
     const atFoe = T.blink && tgt && !s._free && (tgt.x - s.x)*s._dir > 0 && Math.abs(tgt.x - s.x) < s.r + T.tip;   // (8-Ball's contest, Price Tag: the snap as soon as the foe is at its tip)
-    if(there || stopped || atFoe || Math.abs(s.x - s._x0) >= T.lunge || s._pt > 20){ s._commit = 0; s.vx = 0; a2Snip(s, T, own); asGo(s, 'rest'); }
+    if(there || stopped || atFoe || (s._lk && LKF && !lkOnTop(s.x + s._dir*(s.r*0.6 + T.spd), s.y + s.r)) || Math.abs(s.x - s._x0) >= T.lunge || s._pt > 20){ s._commit = 0; s.vx = 0; a2Snip(s, T, own); asGo(s, 'rest'); }
     return;
   }
   if(own && a2Stuck(own) && Math.hypot(own.x - s.x, own.y - s.y) < T.free){ s._free = 1; s._dir = Math.sign(own.x - s.x) || s.face; s.face = s._dir; asGo(s, 'spread'); return; }
@@ -62358,7 +62375,7 @@ const HOSTILE_ADD_DMG = 0.75;
 function isTrophy(s){ return !!s && s.type==="assist" && !s.hostile; }
 function addDmg(s, d){
   if(s.hostile) return d*HOSTILE_ADD_DMG*((typeof BOSSRUSH!=='undefined' && BOSSRUSH.dmgMult) || 1);
-  return isTrophy(s) ? d*ASSIST_TROPHY_DMG*(s._lk ? LK.astK*(s._lkPow || 1) : 1) : d;   // (8-Ball's contest, s._lk: every assist LK.astK; s._lkPow: 2 or 3 of a type out, lkKeep)
+  return isTrophy(s) ? d*ASSIST_TROPHY_DMG*(s._lk ? LK.astK*(s._lkPow || 1)*(s._lkGold ? LKX.goldK : 1) : 1) : d;   // (s._lkGold: a jawbreaker's, LKX.goldK)   // (8-Ball's contest, s._lk: every assist LK.astK; s._lkPow: 2 or 3 of a type out, lkKeep)
 }
 function hostileCount(){ let n = 0; for(const m of summons) if(m.hostile && m.life>0) n++; return n; }
 // HOW AN ASSIST FIGHTS ON HIS SIDE. An assist takes its summoner's team, and a boss has no fighter index, so the add is
@@ -74982,6 +74999,7 @@ function updateSummons(){
     let tgt=null, best=1e9;
     for(const f of fighters){ if(f.dead) continue;
       if(s.type==="assist" && f.team===s.team) continue;   // assists only hit enemies of their owner
+      if(s._lk && CROOM && !crmSame(f, s)) continue;   // (8-Ball's contest: a foe in another room is not its foe -- it walked into the chutes after them)
       if(s.type==="boss" && f.team===s.team) continue;     // One's ghost fighter is on her side
       const d=Math.hypot(f.x-s.x, f.y-s.y); if(d<best){best=d;tgt=f;}
     }
@@ -115797,7 +115815,8 @@ function crmThrough(f, d){
   for(let i = 0; i < 8; i++) puff(f.x, f.y, '#ffffff', 4);
   f.x = to.x; f.y = to.y - f.r; f.vx = 0; f.vy = 0; f.onground = true; f.dropping = 0; f._crmT = hazardT + (isHumanCtrl(f) ? 30 : 90); CROOM.uses++;   /* (a CPU: a moment before another door) */
   for(const s of summons){ if(s._lk && s.owner === f.idx && s.life > 0 && typeof s.x === 'number' && crmReg(s.x, s.y) === d.reg){ s.x = to.x + (simRand() - 0.5)*80; s.y = to.y - 60; s.vx = 0; s.vy = 0;
-    if(s.act === 'stay' && s._ph !== 'arrive'){ s.fixed = null; s._commit = 0; asGo(s, 'idle'); } } }   // (8-Ball's assists go through with the fighter they belong to; a bumper hops to a new spot, never staying in the doorway)
+    if(s.act === 'stay' && s._ph !== 'arrive'){ s.fixed = null; s._commit = 0; asGo(s, 'idle'); }
+    if(s.act === 'bounce') s.vx = (s.face || 1)*((s._lkT && s._lkT.ballV) || BEACH_BALL_SPEED); } }   // (8-Ball's assists go through with the fighter they belong to; a bumper hops to a new spot, never staying in the doorway)
   for(let i = 0; i < 8; i++) puff(f.x, f.y, '#ffffff', 4);
   if(f.you){ tone(330, 0.08, 'triangle', 0.06, 0, 220); const t = camTarget(f.x, f.y, CAM_ZOOM); camX = t.x; camY = t.y; }   // (the view cuts to the other side, as the mill's does)
 }
@@ -115850,7 +115869,7 @@ function crmNextDoor(f, x, y){
   return best;
 }
 // how far it is to walk to (x, y), through the doors
-function crmCost(f, x, y, n){ const d = crmNextDoor(f, x, y); if(!d) return Math.hypot(x - f.x, y - f.y); if((n || 0) > 5) return 1e9; return Math.abs(d.x - f.x) + Math.abs(d.y - (f.y + (f.r || 0)))*0.5 + 120 + crmCost({ x:d.tx, y:d.ty - 20, r:20 }, x, y, (n || 0) + 1); }
+function crmCost(f, x, y, n){ const d = crmNextDoor(f, x, y); if(!d) return Math.hypot(x - f.x, y - f.y); if((n || 0) > 9) return 1e9; return Math.abs(d.x - f.x) + Math.abs(d.y - (f.y + (f.r || 0)))*0.5 + 120 + crmCost({ x:d.tx, y:d.ty - 20, r:20 }, x, y, (n || 0) + 1); }
 // ---------- EVENT FIGHTERS: RULES ARE RULES (Hot Dog's CONTEST, his third event match: CONTEST_RULES.rules; UPGRADED 2026-11-17, SIMPLIFIED 2026-11-18 to the owner's picks) ----------
 // THE CONCEPT (kept from the owner's approved pitch): a referee posts rules; OBEYING is the main way to score: +1 for every second (RR.obey frames) you obey every
 // rule in force where you stand (not in the RR.quiet frames after a zap), +3 for a whole referee rule kept with no break; a BREAK is -5 and a ZAP (3%, a short stun,
@@ -118190,38 +118209,38 @@ const AS_TY_HEAVY = 1.25;   // (a regular match: under the contest's LK.heavyK, 
 // that hops again to keep between), midair (a clap that freezes foes in the air over ground), flip (a swat that flips up), march (a drummer who walks as she plays).
 const LK_VARY = {
   'Battery':       { hw:12 },                                                          // SHOCK: the long wire (a thicker one: it caught almost nobody)
-  'Salt Lamp':     { all:1, R:340 },                                                   // FIRE: glows all round (backs too), a wider glow than the Selfie Stick's flash
+  'Salt Lamp':     { v:'aura', R:150, glow:300 },                                       // FIRE: no flash -- a warm glow she carries at the foe, burning (LKV.aura)
   'Fire-ette':     { spd:11, dist:860 },                                               // FIRE: the fastest, longest flight
-  'Ice Creamy':    { R:330, n:1, freeze:60, walk:2.2, reach:220 },                     // ICE: one slow, wide, long freeze
-  'Milkshake':     { n:2, w:180, h:80, up:-6, air:22, stun:44, dmg:9, reach:190 },     // ICE: a low, wide splash
-  'Anchor':        { up:-17, air:52, slamX:100, slamY:70, dmg:20, kb:17, walk:2.0, reach:240 },   // HEAVY: one huge drop, a wide slam
-  'Winner':        { spd:13.5, dist:820, level:100, walk:3.8, reach:520 },             // HEAVY: the fastest, longest roll
+  'Ice Creamy':    { v:'scoop', n:2, walk:2.2, reach:260 },                             // ICE: lobs a scoop: a freeze where it lands and a chilling puddle (LKV.scoop)
+  'Milkshake':     { v:'spill', n:2, reach:260 },                                       // ICE: tips over: a cold wave along the floor, a slippery trail (LKV.spill)
+  'Anchor':        { up:-17, air:52, slamX:100, slamY:70, dmg:20, kb:17, walk:2.0, reach:240, quake:1 },   // HEAVY: one huge drop on its chain, shockwaves along the floor
+  'Winner':        { spd:13.5, dist:820, level:100, walk:3.8, reach:520, pop:1 },      // HEAVY: the fastest roll, a golden streak; who it hits goes up high
   'Price Tag':     { blink:1, reach:330, lunge:90, spd:13, tip:40 },                   // SNEAKY: appears BEHIND the foe, then a quick snip after it
-  'Credit Card':   { reach:560, dmg:9, kb:6, stun:30, walk:3.8 },                      // SNEAKY: a long-range swipe, a harder jolt
-  'Lightning Cherry': { out:110, live:130, dmg:8, stun:12, hw:14, walk:4.0 },          // SHOCK: a short, hot wire
-  'Robot Flower':  { pos:0.85, dmg:7, kb:5, ky:-8 },                                   // SHOCK: plants itself right by the foe
-  'Propeller Hat': { n:5, spd:7.5, dist:330, H:32, dmg:3, kb:8 },                      // WIND: many small, quick gusts
-  'Boombox':       { nSlow:2, nFast:10, fast:7, crashW:360, crashDmg:13, spd:7.5, dist:340, plant:320 },   // WIND: a fast song, a big crash
-  'Shampoo':       { n:4, reach:210, w:90, h:150, up:-11, air:34, dmg:6, stun:24 },    // WATER: four high, narrow squirts
-  'Kitchen Sink':  { n:2, spd:5.8, dist:320, h:84, dmg:8, kb:12, walk:1.2, near:300 }, // WATER: two big, fast, short waves
-  'Water Bottle':  { pos:0.18, kb:9 },                                                 // WATER: stands guard by its summoner
-  'Coconut Water': { ballV:6.2, ballHop:10.5, dmg:6, kb:9 },                           // WATER: low, fast skips
-  'Avocado':       { n:2, spd:7.5, dist:420, dmg:9, kb:11 },                           // POISON: rolls there and back
+  'Credit Card':   { v:'swipe', reach:360, dmg:9, kb:6, walk:3.8, n:2 },                // SNEAKY: a SWIPE, a flat dash through the foe, a stripe behind (LKV.swipe)
+  'Lightning Cherry': { v:'zap', reach:230, dmg:7, walk:4.0, n:3 },                    // SHOCK: no wire -- zaps the foe herself, three bolts (LKV.zap)
+  'Robot Flower':  { pos:0.85, dmg:7, kb:5, ky:-8, turret:1 },                         // SHOCK: plants itself by the foe and shoots pollen zaps
+  'Propeller Hat': { v:'heli', reach:500 },                                            // WIND: flies over the foe, a downdraft on them (LKV.heli)
+  'Boombox':       { v:'blast' },                                                       // WIND: stays put, speaker shockwaves in a cone on the beat, a bass drop (LKV.blast)
+  'Shampoo':       { v:'squirt', n:4, reach:300 },                                      // WATER: bubbles in a fan, lather puddles (LKV.squirt)
+  'Kitchen Sink':  { v:'faucet', n:2, walk:1.2, reach:320 },                           // WATER: the tap's spray, lobbed drops, small puddles (LKV.faucet)
+  'Water Bottle':  { pos:0.18, kb:9, guard:1 },                                        // WATER: stands guard by its summoner: a bubble that pops foes' shots
+  'Coconut Water': { ballV:6.2, ballHop:10.5, dmg:6, kb:9, splash:1 },                 // WATER: low, fast skips that splash
+  'Avocado':       { n:2, spd:7.5, dist:420, dmg:9, kb:11, guac:1 },                   // POISON: rolls there and back, a guacamole trail
   'Leek':          { tip:62, cr:26, lunge:60, spd:6, n:2, dmg:11, kb:11 },             // POISON: a slow, wide club
-  'Eggy':          { hops:3, up:-9, air:26, slamX:44, dmg:8, kb:9, reach:240 },        // POISON: three little hops in a row
-  'Glue':          { R:170, n:3, freeze:32, reach:120 },                               // POISON: three close, sticky claps
+  'Eggy':          { hops:3, up:-9, air:26, slamX:44, dmg:8, kb:9, reach:240, yolk:1 }, // POISON: three little hops, a rotten-egg cloud at each
+  'Glue':          { v:'glue', n:3, reach:170 },                                        // POISON: glue streaks on the floor that stick (LKV.glue)
   // THE ELEVEN THAT HAD ONLY THEIR ACT'S NUMBERS (the owner, 2026-11-19: the assists "act the same", the types "feel the same"): each its own too.
   'Grotato':       { atFoe:1, nm:7, mgap:46, wind:24 },                                // FIRE: digs and plants a tight patch right under the foe
   'Rubber Spatula': { flip:13, reach:190, dmg:9 },                                     // FIRE: flips a foe straight up like a pancake
-  'Clapboard':     { midair:1, R:260, lift:26 },                                       // ICE: "Cut!" freezes foes in the air too
+  'Clapboard':     { midair:1, R:260, lift:26, line:1 },                               // ICE: "Cut!" freezes the line in front, "Action!" shoves them on
   'Toilet':        { pull:300, pullV:1.6, wind:46 },                                   // ICE: the flush sucks foes in first, then the wave
   'Beach Ball':    { ballV:2.8, ballHop:18, kb:14, dmg:9 },                            // HEAVY: the slowest, highest bounces and a big pop up
   '9-Ball':        { follow:150, kb:10, dmg:6 },                                       // HEAVY: racks up again: hops to the new spot between you and the foe
   'MePad':         { wind:20, reach:460, saves:3 },                                     // SNEAKY: the quick assistant: a fast glow, and he saves you 3 times
   'Scissors':      { n:5, spread:16, lunge:70, spd:12, dmg:8 },                         // SNEAKY: snip-snip-snip, five quick short snips
-  'Selfie Stick':  { shots:3, pose2:18, R:280 },                                       // SHOCK: burst mode, three flashes in a row
+  'Selfie Stick':  { shots:3, pose2:18, R:280, all:1, photo:1 },                       // SHOCK: a panorama burst, three photos all round, pulled into the frame
   'Conch Shell':   { spd:3.2, dist:760, H:72, kb:12, dmg:5 },                          // WIND: deep, tall, slow blasts that go a long way
-  'Snare Drum':    { march:1.3 } };                                                    // WIND: marches toward the foe as she drums
+  'Snare Drum':    { v:'roll' } };                                                      // WIND: marches at the foe in a rat-a-tat drumroll, a rimshot to end (LKV.roll)
 function lkVaryT(row){ const v = row && LK_VARY[row.name]; return v ? Object.assign({}, AS[row.act] || {}, v) : null; }
 function lkPics(){ if(typeof ASSIST_SPRITE_SRC === 'undefined') return; for(const r of LK_ROSTER) if(r.pic && !ASSIST_SPRITE_SRC[r.name]) ASSIST_SPRITE_SRC[r.name] = { src:'assets/sprites/' + r.pic + '.png', h:2.6, w:3.0 }; }   // (the strongest: they were the giant jawbreaker's alone; with the giant cut, no jawbreaker holds one)
 // CPUs by level (0 Easy .. 3 Expert): the fight range; how far from a foe it feels safe to lick, how often it licks and how long; how much it wants the family that
@@ -118282,41 +118301,30 @@ function lkBuildWorld(){
   WW = K.WW; WH = K.WH; camX = 0; camY = 0; bases = []; floors = []; worldZones = []; spawnZones = []; SIDE_ROOM = 0;
   const gy = groundY(), plats = [];
   worldPlats = [];
-  FLOOR_SEGS = [{ x0:240, x1:1500 }, { x0:1720, x1:3080 }, { x0:3300, x1:4560 }];
   const one = (x, y, w, v) => { const p = { x:x, y:Math.round(y), w:w, h:14, solid:false, lkp:true }; if(v) p.lkBelt = v; worldPlats.push(p); plats.push(p); return p; };
-  // the mixing hall
-  one(380, gy - 150, 300); one(980, gy - 150, 300); one(600, gy - 300, 480);
-  // the middle room: two belts that run toward its middle, two high ledges
-  one(1780, gy - 150, 470, K.beltV); one(2550, gy - 150, 470, -K.beltV); one(1850, gy - 310, 260); one(2690, gy - 310, 260);
-  // the wrapping room: the low belt runs right to the lift, the lift takes a jawbreaker up to the high belt, the high belt runs left and drops it back on the low one
-  const low = one(3380, gy - 150, 760, K.beltV), high = one(3700, gy - 310, 560, -K.beltV); one(4320, gy - 170, 200);
-  // BIGGER (the owner, 2026-11-19: "the assists and map could be stronger (for 8ball only) and bigger (also 8ball)"): two more rooms past the wrapping room, each its own
-  // set piece in the factory's style (lkDeco*): THE FELT TABLE (a giant billiard table: its felt top a plateau over the floor, its lamp a ledge, the chalk store's
-  // shelves on the left, a rack belt on the right) and THE CUE-RACK GALLERY (cue racks stepping up the back wall, the ball-return belt running to the ball-return
-  // pipe, whose door goes back to the mixing hall: the five rooms are a ring).
-  const tbl = one(5180, gy - 170, 700); tbl.lkSet = 'table';
-  const lamp = one(5330, gy - 320, 400); lamp.lkSet = 'lamp';
-  one(4900, gy - 150, 200).lkSet = 'chalk'; one(4720, gy - 290, 200).lkSet = 'chalk';
-  one(5960, gy - 290, 230, -K.beltV).lkSet = 'rack';
-  one(6500, gy - 150, 220).lkSet = 'cue'; one(6800, gy - 280, 220).lkSet = 'cue'; one(7100, gy - 410, 240).lkSet = 'cue';
-  one(7040, gy - 150, 440, K.beltV).lkSet = 'return'; one(7420, gy - 300, 200).lkSet = 'score';
-  FLOOR_SEGS.push({ x0:4780, x1:6120 }, { x0:6340, x1:7660 });
-  const sp = (x, top) => ({ x:x, top:top });
-  LKF = { gy:gy, plats:plats, belts:plats.filter(p => p.lkBelt), lift:{ x:4210, low:low, high:high },
-    walls:[1610, 3190, 4670, 6230], far:[sp(840, gy - 300), sp(1980, gy - 310), sp(2820, gy - 310), sp(4420, gy - 170), sp(4800, gy - 290), sp(5530, gy - 320), sp(7220, gy - 410), sp(7500, gy - 300)],
-    spots:[sp(420, gy), sp(1300, gy), sp(530, gy - 150), sp(840, gy - 300), sp(1900, gy - 150), sp(2950, gy - 150), sp(2800, gy), sp(3450, gy - 150), sp(3480, gy), sp(3900, gy), sp(3950, gy - 310),
-      sp(4950, gy), sp(5500, gy), sp(5300, gy - 170), sp(5700, gy - 170), sp(5000, gy - 150), sp(6600, gy), sp(7300, gy), sp(6600, gy - 150), sp(6900, gy - 280), sp(7200, gy - 150)] };
-  lkRooms();   // ROOMS APART: the walls in the chutes, the five rooms and their doors
+  // SEVEN ROOMS, A NEW LAYOUT EACH MATCH (2026-11-20, the owner: "not interconnected", "same layout every match", "still too small"): LK_ROOMS, lkBuildRooms. The five there
+  // were keep their own ledges, belts, lift and set pieces (each in its own room, wherever that room now stands); the gumball tower and the taffy pull are new.
+  const B = lkBuildRooms(gy, one);
+  FLOOR_SEGS = B.segs;
+  const pick4 = [0, 2, 4, 6].map(i => B.rooms[Math.min(i, B.rooms.length - 1)]);
+  LKF = { gy:gy, plats:plats, belts:plats.filter(p => p.lkBelt), lift:B.lift, walls:B.walls, far:B.far, spots:B.spots, rooms:B.rooms, order:B.order,
+    starts:pick4.map(R => lkRx(R, R.D.start)), resp:B.rooms.map(R => lkRx(R, R.D.resp)) };
+  lkRooms();   // ROOMS APART: the walls in the chutes, the seven rooms and their doors
 }
 // What a thing can stand on at x: the factory's ledges and belts, and the floor.
 function lkRooms(){
-  const gy = LKF.gy, xs = [-3000].concat(LKF.walls, [LK.WW + 3000]), names = ['mixing', 'middle', 'wrapping', 'table', 'gallery'];
+  const gy = LKF.gy, xs = [-3000].concat(LKF.walls, [LK.WW + 3000]), R = LKF.rooms;
   crmMake(null);
   for(const wx of LKF.walls) worldPlats.push({ x:wx - 10, y:-600, w:20, h:LK.WH + 1200, solid:true, crw:true });
-  for(let i = 0; i < names.length; i++) crmRoom({ name:names[i], x0:xs[i], x1:xs[i + 1], y0:-3000, y1:LK.WH + 3000 });
-  const o = { col:'#e88aa8', dark:'#3a1a2a' };
-  crmLink(1430, gy, 1790, gy, o); crmLink(3010, gy, 3370, gy, o); crmLink(4490, gy, 4850, gy, o); crmLink(6050, gy, 6410, gy, o);
-  crmLink(7560, gy, 330, gy, { col:'#c9a34b', dark:'#2a1a10', lkPipe:1 });   // THE BALL RETURN: the pipe's mouth in the gallery comes out at the mixing hall's far end
+  for(let i = 0; i < R.length; i++) crmRoom({ name:R[i].key, x0:xs[i], x1:xs[i + 1], y0:-3000, y1:LK.WH + 3000 });
+  const o = { col:'#e88aa8', dark:'#3a1a2a' }, hi = { col:'#6ad0c0', dark:'#123a36' };
+  for(let i = 0; i + 1 < R.length; i++){ const a = R[i], b = R[i + 1];   // TWO DOORS between rooms side by side: the floor's, and the high one between their gantries
+    crmLink(a.X + a.fw - 70, gy, b.X + 70, gy, o); crmLink(a.up[1].x, a.up[1].y, b.up[0].x, b.up[0].y, hi); }
+  const far = (i, not) => { let best = -1, bd = -1; R.forEach((q, j) => { if(j === i || not.indexOf(j) >= 0) return; const d = Math.abs(j - i); if(d > bd){ bd = d; best = j; } }); return best; };
+  const gi = R.findIndex(q => q.key === 'gallery'), ui = R.findIndex(q => q.key === 'gumball'), pj = far(gi, []), qj = far(ui, pj === ui ? [gi] : [pj]);   // (the two long ways never join the same two rooms)
+  const G = R[gi], Pp = R[pj], U = R[ui], Q = R[qj];
+  crmLink(lkRx(G, G.D.pipe), gy, lkRx(Pp, Pp.D.skip), gy, { col:'#c9a34b', dark:'#2a1a10', lkPipe:1 });   // THE BALL RETURN: the gallery's pipe to the room farthest from it
+  crmLink(lkRx(U, U.D.chute[0]), gy - U.D.chute[1], lkRx(Q, Q.D.skip), gy, { col:'#ff6a9a', dark:'#3a1020', lkGum:1 });   // THE GUMBALL CHUTE: from the top of the machine to the room farthest from it
 }
 function lkTopsAt(x){ const out = []; for(const p of LKF.plats) if(x >= p.x && x <= p.x + p.w) out.push(p.y); if(groundAt(x)) out.push(LKF.gy); return out; }
 function lkSupport(s, R){
@@ -118346,7 +118354,7 @@ function lkShellMove(s){
   const R = lkR(s), L = LKF.lift, t = hazardT;
   if(s.lift){
     s.vx = 0; s.y -= LK.liftV; s.x += (L.x - s.x)*0.2;
-    if(s.y + R <= L.high.y){ s.y = L.high.y - R; s.x = L.high.x + L.high.w - 30; s.lift = 0; s.on = L.high; }
+    if(s.y + R <= L.high.y){ s.y = L.high.y - R; s.x = L.dir < 0 ? L.high.x + 30 : L.high.x + L.high.w - 30; s.lift = 0; s.on = L.high; }
     return;
   }
   const on = lkSupport(s, R); s.on = on;
@@ -118355,7 +118363,7 @@ function lkShellMove(s){
     const bv = (on !== 'floor' && on.lkBelt) || 0;
     if(bv) s.x += bv;
     s.x += s.vx; s.vx *= LK.fric; if(Math.abs(s.vx) < 0.12) s.vx = 0;
-    if(on === L.low && s.x >= on.x + on.w - 8){ s.lift = 1; return; }
+    if(on === L.low && (L.dir < 0 ? s.x <= on.x + 8 : s.x >= on.x + on.w - 8)){ s.lift = 1; return; }   // (a mirrored wrapping room: the lift at the low belt's left end)
     if(on !== 'floor' && (s.x < on.x || s.x > on.x + on.w)){ if(bv) s.vx += Math.sign(bv)*LK.offBelt; s.on = null; }
   } else {
     const b0 = s.y + R; s.vy += JB.grav; s.y += s.vy; s.x += s.vx; s.vx *= 0.99;
@@ -118394,6 +118402,7 @@ function lkBreak(s, f){
   J.st.broke[s.fl]++; J.st.jawTaken++;
   for(let i = 0; i < 14; i++) puff(s.x, s.y, i % 2 ? col : '#ffffff', 6);
   jawbSfx('found');
+  (f._lkG || (f._lkG = {}))[s.ast] = 1;   // GOLD: from a jawbreaker (LKX.goldK)
   lkTake(f, s.ast);
 }
 function lkAllTaken(){ const J = JAWB; return J.taken >= J.total || !fighters.some(f => !f.dead && !lkCapped(f)); }
@@ -118406,7 +118415,7 @@ function lkKeep(){
   for(const s of summons) if(s._lk && fighters[s.owner] && fighters[s.owner].dead) s.life = 0;
   for(const f of fighters){
     if(f.dead){   // OUT OF STOCKS: the team goes back to the wild
-      if(!f._lkRel && lkHeld(f).length){ f._lkRel = 1; for(const n of lkHeld(f)){ J.wq.push(n); delete J.takenBy[n]; J.taken--; } f._lkA = []; }
+      if(!f._lkRel && lkHeld(f).length){ f._lkRel = 1; for(const n of lkHeld(f)){ J.wq.push(n); delete J.takenBy[n]; J.taken--; } f._lkA = []; f._lkG = {}; }
       f._lkTri = null; continue;
     }
     const act = lkActive(f), T = lkTeam(f, act), tri = T.n >= 3 ? T.ty : null;
@@ -118418,7 +118427,8 @@ function lkKeep(){
       const key = f.idx + ':' + name, live = summons.find(s => s._lk === key && s.life > 0);
       if(live){ live._lkPow = pow; J.rc[key] = 0; lkTag(live, f, name); continue; }
       if(J.seen[key] && !J.rc[key]) J.rc[key] = t + LK.waitMin + Math.floor(jawbRand()*(LK.waitMax - LK.waitMin + 1));
-      if(t >= (J.rc[key] || 0)){ if(J.seen[key]) J.resp++; const row = lkRow(name), s = row && summonAssistNamed(f, row); if(s){ s._lk = key; s._lkT = lkVaryT(row); s.life = 1e9; s._lkPow = pow; J.seen[key] = 1; J.rc[key] = 0; lkTag(s, f, name); } }
+      if(t >= (J.rc[key] || 0) && lkGroundTop(f.x, f.y + f.r) != null){ if(J.seen[key]) J.resp++;   // (never put out over a chute: it waits till you are over something)
+        const row = lkRow(name), s = row && summonAssistNamed(f, row); if(s){ s._lk = key; s._lkT = lkVaryT(row); s._lkGold = (f._lkG && f._lkG[name]) ? 1 : 0; s.life = 1e9; s._lkPow = pow; J.seen[key] = 1; J.rc[key] = 0; lkTag(s, f, name); } }
     }
   }
 }
@@ -118441,7 +118451,7 @@ function lkTouch(P, t, o){
   if(!reg){ const L = J.st.land || (J.st.land = {}); L[nm] = (L[nm] || 0) + 1; }   // (the tally: each landed hit or catch, before the touch's gap)
   if((t._lkTT || 0) > now) return;
   t._lkTT = now + LK.touchGap;
-  const own = fighters[P._lkOwn], Q = reg ? LK_REG : LK, tri = !reg && ((own && P === own._lkTP) || (s && s._lkPow === LK.triDmg)), K = tri ? LK.triFx : 1, n = v => Math.round(v*K);
+  const own = fighters[P._lkOwn], Q = reg ? LK_REG : LK, tri = !reg && ((own && P === own._lkTP) || (s && s._lkPow === LK.triDmg)), K = (tri ? LK.triFx : 1)*((!reg && s && s._lkGold) ? LKX.goldFx : 1), n = v => Math.round(v*K);
   if(!reg){ J.st.touch[fl]++; const TB = J.st.touchBy || (J.st.touchBy = {}); TB[nm] = (TB[nm] || 0) + 1; }
   const ax = (s && typeof s.x === 'number') ? s.x : t.x, fx = { k:fl, x:t.x, y:t.y, t:now, id:t.idx, tri:tri ? 1 : 0 };
   const V = reg ? null : (t._lkV || (t._lkV = {})), mark = (q, k, d) => { if(V){ const W = q._lkV || (q._lkV = {}); W[k] = Math.max(W[k] || 0, now + d); } };
@@ -118449,7 +118459,7 @@ function lkTouch(P, t, o){
   else if(fl === 'ice'){ t.frozen = Math.max(t.frozen || 0, n(Q.freezeT)); t.vx *= 0.3; if(!reg){ t.slowed = Math.max(t.slowed || 0, n(LK.chillT)); mark(t, 'ice', n(Q.freezeT + LK.chillT)); } }
   else if(fl === 'heavy'){ mark(t, 'heavy', n(40)); /* the launch itself is LK.heavyK times as far: CONTEST_RULES.lick.kbK */ }
   else if(fl === 'sneaky'){
-    if(!(o && o.noBlink) && own && !own.dead && crmSame(own, t) && !((t._lkBlink || 0) > now)){   // (a foe is blinked once a LK.blinkGap at most: the rope's next touch would pull them straight back in)
+    if(!(o && o.noBlink) && own && !own.dead && P !== own._lkTP && crmSame(own, t) && !((t._lkBlink || 0) > now)){   // (a foe is blinked once a LK.blinkGap at most: the rope's next touch would pull them straight back in)
       const at = own.onground ? own : (s && s.onground ? s : null);
       if(at){ const side = Math.sign(t.x - at.x) || own.face || 1; let x = clamp(at.x + side*64, 30, WW - 30); if(!mepadSpotFree(x, at.y)) x = at.x;
         for(let i = 0; i < 8; i++) puff(t.x, t.y, F.pal[i % 5], 4);
@@ -118477,6 +118487,7 @@ function lkTouch(P, t, o){
     for(const q of fighters){ if(q.dead || q.invuln > 0 || (own && q.team === own.team) || !crmSame(q, t) || Math.hypot(q.x - t.x, q.y - t.y) > Q.gustR) continue;
       const sx = Math.sign(q.x - ax) || Math.sign(q.x - t.x) || 1, gv = n(Q.gustV*10)/10; q.vx = sx*Math.max(Math.abs(q.vx || 0), gv); q.vy = Math.min(q.vy || 0, -3); q.onground = false; mark(q, 'wind', 40); }
   }
+  if(!reg && own && P === own._lkTP) lkTriFx(own, t, fl);   // TYPE POWER on your own hit: each type its own extra (lkTriFx)
   for(let i = 0; i < 6; i++) puff(t.x, t.y, F.pal[i % 5], 4);
   tone(F.snd[0], 0.12, F.snd[2], 0.04, 0, F.snd[1]);
   if(!reg) J.fx.push(fx);
@@ -118497,8 +118508,7 @@ function lkDrawFx(c){
     c.save(); c.globalAlpha = 1 - u;
     if(e.k === 'wind'){ c.strokeStyle = F.col; c.lineWidth = 4; c.beginPath(); c.arc(e.x, e.y, LK.gustR*(0.3 + 0.7*u), 0, 7); c.stroke(); }
     if(e.k === 'shock') for(const g of (e.ch || (e.x2 != null ? [[e.x, e.y, e.x2, e.y2]] : []))){ for(const [lw, col] of [[6, F.col], [2, '#ffffff']]){ c.strokeStyle = col; c.lineWidth = lw; c.beginPath(); c.moveTo(g[0], g[1]); for(let i = 1; i < 6; i++){ const k = i/6; c.lineTo(g[0] + (g[2] - g[0])*k + (i % 2 ? 9 : -9), g[1] + (g[3] - g[1])*k + (i % 2 ? -7 : 7)); } c.lineTo(g[2], g[3]); c.stroke(); } }
-    c.strokeStyle = F.col; c.lineWidth = e.tri ? 6 : 4; c.beginPath(); c.arc(e.x, e.y, 18 + u*(e.tri ? 70 : 46), 0, 7); c.stroke();   // the burst where it landed (wider for TYPE POWER)
-    if(e.tri){ c.lineWidth = 2; c.strokeStyle = '#ffffff'; c.beginPath(); c.arc(e.x, e.y, 10 + u*54, 0, 7); c.stroke(); }
+    if(!e.tri){ c.strokeStyle = F.col; c.lineWidth = 4; c.beginPath(); c.arc(e.x, e.y, 18 + u*46, 0, 7); c.stroke(); }   // the burst where it landed (TYPE POWER draws its own: lkTriFx)
     c.translate(x, y); c.fillStyle = F.col; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.arc(0, 0, 15, 0, 7); c.fill(); c.stroke();
     lkFlavIcon(c, e.k, 10);
     c.restore();
@@ -118609,22 +118619,11 @@ function lkComboStep(){
     const mem = []; for(const name of act) if(lkFlav(name) === T.ty){ const s = summons.find(q => q._lk === f.idx + ':' + name && q.life > 0); if(s) mem.push([s, name]); }
     if(mem.length < 2) continue;
     if(!f._lkComboSeen){ f._lkComboSeen = 1; J.st.combos++; }
-    const segs = []; for(let i = 0; i + 1 < mem.length; i++){ const a = mem[i][0], b = mem[i + 1][0]; if(Math.hypot(a.x - b.x, a.y - b.y) <= LK.comboR) segs.push([a, b, mem[i][1]]); }
-    if(!segs.length) continue;
-    const F = LK_FLAVS[T.ty];
-    f._lkCombo = { segs:segs, fl:T.ty };
-    for(const o of fighters){
-      if(o === f || o.dead || o.team === f.team || o.invuln > 0 || (o._lkBeamT || 0) > t) continue;
-      const sg = segs.find(q => lkSegDist(o.x, o.y, q[0].x, q[0].y, q[1].x, q[1].y) <= o.r + LK.comboW); if(!sg) continue;
-      o._lkBeamT = t + LK.ropeEvery; J.st.comboHits++;
-      const a = sg[0], b = sg[1], dir = Math.sign(o.x - (a.x + b.x)/2) || 1;
-      lkTag(a, f, sg[2]); applyHit(o, LK.ropeDmg, dir*LK.ropeKb, -LK.ropeKb*0.8, assistFighter(a), { shot:1 });   // (the rope's hit: the type's touch rides on it, lkTouch)
-      for(let i = 0; i < 6; i++) puff(o.x, o.y, F.col, 4);
-    }
+    f._lkCombo = { mem:mem, fl:T.ty }; lkBond(f, T.ty, mem);   // THE PAIRS' BONDS (2026-11-20): each type its own thing between its two, no more one rope for all (lkBond)
   }
 }
 function lkRespawn(f){
-  const xs = [800, 1950, 2850, 3950, 5500, 7000];
+  const xs = LKF.resp;   // (one place in each room, wherever it stands this match)
   let best = xs[0], bd = -1;
   for(const x of xs){ let d = 1e9; for(const o of fighters) if(o !== f && !o.dead) d = Math.min(d, Math.abs(o.x - x)); if(d > bd){ bd = d; best = x; } }
   f.x = Math.round(best + (simRand() - 0.5)*160); f.y = LKF.gy - 320;
@@ -118635,7 +118634,7 @@ function lkStep(){
   for(const s of J.shs){ if(s.flash > 0) s.flash--; if(s.st === 'sit') lkShellMove(s); }
   jawbShots();
   J.shs = J.shs.filter(s => s.st === 'sit' || (s.st !== 'gone' && t - s.end < JB.out));
-  lkBelts(); lkGrow(); lkKeep(); lkComboStep(); lkRushFx(); lkWildStep(); lkKoStep();
+  lkBelts(); lkGrow(); lkKeep(); lkComboStep(); lkKitStep(); lkRushFx(); lkWildStep(); lkKoStep();
   for(const f of fighters) lkCpuSwap(f);
   if(!J.fall && (lkAllTaken() || t >= LK.fallAt)) lkFallBegin();   // (and at LK.fallAt at the latest: the owner, 2026-11-18, 'start sooner'; the CPU runs took 6 to 10 minutes)
   if(J.fall) lkFallStep();
@@ -118662,20 +118661,22 @@ function lkWildSpawn(){
 function lkWildMove(w){
   const R = w.r, t = hazardT, weak = w.weak > t, on = lkSupport(w, R);
   if(on){
-    w.vy = 0;
+    w.vy = 0; const x0 = w.x, feet = w.y + R;
     const bv = (on !== 'floor' && on.lkBelt) || 0; if(bv) w.x += bv;
     if(!weak){
       w.vx += (w.dir*LK.wildV - w.vx)*0.2;
       const ax = w.x + w.dir*(R + 8);
       if(!lkTopsAt(ax).some(top => Math.abs(top - (w.y + R)) < 4) || ax < 40 || ax > WW - 40){ w.dir = -w.dir; w.vx = 0; }
-      if(t >= w.hop){ w.hop = t + 150 + Math.floor(jawbRand()*300); w.vy = -LK.wildHop; w.vx = w.dir*2.2; w.y -= 2; }
+      if(t >= w.hop){ w.hop = t + 150 + Math.floor(jawbRand()*300); w.vy = -LK.wildHop; w.vx = lkOnTop(w.x + w.dir*80, feet) ? w.dir*2.2 : 0; w.y -= 2; }   // (a hop forward only where its surface goes on)
     } else w.vx *= 0.8;
     w.x += w.vx; w.face = w.dir;
+    if(w.vy === 0){ if(!lkOnTop(w.x, feet)){ w.x = x0; w.vx = 0; w.dir = -w.dir; } else { w.sx = w.x; w.sy = w.y; } }   // ON ITS SURFACE (2026-11-20): a belt's end, a push or a step never takes it off
   } else {
     const b0 = w.y + R; w.vy += JB.grav; w.y += w.vy; w.x += w.vx;
     for(const wx of LKF.walls) if(Math.abs(w.x - wx) < R + 10){ w.x = wx + (w.x < wx ? -1 : 1)*(R + 10); w.vx = -w.vx*0.5; w.dir = -w.dir; }
     let land = null; for(const top of lkTopsAt(w.x)) if(b0 <= top + 2 && w.y + R >= top && (land === null || top < land)) land = top;
     if(land !== null){ w.y = land - R; w.vy = 0; }
+    if(w.y + R > LKF.gy + 40 && lkGroundTop(w.x, w.y + R) == null && w.sx != null){ w.x = w.sx; w.y = w.sy; w.vx = 0; w.vy = 0; for(let i = 0; i < 8; i++) puff(w.x, w.y, LK_FLAVS[w.ty].col, 4); JAWB.st.resc = (JAWB.st.resc || 0) + 1; }   // knocked down a chute: back where it stood
   }
   w.x = clamp(w.x, 20, WW - 20);
   if(w.y > WH + 120){ w.gone = 1; JAWB.wq.push(w.name); }   // (knocked down a chute: not lost, it comes out again somewhere)
@@ -118939,8 +118940,8 @@ function lkCue(c, x, y0, y1, k){   // one cue standing on its butt at (x, y0) up
 function lkDecoBack(c){
   const V = viewRect(), gy = LKF.gy, t = hazardT;
   c.save(); c.lineJoin = 'round';
-  // ---- THE FELT TABLE (4670..6230) ----
-  if(dcIn(V, 4670, 6230)){
+  // ---- THE FELT TABLE (made at 4780, moved to its room's place: lkDecoOpen) ----
+  { const Rm = lkRoomOf('table'); if(Rm && lkDecoOpen(c, V, Rm, 4780)){
     c.fillStyle = '#5a2a22'; c.fillRect(4680, gy - 210, 1540, 210);   // the hall's wood panelling
     for(let x = 4700; x < 6200; x += 110){ c.fillStyle = '#6e3828'; c.fillRect(x, gy - 190, 90, 170); c.strokeStyle = '#3a1a14'; c.lineWidth = 2; c.strokeRect(x, gy - 190, 90, 170); c.fillStyle = 'rgba(255,214,150,0.08)'; c.fillRect(x + 6, gy - 184, 78, 20); }
     c.fillStyle = '#c9a34b'; c.fillRect(4680, gy - 216, 1540, 8); c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.strokeRect(4680, gy - 216, 1540, 8);
@@ -118968,10 +118969,10 @@ function lkDecoBack(c){
     c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillStyle = '#9a5a2a'; c.beginPath(); c.moveTo(5965, gy - 330); c.lineTo(6185, gy - 330); c.lineTo(6075, gy - 500); c.closePath(); c.fill(); c.stroke();
     c.fillStyle = '#3a1a2a'; c.beginPath(); c.moveTo(5990, gy - 340); c.lineTo(6160, gy - 340); c.lineTo(6075, gy - 478); c.closePath(); c.fill();
     let bi = 0; for(let row = 0; row < 4; row++) for(let k = 0; k <= row; k++){ const bx = 6075 + (k - row/2)*26, by = gy - 456 + row*26; lkBallDot(c, bx, by, 12, (row === 2 && k === 1) ? '#1c1c1c' : LK_FLAVS[LK_FLAV_KEYS[bi % 8]].col, bi % 2 === 1); bi++; }
-  }
-  // ---- THE CUE-RACK GALLERY (6230..7900) ----
-  if(dcIn(V, 6230, 7900)){
-    c.fillStyle = '#4a1e48'; c.fillRect(6240, gy - 230, 1660, 230);   // velvet walls, gold trim
+  c.restore(); } }
+  // ---- THE CUE-RACK GALLERY (made at 6340) ----
+  { const Rm = lkRoomOf('gallery'); if(Rm && lkDecoOpen(c, V, Rm, 6340)){
+    c.fillStyle = '#4a1e48'; c.fillRect(6240, gy - 230, 1680, 230);   // velvet walls, gold trim
     for(let x = 6250; x < 7890; x += 46){ c.fillStyle = 'rgba(255,255,255,0.05)'; c.fillRect(x, gy - 228, 18, 228); }
     c.fillStyle = '#c9a34b'; c.fillRect(6240, gy - 236, 1660, 8); c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.strokeRect(6240, gy - 236, 1660, 8);
     for(const sx of [6620, 7000, 7380]){ c.fillStyle = 'rgba(255,230,190,0.09)'; c.beginPath(); c.moveTo(sx - 20, gy - 760); c.lineTo(sx + 20, gy - 760); c.lineTo(sx + 170, gy); c.lineTo(sx - 170, gy); c.closePath(); c.fill();
@@ -118984,10 +118985,10 @@ function lkDecoBack(c){
       for(let k = 0; k < 6; k++){ const cx = x0 + 28 + k*((x1 - x0 - 56)/5); lkCue(c, cx, gy - 140, gy - 600 + (k % 3)*22, ck++); c.fillStyle = '#c9a34b'; c.fillRect(cx - 7, gy - 470, 14, 8); }
     }
     // the framed eight ball
-    c.fillStyle = '#c9a34b'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillRect(6280, gy - 560, 150, 150); c.strokeRect(6280, gy - 560, 150, 150); c.fillStyle = '#3aa86a'; c.fillRect(6292, gy - 548, 126, 126);
-    c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(6355, gy - 485, 46, 0, 7); c.fill(); c.fillStyle = '#ffffff'; c.beginPath(); c.arc(6347, gy - 495, 18, 0, 7); c.fill();
-    c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.arc(6347, gy - 501, 5, 0, 7); c.arc(6347, gy - 488, 6.5, 0, 7); c.stroke();
-    c.fillStyle = 'rgba(255,255,255,0.3)'; c.beginPath(); c.arc(6372, gy - 512, 9, 0, 7); c.fill();
+    c.fillStyle = '#c9a34b'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillRect(6280, gy - 600, 150, 150); c.strokeRect(6280, gy - 600, 150, 150); c.fillStyle = '#3aa86a'; c.fillRect(6292, gy - 588, 126, 126);
+    c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(6355, gy - 525, 46, 0, 7); c.fill(); c.fillStyle = '#ffffff'; c.beginPath(); c.arc(6347, gy - 535, 18, 0, 7); c.fill();
+    c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.arc(6347, gy - 541, 5, 0, 7); c.arc(6347, gy - 528, 6.5, 0, 7); c.stroke();
+    c.fillStyle = 'rgba(255,255,255,0.3)'; c.beginPath(); c.arc(6372, gy - 552, 9, 0, 7); c.fill();
     // the ball-return pipe over the return belt, its windows and the balls rolling down it to the mouth
     c.strokeStyle = '#1c1c1c'; c.lineWidth = 30; c.lineCap = 'round'; c.beginPath(); c.moveTo(7040, gy - 230); c.lineTo(7470, gy - 230); c.quadraticCurveTo(7560, gy - 230, 7560, gy - 160); c.stroke();
     c.strokeStyle = '#c9a34b'; c.lineWidth = 24; c.stroke();
@@ -118995,7 +118996,8 @@ function lkDecoBack(c){
     for(let wx = 7080; wx < 7460; wx += 80){ c.fillStyle = 'rgba(214,232,255,0.55)'; c.fillRect(wx, gy - 240, 44, 20); c.strokeStyle = '#6a5020'; c.lineWidth = 2; c.strokeRect(wx, gy - 240, 44, 20); }
     for(let k = 0; k < 5; k++){ const u = ((t*1.4 + k*86) % 430), bx = 7040 + u, inW = ((bx - 7080) % 80 + 80) % 80 < 44 && bx > 7080 && bx < 7460; if(inW){ c.save(); c.beginPath(); c.rect(7080, gy - 240, 380, 20); c.clip(); lkBallDot(c, bx, gy - 230, 9, LK_FLAVS[LK_FLAV_KEYS[k % 8]].col, k % 2 === 1); c.restore(); } }
     c.lineCap = 'butt';
-  }
+  c.restore(); } }
+  lkDecoNew(c);   // the gumball tower and the taffy pull, and the gumball chute's mouths
   // the ball return's brass mouths, round both its doorways (the gallery's and the mixing hall's)
   for(const d of CROOM ? CROOM.doors : []){ if(!d.lkPipe || !dcIn(V, d.x - 90, d.x + 90)) continue;
     c.fillStyle = '#c9a34b'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.arc(d.x, d.y - 66, 74, 0, 7); c.fill(); c.stroke();
@@ -119032,7 +119034,7 @@ function lkDecoMid(c){
       c.fillStyle = '#6a3a24'; c.fillRect(x, y, w, 14); c.strokeRect(x, y, w, 14);
       c.strokeStyle = '#c9a34b'; c.lineWidth = 2; c.beginPath(); c.moveTo(x + 8, y + 30); c.lineTo(x + w - 8, y + 30); c.stroke();
       for(let i = 0; i < 9; i++){ c.fillStyle = LK_FLAVS[LK_FLAV_KEYS[i % 8]].col; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.5; c.beginPath(); c.arc(x + 20 + i*(w - 40)/8, y + 30, 7, 0, 7); c.fill(); c.stroke(); }
-    }
+    } else lkDecoMidNew(c, p, k);   // (the gantries and the two new rooms' ledges)
   }
   c.restore();
 }
@@ -119072,19 +119074,6 @@ function lkDrawOver(c){
     const ex = s.x - f.face*lkR(s)*1.1, wob = Math.sin(t*0.6)*3;
     c.save(); c.strokeStyle = '#ff6a9a'; c.lineCap = 'round'; c.lineWidth = 7; c.beginPath(); c.moveTo(f.x + f.face*f.r*0.6, f.y + 2); c.quadraticCurveTo((f.x + ex)/2, f.y + 8 + wob, ex, s.y + 4); c.stroke(); c.restore();
   }
-  for(const f of fighters){   // the candy rope between the same-type ones out
-    const C = f._lkCombo; if(!C) continue;
-    const F = LK_FLAVS[C.fl];
-    c.save(); c.lineCap = 'round';
-    for(const sg of C.segs){
-      const ax = sg[0].x, ay = sg[0].y, bx = sg[1].x, by = sg[1].y;
-      c.globalAlpha = 0.35; c.strokeStyle = F.col; c.lineWidth = 16; c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
-      c.globalAlpha = 1; c.lineWidth = 7; c.strokeStyle = F.col; c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
-      c.strokeStyle = '#ffffff'; c.lineWidth = 7; c.setLineDash([9, 9]); c.lineDashOffset = -t*1.5; c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke(); c.setLineDash([]);
-      for(const s of [sg[0], sg[1]]){ c.strokeStyle = F.col; c.lineWidth = 3; c.beginPath(); c.arc(s.x, s.y, (s.r || 26) + 6 + Math.sin(t*0.2)*2, 0, 7); c.stroke(); }
-    }
-    c.restore();
-  }
   for(const f of fighters){   // TYPE POWER: a ring of the type's colour round your feet, its picture by you
     if(f.dead || !f._lkTri) continue;
     const F = LK_FLAVS[f._lkTri]; if(!F) continue;
@@ -119106,9 +119095,9 @@ CONTEST_RULES.lick = {
     J.pool = pool; J.order = pool.slice().sort((a, b) => LK_FLAV_KEYS.indexOf(lkFlav(a)) - LK_FLAV_KEYS.indexOf(lkFlav(b))); J.total = J.order.length;
     J.jq = pool.slice(0, LK.jaws); J.wq = pool.slice(LK.jaws); J.wild = [];
     J.home = {}; tys.forEach((ty, i) => { J.home[ty] = i % (LKF.walls.length + 1); });   // THE SPAWN MIX: each type's home room (five types, five rooms: one each)
-    for(const f of fighters){ f._lkA = []; f._lkDec = {}; f._lkBan = {}; f._lkW = null; f._lkWk = null; f._lkLk = null; f._lkLkT = null; f._lkRush = 0; f._lkTgt = -1; f._lkBeamT = 0; f._lkComboSeen = 0; f._lkCombo = null; f._lkTT = 0; f._lkBlink = 0;
+    for(const f of fighters){ f._lkA = []; f._lkG = {}; f._lkDec = {}; f._lkBan = {}; f._lkW = null; f._lkWk = null; f._lkLk = null; f._lkLkT = null; f._lkRush = 0; f._lkTgt = -1; f._lkBeamT = 0; f._lkComboSeen = 0; f._lkCombo = null; f._lkTT = 0; f._lkBlink = 0;
       f._lkK = 0; f._lkSwT = 0; f._lkSwP = false; f._lkRel = 0; f._lkTri = null; f._lkTP = null; f._lkSt = null; f._lkWT = -1; }
-    const xs = [700, 2450, 5000, 6900], n = fighters.length;   // (one in each room but the wrapping room)
+    const xs = LKF.starts, n = fighters.length;   // (four rooms apart, this match's 1st, 3rd, 5th and 7th)
     fighters.forEach((f, i) => { f.x = n <= 4 ? xs[i] : Math.round(floorSafeX(WW*(i + 0.5)/n, 60)); f.y = LKF.gy - f.r - 2; f.vx = 0; f.vy = 0; });
     J.spots = LKF.spots;
     for(let i = 0; i < LK.jawMax; i++){ J.nextMake = 0; lkGrow(); }
@@ -119118,13 +119107,13 @@ CONTEST_RULES.lick = {
   },
   step(){ lkStep(); },
   speedK(f){ return (f && f._lkRush > hazardT) ? LK.rushK : 1; },   // the SUGAR RUSH
-  kbK(t, from){ if(!from) return 1; if(from._lkFam) return LK.astKb*(from._lkFam === 'heavy' ? LK.heavyK : 1); return from._lkTri === 'heavy' ? LK.heavyK : 1; },   // every contest assist launches LK.astKb times as far; HEAVY ones (and a heavy rope, and heavy TYPE POWER) LK.heavyK times more
+  kbK(t, from){ if(!from) return 1; if(from._lkFam) return LK.astKb*(from._lkFam === 'heavy' ? LK.heavyK : 1)*((from._lkS && from._lkS._lkGold) ? LKX.goldKb : 1); return from._lkTri === 'heavy' ? LK.heavyK : 1; },   // every contest assist launches LK.astKb times as far; HEAVY ones (and a heavy rope, and heavy TYPE POWER) LK.heavyK times more
   world(c, layer){
     const J = JAWB; if(!J || !J.lk || !LKF) return;
-    if(layer === 'under'){ lkDrawFactory(c); lkDrawWild(c); }
+    if(layer === 'under'){ lkDrawFactory(c); lkKitDrawUnder(c); lkDrawWild(c); }
     lkDrawFall(c, layer);
     if(layer === 'over'){
-      lkDrawOver(c); lkDrawStatus(c); lkDrawTags(c); lkDrawFx(c);
+      lkDrawOver(c); lkKitDrawOver(c); lkDrawStatus(c); lkDrawTags(c); lkDrawFx(c);
       const me = fighters.find(f => f.you);
       if(me && !me.dead && !lkCapped(me)) for(const s of J.shs){   // over a shell, the ring of what YOU have dealt to it (a picture, no words)
         const d = s.st === 'sit' ? (s.dealt[me.idx] || 0) : 0; if(d <= 0) continue;
@@ -119317,7 +119306,675 @@ function lkRoam(f, inp, lv){
   if(crmReg(R.x, LKF.gy - 10) === crmRegOf(f) && Math.abs(R.x - f.x) < 220){ f._lkRoam = null; f._lkAlone = 0; return false; }
   return lkGoal(f, inp, 'roam', R.x, LKF.gy);
 }
-EVENT_TWIST_WORDS['contest:lick'] = { icon:'🍬', short:"8-Ball's contest: catch assists, last one standing", words:"8-Ball's contest: a candy factory of five rooms (hold Up in a doorway). Wild assists roam: hit one till it is weak, then walk into it to catch it; far-off jawbreakers hold a few more. Carry 6, 3 fight with you: the Swap key brings out the next. 2 of a type join with a candy rope and hit harder; 3 of a type give your own hits their power. Jawbreakers fall at 1:30. 6 stocks, last one standing.", goal:'Catch assists. Last one standing wins.' };
+// ==== 8-BALL'S CONTEST, THE ASSISTS' KIT (2026-11-20, the owner: "the assists fall off the stage"; "snare and the boom box are the same"; "salt lamp, clapboard,
+// and selfie stick.... do i really have to say it."; "the assist buffs are just the lasers. theyre way too similar"; "the assists from jawbreakers arent stronger
+// than the others"; "in this the assists should have 2 or 3 moves") ====
+// ON THEIR SURFACE: an assist never walks, rolls, lunges, dashes or skips into a gap (lkGroundTop: nothing under it at all) -- it stops at the edge, a ball turns back;
+// in the contest a committed line (a roll, a dash, a march) stops at ANY edge of its ledge, a walking one steps off a ledge only to go down to a foe below it, and
+// one that still goes down a chute (a knock, a hop) reappears at the last place it stood (JAWB.st.resc), with a puff. The wild ones the same (lkWildMove).
+// THREE MOVES EACH (LK_MOVES): its act, a CLOSE move (a foe in its face) and a SPECIAL (its own situation: a far foe for a shot or a lob, a foe overhead for a pulse
+// or a spin, a foe on its floor for a quake, one a short way off for a leap or a dash). Each move at most once a LKX.mvGap frames (3.5 s; a gold one 3 s), only
+// while its act is between attacks; the act's own gaps are as they were.
+// GOLD (jawbreaker assists): an assist you broke out of a jawbreaker is GOLD for you: LKX.goldK times the damage, LKX.goldKb times the launch, its touch LKX.goldFx
+// times as long, its moves a little more often, a gold crown and sparkles. Caught wild ones are plain.
+const LKX = { mvGap:210, mvGapGold:180, mvW:14, goldK:1.35, goldKb:1.2, goldFx:1.4, patchGap:40, bondEvery:150 };
+// what is at or below `feet` under x (the factory's ledges and floor; elsewhere the van tops) -- null: nothing, a gap
+function lkGroundTop(x, feet){
+  if(LKF){ let b = null; for(const top of lkTopsAt(x)) if(top >= feet - 4 && (b === null || top < b)) b = top; return b; }
+  const sb = surfaceBelow(x, feet - 4); return (sb == null || (sb === groundY() && floorOpenAt(x))) ? null : sb;
+}
+function lkOnTop(x, feet){ const b = lkGroundTop(x, feet); return b != null && Math.abs(b - feet) < 5; }   // the same surface goes on at x
+function lkSafeOf(s){ const q = s._lkSafe; if(q && (!CROOM || crmReg(q.x, q.y) === crmReg(s.x, s.y))) return q; return { x:floorSafeX(s.x, 80), y:LKF.gy - s.r - 2 }; }   // where it last stood in this room (else the nearest floor)
+function lkGuardOn(){ return !!LKF || (!!FLOOR_SEGS && !isBig()); }   // (only where there are real gaps)
+function lkMvCount(s, k){ const J = JAWB; if(!J || !J.lk || !J.st) return; const M = J.st.mv || (J.st.mv = {}), m = M[s.name] || (M[s.name] = { a:0, c:0, s:0 }); m[k]++; }
+// The moves: [kind, damage, knockback, colour]. c: the close move, s: the special. (The act is the first move.)
+const LK_MOVES = {
+  'Grotato':        { c:['slam', 7, 9, '#c8a060', 'Spud Smash'],      s:['lob', 6, 8, '#ff8a2a', 'Hot Potato'] },
+  'Rubber Spatula': { c:['poke', 6, 8, '#f2e070', 'Flip Jab'],        s:['quake', 6, 10, '#ffb03a', 'Griddle Slam'] },
+  'Salt Lamp':      { c:['pulse', 5, 7, '#ffb08a', 'Warm Flare'],     s:['shot', 4, 5, '#ffffff', 'Salt Spray'] },
+  'Fire-ette':      { c:['spin', 6, 8, '#ff5a2a', 'Fire Twirl'],      s:['shot', 6, 7, '#ffd23f', 'Ember Flick'] },
+  'Clapboard':      { c:['slam', 7, 8, '#2a2a2e', 'Clapper Bite'],    s:['shot', 5, 7, '#ffffff', 'Slate Throw'] },
+  'Toilet':         { c:['pulse', 5, 8, '#6ec6f0', 'Splash Back'],    s:['leap', 7, 10, '#eef2f6', 'Lid Slam'] },
+  'Ice Creamy':     { c:['swipe', 6, 8, '#f4e6d0', 'Cone Swipe'],     s:['spin', 6, 9, '#bfeaff', 'Sprinkle Whirl'] },
+  'Milkshake':      { c:['poke', 6, 7, '#f0ece0', 'Straw Jab'],       s:['pulse', 6, 8, '#bfeaff', 'Brain Freeze'] },
+  'Beach Ball':     { c:['pulse', 6, 10, '#e85a8a', 'Squish Bump'],   s:['shot', 5, 8, '#f4e0a0', 'Sand Kick'] },
+  '9-Ball':         { c:['spin', 6, 10, '#f2c94c', 'Rack Spin'],      s:['shot', 6, 10, '#ffffff', 'Break Shot'] },
+  'Anchor':         { c:['swipe', 8, 11, '#6a6a74', 'Chain Swing'],   s:['dash', 8, 12, '#3a3a40', 'Keel Haul'] },
+  'Winner':         { c:['spin', 7, 10, '#ffd23f', 'Victory Spin'],   s:['leap', 8, 12, '#ffd23f', 'Podium Leap'] },
+  'MePad':          { c:['pulse', 4, 7, '#c4308a', 'Ping'],           s:['shot', 5, 6, '#7fd8ff', 'App Beam'] },
+  'Scissors':       { c:['spin', 6, 8, '#8ccf4a', 'Blade Whirl'],     s:['dash', 7, 9, '#d8ffb0', 'Cut Through'] },
+  'Price Tag':      { c:['poke', 6, 7, '#e83a3a', 'String Whip'],     s:['shot', 5, 6, '#ffd8d8', 'Sale Sticker'] },
+  'Credit Card':    { c:['swipe', 6, 8, '#3a6ae8', 'Card Slap'],      s:['pulse', 5, 8, '#9cc8ff', 'Declined'] },
+  'Battery':        { c:['pulse', 5, 7, '#fff27a', 'Discharge'],      s:['shot', 5, 6, '#fff27a', 'Spark Bolt'] },
+  'Selfie Stick':   { c:['poke', 6, 8, '#c0c0c8', 'Stick Poke'],      s:['spin', 6, 9, '#ffffff', 'Panorama'] },
+  'Lightning Cherry': { c:['slam', 7, 8, '#8a1a2a', 'Stem Smack'],    s:['lob', 5, 6, '#ffd21f', 'Cherry Pit'] },
+  'Robot Flower':   { c:['spin', 6, 8, '#d070d8', 'Petal Spin'],      s:['pulse', 5, 7, '#ffe866', 'Pollen Burst'] },
+  'Conch Shell':    { c:['pulse', 5, 9, '#f4b48a', 'Echo Burst'],     s:['leap', 7, 10, '#fde6d2', 'Shell Drop'] },
+  'Snare Drum':     { c:['slam', 6, 8, '#2a3aa0', 'Stick Strike'],    s:['quake', 5, 9, '#c8d4ff', 'Floor Tom'] },
+  'Propeller Hat':  { c:['spin', 5, 9, '#2a2a8a', 'Blade Spin'],      s:['dash', 6, 9, '#dfe8f2', 'Gust Dash'] },
+  'Boombox':        { c:['pulse', 6, 11, '#6a4a2a', 'Bass Drop'],     s:['shot', 5, 7, '#ffffff', 'Loud Note'] },
+  'Shampoo':        { c:['poke', 5, 7, '#f6a8c8', 'Squirt'],          s:['pulse', 5, 8, '#ffd8ee', 'Lather Burst'] },
+  'Kitchen Sink':   { c:['slam', 7, 9, '#9ab0c0', 'Faucet Smack'],    s:['quake', 6, 9, '#2f6fe8', 'Drain Gurgle'] },
+  'Water Bottle':   { c:['spin', 5, 9, '#9cc8ff', 'Bottle Spin'],     s:['shot', 5, 7, '#2f6fe8', 'Cap Shot'] },
+  'Coconut Water':  { c:['pulse', 6, 9, '#7ab84a', 'Coconut Crack'],  s:['shot', 5, 6, '#d6e8ff', 'Straw Spit'] },
+  'Avocado':        { c:['swipe', 7, 9, '#9ad06a', 'Half Slap'],      s:['lob', 6, 8, '#6a3a1a', 'Pit Throw'] },
+  'Leek':           { c:['spin', 6, 9, '#9ad06a', 'Leaf Whirl'],      s:['quake', 6, 10, '#c23ad0', 'Root Stomp'] },
+  'Eggy':           { c:['poke', 5, 7, '#ffd23f', 'Yolk Jab'],        s:['lob', 6, 7, '#f4ecd8', 'Egg Toss'] },
+  'Glue':           { c:['swipe', 6, 7, '#f0f0f0', 'Sticky Slap'],    s:['shot', 5, 5, '#ffffff', 'Glob Shot'] } };
+// a hit by one of the kit's own things (the stand-in e.by, so the type's touch rides on it: lkTouch); once each foe a thing when e.hit is a set
+function lkKitHit(e, o, dmg, kbx, kby, opts){
+  if(!o || o.dead || o.team === e.team || hardInvuln(o) || (e.room != null && CROOM && crmRegOf(o) !== e.room)) return false;
+  if(e.hit){ if(e.hit.has(o)) return false; e.hit.add(o); }
+  if(e.bond && JAWB && JAWB.st) JAWB.st.comboHits++;   // (a pair's bond: the tally)
+  applyHit(o, dmg, kbx, kby, e.by, opts); return true;
+}
+function lkKit(){ const J = JAWB; return J.kx || (J.kx = []); }
+function lkKFrom(s, o){ return Object.assign({ by:assistFighter(s), team:s.team, room:CROOM ? crmReg(s.x, s.y) : null, src:s, t0:hazardT, hit:new Set() }, o); }
+function lkKD(s, d){ return addDmg(s, d); }   // (an assist's number made its trophy's: LK.astK, a pair's, a gold one's)
+// THE KIT, ONCE A FRAME AN ASSIST: true when it took the frame (a move, or the assist's own act from LKV), so the act is not run.
+function lkKitBrain(s, tgt, own){
+  const t = hazardT; s._lkPz = null;
+  const feet = s.y + s.r;
+  if(s.onground && !s._fly && lkOnTop(s.x, feet) && (!CROOM || crmReg(s.x, feet - 20) === crmReg(s.x, s.y))) s._lkSafe = { x:s.x, y:s.y };   // where it last stood
+  if(!s._fly && !s.onground && s.vy > 0 && lkGroundTop(s.x, feet) == null && feet < LKF.gy + 40){ s.vx = (Math.sign(lkSafeOf(s).x - s.x) || 1)*5; }   // coming down over a gap: it steers back over where it stood
+  if(!s._fly && feet > LKF.gy + 40 && lkGroundTop(s.x, feet) == null){   // down a chute after all (a knock, a hop): it reappears where it last stood
+    const q = lkSafeOf(s);
+    if(q){ s.x = q.x; s.y = q.y - 4; s.vx = 0; s.vy = 0; s._commit = 0; s._mv = null; if(s.fixed === 'stay'){ s.fixed = null; asGo(s, 'idle'); }
+      for(let i = 0; i < 10; i++) puff(s.x, s.y, i % 2 ? '#ffffff' : LK_FLAVS[lkFlav(s.name)].col, 4); if(JAWB.st) JAWB.st.resc = (JAWB.st.resc || 0) + 1; }
+  }
+  if(s._lkMvT == null) s._lkMvT = t + 60;
+  if(s._mv){ lkMoveStep(s, tgt); return true; }
+  if(lkMoveTry(s, tgt, own)) return true;
+  const T = s._lkT, v = T && T.v && LKV[T.v];
+  if(v){ v(s, tgt, T, own); return true; }
+  if(!tgt && own && !own.dead && crmSame(own, s) && s._ph === 'idle' && !s.fixed && s.act !== 'bounce' && Math.abs(own.x - s.x) > 160){ navAssist(s, own, own.x - s.x, 3); }   // nobody to fight in its room: it keeps by you
+  return false;
+}
+// May it step to x? (on its surface; off a ledge only toward a foe below it). Never into a gap anywhere.
+function lkStepOk(s, nx, tgt){
+  const feet = s.y + s.r;
+  if(lkOnTop(nx, feet)) return true;
+  const below = lkGroundTop(nx, feet); if(below == null) return false;
+  return !!tgt && (tgt.y + (tgt.r || 24)) > feet + 40;
+}
+function lkMoveTry(s, tgt, own){
+  const t = hazardT, mv = LK_MOVES[s.name];
+  if(!mv || !tgt || tgt.type === 'boss' || (CROOM && !crmSame(tgt, s)) || s._lkMvT > t) return false;
+  if(!(s._ph === 'idle' || s._ph === 'stay' || s.act === 'bounce' || s._ph === 'rest' || s._ph === 'put' || s._ph === 'done')) return false;
+  const dx = tgt.x - s.x, adx = Math.abs(dx), dy = tgt.y - s.y, near = s.r + (tgt.r || 24) + 56;
+  let k = null;
+  if(adx < near && Math.abs(dy) < 80) k = 'c';
+  else {
+    const kind = mv.s[0], air = dy < -60 && adx < 230;
+    if((kind === 'shot' || kind === 'lob') && adx > 150 && adx < 480 && Math.abs(dy) < 220) k = 's';
+    else if((kind === 'pulse' || kind === 'spin') && (air || (own && !own.dead && Math.hypot(own.x - tgt.x, own.y - tgt.y) < 110 && adx < 200))) k = 's';
+    else if(kind === 'quake' && adx < 300 && Math.abs((tgt.y + tgt.r) - (s.y + s.r)) < 12 && tgt.onground && s.onground) k = 's';
+    else if((kind === 'leap' || kind === 'dash') && adx > 110 && adx < 330 && Math.abs(dy) < 70 && s.onground) k = 's';
+  }
+  if(!k) return false;
+  const kind = mv[k][0];
+  if((s.fixed || s.act === 'bounce' || s._fly) && (kind === 'leap' || kind === 'dash' || kind === 'quake')) return false;
+  if(kind === 'leap' && !(lkOnTop(tgt.x, tgt.y + tgt.r) || lkGroundTop(tgt.x, tgt.y + tgt.r) != null)) return false;
+  s._mv = { k:k, kind:kind, d:mv[k], t:0, dir:Math.sign(dx) || s.face || 1, tx:tgt.x, ty:tgt.y };
+  s._lkMvT = t + (s._lkGold ? LKX.mvGapGold : LKX.mvGap) + Math.floor(simRand()*60);
+  s.face = s._mv.dir; lkMvCount(s, k);
+  return true;
+}
+function lkMoveStep(s, tgt){
+  const M = s._mv, W = LKX.mvW, d = M.d, dir = M.dir, feet = s.y + s.r; M.t++;
+  const e = lkKFrom(s, {}), dmg = lkKD(s, d[1]), kb = d[2];
+  s.face = dir;
+  if(M.kind !== 'leap' && M.kind !== 'dash' && !s.fixed && s.act !== 'bounce') s.vx *= 0.5;
+  if(M.t < W){ const k = M.t/W; s._lkPz = M.kind === 'spin' ? { sx:1 + 0.1*k, sy:1 - 0.12*k } : M.kind === 'slam' || M.kind === 'quake' ? { sx:1 - 0.08*k, sy:1 + 0.16*k, dx:-dir*3*k } : M.kind === 'leap' ? { sx:1 + 0.2*k, sy:1 - 0.24*k } : { rot:-dir*0.22*k, dx:-dir*4*k, sx:1, sy:1 }; return; }
+  const box = (x0, y0, x1, y1, kx, ky) => { for(const o of fighters){ if(o === null || !crmSame(o, s)) continue; if(a2InBox(o, Math.min(x0, x1), y0, Math.max(x0, x1), y1)) lkKitHit(e, o, dmg, kx(o), ky); } };
+  if(M.t === W){
+    M.st = hazardT;
+    if(M.kind === 'swipe'){ box(s.x, s.y - s.r - 44, s.x + dir*(s.r + 76), s.y + s.r, () => dir*kb, -kb*0.7); tone(520, 0.06, 'triangle', 0.04, 0, 300); }
+    else if(M.kind === 'poke'){ box(s.x, s.y - 18, s.x + dir*(s.r + 104), s.y + 18, () => dir*kb*1.1, -kb*0.35); tone(760, 0.05, 'square', 0.03, 0, 500); }
+    else if(M.kind === 'slam'){ box(s.x - dir*10, s.y - s.r - 20, s.x + dir*(s.r + 70), feet + 6, () => dir*kb*0.45, -kb); impact(s.x + dir*(s.r + 30), feet, { shake:3, dust:2, debris:2, r:50 }); }
+    else if(M.kind === 'spin'){ for(const o of fighters){ if(!o || o.dead || !crmSame(o, s) || Math.hypot(o.x - s.x, o.y - s.y) > s.r + 62 + (o.r || 24)) continue; lkKitHit(e, o, dmg, (Math.sign(o.x - s.x) || dir)*kb, -kb*0.6); } tone(440, 0.12, 'sawtooth', 0.03, 0, 880); }
+    else if(M.kind === 'pulse'){ lkKit().push(Object.assign(e, { k:'ring', x:s.x, y:s.y, R:140, grow:16, dmg:dmg, kb:kb, col:d[3], life:18 })); tone(300, 0.14, 'sine', 0.05, 0, 600); }
+    else if(M.kind === 'quake'){ for(const w of [-1, 1]) lkKit().push(lkKFrom(s, { k:'wave', x:s.x + w*s.r*0.6, y:feet, dir:w, spd:6.5, dist:240, d:0, h:44, dmg:dmg, kb:kb, col:d[3], life:60 })); impact(s.x, feet, { shake:4, dust:3, debris:3, r:60 }); }
+    else if(M.kind === 'shot' || M.kind === 'lob'){
+      const x0 = s.x + dir*s.r*0.6, y0 = s.y - s.r*0.3, lob = M.kind === 'lob';
+      const tx = tgt && crmSame(tgt, s) ? tgt.x : M.tx, ty = tgt && crmSame(tgt, s) ? tgt.y : M.ty;
+      let vx, vy; if(lob){ const n = 40; vx = clamp((tx - x0)/n, -9, 9); vy = -8.5; } else { const L = Math.hypot(tx - x0, ty - y0) || 1; vx = (tx - x0)/L*8; vy = (ty - y0)/L*8; }
+      lkKit().push(lkKFrom(s, { k:'shot', x:x0, y:y0, vx:vx, vy:vy, g:lob ? 0.34 : 0, r:lob ? 11 : 9, dmg:dmg, kb:kb, col:d[3], life:110, shape:s.name }));
+      tone(lob ? 380 : 660, 0.08, 'triangle', 0.04, 0, lob ? 240 : 900);
+    }
+    else if(M.kind === 'leap'){ const nx = M.tx; s.vx = clamp((nx - s.x)/30, -7.5, 7.5); s.vy = -11; s.onground = false; s._commit = 1; }
+    else if(M.kind === 'dash'){ s._commit = 1; M.x0 = s.x; }
+  }
+  if(M.kind === 'leap' && M.t > W){
+    if(s.vy > 0) for(const o of fighters){ if(o && crmSame(o, s) && Math.abs(o.x - s.x) < s.r + 18 && Math.abs(o.y - s.y) < s.r + 30) lkKitHit(M.e || (M.e = e), o, dmg, (Math.sign(o.x - s.x) || dir)*kb*0.6, -kb); }
+    if((s.onground && M.t > W + 3) || M.t > W + 70){ s._commit = 0; s.vx = 0; for(const o of fighters){ if(o && crmSame(o, s) && o.onground && Math.abs(o.x - s.x) < s.r + 56 && Math.abs((o.y + o.r) - feet) < 30) lkKitHit(M.e || (M.e = e), o, dmg, (Math.sign(o.x - s.x) || dir)*kb, -kb*0.8); }
+      impact(s.x, feet, { shake:4, dust:3, debris:3, r:56 }); M.st = hazardT; s._mv = null; }
+    return;
+  }
+  if(M.kind === 'dash' && M.t >= W){
+    const nx = s.x + dir*11;
+    if(M.t > W + 18 || !lkOnTop(nx + dir*s.r*0.5, feet) || (CROOM && crmReg(nx + dir*s.r, s.y) !== crmReg(s.x, s.y))){ s._commit = 0; s.vx = 0; s._mv = null; return; }
+    s.vx = dir*11; M.e = M.e || e;
+    for(const o of fighters){ if(o && crmSame(o, s) && hurtGap(o, s.x, s.y) < s.r) lkKitHit(M.e, o, dmg, dir*kb, -kb*0.5); }
+    if(M.t % 3 === 0) puff(s.x - dir*s.r, s.y, d[3], 3);
+    return;
+  }
+  if(M.t >= W + 14) s._mv = null;
+}
+// EACH ITS OWN ACT (LKV, the contest's LK_VARY `v`): the assists that shared an act with another and looked and played like it now have their own. The act's home
+// assist keeps it (9-Ball, Battery, Clapboard, Conch Shell, Rubber Spatula, Scissors, Toilet, MePad, Beach Ball, Grotato, Fire-ette, Winner's roll, Spongy's slam).
+// Every one: walks up (its own walk), a wind-up of its body (LKX pose), the thing itself, a rest, a few times, then it is put back after the wait (lkKeep).
+function lkNear(s, tgt, reach, lvl){   // in reach on its level: true; else it walks there (on its surface)
+  if(!tgt || (CROOM && !crmSame(tgt, s))) return false;
+  const dx = tgt.x - s.x; s.face = Math.sign(dx) || s.face;
+  if(s.onground && Math.abs(dx) < reach && Math.abs(asFeet(tgt) - (s.y + s.r)) < (lvl || 90)) return true;
+  navAssist(s, tgt, dx, (s._lkT && s._lkT.walk) || 3); return false;
+}
+function lkRest(s, T, n, rest){ s.vx *= 0.8; if(s._pt < rest) return; if((s._lkN || 0) >= n){ s.life = 0; return; } asGo(s, 'idle'); }
+function lkFoesIn(s, fn){ const out = []; for(const o of fighters){ if(!o || o.dead || o.team === s.team || hardInvuln(o) || (CROOM && !crmSame(o, s))) continue; if(fn(o)) out.push(o); } return out; }
+const LKV = {
+  // SALT LAMP: no flash. She lights up and carries a warm glow toward the foe for 5 s: whoever is in it is hit by the heat every 3/4 s (FIRE: it burns).
+  aura(s, tgt, T){
+    if(s._ph === 'idle'){ if(!tgt || (CROOM && !crmSame(tgt, s)) || Math.abs(tgt.x - s.x) > 420){ if(tgt) lkNear(s, tgt, 420, 200); return; } asGo(s, 'glow'); s._lkN = (s._lkN || 0) + 1; lkMvCount(s, 'a'); tone(200, 0.4, 'sine', 0.04, 0, 320); return; }
+    if(s._ph === 'glow'){
+      const g = Math.min(1, s._pt/30); s._lkPz = { sx:1 + 0.05*Math.sin(s._pt*0.15), sy:1 + 0.05*Math.sin(s._pt*0.15) };
+      if(tgt && crmSame(tgt, s) && Math.abs(tgt.x - s.x) > 30){ const nx = s.x + Math.sign(tgt.x - s.x)*1.4; if(lkStepOk(s, nx, null)) s.x = nx; s.face = Math.sign(tgt.x - s.x) || s.face; }
+      s.vx = 0;
+      if(s._pt > 20 && s._pt % 45 === 0){ const e = lkKFrom(s, { hit:null }); for(const o of lkFoesIn(s, o => Math.hypot(o.x - s.x, o.y - s.y) < T.R*g + (o.r || 24))) lkKitHit(e, o, lkKD(s, 3), (Math.sign(o.x - s.x) || 1)*2, -2); }
+      if(s._pt % 5 === 0) puff(s.x + (cosRand() - 0.5)*T.R, s.y - cosRand()*T.R*0.6, '#ffd8b0', 2);
+      if(s._pt >= (T.glow || 300)) asGo(s, 'rest');
+      return;
+    }
+    if(s._ph === 'rest') lkRest(s, T, 1, 30);
+  },
+  // ICE CREAMY: she lobs a big scoop at the foe; where it lands it bursts (a freeze round it) and leaves a melting puddle that chills whoever stands in it.
+  scoop(s, tgt, T){
+    if(s._ph === 'idle'){ if(lkNear(s, tgt, T.reach || 260, 160)){ asGo(s, 'wind'); s._lx = tgt.x; s._ly = tgt.y; } return; }
+    if(s._ph === 'wind'){ s.vx = 0; const k = Math.min(1, s._pt/24); s._lkPz = { rot:-s.face*0.35*k, sx:1, sy:1 + 0.08*k };
+      if(s._pt >= 24){ const x0 = s.x + s.face*s.r*0.5, y0 = s.y - s.r*0.6; s._lkN = (s._lkN || 0) + 1; lkMvCount(s, 'a');
+        lkKit().push(lkKFrom(s, { k:'shot', x:x0, y:y0, vx:clamp((s._lx - x0)/42, -9, 9), vy:-8, g:0.34, r:14, dmg:lkKD(s, 6), kb:6, col:'#f4e6d0', life:120, shape:'scoop', land:'scoop' })); asGo(s, 'rest'); }
+      return; }
+    if(s._ph === 'rest') lkRest(s, T, T.n || 2, 60);
+  },
+  // GLUE: squirts a long glue streak along the floor in front: whoever walks into it is stuck (rooted) a moment. Three squirts.
+  glue(s, tgt, T){
+    if(s._ph === 'idle'){ if(lkNear(s, tgt, T.reach || 170, 90)) asGo(s, 'wind'); return; }
+    if(s._ph === 'wind'){ s.vx = 0; const k = Math.min(1, s._pt/16); s._lkPz = { sx:1 - 0.12*k, sy:1 + 0.12*k };
+      if(s._pt >= 16){ s._lkN = (s._lkN || 0) + 1; lkMvCount(s, 'a'); const feet = s.y + s.r; let x1 = s.x + s.face*s.r*0.5;
+        for(let i = 0; i < 16; i++){ const nx = x1 + s.face*10; if(!lkOnTop(nx, feet)) break; x1 = nx; }
+        const xa = Math.min(s.x, x1), xb = Math.max(s.x, x1);
+        lkKit().push(lkKFrom(s, { k:'patch', kind:'glue', x:(xa + xb)/2, y:feet, w:Math.max(40, xb - xa), life:220, col:'#f4f4f4', dmg:lkKD(s, 2), g:{} }));
+        for(let i = 0; i < 6; i++) puff(s.x + s.face*(20 + i*20), feet - 4, '#ffffff', 3); asGo(s, 'rest'); }
+      return; }
+    if(s._ph === 'rest') lkRest(s, T, T.n || 3, 40);
+  },
+  // MILKSHAKE: tips over and spills -- a cold milkshake wave runs along the floor in front of her and leaves it slippery.
+  spill(s, tgt, T){
+    if(s._ph === 'idle'){ if(lkNear(s, tgt, T.reach || 260, 80)) asGo(s, 'wind'); return; }
+    if(s._ph === 'wind'){ s.vx = 0; const k = Math.min(1, s._pt/20); s._lkPz = { rot:s.face*0.7*k, sx:1, sy:1 };
+      if(s._pt >= 20){ s._lkN = (s._lkN || 0) + 1; lkMvCount(s, 'a'); const feet = s.y + s.r;
+        lkKit().push(lkKFrom(s, { k:'wave', x:s.x + s.face*s.r, y:feet, dir:s.face, spd:5, dist:360, d:0, h:58, dmg:lkKD(s, 7), kb:8, col:'#f0ece0', life:90, trail:'slick' }));
+        asGo(s, 'rest'); }
+      return; }
+    if(s._ph === 'rest'){ if(s._pt < 14) s._lkPz = { rot:s.face*0.7*(1 - s._pt/14), sx:1, sy:1 }; lkRest(s, T, T.n || 2, 50); }
+  },
+  // SHAMPOO: squirts three bubbles in a fan; each pops into a lather puddle that soaks whoever stands in it. Four squirts.
+  squirt(s, tgt, T){
+    if(s._ph === 'idle'){ if(lkNear(s, tgt, T.reach || 300, 200)){ asGo(s, 'wind'); s._lx = tgt.x; } return; }
+    if(s._ph === 'wind'){ s.vx = 0; const k = Math.min(1, s._pt/14); s._lkPz = { sx:1 + 0.1*k, sy:1 - 0.14*k };
+      if(s._pt >= 14){ s._lkN = (s._lkN || 0) + 1; lkMvCount(s, 'a'); const x0 = s.x, y0 = s.y - s.r;
+        for(const f of [0.75, 1, 1.25]) lkKit().push(lkKFrom(s, { k:'shot', x:x0, y:y0, vx:clamp((s._lx - x0)*f/46, -8, 8), vy:-9, g:0.34, r:10, dmg:lkKD(s, 4), kb:5, col:'#f6a8c8', life:120, shape:'bubble', land:'lather' }));
+        tone(900, 0.08, 'sine', 0.04, 0, 1300); asGo(s, 'rest'); }
+      return; }
+    if(s._ph === 'rest') lkRest(s, T, T.n || 4, 40);
+  },
+  // CREDIT CARD: a SWIPE -- a flat, committed dash straight through the foe's place, a magnetic stripe left in the air behind; it stops at its ledge's end.
+  swipe(s, tgt, T){
+    if(s._ph === 'idle'){ if(lkNear(s, tgt, T.reach || 360, 50)){ asGo(s, 'wind'); s._dir = s.face; } return; }
+    if(s._ph === 'wind'){ s.vx = 0; s.face = s._dir; const k = Math.min(1, s._pt/20); s._lkPz = { rot:-s._dir*0.5*k, dx:-s._dir*6*k, sx:1, sy:1 };
+      if(s._pt >= 20){ asGo(s, 'go'); s._x0 = s.x; s._commit = 1; s._lkN = (s._lkN || 0) + 1; lkMvCount(s, 'a'); s._lkE = lkKFrom(s, {}); } return; }
+    if(s._ph === 'go'){
+      const nx = s.x + s._dir*12, feet = s.y + s.r; s._lkPz = { rot:s._dir*0.12, sx:1.1, sy:0.9 };
+      if(Math.abs(s.x - s._x0) > 340 || !lkOnTop(nx + s._dir*s.r*0.5, feet) || (CROOM && crmReg(nx + s._dir*s.r, s.y) !== crmReg(s.x, s.y)) || s._pt > 40){ s._commit = 0; s.vx = 0;
+        lkKit().push(lkKFrom(s, { k:'stripe', x0:s._x0, x1:s.x, y:s.y, life:26 })); asGo(s, 'rest'); return; }
+      s.vx = s._dir*12;
+      for(const o of fighters){ if(o && crmSame(o, s) && hurtGap(o, s.x, s.y) < s.r + 4) lkKitHit(s._lkE, o, lkKD(s, T.dmg || 9), s._dir*(T.kb || 6), -5); }
+      return; }
+    if(s._ph === 'rest') lkRest(s, T, T.n || 2, 50);
+  },
+  // LIGHTNING CHERRY: no wire. Up close she zaps the foe herself -- a bolt from her stem straight to them, three times.
+  zap(s, tgt, T){
+    if(s._ph === 'idle'){ if(lkNear(s, tgt, T.reach || 230, 200)) asGo(s, 'wind'); return; }
+    if(s._ph === 'wind'){ s.vx = 0; s._lkPz = { dx:Math.sin(s._pt*2.1)*2, sx:1, sy:1 + 0.06*Math.min(1, s._pt/18) };
+      if(s._pt % 4 === 0) puff(s.x, s.y - s.r, '#ffd21f', 2);
+      if(s._pt >= 18){ s._lkN = (s._lkN || 0) + 1; lkMvCount(s, 'a');
+        if(tgt && crmSame(tgt, s) && Math.hypot(tgt.x - s.x, tgt.y - s.y) < (T.reach || 230) + 60){ const e = lkKFrom(s, {}); lkKitHit(e, tgt, lkKD(s, T.dmg || 7), (Math.sign(tgt.x - s.x) || 1)*4, -4, { stun:12 });
+          lkKit().push(lkKFrom(s, { k:'bolt', x1:s.x, y1:s.y - s.r, x2:tgt.x, y2:tgt.y, life:12 })); tone(1400, 0.08, 'square', 0.04, 0, 300); }
+        asGo(s, 'rest'); }
+      return; }
+    if(s._ph === 'rest') lkRest(s, T, T.n || 3, 36);
+  },
+  // PROPELLER HAT: takes off, flies over the foe and blows a DOWNDRAFT on them -- a column of wind pushing them down and away -- then flies off.
+  heli(s, tgt, T){
+    const Rm = CROOM ? crmRoomAt(s.x, s.y) : null, x0 = Rm ? Math.max(Rm.x0 + 60, 60) : 60, x1 = Rm ? Math.min(Rm.x1 - 60, WW - 60) : WW - 60;
+    if(s._ph === 'rest'){ s._lkPz = null; if(s.onground){ s.vx *= 0.8; if(s._pt >= 90) s.life = 0; } return; }
+    if(s._ph === 'idle'){ if(s._pt >= 60 && tgt && crmSame(tgt, s) && Math.abs(tgt.x - s.x) < (T.reach || 500)){ asGo(s, 'up'); s._fly = 1; s._lkN = (s._lkN || 0) + 1; lkMvCount(s, 'a'); } else if(tgt) lkNear(s, tgt, 500, 300); return; }
+    const hx = clamp(tgt && crmSame(tgt, s) ? tgt.x : s.x, x0, x1), hy = (tgt && crmSame(tgt, s) ? tgt.y : s.y) - 190;
+    s._lkPz = { rot:Math.sin(s._pt*0.2)*0.08, sx:1, sy:1 };
+    if(s._ph === 'up' || s._ph === 'blow'){
+      s.vx = clamp((hx - s.x)*0.06, -3.2, 3.2); s.vy = clamp((hy - s.y)*0.06, -4, 3); s.x = clamp(s.x, x0, x1);
+      if(s._ph === 'up' && (s._pt > 70 || Math.abs(hx - s.x) < 30)) asGo(s, 'blow');
+      if(s._ph === 'blow'){
+        const e = s._lkE || (s._lkE = lkKFrom(s, { hit:null, g:{} })), top = s.y + s.r;
+        if(s._pt % 3 === 0) puff(s.x + (cosRand() - 0.5)*70, top + 30 + cosRand()*150, '#eef4fa', 2);
+        for(const o of lkFoesIn(s, o => Math.abs(o.x - s.x) < 50 + (o.r || 24)*0.5 && o.y > top && o.y < top + 300)){
+          o.vy = Math.max(o.vy || 0, 3.5); o.vx += (Math.sign(o.x - s.x) || 1)*0.5;
+          if((e.g[o.idx] || 0) <= hazardT){ e.g[o.idx] = hazardT + 40; lkKitHit(e, o, lkKD(s, 2), (Math.sign(o.x - s.x) || 1)*5, 3); } }
+        if(s._pt >= 150){ s._fly = 0; s._lkE = null; s.vx = 0; s.vy = 0; for(let i = 0; i < 10; i++) puff(s.x, s.y, '#dfe8f2', 4); asGo(s, 'rest'); }   // (it drops down, rests, and is put back after the wait)
+      }
+      return;
+    }
+  },
+  // KITCHEN SINK: turns the tap on -- a spray of water drops lobbed at the foe for a moment; each splashes into a small puddle that soaks.
+  faucet(s, tgt, T){
+    if(s._ph === 'idle'){ if(lkNear(s, tgt, T.reach || 320, 200)){ asGo(s, 'wind'); s._lx = tgt.x; } return; }
+    if(s._ph === 'wind'){ s.vx = 0; s._lkPz = { dx:Math.sin(s._pt*2.3)*2*Math.min(1, s._pt/24), sx:1, sy:1 }; if(s._pt >= 24){ asGo(s, 'spray'); s._lkN = (s._lkN || 0) + 1; lkMvCount(s, 'a'); } return; }
+    if(s._ph === 'spray'){ s.vx = 0; if(tgt && crmSame(tgt, s)) s._lx = tgt.x;
+      if(s._pt % 6 === 0){ const x0 = s.x + s.face*s.r*0.4, y0 = s.y - s.r*0.7, f = 0.8 + 0.4*dcH(s._pt, 3);
+        lkKit().push(lkKFrom(s, { k:'shot', x:x0, y:y0, vx:clamp((s._lx - x0)*f/40, -8, 8), vy:-7.5, g:0.34, r:8, dmg:lkKD(s, 3), kb:6, col:'#5a9af5', life:110, shape:'drop', land:'puddle' })); }
+      if(s._pt >= 36) asGo(s, 'rest'); return; }
+    if(s._ph === 'rest') lkRest(s, T, T.n || 2, 60);
+  },
+  // SNARE DRUM: marches at the foe playing a fast DRUMROLL -- a rat-a-tat of small, quick stick hits right in front of her -- and ends it with a RIMSHOT, one sharp crack.
+  roll(s, tgt, T){
+    if(s._ph === 'idle'){ if(lkNear(s, tgt, 240, 80)){ asGo(s, 'roll'); s._lkN = (s._lkN || 0) + 1; lkMvCount(s, 'a'); s._lkE = null; } return; }
+    const feet = s.y + s.r;
+    if(s._ph === 'roll'){
+      s.vx = 0; s._lkPz = { sx:1 + 0.05*((s._pt >> 1) % 2), sy:1 - 0.05*((s._pt >> 1) % 2) };
+      if(tgt && crmSame(tgt, s) && Math.abs(tgt.x - s.x) > s.r + 34){ const nx = s.x + Math.sign(tgt.x - s.x)*1.8; if(lkStepOk(s, nx, null)) s.x = nx; s.face = Math.sign(tgt.x - s.x) || s.face; }
+      if(s._pt % 6 === 0){ const e = lkKFrom(s, {}); for(const o of lkFoesIn(s, o => a2InBox(o, Math.min(s.x, s.x + s.face*(s.r + 44)), s.y - s.r - 10, Math.max(s.x, s.x + s.face*(s.r + 44)), feet))) lkKitHit(e, o, lkKD(s, 1), s.face*2, -1.5, { stun:4 });
+        lkKit().push(lkKFrom(s, { k:'tap', x:s.x + s.face*(s.r + 8 + (s._pt % 12 ? 0 : 10)), y:s.y - s.r*0.3, life:8 })); tone(1700 + (s._pt % 12)*30, 0.025, 'square', 0.025, 0, 1500); }
+      if(s._pt >= 150) asGo(s, 'rim'); return; }
+    if(s._ph === 'rim'){ s.vx = 0; const k = Math.min(1, s._pt/12); s._lkPz = { sx:1 - 0.1*k, sy:1 + 0.14*k };
+      if(s._pt >= 12){ const e = lkKFrom(s, {}), x1 = s.x + s.face*(s.r + 96);
+        for(const o of lkFoesIn(s, o => a2InBox(o, Math.min(s.x, x1), s.y - s.r - 30, Math.max(s.x, x1), feet))) lkKitHit(e, o, lkKD(s, 12), s.face*12, -10);
+        lkKit().push(lkKFrom(s, { k:'crack', x:s.x + s.face*(s.r + 40), y:s.y - s.r*0.4, life:16 })); tone(2400, 0.06, 'square', 0.06, 0, 600); noise(0.08, 0.05, 3000, 0, 40); asGo(s, 'done'); }
+      return; }
+    if(s._ph === 'done'){ if(s._pt < 10) s._lkPz = { sx:1 + 0.2*(1 - s._pt/10), sy:1 - 0.2*(1 - s._pt/10) }; if(s._pt >= 20) s.life = 0; }
+  },
+  // BOOMBOX: is put down and STAYS PUT. On the beat it blasts big, slow SPEAKER SHOCKWAVES in a cone the way it faces -- four beats, the fourth a BASS DROP, wider and
+  // harder -- a rest, a second song if a foe is still in its room, then it is picked up (back beside you after the wait).
+  blast(s, tgt, T){
+    if(s._ph === 'idle'){ if(!s.onground) return; s.vx = 0; asGo(s, 'put'); return; }
+    s.vx = 0;
+    if(s._ph === 'put'){ if(tgt && crmSame(tgt, s)) s.face = Math.sign(tgt.x - s.x) || s.face; if(s._pt >= 20 && tgt && crmSame(tgt, s) && Math.abs(tgt.x - s.x) < 620){ asGo(s, 'song'); s._lkN = (s._lkN || 0) + 1; lkMvCount(s, 'a'); }
+      else if(s._pt > 240) s.life = 0; return; }
+    if(s._ph === 'song'){
+      const b = s._pt % 45, n = Math.floor(s._pt/45);
+      s._lkPz = { sx:1 + 0.12*Math.max(0, 1 - b/8)*(n >= 3 ? 1.6 : 1), sy:1 - 0.1*Math.max(0, 1 - b/8)*(n >= 3 ? 1.6 : 1) };
+      if(b === 0 && n < 4){ const drop = n === 3;
+        lkKit().push(lkKFrom(s, { k:'cone', x:s.x + s.face*s.r*0.6, y:s.y, dir:s.face, a:drop ? 0.8 : 0.5, r:s.r, spd:drop ? 3.2 : 3.6, rmax:drop ? 520 : 440, dmg:lkKD(s, drop ? 9 : 4), kb:drop ? 13 : 7, life:200, drop:drop ? 1 : 0 }));
+        tone(drop ? 70 : 120, drop ? 0.35 : 0.14, 'square', drop ? 0.08 : 0.05, 0, drop ? 40 : 90); }
+      if(s._pt >= 4*45) asGo(s, 'rest'); return; }
+    if(s._ph === 'rest'){ const own = fighters[s.owner];
+      if(s._pt >= 220){ if((s._lkN || 0) < 2 && tgt && crmSame(tgt, s) && Math.abs(tgt.x - s.x) < 620 && own && !own.dead && crmSame(own, s) && Math.abs(own.x - s.x) < 900){ asGo(s, 'song'); s._lkN++; lkMvCount(s, 'a'); } else s.life = 0; } }
+  } };
+// What the kit puts in the world (JAWB.kx), once a frame: rings that open, waves that run along a surface, shots and lobs, puddles and patches, clouds, and art only.
+function lkKitStep(){
+  const J = JAWB, t = hazardT, L = lkKit(); if(!L.length) return;
+  for(const e of L){
+    const age = t - e.t0; if(age > e.life){ e.dead = true; continue; }
+    if(e.k === 'ring'){ const R = e.R*Math.min(1, age/e.grow); for(const o of fighters){ if(!o || o.dead) continue; const d = Math.hypot(o.x - e.x, o.y - e.y); if(d < R + (o.r || 24) && d > R - 46) lkKitHit(e, o, e.dmg, (Math.sign(o.x - e.x) || 1)*e.kb, -e.kb*0.7, e.opts); } }
+    else if(e.k === 'wave'){
+      e.x += e.dir*e.spd; e.d += e.spd;
+      if(e.d >= e.dist || !lkOnTop(e.x, e.y) || (CROOM && crmReg(e.x, e.y - 20) !== e.room)){ e.dead = true; for(let i = 0; i < 3; i++) puff(e.x, e.y - 8, e.col, 3); continue; }
+      if(e.trail === 'slick' && age % 10 === 0) L.push(Object.assign(lkKFromE(e), { k:'patch', kind:'slick', x:e.x, y:e.y, w:46, life:160, col:e.col, g:{} }));
+      for(const o of fighters){ if(!o || o.dead) continue; const fy = o.y + o.r; if(Math.abs(o.x - e.x) < 18 + (o.r || 24)*0.4 && fy > e.y - e.h && fy < e.y + 8) lkKitHit(e, o, e.dmg, e.dir*e.kb, -e.kb, e.opts); }
+    }
+    else if(e.k === 'shot'){
+      const y0 = e.y; e.vy += e.g; e.x += e.vx; e.y += e.vy;
+      if(CROOM && crmReg(e.x, e.y) !== e.room){ e.dead = true; continue; }
+      let hitO = null; for(const o of fighters){ if(!o || o.dead || o.team === e.team || hardInvuln(o)) continue; if(hurtGap(o, e.x, e.y) < e.r){ hitO = o; break; } }
+      if(hitO){ lkKitHit(e, hitO, e.dmg, (Math.sign(e.vx) || 1)*e.kb, -e.kb*0.6, e.opts); lkLand(e); e.dead = true; continue; }
+      if(e.g > 0 && e.vy > 0){ const top = lkGroundTop(e.x, y0); if(top != null && e.y >= top){ e.y = top; lkLand(e); e.dead = true; continue; } }
+      if(e.y > LKF.gy + 200 || e.x < 0 || e.x > WW){ e.dead = true; continue; }
+      if(e.g === 0 && lkGroundTop(e.x, e.y) != null && Math.abs(lkGroundTop(e.x, e.y) - e.y) < 3){ lkLand(e); e.dead = true; continue; }
+    }
+    else if(e.k === 'patch'){
+      for(const o of fighters){ if(!o || o.dead || o.team === e.team || hardInvuln(o) || (CROOM && crmRegOf(o) !== e.room)) continue;
+        const fy = o.y + o.r; if(!o.onground || Math.abs(o.x - e.x) > e.w/2 + 6 || Math.abs(fy - e.y) > 8) continue;
+        if(e.kind === 'slick'){ o.vx *= 1.04; o.slowed = Math.max(o.slowed || 0, 20); }
+        if((e.g[o.idx] || 0) > t) continue; e.g[o.idx] = t + LKX.patchGap;
+        if(e.kind === 'glue'){ o.rooted = Math.max(o.rooted || 0, 45); lkKitHit(e, o, e.dmg, 0, 0); for(let i = 0; i < 4; i++) puff(o.x, fy - 4, '#ffffff', 3); }
+        else if(e.kind === 'chill'){ o.slowed = Math.max(o.slowed || 0, 60); lkKitHit(e, o, e.dmg, 0, -1); }
+        else if(e.kind === 'burn' || e.kind === 'soak' || e.kind === 'poison'){ lkKitHit(e, o, e.dmg, (Math.sign(o.x - e.x) || 1)*1.5, -2); }
+      }
+    }
+    else if(e.k === 'cloud'){
+      for(const o of fighters){ if(!o || o.dead || o.team === e.team || hardInvuln(o) || (CROOM && crmRegOf(o) !== e.room) || Math.hypot(o.x - e.x, o.y - e.y) > e.R + (o.r || 24)) continue;
+        if((e.g[o.idx] || 0) > t) continue; e.g[o.idx] = t + 45; lkKitHit(e, o, e.dmg, 0, -1); }
+    }
+    else if(e.k === 'cone'){
+      e.r += e.spd; if(e.r > e.rmax){ e.dead = true; continue; }
+      for(const o of fighters){ if(!o || o.dead) continue; const dx = o.x - e.x, dy = o.y - e.y, d = Math.hypot(dx, dy); if(Math.abs(d - e.r) > 26 + (o.r || 24)*0.5) continue;
+        const ang = Math.atan2(dy, dx*e.dir); if(Math.abs(ang) > e.a) continue; lkKitHit(e, o, e.dmg, e.dir*e.kb, -e.kb*0.55); }
+    }
+    else if(e.k === 'film' && age === e.rel){   // CLAPBOARD's "action!": the frozen line is let go with a shove
+      for(const o of fighters){ if(!o || o.dead || e.ids.indexOf(o.idx) < 0) continue; o.frozen = 0; o.vx = e.dir*9; o.vy = -5; o.onground = false; for(let i = 0; i < 5; i++) puff(o.x, o.y, i % 2 ? '#ffffff' : '#2a2a2e', 4); }
+      tone(1200, 0.05, 'square', 0.05, 0, 900);
+    }
+  }
+  J.kx = L.filter(e => !e.dead);
+}
+function lkKFromE(e){ return { by:e.by, team:e.team, room:e.room, src:e.src, t0:hazardT, hit:null, dmg:e.dmg*0.5, g:{} }; }
+// what a lob leaves where it lands
+function lkLand(e){
+  const L = lkKit(), base = lkKFromE(e), y = e.y;
+  if(e.land === 'scoop'){ L.push(Object.assign(base, { k:'patch', kind:'chill', x:e.x, y:y, w:150, life:150, col:'#f4e6d0' }));
+    for(const o of fighters){ if(!o || o.dead || o.team === e.team || hardInvuln(o) || Math.hypot(o.x - e.x, (o.y + o.r) - y) > 80) continue; o.frozen = Math.max(o.frozen || 0, 24); }
+    for(let i = 0; i < 10; i++) puff(e.x, y - 6, i % 2 ? '#f4e6d0' : '#ff8fb8', 4); }
+  else if(e.land === 'lather') L.push(Object.assign(base, { k:'patch', kind:'soak', x:e.x, y:y, w:70, life:120, col:'#ffd8ee' }));
+  else if(e.land === 'puddle') L.push(Object.assign(base, { k:'patch', kind:'soak', x:e.x, y:y, w:60, life:90, col:'#5a9af5' }));
+  else for(let i = 0; i < 4; i++) puff(e.x, e.y, e.col, 3);
+}
+// ---- THE HOME ACTS' OWN TWISTS (hooks in their acts, contest only: the _lkT knob) ----
+function lkPhotoFx(s, f){   // SELFIE STICK: a caught foe is pulled into the frame (a step toward the camera) and framed
+  const feet = f.y + f.r, nx = f.x + Math.sign(s.x - f.x)*46;
+  if(Math.abs(f.x - s.x) > s.r + 40 && (!f.onground || lkOnTop(nx, feet)) && (!CROOM || crmReg(nx, f.y) === crmRegOf(f))) f.x = nx;
+  lkKit().push(lkKFrom(s, { k:'frame', id:f.idx, life:30 }));
+}
+function lkClapLine(s, T){   // CLAPBOARD: "CUT!" freezes everyone in a LINE in front of the board; "ACTION!" lets them go with a shove
+  const x1 = s.x + s.face*T.R, ids = [];
+  for(const f of fighters){ if(!a2Open(s, f) || (CROOM && !crmSame(f, s)) || !a2InBox(f, Math.min(s.x, x1), s.y - s.r - 90, Math.max(s.x, x1), s.y + s.r + 4)) continue;
+    f.frozen = Math.max(f.frozen || 0, T.freeze); f._cutT = hazardT + T.freeze; f.vx = 0; ids.push(f.idx); lkTouch(assistFighter(s), f); }
+  lkKit().push(lkKFrom(s, { k:'film', x0:s.x, x1:x1, y:s.y, dir:s.face, ids:ids, rel:T.freeze, life:T.freeze + 12 }));
+}
+function lkSplash(s){ if(((s._spl = (s._spl || 0) + 1) % 3)) return; lkKit().push(lkKFrom(s, { k:'ring', x:s.x, y:s.y + s.r - 6, R:80, grow:10, dmg:lkKD(s, 3), kb:5, col:'#5a9af5', life:12, splash:1 })); }   // COCONUT WATER: a splash every third skip
+function lkStayExtra(s, T){   // ROBOT FLOWER shoots pollen zaps from where it is planted; WATER BOTTLE's bubble guards: foes' shots near it pop, and a spray ring now and then
+  if(T.turret && s._pt % 80 === 40){ let best = null, bd = 430; for(const o of lkFoesIn(s, () => true)){ const d = Math.hypot(o.x - s.x, o.y - s.y); if(d < bd){ bd = d; best = o; } }
+    if(best){ const L = Math.max(1, bd), x0 = s.x, y0 = s.y - s.r*0.8; lkKit().push(lkKFrom(s, { k:'shot', x:x0, y:y0, vx:(best.x - x0)/L*7, vy:(best.y - y0)/L*7, g:0, r:8, dmg:lkKD(s, 4), kb:4, col:'#ffe866', life:90, shape:'pollen' })); tone(1000, 0.05, 'triangle', 0.03, 0, 1500); } }
+  if(T.guard){
+    for(const p of projectiles){ if(!(p.life > 0) || p.dead || !p.ownerObj || p.ownerObj.team === s.team || Math.hypot(p.x - s.x, p.y - s.y) > 100) continue; p.life = 0; p.dead = true; for(let i = 0; i < 5; i++) puff(p.x, p.y, '#9cc8ff', 3); }
+    if(s._pt % 90 === 45 && lkFoesIn(s, o => Math.hypot(o.x - s.x, o.y - s.y) < 100).length) lkKit().push(lkKFrom(s, { k:'ring', x:s.x, y:s.y, R:96, grow:12, dmg:lkKD(s, 3), kb:8, col:'#9cc8ff', life:14 }));
+  }
+}
+function lkCrushLand(s, T){   // ANCHOR's drop sends shockwaves along the floor both ways; EGGY's landing cracks a rotten-egg cloud
+  const feet = s.y + s.r;
+  if(T.quake) for(const w of [-1, 1]) lkKit().push(lkKFrom(s, { k:'wave', x:s.x + w*s.r, y:feet, dir:w, spd:7, dist:300, d:0, h:50, dmg:lkKD(s, 6), kb:10, col:'#6a6a74', life:60 }));
+  if(T.yolk) lkKit().push(lkKFrom(s, { k:'cloud', x:s.x, y:feet - 30, R:70, dmg:lkKD(s, 2), life:150, g:{}, hit:null, col:'#c8d040' }));
+}
+function lkRushTrail(s, T){ if(T.guac && s._pt % 12 === 0) lkKit().push(lkKFrom(s, { k:'patch', kind:'poison', x:s.x, y:s.y + s.r, w:56, life:220, col:'#7ab84a', dmg:lkKD(s, 2), g:{}, hit:null })); }   // AVOCADO: a guacamole trail
+// ---- THE PAIRS' BONDS (2 of a type out; were all one candy rope, "just the lasers"): each type its own thing between its two ----
+function lkBondHit(f, s, o, k){ const t = hazardT; if(o === f || o.dead || o.team === f.team || hardInvuln(o) || (o._lkBeamT || 0) > t || (CROOM && !crmSame(o, s))) return false;
+  o._lkBeamT = t + LK.ropeEvery; JAWB.st.comboHits++; const dir = Math.sign(o.x - s.x) || 1;
+  applyHit(o, LK.ropeDmg*(k || 1), dir*LK.ropeKb*(k || 1), -LK.ropeKb*0.8*(k || 1), assistFighter(s), { shot:1 }); return true; }
+function lkBond(f, fl, mem){
+  const t = hazardT, foes = fighters.filter(o => o && o !== f && !o.dead && o.team !== f.team);
+  mem.forEach((m, i) => {
+    const s = m[0], feet = s.y + s.r; lkTag(s, f, m[1]);
+    if(fl === 'fire'){ if(s.onground && (t + i*25) % 50 === 0) lkKit().push(lkKFrom(s, { k:'patch', kind:'burn', x:s.x, y:feet, w:64, life:200, col:'#ff8a2a', dmg:LK.ropeDmg*0.6, g:{}, hit:null, bond:1 })); }
+    else if(fl === 'ice'){ for(let k = 0; k < 3; k++){ const a = t*0.06 + k*2.09 + i, sx = s.x + Math.cos(a)*(s.r + 36), sy = s.y + Math.sin(a)*(s.r + 22); for(const o of foes) if(Math.hypot(o.x - sx, o.y - sy) < (o.r || 24) + 14) lkBondHit(f, s, o, 0.8); } }
+    else if(fl === 'heavy'){ if(s.onground && (t + i*75) % LKX.bondEvery === 0){ for(const w of [-1, 1]) lkKit().push(lkKFrom(s, { k:'wave', x:s.x + w*s.r, y:feet, dir:w, spd:6, dist:200, d:0, h:46, dmg:LK.ropeDmg, kb:LK.ropeKb*2, col:'#8a4fd8', life:50, bond:1 })); impact(s.x, feet, { shake:2, dust:2, r:40 }); } }
+    else if(fl === 'water'){ for(const o of foes) if(o.onground && Math.abs(o.x - s.x) < 74 && Math.abs((o.y + o.r) - feet) < 12 && lkBondHit(f, s, o, 0.6)) o.vx += (Math.sign(o.x - s.x) || 1)*4; }
+    else if(fl === 'poison'){ for(const o of foes) if(Math.hypot(o.x - s.x, o.y - s.y) < 84 + (o.r || 24)) lkBondHit(f, s, o, 0.6); }
+  });
+  if(mem.length < 2) return;
+  const a = mem[0][0], b = mem[1][0];
+  if(Math.hypot(a.x - b.x, a.y - b.y) > LK.comboR || (CROOM && !crmSame(a, b))) return;
+  if(fl === 'shock'){ for(const o of foes){ if(lkSegDist(o.x, o.y, a.x, a.y, b.x, b.y) <= o.r + LK.comboW) lkBondHit(f, a, o, 1); } }
+  else if(fl === 'wind'){ const u = 0.5 - 0.5*Math.cos(t*0.05), wx = a.x + (b.x - a.x)*u, wy = a.y + (b.y - a.y)*u; f._lkWhirl = { x:wx, y:wy };
+    for(const o of foes) if(Math.hypot(o.x - wx, o.y - wy) < (o.r || 24) + 34 && lkBondHit(f, a, o, 1)){ o.vy = Math.min(o.vy || 0, -6); } }
+  else if(fl === 'sneaky' && t % 200 === 0 && a.onground && b.onground && !a.fixed && !b.fixed){   // the two blink into each other's places; foes by either place are dazed
+    const ax = a.x, ay = a.y; a.x = b.x; a.y = b.y; b.x = ax; b.y = ay;
+    for(const s of [a, b]){ for(let i = 0; i < 8; i++) puff(s.x, s.y, i % 2 ? '#5fd23a' : '#d8ffb0', 4); for(const o of foes) if(Math.hypot(o.x - s.x, o.y - s.y) < 96) lkBondHit(f, s, o, 1); }
+    lkKit().push(lkKFrom(a, { k:'blink', x1:a.x, y1:a.y, x2:b.x, y2:b.y, life:24 }));
+  }
+}
+// ---- TYPE POWER (3 of a type out: your own hits give the type's touch) -- each type its own extra on YOUR hit ----
+function lkTriFx(own, t, fl){
+  const P = own._lkTPx || (own._lkTPx = { idx:-2, _asKey:'tpx' + own.idx }); P.team = own.team; P._lkFam = fl; P._lkOwn = own.idx; P._lkS = own;   // (its own stand-in: what it hits gets the type's touch, never another TYPE POWER extra)
+  const e = { by:P, team:own.team, room:CROOM ? crmRegOf(t) : null, src:own, t0:hazardT, hit:new Set([t]), g:{} }, feet = t.y + t.r, L = lkKit();
+  if(fl === 'fire'){ const top = lkGroundTop(t.x, feet); if(top != null) L.push(Object.assign({}, e, { hit:null, k:'patch', kind:'burn', x:t.x, y:top, w:90, life:150, col:'#ff8a2a', dmg:2, embers:1 })); }
+  else if(fl === 'ice'){ L.push(Object.assign({}, e, { k:'shards', x:t.x, y:t.y, life:24 })); for(const o of fighters) if(o && o !== t && !o.dead && o.team !== own.team && Math.hypot(o.x - t.x, o.y - t.y) < 110){ o.slowed = Math.max(o.slowed || 0, 60); } }
+  else if(fl === 'heavy'){ L.push(Object.assign({}, e, { k:'ring', x:t.x, y:t.y, R:130, grow:14, dmg:3, kb:10, col:'#8a4fd8', life:16, shock:1 })); impact(t.x, feet, { shake:4, dust:2, r:60 }); }
+  else if(fl === 'sneaky'){ const side = Math.sign(t.x - own.x) || own.face || 1, nx = t.x + side*(t.r + own.r + 8);
+    if(lkOnTop(nx, own.y + own.r) || !own.onground){ if(!CROOM || crmReg(nx, own.y) === crmRegOf(own)){ L.push(Object.assign({}, e, { k:'blink', x1:own.x, y1:own.y, x2:nx, y2:own.y, life:24 })); own.x = nx; own.face = -side; for(let i = 0; i < 8; i++) puff(own.x, own.y, '#5fd23a', 4); } } }
+  else if(fl === 'shock') L.push(Object.assign({}, e, { k:'sparks', x:t.x, y:t.y, life:20 }));
+  else if(fl === 'wind') L.push(Object.assign({}, e, { k:'swirl', x:t.x, y:t.y, life:26 }));
+  else if(fl === 'water'){ const top = lkGroundTop(t.x, feet); if(top != null) L.push(Object.assign({}, e, { hit:null, k:'patch', kind:'soak', x:t.x, y:top, w:110, life:150, col:'#5a9af5', dmg:2 })); }
+  else if(fl === 'poison') L.push(Object.assign({}, e, { hit:null, k:'cloud', x:t.x, y:t.y, R:80, dmg:2, life:150, col:'#c23ad0' }));
+}
+// ---- THE KIT'S PICTURES (art only: no words, no random numbers) ----
+function lkKitDrawUnder(c){   // on the floor: patches, puddles, clouds' shadows
+  const t = hazardT;
+  c.save(); c.lineJoin = 'round'; c.lineCap = 'round';
+  for(const e of lkKit()){
+    const age = t - e.t0, fade = Math.min(1, (e.life - age)/20);
+    if(e.k === 'patch'){ const w = e.w/2;
+      c.globalAlpha = 0.75*fade; c.fillStyle = e.col; c.beginPath(); c.ellipse(e.x, e.y - 2, w, 7, 0, 0, 7); c.fill();
+      c.strokeStyle = 'rgba(28,28,28,0.5)'; c.lineWidth = 1.5; c.stroke();
+      if(e.kind === 'burn'){ for(let i = 0; i < 4; i++){ const ex = e.x - w*0.7 + i*w*0.47, h = 8 + 6*Math.abs(Math.sin(t*0.3 + i*1.3)); c.fillStyle = i % 2 ? '#ffd23f' : '#ff5a2a'; c.globalAlpha = 0.9*fade; c.beginPath(); c.moveTo(ex - 5, e.y - 2); c.quadraticCurveTo(ex, e.y - h*1.6, ex + 5, e.y - 2); c.fill(); }
+        if(e.embers) for(let i = 0; i < 3; i++){ const u = ((t + i*13) % 30)/30; c.fillStyle = '#ffb03a'; c.globalAlpha = (1 - u)*fade; c.fillRect(e.x + (dcH(i, e.t0) - 0.5)*w*1.6, e.y - 6 - u*30, 3, 3); } }
+      else if(e.kind === 'glue'){ c.strokeStyle = '#ffffff'; c.lineWidth = 2; c.globalAlpha = 0.9*fade; for(let i = 0; i < 4; i++){ const gx = e.x - w*0.8 + i*w*0.53; c.beginPath(); c.moveTo(gx, e.y - 3); c.quadraticCurveTo(gx + 3, e.y - 12 - 3*Math.sin(t*0.1 + i), gx + 6, e.y - 3); c.stroke(); } c.fillStyle = 'rgba(255,255,255,0.8)'; c.beginPath(); c.ellipse(e.x - w*0.3, e.y - 4, w*0.25, 2, 0, 0, 7); c.fill(); }
+      else if(e.kind === 'chill'){ c.fillStyle = '#ff8fb8'; for(let i = 0; i < 6; i++){ c.globalAlpha = 0.9*fade; c.fillRect(e.x - w*0.8 + dcH(i, 7)*w*1.6, e.y - 4 - dcH(i, 9)*3, 4, 2); } c.strokeStyle = '#e6f7ff'; c.lineWidth = 1.5; for(let i = 0; i < 3; i++){ const sx = e.x + (i - 1)*w*0.5, sy = e.y - 12 - (age*0.3 + i*7) % 14; c.beginPath(); c.moveTo(sx - 4, sy); c.lineTo(sx + 4, sy); c.moveTo(sx, sy - 4); c.lineTo(sx, sy + 4); c.stroke(); } }
+      else if(e.kind === 'soak'){ c.fillStyle = 'rgba(255,255,255,0.7)'; for(let i = 0; i < 3; i++){ const r = 3 + ((age*0.2 + i*4) % 6); c.globalAlpha = 0.7*fade; c.beginPath(); c.arc(e.x + (i - 1)*w*0.5, e.y - 6 - r, r, 0, 7); c.stroke(); } }
+      else if(e.kind === 'poison'){ for(let i = 0; i < 3; i++){ const ph = ((t + i*15) % 45)/45; c.globalAlpha = 0.8*(1 - ph)*fade; c.fillStyle = '#c23ad0'; c.beginPath(); c.arc(e.x + (i - 1)*w*0.5, e.y - 4 - ph*18, 3 + ph*3, 0, 7); c.fill(); } }
+      else if(e.kind === 'slick'){ c.strokeStyle = 'rgba(255,255,255,0.8)'; c.lineWidth = 2; c.globalAlpha = 0.8*fade; c.beginPath(); c.moveTo(e.x - w*0.5, e.y - 4); c.lineTo(e.x + w*0.2, e.y - 4); c.stroke(); }
+    }
+  }
+  c.restore();
+}
+function lkKitDrawOver(c){
+  const t = hazardT;
+  c.save(); c.lineJoin = 'round'; c.lineCap = 'round';
+  for(const e of lkKit()){
+    const age = t - e.t0, u = Math.min(1, age/Math.max(1, e.life)), fade = Math.min(1, (e.life - age)/12);
+    if(e.k === 'ring'){ const R = e.R*Math.min(1, age/e.grow); c.globalAlpha = 0.85*fade; c.strokeStyle = e.col; c.lineWidth = e.shock ? 8 : 5; c.beginPath(); c.arc(e.x, e.y, R, 0, 7); c.stroke(); c.strokeStyle = '#ffffff'; c.lineWidth = 2; c.beginPath(); c.arc(e.x, e.y, R*0.8, 0, 7); c.stroke();
+      if(e.splash) for(let i = 0; i < 6; i++){ const a = Math.PI + i*Math.PI/5, rr = R*0.9; c.fillStyle = '#5a9af5'; c.beginPath(); c.arc(e.x + Math.cos(a)*rr, e.y + Math.sin(a)*rr*0.6, 4, 0, 7); c.fill(); } }
+    else if(e.k === 'wave'){ const H = e.h; c.globalAlpha = 0.9*Math.min(1, (e.dist - e.d)/40 + 0.1); c.fillStyle = e.col; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2;
+      c.beginPath(); c.moveTo(e.x - e.dir*26, e.y); c.quadraticCurveTo(e.x - e.dir*6, e.y - H*1.1, e.x + e.dir*14, e.y - H*0.5); c.quadraticCurveTo(e.x + e.dir*22, e.y - H*0.2, e.x + e.dir*20, e.y); c.closePath(); c.fill(); c.stroke();
+      c.strokeStyle = 'rgba(255,255,255,0.8)'; c.beginPath(); c.moveTo(e.x - e.dir*12, e.y - H*0.5); c.quadraticCurveTo(e.x, e.y - H*0.85, e.x + e.dir*10, e.y - H*0.5); c.stroke(); }
+    else if(e.k === 'shot'){ c.globalAlpha = 1; c.fillStyle = e.col; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2;
+      if(e.shape === 'bubble'){ c.globalAlpha = 0.85; c.beginPath(); c.arc(e.x, e.y, e.r, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#ffffff'; c.beginPath(); c.arc(e.x - e.r*0.35, e.y - e.r*0.35, e.r*0.3, 0, 7); c.fill(); }
+      else if(e.shape === 'drop'){ c.beginPath(); c.moveTo(e.x, e.y - e.r*1.4); c.quadraticCurveTo(e.x + e.r, e.y, e.x, e.y + e.r); c.quadraticCurveTo(e.x - e.r, e.y, e.x, e.y - e.r*1.4); c.fill(); c.stroke(); }
+      else if(e.shape === 'scoop'){ c.fillStyle = '#ff8fb8'; c.beginPath(); c.arc(e.x, e.y, e.r, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#f4e6d0'; c.beginPath(); c.arc(e.x - 3, e.y - 3, e.r*0.6, 0, 7); c.fill(); c.fillStyle = '#5cc8ff'; c.fillRect(e.x + 2, e.y - 6, 3, 2); c.fillStyle = '#ffd23f'; c.fillRect(e.x - 6, e.y + 3, 3, 2); }
+      else if(e.shape === 'pollen'){ for(let i = 0; i < 5; i++){ const a = i*1.256 + t*0.2; c.fillStyle = '#d070d8'; c.beginPath(); c.arc(e.x + Math.cos(a)*e.r*0.8, e.y + Math.sin(a)*e.r*0.8, 3.5, 0, 7); c.fill(); } c.fillStyle = '#ffe866'; c.beginPath(); c.arc(e.x, e.y, e.r*0.6, 0, 7); c.fill(); c.stroke(); }
+      else if(e.shape === 'Boombox'){ c.fillStyle = '#ffffff'; c.beginPath(); c.ellipse(e.x, e.y + 4, 6, 4.5, -0.4, 0, 7); c.fill(); c.stroke(); c.beginPath(); c.moveTo(e.x + 5, e.y + 3); c.lineTo(e.x + 5, e.y - 12); c.lineTo(e.x + 12, e.y - 8); c.stroke(); }
+      else { c.beginPath(); c.arc(e.x, e.y, e.r, 0, 7); c.fill(); c.stroke(); c.globalAlpha = 0.4; c.beginPath(); c.arc(e.x - e.vx*1.5, e.y - e.vy*1.5, e.r*0.7, 0, 7); c.fill(); } }
+    else if(e.k === 'cloud'){ for(let i = 0; i < 7; i++){ const a = i*0.9 + t*0.02, rr = e.R*(0.45 + 0.35*dcH(i, 5)); c.globalAlpha = 0.28*fade; c.fillStyle = i % 2 ? (e.col || '#c23ad0') : '#7a1a88'; c.beginPath(); c.arc(e.x + Math.cos(a)*rr*0.7, e.y + Math.sin(a)*rr*0.4, rr*0.6, 0, 7); c.fill(); }
+      for(let i = 0; i < 4; i++){ const ph = ((t + i*11) % 40)/40; c.globalAlpha = 0.8*(1 - ph)*fade; c.fillStyle = '#f0a8f5'; c.beginPath(); c.arc(e.x + (dcH(i, 3) - 0.5)*e.R, e.y + e.R*0.3 - ph*e.R, 3, 0, 7); c.fill(); } }
+    else if(e.k === 'cone'){ const a = e.a, a0 = e.dir > 0 ? -a : Math.PI - a, a1 = e.dir > 0 ? a : Math.PI + a, al = Math.max(0, 1 - e.r/e.rmax);
+      for(let j = 0; j < 3; j++){ const rr = e.r - j*14; if(rr < 10) continue; c.globalAlpha = (0.85 - j*0.25)*Math.min(1, al*2.5); c.strokeStyle = j ? '#6a4a2a' : '#ffe0a0'; c.lineWidth = (e.drop ? 12 : 7) - j*2; c.beginPath(); c.arc(e.x, e.y, rr, a0, a1); c.stroke(); }
+      c.globalAlpha = Math.min(1, al*2); c.fillStyle = '#ffffff'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.5;
+      for(let k = -1; k <= 1; k += 2){ const ang = (e.dir > 0 ? 0 : Math.PI) + k*a*0.6, nx = e.x + Math.cos(ang)*e.r, ny = e.y + Math.sin(ang)*e.r; c.beginPath(); c.ellipse(nx, ny + 3, 5, 3.5, -0.4, 0, 7); c.fill(); c.stroke(); c.beginPath(); c.moveTo(nx + 4, ny + 2); c.lineTo(nx + 4, ny - 9); c.stroke(); } }
+    else if(e.k === 'bolt'){ for(const [lw, col] of [[7, '#ffd21f'], [2.5, '#ffffff']]){ c.globalAlpha = fade; c.strokeStyle = col; c.lineWidth = lw; c.beginPath(); c.moveTo(e.x1, e.y1); for(let i = 1; i < 7; i++){ const k = i/7; c.lineTo(e.x1 + (e.x2 - e.x1)*k + ((i + (age >> 1)) % 2 ? 10 : -10), e.y1 + (e.y2 - e.y1)*k + (i % 2 ? -6 : 6)); } c.lineTo(e.x2, e.y2); c.stroke(); } }
+    else if(e.k === 'frame'){ const f = fighters[e.id]; if(!f || f.dead) continue; const r = (f.r || 24) + 14; c.globalAlpha = fade; c.strokeStyle = '#ffffff'; c.lineWidth = 4;
+      for(const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]){ c.beginPath(); c.moveTo(f.x + sx*r, f.y + sy*r - sy*12); c.lineTo(f.x + sx*r, f.y + sy*r); c.lineTo(f.x + sx*r - sx*12, f.y + sy*r); c.stroke(); }
+      if(age < 6){ c.globalAlpha = 0.5*(1 - age/6); c.fillStyle = '#ffffff'; c.fillRect(f.x - r, f.y - r, r*2, r*2); } }
+    else if(e.k === 'film'){ const x0 = Math.min(e.x0, e.x1), w = Math.abs(e.x1 - e.x0), y = e.y - 20; c.globalAlpha = age < e.rel ? 0.85 : fade; c.fillStyle = '#1c1c1c'; c.fillRect(x0, y - 22, w, 44);
+      c.fillStyle = '#f4f4f4'; for(let x = x0 + 6; x < x0 + w - 8; x += 22){ c.fillRect(x, y - 19, 10, 6); c.fillRect(x, y + 13, 10, 6); }
+      c.globalAlpha = 0.25; c.fillStyle = '#bfeaff'; c.fillRect(x0, y - 12, w, 24);
+      if(age >= e.rel){ c.globalAlpha = fade; c.fillStyle = '#ffffff'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; const mx = e.x0 + e.dir*36; c.beginPath(); c.moveTo(mx, y - 30); c.lineTo(mx + e.dir*18, y - 6); c.lineTo(mx - e.dir*6, y - 6); c.closePath(); c.fill(); c.stroke(); } }
+    else if(e.k === 'stripe'){ c.globalAlpha = fade*0.9; c.fillStyle = '#1c1c1c'; c.fillRect(Math.min(e.x0, e.x1), e.y - 8, Math.abs(e.x1 - e.x0), 10); c.fillStyle = '#c9a34b'; c.fillRect(Math.min(e.x0, e.x1), e.y + 4, Math.abs(e.x1 - e.x0), 3); }
+    else if(e.k === 'tap'){ c.globalAlpha = fade; c.strokeStyle = '#ffffff'; c.lineWidth = 2; for(let i = 0; i < 3; i++){ const a = -0.8 + i*0.8; c.beginPath(); c.moveTo(e.x + Math.cos(a)*6, e.y + Math.sin(a)*6); c.lineTo(e.x + Math.cos(a)*13, e.y + Math.sin(a)*13); c.stroke(); } }
+    else if(e.k === 'crack'){ const R = 14 + age*3; c.globalAlpha = fade; c.fillStyle = '#ffffff'; c.strokeStyle = '#2a3aa0'; c.lineWidth = 2.5; c.beginPath(); for(let i = 0; i < 16; i++){ const a = i*Math.PI/8, rr = i % 2 ? R*0.4 : R; c.lineTo(e.x + Math.cos(a)*rr, e.y + Math.sin(a)*rr); } c.closePath(); c.fill(); c.stroke(); }
+    else if(e.k === 'blink'){ c.globalAlpha = 0.8*fade; c.strokeStyle = '#5fd23a'; c.lineWidth = 4; c.setLineDash([10, 8]); c.lineDashOffset = -age*2; c.beginPath(); c.moveTo(e.x1, e.y1); c.lineTo(e.x2, e.y2); c.stroke(); c.setLineDash([]); }
+    else if(e.k === 'shards'){ for(let i = 0; i < 8; i++){ const a = i*0.785, d = 10 + u*70; c.globalAlpha = fade; c.fillStyle = '#e6f7ff'; c.strokeStyle = '#2f8fd8'; c.lineWidth = 1.5; c.save(); c.translate(e.x + Math.cos(a)*d, e.y + Math.sin(a)*d); c.rotate(a); c.beginPath(); c.moveTo(8, 0); c.lineTo(-4, 4); c.lineTo(-4, -4); c.closePath(); c.fill(); c.stroke(); c.restore(); } }
+    else if(e.k === 'sparks'){ for(let i = 0; i < 6; i++){ const a = dcH(i, e.t0)*6.28, d = 8 + u*44; c.globalAlpha = fade; c.strokeStyle = i % 2 ? '#ffffff' : '#ffd21f'; c.lineWidth = 3; c.beginPath(); c.moveTo(e.x + Math.cos(a)*d*0.5, e.y + Math.sin(a)*d*0.5); c.lineTo(e.x + Math.cos(a + 0.3)*d, e.y + Math.sin(a + 0.3)*d); c.lineTo(e.x + Math.cos(a)*d*1.3, e.y + Math.sin(a)*d*1.3); c.stroke(); } }
+    else if(e.k === 'swirl'){ for(let i = 0; i < 3; i++){ const a0 = age*0.35 + i*2.09, R = 20 + u*50; c.globalAlpha = 0.85*fade; c.strokeStyle = i % 2 ? '#ffffff' : '#9fb4c8'; c.lineWidth = 3; c.beginPath(); c.arc(e.x, e.y, R, a0, a0 + 1.7); c.stroke(); } }
+  }
+  // the moves as they strike, the assists' own looks, the pairs' bonds, gold
+  for(const s of summons){
+    if(!s._lk || !(s.life > 0) || typeof s.x !== 'number' || (CROOM && crmHid({ x:s.x, y:s.y }))) continue;
+    const r = s.r || 26, T = s._lkT || {}, M = s._mv;
+    if(M && M.st != null && t - M.st < 12){ const k = (t - M.st)/12, dir = M.dir, col = M.d[3]; c.globalAlpha = 1 - k; c.strokeStyle = col; c.fillStyle = col;
+      if(M.kind === 'swipe'){ c.lineWidth = 10; c.beginPath(); c.arc(s.x, s.y, r + 50, dir > 0 ? -1.3 : Math.PI - 0.3, dir > 0 ? 0.3 : Math.PI + 1.3); c.stroke(); c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.stroke(); }
+      else if(M.kind === 'poke'){ c.lineWidth = 6; c.beginPath(); c.moveTo(s.x + dir*r, s.y); c.lineTo(s.x + dir*(r + 104*(0.6 + 0.4*k)), s.y); c.stroke(); c.fillStyle = '#ffffff'; c.beginPath(); c.arc(s.x + dir*(r + 104), s.y, 6, 0, 7); c.fill(); }
+      else if(M.kind === 'slam'){ c.lineWidth = 4; for(let i = 0; i < 5; i++){ const a = Math.PI + i*Math.PI/4; c.beginPath(); c.moveTo(s.x + dir*(r + 30), s.y + r); c.lineTo(s.x + dir*(r + 30) + Math.cos(a)*(20 + k*30), s.y + r + Math.sin(a)*(20 + k*30)); c.stroke(); } }
+      else if(M.kind === 'spin'){ c.lineWidth = 6; for(let i = 0; i < 3; i++){ const a0 = k*6 + i*2.09; c.beginPath(); c.arc(s.x, s.y, r + 52, a0, a0 + 1.4); c.stroke(); } }
+      c.globalAlpha = 1; }
+    if(M && M.t < LKX.mvW){ c.globalAlpha = 0.6*M.t/LKX.mvW; c.fillStyle = M.d[3]; c.beginPath(); c.arc(s.x, s.y - r - 30, 5 + 3*Math.sin(t*0.5), 0, 7); c.fill(); c.globalAlpha = 1; }   // the wind-up's glint
+    if(T.v === 'aura' && s._ph === 'glow'){ const R = T.R*Math.min(1, s._pt/30)*(1 + 0.04*Math.sin(t*0.15)); const g = c.createRadialGradient(s.x, s.y, 4, s.x, s.y, R); g.addColorStop(0, 'rgba(255,200,150,0.55)'); g.addColorStop(0.6, 'rgba(255,140,90,0.22)'); g.addColorStop(1, 'rgba(255,120,80,0)'); c.fillStyle = g; c.beginPath(); c.arc(s.x, s.y, R, 0, 7); c.fill();
+      for(let i = 0; i < 6; i++){ const ph = ((t + i*17) % 60)/60, cx = s.x + Math.sin(i*2.1)*R*0.6, cy = s.y + R*0.3 - ph*R; c.globalAlpha = 0.9*(1 - ph); c.fillStyle = '#ffffff'; c.strokeStyle = '#e88a8a'; c.lineWidth = 1; c.save(); c.translate(cx, cy); c.rotate(t*0.05 + i); c.fillRect(-3, -3, 6, 6); c.strokeRect(-3, -3, 6, 6); c.restore(); } c.globalAlpha = 1; }
+    if(T.v === 'heli' && s._ph === 'blow'){ const top = s.y + r; c.globalAlpha = 0.3; c.fillStyle = '#eef4fa'; c.beginPath(); c.moveTo(s.x - 30, top); c.lineTo(s.x + 30, top); c.lineTo(s.x + 60, top + 300); c.lineTo(s.x - 60, top + 300); c.closePath(); c.fill();
+      c.globalAlpha = 0.8; c.strokeStyle = '#ffffff'; c.lineWidth = 2; for(let i = 0; i < 4; i++){ const yy = top + ((t*4 + i*75) % 300); c.beginPath(); c.moveTo(s.x - 20 - yy*0.1, yy); c.lineTo(s.x - 6, yy + 16); c.moveTo(s.x + 20 + yy*0.1, yy); c.lineTo(s.x + 6, yy + 16); c.stroke(); } c.globalAlpha = 1; }
+    if(T.v === 'blast' && (s._ph === 'song' || s._ph === 'put' || s._ph === 'rest')){ const b = s._ph === 'song' ? Math.max(0, 1 - (s._pt % 45)/10) : 0; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; for(const k of [-1, 1]){ c.fillStyle = '#3a2a1a'; c.beginPath(); c.arc(s.x + k*r*0.5, s.y + r*0.1, r*0.3*(1 + 0.25*b), 0, 7); c.fill(); c.stroke(); c.fillStyle = '#c9a34b'; c.beginPath(); c.arc(s.x + k*r*0.5, s.y + r*0.1, r*0.1, 0, 7); c.fill(); }
+      if(s._ph === 'song' && (t % 20) < 10){ c.fillStyle = '#ffffff'; c.beginPath(); c.ellipse(s.x + s.face*r*0.2, s.y - r - 10 - (t % 20), 4, 3, -0.4, 0, 7); c.fill(); c.stroke(); } }
+    if(T.v === 'roll' && s._ph === 'roll'){ c.strokeStyle = '#d8b070'; c.lineWidth = 3; for(const k of [-1, 1]){ const a = (t % 6 < 3 ? -0.9 : -0.3) + k*0.25; c.beginPath(); c.moveTo(s.x + k*r*0.4, s.y - r*0.8); c.lineTo(s.x + k*r*0.4 + s.face*Math.cos(a)*26, s.y - r*0.8 + Math.sin(a)*26); c.stroke(); } }
+    if(T.guard && s._ph === 'stay'){ c.globalAlpha = 0.16 + 0.05*Math.sin(t*0.1); c.fillStyle = '#9cc8ff'; c.beginPath(); c.arc(s.x, s.y, 100, Math.PI, 0); c.fill(); c.globalAlpha = 0.6; c.strokeStyle = '#d6e8ff'; c.lineWidth = 2; c.beginPath(); c.arc(s.x, s.y, 100, Math.PI, 0); c.stroke(); c.globalAlpha = 1; }
+    if(T.turret && s._ph === 'stay'){ for(let i = 0; i < 6; i++){ const a = t*0.03 + i*1.047; c.fillStyle = i % 2 ? '#d070d8' : '#ffe866'; c.globalAlpha = 0.8; c.beginPath(); c.ellipse(s.x + Math.cos(a)*(r + 10), s.y + Math.sin(a)*(r + 10), 7, 4, a, 0, 7); c.fill(); } c.globalAlpha = 1; }
+    if(T.pop && s._ph === 'go'){ for(let i = 1; i <= 3; i++){ c.globalAlpha = 0.5/i; c.fillStyle = '#ffd23f'; c.beginPath(); c.arc(s.x - (s._dir || 1)*i*18, s.y, r*(1 - i*0.15), 0, 7); c.fill(); } c.globalAlpha = 1; }
+    if(T.quake && s._ph === 'go'){ c.strokeStyle = '#4a4a54'; c.lineWidth = 5; c.setLineDash([10, 6]); c.beginPath(); c.moveTo(s.x, s.y - r); c.lineTo(s.x, s.y - r - 600); c.stroke(); c.setLineDash([]); }
+    if(s.name === 'Leek' && s._ph === 'lunge'){ c.globalAlpha = 0.7; c.strokeStyle = '#9ad06a'; c.lineWidth = 12; c.beginPath(); c.arc(s.x, s.y, r + 40, (s._dir || s.face) > 0 ? -1.2 : Math.PI - 0.6, (s._dir || s.face) > 0 ? 0.6 : Math.PI + 1.2); c.stroke(); c.globalAlpha = 1; }
+    if(s.name === 'Price Tag' && s._ph === 'lunge' && s._x0 != null){ c.strokeStyle = '#f4f4f4'; c.lineWidth = 2; c.beginPath(); c.moveTo(s._x0, s.y - 6); c.quadraticCurveTo((s._x0 + s.x)/2, s.y - 30, s.x, s.y - 4); c.stroke(); }
+    if(s._lkGold){ c.save(); c.translate(s.x, s.y - r - 34 + Math.sin(t*0.08)*2); c.fillStyle = '#ffd23f'; c.strokeStyle = '#7a5a10'; c.lineWidth = 2; c.beginPath(); c.moveTo(-12, 6); c.lineTo(-12, -4); c.lineTo(-6, 1); c.lineTo(0, -8); c.lineTo(6, 1); c.lineTo(12, -4); c.lineTo(12, 6); c.closePath(); c.fill(); c.stroke(); c.restore();
+      c.globalAlpha = 0.5 + 0.2*Math.sin(t*0.2); c.strokeStyle = '#ffd23f'; c.lineWidth = 3; c.beginPath(); c.arc(s.x, s.y, r + 10, 0, 7); c.stroke();
+      for(let i = 0; i < 3; i++){ const a = t*0.07 + i*2.09; c.globalAlpha = 0.9; c.fillStyle = '#fff3b0'; c.save(); c.translate(s.x + Math.cos(a)*(r + 14), s.y + Math.sin(a)*(r + 14)); c.rotate(a); c.beginPath(); for(let k = 0; k < 8; k++){ const rr = k % 2 ? 2 : 5; c.lineTo(Math.cos(k*0.785)*rr, Math.sin(k*0.785)*rr); } c.closePath(); c.fill(); c.restore(); }
+      c.globalAlpha = 1; }
+  }
+  for(const f of fighters){   // THE PAIRS' BONDS, each type its own look
+    const C = f._lkCombo; if(!C || !C.mem) continue;
+    const fl = C.fl, F = LK_FLAVS[fl], mem = C.mem.map(m => m[0]);
+    for(const s of mem){ const r = s.r || 26, feet = s.y + r;
+      if(fl === 'ice') for(let k = 0; k < 3; k++){ const a = t*0.06 + k*2.09 + mem.indexOf(s), sx = s.x + Math.cos(a)*(r + 36), sy = s.y + Math.sin(a)*(r + 22); c.fillStyle = '#e6f7ff'; c.strokeStyle = '#2f8fd8'; c.lineWidth = 1.5; c.save(); c.translate(sx, sy); c.rotate(a*2); c.beginPath(); c.moveTo(0, -9); c.lineTo(5, 0); c.lineTo(0, 9); c.lineTo(-5, 0); c.closePath(); c.fill(); c.stroke(); c.restore(); }
+      else if(fl === 'water'){ c.globalAlpha = 0.45; c.fillStyle = '#5a9af5'; c.beginPath(); c.ellipse(s.x, feet - 1, 74, 7, 0, 0, 7); c.fill(); c.globalAlpha = 0.7; c.strokeStyle = '#d6e8ff'; c.lineWidth = 1.5; const rr = 20 + (t*0.8 % 50); c.beginPath(); c.ellipse(s.x, feet - 1, rr, rr*0.1, 0, 0, 7); c.stroke(); c.globalAlpha = 1; }
+      else if(fl === 'poison'){ for(let i = 0; i < 6; i++){ const a = i*1.05 + t*0.03; c.globalAlpha = 0.22; c.fillStyle = i % 2 ? '#c23ad0' : '#7a1a88'; c.beginPath(); c.arc(s.x + Math.cos(a)*50, s.y + Math.sin(a)*30, 34, 0, 7); c.fill(); } c.globalAlpha = 1; }
+      else if(fl === 'heavy'){ c.globalAlpha = 0.5; c.strokeStyle = '#8a4fd8'; c.lineWidth = 3; const ph = ((t + mem.indexOf(s)*75) % LKX.bondEvery)/LKX.bondEvery; c.beginPath(); c.ellipse(s.x, feet, (r + 8)*(1 + ph*0.3), 6, 0, 0, 7); c.stroke(); c.globalAlpha = 1; }
+      else if(fl === 'fire'){ if(t % 4 === 0) puff(s.x + (cosRand() - 0.5)*r, feet - 4, '#ff8a2a', 2); }
+      else if(fl === 'sneaky'){ const ph = (t % 200)/200; c.globalAlpha = 0.3 + 0.5*ph; c.strokeStyle = '#5fd23a'; c.lineWidth = 2; c.setLineDash([4, 6]); c.beginPath(); c.arc(s.x, s.y, r + 12, 0, 7); c.stroke(); c.setLineDash([]); c.globalAlpha = 1; }
+    }
+    if(mem.length >= 2){ const a = mem[0], b = mem[1];
+      if(fl === 'shock' && Math.hypot(a.x - b.x, a.y - b.y) <= LK.comboR){ for(const [lw, col] of [[8, F.col], [2.5, '#ffffff']]){ c.strokeStyle = col; c.lineWidth = lw; c.beginPath(); c.moveTo(a.x, a.y); const n = Math.max(4, Math.round(Math.hypot(b.x - a.x, b.y - a.y)/40)); for(let i = 1; i < n; i++){ const k = i/n; c.lineTo(a.x + (b.x - a.x)*k + (((i + (t >> 2)) % 2) ? 12 : -12), a.y + (b.y - a.y)*k + ((i % 2) ? -10 : 10)); } c.lineTo(b.x, b.y); c.stroke(); } }
+      if(fl === 'wind' && f._lkWhirl){ const w = f._lkWhirl; for(let i = 0; i < 4; i++){ const rr = 10 + i*8, a0 = t*0.4 + i; c.globalAlpha = 0.8; c.strokeStyle = i % 2 ? '#ffffff' : '#9fb4c8'; c.lineWidth = 3; c.beginPath(); c.ellipse(w.x, w.y - i*10 + 20, rr, rr*0.35, 0, a0, a0 + 4.5); c.stroke(); } c.globalAlpha = 1; }
+    }
+  }
+  c.restore();
+}
+// ---- THE FACTORY'S ROOMS (2026-11-20, the owner: the map is "not interconnected", the "same layout every match", "still too small") ----
+// SEVEN ROOMS, each its own set piece: the five there were and two new ones, THE GUMBALL TOWER (a giant gumball machine you climb inside, up a brass spiral to its
+// lid) and THE TAFFY PULL (two taffy-pulling machines, a marble cooling slab, a copper kettle, a catwalk, a wrapping belt under a cutter). EVERY MATCH ANOTHER
+// LAYOUT: the seven are put in a new order along the floor and each may be MIRRORED (lkBuildWorld), so the jawbreakers' far spots, the wild spots, the belts and
+// the lift are somewhere else each time. INTERCONNECTED: between two rooms side by side there are TWO doors (the floor's, and a high door between their high
+// gantries), and two LONG WAYS skip across the factory: the cue-rack gallery's ball-return pipe and the gumball tower's gumball chute (from the top of the
+// machine), each to the room farthest from it. Every door is the mill's (hold Up in the doorway).
+// A room: fw (its floor's width), its ledges (rx from its floor's start, dy over the floor, w, set, belt), the high doors' places (upL, upR: [rx, dy]),
+// skip (where a long way comes in, on its floor), spots and far spots ([rx, dy]), start and resp (on its floor), lift (the wrapping room's), and its deco origin.
+const LK_ROOMS = {
+  mixing:   { fw:1260, L:[[140,150,300],[740,150,300],[360,300,480],[20,300,200,'gantry'],[1040,300,200,'gantry']], upL:[110,300], upR:[1150,300], skip:600,
+              spots:[[180,0],[1060,0],[290,150],[600,300]], far:[[600,300]], start:460, resp:560 },
+  middle:   { fw:1360, L:[[60,150,470,null,1],[830,150,470,null,-1],[130,310,260],[970,310,260]], upL:[200,310], upR:[1160,310], skip:680,
+              spots:[[180,150],[1230,150],[1080,0]], far:[[260,310],[1100,310]], start:730, resp:230 },
+  wrapping: { fw:1260, L:[[80,150,760,'low',1],[400,310,560,'high',-1],[1020,170,200],[20,300,200,'gantry'],[1060,330,180,'gantry']], upL:[110,300], upR:[1150,330], skip:300,
+              spots:[[150,150],[180,0],[600,0],[650,310]], far:[[1120,170]], start:550, resp:650, lift:910 },
+  table:    { fw:1340, L:[[400,170,700,'table'],[550,320,400,'lamp'],[120,150,200,'chalk'],[-60,290,200,'chalk'],[1180,290,230,'rack',-1],[1000,440,150,'gantry']], upL:[40,290], upR:[1075,440], skip:224,
+              spots:[[170,0],[720,0],[520,170],[920,170],[220,150]], far:[[20,290],[750,320]], start:220, resp:720, deco:4780 },
+  gallery:  { fw:1460, L:[[160,150,220,'cue'],[460,280,220,'cue'],[760,410,240,'cue'],[700,150,440,'return',1],[1080,300,200,'score'],[0,280,140,'gantry']], upL:[70,280], upR:[1240,300], skip:960, pipe:1220,
+              spots:[[260,0],[960,0],[260,150],[560,280],[860,150]], far:[[880,410],[1160,300]], start:560, resp:660, deco:6340 },
+  gumball:  { fw:1300, L:[[470,130,360,'gbase'],[140,240,220,'gspiral'],[900,240,220,'gspiral'],[380,370,240,'gspiral'],[680,490,240,'gspiral'],[530,640,240,'gcap'],[20,320,180,'gantry'],[1100,330,180,'gantry']],
+              upL:[110,320], upR:[1190,330], skip:250, chute:[650,640], spots:[[200,0],[1100,0],[250,240],[1000,240],[500,370],[800,490]], far:[[650,640],[1010,240]], start:150, resp:1000 },
+  taffy:    { fw:1400, L:[[360,140,680,'slab'],[120,280,200,'puller'],[1080,280,200,'puller'],[640,270,120,'kettle'],[480,400,440,'catwalk'],[1110,150,260,'twrap',-1]],
+              upL:[220,280], upR:[1180,280], skip:200, spots:[[250,0],[1150,0],[450,140],[950,140],[220,280],[700,400]], far:[[1180,280],[700,400]], start:700, resp:1150 } };
+const LK_ROOM_KEYS = ['mixing', 'middle', 'wrapping', 'table', 'gallery', 'gumball', 'taffy'];
+function lkRoomOf(key){ return LKF && LKF.rooms ? LKF.rooms.find(r => r.key === key) : null; }
+function lkRx(R, rx){ return R.X + (R.mir ? R.fw - rx : rx); }   // a room's own x in the world
+// draw a room's set piece made in its old place (o: the x its floor started at then), moved (and mirrored) to where it is now
+function lkDecoOpen(c, V, R, o){ if(!dcIn(V, R.X - 140, R.X + R.fw + 140)) return false; c.save(); if(R.mir){ c.translate(R.X + R.fw + o, 0); c.scale(-1, 1); } else c.translate(R.X - o, 0); return true; }
+// THE TWO NEW ROOMS' BACKS (decoBack), at their places now (X: the floor's start; mirrored about the room's middle)
+function lkDecoNew(c){
+  const V = viewRect(), gy = LKF.gy, t = hazardT;
+  { const R = lkRoomOf('gumball'); if(R && lkDecoOpen(c, V, R, 0)){   // THE GUMBALL TOWER: candy-stripe wallpaper, the machine's red body and coin slot, its glass globe of gumballs, the crank
+    const fw = R.fw;
+    c.fillStyle = '#f4d0dc'; c.fillRect(-100, gy - 240, fw + 200, 240);
+    c.save(); c.beginPath(); c.rect(-100, gy - 240, fw + 200, 240); c.clip(); c.fillStyle = '#e88aa8'; for(let x = -340; x < fw + 200; x += 60){ c.beginPath(); c.moveTo(x, gy); c.lineTo(x + 30, gy); c.lineTo(x + 270, gy - 240); c.lineTo(x + 240, gy - 240); c.closePath(); c.fill(); } c.restore();
+    c.fillStyle = '#c9a34b'; c.fillRect(-100, gy - 246, fw + 200, 8); c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.strokeRect(-100, gy - 246, fw + 200, 8);
+    const cx = 650, cy = gy - 400, GR = 250;
+    c.fillStyle = '#c2303a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.moveTo(440, gy); c.lineTo(470, gy - 130); c.lineTo(830, gy - 130); c.lineTo(860, gy); c.closePath(); c.fill(); c.stroke();   // the body
+    c.fillStyle = '#9a2030'; c.fillRect(470, gy - 150, 360, 22); c.strokeRect(470, gy - 150, 360, 22);
+    c.fillStyle = '#d8d8e0'; c.fillRect(600, gy - 100, 100, 46); c.strokeRect(600, gy - 100, 100, 46); c.fillStyle = '#1c1c1c'; c.fillRect(640, gy - 92, 20, 6);   // the coin plate and its slot
+    c.save(); c.translate(650, gy - 70); c.rotate(t*0.03); c.fillStyle = '#c9a34b'; c.beginPath(); c.arc(0, 0, 14, 0, 7); c.fill(); c.stroke(); c.fillRect(-3, -30, 6, 30); c.strokeRect(-3, -30, 6, 30); c.restore();   // the crank
+    c.fillStyle = '#5a1018'; c.beginPath(); c.arc(760, gy - 40, 24, Math.PI, 0); c.fill(); c.stroke();   // the dispenser door, a gumball rolling out now and then
+    { const u = (t % 240)/240; if(u < 0.4){ lkBallDot(c, 760 + u*300, gy - 12, 11, LK_FLAVS[LK_FLAV_KEYS[Math.floor(t/240) % 8]].col, false); } }
+    c.save(); c.beginPath(); c.arc(cx, cy, GR, 0, 7); c.clip();
+    c.fillStyle = 'rgba(214,236,255,0.18)'; c.fillRect(cx - GR, cy - GR, GR*2, GR*2);
+    for(let i = 0; i < 70; i++){ const a = dcH(i, 1)*6.283, rr = Math.sqrt(dcH(i, 2))*(GR - 18), bx = cx + Math.cos(a)*rr, by = cy + Math.abs(Math.sin(a))*rr*0.9 + 30 - (i % 3)*4 + Math.sin(t*0.02 + i)*1.5; if(by < cy - GR*0.25) continue; lkBallDot(c, bx, by, 16, LK_FLAVS[LK_FLAV_KEYS[i % 8]].col, false); }
+    c.restore();
+    c.strokeStyle = 'rgba(255,255,255,0.75)'; c.lineWidth = 6; c.beginPath(); c.arc(cx, cy, GR - 20, Math.PI*1.1, Math.PI*1.45); c.stroke();
+    c.strokeStyle = '#1c1c1c'; c.lineWidth = 4; c.beginPath(); c.arc(cx, cy, GR, 0, 7); c.stroke(); c.strokeStyle = 'rgba(214,236,255,0.6)'; c.lineWidth = 2; c.beginPath(); c.arc(cx, cy, GR - 6, 0, 7); c.stroke();
+    c.strokeStyle = '#c9a34b'; c.lineWidth = 10; c.beginPath(); c.moveTo(250, gy - 240); c.quadraticCurveTo(420, gy - 300, 500, gy - 370); c.moveTo(620, gy - 370); c.quadraticCurveTo(700, gy - 430, 800, gy - 490); c.moveTo(1010, gy - 240); c.quadraticCurveTo(940, gy - 300, 900, gy - 370); c.stroke();   // the brass spiral between its ledges
+    c.restore(); } }
+  { const R = lkRoomOf('taffy'); if(R && lkDecoOpen(c, V, R, 0)){   // THE TAFFY PULL: mint and cream tiles, two pulling machines with their taffy looping round the turning arms, wrapped taffy on shelves
+    const fw = R.fw;
+    for(let x = -100; x < fw + 100; x += 50) for(let r = 0; r < 5; r++){ c.fillStyle = ((x/50 + r) & 1) ? '#c8f0dc' : '#fff4dc'; c.fillRect(x, gy - 250 + r*50, 50, 50); }
+    c.fillStyle = '#c9a34b'; c.fillRect(-100, gy - 256, fw + 200, 8); c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.strokeRect(-100, gy - 256, fw + 200, 8);
+    for(const [mx, ph] of [[220, 0], [1180, 1.6]]){   // a pulling machine over each puller ledge
+      const hy = gy - 460;
+      c.fillStyle = '#7a8a9a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillRect(mx - 110, hy - 70, 220, 40); c.strokeRect(mx - 110, hy - 70, 220, 40); c.fillRect(mx - 12, hy - 30, 24, 150); c.strokeRect(mx - 12, hy - 30, 24, 150);
+      const a = t*0.04 + ph, pegs = [[mx - 70, hy + 40]]; for(let k = 0; k < 2; k++){ const b = a + k*Math.PI; pegs.push([mx + Math.cos(b)*64, hy + 40 + Math.sin(b)*48]); }
+      c.strokeStyle = '#ff8fb8'; c.lineWidth = 16; c.beginPath(); c.moveTo(pegs[0][0], pegs[0][1]); c.quadraticCurveTo(mx, hy + 110, pegs[1][0], pegs[1][1]); c.quadraticCurveTo(mx + 30, hy - 10, pegs[2][0], pegs[2][1]); c.quadraticCurveTo(mx - 10, hy + 100, pegs[0][0], pegs[0][1]); c.stroke();
+      c.strokeStyle = '#ffd0e2'; c.lineWidth = 5; c.stroke();
+      for(const [px, py] of pegs){ c.fillStyle = '#c9a34b'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.arc(px, py, 9, 0, 7); c.fill(); c.stroke(); }
+    }
+    for(const [sx, sy] of [[400, gy - 520], [880, gy - 520]]){ c.fillStyle = '#9a6a3a'; c.fillRect(sx, sy, 160, 10); c.strokeRect(sx, sy, 160, 10);   // shelves of wrapped taffy
+      for(let k = 0; k < 6; k++){ const wx = sx + 14 + k*24; c.fillStyle = LK_FLAVS[LK_FLAV_KEYS[(k + sx) % 8]].col; c.fillRect(wx - 7, sy - 12, 14, 12); c.strokeRect(wx - 7, sy - 12, 14, 12); c.fillStyle = '#ffffff'; c.beginPath(); c.moveTo(wx - 7, sy - 6); c.lineTo(wx - 13, sy - 11); c.lineTo(wx - 13, sy - 1); c.closePath(); c.moveTo(wx + 7, sy - 6); c.lineTo(wx + 13, sy - 11); c.lineTo(wx + 13, sy - 1); c.closePath(); c.fill(); } }
+    { const py = gy - 262 + 40*(0.5 - 0.5*Math.cos(t*0.06)); c.fillStyle = '#5a5a66'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.fillRect(1226, gy - 278, 8, py - (gy - 278)); c.fillStyle = '#c0c0c8'; c.beginPath(); c.moveTo(1200, py); c.lineTo(1260, py); c.lineTo(1250, py + 14); c.lineTo(1210, py + 14); c.closePath(); c.fill(); c.stroke(); }   // the cutter over the belt
+    c.restore(); } }
+  // the gumball chute's mouth, round both its doorways
+  for(const d of CROOM ? CROOM.doors : []){ if(!d.lkGum || !dcIn(V, d.x - 90, d.x + 90)) continue;
+    c.fillStyle = '#ff6a9a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.arc(d.x, d.y - 66, 72, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = '#9a2040'; c.beginPath(); c.arc(d.x, d.y - 66, 60, 0, 7); c.fill();
+    for(let i = 0; i < 6; i++){ const a = t*0.02 + i*1.047; lkBallDot(c, d.x + Math.cos(a)*66, d.y - 66 + Math.sin(a)*66, 7, LK_FLAVS[LK_FLAV_KEYS[i % 8]].col, false); } }
+}
+// THE NEW LEDGES' OWN STUFF (decoMid, by set)
+function lkDecoMidNew(c, p, k){
+  const x = p.x, y = p.y, w = p.w, t = hazardT;
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5;
+  if(k === 'gantry'){   // a steel gantry: a grating, pink railings, rivets
+    c.fillStyle = '#6a6a7a'; c.fillRect(x, y, w, 14); c.strokeRect(x, y, w, 14);
+    c.strokeStyle = '#3a3a46'; c.lineWidth = 1.5; for(let gx = x + 6; gx < x + w - 4; gx += 10){ c.beginPath(); c.moveTo(gx, y + 2); c.lineTo(gx + 5, y + 12); c.stroke(); }
+    c.strokeStyle = '#e88aa8'; c.lineWidth = 3; c.beginPath(); c.moveTo(x + 4, y - 26); c.lineTo(x + w - 4, y - 26); for(let px = x + 6; px <= x + w - 4; px += 30){ c.moveTo(px, y - 26); c.lineTo(px, y); } c.stroke();
+    c.fillStyle = '#c9a34b'; for(const rx of [x + 6, x + w - 10]){ c.fillRect(rx, y + 4, 4, 4); }
+    c.strokeStyle = '#4a4a54'; c.lineWidth = 4; c.beginPath(); c.moveTo(x + 10, y + 14); c.lineTo(x + 30, y + 54); c.moveTo(x + w - 10, y + 14); c.lineTo(x + w - 30, y + 54); c.stroke();
+  } else if(k === 'gbase'){ c.fillStyle = '#d8d8e0'; c.fillRect(x, y, w, 14); c.strokeRect(x, y, w, 14); c.fillStyle = '#9a9aaa'; for(let rx = x + 12; rx < x + w - 6; rx += 40){ c.beginPath(); c.arc(rx, y + 7, 3, 0, 7); c.fill(); } }
+  else if(k === 'gspiral'){ c.fillStyle = '#c9a34b'; c.fillRect(x, y, w, 12); c.strokeRect(x, y, w, 12); c.fillStyle = '#e8c870'; c.fillRect(x + 2, y + 2, w - 4, 3);
+    for(let i = 0; i < 3; i++){ const bx = x + 20 + ((t*0.8 + i*w/3) % (w - 40)); lkBallDot(c, bx, y - 9, 9, LK_FLAVS[LK_FLAV_KEYS[(i + (x | 0)) % 8]].col, false); } }
+  else if(k === 'gcap'){ c.fillStyle = '#c2303a'; c.beginPath(); c.moveTo(x, y + 14); c.quadraticCurveTo(x + w/2, y - 24, x + w, y + 14); c.closePath(); c.fill(); c.stroke(); c.fillRect(x, y, w, 14); c.strokeRect(x, y, w, 14);
+    c.fillStyle = '#c9a34b'; c.beginPath(); c.arc(x + w/2, y - 18, 10, 0, 7); c.fill(); c.stroke(); }
+  else if(k === 'slab'){ c.fillStyle = '#eef0f4'; c.fillRect(x, y, w, 16); c.strokeRect(x, y, w, 16); c.strokeStyle = 'rgba(120,130,150,0.6)'; c.lineWidth = 1.5; for(let i = 0; i < 6; i++){ const vx = x + 40 + i*w/6; c.beginPath(); c.moveTo(vx, y + 2); c.quadraticCurveTo(vx + 20, y + 8, vx + 10, y + 14); c.stroke(); }
+    c.fillStyle = '#9a9aaa'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; for(const lx of [x + 30, x + w - 50]){ c.fillRect(lx, y + 16, 20, LKF.gy - y - 16); c.strokeRect(lx, y + 16, 20, LKF.gy - y - 16); }
+    for(let k2 = 0; k2 < 4; k2++){ const tx = x + 80 + k2*(w - 160)/3; c.fillStyle = k2 % 2 ? '#ff8fb8' : '#7fd8ff'; c.beginPath(); c.ellipse(tx, y - 5, 26, 6, 0, 0, 7); c.fill(); c.stroke(); } }
+  else if(k === 'puller'){ c.fillStyle = '#7a8a9a'; c.fillRect(x, y, w, 14); c.strokeRect(x, y, w, 14); c.fillStyle = '#5a6a7a'; c.fillRect(x + 20, y + 14, w - 40, LKF.gy - y - 14); c.strokeRect(x + 20, y + 14, w - 40, LKF.gy - y - 14);
+    c.fillStyle = '#ffd23f'; c.fillRect(x + w/2 - 20, y + 40, 40, 24); c.strokeRect(x + w/2 - 20, y + 40, 40, 24); c.fillStyle = (t >> 4) % 2 ? '#5fd23a' : '#2a8a1a'; c.beginPath(); c.arc(x + w/2, y + 90, 7, 0, 7); c.fill(); c.stroke(); }
+  else if(k === 'kettle'){ c.fillStyle = '#c86a3a'; c.beginPath(); c.moveTo(x, y + 10); c.quadraticCurveTo(x - 20, y + 120, x + w/2, LKF.gy - 140 - 2); c.quadraticCurveTo(x + w + 20, y + 120, x + w, y + 10); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = '#e8a060'; c.fillRect(x - 4, y, w + 8, 12); c.strokeRect(x - 4, y, w + 8, 12); if(t % 6 === 0) puff(x + w/2 + Math.sin(t)*20, y - 10, '#ffffff', 3); }
+  else if(k === 'catwalk'){ c.fillStyle = '#5a5a66'; c.fillRect(x, y, w, 12); c.strokeRect(x, y, w, 12); c.strokeStyle = '#c8f0dc'; c.lineWidth = 3; c.beginPath(); c.moveTo(x, y - 24); c.lineTo(x + w, y - 24); for(let px = x; px <= x + w; px += 40){ c.moveTo(px, y - 24); c.lineTo(px, y); } c.stroke();
+    c.strokeStyle = '#4a4a54'; c.lineWidth = 3; for(const hx of [x + 30, x + w - 30]){ c.beginPath(); c.moveTo(hx, y); c.lineTo(hx, y - 500); c.stroke(); } }
+  else if(k === 'twrap'){ for(let i = 0; i < 5; i++){ const u = ((t*Math.abs(p.lkBelt || 1) + i*w/5) % w), wx = p.lkBelt < 0 ? x + w - u : x + u; c.fillStyle = LK_FLAVS[LK_FLAV_KEYS[i % 8]].col; c.fillRect(wx - 8, y - 10, 16, 10); c.strokeRect(wx - 8, y - 10, 16, 10); } }
+}
+function lkBuildRooms(gy, one){
+  const K = LK, order = LK_ROOM_KEYS.slice();
+  for(let i = order.length - 1; i > 0; i--){ const k = Math.floor(simRand()*(i + 1)), q = order[i]; order[i] = order[k]; order[k] = q; }
+  const rooms = [], walls = [], far = [], spots = [], segs = []; let X = 240, lift = null;
+  for(const key of order){
+    const D = LK_ROOMS[key], R = { key:key, X:X, fw:D.fw, mir:simRand() < 0.5 ? 1 : 0, D:D };
+    for(const q of D.L){ const rx = R.mir ? D.fw - q[0] - q[2] : q[0], v = q[4] ? q[4]*(R.mir ? -1 : 1)*K.beltV : 0, p = one(X + rx, gy - q[1], q[2], v);
+      if(q[3] === 'low' || q[3] === 'high') R[q[3]] = p; else if(q[3]) p.lkSet = q[3]; }
+    for(const q of D.spots) spots.push({ x:lkRx(R, q[0]), top:gy - q[1] });
+    for(const q of D.far) far.push({ x:lkRx(R, q[0]), top:gy - q[1] });
+    if(D.lift) lift = { x:lkRx(R, D.lift), low:R.low, high:R.high, dir:R.mir ? -1 : 1 };
+    const uL = R.mir ? D.upR : D.upL, uR = R.mir ? D.upL : D.upR;
+    R.up = [{ x:lkRx(R, uL[0]), y:gy - uL[1] }, { x:lkRx(R, uR[0]), y:gy - uR[1] }];
+    segs.push({ x0:X, x1:X + D.fw }); rooms.push(R);
+    X += D.fw; walls.push(X + 110); X += 220;
+  }
+  walls.pop();
+  K.WW = X - 220 + 240; WW = K.WW;
+  return { rooms:rooms, walls:walls, far:far, spots:spots, segs:segs, lift:lift, order:order };
+}
+function lkSafeX(s, x){   // a leap's or a hop's landing: never over a gap, nor so near one that the arc carries it over (it lands short instead)
+  if(!lkGuardOn()) return x; const f = s.y + s.r, d = Math.sign(x - s.x) || 1;
+  for(let k = 0; k < 12; k++){ const xx = x - d*k*24; if((xx - s.x)*d < 0) break; if(lkGroundTop(xx, f) != null && lkGroundTop(xx + d*50, f) != null) return xx; }
+  return s.x; }
+EVENT_TWIST_WORDS['contest:lick'] = { icon:'🍬', short:"8-Ball's contest: catch assists, last one standing", words:"8-Ball's contest: a candy factory of seven rooms, a new layout every match (hold Up in a doorway). Wild assists roam: hit one till it is weak, then walk into it to catch it; far-off jawbreakers hold a few more. Carry 6, 3 fight with you: the Swap key brings out the next. 2 of a type join with a candy rope and hit harder; 3 of a type give your own hits their power. Jawbreakers fall at 1:30. 6 stocks, last one standing.", goal:'Catch assists. Last one standing wins.' };
 
 // ---------- EVENT FIGHTERS: THE DIG GAMES (Spongy's CONTEST, his third event match: CONTEST_RULES.dig, world HG) ----------
 // THE OWNER'S DESIGN (2026-11-18, the simplify answer: "1, but keep the steal. also, it is a HUGE map, slightly bigger than ctf, but without a minimap.
@@ -132341,6 +132998,7 @@ function asPoseBegin(s){
     const k = Math.min(1, t/ASSIST_ARRIVE), e = Math.max(0.15, (1 - Math.pow(1 - k, 3))*(1 + 0.18*Math.sin(k*Math.PI)));
     atFeet(e, e); return true;
   }
+  if(s._lkPz){ const z = s._lkPz; if(z.dx) ctx.translate(z.dx, 0); if(z.rot){ ctx.translate(0, R); ctx.rotate(z.rot); ctx.translate(0, -R); } atFeet(z.sx || 1, z.sy || 1); return true; }   // (8-Ball's contest: the kit's poses)
   const pn = asPoseName(s), a2p = A2_POSE[pn]; if(a2p){ a2p(s, P, R, t, ph, face, atFeet); return true; }   // ASSIST BATCH A2's wind-ups (a real assist: its act's, asPoseName)
   switch(pn){
     case 'Eraser': if(ph === 'wind'){ const w = Math.sin(t*0.9); ctx.translate(w*6, 0); ctx.rotate(w*0.12); } break;   // rubbing side to side
@@ -132540,7 +133198,7 @@ const AS_ACT_HOME = { erase:'Eraser', crush:'Spongy', rush:'8-Ball', pull:'Black
   vortex:'Blender', flash:'#flash', cart:'Shopping Cart', bounce:'Beach Ball', chomp:'The Floor', plane:'#plane', flush:'Toilet', warp:'MePad', stay:'9-Ball',
   wire:'Battery', cut:'Clapboard', horn:'Conch Shell', swat:'Rubber Spatula', snip:'Scissors', drum:'Snare Drum' };
 const AS_HOME_NAMES = new Set(Object.values(AS_ACT_HOME).concat(['Selfie Stick', 'Foldy']));
-function asPoseName(s){ if(AS_HOME_NAMES.has(s.name)) return s.name; const a = s.act || ((lkRow(s.name) || {}).act); return AS_ACT_HOME[a] || s.name; }   // (a guest's snapshot has the name, not the act: the row gives it)
+function asPoseName(s){ if(s._lkT && s._lkT.v) return 'LKV'; if(AS_HOME_NAMES.has(s.name)) return s.name; const a = s.act || ((lkRow(s.name) || {}).act); return AS_ACT_HOME[a] || s.name; }   // (a guest's snapshot has the name, not the act: the row gives it)
 // ---- ASSIST BATCH A2: their art, their wind-ups and what they put in the world ------------------------------------------------------------
 // The renders are the characters' TPOT 14 vote pictures (Rubber Spatula's is his TPOT 7 render) from the BFDI wiki, cut out and scaled to
 // 200 px tall here (assets/sprites/CREDITS.md, scripts/sprite-manifest.json). Every wind-up is the body's own (A2_POSE, from asPoseBegin);
@@ -132615,6 +133273,7 @@ const A2_FX = {
   'Conch Shell'(s, P){ if(P.a2 && P.a2.r) for(const g of P.a2.r) a2DrawRing(s, g); },
   'Snare Drum'(s, P){ if(P.a2 && P.a2.r) for(const w of P.a2.r) a2DrawRipple(s, w); },
 };
+A2_POSE.LKV = function(){}; A2_FX.LKV = function(){};   // (8-Ball's contest: an assist on its own act draws its own: lkKitDrawOver)
 // The wire: from their terminal facing the summoner to the summoner, crackling (its kinks move with the pose's clock), grown out to `k` of
 // the way. Snapped, its two ends whip back and fade; run out, it fades.
 function a2DrawWire(s, P, A){

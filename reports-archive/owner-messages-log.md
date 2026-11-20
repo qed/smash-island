@@ -1140,6 +1140,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-20**: "and the assist buffs are just the lasers. theyre way too similar. and also, the assists from jawbreakers arent stronger than the others. plus, in this the assists should have 2 or 3 moves."
 - **2026-11-20**: "salt lamp, clapboard, and selfie stick.... do i really have to say it." (same flash act; owner annoyed at pointing out each one)
 - **2026-11-20**: "go to spongy"
+- **2026-11-20**: "go to the updated spongy"
+- **2026-11-20** (after playing the working build's Dig Games): "spongys event is 10/10"
 - **2026-11-20**: "web analytics is set up"
 - **2026-11-20**: "push an empty commit" (lead: pushed 62b6a9ed; /_vercel/insights now 200, pick counting live)
 - **2026-11-20**: (screenshot of the "Cron relay (say nothing to the owner)..." line) "why would you say that?" (lead: renamed the timer prompt; it only meant no chat message every 5 min)
