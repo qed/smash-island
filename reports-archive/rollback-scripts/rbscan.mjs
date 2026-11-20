@@ -8,7 +8,7 @@ const req = createRequire(new URL('../../package.json', import.meta.url));
 const acorn = req('acorn');
 const walk = { full(node, cb) { const st = [node]; while (st.length) { const n = st.pop(); if (!n || typeof n.type !== 'string') continue; cb(n);
   for (const k in n) { if (k === 'start' || k === 'end' || k === 'type') continue; const v = n[k]; if (Array.isArray(v)) { for (const c of v) if (c && typeof c.type === 'string') st.push(c); } else if (v && typeof v.type === 'string') st.push(v); } } } };
-const html = readFileSync('artifacts/V1/index.html', 'utf8');
+const html = readFileSync(process.env.RB_HTML || 'artifacts/V1/index.html', 'utf8');
 const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
 const src = scripts.sort((a, b) => b.length - a.length)[0];
 const ast = acorn.parse(src, { ecmaVersion: 'latest', sourceType: 'script', allowReturnOutsideFunction: true });
