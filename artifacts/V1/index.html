@@ -55003,6 +55003,16 @@ function toiletFlush(s, T){
   (s._waves || (s._waves = [])).push({ x:s.x - s.r*0.6, y, dir:-1, d:0, hit:new Set() }, { x:s.x + s.r*0.6, y, dir:1, d:0, hit:new Set() });
   for(let i=0;i<10;i++) puff(s.x, s.y - s.r*0.3, '#6ec6f0', 4);
 }
+// (8-Ball's contest, T.pull: Toilet) the flush SUCKS IN first: a foe standing on his floor within T.pull px slides toward him, never off an edge, never
+// out of its room or out of a doorway, never one in hitstun.
+function toiletPull(s, T){
+  const sf = s.y + s.r;
+  for(const f of fighters){ if(!a2Open(s, f) || !f.onground || f.hitstun > 0 || Math.abs(feetY(f) - sf) > 10 || Math.abs(f.x - s.x) > T.pull || Math.abs(f.x - s.x) < s.r + 10) continue;
+    if(CROOM && (!crmSame(f, s) || crmDoorAt(f))) continue;
+    const nx = f.x + Math.sign(s.x - f.x)*T.pullV;
+    if(!standAt(nx, feetY(f))) continue;
+    f.x = nx; if(s._pt % 8 === 0) puff(f.x, feetY(f) - 4, '#6ec6f0', 2); }
+}
 function stepToiletWaves(s, T){
   if(!s._waves || !s._waves.length) return;
   for(const w of s._waves){
@@ -55153,9 +55163,9 @@ const AS_ACT = {
     if(s._ph === 'idle'){ asGo(s, 'wind'); s._dir = tgt ? (Math.sign(tgt.x - s.x) || s.face) : s.face; return; }
     if(s._pt % 5 === 0) puff(s.x + s._dir*s.r*0.6, s.y + s.r - 2, '#8a6a4a', 2);
     if(s._pt < T.wind) return;
-    const half = (GROTATO_MINES-1)*GROTATO_GAP*0.5, mx = clamp(s.x + s._dir*T.lead, 30 + half, WW - 30 - half);
-    for(let i=0;i<GROTATO_MINES;i++){
-      const x = mx + (i - (GROTATO_MINES-1)*0.5)*GROTATO_GAP, top = surfaceBelow(x, s.y + s.r - 30);
+    const NM = T.nm || GROTATO_MINES, GP = T.mgap || GROTATO_GAP, half = (NM-1)*GP*0.5, cx = (T.atFoe && tgt && tgt.type !== "boss" && Math.abs(tgt.x - s.x) < 700 && Math.abs(asFeet(tgt) - (s.y + s.r)) < 60) ? tgt.x : s.x + s._dir*T.lead, mx = clamp(cx, 30 + half, WW - 30 - half);   // (T.atFoe, T.nm, T.mgap: 8-Ball's contest, LK_VARY)
+    for(let i=0;i<NM;i++){
+      const x = mx + (i - (NM-1)*0.5)*GP, top = surfaceBelow(x, s.y + s.r - 30);
       if(top == null || (!isBig() && Math.abs(top - groundY()) < 2 && floorOpenAt(x))) continue;
       addProj({owner:-2, ownerObj:assistFighter(s), x, y:top-8, vx:0, vy:0, grav:false, dmg:addDmg(s, 12), kb:11, r:12, color:'#4a9c6a', life:60*8, trap:true, arm:30, assist:true});
     }
@@ -55225,6 +55235,7 @@ const AS_ACT = {
     for(const b of assistFoes(s)){ if(b.type==="boss") continue;
       if(Math.hypot(b.x-s.x, b.y-s.y) < T.R && Math.sign(s.x-b.x) === Math.sign(b.face||1)) b._cd = Math.max(b._cd||0, FLASH_STUN); }
     for(let i=0;i<20;i++) puff(s.x, s.y, '#fff', 6);
+    if((s._shots = (s._shots || 0) + 1) < (T.shots || 1)){ s._lkT = Object.assign({}, s._lkT, { pose:T.pose2 || T.pose }); s.life = Math.max(s.life, (T.pose2 || T.pose) + 10); asGo(s, 'pose'); return; }   // (T.shots: a burst, LK_VARY)
     s.life = 0;   // one-shot
   },
   // SHOPPING CART (doc: "A rideable rampage cart spawns for the summoner"): ride it by standing on it (an AI summoner walks over
@@ -55352,7 +55363,7 @@ const AS_ACT = {
   // reaches along with it and soaks them (slowed). Three flushes.
   flush(s, tgt, T){
     stepToiletWaves(s, T);
-    if(s._ph === 'wind'){ s.vx *= 0.5; if(s._pt >= T.wind){ toiletFlush(s, T); asGo(s, 'rest'); } return; }
+    if(s._ph === 'wind'){ s.vx *= 0.5; if(T.pull) toiletPull(s, T); if(s._pt >= T.wind){ toiletFlush(s, T); asGo(s, 'rest'); } return; }
     if(s._ph === 'rest'){
       s.vx *= 0.8;
       if(s._pt < T.gap) return;
@@ -55467,6 +55478,7 @@ AS_ACT.stay = function(s, tgt, T, owner){
     return;
   }
   if(CROOM && s._ph === 'stay' && Math.abs(crmClearX(s.x, s.y, s.r) - s.x) > 10){ s.fixed = null; s._commit = 0; asGo(s, 'idle'); return; }   // (in a doorway, however it got there: it hops to a clear spot, and bumps nobody there)
+  if(T.follow && s._ph === 'stay' && s._pt >= T.follow && tgt && tgt.type !== "boss" && owner && !owner.dead && crmSame(owner, s) && crmSame(tgt, s) && Math.abs((owner.x + (tgt.x - owner.x)*(T.pos != null ? T.pos : 0.5)) - s.x) > 70){ s.fixed = null; s._commit = 0; asGo(s, 'idle'); return; }   // (T.follow: it hops to the new spot, LK_VARY)   // (in a doorway, however it got there: it hops to a clear spot, and bumps nobody there)
   const L = s._bumpT || (s._bumpT = new Map());
   for(const f of fighters){ if(!a2Open(s, f) || hazardT - (L.get(f) ?? -1e9) < T.gap || hurtGap(f, s.x, s.y) >= s.r || (CROOM && crmDoorAt(f))) continue;   // (one standing in a doorway is never bumped: Up takes them through)
     L.set(f, hazardT);
@@ -55531,11 +55543,12 @@ AS_ACT.cut = function(s, tgt, T){
   if(s.onground && Math.abs(dx) < T.reach + asBig(tgt) && Math.abs(asFeet(tgt) - (s.y + s.r)) < 90){ asGo(s, 'lift'); return; }
   navAssist(s, tgt, dx, T.walk);
 };
+function a2OverGround(f){ const sb = surfaceBelow(f.x, feetY(f)); return sb != null && !(sb === groundY() && floorOpenAt(f.x)) && sb - feetY(f) < 260; }   // something to land on just below (a foe frozen in the air drops onto it)
 function a2Clap(s, T){
   s._claps = (s._claps||0) + 1;
   hitArt(haAssistOwner(s), haAssistKey(s, 'cut'), { kind:'circle', x:s.x, y:s.y, r:haEdgeR(T.R) }, { color:'#ffffff', style:'ring', world:true, fade:10 });   // HIT ART: the clap's reach (centre-judged)
   for(let i=0;i<10;i++) puff(s.x + s.face*s.r*0.4, s.y - s.r, i % 2 ? '#ffffff' : '#2a2a2e', 4);
-  for(const f of fighters){ if(!a2Open(s, f) || !f.onground || Math.hypot(f.x - s.x, f.y - s.y) >= T.R) continue;
+  for(const f of fighters){ if(!a2Open(s, f) || !(f.onground || (T.midair && a2OverGround(f))) || Math.hypot(f.x - s.x, f.y - s.y) >= T.R) continue;   // (T.midair: 8-Ball's contest, LK_VARY)
     f.frozen = Math.max(f.frozen||0, T.freeze); f._cutT = hazardT + T.freeze; f.vx = 0;
     for(let i=0;i<5;i++) puff(f.x, f.y - 6, '#e8e8f0', 3);
     if((LKF && s._lk) || asTyped(s)) lkTouch(assistFighter(s), f); }   // (8-Ball's contest: the family's touch)
@@ -55599,7 +55612,8 @@ function a2Swat(s, T){
   impact(s.x, bot, { shake:3, dust:2, debris:2, r:T.w/2 });
   for(const f of fighters){ if(!a2Open(s, f) || !a2InBox(f, x0, y0, x1, y1)) continue;
     const d = Math.sign(f.x - s.x) || s._dir || 1;
-    if(f.onground){ a2Hit(s, f, T.dmg, d*2, -4); stunFx(f, T.stun); }   // grounded: the stun and a small pop
+    if(f.onground && T.flip) a2Hit(s, f, T.dmg, d*1.5, -T.flip);   // (T.flip: flipped up like a pancake, LK_VARY)
+    else if(f.onground){ a2Hit(s, f, T.dmg, d*2, -4); stunFx(f, T.stun); }   // grounded: the stun and a small pop
     else a2Hit(s, f, T.dmg, d*7, -8); }                                   // airborne: up and sideways, never down
   for(const b of assistFoes(s)){ if(a2BossInBox(b, x0, y0, x1, y1)) assistHitSummon(s, b, addDmg(s, T.dmg), false); }
 }
@@ -55668,6 +55682,8 @@ AS_ACT.drum = function(s, tgt, T){
   if(s._ph === 'settle'){ s.vx = 0; if(s._pt >= T.settle){ asGo(s, 'song'); s.life = Math.max(s.life, T.crash + Math.ceil(T.dist/T.spd) + 30); } return; }
   if(s._ph === 'song'){
     s.vx = 0;
+    if(T.march && tgt && tgt.type !== "boss" && crmSame(tgt, s) && Math.abs(tgt.x - s.x) > s.r + 30){ const nx = s.x + Math.sign(tgt.x - s.x)*T.march, fy = s._fy != null ? s._fy : s.y + s.r, sb = surfaceBelow(nx, fy - 6);   // (T.march: 8-Ball's contest, LK_VARY)
+      if(sb != null && Math.abs(sb - fy) < 3 && !(sb === groundY() && floorOpenAt(nx)) && !(CROOM && crmReg(nx, fy - 20) !== crmReg(s.x, s.y))){ s.x = nx; s.face = Math.sign(tgt.x - s.x) || s.face; } }
     if(a2DrumBeats(T).indexOf(s._pt) >= 0) a2Beat(s, T);
     if(s._pt >= T.crash){ a2Crash(s, T); asGo(s, 'done'); }
     return;
@@ -117810,7 +117826,7 @@ const LK = { total:8, cap:2, need:50, shells:6, regrow:120, combo:30, waitMin:18
              WW:7900, WH:960, fric:0.965, beltV:1.3, liftV:2.2, offBelt:2.2,
              lickEvery:15, lickDmg:3, lickR:18, rushT:120, rushK:1.3,
              comboR:900, comboW:10, ropeDmg:5, ropeKb:5, ropeEvery:45, fams:4,
-             touchGap:20, burnT:100, freezeT:24, heavyK:1.45, blinkT:20, blinkGap:180, stunT:24, arcR:240, arcDmg:2, gustR:170, gustV:8, fxT:30 };
+             spawnFar:700, touchGap:20, burnT:100, freezeT:24, heavyK:1.45, blinkT:20, blinkGap:180, stunT:24, arcR:240, arcDmg:2, gustR:170, gustV:8, fxT:30 };
 // THE POKEMON WAY (the owner, 2026-11-19: "kinda like pokemon, where you have to get assists ... you can get 6 assists, but only 3 can fight with you"; "if you have
 // 3 of the same type (the assists of each type should be consistent) you have a stronger buff"; "because of the 6 stocks, assists should be more powerful").
 // WILD ASSISTS roam the factory (JAWB.wild, lkWild*): hit one down to the last bit of its health (the bar over it: LK.wildHp, weak at LK.weakAt) and, while it is
@@ -117874,7 +117890,9 @@ const AS_TY_HEAVY = 1.25;   // (a regular match: under the contest's LK.heavyK, 
 // EACH ITS OWN (the owner, 2026-11-19: "why are all the assists the same?"): in the contest every assist plays its act with its own numbers (s._lkT: its act's row in AS
 // with these on top), so two on one act still move and hit differently -- reach, speed, how many hits, how wide, where it stands. The gaps between attacks (rest, gap,
 // again, every) are never changed. New knobs: pos (a bumper's spot between its summoner 0 and the foe 1), blink (appears behind the foe before the snip), all (a flash
-// all round, not only on faces turned to it), hops (slams in a row), n on a roll (there and back), ballV / ballHop (a ricochet's own speed and bounce).
+// all round, not only on faces turned to it), hops (slams in a row), n on a roll (there and back), ballV / ballHop (a ricochet's own speed and bounce); and
+// atFoe / nm / mgap (mines under the foe, how many, how far apart), shots / pose2 (a burst of flashes), pull / pullV (a flush that sucks in), follow (a bumper
+// that hops again to keep between), midair (a clap that freezes foes in the air over ground), flip (a swat that flips up), march (a drummer who walks as she plays).
 const LK_VARY = {
   'Battery':       { hw:12 },                                                          // SHOCK: the long wire (a thicker one: it caught almost nobody)
   'Salt Lamp':     { all:1, R:340 },                                                   // FIRE: glows all round (backs too), a wider glow than the Selfie Stick's flash
@@ -117896,7 +117914,19 @@ const LK_VARY = {
   'Avocado':       { n:2, spd:7.5, dist:420, dmg:9, kb:11 },                           // POISON: rolls there and back
   'Leek':          { tip:62, cr:26, lunge:60, spd:6, n:2, dmg:11, kb:11 },             // POISON: a slow, wide club
   'Eggy':          { hops:3, up:-9, air:26, slamX:44, dmg:8, kb:9, reach:240 },        // POISON: three little hops in a row
-  'Glue':          { R:170, n:3, freeze:32, reach:120 } };                             // POISON: three close, sticky claps
+  'Glue':          { R:170, n:3, freeze:32, reach:120 },                               // POISON: three close, sticky claps
+  // THE ELEVEN THAT HAD ONLY THEIR ACT'S NUMBERS (the owner, 2026-11-19: the assists "act the same", the types "feel the same"): each its own too.
+  'Grotato':       { atFoe:1, nm:7, mgap:46, wind:24 },                                // FIRE: digs and plants a tight patch right under the foe
+  'Rubber Spatula': { flip:13, reach:190, dmg:9 },                                     // FIRE: flips a foe straight up like a pancake
+  'Clapboard':     { midair:1, R:260, lift:26 },                                       // ICE: "Cut!" freezes foes in the air too
+  'Toilet':        { pull:300, pullV:1.6, wind:46 },                                   // ICE: the flush sucks foes in first, then the wave
+  'Beach Ball':    { ballV:2.8, ballHop:18, kb:14, dmg:9 },                            // HEAVY: the slowest, highest bounces and a big pop up
+  '9-Ball':        { follow:150, kb:10, dmg:6 },                                       // HEAVY: racks up again: hops to the new spot between you and the foe
+  'MePad':         { wind:20, reach:460, saves:3 },                                     // SNEAKY: the quick assistant: a fast glow, and he saves you 3 times
+  'Scissors':      { n:5, spread:16, lunge:70, spd:12, dmg:8 },                         // SNEAKY: snip-snip-snip, five quick short snips
+  'Selfie Stick':  { shots:3, pose2:18, R:280 },                                       // SHOCK: burst mode, three flashes in a row
+  'Conch Shell':   { n:2, spd:3.2, dist:760, H:72, kb:12, dmg:5 },                     // WIND: a deep, tall, slow blast that goes a long way
+  'Snare Drum':    { march:1.3 } };                                                    // WIND: marches toward the foe as she drums
 function lkVaryT(row){ const v = row && LK_VARY[row.name]; return v ? Object.assign({}, AS[row.act] || {}, v) : null; }
 function lkPics(){ if(typeof ASSIST_SPRITE_SRC === 'undefined') return; for(const r of LK_ROSTER) if(r.pic && !ASSIST_SPRITE_SRC[r.name]) ASSIST_SPRITE_SRC[r.name] = { src:'assets/sprites/' + r.pic + '.png', h:2.6, w:3.0 }; }   // (the strongest: they were the giant jawbreaker's alone; with the giant cut, no jawbreaker holds one)
 // CPUs by level (0 Easy .. 3 Expert): the fight range; how far from a foe it feels safe to lick, how often it licks and how long; how much it wants the family that
@@ -118298,11 +118328,17 @@ function lkComboStep(){
     }
   }
 }
+// BACK WHERE A FOE IS (2026-11-19, the long matches: with five rooms apart the spot farthest from everyone was nearly always an EMPTY room, and fighters
+// spent over half the match with nobody in their room): a spot in a room that holds a living foe, the one of those farthest from them (up to LK.spawnFar px
+// counts: past that every spot is as good, and the farthest is still taken). No foe in any room with a spot: the farthest spot, as before.
 function lkRespawn(f){
-  const xs = [800, 1950, 2850, 3950, 5500, 7000];
+  const xs = [800, 1950, 2850, 3950, 5500, 7000], gy = LKF.gy;
   let best = xs[0], bd = -1;
-  for(const x of xs){ let d = 1e9; for(const o of fighters) if(o !== f && !o.dead) d = Math.min(d, Math.abs(o.x - x)); if(d > bd){ bd = d; best = x; } }
-  f.x = Math.round(best + (Math.random() - 0.5)*160); f.y = LKF.gy - 320;
+  for(const x of xs){ let d = 1e9, there = 0; const rg = CROOM ? crmReg(x, gy - 20) : 0;
+    for(const o of fighters) if(o !== f && !o.dead){ d = Math.min(d, Math.abs(o.x - x)); if(CROOM && crmRegOf(o) === rg) there = 1; }
+    const k = (there || !CROOM ? 1e6 : 0) + Math.min(d, LK.spawnFar) + d*1e-3;
+    if(k > bd){ bd = k; best = x; } }
+  f.x = Math.round(best + (Math.random() - 0.5)*160); f.y = gy - 320;
 }
 function lkStep(){
   const J = JAWB, t = hazardT; if(!J || !J.lk || !LKF) return;
@@ -118976,15 +119012,18 @@ function lkBrain(f, inp, tgt, dist){
   return false;
 }
 // ROOMS APART: a CPU sees only the foes in its own room. Alone there, with nothing to break (capped, or in the fall), after LK_AI.roam frames (by level) it goes
-// through a door to another room; seeing a foe ends it.
+// through a door to another room; seeing a foe ends it. WHICH ROOM (2026-11-19, the long matches): the room of the foe it can walk to soonest (crmCost, through
+// the doors; it hears the fight), not a random one -- with five rooms a random pick was an empty room most of the time.
 function lkRoam(f, inp, lv){
   f._lkAlone = (f._lkAlone || 0) + 1;
   let R = f._lkRoam;
   if(R && hazardT > R.until) R = f._lkRoam = null;
   if(!R){
     if(f._lkAlone < LK_AI.roam[lv]*(JAWB.fall ? 0.5 : 1)) return false;
-    const here = crmRegOf(f), rooms = CROOM.rooms.filter(r => r.id !== here), r = rooms[Math.floor(Math.random()*rooms.length)];
-    R = f._lkRoam = { x:Math.round((Math.max(r.x0, 300) + Math.min(r.x1, LK.WW - 300))/2 + (Math.random() - 0.5)*300), until:hazardT + 900 };
+    const here = crmRegOf(f); let foe = null, fc = 1e12;
+    for(const o of fighters){ if(o === f || o.dead || crmRegOf(o) === here) continue; const c = crmCost(f, o.x, o.y + (o.r || 0) - 10); if(c < fc){ fc = c; foe = o; } }
+    const rooms = CROOM.rooms.filter(r => r.id !== here), r = (foe && crmRoomAt(foe.x, foe.y)) || rooms[Math.floor(Math.random()*rooms.length)];
+    R = f._lkRoam = { x:Math.round(foe && r.id !== here ? clamp(foe.x, Math.max(r.x0, 300), Math.min(r.x1, LK.WW - 300)) : (Math.max(r.x0, 300) + Math.min(r.x1, LK.WW - 300))/2 + (Math.random() - 0.5)*300), until:hazardT + 900 };
   }
   if(crmReg(R.x, LKF.gy - 10) === crmRegOf(f) && Math.abs(R.x - f.x) < 220){ f._lkRoam = null; f._lkAlone = 0; return false; }
   return lkGoal(f, inp, 'roam', R.x, LKF.gy);
