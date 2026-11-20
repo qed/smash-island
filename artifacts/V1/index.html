@@ -19635,9 +19635,9 @@ function viewRect(){ const z = viewZoom(), hw = W/(2*z), hh = H/(2*z), cx = camX
   if(MCAVE && MCAVE.on){ const d = Math.hypot(hw, hh); return { x:cx - d, y:cy - d, w:2*d, h:2*d }; }   // MOON CAVES: the square the turned view turns in (it covers the screen at any turn)
   return { x:cx - hw, y:cy - hh, w:2*hw, h:2*hh }; }
 // The buttons an online input message carries (NET.sendInput, NET.onMessage, netRemoteInput).
-const NET_BUTTONS = ['left','right','jump','down','attack','special','smash','flag','edit','shield'];   // (shield last: a bit the older rooms never set)
+const NET_BUTTONS = ['left','right','jump','down','attack','special','smash','flag','edit','shield','swap'];   // (shield: a bit the older rooms never set; swap: 8-Ball's contest's A, online)
 const NET_IN_Z = 1 << NET_BUTTONS.indexOf('shield');   // (SPRINT: Z is a tap or a hold: netPredRun plays that decision, so Z alone does not stop the prediction)
-const NET_IN_MASK = (1 << NET_BUTTONS.length) - 1, NET_IN_ACT = NET_IN_MASK & ~15;   // (bit i is NET_BUTTONS[i]); every button; the ones that start a move
+const NET_IN_MASK = (1 << NET_BUTTONS.length) - 1, NET_IN_ACT = NET_IN_MASK & ~15 & ~(1 << NET_BUTTONS.indexOf('swap'));   /* (the swap starts no move: the prediction runs on through it) */   // (bit i is NET_BUTTONS[i]); every button; the ones that start a move
 
 // ============================================================
 //  THE LOCKER, WHAT'S NEW, AND THE CHANGELOG  (the owner, 2026-10-14)
@@ -24468,7 +24468,7 @@ function beginMatchNow(){
   try{ clipReset(); }catch(e){}       // and a fresh ring for the shareable GIF
   try{ blurFormControl(); }catch(e){}   // a dropdown or text box the lobby left focused would take every key of this match (see blurFormControl)
   running=true; paused=false; hazardT=0;
-  MATCH_TWIST = (EVENT_RUN && !inNetSession()) ? eventTwistKey(EVENT_RUN.m) : null;   // an event match's twist, and no other match's (EVENT FIGHTERS: THE TWISTS)
+  MATCH_TWIST = (EVENT_RUN && (!inNetSession() || evNetOn())) ? eventTwistKey(EVENT_RUN.m) : null;   // an event match's twist, and no other match's (EVENT FIGHTERS: THE TWISTS)
   basketBegin();   // REACH THE BASKET (an event twist): X's basket, in every match null but the one that has it
   jawbBegin();   // SOMEBODY'S INSIDE (an event twist): the jawbreakers, in every match null but the one that has them
   collectBegin();   // A COMPLETE COLLECTION (an event twist): an empty collection for every fighter, in every match but the one that has it nothing
@@ -30935,7 +30935,7 @@ function buildFighters(){
     const pool = ROSTER.filter(r=>!used.has(r.name) && !r.event);
     const playAI=pool.filter(r=>r.play), road=pool.filter(r=>!r.play);
     shuffle(playAI); shuffle(road);
-    const fill=oneAiTake([...playAI,...road], N-humans.length).map(p=>({...p, you:false}));   // the host's own chain decides
+    const fill=(evNetOn() ? evNetFill(used, N-humans.length, [...playAI,...road]) : oneAiTake([...playAI,...road], N-humans.length)).map(p=>({...p, you:false}));   // the host's own chain decides (8-Ball's contest online: its own CPUs first, evNetFill)
     all=[...humans, ...fill];
   } else {
     let picks;
@@ -75230,7 +75230,7 @@ function step(){
     } else if(ctrl==="remote"){
       const r = simNetIn(f.idx, 0);   // input relayed from that player's device, a press since the last frame latched in (netRemoteInput, in the record)
       if(r){ inp.left=!!r.left; inp.right=!!r.right; inp.jump=!!r.jump; inp.up=!!r.jump;
-        inp.down=!!r.down; inp.attack=!!r.attack; inp.special=!!r.special; inp.smash=!!r.smash; inp.shield=!!r.shield; inp.flag=!!r.flag; inp.edit=!!r.edit; }
+        inp.down=!!r.down; inp.attack=!!r.attack; inp.special=!!r.special; inp.smash=!!r.smash; inp.shield=!!r.shield; inp.flag=!!r.flag; inp.edit=!!r.edit; inp.swap=!!r.swap; }
     } else if(ctrl==="trainer"){
       inp = trainerInput(f);   // Training: a dummy that walks at you or hops about
     } else if(ctrl==="ctut"){
@@ -111197,7 +111197,7 @@ function contestBegin(){
   if(!R) return;
   CONTEST = { rule:m.contest, rain:false, winner:null };
   for(const f of fighters){ f._cst = []; f._cHits = 0; f._cHold = 0; }
-  if(R.begin) R.begin();
+  if(R.begin && !isNetClient()) R.begin();   // (ONLINE: a guest draws the host's state, s.lq: it begins nothing)
 }
 function contestRule(){ return (CONTEST && CONTEST_RULES[CONTEST.rule]) || null; }
 function contestHold(){ const R = contestRule(); return !!(R && R.hold && CONTEST.winner == null && R.hold()); }
@@ -118378,14 +118378,188 @@ function lkSwap(f){
 }
 // A CPU turns its team toward 3 of a type (else 2) when the team has one.
 function lkCpuSwap(f){
-  if(f.you || f.dead || hazardT % 20 !== f.idx % 20) return;
+  if(isHumanCtrl(f) || f.dead || hazardT % 20 !== f.idx % 20) return;   // (a person's team is theirs to turn, an online guest's too: it was f.you, which a guest's fighter never is on the host)
   const h = lkHeld(f), n = h.length; if(n <= LK.out) return;
   const sc = k => { const o = []; for(let i = 0; i < LK.out; i++) o.push(h[(k + i) % n]); const T = lkTeam(f, o); return T.n >= 3 ? 100 : T.n === 2 ? 30 : 0; };
   const now = sc((((f._lkK || 0) % n) + n) % n); let best = now; for(let k = 0; k < n; k++) best = Math.max(best, sc(k));
   if(best > now) lkSwap(f);
 }
 function lkR(s){ return JB.r; }
-function lkWanted(){ return !!EVENT_RUN && !inNetSession() && !!EVENT_RUN.m && EVENT_RUN.m.contest === 'lick'; }
+function lkWanted(){ return !!EVENT_RUN && (!inNetSession() || evNetOn()) && !!EVENT_RUN.m && EVENT_RUN.m.contest === 'lick'; }   // (ONLINE: in a room too, EV_NET)
+// ---- ONLINE: 8-BALL'S CONTEST IN A ROOM (the owner, 2026-11-19: one event contest playable online, as a test) ----
+// EV_NET lists the contests a room may play; every other event match still refuses in a room (startEventMatch, eventPlay) and the room says so in its one line
+// (lobbyEventOffWords). THE HOST starts it from the room (NET.startEventAsHost: the "Play the event contest" button beside the line): the contest's own setup
+// (evNetHostPrep: Free-for-all, 6 stocks, no items, the candy factory), every human a seat, the event's CPUs in the seats left (evNetFill), and the start
+// carries settings.ev = [event, match, week, layout seed] so every guest builds the same factory (lkWanted, setupWorld: the seven rooms' order and mirrors
+// come from that seed online, lkBuildRooms) and holds the same EVENT_RUN (evNetFromStart). A guest back from a dropped connection gets the same start again
+// (NET.rejoinAnswer), so it builds the same factory and lands back in its own fighter.
+// THE HOST runs everything as offline. A GUEST simulates none of it: each snapshot carries the contest's state as one small pack (s.lq: lkNetOut), and the
+// guest draws from it (lkNetIn): the jawbreakers, the wild assists, the fall, the touches, the licks, the ropes, type power, every fighter's team of assists
+// and which 3 are out. The slow part (the pool's order, who holds which, each team) rides only when it changes, early in the match, with the geometry and
+// once a second (netStatDue, the slow fields' rule); a snapshot the guest skips hands it on (netSnapshotArrived). The guest's A key (the swap) goes to the
+// host as a button (NET_BUTTONS 'swap'). The rooms: a guest's view is the room its own fighter is in (CROOM, crmViewer: its own fighter). A guest's own
+// fighter is predicted through the belts and the doors as the host plays them (netPredRun: lkPredBelt, lkPredDoor). The result: the host's, and a guest's own
+// event pay from its own result (netClientMatchOver: eventFinish), the same rules as offline.
+const EV_NET = ['lick'];
+function evNetOk(m){ return !!m && EV_NET.indexOf(m.contest) >= 0 && !m.sides.some(sd => sd.length > 1); }
+function evNetOn(){ return !!EVENT_RUN && evNetOk(EVENT_RUN.m); }
+function evRoomMatch(){ let ev = null; try{ ev = eventThisWeek(); }catch(e){} if(!ev || !ev.name) return null; const m = (EVENT_MATCHES[ev.name] || []).find(q => evNetOk(q) && eventMatchReady(q)); return m ? { ev:ev, m:m } : null; }
+// The host's start (startAsHost): the contest's own settings (lent: returnEventLoan hands the room's back when the host leaves the result), or null when no online contest is picked.
+function evNetHostPrep(humans){
+  const P = EVENT_PICK, R = evRoomMatch();
+  if(!P || P.rush || !R || P.name !== R.ev.name || P.n !== R.m.n){ if(P && !P.rush) EVENT_PICK = null; return null; }
+  const m = R.m, n = Math.max(m.sides.reduce((a, sd) => a + sd.length, 0), humans | 0);
+  if(!EVENT_LOAN) EVENT_LOAN = { mode:SETTINGS.mode, count:SETTINGS.count, stocks:SETTINGS.stocks, teamKey:SETTINGS.teamKey, itemRate:SETTINGS.itemRate,
+    mapSize:SETTINGS.mapSize, smashBalls:SETTINGS.smashBalls, stage };
+  SETTINGS.mode = 'ffa'; SETTINGS.count = n; SETTINGS.stocks = m.stocks || 2; SETTINGS.itemRate = EVENT_ITEM_RATE[m.items]; SETTINGS.mapSize = 'normal'; SETTINGS.smashBalls = !!m.smashBalls;
+  stage = STAGES.find(st => st.id === m.stage) || stage;
+  DAILY_ACTIVE = false; PENDING_DAILY = null; CCARD.pend = false;
+  return [R.ev.name, m.n, R.ev.week, (Math.random()*4294967296) >>> 0];   // (and THE LAYOUT's seed: the seven rooms are put in a new order each match, lkBuildRooms; every device rolls it from this one)
+}
+// Every device's start (NET.beginMatch): the event match the start names, checked here (peer-supplied), or null. A guest whose own week is another
+// (the clock turned) plays it all the same, unpaid (done).
+function evNetFromStart(ev){
+  if(!Array.isArray(ev) || typeof ev[0] !== 'string' || !Object.prototype.hasOwnProperty.call(EVENT_MATCHES, ev[0])) return null;
+  const m = eventMatchOf(ev[0], ev[1] | 0); if(!evNetOk(m) || !eventMatchReady(m)) return null;
+  let cur = null; try{ cur = eventThisWeek(); }catch(e){}
+  const same = !!cur && cur.name === ev[0] && cur.week === ev[2];
+  return { name:ev[0], n:m.n, m:m, week:same ? cur.week : (cur ? cur.week : 0), done:!same, net:1, lkSeed:(typeof ev[3] === 'number' && isFinite(ev[3])) ? (ev[3] >>> 0) : null };
+}
+// The CPU seats (buildFighters, online): the event's own CPUs, in its order, that no human picked (a stand-in for one One has erased, as eventLineup);
+// then the usual random fill if the humans took them.
+function evNetFill(used, k, rest){
+  const R = EVENT_RUN, out = [];
+  for(const sd of R.m.sides) for(const nm of sd){
+    if(nm === 'you' || used.has(nm) || out.length >= k) continue;
+    let r = ROSTER.find(x => x.name === nm); if(!r) continue;
+    if(r.name !== R.name && oneAiBanned(r)) r = eventStandIn(r, (R.week*7 + out.length + 1) >>> 0);
+    if(r && !used.has(r.name) && !out.some(o => o.name === r.name)) out.push(r);
+  }
+  const more = oneAiTake(rest.filter(r => !out.some(o => o.name === r.name)), Math.max(0, k - out.length));
+  return out.concat(more).slice(0, k);
+}
+// THE PACK (host: lkNetOut, in every snapshot as s.lq). Names go as LK_ROSTER indices, types as LK_FLAV_KEYS indices, times as frames from s.t.
+//   s: jawbreakers [id, x, y, state (JB_ST, -1 gone), type, flash, t0, end (1: not yet), angle*100, [fighter, dealt, ...]]
+//   w: wild ones [id, name, x, y, hp, weak frames left, flash, face]
+//   f: the fall [t0] or 0; b: the falling jawbreakers [id, x, y, y0, state (0 warn, 1 fall, 2 land), t0, tl (1: not yet), dir]
+//   x: the touches on screen [kind (LK_FLAV_KEYS; 8 a catch), x, y, t, fighter, type of a catch | x2, y2 of a spark]
+//   l: licks [fighter, shell id, licks]; c: bonds [fighter, type, sneaky blink wait, whirl x, whirl y, summon, name, summon, name...]; p: type power [fighter, type, ...]
+//   g: the contest's assists [summon, type (-1 none), gold, act phase, its frames, dir, start x, move [c|s, kind, dir, frames, struck (frames from now)] or 0]
+//   v: what a touch left on a fighter [fighter, type, frames left, ..., -1, blink-from x, y, when]; k: the kit's things (lkNetKit: their plain fields)
+//   d: a guest's doors [fighter, frames Up held, Up still held from the last door, frames to wait] (its own prediction: lkPredDoor)
+//   z (slow): [order, the fighter holding each of order (-1), teams [fighter, k, names...]]
+const LKN = { key:{}, at:{} };
+function lkRi(n){ return LK_ROSTER.findIndex(r => r.name === n); }
+function lkNetOut(){
+  const J = JAWB, t = hazardT, q = {}, si = s => summons.indexOf(s), fk = k => LK_FLAV_KEYS.indexOf(k);
+  q.s = J.shs.map(s => { const d = []; for(const k in s.dealt) d.push(+k, Math.round(s.dealt[k])); return [s.id, Math.round(s.x), Math.round(s.y), JB_ST.indexOf(s.st), fk(s.fl), s.flash | 0, s.t0 - t, s.end < 0 ? 1 : s.end - t, Math.round((s.ang || 0)*100), d]; });
+  q.w = J.wild.filter(w => !w.gone).map(w => [w.id, lkRi(w.name), Math.round(w.x), Math.round(w.y), Math.round(w.hp), w.weak > t ? w.weak - t : 0, w.flash | 0, w.face < 0 ? -1 : 1]);
+  q.f = J.fall ? [J.fall.t0 - t] : 0;
+  if(J.fl.length) q.b = J.fl.map(b => [b.id, Math.round(b.x), Math.round(b.y), Math.round(b.y0), b.st === 'warn' ? 0 : b.st === 'fall' ? 1 : 2, b.t0 - t, b.tl < 0 ? 1 : b.tl - t, b.dir < 0 ? -1 : 1]);
+  if(J.fx.length) q.x = J.fx.filter(e => t - e.t < LK.fxT).map(e => e.k === 'catch' ? [8, Math.round(e.x), Math.round(e.y), e.t - t, e.id, fk(e.ty)] : [fk(e.k), Math.round(e.x), Math.round(e.y), e.t - t, e.id].concat(e.x2 != null ? [Math.round(e.x2), Math.round(e.y2)] : []));
+  const l = [], c = [], p = [], d = [], g = [], v = [];
+  for(const f of fighters){
+    if(f._lkLk && t - f._lkLk.t <= 1) l.push([f.idx, f._lkLk.id, f._lkLk.n]);
+    if(f._lkCombo && f._lkCombo.mem){ const W = f._lkWhirl, r = [f.idx, fk(f._lkCombo.fl), Math.max(0, (f._lkSwp || 0) - t), W ? Math.round(W.x) : null, W ? Math.round(W.y) : null]; for(const m of f._lkCombo.mem) r.push(si(m[0]), lkRi(m[1])); c.push(r); }   // (a pair's bond: its two, the sneaky blink's wait, the wind's whirl)
+    if(f._lkV){ const V = f._lkV, r = [f.idx]; for(const k of LK_FLAV_KEYS){ const u = (V[k] || 0) - t; if(u > 0) r.push(fk(k), u); } if(V.sx != null && t - (V.sxT || -99) < 26) r.push(-1, Math.round(V.sx), Math.round(V.sy), V.sxT - t); if(r.length > 1) v.push(r); }   // (what a touch left on them: lkDrawStatus)
+    if(f._lkTri) p.push(f.idx, fk(f._lkTri));
+    if(f.controller === 'remote') d.push([f.idx, f._crmUp | 0, f._crmHold ? 1 : 0, Math.max(0, (f._crmT || 0) - t)]);
+  }
+  summons.forEach((s, i) => { if(!s._lk || !(s.life > 0)) return; const P = s._as, M = s._mv;   // every contest assist: its type, gold, its act's phase, its move (lkKitDrawOver, lkDrawTags)
+    g.push([i, P && P._lkFam ? fk(P._lkFam) : -1, s._lkGold ? 1 : 0, typeof s._ph === 'string' ? s._ph : '', s._pt | 0, s._dir || 0, typeof s._x0 === 'number' ? Math.round(s._x0) : null,
+      M ? [M.k, M.kind, M.dir, M.t | 0, M.st != null ? M.st - t : null] : 0]); });
+  if(l.length) q.l = l; if(c.length) q.c = c; if(p.length) q.p = p; if(d.length) q.d = d; if(g.length) q.g = g; if(v.length) q.v = v;
+  if(J.kx && J.kx.length) q.k = J.kx.map(lkNetKit);   // THE KIT's things (shots, waves, rings, patches, spills...): their plain fields, as lkKitDrawUnder and lkKitDrawOver read them
+  const z = [J.order.map(lkRi), J.order.map(n => { if(!J.takenBy[n]) return -1; const o = fighters.find(f => lkHeld(f).indexOf(n) >= 0) || fighters.find(f => f.color === J.takenBy[n]); return o ? o.idx : -1; }),
+    fighters.filter(f => lkHeld(f).length).map(f => [f.idx, f._lkK | 0].concat(lkHeld(f).map(lkRi)))];
+  if(netStatDue(LKN.key, LKN.at, 0, JSON.stringify(z))) q.z = z;
+  return q;
+}
+// One of the kit's things for the wire: the numbers, words and flags its pictures read (LK_NET_KIT; never the fighter, the assist or the set of who it hit); times as frames from now.
+const LK_NET_KIT = new Set(['k','kind','shape','who','col','x','y','x0','x1','x2','y1','y2','r','R','w','h','a','d','dir','dist','rmax','grow','life','t0','rel','id','vx','vy','cr','embers','splash','shock','drop']);   // (what lkKitDrawUnder and lkKitDrawOver read: nothing else goes)
+function lkNetKit(e){ const o = {}, t = hazardT; for(const k in e){ if(!LK_NET_KIT.has(k)) continue; const v = e[k]; if(typeof v === 'number'){ if(isFinite(v)) o[k] = (k === 't0' || k === 'at') ? v - t : Math.round(v*100)/100; } else if(typeof v === 'string' || typeof v === 'boolean') o[k] = v; } return o; }
+// The guest's side: only plain fields with plain names (it is a peer's), times back on this clock.
+function lkNetKitIn(o, t){ if(!o || typeof o !== 'object' || Array.isArray(o)) return null; const e = {};
+  for(const k of Object.keys(o)){ if(!/^[A-Za-z][A-Za-z0-9]{0,11}$/.test(k)) continue; const v = o[k];
+    if(typeof v === 'number' && isFinite(v)) e[k] = v; else if(typeof v === 'boolean') e[k] = v; else if(typeof v === 'string' && v.length <= 24) e[k] = v; }
+  if(typeof e.k !== 'string') return null; e.t0 = t + (e.t0 | 0); if('at' in e) e.at = t + (e.at | 0); if(!(e.life > 0)) e.life = 1; return e; }
+// A snapshot the guest skipped: its slow part goes on in the newer one (netSnapshotArrived)
+function lkNetCarry(prev, s){ if(prev && s && prev.z && !s.z) s.z = prev.z; }
+// THE GUEST: the host's contest as it is in this snapshot (applySnapshot, after the fighters and the summons are rebuilt), and the sounds of what just happened.
+let LKG = null;
+function lkNetIn(q, fresh){
+  if(!q || typeof q !== 'object' || !LKF) return;
+  const t = hazardT, was = (fresh || !LKG) ? null : LKG, J = was || (LKG = lkJawb()), nm = i => (LK_ROSTER[i | 0] || {}).name || null, fl = i => LK_FLAV_KEYS[i | 0] || 'sneaky', A = a => Array.isArray(a) ? a : [];
+  J.lk = true; J.net = 1; const heard = J._heard || (J._heard = {}), me = window.NET ? NET.myIdx : -1;
+  const old = {}; for(const s of (J.shs || [])) old[s.id] = s.st;
+  J.shs = A(q.s).map(a => { const dealt = {}, dd = A(a[9]); for(let i = 0; i + 1 < dd.length; i += 2) dealt[dd[i] | 0] = +dd[i + 1] || 0;
+    return { id:a[0] | 0, lk:1, x:+a[1] || 0, y:+a[2] || 0, st:JB_ST[a[3] | 0] || 'gone', fl:fl(a[4]), flash:a[5] | 0, t0:t + (a[6] | 0), end:a[7] > 0 ? -1 : t + (a[7] | 0), ang:(+a[8] || 0)/100, dealt:dealt, need:LK.need, lift:0, dir:1, gr:{}, bk:{} }; });
+  for(const s of J.shs) if(was && old[s.id] === 'sit' && s.st !== 'sit') jawbSfx('found');   // (a jawbreaker broken)
+  J.wild = A(q.w).map(a => { const n = nm(a[1]), r = lkRow(n); return { id:a[0] | 0, name:n, ty:lkFlav(n), color:r ? r.color : '#ffffff', x:+a[2] || 0, y:+a[3] || 0, r:LK.wildR, hp:+a[4] || 0, weak:a[5] > 0 ? t + (a[5] | 0) : 0, flash:a[6] | 0, face:a[7] < 0 ? -1 : 1, gone:0, gr:{} }; }).filter(w => w.name);
+  const wasFall = !!J.fall;
+  J.fall = Array.isArray(q.f) ? { t0:t + (q.f[0] | 0) } : null;
+  if(J.fall && was && !wasFall){ tone(90, 0.7, 'sawtooth', 0.06, 0, 45); noise(0.5, 0.04, 400, 0, 120); }
+  J.fl = A(q.b).map(a => ({ id:a[0] | 0, x:+a[1] || 0, y:+a[2] || 0, y0:+a[3] || 0, R:LK.fallR, vy:0, st:['warn', 'fall', 'land'][a[4] | 0] || 'warn', t0:t + (a[5] | 0), tl:a[6] > 0 ? -1 : t + (a[6] | 0), dir:a[7] < 0 ? -1 : 1, bk:{} }));
+  J.fx = A(q.x).map(a => (a[0] | 0) === 8 ? { k:'catch', x:+a[1], y:+a[2], t:t + (a[3] | 0), id:a[4] | 0, ty:fl(a[5]) } : Object.assign({ k:fl(a[0]), x:+a[1], y:+a[2], t:t + (a[3] | 0), id:a[4] | 0 }, a.length > 6 ? { x2:+a[5], y2:+a[6] } : {}));
+  for(const e of J.fx){ const key = e.k + ':' + e.t + ':' + e.id; if(heard[key]) continue; heard[key] = t;   // the host's sounds for them, once each
+    if(!was) continue; if(e.k === 'catch') jawbSfx('found'); else { const F = LK_FLAVS[e.k]; if(F) tone(F.snd[0], 0.12, F.snd[2], 0.04, 0, F.snd[1]); } }
+  for(const k in heard) if(t - heard[k] > 120 || heard[k] > t + 5) delete heard[k];
+  if(Array.isArray(q.z) && q.z.length === 3){
+    J.order = A(q.z[0]).map(nm).filter(Boolean); J.total = J.order.length || LK.total; J.takenBy = {};
+    A(q.z[1]).forEach((ix, i) => { const f = fighters.find(o => o.idx === ix), n = J.order[i]; if(f && n) J.takenBy[n] = f.color || '#ffffff'; });
+    J._teams = {}; for(const r of A(q.z[2])) if(Array.isArray(r)) J._teams[r[0] | 0] = { k:r[1] | 0, a:r.slice(2).map(nm).filter(Boolean) };
+  }
+  const T = J._teams || {}, lk = {}, co = {}, tp = {};
+  for(const r of A(q.l)) lk[r[0] | 0] = r;
+  for(const r of A(q.c)) co[r[0] | 0] = r;
+  { const p = A(q.p); for(let i = 0; i + 1 < p.length; i += 2) tp[p[i] | 0] = fl(p[i + 1]); }
+  for(const r of A(q.g)){ if(!Array.isArray(r)) continue; const s = summons[r[0] | 0]; if(!s) continue;   // the contest's assists: as lkKitDrawOver and lkDrawTags read them
+    s._lk = 1; s.life = 1; s._lkFl = (r[1] | 0) >= 0 ? fl(r[1]) : null; s._lkGold = r[2] ? 1 : 0; s._ph = typeof r[3] === 'string' ? r[3].slice(0, 12) : ''; s._pt = r[4] | 0; s._dir = +r[5] || 0;
+    s._x0 = typeof r[6] === 'number' ? r[6] : null; const row = lkRow(s.name); s._lkT = row ? lkVaryT(row) : null;
+    const M = Array.isArray(r[7]) ? r[7] : null, mv = M && LK_MOVES[s.name], dd = mv && (M[0] === 'c' || M[0] === 's') ? mv[M[0]] : null;
+    s._mv = dd ? { k:M[0], kind:typeof M[1] === 'string' ? M[1] : dd[0], d:dd, dir:(+M[2] || 1) < 0 ? -1 : 1, t:M[3] | 0, st:typeof M[4] === 'number' ? t + (M[4] | 0) : null } : null; }
+  J.kx = A(q.k).map(o => lkNetKitIn(o, t)).filter(Boolean).slice(0, 200);   // THE KIT's things, drawn from the host's
+  const sv = {}; for(const r of A(q.v)){ if(!Array.isArray(r)) continue; const V = {}; for(let i = 1; i + 1 < r.length; i += 2){ if((r[i] | 0) === -1){ V.sx = +r[i + 1] || 0; V.sy = +r[i + 2] || 0; V.sxT = t + (r[i + 3] | 0); break; } V[fl(r[i])] = t + (r[i + 1] | 0); } sv[r[0] | 0] = V; }
+  J._crd = null; for(const r of A(q.d)) if((r[0] | 0) === me) J._crd = { up:r[1] | 0, hold:!!r[2], cd:r[3] | 0, t:t };
+  for(const f of fighters){
+    const tm = T[f.idx], wasMe = was && f.idx === me ? J._mine : null;
+    f._lkA = tm ? tm.a.slice() : []; f._lkK = tm ? tm.k : 0;
+    const L = lk[f.idx]; f._lkLk = L ? { id:L[1] | 0, t:t, n:L[2] | 0, t0:t } : null;
+    const C = co[f.idx]; f._lkCombo = null; f._lkV = sv[f.idx] || null;
+    if(C){ const mem = []; for(let i = 5; i + 1 < C.length; i += 2){ const s = summons[C[i] | 0]; if(s) mem.push([s, nm(C[i + 1]) || s.name]); }   // (a pair's bond: lkKitDrawOver)
+      if(mem.length) f._lkCombo = { mem:mem, fl:fl(C[1]) }; f._lkSwp = t + (C[2] | 0); f._lkWhirl = typeof C[3] === 'number' ? { x:C[3], y:+C[4] || 0 } : null; }
+    f._lkTri = tp[f.idx] || null;
+    if(f.idx === me){   // this guest's own: the lick's tick, the swap's click and a pair's chime, as the host plays them for its own player
+      const now = { n:L ? L[2] | 0 : -1, k:f._lkK, a:f._lkA.join('|'), tn:lkTeam(f).n };
+      if(wasMe){
+        if(now.n > wasMe.n && wasMe.n >= 0) tone(700 + (now.n % 3)*60, 0.06, 'sine', 0.03, 0, 1100);
+        if(now.a === wasMe.a && now.k !== wasMe.k) tone(520, 0.07, 'triangle', 0.04, 0, 780);
+        if(now.tn >= 2 && now.tn > wasMe.tn){ tone(660, 0.12, 'triangle', 0.05, 0, 990); tone(990, 0.16, 'triangle', 0.05, 0.1, now.tn >= 3 ? 1760 : 1320); }
+      }
+      J._mine = now;
+    }
+  }
+  for(const p of worldPlats) if(p.solid && !p.crw && p.w === 20 && LKF.walls.some(wx => Math.abs(p.x - (wx - 10)) < 1)) p.crw = true;   // (the walls in the chutes: the factory draws them, never paintPlat -- the geometry does not carry the mark)
+  JAWB = J;
+}
+// THE GUEST'S PREDICTION (netPredRun), the host's own rules on its own fighter: a belt carries whoever stands on it (lkBelts: before the move),
+// and Up held in a doorway for CROOM.hold frames goes through it (crmInput; standing in the doorway Up is not a jump). The door's count, the Up still
+// held from the last door and the wait come from the host (s.lq.d), as of the snapshot the prediction starts from; null on any other map.
+function lkPredOn(){ return !!LKF && !!JAWB && !!JAWB.lk && !!JAWB.net; }
+function lkPredBelt(P){ if(!P.g) return; for(const p of LKF.belts) if(P.x >= p.x && P.x <= p.x + p.w && Math.abs(P.y + P.r - p.y) < 4){ P.x += p.lkBelt; break; } }
+function lkPredDoor(P, D, J, g, a0){   // D: the door state (a copy for this replay), J: Up held this frame; true when Up is the door (no jump)
+  if(!D || !CROOM) return false;
+  if(D.hold && !J) D.hold = false;
+  if(D.hold) P.jp = true;
+  if(!J || D.hold){ D.up = 0; return false; }
+  const d = crmDoorAt(P); if(!d){ D.up = 0; return false; }
+  const off = P.g;
+  if(g - a0 < D.cd) return off;
+  if(++D.up < CROOM.hold) return off;
+  D.up = 0; D.hold = true; D.cd = g - a0 + 30;
+  P.x = d.tx; P.y = d.ty - P.r; P.vx = 0; P.vy = 0; P.g = true;
+  return off;
+}
 // THE FACTORY: in place of the stage's own world (setupWorld), for this one event match.
 function lkBuildWorld(){
   const K = LK;
@@ -118648,7 +118822,7 @@ function lkDrawTags(c){
   const t = hazardT;
   for(const s of summons){
     if(!s._lk || !(s.life > 0) || typeof s.x !== 'number') continue;
-    const P = s._as, fl = P && P._lkFam, F = fl && LK_FLAVS[fl]; if(!F) continue;
+    const P = s._as, fl = (P && P._lkFam) || s._lkFl, F = fl && LK_FLAVS[fl]; if(!F) continue;   // (_lkFl: a guest's, from the snapshot: lkNetIn)
     const r = s.r || 24;
     c.save(); c.globalAlpha = 0.55; c.strokeStyle = F.col; c.lineWidth = 3; c.beginPath(); c.ellipse(s.x, s.y + r, r + 6, 6, 0, 0, 7); c.stroke();
     c.globalAlpha = 0.95; c.translate(s.x, s.y - r - 16 + Math.sin(t*0.08)*2); c.fillStyle = F.col; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.arc(0, 0, 9, 0, 7); c.fill(); c.stroke();
@@ -120110,10 +120284,11 @@ function lkDecoMidNew(c, p, k){
 }
 function lkBuildRooms(gy, one){
   const K = LK, order = LK_ROOM_KEYS.slice();
-  for(let i = order.length - 1; i > 0; i--){ const k = Math.floor(simRand()*(i + 1)), q = order[i]; order[i] = order[k]; order[k] = q; }
+  const sd = (EVENT_RUN && EVENT_RUN.lkSeed != null) ? { s:EVENT_RUN.lkSeed | 0 } : null, rnd = sd ? (() => rng32(sd)) : simRand;   // (ONLINE: the layout from the start's seed, the same on every device: evNetFromStart; offline the match's own dice as before)
+  for(let i = order.length - 1; i > 0; i--){ const k = Math.floor(rnd()*(i + 1)), q = order[i]; order[i] = order[k]; order[k] = q; }
   const rooms = [], walls = [], far = [], spots = [], segs = []; let X = 240, lift = null;
   for(const key of order){
-    const D = LK_ROOMS[key], R = { key:key, X:X, fw:D.fw, mir:simRand() < 0.5 ? 1 : 0, D:D };
+    const D = LK_ROOMS[key], R = { key:key, X:X, fw:D.fw, mir:rnd() < 0.5 ? 1 : 0, D:D };
     for(const q of D.L){ const rx = R.mir ? D.fw - q[0] - q[2] : q[0], v = q[4] ? q[4]*(R.mir ? -1 : 1)*K.beltV : 0, p = one(X + rx, gy - q[1], q[2], v);
       if(q[3] === 'low' || q[3] === 'high') R[q[3]] = p; else if(q[3]) p.lkSet = q[3]; }
     for(const q of D.spots) spots.push({ x:lkRx(R, q[0]), top:gy - q[1] });
@@ -149061,7 +149236,8 @@ function serializeState(withGeo){
   if(FINX.length) s.fnx = finxNet();   // the finishers running (FINISHERS V2): what a guest draws of them
   if(FILE_RIDES.length) s.frd = FILE_RIDES.map(p=>[Math.round(p.x), Math.round(p.y), p.w, p.h, p.face, p.on ? 1 : 0, p.vx ? 1 : 0, p.owner ? p.owner.idx : -1]);   // the big files being ridden: where, which way, glowing, gliding, whose
   if(SMASHBALL) s.fsb = [Math.round(SMASHBALL.x), Math.round(SMASHBALL.y), Math.max(0, Math.round(SMASHBALL.hp/SMASHBALL.hpMax*100)), SMASHBALL.flash > 0 ? 1 : 0];   // the Smash Ball: where it is, how much is left, a hit's flash
-  if(JAWB) s.jw = jawbNet();   // SOMEBODY'S INSIDE (an event twist): the shell now, as numbers ([] when there is none), in every snapshot; it is drawn from these and the clock
+  if(JAWB && JAWB.lk) s.lq = lkNetOut();   // LICK YOUR WAY TO FREEDOM (8-Ball's contest, online): its state as one small pack (lkNetOut)
+  else if(JAWB) s.jw = jawbNet();   // SOMEBODY'S INSIDE (an event twist): the shell now, as numbers ([] when there is none), in every snapshot; it is drawn from these and the clock
   if(BASKET) s.bk = [BASKET.t0, BASKET.n, BASKET.sx, BASKET.sy];   // REACH THE BASKET (an event twist): the last take, in every snapshot (a snapshot dropped for a newer takes no take with it); the basket's place is the clock's (basketAt)
   if(STICKY) s.sk = stickyNet();   // STICKY PILLARS (an event twist): who is stuck where, in every snapshot (a few numbers each)
   if(FS.freeze > 0 || FS.slow > 0) s.fsx = [FS.freeze, FS.fz, FS.slow, FS.sf, Math.round(FS.sx), Math.round(FS.sy), FS.slowN, FS.game | 0];   // a Final Smash's intro and slow-mo KO: frames left, whose, the close-up's point, the slow-mo's length (CATCH, THEN CINEMATIC); the last KO's (THE LAST KO)
@@ -149100,8 +149276,9 @@ function serializeState(withGeo){
 // One line for the lobby: what the host has set.
 // THE EVENT IN A ROOM: an event match is offline for now (startEventMatch and eventPlay refuse in a room), so the room says so in one plain line
 // while an event is on, under the match settings, for the host and the guests alike (nothing before the events launch).
-function lobbyEventOffWords(){ let ev = null; try{ ev = eventThisWeek(); }catch(e){} return ev && ev.name ? "This week's event (" + ev.name + ") is offline for now." : ''; }
-function lobbyEventOffLine(el){ const t = lobbyEventOffWords(); if(!t) return; const d = document.createElement('div'); d.className = 'foot lobbyevoff'; d.id = 'lobbyEventOff'; d.textContent = t; d.title = 'Leave the room to play it.'; el.appendChild(d); }
+function lobbyEventOffWords(){ let ev = null; try{ ev = eventThisWeek(); }catch(e){} const R = evRoomMatch(); if(R) return "This week's event contest, " + R.m.name + ", plays here: the host starts it."; return ev && ev.name ? "This week's event (" + ev.name + ") is offline for now." : ''; }   // (ONLINE EVENT CONTEST: 8-Ball's, EV_NET; every other event keeps the offline line)
+function lobbyEventOffLine(el){ const t = lobbyEventOffWords(); if(!t) return; const d = document.createElement('div'); d.className = 'foot lobbyevoff'; d.id = 'lobbyEventOff'; d.textContent = t; const R = evRoomMatch(); d.title = R ? 'Its other event matches are offline for now.' : 'Leave the room to play it.'; el.appendChild(d);
+  if(R && window.NET && NET.role === 'host'){ const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm'; b.id = 'lobbyEventPlay'; b.textContent = 'Play the event contest ▶'; b.onclick = ()=>NET.startEventAsHost(); el.appendChild(b); } }   // (the host's start for it: NET.startEventAsHost)
 function lobbySummaryText(s){
   const st=STAGES.find(x=>x.id===s.stage), size=(MAP_SIZES[s.mapSize]||MAP_SIZES.normal).label;
   const mode = s.mode==='teams' ? (s.teamKey||'')+' Teams' : s.mode==='boss' ? 'Boss Rush' : s.mode==='ctf' ? 'Capture the Flag ' + Math.floor(s.count/2) + 'v' + Math.floor(s.count/2) : 'Free-for-all';
@@ -149122,6 +149299,7 @@ function netSnapshotArrived(N, s){
       if(sf.name === undefined && pf.name !== undefined){ sf.name = pf.name; sf.color = pf.color; sf.koCap = pf.koCap; sf.team = pf.team; sf.kit = pf.kit; if(pf.oc !== undefined) sf.oc = pf.oc; }   // (OC ONLINE SYNC: and the OC's code)
       const k = (pf.pr && pf.pr.k) || pf._k; if(k){ if(sf.pr && !sf.pr.b && !sf.pr.k) sf.pr.k = k; else if(!(sf.pr && sf.pr.k)) sf._k = k; } }
     if(!s.banner && prev.banner) s.banner = prev.banner;
+    if(prev.lq && s.lq) lkNetCarry(prev.lq, s.lq);   // (8-Ball's contest: the teams the skipped one carried)
     if(Array.isArray(prev.ko) && prev.ko.length) s.ko = prev.ko.concat(Array.isArray(s.ko) ? s.ko : []).slice(-8);
     if(Array.isArray(prev.imp) && prev.imp.length) s.imp = prev.imp.concat(Array.isArray(s.imp) ? s.imp : []).slice(-IMPACT_FX.netMax);
   }
@@ -149247,6 +149425,7 @@ function applySnapshot(s){
   { const was = fresh ? [] : FINX;   // the finishers running (FINISHERS V2): drawn from the host's rows, glided like everything else
     FINX = Array.isArray(s.fnx) ? s.fnx.map(r=>{ const o = Object.assign({}, r); if(r.mR > 0){ o._mcPhi = +r.mP; o._mcRho = +r.mR; } netGlide(o, was.find(q=>q.id===o.id) || null); return o; }) : []; }   // (MOON CAVES: its chart, as mcFinxDraw reads it)
   summons=(s.summons||[]).map((m,i)=>{ const e={...m}, p=wasS[i]; netGlide(e, (p && p.name===m.name && p.type===m.type) ? p : null); return e; });
+  if(s.lq){ try{ lkNetIn(s.lq, fresh); }catch(e){ console.error('lkNetIn', e); } }   // LICK YOUR WAY TO FREEDOM (online): the host's contest, drawn here (after the fighters and the summons)
   if(typeof s.bossCleared==='number') BOSSRUSH.cleared=s.bossCleared;
   if(Array.isArray(s.pb)){
     for(const b of s.pb) if(Array.isArray(b)) particles.push({x:b[0], y:b[1], vx:b[2], vy:b[3], life:b[4], r:b[5], color:(typeof b[6] === 'number' && Array.isArray(s.pc)) ? s.pc[b[6]] : b[6]});   // (ONLINE LAG: pc, the colour table)
@@ -149285,6 +149464,7 @@ function netClientMatchOver(){
     return;
   }
   const winTeam = alive.length ? alive[0].team : undefined;
+  if(EVENT_RUN && !EVENT_RUN.done){ try{ eventFinish(winTeam); }catch(e){ console.error('eventFinish', e); } }   // ONLINE EVENT CONTEST: this guest's own pay, by the offline rules, from the host's result
   setTimeout(()=>{ showResult(alive, winTeam); note(); }, 700);
 }
 // Four is down and the host is reading the victory card: the client sees the card too, without the host's two buttons.
@@ -149372,6 +149552,7 @@ function clientCamera(k){
   const f = clientFollow();
   if(!f) return;
   const t = camTarget(f.x, f.y, CAM_ZOOM);
+  if(CROOM){ const rg = crmRegOf(f), was = NET_VIEW.crmRg; NET_VIEW.crmRg = rg; if(NET_VIEW.camReady && was != null && rg !== was){ camX = t.x; camY = t.y; return; } }   // ROOMS APART (8-Ball's contest online): into another room, the view cuts to it, as the host's own does (crmThrough)
   if(!NET_VIEW.camReady){ camX = t.x; camY = t.y; NET_VIEW.camReady = true; return; }   // a match opens on you
   const e = (k === undefined || k === 1) ? 0.12 : 1 - Math.pow(1 - 0.12, k);
   camX += (t.x-camX)*e;
@@ -149527,7 +149708,7 @@ function netPredOut(f){
   const timedOnly = !held && timed && !hdNetBusy(f) && netPredCoastOk(f, ctfHeld);
   if(busy && !timedOnly){ if(netPredCoastOk(f, ctfHeld)){ o.c = 1; if(f._hitStop > 0) o.hs = f._hitStop | 0; if(f.hitstun > 0) o.h = f.hitstun | 0; } return o; }   // (may the guest coast it on from here -- netPredCoastOk; h: the stun, no friction)
   if(hdNetBusy(f)){ o.b = 1; return o; }   // (HOT DOG: his stance, lunge, ride and carry hold his walk: EVENT FIGHTERS: HOT DOG)
-  const fst = f.st || STAT_ONE, sk = ctfSpeedK(f)*rainRunK(), r3 = v=>Math.round(v*1000)/1000;   // (THE RAIN twist's slow rides in the speeds: rainRunK)
+  const fst = f.st || STAT_ONE, sk = ctfSpeedK(f)*rainRunK(f), r3 = v=>Math.round(v*1000)/1000;   // (THE RAIN twist's slow rides in the speeds: rainRunK)
   const mvB = (f.slowed>0 ? MOVE*0.5 : MOVE) * (f._hasteT>0 ? (1 + 0.5*Math.min(1, f._hasteT/20)) : 1) * sk;
   const capB = (f.slowed>0?MAXVX*0.55:MAXVX)*(f._hasteT>0 ? (1 + 0.4*Math.min(1, f._hasteT/20)) : 1)*(f._grasstree>0?0.85:1)*(f._noBattery>0?0.75:1)*(f._slowmoT>hazardT?0.5:1)*sk;
   const jv = (SETTINGS.mode==='ctf' ? ctfJumpV(f) : JUMP*fst.jump) * (f._sinkT > hazardT ? FX2.sand.jump : 1);
@@ -149581,12 +149762,14 @@ function netPredRun(a, pr, to, team, sq, cz){   // sq: the Spongys on the stage 
   const onXs = ()=>{ if(!xs || !P.g) return null; for(const p of xs) if(P.x >= p.x - 4 && P.x <= p.x + p.w + 4 && Math.abs(P.y + P.r - p.y) <= 4) return p; return null; };
   // YOYLE NEEDLE, THE NEEDLE SHIFTS: the short floor belts carry whoever stands on them, as the host's ynShStep does (only while the needle is split: ynShW 1, the host's state from ynNetIn);
   // without them the guest's own fighter stood still on a belt here while the host carried it, and the host's snapshots dragged it along (about 20 px behind on every ride)
+  const lkp = lkPredOn(), lkD = (lkp && JAWB._crd) ? Object.assign({}, JAWB._crd) : null;   // LICK YOUR WAY TO FREEDOM (online): the factory's belts and doors (lkPredBelt, lkPredDoor)
   let yb = null; if(YN_VIS){ const S = ynSh(); if(S && S.T.B && S.T.B.length && ynShW(S) >= 1) yb = S.T.B; }
   for(let g = from; g <= to; g++){ mcEnter(P); try {   // (MOON CAVES: in the predicted body's own chart)
     const ci = g - from, forced = ci < czN, stun = ci < czS + czH;
     if(ci < czS) continue;   // (a hit's freeze holds it still first: HIT FREEZE, the frames the host says are left)
     if(xs){ const on = onXs(), cl2 = a.rd.t + (g - pr.a); for(const p of xs){ const q = ynMvzAt(p, cl2); if(p === on){ P.x += q[0] - p.x; P.y += q[1] - p.y; } p.x = q[0]; p.y = q[1]; } }
     if(yb && P.g) for(const bt of yb){ const p = worldPlats[bt[0]]; if(!p) continue; const x0 = p.x + bt[1]; if(P.x < x0 || P.x > x0 + bt[2] || Math.abs(P.y + P.r - p.y) > 4) continue; P.x += (bt[3] || 1)*2.2*YNH.beltV; }   // (applyZone's belt: before the move, as ynStep runs before the fighters)
+    if(lkp) lkPredBelt(P);   // (lkBelts: before the move)
     if(MCAVE && MCAVE.on) plats = platRects();
     let m = N.inMaskAt(g), mp = N.inMaskAt(g - 1);
     if(!coast && !forced && (m & NET_IN_ACT & ~zm) && !(mp & NET_IN_ACT & ~zm)) coast = true;   // (JURY 1: only a PRESS starts a move; a key already down when the host said "free" did not, and used to stop the fighter dead)
@@ -149596,6 +149779,7 @@ function netPredRun(a, pr, to, team, sq, cz){   // sq: the Spongys on the stage 
     if(sq && sq.length && !P.g && !P.sqU && P.vy > 0){ for(const s of sq){ const top = spongyTopHit(P.x, P.y, P.r, P.vy, s); if(top != null){ P.y = top - P.r; P.vy = -SPONGY.top.v; P.sqU = true; P.ff = false; P.hop = false; break; } } }   // SQUISHY TOP (spongyStep: the host's rule, before it moves)
     const L = m & 1, R = m & 2, D = m & 8;
     let J = m & 4;
+    if(lkD && lkPredDoor(P, lkD, !!J, g, pr.a)) J = 0;   // (8-Ball's contest online, crmInput: standing in a doorway, Up is the door; coasting or forced, m is 0: no Up)
     if(zm && !coast && !forced){   // SPRINT: the host's sprintZ and sprintTick on the guest's keys. A Z that is not a tap in a run (a shield, a reflector) is the host's alone.
       const dir = L && !R ? -1 : R && !L ? 1 : 0, zOn = !!(m & zm), zEdge = zOn && !(mp & zm);
       if(!P.g){ P.sp = 0; P.zd = 0; }
@@ -150592,7 +150776,9 @@ window.NET = {
     const picks=this.players.map(p=>{ const s=netSplitName(netSideSplit(p.fighter||p.name).rest); if(p.id===this.myId) s.code=cosNetCode(myCos(s.name)); return s; });
     const humans=picks.map(s=>(ROSTER.some(r=>r.play && r.name===s.name) || s.name==='OC') ? s.name : "Firey");   // ('OC': resolved below, once the mode is known)
     // Everything the lobby shows travels with the start: host and clients must build the SAME stadium and arena.
+    const evs=evNetHostPrep(this.players.length);   // ONLINE EVENT CONTEST: the room's event contest picked (startEventAsHost, or the Rematch of one): its own setup
     const settings=Object.assign(this.lobbySettings(), { count:Math.max(SETTINGS.count, this.players.length) });
+    if(evs) settings.ev=evs;
     if(stage && stage.moonV === 4) settings.moon = MC4.pick(Math.max(2, Math.min(15, Math.ceil(settings.count/2))));   // MOON CAVES v4 (V8b): the host draws the moon, and every device builds that one
     if(SETTINGS.mode==='ctf') settings.ctfMap = ctfPickMap();   // the host picks the map: the start carries its id, and every device builds that one
     const ocs=this.ocSeats(humans, settings.mode);   // OC ONLINE SYNC: each OC seat's checked build; humans[i] is the OC's name now
@@ -150608,6 +150794,9 @@ window.NET = {
     this.beginMatch(settings, roster, ids, start.cos, start.sides, start.look, start.oc);
     this._startMsg = start;   // (REJOIN: the same start goes again, to one player coming back: rejoinAnswer)
   },
+
+  // ONLINE EVENT CONTEST: the room's "Play the event contest" button (lobbyEventOffLine): this week's contest when it is one a room may play (EV_NET).
+  startEventAsHost(){ const R=evRoomMatch(); if(!R || this.role!=="host") return; EVENT_PICK={ name:R.ev.name, n:R.m.n }; this.startAsHost(); },
 
   // OC ONLINE SYNC: the seats whose hello said 'OC'. Free-for-all and Teams only (anything else: Firey). The build is the guest's sent code (the host's own from its pick),
   // checked by ocNetBuild (over-budget picks, an unknown move or type, a bad name: the type's default, name 'OC'); no build received: the default OC. Names are made unique.
@@ -150633,7 +150822,8 @@ window.NET = {
     if(SETTINGS.mode==='ctf') CTF.netMap = (typeof s.ctfMap==='string' && CTF_MAPS[s.ctfMap]) ? s.ctfMap : null;
     CTF.netAdv = SETTINGS.mode==='ctf' ? !!s.ctfAdv : null;   // (an older host sends none: off)
     SETTINGS.count = int(s.count, 1, MAX_MOON, SETTINGS.count||2);   // (MOON CAVES: 30 there; buildFighters clamps by the stage, maxTeams)
-    SETTINGS.stocks = int(s.stocks, 1, 5, 3);
+    EVENT_RUN = evNetFromStart(s.ev);   // ONLINE EVENT CONTEST (EV_NET): the event match this start names, checked; null for every other room match
+    SETTINGS.stocks = int(s.stocks, 1, EVENT_RUN ? Math.max(5, EVENT_RUN.m.stocks | 0) : 5, 3);   // (8-Ball's contest: its 6)
     if(typeof s.teamKey==='string' && /^\d+(v\d+)*$/.test(s.teamKey)) SETTINGS.teamKey = s.teamKey;
     SETTINGS.mapSize = MAP_SIZES[s.mapSize] ? s.mapSize : 'normal';
     if(s.itemRate!=null) SETTINGS.itemRate = int(s.itemRate, 0, 3, 2);
