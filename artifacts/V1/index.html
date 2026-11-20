@@ -32350,6 +32350,7 @@ function loop(){
       // Clients never simulate. They send their input (key presses leave the moment they happen -- netInputChanged;
       // this catches a gamepad and sends a slow heartbeat), then draw the host's snapshots: glided between, through
       // a camera of their own (clientFrame), with the ticks of the 60 Hz clock the host's own steps would have been.
+      window.NET.rejoinTick(now);   // (REJOIN: a dropped socket: try the room again)
       window.NET.sendInput();
       clientFrame(FIXED_STEP ? n : undefined);
       // A client never runs step(), and step() was the only thing that refreshed the HUD, so a client's stock and
@@ -149254,6 +149255,14 @@ function netViewReset(){
 //   send  changes each message repeats    near  frames apart under which two changes keep their gap    wait  most steps one is held for it
 //   win   ms of arrivals the host's estimate of a guest's clock looks back over (netAck)
 const NET_IN = { hb:6, keep:90, max:24, send:12, near:12, wait:4, win:2000 };
+// REJOIN (the owner said yes, 2026-11-19: a guest whose connection drops mid-match comes back to their own fighter). All in ms.
+//   first  the guest's first try after its socket closed     gap, gapMax  then a try every gap*n, at most gapMax apart     hang  a try still opening after this is given up
+//   max    how long the guest keeps trying before it goes back to the lobby (a Join of the same code still works after: the host remembers)
+//   wait   connected again, how long it waits for the host's answer (a start for it alone, or the final picture) before it waits in the room
+//   mute   a seat the host has heard nothing from for this long holds no keys (it ran on the last ones it was sent, off the edge)
+//   quiet  ...and for this long, the computer plays it until its player is heard again (a socket the relay still lists, half closed)
+//   ans    the host answers one player's rejoin at most this often (it rides every input until the answer lands)
+const NET_RJ = { first:300, gap:1000, gapMax:2000, hang:8000, max:90000, wait:5000, mute:1000, quiet:3000, ans:1500 };
 function netInputOf(m){ const o = {}; for(let i = 0; i < NET_BUTTONS.length; i++) o[NET_BUTTONS[i]] = !!(m & (1 << i)); return o; }
 function netMaskOf(inp){ let m = 0; for(let i = 0; i < NET_BUTTONS.length; i++) if(inp && inp[NET_BUTTONS[i]]) m |= 1 << i; return m; }
 // A guest's input message, on the host. Peer-supplied: whole numbers only, a bounded list, buttons masked. False for one not of this shape
@@ -149267,6 +149276,7 @@ function netInputIn(N, idx, m){
   const ins = N.inS || (N.inS = {}), now = performance.now();
   let S = ins[idx];
   if(!S || S.e !== e) S = ins[idx] = { e, q:[], cur:0, lastG:-1e9, clk:0, wt:0, offs:[] };   // a new match of theirs
+  S.at = now;   // (REJOIN: when this seat was last heard from -- netPlayStep)
   if(list.length){
     // what this message says from its first change on replaces what was queued from there; a change already played is not played again,
     // unless the frame last played now says otherwise (a key that came later in that same frame): it is played as a change of its own
@@ -149291,7 +149301,10 @@ function netPlayStep(){
     const c = S.q[0];
     // far from the last change (a fresh press): now. Close to it: when its gap has passed, or after `wait` steps at most.
     if(c && (c[0] - S.lastG >= NET_IN.near || S.clk >= c[0] || ++S.wt > NET_IN.wait)){ S.q.shift(); S.cur = c[1]; S.lastG = c[0]; S.clk = c[0]; S.wt = 0; }
-    N.inputs[k] = netInputOf(S.cur);
+    // REJOIN: nothing heard for NET_RJ.mute: no keys (the seat ran on the last ones sent); for NET_RJ.quiet: the computer plays it (seatQuiet)
+    const hush = performance.now() - (S.at || 0);
+    N.inputs[k] = netInputOf(hush > NET_RJ.mute ? 0 : S.cur);
+    if(hush > NET_RJ.quiet) N.seatQuiet(+k);
   }
 }
 // The last of a guest's frames the host's match has played, as best the host can tell: its step count moved onto the guest's clock by the
@@ -149725,17 +149738,19 @@ window.NET = {
     let opened = false, failed = false;   // (ONLINE LOBBY POLISH: a socket that never opened is a join that failed)
     this.ws.onopen = ()=>{
       opened = true;
+      if(this._rj && this.ws===ws){ this._rj.open = performance.now(); this._rjId = true; }   // (REJOIN: connected again; its inputs now say who it is, until the host answers)
       this.status(asHost?"Hosting — waiting for players":"Connected — joining");
       this.send({t:"hello", id:this.myId, host:!!asHost, name:(chosen?this.helloName(chosen.name):"?")});   // the look rides the name (netHelloName), and the side (netSideTag)
     };
     this.ws.onmessage = (ev)=>{ try{ this.onMessage(JSON.parse(ev.data)); }catch(e){} };
     const ws = this.ws;
-    this.ws.onclose = ()=>{ if(this.ws!==ws) return; if(this.role==="client" && running) this.dropped("Connection lost — host a room or join another"); else if(!(failed && !opened)) this.status("Disconnected"); };   // (a socket that failed to open keeps its own message: the close that follows the error must not wipe it)
+    this.ws.onclose = ()=>{ if(this.ws!==ws) return; if(this.role==="client" && running){ if(!this.rejoinBegin(addr)) this.dropped("Connection lost — host a room or join another"); } else if(!(failed && !opened)) this.status("Disconnected"); };   // (a socket that failed to open keeps its own message: the close that follows the error must not wipe it)
     // Name what was actually dialled. "Is the server running?" is unanswerable when the player has
     // no idea what server the game even wants.
     this.ws.onerror = ()=>{
       if(this.ws!==ws) return;
       failed = true;
+      if(this._rj) return;   // (REJOIN: a try that failed; rejoinTick says what is going on, and tries again)
       // ONLINE LOBBY POLISH (room full): the relay answers the 9th player with an HTTP 409 before the socket upgrades, and a browser shows a page
       // nothing of that (no status, no close code, no reason: only an error, then a close of 1006), and a player cannot see a room's size before
       // joining either. So "full" cannot be told from "offline" here without a relay change; a joiner whose socket never opened is told both.
@@ -149820,9 +149835,82 @@ window.NET = {
       if(!id || here.has(id)) return;
       this._seats[i] = null;
       if(this.inputs) this.inputs[i] = null; if(this.latch) this.latch[i] = null; if(this.inS) delete this.inS[i];
-      const f = fighters[i];
+      const f = fighters[i], q = !!(this._quiet && this._quiet[i]);
+      (this._left || (this._left = {}))[i] = { id, remote: q || !!(f && f.controller==="remote") };   // REJOIN: who sat here, for when they come back (rejoinAnswer)
+      if(this._quiet) delete this._quiet[i];
       if(f && f.controller==="remote"){ f.controller = "ai"; f.you = false; }
+      if(f && !q && running) banner(f.name + " left: the computer plays for them", 1800);
     });
+  },
+  // REJOIN. A seat heard nothing from for NET_RJ.quiet (netPlayStep): the computer plays it, and its player keeps the seat. The relay can
+  // list a dropped player for a while (a half-closed socket), so a roster may never say they left.
+  seatQuiet(i){
+    if(this.role!=="host" || !running || !this._seats || !this._seats[i]) return;
+    const Q = this._quiet || (this._quiet = {}); if(Q[i]) return;
+    const f = fighters[i]; if(!f || f.controller!=="remote") return;
+    Q[i] = true; f.controller = "ai"; f.you = false;
+    banner(f.name + " lost connection: the computer plays for them", 1800);
+  },
+  // ...and heard again (an input for the seat): theirs again. Nothing else to do -- their screen never left the match.
+  seatUnquiet(i){
+    const Q = this._quiet; if(!Q || !Q[i]) return;
+    delete Q[i];
+    const f = fighters[i]; if(f && f.controller==="ai" && running){ f.controller = "remote"; f.you = false; banner(f.name + " is back", 1200); }
+  },
+  // A roster with a player who left this match in it again (seatsLeft remembered them): their seat back (rejoinAnswer).
+  seatsBack(){
+    const L = this._left; if(!L || this.role!=="host") return;
+    const here = new Set((this.players||[]).map(p=>p.id));
+    for(const k of Object.keys(L)){ const e = L[k]; if(e && here.has(e.id)) this.rejoinAnswer(+k, e.id); }
+  },
+  // A player back in the room who sat in this match (the roster, or their first inputs after a reconnect, which say who they are: id, rj).
+  // The match still on: the seat and the fighter are theirs again, and a start for them alone (the others ignore it) rebuilds their screen,
+  // with a full snapshot after it (catchUp). The match over: its last picture, for the results. Nothing of theirs here: they wait in the room.
+  rejoinAnswer(i, id){
+    const now = performance.now(), A = this._rjAns || (this._rjAns = {});
+    if(now - (A[id] || -1e9) < NET_RJ.ans) return;
+    const L = this._left || (this._left = {}), e = L[i];
+    const mine = !!this._seats && (this._seats[i] === id || (!!e && e.id === id && this._seats[i] === null));
+    if(!mine || !this._startMsg){ A[id] = now; this.send({t:"state", to:id, nomatch:1}); return; }
+    A[id] = now;
+    if(!running){ delete L[i]; this.send({t:"state", to:id, s:serializeState()}); return; }   // (the final picture: s.over, and the results)
+    const f = fighters[i], back = !!e || !!(this._quiet && this._quiet[i]);
+    if(e){ delete L[i]; this._seats[i] = id; }
+    if(this.inputs) this.inputs[i] = null; if(this.latch) this.latch[i] = null; if(this.inS) delete this.inS[i]; if(this.planAck) delete this.planAck[i];
+    if(f && f.controller==="ai" && (e ? e.remote : back)){ f.controller = "remote"; f.you = false; }
+    if(this._quiet) delete this._quiet[i];
+    if(f && back) banner(f.name + " is back", 1200);
+    this.send(Object.assign({}, this._startMsg, { to:id, rejoin:1 }));
+    this.catchUp();
+  },
+  // The next snapshot carries everything again: the map (geo), every slow field (NET_STAT), Capture the Flag's whole build (ctfNetOut).
+  catchUp(){ this._catchUp = true; this._geoKey = null; try{ CTF._netKey = null; }catch(e){} },
+  // REJOIN, the guest's side. Its socket closed mid-match: it keeps the match on screen and tries the same room again (rejoinTick).
+  rejoinBegin(addr){
+    if(this.role!=="client" || !running || (!this.room && !addr)) return false;
+    const now = performance.now();
+    if(!this._rj) this._rj = { t0:now, addr:addr || null, next:now + NET_RJ.first, n:0, open:0, tryAt:0, said:-1e9 };
+    this._rj.open = 0; this.ws = null;
+    return true;
+  },
+  rejoinTick(now){
+    const R = this._rj; if(!R || this.role!=="client") return;
+    if(this.ws && this.ws.readyState === 1){
+      if(R.open && now - R.open > NET_RJ.wait){ this._rj = null; this.toRoom("Couldn't get back into that match: waiting in the room for the next one"); }
+      else if(now - R.said > 1000){ R.said = now; banner("Reconnected: getting back into the match...", 1300, 'sys', true); }
+      return;
+    }
+    if(now - R.t0 > NET_RJ.max){ this._rj = null; this.dropped("Connection lost — host a room or join another"); return; }
+    if(now - R.said > 1000){ R.said = now; banner("Connection lost: reconnecting... (" + Math.ceil((NET_RJ.max - (now - R.t0))/1000) + " s)", 1300, 'sys', true); }
+    if(this.ws && this.ws.readyState === 0){ if(now - R.tryAt < NET_RJ.hang) return; const w = this.ws; this.ws = null; try{ w.close(); }catch(e){} }
+    if(now < R.next) return;
+    R.n++; R.next = now + Math.min(NET_RJ.gapMax, NET_RJ.gap*R.n); R.tryAt = now;
+    this.connect(R.addr, false);
+  },
+  // Out of the match but still in the room (connected): the lobby, as after a match.
+  toRoom(msg){
+    running=false; paused=false; this.snapshot=null;
+    go('lobby'); this.renderLobby(); this.status(msg);
   },
   // This client's match is gone with the host (or the socket): out of the match and back to the lobby, told why.
   dropped(msg, hostLeft){
@@ -149838,6 +149926,7 @@ window.NET = {
     this.mySide=0; this.lobbySides=null;   // (a side is picked in a room: the next room starts unpicked)
     this.planVote=null; this.planAck={};   // (a plan vote belongs to its match)
     this.inS={}; this.inTick=0; this._inT0=null;   // (and so does input)
+    this._rj=null; this._rjId=false; this._left={}; this._quiet={}; this._rjAns={}; this._catchUp=false; this._startMsg=null;   // (REJOIN: this room's)
     if(this._inTimer != null){ try{ clearTimeout(this._inTimer); }catch(e){} this._inTimer = null; }
     // Cleared here too, not just in go('title'), so any other exit path is safe as well.
     window.__netRoster=null; window.__netHumanCount=0; window.__netSides=null; window.__netOC=null;
@@ -149864,10 +149953,11 @@ window.NET = {
         // shorter list (so every client after a leaver drove the leaver's fighter), and a leaver's seat kept running on the
         // last input it sent, off the edge, stock after stock. Seats are fixed at the start (this._seats); a leaver's seat
         // goes to the computer.
-        if(this.role==="host") this.seatsLeft();
+        if(this.role==="host"){ this.seatsLeft(); this.seatsBack(); }   // (REJOIN: a player who left this match is back: their seat again)
         this.pushLobby();   // a joiner waiting in the lobby still sees the host's settings
         return;
       }
+      if(this.role==="host") this.seatsBack();   // (REJOIN: back after the match ended: its last picture, for the results)
       this.renderLobby(); this.pushLobby();   // a new player sees the host's settings at once
       const n=this.players.length;   // ...and the line under the title says who is here (it said "Connected — joining" for good)
       if(this.role==="host") this.status(n>1 ? "Hosting — "+n+" players in the room" : "Hosting — waiting for players");
@@ -149881,6 +149971,10 @@ window.NET = {
       const idx=m.idx, inp=m.input;
       if(!Number.isInteger(idx) || idx<0 || idx>=64 || !inp || typeof inp!=='object') return;
       if(m.oc!==undefined){ if(!running) this.ocIn(idx, m.oc); return; }   // (OC ONLINE SYNC: a guest's build, in the lobby)
+      // REJOIN: a guest back from a dropped connection says who it is (id) and asks for its seat (rj) until the host answers. Keys for a seat
+      // that is not that id's are not played (the seat is the computer's now, or another match began meanwhile).
+      if(m.id!==undefined){ const id=String(m.id).slice(0,32); if(m.rj) this.rejoinAnswer(idx, id); if(!this._seats || this._seats[idx]!==id) return; }
+      if(this._quiet && this._quiet[idx]) this.seatUnquiet(idx);
       if(!(Array.isArray(m.c) && netInputIn(this, idx, m))){   // frame by frame (ONLINE INPUT, FRAME BY FRAME); else a guest from before that:
         const was = this.inputs[idx] || {};
         this.inputs[idx]=inp;
@@ -149892,8 +149986,17 @@ window.NET = {
       }
       if(m.plan && typeof m.plan==='object'){ try{ ctfPlanVoteNetIn(this, idx, m.plan); }catch(e){} }   // a guest's vote for its side's plan rides on its input (ctfPlanVoteNetSend)
     }
-    else if(m.t==="state" && this.role==="client"){ if(m.s && typeof m.s==='object') netSnapshotArrived(this, m.s); }
+    else if(m.t==="state" && this.role==="client"){
+      // REJOIN: a state for one player (rejoinAnswer) is for that one only; while this screen waits for the host's answer, the match's
+      // pictures are not drawn (they may be another match's by now)
+      if(m.to!==undefined){ if(m.to!==this.myId) return; this._rj=null; this._rjId=false;
+        if(m.nomatch){ if(running) this.toRoom("That match is over: waiting in the room for the next one"); return; } }
+      else if(this._rj) return;
+      if(m.s && typeof m.s==='object') netSnapshotArrived(this, m.s);
+    }
     else if(m.t==="start"){
+      if(m.to!==undefined && m.to!==this.myId) return;   // REJOIN: a start for one player coming back into the match (rejoinAnswer): not this screen's
+      if(m.rejoin && this.role!=="client") return;
       // A host on another build (an older host sends no build at all) cannot be played with: the two games would disagree. Out of
       // the room, told why, rather than into a match that only looks like lag. (A host on this build never starts a room that is not.)
       if(this.role==="client" && m.build!==gameBuild()){
@@ -149901,7 +150004,9 @@ window.NET = {
                              : "Left the room: the host has an older version of the game. Ask them to refresh the page (F5) and create a new room.");
         return;
       }
+      const back = !!m.rejoin; this._rj = null;
       this.beginMatch(m.settings, m.roster, m.ids, m.cos, m.sides, m.look);
+      if(back) banner("You're back in the match!", 1500, 'sys', true);
     }
     else if(m.t==="status"){ this.status(m.msg); }
   },
@@ -150343,6 +150448,7 @@ window.NET = {
       if(sizes && sizes.length>1) start.sides=netResolveSides(this.lobbyEntries().map(e=>(e.pick|0)-1), sizes, settings.mode); }
     this.send(start);
     this.beginMatch(settings, roster, ids, start.cos, start.sides, start.look, start.oc);
+    this._startMsg = start;   // (REJOIN: the same start goes again, to one player coming back: rejoinAnswer)
   },
 
   // OC ONLINE SYNC: the seats whose hello said 'OC'. Free-for-all and Teams only (anything else: Firey). The build is the guest's sent code (the host's own from its pick),
@@ -150391,7 +150497,7 @@ window.NET = {
     { const rb=document.getElementById('resultRematch'); if(rb) rb.style.display=''; }
     // mark which fighters are network-controlled
     window.__netRoster = roster;
-    window.__netHumanCount = this.players.length;
+    window.__netHumanCount = Array.isArray(ids) ? ids.length : this.players.length;   // (the seats the match started with: a rejoin's roster may list more)
     // each human's side (Capture the Flag and Teams), by seat, as the host worked it out. Peer-supplied: small whole numbers, one a seat, or
     // nothing (an older host sends none: the seats go by turns, as they used to)
     window.__netSides = (Array.isArray(sides) && sides.length===roster.length && sides.every(t=>Number.isInteger(t) && t>=0 && t<4)) ? sides.slice() : null;
@@ -150400,6 +150506,7 @@ window.NET = {
     // nothing from the last match: a held key it left behind, or a snapshot of its world
     this.inputs = {}; this.latch = {}; this.snapshot = null; this.planVote = null; this.planAck = {};
     this.inS = {}; this.inTick = 0; this._inT0 = null; if(this.role==='client') this.inReset();   // (a new input timeline: frame 0 is now)
+    this._left = {}; this._quiet = {}; this._rjAns = {}; this._catchUp = false; this._rjId = false;   // (REJOIN: nobody has left this match yet)
     startMatch();   // handles screen switch + starts the loop (net-aware buildFighters)
   },
 
@@ -150422,7 +150529,8 @@ window.NET = {
     if(!final && this.ws.bufferedAmount > Math.max(24000, 2*(this._lastBytes||0))) return;
     this._lastBroadcast=now;
     const key = worldGeoKey(), geo = SETTINGS.mode !== 'ctf' && (key !== this._geoKey || now - (this._geoAt||0) > NET_GEO_EVERY);   // (Capture the Flag's map goes by its id)
-    NET_STAT.force = geo; if(geo) NET_STAT.geoPos = worldPlats.map(p=>[Math.round(p.x), Math.round(p.y)]);   // ONLINE LAG: a geometry snapshot carries every slow field too, and is the base the mv rows are measured from
+    const cu = !!this._catchUp;   // (REJOIN: someone is back: everything once more, Capture the Flag's included -- catchUp)
+    NET_STAT.force = geo || cu; if(geo) NET_STAT.geoPos = worldPlats.map(p=>[Math.round(p.x), Math.round(p.y)]);   // ONLINE LAG: a geometry snapshot carries every slow field too, and is the base the mv rows are measured from
     const s = serializeState(false);
     NET_STAT.force = false;
     if(geo){ s.geo = worldGeo(); this._geoKey = key; this._geoAt = now; }
@@ -150430,6 +150538,7 @@ window.NET = {
     this._lastBytes = text.length;
     if(!s.geo) this._rateBytes = text.length;
     this.ws.send(text);
+    if(cu) this._catchUp = false;
   },
   // What this client holds right now: its keys, and its gamepad (a client could not play with one before). Nothing
   // while paused or hidden, or while its Capture the Flag planning menu is open (there the fighter stands, as it does for the host),
@@ -150499,6 +150608,7 @@ window.NET = {
       for(let i = Math.max(0, sendable.length - NET_IN.send); i < sendable.length; i++) c.push(F - sendable[i][0], sendable[i][1]);
       const msg = {t:"input", idx:this.myIdx, input, f:F, e:this._inE, c};
       if(urgent || (typeof document!=='undefined' && document.hidden)) msg.u = 1;
+      if(this._rjId){ msg.id = this.myId; if(this._rj) msg.rj = 1; }   // (REJOIN: back from a dropped connection: who this is, and asking for the seat)
       if(this.planVote) msg.plan = this.planVote;   // a Capture the Flag plan vote, until the host's snapshot says it was counted (ctfPlanVoteNetSend)
       this.send(msg);
       this._inSentF = F; this.lastInputSent = now;
