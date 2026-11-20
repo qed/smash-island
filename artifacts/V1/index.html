@@ -59718,11 +59718,21 @@ const SWARM = {
   // until ballLock frames before the throw; n: balls thrown at once ("DODGEBALL! two balls in P3", the owner, Round 17: the
   // second goes for the floor `ballApart` px from where the first is aimed, toward the middle of the room, and both first legs
   // are marked the whole wind-up; both are `unbreakable` and share the move's one attack id, so the move is still one boss hit)
+  // 2026-11-20 (the owner, playing Boss Rush: "dodgeball doesnt do much"): it now COMES BACK AT YOU. Each time it meets a floor, a wall, the ceiling or a ledge its
+  // bugs GRIP the surface for `grip` frames (the tell: it stops dead, its bugs splayed, flashing white as it lets go; "maintaining a strong grip on surfaces",
+  // Bugs) and spring it off again at where the nearest of you stood as it landed -- each leg a straight line off the surface, `up` faster each bounce (to `vcap`);
+  // a leg that would go into the surface is bent out of it. `bounces` surfaces after the throw, then it comes apart. The crawlers it sheds hunt the nearest of you
+  // at spd and NIP: within ballNip.near one stops and rears up for ballNip.rear frames (the tell: it shakes, standing tall), then leaps at the spot you stood on as it
+  // reared (hop, jump x its speed) -- jump it or step off that spot. Each crawler nips ONCE: after its leap it scuttles off the way it was going and is gone (`off`
+  // frames). The nips are their own attack id, capped at one nip, so a use is at most the ball's hit and one nip.
+  // (It had a bug that made it do nothing at all most turns: thrown from under the middle ledge -- where he stands a lot -- it started inside the ledge and came
+  // apart on three `side` bounces in three frames. The throw now starts clear of every ledge, and a ball inside a ledge is pushed out, never bounced in place.)
   ball:[null,
-    { v:10.5, r:34, bounces:3, shed:3, spd:2.6, aim:'lock',   n:1 },
-    { v:11.5, r:34, bounces:3, shed:4, spd:3.0, aim:'follow', n:1 },
-    { v:12.5, r:36, bounces:4, shed:4, spd:3.4, aim:'follow', n:2 }],
+    { v:10.5, r:34, bounces:4, shed:2, spd:3.0, aim:'lock',   n:1, grip:20, up:0.07, vcap:13.5 },
+    { v:11.5, r:34, bounces:5, shed:2, spd:3.3, aim:'follow', n:1, grip:18, up:0.07, vcap:14.5 },
+    { v:12.5, r:36, bounces:5, shed:1, spd:3.6, aim:'follow', n:2, grip:18, up:0.07, vcap:15.5 }],
   ballLock:14, ballApart:300,
+  ballNip:{ near:64, rear:18, hop:-6.5, jump:1.7, dmg:0.45, kb:6, off:40 },
   // SEEKERS!  the old seekers: n homing stinger bugs, v fast, turning at most `turn` radians a frame
   seek:[null, { n:3, v:5.0, turn:0.035 }, { n:4, v:5.6, turn:0.035 }, { n:5, v:6.2, turn:0.035 }],   // 2026-11-09 (boss fairness): turn 0.06 / 0.075 -> 0.035 in phases 2-3 (4 / 5 stingers that out-turned every jump); 2026-11-19 (Boss Rush pass 8): phase 1's 0.05 -> 0.035 too (it turned the hardest of the three: a 100 px circle against 143 / 160 / 177, and no scripted line dodged it from 3 of 4 start spots)
   // EGG SAC!  a lobbed sac: it cracks `crack` frames after it lands and n hatchlings crawl out at spd, swelling `grow` px a
@@ -60043,8 +60053,14 @@ function swarmPoison(s, f){
 // leg) and it is thrown at where you stood, ricocheting off the floor, the walls and the ledges. Each bounce on a floor or a
 // ledge sheds bugs that crawl after you and leaves goo where it hit; after its last bounce it comes apart.
 function swarmBall(s, tgt){
-  const ph = swarmPhase(s), B = SWARM.ball[ph], sw = s._sw || {}, id = ++BOSS_ATK_ID;
-  const hx = s.x + (s.face || 1)*s.r*0.15, hy = s.y - s.r*0.95;
+  const ph = swarmPhase(s), B = SWARM.ball[ph], sw = s._sw || {}, id = ++BOSS_ATK_ID, cid = ++BOSS_ATK_ID;   // (cid: the crawlers' nips, their own one hit)
+  const hx = s.x + (s.face || 1)*s.r*0.15;
+  let hy = s.y - s.r*0.95;
+  for(const pl of platRects()){   // thrown from under a ledge (he stands under the middle one a lot): it leaves from just below it, never inside it
+    if(pl.rot) continue;
+    const h = pl.h || 14;
+    if(hx > pl.x - B.r && hx < pl.x + pl.w + B.r && hy > pl.y - B.r && hy < pl.y + h + B.r) hy = (s.y > pl.y) ? Math.min(groundY() - B.r - 2, pl.y + h + B.r + 2) : pl.y - B.r - 2;
+  }
   const a = sw.b || [tgt ? tgt.x : s.x + (s.face || 1)*300, tgt ? tgt.y : s.y];
   const aims = [a];
   if(B.n > 1) aims.push(sw.b2 || swarmBallAim2(a[0], a[1]));   // phase 3: two balls at once ("DODGEBALL! two balls in P3", the owner, Round 17), the second at the floor beside
@@ -60053,43 +60069,83 @@ function swarmBall(s, tgt){
     let dx = aim[0] - hx, dy = aim[1] - hy; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
     // `unbreakable`: nothing a fighter does destroys, catches, turns back or cancels it -- not a reflect or a counter, a turret, Nickel's shred, Marshmallow's
     // scream, Clover's butterflies, Box's packing, nor the Eraser (each of those asks p.unbreakable). The owner, 2026-10-01, Round 17: "nondestructible bug
-    // balls." It flies on until its own end: its last bounce, its life, or the one hit it deals (a hit it lands is the ball spent, as it always was). Both
+    // balls." It flies on until its own end: its last bounce or its age (swarmBallGuard; since 2026-11-20 a hit it lands no longer spends it either). Both
     // balls of phase 3 are the one move's: one attack id, a volley, so the pair is at most one boss hit.
-    const ball = addProj(swarmShot(s, { swarm:'ball', shape:'bugball', x:hx, y:hy, vx:dx*B.v, vy:dy*B.v, r:B.r, dmg:bossDmg(), kb:13, bossAtk:id, life:420, ph, bounces:0, unbreakable:true }));
+    const ball = addProj(swarmShot(s, { swarm:'ball', shape:'bugball', x:hx, y:hy, vx:dx*B.v, vy:dy*B.v, r:B.r, dmg:bossDmg(), kb:13, bossAtk:id, cid, life:900, ph, bounces:0, v0:B.v, plain:i > 0, unbreakable:true }));   // (the second ball of phase 3 ricochets plainly -- it does not come back at you: two that both did left no way out)
+    swarmBallGuard(ball);
     s._balls.push(ball);
     if(i === 0) s._ball = ball;
   });
   shake(5);
   for(let i=0;i<10;i++) puff(hx + (cosRand()*2 - 1)*30, hy + (cosRand()*2 - 1)*30, '#9f00ff', 4);
 }
+// UNBREAKABLE, everywhere ("nondestructible bug balls", the owner; 2026-11-20 the owner again: it "breaks upon hitting a platform ... and when hitting projectiles"). Over a
+// hundred places in the game end a shot by setting its life to 0 -- a shot that meets a fighter, a shield bubble, a guard, a sweep. Rather than chase each one, the ball's
+// `life` refuses to go to 0 until the ball itself comes apart (swarmPop sets `popped` first): its own end is its last bounce or its age (SWARM_BALL_AGE frames). A hit it
+// lands no longer spends it either: it bounces on (the move's one attack id still caps it at one hit on each of you).
+const SWARM_BALL_AGE = 900;
+function swarmBallGuard(p){
+  if(!p) return p;
+  let lv = p.life;
+  Object.defineProperty(p, 'life', { configurable:true, enumerable:true, get(){ return lv; }, set(v){ if(v > 0 || this.popped) lv = v; else if(lv < 1) lv = 1; } });
+  return p;
+}
 function swarmBallStep(p, s){
   const gy = groundY(), r = p.r;
+  p._age = (p._age || 0) + 1;
+  if(p._age > SWARM_BALL_AGE){ swarmPop(p, s); return; }
+  if(p._grip > 0){   // gripping the surface it hit: still, then sprung off at where you stood as it landed
+    p.vx = 0; p.vy = 0;
+    if(--p._grip <= 0){ p.vx = p._gv[0]; p.vy = p._gv[1]; p._gv = null; }
+    return;
+  }
   const nx = p.x + p.vx, ny = p.y + p.vy;
-  let hit = null;
-  if(nx < r){ p.x = r; p.vx = Math.abs(p.vx); hit = 'wall'; }
-  else if(nx > WW - r){ p.x = WW - r; p.vx = -Math.abs(p.vx); hit = 'wall'; }
-  if(ny < r + 10){ p.y = r + 10; p.vy = Math.abs(p.vy); hit = hit || 'ceil'; }
-  else if(ny > gy - r){ p.y = gy - r; p.vy = -Math.abs(p.vy); hit = 'floor'; }
+  let hit = null, nrm = null;
+  if(nx < r){ p.x = r; p.vx = Math.abs(p.vx); hit = 'wall'; nrm = [1, 0]; }
+  else if(nx > WW - r){ p.x = WW - r; p.vx = -Math.abs(p.vx); hit = 'wall'; nrm = [-1, 0]; }
+  if(ny < r + 10){ p.y = r + 10; p.vy = Math.abs(p.vy); if(!hit){ hit = 'ceil'; nrm = [0, 1]; } }
+  else if(ny > gy - r){ p.y = gy - r; p.vy = -Math.abs(p.vy); hit = 'floor'; nrm = [0, -1]; }
   if(!hit) for(const pl of platRects()){
     if(pl.rot) continue;
     const h = pl.h || 14;
     if(nx > pl.x - r && nx < pl.x + pl.w + r && ny > pl.y - r && ny < pl.y + h + r){
-      if(p.y + r <= pl.y + 1 && p.vy > 0){ p.y = pl.y - r; p.vy = -Math.abs(p.vy); hit = 'top'; }
-      else if(p.y - r >= pl.y + h - 1 && p.vy < 0){ p.y = pl.y + h + r; p.vy = Math.abs(p.vy); hit = 'under'; }
-      else { p.vx = -p.vx; hit = 'side'; }
+      if(p.y + r <= pl.y + 1 && p.vy > 0){ p.y = pl.y - r; p.vy = -Math.abs(p.vy); hit = 'top'; nrm = [0, -1]; }
+      else if(p.y - r >= pl.y + h - 1 && p.vy < 0){ p.y = pl.y + h + r; p.vy = Math.abs(p.vy); hit = 'under'; nrm = [0, 1]; }
+      else {   // its end: pushed out to the side it came from (a ball already inside a ledge is put outside it, not bounced in place every frame)
+        const left = p.x < pl.x + pl.w/2;
+        p.x = left ? pl.x - r - 1 : pl.x + pl.w + r + 1; p.vx = (left ? -1 : 1)*Math.abs(p.vx); hit = 'side'; nrm = [left ? -1 : 1, 0];
+      }
       break;
     }
   }
-  if(hit){ p.bounces = (p.bounces || 0) + 1; swarmBounce(p, s, hit); }
+  if(hit){
+    // a bounce that comes within 10 frames of the last (a plain ball zigzagging in the narrow gap between the floor and a ledge's underside) counts a third (every third is a
+    // bounce) and sheds nothing -- such a ball used to spend all its bounces in under half a second there and come apart (the owner: it "breaks upon hitting a platform")
+    const quick = p._bT != null && p._age - p._bT < 10; p._bT = p._age;
+    if(quick && (p._qb = (p._qb || 0) + 1) % 3){ puff(p.x, p.y, '#9f00ff', 3); return; }
+    p.bounces = (p.bounces || 0) + 1; swarmBounce(p, s, hit); if(!p.popped && !p.plain) swarmBallGrip(p, nrm);   // (phase 3's second ball: a plain ricochet, `plain`)
+  }
+}
+// After a bounce that is not its last: it grips where it hit and is aimed at where the nearest of you stands now (fixed now: moving dodges it), off the surface
+// (a leg that would go into the surface is bent out until it leaves at a fair angle), `up` faster than the leg before.
+function swarmBallGrip(p, nrm){
+  const B = SWARM.ball[p.ph || 1];
+  let t = null, bd = 1e9;
+  for(const f of fighters){ if(f.dead || f.team === -1) continue; const d = Math.hypot(f.x - p.x, f.y - p.y); if(d < bd){ bd = d; t = f; } }
+  const sp0 = Math.hypot(p.vx, p.vy) || 1, sp = Math.min(B.vcap, (p.v0 || B.v)*(1 + B.up*(p.bounces || 0)));
+  let ux = p.vx/sp0, uy = p.vy/sp0;   // no one to go for: the plain ricochet
+  if(t){ const L = Math.hypot(t.x - p.x, t.y - p.y) || 1; ux = (t.x - p.x)/L; uy = (t.y - p.y)/L; }
+  if(nrm){ const MIN = 0.3, dn = ux*nrm[0] + uy*nrm[1]; if(dn < MIN){ ux += nrm[0]*(MIN - dn); uy += nrm[1]*(MIN - dn); const L = Math.hypot(ux, uy) || 1; ux /= L; uy /= L; } }
+  p._gv = [ux*sp, uy*sp]; p._grip = B.grip; p._gripN = B.grip; p.vx = 0; p.vy = 0;
 }
 function swarmBounce(p, s, hit){
   const gy = groundY(), B = SWARM.ball[p.ph || 1], last = p.bounces >= B.bounces;
   const cy = hit === 'floor' ? gy : hit === 'top' ? p.y + p.r : p.y;
   impact(p.x, cy, { shake:last ? 10 : 7, dust:1.4, debris:4, scar:hit === 'floor' || hit === 'top', r:70, color:'#8b4fc0' });
   if(hit === 'floor' || hit === 'top'){   // crawling bugs off the surface it hit, and goo on the floor
-    for(let k=0;k<B.shed;k++){
-      addProj(swarmShot(s, { swarm:'crawl', shape:k % 2 ? 'bugred' : 'bugpurple', x:p.x + (k - (B.shed - 1)/2)*10, y:cy - SWARM.bug*0.95, vx:(k % 2 ? 1 : -1)*B.spd, vy:0, r:SWARM.bug, bossAtk:p.bossAtk,
-        life:150, spd:B.spd*(0.9 + (k % 3)*0.1), bob:k*3, ph:p.ph }));
+    for(let k=0;k<(p.plain ? 0 : B.shed);k++){   // (phase 3's plain second ball sheds none: the crawlers come off the one that comes back at you)
+      addProj(swarmShot(s, { swarm:'crawl', shape:k % 2 ? 'bugred' : 'bugpurple', x:p.x + (k - (B.shed - 1)/2)*10, y:cy - SWARM.bug*0.95, vx:(k % 2 ? 1 : -1)*B.spd, vy:0, r:SWARM.bug, bossAtk:p.cid != null ? p.cid : p.bossAtk,
+        dmg:bossDmg()*SWARM.ballNip.dmg, bossCap:bossDmg()*SWARM.ballNip.dmg, volley:false, kb:SWARM.ballNip.kb, life:110, spd:B.spd*(0.9 + (k % 3)*0.1), bob:k*3, ph:p.ph, nipT:30 + k*8 }));   // (nipT: a crawler crawls a while before it can rear up to nip -- none leaps off the spot it was shed on)
     }
     if(hit === 'floor') swarmGoo(s, p.x, 34, SWARM.goo.life);
   }
@@ -60160,8 +60216,21 @@ function swarmCrawlStep(p){
   }
   if(top !== null){
     p.y = top - r*0.95 + Math.sin(hazardT*0.6 + (p.bob || 0))*1.2; p.vy = 0;
-    const t = swarmNearestFighter(p.x);
-    if(t){ const dx = t.x - p.x; p.vx = Math.abs(dx) < 4 ? 0 : Math.sign(dx)*(p.spd || 2.5); }
+    if(p.swarm === 'crawl'){   // DODGEBALL!'s crawlers: the nearest of you (not one far overhead), and a NIP -- near you it rears up (`rear` frames, shaking), then leaps at the spot it saw you on
+      const N = SWARM.ballNip; let t = null, bd = 1e9;
+      for(const f of fighters){ if(f.dead || f.team === -1) continue; const d = Math.hypot(f.x - p.x, f.y - p.y); if(d < bd){ bd = d; t = f; } }
+      if(p.nipT > 0) p.nipT--;
+      if(p.rearT > 0){   // rearing: still, standing tall and shaking; then the leap, at the spot locked as it reared
+        p.vx = 0; p.y -= 3 + Math.sin(hazardT*2.1 + (p.bob || 0))*1.5;
+        if(--p.rearT <= 0){ const dx = p.nipX - p.x; p.vy = N.hop; p.vx = Math.sign(dx || 1)*Math.min(Math.abs(dx)/14 + 1, (p.spd || 2.5)*N.jump); p.nipped = Math.sign(dx || 1); p.y -= 2; }
+      } else if(p.nipped){   // its one nip is spent: it scuttles off the way it leapt, and is gone
+        p.vx = p.nipped*(p.spd || 2.5)*1.2; if(!(p.offT > 0)) p.offT = N.off; else if(--p.offT <= 0){ p.dmg = 0; p.life = 0; }
+      } else if(t){ const dx = t.x - p.x; p.vx = Math.abs(dx) < 4 ? 0 : Math.sign(dx)*(p.spd || 2.5);
+        if(!(p.nipT > 0) && Math.abs(dx) < N.near && t.y < p.y + 30 && t.y > p.y - 140){ p.rearT = N.rear; p.nipX = t.x; p.vx = 0; } }
+    } else {
+      const t = swarmNearestFighter(p.x);
+      if(t){ const dx = t.x - p.x; p.vx = Math.abs(dx) < 4 ? 0 : Math.sign(dx)*(p.spd || 2.5); }
+    }
   } else p.vy += 0.5;
 }
 // The tick's dispatch: every swarm shot is stepped here (the sac is inert, so it is stepped whatever its delay).
@@ -60176,7 +60245,7 @@ function swarmStepShots(s, tgt){
     else if(p.swarm === 'seek') swarmSeekStep(p);
     else if(p.swarm === 'sting') swarmStingStep(p, s);
   }
-  if(s._ball && s._ball.life <= 0) swarmPop(s._ball, s);   // a hit took it: it comes apart where it was
+  if(s._ball && s._ball.life <= 0) swarmPop(s._ball, s);   // (it cannot be taken now -- swarmBallGuard -- so this is only a safety net)
   if(s._balls && s._balls.length){   // ...and so for either of phase 3's two
     for(const bl of s._balls) if(bl.life <= 0 && !bl.popped) swarmPop(bl, s);
     s._balls = s._balls.filter(bl => !bl.popped);
@@ -60299,10 +60368,11 @@ function swarmHatchDraw(c, r, pr){   // a hatchling: a larva at first, then a bu
   swarmBugAt(c, key, 0, 0, H*(0.45 + 0.55*e), pr && (pr.vx < 0 || (!pr.vx && pr.hd < 0)));
 }
 function swarmBallDraw(c, r, pr){   // the ball of bugs (the caller spins it): a dark heart, and bugs anchored all round it
-  c.fillStyle = '#231a33'; c.strokeStyle = '#9f00ff'; c.lineWidth = Math.max(2, r*0.1);
+  const g = (pr && pr._grip > 0) ? 1 - pr._grip/Math.max(1, pr._gripN || 1) : -1;   // gripping a surface (the tell before it springs back at you): its bugs splay out, and it flashes white as it lets go
+  c.fillStyle = '#231a33'; c.strokeStyle = g >= 0 && pr._grip <= 5 ? (pr._grip % 2 ? '#ffffff' : '#e0b0ff') : '#9f00ff'; c.lineWidth = Math.max(2, r*(g >= 0 ? 0.16 : 0.1));
   c.beginPath(); c.arc(0, 0, r*0.86, 0, 7); c.fill(); c.stroke();
   for(let i=0;i<14;i++){
-    const a = i/14*Math.PI*2, rr = r*(0.8 + 0.06*Math.sin(hazardT*0.2 + i*2));
+    const a = i/14*Math.PI*2, rr = r*(0.8 + 0.06*Math.sin(hazardT*(g >= 0 ? 0.9 : 0.2) + i*2) + (g >= 0 ? 0.12 + 0.1*g : 0));
     c.save(); c.translate(Math.cos(a)*rr, Math.sin(a)*rr); c.rotate(a + Math.PI/2);
     swarmBugAt(c, i % 3 === 0 ? 'bugred' : 'bugpurple', 0, 0, r*0.62, false);
     c.restore();
@@ -91200,6 +91270,16 @@ function zsShot(f, pr){
     const R = Math.max(zsRadius(f), f.r);
     if(Math.hypot(pr.x - f.x, pr.y - f.y) >= R + (pr.r || 6)) return false;
     if(pr._slot === 'smash' && brkKit(own)){ pr.life = 0; zsBreakerHit(f, own, pr.dmg, true); return true; }   // SHIELD BREAKERS: a breaker's anvil or mine breaks the bubble
+    if(pr.unbreakable){   // the Bug Swarm's dodgeball ("nondestructible bug balls"): the bubble blocks it and takes the blow, and it bounces off the bubble whole
+      f._zsM = zsMeter(f) - pr.dmg; f._zsF = 8; zsSfx('block');
+      const dx = pr.x - f.x, dy = pr.y - f.y, L = Math.hypot(dx, dy) || 1, ux = dx/L, uy = dy/L, vn = (pr.vx || 0)*ux + (pr.vy || 0)*uy, out = R + (pr.r || 6) + 1;
+      if(vn < 0){ pr.vx -= 2*vn*ux; pr.vy -= 2*vn*uy; }
+      if(pr._gv){ const gn = pr._gv[0]*ux + pr._gv[1]*uy; if(gn < 0){ pr._gv[0] -= 2*gn*ux; pr._gv[1] -= 2*gn*uy; } }   // (gripping: the leg it was about to spring along is turned away too)
+      pr.x = f.x + ux*out; pr.y = f.y + uy*out;
+      for(let i = 0; i < 4; i++) puff(pr.x, pr.y, '#ffffff', 3);
+      if(f._zsM <= 0) zsBreak(f);
+      return true;
+    }
     f._zsM = zsMeter(f) - pr.dmg; f._zsF = 8; zsSfx('block'); pr.life = 0;
     for(let i = 0; i < 4; i++) puff(pr.x, pr.y, '#ffffff', 3);
     if(f._zsM <= 0) zsBreak(f);
@@ -119741,7 +119821,7 @@ function lkStayExtra(s, T){   // ROBOT FLOWER shoots pollen zaps from where it i
   if(T.turret && s._pt % 80 === 40){ let best = null, bd = 430; for(const o of lkFoesIn(s, () => true)){ const d = Math.hypot(o.x - s.x, o.y - s.y); if(d < bd){ bd = d; best = o; } }
     if(best){ const L = Math.max(1, bd), x0 = s.x, y0 = s.y - s.r*0.8; lkKit().push(lkKFrom(s, { k:'shot', x:x0, y:y0, vx:(best.x - x0)/L*7, vy:(best.y - y0)/L*7, g:0, r:8, dmg:lkKD(s, 4), kb:4, col:'#ffe866', life:90, shape:'pollen' })); tone(1000, 0.05, 'triangle', 0.03, 0, 1500); } }
   if(T.guard){
-    for(const p of projectiles){ if(!(p.life > 0) || p.dead || !p.ownerObj || p.ownerObj.team === s.team || Math.hypot(p.x - s.x, p.y - s.y) > 100) continue; p.life = 0; p.dead = true; for(let i = 0; i < 5; i++) puff(p.x, p.y, '#9cc8ff', 3); }
+    for(const p of projectiles){ if(!(p.life > 0) || p.dead || p.unbreakable || !p.ownerObj || p.ownerObj.team === s.team || Math.hypot(p.x - s.x, p.y - s.y) > 100) continue; p.life = 0; p.dead = true; for(let i = 0; i < 5; i++) puff(p.x, p.y, '#9cc8ff', 3); }
     if(s._pt % 90 === 45 && lkFoesIn(s, o => Math.hypot(o.x - s.x, o.y - s.y) < 100).length) lkKit().push(lkKFrom(s, { k:'ring', x:s.x, y:s.y, R:96, grow:12, dmg:lkKD(s, 3), kb:8, col:'#9cc8ff', life:14 }));
   }
 }
