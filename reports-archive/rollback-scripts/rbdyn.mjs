@@ -3,6 +3,14 @@
 //   det  : the same match run several ways (twice alike; with drawing; another window size; real clocks); per-binding state hashes compared
 //   perf : step() time per frame, Math.random / clock / timer calls per frame, by phase (sim / draw) and by calling function
 //   snap : the state rollback must save: size, snapshot + restore time, and whether a restore really rewinds (re-simulate and compare)
+// DETERMINISM TEST (rollback step 0, 2026-11-20; the block at the end): two people (one on this keyboard, one an online guest whose buttons
+// arrive in NET.inputs) and two CPUs, on a normal stage (goiky, pillars, incin, yoyle); the people's keys come from a fixed script of the frame:
+//   rdet   : the match played live (its input record kept), again live, then REPLAYED from the record alone (no keyboard, no network, the
+//            harness's Math.random on another seed), and replayed with drawing and an extra Math.random call after every frame
+//   rnoise : live, and live with one extra Math.random call after every frame (anything outside the sim using the browser's dice);
+//            runs on any build, so it gives the before and the after
+//   rsnap  : save, play 15 frames, restore, play the same 15 again (the script's keys again; and, on a build with SIM_IN, from the record)
+//   RB_HTML=<file> runs another build (give it its own scan.json: RB_DIR); NOWEAKSHIM=1 keeps the page's own WeakMaps (use it with rsnap)
 import os from 'node:os'; try { os.setPriority(0, os.constants.priority.PRIORITY_LOW); } catch (e) {}
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -10,7 +18,7 @@ const { JSDOM } = createRequire(new URL('../../package.json', import.meta.url))(
 const SCR = process.env.RB_DIR || new URL('.', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');   // (scan.json lives next to the scripts)
 const scan = JSON.parse(readFileSync(SCR + 'scan.json', 'utf8'));
 const LETS = [...scan.lets, ...scan.vars], BIND = [...LETS, ...scan.consts];
-const HTML = readFileSync('artifacts/V1/index.html', 'utf8');
+const HTML = readFileSync(process.env.RB_HTML || 'artifacts/V1/index.html', 'utf8');
 const [MODE = 'det', SCEN = 'goiky', FRS = '1800'] = process.argv.slice(2);
 const FRAMES = +FRS;
 const WEAKSHIM = !process.env.NOWEAKSHIM;   // (measurement only: the page's WeakMaps/WeakSets become Maps/Sets so a snapshot can see what they hold; nothing in the page iterates them)
@@ -25,6 +33,9 @@ const SCENARIOS = {
   shift:   { stage: 'shift', mode: 'teams', count: 8, items: 2, tk: '4v4' },
   tlc:     { stage: 'tlc', mode: 'teams', count: 8, items: 2, tk: '4v4' },
   ctf:     { stage: 'goiky', mode: 'ctf', count: 8, items: 0, tk: '' },
+  pillars: { stage: 'pillars', mode: 'ffa', count: 4, items: 2, tk: '' },
+  incin:   { stage: 'incin', mode: 'ffa', count: 4, items: 2, tk: '' },
+  yoyle:   { stage: 'yoyle', mode: 'ffa', count: 4, items: 2, tk: '' },
 };
 const SC = SCENARIOS[SCEN];
 
@@ -216,7 +227,16 @@ function makeSnapper(R) {
     }
     R.set(s.lets); R.rng.s.a = s.rng; R.F = s.F;
   }
-  return { calibrate, snapshot, restore, get changed() { return changed; }, get frozen() { return frozen; } };
+  function calibrateWith(ch) {   // (rsnap: the changed bindings worked out by the caller)
+    changed = ch; const EX = new Set((process.env.EXCL || '').split(',').filter(Boolean));
+    rootsIdx = BIND.map((n, i) => i).filter((i) => changed.has(BIND[i]) && !EX.has(BIND[i]));
+    const vals = R.get(); frozen = new Set();
+    const markFrom = (v0) => { const st = [v0]; while (st.length) { const v = st.pop(); if (!v || (typeof v !== 'object')) continue; if (frozen.has(v) || R.isSkip(v)) continue; frozen.add(v);
+      if (Array.isArray(v)) { for (const x of v) st.push(x); continue; } if (v instanceof R.win.Map) { for (const [k, x] of v) { st.push(k); st.push(x); } continue; } if (v instanceof R.win.Set) { for (const x of v) st.push(x); continue; }
+      if (ArrayBuffer.isView(v)) continue; for (const k of Object.keys(v)) { try { st.push(v[k]); } catch (e) {} } } };
+    BIND.forEach((n, i) => { if (!changed.has(n) || EX.has(n)) markFrom(vals[i]); });
+  }
+  return { calibrate, calibrateWith, snapshot, restore, get changed() { return changed; }, get frozen() { return frozen; } };
 }
 const fieldsOf = (R) => R.win.eval('fighters').map((f) => { const ks = Object.keys(f); const hs = hashAll(R, null, ks.map((k) => f[k])); const o = {}; ks.forEach((k, j) => { o[k] = hs[j]; }); return o; });
 const fieldDiff = (A, B) => { const d = new Set(); A.forEach((o, j) => { const p = B[j] || {}; for (const k of new Set([...Object.keys(o), ...Object.keys(p)])) if (o[k] !== p[k]) d.add(k); }); return [...d]; };
@@ -285,6 +305,134 @@ if (MODE === 'blocks') {
     out.push({ block: b, meanMs: mean(st), p95: pct(st, 0.95), max: pct(st, 1), rndPerFrame: +((R.cnt.rnd[1] - r0) / 300).toFixed(2), ...JSON.parse(ex) });
   }
   console.log(JSON.stringify({ scen: SCEN, blocks: out, errs: R.errs.slice(0, 3) }));
+  R.win.close();
+}
+// ============================================================ DETERMINISM TEST (rollback step 0)
+const INPUT_SRC = new Set(['down', 'KEY_LATCH', 'KEY_LATCH_NOW', 'SIM_IN']);   // the input sources themselves: a replay has none of the live ones by design
+const LINEUPS = { goiky: ['Bubble', 'Firey', 'Leafy'], pillars: ['Coiny', 'Spongy', 'Book'], incin: ['Match', 'Pencil', 'Ice Cube'], yoyle: ['Bomby', 'Needle', 'Rocky'] };
+const KB = { left: 'ArrowLeft', right: 'ArrowRight', jump: 'ArrowUp', down: 'ArrowDown', attack: 'KeyX', special: 'KeyC', smash: 'KeyV', shield: 'KeyZ' };
+function mix32(x) { x = Math.imul(x ^ (x >>> 16), 0x7feb352d); x = Math.imul(x ^ (x >>> 15), 0x846ca68b); return (x ^ (x >>> 16)) >>> 0; }
+// What a scripted player holds on frame F: a new choice every 6-13 frames: a way, sometimes a jump, a swing, a special, a smash, a shield.
+const SEGS = new Map();
+function segOf(F, salt) {
+  let L = SEGS.get(salt); if (!L) SEGS.set(salt, L = [0]);
+  while (L[L.length - 1] <= F) { const k = L.length - 1; L.push(L[k] + 6 + (mix32(k * 977 + salt) % 8)); }
+  let lo = 0, hi = L.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (L[m] <= F) lo = m; else hi = m; }
+  return [lo, L[lo]];
+}
+function scriptHold(F, salt) {
+  const [seg, at] = segOf(F, salt), h = mix32(seg * 7919 + salt * 31 + 5), o = {};
+  const way = h % 5; if (way === 1 || way === 3) o.left = true; if (way === 2 || way === 4) o.right = true;
+  const b = (h >>> 4) % 16, tap = F - at < 3;   // the buttons are taps: down for the first 3 frames of the choice
+  if (b === 1 || b === 2) o.jump = true; if (tap && (b === 3 || b === 4 || b === 5)) o.attack = true; if (tap && b === 6) o.special = true;
+  if (b === 7 && F - at < 8) o.smash = true; if (b === 8) o.shield = true; if (b === 9) o.down = true; if (tap && b === 10) { o.special = true; o.down = true; }
+  return o;
+}
+const SALT_LOCAL = 11, SALT_REMOTE = 23;
+function start2(R, sc, seedMatch) {
+  const four = LINEUPS[sc.stage] || LINEUPS.goiky;
+  R.win.eval(`chosen = ROSTER.find(function(r){ return r.name==='Pen'; }); SETTINGS.mode='ffa'; SETTINGS.count=4; SETTINGS.stocks=99; SETTINGS.itemRate=${sc.items}; SETTINGS.mapSize='normal'; SETTINGS.teamKey='';
+    stage = STAGES.find(function(s){ return s.id===${JSON.stringify(sc.stage)}; }) || STAGES[0]; LINEUP_MEMO = { key: lineupKey(4), names: ${JSON.stringify(four)}, teamOf: null };
+    if(typeof SIM_SEED_NEXT !== 'undefined') SIM_SEED_NEXT = ${seedMatch >>> 0};
+    beginMatchNow(); fighters.forEach(function(f){ f.controller='ai'; }); fighters[0].controller='local'; fighters[1].controller='remote'; if(typeof CCARD!=='undefined') CCARD.on=false;`);
+  R.held = {}; R.remote = '';
+}
+// The live keys for frame R.F + 1: the keyboard's changes as key events, the guest's buttons as the host's NET.inputs holds them.
+function liveKeys(R) {
+  const F = R.F + 1, want = scriptHold(F, SALT_LOCAL);
+  for (const b in KB) { const w = !!want[b], h = !!R.held[b]; if (w !== h) { R.win.dispatchEvent(new R.win.KeyboardEvent(w ? 'keydown' : 'keyup', { code: KB[b], bubbles: true })); R.held[b] = w; } }
+  const g = scriptHold(F, SALT_REMOTE), k = JSON.stringify(g);
+  if (k !== R.remote) { R.remote = k; R.win.eval(`window.NET.inputs[1] = { left:${!!g.left}, right:${!!g.right}, jump:${!!g.jump}, down:${!!g.down}, attack:${!!g.attack}, special:${!!g.special}, smash:${!!g.smash}, shield:${!!g.shield}, flag:false, edit:false };`); }
+}
+// positions, damage, stocks, the shots, the clock and the sim's dice (not the harness's Math.random: rdet runs it on other seeds on purpose)
+const core2 = (R) => R.win.eval(`JSON.stringify([hazardT, fighters.map(function(f){ return [f.x,f.y,f.vx,f.vy,f.pct,f.stocks,f.dead?1:0]; }), projectiles.map(function(p){ return [p.x,p.y]; }), items.map(function(it){ return [it.x,it.y,it.kind]; }), typeof SIMRNG !== 'undefined' ? SIMRNG.s : null])`);
+function hasSimIn(R) { return R.win.eval('typeof SIM_IN !== "undefined"'); }
+function recordInto(R, rec) { R.win.__recPush = (t, s) => { rec.set(t, s); }; R.win.eval('SIM_IN.rec = function(t, kb, net){ __recPush(t, JSON.stringify({ kb: kb, net: net })); };'); }
+function feedFrom(R, rec) { R.win.__recGet = (t) => rec.get(t) || null; R.win.eval('SIM_IN.feed = function(t){ var s = __recGet(t); return s ? JSON.parse(s) : null; };'); }
+// One run: live (keys from the script) or replayed (feed); draw: drawView each frame; noise: one more Math.random after each frame.
+async function runDet(label, { seed = 7, seedMatch = 424242, live = true, rec = null, feed = null, draw = false, noise = false } = {}, frames = FRAMES, every = 30) {
+  const R = await boot({ seed }); start2(R, SC, seedMatch);
+  if (rec) recordInto(R, rec); if (feed) feedFrom(R, feed);
+  const tl = [];
+  const sample = (i) => tl.push([i, hashAll(R), core2(R)]);
+  sample(0);
+  for (let i = 1; i <= frames; i++) {
+    if (live) liveKeys(R);
+    R.F++; R.win.eval('step()');
+    if (draw) R.win.eval('drawView(false,false); ageView(1);');
+    if (noise) R.win.Math.random();
+    if (i % every === 0) sample(i);
+  }
+  const info = { label, errs: R.errs.slice(0, 3), fighters: JSON.parse(R.win.eval('JSON.stringify(fighters.map(function(f){ return [f.name, f.controller, Math.round(f.pct), f._kos||0, f._falls||0]; }))')), hazardT: R.win.eval('hazardT') };
+  R.win.close();
+  return { tl, info };
+}
+function compareDet(A, B) {
+  let same = 0, simSame = 0, coreSame = 0, firstAll = null, firstSim = null, firstCore = null; const names = new Set();
+  for (let k = 0; k < A.tl.length; k++) {
+    const d = diffB(A.tl[k][1], B.tl[k][1]); d.forEach((n) => names.add(n));
+    const ds = d.filter((n) => !INPUT_SRC.has(n));
+    if (!d.length) same++; else if (firstAll == null) firstAll = A.tl[k][0];
+    if (!ds.length) simSame++; else if (firstSim == null) firstSim = A.tl[k][0];
+    if (A.tl[k][2] === B.tl[k][2]) coreSame++; else if (firstCore == null) firstCore = A.tl[k][0];
+  }
+  return { checkpoints: A.tl.length, allBindingsSame: same, sameButInputSources: simSame, positionsSame: coreSame, firstDiffAll: firstAll, firstDiffSim: firstSim, firstDiffPositions: firstCore, nDiffering: names.size, differingBindings: [...names].slice(0, 30) };
+}
+if (MODE === 'rdet') {
+  const t0 = Date.now();
+  const rec = new Map();
+  const A = await runDet('A live (record kept)', { rec });
+  const B = await runDet('B live again', {});
+  const out = { scen: SCEN, frames: FRAMES, records: rec.size, 'A vs B (live, twice)': compareDet(A, B) };
+  if (rec.size) {
+    const C = await runDet('C replayed from the record (no key events, no NET.inputs)', { live: false, feed: rec });
+    const Ad = await runDet('Ad live, drawn every frame', { draw: true });
+    const D = await runDet('D replayed, drawn, harness Math.random on seed 99 + one extra call a frame', { seed: 99, live: false, feed: rec, draw: true, noise: true });
+    out['A vs C (replay from the record)'] = compareDet(A, C); out['Ad vs D (drawn: live vs replay on other browser dice)'] = compareDet(Ad, D);
+    out.info = [A.info, B.info, C.info, Ad.info, D.info];
+  } else out.info = [A.info, B.info];
+  out.secs = (Date.now() - t0) / 1000;
+  console.log(JSON.stringify(out));
+}
+if (MODE === 'rnoise') {
+  const A = await runDet('A live', {});
+  const N = await runDet('N live + one Math.random after each frame', { noise: true });
+  console.log(JSON.stringify({ scen: SCEN, frames: FRAMES, html: process.env.RB_HTML || 'artifacts/V1/index.html', 'A vs N': compareDet(A, N), info: [A.info, N.info] }));
+}
+if (MODE === 'rsnap') {
+  const R = await boot({ seed: 7 }); start2(R, SC, 424242);
+  const simIn = hasSimIn(R);
+  const fr = () => { liveKeys(R); R.F++; R.win.eval('step()'); };
+  const S = makeSnapper(R);   // (calibrated by hand: the keys must move while it watches what changes)
+  for (let i = 0; i < 60; i++) fr();
+  // (what changes: compared with the start every 60 frames, not only at the end -- a list that is empty at both ends, the items, still changes)
+  const h0 = hashAll(R), chg = new Set(); for (let i = 1; i <= 900; i++) { fr(); if (i % 60 === 0) for (const n of diffB(h0, hashAll(R))) chg.add(n); }
+  S.calibrateWith(chg);
+  const K = 15, tries = [];
+  for (let rep = 0; rep < 6; rep++) {
+    for (let i = 0; i < 97; i++) fr();
+    const s = S.snapshot(), held = { ...R.held }, remote = R.remote;
+    const rec = new Map(); if (simIn) recordInto(R, rec);
+    for (let i = 0; i < K; i++) fr();
+    if (simIn) R.win.eval('SIM_IN.rec = null;');
+    const H1 = hashAll(R), C1 = core2(R), F1 = fieldsOf(R), I1 = process.env.RBDBG ? R.win.eval('JSON.stringify(items.map(function(i){ return [i.kind, Math.round(i.x), Math.round(i.y), !!i.taken]; }))') : '';
+    S.restore(s); R.held = { ...held }; R.remote = '';   // (NET.inputs is not a binding the save holds: the guest's buttons are written again on the next frame, as the script has them)
+    for (let i = 0; i < K; i++) fr();
+    const H2 = hashAll(R), C2 = core2(R), d2 = diffB(H1, H2);
+    const r = { at: R.F, keysAgain: { diff: d2.length, positionsSame: C1 === C2, names: d2.slice(0, 12), fighterFields: fieldDiff(F1, fieldsOf(R)).slice(0, 12) } };
+    if (simIn) {   // the same 15 frames once more from the save, from the record alone (no key events at all)
+      S.restore(s); feedFrom(R, rec);
+      for (let i = 0; i < K; i++) { R.F++; R.win.eval('step()'); }
+      R.win.eval('SIM_IN.feed = null;');
+      const H3 = hashAll(R), C3 = core2(R), d3 = diffB(H1, H3);
+      if (process.env.RBDBG) r.dbg = { itemsRoot: chg.has('items'), I1, I3: R.win.eval('JSON.stringify(items.map(function(i){ return [i.kind, Math.round(i.x), Math.round(i.y), !!i.taken]; }))'), itemTimer: R.win.eval('itemTimer'), itemTimerRoot: chg.has('itemTimer') };
+      r.fromRecord = { diffButInputSources: d3.filter((n) => !INPUT_SRC.has(n)).length, positionsSame: C1 === C3, names: d3.slice(0, 12), fighterFields: fieldDiff(F1, fieldsOf(R)).slice(0, 12) };
+      // back to the live keys: the keyboard as the live run left it (the record played no key events)
+      S.restore(s); R.held = { ...held }; R.remote = ''; for (let i = 0; i < K; i++) fr();
+    }
+    tries.push(r);
+  }
+  console.log(JSON.stringify({ scen: SCEN, html: process.env.RB_HTML || 'artifacts/V1/index.html', weakShim: WEAKSHIM, changedBindings: chg.size, rewinds: tries, errs: R.errs.slice(0, 3) }));
   R.win.close();
 }
 process.exit(0);
