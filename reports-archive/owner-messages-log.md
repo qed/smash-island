@@ -1150,6 +1150,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-20**: "and go to the weakest EVENT" (lead picked Sticker: Normal still not winnable by a simple walker, heaviest feature count)
 - **2026-11-20**: "ehhh, the rules are very similar, and integrated" (Sticker's many systems are fine)
 - **2026-11-20** (playing Sticker): "issue: at the new subway station deco, it is overcrowded. make it  have more space between them."
+- **2026-11-20** (playing Sticker): "yeah, its very fair" (Sticker's contest is fair to play: the "Normal not winnable" bot finding is not what the owner sees)
 - **2026-11-20**: "web analytics is set up"
 - **2026-11-20**: "push an empty commit" (lead: pushed 62b6a9ed; /_vercel/insights now 200, pick counting live)
 - **2026-11-20**: (screenshot of the "Cron relay (say nothing to the owner)..." line) "why would you say that?" (lead: renamed the timer prompt; it only meant no chat message every 5 min)
