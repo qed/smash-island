@@ -1142,6 +1142,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-20**: "go to spongy"
 - **2026-11-20**: "go to the updated spongy"
 - **2026-11-20** (after playing the working build's Dig Games): "spongys event is 10/10"
+- **2026-11-20**: "give me the one you think has the lowers score" (lead opened Live Boss Rush in the pane)
+- **2026-11-20** (playing Boss Rush): "fsb phase one didnt need to be nerfed. for the tlc"
 - **2026-11-20**: "web analytics is set up"
 - **2026-11-20**: "push an empty commit" (lead: pushed 62b6a9ed; /_vercel/insights now 200, pick counting live)
 - **2026-11-20**: (screenshot of the "Cron relay (say nothing to the owner)..." line) "why would you say that?" (lead: renamed the timer prompt; it only meant no chat message every 5 min)
