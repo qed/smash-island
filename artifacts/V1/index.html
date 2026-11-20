@@ -21025,6 +21025,40 @@ function pollPad(){
   };
 }
 
+// THE FRAME'S INPUTS (DETERMINISM, rollback step 0). Every key the match reads in a step comes from one record, gathered once near the
+// top of step() (simInputsGather): this computer's keyboard and gamepad, and each online guest's buttons as the host has them. step() and
+// everything under it reads only the record (simHeld, simPress, simKey, simPad, simTap, simNetIn, simNetBit), never the live keyboard,
+// gamepad or network, so a step played again from a saved record plays exactly as it did. The keyboard's part is three bit masks
+// (SIM_BIT): the keys held, the gamepad's buttons, and the taps since the last step (PRESS LATCH); each guest's is two of NET_BUTTONS'
+// masks: what step() played for them (netRemoteInput, its latch in) and their buttons as they stand (NET.inputs). -1: none.
+// SIM_IN.feed (a function of the frame) plays recorded records instead of gathering; SIM_IN.rec (a function) is handed each one gathered.
+const SIM_KEYS = ['left','right','jump','down','attack','special','smash','shield','flag','edit','swap','d1','d2','d3'];   // (d1-d3: the 1 2 3 keys, top row or keypad)
+const SIM_BIT = {}; SIM_KEYS.forEach((b, i) => { SIM_BIT[b] = 1 << i; });
+const SIM_IN = { t:-1, kb:[0, 0, 0], net:null, feed:null, rec:null };
+function simNetMask(r){ return r ? netMaskOf(r) : -1; }
+function simInputsGather(){
+  const S = SIM_IN;
+  if(S.feed){ const r = S.feed(hazardT) || {}; S.kb = r.kb || [0, 0, 0]; S.net = r.net || null; }
+  else {
+    const K = KEYS, L = KEY_LATCH_NOW, pad = pollPad();
+    let k = 0, p = 0, l = 0;
+    for(let i = 0; i < 11; i++){ const b = SIM_KEYS[i], c = K[b]; if(down[c]) k |= 1 << i; if(L[c]) l |= 1 << i; if(pad && pad[b]) p |= 1 << i; }
+    for(let d = 1; d <= 3; d++) if(down['Digit' + d] || down['Numpad' + d]) k |= SIM_BIT['d' + d];
+    S.kb = [k, p, l]; S.net = null;
+    const N = window.NET;
+    if(N) for(const f of fighters) if(f.controller === 'remote'){ const raw = N.inputs ? N.inputs[f.idx] : null; (S.net || (S.net = {}))[f.idx] = [simNetMask(netRemoteInput(f.idx)), simNetMask(raw)]; }   // (netRemoteInput once a step, as before: it takes the latch)
+  }
+  S.t = hazardT;
+  if(S.rec) S.rec(hazardT, S.kb, S.net);
+}
+function simKey(b){ return (SIM_IN.kb[0] & SIM_BIT[b]) !== 0; }                                    // held on the keyboard
+function simPad(b){ return (SIM_IN.kb[1] & SIM_BIT[b]) !== 0; }                                    // held on the gamepad
+function simTap(b){ return (SIM_IN.kb[2] & SIM_BIT[b]) !== 0; }                                    // tapped since the last step
+function simHeld(b){ return ((SIM_IN.kb[0] | SIM_IN.kb[1]) & SIM_BIT[b]) !== 0; }                  // keyboard or gamepad
+function simPress(b){ return ((SIM_IN.kb[0] | SIM_IN.kb[1] | SIM_IN.kb[2]) & SIM_BIT[b]) !== 0; }  // held, or tapped since the last step
+function simNetIn(idx, raw){ const n = SIM_IN.net, v = n && n[idx], m = v ? v[raw ? 1 : 0] : -1; return m < 0 ? null : netInputOf(m); }
+function simNetBit(idx, raw, b){ const n = SIM_IN.net, v = n && n[idx], m = v ? v[raw ? 1 : 0] : -1; return m >= 0 && (m & (1 << NET_BUTTONS.indexOf(b))) !== 0; }
+
 // ============================================================
 //  NEW-PLAYER POLISH (readiness jury, 2026-11): the real keys on screen, and a gamepad that can pause.
 // ============================================================
@@ -74976,6 +75010,7 @@ function step(){
   if(fsTimeGate()) return;   // CATCH, THEN CINEMATIC: the Final Smash intro stops the match; its slow-mo KO skips steps (fsTimeGate)
   hazardT++;
   KEY_LATCH_NOW = KEY_LATCH; KEY_LATCH = {};   // (PRESS LATCH: the taps since the last step that ran)
+  simInputsGather();   // DETERMINISM: this step's keys, all of them, once (SIM_IN); nothing below reads the keyboard, the gamepad or the network
   STEP_F = null;   // (HIT FREEZE: set while each fighter's own frame runs, below)
   // Clutch-time music. Deliberately NOT per frame: twice a second is far more often than the
   // condition can meaningfully change, and it keeps audio work out of the hot loop.
@@ -75004,7 +75039,6 @@ function step(){
   // Boss Rush's win/lose check (bossRushCheck) runs once a frame, from checkWin at the end of this step. It used to run from
   // here as well, so BOSSRUSH.frames counted two a frame and the victory card showed about double the real run time.
   if(isBigFFA()) updateSpawnZones();
-  const pad=pollPad();
   if(FILE_RIDES.length) fileRideStep();   // the big files glide and carry whoever stands on them, before this frame's platforms are gathered (THE BIG FILE)
   if(FINX.length) finxStep();   // the finishers running (FINISHERS V2): their tells, hits and holds, and what they leave behind
   finC1_holeSync();   // Saw's cut ledges, from the rows (FIN lane c1)
@@ -75030,7 +75064,7 @@ function step(){
       if(f._spr || f._sprD){ f._spr = 0; f._sprD = 0; }   // SPRINT: held still by a hit (it ends when hit)
       if(f.frozen > 0) f.frozen--;   // SMASH AUDIT FIXES (2026-11-04): a freeze is FREEZE_MAX (45) frames of wall time, hit-stop included: its timer and the 70-frame gap kept still through the hit-stop (3 frames for a light hit, 6 for a smash), so a 45-frame freeze held a foe 48-51 frames
       if(f._freezeLock > 0) f._freezeLock--;
-      hitStopHold(f, f.controller || (f.you ? "local" : "ai"), pad); continue; }
+      hitStopHold(f, f.controller || (f.you ? "local" : "ai")); continue; }
     mcEnter(f); try {   // MOON CAVES: the rest of this fighter's frame runs in its own chart (mcEnter: nothing at all on any other map)
     if(MCAVE && MCAVE.on) plats = platRects();
     STEP_F = f;
@@ -75038,23 +75072,21 @@ function step(){
     // ---- input (local human / remote player / AI) ----
     let inp={left:false,right:false,jump:false,attack:false,special:false,smash:false};
     const ctrl = f.controller || (f.you ? "local" : "ai");
-    if(ctrl==="local"){
-      const K = KEYS;
-      const gp = pad;
-      inp.left = down[K.left]||gp?.left;
-      inp.right= down[K.right]||gp?.right;
-      inp.jump = down[K.jump]||KEY_LATCH_NOW[K.jump]||gp?.jump;
-      inp.up   = down[K.jump]||KEY_LATCH_NOW[K.jump]||gp?.jump;      // "up" direction = jump key/stick up
-      inp.down = down[K.down]||gp?.down;
-      inp.attack=down[K.attack]||KEY_LATCH_NOW[K.attack]||gp?.attack;
-      inp.special=down[K.special]||KEY_LATCH_NOW[K.special]||gp?.special;
-      inp.smash =down[K.smash]||KEY_LATCH_NOW[K.smash]||gp?.smash;
-      inp.shield=!!(down[K.shield] || gp?.shield);
-      inp.flag  =down[K.flag];
-      inp.edit  =down[K.edit];
-      inp.swap  =down[K.swap];
+    if(ctrl==="local"){   // (this step's record: SIM_IN)
+      inp.left = simHeld('left');
+      inp.right= simHeld('right');
+      inp.jump = simPress('jump');
+      inp.up   = simPress('jump');      // "up" direction = jump key/stick up
+      inp.down = simHeld('down');
+      inp.attack=simPress('attack');
+      inp.special=simPress('special');
+      inp.smash =simPress('smash');
+      inp.shield=simHeld('shield');
+      inp.flag  =simKey('flag');
+      inp.edit  =simKey('edit');
+      inp.swap  =simKey('swap');
     } else if(ctrl==="remote"){
-      const r = netRemoteInput(f.idx);   // input relayed from that player's device, a press since the last frame latched in
+      const r = simNetIn(f.idx, 0);   // input relayed from that player's device, a press since the last frame latched in (netRemoteInput, in the record)
       if(r){ inp.left=!!r.left; inp.right=!!r.right; inp.jump=!!r.jump; inp.up=!!r.jump;
         inp.down=!!r.down; inp.attack=!!r.attack; inp.special=!!r.special; inp.smash=!!r.smash; inp.shield=!!r.shield; inp.flag=!!r.flag; inp.edit=!!r.edit; }
     } else if(ctrl==="trainer"){
@@ -75741,8 +75773,8 @@ function step(){
     if(f.flying>0 && inp.down && (f.you || f.controller==='remote')){ f.flying=0; f.vy=Math.max(f.vy,1); puff(f.x,f.y+f.r,'#e6a6e0',3); }
     const gv = gravFor(f);   // gravity this frame: thin air lightens it (Thermal Rise, a float area), and the float timer runs down
     if(f.flying>0){                       // Puffball flight: hover, up gives lift, gravity floats
-      const wantUp = f.you ? (down[KEYS.jump]||pollPad()?.jump)
-                           : f.controller==='remote' ? !!(window.NET && window.NET.inputs[f.idx] && window.NET.inputs[f.idx].jump)   // (a guest's Puffball was flown by the CPU's rule: up did nothing and she sank)
+      const wantUp = f.you ? simHeld('jump')
+                           : f.controller==='remote' ? simNetBit(f.idx, 1, 'jump')   // (a guest's Puffball was flown by the CPU's rule: up did nothing and she sank)
                            : (f.aiTarget && f.aiTarget.y < f.y-20);   // AI climbs only if target is above
       if(wantUp) f.vy-=0.9;
       else if(!f.you && f.controller!=='remote' && f.aiTarget && f.aiTarget.y > f.y+20) f.vy+=0.7; // AI dives toward lower targets
@@ -76100,8 +76132,8 @@ function step(){
       pr.aimWindow--;
       const o=pr.ownerObj;
       if(o && !o.dead){
-        const up   = (o.controller==="local") ? (down[KEYS.jump]|| pollPad()?.jump) : (o.controller==="remote" ? (window.NET&&window.NET.inputs[o.idx]&&window.NET.inputs[o.idx].jump) : (o.aiTarget && o.aiTarget.y < o.y-30));
-        const dn   = (o.controller==="local") ? (down[KEYS.down]|| pollPad()?.down) : (o.controller==="remote" ? (window.NET&&window.NET.inputs[o.idx]&&window.NET.inputs[o.idx].down) : (o.aiTarget && o.aiTarget.y > o.y+30));
+        const up   = (o.controller==="local") ? simHeld('jump') : (o.controller==="remote" ? simNetBit(o.idx, 1, 'jump') : (o.aiTarget && o.aiTarget.y < o.y-30));
+        const dn   = (o.controller==="local") ? simHeld('down') : (o.controller==="remote" ? simNetBit(o.idx, 1, 'down') : (o.aiTarget && o.aiTarget.y > o.y+30));
         if(up){ pr.vy -= 0.55; if(pr.aimWindow%4===0) puff(pr.x,pr.y-6,'#fff',2); }   // bend higher (lob)
         else if(dn){ pr.vy += 0.5; if(pr.aimWindow%4===0) puff(pr.x,pr.y+6,'#fff',2); } // flatten (low, fast)
         // clamp so it stays sane
@@ -77721,11 +77753,11 @@ function hitStopHit(t, from, dmg){
 }
 // One frame of being held: counted down, and a person's buttons noted for the frame it ends (a remote player's press is latched
 // for one frame only, so it is read here or lost).
-function hitStopHold(f, ctrl, pad){
+function hitStopHold(f, ctrl){
   f._hitStop--; f._hsHeld = hazardT;
   let r = null;
-  if(ctrl === 'local'){ const K = KEYS; r = { attack:down[K.attack]||KEY_LATCH_NOW[K.attack]||pad?.attack, special:down[K.special]||KEY_LATCH_NOW[K.special]||pad?.special, smash:down[K.smash]||KEY_LATCH_NOW[K.smash]||pad?.smash, jump:down[K.jump]||KEY_LATCH_NOW[K.jump]||pad?.jump, left:down[K.left]||pad?.left, right:down[K.right]||pad?.right, down:down[K.down]||pad?.down }; }
-  else if(ctrl === 'remote') r = netRemoteInput(f.idx);
+  if(ctrl === 'local') r = { attack:simPress('attack'), special:simPress('special'), smash:simPress('smash'), jump:simPress('jump'), left:simHeld('left'), right:simHeld('right'), down:simHeld('down') };   // (this step's record: SIM_IN)
+  else if(ctrl === 'remote') r = simNetIn(f.idx, 0);
   else if(ctrl === 'ai') r = brainSdiKeys(f);   // MDI: a CPU's SDI taps
   mdiSDI(f, r);   // MDI: a fresh press of a way in the freeze shifts them a little (SDI)
   if(!r) return;
@@ -109410,9 +109442,8 @@ function spleefGhostStep(S, t){
     if(g.cd > 0) g.cd--;
     let dir = 0, drop = false, ty = 0;
     if(g.f.you && (g.f.controller || 'local') === 'local'){
-      const K = KEYS; let gp = null; try{ gp = pollPad(); }catch(e){}
-      dir = ((down[K.right] || (gp && gp.right)) ? 1 : 0) - ((down[K.left] || (gp && gp.left)) ? 1 : 0);
-      drop = !!(down[K.attack] || KEY_LATCH_NOW[K.attack] || down[K.down] || (gp && (gp.attack || gp.down)));
+      dir = (simHeld('right') ? 1 : 0) - (simHeld('left') ? 1 : 0);   // (this step's record: SIM_IN)
+      drop = simPress('attack') || simHeld('down');
       const z = viewZoom() || 1; ty = camY + H/2 - (H/2)/z + 80;
       g.x = clamp(g.x + dir*X.ghostV, S.x0 + 20, S.x1 - 20);
     } else {
@@ -116026,7 +116057,7 @@ function rrDeal(S, k){
 }
 function rrDraftPick(S){
   const D = S.draft, f = fighters[D.by]; if(!f) return;
-  if(isHumanCtrl(f)){ for(let i = 0; i < 3; i++){ if((down['Digit' + (i + 1)] || down['Numpad' + (i + 1)]) && D.pick !== i){ D.pick = i; tone(740, 0.06, 'triangle', 0.1); } } return; }
+  if(isHumanCtrl(f)){ for(let i = 0; i < 3; i++){ if(simKey('d' + (i + 1)) && D.pick !== i){ D.pick = i; tone(740, 0.06, 'triangle', 0.1); } } return; }
   if(D.pick < 0 && hazardT >= D.at) D.pick = rrCpuPick(f, D.opts);
 }
 // ---- THE CARDS ----
@@ -121960,9 +121991,9 @@ CONTEST_RULES.top = {
       if(t < g._bhGhostAt || !live.length) continue;
       const A = g._bhAim || (g._bhAim = { side:1, dy:0, y:null, tg:null }), z = viewZoom() || 1, vcy = camY + H/2, hh = H/(2*z);
       if(g.controller === 'local'){
-        if(down[KEYS.jump]) A.dy -= 8; if(down[KEYS.down]) A.dy += 8; if(down[KEYS.left]) A.side = -1; if(down[KEYS.right]) A.side = 1;
+        if(simKey('jump')) A.dy -= 8; if(simKey('down')) A.dy += 8; if(simKey('left')) A.side = -1; if(simKey('right')) A.side = 1;   // (this step's record: SIM_IN)
         A.dy = clamp(A.dy, -hh*0.85, hh*0.75); A.y = clamp(vcy + A.dy, 90, S.line - 120);
-        if(down[KEYS.attack]){ bhcPlanDebris(null, g, A.y, A.side); g._bhGhostAt = t + K.ghostCd; }
+        if(simKey('attack')){ bhcPlanDebris(null, g, A.y, A.side); g._bhGhostAt = t + K.ghostCd; }
       } else {
         const lv = brainLevel(g);
         if(!A.tg || A.tg.dead){ let pick = null; if(lv >= 2){ for(const o of live) if(!pick || (o._bhN || 0) > (pick._bhN || 0)) pick = o; } else pick = live[Math.floor(simRand()*live.length)];   // (Hard and Expert throw at the leader)
