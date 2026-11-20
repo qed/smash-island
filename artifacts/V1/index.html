@@ -15584,7 +15584,7 @@ function ctfNavPath(nav, from, to, opt){
     const cur = open.splice(bi, 1)[0];
     if(cur === to){
       const edges = [], doors = []; let c = to;
-      while(c !== from){ const e = came.get(c); edges.push(e); for(const d of e.doors) if(!opt.doorOK(d) && !doors.includes(d)) doors.push(d); c = e.from; }
+      while(c !== from){ const e = came.get(c); edges.push(e); for(const d of e.doors) if(!opt.doorOK(d, e) && !doors.includes(d)) doors.push(d); c = e.from; }
       return { edges:edges.reverse(), doors };
     }
     done.add(cur);
@@ -15598,7 +15598,7 @@ function ctfNavPath(nav, from, to, opt){
       if(e.kind === 'wall' && opt.wallOK && !opt.wallOK(e)) continue;   // (a wall jump: only a fighter who has it, and whose numbers do this one)
       if(opt.team != null && ctfNavNoT(e, opt.team)) continue;   // (a drop through a ledge where a pad lies that throws this side back up: the other side's spikes, or a spring)
       if(e.need && !(opt.bo && opt.bo[e.to])) pen += 600;   // a super jump only where nothing else gets there: it is the shakiest move there is
-      if(e.doors.length){ let bad = 0; for(const d of e.doors) if(!opt.doorOK(d)) bad++; if(bad){ if(!opt.closed) continue; pen = 250*bad; } }
+      if(e.doors.length){ let bad = 0; for(const d of e.doors) if(!opt.doorOK(d, e)) bad++; if(bad){ if(!opt.closed) continue; pen = 250*bad; } }
       if(opt.skip && opt.skip(N[e.to])) continue;
       if(N[e.to].pit === true && e.kind !== 'portal') continue;   // (into a hole's floor: ctfNavPitIn)
       if(done.has(e.to)) continue;
@@ -15756,8 +15756,13 @@ function ctfAiStat(k){ const S = CTF.stat = CTF.stat || {}; S[k] = (S[k] || 0) +
 function ctfAiBanEdge(ai, e, now, f){
   const L = CTF.live, key = e.from + '>' + e.to + ':' + Math.round(e.xa); if(!L || !L.ai) return;
   if(f && e.cs){ const sig = ctfStatSig(f); if(sig && e.cs[sig] === 0){ ai.ban[key] = now + 1800; return; } }   // (a move the stat check turned down for this fighter, tried as its last way (ctfAiPlan): the miss is its own stats', not the move's, so the side is not kept off it)
-  const G = L.ai.gfail = L.ai.gfail || {}, ct = G[key] = (G[key] || 0) + 1;
-  ai.ban[key] = now + 900*ct*ct; (L.ai.gban = L.ai.gban || {})[key] = now + 500*ct*ct*ct;
+  if(ai.edgeHit){ ai.edgeHit = false; ctfAiStat('banHitSkip'); ai.ban[key] = now + 300; return; }   // (CTF fix 2026-11-19: knocked out of the move by a hit: the miss is the fight's, not the move's; a short own ban only)
+  // (CTF fix 2026-11-19: the side's bans were one table for BOTH sides, the fail count never went down and the side ban grew as 500*fails^3 (40,000-59,000 frames in the 8-player Mines
+  // matches). Now each side has its own, a fail is forgiven for every 30 s without one, and the side keeps off a move for at most 40 s, the fighter itself for at most 80 s.)
+  const T = f ? f.team : (ai.team != null ? ai.team : -1);
+  const G = L.ai.gfail = L.ai.gfail || {}, g0 = G[key], ct = Math.max(0, (g0 ? g0[0] : 0) - (g0 ? Math.floor((now - g0[1])/1800) : 0)) + 1; G[key] = [ct, now];
+  ai.ban[key] = now + Math.min(4800, 900*ct*ct);
+  if(T === 0 || T === 1){ const GB = L.ai.gban = L.ai.gban || [{}, {}]; GB[T][key] = now + Math.min(2400, 500*ct*ct*ct); }
 }
 // Riding a wheel (an edge of kind 'wheel'): walk to the boarding spot on the bed, wait for a paddle coming up past the feet, jump onto it, ride it to the height of the door on the pit's wall, and press into it.
 function ctfAiWheel(f, ai, nav, inp, now){
@@ -15765,7 +15770,7 @@ function ctfAiWheel(f, ai, nav, inp, now){
   ai.et = (ai.et || 0) + 1;
   const feet = f.y + f.r, cn = ctfNavNodeOf(nav, f);
   if(cn && cn.id === e.to){ ai.edge = null; ai.phase = ''; ai.pi++; ctfAiStat('wheelOK'); return false; }
-  if(ai.et > 3400){ ctfAiStat('wheelTimeout'); ctfAiBanEdge(ai, e, now); ai.path = null; ai.edge = null; ai.phase = ''; return 'lost'; }
+  if(ai.et > 3400){ ctfAiStat('wheelTimeout'); ctfAiBanEdge(ai, e, now, f); ai.path = null; ai.edge = null; ai.phase = ''; return 'lost'; }
   let on = null; if(f.onground) for(const id of wl.ids){ const p = L.elevs[id]; if(Math.abs(feet - p.y) < 10 && f.x > p.x - 4 && f.x < p.x + p.w + 4){ on = p; break; } }
   if(on){   // riding: nothing to press until the paddle is at the door
     ai.ws = 'ride'; ai.wl = 0;
@@ -15822,7 +15827,7 @@ function ctfAiFollow(f, ai, nav, inp, now){
     if(!f.onground) return false;
     if(!cn || cn.id !== e.from){ ai.path = null; return 'lost'; }
     { const cs = ctfStatSig(f); if(cs && !ai.csOff && !ctfNavStatOK(nav, e, f, cs)){ ctfAiStat('statSkip'); ai.path = null; return 'lost'; } }   // (a move its own stats cannot make: plan again without it; a path planned past the check, as the last way, is taken as it is)
-    ai.edge = e; ai.phase = 'stage'; ai.et = 0; ai.dj = false; ai.etMax = 260 + Math.abs((e.kind === 'jump' && e.dir !== 0 ? e.xa - e.dir*(e.run || 0) : e.xa) - f.x)/7;
+    ai.edge = e; ai.phase = 'stage'; ai.et = 0; ai.dj = false; ai.edgeHit = false; ai.etMax = 260 + Math.abs((e.kind === 'jump' && e.dir !== 0 ? e.xa - e.dir*(e.run || 0) : e.xa) - f.x)/7;
   }
   e = ai.edge; ai.et = (ai.et || 0) + 1;
   if(e.kind === 'wheel'){ ai.et = 0; return ctfAiWheel(f, ai, nav, inp, now); }
@@ -15832,7 +15837,7 @@ function ctfAiFollow(f, ai, nav, inp, now){
     if(ai.zr === e){ if(!f.onground) return false; ai.zr = null; ai.path = null; ai.edge = null; ai.phase = ''; ctfAiStat('zipAlt'); return 'lost'; }   // (off the line and not where it was for: no steering back to its start in the air; plan again from where it came down)
     if(Math.abs(f.x - e.xa) > 16) ctfAiWalk(f, inp, e.xa, 10); else if(e.dir === 0){ inp.up = true; } else if(e.dir < 0) inp.left = true; else inp.right = true;
     if(ai.pe !== e){ ai.pe = e; ai.pd = Math.abs(f.x - e.xa); }
-    if(ai.et > 300 + ai.pd/6 + (e.extra || 0)){ ctfAiStat('portalTimeout'); ctfAiBanEdge(ai, e, now); ai.path = null; ai.edge = null; ai.phase = ''; return 'lost'; }
+    if(ai.et > 300 + ai.pd/6 + (e.extra || 0)){ ctfAiStat('portalTimeout'); ctfAiBanEdge(ai, e, now, f); ai.path = null; ai.edge = null; ai.phase = ''; return 'lost'; }
     return false;
   }
   if(ai.et > (ai.etMax || 260) + (e.kind === 'walk' ? Math.abs(e.xb - f.x)/5 : 0) || (ai.phase === 'air' && ai.jt > 150)){ ctfAiStat('edgeTimeout'); ctfAiStat('to_' + e.kind + '_' + ai.phase); (CTF.stat.toList = CTF.stat.toList || []).length < 14 && CTF.stat.toList.push(e.kind + ' ' + e.from + '>' + e.to + ' xa=' + Math.round(e.xa) + ' dir=' + e.dir + ' T=' + e.T + ' run=' + Math.round(e.run||0) + ' fx=' + Math.round(f.x) + ' fy=' + Math.round(f.y) + ' vx=' + Math.round(f.vx*10)/10 + ' ph=' + ai.phase + ' fi=' + f.idx); ctfAiBanEdge(ai, e, now, f); ai.edge = null; ai.path = null; return 'lost'; }
@@ -15939,9 +15944,9 @@ function ctfAiWallFollow(f, ai, nav, inp, now, e, cn){
   if(ai.wt > 1 && f.onground){   // came down
     const ok = !!(cn && cn.id === e.to); off();
     if(ok){ ai.pi++; ctfAiStat('wallOK'); return false; }
-    ctfAiStat('wallBad'); ctfAiBanEdge(ai, e, now); ai.path = null; return 'lost';
+    ctfAiStat('wallBad'); ctfAiBanEdge(ai, e, now, f); ai.path = null; return 'lost';
   }
-  if(ai.wt > 180){ ctfAiStat('wallTimeout'); ctfAiBanEdge(ai, e, now); off(); ai.path = null; return 'lost'; }
+  if(ai.wt > 180){ ctfAiStat('wallTimeout'); ctfAiBanEdge(ai, e, now, f); off(); ai.path = null; return 'lost'; }
   const o = ctfWjCtl(e.wj, ai.wjc, { t:ai.wt, g:f.onground, vy:f.vy, jumps:f.jumps, wall:f._wallT != null ? hazardT - f._wallT : 99, ws:f._wallSide || 0, used:!!(f._wallUsed && f._wallUsed[f._wallId]) });
   if(o.dir > 0) inp.right = true; else if(o.dir < 0) inp.left = true;
   if(o.jump){ inp.jump = true; inp.up = true; }
@@ -15977,8 +15982,27 @@ function ctfAiHomeGoal(f, nav, M){
 // ---- the plan -------------------------------------------------------------------------------------------------------
 function ctfAiDoorOK(L, f){
   const key = f._ck >= 0 ? L.keys[f._ck] : null;
-  return id=>{ if(id[0] === 'J') return false; const d = L.doors.find(q=>q.id === id); return !d || d.op[f.team] || (key && key.door === id); };
+  return (id, e)=>{ if(id[0] === 'J') return false; const d = ctfDoorOfEdge(L, id, e); return !d || d.op[f.team] || (key && key.door === id); };
 }
+// (CTF fix 2026-11-19: doors open one at a time (a key or a personal key opens the door it is held up to), but two doors can share an id (the Mines: two '1r' doors 1200 px apart), and the CPUs
+// asked only the first of them: a CPU with a personal key was sent to the far one, whose way in was through the near one, then to the map key behind them, then to the far door again, every
+// step (Loser, Mines 8-player: 2,300 times in a row). The move's own door now: the one with that id nearest the gap the move crosses; the errand's door: the nearest one still shut.)
+function ctfDoorOfEdge(L, id, e){
+  let best = null, bd = 1e9; const N = CTF.nav && CTF.nav.nodes, mx = e ? (e.xb != null ? (e.xa + e.xb)/2 : e.xa) : null, my = e && N && N[e.to] ? N[e.to].y : null;
+  for(const d of L.doors){ if(d.id !== id) continue; if(mx == null) return d; const q = Math.abs(d.x + d.w/2 - mx) + (my != null ? Math.abs(d.y + d.h - my)*0.5 : 0); if(q < bd){ bd = q; best = d; } }
+  return best;
+}
+function ctfAiDoorSide(f, ai, d, now){
+  const nav = CTF.nav, L = CTF.live; if(!nav || !L) return null;
+  const cn = ctfNavNodeOf(nav, f) || (ai.lastNode != null ? nav.nodes[ai.lastNode] : null), y = d.y + d.h, left = f.x < d.x;
+  for(const x of [left ? d.x - 28 : d.x + d.w + 28, left ? d.x + d.w + 28 : d.x - 28]){
+    const gn = ctfNavNodeAt(nav, x, y, 14); if(!cn || !gn) continue; if(cn.id === gn.id) return x;
+    const opt = { prof:f._cf >= 0 ? 'c' : 'f', team:f.team, bo:nav.boostOnly && nav.boostOnly[f.team], x0:f.x, doorOK:ctfAiDoorOK(L, f), skip:ctfAiSkip(f), ban:ai.ban, gban:null, noCross:L.phase === 'hide', mid:L.map.WW/2, now, closed:false, has:f._ctfJT > 120 && f._cf < 0 ? { jump:true } : null, cs:'', wallOK:ctfAiWallOK(f, nav) };
+    if(ctfNavPath(nav, cn.id, gn.id, opt)) return x;
+  }
+  return null;
+}
+function ctfDoorShutNear(L, id, f){ let best = null, bd = 1e9; for(const d of L.doors){ if(d.id !== id || d.op[f.team]) continue; const q = Math.hypot(d.x + d.w/2 - f.x, (d.y + d.h/2 - f.y)*1.5); if(q < bd){ bd = q; best = d; } } return best || L.doors.find(q=>q.id === id); }
 function ctfAiSkip(f){   // places a CPU may not go: the zone round its own side's jail
   const L = CTF.live, zs = L.jails.filter(j=>j.owner === f.team).map(j=>j.zone);
   return n=>{ const cx = (n.x0 + n.x1)/2; for(const z of zs) if(cx > z.x - 20 && cx < z.x + z.w + 20 && n.y > z.y && n.y < z.y + z.h + 10) return true; return false; };
@@ -16172,9 +16196,12 @@ function ctfAiPlan(f, ai, goalX, goalY, now){
   const gn = ctfNavNodeAt(nav, goalX, goalY, 14);
   if(!cn || !gn) return false;
   const sig = ctfStatSig(f);
-  const opt = { prof:f._cf >= 0 ? 'c' : 'f', team:f.team, bo:nav.boostOnly && nav.boostOnly[f.team], x0:f.x, doorOK:ctfAiDoorOK(L, f), skip:ctfAiSkip(f), ban:ai.ban, gban:L.ai && L.ai.gban, noCross:L.phase === 'hide', mid:L.map.WW/2, now, closed:false, has:f._ctfJT > 120 && f._cf < 0 ? { jump:true } : null, cs:sig, wallOK:ctfAiWallOK(f, nav) };
+  const opt = { prof:f._cf >= 0 ? 'c' : 'f', team:f.team, bo:nav.boostOnly && nav.boostOnly[f.team], x0:f.x, doorOK:ctfAiDoorOK(L, f), skip:ctfAiSkip(f), ban:ai.ban, gban:L.ai && L.ai.gban && L.ai.gban[f.team], noCross:L.phase === 'hide', mid:L.map.WW/2, now, closed:false, has:f._ctfJT > 120 && f._cf < 0 ? { jump:true } : null, cs:sig, wallOK:ctfAiWallOK(f, nav) };
   let r = ctfNavPath(nav, cn.id, gn.id, opt);
-  if(!r && sig && opt.csHit){ opt.cs = ''; r = ctfNavPath(nav, cn.id, gn.id, opt); }   // NEVER THE LAST WAY (review, 2026-10-19): no path is left without the moves the stat check turned down: plan with them, and the CPU tries them (ctfAiFollow does not check this path again)
+  if(!r && sig && opt.csHit){ opt.cs = ''; r = ctfNavPath(nav, cn.id, gn.id, opt); }
+  if(!r && opt.gban){ opt.gban = null; r = ctfNavPath(nav, cn.id, gn.id, opt); if(r) ctfAiStat('sideBanLast'); }
+  if(!r && opt.ban){ opt.ban = null; r = ctfNavPath(nav, cn.id, gn.id, opt); if(r) ctfAiStat('ownBanLast'); }   // (and then not its own: with no way left at all it tries the move it missed again rather than stand (side 1 in that match, with the side's ban already left out: 5,700 more plans failed on the fighters' own bans alone, 23,000 on both))   // (CTF fix 2026-11-19: nor is the side's ban: in the Mines 8-player match side 1's searchers failed 16,000 plans in 12,000 frames on side bans alone, the way out of their corner banned again at every miss)
+  // NEVER THE LAST WAY (review, 2026-10-19): no path is left without the moves the stat check turned down: plan with them, and the CPU tries them (ctfAiFollow does not check this path again)
   if(!r){
     opt.closed = true; r = ctfNavPath(nav, cn.id, gn.id, opt);
     if(!r) return false;
@@ -16231,6 +16258,7 @@ function ctfAiInputRaw(f){
   if(!nav || !ai) return null;
   if(!nav.ready) return ctfAiInpNew();    // the map's graph is still being worked out: stand
   if(f.onground){ const cn = ctfNavNodeOf(nav, f); if(cn) ai.lastNode = cn.id; }
+  if(ai.edge && f.hitstun > 0) ai.edgeHit = true;   // (hit during a move: see ctfAiBanEdge)
   const inp = ctfAiInpNew();
   const now = L.t;
   if(L.phase === 'hide') return ctfAiHide(f, ai, L, nav, inp, now);
@@ -16288,7 +16316,7 @@ function ctfAiGoalDone(f, ai, L){
   if(g.kind === 'home'){ if(f._cf < 0) return true; }
   if(g.kind === 'boost'){ if(f._ctfJT > 260) return true; const b = L.boosts[g.id]; if(b && b.cd > 0) return true; }
   if(g.kind === 'guard' && f.onground && CTF.nav){ const cn = ctfNavNodeOf(CTF.nav, f), gn = ctfNavNodeAt(CTF.nav, g.x, g.y, 14); if(cn && gn && cn.id === gn.id && Math.abs(f.x - g.x) < 36) return true; }
-  if(g.kind === 'door'){ const d = L.doors.find(q=>q.id === g.door); if(!d || d.op[f.team] || (f._ck < 0 && !f._pk)) return true; }
+  if(g.kind === 'door'){ const d = g.dref || L.doors.find(q=>q.id === g.door); if(!d || d.op[f.team] || (f._ck < 0 && !f._pk)) return true; }
   return false;
 }
 function ctfAiGoalFailed(f, ai, L, r, now){
@@ -16297,9 +16325,10 @@ function ctfAiGoalFailed(f, ai, L, r, now){
   if(r && r.need && g){
     // a locked door is in the way: the key that opens it
     const k = L.keys.find(q=>q.door === r.need && q.st === 0);
-    const dd = f._pk ? L.doors.find(q=>q.id === r.need) : null;
-    if(dd && g.kind !== 'door'){ const left = f.x < dd.x; ai.goal = { kind:'door', x:left ? dd.x - 28 : dd.x + dd.w + 28, y:dd.y + dd.h, door:dd.id }; ai.replan = now + 400; return; }   // the personal key opens it
-    if(k && f._ck < 0 && !(g.kind === 'key')){ ai.goal = { kind:'key', id:k.i, x:k.x, y:k.y, then:g }; ai.replan = now + 400; return; }
+    const ad = ai.dead = ai.dead || {}, dd = f._pk && !(ad['d' + r.need] > now) ? ctfDoorShutNear(L, r.need, f) : null, dep = (g.dk || 0) + 1, dsx = dd ? ctfAiDoorSide(f, ai, dd, now) : null;
+    if(g.kind === 'door' || g.kind === 'key' || (dd && dsx == null)){ ad['d' + r.need] = now + 900; if(k) ad['k' + k.i] = now + 900; }   // (CTF fix 2026-11-19: a door or key errand that itself needs a door, or a door neither side of which it can get to: that door and its key are left for 15 s; before, the chain was tried again every step: Loser, Mines, about 8,000 times in 12,000 frames)   // (dk: how deep in door-and-key errands this is: a door errand that needs a key that needs a door... is given up at the third, CTF fix 2026-11-19)
+    if(dd && dsx != null && g.kind !== 'door' && dep <= 2){ ai.goal = { kind:'door', x:dsx, y:dd.y + dd.h, door:dd.id, dref:dd, dk:dep }; ai.replan = now + 400; return; }   // the personal key opens it
+    if(k && f._ck < 0 && !(g.kind === 'key') && dep <= 2 && !(ad['k' + k.i] > now)){ ai.goal = { kind:'key', id:k.i, x:k.x, y:k.y, then:g, dk:dep }; ai.replan = now + 400; return; }
     if(g.kind === 'point'){ ai.dead = ai.dead || {}; ai.dead[g.pi] = now + 1500; }
     ai.goal = null; return;
   }
@@ -16327,8 +16356,8 @@ function ctfAiChoose(f, ai, L, nav, now){
   }
   // 2. a key in hand goes to the door it opens (a place behind it waits there to be searched)
   if(f._ck >= 0){
-    const k = L.keys[f._ck], d = L.doors.find(q=>q.id === k.door);
-    if(d && !d.op[t] && d.team !== t){ const left = f.x < d.x; return set({ kind:'door', x:left ? d.x - 28 : d.x + d.w + 28, y:d.y + d.h, door:d.id }); }
+    const k = L.keys[f._ck], d = ctfDoorShutNear(L, k.door, f);
+    if(d && !d.op[t] && d.team !== t){ const left = f.x < d.x; return set({ kind:'door', x:left ? d.x - 28 : d.x + d.w + 28, y:d.y + d.h, door:d.id, dref:d }); }
   }
   // 3. free the prisoners: a fighter of mine is in the enemy's jail. A jailed HUMAN comes first: within about ten seconds the side commits (one rescuer when the door is clear, two when it is
   //    guarded: the second goes in fighting, the first holds the door for the two seconds). A jailed CPU waits a little longer and is not gone for through a well guarded door.
@@ -28576,6 +28605,9 @@ function siSpots(N){
   for(const o of SI.outers) if(o.fx === 1) band(o.p.x, o.p.x + o.p.w, o.p.y - 200, o.p.y + 6, 'shield');
   SI_SP = { N, S:SI, sp }; return SI_SP.sp;
 }
+// The Shell's armour is worth a SHORT walk only (owner, 2026-11-19: 'only when its close'). 300 of route cost is a short trip: the heal trips sent in the 25 test matches cost 0-188 (all but 3), and every
+// one that arrived cost 172 or less (about 300-1700 px); the armour checks were mostly 640-1700 (2300-5800 px across the map), and the old bound of 1000 let those go.
+const SI_ARMOUR_NEAR = 300;
 function siTrip(f, inp, N){
   const now = hazardT; let T = f._siTrip, fd = 1e9; for(const o of fighters) if(!o.dead && o.team !== f.team){ const d = Math.hypot(o.x - f.x, o.y - f.y); if(d < fd) fd = d; }
   if(f._siPad || (SI.party && (SI.party.a === f || SI.party.b === f))){ f._siTrip = null; return false; }   // (a chest party owns this CPU's goal)
@@ -28598,12 +28630,12 @@ function siTrip(f, inp, N){
     return false;
   }
   if(now < 600 || now < (f._siTripCd || 0) || fd < 450 || !f.onground || f.hitstun > 0 || (now + f.idx*7) % 30 !== 0 || f._siGoal) return false;
-  const hurt = f.pct >= 45, wantSh = !hurt && f.pct >= 15 && fd > 700 && !((f._diShield || 0) > now) && (f.idx*5 + Math.floor(now/900)) % 3 === 0;
+  const hurt = f.pct >= 45, wantSh = !hurt && f.pct >= 15 && fd > 700 && !((f._diShield || 0) > now);   // (CPU fix 2026-11-19 (owner: armour trips 'only when its close'): an armour trip only to an armour spot within SI_ARMOUR_NEAR of route cost, see below; the old one-try-in-three lottery is gone, as it skipped every close chance measured (0 of 5 in 25 matches))
   if(!hurt && !wantSh) return false;
   const sp = siSpots(N), a = siNodeAt(N, f); if(!sp.length || !a) return false;
   let best = null, bc = 1e9;
   for(const q of sp){ if(q.k !== (hurt ? 'heal' : 'shield')) continue; if(hurt && f.pct < 60 && tripFoeOnWay(f, (q.x0 + q.x1)/2, q.n.y)) continue; const c = a === q.n ? 0 : ((siPlan(N, a, new Map([[q.n, 1]])) || { cost:1e9 }).cost); if(c < bc){ bc = c; best = q; } }
-  if(!best || bc > (hurt ? 2400 : 1000)){ f._siTripCd = now + 240; return false; }
+  if(!best || bc > (hurt ? 2400 : SI_ARMOUR_NEAR)){ f._siTripCd = now + 240; return false; }
   f._siTrip = { s:best, n:best.n, k:best.k, until:now + Math.min(2400, 600 + bc*1.5), arr:0 }; f._siGoal = best.n; f._siPlan = null; SI.trips = (SI.trips || 0) + 1;
   return false;
 }
