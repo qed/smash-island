@@ -1129,7 +1129,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19 ~19:30**: "ohhhh"
 - **2026-11-19 ~19:35**: "rollback study so far?"
 - **2026-11-19 ~19:40**: "make the computer less busy. 4 jobs" (lead: stopped cpu11, rejoin, evonline; kept dig3, eball6, smash8, rollback study)
-- **2026-11-20**: "who has used which fighters?"
+- **2026-11-20**: "who has used which fighters?" (lead: Vercel Web Analytics is NOT enabled for the smash project; /_vercel/insights 404; no pick data exists)
+- **2026-11-20**: "whats running?"
 - **2026-11-19**: go to foldy
 - **2026-11-19**: dude, the skins are just recolors for the event fighters
 - **2026-11-19** *(question box: what should a real skin be?)*: Show looks from the wiki (Recommended)
