@@ -1111,6 +1111,27 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19 ~17:05**: "how is the queue?"
 - **2026-11-19 ~17:10**: "and push, and move to 8balls week"
 - **2026-11-19 ~17:20** (answers to the open list): "1. yes 2. only when its close 3. nah 4. in a ring, and the floating caves should be connected, and the different areas should have diferent features, and also, natural belowground caves. 5. yes 6. yeah 7. on friday. 8. and yeah, do those things" (= Cherries rule yes; CPU armour trips only when close; 8-Ball assist timing unchanged; Dig Games: keep ring start + connect the hanging caves + distinct features per area + natural underground caves; up/down batch 6 yes; one event online + rejoin yes; full push on Friday; do the next-up list)
+- **2026-11-19 ~17:30**: "start the situation check too. open it in the pane"
+- **2026-11-19 ~17:35**: "no, open 8balls event in the pane"
+- **2026-11-19 ~17:40**: "why isnt it the update version?"
+- **2026-11-19 ~17:50**: "the assists and map could be stronger(for 8ball only) and bigger(also 8ball), respectivelu" (= 8-Ball contest only: assists stronger, map bigger)
+- **2026-11-19 ~18:00**: "issue: 9ball can stop ppl from entering doorways"
+- **2026-11-19 ~18:10**: "also, why are all the assists the same?" -> (question box) They act the same + Types feel the same (8-Ball contest)
+- **2026-11-19 ~18:30**: "what is bows up and down smash?"
+- **2026-11-19 ~18:35**: "its a yes." -> (question box) both: Bow's own up/down smash (next batch, Bow first) + merge batch 7
+- **2026-11-19 ~18:45**: "ehhh, if you can, maybe deviate from the "all chairs everyday" theme. use the lasso from s1 for her usmash, it will be like a command grab."
+- **2026-11-19 ~18:50**: "no, it throws them downwards. it grabs them(the grab hitbox that only grabs from above and slightly to the side, and then the lasso will slam towards the ground."
+- **2026-11-19 ~18:55**: "is spongy finished?"
+- **2026-11-19 ~19:05**: "do the trade-off if you think that you could fix the issue that would result from it more easily than fixing the current issues." (host waiting for each guest key's own frame) -> lead: not done, see answer
+- **2026-11-19 ~19:15**: "we need to make multiplayer perfectly smooth, because im eventually envisioning playing without rooms, but with public lobbies, and who knows? those ppl might be from halfway accross the planet"
+- **2026-11-19 ~19:25**: (screenshot of a broken wiki hitbox picture) "this is what the wiki frame data looks like"
+- **2026-11-19 ~19:28**: "so how is smash so smooth online?"
+- **2026-11-19 ~19:30**: "ohhhh"
+- **2026-11-19 ~19:35**: "rollback study so far?"
+- **2026-11-19 ~19:40**: "make the computer less busy. 4 jobs" (lead: stopped cpu11, rejoin, evonline; kept dig3, eball6, smash8, rollback study)
+- **2026-11-20**: "who has used which fighters?" (lead: Vercel Web Analytics is NOT enabled for the smash project; /_vercel/insights 404; no pick data exists)
+- **2026-11-20**: "whats running?"
+- **2026-11-20**: "its a yes for all." (= start/finish all paused work: Dig Games caves fix, 8-Ball last assists, CPU armour + CTF, batch 8 smashes yes, Bow lasso catches through shields, 8-Ball online + rejoin, rollback step 0)
 - **2026-11-19**: go to foldy
 - **2026-11-19**: dude, the skins are just recolors for the event fighters
 - **2026-11-19** *(question box: what should a real skin be?)*: Show looks from the wiki (Recommended)
