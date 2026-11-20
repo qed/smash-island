@@ -252,6 +252,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (NEEDY pace + ideas)**: pace: Shorter gap, Drop evil-KO injects; ideas: all 12 (1-2 Lab + antidote, 3-4 Vaccine + alarm, 5-6 Doors + quarantine, 7 Evil move, 8-9 Conveyor + robot arm, 10 Goo puddle, 11 Evil jar, 12 Decon shower)
 - **2026-11-17 (HOT DOG ideas)**: "you could try harder.", 1-2 Courtroom + rule cards, 3-4 More + double rules
 - **2026-11-17 (HOT DOG bigger ideas + STAPY ideas)**: Hot Dog: Rule zones, Lawmaker, Rule-break heists, Rule chain, Traffic rules (not trial, contract deals, bribe the ref); Stapy: 1-3 Storm, searchlights, foghorn (not 4-10)
+- **2026-11-20 (playing Cloudy's week)**: cloudy is good, but i dont feel the buffs as different buffs.
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
@@ -657,6 +658,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (playing the Box challenge)**: I found the root cause: box's only playable move is smash. The reason she has flown under the radar is because hop smashes are REALLY strong.
 - **2026-11-17 (answers: hop smashes + Box)**: hop smashes: "Measure first"; Box: "the finisher sucks.", Real jab + ranged, Specials that hurt (not picked: lower her smash)
 - **2026-11-17 (next, on Box; her ROSTER arch is "Keeper")**: and also because her archetype gives her the best sweeping tilts and airs.
+- **2026-11-20 (same message)**: foldys recovery is cool and in character.
 
 ## Bosses, Boss Rush & secrets
 
@@ -1514,6 +1516,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-16 (TLC map job running)**: should we start other tasks? (answer to my pick list: Stapy rebuild, Event-fighter skins, Quick move fixes; not Moon Caves)
 - **2026-11-16 (after my % report: move fixes done incl. Calculated Bounce side effects, event skins waiting on an OK, new CPU stand-still job)**: % complete? start a new thing to replace the event-skins
 - **2026-11-17**: you can start more tasks
+- **2026-11-20**: start jobs, up to 4 of em
 
 ## Other
 - **2026-11-17 (evening)**: can you please take all the work I have done on this across all commits and create a presentation showing all the coding skills I have learned while building this project and how they can be transferred to future coding projects?
