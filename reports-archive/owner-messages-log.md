@@ -1134,6 +1134,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-20**: "its a yes for all." (= start/finish all paused work: Dig Games caves fix, 8-Ball last assists, CPU armour + CTF, batch 8 smashes yes, Bow lasso catches through shields, 8-Ball online + rejoin, rollback step 0)
 - **2026-11-20**: "web analytics is set up"
 - **2026-11-20**: "push an empty commit" (lead: pushed 62b6a9ed; /_vercel/insights now 200, pick counting live)
+- **2026-11-20**: (screenshot of the "Cron relay (say nothing to the owner)..." line) "why would you say that?" (lead: renamed the timer prompt; it only meant no chat message every 5 min)
 - **2026-11-19**: go to foldy
 - **2026-11-19**: dude, the skins are just recolors for the event fighters
 - **2026-11-19** *(question box: what should a real skin be?)*: Show looks from the wiki (Recommended)
