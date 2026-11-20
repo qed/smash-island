@@ -24420,6 +24420,7 @@ function pickCount(){
 }
 function beginMatchNow(){
   simSeedMatch();   // DETERMINISM: this match's dice (see SIMRNG)
+  if(!PCAM.on){ FINC1_CUTS.clear(); _cpuHands.clear(); }   // (and what the last match's world and CPUs kept: they were WeakMaps, which let go by themselves)
   nanGuard.said = false;   // (NOT A NUMBER: said once a match)
   CPU_LOOK.seed = cpuLookSeed();   // (CPUS WEAR SKINS: a new look for each CPU each match; online the start's seed is used: CPU_LOOK.net)
   stageGuard();   // (a locked secret stage never starts a match here; online, the host's pick stands)
@@ -86688,7 +86689,7 @@ function finC1_holeGap(o){
 // the ledge back whole when the row is gone. Run by the host after its finishers step (every frame: a hole whose owner was KO'd leaves no row to
 // run it); a guest never runs it: it is sent the cut map with the rest of the host's geometry (worldGeo, whenever its key changes) and draws the
 // cut edges from the rows. The cuts are kept per world (the Plays Camera runs several matches, each with its own worldPlats).
-const FINC1_CUTS = new WeakMap();
+const FINC1_CUTS = new Map();   // (DETERMINISM: a Map a save can list; a new match lets go of the last ones: beginMatchNow)
 function finC1_holeSync(){
   if(isNetClient()) return;
   finC12_platSync();   // (batch c12: Blueberry's boulder's top)
@@ -128497,7 +128498,7 @@ function brainShotTell(f, B){
     if(dx < 0 || sp < 1.5 || Math.abs(dy) > f.r*1.3 + (p.r || 6)) continue;
     const eta = (dx - f.r)/(sp + Math.max(0, (f.vx || 0)*d)), react = (typeof CPU_HUMAN !== 'undefined' && CPU_HUMAN.react[f._lvlCache != null ? f._lvlCache : brainLevel(f)]) || 0;
     if(eta > RF.start + 8 + react || eta < 0) continue;   // not yet (or already on it); it sees the shot a moment late, so it starts that much earlier
-    if(!B.shSeenShot) B.shSeenShot = new WeakSet();
+    if(!B.shSeenShot) B.shSeenShot = new Set();   // (DETERMINISM: a Set a save can list; it goes with the brain)
     if(!B.shSeenShot.has(p)){ B.shSeenShot.add(p); B.shShotOk = simRand(); }
     return true;
   }
@@ -128959,7 +128960,7 @@ function brainCatch(f, inp, B, L){
 // shots Everything Packed cannot take (a placed thing, a rider, Yin, an unbreakable one) are not looked at.
 function brainShotComing(f, B, L){
   const n = CPU_HUMAN.react[f._lvlCache != null ? f._lvlCache : brainLevel(f)] || 0, ld = n*L.lead;
-  if(!B.shotNote) B.shotNote = new WeakMap();
+  if(!B.shotNote) B.shotNote = new Map();   // (DETERMINISM: a Map a save can list; it goes with the brain)
   for(const p of projectiles){
     if(p.trap || p.turret || p.orbit || p.drive || p._yin || p.unbreakable || !(p.life > 0)) continue;
     if(p.ownerObj ? (p.ownerObj === f || p.ownerObj.team === f.team) : p.owner === f.idx) continue;
@@ -128994,7 +128995,7 @@ function brainAilment(f){ return f.burn > 0 || f._poisonT > 0 || f.bleed > 0 || 
 function brainDangers(f, B, L){
   if(B.hzAt === hazardT) return B.hzList;
   const out = [], see = CPU_HUMAN.react[f._lvlCache != null ? f._lvlCache : brainLevel(f)] || 0;
-  if(!B.hzNote) B.hzNote = new WeakMap();
+  if(!B.hzNote) B.hzNote = new Map();   // (DETERMINISM: a Map a save can list; it goes with the brain)
   const noted = (o) => { let v = B.hzNote.get(o); if(v === undefined){ v = simRand() < L.hz; B.hzNote.set(o, v); } return v; };
   for(const p of projectiles){
     if(!p.trap || !(p.life > 0) || p.falling || p.slick || p._metagWall || p.turret || p.allyPickup || p.owner === f.idx || p.arm >= 1e8) continue;
@@ -129444,14 +129445,15 @@ const SEE_F = ['x','y','vx','vy','face','onground','jumps','flying','dropping','
 const SEE_DEAD = SEE_F.length;          // (the row's last slot: whether it was down then)
 const SEE_P = ['x','y','vx','vy'];      // a shot's or a summon's
 const SEE_R = 32;                       // frames kept: a power of two longer than the longest delay
-const _cpuSeen = new WeakMap();         // fighter, shot or summon -> { s: first frame kept, l: last frame kept, v: rows by frame }
+const _cpuSeen = new Map();             // fighter, shot or summon -> { s: first frame kept, l: last frame kept, v: rows by frame, w: its match's fighters }
+// (DETERMINISM: a Map, not a WeakMap, so a save of the match can hold it; cpuSeePrune lets go of what no reader can ask for any more)
 let _cpuSeeT = 0;
 function cpuSeeKeep(o, F, t, dead){
   let h = _cpuSeen.get(o);
   // New, or back after a gap, or put somewhere else between two frames (cpuSeeSettle: a new round's places, a test's setup -- the world
   // set up again, not anything a foe did): its story starts now, and it is seen where it is.
-  if(!h || h.l !== t - 1 || (h.et === t - 1 && (o.x !== h.ex || o.y !== h.ey))){ h = { s:t, l:t, v:new Array(SEE_R) }; _cpuSeen.set(o, h); }
-  h.l = t;
+  if(!h || h.l !== t - 1 || (h.et === t - 1 && (o.x !== h.ex || o.y !== h.ey))){ h = { s:t, l:t, v:new Array(SEE_R), w:null }; _cpuSeen.set(o, h); }
+  h.l = t; h.w = fighters;
   const i = t & (SEE_R - 1); let row = h.v[i];
   if(!row) row = h.v[i] = new Array(F.length + 1);
   for(let k = 0; k < F.length; k++) row[k] = o[F[k]];
@@ -129463,6 +129465,16 @@ function cpuSeeRecord(){
   for(const o of fighters) cpuSeeKeep(o, SEE_F, t, !!o.dead);
   for(const p of projectiles) cpuSeeKeep(p, SEE_P, t, false);
   for(const s of summons) cpuSeeKeep(s, SEE_P, t, false);
+  cpuSeePrune(t);
+}
+// What the eyes and hands keep that nothing can read any more goes (DETERMINISM: they were WeakMaps, which forgot it by themselves). An
+// eye entry last kept SEE_R or more frames ago: every reader asks for a frame inside the last SEE_R (cpuSeeBegin and cpuSeeSettle this
+// frame's, cpuSeeKeep the last one's, brainSeenVel and spongySeenStill at most SEE_R - 1 back), so it reads exactly as one never kept.
+// An entry of another match (a world set up since): not while the Plays Camera runs, whose matches take turns on the same globals.
+function cpuSeePrune(t){
+  const other = !PCAM.on;
+  for(const [o, h] of _cpuSeen) if(h.w === fighters ? h.l < t - SEE_R : other) _cpuSeen.delete(o);
+  if(other) for(const [f, h] of _cpuHands) if(h.w !== fighters) _cpuHands.delete(f);
 }
 // Once a frame, at the end of step: where each fighter ended it. Anything that moves a fighter inside a frame (a run, a hit, a respawn, a
 // Teleport, the flag mode's jail) is seen late; only a place changed between frames starts its story again (cpuSeeKeep). Reads only.
@@ -129580,14 +129592,14 @@ const CPU_DIRS = (1<<0)|(1<<1)|(1<<3)|(1<<4);   // left, right, up, down: a turn
 const CPU_PRESS_RANK = [[(1<<8)|(1<<9)|(1<<10)|(1<<11), 4], [(1<<6)|(1<<7)|(1<<13), 3], [1<<12, 2], [(1<<2)|(1<<5), 1]];
 function cpuPressRank(bits){ for(const [m, r] of CPU_PRESS_RANK) if(bits & m) return r; return 0; }
 const CPU_PEND_MAX = 12;                // frames a press decided while the hands were busy keeps (past that it is stale and dropped)
-const _cpuHands = new WeakMap();        // fighter -> { sig, keys, tok, next, last, n, pend }
+const _cpuHands = new Map();            // fighter -> { sig, keys, tok, next, last, n, pend, w: its match's fighters } (a Map: see _cpuSeen)
 // The hands forget a press still waiting for them (brainRecover, as a trip off the stage begins: the recovery has the keys now).
 function cpuHandsForget(f){ const h = _cpuHands.get(f); if(h) h.pend = null; }
 function cpuHumanKeys(f, inp, gap, fight){
   if(!(gap > 0) || !inp) return inp;
   const now = hazardT, cap = CPU_HUMAN.tapBurst;
   let h = _cpuHands.get(f);
-  if(!h || now < h.last){ h = { sig:0, keys:null, tok:cap, next:0, last:-1e9, n:0, pend:null, btnAt:-1e9 }; _cpuHands.set(f, h); }   // (a new match's clock: a fresh hand)
+  if(!h || now < h.last){ h = { sig:0, keys:null, tok:cap, next:0, last:-1e9, n:0, pend:null, btnAt:-1e9, w:fighters }; _cpuHands.set(f, h); }   // (a new match's clock: a fresh hand)
   while(h.tok < cap && now >= h.next){ h.tok++; if(h.tok < cap) h.next += cpuHandGap(f, gap, ++h.n); }
   const want = cpuKeySig(inp), fresh = (want & ~h.sig & CPU_PRESS) !== 0;
   // No foe near: its own pace (see CPU_HUMAN). And while Bow fades into her Teleport the arrows are the aim of the press she has already
