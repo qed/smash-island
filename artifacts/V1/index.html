@@ -56345,7 +56345,8 @@ function onBossPhaseChange(s, ph){
   // nearest fighter: one of his holes opens there (phase-3 length). `>=` so one burst of damage that skips phase 2 still
   // gets here. Phase 2 needs no one-time effect: the blink and the ELECTRIC FENCE read the phase (springyBeginTelegraph,
   // updateSpringy).
-  if(s.attack==="springy" && ph>=3){ s._quakeT = SPRINGY.quake; const t = springyNearest(s.x); if(t) springyHole(clamp(t.x, 60, WW - 60), 3, ++BOSS_ATK_ID); }
+  // 2026-11-20: the hole opened the frame phase 3 began, under a fighter who had no way to see it coming; now the floor cracks there first (springyPhaseBeat).
+  if(s.attack==="springy") springyPhaseBeat(s, ph);
   // PHASE SLOTS (see BOSS SLOTS): one-time effects as phase `ph` starts (the flash, the shake and the card are above).
   // @boss:announcer:begin phase
   if(s.attack==="announcer") annPhase(s, ph);   // 2: the first item is sold; 3: the crusher drops in
@@ -56460,7 +56461,7 @@ function bossPhaseName(s, ph){
 function bossTelLen(s){
   if(s.attack==="one") return ONE_TEL[s._telKind] || ONE_TEL4;   // so the wind-up ring fills over her real wind-up
   if(s.attack==="cobsfight") return cobsTelLen(s);   // Steve Cobs: his own, shorter in rage (COBS_TEL)
-  if(s.attack==="springy") return 40;            // Springy compresses for two thirds of a second before he leaves the floor: the "long tell" of the research
+  if(s.attack==="springy") return SPRINGY.tel[s._telKind] || 40;   // Springy compresses for two thirds of a second before he leaves the floor: the "long tell" of the research; each move its own since 2026-11-20 (SPRINGY.tel)
   // TELLEN SLOTS (see BOSS SLOTS): a boss with its own wind-up length returns it here (drawBossSprite's ring reads it too).
   // @boss:announcer:begin tellen
   if(s.attack==="announcer") return annTelLen(s);   // the laser's and the acid's wind-ups are longer (ANN.laser.tel, ANN.acid.tel): the cross locks for its last 30 frames, the acid's spots are up all through; the rest 36
@@ -56569,11 +56570,11 @@ const BOSS_EXTRA = {
   // @boss:four:end extra
 
   "Steve Cobs": ["knife", "kernels"],       // his own: the Contraption, MeKnife, the Contraption, kernels (phase 3: every other Contraption is SCREEN CRACKER). Off the roster ("replace him with springy"); kept for the secret fight
-  "Springy": ["longarm", "boxdrop", "springbot"],   // his own, drawn with the slam by the picker (BOSS_PICK.springy, beside his code): JUST WANTED A HAND, A TOY IN EVERY BOX, MY PURPOSE! (see SPRINGY)
+  "Springy": ["longarm", "boxdrop", "springbot", "springjar", "springglitch"],   // his own, drawn with the slam by the picker (BOSS_PICK.springy, beside his code): JUST WANTED A HAND, A TOY IN EVERY BOX, MY PURPOSE!, TRAPPED IN A JAR! (from phase 2), GLITCHING! (phase 3) (see SPRINGY)
 };
 const BOSS_MOVE_NAME = { rain:"INCOMING!", ring:"SHOCK RING!", slam:"GROUND POUND!", seekers:"SEEKERS!",
   knife:"MEKNIFE!", kernels:"KERNEL STOMP!",
-  longarm:"JUST WANTED A HAND!", boxdrop:"A TOY IN EVERY BOX!", springbot:"MY PURPOSE!",   // Springy: "I thought you just wanted a hand." (A Jury of Your Fears/Transcript); "Each box claims to have a spring toy in them" (Springtastic); Spring-Bot: "My. Purpose." (You Can't Do This Forever/Transcript)
+  longarm:"JUST WANTED A HAND!", boxdrop:"A TOY IN EVERY BOX!", springbot:"MY PURPOSE!", springjar:"TRAPPED IN A JAR!", springglitch:"GLITCHING!",   // Springy: "I thought you just wanted a hand." (A Jury of Your Fears/Transcript); "Each box claims to have a spring toy in them" (Springtastic); Spring-Bot: "My. Purpose." (You Can't Do This Forever/Transcript)
   // @boss:announcer:begin movename
   annlaser:"QUADRUPLE LASER!", annacid:"ACID TEARS!", annballoon:"WATER BALLOONS!",   // the Laser Powered Teleportation Device; Rescission ("start crying acid"); A Leg Up in the Race ("Ha, ha, water balloons.")
   // @boss:announcer:end movename
@@ -56912,6 +56913,9 @@ const BOSS_MOVES = {
   springbot(s, tgt){ const id = ++BOSS_ATK_ID, ph = Math.min(3, s._telPh || s._phase || 1);
     springyBotDrop(s, s._boxX != null ? s._boxX : springyBotSpot(s._telX != null ? s._telX : (tgt ? tgt.x : s.x)), id, ph);
     s._boxX = null; },
+  // TRAPPED IN A JAR! and GLITCHING! (Springy, 2026-11-20): see springyJarFire and springyGlitchFire, beside his code
+  springjar(s, tgt){ springyJarFire(s, tgt); },
+  springglitch(s, tgt){ springyGlitchFire(s, tgt); },
   // MOVES SLOTS (see BOSS SLOTS): a second move is `key(s, tgt){ ... }`, named in BOSS_MOVE_NAME and listed in BOSS_EXTRA.
   // Every part of one move shares one attack id (++BOSS_ATK_ID), so the whole move is at most one boss hit.
   // @boss:announcer:begin moves
@@ -68612,6 +68616,17 @@ function cobsPunch(s, atkId, first){
 //             boxW, boxHgt a landed box's wall; boxLife how long it stands
 //   quake     phase 3 entry: frames of shaking
 //   padW      the exit room's white spring, a bounce pad on the right edge ("The exit room contains a white spring")
+//   ent, entFall   his entrance (2026-11-20, "he was supposed to get better alongside them"): frames in all, and the frame he lands from the top of the
+//             screen; then one rebound. Drawn only (as the Announcer's fall): he stands where he spawns, and his first turn (120 frames) comes after it
+//   crack     phase 3's entry: frames the floor cracks under the nearest fighter before his hole opens there (it opened at once: the audit's hit at frame 12)
+//   sq        frames of the squash-and-wobble on a landing (drawn only: springyDrawTell)
+//   tel       each move's wind-up, in wind-up units (BOSS_TEL_PACE makes them a quarter longer in frames)
+//   jar       TRAPPED IN A JAR! (from phase 2): jars a turn by phase (n), the glass's width and height, where it starts (top, above the screen) and its fall a
+//             frame; lock: wind-up units the first jar's spot is fixed before the end; hold: frames a caught fighter is shaken; kb, ky, dmg: the hit when it
+//             breaks (a whole boss hit), thrown toward the middle; follow: frames the second jar's shadow follows you before it drops (it drops 30 frames after the first lands); an empty jar cracks for crackT frames, then breaks into one glass shard each way
+//             (shardV, shardR, shardFr frames, shardDmg of a hit, the jar's id); colour of the glass and of its rim
+//   glitch    GLITCHING! (phase 3): n spots, every frames apart, r the burst round him at each, spread how far the first two are from you, lock: the last
+//             spot follows you until lock frames before it; kb, ky, dmg the burst's hit (one attack id: one boss hit at most)
 //   bot       MY PURPOSE!, the Spring-Bot toy (springyBotDrop on): it records `slots` specials after it lands and fires the sequence back
 //             `plays` times. listen: the most frames it waits for them (then it plays what it has, or throws the mitten if it heard none); ready:
 //             its squat before the first shot; first, gap (by phase) and pause: frames before the first shot, between shots and between
@@ -68622,6 +68637,10 @@ function cobsPunch(s, atkId, first){
 //             mit: the mitten it throws when it heard nothing (Round 17), one throw, its size, knockback, share of a boss hit, speed by phase and colour
 const SPRINGY = { gaps:[0,96,72,54], slams:[0,3,4,5], launch:-30, hang:26, lock:10, drop:22, slamR:144, slamKb:12,
                   holeW:150, holeT:[0,240,240,360], pit:44, hop:-7, approach:220, backoff:140,
+                  ent:56, entFall:34, crack:60, sq:14,
+                  tel:{ springy:40, longarm:40, boxdrop:40, springbot:40, springjar:44, springglitch:48 },
+                  jar:{ n:[0,0,1,2], w:78, h:96, top:-110, fall:15, lock:24, hold:56, kb:10, ky:-14, dmg:1, follow:75, crackT:16, shardV:5, shardR:9, shardFr:30, shardDmg:0.45, color:'#cfeeff', lid:'#d8a83a' },
+                  glitch:{ n:4, every:26, r:92, spread:300, lock:30, kb:12, ky:-9, dmg:1 },
                   armLen:0.7, armSpd:24, armR:30, armKb:14, blinkEvery:480, blink:320, fence:48, fenceEvery:60,
                   boxes:[0.2,0.5,0.8], boxY:0.12, boxW:110, boxHgt:64, boxLife:240, quake:120, padW:90,
                   bot:{ slots:5, plays:3, listen:480, ready:30, first:24, gap:[0,34,30,26], pause:60, speed:[0,8,9,10], aim:16, down:40, r:24, shotR:13, kb:7, dmg:0.35, color:'#93a85a', glow:'#a8e04a',
@@ -68638,9 +68657,13 @@ const SPRINGY_END = { fall:32, lava:56, revive:104, glitch:118, total:150, boing
 // (s._slam), and the Spring-Bot once it PLAYS BACK -- its squat before the first shot, the shots, and every shot it has fired that is still flying (springyToyBusy); not while it falls, LISTENS or powers down: the toy
 // is one inert shot for its whole life, marked `lingers`, so what holds his next turn is the playback and nothing before it (Round 17, one attack at a time: listening fires nothing, so it does not hold his
 // next attack; while the toy plays back, he waits). Every other part of a turn is a shot, and the holes he punches lie there for good (`lingers`).
+// 2026-11-20 (the owner, after Live Boss Rush: "springy is the only bad thing; by using him as a model, we forgot that he was supposed to get better
+// alongside them"): his four, and two more, so each phase adds one as the others' do -- TRAPPED IN A JAR! from phase 2 (ground: it comes down on the
+// floor you stand on) and GLITCHING! in phase 3 (any) -- four, five and six moves ("from Boss 9 on, 6"). `busy`: also a GLITCHING! turn still running.
 BOSS_PICK.springy = {
-  tags:{ springy:'ground', longarm:'close', boxdrop:'any', springbot:'far' },
-  busy:(s) => !!s._slam || springyToyBusy()
+  tags:{ springy:'ground', longarm:'close', boxdrop:'any', springbot:'far', springjar:'ground', springglitch:'any' },
+  moves:(s, ph) => ['springy', 'longarm', 'boxdrop', 'springbot'].concat(ph >= 2 ? ['springjar'] : [], ph >= 3 ? ['springglitch'] : []),
+  busy:(s) => !!s._slam || !!s._glitch || springyToyBusy()
 };
 function springyNearest(x){ let best = null, bd = 1e9; for(const f of fighters){ if(f.dead) continue; const d = Math.abs(f.x - x); if(d < bd){ bd = d; best = f; } } return best; }
 function springyBoxIndex(x){ let bi = 0; SPRINGY.boxes.forEach((fx, i) => { if(Math.abs(WW*fx - x) < Math.abs(WW*SPRINGY.boxes[bi] - x)) bi = i; }); return bi; }
@@ -68651,6 +68674,7 @@ function springyDropSpots(x0, ph){ return ph >= 2 ? [x0, clamp(x0 + (x0 < WW*0.5
 // cobsBeginTelegraph), and the blink of phase 2.
 function springyBeginTelegraph(s, tgt){
   s._telPh = s._phase || 1;
+  s._tel = bossTelLen(s);   // this runs once the turn's move is known: its own length (SPRINGY.tel)
   const gy = groundY();
   if(s._telPh >= 2 && tgt && !tgt.dead && hazardT - (s._blinkAt == null ? -1e9 : s._blinkAt) >= SPRINGY.blinkEvery){
     for(let i=0;i<14;i++) puff(s.x, s.y, '#7ff0ff', 5);
@@ -68668,6 +68692,8 @@ function springyBeginTelegraph(s, tgt){
     s._armRows = [row > gy - 50 ? gy - 24 - 96 : row, gy - 24];   // "a double punch, one high, one low": from phase 1 now (Round 17: "JUST WANTED A HAND second fist from phase 1"; it was phase 2 and on)
   } else s._armRows = null;
   s._boxX = s._telKind === "boxdrop" ? clamp(tx, 80, WW - 80) : (s._telKind === "springbot" ? springyBotSpot(tx) : null);   // the box's spot; MY PURPOSE!'s is the box farthest from you
+  if(s._telKind === "springjar") s._boxX = clamp(tx, 80, WW - 80);   // TRAPPED IN A JAR!: the first jar's spot, which follows you until SPRINGY.jar.lock (updateSpringy)
+  if(s._telKind === "springglitch") springyGlitchPlan(s, tx);          // GLITCHING!: where he will come out, and when
 }
 // THE SLAM. The first comes down where you are as he leaves the floor; the second and third (phases 2 and 3) follow you
 // while he hangs, until SPRINGY.lock frames before the drop. The mark is a shot that never moves, hits nor ages (a delayed
@@ -68711,6 +68737,7 @@ function springySlamLand(s, S){
     }
   }
   springyHole(s.x, S.ph, id);
+  springyHz(s).sq = hazardT;   // the coil squashes and wobbles (drawn: springyDrawTell)
   if(S.ph >= 3){ for(const d of [-1, 1]) addProj(bossShot(s, { x:s.x + d*s.r*0.6, y:gy - 12, vx:d*8, vy:0, r:14, bossAtk:id, life:120, color:'#afafaf', shape:'springwave', springy:true })); }
   S.n++; S.left--;
   if(S.left > 0){ S.phase = 'up'; s.vy = SPRINGY.launch; }
@@ -68854,6 +68881,194 @@ function springyBotStep(p, s){
     }
   } else if(sb.t >= B.down) springyBotKill(p);
 }
+// ---- 2026-11-20: SPRINGY GETS BETTER ALONGSIDE THEM ----------------------------------------------------------------------------
+// The owner, after Live Boss Rush: "springy is the only bad thing; by using him as a model, we forgot that he was supposed to get better alongside
+// them." He was the template the others were built from and kept his first kit: four moves in every phase, one wind-up for all of them, no entrance,
+// phase 2 with no beat of its own, and phase 3's hole opening under you with no warning. His concept and his four moves are as they were; added:
+//   TRAPPED IN A JAR! (from phase 2)  "Springy finishes digging up [a contestant] and traps him in a jar, laughing as he shakes him around" (A Jury of
+//          Your Fears/Transcript). He crouches as if to dig; a glass jar comes down from above the screen, upside down, on the spot you stand on -- its
+//          shadow follows you through the wind-up, then holds (SPRINGY.jar.lock). Whoever is under it when it lands is caught: held in the glass and
+//          shaken (hold frames), then it breaks and throws them out -- one boss hit. An empty jar breaks into a glass shard each way along the floor
+//          (hop it, or be further away). Phase 3: a second jar, whose shadow follows you for `follow` frames after the first falls, then drops; it
+//          never comes down on someone already in a jar. Each jar its own attack id, as each slam is.
+//   GLITCHING! (phase 3)   "Whenever Springy is too excited, scared or enraged, they glitch constantly. This is because he was generated by MeLife."
+//          (his page) -- the phase-2 blink, made a move: static gathers on four spots on the floor (a step to each side of you, then where you stood,
+//          then one that follows you until `lock` frames before it), and he glitches out of each in turn, `every` frames apart, with a burst round him.
+//          The brightest static is the next. One attack id: one boss hit at most.
+//   An entrance (he drops in from the top and lands), a squash and wobble on every landing and a stretch in the air (he is a spring), glitches in
+//   his picture from phase 2, a beat for phase 2 (the ELECTRIC FENCE door sparks on, the boxes rattle) and phase 3's hole behind a crack first.
+function springyHz(s){ return s._hz || (s._hz = {}); }
+// the nearest living fighter to x that no jar holds
+function springyHeld(f){ for(const p of projectiles) if(p.springJar && p.life > 0 && p.jr && p.jr.s === 1 && p.jr.c === f.idx) return true; return false; }
+function springyFree(x){ let best = null, bd = 1e9; for(const f of fighters){ if(f.dead || springyHeld(f)) continue; const d = Math.abs(f.x - x); if(d < bd){ bd = d; best = f; } } return best; }
+// TRAPPED IN A JAR! The jar is an inert carrier (a delayed shot: the projectile step neither moves nor ages it) that springyJarStep flies; a netcode
+// client gets it with the other shots (its `jr`: s -1 waits (its shadow follows you), 0 falls, 1 holds; t frames; c who is in it) and drawSpringyJar draws it.
+// It is a live shot of the turn until it breaks, so his next turn waits for it (one attack at a time).
+function springyJarMake(s, x, wait, id){
+  const J = SPRINGY.jar;
+  return addProj({ owner:-2, ownerObj:{team:-1, idx:-2}, x, y:J.top, vx:0, vy:0, grav:false, dmg:0, kb:0, r:1, color:J.color, life:1, delay:1e6, warn:0, warnX:x, warnY:groundY(),
+    springJar:true, springy:true, noAim:true, bossAtk:id, shape:'springjar', jr:{ s: wait > 0 ? -1 : 0, t: wait, c:-1 } });
+}
+function springyJarFire(s, tgt){
+  const J = SPRINGY.jar, ph = Math.min(3, s._telPh || s._phase || 1), n = Math.max(1, J.n[ph] || 1);
+  const x0 = s._boxX != null ? s._boxX : clamp(s._telX != null ? s._telX : (tgt ? tgt.x : s.x), 80, WW - 80);
+  for(let i = 0; i < n; i++) springyJarMake(s, x0, i === 0 ? 0 : J.follow, ++BOSS_ATK_ID);
+  s._boxX = null;
+}
+function springyJarStep(p, s){
+  const J = SPRINGY.jar, gy = groundY(), R = p.jr;
+  if(!R){ springyBotKill(p); return; }
+  if(R.s === -1){   // the second jar: its shadow follows the nearest fighter no jar holds, then it drops from there
+    const t = springyFree(p.x);
+    if(t) p.x = p.warnX = clamp(t.x, 80, WW - 80);
+    if(--R.t <= 0){ if(!t){ springyBotKill(p); return; } R.s = 0; R.t = 0; }
+  } else if(R.s === 0){
+    p.y += J.fall;
+    if(p.y >= gy - J.h*0.5){ p.y = gy - J.h*0.5; springyJarLand(p, s); }
+  } else if(R.s === 1){
+    const f = fighters.find(q => q.idx === R.c);
+    if(!f || f.dead || --R.t <= 0){ springyJarBreak(p, s, f && !f.dead ? f : null); return; }
+    // "laughing as he shakes him around": the jar rocks and hops on the spot, and whoever is in it goes with it
+    p.x = p.warnX + Math.sin(R.t*0.55)*6; p.y = gy - J.h*0.5 - Math.abs(Math.sin(R.t*0.28))*16;
+    f.x = p.x; f.y = p.y + J.h*0.5 - f.r - 3; f.vx = 0; f.vy = 0; f.frozen = Math.max(f.frozen || 0, 2);
+  } else if(R.s === 2){ if(--R.t <= 0) springyJarShards(p, s); }   // the empty jar's crack, then its shards
+}
+function springyJarLand(p, s){
+  const J = SPRINGY.jar, gy = groundY();
+  shake(6); for(let i=0;i<10;i++) puff(p.x + (cosRand()*2-1)*J.w*0.5, gy - 4, '#d8d8d8', 4);
+  if(springyHoleAt(p.x)){ springyJarBreak(p, s, null); return; }   // over an open hole the floor is not there to trap anyone against: it goes down the pit and breaks
+  let best = null, bd = 1e9;
+  for(const f of fighters){
+    if(f.dead || f.invuln > 0 || f._heldBy != null || f._fsLock || springyHeld(f)) continue;
+    const dx = Math.abs(f.x - p.x);
+    if(dx < J.w*0.5 + f.r*0.4 && feetY(f) > gy - J.h*0.85 && dx < bd){ bd = dx; best = f; }
+  }
+  if(!best){ springyJarBreak(p, s, null); return; }
+  p.jr.s = 1; p.jr.t = J.hold; p.jr.c = best.idx; p.warnX = p.x;
+  best.vx = 0; best.vy = 0; best.frozen = Math.max(best.frozen || 0, 2);
+  for(let i=0;i<8;i++) puff(p.x, gy - J.h*0.6, '#ffffff', 3);
+}
+function springyJarBreak(p, s, f){
+  const J = SPRINGY.jar, gy = groundY();
+  for(let i=0;i<14;i++) puff(p.x + (cosRand()*2-1)*J.w*0.5, p.y + (cosRand()*2-1)*J.h*0.4, i % 2 ? J.color : '#ffffff', 4);
+  shake(f ? 7 : 4);
+  if(f){ f.frozen = 0; applyHit(f, bossDmg()*J.dmg, (p.x < WW*0.5 ? 1 : -1)*J.kb, J.ky, null, { bossAtk:p.bossAtk }); }   // thrown out toward the middle of the arena, not off its edge
+  else if(!springyHoleAt(p.x) && p.jr && p.jr.s !== 2){ p.jr.s = 2; p.jr.t = J.crackT; return; }   // an empty jar on the floor cracks first (drawn), then bursts: springyJarStep
+  springyBotKill(p);
+}
+function springyJarShards(p, s){
+  const J = SPRINGY.jar, gy = groundY();
+  for(let i=0;i<10;i++) puff(p.x + (cosRand()*2-1)*J.w*0.5, p.y + (cosRand()*2-1)*J.h*0.4, i % 2 ? J.color : '#ffffff', 4);
+  for(const d of [-1, 1]) addProj(bossShot(s, { x:p.x + d*J.w*0.3, y:gy - 10, vx:d*J.shardV, vy:0, r:J.shardR, kb:7, dmg:bossDmg()*J.shardDmg, color:J.color,
+    life:Math.ceil(J.shardFr/PROJ_LIFE), shape:'springglass', bossAtk:p.bossAtk, springy:true }));
+  springyBotKill(p);
+}
+// GLITCHING! The plan is plain numbers in his _hz (it crosses the snapshot), [x, frame] a spot: a step to each side of you, then where you stood, then one
+// that follows you (springyGlitchFollow) until SPRINGY.glitch.lock frames before it.
+function springyGlitchPlan(s, tx){
+  const G = SPRINGY.glitch, H = springyHz(s), lo = s.r*0.7 + 20, hi = WW - s.r*0.7 - 20;
+  const a = clamp(tx, lo, hi), side = a < WW*0.5 ? 1 : -1;
+  const b = clamp(a + side*G.spread, lo, hi), c = clamp(a - side*G.spread, lo, hi);
+  const t0 = hazardT + bossTelFrames(s);
+  H.gl = [b, c, a, a].slice(0, G.n).map((x, i) => [Math.round(x), t0 + i*G.every]);
+}
+function springyGlitchFollow(s){
+  const H = s._hz, G = SPRINGY.glitch;
+  if(!H || !Array.isArray(H.gl) || !H.gl.length) return;
+  const L = H.gl[H.gl.length - 1];
+  if(hazardT < L[1] - G.lock){ const t = springyFree(L[0]); if(t) L[0] = Math.round(clamp(t.x, s.r*0.7 + 20, WW - s.r*0.7 - 20)); }
+}
+function springyGlitchFire(s, tgt){
+  const H = springyHz(s);
+  if(!Array.isArray(H.gl) || !H.gl.length) springyGlitchPlan(s, tgt ? tgt.x : s.x);
+  s._glitch = { id:++BOSS_ATK_ID, i:0 };
+  springyGlitchStep(s);
+}
+function springyGlitchStep(s){
+  const G = SPRINGY.glitch, H = springyHz(s), Q = s._glitch, gl = H.gl || [], gy = groundY();
+  while(Q.i < gl.length && hazardT >= gl[Q.i][1]){
+    const x = gl[Q.i][0], y = gy - s.r;
+    for(let k=0;k<10;k++) puff(s.x, s.y, '#7ff0ff', 4);
+    s.x = x; s.homeX = x; s.y = y; s.vx = 0; s.vy = 0;
+    for(let k=0;k<16;k++) puff(x + (cosRand()*2-1)*G.r*0.8, y + (cosRand()*2-1)*G.r*0.6, k % 2 ? '#7ff0ff' : '#ff5fd0', 5);
+    shake(5); H.sq = hazardT; H.lb = [x, hazardT];
+    for(const f of fighters){ if(f.dead || f.invuln > 0 || springyHeld(f)) continue;
+      if(Math.hypot(f.x - x, f.y - y) < G.r + f.r*0.5) applyHit(f, bossDmg()*G.dmg, (Math.sign(f.x - x) || 1)*G.kb, G.ky, null, { bossAtk:Q.id }); }
+    Q.i++;
+  }
+  if(Q.i >= gl.length){ s._glitch = null; H.gl = null; s._atkTimer = bossAtkGap(s); }
+}
+// The phase beats. 2: the ELECTRIC FENCE door sparks on (it is live from now on: updateSpringy) and the boxes rattle. 3: the shake, the boxes rattle again,
+// and the floor CRACKS under the nearest fighter for SPRINGY.crack frames before his hole opens there (springyCrack).
+function springyPhaseBeat(s, ph){
+  const H = springyHz(s), gy = groundY();
+  if(ph >= 2 && H.p2 == null){ H.p2 = hazardT; for(let i=0;i<18;i++) puff(SPRINGY.fence*0.6, gy - 10 - cosRand()*140, i % 2 ? '#ffd23f' : '#ffffa0', 5); shake(6); }
+  if(ph >= 3 && H.p3 == null){
+    H.p3 = hazardT; s._quakeT = SPRINGY.quake;
+    const t = springyNearest(s.x);
+    if(t) springyCrack(clamp(t.x, 60, WW - 60), ++BOSS_ATK_ID);
+  }
+}
+function springyCrack(x, id){
+  const gy = groundY();
+  return addProj({ owner:-2, ownerObj:{team:-1, idx:-2}, x, y:gy + 200, vx:0, vy:0, grav:false, dmg:0, kb:0, r:1, color:'#ff7a20', life:1, delay:SPRINGY.crack, warn:0,
+    warnX:x, warnY:gy, springCrack:true, springy:true, bossAtk:id, noAim:true, lingers:true });
+}
+// His picture's spring (drawn only, before the art: drawBossSprite): the entrance's drop and rebound, a stretch in the air of a slam, the squash and
+// wobble of a landing, a glitch in the picture now and then from phase 2, the jar's shake. And in the world: the first jar's shadow and the grit off the
+// top of the screen through its wind-up, and the static where GLITCHING! will come out (brighter for the next one), and its last burst.
+function springyStatic(x, y, rad, k, n){
+  ctx.save(); const m = Math.round(6 + 12*k), fr = hazardT >> 1;
+  for(let i = 0; i < m; i++){
+    const h1 = Math.sin((i + 1)*12.9898 + fr*78.233 + n*37.7)*43758.5453, u = h1 - Math.floor(h1);
+    const h2 = Math.sin((i + 1)*4.1 + fr*1.7 + n*9.1)*9631.7, v = h2 - Math.floor(h2);
+    const a = u*6.283, rr = rad*Math.sqrt(v);
+    ctx.globalAlpha = 0.15 + 0.6*k; ctx.fillStyle = i % 3 === 0 ? '#ff5fd0' : (i % 3 === 1 ? '#7ff0ff' : '#f4f4f8');
+    ctx.fillRect(x + Math.cos(a)*rr - 6, y + Math.sin(a)*rr*0.8 - 2, 8 + 10*u, 3 + 3*v);
+  }
+  ctx.restore();
+}
+function springyDrawTell(s){
+  const H = s._hz || {}, R = s.r || 60, gy = groundY(), E = SPRINGY;
+  ctx.save(); ctx.translate(-s.x, -s.y);
+  if(s._tel > 0 && s._telKind === "springjar" && typeof s._boxX === 'number'){
+    const k = Math.max(0, 1 - s._tel/(bossTelLen(s) || 44));
+    bossFallShadow(s._boxX, gy, E.jar.w*0.6, 0.1 + 0.4*k); bossGrit(s._boxX - 34, s._boxX + 34, 0, gy*0.4, k, '#9fc8d8');
+  }
+  if(Array.isArray(H.gl)) for(let i = 0; i < H.gl.length; i++){
+    const x = H.gl[i][0], left = H.gl[i][1] - hazardT; if(left < 0) continue;
+    const k = clamp(1 - left/110, 0, 1); springyStatic(x, gy - R, R*(0.55 + 0.45*k), k, i);
+  }
+  if(Array.isArray(H.lb) && hazardT - H.lb[1] < 12){ const u = (hazardT - H.lb[1])/12; ctx.globalAlpha = 0.5*(1 - u); ctx.fillStyle = '#bff8ff'; ctx.beginPath(); ctx.arc(H.lb[0], gy - R, E.glitch.r*(0.7 + 0.3*u), 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+  ctx.restore();
+  if(H.en != null && H.en < E.ent){
+    if(H.en < E.entFall){ const u = H.en/E.entFall; ctx.translate(0, -(1 - u*u)*(gy + R*2)); ctx.scale(0.86, 1.18); }
+    else { const u = (H.en - E.entFall)/(E.ent - E.entFall); ctx.translate(0, -Math.sin(Math.PI*u)*58); }
+  }
+  const sl = s._slam ? s._slam.phase : s._slamPh;
+  if(sl === 'up' || sl === 'down') ctx.scale(0.84, 1.2);
+  const q = H.sq != null ? hazardT - H.sq : 99;
+  if(q >= 0 && q < E.sq){ const k = 1 - q/E.sq, w = Math.cos(q*0.9)*k; ctx.translate(0, R*0.16*w); ctx.scale(1 + 0.22*w, 1 - 0.22*w); }
+  const ph = s._phase || 1;
+  if(ph >= 2 && (hazardT % (ph >= 3 ? 31 : 53)) < 3) ctx.translate(((hazardT*7) % 3 - 1)*R*0.09, 0);
+  for(const p of projectiles) if(p.springJar && p.jr && p.jr.s === 1){ ctx.translate(Math.sin(hazardT*0.9)*R*0.04, 0); ctx.rotate(Math.sin(hazardT*0.45)*0.06); break; }   // he laughs while it shakes
+}
+// The jar (springyJarMake), drawn from its state: its shadow while it waits or falls, then the glass, upside down, its rim at the floor.
+function drawSpringyJar(pr){
+  const J = SPRINGY.jar, gy = pr.warnY != null ? pr.warnY : groundY(), R = pr.jr || { s:0, t:0 }, w = J.w, h = J.h;
+  if(R.s === -1 || R.s === 0){ const k = R.s === -1 ? 0.15 : clamp(1 - (gy - h*0.5 - pr.y)/(gy + 120), 0, 1); bossFallShadow(pr.x, gy, w*0.6, 0.15 + 0.85*k); if(R.s === -1) return; }
+  ctx.save(); ctx.translate(pr.x, pr.y);
+  if(R.s === 1) ctx.rotate(Math.sin((R.t || 0)*0.55)*0.12);
+  const x0 = -w/2, y0 = -h/2, rr = 14;
+  const path = () => { ctx.beginPath(); ctx.moveTo(x0, h/2); ctx.lineTo(x0, y0 + rr); ctx.quadraticCurveTo(x0, y0, x0 + rr, y0); ctx.lineTo(-x0 - rr, y0); ctx.quadraticCurveTo(-x0, y0, -x0, y0 + rr); ctx.lineTo(-x0, h/2); };
+  ctx.globalAlpha = 0.3; ctx.fillStyle = J.color; path(); ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = 0.95; ctx.strokeStyle = '#eafcff'; ctx.lineWidth = 3; path(); ctx.stroke();
+  ctx.globalAlpha = 0.7; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(x0 + 12, y0 + 18); ctx.lineTo(x0 + 12, h/2 - 18); ctx.stroke();   // the shine
+  ctx.globalAlpha = 1; ctx.fillStyle = J.lid; ctx.fillRect(x0 - 4, h/2 - 9, w + 8, 9); ctx.strokeStyle = '#6a4a10'; ctx.lineWidth = 2; ctx.strokeRect(x0 - 4, h/2 - 9, w + 8, 9);   // the threaded rim
+  if(R.s === 2){ const k = 1 - clamp((R.t || 0)/J.crackT, 0, 1); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.beginPath();   // cracking: the lines run out across the glass
+    ctx.moveTo(0, y0 + 10); ctx.lineTo(-w*0.2*k, y0 + h*0.35*k); ctx.lineTo(w*0.12*k, y0 + h*0.6*k); ctx.moveTo(0, y0 + 10); ctx.lineTo(w*0.3*k, y0 + h*0.3*k); ctx.lineTo(w*0.2*k, y0 + h*0.75*k); ctx.stroke(); }
+  ctx.restore();
+}
 // His arena's one prop that is a platform: the exit room's white spring ("The exit room contains a white spring and an
 // exit in the ceiling for contestants to exit out of", Floating Cereal Boxes), a bounce pad on the right edge -- the
 // engine's `bouncy` (Spongy's), so a fighter who lands on it leaves again at -14: a way up out of a slam's reach.
@@ -68874,6 +69089,13 @@ function updateSpringy(s, tgt){
   s._hpSeen = s.hp;
   // phase 3's shake (onBossPhaseChange)
   if(s._quakeT > 0){ s._quakeT--; shake(1.5); }
+  // his entrance (SPRINGY.ent): he drops in from the top of the screen and lands -- a picture (springyDrawTell), and the landing's impact here
+  const H = springyHz(s);
+  if(H.en == null) H.en = 0;
+  if(H.en < SPRINGY.ent){ H.en++; if(H.en === SPRINGY.entFall){ impact(s.x, gy, { shake:9, dust:2, debris:0, r:110 }); H.sq = hazardT; } else if(H.en === SPRINGY.ent){ H.sq = hazardT; for(let i=0;i<8;i++) puff(s.x + (cosRand()*2-1)*s.r*0.6, gy - 4, '#d8d8d8', 4); } }
+  // TRAPPED IN A JAR!: the first jar's shadow follows you until its spot locks
+  if(s._tel > 0 && s._telKind === "springjar" && s._tel > SPRINGY.jar.lock){ const t = springyFree(s._boxX != null ? s._boxX : s.x); if(t) s._boxX = clamp(t.x, 80, WW - 80); }
+  springyGlitchFollow(s);
   // ONE ATTACK AT A TIME (Round 17): the toy's listening let his gap run; once it readies and plays back he waits for it. If the gap's count was on when it
   // readied, the engine's watch goes back on here, and holds his next turn (BOSS_PICK.springy's busy: springyToyBusy) until the toy and what it fired are gone.
   // Then the paced gap runs from that moment, as after any attack.
@@ -68908,8 +69130,11 @@ function updateSpringy(s, tgt){
     }
     if(p.springToy && !p._lunged && (p.bounces||0) >= 1){ p._lunged = true; const t = springyNearest(p.x); p.vx = (t ? (Math.sign(t.x - p.x) || 1) : 1)*13; }
     if(p.springBot) springyBotStep(p, s);   // the Spring-Bot's clock (MY PURPOSE!)
+    if(p.springJar) springyJarStep(p, s);   // TRAPPED IN A JAR!
+    if(p.springCrack && !p._open && p.delay <= 2){ p._open = true; springyHole(p.x, 3, p.bossAtk); }   // phase 3's entry: the crack gives way
   }
   if(s._slam){ springySlamStep(s, tgt); return true; }
+  if(s._glitch){ springyGlitchStep(s); return true; }   // GLITCHING!: he flies it himself, as the slam
   return false;
 }
 // THE ENDING ("Lava, then MeLife revival" -- the owner's pick, 2026-09-29). The finale: Spring-Bot shoves MePhone4 to the
@@ -130801,6 +131026,8 @@ function drawProjectileBody(pr){
     // THE SPRING-BOT (springyBotDrop) is drawn from its state; a shot it plays back wears a ring in the toy's glow green over the special's own
     // art (drawn below), so it reads as the toy's and not as a fighter's own shot.
     if(pr.springBot){ drawSpringBot(pr); return; }
+    if(pr.springJar){ drawSpringyJar(pr); return; }   // TRAPPED IN A JAR! (drawSpringyJar)
+    if(pr.springCrack){ bossCrack(pr.warnX != null ? pr.warnX : pr.x, pr.warnY != null ? pr.warnY : groundY(), SPRINGY.holeW, 1 - clamp((pr.delay || 0)/SPRINGY.crack, 0, 1), '#ff7a20'); return; }   // phase 3's crack, before the hole
     if(pr.springEcho){ ctx.save(); ctx.globalAlpha = 0.7; ctx.strokeStyle = SPRINGY.bot.glow; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(pr.x, pr.y, pr.r*1.55 + Math.sin(hazardT*0.5)*1.5, 0, 7); ctx.stroke(); ctx.restore(); }
     if(pr.bhOrb){ bhDrawOrb(pr); return; }   // Black Hole's clod or the item in his orbit (EVENT FIGHTERS: BLACK HOLE)
     if(pr.berry){ pieDrawBerry(pr); return; }   // Pie's berry (EVENT FIGHTERS: PIE)
@@ -132604,7 +132831,9 @@ function drawArenaDecor(key){
       ctx.beginPath(); for(let k=0;k<4;k++){ ctx.moveTo(sx-18, sy+k*14); ctx.bezierCurveTo(sx-18, sy+k*14-10, sx+18, sy+k*14-4, sx+18, sy+k*14+14); } ctx.stroke(); }
     ctx.lineCap="butt";
     const bw=Math.min(120, W*0.11), bh=bw*1.4, by=H*SPRINGY.boxY;
-    SPRINGY.boxes.forEach((fx,i)=>{ const bx=W*fx + Math.sin(hazardT*0.02+i*2)*6, top=by - bh*0.5 + Math.cos(hazardT*0.017+i)*4;
+    const spH = (summons.find(m=>m.type==="boss" && m.attack==="springy") || {})._hz || {};   // his phase beats: the boxes rattle as phases 2 and 3 begin, and glitch now and then in phase 3
+    const rattle = (spH.p2 != null && hazardT - spH.p2 >= 0 && hazardT - spH.p2 < 60) || (spH.p3 != null && hazardT - spH.p3 >= 0 && hazardT - spH.p3 < 120);
+    SPRINGY.boxes.forEach((fx,i)=>{ const bx=W*fx + Math.sin(hazardT*0.02+i*2)*6 + (rattle ? Math.sin(hazardT*1.3 + i*2)*5 : 0) + (spH.p3 != null && (hazardT + i*17) % 41 < 3 ? 9 : 0), top=by - bh*0.5 + Math.cos(hazardT*0.017+i)*4;
       ctx.globalAlpha=0.85; ctx.fillStyle=SPRINGY_BOX_COLORS[i]; ctx.fillRect(bx-bw/2, top, bw, bh); ctx.globalAlpha=1;
       ctx.strokeStyle="rgba(0,0,0,0.5)"; ctx.lineWidth=3; ctx.strokeRect(bx-bw/2, top, bw, bh);
       ctx.fillStyle="rgba(255,255,255,0.9)"; ctx.beginPath(); ctx.ellipse(bx, top+bh*0.62, bw*0.32, bw*0.14, 0, 0, 7); ctx.fill();   // the bowl
@@ -133571,7 +133800,7 @@ const BOSS_TELLS = {
     fourbye:{ pose:'puff', glow:'#cfe6ff', beats:3 }, fourtower:{ pose:null, glow:'#96d7ff', beats:2 }, fourhearts:{ pose:'puff', glow:'#ff7fb6', beats:2 },
     fourido:{ pose:null, glow:'#c8d6ee', beats:3 }, fourcactus:{ pose:null, glow:'#3d86d8', beats:2 } },
   springy:{ springy:{ pose:'crouch', glow:'#e8e8f0', beats:3 }, longarm:{ pose:'coil', glow:'#ff4a01', beats:2 }, boxdrop:{ pose:'rise', glow:'#f2c230', beats:2 },
-    springbot:{ pose:'rise', glow:'#9ad84a', beats:3 } },
+    springbot:{ pose:'rise', glow:'#9ad84a', beats:3 }, springjar:{ pose:'crouch', glow:'#bfe8ff', beats:2 }, springglitch:{ pose:'shake', glow:'#7ff0ff', beats:3 } },
   two:{ two:{ pose:'tilt', glow:'#74D275', beats:3 }, twosun:{ pose:'rise', glow:'#ff7a50', beats:2 }, twopower:{ pose:'puff', glow:'#74D275', beats:2 },
     twoblocks:{ pose:'rear', glow:'#fdc42b', beats:2 }, tworails:{ pose:'rear', glow:'#a0ff8c', beats:2 }, twoclap:{ pose:'coil', glow:'#74D275', beats:2 } },
   dragon:{ dragon:{ pose:null, glow:'#b858dc', beats:2 }, dragonroar:{ pose:'puff', glow:'#ff3a2a', beats:3 }, dragonchar:{ pose:'puff', glow:'#ffb050', beats:2 },
@@ -133705,6 +133934,7 @@ function drawBossSprite(s){
     // and where the payload will land: its shadow, darker as the drop nears (the toy's own shadow takes over once it is falling)
     if(!bot){ ctx.save(); ctx.translate(-s.x, -s.y); for(const sx of xs) bossFallShadow(sx, groundY(), 40, 0.15 + 0.6*k); ctx.restore(); }
   }
+  if(s.sprite==="springy") springyDrawTell(s);   // his spring and his glitches (they carry on to the art below), the jar's shadow, GLITCHING!'s static
   // TELL SLOTS (see BOSS SLOTS): a boss's wind-up tells, in its own frame (translated to it: subtract s.x, s.y from a world
   // spot), drawn before its art so they show with the render too. The tell is the hitbox.
   // @boss:announcer:begin tell
@@ -143484,6 +143714,7 @@ const PROJ_SHAPE = {
     c.fillStyle='#5a5a5a'; for(let i=0;i<3;i++){ c.beginPath(); c.arc((i-1)*r*0.16,-r*0.32,r*0.04,0,7); c.fill(); }
     c.strokeStyle='#1c1c1c'; c.lineWidth=Math.max(1.5,r*0.08); c.beginPath(); c.moveTo(r*0.15,-r*1.35); c.lineTo(r*0.28,-r*1.8); c.stroke();   // a red antennae
     c.fillStyle='#d83a3a'; c.beginPath(); c.arc(r*0.28,-r*1.84,r*0.14,0,7); c.fill(); } },
+  springglass:{ draw(c,r){ c.fillStyle='#e8fbff'; c.strokeStyle='#7ab8d0'; c.lineWidth=1.5; c.beginPath(); c.moveTo(-r,r*0.5); c.lineTo(-r*0.2,-r); c.lineTo(r,r*0.2); c.lineTo(r*0.1,r*0.8); c.closePath(); c.fill(); c.stroke(); } },   // a shard of Springy's jar (TRAPPED IN A JAR!)
   springwave:{ draw(c,r){ c.strokeStyle='#afafaf'; c.lineWidth=r*0.3; c.lineCap='round'; c.beginPath(); c.moveTo(-r,r*0.4); c.lineTo(-r*0.5,-r*0.4); c.lineTo(0,r*0.4); c.lineTo(r*0.5,-r*0.4); c.lineTo(r,r*0.4); c.stroke(); c.lineCap='butt'; } },   // the terrarium's shockwave, a coil along the floor
   // --- Steve Cobs's secret fight (COBS_MOVES): the Meeple van with its C0B5 plate, a product sample box, a Meeple Watch that bends as it
   //     tumbles ("The watches bend too."), a Screen Protector pane on its way down, and popcorn
@@ -148735,6 +148966,8 @@ function netProjectiles(){
     if(p.springMark){ x = x || {}; x.springMark = 1; x.warnX = Math.round(p.warnX||0); x.warnY = Math.round(p.warnY||0); }   // ...and his landing mark
     if(p.springBot && p.sb){ x = x || {}; x.springBot = 1; x.sb = { s:p.sb.s, t:p.sb.t, h:p.sb.h, i:p.sb.i, v:p.sb.v, f:p.sb.f, r:p.sb.r.map(q=>({ k:q.k, c:q.c })) }; }   // ...his Spring-Bot (MY PURPOSE!): its state, and the specials it has recorded
     if(p.springEcho){ x = x || {}; x.springEcho = 1; }   // ...and a shot it plays back (its `shape` is the special it copies)
+    if(p.springJar && p.jr){ x = x || {}; x.springJar = 1; x.jr = { s:p.jr.s, t:p.jr.t, c:p.jr.c }; x.warnY = Math.round(p.warnY||0); }   // ...his jar (TRAPPED IN A JAR!)
+    if(p.springCrack){ x = x || {}; x.springCrack = 1; x.delay = p.delay; x.warnX = Math.round(p.warnX||0); x.warnY = Math.round(p.warnY||0); }   // ...and phase 3's crack
     if(p.armX0 != null){ x = x || {}; x.armX0 = Math.round(p.armX0); x.armY0 = Math.round(p.armY0 != null ? p.armY0 : p.y); }   // the mitten's arm reaches back to where he threw it
     // NETSHOT SLOTS (see BOSS SLOTS): `if(p.flag){ x = x || {}; x.flag = 1; }` -- a few small fields; a client spreads them back.
     // @boss:announcer:begin netshot
