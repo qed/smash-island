@@ -1135,6 +1135,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-20**: "open the app" -> "no, like the hk-style app" -> "so, you know how e had a version which was a desktop app?"
 - **2026-11-20**: "also, why is the map teh same?" (8-Ball, playing the working build)
 - **2026-11-20**: "and snare and the boom box are the same."
+- **2026-11-20**: "and the assists fall off the stage"
+- **2026-11-20** (question box, 8-Ball map "the same"): "not interconnected." + Same layout every match + Still too small
 - **2026-11-20**: "web analytics is set up"
 - **2026-11-20**: "push an empty commit" (lead: pushed 62b6a9ed; /_vercel/insights now 200, pick counting live)
 - **2026-11-20**: (screenshot of the "Cron relay (say nothing to the owner)..." line) "why would you say that?" (lead: renamed the timer prompt; it only meant no chat message every 5 min)
