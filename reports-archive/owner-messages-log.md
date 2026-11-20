@@ -1122,6 +1122,42 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19 ~18:45**: "ehhh, if you can, maybe deviate from the "all chairs everyday" theme. use the lasso from s1 for her usmash, it will be like a command grab."
 - **2026-11-19 ~18:50**: "no, it throws them downwards. it grabs them(the grab hitbox that only grabs from above and slightly to the side, and then the lasso will slam towards the ground."
 - **2026-11-19 ~18:55**: "is spongy finished?"
+- **2026-11-19 ~19:05**: "do the trade-off if you think that you could fix the issue that would result from it more easily than fixing the current issues." (host waiting for each guest key's own frame) -> lead: not done, see answer
+- **2026-11-19 ~19:15**: "we need to make multiplayer perfectly smooth, because im eventually envisioning playing without rooms, but with public lobbies, and who knows? those ppl might be from halfway accross the planet"
+- **2026-11-19 ~19:25**: (screenshot of a broken wiki hitbox picture) "this is what the wiki frame data looks like"
+- **2026-11-19 ~19:28**: "so how is smash so smooth online?"
+- **2026-11-19 ~19:30**: "ohhhh"
+- **2026-11-19 ~19:35**: "rollback study so far?"
+- **2026-11-19 ~19:40**: "make the computer less busy. 4 jobs" (lead: stopped cpu11, rejoin, evonline; kept dig3, eball6, smash8, rollback study)
+- **2026-11-20**: "who has used which fighters?" (lead: Vercel Web Analytics is NOT enabled for the smash project; /_vercel/insights 404; no pick data exists)
+- **2026-11-20**: "whats running?"
+- **2026-11-20**: "its a yes for all." (= start/finish all paused work: Dig Games caves fix, 8-Ball last assists, CPU armour + CTF, batch 8 smashes yes, Bow lasso catches through shields, 8-Ball online + rejoin, rollback step 0)
+- **2026-11-20**: "open the app" -> "no, like the hk-style app" -> "so, you know how e had a version which was a desktop app?"
+- **2026-11-20**: "also, why is the map teh same?" (8-Ball, playing the working build)
+- **2026-11-20**: "and snare and the boom box are the same."
+- **2026-11-20**: "and the assists fall off the stage"
+- **2026-11-20** (question box, 8-Ball map "the same"): "not interconnected." + Same layout every match + Still too small
+- **2026-11-20**: "and the assist buffs are just the lasers. theyre way too similar. and also, the assists from jawbreakers arent stronger than the others. plus, in this the assists should have 2 or 3 moves."
+- **2026-11-20**: "salt lamp, clapboard, and selfie stick.... do i really have to say it." (same flash act; owner annoyed at pointing out each one)
+- **2026-11-20**: "go to spongy"
+- **2026-11-20**: "go to the updated spongy"
+- **2026-11-20** (after playing the working build's Dig Games): "spongys event is 10/10"
+- **2026-11-20**: "give me the one you think has the lowers score" (lead opened Live Boss Rush in the pane)
+- **2026-11-20** (playing Boss Rush): "fsb phase one didnt need to be nerfed. for the tlc" (lead: TLC end rest now phases 2-3 only)
+- **2026-11-20** (playing Boss Rush): "dodgeball doesnt do much" (The Bug Swarm's DODGEBALL!)
+- **2026-11-20** (Boss Rush): "springy is the only bad thing; by using him as a model, we forgot that he was supposed to get better alongside them."
+- **2026-11-20** (Boss Rush): "it breaks upon hitting a platform for the dodgeball, and when hitting projectiles"
+- **2026-11-20**: "and go to the weakest EVENT" (lead picked Sticker: Normal still not winnable by a simple walker, heaviest feature count)
+- **2026-11-20**: "ehhh, the rules are very similar, and integrated" (Sticker's many systems are fine)
+- **2026-11-20** (playing Sticker): "issue: at the new subway station deco, it is overcrowded. make it  have more space between them."
+- **2026-11-20** (playing Sticker): "yeah, its very fair" (Sticker's contest is fair to play: the "Normal not winnable" bot finding is not what the owner sees)
+- **2026-11-20**: "next-worst?" (lead picked Cloudy: least played/discussed contest)
+- **2026-11-20**: "1 thing i found while playing casually is that the reason we made it so that grabs dont break shield was because of the frame-perfect bots we had before. so make the triangle of grabs beats shields beats attack beats grab!"
+- **2026-11-20**: "also, are up specials still by archetype, save for bow and a couple others?" (lead: no - all 102 public fighters have their own up special; shared ones are the remaining up/down smashes and the plain jab "Attack" for 94)
+- **2026-11-20**: "but they all feel the same. in smash, some recoveries you have to time, some have spikes that can be used offensively, etc." (up specials: unique names, same feel)
+- **2026-11-20**: "web analytics is set up"
+- **2026-11-20**: "push an empty commit" (lead: pushed 62b6a9ed; /_vercel/insights now 200, pick counting live)
+- **2026-11-20**: (screenshot of the "Cron relay (say nothing to the owner)..." line) "why would you say that?" (lead: renamed the timer prompt; it only meant no chat message every 5 min)
 - **2026-11-19**: go to foldy
 - **2026-11-19**: dude, the skins are just recolors for the event fighters
 - **2026-11-19** *(question box: what should a real skin be?)*: Show looks from the wiki (Recommended)
