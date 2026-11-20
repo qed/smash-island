@@ -15992,6 +15992,16 @@ function ctfDoorOfEdge(L, id, e){
   for(const d of L.doors){ if(d.id !== id) continue; if(mx == null) return d; const q = Math.abs(d.x + d.w/2 - mx) + (my != null ? Math.abs(d.y + d.h - my)*0.5 : 0); if(q < bd){ bd = q; best = d; } }
   return best;
 }
+function ctfAiDoorSide(f, ai, d, now){
+  const nav = CTF.nav, L = CTF.live; if(!nav || !L) return null;
+  const cn = ctfNavNodeOf(nav, f) || (ai.lastNode != null ? nav.nodes[ai.lastNode] : null), y = d.y + d.h, left = f.x < d.x;
+  for(const x of [left ? d.x - 28 : d.x + d.w + 28, left ? d.x + d.w + 28 : d.x - 28]){
+    const gn = ctfNavNodeAt(nav, x, y, 14); if(!cn || !gn) continue; if(cn.id === gn.id) return x;
+    const opt = { prof:f._cf >= 0 ? 'c' : 'f', team:f.team, bo:nav.boostOnly && nav.boostOnly[f.team], x0:f.x, doorOK:ctfAiDoorOK(L, f), skip:ctfAiSkip(f), ban:ai.ban, gban:null, noCross:L.phase === 'hide', mid:L.map.WW/2, now, closed:false, has:f._ctfJT > 120 && f._cf < 0 ? { jump:true } : null, cs:'', wallOK:ctfAiWallOK(f, nav) };
+    if(ctfNavPath(nav, cn.id, gn.id, opt)) return x;
+  }
+  return null;
+}
 function ctfDoorShutNear(L, id, f){ let best = null, bd = 1e9; for(const d of L.doors){ if(d.id !== id || d.op[f.team]) continue; const q = Math.hypot(d.x + d.w/2 - f.x, (d.y + d.h/2 - f.y)*1.5); if(q < bd){ bd = q; best = d; } } return best || L.doors.find(q=>q.id === id); }
 function ctfAiSkip(f){   // places a CPU may not go: the zone round its own side's jail
   const L = CTF.live, zs = L.jails.filter(j=>j.owner === f.team).map(j=>j.zone);
@@ -16188,7 +16198,10 @@ function ctfAiPlan(f, ai, goalX, goalY, now){
   const sig = ctfStatSig(f);
   const opt = { prof:f._cf >= 0 ? 'c' : 'f', team:f.team, bo:nav.boostOnly && nav.boostOnly[f.team], x0:f.x, doorOK:ctfAiDoorOK(L, f), skip:ctfAiSkip(f), ban:ai.ban, gban:L.ai && L.ai.gban && L.ai.gban[f.team], noCross:L.phase === 'hide', mid:L.map.WW/2, now, closed:false, has:f._ctfJT > 120 && f._cf < 0 ? { jump:true } : null, cs:sig, wallOK:ctfAiWallOK(f, nav) };
   let r = ctfNavPath(nav, cn.id, gn.id, opt);
-  if(!r && sig && opt.csHit){ opt.cs = ''; r = ctfNavPath(nav, cn.id, gn.id, opt); }   // NEVER THE LAST WAY (review, 2026-10-19): no path is left without the moves the stat check turned down: plan with them, and the CPU tries them (ctfAiFollow does not check this path again)
+  if(!r && sig && opt.csHit){ opt.cs = ''; r = ctfNavPath(nav, cn.id, gn.id, opt); }
+  if(!r && opt.gban){ opt.gban = null; r = ctfNavPath(nav, cn.id, gn.id, opt); if(r) ctfAiStat('sideBanLast'); }
+  if(!r && opt.ban){ opt.ban = null; r = ctfNavPath(nav, cn.id, gn.id, opt); if(r) ctfAiStat('ownBanLast'); }   // (and then not its own: with no way left at all it tries the move it missed again rather than stand (side 1 in that match, with the side's ban already left out: 5,700 more plans failed on the fighters' own bans alone, 23,000 on both))   // (CTF fix 2026-11-19: nor is the side's ban: in the Mines 8-player match side 1's searchers failed 16,000 plans in 12,000 frames on side bans alone, the way out of their corner banned again at every miss)
+  // NEVER THE LAST WAY (review, 2026-10-19): no path is left without the moves the stat check turned down: plan with them, and the CPU tries them (ctfAiFollow does not check this path again)
   if(!r){
     opt.closed = true; r = ctfNavPath(nav, cn.id, gn.id, opt);
     if(!r) return false;
@@ -16312,9 +16325,10 @@ function ctfAiGoalFailed(f, ai, L, r, now){
   if(r && r.need && g){
     // a locked door is in the way: the key that opens it
     const k = L.keys.find(q=>q.door === r.need && q.st === 0);
-    const dd = f._pk ? ctfDoorShutNear(L, r.need, f) : null, dep = (g.dk || 0) + 1;   // (dk: how deep in door-and-key errands this is: a door errand that needs a key that needs a door... is given up at the third, CTF fix 2026-11-19)
-    if(dd && g.kind !== 'door' && dep <= 2){ const left = f.x < dd.x; ai.goal = { kind:'door', x:left ? dd.x - 28 : dd.x + dd.w + 28, y:dd.y + dd.h, door:dd.id, dref:dd, dk:dep }; ai.replan = now + 400; return; }   // the personal key opens it
-    if(k && f._ck < 0 && !(g.kind === 'key') && dep <= 2){ ai.goal = { kind:'key', id:k.i, x:k.x, y:k.y, then:g, dk:dep }; ai.replan = now + 400; return; }
+    const ad = ai.dead = ai.dead || {}, dd = f._pk && !(ad['d' + r.need] > now) ? ctfDoorShutNear(L, r.need, f) : null, dep = (g.dk || 0) + 1, dsx = dd ? ctfAiDoorSide(f, ai, dd, now) : null;
+    if(g.kind === 'door' || g.kind === 'key' || (dd && dsx == null)){ ad['d' + r.need] = now + 900; if(k) ad['k' + k.i] = now + 900; }   // (CTF fix 2026-11-19: a door or key errand that itself needs a door, or a door neither side of which it can get to: that door and its key are left for 15 s; before, the chain was tried again every step: Loser, Mines, about 8,000 times in 12,000 frames)   // (dk: how deep in door-and-key errands this is: a door errand that needs a key that needs a door... is given up at the third, CTF fix 2026-11-19)
+    if(dd && dsx != null && g.kind !== 'door' && dep <= 2){ ai.goal = { kind:'door', x:dsx, y:dd.y + dd.h, door:dd.id, dref:dd, dk:dep }; ai.replan = now + 400; return; }   // the personal key opens it
+    if(k && f._ck < 0 && !(g.kind === 'key') && dep <= 2 && !(ad['k' + k.i] > now)){ ai.goal = { kind:'key', id:k.i, x:k.x, y:k.y, then:g, dk:dep }; ai.replan = now + 400; return; }
     if(g.kind === 'point'){ ai.dead = ai.dead || {}; ai.dead[g.pi] = now + 1500; }
     ai.goal = null; return;
   }
