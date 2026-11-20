@@ -253,6 +253,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (HOT DOG ideas)**: "you could try harder.", 1-2 Courtroom + rule cards, 3-4 More + double rules
 - **2026-11-17 (HOT DOG bigger ideas + STAPY ideas)**: Hot Dog: Rule zones, Lawmaker, Rule-break heists, Rule chain, Traffic rules (not trial, contract deals, bribe the ref); Stapy: 1-3 Storm, searchlights, foghorn (not 4-10)
 - **2026-11-20 (playing Cloudy's week)**: cloudy is good, but i dont feel the buffs as different buffs.
+- **2026-11-20 (same message)**: also, go to next weakest event
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
@@ -1164,6 +1165,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19**: dude, the skins are just recolors for the event fighters
 - **2026-11-19** *(question box: what should a real skin be?)*: Show looks from the wiki (Recommended)
 - **2026-11-19**: also, there is too much endlag on foldys finisher
+- **2026-11-20 (on pushing Cloudy's fixed rules card (1) and new item buffs (2) live)**: do 1, 2, but merge all the weeks updates into one entry. do this every time.
 
 ## Status questions & check-ins
 
