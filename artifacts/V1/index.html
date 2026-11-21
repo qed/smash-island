@@ -21132,6 +21132,118 @@ function simInputsGather(){
   S.t = hazardT;
   if(S.rec) S.rec(hazardT, S.kb, S.net);
 }
+// ---------- ROLLBACK, PHASE 1: THE MATCH'S SAVE (simSave / simLoad) ----------
+// For rollback netcode (reports-archive/rollback-study.md, phase 1): a save of the whole match as it stands between two steps, and a
+// load that puts it back, so a frame can be played again with other inputs. Nothing calls these in a match yet: nothing changes for players.
+// COVERS: a normal stage (not the Teams maps, CTF, contests or bosses: simSaveOk) with 2-4 fighters -- every fighter (all its fields, its
+// move, its brain), the shots, beams and tendrils, the items and the Smash Ball, summons and assists, the finishers and the platforms they
+// make, the big files, the spawn areas, the Final Smash's state (FS, FSW, FSF), the last KO (KOC), the hit freezes, the frame (hazardT) and
+// the other counters step() reads, the sim's dice (SIMRNG.s), the CPUs' eyes and hands (_cpuSeen, _cpuHands: Maps since step 0), and the
+// input record's place (SIM_IN: the frame it is for, its keys).
+// HOW: simLoad puts everything back IN PLACE. Every object stays itself (a shot's owner, a CPU's target, the eyes' Map keys all still work):
+// its own fields are written back in their saved order (for-in order is part of the state), arrays, Maps and Sets get their saved contents,
+// and the top-level numbers and lists their saved values. Whatever was made after the save is simply let go. A save can be loaded any
+// number of times. What a save walks: the roots below and every plain object, array, Map and Set reachable from them, except through
+// SIM_SAVE_REF's keys (the game's own fixed tables, kept by reference) and anything that is not plain data (the page, canvases, class
+// instances: kept by reference).
+// NOT SAVED (the screen's only, made again by the replayed frames; nothing in step() reads them back): the particles and the impact dust
+// (IMPACT_DUST, IMPACT_DEBRIS), the screen's dice (COSRNG), the camera (camX, camY, LGC, shakeAmt), the hit art (HIT_ART, HA_N); the move
+// tables that fill in as they are first asked for (MOVESETS, SIZE_HURT, DSM_CACHE, and the _swc note on DSM_OWN's and NSM_MV's rows:
+// worked out from fixed data, the same whichever frame fills them); the live keyboard (down, KEY_LATCH, KEY_LATCH_NOW: a replayed frame
+// plays SIM_IN's record, SIM_IN.feed); the player's profile (PROFILE: the computer's own, not the match's).
+// Nor the world's shape (worldPlats, floors, bases, the stage): set as the match begins and not changed by a normal stage's frames.
+const SIM_SAVE_REF = new Set(['kit', 'poly']);   // keys whose objects are the game's fixed tables (a fighter's kit, a hurt box's shape)
+const SIM_SV = { seen:new Set(), st:[] };
+// (the built-ins it calls for every object, read once: a name looked up on the page's global object is slow in some hosts)
+const SV_KEYS = Object.keys, SV_PROTO = Object.getPrototypeOf, SV_OBJ = Object.prototype, SV_ISARR = Array.isArray, SV_MAP = Map, SV_SET = Set, SV_VIEW = ArrayBuffer.isView, SV_DV = DataView;
+function simSaveOk(){ return SETTINGS.mode !== 'ctf' && !STG && !DRM && !WND && !TL && !SI && !YN && !MATCH_TWIST && !(MCAVE && MCAVE.on); }
+function simSave(){
+  const O = [], K = [], A = [], B = [];
+  const seen = SIM_SV.seen, st = SIM_SV.st, REF = SIM_SAVE_REF;
+  seen.clear(); st.length = 0;
+  // (the lists that may be swapped for new ones are kept themselves; ASSIST_BAG last and not walked: its entries are roster rows, by reference)
+  const L = [fighters, projectiles, items, summons, beams, tendrils, FILE_RIDES, FINX, FX_PLATS, spawnZones, SMASHBALL, evil, SPONGY_PLATS,
+    SMASH_PROJ, FSB_CLONE, CAKE_FX, RIVAL_KILLS, JAB_BY, STEP_F, ASSIST_BAG];
+  const R = [FS, FSW, FSF, KOC, QSTAT, FINC2_HIST, HITSTOP_FIN, STOMACH, TEAM_AI, _cpuSeen, _cpuHands, _anchorOut, MC_RP];
+  for(let i = 0; i < L.length - 1; i++){ const r = L[i]; if(r !== null && typeof r === 'object') st.push(r); }
+  for(let i = 0; i < R.length; i++) st.push(R[i]);
+  while(st.length){
+    const o = st.pop();
+    if(seen.has(o)) continue;
+    seen.add(o);
+    if(SV_ISARR(o)){
+      const c = o.slice();
+      for(let j = 0; j < c.length; j++){ const x = c[j]; if(x !== null && typeof x === 'object') st.push(x); }
+      O.push(o); K.push(1); A.push(c); B.push(null); continue;
+    }
+    const p = SV_PROTO(o);
+    if(p === SV_OBJ || p === null){
+      const ks = SV_KEYS(o), n = ks.length, vs = new Array(n);
+      for(let j = 0; j < n; j++){ const x = o[ks[j]]; vs[j] = x; if(x !== null && typeof x === 'object' && !REF.has(ks[j])) st.push(x); }
+      O.push(o); K.push(0); A.push(ks); B.push(vs); continue;
+    }
+    if(o === _cpuSeen){   // THE EYES: each entry's fields, and its rows copied as they are, not walked (cpuSeeRows)
+      const c = new Array(o.size * 2); let j = 0;
+      for(const [k, h] of o){ c[j++] = k; c[j++] = h; st.push(k); cpuSeeRows(h, O, K, A, B, st); }
+      O.push(o); K.push(3); A.push(c); B.push(null); continue;
+    }
+    if(o instanceof SV_MAP){
+      const c = new Array(o.size * 2); let j = 0;
+      for(const [k, x] of o){ c[j++] = k; c[j++] = x; if(k !== null && typeof k === 'object') st.push(k); if(x !== null && typeof x === 'object') st.push(x); }
+      O.push(o); K.push(3); A.push(c); B.push(null); continue;
+    }
+    if(o instanceof SV_SET){
+      const c = [...o]; for(const x of c) if(x !== null && typeof x === 'object') st.push(x);
+      O.push(o); K.push(4); A.push(c); B.push(null); continue;
+    }
+    if(SV_VIEW(o) && !(o instanceof SV_DV)){ O.push(o); K.push(2); A.push(o.slice()); B.push(null); continue; }
+    // anything else (a canvas, an image, a class instance): kept by reference, not walked
+  }
+  seen.clear();
+  return { O, K, A, B, L, bag:ASSIST_BAG.slice(), ASSIST_LAST, RIVAL_NAME,
+    n:[hazardT, itemTimer, NDY_FT, HD_ON_T, HD_ON, _cpuSeeT, lastKoFrame, FINX_SEQ, ASSIST_KEY_SEQ, HA_SUMMON_SEQ, HITSTOP_WU,
+      VOLLEY_SEQ, HIT_CAST, BOSS_ATK_ID, KO_GROW, WALK_ROOM, SIDE_ROOM],
+    rng:SIMRNG.s, seed:SIMRNG.seed, inT:SIM_IN.t, inKb:SIM_IN.kb, inNet:SIM_IN.net };
+}
+// One eye entry (cpuSeeKeep): its own fields as any object's, its ring of rows (h.v) and each row copied as it is. A row holds numbers and
+// flags, and the fighter's own move objects of that frame (its _mv, _gb, _hold...): those are saved through the fighter while they are
+// its own, and nothing changes one any more once it is not (an old row is only read, cpuSeeSwap), so a row is not walked.
+function cpuSeeRows(h, O, K, A, B, st){
+  const ks = SV_KEYS(h), n = ks.length, vs = new Array(n);
+  for(let j = 0; j < n; j++){ const x = h[ks[j]]; vs[j] = x; if(x !== null && typeof x === 'object' && x !== h.v) st.push(x); }
+  O.push(h); K.push(0); A.push(ks); B.push(vs);
+  const v = h.v, c = v.slice();
+  for(let j = 0; j < c.length; j++){ const r = c[j]; if(r){ O.push(r); K.push(1); A.push(r.slice()); B.push(null); } }
+  O.push(v); K.push(1); A.push(c); B.push(null);
+}
+function simLoad(sv){
+  const O = sv.O, K = sv.K, A = sv.A, B = sv.B;
+  for(let i = 0; i < O.length; i++){
+    const o = O[i], a = A[i], k = K[i];
+    if(k === 0){
+      const vs = B[i], n = a.length, cur = SV_KEYS(o), m = cur.length;
+      let q = 0; while(q < n && q < m && cur[q] === a[q]) q++;
+      // (a field added, dropped or moved since: the fields after the first that differs go, the newest first, and come back in the saved
+      // order -- for-in order is part of the state; a field added at the end and taken off again leaves the object as fast as it was)
+      for(let j = m - 1; j >= q; j--) delete o[cur[j]];
+      for(let j = 0; j < n; j++) o[a[j]] = vs[j];
+    }
+    else if(k === 1){ o.length = a.length; for(let j = 0; j < a.length; j++) o[j] = a[j]; }
+    else if(k === 3){ o.clear(); for(let j = 0; j < a.length; j += 2) o.set(a[j], a[j + 1]); }
+    else if(k === 4){ o.clear(); for(let j = 0; j < a.length; j++) o.add(a[j]); }
+    else if(k === 2) o.set(a);
+  }
+  const L = sv.L;
+  fighters = L[0]; projectiles = L[1]; items = L[2]; summons = L[3]; beams = L[4]; tendrils = L[5]; FILE_RIDES = L[6]; FINX = L[7]; FX_PLATS = L[8];
+  spawnZones = L[9]; SMASHBALL = L[10]; evil = L[11]; SPONGY_PLATS = L[12];
+  SMASH_PROJ = L[13]; FSB_CLONE = L[14]; CAKE_FX = L[15]; RIVAL_KILLS = L[16]; JAB_BY = L[17]; STEP_F = L[18];
+  ASSIST_BAG = L[19]; ASSIST_BAG.length = 0; for(const x of sv.bag) ASSIST_BAG.push(x); ASSIST_LAST = sv.ASSIST_LAST; RIVAL_NAME = sv.RIVAL_NAME;
+  const n = sv.n;
+  hazardT = n[0]; itemTimer = n[1]; NDY_FT = n[2]; HD_ON_T = n[3]; HD_ON = n[4]; _cpuSeeT = n[5]; lastKoFrame = n[6]; FINX_SEQ = n[7]; ASSIST_KEY_SEQ = n[8]; HA_SUMMON_SEQ = n[9]; HITSTOP_WU = n[10];
+  VOLLEY_SEQ = n[11]; HIT_CAST = n[12]; BOSS_ATK_ID = n[13]; KO_GROW = n[14]; WALK_ROOM = n[15]; SIDE_ROOM = n[16];
+  SIMRNG.s = sv.rng; SIMRNG.seed = sv.seed; SIM_IN.t = sv.inT; SIM_IN.kb = sv.inKb; SIM_IN.net = sv.inNet;
+}
+// ---------- (end of ROLLBACK, PHASE 1) ----------
 function simKey(b){ return (SIM_IN.kb[0] & SIM_BIT[b]) !== 0; }                                    // held on the keyboard
 function simPad(b){ return (SIM_IN.kb[1] & SIM_BIT[b]) !== 0; }                                    // held on the gamepad
 function simTap(b){ return (SIM_IN.kb[2] & SIM_BIT[b]) !== 0; }                                    // tapped since the last step
@@ -78607,7 +78719,9 @@ const SM_PAT = {
       dmg:s.dmg, kb:s.kb, fx:s.effect, n:s.n, color:s.color||f.color, hit:{}, up:s.up};
     // A ring around you winds up before it expands -- see CIRCLE_WINDUP. The cost was already
     // paid in runSmashSpec, so a ring that gets interrupted still costs what it would have.
-    startWindup(f, s.wind==null ? CIRCLE_WINDUP : s.wind, function(){ f._sm = sm; }, sm.color, { kind:'circle', r:sm.r1 });   // the tell: the ring's full size
+    const go = function(){ f._sm = sm; };
+    startWindup(f, s.wind==null ? CIRCLE_WINDUP : s.wind, go, sm.color, { kind:'circle', r:sm.r1 });   // the tell: the ring's full size
+    windupKeep(f, go, sm);   // (ROLLBACK: the ring it will hand over, where a save sees it)
     if(f._windup) f._windup.smash = true;   // the angle waits for it (SMASH_ANGLE_FRAMES)
   },
   // An instant line to the edge of the stage. No travel time, so it is answered by position only.
@@ -80303,12 +80417,12 @@ const DOWNSPECIALS = {
     if(!t && summons.length){ const bs = nearestSummon(f, f.x+f.face*f.r, f.y, 34, function(o){ return Math.sign(o.x-f.x||f.face)===f.face; });
       if(bs){ f._atkSeq=(f._atkSeq||0)+1; damageSummon(f, bs, f.x, f.y, 8); for(let i=0;i<6;i++) puff(bs.x, bs.y, '#7c2028', 4); return; } }   // a boss will not go on a spike: the fling's 8 lands where it stands (fighters only before: 0 in Boss Rush)
     if(!t){ f.hitstun=Math.max(f.hitstun||0,18); f._selfStun=18; puff(f.x+f.face*f.r, f.y, '#a5acac', 4); return; }   // a miss: 18 frames of endlag
-    const n0 = t._koN||0; let n=0;
+    const n0 = t._koN||0, C = { n:0 };   // (C.n: the carries so far, on the wind-up too -- windupKeep)
     const carry = function(){
       if(f.dead || koSince(t, n0)) return;   // (any KO of theirs ends the ride: a lost stock, a trip home -- ONE FALL, ONE STOCK)
-      if(++n <= 12){   // about 36 frames on the spike, at a run
+      if(++C.n <= 12){   // about 36 frames on the spike, at a run
         f.vx = f.face*6; t.x = f.x + f.face*(f.r + 14); t.y = f.y - 6; t.vx = f.vx; t.vy = 0; t.onground=false; stunFx(t, 6);
-        startWindup(f, 3, carry, 'rgba(0,0,0,0)'); if(f._windup) f._windup.b3 = 'grab';
+        startWindup(f, 3, carry, 'rgba(0,0,0,0)'); windupKeep(f, carry, C); if(f._windup) f._windup.b3 = 'grab';
       } else { f._atkSeq = (f._atkSeq||0) + 1; applyHit(t, 8, f.face*10, -6, f); for(let i=0;i<6;i++) puff(t.x, t.y, '#7c2028', 4); }
     };
     carry(); },
@@ -96399,6 +96513,10 @@ function startWindup(f, frames, fire, color, sh){
   // before a KO can never go off at the respawn point, whichever respawn route ran.
   f._windup = { t: frames, t0: frames, fire: fire, color: color || f.color, falls: f._falls||0, root: f._wuRoot || null, seq: f._atkSeq||0 };   // (root: the wind-up this one was started from, for a move that strikes in strokes; seq: the move that started it -- HIT FREEZE)
 }
+// ROLLBACK (the match's save, simSave): what a wind-up's closure counts or will hand over, kept on that wind-up as data. A save sees
+// the wind-up's fields but not what its `fire` closes over; with the counter or object here too, a save holds it and a load puts it
+// back in place (the closure still sees the same object). Only on the wind-up this closure started (one already running eats it).
+function windupKeep(f, fire, o){ if(f._windup && f._windup.fire === fire) f._windup.keep = o; }
 // DASH TELL (the owner, 2026-11-04: dash attacks "are very annoying, with no tell. I can think that the cpu is just using a lunge smash, but NOPE,
 // it is an undodgeable (or nearly) dash"; Life Ring's, with its whistle, is "more fair": "I have time to think - oh wait, that isnt coming out,
 // better dodge!"). Every special that dashes at a foe now begins with the same STARTUP Life Ring's has (startWindup, drawn by stupK: the body
@@ -98991,18 +99109,18 @@ function doSpecial(f){
       // then three strokes ahead, 3% + 3% + 6%, the last one pushing. Every stroke strips first (SM_FX.strip), so an
       // armour, a counter or a reflect never gets to answer the saw. A miss leaves him rooted there all the same.
       f.rooted = Math.max(f.rooted||0, 34);
-      let n = 0;
+      const C = { n:0 };   // (C.n: the strokes so far, on the wind-up too -- windupKeep)
       const stroke = function(){
-        n++; const last = n === 3, reach = f.r + 40;
+        C.n++; const last = C.n === 3, reach = f.r + 40;
         f._atkSeq = (f._atkSeq||0) + 1;   // each stroke is a new cut: it may land through the grace the last one opened (chainOpen)
         armAtk(f, ATK_ANIM, animKindOf(f, 'special'), mvId(f, f._mv ? f._mv.key : 'special'));
         const sh = {kind:'capsule', x1:f.x + f.face*f.r*0.3, y1:f.y, x2:f.x + f.face*reach, y2:f.y, r:14};
         for(const t of shapeTargets(f, sh)) SM_FX.strip(t, f);
         hitShape(f, sh, last ? 6 : 3, last ? 6 : 3, f.face*(last ? 8 : 1.5), last ? -5 : -2);
         for(let i=0;i<4;i++) puff(f.x + f.face*(f.r + 20), f.y, i%2 ? '#924e3c' : '#d9d2c4', 3);
-        if(!last) startWindup(f, 6, stroke, 'rgba(0,0,0,0)', { kind:'capsule', x1:f.r*0.3, y1:0, x2:f.r + 40, y2:0, r:14, c:'#924e3c' });
+        if(!last){ startWindup(f, 6, stroke, 'rgba(0,0,0,0)', { kind:'capsule', x1:f.r*0.3, y1:0, x2:f.r + 40, y2:0, r:14, c:'#924e3c' }); windupKeep(f, stroke, C); }
       };
-      startWindup(f, 8, stroke, '#924e3c', { kind:'capsule', x1:f.r*0.3, y1:0, x2:f.r + 40, y2:0, r:14 });   // the tell is the stroke's own line (it was a circle)
+      startWindup(f, 8, stroke, '#924e3c', { kind:'capsule', x1:f.r*0.3, y1:0, x2:f.r + 40, y2:0, r:14 }); windupKeep(f, stroke, C);   // the tell is the stroke's own line (it was a circle)
       f.flash=8; f.spCd=40; break; }
     case "spikeburst": { // Spikey: CAN'T HOLD IT IN. When he is distressed he shoots off all his spikes, and they grow back
       // very fast (Abilities); in Rock the Boat they shake as it builds, then all go ("I just can't hold it in anymore!").
@@ -99010,19 +99128,19 @@ function doSpecial(f){
       // frames); let go and they fly -- 6 on a tap, 8 held full (4% each, 6% full), straight out every way. Then he is
       // bald for 150 frames (Spikey without the spikes.png): nothing more to shoot until they are back.
       if(f._baldUntil > hazardT){ f.spCd = Math.max(f.spCd||0, f._baldUntil - hazardT); break; }
-      let held = 0;
+      const C = { held:0 };   // (C.held: the shakes so far, on the wind-up too -- windupKeep)
       const burst = function(){
-        const full = held >= 12, n = full ? 8 : 6, dmg = full ? 6 : 4, V = newVolley('spikeburst');   // one burst, one cast: every spike that reaches a foe lands (VOLLEY_CAP)
+        const full = C.held >= 12, n = full ? 8 : 6, dmg = full ? 6 : 4, V = newVolley('spikeburst');   // one burst, one cast: every spike that reaches a foe lands (VOLLEY_CAP)
         for(let i=0;i<n;i++){ const a = i/n*Math.PI*2;
           spawnProj(f, Object.assign({x:f.x, y:f.y-4, vx:Math.cos(a)*9, vy:Math.sin(a)*9, grav:false, dmg:dmg, kb:3, r:7, color:'#a5acac', life:28}, V)); }
         for(let i=0;i<8;i++) puff(f.x, f.y-4, '#7c2028', 4);
         f._baldUntil = hazardT + 150; f.spCd = Math.max(f.spCd||0, 150);
       };
       const hold = function(){   // f._sp stays true while special is held (the input loop clears it on release)
-        if(f._sp && held < 12){ held++; startWindup(f, 4, hold, '#7c2028'); if(f._windup) f._windup.b3 = 'spikes'; }
+        if(f._sp && C.held < 12){ C.held++; startWindup(f, 4, hold, '#7c2028'); windupKeep(f, hold, C); if(f._windup) f._windup.b3 = 'spikes'; }
         else burst();
       };
-      startWindup(f, 4, hold, '#7c2028'); if(f._windup) f._windup.b3 = 'spikes';
+      startWindup(f, 4, hold, '#7c2028'); windupKeep(f, hold, C); if(f._windup) f._windup.b3 = 'spikes';
       // The 150 is charged by the burst (above), when the spikes actually fly. Charged at the press, a tap that hit him during
       // the hold -- applyHit drops the wind-up -- fired nothing and still locked the button for the full 150.
       f.flash=6; f.spCd=Math.max(f.spCd||0, 24); break; }
@@ -99055,7 +99173,7 @@ function doSpecial(f){
           f.flash=6; cd(30); return; }
         const HOLD = 16, falls = t._falls||0, prevWeak = f.weakened||0;
         f.weakened = Math.max(prevWeak, 150 + HOLD*2); f._flameOutUntil = hazardT + 150 + HOLD*2;
-        let n = 0;
+        const C = { n:0 };   // (C.n: the frames held so far, on the wind-up too -- windupKeep)
         const release = function(){
           f.weakened = Math.max(0, prevWeak - HOLD*2); f._flameOutUntil = 0;   // a clean release: the flame never went out (cleared first, or the fling itself would land weakened)
           f._atkSeq = (f._atkSeq||0) + 1;
@@ -99076,7 +99194,7 @@ function doSpecial(f){
           t.x += (hx - t.x)*0.5; t.y += (hy - t.y)*0.5; t.vx = 0; t.vy = 0; t.onground = false; stunFx(t, 6);
           hitArt(f, 'grip', { kind:'capsule', x1:f.x, y1:f.y, x2:t.x, y2:t.y, r:3 }, { style:'tether', color:'#b88cff', to:t.idx, fade:6 });   // HIT ART: her hold on them
           // and, filling in over the hold, the slam it turns into if a second foe is in it at the release (a centre within 50 + their r of the held one)
-          if(++n < HOLD){ startWindup(f, 2, hold, 'rgba(0,0,0,0)', { kind:'circle', wx:t.x, wy:t.y, r:haEdgeR(50 + t.r), c:'#b88cff', p:n/HOLD }); if(f._windup) f._windup.b3 = 'grip'; }
+          if(++C.n < HOLD){ startWindup(f, 2, hold, 'rgba(0,0,0,0)', { kind:'circle', wx:t.x, wy:t.y, r:haEdgeR(50 + t.r), c:'#b88cff', p:C.n/HOLD }); windupKeep(f, hold, C); if(f._windup) f._windup.b3 = 'grip'; }
           else release();
         };
         hold();
