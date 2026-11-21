@@ -836,6 +836,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-12 18:04 UTC**: you can stop the processes now
 - **2026-11-13 18:40 UTC** *(part)*: stop doing that.
 - **2026-11-17**: the cpus delay recovery tools too much and fall sooo much.
+- **2026-11-21 (playing)**: uhhh, witht he right postisioning, cherries smash can ko after 1 use of it
 
 ## Art, animation & polish
 
