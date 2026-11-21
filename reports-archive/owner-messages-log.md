@@ -662,6 +662,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-20 (same message)**: foldys recovery is cool and in character.
 - **2026-11-21 (same message)**: also, if a finisher makes sense to be able to start in the air(like lifering) than you should be able do airnisher
 - **2026-11-21 (next, on air finishers)**: cuz it makes no sense for bow to have an airnisher
+- **2026-11-21 (after the lead listed the four close-call finishers)**: for clover, it should work, but it should fall WHILE MOVING FORWARD, just like how all projectiles that go accross the floor SHOULD
 
 ## Bosses, Boss Rush & secrets
 
