@@ -713,6 +713,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-11 13:57 UTC**: last phase zero feels no different from second phase zero.
 - **2026-11-11 14:00 UTC**: and screechy is nigh on impossimble in 3rd phase
 - **2026-11-11 18:32 UTC** *(part)*: hide the rush names in credits.
+- **2026-11-20 (after the lead said Algebralien Rush is hidden until the owner switches it on; first open days 22-23 Nov)**: turn it on, but keep the system
 
 ## Balance & CPUs
 
