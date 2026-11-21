@@ -660,6 +660,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (answers: hop smashes + Box)**: hop smashes: "Measure first"; Box: "the finisher sucks.", Real jab + ranged, Specials that hurt (not picked: lower her smash)
 - **2026-11-17 (next, on Box; her ROSTER arch is "Keeper")**: and also because her archetype gives her the best sweeping tilts and airs.
 - **2026-11-20 (same message)**: foldys recovery is cool and in character.
+- **2026-11-21 (same message)**: also, if a finisher makes sense to be able to start in the air(like lifering) than you should be able do airnisher
 
 ## Bosses, Boss Rush & secrets
 
@@ -837,6 +838,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-13 18:40 UTC** *(part)*: stop doing that.
 - **2026-11-17**: the cpus delay recovery tools too much and fall sooo much.
 - **2026-11-21 (playing)**: uhhh, witht he right postisioning, cherries smash can ko after 1 use of it
+- **2026-11-21 (after the Cherries side-smash report)**: also, check for which smashes can do that near ledge or in air.
 
 ## Art, animation & polish
 
