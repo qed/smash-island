@@ -664,6 +664,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-21 (next, on air finishers)**: cuz it makes no sense for bow to have an airnisher
 - **2026-11-21 (after the lead listed the four close-call finishers)**: for clover, it should work, but it should fall WHILE MOVING FORWARD, just like how all projectiles that go accross the floor SHOULD
 - **2026-11-21 (next, correcting the lead's reading that it meant shots fired from the air)**: no, this is just in gerenal for the shots on platforms
+- **2026-11-21 (next, on the close-call finishers)**: for lolipop, it should only activate in the air if the first part connects.
 
 ## Bosses, Boss Rush & secrets
 
