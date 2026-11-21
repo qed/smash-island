@@ -661,6 +661,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (next, on Box; her ROSTER arch is "Keeper")**: and also because her archetype gives her the best sweeping tilts and airs.
 - **2026-11-20 (same message)**: foldys recovery is cool and in character.
 - **2026-11-21 (same message)**: also, if a finisher makes sense to be able to start in the air(like lifering) than you should be able do airnisher
+- **2026-11-21 (next, on air finishers)**: cuz it makes no sense for bow to have an airnisher
 
 ## Bosses, Boss Rush & secrets
 
