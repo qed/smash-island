@@ -78718,7 +78718,9 @@ const SM_PAT = {
       dmg:s.dmg, kb:s.kb, fx:s.effect, n:s.n, color:s.color||f.color, hit:{}, up:s.up};
     // A ring around you winds up before it expands -- see CIRCLE_WINDUP. The cost was already
     // paid in runSmashSpec, so a ring that gets interrupted still costs what it would have.
-    startWindup(f, s.wind==null ? CIRCLE_WINDUP : s.wind, function(){ f._sm = sm; }, sm.color, { kind:'circle', r:sm.r1 });   // the tell: the ring's full size
+    const go = function(){ f._sm = sm; };
+    startWindup(f, s.wind==null ? CIRCLE_WINDUP : s.wind, go, sm.color, { kind:'circle', r:sm.r1 });   // the tell: the ring's full size
+    windupKeep(f, go, sm);   // (ROLLBACK: the ring it will hand over, where a save sees it)
     if(f._windup) f._windup.smash = true;   // the angle waits for it (SMASH_ANGLE_FRAMES)
   },
   // An instant line to the edge of the stage. No travel time, so it is answered by position only.
@@ -80366,12 +80368,12 @@ const DOWNSPECIALS = {
     if(!t && summons.length){ const bs = nearestSummon(f, f.x+f.face*f.r, f.y, 34, function(o){ return Math.sign(o.x-f.x||f.face)===f.face; });
       if(bs){ f._atkSeq=(f._atkSeq||0)+1; damageSummon(f, bs, f.x, f.y, 8); for(let i=0;i<6;i++) puff(bs.x, bs.y, '#7c2028', 4); return; } }   // a boss will not go on a spike: the fling's 8 lands where it stands (fighters only before: 0 in Boss Rush)
     if(!t){ f.hitstun=Math.max(f.hitstun||0,18); f._selfStun=18; puff(f.x+f.face*f.r, f.y, '#a5acac', 4); return; }   // a miss: 18 frames of endlag
-    const n0 = t._koN||0; let n=0;
+    const n0 = t._koN||0, C = { n:0 };   // (C.n: the carries so far, on the wind-up too -- windupKeep)
     const carry = function(){
       if(f.dead || koSince(t, n0)) return;   // (any KO of theirs ends the ride: a lost stock, a trip home -- ONE FALL, ONE STOCK)
-      if(++n <= 12){   // about 36 frames on the spike, at a run
+      if(++C.n <= 12){   // about 36 frames on the spike, at a run
         f.vx = f.face*6; t.x = f.x + f.face*(f.r + 14); t.y = f.y - 6; t.vx = f.vx; t.vy = 0; t.onground=false; stunFx(t, 6);
-        startWindup(f, 3, carry, 'rgba(0,0,0,0)'); if(f._windup) f._windup.b3 = 'grab';
+        startWindup(f, 3, carry, 'rgba(0,0,0,0)'); windupKeep(f, carry, C); if(f._windup) f._windup.b3 = 'grab';
       } else { f._atkSeq = (f._atkSeq||0) + 1; applyHit(t, 8, f.face*10, -6, f); for(let i=0;i<6;i++) puff(t.x, t.y, '#7c2028', 4); }
     };
     carry(); },
@@ -96462,6 +96464,10 @@ function startWindup(f, frames, fire, color, sh){
   // before a KO can never go off at the respawn point, whichever respawn route ran.
   f._windup = { t: frames, t0: frames, fire: fire, color: color || f.color, falls: f._falls||0, root: f._wuRoot || null, seq: f._atkSeq||0 };   // (root: the wind-up this one was started from, for a move that strikes in strokes; seq: the move that started it -- HIT FREEZE)
 }
+// ROLLBACK (the match's save, simSave): what a wind-up's closure counts or will hand over, kept on that wind-up as data. A save sees
+// the wind-up's fields but not what its `fire` closes over; with the counter or object here too, a save holds it and a load puts it
+// back in place (the closure still sees the same object). Only on the wind-up this closure started (one already running eats it).
+function windupKeep(f, fire, o){ if(f._windup && f._windup.fire === fire) f._windup.keep = o; }
 // DASH TELL (the owner, 2026-11-04: dash attacks "are very annoying, with no tell. I can think that the cpu is just using a lunge smash, but NOPE,
 // it is an undodgeable (or nearly) dash"; Life Ring's, with its whistle, is "more fair": "I have time to think - oh wait, that isnt coming out,
 // better dodge!"). Every special that dashes at a foe now begins with the same STARTUP Life Ring's has (startWindup, drawn by stupK: the body
@@ -99050,18 +99056,18 @@ function doSpecial(f){
       // then three strokes ahead, 3% + 3% + 6%, the last one pushing. Every stroke strips first (SM_FX.strip), so an
       // armour, a counter or a reflect never gets to answer the saw. A miss leaves him rooted there all the same.
       f.rooted = Math.max(f.rooted||0, 34);
-      let n = 0;
+      const C = { n:0 };   // (C.n: the strokes so far, on the wind-up too -- windupKeep)
       const stroke = function(){
-        n++; const last = n === 3, reach = f.r + 40;
+        C.n++; const last = C.n === 3, reach = f.r + 40;
         f._atkSeq = (f._atkSeq||0) + 1;   // each stroke is a new cut: it may land through the grace the last one opened (chainOpen)
         armAtk(f, ATK_ANIM, animKindOf(f, 'special'), mvId(f, f._mv ? f._mv.key : 'special'));
         const sh = {kind:'capsule', x1:f.x + f.face*f.r*0.3, y1:f.y, x2:f.x + f.face*reach, y2:f.y, r:14};
         for(const t of shapeTargets(f, sh)) SM_FX.strip(t, f);
         hitShape(f, sh, last ? 6 : 3, last ? 6 : 3, f.face*(last ? 8 : 1.5), last ? -5 : -2);
         for(let i=0;i<4;i++) puff(f.x + f.face*(f.r + 20), f.y, i%2 ? '#924e3c' : '#d9d2c4', 3);
-        if(!last) startWindup(f, 6, stroke, 'rgba(0,0,0,0)', { kind:'capsule', x1:f.r*0.3, y1:0, x2:f.r + 40, y2:0, r:14, c:'#924e3c' });
+        if(!last){ startWindup(f, 6, stroke, 'rgba(0,0,0,0)', { kind:'capsule', x1:f.r*0.3, y1:0, x2:f.r + 40, y2:0, r:14, c:'#924e3c' }); windupKeep(f, stroke, C); }
       };
-      startWindup(f, 8, stroke, '#924e3c', { kind:'capsule', x1:f.r*0.3, y1:0, x2:f.r + 40, y2:0, r:14 });   // the tell is the stroke's own line (it was a circle)
+      startWindup(f, 8, stroke, '#924e3c', { kind:'capsule', x1:f.r*0.3, y1:0, x2:f.r + 40, y2:0, r:14 }); windupKeep(f, stroke, C);   // the tell is the stroke's own line (it was a circle)
       f.flash=8; f.spCd=40; break; }
     case "spikeburst": { // Spikey: CAN'T HOLD IT IN. When he is distressed he shoots off all his spikes, and they grow back
       // very fast (Abilities); in Rock the Boat they shake as it builds, then all go ("I just can't hold it in anymore!").
@@ -99069,19 +99075,19 @@ function doSpecial(f){
       // frames); let go and they fly -- 6 on a tap, 8 held full (4% each, 6% full), straight out every way. Then he is
       // bald for 150 frames (Spikey without the spikes.png): nothing more to shoot until they are back.
       if(f._baldUntil > hazardT){ f.spCd = Math.max(f.spCd||0, f._baldUntil - hazardT); break; }
-      let held = 0;
+      const C = { held:0 };   // (C.held: the shakes so far, on the wind-up too -- windupKeep)
       const burst = function(){
-        const full = held >= 12, n = full ? 8 : 6, dmg = full ? 6 : 4, V = newVolley('spikeburst');   // one burst, one cast: every spike that reaches a foe lands (VOLLEY_CAP)
+        const full = C.held >= 12, n = full ? 8 : 6, dmg = full ? 6 : 4, V = newVolley('spikeburst');   // one burst, one cast: every spike that reaches a foe lands (VOLLEY_CAP)
         for(let i=0;i<n;i++){ const a = i/n*Math.PI*2;
           spawnProj(f, Object.assign({x:f.x, y:f.y-4, vx:Math.cos(a)*9, vy:Math.sin(a)*9, grav:false, dmg:dmg, kb:3, r:7, color:'#a5acac', life:28}, V)); }
         for(let i=0;i<8;i++) puff(f.x, f.y-4, '#7c2028', 4);
         f._baldUntil = hazardT + 150; f.spCd = Math.max(f.spCd||0, 150);
       };
       const hold = function(){   // f._sp stays true while special is held (the input loop clears it on release)
-        if(f._sp && held < 12){ held++; startWindup(f, 4, hold, '#7c2028'); if(f._windup) f._windup.b3 = 'spikes'; }
+        if(f._sp && C.held < 12){ C.held++; startWindup(f, 4, hold, '#7c2028'); windupKeep(f, hold, C); if(f._windup) f._windup.b3 = 'spikes'; }
         else burst();
       };
-      startWindup(f, 4, hold, '#7c2028'); if(f._windup) f._windup.b3 = 'spikes';
+      startWindup(f, 4, hold, '#7c2028'); windupKeep(f, hold, C); if(f._windup) f._windup.b3 = 'spikes';
       // The 150 is charged by the burst (above), when the spikes actually fly. Charged at the press, a tap that hit him during
       // the hold -- applyHit drops the wind-up -- fired nothing and still locked the button for the full 150.
       f.flash=6; f.spCd=Math.max(f.spCd||0, 24); break; }
@@ -99114,7 +99120,7 @@ function doSpecial(f){
           f.flash=6; cd(30); return; }
         const HOLD = 16, falls = t._falls||0, prevWeak = f.weakened||0;
         f.weakened = Math.max(prevWeak, 150 + HOLD*2); f._flameOutUntil = hazardT + 150 + HOLD*2;
-        let n = 0;
+        const C = { n:0 };   // (C.n: the frames held so far, on the wind-up too -- windupKeep)
         const release = function(){
           f.weakened = Math.max(0, prevWeak - HOLD*2); f._flameOutUntil = 0;   // a clean release: the flame never went out (cleared first, or the fling itself would land weakened)
           f._atkSeq = (f._atkSeq||0) + 1;
@@ -99135,7 +99141,7 @@ function doSpecial(f){
           t.x += (hx - t.x)*0.5; t.y += (hy - t.y)*0.5; t.vx = 0; t.vy = 0; t.onground = false; stunFx(t, 6);
           hitArt(f, 'grip', { kind:'capsule', x1:f.x, y1:f.y, x2:t.x, y2:t.y, r:3 }, { style:'tether', color:'#b88cff', to:t.idx, fade:6 });   // HIT ART: her hold on them
           // and, filling in over the hold, the slam it turns into if a second foe is in it at the release (a centre within 50 + their r of the held one)
-          if(++n < HOLD){ startWindup(f, 2, hold, 'rgba(0,0,0,0)', { kind:'circle', wx:t.x, wy:t.y, r:haEdgeR(50 + t.r), c:'#b88cff', p:n/HOLD }); if(f._windup) f._windup.b3 = 'grip'; }
+          if(++C.n < HOLD){ startWindup(f, 2, hold, 'rgba(0,0,0,0)', { kind:'circle', wx:t.x, wy:t.y, r:haEdgeR(50 + t.r), c:'#b88cff', p:C.n/HOLD }); windupKeep(f, hold, C); if(f._windup) f._windup.b3 = 'grip'; }
           else release();
         };
         hold();
