@@ -2043,7 +2043,7 @@
     <h1 id="tourneyHubTitle">Matchday 1</h1>
     <div id="tourneyHubBody" class="tourney-body"></div>
     <div class="row" style="justify-content:center;margin-top:12px">
-      <button class="btn ghost sm" onclick="if(confirm('Quit the tournament?')){endTournament();go('title');}">✕ Quit</button>
+      <button class="btn ghost sm" id="tourneyQuitBtn" onclick="if(confirm('Quit the tournament?')){endTournament();go('title');}">✕ Quit</button>
       <button class="btn" id="tourneyProceedBtn" onclick="simRestOfRound()">Sim &amp; Continue ▶</button>
     </div>
   </div>
@@ -14246,7 +14246,7 @@ function ctfStratReport(){
   const tot = {}; for(const id of Object.keys(TOURNEY.ctf.memo)){ const m = TOURNEY.ctf.memo[id]; for(const p of Object.keys(m.all)){ const c = tot[p] || (tot[p] = { n:0, w:0 }); c.n += m.all[p].n; c.w += m.all[p].w; } }
   const rows = Object.keys(tot).filter(p=>CTF_STRATS[p] && tot[p].n >= 1).sort((a, b)=>tot[b].n - tot[a].n).slice(0, 6);
   if(!rows.length) return '';
-  return '<div class="th-sub" style="text-align:center">How the plans did across the cup (wins / matches played with it):</div>' + rows.map(p=>'<div class="th-row" style="justify-content:center"><span class="th-tn" style="flex:none;min-width:200px">' + esc(CTF_STRATS[p].name) + '</span><span>' + Math.round(tot[p].w*10)/10 + ' / ' + Math.round(tot[p].n*10)/10 + '</span></div>').join('');
+  return '<div class="th-sub" style="text-align:center">How the plans did across the cup (wins / matches played with it; a plan used for part of a match counts for that part):</div>' + rows.map(p=>'<div class="th-row" style="justify-content:center"><span class="th-tn" style="flex:none;min-width:200px">' + esc(CTF_STRATS[p].name) + '</span><span>' + Math.round(tot[p].w*10)/10 + ' / ' + Math.round(tot[p].n*10)/10 + '</span></div>').join('');
 }
 // ---- a fixture nobody watches: the same strategists, the model run once ----
 function ctfStratSim(fx){
@@ -22624,11 +22624,12 @@ function cupPickSync(){
   const set = (id, t) => { const e = document.getElementById(id); if(e) e.textContent = t; };
   const you = document.querySelector('#select .selyou'); if(you) you.textContent = mates ? 'TEAMMATE '+(pt.mates.length+1) : 'YOU';
   set('selTitle', mates ? 'Pick teammate '+(pt.mates.length+1)+' of '+(pt.size-1) : 'Pick your fighter');
-  set('selBrand', mates ? 'World Cup · your team so far: '+[pt.lead, ...pt.mates].map(m=>m.name).join(', ') : onCup ? 'World Cup · you are picking your team' : 'Cake at Stake · Contestant Select');
-  set('startBtn', mates ? (pt.mates.length+1 < pt.size-1 ? 'Next teammate ▶' : 'Kick Off ▶') : onCup ? 'Pick teammates ▶' : 'Start Match ▶');
+  const cupOne = !!(pt && !pt.pickMates);   // a Normal cup's pick of your own fighter only (Solo, or teammates by Random draw): the cup picks the stages
+  set('selBrand', mates ? 'World Cup · your team so far: '+[pt.lead, ...pt.mates].map(m=>m.name).join(', ') : onCup ? 'World Cup · you are picking your team' : cupOne ? 'World Cup · pick the fighter you play' : 'Cake at Stake · Contestant Select');
+  set('startBtn', mates ? (pt.mates.length+1 < pt.size-1 ? 'Next teammate ▶' : 'Kick Off ▶') : onCup ? 'Pick teammates ▶' : cupOne ? 'Kick Off ▶' : 'Start Match ▶');
   set('selHowTo', mates ? 'Click a teammate (or use the arrow keys), then '+(pt.mates.length+1 < pt.size-1 ? 'Next teammate.' : 'Kick Off.')+' Esc: back.'
-                  : onCup ? 'Click your fighter (or use the arrow keys), then Pick teammates. Esc: back.' : 'Click a fighter, pick a stadium, then start.');
-  if(onCup) set('matchSummary', 'World Cup · '+pt.size+'v'+pt.size);
+                  : onCup ? 'Click your fighter (or use the arrow keys), then Pick teammates. Esc: back.' : cupOne ? 'Click your fighter, then Kick Off. The cup picks the stages.' : 'Click a fighter, pick a stadium, then start.');
+  if(onCup || cupOne) set('matchSummary', 'World Cup · '+(pt.size > 1 ? pt.size+'v'+pt.size : 'Solo'));
   // An event match's pick keeps its own labels ("Play ▶", "Event · Take the Plunge", its how-to), whatever relabelled the screen: updateSummary
   // ends here, and the CPU skill's click and every buildBoard call it. (syncEventSelect, with a match held, never calls updateSummary back.)
   if(!onCup && !mates){ try{ if(EVENT_PICK) syncEventSelect(); }catch(e){} }
@@ -22809,6 +22810,8 @@ function startTournament(teamSize, mode, opts){
   buildGroupFixtures();
   showTourneyHub();
 }
+// A solo side is one fighter ("Rose wins", "Rose advances"); a squad ("Rose +1") is plural.
+function cupVerb(team, one, many){ return (team && team.members && team.members.length === 1) ? one : many; }
 function teamName(members, i){
   if(members.length===1) return members[0].name;
   // squad name: first member + count
@@ -23430,7 +23433,7 @@ function pcOver(winTeam){
   const fx = m.fx;
   if(fx.kind === 'ko'){
     const wt = (winTeam===0 || winTeam===1) ? winTeam : cupTimedWinner(fx);   // both out on one frame, or the clock: the tie-break
-    fx.winner = wt===0 ? fx.a : fx.b; fx.result = { sa: wt===0?1:0, sb: wt===1?1:0 }; fx.played = true;
+    fx.winner = wt===0 ? fx.a : fx.b; fx.result = cupKoScore(fx); fx.played = true;
     try{ recordCupFight(wt); }catch(e){}
   } else {
     const st0 = fx._stk0 || [0,0];
@@ -23717,7 +23720,7 @@ function tourneyLiveTick(){
   if(TOURNEY.liveTimer<=0){
     if(PCAM.on){ pcOver(null); return; }   // PLAYS CAMERA: scored where it stands; the session goes on
     if(fx.kind==="group") finishWatchedGroup(fx);
-    else if(!fx.played){ banner(cupTimedWinner(fx)===0 ? fx.a.name+" advance!" : fx.b.name+" advance!", 1600); finishWatchedKnockout(fx, cupTimedWinner(fx)); }
+    else if(!fx.played){ const wt = cupTimedWinner(fx), wtm = wt===0 ? fx.a : fx.b; banner(wtm.name+cupVerb(wtm, " advances!", " advance!"), 1600); finishWatchedKnockout(fx, wt); }
   }
 }
 // Stocks a side has left (a fighter who is out has none), and what each side lost.
@@ -23730,6 +23733,8 @@ function cupTimedWinner(fx){
   const p0=pct(0), p1=pct(1); if(Math.abs(p0-p1)>0.5) return p0<p1 ? 0 : 1;
   return Math.random()<0.5 ? 0 : 1;
 }
+// A played knockout's score, as a group fight's: the stocks each side took off the other (who went through is fx.winner, marked on the hub and the bracket).
+function cupKoScore(fx){ const st0 = fx._stk0 || [0,0]; return { sa:Math.max(0, st0[1] - cupTeamStocks(1)), sb:Math.max(0, st0[0] - cupTeamStocks(0)) }; }
 function finishWatchedGroup(fx){
   if(fx.played) return;   // the clock and a wipe-out can both land
   // A stock fight: the score is the stocks each side took off the other -- all of theirs for the side that wiped the other out, and
@@ -23749,7 +23754,7 @@ function finishWatchedKnockout(fx, winTeam){
   // winTeam: 0 => A, 1 => B
   if(fx.played) return;
   fx.winner = winTeam===0 ? fx.a : fx.b;
-  fx.result = { sa: winTeam===0?1:0, sb: winTeam===1?1:0 };
+  fx.result = cupKoScore(fx);
   fx.played=true;
   recordCupFight(winTeam);   // for DWS: the fight as it was played
   running=false; TOURNEY_WATCHING=null; TOURNEY_MATCH_ACTIVE=false;
@@ -23774,13 +23779,16 @@ function showTourneyHub(){
   const title=document.getElementById('tourneyHubTitle');
   const body=document.getElementById('tourneyHubBody');
   const proceed=document.getElementById('tourneyProceedBtn');
+  { const qb = document.getElementById('tourneyQuitBtn'); if(qb) qb.style.display = TOURNEY.stage==="done" ? 'none' : ''; }
   if(TOURNEY.stage==="done"){
     brand.textContent="Champions";
     const won = TOURNEY.mode==="normal" && TOURNEY.champion===TOURNEY.myTeam;
     title.textContent="🏆 "+TOURNEY.champion.name;
     // ONE'S CHAIN: the cup that is won with only Lightning left cracks the Moon, and the Moon plays by itself (oneMoonAuto). Never a Flag Cup.
     const moon = won && TOURNEY.game !== 'ctf' && oneQ().stage===ONE_STAGE.MOON, erased = oneHubNote();
-    body.innerHTML = erased + '<div class="tourney-champ">'+(won?"YOU win the World Cup! 🎉":TOURNEY.champion.name+' win the World Cup!')+'</div>'
+    const wcUn = TOURNEY.game !== 'ctf' ? ctfCupUnlockText() : '';   // the cup win's trophy fighter (awardWorldCup), said here: the World Cup's own matches never reach a result screen
+    body.innerHTML = erased + '<div class="tourney-champ">'+(won?"YOU win the World Cup! 🎉":esc(TOURNEY.champion.name)+cupVerb(TOURNEY.champion, ' wins', ' win')+' the World Cup!')+'</div>'
+      + (wcUn ? '<div class="tourney-champ" style="font-size:16px">' + esc(wcUn) + '</div>' : '')
       + (moon ? '<div class="tourney-champ" style="font-size:16px;opacity:.85">…something up there just cracked.</div>' : '');
     if(moon){ proceed.textContent="Look up 🌕"; proceed.onclick=()=>{ endTournament(); playMoonScene(); }; oneMoonAuto(); }
     else { proceed.textContent="Back to Title"; proceed.onclick=()=>{ endTournament(); go('title'); }; }
@@ -96332,7 +96340,7 @@ function syncPauseMoves(){
   const open = PAUSE_MOVES_OPEN && !!r;
   box.style.display = open ? 'block' : 'none';
   if(open) box.innerHTML = moveListHTML(r);
-  if(btn) btn.textContent = open ? 'Hide move list' : 'Move list';
+  if(btn){ btn.textContent = open ? 'Hide move list' : 'Move list'; btn.style.display = r ? '' : 'none'; }
   if(card) card.style.maxWidth = open ? '640px' : '420px';
 }
 // the character-select card's two tabs: 'moves', 'skins'
@@ -108823,7 +108831,7 @@ function checkWin(){
       if(fx.kind==="ko"){
         // knockout: the surviving team wins; return to hub
         const wt = (winTeam===0 || winTeam===1) ? winTeam : cupTimedWinner(fx);   // both sides out on the same frame: the tie-break decides
-        banner((wt===0?fx.a.name:fx.b.name)+" advance!", 1600);
+        { const wtm = wt===0 ? fx.a : fx.b; banner(wtm.name+cupVerb(wtm, " advances!", " advance!"), 1600); }
         setTimeout(()=>finishWatchedKnockout(fx, wt), kocAfter(1400));   // (kocAfter: the last KO's hold comes out of the wait)
       } else {
         // group match ended early (a team wiped out before the timer) — score it now
@@ -152643,6 +152651,7 @@ function quitNeedsConfirm(){
     if(BOSSRUSH && BOSSRUSH.active) return 'Quit this Boss Rush run? The bosses you have beaten so far are lost.';
     if(typeof DAILY_ACTIVE !== 'undefined' && DAILY_ACTIVE) return 'Quit the Daily? Your attempt for today is used up.';
     if(inNetSession()) return 'Leave the online match? You cannot come back to it.';
+    if(TOURNEY && TOURNEY.active) return 'Quit the ' + (TOURNEY.game === 'ctf' ? 'Flag Cup' : 'World Cup') + '? The whole cup ends here.';
   }catch(e){}
   return '';
 }
