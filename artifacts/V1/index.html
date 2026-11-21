@@ -124261,14 +124261,6 @@ function bhcDrawRocket(c, x, y, s, flame, t){
   c.fillStyle = '#6fb7ff'; c.beginPath(); c.arc(0, 0, s*0.17, 0, 7); c.fill(); c.stroke();
   c.restore();
 }
-// A STAR (art: only the switched-off picture card draws it now; the falling stars are gone from the match).
-function bhcDrawStar(c, x, y, s, a){
-  c.save(); c.translate(x, y); c.rotate(a || 0);
-  c.globalAlpha *= 0.35; c.fillStyle = '#fff3a0'; c.beginPath(); c.arc(0, 0, s*1.7, 0, 7); c.fill(); c.globalAlpha /= 0.35;
-  c.fillStyle = '#ffe14a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath();
-  for(let k = 0; k < 10; k++){ const r = k % 2 ? s*0.45 : s, an = -Math.PI/2 + k*Math.PI/5; c.lineTo(Math.cos(an)*r, Math.sin(an)*r); } c.closePath(); c.fill(); c.stroke();
-  c.restore();
-}
 CONTEST_RULES.top = {
   twists:['lowgrav'],
   begin(){
@@ -124450,11 +124442,19 @@ CONTEST_RULES.top = {
     if(gx != null){ if(gx < f.x - 6) inp.left = true; else if(gx > f.x + 6) inp.right = true; return true; }
     if(!tg) tg = bhcNextLedge(f);
     if(!tg || !tg.live) return false;
+    if(!f.onground && f.vy > 0 && feet > tg.y + 4 && f.jumps <= 0 && (f._usedAirSpecial || !bhcCpuUpOk(f)) && !f._bhWT){   // falling under the step with nothing left to get up there with: it lands on a ledge under it
+      const lo = bhcLandLedge(f);   // (it steered on at the step above, out of reach, and fell past every ledge into the hole: 2026-11-21)
+      if(lo){ const lx = clamp(f.x, lo.x + 14, lo.x + lo.w - 14); inp.left = lx < f.x - 4; inp.right = lx > f.x + 4; return true; }
+    }
     const cx = ax != null ? ax : tg.x + tg.w/2, gap = Math.max(0, tg.x - f.x, f.x - (tg.x + tg.w));
     if(cx < f.x - 6) inp.left = true; else if(cx > f.x + 6) inp.right = true;
+    if(f._bhWT){ inp.up = true; return true; }   // Black Hole in his Wormhole (pressed as his way up, below): aimed up and over to the ledge (bhHold reads the arrows; level, it came out sideways with no height and he fell in)
     if(side && f.onground && now - S.flip.on >= C.react[lv]){ if(side > 0 && !inp.right) inp.left = true; else if(side < 0 && !inp.left) inp.right = true; }   // lean against the slide
     if(f.onground){ if(gap < 100) inp.jump = true; }
-    else if(f.vy > 0 && f.jumps > 0 && f.y + f.r > tg.y - 6 && gap < 160) inp.jump = (now % 4) < 2;   // (it fell short of the step: the second jump)
+    else if(f.vy > 0 && f.y + f.r > tg.y - 6 && (gap < 160 || bhcCpuDanger(f))){   // (it fell short of the step, or it is falling in the band over the hole)
+      if(f.jumps > 0) inp.jump = (now % 4) < 2;   // the second jump
+      else if(!f._usedAirSpecial && !(f.spCd > 0) && bhcCpuUpOk(f)){ inp.up = true; inp.special = true; if(f._br) f._br.recT = now; }   // then its up special (2026-11-21: in 16 seeded all-CPU matches every one of the 138 swallows came with it unused: the engine's own recovery, brainRecover, never starts here, a ledge is always under the climber; recT lets brainOut pass the press as on a trip back)
+    }
     return true;
   },
   // ART: THE WORLD BEING EATEN, layer by layer. Under the fighters: the layer's sky, its landmarks (tearing loose and streaming down as the hole nears them), stars from the clouds up, the hole with its rings and
@@ -124760,6 +124760,19 @@ function bhcLandmark(c, lay, id, t){
 // THE CPU AND THE HOLE: in the band just over it (under BHK.cpu.flee frames of the hole's rise at its speed now, or BHK.dangerPx, whichever is more) a CPU climbs first.
 function bhcCpuDanger(f){ const K = BHK, t = hazardT, v = (K.holeRise + K.holeAcc*t)*(t < K.start.len ? K.start.k0 + (1 - K.start.k0)*t/K.start.len : 1); return bhcAbove(f) < Math.max(K.dangerPx, v*K.cpu.flee); }
 // THE CPU'S NEXT LEDGE: the one after the ledge it last stood on (the tower's own stair).
+// A CPU's up special as a way up (want, out of air jumps): not a stance (brainKit's uStance) and not a slam with no lift (Bow's Chair Slam).
+// A ledge to land on, falling (want): the highest live one under the feet, over the hole, that the fall can still drift to (about a third of the drop sideways); else the nearest one under them.
+function bhcLandLedge(f){
+  const S = BHC, feet = f.y + f.r; let best = null, near = null, nd = 1e9;
+  for(let k = S.next - 1; k >= S.low; k--){
+    const p = S.ledges[k]; if(!p || !p.live || p.y < feet - 2 || p.y > S.line - 10) continue;
+    const gap = Math.max(0, p.x - f.x, f.x - (p.x + p.w)), dy = p.y - feet;
+    if(gap <= 30 + 0.35*dy){ best = p; break; }
+    if(gap < nd){ nd = gap; near = p; }
+  }
+  return best || near;
+}
+function bhcCpuUpOk(f){ const K = brainKit(f); return !K.uStance && !(K.up && K.up.kind === 'slam'); }
 function bhcNextLedge(f){ return bhcLedge((f._bhRef == null ? -1 : f._bhRef) + 1); }
 EVENT_TWIST_WORDS['contest:top'] = { icon:'\u{1F573}\u{FE0F}', short:"Black Hole's contest: back to the top", words:"Black Hole's contest: a black hole rises from the bottom, slowly at first, then faster and faster. Climb! Comets knock you down, the world sometimes tips sideways, and three rocket parts build you a rocket. Falling in costs a stock; out of stocks, you throw comets. Last one standing wins.", goal:'Survive the rising hole!' };
 
@@ -154848,8 +154861,17 @@ const CCARD_ART = {
      '>', 'win']
   ]; },
   // BLACK HOLE: it eats the world from the bottom up and rises; climb up through it (Yoyleland, Goiky, the clouds, the Moon, space), and the last one standing wins. Three rocket parts make a rocket,
-  // a falling star gives your jumps back, the world tips sideways now and then, and falling in costs a stock.
-  top:function(){ return [
+  // a comet knocks you down, the world tips sideways now and then, falling in costs a stock, and out of stocks you are a ghost who throws the comets
+  // (2026-11-21: the falling star's cells went, the falling stars left the contest on 2026-11-18; the comet and the ghost came in)
+  top:function(){
+    const comet = function(c, x, y, r){ c.save(); c.lineCap = 'round'; c.strokeStyle = 'rgba(255,120,50,0.6)'; c.lineWidth = r*0.9; c.beginPath(); c.moveTo(x, y); c.lineTo(x + r*3, y - r*1.1); c.stroke();
+      c.strokeStyle = 'rgba(255,230,160,0.8)'; c.lineWidth = r*0.4; c.beginPath(); c.moveTo(x, y); c.lineTo(x + r*2, y - r*0.73); c.stroke();
+      c.translate(x, y); c.fillStyle = '#e9e2f2'; c.strokeStyle = '#140a10'; c.lineWidth = 3; c.beginPath(); for(let k = 0; k < 8; k++){ const a = k/8*6.283, rr = r*(0.7 + 0.3*bhcR(5, k)); c.lineTo(Math.cos(a)*rr, Math.sin(a)*rr); } c.closePath(); c.fill(); c.stroke();
+      c.fillStyle = '#a070ff'; c.beginPath(); c.moveTo(-r*0.4, -r*0.1); c.lineTo(r*0.2, -r*0.45); c.lineTo(r*0.45, r*0.15); c.closePath(); c.fill(); c.restore(); };
+    const ghost = function(c, x, y, s){ c.save(); c.translate(x, y); const k = s/48; c.scale(k, k); c.fillStyle = '#e8e4f4'; c.strokeStyle = '#9a90b8'; c.lineWidth = 3;
+      c.beginPath(); c.arc(0, -4, 24, Math.PI, 0); c.lineTo(24, 22); for(let q = 0; q < 4; q++){ c.lineTo(24 - 12*(q + 0.5), 14); c.lineTo(24 - 12*(q + 1), 22); } c.closePath(); c.fill(); c.stroke();
+      c.fillStyle = CC_INK; c.beginPath(); c.arc(-8, -4, 4, 0, 7); c.arc(8, -4, 4, 0, 7); c.fill(); c.restore(); };
+    return [
     [function(c, x, y, s){ c.save(); c.fillStyle = '#140a1a'; c.strokeStyle = '#a070ff'; c.lineWidth = 4; c.beginPath(); c.ellipse(x, y + s*0.25, s*0.42, s*0.16, 0, 0, 7); c.fill(); c.stroke(); c.restore();
        bhcChunk(c, x - s*0.25, y - s*0.15, s*0.12, 1, 3, 1, 0); bhcChunk(c, x + s*0.22, y - s*0.25, s*0.12, 2, 5, 1, 1); ccArrow(c, x, y - s*0.02, s*0.5, '#a070ff', Math.PI/2); },
      '>', function(c, x, y, s){ const cols = ['#0a0518', '#16141e', '#4a5470', '#6a3418', '#5a1a3e'], bh = s*0.17, x0 = x - s*0.3, w = s*0.6, top = y - s*0.45;
@@ -154865,14 +154887,15 @@ const CCARD_ART = {
      '>', 'win'],
     [function(c, x, y, s){ bhcDrawPart(c, x - s*0.3, y, s*0.13, 0); bhcDrawPart(c, x, y, s*0.13, 1); bhcDrawPart(c, x + s*0.3, y, s*0.13, 2); },
      '>', function(c, x, y, s){ bhcDrawRocket(c, x, y + s*0.15, s*0.2, 1, 3); ccMe(c, x, y - s*0.22, s*0.28); ccArrow(c, x + s*0.32, y - s*0.1, s*0.45, '#7ae582', -Math.PI/2); },
-     function(c, x, y, s){ bhcDrawStar(c, x - s*0.15, y - s*0.15, s*0.14, 0.2); ccMe(c, x + s*0.12, y + s*0.15, s*0.34); },
-     '>', function(c, x, y, s){ ccMe(c, x, y + s*0.12, s*0.36); ccArrow(c, x - s*0.16, y - s*0.22, s*0.32, '#ffe14a', -Math.PI/2); ccArrow(c, x + s*0.16, y - s*0.22, s*0.32, '#ffe14a', -Math.PI/2); }],
+     function(c, x, y, s){ ccMe(c, x - s*0.18, y, s*0.36); comet(c, x + s*0.12, y - s*0.08, s*0.12); ccSpark(c, x - s*0.02, y - s*0.04, s*0.18); },
+     '>', function(c, x, y, s){ c.save(); c.fillStyle = '#7a6a98'; c.strokeStyle = CC_INK; c.lineWidth = 3; c.fillRect(x - s*0.3, y - s*0.12, s*0.6, s*0.06); c.strokeRect(x - s*0.3, y - s*0.12, s*0.6, s*0.06); c.restore();
+       ccMe(c, x, y + s*0.16, s*0.3); ccArrow(c, x + s*0.3, y + s*0.1, s*0.35, '#ff6a5a', Math.PI/2); }],
     [function(c, x, y, s){ c.save(); c.translate(x, y); c.rotate(0.3); c.fillStyle = '#7a6a98'; c.strokeStyle = CC_INK; c.lineWidth = 3;
        for(let i = 0; i < 3; i++){ c.fillRect(-s*0.3 + (i % 2)*s*0.25, s*0.25 - i*s*0.22, s*0.3, s*0.07); c.strokeRect(-s*0.3 + (i % 2)*s*0.25, s*0.25 - i*s*0.22, s*0.3, s*0.07); }
        c.fillStyle = '#2a1024'; c.fillRect(s*0.36, -s*0.42, s*0.1, s*0.84); c.strokeRect(s*0.36, -s*0.42, s*0.1, s*0.84); c.restore();
        ccMe(c, x + s*0.12, y - s*0.05, s*0.26); ccArrow(c, x - s*0.1, y - s*0.32, s*0.4, '#ffb347', 0); },
      function(c, x, y, s){ c.save(); c.fillStyle = '#140a1a'; c.strokeStyle = '#a070ff'; c.lineWidth = 4; c.beginPath(); c.ellipse(x, y + s*0.25, s*0.4, s*0.14, 0, 0, 7); c.fill(); c.stroke(); c.restore(); ccMe(c, x, y - s*0.05, s*0.4); ccArrow(c, x + s*0.3, y - s*0.05, s*0.35, '#ff6a5a', Math.PI/2); },
-     '=', '-1']
+     '=', '-1', function(c, x, y, s){ ghost(c, x - s*0.15, y - s*0.05, s*0.34); comet(c, x + s*0.2, y + s*0.12, s*0.09); ccArrow(c, x + s*0.12, y - s*0.22, s*0.3, '#ff7a5a', 0.4); }]
   ]; },
   // CLOCK: the time-travel heist: gears are the points and a KO drops half; the seed in the past is a tree in the future; doors between the eras; the hour rules; most gears at midnight wins
   clock:function(){ return [
