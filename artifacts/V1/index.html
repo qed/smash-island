@@ -75526,7 +75526,7 @@ function step(){
     if(f._smQ && f._smQ.t != null && !f._smQ.angle && isHumanCtrl(f) && f.onground && inp.jump && !f._jp && hazardT - f._smQ.t <= SM_CANCEL_WIN){ inp.jump = false; f._upCancel = true; f._smQ.angle = 1; }
     if(f.hitstun>0 && (f._hold || f._heldBy!=null || f._gb || f._mv)) mvCancel(f);   // a hit lets go of a grab, a hold or a move in progress
     f._dirPrev = mdiMask(inp);   // MDI: the ways held this frame (a press in the hit-freeze is fresh against these: mdiSDI)
-    if(f.hitstun>0){ mdiDI(f, inp); f.hitstun--; f._spPend=0; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }   // (mdiDI: the way held bends the launch of the hit just taken; everything else is thrown away in stun)
+    if(f.hitstun>0){ mdiDI(f, inp); f.hitstun--; f._spPend=0; f._inClrAt = hazardT; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }   // (mdiDI: the way held bends the launch of the hit just taken; everything else is thrown away in stun)
     if(f._selfStun > 0) f._selfStun = f.hitstun > 0 ? f._selfStun - 1 : 0;   // its own stun runs down with the hitstun (edgeOwnStun)
     if(f._fsHitT != null && f.onground && hazardT - f._fsHitT > 3) f._fsHitT = null;   // landed after a Final Smash's launch: a later KO is not its (fsKoSlow)
     if(f.frozen>0){ inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
@@ -75538,7 +75538,7 @@ function step(){
     if(f._fxLock > hazardT){ f._fxIn = (inp.left ? 1 : 0) | (inp.right ? 2 : 0) | ((inp.up || inp.jump) ? 4 : 0) | (inp.down ? 8 : 0); if(FINX.length) finxPress(f); inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; f._smQ = null; f.smashHold = 0; f._smBuf = false; }   // committed to a finisher (its tell, a reel, a slap fight): no input but the slap fight's mash, Nickel's beat, Liy's second click and the mash out of Yellow Face's tosses, and no smash charging through it; the arrows are kept for Rocky's jet (_fxIn) (FINISHERS V2)
     const aS = atkSpeedSteps(f);   // ATTACK SPEED: how many frames the attack timers run this frame -- 1, unless something speeds them up or slows them (atkSpeedSteps)
     endLagStep(f);   // FRAME BUDGET: a move's end lag starts the frame its commitment ends (nothing for a fighter with none pending)
-    if(f._lag>0){ f._lag-=aS; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }   // the recovery of a throw, a whiffed grab, a landing, or a move's end lag (FRAME BUDGET)
+    if(f._lag>0){ f._lag-=aS; f._inClrAt = hazardT; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }   // the recovery of a throw, a whiffed grab, a landing, or a move's end lag (FRAME BUDGET)
     inp = zsStep(f, inp);   // SHIELD / REFLECTOR (Z): raised, held, dropped, broken (zsStep)
     if(f.invuln>0) f.invuln--;
     if(f._graceLeft>0) f._graceLeft--;   // runs down beside invuln: how much of it is hit-grace
@@ -149905,6 +149905,8 @@ function netInResume(){
 // and the guest disagree (a hit the guest has not heard of yet, a moving platform), the difference eases out over a few frames rather than
 // snapping (NET_PRED.ease), unless it is too big to be one (`snap` px).
 //   max  most frames played ahead (a worse network is not chased further)     ease  how much of a difference is left the next frame
+//   stepMax  the most of a difference eased out in one frame (GUEST SNAPS: a hit heard of a round trip late halved a 150-200 px gap a frame:
+//            the fighter jumped 75-100 px on the guest's screen; now it slides across in a few frames)
 //   hitEase, hitT  the same, for `hitT` frames after the prediction turns off or on -- a hit the guest had not heard of, and the stun's end:
 //                  that slide is the one a player notices, so it is short (the owner, 2026-10-24: "try to fix that")
 // GUEST RUBBER-BANDING (the owner, 2026-11-19: "multiplayer is buggy when its not me who is hosting" -- snapping back, lag). Measured on fake
@@ -149918,7 +149920,7 @@ function netInResume(){
 // riding, a Final Smash...), and then it is drawn where the host has it, as before. Also played now: the host's jump buffer (a jump pressed
 // in the air with none left is kept for the landing: `jb`), which the guest did not know and so jumped late, and a prediction more than
 // `max` frames ahead stops there instead of playing its keys from the wrong frame.
-const NET_PRED = { on:true, max:40, ease:0.8, hitEase:0.5, hitT:8, snap:480, ox:0, oy:0, mode:0, bx:0, by:0, auth:null, fastT:0 };
+const NET_PRED = { on:true, max:40, ease:0.8, hitEase:0.5, hitT:8, snap:480, stepMax:20, ox:0, oy:0, mode:0, bx:0, by:0, auth:null, fastT:0 };
 // On the host: what a guest's prediction needs of its fighter -- the frame it is at, whether it is free (b), its jumps and jump-key state,
 // and the numbers this step's run and jump would use (k) as step() works them out, so the guest needs none of the buffs and stats behind them;
 // and its walls: the one touched within WALL_WINDOW steps (w: side, steps ago, which face), the faces kicked off this airtime (wu), its cling
@@ -149928,18 +149930,23 @@ function netPredOut(f){
   if(!S) return null;
   const a = netAck(N, S); if(a == null) return null;
   const ctfHeld = SETTINGS.mode === 'ctf' && CTF.live && !CTF.live.over && (CTF.live.phase !== 'play' || f._jail != null || f._fuse || f._can || f._canLand || f._peekT > 0 || f._peekCd > 0);   // (Capture the Flag holds them: ctfFilterInput)
-  const keysOff = f._freeAt !== hazardT || f._freeIn !== (S.cur & 7), timed = f.hitstun > 0 || f._hitStop > 0 || f._lag > 0;   // (GUEST RUBBER-BANDING: a stun, a hit's freeze, a move's end lag: they end on a known frame)
-  const held = !!(ctfHeld || FS.freeze > 0 || FS.slow > 0 || f.dead || f._fsLock || f._mv || f._dashing > 0 || f._hyperT > 0 || f._gotcha || f._nail
+  const keysOff = (f._freeAt !== hazardT || f._freeIn !== (S.cur & 7)) && !(f._inClrAt === hazardT && f._freeAt === hazardT && !(f.hitstun > 0) && !(f._lag > 0)), timed = f.hitstun > 0 || f._hitStop > 0 || f._lag > 0;   // (GUEST RUBBER-BANDING: a stun, a hit's freeze, a move's end lag: they end on a known frame)
+  // GUEST SNAPS: the step a stun or an end lag ran out in played no keys (_inClrAt), but the next one plays them: that step is a free one, not an
+  // open-ended busy one (a guest coasted it with no keys until the next picture -- through a network stall, 140 px from where its fighter ran)
+  // GUEST SNAPS: a move the guest can play itself (netPredMvOut) does not hold the prediction: it goes with the free fighter's numbers and its own frames (mv)
+  const mvC = (f._mv && !keysOff && !timed && !hdNetBusy(f) && netPredCoastOk(f, ctfHeld)) ? netPredMvOut(f) : null;
+  const held = !!(ctfHeld || FS.freeze > 0 || FS.slow > 0 || f.dead || f._fsLock || (f._mv && !mvC) || f._dashing > 0 || f._hyperT > 0 || f._gotcha || f._nail
     || (f._sm && f._sm.drive) || f.flying > 0 || f._tp || f._tpHang > 0 || stanceStill(f) || f.rooted > 0 || f._gb || f._hold || f._slam
     || f.frozen > 0 || f._fxLock > hazardT || f.ctrlRev > 0 || f.smashHold > 0 || f._windup || f._plunge || f._floatT > 0 || f.iceUntil > 0
     || f._ynZip || f._heldBy != null || f._grabHold || f._attract || f.dropping > 0 || f._springT > 0 || f._raceSpringT > 0 || f.swallowed || f._rubHang > hazardT || f._fHold > hazardT || f._ffPh || f._bzPh || f._bbPh || f._hiPh || f._stPh || f._wallKickT > hazardT || f._spFly > hazardT || f._roll || f._bhSingT > hazardT || f._bhWT >= hazardT || f._boltHang > hazardT || f._flutT > hazardT || f._crumbT > hazardT || f._sdPh || RACE.active || (WND && f._stgRide));   // (WINDY HEIGHTS TEAMS: a rider on a kite, the gondola, a vane or the Airship is the host's to place: the guest's own replay ran it against a kite 3 frames old and popped it 60 to 150 px)   // (Spongy: his finisher's and Final Smash's flight, Squash and Spring's squash)   // (Black Hole: SINGULARITY's drift, the WORMHOLE)   // (Eraser: RUB OUT's hang, STEAKHOUSE FLIP's wall kick; 8-Ball: STOP SHOT's roll; Cloudy: the bolt's air hold; Pie: Arm Flutter's flaps, her crumbs)
   const busy = held || keysOff || timed;
   const o = { a, b:busy ? 1 : 0 };
+  if(S.lastG > -1e8 && a - S.lastG < 4000 && Number.isInteger(S.clk)){ o.lg = a - S.lastG; o.ld = a - S.clk; }   // GUEST SNAPS: the last change of theirs it played (frames before a) and how far its play clock runs behind a (netPredKeys)
   // GUEST RUBBER-BANDING: only a stun, a hit's freeze or an end lag (timedOnly): everything the free fighter sends, and when its keys come back
   // (n frames: the freeze, then the longer of the stun and the lag) -- the guest coasts that long and then plays its keys, where it used to wait
   // for the host's free picture to come back and jump forward a round trip of running
   const timedOnly = !held && timed && !hdNetBusy(f) && netPredCoastOk(f, ctfHeld);
-  if(busy && !timedOnly){ if(netPredCoastOk(f, ctfHeld)){ o.c = 1; if(f._hitStop > 0) o.hs = f._hitStop | 0; if(f.hitstun > 0) o.h = f.hitstun | 0; } return o; }   // (may the guest coast it on from here -- netPredCoastOk; h: the stun, no friction)
+  if(busy && !timedOnly){ if(netPredCoastOk(f, ctfHeld)){ o.c = 1; if(f._dashing > 0) o.ds = [f._dashing | 0, Math.round((f._dashSpeed||22)*1000)/1000, f._dashVY ? Math.round(f._dashVY*1000)/1000 : 0]; if(f._hitStop > 0) o.hs = f._hitStop | 0; if(f.hitstun > 0) o.h = f.hitstun | 0; } return o; }   // (may the guest coast it on from here -- netPredCoastOk; h: the stun, no friction)
   if(hdNetBusy(f)){ o.b = 1; return o; }   // (HOT DOG: his stance, lunge, ride and carry hold his walk: EVENT FIGHTERS: HOT DOG)
   const fst = f.st || STAT_ONE, sk = ctfSpeedK(f)*rainRunK(f), r3 = v=>Math.round(v*1000)/1000;   // (THE RAIN twist's slow rides in the speeds: rainRunK)
   const mvB = (f.slowed>0 ? MOVE*0.5 : MOVE) * (f._hasteT>0 ? (1 + 0.5*Math.min(1, f._hasteT/20)) : 1) * sk;
@@ -149956,8 +149963,25 @@ function netPredOut(f){
   if(f._wallSide && typeof f._wallT === 'number' && hazardT - f._wallT <= WALL_WINDOW) o.w = [f._wallSide, hazardT - f._wallT, f._wallId];   // (mtWallJump)
   if(f._wallUsed){ const u = Object.keys(f._wallUsed); if(u.length) o.wu = u; }
   { const lim = f.kit && CLINGERS[f.kit.special]; if(lim) o.cl = [lim, f._clingT || 0]; }   // (mtCling: how long it may cling, and has this airtime)
+  if(mvC){ o.b = 1; o.c = 1; o.mv = mvC; }   // (b and c: a guest from before this coasts it as it did)
   if(timedOnly){ o.c = 1; o.hs = f._hitStop > 0 ? f._hitStop | 0 : 0; o.h = f.hitstun > 0 ? f.hitstun | 0 : 0; o.n = o.hs + Math.max(o.h, f._lag > 0 ? Math.ceil(f._lag) : 0); }
   return o;
+}
+// GUEST SNAPS (the owner, 2026-11-20: online "perfectly smooth"): a move in progress as its guest can play it -- what is left of it, from the
+// next frame on (mvTick's own frame numbers): [frames left, flags (1 air, 2 vhold, 4 turn, 8 lift), frames to the end of its live part, to
+// its auto-cancel, its landing lag, its jump cancel (0 none, 1 on a hit, 2 at the end, 3 either), its special cancel, its pushes still to
+// come [from, to, vx (times the facing), vy, mode (0 set, 1 add, 2 stall, 3 dive)]]. Null when the guest could not: a side special (it
+// drives itself and arms an end lag), a push worked out per use, a row that turns its fighter, a stance. The guest used to coast a move
+// with no keys at all while the host's fighter walked on with the arrows (a ground move walks at full speed) or was lifted by the move:
+// 40-180 px apart for a round trip, then pulled across in two or three frames.
+function netPredMvOut(f){
+  const mv = f._mv, S = mv && mv.s; if(!S || mv.key === 'side' || S.flipAt != null || stanceStill(f)) return null;
+  const t = mv.t, total = mvTotal(S), q = v=>Math.round(v*1000)/1000, rows = [];
+  if(t >= total) return null;
+  if(S.mv) for(const m of S.mv){ const t1 = m.t1 == null ? m.t0 : m.t1; if(t1 < t) continue; if(typeof m.vx === 'function' || typeof m.vy === 'function') return null;
+    rows.push([m.t0 - t, t1 - t, m.vx == null ? null : q(m.vx), m.vy == null ? null : q(m.vy), m.mode === 'add' ? 1 : m.mode === 'stall' ? 2 : m.mode === 'dive' ? 3 : 0]); }
+  const jc = S.jc === 'hit' ? 1 : S.jc === 'end' ? 2 : S.jc === 'any' ? 3 : 0;
+  return [total - t, (mv.air ? 1 : 0) | (S.vhold ? 2 : 0) | (S.turn ? 4 : 0) | (mv.lift ? 8 : 0), S.st + S.act - t, S.ac == null ? 999 : S.ac - t, S.land == null ? 6 : S.land, jc, S.sc ? 1 : 0, rows];
 }
 // GUEST RUBBER-BANDING: may a busy fighter be coasted on by its guest (its speed, gravity, friction, floors)? Not while something places it or
 // holds it up -- carried, held, swallowed, riding, hovering, gliding, hanging, teleporting, dropping through, a Final Smash, a race -- nor while it is
@@ -149975,10 +149999,46 @@ function netPredCoastOk(f, ctfHeld){
 // them the guest's fighter fell past the ledge into the rock and was dragged back out 45 to 96 px (the guest-controls report, 2026-10-26).
 // cz (GUEST RUBBER-BANDING), a busy fighter's coast: n frames with no keys (Infinity: all of them), the first hs of them held still (a hit's freeze),
 // the next h of them in a stun (no friction: step() skips the whole move block in hitstun)
+// GUEST SNAPS: the guest's own keys as the host will play them, for the prediction: the host plays one change a step, a fresh one as it comes and
+// one close behind the last (NET_IN.near) at the same gap, or `wait` steps after it is next at most (netPlayStep). The snapshot says which
+// change it played last (lg) and how far its play clock is behind (ld). A change the host has not played by the snapshot's frame plays after it.
+// Without this the prediction played every key on the frame it was pressed: a tap the host had not played yet when its picture was taken (it
+// plays keys 1-9 frames late on a jittery network) was skipped altogether -- a double jump went up on the guest's screen, fell back down when
+// the next picture came, and went up again when the host's did (160 px, both ways, in a few frames).
+function netPredKeys(pr, to){
+  const N = window.NET, C = N._inChg || [];
+  if(!Number.isInteger(pr.lg) || !Number.isInteger(pr.ld) || !Number.isFinite(pr.a)) return null;   // (a host from before this: the keys as pressed)
+  const lastG = pr.a - pr.lg, D0 = pr.ld, base = N.inMaskAt(lastG), sch = [];
+  let D = D0, prevG = lastG, g = pr.a + 1;
+  for(const c of C){
+    if(c[0] <= lastG) continue;
+    const head = Math.max(c[0], g);   // (the earliest it can be next: not before its own frame, nor before the step after the last played)
+    let at = c[0] - prevG >= NET_IN.near ? head : Math.max(head, Math.min(c[0] + D, head + NET_IN.wait));
+    if(at > to) break;
+    sch.push([at, c[1]]); D = at - c[0]; prevG = c[0]; g = at + 1;
+  }
+  const p0 = lastG + D0;   // the frame the last played change was played on
+  return function(q){
+    if(q < p0) return N.inMaskAt(Math.min(q - D0, lastG - 1));
+    let m = base; for(const e of sch){ if(e[0] > q) break; m = e[1]; } return m;
+  };
+}
 function netPredRun(a, pr, to, team, sq, cz){   // sq: the Spongys on the stage (SQUISHY TOP), from netPredict
   const N = window.NET, k = pr.k;
   const from = pr.a + 1; if(to - from + 1 > NET_PRED.max) to = from + NET_PRED.max - 1;   // (GUEST RUBBER-BANDING: it was `from` that moved, so the keys were played from the wrong frame)
+  const KA = netPredKeys(pr, to), mAt = KA || (q=>N.inMaskAt(q));   // (GUEST SNAPS: the keys as the host will play them)
   if(to < from) return null;
+  // GUEST SNAPS: a move in progress (cz.mv, netPredMvOut), played as the host's mvTick plays it: the arrows walk a ground move (not on its push
+  // frames) and drift an aerial, its pushes act on their frames, jump only as its jump cancel, it ends on its last frame, on an aerial's
+  // landing (then its landing lag: no keys) or when a ground move walks off its floor. coastA: a coast from a press of attack alone keeps the
+  // arrows -- the host's fighter walks on with them through a tilt and drifts through an aerial, where the coast with no keys stopped it dead.
+  let Mv = null, lagTo = -1, endAt = -1, coastA = false;
+  if(cz && Array.isArray(cz.mv) && cz.mv.length >= 8){ const q = cz.mv; Mv = { n:+q[0] | 0, air:!!(q[1] & 1), vhold:!!(q[1] & 2), turn:!!(q[1] & 4), lift:!!(q[1] & 8), live:+q[2] | 0, ac:+q[3], land:+q[4] | 0, jc:+q[5] | 0, sc:!!q[6], rows:Array.isArray(q[7]) ? q[7].filter(r=>Array.isArray(r) && r.length >= 5) : [] }; }
+  // GUEST SNAPS: a dash (cz.ds: frames left, speed, climb) holds its own speed through a coast, as the host's dash block does, the way it faces --
+  // the arrows still turn it, and the dash with it, in the host's move block (the coast held it
+  // to the run's speed: Leafy's 22 px a frame dash was drawn at 7, 80-130 px behind by its end)
+  const ds = cz && Array.isArray(cz.ds) && cz.ds.length >= 3 && cz.ds.every(Number.isFinite) ? cz.ds : null;
+  const mvPush = t=>Mv.rows.some(r=>r[2] != null && t >= r[0] && t <= r[1]);
   let coast = false;   // GUEST RUBBER-BANDING: no keys from here on (a press that starts a move, Down on the ground)
   const czN = cz ? cz.n : 0, czS = cz ? cz.hs | 0 : 0, czH = cz ? cz.h | 0 : 0;
   const P = { x:a.x, y:a.y, vx:a.vx, vy:a.vy, g:a.g, face:a.face, r:a.r, j:pr.j, at:pr.at, jp:!!(pr.s & 1), hop:!!(pr.s & 2), ff:!!(pr.s & 4), dn:!!(pr.s & 8), hj:+pr.hj || 0 };
@@ -149998,17 +150058,27 @@ function netPredRun(a, pr, to, team, sq, cz){   // sq: the Spongys on the stage 
   const lkp = lkPredOn(), lkD = (lkp && JAWB._crd) ? Object.assign({}, JAWB._crd) : null;   // LICK YOUR WAY TO FREEDOM (online): the factory's belts and doors (lkPredBelt, lkPredDoor)
   let yb = null; if(YN_VIS){ const S = ynSh(); if(S && S.T.B && S.T.B.length && ynShW(S) >= 1) yb = S.T.B; }
   for(let g = from; g <= to; g++){ mcEnter(P); try {   // (MOON CAVES: in the predicted body's own chart)
-    const ci = g - from, forced = ci < czN, stun = ci < czS + czH;
+    const ci = g - from, stun = ci < czS + czH;
     if(ci < czS) continue;   // (a hit's freeze holds it still first: HIT FREEZE, the frames the host says are left)
     if(xs){ const on = onXs(), cl2 = a.rd.t + (g - pr.a); for(const p of xs){ const q = ynMvzAt(p, cl2); if(p === on){ P.x += q[0] - p.x; P.y += q[1] - p.y; } p.x = q[0]; p.y = q[1]; } }
     if(yb && P.g) for(const bt of yb){ const p = worldPlats[bt[0]]; if(!p) continue; const x0 = p.x + bt[1]; if(P.x < x0 || P.x > x0 + bt[2] || Math.abs(P.y + P.r - p.y) > 4) continue; P.x += (bt[3] || 1)*2.2*YNH.beltV; }   // (applyZone's belt: before the move, as ynStep runs before the fighters)
     if(lkp) lkPredBelt(P);   // (lkBelts: before the move)
     if(MCAVE && MCAVE.on) plats = platRects();
-    let m = N.inMaskAt(g), mp = N.inMaskAt(g - 1);
-    if(!coast && !forced && (m & NET_IN_ACT & ~zm) && !(mp & NET_IN_ACT & ~zm)) coast = true;   // (JURY 1: only a PRESS starts a move; a key already down when the host said "free" did not, and used to stop the fighter dead)
-    if(!coast && !forced && czN > 0 && ci === czN){ for(let q = g - 8; q < g; q++) if((N.inMaskAt(q) & NET_IN_ACT & ~zm) & ~(N.inMaskAt(q - 1) & NET_IN_ACT & ~zm)){ coast = true; break; } }   // (a press in the stun's or the lag's last 8 frames: the host's input buffer plays it now)
-    if(!coast && !forced && (m & 8) && P.g) coast = true;   // (Down on the ground: a crouch, a drop, a down move -- the host's)
-    if(coast || forced){ m = 0; mp = 0; P.hop = false; P.sp = 0; P.zd = 0; P.jb = null; }   // (GUEST RUBBER-BANDING: it was `break`, and the fighter stood frozen where the press was, a round trip, then jumped)
+    let m = mAt(g), mp = mAt(g - 1);
+    let mvt = -1, keepFace = false, vh = false;   // (GUEST SNAPS: the move's own frame this frame, or -1)
+    if(Mv){ if(ci >= Mv.n){ Mv = null; endAt = ci; } else if(Mv.air && P.g){ const lag = ci >= Mv.ac ? 0 : Mv.land; Mv = null; if(lag > 0){ lagTo = ci + 1 + lag; endAt = lagTo; } else endAt = ci; } else if(!Mv.air && !P.g && !Mv.lift){ Mv = null; } else mvt = ci; }
+    const forced = ci < czN || ci < lagTo;
+    if(mvt >= 0){
+      const done = mvt >= Mv.live, jcOk = (Mv.jc === 2 || Mv.jc === 3) && done;
+      if(jcOk && (m & 4) && !(mp & 4) && (P.j > 0 || P.g)){ Mv = null; mvt = -1; }   // (the jump cancel: the move is gone and the jump plays this frame)
+      else if(Mv.sc && done && (m & 96)){ Mv = null; mvt = -1; coast = true; }   // (a special or a smash cancels it: the host's)
+      else { m &= ~4; if(!Mv.air && mvPush(mvt)) m &= ~3; keepFace = Mv.air && !Mv.turn; vh = Mv.vhold && mvPush(mvt); }
+    }
+    if(mvt < 0 && !coast && !forced && (m & NET_IN_ACT & ~zm) && !(mp & NET_IN_ACT & ~zm)){ coast = true; coastA = !((m & ~mp) & NET_IN_ACT & ~zm & ~16); }   // (JURY 1: only a PRESS starts a move; a key already down when the host said "free" did not, and used to stop the fighter dead)
+    if(mvt < 0 && !coast && !forced && ((czN > 0 && ci === czN) || ci === endAt)){ for(let q = g - 8; q < g; q++) if((mAt(q) & NET_IN_ACT & ~zm) & ~(mAt(q - 1) & NET_IN_ACT & ~zm)){ coast = true; coastA = false; break; } }   // (a press in the stun's or the lag's last 8 frames: the host's input buffer plays it now)
+    if(mvt < 0 && !coast && !forced && (m & 8) && P.g) coast = true;   // (Down on the ground: a crouch, a drop, a down move -- the host's)
+    if(coast && coastA && !forced){ const kp = 3 | (P.g ? 0 : 8); m &= kp; mp &= kp; P.hop = false; P.zd = 0; P.jb = null; if(!P.g) keepFace = true; }   // (GUEST SNAPS: an attack's coast keeps the arrows; an aerial keeps its facing)
+    else if(coast || forced){ m = 0; mp = 0; P.hop = false; P.sp = 0; P.zd = 0; P.jb = null; }   // (GUEST RUBBER-BANDING: it was `break`, and the fighter stood frozen where the press was, a round trip, then jumped)
     if(sq && sq.length && !P.g && !P.sqU && P.vy > 0){ for(const s of sq){ const top = spongyTopHit(P.x, P.y, P.r, P.vy, s); if(top != null){ P.y = top - P.r; P.vy = -SPONGY.top.v; P.sqU = true; P.ff = false; P.hop = false; break; } } }   // SQUISHY TOP (spongyStep: the host's rule, before it moves)
     const L = m & 1, R = m & 2, D = m & 8;
     let J = m & 4;
@@ -150024,15 +150094,28 @@ function netPredRun(a, pr, to, team, sq, cz){   // sq: the Spongys on the stage 
       if(P.sp && (!P.g || J || (P.sp > 0 ? !(R && !L) : !(L && !R)))) P.sp = 0;
     }
     // move (step(): ---- move ----)
+    const face0 = P.face, dsOn = !!ds && ci < ds[0];
+    if(dsOn){ P.vx = P.face*ds[1]; if(ds[2]) P.vy = ds[2]; const mk = mAt(g); if(mk & 1) P.face = -1; if(mk & 2) P.face = 1; }   // (the dash block, before the move block; then the arrows' turn)
+    if(mvt >= 0){   // (GUEST SNAPS: mvTick's turn and its pushes, before the move block)
+      if(!Mv.air && (L || R)) P.face = (L && R) ? 1 : (R ? 1 : -1);
+      for(const r of Mv.rows){ if(mvt < r[0] || mvt > r[1]) continue; const vx = r[2] == null ? null : r[2]*P.face, vy = r[3];
+        if(vy != null && vy < 0) Mv.lift = true;
+        if(r[4] === 1){ if(vx != null) P.vx += vx; if(vy != null) P.vy += vy; }
+        else if(r[4] === 2){ if(P.vy > vy) P.vy = vy; if(vx != null) P.vx = vx; P.ff = false; }
+        else if(r[4] === 3){ if(P.vy < vy) P.vy = vy; if(vx != null) P.vx = vx; }
+        else { if(vx != null) P.vx = vx; if(vy != null){ P.vy = vy; if(vy < 0) P.g = false; } } }
+    }
     const vx0 = Math.abs(P.vx), mv = P.g ? k[0] : k[1];
     if(L){ P.vx -= mv; P.face = -1; }
     if(R){ P.vx += mv; P.face = 1; }
+    if(keepFace) P.face = face0;
     if(!L && !R && P.g && !stun) P.vx *= (P.ice > 0 ? 0.99 : stbFric());   // (in a stun step() runs no move block: no friction)
     if(P.ice > 0) P.ice--;
     let cap = P.g ? k[2] : k[3];
     if(P.sp) cap *= SPRINT.k;   // SPRINT: 1.4 times the run's cap
     if(!P.g && k[2] > k[3] && vx0 > cap) cap = Math.min(runEaseCap(cap, k[2], P.at + 1), vx0);
-    if(!stun) P.vx = Math.max(-cap, Math.min(cap, P.vx));   // (a launch in a stun is not held to the run's speed: step() skips the move block)
+    if(!stun && !vh) P.vx = Math.max(-cap, Math.min(cap, P.vx));   // (a launch in a stun is not held to the run's speed: step() skips the move block)   (GUEST SNAPS: nor a push that holds its speed: vhold)
+    if(dsOn && ci < ds[0] - 1) P.vx = P.face*ds[1];   // (the move block's dash: no cap while frames are left)
     // the jump buffer (step(): INPUT BUFFER): a jump pressed in the air with none left is played on the landing, up to 6 frames later
     if(!coast && !forced){ if(J && !P.jp && P.j <= 0 && !P.g) P.jb = g; else if(P.jb != null){ if(!J && P.g && P.j > 0 && g - P.jb <= 6){ J = 4; P.jb = null; } else if(g - P.jb > 6) P.jb = null; } }
     // jump, and the short hop
@@ -150111,9 +150194,10 @@ function netPredFrom(A, to, team, sq){
   const pr = A && A.pr; if(!pr) return null;
   const k = Array.isArray(pr.k) && pr.k.length >= 10 ? pr.k : (Array.isArray(A.k) && A.k.length >= 10 ? A.k : null);
   let P = null, mode = 0;
-  if(!pr.b && k && !A._hold){ P = netPredRun(A, pr.k ? pr : Object.assign({}, pr, { k }), to, team, sq); mode = 1; }
+  if(pr.b && pr.c && Array.isArray(pr.mv) && k && Number.isFinite(pr.a) && pr.j != null){ P = netPredRun(A, pr.k ? pr : Object.assign({}, pr, { k }), to, team, sq, { n:0, mv:pr.mv }); mode = 1; }   // (GUEST SNAPS: a move it can play)
+  else if(!pr.b && k && !A._hold){ P = netPredRun(A, pr.k ? pr : Object.assign({}, pr, { k }), to, team, sq); mode = 1; }
   else if(pr.b && pr.c && pr.n > 0 && k && Number.isFinite(pr.a)){ P = netPredRun(A, pr.k ? pr : Object.assign({}, pr, { k }), to, team, sq, { n:pr.n | 0, hs:pr.hs | 0, h:pr.h | 0 }); mode = 3; }   // (a stun or an end lag: coasted, then its keys)
-  else if(((pr.b && pr.c) || (!pr.b && A._hold)) && k && Number.isFinite(pr.a)){ P = netPredRun(A, { a:pr.a, k, s:0, j:0, at:0 }, to, team, sq, { n:Infinity, hs:pr.b ? pr.hs | 0 : 0, h:pr.b ? pr.h | 0 : 0 }); mode = 3; }
+  else if(((pr.b && pr.c) || (!pr.b && A._hold)) && k && Number.isFinite(pr.a)){ P = netPredRun(A, { a:pr.a, k, s:0, j:0, at:0 }, to, team, sq, { n:Infinity, hs:pr.b ? pr.hs | 0 : 0, h:pr.b ? pr.h | 0 : 0, ds:pr.b && Array.isArray(pr.ds) ? pr.ds : null }); mode = 3; }
   if(P) P.mode = mode;
   return P;
 }
@@ -150128,7 +150212,7 @@ function netPredict(now, camK){   // camK: real time since the last frame in ste
   if(!me._pa){ me._pa = { x:me._tx, y:me._ty, vx:me.vx, vy:me.vy, g:!!me.onground, face:me.face, r:me.r, pr:me.pr, k:me._prK }; if(YN_VIS) me._pa.rd = ynRideOf(me._pa, NET_VIEW.tt); }   // (k: the last numbers the host sent, for a coast)   // (rd: standing on a Yoyle Needle express shuttle at the snapshot's clock)
   const A = me._pa, to = N.inFrame(now);
   const sq = fighters.filter(g=>g !== me && !g.dead && (isSpongy(g) || g.name === 'Spongy'));   // (SQUISHY TOP: the Spongys the prediction bounces off)
-  if(A._hold === undefined){ const B = S.auth, bp = B && B !== A && B.pr; A._hold = !!(bp && bp.b && bp.c && !(bp.n > 0) && A.pr && !A.pr.b); }   // (netPredFrom: a free picture after an open-ended busy one)
+  if(A._hold === undefined){ const B = S.auth, bp = B && B !== A && B.pr; A._hold = !!(bp && bp.b && bp.c && !bp.mv && !(bp.n > 0) && A.pr && !A.pr.b); }   // (netPredFrom: a free picture after an open-ended busy one)
   const P = netPredFrom(A, to, me.team, sq);
   const bx = P ? P.x : me.x, by = P ? P.y : me.y, mode = P ? P.mode : 2;   // 1: its keys played; 3: coasted, busy (GUEST RUBBER-BANDING); 2: where the host has it
   if(S.mode && mode !== S.mode){ S.ox += S.bx - bx; S.oy += S.by - by; S.fastT = S.hitT; }   // prediction on or off: from where it was drawn, quickly
@@ -150148,7 +150232,8 @@ function netPredict(now, camK){   // camK: real time since the last frame in ste
   if(P){ if(P.mode === 1) me.face = P.face; me.vx = P.vx; me.vy = P.vy; me.onground = P.g; }   // (the run cycle, the lean, the jump stretch; a busy fighter faces the way the host has it)
   // (THE LAST KO: through the slow-mo KO and a Final Smash's intro the gap from running ahead is held, not eased out -- eased out against a
   // match moving at a quarter speed, or not at all, it slid the fighter back to where the host had it, 16 px a frame at 50 ms; a hit's is still eased)
-  if(!((FS.slow > 0 || FS.freeze > 0) && !(me.hitstun > 0))){ const kk = camK > 0 ? camK : 1, e = Math.pow(S.fastT > 0 ? S.hitEase : S.ease, kk); if(S.fastT > 0) S.fastT = Math.max(0, S.fastT - kk); S.ox *= e; S.oy *= e; }
+  if(!((FS.slow > 0 || FS.freeze > 0) && !(me.hitstun > 0))){ const kk = camK > 0 ? camK : 1, e = Math.pow(S.fastT > 0 ? S.hitEase : S.ease, kk); if(S.fastT > 0) S.fastT = Math.max(0, S.fastT - kk); { let nx = S.ox*e, ny = S.oy*e; const d = Math.hypot(S.ox - nx, S.oy - ny), cap = S.stepMax*kk;   // GUEST SNAPS: never more than stepMax px of it a frame
+    if(d > cap){ const r = cap/d; nx = S.ox - (S.ox - nx)*r; ny = S.oy - (S.oy - ny)*r; } S.ox = nx; S.oy = ny; } }
   if(Math.abs(S.ox) < 0.05) S.ox = 0; if(Math.abs(S.oy) < 0.05) S.oy = 0;
 }
 // The input step() uses for a remote player this frame. A guest sending frames: what netPlayStep gave them. A guest from before that: what
