@@ -1487,6 +1487,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (night, after the time estimate)**: keep going
 - **2026-11-17 (answers: sweet spots batch 2, Jammy)**: batch 2: Merge it; Jammy: Lid back on sooner
 - **2026-11-17 (night)**: how much longer
+- **2026-11-21 (back)**: how much longer to finish?
 
 ## Working rules, budget & agents
 
@@ -1536,6 +1537,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17**: you can start more tasks
 - **2026-11-20**: start jobs, up to 4 of em
 - **2026-11-21 (~09:30)**: signing off for a long time(12+ hours), so do your best judgement, 5 tasks, always take a decision, but after, tell me what are the changes you want to talk to me about. your goal is to get ALL(emphasis) scores as high as possible. try and get our first 10's.
+- **2026-11-21 (next)**: can we pause on this work and continue when I say go?
 
 ## Other
 - **2026-11-17 (evening)**: can you please take all the work I have done on this across all commits and create a presentation showing all the coding skills I have learned while building this project and how they can be transferred to future coding projects?
