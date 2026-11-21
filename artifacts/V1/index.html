@@ -9127,6 +9127,9 @@ function ctfBuildWorld(keep){   // keep: the same map again (the bid swapped the
   if(!keep){ CTF.swap = false; CTF.bidRes = null; CTF.bidPre = null; CTF.band = ctfBandOf(SETTINGS.count); }
   const M = ctfMapGet(id, CTF.swap, CTF.band);
   CTF.lastMap = id; CTF.mapId = id; CTF.map = M;
+  if(!keep && ctfAsym() && !CTF.noShipped && !CTF.noFetch && typeof fetch === 'function' && !(CTF_MAPS[id] && CTF_MAPS[id].noGraph) && !(typeof isNetClient === 'function' && isNetClient())){   // (a side bid may swap the halves: that graph fetched now, so the wait is short)
+    const sg = id + '~' + String(M.gid || id).slice(id.length); if(!CTF_GRAPHS[sg]) try{ ctfGraphFetch(sg).then(null, ()=>{}); }catch(e){}
+  }
   if(!(stage && String(stage.id).indexOf('ctf-') === 0)) CTF.prevStage = stage;
   stage = ctfStageObj(id);
   CAM_ZOOM = CTF_ZOOM;   // the rooms are drawn closer than the other big arenas: a screen is a room and a bit
@@ -10811,10 +10814,10 @@ function ctfEditPrebuild(L){   // while they are still hiding: once the edits ha
   if(L.pre && L.pre.seq === L.editSeq){ if(!L.pre.nav.ready) ctfNavTick(L.pre.nav, 80, 3); return; }
   if(L.t - L.editT >= 30) L.pre = { seq:L.editSeq, n:st, nav:ctfEditNav(L, st) };
 }
-// THE ROUTE CHECK'S SPEED AND BANNER (playtest focus group: 16-41 s with nothing on screen). Nobody moves during the check, so a real browser spends up to 8 ms of each step on it, in all its ticks together
-// (they were 6 ms each, up to 12 with two) (the headless harness counts slices, not milliseconds, and keeps its own number: its matches are unchanged). It is not cut short and does not start the match
+// THE ROUTE CHECK'S SPEED AND BANNER (playtest focus group: 16-41 s with nothing on screen). Nobody moves during the check, so each of its ticks gets 6 slices of work a step (about 6 ms; counted, never timed, so the
+// check ends on the same step on any machine: ctfNavDet; a browser used to give it what was left of 8 ms). It is not cut short and does not start the match
 // early: a flag shut in by a piece has to be found before play, and finding it later would take a piece away in the middle of a fight. The banner shows the work instead.
-function ctfFixMs(){ return ctfNavDet() ? 6 : Math.max(2, 8 - (performance.now() - (CTF._fixT0 || 0))); }   // (8 ms for the whole step: a second tick in the same step gets only what is left. One probe slice can still overshoot it: measured up to 30 ms in jsdom at any ask)
+function ctfFixMs(){ return 6; }   // (slices of work for one tick of the route check: see ctfNavDet. One probe slice can overshoot: measured up to 30 ms in jsdom)
 function ctfFixProgress(L){   // { pct, secs } of the graph being made right now (the check makes several, one after another), for the banner
   const F = L.fix; let pct = 0;
   if(F){ const navs = Object.values(F.navs || {}); if(F.full) navs.push(F.full);
@@ -10897,7 +10900,6 @@ function ctfFixTry(L, F){
   F.ci++;
 }
 function ctfFixStep(L){
-  CTF._fixT0 = performance.now();
   const F = L.fix; if(!F){ ctfStartPlay(L); return; }
   if(F.bOK == null && !ctfFixBInit(L, F)) return;
   // THE MAP'S OWN PROBLEMS (Forest, 4 players: the jail's door is out of reach with no piece built at all, so every one of the CPUs' 9 pieces was taken away one by one, 13,000 steps of nobody moving, for a problem they
@@ -12506,10 +12508,16 @@ function drawCtfHud(){
   if(L.phase === 'bid') ctfDrawBid(L); else if(L.bidShow > 0) ctfDrawBidResult(L);
   if(ctfSpecOn()) ctfDrawSpecHud(L);
   if(L.phase === 'fix'){ ctx.fillStyle = '#f4efe2'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.save(); ctx.translate(W/2, 130); ctx.rotate(hazardT*0.12); ctx.beginPath(); for(let i = 0; i < 12; i++){ const a = i*Math.PI/6, rr = i%2 ? 14 : 22; ctx.lineTo(Math.cos(a)*rr, Math.sin(a)*rr); } ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); ctfDrawFixBanner(L); }
+  if(CTF._loadWait > 20) ctfDrawLoadBanner();   // (the files of ctfLoadGate still coming)
   // a capture flashes the scoring side's colour round the edge of the screen
   if(L.flash){ const a = Math.min(1, L.flash.t/25)*(L.flash.soft ? 0.25 : 0.5); ctx.globalAlpha = a; ctx.strokeStyle = ctfColor(L.flash.team); ctx.lineWidth = 36; ctx.strokeRect(0, 0, W, H); ctx.globalAlpha = 1; }
   ctx.restore();
   ctfDrawMinimap();
+}
+function ctfDrawLoadBanner(){
+  const w = 260, x = W/2 - w/2, y = 168;
+  ctx.save(); ctx.fillStyle = 'rgba(28,24,38,0.88)'; ctx.fillRect(x, y, w, 40); ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 3; ctx.strokeRect(x, y, w, 40);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#ffd23f'; ctx.font = "700 20px 'Baloo 2', system-ui"; ctx.fillText('Loading the map...', W/2, y + 27); ctx.restore();
 }
 function ctfDrawFixBanner(L){   // "Checking routes..." with the share of the graph made and the seconds so far, under the gear
   const pr = ctfFixProgress(L), w = 260, x = W/2 - w/2, y = 168;
@@ -15446,16 +15454,16 @@ function* ctfNavProbeGen(nav, n){
     yield* ctfNavWallGen(nav, n, direct, e=>n.edges.push(e));
   }
 }
-// A DETERMINISTIC BUDGET FOR HEADLESS RUNS (the owner's playtest, 2026-10-18: a test that passed alone failed on a busy laptop because the CPUs' route graph was built within so many MILLISECONDS a step, and a busy machine gets less done a step): in a browser the budget is still wall-clock (the graph is built
-// a slice a frame, so it never stutters); where there is no screen (jsdom: the tests, the probes) it is a number of slices of work a step (one slice is about a millisecond on an idle machine, so ms of them), the same on any machine at any load.
-function ctfNavDet(){ if(CTF.navDet == null) CTF.navDet = typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent || ''); return CTF.navDet; }
-function ctfNavTick(nav, count, ms){   // ms: stop after that many milliseconds (or, headless, ms slices of work)
+// A DETERMINISTIC BUDGET (the owner's playtest, 2026-10-18: a test that passed alone failed on a busy laptop because the CPUs' route graph was built within so many MILLISECONDS a step, and a busy machine gets less done a step;
+// ROLLBACK, 2026-11-20: a browser kept the clock, so how far a CPU's routes got each step was the machine's speed, and no two machines played the same match): the budget is a number of slices of work a step everywhere, never the clock (one slice is about a millisecond on an idle machine, so ms of them). The graph is still made a slice at a time, a few a step.
+function ctfNavDet(){ return true; }   // (always: kept for anything that asks)
+function ctfNavTick(nav, count, ms){   // ms: stop after that many slices of work (about a millisecond each on an idle machine); none: run it through
   if(nav.pending) return;   // the map's shipped graph is being fetched: nothing to build unless it fails (ctfGraphFetch)
-  const det = !!ms && ctfNavDet(), cap = det ? Math.max(1, Math.round(ms)) : 0, t0 = ms && !det ? performance.now() : 0; let started = 0, slices = 0;
+  const cap = ms ? Math.max(1, Math.round(ms)) : 0; let started = 0, slices = 0;
   while(!nav.ready){
     if(!nav.gen){ if(nav.cursor >= nav.nodes.length || started >= count) break; started++; nav.gen = ctfNavProbeGen(nav, nav.nodes[nav.cursor++]); }
     if(nav.gen.next().done) nav.gen = null;
-    if(det){ if(++slices >= cap) break; } else if(ms && performance.now() - t0 > ms) break;   // (a place is probed in slices: the budget holds even for a slow one)
+    if(cap && ++slices >= cap) break;   // (a place is probed in slices: the budget holds even for a slow one)
   }
   if(nav.cursor >= nav.nodes.length && !nav.gen && !nav.ready){ nav.ready = true; ctfNavSpikePatch(nav); ctfNavReach(nav); }
 }
@@ -15507,6 +15515,15 @@ function ctfNavMake(M){
     try{ ctfGraphFetch(gid).then(once, ()=>once(false)); setTimeout(()=>once(false), 8000); }catch(e){ once(false); }
   }
   return nav;
+}
+// THE MATCH WAITS FOR ITS FILES (rollback, 2026-11-20): the map's shipped graph and the shot table (CTF_PROJ) come by fetch, so they used to land on whatever step the network
+// gave: the CPUs planned with no graph, or with the attack table, for a step or a hundred, and two machines played two matches. Now step() does not run while either is on its way
+// (the screen holds; after a moment it says so): the match's steps are the same however long the files take. A file that fails leaves the runtime builder, as before.
+function ctfLoadGate(){
+  if(SETTINGS.mode !== 'ctf' || !CTF.live || !running) return false;
+  const n = CTF.nav, wait = !!(n && (n.pending || CTF_PROJ.loading));   // (CTF.nav: the host's CPUs plan; an online guest has none and never waits)
+  CTF._loadWait = wait ? (CTF._loadWait || 0) + 1 : 0;
+  return wait;
 }
 function ctfGraphFetch(id){
   if(CTF_GRAPH_WAIT[id]) return CTF_GRAPH_WAIT[id];
@@ -15645,6 +15662,7 @@ function ctfAiBegin(L, nav){
   if(CTF.skipNav || (typeof isNetClient === 'function' && isNetClient())){ CTF.nav = null; return; }   // (an online guest never plans: the host does)
   if(!CTF.navs) CTF.navs = {};
   CTF.nav = nav || CTF.navs[ctfNavId()] || (CTF.navs[ctfNavId()] = ctfNavMake(CTF.map));
+  ctfProjLoad();   // (the shot table, fetched now: the match waits for it with the graph, ctfLoadGate)
   ctfPlanBegin(L);
   L.ai = { visited:[null, null], visAt:[null, null], claims:[{}, {}], roomClaims:[{}, {}], hideTaken:{}, rescue:[0, 0], stat:{ nodes:CTF.nav.nodes.length } };
   for(const f of fighters){ f._ai = { goal:null, path:null, pi:0, edge:null, phase:'', t:0, lastX:f.x, still:0, ban:{}, replan:0, fight:0, role:'att', hide:null, hideT:0 }; }
@@ -16186,10 +16204,10 @@ function ctfNavStatOK(nav, e, f, sig, now){
   }
   return C[sig] === 1;
 }
-// The queue, a few flights a step (ctfStep): CTF_STAT_MS of work, or headless (the tests, the probes) CTF_STAT_SLICES flights, the same on any machine at any load; k: that many times over.
+// The queue, a few flights a step (ctfStep): CTF_STAT_SLICES flights, counted, never timed (ctfNavDet), the same on any machine at any load; k: that many times over.
 function ctfNavStatTick(nav, mul){
   const Q = nav && nav.statQ; if(!Q || !Q.length) return;
-  const det = ctfNavDet(), t0 = det ? 0 : performance.now(); let k = 0;
+  let k = 0;
   while(Q.length){
     const j = Q[0], C = j.e.cs;
     if(C[j.sig] === undefined && j.ph === 1 && C[j.one] !== undefined) C[j.sig] = C[j.one] ? 0 : 1;   // (the move's check at every stat 1 came in meanwhile)
@@ -16202,7 +16220,7 @@ function ctfNavStatTick(nav, mul){
       if(!j.ph){ if(r.value) C[j.sig] = 1; else if(C[j.one] !== undefined) C[j.sig] = C[j.one] ? 0 : 1; else j.ph = 1; }
       else { C[j.one] = r.value ? 1 : 0; C[j.sig] = r.value ? 0 : 1; }
     }
-    if(det){ if(++k >= CTF_STAT_SLICES*(mul || 1)) break; } else if(performance.now() - t0 > CTF_STAT_MS*(mul || 1)) break;
+    if(++k >= CTF_STAT_SLICES*(mul || 1)) break;
   }
 }
 // Plan a path to (x, y); returns false when there is none (the goal is not reachable even with every door open) or sets ai.path.
@@ -75149,6 +75167,7 @@ nanGuard.said = false;
 function step(){
   netPlayStep();   // ONLINE: each guest's input for this step (netPlayStep), before the gate: a step not run is one no one plays
   kocTick();   // THE LAST KO: a new match starts it clean; the frames since the match was decided
+  if(ctfLoadGate()) return;   // CAPTURE THE FLAG: the map's route graph or the shot table still on its way: no step until it is in (ctfLoadGate)
   if(fsTimeGate()) return;   // CATCH, THEN CINEMATIC: the Final Smash intro stops the match; its slow-mo KO skips steps (fsTimeGate)
   hazardT++;
   KEY_LATCH_NOW = KEY_LATCH; KEY_LATCH = {};   // (PRESS LATCH: the taps since the last step that ran)
