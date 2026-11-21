@@ -33113,10 +33113,10 @@ function fsOnKo(f){
 //   - a foe the Final Smash has CAUGHT (fsLock) is its own, seen when it was caught: its scene is not tested again, except Bow's chairs (fsChairAim).
 //   `wide` on a row: a screen-wide cinematic that reaches everyone by design (not tested at all). A map with no solid piece is untouched (fswOn).
 const FSW = { force:false, vt:-1, org:null, pf:null, hx:0, hy:0 };   // pf, hx, hy: the holder whose row is ticking and where he stood when the tick began (a row that carries him is stopped at rock after it: fsRun)   // force: a test's switch; vt: the idx of the foe a funnel has already seen (applyHit does not test it twice); org: a row's prop spot {x, y}
-function fswPieces(f){
+function fswPieces(f, ramps){   // ramps: count a slope piece too (Bow's chairs, fswSee strict: a slope is rock to sit in; for a line of sight it is a step walked up)
   const out = [];
   for(const p of platRects()){
-    if(!p.solid || p.rot || p.ramp || p.ghost) continue;
+    if(!p.solid || p.rot || (p.ramp && !ramps) || p.ghost) continue;
     if(f && p.dref !== undefined && p.dref.op && p.dref.op[f.team]) continue;   // (a door open for the holder's side is not there)
     out.push(p);
   }
@@ -33127,7 +33127,7 @@ function fswOn(){ return FSW.force || fswPieces(null).length > 0; }
 // point is inside is not counted (a holder or a blast standing flush in a doorway), unless `strict` (Bow's chair: a chair inside the rock is blocked).
 function fswSee(x0, y0, x1, y1, f, strict){
   const dx = x1 - x0, dy = y1 - y0;
-  for(const p of fswPieces(f)){
+  for(const p of fswPieces(f, strict)){   // (strict also counts slopes: FS 10, 2026-11-21, a Moon Caves tunnel slope (32 px of rock) took a chair, the one spot of 80 in the audit)
     const h = p.h || 16, L = p.x + 2, R = p.x + p.w - 2, T = p.y + 2, B = p.y + h - 2;
     if(R <= L || B <= T) continue;
     const in0 = x0 > L && x0 < R && y0 > T && y0 < B;
@@ -34658,11 +34658,20 @@ function fsChairHome(f, st){
 // FS WALLS: the still version's chairs come in from fixed sides round the foe (FS_CHAIR_DIR). A side whose chair would sit in rock (the line from where the
 // chair ends up, 0.95 of the foe's size and the chair's own length out, back to the foe is blocked, or its end is inside a piece) is swapped for the nearest side that is
 // clear (a foe against a wall is struck from the open side). The swaps ride on fsPd (3 bits a blow, +1) for a guest's picture. Nothing changes where no rock is near.
+// Room for a chair along u from the foe (from a to b px out, `cr` px either side): no solid piece (slopes too) within cr of the points along it (FS 10, 2026-11-21:
+// a line 1 px past a rock's corner read clear while the chair drawn there sat in the rock: Moon Caves, 2 spots of 80).
+function fsChairRoom(t, u, a, b, cr, f){
+  const P = fswPieces(f, true);
+  for(let s = a; s <= b + 0.01; s += 6){ const x = t.x + u[0]*s, y = t.y + u[1]*s;
+    for(const p of P){ const ph = p.h || 16, nx = x < p.x ? p.x : (x > p.x + p.w ? p.x + p.w : x), ny = y < p.y ? p.y : (y > p.y + ph ? p.y + ph : y); if((nx - x)*(nx - x) + (ny - y)*(ny - y) < cr*cr) return false; } }
+  return true;
+}
 function fsChairDirOf(pd, i){ return pd > 0 ? (Math.floor((pd - 1)/Math.pow(8, i)) % 8) : i; }
 function fsChairAim(f, st, t){
   st.dirs = null; if(!fswOn()) return;
   const C = FS_CHAIR, R = t.r || 24, k = R/24, out = 0.95*R + 44*k, ok = [];
   for(let j = 0; j < 8; j++){ const u = FS_CHAIR_DIR[j]; ok.push(fswSee(t.x + u[0]*out, t.y + u[1]*out, t.x, t.y, f, true) && fswSee(t.x + u[0]*(out + 16), t.y + u[1]*(out + 16), t.x, t.y, f, true)); }   // (the tip and 16 px past it: a chair's own length)
+  { const fat = ok.map((v, j)=> v && fsChairRoom(t, FS_CHAIR_DIR[j], 0.95*R + 4, out + 16, 10*k, f)); if(fat.some(Boolean)) for(let j = 0; j < 8; j++) ok[j] = fat[j]; }   // (FS 10: the chair is a body, not a line: a side whose chair would graze a corner of rock is swapped too, unless every side does)
   if(ok.every(Boolean)) return;
   const dirs = [], cd = (p, q)=> { const d = Math.abs(p - q) % 8; return Math.min(d, 8 - d); };
   let pd = 0;
@@ -35220,20 +35229,25 @@ FINAL_SMASHES['Pen'] = fsaA_wrap(PEN_ROW, {
   },
 });
 
-function fsVanRoom(){ return Math.ceil(2*SIDE_ROOM/24); }   // MORE ROOM PAST THE LEDGES: the frames the Van needs to cross the side room too (0 elsewhere)
+function fsVanRoom(){ return Math.ceil(2*SIDE_ROOM/24); }
+// Where the Van starts (FS 10, 2026-11-21): the world's edge behind her, as always, on a single screen. On a map wider than its run (the big maps, the Teams
+// maps: 4,000-10,000 px) it came from the world's edge and never got near her (it hit nobody past ~1,300 px from that edge): there it starts 850 px behind
+// her (her reach, 700, and the 150 it always had off the edge), never past the world's edge. fsAx: where she pressed it (a guest has it too).
+function fsVanX0(f, d){ const e = d > 0 ? -150 - SIDE_ROOM : WW + 150 + SIDE_ROOM; if(WW + 300 + 2*SIDE_ROOM <= 24*(61 + fsVanRoom())) return e;
+  const ax = f.fsAx != null ? f.fsAx : f.x, a = ax - d*850; return d > 0 ? Math.max(e, a) : Math.min(e, a); }   // MORE ROOM PAST THE LEDGES: the frames the Van needs to cross the side room too (0 elsewhere)
 // MATCH -- FREESMART OVERDRIVE. The FreeSmart Van, the FreeSmarters' own: in BFDIA 5 Pencil drives it (Match aboard) into Evil Leafy's mouth
 // (the design doc). Match whistles and the Van barrels through from behind her, edge to edge, 24 px a frame, 100 px tall: jump it or stand
 // off the lane. 24% and a hard launch for whoever it meets.
 const MATCH_ROW = {
   id:'freesmartvan', wind:FS_WIND, get dur(){ return FS_WIND + 76 + fsVanRoom(); }, reach:700,
-  catch(f){ const d = f.face < 0 ? -1 : 1, v0 = d > 0 ? -150 - SIDE_ROOM : WW + 150 + SIDE_ROOM, v1 = v0 + d*24*(61 + fsVanRoom()), lo = Math.max(f.x - 700, Math.min(v0, v1)), hi = Math.min(f.x + 700, Math.max(v0, v1)), fy = f.y + f.r;
+  catch(f){ const d = f.face < 0 ? -1 : 1, v0 = fsVanX0(f, d), v1 = v0 + d*24*(61 + fsVanRoom()), lo = Math.max(f.x - 700, Math.min(v0, v1)), hi = Math.min(f.x + 700, Math.max(v0, v1)), fy = f.y + f.r;
     return { kind:'box', x:lo, y:fy - 100, w:Math.max(0, hi - lo), h:100 }; }, lockEnd:'one',   // CATCH: the Van's lane, as far as her reach and its run
   start(f, st){ st.dir = f.face; armAtk(f, this.wind, 'fsgather'); },
   tick(f, st, t){
     const w = this.wind, dir = st.dir;
     if(t === w){ armAtk(f, 40, 'fsburst'); shake(7); }
     if(t >= w && t < w + 62 + fsVanRoom()){
-      const vx = (dir > 0 ? -150 - SIDE_ROOM : WW + 150 + SIDE_ROOM) + dir*24*(t - w), fy = st.fy != null ? st.fy : (st.fy = f.y + f.r);
+      const vx = fsVanX0(f, dir) + dir*24*(t - w), fy = st.fy != null ? st.fy : (st.fy = f.y + f.r);
       for(const o of fighters){
         if(fsHurtMark(f, o) || st.hit.has(o.idx)) continue;
         if(Math.abs(o.x - vx) < 70 + o.r && o.y > fy - 100 - o.r && o.y < fy + 30){ st.hit.add(o.idx); o.countering = 0; applyHit(o, 24, dir*24, -10, f); shake(8); }
@@ -35247,9 +35261,9 @@ const MATCH_ROW = {
     c.save();
     if(t < w + 66 + fsVanRoom()){
       if(t < w){   // the Van's headlights flashing at the edge it will come from (no lane drawn)
-        if((t % 6) < 3){ const ex = dir > 0 ? 24 - SIDE_ROOM : WW - 24 + SIDE_ROOM; c.globalAlpha = 1; c.fillStyle = '#fffbd0'; c.beginPath(); c.arc(ex, fy - 60, 16, 0, 7); c.arc(ex, fy - 30, 16, 0, 7); c.fill(); }
+        if((t % 6) < 3){ const ex = fsVanX0(f, dir) + dir*174; c.globalAlpha = 1; c.fillStyle = '#fffbd0'; c.beginPath(); c.arc(ex, fy - 60, 16, 0, 7); c.arc(ex, fy - 30, 16, 0, 7); c.fill(); }
       } else if(t < w + 62 + fsVanRoom()){   // the Van
-        const vx = (dir > 0 ? -150 - SIDE_ROOM : WW + 150 + SIDE_ROOM) + dir*24*(t - w), by = fy;
+        const vx = fsVanX0(f, dir) + dir*24*(t - w), by = fy;
         c.save(); c.translate(vx, by); c.scale(dir, 1); c.globalAlpha = 1; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4;
         if(!fsPic(c, 'van', 5, -38, 195)){   // the show's Supervan picture; the drawn van until it loads
         c.fillStyle = '#e8e2d0'; c.beginPath(); c.rect(-90, -88, 150, 76); c.fill(); c.stroke();   // the body
@@ -35271,7 +35285,7 @@ const MATCH_ROW = {
 // face's small o, two sound arcs growing out of it 22-34 and gone by W + 8); the Van's headlights then flash at the edge from W - 14 as they did over the old startup. THE KNOCK-BACK: the Van's slipstream tips her (0.42 rad) as its nose reaches her
 // and carries her 40 px the way it goes over 14 frames (fsaA_slide: clamped to what she stands on, none on the Moon, no launch), and she lands on her feet; the Van's own frames do not read where she stands.
 const MATCH_FS = { W:36, back:40, backFrames:14, span:999 };
-function fsaA_matchPass(f){ const d = f.face < 0 ? -1 : 1, v0 = d > 0 ? -150 - SIDE_ROOM : WW + 150 + SIDE_ROOM; return MATCH_FS.W + Math.max(1, Math.round(((f.fsAx - v0)*d - 100)/24) - 1); }   // the frame the Van's nose reaches her (from where she began: the Van runs on its own clock)
+function fsaA_matchPass(f){ const d = f.face < 0 ? -1 : 1, v0 = fsVanX0(f, d); return MATCH_FS.W + Math.max(1, Math.round(((f.fsAx - v0)*d - 100)/24) - 1); }   // the frame the Van's nose reaches her (from where she began: the Van runs on its own clock)
 function fsaA_matchBody(f, t){   // [lean, dx, sx, sy]
   const d = f.face < 0 ? -1 : 1, tp = fsaA_matchPass(f);
   const lean = fsaA_tab(t, [[0, 0], [7, 1.5], [13, 1.46], [16, -0.22], [22, 0], [25, -0.1], [36, -0.1], [46, 0]]) + 0.03*Math.sin(t*0.5)*fsaA_k(t, 22, 28) + 0.42*fsaA_bump(t, tp - 1, tp + 15);
@@ -76768,6 +76782,7 @@ function step(){
       }
     }
     if(pr._fs && !pr.trap && !pr.turret && !pr.fswThru && fswOn() && !fswWide(pr._fsSt) && (!fswSee(_fx0, _fy0, pr.x, pr.y, pr.ownerObj) || fswIn(pr.x, pr.y, pr.ownerObj))){ pr.life = 0; for(let i=0;i<5;i++) puff(_fx0, _fy0, i%2 ? '#ffffff' : pr.color, 3); continue; }   // FS WALLS: a Final Smash's shot stops at the first rock it meets (after the landing and bounce rules above: a drop that comes down on a floor lands as it always did)
+    if(pr._fs && !pr.trap && !pr.turret && !pr.fswThru && !fswWide(pr._fsSt) && !isBig() && !(MCAVE && MCAVE.on) && pr.y > groundY() + 4 && !floorOpenAt(pr.x) && !springyHoleAt(pr.x) && (_fy0 <= groundY() + 4 || floorOpenAt(_fx0))){ pr.life = 0; for(let i=0;i<5;i++) puff(pr.x, groundY() - 2, i%2 ? '#ffffff' : pr.color, 3); continue; }   // FS 10 (2026-11-21): ...and at the floor of a single screen (it is no piece, so the rule above never saw it): a shot whose middle goes down into the floor, or on under it from a gap into a span's cliff, stops there (Money's bags, Knife's, Tissues', Cheesy's ... flew on under the floor for 30-200 frames). One made under it, or rising out of it, is left alone
     // Taco salsa: settle into a lingering slow-puddle on ANY surface it lands on —
     // the ground, a one-way platform top, or a solid block top, in any stage.
     if((pr.landsPuddle || pr.landsAcid) && pr.grav && pr.vy>=0){
@@ -100579,7 +100594,7 @@ function ootpRead(f, t, dx){
 // or what a smash, a finisher or a Final Smash put out), and a giant pink eraser sweeps the whole floor from one edge to the other the way he faces, in ERASER.fs.run frames: whoever it meets on the floor,
 // up to its height, takes 21% (42% with KO-LEVEL). Jump it or stand on a platform. The floor is the main floor (the one under him on a map
 // that has none), worked out the same way on every screen; the eraser's place is a pure function of fsT and the facing.
-function eraserFsFloor(f){ return isBig() ? fsFeetY(f) : groundY(); }
+function eraserFsFloor(f){ return (isBig() || (FLOOR_SEGS && !FLOOR_SEGS.length)) ? fsFeetY(f) : groundY(); }   // (FS 10, 2026-11-21: on a single screen with no floor at all -- Dream Island, Yoyle Needle -- the ground line it wiped is not there and it hit nobody: her own floor, as on the big maps)
 function eraserFsFront(dir, tt){ const u = tt/ERASER.fs.run; return dir > 0 ? -140 + (WW + 280)*u : WW + 140 - (WW + 280)*u; }
 FINAL_SMASHES['Eraser'] = {
   id:'slateclean', wind:FS_WIND, dur:FS_WIND + ERASER.fs.run + 20, reach:WW,
@@ -107576,6 +107591,9 @@ Object.assign(FB_FRAME_DATA, { 'jammy.neutral':[20, 1, 0, 0], 'jammy.up':[12, 1,
 // row's st / act / end (the old audit counted the last live frame into the end lag: one frame more). Throws have no whiff (-1). A move that never hit a dummy from
 // any spot (a counter, a teleport, a buff) has no row -- the old rows of five such moves are gone with it (cool.down, rant.down, ring.finisher,
 // tricks.finisher, jammy.down: none of them hit a dummy today). Display only: frameData, the Moves list and the wiki read it; nothing plays from it.
+// chair.fs (Bow, 2026-11-21, FS 10 job): the same rule, except that once her catch has taken the dummy it is no longer put back at its spot each frame
+// (she moves round a caught foe; a dummy put back beside her every frame never took a blow from any spot). With that one change the other 116 Final Smash
+// rows read as they are here, all but Spongy's (138 that way; left at 99, see docs/LEDGER.md, FS 10). From the press, a foe 52 px beside her.
 Object.assign(FB_FRAME_DATA, {
   'accrete.bair':[8,3,12,12], 'accrete.dair':[7,4,10,10], 'accrete.dtilt':[6,3,9,9], 'accrete.fair':[7,3,10,10], 'accrete.finisher':[102,1,0,0], 'accrete.fs':[121,1,0,0], 'accrete.grab':[5,3,25,-1], 'accrete.jab':[0,1,21,11],
   'accrete.nair':[5,14,8,8], 'accrete.uair':[6,4,10,10], 'accrete.up':[6,1,0,0], 'accrete.usmash':[29,4,29,29], 'accrete.utilt':[6,4,9,9], 'airleak.bair':[5,3,9,9], 'airleak.dair':[6,4,10,10], 'airleak.dtilt':[3,2,7,7],
@@ -107603,9 +107621,15 @@ Object.assign(FB_FRAME_DATA, {
   'bottle.dsmash':[28,20,24,24], 'bottle.dthrow':[0,1,-1,13], 'bottle.dtilt':[6,4,11,11], 'bottle.fair':[7,6,12,12], 'bottle.finisher':[21,24,0,0], 'bottle.fs':[109,1,0,0], 'bottle.fthrow':[0,1,-1,19], 'bottle.grab':[7,3,29,-1],
   'bottle.jab':[0,1,21,11], 'bottle.nair':[5,10,10,10], 'bottle.neutral':[20,1,0,0], 'bottle.smash':[24,7,7,13], 'bottle.uair':[4,3,7,7], 'bottle.up':[1,1,0,0], 'bottle.usmash':[29,7,26,26], 'bottle.uthrow':[0,1,-1,13],
   'bottle.utilt':[6,4,10,10], 'buynow.bair':[5,3,9,9], 'buynow.dair':[7,4,12,12], 'buynow.dtilt':[4,2,7,7], 'buynow.fair':[6,3,9,9], 'buynow.fs':[117,1,0,0], 'buynow.grab':[5,3,23,-1], 'buynow.jab':[0,1,21,11],
+<<<<<<< HEAD
   'buynow.nair':[4,7,6,6], 'buynow.uair':[4,4,7,7], 'buynow.up':[11,1,0,0], 'buynow.utilt':[4,3,8,8], 'cap.bair':[6,2,10,10], 'cap.dair':[6,4,10,10], 'cap.dtilt':[3,2,5,5], 'cap.fair':[5,6,7,7],
   'cap.fs':[97,1,0,0], 'cap.grab':[5,3,25,-1], 'cap.jab':[0,1,21,11], 'cap.nair':[4,8,7,7], 'cap.uair':[4,3,8,8], 'cap.up':[18,1,0,0], 'cap.utilt':[5,3,8,8], 'chair.bair':[6,3,12,12],
   'chair.dair':[9,4,13,13], 'chair.dtilt':[4,2,8,8], 'chair.fair':[8,3,11,11], 'chair.grab':[5,3,27,-1], 'chair.jab':[0,1,21,11], 'chair.nair':[5,6,7,7], 'chair.neutral':[8,1,0,0], 'chair.uair':[4,3,8,8],
+=======
+  'buynow.nair':[4,7,6,6], 'buynow.uair':[4,4,7,7], 'buynow.up':[1,1,0,0], 'buynow.utilt':[4,3,8,8], 'cap.bair':[6,2,10,10], 'cap.dair':[6,4,10,10], 'cap.dtilt':[3,2,5,5], 'cap.fair':[5,6,7,7],
+  'cap.fs':[97,1,0,0], 'cap.grab':[5,3,25,-1], 'cap.jab':[0,1,21,11], 'cap.nair':[4,8,7,7], 'cap.uair':[4,3,8,8], 'cap.up':[1,1,0,0], 'cap.utilt':[5,3,8,8], 'chair.bair':[6,3,12,12],
+  'chair.dair':[9,4,13,13], 'chair.dtilt':[4,2,8,8], 'chair.fair':[8,3,11,11], 'chair.fs':[92,1,0,0], 'chair.grab':[5,3,27,-1], 'chair.jab':[0,1,21,11], 'chair.nair':[5,6,7,7], 'chair.neutral':[8,1,0,0], 'chair.uair':[4,3,8,8],
+>>>>>>> g-fs10
   'chair.usmash':[29,4,28,28], 'chair.utilt':[5,3,9,9], 'cheer.bair':[5,3,10,10], 'cheer.dair':[8,4,11,11], 'cheer.dtilt':[5,3,9,9], 'cheer.fair':[5,3,9,9], 'cheer.fs':[83,1,0,0], 'cheer.grab':[5,3,23,-1],
   'cheer.jab':[0,1,21,13], 'cheer.nair':[4,6,7,7], 'cheer.uair':[4,3,8,8], 'cheer.usmash':[29,4,28,28], 'cheer.utilt':[5,3,8,8], 'cherries.bair':[5,3,10,10], 'cherries.dair':[7,4,11,11], 'cherries.dtilt':[4,3,9,9],
   'cherries.fair':[5,2,9,9], 'cherries.fs':[87,1,0,0], 'cherries.grab':[5,3,23,-1], 'cherries.jab':[0,1,21,11], 'cherries.nair':[4,6,7,7], 'cherries.uair':[4,3,8,8], 'cherries.usmash':[29,4,30,30], 'cherries.utilt':[5,3,9,9],
