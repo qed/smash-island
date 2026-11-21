@@ -84,3 +84,7 @@ Nothing new reaches 9 except Final Smashes. Broken or wrong found: (1) website s
 Up: CPU players 7 -> 8, Live Boss Rush 6 -> 8, Event contests 7 -> 8. Final Smashes 9. Everything else unchanged (Balance 7, Algebralien Rush 7 hidden, OCs 7, Online 7, the rest 8).
 Open: Mines 8-player CTF regression (one match now times out), rejoin check fails on Windy Heights moving platforms, Algebralien Rush unhides 22 Nov with no release check, Update 12 entry long (27 items).
 Next jobs: up specials (owner picks on g-recov), Algebralien Rush release check, fresh balance panel; owner replay of Springy, DODGEBALL!, new 8-Ball.
+
+## Jury 2026-11-21 (full write-up: smash-bal/reports/jury-2026-11-21.md)
+Up: Algebralien Rush 7 -> 8. Everything else unchanged (Final Smashes 9; Balance, OCs, Online 7; the rest 8). No 10s yet (Spongy's event is 10/10 by the owner).
+Closest to 10: Final Smashes (Bow frame row, Moon Caves chair spot, owner answer on screen-wide exemptions, then owner play); Algebralien Rush (SUN HUNT room, ROOT THEM OUT start, owner plays 22-23 Nov); Event contests; Live Boss Rush (owner replay); World Cup (trophy click-through).
