@@ -79,3 +79,8 @@ Own checks: bootcheck errors none, guards ok; allcontests 1800 ERRORS 0 (15/15);
 | Website and search pages | 8 (8) | every move in full with frame data and frame-by-frame hitbox pictures (1630). STALE: the pages were built before g-smash6, so Apple, Bracelety, Firey Jr., MeTag, Pickle, Poppy, Profily and Silver Spoon still show Rising Lunge / Low Lunge | re-run gen-seo-pages before shipping; look at a few hitbox strips in the pane |
 
 Nothing new reaches 9 except Final Smashes. Broken or wrong found: (1) website stale for the 8 batch-6 fighters; (2) Update 12 notes miss the batch 6 smashes; (3) CTF gban bans shared by both sides, never decaying (from g-ctf10's row, not fixed); (4) OCs' 6 UI fails unexplained.
+
+## Jury 2026-11-20 late (full write-up: smash-bal/reports/jury-2026-11-20-late.md)
+Up: CPU players 7 -> 8, Live Boss Rush 6 -> 8, Event contests 7 -> 8. Final Smashes 9. Everything else unchanged (Balance 7, Algebralien Rush 7 hidden, OCs 7, Online 7, the rest 8).
+Open: Mines 8-player CTF regression (one match now times out), rejoin check fails on Windy Heights moving platforms, Algebralien Rush unhides 22 Nov with no release check, Update 12 entry long (27 items).
+Next jobs: up specials (owner picks on g-recov), Algebralien Rush release check, fresh balance panel; owner replay of Springy, DODGEBALL!, new 8-Ball.
