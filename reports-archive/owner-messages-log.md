@@ -665,6 +665,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-21 (after the lead listed the four close-call finishers)**: for clover, it should work, but it should fall WHILE MOVING FORWARD, just like how all projectiles that go accross the floor SHOULD
 - **2026-11-21 (next, correcting the lead's reading that it meant shots fired from the air)**: no, this is just in gerenal for the shots on platforms
 - **2026-11-21 (next, on the close-call finishers)**: for lolipop, it should only activate in the air if the first part connects.
+- **2026-11-21 (next, on the falling rule)**: no, not like that! i just mean that, for example, after falling off a platform(NOT if launched in the air; that moves how it does today until reaching the edge of a platform) it should move how something would normally
+- **2026-11-21 (box: Clover's pinwheel, drift off edges / also start in air / other)**: this was for the rolling projectile, off topic.
 
 ## Bosses, Boss Rush & secrets
 
