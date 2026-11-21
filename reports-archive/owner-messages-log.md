@@ -1179,6 +1179,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-19** *(question box: what should a real skin be?)*: Show looks from the wiki (Recommended)
 - **2026-11-19**: also, there is too much endlag on foldys finisher
 - **2026-11-20 (on pushing Cloudy's fixed rules card (1) and new item buffs (2) live)**: do 1, 2, but merge all the weeks updates into one entry. do this every time.
+- **2026-11-21 (answers to the lead's list: push live? / light fighters? / walk-off KO lines? / SUN HUNT room? / DODGEBALL! phase 3? / 8-Ball online every week? / up specials batch 1?)**: push it, lower the smashes that do the damage, yeah, yes, yes, by-event, wdym?
 
 ## Status questions & check-ins
 
