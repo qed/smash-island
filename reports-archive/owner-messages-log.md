@@ -670,6 +670,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-21 (next, on the falling rule)**: no, not like that! i just mean that, for example, after falling off a platform(NOT if launched in the air; that moves how it does today until reaching the edge of a platform) it should move how something would normally
 - **2026-11-21 (box: Clover's pinwheel, drift off edges / also start in air / other)**: this was for the rolling projectile, off topic.
 - **2026-11-21 (on Pencil's Supervan, which blows up at an edge)**: for the van, no, it should not fall off.
+- **2026-11-21 (answers on up specials batch 1: helpless after on Lightning/Toothpaste/Pin? / Loser's counter vs Effortless Catch? / Basketball loses his jump back? / merge batch 1 and build the rest?)**: 1. if the recoveries are good 2. does the up-c do anything if you dont counter? 3. yeah. 4. sure ig
 
 ## Bosses, Boss Rush & secrets
 
