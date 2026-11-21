@@ -254,6 +254,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (HOT DOG bigger ideas + STAPY ideas)**: Hot Dog: Rule zones, Lawmaker, Rule-break heists, Rule chain, Traffic rules (not trial, contract deals, bribe the ref); Stapy: 1-3 Storm, searchlights, foghorn (not 4-10)
 - **2026-11-20 (playing Cloudy's week)**: cloudy is good, but i dont feel the buffs as different buffs.
 - **2026-11-20 (same message)**: also, go to next weakest event
+- **2026-11-21**: go to the next weakest event
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
