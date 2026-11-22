@@ -1183,6 +1183,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-20 (on pushing Cloudy's fixed rules card (1) and new item buffs (2) live)**: do 1, 2, but merge all the weeks updates into one entry. do this every time.
 - **2026-11-21 (answers to the lead's list: push live? / light fighters? / walk-off KO lines? / SUN HUNT room? / DODGEBALL! phase 3? / 8-Ball online every week? / up specials batch 1?)**: push it, lower the smashes that do the damage, yeah, yes, yes, by-event, wdym?
 - **2026-11-22 (after the lead said SUN HUNT's fix was waiting on 'push')**: push
+- **2026-11-22 (after the SUN HUNT line went into What's new)**: we dont talk about abr in the changelog
 
 ## Status questions & check-ins
 
@@ -1490,6 +1491,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (night)**: how much longer
 - **2026-11-21 (back)**: how much longer to finish?
 - **2026-11-22**: what did you do?
+- **2026-11-22 (next)**: also, how is the tracking data?
 
 ## Working rules, budget & agents
 
