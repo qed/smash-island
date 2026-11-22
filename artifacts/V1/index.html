@@ -130798,6 +130798,7 @@ const BRAIN_LV = [
 // Marker's splash and Money's burst all land within 100 px.)
 [0.12, 0.4, 0.6, 0.7].forEach(function(v, i){ BRAIN_LV[i].shd = v; });   // SHIELD / REFLECTOR (Z): the chance it acts on a tell it saw, by level (Easy reads least, Expert most): brainShield
 [0.05, 0.2, 0.5, 0.8].forEach(function(v, i){ BRAIN_LV[i].punish = v; });   // FRAME BUDGET: the chance it punishes a foe it sees in end lag within its reach, once per recovery (brainPunish)
+[0.04, 0.12, 0.2, 0.3].forEach(function(v, i){ BRAIN_LV[i].recOff = v; });   // OFFENSIVE RECOVERIES (2026-11-21): the chance a decision that sees its up special land on a foe is that press (brainUpOff, the spike dive, the counter rise in brainGuess): Easy rarely, Expert sometimes
 const BRAIN_SHOOTERS = new Set(["ember","cap","fry","barf","serve","freeze","beam","sign","dribble","zapshooter","fly","gust","zap","spark",
   "jawbreaker","spike","sucker","battery","emberjr","measure","shatter","timber","pricetag"]);
 // WHERE EACH KIT'S SPECIALS LAND, measured from the moves themselves (the bot fixes, 2026-10-28): every fighter's neutral special and its
@@ -131224,6 +131225,7 @@ function brainRecover(f, inp, B, sp){
   B.press = null; B.str = null; if(B.st === 'string' || B.st === 'smash') B.st = 'approach';
   B.recT = hazardT;   // (a trip back is on: brainOut lets its specials through before the CPU has 'woken' -- the up-special and Bow's Teleport are its way back)
   const held = !!f._jp;
+  if(B.eg && B.eg.dive && brainDiveStep(f, inp, B, B.eg, sp)) return true;   // OFFENSIVE RECOVERIES: the spike dive it hopped out on (brainGuard), while it is safe
   // A PERSON OFF THE STAGE (REAL EDGES): once a trip, by level (BRAIN_LV recMiss), it may get one thing wrong -- a late start (nothing pressed
   // for a moment while it falls), a moment's drift without steering, or its jump and its up-special thrown away at once. So a CPU makes it
   // back most of the time and is lost now and then, as a person is. As the trip begins, a press decided on the floor and still waiting for
@@ -131323,6 +131325,12 @@ function brainThrow(f, inp, B){
 function brainGuess(f, t, B, L, dist, awake){
   const tell = !t._isBoss && (t.smashHold > 0 || !!t._windup || !!t._mv || t._atkAnim > 0);   // (any swing it sees start: a jab, a tilt, a smash's charge, a wind-up)
   const fresh = tell && !B.tellOn; B.tellOn = tell;
+  if(fresh && awake && L.recOff > 0 && !t._isBoss && !(f.hitstun > 0) && f.spCd <= 0 && !(f._aiSpGap > 0) && hazardT >= B.ctrCd && !(f._rec || f._stall || f._helpless) && !(!f.onground && f._usedAirSpecial)){   // OFFENSIVE RECOVERIES: a counter rise meets a swing it sees start in its reach (the same tell, the same wait after any guess)
+    const U = UPSPEC[f.kit && f.kit.special];
+    if(U && U.shape === 'counter' && dist < f.r + (t.r || 24) + 70 && simRand() < L.recOff*2){
+      B.ctrCd = hazardT + Math.round(brainR(L.ctrCd[1] > 0 ? L.ctrCd : [360, 600])); brainTap(B, { special:true, up:true }, 3); B.str = null; B.st = 'wait'; B.until = hazardT + 30; return;
+    }
+  }
   if(!fresh || !(L.ctr > 0)) return;
   const K = brainKit(f);
   if(!K.any || !awake || f.hitstun > 0 || hazardT - B.hurtEnd < L.ctrHit || hazardT < B.ctrCd) return;
@@ -131518,6 +131526,8 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   // (0.6 of that, the finishing rate above), else now and then (0.12, the OC rule's "without one"). Nothing else about when a CPU smashes is changed.
   if(f.onground && !t._isBoss && dy < -60 && dy > -150 && adx < 70 && !(t.vy < -1) && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0)
      && simRand() < (open ? L.smash : ((t.pct||0) >= (hazardT - lastKoFrame > 720 ? 70 : 100)) ? L.smash*0.6 : L.smash*0.12)){ brainTap(B, brainSmash(f, t, toward, 1), 3); B.st = 'smash'; B.until = now + 75; return; }
+  // OFFENSIVE RECOVERIES: its up special as an attack where that kind lands (brainUpOff), now and then (L.recOff)
+  { const uo = brainUpOff(f, t, L, sp, dx, dy, ready); if(uo && simRand() < L.recOff){ brainTap(B, uo, 3); B.specAt = now + brainSpecGap(f, L); return; } }
   // its up-special when it lands from here (brainUpLands), now and then: an uppercut or a spin at a foe above it (an anti-air), Bow's Chair
   // Slam on a foe beside her
   if(ready && f.onground && !t._isBoss && (dy < -24 || (K.up && K.up.kind === 'slam')) && brainUpLands(f, K, t) && simRand() < L.upAtk){ brainTap(B, { special:true, up:true }, 3); B.specAt = now + brainSpecGap(f, L); return; }
@@ -131765,6 +131775,7 @@ function brainGuard(f, ts, t, inp, B, L, targets, sp){
     // drifts now, and one frame's push moves that guess a long way when it is high up: it drifts on toward the spot only past a band at
     // least that wide, and lets itself drop inside it, so the arrow is not flipped every frame (after a respawn Bow's flipped 51 times in a
     // second); and it lets go a moment (EG_AIR_HOLD) before it turns the arrow back the other way, as a person would.
+    if(E.dive && brainDiveStep(f, inp, B, E, sp)) return true;   // (OFFENSIVE RECOVERIES: hopping out on the spike dive, still over the stage)
     const gL = gravAt(f), dyL = Math.max(0, groundY() - (f.y + f.r)), tL = (Math.sqrt(Math.max(0, (f.vy || 0)*(f.vy || 0) + 2*gL*dyL)) - (f.vy || 0))/gL;
     const lx = f.x + (f.vx || 0)*Math.max(0, tL), li = (lx - e.x)*e.inl;   // (li: how far in from the edge it comes down, carrying on as it is)
     const band = Math.max(30, MOVE*(f.st || STAT_ONE).air*Math.max(0, tL));   // (how far a frame's push moves that)
@@ -131794,6 +131805,12 @@ function brainGuard(f, ts, t, inp, B, L, targets, sp){
   if(open && brainInReach(f, t, 20) && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && !K.smStance && !K.smBuff && simRand() < L.smash){
     brainTap(B, brainSmash(f, t, toward), 3); E.smAt = now; return true;
   }
+  // OFFENSIVE RECOVERIES at the ledge: THE SPIKE DIVE -- a spike row's fighter, a foe just under the ledge trying to get back -- now and then
+  // it hops out after them and drops its spike on them (brainDiveStep); or its up special lands on a foe arriving (brainUpOff: Coiny's slap, a carry)
+  if(off && !upAt && E.mode === 'ledge' && there && ready && !E.dove && brainDiveOk(f, t, e, sp) && simRand() < L.recOff){
+    E.dove = true; E.dive = { at:now, until:now + 50, press:0 }; inp.jump = !f._jp; inp.left = out < 0; inp.right = out > 0; return true;
+  }
+  { const uo = brainUpOff(f, t, L, sp, dx, dy, ready); if(uo && simRand() < L.recOff){ brainTap(B, uo, 3); B.specAt = now + brainSpecGap(f, L); return true; } }
   // IF THEY JUMP: up to the ledge or over it and into its reach (or out there level with it, in its reach) -- the strong jab, as they arrive
   if(reach){
     if(simRand() < L.egHit){ brainTap(B, brainMoveKeys(f, t, brainStrongMove(f, t)), 3); E.jabAt = now; E.jabs = (E.jabs || 0) + 1; }
@@ -131847,6 +131864,77 @@ function brainUpLands(f, K, t){
   if(u.kind === 'spin') return Math.abs(t.x - f.x) < SPIN_R_RISE + tr && t.y - f.y < 20 && t.y - f.y > -150;
   if(u.kind === 'slam') return f.onground && Math.abs(t.x - f.x) < f.r + u.rad + tr && Math.abs(t.y - f.y) < 40;
   return false;
+}
+// OFFENSIVE RECOVERIES (2026-11-21; the owner: "in smash, some recoveries you have to time, some have spikes that can be used offensively, etc."):
+// now and then (BRAIN_LV recOff: Easy rarely, Expert sometimes) a CPU uses its up special as an attack where that kind of up special lands,
+// read from its own row, on the foe as it sees it (a moment late, led a little: so it misses now and then):
+//   carry     a foe beside it on the floor is rolled up with it
+//   topspike  a foe that will be in front of it at the top of the hop is slapped DOWN (Coiny)
+//   tether    the lash to the nearest corner in reach runs through the foe (it is hit and pulled in on the way)
+//   plunge    a spike row (a fall hit or a top hammer) over a foe: the drop or the hammer drives them DOWN. In the air only where it is safe
+//             (brainPlungeSafe): well in over the stage, or out past the ledge with a jump left for after it, near the ledge, the drop's end
+//             above the ledge. At the ledge it may hop out after a foe coming back about level with it to do it (THE SPIKE DIVE: brainDiveStep).
+//   counter   a swing it sees start in its reach is met with the counter rise (brainGuess)
+// Returns the keys of the press, or null.
+function brainUpOff(f, t, L, sp, dx, dy, ready){
+  const U = UPSPEC[sp];
+  if(!U || !ready || !(L.recOff > 0) || t._isBoss || f._helpless || f._rec || f._stall || f.hitstun > 0) return null;
+  if(!f.onground && (f._usedAirSpecial || overDrop(f))) return null;   // (off the stage it is the dive's own rule: brainDiveStep)
+  const tr = t.r || 24, K = { special:true, up:true };
+  switch(U.shape){
+    case 'carry': return (f.onground && Math.abs(dy) < 50 && Math.hypot(dx, dy) - tr < f.r + (U.rad || 30) - 8) ? K : null;
+    case 'topspike': {
+      if(!f.onground || f.face !== (dx < 0 ? -1 : 1)) return null;
+      const S = U.slap || {}, gv = gravAt(f), p = Math.abs(U.power == null ? -12 : U.power)*recV(f), T = p/gv, top = f.y - p*p/(2*gv);
+      const tx = t.x + (t.vx || 0)*T*0.5, ty = t.onground ? t.y : t.y + (t.vy || 0)*T*0.5;
+      return Math.hypot(tx - (f.x + f.face*(S.fx || 0)), ty - (top + f.r + (S.dy == null ? 22 : S.dy))) < (S.r || 34) + tr*0.6 ? K : null;
+    }
+    case 'tether': {
+      const c = recTetherFind(f, U, 0); if(!c) return null;
+      const x0 = f.x, y0 = f.y - f.r*0.3, vx = c[0] - x0, vy = c[1] - y0, L2 = vx*vx + vy*vy || 1, u = Math.max(0, Math.min(1, ((t.x - x0)*vx + (t.y - y0)*vy)/L2));
+      return Math.hypot(t.x - (x0 + vx*u), t.y - (y0 + vy*u)) < tr + 4 ? K : null;
+    }
+    case 'plunge': return (!f.onground && brainPlungeHits(f, U, t) && brainPlungeSafe(f, U)) ? K : null;
+  }
+  return null;
+}
+// A spike row's plunge from here, on the foe as seen: the top hammer where the hang ends, or the drop's column (a fall hit is a cast in the air's).
+function brainPlungeHits(f, U, t){
+  if(!U || U.shape !== 'plunge' || !(U.fall || U.top)) return false;
+  const gv = gravAt(f), p = Math.abs(U.power == null ? -13 : U.power)*recV(f), T = p/gv + (U.hang || 6), top = f.y - p*p/(2*gv);
+  const tr = t.r || 24, tx = t.x + (t.vx || 0)*T*0.5, ty = t.onground ? t.y : t.y + (t.vy || 0)*T*0.5;
+  if(U.top){ const cx = f.x + f.face*(U.top.fx || 0), cy = top + f.r + (U.top.dy == null ? 22 : U.top.dy); if(Math.hypot(tx - cx, ty - cy) < (U.top.r || 34) + tr*0.6) return true; }
+  if(U.fall && !f.onground){ const bot = U.fallMax ? top + 14*U.fallMax : groundY(); if(Math.abs(tx - f.x) < f.r + tr && ty > top && ty < bot + f.r + tr*0.5) return true; }
+  return false;
+}
+// Where a plunge in the air is safe: well in over the stage; or near the ledge with a jump left for after it and the end of the drop (it lets
+// go after fallMax frames) above the ledge's top. A row that drops all the way down is never cast out there.
+function brainPlungeSafe(f, U){
+  if(!FLOOR_SEGS) return !overDrop(f);
+  for(const q of FLOOR_SEGS) if(f.x > q.x0 + 40 && f.x < q.x1 - 40) return true;
+  if(!U.fallMax || !(f.jumps > 0)) return false;
+  const gv = gravAt(f), p = Math.abs(U.power == null ? -13 : U.power)*recV(f), bot = f.y - p*p/(2*gv) + 14*U.fallMax;
+  let near = Infinity; for(const q of FLOOR_SEGS) near = Math.min(near, Math.abs(f.x - q.x0), Math.abs(f.x - q.x1));
+  return near < 150 && bot + f.r < groundY() + 30;
+}
+// THE SPIKE DIVE (brainGuard): at the ledge, on its feet with both jumps, a spike row, and the foe it guards just out from the edge, about
+// level with the ledge or over it (not shooting up past it): it hops out toward them (brainDiveStep steers it over them, never past DIVE_OUT from the edge),
+// and drops the spike when it lands on them from where it is and it is safe; it gives up -- and goes back as on any trip back -- once it is not.
+// (Out there it reads the foe itself, not a moment late: the dive lasts under a second.)
+const DIVE_OUT = 110;
+function brainDiveOk(f, t, e, sp){
+  const U = UPSPEC[sp]; if(!U || U.shape !== 'plunge' || !(U.fall || U.top) || !U.fallMax || !f.onground || !((f.jumps || 0) >= 2)) return false;
+  const out = -e.inl, a = (t.x - e.x)*out, d = t.y + (t.r || 24) - groundY();
+  return a >= 10 && a <= DIVE_OUT + 20 && d >= -140 && d <= 50 && !((t.vy || 0) < -8);   // (the drop lets go after fallMax frames: it reaches a foe about level with the ledge or over it, not one deep under it)
+}
+function brainDiveStep(f, inp, B, E, sp){
+  const D = E.dive, now = hazardT, U = UPSPEC[sp], ts = E.who;
+  if(D.press && now <= D.press){ inp.special = true; inp.up = true; inp.left = inp.right = false; inp.jump = false; return true; }   // (the press, held a few frames as a person's)
+  if(D.press || !U || now >= D.until || !ts || ts.dead || ts.onground || (f.onground && now > D.at + 3) || f.hitstun > 0 || f._usedAirSpecial || f._stall || f._rec || !(f.jumps > 0) || f.y + f.r > groundY() + 20){ E.dive = null; return false; }
+  const e = E.edge, out = -e.inl, lim = e.x + out*DIVE_OUT, want = out > 0 ? Math.min(ts.x, lim) : Math.max(ts.x, lim), gx = want - f.x;
+  inp.left = gx < -6; inp.right = gx > 6; inp.jump = false; inp.special = false;
+  if(!f.onground && brainPlungeHits(f, U, ts) && brainPlungeSafe(f, U)){ D.press = now + 2; inp.special = true; inp.up = true; inp.left = inp.right = false; }
+  return true;
 }
 // BOX'S CATCH: a foe's shot she sees coming (late, as she sees anything: cpuSeeBegin) that will be in her flaps' reach a moment on is packed,
 // whatever she was about -- the approach, a string, a guard at the ledge (not mid-smash, not mid-press, not before she has woken from a stun)
@@ -144532,7 +144620,7 @@ function nameTagFlush(again){
   } finally { ctx.restore(); }
 }
 function drawFighter(f){
-  if(f._rec && f._rec.hide) return;   // RECOVERY TYPES: a teleport's vanish (the host's state: a guest still sees the body)
+  if((f._rec && f._rec.hide) || f._recHide) return;   // RECOVERY TYPES: a teleport's vanish (the host's state; a guest's picture carries it as rh: netRecOut)
   ctx.save();
   if(f._grasstree>0){   // Grasstree: Tree's body behind him (render-only). His own sprite if it has loaded, a trunk if not.
     const tsp = (typeof SPRITES !== 'undefined') && SPRITES['Tree'], tim = tsp && spriteImage(tsp);
@@ -150542,6 +150630,30 @@ const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering
   'fsGlow','fsId','fsT','fsWind','fsDur','fsAx','fsAy','fsBx','fsBy','fsCx','fsCy',   // FINAL SMASH BALLS: the glow, and which Final Smash is on, how far in, and where it began (all a client needs to draw it)
   '_spr',   // (SPRINT: the way a sprinting fighter runs, -1 or 1 -- the lean drawFighter draws)
   'fsC','fsLk','fsPd'];   // (fsPd: Pencil's van's road in px, 0 when it stays) ...the catch's frames left, and whose catch holds this fighter (+1) (CATCH, THEN CINEMATIC)
+// RECOVERY TYPES ON A GUEST (2026-11-21): the state of an up special stays on the host (f._rec), and its look was the host's alone -- the
+// body hidden in a teleport's vanish (a guest still saw it), the tether's line, the carry's wheel and the charge's glow (puffs, which are not
+// sent). So the host sends a few plain numbers while one is on: rh the vanish, rl the line's far end and colour, rc the wheel's reach and
+// colours, rq the charge (0..100); the guest hides the body (drawFighter) and makes the same puffs itself (netRecIn).
+// The up specials whose fighter the host places its own way, that the guest cannot play with its keys: a charge's slow sink, a teleport's
+// vanish and jump, a counter's still stance, a tether's reel, an aim burst's and a fast line's fixed flight (an aim burst was cut 371 px). The guest played its keys over them with plain physics and the host's picture
+// then pulled it back (176 px after a teleport); now it draws them where the host has them. (Measured with all of them held -- the glide,
+// hover, float, hops, carry, armour, a plunge's drop: the steered ones came out worse, the switches back and forth snapping 50-100 px -- so
+// those are the guest's to play as before.)
+function netRecHeld(f){ const R = f._rec; return !!R && (R.k === 'charge' || R.k === 'tele' || R.k === 'counter' || R.k === 'burst' || R.k === 'line' || (R.k === 'tether' && R.ph === 'reel')); }
+function netRecOut(f, o){
+  const R = f._rec, s = R && R.s; if(!R || !s) return;
+  if(R.hide) o.rh = 1;
+  if(R.k === 'tether' && (R.ph === 'reel' || R.t <= 6) && Number.isFinite(R.lx) && Number.isFinite(R.ly)) o.rl = [Math.round(R.lx), Math.round(R.ly), (s.colors && s.colors[0]) || '#7a3a2a'];
+  else if(R.k === 'carry') o.rc = [Math.round(f.r + (s.rad || 30)), (s.colors && s.colors[0]) || '#ffcf3a', (s.colors && s.colors[1]) || '#ff6a2a'];
+  else if(R.k === 'charge') o.rq = Math.round(100*Math.min(1, R.t/(s.full || 40)));
+}
+function netRecIn(f){
+  if(f.dead) return;
+  const L = f.rl, C = f.rc;
+  if(Array.isArray(L) && Number.isFinite(L[0]) && Number.isFinite(L[1])){ const n = 5; for(let i=1;i<=n;i++) puff(f.x + (L[0] - f.x)*i/n, f.y - f.r*0.3 + (L[1] - f.y + f.r*0.3)*i/n, typeof L[2] === 'string' ? L[2] : '#7a3a2a', 2); }
+  else if(Array.isArray(C) && Number.isFinite(C[0])){ for(let i=0;i<2;i++) puff(f.x + (cosRand()*2-1)*C[0]*0.7, f.y + (cosRand()*2-1)*C[0]*0.7, typeof C[i ? 1 : 2] === 'string' ? C[i ? 1 : 2] : '#ffcf3a', 4); }
+  else if(Number.isFinite(f.rq)){ const q = Math.max(0, Math.min(100, f.rq))/100; puff(f.x + f.face*f.r*0.6, f.y - f.r, q >= 0.75 ? '#ffd84a' : '#ff8a3a', 2 + Math.round(3*q)); }
+}
 function netFighter(f){
   const o = { idx:f.idx, x:Math.round(f.x), y:Math.round(f.y), r:f.r, face:f.face,
     pct:f.pct, stocks:(f.stocks===Infinity?-1:f.stocks),   // (unrounded since batch 3 of the up/down smashes: a guest's % is the host's exactly)
@@ -150561,6 +150673,7 @@ function netFighter(f){
     if(f._atkMove) o.swingMove = f._atkMove;   // which move it is, for its own limbs, body and face (MOVE ANIMATIONS)
     if(f._atkLen) o.swingLen = f._atkLen;      // a smash runs longer than a jab; the beats scale with it
   }
+  if(f._rec) netRecOut(f, o);   // RECOVERY TYPES: what a guest draws of an up special in progress (netRecOut)
   if(f._plunge) o.plunge = 1;   // Meteor Puff's dive is on: a client draws her BFDIA 6 sprite for as long as it lasts (puffPose); the state itself stays on the host
   if(f._hurtAnim != null) o.hurtT = f._hurtAnim;   // sent whenever set: wasHit tells 0 from "never set"
   if(f._heatFx) o.heatFx = f._heatFx;   // Paintbrush's Heat Explosion and Knife's Fist Thingy: drawKitFx draws them from these
@@ -150899,6 +151012,7 @@ function applySnapshot(s){
       _heatFx:fd.heatFx, _hookFx:fd.hookFx, _jamFx:fd.jamFx,
       _atkAnim: fd.swing || 0, _atkKind: fd.swingKind || null, _atkMove: fd.swingMove || null, _atkLen: fd.swingLen, _hurtAnim: fd.hurtT,
       _plunge: fd.plunge ? { from: 0, life: 0 } : null,   // (a client never simulates: this is only the flag puffPose reads)
+      _recHide: fd.rh ? 1 : 0,   // (RECOVERY TYPES: a teleport's vanish, the host's: drawFighter hides the body)
       _windup: (fd.charge && typeof fd.charge === 'object') ? fd.charge : null,
       _atk0: fd.swing || 0,   // the swing timer as the snapshot has it (netSwing counts it down between snapshots)
       // THIS device's fighter is the one it plays, not the one the host marked (the host's own). The gold marker, the
@@ -150911,7 +151025,10 @@ function applySnapshot(s){
     // the swing timer the last snapshot had, when this is the same swing still running: netSwing never shows more than it. A swing held by a
     // hit's freeze on the host (HIT FREEZE) arrives with the same timer twice, and counted back up from it each time it stepped a frame back and forth
     f._atkCap = (was && was._atk0 > 0 && f._atk0 > 0 && was._atk0 >= f._atk0) ? was._atk0 : 0;
-    netGlide(f, (was && was._tpT > 0 && !(f._tpT > 0)) ? null : was);   // Bow's Teleport: the fade just ended, so she is somewhere else -- cut to it (a short trip is under NET_TELEPORT, and would glide)
+    if(f.rl || f.rc || f.rq != null) netRecIn(f);   // (RECOVERY TYPES: the line, the wheel, the glow)
+    if(was && was._recHide && !f._recHide && f.idx === myIdx){ NET_PRED.ox = 0; NET_PRED.oy = 0; NET_PRED.mode = 0; NET_PRED.auth = null; }   // (RECOVERY TYPES: this guest's own teleport arrives -- a cut, as the host's; the prediction, back on as the move ends that frame, eased the 176 px out as a slide)
+    if(was && !!was._recHide !== !!f._recHide && !f.dead){ for(let i=0;i<10;i++) puff(f.x + (cosRand()*2-1)*(f.r + 4), f.y + (cosRand()*2-1)*(f.r + 4), i%2 ? (f.color || '#ffffff') : '#ffffff', 4); }   // (a teleport's vanish and arrival puffs)
+    netGlide(f, ((was && was._tpT > 0 && !(f._tpT > 0)) || (was && was._recHide && !f._recHide)) ? null : was);   // (RECOVERY TYPES: a teleport's arrival, 170-190 px, is a cut too)   // Bow's Teleport: the fade just ended, so she is somewhere else -- cut to it (a short trip is under NET_TELEPORT, and would glide)
     return f;
   });
   if(s.mode==='ctf'){ try{ ctfNetFightersIn(); }catch(e){ console.error('ctfNetFightersIn', e); } }
@@ -151234,7 +151351,7 @@ function netPredOut(f){
   const held = !!(ctfHeld || FS.freeze > 0 || FS.slow > 0 || f.dead || f._fsLock || (f._mv && !mvC) || f._dashing > 0 || f._hyperT > 0 || f._gotcha || f._nail
     || (f._sm && f._sm.drive) || f.flying > 0 || f._tp || f._tpHang > 0 || stanceStill(f) || f.rooted > 0 || f._gb || f._hold || f._slam
     || f.frozen > 0 || f._fxLock > hazardT || f.ctrlRev > 0 || f.smashHold > 0 || f._windup || f._plunge || f._floatT > 0 || f.iceUntil > 0
-    || f._ynZip || f._heldBy != null || f._grabHold || f._attract || f.dropping > 0 || f._springT > 0 || f._raceSpringT > 0 || f.swallowed || f._rubHang > hazardT || f._fHold > hazardT || f._ffPh || f._bzPh || f._bbPh || f._hiPh || f._stPh || f._wallKickT > hazardT || f._spFly > hazardT || f._roll || f._bhSingT > hazardT || f._bhWT >= hazardT || f._boltHang > hazardT || f._flutT > hazardT || f._crumbT > hazardT || f._sdPh || RACE.active || (WND && f._stgRide));   // (WINDY HEIGHTS TEAMS: a rider on a kite, the gondola, a vane or the Airship is the host's to place: the guest's own replay ran it against a kite 3 frames old and popped it 60 to 150 px)   // (Spongy: his finisher's and Final Smash's flight, Squash and Spring's squash)   // (Black Hole: SINGULARITY's drift, the WORMHOLE)   // (Eraser: RUB OUT's hang, STEAKHOUSE FLIP's wall kick; 8-Ball: STOP SHOT's roll; Cloudy: the bolt's air hold; Pie: Arm Flutter's flaps, her crumbs)
+    || f._ynZip || f._heldBy != null || f._grabHold || f._attract || f.dropping > 0 || f._springT > 0 || f._raceSpringT > 0 || f.swallowed || f._rubHang > hazardT || f._fHold > hazardT || f._ffPh || f._bzPh || f._bbPh || f._hiPh || f._stPh || f._wallKickT > hazardT || f._spFly > hazardT || f._roll || f._bhSingT > hazardT || f._bhWT >= hazardT || f._boltHang > hazardT || f._flutT > hazardT || f._crumbT > hazardT || f._sdPh || RACE.active || (WND && f._stgRide) || netRecHeld(f));   // (RECOVERY TYPES, 2026-11-21: netRecHeld)   // (WINDY HEIGHTS TEAMS: a rider on a kite, the gondola, a vane or the Airship is the host's to place: the guest's own replay ran it against a kite 3 frames old and popped it 60 to 150 px)   // (Spongy: his finisher's and Final Smash's flight, Squash and Spring's squash)   // (Black Hole: SINGULARITY's drift, the WORMHOLE)   // (Eraser: RUB OUT's hang, STEAKHOUSE FLIP's wall kick; 8-Ball: STOP SHOT's roll; Cloudy: the bolt's air hold; Pie: Arm Flutter's flaps, her crumbs)
   const busy = held || keysOff || timed;
   const o = { a, b:busy ? 1 : 0 };
   if(S.lastG > -1e8 && a - S.lastG < 4000 && Number.isInteger(S.clk)){ o.lg = a - S.lastG; o.ld = a - S.clk; }   // GUEST SNAPS: the last change of theirs it played (frames before a) and how far its play clock runs behind a (netPredKeys)
@@ -151250,7 +151367,8 @@ function netPredOut(f){
   const jv = (SETTINGS.mode==='ctf' ? ctfJumpV(f) : JUMP*fst.jump) * (f._sinkT > hazardT ? FX2.sand.jump : 1);
   const hopOk = mtOn(f) && jv === JUMP*fst.jump;   // (step(): a boosted, laden or sunk jump is never cut short)
   if(isHumanCtrl(f) && (sprintCan(f) || f._spr || f._sprD > 0)){ o.z = 1; if(f._spr) o.sp = f._spr; if(f._sprD > 0) o.zd = f._sprD; }   // SPRINT: Z may start a decision (z), the sprint's way (sp) and how far the decision is (zd)
-  o.j = f.jumps; o.at = f._airT || 0; if(f._sqUsed) o.q = 1;   // (q: Squishy Top's bounce spent this airtime)
+  // (RECOVERY TYPES: helpless after a far one -- no jump until it lands -- on the guest's screen too)
+  o.j = f._helpless ? 0 : f.jumps; o.at = f._airT || 0; if(f._sqUsed) o.q = 1;   // (q: Squishy Top's bounce spent this airtime)
   if(f._jBuf != null && isHumanCtrl(f)) o.jb = hazardT - f._jBuf;   // the jump buffer, frames ago (step(): INPUT BUFFER)
   if(f._hitJumpV && f._hitJumpV !== 1 && f.jumps === 1 && !f.onground) o.hj = r3(f._hitJumpV);   // the one jump left is the one a hit gave back, lower (hitJumpBack)
   o.s = (f._jp ? 1 : 0) | (f._hop ? 2 : 0) | (f._ff ? 4 : 0) | (f._dnPrev ? 8 : 0) | (mtOn(f) ? 16 : 0) | (hopOk ? 32 : 0) | ((f.kit && f.kit.special==='airrel') ? 64 : 0);
@@ -151287,7 +151405,7 @@ function netPredCoastOk(f, ctfHeld){
     || f._gb || f._hold || f._slam || f.frozen > 0 || f._plunge || f._floatT > 0 || f._ynZip || f._heldBy != null || f._grabHold || f._attract || f.dropping > 0
     || f._springT > 0 || f._raceSpringT > 0 || f.swallowed || f._rubHang > hazardT || f._fHold > hazardT || f._ffPh || f._bzPh || f._bbPh || f._hiPh || f._stPh
     || f._wallKickT > hazardT || f._spFly > hazardT || f._roll || f._bhSingT > hazardT || f._bhWT >= hazardT || f._boltHang > hazardT || f._flutT > hazardT
-    || f._crumbT > hazardT || f._sdPh || f._sdHang > hazardT || f._stk || f._hyperT > 0 || RACE.active || (WND && f._stgRide) || hdNetBusy(f));
+    || f._crumbT > hazardT || f._sdPh || f._sdHang > hazardT || f._stk || f._hyperT > 0 || RACE.active || (WND && f._stgRide) || hdNetBusy(f) || netRecHeld(f));
 }
 // On the guest: its own fighter's frames from `a` (the snapshot's state, `pr` its numbers) played forward through frame `to` with its own keys.
 // Null when there is nothing to play. Stops early at a key that starts a move, or Down on the ground. The cliffs are the host's own rule
