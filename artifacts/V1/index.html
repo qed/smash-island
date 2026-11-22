@@ -79749,10 +79749,11 @@ const REC_DIRS = [[0,-1],[1,-1],[-1,-1],[1,0],[-1,0],[1,1],[-1,1],[0,1]];
 function recIsCpu(f){ return !isHumanCtrl(f); }
 // The CPU's goal: off the stage, a point just over the nearest floor end; on the stage, straight up.
 function recGoal(f){
-  if(!(FLOOR_SEGS && overDrop(f))) return { x:f.x, y:f.y - 160, off:false };
+  if(BHC && bhcWanted()){ const p = bhcRecLedge(f); if(p) return { x:clamp(f.x, p.x + 14, p.x + p.w - 14), y:p.y - f.r - 30, off:true, gy:p.y, segs:[{ x0:p.x, x1:p.x + p.w }], gk:(lowGravOn() ? 0.7 : 1) + bhcPull(f.y) }; }   // BACK TO THE TOP (2026-11-22): the CPU's recovery goes for its next ledge; the start slab it aimed for is long under the hole (a float stopped after 12-30 frames, hops never hopped again, a glide or hover never started, a teleport went straight up or toward the slab)
+  if(!(FLOOR_SEGS && overDrop(f))) return { x:f.x, y:f.y - 160, off:false, gy:groundY() };
   let best = null, bd = Infinity; const gy = groundY();
   for(const q of FLOOR_SEGS) for(const x of [q.x0 + 26, q.x1 - 26]){ const d = Math.abs(x - f.x); if(d < bd){ bd = d; best = x; } }
-  return { x:best, y:gy - f.r - 30, off:true };
+  return { x:best, y:gy - f.r - 30, off:true, gy:gy, segs:FLOOR_SEGS };
 }
 function recAimOf(f, inp){   // the arrows held: [ax, ay] (0, 0 when none); the jump key is a player's up
   return [(inp.right ? 1 : 0) - (inp.left ? 1 : 0), (inp.down ? 1 : 0) - ((inp.up || inp.jump) ? 1 : 0)];
@@ -79761,9 +79762,9 @@ function recAimOf(f, inp){   // the arrows held: [ax, ay] (0, 0 when none); the 
 // in the way stops it short), and the best is an end with the feet over the floor's height nearest the floor; failing that, the highest end.
 function recCpuAim(f, dist, raw){   // (raw, batch 2: a burst flies its line, it is no teleport: teleportDest keeps an end inside the world, and since the bigger blast zones a fighter is often out past it, where every way then scored the same and the CPU zipped straight up)
   const g = recGoal(f); if(!g.off) return REC_DIRS[0];
-  const gy = groundY(); let best = REC_DIRS[0], bs = Infinity;
+  const gy = g.gy; let best = REC_DIRS[0], bs = Infinity;
   for(const d of REC_DIRS){ if(d[1] > 0) continue; const n = Math.hypot(d[0], d[1]), p = raw ? { x:f.x + d[0]/n*dist, y:f.y + d[1]/n*dist } : teleportDest(f, f.x, f.y, d[0]/n*dist, d[1]/n*dist);
-    let across = Infinity; for(const q of FLOOR_SEGS){ const a = p.x < q.x0 ? q.x0 - p.x : p.x > q.x1 ? p.x - q.x1 : 0; if(a < across) across = a; }
+    let across = Infinity; for(const q of g.segs){ const a = p.x < q.x0 ? q.x0 - p.x : p.x > q.x1 ? p.x - q.x1 : 0; if(a < across) across = a; }
     const over = gy - (p.y + f.r), left = across - MAXVX*(f.st && f.st.air || 1)*0.85*Math.sqrt(2*Math.max(0, over)/GRAV);   // (batch 2: what is still to cover after it, drifting down from that height)
     const sc = over >= 0 ? Math.max(0, left) + across*0.01 : 1000 - over + across*0.1;
     if(sc < bs){ bs = sc; best = d; } }
@@ -79817,9 +79818,9 @@ function recStart(f, s){
 function recCpuChargeT(f, s){
   const full = s.full || 40, g = recGoal(f);
   if(!g.off) return Math.round(full*0.5);
-  const need = Math.max(30, (f.y + f.r) - groundY() + 40) * 1.12, p = Math.sqrt(2*GRAV*need)/recV(f);
-  const q = (p - Math.abs(s.min)) / (Math.abs(s.max) - Math.abs(s.min));
-  return Math.max(2, Math.min(full, Math.round(q*full) + 4));
+  const hold = need => { const p = Math.sqrt(2*GRAV*(g.gk || 1)*need)/recV(f), q = (p - Math.abs(s.min)) / (Math.abs(s.max) - Math.abs(s.min)); return Math.max(2, Math.min(full, Math.round(q*full) + 4)); };
+  const need = Math.max(30, (f.y + f.r) - g.gy + 40) * 1.12, t0 = hold(need);
+  return g.gk ? hold(need + (s.sink || 1.2)*t0) : t0;   // (BACK TO THE TOP, recGoal's gk: the low gravity and the hole's pull, and what it sinks while it burns)
 }
 // The ledge corner the whip can reach (a floor's end, a platform's corner), nearest first; null if none.
 function recTetherFind(f, s, dir){
@@ -79945,7 +79946,7 @@ function recStep(f, inp){
       } else if(f.onground || R.t > 40) f._rec = null;
       break; }
     case 'hops': {
-      const edge = cpu ? (f.vy > 0.5 && R.t >= (s.gap || 8) && (recGoal(f).off ? (f.y + f.r + f.vy*6 > groundY() - 30) : false)) : (C && !R.lastC);
+      const edge = cpu ? (f.vy > 0.5 && R.t >= (s.gap || 8) && ((g => g.off && f.y + f.r + f.vy*6 > g.gy - 30)(recGoal(f)))) : (C && !R.lastC);
       R.lastC = !!C;
       if(f.onground && R.t > 2){ f._rec = null; break; }
       if(R.i < (s.n || 3) && R.t >= (s.gap || 8) && edge){ const dir = inp.left ? -1 : inp.right ? 1 : 0; recHop(f, s, R, dir); f.spCd = Math.max(f.spCd, 30); }
@@ -79991,7 +79992,7 @@ function recStep(f, inp){
       if(R.t >= (s.win || 10)){ f._rec = null; upLaunch(f, (s.power==null ? -13 : s.power)*recV(f)); if(recSwing(f, s.swing, 1) > 0) recHeal(f, s.heal); }   // (batch 5: Grassy's heal)
       break; }
     case 'float': {
-      const want = R.t <= (s.min || 12) || (cpu ? (recGoal(f).off ? (f.y + f.r > groundY() - 50) : R.t < 30) : (C || inp.jump));   // (a tap still lifts for `min` frames)
+      const want = R.t <= (s.min || 12) || (cpu ? ((g => g.off ? (f.y + f.r > g.gy - 50) : R.t < 30)(recGoal(f))) : (C || inp.jump));   // (a tap still lifts for `min` frames)
       inp.attack = false; inp.special = false; inp.smash = false; inp.jump = false; inp.up = false;
       if(!want || R.t > (s.max || 64) || (f.onground && R.t > 3)){ f._rec = null; if(s.endJumps && !f.onground) f.jumps = Math.max(f.jumps||0, s.endJumps); break; }
       const v = (s.rate || -3.4)*recV(f); f.vy += (v - f.vy)*0.3;
@@ -80037,8 +80038,8 @@ function recStep(f, inp){
   }
 }
 // GLIDE / HOVER, for the CPU: off the stage, over the ledge's height and still out from it; never on the stage.
-function recCpuGlide(f){ const g = recGoal(f); return g.off && f.y + f.r < groundY() + 10 && Math.abs(g.x - f.x) > 30; }
-function recCpuHover(f){ const g = recGoal(f); return g.off && f.y + f.r < groundY() + 20 && Math.abs(g.x - f.x) > 40; }
+function recCpuGlide(f){ const g = recGoal(f); return g.off && f.y + f.r < g.gy + 10 && Math.abs(g.x - f.x) > 30; }
+function recCpuHover(f){ const g = recGoal(f); return g.off && f.y + f.r < g.gy + 20 && Math.abs(g.x - f.x) > 40; }
 // COUNTER (applyHit asks first): in the stance, the hit is taken -- nothing lands -- and the rise is the higher one, with a hit back.
 function recHeal(f, h){ if(!(h > 0)) return; f.pct = Math.max(0, f.pct - h); for(let i=0;i<5;i++) puff(f.x, f.y-8, '#f5c88a', 3); }   // (batch 5: a row's heal, on a hit that landed)
 function recCounterTake(t, from){
@@ -125361,6 +125362,8 @@ function bhcLandLedge(f){
 }
 function bhcCpuUpOk(f){ const K = brainKit(f); return !K.uStance && !(K.up && K.up.kind === 'slam'); }
 function bhcNextLedge(f){ return bhcLedge((f._bhRef == null ? -1 : f._bhRef) + 1); }
+// THE CPU'S RECOVERY GOAL here (recGoal): the next ledge up while it is in reach over the feet, else the ledge it can still land on (bhcLandLedge).
+function bhcRecLedge(f){ const p = bhcNextLedge(f); if(p && p.live && (f.y + f.r) - p.y < 260) return p; return bhcLandLedge(f); }
 EVENT_TWIST_WORDS['contest:top'] = { icon:'\u{1F573}\u{FE0F}', short:"Black Hole's contest: back to the top", words:"Black Hole's contest: a black hole rises from the bottom, slowly at first, then faster and faster. Climb! Comets knock you down, the world sometimes tips sideways, and three rocket parts build you a rocket. Falling in costs a stock; out of stocks, you throw comets. Last one standing wins.", goal:'Survive the rising hole!' };
 
 // ---------- EVENT FIGHTERS: NEEDY'S WEEK (her event data, her two twists NOW I CARE and ON POINT, and her contest EVIL SERUM) ----------
