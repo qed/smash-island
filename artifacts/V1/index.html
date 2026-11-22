@@ -9519,10 +9519,12 @@ function ctfEndHide(L){
   for(const f of fighters){
     const fl = L.flags[f.idx];
     if(fl.st === 0){   // never put down: it goes where its carrier stands, or at the nearest hiding spot of its side
+      // (CTF fix 2026-11-21: only where the other side can get to it, as every other hiding is (ctfAiReachable: not in a spring area); before, a flag still held when the hiding ended was
+      // put down where its carrier stood even inside a spring pad's area (Factory 8-player seed 3: x 18780), where nobody could ever pick it up. The nearest such spot, or any spot as before.)
       const sy = ctfSurfaceBelow(f.x, f.y + f.r - 10, 500);
-      if(sy !== null && ctfHideValid(f.team, f.x, sy)) ctfPlaceFlag(fl, f.x, sy);
-      else { let best = null, bd = 1e9; for(const s of CTF.map.spots) if(s.team === f.team){ const d = Math.hypot(s.x - f.x, s.y - f.y); if(d < bd){ bd = d; best = s; } }
-        ctfPlaceFlag(fl, best.x, best.y); }
+      if(sy !== null && ctfHideValid(f.team, f.x, sy) && ctfAiReachable(f.team, f.x, sy)) ctfPlaceFlag(fl, f.x, sy);
+      else { let best = null, bd = 1e9, any = null, ad = 1e9; for(const s of CTF.map.spots) if(s.team === f.team){ const d = Math.hypot(s.x - f.x, s.y - f.y); if(d < ad){ ad = d; any = s; } if(d < bd && ctfAiReachable(f.team, s.x, s.y)){ bd = d; best = s; } }
+        best = best || any; ctfPlaceFlag(fl, best.x, best.y); }
     }
   }
   { const x = L.xFlag; if(x && x.st !== 1){ const o = fighters[x.owner]; const sy = o ? ctfSurfaceBelow(o.x, o.y + o.r - 10, 500) : null;
@@ -10085,7 +10087,7 @@ function ctfStepFlags(L){
     if(fl.fall){
       fl.vy += 0.5; fl.y += fl.vy;
       const s = ctfSurfaceBelow(fl.x, fl.y - fl.vy - 4, 300);
-      if(s !== null && fl.y >= s){ fl.y = s; fl.fall = false; fl.vy = 0; ctfFlagRest(L, fl); if(fl.st === 1) ctfFlagResettle(L, fl); }
+      if(s !== null && fl.y >= s){ fl.y = s; fl.fall = false; fl.vy = 0; ctfFlagRest(L, fl); if(fl.st === 1) ctfFlagResettle(L, fl); else if(fl.st === 3 && fl.elev == null && fl.pad == null && ctfSpringGuards(fl.x, fl.y)) ctfFlagUnspring(fl); }
       else if(fl.y > CTF.map.WH + 100){ if(fl.st === 1) ctfFlagResettle(L, fl, true); else ctfReturnFlag(fl); }
     }
     for(const f of fighters){
@@ -10102,6 +10104,23 @@ function ctfStepFlags(L){
       }
     }
   }
+}
+// (CTF fix 2026-11-21: a flag DROPPED where a spring area covers it (a carrier tagged or jailed over a spring pad) lay where nobody could pick it up, as a hidden one did before ctfSpringGuards.
+// It slides along the floor it lies on to the nearest place just past the spring area's edge (the floor going on level, no wall in the way); with no such place it goes back to where it was hidden.)
+function ctfFlagUnspring(fl){
+  let best = null;
+  for(const dir of [-1, 1]){
+    let py = fl.y;
+    for(let dx = 12; dx <= 900; dx += 12){
+      const x = fl.x + dir*dx, sy = ctfSurfaceBelow(x, py - 30, 60);
+      if(sy === null || Math.abs(sy - py) > 30 || ctfInSolid(x, sy - 20) || x < 0 || x > CTF.map.WW) break;
+      py = sy;
+      if(!ctfSpringGuards(x, sy)){ if(!best || dx < best.d) best = { x, y:sy, d:dx }; break; }
+    }
+  }
+  if(!best){ ctfReturnFlag(fl); return; }
+  fl.x = best.x; fl.y = best.y; fl.fall = false; fl.vy = 0; ctfFlagRest(CTF.live, fl);
+  for(let i=0;i<8;i++) puff(fl.x, fl.y - 20, '#fff', 4);
 }
 function ctfReturnFlag(fl){ fl.st = 1; fl.car = -1; fl.x = fl.hx; fl.y = fl.hy; fl.fall = false; fl.vy = 0;
   { const L = CTF.live, e = L && fl.hride != null ? L.elevs[fl.hride] : null; fl.elev = e && !e.mov ? fl.hride : null; fl.pad = e && e.mov ? fl.hride : null; }   // (back on the moving part its hiding place is on, or on nothing that moves)
