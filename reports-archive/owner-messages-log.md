@@ -852,6 +852,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17**: the cpus delay recovery tools too much and fall sooo much.
 - **2026-11-21 (playing)**: uhhh, witht he right postisioning, cherries smash can ko after 1 use of it
 - **2026-11-21 (after the Cherries side-smash report)**: also, check for which smashes can do that near ledge or in air.
+- **2026-11-22 (answers on the balance panel: 1 should up specials KO? 2 do the suggested nerfs and buffs?)**: wow roboty went from one of the best to one of the worst... for 1, yes, because is mii brawler mii brawler without thrupper combos? 2. yeah sure
 
 ## Art, animation & polish
 
