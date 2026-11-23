@@ -953,6 +953,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-23 (after the Fries loss online, picking the lead's next fighter)**: and lets do a different fighter
 - **2026-11-23 (after the lead read the /pick/ fighter counts in Vercel Web Analytics: Book 6 people, Money 5, Bow 1)**: also, me maining bow isnt there
 - **2026-11-23 (answering why)**: i turned on dont count my visists
+- **2026-11-23 (after the lead said about 16 people visited, one each from Brazil, India and Singapore)**: yeah, ik who played from singapore, its one of my friends
 
 ## Bugs & fixes
 
