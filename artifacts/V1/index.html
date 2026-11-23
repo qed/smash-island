@@ -10208,8 +10208,8 @@ function ctfEliminate(f){
   if(f._carrying){ for(const c of f._carrying){ const t = fighters[c.idx]; if(t && t._carriedBy === f.idx) t._carriedBy = null; } f._carrying = null; }
   f._carriedBy = null; f._gravSaved = false;
   if(killer && killer !== f && !killer.dead){ killer._kos = (killer._kos||0) + 1; L.kos[killer.team] = (L.kos[killer.team]||0) + 1; }
-  if(killer && killer !== f && !killer.dead && killer.kit && COMEBACK[killer.kit.special]) killer.killCount = (killer.killCount||0) + 1;
-  if(f.kit && COMEBACK[f.kit.special]) f.deaths = (f.deaths||0) + 1;
+  if(killer && killer !== f && !killer.dead && killer.kit && LIMIT_KITS[killer.kit.special]) killer.killCount = (killer.killCount||0) + 1;   // (stats only: since the Limit, 2026-11-23, a KO or a death powers nothing)
+  if(f.kit && LIMIT_KITS[f.kit.special]) f.deaths = (f.deaths||0) + 1;
   // what they held falls where they fell
   const px = clamp(f.x, 60, L.map.WW - 60), py = clamp(f.y, 0, L.map.WH - 40);
   if(f._cf >= 0){ f.x = px; f.y = py; ctfDropFlag(f, 'ko'); }
@@ -76730,7 +76730,7 @@ function step(){
                    pr.bossAtk!=null ? {bossAtk:pr.bossAtk, volley:pr.volley, shot:1} : {shot:1});
           if(pr.burn) f.burn=Math.max(f.burn,110);
           if(pr.poison){ f.burn=Math.max(f.burn,80); f._poisonT=Math.max(f._poisonT||0,80); }
-          if(pr.freeze && f.pct>freezePct(pr.ownerObj)){ applyFreeze(f, freezeDuration(f.pct,50) + comebackFlavor(pr.ownerObj||{}, "freeze")); }
+          if(pr.freeze && (pr._limFz || f.pct>freezePct(pr.ownerObj))){ applyFreeze(f, freezeDuration(f.pct,50) + (pr._limFz||0)); }
           // a trap's effect lands when it is stepped on, the way a thrown one's does (it never did here)
           if(pr.fxTag && SM_FX[pr.fxTag]) SM_FX[pr.fxTag](f, pr.ownerObj, pr.fxN);
           if(pr.root && tpRootTake(f, pr)){ const rb = f.rooted || 0; lockRoot(f, 60); ocRootFix(f, pr.ownerObj, rb); }   // (ROOT CHAIN BROKEN: her trap still hits, it may not root) (OC MOVES V2: an OC's root never outlasts the stun)
@@ -76905,7 +76905,7 @@ function step(){
         if(!ffBlocked){
           if(pr.burn) f.burn=Math.max(f.burn,110);
           if(pr.poison){ f.burn=Math.max(f.burn,80); f._poisonT=Math.max(f._poisonT||0,80); }
-          if(pr.freeze && f.pct>freezePct(pr.ownerObj)){ applyFreeze(f, freezeDuration(f.pct,50) + comebackFlavor(pr.ownerObj||{}, "freeze")); }
+          if(pr.freeze && (pr._limFz || f.pct>freezePct(pr.ownerObj))){ applyFreeze(f, freezeDuration(f.pct,50) + (pr._limFz||0)); }
           if(pr.root && tpRootTake(f, pr)){ const rb = f.rooted || 0; lockRoot(f, 60); ocRootFix(f, pr.ownerObj, rb); }   // (ROOT CHAIN BROKEN) (OC MOVES V2)
           if(pr.reverseCtrl){ applyCtrlRev(f,70); }
           // A smash whose PATTERN is a projectile (walk / rain / mine) carries its row's effect as
@@ -76986,80 +76986,187 @@ function step(){
 //  PER-FIGHTER RANGE PROFILES — reach/power tuned to how each plays
 // ============================================================
 // ============================================================
-//  COMEBACK SCALING — designated low-tier fighters get stronger
-//  the more they die / KO, to help them claw back into a match.
-//    per DEATH:  projectile chars +2 shots  |  shockwave chars +range  |  all: -1 i-frame
-//    per KO:     a quarter of the above (+0.5 shot / +range/4 / -0.25 i-frame)
-//    i-frames are floored so they can't drop below a minimum.
-//  Trap-type specials are excluded from the +shots bonus (traps don't multiply).
+//  LIMIT -- the eleven scalers' powered moves (it replaced COMEBACK SCALING, 2026-11-23)
 // ============================================================
-const COMEBACK = {
-  // projectile-type: gain extra shots
-  spike:   {type:"proj"},    // Naily
-  emberjr: {type:"proj"},    // Firey Jr.
-  measure: {type:"proj"},    // Ruler
-  freeze:  {type:"proj", flavor:"freeze"},   // Gelatin — also freezes longer as she comes back
-  fry:     {type:"proj"},    // Fries (low-tier)
-  // shockwave / melee-burst type: gain extra range instead of shots
-  rant:    {type:"shock"},   // Dora
-  slap:    {type:"shock"},   // Coiny
-  buynow:  {type:"shock"},   // Yellow Face
-  grasstree: {type:"shock", flavor:"armor"},   // Grassy — digs in, gains armor
-  reflect: {type:"shock"},   // Gaty
-  // Toothpaste (paste) is a TRAP — excluded from +shots, but still gets range + i-frame help via "shock"
-  paste:   {type:"shock"},
+// The owner, 2026-11-23: "it should not be like something that continuously makes you stronger; it should be like cloud's limit, where
+// your specials get powered up ... we will include nuetral-smash instead of up-special"; then "no, this is for as you take damage. so if
+// you are at 100%, then you can use EACH of these once. and they should be much cooler and stuff."
+//   - The METER fills with the damage the fighter takes: 1 point a 1% (limFill, from applyHit). It is full at LIMIT.full.
+//   - Full, the Limit is READY: the neutral special (C), the down special (down + C) and the neutral smash (V) EACH come out powered once,
+//     in any order (_limR: the ones still unused, bits 1 C, 2 down + C, 4 V). It does not fill while any is left; the last one spent
+//     empties it and it fills again from new damage. A lost stock keeps it (Cloud keeps his).
+//   - The up special is never powered. KOs give nothing. Nothing grows over a match: no shots, reach, freeze, armour or hit-grace that
+//     builds up with deaths, as the old scaling did.
+//   - A powered move is its OWN version of the base move: the same idea, bigger, with something new (the kit bodies read limOn; the
+//     extras are LIMIT_EXTRA, the delayed parts LIMIT_LATER, the smash rows LIMIT_SMASH / NSM_LIM). And the whole move hits LIMIT.dmg harder
+//     and launches LIMIT.kb farther: applyHit for its swings, addProj for its shots (scaled once, as they are born).
+//   - A person spends one on the next press of that move. A CPU spends one only when it is likely to land or knock out (limWorth); else
+//     the move comes out plain and the charge waits.
+//   - Tells (drawn only, from the wire fields cbTellTick copies: NET_FIGHTER_FLAGS): the aura and ring grow with the meter; ready, they turn
+//     gold and pulse; three pips beside the name tag fill with the meter, then show the powered moves still unused (C, down + C, V); a
+//     powered move going off flashes a gold burst with sparks and a short sound.
+const LIMIT_KITS = { spike:1, emberjr:1, measure:1, freeze:1, fry:1, rant:1, slap:1, buynow:1, grasstree:1, reflect:1, paste:1 };
+const LIMIT = { full:100, dmg:1.25, kb:1.3, win:150, fz:20 };   // win: the frames a powered move's own hits stay powered (the move only: a new move ends it); fz: Gelatin's extra freeze
+const LIMIT_BIT = { n:1, d:2, s:4 };
+// [C, down + C, V]: about how far each powered move reaches, for the CPU (limWorth)
+const LIMIT_AI_R = { spike:[700,150,260], emberjr:[420,140,110], measure:[800,110,800], freeze:[420,200,90], fry:[380,170,170],
+  rant:[110,100,260], slap:[100,150,150], buynow:[140,320,130], grasstree:[120,90,420], reflect:[100,100,240], paste:[460,160,140] };
+// a powered move that would do nothing here is not spent (Dora digs only on the ground)
+const LIMIT_CAN = { rant:{ d:function(f){ return !!f.onground; } } };
+function isLimitKit(f){ return !!(f && f.kit && LIMIT_KITS[f.kit.special] && !f.oc); }
+function limLeft(m){ return (m & 1) + ((m >> 1) & 1) + ((m >> 2) & 1); }
+function limFill(t, dmg){
+  if(!isLimitKit(t) || t._limR || !(dmg > 0)) return;
+  t._lim = Math.min(LIMIT.full, (t._lim || 0) + dmg);
+  if(t._lim >= LIMIT.full){ t._lim = LIMIT.full; t._limR = 7; t._cbT = hazardT; }   // READY: each of the three, once
+}
+function limIsPerson(f){ return f.controller === 'local' || f.controller === 'remote'; }
+function limReady(f, slot){ return isLimitKit(f) && !!((f._limR || 0) & LIMIT_BIT[slot]); }
+// Is a powered move worth spending now (a CPU)? A foe (or a boss) inside the move's reach, the way a long shot faces, and either close,
+// already in hitstun, or hurt enough (80%+) for the extra launch to knock them out.
+function limWorth(f, slot){
+  const R = (LIMIT_AI_R[f.kit.special] || [140,140,140])[slot === 'n' ? 0 : slot === 'd' ? 1 : 2];
+  const ok = function(x, y, pct, stun){
+    const dx = x - f.x, dy = Math.abs(y - f.y), d = Math.hypot(dx, dy);
+    if(d > R || dy > Math.max(70, R*0.25)) return false;
+    if(R >= 300 && dx*f.face < -20) return false;
+    return stun || pct >= 80 || d < R*0.6;
+  };
+  for(const t of fighters){ if(t.dead || t === f || t.team === f.team) continue; if(ok(t.x, t.y, t.pct || 0, t.hitstun > 0)) return true; }
+  for(const o of summons){ if(!o || o.dead || o.team === f.team || !Number.isFinite(o.x)) continue; if(ok(o.x, o.y, 100, false)) return true; }
+  return false;
+}
+// The move about to come out: powered? (called where the move really starts: after its tell, after its _atkSeq). Spends it, and runs the
+// kit's extra for that slot.
+function limArm(f, slot){
+  if(!limReady(f, slot)) return false;
+  const can = LIMIT_CAN[f.kit.special] && LIMIT_CAN[f.kit.special][slot];
+  if(can && !can(f)) return false;
+  if(!limIsPerson(f) && !limWorth(f, slot)) return false;
+  f._limR &= ~LIMIT_BIT[slot];
+  if(!f._limR) f._lim = 0;   // all three spent: it fills again from new damage
+  f._limOn = { k:slot, seq:f._atkSeq || 0, until:hazardT + LIMIT.win };
+  f._cbF = hazardT; f._cbK = LIMIT_BIT[slot]; f.flash = Math.max(f.flash || 0, 14);
+  for(let i = 0; i < 10; i++) puff(f.x + cosRand()*40 - 20, f.y - cosRand()*30, i % 2 ? LIM_COL : '#fff6c8', 4);
+  const X = LIMIT_EXTRA[f.kit.special];
+  if(X && X[slot]) X[slot](f);
+  return true;
+}
+// Is this fighter's move a powered one (slot: which; none: any)? Only the move that was armed, and only for LIMIT.win frames.
+function limOn(f, slot){
+  if(f && f._limForce) return true;
+  const L = f && f._limOn;
+  return !!L && L.seq === (f._atkSeq || 0) && hazardT < L.until && (!slot || L.k === slot);
+}
+function limShot(p){ p.dmg = (p.dmg || 0)*LIMIT.dmg; p.kb = (p.kb || 0)*LIMIT.kb; p._lim = 1; if(p.freeze) p._limFz = LIMIT.fz; }
+// A powered hit round a point: everyone in reach (front: only ahead of the fighter; out: launched away from the point), a status, its ring.
+function limHit(f, key, cx, cy, R, dmg, kx, ky, o){
+  o = o || {}; let n = 0;
+  for(const t of fighters){
+    if(t.dead || t.idx === f.idx || t.team === f.team || t.invuln > 0) continue;
+    if(o.front && (t.x - f.x)*f.face < -8) continue;
+    if(hurtGap(t, cx, cy) < R - HURT_R0){
+      applyHit(t, dmg, (o.out ? (Math.sign(t.x - cx) || f.face) : f.face)*kx, ky, f);
+      if(o.fx && SM_FX[o.fx]) SM_FX[o.fx](t, f, o.n);
+      n++;
+    }
+  }
+  if(summons.length) damageSummons(f, cx, cy, R, dmg);
+  hitArt(f, key, { kind:'circle', x:cx, y:cy, r:Math.max(4, R - HURT_R0) }, o.ring ? { color:o.color || LIM_COL, style:'ring', world:true, fade:8 } : { color:o.color || LIM_COL, world:true, fade:8 });
+  return n;
+}
+// The later parts of a powered move (data only, so a save holds them): limLater queues one, the fighter step runs it (cbTellTick). A KO
+// or a hit taken in the meantime drops it, as a wind-up is dropped.
+function limLater(f, n, k){ (f._limQ || (f._limQ = [])).push({ at:hazardT + n, k:k, falls:f._falls || 0 }); }
+function limQueueTick(f){
+  const Q = f._limQ;
+  for(let i = Q.length - 1; i >= 0; i--){
+    const e = Q[i];
+    if(f.dead || e.falls !== (f._falls || 0) || f.hitstun > 0 || f.frozen > 0){ Q.splice(i, 1); continue; }
+    if(hazardT < e.at) continue;
+    Q.splice(i, 1);
+    const fn = LIMIT_LATER[e.k]; if(!fn) continue;
+    f._limForce = true; try { fn(f); } finally { f._limForce = false; }
+  }
+}
+const LIMIT_LATER = {
+  // Ruler -- Cut Once: "measure twice, cut once": a beat after the shot, one long piercing cut that weakens
+  cut(f){ spawnProj(f, { vx:f.face*24, vy:0, grav:false, pierce:true, dmg:12, kb:12, r:9, color:'#e8d8a0', life:46, fxTag:'weaken', fxN:200 }); for(let i = 0; i < 6; i++) puff(f.x + f.face*20, f.y - 6, '#e8d8a0', 4); tone(880, 0.06, 'square', 0.08, 0, 1320); },
+  // Ruler -- Ruled Line: the ruler snaps back along the same line
+  snap(f){ SM_PAT.beam(f, { len:860, wide:22, dmg:7, kb:15, up:-8, effect:'stun', n:20, color:'#fff2b0' }); tone(1200, 0.05, 'square', 0.08, 0, 600); },
+  // Dora -- Endless Earful: "and ANOTHER thing!"
+  another(f){ SM_PAT.beam(f, { len:260, wide:40, dmg:7, kb:12, up:-7, effect:'stun', n:18, color:'#f2a0c8' }); for(let i = 0; i < 8; i++) puff(f.x + f.face*(20 + i*25), f.y, '#f2a0c8', 3); },
+  // Coiny -- Slap Fight Rematch: the backhand
+  backhand(f){ const cx = f.x + f.face*32; limHit(f, 'limslap', cx, f.y, 56, 9, 12, -8, { front:true, fx:'stun', n:18, color:'#f2c84b' }); for(let i = 0; i < 6; i++) puff(cx, f.y, '#f2c84b', 4); tone(520, 0.05, 'square', 0.1, 0, 300); },
+  // Coiny -- Cha-Ching Slap: a spray of coins after the slap
+  coins(f){ const V = newVolley('limcoins'); for(const v of [[5,-6],[7,-5],[9,-4]]) spawnProj(f, Object.assign({ vx:f.face*v[0], vy:v[1], grav:true, dmg:4, kb:4, r:6, color:'#f2c84b', life:60, bounce:true, maxBounces:2 }, V)); },
+  // Fries -- Deep Fryer: fries burst out of the ring all round
+  fryring(f){ const V = newVolley('fries'); for(let i = 0; i < 8; i++){ const a = i/8*Math.PI*2; addProj(Object.assign({ owner:f.idx, ownerObj:f, x:f.x, y:f.y - 6, vx:Math.cos(a)*9, vy:Math.sin(a)*9, grav:false, dmg:4, kb:5, r:5, color:'#e04b3a', life:34, burn:true }, V)); } },
+  // Gelatin -- Triple Dose: the syringe sprays as the plunger goes down
+  gelspray(f){ const V = newVolley('limit'); for(let i = 0; i < 3; i++) spawnProj(f, Object.assign({ vx:f.face*11, vy:-1 + (i - 1)*1.6, grav:true, dmg:5, kb:5, r:7, color:'#9ad24b', life:50, freeze:true }, V)); },
+  // Gaty -- Judgement Gate: the gate slams shut both ways
+  gateslam(f){ limHit(f, 'limgate', f.x, f.y, 76, 6, 7, -6, { out:true, fx:'stun', n:20, ring:true, color:'#c8d8e8' }); for(let i = 0; i < 10; i++) puff(f.x + cosRand()*60 - 30, f.y, '#c8d8e8', 4); },
 };
-const COMEBACK_IFRAME_FLOOR = 3;
-// how many "comeback points" a fighter has earned: deaths count full, kills count a quarter.
-// Hard-capped so the bonus can't scale without limit (e.g. infinite-stock boss rush).
-const COMEBACK_MAX_POINTS = 5;
-// Boss Rush caps it lower: every death there is permanent, bosses stand still for the extra shots, and uncapped it
-// carried Gelatin through 14 bosses in 85 s (11 freeze shots a cast into a boss's body). "just cap it, but make it
-// decently high. fries is okay, bcs his damage is pretty low" -- so Fries keeps the full bonus.
-const BOSS_COMEBACK_MAX = 3;
-function comebackPoints(f){
-  if(!f.kit || !COMEBACK[f.kit.special]) return 0;
-  const cap = (SETTINGS.mode==='boss' && f.kit.special!=='fry') ? BOSS_COMEBACK_MAX : COMEBACK_MAX_POINTS;
-  return Math.min(cap, (f.deaths||0) + 0.25*(f.killCount||0));
-}
-// personalized comeback bonus, scaled by comeback points, tuned to each fighter's identity.
-// Returns a number whose meaning depends on the fighter's flavor (see call sites).
-function comebackFlavor(f, which){
-  if(!f.kit || !COMEBACK[f.kit.special] || COMEBACK[f.kit.special].flavor!==which) return 0;
-  const pts = comebackPoints(f);
-  if(which==="freeze") return Math.min(40, pts*12);   // Gelatin: up to +40 frames of freeze
-  if(which==="armor")  return Math.min(30, pts*10);   // Grassy: up to +30 armor on her attacks
-  return 0;
-}
-
-// how many extra projectiles a designated projectile-fighter fires: +2 per comeback point (capped)
-function comebackShots(f){
-  if(!f.kit || !COMEBACK[f.kit.special] || COMEBACK[f.kit.special].type!=="proj") return 0;
-  return Math.round(comebackPoints(f)*2);   // capped at COMEBACK_MAX_POINTS*2 = 10 extra shots
-}
-// extra shockwave range for designated shockwave-fighters: +14px per comeback point (capped)
-function comebackRange(f){
-  if(!f.kit || !COMEBACK[f.kit.special] || COMEBACK[f.kit.special].type!=="shock") return 0;
-  return comebackPoints(f)*14;   // capped at COMEBACK_MAX_POINTS*14 = 70px
-}
+// What a powered move adds the moment it goes off (the base move runs too, read through limOn where it changes).
+const LIMIT_EXTRA = {
+  spike: {   // Naily
+    n(f){ spawnProj(f, { vx:f.face*22, vy:0, grav:false, pierce:true, dmg:12, kb:11, r:9, color:'#8fa3b8', life:40, fxTag:'bleed', fxN:150 }); },   // Nail Storm: a railroad spike out ahead of the nails
+    d(f){ limHit(f, 'limnails', f.x + f.face*60, feetY(f) - 12, 72, 8, 3, -11, { front:true, fx:'bleed', n:150, color:'#c0c0c0' }); for(let i = 0; i < 10; i++) puff(f.x + f.face*(20 + i*9), feetY(f) - 4, '#c0c0c0', 3); },   // Bed of Nails: nails burst out of the floor ahead
+    s(f){ addProj({ owner:f.idx, ownerObj:f, x:f.x, y:feetY(f) - 6, vx:0, vy:0, grav:false, dmg:6, kb:5, r:12, color:'#c0c0c0', life:220, trap:true, arm:16 }); },   // Railroad Rush: a spike trap where she set off
+  },
+  emberjr: {   // Firey Jr.
+    n(f){ spawnProj(f, { vx:f.face*11, vy:-2, grav:true, dmg:12, kb:11, r:15, color:'#ff5a1a', burn:true, life:70 }); },   // Tantrum Fireball: a big fireball with the bursts
+  },
+  measure: {   // Ruler
+    n(f){ limLater(f, 12, 'cut'); },
+    d(f){ limHit(f, 'limrule', f.x + f.face*40, f.y, 60, 9, 10, -6, { front:true, fx:'weaken', n:200, color:'#e8d8a0' }); },   // Ruled Out: a flat swipe of the ruler as it comes up
+    s(f){ limLater(f, 26, 'snap'); },
+  },
+  freeze: { s(f){ limLater(f, 14, 'gelspray'); } },   // Gelatin
+  fry: {   // Fries
+    n(f){ spawnProj(f, { vx:f.face*13, vy:0, grav:false, pierce:true, dmg:10, kb:10, r:10, color:'#f2c84b', burn:true, life:45, shape:'fry' }); },   // Supersize: one giant fry with the volley
+    s(f){ limLater(f, CIRCLE_WINDUP + 2, 'fryring'); },
+  },
+  rant: { s(f){ limLater(f, 26, 'another'); } },   // Dora
+  slap: { n(f){ limLater(f, 22, 'backhand'); }, s(f){ limLater(f, 12, 'coins'); } },   // Coiny
+  grasstree: {   // Grassy
+    n(f){ limHit(f, 'limbloom', f.x, f.y, 110, 8, 4, -9, { out:true, fx:'root', n:45, ring:true, color:'#7bc043' }); for(let i = 0; i < 14; i++) puff(f.x + cosRand()*200 - 100, feetY(f) - 4, i % 2 ? '#7bc043' : '#8a6a3a', 5); },   // Full Bloom: roots burst up round him
+    s(f){ const fc = f.face; f.face = -fc; try { SM_PAT.walk(f, smashRowAsFired(LIMIT_SMASH.grasstree(SMASH_SPEC.grasstree), f)); } finally { f.face = fc; } },   // Rolling Forest: a second roller goes the other way
+  },
+  reflect: {   // Gaty
+    d(f){ f.armor = Math.max(f.armor || 0, 30); braceUp(f, 30); limHit(f, 'limiron', f.x, f.y, 76, 7, 9, -6, { out:true, fx:'root', n:30, ring:true, color:'#c8d8e8' }); },   // Iron Gate: braced, and the gate slams shut round her
+    s(f){ limLater(f, 16, 'gateslam'); },
+  },
+  paste: {   // Toothpaste
+    n(f){ for(const ox of [60, 100]) addProj({ owner:f.idx, ownerObj:f, x:f.x + f.face*ox, y:feetY(f) - 6, vx:0, vy:0, grav:false, dmg:4, kb:2, r:13, color:'#f0f0f0', life:220, trap:true, root:true, tpRoot:true, arm:14 }); },   // Minty Blast: three traps, not one
+    s(f){ spawnProj(f, { vx:f.face*10, vy:-1, grav:false, dmg:8, kb:6, r:18, color:'#f0f0f0', life:50, root:true, tpRoot:true, sticky:true }); },   // Fresh Breath Field: a glob flies out of the mine
+  },
+};
+// The powered neutral smash rows (SMASH_SPEC kits): the same pattern, bigger
+const LIMIT_SMASH = {
+  measure:   (r) => Object.assign({}, r, { wide:34, n:300 }),                    // Ruler -- Ruled Line: a wider line, a longer weaken (and it snaps back: LIMIT_LATER.snap)
+  fry:       (r) => Object.assign({}, r, { rad:150, n:200 }),                    // Fries -- Deep Fryer: a bigger ring that burns longer (and fries fly out: fryring)
+  rant:      (r) => Object.assign({}, r, { len:260, wide:48, n:300 }),           // Dora -- Endless Earful: farther, wider, a longer weaken (and ANOTHER thing)
+  slap:      (r) => Object.assign({}, r, { reach:44, step:10, n:200 }),          // Coiny -- Cha-Ching Slap: a longer lunge, a longer bleed (and the coins)
+  grasstree: (r) => Object.assign({}, r, { r:26, life:150, n:90 }),             // Grassy -- Rolling Forest: a bigger roller, rolling longer, rooting longer (and one goes back)
+  reflect:   (r) => Object.assign({}, r, { pull:240, force:11, reach:52 }),      // Gaty -- Judgement Gate: pulls from farther and harder (and slams shut both ways)
+  paste:     (r) => Object.assign({}, r, { r:34, life:600, n:260 }),             // Toothpaste -- Fresh Breath Field: a bigger, longer-lasting mine (and a glob)
+};
 // ---------------------------------------------------------------------------------------------------------------------------------------------
-// COMEBACK TELLS (the owner, 2026-11-04: "anything a player cannot see coming or answer is a bug; a power spike needs a visible tell").
-// The 11 COMEBACK kits (stock-scaled: +2 shots, +14 px reach, -1 hit-grace frame a point) used to show a small icon and nothing else, and Nickel's
-// damage (+1 to +60% by the foe's percent) showed nothing at all. Now both are on the body: a warm aura that grows with the comeback points (with a
-// pulse that quickens), a ring flash and a chime (no floating text: the owner ordered those removed) when a point is gained, and pips beside the name tag; Nickel's body heats from
-// yellow to red with the bonus, with a '+N%' beside his tag and a spark when it ticks up. DRAWN ONLY: the numbers (comebackPoints, comebackShots,
-// comebackRange, the hit-grace, Nickel's pct/220 cap 0.6) are untouched. cbTellTick (once a frame, in the fighter step) only copies them into
-// wire fields (_cbQ points in quarters, _cbT the frame of the last gain, _cbD its size in quarters, _snQ Nickel's bonus in percent, _snT the frame it
-// ticked up), so a guest draws the same picture (NET_FIGHTER_FLAGS); nothing reads them but the drawing below.
+// TELLS (the owner, 2026-11-04: "anything a player cannot see coming or answer is a bug; a power spike needs a visible tell"). DRAWN ONLY.
+// cbTellTick (once a frame, in the fighter step) copies the Limit into wire fields -- _cbQ the meter (0-100), _cbR the powered moves left
+// (bits), _cbT the frame it filled, _cbF the frame a powered move went off (_cbK which) -- so a guest draws and hears the same
+// (NET_FIGHTER_FLAGS); it also runs the powered moves' later parts (limQueueTick). Nickel's damage bonus (+1 to +60% by the foe's percent)
+// heats his body, with a '+N%' beside his tag (_snQ, _snT). Nothing reads these fields but the drawing below.
 // ---------------------------------------------------------------------------------------------------------------------------------------------
-const CB_COL = '#ffb347';
+const CB_COL = '#ffb347', LIM_COL = '#ffd23f';
 function cbTellTick(f){
   const k = f.kit && f.kit.special;
   if(!k) return;
-  if(COMEBACK[k]){
-    const q = Math.round(comebackPoints(f)*4), was = f._cbQ;
-    if(was != null && q > was){ f._cbT = hazardT; f._cbD = q - was; }   // a point (a death) or a quarter (a KO) was gained
-    f._cbQ = q;
+  if(LIMIT_KITS[k]){
+    f._cbQ = Math.round(f._lim || 0); f._cbR = f._limR || 0;
+    if(f._limQ && f._limQ.length) limQueueTick(f);
+    if(f._limOn && hazardT >= f._limOn.until) f._limOn = null;
   } else if(k === 'snark'){
     let best = null, bd = 1e9;
     for(const t of fighters){ if(t === f || t.dead || t.team === f.team) continue; const d = Math.abs(t.x - f.x) + Math.abs(t.y - f.y); if(d < bd){ bd = d; best = t; } }   // the foe his next hit most likely lands on
@@ -77071,21 +77178,35 @@ function cbTellTick(f){
 function snarkHeat(sn){ const k = Math.min(1, sn/60); return { k:k, col:'rgb(255,' + Math.round(210 - 150*k) + ',' + Math.round(80 - 55*k) + ')' }; }
 // world space, behind the body (the fighter loop calls it before drawFighter); render only
 function drawTellFx(f){
-  const q = f._cbQ|0, sn = f._snQ|0;
-  const age = f._cbT != null ? hazardT - f._cbT : 9999, sage = f._snT != null ? hazardT - f._snT : 9999;
-  if(!(q > 0 || sn > 0 || age < 60 || sage < 14)) return;
+  const q = f._cbQ|0, lr = f._cbR|0, sn = f._snQ|0;
+  const age = f._cbT != null ? hazardT - f._cbT : 9999, fage = f._cbF != null ? hazardT - f._cbF : 9999, sage = f._snT != null ? hazardT - f._snT : 9999;
+  if(!(q > 0 || lr > 0 || sn > 0 || age < 60 || fage < 30 || sage < 14)) return;
   const c = ctx;
   c.save(); mcUpright(f.x, f.y); c.translate(f.x, f.y);
   try{
-    if(q > 0){
-      const pts = q/4, pulse = 0.5 + 0.5*Math.sin(hazardT*(0.08 + 0.03*pts)), flash = age < 20 ? 1 - age/20 : 0, R = f.r + 5 + 3*pts + 8*flash;
+    if(q > 0 || lr > 0){
+      const ready = lr > 0, k = ready ? 1 : Math.min(1, q/LIMIT.full), rgb = ready ? '255,210,63' : '255,179,71';
+      const pulse = 0.5 + 0.5*Math.sin(hazardT*(ready ? 0.22 : 0.06 + 0.06*k)), flash = age < 20 ? 1 - age/20 : 0;
+      const R = f.r + 4 + 7*k + 10*flash + (ready ? 3*pulse : 0);
       c.globalCompositeOperation = 'lighter';
-      const g = c.createRadialGradient(0, 0, f.r*0.7, 0, 0, R + 8), a = Math.min(0.9, 0.10 + 0.05*pts + 0.12*pulse + 0.35*flash);
-      g.addColorStop(0, 'rgba(255,179,71,0)'); g.addColorStop(0.6, 'rgba(255,179,71,' + a + ')'); g.addColorStop(1, 'rgba(255,179,71,0)');
+      const g = c.createRadialGradient(0, 0, f.r*0.7, 0, 0, R + 8), a = Math.min(0.9, (ready ? 0.32 + 0.22*pulse : 0.04 + 0.2*k + 0.08*pulse*k) + 0.35*flash);
+      g.addColorStop(0, 'rgba(' + rgb + ',0)'); g.addColorStop(0.6, 'rgba(' + rgb + ',' + a + ')'); g.addColorStop(1, 'rgba(' + rgb + ',0)');
       c.fillStyle = g; c.beginPath(); c.arc(0, 0, R + 8, 0, 7); c.fill();
       c.globalCompositeOperation = 'source-over';
-      c.globalAlpha = Math.min(1, 0.35 + 0.35*pulse + 0.4*flash); c.strokeStyle = CB_COL; c.lineWidth = 1.5 + 0.4*pts;
+      c.globalAlpha = Math.min(1, (ready ? 0.6 + 0.4*pulse : 0.2 + 0.4*k) + 0.4*flash); c.strokeStyle = ready ? LIM_COL : CB_COL; c.lineWidth = 1.2 + 1.6*k;
       c.beginPath(); c.arc(0, 0, R, 0, 7); c.stroke();
+      if(ready){   // ready: sparks circle the ring
+        c.fillStyle = '#fff6c8';
+        for(let i = 0; i < 3; i++){ const an = hazardT*0.12 + i*2.094; c.beginPath(); c.arc(Math.cos(an)*R, Math.sin(an)*R, 2, 0, 7); c.fill(); }
+      }
+      c.globalAlpha = 1;
+    }
+    if(fage < 30){   // a powered move went off: a gold burst and sparks
+      const u = fage/30, R = f.r + 6 + 64*u;
+      c.globalAlpha = 1 - u; c.strokeStyle = LIM_COL; c.lineWidth = 1 + 5*(1 - u);
+      c.beginPath(); c.arc(0, 0, R, 0, 7); c.stroke();
+      c.strokeStyle = '#fff6c8'; c.lineWidth = 2;
+      for(let i = 0; i < 10; i++){ const an = i*0.628 + 0.3, r0 = f.r + 4 + fage*2.2, r1 = r0 + 10*(1 - u) + 3; c.beginPath(); c.moveTo(Math.cos(an)*r0, Math.sin(an)*r0); c.lineTo(Math.cos(an)*r1, Math.sin(an)*r1); c.stroke(); }
       c.globalAlpha = 1;
     }
     if(sn > 0){
@@ -77102,22 +77223,30 @@ function drawTellFx(f){
       c.globalAlpha = 1;
     }
   } finally { c.restore(); }
-  if(age < 3 && f._cbSnd !== f._cbT){   // the chime, once per gain (heard by a guest too: it is read from the wire field)
+  if(age < 3 && f._cbSnd !== f._cbT){   // the chime: the Limit is ready (heard by a guest too: it is read from the wire field)
     f._cbSnd = f._cbT;
-    if((f._cbD|0) >= 4){ tone(330, 0.22, 'triangle', 0.16, 0, 660); tone(495, 0.28, 'triangle', 0.12, 0.09, 990); }
-    else tone(660, 0.1, 'triangle', 0.08, 0, 880);
+    tone(330, 0.22, 'triangle', 0.16, 0, 660); tone(495, 0.28, 'triangle', 0.12, 0.09, 990);
+  }
+  if(fage < 3 && f._cbFS !== f._cbF){   // a powered move: a bright rising stab
+    f._cbFS = f._cbF;
+    tone(392, 0.09, 'square', 0.1, 0, 784); tone(587, 0.18, 'triangle', 0.13, 0.05, 1175); tone(784, 0.22, 'triangle', 0.09, 0.1, 1568);
   }
 }
-// beside the name tag (the matrix is the tag's): the comeback pips, or Nickel's '+N%'. x is the pill's right edge.
+// beside the name tag (the matrix is the tag's): the Limit's three pips, or Nickel's '+N%'. x is the pill's right edge.
+// Filling, the pips fill in turn with the meter (a third each); ready, a bright pip is a powered move still unused (C, down + C, V).
 function drawTellTag(f, x, y){
-  const q = f._cbQ|0, sn = f._snQ|0, c = ctx;
-  if(q > 0){
-    const pts = q/4, cap = (SETTINGS.mode === 'boss' && f.kit && f.kit.special !== 'fry') ? BOSS_COMEBACK_MAX : COMEBACK_MAX_POINTS;
+  const q = f._cbQ|0, lr = f._cbR|0, sn = f._snQ|0, c = ctx;
+  if(q > 0 || lr > 0){
     c.save(); c.lineWidth = 1.2;
-    for(let i = 0; i < cap; i++){
-      const px = x + 3 + i*8, part = Math.max(0, Math.min(1, pts - i));
+    for(let i = 0; i < 3; i++){
+      const px = x + 3 + i*8;
       c.strokeStyle = '#1c1c1c'; c.fillStyle = 'rgba(28,28,28,0.7)'; c.beginPath(); c.arc(px, y, 3, 0, 7); c.fill(); c.stroke();
-      if(part > 0){ c.fillStyle = CB_COL; c.beginPath(); if(part < 1){ c.moveTo(px, y); c.arc(px, y, 3, -Math.PI/2, -Math.PI/2 + part*Math.PI*2); c.closePath(); } else c.arc(px, y, 3, 0, 7); c.fill(); }
+      if(lr > 0){
+        if(lr & (1 << i)){ c.fillStyle = LIM_COL; c.beginPath(); c.arc(px, y, 3, 0, 7); c.fill(); c.strokeStyle = 'rgba(255,246,200,' + (0.5 + 0.5*Math.sin(hazardT*0.22)) + ')'; c.beginPath(); c.arc(px, y, 4.2, 0, 7); c.stroke(); }
+      } else {
+        const part = Math.max(0, Math.min(1, q/LIMIT.full*3 - i));
+        if(part > 0){ c.fillStyle = CB_COL; c.beginPath(); if(part < 1){ c.moveTo(px, y); c.arc(px, y, 3, -Math.PI/2, -Math.PI/2 + part*Math.PI*2); c.closePath(); } else c.arc(px, y, 3, 0, 7); c.fill(); }
+      }
     }
     c.restore();
   } else if(sn > 0){
@@ -77876,7 +78005,8 @@ const SMASHES = {
   // real one — so the move is aimed by where you will END. Charge is the dash length. Resolved
   // over frames in the fighter loop (search _nail), like Puffball's plunge.
   // KIT FIX (kit-roles): "Nail Volley is pokes", so the full-charge smash ends in ONE big pin-launch: the back-jab drives them off the nail with NAIL_PIN_KB.
-  spike(f){ f.flash=12; beginCombo(f); f._nail = { t: 12, speed: 13, dmg: Math.round(16*SMASH_DMG_MULT), jab: Math.round(7*SMASH_DMG_MULT), hits: new Set() }; f.invuln = Math.max(f.invuln, 3); },
+  spike(f){ f.flash=12; beginCombo(f); const LP = limOn(f,'s'); f._nail = { t: LP?18:12, speed: LP?18:13,   // (LIMIT, Railroad Rush: a faster, longer dash, and a trap where she set off)
+     dmg: Math.round(16*SMASH_DMG_MULT), jab: Math.round(7*SMASH_DMG_MULT), hits: new Set() }; f.invuln = Math.max(f.invuln, 3); },
 
   kick(f){ f.cloud=720; f.flash=12; 
     for(let i=0;i<14;i++) puff(f.x+(cosRand()*40-20),f.y+(cosRand()*30-15),'#dfefff',6); },
@@ -79488,13 +79618,14 @@ function doSmash(f){
   const id = smashIdOf(f);
   playSmashSfx(id);
   const k=f.kit && f.kit.special;
+  const LS = limArm(f, 's');   // LIMIT: a ready scaler's powered neutral smash (its row: LIMIT_SMASH; a hand-written one reads limOn)
   if(!(SMASH_SPEC[k] && SMASH_SPEC[k].uncopyable)){ f._lastSmashKind = k; f._lastSmashAt = hazardT; }   // Dough's Knockoff copies a smash too (case "copycat"); Bot's THE ONE AND ONLY! cannot be copied
   const before = new Set(projectiles);
   const tag = function(){ for(const p of projectiles) if(p.owner===f.idx && !before.has(p)){ p._slot = 'smash'; if(f._smAngle) p.smAngle = f._smAngle; } };   // shots carry the angle, and the move they came from (no taker takes a smash's: TAKE_NEVER)
   if(SMASH_SPEC[k] && SMASH_SPEC[k].uncopyable) f._noCopyT = hazardT + 150;   // Bot's THE ONE AND ONLY!: nothing may copy it (see applyHit's tape)
   f._smSync = true;   // SHIELD BREAKERS: a hit thrown by the body below is the smash's (brkSwing)
   if(f.oc){ const o = ocOpt(f, 's'); if(o && o.smash){ ocUsed(f, 's'); ocBoostArm(f, o); runSmashSpec(f, Object.assign(smashRowAsFired(o.smash, f), { color:(OC_TYPES[f.oc.type] || OC_TYPES.zoner).color })); tag(); f._smSync = false; return; } }   // OC ENGINE: the smash pick, a SMASH_SPEC-style row
-  if(SMASH_SPEC[k]){ runSmashSpec(f, smashRowAsFired(SMASH_SPEC[k], f)); tag(); f._smSync = false; return; }
+  if(SMASH_SPEC[k]){ runSmashSpec(f, smashRowAsFired(LS && LIMIT_SMASH[k] ? LIMIT_SMASH[k](SMASH_SPEC[k]) : SMASH_SPEC[k], f)); tag(); f._smSync = false; return; }
   if(SMASHES[k]){ SMASHES[k](f); smashCost(f, LEGACY_SMASH_COST[k]); tag(); f._smSync = false; return; }
   f._smSync = false;
   genericSmash(f);
@@ -80386,26 +80517,29 @@ const DOWNSPECIALS = {
     for(let i=0;i<8;i++) puff(f.x+(cosRand()*200-100),f.y+18,'#ff6fae',4); },
   serve(f){ swapGadget(f); }, // Tennis Ball — steps the gadget rack (see GADGETS); it replaced a 30-frame armour brace
   anvil(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*40,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:8,kb:9,r:14,color:'#8a6a3a',life:260,trap:true,arm:30});  }, // Blocky — trap
-  slap(f){ f.flash=8; for(const v of [[4,-7],[6,-6],[8,-5]]){ spawnProj(f,{vx:f.face*v[0],vy:v[1],grav:true,dmg:3,kb:3,r:6,color:'#f2c84b',life:60,bounce:true,maxBounces:2}); } for(let i=0;i<4;i++) puff(f.x+f.face*10,f.y-12,'#f2c84b',3);  }, // Coiny -- Spare Change (UNIQUE MOVES 4): tosses three coins that bounce away (was a counter stance shared with Ruler and Firey)
+  slap(f){ f.flash=8; const LP=limOn(f,'d'), V=LP?newVolley('limcoins'):{}; for(const v of (LP?[[3,-8],[4,-7],[5,-6.5],[6,-6],[7,-5.5],[8,-5],[10,-4]]:[[4,-7],[6,-6],[8,-5]])){ spawnProj(f,Object.assign({vx:f.face*v[0],vy:v[1],grav:true,dmg:3,kb:3,r:6,color:'#f2c84b',life:60,bounce:true,maxBounces:LP?3:2}, V)); } for(let i=0;i<4;i++) puff(f.x+f.face*10,f.y-12,'#f2c84b',3);  }, // Coiny -- Spare Change (UNIQUE MOVES 4): tosses three coins that bounce away (was a counter stance shared with Ruler and Firey); LIMIT, Make It Rain: seven coins that bounce more
   cap(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*10,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:3,kb:2,r:12,color:'#3a6ea5',life:200,trap:true,slick:true});  }, // Pen — slippery zone
   van(f){ f.flash=8; f.armor=Math.max(f.armor||0,14); let n=0; projectiles=projectiles.filter(function(p){ if(p._fsVol!==undefined||!p.ownerObj||fighters.indexOf(p.ownerObj)<0||p.ownerObj.team===f.team||Math.hypot(p.x-f.x,p.y-f.y)>220) return true; n++; return false; }); for(let i=0;i<8;i++) puff(f.x+f.face*(10+i*8),f.y-8,'#f4a0a0',4);  }, // Pencil -- Erase (UNIQUE MOVES 5): the rubber end rubs out every enemy shot near her (was armour, the same as Pin's)
   zapshooter(f){ f.flash=10; f.countering=CRUSHER_FRAMES; f.armor=Math.max(f.armor||0, CRUSHER_FRAMES); for(let i=0;i<8;i++) puff(f.x,f.y-8,'#dcdcdc',5); }, // Golf Ball — the Announcer Crusher stop: brace; the next hit is stopped dead and its attacker shoved (applyHit)
   barf(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:2,kb:1,r:16,color:'#8a9c3a',life:240,trap:true,poison:true});  }, // Rocky — poison puddle
   define(f){ f.flash=8; f.armor=24; braceUp(f, 24); puff(f.x,f.y-8,'#4b9c6a',5);  }, // Book
-  fry(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*30,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:5,kb:4,r:12,color:'#e04b3a',life:220,trap:true});  }, // Fries — trap
-  freeze(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*24,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:4,kb:3,r:12,color:'#9ad24b',life:220,trap:true,freeze:true,arm:20});  }, // Gelatin — freeze mine
+  fry(f){ f.flash=8; const LP=limOn(f,'d'); for(const ox of (LP?[30,70,110]:[30])) addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*ox,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:5,kb:4,r:12,color:'#e04b3a',life:220,trap:true,burn:LP});  }, // Fries — trap (LIMIT, Hot Oil Spill: three that burn)
+  freeze(f){ f.flash=8; const LP=limOn(f,'d'); for(const ox of (LP?[24,64,104]:[24])) addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*ox,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:4,kb:3,r:LP?16:12,color:'#9ad24b',life:220,trap:true,freeze:true,arm:20});  }, // Gelatin — freeze mine (LIMIT, Jelly Field: three bigger mines that freeze at any percent)
   flip(f){ f.flash=8; if(simRand()<0.5){ f.armor=44; braceUp(f, 44); } else { f.pct+=6; } }, // Nickel — gamble defense
   // ---- new down-specials ----
   fly(f){ f.flash=8; f.flying=Math.max(f.flying,90); f.vy=Math.min(f.vy,-2); puff(f.x,f.y-8,'#e6a6e0',6);  }, // Puffball — sustained hover
   beam(f){ f.flash=8; for(const v of [[6,-6],[8,-3],[10,-1]]){ spawnProj(f,{vx:f.face*v[0],vy:v[1],grav:true,dmg:4,kb:4,r:7,color:'#e0384b',life:50,bounce:true,maxBounces:1}); } for(let i=0;i<6;i++) puff(f.x+f.face*14,f.y-8,'#e0384b',4);  }, // Ruby -- Shard Spray (UNIQUE MOVES 4): three gem shards fan out and bounce (was a floor trap shared with four others)
   gust(f){ f.flash=8; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(Math.abs(t.y-f.y)<70 && Math.abs(t.x-f.x)<170){ t.vx += Math.sign(t.x-f.x||f.face)*7; t.onground=false; } } for(let i=0;i<10;i++) puff(f.x+(cosRand()*120-60),f.y,'#bfe8ff',4);  }, // Fanny — push everyone away
-  reflect(f){ f.flash=10; f.reflecting=44; f._reflAtk=false; puff(f.x,f.y-8,'#e8e8e8',6);  }, // Gaty — long reflect stance
+  reflect(f){ f.flash=10; f.reflecting=limOn(f,'d')?90:44; f._reflAtk=false;   // (LIMIT, Iron Gate: twice as long, braced, and the gate slams shut round her: LIMIT_EXTRA)
+    puff(f.x,f.y-8,'#e8e8e8',6);  }, // Gaty — long reflect stance
   ring(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ hitArt(f, 'ring', { kind:'circle', x:f.x, y:f.y, r:f.r+50-HURT_R0 }, { color:'#f2c84b' }); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+50){ stunFx(t,18);} } puff(f.x,f.y-8,'#f2c84b',6); }, '#f2c84b', { kind:'circle', r:f.r+50-HURT_R0 });  }, // Bell — brace + nearby stun
   sign(f){ f.flash=8; f._empower=1; f._hasteT=Math.max(f._hasteT||0,40); f.healing=Math.max(f.healing||0,20); for(let i=0;i<6;i++) puff(f.x,f.y-10,'#6fb7ff',4);  }, // Bracelety -- Pep Talk (UNIQUE MOVES 6): a cheer that speeds her up, heals a little and powers her next Attack (was armour, the same as Book's)
   dribble(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:5,kb:8,r:13,color:'#e08a3a',life:220,trap:true,arm:24});  }, // Basketball — bouncy mine
-  buynow(f){ f.flash=8; let tgt=null,best=200; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;tgt=t;} } if(tgt){ tgt.weakened=160; } haPick(f, 'weaken', tgt, 200, '#f2d84b'); }, // Yellow Face — weaken nearest (HIT ART: a ray to whoever, or how far it looked)
+  buynow(f){ f.flash=8;
+    if(limOn(f,'d')){ let any=false; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<320){ t.weakened=Math.max(t.weakened||0,240); stunFx(t,16); haPick(f, 'weaken' + t.idx, t, 320, '#ffd23f'); any=true; } } if(!any) haPick(f, 'weaken', null, 320, '#ffd23f'); for(let i=0;i<10;i++) puff(f.x,f.y-8,'#ffd23f',4); return; }   // LIMIT, Everybody Gets One!: every foe near him, longer, with a short stun
+    let tgt=null,best=200; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;tgt=t;} } if(tgt){ tgt.weakened=160; } haPick(f, 'weaken', tgt, 200, '#f2d84b'); }, // Yellow Face — weaken nearest (HIT ART: a ray to whoever, or how far it looked)
   splash(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:2,kb:1,r:16,color:'#c9c04b',life:240,trap:true,poison:true});  }, // Barf Bag — poison puddle
-  grasstree(f){ f.flash=8; f.armor=36+comebackFlavor(f,"armor"); braceUp(f, f.armor); f.rooted=Math.max(f.rooted||0,24); addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*16,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:3,kb:5,r:12,color:'#7bc043',life:150,trap:true}); for(let i=0;i<8;i++) puff(f.x,f.y+f.r,'#7bc043',5);  }, // Grassy -- Take Root (UNIQUE MOVES 6): roots himself under armour for a moment and a bramble springs up beside him (was armour, 0.63 alike to Pin's)
+  grasstree(f){ f.flash=8; const LP=limOn(f,'d'); f.armor=LP?60:36; braceUp(f, f.armor); f.rooted=Math.max(f.rooted||0,24); for(const ox of (LP?[16,-24,56]:[16])) addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*ox,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:3,kb:5,r:12,color:'#7bc043',life:150,trap:true,root:LP}); if(LP){ f.pct=Math.max(0,f.pct-6); } for(let i=0;i<8;i++) puff(f.x,f.y+f.r,'#7bc043',5);  }, // Grassy -- Take Root (UNIQUE MOVES 6): roots himself under armour for a moment and a bramble springs up beside him (was armour, 0.63 alike to Pin's); LIMIT, Deep Roots: more armour, three brambles that root, and he heals 6%
   // ---- next 10 ----
   zap(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:7,kb:5,r:13,color:'#f2e84b',life:260,trap:true,shape:'zaptrap'});  }, // Lightning — floor trap (was 5 dmg / 200 frames)
   spark(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*24,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:4,kb:3,r:12,color:'#e04b8a',life:200,trap:true,burn:true});  }, // Match — burn trap
@@ -80413,7 +80547,7 @@ const DOWNSPECIALS = {
   jawbreaker(f){ // Taco -- STUCK INSIDE (UNIQUE MOVES 3, BFB 2: she was stuck inside the jawbreaker). A jawbreaker closes round her for 0.6 s: she cannot move, hits on her do less (a brace), and the first foe who attacks her up close gets stuck to the candy, rooted half a second (no drag, no stun). The salsa puddle stays at her feet.
     f.flash=8; f.armor=Math.max(f.armor,36); braceUp(f, 36); f._nsv = { k:'stuck', t0:hazardT, on:1, done:1, h:0 };
     addProj({owner:f.idx,ownerObj:f,x:f.x,y:groundY()-6,vx:0,vy:0,grav:false,dmg:2,kb:1,r:18,color:'#f2c84b',life:220,trap:true,slow:true});  }, // Taco -- the jawbreaker closes round her, and a salsa puddle
-  spike(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:6,kb:5,r:12,color:'#c0c0c0',life:220,trap:true,arm:16});  }, // Naily — spike trap
+  spike(f){ f.flash=8; for(const ox of (limOn(f,'d')?[20,60,100]:[20])) addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*ox,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:6,kb:5,r:12,color:'#c0c0c0',life:220,trap:true,arm:16});  }, // Naily — spike trap (LIMIT, Bed of Nails: three, and nails burst up ahead: LIMIT_EXTRA)
   sucker(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:4,kb:2,r:13,color:'#c04be0',life:220,trap:true,root:true,arm:14});  }, // Lollipop — rooting trap
   static(f){ f.flash=8; startWindup(f, CIRCLE_WINDUP, function(){ hitArt(f, 'static', { kind:'circle', x:f.x, y:f.y, r:haEdgeR(220) }, { color:'#8fd0ff', style:'zone', fade:8 }); let tgt=null,best=220; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||hardInvuln(t))continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;tgt=t;} } if(tgt){ SM_FX.root(tgt,f,34); for(let i=0;i<8;i++) puff(tgt.x,tgt.y-8,'#8fd0ff',4); } puff(f.x,f.y-8,'#8fd0ff',6); }, '#8fd0ff', { kind:'circle', r:220 });  }, // TV -- Pause (UNIQUE MOVES 4): hits pause on the nearest foe and holds them still (was a stun ring identical to Bell's)
   battery(f){ f.flash=8; hitArt(f, 'jam', { kind:'circle', x:f.x, y:f.y, r:haEdgeR(REMOTE_JAM_REACH) }, { color:'#c04be0', style:'ring' }); const t = remoteJamTarget(f);   // Remote — REMOTE JAM: scrambles the nearest foe in reach (see remoteJamTarget); the ring is that reach (centre-judged: haEdgeR)
@@ -80442,20 +80576,25 @@ const DOWNSPECIALS = {
   payday(f){ f.flash=8; f.armor=24; f._empower=1; for(let i=0;i<8;i++) puff(f.x,f.y-8,'#ffd23f',4);  }, // Money — bank an empowered hit
   thorn(f){ f.flash=8; f.invuln=Math.max(f.invuln||0,14); f.rooted=Math.max(f.rooted||0,14); for(let i=0;i<6;i++) puff(f.x,f.y-10,'#e0384b',4);  }, // Rose -- Curtsy (UNIQUE MOVES 5): a still, silent bow nothing can touch for a moment (was a counter identical to Ice Cube's)
   fraidy(f){ f.flash=8; f.invuln=Math.max(f.invuln,20); f.vx=-f.face*8; for(let i=0;i<6;i++) puff(f.x,f.y-8,'#e8c84b',4);  }, // Woody — brief dodge
-  paste(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:4,kb:2,r:14,color:'#f0f0f0',life:260,trap:true,root:true,tpRoot:true,arm:12});  }, // Toothpaste — root trap (tpRoot: ROOT CHAIN BROKEN)
+  paste(f){ f.flash=8; const LP=limOn(f,'d'); for(const ox of (LP?[20,60,100]:[20])) addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*ox,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:4,kb:2,r:LP?18:14,color:'#f0f0f0',life:260,trap:true,root:true,tpRoot:true,arm:12});  }, // Toothpaste — root trap (tpRoot: ROOT CHAIN BROKEN) (LIMIT, Sticky Situation: three bigger ones)
   rant(f){ // Dora -- GET DIGGING (UNIQUE MOVES 3, BFDIA): she digs straight down at great speed, is under the floor for 12 frames (cannot be hit), and comes back up in the same place; the burst of dirt stuns foes within about 40 px of the hole. Only on the ground; she is stuck half out of the hole for 10 frames after.
     if(!f.onground){ f.flash = 4; return; }
+    const LP = limOn(f,'d');   // LIMIT, Dig Deep: a wider, longer stun, and the ground erupts under foes near the hole
     f.flash = 8; f.invuln = Math.max(f.invuln, 14); f._nsv = { k:'dig', t0:hazardT, on:1, done:1, x:Math.round(f.x), y:Math.round(feetY(f)) };
-    startWindup(f, 12, function(){ f._lag = Math.max(f._lag || 0, 10); f.flash = 8; hitArt(f, 'rant', { kind:'circle', x:f.x, y:f.y, r:40 }, { color:'#a07a4a', style:'ring' });   // (the ring is the stun's own reach: hurtGap < 40 below; it was drawn 24 px short)
-      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0) continue; if(hurtGap(t, f.x, f.y) < 40){ stunFx(t, 16); } }
+    startWindup(f, 12, function(){ f._lag = Math.max(f._lag || 0, 10); f.flash = 8; hitArt(f, 'rant', { kind:'circle', x:f.x, y:f.y, r:LP?90:40 }, { color:'#a07a4a', style:'ring' });   // (the ring is the stun's own reach: hurtGap < 40 below; it was drawn 24 px short)
+      if(LP){ f._limForce = true; try { limHit(f, 'limdig', f.x, f.y, 64 + HURT_R0, 10, 4, -12, { out:true, color:'#8a6a3a' }); } finally { f._limForce = false; } }
+      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||(t.invuln>0 && !(LP && t.lastHitBy===f && t._lastHitT===hazardT))) continue; if(hurtGap(t, f.x, f.y) < (LP?90:40)){ stunFx(t, LP?30:16); } }
       for(let i = 0; i < 10; i++) puff(f.x + (cosRand()*50 - 25), feetY(f) - 4, '#8a6a3a', 5); }, '#a07a4a'); },
   seriously(f){ f.flash=8; f.armor=Math.max(f.armor,44); braceUp(f, 44); puff(f.x,f.y-8,'#4a90c0',6);  }, // David — big armor (trimmed)
-  emberjr(f){ f.flash=10; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0) continue; if(hurtGap(t,f.x,f.y)<80-HURT_R0){ applyHit(t,3,Math.sign(t.x-f.x||1)*3,-4,f); SM_FX.burn(t,f,100); } }
-    if(summons.length) damageSummons(f, f.x, f.y, 80, 3);
-    hitArt(f, 'flare', { kind:'circle', x:f.x, y:f.y, r:80 - HURT_R0 }, { color:'#f0803a', style:'ring', fade:8 });
+  emberjr(f){ f.flash=10; const LP=limOn(f,'d'), R=LP?140:80;   // (LIMIT, Inferno Ring: a far bigger ring that hits hard, launches and burns longer)
+    for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0) continue; if(hurtGap(t,f.x,f.y)<R-HURT_R0){ applyHit(t,LP?9:3,Math.sign(t.x-f.x||1)*(LP?8:3),LP?-9:-4,f); SM_FX.burn(t,f,LP?180:100); } }
+    if(summons.length) damageSummons(f, f.x, f.y, R, LP?9:3);
+    hitArt(f, 'flare', { kind:'circle', x:f.x, y:f.y, r:R - HURT_R0 }, { color:LP?'#ff5a1a':'#f0803a', style:'ring', fade:8 });
+    if(LP) for(let i=0;i<16;i++){ const a=i/16*Math.PI*2; puff(f.x+Math.cos(a)*90,f.y+Math.sin(a)*90,'#ff5a1a',4); }
     for(let i=0;i<10;i++){ const a=i/10*Math.PI*2; puff(f.x+Math.cos(a)*30,f.y+Math.sin(a)*30,'#f0803a',3); } },   // Firey Jr. -- Flare Up (UNIQUE MOVES 4): a flame ring that sets near foes burning (was a floor trap)
   photo(f){ f.flash=8; f.healing=Math.max(f.healing||0,130); f._healStill=true; f.armor=20; for(let i=0;i<8;i++) puff(f.x,f.y-8,'#4b9c5a',5);  }, // Fern — strong regen stance
-  measure(f){ f.flash=8; f.reflecting=22; f._reflAtk=false; puff(f.x+f.face*14,f.y-10,'#b0b0b0',5);  }, // Ruler -- Straight Edge (UNIQUE MOVES 4): the ruler held flat turns shots back for a moment (was a counter shared with Coiny and Firey)
+  measure(f){ f.flash=8; f.reflecting=limOn(f,'d')?60:22; f._reflAtk=false;   // (LIMIT, Ruled Out: held up far longer, with a swipe that weakens: LIMIT_EXTRA)
+    puff(f.x+f.face*14,f.y-10,'#b0b0b0',5);  }, // Ruler -- Straight Edge (UNIQUE MOVES 4): the ruler held flat turns shots back for a moment (was a counter shared with Coiny and Firey)
   slam(f){ f.flash=8; f.armor=Math.max(f.armor,50); braceUp(f, 50); f.vy=Math.min(f.vy,-2); puff(f.x,f.y-8,'#9a9a9a',6);  }, // Sidewalky — heavy brace
   // ---- new roster down-specials (v23+) ----
   airleak(f){ f.flash=8; f.invuln=Math.max(f.invuln,16); f.vy=-4; for(let i=0;i<8;i++) puff(f.x,f.y+10,'#bfeae0',4);  }, // Balloony — deflate & drift, brief dodge
@@ -80757,6 +80896,7 @@ function doDownSpecial(f){
   if(DASH_TELL_DOWN.has(k) && !f._dashTellGo && dashTell(f, function(){ f._dashTellGo = true; try { doDownSpecial(f); } finally { f._dashTellGo = false; } })) return;   // DASH TELL
   if(tellAdd(f, 'down', function(){ doDownSpecial(f); })) return;   // NO-TELL SWEEP
   endLagArm(f, 'down');   // FRAME BUDGET
+  limArm(f, 'd');   // LIMIT: a ready scaler's powered down special
   if(f.oc){ ocRun(f, 'd'); return; }   // OC ENGINE: the down-special pick
   if(DOWNSPECIALS[k]) DOWNSPECIALS[k](f);
   else { f.countering=22; f.flash=8;  }
@@ -94020,9 +94160,22 @@ const NSM_MV = {
     boxes:[{ s:MvC(34,-50, 34,26, 20), t0:6, t1:13, g:'a', dmg:19.5, kb:[9.2,-9.2], fx:msFx('knockdown',30) }] },
 };
 for(const nm in NSM_MV){ const r = NSM_MV[nm]; if(r.kit && SMASH_ID[r.kit]) SMASH_ID[r.kit].name = r.n; }
+// LIMIT: the three scalers whose neutral smash is a move row get a powered row of their own (nsmMvStart takes it while the Limit is ready)
+const NSM_LIM = {
+  'Firey Jr.': Object.assign({}, NSM_MV['Firey Jr.'], { n:'Supernova Tantrum', tot:23, act:19,   // the last kick is a big flare that burns twice as long
+    boxes:[{ s:MvC(8,18, 62,18, 15), t0:6, t1:9, g:'a', dmg:3, kb:[0.4,-0.3], stun:10 }, { s:MvC(8,18, 62,18, 15), t0:10, t1:13, g:'b', chain:true, dmg:3, kb:[0.4,-0.3], stun:10 },
+      { s:MvC(8,18, 62,18, 15), t0:14, t1:17, g:'c', chain:true, dmg:3, kb:[0.4,-0.3], stun:10 }, { s:MvO(44,4,48), t0:18, t1:21, g:'d', chain:true, dmg:11, kb:[9.6,-6.4], fx:msBurn(180) }] }),
+  'Yellow Face': Object.assign({}, NSM_MV['Yellow Face'], { n:'Buy One, Get Two Free!', tot:30, act:44,   // three pops: two that hold, then the biggest launches
+    boxes:[{ s:MvO(60,-4,22), t0:5, t1:8, g:'a', dmg:7, kb:[0.3,-0.3], stun:30 }, { s:MvO(60,-4,34), t0:25, t1:28, g:'b', chain:true, dmg:9, kb:[0.3,-0.3], stun:24 },
+      { s:MvO(64,-4,50), t0:44, t1:47, g:'c', chain:true, dmg:14, kb:[9.4,-9.4] }] }),
+  'Gelatin': Object.assign({}, NSM_MV['Gelatin'], { n:'Triple Dose', tot:19,   // a longer syringe, a bigger plunge that freezes at any percent, and it sprays (LIMIT_LATER.gelspray)
+    boxes:[{ s:MvC(10,-4, 62,-4, 12), t0:4, t1:6, g:'a', dmg:6, kb:[0.4,-0.2], stun:16 }, { s:MvC(10,-4, 62,-4, 18), t0:14, t1:17, g:'b', chain:true, dmg:13, kb:[9,-9.5], fx:(f, t) => applyFreeze(t, freezeDuration(t.pct, 50) + LIMIT.fz) }] }),
+};
 function nsmMvStart(f){
-  const S = f.oc ? null : NSM_MV[f.name]; if(!S) return false;
+  const S0 = f.oc ? null : NSM_MV[f.name]; if(!S0) return false;
+  const LP = !!NSM_LIM[f.name] && limReady(f, 's') && (limIsPerson(f) || limWorth(f, 's')), S = LP ? NSM_LIM[f.name] : S0;   // LIMIT: the powered row
   if(!mvStart(f, S, 'nsmash')) return false;
+  if(LP) limArm(f, 's');
   if(f.you) questSmashArm(f);
   playSmashSfx(smashIdOf(f));
   f.smCd = Math.max(f.smCd || 0, SMASH_ENDLAG + (S.cdx || 0));
@@ -96309,6 +96462,22 @@ function zsMenuText(r){
   if(r && isReflector(r)) return 'Reflector — hold Z: a pane in front of you turns enemy shots back at their owner, 1.8x faster and 1.3x the damage (at most 12%). It takes ' + RF.start + ' frames to come up, lasts up to ' + RF.active + ' while Z is held, and leaves you open for ' + RF.endLag + ' frames after (then ' + RF.cd + ' more before you can raise it again). It does nothing against melee or grabs. The strong fighters have this instead of a shield.' + spr;
   return 'Shield — hold Z: a bubble in your colour blocks every hit and shot (a grab still gets you). It shrinks as it takes damage and refills when you let go; at zero it breaks and you are stunned for 2 s. It comes up in ' + ZS.start + ' frames and costs ' + ZS.endLag + ' to drop; jump leaves it at once, and it cannot be raised in the air. Out of it: ' + zsOutText(r) + ' (the bubble drops when the move starts).' + spr;
 }
+// LIMIT, in the moves list: [C, down + C, V] -- each powered version's name and what it adds, in plain words
+const LIMIT_TEXT = {
+  'Naily':       [['Nail Storm', 'seven nails and a big railroad spike'], ['Bed of Nails', 'three traps, and nails burst up ahead'], ['Railroad Rush', 'a faster, longer dash that leaves a trap']],
+  'Firey Jr.':   [['Tantrum Fireball', 'five bursts and a big fireball'], ['Inferno Ring', 'a huge ring that launches and burns longer'], ['Supernova Tantrum', 'the last kick is a big flare']],
+  'Ruler':       [['Cut Once', 'a long piercing cut follows the shot'], ['Ruled Out', 'held up longer, with a swipe that weakens'], ['Ruled Line', 'a wider line that snaps back and stuns']],
+  'Gelatin':     [['Deep Freeze', 'three shots that freeze at any damage'], ['Jelly Field', 'three bigger mines that freeze at any damage'], ['Triple Dose', 'a bigger plunge that always freezes, and a spray']],
+  'Fries':       [['Supersize', 'seven fries and one giant fry'], ['Hot Oil Spill', 'three traps that burn'], ['Deep Fryer', 'a bigger ring, then fries fly out all round']],
+  'Dora':        [['Rant Rampage', 'five jabs, longer reach, a harder last one'], ['Dig Deep', 'the ground erupts and stuns far wider'], ['Endless Earful', 'farther and wider, then "and ANOTHER thing!"']],
+  'Coiny':       [['Slap Fight Rematch', 'a longer slap, then a backhand that stuns'], ['Make It Rain', 'seven coins that bounce more'], ['Cha-Ching Slap', 'a longer lunge, then a spray of coins']],
+  'Yellow Face': [['Limited Time Offer!', 'a bigger cone, a longer stun, and it weakens'], ['Everybody Gets One!', 'weakens every foe near him and stuns them'], ['Buy One, Get Two Free!', 'three pops: two hold, the last launches']],
+  'Grassy':      [['Full Bloom', 'a longer Grasstree, and roots burst up round him'], ['Deep Roots', 'more armour, three rooting brambles, heals a little'], ['Rolling Forest', 'a bigger roller, and a second rolls back']],
+  'Gaty':        [['Gate Crash', 'a longer reflect and a bigger swing that strips armour'], ['Iron Gate', 'twice as long, braced, and the gate slams round her'], ['Judgement Gate', 'pulls from farther, then slams shut both ways']],
+  'Toothpaste':  [['Minty Blast', 'a huge glob that goes through, and three traps'], ['Sticky Situation', 'three bigger root traps'], ['Fresh Breath Field', 'a bigger mine that lasts longer, and a glob']],
+};
+function limitShort(name){ const L = LIMIT_TEXT[name]; return 'Limit — take 100% to fill it; then C, ↓ + C and V each get one powered use: ' + L.map(x=>x[0]).join(', '); }
+function limitText(name){ const L = LIMIT_TEXT[name]; return 'Limit — taking 100% damage fills your Limit (it stays when you lose a stock). Then your neutral special, down special and neutral smash each get one powered use, in any order; all three are stronger. C: ' + L[0][0] + ' (' + L[0][1] + '). ↓ + C: ' + L[1][0] + ' (' + L[1][1] + '). V: ' + L[2][0] + ' (' + L[2][1] + ').'; }
 function moveRowsFor(r){
   const mt = MOVE_TEXT[r.name] || {}, ms = r.kit && MOVESETS[r.kit.special], rows = [], dk = statsFor(r.name).dmg, GT = (k) => statWords(dk, GRAB_TEXT_SHARED[k]);   // (FIGHTER STATS: the shared grab lines in the fighter's dmg)
   const add = (k, t, wide) => { if(t) rows.push([k, t, !!wide]); };
@@ -96330,6 +96499,7 @@ function moveRowsFor(r){
   add('V', (smashKindOf(r) ? smashKindOf(r) + ' · ' : '') + smashBlurb(r) + ' ' + smashHowText(r), true);
   add('↑ + V', dirSmashText(r, 1), true); add('↓ + V', dirSmashText(r, -1), true);   // UP SMASH, DOWN SMASH
   add('V + C', mt.finisher);
+  if(r.kit && LIMIT_KITS[r.kit.special] && LIMIT_TEXT[r.name]) add('Limit', limitText(r.name), true);   // LIMIT: the scaler's three powered moves
   add('Z', zsMenuText(r), true);   // SHIELD / REFLECTOR (Z)
   { const fl = fsMenuLine(r); if(fl) add('Final Smash', fl[0] + ' — ' + fl[1], true); }   // FS MENU LINES (the All moves tab and the pause menu's Move list)
   const tech = ms && ms.tech ? ms.tech.join(' ') : 'Short hop (a quick press of ↑), fast fall (↓ in the air) and a wall jump (jump toward a wall in the air).' + (r.kit && DASH_KITS.has(r.kit.special) ? ' ' + "DASH TECH (Celeste's), CAPTURE THE FLAG ONLY: there, out of a ↓ + → dash along the ground, jump for a HYPER (long, low, 1.4x the dash's speed); out of a straight dash, a SUPER (normal height, the dash's speed); with the other arrow held, a short reverse hyper. A ↓ + → dash from the air that lands is a wavedash: jump at once for a hyper. In every other mode a jump out of a dash is a plain jump. One air dash an airtime, refilled on landing." : '');
@@ -96404,6 +96574,7 @@ function moveShortRows(r){
     const k = x[0], fold = /in the air|holding|X \+ C|Movetech/.test(k);
     let t;
     if(k === 'Z') t = zShort(r);
+    else if(k === 'Limit') t = limitShort(r.name);
     else if(k === 'Final Smash'){ const fd = kit && typeof frameData === 'function' ? frameData(kit, 'fs') : null; t = fsShort(x[1]) + (fd && fd.startup > 0 ? ' · startup ' + fd.startup + 'f' : ''); }   // (startup only: from the press, the intro included)
     else if(k === 'Movetech') t = techShort(r);
     else if(/^The neutral (attack|special), aimed that way/.test(x[1])) t = 'Same as ' + (k.indexOf('X') >= 0 ? 'X' : 'C') + ', aimed';
@@ -98652,6 +98823,7 @@ function doSpecial(f){
   if(DASH_TELL_KINDS.has(k) && !f._dashTellGo && dashTell(f, function(){ f._dashTellGo = true; try { doSpecial(f); } finally { f._dashTellGo = false; } })) return;   // DASH TELL: the dash begins after its wind-up
   if(tellAdd(f, 'neutral', function(){ doSpecial(f); })) return;   // NO-TELL SWEEP: the wind-up TELL_ADD gives this special, then the special itself
   endLagArm(f, 'neutral');   // FRAME BUDGET: the end lag this special pays once it is done (nothing for a kit not in ENDLAG_ADD)
+  limArm(f, 'n');   // LIMIT: a ready scaler's powered neutral special (the kit bodies below read limOn)
   if(f.oc){ ocRun(f, 'n'); return; }   // OC ENGINE: an original character's neutral-special pick (nothing for anyone else)
   switch(k){
     case "ember": spawnProj(f, {vx:f.face*8,vy:-2,grav:true,dmg:8,kb:6,r:9,color:"#f0803a",burn:true,life:60}); f.flash=8; f.spCd=48; break;
@@ -98705,11 +98877,11 @@ function doSpecial(f){
       const ax=tgt?tgt.x:f.x+f.face*80;
       lobProj(f, ax, tgt?tgt.y+tgt.r:feetY(f), {dmg:13,kb:9,r:12,color:"#3a3a3a",life:150}, 30);   // PRANK RIG (UNIQUE MOVES 3): he heaves the anvil in a flat quick arc onto the foe's spot (was an anvil out of the sky)
       f.flash=8; f.spCd=103; break; }
-    case "slap": { const cx=f.x+f.face*32; f.flash=6; const rr=40+comebackRange(f); // Coiny: fast slap, bonus vs Firey (canon rivalry)
+    case "slap": { const cx=f.x+f.face*32; f.flash=6; const rr=40+(limOn(f,'n')?14:0); // Coiny: fast slap, bonus vs Firey (canon rivalry); LIMIT (Slap Fight Rematch): a longer reach, and a backhand after (LIMIT_LATER.backhand)
       for(const t of fighters){ if(t.dead||t.idx===f.idx||t.invuln>0)continue; if(hurtGap(t, cx, f.y) < -HURT_R0 + rr){
         const fire=/Firey|Bomby/.test(t.name); applyHit(t, fire?13:9, f.face*9, -6, f); } }
       if(summons.length) damageSummons(f, cx, f.y, rr, 9);   // reaches a boss too (it looped over fighters only: 0 in Boss Rush)
-      hitArt(f, 'slap', { kind:'circle', x:cx, y:f.y, r:rr - HURT_R0 }, { color:'#e8a33d', fade:6 });   // HIT ART: the slap, at its reach (the comeback range with it)
+      hitArt(f, 'slap', { kind:'circle', x:cx, y:f.y, r:rr - HURT_R0 }, { color:'#e8a33d', fade:6 });   // HIT ART: the slap, at its reach (the Limit's with it)
       for(let i=0;i<4;i++) puff(cx,f.y,'#e8a33d',4); f.spCd=30; break; }
     case "cap": if(FINX.length && fxMine(f, 'sentry')){ f.spCd = 12; puff(f.x + f.face*14, f.y - 10, '#9aa7b0', 3); break; }   // no Cap Shot while his cap stands as a sentry (FINISHERS V2: Cap Sentry)
       spawnProj(f,{vx:f.face*11,vy:0,grav:false,bounce:false,dmg:7,kb:6,r:8,color:"#3a6ea5",life:70,boomerang:true,homeX:f.x,ownerFace:f.face}); f.flash=6; f.spCd=51; break;
@@ -98730,12 +98902,12 @@ function doSpecial(f){
       if(tgt){ tgt.defined=600; tgt.defineStacks=Math.min((tgt.defineStacks||0)+1, 5);
         for(let i=0;i<6;i++) puff(tgt.x,tgt.y-12,'#4b9c6a',4); }
       f.flash=8; break; }
-    case "fry": { // Fries: quick triple dart (+comeback shots)
-      const n=3+comebackShots(f), V=newVolley('fries');   // one cast: two fries on one foe at most (VOLLEY_CAP)
+    case "fry": { // Fries: quick triple dart (LIMIT, Supersize: seven, and one giant fry: LIMIT_EXTRA)
+      const n=limOn(f,'n')?7:3, V=newVolley('fries');   // one cast: two fries on one foe at most (VOLLEY_CAP)
       for(let i=0;i<n;i++) addProj(Object.assign({owner:f.idx,ownerObj:f,x:f.x+f.face*18,y:f.y-6+(i%3)*6-6,vx:f.face*(8+(i%3)),vy:(i>=3?((i-3)-1)*1.2:0),grav:false,dmg:4,kb:4,r:5,color:"#e04b3a",life:40}, V));
       f.flash=6; f.spCd=46; break; }
-    case "freeze": { const n=1+comebackShots(f);
-      for(let i=0;i<n;i++) spawnProj(f,{vx:f.face*10,vy:-1+(i-(n-1)/2)*1.4,grav:true,dmg:6,kb:5,r:8,color:"#9ad24b",life:70,freeze:true});
+    case "freeze": { const LP=limOn(f,'n'), n=LP?3:1, V=LP?newVolley('limit'):{};   // LIMIT (Deep Freeze): three shots that freeze at any percent, longer (limShot: _limFz)
+      for(let i=0;i<n;i++) spawnProj(f,Object.assign({vx:f.face*10,vy:-1+(i-(n-1)/2)*1.4,grav:true,dmg:6,kb:5,r:8,color:"#9ad24b",life:70,freeze:true}, V));
       f.flash=6; f.spCd=48; break; }
     case "flip": { // Nickel: gamble — good roll = coin strike + armor, bad roll = minor stumble
       if(simRand()<0.7){ f.armor=44; f.flash=12; 
@@ -98746,8 +98918,8 @@ function doSpecial(f){
     // ---- new playable kits ----
     case "fly": f._empower=1; f.flying=90; f.flash=10; for(let i=0;i<8;i++) puff(f.x,f.y-6,'#f2a6e8',5);  f.spCd=74; break; // Puffball: charge next shot + brief float
     case "beam": f._empower=1; f.flash=10; for(let i=0;i<8;i++) puff(f.x,f.y-6,'#ff8aa0',5);  f.spCd=67; break; // Ruby: charge next gem bolt
-    case "buynow": { const cx=f.x+f.face*40; f.flash=8; const rr=66+comebackRange(f); // Yellow Face: stun cone
-      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.invuln>0)continue; if(hurtGap(t, cx, f.y) < -HURT_R0 + rr && Math.sign(t.x-f.x)===f.face){ applyHit(t,7,f.face*4,-3,f); stunFx(t,28); } }
+    case "buynow": { const cx=f.x+f.face*40; f.flash=8; const LP=limOn(f,'n'), rr=66+(LP?38:0); // Yellow Face: stun cone (LIMIT, Limited Time Offer!: bigger, a longer stun, and it weakens)
+      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.invuln>0)continue; if(hurtGap(t, cx, f.y) < -HURT_R0 + rr && Math.sign(t.x-f.x)===f.face){ applyHit(t,7,f.face*4,-3,f); stunFx(t,LP?44:28); if(LP) t.weakened=Math.max(t.weakened||0,160); } }
       if(summons.length) damageSummons(f, cx, f.y, rr, 7);   // reaches a boss too (it looped over fighters only: 0 in Boss Rush)
       hitArt(f, 'buynow', haAhead(f, cx, f.y, rr - HURT_R0, 0, 0), { color:'#f2d84b', fade:8 });   // HIT ART: the pitch's disc, ahead of him only (a centre limit: haAhead)
       for(let i=0;i<8;i++) puff(cx,f.y,'#f2d84b',4);  f.spCd=46; break; }
@@ -98780,10 +98952,10 @@ function doSpecial(f){
       }, '#f2c84b', { kind:'circle', r:f.r+80-HURT_R0 });  f.spCd=69; break; }
     case "sign": spawnProj(f,{vx:f.face*10,vy:0,grav:false,boomerang:true,ownerFace:f.face,dmg:10,kb:8,r:9,color:'#6fb7ff',life:70}); f.flash=6; f.spCd=46; break; // Bracelety (buffed: weak)
     case "gust": f._empower=1; f.flash=10; for(let i=0;i<8;i++) puff(f.x,f.y-6,'#bfe8ff',5);  f.spCd=67; break; // Fanny: charge next air blast
-    case "reflect": f.reflecting=36; f._reflAtk=true; f.flash=10; startWindup(f, CIRCLE_WINDUP, function(){ const rr=f.r+44+comebackRange(f); hitArt(f, 'reflect', { kind:'circle', x:f.x, y:f.y, r:rr-HURT_R0 }, { color:'#e8e8e8' }); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + rr){ applyHit(t,5,Math.sign(t.x-f.x||1)*6,-4,f);} } if(summons.length) damageSummons(f, f.x, f.y, rr, 5); }, '#e8e8e8', { kind:'circle', r:f.r+44+comebackRange(f)-HURT_R0 }); puff(f.x,f.y-8,'#e8e8e8',5);  break; // Gaty
+    case "reflect": { const LP=limOn(f,'n'); f.reflecting=LP?60:36; f._reflAtk=true; f.flash=10; startWindup(f, CIRCLE_WINDUP, function(){ const rr=f.r+44+(LP?40:0); hitArt(f, 'reflect', { kind:'circle', x:f.x, y:f.y, r:rr-HURT_R0 }, { color:'#e8e8e8' }); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + rr){ applyHit(t,LP?9:5,Math.sign(t.x-f.x||1)*(LP?11:6),LP?-7:-4,f); if(LP) SM_FX.strip(t,f);} } if(summons.length) damageSummons(f, f.x, f.y, rr, LP?9:5); }, '#e8e8e8', { kind:'circle', r:f.r+44+(LP?40:0)-HURT_R0 }); puff(f.x,f.y-8,'#e8e8e8',5);  break; } // Gaty (LIMIT, Gate Crash: a longer reflect, a wider swing that hits harder and strips armour)
     case "grasstree": { // Grassy: GRASSTREE (TPOT 16-17: he pilots Tree's body). For GRASSTREE_FRAMES he is up a
       // tree: armoured, a tree's reach and weight behind every swing, and slower. Using it again refreshes it.
-      f._grasstree = GRASSTREE_FRAMES; f.flash=10;
+      f._grasstree = GRASSTREE_FRAMES + (limOn(f,'n') ? 120 : 0); f.flash=10;   // (LIMIT, Full Bloom: 2 s longer, and roots burst up round him: LIMIT_EXTRA)
       for(let i=0;i<12;i++) puff(f.x+(cosRand()*50-25), f.y+f.r-cosRand()*60, i%2 ? '#7bc043' : '#8a6a3a', 5);
       f.spCd=90; break; }
     // ---- next 10 characters ----
@@ -98821,8 +98993,8 @@ function doSpecial(f){
       spawnProj(f,{vx:f.face*8,vy:-3,grav:true,bounce:true,dmg:12,kb:8,r:15,color:'#e8e0f0',life:120,maxBounces:3,
         fxTag:'root',fxN:JAWBREAKER_STUCK,shape:'jawball'});
       f.flash=8; f.spCd=72; break; }
-    case "spike": { // Naily: fast piercing jab volley (+extra shots via comeback scaling)
-      const extra=comebackShots(f); const n=3+extra, V=newVolley('nails');   // one cast: two nails in one foe at most, however many she fires (VOLLEY_CAP)
+    case "spike": { // Naily: fast piercing jab volley (LIMIT, Nail Storm: seven nails in a wider fan, and a railroad spike: LIMIT_EXTRA)
+      const extra=limOn(f,'n')?4:0; const n=3+extra, V=newVolley('nails');   // one cast: two nails in one foe at most, however many she fires (VOLLEY_CAP)
       for(let k=0;k<n;k++){ const dy=(n===1?0:(k/(n-1)-0.5))*2*(1+extra*0.15);   // fan wider as shots grow
         spawnProj(f,Object.assign({vx:f.face*18,vy:dy*0.5,grav:false,pierce:true,dmg:8,kb:6,r:6,color:'#c0c0c0',life:38}, V)); }
       f.flash=6; f.spCd=35; break; }
@@ -98901,14 +99073,14 @@ function doSpecial(f){
     case "fraidy": { // Woody: panic-dash backward, dropping fear splinters that damage pursuers
       f.vx=-f.face*20; f._dashing=Math.max(f._dashing||0,10); f.invuln=Math.max(f.invuln,10); f.flash=10; applyDashVY(f,16,14);
       for(let i=0;i<3;i++) spawnProj(f,{vx:f.face*(2-i),vy:-2,grav:true,dmg:5,kb:4,r:7,color:'#e8c84b',life:70,landsTrap:true});  f.spCd=60; break; }   // the splinters settle where they land and wait for pursuers
-    case "paste": { // Toothpaste: fling a sticky glob that roots on hit, and leave a trap (+comeback reach)
-      spawnProj(f,{vx:f.face*10,vy:-1,grav:false,dmg:9,kb:6,r:12+comebackRange(f)*0.4,color:'#f0f0f0',life:50,root:true,tpRoot:true,sticky:true});   // stronger active rooting projectile (tpRoot: ROOT CHAIN BROKEN); 2026-11-19: dmg 12 -> 9 (balance pass g-bal9: a CPU gauntlet outlier, numbers only)
+    case "paste": { // Toothpaste: fling a sticky glob that roots on hit, and leave a trap (LIMIT, Minty Blast: a huge glob that goes through, and three traps)
+      spawnProj(f,{vx:f.face*10,vy:-1,grav:false,dmg:9,kb:6,r:limOn(f,'n')?22:12,pierce:limOn(f,'n'),color:'#f0f0f0',life:50,root:true,tpRoot:true,sticky:true});   // stronger active rooting projectile (tpRoot: ROOT CHAIN BROKEN); 2026-11-19: dmg 12 -> 9 (balance pass g-bal9: a CPU gauntlet outlier, numbers only)
       addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:4,kb:2,r:13,color:'#f0f0f0',life:220,trap:true,root:true,tpRoot:true,arm:14});
       f.flash=8;  f.spCd=66; break; }   // 2026-11-19: cooldown 55 -> 66 (balance pass g-bal9: a CPU gauntlet outlier, numbers only)
     case "rant": { // Dora: RAPID RANT, three hard jabs and the last one launches. It was four of 3.5 on a 23-frame
       // cooldown -- 187 hits in 16 probe games for 3.3 each and no knockout at all (round 2: "Fewer, harder hits").
-      const rr=52+comebackRange(f); f.flash=4;
-      beginCombo(f); f._rant = { n:3, every:5, t:0, dmg:5, reach:rr, finKb:12, finUp:-8 };   // three of 5, still a flurry (design-calls)
+      const LP=limOn(f,'n'), rr=52+(LP?20:0); f.flash=4;   // LIMIT (Rant Rampage): five jabs, a longer reach, a harder last one
+      beginCombo(f); f._rant = { n:LP?5:3, every:5, t:0, dmg:5, reach:rr, finKb:LP?15:12, finUp:LP?-10:-8 };   // three of 5, still a flurry (design-calls)
       f.spCd=40; break; }
     case "seriously": { // David: heavy ground-pound shockwave. In the air he slams down and it goes off on landing.
       const pound = function(){ const cx=f.x; f.flash=12;
@@ -98918,9 +99090,9 @@ function doSpecial(f){
         f.vy=-2; for(let i=0;i<16;i++) puff(cx+cosRand()*120-60,feetY(f),'#4a90c0',5); };
       if(f.onground) pound(); else slamThen(f, pound);
       f.spCd=138; break; }
-    case "emberjr": { // Firey Jr.: fast, weaker flame bursts (rapid) (+comeback shots)
-      const n=1+comebackShots(f);
-      for(let i=0;i<n;i++) spawnProj(f,{vx:f.face*13,vy:-1+(i-(n-1)/2)*1.3,grav:true,dmg:7,kb:6,r:8,color:'#f0803a',burn:true,life:55});
+    case "emberjr": { // Firey Jr.: fast, weaker flame bursts (rapid) (LIMIT, Tantrum Fireball: five in a fan and a big fireball: LIMIT_EXTRA)
+      const LP=limOn(f,'n'), n=LP?5:1, V=LP?newVolley('limit'):{};
+      for(let i=0;i<n;i++) spawnProj(f,Object.assign({vx:f.face*13,vy:-1+(i-(n-1)/2)*1.3,grav:true,dmg:7,kb:6,r:8,color:'#f0803a',burn:true,life:55}, V));
       f.flash=6; f.spCd=30; break; }
     case "photo": { // Fern: root down, heal over time, and strike with a vine
       f.healing=Math.max(f.healing||0,80); f._healStill=true; f.flash=10;   // (a plant heals standing still: see the heal tick, 2026-11-09)
@@ -98928,8 +99100,8 @@ function doSpecial(f){
       if(summons.length) damageSummons(f, cx, f.y, 48, 8);   // reaches a boss too (it looped over fighters only: 0 in Boss Rush)
       hitArt(f, 'vine', { kind:'circle', x:cx, y:f.y, r:48 - HURT_R0 }, { color:'#4b9c5a', fade:8 });   // HIT ART: where the vine strikes, at its reach
       for(let i=0;i<8;i++) puff(f.x,f.y-8,'#4b9c5a',4);  f.spCd=110; break; }
-    case "measure": { // Ruler: precise long straight shot (+comeback shots)
-      const n=1+comebackShots(f);
+    case "measure": { // Ruler: precise long straight shot (LIMIT, Cut Once: a long piercing cut follows: LIMIT_LATER.cut)
+      const n=1;
       for(let i=0;i<n;i++) spawnProj(f,{vx:f.face*16,vy:(i-(n-1)/2)*1.1,grav:false,dmg:9,kb:7,r:6,color:'#b0b0b0',life:70,pierce:false});
       f.flash=6; f.spCd=51; break; }
     case "slam": { // Sidewalky: lunging body-slam that stuns on hit
@@ -99681,6 +99853,7 @@ function doSpecial(f){
 const PROJ_LIFE = 1.4;
 function addProj(p){
   if(p && p.life) p.life = Math.round(p.life * PROJ_LIFE);
+  if(p && p.ownerObj && p.ownerObj._limOn !== undefined && !p._lim && limOn(p.ownerObj)) limShot(p);   // LIMIT: a powered move's shot, scaled once as it is born
   if(p && FS.by && p.ownerObj === FS.by){ p._fs = FS.by; p._fsSt = FS.by._fs; if(fswOn()){ const H = fswHome(FS.by); if(!fswSee(H.x, H.y, p.x, p.y, FS.by)) p._fsVis = false; } }   // (FS WALLS: _fsVis false: thrown from a spot the holder cannot see)   // a Final Smash's shot: its hits are the Final Smash's (fsHitBy)
   // TRAPS FALL. "traps should FALL, not appear" and "traps cant fall on platforms": a trap a fighter places used
   // to be created at its resting spot and never moved again (the trap branch skips all movement), so it popped
@@ -107887,7 +108060,7 @@ function freezeDuration(pct, base){
   const bonus = Math.min(18, Math.max(0, (pct - 15)) * 0.18);
   return Math.min(FREEZE_MAX, Math.round(b*0.55 + bonus));
 }
-const FREEZE_MAX = LOCK.max;   // absolute ceiling on any freeze, before or after comeback bonuses (45: LOCK.max, MAX LOCK TIME)
+const FREEZE_MAX = LOCK.max;   // absolute ceiling on any freeze, before or after a Limit bonus (45: LOCK.max, MAX LOCK TIME)
 // BLEED — Naily's status. 150 frames, front-loaded and DECAYING: about 6.75% total, most of it in
 // the first second. Re-wounding refreshes the clock rather than stacking, so it cannot be farmed.
 const BLEED_FRAMES = 150;
@@ -108017,7 +108190,7 @@ function graceBlocks(t, f){
 // same cast, and only while grace is all that protects the target (respawn, a dodge, a Final Smash's hold still stop them). Everything else
 // keeps the grace exactly as before: the same fighter's next cast or any other move, other attackers, assists, hazards, a turned-back shot.
 // A rising spin that drops a volley (Flower's pollen, Donut's sprinkles) is one move with its drops: the aura's hits carry the cast too.
-// THE LIMIT, for a kit whose power scales -- a comeback kit (more shots per death, less grace), or one whose hits grow with a counter (Money's
+// THE CAP, for a kit whose power scales -- a powered Limit move (more shots in one cast), or one whose hits grow with a counter (Money's
 // interest): `cap` is the most hits one cast lands on one foe (the first and those through its grace). `boss` is the same for a boss's
 // per-attacker grace (bossGraceRec), so a body 170 px across does not take a whole volley a fighter would not ("bosses must not melt").
 // 0 is no limit. Only the kits here have volleys; every other shot is untouched.
@@ -108026,8 +108199,10 @@ const VOLLEY_CAP = {
   pollen:     { cap:0, boss:3 },   // Flower -- Pollen Puff: the spin and its three puffs ("a puff does 3%")
   sprinkles:  { cap:0, boss:3 },   // Donut -- Sprinkle Spin: the spin and the three sprinkles that rain on foes below
   redballs:   { cap:0, boss:3 },   // Rocky -- Red Balls: "3% per ball"
-  nails:      { cap:2, boss:1 },   // Naily -- Nail Volley (comeback: up to 13 nails): two; a boss, one, as before (8 a cast every 35 frames: two doubled her Boss Rush, the mode piercing nails once ran away with)
-  fries:      { cap:2, boss:2 },   // Fries -- Fry Dart (comeback: up to 13 fries): two, as the card says ("sometimes two land")
+  limit:      { cap:2, boss:1 },   // LIMIT: a powered spread (Firey Jr.'s fan, Gelatin's freeze shots and spray): two on one foe; a boss, one
+  limcoins:   { cap:3, boss:1 },   // LIMIT: Coiny's powered coins (Make It Rain's seven, the smash's three): three on one foe; a boss, one
+  nails:      { cap:2, boss:1 },   // Naily -- Nail Volley (her Limit's Nail Storm: seven nails): two; a boss, one, as before (8 a cast every 35 frames: two doubled her Boss Rush, the mode piercing nails once ran away with)
+  fries:      { cap:2, boss:2 },   // Fries -- Fry Dart (his Limit's Supersize: seven fries; the Deep Fryer's eight): two, as the card says ("sometimes two land")
   coins:      { cap:2, boss:1, after:0.5 },   // Money (the owner, 2026-10-23: "2nd coin has reduced damage": the second coin on the same foe deals half) -- her smash's three coins, each worth more on a hurt foe (her interest): two; a boss, one, as before (two were 48 of a 175 boss in one smash)
   shatter:    { cap:0, boss:3 },   // Ice Cube -- Cold Snap: every shard that reaches a foe (the owner, 2026-10-23, picked it: "bcs point blank is hard to do")
   saltshake:  { cap:0, boss:3 },   // Salt -- Shake: every grain of one throw (the owner, 2026-10-23); Pepper's echo is a throw of her own
@@ -108049,15 +108224,13 @@ function hardInvuln(t){ return t.invuln > 16 && t.invuln > (t._graceLeft||0); }
 // Hit-grace scales with the hit's weight: light/fast pokes give little grace (so rapid pokes connect), heavy hits give more
 // (to stop projectile walls chain-stunning). More of it, on the owner's call: a light poke gave 6 frames, which is how a
 // projectile wall or a fast multi-hit chained someone with no gap to answer in. Roughly doubled at the light end, and the cap
-// raised so a big hit still buys more room than a small one. Comeback scaling: a designated fighter's attacks impose less
-// hit-grace (down to a floor), so their pokes chain better the more they've died / KO'd.
+// raised so a big hit still buys more room than a small one. (The comeback kits' grace cut went with COMEBACK SCALING: the Limit, 2026-11-23.)
 // COMBOS: grace grows by the stun's HIT_STUN_PLUS, cap and all, so it still covers a hit's stun exactly as much as it did. A tick
 // (a shot's lingering damage, a poison cloud: opts.tick) is not an attack's hit, and keeps the stun and the grace it had; so does a
 // hit from no fighter (a boss, a hazard, an assist trophy: hitStunPlus).
 function hitGraceFrames(dmg, from, tick){
   const plus = hitStunPlus(from, tick);
   let grace = Math.round(9 + plus + dmg*0.6);        // a fighter's: ~18 for a 5-dmg poke, ~26 for an 18-dmg hit, capped at 30 (ticks and no fighter's: 12, 20, 24)
-  if(from && from.kit && COMEBACK[from.kit.special]){ grace = Math.max(COMEBACK_IFRAME_FLOOR + plus, grace - comebackPoints(from)); }   // (the floor moves too: 9, was 3)
   return Math.min(24 + plus, grace);
 }
 function hitStunFrames(dmg, from, tick){ return Math.max(4, Math.round(Math.min(24, 6 + dmg))) + hitStunPlus(from, tick); }   // a fighter's: 15 for a 3% jab (was 9), 30 at the cap (was 24)
@@ -108256,6 +108429,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(t._diShield > hazardT){ kbx *= DIK.shieldKb; kby *= DIK.shieldKb; }   // DREAM ISLAND TEAMS: the shield area's and the lighthouse's armour: less knockback for a while
   if(from && from.weakened>0){ dmg*=0.7; kbx*=0.7; kby*=0.7; }  // Golf Ball's old single-target debuff
   if(from && from._knockoff && from._knockoff.until > hazardT && !(opts && opts.shot)){ dmg*=0.8; kbx*=0.8; kby*=0.8; }   // Dough's copy (0.8x, was 0.7x: 2026-11-19 balance pass), for the whole copied action (a shot was scaled at spawnProj)
+  if(from && from !== t && !(opts && (opts.shot || opts.tick)) && (from._limOn || from._limForce) && limOn(from)){ dmg*=LIMIT.dmg; kbx*=LIMIT.kb; kby*=LIMIT.kb; }   // LIMIT: a powered move's own hits (its shots were scaled at addProj)
   // Golf Ball's curse saps damage output, but it used to stack FOREVER with no cap and no decay —
   // a long match left you permanently floored at 20% damage with no counterplay. Now it's capped
   // and decays, so it's real pressure you can recover from rather than a permanent crippling.
@@ -108348,6 +108522,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(CONTEST && dmg > 0 && from && from !== t && !(opts && opts.tick) && contestBlock(t, from, dmg)) return;   // A CONTEST's block (Cloudy's trophy guard): the whole hit is taken
   if(TESTMODE.active && !TESTMODE.damage){ dmg=0; }   // test mode: damage toggle off = no % buildup
   t.pct+=dmg;
+  if(dmg > 0 && t.kit && LIMIT_KITS[t.kit.special]) limFill(t, dmg);   // LIMIT: the meter fills with the damage taken, 1 a 1%
   if(dmg > 0 && from && from !== t && !(opts && opts.tick) && from._eLag) endLagHit(from);   // FRAME BUDGET: the move connected -- its end lag is cut (a blocked hit never gets here: zsBlock)
   if(CONTEST && dmg > 0 && from && from !== t && !(opts && opts.tick)) contestHit(t, from, dmg);   // A CONTEST: a landed hit counts toward the steal, and knocks the seed (and a hard one the window) loose
   if(t._inf > 0 && dmg > 0 && from && from !== t && POINTED.has(from.name) && !(opts && opts.tick)) beachPop(t);   // Beach Ball pumped: a pointed fighter (Pin, Needle, Naily) pops them (EVENT FIGHTERS: BEACH BALL)
@@ -108795,11 +108970,11 @@ function eliminate(f){
   f._carriedBy = null;
   f._gravSaved = false;   // Marshmallow's gravity can fail in her favour once more
   if(killer && killer!==f && !killer.dead){ killer._kos=(killer._kos||0)+1; }  // universal: KOs scored
-  // Comeback scaling: credit the killer with a KO, and the victim with a death (only for designated fighters)
-  if(killer && killer!==f && !killer.dead && killer.kit && COMEBACK[killer.kit.special]){
+  // The scalers' own KO and death counts (stats only: since the Limit, 2026-11-23, they power nothing; the Limit fills with damage)
+  if(killer && killer!==f && !killer.dead && killer.kit && LIMIT_KITS[killer.kit.special]){
     killer.killCount=(killer.killCount||0)+1;   // no "MORE SHOTS!" / "WIDER REACH!" line ("Remove them all"); the status icon carries the count
   }
-  if(f.kit && COMEBACK[f.kit.special] && f.stocks>0 && f.stocks!==Infinity){   // dying (but not out) fuels the comeback; infinite-stock respawns don't count
+  if(f.kit && LIMIT_KITS[f.kit.special] && f.stocks>0 && f.stocks!==Infinity){
     f.deaths=(f.deaths||0)+1;   // no "COMEBACK +n" line ("Remove them all"); the status icon carries the count
   }
   { const vt = sideRoomTop(); puff(f.x, Math.max(20 + vt,Math.min(WH-20-vt,f.y)), '#fff', 22); puff(f.x, Math.max(20 + vt,Math.min(WH-20-vt,f.y)), f.color, 14); }
@@ -143867,7 +144042,7 @@ const STATUS_ICONS = [
   { key:'swallowed',on:f=>f._swallow>0,                     glyph:'mouth',  color:'#e0a050' },   // in the boss's stomach
   { key:'fury',     on:f=>(f._fury||0)>=50, glyph:'flame', color:'#ff6a2a' },   // Paintbrush: their bristles are burning
   { key:'fluff',    on:f=>(f.koCount||0)>0 && !!f.kit && f.kit.special==='fluff', glyph:'ko', color:'#ffd23f', count:f=>f.koCount },   // Pillow: +3% damage per KO, permanent
-  { key:'comeback', on:f=>comebackPoints(f)>0,              glyph:'rise',   color:'#ffb347', count:f=>Math.ceil(comebackPoints(f)) },   // a comeback kit, behind: its bonus is live
+  { key:'limit',    on:f=>(f._cbR|0)>0,                     glyph:'rise',   color:'#ffd23f', count:f=>limLeft(f._cbR|0) },   // LIMIT: ready, and how many powered moves are left (from the wire field, so a guest sees it too)
 ];
 const STATUS_ICON_R = 6, STATUS_ICON_GAP = 3;
 // The row sits ABOVE the name tag and is drawn after it. It used to sit at -r-30 and be drawn before
@@ -150673,7 +150848,7 @@ const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering
   '_sleepT','_slowmoT','_hushT',   // (FINISHERS V2, batch 4: Pillow's sleep, Remote's slow motion, Rose's hush)
   '_cutT',   // (ASSIST BATCH A2: Clapboard's CUT!, until when -- its icon; the freeze itself is 'frozen')
   '_zeroT',   // (FINISHERS V2, batch 6: Donut's zero)
-  '_cbQ','_cbT','_cbD','_snQ','_snT',   // (COMEBACK TELLS: comeback points in quarters, the frame and size of the last gain; Nickel's bonus in percent, the frame it ticked up)
+  '_cbQ','_cbR','_cbT','_cbF','_cbK','_snQ','_snT',   // (LIMIT TELLS: the meter 0-100, the powered moves left (bits), the frame it filled, the frame a powered move went off and which; Nickel's bonus in percent, the frame it ticked up)
   '_soakT',   // (EVENT FIGHTERS: SOAKED, until when -- the drips are drawn from it)
   '_flipT',   // (EVENT FIGHTERS: ERASER -- frames left of a backflip's turn: STEAKHOUSE FLIP and his wall jump)
   '_water',   // (EVENT FIGHTERS: SPONGY -- the water he holds, 0 to 3: his darker holes and drips)
