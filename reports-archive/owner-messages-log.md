@@ -858,6 +858,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-23 (answer to the lead's box on how to change the 11 comeback scalers; the owner ticked "Smaller bonus, lower cap" and "Lost stocks only")**: also, it should not be like something that continuously makes you stronger; it should be like cloud's limit, where your specials get powered up, but here, due to the lack of up-specials that kill(bow is an exception), we will include nuetral-smash instead of up-special.
 - **2026-11-23 (correcting the lead's Limit brief: one charge per lost stock, cap 2, the next powered move spends one)**: no, this is for as you take damage. so if you are at 100%, then you can use EACH of these once. and they should be much cooler and stuff.
 - **2026-11-23 (after the lead's Rose lost to the owner's Bow online, 0 stocks to 2; the lead used Thorn Lash at up to 270 px)**: dude, thorn lash has way too much range...
+- **2026-11-23 (after the lead cut Thorn Lash's reach 300 -> 170)**: good, because before, it damaged ppl for existing, canceled moves that were already activated, and ruined combos
 
 ## Art, animation & polish
 
