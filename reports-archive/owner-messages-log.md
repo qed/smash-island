@@ -856,6 +856,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-23 (coaching the lead's Firey vs Expert Cheesy; and the balance questions: 1 nerf Puffball's close-up hit instead of the dive? 2 Ruby: jab or smash?)**: you are overcompensating. cheesy is at ledge, and you go directly into disadvantage, and because of fireys air speed and fall speed, you fall off. and do 1 and nerf rubys smash.
 - **2026-11-23 (after losing to the owner's Gelatin with Fries online; both are comeback scalers)**: we need to change scalers
 - **2026-11-23 (answer to the lead's box on how to change the 11 comeback scalers; the owner ticked "Smaller bonus, lower cap" and "Lost stocks only")**: also, it should not be like something that continuously makes you stronger; it should be like cloud's limit, where your specials get powered up, but here, due to the lack of up-specials that kill(bow is an exception), we will include nuetral-smash instead of up-special.
+- **2026-11-23 (correcting the lead's Limit brief: one charge per lost stock, cap 2, the next powered move spends one)**: no, this is for as you take damage. so if you are at 100%, then you can use EACH of these once. and they should be much cooler and stuff.
 
 ## Art, animation & polish
 
