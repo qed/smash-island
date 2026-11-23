@@ -854,6 +854,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-21 (after the Cherries side-smash report)**: also, check for which smashes can do that near ledge or in air.
 - **2026-11-22 (answers on the balance panel: 1 should up specials KO? 2 do the suggested nerfs and buffs?)**: wow roboty went from one of the best to one of the worst... for 1, yes, because is mii brawler mii brawler without thrupper combos? 2. yeah sure
 - **2026-11-23 (coaching the lead's Firey vs Expert Cheesy; and the balance questions: 1 nerf Puffball's close-up hit instead of the dive? 2 Ruby: jab or smash?)**: you are overcompensating. cheesy is at ledge, and you go directly into disadvantage, and because of fireys air speed and fall speed, you fall off. and do 1 and nerf rubys smash.
+- **2026-11-23 (after losing to the owner's Gelatin with Fries online; both are comeback scalers)**: we need to change scalers
+- **2026-11-23 (answer to the lead's box on how to change the 11 comeback scalers; the owner ticked "Smaller bonus, lower cap" and "Lost stocks only")**: also, it should not be like something that continuously makes you stronger; it should be like cloud's limit, where your specials get powered up, but here, due to the lack of up-specials that kill(bow is an exception), we will include nuetral-smash instead of up-special.
 
 ## Art, animation & polish
 
@@ -937,6 +939,9 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17**: change the skin names to what it is, except when it would make sense. pewter yellow face is not real
 - **2026-11-17 (on the skin-name list)**: for cake, its her bfdia look. for that, its yoyle metal buble. for twinkle, its what happens in bfb when four is multiplied by donut. (applied: Caked Cake -> BFDIA Cake; Yoyleball Bubble -> Yoyle Metal Bubble; the Twinkle names are a real BFB thing: kept)
 - **2026-11-23 (after the lead beat Expert MeTag and asked to join the owner's online room, which normally breaks the never-touch-the-relay rule)**: its fine, join my room. code is 2T94
+- **2026-11-23 (online rematch in room 2T94; the owner's Bow beat the lead's Firey again, 4 stocks to 0)**: and you died
+- **2026-11-23 (right after the second online loss)**: try a different fighter, and learn them.
+- **2026-11-23 (third online match in room 2T94: the owner's Gelatin beat the lead's Fries, 2 stocks to 0; both are comeback scalers)**: we need to change scalers
 
 ## Bugs & fixes
 
