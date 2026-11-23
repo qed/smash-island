@@ -728,6 +728,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-11 18:32 UTC** *(part)*: hide the rush names in credits.
 - **2026-11-20 (after the lead said Algebralien Rush is hidden until the owner switches it on; first open days 22-23 Nov)**: turn it on, but keep the system
 - **2026-11-21 (on DODGEBALL! phase 3; the lead had read 'yes' as soften)**: no, my yes was that its okay for phase 3. its only what? 1 dodgeball?
+- **2026-11-23 (part: Zero; the owner later said "leave them. ok. sure." answered the lead's Limit questions, not Zero ones)**: less literal tells for zero. the nkg attack should have actual zero sprites. so should all the other attacks. and the zero trail for the nkg attack should go into the lunge on the floor. and the shield should have a bigger window to attack in. leave them. ok. sure. also, you should gain 2 stocks, but start at 2.
 
 ## Balance & CPUs
 
@@ -860,6 +861,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-23 (after the lead's Rose lost to the owner's Bow online, 0 stocks to 2; the lead used Thorn Lash at up to 270 px)**: dude, thorn lash has way too much range...
 - **2026-11-23 (after the lead cut Thorn Lash's reach 300 -> 170)**: good, because before, it damaged ppl for existing, canceled moves that were already activated, and ruined combos
 - **2026-11-23 (the lead offered: give Thorn Lash a short wind-up and a vine that travels out, so it can be seen and dodged, keeping the front-or-behind pull)**: yeah do that
+- **2026-11-23 (part: the same message answered the lead's three Limit questions -- strength of the powered moves, Grassy's heal not lowering the meter, OK to merge)**: less literal tells for zero. the nkg attack should have actual zero sprites. so should all the other attacks. and the zero trail for the nkg attack should go into the lunge on the floor. and the shield should have a bigger window to attack in. leave them. ok. sure. also, you should gain 2 stocks, but start at 2.
+- **2026-11-23 (after the lead mistook the answers for Zero questions)**: those arent zero questions, theyre limit questions
 
 ## Art, animation & polish
 
