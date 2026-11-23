@@ -857,6 +857,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-23 (after losing to the owner's Gelatin with Fries online; both are comeback scalers)**: we need to change scalers
 - **2026-11-23 (answer to the lead's box on how to change the 11 comeback scalers; the owner ticked "Smaller bonus, lower cap" and "Lost stocks only")**: also, it should not be like something that continuously makes you stronger; it should be like cloud's limit, where your specials get powered up, but here, due to the lack of up-specials that kill(bow is an exception), we will include nuetral-smash instead of up-special.
 - **2026-11-23 (correcting the lead's Limit brief: one charge per lost stock, cap 2, the next powered move spends one)**: no, this is for as you take damage. so if you are at 100%, then you can use EACH of these once. and they should be much cooler and stuff.
+- **2026-11-23 (after the lead's Rose lost to the owner's Bow online, 0 stocks to 2; the lead used Thorn Lash at up to 270 px)**: dude, thorn lash has way too much range...
 
 ## Art, animation & polish
 
@@ -943,6 +944,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-23 (online rematch in room 2T94; the owner's Bow beat the lead's Firey again, 4 stocks to 0)**: and you died
 - **2026-11-23 (right after the second online loss)**: try a different fighter, and learn them.
 - **2026-11-23 (third online match in room 2T94: the owner's Gelatin beat the lead's Fries, 2 stocks to 0; both are comeback scalers)**: we need to change scalers
+- **2026-11-23 (after the Fries loss online, picking the lead's next fighter)**: and lets do a different fighter
 
 ## Bugs & fixes
 
