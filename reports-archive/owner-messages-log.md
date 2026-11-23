@@ -853,6 +853,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-21 (playing)**: uhhh, witht he right postisioning, cherries smash can ko after 1 use of it
 - **2026-11-21 (after the Cherries side-smash report)**: also, check for which smashes can do that near ledge or in air.
 - **2026-11-22 (answers on the balance panel: 1 should up specials KO? 2 do the suggested nerfs and buffs?)**: wow roboty went from one of the best to one of the worst... for 1, yes, because is mii brawler mii brawler without thrupper combos? 2. yeah sure
+- **2026-11-23 (coaching the lead's Firey vs Expert Cheesy; and the balance questions: 1 nerf Puffball's close-up hit instead of the dive? 2 Ruby: jab or smash?)**: you are overcompensating. cheesy is at ledge, and you go directly into disadvantage, and because of fireys air speed and fall speed, you fall off. and do 1 and nerf rubys smash.
 
 ## Art, animation & polish
 
