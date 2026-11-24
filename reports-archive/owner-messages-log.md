@@ -868,6 +868,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-24 (after the lead's theoretical stat ranking and the balance-tune report, which used FIGHTER_WINRATE: Fries 51%, Rose 47.5%)**: this is old data, i believe. so are the fries and rose numbers.
 - **2026-11-24 (after the balance-tune report: Puffball's close-up smash hit 26->20, her dive left as it was; she still wins 20/24)**: dude, why did you not change pb's dive?
 - **2026-11-24 (after the lead admitted the baked win rates are from 2026-08-10 and offered a full re-measure)**: re-measure the whole roster
+- **2026-11-24 (the lead offered 6 processes instead of 2 for the roster re-measure)**: no. any ways to make it take less time
+- **2026-11-24 (box: speed-ups without more processes; picked)**: Stop early when clear (Recommended), 2 stocks, not 3
 
 ## Art, animation & polish
 
