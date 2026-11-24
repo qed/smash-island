@@ -673,6 +673,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-21 (answers on up specials batch 1: helpless after on Lightning/Toothpaste/Pin? / Loser's counter vs Effortless Catch? / Basketball loses his jump back? / merge batch 1 and build the rest?)**: 1. if the recoveries are good 2. does the up-c do anything if you dont counter? 3. yeah. 4. sure ig
 - **2026-11-22 (on OCs)**: also, why have you not changed the oc's moves on live? and why is the beam smash that they have way shorter than the others? and why do they have 8 moves per slot, not 4 like asked?
 - **2026-11-22 (box: OC picks / Lance Beam / what to change)**: OC picks: 4 per slot, by type. Lance Beam: Roster length. What to change: you never buffed the moves, made them cooler, or made them less generic. + New up specials + Smash/KO fixes
+- **2026-11-24 (after the lead showed the OC moves v3 list and asked: merge it, and bring the Zoner default (48% vs the 25-40% band) down first?)**: slightly nerf it, then
 
 ## Bosses, Boss Rush & secrets
 
