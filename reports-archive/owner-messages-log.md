@@ -674,6 +674,13 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-22 (on OCs)**: also, why have you not changed the oc's moves on live? and why is the beam smash that they have way shorter than the others? and why do they have 8 moves per slot, not 4 like asked?
 - **2026-11-22 (box: OC picks / Lance Beam / what to change)**: OC picks: 4 per slot, by type. Lance Beam: Roster length. What to change: you never buffed the moves, made them cooler, or made them less generic. + New up specials + Smash/KO fixes
 - **2026-11-24 (after the lead showed the OC moves v3 list and asked: merge it, and bring the Zoner default (48% vs the 25-40% band) down first?)**: slightly nerf it, then
+- **2026-11-24 (the lead offered to add Jack's 7% self-damage to his smash card)**: add it to the card. do so for all of that sort of stuff, like goo
+- **2026-11-24 (after the lead started the job adding self-costs like Jack's 7% to move cards)**: and do the same thing for every other effect.
+- **2026-11-24**: oh, why did you change gelatins smash?
+- **2026-11-24 (after the lead explained Double Dose replaced the Ice Breaker freeze-mine smash in the 11-15 pass because his down special is also a freeze mine)**: put the mine back. however, change his down-special. double dose sucks, because it is just a lower-range nspecial, which already combos easily. it is stupid, because of how small the range is. have you ever heard of a jab-size smash which doesnt have something(like a lunge) to compensate?
+- **2026-11-24 (box: Gelatin's new down special; options Wobble Counter / Booster Shot / Set Solid / Steak Sizzle)**: Lets theme his kit more around him having syringes and a steakhouse, not all freezes, so he will be an effects zoner. otherwise, steak sizzle.
+- **2026-11-24 (right after)**: and give me all the others you canged
+- **2026-11-24**: oh, and cherries finisher should be a command grab.
 
 ## Bosses, Boss Rush & secrets
 
