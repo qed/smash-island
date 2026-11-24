@@ -681,6 +681,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-24 (box: Gelatin's new down special; options Wobble Counter / Booster Shot / Set Solid / Steak Sizzle)**: Lets theme his kit more around him having syringes and a steakhouse, not all freezes, so he will be an effects zoner. otherwise, steak sizzle.
 - **2026-11-24 (right after)**: and give me all the others you canged
 - **2026-11-24**: oh, and cherries finisher should be a command grab.
+- **2026-11-24 (Gelatin re-theme: it is for his specials; the finisher cycles like Sora's neutral special)**: push all of them. and for gelatin, it is for specials. and for the finsiher, it should be like soras neutral special, cycling
 
 ## Bosses, Boss Rush & secrets
 
@@ -1222,6 +1223,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-21 (answers to the lead's list: push live? / light fighters? / walk-off KO lines? / SUN HUNT room? / DODGEBALL! phase 3? / 8-Ball online every week? / up specials batch 1?)**: push it, lower the smashes that do the damage, yeah, yes, yes, by-event, wdym?
 - **2026-11-22 (after the lead said SUN HUNT's fix was waiting on 'push')**: push
 - **2026-11-22 (after the SUN HUNT line went into What's new)**: we dont talk about abr in the changelog
+- **2026-11-24 (after the lead's not-live move list, which turned out to compare against a stale copy)**: why havent you pushed all those??? push leafy and the ones which arent stupid. ALSO, DOUBLE DOSE IS LIVE!!!! also, give me weak kits that should be changed. also, give me proposals for the effects zone
+- **2026-11-24 (push: the 8 up/down smash pairs of batch 8 -- Bow, Clover, Fanny, Grassy, Lifering, Marker, Paper, Saw)**: push all of them. and for gelatin, it is for specials. and for the finsiher, it should be like soras neutral special, cycling
 
 ## Status questions & check-ins
 
