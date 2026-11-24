@@ -20769,7 +20769,7 @@ function dirSmashText(r, dir){
   const N = dirSmashNums(r && r.kit && r.kit.special, r && r.name), up = dir > 0, dm = (typeof statsFor === 'function' ? statsFor(r.name).dmg : 1);
   const nm = (up ? DSM_NAMES.up : DSM_NAMES.down)[N.pat] || (up ? DSM_NAMES.up.none : DSM_NAMES.down.none);
   const dmg = Math.round(N.D*(up ? DSM.upDmg : DSM.downDmg)*dm);
-  return up ? nm + ' — press ↑ and V together (the jump is cancelled; the same charge): a wide swing over your head that launches foes straight up. On hit: ' + dmg + '%, launches up.'
+  return up ? nm + ' — press ↑ and V together (the jump is cancelled; the same charge): a wide swing over your head that launches foes straight up. On hit: ' + dmg + '%, launches up.' + usmPbWords(null)
             : nm + ' — press ↓ and V together (on a platform the smash wins over dropping through; the same charge): a low sweep that hits both sides at once and sends foes low and out. On hit: ' + dmg + '%.';
 }
 function smashKindOf(f){ const sp = f && f.kit && f.kit.special, row = (f && f.oc) ? ((ocOpt(f, 's') || {}).smash || null) : ((typeof SMASH_SPEC !== 'undefined' && SMASH_SPEC[sp]) || null); return row ? SMASH_KIND[row.pat] : null; }   // (OC ENGINE: an OC's smash pick)
@@ -78657,13 +78657,14 @@ function dirSmashSpec(f, dir){
   const sp = f.kit && f.kit.special, up = dir > 0, key = f.name + '|' + dir + '|' + Math.round(f.r);
   let S = DSM_CACHE.get(key); if(S) return S;
   const own = DSM_OWN[f.name];   // UNIQUE UP/DOWN SMASHES, batches 1 to 3: thirty-six fighters have their own rows (DSM_OWN)
-  if(own){ S = own[up ? 'up' : 'down']; DSM_CACHE.set(key, S); return S; }
+  if(own){ S = own[up ? 'up' : 'down']; if(up) S = usmPbRow(S); DSM_CACHE.set(key, S); return S; }
   const N = dirSmashNums(sp, f.name), r = f.r, name = (up ? DSM_NAMES.up : DSM_NAMES.down)[N.pat] || (up ? DSM_NAMES.up.none : DSM_NAMES.down.none);
   const end = 20 + Math.round(N.D*0.45);
   if(up){
     const dmg = Math.round(N.D*DSM.upDmg*10)/10, K = N.K;
     S = { n:name, d:'a wide swing over your head that launches them upward', pose:'uppercut', st:DSM.upSt, act:DSM.upAct, end:end, land:12, ac:999, smash:true,
       boxes:[{ s:MvF(r*0.25, r + 66, -2.35, -0.75, -2, 0), dmg:dmg, kb:[K*0.1, -K] }] };
+    S = usmPbRow(S);
   } else {
     const dmg = Math.round(N.D*DSM.downDmg*10)/10, K = N.K, y = r*0.7;
     S = { n:name, d:'a low sweep that hits both sides and sends them low and out', pose:'kick', st:DSM.downSt, act:DSM.downAct, end:end, land:12, ac:999, smash:true,
@@ -78673,6 +78674,54 @@ function dirSmashSpec(f, dir){
   return S;
 }
 const DSM_CACHE = new Map();
+// UP SMASH AT POINT BLANK (the owner, 2026-11-24: "all up-smashes should be able to hit when in point blank range, except when someone is below"). Before this,
+// 110 of the 124 up smashes missed a foe touching them on some side (behind for most, in front or overlapping for many), because their boxes start high or out.
+// Every up smash row now also carries a POINT-BLANK HIT: the user's own outline plus USM_PB.margin px, as drawn facing either way (a smash turns its user toward
+// the nearest foe, so a foe touching their back is in front of them when it comes out), live on the first USM_PB.frames frames of the row's first
+// box (so no startup or active frames change) and in that box's group (one hit per foe, as before). It hits only a foe that none of the row's own boxes reaches
+// from where it stands, so every hit the move landed before lands exactly as it did (sweet spot and launch included), and never a foe below (its centre under
+// the user's feet). It is the first box at USM_PB.dmg of its damage and USM_PB.kb of its launch (a light opening hit of a string, under USM_PB.light, is kept as
+// it is so the string still links), and it always sends them up (at least USM_PB.up). A row with two states (Jammy's lid) gets one for each. Bow's Lasso is a
+// command grab, so it gets no hit: its catch also takes a foe at point blank instead (bowLassoCatch).
+const USM_PB = { margin:6, frames:2, dmg:0.7, kb:0.7, light:8, up:3 };
+const USM_PB_ROWS = new WeakMap();
+function usmPbBelow(f, t){ return t.y > f.y + f.r; }
+function usmPbRow(S){
+  if(!S || !S.boxes || !S.boxes.length) return S;
+  const done = USM_PB_ROWS.get(S); if(done) return done;
+  const first = new Map(), live1 = S.st + S.act;
+  S.boxes.forEach(function(b, i){
+    if(b.pb || b.when === bowLassoCatch || b.when === bowLassoReel) return;
+    const w = b.when || null, t0 = b.t0 == null ? S.st : b.t0, o = first.get(w);
+    if(!o || t0 < o.t0) first.set(w, { b:b, i:i, t0:t0 });
+  });
+  const add = [];
+  first.forEach(function(o){
+    const B = o.b, light = B.dmg < USM_PB.light, k = light ? 1 : USM_PB.kb, kb = B.kb || [4, -3];
+    const b1 = B.t1 == null ? live1 - 1 : B.t1;
+    const P = Object.assign({}, B, { s:{ k:'b', m:USM_PB.margin, both:true }, t0:o.t0, t1:Math.min(b1, o.t0 + USM_PB.frames - 1), g:B.g || ('b' + o.i), pb:true,
+      dmg:light ? B.dmg : Math.round(B.dmg*USM_PB.dmg*10)/10, kb:[kb[0]*k, Math.min(kb[1]*k, -USM_PB.up)] });
+    delete P.sweet; delete P.rad; delete P.rehit;
+    if(B.dmgFn && !light) P.dmgFn = function(f, t){ return Math.round(B.dmgFn(f, t)*USM_PB.dmg*10)/10; };
+    add.push(P);
+  });
+  const R = add.length ? Object.assign({}, S, { boxes:S.boxes.concat(add) }) : S;
+  USM_PB_ROWS.set(S, R);
+  return R;
+}
+// May the point-blank hit `b` of move mv take foe t: not below, and out of reach of every box of the row (in the same state) on this frame and every frame still
+// to come, tested with the very shape each box hits with on that frame (a swing's slice: swShapeAt), from where the user stands now.
+function usmPbOk(f, mv, b, t){
+  if(usmPbBelow(f, t)) return false;
+  const S = mv.s, kit = ocKitKey(f, mv.key), live1 = S.st + S.act;
+  for(const o of S.boxes){
+    if(o.pb || (o.when && o.when !== b.when)) continue;
+    const o1 = o.t1 == null ? live1 - 1 : o.t1;
+    for(let k = Math.max(o.t0 == null ? S.st : o.t0, mv.t); k <= o1; k++){ const sh = swShapeAt(f, kit, mv.key, S, o, k); if(sh && shapeHits(sh, t)) return false; }
+  }
+  return true;
+}
+function usmPbTouch(f, t){ return !usmPbBelow(f, t) && shapeHits(Object.assign(bodyShape(f, USM_PB.margin), { both:true }), t); }
 // JUMP-CANCEL UP SMASH (the owner, 2026-11-05: "if up smash didn't jump, then how would you up smash?"). Up is the jump key, so on the ground a person's up + smash started a jump. Now, on the
 // ground, a smash pressed with up held, or within SM_CANCEL_WIN frames after an up press that started a jump from the ground, CANCELS the jump (the fighter is put back where it stood, no jump
 // velocity, the jump is not spent) and the UP SMASH comes out; a down held, or pressed up to SM_CANCEL_WIN frames before on a platform (the drop), keeps the fighter on the platform and is a
@@ -93022,6 +93071,7 @@ const MvC = (x1, y1, x2, y2, r) => ({ k:'c', x1:x1, y1:y1, x2:x2, y2:y2, r:r });
 const MvO = (x, y, r) => ({ k:'o', x:x, y:y, r:r });
 function mvShape(f, s){
   const d = f.face, z = sizeOf(f);   // PER-FIGHTER SIZE: a bigger fighter's moves reach as much further (Puffball grown: FX2.grow); 1 for everyone else
+  if(s.k === 'b') return Object.assign(bodyShape(f, s.m*z), { both:!!s.both });   // (UP SMASH AT POINT BLANK: the user's own outline)
   if(s.k === 'f') return { kind:'fan', cx:f.x + s.ox*d*z, cy:f.y + s.oy*z, r0:s.r0*z, r1:s.r1*z, a0:s.a0, a1:s.a1, face:d };
   if(s.k === 'c') return { kind:'capsule', x1:f.x + s.x1*d*z, y1:f.y + s.y1*z, x2:f.x + s.x2*d*z, y2:f.y + s.y2*z, r:s.r*z };
   return { kind:'capsule', x1:f.x + s.x*d*z, y1:f.y + s.y*z, x2:f.x + s.x*d*z, y2:f.y + s.y*z, r:s.r*z };
@@ -93128,6 +93178,7 @@ const SW_WORDS = /swing|sweep|swipe|swat|chop|whip|\bround\b|wheel|hook|backhand
 const SW_STRAIGHT = /straight|stab|poke|thrust|\bjab|punch|shove|pound|spike|column|\bdrops?\b|\bslaps?\b/i;
 const SW_EXC = { 'chair.fa':'swing', 'shutter.na':'thrust', 'float.dsmash':'thrust', 'slap.usmash':'thrust', 'barf.usmash':'thrust', 'beam.usmash':'thrust', 'fry.dsmash':'thrust', 'rant.dsmash':'thrust', 'seriously.dsmash':'thrust', 'reflect.dsmash':'thrust' };   // Bow's Chair Swing (the owner's example): its words already say swing; pinned so a rewording cannot lose it. Cammy's Shutter Click (UNIQUE MOVES BATCH 1): a burst to both sides at once, not a swing (its 'flashes' holds 'lash')
 function swClassOf(kit, key, S, b){
+  if(b && b.pb) return 'thrust';
   const e = SW_EXC[kit + '.' + key]; if(e) return e;
   if(!b || !b.s || b.rehit) return 'thrust';
   if(b.s.k === 'f') return 'swing';
@@ -93176,18 +93227,18 @@ function mvStrike(f, mv, b, gi){
   // SWEPT HITBOXES: a swing's box tests only this frame's slice of its shape (swShapeAt); a thrust's, a disc's and a re-hitting box's the whole shape, as ever
   const sh = swShapeAt(f, ocKitKey(f, mv.key), mv.key, S, b, mv.t) || mvShape(f, b.s), bb = shapeBounds(sh), key = b.g || ('b' + gi);   // (OC ENGINE: SW_EXC may pin an OC option by its id)
   const swept = b._swc === 'swing' && swLive1(S, b) - b0 >= 1;
-  if(MATCH_TWIST) NDY_SW = [f, hazardT, Math.hypot(bb.cx - f.x, bb.cy - f.y) + bb.rad];   // ON POINT: how far this box reaches
+  if(MATCH_TWIST && !b.pb) NDY_SW = [f, hazardT, Math.hypot(bb.cx - f.x, bb.cy - f.y) + bb.rad];   // ON POINT: how far this box reaches
   if(SHOW_HITBOXES) DEBUG_HITS.push({ shape:sh, pts:shapePts(sh), t:6 });
   // HIT ART: each box on each of its live frames, mirrored as the move faces -- a back-air behind, a down-air under -- and flashing on
   // each of a rehitting box's hits (a neutral air's spins can be counted). A swept box records its slice under its own key each frame, so
   // the streak is drawn where the hit is and the earlier slices fade behind it: the arc you see is the arc that hits.
-  hitArt(f, 'mv' + gi + (swept ? 's' + (mv.t - b0) : ''), sh, { tick: !!b.rehit && (mv.t - b0) % b.rehit === 0 });
-  if(BEACH) beachNote(f, b.dmg, f.face*(b.kb || [4, -3])[0], (b.kb || [4, -3])[1]);   // BEACH BALL'S CONTEST: this box's own damage and knockback, for the ball
-  hitTurrets(f, bb.cx, bb.cy, bb.rad, b.dmg);
-  if(FINX.length && f.kit) fx8DoughRec(f, sh, b.dmg, f.face*(b.kb || [4, -3])[0], (b.kb || [4, -3])[1], key, b.rehit, mv.t);   // Dough's copy throws it again a beat later (FINISHERS V2, batch 8)
+  if(!b.pb) hitArt(f, 'mv' + gi + (swept ? 's' + (mv.t - b0) : ''), sh, { tick: !!b.rehit && (mv.t - b0) % b.rehit === 0 });
+  if(BEACH && !b.pb) beachNote(f, b.dmg, f.face*(b.kb || [4, -3])[0], (b.kb || [4, -3])[1]);   // BEACH BALL'S CONTEST: this box's own damage and knockback, for the ball
+  if(!b.pb) hitTurrets(f, bb.cx, bb.cy, bb.rad, b.dmg);
+  if(FINX.length && f.kit && !b.pb) fx8DoughRec(f, sh, b.dmg, f.face*(b.kb || [4, -3])[0], (b.kb || [4, -3])[1], key, b.rehit, mv.t);   // Dough's copy throws it again a beat later (FINISHERS V2, batch 8)
   const hs = mv.hit[key] || (mv.hit[key] = new Map());
   if(b.chain) f._combo = true;   // `chain`: a later step of ONE move lands through the hit-grace its own earlier step opened (graceBlocks: the same attacker, the same move)
-  const fresh = shapeTargets(f, sh).filter(t => !hs.has(t.idx));
+  const fresh = shapeTargets(f, sh).filter(t => !hs.has(t.idx) && (!b.pb || usmPbOk(f, mv, b, t)));
   if(b.chain) f._combo = false;
   let again = [];
   if(b.rehit){ f._combo = true; again = shapeTargets(f, sh).filter(t => hs.has(t.idx) && mv.t - hs.get(t.idx) >= b.rehit); f._combo = false; }
@@ -93206,7 +93257,7 @@ function mvStrike(f, mv, b, gi){
     mv.landed = true; f._confirm = 1;
     if(b.fx) b.fx(f, t, mv);
   }
-  if(summons.length) damageSummons(f, bb.cx, bb.cy, bb.rad, b.dmg, null, mv.boss);
+  if(summons.length && !b.pb) damageSummons(f, bb.cx, bb.cy, bb.rad, b.dmg, null, mv.boss);
 }
 // ---- which move does X start? ----
 const UT_JUMP_WINDOW = 3;   // ↑+X on the ground: the jump key goes down with X, and the up-tilt comes out instead of the hop
@@ -93773,11 +93824,12 @@ const DSM_OWN = {
   },
 };
 // The move lists: the same wording as the generated pair, from the row.
+function usmPbWords(row){ return row && row.boxes && row.boxes.some(function(b){ return b.when === bowLassoCatch; }) ? ' A foe touching her (not below) is caught too.' : ' A foe touching you (not below) is hit too.'; }
 function dsmOwnText(r, dir){
   const row = DSM_OWN[r && r.name] && DSM_OWN[r.name][dir > 0 ? 'up' : 'down']; if(!row) return null;
   const dm = (typeof statsFor === 'function' ? statsFor(r.name).dmg : 1), dmg = Math.round(row.tot*dm*10)/10;
   return row.n + (dir > 0 ? ' — press ↑ and V together (the jump is cancelled; the same charge): ' : ' — press ↓ and V together (on a platform the smash wins over dropping through; the same charge): ')
-    + row.d + '. On hit: ' + dmg + '%' + (row.x || '') + msFxWords(row.boxes, row.d + ' ' + (row.x || '')) + '.';
+    + row.d + '. On hit: ' + dmg + '%' + (row.x || '') + msFxWords(row.boxes, row.d + ' ' + (row.x || '')) + '.' + (dir > 0 ? usmPbWords(row) : '');
 }
 // The frame a move is on, for drawing: the real one on the host, worked out from the attack animation on a guest (the animation counts down from the move's length + 2).
 function dsmFrame(f){ return f._mv && f._mv.s && f._mv.s.smash ? f._mv.t : (f._atkLen || 0) - (f._atkAnim || 0) - 0; }
@@ -94551,7 +94603,7 @@ function bowLassoCatch(f){
   if(SHOW_HITBOXES) DEBUG_HITS.push({ shape:sh, pts:shapePts(sh), t:6 });
   let best = null, bd = 1e9;
   for(const t of fighters){
-    if(!grabbable(f, t) || t.invuln > 0 || t._isBoss || !shapeHits(sh, t)) continue;
+    if(!grabbable(f, t) || t.invuln > 0 || t._isBoss || !(shapeHits(sh, t) || usmPbTouch(f, t))) continue;   // (UP SMASH AT POINT BLANK: a foe touching her, not below)
     const d = Math.hypot(t.x - f.x, t.y - f.y); if(d < bd){ bd = d; best = t; }
   }
   hitArt(f, 'grab', sh, { color: best ? '#ffffff' : '#9aa7b0', style:'grab' });
@@ -100447,6 +100499,7 @@ function shapeHits(sh, t){
     for(let i=0;i<A.length;i+=2) if(hurtGap(t, A[i], A[i+1]) < m) return true;   // a point of the attacker's body inside (or at) the target
     const B = bodyPts(t), me = sh.f;
     for(let i=0;i<B.length;i+=2) if(hurtGap(me, B[i], B[i+1]) < m) return true;   // or of the target's inside the attacker
+    if(sh.both){ const g = Object.create(me); g.face = -(me.face || 1); return shapeHits({ kind:'body', f:g, margin:m }, t); }   // (UP SMASH AT POINT BLANK: the outline facing either way)
     return false;
   }
   const thick = sh.kind==='capsule' ? sh.r : 5;   // a limb has some thickness; a blade its radius
@@ -105559,7 +105612,7 @@ DSM_OWN['Needy'] = {
           boxes:[{ s:MvC(8, 7.5, 60, 7.5, 16), t0:5, t1:10, g:'a', dmg:14, kb:[8.0, -5.4] }, { s:MvC(-8, 7.5, -60, 7.5, 16), t0:11, t1:16, g:'a', dmg:14, kb:[-8.0, -5.4] }],
           mv:[{ t0:5, t1:10, mode:'set', vx:3.6 }, { t0:11, t1:16, mode:'set', vx:-3.6 }] },
 };
-NDY_TRY.usmash = Object.assign({}, DSM_OWN['Needy'].up, { boxes:[{ s:MvC(0, -18.5, 0, -82.5, 17), t0:6, t1:10, g:'a', dmg:15, kb:[0.6, -10.4] }, { s:MvC(0, -52.5, 0, -116.5, 17), t0:15, t1:19, g:'a', dmg:15, kb:[0.6, -10.4] }] });
+NDY_TRY.usmash = usmPbRow(Object.assign({}, DSM_OWN['Needy'].up, { boxes:[{ s:MvC(0, -18.5, 0, -82.5, 17), t0:6, t1:10, g:'a', dmg:15, kb:[0.6, -10.4] }, { s:MvC(0, -52.5, 0, -116.5, 17), t0:15, t1:19, g:'a', dmg:15, kb:[0.6, -10.4] }] }));
 MOVE_TEXT['Needy'] = { jab:"Lazy Poke — she barely moves: she slides forward a little and the needle pokes once, the longest jab reach of the five BFDIE fighters. Trying: three fast pokes. On hit: 3% (Trying 1.6% a poke).",
   special:"Evil Serum — her plunger slides back by itself and the pink glows, then she lunges needle first. The very tip injects a dose: 2%, and the foe goes evil for 6 s (red eyes, THEY hit 20% harder), then wobbles and crashes for 12% and falls over. The barrel only bumps (4%) and keeps the dose; no dose left, the tip pricks for 4%.",
   up:"Leave the Rest — she shakes, then her back half pops off like a rocket stage and she shoots up needle first. The dropped half hits right below her for 5%, at the split only. For 2 s she is half: smaller and lighter, and no second one until she is whole.",
