@@ -36,6 +36,7 @@ window.__setupCustomMatch = function(names, stocks, aiLevel, itemRate){
   window.__elimSeq=0; lastKoFrame=0;
   fighters.forEach(function(f){ f.placement=null; f._downOrder=0; f._kos=0; f._falls=0; f._dmgDealt=0; f._dmgTaken=0; });
   particles=[]; projectiles=[]; beams=[]; evil=null; items=[]; summons=[]; itemTimer=0; tendrils=[]; BOSS_ARENA=null;
+  HIT_ART.length=0; FILE_RIDES=[]; FINX=[]; FX_PLATS=[];   // a finisher still running when the last match ended must not carry into this one (it latched onto whoever took its slot)
   if(stage.hazard==='evilleafy'){ evil={x:WW*0.9,y:groundY()-40}; }  // (goiky has none; kept for safety)
   return fighters.length;
 };
