@@ -865,6 +865,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-23 (the lead offered: give Thorn Lash a short wind-up and a vine that travels out, so it can be seen and dodged, keeping the front-or-behind pull)**: yeah do that
 - **2026-11-23 (part: the same message answered the lead's three Limit questions -- strength of the powered moves, Grassy's heal not lowering the meter, OK to merge)**: less literal tells for zero. the nkg attack should have actual zero sprites. so should all the other attacks. and the zero trail for the nkg attack should go into the lunge on the floor. and the shield should have a bigger window to attack in. leave them. ok. sure. also, you should gain 2 stocks, but start at 2.
 - **2026-11-23 (after the lead mistook the answers for Zero questions)**: those arent zero questions, theyre limit questions
+- **2026-11-24 (after the lead's theoretical stat ranking and the balance-tune report, which used FIGHTER_WINRATE: Fries 51%, Rose 47.5%)**: this is old data, i believe. so are the fries and rose numbers.
+- **2026-11-24 (after the balance-tune report: Puffball's close-up smash hit 26->20, her dive left as it was; she still wins 20/24)**: dude, why did you not change pb's dive?
 
 ## Art, animation & polish
 
