@@ -682,6 +682,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-24 (right after)**: and give me all the others you canged
 - **2026-11-24**: oh, and cherries finisher should be a command grab.
 - **2026-11-24 (Gelatin re-theme: it is for his specials; the finisher cycles like Sora's neutral special)**: push all of them. and for gelatin, it is for specials. and for the finsiher, it should be like soras neutral special, cycling
+- **2026-11-24**: all up-smashes should be able to hit when in point blank range, except when someone is below
 
 ## Bosses, Boss Rush & secrets
 
