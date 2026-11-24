@@ -1227,6 +1227,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-22 (after the SUN HUNT line went into What's new)**: we dont talk about abr in the changelog
 - **2026-11-24 (after the lead's not-live move list, which turned out to compare against a stale copy)**: why havent you pushed all those??? push leafy and the ones which arent stupid. ALSO, DOUBLE DOSE IS LIVE!!!! also, give me weak kits that should be changed. also, give me proposals for the effects zone
 - **2026-11-24 (push: the 8 up/down smash pairs of batch 8 -- Bow, Clover, Fanny, Grassy, Lifering, Marker, Paper, Saw)**: push all of them. and for gelatin, it is for specials. and for the finsiher, it should be like soras neutral special, cycling
+- **2026-11-24 (after Gelatin's Ice Breaker/Steak Sizzle/Daily Specials and Cherries' Cherry Pick merged into the update)**: push gelatin and cherries too
+- **2026-11-24 (the lead asked whether to wait for Gelatin's spikeball headphones before pushing Gelatin and Cherries)**: push it without the headphones, do those after.
 
 ## Status questions & check-ins
 
