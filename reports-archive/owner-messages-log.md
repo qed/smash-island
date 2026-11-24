@@ -870,6 +870,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-24 (after the lead admitted the baked win rates are from 2026-08-10 and offered a full re-measure)**: re-measure the whole roster
 - **2026-11-24 (the lead offered 6 processes instead of 2 for the roster re-measure)**: no. any ways to make it take less time
 - **2026-11-24 (box: speed-ups without more processes; picked)**: Stop early when clear (Recommended), 2 stocks, not 3
+- **2026-11-24 (after the OC real-damage table and the stat ranking, where Jack was 8th: strong smash, fast moves, light)**: yeah, and then there is jack, who is basically pichu
+- **2026-11-24 (after the lead described Jack as a glass cannon)**: it is cuz he does self-damage
 
 ## Art, animation & polish
 
