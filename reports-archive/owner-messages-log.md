@@ -1229,6 +1229,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-24 (push: the 8 up/down smash pairs of batch 8 -- Bow, Clover, Fanny, Grassy, Lifering, Marker, Paper, Saw)**: push all of them. and for gelatin, it is for specials. and for the finsiher, it should be like soras neutral special, cycling
 - **2026-11-24 (after Gelatin's Ice Breaker/Steak Sizzle/Daily Specials and Cherries' Cherry Pick merged into the update)**: push gelatin and cherries too
 - **2026-11-24 (the lead asked whether to wait for Gelatin's spikeball headphones before pushing Gelatin and Cherries)**: push it without the headphones, do those after.
+- **2026-11-24 (Gelatin's Spikeball Headphones: keep the better recovery, 202 px vs Fork Toss's 151, or shorten it?)**: keep it, push the headphones
 
 ## Status questions & check-ins
 
