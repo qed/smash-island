@@ -683,6 +683,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-24**: oh, and cherries finisher should be a command grab.
 - **2026-11-24 (Gelatin re-theme: it is for his specials; the finisher cycles like Sora's neutral special)**: push all of them. and for gelatin, it is for specials. and for the finsiher, it should be like soras neutral special, cycling
 - **2026-11-24**: all up-smashes should be able to hit when in point blank range, except when someone is below
+- **2026-11-24 (Gelatin's up special, after the lead's specials-only ideas: keep Fork Toss or 'Fork and Knife')**: for the up-c, make it something that takes from something else from his source material- ooh! he could shoot a spikeball to each side of him while going up. it bleeds. this takes from the episode in bfdia where yellow face gives him unremovable headphones that shoot spikeballs.
 
 ## Bosses, Boss Rush & secrets
 
