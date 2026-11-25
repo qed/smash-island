@@ -891,6 +891,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-24 (after the lead described Jack as a glass cannon)**: it is cuz he does self-damage
 - **2026-11-25 (after weak-kits-proposals.md: 10 weakest fighters, 2-3 ranked fixes each, some CPU-only)**: build all the weak kit fixes.
 - **2026-11-25**: do a second round for cloudy, spongy, needy and sticker. also, for 8-ball, the cpus just get any assists, with no rhyme or reason
+- **2026-11-25 (while the guest-lag job runs)**: also, you should not be able to jump again after being hit offstage, nor use your recovery.
 
 ## Art, animation & polish
 
@@ -985,6 +986,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (after the lead asked which other screens to improve; with a screenshot of an empty side panel)**: do the oc editor and event pages too. also, how do i close this
 - **2026-11-25 (frame data: fold the 'Same as X/C, aimed' rows into the X and C rows? count frames from the key press instead of the move's start?)**: yeah fold them in, count from the press
 - **2026-11-25 (after the lead showed the Sparring Figures panel inside Training)**: turn off music for it.
+- **2026-11-25 (live = Update 13 + CTF fix, ad5c3e8a)**: the guests have lag. lots of lag
 
 ## Bugs & fixes
 
