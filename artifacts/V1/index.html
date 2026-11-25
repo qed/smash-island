@@ -1910,6 +1910,7 @@
       <div class="tut-card"><div class="tut-key" data-ks="shield">Z</div><div class="tut-lbl">Shield (hold)</div></div>
     </div>
     <div class="tut-note">Gamepad: A jump · X attack · Y special · B smash · LB shield</div>
+    <div class="tut-note">Figures (the last tile on the fighter board): a CPU that learns your habits and counters them, so you can fix them.</div>
     <div class="row" style="justify-content:center;margin-top:14px">
       <button class="btn" onclick="startTutorial()">Try it ▶</button>
       <button class="btn ghost sm" id="tutBackBtn" onclick="go('title')">◀ Back</button>
@@ -2073,6 +2074,7 @@
     <div id="eraseNote" class="unlock-note erase-note" style="display:none"></div>
     <div id="questNote" class="unlock-note quest-note" style="display:none" role="status"></div>
     <div id="eventNote" class="unlock-note event-note" style="display:none" role="status"></div>
+    <div id="figCard" class="unlock-note" style="display:none;text-align:left" role="status"></div>
     <div id="runReview" class="run-review"></div>
     <div class="row" style="justify-content:center">
       <button class="btn" id="resultRematch" onclick="rematch()">Rematch ↻</button>
@@ -6363,6 +6365,7 @@ const OC_RELEASED = true;   // (OC RELEASE 2026-11-18: the owner, 'Release after
 const OC_OPEN = OC_RELEASED || (function(){ try{ return localStorage.getItem('bfsi:ocopen') === '1'; }catch(e){ return false; } })();
 const OC_PUBLIC_TYPES = ['zoner', 'grappler', 'trapper', 'trickster'];
 let OC_CPU = [];   // names of the saved OCs given a CPU seat in the next local match (only ever filled from the OC screen)
+let FIG_LIST = null, FIG_CPU = [], FIG_RUN = false; const FIGM = { spar:null, last:null };   // SPARRING FIGURES: the saved list (figLoad), the CPU seats, whether this match has one, the Spar, the last match's card
 let stage = STAGES[0];
 // PLAYS CAMERA (see that block, in the World Cup's): declared with the first state, since go(), loop(), applyHit and the sound ask it.
 // on: a session is live; bg: the match stepping now is one nobody sees; cur: the match stepping now; real: the game's own dice.
@@ -19718,6 +19721,7 @@ function openLocker(){ go(LOCKER_LAST); }
 // Plain, player-facing words; menus may have text (a match may not).
 const CHANGELOG = [
   { date: '2026-11-XX', version: 'Update 13', items: [   // ship date: the lead sets it (2026-11-XX until then)
+    "Sparring Figures: make a CPU fighter from the Figures tile on the fighter board. It learns your habits and counters them, and levels up to 50 as you fight it. After a match it lists your weaknesses, so you know what to fix.",
     "Every up special is now its own kind of recovery: teleports, tethers, glides, floats, hovers, charged jumps, hops, armoured climbs, spikes, counters and more. Some leave you helpless until you land.",
     "Bigger blast zones on the single-screen stages. Walk-off stages' side lines are now as far out as on the ledge stages.",
     "Grab beats shield: a grab now catches a shielding foe. Shield beats attack, attack beats grab.",
@@ -20039,6 +20043,7 @@ function buildChangelog(){
 // ---------- screen router ----------
 function go(id){
   if(id==='rush' && !rushOn()) id = 'title';   // Algebralien Rush stays shut until the owner opens it (RUSH_OPEN) or previews it (RUSH_DEV)
+  if(FIGM.spar && id !== 'result' && id !== '_none_') figSparEnd();   // SPARRING FIGURES: leaving the Spar puts the player's mode, count and stage back
   if(PCAM.on && id !== '_none_') pcStop();   // PLAYS CAMERA: left part-way; the fixtures not finished stay to watch or sim
   if(id !== 'ctfCupTeams' && typeof CTFKIT_UI !== 'undefined' && CTFKIT_UI){ try{ ctfKitClose(); }catch(e){ CTFKIT_UI = null; } }   // a kit box left open must not eat the next screen's Esc (playtest)
   paused=false; { const pc=document.getElementById('pauseCard'); if(pc) pc.style.display='none'; }   // no screen is reached paused
@@ -20487,6 +20492,7 @@ function buildBoard(){
     b.appendChild(c);
   });
   if(OC_OPEN){ try{ ocBoardCells(b); }catch(e){ console.error('ocBoardCells', e); } }   // OC EDITOR: the saved OCs after the roster
+  try{ figBoardCell(b); }catch(e){ console.error('figBoardCell', e); }   // SPARRING FIGURES: the Figures tile, last
   try{ if(wrap) wrap.scrollTop = keepScroll; }catch(e){}
   scrollChosenIntoView();
   const note=document.getElementById('lockNote'); if(note) note.style.display='none';
@@ -24727,6 +24733,7 @@ function beginMatchNow(){
   resize();
   setupWorld();
   buildFighters();
+  FIG_RUN = fighters.some(f => f._fig);   // SPARRING FIGURES: this match has one
   LINEUP_MEMO = null;   // this lineup is now in play; the next preview, and the next match, roll fresh
   try{ SHARE_BRAG = null; }catch(e){}   // last match's brag line is gone with its result screen
   // audio is best-effort — never let an audio failure abort match setup (empty-map risk)
@@ -31271,6 +31278,7 @@ function buildFighters(){
     }
     all=[{...chosen, you:true}, ...picks.map(p=>({...p, you:false}))];
     if(OC_CPU.length) all = ocCpuSeat(all);   // OC EDITOR: the saved OCs the player put in a CPU seat (empty unless they did)
+    if(FIGM.spar) all = figSparSeat(all); else if(FIG_CPU.length) all = figCpuSeat(all);   // SPARRING FIGURES: the Spar's 1v1, or the Figures given a CPU seat
     // THE DAILY'S FOE. "The same seeded matchup for everyone" -- and since Wave 3.5 the fixed opponent was only ever put in
     // the Test Mode lineup above, so a real Daily drew slot 1 at random like any match (found on the bug pass: a Daily of
     // Lightning vs Pin came out Lightning vs Yellow Face, Ruler, Pencil). It is today's foe, a mirror match included.
@@ -31351,6 +31359,7 @@ function buildFighters(){
       if(f.you){ f.controller = "local"; }
       else { f.controller = "ai"; }
     }
+    if(r._figId) figAttach(f, r._figId);   // SPARRING FIGURES: its level, its brain row and what it knows
     fighters.push(f);
   });
 }
@@ -75803,7 +75812,7 @@ function step(){
       // A HUMAN'S EYES AND HANDS (CPU_HUMAN): a CPU sees its foes as they were a moment ago, and its keys change at a person's pace;
       // the brain (aiThink) decides on what it sees.
       const hl = cpuHumanLevel(f), pre = (f._mcThink && f._mcThink.t === hazardT) ? f._mcThink : null;   // (MOON CAVES: decided in mcThinkPass)
-      const seen = (hl >= 0 && !pre) ? cpuSeeBegin(f, CPU_HUMAN.react[hl]) : null;
+      const seen = (hl >= 0 && !pre) ? cpuSeeBegin(f, f._fig ? f._fig.react : CPU_HUMAN.react[hl]) : null;
       if(pre){ inp = pre.inp; f._mcThink = null; }
       else {
       try {
@@ -75814,9 +75823,10 @@ function step(){
       fsBotInput(f, inp);   // chases the Smash Ball, and holds a Final Smash until it will hit
       } finally { if(seen) cpuSeeEnd(seen); }
       }
-      if(hl >= 0 && f._lhKeysT !== hazardT) inp = cpuHumanKeys(f, inp, CPU_HUMAN.inputGap[hl], (pre ? pre.near : seen ? seen.near : cpuFoeNear(f)) <= CPU_HUMAN.fightReach);   // (STAPY'S CONTEST: a climbing CPU's keys are a jump plan's, frame for frame (lhcKeysOut); the human hands' gaps near a foe made it brake late and fall)
+      if(hl >= 0 && f._lhKeysT !== hazardT) inp = cpuHumanKeys(f, inp, f._fig ? f._fig.gap : CPU_HUMAN.inputGap[hl], (pre ? pre.near : seen ? seen.near : cpuFoeNear(f)) <= CPU_HUMAN.fightReach);   // (STAPY'S CONTEST: a climbing CPU's keys are a jump plan's, frame for frame (lhcKeysOut); the human hands' gaps near a foe made it brake late and fall)
       if(f._aiShU > hazardT) inp = Object.assign({}, inp, { shield:true });   // the shield / reflector its brain is holding (brainShield)
     }
+    if(FIG_RUN) figWatchKeys(f, inp);   // SPARRING FIGURES: a person's moves, counted for the Figures in the match (reads only)
     if(f._hsBuf){ for(const b in f._hsBuf) inp[b] = true; f._hsBuf = null; }   // HIT FREEZE: a button pressed while held still is pressed now
     f._rawKeys = (ctrl==='local' || ctrl==='remote') ? [!!inp.attack, !!inp.special, !!inp.smash, !!inp.jump] : null;   // a human's buttons as pressed, before the pairing below: what a cuff's mash counts (cuffKeys)
     const inpPaired = inp;   // (the pairing changes this input in place; anything below that masks the input makes a new one: heldStruggle)
@@ -77050,6 +77060,7 @@ function step(){
   if(SETTINGS.mode==='ctf'){ ctfStep(); if(CTUT.active) ctutTick(); }   // (the practice checks its step after the mode's own)
   checkWin();
   cpuSeeSettle();   // where every fighter ended the frame: a place changed before the next one (a new round's places, a test's setup) is not a move to react to (CPU_HUMAN)
+  if(FIG_RUN) figWatchStep();   // SPARRING FIGURES: what the person did this frame, for the Figures in the match (reads only)
 }
 
 // ---------- attacks ----------
@@ -109661,6 +109672,7 @@ function checkWin(){
     }
     awardMatchProgress(winTeam);   // profile + unlock delta, computed synchronously
     recordMatch(winTeam);    // log the result for balance analysis
+    try{ figMatchEnd(winTeam); }catch(e){ console.error('figMatchEnd', e); }   // SPARRING FIGURES: experience, the habits saved, the card
     if(EVENT_RUN && !EVENT_RUN.done){ try{ eventFinish(winTeam); }catch(e){ console.error('eventFinish', e); } }   // an event match pays the moment it ends
     if(DAILY_ACTIVE){ try{ shareArmDaily(winTeam); }catch(e){} try{ recordDaily(winTeam===0); }catch(e){} DAILY_ACTIVE=false; PENDING_DAILY=null; }
     returnDailyLoan();   // the Daily's fighter was lent for that match only (showResult names who you played)
@@ -130596,6 +130608,7 @@ function showResult(winners, winTeam){
   showUnlockNote();   // drains PENDING_UNLOCKS; renders nothing when empty
   showErasedNote();   // ...and One's erasures the same way
   try{ showEventNote(); }catch(e){}   // an event match: the tokens it paid, and the way back to the event page
+  try{ figCard(); }catch(e){}   // SPARRING FIGURES: "Your weaknesses"
   // Win Tokens: your player card (victory pose when you won) and what this match did for your quests. Here, after the
   // match, and nowhere during it.
   try{ renderResultCard(youWon); showQuestNote(); refreshWallets(); }catch(e){}
@@ -131711,6 +131724,7 @@ function brainStancePress(f, inp){
   return false;
 }
 function brainLevel(f){
+  if(f._fig) return figTier(f);   // SPARRING FIGURES: Normal, Hard or Expert by its level, for every per-level table (its own row: figBrainRow)
   let l = (f._lvl != null) ? f._lvl : AI_LEVEL;
   if(f._lvl == null && SETTINGS.mode === 'ctf' && CTF.skillOf && CTF.skillOf[f.team] != null) l = CTF.skillOf[f.team];
   return l <= 0 ? 0 : l >= 3 ? 3 : l >= 2 ? 2 : 1;
@@ -131754,9 +131768,479 @@ function brainEdges(f, inp, m){
   if(f.x < m){ inp.left = false; } if(f.x > WW - m){ inp.right = false; }
 }
 
+// ============================================================
+//  SPARRING FIGURES (Update 13; the owner, 2026-11-24: an in-game trainable fighter -- "this will help you train your weaknesses, as they will
+//  counter all of them")
+// ============================================================
+// A Figure is a CPU fighter the player makes (any playable fighter, or one of their OCs), names and keeps: up to FIG_MAX, in localStorage
+// (FIG_KEY). It starts at level 1 and plays exactly like a Normal CPU; fighting it gives it experience (figGain: seconds fought) up to level 50,
+// where it is past Expert. The level sets its brain row (figBrainRow: BRAIN_LV's Normal at 1, Hard at 20, Expert at 38, past Expert at 50) and
+// its eyes and hands (FIG_REACT, FIG_GAP: CPU_HUMAN's numbers at the same levels).
+// THE HABITS. While it fights a person it watches what that person does (figWatchStep, figWatchKeys: only what is on the screen), one rate per
+// habit (FIG_HAB): at every chance to show the habit the rate moves a fifth of the way to 1 (did it) or 0 (did not). A habit it has seen at
+// least FIG_MIN times with a rate over 0.45 is known (figStr), and its counter is used, rolled as a chance that grows with the level (figK). The
+// rate is an average over the last few chances, so a habit the player stops fades on its own: fixing it really works. What it sees of the
+// person is a moment late, as for any CPU (the ring of figSaw, read at its own reaction time).
+// THE COUNTERS go through the brain's own eyes and hands: the shield (brainShield's bubble), the punish, the edge-guard (brainGuard), the
+// spacing. After a match the result screen lists the top 3 habits and what it does about them (figCard).
+// Offline only: a Figure fills a CPU seat of Free-for-all and Teams (FIG_CPU, chosen on the Figures screen), or a Spar: a 1v1 on Goiky Field.
+const FIG_MAX = 4, FIG_KEY = 'bfsi:figures', FIG_LV_MAX = 50, FIG_A = 0.2, FIG_MIN = 4;
+const FIG_KNOT = [1, 20, 38, 50], FIG_REACT = [20, 10, 10, 8], FIG_GAP = [12, 10, 8, 7];
+// Each habit: what the card says the player does, and what the Figure does about it ($: the move's name).
+const FIG_HAB = {
+  oosJ: { you:'You jump out of shield a lot', it:'it waits where you come down' },
+  oosA: { you:'You attack out of shield a lot', it:'it stays just out of reach of your shield, then punishes your swing' },
+  shd: { you:'You shield a lot', it:'it grabs your shield' },
+  recL: { you:'You recover low', it:'it guards the ledge and hits down at you' },
+  recH: { you:'You recover high', it:'it waits in from the ledge and hits up as you land' },
+  getA: { you:'You attack as you get back on the stage', it:'it shields at the ledge, then punishes' },
+  jin: { you:'You jump in at it a lot', it:'it hits up at you as you come in' },
+  run: { you:'You run in a lot', it:'it puts a hit where you run into it' },
+  landA: { you:'You land with an attack a lot', it:'it shields as you land, then punishes' },
+  spam: { you:'You use the same move over and over', it:'it waits it out, then comes in' },
+  fav: { you:'You use $ the most', it:'it shields it and punishes' },
+};
+const FIG_MV = { a:'Attack', ua:'up + Attack', da:'down + Attack', A:'air Attack', s:'Special', ds:'down + Special', S:'air Special', us:'up + Special', v:'Smash' };
+
+// ---- SAVING: bfsi:figures = {v:1, list:[{id, n:name, c:fighter (or OC) name, oc, lv, xp, h:{habit:[rate, seen]}, mv:{move:share}, mn}]} ----
+function figLoad(){
+  if(FIG_LIST) return FIG_LIST;
+  FIG_LIST = [];
+  try{ const d = JSON.parse(localStorage.getItem(FIG_KEY) || 'null'); if(d && Array.isArray(d.list)) for(const x of d.list){ const c = figClean(x); if(c && FIG_LIST.length < FIG_MAX) FIG_LIST.push(c); } }catch(e){}
+  return FIG_LIST;
+}
+function figPersist(){ try{ localStorage.setItem(FIG_KEY, JSON.stringify({ v:1, list:FIG_LIST || [] })); }catch(e){} }
+function figClean(x){   // any saved thing -> a valid Figure, or null
+  if(!x || typeof x !== 'object' || typeof x.id !== 'string') return null;
+  const h = {}, mv = {};
+  for(const k in FIG_HAB){ const v = x.h && x.h[k]; if(Array.isArray(v) && isFinite(v[0]) && isFinite(v[1])) h[k] = [clamp(+v[0], 0, 1), clamp(v[1] | 0, 0, 99)]; }
+  if(x.mv && typeof x.mv === 'object') for(const k in FIG_MV){ const v = +x.mv[k]; if(v > 0.01) mv[k] = Math.min(1, v); }
+  return { id:x.id.slice(0, 16), n:ocNameOk(x.n) ? x.n : 'Figure', c:typeof x.c === 'string' ? x.c.slice(0, 40) : 'Firey', oc:x.oc ? 1 : 0,
+    lv:clamp(x.lv | 0, 1, FIG_LV_MAX), xp:Math.max(0, x.xp | 0), h, mv, mn:clamp(x.mn | 0, 0, 999) };
+}
+function figFind(id){ return figLoad().find(x => x.id === id) || null; }
+function figNameTaken(name, skip){ const k = ocKeyForm(name); return figLoad().some(x => x.id !== skip && ocKeyForm(x.n) === k); }
+function figNew(c, oc, name){   // -> { ok, msg }
+  const L = figLoad();
+  if(L.length >= FIG_MAX) return { ok:false, msg:'Four Figures is the most: delete one first' };
+  const why = ocNameWhy(name); if(why) return { ok:false, msg:why };
+  if(figNameTaken(name, '')) return { ok:false, msg:'That name is taken' };
+  L.push({ id:'f' + Date.now().toString(36) + Math.floor(Math.random()*1296).toString(36), n:ocNameClean(name), c, oc:oc ? 1 : 0, lv:1, xp:0, h:{}, mv:{}, mn:0 });
+  figPersist(); return { ok:true, msg:'Saved' };
+}
+function figRename(id, name){
+  const d = figFind(id); if(!d) return { ok:false, msg:'' };
+  const why = ocNameWhy(name); if(why) return { ok:false, msg:why };
+  if(figNameTaken(name, id)) return { ok:false, msg:'That name is taken' };
+  d.n = ocNameClean(name); figPersist(); return { ok:true, msg:'Renamed' };
+}
+function figDelete(id){ const L = figLoad(), i = L.findIndex(x => x.id === id); if(i < 0) return; L.splice(i, 1); FIG_CPU = FIG_CPU.filter(x => x !== id); figPersist(); }
+
+// ---- LEVELS ----
+function figNeed(lv){ return 30 + 3*lv; }   // seconds of fighting from one level to the next: about 85 minutes from 1 to 50
+function figGain(d, secs){ let up = 0; d.xp += secs; while(d.lv < FIG_LV_MAX && d.xp >= figNeed(d.lv)){ d.xp -= figNeed(d.lv); d.lv++; up++; } if(d.lv >= FIG_LV_MAX) d.xp = 0; return up; }
+function figKnot(V, lv){ for(let i = 1; i < FIG_KNOT.length; i++) if(lv <= FIG_KNOT[i]){ const k = (lv - FIG_KNOT[i - 1])/(FIG_KNOT[i] - FIG_KNOT[i - 1]); return V[i - 1] + (V[i] - V[i - 1])*k; } return V[V.length - 1]; }
+// Level 50's row: Expert's carried on by 0.6 of the step from Hard to Expert -- a chance never past 0.97 (unless Expert's is), never under 0, and a
+// wait in frames never under two thirds of Expert's.
+let FIG_ROWX = null;
+function figRowPast(){
+  if(FIG_ROWX) return FIG_ROWX;
+  const H = BRAIN_LV[2], E = BRAIN_LV[3], X = {}, frames = /^(think|wake|gap|spec|target|ctrCd|ctrHit)$/;
+  const one = (e, h, k) => { const v = e + (e - h)*0.6; return frames.test(k) ? Math.max(Math.round(e*0.67), v) : (k !== 'strMax' && e <= 1 && h <= 1) ? Math.max(0, Math.min(Math.max(e, 0.97), v)) : v; };
+  for(const k in E){ const e = E[k], h = H[k] == null ? e : H[k]; X[k] = Array.isArray(e) ? e.map((v, i) => one(v, h[i], k)) : one(e, h, k); }
+  return (FIG_ROWX = X);
+}
+function figBrainRow(lv){
+  const R = [BRAIN_LV[1], BRAIN_LV[2], BRAIN_LV[3], figRowPast()];
+  let i = 1; while(i < FIG_KNOT.length - 1 && lv > FIG_KNOT[i]) i++;
+  const k = clamp((lv - FIG_KNOT[i - 1])/(FIG_KNOT[i] - FIG_KNOT[i - 1]), 0, 1), A = R[i - 1], B = R[i], out = {};
+  const mix = (a, b) => Array.isArray(a) || Array.isArray(b) ? (a || b).map((v, j) => mix(a ? a[j] : 0, b ? b[j] : 0)) : (a || 0) + ((b || 0) - (a || 0))*k;
+  for(const key of new Set(Object.keys(A).concat(Object.keys(B)))) out[key] = mix(A[key], B[key]);
+  out.strMax = Math.round(out.strMax);
+  return out;
+}
+function figTier(f){ const lv = f._fig.lv; return lv < 20 ? 1 : lv < 38 ? 2 : 3; }   // (brainLevel: the level any per-level table reads)
+// A fighter in the match made from a Figure (buildFighters: the row's _figId).
+function figAttach(f, id){
+  const d = figFind(id); if(!d) return;
+  f._fig = { d, lv:d.lv, L:figBrainRow(d.lv), react:Math.round(figKnot(FIG_REACT, d.lv)), gap:Math.round(figKnot(FIG_GAP, d.lv)), cnt:{}, pick:{}, hit:{}, u:null };
+  f._figTag = d.n + ' Lv ' + d.lv;
+}
+function figRowOf(d){
+  let r = null;
+  if(d.oc){ const o = ocFind(d.c); if(o) r = ocRowOf(o); }
+  else r = ROSTER.find(q => q.name === d.c && q.play);
+  return Object.assign({}, r || ROSTER.find(q => q.play), { you:false, _figId:d.id });
+}
+
+// ---- WHAT IT KNOWS ----
+function figSeeH(d, id, x){ const h = d.h[id] || (d.h[id] = [0.3, 0]); h[0] = Math.round((h[0] + (x - h[0])*FIG_A)*100)/100; h[1] = Math.min(99, h[1] + 1); }
+function figFav(d){ if(d.mn < 8) return null; let b = null; for(const k in d.mv) if(!b || d.mv[k] > d.mv[b]) b = k; return b && d.mv[b] >= 0.3 ? b : null; }
+function figStr(d, id){   // 0 (not a habit it knows) to 1 (a sure one)
+  if(id === 'fav'){ const k = figFav(d); return k ? clamp((d.mv[k] - 0.3)/0.3, 0, 1) : 0; }
+  const h = d.h[id]; return (!h || h[1] < FIG_MIN) ? 0 : clamp((h[0] - 0.45)/0.35, 0, 1);
+}
+function figK(f, id){ const F = f._fig; return F ? figStr(F.d, id)*(0.4 + 0.55*(F.lv - 1)/(FIG_LV_MAX - 1)) : 0; }   // the chance it uses the counter: more often the higher its level
+function figTop(d, n){
+  return Object.keys(FIG_HAB).map(id => ({ id, s:figStr(d, id) })).filter(x => x.s > 0).sort((a, b) => b.s - a.s).slice(0, n)
+    .map(x => FIG_HAB[x.id].you.replace('$', FIG_MV[figFav(d)] || 'one move') + ' → ' + FIG_HAB[x.id].it + '.');
+}
+function figUsed(f, id){ const F = f._fig, c = F.cnt; c[id] = (c[id] || 0) + 1; figLanded(f, true); F.u = { id, t:hazardT, d:f._dmgDealt || 0 }; }
+// Did the counter's hit land (any damage it dealt in the 45 frames after)? Kept for this match only (f._fig.hit), for the checks.
+function figLanded(f, now){ const F = f._fig, u = F.u; if(!u || (!now && hazardT - u.t < 45)) return; F.u = null; if((f._dmgDealt || 0) > u.d) F.hit[u.id] = (F.hit[u.id] || 0) + 1; }
+function figPicked(f, id){ const c = f._fig.pick; c[id] = (c[id] || 0) + 1; }
+
+// ---- THE EYES: what the person does, once a frame at the end of step (reads only) ----
+function figWatchStep(){
+  const figs = fighters.filter(f => f._fig && !f.dead); if(!figs.length) return;
+  const now = hazardT;
+  for(const g of figs) figLanded(g, false);
+  for(const h of fighters){
+    if(h._fig || !(isHumanCtrl(h) || h._figWatch)) continue;
+    const W = h._figW || (h._figW = { ring:new Array(32), zs:false, air:0, far:true, trip:null, win:null, oos:null, lastMv:null, atkT:-1e9, airAtkT:-1e9, prev:0, spamK:null, spamT:-1e9, useK:null, useT:-1e9 });
+    const swing = h._atkAnim > 0 || !!h._mv || !!h._windup || h.smashHold > 0;
+    W.ring[now & 31] = { sh:!h.dead && h._zsOn > 0, mv:(!h.dead && swing) ? W.lastMv : null };
+    if(h.dead){ W.trip = null; W.zs = false; W.oos = null; W.win = null; W.air = 0; W.far = true; continue; }
+    let fg = figs[0], dist = Infinity;
+    for(const g of figs){ const q = Math.hypot(g.x - h.x, g.y - h.y); if(q < dist){ dist = q; fg = g; } }
+    const see = (id, x) => { for(const g of figs) figSeeH(g._fig.d, id, x); };
+    // OUT OF SHIELD: the bubble dropped (not broken, not hit): a jump out, a move out, or a plain let-go -- read 3 frames on
+    const zs = h._zsOn > 0;
+    if(W.zs && !zs && !(h._zsBrk > 0) && !(h.hitstun > 0) && dist < 260) W.oos = { t:now };
+    W.zs = zs;
+    if(W.oos && now - W.oos.t >= 3){ see('oosJ', (!h.onground && h.vy < 0) ? 1 : 0); see('oosA', (h._zsOutT || -9) >= W.oos.t - 1 ? 1 : 0); W.oos = null; }
+    // SHIELDING A LOT: in each half second the Figure swung at it up close, did it shield?
+    if(dist < 170 && h.onground){
+      const w = W.win || (W.win = { t:now, sh:false, sw:false });
+      if(zs) w.sh = true;
+      if(fg._atkAnim > 0 || !!fg._mv || fg.smashHold > 0) w.sw = true;
+      if(now - w.t >= 30){ if(w.sw) see('shd', w.sh ? 1 : 0); W.win = null; }
+    } else W.win = null;
+    // COMING IN: from over 260 px to under 170, moving at it -- in the air (a jump-in) or running on the ground
+    if(dist > 260) W.far = true;
+    else if(W.far && dist < 170){ W.far = false; const at = (fg.x - h.x)*(h.vx || 0) > 0; see('jin', (!h.onground && at) ? 1 : 0); see('run', (h.onground && at && Math.abs(h.vx) > 4) ? 1 : 0); }
+    // LANDING near it after 15 frames in the air: with an aerial out in the last 20 frames, or not
+    if(!h.onground) W.air++;
+    else { if(W.air > 15 && dist < 220 && !W.trip) see('landA', now - W.airAtkT < 20 ? 1 : 0); W.air = 0; }
+    // A TRIP OFF THE STAGE (a stage with real edges): low (its feet went 30 px or more under the floor's top: it came back up from under the
+    // ledge) or high (they never did), and an attack as it got back on
+    const off = overDrop(h);
+    if(off && !W.trip) W.trip = { t:now, lo:-1e9 };
+    if(W.trip){
+      if(!h.onground) W.trip.lo = Math.max(W.trip.lo, (h.y + h.r) - groundY());
+      if(h.onground){
+        const T = W.trip; W.trip = null;
+        if(now - T.t > 20){ see('recL', T.lo > 30 ? 1 : 0); see('recH', T.lo > 30 ? 0 : 1); see('getA', now - W.atkT < 25 ? 1 : 0); }
+      }
+    }
+  }
+}
+// Its moves, from its keys (step, after every kind of control): one count a move it starts; a string of the same move (pressed again within 25
+// frames) is one use. The share of each move is an average over about the last dozen; "the same move over and over" is a use that repeats the last.
+function figWatchKeys(f, inp){
+  if(f._fig || f.dead || !(isHumanCtrl(f) || f._figWatch)) return;
+  const W = f._figW; if(!W) return;
+  const P = W.prev, a = !!inp.attack, s = !!inp.special, v = !!inp.smash;
+  W.prev = (a ? 1 : 0) | (s ? 2 : 0) | (v ? 4 : 0);
+  const ea = a && !(P & 1), es = s && !(P & 2), ev = v && !(P & 4);
+  if(!(ea || es || ev) || f.hitstun > 0 || f._zsBrk > 0 || (a && s)) return;   // (X and C together: a grab or the finisher)
+  const air = !f.onground, now = hazardT;
+  const k = ev ? 'v' : ea ? (air ? 'A' : inp.up ? 'ua' : inp.down ? 'da' : 'a') : (inp.up ? (air ? null : 'us') : inp.down ? 'ds' : air ? 'S' : 's');
+  if(!k) return;   // (up + Special in the air: a way back, not a move it throws out)
+  W.atkT = now; if(air) W.airAtkT = now; W.lastMv = k;
+  const again = W.useK === k && now - W.useT < 25; W.useK = k; W.useT = now;
+  if(again) return;
+  const figs = fighters.filter(g => g._fig && !g.dead && Math.hypot(g.x - f.x, g.y - f.y) < 400);
+  for(const g of figs){
+    const D = g._fig.d;
+    for(const q in D.mv){ D.mv[q] = Math.round(D.mv[q]*92)/100; if(D.mv[q] < 0.01) delete D.mv[q]; }
+    D.mv[k] = Math.min(1, Math.round(((D.mv[k] || 0) + 0.08)*100)/100); D.mn = Math.min(999, D.mn + 1);
+    figSeeH(D, 'spam', (W.spamK === k && now - W.spamT < 120) ? 1 : 0);
+  }
+  if(figs.length){ W.spamK = k; W.spamT = now; }
+}
+// What a Figure sees of the person, n frames late (its reaction time): the shield, and the move it is swinging.
+function figSaw(t, f){ const W = t._figW; return (W && W.ring[(hazardT - f._fig.react) & 31]) || null; }
+
+// ---- THE COUNTERS ----
+// The shield ones, beside brainShield: the person's favourite move seen starting near it, or an aerial it sees coming down on it.
+function figShieldUp(f, t, B, L, dist, awake){
+  const S = figSaw(t, f), mvOn = !!(S && S.mv), fresh = mvOn && !B.figMvOn; B.figMvOn = mvOn;
+  if(!fresh || !awake || t._isBoss || isReflector(f) || !f.onground || f.hitstun > 0 || f._zsBrk > 0 || f._zsLk > 0 || B.shOn || hazardT < (B.shCd || 0) || zsMeter(f) < 20) return;
+  if(dist > f.r + (t.r || 24) + 120) return;
+  let id = null;
+  if(S.mv === figFav(f._fig.d) && simRand() < figK(f, 'fav')) id = 'fav';
+  else if(!t.onground && t.vy > 0 && t.y < f.y - 10 && simRand() < figK(f, 'landA')) id = 'landA';
+  if(!id) return;
+  B.shOn = true; B.shT0 = B.shSeen = hazardT; f._aiShU = hazardT + 10; B.figPun = { id, until:hazardT + 70 }; figPicked(f, id); figUsed(f, id);
+}
+// The rest, in the fight (brainFight, after the punish): true when it took the keys this frame.
+function figAct(f, t, inp, B, L, dx, dy, adx, ady, dist, toward){
+  const now = hazardT, S = figSaw(t, f); if(!S || t._isBoss) return false;
+  const reach = brainReach(f) + (t.r || 24)*0.5, tap = (keys) => { brainTap(B, keys, 3); Object.assign(inp, B.press.keys); return true; };
+  const hit = (id) => { figUsed(f, id); B.figEp = null; return tap(brainMoveKeys(f, t, brainStrongMove(f, t))); };
+  const hold = (gap) => { if(adx < gap - 10){ inp.left = toward > 0; inp.right = toward < 0; } else if(adx > gap + 25 && f.onground){ inp.left = toward < 0; inp.right = toward > 0; } brainEdges(f, inp, 70); return true; };
+  // THE PUNISH after a counter's shield: the bubble down, the person in reach -- the smash on one stuck in lag or stun, else the strong jab
+  const P = B.figPun;
+  if(P && now > P.until) B.figPun = null;
+  else if(P && !B.shOn && f.onground && f.atkCd <= 0 && !f._mv && !f._lag && brainInReach(f, t, 10)){
+    B.figPun = null;
+    if((t._lag > 0 || t.hitstun > 0) && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0)){ tap(brainSmash(f, t, toward)); B.st = 'smash'; B.until = now + 75; return true; }
+    return tap(brainMoveKeys(f, t, brainStrongMove(f, t)));
+  }
+  // A NEW CHANCE: the shield seen going up (grab it, wait for the jump out, or stay out of the swing out of it), a swing of the move it spams,
+  // a jump in at it, a run in at it -- one roll each time it sees one
+  const shUp = S.sh && !B.figShOn; B.figShOn = S.sh;
+  const air = !t.onground, airNew = air && !B.figAir; B.figAir = air;
+  const run = t.onground && (t.vx || 0)*toward < -3 && ady < 30, runNew = run && !B.figRun; B.figRun = run;
+  const mvOn = !!S.mv, mvNew = mvOn && !B.figSw; B.figSw = mvOn;
+  if(!B.figEp && now >= B.wake){
+    let id = null;
+    if(shUp && dist < 260){
+      const c = ['shd', 'oosJ', 'oosA'].map(q => [q, figK(f, q)]).sort((p, q) => q[1] - p[1])[0];
+      if(simRand() < c[1]) id = c[0];
+    } else if(mvNew && S.mv === (t._figW && t._figW.spamK) && adx > reach - 10 && dist < reach + 120 && simRand() < figK(f, 'spam')) id = 'spam';
+    else if(airNew && dy < -10 && adx < 260 && (t.vx || 0)*toward < 0.5 && simRand() < figK(f, 'jin')) id = 'jin';
+    else if(runNew && adx < reach + 160 && simRand() < figK(f, 'run')) id = 'run';
+    if(id){ B.figEp = { id, until:now + (id === 'oosJ' || id === 'oosA' ? 120 : 70), up:false }; figPicked(f, id); B.str = null; if(B.st === 'string') B.st = 'approach'; }
+  }
+  const E = B.figEp; if(!E) return false;
+  if(now > E.until){ B.figEp = null; return false; }
+  if(E.id === 'shd'){   // GRAB THE SHIELD: in to grab range while the bubble is up
+    if(!S.sh || !t.onground){ B.figEp = null; return false; }
+    if(adx < f.r + (t.r || 24) + 16 && ady < 30 && f.onground && f.atkCd <= 0){ figUsed(f, 'shd'); B.figEp = null; B.next = now + 30; return tap({ grab:true }); }
+    inp.left = toward < 0; inp.right = toward > 0; brainEdges(f, inp, 70); return true;
+  }
+  if(E.id === 'oosJ'){   // WAIT WHERE THE JUMP OUT COMES DOWN: it fights the bubble as ever, and the moment it sees the jump out it goes under it, the hit as it comes down or lands
+    if(S.sh && t.onground && !E.up) return false;
+    if(!t.onground){
+      if(!E.up){ E.up = true; E.until = now + 90; }
+      const g = gravAt(t) || GRAV, fall = Math.max(0, groundY() - (t.y + (t.r || 24))), vy = t.vy || 0, tl = (vy + Math.sqrt(vy*vy + 2*g*fall))/g;   // (frames until it is down)
+      const lx = clamp(t.x + (t.vx || 0)*tl, 0, WW), gx = lx - f.x;
+      if(Math.abs(gx) > 14 && f.onground){ inp.left = gx < 0; inp.right = gx > 0; }
+      if(f.onground && f.atkCd <= 0 && vy > 0 && adx < 70 && dy < -20 && dy > -110) return hit('oosJ');
+      brainEdges(f, inp, 70); return true;
+    }
+    if(!E.up){ if(!S.sh) B.figEp = null; return false; }   // (it let go of the shield on the ground: no jump to wait for)
+    if(E.land == null) E.land = now;
+    if(f.onground && f.atkCd <= 0 && brainInReach(f, t, 10)) return hit('oosJ');
+    if(now - E.land > 20){ B.figEp = null; B.next = now; return false; }
+    if(f.onground && adx > 6){ inp.left = toward < 0; inp.right = toward > 0; brainEdges(f, inp, 70); }   // (down: straight at it while it is still landing)
+    return true;
+  }
+  if(E.id === 'oosA' || E.id === 'spam'){   // STAY OUT OF THE SWING: just out of reach while it swings, then straight in on the person's cooldown
+    const busy = E.id === 'oosA' ? (S.sh || mvOn) : mvOn;
+    if(busy){ E.seenSw = E.seenSw || mvOn; return hold(reach + 25); }
+    if(E.id === 'oosA' && !E.seenSw){ B.figEp = null; return false; }   // (it let go of the shield without a swing out of it)
+    figUsed(f, E.id); B.figEp = null; B.figPun = { id:E.id, until:now + 45 }; B.next = now; return false;
+  }
+  if(E.id === 'jin'){   // HIT UP AT A JUMP-IN: stand and face it, the up hit (up smash, up-tilt, else the jab) as it comes into reach above
+    if(t.onground){ B.figEp = null; return false; }
+    if(f.onground && f.face !== toward){ inp.left = toward < 0; inp.right = toward > 0; return true; }
+    if(f.onground && adx < 80 && dy < -20 && dy > -130){
+      if(dy < -55 && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && simRand() < 0.5){ figUsed(f, 'jin'); B.figEp = null; tap(brainSmash(f, t, toward, 1)); B.st = 'smash'; B.until = now + 75; return true; }
+      if(f.atkCd <= 0) return hit('jin');
+    }
+    return true;
+  }
+  if(E.id === 'run'){   // A HIT WHERE IT RUNS IN: still, faced at it, the hit pressed the moment its run will carry it into the swing
+    if(!t.onground || (t.vx || 0)*toward > -1.5){ B.figEp = null; return false; }
+    if(f.face !== toward){ inp.left = toward < 0; inp.right = toward > 0; return true; }
+    if(adx <= reach + Math.abs(t.vx || 0)*5 && f.atkCd <= 0){
+      if(f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && simRand() < 0.4){ figUsed(f, 'run'); B.figEp = null; tap(brainSmash(f, t, toward)); B.st = 'smash'; B.until = now + 75; return true; }
+      return hit('run');
+    }
+    return true;
+  }
+  B.figEp = null; return false;
+}
+// THE EDGE-GUARD (brainGuard): how likely it guards, and where it stands -- at the ledge for a low way back, further in for a high one, a little in
+// for one who comes back with an attack.
+function figEgK(f, L){ return Math.max(L.eg, figK(f, 'recL'), figK(f, 'recH'), figK(f, 'getA')); }
+function figGuardPlan(f, E, e){
+  const c = ['recL', 'recH', 'getA'].map(q => [q, figK(f, q)]).sort((p, q) => q[1] - p[1])[0];
+  if(!(c[1] > 0) || simRand() >= c[1] / Math.max(1e-6, figEgK(f, f._fig.L))) return;   // (the guard was rolled at figEgK; this keeps each plan at its own chance)
+  E.fg = c[0]; figPicked(f, c[0]);
+  if(E.mode === 'trap') return;
+  if(c[0] === 'recH') E.spot = e.x + e.inl*(f.r + 100);
+  else if(c[0] === 'getA') E.spot = e.x + e.inl*(f.r*0.5 + 30);
+}
+// At the ledge, its decision (at the guard's own pace): true when it pressed something.
+function figGuardHit(f, t, B, E, L, off, upAt, reach, dx, dy, adx, toward){
+  const now = hazardT;
+  if(E.fg === 'recL' && off && dy > -10 && dy < 100 && adx < brainReach(f) + 40){   // a foe coming up under the ledge: hit down at it
+    figUsed(f, 'recL');
+    if(f.smCd <= 0 && !f._smQ && !(f.smashHold > 0)) brainTap(B, brainSmash(f, t, toward, -1), 3); else brainTap(B, brainMoveKeys(f, t, 'dt'), 3);
+    E.jabAt = now; return true;
+  }
+  if(E.fg === 'recH' && reach && dy < -20){   // a foe landing from high: hit up at it
+    figUsed(f, 'recH');
+    if(dy < -55 && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0)) brainTap(B, brainSmash(f, t, toward, 1), 3); else brainTap(B, brainMoveKeys(f, t, brainStrongMove(f, t)), 3);
+    E.jabAt = now; return true;
+  }
+  if(E.fg === 'getA' && upAt && reach && f.onground && !isReflector(f) && !B.shOn && zsMeter(f) >= 20 && !(f._zsBrk > 0) && !(f._zsLk > 0)){   // a foe getting back on with an attack: the shield, then the punish
+    figUsed(f, 'getA'); B.shOn = true; B.shT0 = B.shSeen = now; f._aiShU = now + 10; B.figPun = { id:'getA', until:now + 70 }; E.mode = 'none'; return true;
+  }
+  return false;
+}
+
+// ---- THE MATCH: seats, the Spar, the end ----
+function figCpuSeat(all){   // the Figures given a CPU seat (the Figures screen), from the last seat back, past any OC seat
+  if(!(SETTINGS.mode === 'ffa' || SETTINGS.mode === 'teams') || EVENT_RUN || PENDING_DAILY || TOURNEY.active || TESTMODE.active) return all;
+  let s = all.length - 1;
+  for(const id of FIG_CPU){ const d = figFind(id); if(!d) continue; while(s > 0 && all[s].oc) s--; if(s <= 0) break; all[s] = figRowOf(d); s--; }
+  return all;
+}
+function figSparSeat(all){ const d = figFind(FIGM.spar.id); if(d && all.length > 1) all[1] = figRowOf(d); return all.slice(0, 2); }
+function figSpar(id){   // a quick 1v1 on Goiky Field with the fighter picked on the board; the player's own mode, count and stage come back after (figSparEnd)
+  if(!figFind(id)) return;
+  if(!FIGM.spar) FIGM.spar = { id, prev:{ mode:SETTINGS.mode, count:SETTINGS.count, stage } };
+  FIGM.spar.id = id;
+  SETTINGS.mode = 'ffa'; SETTINGS.count = 2; stage = STAGES.find(s => s.id === 'goiky') || stage;
+  EVENT_PICK = null; PENDING_TOURNEY = null; PENDING_DAILY = null;
+  if(!chosen || (chosen.oc && !ocFind(chosen.name))) chosen = ROSTER.find(r => r.play);
+  startMatch();
+}
+function figSparEnd(){ const S = FIGM.spar; if(!S) return; FIGM.spar = null; SETTINGS.mode = S.prev.mode; SETTINGS.count = S.prev.count; stage = S.prev.stage; }
+// When the match ends (checkWin): experience and the habits saved for every Figure in it that fought a person, and the card for the result screen.
+function figMatchEnd(winTeam){
+  if(FIGM.ended === fighters) return;   // (once a match: checkWin can come here again before the loop stops)
+  FIGM.last = null; FIGM.ended = fighters;
+  const figs = fighters.filter(f => f._fig);
+  if(!figs.length || !fighters.some(h => !h._fig && (isHumanCtrl(h) || h._figWatch))) return;
+  const secs = Math.min(300, Math.round(hazardT/60)) + 20, out = [];
+  for(const f of figs){ const d = f._fig.d, lv0 = d.lv; figGain(d, secs); out.push({ n:d.n, lv0, lv:d.lv, won:f.team === winTeam, lines:figTop(d, 3) }); }
+  figPersist();
+  FIGM.last = out;
+}
+// "Your weaknesses": on the result screen after a match with a Figure.
+function figCard(){
+  const el = document.getElementById('figCard'); if(!el) return;
+  const L = FIGM.last; FIGM.last = null;
+  if(!L || !L.length){ el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.innerHTML = L.map(x => '<div><b>' + esc(x.n) + ' · Lv ' + x.lv + '</b>' + (x.lv > x.lv0 ? ' (up from ' + x.lv0 + ')' : '') + '</div>'
+    + (x.lines.length ? '<div style="font-weight:700;font-size:13px;margin-top:4px">Your weaknesses:</div>' + x.lines.map(s => '<div style="font-weight:600;font-size:13px">' + esc(s) + '</div>').join('')
+      + '<div style="font-weight:600;font-size:12px;margin-top:4px">Stop a habit and it fades from its memory.</div>'
+      : '<div style="font-weight:600;font-size:13px">Still learning your habits. Keep fighting it.</div>')).join('<hr style="border:0;border-top:2px solid #1c1c1c;margin:6px 0">');
+  el.style.display = 'block';
+}
+
+// ---- THE FIGURES SCREEN: built by JS on first use, keyboard (and a click to pick a row), the OC screen's look ----
+const FIGUI = { mode:'list', sel:0, cur:0, pickC:null, pickOc:0, name:'', msg:'', ask:null, bound:false };
+function figPickList(){
+  const L = ROSTER.filter(r => r.play && isUnlocked(r) && !eventLocked(r)).map(r => ({ c:r.name, oc:0, color:r.color }));
+  if(OC_OPEN) for(const o of OC_LIST) L.push({ c:o.name, oc:1, color:'#e9e4d8' });
+  return L;
+}
+function figEnsureScreen(){
+  let el = document.getElementById('figscreen'); if(el) return el;
+  ocEnsureScreen();   // (its style: the rows, the side card, the notes)
+  el = document.createElement('div'); el.id = 'figscreen'; el.className = 'screen';
+  el.innerHTML = '<div class="brand">Sparring Figures</div><h1 style="font-size:34px" id="figTitle">FIGURES</h1>'
+    + '<div class="sub" style="text-align:center">A Figure learns your habits and counters them. Fight it to level it up.</div><div id="figBody" class="ocmain" style="margin-top:10px"></div>'
+    + '<div class="ocnote" id="figNote" role="status" aria-live="polite"></div><div class="ochelp" id="figHelp"></div>';
+  const st = document.createElement('style'); st.textContent = '#figscreen{align-items:center;text-align:center}#figscreen .ocmain{display:flex;gap:16px;width:min(980px,100%);text-align:left;align-items:flex-start}'
+    + '#figscreen .oclist{flex:1 1 auto;display:flex;flex-direction:column;gap:6px;min-width:0}#figscreen .ocrow{border:2px solid #1c1c1c;border-radius:10px;background:var(--panel);padding:7px 10px;font-weight:700;font-size:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;cursor:pointer}'
+    + '#figscreen .ocrow.sel{background:var(--gold);box-shadow:0 3px 0 #1c1c1c}#figscreen .ocsub{font-size:12px;font-weight:600;color:#555}#figscreen .ocside{flex:0 0 280px;border:2px solid #1c1c1c;border-radius:12px;background:var(--panel);padding:10px;text-align:left}'
+    + '#figscreen .ocrole{font-size:10px;letter-spacing:.06em;padding:1px 6px;border-radius:6px;background:#1c1c1c;color:#fff;text-transform:uppercase}#figscreen .figgrid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;flex:1 1 auto;max-height:56vh;overflow:auto}'
+    + '#figscreen .figcell{border:2px solid #1c1c1c;border-radius:8px;background:var(--panel);padding:5px 4px;font-size:12px;font-weight:700;text-align:center;cursor:pointer}#figscreen .figcell.sel{background:var(--gold);box-shadow:0 3px 0 #1c1c1c}'
+    + '#figscreen .ocnote{min-height:22px;font-weight:800;font-size:14px;color:#9a3a2a;margin:6px 0 0}#figscreen .ochelp{font-size:11px;font-family:"JetBrains Mono",monospace;color:#000a;margin-top:10px}'
+    + '#figscreen .ocname{font-size:22px;font-weight:800;border:3px solid #1c1c1c;border-radius:10px;background:#fff;padding:6px 12px;min-width:240px;display:inline-block}';
+  document.head.appendChild(st);
+  const host = document.getElementById('title'); (host && host.parentElement ? host.parentElement : document.body).appendChild(el);
+  if(!FIGUI.bound){ FIGUI.bound = true; addEventListener('keydown', figKeydown); }
+  return el;
+}
+function figOpen(){
+  figLoad(); figEnsureScreen();
+  if(OC_OPEN && !OC_LOADED) ocLoad().then(() => { try{ if(document.getElementById('figscreen').classList.contains('active')) figRender(); }catch(e){} });
+  FIGUI.mode = 'list'; FIGUI.msg = ''; FIGUI.ask = null; FIGUI.sel = clamp(FIGUI.sel, 0, Math.max(0, FIG_LIST.length - 1));
+  go('figscreen'); figRender();
+}
+function figRender(){
+  const body = document.getElementById('figBody'), note = document.getElementById('figNote'), help = document.getElementById('figHelp'); if(!body) return;
+  note.textContent = FIGUI.msg || '';
+  const L = figLoad();
+  if(FIGUI.mode === 'list'){
+    document.getElementById('figTitle').textContent = 'FIGURES';
+    const rows = L.map((d, i) => '<div class="ocrow' + (i === FIGUI.sel ? ' sel' : '') + '" data-i="' + i + '"><b>' + esc(d.n) + '</b><span class="ocsub">' + esc(d.c) + (d.oc ? ' (OC)' : '')
+      + '</span><span class="ocsub">Lv ' + d.lv + '</span>' + (FIG_CPU.indexOf(d.id) >= 0 ? '<span class="ocrole">CPU seat</span>' : '') + '</div>').join('');
+    const d = L[FIGUI.sel], lines = d ? figTop(d, 3) : [];
+    const side = d ? '<div class="ocside"><b style="font-size:18px">' + esc(d.n) + ' · Lv ' + d.lv + '</b><div class="ocsub">' + esc(d.c) + (d.lv < FIG_LV_MAX ? ' · next level in ' + Math.max(1, Math.round((figNeed(d.lv) - d.xp)/60)) + ' min of fighting' : ' · top level') + '</div>'
+      + '<div style="font-weight:800;font-size:13px;margin-top:8px">Your weaknesses</div>' + (lines.length ? lines.map(s => '<div class="ocsub" style="margin-top:3px">' + esc(s) + '</div>').join('') : '<div class="ocsub">Nothing yet. Spar with it!</div>') + '</div>' : '';
+    body.innerHTML = '<div class="oclist">' + (rows || '<div class="ocrow" style="opacity:.6">No Figures yet. Press N to make one.</div>') + '</div>' + side;
+    body.querySelectorAll('.ocrow[data-i]').forEach(r => { r.onclick = () => { FIGUI.sel = +r.dataset.i; FIGUI.msg = ''; figRender(); }; });
+    help.textContent = 'Enter spar · S CPU seat (Free-for-all, Teams) · N new · R rename · D delete · Esc back (' + L.length + ' of ' + FIG_MAX + ')';
+    return;
+  }
+  if(FIGUI.mode === 'pick'){
+    document.getElementById('figTitle').textContent = 'PICK ITS FIGHTER';
+    const P = figPickList();
+    body.innerHTML = '<div class="figgrid">' + P.map((p, i) => '<div class="figcell' + (i === FIGUI.cur ? ' sel' : '') + '" data-i="' + i + '">' + esc(p.c) + (p.oc ? ' (OC)' : '') + '</div>').join('') + '</div>';
+    body.querySelectorAll('.figcell').forEach(c => { c.onclick = () => { FIGUI.cur = +c.dataset.i; figPickDone(); }; });
+    const s = body.querySelector('.figcell.sel'); if(s && s.scrollIntoView) try{ s.scrollIntoView({ block:'nearest' }); }catch(e){}
+    help.textContent = 'Arrows choose · Enter next · Esc back';
+    return;
+  }
+  document.getElementById('figTitle').textContent = FIGUI.mode === 'rename' ? 'RENAME' : 'NAME IT';
+  body.innerHTML = '<div class="oclist" style="align-items:center"><div class="ocsub">NAME (letters and numbers, 12 at most)</div><div><span class="ocname">' + (esc(FIGUI.name) || '&nbsp;') + '_</span></div></div>';
+  help.textContent = 'Type a name · Backspace · Enter save · Esc back';
+}
+function figPickDone(){
+  const p = figPickList()[FIGUI.cur]; if(!p) return;
+  FIGUI.pickC = p.c; FIGUI.pickOc = p.oc; FIGUI.mode = 'name'; FIGUI.msg = '';
+  let n = 1; while(figNameTaken('Figure ' + n, '') && n < 9) n++; FIGUI.name = 'Figure ' + n;
+  figRender();
+}
+function figKeydown(e){
+  const el = document.getElementById('figscreen');
+  if(!el || !el.classList.contains('active') || running) return;
+  const c = e.code, k = e.key, enter = (c === 'Enter' || c === 'NumpadEnter'), done = () => e.preventDefault(), L = figLoad();
+  if(FIGUI.mode === 'list'){
+    if(FIGUI.ask){ const a = FIGUI.ask; FIGUI.ask = null; if(c === 'KeyD'){ const d = figFind(a); if(d){ figDelete(a); FIGUI.msg = 'Deleted ' + d.n; FIGUI.sel = clamp(FIGUI.sel, 0, Math.max(0, L.length - 1)); } } else FIGUI.msg = ''; figRender(); done(); return; }
+    FIGUI.msg = '';
+    const d = L[FIGUI.sel];
+    if(c === 'ArrowDown'){ if(L.length) FIGUI.sel = (FIGUI.sel + 1) % L.length; figRender(); done(); }
+    else if(c === 'ArrowUp'){ if(L.length) FIGUI.sel = (FIGUI.sel + L.length - 1) % L.length; figRender(); done(); }
+    else if(enter || c === 'KeyX'){ if(d) figSpar(d.id); done(); }
+    else if(c === 'KeyN'){ if(L.length >= FIG_MAX){ FIGUI.msg = 'Four Figures is the most: delete one first'; figRender(); } else { FIGUI.mode = 'pick'; FIGUI.cur = 0; figRender(); } done(); }
+    else if(c === 'KeyR'){ if(d){ FIGUI.mode = 'rename'; FIGUI.name = d.n; figRender(); } done(); }
+    else if(c === 'KeyD'){ if(d){ FIGUI.ask = d.id; FIGUI.msg = 'Delete ' + d.n + '? Press D again'; } figRender(); done(); }
+    else if(c === 'KeyS'){ if(d){ const at = FIG_CPU.indexOf(d.id); if(at >= 0) FIG_CPU.splice(at, 1); else if(FIG_CPU.length >= 3) FIGUI.msg = 'Three CPU Figures at most'; else FIG_CPU.push(d.id); } figRender(); done(); }
+    else if(c === 'Escape' || c === 'KeyC'){ go('select'); done(); }
+    return;
+  }
+  if(FIGUI.mode === 'pick'){
+    const n = figPickList().length;
+    if(c === 'ArrowRight'){ FIGUI.cur = (FIGUI.cur + 1) % n; figRender(); done(); }
+    else if(c === 'ArrowLeft'){ FIGUI.cur = (FIGUI.cur + n - 1) % n; figRender(); done(); }
+    else if(c === 'ArrowDown'){ FIGUI.cur = Math.min(n - 1, FIGUI.cur + 6); figRender(); done(); }
+    else if(c === 'ArrowUp'){ FIGUI.cur = Math.max(0, FIGUI.cur - 6); figRender(); done(); }
+    else if(enter || c === 'KeyX'){ figPickDone(); done(); }
+    else if(c === 'Escape' || c === 'KeyC'){ FIGUI.mode = 'list'; figRender(); done(); }
+    return;
+  }
+  if(c === 'Backspace'){ FIGUI.name = FIGUI.name.slice(0, -1); FIGUI.msg = ''; figRender(); done(); }
+  else if(enter){
+    const r = FIGUI.mode === 'rename' ? figRename((L[FIGUI.sel] || {}).id, FIGUI.name) : figNew(FIGUI.pickC, FIGUI.pickOc, FIGUI.name);
+    if(r.ok){ if(FIGUI.mode === 'name') FIGUI.sel = figLoad().length - 1; FIGUI.mode = 'list'; }
+    FIGUI.msg = r.msg; figRender(); done();
+  }
+  else if(c === 'Escape'){ FIGUI.mode = FIGUI.mode === 'rename' ? 'list' : 'pick'; FIGUI.msg = ''; figRender(); done(); }
+  else if(k && k.length === 1 && /[A-Za-z0-9 ]/.test(k) && !e.ctrlKey && !e.metaKey && !e.altKey){ if(FIGUI.name.length < OC_NAME_MAX) FIGUI.name += k; FIGUI.msg = ''; figRender(); done(); }
+}
+// The fighter board's tile (after the roster and the OCs): opens the Figures screen. Offline only.
+function figBoardCell(b){
+  if(inNetSession() || cupPicking() || EVENT_PICK || (PENDING_TOURNEY && PENDING_TOURNEY.pickMates)) return;
+  const m = document.createElement('div'); m.className = 'cell play'; m.dataset.fig = '';
+  m.innerHTML = '<span class="dot" style="background:#ffd23f"></span><span class="cellname">Figures</span>';
+  m.title = 'Sparring Figures: CPU fighters that learn your habits and counter them';
+  m.onclick = () => figOpen();
+  b.appendChild(m);
+}
 function aiThink(f){
   if(RACE.active && f._runner) return raceRunnerAi(f);   // RUNNING!: the runners run (see raceRunnerAi)
-  const B = brainOf(f), lvl = brainLevel(f), L = BRAIN_LV[lvl], now = hazardT;
+  const B = brainOf(f), lvl = brainLevel(f), L = f._fig ? f._fig.L : BRAIN_LV[lvl], now = hazardT;   // (SPARRING FIGURES: a Figure's row is its level's, figBrainRow)
   f._lvlCache = lvl;   // (the finishers' own CPU parts read the level from here)
   const inp = brainKeys();
   if(HG && !(f.hitstun > 0 || f.frozen > 0 || f._heldBy != null) && hgBrain(f, inp, lvl)) return inp;   // THE DIG GAMES (Spongy's contest): the storm, the arena events, supplies, digging and roaming are its own (hgBrain); a near foe in sight is the brain's fight
@@ -131809,7 +132293,7 @@ function aiThink(f){
   // WHERE IT GUESSES THE FOE IS: it sees the foe a moment late (CPU_HUMAN.react), and a person makes up some of that by reading where the foe
   // was heading -- the seen place, carried on along the seen speed for part of that moment (lead: more of it on Hard). Its swings, its reach
   // and its steps go by the guess; what the foe is doing (its swing, its stun) is still only what it saw.
-  const ts = f.aiTarget, ld = CPU_HUMAN.react[lvl] * L.lead;
+  const ts = f.aiTarget, ld = (f._fig ? f._fig.react : CPU_HUMAN.react[lvl]) * L.lead;
   let t = (ts._isBoss || !(ld > 0)) ? ts : Object.assign(Object.create(ts), { x: ts.x + (ts.vx||0)*ld, y: ts.y + (ts.onground ? 0 : (ts.vy||0)*ld*0.3) });
   if(MCAVE && MCAVE.on && !ts._isBoss) t = mcWayTarget(f, t, B, ts);   // MOON CAVES: a foe round the far side is gone after over 12 or under 6 o'clock
   const dx=t.x-f.x, dy=t.y-f.y, adx=Math.abs(dx), ady=Math.abs(dy), dist=Math.hypot(dx,dy);
@@ -132241,9 +132725,11 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   const now = hazardT, K = brainKit(f), toward = dx < 0 ? -1 : 1, awake = now >= B.wake;
   brainGuess(f, t, B, L, dist, awake);
   brainShield(f, t, B, L, dist, awake);   // SHIELD / REFLECTOR (Z): on a tell it saw
+  if(f._fig) figShieldUp(f, t, B, L, dist, awake);   // SPARRING FIGURES: the shield counters (figShieldUp)
   // a press in progress (a tap is held a few frames, then let go)
   if(B.press){ if(now <= B.press.until){ Object.assign(inp, B.press.keys); return; } B.press = null; }
   if(brainPunish(f, t, inp, B, L, toward)) return;   // FRAME BUDGET: a foe in end lag within reach, hit by level
+  if(f._fig && figAct(f, t, inp, B, L, dx, dy, adx, ady, dist, toward)) return;   // SPARRING FIGURES: the counters to the habits it knows (figAct)
   const inReach = brainInReach(f, t);
   // a smash it pressed: it waits for it to go off
   if(B.st === 'smash'){ if((!f._smQ && !(f.smashHold > 0)) || now > B.until){ B.st = 'approach'; B.next = now + 6; } return; }
@@ -132546,10 +133032,11 @@ function brainGuard(f, ts, t, inp, B, L, targets, sp){
     E.mode = 'none';
     const e = brainEdgeNear(t.x);
     E.back = !off || brainFoeBack(t, L);
-    if(!e || f.x < e.q.x0 || f.x > e.q.x1 || !E.back || simRand() >= L.eg) return false;
+    if(!e || f.x < e.q.x0 || f.x > e.q.x1 || !E.back || simRand() >= (f._fig ? figEgK(f, L) : L.eg)) return false;   // (SPARRING FIGURES: more often against a way back it knows, figEgK)
     const K = brainKit(f), trap = (K.down === 'trap' || K.nTrap) && off && simRand() < L.egTrap;
     E.edge = e; E.mode = trap ? 'trap' : 'ledge';
     E.spot = e.x + e.inl*(trap ? Math.max(f.r*0.5 + 8, (K.trapX || 0) + 10) : f.r*0.5 + 8);   // a step in from the edge (a trap laid ahead of its layer lands just in from it)
+    if(f._fig) figGuardPlan(f, E, e);   // SPARRING FIGURES: where it stands for the way back it knows
     B.str = null; if(B.st === 'string' || B.st === 'smash') B.st = 'approach';
   }
   if(E.mode === 'none') return false;
@@ -132614,6 +133101,7 @@ function brainGuard(f, ts, t, inp, B, L, targets, sp){
   }
   { const uo = brainUpOff(f, t, L, sp, dx, dy, ready); if(uo && simRand() < L.recOff){ brainTap(B, uo, 3); B.specAt = now + brainSpecGap(f, L); return true; } }
   // IF THEY JUMP: up to the ledge or over it and into its reach (or out there level with it, in its reach) -- the strong jab, as they arrive
+  if(E.fg && figGuardHit(f, t, B, E, L, off, upAt, reach, dx, dy, adx, toward)) return true;   // SPARRING FIGURES: the hit (or the shield) for the way back it knows
   if(reach){
     if(simRand() < L.egHit){ brainTap(B, brainMoveKeys(f, t, brainStrongMove(f, t)), 3); E.jabAt = now; E.jabs = (E.jabs || 0) + 1; }
     return true;
@@ -133348,7 +133836,7 @@ function mcThinkPass(){
     const ctrl = f.controller || (f.you ? 'local' : 'ai');
     if(ctrl === 'local' || ctrl === 'remote' || ctrl === 'trainer' || ctrl === 'ctut' || ctrl === 'still') continue;
     const hl = cpuHumanLevel(f); if(hl < 0) continue;
-    const n = CPU_HUMAN.react[hl], key = f.team + ':' + n;
+    const n = f._fig ? f._fig.react : CPU_HUMAN.react[hl], key = f.team + ':' + n;
     let g = G.get(key); if(!g) G.set(key, g = { n, list:[] }); g.list.push(f);
   }
   for(const g of G.values()){
@@ -145370,7 +145858,7 @@ function nameTagShown(f){
 let NAMETAG_Q = null;
 function drawNameTagRow(f, lift){
   if(nameTagShown(f)){
-    const label = f.name || "";
+    const label = f._figTag || f.name || "";   // (SPARRING FIGURES: a Figure's name and level)
     const tagY = -(f.r + (f.you?28:16)) - lift;   // sit above the head (higher if the 'you' triangle is present)
     ctx.font = "700 12px 'Baloo 2', system-ui, sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -145418,7 +145906,7 @@ function nameTagFlush(again){
     for(const e of order){
       const f = e.f, m = e.m; e.lift = 0; e.dx = 0; e.dy = 0;
       if(!(MCAVE && MCAVE.on) && nameTagShown(f)){
-        const bk = APP_BOOST, sc = Math.hypot(m.a, m.b) || 1, w = (ctx.measureText(f.name || '').width + 12)*sc*bk, base = -(f.r + (f.you ? 28 : 16)) - 9*(bk - 1);
+        const bk = APP_BOOST, sc = Math.hypot(m.a, m.b) || 1, w = (ctx.measureText(f._figTag || f.name || '').width + 12)*sc*bk, base = -(f.r + (f.you ? 28 : 16)) - 9*(bk - 1);
         let sx = m.c*base + m.e, sy = m.d*base + m.f, fx = fit(sx, sy, w, sc);
         for(let k = 0; k < 3 && placed.some(p => Math.abs(p.x - fx.x) < (p.w + w)/2 && Math.abs(p.y - fx.y) < 19*sc*bk); k++){ e.lift += 19*bk; sx = m.c*(base - e.lift) + m.e; sy = m.d*(base - e.lift) + m.f; fx = fit(sx, sy, w, sc); }
         e.dx = fx.x - sx; e.dy = fx.y - sy;   // JURY 2B: the whole pill stays inside the canvas (no more 'cil' for Pencil at the edge)
