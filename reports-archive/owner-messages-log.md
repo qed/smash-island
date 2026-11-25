@@ -352,6 +352,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (playing the Candle challenge)**: candle has a cheese. neutral special is unavoidable in a BIG radius
 - **2026-11-17 (Candle Inner-Flame fix; offered wind-up tell / smaller reach / shield-dodge beats it / longer cooldown)**: Wind-up tell (Recommended), Smaller reach
 - **2026-11-25**: also, you know how marshmallow was in our early world cups, but was regarded as kinda "bad"? welll, i underestimated her(only stock i lost was a voluntary one). 5-0. Shes my secondary
+- **2026-11-25 (right after the Marshmallow 5-0 message)**: nvm, there is a full counter(ruler)
 
 ## Teams maps, stages & levels
 
@@ -693,6 +694,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (about the less-generic smash redesigns, briefed as 'in character, from the show')**: push the short smashes and figures. and it doesnt need to be in-charracter
 - **2026-11-25 (box: Trophy's neutral smash KOs at 90% after the follow-up, old 142%, Update 13 never)**: Keep 90%
 - **2026-11-25 (box: Beach Ball, Bomb, Cake first hit pushes the foe out before the big hit; Tree's root can't be launched -- fix all four or leave them)**: do 1, and fix it for all of them. during multihit attacks, you should be tethered to them until the launch.
+- **2026-11-25 (while the push went live)**: ungenericify the grabs
 
 ## Bosses, Boss Rush & secrets
 
