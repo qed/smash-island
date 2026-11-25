@@ -96841,8 +96841,8 @@ function zsOutText(r){
 }
 function zsMenuText(r){
   const spr = ' Tap Z while moving on the ground to sprint instead (' + SPRINT.k + 'x your run until you stop, turn, jump, attack or get hit); if Z is still held ' + SPRINT.decide + ' frames after the press, it is a hold and comes up then.';
-  if(r && isReflector(r)) return 'Reflector — hold Z: a pane in front of you turns enemy shots back at their owner, 1.8x faster and 1.3x the damage (at most 12%). It takes ' + RF.start + ' frames to come up, lasts up to ' + RF.active + ' while Z is held, and leaves you open for ' + RF.endLag + ' frames after (then ' + RF.cd + ' more before you can raise it again). It does nothing against melee or grabs. The strong fighters have this instead of a shield.' + spr;
-  return 'Shield — hold Z: a bubble in your colour blocks every hit and shot (a grab still gets you). It shrinks as it takes damage and refills when you let go; at zero it breaks and you are stunned for 2 s. It comes up in ' + ZS.start + ' frames and costs ' + ZS.endLag + ' to drop; jump leaves it at once, and it cannot be raised in the air. Out of it: ' + zsOutText(r) + ' (the bubble drops when the move starts).' + spr;
+  if(r && isReflector(r)) return 'Reflector — hold Z: a pane in front of you turns enemy shots back at their owner, 1.8x faster and 1.3x the damage (at most 12%). It takes ' + RF_PRESS + ' frames from the press to come up, lasts up to ' + RF.active + ' while Z is held, and leaves you open for ' + RF.endLag + ' frames after (then ' + RF.cd + ' more before you can raise it again). It does nothing against melee or grabs. The strong fighters have this instead of a shield.' + spr;
+  return 'Shield — hold Z: a bubble in your colour blocks every hit and shot (a grab still gets you). It shrinks as it takes damage and refills when you let go; at zero it breaks and you are stunned for 2 s. It comes up ' + ZS_PRESS + ' frames after the press and costs ' + ZS.endLag + ' to drop; jump leaves it at once, and it cannot be raised in the air. Out of it: ' + zsOutText(r) + ' (the bubble drops when the move starts).' + spr;
 }
 // LIMIT, in the moves list: [C, down + C, V] -- each powered version's name and what it adds, in plain words
 const LIMIT_TEXT = {
@@ -96939,11 +96939,11 @@ function moveShort(line, fd, act){
   { const me = mvSelfShort(line, what); if(me) t += ' · ' + me; }   // (the user's cost and gains)
   return t + mvFrameTail(fd, act);
 }
-// " · startup 14f · end lag 18f" from a FB_FRAME_DATA row; " · act after 30f" for a move with no row but FB_ACT_DATA (it never connects)
+// " · startup 14f · end lag 18f" from a FB_FRAME_DATA row counted from the press (frameDataPress); " · act after 30f" for a move with no row but FB_ACT_DATA (it never connects)
 function mvFrameTail(fd, act){
   let t = '';
   if(fd && fd.startup >= 0){   // (FRAME DATA FILL: every row is measured; a startup of 0 hits the frame it is pressed -- a throw's 0 is the throw itself)
-    if(fd.startup > 0) t += ' · startup ' + fd.startup + 'f'; else if(!(fd.endLagWhiff < 0)) t += ' · instant';
+    if(fd.startup > 1) t += ' · startup ' + fd.startup + 'f'; else if(!(fd.endLagWhiff < 0)) t += ' · instant';   // (from the press: frame 1 is instant)
     const lag = fd.endLagWhiff > 0 ? fd.endLagWhiff : fd.endLagHit;
     if(lag > 1) t += ' · end lag ' + lag + 'f';
   } else if(act > 0) t += ' · act after ' + act + 'f';
@@ -96962,9 +96962,10 @@ function fsShort(line){
   }
   return line.slice(0, i) + D + d;
 }
+const ZS_PRESS = 4, RF_PRESS = 7;   // (COUNTED FROM THE PRESS: measured with the keys, standing; see FB_PRESS_ADD)
 function zShort(r){
-  if(r && isReflector(r)) return 'Reflector — hold Z: shots go back · up in ' + RF.start + 'f · end lag ' + RF.endLag + 'f · tap Z to sprint';
-  return 'Shield — hold Z · up in ' + ZS.start + 'f · drop ' + ZS.endLag + 'f · tap Z to sprint';
+  if(r && isReflector(r)) return 'Reflector — hold Z: shots go back · up in ' + RF_PRESS + 'f · end lag ' + RF.endLag + 'f · tap Z to sprint';
+  return 'Shield — hold Z · up in ' + ZS_PRESS + 'f · drop ' + ZS.endLag + 'f · tap Z to sprint';
 }
 function techShort(r){
   const ms = r.kit && MOVESETS[r.kit.special];
@@ -96973,20 +96974,27 @@ function techShort(r){
   if(t.split(' ').length > 16) t = t.split(' (')[0].replace(/[.,;]$/, '') + '.';
   return t + dash;
 }
-// [[input, short line, folded?], ...]
+// [[input, short line, folded?], ...]. FOLDED AIMING (the owner, 2026-11-25: "fold them in"): the ←/→ + X and ←/→ + C rows (the same moves, aimed)
+// are not rows of their own; the X and C rows say so in their key and give the aimed press's startup when it differs. Every frame counts from the press.
 function moveShortRows(r){
-  const kit = r.kit && r.kit.special;
-  return moveRowsFor(r).map(x=>{
-    const k = x[0], fold = /in the air|holding|X \+ C|Movetech/.test(k);
+  const kit = r.kit && r.kit.special, all = moveRowsFor(r), AIM = /^The neutral (attack|special), aimed that way/;
+  const aimed = { X: all.some(x=>x[0] === '←/→ + X' && AIM.test(x[1])), C: all.some(x=>x[0] === '←/→ + C' && AIM.test(x[1])) };
+  const st = (fd, act)=>{ if(fd && fd.startup >= 0) return fd.startup > 1 ? 'startup ' + fd.startup + 'f' : 'instant'; return act > 0 ? 'act after ' + act + 'f' : ''; };
+  return all.filter(x=>!AIM.test(x[1])).map(x=>{
+    let k = x[0]; const fold = /in the air|holding|X \+ C|Movetech/.test(k);
     let t;
     if(k === 'Z') t = zShort(r);
     else if(k === 'Limit') t = limitShort(r.name);
-    else if(k === 'Final Smash'){ const fd = kit && typeof frameData === 'function' ? frameData(kit, 'fs') : null; t = fsShort(x[1]) + (mvSelfShort(x[1], '') ? ' · ' + mvSelfShort(x[1], '') : '') + (fd && fd.startup > 0 ? ' · startup ' + fd.startup + 'f' : ''); }   // (startup only: from the press, the intro included)
+    else if(k === 'Final Smash'){ const fd = kit ? frameDataPress(kit, 'fs') : null; t = fsShort(x[1]) + (mvSelfShort(x[1], '') ? ' · ' + mvSelfShort(x[1], '') : '') + (fd && fd.startup > 1 ? ' · startup ' + fd.startup + 'f' : ''); }   // (startup only: from the press, the intro included)
     else if(k === 'Movetech') t = techShort(r);
-    else if(/^The neutral (attack|special), aimed that way/.test(x[1])){ const X = k.indexOf('X') >= 0, s = X ? 'jab' : 'neutral';   // (the same move, run by the same code, facing the arrow: its frames)
-      t = 'Same as ' + (X ? 'X' : 'C') + ', aimed' + (kit ? mvFrameTail(frameData(kit, s), actData(kit, s)) : ''); }
-    else if(k === 'X, holding'){ const p = kit ? pummelData(kit) : null; t = moveShort(x[1], null) + (p ? (p.startup > 0 ? ' · startup ' + p.startup + 'f' : ' · instant') + ' · again every ' + p.every + 'f' : ''); }
-    else t = moveShort(x[1], (kit && MV_SLOT[k]) ? frameData(kit, MV_SLOT[k]) : null, (kit && MV_SLOT[k]) ? actData(kit, MV_SLOT[k]) : null);
+    else if(k === 'X, holding'){ const p = kit ? pummelData(kit) : null; t = moveShort(x[1], null) + (p ? (p.startup + 1 > 1 ? ' · startup ' + (p.startup + 1) + 'f' : ' · instant') + ' · again every ' + p.every + 'f' : ''); }   // (FB_PUMMEL_DATA: 0 = it lands on the first frame after the press)
+    else {
+      const s = kit && MV_SLOT[k];
+      t = moveShort(x[1], s ? frameDataPress(kit, s) : null, s ? actDataPress(kit, s) : null);
+      const A = (k === 'X' && aimed.X) ? 'X' : (k === 'C' && aimed.C) ? 'C' : null;
+      if(A){ k = A + ' (or ←/→ + ' + A + ': aimed)';
+        if(s){ const a0 = st(frameDataPress(kit, s), actDataPress(kit, s)), a1 = st(frameDataPress(kit, s, true), actDataPress(kit, s, true)); if(a1 && a1 !== a0) t += ' · aimed: ' + a1; } }
+    }
     return [k, t, fold];
   });
 }
@@ -96996,7 +97004,7 @@ function moveListHTML(r, noHead){   // (noHead: the select card, whose name is s
   const rows = moveShortRows(r), main = rows.filter(x=>!x[2]), more = rows.filter(x=>x[2]);
   return (noHead ? '' : '<div class="mc-head">' + esc(r.name) + ' — moves</div>') + main.map(row).join('') +
     (more.length ? '<details class="mc-more"><summary>Air, grab and throws</summary>' + more.map(row).join('') + '</details>' : '') +
-    '<div class="mc-sub">Frames are 1/60 s.</div>';
+    '<div class="mc-sub">Frames are 1/60 s, counted from the press.</div>';
 }
 // the pause menu's list: the fighter you are playing
 function togglePauseMoves(){
@@ -98973,6 +98981,246 @@ const FB_PUMMEL_DATA = {
 };
 function actData(kit, slot){ const n = FB_ACT_DATA[kit + '.' + slot]; return n > 0 ? n : null; }
 function pummelData(kit){ const r = FB_PUMMEL_DATA[kit]; return r ? { startup:r[0], every:r[1] } : null; }
+// COUNTED FROM THE PRESS (the owner, 2026-11-25: "count from the press"). FB_FRAME_DATA and FB_ACT_DATA count from the frame the MOVE STARTS (the
+// measuring script calls the move's own function), and they stay that way: nothing that reads them changes. What a player sees counts from the KEY
+// PRESS, and a press waits before its move starts -- a plain X on the ground waits for a C (the X+C grab, CI_GRAB_DELAY), a plain C waits for an
+// arrow (SPECIAL_DIR_WINDOW), the other pairs CI_DELAY, a smash its charge. FB_PRESS_ADD is what to add to a row's startup (or act) frames to
+// count from the press, MEASURED per fighter and input with the real keys (jsdom, the real step loop, fighter 'local', the keys down on frame 0 and
+// let go after a 3-frame tap): the first frame a pinned still dummy is hit counted from the press, minus the row's own startup (a move that never
+// connects: the first frame free again, minus its act). Frame 1 = the first frame after the press, so 'instant' is a hit on frame 1. kit.jab@aim and
+// kit.neutral@aim: the same moves pressed with an arrow (they wait less). A row can be below its own startup where the real input is not the bare
+// move: an up special pressed with Up also jumps. ZS_PRESS / RF_PRESS: frames from the Z press until the shield blocks / the reflector turns
+// shots (standing still; moving, a Z press is a sprint until SPRINT.decide). Two rows are not the dummy's: Puffball's flight (she can act in it at
+// once, so only the press's own wait) and Bow's Final Smash (her catch moves the dummy; every Final Smash starts 1 frame after the press). Display
+// only: the Moves list and the wiki read these.
+const FB_PRESS_ADD = {
+  'accrete.bair':2, 'accrete.dair':2, 'accrete.down':1, 'accrete.dsmash':1, 'accrete.dtilt':2, 'accrete.fair':2, 'accrete.finisher':1, 'accrete.fs':1, 'accrete.grab':1, 'accrete.jab':8,
+  'accrete.jab@aim':2, 'accrete.nair':2, 'accrete.neutral':5, 'accrete.neutral@aim':1, 'accrete.smash':1, 'accrete.uair':2, 'accrete.up':1, 'accrete.usmash':1, 'accrete.utilt':2, 'airleak.bair':2,
+  'airleak.dair':2, 'airleak.down':1, 'airleak.dsmash':1, 'airleak.dtilt':2, 'airleak.fair':2, 'airleak.finisher':1, 'airleak.fs':1, 'airleak.grab':1, 'airleak.jab':8, 'airleak.jab@aim':2,
+  'airleak.nair':2, 'airleak.neutral':5, 'airleak.neutral@aim':1, 'airleak.smash':0, 'airleak.uair':2, 'airleak.up':1, 'airleak.usmash':1, 'airleak.utilt':2, 'airrel.bair':2, 'airrel.dair':2,
+  'airrel.down':1, 'airrel.dsmash':1, 'airrel.dtilt':2, 'airrel.fair':2, 'airrel.finisher':1, 'airrel.fs':1, 'airrel.grab':1, 'airrel.jab':8, 'airrel.jab@aim':2, 'airrel.nair':2,
+  'airrel.neutral':5, 'airrel.neutral@aim':1, 'airrel.smash':1, 'airrel.uair':2, 'airrel.up':-16, 'airrel.usmash':1, 'airrel.utilt':2, 'antenna.bair':2, 'antenna.dair':2, 'antenna.down':1,
+  'antenna.dsmash':1, 'antenna.dtilt':2, 'antenna.fair':2, 'antenna.finisher':1, 'antenna.fs':4, 'antenna.grab':1, 'antenna.jab':8, 'antenna.jab@aim':2, 'antenna.nair':2, 'antenna.neutral':5,
+  'antenna.neutral@aim':1, 'antenna.smash':1, 'antenna.uair':2, 'antenna.up':0, 'antenna.usmash':1, 'antenna.utilt':2, 'anvil.bair':2, 'anvil.dair':2, 'anvil.down':0, 'anvil.dsmash':1,
+  'anvil.dtilt':2, 'anvil.fair':2, 'anvil.finisher':1, 'anvil.fs':1, 'anvil.grab':1, 'anvil.jab':8, 'anvil.jab@aim':2, 'anvil.nair':2, 'anvil.neutral':7, 'anvil.neutral@aim':0,
+  'anvil.smash':1, 'anvil.uair':2, 'anvil.up':0, 'anvil.usmash':1, 'anvil.utilt':2, 'atstake.bair':2, 'atstake.dair':2, 'atstake.down':1, 'atstake.dsmash':1, 'atstake.dtilt':2,
+  'atstake.fair':2, 'atstake.finisher':1, 'atstake.fs':1, 'atstake.grab':1, 'atstake.jab':8, 'atstake.jab@aim':2, 'atstake.nair':2, 'atstake.neutral':5, 'atstake.neutral@aim':1, 'atstake.smash':1,
+  'atstake.uair':2, 'atstake.up':1, 'atstake.usmash':1, 'atstake.utilt':2, 'barf.bair':2, 'barf.dair':2, 'barf.down':0, 'barf.dsmash':1, 'barf.dtilt':2, 'barf.fair':2,
+  'barf.finisher':1, 'barf.fs':1, 'barf.grab':1, 'barf.jab':8, 'barf.jab@aim':2, 'barf.nair':2, 'barf.neutral':4, 'barf.neutral@aim':0, 'barf.smash':1, 'barf.uair':2,
+  'barf.up':0, 'barf.usmash':1, 'barf.utilt':2, 'barrier.bair':2, 'barrier.dair':2, 'barrier.down':1, 'barrier.dsmash':1, 'barrier.dtilt':2, 'barrier.fair':2, 'barrier.finisher':1,
+  'barrier.fs':1, 'barrier.grab':1, 'barrier.jab':8, 'barrier.jab@aim':2, 'barrier.nair':2, 'barrier.neutral':5, 'barrier.neutral@aim':1, 'barrier.smash':1, 'barrier.uair':2, 'barrier.up':-6,
+  'barrier.usmash':1, 'barrier.utilt':2, 'battery.bair':2, 'battery.dair':2, 'battery.down':1, 'battery.dsmash':1, 'battery.dtilt':2, 'battery.fair':2, 'battery.finisher':1, 'battery.fs':1,
+  'battery.grab':1, 'battery.jab':8, 'battery.jab@aim':2, 'battery.nair':2, 'battery.neutral':6, 'battery.neutral@aim':2, 'battery.smash':1, 'battery.uair':2, 'battery.up':1, 'battery.usmash':1,
+  'battery.utilt':2, 'beachball.bair':2, 'beachball.dair':2, 'beachball.down':1, 'beachball.dsmash':1, 'beachball.dtilt':2, 'beachball.fair':2, 'beachball.finisher':1, 'beachball.fs':1, 'beachball.grab':1,
+  'beachball.jab':8, 'beachball.jab@aim':2, 'beachball.nair':2, 'beachball.neutral':5, 'beachball.neutral@aim':1, 'beachball.smash':0, 'beachball.uair':2, 'beachball.up':1, 'beachball.usmash':1, 'beachball.utilt':2,
+  'beam.bair':2, 'beam.dair':2, 'beam.down':0, 'beam.dsmash':1, 'beam.dtilt':2, 'beam.fair':2, 'beam.finisher':1, 'beam.fs':1, 'beam.grab':1, 'beam.jab':8,
+  'beam.jab@aim':2, 'beam.nair':2, 'beam.neutral':5, 'beam.neutral@aim':1, 'beam.smash':1, 'beam.uair':2, 'beam.up':1, 'beam.usmash':1, 'beam.utilt':2, 'bestie.bair':2,
+  'bestie.dair':2, 'bestie.down':1, 'bestie.dsmash':1, 'bestie.dtilt':2, 'bestie.fair':2, 'bestie.finisher':1, 'bestie.fs':1, 'bestie.grab':1, 'bestie.jab':8, 'bestie.jab@aim':2,
+  'bestie.nair':2, 'bestie.neutral':5, 'bestie.neutral@aim':1, 'bestie.smash':1, 'bestie.uair':2, 'bestie.up':1, 'bestie.usmash':1, 'bestie.utilt':2, 'blackmail.bair':2, 'blackmail.dair':2,
+  'blackmail.down':0, 'blackmail.dsmash':1, 'blackmail.dtilt':2, 'blackmail.fair':2, 'blackmail.finisher':1, 'blackmail.fs':1, 'blackmail.grab':1, 'blackmail.jab':8, 'blackmail.jab@aim':2, 'blackmail.nair':2,
+  'blackmail.neutral':5, 'blackmail.neutral@aim':1, 'blackmail.smash':1, 'blackmail.uair':2, 'blackmail.up':1, 'blackmail.usmash':1, 'blackmail.utilt':2, 'blueberry.bair':2, 'blueberry.dair':2, 'blueberry.down':1,
+  'blueberry.dsmash':1, 'blueberry.dtilt':2, 'blueberry.fair':2, 'blueberry.finisher':1, 'blueberry.fs':1, 'blueberry.grab':1, 'blueberry.jab':8, 'blueberry.jab@aim':2, 'blueberry.nair':2, 'blueberry.neutral':5,
+  'blueberry.neutral@aim':1, 'blueberry.smash':0, 'blueberry.uair':2, 'blueberry.up':1, 'blueberry.usmash':1, 'blueberry.utilt':2, 'bomb.bair':2, 'bomb.dair':2, 'bomb.down':0, 'bomb.dsmash':1,
+  'bomb.dtilt':2, 'bomb.fair':2, 'bomb.finisher':1, 'bomb.fs':1, 'bomb.grab':1, 'bomb.jab':8, 'bomb.jab@aim':2, 'bomb.nair':2, 'bomb.neutral':5, 'bomb.neutral@aim':1,
+  'bomb.smash':1, 'bomb.uair':2, 'bomb.up':-16, 'bomb.usmash':1, 'bomb.utilt':2, 'bottle.bair':2, 'bottle.dair':2, 'bottle.down':1, 'bottle.dsmash':1, 'bottle.dtilt':2,
+  'bottle.fair':2, 'bottle.finisher':1, 'bottle.fs':1, 'bottle.grab':1, 'bottle.jab':8, 'bottle.jab@aim':2, 'bottle.nair':2, 'bottle.neutral':5, 'bottle.neutral@aim':1, 'bottle.smash':1,
+  'bottle.uair':2, 'bottle.up':1, 'bottle.usmash':1, 'bottle.utilt':2, 'buynow.bair':2, 'buynow.dair':2, 'buynow.down':1, 'buynow.dsmash':1, 'buynow.dtilt':2, 'buynow.fair':2,
+  'buynow.finisher':1, 'buynow.fs':1, 'buynow.grab':1, 'buynow.jab':8, 'buynow.jab@aim':2, 'buynow.nair':2, 'buynow.neutral':5, 'buynow.neutral@aim':1, 'buynow.smash':1, 'buynow.uair':2,
+  'buynow.up':1, 'buynow.usmash':1, 'buynow.utilt':2, 'cap.bair':2, 'cap.dair':2, 'cap.down':1, 'cap.dsmash':1, 'cap.dtilt':2, 'cap.fair':2, 'cap.finisher':1,
+  'cap.fs':1, 'cap.grab':1, 'cap.jab':8, 'cap.jab@aim':2, 'cap.nair':2, 'cap.neutral':4, 'cap.neutral@aim':0, 'cap.smash':0, 'cap.uair':2, 'cap.up':-14,
+  'cap.usmash':1, 'cap.utilt':2, 'chair.bair':2, 'chair.dair':2, 'chair.down':0, 'chair.dsmash':1, 'chair.dtilt':2, 'chair.fair':2, 'chair.finisher':1, 'chair.fs':1,
+  'chair.grab':1, 'chair.jab':8, 'chair.jab@aim':2, 'chair.nair':2, 'chair.neutral':4, 'chair.neutral@aim':0, 'chair.smash':0, 'chair.uair':2, 'chair.up':1, 'chair.usmash':10,
+  'chair.utilt':2, 'cheer.bair':2, 'cheer.dair':2, 'cheer.down':1, 'cheer.dsmash':1, 'cheer.dtilt':2, 'cheer.fair':2, 'cheer.finisher':1, 'cheer.fs':1, 'cheer.grab':1,
+  'cheer.jab':8, 'cheer.jab@aim':2, 'cheer.nair':2, 'cheer.neutral':5, 'cheer.neutral@aim':1, 'cheer.smash':0, 'cheer.uair':2, 'cheer.up':1, 'cheer.usmash':1, 'cheer.utilt':2,
+  'cherries.bair':2, 'cherries.dair':2, 'cherries.down':0, 'cherries.dsmash':1, 'cherries.dtilt':2, 'cherries.fair':2, 'cherries.finisher':18, 'cherries.fs':1, 'cherries.grab':1, 'cherries.jab':8,
+  'cherries.jab@aim':2, 'cherries.nair':2, 'cherries.neutral':4, 'cherries.neutral@aim':0, 'cherries.smash':0, 'cherries.uair':2, 'cherries.up':1, 'cherries.usmash':1, 'cherries.utilt':2, 'clockhands.bair':2,
+  'clockhands.dair':2, 'clockhands.down':1, 'clockhands.dsmash':1, 'clockhands.dtilt':2, 'clockhands.fair':2, 'clockhands.finisher':1, 'clockhands.fs':1, 'clockhands.grab':1, 'clockhands.jab':8, 'clockhands.jab@aim':2,
+  'clockhands.nair':2, 'clockhands.neutral':5, 'clockhands.neutral@aim':-9, 'clockhands.smash':1, 'clockhands.uair':2, 'clockhands.up':1, 'clockhands.usmash':1, 'clockhands.utilt':2, 'clover.bair':2, 'clover.dair':2,
+  'clover.down':1, 'clover.dsmash':1, 'clover.dtilt':2, 'clover.fair':2, 'clover.finisher':1, 'clover.fs':1, 'clover.grab':1, 'clover.jab':8, 'clover.jab@aim':2, 'clover.nair':2,
+  'clover.neutral':4, 'clover.neutral@aim':0, 'clover.smash':1, 'clover.uair':2, 'clover.up':-7, 'clover.usmash':1, 'clover.utilt':2, 'collide.bair':2, 'collide.dair':2, 'collide.down':1,
+  'collide.dsmash':1, 'collide.dtilt':2, 'collide.fair':2, 'collide.finisher':1, 'collide.fs':1, 'collide.grab':1, 'collide.jab':8, 'collide.jab@aim':2, 'collide.nair':2, 'collide.neutral':5,
+  'collide.neutral@aim':1, 'collide.smash':1, 'collide.uair':2, 'collide.up':1, 'collide.usmash':1, 'collide.utilt':2, 'condishawn.bair':2, 'condishawn.dair':2, 'condishawn.down':-40, 'condishawn.dsmash':1,
+  'condishawn.dtilt':2, 'condishawn.fair':2, 'condishawn.finisher':1, 'condishawn.fs':1, 'condishawn.grab':1, 'condishawn.jab':8, 'condishawn.jab@aim':2, 'condishawn.nair':2, 'condishawn.neutral':5, 'condishawn.neutral@aim':1,
+  'condishawn.smash':1, 'condishawn.uair':2, 'condishawn.up':-16, 'condishawn.usmash':1, 'condishawn.utilt':2, 'cool.bair':2, 'cool.dair':2, 'cool.down':1, 'cool.dsmash':1, 'cool.dtilt':2,
+  'cool.fair':2, 'cool.finisher':1, 'cool.fs':1, 'cool.grab':1, 'cool.jab':8, 'cool.jab@aim':2, 'cool.nair':2, 'cool.neutral':5, 'cool.neutral@aim':1, 'cool.smash':1,
+  'cool.uair':2, 'cool.up':1, 'cool.usmash':1, 'cool.utilt':2, 'copycat.bair':2, 'copycat.dair':2, 'copycat.down':1, 'copycat.dsmash':1, 'copycat.dtilt':2, 'copycat.fair':2,
+  'copycat.finisher':1, 'copycat.fs':1, 'copycat.grab':1, 'copycat.jab':8, 'copycat.jab@aim':2, 'copycat.nair':2, 'copycat.neutral':5, 'copycat.neutral@aim':1, 'copycat.smash':0, 'copycat.uair':2,
+  'copycat.up':-16, 'copycat.usmash':1, 'copycat.utilt':2, 'coresaw.bair':2, 'coresaw.dair':2, 'coresaw.down':1, 'coresaw.dsmash':1, 'coresaw.dtilt':2, 'coresaw.fair':2, 'coresaw.finisher':1,
+  'coresaw.fs':1, 'coresaw.grab':1, 'coresaw.jab':8, 'coresaw.jab@aim':2, 'coresaw.nair':2, 'coresaw.neutral':5, 'coresaw.neutral@aim':1, 'coresaw.smash':1, 'coresaw.uair':2, 'coresaw.up':-12,
+  'coresaw.usmash':1, 'coresaw.utilt':2, 'counter.bair':2, 'counter.dair':2, 'counter.down':1, 'counter.dsmash':1, 'counter.dtilt':2, 'counter.fair':2, 'counter.finisher':1, 'counter.fs':1,
+  'counter.grab':1, 'counter.jab':8, 'counter.jab@aim':2, 'counter.nair':2, 'counter.neutral':5, 'counter.neutral@aim':1, 'counter.smash':1, 'counter.uair':2, 'counter.up':1, 'counter.usmash':1,
+  'counter.utilt':2, 'cumulus.bair':2, 'cumulus.dair':2, 'cumulus.down':1, 'cumulus.dsmash':1, 'cumulus.dtilt':2, 'cumulus.fair':2, 'cumulus.finisher':1, 'cumulus.fs':1, 'cumulus.grab':1,
+  'cumulus.jab':8, 'cumulus.jab@aim':2, 'cumulus.nair':2, 'cumulus.neutral':5, 'cumulus.neutral@aim':1, 'cumulus.smash':0, 'cumulus.uair':2, 'cumulus.up':1, 'cumulus.usmash':1, 'cumulus.utilt':2,
+  'dash.bair':2, 'dash.dair':2, 'dash.down':1, 'dash.dsmash':1, 'dash.dtilt':2, 'dash.fair':2, 'dash.finisher':1, 'dash.fs':1, 'dash.grab':1, 'dash.jab':8,
+  'dash.jab@aim':2, 'dash.nair':2, 'dash.neutral':5, 'dash.neutral@aim':1, 'dash.smash':1, 'dash.uair':2, 'dash.up':1, 'dash.usmash':1, 'dash.utilt':2, 'define.bair':2,
+  'define.dair':2, 'define.down':1, 'define.dsmash':1, 'define.dtilt':2, 'define.fair':2, 'define.finisher':1, 'define.fs':1, 'define.grab':1, 'define.jab':8, 'define.jab@aim':2,
+  'define.nair':2, 'define.neutral':5, 'define.neutral@aim':1, 'define.smash':1, 'define.uair':2, 'define.up':1, 'define.usmash':1, 'define.utilt':2, 'disinfect.bair':2, 'disinfect.dair':2,
+  'disinfect.down':1, 'disinfect.dsmash':1, 'disinfect.dtilt':2, 'disinfect.fair':2, 'disinfect.finisher':1, 'disinfect.fs':1, 'disinfect.grab':1, 'disinfect.jab':8, 'disinfect.jab@aim':2, 'disinfect.nair':2,
+  'disinfect.neutral':5, 'disinfect.neutral@aim':1, 'disinfect.smash':1, 'disinfect.uair':2, 'disinfect.up':3, 'disinfect.usmash':1, 'disinfect.utilt':2, 'dribble.bair':2, 'dribble.dair':2, 'dribble.down':0,
+  'dribble.dsmash':1, 'dribble.dtilt':2, 'dribble.fair':2, 'dribble.finisher':1, 'dribble.fs':1, 'dribble.grab':1, 'dribble.jab':8, 'dribble.jab@aim':2, 'dribble.nair':2, 'dribble.neutral':4,
+  'dribble.neutral@aim':0, 'dribble.smash':0, 'dribble.uair':2, 'dribble.up':1, 'dribble.usmash':1, 'dribble.utilt':2, 'eball.bair':2, 'eball.dair':2, 'eball.down':1, 'eball.dsmash':1,
+  'eball.dtilt':2, 'eball.fair':2, 'eball.finisher':1, 'eball.fs':1, 'eball.grab':1, 'eball.jab':8, 'eball.jab@aim':2, 'eball.nair':2, 'eball.neutral':4, 'eball.neutral@aim':0,
+  'eball.smash':1, 'eball.uair':2, 'eball.up':1, 'eball.usmash':1, 'eball.utilt':2, 'ember.bair':2, 'ember.dair':2, 'ember.down':0, 'ember.dsmash':1, 'ember.dtilt':2,
+  'ember.fair':2, 'ember.finisher':1, 'ember.fs':1, 'ember.grab':1, 'ember.jab':8, 'ember.jab@aim':2, 'ember.nair':2, 'ember.neutral':5, 'ember.neutral@aim':1, 'ember.smash':1,
+  'ember.uair':2, 'ember.up':1, 'ember.usmash':1, 'ember.utilt':2, 'emberjr.bair':2, 'emberjr.dair':2, 'emberjr.down':1, 'emberjr.dsmash':1, 'emberjr.dtilt':2, 'emberjr.fair':2,
+  'emberjr.finisher':1, 'emberjr.fs':1, 'emberjr.grab':1, 'emberjr.jab':8, 'emberjr.jab@aim':2, 'emberjr.nair':2, 'emberjr.neutral':4, 'emberjr.neutral@aim':0, 'emberjr.smash':1, 'emberjr.uair':2,
+  'emberjr.up':1, 'emberjr.usmash':1, 'emberjr.utilt':2, 'engulf.bair':2, 'engulf.dair':2, 'engulf.down':0, 'engulf.dsmash':1, 'engulf.dtilt':2, 'engulf.fair':2, 'engulf.finisher':1,
+  'engulf.fs':1, 'engulf.grab':1, 'engulf.jab':8, 'engulf.jab@aim':2, 'engulf.nair':2, 'engulf.neutral':5, 'engulf.neutral@aim':1, 'engulf.smash':1, 'engulf.uair':2, 'engulf.up':1,
+  'engulf.usmash':1, 'engulf.utilt':2, 'evilpaper.bair':2, 'evilpaper.dair':2, 'evilpaper.down':1, 'evilpaper.dsmash':1, 'evilpaper.dtilt':2, 'evilpaper.fair':2, 'evilpaper.finisher':1, 'evilpaper.fs':1,
+  'evilpaper.grab':1, 'evilpaper.jab':8, 'evilpaper.jab@aim':2, 'evilpaper.nair':2, 'evilpaper.neutral':4, 'evilpaper.neutral@aim':1, 'evilpaper.smash':1, 'evilpaper.uair':2, 'evilpaper.up':1, 'evilpaper.usmash':1,
+  'evilpaper.utilt':2, 'flip.bair':2, 'flip.dair':2, 'flip.down':1, 'flip.dsmash':1, 'flip.dtilt':2, 'flip.fair':2, 'flip.finisher':1, 'flip.fs':1, 'flip.grab':1,
+  'flip.jab':8, 'flip.jab@aim':2, 'flip.nair':2, 'flip.neutral':5, 'flip.neutral@aim':1, 'flip.smash':0, 'flip.uair':2, 'flip.up':0, 'flip.usmash':1, 'flip.utilt':2,
+  'float.bair':2, 'float.dair':2, 'float.down':1, 'float.dsmash':1, 'float.dtilt':2, 'float.fair':2, 'float.finisher':1, 'float.fs':1, 'float.grab':1, 'float.jab':8,
+  'float.jab@aim':2, 'float.nair':2, 'float.neutral':5, 'float.neutral@aim':1, 'float.smash':0, 'float.uair':2, 'float.up':3, 'float.usmash':1, 'float.utilt':2, 'fluff.bair':2,
+  'fluff.dair':2, 'fluff.down':1, 'fluff.dsmash':1, 'fluff.dtilt':2, 'fluff.fair':2, 'fluff.finisher':1, 'fluff.fs':1, 'fluff.grab':1, 'fluff.jab':8, 'fluff.jab@aim':2,
+  'fluff.nair':2, 'fluff.neutral':5, 'fluff.neutral@aim':1, 'fluff.smash':1, 'fluff.uair':2, 'fluff.up':1, 'fluff.usmash':1, 'fluff.utilt':2, 'fly.dair':2, 'fly.down':1,
+  'fly.dsmash':1, 'fly.dtilt':2, 'fly.finisher':1, 'fly.fs':1, 'fly.grab':1, 'fly.jab':8, 'fly.jab@aim':2, 'fly.nair':1, 'fly.neutral':5, 'fly.neutral@aim':1,
+  'fly.smash':1, 'fly.uair':2, 'fly.up':1, 'fly.usmash':-4, 'fly.utilt':2, 'fraidy.bair':2, 'fraidy.dair':2, 'fraidy.down':1, 'fraidy.dsmash':1, 'fraidy.dtilt':2,
+  'fraidy.fair':2, 'fraidy.finisher':1, 'fraidy.fs':1, 'fraidy.grab':1, 'fraidy.jab':8, 'fraidy.jab@aim':2, 'fraidy.nair':2, 'fraidy.neutral':5, 'fraidy.neutral@aim':1, 'fraidy.smash':1,
+  'fraidy.uair':2, 'fraidy.up':1, 'fraidy.usmash':1, 'fraidy.utilt':2, 'freeze.bair':2, 'freeze.dair':2, 'freeze.down':0, 'freeze.dsmash':1, 'freeze.dtilt':2, 'freeze.fair':2,
+  'freeze.finisher':1, 'freeze.fs':1, 'freeze.grab':1, 'freeze.jab':8, 'freeze.jab@aim':2, 'freeze.nair':2, 'freeze.neutral':4, 'freeze.neutral@aim':1, 'freeze.smash':0, 'freeze.uair':2,
+  'freeze.up':2, 'freeze.usmash':1, 'freeze.utilt':2, 'fry.bair':2, 'fry.dair':2, 'fry.down':0, 'fry.dsmash':1, 'fry.dtilt':2, 'fry.fair':2, 'fry.finisher':1,
+  'fry.fs':1, 'fry.grab':1, 'fry.jab':8, 'fry.jab@aim':2, 'fry.nair':2, 'fry.neutral':4, 'fry.neutral@aim':0, 'fry.smash':1, 'fry.uair':2, 'fry.up':1,
+  'fry.usmash':1, 'fry.utilt':2, 'fury.bair':2, 'fury.dair':2, 'fury.down':0, 'fury.dsmash':1, 'fury.dtilt':2, 'fury.fair':2, 'fury.finisher':1, 'fury.fs':1,
+  'fury.grab':1, 'fury.jab':8, 'fury.jab@aim':2, 'fury.nair':2, 'fury.neutral':4, 'fury.neutral@aim':0, 'fury.smash':1, 'fury.uair':2, 'fury.up':2, 'fury.usmash':1,
+  'fury.utilt':2, 'glaze.bair':2, 'glaze.dair':2, 'glaze.down':0, 'glaze.dsmash':1, 'glaze.dtilt':2, 'glaze.fair':2, 'glaze.finisher':1, 'glaze.fs':1, 'glaze.grab':1,
+  'glaze.jab':8, 'glaze.jab@aim':2, 'glaze.nair':2, 'glaze.neutral':5, 'glaze.neutral@aim':1, 'glaze.smash':0, 'glaze.uair':2, 'glaze.up':0, 'glaze.usmash':1, 'glaze.utilt':2,
+  'glowgold.bair':2, 'glowgold.dair':2, 'glowgold.down':1, 'glowgold.dsmash':1, 'glowgold.dtilt':2, 'glowgold.fair':2, 'glowgold.finisher':14, 'glowgold.fs':1, 'glowgold.grab':1, 'glowgold.jab':8,
+  'glowgold.jab@aim':2, 'glowgold.nair':2, 'glowgold.neutral':5, 'glowgold.neutral@aim':1, 'glowgold.smash':1, 'glowgold.uair':2, 'glowgold.up':-16, 'glowgold.usmash':1, 'glowgold.utilt':2, 'grasstree.bair':2,
+  'grasstree.dair':2, 'grasstree.down':0, 'grasstree.dsmash':1, 'grasstree.dtilt':2, 'grasstree.fair':2, 'grasstree.finisher':1, 'grasstree.fs':1, 'grasstree.grab':1, 'grasstree.jab':8, 'grasstree.jab@aim':2,
+  'grasstree.nair':2, 'grasstree.neutral':5, 'grasstree.neutral@aim':1, 'grasstree.smash':0, 'grasstree.uair':2, 'grasstree.up':1, 'grasstree.usmash':1, 'grasstree.utilt':2, 'gust.bair':2, 'gust.dair':2,
+  'gust.down':1, 'gust.dsmash':1, 'gust.dtilt':2, 'gust.fair':2, 'gust.finisher':1, 'gust.fs':1, 'gust.grab':1, 'gust.jab':8, 'gust.jab@aim':2, 'gust.nair':2,
+  'gust.neutral':5, 'gust.neutral@aim':1, 'gust.smash':1, 'gust.uair':2, 'gust.up':1, 'gust.usmash':1, 'gust.utilt':2, 'heavy.bair':2, 'heavy.dair':2, 'heavy.down':0,
+  'heavy.dsmash':1, 'heavy.dtilt':2, 'heavy.fair':2, 'heavy.finisher':1, 'heavy.fs':1, 'heavy.grab':1, 'heavy.jab':8, 'heavy.jab@aim':2, 'heavy.nair':2, 'heavy.neutral':5,
+  'heavy.neutral@aim':1, 'heavy.smash':0, 'heavy.uair':2, 'heavy.up':1, 'heavy.usmash':1, 'heavy.utilt':2, 'hors.bair':2, 'hors.dair':2, 'hors.down':1, 'hors.dsmash':1,
+  'hors.dtilt':2, 'hors.fair':2, 'hors.finisher':1, 'hors.fs':1, 'hors.grab':1, 'hors.jab':8, 'hors.jab@aim':2, 'hors.nair':2, 'hors.neutral':4, 'hors.neutral@aim':0,
+  'hors.smash':1, 'hors.uair':2, 'hors.up':-14, 'hors.usmash':1, 'hors.utilt':2, 'hotdog.bair':2, 'hotdog.dair':2, 'hotdog.down':-25, 'hotdog.dsmash':1, 'hotdog.dtilt':2,
+  'hotdog.fair':2, 'hotdog.finisher':1, 'hotdog.fs':1, 'hotdog.grab':1, 'hotdog.jab':8, 'hotdog.jab@aim':2, 'hotdog.nair':2, 'hotdog.neutral':5, 'hotdog.neutral@aim':-20, 'hotdog.smash':1,
+  'hotdog.uair':2, 'hotdog.up':1, 'hotdog.usmash':1, 'hotdog.utilt':2, 'ink.bair':2, 'ink.dair':2, 'ink.down':0, 'ink.dsmash':1, 'ink.dtilt':2, 'ink.fair':2,
+  'ink.finisher':1, 'ink.fs':1, 'ink.grab':1, 'ink.jab':8, 'ink.jab@aim':2, 'ink.nair':2, 'ink.neutral':5, 'ink.neutral@aim':1, 'ink.smash':0, 'ink.uair':2,
+  'ink.up':1, 'ink.usmash':-4, 'ink.utilt':2, 'innerflame.bair':2, 'innerflame.dair':2, 'innerflame.down':1, 'innerflame.dsmash':1, 'innerflame.dtilt':2, 'innerflame.fair':2, 'innerflame.finisher':1,
+  'innerflame.fs':4, 'innerflame.grab':1, 'innerflame.jab':8, 'innerflame.jab@aim':2, 'innerflame.nair':2, 'innerflame.neutral':5, 'innerflame.neutral@aim':1, 'innerflame.smash':1, 'innerflame.uair':2, 'innerflame.up':-16,
+  'innerflame.usmash':1, 'innerflame.utilt':2, 'jack.bair':2, 'jack.dair':2, 'jack.down':1, 'jack.dsmash':1, 'jack.dtilt':2, 'jack.fair':2, 'jack.finisher':1, 'jack.fs':1,
+  'jack.grab':1, 'jack.jab':8, 'jack.jab@aim':2, 'jack.nair':2, 'jack.neutral':4, 'jack.neutral@aim':0, 'jack.smash':0, 'jack.uair':2, 'jack.up':1, 'jack.usmash':1,
+  'jack.utilt':2, 'jammy.bair':2, 'jammy.dair':2, 'jammy.down':1, 'jammy.dsmash':1, 'jammy.dtilt':2, 'jammy.fair':2, 'jammy.finisher':1, 'jammy.fs':1, 'jammy.grab':1,
+  'jammy.jab':8, 'jammy.jab@aim':2, 'jammy.nair':2, 'jammy.neutral':-7, 'jammy.neutral@aim':-11, 'jammy.smash':1, 'jammy.uair':2, 'jammy.up':1, 'jammy.usmash':1, 'jammy.utilt':2,
+  'jawbreaker.bair':2, 'jawbreaker.dair':2, 'jawbreaker.down':0, 'jawbreaker.dsmash':1, 'jawbreaker.dtilt':2, 'jawbreaker.fair':2, 'jawbreaker.finisher':1, 'jawbreaker.fs':1, 'jawbreaker.grab':1, 'jawbreaker.jab':8,
+  'jawbreaker.jab@aim':2, 'jawbreaker.nair':2, 'jawbreaker.neutral':5, 'jawbreaker.neutral@aim':1, 'jawbreaker.smash':0, 'jawbreaker.uair':2, 'jawbreaker.up':1, 'jawbreaker.usmash':1, 'jawbreaker.utilt':2, 'kick.bair':2,
+  'kick.dair':2, 'kick.down':1, 'kick.dsmash':1, 'kick.dtilt':2, 'kick.fair':2, 'kick.finisher':1, 'kick.fs':1, 'kick.grab':1, 'kick.jab':8, 'kick.jab@aim':2,
+  'kick.nair':2, 'kick.neutral':5, 'kick.neutral@aim':1, 'kick.smash':1, 'kick.uair':2, 'kick.up':1, 'kick.usmash':-1, 'kick.utilt':2, 'leavealone.bair':2, 'leavealone.dair':2,
+  'leavealone.down':1, 'leavealone.dsmash':1, 'leavealone.dtilt':2, 'leavealone.fair':2, 'leavealone.finisher':1, 'leavealone.fs':1, 'leavealone.grab':1, 'leavealone.jab':8, 'leavealone.jab@aim':2, 'leavealone.nair':2,
+  'leavealone.neutral':5, 'leavealone.neutral@aim':1, 'leavealone.smash':1, 'leavealone.uair':2, 'leavealone.up':1, 'leavealone.usmash':1, 'leavealone.utilt':2, 'lemon.bair':2, 'lemon.dair':2, 'lemon.down':1,
+  'lemon.dsmash':1, 'lemon.dtilt':2, 'lemon.fair':2, 'lemon.finisher':1, 'lemon.fs':1, 'lemon.grab':1, 'lemon.jab':8, 'lemon.jab@aim':2, 'lemon.nair':2, 'lemon.neutral':4,
+  'lemon.neutral@aim':0, 'lemon.smash':1, 'lemon.uair':2, 'lemon.up':1, 'lemon.usmash':1, 'lemon.utilt':2, 'lifeguard.bair':2, 'lifeguard.dair':2, 'lifeguard.down':1, 'lifeguard.dsmash':1,
+  'lifeguard.dtilt':2, 'lifeguard.fair':2, 'lifeguard.finisher':1, 'lifeguard.fs':1, 'lifeguard.grab':1, 'lifeguard.jab':8, 'lifeguard.jab@aim':2, 'lifeguard.nair':2, 'lifeguard.neutral':5, 'lifeguard.neutral@aim':1,
+  'lifeguard.smash':1, 'lifeguard.uair':2, 'lifeguard.up':1, 'lifeguard.usmash':1, 'lifeguard.utilt':2, 'measure.bair':2, 'measure.dair':2, 'measure.down':1, 'measure.dsmash':1, 'measure.dtilt':2,
+  'measure.fair':2, 'measure.finisher':1, 'measure.fs':1, 'measure.grab':1, 'measure.jab':8, 'measure.jab@aim':2, 'measure.nair':2, 'measure.neutral':4, 'measure.neutral@aim':0, 'measure.smash':1,
+  'measure.uair':2, 'measure.up':1, 'measure.usmash':1, 'measure.utilt':2, 'mic.bair':2, 'mic.dair':2, 'mic.down':1, 'mic.dsmash':1, 'mic.dtilt':2, 'mic.fair':2,
+  'mic.finisher':1, 'mic.fs':1, 'mic.grab':1, 'mic.jab':8, 'mic.jab@aim':2, 'mic.nair':2, 'mic.neutral':4, 'mic.neutral@aim':0, 'mic.smash':1, 'mic.uair':2,
+  'mic.up':-15, 'mic.usmash':1, 'mic.utilt':2, 'needy.bair':2, 'needy.dair':2, 'needy.down':89, 'needy.dsmash':1, 'needy.dtilt':2, 'needy.fair':2, 'needy.finisher':1,
+  'needy.fs':1, 'needy.grab':1, 'needy.jab':8, 'needy.jab@aim':2, 'needy.nair':2, 'needy.neutral':1, 'needy.neutral@aim':-19, 'needy.smash':1, 'needy.uair':2, 'needy.up':1,
+  'needy.usmash':1, 'needy.utilt':2, 'onehit.bair':2, 'onehit.dair':2, 'onehit.down':1, 'onehit.dsmash':1, 'onehit.dtilt':2, 'onehit.fair':2, 'onehit.finisher':1, 'onehit.fs':1,
+  'onehit.grab':1, 'onehit.jab':8, 'onehit.jab@aim':2, 'onehit.nair':2, 'onehit.neutral':5, 'onehit.neutral@aim':1, 'onehit.smash':1, 'onehit.uair':2, 'onehit.up':1, 'onehit.usmash':1,
+  'onehit.utilt':2, 'packed.bair':2, 'packed.dair':2, 'packed.down':1, 'packed.dsmash':1, 'packed.dtilt':2, 'packed.fair':2, 'packed.finisher':1, 'packed.fs':1, 'packed.grab':1,
+  'packed.jab':8, 'packed.jab@aim':2, 'packed.nair':2, 'packed.neutral':5, 'packed.neutral@aim':1, 'packed.smash':0, 'packed.uair':2, 'packed.up':1, 'packed.usmash':1, 'packed.utilt':2,
+  'paintball.bair':2, 'paintball.dair':2, 'paintball.down':1, 'paintball.dsmash':1, 'paintball.dtilt':2, 'paintball.fair':2, 'paintball.finisher':1, 'paintball.fs':1, 'paintball.grab':1, 'paintball.jab':8,
+  'paintball.jab@aim':2, 'paintball.nair':2, 'paintball.neutral':4, 'paintball.neutral@aim':0, 'paintball.smash':1, 'paintball.uair':2, 'paintball.up':1, 'paintball.usmash':1, 'paintball.utilt':2, 'paperplane.bair':2,
+  'paperplane.dair':2, 'paperplane.down':1, 'paperplane.dsmash':1, 'paperplane.dtilt':2, 'paperplane.fair':2, 'paperplane.finisher':1, 'paperplane.fs':1, 'paperplane.grab':1, 'paperplane.jab':8, 'paperplane.jab@aim':2,
+  'paperplane.nair':2, 'paperplane.neutral':5, 'paperplane.neutral@aim':-19, 'paperplane.smash':1, 'paperplane.uair':2, 'paperplane.up':1, 'paperplane.usmash':1, 'paperplane.utilt':2, 'paste.bair':2, 'paste.dair':2,
+  'paste.down':0, 'paste.dsmash':1, 'paste.dtilt':2, 'paste.fair':2, 'paste.finisher':1, 'paste.fs':1, 'paste.grab':1, 'paste.jab':8, 'paste.jab@aim':2, 'paste.nair':2,
+  'paste.neutral':5, 'paste.neutral@aim':1, 'paste.smash':0, 'paste.uair':2, 'paste.up':1, 'paste.usmash':1, 'paste.utilt':2, 'payday.bair':2, 'payday.dair':2, 'payday.down':1,
+  'payday.dsmash':1, 'payday.dtilt':2, 'payday.fair':2, 'payday.finisher':1, 'payday.fs':1, 'payday.grab':1, 'payday.jab':8, 'payday.jab@aim':2, 'payday.nair':2, 'payday.neutral':8,
+  'payday.neutral@aim':-7, 'payday.smash':0, 'payday.uair':2, 'payday.up':1, 'payday.usmash':1, 'payday.utilt':2, 'photo.bair':2, 'photo.dair':2, 'photo.down':1, 'photo.dsmash':1,
+  'photo.dtilt':2, 'photo.fair':2, 'photo.finisher':1, 'photo.fs':1, 'photo.grab':1, 'photo.jab':8, 'photo.jab@aim':2, 'photo.nair':2, 'photo.neutral':5, 'photo.neutral@aim':1,
+  'photo.smash':1, 'photo.uair':2, 'photo.up':-16, 'photo.usmash':1, 'photo.utilt':2, 'pickle.bair':2, 'pickle.dair':2, 'pickle.down':1, 'pickle.dsmash':1, 'pickle.dtilt':2,
+  'pickle.fair':2, 'pickle.finisher':1, 'pickle.fs':1, 'pickle.grab':1, 'pickle.jab':8, 'pickle.jab@aim':2, 'pickle.nair':2, 'pickle.neutral':5, 'pickle.neutral@aim':1, 'pickle.smash':1,
+  'pickle.uair':2, 'pickle.up':1, 'pickle.usmash':1, 'pickle.utilt':2, 'pieberry.bair':2, 'pieberry.dair':2, 'pieberry.down':1, 'pieberry.dsmash':1, 'pieberry.dtilt':2, 'pieberry.fair':2,
+  'pieberry.finisher':1, 'pieberry.fs':1, 'pieberry.grab':1, 'pieberry.jab':8, 'pieberry.jab@aim':2, 'pieberry.nair':2, 'pieberry.neutral':5, 'pieberry.neutral@aim':1, 'pieberry.smash':1, 'pieberry.uair':2,
+  'pieberry.up':1, 'pieberry.usmash':1, 'pieberry.utilt':2, 'pierce.bair':2, 'pierce.dair':2, 'pierce.down':1, 'pierce.dsmash':1, 'pierce.dtilt':2, 'pierce.fair':2, 'pierce.finisher':1,
+  'pierce.fs':1, 'pierce.grab':1, 'pierce.jab':8, 'pierce.jab@aim':2, 'pierce.nair':2, 'pierce.neutral':5, 'pierce.neutral@aim':1, 'pierce.smash':1, 'pierce.uair':2, 'pierce.up':1,
+  'pierce.usmash':1, 'pierce.utilt':2, 'pricetag.bair':2, 'pricetag.dair':2, 'pricetag.down':1, 'pricetag.dsmash':1, 'pricetag.dtilt':2, 'pricetag.fair':2, 'pricetag.finisher':1, 'pricetag.fs':1,
+  'pricetag.grab':1, 'pricetag.jab':8, 'pricetag.jab@aim':2, 'pricetag.nair':2, 'pricetag.neutral':5, 'pricetag.neutral@aim':1, 'pricetag.smash':1, 'pricetag.uair':2, 'pricetag.up':1, 'pricetag.usmash':1,
+  'pricetag.utilt':2, 'pun.bair':2, 'pun.dair':2, 'pun.down':1, 'pun.dsmash':1, 'pun.dtilt':2, 'pun.fair':2, 'pun.finisher':1, 'pun.fs':1, 'pun.grab':1,
+  'pun.jab':8, 'pun.jab@aim':2, 'pun.nair':2, 'pun.neutral':4, 'pun.neutral@aim':0, 'pun.smash':1, 'pun.uair':2, 'pun.up':1, 'pun.usmash':1, 'pun.utilt':2,
+  'quake.bair':2, 'quake.dair':2, 'quake.down':1, 'quake.dsmash':1, 'quake.dtilt':2, 'quake.fair':2, 'quake.finisher':1, 'quake.fs':1, 'quake.grab':1, 'quake.jab':8,
+  'quake.jab@aim':2, 'quake.nair':2, 'quake.neutral':5, 'quake.neutral@aim':1, 'quake.smash':0, 'quake.uair':2, 'quake.up':1, 'quake.usmash':1, 'quake.utilt':2, 'rant.bair':2,
+  'rant.dair':2, 'rant.down':1, 'rant.dsmash':1, 'rant.dtilt':2, 'rant.fair':2, 'rant.finisher':1, 'rant.fs':1, 'rant.grab':1, 'rant.jab':8, 'rant.jab@aim':2,
+  'rant.nair':2, 'rant.neutral':5, 'rant.neutral@aim':1, 'rant.smash':1, 'rant.uair':2, 'rant.up':-16, 'rant.usmash':1, 'rant.utilt':2, 'reflect.bair':2, 'reflect.dair':2,
+  'reflect.down':1, 'reflect.dsmash':1, 'reflect.dtilt':2, 'reflect.fair':2, 'reflect.finisher':1, 'reflect.fs':1, 'reflect.grab':1, 'reflect.jab':8, 'reflect.jab@aim':2, 'reflect.nair':2,
+  'reflect.neutral':5, 'reflect.neutral@aim':1, 'reflect.smash':1, 'reflect.uair':2, 'reflect.up':-3, 'reflect.usmash':1, 'reflect.utilt':2, 'ring.bair':2, 'ring.dair':2, 'ring.down':1,
+  'ring.dsmash':1, 'ring.dtilt':2, 'ring.fair':2, 'ring.finisher':1, 'ring.fs':1, 'ring.grab':1, 'ring.jab':8, 'ring.jab@aim':2, 'ring.nair':2, 'ring.neutral':5,
+  'ring.neutral@aim':1, 'ring.smash':1, 'ring.uair':2, 'ring.up':1, 'ring.usmash':1, 'ring.utilt':2, 'rubout.bair':2, 'rubout.dair':2, 'rubout.down':1, 'rubout.dsmash':1,
+  'rubout.dtilt':2, 'rubout.fair':2, 'rubout.finisher':1, 'rubout.fs':1, 'rubout.grab':1, 'rubout.jab':8, 'rubout.jab@aim':2, 'rubout.nair':2, 'rubout.neutral':5, 'rubout.neutral@aim':1,
+  'rubout.smash':1, 'rubout.uair':2, 'rubout.up':1, 'rubout.usmash':1, 'rubout.utilt':2, 'saltpepper.bair':2, 'saltpepper.dair':2, 'saltpepper.down':1, 'saltpepper.dsmash':1, 'saltpepper.dtilt':2,
+  'saltpepper.fair':2, 'saltpepper.finisher':0, 'saltpepper.fs':1, 'saltpepper.grab':1, 'saltpepper.jab':8, 'saltpepper.jab@aim':2, 'saltpepper.nair':2, 'saltpepper.neutral':4, 'saltpepper.neutral@aim':1, 'saltpepper.smash':1,
+  'saltpepper.uair':2, 'saltpepper.up':1, 'saltpepper.usmash':1, 'saltpepper.utilt':2, 'saw.bair':2, 'saw.dair':2, 'saw.down':1, 'saw.dsmash':1, 'saw.dtilt':2, 'saw.fair':2,
+  'saw.finisher':1, 'saw.fs':1, 'saw.grab':1, 'saw.jab':8, 'saw.jab@aim':2, 'saw.nair':2, 'saw.neutral':5, 'saw.neutral@aim':1, 'saw.smash':1, 'saw.uair':2,
+  'saw.up':1, 'saw.usmash':1, 'saw.utilt':2, 'seriously.bair':2, 'seriously.dair':2, 'seriously.down':1, 'seriously.dsmash':1, 'seriously.dtilt':2, 'seriously.fair':2, 'seriously.finisher':1,
+  'seriously.fs':1, 'seriously.grab':1, 'seriously.jab':8, 'seriously.jab@aim':2, 'seriously.nair':2, 'seriously.neutral':5, 'seriously.neutral@aim':1, 'seriously.smash':1, 'seriously.uair':2, 'seriously.up':1,
+  'seriously.usmash':1, 'seriously.utilt':2, 'serve.bair':2, 'serve.dair':2, 'serve.down':1, 'serve.dsmash':-10, 'serve.dtilt':2, 'serve.fair':2, 'serve.finisher':1, 'serve.fs':1,
+  'serve.grab':1, 'serve.jab':8, 'serve.jab@aim':2, 'serve.nair':2, 'serve.neutral':5, 'serve.neutral@aim':1, 'serve.smash':0, 'serve.uair':2, 'serve.up':0, 'serve.usmash':1,
+  'serve.utilt':2, 'shatter.bair':2, 'shatter.dair':2, 'shatter.down':1, 'shatter.dsmash':1, 'shatter.dtilt':2, 'shatter.fair':2, 'shatter.finisher':1, 'shatter.fs':1, 'shatter.grab':1,
+  'shatter.jab':8, 'shatter.jab@aim':2, 'shatter.nair':2, 'shatter.neutral':5, 'shatter.neutral@aim':1, 'shatter.smash':1, 'shatter.uair':2, 'shatter.up':1, 'shatter.usmash':1, 'shatter.utilt':2,
+  'shutter.bair':2, 'shutter.dair':2, 'shutter.down':1, 'shutter.dsmash':1, 'shutter.dtilt':2, 'shutter.fair':2, 'shutter.finisher':1, 'shutter.fs':1, 'shutter.grab':1, 'shutter.jab':8,
+  'shutter.jab@aim':2, 'shutter.nair':2, 'shutter.neutral':5, 'shutter.neutral@aim':1, 'shutter.smash':1, 'shutter.uair':2, 'shutter.up':1, 'shutter.usmash':1, 'shutter.utilt':2, 'sign.bair':2,
+  'sign.dair':2, 'sign.down':1, 'sign.dsmash':1, 'sign.dtilt':2, 'sign.fair':2, 'sign.finisher':1, 'sign.fs':1, 'sign.grab':1, 'sign.jab':8, 'sign.jab@aim':2,
+  'sign.nair':2, 'sign.neutral':5, 'sign.neutral@aim':1, 'sign.smash':1, 'sign.uair':2, 'sign.up':1, 'sign.usmash':1, 'sign.utilt':2, 'slam.bair':2, 'slam.dair':2,
+  'slam.down':1, 'slam.dsmash':1, 'slam.dtilt':2, 'slam.fair':2, 'slam.finisher':1, 'slam.fs':1, 'slam.grab':1, 'slam.jab':8, 'slam.jab@aim':2, 'slam.nair':2,
+  'slam.neutral':5, 'slam.neutral@aim':1, 'slam.smash':1, 'slam.uair':2, 'slam.up':1, 'slam.usmash':1, 'slam.utilt':2, 'slap.bair':2, 'slap.dair':2, 'slap.down':0,
+  'slap.dsmash':-3, 'slap.dtilt':2, 'slap.fair':2, 'slap.finisher':1, 'slap.fs':1, 'slap.grab':1, 'slap.jab':8, 'slap.jab@aim':2, 'slap.nair':2, 'slap.neutral':5,
+  'slap.neutral@aim':1, 'slap.smash':1, 'slap.uair':2, 'slap.up':-6, 'slap.usmash':1, 'slap.utilt':2, 'snark.bair':2, 'snark.dair':2, 'snark.down':1, 'snark.dsmash':1,
+  'snark.dtilt':2, 'snark.fair':2, 'snark.finisher':1, 'snark.fs':1, 'snark.grab':1, 'snark.jab':8, 'snark.jab@aim':2, 'snark.nair':2, 'snark.neutral':5, 'snark.neutral@aim':1,
+  'snark.smash':1, 'snark.uair':2, 'snark.up':1, 'snark.usmash':1, 'snark.utilt':2, 'spark.bair':2, 'spark.dair':2, 'spark.down':0, 'spark.dsmash':1, 'spark.dtilt':2,
+  'spark.fair':2, 'spark.finisher':1, 'spark.fs':1, 'spark.grab':1, 'spark.jab':8, 'spark.jab@aim':2, 'spark.nair':2, 'spark.neutral':4, 'spark.neutral@aim':0, 'spark.smash':1,
+  'spark.uair':2, 'spark.up':1, 'spark.usmash':1, 'spark.utilt':2, 'spike.bair':2, 'spike.dair':2, 'spike.down':0, 'spike.dsmash':1, 'spike.dtilt':2, 'spike.fair':2,
+  'spike.finisher':1, 'spike.fs':1, 'spike.grab':1, 'spike.jab':8, 'spike.jab@aim':2, 'spike.nair':2, 'spike.neutral':4, 'spike.neutral@aim':0, 'spike.smash':1, 'spike.uair':2,
+  'spike.up':-3, 'spike.usmash':1, 'spike.utilt':2, 'spikeburst.bair':2, 'spikeburst.dair':2, 'spikeburst.down':1, 'spikeburst.dsmash':1, 'spikeburst.dtilt':2, 'spikeburst.fair':2, 'spikeburst.finisher':1,
+  'spikeburst.fs':1, 'spikeburst.grab':1, 'spikeburst.jab':8, 'spikeburst.jab@aim':2, 'spikeburst.nair':2, 'spikeburst.neutral':5, 'spikeburst.neutral@aim':6, 'spikeburst.smash':1, 'spikeburst.uair':2, 'spikeburst.up':1,
+  'spikeburst.usmash':1, 'spikeburst.utilt':2, 'splash.bair':2, 'splash.dair':2, 'splash.down':0, 'splash.dsmash':1, 'splash.dtilt':2, 'splash.fair':2, 'splash.finisher':1, 'splash.fs':1,
+  'splash.grab':1, 'splash.jab':8, 'splash.jab@aim':2, 'splash.nair':2, 'splash.neutral':5, 'splash.neutral@aim':1, 'splash.smash':1, 'splash.uair':2, 'splash.up':2, 'splash.usmash':1,
+  'splash.utilt':2, 'split.bair':2, 'split.dair':2, 'split.down':1, 'split.dsmash':1, 'split.dtilt':2, 'split.fair':2, 'split.finisher':1, 'split.fs':1, 'split.grab':1,
+  'split.jab':8, 'split.jab@aim':2, 'split.nair':2, 'split.neutral':4, 'split.neutral@aim':0, 'split.smash':1, 'split.uair':2, 'split.up':1, 'split.usmash':1, 'split.utilt':2,
+  'stapler.bair':2, 'stapler.dair':2, 'stapler.down':1, 'stapler.dsmash':1, 'stapler.dtilt':2, 'stapler.fair':2, 'stapler.finisher':1, 'stapler.fs':1, 'stapler.grab':1, 'stapler.jab':8,
+  'stapler.jab@aim':2, 'stapler.nair':2, 'stapler.neutral':5, 'stapler.neutral@aim':1, 'stapler.smash':1, 'stapler.uair':2, 'stapler.up':-6, 'stapler.usmash':1, 'stapler.utilt':2, 'static.bair':2,
+  'static.dair':2, 'static.down':1, 'static.dsmash':1, 'static.dtilt':2, 'static.fair':2, 'static.finisher':1, 'static.fs':1, 'static.grab':1, 'static.jab':8, 'static.jab@aim':2,
+  'static.nair':2, 'static.neutral':4, 'static.neutral@aim':0, 'static.smash':1, 'static.uair':2, 'static.up':1, 'static.usmash':1, 'static.utilt':2, 'sticker.bair':2, 'sticker.dair':2,
+  'sticker.down':1, 'sticker.dsmash':1, 'sticker.dtilt':2, 'sticker.fair':2, 'sticker.finisher':1, 'sticker.fs':1, 'sticker.grab':1, 'sticker.jab':8, 'sticker.jab@aim':2, 'sticker.nair':2,
+  'sticker.neutral':5, 'sticker.neutral@aim':1, 'sticker.smash':1, 'sticker.uair':2, 'sticker.up':1, 'sticker.usmash':-4, 'sticker.utilt':2, 'stopshot.bair':2, 'stopshot.dair':2, 'stopshot.down':1,
+  'stopshot.dsmash':1, 'stopshot.dtilt':2, 'stopshot.fair':2, 'stopshot.finisher':1, 'stopshot.fs':1, 'stopshot.grab':1, 'stopshot.jab':8, 'stopshot.jab@aim':2, 'stopshot.nair':2, 'stopshot.neutral':5,
+  'stopshot.neutral@aim':1, 'stopshot.smash':1, 'stopshot.uair':2, 'stopshot.up':1, 'stopshot.usmash':1, 'stopshot.utilt':2, 'sucker.bair':2, 'sucker.dair':2, 'sucker.down':0, 'sucker.dsmash':1,
+  'sucker.dtilt':2, 'sucker.fair':2, 'sucker.finisher':1, 'sucker.fs':1, 'sucker.grab':1, 'sucker.jab':8, 'sucker.jab@aim':2, 'sucker.nair':2, 'sucker.neutral':4, 'sucker.neutral@aim':0,
+  'sucker.smash':1, 'sucker.uair':2, 'sucker.up':0, 'sucker.usmash':1, 'sucker.utilt':2, 'switch.bair':2, 'switch.dair':2, 'switch.down':1, 'switch.dsmash':1, 'switch.dtilt':2,
+  'switch.fair':2, 'switch.finisher':1, 'switch.fs':1, 'switch.grab':1, 'switch.jab':8, 'switch.jab@aim':2, 'switch.nair':2, 'switch.neutral':5, 'switch.neutral@aim':1, 'switch.smash':1,
+  'switch.uair':2, 'switch.up':1, 'switch.usmash':1, 'switch.utilt':2, 'tackle.bair':2, 'tackle.dair':2, 'tackle.down':1, 'tackle.dsmash':1, 'tackle.dtilt':2, 'tackle.fair':2,
+  'tackle.finisher':1, 'tackle.fs':1, 'tackle.grab':1, 'tackle.jab':8, 'tackle.jab@aim':2, 'tackle.nair':2, 'tackle.neutral':5, 'tackle.neutral@aim':1, 'tackle.smash':1, 'tackle.uair':2,
+  'tackle.up':-14, 'tackle.usmash':1, 'tackle.utilt':2, 'tape.bair':2, 'tape.dair':2, 'tape.down':1, 'tape.dsmash':1, 'tape.dtilt':2, 'tape.fair':2, 'tape.finisher':1,
+  'tape.fs':1, 'tape.grab':1, 'tape.jab':8, 'tape.jab@aim':2, 'tape.nair':2, 'tape.neutral':4, 'tape.neutral@aim':0, 'tape.smash':1, 'tape.uair':2, 'tape.up':1,
+  'tape.usmash':1, 'tape.utilt':2, 'testtube.bair':2, 'testtube.dair':2, 'testtube.down':1, 'testtube.dsmash':1, 'testtube.dtilt':2, 'testtube.fair':2, 'testtube.finisher':1, 'testtube.fs':1,
+  'testtube.grab':1, 'testtube.jab':8, 'testtube.jab@aim':2, 'testtube.nair':2, 'testtube.neutral':4, 'testtube.neutral@aim':1, 'testtube.smash':0, 'testtube.uair':2, 'testtube.up':1, 'testtube.usmash':1,
+  'testtube.utilt':2, 'thorn.bair':2, 'thorn.dair':2, 'thorn.down':1, 'thorn.dsmash':1, 'thorn.dtilt':2, 'thorn.fair':2, 'thorn.finisher':1, 'thorn.fs':1, 'thorn.grab':1,
+  'thorn.jab':8, 'thorn.jab@aim':2, 'thorn.nair':2, 'thorn.neutral':5, 'thorn.neutral@aim':-7, 'thorn.smash':1, 'thorn.uair':2, 'thorn.up':1, 'thorn.usmash':1, 'thorn.utilt':2,
+  'timber.bair':2, 'timber.dair':2, 'timber.down':1, 'timber.dsmash':1, 'timber.dtilt':2, 'timber.fair':2, 'timber.finisher':1, 'timber.fs':1, 'timber.grab':1, 'timber.jab':8,
+  'timber.jab@aim':2, 'timber.nair':2, 'timber.neutral':4, 'timber.neutral@aim':0, 'timber.smash':1, 'timber.uair':2, 'timber.up':-7, 'timber.usmash':1, 'timber.utilt':2, 'tricks.bair':2,
+  'tricks.dair':2, 'tricks.down':1, 'tricks.dsmash':1, 'tricks.dtilt':2, 'tricks.fair':2, 'tricks.finisher':1, 'tricks.fs':1, 'tricks.grab':1, 'tricks.jab':8, 'tricks.jab@aim':2,
+  'tricks.nair':2, 'tricks.neutral':4, 'tricks.neutral@aim':0, 'tricks.smash':0, 'tricks.uair':2, 'tricks.up':1, 'tricks.usmash':1, 'tricks.utilt':2, 'vacuum.bair':2, 'vacuum.dair':2,
+  'vacuum.down':1, 'vacuum.dsmash':1, 'vacuum.dtilt':2, 'vacuum.fair':2, 'vacuum.finisher':1, 'vacuum.fs':1, 'vacuum.grab':1, 'vacuum.jab':8, 'vacuum.jab@aim':2, 'vacuum.nair':2,
+  'vacuum.neutral':5, 'vacuum.neutral@aim':1, 'vacuum.smash':1, 'vacuum.uair':2, 'vacuum.up':-15, 'vacuum.usmash':1, 'vacuum.utilt':2, 'van.bair':2, 'van.dair':2, 'van.down':1,
+  'van.dsmash':1, 'van.dtilt':2, 'van.fair':2, 'van.finisher':1, 'van.fs':1, 'van.grab':1, 'van.jab':8, 'van.jab@aim':2, 'van.nair':2, 'van.neutral':5,
+  'van.neutral@aim':1, 'van.smash':0, 'van.uair':2, 'van.up':0, 'van.usmash':1, 'van.utilt':2, 'wallmart.bair':2, 'wallmart.dair':2, 'wallmart.down':1, 'wallmart.dsmash':1,
+  'wallmart.dtilt':2, 'wallmart.fair':2, 'wallmart.finisher':1, 'wallmart.fs':1, 'wallmart.grab':1, 'wallmart.jab':8, 'wallmart.jab@aim':2, 'wallmart.nair':2, 'wallmart.neutral':5, 'wallmart.neutral@aim':1,
+  'wallmart.smash':1, 'wallmart.uair':2, 'wallmart.up':1, 'wallmart.usmash':1, 'wallmart.utilt':2, 'wringout.bair':2, 'wringout.dair':2, 'wringout.down':1, 'wringout.dsmash':1, 'wringout.dtilt':2,
+  'wringout.fair':2, 'wringout.finisher':1, 'wringout.fs':1, 'wringout.grab':1, 'wringout.jab':8, 'wringout.jab@aim':2, 'wringout.nair':2, 'wringout.neutral':5, 'wringout.neutral@aim':1, 'wringout.smash':1,
+  'wringout.uair':2, 'wringout.up':1, 'wringout.usmash':1, 'wringout.utilt':2, 'yinyang.bair':2, 'yinyang.dair':2, 'yinyang.down':1, 'yinyang.dsmash':1, 'yinyang.dtilt':2, 'yinyang.fair':2,
+  'yinyang.finisher':1, 'yinyang.fs':1, 'yinyang.grab':1, 'yinyang.jab':8, 'yinyang.jab@aim':2, 'yinyang.nair':2, 'yinyang.neutral':4, 'yinyang.neutral@aim':0, 'yinyang.smash':1, 'yinyang.uair':2,
+  'yinyang.up':1, 'yinyang.usmash':1, 'yinyang.utilt':2, 'zap.bair':2, 'zap.dair':2, 'zap.down':0, 'zap.dsmash':1, 'zap.dtilt':2, 'zap.fair':2, 'zap.finisher':1,
+  'zap.fs':1, 'zap.grab':1, 'zap.jab':8, 'zap.jab@aim':2, 'zap.nair':2, 'zap.neutral':5, 'zap.neutral@aim':1, 'zap.smash':1, 'zap.uair':2, 'zap.up':9,
+  'zap.usmash':1, 'zap.utilt':2, 'zapshooter.bair':2, 'zapshooter.dair':2, 'zapshooter.down':1, 'zapshooter.dsmash':1, 'zapshooter.dtilt':2, 'zapshooter.fair':2, 'zapshooter.finisher':1, 'zapshooter.fs':1,
+  'zapshooter.grab':1, 'zapshooter.jab':8, 'zapshooter.jab@aim':2, 'zapshooter.nair':2, 'zapshooter.neutral':4, 'zapshooter.neutral@aim':0, 'zapshooter.smash':1, 'zapshooter.uair':2, 'zapshooter.up':-12, 'zapshooter.usmash':1,
+  'zapshooter.utilt':2
+};
+function pressAdd(kit, slot){ const n = FB_PRESS_ADD[kit + '.' + slot]; return n == null ? 0 : n; }
+function frameDataPress(kit, slot, aim){ const fd = frameData(kit, slot); if(!fd || !(fd.startup >= 0) || fd.endLagWhiff < 0) return fd; return Object.assign({}, fd, { startup: fd.startup + pressAdd(kit, slot + (aim ? '@aim' : '')) }); }
+function actDataPress(kit, slot, aim){ const n = actData(kit, slot); return n > 0 ? n + pressAdd(kit, slot + (aim ? '@aim' : '')) : n; }
 // Paintbrush's Heat Explosion at full rage (18%, a 120-frame burn, radius body + 120 px, spends the meter). Called when the wind-up ends (doSpecial 'fury').
 function heatExplosion(f){
   if(f.dead) return;

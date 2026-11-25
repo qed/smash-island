@@ -401,8 +401,8 @@ const MOVE_GROUPS = [
 ];
 const fdTable = (head, cells) => `<table class="fd"><thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody><tr>${cells.map((c) => `<td>${esc(c)}</td>`).join('')}</tr></tbody></table>`;
 const FD_HEAD = ['Startup', 'Active', 'End lag (miss)', 'End lag (hit)'];
-// a row's frames, exactly as the game's table has them ([startup, active, endLagWhiff, endLagHit]; -1 = not measured). The game's own
-// rule (moveShort): every row is measured; a 0 startup hits on the frame it is pressed ('instant').
+// a row's frames, as the game's table has them ([startup, active, endLagWhiff, endLagHit]; -1 = not measured), with the startup COUNTED FROM
+// THE PRESS (row.pressStartup, the game's frameDataPress: frame 1 = the frame after the press). A move that never connects: row.act, from the press.
 function frameHtml(row, m) {
   if (row.key === 'Z') {
     const z = m.z;
@@ -410,13 +410,15 @@ function frameHtml(row, m) {
       ? fdTable(['Comes up', 'Lasts', 'End lag', 'Again after'], [z.start, `up to ${z.active}, while Z is held`, z.endLag, `${z.cd} more`])
       : fdTable(['Comes up', 'Lasts', 'End lag (dropping it)'], [z.start, 'while Z is held', z.endLag]);
   }
-  if (/^The neutral (attack|special), aimed that way/.test(row.text)) return `<p class="small">The same move as ${row.key.includes('X') ? 'X' : 'C'}.</p>`;
+  if (/^The neutral (attack|special), aimed that way/.test(row.text)) return `<p class="small">The same move as ${row.key.includes('X') ? 'X' : 'C'}, aimed${row.aimStartup != null ? `: its hit comes ${row.aimStartup} frames after the press` : row.aimAct != null ? `: you can act ${row.aimAct} frames after the press` : ''}.</p>`;
   const f = row.frames;
+  if (row.pummel) return `<p class="small">The first pummel lands ${row.pummel.startup + 1} frame${row.pummel.startup ? 's' : ''} after the press, then one every ${row.pummel.every} frames while X is held.</p>`;
+  if ((!f || !(f[0] >= 0)) && row.act != null) return `<p class="small">No hit: you can act again ${row.act} frames after the press.</p>`;
   if (!f || !(f[0] >= 0)) return '<p class="small">Frame data: not measured.</p>';   // (every row in the table is measured; a 0 startup is a real frame-0 hit)
   const cell = (v) => (v < 0 ? 'not measured' : String(v));
   return /throw$/.test(row.slot || '')
     ? fdTable(FD_HEAD, ['from the hold', '–', 'a throw cannot miss', cell(f[3])])
-    : fdTable(FD_HEAD, [cell(f[0]), cell(f[1]), cell(f[2]), cell(f[3])]);
+    : fdTable(FD_HEAD, [cell(row.pressStartup != null ? row.pressStartup : f[0]), cell(f[1]), cell(f[2]), cell(f[3])]);
 }
 // The hitbox strip under a move (scripts/dump-hitboxes.mjs). Numbers in its caption come from the same recording as the picture.
 const SMASH_SLOTS = new Set(['smash', 'usmash', 'dsmash']);
@@ -474,8 +476,8 @@ function fighterPage(r, i) {
     </tbody>
   </table></div>
   <h2>${esc(r.name)}'s moves</h2>
-  <p class="small">Every move in full, in the game's own words. Damage is the first hit on a standing foe. Frames are 1/60 of a second: startup is the wait before the hit comes out, active is how long it can hit, end lag is how long you cannot act after. "Not measured" means the game has no frame numbers for that move yet. In the game, the fighter card and the pause menu have a short Moves list.</p>
-  ${Object.keys(HB_MOVES).some((k) => k.startsWith(r.name + '|')) ? `<p class="small"><strong>Hitboxes frame by frame.</strong> Under each move: one panel per frame, from frame 0 (the frame you press the button) to the end of its end lag, recorded from the game itself on a miss (a still foe far away), with the camera on the fighter and the ground as a grey line. The number on each panel is its frame; … means frames were skipped. Throws, the pummel, the shield and the Final Smash have no strip. Colours:</p>
+  <p class="small">Every move in full, in the game's own words. Damage is the first hit on a standing foe. Frames are 1/60 of a second, counted from the press: startup is the frames from the key press to the hit (1 = the frame right after it), active is how long it can hit, end lag is how long you cannot act after. "Not measured" means the game has no frame numbers for that move yet. In the game, the fighter card and the pause menu have a short Moves list.</p>
+  ${Object.keys(HB_MOVES).some((k) => k.startsWith(r.name + '|')) ? `<p class="small"><strong>Hitboxes frame by frame.</strong> Under each move: one panel per frame, from frame 0 (the frame the move starts; the press can wait a few frames before that, which the table counts) to the end of its end lag, recorded from the game itself on a miss (a still foe far away), with the camera on the fighter and the ground as a grey line. The number on each panel is its frame; … means frames were skipped. Throws, the pummel, the shield and the Final Smash have no strip. Colours:</p>
   <p class="small">${HB_LEGEND}</p>` : ''}
 ${groups.filter(([, rows]) => rows.length).map(([g, rows]) => `  <h2>${esc(g)}</h2>
   <div class="card">
