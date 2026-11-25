@@ -93230,8 +93230,15 @@ const GRAB_DEFAULT = {
   d: { dmg: 5, kx: 1.8, ky: -9, stun: 30, pose: 'slam', lag: 14 },
 };
 const STRUGGLE = 3, GRAB_DIR_LOCK = 6, GRAB_ACTIVE = 3;   // GRAB_ACTIVE: frames the grab box is live (from frame G.st); the whole whiff is unchanged, so its end lag is 2 frames shorter
+const GRAB_KIT = {};   // OWN THROWS: kit -> a grab of a kit with no MOVESETS entry (same shape as a MOVESETS grab)
 function grabOf(f){
-  const ms = msOf(f), o = ms && ms.grab;
+  const ms = msOf(f);
+  let o = ms && ms.grab;
+  if(f && f.oc && f.oc.picks && typeof OC_GRABS !== 'undefined' && OC_GRABS[f.oc.picks.g]) o = OC_GRABS[f.oc.picks.g].grab;   // (an OC's picked grab set, OC GRABS)
+  if(!o && f && f.kit) o = GRAB_KIT[f.kit.special] || null;
+  // ---- Steve Cobs's prize: begin ----
+  if(!o && f && f.kit && PRIZE_INSTALLED && PRIZE_KIT.GRAB) o = PRIZE_KIT.GRAB[f.kit.special] || null;
+  // ---- Steve Cobs's prize: end ----
   if(!o) return GRAB_DEFAULT;
   const G = Object.assign({}, GRAB_DEFAULT, o);
   for(const k of ['pummel', 'hold', 'f', 'b', 'u', 'd']) G[k] = Object.assign({}, GRAB_DEFAULT[k], o[k] || {});
@@ -93247,7 +93254,7 @@ function mvGrabStart(f){
   f._gb = { t: 0, G: G };
   { const U = f._used || (f._used = {}); U.grab = (U.grab || 0) + 1; }
   f.atkCd = G.whiff; f.flash = 4;
-  armAtk(f, G.whiff, 'grab', mvId(f, 'grab'));
+  armAtk(f, G.whiff, 'grab', thrLabel(f, 'grab'));
   if(f.kit && f.kit.special==='saltpepper') pepperEcho(f,'grab');   // Pepper reaches too
   return true;
 }
@@ -93279,7 +93286,7 @@ function holdStart(f, t, G){
   f._hold = { idx: t.idx, t: 0, max: max, pumCd: 0, G: G, prev: { l: false, r: false, u: false, d: false, a: true } };   // (a direction must go down again to throw; X pummels while it is down, holdTick)
   t._heldBy = f.idx; t._stPrev = null;
   f.atkCd = 0; f.vx = 0; f.flash = 6;
-  armAtk(f, 16, 'grab', mvId(f, 'grab'));
+  armAtk(f, 16, 'grab', thrLabel(f, 'grab'));
   holdPlace(f, t);
   if(G.onHold) G.onHold(f, t);   // a grab that does something as it closes (Cloudy's Collect: their held item into his collection)
   for(let i = 0; i < 6; i++) puff(t.x, t.y - 8, '#fff', 3);
@@ -93289,6 +93296,7 @@ function holdPlace(f, t){
   t.rooted = Math.max(t.rooted || 0, 2);
 }
 function holdRelease(f, t, push){
+  if(t && f._hold && f._hold.thr) t.y = Math.min(t.y, f.y + f.r - t.r);   // (OWN THROWS: a motion cut short -- a sink, a dunk -- never leaves them in the floor)
   if(t){ t._heldBy = null; t.rooted = 0; if(push){ t.vx = f.face * push; t.invuln = Math.max(t.invuln, 12); } }
   f._hold = null; f._gbDone = hazardT;
 }
@@ -93305,6 +93313,7 @@ function holdTick(f, inp){
   const dirs = { l: !!inp.left, r: !!inp.right, u: !!inp.up || !!inp.jump, d: !!inp.down, a: !!inp.attack };
   const P = H.prev; H.prev = dirs;
   inp.left = false; inp.right = false; inp.jump = false; inp.up = false; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; inp.fin = false;
+  if(H.thr){ thrTick(f, t, H); return; }   // OWN THROWS: the throw's motion is under way (no pummel, no struggle-out: it is the throw now)
   H.t++; if(H.pumCd > 0) H.pumCd--;
   holdPlace(f, t);
   if(H.t >= H.max){ holdRelease(f, t, -3); f.atkCd = 14; for(let i = 0; i < 6; i++) puff(t.x, t.y - 6, '#fff', 3); return; }   // they wriggled out
@@ -93322,7 +93331,7 @@ function holdTick(f, inp){
   // did. Only a person's hold repeats (isHumanCtrl: local or an online guest): a CPU pummels on a fresh press, as before, so the CTF
   // defenders and carriers that keep X down through a hold don't start pummelling.
   if(dirs.a && (!P.a || isHumanCtrl(f)) && H.pumCd <= 0){
-    H.pumCd = G.pummel.every; f.flash = 5; armAtk(f, 10, 'punch', mvId(f, 'pummel'));
+    H.pumCd = G.pummel.every; f.flash = 5; armAtk(f, 10, 'punch', thrLabel(f, 'pummel'));
     holdDamage(f, t, G.pummel.dmg);
     for(let i = 0; i < 4; i++) puff(t.x, t.y - 6, f.color, 3);
   }
@@ -93337,19 +93346,81 @@ function holdDamage(f, t, dmg){
   if(t.pct >= t.koCap && !t.dead && !FDR) eliminate(t);   // (THE WIND RACE: damage never KOs)
 }
 function doThrow(f, t, kind){
-  const G = f._hold.G, T = G[kind];   // (FRAME BUDGET: the 20-frame throw wind-up of the no-tell sweep is gone -- a throw launches at once, as it did before it; the hold is capped by LOCK.max)
+  const H = f._hold, G = H.G, T = G[kind];   // (FRAME BUDGET: the 20-frame throw wind-up of the no-tell sweep is gone -- a throw launches at once, as it did before it; the hold is capped by LOCK.max)
+  { const U = f._used || (f._used = {}); U[kind + 'throw'] = (U[kind + 'throw'] || 0) + 1; }
+  if(T.mo && THR_MO[T.mo] != null && !H.thr){   // OWN THROWS: a throw with a motion of its own works the foe round first (thrTick), then launches
+    H.thr = { k:kind, T:T, t:0, n:T.mt || THR_MO[T.mo], hit:0 };
+    armAtk(f, H.thr.n + T.lag + 6, T.pose, thrLabel(f, kind + 'throw'));
+    f.atkCd = Math.max(f.atkCd, H.thr.n + T.lag); f.flash = 6;
+    return;
+  }
+  thrLaunch(f, t, kind, false);
+}
+// the launch: the throw's own numbers, from where the holder stands (`moved`: its motion has run, and its swing is already going)
+function thrLaunch(f, t, kind, moved){
+  const G = f._hold.G, T = G[kind];
   holdRelease(f, t, 0);
   if(kind === 'b') f.face = -f.face;
   const dir = f.face;
-  armAtk(f, T.lag + 6, T.pose, mvId(f, kind + 'throw'));
+  if(!moved) armAtk(f, T.lag + 6, T.pose, thrLabel(f, kind + 'throw'));
   f.atkCd = Math.max(f.atkCd, T.lag); f.flash = 8;
   t.x = f.x + dir * (f.r + t.r) * 0.9; t.y = f.y + f.r - t.r;
   t.invuln = 0;
-  applyHit(t, T.dmg, dir * T.kx, T.ky, f, { stun: T.stun || 0, throwKind: kind });
+  const dmg = T.mo === 'multi' ? Math.max(0, T.dmg - (T.mh || 3)*(T.md || 1)) : T.dmg;   // (a multi-hit motion has landed the rest on the way)
+  applyHit(t, dmg, dir * T.kx, T.ky, f, { stun: T.stun || 0, throwKind: kind });
   if(T.fx) T.fx(f, t, dir);
   f._thrown = { t: hazardT, kind: kind, idx: t.idx };
   if(f.kit && f.kit.special==='saltpepper') pepperEcho(f,'throw');   // ...and shoves
-  { const U = f._used || (f._used = {}); U[kind + 'throw'] = (U[kind + 'throw'] || 0) + 1; }
+}
+// ---- OWN THROWS (the owner, 2026-11-25: "ungenericify the grabs") ----
+// A throw row may carry a MOTION of its own (`mo`, one of THR_MO): before the launch the holder works the foe round for a few frames -- a spin,
+// a lift overhead, a carry, a slam, a sink into the floor, a juggle, a few small hits -- placed each frame by thrPath, so a guest sees it in the
+// positions it is shipped. `mt` is that motion's length in frames (default THR_MO's). `ef` ([effect, n]) is an effect run on the launch (an SM_FX
+// effect or THR_FX's bury), said on the card. `art` ([prop, colour, colour2]) is the throw's own drawing (THR_ART, in the show's style: flat fills,
+// a dark outline), drawn by drawThrowArt from the throw's start. The launch itself is the old one (the same numbers, from where the holder
+// stands), so the throw's KO percent and its follow-up hold. A 'multi' motion lands `mh` small hits of `md` % on the way (holdDamage, the
+// pummel's bookkeeping) and the launch carries the rest of `dmg`. The hold is not let go during the motion: a hit on the holder, a freeze or a KO
+// still lets go (holdTick's checks); the struggle cannot end it (it is the throw now). A grab object's `art` ({ g, p }) draws its reach and pummel.
+const THR_MO = { spin:14, over:12, lift:12, carry:18, slam:12, sink:12, multi:16, shake:12, roll:12, juggle:14, pull:10, dunk:12 };
+const THR_POSE = { spin:'spin', over:'throwb', lift:'cast', carry:'cast', slam:'slam', sink:'stomp', multi:'punch', shake:'sweep', roll:'sweep', juggle:'uppercut', pull:'hook', dunk:'chop' };
+const THR_FX = {   // effects that are a throw's own (the rest are SM_FX's)
+  bury: (t, f, n) => { lockRoot(t, n || 36); t.vx = 0; t.vy = Math.min(0, t.vy || 0)*0.2; t._buryT = hazardT + Math.min(n || 36, LOCK.max); for(let i = 0; i < 8; i++) puff(t.x, t.y + t.r, '#8a6a4a', 3); },
+};
+function thrFx(name, n){ return fxTag((f, t) => { if(THR_FX[name]) THR_FX[name](t, f, n); else if(SM_FX[name]) SM_FX[name](t, f, n); }, name); }
+function thrLabel(f, slot){ return mvId(f, slot) || ((f && f.kit && f.kit.special) ? f.kit.special + '.' + slot : null); }   // (a fighter with no MOVESETS: its grab's art still finds it)
+// where the held foe is on the motion's frame: [ahead, down] from where a held foe stands (holdPlace), u from 0 to 1
+function thrPath(mo, u, f, t, k){
+  const R = (f.r + t.r)*0.85, H = f.r + t.r, PI = Math.PI;
+  switch(mo){
+    case 'spin': { const a = u*(k === 'b' ? 3 : 2)*PI; return [R*Math.cos(a), -6 - 10*Math.abs(Math.sin(a))]; }
+    case 'over': { const a = u*PI; return [R*Math.cos(a), -H*1.1*Math.sin(a)]; }
+    case 'lift': return [R*(1 - u*0.85), -H*1.05*Math.sin(u*PI/2)];
+    case 'carry': { const v = Math.min(1, u*5); return [R*(1 - v*0.75), -H*0.95*v]; }
+    case 'slam': { if(u < 0.6){ const v = u/0.6; return [R*(1 - v*0.8), -H*1.05*Math.sin(v*PI/2)]; } const v = (u - 0.6)/0.4; return [R*(0.2 + 0.9*v), -H*1.05*(1 - v) + 4*v]; }
+    case 'sink': return [R, t.r*0.7*u];
+    case 'multi': return [R + 3*Math.sin(u*PI*8), -2*Math.abs(Math.sin(u*PI*8))];
+    case 'shake': return [R, -6 - 9*Math.abs(Math.sin(u*PI*5))];
+    case 'roll': return [R + 34*u, 0];
+    case 'juggle': return [R, -52*Math.sin(u*PI)];
+    case 'pull': return [R*(1 + 0.9*Math.sin(u*PI)), -4*Math.sin(u*PI)];
+    case 'dunk': { if(u < 0.5) return [R, -H*0.8*Math.sin(u*PI)]; const v = (u - 0.5)/0.5; return [R, -H*0.8*(1 - v) + t.r*0.5*v]; }
+  }
+  return [R, 0];
+}
+// the holder's frame while a throw's motion runs (holdTick hands over here)
+function thrTick(f, t, H){
+  const M = H.thr, T = M.T;
+  M.t++;
+  const u = Math.min(1, M.t/M.n), P = thrPath(T.mo, u, f, t, M.k);
+  if(T.mo === 'carry' && M.t > 3 && standAt(f.x + f.face*(f.r + 34), feetY(f))) f.x += f.face*(T.cv || 3);   // (never off a ledge: it stops at the edge)
+  f.vx = 0;
+  t.x = f.x + f.face*P[0]; t.y = f.y + f.r - t.r + P[1]; t.vx = 0; t.vy = 0; t.onground = true; t.face = -f.face;
+  t.rooted = Math.max(t.rooted || 0, 2);
+  if(T.mo === 'multi'){
+    const n = T.mh || 3, gap = Math.max(1, Math.floor(M.n/(n + 1)));
+    if(M.hit < n && M.t >= gap*(M.hit + 1)){ M.hit++; holdDamage(f, t, T.md || 1); f.flash = 4; for(let i = 0; i < 3; i++) puff(t.x - f.face*t.r*0.4, t.y - 4, f.color, 3); }
+  }
+  if(M.t >= M.n){ H.thr = null; thrLaunch(f, t, M.k, true); }
 }
 // a held fighter's own frame: struggle, and nothing else (called where the inputs are masked). THE KEYS, NOT THE MOVES, as a cuff's mash (cuffKeys): `R` is
 // a human's attack, special, smash and jump as pressed (f._rawKeys, before the pairing), or X and C mashed together took nothing off the hold (the pairing
@@ -93806,7 +93877,10 @@ function msLine(S, dk = 1){   // dk: the fighter's dmg (FIGHTER STATS)
   const dm = Math.max.apply(null, (S.boxes || []).map(b => b.dmg).concat([0]));
   return S.n + ' — ' + S.d + ' (' + msReachWord(S) + '). On hit: ' + (S.x ? statPcts(dk, S.x) : msPct(dm*dk)) + (S.fxt ? ', ' + statPcts(dk, S.fxt) : '') + msFxWords(S.boxes, S.d + ' ' + (S.x || '') + ' ' + (S.fxt || '')) + '.';
 }
-function msThrowLine(T, dk = 1){ return T.n + ' — ' + T.d + '. On hit: ' + msPct(T.dmg*dk) + '.'; }
+function msThrowLine(T, dk = 1){   // (OWN THROWS: a multi-hit throw's small hits and every effect said)
+  const hits = T.mo === 'multi' ? ' in all (' + (T.mh || 3) + ' small hits of ' + msPct((T.md || 1)*dk) + ' first)' : '';
+  return T.n + ' — ' + T.d + '. On hit: ' + msPct(T.dmg*dk) + hits + msFxWords(T.fx ? [{ fx:T.fx }] : [], T.d) + '.';
+}
 function msWords(){   // (every batch calls it once its fighters are in MOVESETS; it is safe to run again)
   for(const r of ROSTER){
     if(!r.play || !r.kit) continue;
@@ -93847,6 +93921,7 @@ const MS_FX_WORDS = [['burn', /burn/i, 'sets them burning'], ['bleed', /bleed/i,
   ['ice', /slipp|ice/i, 'leaves them slippery'], ['curse', /curse/i, 'curses them'], ['define', /mark|take more/i, 'marks them to take more'],
   ['soak', /soak/i, 'soaks them'], ['weaken', /weak/i, 'weakens their hits'], ['scramble', /scrambl|dizzy|swapped|controls/i, 'scrambles their controls'],
   ['stun', /stun|dazzl/i, 'stuns them'], ['strip', /strip|armou?r[^.]{0,30}gone|ends their armou?r/i, 'strips armour'], ['drain', /drain|heals/i, 'drains them'],
+  ['bury', /bur(?:y|ies|ied)/i, 'buries them'],
   ['knockdown', /knock(?:s|ed|ing)? (?:\w+ )?down|knockdown|off (?:their|his|her) feet|drops? them|trip/i, 'knocks them down']];
 function msFxWords(boxes, said){
   const seen = new Set(); let add = '';
@@ -95804,6 +95879,170 @@ function drawDsmProps(){
     ctx.restore();
   }
 }
+// ---- OWN THROWS: THE DRAWINGS (the owner, 2026-11-25: "ungenericify the grabs") ----
+// Each throw's `art` ([prop, colour, colour2]) and each grab's art.g (the reach) and art.p (the pummel), drawn in the show's style (a flat fill and a
+// dark outline: dpFill and its friends), forward-relative to where the throw sends the foe: x grows the way the foe flies (behind the holder for a back
+// throw, until its turn), y down. t: frames since the throw (or grab, or pummel) began; o.L: the frame it launches (its motion's length); o.k: f, b,
+// u, d, g or p; o.kx, o.ky: the launch. Drawn from what a netcode client is shipped (the swing, its label and length, the holder's place), so a guest
+// draws the same. A prop sits where the held foe is, or follows the launch (thrFoeAt: the foe's path, roughly), or marks the floor.
+function thrFoeAt(o, t){   // where the thrown foe roughly is at frame t (forward-relative)
+  const R = 41, tau = t - o.L;
+  if(tau <= 0){ const P = o.mo ? thrPath(o.mo, Math.min(1, Math.max(0, t/o.L)), { r:24 }, { r:24 }, o.k) : [R, 0]; return [o.k === 'b' ? -P[0] : P[0], -14 + P[1]]; }   // (a back throw's path is the holder's forward; the art's x is the foe's way)
+  const vx = Math.abs(o.kx || 6)*0.9, vy = (o.ky || -5)*0.9;
+  return [R + vx*tau, -14 + vy*tau + 0.22*tau*tau];
+}
+function thrFade(t, a, b){ return t < a || t > b ? 0 : Math.min(1, (t - a + 1)/3, (b - t + 1)/4); }
+const THR_ART = {
+  flame: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 14); if(!k) return; const P = thrFoeAt(o, t);
+    for(let i = 0; i < 3; i++){ const a = t*0.6 + i*2.1, x = P[0] - 10 + i*10, y = P[1] + 12, h = (16 + 6*Math.sin(a))*k;
+      dpPoly(c, [X(x - 7), Y(y), X(x), Y(y - h), X(x + 7), Y(y)], A[1] || '#ff8a2a'); dpPoly(c, [X(x - 3), Y(y), X(x), Y(y - h*0.55), X(x + 3), Y(y)], A[2] || '#ffd23a'); } },
+  rainbow: function(c, X, Y, z, t, A, o){ if(t < o.L || t > o.L + 16) return; const cols = ['#e8402a', '#ff9a2a', '#ffe14a', '#5fd04a', '#4a8af0', '#9a5ae0'], n = Math.min(10, t - o.L + 1);
+    for(let j = 0; j < cols.length; j++){ c.beginPath(); for(let i = 0; i <= n; i++){ const P = thrFoeAt(o, o.L + i); c.lineTo(X(P[0]), Y(P[1] + j*3 - 8)); }
+      c.strokeStyle = cols[j]; c.lineWidth = 3; c.lineCap = 'round'; c.stroke(); } },
+  stars: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 12); if(!k) return; const P = thrFoeAt(o, t);
+    for(let i = 0; i < 3; i++){ const a = t*0.35 + i*2.09; dpStar(c, X(P[0] + Math.cos(a)*20), Y(P[1] - 26 + Math.sin(a)*6), 6*k, 2.6*k, 5, A[1] || '#ffe14a'); } },
+  coins: function(c, X, Y, z, t, A, o){ if(t < o.L - 2 || t > o.L + 16) return; const tau = t - o.L + 2;
+    for(let i = 0; i < 3; i++){ const x = 30 + i*14 + tau*2.2*(i + 1)*0.5, y = -30 - tau*(3 - i) + 0.25*tau*tau, w = 7*Math.abs(Math.cos(tau*0.5 + i));
+      dpEll(c, X(x), Y(y), Math.max(1.5, w), 7, 0, A[1] || '#f2c14a'); } },
+  pages: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 14); if(!k) return; const P = thrFoeAt(o, Math.min(t, o.L + 4));
+    for(let i = 0; i < 3; i++){ const a = t*0.3 + i*1.7, x = P[0] - 16 + i*16 + Math.sin(a)*6, y = P[1] - 20 - i*6 - (t*0.6) + Math.cos(a)*4;
+      c.save(); c.translate(X(x), Y(y)); c.rotate(Math.sin(a)*0.6); dpPoly(c, [-8, -6, 8, -6, 8, 6, -8, 6], A[1] || '#f4f1e6'); dpLine(c, -5, -1, 5, -1, 0.6, A[2] || '#9aa4b0'); c.restore(); } },
+  ink: function(c, X, Y, z, t, A, o){ const k = thrFade(t, o.L - 2, o.L + 18); if(!k) return; const x = 44, y = 22;
+    dpEll(c, X(x), Y(y), 26*k, 6*k, 0, A[1] || '#1f2a5a'); for(let i = 0; i < 4; i++){ const a = i*1.4 + 0.3; dpDisc(c, X(x + Math.cos(a)*30*k), Y(y - 4 - Math.abs(Math.sin(a))*10*k), 3.5*k, A[1] || '#1f2a5a'); } },
+  bolt: function(c, X, Y, z, t, A, o){ if(t > o.L + 8 || (t % 4) > 2) return; const P = thrFoeAt(o, t), pts = [];
+    for(let i = 0; i <= 5; i++){ const u = i/5; pts.push(X(8 + (P[0] - 8)*u + (i % 2 ? 6 : -6)), Y(-16 + (P[1] + 16)*u + (i % 2 ? -8 : 8))); }
+    c.beginPath(); for(let i = 0; i < pts.length; i += 2) c.lineTo(pts[i], pts[i + 1]); c.strokeStyle = DSM_INK; c.lineWidth = 6; c.stroke(); c.strokeStyle = A[1] || '#ffe14a'; c.lineWidth = 3; c.stroke(); },
+  snow: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 14); if(!k) return; const P = thrFoeAt(o, Math.min(t, o.L + 2));
+    for(let i = 0; i < 5; i++){ const a = i*1.26, r = 14 + (t - o.L > 0 ? (t - o.L)*2.4 : 2); dpDisc(c, X(P[0] + Math.cos(a)*r), Y(P[1] + Math.sin(a)*r*0.7), 5*k, A[1] || '#ffffff'); } },
+  drops: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 14); if(!k) return; const P = thrFoeAt(o, Math.min(t, o.L + 3));
+    for(let i = 0; i < 5; i++){ const a = -0.3 - i*0.6, r = 12 + Math.max(0, t - o.L)*2.2, x = P[0] + Math.cos(a)*r, y = P[1] + Math.sin(a)*r + Math.max(0, t - o.L)*0.8;
+      dpPoly(c, [X(x), Y(y - 7*k), X(x + 4*k), Y(y + 2), X(x - 4*k), Y(y + 2)], A[1] || '#7ec8f0'); } },
+  leaves: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 16); if(!k) return; const P = thrFoeAt(o, Math.min(t, o.L + 5));
+    for(let i = 0; i < 4; i++){ const a = t*0.25 + i*1.6, x = P[0] - 18 + i*12 + Math.sin(a)*8, y = P[1] - 10 + i*3 + t*0.5 - 10;
+      c.save(); c.translate(X(x), Y(y)); c.rotate(a); dpEll(c, 0, 0, 8*k, 3.5*k, 0, A[1] || '#5fbf3a'); c.restore(); } },
+  petals: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 16); if(!k) return; const P = thrFoeAt(o, Math.min(t, o.L + 5));
+    for(let i = 0; i < 5; i++){ const a = t*0.3 + i*1.25, x = P[0] + Math.cos(a)*(16 + i*2), y = P[1] - 12 + Math.sin(a)*10 - t*0.3;
+      dpEll(c, X(x), Y(y), 5*k, 3*k, a, A[1] || '#f07aa8'); } },
+  notes: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 18); if(!k) return;
+    for(let i = 0; i < 3; i++){ const x = 8 + i*16 + Math.sin(t*0.3 + i)*5, y = -30 - i*8 - t*1.1;
+      dpEll(c, X(x), Y(y), 5*k, 4*k, -0.4, A[1] || '#3a3a46'); dpLine(c, X(x + 4*k), Y(y), X(x + 4*k), Y(y - 14*k), 1, A[1] || '#3a3a46'); } },
+  bubbles: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 16); if(!k) return; const P = thrFoeAt(o, t);
+    c.save(); c.globalAlpha *= 0.75; dpDisc(c, X(P[0]), Y(P[1]), 30*k, A[1] || 'rgba(170,220,255,0.35)'); c.restore();
+    dpDisc(c, X(P[0] - 10), Y(P[1] - 12), 4*k, '#ffffff'); },
+  dust: function(c, X, Y, z, t, A, o){ const tau = t - o.L; if(tau < 0 || tau > 14) return; const k = 1 - tau/15, r = 10 + tau*3.2;
+    for(const s of [-1, 1]) for(let i = 0; i < 3; i++) dpDisc(c, X(40 + s*(r + i*8)), Y(22 - i*4 - tau*0.4), (7 - i*1.5)*k + 1, A[1] || '#d8ccb4'); },
+  crack: function(c, X, Y, z, t, A, o){ const k = thrFade(t, o.L, o.L + 22); if(!k) return; const x = 42, y = 24;
+    for(const s of [-1, 1]){ c.beginPath(); c.moveTo(X(x), Y(y)); c.lineTo(X(x + s*14*k), Y(y + 2)); c.lineTo(X(x + s*22*k), Y(y - 1)); c.lineTo(X(x + s*34*k), Y(y + 2)); c.strokeStyle = A[1] || DSM_INK; c.lineWidth = 2.5; c.stroke(); } },
+  mound: function(c, X, Y, z, t, A, o){ const k = thrFade(t, Math.max(0, o.L - 6), o.L + 40); if(!k) return; const x = 42, y = 26;
+    dpPoly(c, [X(x - 30*k), Y(y), X(x - 18*k), Y(y - 12*k), X(x), Y(y - 16*k), X(x + 18*k), Y(y - 12*k), X(x + 30*k), Y(y)], A[1] || '#9a7a52');
+    dpDisc(c, X(x - 12*k), Y(y - 8*k), 3*k, A[2] || '#7a5a3a'); dpDisc(c, X(x + 10*k), Y(y - 10*k), 2.5*k, A[2] || '#7a5a3a'); },
+  swirl: function(c, X, Y, z, t, A, o){ if(t > o.L + 4) return; const u = Math.min(1, t/Math.max(1, o.L));
+    c.beginPath(); c.arc(X(0), Y(-14), 44*z, -u*6.2 - 0.6, -u*6.2 + 0.6); c.strokeStyle = DSM_INK; c.lineWidth = 7; c.lineCap = 'round'; c.stroke(); c.strokeStyle = A[1] || '#ffffff'; c.lineWidth = 4; c.stroke(); },
+  speed: function(c, X, Y, z, t, A, o){ const tau = t - o.L; if(tau < 0 || tau > 10) return; const P = thrFoeAt(o, t), a = Math.atan2(o.ky || -5, Math.abs(o.kx || 6));
+    for(let i = -1; i <= 1; i++){ const bx = P[0] - Math.cos(a)*(20 + i*4) + Math.sin(a)*i*10, by = P[1] - Math.sin(a)*(20 + i*4) - Math.cos(a)*i*10;
+      dpLine(c, X(bx), Y(by), X(bx - Math.cos(a)*24), Y(by - Math.sin(a)*24), 2, A[1] || '#ffffff'); } },
+  cash: function(c, X, Y, z, t, A, o){ const k = thrFade(t, o.L - 3, o.L + 18); if(!k) return;
+    for(let i = 0; i < 3; i++){ const tau = Math.max(0, t - o.L + 3), x = 30 + i*16 + Math.sin(tau*0.3 + i)*8, y = -40 + tau*1.2 - i*6;
+      c.save(); c.translate(X(x), Y(y)); c.rotate(Math.sin(tau*0.25 + i)*0.5); dpPoly(c, [-10, -5, 10, -5, 10, 5, -10, 5], A[1] || '#6fbf5a'); dpDisc(c, 0, 0, 2.5, A[2] || '#3a7a2a'); c.restore(); } },
+  tape: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 16); if(!k) return; const P = o.k === 'd' ? [42, 14] : thrFoeAt(o, Math.min(t, o.L + 2));
+    for(const s of [-1, 1]){ c.save(); c.translate(X(P[0]), Y(P[1])); c.rotate(s*0.6); dpPoly(c, [-20*k, -4, 20*k, -4, 20*k, 4, -20*k, 4], A[1] || 'rgba(235,225,190,0.92)'); c.restore(); } },
+  thread: function(c, X, Y, z, t, A, o){ if(t > o.L + 8) return; const P = thrFoeAt(o, t);
+    c.beginPath(); c.moveTo(X(10), Y(-10)); c.quadraticCurveTo(X((10 + P[0])/2), Y(Math.min(-10, P[1]) - 18), X(P[0]), Y(P[1])); c.strokeStyle = A[1] || '#e04a6a'; c.lineWidth = 2; c.stroke(); },
+  chair: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 10); if(!k) return; const P = o.k === 'd' ? [42, -16] : [26, -58 + Math.min(1, t/6)*20];
+    const x = P[0], y = P[1], col = A[1] || '#b8743a';
+    dpPoly(c, [X(x - 14), Y(y), X(x + 14), Y(y), X(x + 14), Y(y + 5), X(x - 14), Y(y + 5)], col); dpLine(c, X(x - 12), Y(y + 5), X(x - 12), Y(y + 22), 2.5, col);
+    dpLine(c, X(x + 12), Y(y + 5), X(x + 12), Y(y + 22), 2.5, col); dpLine(c, X(x + 12), Y(y), X(x + 12), Y(y - 18), 2.5, col); },
+  rings: function(c, X, Y, z, t, A, o){ const tau = t - Math.max(0, o.L - 4); if(tau < 0 || tau > 16) return; const P = thrFoeAt(o, Math.min(t, o.L));
+    for(let i = 0; i < 3; i++){ const r = 10 + (tau + i*4)*2.6; if(r > 60) continue; c.beginPath(); c.arc(X(P[0] - 30), Y(P[1]), r, -0.7, 0.7); c.strokeStyle = A[1] || '#ffe7a0'; c.lineWidth = 3; c.stroke(); } },
+  hearts: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 14); if(!k) return;
+    for(let i = 0; i < 3; i++){ const x = 20 + i*14, y = -40 - t*0.9 - i*5, s = 4*k; c.beginPath(); c.moveTo(X(x), Y(y + s*1.6));
+      c.bezierCurveTo(X(x - s*2.2), Y(y), X(x - s), Y(y - s*1.4), X(x), Y(y - s*0.4)); c.bezierCurveTo(X(x + s), Y(y - s*1.4), X(x + s*2.2), Y(y), X(x), Y(y + s*1.6)); dpFill(c, A[1] || '#f05a7a'); } },
+  pow: function(c, X, Y, z, t, A, o){ const tau = t - o.L; if(tau < 0 || tau > 7) return; const k = tau < 2 ? 0.6 + tau*0.2 : 1 - (tau - 2)/7, P = thrFoeAt(o, o.L);
+    dpStar(c, X(P[0] - 6), Y(P[1]), 26*k, 12*k, 8, A[1] || '#ffe14a'); dpStar(c, X(P[0] - 6), Y(P[1]), 13*k, 6*k, 8, A[2] || '#ff8a2a'); },
+  gems: function(c, X, Y, z, t, A, o){ const k = thrFade(t, o.L - 2, o.L + 14); if(!k) return; const tau = Math.max(0, t - o.L + 2), P = thrFoeAt(o, o.L);
+    for(let i = 0; i < 4; i++){ const a = -0.4 - i*0.8, r = 12 + tau*2.6, x = P[0] + Math.cos(a)*r, y = P[1] + Math.sin(a)*r + 0.2*tau*tau, s = 6*k;
+      dpPoly(c, [X(x), Y(y - s), X(x + s*0.7), Y(y), X(x), Y(y + s), X(x - s*0.7), Y(y)], A[1] || '#e0304a'); } },
+  ice: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 10); if(!k) return; const P = thrFoeAt(o, t);
+    c.save(); c.globalAlpha *= 0.8; dpPoly(c, [X(P[0] - 26*k), Y(P[1] - 24*k), X(P[0] + 24*k), Y(P[1] - 28*k), X(P[0] + 28*k), Y(P[1] + 22*k), X(P[0] - 24*k), Y(P[1] + 26*k)], A[1] || 'rgba(190,235,255,0.55)'); c.restore();
+    dpLine(c, X(P[0] - 12), Y(P[1] - 14), X(P[0] - 2), Y(P[1] - 18), 1.5, '#ffffff'); },
+  goo: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 16); if(!k) return; const P = thrFoeAt(o, Math.min(t, o.L + 2));
+    for(let i = 0; i < 4; i++){ const a = i*1.57 + t*0.1, r = 14 + Math.max(0, t - o.L)*1.6; dpEll(c, X(P[0] + Math.cos(a)*r), Y(P[1] + Math.sin(a)*r*0.6 + Math.max(0, t - o.L)*0.6), 6*k, 4.5*k, a, A[1] || '#8a5ac8'); } },
+  wind: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 12); if(!k) return;
+    for(let i = 0; i < 3; i++){ const x = 14 + ((t*5 + i*22) % 70), y = -30 + i*14; c.beginPath(); c.moveTo(X(x - 18), Y(y)); c.quadraticCurveTo(X(x), Y(y - 8), X(x + 10), Y(y)); c.arc(X(x + 10), Y(y + 4), 4, -1.57, 1.57, X(1) < X(0));
+      c.strokeStyle = A[1] || '#dff4ff'; c.lineWidth = 2.5; c.lineCap = 'round'; c.stroke(); } },
+  static: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 10); if(!k) return; const P = thrFoeAt(o, t);
+    for(let i = 0; i < 7; i++){ const h = (i*37 + t*13) % 23, x = P[0] - 22 + (h*2) % 44, y = P[1] - 22 + ((h*5 + i*11) % 40); c.fillStyle = (i + t) % 2 ? (A[1] || '#e8e8e8') : (A[2] || '#5a5a66'); c.fillRect(X(x), Y(y), 5, 5); } },
+  smoke: function(c, X, Y, z, t, A, o){ const k = thrFade(t, o.L - 2, o.L + 18); if(!k) return; const tau = Math.max(0, t - o.L + 2);
+    for(let i = 0; i < 4; i++){ const P = thrFoeAt(o, o.L + Math.max(0, tau - i*3)); dpDisc(c, X(P[0] - 14 - i*6), Y(P[1] - 4 - i*3), (5 + i*2.5)*k, A[1] || '#b8b8c0'); } },
+  sign: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 12); if(!k) return; const x = 18, y = -70 + Math.min(1, t/5)*6;
+    dpLine(c, X(x), Y(y + 18), X(x), Y(y + 44), 2.5, '#8a5a3a'); dpPoly(c, [X(x - 18), Y(y), X(x + 18), Y(y), X(x + 18), Y(y + 20), X(x - 18), Y(y + 20)], A[1] || '#ffffff'); },
+  arrow: function(c, X, Y, z, t, A, o){ const k = thrFade(t, Math.max(0, o.L - 4), o.L + 10); if(!k) return; const a = Math.atan2(o.ky || -5, Math.abs(o.kx || 6)), x = 36, y = -24, L = 46*k;
+    c.save(); c.translate(X(x), Y(y)); c.scale(X(1) < X(0) ? -1 : 1, 1); c.rotate(a); dpPoly(c, [0, -4, L, -4, L, -11, L + 16, 0, L, 11, L, 4, 0, 4], A[1] || '#f2d04a'); c.restore(); },
+  flash: function(c, X, Y, z, t, A, o){ const tau = t - Math.max(0, o.L - 2); if(tau < 0 || tau > 6) return; const k = 1 - tau/7, P = thrFoeAt(o, Math.min(t, o.L));
+    dpStar(c, X(P[0]), Y(P[1] - 4), 34*k, 8*k, 8, A[1] || '#ffffff'); },
+  spikes: function(c, X, Y, z, t, A, o){ const k = thrFade(t, Math.max(0, o.L - 6), o.L + 16); if(!k) return; const x = 42, y = 26;
+    for(let i = -2; i <= 2; i++) dpPoly(c, [X(x + i*11 - 5), Y(y), X(x + i*11), Y(y - (14 + (i % 2 ? 0 : 6))*k), X(x + i*11 + 5), Y(y)], A[1] || '#c0c6cc'); },
+  shards: function(c, X, Y, z, t, A, o){ const k = thrFade(t, o.L - 1, o.L + 14); if(!k) return; const tau = Math.max(0, t - o.L + 1), P = o.k === 'd' ? [42, 18] : thrFoeAt(o, o.L);
+    for(let i = 0; i < 5; i++){ const a = -0.2 - i*0.7, r = 8 + tau*3, x = P[0] + Math.cos(a)*r, y = P[1] + Math.sin(a)*r + 0.25*tau*tau;
+      dpPoly(c, [X(x), Y(y - 5*k), X(x + 4*k), Y(y + 3), X(x - 3*k), Y(y + 4)], A[1] || 'rgba(200,240,240,0.9)'); } },
+  confetti: function(c, X, Y, z, t, A, o){ const k = thrFade(t, o.L - 3, o.L + 18); if(!k) return; const tau = Math.max(0, t - o.L + 3), cols = [A[1] || '#f05a7a', A[2] || '#4ac0f0', '#ffe14a', '#6fd04a'];
+    for(let i = 0; i < 8; i++){ const a = -0.2 - i*0.36, r = 10 + tau*2.4, x = 30 + Math.cos(a)*r, y = -30 + Math.sin(a)*r + 0.18*tau*tau; c.fillStyle = cols[i % 4]; c.fillRect(X(x) - 2, Y(y) - 3, 4, 6); } },
+  blade: function(c, X, Y, z, t, A, o){ if(t > o.L + 6) return; const u = Math.min(1, t/Math.max(1, o.L)), P = thrFoeAt(o, t);
+    c.beginPath(); c.arc(X(P[0] - 10), Y(P[1]), 30, -2.4 + u*2.8, -1.4 + u*2.8, X(1) < X(0)); c.strokeStyle = DSM_INK; c.lineWidth = 6; c.stroke(); c.strokeStyle = A[1] || '#e8edf2'; c.lineWidth = 3; c.stroke(); },
+  fist: function(c, X, Y, z, t, A, o){ const k = thrFade(t, Math.max(0, o.L - 4), o.L + 8); if(!k) return; const P = o.k === 'u' ? [40, 22 - 40*k] : [70 - 30*k, -16];
+    dpDisc(c, X(P[0]), Y(P[1]), 14*k, A[1] || '#f0c8a0'); for(let i = 0; i < 3; i++) dpLine(c, X(P[0] - 6 + i*6), Y(P[1] - 10*k), X(P[0] - 6 + i*6), Y(P[1] - 4*k), 1, A[2] || '#c89870'); },
+  spring: function(c, X, Y, z, t, A, o){ const k = thrFade(t, Math.max(0, o.L - 6), o.L + 10); if(!k) return; const x = 42, y0 = 26, h = 10 + 30*Math.min(1, Math.max(0, (t - o.L + 6)/6));
+    c.beginPath(); for(let i = 0; i <= 8; i++) c.lineTo(X(x + (i % 2 ? 10 : -10)), Y(y0 - h*i/8)); c.strokeStyle = DSM_INK; c.lineWidth = 5; c.stroke(); c.strokeStyle = A[1] || '#c0c6cc'; c.lineWidth = 2.5; c.stroke();
+    dpPoly(c, [X(x - 14), Y(y0 - h - 3), X(x + 14), Y(y0 - h - 3), X(x + 14), Y(y0 - h + 2), X(x - 14), Y(y0 - h + 2)], A[2] || '#e04a4a'); },
+  block: function(c, X, Y, z, t, A, o){ const k = thrFade(t, Math.max(0, o.L - 5), o.L + 8); if(!k) return; const x = 42, y = 26, s = 26*k;
+    dpPoly(c, [X(x - s/2), Y(y), X(x + s/2), Y(y), X(x + s/2), Y(y - s), X(x - s/2), Y(y - s)], A[1] || '#e04a4a'); },
+  bag: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 4); if(!k) return; const P = thrFoeAt(o, t);
+    dpPoly(c, [X(P[0] - 22), Y(P[1] + 20), X(P[0] - 18), Y(P[1] - 18), X(P[0] + 18), Y(P[1] - 18), X(P[0] + 22), Y(P[1] + 20)], A[1] || '#d8b88a'); },
+  hammer: function(c, X, Y, z, t, A, o){ if(t > o.L + 6) return; const u = Math.min(1, t/Math.max(1, o.L)), a = -1.9 + u*2.2;
+    c.save(); c.translate(X(10), Y(-30)); c.scale(X(1) < X(0) ? -1 : 1, 1); c.rotate(a); dpLine(c, 0, 0, 38, 0, 3, '#8a5a3a'); dpPoly(c, [32, -9, 46, -9, 46, 9, 32, 9], A[1] || '#9aa4b0'); c.restore(); },
+  lasso: function(c, X, Y, z, t, A, o){ if(t > o.L + 6) return; const P = thrFoeAt(o, t);
+    c.beginPath(); c.moveTo(X(10), Y(-20)); c.lineTo(X(P[0]), Y(P[1] - 6)); c.strokeStyle = A[1] || '#c8a060'; c.lineWidth = 2.5; c.stroke(); c.beginPath(); c.ellipse(X(P[0]), Y(P[1]), 22, 8, 0, 0, 7); c.stroke(); },
+  cloud: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 14); if(!k) return; const P = o.k === 'd' ? [42, -60] : thrFoeAt(o, Math.min(t, o.L)), y = P[1] + (o.k === 'd' ? 0 : 20);
+    for(let i = -1; i <= 1; i++) dpDisc(c, X(P[0] + i*14), Y(y - (i ? 0 : 6)), (i ? 11 : 14)*k, A[1] || '#f2f6fa'); },
+  ball: function(c, X, Y, z, t, A, o){ const k = thrFade(t, o.L, o.L + 10); if(!k) return; const tau = t - o.L, x = 42 + tau*2, y = 20 - Math.abs(Math.sin(tau*0.45))*30;
+    dpDisc(c, X(x), Y(y), 9*k, A[1] || '#e8803a'); dpLine(c, X(x - 8*k), Y(y), X(x + 8*k), Y(y), 1, A[2] || '#3a2a1a'); },
+  orbit: function(c, X, Y, z, t, A, o){ if(t > o.L + 6) return; for(let i = 0; i < 2; i++){ const a = t*0.5 + i*3.14; dpDisc(c, X(Math.cos(a)*50), Y(-14 + Math.sin(a)*16), 5, A[1] || '#b89af0'); } },
+  steam: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 16); if(!k) return;
+    for(let i = 0; i < 4; i++){ const P = thrFoeAt(o, Math.min(t, o.L)), y = P[1] + 20 - ((t*2.2 + i*12) % 50); dpDisc(c, X(P[0] - 8 + i*5), Y(y), (6 + i)*k, A[1] || 'rgba(240,244,248,0.85)'); } },
+  paste: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 14); if(!k) return; const P = thrFoeAt(o, Math.min(t, o.L + 2));
+    c.beginPath(); c.moveTo(X(12), Y(-14)); c.quadraticCurveTo(X(P[0]*0.6), Y(P[1] - 20), X(P[0]), Y(P[1])); c.strokeStyle = DSM_INK; c.lineWidth = 10*k + 2; c.lineCap = 'round'; c.stroke(); c.strokeStyle = A[1] || '#f2f6fa'; c.lineWidth = 7*k; c.stroke();
+    if(A[2]){ c.strokeStyle = A[2]; c.lineWidth = 2*k; c.stroke(); } },
+  vine: function(c, X, Y, z, t, A, o){ if(t > o.L + 8) return; const P = thrFoeAt(o, t);
+    c.beginPath(); c.moveTo(X(8), Y(-8)); c.bezierCurveTo(X(P[0]*0.3), Y(-40), X(P[0]*0.7), Y(P[1] + 30), X(P[0]), Y(P[1])); c.strokeStyle = DSM_INK; c.lineWidth = 6; c.stroke(); c.strokeStyle = A[1] || '#4aa83a'; c.lineWidth = 3.5; c.stroke();
+    dpEll(c, X(P[0]*0.5), Y((P[1] - 8)*0.5 - 8), 6, 3, 0.6, A[2] || '#6fd04a'); },
+  card: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 12); if(!k) return; const P = thrFoeAt(o, Math.min(t, o.L + 2));
+    c.save(); c.translate(X(P[0]), Y(P[1] - 30)); c.rotate(Math.sin(t*0.3)*0.3); dpPoly(c, [-9*k, -13*k, 9*k, -13*k, 9*k, 13*k, -9*k, 13*k], A[1] || '#ffffff'); dpDisc(c, 0, 0, 3.5*k, A[2] || '#e0304a'); c.restore(); },
+  tag: function(c, X, Y, z, t, A, o){ const k = thrFade(t, 0, o.L + 16); if(!k) return; const P = thrFoeAt(o, Math.min(t, o.L + 3));
+    c.save(); c.translate(X(P[0] + 10), Y(P[1] - 26)); c.rotate(-0.4); dpPoly(c, [-6*k, -9*k, 8*k, -9*k, 14*k, 0, 8*k, 9*k, -6*k, 9*k], A[1] || '#f2a0c0'); dpDisc(c, -2*k, 0, 2*k, '#ffffff'); c.restore(); },
+};
+// the throw (or grab, or pummel) being drawn for f, and its art: from the swing's label (kit.fthrow, kit.grab, kit.pummel) and its length
+function thrArtOf(f){
+  const mv = f._atkAnim > 0 ? f._atkMove : null; if(!mv) return null;
+  const dot = mv.lastIndexOf('.'), slot = dot >= 0 ? mv.slice(dot + 1) : '';
+  if(slot !== 'grab' && slot !== 'pummel' && !(slot.length === 6 && slot.endsWith('throw'))) return null;
+  const G = grabOf(f); if(!G) return null;
+  if(slot === 'grab' || slot === 'pummel'){ const A = G.art && G.art[slot === 'grab' ? 'g' : 'p']; return A ? { A, o:{ L:slot === 'grab' ? (G.st || 4) : 1, k:slot[0], kx:4, ky:-1, mo:null } } : null; }
+  const k = slot[0], T = G[k]; if(!T || !T.art) return null;
+  return { A:T.art, o:{ L:T.mo ? (T.mt || THR_MO[T.mo] || 0) : 0, k:k, kx:T.kx, ky:T.ky, mo:T.mo || null } };
+}
+function drawThrowArt(){
+  if(!fighters.length) return;
+  for(const f of fighters){
+    if(f.dead || !(f._atkAnim > 0) || haHidden(f)) continue;
+    const R = thrArtOf(f); if(!R) continue;
+    const fn = THR_ART[R.A[0]]; if(!fn) continue;
+    const t = (f._atkLen || 0) - (f._atkAnim || 0), z = sizeOf(f);
+    let d = f.face < 0 ? -1 : 1; if(R.o.k === 'b' && t < R.o.L) d = -d;   // (a back throw's art faces where the foe will fly: behind, until the turn)
+    ctx.save(); ctx.globalAlpha = 1;
+    try { fn(ctx, function(x){ return f.x + x*d*z; }, function(y){ return f.y + y*z; }, z, t, R.A, R.o); } catch(e){}
+    ctx.restore();
+  }
+}
 // Bubble's pop (Oh Noio!): her body is drawn faint while the ring spreads, and comes back over the end frames (drawing only; her hurtbox stays).
 function dsmBodyK(f){
   if(f.name !== 'Bubble' || !(f._atkAnim > 0) || f._atkMove !== 'float.dsmash') return 1;
@@ -97608,7 +97847,7 @@ const MV_FX = [[/burn/i,'burn'],[/slow/i,'slow'],[/stun/i,'stun'],[/knocks? (?:t
   [/pull|drag|reel/i,'pull'],[/push|shove/i,'push'],[/confus/i,'confuse'],[/blind/i,'blind'],[/sleep/i,'sleep'],[/stick|stuck/i,'sticks'],[/curse/i,'curse'],
   [/bleed/i,'bleed'],[/\broot|glued/i,'root'],[/weaken/i,'weaken'],[/scrambl|dizzy|arrows? swapped/i,'scramble'],[/strips? armou?r/i,'strips armour'],
   [/slipp|ices? them/i,'slippery'],[/drain/i,'drain'],[/marks? them|take more/i,'marked'],[/soak/i,'soak'],[/silenc/i,'silence'],[/crush/i,'crush'],[/daze/i,'daze'],
-  [/pops? (?:them|it) up/i,'launch up']];   // (EFFECTS ON THE CARD, 2026-11-24: every effect the words name, no longer the first two)
+  [/pops? (?:them|it) up/i,'launch up'],[/\bbur(?:y|ies|ied)\b/i,'bury']];   // (EFFECTS ON THE CARD, 2026-11-24: every effect the words name, no longer the first two)
 const MV_NOHIT = [[/counter/i,'counter'],[/reflect|turns? .{0,12}shots back/i,'reflect'],[/armou?r|shrugs off/i,'armour'],[/teleport|vanish|reappear/i,'teleport'],
   [/heal/i,'heal'],[/faster|harder|power/i,'power-up'],[/less damage/i,'tougher'],[/curse/i,'curse'],[/a hold/i,'hold'],[/weaker|weaken/i,'weakens them']];
 // THE USER'S OWN SIDE OF A MOVE (the owner, 2026-11-24, Jack's smash: "add it to the card. do so for all of that sort of stuff, like goo"): what the move
@@ -137047,6 +137286,7 @@ function draw(){
   drawShieldArt();      // SHIELD / REFLECTOR (Z): the bubble that shrinks as it takes hits, the reflector's pane, the break
   drawHitArt();         // HIT ART: every hit's real area, over the bodies it reaches
   drawDsmProps();       // UNIQUE UP/DOWN SMASHES: the props of the twelve fighters' own up and down smashes
+  drawThrowArt();       // OWN THROWS: each grab's reach, pummel and four throws drawn in the show's style
   drawNsvProps();       // UNIQUE NEUTRAL SMASHES v2: the parcel, the crack, the cloud, the goo wave, the apple halves, the flames
   if(SHOW_HITBOXES) drawHitboxOverlay();
 
@@ -144831,6 +145071,21 @@ const MVA_ARMS = {
   uthrow:  { th:-MVA_PI/2,   A:1.0,  cls:'up',     limbs:[[0, 0, 1.0, -1.75], [0, 1, 1.0, -1.4]] },
   dthrow:  { th:MVA_PI/2,    A:1.1,  cls:'down',   limbs:[[0, 0, -1.8, 1.5], [0, 1, -1.6, 1.3]] },
 };
+// OWN THROWS: the arm work of each throw motion (THR_MO), in MVA_ARMS' terms; `kind` is the body's frame row (FR_KIND)
+const THR_ARMS = {
+  spin:   { th:0,             A:1.15, cls:'spin',   kind:'spin',  limbs:[[0, 0, -0.8, 0.05], [0, 1, -2.35, 3.09]] },
+  over:   { th:MVA_PI - 0.3,  A:1.15, cls:'throw',                limbs:[[0, 0, 0.4, -2.9], [0, 1, 0.2, -2.6]] },
+  lift:   { th:-MVA_PI/2,     A:1.05, cls:'up',     kind:'cast',  limbs:[[0, 0, 0.9, -1.6], [0, 1, 0.7, -1.5]] },
+  carry:  { th:-1.2,          A:0.95, cls:'move',   kind:'dash',  limbs:[[0, 0, -1.5, -1.7], [0, 1, -1.4, -1.5]] },
+  slam:   { th:MVA_PI/2,      A:1.2,  cls:'down',   kind:'slam',  limbs:[[0, 0, -1.6, 0.9], [0, 1, -1.5, 1.1]] },
+  sink:   { th:MVA_PI/2,      A:1.0,  cls:'down',   kind:'stomp', limbs:[[0, 0, 0.2, 1.3], [0, 1, 0.4, 1.4]] },
+  multi:  { th:0.1,           A:0.85, cls:'pummel', kind:'punch', limbs:[[0, 0, 0.9, -0.1], [0, 1, 0.6, 0.2]] },
+  shake:  { th:-0.2,          A:0.95, cls:'quick',                limbs:[[0, 0, -0.6, 0.4], [0, 1, -0.3, 0.6]] },
+  roll:   { th:0.3,           A:0.95, cls:'thrust',               limbs:[[0, 0, 1.2, 0.3], [0, 1, 1.0, 0.5]] },
+  juggle: { th:-1.3,          A:1.05, cls:'up',     kind:'uppercut', limbs:[[0, 0, 0.6, -1.9], [0, 1, 0.9, -1.3]] },
+  pull:   { th:0,             A:1.0,  cls:'throw',  kind:'punch', limbs:[[0, 0, 0.2, 2.6], [0, 1, 0.4, 2.4]] },
+  dunk:   { th:1.2,           A:1.15, cls:'down',   kind:'slam',  limbs:[[0, 0, -1.9, 1.2], [0, 1, -1.7, 1.0]] },
+};
 // today's moves with no hitbox data here (the jab, the neutral, up and down specials, the smash, the finisher): the kind of move they are, in a role of their own
 const MVA_ROLES = {
   jab:      { dw:0,     ds:0,     A:1.0,  wind:1.0,  lean:0,     cls:'quick' },
@@ -144860,11 +145115,11 @@ function mvaBuild(kit, name){
       o.wind = mvaClamp(0.5 + S.st/10, 0.7, 1.4);
       rows = mvaRows((S.anim && S.anim.th != null) ? S.anim.th : G.th, (S.anim && S.anim.A) || A, o, id);
     } else if(MVA_ARMS[slot]){   // the grab, the pummel and the four throws
-      const a = MVA_ARMS[slot]; cls = a.cls;
+      const gT = (slot.length === 6 && slot.endsWith('throw') && ms.grab) ? ms.grab[slot[0]] : null, a = (gT && gT.mo && THR_ARMS[gT.mo]) || MVA_ARMS[slot]; cls = a.cls;   // (OWN THROWS: the motion's own arm work)
       const jt = (n) => (mvaRnd(id, 40 + n) - 0.5)*0.24;
       limbs = a.limbs.map((e, n) => [e[0], e[1], mvaR(e[2] + jt(n*2)), mvaR(e[3] + jt(n*2 + 1))]);
       if(!P.a) limbs = limbs.map((e) => [1, e[1], e[2], e[3]]);
-      rows = mvaRows(a.th + jt(9), a.A, { lunge: a.lunge || 0, wind: slot === 'pummel' ? 0.5 : 1 }, id);
+      rows = mvaRows(a.th + jt(9), a.A, { lunge: a.lunge || 0, wind: slot === 'pummel' ? 0.5 : 1, kind: a.kind ? FR_KIND[a.kind] : undefined }, id);
     } else if(MVA_ROLES[slot]){   // today's moves: the kind they are, in a role of their own
       const R = MVA_ROLES[slot], kind = slot === 'side' ? (S && S.pose) : animKindOf(fake, slot);
       if(!kind || kind === 'spit') continue;   // (Puffball's X is her spit: the body does it, and stays as it is)
