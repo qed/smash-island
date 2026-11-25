@@ -1424,6 +1424,7 @@
       <div class="setrow"><span>Knockback <span style="opacity:.6;font-size:11px">(off = anchored DPS dummy)</span></span><span class="seg" id="testAnchor"></span></div>
       <div class="foot" style="margin-top:6px">In-match: press <b>R</b> to reset positions & damage, <b>Esc</b> to come back.</div>
     </div>
+    <div id="figPanel" style="display:none"></div>
     <div class="row" style="margin-top:12px">
       <button class="btn ghost sm" id="testBack" onclick="backToEditor()">◀ Back to editor</button>
       <button class="btn" onclick="startTestNow()">Start Testing ▶</button>
@@ -1910,7 +1911,7 @@
       <div class="tut-card"><div class="tut-key" data-ks="shield">Z</div><div class="tut-lbl">Shield (hold)</div></div>
     </div>
     <div class="tut-note">Gamepad: A jump · X attack · Y special · B smash · LB shield</div>
-    <div class="tut-note">Figures (the last tile on the fighter board): a CPU that learns your habits and counters them, so you can fix them.</div>
+    <div class="tut-note">Sparring Figures (in Training): a CPU that learns your habits and counters them, so you can fix them.</div>
     <div class="row" style="justify-content:center;margin-top:14px">
       <button class="btn" onclick="startTutorial()">Try it ▶</button>
       <button class="btn ghost sm" id="tutBackBtn" onclick="go('title')">◀ Back</button>
@@ -2080,6 +2081,7 @@
       <button class="btn" id="resultRematch" onclick="rematch()">Rematch ↻</button>
       <button class="btn alt sm" id="resultEvent" style="display:none" onclick="go('event')">Event ▸</button>
       <button class="btn alt sm" id="resultRush" style="display:none" onclick="go('rush')">Rush ▸</button>
+      <button class="btn alt sm" id="resultFigures" style="display:none">Figures ▸</button>
       <button class="btn alt sm" id="resultChange" onclick="changeFighter()">Change fighter</button>
       <button class="btn alt sm" id="resultEditor" style="display:none" onclick="backToEditor()">◀ Back to editor</button>
       <button class="btn ghost sm" onclick="go('title')">Title</button>
@@ -19721,7 +19723,7 @@ function openLocker(){ go(LOCKER_LAST); }
 // Plain, player-facing words; menus may have text (a match may not).
 const CHANGELOG = [
   { date: '2026-11-XX', version: 'Update 13', items: [   // ship date: the lead sets it (2026-11-XX until then)
-    "Sparring Figures: make a CPU fighter from the Figures tile on the fighter board. It learns your habits and counters them, and levels up to 50 as you fight it. After a match it lists your weaknesses, so you know what to fix.",
+    "Sparring Figures, in Training: make a CPU fighter that learns your habits and counters them, and levels up to 50 as you spar with it. After a match it lists your weaknesses, so you know what to fix.",
     "Every up special is now its own kind of recovery: teleports, tethers, glides, floats, hovers, charged jumps, hops, armoured climbs, spikes, counters and more. Some leave you helpless until you land.",
     "Bigger blast zones on the single-screen stages. Walk-off stages' side lines are now as far out as on the ledge stages.",
     "Grab beats shield: a grab now catches a shielding foe. Shield beats attack, attack beats grab.",
@@ -20492,7 +20494,6 @@ function buildBoard(){
     b.appendChild(c);
   });
   if(OC_OPEN){ try{ ocBoardCells(b); }catch(e){ console.error('ocBoardCells', e); } }   // OC EDITOR: the saved OCs after the roster
-  try{ figBoardCell(b); }catch(e){ console.error('figBoardCell', e); }   // SPARRING FIGURES: the Figures tile, last
   try{ if(wrap) wrap.scrollTop = keepScroll; }catch(e){}
   scrollChosenIntoView();
   const note=document.getElementById('lockNote'); if(note) note.style.display='none';
@@ -24731,6 +24732,7 @@ function beginMatchNow(){
   go('_none_');
   document.getElementById('hud').classList.add('active');
   resize();
+  try{ if(FIG_RUN) figMatchEnd(null, true); }catch(e){}   // SPARRING FIGURES: a match restarted part-way (R) saves what it learned first
   setupWorld();
   buildFighters();
   FIG_RUN = fighters.some(f => f._fig);   // SPARRING FIGURES: this match has one
@@ -97037,6 +97039,7 @@ function trainingScreenSync(){
   const tag = document.getElementById('testTag'); if(tag) tag.textContent = T ? 'A practice room: a dummy, the hitboxes, any damage. Infinite stocks, R resets.' : 'Jump around your map — infinite stocks, reset anytime.';
   const back = document.getElementById('testBack'); if(back){ back.textContent = T ? '◀ Back' : '◀ Back to editor'; back.onclick = ()=>{ if(T){ TESTMODE.training = false; go('title'); } else backToEditor(); }; }
   const note = document.getElementById('testMapNote'); if(note) note.textContent = testNoteText();
+  try{ figPanelSync(); }catch(e){ console.error('figPanelSync', e); }   // SPARRING FIGURES: their panel, in Training only
 }
 // The map being tested and WHO YOU ARE in it: "Map: My level · Testing as Firey" (the level creator review, 2026-10-26: "Test the Feel never says which
 // fighter you are"). The fighter is the one last picked (chosen), as buildFighters seats you.
@@ -131878,7 +131881,8 @@ function figSeeH(d, id, x){ const h = d.h[id] || (d.h[id] = [0.3, 0]); h[0] = Ma
 function figFav(d){ if(d.mn < 8) return null; let b = null; for(const k in d.mv) if(!b || d.mv[k] > d.mv[b]) b = k; return b && d.mv[b] >= 0.3 ? b : null; }
 function figStr(d, id){   // 0 (not a habit it knows) to 1 (a sure one)
   if(id === 'fav'){ const k = figFav(d); return k ? clamp((d.mv[k] - 0.3)/0.3, 0, 1) : 0; }
-  const h = d.h[id]; return (!h || h[1] < FIG_MIN) ? 0 : clamp((h[0] - 0.45)/0.35, 0, 1);
+  const h = d.h[id], base = id === 'shd' ? 0.3 : 0.45;   // (a shield up for 3 of every 10 of its close swings is already a lot: most players block far fewer)
+  return (!h || h[1] < FIG_MIN) ? 0 : clamp((h[0] - base)/0.35, 0, 1);
 }
 function figK(f, id){ const F = f._fig; return F ? figStr(F.d, id)*(0.4 + 0.55*(F.lv - 1)/(FIG_LV_MAX - 1)) : 0; }   // the chance it uses the counter: more often the higher its level
 function figTop(d, n){
@@ -131897,10 +131901,10 @@ function figWatchStep(){
   for(const g of figs) figLanded(g, false);
   for(const h of fighters){
     if(h._fig || !(isHumanCtrl(h) || h._figWatch)) continue;
-    const W = h._figW || (h._figW = { ring:new Array(32), zs:false, air:0, far:true, trip:null, win:null, oos:null, lastMv:null, atkT:-1e9, airAtkT:-1e9, prev:0, spamK:null, spamT:-1e9, useK:null, useT:-1e9 });
+    const W = h._figW || (h._figW = { ring:new Array(32), zs:false, air:0, far:true, trip:null, shw:null, fsw:false, oos:null, lastMv:null, atkT:-1e9, airAtkT:-1e9, prev:0, spamK:null, spamT:-1e9, useK:null, useT:-1e9 });
     const swing = h._atkAnim > 0 || !!h._mv || !!h._windup || h.smashHold > 0;
     W.ring[now & 31] = { sh:!h.dead && h._zsOn > 0, mv:(!h.dead && swing) ? W.lastMv : null };
-    if(h.dead){ W.trip = null; W.zs = false; W.oos = null; W.win = null; W.air = 0; W.far = true; continue; }
+    if(h.dead){ W.trip = null; W.zs = false; W.oos = null; W.shw = null; W.air = 0; W.far = true; continue; }
     let fg = figs[0], dist = Infinity;
     for(const g of figs){ const q = Math.hypot(g.x - h.x, g.y - h.y); if(q < dist){ dist = q; fg = g; } }
     const see = (id, x) => { for(const g of figs) figSeeH(g._fig.d, id, x); };
@@ -131909,13 +131913,10 @@ function figWatchStep(){
     if(W.zs && !zs && !(h._zsBrk > 0) && !(h.hitstun > 0) && dist < 260) W.oos = { t:now };
     W.zs = zs;
     if(W.oos && now - W.oos.t >= 3){ see('oosJ', (!h.onground && h.vy < 0) ? 1 : 0); see('oosA', (h._zsOutT || -9) >= W.oos.t - 1 ? 1 : 0); W.oos = null; }
-    // SHIELDING A LOT: in each half second the Figure swung at it up close, did it shield?
-    if(dist < 170 && h.onground){
-      const w = W.win || (W.win = { t:now, sh:false, sw:false });
-      if(zs) w.sh = true;
-      if(fg._atkAnim > 0 || !!fg._mv || fg.smashHold > 0) w.sw = true;
-      if(now - w.t >= 30){ if(w.sw) see('shd', w.sh ? 1 : 0); W.win = null; }
-    } else W.win = null;
+    // SHIELDING A LOT: each swing the Figure starts at it up close, while it is on its feet -- was its shield up at any time in the next 20 frames?
+    const fsw = fg._atkAnim > 0 || !!fg._mv || fg.smashHold > 0 || !!fg._windup, fNew = fsw && !W.fsw; W.fsw = fsw;
+    if(fNew && dist < 170 && h.onground && !W.shw) W.shw = { t:now, sh:zs };
+    if(W.shw){ if(zs) W.shw.sh = true; if(now - W.shw.t >= 20){ see('shd', W.shw.sh ? 1 : 0); W.shw = null; } }
     // COMING IN: from over 260 px to under 170, moving at it -- in the air (a jump-in) or running on the ground
     if(dist > 260) W.far = true;
     else if(W.far && dist < 170){ W.far = false; const at = (fg.x - h.x)*(h.vx || 0) > 0; see('jin', (!h.onground && at) ? 1 : 0); see('run', (h.onground && at && Math.abs(h.vx) > 4) ? 1 : 0); }
@@ -131963,6 +131964,112 @@ function figWatchKeys(f, inp){
 function figSaw(t, f){ const W = t._figW; return (W && W.ring[(hazardT - f._fig.react) & 31]) || null; }
 
 // ---- THE COUNTERS ----
+// COUNTERS v2 (the owner, 2026-11-25: "fix the counters first"): THE PLAN. A counter no longer swings at the first chance it sees. From what it saw
+// (a moment late, as ever) it works out where the habit is taking the person -- its arc in the air as a falling body (figPath: the speed it saw and
+// the pull it saw on it, figGrav), or its run on along the floor -- and which of its own ground moves, pressed when its hands are next free
+// (figHands: its own hands' wait, the move's cooldown), has a box on that spot on one of the move's live frames (the move's own startup, live
+// frames and boxes: MOVESETS), standing where it is or a few steps away (figPlan). Then it goes there, keeps its hands still, and presses the move
+// when the plan says (figDoPlan). Nothing is stronger, faster or better seen: the same moves, the same eyes, the same hands.
+function figHands(f){
+  const h = _cpuHands.get(f), now = hazardT;
+  let d = Math.max(0, f.atkCd || 0, f._lag || 0, f._mv ? 99 : 0);
+  if(h){ const tap = Math.max(0, CPU_HUMAN.tapMin - (now - h.last)); d = Math.max(d, h.tok >= 1 ? tap : Math.max(tap, h.next - now)); }
+  return d;
+}
+function figGrav(f, ts){   // the pull it sees on a foe in the air, and its drift: how much its fall and its sideways speed changed between the last two frames it saw
+  const H = _cpuSeen.get(ts), T = _cpuSeeT, n = f._fig.react, iv = SEE_F.indexOf('vy'), ix = SEE_F.indexOf('vx'), io = SEE_F.indexOf('onground'), is = SEE_F.indexOf('hitstun');
+  const out = { g:gravAt(ts), ax:0 };
+  if(H && H.l === T && T - n - 1 >= H.s){
+    const a = H.v[(T - n) & (SEE_R - 1)], b = H.v[(T - n - 1) & (SEE_R - 1)];
+    if(a && b && !a[io] && !b[io] && !(a[is] > 0)){ const g = a[iv] - b[iv]; if(g > 0.1 && g < 2) out.g = g; out.ax = clamp(a[ix] - b[ix], -1, 1); }
+  }
+  return out;
+}
+// Where the foe will be, frame by frame from what it saw: in the air a falling body that lands on what is under it; on the floor its run carried on
+// (run) or slowing to a stop.
+function figPath(f, ts, N, run){
+  const r = ts.r || 24, G = figGrav(f, ts), g = G.g, top = MAXVX*((ts.st || STAT_ONE).air || 1), out = [];
+  let x = ts.x, y = ts.y, vx = ts.vx || 0, vy = ts.vy || 0, on = !!ts.onground;
+  out.push({ x, y, on });
+  for(let i = 1; i <= N; i++){
+    if(on){ if(!run) vx *= FRICTION; x += vx; const s = surfaceBelow(clamp(x, 1, WW - 1), y + r); if(s == null || s - (y + r) > 8) on = false; }
+    else { const feet0 = y + r; vy = Math.min(vy + g, 16); if(G.ax && Math.abs(vx + G.ax) <= Math.max(top, Math.abs(vx))) vx += G.ax; x += vx; y += vy; const s = vy > 0 ? surfaceBelow(clamp(x, 1, WW - 1), feet0) : null; if(s != null && y + r >= s){ y = s - r; vy = 0; on = true; } }
+    out.push({ x, y, on });
+  }
+  return out;
+}
+function figBoxHits(f, S, x, face, ts, p){
+  const g = Object.create(f), q = Object.create(ts); g.x = x; g.face = face; q.x = p.x; q.y = p.y;
+  if(S.jab) return shapeHits(jabFan(g, S.reach), q);
+  for(const b of S.boxes) if(shapeHits(mvShape(g, b.s), q)) return true;
+  return false;
+}
+// The plain X on the ground is the jab (doAttack), not a moveset row: it hits on the press itself, in its fan (jabFan, the reach doAttack works out).
+// Null for a kit whose X is a shot.
+function figJabS(f){
+  const sp = f.kit && f.kit.special; if(RANGED_ATTACKERS[sp]) return null;
+  const extra = (rangeProfile(f).reach || 0) + (f._grasstree > 0 ? 14 : 0);
+  return { jab:true, st:0, act:1, reach:(f.r + 26 + extra)*(JAB_REACH_UP[sp] || 1), off:22 + extra*0.6 };
+}
+function figOffs(S){   // how far in front of the fighter each of the move's boxes sits (where to stand for it), and a little either side
+  if(S.jab) return [S.off, S.off - 14, S.off + 14, S.off + 28];
+  const o = [];
+  for(const b of S.boxes){ const s = b.s, c = s.k === 'f' ? (s.ox || 0) + Math.cos((s.a0 + s.a1)/2)*(s.r0 + s.r1)/2 : s.k === 'c' ? (s.x1 + s.x2)/2 : s.k === 'b' ? 0 : (s.x || 0); o.push(c, c - 14, c + 14); }
+  return o;
+}
+function figWalk(f, d){ const top = MAXVX*((f.st || STAT_ONE).run || 1); let v = 0, s = 0; for(let i = 0; i < d; i++){ v = Math.min(top, v + MOVE); s += v; } return s; }   // (from a standstill: how far it gets in d frames)
+// The soonest press of one of `keys` that lands on the foe's path within H frames: { key, d (frames from now), x (where it stands), face } or null.
+// walk: it may step there first (within lim, the floor it stands on); run: the foe keeps running.
+function figPlan(f, ts, keys, H, walk, run, lim){
+  const ms = msOf(f); if(!ms || !f.onground) return null;
+  const n = f._fig.react, d0 = figHands(f); if(d0 > H) return null;
+  const P = figPath(f, ts, n + H + 24, run);
+  let best = null;
+  for(const key of keys){
+    const S = key === 'jab' ? figJabS(f) : ms[key]; if(!S || (!S.jab && !S.boxes)) continue;
+    const offs = walk ? figOffs(S) : null;
+    for(let d = d0; d <= H && (!best || d < best.d); d++){
+      let x = null, fc = 1, hp = null;
+      for(let j = 0; j < S.act && x == null; j++){
+        const p = P[n + d + S.st + j]; if(!p) break;
+        fc = p.x >= f.x ? 1 : -1;
+        if(figBoxHits(f, S, f.x, fc, ts, p)){ x = f.x; hp = p; break; }
+        if(!walk || d <= d0) continue;
+        const R = figWalk(f, d - d0);
+        for(const o of offs){
+          for(const c of [1, -1]){ const sx = p.x - c*o; if(Math.abs(sx - f.x) > R || (lim && (sx < lim[0] || sx > lim[1]))) continue; if(figBoxHits(f, S, sx, c, ts, p)){ x = sx; fc = c; hp = p; break; } }
+          if(x != null) break;
+        }
+      }
+      if(x != null){ best = { key, d, x, face:fc, p:hp, st:S.st }; break; }
+    }
+  }
+  return best;
+}
+// Carries out a plan: the press when it is time (and it stands there, faced the right way), else the steps there; true: it took the keys.
+function figDoPlan(f, inp, B, id, plan){
+  if(!plan) return false;
+  const gx = plan.x - f.x, d0 = figHands(f);
+  if(Math.abs(gx) >= 10){ inp.left = gx < 0; inp.right = gx > 0; return true; }
+  if(plan.d > 0 || d0 > 0) return true;   // (there: still, the hands kept free, until the press goes out on the frame the plan wants -- pressed early it would wait in the hands and be dropped)
+  if(plan.key !== 'jab' && f.face !== plan.face){ inp.left = plan.face < 0; inp.right = plan.face > 0; return true; }   // (an up or down tilt faces the way it already faces: turn first)
+  const k = plan.key === 'ut' ? { attack:true, up:true, mv:true } : plan.key === 'dt' ? { attack:true, down:true, mv:true } : brainFace({ attack:true }, plan.face);   // (jab: X, faced at the foe)
+  figUsed(f, id); B.figEp = null; brainTap(B, k, 3); Object.assign(inp, B.press.keys);
+  if(id !== 'combo') B.figFol = { until:hazardT + plan.d + plan.st + 50 };   // (a counter that lands is followed up: figFollow)
+  f._fig.pl = { id, key:plan.key, at:hazardT + plan.d + plan.st, x:plan.p.x, y:plan.p.y };   // (where it planned the hit: for the checks)
+  return true;
+}
+// THE FOLLOW-UP: a counter's hit that it sees land (the foe in hitstun, its flight no longer its own) is followed by the next hit planned onto that
+// flight -- the up tilt, the jab or the down tilt, a few steps if it must. At kill percent, with its smash ready and the foe in reach, it leaves the
+// press to the fight's own opening rule (the smash). Counted as 'combo', apart from the counters themselves. True: it took the keys.
+function figFollow(f, t, inp, B){
+  const F = B.figFol; if(!F) return false;
+  if(hazardT > F.until){ B.figFol = null; return false; }
+  if(!(t.hitstun > 0) || t._isBoss || !f.onground) return false;
+  if((t.pct || 0) >= 90 && f.smCd <= 0 && brainInReach(f, t, 20)) return false;
+  return figDoPlan(f, inp, B, 'combo', figPlan(f, f.aiTarget, ['ut', 'jab', 'dt'], 30, true, false, figFloorLim(f)));
+}
+function figFloorLim(f){ for(const q of (FLOOR_SEGS || [])) if(f.x >= q.x0 && f.x <= q.x1) return [q.x0 + f.r*0.5 + 4, q.x1 - f.r*0.5 - 4]; return null; }
 // The shield ones, beside brainShield: the person's favourite move seen starting near it, or an aerial it sees coming down on it.
 function figShieldUp(f, t, B, L, dist, awake){
   const S = figSaw(t, f), mvOn = !!(S && S.mv), fresh = mvOn && !B.figMvOn; B.figMvOn = mvOn;
@@ -131988,6 +132095,7 @@ function figAct(f, t, inp, B, L, dx, dy, adx, ady, dist, toward){
     if((t._lag > 0 || t.hitstun > 0) && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0)){ tap(brainSmash(f, t, toward)); B.st = 'smash'; B.until = now + 75; return true; }
     return tap(brainMoveKeys(f, t, brainStrongMove(f, t)));
   }
+  if(figFollow(f, t, inp, B)) return true;
   // A NEW CHANCE: the shield seen going up (grab it, wait for the jump out, or stay out of the swing out of it), a swing of the move it spams,
   // a jump in at it, a run in at it -- one roll each time it sees one
   const shUp = S.sh && !B.figShOn; B.figShOn = S.sh;
@@ -132011,21 +132119,16 @@ function figAct(f, t, inp, B, L, dx, dy, adx, ady, dist, toward){
     if(adx < f.r + (t.r || 24) + 16 && ady < 30 && f.onground && f.atkCd <= 0){ figUsed(f, 'shd'); B.figEp = null; B.next = now + 30; return tap({ grab:true }); }
     inp.left = toward < 0; inp.right = toward > 0; brainEdges(f, inp, 70); return true;
   }
-  if(E.id === 'oosJ'){   // WAIT WHERE THE JUMP OUT COMES DOWN: it fights the bubble as ever, and the moment it sees the jump out it goes under it, the hit as it comes down or lands
+  if(E.id === 'oosJ'){   // WHERE THE JUMP OUT COMES DOWN: it fights the bubble as ever; once it sees the jump out it plans the hit on its way down or as it lands
+    const ts = f.aiTarget;
     if(S.sh && t.onground && !E.up) return false;
-    if(!t.onground){
-      if(!E.up){ E.up = true; E.until = now + 90; }
-      const g = gravAt(t) || GRAV, fall = Math.max(0, groundY() - (t.y + (t.r || 24))), vy = t.vy || 0, tl = (vy + Math.sqrt(vy*vy + 2*g*fall))/g;   // (frames until it is down)
-      const lx = clamp(t.x + (t.vx || 0)*tl, 0, WW), gx = lx - f.x;
-      if(Math.abs(gx) > 14 && f.onground){ inp.left = gx < 0; inp.right = gx > 0; }
-      if(f.onground && f.atkCd <= 0 && vy > 0 && adx < 70 && dy < -20 && dy > -110) return hit('oosJ');
-      brainEdges(f, inp, 70); return true;
-    }
-    if(!E.up){ if(!S.sh) B.figEp = null; return false; }   // (it let go of the shield on the ground: no jump to wait for)
-    if(E.land == null) E.land = now;
-    if(f.onground && f.atkCd <= 0 && brainInReach(f, t, 10)) return hit('oosJ');
-    if(now - E.land > 20){ B.figEp = null; B.next = now; return false; }
-    if(f.onground && adx > 6){ inp.left = toward < 0; inp.right = toward > 0; brainEdges(f, inp, 70); }   // (down: straight at it while it is still landing)
+    if(!E.up){ if(t.onground){ if(!S.sh) B.figEp = null; return false; } E.up = true; E.until = now + 100; }   // (let go of on the ground: no jump to wait for)
+    if(t.onground){ if(E.land == null) E.land = now; if(now - E.land > 24){ B.figEp = null; B.next = now; return false; } }
+    if(!f.onground) return false;
+    const plan = figPlan(f, ts, ['ut', 'jab', 'dt'], 40, true, false, figFloorLim(f));
+    if(figDoPlan(f, inp, B, 'oosJ', plan)) return true;
+    const Pth = figPath(f, ts, f._fig.react + 60, false), L = Pth.find((p, i) => i >= f._fig.react && p.on) || Pth[Pth.length - 1], gx = L.x - f.x;   // (no hit from here yet: to where it comes down)
+    if(Math.abs(gx) > 20){ inp.left = gx < 0; inp.right = gx > 0; brainEdges(f, inp, 70); }
     return true;
   }
   if(E.id === 'oosA' || E.id === 'spam'){   // STAY OUT OF THE SWING: just out of reach while it swings, then straight in on the person's cooldown
@@ -132034,23 +132137,17 @@ function figAct(f, t, inp, B, L, dx, dy, adx, ady, dist, toward){
     if(E.id === 'oosA' && !E.seenSw){ B.figEp = null; return false; }   // (it let go of the shield without a swing out of it)
     figUsed(f, E.id); B.figEp = null; B.figPun = { id:E.id, until:now + 45 }; B.next = now; return false;
   }
-  if(E.id === 'jin'){   // HIT UP AT A JUMP-IN: stand and face it, the up hit (up smash, up-tilt, else the jab) as it comes into reach above
+  if(E.id === 'jin'){   // A JUMP-IN: it plans the up-tilt (or the jab) on the jump's arc, steps under it if it must, and presses it in time
     if(t.onground){ B.figEp = null; return false; }
-    if(f.onground && f.face !== toward){ inp.left = toward < 0; inp.right = toward > 0; return true; }
-    if(f.onground && adx < 80 && dy < -20 && dy > -130){
-      if(dy < -55 && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && simRand() < 0.5){ figUsed(f, 'jin'); B.figEp = null; tap(brainSmash(f, t, toward, 1)); B.st = 'smash'; B.until = now + 75; return true; }
-      if(f.atkCd <= 0) return hit('jin');
-    }
-    return true;
+    if(!f.onground) return false;
+    const plan = figPlan(f, f.aiTarget, ['ut', 'jab'], 40, true, false, figFloorLim(f));
+    return figDoPlan(f, inp, B, 'jin', plan);   // (no hit on the arc from here yet: the fight as ever this frame, and a new plan next frame)
   }
-  if(E.id === 'run'){   // A HIT WHERE IT RUNS IN: still, faced at it, the hit pressed the moment its run will carry it into the swing
+  if(E.id === 'run'){   // A RUN-IN: it stands and presses the jab (or the down tilt) so the run carries the foe into it
     if(!t.onground || (t.vx || 0)*toward > -1.5){ B.figEp = null; return false; }
-    if(f.face !== toward){ inp.left = toward < 0; inp.right = toward > 0; return true; }
-    if(adx <= reach + Math.abs(t.vx || 0)*5 && f.atkCd <= 0){
-      if(f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && simRand() < 0.4){ figUsed(f, 'run'); B.figEp = null; tap(brainSmash(f, t, toward)); B.st = 'smash'; B.until = now + 75; return true; }
-      return hit('run');
-    }
-    return true;
+    if(!f.onground) return false;
+    const plan = figPlan(f, f.aiTarget, ['jab', 'dt'], 30, false, true, null);
+    return figDoPlan(f, inp, B, 'run', plan);
   }
   B.figEp = null; return false;
 }
@@ -132065,19 +132162,23 @@ function figGuardPlan(f, E, e){
   if(c[0] === 'recH') E.spot = e.x + e.inl*(f.r + 100);
   else if(c[0] === 'getA') E.spot = e.x + e.inl*(f.r*0.5 + 30);
 }
+// At the ledge, every frame (before it walks to its spot): the low way back -- the foe coming up the ledge's line -- met by the down tilt or the jab
+// planned onto its way up; the high one by the up tilt or the jab planned onto its way down. True when it took the keys.
+function figGuardStep(f, ts, t, inp, B, E, off, e){
+  if(!f.onground) return false;
+  if(figFollow(f, t, inp, B)) return true;
+  if(t.onground) return false;
+  const lim = [e.q.x0 + f.r*0.5 + 4, e.q.x1 - f.r*0.5 - 4], dx = t.x - f.x, dy = t.y - f.y;
+  // THE MOMENT for a low way back: once it has spent its way up (the up special used, or no jump left) -- hit then, it has nothing left to come back
+  // with. The jab first (it knocks them out, away from the stage), the down tilt where only that reaches (it pops them up).
+  if(E.fg === 'recL' && dy > -60 && Math.abs(dx) < 220 && (ts._usedAirSpecial || !(ts.jumps > 0)))
+    return figDoPlan(f, inp, B, 'recL', figPlan(f, ts, ['jab'], 36, true, false, lim) || figPlan(f, ts, ['dt'], 36, true, false, lim));
+  if(E.fg === 'recH' && dy < 0 && Math.abs(dx) < 260) return figDoPlan(f, inp, B, 'recH', figPlan(f, ts, ['ut', 'jab'], 40, true, false, lim));
+  return false;
+}
 // At the ledge, its decision (at the guard's own pace): true when it pressed something.
 function figGuardHit(f, t, B, E, L, off, upAt, reach, dx, dy, adx, toward){
   const now = hazardT;
-  if(E.fg === 'recL' && off && dy > -10 && dy < 100 && adx < brainReach(f) + 40){   // a foe coming up under the ledge: hit down at it
-    figUsed(f, 'recL');
-    if(f.smCd <= 0 && !f._smQ && !(f.smashHold > 0)) brainTap(B, brainSmash(f, t, toward, -1), 3); else brainTap(B, brainMoveKeys(f, t, 'dt'), 3);
-    E.jabAt = now; return true;
-  }
-  if(E.fg === 'recH' && reach && dy < -20){   // a foe landing from high: hit up at it
-    figUsed(f, 'recH');
-    if(dy < -55 && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0)) brainTap(B, brainSmash(f, t, toward, 1), 3); else brainTap(B, brainMoveKeys(f, t, brainStrongMove(f, t)), 3);
-    E.jabAt = now; return true;
-  }
   if(E.fg === 'getA' && upAt && reach && f.onground && !isReflector(f) && !B.shOn && zsMeter(f) >= 20 && !(f._zsBrk > 0) && !(f._zsLk > 0)){   // a foe getting back on with an attack: the shield, then the punish
     figUsed(f, 'getA'); B.shOn = true; B.shT0 = B.shSeen = now; f._aiShU = now + 10; B.figPun = { id:'getA', until:now + 70 }; E.mode = 'none'; return true;
   }
@@ -132092,151 +132193,172 @@ function figCpuSeat(all){   // the Figures given a CPU seat (the Figures screen)
   return all;
 }
 function figSparSeat(all){ const d = figFind(FIGM.spar.id); if(d && all.length > 1) all[1] = figRowOf(d); return all.slice(0, 2); }
-function figSpar(id){   // a quick 1v1 on Goiky Field with the fighter picked on the board; the player's own mode, count and stage come back after (figSparEnd)
+function figSpar(id){   // a 1v1 at once on the Training stage, with the fighter you play; the player's own mode, count and stage come back after (figSparEnd)
   if(!figFind(id)) return;
   if(!FIGM.spar) FIGM.spar = { id, prev:{ mode:SETTINGS.mode, count:SETTINGS.count, stage } };
   FIGM.spar.id = id;
-  SETTINGS.mode = 'ffa'; SETTINGS.count = 2; stage = STAGES.find(s => s.id === 'goiky') || stage;
+  SETTINGS.mode = 'ffa'; SETTINGS.count = 2; TESTMODE.active = false;
   EVENT_PICK = null; PENDING_TOURNEY = null; PENDING_DAILY = null;
   if(!chosen || (chosen.oc && !ocFind(chosen.name))) chosen = ROSTER.find(r => r.play);
   startMatch();
 }
 function figSparEnd(){ const S = FIGM.spar; if(!S) return; FIGM.spar = null; SETTINGS.mode = S.prev.mode; SETTINGS.count = S.prev.count; stage = S.prev.stage; }
-// When the match ends (checkWin): experience and the habits saved for every Figure in it that fought a person, and the card for the result screen.
-function figMatchEnd(winTeam){
+// When the match ends (checkWin), or is left part-way (quit: quitMatch, a restart, the page closed): experience and the habits saved for every Figure
+// in it that fought a person, and the card for the result screen (not for a match left part-way).
+function figMatchEnd(winTeam, quit){
   if(FIGM.ended === fighters) return;   // (once a match: checkWin can come here again before the loop stops)
   FIGM.last = null; FIGM.ended = fighters;
   const figs = fighters.filter(f => f._fig);
-  if(!figs.length || !fighters.some(h => !h._fig && (isHumanCtrl(h) || h._figWatch))) return;
+  if(!figs.length || !fighters.some(h => !h._fig && (isHumanCtrl(h) || h._figWatch)) || (quit && hazardT < 60)) return;
   const secs = Math.min(300, Math.round(hazardT/60)) + 20, out = [];
-  for(const f of figs){ const d = f._fig.d, lv0 = d.lv; figGain(d, secs); out.push({ n:d.n, lv0, lv:d.lv, won:f.team === winTeam, lines:figTop(d, 3) }); }
+  for(const f of figs){ const d = f._fig.d, lv0 = d.lv; figGain(d, secs); out.push({ id:d.id, c:d.c, oc:d.oc, n:d.n, lv0, lv:d.lv, won:f.team === winTeam, lines:figTop(d, 3) }); }
   figPersist();
-  FIGM.last = out;
+  FIGM.last = quit ? null : out;
 }
+addEventListener('pagehide', () => { try{ if(FIG_RUN && running) figMatchEnd(null, true); }catch(e){} });
 // "Your weaknesses": on the result screen after a match with a Figure.
 function figCard(){
-  const el = document.getElementById('figCard'); if(!el) return;
+  const el = document.getElementById('figCard'), rb = document.getElementById('resultFigures'); if(!el) return;
   const L = FIGM.last; FIGM.last = null;
+  if(rb){ rb.style.display = (L && L.length) ? '' : 'none'; rb.onclick = L && L.length ? () => figBackToTraining(L[0].id) : null; }
   if(!L || !L.length){ el.style.display = 'none'; el.innerHTML = ''; return; }
-  el.innerHTML = L.map(x => '<div><b>' + esc(x.n) + ' · Lv ' + x.lv + '</b>' + (x.lv > x.lv0 ? ' (up from ' + x.lv0 + ')' : '') + '</div>'
+  el.innerHTML = L.map(x => '<div style="display:flex;align-items:center;gap:8px"><span data-figpic></span><b>' + esc(x.n) + ' · Lv ' + x.lv + '</b>' + (x.lv > x.lv0 ? ' (up from ' + x.lv0 + ')' : '') + '</div>'
     + (x.lines.length ? '<div style="font-weight:700;font-size:13px;margin-top:4px">Your weaknesses:</div>' + x.lines.map(s => '<div style="font-weight:600;font-size:13px">' + esc(s) + '</div>').join('')
       + '<div style="font-weight:600;font-size:12px;margin-top:4px">Stop a habit and it fades from its memory.</div>'
       : '<div style="font-weight:600;font-size:13px">Still learning your habits. Keep fighting it.</div>')).join('<hr style="border:0;border-top:2px solid #1c1c1c;margin:6px 0">');
+  el.querySelectorAll('[data-figpic]').forEach((s, i) => { const x = L[i]; if(x){ const p = figThumbOf(x.c, x.oc); p.style.height = '44px'; s.appendChild(p); } });
   el.style.display = 'block';
 }
 
-// ---- THE FIGURES SCREEN: built by JS on first use, keyboard (and a click to pick a row), the OC screen's look ----
-const FIGUI = { mode:'list', sel:0, cur:0, pickC:null, pickOc:0, name:'', msg:'', ask:null, bound:false };
+// ---- THE FIGURES IN TRAINING (the owner, 2026-11-25: "let's make the ui better. for the sparring figures, they should be in training") ----
+// A panel on the Training screen (figPanelSync: only while it is Training, not the editor's Test the Feel). The Figures as cards -- the fighter's
+// picture, the name, the level -- then a + New card; under the picked one, its weaknesses and real buttons: Spar (a 1v1 on the Training stage, at
+// once), Rename, Delete (pressed twice), CPU seat (it joins your Free-for-all and Teams matches as a CPU). + New opens a fighter grid and a name box
+// in the same panel. Keyboard: the arrows pick, Enter spars (or opens + New, or saves), Delete deletes, Esc backs out; the mouse clicks the same.
+const FIGUI = { sel:0, mode:'list', cur:0, name:'', ask:false, msg:'', bound:false };
 function figPickList(){
   const L = ROSTER.filter(r => r.play && isUnlocked(r) && !eventLocked(r)).map(r => ({ c:r.name, oc:0, color:r.color }));
   if(OC_OPEN) for(const o of OC_LIST) L.push({ c:o.name, oc:1, color:'#e9e4d8' });
   return L;
 }
-function figEnsureScreen(){
-  let el = document.getElementById('figscreen'); if(el) return el;
-  ocEnsureScreen();   // (its style: the rows, the side card, the notes)
-  el = document.createElement('div'); el.id = 'figscreen'; el.className = 'screen';
-  el.innerHTML = '<div class="brand">Sparring Figures</div><h1 style="font-size:34px" id="figTitle">FIGURES</h1>'
-    + '<div class="sub" style="text-align:center">A Figure learns your habits and counters them. Fight it to level it up.</div><div id="figBody" class="ocmain" style="margin-top:10px"></div>'
-    + '<div class="ocnote" id="figNote" role="status" aria-live="polite"></div><div class="ochelp" id="figHelp"></div>';
-  const st = document.createElement('style'); st.textContent = '#figscreen{align-items:center;text-align:center}#figscreen .ocmain{display:flex;gap:16px;width:min(980px,100%);text-align:left;align-items:flex-start}'
-    + '#figscreen .oclist{flex:1 1 auto;display:flex;flex-direction:column;gap:6px;min-width:0}#figscreen .ocrow{border:2px solid #1c1c1c;border-radius:10px;background:var(--panel);padding:7px 10px;font-weight:700;font-size:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;cursor:pointer}'
-    + '#figscreen .ocrow.sel{background:var(--gold);box-shadow:0 3px 0 #1c1c1c}#figscreen .ocsub{font-size:12px;font-weight:600;color:#555}#figscreen .ocside{flex:0 0 280px;border:2px solid #1c1c1c;border-radius:12px;background:var(--panel);padding:10px;text-align:left}'
-    + '#figscreen .ocrole{font-size:10px;letter-spacing:.06em;padding:1px 6px;border-radius:6px;background:#1c1c1c;color:#fff;text-transform:uppercase}#figscreen .figgrid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;flex:1 1 auto;max-height:56vh;overflow:auto}'
-    + '#figscreen .figcell{border:2px solid #1c1c1c;border-radius:8px;background:var(--panel);padding:5px 4px;font-size:12px;font-weight:700;text-align:center;cursor:pointer}#figscreen .figcell.sel{background:var(--gold);box-shadow:0 3px 0 #1c1c1c}'
-    + '#figscreen .ocnote{min-height:22px;font-weight:800;font-size:14px;color:#9a3a2a;margin:6px 0 0}#figscreen .ochelp{font-size:11px;font-family:"JetBrains Mono",monospace;color:#000a;margin-top:10px}'
-    + '#figscreen .ocname{font-size:22px;font-weight:800;border:3px solid #1c1c1c;border-radius:10px;background:#fff;padding:6px 12px;min-width:240px;display:inline-block}';
-  document.head.appendChild(st);
-  const host = document.getElementById('title'); (host && host.parentElement ? host.parentElement : document.body).appendChild(el);
-  if(!FIGUI.bound){ FIGUI.bound = true; addEventListener('keydown', figKeydown); }
-  return el;
+function figThumbOf(c, oc){   // the fighter's picture (an OC's look), or a dot of its colour
+  if(oc){ const o = ocFind(c), s = document.createElement('span'); s.className = 'figpic'; s.innerHTML = o ? ocImg(ocLookOf(o.look), 'figimg') : ''; return s; }
+  const r = ROSTER.find(q => q.name === c); return lobbyThumb(c, r && r.color, 'fig');
 }
-function figOpen(){
-  figLoad(); figEnsureScreen();
-  if(OC_OPEN && !OC_LOADED) ocLoad().then(() => { try{ if(document.getElementById('figscreen').classList.contains('active')) figRender(); }catch(e){} });
-  FIGUI.mode = 'list'; FIGUI.msg = ''; FIGUI.ask = null; FIGUI.sel = clamp(FIGUI.sel, 0, Math.max(0, FIG_LIST.length - 1));
-  go('figscreen'); figRender();
+function figEnsureStyle(){
+  if(document.getElementById('figstyle')) return;
+  const st = document.createElement('style'); st.id = 'figstyle';
+  st.textContent = '#figPanel{max-width:640px;margin:14px auto 0;border:3px solid #1c1c1c;border-radius:14px;background:var(--panel);padding:10px 12px;text-align:center;color:#1c1c1c}'
+    + '#figPanel .figtitle{font-weight:900;font-size:20px}#figPanel .figsub{font-size:12px;font-weight:600;color:#555;margin-bottom:8px}'
+    + '#figPanel .figcards{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}'
+    + '#figPanel .figcard{width:108px;border:2px solid #1c1c1c;border-radius:10px;background:#fff;padding:6px 4px;display:flex;flex-direction:column;align-items:center;gap:2px;font:inherit;font-size:12px;cursor:pointer;color:#1c1c1c}'
+    + '#figPanel .figcard b{font-size:13px}#figPanel .figcard.sel{background:var(--gold);box-shadow:0 3px 0 #1c1c1c}#figPanel .figcard.new{border-style:dashed}'
+    + '#figPanel .figplus{font-size:34px;font-weight:900;line-height:52px}#figPanel .figimg{height:52px;width:auto;max-width:60px;object-fit:contain}#figPanel .figdot{width:40px;height:40px;border-radius:50%;margin:6px;border:2px solid #1c1c1c}'
+    + '#figPanel .figweak{margin:10px auto 6px;max-width:520px;text-align:left;font-size:13px;font-weight:600}#figPanel .figweakh{font-weight:800;font-size:14px;margin:4px 0}'
+    + '#figPanel .figgrid{display:grid;grid-template-columns:repeat(8,1fr);gap:5px;max-height:240px;overflow:auto;margin:4px 0 8px}'
+    + '#figPanel .figpick{border:2px solid #1c1c1c;border-radius:8px;background:#fff;padding:3px 2px;font:inherit;font-size:10px;cursor:pointer;display:flex;flex-direction:column;align-items:center;color:#1c1c1c}'
+    + '#figPanel .figpick .figimg{height:34px}#figPanel .figpick .figdot{width:26px;height:26px;margin:4px}#figPanel .figpick.sel{background:var(--gold)}'
+    + '#figPanel .fignote{min-height:18px;font-weight:800;font-size:13px;color:#9a3a2a}#figPanel .row{justify-content:center;gap:8px;margin-top:6px}';
+  document.head.appendChild(st);
+}
+function figPanelSync(){
+  const el = document.getElementById('figPanel'); if(!el) return;
+  const on = !!TESTMODE.training; el.style.display = on ? '' : 'none';
+  if(!FIGUI.bound){ FIGUI.bound = true; addEventListener('keydown', figKeydown); }
+  if(on){ figLoad(); if(OC_OPEN && !OC_LOADED) ocLoad().then(() => { try{ figRender(); }catch(e){} }); figRender(); }
 }
 function figRender(){
-  const body = document.getElementById('figBody'), note = document.getElementById('figNote'), help = document.getElementById('figHelp'); if(!body) return;
-  note.textContent = FIGUI.msg || '';
-  const L = figLoad();
-  if(FIGUI.mode === 'list'){
-    document.getElementById('figTitle').textContent = 'FIGURES';
-    const rows = L.map((d, i) => '<div class="ocrow' + (i === FIGUI.sel ? ' sel' : '') + '" data-i="' + i + '"><b>' + esc(d.n) + '</b><span class="ocsub">' + esc(d.c) + (d.oc ? ' (OC)' : '')
-      + '</span><span class="ocsub">Lv ' + d.lv + '</span>' + (FIG_CPU.indexOf(d.id) >= 0 ? '<span class="ocrole">CPU seat</span>' : '') + '</div>').join('');
-    const d = L[FIGUI.sel], lines = d ? figTop(d, 3) : [];
-    const side = d ? '<div class="ocside"><b style="font-size:18px">' + esc(d.n) + ' · Lv ' + d.lv + '</b><div class="ocsub">' + esc(d.c) + (d.lv < FIG_LV_MAX ? ' · next level in ' + Math.max(1, Math.round((figNeed(d.lv) - d.xp)/60)) + ' min of fighting' : ' · top level') + '</div>'
-      + '<div style="font-weight:800;font-size:13px;margin-top:8px">Your weaknesses</div>' + (lines.length ? lines.map(s => '<div class="ocsub" style="margin-top:3px">' + esc(s) + '</div>').join('') : '<div class="ocsub">Nothing yet. Spar with it!</div>') + '</div>' : '';
-    body.innerHTML = '<div class="oclist">' + (rows || '<div class="ocrow" style="opacity:.6">No Figures yet. Press N to make one.</div>') + '</div>' + side;
-    body.querySelectorAll('.ocrow[data-i]').forEach(r => { r.onclick = () => { FIGUI.sel = +r.dataset.i; FIGUI.msg = ''; figRender(); }; });
-    help.textContent = 'Enter spar · S CPU seat (Free-for-all, Teams) · N new · R rename · D delete · Esc back (' + L.length + ' of ' + FIG_MAX + ')';
+  const el = document.getElementById('figPanel'); if(!el || el.style.display === 'none') return;
+  figEnsureStyle();
+  const L = figLoad(), mk = (tag, cls, text) => { const e = document.createElement(tag); if(cls) e.className = cls; if(text != null) e.textContent = text; return e; };
+  const btn = (bar, label, cls, fn, id) => { const x = mk('button', 'btn' + (cls ? ' ' + cls : ''), label); x.type = 'button'; if(id) x.id = id; x.onclick = fn; bar.appendChild(x); return x; };
+  el.innerHTML = '';
+  el.appendChild(mk('div', 'figtitle', 'Sparring Figures'));
+  el.appendChild(mk('div', 'figsub', 'They learn your habits and counter them.'));
+  if(FIGUI.mode !== 'list'){   // + New (a fighter, then a name) or Rename (a name)
+    if(FIGUI.mode === 'make'){
+      const P = figPickList(), g = mk('div', 'figgrid'); FIGUI.cur = clamp(FIGUI.cur, 0, Math.max(0, P.length - 1));
+      P.forEach((p, i) => { const c = mk('button', 'figpick' + (i === FIGUI.cur ? ' sel' : '')); c.type = 'button'; c.title = p.c; c.appendChild(figThumbOf(p.c, p.oc)); c.appendChild(mk('span', null, p.c)); c.onclick = () => { FIGUI.cur = i; FIGUI.msg = ''; figRender(); }; g.appendChild(c); });
+      el.appendChild(mk('div', 'figweakh', 'Its fighter')); el.appendChild(g);
+    }
+    const nr = mk('div', 'row'); nr.appendChild(mk('span', 'figweakh', 'Name'));
+    const inp = document.createElement('input'); inp.id = 'figName'; inp.className = 'netinput'; inp.maxLength = OC_NAME_MAX; inp.value = FIGUI.name; inp.autocomplete = 'off'; inp.spellcheck = false; inp.setAttribute('aria-label', 'Figure name');
+    inp.oninput = () => { FIGUI.name = inp.value; FIGUI.msg = ''; };
+    inp.onkeydown = (e) => { e.stopPropagation(); if(e.key === 'Enter'){ e.preventDefault(); figSaveName(); } else if(e.key === 'Escape'){ e.preventDefault(); figBackList(); } };
+    nr.appendChild(inp); el.appendChild(nr);
+    const bar = mk('div', 'row'); btn(bar, 'Save', '', figSaveName, 'figSaveBtn'); btn(bar, 'Back', 'ghost sm', figBackList, 'figBackBtn'); el.appendChild(bar);
+    el.appendChild(mk('div', 'fignote', FIGUI.msg));
+    el.appendChild(mk('div', 'foot', FIGUI.mode === 'make' ? 'Arrows: fighter · Enter: save · Esc: back' : 'Enter: save · Esc: back'));
     return;
   }
-  if(FIGUI.mode === 'pick'){
-    document.getElementById('figTitle').textContent = 'PICK ITS FIGHTER';
-    const P = figPickList();
-    body.innerHTML = '<div class="figgrid">' + P.map((p, i) => '<div class="figcell' + (i === FIGUI.cur ? ' sel' : '') + '" data-i="' + i + '">' + esc(p.c) + (p.oc ? ' (OC)' : '') + '</div>').join('') + '</div>';
-    body.querySelectorAll('.figcell').forEach(c => { c.onclick = () => { FIGUI.cur = +c.dataset.i; figPickDone(); }; });
-    const s = body.querySelector('.figcell.sel'); if(s && s.scrollIntoView) try{ s.scrollIntoView({ block:'nearest' }); }catch(e){}
-    help.textContent = 'Arrows choose · Enter next · Esc back';
-    return;
+  FIGUI.sel = clamp(FIGUI.sel, 0, L.length < FIG_MAX ? L.length : L.length - 1);
+  const row = mk('div', 'figcards');
+  L.forEach((d, i) => { const c = mk('button', 'figcard' + (i === FIGUI.sel ? ' sel' : '')); c.type = 'button'; c.dataset.fig = d.id; c.appendChild(figThumbOf(d.c, d.oc)); c.appendChild(mk('b', null, d.n)); c.appendChild(mk('span', null, 'Lv ' + d.lv)); c.onclick = () => { FIGUI.sel = i; FIGUI.ask = false; FIGUI.msg = ''; figRender(); }; row.appendChild(c); });
+  if(L.length < FIG_MAX){ const c = mk('button', 'figcard new' + (FIGUI.sel === L.length ? ' sel' : '')); c.type = 'button'; c.id = 'figNewCard'; c.appendChild(mk('span', 'figplus', '+')); c.appendChild(mk('b', null, 'New Figure')); c.onclick = figMakeOpen; row.appendChild(c); }
+  el.appendChild(row);
+  const d = L[FIGUI.sel];
+  if(d){
+    const lines = figTop(d, 3), box = mk('div', 'figweak');
+    box.appendChild(mk('div', 'figweakh', d.n + ' · ' + d.c + ' · Lv ' + d.lv + ' — your weaknesses'));
+    if(lines.length) lines.forEach(s => box.appendChild(mk('div', null, s))); else box.appendChild(mk('div', null, 'None yet. Spar to find them.'));
+    el.appendChild(box);
+    const bar = mk('div', 'row'), seat = FIG_CPU.indexOf(d.id) >= 0;
+    btn(bar, 'Spar ▶', '', () => figSpar(d.id), 'figSparBtn');
+    btn(bar, 'Rename', 'ghost sm', () => { FIGUI.mode = 'rename'; FIGUI.name = d.n; FIGUI.msg = ''; figRender(); figFocusName(); }, 'figRenameBtn');
+    btn(bar, FIGUI.ask ? 'Sure? Delete' : 'Delete', 'ghost sm', () => figDeleteAsk(d), 'figDeleteBtn');
+    btn(bar, 'CPU seat: ' + (seat ? 'On' : 'Off'), 'ghost sm', () => { const at = FIG_CPU.indexOf(d.id); if(at >= 0) FIG_CPU.splice(at, 1); else if(FIG_CPU.length >= 3) FIGUI.msg = 'Three at most'; else FIG_CPU.push(d.id); figRender(); }, 'figSeatBtn').title = 'On: it joins your Free-for-all and Teams matches as a CPU';
+    el.appendChild(bar);
   }
-  document.getElementById('figTitle').textContent = FIGUI.mode === 'rename' ? 'RENAME' : 'NAME IT';
-  body.innerHTML = '<div class="oclist" style="align-items:center"><div class="ocsub">NAME (letters and numbers, 12 at most)</div><div><span class="ocname">' + (esc(FIGUI.name) || '&nbsp;') + '_</span></div></div>';
-  help.textContent = 'Type a name · Backspace · Enter save · Esc back';
+  el.appendChild(mk('div', 'fignote', FIGUI.msg));
+  el.appendChild(mk('div', 'foot', '← →: pick · Enter: ' + (d ? 'spar' : 'new') + (d ? ' · Delete: delete' : '')));
 }
-function figPickDone(){
-  const p = figPickList()[FIGUI.cur]; if(!p) return;
-  FIGUI.pickC = p.c; FIGUI.pickOc = p.oc; FIGUI.mode = 'name'; FIGUI.msg = '';
-  let n = 1; while(figNameTaken('Figure ' + n, '') && n < 9) n++; FIGUI.name = 'Figure ' + n;
+function figFocusName(){ try{ const i = document.getElementById('figName'); if(i){ i.focus(); i.select(); } }catch(e){} }
+function figMakeOpen(){
+  if(figLoad().length >= FIG_MAX){ FIGUI.msg = 'Four is the most'; figRender(); return; }
+  let n = 1; while(figNameTaken('Figure ' + n, '') && n < 9) n++;
+  FIGUI.mode = 'make'; FIGUI.cur = 0; FIGUI.name = 'Figure ' + n; FIGUI.msg = ''; FIGUI.ask = false; figRender();
+}
+function figBackList(){ FIGUI.mode = 'list'; FIGUI.msg = ''; figRender(); }
+function figSaveName(){
+  const L = figLoad();
+  let r;
+  if(FIGUI.mode === 'rename') r = figRename((L[FIGUI.sel] || {}).id, FIGUI.name);
+  else { const p = figPickList()[FIGUI.cur]; r = p ? figNew(p.c, p.oc, FIGUI.name) : { ok:false, msg:'Pick a fighter' }; if(r.ok) FIGUI.sel = figLoad().length - 1; }
+  FIGUI.msg = r.msg; if(r.ok) FIGUI.mode = 'list';
   figRender();
 }
-function figKeydown(e){
-  const el = document.getElementById('figscreen');
-  if(!el || !el.classList.contains('active') || running) return;
-  const c = e.code, k = e.key, enter = (c === 'Enter' || c === 'NumpadEnter'), done = () => e.preventDefault(), L = figLoad();
-  if(FIGUI.mode === 'list'){
-    if(FIGUI.ask){ const a = FIGUI.ask; FIGUI.ask = null; if(c === 'KeyD'){ const d = figFind(a); if(d){ figDelete(a); FIGUI.msg = 'Deleted ' + d.n; FIGUI.sel = clamp(FIGUI.sel, 0, Math.max(0, L.length - 1)); } } else FIGUI.msg = ''; figRender(); done(); return; }
-    FIGUI.msg = '';
-    const d = L[FIGUI.sel];
-    if(c === 'ArrowDown'){ if(L.length) FIGUI.sel = (FIGUI.sel + 1) % L.length; figRender(); done(); }
-    else if(c === 'ArrowUp'){ if(L.length) FIGUI.sel = (FIGUI.sel + L.length - 1) % L.length; figRender(); done(); }
-    else if(enter || c === 'KeyX'){ if(d) figSpar(d.id); done(); }
-    else if(c === 'KeyN'){ if(L.length >= FIG_MAX){ FIGUI.msg = 'Four Figures is the most: delete one first'; figRender(); } else { FIGUI.mode = 'pick'; FIGUI.cur = 0; figRender(); } done(); }
-    else if(c === 'KeyR'){ if(d){ FIGUI.mode = 'rename'; FIGUI.name = d.n; figRender(); } done(); }
-    else if(c === 'KeyD'){ if(d){ FIGUI.ask = d.id; FIGUI.msg = 'Delete ' + d.n + '? Press D again'; } figRender(); done(); }
-    else if(c === 'KeyS'){ if(d){ const at = FIG_CPU.indexOf(d.id); if(at >= 0) FIG_CPU.splice(at, 1); else if(FIG_CPU.length >= 3) FIGUI.msg = 'Three CPU Figures at most'; else FIG_CPU.push(d.id); } figRender(); done(); }
-    else if(c === 'Escape' || c === 'KeyC'){ go('select'); done(); }
-    return;
-  }
-  if(FIGUI.mode === 'pick'){
-    const n = figPickList().length;
-    if(c === 'ArrowRight'){ FIGUI.cur = (FIGUI.cur + 1) % n; figRender(); done(); }
-    else if(c === 'ArrowLeft'){ FIGUI.cur = (FIGUI.cur + n - 1) % n; figRender(); done(); }
-    else if(c === 'ArrowDown'){ FIGUI.cur = Math.min(n - 1, FIGUI.cur + 6); figRender(); done(); }
-    else if(c === 'ArrowUp'){ FIGUI.cur = Math.max(0, FIGUI.cur - 6); figRender(); done(); }
-    else if(enter || c === 'KeyX'){ figPickDone(); done(); }
-    else if(c === 'Escape' || c === 'KeyC'){ FIGUI.mode = 'list'; figRender(); done(); }
-    return;
-  }
-  if(c === 'Backspace'){ FIGUI.name = FIGUI.name.slice(0, -1); FIGUI.msg = ''; figRender(); done(); }
-  else if(enter){
-    const r = FIGUI.mode === 'rename' ? figRename((L[FIGUI.sel] || {}).id, FIGUI.name) : figNew(FIGUI.pickC, FIGUI.pickOc, FIGUI.name);
-    if(r.ok){ if(FIGUI.mode === 'name') FIGUI.sel = figLoad().length - 1; FIGUI.mode = 'list'; }
-    FIGUI.msg = r.msg; figRender(); done();
-  }
-  else if(c === 'Escape'){ FIGUI.mode = FIGUI.mode === 'rename' ? 'list' : 'pick'; FIGUI.msg = ''; figRender(); done(); }
-  else if(k && k.length === 1 && /[A-Za-z0-9 ]/.test(k) && !e.ctrlKey && !e.metaKey && !e.altKey){ if(FIGUI.name.length < OC_NAME_MAX) FIGUI.name += k; FIGUI.msg = ''; figRender(); done(); }
+function figDeleteAsk(d){
+  if(!FIGUI.ask){ FIGUI.ask = true; FIGUI.msg = ''; figRender(); return; }
+  figDelete(d.id); FIGUI.ask = false; FIGUI.msg = 'Deleted ' + d.n; figRender();
 }
-// The fighter board's tile (after the roster and the OCs): opens the Figures screen. Offline only.
-function figBoardCell(b){
-  if(inNetSession() || cupPicking() || EVENT_PICK || (PENDING_TOURNEY && PENDING_TOURNEY.pickMates)) return;
-  const m = document.createElement('div'); m.className = 'cell play'; m.dataset.fig = '';
-  m.innerHTML = '<span class="dot" style="background:#ffd23f"></span><span class="cellname">Figures</span>';
-  m.title = 'Sparring Figures: CPU fighters that learn your habits and counter them';
-  m.onclick = () => figOpen();
-  b.appendChild(m);
+function figKeydown(e){
+  const scr = document.getElementById('test'), el = document.getElementById('figPanel');
+  if(running || !scr || !scr.classList.contains('active') || !el || el.style.display === 'none' || !TESTMODE.training) return;
+  const tg = e.target && e.target.tagName;
+  if(tg === 'INPUT' || tg === 'SELECT' || tg === 'TEXTAREA' || (tg === 'BUTTON' && (e.key === 'Enter' || e.key === ' '))) return;   // (a focused button takes its own Enter)
+  const L = figLoad(), done = () => { e.preventDefault(); e.stopPropagation(); };
+  if(FIGUI.mode === 'make'){
+    const n = figPickList().length;
+    if(e.key === 'ArrowRight'){ FIGUI.cur = (FIGUI.cur + 1) % n; figRender(); done(); }
+    else if(e.key === 'ArrowLeft'){ FIGUI.cur = (FIGUI.cur + n - 1) % n; figRender(); done(); }
+    else if(e.key === 'ArrowDown'){ FIGUI.cur = Math.min(n - 1, FIGUI.cur + 8); figRender(); done(); }
+    else if(e.key === 'ArrowUp'){ FIGUI.cur = Math.max(0, FIGUI.cur - 8); figRender(); done(); }
+    else if(e.key === 'Enter'){ figSaveName(); done(); }
+    else if(e.key === 'Escape'){ figBackList(); done(); }
+    return;
+  }
+  if(FIGUI.mode === 'rename'){ if(e.key === 'Escape'){ figBackList(); done(); } return; }
+  const top = L.length < FIG_MAX ? L.length : L.length - 1;
+  if(e.key === 'ArrowRight'){ FIGUI.sel = Math.min(top, FIGUI.sel + 1); FIGUI.ask = false; FIGUI.msg = ''; figRender(); done(); }
+  else if(e.key === 'ArrowLeft'){ FIGUI.sel = Math.max(0, FIGUI.sel - 1); FIGUI.ask = false; FIGUI.msg = ''; figRender(); done(); }
+  else if(e.key === 'Enter'){ const d = L[FIGUI.sel]; if(d) figSpar(d.id); else figMakeOpen(); done(); }
+  else if(e.key === 'Delete'){ const d = L[FIGUI.sel]; if(d) figDeleteAsk(d); done(); }
+}
+// The result screen's way back to the Figures (shown after a match with one): Training, that Figure picked.
+function figBackToTraining(id){
+  openTraining();
+  const i = figLoad().findIndex(x => x.id === id); if(i >= 0) FIGUI.sel = i;
+  FIGUI.mode = 'list'; FIGUI.msg = ''; figRender();
 }
 function aiThink(f){
   if(RACE.active && f._runner) return raceRunnerAi(f);   // RUNNING!: the runners run (see raceRunnerAi)
@@ -133076,6 +133198,7 @@ function brainGuard(f, ts, t, inp, B, L, targets, sp){
     inp.left = a < 0; inp.right = a > 0;
     return true;
   }
+  if(E.fg && figGuardStep(f, ts, t, inp, B, E, off, e)) return true;   // SPARRING FIGURES: the hit planned onto the way back it knows
   if(!there) brainWalk(f, inp, gx < 0 ? -1 : 1, sp, spot);
   else if(f.onground && f.face !== (upAt ? toward : out)){ inp.left = (upAt ? toward : out) < 0; inp.right = !inp.left; }   // faced out (or at them)
   if(!f.onground || now < B.next) return true;
@@ -154256,6 +154379,7 @@ function openTest(){
   TESTMODE.active=false;   // not active until they hit "Start Testing"
   SETTINGS.mode="ffa";     // sandbox is single-screen
   go('test');
+  try{ figPanelSync(); }catch(e){}   // (Test the Feel: no Figures panel; openTraining shows it)
   const mkSeg=(id, opts, cur, apply)=>{
     const seg=document.getElementById(id); if(!seg) return; seg.innerHTML='';
     opts.forEach(o=>{ const b=document.createElement('button'); b.textContent=o.label;
@@ -154324,6 +154448,7 @@ function quitAsk(){
   t.textContent = q; a.style.display = 'block';
 }
 function quitMatch(){
+  try{ if(FIG_RUN) figMatchEnd(null, true); }catch(e){}   // SPARRING FIGURES: what it learned in a match left part-way is saved too
   quitAskNo();
   setPaused(false);
   go('title');
