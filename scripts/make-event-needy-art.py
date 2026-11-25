@@ -1,3 +1,7 @@
+# SUPERSEDED (2026-11-25): do not run this script; it is kept as the record of how the first event art was made (2026-11-17).
+# The event skins are now the show's own looks from the BFDI wiki (docs/LEDGER.md 2026-11-19; scripts/sprite-manifest-skins.json).
+# This script re-makes needy.png and then STOPS before its old recolour skin (that part never runs).
+# So nothing current is rewritten by accident, it now refuses to write anything unless it is given --force-old-art.
 # Needy's render and her event skin (BFDIE event kit art), made from the one owner-approved picture (read as data only).
 #   needy.png               File:NeedyPoseIntro.png -- her BFDIE intro pose (2438 x 1166): a syringe lying on its side, plunger left, needle right,
 #                           on her two thin black stick legs. She has NO arms and she HAS legs (the owner, 2026-11-17: "why does needy not have legs?";
@@ -9,6 +13,10 @@
 # which the game's rows for her copy (LIMB_RIG['Needy'], NDY_LEGS in index.html).
 # Run: <a Python with PIL> -I scripts/make-event-needy-art.py <downloads dir> artifacts/V1/assets/sprites
 import sys, os, colorsys
+if '--force-old-art' not in sys.argv:
+    sys.stderr.write('REFUSED: this script is superseded (see the note at the top) and would overwrite the current event art. Nothing was written. Pass --force-old-art to run it anyway.' + chr(10))
+    sys.exit(2)
+sys.argv = [a for a in sys.argv if a != '--force-old-art']
 from PIL import Image
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'helpers'))
 from trace_legs import leg_mask, leg_rows, js_row

@@ -1,3 +1,7 @@
+# SUPERSEDED (2026-11-25): do not run this script; it is kept as the record of how the first event art was made (2026-11-17).
+# The event skins are now the show's own looks from the BFDI wiki (docs/LEDGER.md 2026-11-19; scripts/sprite-manifest-skins.json).
+# This script re-makes hot-dog.png and then STOPS before its old recolour skin (that part never runs).
+# So nothing current is rewritten by accident, it now refuses to write anything unless it is given --force-old-art.
 # Hot Dog's render (BFDIE event fighter art), made from the official BFDIE render (read as data only).
 #   hot-dog.png   the BFDIE render (2245 x 1158, transparent), on his two little black stick legs: trimmed and scaled to 200 px tall, the other renders'
 #                 size (388 x 200). He has NO arms and he HAS legs (the owner, 2026-11-17: "hot dog doesnt have arms"; an earlier build cut his legs off
@@ -5,6 +9,10 @@
 #                 of the picture's height), which the game's rows for him copy (LIMB_RIG["Hot Dog"], HD_LEGS in index.html).
 # Run: <a Python with PIL> -I scripts/make-event-hotdog-art.py <path to the render> artifacts/V1/assets/sprites
 import sys, os
+if '--force-old-art' not in sys.argv:
+    sys.stderr.write('REFUSED: this script is superseded (see the note at the top) and would overwrite the current event art. Nothing was written. Pass --force-old-art to run it anyway.' + chr(10))
+    sys.exit(2)
+sys.argv = [a for a in sys.argv if a != '--force-old-art']
 from PIL import Image
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'helpers'))
 from trace_legs import leg_mask, leg_rows, js_row

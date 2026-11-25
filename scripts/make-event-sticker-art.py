@@ -1,3 +1,7 @@
+# SUPERSEDED (2026-11-25): do not run this script; it is kept as the record of how the first event art was made (2026-11-17).
+# The event skins are now the show's own looks from the BFDI wiki (docs/LEDGER.md 2026-11-19; scripts/sprite-manifest-skins.json).
+# This script re-makes sticker.png and then STOPS before its old recolour skin (that part never runs).
+# So nothing current is rewritten by accident, it now refuses to write anything unless it is given --force-old-art.
 # Sticker's render (event fighter art), made from the one owner-approved picture (read as data only): their BFDIE idle render
 # (full size), supplied by the lead (the BFDI wiki's render of the upside-down square sunset sticker: blue top, red bottom, a yellow sun,
 # a white liner with a grey edge, black stick arms and legs).
@@ -6,6 +10,10 @@
 #   thumbs/night-sticker.png        its 56 px wide thumbnail
 # Run: <a Python with PIL> -I scripts/make-event-sticker-art.py <the source png> artifacts/V1/assets/sprites
 import sys, os, colorsys
+if '--force-old-art' not in sys.argv:
+    sys.stderr.write('REFUSED: this script is superseded (see the note at the top) and would overwrite the current event art. Nothing was written. Pass --force-old-art to run it anyway.' + chr(10))
+    sys.exit(2)
+sys.argv = [a for a in sys.argv if a != '--force-old-art']
 from PIL import Image
 
 SRC, SPR = sys.argv[1], sys.argv[2]
