@@ -18949,8 +18949,9 @@ function clutchTick(){
 // Which bed the game SHOULD be playing right now — used when sound is toggled back on.
 function currentMusicKind(){
   try{
-    if(typeof running!=='undefined' && running) return CLUTCH.on ? 'intense' : clutchBaseKind();
+    if(typeof running!=='undefined' && running) return figQuiet() ? null : CLUTCH.on ? 'intense' : clutchBaseKind();   // (SPARRING FIGURES: a Training match or a Spar is quiet)
     const el = document.querySelector('.screen.active');
+    if(el && el.id === 'test' && TESTMODE.training) return null;
     return (el && screenMusicKind(el.id)) || null;
   }catch(e){ return null; }
 }
@@ -20119,7 +20120,7 @@ function go(id){
   // startMusic() no-ops when the requested bed is already the one playing, which keeps the
   // menu loop running unbroken across title -> select -> controls -> title.
   // While Steve Cobs's card holds the title (his door is open, One's card is not up), the title plays his bed (screenMusicKind).
-  const bed = screenMusicKind(id);
+  const bed = (id === 'test' && (TESTMODE.training || FIGM.toTraining)) ? null : screenMusicKind(id);   // (SPARRING FIGURES: Training is quiet, figQuiet)
   if(bed){ try{ startMusic(bed); }catch(e){} }
 }
 
@@ -24741,7 +24742,7 @@ function beginMatchNow(){
   // audio is best-effort — never let an audio failure abort match setup (empty-map risk)
   // musicNewMatch, not startMusic: R mid-fight comes back through here with the battle bed still
   // playing, and a new match is a new pick from the player's own battle playlist, when they have one.
-  try{ clutchReset(); sndInit(); musicNewMatch(ONEFIGHT.active ? 'one' : COBSFIGHT.active ? 'cobs' : SETTINGS.mode==='boss' ? 'boss' : 'battle'); }catch(e){}   // One's fight and Steve Cobs's run in boss mode but have their own beds
+  try{ clutchReset(); sndInit(); if(figQuiet()) stopMusic(); else musicNewMatch(ONEFIGHT.active ? 'one' : COBSFIGHT.active ? 'cobs' : SETTINGS.mode==='boss' ? 'boss' : 'battle'); }catch(e){}   // One's fight and Steve Cobs's run in boss mode but have their own beds
   try{ startRunRecording(); }catch(e){}   // every match records for replay on the result screen
   try{ clipReset(); }catch(e){}       // and a fresh ring for the shareable GIF
   try{ blurFormControl(); }catch(e){}   // a dropdown or text box the lobby left focused would take every key of this match (see blurFormControl)
@@ -97027,7 +97028,7 @@ function setMcTab(t){ MC_TAB = t; refreshSel(); }
 // (stand, walk at you, hop about, or fight like a CPU) and the hitbox view (B in the match toggles it too).
 const TRAIN_PCTS = [0, 20, 40, 60, 80, 100, 130];
 function openTraining(){
-  openTest();   // builds the option rows (and routes to the screen)
+  FIGM.toTraining = true; try{ openTest(); } finally { FIGM.toTraining = false; }   // (SPARRING FIGURES: Training is quiet from its first frame)   // builds the option rows (and routes to the screen)
   TESTMODE.training = true; dropCustomLevel();
   trainingScreenSync();
 }
@@ -97040,6 +97041,7 @@ function trainingScreenSync(){
   const back = document.getElementById('testBack'); if(back){ back.textContent = T ? '◀ Back' : '◀ Back to editor'; back.onclick = ()=>{ if(T){ TESTMODE.training = false; go('title'); } else backToEditor(); }; }
   const note = document.getElementById('testMapNote'); if(note) note.textContent = testNoteText();
   try{ figPanelSync(); }catch(e){ console.error('figPanelSync', e); }   // SPARRING FIGURES: their panel, in Training only
+  if(T){ try{ stopMusic(); }catch(e){} }   // (Training is quiet: figQuiet)
 }
 // The map being tested and WHO YOU ARE in it: "Map: My level · Testing as Firey" (the level creator review, 2026-10-26: "Test the Feel never says which
 // fighter you are"). The fighter is the one last picked (chosen), as buildFighters seats you.
@@ -131866,7 +131868,7 @@ function figTier(f){ const lv = f._fig.lv; return lv < 20 ? 1 : lv < 38 ? 2 : 3;
 // A fighter in the match made from a Figure (buildFighters: the row's _figId).
 function figAttach(f, id){
   const d = figFind(id); if(!d) return;
-  f._fig = { d, lv:d.lv, L:figBrainRow(d.lv), react:Math.round(figKnot(FIG_REACT, d.lv)), gap:Math.round(figKnot(FIG_GAP, d.lv)), cnt:{}, pick:{}, hit:{}, u:null };
+  f._fig = { d, lv:d.lv, L:figBrainRow(d.lv), react:Math.round(figKnot(FIG_REACT, d.lv)), gap:Math.round(figKnot(FIG_GAP, d.lv)), cnt:{}, pick:{}, hit:{}, ck:{}, hk:{}, u:null };
   f._figTag = d.n + ' Lv ' + d.lv;
 }
 function figRowOf(d){
@@ -131889,16 +131891,20 @@ function figTop(d, n){
   return Object.keys(FIG_HAB).map(id => ({ id, s:figStr(d, id) })).filter(x => x.s > 0).sort((a, b) => b.s - a.s).slice(0, n)
     .map(x => FIG_HAB[x.id].you.replace('$', FIG_MV[figFav(d)] || 'one move') + ' → ' + FIG_HAB[x.id].it + '.');
 }
-function figUsed(f, id){ const F = f._fig, c = F.cnt; c[id] = (c[id] || 0) + 1; figLanded(f, true); F.u = { id, t:hazardT, d:f._dmgDealt || 0 }; }
+function figUsed(f, id, key){ const F = f._fig, c = F.cnt; c[id] = (c[id] || 0) + 1; if(key){ const q = id + '.' + key; F.ck[q] = (F.ck[q] || 0) + 1; } figLanded(f, true); F.u = { id, k:key ? id + '.' + key : null, t:hazardT, d:f._dmgDealt || 0 }; }
 // Did the counter's hit land (any damage it dealt in the 45 frames after)? Kept for this match only (f._fig.hit), for the checks.
-function figLanded(f, now){ const F = f._fig, u = F.u; if(!u || (!now && hazardT - u.t < 45)) return; F.u = null; if((f._dmgDealt || 0) > u.d) F.hit[u.id] = (F.hit[u.id] || 0) + 1; }
+function figLanded(f, now){ const F = f._fig, u = F.u; if(!u || (!now && hazardT - u.t < 45)) return; F.u = null; if((f._dmgDealt || 0) > u.d || (u.k && /grab/.test(u.k) && f._hold)){ F.hit[u.id] = (F.hit[u.id] || 0) + 1; if(u.k) F.hk[u.k] = (F.hk[u.k] || 0) + 1; } }
 function figPicked(f, id){ const c = f._fig.pick; c[id] = (c[id] || 0) + 1; }
 
 // ---- THE EYES: what the person does, once a frame at the end of step (reads only) ----
 function figWatchStep(){
   const figs = fighters.filter(f => f._fig && !f.dead); if(!figs.length) return;
   const now = hazardT;
-  for(const g of figs) figLanded(g, false);
+  for(const g of figs){
+    figLanded(g, false);
+    const F = g._fig, s = F.smP;   // ITS OWN SMASH'S TIME: from the press to the first damage it deals, learned from the ones that land
+    if(s){ const full = smashFullOf(g), dt = now - s.t; if((g._dmgDealt || 0) > s.d && dt >= full && dt <= full + 22){ F.smT = Math.round(F.smT ? (2*F.smT + dt)/3 : dt); F.smP = null; } else if(dt > full + 22) F.smP = null; }
+  }
   for(const h of fighters){
     if(h._fig || !(isHumanCtrl(h) || h._figWatch)) continue;
     const W = h._figW || (h._figW = { ring:new Array(32), zs:false, air:0, far:true, trip:null, shw:null, fsw:false, oos:null, lastMv:null, atkT:-1e9, airAtkT:-1e9, prev:0, spamK:null, spamT:-1e9, useK:null, useT:-1e9 });
@@ -131999,10 +132005,30 @@ function figPath(f, ts, N, run){
   return out;
 }
 function figBoxHits(f, S, x, face, ts, p){
+  if(S.zone) return figZoneHits(f, S, x, face, ts, p);
   const g = Object.create(f), q = Object.create(ts); g.x = x; g.face = face; q.x = p.x; q.y = p.y;
   if(S.jab) return shapeHits(jabFan(g, S.reach), q);
   for(const b of S.boxes) if(shapeHits(mvShape(g, b.s), q)) return true;
   return false;
+}
+// COUNTERS v3 (the lead, 2026-11-25: a stronger punish is fair, the same eyes, hands, speed and damage): THE STRONG MOVES. The up smash for a jump-in,
+// the grab for a landing out of the shield jump, the down smash at the ledge for a low way back. A smash charges and goes off by itself (SMASHES:
+// PRESS ONCE), so it is started early: pressed figSmashT frames before the foe reaches its box, from the plan. Where they land was measured off the
+// moves themselves (Pen, Firey, Leafy, a still foe at 0-130 px): the up smash above the fighter, 45 px either side, 15-115 px up; the down smash low
+// in front, to 85 px, from 25 px up to 55 px down; the grab in front, to the two bodies' edges and 12 px more, level, a foe on its feet, 7 frames on.
+// The smash's time is its charge (smashFullOf) and 6 more until it learns its own from its smashes that land (figWatchStep).
+function figZoneHits(f, S, x, face, ts, p){
+  const dx = (p.x - x)*face, dy = p.y - f.y;
+  if(S.zone === 'usm') return Math.abs(dx) <= 45 && dy >= -115 && dy <= -15;
+  if(S.zone === 'dsm') return dx >= -10 && dx <= 85 && dy >= -25 && dy <= 55;
+  if(S.zone === 'grab') return p.on && dx >= 0 && dx <= f.r + (ts.r || 24) + 12 && Math.abs(dy) <= 26;
+  return false;
+}
+function figSmashT(f){ const F = f._fig; return F.smT || (smashFullOf(f) + 6); }
+function figStrongS(f, key){
+  if(key === 'grab') return (f.onground && !f._hold && !f._gb && f.atkCd <= 0) ? { zone:'grab', st:7, act:2 } : null;
+  if(f.smCd > 0 || f._smQ || f.smashHold > 0 || !f.onground) return null;
+  return { zone:key, st:figSmashT(f), act:3 };
 }
 // The plain X on the ground is the jab (doAttack), not a moveset row: it hits on the press itself, in its fan (jabFan, the reach doAttack works out).
 // Null for a kit whose X is a shot.
@@ -132013,6 +132039,7 @@ function figJabS(f){
 }
 function figOffs(S){   // how far in front of the fighter each of the move's boxes sits (where to stand for it), and a little either side
   if(S.jab) return [S.off, S.off - 14, S.off + 14, S.off + 28];
+  if(S.zone) return S.zone === 'usm' ? [0, 20, -20] : S.zone === 'dsm' ? [40, 20, 60] : [30, 45];
   const o = [];
   for(const b of S.boxes){ const s = b.s, c = s.k === 'f' ? (s.ox || 0) + Math.cos((s.a0 + s.a1)/2)*(s.r0 + s.r1)/2 : s.k === 'c' ? (s.x1 + s.x2)/2 : s.k === 'b' ? 0 : (s.x || 0); o.push(c, c - 14, c + 14); }
   return o;
@@ -132026,7 +132053,7 @@ function figPlan(f, ts, keys, H, walk, run, lim){
   const P = figPath(f, ts, n + H + 24, run);
   let best = null;
   for(const key of keys){
-    const S = key === 'jab' ? figJabS(f) : ms[key]; if(!S || (!S.jab && !S.boxes)) continue;
+    const S = key === 'jab' ? figJabS(f) : (key === 'usm' || key === 'dsm' || key === 'grab') ? figStrongS(f, key) : ms[key]; if(!S || (!S.jab && !S.zone && !S.boxes)) continue;
     const offs = walk ? figOffs(S) : null;
     for(let d = d0; d <= H && (!best || d < best.d); d++){
       let x = null, fc = 1, hp = null;
@@ -132052,9 +132079,12 @@ function figDoPlan(f, inp, B, id, plan){
   const gx = plan.x - f.x, d0 = figHands(f);
   if(Math.abs(gx) >= 10){ inp.left = gx < 0; inp.right = gx > 0; return true; }
   if(plan.d > 0 || d0 > 0) return true;   // (there: still, the hands kept free, until the press goes out on the frame the plan wants -- pressed early it would wait in the hands and be dropped)
-  if(plan.key !== 'jab' && f.face !== plan.face){ inp.left = plan.face < 0; inp.right = plan.face > 0; return true; }   // (an up or down tilt faces the way it already faces: turn first)
-  const k = plan.key === 'ut' ? { attack:true, up:true, mv:true } : plan.key === 'dt' ? { attack:true, down:true, mv:true } : brainFace({ attack:true }, plan.face);   // (jab: X, faced at the foe)
-  figUsed(f, id); B.figEp = null; brainTap(B, k, 3); Object.assign(inp, B.press.keys);
+  if(plan.key !== 'jab' && plan.key !== 'usm' && plan.key !== 'dsm' && f.face !== plan.face){ inp.left = plan.face < 0; inp.right = plan.face > 0; return true; }   // (a tilt or the grab faces the way it already faces: turn first)
+  const smash = plan.key === 'usm' || plan.key === 'dsm';
+  const k = plan.key === 'ut' ? { attack:true, up:true, mv:true } : plan.key === 'dt' ? { attack:true, down:true, mv:true } : plan.key === 'grab' ? { grab:true }
+    : smash ? brainSmash(f, f.aiTarget, plan.face, plan.key === 'usm' ? 1 : -1) : brainFace({ attack:true }, plan.face);   // (jab: X, faced at the foe)
+  figUsed(f, id, plan.key); B.figEp = null; brainTap(B, k, 3); Object.assign(inp, B.press.keys);
+  if(smash){ B.st = 'smash'; B.until = hazardT + plan.st + 30; f._fig.smP = { t:hazardT, d:f._dmgDealt || 0 }; }   // (it waits for it to go off, and times it: figWatchStep)
   if(id !== 'combo') B.figFol = { until:hazardT + plan.d + plan.st + 50 };   // (a counter that lands is followed up: figFollow)
   f._fig.pl = { id, key:plan.key, at:hazardT + plan.d + plan.st, x:plan.p.x, y:plan.p.y };   // (where it planned the hit: for the checks)
   return true;
@@ -132084,6 +132114,7 @@ function figShieldUp(f, t, B, L, dist, awake){
 // The rest, in the fight (brainFight, after the punish): true when it took the keys this frame.
 function figAct(f, t, inp, B, L, dx, dy, adx, ady, dist, toward){
   const now = hazardT, S = figSaw(t, f); if(!S || t._isBoss) return false;
+  if(f._smQ || f.smashHold > 0) return false;   // (its smash is charging: the fight's own wait holds it)
   const reach = brainReach(f) + (t.r || 24)*0.5, tap = (keys) => { brainTap(B, keys, 3); Object.assign(inp, B.press.keys); return true; };
   const hit = (id) => { figUsed(f, id); B.figEp = null; return tap(brainMoveKeys(f, t, brainStrongMove(f, t))); };
   const hold = (gap) => { if(adx < gap - 10){ inp.left = toward > 0; inp.right = toward < 0; } else if(adx > gap + 25 && f.onground){ inp.left = toward < 0; inp.right = toward > 0; } brainEdges(f, inp, 70); return true; };
@@ -132125,7 +132156,7 @@ function figAct(f, t, inp, B, L, dx, dy, adx, ady, dist, toward){
     if(!E.up){ if(t.onground){ if(!S.sh) B.figEp = null; return false; } E.up = true; E.until = now + 100; }   // (let go of on the ground: no jump to wait for)
     if(t.onground){ if(E.land == null) E.land = now; if(now - E.land > 24){ B.figEp = null; B.next = now; return false; } }
     if(!f.onground) return false;
-    const plan = figPlan(f, ts, ['ut', 'jab', 'dt'], 40, true, false, figFloorLim(f));
+    const plan = figPlan(f, ts, ['grab'], 40, true, false, figFloorLim(f)) || figPlan(f, ts, ['ut', 'jab', 'dt'], 40, true, false, figFloorLim(f));   // (the grab as it lands; a light hit where the grab cannot be timed)
     if(figDoPlan(f, inp, B, 'oosJ', plan)) return true;
     const Pth = figPath(f, ts, f._fig.react + 60, false), L = Pth.find((p, i) => i >= f._fig.react && p.on) || Pth[Pth.length - 1], gx = L.x - f.x;   // (no hit from here yet: to where it comes down)
     if(Math.abs(gx) > 20){ inp.left = gx < 0; inp.right = gx > 0; brainEdges(f, inp, 70); }
@@ -132140,7 +132171,7 @@ function figAct(f, t, inp, B, L, dx, dy, adx, ady, dist, toward){
   if(E.id === 'jin'){   // A JUMP-IN: it plans the up-tilt (or the jab) on the jump's arc, steps under it if it must, and presses it in time
     if(t.onground){ B.figEp = null; return false; }
     if(!f.onground) return false;
-    const plan = figPlan(f, f.aiTarget, ['ut', 'jab'], 40, true, false, figFloorLim(f));
+    const plan = figPlan(f, f.aiTarget, ['usm'], 30, true, false, figFloorLim(f)) || figPlan(f, f.aiTarget, ['ut', 'jab'], 40, true, false, figFloorLim(f));   // (the up smash started early enough to be out as it arrives; a light hit where it cannot be timed)
     return figDoPlan(f, inp, B, 'jin', plan);   // (no hit on the arc from here yet: the fight as ever this frame, and a new plan next frame)
   }
   if(E.id === 'run'){   // A RUN-IN: it stands and presses the jab (or the down tilt) so the run carries the foe into it
@@ -132166,13 +132197,18 @@ function figGuardPlan(f, E, e){
 // planned onto its way up; the high one by the up tilt or the jab planned onto its way down. True when it took the keys.
 function figGuardStep(f, ts, t, inp, B, E, off, e){
   if(!f.onground) return false;
+  if(f._smQ || f.smashHold > 0) return true;   // (its smash is charging: still)
   if(figFollow(f, t, inp, B)) return true;
   if(t.onground) return false;
   const lim = [e.q.x0 + f.r*0.5 + 4, e.q.x1 - f.r*0.5 - 4], dx = t.x - f.x, dy = t.y - f.y;
   // THE MOMENT for a low way back: once it has spent its way up (the up special used, or no jump left) -- hit then, it has nothing left to come back
   // with. The jab first (it knocks them out, away from the stage), the down tilt where only that reaches (it pops them up).
-  if(E.fg === 'recL' && dy > -60 && Math.abs(dx) < 220 && (ts._usedAirSpecial || !(ts.jumps > 0)))
-    return figDoPlan(f, inp, B, 'recL', figPlan(f, ts, ['jab'], 36, true, false, lim) || figPlan(f, ts, ['dt'], 36, true, false, lim));
+  if(E.fg === 'recL' && dy > -60 && Math.abs(dx) < 220 && (ts._usedAirSpecial || !(ts.jumps > 0))){
+    // the kit's own spike (the spike dive: a plunge up special), where it reaches; else the down smash planned onto its way up; else the jab, then the down tilt
+    const sp = f.kit && f.kit.special;
+    if(!E.dove && brainDiveOk(f, ts, e, sp)){ figUsed(f, 'recL'); E.dove = true; E.dive = { at:hazardT, until:hazardT + 50, press:0 }; inp.jump = !f._jp; inp.left = -e.inl < 0; inp.right = -e.inl > 0; return true; }
+    return figDoPlan(f, inp, B, 'recL', figPlan(f, ts, ['dsm'], 20, false, false, null) || figPlan(f, ts, ['jab'], 36, true, false, lim) || figPlan(f, ts, ['dt'], 36, true, false, lim));
+  }
   if(E.fg === 'recH' && dy < 0 && Math.abs(dx) < 260) return figDoPlan(f, inp, B, 'recH', figPlan(f, ts, ['ut', 'jab'], 40, true, false, lim));
   return false;
 }
@@ -132202,6 +132238,9 @@ function figSpar(id){   // a 1v1 at once on the Training stage, with the fighter
   if(!chosen || (chosen.oc && !ocFind(chosen.name))) chosen = ROSTER.find(r => r.play);
   startMatch();
 }
+// QUIET (the owner, 2026-11-25, after seeing the panel: "turn off music for it"): Training -- its screen, its matches -- and a Spar play no music.
+// Sound effects stay. Leaving for the menus brings their music back (go: the screen's own bed); the music setting is never touched.
+function figQuiet(){ return !!((TESTMODE.training && TESTMODE.active) || FIGM.spar); }   // (a Training match, or a Spar: its screen is quiet through go and trainingScreenSync)
 function figSparEnd(){ const S = FIGM.spar; if(!S) return; FIGM.spar = null; SETTINGS.mode = S.prev.mode; SETTINGS.count = S.prev.count; stage = S.prev.stage; }
 // When the match ends (checkWin), or is left part-way (quit: quitMatch, a restart, the page closed): experience and the habits saved for every Figure
 // in it that fought a person, and the card for the result screen (not for a match left part-way).
@@ -132712,7 +132751,7 @@ function brainThrow(f, inp, B){
   if(B.pum > 0 && H.pumCd <= 0){ inp.attack = true; B.pum--; B.btn = true; return; }
   if(H.t < B.throwAt && H.t < H.max - 12) return;
   const edgeDir = (T.x < WW*0.5) ? -1 : 1, r = simRand();
-  const kind = (T.pct >= 90) ? (edgeDir === f.face ? 'f' : 'b') : (r < 0.45 ? 'u' : r < 0.75 ? 'd' : 'f');
+  const kind = (T.pct >= 90 || (f._fig && f._fig.u && f._fig.u.id === 'oosJ')) ? (edgeDir === f.face ? 'f' : 'b') : (r < 0.45 ? 'u' : r < 0.75 ? 'd' : 'f');   // (SPARRING FIGURES: a counter's grab throws toward the nearer side)
   if(kind === 'd') inp.down = true; else if(kind === 'u') inp.up = true;
   else if(kind === 'f'){ if(f.face > 0) inp.right = true; else inp.left = true; }
   else { if(f.face > 0) inp.left = true; else inp.right = true; }
@@ -154411,7 +154450,7 @@ function startTestNow(){
 function exitTest(){
   paused=false;
   const wasTraining = TESTMODE.training;
-  openTest();
+  FIGM.toTraining = wasTraining; try{ openTest(); } finally { FIGM.toTraining = false; }
   if(wasTraining){ TESTMODE.training = true; trainingScreenSync(); }
   PENDING_CUSTOM = true;
 }
