@@ -78829,7 +78829,7 @@ function usmPbOk(f, mv, b, t){
   }
   return true;
 }
-function usmPbTouch(f, t){ return !usmPbBelow(f, t) && shapeHits(Object.assign(bodyShape(f, USM_PB.margin), { both:true }), t); }
+function usmPbTouch(f, t){ return !usmPbBelow(f, t) && shapeHits(Object.assign(bodyShape(f, USM_PB.margin), { both:true, circ:true }), t); }
 // JUMP-CANCEL UP SMASH (the owner, 2026-11-05: "if up smash didn't jump, then how would you up smash?"). Up is the jump key, so on the ground a person's up + smash started a jump. Now, on the
 // ground, a smash pressed with up held, or within SM_CANCEL_WIN frames after an up press that started a jump from the ground, CANCELS the jump (the fighter is put back where it stood, no jump
 // velocity, the jump is not spent) and the UP SMASH comes out; a down held, or pressed up to SM_CANCEL_WIN frames before on a platform (the drop), keeps the fighter on the platform and is a
@@ -78876,8 +78876,8 @@ function brainSmDir(f, t){
   if(!t || !f.onground) return;
   const dx = Math.abs(t.x - f.x), dy = t.y - f.y;
   let d = 0;
-  if(dy < -60 && dx < 90 && simRand() < 0.7) d = 1;
-  else if(DSM_OWN[f.name] && DSM_OWN[f.name].down){ if(Math.abs(dy) < 60 && brainDsmLands(f, t) && simRand() < 0.5) d = -1; }   // (batch 3: an own down smash is asked for where it REACHES, not on the sweep's distance; see brainDsmLands)
+  if((USM_OWN[f.name] ? (dy < -30 && brainUsmLands(f, t)) : (dy < -60 && dx < 90)) && simRand() < 0.7) d = 1;   // (SMASH FOLLOW-UP: a remade up smash where its own boxes land)
+  else if(DSM_OWN[f.name] && DSM_OWN[f.name].down){ const nL = brainNsmLands(f, t); if(Math.abs(dy) < 60 && brainDsmLands(f, t) && (nL === false || simRand() < 0.5)) d = -1; }   // (SMASH FOLLOW-UP: the down smash for sure where the neutral one would miss)   // (batch 3: an own down smash is asked for where it REACHES, not on the sweep's distance; see brainDsmLands)
   else if(dx < f.r + (t.r || 24) + 40 && Math.abs(dy) < 40 && simRand() < 0.18) d = -1;
   f._aiSmDir = d; f._aiSmDirT = hazardT;
 }
@@ -78887,13 +78887,60 @@ function brainSmDir(f, t){
 // seven of batch 3's moves 0 times in 8 matches. This reads only where the foe is now.
 function brainDsmLands(f, t){
   const S = DSM_OWN[f.name] && DSM_OWN[f.name].down; if(!S || !S.boxes) return false;
-  const fc = (t.x >= f.x ? 1 : -1)*(S.back ? -1 : 1), g = Object.create(f); g.face = fc;
-  for(const bx of S.boxes){ if(shapeHits(mvShape(g, bx.s), t)) return true; }
-  return false;
+  return brainRowLands(f, t, S, !!S.back);   // (SMASH FOLLOW-UP: each box where the foe will be on its own frame, the charge included)
 }
 function brainSmash(f, t, toward, want){ brainSmDir(f, t); if(want){ f._aiSmDir = want; f._aiSmDirT = hazardT; }
   if(f._aiSmDir === -1 && DSM_OWN[f.name] && DSM_OWN[f.name].down && DSM_OWN[f.name].down.back) toward = -toward;   // (batch 3: a down smash that hits only behind the fighter is pressed with its back to the foe)
   return brainFace({ smash:true }, toward); }   // (want: the direction is already decided -- the up smash as an anti-air, brainFight)
+// SMASH FOLLOW-UP (2026-11-25): THE CPU KNOWS THE REMADE SMASHES. Until now it pressed the 66 remade neutral smashes from the old stock shapes' reads: a foe in
+// its jab's reach (a lunge or a hop that now goes 200-300 px was never used from range), a beam's 900 px (Tapey's dash and Nickel (II)'s bounce fired from across
+// the stage), the old carry for its edge sense. NSM_AI is each move as it is now, measured from the move itself (scratchpad np.mjs: the fighter on the floor, a still
+// Pen on the floor d px ahead, d = 0 to 440 in 8 px steps): [near, far, first, carry] = the nearest and the farthest centre-to-centre distance it lands at, the frame
+// of its first hit after the charge (at the spot just past touching), and how far it carries its user the way it faces with nobody there. Measure again when one changes.
+const NSM_AI = {
+  '8-Ball':[0,128,6,96], 'Balloon':[0,110,7,111], 'Balloony':[0,274,6,296], 'Barf Bag':[0,114,4,39], 'Baseball':[0,302,6,312], 'Basketball':[0,254,7,221],
+  'Beach Ball':[24,234,12,221], 'Bell':[0,136,5,135], 'Bomb':[0,168,19,84], 'Bomby':[0,118,19,0], 'Book':[8,160,4,57], 'Bot':[32,302,5,221], 'Bottle':[0,182,4,0],
+  'Box':[0,276,5,365], 'Bracelety':[0,162,3,90], 'Bubble':[0,318,8,0], 'Cake':[0,194,5,0], 'Cammy':[8,232,3,0], 'Candle':[8,84,7,0], 'Cheesy':[0,330,3,0], 'Clock':[24,148,3,72],
+  'Coiny':[0,120,6,77], 'David':[0,136,11,0], 'Dora':[8,242,3,0], 'Eraser':[0,158,3,108], 'Fern':[8,142,7,0], 'Firey':[0,148,3,115], 'Flower':[0,216,7,215], 'Foldy':[0,150,3,111],
+  'Fries':[0,142,9,0], 'Gaty':[0,104,5,0], 'Hot Dog':[8,158,3,31], 'Jack':[24,278,3,226], 'Lightbulb':[0,430,3,0], 'Lightning':[0,208,3,235], 'Liy':[0,150,5,98],
+  'Magnet':[0,210,5,0], 'Microphone':[0,184,7,0], 'Nickel':[0,278,6,285], 'Nickel (II)':[0,452,3,0], 'Paintbrush':[0,104,5,0], 'Pickle':[0,170,5,149], 'Pie':[0,196,6,192],
+  'Pillow':[0,124,8,0], 'Poppy':[0,160,4,0], 'Remote':[8,614,3,0], 'Rocky':[0,144,15,0], 'Rose':[0,194,7,0], 'Ruby':[0,354,3,0], 'Ruler':[16,380,3,0], 'Salt':[0,180,3,98],
+  'Sidewalky':[8,140,6,0], 'Silver Spoon':[0,138,4,90], 'Snowball':[0,156,8,0], 'Spikey':[0,200,3,223], 'Spongy':[0,166,4,30], 'Stapy':[24,162,3,106], 'Sticker':[0,168,4,86],
+  'TV':[16,464,5,0], 'Taco (II)':[0,136,8,0], 'Tapey':[0,456,3,162], 'Tea Kettle':[0,142,15,0], 'Teddy Bear':[0,150,7,0], 'Tree':[0,124,7,0], 'Trophy':[0,164,4,124],
+  'Yin-Yang':[0,138,3,134]
+};
+function brainNsmBand(f){ return (!f || f.oc) ? null : (NSM_AI[f.name] || null); }
+// Where foe t will be n frames from now, from what it is doing: its run carried on (10 frames at most: by then a person has reacted), a fall onto what is under it.
+function brainFoeAt(t, n){
+  const r = t.r || 24, x = t.x + (t.vx || 0)*Math.min(n, 10); let y = t.y;
+  if(!t.onground){ const m = Math.min(n, 24); y = t.y + (t.vy || 0)*m + 0.5*GRAV*m*m; const s = surfaceBelow(clamp(x, 1, WW - 1), t.y + r); if(s != null && y + r > s) y = s - r; if(y < t.y - 200) y = t.y - 200; }
+  return { x, y };
+}
+// Does the remade neutral smash land on t: where t will be when it hits (the charge, then its first hit), inside the band, level with it. null: no row here (the old reads).
+function brainNsmLands(f, t){
+  const A = brainNsmBand(f); if(!A) return null;
+  const p = brainFoeAt(t, smashFullOf(f) + A[2]), dx = Math.abs(p.x - f.x), big = Math.max(0, (t.r || 24) - 24);
+  return dx >= A[0] - big && dx <= A[1] + big && Math.abs(p.y - f.y) < 44 + big;
+}
+// Does a box of the up or down smash row land on t where t will be on that box's own frame (the charge, then the box's t0)? The up smash's point-blank hit counts for a
+// foe touching it that is not below (usmPbTouch). back: a row that hits only behind is pressed with its back to the foe.
+function brainRowLands(f, t, S, back){
+  if(!S || !S.boxes) return false;
+  const fc = (t.x >= f.x ? 1 : -1)*(back ? -1 : 1), g = Object.create(f), q = Object.create(t), ch = smashFullOf(f); g.face = fc;
+  for(const bx of S.boxes){
+    const p = brainFoeAt(t, ch + (bx.t0 == null ? S.st : bx.t0)); q.x = p.x; q.y = p.y;
+    if(bx.pb){ if(usmPbTouch(g, q)) return true; continue; }
+    if(shapeHits(mvShape(g, bx.s), q)) return true;
+  }
+  return false;
+}
+function brainUsmLands(f, t){ return brainRowLands(f, t, dirSmashSpec(f, 1), false); }
+// The smash, any of the three, lands from here: for a fighter with a remade neutral smash its band or its own down smash; for anyone else the jab's reach as before,
+// or its own down smash where that reaches further.
+function brainSmLands(f, t, extra){
+  const n = brainNsmLands(f, t), d = !!(DSM_OWN[f.name] && DSM_OWN[f.name].down) && Math.abs(t.y - f.y) < 60 && brainDsmLands(f, t);
+  return n === null ? (brainInReach(f, t, extra) || d) : (n || d);
+}
 // THREE COOLDOWNS ("Specials and smashes should have seperate cooldowns, and also attacks"): X and ↓+X wait on atkCd,
 // C, ↑+C and ↓+C on spCd, V on smCd, and nothing one of them does touches the others. A smash's declared cd used to
 // land on atkCd and spCd both, and its endlag on atkCd, so throwing one locked your jab and your special for up to
@@ -93344,7 +93391,7 @@ const MvC = (x1, y1, x2, y2, r) => ({ k:'c', x1:x1, y1:y1, x2:x2, y2:y2, r:r });
 const MvO = (x, y, r) => ({ k:'o', x:x, y:y, r:r });
 function mvShape(f, s){
   const d = f.face, z = sizeOf(f);   // PER-FIGHTER SIZE: a bigger fighter's moves reach as much further (Puffball grown: FX2.grow); 1 for everyone else
-  if(s.k === 'b') return Object.assign(bodyShape(f, s.m*z), { both:!!s.both });   // (UP SMASH AT POINT BLANK: the user's own outline)
+  if(s.k === 'b') return Object.assign(bodyShape(f, s.m*z), { both:!!s.both, circ:!!s.both });   // (UP SMASH AT POINT BLANK: the user's own outline, or its body circle: SMASH FOLLOW-UP)
   if(s.k === 'f') return { kind:'fan', cx:f.x + s.ox*d*z, cy:f.y + s.oy*z, r0:s.r0*z, r1:s.r1*z, a0:s.a0, a1:s.a1, face:d };
   if(s.k === 'c') return { kind:'capsule', x1:f.x + s.x1*d*z, y1:f.y + s.y1*z, x2:f.x + s.x2*d*z, y2:f.y + s.y2*z, r:s.r*z };
   return { kind:'capsule', x1:f.x + s.x*d*z, y1:f.y + s.y*z, x2:f.x + s.x*d*z, y2:f.y + s.y*z, r:s.r*z };
@@ -93358,10 +93405,10 @@ function mvPushes(S, t){
 }
 function mvStart(f, S, key, nofx){
   if(inOwnTeamZone(f) || f._mv) return false;
-  const total = mvTotal(S);
+  const sk = S.skip || 0, total = mvTotal(S) - sk;   // (SMASH FOLLOW-UP: `skip`, a row that begins that many frames into its own timeline: see NSM_SKIP)
   armAtk(f, Math.max(10, total + 2), S.pose || 'punch', mvId(f, key));   // a new move (_atkSeq): only a NEW move may chain onto a foe in hitstun
   beginCombo(f);
-  f._mv = { s:S, key:key, t:0, air:!f.onground, landed:false, hit:{}, boss:new Set() };
+  f._mv = { s:S, key:key, t:sk, air:!f.onground, landed:false, hit:{}, boss:new Set() };
   f._lastKey = key; { const U = f._used || (f._used = {}); U[key] = (U[key] || 0) + 1; }   // (what a fighter has used, for the tests and the trainer)
   f.atkCd = Math.max(f.atkCd, total);
   f.flash = 4;
@@ -94644,10 +94691,14 @@ function cherPickReel(f){
 // over your head" get their own row in USM_OWN (below; read by dirSmashSpec, dsmOwnText and drawDsmProps before DSM_OWN, so the down smash of those
 // fighters is untouched). Each keeps the old move's job and size: the same total damage at most (`tot`), about the same launch (measured: KO percent on
 // a still dummy mid-stage), and its self-cost, its shield break (brkSwing reads the 'nsmash' key) and its Limit (NSM_LIM). The old SMASH_SPEC row stays
-// where it is, as for the first 19 rows: the CPU still reads its reach, and the down smash is still made from it. The owner's list: reports/smashes-less-generic.md.
+// where it is, as for the first 19 rows: the down smash is still made from it (the CPU reads the new moves from NSM_AI since the SMASH FOLLOW-UP). The owner's list: reports/smashes-less-generic.md.
 const SMU_GOLD = (f, t) => { if(f._glowGoldT > 0 && f._empowerT > 0){ t.vx *= 0.81; t.vy *= 0.81; } };   // Silver Spoon: his smash inside his own gold launches a little less (the old row's goldKb)
 const smuFx = (name, n, after) => fxTag((f, t, mv) => { if(SM_FX[name]) SM_FX[name](t, f, n); if(after) after(f, t, mv); }, name);
 const smuSelf = (n) => (f) => { f.pct += n; };   // the old row's cost.self: it costs the user this much, hit or miss
+// SMASH FOLLOW-UP (2026-11-25): Liy's Flick Off goes to just behind the nearest foe in front of her, level with her and up to 150 px off (40 px past them), or 120 px with nobody
+// there; the speed for its four frames. Before, a fixed 120 px passed a foe who was right on top of her (her reach was 96 px, the old dash's 144).
+function smuLiyHop(f){ let best = null; for(const t of fighters){ if(!t || t === f || t.dead || t.team === f.team) continue; const dx = (t.x - f.x)*f.face; if(dx < 0 || dx > 150 || Math.abs(t.y - f.y) > 60) continue; if(best == null || dx < best) best = dx; }
+  return (best == null ? 120 : Math.max(60, best + 40))/4; }
 Object.assign(NSM_MV, {
   // ---- batch A: ten of the lunges ----
   'Firey': { vhold:true, kit:'ember', kind:'Charge', n:'Hot Head Charge', d:'charges head first about 110 px; three little fires are left burning on the floor behind him, and they hit too', tot:21, x:', sets them burning', pose:'dash', st:5, act:26, end:22, smash:true,
@@ -94662,18 +94713,18 @@ Object.assign(NSM_MV, {
     boxes:[{ s:MvC(-56,-6, -24,-58, 14), t0:6, t1:7, g:'a', dmg:6, kb:[-2.5,-5] }, { s:MvC(-14,-74, 34,-74, 15), t0:8, t1:9, g:'a', dmg:8, kb:[3,-6] },
       { s:MvC(12,12, 104,12, 16), t0:10, t1:12, g:'a', sweet:true, dmg:22.5, kb:[8.8,-8.4], fx:msFx('define',3) }],
     mv:[{ t0:6, t1:12, mode:'set', vx:6 }] },
-  'Bell': { vhold:true, kit:'ring', kind:'Pendulum', n:'Pendulum', d:'rocks back on his rope, then swings his whole body forward in a low arc; the bottom of the swing hits hardest', tot:25.5, x:', stuns them', pose:'dash', st:6, act:9, end:22, smash:true,
-    boxes:[{ s:MvO(20,12,26), t0:8, t1:10, g:'a', sweet:true, dmg:25.5, kb:[5,-3.3], fx:msFx('stun',26) }, { s:MvO(12,0,24), t0:6, t1:14, g:'a', dmg:15, kb:[4,-2.8], fx:msFx('stun',18) }],
+  'Bell': { vhold:true, kit:'ring', kind:'Pendulum', n:'Pendulum', d:'rocks back on his rope, then swings his whole body forward in a low arc; the bottom of the swing hits hardest', tot:25.5, x:', stuns them', pose:'dash', st:6, act:9, end:22, smash:true,   // (SMASH FOLLOW-UP: launch x0.73 on box 0,1, its KO back near the old move's)
+    boxes:[{ s:MvO(20,12,26), t0:8, t1:10, g:'a', sweet:true, dmg:25.5, kb:[3.6,-2.4], fx:msFx('stun',26) }, { s:MvO(12,0,24), t0:6, t1:14, g:'a', dmg:15, kb:[2.9,-2], fx:msFx('stun',18) }],
     mv:[{ t0:1, t1:5, mode:'set', vx:-5 }, { t0:6, t1:14, mode:'set', vx:16 }] },
-  'Bracelety': { vhold:true, kit:'sign', kind:'Cartwheel', n:'Cartwheel Cheer', d:'cartwheels forward about 110 px, hands then feet hitting, and lands in a "Go!" pose that launches', tot:16.5, x:', the landing stuns them', pose:'spin', st:4, act:14, end:20, smash:true,
+  'Bracelety': { vhold:true, kit:'sign', kind:'Cartwheel', n:'Cartwheel Cheer', d:'cartwheels forward about 110 px, hands then feet hitting, and lands in a "Go!" pose that launches', tot:16.5, x:', the landing stuns them', pose:'spin', st:4, act:14, end:20, smash:true,   // (SMASH FOLLOW-UP: launch x1.22 on box 2, its KO back near the old move's)
     boxes:[{ s:MvO(10,-26,19), t0:5, t1:8, g:'a', dmg:4, kb:[2,-4], stun:12 }, { s:MvO(12,-30,20), t0:9, t1:13, g:'b', chain:true, dmg:4, kb:[2,-4.4], stun:12 },
-      { s:MvC(8,-10, 50,-12, 17), t0:15, t1:17, g:'c', chain:true, dmg:8.5, kb:[8.6,-10.8], fx:msFx('stun',30) }],
+      { s:MvC(8,-10, 50,-12, 17), t0:15, t1:17, g:'c', chain:true, dmg:8.5, kb:[10.5,-13.2], fx:msFx('stun',30) }],
     mv:[{ t0:4, t1:14, mode:'set', vx:10 }, { t0:15, t1:17, mode:'set', vx:0 }] },
   'Pickle': { vhold:true, kit:'pickle', kind:'Rebound', n:'Off the Ropes', d:'steps BACK about 30 px, as if into the ropes, then springs forward about 150 px into a lariat with both gloves', tot:22.5, x:', stuns them', pose:'punch', st:8, act:9, end:28, smash:true,
     boxes:[{ s:MvC(10,-10, 46,-14, 16), t0:8, t1:16, g:'a', dmg:22.5, kb:[9.4,-8.4], fx:msFx('stun',26) }],
     mv:[{ t0:1, t1:5, mode:'set', vx:-6 }, { t0:6, t1:6, mode:'set', vx:0 }, { t0:7, t1:16, mode:'set', vx:16 }] },
-  'Trophy': { vhold:true, kit:'blackmail', kind:'Shove', n:'Push Off', d:'a two-hand shove slides the foe away along the floor, then he chases after them and kicks them away', tot:21, x:', the kick knocks them down', pose:'punch', st:5, act:15, end:22, smash:true,
-    boxes:[{ s:MvC(14,-4, 46,-4, 17), t0:5, t1:7, g:'a', dmg:6, kb:[4.2,-0.3], stun:26 }, { s:MvC(10,4, 50,0, 17), t0:13, t1:19, g:'b', chain:true, dmg:15, kb:[7.3,-7], fx:msFx('knockdown',30) }],
+  'Trophy': { vhold:true, kit:'blackmail', kind:'Shove', n:'Push Off', d:'a two-hand shove slides the foe away along the floor, then he chases after them and kicks them away', tot:21, x:', the kick knocks them down', pose:'punch', st:5, act:15, end:22, smash:true,   // (SMASH FOLLOW-UP: launch x1.44 on box 1, its KO back near the old move's)
+    boxes:[{ s:MvC(14,-4, 46,-4, 17), t0:5, t1:7, g:'a', dmg:6, kb:[4.2,-0.3], stun:26 }, { s:MvC(10,4, 50,0, 17), t0:13, t1:19, g:'b', chain:true, dmg:15, kb:[10.5,-10.1], fx:msFx('knockdown',30) }],
     mv:[{ t0:5, t1:8, mode:'set', vx:0 }, { t0:9, t1:18, mode:'set', vx:11 }] },
   'Yin-Yang': { vhold:true, kit:'yinyang', kind:'Wheel', n:'Yin-Yang Wheel', d:'rolls forward about 110 px as a spinning yin-yang: the white half bumps them, then the black half throws them high', tot:24, x:', knocks them down', pose:'spin', st:5, act:12, end:26, smash:true,
     boxes:[{ s:MvO(14,0,26), t0:5, t1:10, g:'a', dmg:6, kb:[1.6,-2], stun:14 }, { s:MvO(14,0,26), t0:11, t1:16, g:'b', chain:true, dmg:18, kb:[3.6,-14.4], fx:msFx('knockdown',30) }],
@@ -94738,12 +94789,12 @@ for(const nm of ['Firey', 'Coiny', 'Book', 'Bell', 'Bracelety', 'Pickle', 'Troph
 Object.assign(NSM_MV, {
   'Eraser': { vhold:true, kit:'rubout', kind:'Slide', n:'Not Even Looking', d:'turns his back and slides backside first about 120 px; his back is the hit', tot:21, x:', weakens their hits', pose:'kickback', st:5, act:12, end:24, smash:true,
     boxes:[{ s:MvO(18,0,24), t0:5, t1:16, g:'a', dmg:21, kb:[9.2,-8.8], fx:msFx('weaken',150) }], mv:[{ t0:5, t1:15, mode:'set', vx:12 }, { t0:16, t1:18, mode:'set', vx:0 }] },
-  'Clock': { vhold:true, kit:'clockhands', kind:'Propeller', n:'Hands Spin', d:'steps in with both hands pointing forward and spins them like a propeller in front of him: two quick hits hold the foe, the third launches', tot:23.1, x:', knocks them down', pose:'punch', st:6, act:12, end:24, smash:true,
+  'Clock': { vhold:true, kit:'clockhands', kind:'Propeller', n:'Hands Spin', d:'steps in with both hands pointing forward and spins them like a propeller in front of him: two quick hits hold the foe, the third launches', tot:23.1, x:', knocks them down', pose:'punch', st:6, act:12, end:24, smash:true,   // (SMASH FOLLOW-UP: launch x0.85 on box 2, its KO back near the old move's)
     boxes:[{ s:MvO(40,-4,30), t0:6, t1:8, g:'a', dmg:4, kb:[1,-1], stun:12 }, { s:MvO(40,-4,30), t0:10, t1:12, g:'b', chain:true, dmg:4, kb:[1,-1], stun:12 },
-      { s:MvO(40,-4,30), t0:14, t1:17, g:'c', chain:true, dmg:15.1, kb:[6.8,-6], fx:msFx('knockdown',30) }], mv:[{ t0:2, t1:13, mode:'set', vx:8 }, { t0:14, t1:17, mode:'set', vx:0 }] },
-  'Pie': { vhold:true, kit:'pieberry', kind:'Snap', n:'Rubber Band', d:'stretches back like a rubber band, then snaps forward about 110 px; the very tip of the snap hits hardest', tot:20.1, x:', knocks them down', pose:'dash', st:8, act:7, end:24, smash:true,
+      { s:MvO(40,-4,30), t0:14, t1:17, g:'c', chain:true, dmg:15.1, kb:[5.8,-5.1], fx:msFx('knockdown',30) }], mv:[{ t0:2, t1:13, mode:'set', vx:8 }, { t0:14, t1:17, mode:'set', vx:0 }] },
+  'Pie': { vhold:true, kit:'pieberry', kind:'Snap', n:'Rubber Band', d:'stretches back like a rubber band, then snaps forward about 180 px; the very tip of the snap hits hardest', tot:20.1, x:', knocks them down', pose:'dash', st:8, act:7, end:24, smash:true,
     boxes:[{ s:MvO(46,-6,14), t0:10, t1:14, g:'a', sweet:true, dmg:20.1, kb:[9.4,-8.6], fx:msFx('knockdown',28) }, { s:MvO(16,-2,20), t0:8, t1:13, g:'a', dmg:13, kb:[6.8,-6] }],
-    mv:[{ t0:1, t1:6, mode:'set', vx:-3 }, { t0:7, t1:7, mode:'set', vx:0 }, { t0:8, t1:14, mode:'set', vx:20 }] },
+    mv:[{ t0:1, t1:6, mode:'set', vx:-3 }, { t0:7, t1:7, mode:'set', vx:0 }, { t0:8, t1:14, mode:'set', vx:29 }] },   // (SMASH FOLLOW-UP: 20 -> 29, the old lunge's reach)
   'Stapy': { vhold:true, kit:'stapler', kind:'Clamp', n:'Clamp Down', d:'lunges with his jaw wide open, then clamps it shut on whoever is inside: the jaws close on them from above and below', tot:23, x:', makes them bleed', pose:'slam', st:7, act:6, end:26, smash:true,
     boxes:[{ s:MvC(14,-30, 62,-30, 10), t0:7, t1:9, g:'a', dmg:6, kb:[1,2], stun:14 }, { s:MvC(14,22, 62,22, 10), t0:7, t1:9, g:'a', dmg:6, kb:[1,-2], stun:14 },
       { s:MvC(16,-4, 62,-4, 17), t0:10, t1:12, g:'b', chain:true, dmg:17, kb:[9.4,-9.2], fx:msFx('bleed',150) }], mv:[{ t0:4, t1:11, mode:'set', vx:12 }] },
@@ -94753,19 +94804,19 @@ Object.assign(NSM_MV, {
   'Hot Dog': { vhold:true, kit:'hotdog', kind:'Cross', n:'Condiment Cross', d:'a jet of ketchup and a jet of mustard cross in an X ahead of him, out to about 125 px; where they cross hits hardest', tot:20.1, x:', knocks them down', pose:'cast', st:7, act:4, end:26, smash:true,
     boxes:[{ s:MvO(66,-5,17), t0:7, t1:10, g:'a', sweet:true, dmg:20.1, kb:[9.8,-9.8], fx:msFx('knockdown',28) }, { s:MvC(10,-34, 124,24, 8), t0:7, t1:10, g:'a', dmg:12, kb:[6.5,-6] }, { s:MvC(10,24, 124,-34, 8), t0:7, t1:10, g:'a', dmg:12, kb:[6.5,-6] }],
     mv:[{ t0:2, t1:8, mode:'set', vx:4 }] },
-  'Bottle': { kit:'bottle', kind:'Cork', n:'Cork Pop', d:'her cap pops off in a low arc out to about 170 px, with a fizz spray close in front of her; the cork hits hardest', tot:19, x:', the cork knocks them down and launches far', pose:'cast', st:6, act:10, end:24, smash:true,
+  'Bottle': { kit:'bottle', kind:'Cork', n:'Cork Pop', d:'her cap pops off in a low arc out to about 170 px, with a fizz spray close in front of her; the cork hits hardest', tot:19, x:', the cork knocks them down and launches far', pose:'cast', st:6, act:10, end:24, smash:true,   // (SMASH FOLLOW-UP: launch x0.85 on box 1,2,3,4, its KO back near the old move's)
     boxes:[{ s:MvC(14,-10, 52,-14, 15), t0:6, t1:9, g:'a', dmg:3, kb:[1.4,-1.6], stun:12 },
-      { s:MvO(70,-20,13), t0:8, t1:9, g:'b', chain:true, dmg:16, kb:[6,-7.1], fx:msFx('knockdown',24) }, { s:MvO(104,-24,13), t0:10, t1:11, g:'b', chain:true, dmg:16, kb:[6,-7.1], fx:msFx('knockdown',24) },
-      { s:MvO(138,-16,13), t0:12, t1:13, g:'b', chain:true, dmg:16, kb:[6,-7.1], fx:msFx('knockdown',24) }, { s:MvO(164,0,13), t0:14, t1:15, g:'b', chain:true, dmg:16, kb:[6,-7.1], fx:msFx('knockdown',24) }] },
+      { s:MvO(70,-20,13), t0:8, t1:9, g:'b', chain:true, dmg:16, kb:[5.1,-6], fx:msFx('knockdown',24) }, { s:MvO(104,-24,13), t0:10, t1:11, g:'b', chain:true, dmg:16, kb:[5.1,-6], fx:msFx('knockdown',24) },
+      { s:MvO(138,-16,13), t0:12, t1:13, g:'b', chain:true, dmg:16, kb:[5.1,-6], fx:msFx('knockdown',24) }, { s:MvO(164,0,13), t0:14, t1:15, g:'b', chain:true, dmg:16, kb:[5.1,-6], fx:msFx('knockdown',24) }] },
   'Sticker': { vhold:true, kit:'sticker', kind:'Peel', n:'Stick and Peel', d:'slaps herself flat on the floor ahead (a low hit that holds them), then peels up from the far corner, launching far', tot:18, x:'', pose:'slam', st:5, act:14, end:22, smash:true,
     boxes:[{ s:MvC(0,18, 62,18, 11), t0:9, t1:12, g:'a', dmg:6, kb:[0.5,-1], stun:18 }, { s:MvC(0,10, 40,10, 14), t0:5, t1:8, g:'a', dmg:6, kb:[0.5,-1], stun:18 }, { s:MvC(50,16, 50,-40, 15), t0:15, t1:18, g:'b', chain:true, dmg:12, kb:[7.6,-10.6] }],   // the peel's launch 6.8/-9.4 -> 7.6/-10.6: WEAK KITS ROUND 2 (2026-11-25)
     mv:[{ t0:5, t1:11, mode:'set', vx:15 }, { t0:12, t1:18, mode:'set', vx:0 }] },
-  'Snowball': { kit:'tackle', kind:'Pillar', n:'Ice Pillar', d:'punches the floor and a pillar of ice bursts up just in front of him, then breaks into two chunks that slide out along the floor, one ahead and one back past him', tot:18, x:', freezes them', pose:'slam', st:9, act:12, end:20, smash:true,
-    boxes:[{ s:MvC(36,20, 36,-64, 21), t0:9, t1:12, g:'a', dmg:18, kb:[2.2,-8.2], fx:msFx('freeze',40) },
-      { s:MvO(70,14,13), t0:13, t1:14, g:'a', dmg:10, kb:[5,-5], fx:msFx('freeze',30) }, { s:MvO(104,14,13), t0:15, t1:16, g:'a', dmg:10, kb:[5,-5], fx:msFx('freeze',30) }, { s:MvO(134,14,13), t0:17, t1:20, g:'a', dmg:10, kb:[5,-5], fx:msFx('freeze',30) },
-      { s:MvO(2,14,13), t0:13, t1:14, g:'a', dmg:10, kb:[-5,-5], fx:msFx('freeze',30) }, { s:MvO(-34,14,13), t0:15, t1:16, g:'a', dmg:10, kb:[-5,-5], fx:msFx('freeze',30) }, { s:MvO(-70,14,13), t0:17, t1:20, g:'a', dmg:10, kb:[-5,-5], fx:msFx('freeze',30) }] },
-  'Fries': { kit:'fry', kind:'Fling', n:'Fry Fan', d:'fans his fries out over his head like a hand of cards (it catches someone right above him), then flings them all forward in a spread', tot:18, x:', sets them burning', pose:'throw', st:4, act:10, end:22, smash:true,
-    boxes:[{ s:MvF(18,64, -2.5,-0.6, -8,0), t0:4, t1:8, g:'a', dmg:4, kb:[1,-3], stun:12 }, { s:MvF(20,128, -0.45,0.25, -6,0), t0:10, t1:13, g:'b', chain:true, dmg:14, kb:[7,-6], fx:msBurn(100) }] },
+  'Snowball': { kit:'tackle', kind:'Pillar', n:'Ice Pillar', d:'punches the floor and a pillar of ice bursts up just in front of him, then breaks into two chunks that slide out along the floor, one ahead and one back past him', tot:18, x:', freezes them', pose:'slam', st:9, act:12, end:20, smash:true,   // (SMASH FOLLOW-UP: launch x0.65 on box 0,1,2,3,4,5,6, its KO back near the old move's)
+    boxes:[{ s:MvC(36,20, 36,-64, 21), t0:9, t1:12, g:'a', dmg:18, kb:[1.4,-5.3], fx:msFx('freeze',40) },
+      { s:MvO(70,14,13), t0:13, t1:14, g:'a', dmg:10, kb:[3.2,-3.2], fx:msFx('freeze',30) }, { s:MvO(104,14,13), t0:15, t1:16, g:'a', dmg:10, kb:[3.2,-3.2], fx:msFx('freeze',30) }, { s:MvO(134,14,13), t0:17, t1:20, g:'a', dmg:10, kb:[3.2,-3.2], fx:msFx('freeze',30) },
+      { s:MvO(2,14,13), t0:13, t1:14, g:'a', dmg:10, kb:[-3.2,-3.2], fx:msFx('freeze',30) }, { s:MvO(-34,14,13), t0:15, t1:16, g:'a', dmg:10, kb:[-3.2,-3.2], fx:msFx('freeze',30) }, { s:MvO(-70,14,13), t0:17, t1:20, g:'a', dmg:10, kb:[-3.2,-3.2], fx:msFx('freeze',30) }] },
+  'Fries': { kit:'fry', kind:'Fling', n:'Fry Fan', d:'fans his fries out over his head like a hand of cards (it catches someone right above him), then flings them all forward in a spread', tot:18, x:', sets them burning', pose:'throw', st:4, act:10, end:22, smash:true,   // (SMASH FOLLOW-UP: launch x1.18 on box 1, its KO back near the old move's)
+    boxes:[{ s:MvF(18,64, -2.5,-0.6, -8,0), t0:4, t1:8, g:'a', dmg:4, kb:[1,-3], stun:12 }, { s:MvF(20,128, -0.45,0.25, -6,0), t0:10, t1:13, g:'b', chain:true, dmg:14, kb:[8.3,-7.1], fx:msBurn(100) }] },
 });
 Object.assign(NSM_LIM, { 'Fries': Object.assign({}, NSM_MV['Fries'], { n:'Deep Fryer' }) });
 Object.assign(DSM_PROPS, {
@@ -94812,9 +94863,9 @@ Object.assign(NSM_MV, {
   'Fern': { kit:'photo', kind:'Frond', n:'Fiddlehead', d:'a curled frond unrolls along the floor in front of him, out to about 135 px; the tip whips last and hardest', tot:19.5, x:', drains them', pose:'punch', st:8, act:9, end:20, smash:true,
     boxes:[{ s:MvO(116,6,18), t0:14, t1:16, g:'a', sweet:true, dmg:19.5, kb:[8.2,-8.6], fx:msFx('drain',5) },
       { s:MvO(30,10,18), t0:8, t1:9, g:'a', dmg:11, kb:[5,-6], fx:msFx('drain',3) }, { s:MvO(58,12,17), t0:10, t1:11, g:'a', dmg:11, kb:[5,-6], fx:msFx('drain',3) }, { s:MvO(86,12,16), t0:12, t1:13, g:'a', dmg:11, kb:[5,-6], fx:msFx('drain',3) }] },
-  'Balloon': { vhold:true, kit:'airrel', kind:'Inflate', n:'Over-Inflate', d:'blows himself up to twice his size, bumping everyone round him, then lets the air out and squeals forward about 90 px (it costs him 5%)', tot:19.5, x:', knocks them down', pose:'spin', st:8, act:13, end:20, smash:true,
+  'Balloon': { vhold:true, kit:'airrel', kind:'Inflate', n:'Over-Inflate', d:'blows himself up to twice his size, bumping everyone round him, then lets the air out and squeals forward about 90 px (it costs him 5%)', tot:19.5, x:', knocks them down', pose:'spin', st:8, act:13, end:20, smash:true,   // (SMASH FOLLOW-UP: launch x1.35 on box 0,1, its KO back near the old move's)
     start:smuSelf(5),
-    boxes:[{ s:MvO(0,-6,56), t0:8, t1:10, g:'a', dmg:12, rad:13.5 }, { s:MvO(14,0,24), t0:14, t1:20, g:'b', chain:true, dmg:7.5, kb:[10.4,-10.4], fx:msFx('knockdown',30) }],
+    boxes:[{ s:MvO(0,-6,56), t0:8, t1:10, g:'a', dmg:12, rad:18.2 }, { s:MvO(14,0,24), t0:14, t1:20, g:'b', chain:true, dmg:7.5, kb:[14,-14], fx:msFx('knockdown',30) }],
     mv:[{ t0:0, t1:13, mode:'set', vx:0 }, { t0:14, t1:20, mode:'set', vx:13 }] },
   'Bomb': { vhold:true, kit:'collide', kind:'Rocket jump', n:'Rocket Jump', d:'a blast under him throws him up and forward, and he comes down with a second, bigger blast where he lands (it costs him 8%)', tot:28.5, x:', the landing blast stuns them', pose:'slam', st:6, act:18, end:22, land:6, ac:99, smash:true,
     start:smuSelf(8),
@@ -94834,8 +94885,8 @@ Object.assign(NSM_MV, {
   'Spongy': { vhold:true, kit:'wringout', kind:'Belly flop', n:'Belly Flop', d:'falls flat forward on his face: his body lands just ahead of him, and water splashes out from both ends', tot:22.9, x:', soaks them', pose:'slam', st:9, act:6, end:24, smash:true,
     boxes:[{ s:MvC(10,14, 72,14, 20), t0:9, t1:11, g:'a', dmg:22.9, kb:[9.8,-11.4], fx:msFx('soak',120) }, { s:MvO(112,16,14), t0:11, t1:14, g:'a', dmg:10, kb:[5,-6], fx:msFx('soak',80) }, { s:MvO(-42,16,14), t0:11, t1:14, g:'a', dmg:10, kb:[-5,-6], fx:msFx('soak',80) }],
     mv:[{ t0:4, t1:10, mode:'set', vx:6 }, { t0:11, t1:14, mode:'set', vx:0 }] },
-  '8-Ball': { vhold:true, kit:'stopshot', kind:'Bank shot', n:'Bank Shot', d:'rolls forward fast, about 110 px, bounces off an invisible cushion and rolls back: it hits going out, and harder coming back', tot:21, x:', knocks them down', pose:'spin', st:5, act:19, end:20, smash:true,
-    boxes:[{ s:MvO(12,0,24), t0:5, t1:13, g:'a', dmg:9, kb:[3,-4], stun:16 }, { s:MvO(-12,0,24), t0:15, t1:23, g:'b', chain:true, dmg:12, kb:[-8.4,-8.4], fx:msFx('knockdown',30) }],
+  '8-Ball': { vhold:true, kit:'stopshot', kind:'Bank shot', n:'Bank Shot', d:'rolls forward fast, about 110 px, bounces off an invisible cushion and rolls back: it hits going out, and harder coming back', tot:21, x:', knocks them down', pose:'spin', st:5, act:19, end:20, smash:true,   // (SMASH FOLLOW-UP: launch x1.35 on box 1, its KO back near the old move's)
+    boxes:[{ s:MvO(12,0,24), t0:5, t1:13, g:'a', dmg:9, kb:[3,-4], stun:16 }, { s:MvO(-12,0,24), t0:15, t1:23, g:'b', chain:true, dmg:12, kb:[-11.3,-11.3], fx:msFx('knockdown',30) }],
     mv:[{ t0:5, t1:13, mode:'set', vx:13 }, { t0:14, t1:14, mode:'set', vx:0 }, { t0:15, t1:23, mode:'set', vx:-13 }] },
 });
 Object.assign(DSM_PROPS, {
@@ -94888,24 +94939,24 @@ Object.assign(NSM_MV, {
       { s:MvO(0,12,22), t0:23, t1:24, g:'d', chain:true, dmg:2.5, kb:[2,-1], stun:12 }, { s:MvO(0,8,32), t0:30, t1:36, g:'e', chain:true, dmg:11, kb:[9,-8], fx:msFx('knockdown',28) }],
     mv:[{ t0:5, t1:5, mode:'set', vx:9, vy:-4 }, { t0:10, t1:10, mode:'set', vx:9, vy:-4 }, { t0:15, t1:15, mode:'set', vx:9, vy:-4 }, { t0:20, t1:20, mode:'set', vx:9, vy:-4 }, { t0:6, t1:9, mode:'set', vx:9 }, { t0:11, t1:14, mode:'set', vx:9 }, { t0:16, t1:19, mode:'set', vx:9 }, { t0:21, t1:24, mode:'set', vx:9 },
       { t0:25, t1:25, mode:'set', vx:4, vy:-9 }, { t0:26, t1:29, mode:'set', vx:4 }, { t0:30, t1:36, mode:'dive', vx:2, vy:12 }] },
-  'Balloony': { vhold:true, kit:'airleak', kind:'Loop', n:'Loop-de-Loop', d:'lets go and zips round a loop in the air ahead of him, about 200 px, like a balloon let go; he hits everything on the loop', tot:15, x:', knocks them down and launches far', pose:'spin', st:5, act:17, end:20, land:6, ac:99, smash:true,
+  'Balloony': { vhold:true, kit:'airleak', kind:'Loop', n:'Loop-de-Loop', d:'lets go and zips round a loop in the air ahead of him, about 270 px, like a balloon let go; he hits everything on the loop', tot:15, x:', knocks them down and launches far', pose:'spin', st:5, act:17, end:20, land:6, ac:99, smash:true,
     boxes:[{ s:MvO(0,0,30), t0:6, t1:21, g:'a', dmg:15, kb:[9.4,-9.4], fx:msFx('knockdown',28) }],
-    mv:[{ t0:6, t1:21, mode:'set', vx:(f, mv) => { const a = (mv.t - 6)/16*Math.PI*2; f.vy = -9*Math.sin(a); if(f.vy < 0){ f.onground = false; mv.lift = true; } return 12 + 14*Math.cos(a); } }] },
-  'Baseball': { vhold:true, kit:'heavy', kind:'Pitch', n:'Curveball', d:'pitches himself up and forward, and the curve brings him down on the floor about 200 px ahead', tot:25.5, x:', slows them and launches far', pose:'dash', st:6, act:15, end:24, land:8, ac:99, smash:true,
+    mv:[{ t0:6, t1:21, mode:'set', vx:(f, mv) => { const a = (mv.t - 6)/16*Math.PI*2; f.vy = -9*Math.sin(a); if(f.vy < 0){ f.onground = false; mv.lift = true; } return 17 + 14*Math.cos(a); } }] },   // (SMASH FOLLOW-UP: 12 -> 17 a frame on average, the old hop's reach)
+  'Baseball': { vhold:true, kit:'heavy', kind:'Pitch', n:'Curveball', d:'pitches himself up and forward, and the curve brings him down on the floor about 300 px ahead', tot:25.5, x:', slows them and launches far', pose:'dash', st:6, act:15, end:24, land:8, ac:99, smash:true,
     boxes:[{ s:MvO(8,0,24), t0:6, t1:20, g:'a', dmg:25.5, kb:[9.8,-9.4], fx:msFx('slow',90) }],
-    mv:[{ t0:6, t1:6, mode:'set', vx:14, vy:-7 }, { t0:7, t1:13, mode:'set', vx:14 }, { t0:14, t1:20, mode:'dive', vx:12, vy:9 }] },
-  'Box': { vhold:true, kit:'packed', kind:'Tumble', n:'This Side Up', d:'tumbles end over end twice, about 140 px; each corner that lands hits, and the second one roots them', tot:24, x:', roots them', pose:'spin', st:4, act:17, end:22, land:6, ac:99, smash:true,
+    mv:[{ t0:6, t1:6, mode:'set', vx:21, vy:-7 }, { t0:7, t1:13, mode:'set', vx:21 }, { t0:14, t1:20, mode:'dive', vx:17, vy:9 }] },   // (SMASH FOLLOW-UP: faster, the old hop's reach)
+  'Box': { vhold:true, kit:'packed', kind:'Tumble', n:'This Side Up', d:'tumbles end over end twice, about 240 px; each corner that lands hits, and the second one roots them', tot:24, x:', roots them', pose:'spin', st:4, act:17, end:22, land:6, ac:99, smash:true,
     boxes:[{ s:MvO(16,16,18), t0:10, t1:11, g:'a', dmg:8, kb:[3,-3], stun:16 }, { s:MvO(0,0,26), t0:4, t1:17, g:'a', dmg:8, kb:[3,-3], stun:16 }, { s:MvO(16,16,20), t0:18, t1:20, g:'b', chain:true, dmg:16, kb:[4,-6], fx:msFx('root',80) }],
-    mv:[{ t0:4, t1:4, mode:'set', vx:9, vy:-6 }, { t0:5, t1:11, mode:'set', vx:9 }, { t0:12, t1:12, mode:'set', vx:9, vy:-6 }, { t0:13, t1:20, mode:'set', vx:9 }] },
-  'Jack': { vhold:true, kit:'jack', kind:'Suplex', n:'Suplex', d:'charges in about 120 px, catches the foe in front of him and falls backward, slamming them into the floor BEHIND him (it costs him 7%)', tot:25.5, x:', knocks them down', pose:'slam', st:4, act:16, end:24, smash:true,
+    mv:[{ t0:4, t1:4, mode:'set', vx:15, vy:-6 }, { t0:5, t1:11, mode:'set', vx:15 }, { t0:12, t1:12, mode:'set', vx:15, vy:-6 }, { t0:13, t1:20, mode:'set', vx:15 }] },   // (SMASH FOLLOW-UP: 9 -> 15 a frame, the old hop's reach)
+  'Jack': { vhold:true, kit:'jack', kind:'Suplex', n:'Suplex', d:'charges in, up to about 270 px, until he catches the foe in front of him, then falls backward, slamming them into the floor BEHIND him (it costs him 7%)', tot:25.5, x:', knocks them down', pose:'slam', st:4, act:18, end:22, smash:true,
     start:smuSelf(7),
-    boxes:[{ s:MvO(30,-6,22), t0:4, t1:11, g:'a', dmg:7.5, kb:[-2.6,-5.2], stun:26 }, { s:MvC(20,-50, -50,8, 34), t0:12, t1:19, g:'b', chain:true, dmg:18, kb:[-9,-8], fx:msFx('knockdown',30) }],
-    mv:[{ t0:3, t1:10, mode:'set', vx:15 }, { t0:11, t1:19, mode:'set', vx:0 }] },
-  'Bot': { vhold:true, kit:'cheer', kind:'Drumroll', n:'Drumroll', d:'struts in on his stilts about 140 px, stomping a drumroll just ahead of him, four quick stomps, then a cymbal crash', tot:18, x:', the crash stuns them', pose:'stompdn', st:4, act:23, end:20, smash:true,
+    boxes:[{ s:MvO(30,-6,22), t0:4, t1:13, g:'a', dmg:7.5, kb:[-2.6,-5.2], stun:26 }, { s:MvC(20,-50, -50,8, 34), t0:12, t1:21, g:'b', chain:true, dmg:18, kb:[-9,-8], fx:msFx('knockdown',30) }],
+    mv:[{ t0:3, t1:13, mode:'set', vx:(f, mv) => (mv.landed ? 0 : 25) }, { t0:14, t1:21, mode:'set', vx:0 }] },   // (SMASH FOLLOW-UP: the charge stops on the catch; up to about 270 px, for the old hop's reach)
+  'Bot': { vhold:true, kit:'cheer', kind:'Drumroll', n:'Drumroll', d:'struts in on his stilts about 260 px, stomping a drumroll just ahead of him, four quick stomps, then a cymbal crash', tot:18, x:', the crash stuns them', pose:'stompdn', st:4, act:23, end:20, smash:true,
     start:(f) => { f._noCopyT = hazardT + 150; },   // (the old row's uncopyable: nothing may copy it)
     boxes:[{ s:MvO(30,16,18), t0:6, t1:7, g:'a', dmg:2, kb:[1,-1], stun:12 }, { s:MvO(30,16,18), t0:10, t1:11, g:'b', chain:true, dmg:2, kb:[1,-1], stun:12 }, { s:MvO(30,16,18), t0:14, t1:15, g:'c', chain:true, dmg:2, kb:[1,-1], stun:12 },
       { s:MvO(30,16,18), t0:18, t1:19, g:'d', chain:true, dmg:2, kb:[1,-1], stun:12 }, { s:MvO(36,-10,40), t0:24, t1:26, g:'e', chain:true, dmg:10, kb:[8,-8.4], fx:msFx('stun',24) }],
-    mv:[{ t0:4, t1:21, mode:'set', vx:8 }, { t0:22, t1:26, mode:'set', vx:0 }] },
+    mv:[{ t0:4, t1:21, mode:'set', vx:15 }, { t0:22, t1:26, mode:'set', vx:0 }] },   // (SMASH FOLLOW-UP: 8 -> 15 a frame, the old hop's reach)
   'Beach Ball': { vhold:true, kit:'beachball', kind:'Bounce', n:'Double Bounce', d:'bounces at the foe and off them: two stomps one after the other, about 90 and 180 px ahead; the second one throws them', tot:31.5, x:', knocks them down', pose:'spin', st:6, act:24, end:22, land:8, ac:99, smash:true,
     boxes:[{ s:MvO(0,16,30), t0:13, t1:17, g:'a', dmg:15, kb:[3,-9], stun:18 }, { s:MvO(0,16,30), t0:25, t1:29, g:'b', chain:true, dmg:16.5, kb:[9.6,-10.2], fx:msFx('knockdown',28) }],
     mv:[{ t0:6, t1:6, mode:'set', vx:9, vy:-8 }, { t0:7, t1:12, mode:'set', vx:9 }, { t0:13, t1:17, mode:'dive', vx:9, vy:10 }, { t0:18, t1:18, mode:'set', vx:9, vy:-8 }, { t0:19, t1:24, mode:'set', vx:9 }, { t0:25, t1:29, mode:'dive', vx:6, vy:10 }] },
@@ -94934,11 +94985,11 @@ Object.assign(NSM_MV, {
     start:smuSelf(8),
     boxes:[{ s:MvO(0,-34,30), t0:4, t1:5, g:'a', dmg:2, kb:[0.5,-1], stun:12 }, { s:MvO(0,-34,30), t0:9, t1:10, g:'b', chain:true, dmg:2, kb:[0.5,-1], stun:12 }, { s:MvO(0,-34,30), t0:14, t1:15, g:'c', chain:true, dmg:2, kb:[0.5,-1], stun:12 },
       { s:MvO(0,0,110), t0:20, t1:22, g:'d', chain:true, dmg:25.5, rad:13, fx:msBurn(130) }], mv:[{ t0:0, t1:22, mode:'set', vx:0 }] },
-  'Rocky': { kit:'barf', kind:'Fountain', n:'Barf Fountain', d:'barfs straight up over his head, and it rains back down round him on both sides, out to about 120 px; he cannot move while he does it', tot:28.5, x:', poisons them', pose:'spit', st:10, act:15, end:22, smash:true,
+  'Rocky': { kit:'barf', kind:'Fountain', n:'Barf Fountain', d:'barfs straight up over his head, and it rains back down round him on both sides, out to about 120 px; he cannot move while he does it', tot:28.5, x:', poisons them', pose:'spit', st:10, act:15, end:22, smash:true,   // (SMASH FOLLOW-UP: launch x1.13 on box 1,2,3,4,5,6, its KO back near the old move's)
     boxes:[{ s:MvC(0,-30, 0,-112, 16), t0:10, t1:12, g:'a', dmg:10, kb:[0,-6], fx:msFx('poison',60) },
-      { s:MvO(40,12,22), t0:16, t1:18, g:'a', dmg:28.5, kb:[4.2,-4.4], fx:msFx('poison',110) }, { s:MvO(-40,12,22), t0:16, t1:18, g:'a', dmg:28.5, kb:[-4.2,-4.4], fx:msFx('poison',110) },
-      { s:MvO(80,12,22), t0:19, t1:21, g:'a', dmg:28.5, kb:[4.2,-4.4], fx:msFx('poison',110) }, { s:MvO(-80,12,22), t0:19, t1:21, g:'a', dmg:28.5, kb:[-4.2,-4.4], fx:msFx('poison',110) },
-      { s:MvO(112,12,22), t0:22, t1:24, g:'a', dmg:28.5, kb:[4.2,-4.4], fx:msFx('poison',110) }, { s:MvO(-112,12,22), t0:22, t1:24, g:'a', dmg:28.5, kb:[-4.2,-4.4], fx:msFx('poison',110) }], mv:[{ t0:0, t1:24, mode:'set', vx:0 }] },
+      { s:MvO(40,12,22), t0:16, t1:18, g:'a', dmg:28.5, kb:[4.7,-5], fx:msFx('poison',110) }, { s:MvO(-40,12,22), t0:16, t1:18, g:'a', dmg:28.5, kb:[-4.7,-5], fx:msFx('poison',110) },
+      { s:MvO(80,12,22), t0:19, t1:21, g:'a', dmg:28.5, kb:[4.7,-5], fx:msFx('poison',110) }, { s:MvO(-80,12,22), t0:19, t1:21, g:'a', dmg:28.5, kb:[-4.7,-5], fx:msFx('poison',110) },
+      { s:MvO(112,12,22), t0:22, t1:24, g:'a', dmg:28.5, kb:[4.7,-5], fx:msFx('poison',110) }, { s:MvO(-112,12,22), t0:22, t1:24, g:'a', dmg:28.5, kb:[-4.7,-5], fx:msFx('poison',110) }], mv:[{ t0:0, t1:24, mode:'set', vx:0 }] },
   'David': { kit:'seriously', kind:'Facepalm', n:'Facepalm', d:'a giant hand comes down in a facepalm just ahead of him, about 100 px wide, and his shrug shoves anyone behind him', tot:27, x:', the hand stuns them', pose:'slam', st:10, act:5, end:24, smash:true,
     boxes:[{ s:MvC(20,-62, 104,-62, 22), t0:10, t1:11, g:'a', dmg:27, kb:[7.6,-14], fx:msFx('stun',28) }, { s:MvC(20,8, 104,8, 22), t0:12, t1:14, g:'a', dmg:27, kb:[7.6,-14], fx:msFx('stun',28) }, { s:MvO(-40,-8,30), t0:10, t1:14, g:'a', dmg:10, kb:[-6,-5] }],
     mv:[{ t0:0, t1:14, mode:'set', vx:0 }] },
@@ -94951,15 +95002,15 @@ Object.assign(NSM_MV, {
   'Paintbrush': { kit:'fury', kind:'Circle', n:'Paint Circle', d:'stands on her bristles and paints one full circle round herself, about 70 px out, starting in front, over the top and round behind; the brush tip hits where it is (it costs her 4%)', tot:22.5, x:', sets them burning and launches far', pose:'spin', st:6, act:12, end:22, smash:true,
     start:smuSelf(4),
     boxes:[{ s:MvO(0,-4,32), t0:6, t1:7, g:'a', dmg:22.5, rad:15, fx:msBurn(120) }].concat(smuArc(12, 0, -8, 70, 0.6, -3.7, 6, 1, { r:26, g:'a', dmg:22.5, rad:15, fx:msBurn(120) })), mv:[{ t0:0, t1:17, mode:'set', vx:0 }] },
-  'Teddy Bear': { kit:'paintball', kind:'Stuffing', n:'Stuffing Burst', d:'his seams burst and stuffing puffs out all round him, then he pulls himself back together, dragging them in and over him', tot:24, x:', knocks them down', pose:'shake', st:8, act:12, end:22, smash:true,
+  'Teddy Bear': { kit:'paintball', kind:'Stuffing', n:'Stuffing Burst', d:'his seams burst and stuffing puffs out all round him, then he pulls himself back together, dragging them in and over him', tot:24, x:', knocks them down', pose:'shake', st:8, act:12, end:22, smash:true,   // (SMASH FOLLOW-UP: launch x1.33 on box 1,2, its KO back near the old move's)
     boxes:[{ s:MvO(0,-4,82), t0:8, t1:10, g:'a', dmg:10, rad:5.5, stun:20 },
-      { s:MvC(10,-4, 104,-4, 40), t0:16, t1:19, g:'b', chain:true, dmg:14, kb:[-8.4,-10.8], fx:msFx('knockdown',30) }, { s:MvC(-10,-4, -104,-4, 40), t0:16, t1:19, g:'b', chain:true, dmg:14, kb:[8.4,-10.8], fx:msFx('knockdown',30) }],
+      { s:MvC(10,-4, 104,-4, 40), t0:16, t1:19, g:'b', chain:true, dmg:14, kb:[-11.2,-14.4], fx:msFx('knockdown',30) }, { s:MvC(-10,-4, -104,-4, 40), t0:16, t1:19, g:'b', chain:true, dmg:14, kb:[11.2,-14.4], fx:msFx('knockdown',30) }],
     mv:[{ t0:0, t1:19, mode:'set', vx:0 }] },
   'Gaty': { kit:'reflect', kind:'Turnstile', n:'Turnstile', d:'a turnstile spins in front of her: its arm sweeps the foe round from in front of her to behind her, and the next arm throws them', tot:19.5, x:', strips armour and stances', pose:'spin', st:6, act:9, end:22, smash:true,
     boxes:[{ s:MvC(10,-6, 88,-6, 13), t0:6, t1:7, g:'a', dmg:6, kb:[-5,-3], stun:18 }, { s:MvC(10,-6, 52,-6, 15), t0:8, t1:9, g:'a', dmg:6, kb:[-5,-3], stun:18 },
       { s:MvC(-10,-6, -52,-6, 15), t0:10, t1:11, g:'b', chain:true, dmg:13.5, kb:[-9.6,-9.6], fx:msFx('strip',1) }, { s:MvC(-10,-6, -88,-6, 13), t0:12, t1:14, g:'b', chain:true, dmg:13.5, kb:[-9.6,-9.6], fx:msFx('strip',1) }] },
-  'Rose': { kit:'thorn', kind:'Vine', n:'Vine Lash', d:'a thorny vine lashes out straight ahead, about 180 px, wraps the foe and reels them in onto her thorns', tot:22.5, x:', the thorns make them bleed', pose:'throw', st:8, act:11, end:22, smash:true,
-    boxes:[{ s:MvC(20,-10, 180,-10, 10), t0:8, t1:10, g:'a', dmg:6, kb:[-7.6,-2], stun:22 }, { s:MvO(30,-4,30), t0:14, t1:18, g:'b', chain:true, dmg:16.5, kb:[4.8,-4.4], fx:msFx('bleed',150) }] },
+  'Rose': { kit:'thorn', kind:'Vine', n:'Vine Lash', d:'a thorny vine lashes out straight ahead, about 180 px, wraps the foe and reels them in onto her thorns', tot:22.5, x:', the thorns make them bleed', pose:'throw', st:8, act:11, end:22, smash:true,   // (SMASH FOLLOW-UP: launch x1.22 on box 0,1, its KO back near the old move's)
+    boxes:[{ s:MvC(20,-10, 180,-10, 10), t0:8, t1:10, g:'a', dmg:6, kb:[-9.3,-2.4], stun:22 }, { s:MvO(30,-4,30), t0:14, t1:18, g:'b', chain:true, dmg:16.5, kb:[5.9,-5.4], fx:msFx('bleed',150) }] },
   'Cake': { kit:'atstake', kind:'Frosting', n:'Frosting Drag', d:'spreads frosting along the floor ahead of her, about 170 px: whoever is on it slides in to her, and she takes a bite', tot:18, x:', drains them', pose:'punch', st:6, act:16, end:22, smash:true,
     boxes:[{ s:MvC(24,18, 172,18, 13), t0:6, t1:12, g:'a', dmg:4, kb:[-6.8,-1], stun:22 }, { s:MvO(30,-6,28), t0:17, t1:21, g:'b', chain:true, dmg:14, kb:[5.6,-6], fx:msFx('drain',6) }] },
 });
@@ -94999,14 +95050,14 @@ const smuSweep = (n, ox, oy, L, a0, a1, r, t0, b) => Array.from({ length:n }, (_
 Object.assign(NSM_MV, {
   'Candle': { kit:'innerflame', kind:'Lift', n:'Lift and Drop', d:'lifts the foe in front of her into the air with her mind, holds them a moment, then slams them away', tot:22.5, x:', knocks them down and launches far', pose:'cast', st:8, act:14, end:22, smash:true,
     boxes:[{ s:MvO(48,-10,32), t0:8, t1:10, g:'a', dmg:6, kb:[0,-5.6], stun:26 }, { s:MvC(48,-20, 48,-120, 32), t0:18, t1:21, g:'b', chain:true, dmg:16.5, kb:[9.4,-9.8], fx:msFx('knockdown',30) }] },
-  'Magnet': { kit:'bestie', kind:'Poles', n:'Attract, Repel', d:'pulls them in with one pole from about 180 px, flips round, and blasts them away with the other', tot:19.5, x:', stuns them', pose:'spin', st:6, act:14, end:22, smash:true,
-    boxes:[{ s:MvC(24,-6, 182,-6, 24), t0:6, t1:12, g:'a', dmg:4, kb:[-5,-0.8], stun:24 }, { s:MvC(0,-6, 60,-6, 34), t0:16, t1:19, g:'b', chain:true, dmg:15.5, kb:[10.4,-8.6], fx:msFx('stun',24) }] },
+  'Magnet': { kit:'bestie', kind:'Poles', n:'Attract, Repel', d:'pulls them in with one pole from about 180 px, flips round, and blasts them away with the other', tot:19.5, x:', stuns them', pose:'spin', st:6, act:14, end:22, smash:true,   // (SMASH FOLLOW-UP: launch x1.33 on box 1, its KO back near the old move's)
+    boxes:[{ s:MvC(24,-6, 182,-6, 24), t0:6, t1:12, g:'a', dmg:4, kb:[-5,-0.8], stun:24 }, { s:MvC(0,-6, 60,-6, 34), t0:16, t1:19, g:'b', chain:true, dmg:15.5, kb:[13.8,-11.4], fx:msFx('stun',24) }] },
   'Lightning': { vhold:true, kit:'zap', kind:'Zigzag', n:'Zigzag', d:'dashes ahead about 190 px in a zigzag, up, down, up; he hits everything he passes', tot:19.5, x:', stuns them and launches far', pose:'dash', st:4, act:12, end:22, land:6, ac:99, smash:true,
     boxes:[{ s:MvO(0,0,28), t0:4, t1:15, g:'a', dmg:19.5, kb:[9.8,-9.8], fx:msFx('stun',26) }],
     mv:[{ t0:4, t1:15, mode:'set', vx:(f, mv) => { const k = Math.floor((mv.t - 4)/4); f.vy = k === 1 ? 5 : -5; if(f.vy < 0){ f.onground = false; mv.lift = true; } return 16; } }, { t0:16, t1:16, mode:'set', vx:2 }] },
-  'Liy': { vhold:true, kit:'switch', kind:'Lights out', n:'Flick Off', d:'the lights go out and she is gone: she reappears about 120 px ahead, behind whoever was in front of her, and flicks them back the way she came', tot:24, x:', scrambles their controls', pose:'punch', st:6, act:9, end:22, smash:true,
+  'Liy': { vhold:true, kit:'switch', kind:'Lights out', n:'Flick Off', d:'the lights go out and she is gone: she reappears just behind whoever is in front of her (up to about 150 px off; with nobody there, 120 px ahead) and flicks them back the way she came', tot:24, x:', scrambles their controls', pose:'punch', st:6, act:9, end:22, smash:true,
     boxes:[{ s:MvO(-34,-6,28), t0:10, t1:14, g:'a', dmg:24, kb:[-5.4,-4.6], fx:msFx('scramble',70) }],
-    mv:[{ t0:6, t1:9, mode:'set', vx:(f) => { f.invuln = Math.max(f.invuln || 0, 2); return 30; } }, { t0:10, t1:14, mode:'set', vx:0 }] },
+    mv:[{ t0:6, t1:9, mode:'set', vx:(f, mv) => { f.invuln = Math.max(f.invuln || 0, 2); if(mv._liyV == null) mv._liyV = smuLiyHop(f); return mv._liyV; } }, { t0:10, t1:14, mode:'set', vx:0 }] },
   'Salt': { vhold:true, kit:'saltpepper', kind:'Strut', n:'Runway Strut', d:'three sharp strutting steps forward, each a stomp just ahead of him, then a hair flip (Pepper still echoes it)', tot:19.5, x:', the flip weakens their hits', pose:'stompdn', st:4, act:21, end:22, smash:true,
     start:(f) => { pepperEcho(f, 'smash'); },
     boxes:[{ s:MvO(22,16,22), t0:7, t1:8, g:'a', dmg:4, kb:[1.5,-1], stun:14 }, { s:MvO(22,16,22), t0:12, t1:13, g:'b', chain:true, dmg:4, kb:[1.5,-1], stun:14 }, { s:MvO(22,16,22), t0:17, t1:18, g:'c', chain:true, dmg:4, kb:[1.5,-1], stun:14 },
@@ -95028,14 +95079,15 @@ Object.assign(NSM_MV, {
     boxes:smuLine(9, 40, -6, 360, -6, 15, 6, 1, { g:'a', dmg:6, kb:[1,-1], stun:24 }).concat(smuLine(9, 360, -6, 40, -6, 16, 18, 1, { g:'b', chain:true, dmg:12, kb:[-9.6,-9.8], fx:msFx('weaken',150) })) },
   'Lightbulb': { kit:'eball', kind:'Spotlight', n:'Spotlight Sweep', d:'a spotlight beam about 400 px long swings down from high up ahead of her onto the floor', tot:20, x:', marks them to take more', pose:'cast', st:6, act:7, end:22, smash:true,
     boxes:smuSweep(7, 16, -24, 400, -0.95, 0.12, 12, 6, { g:'a', dmg:20, kb:[7.8,-9], fx:msFx('define',3) }) },
-  'Nickel (II)': { kit:'snark', kind:'Rebound', n:'Zinger Rebound', d:'a remark that hits the floor about 160 px ahead and bounces on up and away, a V shape (out to about 360 px)', tot:21, x:', knocks them down and launches far', pose:'cast', st:6, act:5, end:22, smash:true,
-    boxes:[{ s:MvC(20,-10, 160,22, 11), t0:6, t1:7, g:'a', dmg:21, kb:[8.4,-8.6], fx:msFx('knockdown',28) }, { s:MvC(160,22, 360,-150, 11), t0:8, t1:10, g:'a', dmg:21, kb:[7,-11], fx:msFx('knockdown',28) }] },
+  'Nickel (II)': { kit:'snark', kind:'Rebound', n:'Zinger Rebound', d:'a remark that hits the floor about 200 px ahead and bounces on up and away, a wide V shape (out to about 430 px)', tot:21, x:', knocks them down and launches far', pose:'cast', st:6, act:5, end:22, smash:true,
+    boxes:[{ s:MvC(20,-10, 200,22, 11), t0:6, t1:7, g:'a', dmg:21, kb:[8.4,-8.6], fx:msFx('knockdown',28) }, { s:MvC(200,22, 440,-40, 11), t0:8, t1:10, g:'a', dmg:21, kb:[7,-11], fx:msFx('knockdown',28) }] },   // (SMASH FOLLOW-UP: was 160 / 360,-150: a flatter V, for the old beam's reach)
   'Cammy': { kit:'shutter', kind:'Photo', n:'Flash Photography', d:'a photo frame flashes ahead of her, from about 60 to 200 px out and as tall as she is; everyone inside the frame is hit', tot:20, x:', knocks them down', pose:'cast', st:8, act:2, end:22, smash:true,
     boxes:[{ s:MvC(48,-12, 190,-12, 38), t0:8, t1:9, g:'a', dmg:20, kb:[5.8,-14.6], fx:msFx('knockdown',28) }] },
   'Cheesy': { kit:'pun', kind:'Beats', n:'Ba-Dum-Tss', d:'three beats fly out along the same line one after another, ba, dum, then a cymbal, each out to about 300 px; the cymbal hits hardest', tot:18, x:', the cymbal weakens their hits', pose:'cast', st:6, act:21, end:22, smash:true,
     boxes:smuLine(7, 30, -10, 300, -10, 18, 6, 1, { g:'a', dmg:4, kb:[1.4,-1], stun:14 }).concat(smuLine(7, 30, -10, 300, -10, 18, 13, 1, { g:'b', chain:true, dmg:4, kb:[1.4,-1], stun:14 }), smuLine(7, 30, -10, 300, -10, 26, 20, 1, { g:'c', chain:true, dmg:10, kb:[8.8,-8.2], fx:msFx('weaken',150) })) },
-  'Tapey': { vhold:true, kit:'tape', kind:'Fast forward', n:'Fast Forward', d:'fast-forwards herself in a blur about 200 px ahead; a beat later her afterimages hit again all along the path she took', tot:20, x:', stuns them', pose:'dash', st:5, act:16, end:22, smash:true,
-    boxes:[{ s:MvO(0,-4,26), t0:5, t1:13, g:'a', dmg:8, kb:[2,-2], stun:24 }, { s:MvC(-200,-4, 0,-4, 24), t0:18, t1:20, g:'b', chain:true, dmg:12, kb:[9.8,-10], fx:msFx('stun',40) }],
+  'Tapey': { vhold:true, kit:'tape', kind:'Fast forward', n:'Fast Forward', d:'fast-forwards herself in a blur about 200 px ahead; a beat later her afterimages hit again all along the path she took, and a fast-forward sign runs on ahead of her, about 260 px more', tot:20, x:', stuns them', pose:'dash', st:5, act:17, end:21, smash:true,
+    boxes:[{ s:MvO(0,-4,26), t0:5, t1:13, g:'a', dmg:8, kb:[2,-2], stun:24 }, { s:MvC(-200,-4, 0,-4, 24), t0:18, t1:20, g:'b', chain:true, dmg:12, kb:[9.8,-10], fx:msFx('stun',40) }]
+      .concat(Array.from({ length:8 }, (_, i) => ({ s:MvO(40 + i*32, -4, 24), t0:14 + i, t1:14 + i, g:'b', chain:true, dmg:12, kb:[9.8,-10], fx:msFx('stun',40) }))),   // (SMASH FOLLOW-UP: the sign, in the afterimages' group: one of the two per foe)
     mv:[{ t0:5, t1:13, mode:'set', vx:22 }, { t0:14, t1:20, mode:'set', vx:0 }] },
 });
 Object.assign(NSM_LIM, { 'Dora': Object.assign({}, NSM_MV['Dora'], { n:'Endless Earful' }), 'Ruler': Object.assign({}, NSM_MV['Ruler'], { n:'Ruled Line' }) });
@@ -95056,13 +95108,19 @@ Object.assign(DSM_PROPS, {
   'Ruler.neu': function(c, X, Y, z, t){ if(t < 6 || t > 27) return; const e = t <= 14 ? 40 + (t - 6)*40 : t < 18 ? 360 : Math.max(40, 360 - (t - 18)*40);
     dpLine(c, X(14), Y(-6), X(e), Y(-6), 6, '#f2d24a'); for(let x = 30; x < e; x += 20) dpLine(c, X(x), Y(-9), X(x), Y(-3), 1, '#2b2b33'); dpPoly(c, [X(e), Y(-12), X(e + 8), Y(-12), X(e + 8), Y(2), X(e), Y(2)], '#9aa3ad'); },
   'Lightbulb.neu': function(c, X, Y, z, t){ if(t < 6 || t > 13) return; const a = -0.95 + 1.07*Math.min(1, (t - 6)/6); c.globalAlpha = 0.45; c.beginPath(); c.moveTo(X(16), Y(-24)); c.lineTo(X(16 + Math.cos(a - 0.07)*400), Y(-24 + Math.sin(a - 0.07)*400)); c.lineTo(X(16 + Math.cos(a + 0.07)*400), Y(-24 + Math.sin(a + 0.07)*400)); c.closePath(); c.fillStyle = '#fff27a'; c.fill(); c.globalAlpha = 1; },
-  'Nickel (II).neu': function(c, X, Y, z, t){ if(t < 6 || t > 11) return; dpLine(c, X(20), Y(-10), X(160), Y(22), 4, '#cfd8de'); if(t >= 8) dpLine(c, X(160), Y(22), X(360), Y(-150), 4, '#cfd8de'); },
+  'Nickel (II).neu': function(c, X, Y, z, t){ if(t < 6 || t > 11) return; dpLine(c, X(20), Y(-10), X(200), Y(22), 4, '#cfd8de'); if(t >= 8) dpLine(c, X(200), Y(22), X(440), Y(-40), 4, '#cfd8de'); },
   'Cammy.neu': function(c, X, Y, z, t){ if(t < 6 || t > 12) return; c.strokeStyle = DSM_INK; c.lineWidth = 4; c.strokeRect(X(60), Y(-52), 140*z*(X(1) > X(0) ? 1 : -1), 80*z);
     if(t >= 8 && t <= 10){ c.globalAlpha = 0.7; c.fillStyle = '#ffffff'; c.fillRect(X(60), Y(-52), 140*z*(X(1) > X(0) ? 1 : -1), 80*z); c.globalAlpha = 1; } },
   'Cheesy.neu': function(c, X, Y, z, t){ for(const k of [[6, 'ba'], [13, 'dum'], [20, 'TSS!']]){ if(t >= k[0] && t <= k[0] + 6){ c.fillStyle = DSM_INK; c.font = 'bold ' + ((k[1] === 'TSS!' ? 16 : 11)*z|0) + 'px sans-serif'; c.fillText(k[1], X(30 + (t - k[0])*45), Y(-24)); } } if(t >= 20 && t <= 26) dpEll(c, X(30 + (t - 20)*45), Y(-10), 22*z, 5*z, -0.2, '#e8c34a'); },
-  'Tapey.neu': function(c, X, Y, z, t){ if(t >= 5 && t <= 13){ c.fillStyle = DSM_INK; c.font = 'bold ' + (12*z|0) + 'px sans-serif'; c.fillText('>>', X(-6), Y(-34)); } if(t >= 14 && t <= 20){ for(let i = 1; i <= 4; i++){ c.globalAlpha = 0.35; dpDisc(c, X(-i*45), Y(-4), 20*z, '#c91745'); } c.globalAlpha = 1; } },
+  'Tapey.neu': function(c, X, Y, z, t){ if(t >= 14 && t <= 22){ const x = 40 + Math.min(7, t - 14)*32; c.globalAlpha = t > 21 ? 0.5 : 1; dpPoly(c, [X(x - 16), Y(-20), X(x), Y(-4), X(x - 16), Y(12)], '#c91745'); dpPoly(c, [X(x), Y(-20), X(x + 16), Y(-4), X(x), Y(12)], '#c91745'); c.globalAlpha = 1; } if(t >= 5 && t <= 13){ c.fillStyle = DSM_INK; c.font = 'bold ' + (12*z|0) + 'px sans-serif'; c.fillText('>>', X(-6), Y(-34)); } if(t >= 14 && t <= 20){ for(let i = 1; i <= 4; i++){ c.globalAlpha = 0.35; dpDisc(c, X(-i*45), Y(-4), 20*z, '#c91745'); } c.globalAlpha = 1; } },
 });
 for(const nm of ['Candle', 'Magnet', 'Lightning', 'Liy', 'Salt', 'Spikey', 'Ruby', 'Remote', 'TV', 'Dora', 'Ruler', 'Lightbulb', 'Nickel (II)', 'Cammy', 'Cheesy', 'Tapey']){ const r = NSM_MV[nm]; if(r && r.kit && SMASH_ID[r.kit]) SMASH_ID[r.kit].name = r.n; }
+// SMASH FOLLOW-UP (2026-11-25): START-UP. The remade neutral smashes that replaced a lunge, a dash or a beam (those hit on the frame the charge ended) came out 5 to 9
+// frames after it. Each of these now begins `skip` frames into its own timeline (mvStart): the first frames of its wind-up are cut, every box, push and drawing keeps its
+// frame, so the shape is the same and the first hit comes about 3 frames after the charge (Bell, Pickle and Pie keep most of their swing back: 5-7). The frame rows
+// (FB_FRAME_DATA) count from the cut start. Bomb, Bomby and Tea Kettle are left: their count-down (a blast, a fuse, a rattle) is the move.
+const NSM_SKIP = { 'Bell':2, 'Book':5, 'Bottle':3, 'Bracelety':3, 'Cammy':4, 'Cheesy':3, 'Clock':2, 'Coiny':3, 'Dora':3, 'Eraser':2, 'Firey':2, 'Foldy':2, 'Hot Dog':3, 'Lightbulb':4, 'Lightning':2, 'Liy':4, 'Nickel (II)':2, 'Pickle':2, 'Pie':2, 'Remote':2, 'Ruby':2, 'Ruler':2, 'Salt':3, 'Spongy':4, 'Stapy':3, 'Tapey':3, 'Yin-Yang':2, 'Spikey':2 };
+for(const nm in NSM_SKIP){ if(NSM_MV[nm]) NSM_MV[nm].skip = NSM_SKIP[nm]; if(NSM_LIM[nm]) NSM_LIM[nm].skip = NSM_SKIP[nm]; }
 // ---- SMASHES LESS GENERIC, the up smashes: the 52 fighters whose up smash was the generated wide swing (dirSmashSpec) get their own row here.
 // Each row's damage (tot) and launch are the generated move's own (its damage D and straight-up launch K), shared out over the new shape; the end lag is the generated one.
 // The point-blank hit (USM_PB) is added to every row by usmPbRow, as for DSM_OWN's rows.
@@ -101842,6 +101900,7 @@ function fanMisses(sh, t, thick){
 function shapeHits(sh, t){
   if(sh.kind==='body'){
     const m = sh.margin||0;
+    if(sh.circ && Math.hypot(sh.f.x - t.x, sh.f.y - t.y) <= (sh.f.r || 24) + (t.r || 24) + m) return true;   // (SMASH FOLLOW-UP: the point-blank hit also takes a foe whose body circle touches the user's: 10 of the 52 remade up smashes missed a foe standing right against them, centres r + r' apart, where two drawn outlines can still be a few px apart)
     if(Math.hypot(sh.f.x - t.x, sh.f.y - t.y) > hurtReach(sh.f) + hurtReach(t) + m + 2) return false;   // too far apart for any outline point to touch (a conservative circle test)
     const A = bodyPts(sh.f);
     for(let i=0;i<A.length;i+=2) if(hurtGap(t, A[i], A[i+1]) < m) return true;   // a point of the attacker's body inside (or at) the target
@@ -109655,10 +109714,11 @@ Object.assign(FB_FRAME_DATA, { 'airrel.usmash':[29,8,25,25], 'airrel.dsmash':[28
 // Bow's Lasso is a command grab, so its startup is the frame the loop CATCHES (the rope's 2%), as the grab's row is the first frame the dummy is held).
 Object.assign(FB_FRAME_DATA, { 'chair.usmash':[30,10,21,25], 'chair.dsmash':[29,5,27,27], 'clover.usmash':[30,10,22,22], 'clover.dsmash':[28,6,28,28], 'gust.usmash':[29,10,21,21], 'gust.dsmash':[28,12,20,20], 'grasstree.usmash':[29,6,27,27], 'grasstree.dsmash':[28,6,28,28], 'lifeguard.usmash':[29,6,29,29], 'lifeguard.dsmash':[28,14,22,22], 'ink.usmash':[29,11,22,22], 'ink.dsmash':[28,8,26,26], 'evilpaper.usmash':[30,7,27,27], 'evilpaper.dsmash':[31,4,29,29], 'saw.usmash':[32,12,20,20], 'saw.dsmash':[31,7,26,26] });
 // SMASHES LESS GENERIC (2026-11-25): the remade neutral and up smashes' rows, from each move row (the full charge + the first damaging box's frame; live frames over all its boxes; the row's end lag)
-Object.assign(FB_FRAME_DATA, { 'ember.smash':[29, 26, 22, 22], 'slap.smash':[28, 10, 16, 16], 'define.smash':[30, 7, 24, 24], 'ring.smash':[34, 9, 22, 22], 'sign.smash':[29, 13, 20, 20], 'pickle.smash':[32, 9, 28, 28], 'blackmail.smash':[29, 15, 22, 22], 'yinyang.smash':[29, 12, 26, 26], 'vacuum.smash':[29, 11, 18, 18], 'glowgold.smash':[30, 11, 24, 24] });   // batch A
-Object.assign(FB_FRAME_DATA, { 'rubout.smash':[31, 12, 24, 24], 'clockhands.smash':[30, 12, 24, 24], 'pieberry.smash':[32, 7, 24, 24], 'stapler.smash':[35, 6, 26, 26], 'paperplane.smash':[29, 13, 22, 22], 'hotdog.smash':[33, 4, 26, 26], 'bottle.smash':[30, 10, 24, 24], 'sticker.smash':[29, 14, 22, 22], 'tackle.smash':[35, 12, 20, 20], 'fry.smash':[29, 10, 22, 22], 'splash.smash':[28, 16, 22, 22], 'fluff.smash':[33, 26, 18, 18], 'photo.smash':[34, 9, 20, 20], 'airrel.smash':[32, 13, 20, 20], 'collide.smash':[30, 18, 22, 22], 'lemon.smash':[33, 3, 22, 22], 'mic.smash':[32, 9, 22, 22], 'hors.smash':[29, 18, 20, 20], 'wringout.smash':[39, 6, 24, 24], 'stopshot.smash':[32, 19, 20, 20] });   // batches B and C
-Object.assign(FB_FRAME_DATA, { 'float.smash':[33, 42, 16, 16], 'quake.smash':[30, 18, 20, 20], 'flip.smash':[29, 20, 20, 20], 'dribble.smash':[34, 29, 18, 18], 'airleak.smash':[30, 16, 20, 20], 'heavy.smash':[33, 15, 24, 24], 'packed.smash':[28, 17, 22, 22], 'jack.smash':[28, 16, 24, 24], 'cheer.smash':[30, 21, 20, 20], 'beachball.smash':[37, 17, 22, 22], 'bomb.smash':[33, 19, 24, 24], 'barf.smash':[34, 15, 22, 22], 'seriously.smash':[37, 5, 24, 24], 'slam.smash':[34, 4, 22, 22], 'timber.smash':[40, 13, 24, 24], 'fury.smash':[30, 12, 22, 22], 'paintball.smash':[32, 12, 22, 22], 'reflect.smash':[32, 9, 22, 22], 'thorn.smash':[32, 11, 22, 22], 'atstake.smash':[30, 16, 22, 22] });   // batches D and E (Bubble's: the bubble leaves on frame 8 and lasts 42 frames; its first hit is measured on a dummy 56 px away)
-Object.assign(FB_FRAME_DATA, { 'innerflame.smash':[32, 14, 22, 22], 'bestie.smash':[34, 14, 22, 22], 'zap.smash':[28, 12, 22, 22], 'switch.smash':[34, 5, 22, 22], 'saltpepper.smash':[31, 18, 22, 22], 'spikeburst.smash':[28, 15, 20, 20], 'beam.smash':[30, 3, 22, 22], 'battery.smash':[33, 16, 22, 22], 'static.smash':[34, 11, 22, 22], 'rant.smash':[30, 12, 22, 22], 'measure.smash':[30, 21, 22, 22], 'eball.smash':[30, 7, 22, 22], 'snark.smash':[30, 5, 22, 22], 'shutter.smash':[32, 2, 22, 22], 'pun.smash':[30, 21, 22, 22], 'tape.smash':[29, 16, 22, 22] });   // batch F
+// (SMASH FOLLOW-UP, 2026-11-25: the start-up numbers of the rows that now begin part-way into their wind-up (NSM_SKIP) are less by that skip; Jack's suplex is 18 active / 22 end lag)
+Object.assign(FB_FRAME_DATA, { 'ember.smash':[27, 26, 22, 22], 'slap.smash':[25, 10, 16, 16], 'define.smash':[25, 7, 24, 24], 'ring.smash':[32, 9, 22, 22], 'sign.smash':[26, 13, 20, 20], 'pickle.smash':[30, 9, 28, 28], 'blackmail.smash':[29, 15, 22, 22], 'yinyang.smash':[27, 12, 26, 26], 'vacuum.smash':[29, 11, 18, 18], 'glowgold.smash':[30, 11, 24, 24] });   // batch A
+Object.assign(FB_FRAME_DATA, { 'rubout.smash':[29, 12, 24, 24], 'clockhands.smash':[28, 12, 24, 24], 'pieberry.smash':[30, 7, 24, 24], 'stapler.smash':[32, 6, 26, 26], 'paperplane.smash':[27, 13, 22, 22], 'hotdog.smash':[30, 4, 26, 26], 'bottle.smash':[27, 10, 24, 24], 'sticker.smash':[29, 14, 22, 22], 'tackle.smash':[35, 12, 20, 20], 'fry.smash':[29, 10, 22, 22], 'splash.smash':[28, 16, 22, 22], 'fluff.smash':[33, 26, 18, 18], 'photo.smash':[34, 9, 20, 20], 'airrel.smash':[32, 13, 20, 20], 'collide.smash':[30, 18, 22, 22], 'lemon.smash':[33, 3, 22, 22], 'mic.smash':[32, 9, 22, 22], 'hors.smash':[29, 18, 20, 20], 'wringout.smash':[35, 6, 24, 24], 'stopshot.smash':[32, 19, 20, 20] });   // batches B and C
+Object.assign(FB_FRAME_DATA, { 'float.smash':[33, 42, 16, 16], 'quake.smash':[30, 18, 20, 20], 'flip.smash':[29, 20, 20, 20], 'dribble.smash':[34, 29, 18, 18], 'airleak.smash':[30, 16, 20, 20], 'heavy.smash':[33, 15, 24, 24], 'packed.smash':[28, 17, 22, 22], 'jack.smash':[28, 18, 22, 22], 'cheer.smash':[30, 21, 20, 20], 'beachball.smash':[37, 17, 22, 22], 'bomb.smash':[33, 19, 24, 24], 'barf.smash':[34, 15, 22, 22], 'seriously.smash':[37, 5, 24, 24], 'slam.smash':[34, 4, 22, 22], 'timber.smash':[40, 13, 24, 24], 'fury.smash':[30, 12, 22, 22], 'paintball.smash':[32, 12, 22, 22], 'reflect.smash':[32, 9, 22, 22], 'thorn.smash':[32, 11, 22, 22], 'atstake.smash':[30, 16, 22, 22] });   // batches D and E (Bubble's: the bubble leaves on frame 8 and lasts 42 frames; its first hit is measured on a dummy 56 px away)
+Object.assign(FB_FRAME_DATA, { 'innerflame.smash':[32, 14, 22, 22], 'bestie.smash':[34, 14, 22, 22], 'zap.smash':[26, 12, 22, 22], 'switch.smash':[30, 5, 22, 22], 'saltpepper.smash':[28, 18, 22, 22], 'spikeburst.smash':[26, 15, 20, 20], 'beam.smash':[28, 3, 22, 22], 'battery.smash':[31, 16, 22, 22], 'static.smash':[34, 11, 22, 22], 'rant.smash':[27, 12, 22, 22], 'measure.smash':[28, 21, 22, 22], 'eball.smash':[26, 7, 22, 22], 'snark.smash':[28, 5, 22, 22], 'shutter.smash':[28, 2, 22, 22], 'pun.smash':[27, 21, 22, 22], 'tape.smash':[26, 17, 21, 21] });   // batch F
 Object.assign(FB_FRAME_DATA, { 'dribble.usmash':[31, 14, 29, 29], 'zap.usmash':[32, 4, 29, 29], 'switch.usmash':[29, 4, 31, 31], 'payday.usmash':[30, 17, 28, 28], 'spike.usmash':[30, 4, 28, 28], 'battery.usmash':[32, 8, 27, 27], 'thorn.usmash':[29, 7, 30, 30], 'static.usmash':[33, 7, 28, 28], 'paste.usmash':[29, 11, 27, 27], 'measure.usmash':[29, 5, 28, 28], 'slam.usmash':[32, 6, 29, 29], 'airleak.usmash':[29, 8, 27, 27], 'antenna.usmash':[37, 11, 28, 28], 'atstake.usmash':[29, 9, 28, 28], 'tricks.usmash':[29, 6, 28, 28], 'eball.usmash':[30, 3, 29, 29], 'fury.usmash':[29, 8, 30, 30], 'wallmart.usmash':[30, 4, 30, 30], 'heavy.usmash':[32, 7, 32, 32], 'snark.usmash':[29, 13, 29, 29], 'saltpepper.usmash':[30, 5, 29, 29], 'testtube.usmash':[29, 11, 29, 29], 'packed.usmash':[30, 5, 31, 31], 'blackmail.usmash':[29, 9, 29, 29], 'coresaw.usmash':[30, 5, 31, 31], 'spikeburst.usmash':[29, 13, 29, 29], 'innerflame.usmash':[29, 9, 30, 30], 'shutter.usmash':[29, 4, 29, 29], 'pun.usmash':[29, 15, 28, 28], 'copycat.usmash':[29, 4, 29, 29], 'leavealone.usmash':[29, 5, 29, 29], 'disinfect.usmash':[30, 11, 29, 29], 'condishawn.usmash':[29, 8, 29, 29], 'yinyang.usmash':[29, 11, 31, 31], 'onehit.usmash':[29, 10, 26, 26], 'blueberry.usmash':[29, 5, 30, 30], 'cherries.usmash':[29, 4, 30, 30], 'jack.usmash':[29, 10, 32, 32], 'bestie.usmash':[34, 5, 29, 29], 'tape.usmash':[29, 10, 29, 29], 'paintball.usmash':[29, 15, 31, 31], 'cheer.usmash':[29, 6, 28, 28], 'rubout.usmash':[31, 5, 29, 29], 'wringout.usmash':[37, 4, 30, 30], 'stopshot.usmash':[32, 7, 29, 29], 'accrete.usmash':[29, 12, 28, 28], 'clockhands.usmash':[30, 9, 30, 30], 'cumulus.usmash':[29, 11, 29, 29], 'pieberry.usmash':[29, 5, 29, 29], 'stapler.usmash':[33, 9, 30, 30], 'paperplane.usmash':[30, 7, 28, 28], 'beachball.usmash':[29, 9, 34, 34] });   // the 52 up smashes (USM_OWN)
 // ==== DS3 BEGIN (down smashes: short = strong, less generic) ====
 // ============================================================
@@ -109731,8 +109791,8 @@ DSM_PROPS['Lightning.down'] = function(c, X, Y, z, t){ if(t < 5 || t > 13) retur
   for(const s of [1, -1]){ const a = s > 0 ? 5 : 7; if(t < a || t > a + 4) continue;
     ds3Path(c, X, Y, [s*24, -120, s*44, -84, s*34, -62, s*62, -30, s*52, -8, s*84, 18], 5, '#ffe14a'); dpStar(c, X(s*84), Y(16), 14*z, 6*z, 5, '#fff7a8'); } };
 
-ds3Set('Liy', { n:'Toggle', d:'flips like a light switch: OFF in front of her knocks foes flat in the dark, ON behind her throws foes up into the light', tot:19.7, x:' behind her (15% in front, and knocks them flat)', pose:'slam', st:4, act:5, end:31, smash:true,
-  boxes:[{ s:MvC(12,10, 84,14, 17), g:'f', dmg:15, kb:[1.4,-1.2], fx:msFx('knockdown',34) }, { s:MvC(-12,-6, -78,-30, 18), g:'b', dmg:19.7, kb:[-2.2,-5.0] }] });
+ds3Set('Liy', { n:'Toggle', d:'flips like a light switch: the click flicks away whoever is right against her front, OFF further in front knocks foes flat in the dark, ON behind her throws foes up into the light', tot:19.7, x:' behind her (15% in front, and knocks them flat)', pose:'slam', st:4, act:5, end:31, smash:true,
+  boxes:[{ s:MvO(26,4,22), g:'f', dmg:15, kb:[8.2,-7.6] }, { s:MvC(12,10, 84,14, 17), g:'f', dmg:15, kb:[1.4,-1.2], fx:msFx('knockdown',34) }, { s:MvC(-12,-6, -78,-30, 18), g:'b', dmg:19.7, kb:[-2.2,-5.0] }] });   // (SMASH FOLLOW-UP: the click, first in its group)
 DSM_PROPS['Liy.down'] = function(c, X, Y, z, t){ if(t < 4 || t > 12) return; const k = t < 9 ? 1 : Math.max(0.1, 1 - (t - 9)/4);
   dpEll(c, X(52), Y(12), 42*z*k + 2, 14*z*k + 1, 0, '#24243a'); dpDisc(c, X(52), Y(10), 6*z*k + 1, '#e8e8f0'); dpDisc(c, X(55), Y(8), 5*z*k + 1, '#24243a');
   for(let i = 0; i < 4; i++){ const a = -2.2 - i*0.28; dpLine(c, X(-14), Y(-12), X(-14 + Math.cos(a)*74*k), Y(-12 + Math.sin(a)*74*k), 3, '#fff3a0'); } };
@@ -109744,8 +109804,9 @@ DSM_PROPS['Money.down'] = function(c, X, Y, z, t){ if(t < 4 || t > 15) return; c
   for(const s of [1, -1]){ dpPoly(c, [X(s*12), Y(-10), X(s*w), Y(-10), X(s*w), Y(14), X(s*12), Y(14)], '#7fbf5a'); dpLine(c, X(s*(w - 10)), Y(-4), X(s*(w - 10)), Y(8), 2, '#2f6a2a'); }
   if(t >= 11) for(let i = 0; i < 3; i++) dpDisc(c, X((i - 1)*16), Y(-30 - (t - 11)*3 - i*4), 5*z, '#ffd23a'); };
 
-ds3Set('Naily', { n:'Nailed Down', d:'hammers herself into the floor: anyone right beside her is nailed to the spot for a moment, and the floor cracks open further out and pops foes up', tot:14.8, x:'', pose:'stompdn', st:4, act:6, end:28, smash:true,
-  boxes:[{ s:MvC(60,18, 106,14, 12), g:'a', dmg:14.8, kb:[2.4,-6.0] }, { s:MvC(-60,18, -106,14, 12), g:'a', dmg:14.8, kb:[-2.4,-6.0] }, { s:MvO(0,14,44), g:'a', dmg:9, kb:[0,-0.5], fx:msFx('root',45) }] });
+ds3Set('Naily', { n:'Nailed Down', d:'hammers herself into the floor: anyone right beside her is nailed to the spot, and a moment later the floor cracks under them and pops them up; further out the cracks pop foes up at once', tot:17, x:'', pose:'stompdn', st:4, act:10, end:24, smash:true,
+  boxes:[{ s:MvC(60,18, 106,14, 12), t0:4, t1:9, g:'a', dmg:14.8, kb:[2.4,-6.0] }, { s:MvC(-60,18, -106,14, 12), t0:4, t1:9, g:'a', dmg:14.8, kb:[-2.4,-6.0] }, { s:MvO(0,14,44), t0:4, t1:9, g:'a', dmg:11, kb:[0,-0.5], fx:msFx('root',45) },
+    { s:MvO(0,14,46), t0:12, t1:13, g:'p', chain:true, dmg:6, kb:[0,-11.5], fx:fxTag((f, t) => { t.rooted = 0; }, 'pop') }] });   // (SMASH FOLLOW-UP: the pop, so a foe right beside her takes 17% and goes up; was 9% and stayed put)
 DSM_PROPS['Naily.down'] = function(c, X, Y, z, t){ if(t < 4 || t > 13) return; const u = Math.min(1, (t - 4)/3);
   for(const s of [1, -1]){ ds3Path(c, X, Y, [s*14, 22, s*40, 16, s*58, 24, s*(58 + 44*u), 14], 2, '#5a5048'); if(u >= 1) dpPoly(c, [X(s*70), Y(20), X(s*84), Y(2), X(s*100), Y(20)], '#9a8f80'); }
   dpLine(c, X(-34), Y(22), X(34), Y(22), 4, '#c0c6cc'); };
@@ -109771,14 +109832,16 @@ DSM_PROPS['TV.down'] = function(c, X, Y, z, t){ if(t < 4 || t > 14) return; cons
   dpPoly(c, [X(-w), Y(y - 8), X(w), Y(y - 8), X(w), Y(y + 8), X(-w), Y(y + 8)], '#d8d8e0');
   for(let i = 0; i < 9; i++){ const x = -w + 8 + ((i*37 + t*23) % (2*w - 16)); dpLine(c, X(x), Y(y - 4), X(x + 10), Y(y - 4), 2, i % 2 ? '#30303a' : '#8a8aa0'); } };
 
-ds3Set('Toothpaste', { n:'Minty Puddle', d:'squeezes a puddle of paste out at her feet that spreads both ways; whoever it spreads under is stuck in it and slowed', tot:12.3, x:', and slows them', pose:'stompdn', st:4, act:7, end:27, smash:true,
-  boxes:[{ s:MvC(-30,20, 30,20, 14), t0:4, t1:4, g:'a', dmg:12.3, rad:4.2, fx:msFx('slow',80) }, { s:MvC(-50,20, 50,20, 14), t0:5, t1:6, g:'a', dmg:12.3, rad:4.2, fx:msFx('slow',80) },
+ds3Set('Toothpaste', { n:'Minty Puddle', d:'squeezes a puddle of paste out at her feet that spreads both ways; whoever it spreads under is stuck in it and slowed, and the squeeze shoots her cap into whoever is right against her', tot:13.5, x:', and slows them', pose:'stompdn', st:4, act:7, end:27, smash:true,
+  boxes:[{ s:MvO(26,0,24), t0:4, t1:5, g:'a', dmg:13.5, kb:[7.4,-7] }, { s:MvO(-26,0,24), t0:4, t1:5, g:'a', dmg:13.5, kb:[-7.4,-7] },   // (SMASH FOLLOW-UP: the cap, first in the group)
+    { s:MvC(-30,20, 30,20, 14), t0:4, t1:4, g:'a', dmg:12.3, rad:4.2, fx:msFx('slow',80) }, { s:MvC(-50,20, 50,20, 14), t0:5, t1:6, g:'a', dmg:12.3, rad:4.2, fx:msFx('slow',80) },
          { s:MvC(-70,20, 70,20, 14), t0:7, t1:8, g:'a', dmg:12.3, rad:4.2, fx:msFx('slow',80) }, { s:MvC(-88,20, 88,20, 14), t0:9, t1:10, g:'a', dmg:12.3, rad:4.2, fx:msFx('slow',80) }] });
 DSM_PROPS['Toothpaste.down'] = function(c, X, Y, z, t){ if(t < 4 || t > 20) return; const w = Math.min(96, 30 + (t - 4)*10), k = t > 16 ? Math.max(0.1, 1 - (t - 16)/4) : 1;
   dpEll(c, X(0), Y(22), w*z*k + 2, 7*z*k + 1, 0, '#8fe0d0'); for(const s of [-0.5, 0, 0.5]) dpEll(c, X(s*w), Y(20), 9*z*k + 1, 3*z*k + 1, 0, '#ffffff'); };
 
-ds3Set('Ruler', { n:'Exactly Twelve Inches', d:'slaps himself flat on the floor both ways: the end marks, right at the tips, hit hard; anything closer is only measured', tot:17, x:' at the tips (12% closer in)', pose:'slam', st:4, act:5, end:28, smash:true,
-  boxes:[{ s:MvO(100,18,14), g:'f', dmg:17, kb:[11.6,-6.2], sweet:true }, { s:MvO(-100,18,14), g:'b', dmg:17, kb:[-11.6,-6.2], sweet:true }, { s:MvC(14,20, 86,20, 10), g:'f', dmg:12, kb:[7.6,-4.4] }, { s:MvC(-14,20, -86,20, 10), g:'b', dmg:12, kb:[-7.6,-4.4] }] });
+ds3Set('Ruler', { n:'Exactly Twelve Inches', d:'slaps himself flat on the floor both ways: the end marks, right at the tips, hit hard, and so does his middle on whoever is right against him; anything between is only measured', tot:17, x:' at the tips (15% right against him, 12% between)', pose:'slam', st:4, act:5, end:28, smash:true,
+  boxes:[{ s:MvO(26,10,22), g:'f', dmg:15, kb:[8.6,-7.2] }, { s:MvO(-26,10,22), g:'b', dmg:15, kb:[-8.6,-7.2] },   // (SMASH FOLLOW-UP: his middle, first in each group)
+    { s:MvO(100,18,14), g:'f', dmg:17, kb:[11.6,-6.2], sweet:true }, { s:MvO(-100,18,14), g:'b', dmg:17, kb:[-11.6,-6.2], sweet:true }, { s:MvC(14,20, 86,20, 10), g:'f', dmg:12, kb:[7.6,-4.4] }, { s:MvC(-14,20, -86,20, 10), g:'b', dmg:12, kb:[-7.6,-4.4] }] });
 DSM_PROPS['Ruler.down'] = function(c, X, Y, z, t){ if(t < 4 || t > 11) return; const k = t > 8 ? Math.max(0.1, 1 - (t - 8)/4) : 1;
   for(const s of [1, -1]){ dpPoly(c, [X(s*12), Y(14), X(s*108*k), Y(14), X(s*108*k), Y(24), X(s*12), Y(24)], '#f2d17a'); for(let i = 1; i < 10; i++) dpLine(c, X(s*(12 + i*10*k)), Y(14), X(s*(12 + i*10*k)), Y(i % 5 ? 18 : 21), 1, '#6b4a3a');
     if(k > 0.6) dpStar(c, X(s*100), Y(8), 9*z, 4*z, 4, '#ffffff'); } };
@@ -110046,8 +110109,9 @@ DSM_PROPS['Beach Ball.down'] = function(c, X, Y, z, t){ if(t < 4 || t > 12) retu
 
 // the look-alikes: Poppy's sparks were Balloon's static row with another colour; Fern's fronds and Silver Spoon's bowl were the generated two low lines
 { const pf = DSM_OWN['Poppy'] && DSM_OWN['Poppy'].down && DSM_OWN['Poppy'].down.boxes[0].fx;
-ds3Set('Poppy', { n:'Short Circuit', d:'a spark runs round a square circuit all round her: up her front, over her head, down her back and back along the floor under her; whoever it runs into is jolted stiff (stunned, half a second) and only nudged', tot:13, x:'', pose:'stompdn', st:4, act:7, end:28, smash:true,
-  boxes:[{ s:MvC(84,18, 84,-56, 16), t0:4, t1:5, g:'a', dmg:13, kb:[3.0,-2.6], fx:pf }, { s:MvC(84,-60, -84,-60, 16), t0:6, t1:7, g:'a', dmg:13, rad:3.4, fx:pf }, { s:MvC(-84,-56, -84,18, 16), t0:8, t1:9, g:'a', dmg:13, kb:[-3.0,-2.6], fx:pf }, { s:MvC(-84,18, 84,18, 14), t0:10, t1:11, g:'a', dmg:13, rad:3.4, fx:pf }] }); }
+ds3Set('Poppy', { n:'Short Circuit', d:'a spark runs round a square circuit all round her: up her front, over her head, down her back and back along the floor under her; whoever it runs into is jolted stiff (stunned, half a second) and only nudged, and whoever is right against her gets the hot iron and is thrown', tot:14, x:'', pose:'stompdn', st:4, act:7, end:28, smash:true,
+  boxes:[{ s:MvO(26,4,24), t0:4, t1:5, g:'a', dmg:14, kb:[7.6,-7.2], fx:msBurn(60) }, { s:MvO(-26,4,24), t0:4, t1:5, g:'a', dmg:14, kb:[-7.6,-7.2], fx:msBurn(60) },   // (SMASH FOLLOW-UP: the iron, first in the group)
+    { s:MvC(84,18, 84,-56, 16), t0:4, t1:5, g:'a', dmg:13, kb:[3.0,-2.6], fx:pf }, { s:MvC(84,-60, -84,-60, 16), t0:6, t1:7, g:'a', dmg:13, rad:3.4, fx:pf }, { s:MvC(-84,-56, -84,18, 16), t0:8, t1:9, g:'a', dmg:13, kb:[-3.0,-2.6], fx:pf }, { s:MvC(-84,18, 84,18, 14), t0:10, t1:11, g:'a', dmg:13, rad:3.4, fx:pf }] }); }
 DSM_PROPS['Poppy.down'] = function(c, X, Y, z, t){ if(t < 4 || t > 12) return; const P = [84, 18, 84, -60, -84, -60, -84, 18, 84, 18], u = Math.min(1, (t - 4)/7)*4, k = Math.floor(u), f = u - k;
   const pts = []; for(let i = 0; i <= k && i < 5; i++) pts.push(P[i*2], P[i*2 + 1]); if(k < 4) pts.push(P[k*2] + (P[k*2 + 2] - P[k*2])*f, P[k*2 + 1] + (P[k*2 + 3] - P[k*2 + 1])*f);
   ds3Path(c, X, Y, pts, 3, '#ffe14a'); dpStar(c, X(pts[pts.length - 2]), Y(pts[pts.length - 1]), 10*z, 4*z, 6, '#ffffff'); };
@@ -110063,7 +110127,15 @@ DSM_PROPS['Silver Spoon.down'] = function(c, X, Y, z, t){ if(t < 4 || t > 11) re
   dpLine(c, X(0), Y(10), X(Math.cos(a)*70), Y(10 + Math.sin(a)*70), 5, '#d8dde3'); dpEll(c, X(Math.cos(a)*80), Y(10 + Math.sin(a)*80), 14*z, 9*z, a, '#e8ecf0');
   if(t >= 6) dpLine(c, X(-14), Y(-10), X(-70), Y(-10), 4, '#d8dde3'); };
 // their frame rows, MEASURED with the frame data fill script (earliest hit over the dummy spots + the full charge; active from the whiff; end lag on a whiff and on a hit)
-Object.assign(FB_FRAME_DATA, { 'dribble.dsmash':[30, 10, 29, 29], 'zap.dsmash':[29, 5, 29, 29], 'payday.dsmash':[28, 10, 28, 28], 'spike.dsmash':[28, 6, 28, 28], 'battery.dsmash':[31, 12, 27, 27], 'thorn.dsmash':[28, 6, 30, 30], 'static.dsmash':[32, 9, 28, 28], 'paste.dsmash':[28, 7, 27, 27], 'slam.dsmash':[31, 6, 29, 29], 'airleak.dsmash':[28, 8, 27, 27], 'antenna.dsmash':[35, 9, 28, 28], 'atstake.dsmash':[28, 9, 28, 28], 'tricks.dsmash':[28, 8, 28, 28], 'fury.dsmash':[28, 10, 30, 30], 'wallmart.dsmash':[28, 6, 30, 30], 'heavy.dsmash':[31, 7, 32, 32], 'snark.dsmash':[28, 9, 29, 29], 'saltpepper.dsmash':[28, 6, 29, 29], 'testtube.dsmash':[28, 11, 29, 29], 'packed.dsmash':[28, 10, 31, 31], 'coresaw.dsmash':[29, 8, 31, 31], 'spikeburst.dsmash':[38, 3, 29, 29], 'innerflame.dsmash':[29, 13, 30, 30], 'shutter.dsmash':[28, 7, 29, 29], 'pun.dsmash':[28, 10, 28, 28], 'copycat.dsmash':[28, 8, 29, 29], 'leavealone.dsmash':[31, 6, 29, 29], 'disinfect.dsmash':[28, 10, 29, 29], 'condishawn.dsmash':[28, 6, 29, 29], 'yinyang.dsmash':[28, 10, 31, 31], 'onehit.dsmash':[28, 10, 26, 26], 'blueberry.dsmash':[28, 6, 30, 30], 'cherries.dsmash':[28, 10, 30, 30], 'jack.dsmash':[28, 8, 32, 32], 'bestie.dsmash':[32, 6, 29, 29], 'tape.dsmash':[29, 13, 29, 29], 'paintball.dsmash':[28, 5, 31, 31], 'cheer.dsmash':[28, 11, 28, 28], 'rubout.dsmash':[30, 10, 29, 29], 'wringout.dsmash':[35, 4, 30, 30], 'stopshot.dsmash':[31, 11, 29, 29], 'accrete.dsmash':[28, 12, 28, 28], 'clockhands.dsmash':[28, 6, 30, 30], 'cumulus.dsmash':[28, 14, 29, 29], 'pieberry.dsmash':[28, 9, 29, 29], 'stapler.dsmash':[33, 10, 30, 30], 'paperplane.dsmash':[28, 8, 28, 28], 'beachball.dsmash':[29, 4, 34, 34], 'vacuum.dsmash':[28, 7, 28, 28], 'photo.dsmash':[30, 5, 27, 27], 'glowgold.dsmash':[30, 4, 30, 30] });
+// SMASH FOLLOW-UP (2026-11-25): the drawings of the five close hits (drawn first, then the move's own drawing)
+{ const dsmClose = (name, fn) => { const P0 = DSM_PROPS[name]; DSM_PROPS[name] = function(c, X, Y, z, t){ fn(c, X, Y, z, t); if(P0) P0(c, X, Y, z, t); }; };
+  dsmClose('Naily.down', (c, X, Y, z, t) => { if(t < 12 || t > 16) return; const h = 10 + (t - 12)*6; for(const s of [1, -1]) dpPoly(c, [X(s*6), Y(22), X(s*18), Y(22 - h), X(s*30), Y(22)], '#9a8f80'); });   // the floor popping up under a nailed foe
+  dsmClose('Liy.down', (c, X, Y, z, t) => { if(t < 4 || t > 7) return; dpStar(c, X(30), Y(2), 16*z, 6*z, 4, '#fff3a0'); });   // the click
+  dsmClose('Poppy.down', (c, X, Y, z, t) => { if(t < 4 || t > 7) return; for(const s of [1, -1]){ dpLine(c, X(s*10), Y(0), X(s*34), Y(6), 5, '#7a5230'); dpLine(c, X(s*34), Y(6), X(s*44), Y(8), 3, '#c0c6cc'); dpStar(c, X(s*46), Y(8), 9*z, 4*z, 5, '#ffd23f'); } });   // the hot iron
+  dsmClose('Toothpaste.down', (c, X, Y, z, t) => { if(t < 4 || t > 8) return; for(const s of [1, -1]) dpEll(c, X(s*(24 + (t - 4)*6)), Y(-2), 7*z, 5*z, 0, '#ffffff'); });   // the cap
+  dsmClose('Ruler.down', (c, X, Y, z, t) => { if(t < 4 || t > 7) return; for(const s of [1, -1]) dpEll(c, X(s*26), Y(20), 14*z, 3*z, 0, 'rgba(255,255,255,0.7)'); });   // his middle slapping down
+}
+Object.assign(FB_FRAME_DATA, { 'dribble.dsmash':[30, 10, 29, 29], 'zap.dsmash':[29, 5, 29, 29], 'payday.dsmash':[28, 10, 28, 28], 'spike.dsmash':[28, 10, 24, 24], 'battery.dsmash':[31, 12, 27, 27], 'thorn.dsmash':[28, 6, 30, 30], 'static.dsmash':[32, 9, 28, 28], 'paste.dsmash':[28, 7, 27, 27], 'slam.dsmash':[31, 6, 29, 29], 'airleak.dsmash':[28, 8, 27, 27], 'antenna.dsmash':[35, 9, 28, 28], 'atstake.dsmash':[28, 9, 28, 28], 'tricks.dsmash':[28, 8, 28, 28], 'fury.dsmash':[28, 10, 30, 30], 'wallmart.dsmash':[28, 6, 30, 30], 'heavy.dsmash':[31, 7, 32, 32], 'snark.dsmash':[28, 9, 29, 29], 'saltpepper.dsmash':[28, 6, 29, 29], 'testtube.dsmash':[28, 11, 29, 29], 'packed.dsmash':[28, 10, 31, 31], 'coresaw.dsmash':[29, 8, 31, 31], 'spikeburst.dsmash':[38, 3, 29, 29], 'innerflame.dsmash':[29, 13, 30, 30], 'shutter.dsmash':[28, 7, 29, 29], 'pun.dsmash':[28, 10, 28, 28], 'copycat.dsmash':[28, 8, 29, 29], 'leavealone.dsmash':[31, 6, 29, 29], 'disinfect.dsmash':[28, 10, 29, 29], 'condishawn.dsmash':[28, 6, 29, 29], 'yinyang.dsmash':[28, 10, 31, 31], 'onehit.dsmash':[28, 10, 26, 26], 'blueberry.dsmash':[28, 6, 30, 30], 'cherries.dsmash':[28, 10, 30, 30], 'jack.dsmash':[28, 8, 32, 32], 'bestie.dsmash':[32, 6, 29, 29], 'tape.dsmash':[29, 13, 29, 29], 'paintball.dsmash':[28, 5, 31, 31], 'cheer.dsmash':[28, 11, 28, 28], 'rubout.dsmash':[30, 10, 29, 29], 'wringout.dsmash':[35, 4, 30, 30], 'stopshot.dsmash':[31, 11, 29, 29], 'accrete.dsmash':[28, 12, 28, 28], 'clockhands.dsmash':[28, 6, 30, 30], 'cumulus.dsmash':[28, 14, 29, 29], 'pieberry.dsmash':[28, 9, 29, 29], 'stapler.dsmash':[33, 10, 30, 30], 'paperplane.dsmash':[28, 8, 28, 28], 'beachball.dsmash':[29, 4, 34, 34], 'vacuum.dsmash':[28, 7, 28, 28], 'photo.dsmash':[30, 5, 27, 27], 'glowgold.dsmash':[30, 4, 30, 30] });
 // ==== DS3 END ====
 
 // ============================================================
@@ -133215,7 +133287,7 @@ function brainKit(f){
     shot: M ? !!band && band[1] >= 150 && Math.abs(carry) < 100 : srcShot,   // it lands at range: a projectile, a far flash, a drop on the foe
     rush: !!band && band[1] >= 150 && carry >= 100,                           // a dash that hits whoever it runs into (Leafy's Sprint, Snowball's Rage Tackle; MeTag's step back is none)
     near: M ? !!band && band[0] <= 40 : !srcShot,                             // it lands up close
-    band, spDmg: M ? M[2] : 0, carry, smCarry: M ? M[4] : 0,
+    band, spDmg: M ? M[2] : 0, carry, smCarry: brainNsmBand(f) ? brainNsmBand(f)[3] : M ? M[4] : 0,   // (SMASH FOLLOW-UP: a remade smash's own carry)
     dBand: (M && M[5] >= 0 && down === 'other') ? [M[5], Math.min(M[6], 420)] : null, dDmg: M ? M[7] : 0,   // a down-special that is an attack, and where it lands
     nTrap, trapX: nTrap ? trapAt(nSrc) : trapAt(dSrc),
     upDmg: !U ? 0 : U.hit ? Math.max.apply(null, [].concat(U.hit.dmg)) : (U.shape === 'spin' || U.shape === 'plunge' || U.shape === 'carry') ? (U.dmg || 4) : 0,   // an up-special that hits
@@ -133224,7 +133296,7 @@ function brainKit(f){
     up: !U ? null : U.hit ? { kind:'hit', fx:U.hit.fx || 0, off:U.hit.off == null ? -14 : U.hit.off, reach:U.hit.reach || 18 }
       : (U.shape === 'spin' || U.shape === 'carry') ? { kind:'spin' } : (U.shape === 'plunge' && U.power === 0) ? { kind:'slam', rad:U.rad || 40 } : null,
     catch: /\bf\._packed\b/.test(nSrc),   // BOX: Everything Packed takes a foe's shot on its way in, and throws it back on the next press
-    beam: (SMASH_SPEC[k] && SMASH_SPEC[k].pat === 'beam') ? (SMASH_SPEC[k].len || 0) : 0,   // a beam smash, and how far it reaches
+    beam: brainNsmBand(f) ? 0 : (SMASH_SPEC[k] && SMASH_SPEC[k].pat === 'beam') ? (SMASH_SPEC[k].len || 0) : 0,   // a beam smash, and how far it reaches (a remade one: NSM_AI)
     nStance:brainIsStance(nSrc), uStance:!UPSPEC[k] && brainIsStance(src(UPSPECIALS[k])), down,
     smStance:!SMASH_SPEC[k] && brainIsStance(src(SMASHES[k])), smBuff:BUFF_SMASHES.has(k),
     smTrap: (k === 'pierce' && SMASH_SPEC[k] && SMASH_SPEC[k].pat === 'mine') ? (SMASH_SPEC[k].at || 40) : 0 };   // Pin's smash is a mine she lays (WEAK KIT FIXES 2026-11-25: the CPU lays it on a path or at the ledge)
@@ -133545,6 +133617,8 @@ function figSmashT(f){ const F = f._fig; return F.smT || (smashFullOf(f) + 6); }
 function figStrongS(f, key){
   if(key === 'grab') return (f.onground && !f._hold && !f._gb && f.atkCd <= 0) ? { zone:'grab', st:7, act:2 } : null;
   if(f.smCd > 0 || f._smQ || f.smashHold > 0 || !f.onground) return null;
+  const R = USM_OWN[f.name] && key === 'usm' ? dirSmashSpec(f, 1) : (key === 'dsm' && DSM_OWN[f.name] && DSM_OWN[f.name].down) || null;   // (SMASH FOLLOW-UP: a remade up or down smash: its own boxes)
+  if(R && R.boxes) return { boxes:R.boxes.filter(b => !b.pb), st:f._fig.smT || (smashFullOf(f) + R.st), act:R.act };
   return { zone:key, st:figSmashT(f), act:3 };
 }
 // The plain X on the ground is the jab (doAttack), not a moveset row: it hits on the press itself, in its fan (jabFan, the reach doAttack works out).
@@ -134404,7 +134478,7 @@ function brainPunish(f, t, inp, B, L, toward){
 function brainSnapFollow(f, t, inp, B, K, adx, ady, toward, sp, now){
   if(f._snapTgt !== t.idx || !(now - (f._snapHitT == null ? -1e9 : f._snapHitT) < 40) || !(t.hitstun > 0) || B.st === 'smash') return false;
   if(!f.onground || f.smCd > 0 || f._smQ || f.smashHold > 0 || f._lag > 0 || f.hitstun > 0 || ady > 40) return false;
-  if(adx > (K.beam || 240)*0.85){ brainWalk(f, inp, toward, sp, t.x); return true; }   // a step in
+  if(brainNsmBand(f) ? (!brainNsmLands(f, t) && adx > brainNsmBand(f)[0]) : adx > (K.beam || 240)*0.85){ brainWalk(f, inp, toward, sp, t.x); return true; }   // a step in (SMASH FOLLOW-UP: until the photo's own band reaches)
   f._snapHitT = null; brainTap(B, brainSmash(f, t, toward), 3); Object.assign(inp, B.press.keys); B.st = 'smash'; B.until = now + 75; return true;
 }
 function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
@@ -134470,9 +134544,9 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   // FINISHING (STALLED MATCHES): a foe in reach whose damage is high -- 100%, or 70% once the match has gone 12 s without a KO (the same clock as the retreat above) --
   // is smashed at 0.6 of the rate of an opening it saw. The percent is on every foe's HUD, so this is nothing the computer could not see; the smash was only ever
   // thrown at a stunned or swinging foe, and at 150%+ CPUs traded jabs for a minute (CPU-only Canyon and Teams, measured).
-  const finishing = !open && !t._isBoss && inReach && (t.pct||0) >= (hazardT - lastKoFrame > 720 ? 70 : 100);
+  const finishing = !open && !t._isBoss && (inReach || (brainNsmBand(f) && brainSmLands(f, t, 20))) && (t.pct||0) >= (hazardT - lastKoFrame > 720 ? 70 : 100);   // (SMASH FOLLOW-UP: or where its remade smash lands)
   if((open || finishing) && f.onground && simRand() < (open ? L.smash : L.smash*0.6)){
-    const smOk = (K.smBand ? ocSmashLands(K, adx, ady) : brainInReach(f, t, 20)) && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && !K.smStance && !K.smBuff;
+    const smOk = (K.smBand ? ocSmashLands(K, adx, ady) : brainSmLands(f, t, 20)) && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && !K.smStance && !K.smBuff;
     const alt = f.spCd <= 0 && !(f._aiSpGap > 0) && (!smOk || simRand() < 0.4) && simRand() < L.kit;
     if(alt && K.near && K.spDmg >= 10 && !K.nStance && !brainSpent(f) && brainLands(K, adx) && ady < 44){ brainTap(B, brainFace({ special:true }, toward), 3); B.specAt = now + brainSpecGap(f, L); return; }
     if(alt && K.upDmg >= 10 && brainUpLands(f, K, t)){ brainTap(B, { special:true, up:true }, 3); B.specAt = now + brainSpecGap(f, L); return; }
@@ -134492,7 +134566,7 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   // (0 presses in the 8 matches measured for batch 2; batch 1 saw the same). The fix is a decision of its own, by the smash's own rule: a foe over it (60 to 150 px up, within 70 px across, not
   // rising away), itself on the ground and its smash ready -- on an opening it saw (the foe stunned, frozen or mid-swing: L.smash), at a foe at kill percent
   // (0.6 of that, the finishing rate above), else now and then (0.12, the OC rule's "without one"). Nothing else about when a CPU smashes is changed.
-  if(f.onground && !t._isBoss && dy < -60 && dy > -150 && adx < 70 && !(t.vy < -1) && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0)
+  if(f.onground && !t._isBoss && (USM_OWN[f.name] ? (dy < -30 && brainUsmLands(f, t)) : (dy < -60 && dy > -150 && adx < 70)) && !(t.vy < -1) && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0)
      && simRand() < (open ? L.smash : ((t.pct||0) >= (hazardT - lastKoFrame > 720 ? 70 : 100)) ? L.smash*0.6 : L.smash*0.12)){ brainTap(B, brainSmash(f, t, toward, 1), 3); B.st = 'smash'; B.until = now + 75; return; }
   // OFFENSIVE RECOVERIES: its up special as an attack where that kind lands (brainUpOff), now and then (L.recOff)
   { const uo = brainUpOff(f, t, L, sp, dx, dy, ready); if(uo && simRand() < L.recOff){ brainTap(B, uo, 3); B.specAt = now + brainSpecGap(f, L); return; } }
@@ -134525,7 +134599,8 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   // a down-special that lands at range (Bow's snowballs, Baseball's, Paintbrush's; a mark thrown on the nearest foe), now and then
   if(K.dBand && ready && f.onground && ady < 60 && adx > Math.max(brainReach(f), K.dBand[0]) && adx < K.dBand[1] && simRand() < (K.dDmg > 0 ? 0.3 : 0.12)*L.kit){ brainTap(B, { special:true, down:true }, 3); B.specAt = now + brainSpecGap(f, L); return; }
   // a beam smash down the stage at a foe level with it (Lightbulb's, Tissues', TV's, Remote's, Ruler's...): on an opening it saw, or now and then
-  if(K.beam && f.onground && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && !K.smStance && ady < 24 && adx > brainReach(f) + 20 && adx < K.beam*0.8
+  const nA = brainNsmBand(f);   // (SMASH FOLLOW-UP: a remade smash that reaches past the jab is thrown from where it lands, by its own band; a beam as before)
+  if((nA ? nA[1] > brainReach(f) + 40 : K.beam) && f.onground && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && !K.smStance && ady < 24 && adx > brainReach(f) + 20 && (nA ? brainNsmLands(f, t) : adx < K.beam*0.8)
      && simRand() < (open ? L.smash : L.smash*0.08)*L.kit){ brainTap(B, brainSmash(f, t, toward), 3); B.st = 'smash'; B.until = now + 75; return; }
   // X is a shot for some (Puffball, Ruby, Fanny, Ruler): from range, a string of shots
   if(K.shotX && dist < 300 && ady < 40){ B.st = 'string'; B.str = { move:'jab', left:2, n:0, next:now, dmg0:f._dmgDealt||0, extra:false }; return; }
@@ -134782,7 +134857,7 @@ function brainGuard(f, ts, t, inp, B, L, targets, sp){
   // AN OPENING it saw in reach (the foe stunned, frozen or mid-swing): the smash, by the fight's own rule (L.smash; never a stance or a
   // self-buff smash) -- a foe it has just knocked out there is one
   const open = (t.hitstun > 10) || (t.frozen > 0) || (t.atkCd > 12 && t._atkAnim > 0) || (t.smashHold > 0);
-  if(open && brainInReach(f, t, 20) && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && !K.smStance && !K.smBuff && simRand() < L.smash){
+  if(open && brainSmLands(f, t, 20) && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && !K.smStance && !K.smBuff && simRand() < L.smash){
     brainTap(B, brainSmash(f, t, toward), 3); E.smAt = now; return true;
   }
   // OFFENSIVE RECOVERIES at the ledge: THE SPIKE DIVE -- a spike row's fighter, a foe just under the ledge trying to get back -- now and then
