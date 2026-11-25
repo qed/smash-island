@@ -687,6 +687,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-24 (Gelatin's up tilt was still called 'Fork Toss Up' after Fork Toss was replaced by Spikeball Headphones)**: yeah rename the up tilt
 - **2026-11-25**: why does clover's smash have the range of a bad up-air?
 - **2026-11-25 (boxes: merge the short-smash fixes; give the very short DOWN smashes reach too?)**: Merge all 14 (Recommended); for the down smashes: if they are short, then make them strong. also, I notice that they are rather generic.
+- **2026-11-25 (after the short-smash report noted Bubble's smash never hit a still foe in the test)**: check bubble's smash too. also, make the smashes less GENERIC.
 
 ## Bosses, Boss Rush & secrets
 
