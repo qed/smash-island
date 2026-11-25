@@ -685,6 +685,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-24**: all up-smashes should be able to hit when in point blank range, except when someone is below
 - **2026-11-24 (Gelatin's up special, after the lead's specials-only ideas: keep Fork Toss or 'Fork and Knife')**: for the up-c, make it something that takes from something else from his source material- ooh! he could shoot a spikeball to each side of him while going up. it bleeds. this takes from the episode in bfdia where yellow face gives him unremovable headphones that shoot spikeballs.
 - **2026-11-24 (Gelatin's up tilt was still called 'Fork Toss Up' after Fork Toss was replaced by Spikeball Headphones)**: yeah rename the up tilt
+- **2026-11-25**: why does clover's smash have the range of a bad up-air?
 
 ## Bosses, Boss Rush & secrets
 
