@@ -2125,4 +2125,5 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-13 19:05 UTC** *(part)*: THANK YOU.
 - **2026-11-24**: try to get an amiibo
 - **2026-11-24 (box: what 'try to get an amiibo' means; picked)**: In-game trainable fighter
+- **2026-11-24 (about the in-game amiibo, a trainable fighter)**: this will help you train your weaknesses, as they will counter all of them.
 
