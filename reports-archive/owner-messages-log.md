@@ -690,6 +690,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (boxes: merge the short-smash fixes; give the very short DOWN smashes reach too?)**: Merge all 14 (Recommended); for the down smashes: if they are short, then make them strong. also, I notice that they are rather generic.
 - **2026-11-25 (after the short-smash report noted Bubble's smash never hit a still foe in the test)**: check bubble's smash too. also, make the smashes less GENERIC.
 - **2026-11-25 (about the less-generic smash redesigns, briefed as 'in character, from the show')**: push the short smashes and figures. and it doesnt need to be in-charracter
+- **2026-11-25 (box: Trophy's neutral smash KOs at 90% after the follow-up, old 142%, Update 13 never)**: Keep 90%
+- **2026-11-25 (box: Beach Ball, Bomb, Cake first hit pushes the foe out before the big hit; Tree's root can't be launched -- fix all four or leave them)**: do 1, and fix it for all of them. during multihit attacks, you should be tethered to them until the launch.
 
 ## Bosses, Boss Rush & secrets
 
@@ -892,6 +894,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (after weak-kits-proposals.md: 10 weakest fighters, 2-3 ranked fixes each, some CPU-only)**: build all the weak kit fixes.
 - **2026-11-25**: do a second round for cloudy, spongy, needy and sticker. also, for 8-ball, the cpus just get any assists, with no rhyme or reason
 - **2026-11-25 (while the guest-lag job runs)**: also, you should not be able to jump again after being hit offstage, nor use your recovery.
+- **2026-11-25 (box: how should Sticker get KOs? stronger Backstab / faster smash / more damage)**: Stronger Backstab
 
 ## Art, animation & polish
 
@@ -1249,6 +1252,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (after the 118 neutral/up smash remakes and the 70 down smash changes were shown)**: merge both and push. push everything that isnt live yet
 - **2026-11-25 (the lead offered to push the Capture the Flag fix alone)**: push it
 - **2026-11-25 (the UI job reported that Update 13's What's new is 28 lines and ~920 words; the lead asked whether to shorten it)**: yeah shorten the whats new
+- **2026-11-25 (box: push everything merged now -- shorter What's new, room lines, hit-offstage change, weak kits round 2, Needy/Jammy fix, smash follow-up -- or wait for the lag fix)**: Push now
 
 ## Status questions & check-ins
 
