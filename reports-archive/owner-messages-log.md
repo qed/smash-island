@@ -688,6 +688,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25**: why does clover's smash have the range of a bad up-air?
 - **2026-11-25 (boxes: merge the short-smash fixes; give the very short DOWN smashes reach too?)**: Merge all 14 (Recommended); for the down smashes: if they are short, then make them strong. also, I notice that they are rather generic.
 - **2026-11-25 (after the short-smash report noted Bubble's smash never hit a still foe in the test)**: check bubble's smash too. also, make the smashes less GENERIC.
+- **2026-11-25 (about the less-generic smash redesigns, briefed as 'in character, from the show')**: push the short smashes and figures. and it doesnt need to be in-charracter
 
 ## Bosses, Boss Rush & secrets
 
@@ -1240,6 +1241,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-24 (after Gelatin's Ice Breaker/Steak Sizzle/Daily Specials and Cherries' Cherry Pick merged into the update)**: push gelatin and cherries too
 - **2026-11-24 (the lead asked whether to wait for Gelatin's spikeball headphones before pushing Gelatin and Cherries)**: push it without the headphones, do those after.
 - **2026-11-24 (Gelatin's Spikeball Headphones: keep the better recovery, 202 px vs Fork Toss's 151, or shorten it?)**: keep it, push the headphones
+- **2026-11-25 (after the 14 short-smash fixes and the Sparring Figures merged into the update)**: push the short smashes and figures. and it doesnt need to be in-charracter
 
 ## Status questions & check-ins
 
