@@ -20786,7 +20786,8 @@ function dirSmashText(r, dir){
   return up ? nm + ' — press ↑ and V together (the jump is cancelled; the same charge): a wide swing over your head that launches foes straight up. On hit: ' + dmg + '%, launches up.' + usmPbWords(null)
             : nm + ' — press ↓ and V together (on a platform the smash wins over dropping through; the same charge): a low sweep that hits both sides at once and sends foes low and out. On hit: ' + dmg + '%.';
 }
-function smashKindOf(f){ const sp = f && f.kit && f.kit.special, row = (f && f.oc) ? ((ocOpt(f, 's') || {}).smash || null) : ((typeof SMASH_SPEC !== 'undefined' && SMASH_SPEC[sp]) || null); return row ? SMASH_KIND[row.pat] : null; }   // (OC ENGINE: an OC's smash pick)
+function smashKindOf(f){ const nk = (f && !f.oc && typeof NSM_MV !== 'undefined' && NSM_MV[f.name] && NSM_MV[f.name].kind) || null; if(nk) return nk;   // (SMASHES LESS GENERIC: a remade neutral smash names its own kind)
+  const sp = f && f.kit && f.kit.special, row = (f && f.oc) ? ((ocOpt(f, 's') || {}).smash || null) : ((typeof SMASH_SPEC !== 'undefined' && SMASH_SPEC[sp]) || null); return row ? SMASH_KIND[row.pat] : null; }   // (OC ENGINE: an OC's smash pick)
 
 // EVERY MOVE, IN WORDS ("add attack descriptions to everything"). One line per input for each fighter, written from the move's
 // code and measured in-game (first-hit damage at 40, 110 and 220 px), then checked line by line by a second reader.
@@ -78743,7 +78744,7 @@ function dirSmashNums(sp, name){
 function dirSmashSpec(f, dir){
   const sp = f.kit && f.kit.special, up = dir > 0, key = f.name + '|' + dir + '|' + Math.round(f.r);
   let S = DSM_CACHE.get(key); if(S) return S;
-  const own = DSM_OWN[f.name];   // UNIQUE UP/DOWN SMASHES, batches 1 to 3: thirty-six fighters have their own rows (DSM_OWN)
+  const own = (up && typeof USM_OWN !== 'undefined' && USM_OWN[f.name]) ? { up:USM_OWN[f.name] } : DSM_OWN[f.name];   // (SMASHES LESS GENERIC: an own up smash in USM_OWN, the down smash as it was)   // UNIQUE UP/DOWN SMASHES, batches 1 to 3: thirty-six fighters have their own rows (DSM_OWN)
   if(own){ S = own[up ? 'up' : 'down']; if(up) S = usmPbRow(S); DSM_CACHE.set(key, S); return S; }
   const N = dirSmashNums(sp, f.name), r = f.r, name = (up ? DSM_NAMES.up : DSM_NAMES.down)[N.pat] || (up ? DSM_NAMES.up.none : DSM_NAMES.down.none);
   const end = 20 + Math.round(N.D*0.45);
@@ -92659,7 +92660,7 @@ function brkKit(f){ return !!(f && f.kit && SHIELD_BREAKERS[f.kit.special] === '
 function brkSwing(from, opts){
   if(!brkKit(from)) return false;
   if(opts && opts.shot) return !!(SMASH_PROJ && SMASH_PROJ._slot === 'smash' && SMASH_PROJ.ownerObj === from);
-  return !!(from._smSync || from._sm || (from._windup && from._windup.smash));
+  return !!(from._smSync || from._sm || (from._windup && from._windup.smash) || (from._mv && from._mv.key === 'nsmash'));   // (SMASHES LESS GENERIC: a neutral smash written as a move row breaks a bubble too)
 }
 // The tell is showing: a breaker's charge (_brkTell is set on each charge frame; a press that carried an arrow is the up or the down smash, which does not break).
 function brkTell(f){ return !!f && f.smashHold > 0 && !!f._brkTell; }
@@ -94078,7 +94079,7 @@ const DSM_OWN = {
 // The move lists: the same wording as the generated pair, from the row.
 function usmPbWords(row){ return row && row.boxes && row.boxes.some(function(b){ return b.when === bowLassoCatch; }) ? ' A foe touching her (not below) is caught too.' : ' A foe touching you (not below) is hit too.'; }
 function dsmOwnText(r, dir){
-  const row = DSM_OWN[r && r.name] && DSM_OWN[r.name][dir > 0 ? 'up' : 'down']; if(!row) return null;
+  const row = (dir > 0 && typeof USM_OWN !== 'undefined' && USM_OWN[r && r.name]) || (DSM_OWN[r && r.name] && DSM_OWN[r.name][dir > 0 ? 'up' : 'down']); if(!row) return null;   // (USM_OWN: SMASHES LESS GENERIC)
   const dm = (typeof statsFor === 'function' ? statsFor(r.name).dmg : 1), dmg = Math.round(row.tot*dm*10)/10;
   return row.n + (dir > 0 ? ' — press ↑ and V together (the jump is cancelled; the same charge): ' : ' — press ↓ and V together (on a platform the smash wins over dropping through; the same charge): ')
     + row.d + '. On hit: ' + dmg + '%' + (row.x || '') + msFxWords(row.boxes, row.d + ' ' + (row.x || '')) + '.' + (dir > 0 ? usmPbWords(row) : '');
@@ -94615,6 +94616,104 @@ function cherPickReel(f){
   if(mv.t < left){ mv.t = left; f.atkCd = Math.min(f.atkCd, CHER_PICK.after); }   // a throw's end: they are free soon after the slam
   return false;
 }
+// ============================================================
+//  SMASHES LESS GENERIC (the owner, 2026-11-25: "make the smashes less GENERIC"; then "it doesnt need to be in-charracter")
+// ============================================================
+// The neutral smashes that were a stock SMASH_SPEC shape with only the numbers and the colour changed (a lunge, a ring, a hop, a beam, a rooted ring,
+// a pull, a dash: 66 of them) get a move row of their own here, in the NSM_MV format (above); the 52 up smashes that were the generated "wide swing
+// over your head" get their own row in USM_OWN (below; read by dirSmashSpec, dsmOwnText and drawDsmProps before DSM_OWN, so the down smash of those
+// fighters is untouched). Each keeps the old move's job and size: the same total damage at most (`tot`), about the same launch (measured: KO percent on
+// a still dummy mid-stage), and its self-cost, its shield break (brkSwing reads the 'nsmash' key) and its Limit (NSM_LIM). The old SMASH_SPEC row stays
+// where it is, as for the first 19 rows: the CPU still reads its reach, and the down smash is still made from it. The owner's list: reports/smashes-less-generic.md.
+const SMU_GOLD = (f, t) => { if(f._glowGoldT > 0 && f._empowerT > 0){ t.vx *= 0.81; t.vy *= 0.81; } };   // Silver Spoon: his smash inside his own gold launches a little less (the old row's goldKb)
+const smuFx = (name, n, after) => fxTag((f, t, mv) => { if(SM_FX[name]) SM_FX[name](t, f, n); if(after) after(f, t, mv); }, name);
+const smuSelf = (n) => (f) => { f.pct += n; };   // the old row's cost.self: it costs the user this much, hit or miss
+Object.assign(NSM_MV, {
+  // ---- batch A: ten of the lunges ----
+  'Firey': { vhold:true, kit:'ember', kind:'Charge', n:'Hot Head Charge', d:'charges head first about 110 px; three little fires are left burning on the floor behind him, and they hit too', tot:21, x:', sets them burning', pose:'dash', st:5, act:26, end:22, smash:true,
+    boxes:[{ s:MvO(22,-6,20), t0:5, t1:14, g:'a', dmg:18, kb:[8.6,-6], fx:msBurn(110) },
+      { s:MvC(-14,16, -36,16, 12), t0:15, t1:30, g:'b', dmg:3, kb:[2.4,-3.6], fx:msBurn(60) }, { s:MvC(-50,16, -72,16, 12), t0:15, t1:30, g:'b', dmg:3, kb:[2.4,-3.6], fx:msBurn(60) }, { s:MvC(-86,16, -108,16, 12), t0:15, t1:30, g:'b', dmg:3, kb:[2.4,-3.6], fx:msBurn(60) }],
+    mv:[{ t0:5, t1:14, mode:'set', vx:14 }, { t0:15, t1:30, mode:'set', vx:0 }] },
+  'Coiny': { vhold:true, kit:'slap', kind:'Spin', n:'Spinning Backhand', d:'turns one full circle on the spot, then throws a long backhand with a small step; the fingertips hit hardest', tot:22.5, x:', makes them bleed', pose:'spin', st:4, act:10, end:16, smash:true,
+    boxes:[{ s:MvO(0,-2,30), t0:4, t1:9, g:'a', dmg:3, kb:[1.2,-1], stun:12 },
+      { s:MvC(14,-8, 54,-8, 13), t0:10, t1:13, g:'b', chain:true, dmg:13, kb:[5.6,-3.4], fx:msFx('bleed',80) }, { s:MvO(70,-8,13), t0:10, t1:13, g:'b', chain:true, sweet:true, dmg:19.5, kb:[7.6,-4.6], fx:msFx('bleed',120) }],
+    mv:[{ t0:9, t1:13, mode:'set', vx:10 }] },
+  'Book': { vhold:true, kit:'define', kind:'Page', n:'Page Turn', d:'a giant page sweeps up from behind her, over the top, and slaps down in front of her; the landing edge hits hardest (it catches someone behind her lightly on the way up)', tot:22.5, x:', marks them to take more', pose:'slam', st:6, act:7, end:24, smash:true,
+    boxes:[{ s:MvC(-56,-6, -24,-58, 14), t0:6, t1:7, g:'a', dmg:6, kb:[-2.5,-5] }, { s:MvC(-14,-74, 34,-74, 15), t0:8, t1:9, g:'a', dmg:8, kb:[3,-6] },
+      { s:MvC(12,12, 104,12, 16), t0:10, t1:12, g:'a', sweet:true, dmg:22.5, kb:[8.8,-8.4], fx:msFx('define',3) }],
+    mv:[{ t0:6, t1:12, mode:'set', vx:6 }] },
+  'Bell': { vhold:true, kit:'ring', kind:'Pendulum', n:'Pendulum', d:'rocks back on his rope, then swings his whole body forward in a low arc; the bottom of the swing hits hardest', tot:25.5, x:', stuns them', pose:'dash', st:6, act:9, end:22, smash:true,
+    boxes:[{ s:MvO(20,12,26), t0:8, t1:10, g:'a', sweet:true, dmg:25.5, kb:[5,-3.3], fx:msFx('stun',26) }, { s:MvO(12,0,24), t0:6, t1:14, g:'a', dmg:15, kb:[4,-2.8], fx:msFx('stun',18) }],
+    mv:[{ t0:1, t1:5, mode:'set', vx:-5 }, { t0:6, t1:14, mode:'set', vx:16 }] },
+  'Bracelety': { vhold:true, kit:'sign', kind:'Cartwheel', n:'Cartwheel Cheer', d:'cartwheels forward about 110 px, hands then feet hitting, and lands in a "Go!" pose that launches', tot:16.5, x:', the landing stuns them', pose:'spin', st:4, act:14, end:20, smash:true,
+    boxes:[{ s:MvO(10,-26,19), t0:5, t1:8, g:'a', dmg:4, kb:[2,-4], stun:12 }, { s:MvO(12,-30,20), t0:9, t1:13, g:'b', chain:true, dmg:4, kb:[2,-4.4], stun:12 },
+      { s:MvC(8,-10, 50,-12, 17), t0:15, t1:17, g:'c', chain:true, dmg:8.5, kb:[8.6,-10.8], fx:msFx('stun',30) }],
+    mv:[{ t0:4, t1:14, mode:'set', vx:10 }, { t0:15, t1:17, mode:'set', vx:0 }] },
+  'Pickle': { vhold:true, kit:'pickle', kind:'Rebound', n:'Off the Ropes', d:'steps BACK about 30 px, as if into the ropes, then springs forward about 150 px into a lariat with both gloves', tot:22.5, x:', stuns them', pose:'punch', st:8, act:9, end:28, smash:true,
+    boxes:[{ s:MvC(10,-10, 46,-14, 16), t0:8, t1:16, g:'a', dmg:22.5, kb:[9.4,-8.4], fx:msFx('stun',26) }],
+    mv:[{ t0:1, t1:5, mode:'set', vx:-6 }, { t0:6, t1:6, mode:'set', vx:0 }, { t0:7, t1:16, mode:'set', vx:16 }] },
+  'Trophy': { vhold:true, kit:'blackmail', kind:'Shove', n:'Push Off', d:'a two-hand shove slides the foe away along the floor, then he chases after them and kicks them away', tot:21, x:', the kick knocks them down', pose:'punch', st:5, act:15, end:22, smash:true,
+    boxes:[{ s:MvC(14,-4, 46,-4, 17), t0:5, t1:7, g:'a', dmg:6, kb:[4.2,-0.3], stun:26 }, { s:MvC(10,4, 50,0, 17), t0:13, t1:19, g:'b', chain:true, dmg:15, kb:[7.3,-7], fx:msFx('knockdown',30) }],
+    mv:[{ t0:5, t1:8, mode:'set', vx:0 }, { t0:9, t1:18, mode:'set', vx:11 }] },
+  'Yin-Yang': { vhold:true, kit:'yinyang', kind:'Wheel', n:'Yin-Yang Wheel', d:'rolls forward about 110 px as a spinning yin-yang: the white half bumps them, then the black half throws them high', tot:24, x:', knocks them down', pose:'spin', st:5, act:12, end:26, smash:true,
+    boxes:[{ s:MvO(14,0,26), t0:5, t1:10, g:'a', dmg:6, kb:[1.6,-2], stun:14 }, { s:MvO(14,0,26), t0:11, t1:16, g:'b', chain:true, dmg:18, kb:[3.6,-14.4], fx:msFx('knockdown',30) }],
+    mv:[{ t0:5, t1:16, mode:'set', vx:10 }] },
+  'Poppy': { kit:'vacuum', kind:'Trail', n:'Solder Trail', d:'runs her soldering iron along the floor ahead, a low line of hot solder out to about 100 px, and the end of the line sparks a moment later, about 130 px out: the spark hits harder', tot:21, x:', sets them burning', pose:'punch', st:5, act:11, end:18, smash:true,
+    boxes:[{ s:MvC(16,18, 44,18, 10), t0:5, t1:6, g:'a', dmg:13, kb:[6,-6], fx:msBurn(70) }, { s:MvC(44,18, 72,18, 10), t0:7, t1:8, g:'a', dmg:13, kb:[6,-6], fx:msBurn(70) }, { s:MvC(72,18, 100,18, 10), t0:9, t1:10, g:'a', dmg:13, kb:[6,-6], fx:msBurn(70) },
+      { s:MvO(128,4,24), t0:13, t1:15, g:'a', sweet:true, dmg:21, kb:[8.5,-8.5], fx:msBurn(120) }] },
+  'Silver Spoon': { vhold:true, kit:'glowgold', kind:'Scoop', n:'Scoop and Serve', d:'a low scoop of his bowl lifts the foe off the floor, then a golden punch sends them (it costs him 2%)', tot:24, x:', knocks them down', pose:'uppercut', st:5, act:11, end:24, smash:true,
+    start:smuSelf(2),
+    boxes:[{ s:MvC(10,18, 58,10, 14), t0:5, t1:8, g:'a', dmg:6, kb:[1,-6], stun:16 }, { s:MvO(42,-34,19), t0:12, t1:15, g:'b', chain:true, dmg:18, kb:[11,-11.2], fx:smuFx('knockdown',30, SMU_GOLD) }],
+    mv:[{ t0:3, t1:10, mode:'set', vx:9 }] },
+});
+// The powered rows for the Limit scalers whose neutral smash is new here (the Limit's own extra still comes from LIMIT_EXTRA, as before; applyHit makes the hits harder)
+Object.assign(NSM_LIM, {
+  'Coiny': Object.assign({}, NSM_MV['Coiny'], { n:'Cha-Ching Slap' }),
+});
+// Up smashes with a row of their own, in the DSM_OWN row format (keyed by name; read before DSM_OWN for ↑ + V only).
+const USM_OWN = {};
+// The drawings (DSM_PROPS, forward-relative; t is the move's frame)
+Object.assign(DSM_PROPS, {
+  'Firey.neu': function(c, X, Y, z, t){
+    if(t >= 4 && t <= 14){ const k = 1 + Math.sin(t*1.7)*0.15; dpEll(c, X(-22), Y(-10), 16*z*k, 8*z, 0, '#ff8a2a'); dpEll(c, X(-14), Y(-8), 9*z*k, 5*z, 0, '#ffd23f'); }
+    if(t >= 15 && t <= 30){ const a = t > 26 ? (31 - t)/5 : 1; c.globalAlpha = a;
+      for(const ox of [-25, -61, -97]){ const h = 16 + Math.sin(t*0.9 + ox)*4; dpPoly(c, [X(ox - 9), Y(22), X(ox), Y(22 - h), X(ox + 9), Y(22)], '#ff6a1a'); dpPoly(c, [X(ox - 4), Y(22), X(ox), Y(22 - h*0.55), X(ox + 4), Y(22)], '#ffd23f'); }
+      c.globalAlpha = 1; } },
+  'Coiny.neu': function(c, X, Y, z, t){
+    if(t >= 4 && t <= 9){ c.globalAlpha = 0.5; c.beginPath(); c.arc(X(0), Y(-2), 30*z, 0, 7); c.strokeStyle = '#f2c84b'; c.lineWidth = 4; c.stroke(); c.globalAlpha = 1; }
+    if(t >= 10 && t <= 14){ dpLine(c, X(14), Y(-8), X(62), Y(-8), 7, '#f2c84b'); dpEll(c, X(70), Y(-8), 9*z, 7*z, 0, '#f2c84b'); } },
+  'Book.neu': function(c, X, Y, z, t){
+    if(t < 6 || t > 13) return; const u = Math.min(1, (t - 6)/6), a = Math.PI*(1 - u);   // the page's angle: from behind (pi) over the top to flat in front (0)
+    const L = 104, ex = Math.cos(a)*L, ey = -Math.sin(a)*L*0.8;
+    dpPoly(c, [X(0), Y(12), X(ex), Y(12 + ey), X(ex*0.96), Y(20 + ey), X(0), Y(20)], '#f4f0e2');
+    dpLine(c, X(ex*0.3), Y(14 + ey*0.3), X(ex*0.8), Y(14 + ey*0.8), 1.5, '#9aa3ad'); },
+  'Bell.neu': function(c, X, Y, z, t){
+    if(t > 13) return; const off = t <= 5 ? -t*5 : -25 + (t - 5)*10;
+    dpLine(c, X(0), Y(-220), X(off*0.6), Y(-26), 3, '#c9a36a'); },
+  'Bracelety.neu': function(c, X, Y, z, t){
+    if(t >= 15 && t <= 19){ dpPoly(c, [X(36), Y(-60), X(70), Y(-54), X(66), Y(-36), X(34), Y(-42)], '#ffffff'); c.fillStyle = DSM_INK; c.font = (12*z|0) + 'px sans-serif'; c.fillText('GO!', X(40), Y(-44)); }
+    if(t >= 5 && t <= 13){ c.globalAlpha = 0.45; c.beginPath(); c.arc(X(4), Y(-4), 34*z, 0, 7); c.strokeStyle = '#ff8ac8'; c.lineWidth = 3; c.stroke(); c.globalAlpha = 1; } },
+  'Pickle.neu': function(c, X, Y, z, t){
+    if(t <= 6){ for(const y of [-30, -14, 2]) dpLine(c, X(-40), Y(y), X(-40 + 10), Y(y + 2*Math.sin(t)), 2, '#d9433f'); }
+    if(t >= 8 && t <= 16){ dpEll(c, X(36), Y(-12), 12*z, 10*z, 0, '#d9433f'); dpEll(c, X(28), Y(-2), 11*z, 9*z, 0, '#d9433f'); } },
+  'Trophy.neu': function(c, X, Y, z, t){
+    if(t >= 5 && t <= 8){ dpEll(c, X(34), Y(-10), 8*z, 10*z, 0, '#f2c84b'); dpEll(c, X(34), Y(6), 8*z, 10*z, 0, '#f2c84b'); }
+    if(t >= 15 && t <= 19) dpLine(c, X(8), Y(10), X(46), Y(2), 7, '#f2c84b'); },
+  'Yin-Yang.neu': function(c, X, Y, z, t){
+    if(t < 5 || t > 16) return; const a = t*0.9, R = 26*z;
+    c.save(); c.translate(X(14), Y(0)); c.rotate(a); c.beginPath(); c.arc(0, 0, R, 0, 7); c.fillStyle = '#ffffff'; c.fill();
+    c.beginPath(); c.arc(0, 0, R, -Math.PI/2, Math.PI/2); c.arc(0, R/2, R/2, Math.PI/2, -Math.PI/2, true); c.arc(0, -R/2, R/2, Math.PI/2, -Math.PI/2); c.fillStyle = DSM_INK; c.fill();
+    c.beginPath(); c.arc(0, 0, R, 0, 7); c.strokeStyle = DSM_INK; c.lineWidth = 2.5; c.stroke(); c.restore(); },
+  'Poppy.neu': function(c, X, Y, z, t){
+    if(t < 5 || t > 18) return; const end = Math.min(100, 16 + (t - 5)*14);
+    dpLine(c, X(16), Y(20), X(end), Y(20), 5, '#c0c6cc');
+    if(t <= 11) dpLine(c, X(end - 10), Y(-6), X(end), Y(16), 4, '#7a5230');
+    if(t >= 13 && t <= 16) dpStar(c, X(128), Y(4), 22*z, 9*z, 6, '#ffd23f'); },
+  'Silver Spoon.neu': function(c, X, Y, z, t){
+    if(t >= 4 && t <= 9){ const u = (t - 4)/5; dpEll(c, X(16 + 40*u), Y(16 - 8*u), 16*z, 8*z, -0.3*u, '#d9dde2'); }
+    if(t >= 12 && t <= 16){ dpDisc(c, X(42), Y(-34), 12*z, '#e8c34a'); dpStar(c, X(42), Y(-34), 22*z, 8*z, 4, 'rgba(255,240,170,0.6)'); } },
+});
+for(const nm of ['Firey', 'Coiny', 'Book', 'Bell', 'Bracelety', 'Pickle', 'Trophy', 'Yin-Yang', 'Poppy', 'Silver Spoon']){ const r = NSM_MV[nm]; if(r && r.kit && SMASH_ID[r.kit]) SMASH_ID[r.kit].name = r.n; }
 const NSM_FIN = {
   bomb: { n:'Stop, Drop and Roll', d:'his fuse catches and he panics for half a second (the tell), then drops and rolls forward 160 px along the floor to put it out: his rolling body hits each foe once and knocks them down and away; he ends flat on his back, fuse out, open for a moment, and it costs him nothing', pose:'dash', st:30, act:12, end:20, smash:true,
     boxes:[{ s:MvO(0,6,28), t0:30, t1:42, g:'a', dmg:10, kb:[8.0,-3.0], fx:msFx('knockdown',24) }], mv:[{ t0:0, t1:29, mode:'set', vx:0 }, { t0:30, t1:41, mode:'set', vx:13 }] },
@@ -95126,7 +95225,7 @@ function drawDsmProps(){
       ctx.restore();
     }
     const dir = f._atkMove.endsWith('.usmash') ? 'up' : f._atkMove.endsWith('.dsmash') ? 'down' : f._atkMove.endsWith('.nsmash') ? 'neu' : null; if(!dir) continue;
-    if(dir === 'neu' ? !NSM_MV[f.name] : !DSM_OWN[f.name]) continue;
+    if(dir === 'neu' ? !NSM_MV[f.name] : !(DSM_OWN[f.name] || (dir === 'up' && USM_OWN[f.name]))) continue;
     const fn = DSM_PROPS[f.name + '.' + dir]; if(!fn || haHidden(f)) continue;
     const d = f.face < 0 ? -1 : 1, z = sizeOf(f), t = dsmFrame(f), gw = dir === 'neu' ? null : DSM_GROW[f.name + '.' + dir];   // (RANGE PASS: the row's stretch)
     ctx.save(); ctx.globalAlpha = 1;
@@ -96893,7 +96992,7 @@ const LIMIT_TEXT = {
   'Gelatin':     [['Deep Freeze', 'three shots that freeze at any damage'], ['Mixed Grill', 'a bigger hot plate that sears harder and lasts longer'], ['Glacier Breaker', 'a bigger mine that lasts longer, and a freezing spray']],
   'Fries':       [['Supersize', 'seven fries and one giant fry'], ['Hot Oil Spill', 'three traps that burn'], ['Deep Fryer', 'a bigger ring, then fries fly out all round']],
   'Dora':        [['Rant Rampage', 'five jabs, longer reach, a harder last one'], ['Dig Deep', 'the ground erupts and stuns far wider'], ['Endless Earful', 'farther and wider, then "and ANOTHER thing!"']],
-  'Coiny':       [['Slap Fight Rematch', 'a longer slap, then a backhand that stuns'], ['Make It Rain', 'seven coins that bounce more'], ['Cha-Ching Slap', 'a longer lunge, then a spray of coins']],
+  'Coiny':       [['Slap Fight Rematch', 'a longer slap, then a backhand that stuns'], ['Make It Rain', 'seven coins that bounce more'], ['Cha-Ching Slap', 'the spinning backhand hits harder and throws farther, then a spray of coins']],
   'Yellow Face': [['Limited Time Offer!', 'a bigger cone, a longer stun, and it weakens'], ['Everybody Gets One!', 'weakens every foe near him and stuns them'], ['Buy One, Get Two Free!', 'three pops: two hold, the last launches']],
   'Grassy':      [['Full Bloom', 'a longer Grasstree, and roots burst up round him'], ['Deep Roots', 'more armour, three rooting brambles, heals a little'], ['Rolling Forest', 'a bigger roller, and a second rolls back']],
   'Gaty':        [['Gate Crash', 'a longer reflect and a bigger swing that strips armour'], ['Iron Gate', 'twice as long, braced, and the gate slams round her'], ['Judgement Gate', 'pulls from farther, then slams shut both ways']],
@@ -109014,6 +109113,8 @@ Object.assign(FB_FRAME_DATA, { 'airrel.usmash':[29,8,25,25], 'airrel.dsmash':[28
 // UNIQUE UP / DOWN SMASHES, BATCH 8: Bow, Clover, Fanny, Grassy, Lifering, Marker, Paper, Saw's own rows, MEASURED the same way (the frame data fill script, a fresh match per dummy spot;
 // Bow's Lasso is a command grab, so its startup is the frame the loop CATCHES (the rope's 2%), as the grab's row is the first frame the dummy is held).
 Object.assign(FB_FRAME_DATA, { 'chair.usmash':[30,10,21,25], 'chair.dsmash':[29,5,27,27], 'clover.usmash':[30,10,22,22], 'clover.dsmash':[28,6,28,28], 'gust.usmash':[29,10,21,21], 'gust.dsmash':[28,12,20,20], 'grasstree.usmash':[29,6,27,27], 'grasstree.dsmash':[28,6,28,28], 'lifeguard.usmash':[29,6,29,29], 'lifeguard.dsmash':[28,14,22,22], 'ink.usmash':[29,11,22,22], 'ink.dsmash':[28,8,26,26], 'evilpaper.usmash':[30,7,27,27], 'evilpaper.dsmash':[31,4,29,29], 'saw.usmash':[32,12,20,20], 'saw.dsmash':[31,7,26,26] });
+// SMASHES LESS GENERIC (2026-11-25): the remade neutral and up smashes' rows, from each move row (the full charge + the first damaging box's frame; live frames over all its boxes; the row's end lag)
+Object.assign(FB_FRAME_DATA, { 'ember.smash':[29, 26, 22, 22], 'slap.smash':[28, 10, 16, 16], 'define.smash':[30, 7, 24, 24], 'ring.smash':[34, 9, 22, 22], 'sign.smash':[29, 13, 20, 20], 'pickle.smash':[32, 9, 28, 28], 'blackmail.smash':[29, 15, 22, 22], 'yinyang.smash':[29, 12, 26, 26], 'vacuum.smash':[29, 11, 18, 18], 'glowgold.smash':[30, 11, 24, 24] });   // batch A
 
 // ============================================================
 //  SMASH PAYOFFS — a smash that asks something of you, and pays when you deliver
