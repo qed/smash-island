@@ -699,6 +699,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (after the push; Marshmallow is the owner's secondary)**: oh yeah, on marshmallow's smash, the springpad should bounce once on the floor, and you should be able to spring on it for height.
 - **2026-11-25 (the lead asked: should foes and teammates spring on Marshmallow's leftover pad too?)**: yeah, allies should spring on it.
 - **2026-11-25 (box: Marshmallow's leftover pad springs you when you walk onto it -- keep, or jump only)**: Jump only
+- **2026-11-25 (box: spin auras and spinning up specials now land every tick with the hold, e.g. Bomb's up special 2 hits 8% -> 5 hits 21%; keep them held?)**: hold, but reduce damage per hit.
 
 ## Bosses, Boss Rush & secrets
 
@@ -902,6 +903,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25**: do a second round for cloudy, spongy, needy and sticker. also, for 8-ball, the cpus just get any assists, with no rhyme or reason
 - **2026-11-25 (while the guest-lag job runs)**: also, you should not be able to jump again after being hit offstage, nor use your recovery.
 - **2026-11-25 (box: how should Sticker get KOs? stronger Backstab / faster smash / more damage)**: Stronger Backstab
+- **2026-11-25 (box: moves much stronger with the hold -- Tree 130% vs old 166%, Bot, Lifering, Woody, Naily -- keep or tone down)**: Keep as is
 
 ## Art, animation & polish
 
@@ -1263,6 +1265,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (box: push everything merged now -- shorter What's new, room lines, hit-offstage change, weak kits round 2, Needy/Jammy fix, smash follow-up -- or wait for the lag fix)**: Push now
 - **2026-11-25 (Marshmallow spring pad job running)**: push marshmallow when its done
 - **2026-11-25 (box: push the 8-Ball contest fixes now or wait)**: Push now
+- **2026-11-25 (box: push the multi-hit hold and Sticker's Backstab now or wait)**: Push now
 
 ## Status questions & check-ins
 
