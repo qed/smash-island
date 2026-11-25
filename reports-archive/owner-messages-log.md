@@ -256,6 +256,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-20 (same message)**: also, go to next weakest event
 - **2026-11-21**: go to the next weakest event
 - **2026-11-25 (8-Ball's contest)**: do a second round for cloudy, spongy, needy and sticker. also, for 8-ball, the cpus just get any assists, with no rhyme or reason
+- **2026-11-25 (box: 8-Ball contest assists still take 63% of KOs, goal 30-45% -- CPUs fight more / weaker assists / fine)**: It's fine at 63%
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
@@ -697,6 +698,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (while the push went live)**: ungenericify the grabs
 - **2026-11-25 (after the push; Marshmallow is the owner's secondary)**: oh yeah, on marshmallow's smash, the springpad should bounce once on the floor, and you should be able to spring on it for height.
 - **2026-11-25 (the lead asked: should foes and teammates spring on Marshmallow's leftover pad too?)**: yeah, allies should spring on it.
+- **2026-11-25 (box: Marshmallow's leftover pad springs you when you walk onto it -- keep, or jump only)**: Jump only
 
 ## Bosses, Boss Rush & secrets
 
@@ -1260,6 +1262,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (the UI job reported that Update 13's What's new is 28 lines and ~920 words; the lead asked whether to shorten it)**: yeah shorten the whats new
 - **2026-11-25 (box: push everything merged now -- shorter What's new, room lines, hit-offstage change, weak kits round 2, Needy/Jammy fix, smash follow-up -- or wait for the lag fix)**: Push now
 - **2026-11-25 (Marshmallow spring pad job running)**: push marshmallow when its done
+- **2026-11-25 (box: push the 8-Ball contest fixes now or wait)**: Push now
 
 ## Status questions & check-ins
 
