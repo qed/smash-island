@@ -1,8 +1,16 @@
+# SUPERSEDED (2026-11-25): do not run this script; it is kept as the record of how the first event art was made (2026-11-17).
+# The event skins are now the show's own looks from the BFDI wiki (docs/LEDGER.md 2026-11-19; scripts/sprite-manifest-skins.json).
+# This script re-makes bottle.png and then STOPS before its old recolour skin (that part never runs).
+# So nothing current is rewritten by accident, it now refuses to write anything unless it is given --force-old-art.
 # Bottle's art (BFDIE event fighter): her render, scaled to the game's 200 px sprite height, and her event skin (a recolour of that render).
 #   bottle.png                   her official render (the owner approved the download, 2026-11-17; 600x871, transparent), trimmed and scaled to 200 tall
 #   skins/green-glass-bottle.png  the same picture with the glass tinted bottle green (hue and lightness only), and its 56 px thumbnail in thumbs/
 # Run: <a Python with PIL> -I scripts/make-event-bottle-art.py <downloaded bottle.png> artifacts/V1/assets/sprites
 import sys, os, colorsys
+if '--force-old-art' not in sys.argv:
+    sys.stderr.write('REFUSED: this script is superseded (see the note at the top) and would overwrite the current event art. Nothing was written. Pass --force-old-art to run it anyway.' + chr(10))
+    sys.exit(2)
+sys.argv = [a for a in sys.argv if a != '--force-old-art']
 from PIL import Image
 
 SRC, SPR = sys.argv[1], sys.argv[2]
