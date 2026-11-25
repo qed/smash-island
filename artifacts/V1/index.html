@@ -15907,7 +15907,12 @@ function ctfAiFollow(f, ai, nav, inp, now){
   }
   if(ai.et > (ai.etMax || 260) + (e.kind === 'walk' ? Math.abs(e.xb - f.x)/5 : 0) || (ai.phase === 'air' && ai.jt > 150)){ ctfAiStat('edgeTimeout'); ctfAiStat('to_' + e.kind + '_' + ai.phase); (CTF.stat.toList = CTF.stat.toList || []).length < 14 && CTF.stat.toList.push(e.kind + ' ' + e.from + '>' + e.to + ' xa=' + Math.round(e.xa) + ' dir=' + e.dir + ' T=' + e.T + ' run=' + Math.round(e.run||0) + ' fx=' + Math.round(f.x) + ' fy=' + Math.round(f.y) + ' vx=' + Math.round(f.vx*10)/10 + ' ph=' + ai.phase + ' fi=' + f.idx); ctfAiBanEdge(ai, e, now, f); ai.edge = null; ai.path = null; return 'lost'; }
   if(e.kind === 'walk'){
-    ctfAiWalk(f, inp, e.xb, 4);
+    // (CTF fix 2026-11-25, the Forest HIDE FREEZE: a walk whose end lies where the floor it starts from still covers it (Forest's stair plates: node 243, a 52 px step over the end of the floor below)
+    // was walked to its end and then stood: on the step, not on the floor it was for, keys let go. Two CPUs with their flags stood so for 25 s, the hiding's unstick picking a new place every 2 s
+    // and every new path starting with the same walk. At the end and still on the start floor, it walks on the same way, a body's width and more, onto the floor it is for.)
+    let wx = e.xb; const wto = nav.nodes[e.to];
+    if(f.onground && cn && cn.id === e.from && wto && (Math.abs(f.x - e.xb) < 8 || ai.wpush === e)){ ai.wpush = e; const s = Math.sign(e.xb - e.xa) || Math.sign((wto.x0 + wto.x1)/2 - f.x) || 1; wx = Math.min(Math.max(e.xb + s*(2*f.r + 40), wto.x0 + 6), wto.x1 - 6); }
+    ctfAiWalk(f, inp, wx, 4);
     if(f.onground && cn && cn.id === e.to){ ai.edge = null; ai.pi++; }
     return false;
   }
@@ -16570,13 +16575,15 @@ function ctfNavMoverOnly(nav){
   nav.nodes.forEach(n=>{ if(!plain[n.id]) out[n.id] = 1; });
   return nav.moverOnly = out;
 }
+// (CTF fix 2026-11-25, the Forest HIDE FREEZE: a CPU whose flag is down waits for its side to build as one (35-42 s in) and for the graph with the pieces in it; it stood frozen by its flag all that time,
+// up to 31 s in the Forest 8-player matches. The pieces go where the plan puts them whoever stands where, so it walks about as a CPU that is done does (ctfAiHideIdle) and says done as soon as it may.)
 function ctfAiHide(f, ai, L, nav, inp, now){
   const fl = ctfMyFlag(L, f);
   if(ai.hf !== fl.id){ ai.hf = fl.id; ai.hide = null; ai.doneT = 0; ai.hideTry = 0; }   // (the next flag: a new place)
   if(L.done[f.idx]) return ctfAiHideIdle(f, ai, L, nav, inp, now);   // ready: but a human may take minutes yet, so never stand frozen
   if(fl.st !== 1 && now % 30 === f.idx % 30){ if(ai.hx != null && Math.abs(f.x - ai.hx) + Math.abs(f.y - ai.hy) < 40) ai.hn = (ai.hn || 0) + 1; else ai.hn = 0; ai.hx = f.x; ai.hy = f.y; if(ai.hn >= 4){ ai.hn = 0; ctfAiStat('unstickHide'); ai.hide = null; ai.hideTry = (ai.hideTry || 0) + 1; ctfAiResetMove(ai); ai.fight = 0; } }
   if(fl.st === 1){   // put down: done a moment later
-    ai.doneT = (ai.doneT || 0) + 1; if(ai.doneT === 2 && fl === L.flags[f.idx]){ try{ ctfAiBuild(f, L); }catch(e){ console.error('ctfAiBuild', e); } } if(ai.doneT >= 12 && (!L.plans || CTF.oldBuild || L.plans[f.team].built) && !ctfPrebuildWait(L)) inp.special = true; return inp;   // (done once the side has built, if it builds as one)
+    ai.doneT = (ai.doneT || 0) + 1; if(ai.doneT === 2 && fl === L.flags[f.idx]){ try{ ctfAiBuild(f, L); }catch(e){ console.error('ctfAiBuild', e); } } if(ai.doneT >= 12 && (!L.plans || CTF.oldBuild || L.plans[f.team].built) && !ctfPrebuildWait(L)) inp.special = true; else if(ai.doneT >= 12 && fl === L.flags[f.idx] && nav && nav.ready) return ctfAiHideIdle(f, ai, L, nav, inp, now); return inp;   // (done once the side has built, if it builds as one)
   }
   if(!ai.hide){
     const M = L.map, pts = ctfNavSweep(nav, f.team);
@@ -16698,12 +16705,22 @@ function ctfPlanWatch(L){
   }
 }
 // the situation of a side: the numbers up and down, the score and the time, the jails, how the map is shaped
+// IS HOLDING THE LEAD WORTH IT? (CTF fix 2026-11-25, Mines 8 players: a side 1-0 or 3-2 up after two minutes put three of its four CPUs on defence for the rest of the match, still needing
+// 3-4 more flags, and 6 of 10 matches ran ten minutes without a winner.) A match ends only on flags, so a side that turtles does not run out a clock: it only stops itself winning. With a clock
+// (a Flag Cup fixture with a cap) late is late, as before; with none, the CPUs hold their lead only when the other side is one flag from winning.
+function ctfPlanEndgame(L, sit){
+  if(!sit.late) return false;
+  if(CTF.cupFix && CTF.cupFix.cap > 0) return true;
+  return sit.needF - sit.scoreFoe <= 1;
+}
 function ctfPlanSituation(L, t){
   const mine = fighters.filter(f=>f.team === t), foes = fighters.filter(f=>f.team !== t);
   const up = a=>a.filter(f=>!f.dead && f._jail == null).length, jailed = a=>a.filter(f=>f._jail != null).length;
   const need = ctfNeed(L, t), needF = ctfNeed(L, 1 - t), M = L.map;
   const sit = { upMine:up(mine), upFoe:up(foes), jailMine:jailed(mine), jailFoe:jailed(foes), score:L.score[t], scoreFoe:L.score[1 - t], need, needF, carry:mine.some(f=>f._cf >= 0), foeCarry:foes.some(f=>f._cf >= 0),
-    t:L.playT || 0, lead:L.score[t] - L.score[1 - t], narrow:M._planNarrow == null ? 0.5 : M._planNarrow };
+    t:L.playT || 0, lead:(needF - L.score[1 - t]) - (need - L.score[t]), narrow:M._planNarrow == null ? 0.5 : M._planNarrow };
+  // (CTF fix 2026-11-25: the lead is in flags still to take, not the score: on an uneven hiding (Mines 8 players, 5 flags against 4) a side 1-0 up that needs 5 is level with one that needs 4,
+  // and the side 4-3 up of 5 and 4 is one flag from winning, as the other is; counted by the score, it thought itself ahead and turtled while still needing as many flags.)
   sit.ahead = sit.lead > 0 || (sit.lead === 0 && sit.upMine > sit.upFoe), sit.behind = sit.lead < 0 || sit.upMine < sit.upFoe - 1;
   sit.late = sit.t > 7200;
   return sit;
@@ -17000,12 +17017,13 @@ function ctfPlanDeal(L, pl, nav){
   pl.sit = sit; pl.narrow = narrow;
   // ---- who defends and who attacks: the base share of the skill, moved by the score and the numbers (a side ahead late turtles, a side behind sends more) ----
   let defShare = [0.4, 0.28, 0.22][sk];
-  if(sit.ahead) defShare += 0.12 + (sit.late ? 0.18 : 0);
+  const endG = ctfPlanEndgame(L, sit);
+  if(sit.ahead) defShare += 0.12 + (endG ? 0.18 : 0);
   if(sit.behind) defShare -= 0.1;
   const dry = L.playT - (L.lastCapT || 0), dryOn = dry >= CTF_DRY_START;
   if(dryOn) defShare -= Math.min(0.6, 0.2 + 0.2*Math.floor((dry - CTF_DRY_START)/CTF_DRY_STEP));
   if(sit.upFoe > sit.upMine + 1) defShare += 0.12;
-  if(sit.late && sit.lead >= 1 && !dryOn && ctfPlanOk(pl, 'lateturtle')) defShare = Math.max(defShare, 0.85);   // late turtle: ahead late, everyone defends
+  if((ctfPlanOn(pl, 'lateturtle') ? sit.late : endG) && sit.lead >= 1 && !dryOn && ctfPlanOk(pl, 'lateturtle')) defShare = Math.max(defShare, 0.85);   // late turtle: ahead late, everyone defends (ticked in a plan: after 2 minutes, as it says; the CPUs' own judgement: ctfPlanEndgame)
   if(ctfPlanOn(pl, 'turtle')) defShare = 0.9;
   if(ctfPlanOn(pl, 'allout')) defShare = 0.05;
   if(CTF_PRESETS[pl.preset] && CTF_PRESETS[pl.preset].defShare != null) defShare = CTF_PRESETS[pl.preset].defShare;
