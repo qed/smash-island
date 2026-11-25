@@ -883,6 +883,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-24 (box: speed-ups without more processes; picked)**: Stop early when clear (Recommended), 2 stocks, not 3
 - **2026-11-24 (after the OC real-damage table and the stat ranking, where Jack was 8th: strong smash, fast moves, light)**: yeah, and then there is jack, who is basically pichu
 - **2026-11-24 (after the lead described Jack as a glass cannon)**: it is cuz he does self-damage
+- **2026-11-25 (after weak-kits-proposals.md: 10 weakest fighters, 2-3 ranked fixes each, some CPU-only)**: build all the weak kit fixes.
 
 ## Art, animation & polish
 
