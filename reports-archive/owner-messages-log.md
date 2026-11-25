@@ -1242,6 +1242,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-24 (the lead asked whether to wait for Gelatin's spikeball headphones before pushing Gelatin and Cherries)**: push it without the headphones, do those after.
 - **2026-11-24 (Gelatin's Spikeball Headphones: keep the better recovery, 202 px vs Fork Toss's 151, or shorten it?)**: keep it, push the headphones
 - **2026-11-25 (after the 14 short-smash fixes and the Sparring Figures merged into the update)**: push the short smashes and figures. and it doesnt need to be in-charracter
+- **2026-11-25 (after the 118 neutral/up smash remakes and the 70 down smash changes were shown)**: merge both and push. push everything that isnt live yet
 
 ## Status questions & check-ins
 
