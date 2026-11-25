@@ -1246,6 +1246,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (after the 14 short-smash fixes and the Sparring Figures merged into the update)**: push the short smashes and figures. and it doesnt need to be in-charracter
 - **2026-11-25 (after the 118 neutral/up smash remakes and the 70 down smash changes were shown)**: merge both and push. push everything that isnt live yet
 - **2026-11-25 (the lead offered to push the Capture the Flag fix alone)**: push it
+- **2026-11-25 (the UI job reported that Update 13's What's new is 28 lines and ~920 words; the lead asked whether to shorten it)**: yeah shorten the whats new
 
 ## Status questions & check-ins
 
