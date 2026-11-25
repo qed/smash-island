@@ -696,6 +696,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (box: Beach Ball, Bomb, Cake first hit pushes the foe out before the big hit; Tree's root can't be launched -- fix all four or leave them)**: do 1, and fix it for all of them. during multihit attacks, you should be tethered to them until the launch.
 - **2026-11-25 (while the push went live)**: ungenericify the grabs
 - **2026-11-25 (after the push; Marshmallow is the owner's secondary)**: oh yeah, on marshmallow's smash, the springpad should bounce once on the floor, and you should be able to spring on it for height.
+- **2026-11-25 (the lead asked: should foes and teammates spring on Marshmallow's leftover pad too?)**: yeah, allies should spring on it.
 
 ## Bosses, Boss Rush & secrets
 
@@ -994,6 +995,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (frame data: fold the 'Same as X/C, aimed' rows into the X and C rows? count frames from the key press instead of the move's start?)**: yeah fold them in, count from the press
 - **2026-11-25 (after the lead showed the Sparring Figures panel inside Training)**: turn off music for it.
 - **2026-11-25 (live = Update 13 + CTF fix, ad5c3e8a)**: the guests have lag. lots of lag
+- **2026-11-25 (the lead asked what the guest lag looks like: own fighter late, others snapping, or low frame rate; normal match or event?)**: how long until the guest lag fix is done? nothing happened for me, for your questions. it was perfectly smoth.
 
 ## Bugs & fixes
 
@@ -1257,6 +1259,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (the lead offered to push the Capture the Flag fix alone)**: push it
 - **2026-11-25 (the UI job reported that Update 13's What's new is 28 lines and ~920 words; the lead asked whether to shorten it)**: yeah shorten the whats new
 - **2026-11-25 (box: push everything merged now -- shorter What's new, room lines, hit-offstage change, weak kits round 2, Needy/Jammy fix, smash follow-up -- or wait for the lag fix)**: Push now
+- **2026-11-25 (Marshmallow spring pad job running)**: push marshmallow when its done
 
 ## Status questions & check-ins
 
