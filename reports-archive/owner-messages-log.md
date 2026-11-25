@@ -742,6 +742,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-21 (on DODGEBALL! phase 3; the lead had read 'yes' as soften)**: no, my yes was that its okay for phase 3. its only what? 1 dodgeball?
 - **2026-11-23 (part: Zero; the owner later said "leave them. ok. sure." answered the lead's Limit questions, not Zero ones)**: less literal tells for zero. the nkg attack should have actual zero sprites. so should all the other attacks. and the zero trail for the nkg attack should go into the lunge on the floor. and the shield should have a bigger window to attack in. leave them. ok. sure. also, you should gain 2 stocks, but start at 2.
 - **2026-11-23 (more on Zero's NOUGHTS!, the nkg attack; a Zero polish job is running)**: and he should turn towards you, and he should be able to uppercut if necessary. you should always be moving during this attack.
+- **2026-11-25 (the lead's Boss Rush dodge job included 'TLC phase 3 is fiddly near the walls')**: dude, if you are playing well, you wont be near the walls. the goal is that players figure out that(like in the watcher knights fight) that it is bad to stay near the walls. you dont need to nerf that.
 
 ## Balance & CPUs
 
