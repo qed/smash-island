@@ -1576,6 +1576,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-22 (next)**: also, how is the tracking data?
 - **2026-11-22 (same message)**: and the queue. oh, and the scores
 - **2026-11-24 (after the lead offered a job proposing kit changes for the 10 weakest fighters)**: keep going
+- **2026-11-25 (the lead asked the owner to open the browser pane for training a Figure)**: it be opened
+- **2026-11-25 (Sparring Figures panel)**: what does the cpu seat thing do?
 
 ## Working rules, budget & agents
 
