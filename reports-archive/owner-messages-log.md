@@ -351,6 +351,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (answers: Box rework, hop smash fix, legs hit areas)**: Box: Merge it; hop smash: Landing lag (Recommended); legs: Match the pictures
 - **2026-11-17 (playing the Candle challenge)**: candle has a cheese. neutral special is unavoidable in a BIG radius
 - **2026-11-17 (Candle Inner-Flame fix; offered wind-up tell / smaller reach / shield-dodge beats it / longer cooldown)**: Wind-up tell (Recommended), Smaller reach
+- **2026-11-25**: also, you know how marshmallow was in our early world cups, but was regarded as kinda "bad"? welll, i underestimated her(only stock i lost was a voluntary one). 5-0. Shes my secondary
 
 ## Teams maps, stages & levels
 
