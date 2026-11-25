@@ -79196,7 +79196,7 @@ const NSV_LIFE = { pad:34, burrow:36, cone:24, splat:38, halves:30, foot:40 };
 Object.assign(SMASH_PAT_ANIM, { pad:'slam', burrow:'slam', cone:'spit', splat:'cast', halves:'punch' });
 Object.assign(SMASH_KIND, { pad:'Pad', burrow:'Burrow', cone:'Cloud', splat:'Floor wave', halves:'Split' });
 Object.assign(SMASH_PATTERN_TEXT, {
-  pad:    'roots you while a parcel slides in along the floor and bursts into a spring pad just ahead ({r}) that fires whoever stands on it up and away',
+  pad:    'roots you while a parcel slides in and bursts into a spring pad ({r}) that fires foes up and away, then stays a few seconds to spring you and your teammates high',
   burrow: 'dives teeth-first into the floor; a crack races ahead and you burst up out of it ({r}), throwing up everyone standing there',
   cone:   'sneezes a short, wide cloud in front of you ({r}) and is thrown back by it',
   splat:  'swells up, then splats flat: a low wave runs out along the floor both ways ({r}); hop it',
@@ -79218,7 +79218,8 @@ function nsmStuckStep(f, A){
 }
 function nsvTick(f){
   const A = f._nsv, age = hazardT - A.t0;
-  if(f.dead || age > (NSV_LIFE[A.k] || 40)) { f._nsv = null; return; }
+  if(f.dead || age < 0 || age > (A.life || NSV_LIFE[A.k] || 40)) { f._nsv = null; return; }
+  if(A.k === 'pad' && A.st){ mpadStep(f, A, age); return; }   // Marshmallow's spring pad, left on the floor (MPAD)
   if(A.k === 'stuck') nsmStuckStep(f, A);
   if(A.k === 'dig'){ if(age > 12 && !f._windup && !f._lag && age > 24) f._nsv = null; return; }
   if(!A.on){ if(!f._windup) f._nsv = null; }                                   // lost in the wind-up (a hit)
@@ -79238,10 +79239,65 @@ SM_PAT.pad = function(f, s){
       hitArt(f, 'pad', cap, { color:s.color || f.color });
       smashSwing(f, cx, cy, h/2, s.dmg, s.kbx, null, s.effect, s.n, s.up, cap);
       for(let i = 0; i < 8; i++) puff(cx + (cosRand()*w - w/2), feetY(f) - 6, s.color || f.color, 4);
+      const P = f._nsv;   // THE PAD STAYS (MPAD): on solid floor it hops once and is left there; over a gap, in the air or in a wall it is gone as before
+      if(P && P.k === 'pad' && f.onground){ const px = Math.round(cx), top = mpadFloor(px, feetY(f)); if(top != null){ P.st = 1; P.px = px; P.py = Math.round(top); P.life = W + MPAD.life; P.fl = f._falls || 0; } }
     } finally { f._smSync = false; }
   }, s.color || f.color, null);
   if(f._windup) f._windup.smash = true;
 };
+// THE SPRING PAD STAYS (the owner, 2026-11-25: "the springpad should bounce once on the floor, and you should be able to spring on it for
+// height"; and "yeah, allies should spring on it"). On solid floor her neutral smash's pad hops once and then stays MPAD.life frames (one at a
+// time: her next smash replaces it; her KO or the match's end clears it). Walking or landing onto it throws Marshmallow or a teammate up at
+// MPAD.vy (a Capture the Flag spring pad's -24) and gives two jumps back. Foes are never sprung by it: the smash's own hit is the only one.
+// It rides f._nsv (px, py, life, sp = when it last sprang, n = how many times), so an online guest draws it from the host's picture.
+const MPAD = { life:210, ready:30, vy:-24, half:40, uses:6 };
+function mpadFloorAt(x, y){
+  const t = floorTopAt(x, y); if(t != null) return t;
+  for(const p of platRects()){ if(p.rot) continue; if(x > p.x && x < p.x + p.w && Math.abs(p.y - y) <= 8) return p.y; }   // (a thin platform holds it too)
+  return null;
+}
+// Solid floor under the whole pad (not over a gap or an edge) and no wall where it stands; none in the Moon Caves or the dig games.
+function mpadFloor(x, y){
+  if((MCAVE && MCAVE.on) || HG) return null;
+  const t = mpadFloorAt(x, y); if(t == null) return null;
+  if(mpadFloorAt(x - 24, t) == null || mpadFloorAt(x + 24, t) == null) return null;
+  for(const p of platRects()){ if(p.solid && !p.rot && x > p.x && x < p.x + p.w && t - 20 > p.y && t - 20 < p.y + p.h) return null; }
+  return t;
+}
+function mpadStep(f, A, age){
+  const u = age - A.W;
+  if((f._falls || 0) !== A.fl){ f._nsv = null; return; }   // she was KO'd: it goes with her
+  if(u >= 30 && !A.lp){ A.lp = 1; for(let i = 0; i < 5; i++) puff(A.px + (i - 2)*14, A.py - 3, '#e3dccb', 3); }   // the bounce lands
+  if(age % 6 === 0 && mpadFloor(A.px, A.py) == null){ for(let i = 0; i < 6; i++) puff(A.px + (i - 2.5)*12, A.py - 20, '#d9dde2', 4); f._nsv = null; return; }   // its floor went (a crumble, a hole): so does the pad
+  if(u < MPAD.ready || (A.n || 0) >= MPAD.uses) return;
+  for(const g of fighters){
+    if(g.dead || (g !== f && g.team !== f.team) || g._heldBy != null || g.swallowed || g._mpadT > hazardT) continue;   // her and her teammates only
+    const feet = feetY(g);
+    if(Math.abs(g.x - A.px) > MPAD.half || feet < A.py - 46 || feet > A.py + 6 || g.vy < -1) continue;
+    g.vy = MPAD.vy; g.onground = false; g.jumps = Math.max(g.jumps || 0, 2); g._mpadT = hazardT + 24;
+    A.sp = Math.round(hazardT - A.t0); A.n = (A.n || 0) + 1;
+    for(let i = 0; i < 6; i++) puff(A.px + (i - 2.5)*12, A.py - 40, '#d9dde2', 4);
+    if(g.you && typeof SFX !== 'undefined' && SFX.jump) SFX.jump();
+  }
+}
+// The CPU and the pad: an ally's (or its own) pad near it on the floor and a foe well above, now and then it walks onto it for the height;
+// falling with no jumps left and the pad below in reach, it steers onto it. Each pad springs MPAD.uses times at most, so it never loops.
+function aiPadSpring(f, inp, t){
+  if(f._mpadT > hazardT || f.dead) return;
+  let A = null;
+  for(const m of fighters){ const P = m._nsv; if(!m.dead && P && P.k === 'pad' && P.st && (m._falls || 0) === P.fl && (m === f || m.team === f.team) && hazardT - P.t0 - P.W >= MPAD.ready && (P.n || 0) < MPAD.uses && P.life - (hazardT - P.t0) > 30){ A = P; break; } }
+  if(!A) return;
+  const dx = A.px - f.x, ad = Math.abs(dx), feet = feetY(f);
+  let go = false;
+  if(f.onground){
+    if(Math.abs(feet - A.py) > 10 || ad > 320 || !t || t.dead || !(t.y < f.y - 150) || Math.abs(t.x - A.px) > 260) return;
+    const k = A.t0*8 + Math.floor((hazardT - A.t0)/45); if(f._mpadAsk !== k){ f._mpadAsk = k; f._mpadGo = simRand() < 0.5; }   // sometimes, not every time: asked again about every 3/4 s
+    go = f._mpadGo;
+  } else go = f.vy > 0 && !(f.jumps > 0) && A.py > feet + 20 && ad < 60 + (A.py - feet)*0.6;
+  if(!go) return;
+  inp.left = dx < -8; inp.right = dx > 8; inp.down = false;
+  if(f.onground){ inp.jump = false; inp.special = false; }   // it walks onto the pad: the pad is the jump
+}
 // BURROW (Bonesaw): a short dive, then he travels under the floor (his hurtbox stays on) and bursts up `dist` ahead: one hit where he comes up.
 SM_PAT.burrow = function(f, s){
   const W = s.wind || 10, d = f.face < 0 ? -1 : 1;
@@ -79371,7 +79427,7 @@ function nsvBodyDeform(f){
 }
 const NSV_DRAW = {
   pad(A, t){
-    const c = ctx, d = A.d, spot = A.x + d*A.at, fy = A.y;
+    const c = ctx, d = A.d, spot = A.st ? A.px : A.x + d*A.at, fy = A.st ? A.py : A.y;
     nsvInk(c, 3);
     if(t < A.W){
       const u = Math.min(1, t/A.W), e = u*u*(3 - 2*u), x0 = A.x - d*40, px = x0 + (spot - x0)*e;
@@ -79380,15 +79436,27 @@ const NSV_DRAW = {
       return;
     }
     if(!A.on) return;
-    const u = t - A.W, pop = u < 3 ? 30*u/3 : (u < 8 ? 30 : Math.max(0, 30*(1 - (u - 8)/6)));
-    c.globalAlpha = u > 12 ? Math.max(0, 1 - (u - 12)/6) : 1;
-    c.fillStyle = '#b98a54'; c.fillRect(spot - 13, fy - 26, 26, 26); c.strokeRect(spot - 13, fy - 26, 26, 26);   // the open box
-    c.save(); c.translate(spot + d*13, fy - 26); c.rotate(-d*Math.min(1, u/4)*2.4);                             // the lid flips open on its far hinge
+    const u = t - A.W;
+    let pop = u < 3 ? 30*u/3 : (u < 8 ? 30 : Math.max(0, 30*(1 - (u - 8)/6))), hop = 0, sq = 0;
+    if(!A.st) c.globalAlpha = u > 12 ? Math.max(0, 1 - (u - 12)/6) : 1;
+    else {   // THE PAD STAYS (MPAD): it bounces once on the floor, settles with its spring a little up, kicks when it springs someone, fades at the end
+      const R = 8;
+      if(u >= 14 && u < 30){ const k = (u - 14)/16; hop = 104*k*(1 - k); pop = R*Math.min(1, (u - 14)/4); }
+      else if(u >= 30){
+        const k = u - 30; sq = k < 6 ? Math.sin(Math.PI*k/6) : 0; pop = R*(1 - 0.7*sq);
+        const sp = A.sp != null ? t - A.sp : 99; if(sp >= 0 && sp < 12) pop = R + 26*(sp < 3 ? sp/3 : 1 - (sp - 3)/9);
+      }
+      const left = (A.life || 0) - t; c.globalAlpha = left < 20 ? Math.max(0, left/20) : 1;
+      if(hop > 1){ c.save(); c.fillStyle = 'rgba(0,0,0,0.2)'; c.beginPath(); c.ellipse(spot, fy - 1, Math.max(12, 30 - hop*0.4), 4, 0, 0, 7); c.fill(); c.restore(); }   // its shadow on the floor
+    }
+    const bw = 26*(1 + 0.2*sq), bh = 26*(1 - 0.25*sq), by = fy - hop, bt = by - bh;
+    c.fillStyle = '#b98a54'; c.fillRect(spot - bw/2, bt, bw, bh); c.strokeRect(spot - bw/2, bt, bw, bh);   // the open box
+    c.save(); c.translate(spot + d*bw/2, bt); c.rotate(-d*Math.min(1, u/4)*2.4);                             // the lid flips open on its far hinge
     c.fillStyle = '#c99a62'; c.fillRect(d > 0 ? -26 : 0, -5, 26, 7); c.strokeRect(d > 0 ? -26 : 0, -5, 26, 7); c.restore();
-    c.beginPath(); c.moveTo(spot - 14, fy - 26);                                                                // the zigzag spring
-    for(let i = 1; i <= 6; i++) c.lineTo(spot + (i % 2 ? 14 : -14), fy - 26 - pop*i/6);
+    c.beginPath(); c.moveTo(spot - 14, bt);                                                                     // the zigzag spring
+    for(let i = 1; i <= 6; i++) c.lineTo(spot + (i % 2 ? 14 : -14), bt - pop*i/6);
     c.lineWidth = 7; c.stroke(); c.strokeStyle = '#8a929c'; c.lineWidth = 3.5; c.stroke(); nsvInk(c, 3);
-    c.fillStyle = '#d9dde2'; c.fillRect(spot - 40, fy - 33 - pop, 80, 8); c.strokeRect(spot - 40, fy - 33 - pop, 80, 8);   // the plate
+    c.fillStyle = '#d9dde2'; c.fillRect(spot - 40, bt - 7 - pop, 80, 8); c.strokeRect(spot - 40, bt - 7 - pop, 80, 8);   // the plate
   },
   burrow(A, t, f){
     const c = ctx, fy = A.y, x1 = A.pop ? A.x1 : f.x, d = A.d;
@@ -79472,7 +79540,7 @@ NSV_DRAW.dig = function(A, t, f){
 function drawNsvProps(){
   for(const f of fighters){
     const A = f._nsv; if(!A || f.dead || typeof A.k !== 'string' || !NSV_DRAW[A.k]) continue;
-    const t = hazardT - A.t0; if(!(t >= 0) || t > (NSV_LIFE[A.k] || 40)) continue;
+    const t = hazardT - A.t0; if(!(t >= 0) || t > (A.life || NSV_LIFE[A.k] || 40)) continue;
     ctx.save();
     try { NSV_DRAW[A.k](A, t, f); } catch(e) {} finally { ctx.restore(); }
   }
@@ -135241,6 +135309,7 @@ function brainOut(f, inp, B, L, t, fight){
   if(sp==='hotdog' && awake) aiHotdogOut(f, inp, B, L, t, fight);   // HOT DOG: a failed move retried while it is a retry, That's Wrong. on a foe that just missed, Not Leaving against a wind-up, the slide 60-260 px ahead, the pole held for height (EVENT FIGHTERS: HOT DOG)
   if(sp==='bottle' && awake) aiBottleOut(f, inp, B, L, t, fight);   // BOTTLE: the call at 110-330 px, hiding at 160-430 px now and then, the smash 40-160 px ahead; Test Dummy by finEventWant (EVENT FIGHTERS: BOTTLE)
   if(sp==='sticker' && awake) aiStickerOut(f, inp, B, L, t, fight);   // STICKER: the lift for a shot coming, the whip back, the scrap, Backstab on a foe facing them, Peel Out at the tip, the flutter, the glide over a drop (EVENT FIGHTERS: STICKER)
+  if(awake) aiPadSpring(f, inp, t);   // MARSHMALLOW'S SPRING PAD (MPAD): her own or a teammate's, for height or to get the jumps back
   if(sp==='chair') aiBowTpHold(f, inp);   // Bow: a Teleport on its way keeps its press neutral, and its aim is held while she fades
   // STANCES only by the guess (brainGuess): any other press that would raise one is let go of
   if(now - B.ctrOk > 4 && brainStancePress(f, inp)){ inp.special = false; inp.smash = false; inp.down = false; }
@@ -153876,6 +153945,7 @@ function worldGeoKey(){
 // every check on these reads the same way (truthiness and `> 0` tests).
 const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering','flying','smashHold','burn',
   '_jHit', '_jKo',   // (MOVE JUICE: the last hit taken and the last KO, each one packed number -- the drawing plays them: juiceWatch)
+  '_mpadT',   // (MARSHMALLOW'S SPRING PAD: the frame its spring lets go of this fighter -- the guest holds to the host's place until then, as for a spring)
   '_nsv',   // (UNIQUE NEUTRAL SMASHES v2: the render-only prop of a neutral smash -- { k, t0, ...whole numbers }; a guest draws it from the host's clock)
   '_swingAnvil',   // (SKY-DROP SMASHES removed: Blocky's swung Anvil Smash -- { t0, wind }, the frame it began and its wind-up: a guest draws the anvil in his hands from it and the host's clock; cleared below once the swing is over)
   // ...and the rest of what the tints and STATUS_ICONS read. Only cloud, armor, counter and flying of the 34 icons reached a
@@ -154633,7 +154703,7 @@ function netPredOut(f){
   const held = !!(ctfHeld || FS.freeze > 0 || FS.slow > 0 || f.dead || f._fsLock || (f._mv && !mvC) || f._dashing > 0 || f._hyperT > 0 || f._gotcha || f._nail
     || (f._sm && f._sm.drive) || f.flying > 0 || f._tp || f._tpHang > 0 || stanceStill(f) || f.rooted > 0 || f._gb || f._hold || f._slam
     || f.frozen > 0 || f._fxLock > hazardT || f.ctrlRev > 0 || f.smashHold > 0 || f._windup || f._plunge || f._floatT > 0 || f.iceUntil > 0
-    || f._ynZip || f._heldBy != null || f._grabHold || f._attract || f.dropping > 0 || f._springT > 0 || f._raceSpringT > 0 || f.swallowed || f._rubHang > hazardT || f._fHold > hazardT || f._ffPh || f._bzPh || f._bbPh || f._hiPh || f._stPh || f._wallKickT > hazardT || f._spFly > hazardT || f._roll || f._bhSingT > hazardT || f._bhWT >= hazardT || f._boltHang > hazardT || f._flutT > hazardT || f._crumbT > hazardT || f._sdPh || RACE.active || (WND && f._stgRide) || netRecHeld(f));   // (RECOVERY TYPES, 2026-11-21: netRecHeld)   // (WINDY HEIGHTS TEAMS: a rider on a kite, the gondola, a vane or the Airship is the host's to place: the guest's own replay ran it against a kite 3 frames old and popped it 60 to 150 px)   // (Spongy: his finisher's and Final Smash's flight, Squash and Spring's squash)   // (Black Hole: SINGULARITY's drift, the WORMHOLE)   // (Eraser: RUB OUT's hang, STEAKHOUSE FLIP's wall kick; 8-Ball: STOP SHOT's roll; Cloudy: the bolt's air hold; Pie: Arm Flutter's flaps, her crumbs)
+    || f._ynZip || f._heldBy != null || f._grabHold || f._attract || f.dropping > 0 || f._springT > 0 || f._mpadT > hazardT || f._raceSpringT > 0 || f.swallowed || f._rubHang > hazardT || f._fHold > hazardT || f._ffPh || f._bzPh || f._bbPh || f._hiPh || f._stPh || f._wallKickT > hazardT || f._spFly > hazardT || f._roll || f._bhSingT > hazardT || f._bhWT >= hazardT || f._boltHang > hazardT || f._flutT > hazardT || f._crumbT > hazardT || f._sdPh || RACE.active || (WND && f._stgRide) || netRecHeld(f));   // (RECOVERY TYPES, 2026-11-21: netRecHeld)   // (WINDY HEIGHTS TEAMS: a rider on a kite, the gondola, a vane or the Airship is the host's to place: the guest's own replay ran it against a kite 3 frames old and popped it 60 to 150 px)   // (Spongy: his finisher's and Final Smash's flight, Squash and Spring's squash)   // (Black Hole: SINGULARITY's drift, the WORMHOLE)   // (Eraser: RUB OUT's hang, STEAKHOUSE FLIP's wall kick; 8-Ball: STOP SHOT's roll; Cloudy: the bolt's air hold; Pie: Arm Flutter's flaps, her crumbs)
   const busy = held || keysOff || timed;
   const o = { a, b:busy ? 1 : 0 };
   if(S.lastG > -1e8 && a - S.lastG < 4000 && Number.isInteger(S.clk)){ o.lg = a - S.lastG; o.ld = a - S.clk; }   // GUEST SNAPS: the last change of theirs it played (frames before a) and how far its play clock runs behind a (netPredKeys)
@@ -154685,7 +154755,7 @@ function netPredMvOut(f){
 function netPredCoastOk(f, ctfHeld){
   return !(ctfHeld || f.dead || FS.freeze > 0 || FS.slow > 0 || f._fsLock || f._gotcha || f._nail || (f._sm && f._sm.drive) || f.flying > 0 || f._tp || f._tpHang > 0
     || f._gb || f._hold || f._slam || f.frozen > 0 || f._plunge || f._floatT > 0 || f._ynZip || f._heldBy != null || f._grabHold || f._attract || f.dropping > 0
-    || f._springT > 0 || f._raceSpringT > 0 || f.swallowed || f._rubHang > hazardT || f._fHold > hazardT || f._ffPh || f._bzPh || f._bbPh || f._hiPh || f._stPh
+    || f._springT > 0 || f._mpadT > hazardT || f._raceSpringT > 0 || f.swallowed || f._rubHang > hazardT || f._fHold > hazardT || f._ffPh || f._bzPh || f._bbPh || f._hiPh || f._stPh
     || f._wallKickT > hazardT || f._spFly > hazardT || f._roll || f._bhSingT > hazardT || f._bhWT >= hazardT || f._boltHang > hazardT || f._flutT > hazardT
     || f._crumbT > hazardT || f._sdPh || f._sdHang > hazardT || f._stk || f._hyperT > 0 || RACE.active || (WND && f._stgRide) || hdNetBusy(f) || netRecHeld(f));
 }
