@@ -154741,6 +154741,9 @@ function netViewReset(){
 //   send  changes each message repeats    near  frames apart under which two changes keep their gap    wait  most steps one is held for it
 //   win   ms of arrivals the host's estimate of a guest's clock looks back over (netAck)
 const NET_IN = { hb:6, keep:90, max:24, send:12, near:12, wait:4, win:2000 };
+// GUEST LAG 2: the host's snapshot budget (NET.broadcastState): rate bytes a ms fill it (200 KB/s, the old ceiling), up to cap (or two of the last
+// snapshot, if bigger); wait: the longest a snapshot is held for it, in ms (the old gate's 66)
+const NET_SEND = { rate:200, cap:12000, wait:66 };
 // REJOIN (the owner said yes, 2026-11-19: a guest whose connection drops mid-match comes back to their own fighter). All in ms.
 //   first  the guest's first try after its socket closed     gap, gapMax  then a try every gap*n, at most gapMax apart     hang  a try still opening after this is given up
 //   max    how long the guest keeps trying before it goes back to the lobby (a Join of the same code still works after: the host remembers)
@@ -156103,7 +156106,18 @@ window.NET = {
     // say: loop() stops broadcasting after it, and when the rate gate dropped it every client froze on the frame before the
     // winning KO and never learned the match was over.
     const final = !running || paused;
-    if(!final && now - (this._lastBroadcast||0) < clamp((this._rateBytes||0)/200, 15, 66)) return;
+    // GUEST LAG 2 (the owner, 2026-11-25: "the guests have lag. lots of lag", while the host's own screen was "perfectly smooth"). This gate
+    // was a clock -- at least 15 ms since the last snapshot -- but loop() calls it only on a frame that ran a step, and frames are not exactly
+    // 16.7 ms apart: a frame a ms or two early (the host's own work, a 75/120/144 Hz screen) found 14.x ms and its snapshot was dropped, so the
+    // next one carried two steps and the guests waited 33 ms for it. Measured (fake sockets, Goiky, 4 fighters): 60 Hz with +-3 ms -> 45 pictures
+    // a second, 75 Hz -> 31, 144 Hz -> 36; the host's screen is not touched by it. Now a byte budget instead (NET_SEND): it fills at the same
+    // 200 bytes a ms ceiling and each snapshot (not the geometry) spends it, so small ones go with every step and a big one still waits
+    // (Four's 9.5 KB Screechy ring about 21 a second, as before), and nothing waits longer than the old 66 ms.
+    if(!final){
+      const B = this._sendB || (this._sendB = { at:now, v:0 }), rb = this._rateBytes || 0;
+      B.v = Math.min(Math.max(NET_SEND.cap, 2*rb), B.v + Math.max(0, now - B.at)*NET_SEND.rate); B.at = now;
+      if(B.v < rb && now - (this._lastBroadcast||0) < NET_SEND.wait) return;
+    }
     // A backed-up socket drops this snapshot rather than queue it behind the others. The old 200 KB allowance let ~9
     // queue up -- half a second of stale picture at full speed, 1.6 s on a 1 Mbit/s uplink -- and every client saw the
     // match that far in the past until it drained ("there is an input delay sometimes").
@@ -156117,7 +156131,7 @@ window.NET = {
     if(geo){ s.geo = worldGeo(); this._geoKey = key; this._geoAt = now; }
     const text = JSON.stringify({t:"state", s});
     this._lastBytes = text.length;
-    if(!s.geo) this._rateBytes = text.length;
+    if(!s.geo){ this._rateBytes = text.length; if(this._sendB) this._sendB.v -= text.length; }   // (GUEST LAG 2: the budget above)
     this.ws.send(text);
     if(cu) this._catchUp = false;
   },
