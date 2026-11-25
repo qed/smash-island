@@ -255,6 +255,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-20 (playing Cloudy's week)**: cloudy is good, but i dont feel the buffs as different buffs.
 - **2026-11-20 (same message)**: also, go to next weakest event
 - **2026-11-21**: go to the next weakest event
+- **2026-11-25 (8-Ball's contest)**: do a second round for cloudy, spongy, needy and sticker. also, for 8-ball, the cpus just get any assists, with no rhyme or reason
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
@@ -889,6 +890,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-24 (after the OC real-damage table and the stat ranking, where Jack was 8th: strong smash, fast moves, light)**: yeah, and then there is jack, who is basically pichu
 - **2026-11-24 (after the lead described Jack as a glass cannon)**: it is cuz he does self-damage
 - **2026-11-25 (after weak-kits-proposals.md: 10 weakest fighters, 2-3 ranked fixes each, some CPU-only)**: build all the weak kit fixes.
+- **2026-11-25**: do a second round for cloudy, spongy, needy and sticker. also, for 8-ball, the cpus just get any assists, with no rhyme or reason
 
 ## Art, animation & polish
 
