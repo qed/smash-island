@@ -2012,3 +2012,19 @@ Firey cut to Coiny alone); nothing was redrawn or recoloured. Fan-work use, as e
 | `canon/spongy/spongy-tipping.png` (264x272) | Spongy: BFDIA pose, tipping over (Oh dear) | https://static.wikia.nocookie.net/battlefordreamisland/images/1/13/Ohdear.png |
 | `canon/spongy/spongy-flat.png` (372x164) | Spongy: BFDIA pose, lying flat | https://static.wikia.nocookie.net/battlefordreamisland/images/9/9e/Jhewdbgeirw.png |
 | `canon/spongy/spongy-side.png` (166x184) | Spongy: asset: side | https://static.wikia.nocookie.net/battlefordreamisland/images/c/cf/Spongy_Body_Side.png |
+
+### Animation batch 4 (2026-11-27): show pictures for Eraser
+
+Pictures from BFDI, BFDIA, BFB, TPOT and IDFB (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area, or by height or width for a prop, a view asset or the mech suit; Coiny slapping
+Firey cut to Coiny alone); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/eraser/eraser-smug.png` (196x203) | Eraser: BFB pose, smug grin | https://static.wikia.nocookie.net/battlefordreamisland/images/f/ff/Erase.png |
+| `canon/eraser/eraser-smugs.png` (187x206) | Eraser: BFB pose, smug | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b7/Ububu.png |
+| `canon/eraser/eraser-thanks.png` (163x220) | Eraser: BFB pose: Thanks Ruby! (arm up) | https://static.wikia.nocookie.net/battlefordreamisland/images/4/47/Eraser_-_Thanks_Ruby%21.png |
+| `canon/eraser/eraser-cuberoll.png` (164x190) | Eraser: asset: Eraser cube roll | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a6/Eraser_cuberoll.png |
+| `canon/eraser/eraser-back.png` (132x190) | Eraser: asset: back | https://static.wikia.nocookie.net/battlefordreamisland/images/5/50/Eraserbackasset.png |
+| `canon/eraser/eraser-lying.png` (266x166) | Eraser: IDFB pose, lying | https://static.wikia.nocookie.net/battlefordreamisland/images/c/ce/Eraser_wiki_pose.png |
