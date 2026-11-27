@@ -1778,3 +1778,67 @@ use, as everything above. Marshmallow's scream is a season 1 picture (145x171 at
 | `canon/tea-kettle/tea-kettle-up.png` (234x201) | Tea Kettle: up special | File:Screenshot 2023-11-16 12.42.11 PM-removebg-preview.png | https://static.wikia.nocookie.net/inanimateinsanity/images/6/6a/Screenshot_2023-11-16_12.42.11_PM-removebg-preview.png/revision/latest?cb=20231116200846 |
 | `canon/tea-kettle/tea-kettle-hurt.png` (235x209) | Tea Kettle: hit | File:TK2.png | https://static.wikia.nocookie.net/inanimateinsanity/images/d/d3/TK2.png/revision/latest?cb=20241202155436 |
 | `canon/tea-kettle/tea-kettle-win.png` (236x208) | Tea Kettle: the result screen | File:TeaKettle2024Pose.png | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b2/TeaKettle2024Pose.png/revision/latest?cb=20250628202010 |
+
+### Animation batch 2 (2026-11-27): show pictures for Bubble, Ruby, Pencil, Puffball and Ice Cube
+
+Pictures from BFDI, BFDIA, BFB and TPOT (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (matched by body area; Ruby's turning frames, Puffball's talk colours and Pencil's bend frames
+share one scale each, so they read as one object); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/bubble/bubble-puff.png` (222x187) | Bubble: pose gallery (BFB poses) | https://static.wikia.nocookie.net/battlefordreamisland/images/1/1f/Bubble_-_about_to_admit.png |
+| `canon/bubble/bubble-yoy.png` (207x179) | Bubble: pose gallery (BFDIA-TPOT poses) | https://static.wikia.nocookie.net/battlefordreamisland/images/5/53/Bubble_Yoy.png |
+| `canon/bubble/bubble-scream.png` (216x257) | Bubble: pose gallery (BFB poses) | https://static.wikia.nocookie.net/battlefordreamisland/images/4/46/Bubble_-_NOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO%21.png |
+| `canon/bubble/bubble-cracked.png` (187x179) | Bubble: pose gallery (BFB poses), cracked before popping | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c5/8523E3C7-91FC-438A-B665-46A4E86A5776.png |
+| `canon/bubble/bubble-pushed.png` (254x262) | Bubble: BFB 18, pushed by the FSB | https://static.wikia.nocookie.net/battlefordreamisland/images/9/95/Bubble_pushed_by_the_FSB_%28BFB_18%29.png |
+| `canon/bubble/bubble-hop.png` (245x206) | Bubble: BFB 3 pose | https://static.wikia.nocookie.net/battlefordreamisland/images/2/27/Bubble_BFB3.png |
+| `canon/bubble/bubble-jump.png` (174x222) | Bubble: pose gallery (BFB poses) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a5/Jumpbouble.png |
+| `canon/bubble/bubble-fight.png` (205x214) | Bubble: pose gallery (BFB poses) | https://static.wikia.nocookie.net/battlefordreamisland/images/e/ed/Bubble_Fight.png |
+| `canon/bubble/bubble-cheer.png` (243x239) | Bubble: BFB 21 | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f1/Bubble_-_Yoylecake%21_%28BFB_21%29.png |
+| `canon/bubble/bubble-wobble.png` (181x173) | Bubble: asset: brief popped moment, BFB 1 | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7e/Bubble_Body_copy.png |
+| `canon/ruby/ruby-throw.png` (231x188) | Ruby: BFB pose, throwing a rock | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b2/Ruby_-_rock_throw.png |
+| `canon/ruby/ruby-shake.png` (204x148) | Ruby: gallery pose (BFDIA), shaking | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b3/Ruby_Shake.png |
+| `canon/ruby/ruby-t1.png` (204x118) | Ruby: asset: Ruby turning, frame 1 of 20 | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d7/Ruby_turning0008.png |
+| `canon/ruby/ruby-t4.png` (200x126) | Ruby: asset: Ruby turning, frame 4 | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7c/Ruby_turning0011.png |
+| `canon/ruby/ruby-t7.png` (189x129) | Ruby: asset: Ruby turning, frame 7 | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d9/Ruby_turning0017.png |
+| `canon/ruby/ruby-t10.png` (197x195) | Ruby: asset: Ruby turning, frame 10 (side on) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a6/Ruby_turning0020.png |
+| `canon/ruby/ruby-t14.png` (199x128) | Ruby: asset: Ruby turning, frame 14 | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3f/Ruby_turning0024.png |
+| `canon/ruby/ruby-t18.png` (202x120) | Ruby: asset: Ruby turning, frame 18 | https://static.wikia.nocookie.net/battlefordreamisland/images/5/5d/Ruby_turning0028.png |
+| `canon/ruby/ruby-glow1.png` (174x129) | Ruby: asset: Ruby glowing 1 | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e5/Ruby_glow_asset0046.png |
+| `canon/ruby/ruby-glow5.png` (174x129) | Ruby: asset: Ruby glowing 5 | https://static.wikia.nocookie.net/battlefordreamisland/images/5/51/Ruby_glow_asset0014.png |
+| `canon/ruby/ruby-shining.png` (171x182) | Ruby: BFB pose, shining | https://static.wikia.nocookie.net/battlefordreamisland/images/7/77/Rubt_shining.png |
+| `canon/ruby/ruby-shout.png` (239x153) | Ruby: gallery pose (BFDIA), mouth open | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a4/Rubyopenmouth.png |
+| `canon/ruby/ruby-zoom.png` (264x177) | Ruby: gallery pose (BFDIA), lying with speed lines | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0a/Rubywowowow.png |
+| `canon/pencil/pencil-point.png` (61x170) | Pencil: BFDIA pose, pointing | https://static.wikia.nocookie.net/battlefordreamisland/images/9/98/Pencepointing.png |
+| `canon/pencil/pencil-pointt.png` (92x177) | Pencil: TPOT pose, pointing | https://static.wikia.nocookie.net/battlefordreamisland/images/b/ba/Pencil_pointing.png |
+| `canon/pencil/pencil-yay.png` (65x174) | Pencil: TPOT pose, arms up | https://static.wikia.nocookie.net/battlefordreamisland/images/e/ea/Pencil_yay.png |
+| `canon/pencil/pencil-run.png` (58x167) | Pencil: BFDIA pose, running | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b9/Pencerun.png |
+| `canon/pencil/pencil-runh.png` (79x172) | Pencil: TPOT 13 pose | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a9/Pencil_Running_HAPPY_HAPPY_HAPPY_%28TPOT_13%29.png |
+| `canon/pencil/pencil-onvan.png` (69x173) | Pencil: TPOT pose, on a van | https://static.wikia.nocookie.net/battlefordreamisland/images/5/50/PencilonaVan.png |
+| `canon/pencil/pencil-burning.png` (74x202) | Pencil: gallery pose, Pencil on fire | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fd/Pencil_burning0001.png |
+| `canon/pencil/pencil-scribble.png` (100x173) | Pencil: TPOT intro pose | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3d/Pencil_intro.png |
+| `canon/pencil/pencil-bend1.png` (72x145) | Pencil: asset: Pencil sucked (bend) 1 | https://static.wikia.nocookie.net/battlefordreamisland/images/5/5f/Pencil_Sucked_1.png |
+| `canon/pencil/pencil-bend3.png` (139x137) | Pencil: asset: Pencil sucked (bend) 3 | https://static.wikia.nocookie.net/battlefordreamisland/images/0/01/Pencil_Sucked_3.png |
+| `canon/pencil/pencil-thrown.png` (170x68) | Pencil: BFDIA pose, thrown | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3c/Pencilthrown.png |
+| `canon/puffball/puffball-att1.png` (193x195) | Puffball: BFB pose, straining (attempt 1) | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3f/Puffball_-_Attempt_1.png |
+| `canon/puffball/puffball-att2.png` (193x195) | Puffball: BFB pose, straining (attempt 2) | https://static.wikia.nocookie.net/battlefordreamisland/images/5/5d/Puffball_-_Attempt_2.png |
+| `canon/puffball/puffball-happy.png` (198x200) | Puffball: BFB pose, open smile | https://static.wikia.nocookie.net/battlefordreamisland/images/1/18/Puffy_a.png |
+| `canon/puffball/puffball-shove.png` (193x195) | Puffball: BFB pose, shoving | https://static.wikia.nocookie.net/battlefordreamisland/images/3/39/Puffball_-_Shove_d.png |
+| `canon/puffball/puffball-letgo.png` (194x196) | Puffball: BFB pose, shouting LET GO | https://static.wikia.nocookie.net/battlefordreamisland/images/5/54/Puffball_-_LET_GO%2C_LET_GO.png |
+| `canon/puffball/puffball-chatter.png` (193x198) | Puffball: BFB pose | https://static.wikia.nocookie.net/battlefordreamisland/images/5/5d/Puffball_-_Chatter.png |
+| `canon/puffball/puffball-c1.png` (190x184) | Puffball: asset: Puffball talk colour cycle, frame 1 | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a0/Puffball_Talk0001.png |
+| `canon/puffball/puffball-c5.png` (212x184) | Puffball: asset: talk colour cycle, frame 5 | https://static.wikia.nocookie.net/battlefordreamisland/images/7/71/Puffball_Talk0005.png |
+| `canon/puffball/puffball-c9.png` (236x201) | Puffball: asset: talk colour cycle, frame 9 | https://static.wikia.nocookie.net/battlefordreamisland/images/2/26/Puffball_Talk0010.png |
+| `canon/puffball/puffball-c13.png` (182x195) | Puffball: asset: talk colour cycle, frame 13 | https://static.wikia.nocookie.net/battlefordreamisland/images/f/ff/Puffball_Talk0014.png |
+| `canon/puffball/puffball-c17.png` (194x197) | Puffball: asset: talk colour cycle, frame 17 | https://static.wikia.nocookie.net/battlefordreamisland/images/4/46/Puffball_Talk0018.png |
+| `canon/puffball/puffball-barf.png` (193x195) | Puffball: asset: body shape for barfing | https://static.wikia.nocookie.net/battlefordreamisland/images/4/41/Puffball_Body_copy_barf.png |
+| `canon/ice-cube/ice-cube-mad.png` (186x219) | Ice Cube: BFB pose, mad | https://static.wikia.nocookie.net/battlefordreamisland/images/b/bb/Icy_mad.png |
+| `canon/ice-cube/ice-cube-huff.png` (233x203) | Ice Cube: BFB pose (breath puff) | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0f/Ice_Cube_went_oof.png |
+| `canon/ice-cube/ice-cube-shout.png` (180x217) | Ice Cube: BFB pose, angry shout | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2d/Ice_Cube_-_I%27m_going_to_switch_teams%21.png |
+| `canon/ice-cube/ice-cube-grr.png` (206x288) | Ice Cube: BFB pose, arms up angry | https://static.wikia.nocookie.net/battlefordreamisland/images/7/70/Icy_grrrrrr.png |
+| `canon/ice-cube/ice-cube-tiltyou.png` (200x226) | Ice Cube: BFB pose, tilted | https://static.wikia.nocookie.net/battlefordreamisland/images/a/ae/Icyyou.png |
+| `canon/ice-cube/ice-cube-rev1.png` (176x194) | Ice Cube: BFDI pose: I want revenge! | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7c/Ice-1.png |
+| `canon/ice-cube/ice-cube-rev2.png` (184x207) | Ice Cube: BFDIA pose: REVENGE! | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b6/REVENGE_%21%21%21%21.png |
+| `canon/ice-cube/ice-cube-scared.png` (228x266) | Ice Cube: BFB pose, scared, tilted | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e9/Iceei.png |
