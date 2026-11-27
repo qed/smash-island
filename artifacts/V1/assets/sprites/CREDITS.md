@@ -554,7 +554,7 @@ How a source became a picture (the `method` of its row), as in batch 1, plus:
 |---|---|---|---|
 | `needle-prick.png` (141x194) | her attack (the three pricks) | File:Pre-NeedySlapTpot8.png; cut-out (wiki pose), her stretched arm shortened, the hand moved in | https://battlefordreamisland.fandom.com/wiki/File:Pre-NeedySlapTpot8.png |
 | `needle-stance.png` (56x200) | The Reflex (both), while it lasts | File:Needle mad pointing.png; cut-out (wiki pose) | https://battlefordreamisland.fandom.com/wiki/File:Needle_mad_pointing.png |
-| `needle-mad.png` (40x200) | Riposte Stance and its hold | File:Needle mad.png; cut-out (wiki pose) | https://battlefordreamisland.fandom.com/wiki/File:Needle_mad.png |
+| `needle-mad.png` (40x200) | Triple Thrust and its charge (was the Riposte Stance until 2026-11-27) | File:Needle mad.png; cut-out (wiki pose) | https://battlefordreamisland.fandom.com/wiki/File:Needle_mad.png |
 | `needle-scared.png` (46x200) | hit | File:Scared Needle.png; cut-out (wiki pose) | https://battlefordreamisland.fandom.com/wiki/File:Scared_Needle.png |
 | `needle-proud.png` (54x200) | the result screen | File:Needle proud.png; cut-out (wiki pose) | https://battlefordreamisland.fandom.com/wiki/File:Needle_proud.png |
 
