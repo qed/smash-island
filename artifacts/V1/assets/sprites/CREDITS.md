@@ -1842,3 +1842,23 @@ share one scale each, so they read as one object); nothing was redrawn or recolo
 | `canon/ice-cube/ice-cube-rev1.png` (176x194) | Ice Cube: BFDI pose: I want revenge! | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7c/Ice-1.png |
 | `canon/ice-cube/ice-cube-rev2.png` (184x207) | Ice Cube: BFDIA pose: REVENGE! | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b6/REVENGE_%21%21%21%21.png |
 | `canon/ice-cube/ice-cube-scared.png` (228x266) | Ice Cube: BFB pose, scared, tilted | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e9/Iceei.png |
+
+### Animation batch 3 (2026-11-27): show pictures for Teardrop
+
+Pictures from BFDI, BFB, TPOT, BFDI Mini Again and BFDIE (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area; Rocky's 600-px assets share one scale; Black Hole's by width or his core, centred
+as his render is; a picture of two characters cut to this one); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/teardrop/teardrop-grab.png` (160x229) | Teardrop: BFB pose: about to grab Gelatin | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c0/Teardrop_-_about_to_grab_gelatin.png |
+| `canon/teardrop/teardrop-holder.png` (199x224) | Teardrop: BFB pose: holding Gelatin | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e3/Teardrop_-_the_Gelatin_holder.png |
+| `canon/teardrop/teardrop-kick.png` (227x210) | Teardrop: BFDI: Teardrop kicks Woody | https://static.wikia.nocookie.net/battlefordreamisland/images/1/19/Td_kicked_woody.png |
+| `canon/teardrop/teardrop-evap.png` (121x194) | Teardrop: BFB pose: Teardrop evaporates | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7c/TDEVAPORATES%21.png |
+| `canon/teardrop/teardrop-evaping.png` (123x184) | Teardrop: asset: Teardrop evaporating | https://static.wikia.nocookie.net/battlefordreamisland/images/a/ad/Teardrop_Evaporating.png |
+| `canon/teardrop/teardrop-fstare.png` (113x193) | Teardrop: BFB pose: front stare | https://static.wikia.nocookie.net/battlefordreamisland/images/7/76/Teardrop_-_front_stare_1.png |
+| `canon/teardrop/teardrop-stare.png` (106x195) | Teardrop: BFDI pose: Teardrop stare | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c2/Teardrop_stare.png |
+| `canon/teardrop/teardrop-scream.png` (170x185) | Teardrop: BFB pose: screams silently | https://static.wikia.nocookie.net/battlefordreamisland/images/6/67/Td_screams_silently.png |
+| `canon/teardrop/teardrop-cloud.png` (229x132) | Teardrop: asset: Teardrop as a rain cloud (TPOT 7) | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c7/RainCloudAsset.png |
+| `canon/teardrop/teardrop-erun.png` (109x215) | Teardrop: BFB pose: evil run | https://static.wikia.nocookie.net/battlefordreamisland/images/9/91/TD_evil_run.png |
