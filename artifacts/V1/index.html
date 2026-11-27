@@ -21135,6 +21135,7 @@ addEventListener('keydown',e=>{
   if(!e.repeat) KEY_LATCH[e.code]=true;
   try{ keyHintPress(e); }catch(x){}
   if(TUT.active && e.code==='Escape'){ TUT.active=false; TUT.done=true; running=false; tutorialRestore(); go('title'); return; }
+  if(e.code===KEYS.pause && running && figVsOn()){ e.preventDefault(); e.stopImmediatePropagation(); figVsLeave(); return; }   // FIGURE VS FIGURE: you only watch, so Esc leaves (to Training, what they learned saved)
   if(e.code===KEYS.pause && running && TESTMODE.active){ exitTest(); return; }   // "Esc to come back": the test screen, as promised
   if(e.code===KEYS.pause && running){ setPaused(!paused); }
   if(e.code==='KeyR' && (running||!document.getElementById('result').classList.contains('active')===false)) {}
@@ -111409,8 +111410,10 @@ function checkWin(){
       }
       return;
     }
-    awardMatchProgress(winTeam);   // profile + unlock delta, computed synchronously
-    recordMatch(winTeam);    // log the result for balance analysis
+    if(!figVsOn()){   // (FIGURE VS FIGURE: a bout you only watched is not your match -- no record, no quests, no unlocks)
+      awardMatchProgress(winTeam);   // profile + unlock delta, computed synchronously
+      recordMatch(winTeam);    // log the result for balance analysis
+    }
     try{ figMatchEnd(winTeam); }catch(e){ console.error('figMatchEnd', e); }   // SPARRING FIGURES: experience, the habits saved, the card
     if(EVENT_RUN && !EVENT_RUN.done){ try{ eventFinish(winTeam); }catch(e){ console.error('eventFinish', e); } }   // an event match pays the moment it ends
     if(DAILY_ACTIVE){ try{ shareArmDaily(winTeam); }catch(e){} try{ recordDaily(winTeam===0); }catch(e){} DAILY_ACTIVE=false; PENDING_DAILY=null; }
@@ -133596,25 +133599,27 @@ function brainEdges(f, inp, m){
 // THE COUNTERS go through the brain's own eyes and hands: the shield (brainShield's bubble), the punish, the edge-guard (brainGuard), the
 // spacing. After a match the result screen lists the top 3 habits and what it does about them (figCard).
 // Offline only: a Figure fills a CPU seat of Free-for-all and Teams (FIG_CPU, chosen on the Figures screen), or a Spar: a 1v1 on Goiky Field.
-const FIG_MAX = 4, FIG_KEY = 'bfsi:figures', FIG_LV_MAX = 50, FIG_A = 0.2, FIG_MIN = 4;
+const FIG_MAX = 4, FIG_KEY = 'bfsi:figures', FIG_LV_MAX = 50, FIG_A = 0.2, FIG_MIN = 4, FIG_VS_T = 300*60;   // (FIG_VS_T: Figure vs Figure's clock, figVsTimeUp)
 const FIG_KNOT = [1, 20, 38, 50], FIG_REACT = [20, 10, 10, 8], FIG_GAP = [12, 10, 8, 7];
-// Each habit: what the card says the player does, and what the Figure does about it ($: the move's name).
+// Each habit: what the card says the player does, and what the Figure does about it ($: the move's name); they/vs: the same about another Figure.
 const FIG_HAB = {
-  oosJ: { you:'You jump out of shield a lot', it:'it waits where you come down' },
-  oosA: { you:'You attack out of shield a lot', it:'it stays just out of reach of your shield, then punishes your swing' },
-  shd: { you:'You shield a lot', it:'it grabs your shield' },
-  recL: { you:'You recover low', it:'it guards the ledge and hits down at you' },
-  recH: { you:'You recover high', it:'it waits in from the ledge and hits up as you land' },
-  getA: { you:'You attack as you get back on the stage', it:'it shields at the ledge, then punishes' },
-  jin: { you:'You jump in at it a lot', it:'it hits up at you as you come in' },
-  run: { you:'You run in a lot', it:'it puts a hit where you run into it' },
-  landA: { you:'You land with an attack a lot', it:'it shields as you land, then punishes' },
-  spam: { you:'You use the same move over and over', it:'it waits it out, then comes in' },
-  fav: { you:'You use $ the most', it:'it shields it and punishes' },
+  oosJ: { you:'You jump out of shield a lot', it:'it waits where you come down', they:'jumps out of shield a lot', vs:'it waits where they come down' },
+  oosA: { you:'You attack out of shield a lot', it:'it stays just out of reach of your shield, then punishes your swing', they:'attacks out of shield a lot', vs:'it stays out of reach, then punishes the swing' },
+  shd: { you:'You shield a lot', it:'it grabs your shield', they:'shields a lot', vs:'it grabs the shield' },
+  recL: { you:'You recover low', it:'it guards the ledge and hits down at you', they:'recovers low', vs:'it guards the ledge and hits down' },
+  recH: { you:'You recover high', it:'it waits in from the ledge and hits up as you land', they:'recovers high', vs:'it waits in from the ledge and hits up as they land' },
+  getA: { you:'You attack as you get back on the stage', it:'it shields at the ledge, then punishes', they:'attacks while getting back on the stage', vs:'it shields at the ledge, then punishes' },
+  jin: { you:'You jump in at it a lot', it:'it hits up at you as you come in', they:'jumps in a lot', vs:'it hits up as they come in' },
+  run: { you:'You run in a lot', it:'it puts a hit where you run into it', they:'runs in a lot', vs:'it puts a hit where they run into it' },
+  landA: { you:'You land with an attack a lot', it:'it shields as you land, then punishes', they:'lands with an attack a lot', vs:'it shields the landing, then punishes' },
+  spam: { you:'You use the same move over and over', it:'it waits it out, then comes in', they:'uses the same move over and over', vs:'it waits it out, then comes in' },
+  fav: { you:'You use $ the most', it:'it shields it and punishes', they:'uses $ the most', vs:'it shields it and punishes' },
 };
 const FIG_MV = { a:'Attack', ua:'up + Attack', da:'down + Attack', A:'air Attack', s:'Special', ds:'down + Special', S:'air Special', us:'up + Special', v:'Smash' };
 
-// ---- SAVING: bfsi:figures = {v:1, list:[{id, n:name, c:fighter (or OC) name, oc, lv, xp, h:{habit:[rate, seen]}, mv:{move:share}, mn}]} ----
+// ---- SAVING: bfsi:figures = {v:1, list:[{id, n:name, c:fighter (or OC) name, oc, lv, xp, h:{habit:[rate, seen]}, mv:{move:share}, mn, o:{a Figure's id: {h, mv, mn}}}]} ----
+// (h, mv, mn: what it knows of the person; o: what it knows of each of the other Figures it has fought -- FIGURE VS FIGURE, kept apart so a bout
+// between two Figures never changes what it says about the person.)
 function figLoad(){
   if(FIG_LIST) return FIG_LIST;
   FIG_LIST = [];
@@ -133622,13 +133627,18 @@ function figLoad(){
   return FIG_LIST;
 }
 function figPersist(){ try{ localStorage.setItem(FIG_KEY, JSON.stringify({ v:1, list:FIG_LIST || [] })); }catch(e){} }
-function figClean(x){   // any saved thing -> a valid Figure, or null
-  if(!x || typeof x !== 'object' || typeof x.id !== 'string') return null;
+function figBookClean(x){   // what it knows of one foe (the person, or one other Figure) -> {h, mv, mn}
   const h = {}, mv = {};
   for(const k in FIG_HAB){ const v = x.h && x.h[k]; if(Array.isArray(v) && isFinite(v[0]) && isFinite(v[1])) h[k] = [clamp(+v[0], 0, 1), clamp(v[1] | 0, 0, 99)]; }
   if(x.mv && typeof x.mv === 'object') for(const k in FIG_MV){ const v = +x.mv[k]; if(v > 0.01) mv[k] = Math.min(1, v); }
+  return { h, mv, mn:clamp(x.mn | 0, 0, 999) };
+}
+function figClean(x){   // any saved thing -> a valid Figure, or null
+  if(!x || typeof x !== 'object' || typeof x.id !== 'string') return null;
+  const { h, mv, mn } = figBookClean(x), o = {};
+  if(x.o && typeof x.o === 'object') for(const k of Object.keys(x.o).slice(0, FIG_MAX)) if(k.length <= 16 && k !== x.id && x.o[k] && typeof x.o[k] === 'object') o[k] = figBookClean(x.o[k]);
   return { id:x.id.slice(0, 16), n:ocNameOk(x.n) ? x.n : 'Figure', c:typeof x.c === 'string' ? x.c.slice(0, 40) : 'Firey', oc:x.oc ? 1 : 0,
-    lv:clamp(x.lv | 0, 1, FIG_LV_MAX), xp:Math.max(0, x.xp | 0), h, mv, mn:clamp(x.mn | 0, 0, 999) };
+    lv:clamp(x.lv | 0, 1, FIG_LV_MAX), xp:Math.max(0, x.xp | 0), h, mv, mn, o };
 }
 function figFind(id){ return figLoad().find(x => x.id === id) || null; }
 function figNameTaken(name, skip){ const k = ocKeyForm(name); return figLoad().some(x => x.id !== skip && ocKeyForm(x.n) === k); }
@@ -133637,7 +133647,7 @@ function figNew(c, oc, name){   // -> { ok, msg }
   if(L.length >= FIG_MAX) return { ok:false, msg:'Four Figures is the most: delete one first' };
   const why = ocNameWhy(name); if(why) return { ok:false, msg:why };
   if(figNameTaken(name, '')) return { ok:false, msg:'That name is taken' };
-  L.push({ id:'f' + Date.now().toString(36) + Math.floor(Math.random()*1296).toString(36), n:ocNameClean(name), c, oc:oc ? 1 : 0, lv:1, xp:0, h:{}, mv:{}, mn:0 });
+  L.push({ id:'f' + Date.now().toString(36) + Math.floor(Math.random()*1296).toString(36), n:ocNameClean(name), c, oc:oc ? 1 : 0, lv:1, xp:0, h:{}, mv:{}, mn:0, o:{} });
   figPersist(); return { ok:true, msg:'Saved' };
 }
 function figRename(id, name){
@@ -133646,7 +133656,7 @@ function figRename(id, name){
   if(figNameTaken(name, id)) return { ok:false, msg:'That name is taken' };
   d.n = ocNameClean(name); figPersist(); return { ok:true, msg:'Renamed' };
 }
-function figDelete(id){ const L = figLoad(), i = L.findIndex(x => x.id === id); if(i < 0) return; L.splice(i, 1); FIG_CPU = FIG_CPU.filter(x => x !== id); figPersist(); }
+function figDelete(id){ const L = figLoad(), i = L.findIndex(x => x.id === id); if(i < 0) return; L.splice(i, 1); for(const x of L) if(x.o) delete x.o[id]; FIG_CPU = FIG_CPU.filter(x => x !== id); figPersist(); }
 
 // ---- LEVELS ----
 function figNeed(lv){ return 30 + 3*lv; }   // seconds of fighting from one level to the next: about 85 minutes from 1 to 50
@@ -133693,10 +133703,21 @@ function figStr(d, id){   // 0 (not a habit it knows) to 1 (a sure one)
   const h = d.h[id], base = id === 'shd' ? 0.3 : 0.45;   // (a shield up for 3 of every 10 of its close swings is already a lot: most players block far fewer)
   return (!h || h[1] < FIG_MIN) ? 0 : clamp((h[0] - base)/0.35, 0, 1);
 }
-function figK(f, id){ const F = f._fig; return F ? figStr(F.d, id)*(0.4 + 0.55*(F.lv - 1)/(FIG_LV_MAX - 1)) : 0; }   // the chance it uses the counter: more often the higher its level
+function figK(f, id){ const F = f._fig; return F ? figStr(F.m || F.d, id)*(0.4 + 0.55*(F.lv - 1)/(FIG_LV_MAX - 1)) : 0; }   // the chance it uses the counter: more often the higher its level
 function figTop(d, n){
   return Object.keys(FIG_HAB).map(id => ({ id, s:figStr(d, id) })).filter(x => x.s > 0).sort((a, b) => b.s - a.s).slice(0, n)
     .map(x => FIG_HAB[x.id].you.replace('$', FIG_MV[figFav(d)] || 'one move') + ' → ' + FIG_HAB[x.id].it + '.');
+}
+// FIGURE VS FIGURE (the owner, 2026-11-27: "cpu seat should train the sparring figure against a sparring figure"). Two or more Figures in a match
+// (two CPU seats, or a Figure vs Figure from the Figures panel) watch each other as they watch a person -- the same eyes, the same habits, the
+// same counters -- but each keeps what it knows of another Figure in its own notebook (d.o, by that Figure's id), never in the person's. Never
+// itself, never a teammate. figBook: the notebook a watcher writes; figAim: the one its counters read for the foe it is after (aiThink).
+const FIG_NOBOOK = Object.freeze({ h:Object.freeze({}), mv:Object.freeze({}), mn:0 });
+function figBook(g, h){ const d = g._fig.d; if(!h._fig) return d; const o = d.o || (d.o = {}), id = h._fig.d.id; return o[id] || (o[id] = { h:{}, mv:{}, mn:0 }); }
+function figAim(f, t){ const F = f._fig; F.m = (t && t._fig) ? ((F.d.o && F.d.o[t._fig.d.id]) || FIG_NOBOOK) : F.d; }
+function figTopVs(b, name){   // the card's lines about another Figure: "Leafy jumps in a lot -> it hits up as they come in."
+  return Object.keys(FIG_HAB).map(id => ({ id, s:figStr(b, id) })).filter(x => x.s > 0).sort((p, q) => q.s - p.s).slice(0, 3)
+    .map(x => name + ' ' + FIG_HAB[x.id].they.replace('$', FIG_MV[figFav(b)] || 'one move') + ' → ' + FIG_HAB[x.id].vs + '.');
 }
 function figUsed(f, id, key){ const F = f._fig, c = F.cnt; c[id] = (c[id] || 0) + 1; if(key){ const q = id + '.' + key; F.ck[q] = (F.ck[q] || 0) + 1; } figLanded(f, true); F.u = { id, k:key ? id + '.' + key : null, t:hazardT, d:f._dmgDealt || 0 }; }
 // Did the counter's hit land (any damage it dealt in the 45 frames after)? Kept for this match only (f._fig.hit), for the checks.
@@ -133705,6 +133726,7 @@ function figPicked(f, id){ const c = f._fig.pick; c[id] = (c[id] || 0) + 1; }
 
 // ---- THE EYES: what the person does, once a frame at the end of step (reads only) ----
 function figWatchStep(){
+  if(FIGM.spar && FIGM.spar.vs && FIGM.cap !== fighters && hazardT >= FIG_VS_T) figVsTimeUp();   // FIGURE VS FIGURE: its clock
   const figs = fighters.filter(f => f._fig && !f.dead); if(!figs.length) return;
   const now = hazardT;
   for(const g of figs){
@@ -133713,14 +133735,15 @@ function figWatchStep(){
     if(s){ const full = smashFullOf(g), dt = now - s.t; if((g._dmgDealt || 0) > s.d && dt >= full && dt <= full + 22){ F.smT = Math.round(F.smT ? (2*F.smT + dt)/3 : dt); F.smP = null; } else if(dt > full + 22) F.smP = null; }
   }
   for(const h of fighters){
-    if(h._fig || !(isHumanCtrl(h) || h._figWatch)) continue;
+    const eyes = h._fig ? figs.filter(g => g !== h && g.team !== h.team) : (isHumanCtrl(h) || h._figWatch) ? figs : null;   // (FIGURE VS FIGURE: a Figure is watched by the other side's Figures)
+    if(!eyes || !eyes.length) continue;
     const W = h._figW || (h._figW = { ring:new Array(32), zs:false, air:0, far:true, trip:null, shw:null, fsw:false, oos:null, lastMv:null, atkT:-1e9, airAtkT:-1e9, prev:0, spamK:null, spamT:-1e9, useK:null, useT:-1e9 });
     const swing = h._atkAnim > 0 || !!h._mv || !!h._windup || h.smashHold > 0;
     W.ring[now & 31] = { sh:!h.dead && h._zsOn > 0, mv:(!h.dead && swing) ? W.lastMv : null };
     if(h.dead){ W.trip = null; W.zs = false; W.oos = null; W.shw = null; W.air = 0; W.far = true; continue; }
-    let fg = figs[0], dist = Infinity;
-    for(const g of figs){ const q = Math.hypot(g.x - h.x, g.y - h.y); if(q < dist){ dist = q; fg = g; } }
-    const see = (id, x) => { for(const g of figs) figSeeH(g._fig.d, id, x); };
+    let fg = eyes[0], dist = Infinity;
+    for(const g of eyes){ const q = Math.hypot(g.x - h.x, g.y - h.y); if(q < dist){ dist = q; fg = g; } }
+    const see = (id, x) => { for(const g of eyes) figSeeH(figBook(g, h), id, x); };
     // OUT OF SHIELD: the bubble dropped (not broken, not hit): a jump out, a move out, or a plain let-go -- read 3 frames on
     const zs = h._zsOn > 0;
     if(W.zs && !zs && !(h._zsBrk > 0) && !(h.hitstun > 0) && dist < 260) W.oos = { t:now };
@@ -133752,7 +133775,7 @@ function figWatchStep(){
 // Its moves, from its keys (step, after every kind of control): one count a move it starts; a string of the same move (pressed again within 25
 // frames) is one use. The share of each move is an average over about the last dozen; "the same move over and over" is a use that repeats the last.
 function figWatchKeys(f, inp){
-  if(f._fig || f.dead || !(isHumanCtrl(f) || f._figWatch)) return;
+  if(f.dead || !(f._fig || isHumanCtrl(f) || f._figWatch)) return;   // (FIGURE VS FIGURE: a Figure's keys too, for the other side's Figures)
   const W = f._figW; if(!W) return;
   const P = W.prev, a = !!inp.attack, s = !!inp.special, v = !!inp.smash;
   W.prev = (a ? 1 : 0) | (s ? 2 : 0) | (v ? 4 : 0);
@@ -133764,9 +133787,9 @@ function figWatchKeys(f, inp){
   W.atkT = now; if(air) W.airAtkT = now; W.lastMv = k;
   const again = W.useK === k && now - W.useT < 25; W.useK = k; W.useT = now;
   if(again) return;
-  const figs = fighters.filter(g => g._fig && !g.dead && Math.hypot(g.x - f.x, g.y - f.y) < 400);
+  const figs = fighters.filter(g => g._fig && !g.dead && g !== f && !(f._fig && g.team === f.team) && Math.hypot(g.x - f.x, g.y - f.y) < 400);
   for(const g of figs){
-    const D = g._fig.d;
+    const D = figBook(g, f);
     for(const q in D.mv){ D.mv[q] = Math.round(D.mv[q]*92)/100; if(D.mv[q] < 0.01) delete D.mv[q]; }
     D.mv[k] = Math.min(1, Math.round(((D.mv[k] || 0) + 0.08)*100)/100); D.mn = Math.min(999, D.mn + 1);
     figSeeH(D, 'spam', (W.spamK === k && now - W.spamT < 120) ? 1 : 0);
@@ -133915,7 +133938,7 @@ function figShieldUp(f, t, B, L, dist, awake){
   if(!fresh || !awake || t._isBoss || isReflector(f) || !f.onground || f.hitstun > 0 || f._zsBrk > 0 || f._zsLk > 0 || B.shOn || hazardT < (B.shCd || 0) || zsMeter(f) < 20) return;
   if(dist > f.r + (t.r || 24) + 120) return;
   let id = null;
-  if(S.mv === figFav(f._fig.d) && simRand() < figK(f, 'fav')) id = 'fav';
+  if(S.mv === figFav(f._fig.m || f._fig.d) && simRand() < figK(f, 'fav')) id = 'fav';
   else if(!t.onground && t.vy > 0 && t.y < f.y - 10 && simRand() < figK(f, 'landA')) id = 'landA';
   if(!id) return;
   B.shOn = true; B.shT0 = B.shSeen = hazardT; f._aiShU = hazardT + 10; B.figPun = { id, until:hazardT + 70 }; figPicked(f, id); figUsed(f, id);
@@ -134037,11 +134060,16 @@ function figCpuSeat(all){   // the Figures given a CPU seat (the Figures screen)
   for(const id of FIG_CPU){ const d = figFind(id); if(!d) continue; while(s > 0 && all[s].oc) s--; if(s <= 0) break; all[s] = figRowOf(d); s--; }
   return all;
 }
-function figSparSeat(all){ const d = figFind(FIGM.spar.id); if(d && all.length > 1) all[1] = figRowOf(d); return all.slice(0, 2); }
-function figSpar(id){   // a 1v1 at once on the Training stage, with the fighter you play; the player's own mode, count and stage come back after (figSparEnd)
-  if(!figFind(id)) return;
+function figSparSeat(all){
+  const d = figFind(FIGM.spar.id), v = FIGM.spar.vs && figFind(FIGM.spar.vs);
+  if(d && v && all.length > 1){ all[0] = figRowOf(d); all[1] = figRowOf(v); }   // FIGURE VS FIGURE: both seats are Figures; you watch
+  else if(d && all.length > 1) all[1] = figRowOf(d);
+  return all.slice(0, 2);
+}
+function figSpar(id, vs){   // a 1v1 at once on the Training stage, with the fighter you play; the player's own mode, count and stage come back after (figSparEnd)
+  if(!figFind(id) || (vs && (vs === id || !figFind(vs)))) return;   // (vs: a second Figure -- Figure vs Figure, which you watch)
   if(!FIGM.spar) FIGM.spar = { id, prev:{ mode:SETTINGS.mode, count:SETTINGS.count, stage } };
-  FIGM.spar.id = id;
+  FIGM.spar.id = id; FIGM.spar.vs = vs || null;
   SETTINGS.mode = 'ffa'; SETTINGS.count = 2; TESTMODE.active = false;
   EVENT_PICK = null; PENDING_TOURNEY = null; PENDING_DAILY = null;
   if(!chosen || (chosen.oc && !ocFind(chosen.name))) chosen = ROSTER.find(r => r.play);
@@ -134051,15 +134079,33 @@ function figSpar(id){   // a 1v1 at once on the Training stage, with the fighter
 // Sound effects stay. Leaving for the menus brings their music back (go: the screen's own bed); the music setting is never touched.
 function figQuiet(){ return !!((TESTMODE.training && TESTMODE.active) || FIGM.spar); }   // (a Training match, or a Spar: its screen is quiet through go and trainingScreenSync)
 function figSparEnd(){ const S = FIGM.spar; if(!S) return; FIGM.spar = null; SETTINGS.mode = S.prev.mode; SETTINGS.count = S.prev.count; stage = S.prev.stage; }
+// FIGURE VS FIGURE: a Spar whose two seats are Figures. You only watch: Esc leaves (to Training, what they learned saved); no music (figQuiet);
+// it is not your match (checkWin: no record, quests or unlocks). THE CLOCK: two Figures that keep countering each other could keep a bout going,
+// so at five minutes (the most a match is worth in experience) the one behind -- fewer stocks, then more damage -- loses its last stock and the
+// bout ends as any match does.
+function figVsOn(){ return !!(FIGM.spar && FIGM.spar.vs); }
+function figVsTimeUp(){
+  FIGM.cap = fighters;
+  const L = fighters.filter(f => !f.dead).sort((a, b) => (b.stocks - a.stocks) || ((a.pct || 0) - (b.pct || 0)));
+  if(L.length < 2) return;
+  const f = L[L.length - 1]; f.stocks = 1; eliminate(f);
+}
+function figVsLeave(){ const id = FIGM.spar.id; try{ figMatchEnd(null, true); }catch(e){} figBackToTraining(id); }
+function figVsGo(id){ const a = FIGUI.vs; if(!a || id === a) return; FIGUI.vs = null; figSpar(a, id); }
 // When the match ends (checkWin), or is left part-way (quit: quitMatch, a restart, the page closed): experience and the habits saved for every Figure
-// in it that fought a person, and the card for the result screen (not for a match left part-way).
+// in it that fought a person or a Figure of another side (FIGURE VS FIGURE), and the card for the result screen (not for a match left part-way).
+// The same experience a second of fighting as ever, whoever the foe.
 function figMatchEnd(winTeam, quit){
   if(FIGM.ended === fighters) return;   // (once a match: checkWin can come here again before the loop stops)
   FIGM.last = null; FIGM.ended = fighters;
-  const figs = fighters.filter(f => f._fig);
-  if(!figs.length || !fighters.some(h => !h._fig && (isHumanCtrl(h) || h._figWatch)) || (quit && hazardT < 60)) return;
+  const figs = fighters.filter(f => f._fig), human = fighters.some(h => !h._fig && (isHumanCtrl(h) || h._figWatch));
+  const foe = f => figs.find(g => g !== f && g.team !== f.team), fought = figs.filter(f => human || foe(f));
+  if(!fought.length || (quit && hazardT < 60)) return;
   const secs = Math.min(300, Math.round(hazardT/60)) + 20, out = [];
-  for(const f of figs){ const d = f._fig.d, lv0 = d.lv; figGain(d, secs); out.push({ id:d.id, c:d.c, oc:d.oc, n:d.n, lv0, lv:d.lv, won:f.team === winTeam, lines:figTop(d, 3) }); }
+  for(const f of fought){
+    const d = f._fig.d, lv0 = d.lv, g = human ? null : foe(f); figGain(d, secs);
+    out.push({ id:d.id, c:d.c, oc:d.oc, n:d.n, lv0, lv:d.lv, won:f.team === winTeam, lines:g ? figTopVs(figBook(f, g), g._fig.d.n) : figTop(d, 3), vs:g ? g._fig.d.n : null });
+  }
   figPersist();
   FIGM.last = quit ? null : out;
 }
@@ -134070,12 +134116,22 @@ function figCard(){
   const L = FIGM.last; FIGM.last = null;
   if(rb){ rb.style.display = (L && L.length) ? '' : 'none'; rb.onclick = L && L.length ? () => figBackToTraining(L[0].id) : null; }
   if(!L || !L.length){ el.style.display = 'none'; el.innerHTML = ''; return; }
+  if(L[0].vs){   // FIGURE VS FIGURE: the Figures' names, not their fighters' (Pen vs Pen is two Figures)
+    const w = L.find(x => x.won), tt = document.getElementById('resultTitle'), sb = document.getElementById('resultSub');
+    if(tt && w) tt.textContent = w.n + ' wins'; if(sb) sb.textContent = 'Figure vs Figure: both learned and gained experience.';
+  }
   el.innerHTML = L.map(x => '<div style="display:flex;align-items:center;gap:8px"><span data-figpic></span><b>' + esc(x.n) + ' · Lv ' + x.lv + '</b>' + (x.lv > x.lv0 ? ' (up from ' + x.lv0 + ')' : '') + '</div>'
-    + (x.lines.length ? '<div style="font-weight:700;font-size:13px;margin-top:4px">Your weaknesses:</div>' + x.lines.map(s => '<div style="font-weight:600;font-size:13px">' + esc(s) + '</div>').join('')
+    + (x.vs ? figVsLines(x) : x.lines.length ? '<div style="font-weight:700;font-size:13px;margin-top:4px">Your weaknesses:</div>' + x.lines.map(s => '<div style="font-weight:600;font-size:13px">' + esc(s) + '</div>').join('')
       + '<div style="font-weight:600;font-size:12px;margin-top:4px">Stop a habit and it fades from its memory.</div>'
       : '<div style="font-weight:600;font-size:13px">Still learning your habits. Keep fighting it.</div>')).join('<hr style="border:0;border-top:2px solid #1c1c1c;margin:6px 0">');
   el.querySelectorAll('[data-figpic]').forEach((s, i) => { const x = L[i]; if(x){ const p = figThumbOf(x.c, x.oc); p.style.height = '44px'; s.appendChild(p); } });
   el.style.display = 'block';
+}
+
+function figVsLines(x){
+  const s = 'font-weight:600;font-size:13px';
+  return x.lines.length ? '<div style="font-weight:700;font-size:13px;margin-top:4px">What it learned about ' + esc(x.vs) + ':</div>' + x.lines.map(q => '<div style="' + s + '">' + esc(q) + '</div>').join('')
+    : '<div style="' + s + '">Still learning ' + esc(x.vs) + "'s habits.</div>";
 }
 
 // ---- THE FIGURES IN TRAINING (the owner, 2026-11-25: "let's make the ui better. for the sparring figures, they should be in training") ----
@@ -134083,7 +134139,7 @@ function figCard(){
 // picture, the name, the level -- then a + New card; under the picked one, its weaknesses and real buttons: Spar (a 1v1 on the Training stage, at
 // once), Rename, Delete (pressed twice), CPU seat (it joins your Free-for-all and Teams matches as a CPU). + New opens a fighter grid and a name box
 // in the same panel. Keyboard: the arrows pick, Enter spars (or opens + New, or saves), Delete deletes, Esc backs out; the mouse clicks the same.
-const FIGUI = { sel:0, mode:'list', cur:0, name:'', ask:false, msg:'', bound:false };
+const FIGUI = { sel:0, mode:'list', cur:0, name:'', ask:false, msg:'', bound:false, vs:null };   // (vs: the Figure whose foe is being picked, Vs Figure)
 function figPickList(){
   const L = ROSTER.filter(r => r.play && isUnlocked(r) && !eventLocked(r)).map(r => ({ c:r.name, oc:0, color:r.color }));
   if(OC_OPEN) for(const o of OC_LIST) L.push({ c:o.name, oc:1, color:'#e9e4d8' });
@@ -134100,7 +134156,7 @@ function figEnsureStyle(){
     + '#figPanel .figtitle{font-weight:900;font-size:20px}#figPanel .figsub{font-size:12px;font-weight:600;color:#555;margin-bottom:8px}'
     + '#figPanel .figcards{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}'
     + '#figPanel .figcard{width:108px;border:2px solid #1c1c1c;border-radius:10px;background:#fff;padding:6px 4px;display:flex;flex-direction:column;align-items:center;gap:2px;font:inherit;font-size:12px;cursor:pointer;color:#1c1c1c}'
-    + '#figPanel .figcard b{font-size:13px}#figPanel .figcard.sel{background:var(--gold);box-shadow:0 3px 0 #1c1c1c}#figPanel .figcard.new{border-style:dashed}'
+    + '#figPanel .figcard b{font-size:13px}#figPanel .figcard.sel{background:var(--gold);box-shadow:0 3px 0 #1c1c1c}#figPanel .figcard.vs{outline:3px solid #9a3a2a;outline-offset:1px}#figPanel .figcard.new{border-style:dashed}'
     + '#figPanel .figplus{font-size:34px;font-weight:900;line-height:52px}#figPanel .figimg{height:52px;width:auto;max-width:60px;object-fit:contain}#figPanel .figdot{width:40px;height:40px;border-radius:50%;margin:6px;border:2px solid #1c1c1c}'
     + '#figPanel .figweak{margin:10px auto 6px;max-width:520px;text-align:left;font-size:13px;font-weight:600}#figPanel .figweakh{font-weight:800;font-size:14px;margin:4px 0}'
     + '#figPanel .figgrid{display:grid;grid-template-columns:repeat(8,1fr);gap:5px;max-height:240px;overflow:auto;margin:4px 0 8px}'
@@ -134112,8 +134168,8 @@ function figEnsureStyle(){
 function figPanelSync(){
   const el = document.getElementById('figPanel'); if(!el) return;
   const on = !!TESTMODE.training; el.style.display = on ? '' : 'none';
-  if(!FIGUI.bound){ FIGUI.bound = true; addEventListener('keydown', figKeydown); }
-  if(on){ figLoad(); if(OC_OPEN && !OC_LOADED) ocLoad().then(() => { try{ figRender(); }catch(e){} }); figRender(); }
+  if(!FIGUI.bound){ FIGUI.bound = true; addEventListener('keydown', figKeydown); addEventListener('keydown', figVsEsc, true); }
+  if(on){ FIGUI.vs = null; figLoad(); if(OC_OPEN && !OC_LOADED) ocLoad().then(() => { try{ figRender(); }catch(e){} }); figRender(); }
 }
 function figRender(){
   const el = document.getElementById('figPanel'); if(!el || el.style.display === 'none') return;
@@ -134139,6 +134195,20 @@ function figRender(){
     el.appendChild(mk('div', 'foot', FIGUI.mode === 'make' ? 'Arrows: fighter · Enter: save · Esc: back' : 'Enter: save · Esc: back'));
     return;
   }
+  if(FIGUI.vs){   // VS FIGURE: the second Figure, from the same cards (a click starts it)
+    const a = figFind(FIGUI.vs), vi = L.findIndex(x => x.id === FIGUI.vs);
+    if(a && L.length > 1){
+      if(!L[FIGUI.sel] || FIGUI.sel === vi) FIGUI.sel = vi === 0 ? 1 : 0;
+      el.appendChild(mk('div', 'figweakh', 'Pick a Figure for ' + a.n + ' to fight. You watch; both learn and level up.'));
+      const vr = mk('div', 'figcards');
+      L.forEach((d, i) => { const me = i === vi, c = mk('button', 'figcard' + (me ? ' sel' : i === FIGUI.sel ? ' vs' : '')); c.type = 'button'; c.dataset.fig = d.id; c.disabled = me; c.appendChild(figThumbOf(d.c, d.oc)); c.appendChild(mk('b', null, d.n)); c.appendChild(mk('span', null, 'Lv ' + d.lv)); c.onclick = () => figVsGo(d.id); vr.appendChild(c); });
+      el.appendChild(vr);
+      const vb = mk('div', 'row'); btn(vb, 'Back', 'ghost sm', () => { FIGUI.vs = null; FIGUI.sel = Math.max(0, vi); figRender(); }, 'figVsBack'); el.appendChild(vb);
+      el.appendChild(mk('div', 'foot', '← →: pick · Enter: watch · Esc: back'));
+      return;
+    }
+    FIGUI.vs = null;
+  }
   FIGUI.sel = clamp(FIGUI.sel, 0, L.length < FIG_MAX ? L.length : L.length - 1);
   const row = mk('div', 'figcards');
   L.forEach((d, i) => { const c = mk('button', 'figcard' + (i === FIGUI.sel ? ' sel' : '')); c.type = 'button'; c.dataset.fig = d.id; c.appendChild(figThumbOf(d.c, d.oc)); c.appendChild(mk('b', null, d.n)); c.appendChild(mk('span', null, 'Lv ' + d.lv)); c.onclick = () => { FIGUI.sel = i; FIGUI.ask = false; FIGUI.msg = ''; figRender(); }; row.appendChild(c); });
@@ -134152,6 +134222,7 @@ function figRender(){
     el.appendChild(box);
     const bar = mk('div', 'row'), seat = FIG_CPU.indexOf(d.id) >= 0;
     btn(bar, 'Spar ▶', '', () => figSpar(d.id), 'figSparBtn');
+    btn(bar, 'Vs Figure ▶', 'ghost sm', () => { if(L.length < 2) FIGUI.msg = 'Make a second Figure first'; else { FIGUI.vs = d.id; FIGUI.ask = false; FIGUI.msg = ''; } figRender(); }, 'figVsBtn').title = 'Watch it fight another of your Figures: both learn and level up';
     btn(bar, 'Rename', 'ghost sm', () => { FIGUI.mode = 'rename'; FIGUI.name = d.n; FIGUI.msg = ''; figRender(); figFocusName(); }, 'figRenameBtn');
     btn(bar, FIGUI.ask ? 'Sure? Delete' : 'Delete', 'ghost sm', () => figDeleteAsk(d), 'figDeleteBtn');
     btn(bar, 'CPU seat: ' + (seat ? 'On' : 'Off'), 'ghost sm', () => { const at = FIG_CPU.indexOf(d.id); if(at >= 0) FIG_CPU.splice(at, 1); else if(FIG_CPU.length >= 3) FIGUI.msg = 'Three at most'; else FIG_CPU.push(d.id); figRender(); }, 'figSeatBtn').title = 'On: it joins your Free-for-all and Teams matches as a CPU';
@@ -134196,17 +134267,30 @@ function figKeydown(e){
     return;
   }
   if(FIGUI.mode === 'rename'){ if(e.key === 'Escape'){ figBackList(); done(); } return; }
+  if(FIGUI.vs){   // VS FIGURE: picking the second Figure (Esc: figVsEsc)
+    const vi = L.findIndex(x => x.id === FIGUI.vs), step = s => { let i = FIGUI.sel; do { i = (i + s + L.length) % L.length; } while(i === vi && L.length > 1); FIGUI.sel = i; figRender(); };
+    if(e.key === 'ArrowRight'){ step(1); done(); }
+    else if(e.key === 'ArrowLeft'){ step(-1); done(); }
+    else if(e.key === 'Enter'){ const d = L[FIGUI.sel]; if(d) figVsGo(d.id); done(); }
+    return;
+  }
   const top = L.length < FIG_MAX ? L.length : L.length - 1;
   if(e.key === 'ArrowRight'){ FIGUI.sel = Math.min(top, FIGUI.sel + 1); FIGUI.ask = false; FIGUI.msg = ''; figRender(); done(); }
   else if(e.key === 'ArrowLeft'){ FIGUI.sel = Math.max(0, FIGUI.sel - 1); FIGUI.ask = false; FIGUI.msg = ''; figRender(); done(); }
   else if(e.key === 'Enter'){ const d = L[FIGUI.sel]; if(d) figSpar(d.id); else figMakeOpen(); done(); }
   else if(e.key === 'Delete'){ const d = L[FIGUI.sel]; if(d) figDeleteAsk(d); done(); }
 }
+// Esc while the second Figure is picked: back to the cards (ahead of the screen's own Esc, which is Back: ESC_BACK).
+function figVsEsc(e){
+  if(e.key !== 'Escape' || !FIGUI.vs || running || !TESTMODE.training) return;
+  const scr = document.getElementById('test'); if(!scr || !scr.classList.contains('active')) return;
+  e.preventDefault(); FIGUI.vs = null; figRender();
+}
 // The result screen's way back to the Figures (shown after a match with one): Training, that Figure picked.
 function figBackToTraining(id){
   openTraining();
   const i = figLoad().findIndex(x => x.id === id); if(i >= 0) FIGUI.sel = i;
-  FIGUI.mode = 'list'; FIGUI.msg = ''; figRender();
+  FIGUI.mode = 'list'; FIGUI.vs = null; FIGUI.msg = ''; figRender();
 }
 function aiThink(f){
   if(RACE.active && f._runner) return raceRunnerAi(f);   // RUNNING!: the runners run (see raceRunnerAi)
@@ -134264,6 +134348,7 @@ function aiThink(f){
   // was heading -- the seen place, carried on along the seen speed for part of that moment (lead: more of it on Hard). Its swings, its reach
   // and its steps go by the guess; what the foe is doing (its swing, its stun) is still only what it saw.
   const ts = f.aiTarget, ld = (f._fig ? f._fig.react : CPU_HUMAN.react[lvl]) * L.lead;
+  if(f._fig) figAim(f, ts);   // (FIGURE VS FIGURE: what it knows of this foe -- the person's habits, or that Figure's)
   let t = (ts._isBoss || !(ld > 0)) ? ts : Object.assign(Object.create(ts), { x: ts.x + (ts.vx||0)*ld, y: ts.y + (ts.onground ? 0 : (ts.vy||0)*ld*0.3) });
   if(MCAVE && MCAVE.on && !ts._isBoss) t = mcWayTarget(f, t, B, ts);   // MOON CAVES: a foe round the far side is gone after over 12 or under 6 o'clock
   const dx=t.x-f.x, dy=t.y-f.y, adx=Math.abs(dx), ady=Math.abs(dy), dist=Math.hypot(dx,dy);
