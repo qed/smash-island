@@ -914,6 +914,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (box: moves much stronger with the hold -- Tree 130% vs old 166%, Bot, Lifering, Woody, Naily -- keep or tone down)**: Keep as is
 - **2026-11-27 (box: Salt's back throw, Pepper catches and shoves for 2%, 2% taken off the throw to keep the total)**: extra 2 percent. its fine if some throws are stronger than others, that just means we have more balance tools in our aresenal. like how ness' grab and forward throw kills at 80.
 - **2026-11-27 (Needle now wins 16/16 after Triple Thrust + Pin Drop; the lead offered less Pin Drop damage or longer stuck time)**: lets nerf needle
+- **2026-11-27 (box: Needle still 15/16 after the Pin Drop nerf -- what else to nerf; push when done or show first)**: Jab's third prick; Push when done
 
 ## Art, animation & polish
 
@@ -1607,6 +1608,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-27 (the CPU seat question was not answered yet)**: and about the cpu seat thing?
 - **2026-11-27 (after many reminder relays answered "Nothing is wrong")**: why are you saying "nothing is wrong"?
 - **2026-11-27 (lead busy merging)**: hello?
+- **2026-11-27**: also, do we have any scores that are 10?
 
 ## Working rules, budget & agents
 
