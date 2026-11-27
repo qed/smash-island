@@ -1920,3 +1920,25 @@ as his render is; a picture of two characters cut to this one); nothing was redr
 | `canon/black-hole/black-hole-zapped.png` (399x200) | Black Hole: asset: Black Hole zapped | https://static.wikia.nocookie.net/battlefordreamisland/images/3/34/Black_hole_zapped0012.png |
 | `canon/black-hole/black-hole-orbit.png` (200x200) | Black Hole: asset: orbit ring | https://static.wikia.nocookie.net/battlefordreamisland/images/0/06/Blackholes_Orbit_.png |
 | `canon/black-hole/black-hole-glowless.png` (113x200) | Black Hole: asset: Black Hole without glow | https://static.wikia.nocookie.net/battlefordreamisland/images/9/96/Circle_Eye.png |
+
+### Animation batch 3 (2026-11-27): show pictures for Rose
+
+Pictures from BFDI, BFB, TPOT, BFDI Mini Again and BFDIE (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area; Rocky's 600-px assets share one scale; Black Hole's by width or his core, centred
+as his render is; a picture of two characters cut to this one); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/rose/rose-slap.png` (149x260) | Rose: BFDIE pose: enraged slapping | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d3/Enraged_Slapping_Rose_with_Drool.PNG |
+| `canon/rose/rose-push.png` (141x208) | Rose: BFDIE pose: pushing | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2f/Rose_pushing_some_stairs.png |
+| `canon/rose/rose-egg.png` (151x195) | Rose: BFDI Mini Again pose: egg toss | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c8/RoseEggToss.png |
+| `canon/rose/rose-joy.png` (170x198) | Rose: BFDI Mini Again pose: joyous | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a0/RoseJoyous.png |
+| `canon/rose/rose-dodge.png` (133x210) | Rose: BFDIE pose: dodge | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2f/RoseDodge.png |
+| `canon/rose/rose-bow.png` (140x189) | Rose: BFDI Mini Again pose, eyes closed | https://static.wikia.nocookie.net/battlefordreamisland/images/2/24/Arose.png |
+| `canon/rose/rose-ouch.png` (176x153) | Rose: TPOT pose: ouch | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d6/RoseOUCH.png |
+| `canon/rose/rose-run.png` (132x203) | Rose: BFDIE pose: running | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f8/Rose_runs_from_a_knife_wielding_maniac.png |
+| `canon/rose/rose-shocked.png` (164x215) | Rose: BFDI Mini Again pose: shocked | https://static.wikia.nocookie.net/battlefordreamisland/images/5/56/Roseshocked.png |
+| `canon/rose/rose-ohhh.png` (153x197) | Rose: TPOT pose | https://static.wikia.nocookie.net/battlefordreamisland/images/0/03/Ohhhhhhhhhhh.png |
+| `canon/rose/rose-tpot15.png` (149x189) | Rose: TPOT 15 pose | https://static.wikia.nocookie.net/battlefordreamisland/images/9/95/RoseTPOT15.png |
+| `canon/rose/rose-arms.png` (138x213) | Rose: BFDIE pose: Don't think of it as cheating | https://static.wikia.nocookie.net/battlefordreamisland/images/c/ce/Don%27t_think_of_it_as_Cheating.png |
