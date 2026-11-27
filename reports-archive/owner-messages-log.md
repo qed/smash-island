@@ -913,6 +913,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (box: how should Sticker get KOs? stronger Backstab / faster smash / more damage)**: Stronger Backstab
 - **2026-11-25 (box: moves much stronger with the hold -- Tree 130% vs old 166%, Bot, Lifering, Woody, Naily -- keep or tone down)**: Keep as is
 - **2026-11-27 (box: Salt's back throw, Pepper catches and shoves for 2%, 2% taken off the throw to keep the total)**: extra 2 percent. its fine if some throws are stronger than others, that just means we have more balance tools in our aresenal. like how ness' grab and forward throw kills at 80.
+- **2026-11-27 (Needle now wins 16/16 after Triple Thrust + Pin Drop; the lead offered less Pin Drop damage or longer stuck time)**: lets nerf needle
 
 ## Art, animation & polish
 
