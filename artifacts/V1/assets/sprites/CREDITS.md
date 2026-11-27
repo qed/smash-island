@@ -1741,3 +1741,40 @@ artwork via the BFDI wiki, used under fan-work norms in a disclaimed, non-commer
 | Leek | `leek.png` | https://battlefordreamisland.fandom.com/wiki/File:LeekTPOT14.png (TPOT recommended character; 800x1796 at the source, 89x200 here) |
 | Eggy | `eggy.png` | https://battlefordreamisland.fandom.com/wiki/File:Tpot_renders0033.png (BFB/TPOT contestant; 500x612 at the source, 163x200 here) |
 | Glue | `glue.png` | https://battlefordreamisland.fandom.com/wiki/File:Glue_tpot_pose_2.png (BFDI Mini; 545x913 at the source, 119x200 here) |
+
+### Animation batch 1 (2026-11-27): show pictures for Firey, Pen, Marshmallow and Tea Kettle
+
+Pictures from the shows themselves, for the moves they match (one picture a move, worn the whole move: `POSE_SETS` in index.html). Downloaded
+from the wiki image host (static.wikia.nocookie.net, the originals), cut to their own outline and scaled so the character's body is the size
+of the fighter's render (matched by body area); nothing was redrawn or recoloured. Firey and Pen: jacknjellify's designs, from
+battlefordreamisland.fandom.com. Marshmallow and Tea Kettle: Inanimate Insanity (AnimationEpic), from inanimateinsanity.fandom.com. Fan-work
+use, as everything above. Marshmallow's scream is a season 1 picture (145x171 at the source), so it is scaled up 1.4 and is softer than the rest.
+
+| File | Used for | Source file | Source |
+|---|---|---|---|
+| `canon/firey/firey-jab.png` (189x209) | Firey: her/his attack (jab) | File:Firey Slap.png | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d5/Firey_Slap.png/revision/latest?cb=20200305221124 |
+| `canon/firey/firey-ba.png` (161x199) | Firey: back air | File:Firey Fling.png | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3b/Firey_Fling.png/revision/latest?cb=20161114230031 |
+| `canon/firey/firey-dt.png` (199x211) | Firey: down tilt | File:Firey kicked Icy to death.png | https://static.wikia.nocookie.net/battlefordreamisland/images/9/94/Firey_kicked_Icy_to_death.png/revision/latest?cb=20260401155939 |
+| `canon/firey/firey-dsmash.png` (196x204) | Firey: down smash | File:Firey with his leg still out.png | https://static.wikia.nocookie.net/battlefordreamisland/images/7/70/Firey_with_his_leg_still_out.png/revision/latest?cb=20260401155939 |
+| `canon/firey/firey-up.png` (161x192) | Firey: up special | File:Firey Floating Transparent.png | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d4/Firey_Floating_Transparent.png/revision/latest?cb=20140707111638 |
+| `canon/firey/firey-side.png` (197x205) | Firey: side special | File:Firey Run0001.png | https://static.wikia.nocookie.net/battlefordreamisland/images/2/27/Firey_Run0001.png/revision/latest?cb=20191210173331 |
+| `canon/firey/firey-na.png` (194x195) | Firey: neutral air | File:Firey go wheeeeeeeeeeeee.png | https://static.wikia.nocookie.net/battlefordreamisland/images/8/89/Firey_go_wheeeeeeeeeeeee.png/revision/latest?cb=20260401155939 |
+| `canon/firey/firey-win.png` (152x218) | Firey: the result screen | File:BFDIA Firey celebrating.png | https://static.wikia.nocookie.net/battlefordreamisland/images/4/4f/BFDIA_Firey_celebrating.png/revision/latest?cb=20260401155940 |
+| `canon/pen/pen-down.png` (85x198) | Pen: down special | File:Pen Pointing (BFDIA 15).png | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e3/Pen_Pointing_%28BFDIA_15%29.png/revision/latest?cb=20241006001439 |
+| `canon/pen/pen-ua.png` (137x222) | Pen: up air | File:Pen reach.png | https://static.wikia.nocookie.net/battlefordreamisland/images/2/23/Pen_reach.png/revision/latest?cb=20190806193741 |
+| `canon/pen/pen-up.png` (66x214) | Pen: up special | File:Pen Jumping in BFB 5.png | https://static.wikia.nocookie.net/battlefordreamisland/images/c/ce/Pen_Jumping_in_BFB_5.png/revision/latest?cb=20180117145820 |
+| `canon/pen/pen-side.png` (123x190) | Pen: side special | File:PenYEEEET.png | https://static.wikia.nocookie.net/battlefordreamisland/images/6/64/PenYEEEET.png/revision/latest?cb=20200515103749 |
+| `canon/pen/pen-hurt.png` (77x204) | Pen: hit | File:Pen scream.png | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f1/Pen_scream.png/revision/latest?cb=20190316233623 |
+| `canon/pen/pen-win.png` (46x201) | Pen: the result screen | File:Pen yay.png | https://static.wikia.nocookie.net/battlefordreamisland/images/7/70/Pen_yay.png/revision/latest?cb=20180627202311 |
+| `canon/marshmallow/marshmallow-fa.png` (200x193) | Marshmallow: forward air | File:Marshywithball.png | https://static.wikia.nocookie.net/inanimateinsanity/images/9/98/Marshywithball.png/revision/latest?cb=20230506070717 |
+| `canon/marshmallow/marshmallow-side.png` (156x206) | Marshmallow: side special | File:Marshmallow dive.png | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b2/Marshmallow_dive.png/revision/latest?cb=20241116234802 |
+| `canon/marshmallow/marshmallow-special.png` (180x204) | Marshmallow: neutral special | File:Marshmallow 6.png | https://static.wikia.nocookie.net/inanimateinsanity/images/2/20/Marshmallow_6.png/revision/latest?cb=20120303132917 |
+| `canon/marshmallow/marshmallow-down.png` (158x193) | Marshmallow: down special | File:Marshmallow2024.png | https://static.wikia.nocookie.net/inanimateinsanity/images/6/67/Marshmallow2024.png/revision/latest?cb=20241208211443 |
+| `canon/marshmallow/marshmallow-hurt.png` (166x193) | Marshmallow: hit | File:MarshmallowS4.png | https://static.wikia.nocookie.net/inanimateinsanity/images/e/e0/MarshmallowS4.png/revision/latest?cb=20260804034944 |
+| `canon/marshmallow/marshmallow-win.png` (146x198) | Marshmallow: the result screen | File:MarshmallowCastIdle.png | https://static.wikia.nocookie.net/inanimateinsanity/images/c/cf/MarshmallowCastIdle.png/revision/latest?cb=20121123180538 |
+| `canon/tea-kettle/tea-kettle-special.png` (230x206) | Tea Kettle: neutral special | File:TeaKettle2024PoseAlt.png | https://static.wikia.nocookie.net/inanimateinsanity/images/7/7d/TeaKettle2024PoseAlt.png/revision/latest?cb=20250628193516 |
+| `canon/tea-kettle/tea-kettle-down.png` (232x202) | Tea Kettle: down special | File:Tea Kettle S3 21.png | https://static.wikia.nocookie.net/inanimateinsanity/images/6/61/Tea_Kettle_S3_21.png/revision/latest?cb=20250807183936 |
+| `canon/tea-kettle/tea-kettle-nsmash.png` (238x200) | Tea Kettle: neutral smash | File:Screenshot 2023-11-16 12.42.44 PM-removebg-preview.png | https://static.wikia.nocookie.net/inanimateinsanity/images/4/47/Screenshot_2023-11-16_12.42.44_PM-removebg-preview.png/revision/latest?cb=20231116200846 |
+| `canon/tea-kettle/tea-kettle-up.png` (234x201) | Tea Kettle: up special | File:Screenshot 2023-11-16 12.42.11 PM-removebg-preview.png | https://static.wikia.nocookie.net/inanimateinsanity/images/6/6a/Screenshot_2023-11-16_12.42.11_PM-removebg-preview.png/revision/latest?cb=20231116200846 |
+| `canon/tea-kettle/tea-kettle-hurt.png` (235x209) | Tea Kettle: hit | File:TK2.png | https://static.wikia.nocookie.net/inanimateinsanity/images/d/d3/TK2.png/revision/latest?cb=20241202155436 |
+| `canon/tea-kettle/tea-kettle-win.png` (236x208) | Tea Kettle: the result screen | File:TeaKettle2024Pose.png | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b2/TeaKettle2024Pose.png/revision/latest?cb=20250628202010 |
