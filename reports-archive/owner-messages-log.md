@@ -257,6 +257,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-21**: go to the next weakest event
 - **2026-11-25 (8-Ball's contest)**: do a second round for cloudy, spongy, needy and sticker. also, for 8-ball, the cpus just get any assists, with no rhyme or reason
 - **2026-11-25 (box: 8-Ball contest assists still take 63% of KOs, goal 30-45% -- CPUs fight more / weaker assists / fine)**: It's fine at 63%
+- **2026-11-27 (while the grabs/figures push was being prepared)**: and go to 8balls' week
 ## World Cup results
 
 - **2026-09-28 09:52 UTC** *(part)*: until the world cup, ofc.
@@ -1272,6 +1273,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (box: push the 8-Ball contest fixes now or wait)**: Push now
 - **2026-11-25 (box: push the multi-hit hold and Sticker's Backstab now or wait)**: Push now
 - **2026-11-27 (the lead asked to push the guest lag fix)**: push the lag fix. also, cpu seat should train the sparring figure against a sparring figure
+- **2026-11-27 (after the interrupted grabs push; the lead asked: check/undo the push, drawing only or motion for the 11 slower kept throws, push Figure vs Figure too?)**: push it, drawing only for the 11, and figures too. also, its IFNE to make throws have different numbers. also, compress worktrees
 
 ## Status questions & check-ins
 
