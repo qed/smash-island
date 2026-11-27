@@ -1862,3 +1862,26 @@ as his render is; a picture of two characters cut to this one); nothing was redr
 | `canon/teardrop/teardrop-scream.png` (170x185) | Teardrop: BFB pose: screams silently | https://static.wikia.nocookie.net/battlefordreamisland/images/6/67/Td_screams_silently.png |
 | `canon/teardrop/teardrop-cloud.png` (229x132) | Teardrop: asset: Teardrop as a rain cloud (TPOT 7) | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c7/RainCloudAsset.png |
 | `canon/teardrop/teardrop-erun.png` (109x215) | Teardrop: BFB pose: evil run | https://static.wikia.nocookie.net/battlefordreamisland/images/9/91/TD_evil_run.png |
+
+### Animation batch 3 (2026-11-27): show pictures for Rocky
+
+Pictures from BFDI, BFB, TPOT, BFDI Mini Again and BFDIE (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area; Rocky's 600-px assets share one scale; Black Hole's by width or his core, centred
+as his render is; a picture of two characters cut to this one); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/rocky/rocky-grin.png` (287x226) | Rocky: BFB pose | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0b/Rocky_intro_2.png |
+| `canon/rocky/rocky-ab.png` (249x237) | Rocky: TPOT pose: about to barf again | https://static.wikia.nocookie.net/battlefordreamisland/images/3/35/RockyAboutToBarfAgain.png |
+| `canon/rocky/rocky-bb.png` (289x171) | Rocky: asset: barfing body (happy) | https://static.wikia.nocookie.net/battlefordreamisland/images/2/28/IMG_newrockybarf.PNG |
+| `canon/rocky/rocky-b25.png` (269x210) | Rocky: BFDI 25: Bleh! | https://static.wikia.nocookie.net/battlefordreamisland/images/7/77/RockyBarfingBFDI25.png |
+| `canon/rocky/rocky-bwide.png` (288x173) | Rocky: old asset: barfing, wider | https://static.wikia.nocookie.net/battlefordreamisland/images/7/77/RockyBarfWide.png |
+| `canon/rocky/rocky-spit.png` (288x166) | Rocky: old asset: barfing, spitting a ball (BFDI 13) | https://static.wikia.nocookie.net/battlefordreamisland/images/c/cd/IMG_rockyscream.PNG |
+| `canon/rocky/rocky-tilt.png` (274x277) | Rocky: BFB pose, tilted | https://static.wikia.nocookie.net/battlefordreamisland/images/6/66/Rocky_bfbbb.png |
+| `canon/rocky/rocky-oof.png` (289x340) | Rocky: BFDI pose, oof | https://static.wikia.nocookie.net/battlefordreamisland/images/8/82/Rocky_oof.png |
+| `canon/rocky/rocky-fly.png` (289x348) | Rocky: BFDI pose, flying (Wiiii) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a9/RockyWiiiiii.png |
+| `canon/rocky/rocky-gopen.png` (289x234) | Rocky: BFB pose | https://static.wikia.nocookie.net/battlefordreamisland/images/6/67/Rocky_BFB.png |
+| `canon/rocky/rocky-sneer.png` (289x227) | Rocky: BFB 3 pose | https://static.wikia.nocookie.net/battlefordreamisland/images/5/59/Rocky_BFB3.png |
+| `canon/rocky/rocky-btik.png` (316x227) | Rocky: JNJ TikTok barf challenge pose | https://static.wikia.nocookie.net/battlefordreamisland/images/5/57/Rocky_barf_pose_new.png |
+| `canon/rocky/rocky-sit.png` (271x198) | Rocky: BFDI pose, sitting | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2d/RockySit.png |
