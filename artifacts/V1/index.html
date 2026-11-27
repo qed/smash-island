@@ -75810,6 +75810,7 @@ function step(){
   // here as well, so BOSSRUSH.frames counted two a frame and the victory card showed about double the real run time.
   if(isBigFFA()) updateSpawnZones();
   if(FILE_RIDES.length) fileRideStep();   // the big files glide and carry whoever stands on them, before this frame's platforms are gathered (THE BIG FILE)
+  finArmTick();   // FINISHER ARMOUR: who is armoured in a finisher this frame (finArmTick)
   if(FINX.length) finxStep();   // the finishers running (FINISHERS V2): their tells, hits and holds, and what they leave behind
   finC1_holeSync();   // Saw's cut ledges, from the rows (FIN lane c1)
   const gy=groundY(); let plats=platRects();   // (let: re-read inside each fighter's frame on Moon Caves)
@@ -81343,11 +81344,12 @@ function doAttackSpecial(f){
   if(inOwnTeamZone(f)) return;
 
   armAtk(f, ATK_ANIM, animKindOf(f, 'finisher'), mvId(f, 'finisher'));
-  const k=f.kit && f.kit.special;
+  if(!f._tellGo || f._finT0 == null){ f._finT0 = hazardT; f._finCon = null; f._finArmBy = null; }   // FINISHER ARMOUR: the finisher starts here (its wind-up's second call keeps it)
+  const k=f.kit && f.kit.special, finPre = [f._sm, f._windup];
   // AIR FINISHERS (audit 2026-11-21): Bomby's roll and Tennis Ball's bounces go along the floor. Pressed in the air they wound up (TELL_ADD), the landing
   // cut the move and the finisher was spent for nothing; now, as every other floor finisher, in the air nothing happens and it is not spent.
   if(!f.onground && !f.oc && FIN_FLOOR_TELL.has(k)){ f._atkSeq = seq0; [f._atkKind, f._atkMove, f._atkAnim, f._atkLen, f._atkPhase, f._atkProg] = was; return false; }
-  if(tellAdd(f, 'finisher', function(){ doAttackSpecial(f); })) return;   // NO-TELL SWEEP: a finisher in TELL_ADD winds up first (it is spent at the press, as a dash is)
+  if(tellAdd(f, 'finisher', function(){ doAttackSpecial(f); })){ if(f._windup) f._windup._fin = 1; return; }   // NO-TELL SWEEP: a finisher in TELL_ADD winds up first (it is spent at the press, as a dash is)
   endLagArm(f, 'finisher');   // FRAME BUDGET (two rows: Bomby's and Tennis Ball's, the fast ones)
   // A row that returns false could not start here (the Big File off the ground): nothing happened. The pose and the move count are put back,
   // and the caller does not spend the finisher (it returns false too).
@@ -81360,7 +81362,8 @@ function doAttackSpecial(f){
       if(f.onground){ const cx2 = f.x + f.face*28; f.flash = 12; hitCircle(f, cx2, f.y, f.r + 26, 14, 14, f.face*12, -9); return 'shared'; }
       f._atkSeq = seq0; [f._atkKind, f._atkMove, f._atkAnim, f._atkLen, f._atkPhase, f._atkProg] = was; f._eLag = null; return false; } }   // (f._eLag: nothing happened, no end lag either -- FRAME BUDGET)
     else { const cx=f.x+f.face*28; f.flash=12; hitCircle(f,cx,f.y,f.r+26,14,14,f.face*12,-9);  }
-  } finally { HA_FADE_NEXT = 0; for(const p of projectiles) if(!pre.has(p) && p.owner === f.idx) p._slot = 'finisher'; }
+  } finally { HA_FADE_NEXT = 0; for(const p of projectiles) if(!pre.has(p) && p.owner === f.idx) p._slot = 'finisher';
+    if(f._sm && f._sm !== finPre[0]) f._sm._fin = 1; if(f._windup && f._windup !== finPre[1]) f._windup._fin = 1; }   // (FINISHER ARMOUR: a lunge or a wind-up the finisher started is part of it)
 }
 
 
@@ -82097,6 +82100,61 @@ function finxLetGo(f, all){
   }
   if(FINX.some(function(o){ return o.dead; })) FINX = FINX.filter(function(o){ return !o.dead; });
   f._fxLock = 0; f._fxBy = null;
+}
+// FINISHER ARMOUR (the owner, 2026-11-27: "some finishers are too interruptible"). One rule for every finisher (V + C; not the Final Smashes), while its
+// user is still committed to it -- the finisher's lock (_fxLock) with a record of its own out, its move row, its wind-up or a lunge it started:
+//   STARTUP, before it has landed anything: LIGHT ARMOUR. One weak hit -- FIN_ARM.light % or less after every multiplier, about a jab (the measured jabs
+//   are 2 to 4.4%) -- does its damage and neither flinches nor cancels; every hit of that same move (a multi-hit jab) is taken the same way. A stronger
+//   hit, a second weak move, a grab or a Final Smash still knocks the user out of it, so a finisher's startup is still punishable.
+//   CONNECTED -- it holds a foe (a catch, a reel, a hold, a cinematic) or has landed a hit in the last FIN_ARM.gap frames (a multi-hit string: the measured
+//   gaps between one hit and the next of a string are 7 to 20 frames): HEAVY ARMOUR. Every hit still does its damage, and none flinches, launches or cancels
+//   it, so a third fighter can no longer knock the caught foe free. Once its last hit is FIN_ARM.gap frames old with nothing held, the recovery that
+//   follows is open as before (Bomby flat on his back): no armour. A grab still breaks it
+//   (holdStart lets the finisher go: grabs beat armour), and so does a Final Smash (its hit is never armoured, and its catch lets go: fsLockOn).
+//   A finisher that locks its user again later from something it left out (Bell's doorbell, rung: she comes down her string) is a new startup: light
+//   armour again, unless that record has already landed a hit.
+//   A burn or poison tick never knocks the user out of it (a tick gives a 4-frame stun, which cancelled a finisher). Hits from no fighter (a hazard,
+//   a boss) are not armoured. Damage, launch and timing of every finisher are unchanged.
+// The user is drawn with a flat outline while armoured (white for light, orange for heavy) and a flat white flash on the body as a hit is taken on it
+// (drawStanceArt). _faS (the state) and _faT (the frame of the last hit taken on it) ride the snapshot, so a guest draws the same; the host decides.
+const FIN_ARM = { light:5, gap:22, cap:480 };
+function finArmBusy(f){
+  if(f._finT0 == null || f.dead) return false;
+  if((f._fxLock || 0) > hazardT && f._fxBy == null && FINX.some(function(o){ return !o.dead && o.o === f.idx && o.t0 >= f._finT0; })) return true;
+  return !!((f._mv && f._mv.key === 'finisher') || (f._windup && f._windup._fin) || (f._sm && f._sm._fin));
+}
+function finArmConn(f){
+  if(f._finCon != null && hazardT - f._finCon <= FIN_ARM.gap) return true;
+  for(const o of FINX){ if(o.dead || o.o !== f.idx || o.t0 < f._finT0) continue; for(const g of fighters) if(g._fxBy === o.id) return true; }
+  return false;
+}
+// Once a step (step, the host): who is in a finisher still, and how they are armoured (0 none, 1 light, 2 heavy) -- what the drawing and the CPUs read.
+function finArmTick(){
+  for(const g of fighters){
+    if(g._finT0 == null && (g._fxLock || 0) > hazardT && g._fxBy == null && !g.dead){   // committed again by a record of its own that has not hit yet: a new startup
+      let t0 = null; for(const o of FINX) if(!o.dead && o.o === g.idx && !o._finHit && (t0 == null || o.t0 < t0)) t0 = o.t0;
+      if(t0 != null){ g._finT0 = t0; g._finCon = null; g._finArmBy = null; }
+    }
+    if(g._finT0 == null){ if(g._faS) g._faS = 0; continue; }
+    if(g.dead || hazardT - g._finT0 > FIN_ARM.cap || (hazardT > g._finT0 + 1 && !finArmBusy(g))){ g._finT0 = null; g._finCon = null; g._finArmBy = null; g._faS = 0; continue; }
+    g._faS = finArmBusy(g) ? (finArmConn(g) ? 2 : (g._finArmBy == null && g._finCon == null ? 1 : 0)) : 0;
+  }
+}
+// applyHit: the body as it was before this hit (hdNoFlinch's shape), when the finisher's armour takes it; else null.
+function finArmKeep(t, dmg, from, opts, fsSt){
+  if(t._finT0 == null || t.dead || fsSt || t._fsLock || (opts && opts.throwKind) || !finArmBusy(t)) return null;
+  const tick = !!(opts && opts.tick);
+  if(!tick && !(from && from !== t && fighters.indexOf(from) >= 0)) return null;
+  const heavy = finArmConn(t);
+  if(!heavy && t._finCon != null) return null;   // its last hit long past: the recovery is open
+  if(!tick && !heavy){
+    if(dmg > FIN_ARM.light) return null;
+    const key = SMASH_PROJ ? SMASH_PROJ : (from.idx + ':' + (from._atkSeq || 0));
+    if(t._finArmBy != null && t._finArmBy !== key) return null;
+    t._finArmBy = key;
+  }
+  if(!tick){ t._faT = hazardT; t._faS = heavy ? 2 : 0; }
+  return { fin:1, vx:t.vx, vy:t.vy, og:t.onground, hs:t.hitstun, hop:t._hop, ff:t._ff, j:t.jumps, ua:t._usedAirSpecial, hj:t._hitJumpV, wu:t._windup, sm:t._sm, el:t._eLag, lag:t._lag };
 }
 // An enemy shot that meets what a finisher left (the projectile step, before turrets): the corkboard stops it, the propped mirror turns it back
 // (it becomes Flower's), a hard one pops the bubble, and one on Teardrop's puddle breaks the ambush. True: the shot is done for this frame.
@@ -90724,7 +90782,9 @@ function pzDoorStep(o, f){
   if(o.ph === 'catch'){
     pzDoorHold(o, f);
     const t = fxHeld(o, o.tgt);
-    if(!t || f.hitstun > 0 || f._jail != null){ fxFree(t); o.ph = 'sink'; o.et = hazardT; return; }   // KO'd, jailed or home, or he was hit: they drop free, the rest is lost
+    if(!t || f._jail != null){ fxFree(t); o.ph = 'sink'; o.et = hazardT; return; }   // KO'd, jailed or home: they drop free, the rest is lost. (A hit on him no longer frees them -- FINISHER ARMOUR, 2026-11-27: the door holds them, not
+    // he, so a third fighter hitting him cannot knock the caught foe out; he is free all the while and flinches as ever. A grab on him or a Final Smash ends it.)
+    if(f._heldBy != null || f._fsLock){ fxFree(t); o.ph = 'sink'; o.et = hazardT; return; }
     const a = hazardT - o.ct;
     if((a & 3) === 3 && !pzDoorOk(o)){ fxFree(t); o.ph = 'sink'; o.et = hazardT; return; }   // a solid came down on the door (a closed door, say): they drop free and it sinks
     if(a < D.hold){
@@ -93389,6 +93449,7 @@ function gbTick(f, inp){
   if(++g.t > G.whiff + 2) f._gb = null;
 }
 function holdStart(f, t, G){
+  if(t._finT0 != null && finArmBusy(t)){ finxLetGo(t, false); t._finT0 = null; t._finCon = null; t._faS = 0; }   // FINISHER ARMOUR: a grab beats it -- the finisher it was committed to ends, and what it held is let go
   t.countering = 0; t.reflecting = 0; t.armor = 0; t._riposte = false; t._windup = null; t._sm = null; t._mv = null; t._gb = null;   // a grab beats a stance
   f._gb = null;
   const max = Math.min(LOCK.max, Math.max(40, Math.min(G.hold.max, G.hold.base + t.pct * G.hold.perPct)));   // MAX LOCK TIME: no hold past LOCK.max (it ran 56 to 150 by their %)
@@ -108151,7 +108212,7 @@ function hdNoFlinch(t, dmg, from, opts){
   if(!keep) return null;
   return { vx:t.vx, vy:t.vy, og:t.onground, hs:t.hitstun, hop:t._hop, ff:t._ff, j:t.jumps, ua:t._usedAirSpecial, hj:t._hitJumpV, wu:t._windup, sm:t._sm, el:t._eLag, lag:t._lag };
 }
-function hdKeepBody(t, k){ t.vx = k.vx; t.vy = k.vy; t.onground = k.og; t.hitstun = k.hs; t._hop = k.hop; t._ff = k.ff; t.jumps = k.j; t._usedAirSpecial = k.ua; t._hitJumpV = k.hj; t._hdShrugT = hazardT; }
+function hdKeepBody(t, k){ t.vx = k.vx; t.vy = k.vy; t.onground = k.og; t.hitstun = k.hs; t._hop = k.hop; t._ff = k.ff; t.jumps = k.j; t._usedAirSpecial = k.ua; t._hitJumpV = k.hj; if(!k.fin) t._hdShrugT = hazardT; else t._stunFx = 0; }   // (k.fin: FINISHER ARMOUR's, which draws its own flash)
 function hdKeepMove(t, k){ t._windup = k.wu; t._sm = k.sm; t._eLag = k.el; t._lag = k.lag; }
 // THAT'S WRONG. reads a foe who has JUST MISSED: a move that ended on nothing in the last HD.wrong.miss frames, a move or a grab past its live frames
 // with nothing hit, or the end lag of a move that missed.
@@ -111263,6 +111324,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(TESTMODE.active && !TESTMODE.damage){ dmg=0; }   // test mode: damage toggle off = no % buildup
   if(LKF && from && from._lkFam && t.koCap > 0 && dmg > 0) dmg = Math.min(dmg, Math.max(0, t.koCap - 1 - t.pct));   // 8-BALL'S CONTEST: an assist's damage stops short of the KO percent (the last hit is the fighter's: lkAstKp)
   t.pct+=dmg;
+  if(from && from !== t && from._finT0 != null && dmg > 0 && !(opts && opts.tick) && (!(opts && opts.shot) || (SMASH_PROJ && SMASH_PROJ._slot === 'finisher')) && finArmBusy(from)){ from._finCon = hazardT; for(const o of FINX) if(o.o === from.idx && !o.dead && o.t0 >= from._finT0) o._finHit = 1; }   // FINISHER ARMOUR: the finisher has connected (heavy armour while it holds a foe or hits again within FIN_ARM.gap)
   if(dmg > 0 && t.kit && LIMIT_KITS[t.kit.special]) limFill(t, dmg);   // LIMIT: the meter fills with the damage taken, 1 a 1%
   if(dmg > 0 && from && from !== t && !(opts && opts.tick) && from._eLag) endLagHit(from);   // FRAME BUDGET: the move connected -- its end lag is cut (a blocked hit never gets here: zsBlock)
   if(CONTEST && dmg > 0 && from && from !== t && !(opts && opts.tick)) contestHit(t, from, dmg);   // A CONTEST: a landed hit counts toward the steal, and knocks the seed (and a hard one the window) loose
@@ -111299,7 +111361,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   }
   const hitGround = t.onground;   // (for the dust a launch kicks up: hitFx)
   if(from !== t) t._backAir = false;   // hit by someone else: the respawn's ceiling is over (ONE FALL, ONE STOCK, in step)
-  const hdKeep = hdNoFlinch(t, dmg, from, opts);   // HOT DOG: a hit that interrupts no one (Not Leaving, a retry, Through You's slide, the TOO STUBBORN TO FLINCH twist): put back below
+  const hdKeep = hdNoFlinch(t, dmg, from, opts) || (t._finT0 != null ? finArmKeep(t, dmg, from, opts, fsSt) : null);   // (FINISHER ARMOUR: finArmKeep, the same put-back)   // HOT DOG: a hit that interrupts no one (Not Leaving, a retry, Through You's slide, the TOO STUBBORN TO FLINCH twist): put back below
   if(MATCH_TWIST && from && from !== t && Number.isFinite(from.x)){ const tk = stkTwistKbK(t, from); if(tk !== 1){ kbx *= tk; kby *= tk; } }
   if(CONTEST && from && from !== t){ const ck = contestKbK(t, from); if(ck !== 1){ kbx *= ck; kby *= ck; } }   // A CONTEST: a holder's knockback (Cloudy's: the jam jar, the house set's shield, the crate)   // STICKER'S TWISTS: BACKSTAB (a hit to the back, 30% farther) and SUNSET (up to 25% with the light)
   if(!LKF && from && from !== t && from._asTy === 'heavy'){ kbx *= AS_TY_HEAVY; kby *= AS_TY_HEAVY; }   // EVERYWHERE: a regular match's HEAVY real assist launches farther (AS_TY_HEAVY)
@@ -111330,7 +111392,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(!isTick && from && from !== t && t._eLag){ t._eLag = null; if(t._lag > 0) t._lag = 0; }   // FRAME BUDGET: a hit taken in end lag -- the hitstun takes over
   if(!isTick && t._sm && t._sm.drive) t._sm = null;   // a lunge / dash / hop is lost to a hit (the dash's i-frames mostly spare it)
   if(hdKeep) hdKeepMove(t, hdKeep);   // (HOT DOG: and what it was winding up or doing)
-  t._hurtAnim=HURT_ANIM;   // render-only: the one unambiguous "was HIT" signal (see wasHit)
+  t._hurtAnim = (hdKeep && hdKeep.fin) ? 0 : HURT_ANIM;   // (FINISHER ARMOUR: a hit taken on the armour does not flinch, so no hurt pose)   // render-only: the one unambiguous "was HIT" signal (see wasHit)
   t._hurt=90;   // any hit suppresses heal-over-time (Fern) for ~1.5s so aggression can break through
   if(LKF && from && from._lkFam) lkTouch(from, t);   // 8-BALL'S CONTEST: a contest assist's landed hit gives its family's touch (lkTouch)
   else if(LKF && from && from._lkTri && from._lkTP && from.idx >= 0 && fighters[from.idx] === from) lkTouch(from._lkTP, t);   // ...and TYPE POWER: 3 of a type out, your own hit gives it too
@@ -135243,6 +135305,23 @@ function brainSnapFollow(f, t, inp, B, K, adx, ady, toward, sp, now){
   if(brainNsmBand(f) ? (!brainNsmLands(f, t) && adx > brainNsmBand(f)[0]) : adx > (K.beam || 240)*0.85){ brainWalk(f, inp, toward, sp, t.x); return true; }   // a step in (SMASH FOLLOW-UP: until the photo's own band reaches)
   f._snapHitT = null; brainTap(B, brainSmash(f, t, toward), 3); Object.assign(inp, B.press.keys); B.st = 'smash'; B.until = now + 75; return true;
 }
+// FINISHER ARMOUR (2026-11-27): a foe in a finisher that shows its armour (the flat outline: t._faS, 1 light, 2 heavy) is not jabbed into. Once a
+// finisher, rolled by level (L.punish, the end-lag punish's rate, at least 0.3), it reads the outline: on the floor beside it, the grab (grabs beat armour);
+// else its smash where that lands (a strong hit breaks light armour; on heavy it at least lands its damage); else, against heavy armour, it walks in for
+// the grab. Against heavy armour a string at it ends, and without a read it holds off rather than swing into it; light armour without a read: as before.
+function brainArmRead(f, t, inp, B, L, toward, sp){
+  if(t._isBoss || t.dead || t._finT0 == null) return false;
+  const heavy = t._faS === 2;
+  if(heavy && B.st === 'string') brainEndString(f, B, L);
+  if(B.faE !== t._finT0){ B.faE = t._finT0; B.faOk = simRand() < Math.max(0.3, L.punish || 0); }
+  if(f._lag > 0 || f.hitstun > 0 || f._mv || f.atkCd > 0) return heavy;
+  if(!B.faOk) return heavy;
+  const adx = Math.abs(t.x - f.x), ady = Math.abs(t.y - f.y);
+  if(f.onground && t.onground !== false && adx < f.r + (t.r || 24) + 20 && ady < 30){ brainTap(B, brainFace({ grab:true }, toward), 3); Object.assign(inp, B.press.keys); B.next = hazardT + 20; B.faOk = false; return true; }
+  if(f.onground && f.smCd <= 0 && !f._smQ && !(f.smashHold > 0) && brainSmLands(f, t, 20)){ brainTap(B, brainSmash(f, t, toward), 3); Object.assign(inp, B.press.keys); B.st = 'smash'; B.until = hazardT + 75; B.faOk = false; return true; }
+  if(heavy && f.onground && ady < 60){ brainWalk(f, inp, toward, sp, t.x); return true; }
+  return heavy;
+}
 function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   const now = hazardT, K = brainKit(f), toward = dx < 0 ? -1 : 1, awake = now >= B.wake;
   brainGuess(f, t, B, L, dist, awake);
@@ -135251,6 +135330,7 @@ function brainFight(f, t, inp, B, L, dx, dy, adx, ady, dist, sp){
   // a press in progress (a tap is held a few frames, then let go)
   if(B.press){ if(now <= B.press.until){ Object.assign(inp, B.press.keys); return; } B.press = null; }
   if(brainPunish(f, t, inp, B, L, toward)) return;   // FRAME BUDGET: a foe in end lag within reach, hit by level
+  if(t._faS > 0 && brainArmRead(f, t, inp, B, L, toward, sp)) return;   // FINISHER ARMOUR: a foe armoured in a finisher is grabbed or smashed, not jabbed (Sparring Figures too: before figAct)
   if(sp === 'shutter' && brainSnapFollow(f, t, inp, B, K, adx, ady, toward, sp, now)) return;   // Cammy: the Snapshot, then the smash (WEAK KIT FIXES 2026-11-25)
   if(f._fig && figAct(f, t, inp, B, L, dx, dy, adx, ady, dist, toward)) return;   // SPARRING FIGURES: the counters to the habits it knows (figAct)
   const inReach = brainInReach(f, t);
@@ -156910,6 +156990,7 @@ function haSweet(c, sh, sw, col, k){
 // blinking through the last STANCE_BLINK frames so the end can be seen coming. (It was a 12 px glyph in the icon row, which stays.)
 // countering and reflecting are net flags, so a client draws the same frames.
 const STANCE_BLINK = 6;
+const FIN_ARM_FLASH = 10;   // FINISHER ARMOUR: frames a hit taken on the armour flashes
 const HA_HURT = new Map();
 function haHurtOf(f){ if(f.hurt !== undefined) return f.hurt; if(sizeOf(f) !== 1) return sizedHurt(f.name, sizeOf(f)); let h = HA_HURT.get(f.name); if(h === undefined){ h = hurtboxFor(f.name) || null; HA_HURT.set(f.name, h); } return h; }
 // The fighter's hurtbox outline in the world -- the traced polygon mirrored as it is drawn (hurtMirror), else its ellipse, else its circle.
@@ -156925,12 +157006,18 @@ function haOutline(c, f){
   return null;
 }
 function drawStanceArt(){
-  let any = false; for(const f of fighters) if(!f.dead && (f.countering > 0 || f.reflecting > 0)){ any = true; break; }
+  let any = false; for(const f of fighters) if(!f.dead && (f.countering > 0 || f.reflecting > 0 || f._faS > 0 || (f._faT != null && hazardT - f._faT >= 0 && hazardT - f._faT < FIN_ARM_FLASH))){ any = true; break; }
   if(!any) return;
   const c = ctx; c.save(); c.lineJoin = 'round'; c.lineCap = 'round';
   for(const f of fighters){
     if(f.dead || haHidden(f)) continue;
     const up = MCAVE && MCAVE.on; if(up){ c.save(); mcUpright(f.x, f.y); }   // (MOON CAVES: upright on its part of the disc)
+    const faD = f._faT != null ? hazardT - f._faT : -1;
+    if(f._faS > 0 || (faD >= 0 && faD < FIN_ARM_FLASH)){   // FINISHER ARMOUR: a flat outline while it holds (white light, orange heavy), a flat white flash on the body as a hit lands on it
+      haOutline(c, f);
+      if(faD >= 0 && faD < FIN_ARM_FLASH){ c.globalAlpha = 0.6*(1 - faD/FIN_ARM_FLASH); c.fillStyle = '#ffffff'; c.fill(); }
+      if(f._faS > 0){ const hv = f._faS === 2; c.globalAlpha = 0.4; c.strokeStyle = '#1c1c1c'; c.lineWidth = hv ? 8 : 6; c.stroke(); c.globalAlpha = 0.95; c.strokeStyle = hv ? '#ff9a3c' : '#ffffff'; c.lineWidth = hv ? 4 : 2.5; c.stroke(); }
+    }
     if(f.reflecting > 0 && !(f.reflecting <= STANCE_BLINK && (hazardT & 2))){   // glass: a pale fill, a silver rim, a sheen running round it
       haOutline(c, f);
       c.globalAlpha = 0.14; c.fillStyle = '#dfe8f2'; c.fill();
@@ -157180,6 +157267,7 @@ const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering
   '_btFlip', '_btFlipT0', '_btFlipMiss', '_btSideT', '_btShatT', '_btShat0', '_btJabN', '_btHide', '_btSurp', '_btStickT', '_btLowT', '_btCall',   // (EVENT FIGHTERS: BOTTLE -- her flip, her side, her shards, which pat, her hiding, the surprise, a stuck landing, lying low, and a foe she called: the drawing reads them, with the host's clock)
   '_stPh', '_stLump', '_stGl', '_stGlT', '_stFlat',   // (EVENT FIGHTERS: STICKER -- the corner / smile / slap / stumble phase, the stash's lump, the glide and its sway, Doormat's flat charge: the drawing reads them)
   '_zsOn','_zsM','_zsBrk','_zsLk','_zsF','_rfT','_rfF',   // (SHIELD / REFLECTOR: frames the bubble has been up, its meter, the break stun, the block flash; the reflector's frame and flash -- drawShieldArt reads them)
+  '_faS', '_faT',   // (FINISHER ARMOUR: 1 light / 2 heavy while armoured in a finisher, and the frame of the last hit taken on it -- drawStanceArt draws them)
   '_growT',   // (Puffball's Grow: until when she is grown -- the pink Attack Up icon; her size itself rides in r)
   '_baldUntil', '_fsBaldUntil',   // (FSA lane a: Spikey's spikes are gone until then -- his Can't Hold It In special, and his Final Smash's release (the render-only one))
   '_col',   // (EVENT FIGHTERS: A COMPLETE COLLECTION -- the kinds held, one number, 1 when empty: a guest draws the slots from it, on a fighter that has one)
