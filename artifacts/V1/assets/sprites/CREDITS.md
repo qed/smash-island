@@ -1906,3 +1906,17 @@ as his render is; a picture of two characters cut to this one); nothing was redr
 | `canon/lightning/lightning-shock.png` (167x218) | Lightning: BFB pose: shocked | https://static.wikia.nocookie.net/battlefordreamisland/images/a/ac/Lightshock.png |
 | `canon/lightning/lightning-zigzag.png` (171x201) | Lightning: TPOT pose: Lightning's a zigzag | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0f/Lightning%27s_a_ZigZag.png |
 | `canon/lightning/lightning-cloud.png` (166x202) | Lightning: BFB pose: Oh my cloud | https://static.wikia.nocookie.net/battlefordreamisland/images/1/1e/Lightning_-_Oh_my_cloud......_.png |
+
+### Animation batch 3 (2026-11-27): show pictures for Black Hole
+
+Pictures from BFDI, BFB, TPOT, BFDI Mini Again and BFDIE (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area; Rocky's 600-px assets share one scale; Black Hole's by width or his core, centred
+as his render is; a picture of two characters cut to this one); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/black-hole/black-hole-icon.png` (399x200) | Black Hole: asset: icon pose | https://static.wikia.nocookie.net/battlefordreamisland/images/2/28/Black_Hole_Icon_Pose.png |
+| `canon/black-hole/black-hole-zapped.png` (399x200) | Black Hole: asset: Black Hole zapped | https://static.wikia.nocookie.net/battlefordreamisland/images/3/34/Black_hole_zapped0012.png |
+| `canon/black-hole/black-hole-orbit.png` (200x200) | Black Hole: asset: orbit ring | https://static.wikia.nocookie.net/battlefordreamisland/images/0/06/Blackholes_Orbit_.png |
+| `canon/black-hole/black-hole-glowless.png` (113x200) | Black Hole: asset: Black Hole without glow | https://static.wikia.nocookie.net/battlefordreamisland/images/9/96/Circle_Eye.png |
