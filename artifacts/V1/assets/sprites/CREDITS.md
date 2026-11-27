@@ -1999,3 +1999,16 @@ Firey cut to Coiny alone); nothing was redrawn or recoloured. Fan-work use, as e
 | `canon/woody/woody-run.png` (250x187) | Woody: BFB pose: run | https://static.wikia.nocookie.net/battlefordreamisland/images/b/bd/Woodyrun.png |
 | `canon/woody/woody-runbfdi.png` (181x190) | Woody: BFDI pose: run | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a4/Woody_Run0002.png |
 | `canon/woody/woody-fainted.png` (233x168) | Woody: BFB pose: unconscious | https://static.wikia.nocookie.net/battlefordreamisland/images/4/4b/Fainted_Woody.png |
+
+### Animation batch 4 (2026-11-27): show pictures for Spongy
+
+Pictures from BFDI, BFDIA, BFB, TPOT and IDFB (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area, or by height or width for a prop, a view asset or the mech suit; Coiny slapping
+Firey cut to Coiny alone); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/spongy/spongy-tipping.png` (264x272) | Spongy: BFDIA pose, tipping over (Oh dear) | https://static.wikia.nocookie.net/battlefordreamisland/images/1/13/Ohdear.png |
+| `canon/spongy/spongy-flat.png` (372x164) | Spongy: BFDIA pose, lying flat | https://static.wikia.nocookie.net/battlefordreamisland/images/9/9e/Jhewdbgeirw.png |
+| `canon/spongy/spongy-side.png` (166x184) | Spongy: asset: side | https://static.wikia.nocookie.net/battlefordreamisland/images/c/cf/Spongy_Body_Side.png |
