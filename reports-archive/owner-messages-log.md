@@ -1635,6 +1635,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (Sparring Figure counters don't measurably help yet; the lead asked: fix first or merge as is)**: fix the counters first, then merge. also, start new jobs from the queue
 - **2026-11-25 (after Update 13 shipped)**: start new jobs from the queue.
 - **2026-11-25 (Sparring Figures are live in Training)**: train an amiibo yourself.
+- **2026-11-27 (while the lag fix was pushed)**: set up a sparring figure.
 
 ## Other
 - **2026-11-17 (evening)**: can you please take all the work I have done on this across all commits and create a presentation showing all the coding skills I have learned while building this project and how they can be transferred to future coding projects?
