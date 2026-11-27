@@ -1942,3 +1942,89 @@ as his render is; a picture of two characters cut to this one); nothing was redr
 | `canon/rose/rose-ohhh.png` (153x197) | Rose: TPOT pose | https://static.wikia.nocookie.net/battlefordreamisland/images/0/03/Ohhhhhhhhhhh.png |
 | `canon/rose/rose-tpot15.png` (149x189) | Rose: TPOT 15 pose | https://static.wikia.nocookie.net/battlefordreamisland/images/9/95/RoseTPOT15.png |
 | `canon/rose/rose-arms.png` (138x213) | Rose: BFDIE pose: Don't think of it as cheating | https://static.wikia.nocookie.net/battlefordreamisland/images/c/ce/Don%27t_think_of_it_as_Cheating.png |
+
+### Animation batch 4 (2026-11-27): show pictures for Pin
+
+Pictures from BFDI, BFDIA, BFB, TPOT and IDFB (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area, or by height or width for a prop, a view asset or the mech suit; Coiny slapping
+Firey cut to Coiny alone); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/pin/pin-pointy.png` (111x187) | Pin: TPOT pose | https://static.wikia.nocookie.net/battlefordreamisland/images/6/63/Pointythingy.png |
+| `canon/pin/pin-jtilt.png` (140x185) | Pin: BFDIA pose, tilted jump | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7a/Pin_5.png |
+| `canon/pin/pin-jumping.png` (139x188) | Pin: BFDIA pose, jumping | https://static.wikia.nocookie.net/battlefordreamisland/images/9/93/Pin_Jumping_%28Updated%29.png |
+| `canon/pin/pin-happy.png` (114x187) | Pin: BFDIA 22 pose | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f4/Pinbfdia22.png |
+| `canon/pin/pin-flies.png` (180x107) | Pin: BFDI pose: Hey! We're flying! | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3d/Pin_flies.png |
+| `canon/pin/pin-ftpot.png` (202x161) | Pin: TPOT pose: Pin flying | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b9/Pin_flying.png |
+| `canon/pin/pin-mech.png` (169x240) | Pin: BFDIA pose: angry Mech Pin | https://static.wikia.nocookie.net/battlefordreamisland/images/5/5c/AngryMechPin.png |
+| `canon/pin/pin-rolling.png` (156x166) | Pin: old asset: Pin top (BFDIA 5c) | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d6/Pin_rolling.png |
+
+### Animation batch 4 (2026-11-27): show pictures for Coiny
+
+Pictures from BFDI, BFDIA, BFB, TPOT and IDFB (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area, or by height or width for a prop, a view asset or the mech suit; Coiny slapping
+Firey cut to Coiny alone); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/coiny/coiny-slaps.png` (272x188) | Coiny: BFDIA pose: Coiny slaps Firey | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d5/Coiny_slaps_Firey.png |
+| `canon/coiny/coiny-elim.png` (188x197) | Coiny: BFDI pose | https://static.wikia.nocookie.net/battlefordreamisland/images/9/9f/Elim112coiny.png |
+| `canon/coiny/coiny-jump.png` (213x195) | Coiny: BFDI pose | https://static.wikia.nocookie.net/battlefordreamisland/images/2/22/Coiny_GTTTATINT_2.png |
+| `canon/coiny/coiny-flying.png` (214x190) | Coiny: BFDI pose, flying | https://static.wikia.nocookie.net/battlefordreamisland/images/4/48/Flyingcoiny.png |
+| `canon/coiny/coiny-throw.png` (202x224) | Coiny: BFB pose: throwing stuff | https://static.wikia.nocookie.net/battlefordreamisland/images/7/79/No_big_deal_i_love_throwin_stuff.png |
+| `canon/coiny/coiny-yeet.png` (263x232) | Coiny: BFB pose: throwing (Yeet) | https://static.wikia.nocookie.net/battlefordreamisland/images/e/ea/Has_he_not_made_this_pose_numerous_times_in_the_past%2C_why_does_this_feel_like_a_throwback_2.png |
+| `canon/coiny/coiny-weird.png` (188x235) | Coiny: BFDIA pose | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0d/CoinyWeird.png |
+| `canon/coiny/coiny-front.png` (171x171) | Coiny: asset: front | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d8/Coiny_Body_Front_2.png |
+| `canon/coiny/coiny-side.png` (62x164) | Coiny: asset: side (edge-on) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a6/Coiny_Side.png |
+| `canon/coiny/coiny-below.png` (178x173) | Coiny: asset: from below | https://static.wikia.nocookie.net/battlefordreamisland/images/7/74/Coiny_belowsies.png |
+
+### Animation batch 4 (2026-11-27): show pictures for Woody
+
+Pictures from BFDI, BFDIA, BFB, TPOT and IDFB (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area, or by height or width for a prop, a view asset or the mech suit; Coiny slapping
+Firey cut to Coiny alone); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/woody/woody-kicker.png` (243x204) | Woody: BFB pose: kicking | https://static.wikia.nocookie.net/battlefordreamisland/images/6/6d/Woody_-_kicker.png |
+| `canon/woody/woody-scared.png` (184x183) | Woody: BFB pose: scared | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fa/Scared_woody.png |
+| `canon/woody/woody-scaredal.png` (167x207) | Woody: BFB pose: scared | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0b/Woody_-_scared_as_always.png |
+| `canon/woody/woody-about.png` (198x210) | Woody: BFDI pose: about to scream | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a8/Woody_about_to_scream.png |
+| `canon/woody/woody-scream.png` (192x229) | Woody: BFDI pose: scream | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2c/Woody_Scream.PNG |
+| `canon/woody/woody-fscream.png` (249x231) | Woody: BFB pose: first scream in BFB | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f1/Woody%27s_First_Scream_In_BFB.png |
+| `canon/woody/woody-run.png` (250x187) | Woody: BFB pose: run | https://static.wikia.nocookie.net/battlefordreamisland/images/b/bd/Woodyrun.png |
+| `canon/woody/woody-runbfdi.png` (181x190) | Woody: BFDI pose: run | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a4/Woody_Run0002.png |
+| `canon/woody/woody-fainted.png` (233x168) | Woody: BFB pose: unconscious | https://static.wikia.nocookie.net/battlefordreamisland/images/4/4b/Fainted_Woody.png |
+
+### Animation batch 4 (2026-11-27): show pictures for Spongy
+
+Pictures from BFDI, BFDIA, BFB, TPOT and IDFB (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area, or by height or width for a prop, a view asset or the mech suit; Coiny slapping
+Firey cut to Coiny alone); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/spongy/spongy-tipping.png` (264x272) | Spongy: BFDIA pose, tipping over (Oh dear) | https://static.wikia.nocookie.net/battlefordreamisland/images/1/13/Ohdear.png |
+| `canon/spongy/spongy-flat.png` (372x164) | Spongy: BFDIA pose, lying flat | https://static.wikia.nocookie.net/battlefordreamisland/images/9/9e/Jhewdbgeirw.png |
+| `canon/spongy/spongy-side.png` (166x184) | Spongy: asset: side | https://static.wikia.nocookie.net/battlefordreamisland/images/c/cf/Spongy_Body_Side.png |
+
+### Animation batch 4 (2026-11-27): show pictures for Eraser
+
+Pictures from BFDI, BFDIA, BFB, TPOT and IDFB (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area, or by height or width for a prop, a view asset or the mech suit; Coiny slapping
+Firey cut to Coiny alone); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/eraser/eraser-smug.png` (196x203) | Eraser: BFB pose, smug grin | https://static.wikia.nocookie.net/battlefordreamisland/images/f/ff/Erase.png |
+| `canon/eraser/eraser-smugs.png` (187x206) | Eraser: BFB pose, smug | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b7/Ububu.png |
+| `canon/eraser/eraser-thanks.png` (163x220) | Eraser: BFB pose: Thanks Ruby! (arm up) | https://static.wikia.nocookie.net/battlefordreamisland/images/4/47/Eraser_-_Thanks_Ruby%21.png |
+| `canon/eraser/eraser-cuberoll.png` (164x190) | Eraser: asset: Eraser cube roll | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a6/Eraser_cuberoll.png |
+| `canon/eraser/eraser-back.png` (132x190) | Eraser: asset: back | https://static.wikia.nocookie.net/battlefordreamisland/images/5/50/Eraserbackasset.png |
+| `canon/eraser/eraser-lying.png` (266x166) | Eraser: IDFB pose, lying | https://static.wikia.nocookie.net/battlefordreamisland/images/c/ce/Eraser_wiki_pose.png |
