@@ -1267,6 +1267,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (Marshmallow spring pad job running)**: push marshmallow when its done
 - **2026-11-25 (box: push the 8-Ball contest fixes now or wait)**: Push now
 - **2026-11-25 (box: push the multi-hit hold and Sticker's Backstab now or wait)**: Push now
+- **2026-11-27 (the lead asked to push the guest lag fix)**: push the lag fix. also, cpu seat should train the sparring figure against a sparring figure
 
 ## Status questions & check-ins
 
@@ -1579,6 +1580,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-24 (after the lead offered a job proposing kit changes for the 10 weakest fighters)**: keep going
 - **2026-11-25 (the lead asked the owner to open the browser pane for training a Figure)**: it be opened
 - **2026-11-25 (Sparring Figures panel)**: what does the cpu seat thing do?
+- **2026-11-27 (the CPU seat question was not answered yet)**: and about the cpu seat thing?
 
 ## Working rules, budget & agents
 
