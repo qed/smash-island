@@ -1980,3 +1980,22 @@ Firey cut to Coiny alone); nothing was redrawn or recoloured. Fan-work use, as e
 | `canon/coiny/coiny-front.png` (171x171) | Coiny: asset: front | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d8/Coiny_Body_Front_2.png |
 | `canon/coiny/coiny-side.png` (62x164) | Coiny: asset: side (edge-on) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a6/Coiny_Side.png |
 | `canon/coiny/coiny-below.png` (178x173) | Coiny: asset: from below | https://static.wikia.nocookie.net/battlefordreamisland/images/7/74/Coiny_belowsies.png |
+
+### Animation batch 4 (2026-11-27): show pictures for Woody
+
+Pictures from BFDI, BFDIA, BFB, TPOT and IDFB (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area, or by height or width for a prop, a view asset or the mech suit; Coiny slapping
+Firey cut to Coiny alone); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/woody/woody-kicker.png` (243x204) | Woody: BFB pose: kicking | https://static.wikia.nocookie.net/battlefordreamisland/images/6/6d/Woody_-_kicker.png |
+| `canon/woody/woody-scared.png` (184x183) | Woody: BFB pose: scared | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fa/Scared_woody.png |
+| `canon/woody/woody-scaredal.png` (167x207) | Woody: BFB pose: scared | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0b/Woody_-_scared_as_always.png |
+| `canon/woody/woody-about.png` (198x210) | Woody: BFDI pose: about to scream | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a8/Woody_about_to_scream.png |
+| `canon/woody/woody-scream.png` (192x229) | Woody: BFDI pose: scream | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2c/Woody_Scream.PNG |
+| `canon/woody/woody-fscream.png` (249x231) | Woody: BFB pose: first scream in BFB | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f1/Woody%27s_First_Scream_In_BFB.png |
+| `canon/woody/woody-run.png` (250x187) | Woody: BFB pose: run | https://static.wikia.nocookie.net/battlefordreamisland/images/b/bd/Woodyrun.png |
+| `canon/woody/woody-runbfdi.png` (181x190) | Woody: BFDI pose: run | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a4/Woody_Run0002.png |
+| `canon/woody/woody-fainted.png` (233x168) | Woody: BFB pose: unconscious | https://static.wikia.nocookie.net/battlefordreamisland/images/4/4b/Fainted_Woody.png |
