@@ -707,6 +707,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-27 (box: Needle has 4 counters -- new down special / down + up / keep all)**: remove the counter on her smash. also do the new down special
 - **2026-11-27 (box: Needle's smash without the counter -- point-first lunge or triple thrust; new down special -- Pin Drop, Hissy Fit or Thread Snare)**: Triple thrust; Pin Drop
 - **2026-11-27 (while animation jobs run)**: also, some finishers are too interruptible
+- **2026-11-27 (while batches 4/5 and Needle were being pushed)**: also, all the aerials are still archetype aerials. The down-air in particular
 
 ## Bosses, Boss Rush & secrets
 
@@ -1288,6 +1289,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-27 (finisher armour job running)**: push the finishers when done
 - **2026-11-27 (Bow frame-by-frame job running)**: push bow when done too
 - **2026-11-27 (animation batch 5 running)**: push batch 5 when done too
+- **2026-11-27 (while batches 4/5, Needle and finishers were being merged)**: also, merge all the update lines for a week into a single weekly update line
 
 ## Status questions & check-ins
 
@@ -1602,6 +1604,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (Sparring Figures panel)**: what does the cpu seat thing do?
 - **2026-11-27 (the CPU seat question was not answered yet)**: and about the cpu seat thing?
 - **2026-11-27 (after many reminder relays answered "Nothing is wrong")**: why are you saying "nothing is wrong"?
+- **2026-11-27 (lead busy merging)**: hello?
 
 ## Working rules, budget & agents
 

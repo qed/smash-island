@@ -2028,3 +2028,115 @@ Firey cut to Coiny alone); nothing was redrawn or recoloured. Fan-work use, as e
 | `canon/eraser/eraser-cuberoll.png` (164x190) | Eraser: asset: Eraser cube roll | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a6/Eraser_cuberoll.png |
 | `canon/eraser/eraser-back.png` (132x190) | Eraser: asset: back | https://static.wikia.nocookie.net/battlefordreamisland/images/5/50/Eraserbackasset.png |
 | `canon/eraser/eraser-lying.png` (266x166) | Eraser: IDFB pose, lying | https://static.wikia.nocookie.net/battlefordreamisland/images/c/ce/Eraser_wiki_pose.png |
+### Animation batch 5 (2026-11-27): show pictures for Golf Ball
+
+Pictures from BFDI, BFDIA, BFB and TPOT (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area; an open, flat or edge-on book or ring by the render's width or height);
+nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/golf-ball/golf-ball-bossy.png` (169x211) | Golf Ball: BFDIA pose: bossy | https://static.wikia.nocookie.net/battlefordreamisland/images/8/84/Golfbossy.png |
+| `canon/golf-ball/golf-ball-yippee.png` (180x220) | Golf Ball: BFDIA pose: yippee | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b9/GolfBallYippee.png |
+| `canon/golf-ball/golf-ball-body.png` (165x165) | Golf Ball: asset: current body (BFDIA 6-25) | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0c/Golf_Ball_icon.png |
+| `canon/golf-ball/golf-ball-shoes.png` (163x203) | Golf Ball: BFDIA pose: Super-Stick Shoes | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b0/Golf_Ball_Super-Stick_Shoes_So_Ha%21.png |
+| `canon/golf-ball/golf-ball-pog.png` (170x209) | Golf Ball: BFDIA pose | https://static.wikia.nocookie.net/battlefordreamisland/images/8/84/GolfballPOG.png |
+| `canon/golf-ball/golf-ball-flab.png` (169x203) | Golf Ball: BFDIA pose | https://static.wikia.nocookie.net/battlefordreamisland/images/9/9d/Flabbergolfed.png |
+| `canon/golf-ball/golf-ball-reign.png` (170x206) | Golf Ball: BFDIA pose: GB's reign | https://static.wikia.nocookie.net/battlefordreamisland/images/4/47/GB%27s_Reign.png |
+| `canon/golf-ball/golf-ball-shoutl.png` (207x168) | Golf Ball: BFDIA pose, shouting | https://static.wikia.nocookie.net/battlefordreamisland/images/4/42/Golfshout_1.png |
+| `canon/golf-ball/golf-ball-shout.png` (212x180) | Golf Ball: BFDI pose, shouting | https://static.wikia.nocookie.net/battlefordreamisland/images/b/ba/Golf_Ball_5.png |
+| `canon/golf-ball/golf-ball-determined.png` (167x212) | Golf Ball: BFDI pose | https://static.wikia.nocookie.net/battlefordreamisland/images/b/bd/Golf_b.png |
+
+### Animation batch 5 (2026-11-27): show pictures for Tennis Ball
+
+Pictures from BFDI, BFDIA, BFB and TPOT (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area; an open, flat or edge-on book or ring by the render's width or height);
+nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/tennis-ball/tennis-ball-chatter.png` (190x211) | Tennis Ball: BFB pose, chatter | https://static.wikia.nocookie.net/battlefordreamisland/images/3/31/Tennis_Ball_-_chatter.png |
+| `canon/tennis-ball/tennis-ball-jumps.png` (180x209) | Tennis Ball: BFDIA pose: jumps | https://static.wikia.nocookie.net/battlefordreamisland/images/4/46/TB_JUMPS_TO_HIS_DOOOM.png |
+| `canon/tennis-ball/tennis-ball-prep.png` (181x196) | Tennis Ball: TPOT pose: preparing to jump | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b5/TBpreparingtoJump.png |
+| `canon/tennis-ball/tennis-ball-away.png` (242x181) | Tennis Ball: TPOT pose: jumping away | https://static.wikia.nocookie.net/battlefordreamisland/images/e/eb/JumpawayfromtheFourse.png |
+| `canon/tennis-ball/tennis-ball-bounced.png` (191x190) | Tennis Ball: gallery pose (Other): bounced off by Blocky | https://static.wikia.nocookie.net/battlefordreamisland/images/d/de/TB_getting_bounced_off_by_Blocky.png |
+| `canon/tennis-ball/tennis-ball-squished.png` (229x76) | Tennis Ball: asset: squished (Shattered!) | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fd/Tb_squished.png |
+| `canon/tennis-ball/tennis-ball-sqh.png` (192x137) | Tennis Ball: asset: stuck in Woody's hole (BFDI 3) | https://static.wikia.nocookie.net/battlefordreamisland/images/8/8c/CrushedTennisBall.png |
+| `canon/tennis-ball/tennis-ball-side.png` (178x177) | Tennis Ball: asset: side | https://static.wikia.nocookie.net/battlefordreamisland/images/1/1e/9B08CB79-4156-46B4-AB1B-FAC15B790B0A.png |
+| `canon/tennis-ball/tennis-ball-turn1.png` (179x176) | Tennis Ball: asset: Tennis Ball turning 1 | https://static.wikia.nocookie.net/battlefordreamisland/images/3/37/89784501-CE40-4FC6-82BB-CF74B3C85FA1.png |
+| `canon/tennis-ball/tennis-ball-turn2.png` (179x176) | Tennis Ball: asset: Tennis Ball turning 2 | https://static.wikia.nocookie.net/battlefordreamisland/images/c/cd/331085D9-E67E-4F3B-B475-533BBF9EF11D.png |
+| `canon/tennis-ball/tennis-ball-turn3.png` (179x176) | Tennis Ball: asset: Tennis Ball turning 3 | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d8/908CE021-C6D1-474D-A184-4FA3726DDBA3.png |
+| `canon/tennis-ball/tennis-ball-angled.png` (180x177) | Tennis Ball: asset: angled | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b6/AB82E3E5-BC1E-4120-B495-EF1D3F117668.png |
+| `canon/tennis-ball/tennis-ball-bottom.png` (179x176) | Tennis Ball: asset: looking up (bottom) | https://static.wikia.nocookie.net/battlefordreamisland/images/d/db/Tennis_Ball_Bottom.png |
+
+### Animation batch 5 (2026-11-27): show pictures for Flower
+
+Pictures from BFDI, BFDIA, BFB and TPOT (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area; an open, flat or edge-on book or ring by the render's width or height);
+nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/flower/flower-angry.png` (143x202) | Flower: BFDI 21 pose, angry | https://static.wikia.nocookie.net/battlefordreamisland/images/7/72/Flower_angery_bfdi_21.png |
+| `canon/flower/flower-atk.png` (139x263) | Flower: BFDI: about to kick Ice Cube | https://static.wikia.nocookie.net/battlefordreamisland/images/1/1f/Flower_about_to_kick_Ice_Cube.png |
+| `canon/flower/flower-kicked.png` (293x263) | Flower: BFDI: kicks Ice Cube | https://static.wikia.nocookie.net/battlefordreamisland/images/9/9f/Flower_kicked_Ice_Cube.png |
+| `canon/flower/flower-kicker.png` (174x182) | Flower: BFB pose: the kicker | https://static.wikia.nocookie.net/battlefordreamisland/images/0/07/Flower_-_Don%27t_you_see%2C_She_WAS_the_kicker.png |
+| `canon/flower/flower-bbfb.png` (147x202) | Flower: BFB pose: beautiful | https://static.wikia.nocookie.net/battlefordreamisland/images/6/62/Beautiful.png |
+| `canon/flower/flower-bbfdi.png` (138x265) | Flower: BFDI 1: Ice Cube, don't you think I look beautiful? | https://static.wikia.nocookie.net/battlefordreamisland/images/6/67/Flowerfirstappearance.png |
+| `canon/flower/flower-flail.png` (201x211) | Flower: BFDI pose: flailing | https://static.wikia.nocookie.net/battlefordreamisland/images/4/4d/Flower_Flailing0001.png |
+| `canon/flower/flower-hifive.png` (170x185) | Flower: BFDI pose: hi-five | https://static.wikia.nocookie.net/battlefordreamisland/images/5/55/Flower_Hi-five.png |
+| `canon/flower/flower-mirror.png` (185x174) | Flower: BFDI pose with a hand mirror | https://static.wikia.nocookie.net/battlefordreamisland/images/2/25/Flower%27s_Unhappy_Face.PNG |
+| `canon/flower/flower-oomw.png` (147x264) | Flower: BFDI: Out of my way, I need my space! | https://static.wikia.nocookie.net/battlefordreamisland/images/3/30/Flower_Action_2.png |
+| `canon/flower/flower-rejoin.png` (198x221) | Flower: BFDI pose | https://static.wikia.nocookie.net/battlefordreamisland/images/d/de/Flowerrejoin.png |
+| `canon/flower/flower-swing.png` (247x215) | Flower: BFB pose: push my swing | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c7/Flower_-_push_my_Swing.png |
+
+### Animation batch 5 (2026-11-27): show pictures for Book
+
+Pictures from BFDI, BFDIA, BFB and TPOT (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area; an open, flat or edge-on book or ring by the render's width or height);
+nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/book/book-throw.png` (246x196) | Book: BFDIA pose: throwing | https://static.wikia.nocookie.net/battlefordreamisland/images/8/8e/Book-throw.png |
+| `canon/book/book-throw2.png` (225x206) | Book: BFDIA 5d pose: throwing | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fa/Book-throw2_5d.png |
+| `canon/book/book-cover.png` (149x198) | Book: asset: front cover open | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f0/Bookopen.png |
+| `canon/book/book-open.png` (280x180) | Book: asset: open book | https://static.wikia.nocookie.net/battlefordreamisland/images/7/79/Book_Open.png |
+| `canon/book/book-open7.png` (280x156) | Book: asset: open (TPOT 7) | https://static.wikia.nocookie.net/battlefordreamisland/images/4/49/BookopenTpot7.png |
+| `canon/book/book-open5.png` (149x198) | Book: asset: opened body (TPOT 5) | https://static.wikia.nocookie.net/battlefordreamisland/images/1/12/Book_Opened_Body_%28TPOT_5%29.png |
+| `canon/book/book-angled.png` (106x168) | Book: asset: angled | https://static.wikia.nocookie.net/battlefordreamisland/images/a/ad/Book_body_copy.png |
+| `canon/book/book-side2.png` (73x168) | Book: asset: side, turning | https://static.wikia.nocookie.net/battlefordreamisland/images/0/04/Book_side_2.png |
+| `canon/book/book-side3.png` (110x168) | Book: asset: side, turning further | https://static.wikia.nocookie.net/battlefordreamisland/images/c/cb/Book_side_2_copy.png |
+| `canon/book/book-spine.png` (35x168) | Book: asset: side (spine only) | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0f/Book_side.png |
+| `canon/book/book-flat.png` (185x33) | Book: asset: lying flat (on Spongy) | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3b/Book_on_Spongy_asset.png |
+| `canon/book/book-reveal.png` (164x205) | Book: BFB pose: the opening reveal | https://static.wikia.nocookie.net/battlefordreamisland/images/8/88/Book_-_The_Opening_Reveal.png |
+| `canon/book/book-racket.png` (288x167) | Book: BFDIA pose: opens up and takes out a racket | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3f/Book_opens_up_and_tales_out_Racket.png |
+| `canon/book/book-body.png` (152x168) | Book: asset: body | https://static.wikia.nocookie.net/battlefordreamisland/images/3/34/Book_Icon.png |
+| `canon/book/book-zapped.png` (153x169) | Book: asset: zapped | https://static.wikia.nocookie.net/battlefordreamisland/images/4/49/Bookzap1.png |
+| `canon/book/book-mouth.png` (158x190) | Book: TPOT pose: mouth open | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fe/Book_Mouth_Open.png |
+
+### Animation batch 5 (2026-11-27): show pictures for Donut
+
+Pictures from BFDI, BFDIA, BFB and TPOT (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area; an open, flat or edge-on book or ring by the render's width or height);
+nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/donut/donut-mad.png` (278x242) | Donut: BFB pose, angry | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b1/Donut_baby.png |
+| `canon/donut/donut-shout.png` (200x199) | Donut: BFDIA pose | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f8/DUNUT.png |
+| `canon/donut/donut-stretch.png` (240x204) | Donut: BFB pose: stretched wide | https://static.wikia.nocookie.net/battlefordreamisland/images/6/66/Fat0001.png |
+| `canon/donut/donut-lying.png` (180x78) | Donut: BFB pose, lying on his side | https://static.wikia.nocookie.net/battlefordreamisland/images/1/17/DONT3.png |
+| `canon/donut/donut-flat.png` (170x73) | Donut: asset: Donut flat (BFB 1) | https://static.wikia.nocookie.net/battlefordreamisland/images/b/be/Donutsidenew.png |
+| `canon/donut/donut-ringflat.png` (201x69) | Donut: BFB pose: flattened ring (hula hoop shape) | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3b/THICC_donut.png |
+| `canon/donut/donut-squash.png` (272x205) | Donut: BFB still, squashed ring (cut-out) | https://static.wikia.nocookie.net/battlefordreamisland/images/4/40/Screenshot_17_-removebg-preview.png |
+| `canon/donut/donut-recover.png` (207x178) | Donut: BFB pose: recover | https://static.wikia.nocookie.net/battlefordreamisland/images/3/33/Recover_Donut.png |
+| `canon/donut/donut-dying.png` (241x230) | Donut: BFB pose | https://static.wikia.nocookie.net/battlefordreamisland/images/1/1c/Hes_dying.png |
+| `canon/donut/donut-diary.png` (220x199) | Donut: gallery pose (Other): The new diary is for me! | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c3/The_new_diary_is_for_me%21.png |
+| `canon/donut/donut-twinkle.png` (184x203) | Donut: BFB pose: glowing (twinkle) | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c3/Right_Twinkle.png |
+| `canon/donut/donut-twinklea.png` (174x210) | Donut: BFB pose: glowing, angry | https://static.wikia.nocookie.net/battlefordreamisland/images/7/73/Wrong_Tinkle.png |
