@@ -977,6 +977,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-27 (batches 2 and 3 merged, not live)**: push batches 2 and 3. why does needle have 3 counters?
 - **2026-11-27 (batch 4 and the Needle job running)**: push batch 4 and needle when done. also, while you do the animation batches, work on the ones youve already built, and get at least 1 of them to animation-by-frame.
 - **2026-11-27 (batch 4 finishing)**: start the next animation batch too
+- **2026-11-27 (looking at bow-frames-sheet.png)**: uhhh, the side parts are rotated upwards. why? thats not how she appears in the show
 
 ## Online, UI & players
 
@@ -1283,6 +1284,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-27 (after the interrupted grabs push; the lead asked: check/undo the push, drawing only or motion for the 11 slower kept throws, push Figure vs Figure too?)**: push it, drawing only for the 11, and figures too. also, its IFNE to make throws have different numbers. also, compress worktrees
 - **2026-11-27 (finisher armour job running)**: push the finishers when done
 - **2026-11-27 (Bow frame-by-frame job running)**: push bow when done too
+- **2026-11-27 (animation batch 5 running)**: push batch 5 when done too
 
 ## Status questions & check-ins
 
