@@ -964,6 +964,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-17 (answers on making moves look cool)**: "Both: effects first" (global move effects for every move first: wind-up poses, swing trails, squash/stretch, impact sparks/flash sized by power, shake + tiny freeze on strong hits; then per-fighter animation redraws in batches, most-played first). Hit freeze: "Yes, small and only on strong hits".
 - **2026-11-17 (answers on the move effects)**: weak-hit freeze: "Keep the tiny one". The 4-point star glint growing on the body during wind-ups / pulsing on charged smashes: "THAT IS STUPID" (remove it).
 - **2026-11-22 (on OCs)**: also, give them good sprites for their projectiles
+- **2026-11-27** (pasted, then the owner's own line): "also, begin animation batches, and start refining the animations, until we get a score of 10/10 for animation, and each frame has that. also, start finding canon artwork for all of the moves. if you can't find it, use the SHOW's art style, not the game's. I don't like the game's artstyle" . also, if a move gives an effect(like slowfall for tk's up special) then give it a REASOn for that effect. so for tk's up-c, a blast of steam would go downwards to slow her.
 
 ## Online, UI & players
 
