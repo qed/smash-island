@@ -1942,3 +1942,21 @@ as his render is; a picture of two characters cut to this one); nothing was redr
 | `canon/rose/rose-ohhh.png` (153x197) | Rose: TPOT pose | https://static.wikia.nocookie.net/battlefordreamisland/images/0/03/Ohhhhhhhhhhh.png |
 | `canon/rose/rose-tpot15.png` (149x189) | Rose: TPOT 15 pose | https://static.wikia.nocookie.net/battlefordreamisland/images/9/95/RoseTPOT15.png |
 | `canon/rose/rose-arms.png` (138x213) | Rose: BFDIE pose: Don't think of it as cheating | https://static.wikia.nocookie.net/battlefordreamisland/images/c/ce/Don%27t_think_of_it_as_Cheating.png |
+
+### Animation batch 4 (2026-11-27): show pictures for Pin
+
+Pictures from BFDI, BFDIA, BFB, TPOT and IDFB (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area, or by height or width for a prop, a view asset or the mech suit; Coiny slapping
+Firey cut to Coiny alone); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/pin/pin-pointy.png` (111x187) | Pin: TPOT pose | https://static.wikia.nocookie.net/battlefordreamisland/images/6/63/Pointythingy.png |
+| `canon/pin/pin-jtilt.png` (140x185) | Pin: BFDIA pose, tilted jump | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7a/Pin_5.png |
+| `canon/pin/pin-jumping.png` (139x188) | Pin: BFDIA pose, jumping | https://static.wikia.nocookie.net/battlefordreamisland/images/9/93/Pin_Jumping_%28Updated%29.png |
+| `canon/pin/pin-happy.png` (114x187) | Pin: BFDIA 22 pose | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f4/Pinbfdia22.png |
+| `canon/pin/pin-flies.png` (180x107) | Pin: BFDI pose: Hey! We're flying! | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3d/Pin_flies.png |
+| `canon/pin/pin-ftpot.png` (202x161) | Pin: TPOT pose: Pin flying | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b9/Pin_flying.png |
+| `canon/pin/pin-mech.png` (169x240) | Pin: BFDIA pose: angry Mech Pin | https://static.wikia.nocookie.net/battlefordreamisland/images/5/5c/AngryMechPin.png |
+| `canon/pin/pin-rolling.png` (156x166) | Pin: old asset: Pin top (BFDIA 5c) | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d6/Pin_rolling.png |
