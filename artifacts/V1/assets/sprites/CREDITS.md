@@ -1842,3 +1842,103 @@ share one scale each, so they read as one object); nothing was redrawn or recolo
 | `canon/ice-cube/ice-cube-rev1.png` (176x194) | Ice Cube: BFDI pose: I want revenge! | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7c/Ice-1.png |
 | `canon/ice-cube/ice-cube-rev2.png` (184x207) | Ice Cube: BFDIA pose: REVENGE! | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b6/REVENGE_%21%21%21%21.png |
 | `canon/ice-cube/ice-cube-scared.png` (228x266) | Ice Cube: BFB pose, scared, tilted | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e9/Iceei.png |
+
+### Animation batch 3 (2026-11-27): show pictures for Teardrop
+
+Pictures from BFDI, BFB, TPOT, BFDI Mini Again and BFDIE (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area; Rocky's 600-px assets share one scale; Black Hole's by width or his core, centred
+as his render is; a picture of two characters cut to this one); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/teardrop/teardrop-grab.png` (160x229) | Teardrop: BFB pose: about to grab Gelatin | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c0/Teardrop_-_about_to_grab_gelatin.png |
+| `canon/teardrop/teardrop-holder.png` (199x224) | Teardrop: BFB pose: holding Gelatin | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e3/Teardrop_-_the_Gelatin_holder.png |
+| `canon/teardrop/teardrop-kick.png` (227x210) | Teardrop: BFDI: Teardrop kicks Woody | https://static.wikia.nocookie.net/battlefordreamisland/images/1/19/Td_kicked_woody.png |
+| `canon/teardrop/teardrop-evap.png` (121x194) | Teardrop: BFB pose: Teardrop evaporates | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7c/TDEVAPORATES%21.png |
+| `canon/teardrop/teardrop-evaping.png` (123x184) | Teardrop: asset: Teardrop evaporating | https://static.wikia.nocookie.net/battlefordreamisland/images/a/ad/Teardrop_Evaporating.png |
+| `canon/teardrop/teardrop-fstare.png` (113x193) | Teardrop: BFB pose: front stare | https://static.wikia.nocookie.net/battlefordreamisland/images/7/76/Teardrop_-_front_stare_1.png |
+| `canon/teardrop/teardrop-stare.png` (106x195) | Teardrop: BFDI pose: Teardrop stare | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c2/Teardrop_stare.png |
+| `canon/teardrop/teardrop-scream.png` (170x185) | Teardrop: BFB pose: screams silently | https://static.wikia.nocookie.net/battlefordreamisland/images/6/67/Td_screams_silently.png |
+| `canon/teardrop/teardrop-cloud.png` (229x132) | Teardrop: asset: Teardrop as a rain cloud (TPOT 7) | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c7/RainCloudAsset.png |
+| `canon/teardrop/teardrop-erun.png` (109x215) | Teardrop: BFB pose: evil run | https://static.wikia.nocookie.net/battlefordreamisland/images/9/91/TD_evil_run.png |
+
+### Animation batch 3 (2026-11-27): show pictures for Rocky
+
+Pictures from BFDI, BFB, TPOT, BFDI Mini Again and BFDIE (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area; Rocky's 600-px assets share one scale; Black Hole's by width or his core, centred
+as his render is; a picture of two characters cut to this one); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/rocky/rocky-grin.png` (287x226) | Rocky: BFB pose | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0b/Rocky_intro_2.png |
+| `canon/rocky/rocky-ab.png` (249x237) | Rocky: TPOT pose: about to barf again | https://static.wikia.nocookie.net/battlefordreamisland/images/3/35/RockyAboutToBarfAgain.png |
+| `canon/rocky/rocky-bb.png` (289x171) | Rocky: asset: barfing body (happy) | https://static.wikia.nocookie.net/battlefordreamisland/images/2/28/IMG_newrockybarf.PNG |
+| `canon/rocky/rocky-b25.png` (269x210) | Rocky: BFDI 25: Bleh! | https://static.wikia.nocookie.net/battlefordreamisland/images/7/77/RockyBarfingBFDI25.png |
+| `canon/rocky/rocky-bwide.png` (288x173) | Rocky: old asset: barfing, wider | https://static.wikia.nocookie.net/battlefordreamisland/images/7/77/RockyBarfWide.png |
+| `canon/rocky/rocky-spit.png` (288x166) | Rocky: old asset: barfing, spitting a ball (BFDI 13) | https://static.wikia.nocookie.net/battlefordreamisland/images/c/cd/IMG_rockyscream.PNG |
+| `canon/rocky/rocky-tilt.png` (274x277) | Rocky: BFB pose, tilted | https://static.wikia.nocookie.net/battlefordreamisland/images/6/66/Rocky_bfbbb.png |
+| `canon/rocky/rocky-oof.png` (289x340) | Rocky: BFDI pose, oof | https://static.wikia.nocookie.net/battlefordreamisland/images/8/82/Rocky_oof.png |
+| `canon/rocky/rocky-fly.png` (289x348) | Rocky: BFDI pose, flying (Wiiii) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a9/RockyWiiiiii.png |
+| `canon/rocky/rocky-gopen.png` (289x234) | Rocky: BFB pose | https://static.wikia.nocookie.net/battlefordreamisland/images/6/67/Rocky_BFB.png |
+| `canon/rocky/rocky-sneer.png` (289x227) | Rocky: BFB 3 pose | https://static.wikia.nocookie.net/battlefordreamisland/images/5/59/Rocky_BFB3.png |
+| `canon/rocky/rocky-btik.png` (316x227) | Rocky: JNJ TikTok barf challenge pose | https://static.wikia.nocookie.net/battlefordreamisland/images/5/57/Rocky_barf_pose_new.png |
+| `canon/rocky/rocky-sit.png` (271x198) | Rocky: BFDI pose, sitting | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2d/RockySit.png |
+
+### Animation batch 3 (2026-11-27): show pictures for Lightning
+
+Pictures from BFDI, BFB, TPOT, BFDI Mini Again and BFDIE (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area; Rocky's 600-px assets share one scale; Black Hole's by width or his core, centred
+as his render is; a picture of two characters cut to this one); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/lightning/lightning-cool.png` (205x197) | Lightning: BFB pose | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f2/Lightning_cool.png |
+| `canon/lightning/lightning-zap.png` (216x239) | Lightning: BFB/TPOT pose: Lightning zapping | https://static.wikia.nocookie.net/battlefordreamisland/images/4/44/Lightning_zap.png |
+| `canon/lightning/lightning-zaph.png` (213x195) | Lightning: BFB pose: zapping, happy | https://static.wikia.nocookie.net/battlefordreamisland/images/2/26/Lightning_zap_happy.png |
+| `canon/lightning/lightning-zglow.png` (173x197) | Lightning: asset: Lightning zapping | https://static.wikia.nocookie.net/battlefordreamisland/images/1/16/Lighting_GlowingIcon.png0002.png |
+| `canon/lightning/lightning-angled.png` (157x183) | Lightning: asset: angled body (TPOT 22) | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7d/Lighting_angled.png |
+| `canon/lightning/lightning-lean.png` (200x200) | Lightning: BFB 7 pose | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7f/Lightning_in_BFB_7.png |
+| `canon/lightning/lightning-woke.png` (192x205) | Lightning: BFB pose | https://static.wikia.nocookie.net/battlefordreamisland/images/1/1a/MAN_WOKE.png |
+| `canon/lightning/lightning-inter.png` (175x206) | Lightning: TPOT pose | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b2/Lightning~_Oh_now_you_are_interested_.png |
+| `canon/lightning/lightning-shock.png` (167x218) | Lightning: BFB pose: shocked | https://static.wikia.nocookie.net/battlefordreamisland/images/a/ac/Lightshock.png |
+| `canon/lightning/lightning-zigzag.png` (171x201) | Lightning: TPOT pose: Lightning's a zigzag | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0f/Lightning%27s_a_ZigZag.png |
+| `canon/lightning/lightning-cloud.png` (166x202) | Lightning: BFB pose: Oh my cloud | https://static.wikia.nocookie.net/battlefordreamisland/images/1/1e/Lightning_-_Oh_my_cloud......_.png |
+
+### Animation batch 3 (2026-11-27): show pictures for Black Hole
+
+Pictures from BFDI, BFB, TPOT, BFDI Mini Again and BFDIE (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area; Rocky's 600-px assets share one scale; Black Hole's by width or his core, centred
+as his render is; a picture of two characters cut to this one); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/black-hole/black-hole-icon.png` (399x200) | Black Hole: asset: icon pose | https://static.wikia.nocookie.net/battlefordreamisland/images/2/28/Black_Hole_Icon_Pose.png |
+| `canon/black-hole/black-hole-zapped.png` (399x200) | Black Hole: asset: Black Hole zapped | https://static.wikia.nocookie.net/battlefordreamisland/images/3/34/Black_hole_zapped0012.png |
+| `canon/black-hole/black-hole-orbit.png` (200x200) | Black Hole: asset: orbit ring | https://static.wikia.nocookie.net/battlefordreamisland/images/0/06/Blackholes_Orbit_.png |
+| `canon/black-hole/black-hole-glowless.png` (113x200) | Black Hole: asset: Black Hole without glow | https://static.wikia.nocookie.net/battlefordreamisland/images/9/96/Circle_Eye.png |
+
+### Animation batch 3 (2026-11-27): show pictures for Rose
+
+Pictures from BFDI, BFB, TPOT, BFDI Mini Again and BFDIE (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area; Rocky's 600-px assets share one scale; Black Hole's by width or his core, centred
+as his render is; a picture of two characters cut to this one); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/rose/rose-slap.png` (149x260) | Rose: BFDIE pose: enraged slapping | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d3/Enraged_Slapping_Rose_with_Drool.PNG |
+| `canon/rose/rose-push.png` (141x208) | Rose: BFDIE pose: pushing | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2f/Rose_pushing_some_stairs.png |
+| `canon/rose/rose-egg.png` (151x195) | Rose: BFDI Mini Again pose: egg toss | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c8/RoseEggToss.png |
+| `canon/rose/rose-joy.png` (170x198) | Rose: BFDI Mini Again pose: joyous | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a0/RoseJoyous.png |
+| `canon/rose/rose-dodge.png` (133x210) | Rose: BFDIE pose: dodge | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2f/RoseDodge.png |
+| `canon/rose/rose-bow.png` (140x189) | Rose: BFDI Mini Again pose, eyes closed | https://static.wikia.nocookie.net/battlefordreamisland/images/2/24/Arose.png |
+| `canon/rose/rose-ouch.png` (176x153) | Rose: TPOT pose: ouch | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d6/RoseOUCH.png |
+| `canon/rose/rose-run.png` (132x203) | Rose: BFDIE pose: running | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f8/Rose_runs_from_a_knife_wielding_maniac.png |
+| `canon/rose/rose-shocked.png` (164x215) | Rose: BFDI Mini Again pose: shocked | https://static.wikia.nocookie.net/battlefordreamisland/images/5/56/Roseshocked.png |
+| `canon/rose/rose-ohhh.png` (153x197) | Rose: TPOT pose | https://static.wikia.nocookie.net/battlefordreamisland/images/0/03/Ohhhhhhhhhhh.png |
+| `canon/rose/rose-tpot15.png` (149x189) | Rose: TPOT 15 pose | https://static.wikia.nocookie.net/battlefordreamisland/images/9/95/RoseTPOT15.png |
+| `canon/rose/rose-arms.png` (138x213) | Rose: BFDIE pose: Don't think of it as cheating | https://static.wikia.nocookie.net/battlefordreamisland/images/c/ce/Don%27t_think_of_it_as_Cheating.png |
