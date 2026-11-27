@@ -978,6 +978,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-27 (batch 4 and the Needle job running)**: push batch 4 and needle when done. also, while you do the animation batches, work on the ones youve already built, and get at least 1 of them to animation-by-frame.
 - **2026-11-27 (batch 4 finishing)**: start the next animation batch too
 - **2026-11-27 (looking at bow-frames-sheet.png)**: uhhh, the side parts are rotated upwards. why? thats not how she appears in the show
+- **2026-11-27 (looking at the corrected bow-frames-sheet.png)**: smile is too stretched and weird
+- **2026-11-27 (same sheet)**: also, bow should turn into a ghost during teleport
 
 ## Online, UI & players
 
