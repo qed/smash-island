@@ -976,6 +976,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-27 (animation batch 1 and the effect reasons merged, not live)**: push the animations and effect reasons. also, does every FRAME of every move have an animation?
 - **2026-11-27 (batches 2 and 3 merged, not live)**: push batches 2 and 3. why does needle have 3 counters?
 - **2026-11-27 (batch 4 and the Needle job running)**: push batch 4 and needle when done. also, while you do the animation batches, work on the ones youve already built, and get at least 1 of them to animation-by-frame.
+- **2026-11-27 (batch 4 finishing)**: start the next animation batch too
 
 ## Online, UI & players
 
@@ -1280,6 +1281,8 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (box: push the multi-hit hold and Sticker's Backstab now or wait)**: Push now
 - **2026-11-27 (the lead asked to push the guest lag fix)**: push the lag fix. also, cpu seat should train the sparring figure against a sparring figure
 - **2026-11-27 (after the interrupted grabs push; the lead asked: check/undo the push, drawing only or motion for the 11 slower kept throws, push Figure vs Figure too?)**: push it, drawing only for the 11, and figures too. also, its IFNE to make throws have different numbers. also, compress worktrees
+- **2026-11-27 (finisher armour job running)**: push the finishers when done
+- **2026-11-27 (Bow frame-by-frame job running)**: push bow when done too
 
 ## Status questions & check-ins
 
@@ -1593,6 +1596,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (the lead asked the owner to open the browser pane for training a Figure)**: it be opened
 - **2026-11-25 (Sparring Figures panel)**: what does the cpu seat thing do?
 - **2026-11-27 (the CPU seat question was not answered yet)**: and about the cpu seat thing?
+- **2026-11-27 (after many reminder relays answered "Nothing is wrong")**: why are you saying "nothing is wrong"?
 
 ## Working rules, budget & agents
 
