@@ -706,6 +706,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-27 (box: Bottle, Needy and Jammy plain throws got motion + drawing, numbers kept)**: OK
 - **2026-11-27 (box: Needle has 4 counters -- new down special / down + up / keep all)**: remove the counter on her smash. also do the new down special
 - **2026-11-27 (box: Needle's smash without the counter -- point-first lunge or triple thrust; new down special -- Pin Drop, Hissy Fit or Thread Snare)**: Triple thrust; Pin Drop
+- **2026-11-27 (while animation jobs run)**: also, some finishers are too interruptible
 
 ## Bosses, Boss Rush & secrets
 
