@@ -700,6 +700,9 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (the lead asked: should foes and teammates spring on Marshmallow's leftover pad too?)**: yeah, allies should spring on it.
 - **2026-11-25 (box: Marshmallow's leftover pad springs you when you walk onto it -- keep, or jump only)**: Jump only
 - **2026-11-25 (box: spin auras and spinning up specials now land every tick with the hold, e.g. Bomb's up special 2 hits 8% -> 5 hits 21%; keep them held?)**: hold, but reduce damage per hit.
+- **2026-11-27 (box: merge the new grabs/throws?)**: Merge and push
+- **2026-11-27 (box: the 19 kept effect throws -- draw them too?)**: Yes, draw them
+- **2026-11-27 (box: Bottle, Needy and Jammy plain throws got motion + drawing, numbers kept)**: OK
 
 ## Bosses, Boss Rush & secrets
 
@@ -904,6 +907,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-25 (while the guest-lag job runs)**: also, you should not be able to jump again after being hit offstage, nor use your recovery.
 - **2026-11-25 (box: how should Sticker get KOs? stronger Backstab / faster smash / more damage)**: Stronger Backstab
 - **2026-11-25 (box: moves much stronger with the hold -- Tree 130% vs old 166%, Bot, Lifering, Woody, Naily -- keep or tone down)**: Keep as is
+- **2026-11-27 (box: Salt's back throw, Pepper catches and shoves for 2%, 2% taken off the throw to keep the total)**: extra 2 percent. its fine if some throws are stronger than others, that just means we have more balance tools in our aresenal. like how ness' grab and forward throw kills at 80.
 
 ## Art, animation & polish
 
