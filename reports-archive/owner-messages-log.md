@@ -974,6 +974,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-27** (pasted, then the owner's own line): "also, begin animation batches, and start refining the animations, until we get a score of 10/10 for animation, and each frame has that. also, start finding canon artwork for all of the moves. if you can't find it, use the SHOW's art style, not the game's. I don't like the game's artstyle" . also, if a move gives an effect(like slowfall for tk's up special) then give it a REASOn for that effect. so for tk's up-c, a blast of steam would go downwards to slow her.
 - **2026-11-27 (animation batch 1 and the effect reasons merged, not live)**: push the animations and effect reasons. also, does every FRAME of every move have an animation?
 - **2026-11-27 (batches 2 and 3 merged, not live)**: push batches 2 and 3. why does needle have 3 counters?
+- **2026-11-27 (batch 4 and the Needle job running)**: push batch 4 and needle when done. also, while you do the animation batches, work on the ones youve already built, and get at least 1 of them to animation-by-frame.
 
 ## Online, UI & players
 
