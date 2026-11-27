@@ -1960,3 +1960,23 @@ Firey cut to Coiny alone); nothing was redrawn or recoloured. Fan-work use, as e
 | `canon/pin/pin-ftpot.png` (202x161) | Pin: TPOT pose: Pin flying | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b9/Pin_flying.png |
 | `canon/pin/pin-mech.png` (169x240) | Pin: BFDIA pose: angry Mech Pin | https://static.wikia.nocookie.net/battlefordreamisland/images/5/5c/AngryMechPin.png |
 | `canon/pin/pin-rolling.png` (156x166) | Pin: old asset: Pin top (BFDIA 5c) | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d6/Pin_rolling.png |
+
+### Animation batch 4 (2026-11-27): show pictures for Coiny
+
+Pictures from BFDI, BFDIA, BFB, TPOT and IDFB (jacknjellify), found by the canon-art catalogue (reports-archive/art-next/canon-art-catalog.md) on the BFDI
+wiki (battlefordreamisland.fandom.com) and taken from its image host (static.wikia.nocookie.net). Each is cut to its own outline and scaled so the
+character's body is the size of the fighter's render (by body area, or by height or width for a prop, a view asset or the mech suit; Coiny slapping
+Firey cut to Coiny alone); nothing was redrawn or recoloured. Fan-work use, as everything above.
+
+| File | Wiki asset | Source |
+|---|---|---|
+| `canon/coiny/coiny-slaps.png` (272x188) | Coiny: BFDIA pose: Coiny slaps Firey | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d5/Coiny_slaps_Firey.png |
+| `canon/coiny/coiny-elim.png` (188x197) | Coiny: BFDI pose | https://static.wikia.nocookie.net/battlefordreamisland/images/9/9f/Elim112coiny.png |
+| `canon/coiny/coiny-jump.png` (213x195) | Coiny: BFDI pose | https://static.wikia.nocookie.net/battlefordreamisland/images/2/22/Coiny_GTTTATINT_2.png |
+| `canon/coiny/coiny-flying.png` (214x190) | Coiny: BFDI pose, flying | https://static.wikia.nocookie.net/battlefordreamisland/images/4/48/Flyingcoiny.png |
+| `canon/coiny/coiny-throw.png` (202x224) | Coiny: BFB pose: throwing stuff | https://static.wikia.nocookie.net/battlefordreamisland/images/7/79/No_big_deal_i_love_throwin_stuff.png |
+| `canon/coiny/coiny-yeet.png` (263x232) | Coiny: BFB pose: throwing (Yeet) | https://static.wikia.nocookie.net/battlefordreamisland/images/e/ea/Has_he_not_made_this_pose_numerous_times_in_the_past%2C_why_does_this_feel_like_a_throwback_2.png |
+| `canon/coiny/coiny-weird.png` (188x235) | Coiny: BFDIA pose | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0d/CoinyWeird.png |
+| `canon/coiny/coiny-front.png` (171x171) | Coiny: asset: front | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d8/Coiny_Body_Front_2.png |
+| `canon/coiny/coiny-side.png` (62x164) | Coiny: asset: side (edge-on) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a6/Coiny_Side.png |
+| `canon/coiny/coiny-below.png` (178x173) | Coiny: asset: from below | https://static.wikia.nocookie.net/battlefordreamisland/images/7/74/Coiny_belowsies.png |
