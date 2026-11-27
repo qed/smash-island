@@ -980,6 +980,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-27 (looking at bow-frames-sheet.png)**: uhhh, the side parts are rotated upwards. why? thats not how she appears in the show
 - **2026-11-27 (looking at the corrected bow-frames-sheet.png)**: smile is too stretched and weird
 - **2026-11-27 (same sheet)**: also, bow should turn into a ghost during teleport
+- **2026-11-27 (same Bow sheet)**: and why does she always have her mouth open?
 
 ## Online, UI & players
 
