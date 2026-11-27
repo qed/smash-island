@@ -985,6 +985,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-27 (same sheet)**: also, bow should turn into a ghost during teleport
 - **2026-11-27 (same Bow sheet)**: and why does she always have her mouth open?
 - **2026-11-27 (after the batches 4-5 / Needle / finishers push)**: also, for things like marshmallows special, they shouldnt use blurs. for marshmallow, you should actually SEE the scream
+- **2026-11-27 (box: push the drawn scream and flat effects; fix the double-special bug; flatten the shared hit effects)**: Push now; Fix and push; Yes, flatten them
 
 ## Online, UI & players
 
