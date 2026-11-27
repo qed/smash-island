@@ -708,6 +708,7 @@ Total: 1221 distinct messages (duplicates from transcript replays and system lin
 - **2026-11-27 (box: Needle's smash without the counter -- point-first lunge or triple thrust; new down special -- Pin Drop, Hissy Fit or Thread Snare)**: Triple thrust; Pin Drop
 - **2026-11-27 (while animation jobs run)**: also, some finishers are too interruptible
 - **2026-11-27 (while batches 4/5 and Needle were being pushed)**: also, all the aerials are still archetype aerials. The down-air in particular
+- **2026-11-27 (box: merge the new down-airs, 83 fighters + OC choices)**: Merge and push
 
 ## Bosses, Boss Rush & secrets
 
